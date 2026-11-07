@@ -14,8 +14,11 @@ from pathlib import Path
 
 import duckdb
 import pytest
+from alert_marks import alert_notes
 from streamlit.testing.v1 import AppTest
 
+import capa_simulation.components.write_guard as write_guard
+from capa_simulation import alerts
 from capa_simulation.components.flash import FlashNote
 from capa_simulation.components.home_main_cases import (
     IDLE_REVISION_CHOICE,
@@ -469,7 +472,13 @@ def _refused(app: AppTest) -> bool:
     return any("다른 사용자가 먼저 Case1 지정을 바꿔" in text for text in _texts(app))
 
 
-def test_a_stale_scenario_pick_does_not_replace_another_sessions_choice(tmp_path: Path) -> None:
+def _held(app: AppTest) -> bool:
+    return any("Case1 지정이 방금 바뀌어" in text for text in _texts(app))
+
+
+def test_a_stale_scenario_pick_does_not_replace_another_sessions_choice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """낡은 화면의 시나리오 고르기는 남이 방금 고른 같은 Case 를 덮지 않고, 진 쪽이 그것을 안다.
 
     고르는 것이 곧 저장이라 대조가 없으면 뒤 사람 값이 말없이 남고 두 사람 모두 모른다. 진 화면의
@@ -494,9 +503,10 @@ def test_a_stale_scenario_pick_does_not_replace_another_sessions_choice(tmp_path
     assert stale.selectbox(key=CASE1_SCENARIO).value == s1
     assert stale.selectbox(key=CASE1_REVISION).value == s1_revision
 
-    # 거절은 한 번이고, 지금 지정을 본 다음 고름은 저장한다.
+    # 거절은 한 번이고, 지금 지정을 본 다음(창이 지난 뒤) 고름은 저장한다.
     _ran(stale.run())
     assert not _refused(stale)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
     assert _profile(database)[0][0] == s3
 
@@ -603,7 +613,9 @@ def test_another_cases_save_and_a_rename_do_not_stop_a_stale_pick(tmp_path: Path
     assert not _refused(stale)
 
 
-def test_a_stale_unset_does_not_clear_another_sessions_choice(tmp_path: Path) -> None:
+def test_a_stale_unset_does_not_clear_another_sessions_choice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """낡은 화면의 「지정 안 함」 도 고름이다 — 남이 방금 고른 지정을 지우지 않는다. 지금 짝이 본
     짝 그대로면 평소처럼 비운다."""
     database = tmp_path / "scenario.duckdb"
@@ -621,49 +633,212 @@ def test_a_stale_unset_does_not_clear_another_sessions_choice(tmp_path: Path) ->
     assert _refused(stale)
     assert stale.selectbox(key=CASE1_SCENARIO).value == s1
 
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(None).run())
     assert _profile(database)[0] == (None, None)
 
 
-def test_a_second_pick_on_an_undrawn_box_is_not_taken_for_another_user(tmp_path: Path) -> None:
-    """앞 고름의 회차가 상자를 다시 그리기 전에 끊기면 뒤 고름의 콜백 인자는 앞 고름 전의 짝이다.
+def test_a_refused_pick_sent_back_by_the_browser_is_not_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """거절 회차가 상자를 되돌려도 브라우저는 새 값을 받기 전까지 거절된 값을 들고 있다.
 
-    지금 짝은 제가 방금 저장한 값이다 — 「다른 사용자가 먼저」 로 거절하면 제 고름이 남의 것으로
-    알려지고 마지막 고름이 버려진다. 그 사이 남이 저장했으면 제 저장이 아니니 그대로 거절한다.
-    회차를 끊을 수 없어 끊긴 회차가 남기는 것(같은 낡은 인자)으로 콜백을 잇달아 부른다.
+    그 틈의 다음 신호(팝업 닫기 · Esc · 탭)가 그 값을 싣고 오면 서버는 바뀐 값으로 읽어 콜백을 다시
+    부르고, 콜백 인자는 방금 그린 새 짝이라 대조를 지난다. 창 안에서는 쓰지 않고, 같은 일을 두 번
+    알리지도 않는다. 창이 지난 뒤 다시 고르는 것은 지금 지정을 본 고름이라 저장한다. AppTest 는
+    브라우저 틈이 없어 같은 값을 곧바로 다시 보낸다.
     """
     database = tmp_path / "scenario.duckdb"
     s1, s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
     s3 = _third_scenario(database)
-    repository = DuckDBScenarioRepository(database)
-    repository.replace_global_main_case(1, s2, s2_newer, source="테스트")
+    DuckDBScenarioRepository(database).replace_global_main_case(1, s2, s2_newer, source="테스트")
     clear_global_main_cases_cache()
-    script = """
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    version = _version(database)
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+    assert _refused(stale)
+
+    for _ in range(2):
+        _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+        assert _profile(database)[0] == (s1, s1_revision)
+        assert _version(database) == version
+        assert stale.selectbox(key=CASE1_SCENARIO).value == s1
+        assert not _held(stale)
+        assert MAIN_CASE_NOTICE_KEY not in stale.session_state
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+    assert _profile(database)[0][0] == s3
+    assert not _refused(stale)
+    assert not _held(stale)
+
+
+def test_a_refused_revision_pick_sent_back_by_the_browser_is_not_saved(tmp_path: Path) -> None:
+    """같은 시나리오 안의 리비전 상자도 거절된 값이 되돌아와 남의 고름을 덮지 않는다."""
+    database = tmp_path / "scenario.duckdb"
+    _s1, _s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    repository = DuckDBScenarioRepository(database)
+    base = repository.load_revision(s2_older)
+    third = repository.save_revision(
+        s2,
+        {name: frame.copy() for name, frame in base.tables.items()},
+        base.preset,
+        revision_name="증설안 재검토",
+    )
+    repository.replace_global_main_case(1, s2, str(third.revision.revision_id), source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_REVISION).set_value(s2_older).run())
+    version = _version(database)
+    _ran(stale.selectbox(key=CASE1_REVISION).set_value(s2_newer).run())
+    assert _refused(stale)
+
+    _ran(stale.selectbox(key=CASE1_REVISION).set_value(s2_newer).run())
+    assert _profile(database)[0] == (s2, s2_older)
+    assert _version(database) == version
+
+
+def test_an_old_value_sent_back_after_another_sessions_pick_is_not_saved(tmp_path: Path) -> None:
+    """고름이 없어도 같다 — 남의 지정을 처음 보이는 회차 뒤의 옛 값은 아무도 고르지 않은 값이다.
+
+    팝업 탭을 빠르게 오가면 상자를 옮긴 회차의 새 값을 브라우저가 받기 전에 다음 신호가 옛 값을
+    싣고 와 남의 지정을 말없이 덮었다. 사용자가 정말 고른 값과 갈리지 않아 쓰지 않고 알린다.
+    """
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    DuckDBScenarioRepository(database).replace_global_main_case(1, s2, s2_newer, source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    version = _version(database)
+    _ran(stale.run())
+    assert stale.selectbox(key=CASE1_SCENARIO).value == s1
+    assert not _held(stale)
+
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s2).run())
+
+    assert _profile(database)[0] == (s1, s1_revision)
+    assert _version(database) == version
+    assert stale.selectbox(key=CASE1_SCENARIO).value == s1
+    assert _held(stale)
+    assert not _refused(stale)
+
+
+def test_the_hold_stays_on_the_case_whose_box_moved(tmp_path: Path) -> None:
+    """상자가 옮겨진 Case 만 막는다 — 같은 회차의 다른 Case 고름은 저장한다."""
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, _s2_older, s2_newer = _two_scenarios(database)
+    DuckDBScenarioRepository(database).replace_global_main_case(1, s2, s2_newer, source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    _ran(stale.run())
+    _ran(stale.selectbox(key=CASE2_SCENARIO).set_value(s2).run())
+
+    assert _profile(database) == ((s1, s1_revision), (s2, s2_newer))
+    assert not _held(stale)
+
+
+def test_own_picks_in_a_row_are_not_held(tmp_path: Path) -> None:
+    """제 고름은 상자가 옮겨진 것이 아니다 — 시나리오 고름이 리비전 상자까지 옮겨도 잇단 고름은
+    모두 저장한다(「지정 안 함」 도 같다)."""
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    s3 = _third_scenario(database)
+    clear_global_main_cases_cache()
+    app = _ran(_app(database).run())
+
+    _ran(app.selectbox(key=CASE1_SCENARIO).set_value(s2).run())
+    assert _profile(database)[0] == (s2, s2_newer)
+    _ran(app.selectbox(key=CASE1_REVISION).set_value(s2_older).run())
+    assert _profile(database)[0] == (s2, s2_older)
+    _ran(app.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+    assert _profile(database)[0][0] == s3
+    _ran(app.selectbox(key=CASE1_SCENARIO).set_value(None).run())
+    assert _profile(database)[0] == (None, None)
+    _ran(app.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    assert _profile(database)[0] == (s1, s1_revision)
+    assert MAIN_CASE_NOTICE_KEY not in app.session_state
+    assert not _held(app)
+    assert not _refused(app)
+
+
+def test_another_sessions_same_pair_is_not_taken_for_this_sessions_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """짝은 되돌아올 수 있는 값이다 — 이 세션이 지난번에 저장한 짝과 지금 짝이 같아도 남이 놓은
+    것일 수 있다. 화면이 그린 짝과 다르면 거절한다(창을 끄고 대조만 본다)."""
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, _s2_older, s2_newer = _two_scenarios(database)
+    s3 = _third_scenario(database)
+    DuckDBScenarioRepository(database).replace_global_main_case(1, s1, s1_revision, source="테스트")
+    clear_global_main_cases_cache()
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    first = _ran(_app(database).run())
+    second = _ran(_app(database).run())
+
+    _ran(second.selectbox(key=CASE1_SCENARIO).set_value(s2).run())
+    assert _profile(database)[0] == (s2, s2_newer)
+    _ran(first.run())
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    assert _profile(database)[0] == (s1, s1_revision)
+    _ran(second.run())
+    assert second.selectbox(key=CASE1_SCENARIO).value == s1
+
+    _ran(first.run())
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s2).run())
+    version = _version(database)
+    _ran(second.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+
+    assert _profile(database)[0] == (s2, s2_newer)
+    assert _version(database) == version
+    assert _refused(second)
+
+
+CLOSED_HOST_SCRIPT = """
 import streamlit as st
 
-import capa_simulation.components.home_main_cases as picker
+from capa_simulation.components.home_settings import render_home_dialog_host
 
-picker._save_case_scenario(st.session_state["database_path"], 1, st.session_state["seen"])
+render_home_dialog_host(
+    preference=lambda tabs: None,
+    past_data=lambda: None,
+    closed_notices=(st.session_state["notice_key"],),
+)
 """
-    app = AppTest.from_string(script, default_timeout=120)
-    app.session_state["database_path"] = str(database)
-    app.session_state["seen"] = (s2, s2_newer)
 
-    app.session_state[CASE1_SCENARIO] = s1
+
+def test_a_notice_left_by_a_closed_popup_goes_to_the_alert_popup(tmp_path: Path) -> None:
+    """팝업 안 칸이 꺼내기 전에 닫혀도 거절이 잠자지 않는다 — 닫힌 회차의 호스트가 알림창으로
+    넘기고, 곁 칸이 없어 그리지는 않으며, 다음에 팝업을 열 때 때 지난 알림으로 뜨지 않는다."""
+    database = tmp_path / "scenario.duckdb"
+    s1, _s1_revision, s2, _s2_older, s2_newer = _two_scenarios(database)
+    s3 = _third_scenario(database)
+    DuckDBScenarioRepository(database).replace_global_main_case(1, s2, s2_newer, source="테스트")
+    clear_global_main_cases_cache()
+    first = _ran(_app(database).run())
+    stale = _ran(_app(database).run())
+    _ran(first.selectbox(key=CASE1_SCENARIO).set_value(s1).run())
+    _ran(stale.selectbox(key=CASE1_SCENARIO).set_value(s3).run())
+    message = next(text for text in _texts(stale) if "다른 사용자가 먼저" in text)
+
+    app = AppTest.from_string(CLOSED_HOST_SCRIPT, default_timeout=120)
+    app.session_state["notice_key"] = MAIN_CASE_NOTICE_KEY
+    app.session_state[MAIN_CASE_NOTICE_KEY] = FlashNote("warning", message, ":material/info:")
     _ran(app.run())
-    assert _profile(database)[0] == (s1, s1_revision)
 
-    for chosen in (s3, s1, s3):
-        app.session_state[CASE1_SCENARIO] = chosen
-        _ran(app.run())
-        assert _profile(database)[0][0] == chosen
-        assert MAIN_CASE_NOTICE_KEY not in app.session_state
-
-    repository.replace_global_main_case(1, s2, s2_older, source="다른 사용자")
-    app.session_state[CASE1_SCENARIO] = s1
-    _ran(app.run())
-    assert _profile(database)[0] == (s2, s2_older)
-    assert MAIN_CASE_NOTICE_KEY in app.session_state
+    assert [note["full"] for note in alert_notes(app)] == [alerts.plain_text(message)]
+    assert not app.warning
+    assert MAIN_CASE_NOTICE_KEY not in app.session_state
 
 
 def test_a_hidden_preference_tab_neither_reads_nor_writes(

@@ -129,7 +129,30 @@ def render_flash(*keys: str) -> DeltaGenerator:
     때마다 이벤트 칸에 정확히 한 자리다.
     """
     slot = st.container()
+    sending, beside = _take(keys)
+    for note in beside:
+        _draw(slot, note)
+    alerts.emit(sending, slot=slot)
+    return slot
+
+
+def emit_flash(*keys: str) -> None:
+    """`keys` 에 담아 둔 알림을 칸 없이 알림창 · Alarm 으로만 내고 비운다.
+
+    그 알림 칸이 이 회차에 서지 않는 자리 — 닫힌 팝업의 호스트 — 가 부른다. 팝업 안 칸이 꺼내기
+    전에 닫히면 알림은 어디에도 나가지 않고 그 칸이 다시 설 때까지 잠잔다. 고칠 입력이 사라졌으니
+    경고 · 오류도 곁에 그리지 않는다. 칸을 세우지 않아 뒤 형제의 자리를 건드리지 않고, 이벤트 칸에는
+    부를 때마다 정확히 한 자리다(알릴 것이 없으면 빈 스타일 — `alerts.emit`).
+    """
+    sending, _beside = _take(keys)
+    alerts.emit(sending)
+
+
+def _take(keys: Sequence[str]) -> tuple[list[alerts.AlertNote], list[FlashNote]]:
+    """`keys` 의 알림을 그 차례대로 꺼내 (보낼 표지, 곁에 그릴 알림) 을 낸다. 담아 둔 알림이 없는
+    칸은 쓰기 직후 적어 둔 알림을 첫 알림과 같은 id 로, 그것도 없으면 방금 보낸 표지를 다시 낸다."""
     sending: list[alerts.AlertNote] = []
+    beside: list[FlashNote] = []
     for key in keys:
         note = _note(st.session_state.pop(key, None))
         held = False
@@ -148,9 +171,8 @@ def render_flash(*keys: str) -> DeltaGenerator:
         alerts.remember_sent(key, alert)
         sending.append(alert)
         if note.kind in BESIDE_KINDS and not note.popup_only:
-            _draw(slot, note)
-    alerts.emit(sending, slot=slot)
-    return slot
+            beside.append(note)
+    return sending, beside
 
 
 def _alert(key: str, note: FlashNote, *, held: bool) -> alerts.AlertNote:

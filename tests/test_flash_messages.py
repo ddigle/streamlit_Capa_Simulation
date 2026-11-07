@@ -250,6 +250,34 @@ def test_render_flash_writes_exactly_one_event_slot_with_or_without_alerts() -> 
     assert len(loud) == 1 and loud[0].startswith(f"<style {alerts.MARKER_ATTRIBUTE}=")
 
 
+def test_emit_flash_sends_to_the_alert_popup_without_a_slot_in_one_event_slot() -> None:
+    """칸이 서지 않는 자리(닫힌 팝업의 호스트)의 알림은 표지로만 나가고 비워진다. 경고도 곁에
+    그리지 않고, 칸을 세우지 않으며, 알릴 것이 없어도 이벤트 칸은 빈 스타일 한 자리다."""
+    script = """
+import streamlit as st
+
+from capa_simulation.components.flash import emit_flash, queue_flash
+
+if st.session_state.pop("queue", False):
+    queue_flash("demo_flash", "거절됐습니다", kind="warning")
+emit_flash("demo_flash")
+"""
+    app = AppTest.from_string(script, default_timeout=30)
+    app.session_state["queue"] = True
+    app.run()
+    assert not app.exception
+    assert [note["full"] for note in alert_notes(app)] == ["거절됐습니다"]
+    assert not app.warning
+    assert not app.get("container")
+    assert len(app.get("html")) == 1
+    assert "demo_flash" not in app.session_state
+
+    app.run()
+    assert not app.exception
+    assert not app.warning
+    assert len(app.get("html")) == 1
+
+
 def test_a_queued_alert_code_must_be_a_registered_event_code() -> None:
     """칸마다 코드를 따로 두면 등록부의 사건 코드여야 한다 — 상태 코드 · 없는 코드는 담지 않는다."""
     script = """

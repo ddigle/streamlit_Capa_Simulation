@@ -24,9 +24,10 @@
   `forget_page_dialogs()` 부터 부른다(AGENTS 9장 「팝업과 콜백」 — 한 실행에 팝업 하나). 주요 Case
   의 미지정 칩도 이 콜백으로 `비교 · 주요 Case` 탭을 연다(그 Case 칸을 잠깐 강조 —
   `home_main_cases`).
-- **호스트**: 이벤트 칸에 늘 한 자리 — 열렸으면 팝업, 아니면 빈 스타일 자리표시자. 팝업 본문은
-  이벤트 칸에 쓰지 않는다(편집기는 스타일만 든 `st.html`·토스트를 쓰지 않는다 — 주요 Case 칸 강조
-  서식은 그 칸 머리 줄과 한 `st.html` 에 실려 본문 칸이다).
+- **호스트**: 이벤트 칸에 늘 한 자리 — 열렸으면 팝업, 아니면 닫힌 팝업이 넘긴 알림 표지(없으면 빈
+  스타일 자리표시자 — `flash.emit_flash`). 팝업 안 칸이 꺼내기 전에 닫혀도 알림이 그 칸이 다시 설
+  때까지 잠자지 않는다. 팝업 본문은 이벤트 칸에 쓰지 않는다(편집기는 스타일만 든 `st.html`·토스트를
+  쓰지 않는다 — 주요 Case 칸 강조 서식은 그 칸 머리 줄과 한 `st.html` 에 실려 본문 칸이다).
 - **저장 뒤에도 팝업을 열어 둔다** — 가용설비 현황 「가용설비 설정」(`equipment_settings_dialog`)과
   같은 AGENTS 9장 「팝업 안 저장이 성공하면 열림 키를 지우고 `st.rerun()`」 의 예외다. 폼 저장(판정
   기준·프리셋·Past Data 등)은 앱 범위 `st.rerun()` 이라 사이드바(주요공정 히트맵 칸·대기 띠)도 그
@@ -55,6 +56,7 @@ from collections.abc import Callable, Mapping
 
 import streamlit as st
 
+from capa_simulation.components.flash import emit_flash
 from capa_simulation.components.past_data_management import forget_past_paste
 from capa_simulation.components.settings_box import (
     SETTINGS_ICON,
@@ -176,14 +178,16 @@ def render_home_dialog_host(
     *,
     preference: Callable[[Mapping[str, OpenTab]], None],
     past_data: Callable[[], None],
+    closed_notices: tuple[str, ...] = (),
 ) -> None:
-    """열린 팝업을 그린다 — 이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 빈 스타일 자리표시자).
+    """열린 팝업을 그린다 — 이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 닫힌 팝업의 알림 표지).
 
     `preference` 는 앞 네 탭(`home_state.HOME_PREFERENCE_TABS` — 라벨 → 탭)의 본문을 그린다 — 상자를
     제 탭 안에 넣고, 숨은 회차에 DB 를 읽지 않으려는 상자(주요 Case)가 제 탭을 본다. `past_data` 는
-    `Past Data` 탭 본문이다.
+    `Past Data` 탭 본문이다. `closed_notices` 는 팝업 안 칸이 꺼내는 알림 칸 이름들이다 — 닫힌
+    회차는 알림창 · Alarm 으로 넘긴다(`flash.emit_flash`, 알릴 것이 없으면 빈 스타일 자리표시자).
     """
     if home_settings_open():
         _settings_dialog(preference, past_data)
     else:
-        st.html("<style></style>")
+        emit_flash(*closed_notices)
