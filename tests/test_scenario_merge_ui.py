@@ -329,6 +329,26 @@ def _source_rows(app: AppTest) -> pd.DataFrame:
     ).set_index("월")
 
 
+def test_the_overlap_refusal_stands_right_under_the_choice_and_the_count_beside_it(
+    sources: Sources,
+) -> None:
+    """겹친 달 수는 고를 칸 곁 값 하나이고, 저장 차단 거부는 고칠 칸 바로 아래다 — 표 뒤로 밀리지
+    않는다(설계 규칙 UI-TXT-07 · UI-LAY-03)."""
+    repository, database, base, donor = sources
+    donor = _overlapping_donor(repository, donor)
+
+    app = _app(database, base, donor)
+
+    assert "**겹침** 1개월" in [item.value for item in app.caption]
+    assert not any("겹칩니다" in item.value for item in app.warning)
+    assert not any("겹치는 월:" in item.value for item in app.caption)
+    order = [(item.type, getattr(item, "value", None)) for item in app.main]
+    (refusal,) = [at for at, (kind, _) in enumerate(order) if kind == "error"]
+    table_title = order.index(("markdown", "#### 저장 전 월별 출처"))
+    choice = next(at for at, (kind, _) in enumerate(order) if kind == "button_group")
+    assert choice < refusal < table_title
+
+
 def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
     sources: Sources,
 ) -> None:

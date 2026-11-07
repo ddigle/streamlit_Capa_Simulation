@@ -127,32 +127,42 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     overlap = sources.loc[sources["베이스"] & sources["덧붙일 쪽"], "생산계획년월"].tolist()
     policy: OverlapPolicy = "reject"
     if overlap:
-        st.warning(f"{len(overlap)}개월이 겹칩니다. 겹치는 월 전체에 같은 선택을 적용합니다.")
-        st.caption("겹치는 월: " + ", ".join(format_month(month) for month in overlap))
-        policy = cast(
-            OverlapPolicy,
-            st.segmented_control(
-                "겹치는 월 처리",
-                options=list(OVERLAP_LABELS),
-                default="reject",
-                format_func=OVERLAP_LABELS.__getitem__,
-                key=f"merge_overlap_{base.revision.revision_id}_{owner}_{start}_{end}",
-                persist_state="session",
-                help=(
-                    "선택한 쪽의 월 전체를 12개 월표에 동일하게 적용합니다. "
-                    "서로의 행을 섞지 않습니다. 원본 리비전이나 월 범위를 바꾸면 다시 고릅니다."
-                ),
+        # 겹친 달 수는 고를 칸 곁 값이고, 달마다의 겹침은 아래 표 「겹침」 칸이, 겹친 달 전체에 한
+        # 선택을 쓴다는 말은 칸 풍선이 말한다(설계 규칙 UI-TXT-07).
+        with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
+            policy = cast(
+                OverlapPolicy,
+                st.segmented_control(
+                    "겹치는 월 처리",
+                    options=list(OVERLAP_LABELS),
+                    default="reject",
+                    format_func=OVERLAP_LABELS.__getitem__,
+                    key=f"merge_overlap_{base.revision.revision_id}_{owner}_{start}_{end}",
+                    persist_state="session",
+                    help=(
+                        "선택한 쪽의 월 전체를 12개 월표에 동일하게 적용합니다. "
+                        "서로의 행을 섞지 않습니다. 원본 리비전이나 월 범위를 바꾸면 다시 고릅니다."
+                    ),
+                )
+                or "reject",
             )
-            or "reject",
-        )
+            st.caption(f"**겹침** {len(overlap)}개월", width="content")
         if policy != "reject":
             sources = preview_month_sources(
                 base_tables, donor_tables, start, end, overlap_policy=policy
             )
+    # 합치기의 거부(겹침 저장 차단)는 고칠 칸 바로 아래다 — 표 뒤에 그리면 첫 화면 밖으로 밀린다
+    # (설계 규칙 UI-LAY-03).
+    result: dict[str, pd.DataFrame] | None = None
+    try:
+        result = merge_scenario_months(base_tables, donor_tables, start, end, overlap_policy=policy)
+    except ValueError as exc:
+        st.error(bootstrap_error_message(exc))
     source_display = _month_source_display(sources, base, donor)
     st.markdown("#### 저장 전 월별 출처")
     st.dataframe(source_display, hide_index=True, width="stretch")
-    result = merge_scenario_months(base_tables, donor_tables, start, end, overlap_policy=policy)
+    if result is None:
+        return
     # 점검 결론은 값 — 평문 한 줄(설계 규칙 UI-TXT-04 · AMB-02 (가), 초록 상자 아님).
     st.caption(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
     empty_months = missing_calendar_months(scenario_months(result))
