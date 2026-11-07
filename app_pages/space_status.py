@@ -22,6 +22,7 @@ from capa_simulation.components.equipment_data_workspace import (
     equipment_buffer_generation,
     follow_unit_renames,
     has_unsaved_equipment_edits,
+    hold_until_head_rerun,
     live_layout_role,
     official_confirmation_master,
     pending_fab_layout,
@@ -33,6 +34,7 @@ from capa_simulation.components.equipment_data_workspace import (
     render_name_changes,
     render_reopen_notices,
     replace_equipment_buffer,
+    rerun_if_head_stale,
     reset_equipment_drafts,
     revision_token,
     save_equipment_buffer,
@@ -660,6 +662,8 @@ if not using_sample_equipment and latest_snapshot is not None:
     # 이 화면에는 설비 마스터 제출이 없지만 표시를 여기서 읽어 버린다 — 남기면 가용설비 현황의 다음
     # 회차가 정상 제출까지 막는다.
     pop_drafts_replaced()
+    # 남의 저장에 진 「배치 저장」 거부는 머리를 다시 그리려 다시 도는 회차가 그린다(그 회차 끝).
+    hold_until_head_rerun(SAVE_ERROR_KEY)
     with notices:
         render_reopen_notices()
 # 사이드바 「설비 시나리오」 줄 — 고를 수 있는 줄(팝업은 「불러오기」 만 — 배치 저장은 본문 상자).
@@ -2711,6 +2715,9 @@ render_floor_canvas_dialog_host(
     ),
     disabled=drawing_locked,
 )
+# 남의 저장으로 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버린 회차 — 머리를 새로 그리려 한 번 더
+# 돈다.
+rerun_if_head_stale()
 # 호기 없는 화면에 남은 「필요 단축」 을 기본 값으로 적은 회차 — 사이드바 줄을 걷으려 한 번 더 돈다
 # (모든 위젯을 그린 뒤라 그 회차의 위젯 값을 잃지 않는다).
 if sidebar_rows_stale:

@@ -325,6 +325,14 @@ REOPEN_DISMISS_KEY = "equipment_reopen_dismiss_v1"
 # 편집본 위의 것이라 반영하지 않는다 — 페이지가 `pop_drafts_replaced` 로 한 번 읽는다(표 출납은
 # `base` 대조로 같은 규칙).
 DRAFTS_REPLACED_KEY = "equipment_workspace_drafts_replaced_v1"
+# 이번 회차에 남의 저장으로 편집본을 다시 세우며 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버렸다는
+# 표지. 머리는 페이지 본문보다 먼저 옛 값으로 그렸다 — 부르는 화면이 모든 편집표를 그린 뒤 한 번
+# 다시 돈다(`rerun_if_head_stale`, AGENTS 9장 「`st.rerun()` 은 그 화면의 모든 편집표를 그린
+# 뒤에만」).
+HEAD_STALE_KEY = "equipment_workspace_head_stale_v1"
+# 그 회차에 비켜 둔 곁 알림 칸 {칸 이름: 담아 둔 값} — 다시 도는 회차가 그 칸에 한 번 그리고 한 번
+# 보낸다(`hold_until_head_rerun`).
+_HEAD_HELD_KEY = "equipment_workspace_head_held_v1"
 # 편집본을 저장본에서 새로 세운 직후의 세대. 지금 세대가 이보다 크면 저장 안 한 편집이 있다.
 _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
 # 편집본이 저장본으로 돌아온 세대(`_note_if_back_to_saved`). 세운 세대를 옮기지 않고 따로 둔다 —
@@ -588,6 +596,45 @@ def pop_drafts_replaced() -> bool:
     return st.session_state.pop(DRAFTS_REPLACED_KEY, False) is True
 
 
+def _head_marks() -> tuple[bool, tuple[str, ...]]:
+    """앱 머리가 세는 이 편집본의 미저장 표시 — 설비 편집본(칩 · 두 화면 탭 점)과 작은 편집표의 적용
+    전 편집(칩 · 탭 점). 둘 다 세션만 읽는다."""
+    return has_unsaved_equipment_edits(), tuple(small_editor_edits())
+
+
+def _release_head_hold() -> None:
+    """비켜 둔 곁 알림을 제 칸으로 되돌린다."""
+    held = st.session_state.pop(_HEAD_HELD_KEY, None)
+    if isinstance(held, dict):
+        for key, value in held.items():
+            st.session_state[key] = value
+
+
+def hold_until_head_rerun(*keys: str) -> None:
+    """머리를 다시 그리려 다시 돌 회차(`HEAD_STALE_KEY`)면 `keys` 에 담아 둔 곁 알림을 다시 도는
+    회차까지 비켜 둔다 — 그 칸을 그리기 **전**에 부른다. 이 회차에 꺼내 그리면 다시 돈 회차가 빈
+    칸을 그려 곁 글(남의 저장에 진 「리비전 저장」 거부)이 깜빡 사라지고, 다시 담으면 알림창 ·
+    Alarm 이 한 번 일어난 일을 두 번 센다."""
+    if st.session_state.get(HEAD_STALE_KEY) is not True:
+        return
+    held = st.session_state.get(_HEAD_HELD_KEY)
+    kept = dict(held) if isinstance(held, dict) else {}
+    for key in keys:
+        if key in st.session_state:
+            kept[key] = st.session_state.pop(key)
+    st.session_state[_HEAD_HELD_KEY] = kept
+
+
+def rerun_if_head_stale() -> None:
+    """남의 저장으로 머리가 센 편집을 버린 회차면 비켜 둔 알림을 되돌리고 한 번 다시 돈다 — 앱 머리
+    (변경 칩 · 화면 탭 점)를 새 값으로 그린다(UI-DAT-11). 편집본을 세운 화면이 **모든 편집표를 그린
+    뒤** 부른다. 다음 회차는 표지가 없어 되풀이되지 않는다."""
+    if st.session_state.pop(HEAD_STALE_KEY, None) is not True:
+        return
+    _release_head_hold()
+    st.rerun()
+
+
 def discarded_notice_text() -> str | None:
     """다른 사람의 저장으로 이 세션의 편집이 버려졌다는 알림 — 「알림 닫기」 전까지 남는다."""
     value = st.session_state.get(DISCARDED_NOTICE_KEY)
@@ -646,12 +693,18 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     옮긴다(`_follow_saved_unit_renames`). 샘플 fleet 은 넣지 않는다 — 합성값이 섞이면 첫 실제 저장이
     막힌다.
     """
+    # 앞 회차가 다시 돌기 전에 끊겼으면(본문 `st.rerun()` · `st.stop()`) 표지와 비켜 둔 알림이
+    # 남는다 — 끊긴 뒤 이 회차가 머리를 이미 새 값으로 그렸으니 알림만 제 칸으로 되돌린다.
+    if st.session_state.pop(HEAD_STALE_KEY, None) is not None or _HEAD_HELD_KEY in st.session_state:
+        _release_head_hold()
     token = revision_token(latest_snapshot)
     previous = st.session_state.get(_REVISION_KEY)
     # 남의 저장으로 다시 세우면 버리는 가정 배치 편집을 옛 저장본 사본이 바뀌기 **전**에 센다. 남의
     # **공통** 저장(일정 쪽 그대로)이면 그 편집의 배치 일곱 칸은 새 저장본 위에 다시 얹는다(설계
     # 9장 — 재료도 옛 사본이 바뀌기 전에 든다).
     swapped = previous is not None and previous != token
+    # 앱 머리가 이 회차에 센 미저장 표시(다시 세운 뒤와 견준다).
+    head_before = _head_marks() if swapped else None
     overlay_dropped = _stamped_overlay_edits() if swapped else 0
     reapply = _reapply_material(previous, token) if swapped else None
     # 저장 안 한 이름 바꿈은 다시 얹지 않고 버린다 — 다시 얹은 알림이 그 수를 버린 것에 적는다(같은
@@ -774,6 +827,10 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             )
             stage_editor_module_layouts(reapplied.approved)
             _bump_buffer_generation()
+    if head_before is not None and _head_marks() != head_before:
+        # 머리는 버린 편집을 센 채 그렸다 — 부르는 화면이 회차 끝에 한 번 다시 돈다. 다시 얹은
+        # 편집이 남아 표시가 그대로면 머리가 맞아 돌지 않는다.
+        st.session_state[HEAD_STALE_KEY] = True
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
 

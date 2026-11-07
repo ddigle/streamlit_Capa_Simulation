@@ -19,7 +19,9 @@ from grid_fake import Calls, install_fake_grid, last, outbox, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _two_scenarios
 from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_equipment_scenario_repository import _request, _session, _set
 
+from capa_simulation import alerts
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
@@ -30,6 +32,11 @@ from capa_simulation.components.equipment_data_workspace import (
     NEW_UNIT_DRAFT_KEY,
     PENDING_CANVASES_KEY,
     PENDING_RENAMES_KEY,
+)
+from capa_simulation.components.equipment_master_tab import (
+    SAVE_BUTTON_KEY,
+    SIDE_CHANGES,
+    SIDE_KEY,
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.navigation import EQUIPMENT_MASTER_TAB, EQUIPMENT_TAB_KEY
@@ -375,3 +382,178 @@ def test_another_path_that_puts_the_saved_values_back_clears_the_mark(tmp_path: 
     _ok(app.run())
 
     assert app.session_state["marks"] == [False, True, False]
+
+
+# ------------------------------------------------------------------ 남의 저장이 버린 편집과 앱 머리
+
+HEAD = "test_head_marks"
+RUNS = "test_head_runs"
+SPACE_PAGE = PROJECT_ROOT / "app_pages" / "space_status.py"
+EQUIPMENT_PAGE_FILE = "available_equipment_status.py"
+
+
+def _head_probe(page_file: str) -> str:
+    """앱 머리(변경 칩 · 화면 탭 점)처럼 페이지 본문보다 **먼저** 세는 자리 — 마지막 회차가 본 값과
+    돈 회차 수를 적는다."""
+    return f"""
+import streamlit as st
+from capa_simulation.components.change_summary import session_changes as _changes
+from capa_simulation.components.page_tabs import page_unsaved_marks as _dots
+
+st.session_state[{HEAD!r}] = (
+    [item["top"] for item in _changes({page_file!r}, hrefs={{}})],
+    sorted(_dots({page_file!r})),
+)
+st.session_state[{RUNS!r}] = st.session_state.get({RUNS!r}, 0) + 1
+"""
+
+
+def _head_page(repository: DuckDBEquipmentRepository) -> AppTest:
+    """머리를 먼저 세는 가용설비 현황 탭 ① — 공식 「운영 일정」 세션, 「저장 전 변경」 칸."""
+    clear_equipment_repository()
+    app = AppTest.from_string(
+        _head_probe(EQUIPMENT_PAGE_FILE)
+        + _page_script(PAGE, repository.database_path)
+        + _READ_MARKS,
+        default_timeout=90,
+    )
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.session_state[SELECTION_KEY] = {"scenario_id": OPERATIONS, "schedule_revision_id": None}
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    return _ok(app.run())
+
+
+def _their_common_save(repository: DuckDBEquipmentRepository) -> None:
+    """다른 세션이 공통 대장을 저장한다(EQ-02 담당자)."""
+    theirs = _session(repository)
+    repository.save_equipment(
+        _request(theirs, equipment=_set(theirs.equipment, "EQ-02", "담당자", "남의 담당"))
+    )
+    clear_equipment_repository()
+
+
+def _head_counts_my_edit(app: AppTest, grid: Calls) -> None:
+    _ok(send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "담당Z"}))
+    chips, dots = app.session_state[HEAD]
+    assert CHIP_TOP in chips and dots, app.session_state[HEAD]
+
+
+def _discard_warnings(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.warning if "버리고" in str(item.value)]
+
+
+def test_the_head_drops_an_edit_another_users_save_threw_away_in_the_same_run(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """남의 저장으로 본문이 편집본을 다시 세우며 내 편집을 버리면, 앱 머리는 이미 그 편집을 센 채
+    그렸다 — 다음 조작을 기다리지 않고 그 회차에 한 번 다시 돌아 칩 · 탭 점을 걷는다(UI-DAT-11).
+    버림 알림은 그대로 서고, 다시 돈 회차는 되풀이되지 않는다."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = _head_page(repository)
+    _head_counts_my_edit(app, grid)
+    _their_common_save(repository)
+    runs = app.session_state[RUNS]
+
+    _ok(app.run())
+
+    _assert_marked(app, False)
+    assert app.session_state[HEAD] == ([], [])
+    assert app.session_state[RUNS] == runs + 2
+    assert len(_discard_warnings(app)) == 1
+
+    _ok(app.run())
+    assert app.session_state[RUNS] == runs + 3
+
+
+def test_a_save_refused_by_another_users_common_save_keeps_its_refusal_after_the_head_run(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """「리비전 저장」 이 남의 공통 저장에 거부된 회차 — 본문이 편집을 버려 머리를 다시 그리려 한 번
+    더 돈다. 그 회차가 거부 글을 꺼내 보낸 뒤 다시 돌면 곁 글이 사라지므로, 거부 글은 다시 돈 회차가
+    한 번 그리고 한 번 보낸다."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = _head_page(repository)
+    _head_counts_my_edit(app, grid)
+    _their_common_save(repository)
+    runs = app.session_state[RUNS]
+    sent: list[str] = []
+    remember_sent = alerts.remember_sent
+
+    def spy(key: str, note: alerts.AlertNote) -> None:
+        if "저장하지 않았습니다" in str(note.get("full")):
+            sent.append(str(note.get("id")))
+        remember_sent(key, note)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(alerts, "remember_sent", spy)
+        app.button(key=SAVE_BUTTON_KEY).click()
+        _ok(app.run())
+
+    assert app.session_state[HEAD] == ([], [])
+    assert app.session_state[RUNS] == runs + 2
+    refusals = [str(item.value) for item in app.error if "저장하지 않았습니다" in str(item.value)]
+    assert len(refusals) == 1, refusals
+    assert len(sent) == 1, sent
+    assert len(_discard_warnings(app)) == 1
+
+
+def test_a_reopen_without_lost_edits_does_not_spend_one_more_run(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """버린 편집이 없으면 머리가 이미 맞다 — 남의 저장으로 다시 세운 회차도 한 번만 돈다."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = _head_page(repository)
+    _their_common_save(repository)
+    runs = app.session_state[RUNS]
+
+    _ok(app.run())
+
+    assert app.session_state[RUNS] == runs + 1
+    assert app.session_state[HEAD] == ([], [])
+
+
+_ROUTER = """
+from pathlib import Path
+import streamlit as st
+import capa_simulation.settings as settings
+
+settings.EQUIPMENT_DUCKDB_PATH = Path({database!r})
+settings.DUCKDB_PATH = Path({simulation!r})
+page = {space!r} if st.session_state.get("test_page") == "space" else {equipment!r}
+exec(compile(Path(page).read_text(encoding="utf-8"), page, "exec"), {{"__name__": "__main__"}})
+"""
+
+
+def test_space_drops_the_head_marks_too_when_it_reopens_the_buffer(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """Space 현황도 같은 편집본을 세운다 — 설비 마스터에서 고친 뒤 남이 저장하고 Space 로 옮기면 그
+    화면이 편집을 버리고, 머리를 다시 그리려 한 번 더 돈다."""
+    repository, _ = _two_scenarios(tmp_path)
+    database = repository.database_path
+    clear_equipment_repository()
+    app = AppTest.from_string(
+        _head_probe("space_status.py")
+        + _ROUTER.format(
+            database=str(database),
+            simulation=str(database.with_name(f"{database.stem}_simulation.duckdb")),
+            space=str(SPACE_PAGE),
+            equipment=str(PAGE),
+        )
+        + _READ_MARKS,
+        default_timeout=90,
+    )
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.session_state[SELECTION_KEY] = {"scenario_id": OPERATIONS, "schedule_revision_id": None}
+    _ok(app.run())
+    _head_counts_my_edit(app, grid)
+    _their_common_save(repository)
+    app.session_state["test_page"] = "space"
+    runs = app.session_state[RUNS]
+
+    _ok(app.run())
+
+    _assert_marked(app, False)
+    assert app.session_state[HEAD] == ([], [])
+    assert app.session_state[RUNS] == runs + 2
+    assert len(_discard_warnings(app)) == 1

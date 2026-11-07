@@ -90,6 +90,7 @@ from capa_simulation.components.equipment_data_workspace import (
     grid_overlay,
     grid_toasts,
     grid_undo_steps,
+    hold_until_head_rerun,
     layout_lock_origins,
     layout_memo_mark,
     official_layout_cells,
@@ -1350,6 +1351,8 @@ def render_equipment_master_tab(
     drafts_replaced: bool = False,
 ) -> None:
     """탭 ① 본문. 페이지가 `ensure_equipment_drafts` 를 부른 뒤, 탭이 열린 회차에만 부른다."""
+    # 남의 저장에 진 「리비전 저장」 거부는 머리를 다시 그리려 다시 도는 회차가 그린다(페이지 끝).
+    hold_until_head_rerun(SAVE_RESULT_KEY)
     basis = session.save_basis()
     layout: LayoutMode = layout_mode.layout
     frames: Frames = st.session_state[BUFFER_KEY]
