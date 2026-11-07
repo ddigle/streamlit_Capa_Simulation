@@ -659,7 +659,8 @@ def test_the_month_steps_walk_through_the_five_calculations() -> None:
         "기존 가용 = 48 − 5.81 = **42.19대**",
         "기존 확보율 = 42.19 ÷ 42 = **100.5%**",
     ]
-    assert may.steps[0].note == "제약 기간 밖이라 HBM라E 도 기존 제품에 함께 셉니다."
+    # 달마다 같은 읽는 법은 카드 제목 풍선(`STEPS_HELP`)이다 — 단계 곁에 두지 않는다.
+    assert may.steps[0].note == ""
     assert may.steps[2].note == "27년 6월 몫 6대가 이 달 30일 개조 중 → 5.81대"
     assert may.steps[3].note == "공정 가용 − 개조 중"
     assert may.steps[4].note == "제약 없을 때 114.3% · −13.8%"
@@ -750,7 +751,7 @@ def test_the_demand_split_step_recomputes_from_the_written_numbers(
     written_required, written_existing, written_constrained = _written_numbers(step.body)
     assert units_text(written_existing + written_constrained) == units_text(written_required)
     assert units_text(existing + constrained) == units_text(written_required)
-    assert step.note == "제약 기간이라 공정 소요를 두 갈래로 나눕니다(합하면 원래 소요와 같습니다)."
+    assert step.note == ""
 
 
 @pytest.mark.parametrize(
@@ -1210,10 +1211,7 @@ def test_the_steps_split_the_dedicated_units_and_the_growth() -> None:
     """보유 4 의 6월 — 2단계 회색 줄에 구성, 3단계 회색 줄 머리에 늘어난 전용의 갈림."""
     result = _owned()
     june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    assert (
-        june.steps[1].note
-        == "전용 6대 = 보유 4 · 개조 2 · 제약 확보율을 먼저 맞추도록 정수로 올립니다."
-    )
+    assert june.steps[1].note == "전용 6대 = 보유 4 · 개조 2"
     assert june.steps[2].note.startswith(
         "이 달 늘어난 전용 6대 — 보유 제약 설비 4대는 개조 없이, 개조 2대"
     )

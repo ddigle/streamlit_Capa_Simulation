@@ -44,7 +44,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     SESSION_ONLY_HELP,
     SOURCE_BAND_HELP,
 )
-from capa_simulation.components.constraint_simulation_view import MODIFY_OFF_TEXT
+from capa_simulation.components.constraint_simulation_view import MODIFY_OFF_TEXT, STEPS_HELP
 from capa_simulation.components.preset_number_field import CUSTOM_OPTION
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
@@ -815,6 +815,26 @@ def test_the_general_target_takes_whole_percent_and_home(
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
     assert "기준 HOME" in _header_line(app)
+    assert "칸 색 = 확보 · 경고 · 부족" in _sheet_legend(app)
+
+
+def _sheet_legend(app: AppTest) -> str:
+    (legend,) = [str(item.value) for item in app.caption if "머리 옅은 칠" in str(item.value)]
+    return legend
+
+
+def test_the_month_steps_keep_their_reading_in_the_title_balloon(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """달마다 같은 읽는 법은 고른 달 카드 제목 풍선이다(설계 규칙 UI-TXT-01) — 수가 든 줄은
+    남는다."""
+    app = _opened(dynamic_databases)
+
+    (title,) = [item for item in app.markdown if item.proto.help == STEPS_HELP]
+    assert str(title.value).startswith("**")
+    captions = " ".join(str(item.value) for item in app.caption)
+    for moved in ("두 갈래로 나눕니다", "정수로 올립니다", "정수로 나눈 경우입니다"):
+        assert moved in STEPS_HELP and moved not in captions
 
 
 def test_the_general_target_field_takes_the_home_threshold_range(
