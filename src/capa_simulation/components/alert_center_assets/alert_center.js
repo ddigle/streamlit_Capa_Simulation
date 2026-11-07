@@ -15,6 +15,9 @@
 // - 기록(L1)은 이 브라우저 탭의 `sessionStorage` 다(D1 (가) — 200줄 · 12시간). 새로고침 · 테마 전환(새 세션)에도 남고 탭을 닫으면
 //   사라진다. 읽기 · 쓰기는 모두 try/catch — 막힌 브라우저에서는 이 문서 안에만 쌓인다. 서버에는 아무것도 보내지 않는다(L2 는
 //   usage-log 와 함께 — D6).
+// - 서버 재시작(2026-11-07 통합 검수 D4 (가)): 재시작 뒤 세션은 새것이라 파이썬은 첫 접속과 가르지 못한다. data 의 부트 표지
+//   (`boot.mark`)를 이 탭에 적어 둔 앞 표지와 견주어 앞 표지가 있고 다를 때만 함께 실린 알림(`boot.notice` — `GL-07`)을 띄우고
+//   어느 경우든 지금 표지로 고쳐 적는다. 회차를 스스로 돌리지 않는다 — 다음 앱 전체 회차의 data 가 닿을 때 뜬다.
 // - 머리 툴바: Guide 오른쪽에 `Alarm`(안 읽음 수 배지 · 패널), Guide 왼쪽에 바뀐 것이 있을 때만 서는 변경 칩(D5 (가) · 판). 차례는
 //   파이썬 `theme_toggle.TOOLBAR_BUTTON_ORDER` 한 벌이다(다른 툴바 단추와 같은 규칙 — `capaToolbar.place`). 패널은 브라우저
 //   안에서만 열고 닫아 파이썬 회차가 돌지 않는다.
@@ -219,6 +222,7 @@ function copyText(pairs) {
 }
 // </alerts-rows>
 
+// <alerts-storage>
 function storageGet(key, fallback) {
   try {
     const raw = window.sessionStorage.getItem(key)
@@ -239,6 +243,18 @@ function storageSet(key, value) {
     return false
   }
 }
+
+// 서버가 다시 시작됐나 — 이 탭에 적어 둔 앞 부트 표지(`key`)와 지금 표지(`mark`)를 견주고 지금 표지로 고쳐 적는다. 앞 표지가
+// 있고 다를 때만 참이다 — 첫 접속 · 새 탭(앞 표지 없음)과 같은 프로세스의 새 세션(표지 같음)은 거짓이고, 저장소가 막힌
+// 브라우저는 앞 표지를 읽지 못해 거짓이다.
+function bootChanged(key, mark) {
+  if (!key || !mark) return false
+  const before = storageGet(key, null)
+  if (before === mark) return false
+  storageSet(key, mark)
+  return typeof before === 'string' && before !== ''
+}
+// </alerts-storage>
 
 function el(tag, className, text) {
   const node = document.createElement(tag)
@@ -1297,6 +1313,8 @@ export default function (component) {
   watchRuns(C)
   let changed = false
   for (const note of Array.isArray(data.events) ? data.events : []) if (handle(C, note)) changed = true
+  const boot = data.boot || {}
+  if (bootChanged((data.storage || {}).boot, boot.mark) && handle(C, boot.notice)) changed = true
   if (changed) persist(C)
   scan(C)
   return undefined

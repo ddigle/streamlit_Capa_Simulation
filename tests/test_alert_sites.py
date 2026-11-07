@@ -28,6 +28,8 @@ import ast
 from collections import Counter
 from pathlib import Path
 
+from capa_simulation import alerts
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 경고를 직접 그려도 되는 두 모듈 — 알림의 한 길이다.
 OWNERS = ("src/capa_simulation/components/flash.py", "src/capa_simulation/alerts.py")
@@ -265,3 +267,9 @@ def test_alert_text_has_no_markdown_marks() -> None:
     strings = _alert_text_strings()
     assert strings, "alerts.state 의 글을 하나도 찾지 못했다 — 이 시험이 아무것도 보지 않는다"
     assert [item for item in strings if "`" in item[2]] == []
+
+
+def test_registered_alert_text_is_plain() -> None:
+    """등록부의 기본 글도 그대로 그려진다 — 표시 기호 없이 평문이어야 한다."""
+    written = [(spec.code, text) for spec in alerts.SPECS for text in (spec.short, spec.full)]
+    assert [(code, text) for code, text in written if alerts.plain_text(text) != text] == []
