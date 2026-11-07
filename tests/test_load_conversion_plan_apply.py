@@ -3,6 +3,7 @@
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -13,6 +14,7 @@ from alert_marks import (
     active_state,
     alert_notes,
     data_error_texts,
+    flashed,
     note_table,
     place_errors,
     successes,
@@ -20,7 +22,7 @@ from alert_marks import (
 )
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import Dataframe, ElementTree
+from streamlit.testing.v1.element_tree import Dataframe, ElementTree, TextInput
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
@@ -29,6 +31,7 @@ from capa_simulation import alerts
 from capa_simulation.components import table_toolbar
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.services.korean_particle import with_object_particle
+from capa_simulation.services.month_columns import month_label
 
 PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "load_conversion.py"
 
@@ -119,11 +122,77 @@ def _paste(app: AppTest, text: str) -> None:
             break
 
 
+def test_a_staged_paste_blanks_the_zero_cells_like_the_plain_table(seeded_database: Path) -> None:
+    """붙여넣기 대기 표의 달 칸은 글자로 온다 — 숫자로 읽지 않으면 0 가림이 듣지 않아, 양식을 그대로
+    붙여넣기만 했는데 빈칸이던 칸이 0 으로 보여 값이 바뀐 것처럼 읽혔다. 적용하면 값은 그대로다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    wide = pd.read_csv(StringIO(_clipboard_text(app, scale=1.0)), sep="\t", dtype="object")
+    months = [column for column in wide.columns if column.isdigit()]
+    filled = wide[months[0]].astype(float).gt(0).idxmax()
+    plain_blanks = _editor_node(app, "pkg_plan_editor").value[months].isna().to_numpy().sum()
+    wide.loc[filled, months[0]] = "0.0"
+    _paste(app, wide.to_csv(index=False, sep="\t"))
+    assert not list(app.exception)
+
+    shown = _editor_node(app, "pkg_plan_editor").value
+    assert shown[months].isna().to_numpy().sum() == plain_blanks + 1
+    assert not shown[months].eq(0).to_numpy().any()
+    assert all(pd.api.types.is_float_dtype(shown[month]) for month in months)
+
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+
+
+def test_the_plan_paste_window_calls_the_table_by_its_screen_name(seeded_database: Path) -> None:
+    """화면에서 「PKG PLAN」 이라 부르는 표를 글 칸 이름 · 거부 알림도 같은 이름으로 부른다 — 내부
+    표 이름은 왕복 양식의 파일 이름에만 남는다(설계 규칙 UI-CON-02)."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    _paste(app, "아무 글자\t값\n1\t2")
+    assert not list(app.exception)
+
+    assert app.text_area(key="rq_pkg_plan_csv_clipboard").label == "PKG PLAN 표 붙여넣기"
+    (refused,) = flashed(app, "error")
+    assert refused.value.startswith("PKG PLAN 입력 표의 열이 다운로드 양식과 다릅니다")
+
+
+def _stack_field(app: AppTest) -> TextInput:
+    """가상 제품 팝업의 Stack 칸 — 기준 제품마다 다른 위젯이라 라벨로 찾는다."""
+    return next(field for field in app.text_input if field.label == "Stack")
+
+
+def test_the_stack_field_follows_the_chosen_source_product(seeded_database: Path) -> None:
+    """폼 안이던 기준 제품을 바꿔도 Stack 칸이 첫 제품 값으로 남아, 그대로 누르면 기준과 다른 Stack
+    으로 말없이 등록됐다. 고를 때마다 그 제품 값이 오고, 사람이 고친 값은 그대로 남는다.
+
+    기준 제품마다 위젯이 달라야 한다 — 브라우저 폼은 제출 전 값을 위젯마다 들고 있어 같은 칸에
+    서버가 값을 써도 미제출 값이 그대로 제출된다. AppTest 는 그 값을 재현하지 못해 key 로 본다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    app.button(key="open_virtual_product").click().run()
+    assert not list(app.exception)
+    source = app.selectbox(key="virtual_product_source")
+    stacks = [str(option).rsplit(" · ", 1)[1] for option in source.options]
+    assert _stack_field(app).value == stacks[0]
+    first_key = _stack_field(app).key
+    other = next(index for index, stack in enumerate(stacks) if stack != stacks[0])
+
+    source.set_value(other).run()
+    assert not list(app.exception)
+    assert _stack_field(app).value == stacks[other]
+    assert _stack_field(app).key != first_key
+
+    _stack_field(app).set_value("99H").run()
+    assert _stack_field(app).value == "99H"
+    app.selectbox(key="virtual_product_source").set_value(0).run()
+    assert not list(app.exception)
+    assert _stack_field(app).value == stacks[0]
+
+
 def _register(app: AppTest, product: str, stack: str) -> None:
     """작업 줄의 「가상 제품 등록」 팝업을 열고 등록한다."""
     app.button(key="open_virtual_product").click().run()
     app.text_input(key="virtual_product_name").set_value(product)
-    app.text_input(key="virtual_product_stack").set_value(stack)
+    _stack_field(app).set_value(stack)
     for button in app.button:
         if "가상 제품 등록" in str(button.label) and button.key != "open_virtual_product":
             button.click().run()
@@ -1158,6 +1227,28 @@ def _applied(app: AppTest, text: str) -> list[str | None]:
     return [item.icon for item in successes(app) if text in str(item.value)]
 
 
+def test_a_locked_apply_button_says_why_and_an_open_one_says_what_it_does(
+    seeded_database: Path,
+) -> None:
+    """잠긴 동안 풍선은 까닭이고 눌리면 하는 일이다 — 「적용해야 반영된다」 는 눌리는 단추에 남는다
+    (설계 규칙 UI-INP-07)."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    for key in ("apply_pkg_plan_changes", "apply_yield_changes"):
+        button = app.button(key=key)
+        assert button.disabled
+        assert button.proto.help == "고친 칸이 있으면 누를 수 있습니다."
+
+    app.session_state[_widget_key(app, "pkg_plan_editor")] = PLAN_CELL_EDIT
+    app.session_state[_widget_key(app, "yield_editor")] = YIELD_CELL_EDIT
+    app.run()
+    assert not list(app.exception)
+
+    assert not app.button(key="apply_pkg_plan_changes").disabled
+    assert "이 계획으로 다시 계산됩니다" in app.button(key="apply_pkg_plan_changes").proto.help
+    assert not app.button(key="apply_yield_changes").disabled
+    assert "이 수율로 다시 계산됩니다" in app.button(key="apply_yield_changes").proto.help
+
+
 def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1171,6 +1262,10 @@ def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
     app.button(key="apply_pkg_plan_changes").click().run()
     assert not list(app.exception)
     assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+    # 글 속 달 구간은 표 머리가 아니라 결과 표 꼴이다(`month_label` — AGENTS 8장).
+    assert _applied(app, f"{month_label(202601)}–{month_label(202612)} 구간의 환산") == [
+        APPLIED_ICON
+    ]
     assert app.button(key="apply_pkg_plan_changes").disabled
 
     # 둘째 누름의 회차 — 잠긴 단추의 누름은 버려져 아무것도 하지 않고 화면만 다시 그린다.
@@ -1201,8 +1296,8 @@ def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
     app.session_state[_widget_key(app, "yield_editor")] = edit
     app.button(key="apply_yield_changes").click().run()
     assert not list(app.exception)
-    assert _applied(app, "RQ_YLD 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+    assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
 
     app.run()
     assert not list(app.exception)
-    assert _applied(app, "RQ_YLD 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]
+    assert _applied(app, "수율 편집값을 활성 시나리오에 적용했습니다") == [APPLIED_ICON]

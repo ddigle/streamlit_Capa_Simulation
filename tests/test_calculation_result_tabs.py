@@ -180,6 +180,42 @@ def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatc
     assert data_error_marks(app) == 0
 
 
+@pytest.mark.parametrize(
+    ("error", "short", "page"),
+    [
+        (
+            "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 2건, 예시 []",
+            "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 2건을 채움",
+            "기준 정보",
+        ),
+        ("RQ_YLD의 수율은 0 초과 100% 이하여야 합니다: 1건", None, None),
+    ],
+)
+def test_a_blank_stop_sends_the_alarm_to_the_reference_screen(
+    monkeypatch: pytest.MonkeyPatch, error: str, short: str | None, page: str | None
+) -> None:
+    """세 탭에 마크가 서는 계산 멈춤 — 빈 칸이면 짧은 글 · 「그 화면으로」 가 기준 정보로 가고, 그
+    밖의 멈춤은 이 화면에 남는다(`calculation_stop_notice`, 설계 규칙 UI-NTF-08)."""
+
+    def stopped(*_args: Any, **_kwargs: Any) -> Any:
+        raise ValueError(error)
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_result_summary", stopped)
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    assert data_error_marks(app) == 3
+    (note,) = [item for item in alert_notes(app) if item.get("keep")]
+    assert note["code"] == "ST-20"
+    if short is None:
+        assert note["full"] == error
+        assert note["page"] != "기준 정보"
+    else:
+        assert note["short"] == short
+        assert note["page"] == page
+        assert "RQ_RUN_RATE" not in note["full"]
+
+
 def _required_csv(app: AppTest) -> pd.DataFrame:
     downloads = app.session_state["captured_downloads"]
     data = downloads["download_required_equipment_summary_csv"]["data"]

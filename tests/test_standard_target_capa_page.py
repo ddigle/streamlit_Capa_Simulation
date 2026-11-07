@@ -260,7 +260,18 @@ finally:
     st.download_button = original_download_button
 """
 
+TEMPLATE_KEY = "dialog_standard_target_availability_template"
 RENAMED_TEST_SCRIPT = TEST_SCRIPT.replace("APPLY_RENAME = False", "APPLY_RENAME = True")
+# 석 달 기준정보 + 시험이 바꾸는 조회기간 — 기간을 좁혔다 넓히는 왕복을 본다.
+WIDE_PERIOD_SCRIPT = TEST_SCRIPT.replace(
+    'scenario_tables["RQ_UPEH"] = pd.DataFrame({"생산계획년월": [202608]})',
+    'scenario_tables["RQ_UPEH"] = pd.DataFrame({"생산계획년월": [202607, 202608, 202609]})',
+).replace(
+    'st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")',
+    'st.session_state["production_month_range_v2"] = st.session_state.get(\n'
+    '        "test_period", ("2026-07", "2026-09")\n    )',
+)
+assert WIDE_PERIOD_SCRIPT.count("test_period") == 1 and "202609]}" in WIDE_PERIOD_SCRIPT
 MISSING_WEEK_SCRIPT = TEST_SCRIPT.replace("DROP_ONE_WEEK = False", "DROP_ONE_WEEK = True")
 RENAMED_MISSING_WEEK_SCRIPT = RENAMED_TEST_SCRIPT.replace(
     "DROP_ONE_WEEK = False", "DROP_ONE_WEEK = True"
@@ -494,8 +505,28 @@ def test_calculation_block_failure_is_reported_on_the_page(error: str, message: 
     assert message in data_error_texts(app)
 
 
+def test_a_blank_stop_sends_the_alarm_to_the_reference_screen() -> None:
+    """빈 칸 때문에 멈춘 계산은 짧은 글이 채울 표를 말하고 「그 화면으로」 가 기준 정보를 연다 —
+    같은 `except` 가 받는 다른 오류는 이 화면에 머문다(설계 규칙 UI-NTF-08, 공용 판정
+    `calculation_stop_notice`)."""
+    error = "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 2건, 예시 []"
+    script = TEST_SCRIPT.replace(
+        "RAISE_IN_CALCULATION = None", f"RAISE_IN_CALCULATION = ValueError({error!r})"
+    )
+    assert script != TEST_SCRIPT
+    app = AppTest.from_string(script, default_timeout=60).run()
+
+    assert not app.exception
+    (note,) = [item for item in alert_notes(app) if item.get("keep")]
+    assert note["code"] == "ST-20"
+    assert note["short"] == "대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 2건을 채움"
+    assert note["page"] == "기준 정보"
+    assert "RQ_RUN_RATE" not in note["full"]
+
+
 def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -> None:
-    """조회기간을 바꾼 뒤 과거 리비전을 열어도 페이지가 죽지 않고 범위 안으로 맞춘다."""
+    """조회기간을 바꾼 뒤 과거 리비전을 열어도 페이지가 죽지 않고 범위 안으로 맞춘다. 맞춘 일은 사건
+    알림이다 — 조회일 칸이 접힌 카드라 본문에 글을 두면 결과 상자가 그 회차에만 밀린다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state["standard_target_start_date"] = date(2026, 6, 15)
     app.session_state["standard_target_end_date"] = date(2027, 3, 20)
@@ -504,7 +535,31 @@ def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -
     assert not app.exception
     assert app.session_state["standard_target_start_date"] == date(2026, 8, 1)
     assert app.session_state["standard_target_end_date"] == date(2026, 8, 31)
-    assert any("조정됨" in element.value for element in app.caption)
+    (note,) = flashed(app, "warning")
+    assert "조회일이 현재 조회기간 밖이라 2026-08-01 ~ 2026-08-31 안으로" in note.value
+    assert note.code == "FL-03"
+    assert not app.warning
+    assert not [caption.value for caption in app.main.caption if "맞췄습니다" in caption.value]
+
+
+def test_the_clamp_notice_goes_out_on_the_round_a_calculation_stop_cuts_short() -> None:
+    """맞춘 회차가 계산 멈춤으로 끊겨도 알림은 그 회차에 나간다 — 세션에 남으면 기간을 바꾼 뒤 정상
+    회차가 지나간 기간을 적은 글을 꺼내 맞춘 일이 없는 회차에 거짓 알림이 된다."""
+    error = "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 2건, 예시 []"
+    script = TEST_SCRIPT.replace(
+        "RAISE_IN_CALCULATION = None", f"RAISE_IN_CALCULATION = ValueError({error!r})"
+    )
+    assert script != TEST_SCRIPT
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 6, 15)
+    app.session_state["standard_target_end_date"] = date(2027, 3, 20)
+    app = app.run()
+
+    assert not app.exception
+    assert data_error_texts(app)
+    (note,) = flashed(app, "warning")
+    assert "조회일이 현재 조회기간 밖이라 2026-08-01 ~ 2026-08-31 안으로" in note.value
+    assert "standard_target_date_fit_flash" not in app.session_state
 
 
 def test_saved_view_dates_in_reverse_order_are_corrected() -> None:
@@ -516,9 +571,61 @@ def test_saved_view_dates_in_reverse_order_are_corrected() -> None:
     assert not app.exception
     assert app.session_state["standard_target_end_date"] == date(2026, 8, 25)
     # 두 조정 원인은 문구가 다르다. 한 깃발로 합치면 기간 안인 날짜에도 범위 문구가 뜬다.
-    captions = [element.value for element in app.caption]
-    assert any("시작일이 종료일보다 늦어" in caption for caption in captions)
-    assert not any("조회기간 밖이라" in caption for caption in captions)
+    notices = [note.value for note in flashed(app, "warning")]
+    assert any("시작일이 종료일보다 늦어" in notice for notice in notices)
+    assert not any("조회기간 밖이라" in notice for notice in notices)
+
+
+def _dates(app: AppTest) -> tuple[date, date]:
+    return (
+        app.session_state["standard_target_start_date"],
+        app.session_state["standard_target_end_date"],
+    )
+
+
+def test_dates_fitted_to_a_narrowed_period_come_back_when_it_widens() -> None:
+    """두 칸이 한꺼번에 기간 밖이면 한쪽 끝 하나로 몰려 한 날이 된다. 맞춤으로 바뀐 값은 기간을 넓힐
+    때 돌아온다 — 돌아오는 일은 사용자가 고른 값이라 다시 알리지 않는다."""
+    app = AppTest.from_string(WIDE_PERIOD_SCRIPT, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 7, 5)
+    app.session_state["standard_target_end_date"] = date(2026, 7, 20)
+    app = app.run()
+    assert not app.exception
+    assert _dates(app) == (date(2026, 7, 5), date(2026, 7, 20))
+    assert not flashed(app, "warning")
+
+    app.session_state["test_period"] = ("2026-09", "2026-09")
+    app = app.run()
+    assert _dates(app) == (date(2026, 9, 1), date(2026, 9, 1))
+    assert len(flashed(app, "warning")) == 1
+
+    # 더 좁혀도 값이 그대로면 알릴 것이 없다.
+    app = app.run()
+    assert not flashed(app, "warning")
+
+    app.session_state["test_period"] = ("2026-07", "2026-09")
+    app = app.run()
+    assert not app.exception
+    assert _dates(app) == (date(2026, 7, 5), date(2026, 7, 20))
+    assert not flashed(app, "warning")
+
+
+def test_a_date_chosen_while_narrowed_stays_when_the_period_widens() -> None:
+    """맞춘 뒤 사용자가 조회일을 고르면 그 값이 사용자 값이다 — 넓혀도 옛 값으로 돌아가지 않는다."""
+    app = AppTest.from_string(WIDE_PERIOD_SCRIPT, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 7, 5)
+    app.session_state["standard_target_end_date"] = date(2026, 7, 20)
+    app.session_state["test_period"] = ("2026-09", "2026-09")
+    app = app.run()
+    assert _dates(app) == (date(2026, 9, 1), date(2026, 9, 1))
+
+    app.session_state["standard_target_end_date"] = date(2026, 9, 10)
+    app = app.run()
+    app.session_state["test_period"] = ("2026-07", "2026-09")
+    app = app.run()
+
+    assert not app.exception
+    assert _dates(app) == (date(2026, 9, 1), date(2026, 9, 10))
 
 
 def test_fallback_constants_exist_in_the_page_option_lists() -> None:
@@ -603,46 +710,35 @@ def test_exception_process_notice_stays_original_without_a_rename_profile() -> N
     assert _frame_with_value(app, "공정", "Pre B/D") is not None
 
 
-def test_weekly_availability_template_keeps_the_original_process_name() -> None:
-    """양식 CSV 는 그대로 되붙는 왕복이다. 표시명이 새면 파서가 공정을 찾지 못한다."""
-    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
-
+def _paste_window_template(app: AppTest) -> pd.DataFrame:
+    """붙여넣기 창을 열고 그 창의 양식을 읽는다 — 양식 단추는 창 한 곳이다(설계 규칙 UI-LAY-12)."""
     assert not app.exception
-    template = pd.read_csv(
-        BytesIO(
-            bytes(
-                app.session_state["captured_download_data"][
-                    "download_standard_target_availability_template"
-                ]
-            )
-        ),
+    assert TEMPLATE_KEY not in app.session_state.filtered_state.get("captured_download_data", {})
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    return pd.read_csv(
+        BytesIO(bytes(app.session_state["captured_download_data"][TEMPLATE_KEY])),
         encoding="utf-8-sig",
         dtype="object",
+    )
+
+
+def test_weekly_availability_template_keeps_the_original_process_name() -> None:
+    """양식 CSV 는 그대로 되붙는 왕복이다. 표시명이 새면 파서가 공정을 찾지 못한다."""
+    template = _paste_window_template(
+        AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
     )
 
     assert set(template["공정"]) == {"Process-A", "Process-B"}
 
 
 def test_weekly_availability_template_carries_saved_counts_and_blanks_the_rest() -> None:
-    """작업 줄 양식은 저장된 가용대수를 싣고, 저장값이 없는 공정·주차는 빈칸이다.
+    """창의 양식은 저장된 가용대수를 싣고, 저장값이 없는 공정·주차는 빈칸이다.
 
     예전에는 모든 칸이 0.0 이라, 한 공정만 고쳐 통째로 되붙이면 다른 공정이 0 대로 덮였다
     (2026-09-29 버그 보고). 가짜 저장소는 Process-A 의 26-W32~W36 만 2 대를 갖고 있다.
     """
-    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
-
-    assert not app.exception
-    template = pd.read_csv(
-        BytesIO(
-            bytes(
-                app.session_state["captured_download_data"][
-                    "download_standard_target_availability_template"
-                ]
-            )
-        ),
-        encoding="utf-8-sig",
-        dtype="object",
-    )
+    template = _paste_window_template(AppTest.from_string(TEST_SCRIPT, default_timeout=60).run())
     saved_weeks = {"26-W32", "26-W33", "26-W34", "26-W35", "26-W36"}
     saved_cells = template["공정"].eq("Process-A") & template["Weeknum"].isin(saved_weeks)
     assert saved_cells.sum() == len(saved_weeks)
@@ -703,7 +799,7 @@ def test_missing_availability_table_shows_the_display_name_with_a_source_notice(
     assert set(missing["공정"]) == set(table["shown"]["공정"])
     assert set(table["shown"]["공정"].values()) == {"가공"}
     assert not [caption.value for caption in app.caption if "CSV 양식" in caption.value]
-    assert "CSV 양식 다운로드" in table["help"]["공정"]
+    assert "「가용설비 붙여넣기」 창 양식" in table["help"]["공정"]
     assert table["file"].startswith("Capa_Standard_Target_Missing_Availability_")
 
 
@@ -738,7 +834,7 @@ def test_the_missing_availability_notice_does_not_move_the_weekly_table(
     app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
     assert not app.exception
     assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
-    assert any("CSV 양식 다운로드" in text for text in _process_column_helps(app))
+    assert any("「가용설비 붙여넣기」 창 양식" in text for text in _process_column_helps(app))
     note = active_state(app, "ST-17")
     assert note is not None and "tables" not in note
     assert "결과 상자 안 「누락 공정·주차 확인」" in note["short"]

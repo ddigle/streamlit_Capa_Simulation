@@ -4,7 +4,7 @@
 
 - 표시 항목·기간·공정 필터·상세·PKG 기준(로직 분석이면 고르는 일곱 칸)은 사이드바 조건 카드
   `표준 목표 조건` 이다. 카드는 계산이 멈추는 회차에도 먼저 선다.
-- 주차별 가용설비 입력은 결과 상자 위 작업 줄이다 — 붙여넣기·입력 초기화는 팝업, 양식은 내려받기.
+- 주차별 가용설비 입력은 결과 상자 위 작업 줄이다 — 붙여넣기·입력 초기화는 팝업, 양식은 붙여넣기 창.
 - 설명(산식·세션 적용 범위·예외 처리 규칙)은 Guide(`guides/standard_target_capa.md`)다.
 """
 
@@ -53,8 +53,6 @@ from capa_simulation.components.state_alerts import (
     simulation_scope,
 )
 from capa_simulation.components.table_toolbar import (
-    CSV_TEMPLATE_LABEL,
-    render_csv_download,
     render_table_heading,
     toolbar_clearance,
 )
@@ -63,6 +61,7 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
+    calculation_stop_notice,
     load_page_context,
     prune_choice,
     prune_list_selection,
@@ -135,6 +134,9 @@ OUTPUT_METRIC_KEY = STANDARD_TARGET_OUTPUT_METRIC_KEY
 # 직전 회차에 그린 표시 항목. 위젯이 아닌 칸이라 선택을 비운 회차에도 남는다.
 OUTPUT_METRIC_SHOWN_KEY = f"{OUTPUT_METRIC_KEY}__shown"
 PKG_BASIS_KEY = "standard_target_pkg_basis"
+# 조회기간에 맞춘 조회일 곁 칸 — (맞추기 전 두 값, 맞춘 두 값). 조회일을 맞춘 회차의 알림 칸.
+DATES_BEFORE_FIT_KEY = "standard_target_dates_before_fit"
+DATE_FIT_FLASH_KEY = "standard_target_date_fit_flash"
 # 사이드바 조건 카드와 팝업. 팝업은 한 칸이라 한 회차에 하나다.
 CARD_NAME = "standard_target"
 DIALOG_KEY = f"standard_target{PAGE_DIALOG_SUFFIX}"
@@ -172,7 +174,7 @@ MISSING_LIST_TITLE = "누락 공정·주차"
 # 그 표의 공정 칸 머리 풍선 — 표시명이 입혀진 동안만 단다(숨은 데이터 안내는 칸 머리 풍선 —
 # UI-TXT-04).
 MISSING_PROCESS_HELP = (
-    "화면 표시명입니다 — 붙여넣기에는 작업 줄 「CSV 양식 다운로드」 양식의 원본 공정명을 씁니다."
+    "화면 표시명입니다 — 붙여넣기에는 「가용설비 붙여넣기」 창 양식의 원본 공정명을 씁니다."
 )
 # 창을 연 회차의 알림 글 — 창 안 글 · 칸 풍선 대신 알림창 · Alarm 이다(UI-NTF-09, 2026-11-05 검수
 # static-37). 앞 60자가 결과를 말한다(알림창 짧은 글).
@@ -208,19 +210,29 @@ def _last_day(month: int) -> date:
     return date(year, month_number, monthrange(year, month_number)[1])
 
 
-def _initialize_date_state(key: str, default: date, lower: date, upper: date) -> bool:
-    """리비전이 저장한 조회일을 현재 조회기간 안으로 맞추고 조정 여부를 알린다.
-
-    사이드바 조회기간을 좁힌 뒤 과거 리비전을 열면 저장된 날짜가 범위 밖이 된다.
-    잘라 넣어야 맞춘 사실을 본문에 알릴 수 있다(날짜 칸은 범위 밖 값을 말없이 맞춘다).
-    """
+def _saved_day(key: str, default: date) -> date:
     saved = st.session_state.get(key)
-    if not isinstance(saved, date):
-        st.session_state[key] = default
-        return False
-    clamped = min(max(saved, lower), upper)
-    st.session_state[key] = clamped
-    return clamped != saved
+    return saved if isinstance(saved, date) else default
+
+
+def _fit_dates_to_period(defaults: tuple[date, date], lower: date, upper: date) -> bool:
+    """조회일 두 칸을 현재 조회기간 안으로 맞추고, 맞추느라 값이 달라졌으면 True 다.
+
+    조회기간을 좁히거나 좁힌 뒤 과거 리비전을 열면 저장된 날짜가 범위 밖이 된다. 잘라 넣어야 맞춘
+    사실을 알릴 수 있다(날짜 칸은 범위 밖 값을 말없이 맞춘다). 두 칸이 한꺼번에 범위 밖이면 끝
+    하나로 몰려 한 날이 되므로 맞추기 전 두 값을 곁 칸에 적어 둔다 — 기간을 넓히면 그 값으로
+    돌아오고, 사용자가 그 사이 조회일을 고쳤으면(두 칸이 맞춘 값과 달라지면) 곁 칸을 버린다.
+    """
+    saved = (_saved_day(START_DATE_KEY, defaults[0]), _saved_day(END_DATE_KEY, defaults[1]))
+    held = st.session_state.get(DATES_BEFORE_FIT_KEY)
+    wanted = held[0] if held is not None and held[1] == saved else saved
+    fitted = (min(max(wanted[0], lower), upper), min(max(wanted[1], lower), upper))
+    st.session_state[START_DATE_KEY], st.session_state[END_DATE_KEY] = fitted
+    if fitted == wanted:
+        st.session_state.pop(DATES_BEFORE_FIT_KEY, None)
+    else:
+        st.session_state[DATES_BEFORE_FIT_KEY] = (wanted, fitted)
+    return fitted not in (wanted, saved)
 
 
 def _ordered_text_options(values: pd.Series) -> list[str]:
@@ -743,14 +755,23 @@ minimum_date = _first_day(effective_start_month)
 maximum_date = _last_day(effective_end_month)
 default_start_date = _first_day(effective_start_month)
 default_end_date = _last_day(effective_end_month)
-date_clamped = _initialize_date_state(
-    START_DATE_KEY, default_start_date, minimum_date, maximum_date
+# 날짜를 맞춘 사실은 사건 알림이다 — 조회일 칸은 접힌 카드 안이라 그 곁에 둘 수 없고, 본문에 두면
+# 그 회차에만 결과 상자가 밀린다(설계 규칙 UI-NTF-01). 맞춘 회차에 바로 내보낸다 — 아래 계산 멈춤
+# 뒤에서 꺼내면 멈춘 회차의 글이 세션에 남아 뒤 회차에 지나간 기간을 말한다.
+date_notes = (
+    [
+        "조회일이 현재 조회기간 밖이라 "
+        f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
+    ]
+    if _fit_dates_to_period((default_start_date, default_end_date), minimum_date, maximum_date)
+    else []
 )
-date_clamped |= _initialize_date_state(END_DATE_KEY, default_end_date, minimum_date, maximum_date)
-date_reordered = False
 if st.session_state[START_DATE_KEY] > st.session_state[END_DATE_KEY]:
     st.session_state[END_DATE_KEY] = st.session_state[START_DATE_KEY]
-    date_reordered = True
+    date_notes.append("시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
+if date_notes:
+    queue_flash(DATE_FIT_FLASH_KEY, " ".join(date_notes), kind="warning", popup_only=True)
+render_flash(DATE_FIT_FLASH_KEY)
 
 # 저장된 선택지 문자열이 현재 옵션에 없으면 위젯 생성이 실패한다. 옵션은 화면이 소유하므로
 # 검증도 여기서 한다. 상세 토글이 꺼져 위젯이 없는 실행에서도 세션값을 정상으로 유지한다.
@@ -788,15 +809,6 @@ with card:
         min_date=minimum_date,
         max_date=maximum_date,
     )
-# 날짜를 맞춘 사실은 본문에 알린다. 카드는 기본으로 접혀 있어 그 안에 두면 저장된 날짜가
-# 바뀐 줄 모른다.
-if date_clamped:
-    st.caption(
-        ":orange-badge[조정됨] 조회일이 현재 조회기간 밖이라 "
-        f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
-    )
-if date_reordered:
-    st.caption(":orange-badge[조정됨] 시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
 if start_date > end_date:
     st.error("시작일은 종료일보다 늦을 수 없습니다.")
     st.stop()
@@ -829,7 +841,13 @@ try:
     )
     standard_target_exception_rows = standard_target_summary.exception_rows
 except BOOTSTRAP_ERRORS as exc:
-    render_data_error(bootstrap_error_message(exc), code="ST-20")
+    stop = calculation_stop_notice(exc)
+    render_data_error(
+        bootstrap_error_message(exc) if stop is None else stop.message,
+        code="ST-20",
+        text=None if stop is None else stop.text,
+        goto=None if stop is None else stop.goto,
+    )
     st.stop()
 
 process_options = get_display_ordered_values(
@@ -929,17 +947,6 @@ with card:
     logic_filters = st.container()
 
 target_processes = selected_processes or process_options
-# 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
-# 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
-# 덮인다(2026-09-29 버그 보고).
-# 바이트는 (공정 차례·기간·저장값 지문) 키 캐시다 — 결과와 무관한 조작마다 다시 만들지 않는다.
-template_csv = get_weekly_availability_template_csv(
-    tuple(target_processes),
-    start_date,
-    end_date,
-    frame_digest(availability),
-    _saved=availability,
-)
 
 
 def _close_dialog() -> None:
@@ -954,6 +961,16 @@ def _open_dialog(name: str) -> None:
 def _paste_dialog() -> None:
     """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다)."""
     paste_generation = generation(AVAILABILITY_SAVE_GENERATION_KEY)
+    # 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
+    # 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
+    # 덮인다(2026-09-29 버그 보고). 양식 단추는 이 창 한 곳이다(설계 규칙 UI-LAY-12 · UI-INP-08).
+    template_csv = get_weekly_availability_template_csv(
+        tuple(target_processes),
+        start_date,
+        end_date,
+        frame_digest(availability),
+        _saved=availability,
+    )
     submit = render_paste_form(
         PASTE_FORM_KEY,
         text_key="standard_target_availability_clipboard_text",
@@ -1052,12 +1069,6 @@ with action_row:
             type="primary",
             on_click=_open_dialog,
             args=(PASTE_DIALOG,),
-        )
-        render_csv_download(
-            data=template_csv,
-            file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
-            key="download_standard_target_availability_template",
-            label=CSV_TEMPLATE_LABEL,
         )
         st.button(
             "입력 초기화",
@@ -1162,7 +1173,7 @@ else:
             ):
                 displayed_missing = missing_availability.copy()
                 displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
-                # 이 표가 가리키는 입력은 작업 줄의 `주차별 가용설비 CSV 양식`이고 그 양식과
+                # 이 표가 가리키는 입력은 붙여넣기 창의 `주차별 가용설비 CSV 양식`이고 그 양식과
                 # 붙여넣기 파서는 원본 공정명을 요구한다. 표시명이 입혀진 동안은 공정 칸 머리
                 # 풍선이 그것을 말한다 — 화면 이름을 그대로 적어 붙여넣지 않게. 표가 펼침의 첫
                 # 요소라 도구 막대가 펼침 머리를 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」).

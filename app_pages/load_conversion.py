@@ -105,6 +105,7 @@ from capa_simulation.services.load_calculator import (
     restore_locked_yield_rows,
     yield_from_edit_table,
 )
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.reference_csv import count_removed_values
 from capa_simulation.services.required_equipment import (
     REQUIRED_LOAD_EXCLUSIONS_ATTR,
@@ -218,6 +219,8 @@ PLAN_APPLIED_FLASH_KEY = "pkg_plan_applied_flash"
 PRODUCT_REGISTERED_FLASH_KEY = "virtual_product_registered_flash"
 PLAN_PASTE_KEY = "rq_pkg_plan_csv"
 YIELD_PASTE_KEY = "rq_yield_csv"
+VIRTUAL_SOURCE_KEY = "virtual_product_source"
+VIRTUAL_STACK_KEY = "virtual_product_stack"
 # 작업 줄 알림 칸 — 붙여넣기·적용·등록 알림이 같은 아이콘의 성공 알림으로 선다.
 PLAN_PASTE_FLASH_KEY = f"{PLAN_PASTE_KEY}_flash"
 YIELD_FLASH_KEY = f"{YIELD_PASTE_KEY}_flash"
@@ -226,6 +229,8 @@ APPLIED_ICON = ":material/published_with_changes:"
 # 버튼에 남긴다(2026-09-28 사용자 결정).
 PLAN_APPLY_HELP = "누르면 환산·소요대수·확보율과 홈 대시보드가 이 계획으로 다시 계산됩니다."
 YIELD_APPLY_HELP = "누르면 환산수량과 다른 페이지의 산출값이 이 수율로 다시 계산됩니다."
+# 잠긴 적용 단추의 풍선은 하는 일이 아니라 까닭이다(설계 규칙 UI-INP-07).
+APPLY_LOCKED_HELP = "고친 칸이 있으면 누를 수 있습니다."
 # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다. 이 화면이
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
 # 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
@@ -283,7 +288,8 @@ TAB_CONVERSION = ":material/calculate: 환산"
 TAB_PKG_PLAN = ":material/edit_calendar: PKG PLAN"
 TAB_YIELD = ":material/percent: 수율"
 TAB_LABELS = (TAB_CONVERSION, TAB_PKG_PLAN, TAB_YIELD)
-# 알림이 「그 화면으로」 로 열 탭 이름(아이콘 없이 — 탭 단추 글의 끝과 맞댄다).
+# 알림이 「그 화면으로」 로 열 탭 이름(아이콘 없이 — 탭 단추 글의 끝과 맞댄다). 붙여넣기 창 · 적용
+# 알림이 부르는 표 이름도 이 이름이다 — 내부 표 이름은 양식 파일 이름에만 남는다(UI-CON-02).
 CONVERSION_TAB_NAME = "환산"
 PKG_PLAN_TAB_NAME = "PKG PLAN"
 YIELD_TAB_NAME = "수율"
@@ -535,7 +541,7 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     """
     imported = render_reference_clipboard_form(
         source,
-        table_name="RQ_PKG_PLAN",
+        table_name=PKG_PLAN_TAB_NAME,
         key_columns=PLAN_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=PLAN_PASTE_KEY,
@@ -579,7 +585,7 @@ def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
     )
     _queue_done(
         YIELD_FLASH_KEY,
-        f"RQ_YLD {origin} 활성 시나리오에 적용했습니다.{note} "
+        f"{YIELD_TAB_NAME} {origin} 활성 시나리오에 적용했습니다.{note} "
         "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
     )
     mark_own_change(OWN_CHANGE_KEY, (YIELD_EDITOR_KEY,))
@@ -608,7 +614,7 @@ def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
     # 알린다).
     imported = render_reference_clipboard_form(
         source,
-        table_name="RQ_YLD",
+        table_name=YIELD_TAB_NAME,
         key_columns=YIELD_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=YIELD_PASTE_KEY,
@@ -657,19 +663,25 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
             f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. 등록하면 버려집니다 "
             "— 먼저 그 표의 「변경사항 적용」을 누르세요."
         )
+
+    # 기준 제품은 폼 밖이다 — 폼 안 칸은 제출 때까지 서버에 오지 않아 제품을 바꿔도 Stack 칸이 첫
+    # 제품 값으로 남고, 그대로 누르면 기준과 다른 Stack 으로 등록됐다.
+    selected_source = st.selectbox(
+        "기준이 될 제품",
+        options=range(len(source_labels)),
+        format_func=lambda index: source_labels[index],
+        key=VIRTUAL_SOURCE_KEY,
+    )
     with st.form("virtual_product_form", border=False):
-        selected_source = st.selectbox(
-            "기준이 될 제품",
-            options=range(len(source_labels)),
-            format_func=lambda index: source_labels[index],
-            key="virtual_product_source",
-        )
         with st.container(horizontal=True, gap="small"):
             new_product = st.text_input("제품정보", key="virtual_product_name")
+            # Stack 칸은 기준 제품마다 다른 위젯이다. 같은 칸에 세션으로 값을 써 넣으면 화면만
+            # 바뀌고 브라우저 폼이 들고 있던 미제출 값이 그대로 제출돼, 보이는 값과 등록 값이
+            # 어긋난다.
             new_stack = st.text_input(
                 "Stack",
                 value=str(source_candidates.iloc[selected_source]["Stack"]),
-                key="virtual_product_stack",
+                key=f"{VIRTUAL_STACK_KEY}_{selected_source}",
             )
         registered = st.form_submit_button(
             "가상 제품 등록", icon=":material/library_add:", type="primary"
@@ -759,7 +771,7 @@ with pkg_plan_tab:
             icon=":material/check:",
             key="apply_pkg_plan_changes",
             type="primary",
-            help=PLAN_APPLY_HELP,
+            help=PLAN_APPLY_HELP if plan_pending else APPLY_LOCKED_HELP,
             disabled=not plan_pending,
         )
         # 여는 버튼은 **콜백**으로 연다. 콜백은 스크립트보다 먼저 돌아 열린 팝업이 회차 시작부터
@@ -813,9 +825,12 @@ with pkg_plan_tab:
         column for column in plan_editor_source.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
     displayed_plan_table = plan_editor_source.copy()
-    displayed_plan_table[plan_month_columns] = displayed_plan_table[plan_month_columns].mask(
-        displayed_plan_table[plan_month_columns].eq(0)
+    # 붙여넣기 대기 표의 달 칸은 붙여넣은 글자 그대로다 — 숫자로 읽어야 기본 표처럼 0 칸이 가려진다.
+    # 판정은 붙여넣기 검증(`assert_numeric_edit_values`)과 같은 `to_numeric` 이라 값을 잃지 않는다.
+    plan_month_values = displayed_plan_table[plan_month_columns].apply(
+        pd.to_numeric, errors="coerce"
     )
+    displayed_plan_table[plan_month_columns] = plan_month_values.mask(plan_month_values.eq(0))
     edited_plan_table = st.data_editor(
         classification_styled(displayed_plan_table, PLAN_EDITOR_DIMENSIONS),
         key=editor_widget_key(PLAN_EDITOR_KEY),
@@ -880,7 +895,7 @@ with yield_tab:
                 icon=":material/check:",
                 key="apply_yield_changes",
                 type="primary",
-                help=YIELD_APPLY_HELP,
+                help=YIELD_APPLY_HELP if yield_pending else APPLY_LOCKED_HELP,
                 disabled=not yield_pending,
             )
             st.button(
@@ -1003,7 +1018,8 @@ if apply_plan:
         _queue_done(
             PLAN_APPLIED_FLASH_KEY,
             f"PKG PLAN을 전역 계획값에 반영했습니다. "
-            f"{effective_start_month}~{effective_end_month} 구간의 환산·소요대수·확보율과 "
+            f"{month_label(effective_start_month)}–{month_label(effective_end_month)} "
+            "구간의 환산·소요대수·확보율과 "
             f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
             "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
         )

@@ -2,6 +2,7 @@
 
 import pandas as pd
 
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.securement_heatmap import (
     SECURE_TIER,
     SHORTAGE_TIER,
@@ -41,7 +42,7 @@ def test_hover_keeps_the_uncut_rate() -> None:
     figure = build_securement_heatmap(_table(), dimension_columns=["공정"], thresholds=THRESHOLDS)
 
     assert figure is not None
-    assert figure.data[0].customdata[0][0] == 120.0
+    assert figure.data[0].customdata[0][0][0] == 120.0
 
 
 def test_a_nonzero_rate_is_never_written_as_zero_in_its_cell() -> None:
@@ -83,6 +84,27 @@ def test_months_are_read_top_down_like_the_table() -> None:
     assert figure.layout.yaxis.autorange == "reversed"
 
 
+def test_two_processes_sharing_a_display_name_keep_their_own_rows() -> None:
+    """Plotly 범주 축은 같은 글자를 한 줄로 합친다 — 표시명으로 축을 세우면 표보다 줄이 모자라고 한
+    공정의 값이 가려진다. 축 값은 원본이고 눈금 · hover 글자만 표시명이다(AGENTS 8장 ③)."""
+    table = pd.DataFrame(
+        {"공정": ["AVI", "Mold", "Shipping Inspection"], "202601": [1.2, 1.0, 0.8]}
+    )
+    labels = ProcessLabels(labels={"Shipping Inspection": "AVI"})
+
+    figure = build_securement_heatmap(
+        table, dimension_columns=["공정"], thresholds=THRESHOLDS, labels=labels
+    )
+
+    assert figure is not None
+    trace = figure.data[0]
+    assert list(trace.y) == ["AVI", "Mold", "Shipping Inspection"]
+    assert list(figure.layout.yaxis.tickvals) == list(trace.y)
+    assert list(figure.layout.yaxis.ticktext) == ["AVI", "Mold", "AVI"]
+    assert [row[0][1] for row in trace.customdata] == ["AVI", "Mold", "AVI"]
+    assert "%{y}" not in trace.hovertemplate
+
+
 def test_empty_table_draws_nothing() -> None:
     assert (
         build_securement_heatmap(
@@ -111,7 +133,8 @@ def test_every_process_row_keeps_its_name_when_many_are_shown() -> None:
 
     assert figure is not None
     yaxis = figure.layout.yaxis
-    assert (yaxis.tickmode, yaxis.dtick) == ("linear", 1)
+    assert yaxis.tickmode == "array"
+    assert list(yaxis.tickvals) == list(yaxis.ticktext) == names
     assert (figure.layout.height - CHART_CHROME_PX) / len(names) >= MIN_LABELLED_ROW_PX
     assert yaxis.tickfont.size < MIN_LABELLED_ROW_PX
 
