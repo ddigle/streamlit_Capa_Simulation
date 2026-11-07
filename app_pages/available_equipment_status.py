@@ -411,6 +411,11 @@ with gap_tab:
         assert conditions_card is not None
         with conditions_card:
             start_date, end_date = render_equipment_period(today=today, width="stretch")
+        # 호기가 없고 샘플도 끈 회차의 표지 — 이 탭의 조건 카드는 접힌 채 조회 조건을 담고, 아래
+        # 본문은 Static · 기존보유대수로 그리는 비교라 호기 없음을 말하지 않는다. 카드에 두면 열어야
+        # 보이므로 본문 머리에 값 한 마디 + 풍선(하는 법)으로 둔다(설계 규칙 UI-TXT-04 · UI-TXT-07).
+        if using_dashboard_sample and not show_sample_fleet:
+            st.caption(NO_UNITS_MARK, help=NO_UNITS_HELP)
         # 저장된 Cut-off 는 캐시 경계에서 직접 읽는다(필요 단축 일정과 같다 — 「가용설비 설정」
         # 팝업이 저장하면 그 캐시를 비우고 앱 전체를 다시 돌린다). 저장되지 않은 팝업 표 편집으로
         # 숫자를 내지 않는다.

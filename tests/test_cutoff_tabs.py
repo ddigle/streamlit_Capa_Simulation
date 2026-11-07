@@ -24,6 +24,11 @@ from test_equipment_pages import _open_settings, _open_tab, _page_script
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY, CUTOFF_SAVE_HELP
+from capa_simulation.components.sample_data import (
+    NO_UNITS_HELP,
+    NO_UNITS_MARK,
+    SAMPLE_TOGGLE_KEY,
+)
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_process_cutoff_cache,
@@ -89,6 +94,40 @@ def test_the_gap_tab_asks_for_a_cutoff_before_it_computes(tmp_path: Path) -> Non
     # 빈 상태는 회색 평문 한 줄(값)이고 하는 법은 그 줄의 풍선이다(설계 규칙 UI-TXT-04).
     (line,) = [item for item in app.caption if item.value == "공정별 Cut-off 가 없습니다."]
     assert "먼저 적어야" in str(line.proto.help)
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize("with_cutoff", [False, True])
+def test_the_gap_tab_says_no_units_with_the_sample_switch_off(
+    tmp_path: Path, with_cutoff: bool
+) -> None:
+    """호기가 없고 샘플도 끄면 머리 배지도 조건 카드 표지도 없는 이 탭의 본문이 호기 없음을 말한다 —
+    빈 까닭이 Cut-off 와 상관없다. 카드는 접힌 채 조회 조건을 담아 표지를 카드에 두지 않는다."""
+    database_path = tmp_path / "availability.duckdb"
+    if with_cutoff:
+        repository = DuckDBEquipmentRepository(database_path)
+        repository.initialize()
+        repository.save_process_cutoff(
+            pd.DataFrame({"공정": ["Die Attach"], "Cutoff일수": [15.0], "비고": [None]})
+        )
+    app = AppTest.from_string(_page_script(PAGE, database_path), default_timeout=120)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+
+    app = _open_tab(app.run(), "Static 대비 일정")
+
+    assert not app.exception
+    (mark,) = [item for item in app.main.caption if str(item.value) == NO_UNITS_MARK]
+    assert mark.proto.help == NO_UNITS_HELP
+    assert NO_UNITS_MARK not in [str(item.value) for item in app.sidebar.caption]
+    clear_equipment_repository()
+
+
+def test_the_gap_tab_stays_silent_about_units_while_the_sample_shows(tmp_path: Path) -> None:
+    """샘플을 켠 회차에는 호기가 보이므로 호기 없음 표지가 서지 않는다."""
+    app = _run(tmp_path / "availability.duckdb", tab="Static 대비 일정")
+
+    assert not app.exception
+    assert NO_UNITS_MARK not in [str(item.value) for item in app.main.caption]
     clear_equipment_repository()
 
 
