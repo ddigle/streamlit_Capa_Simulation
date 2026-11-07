@@ -521,6 +521,32 @@ def test_a_cell_fixed_after_a_refused_save_survives_filling(tmp_path: Path) -> N
     clear_equipment_repository()
 
 
+def test_a_cell_fixed_after_a_refused_save_under_a_row_filter_reaches_the_next_save(
+    tmp_path: Path,
+) -> None:
+    """필터가 걸린 표는 행 고정이라 위젯이 그대로 서고 편집이 남는다 — 다시 그려도 거른 행의 칸이
+    다른 행에 붙거나 사라지지 않는다."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb",
+        {"Process-A": 10.0, "Process-C": 20.0},
+        ["Process-A", "Process-C"],
+    )
+    tables = BrowserTables(app, forms=True)
+    app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
+    tables.run()
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 99999.0)
+
+    _press(tables, "Cut-off 저장")
+
+    assert ["넘습니다" in str(item.value) for item in app.error] == [True]
+
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 21.5)
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 10.0, "Process-C": 21.5}
+    clear_equipment_repository()
+
+
 def test_a_cell_typed_after_an_unchanged_save_reaches_the_next_save(tmp_path: Path) -> None:
     """「바뀐 것이 없습니다」 도 초안을 바꾼다 — 저장에 들지 않는 빈 행의 비고가 그렇다. 그 회차가
     표를 다시 그리지 않으면 다음 칸이 버려져 같은 답만 되풀이했다(2026-11-08 검토)."""
