@@ -284,7 +284,11 @@ def test_default_name_follows_the_changed_base(sources: Sources) -> None:
     app.selectbox(key="merge_base_scenario").set_value(other.scenario.scenario_id).run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert app.text_input(key="scenario_merge_name").value == "다른 베이스 2026 · 월 머지"
+    # 기본 이름을 따라갈 때마다 새 위젯이라 라벨로 찾는다 — 같은 칸에 서버가 값을 써도 브라우저
+    # 폼이 들고 있던 친 글자가 제출된다. AppTest 는 그 값을 재현하지 못해 key 로 본다.
+    field = next(item for item in app.text_input if item.label == "새 시나리오 이름")
+    assert field.value == "다른 베이스 2026 · 월 머지"
+    assert field.key != "scenario_merge_name"
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert any(

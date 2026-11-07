@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from alert_marks import data_error_marks, data_error_texts, flashed, place_errors, successes
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import Button
+from streamlit.testing.v1.element_tree import Button, TextInput
 from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -206,22 +206,31 @@ def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source: S
     assert not _save_button(app).disabled
 
 
+def _name_field(app: AppTest) -> TextInput:
+    """저장 폼 이름 칸 — 기본 이름을 따라갈 때마다 새 위젯이라 라벨로 찾는다."""
+    return next(field for field in app.text_input if field.label == "새 시나리오 이름")
+
+
 def test_default_name_follows_changed_years_and_keeps_a_typed_name(source: Source) -> None:
     repository, database, original = source
     app = _app(database, original)
 
     app.number_input(key="scenario_shift_years").set_value(1).run()
-    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +1년 Shift"
+    assert _name_field(app).value == "이동할 2027 · +1년 Shift"
+    first_key = _name_field(app).key
 
-    # 이름 칸은 key 가 있어 value= 가 바뀌어도 처음 값을 든다 — 바뀐 연수를 따라와야 한다.
+    # 이름 칸은 key 가 있어 value= 가 바뀌어도 처음 값을 든다 — 바뀐 연수를 따라와야 한다. 새
+    # 위젯이어야 한다 — 브라우저 폼은 제출 전 값을 위젯마다 들고 있어 같은 칸에 서버가 값을 써도 친
+    # 글자가 그대로 제출된다. AppTest 는 그 값을 재현하지 못해 key 로 본다.
     app.number_input(key="scenario_shift_years").set_value(2).run()
     assert _ranges(app)["이동 후 월 범위"] == "2029-01 ~ 2029-12"
-    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +2년 Shift"
+    assert _name_field(app).value == "이동할 2027 · +2년 Shift"
+    assert _name_field(app).key != first_key
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]
 
     app.number_input(key="scenario_shift_years").set_value(3).run()
-    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +3년 Shift"
+    assert _name_field(app).value == "이동할 2027 · +3년 Shift"
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert not place_errors(app), [item.value for item in app.error]
@@ -240,21 +249,21 @@ def test_default_name_follows_changed_years_and_keeps_a_typed_name(source: Sourc
     # 값을 보내므로 폼에서 치기만 한(제출 안 한) 상태는 흉내 내지 못한다 — 그래서 제출을 거친다.
     # +3 저장 직후에는 같은 요청이라 단추가 꺼져 있어 먼저 아직 저장하지 않은 연수로 바꾼다.
     app.number_input(key="scenario_shift_years").set_value(5).run()
-    app.text_input(key="scenario_shift_name").set_value("내가 고친 이름")
+    _name_field(app).set_value("내가 고친 이름")
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert any(item.scenario_name == "내가 고친 이름" for item in repository.list_scenarios())
     app.number_input(key="scenario_shift_years").set_value(7).run()
-    assert app.text_input(key="scenario_shift_name").value == "내가 고친 이름"
+    assert _name_field(app).value == "내가 고친 이름"
 
     # 0 을 거쳐 이름 칸이 걷힌 뒤에는 새 연수의 기본 이름이 선다.
     app.number_input(key="scenario_shift_years").set_value(0).run()
-    assert not any(item.key == "scenario_shift_name" for item in app.text_input)
+    assert not any(item.label == "새 시나리오 이름" for item in app.text_input)
     app.number_input(key="scenario_shift_years").set_value(6).run()
-    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +6년 Shift"
+    assert _name_field(app).value == "이동할 2027 · +6년 Shift"
     app.number_input(key="scenario_shift_years").set_value(0).run()
     app.number_input(key="scenario_shift_years").set_value(6).run()
-    assert app.text_input(key="scenario_shift_name").value == "이동할 2027 · +6년 Shift"
+    assert _name_field(app).value == "이동할 2027 · +6년 Shift"
     assert not app.exception, [item.message for item in app.exception]
 
 

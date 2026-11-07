@@ -12,7 +12,12 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_list_state import follow_created_scenario
-from capa_simulation.components.widget_generation import bump, generation, write_once_value
+from capa_simulation.components.widget_generation import (
+    bump,
+    generation,
+    widget_key,
+    write_once_value,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -242,15 +247,19 @@ def render_derived_save(
     with st.expander("저장될 출처 메모"):
         st.text(provenance)
     # key 가 있는 이름 칸은 `value=` 가 바뀌어도 처음 값을 든다. 그래서 기본 이름을 씨앗 칸에
-    # 적어 두고, 칸이 없거나 서버가 아는 칸 값이 옛 씨앗 그대로이면 바뀐 기본 이름(이동 연수·
-    # 원본, 머지는 베이스)으로 다시 적는다. 이름 칸은 폼 안이라 제출 전에 친 글자는 서버가 모른다
-    # — 저장을 눌러 제출된 이름만 남고, 치기만 한 이름은 연수·원본을 바꾸면 새 기본 이름으로
-    # 바뀐다.
-    name_key, seed_key = f"{key}_name", f"{key}_name_seed"
+    # 적어 두고, 서버가 아는 칸 값이 옛 씨앗 그대로이면 바뀐 기본 이름(이동 연수·원본, 머지는
+    # 베이스)을 **새 위젯**으로 세운다. 이름 칸은 폼 안이라 제출 전에 친 글자는 서버가 모른다 —
+    # 같은 칸에 세션으로 값을 써 넣으면 화면만 바뀌고 친 글자가 그대로 제출돼, 보이는 이름과
+    # 저장되는 이름이 갈린다. 저장을 눌러 제출된 이름만 남고, 치기만 한 이름은 연수·원본을 바꾸면
+    # 새 기본 이름으로 바뀐다.
+    name_generation_key = f"{key}_name_generation"
+    name_key, seed_key = widget_key(f"{key}_name", name_generation_key), f"{key}_name_seed"
     seed = st.session_state.get(seed_key)
-    if name_key not in st.session_state or (
-        seed != default_name and st.session_state[name_key] == seed
-    ):
+    if name_key not in st.session_state:
+        st.session_state[name_key] = default_name
+    elif seed != default_name and st.session_state[name_key] == seed:
+        bump(name_generation_key)
+        name_key = widget_key(f"{key}_name", name_generation_key)
         st.session_state[name_key] = default_name
     st.session_state[seed_key] = default_name
     # 저장 쓰기의 세대(`write_once_value`). 폼·칸 key 에는 붙이지 않는다 — 저장에 성공하면 같은
