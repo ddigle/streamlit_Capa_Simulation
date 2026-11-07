@@ -90,6 +90,8 @@ DISPLAY_ORDER_UNCHANGED_MESSAGE = (
 )
 # 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
 DISPLAY_ORDER_FLASH_KEY = "display_order_flash"
+# 직접 편집 제목 줄의 범위 고르기 칸 폭(px) — 범위 이름이 한 칸에 들고 창 1100 에서도 한 줄이다.
+SCOPE_PICKER_WIDTH = 240
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시순서 그대로라 새 버전을 만들지 않았습니다."
@@ -244,25 +246,29 @@ def _render_direct_editor(
     (막지 않는다).
     """
     submitted_base = seen(BASE_VERSION_KEY)
-    st.markdown("#### 직접 편집")
-    pages = display_order["페이지 구분"].drop_duplicates().tolist()
-    selected_page = st.selectbox(
-        "페이지 구분",
-        options=pages,
-        key="display_order_page",
-        persist_state="session",
-    )
-    tabs = (
-        display_order.loc[display_order["페이지 구분"].eq(selected_page), "탭 구분"]
-        .drop_duplicates()
-        .tolist()
-    )
-    selected_tab = st.selectbox(
-        "탭 구분",
-        options=tabs,
-        key="display_order_tab",
-        persist_state="session",
-    )
+    # 고칠 범위 고르기는 표 제목 줄 곁이다 — 전폭 두 줄이면 표가 그만큼 밀린다(설계 규칙 UI-LAY-11).
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        st.markdown("#### 직접 편집", width="content")
+        pages = display_order["페이지 구분"].drop_duplicates().tolist()
+        selected_page = st.selectbox(
+            "페이지 구분",
+            options=pages,
+            key="display_order_page",
+            persist_state="session",
+            width=SCOPE_PICKER_WIDTH,
+        )
+        tabs = (
+            display_order.loc[display_order["페이지 구분"].eq(selected_page), "탭 구분"]
+            .drop_duplicates()
+            .tolist()
+        )
+        selected_tab = st.selectbox(
+            "탭 구분",
+            options=tabs,
+            key="display_order_tab",
+            persist_state="session",
+            width=SCOPE_PICKER_WIDTH,
+        )
     scope_mask = display_order["페이지 구분"].eq(selected_page) & display_order["탭 구분"].eq(
         selected_tab
     )

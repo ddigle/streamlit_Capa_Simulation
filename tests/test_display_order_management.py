@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from alert_marks import active_state, infos, place_errors, successes
+from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
@@ -111,6 +112,32 @@ def _path_of(app: AppTest, matches: Callable[[Any], bool]) -> tuple[int, ...]:
     walk(app.main, ())
     assert len(found) == 1, found
     return found[0]
+
+
+def test_the_scope_pickers_stand_on_the_heading_line(tmp_path: Path) -> None:
+    """범위 고르기 둘은 「직접 편집」 제목 줄 곁이다 — 전폭 두 줄로 표를 밀지 않는다(설계 규칙
+    UI-LAY-11). 줄이 좁으면 flex 줄바꿈으로 내려앉는다."""
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-scope.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    heading = _path_of(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "markdown"
+            and "직접 편집" in str(getattr(node, "value", ""))
+        ),
+    )
+    page = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_page")
+    tab = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_tab")
+
+    assert heading[:-1] == page[:-1] == tab[:-1]
+    assert heading[-1] < page[-1] < tab[-1]
+    line: Any = app.main
+    for index in heading[:-1]:
+        line = line.children[index]
+    assert line.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
+    assert line.proto.flex_container.wrap
 
 
 def test_display_label_warning_survives_the_rerun_after_saving(
