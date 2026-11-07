@@ -707,6 +707,14 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     # 넷째 줄 「통합인증」 은 결과 파일이 아니라 지금 설정에서 판정한다(시험 환경은 꺼짐).
     assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀"]
     assert steps.value["단계"].iloc[3] == "통합인증"
+    # 까닭 칸은 잘리지 않게 넓고 세 칸 합은 창 1283 의 표 폭(샘플 관측 918px) 안이다(g8-21).
+    widths = {
+        name: column["width"]
+        for name, column in json.loads(steps.proto.columns).items()
+        if name in {"단계", "결과", "까닭"}
+    }
+    assert widths["까닭"] > widths["단계"] + widths["결과"]
+    assert sum(widths.values()) <= 918
     assert steps.value["까닭"].iloc[3] == "ADFS_CLIENT_ID 없음"
     assert "pip 종료 코드 1" in steps.value["까닭"].iloc[0]
     # 옛 결과 파일에는 통합인증 칸이 없어 그 캡션도 없다.
@@ -958,6 +966,9 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     assert rows["demo_off"]["까닭"] == "module.json enabled=false"
     assert rows["demo_bad_manifest"]["상태"] == "실패"
     assert rows["demo_future_api"]["API"] == "99.0"
+    # 「빠진 화면」 은 「화면」 곁이다 — 끝 칸이면 가로 스크롤 뒤로 숨는다(g8-21).
+    columns = table.columns.tolist()
+    assert columns.index("빠진 화면") == columns.index("화면") + 1
     assert rows["demo_crash"]["마지막 오류"].endswith("RuntimeError · page · main")
     # `module.json` 의 name 은 「모듈 이름」 이다 — 같은 줄 까닭의 「화면 이름 겹침」
     # (pages[].title)과 가른다. 까닭 · 마지막 오류는 기본 폭에서 잘리므로 넓힌 칸으로 싣는다.
@@ -967,7 +978,7 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
         name: config.get("width")
         for name, config in json.loads(app.dataframe[0].proto.columns).items()
     }
-    assert widths["까닭"] == "large" and widths["마지막 오류"] == "medium"
+    assert widths["까닭"] == 280 and widths["마지막 오류"] == "medium"
     # 회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표 꼴이다.
     run_time = json.loads(app.dataframe[0].proto.columns)["마지막 회차 시간(ms)"]
     assert run_time["type_config"] == {"type": "number", "format": "localized"}

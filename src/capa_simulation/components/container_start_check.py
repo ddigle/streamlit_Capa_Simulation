@@ -27,6 +27,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts
 from capa_simulation.components.diagnostic_copy import (
@@ -84,6 +85,18 @@ _ADDRESS = re.compile(
 _GIB = 1024**3
 # pod 이름은 사내 식별값이고 이 줄은 리뷰 압축본에 옮긴다. 같은 pod 인지 가르는 데는 끝이면 족하다.
 POD_TAIL_CHARS = 5
+
+
+def step_column_config() -> dict[str, ColumnConfig]:
+    """까닭은 기본 폭에서 잘려 넓히고 나머지 칸은 줄인다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
+
+    폭 이름(`"small"` · `"large"`)이 아니라 px 이다 — 표가 stretch 라 남는 폭을 세 칸이 똑같이 나눠
+    `"small"` 칸이 줄지 않는다. 셋의 합은 창 1283 의 표 폭 안이라 가로 스크롤이 서지 않는다."""
+    return {
+        "단계": st.column_config.TextColumn(width=150),
+        "결과": st.column_config.TextColumn(width=70),
+        "까닭": st.column_config.TextColumn(width=690),
+    }
 
 
 def build_step_table(
@@ -272,7 +285,7 @@ def render_container_start_check() -> None:
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
         render_diagnostic_copy(report_text(title, report, steps, facts), key=COPY_KEY)
         st.caption(report_origin_caption(report))
-        st.dataframe(steps, hide_index=True, width="stretch")
+        st.dataframe(steps, column_config=step_column_config(), hide_index=True, width="stretch")
         st.caption("  \n".join(facts))
         missing = missing_environment_line(report)
         if missing is not None:

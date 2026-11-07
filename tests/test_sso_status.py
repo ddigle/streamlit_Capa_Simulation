@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -110,6 +111,13 @@ def test_on_shows_facts_without_any_secret() -> None:
     )
     secret_row = environment.set_index("환경변수").loc[names.ENV_SECRET]
     assert (secret_row["상태"], secret_row["까닭"]) == ("있음", sso_status.SECRET_CHECKS_PASSED)
+    widths = {
+        name: column["width"]
+        for name, column in json.loads(app.dataframe[0].proto.columns).items()
+        if name in environment.columns
+    }
+    assert widths["까닭"] > widths["환경변수"] + widths["상태"], "까닭 칸이 잘리지 않게 넓다"
+    assert sum(widths.values()) <= 918, "창 1283 의 표 폭(샘플 관측) 안이다"
     assert "redirect\\_uri" in text and "auth\\/callback" in text
     assert signing().x5t.replace("-", "\\-").replace("_", "\\_") in text
     assert (

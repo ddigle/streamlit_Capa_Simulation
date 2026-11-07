@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 import streamlit as st
+from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts
 from capa_simulation.auth import access_store, names, runtime
@@ -184,6 +185,17 @@ def environment_table(cfg: SsoConfig) -> pd.DataFrame:
     for env, found in issues.items():
         rows.append((env, "틀림", _problem_text(found)))
     return pd.DataFrame(rows, columns=["환경변수", "상태", "까닭"])
+
+
+def environment_column_config() -> dict[str, ColumnConfig]:
+    """까닭은 기본 폭에서 잘려 넓히고 나머지 칸은 줄인다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
+
+    px 로 적는 까닭은 `container_start_check.step_column_config` 와 같다."""
+    return {
+        "환경변수": st.column_config.TextColumn(width=220),
+        "상태": st.column_config.TextColumn(width=70),
+        "까닭": st.column_config.TextColumn(width=620),
+    }
 
 
 def _days_left(now: datetime, not_after: datetime) -> int:
@@ -545,7 +557,12 @@ def render_sso_status() -> None:
             st.caption(readiness_line(cfg))
         else:
             st.error(BROKEN_CONCLUSION, icon=":material/gpp_bad:")
-        st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
+        st.dataframe(
+            environment_table(cfg),
+            column_config=environment_column_config(),
+            hide_index=True,
+            width="stretch",
+        )
         redirect, *facts = fact_lines(cfg, now=now)
         st.caption(redirect, help=REDIRECT_HELP)
         st.caption("  \n".join(facts))
