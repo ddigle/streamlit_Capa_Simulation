@@ -97,6 +97,8 @@ PASTE_DROPS_DRAFT_NOTICE: Final = (
     "이 표에 적용하지 않은 편집 {n}칸이 있습니다 — 붙여넣어 적용하면 그 편집은 버려집니다."
 )
 DISCARD_HELP: Final = "이 표에서 적용하지 않은 편집을 버립니다."
+# 잠긴 「변경사항 적용」 의 풍선 — 왜 잠겼는지(풀린 동안은 `APPLY_NOTICE` 가 하는 일을 말한다).
+APPLY_LOCKED_HELP: Final = "고친 칸이 있으면 누를 수 있습니다."
 # 큰 표 안전 상한(명세 1-2 의 22) — 칸 수 · 껍데기 본문 JSON 바이트 · 상한에 걸렸을 때 싣는 줄 수.
 # 실데이터 센서스(`scripts/inspect_real_data_checks.py` 8-11)가 같은 값 · `GRID_FORMATS` 를
 # 옮겨 둔다 — 바꾸면 `tests/test_inspect_real_data_checks.py` 가 잡는다.
@@ -403,12 +405,13 @@ def render_actions(
     table: GridTable, visible: pd.DataFrame, *, open_paste: Callable[[], None]
 ) -> Actions:
     """표 위 작업 줄 — 「변경사항 적용」 · 「Excel 붙여넣기」 · 「편집 취소」(초안이 있을 때) ·
-    변경 수, 그 아래 편집 범위 줄과 알림 자리. key·글은 옛 편집표 작업 줄과 같다
+    「고칠 칸 n개」(칸 오류가 있을 때), 그 아래 편집 범위 줄과 알림 자리. 고친 수는 표 도구 막대
+    「적용 전 변경 (n)」 하나가 말한다(UI-TXT-07). key·글은 옛 편집표 작업 줄과 같다
     (`f"{editor_key}_apply"` 등).
 
     「변경사항 적용」 은 초안이 없으면 잠근다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙). 첫
     편집은 그리드가 기다리지 않고 바로 보내므로 고친 뒤 한 회차 안에 켜진다."""
-    cells, rows, errors = draft_counts(table.table)
+    cells, _, errors = draft_counts(table.table)
     pending = cells > 0
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         submitted = st.button(
@@ -416,7 +419,7 @@ def render_actions(
             icon=":material/check:",
             key=f"{table.editor_key}_apply",
             type="primary",
-            help=APPLY_NOTICE,
+            help=APPLY_NOTICE if pending else APPLY_LOCKED_HELP,
             disabled=not pending,
         )
         st.button(
@@ -434,8 +437,8 @@ def render_actions(
                 args=(table.table,),
                 help=DISCARD_HELP,
             )
-            fix = f" · :red[고칠 칸 {errors:,}개]" if errors else ""
-            st.markdown(f"**변경사항 확인** &nbsp;{cells:,}개 값 · {rows:,}개 행{fix}")
+            if errors:
+                st.markdown(f":red[고칠 칸 {errors:,}개]")
     render_scope(table.template, visible, table.months)
     if table.cap_notice is not None:
         st.caption(table.cap_notice, help=CAP_HELP)

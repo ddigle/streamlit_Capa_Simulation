@@ -658,12 +658,12 @@ def test_capacity_editors_show_route_keys_without_exceptions(grid_calls: Calls) 
 
     assert not app.exception
     expected_inputs = {
-        "UPEH": "RQ_UPEH 표 붙여넣기",
-        "효율": "RQ_RUN_RATE 표 붙여넣기",
-        "여유율": "RQ_VITAL 표 붙여넣기",
-        "Lot측정률": "RQ_LOT_RATIO 표 붙여넣기",
-        "WF측정률": "RQ_WF_RATIO 표 붙여넣기",
-        "일수": "RQ_RUN_DAY 표 붙여넣기",
+        "UPEH": "UPEH 표 붙여넣기",
+        "효율": "효율 표 붙여넣기",
+        "여유율": "여유율 표 붙여넣기",
+        "Lot측정률": "Lot측정률 표 붙여넣기",
+        "WF측정률": "WF측정률 표 붙여넣기",
+        "일수": "일수 표 붙여넣기",
     }
     route_editor_tabs = {"UPEH", "Lot측정률", "WF측정률"}
     for tab_name, input_label in expected_inputs.items():
@@ -703,10 +703,10 @@ def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:
     셋을 한 화면에 세로로 쌓지 않고 탭을 한 겹 더 두었으므로, 열린 안쪽 탭의 것만
     그려진다. 붙여넣기만 되던 화면이 아니라는 것을 편집기 존재로 고정한다.
     """
-    for sub_tab, table_name, editor_key in (
-        ("보유", "RQ_EQP_OWN", "capa_eqp_own_editor"),
-        ("대여", "RQ_EQP_LENT", "capa_eqp_lent_editor"),
-        ("가용", "RQ_EQP_AVBL", "capa_eqp_avbl_editor"),
+    for sub_tab, editor_key in (
+        ("보유", "capa_eqp_own_editor"),
+        ("대여", "capa_eqp_lent_editor"),
+        ("가용", "capa_eqp_avbl_editor"),
     ):
         app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
         app.session_state[DATASET_KEY] = DATASET[f"설비대수 {sub_tab}"]
@@ -715,7 +715,7 @@ def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:
         assert not app.exception
         assert f"{editor_key}_apply" in {button.key for button in app.button}
         app = _open_paste(app, editor_key)
-        assert f"{table_name} 표 붙여넣기" in {text_area.label for text_area in app.text_area}
+        assert f"설비대수 {sub_tab} 표 붙여넣기" in {text_area.label for text_area in app.text_area}
 
 
 def test_equipment_editor_saves_the_edited_month_to_the_scenario(grid_calls: Calls) -> None:
@@ -1475,6 +1475,19 @@ def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
     assert "원본 공정명" in opening.value
     assert not app.text_area(key="capa_run_day_editor_csv_clipboard").help
     assert not any("원본 공정명" in str(item.value) for item in app.caption)
+
+
+def test_the_paste_window_uses_the_screen_name_but_the_file_keeps_the_table_name() -> None:
+    """글 칸 · 양식 칸은 화면이 부르는 이름이고(UI-CON-02) 내려받는 파일 이름은 원본 표 그대로다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
+    app.run()
+    assert not app.exception
+    app = _open_paste(app, "capa_eqp_own_editor")
+
+    assert {text_area.label for text_area in app.text_area} == {"설비대수 보유 표 붙여넣기"}
+    file_name = _download(app, "capa_eqp_own_editor_csv_download")["file_name"]
+    assert file_name.startswith("RQ_EQP_OWN_") and file_name.endswith(".csv")
 
 
 def test_the_paste_field_has_no_rename_tooltip_without_display_names() -> None:

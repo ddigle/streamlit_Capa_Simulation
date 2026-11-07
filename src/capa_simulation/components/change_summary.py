@@ -9,7 +9,7 @@
 가용설비 현황 작은
    편집표.
 2. **저장 안 함**(`keep`) — 적용했지만 저장하지 않은 시나리오, 설비 편집본 · FAB 배치 대기,
-붙여넣기 대기, Past Data
+기준 정보 표의 적용 전 편집(세션 칸이라 화면을 떠나도 남는다), 붙여넣기 대기, Past Data
    초안, 시나리오 관리 표 초안. 새로고침 · 시나리오 바꿈에 사라진다.
 3. **가정 사용 중**(`assume`) — 공식과 다른 설비 시나리오, UPEH 가정(100% 아님). 내가 바꾼 것이지만
 지우지 않아도 된다 —
@@ -21,8 +21,8 @@
 조건(제약 시뮬레이션 · Qual 계산기 · 필터)은 들지 않는다(설계 5-2 「넣지 않는 것」 — 다음 판 후보).
 머리 띠 위 줄의 「최신 rN 있음」 · 「공식 vN」 은 상태라 넣지 않는다.
 
-차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 붙여넣기
-대기 → Past Data · 목록 → 설비 가정 → UPEH 가정.
+차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 표 초안 ·
+붙여넣기 대기 → Past Data · 목록 → 설비 가정 → UPEH 가정.
 """
 
 from __future__ import annotations
@@ -102,6 +102,12 @@ def _strip_title(title: str, label: str) -> str:
     return label[len(prefix) :] if label.startswith(prefix) else label
 
 
+def _edits_text(title: str, labels: tuple[str, ...]) -> str:
+    """판 한 줄 글 — 「적용 전 편집 · UPEH, 일수」."""
+    names = ", ".join(_strip_title(title, label) for label in labels)
+    return f"적용 전 편집 · {names}"
+
+
 def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[ChangeItem]:
     """이 세션의 변경 목록(차례대로). `hrefs` 는 화면 경로(`PageSpec.path`) → 주소(`url_path`)다."""
 
@@ -112,16 +118,19 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
         return ChangeItem(group=group, page=page, text=text, top=top, href=href, tab=tab)
 
     lose: list[ChangeItem] = []
-    pastes: list[ChangeItem] = []
+    held: list[ChangeItem] = []
     pages = pending_edit_pages(page_file)
     for name, edits in pages.items():
         spec = _spec_for_file(name)
         title = edits.title if spec is None else spec.title
         if edits.editors:
-            names = ", ".join(_strip_title(edits.title, label) for label in edits.editors)
-            lose.append(item("lose", spec, title, f"적용 전 편집 · {names}", f"{title} 적용 전"))
+            text = _edits_text(edits.title, edits.editors)
+            lose.append(item("lose", spec, title, text, f"{title} 적용 전"))
+        if edits.drafts:
+            text = _edits_text(edits.title, edits.drafts)
+            held.append(item("keep", spec, title, text, f"{title} 적용 전"))
         if edits.staged:
-            pastes.append(item("keep", spec, title, "붙여넣기 적용 대기", "붙여넣기 대기"))
+            held.append(item("keep", spec, title, "붙여넣기 적용 대기", "붙여넣기 대기"))
     space_file = Path(SPACE_STATUS.path).name
     if page_file == space_file and floor_state_draft_pending():
         lose.append(
@@ -161,7 +170,7 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
         keep.append(
             item("keep", SPACE_STATUS, SPACE_STATUS.title, "FAB 배치 저장 안 함", "설비 미저장")
         )
-    keep.extend(pastes)
+    keep.extend(held)
     if past_data_has_pending():
         keep.append(item("keep", HOME, HOME.title, "Past Data 저장 안 함", "Past Data 미저장"))
     if list_has_edits():

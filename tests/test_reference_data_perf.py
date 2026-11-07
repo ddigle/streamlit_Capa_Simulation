@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from alert_marks import data_error_texts, place_errors, successes
-from edit_grid_fake import Calls, install_fake_edit_grid
+from edit_grid_fake import Calls, install_fake_edit_grid, last
 from streamlit.dataframe import lazy_df_source
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
@@ -33,7 +33,8 @@ from test_reference_data_page import (
     _visible_keys,
 )
 
-from capa_simulation.reference_grid_keys import DATASET_KEY
+from capa_simulation.components.edit_grid import feed_key
+from capa_simulation.reference_grid_keys import DATASET_KEY, GRID_HOST
 from capa_simulation.services import display_order_scopes as scopes
 from capa_simulation.services.capacity_reference_editor import (
     PERFORMANCE_EDITOR_DIMENSIONS,
@@ -870,24 +871,31 @@ def test_the_overview_message_is_identical_across_reruns() -> None:
 # ---------------------------------------------------------------- R8 변경 개수
 
 
-def _change_lines(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.markdown if "변경사항 확인" in str(item.value)]
+def _change_count(calls: Calls) -> int:
+    """표 도구 막대 「적용 전 변경 (n)」 의 수(그리드 feed)."""
+    return int(last(calls, feed_key(GRID_HOST))["counts"]["cells"])
 
 
-def test_the_change_line_shows_only_with_unapplied_edits(grid_calls: Calls) -> None:
-    """편집이 없으면 「변경사항 확인」 줄이 없고, 고치면 초안 수로 선다. 양식과 같은 값으로 되돌린
-    칸은 초안에서 빠져 줄도 사라진다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙과 같은 뜻)."""
+def _action_row_lines(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.markdown if "개 값" in str(item.value)]
+
+
+def test_the_change_count_lives_only_in_the_grid_toolbar(grid_calls: Calls) -> None:
+    """고친 수는 도구 막대 「적용 전 변경 (n)」 하나가 말하고 작업 줄은 거듭 적지 않는다(UI-TXT-07).
+    양식과 같은 값으로 되돌린 칸은 초안에서 빠져 수도 0 이다(같은 값 적용으로 리비전만 오르는 일을
+    막는 규칙과 같은 뜻)."""
     app = AppTest.from_string(
         _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-change-count"), default_timeout=60
     )
     app = _open_tab(app, "효율")
-    assert _change_lines(app) == []
+    assert _change_count(grid_calls) == 0
     assert app.button(key="capa_run_rate_editor_apply").disabled
 
     app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.5")
-    assert _change_lines(app) == ["**변경사항 확인** &nbsp;1개 값 · 1개 행"]
+    assert _change_count(grid_calls) == 1
+    assert _action_row_lines(app) == []
     assert not app.button(key="capa_run_rate_editor_apply").disabled
 
     app = _grid_write(app, grid_calls, "Process-A\x1f양산", "202608", "0.9")
-    assert _change_lines(app) == []
+    assert _change_count(grid_calls) == 0
     assert app.button(key="capa_run_rate_editor_apply").disabled

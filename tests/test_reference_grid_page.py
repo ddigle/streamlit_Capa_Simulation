@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from alert_marks import flashed, infos, successes
+from alert_marks import alert_notes, flashed, infos, successes
 from edit_grid_fake import (
     FAKE_EVENT_KEY,
     Calls,
@@ -40,9 +40,11 @@ from test_reference_data_page import (
     _walk,
 )
 
+from capa_simulation import alerts
 from capa_simulation.components import page_tabs, reference_grid
 from capa_simulation.components.edit_grid import feed_key
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.month_editor import APPLY_NOTICE
 from capa_simulation.components.tab_marks import pending_segments_style
 from capa_simulation.reference_grid_keys import (
     DATASET_KEY,
@@ -218,6 +220,30 @@ def test_a_grid_draft_stays_when_leaving_and_shows_on_every_page(calls: Calls) -
     assert "기준 정보 · 일수" in app.session_state["probe_marks"]["app_pages/reference_data.py"]
 
 
+_CHIP_PROBE = (
+    '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n'
+    "    from capa_simulation.components.change_summary import session_changes as _changes\n"
+    '    st.session_state["probe_here"] = _changes("reference_data.py", hrefs={})\n'
+    '    st.session_state["probe_there"] = _changes("home.py", hrefs={})\n'
+)
+
+
+def test_a_hand_edited_draft_is_named_as_an_unapplied_edit_in_the_chip(calls: Calls) -> None:
+    """칸을 손으로 고친 일을 머리 칩 · 판이 「붙여넣기 대기」 라 부르지 않는다(UI-DAT-11). 화면을
+    떠나도 남으므로 묶음은 「화면을 떠나면 사라짐」 이 아니라 「저장 안 함」 이다."""
+    script = TWO_PROCESS_TEST_SCRIPT.replace(
+        '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n', _CHIP_PROBE, 1
+    )
+    assert script != TWO_PROCESS_TEST_SCRIPT
+    app = _open(script)
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+
+    for probe in ("probe_here", "probe_there"):
+        [item] = app.session_state[probe]
+        assert (item["group"], item["page"]) == ("keep", "기준 정보")
+        assert (item["top"], item["text"]) == ("기준 정보 적용 전", "적용 전 편집 · 일수")
+
+
 def test_a_fractional_day_is_a_cell_error_and_apply_stops_on_it(calls: Calls) -> None:
     """일수는 정수만 받는다 — 30.5 는 칸 오류로 남고(옛 편집표는 말없이 30), 「변경사항 적용」 은
     고칠 칸을 알리고 멈춘다."""
@@ -266,9 +292,7 @@ def test_apply_raises_the_revision_and_drops_only_that_tables_draft(calls: Calls
     assert after["revision"] == revision + 1
     assert after["content_token"] != token
     assert _scenario_table(app, "RQ_RUN_DAY")["RUN_DAY"].tolist() == [20.0]
-    assert any(
-        "RQ_RUN_DAY 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in successes(app)
-    )
+    assert any("일수 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in successes(app))
     assert _draft(app) is None
     assert last(calls, FEED)["counts"]["cells"] == 0
     assert app.button(key=APPLY).disabled
@@ -346,7 +370,7 @@ def test_undo_and_redo_go_through_the_server_history(calls: Calls) -> None:
 
 
 def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: Calls) -> None:
-    """작업 줄(적용·붙여넣기·편집 취소·변경 수)은 표 위다 — 「편집 취소」 는 그 표 초안만 버린다."""
+    """작업 줄(적용·붙여넣기·편집 취소)은 표 위다 — 「편집 취소」 는 그 표 초안만 버린다."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     assert app.button(key=APPLY).disabled
     assert "capa_run_day_editor_discard" not in {button.key for button in app.button}
@@ -354,10 +378,20 @@ def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: C
     elements = _walk(app.main)
     keys = [getattr(node, "key", None) for node in elements]
     assert keys.index(APPLY) < keys.index("capa_run_day_editor_discard")
-    assert "**변경사항 확인** &nbsp;1개 값 · 1개 행" in {str(item.value) for item in app.markdown}
     app.button(key="capa_run_day_editor_discard").click().run()
     assert not app.exception
     assert _draft(app) is None
+
+
+def test_the_locked_apply_says_why_and_the_open_one_says_what_it_does(calls: Calls) -> None:
+    """잠긴 「변경사항 적용」 풍선은 까닭을 말하고(UI-INP-07), 풀리면 하는 일을 말한다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    assert app.button(key=APPLY).disabled
+    assert app.button(key=APPLY).help == reference_grid.APPLY_LOCKED_HELP
+
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    assert not app.button(key=APPLY).disabled
+    assert app.button(key=APPLY).help == APPLY_NOTICE
 
 
 def test_the_grid_host_holds_tab_clicks_like_the_other_edit_grids() -> None:
@@ -764,6 +798,61 @@ def _drafts_in_two_tables(calls: Calls) -> AppTest:
     return _choose(app, "일수")
 
 
+# 앱 머리(칩 · 탭 점 · 사이드바 줄)처럼 페이지 본문보다 **먼저** 세는 자리 — 마지막 회차가 본 값.
+_HEAD_COUNT_PROBE = (
+    "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels as _labels\n"
+    '    st.session_state["probe_head"] = _labels("reference_data.py")\n'
+    '    st.session_state["probe_runs"] = st.session_state.get("probe_runs", 0) + 1\n'
+    '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n'
+)
+
+
+def _head_count_script(script: str) -> str:
+    probed = script.replace(
+        '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n',
+        _HEAD_COUNT_PROBE,
+        1,
+    )
+    assert probed != script
+    return probed
+
+
+def test_the_head_stops_counting_a_draft_the_page_dropped_on_a_source_change(
+    calls: Calls,
+) -> None:
+    """기간 등 원본이 바뀌어 본문이 초안을 버리면 앱 머리는 이미 그 초안을 세어 그렸다 — 다음 조작을
+    기다리지 않고 그 회차에 한 번 다시 돌아 칩 · 탭 점 · 사이드바 줄을 함께 걷는다(UI-DAT-11)."""
+    app = _open(_head_count_script(TWO_PROCESS_TEST_SCRIPT))
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    assert app.session_state["probe_head"] == ["기준 정보 · 일수"]
+
+    runs = app.session_state["probe_runs"]
+    app.session_state["reference_data_source_token"] = "다른 원본"
+    app.run()
+    assert not app.exception
+    assert _draft(app) is None
+    assert app.session_state["probe_head"] == []
+    assert app.session_state["probe_runs"] == runs + 2
+
+    # 다시 돈 회차가 되풀이되지 않는다.
+    app.run()
+    assert app.session_state["probe_runs"] == runs + 3
+
+
+def test_an_own_apply_does_not_spend_one_more_run_on_the_head(calls: Calls) -> None:
+    """이 화면이 적용한 표의 초안은 머리가 이미 빼고 센다 — 적용 뒤 회차를 한 번 더 돌지 않는다."""
+    app = _open(_head_count_script(REAL_APPLY_TEST_SCRIPT))
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    runs = app.session_state["probe_runs"]
+
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    assert _draft(app) is None
+    assert app.session_state["probe_head"] == []
+    # 누른 회차 · 적용의 `st.rerun()` 회차 둘뿐이다.
+    assert app.session_state["probe_runs"] == runs + 2
+
+
 def test_another_pages_apply_keeps_the_drafts_of_the_tables_it_did_not_touch(
     calls: Calls,
 ) -> None:
@@ -795,12 +884,29 @@ def test_another_pages_apply_keeps_the_drafts_of_the_tables_it_did_not_touch(
     assert toast is None or DROPPED_TOAST.format(n="1") not in toast["text"]
 
 
+def _sent_drop_notices(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """버림 알림이 표지로 나갈 때마다 id 를 적는다 — 앱 시험의 트리는 마지막 회차만 보여, 다시
+    돌기 전에 나간 표지는 여기서만 잡힌다. 표지 하나가 알림창 · Alarm 의 한 번이다."""
+    sent: list[str] = []
+    remember_sent = alerts.remember_sent
+
+    def spy(key: str, note: alerts.AlertNote) -> None:
+        if "다른 화면의 적용으로" in str(note.get("full")):
+            sent.append(str(note.get("id")))
+        remember_sent(key, note)
+
+    monkeypatch.setattr(alerts, "remember_sent", spy)
+    return sent
+
+
 def test_another_pages_apply_that_changed_a_table_drops_only_its_draft_and_says_so(
-    calls: Calls,
+    calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """다른 화면의 적용이 일수 표 내용도 바꿨다 — 그 표 초안만 버리고(옛 양식에 붙은 값이다) 작업
-    줄에 한 번 알린다. 효율 초안은 남는다."""
+    줄에 한 번 알린다. 효율 초안은 남는다. 버린 초안을 앱 머리에서 걷으려 다시 도는 회차가 있어도
+    표지는 하나다 — 둘이면 Alarm 줄이 「×2」 로 센다."""
     app = _drafts_in_two_tables(calls)
+    sent = _sent_drop_notices(monkeypatch)
 
     app = _other_page_apply(app, run_day=25.0)
     assert _draft(app) is None
@@ -810,17 +916,23 @@ def test_another_pages_apply_that_changed_a_table_drops_only_its_draft_and_says_
         "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집(일수 1칸)을 버렸습니다" in text
         for text in warnings
     ), warnings
+    assert len(sent) == 1, sent
+    assert [
+        note["id"] for note in alert_notes(app) if "다른 화면의 적용으로" in note["full"]
+    ] == sent
     app.run()
     assert not any("다른 화면의 적용으로" in str(item.value) for item in app.warning)
+    assert len(sent) == 1, sent
 
 
 def test_the_dropped_notice_survives_the_rerun_of_a_run_that_emptied_a_draft(
-    early_calls: Calls,
+    early_calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """다른 화면의 적용이 일수 표를 바꾼 회차에 효율 초안을 비우는 op(Ctrl+Z)도 함께 왔다 — 반영이
-    초안을 비워 그 회차가 다시 돌아도(C1) 일수 초안을 버렸다는 알림은 다시 돈 회차에 선다. 그다음
-    회차에는 없다."""
+    초안을 비워 그 회차가 다시 돌아도(C1) 일수 초안을 버렸다는 알림은 다시 돈 회차에 한 번 선다.
+    그다음 회차에는 없다."""
     app = _drafts_in_two_tables(early_calls)
+    sent = _sent_drop_notices(monkeypatch)
     gen = app.session_state[history_key("RQ_RUN_RATE")]["gen"]
     app.session_state["probe_revision"] = 2
     app.session_state["probe_token"] = "test-capacity-other-page-apply-carry"
@@ -835,9 +947,11 @@ def test_the_dropped_notice_survives_the_rerun_of_a_run_that_emptied_a_draft(
         "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집(일수 1칸)을 버렸습니다" in text
         for text in warnings
     ), warnings
+    assert len(sent) == 1, sent
     app.run()
     assert not app.exception
     assert not any("다른 화면의 적용으로" in str(item.value) for item in app.warning)
+    assert len(sent) == 1, sent
 
 
 def test_discarding_right_after_an_edit_drops_the_batched_op_without_a_retry_toast(

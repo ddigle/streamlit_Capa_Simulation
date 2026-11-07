@@ -197,7 +197,6 @@
         {"op": "key", "key": "Escape"}
       ],
       "targets": {
-        "ref_change_notice": "text:변경사항 확인",
         "ref_tab_dot": "button:설비대수 가용",
         "ref_apply": "button:변경사항 적용",
         "ref_cancel": "button:편집 취소",
