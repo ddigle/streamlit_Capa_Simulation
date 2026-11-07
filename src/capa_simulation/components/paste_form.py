@@ -139,12 +139,14 @@ def render_paste_window(
     size_key: str = PASTE_SIZE_KEY,
     lock: bool = True,
     resizable: bool = True,
+    empty_why: str = PASTE_EMPTY_WHY,
 ) -> None:
     """이 팝업의 크기 조절 손잡이와 「적용」 잠금을 세운다 — 자리를 먹지 않는다. 알림 칸보다 먼저
     부른다(그 칸을 자리에서 빼는 서식과 팝업이 뜬 뒤 표지를 알림 칸에 넘기는 일이 여기 있다).
 
     `size_key` 는 그 브라우저가 크기를 기억하는 칸 이름이고, `lock` 이면 「적용」 단추를 글 칸 ·
     확인 체크로 잠근다. `resizable` 을 끄면 손잡이를 달지 않는다(글 칸이 없는 확인 창).
+    `empty_why` 는 글 칸이 빈 동안의 까닭 풍선이다 — 표가 아닌 것을 받는 창이 제 말로 준다.
     """
     _PASTE_WINDOW(
         key=f"capa_paste_host_{key}",
@@ -155,7 +157,7 @@ def render_paste_window(
             "storagePrefix": PASTE_SIZE_STORAGE_PREFIX,
             "handleLabel": PASTE_HANDLE_LABEL,
             "lock": lock,
-            "reasons": {"empty": PASTE_EMPTY_WHY, "confirm": PASTE_CONFIRM_WHY},
+            "reasons": {"empty": empty_why, "confirm": PASTE_CONFIRM_WHY},
         },
     )
 
@@ -214,15 +216,16 @@ def render_paste_form(
     side_actions: Callable[[], None] | None = None,
     label_visible: bool = False,
     in_box: bool = False,
+    empty_why: str = PASTE_EMPTY_WHY,
 ) -> PasteSubmit | None:
     """붙여넣기 창 본문 하나. 「적용」 을 누른 회차에만 입력을 돌려준다.
 
     거부는 부르는 쪽이 `refuse_paste(key, 글)` 로 낸다. `opening` 은 창을 연 회차의 알림 글
     (`announce_on_open`), `confirm_key` · `confirm_label` 은 전체 교체 확인 체크, `side_actions` 는
     「적용」 옆에 더 세울 단추(「닫기」)다. `in_box` 는 창 제목이 없는 표 상자 안 칸이다
-    (`paste_action_row`).
+    (`paste_action_row`). `empty_why` 는 글 칸이 빈 동안 잠긴 「적용」 의 까닭 풍선이다.
     """
-    render_paste_window(key, size_key=size_key)
+    render_paste_window(key, size_key=size_key, empty_why=empty_why)
     announce_on_open(text_key, key, opening)
     text = paste_text_area(key, text_key=text_key, label=text_label, label_visible=label_visible)
     confirmed = True

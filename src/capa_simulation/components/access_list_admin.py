@@ -65,6 +65,8 @@ TABLE_REFUSED_MESSAGE: Final = (
     "칸이 여럿인 표라 넣지 않았습니다 — 머리 줄에 loginid 칸이 있어야 그 칸만 읽습니다"
 )
 ADD_LOCKED_WHY: Final = "접속 명단을 읽은 뒤에 넣을 수 있습니다 — 「다시 읽기」"
+# 글 칸이 빈 동안 잠긴 「명단에 넣기」 의 까닭 풍선 — 이 창은 표가 아니라 loginid 목록을 받는다.
+ADD_EMPTY_WHY: Final = "loginid 를 넣으면 누를 수 있습니다."
 REMOVE_HELP: Final = "고른 사람을 명단에서 뺍니다. 그 사람의 열린 탭은 다음 조작에 닫힙니다."
 # 「지우기」 고르기 칸의 이름 — 라벨을 접은 칸이라 자리표시 글로 보인다.
 REMOVE_PICKER_LABEL: Final = "지울 사람"
@@ -183,6 +185,7 @@ def _add_dialog() -> None:
         apply_label="명단에 넣기",
         # 이 창에서 무엇을 넣는지 말하는 글은 라벨뿐이라 보인다(창 제목은 「접속 명단 · 추가」).
         label_visible=True,
+        empty_why=ADD_EMPTY_WHY,
     )
     if submit is None:
         return

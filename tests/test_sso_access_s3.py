@@ -66,7 +66,7 @@ from capa_simulation.auth.access import (
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, load_config
 from capa_simulation.auth.identity import Identity, IdentityProblem, session_check
 from capa_simulation.auth.tokens import issue_session
-from capa_simulation.components import access_list_admin, sso_identity, sso_status
+from capa_simulation.components import access_list_admin, paste_form, sso_identity, sso_status
 from capa_simulation.io import s3_small
 from capa_simulation.io.s3_small import S3Failure, S3Target
 
@@ -1938,6 +1938,26 @@ def test_the_paste_window_adds_people(
     text = _flash_text(app)
     assert "2명을 넣었습니다" in text and "이미 있음 1" in text and "꼴이 아니라 뺌 1" in text
     assert_absent(text, OTHER, GONE, "bad")
+
+
+def test_the_locked_add_says_it_takes_loginids(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """빈 칸에 잠긴 「명단에 넣기」 풍선은 이 창이 받는 것(loginid)을 말한다 — 공용 글 「표를
+    붙여넣으면」 은 머리 없는 표를 거절하는 이 창과 맞지 않는다."""
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(paste_form, "_PASTE_WINDOW", lambda **kwargs: sent.append(kwargs))
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    app = _admin_app(cfg, monkeypatch)
+
+    app = _button(app, "admin_area_access_list_open_add").click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    (window,) = [item for item in sent if item["key"].endswith(access_list_admin.ADD_FORM_KEY)]
+    assert window["data"]["reasons"]["empty"] == access_list_admin.ADD_EMPTY_WHY
+    assert "loginid" in access_list_admin.ADD_EMPTY_WHY
+    assert "표" not in access_list_admin.ADD_EMPTY_WHY
 
 
 def test_the_paste_window_refuses_nothing_readable(
