@@ -265,6 +265,8 @@ UNDO_PRESS_KEY: Final = "equipment_master_undo_press_v1"
 DISCARD_POPOVER_KEY: Final = "equipment_master_discard_v1"
 DISCARD_CONFIRM_KEY: Final = "equipment_master_discard_confirm_v1"
 SAVE_RESULT_KEY: Final = "equipment_master_save_result_v1"
+# 불러오기 · 목록 비우기 결과 칸 — 고칠 입력이 없어 알림창 · Alarm 으로만 낸다(`_load_result`).
+LOAD_RESULT_KEY: Final = "equipment_master_load_result_v1"
 # 불러오기 줄 끝 메뉴 — 팝오버 key 꼬리는 메뉴 세대다. 「한꺼번에 넣기」 가 세대를 올려 메뉴가 팝업
 # 뒤에 남지 않고 닫힌 채 다시 선다(`on_change` 로 여닫힘을 받으면 메뉴를 열 때마다 앱이 다시 돈다).
 DATA_MENU_KEY: Final = "equipment_master_data_menu_v1"
@@ -359,6 +361,13 @@ def _result(kind: FlashKind, text: str) -> None:
     글에 설비 시나리오·호기 이름이 들어 물결표를 막는다(「NEW~01~」 가 지움선이 되지 않게).
     """
     queue_flash(SAVE_RESULT_KEY, markdown_safe_tildes(text), kind=kind)
+
+
+def _load_result(kind: FlashKind, text: str) -> None:
+    """불러오기 · 목록 비우기 결과 — 표 안 띠가 아니라 알림창 · Alarm 으로만(설계 규칙 UI-NTF-03).
+    띠는 닫을 때까지 남아 표를 밀어내고 그 뒤 호기를 더해도 옛 대수를 적었다. 글에 호기 이름 ·
+    조건 값이 들어 구두점을 막는다."""
+    queue_flash(LOAD_RESULT_KEY, literal_markdown(text), kind=kind, popup_only=True)
 
 
 # ------------------------------------------------------------------ 표 조건·모양
@@ -744,13 +753,15 @@ def _on_load(request: grid_component.LoadRequest) -> None:
         text += f"({result.already:,}대는 이미 목록에 있음)"
     if result.cut or (request.kind == "all" and len(index.live) > GRID_ROW_LIMIT):
         text = f"앞 {GRID_ROW_LIMIT:,}대만 불러왔습니다 — 공정·설비명으로 좁혀 불러오세요"
-    queue_grid_toast("grid", text)
+        _load_result("warning", text)
+        return
+    _load_result("success" if result.added else "info", text)
 
 
 def _on_clear() -> None:
     _store_loaded(())
     st.session_state[MISSING_KEY] = ()
-    queue_grid_toast("grid", "목록을 비웠습니다 — 고친 내용은 그대로 남습니다")
+    _load_result("info", "목록을 비웠습니다 — 고친 내용은 그대로 남습니다")
 
 
 def _open_detail(row_id: str) -> None:
@@ -1205,7 +1216,6 @@ def save_button_help(basis: EquipmentSaveBasis | None, layout: LayoutMode) -> st
 def _render_save_section(
     repository: DuckDBEquipmentRepository,
     *,
-    view: GridView,
     basis: EquipmentSaveBasis | None,
     session: EquipmentSession,
     context: GridContext,
@@ -1219,31 +1229,26 @@ def _render_save_section(
         st.session_state[_NOTE_KEY] = ""
     st.text_input("변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER)
     render_saved_by_field(SAVE_FIELDS_PREFIX, persist=True)
-    counts = change_counts(view)
-    errors = counts.errors
-    # 무엇이 어디로 저장되나는 「리비전 저장」 풍선이 말한다 — 이 칸은 지금 저장 못 하는 까닭만(늘
-    # 서 있는 칸이라 아래 단추 줄의 자리가 밀리지 않는다).
-    if session.legacy_trace_count:
-        hint = legacy_trace_message(session.legacy_trace_count)
-    elif errors:
-        hint = f"오류 {errors:,}개를 고쳐야 저장됩니다"
-    else:
-        hint = "" if _has_changes(frames) else NOTHING_TO_SAVE
+    # 수 칸 · 「저장하기 전에 고칠 것」 줄이 고친 것 없음 · 오류 수를 이미 말하고 저장 뒤의 거부는
+    # 단추 아래에 선다 — 이 칸은 다른 자리에 없는 옛 배포 흔적만(늘 서 있는 칸이라 아래 단추 줄의
+    # 자리가 밀리지 않는다, 설계 규칙 UI-TXT-07).
     with st.container():
-        if hint:
-            st.caption(hint)
+        if session.legacy_trace_count:
+            st.caption(legacy_trace_message(session.legacy_trace_count))
     has_fab = pending_fab_layout() is not None
     floor_pending = bool(
         pending_floor_canvases() or pending_floor_marks() or pending_floor_group_labels()
     )
     with st.container(horizontal=True, gap="small"):
+        # 「리비전 저장」 처럼 잠그지 않는다 — 출납은 300ms 묶음이라 이 회차의 단계 수는
+        # 브라우저보다 늦고, 콜백이 출납을 먼저 반영한 뒤 판정해 없으면 그 칸 머리 토스트가
+        # 알린다(설계 규칙 UI-INP-07 의 제출 단추).
         st.button(
             UNDO_LABEL,
             key=UNDO_BUTTON_KEY,
             icon=":material/undo:",
             on_click=_undo_step,
             args=(context, layout, current_generation(UNDO_PRESS_KEY)),
-            disabled=not grid_undo_steps(),
         )
         discard_popover(
             label=DISCARD_LABEL,
@@ -1428,7 +1433,6 @@ def render_equipment_master_tab(
             )
             _render_save_section(
                 repository,
-                view=view,
                 basis=basis,
                 session=session,
                 context=context,
@@ -1470,6 +1474,9 @@ def render_equipment_master_tab(
     elif side == SIDE_CHANGES:
         drawn.add("changes")
     settle_grid_toasts(drawn)
+    # 불러오기 결과는 알림창으로만 가 그릴 것이 없다 — 탭 맨 끝에 둔다. 표 위 알림 칸에 두면 그 칸이
+    # 늘 서서 편집기 영역이 틈 하나만큼 내려간다.
+    render_flash(LOAD_RESULT_KEY)
     # 작은 편집표 제출은 화면의 모든 위젯을 그린 뒤 처리한다(`st.rerun()` 으로 끝난다).
     if submit is not None:
         submit()

@@ -2329,8 +2329,7 @@ def _render_current_data_downloads(
         help=f"{edit_note} 고치지 않고 그대로 붙여넣어도 통과합니다.",
     )
     today = date.today()
-    for column, label, payload, slug, key, frame in zip(
-        st.columns(3),
+    for label, payload, slug, key, frame in zip(
         _TARGETS,
         payloads,
         ("equipment_master", "equipment_baseline", "equipment_downtime"),
@@ -2342,21 +2341,21 @@ def _render_current_data_downloads(
         (buffered_equipment, buffered_baseline, buffered_downtime),
         strict=True,
     ):
-        with column:
-            # 빈 표도 막지 않는다. 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이고, 그대로
-            # 붙여넣으면 0행으로 읽혀 아무것도 바꾸지 않는다.
-            render_csv_download(
-                data=payload,
-                file_name=current_data_file_name(
-                    slug,
-                    latest_snapshot=latest_snapshot,
-                    edited=edited,
-                    today=today,
-                    scenario_name=scenario_name,
-                ),
-                key=key,
-                label=f"{label} 현재 데이터 · {len(frame):,}행",
-            )
+        # 빈 표도 막지 않는다. 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이고, 그대로
+        # 붙여넣으면 0행으로 읽혀 아무것도 바꾸지 않는다. 양식 단추처럼 세로로 쌓는다 — 나란히
+        # 두면 칸 폭에 이름이 잘려 행 수가 「64…」 로 읽혔다(설계 규칙 UI-ACC-02).
+        render_csv_download(
+            data=payload,
+            file_name=current_data_file_name(
+                slug,
+                latest_snapshot=latest_snapshot,
+                edited=edited,
+                today=today,
+                scenario_name=scenario_name,
+            ),
+            key=key,
+            label=f"{label} 현재 데이터 · {len(frame):,}행",
+        )
 
 
 def _example_baseline_rows(baseline: pd.DataFrame) -> pd.DataFrame:
@@ -2668,8 +2667,17 @@ def _editor_view(
     filters: tuple[str, ...],
     locked: tuple[str, ...],
     label: str,
-) -> tuple[TableView, TableView]:
-    """(화면에 적용된 보기, 방금 고른 보기). 둘은 「보기 적용」 전까지 다를 수 있다."""
+    apply_key: str,
+) -> tuple[TableView, TableView, bool]:
+    """(화면에 적용된 보기, 방금 고른 보기, 「보기 적용」 누름). 두 보기는 「보기 적용」 전까지
+    다를 수 있다. 단추는 고르는 칸이 든 펼침 맨 끝에 선다(설계 규칙 UI-LAY-03) — 빈 표는 펼침이
+    없어 누를 것도 없다."""
+    pressed = False
+
+    def apply_button() -> None:
+        nonlocal pressed
+        pressed = st.button("보기 적용", key=apply_key)
+
     requested = render_table_view_controls(
         data,
         key_prefix=prefix,
@@ -2678,13 +2686,14 @@ def _editor_view(
         filter_columns=filters,
         locked_columns=locked,
         label=label,
+        footer=apply_button,
     )
     view_key = f"{key}_applied_view"
     applied = st.session_state.get(view_key)
     if not isinstance(applied, TableView):
         applied = requested
         st.session_state[view_key] = applied
-    return applied, requested
+    return applied, requested, pressed
 
 
 @dataclass(frozen=True)
@@ -2765,29 +2774,30 @@ def _selectable_editor(
 
 
 def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | None:
-    """작은 편집표 **위** 세 단추(2026-09-29 — 작업 단추는 표 위). 누른 것의 이름을 돌려준다. 단추
+    """작은 편집표 **위** 작업 줄의 세 단추(2026-09-29 — 작업 단추는 표 위) — 부르는 쪽의 가로 칸
+    안에 선다(「편집본에 적용」 과 한 줄, 설계 규칙 UI-LAY-11). 누른 것의 이름을 돌려준다. 단추
     값은 표보다 먼저 만들어도 같은 회차의 편집·선택이 함께 들어온다. 필터·삭제·저장의 관계는
     가용설비 현황 Guide 가 말한다. `delete_locked` 를 주면 「선택 행 삭제」 를 끄고 그 까닭을
     풍선으로 보인다(낡은 세션의 비가동 일정).
     """
-    with st.container(horizontal=True, gap="small"):
-        matching = st.button(
-            "필터에 맞는 행 모두 선택",
-            key=f"equipment_{slug}_select_matching_v1",
-            icon=":material/checklist:",
-        )
-        clear = st.button(
-            "선택 해제",
-            key=f"equipment_{slug}_select_clear_v1",
-            icon=":material/deselect:",
-        )
-        delete = st.button(
-            "선택 행 삭제",
-            key=f"equipment_{slug}_delete_selected_v1",
-            icon=":material/delete:",
-            disabled=delete_locked is not None,
-            help=literal_markdown(delete_locked) if delete_locked is not None else None,
-        )
+    matching = st.button(
+        "모두 선택",
+        key=f"equipment_{slug}_select_matching_v1",
+        icon=":material/checklist:",
+        help="표 보기 설정의 필터에 맞는 행을 모두 고릅니다.",
+    )
+    clear = st.button(
+        "선택 해제",
+        key=f"equipment_{slug}_select_clear_v1",
+        icon=":material/deselect:",
+    )
+    delete = st.button(
+        "선택 행 삭제",
+        key=f"equipment_{slug}_delete_selected_v1",
+        icon=":material/delete:",
+        disabled=delete_locked is not None,
+        help=literal_markdown(delete_locked) if delete_locked is not None else None,
+    )
     if matching:
         return SELECT_MATCHING
     if clear:
@@ -2802,22 +2812,33 @@ def _current_selection() -> dict[str, frozenset[RowKey]]:
     return dict(saved) if isinstance(saved, dict) else {}
 
 
-def _deletion_message(plan: DeletionPlan) -> str:
-    """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠지는지. 호기 지우기는 설비 마스터
-    표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
+# 「삭제 확정」 풍선이자 결과 알림의 끝 문장 — 확정은 편집본만 바꾼다.
+DELETE_CONFIRM_HELP = (
+    "확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 리비전에 반영됩니다."
+)
+
+
+def _deletion_value(plan: DeletionPlan) -> str:
+    """삭제 확인 줄의 값 한 줄 — 무엇을 몇 건 지우나(설계 규칙 UI-NTF-09 — 되돌릴 수 있는 삭제라
+    문장 · 대상 목록을 늘어놓지 않는다)."""
     count = plan.target_count
-    # 경고 상자·알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명마다 구두점을 막는다(물결표·
-    # 별표).
+    if plan.target == BASELINE_TARGET:
+        return f"기존 보유대수 {count:,}행 지움"
+    return f"비가동 일정 {count:,}건 지움"
+
+
+def _deletion_message(plan: DeletionPlan) -> str:
+    """작은 편집표(기존 보유대수·비가동 일정)에서 무엇이 얼마나 빠졌는지 — 「삭제 확정」 결과 알림.
+    호기 지우기는 설비 마스터 표의 출납(`delete` — 딸린 비가동 함께, 토스트)이다."""
+    count = plan.target_count
+    # 알림 칸(마크다운)으로만 간다 — 키에 든 설비명·공정명마다 구두점을 막는다(물결표·별표).
     samples = ", ".join(literal_markdown(key) for key in plan.sample_keys())
     more = " 외" if count > len(plan.sample_keys()) else ""
     if plan.target == BASELINE_TARGET:
-        head = f"기존 보유대수 {count:,}행을 편집본에서 지웁니다"
+        head = f"기존 보유대수 {count:,}행을 편집본에서 지웠습니다"
     else:
-        head = f"비가동 일정 {count:,}건을 편집본에서 지웁니다"
-    return (
-        f"{head}. 대상: {samples}{more}. 확정해도 「저장 전 변경」 의 「리비전 저장」 을 눌러야 새 "
-        "리비전에 반영됩니다."
-    )
+        head = f"비가동 일정 {count:,}건을 편집본에서 지웠습니다"
+    return f"{head}. 대상: {samples}{more}. {DELETE_CONFIRM_HELP}"
 
 
 def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
@@ -2829,13 +2850,14 @@ def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool, bool]:
         # 계획은 **지금 편집본**으로 다시 세운다. 대기하는 동안 편집이 있었으면 수가 바뀐다.
         plan = plan_deletion(frames, target, keys)
         if plan.target_count:
-            st.warning(_deletion_message(plan), icon=":material/delete:")
-            with st.container(horizontal=True, gap="small"):
+            with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+                st.caption(_deletion_value(plan), width="content")
                 confirm = st.button(
                     "삭제 확정",
                     key=CONFIRM_DELETE_BUTTON_KEY,
                     type="primary",
                     icon=":material/delete_forever:",
+                    help=DELETE_CONFIRM_HELP,
                 )
                 cancel = st.button("취소", key=CANCEL_DELETE_BUTTON_KEY, icon=":material/close:")
     removed = st.session_state.get(LAST_REMOVED_KEY)
@@ -2886,15 +2908,14 @@ def _apply_bulk_actions(
             else:
                 queue_flash(
                     _NOTICE_KEY,
-                    "선택한 행이 없습니다. 표의 ‘선택’ 칸을 켜거나 "
-                    "‘필터에 맞는 행 모두 선택’을 누른 뒤 지우세요.",
+                    "선택한 행이 없습니다. 표의 ‘선택’ 칸을 켜거나 ‘모두 선택’을 누른 뒤 지우세요.",
                     kind="info",
                 )
     elif confirm and isinstance(pending, tuple):
         target, keys = pending
         plan = plan_deletion(frames, target, keys)
         _store_changed_buffer(apply_deletion(frames, plan))
-        done = _deletion_message(plan).replace("지웁니다", "지웠습니다", 1)
+        done = _deletion_message(plan)
         note_notice(notices, _NOTICE_KEY, done, kind="info")
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
@@ -3290,6 +3311,8 @@ def render_small_editor(
     selection = _current_selection()
     # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
     with st.container(key=f"equipment_small_{slug}_editor_v1"):
+        # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 「보기 적용」 은 고르는 칸이 든 펼침 안에
+        # 선다(`_editor_view`).
         with st.container(horizontal=True, gap="small"):
             # 적용하지 않은 편집 · 필수 칸을 비운 새 줄이 버려지는 것은 누르기 전에 알아야 해 이
             # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
@@ -3300,18 +3323,21 @@ def render_small_editor(
                 icon=":material/check:",
                 help=f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}",
             )
-            view_clicked = st.button("보기 적용", key=f"equipment_{slug}_view_apply_v1")
+            action = _selection_buttons(
+                slug, delete_locked=None if baseline_table else delete_locked
+            )
         confirm_delete, cancel_delete, undo_delete = _render_bulk_delete_status(frames)
+        view_apply_key = f"equipment_{slug}_view_apply_v1"
         if baseline_table:
-            view, requested = _editor_view(
+            view, requested, view_clicked = _editor_view(
                 frames[0],
                 key=BASELINE_EDITOR_KEY,
                 prefix="equipment_baseline_view",
                 filters=("공정", "분류"),
                 locked=("공정", "분류", "기존보유대수"),
                 label="기존 보유대수 · 표 보기 설정",
+                apply_key=view_apply_key,
             )
-            action = _selection_buttons("baseline")
             edited, checked = _selectable_editor(
                 frames[0],
                 view,
@@ -3332,16 +3358,16 @@ def render_small_editor(
             )
         else:
             downtime = frames[2]
-            view, requested = _editor_view(
+            view, requested, view_clicked = _editor_view(
                 downtime,
                 key=DOWNTIME_EDITOR_KEY,
                 prefix=DOWNTIME_VIEW_PREFIX,
                 filters=(EQUIPMENT_ID_COLUMN, "비가동유형"),
                 locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
-                label="운영 비가동 일정 · 표 보기 설정",
+                label="비가동 일정 · 표 보기 설정",
+                apply_key=view_apply_key,
             )
             types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
-            action = _selection_buttons("downtime", delete_locked=delete_locked)
             edited, checked = _selectable_editor(
                 downtime,
                 view,

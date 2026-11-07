@@ -20,7 +20,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -86,6 +86,7 @@ def render_table_view_controls(
     locked_columns: Sequence[str] = (),
     label: str = "표 보기 설정",
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
+    footer: Callable[[], None] | None = None,
 ) -> TableView:
     """컬럼 선택과 행 필터를 그리고 그 결과를 돌려준다.
 
@@ -95,6 +96,8 @@ def render_table_view_controls(
     `value_labels` 는 행 필터 선택지의 **보이는 글자**만 바꾼다(공정 표시명, `column_filter` 와
     같은 모양 — 겹치는 글자는 `ProcessLabels.unique_format_func` 로 가른다). 옵션 값·세션
     저장값·거르는 값은 원본이고 편집표의 칸은 건드리지 않는다.
+
+    `footer` 는 펼침 맨 끝에 그릴 것이다(그 보기를 표에 거는 단추 — 고르는 칸과 한 자리).
     """
     if data.empty:
         return TableView(data)
@@ -149,6 +152,8 @@ def render_table_view_controls(
                         persist_state="session",
                         width=220,
                     )
+        if footer is not None:
+            footer()
 
     visible = data
     for column, chosen in selections.items():

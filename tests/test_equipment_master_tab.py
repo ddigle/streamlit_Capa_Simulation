@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, place_errors, successes
+from alert_marks import alert_notes, flashed, place_errors, successes
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
@@ -376,7 +376,9 @@ def test_the_history_and_downloads_render_in_the_tab(tmp_path: Path, grid: Calls
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     app.button(key=SAVE_BUTTON_KEY).click().run()
-    # 메뉴 「엑셀·CSV」 — 양식 셋 + 현재 데이터 셋.
+    # 메뉴 「엑셀·CSV」 — 양식 셋 + 현재 데이터 셋. 나란히 칸에 넣지 않고 쌓는다 — 칸 폭에 이름이
+    # 잘려 행 수가 「64…」 로 읽혔다(g5-04, 설계 규칙 UI-ACC-02).
+    assert not app.columns
     keys = {button.key for button in app.get("download_button")}
     assert {
         "equipment_master_template_download_v3",
@@ -393,6 +395,71 @@ def test_the_history_and_downloads_render_in_the_tab(tmp_path: Path, grid: Calls
     # 조회의 동작 설명(바로 다시 그림 · 편집본을 바꾸지 않음)은 자리에 늘 두지 않는다 — Guide 가
     # 말한다(설계 규칙 UI-TXT-01).
     assert not any("바로 다시 그립니다" in item.value for item in app.caption)
+
+
+def test_load_and_clear_results_go_to_the_alert_popup_and_leave_the_table_alone(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """불러옴 · 목록 비움 결과는 표 안 띠가 아니라 알림창 · Alarm 이다(설계 규칙 UI-NTF-03) — 띠는
+    닫을 때까지 남아 표 머리를 43px 밀었고 호기를 더한 뒤에도 옛 대수를 적었다(g5-02, 샘플
+    관측). 이미 목록에 있어 새로 든 것이 없으면 성공이 아니라 안내이고, 글의 호기 이름은 꾸밈으로
+    읽히지 않는다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA*01*", "DA-02"))
+    assert not app.exception, app.exception
+    kept = last(grid, emg.GRID_KEY)["toast"]
+    assert kept["undo"]
+
+    def results(kind: str) -> list[str]:
+        # 대역 콜백은 마운트에서 돌아 `send` 의 첫 회차가 알림을 내고 둘째 회차가 다시 보낸다.
+        notes = alert_notes(app, again=True)
+        return [str(note["full"]) for note in notes if note.get("flash") == kind]
+
+    send(app, emg.LOADER_KEY, "clear", {})
+    assert results("info") == ["목록을 비웠습니다 — 고친 내용은 그대로 남습니다"]
+
+    load = {"kind": "names", "ids": ["n:DA*01*"], "missing": [], "label": "DA*01*"}
+    send(app, emg.LOADER_KEY, "load", load)
+    assert results("success") == ["DA*01* — 1대를 새로 불러왔습니다"]
+
+    send(app, emg.LOADER_KEY, "load", load)
+    assert results("info") == ["DA*01* — 0대를 새로 불러왔습니다(1대는 이미 목록에 있음)"]
+    # 표 안 띠는 되돌리기가 달린 넣기 결과 그대로다.
+    assert last(grid, emg.GRID_KEY)["toast"] == kept
+
+
+def test_the_undo_button_stays_live_and_answers_when_there_is_nothing_to_undo(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """「한 단계 되돌리기」 는 「리비전 저장」 과 같은 제출 단추다 — 출납은 300ms 묶음이라 회차의
+    단계 수는 브라우저보다 늦어 잠그면 방금 고친 것을 되돌리는 누름을 놓친다. 잠그지 않고 누른
+    회차에 판정해 그 칸 머리가 알린다(설계 규칙 UI-INP-07, g5-09)."""
+    app = _app(tmp_path / "equipment.duckdb")
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    assert not app.button(key=UNDO_BUTTON_KEY).disabled
+
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+
+    assert not app.exception, app.exception
+    assert last(grid, emg.side_key("changes"))["toast"]["text"] == "되돌릴 고침이 없습니다"
+
+
+def test_the_save_section_repeats_neither_nothing_changed_nor_the_error_count(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """저장 구획은 수 칸 · 칸 글이 이미 말한 것을 거듭하지 않는다(설계 규칙 UI-TXT-07, g5-10). 누른
+    뒤의 거부는 그대로다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+
+    assert not any("고친 것이 없습니다" in item.value for item in app.caption)
+
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+
+    assert not app.exception, app.exception
+    assert any("고친 것이 없습니다" in item.value for item in flashed(app, "info"))
 
 
 def _menu_keys(app: AppTest) -> list[str]:
@@ -604,8 +671,8 @@ def test_a_delivered_toast_does_not_come_back_when_its_mount_returns(
     assert not app.exception, app.exception
     assert last(grid, emg.GRID_KEY)["toast"] is None
 
-    send(app, emg.LOADER_KEY, "clear", {})
-    assert last(grid, emg.GRID_KEY)["toast"]["text"].startswith("목록을 비웠습니다")
+    send_ops(app, grid, {"op": "set", "ids": ["n:DA-01"], "col": "메모1", "text": "메모"})
+    assert last(grid, emg.GRID_KEY)["toast"]["id"]
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_SUMMARY_TAB
     app.run()
     app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB

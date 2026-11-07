@@ -614,13 +614,16 @@ def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
     assert not any(label.endswith("· 표 보기 설정") for label in labels)
     for table, label, prefix in (
         ("기존 보유대수", "기존 보유대수 · 표 보기 설정", "equipment_baseline_view"),
-        ("비가동 일정", "운영 비가동 일정 · 표 보기 설정", "equipment_downtime_view"),
+        ("비가동 일정", "비가동 일정 · 표 보기 설정", "equipment_downtime_view"),
     ):
         app.session_state["equipment_master_table_v1"] = table
         app.run()
         assert not app.exception
         assert label in [expandable.label for expandable in app.status], table
         assert app.multiselect(f"{prefix}_columns").value
+        # 「보기 적용」 은 고르는 칸이 든 펼침 안이다(설계 규칙 UI-LAY-03).
+        view = next(item for item in app.status if item.label == label)
+        assert [button.label for button in view.button] == ["보기 적용"]
     assert len(DuckDBEquipmentRepository(database_path).list_revisions()) == 1
     clear_equipment_repository()
 
@@ -691,7 +694,7 @@ def test_the_empty_page_lists_the_three_inputs_with_counts_and_links(tmp_path: P
     assert not app.exception
     rendered = [element.value for element in app.markdown]
     assert "✗ **설비 마스터** 0건" in rendered
-    assert "✗ **운영 비가동 일정** 0건" in rendered
+    assert "✗ **비가동 일정** 0건" in rendered
     # 저장된 것은 ✓ 로 구분한다. 세 줄 중 이 줄만 tmp DB 에 따라 값이 달라진다.
     assert "✓ **공정별 Cut-off** 1건" in rendered
     # Cut-off 줄에는 본문 설정 단추가 없다 — 「가용설비 설정」 팝업은 사이드바 상자만 연다.

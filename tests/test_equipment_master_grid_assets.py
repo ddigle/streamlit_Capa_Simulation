@@ -90,7 +90,7 @@ def test_the_shift_days_stay_with_their_unit_and_blank_dates_show_the_pattern() 
         "shiftGroup.appendChild(el('span', null, '반입·Qual 일정'))",
         "shiftGroup.appendChild(days)",
         "shiftGroup.appendChild(el('span', null, '일'))",
-        "shiftGroup.appendChild(shift)",
+        "shiftGroup.appendChild(shiftTip.host)",
     ):
         assert part in group, part
     rule = re.search(r"\n\.emg-shift\s*\{(?P<body>[^}]*)\}", CSS)
@@ -807,6 +807,269 @@ def test_the_add_button_says_why_in_a_tip_and_the_panel_keeps_no_line() -> None:
         **off,
         "tip": "아직 추가할 수 없습니다 — 설비명 칸을 확인합니다",
     }
+
+
+_LEAVING_RUNNER = """
+const sent = []
+const data = {
+  mode: 'side', panel: 'new', base: 'b1', columns: [{ name: '설비명', kind: 'name' }],
+  groups: [[0, '호기 정보', 'common', '', [0]]], blank: [''], required: [0],
+  tiers: { required: [[0, false]] }, blocked: false, hint: '',
+  draft: { seq: 6, values: ['EQ-09'] }, checked: 6, errors: {}, warns: {}, locks: {},
+}
+const cleanup = globalThis.__mount({
+  data, parentElement, setTriggerValue() {},
+  setStateValue(name, value) {
+    if (name === 'outbox') sent.push(value.ops.map((op) => op.op))
+  },
+})
+const S = host.__emg
+fire(buttonOf('호기 추가'), 'click')
+results.pressed = sent.length
+for (const handler of host.listeners.focusout) handler({ relatedTarget: null })
+results.focusLeft = sent.length
+cleanup()
+results.left = sent.length
+enqueue(S, { op: 'cell', id: 'a', col: '설비명', text: 'EQ-10' }, [])
+cleanup()
+results.unsentLeft = sent
+process.stdout.write(JSON.stringify(results))
+"""
+
+
+def test_a_mount_leaving_does_not_resend_what_it_already_sent() -> None:
+    """「호기 추가」 는 그 회차가 「새 호기」 마운트를 내리고 칸 고르기를 「호기 상세」 로 적는다.
+    보낸 `add` 의 ack 를 받지 못한 채 내려가는 마운트가 다시 보내면 그 둘째 회차가 고르기 값을
+    브라우저에 적용하기 전의 옛 「새 호기」 를 실어, 눌림은 「호기 상세」 인데 본문은 빈 「새 호기
+    추가」 폼으로 어긋났다(g5-01 — 같은 세션 이어 추가 10번에 6번, 샘플 관측). 초점이 나갈 때도
+    마찬가지다. 아직 보내지 않은 op 는 내려갈 때도 보낸다."""
+    runner = _FAKE_DOM + _MOUNT_LOADER + _LEAVING_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+
+    assert result["pressed"] == 1
+    assert result["focusLeft"] == 1
+    assert result["left"] == 1
+    assert result["unsentLeft"] == [["add"], ["add", "cell"]]
+
+
+_LOCK_TEXT_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  search: [searchLockText(''), searchLockText('  '), searchLockText('WBA')],
+  condition: [conditionLockText(0, 0), conditionLockText(2, 0), conditionLockText(2, 5)],
+  loadAll: [loadAllLockText(641, 641), loadAllLockText(640, 641), loadAllLockText(1000, 1200)],
+  apply: [applyLockText(3, true, ''), applyLockText(0, false, ''), applyLockText(0, true, ''),
+    applyLockText(0, true, '잠긴 칸')],
+  shift: [shiftLockText(4, 7), shiftLockText(0, null), shiftLockText(0, 7),
+    shiftLockText(0, 7, '잠긴 칸'), shiftLockText(0, null, '잠긴 칸'),
+    shiftLockText(4, 7, '잠긴 칸')],
+  held: (() => {
+    const row = (id, ...values) => ({ id, values })
+    const lockedIds = (ids) => (line) => ids.includes(line.id)
+    const pick = (rows, locked) => {
+      const cell = lockedShiftCell(rows, [0, 1], locked)
+      return cell ? [cell[0].id, cell[1]] : null
+    }
+    const dated = row('a', '2026-11-01', '')
+    const empty = row('b', '', '')
+    const other = row('c', '', '2026-11-02')
+    return [
+      pick([dated], lockedIds(['a'])),
+      pick([empty, other], lockedIds(['b', 'c'])),
+      pick([dated, other], lockedIds(['a'])),
+      pick([empty], lockedIds(['b'])),
+      pick([dated], lockedIds([])),
+    ]
+  })(),
+}))
+"""
+
+
+def test_each_locked_button_can_say_why_and_an_unlocked_one_says_nothing() -> None:
+    """잠긴 「불러오기」 · 「맞는 0대 불러오기」 · 「넣기 (0칸)」 · 「밀기 (0칸)」 와 다 불러온 뒤의
+    「전체 n대 불러오기」 는 까닭이 있고(설계 규칙 UI-INP-07, g5-08 · g5-09), 켜진 단추는 빈 글이라
+    풍선이 서지 않는다. 호기를 다 불러오지 못한 상한 초과(1,000 / 1,200)는 켠 채로 둔다. 「밀기」 는
+    낡은 세션처럼 일정이 잠겨 0칸이면 값을 고치라는 말 대신 그 잠금 까닭을 말한다."""
+    result = _node({}, _LOCK_TEXT_RUNNER)
+
+    assert result["search"] == [
+        "설비명을 치면 누를 수 있습니다",
+        "설비명을 치면 누를 수 있습니다",
+        "",
+    ]
+    assert result["condition"] == [
+        "조건을 고르면 누를 수 있습니다",
+        "조건에 맞는 호기가 없습니다",
+        "",
+    ]
+    assert result["loadAll"] == ["전체를 불러왔습니다", "", ""]
+    assert result["apply"] == [
+        "",
+        "넣을 값을 고르면 누를 수 있습니다",
+        "바뀔 칸이 없습니다",
+        "잠긴 칸",
+    ]
+    assert result["shift"] == [
+        "",
+        "밀 날 수를 적으면 누를 수 있습니다",
+        "밀 일정이 있는 칸이 없습니다",
+        "잠긴 칸",
+        "잠긴 칸",
+        "",
+    ]
+    # 일정이 있는 칸이 모두 잠겼을 때만 잠금이 까닭이다 — 풀린 일정이 있거나 일정이 없으면 아니다.
+    assert result["held"] == [["a", 0], ["c", 1], None, None, None]
+
+
+_LOADER_LOCK_RUNNER = """
+const data = {
+  mode: 'loader', names: ['EQ-01', 'EQ-02'], ids: {}, loaded: ['s:EQ-01', 's:EQ-02'],
+  loadedCount: 2, total: 2, alertIds: [],
+  conditions: { columns: [], values: [], codes: [], widths: [] },
+}
+const look = (name) => {
+  const target = buttonOf(name)
+  const wrap = target.parentNode
+  const tip = wrap.querySelector('.emg-tip')
+  return {
+    disabled: target.disabled, wrapped: wrap.className, tip: tip.textContent,
+    tab: wrap.tabIndex, keys: [wrap.dataset.fk, target.dataset.fk],
+  }
+}
+mount(data)
+results.goEmpty = look('불러오기')
+results.allLoaded = look('전체 2대 불러오기')
+const input2 = host.querySelector('[data-fk="search"]')
+input2.value = 'EQ'
+fire(input2, 'input')
+results.goTyped = look('불러오기')
+mount({ ...data, loaded: ['s:EQ-01'], loadedCount: 1 })
+results.allOpen = look('전체 2대 불러오기')
+process.stdout.write(JSON.stringify(results))
+"""
+
+
+def test_the_locked_loader_buttons_keep_a_tip_host_that_follows_the_lock() -> None:
+    """꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 풍선과 탭 자리를 받고, 켜지면 단추에 돌려준다
+    (설계 규칙 UI-INP-07). 다 불러온 「전체 n대 불러오기」 는 눌러도 0대라 잠근다(g5-08)."""
+    runner = _FAKE_DOM + _MOUNT_LOADER + _LOADER_LOCK_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+
+    off = {"disabled": True, "wrapped": "emg-tip-host", "tab": 0}
+    on = {"disabled": False, "wrapped": "emg-tip-host", "tab": -1, "tip": ""}
+    assert result["goEmpty"] == {
+        **off,
+        "tip": "설비명을 치면 누를 수 있습니다",
+        "keys": ["search-go", ""],
+    }
+    assert result["goTyped"] == {**on, "keys": ["", "search-go"]}
+    assert result["allLoaded"] == {
+        **off,
+        "tip": "전체를 불러왔습니다",
+        "keys": ["load-all", ""],
+    }
+    assert result["allOpen"] == {**on, "keys": ["", "load-all"]}
+
+
+def test_the_selection_bar_stands_at_the_frame_end_and_sticks_to_the_window_bottom() -> None:
+    """체크 상자 하나를 누르면 고른 줄 띠가 표 위 흐름에 끼어 표가 91px 내려갔고(g5-03), 표 틀
+    윗변 위에 띄우니 본문을 굴린 뒤 고른 줄의 띠가 머리 띠 뒤 · 창 밖으로 나가 조작 11개 가운데
+    0 ~ 4개만 눌렸으며 덮인 불러오기 줄에 초점이 갔다(샘플 관측 · 설계 규칙 UI-PRF-03). 띠는 표 틀
+    맨 끝 흐름에 서서 위 칸을 밀지도 덮어 두지도 않고, 표 아래 끝이 창 밖이면 창 아래 끝에 붙는다
+    — 표 틀이 스크롤 칸이 되지 않게 `overflow` 를 두지 않는다. 칸 차례도 보이는 차례(표 다음)다."""
+    assert "[bar, toast, box, foot, sel]" in _function("buildGridSkeleton")
+    assert "emg-sel-anchor" not in CSS and "selAnchor" not in JS
+    bar = re.search(r"\n\.emg-sel \{(?P<body>[^}]*)\}", CSS)
+    assert bar is not None
+    for rule in ("position: sticky", "bottom: 0"):
+        assert rule in bar["body"]
+    frame = re.search(r"\n\.emg-grid \{(?P<body>[^}]*)\}", CSS)
+    assert frame is not None and "overflow" not in frame["body"]
+
+
+def test_a_row_under_the_stuck_bar_lifts_only_by_what_it_covers() -> None:
+    """창 아래 끝에 붙은 띠는 그 자리 줄을 덮는다 — 고른 줄 · 초점이 간 줄이 그 밑이면 덮인 만큼만
+    본문을 올리고(`overPx`), 표를 굴려 다시 그릴 때 돌려준 초점(표 밖에서 온 초점이 아님)으로는
+    움직이지 않는다 — 표를 굴리는 손이 본문까지 끌고 가지 않게."""
+    for name in ("toggleRow", "ensureVisible"):
+        assert "clearOfBar(S, id)" in _function(name)
+    focus_in = _function("buildGridSkeleton")
+    assert "event.relatedTarget && !body.contains(event.relatedTarget)" in focus_in
+    assert "main.scrollTop += lift" in _function("clearOfBar")
+    assert "overPx(line.getBoundingClientRect().bottom" in _function("clearOfBar")
+
+
+_HOLD_PLACE_RUNNER = """
+const hold = (hidden, before, after) => {
+  const root = { style: { marginBottom: '129px' } }
+  const main = { scrollTop: after }
+  holdPlace({ selBar: { hidden }, root }, main, before)
+  return [root.style.marginBottom, main.scrollTop]
+}
+const noMain = { style: { marginBottom: '' } }
+holdPlace({ selBar: { hidden: true }, root: noMain }, null, 0)
+process.stdout.write(JSON.stringify({
+  cut: hold(true, 469, 340),
+  kept: hold(true, 340, 340),
+  open: hold(false, 469, 469),
+  noMain: noMain.style.marginBottom,
+}))
+"""
+
+
+def test_closing_the_bar_at_the_scroll_end_keeps_the_table_where_it_was() -> None:
+    """띠가 맨 끝 흐름이라 닫으면 본문이 준다 — 띠 자리까지 굴려 둔 채 닫으면 스크롤이 잘려 표가
+    내려앉는다. 잘린 만큼 표 틀 아래 자리를 남겨 그 자리를 지키고(설계 규칙 UI-PRF-03), 잘리지
+    않았으면 아무것도 바꾸지 않으며, 띠가 다시 서면 남긴 자리를 걷는다."""
+    result = _node({}, _HOLD_PLACE_RUNNER, source=_sections() + _function("holdPlace"))
+
+    assert result == {
+        "cut": ["129px", 469],
+        "kept": ["129px", 340],
+        "open": ["", 469],
+        "noMain": "",
+    }
+
+
+_PLACE_TIP_RUNNER = """
+const box = (left) => ({ getBoundingClientRect: () => ({ left }) })
+const place = (frameLeft, tipLeft) => {
+  const tip = { ...box(tipLeft), style: { transform: 'translateX(9px)' } }
+  placeTip({ closest: () => box(frameLeft) }, tip)
+  return tip.style.transform
+}
+const orphan = { style: { transform: '' } }
+placeTip({ closest: () => null }, orphan)
+process.stdout.write(JSON.stringify({
+  left: place(332, 232),
+  inside: place(332, 340),
+  edge: place(332, 332),
+  rounded: place(332, 331.5),
+  orphan: orphan.style.transform,
+  over: [overPx(911, 781), overPx(700, 781), overPx(100.2, 100)],
+}))
+"""
+
+
+def test_a_tip_that_would_go_under_the_sidebar_moves_back_into_the_frame() -> None:
+    """풍선은 단추 오른쪽 끝에 맞춰 왼쪽으로 자라, 띠가 접혀 「넣기」 가 둘째 줄 맨 앞에 오면 x
+    232 ~ 419 로 떠서 오른쪽 끝 300 인 사이드바 밑에 앞 글자가 잘렸다(샘플 관측 · UI-INP-07 ·
+    UI-ACC-02).
+    뜰 때 칸 왼쪽 끝 밖으로 나간 만큼만 민다 — 칸 안이면 그대로다. 줄 접힘이 창 폭을 따라 달라
+    서식으로 정하지 않는다. 꺼진 단추는 감싼 칸이 마우스 · 초점을 받는다."""
+    result = _node({}, _PLACE_TIP_RUNNER, source=_sections() + _function("placeTip"))
+
+    assert result == {
+        "left": "translateX(100px)",
+        "inside": "",
+        "edge": "",
+        "rounded": "translateX(1px)",
+        "orphan": "",
+        "over": [130, 0, 1],
+    }
+    wrap = _function("tipWrap")
+    assert "host.addEventListener('pointerenter', place)" in wrap
+    assert "host.addEventListener('focusin', place)" in wrap
 
 
 def test_the_add_tip_shows_on_hover_and_keyboard_focus_and_has_the_app_tip_look() -> None:

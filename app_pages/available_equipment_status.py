@@ -175,13 +175,13 @@ def _render_first_data_checklist(counts: tuple[int, int, int]) -> None:
     섞은 다른 산식이라, 두 수가 첫 화면에 나란히 서면 어느 쪽이 맞는지부터 따져야 한다. Cut-off 는
     저장본이 없는 이 자리에서만 한 번 더 읽는다.
 
-    설비 마스터 · 운영 비가동 일정 줄에는 넣는 팝업(붙여넣기 — 편집 동작)을 여는 단추를 단다.
+    설비 마스터 · 비가동 일정 줄에는 넣는 팝업(붙여넣기 — 편집 동작)을 여는 단추를 단다.
     Cut-off 는 공용 설정이라 이 줄에 단추를 두지 않는다 — 사이드바 「가용설비 설정」 상자가 그
     팝업을 연다(설계 규칙 UI-LAY-01 · AMB-07 (가), `tests/test_settings_button_sites.py`).
     """
     rows = (
         ("설비 마스터", "equipment_first_data_master_v1"),
-        ("운영 비가동 일정", "equipment_first_data_down_v1"),
+        ("비가동 일정", "equipment_first_data_down_v1"),
         ("공정별 Cut-off", None),
     )
     for (title, key), count in zip(rows, counts, strict=True):
