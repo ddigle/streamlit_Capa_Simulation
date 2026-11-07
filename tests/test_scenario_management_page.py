@@ -462,6 +462,11 @@ def test_the_tab_opens_straight_on_the_work_switch_without_a_store_status_box(
     assert "관리할 시나리오" not in {item.label for item in app.segmented_control}
     # 내장 합성 시드의 표지는 그 이름이다 — 목록 표(와 사이드바 · 머리 띠)가 그대로 말한다.
     assert BUILTIN_SEED_SCENARIO_NAME in table_names(calls)
+    # 시나리오 표는 머리를 맞출 오른쪽 칸 머리 두 자리를 안다.
+    assert last(calls, TABLE_KEY)["side"] == {
+        "choice": LIST_SIDE.choice_key,
+        "body": LIST_SIDE.body_key,
+    }
 
 
 def test_an_old_session_clone_mode_name_falls_back_to_the_first_mode(tmp_path: Path) -> None:

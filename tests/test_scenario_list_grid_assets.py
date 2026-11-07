@@ -23,7 +23,7 @@ OWN_JS = (ASSETS / "list.js").read_text(encoding="utf-8")
 OWN_CSS = (ASSETS / "list.css").read_text(encoding="utf-8")
 JS = grid.registered_js()
 CSS = grid.registered_css()
-_SECTIONS = ("grid-nav", "grid-outbox", "list-move", "list-ime")
+_SECTIONS = ("grid-nav", "grid-outbox", "list-move", "list-head", "list-ime")
 _MOUNT_HEAD = "export default function (component) {"
 
 
@@ -150,6 +150,46 @@ def test_column_widths_fit_their_heads() -> None:
 
 
 # ---------------------------------------------------------------- 순수 구획
+
+
+def test_the_tools_line_is_as_tall_as_the_side_head() -> None:
+    """두 표 머리의 윗선이 같다 — 왼쪽 작업 줄 높이 + 아래 간격이 오른쪽 칸 머리 높이다. 재 보면
+    마운트 · 표 틀에 위 여백이 없어 차이는 이 둘뿐이다(창 폭 · 사이드바 · 테마와 무관). 작업 줄이
+    단추보다 낮게 적히면 `min-height` 가 듣지 않아 합이 어긋난다."""
+    from capa_simulation.components import side_panel
+
+    tools = re.search(
+        r"\.sgl-tools \{[^}]*min-height: (\d+)px;[^}]*margin-bottom: (\d+)px;", OWN_CSS
+    )
+    assert tools
+    assert int(tools[1]) + int(tools[2]) == side_panel.SIDE_HEAD_PX
+    small = re.search(r"\.emg-btn\.is-small \{\s*height: (\d+)px;", CSS)
+    assert small and int(small[1]) == int(tools[1])
+    assert "button('emg-btn is-small'" in OWN_JS
+    # 두 표 머리 높이는 한 규칙이고, 표 틀 · 마운트에 머리를 내리는 여백을 두지 않는다.
+    assert re.search(r"\.sgl-head \{\s*height: 34px;", OWN_CSS)
+    assert ".sgl-root" not in OWN_CSS
+    assert not re.search(r"\.sgl-box \{[^}]*\n\s*(margin|padding)", OWN_CSS)
+
+
+def test_the_tools_gap_follows_the_side_head() -> None:
+    """고르기가 두 줄로 접힌 만큼 간격이 는다. 맞출 짝이 없으면(접힘 · 쌓임) CSS 값으로 돌아간다."""
+    tools = {"right": 700, "height": 30}
+    one = {"left": 720, "top": 200, "height": 28}
+    two = {"left": 720, "top": 200, "height": 59.5}
+    runner = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({ gaps: input.cases.map((item) => toolsGap(...item)) }))
+"""
+    cases = [
+        [tools, one, {"top": 242}],
+        [tools, two, {"top": 273.5}],
+        [tools, {"left": 0, "top": 0, "height": 0}, {"top": 0}],
+        [tools, {"left": 20, "top": 572, "height": 28}, {"top": 614}],
+        [{"right": 700, "height": 66}, one, {"top": 242}],
+    ]
+    out = _node({"cases": cases}, runner, _sections())
+    assert out["gaps"] == [12, 43.5, None, None, None]
 
 
 _PURE_RUNNER = """
@@ -948,6 +988,103 @@ out.noUndo = document.activeElement.className
 process.stdout.write(JSON.stringify(out))
 """
 )
+
+
+_HEAD_LINE = (
+    _DOM
+    + """
+const out = {}
+const parts = (m) => m.host.querySelector('.sgl-root').children.map((node) => node.className.split(' ')[0])
+const observers = []
+globalThis.ResizeObserver = class {
+  constructor(callback) { this.callback = callback; this.watched = []; this.stopped = false; observers.push(this) }
+  observe(node) { this.watched.push(node) }
+  disconnect() { this.stopped = true }
+}
+const side = {}
+document.querySelector = (selector) => side[selector] || null
+const placed = (top, height, left) => ({ getBoundingClientRect: () => ({ top, height, left, bottom: top + height }) })
+const SIDE = { choice: 'c', body: 'b' }
+;(async () => {
+  // 제목 · 부제는 표 아래, 값 줄 바로 위다 — 빈 표에서도 사라지지 않는다.
+  let m = mount(REVISIONS)
+  out.revisions = parts(m)
+  out.title = m.host.querySelector('.sgl-title').textContent
+  m.cleanup()
+  m = mount({ ...REVISIONS, rows: [], picked: null })
+  out.empty = { parts: parts(m), title: m.host.querySelector('.sgl-title').textContent, sub: m.host.querySelector('.sgl-sub').textContent }
+  out.revisionObservers = observers.length
+  m.cleanup()
+
+  // 왼쪽 표가 먼저 서고 오른쪽 칸이 뒤따른다 — 기다렸다 맞춘다.
+  m = mount({ ...SCENARIOS, side: SIDE })
+  out.scenarios = parts(m)
+  const tools = m.host.querySelector('.sgl-tools')
+  tools.getBoundingClientRect = () => ({ right: 700, height: 30 })
+  out.beforeSide = { observers: observers.length, gap: tools.style.marginBottom }
+  const choice = placed(200, 28, 720)
+  side['.st-key-c'] = choice
+  side['.st-key-b'] = placed(242, 300, 720)
+  await tick(230)
+  out.oneLine = tools.style.marginBottom
+  const seen = observers[observers.length - 1]
+  out.watching = seen.watched[0] === choice
+
+  // 회차 없이 일어나는 접힘 — 지켜보던 고르기 크기로 다시 맞춘다.
+  choice.getBoundingClientRect = () => ({ top: 200, height: 59.5, left: 720, bottom: 259.5 })
+  side['.st-key-b'] = placed(273.5, 300, 720)
+  seen.callback()
+  out.twoLines = tools.style.marginBottom
+  choice.getBoundingClientRect = () => ({ top: 0, height: 0, left: 0, bottom: 0 })
+  seen.callback()
+  out.folded = tools.style.marginBottom
+
+  // 같은 고르기면 옵저버를 새로 만들지 않고, 새로 선 고르기는 그것을 지켜본다.
+  const count = observers.length
+  m.rerender({ ...SCENARIOS, side: SIDE })
+  out.sameChoice = observers.length === count
+  const fresh = placed(200, 28, 720)
+  side['.st-key-c'] = fresh
+  side['.st-key-b'] = placed(242, 300, 720)
+  m.rerender({ ...SCENARIOS, side: SIDE })
+  const next = observers[observers.length - 1]
+  out.swapped = { oldStopped: seen.stopped, watching: next.watched[0] === fresh, gap: tools.style.marginBottom }
+  m.cleanup()
+  out.cleanedUp = next.stopped
+
+  // 칸이 끝내 안 서면 기다림은 끝나고, 내리면 기다림도 멈춘다.
+  delete side['.st-key-c']
+  const before = observers.length
+  m = mount({ ...SCENARIOS, side: SIDE })
+  m.cleanup()
+  side['.st-key-c'] = fresh
+  await tick(230)
+  out.stoppedWaiting = observers.length === before
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+)
+
+
+def test_the_revision_table_comes_first_and_the_head_lines_up() -> None:
+    """리비전 표가 칸 맨 위라 머리가 왼쪽 표 머리와 윗선이 같고, 제목 · 부제는 표 아래 값 줄 바로
+    위다. 고르기가 두 줄로 접혀도 왼쪽이 따라간다."""
+    out = _node({}, _HEAD_LINE, _MOUNT_SOURCE)
+    # 맨 뒤 낭독 칸(`.sgl-status`)은 자리를 차지하지 않는다.
+    order = ["sgl-box", "sgl-title", "sgl-sub", "sgl-values", "sgl-status"]
+    assert out["revisions"] == order
+    assert out["title"] == "가"
+    assert out["empty"] == {"parts": order, "title": "가", "sub": "코드"}
+    assert out["revisionObservers"] == 0
+    assert out["scenarios"][:2] == ["sgl-tools", "sgl-box"]
+    assert out["beforeSide"] == {"observers": 0}
+    assert out["oneLine"] == "12px" and out["watching"] is True
+    assert out["twoLines"] == "43.5px"
+    assert out["folded"] == ""
+    assert out["sameChoice"] is True
+    assert out["swapped"] == {"oldStopped": True, "watching": True, "gap": "12px"}
+    assert out["cleanedUp"] is True
+    assert out["stoppedWaiting"] is True
 
 
 def test_a_reverted_line_hands_the_keyboard_focus_on() -> None:

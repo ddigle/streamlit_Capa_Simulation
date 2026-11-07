@@ -3,7 +3,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  min-height: 30px;
+  margin-bottom: 12px;
 }
 
 .sgl-tool-slot > .emg-tip {
@@ -176,14 +177,14 @@
 }
 
 .sgl-title {
-  margin: 0;
+  margin: 10px 0 0;
   font-size: 14px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .sgl-sub {
-  margin: 2px 0 8px;
+  margin: 2px 0 0;
   color: var(--emg-muted);
   font-size: 12px;
   overflow-wrap: anywhere;

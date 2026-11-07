@@ -610,6 +610,7 @@ def _render_list_management(
                         view.problems,
                         _scenario_facts(scenarios, view.releases),
                     ),
+                    "side": {"choice": LIST_SIDE.choice_key, "body": LIST_SIDE.body_key},
                 },
                 on_outbox=_on_list_outbox,
             )
@@ -919,9 +920,10 @@ def _render_detail(
 ) -> bool:
     """「상세」 칸. 공식 지정 확인 팝업을 그렸으면 `True`.
 
-    자리 차례: 리비전 표(제목 · 원천 코드 · 최근 수정 · 표 · 값 줄) · 미저장 확인 칸 · 작업 줄 ·
+    자리 차례: 리비전 표(표 · 제목 · 원천 코드 · 최근 수정 · 값 줄) · 미저장 확인 칸 · 작업 줄 ·
     결과 칸 · 「보관…」 · 보관 칸. 쓰는 차례로 짠다 — 불러오기를 먼저, 보관은 아래(설계 규칙
-    UI-LAY-06). 생기고 사라지는 것은 모두 늘 서 있는 칸 안이다.
+    UI-LAY-06). 표가 맨 위라 왼쪽 시나리오 표 머리와 윗선이 같다. 생기고 사라지는 것은 모두 늘
+    서 있는 칸 안이다.
     """
     from capa_simulation.components.scenario_list_grid import render_list_mount
 

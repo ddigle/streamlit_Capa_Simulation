@@ -11,6 +11,8 @@ const ROW_HEIGHT = 34
 const DRAG_START_PX = 4
 const EDGE_SCROLL_PX = 28
 const EDGE_SCROLL_STEP = 14
+const SIDE_WAIT_MS = 200
+const SIDE_WAIT_TRIES = 15
 const KEYS_HELP = '이름 칸: 연 줄이면 한 번 눌러 고칩니다(처음 누르면 엽니다) · Enter · F2 어느 줄이든 고치기 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · Space 열기 · 손잡이를 끌어 옮기기 · Alt+↑ ↓ 줄 옮기기 · 순서 칸에 자리 번호'
 const COLUMNS = {
   scenarios: [
@@ -102,6 +104,17 @@ function typedStart(key, ctrl, meta, alt) {
 }
 // </list-ime>
 
+// <list-head>
+// 작업 줄 아래 간격(px) — 왼쪽 표 머리를 오른쪽 칸 표 머리와 같은 높이에 둔다. 고르기 한 줄이면 CSS 값과 같고, 칸이 좁아 고르기가
+// 두 줄로 접히면 늘어난 만큼 넓어진다. 맞출 짝이 없으면 null 이고 CSS 값으로 돌아간다 — 칸을 접었거나(고르기 높이 0) 위아래로
+// 쌓였다(고르기가 작업 줄 오른쪽에 있지 않다). 오른쪽 칸은 붙는 칸이라 두 칸의 위치 차이가 아니라 머리 높이로 잰다.
+function toolsGap(tools, choice, body) {
+  if (!choice.height || choice.left < tools.right) return null
+  const gap = body.top - choice.top - tools.height
+  return gap > 0 ? gap : null
+}
+// </list-head>
+
 // <list-gate>
 // 다시 그려도 되는가 — 칸을 쓰는 중 · 줄을 끄는 중 · 누르는 중이면 안 된다.
 function canRepaint(S) {
@@ -114,6 +127,7 @@ function freshState() {
     mount: newMount(), box: createBox(), sentSeq: 0, timer: 0, base: null, limit: 2000, data: null, mode: null,
     edit: null, focus: null, drag: null, pressing: false, dirty: false, wantFocus: false, listeners: [], bound: false,
     built: null, rowNodes: new Map(), settleTimer: 0, enterAfter: false, suppressClick: false, note: '', view: null,
+    toolsNode: null, headObserver: null, headWatched: null, headTimer: 0, headTries: 0,
   }
 }
 
@@ -250,12 +264,6 @@ function buildTable(S) {
   emptyHost(S)
   S.built = S.mode
   const root = el('div', 'sgl-root sgl-' + S.mode)
-  if (S.mode === 'revisions') {
-    S.titleNode = el('h4', 'sgl-title')
-    S.subNode = el('p', 'sgl-sub')
-    root.appendChild(S.titleNode)
-    root.appendChild(S.subNode)
-  }
   if (S.mode === 'scenarios') {
     const tools = el('div', 'sgl-tools')
     S.tools = [
@@ -265,6 +273,7 @@ function buildTable(S) {
     ]
     for (const tool of S.tools) tools.appendChild(tool.slot)
     root.appendChild(tools)
+    S.toolsNode = tools
   }
   const box = el('div', 'sgl-box')
   const table = el('div', 'emg-table sgl-table')
@@ -293,7 +302,11 @@ function buildTable(S) {
   S.body = body
   S.dropLine = drop
   if (S.mode === 'revisions') {
+    S.titleNode = el('h4', 'sgl-title')
+    S.subNode = el('p', 'sgl-sub')
     S.valuesNode = el('dl', 'sgl-values')
+    root.appendChild(S.titleNode)
+    root.appendChild(S.subNode)
     root.appendChild(S.valuesNode)
   }
   if (S.mode === 'scenarios') {
@@ -375,6 +388,43 @@ function paintTools(S) {
   }
 }
 
+function sideHeadNodes(side) {
+  const choice = document.querySelector('.st-key-' + side.choice)
+  const body = document.querySelector('.st-key-' + side.body)
+  return choice && body ? { choice, body } : null
+}
+
+function alignTools(S) {
+  const nodes = sideHeadNodes(S.data.side)
+  if (!nodes) return
+  const gap = toolsGap(S.toolsNode.getBoundingClientRect(), nodes.choice.getBoundingClientRect(), nodes.body.getBoundingClientRect())
+  S.toolsNode.style.marginBottom = gap === null ? '' : gap + 'px'
+}
+
+// 고르기가 접히고 펴지는 것은 회차 없이 일어난다(칸 끌기 · 창 크기 · 칸 접기) — 고르기 크기를 지켜본다. 왼쪽 표가 먼저 그려지므로
+// 오른쪽 칸이 설 때까지 잠깐 기다리고, 고르기 칸이 새로 서면 그것을 다시 지켜본다.
+function watchSideHead(S) {
+  if (!S.toolsNode || !S.data.side) return
+  if (S.headTimer) clearTimeout(S.headTimer)
+  S.headTimer = 0
+  const nodes = sideHeadNodes(S.data.side)
+  if (!nodes) {
+    if (S.headTries < SIDE_WAIT_TRIES) {
+      S.headTries += 1
+      S.headTimer = setTimeout(() => watchSideHead(S), SIDE_WAIT_MS)
+    }
+    return
+  }
+  S.headTries = 0
+  if (S.headWatched !== nodes.choice) {
+    if (S.headObserver) S.headObserver.disconnect()
+    S.headWatched = nodes.choice
+    S.headObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => alignTools(S)) : null
+    if (S.headObserver) S.headObserver.observe(nodes.choice)
+  }
+  alignTools(S)
+}
+
 function paintTable(S) {
   if (S.built !== S.mode) buildTable(S)
   const keyboard = S.wantFocus
@@ -390,6 +440,7 @@ function paintTable(S) {
   S.table.setAttribute('aria-rowcount', String(rows.length + 1))
   if (S.mode === 'revisions') paintRevisionHead(S)
   paintTools(S)
+  watchSideHead(S)
   S.wantFocus = false
   // 키보드 손짓만 초점 칸으로 스크롤을 따라간다 — 회차가 돌아온 다시 그리기가 사용자가 내리던 스크롤을 끌고 가지 않는다.
   if (hadFocus) restoreCellFocus(S, keyboard ? undefined : { preventScroll: true })
@@ -1002,8 +1053,13 @@ export default function (component) {
     S.listeners = []
     if (S.timer) clearTimeout(S.timer)
     if (S.settleTimer) clearTimeout(S.settleTimer)
+    if (S.headTimer) clearTimeout(S.headTimer)
+    if (S.headObserver) S.headObserver.disconnect()
     S.timer = 0
     S.settleTimer = 0
+    S.headTimer = 0
+    S.headObserver = null
+    S.headWatched = null
     S.bound = false
     S.built = null
   }
