@@ -1093,7 +1093,19 @@ const seen = (b) => ({
 const button = node()
 button.parentElement = node()
 button.parentElement.getBoundingClientRect = () => box(input.left, input.top, 60, 27)
+let held = null
+const isFocused = (n) => n === held
+button.focus = () => { held = button }
+button.parentElement.focus = () => { held = button.parentElement }
 const out = []
+if (input.focus) {
+  held = button
+  lockWith(button, '되돌릴 것 없음')
+  const locked = held === button.parentElement
+  lockWith(button, '')
+  process.stdout.write(JSON.stringify({ locked, freed: held === button }))
+  process.exit(0)
+}
 lockWith(button, '고른 것 없음')
 out.push(seen(button))
 showTip(button.parentElement)
@@ -1139,6 +1151,12 @@ def test_a_locked_button_says_why_only_while_it_is_locked() -> None:
     assert changed["shown"] is True and changed["text"] == "고른 것이 도면에 없음"
     assert freed["disabled"] is False and freed["tab"] is None and freed["shown"] is False
     assert again["shown"] is False
+
+
+def test_keyboard_focus_follows_the_lock_between_the_button_and_its_host() -> None:
+    """잠기는 단추의 초점은 칸으로, 풀리는 칸의 초점은 단추로 옮겨 간다 — 키보드가 끊기지 않는다."""
+    moved = _node(_tip_source() + _TIP_RUNNER, {"left": 300, "top": 60, "focus": True})
+    assert moved == {"locked": True, "freed": True}
 
 
 def test_the_reason_tip_opens_under_the_button_and_stays_inside_the_editor() -> None:

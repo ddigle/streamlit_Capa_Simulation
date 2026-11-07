@@ -374,9 +374,13 @@ export default function (component) {
     else spot.removeAttribute('tabindex')
     if (S.tipFor === spot) showTip(spot)
   }
+  // 초점이 단추나 칸에 있으면 잠기고 풀리는 쪽을 따라간다 — 잠긴 단추와 탭 자리에서 빠진 칸은 초점을 잃어 키보드가 끊긴다.
   function lockWith(button, reason) {
+    const spot = button.parentElement
+    const held = isFocused(button) || isFocused(spot)
     button.disabled = Boolean(reason)
-    setTip(button.parentElement, reason)
+    setTip(spot, reason)
+    if (held) (reason ? spot : button).focus({ preventScroll: true })
   }
   // 마우스는 올린 동안, 키보드는 초점이 머무는 동안이다. 누른 초점(`:focus-visible` 아님)에는 뜨지 않는다.
   function bindTip(spot) {
