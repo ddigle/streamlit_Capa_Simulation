@@ -2284,6 +2284,23 @@ def test_the_list_actions_stand_in_one_row_above_the_table(
     assert picker.label == picker.proto.placeholder == "지울 사람"
 
 
+def test_the_picked_people_wrap_instead_of_scrolling_out_of_sight(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """고른 사람 칩은 줄을 접는다 — 가로 작업 줄 안 기본값은 한 줄 가로 스크롤이라 칸 밖으로 밀린
+    사람이 보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app = _admin_app(cfg, monkeypatch)
+
+    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER, OTHER]).run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
+    assert picker.value == [USER, OTHER]
+    assert picker.proto.HasField("wrap") and picker.proto.wrap
+
+
 def test_the_pick_refusal_stands_right_below_the_row_and_above_the_table(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
