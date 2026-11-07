@@ -1282,7 +1282,8 @@ def test_a_zone_keeps_its_name_in_the_tip_and_its_label_is_rechecked_when_units_
     draw = JS[JS.index("function drawMark(") : JS.index("function appendHandles(")]
     assert "words.classList.add('sle-zone-name')" in draw
     assert "w: Math.max(tagW, emWidth(name) * fs + fs * 0.9)" in draw
-    assert "syncZoneTag(group)" in draw
+    # 그리기가 이름표를 새로 만들므로(배율마다) 도면에 붙인 뒤에 본다.
+    assert draw.index("shape.append(inner)") < draw.index("syncZoneTag(group)")
     assert "tip.textContent = `${markTitle(item)}${item.keepOut ? ' · 설비 금지' : ''}`" in draw
     marks = JS[JS.index("function markOverlaps(flipped) {") :]
     assert marks.index("syncZoneTag(group)") < marks.index("if (VIEW) {")

@@ -2977,7 +2977,6 @@ export default function (component) {
       }
       // 이름표가 차지하는 자리 — 영역은 돌리지 않아(`rotatable: false`) 도면 좌표 그대로다. 글이 꼬리표보다 길면 글 끝까지다.
       group.__tagBox = caption.shown ? { x: item.x + tagX, top, w: Math.max(tagW, emWidth(name) * fs + fs * 0.9), h: fs * 1.6 } : null
-      syncZoneTag(group)
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -3120,6 +3119,7 @@ export default function (component) {
       }
     }
     shape.append(inner)
+    if (item.kind === 'zone') syncZoneTag(group)
     // 돌리지 않는 가운데 글(베이 「B<번호>」·도형 이름표) — 돌리는 그룹 밖에 가로로.
     if (group.__flatText) {
       shape.append(group.__flatText)
