@@ -90,6 +90,8 @@ DISPLAY_ORDER_UNCHANGED_MESSAGE = (
 )
 # 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
 DISPLAY_ORDER_FLASH_KEY = "display_order_flash"
+# 직접 편집 제목 줄의 범위 고르기 칸 폭(px) — 범위 이름이 한 칸에 들고 창 1100 에서도 한 줄이다.
+SCOPE_PICKER_WIDTH = 240
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시순서 그대로라 새 버전을 만들지 않았습니다."
@@ -155,8 +157,7 @@ def render_display_order_management(
         )
     # 저장 성공과 그 저장의 표시명 경고는 같은 칸이다 — 경고 수만큼 아래 직접 편집(key 있는
     # 편집표)이 밀리면 저장 회차(`st.rerun()` 으로 끊김)의 옛 자리에 흐린 사본이 남는다(AGENTS 9장
-    # 「조건부 알림」).
-    # 직접 편집 저장의 「바뀐 것이 없습니다」 와 그 아래 표시명 경고도 이 칸(성공 알림 자리)에 선다.
+    # 「조건부 알림」). 「바뀐 것이 없습니다」 는 이 칸이 아니라 저장 줄 바로 아래 칸이다.
     notice = render_flash(DISPLAY_ORDER_FLASH_KEY)
     _render_label_warnings(notice)
     # 저장된 프로필의 겹친 분류값은 상태 알림(`AD-05` — 알림창 · Alarm, 자리에 그리지 않는다)이다.
@@ -238,31 +239,36 @@ def _render_direct_editor(
     다시 알린다.
 
     **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5 넓힘 — Proc Rename 과 같은
-    꼴) — 최신 저장본을 보고 고친 범위가 그 저장본 그대로면(합친 전체 규칙이 같다) 쓰지 않고
-    `notice`(머리 알림 칸)에 「바뀐 것이 없습니다」 를 적는다(변경 메모만 적은 저장도 같다). 표에
-    화면 표시명을 적은 분류컬럼이 남아 있으면 그 알림 아래에 저장 회차와 같은 표시명 경고를 그린다
-    (막지 않는다).
+    꼴) — 최신 저장본을 보고 고친 범위가 그 저장본 그대로면(합친 전체 규칙이 같다) 쓰지 않고 폼 안
+    저장 줄 바로 아래 칸에 「바뀐 것이 없습니다」 를 적는다(변경 메모만 적은 저장도 같다 — 칸은 늘
+    서 있어 글이 생기고 빠져도 표의 순번이 밀리지 않고, 단추는 제자리다). 표에 화면 표시명을 적은
+    분류컬럼이 남아 있으면 `notice`(머리 알림 칸)에 저장 회차와 같은 표시명 경고를 그린다(막지
+    않는다).
     """
     submitted_base = seen(BASE_VERSION_KEY)
-    st.markdown("#### 직접 편집")
-    pages = display_order["페이지 구분"].drop_duplicates().tolist()
-    selected_page = st.selectbox(
-        "페이지 구분",
-        options=pages,
-        key="display_order_page",
-        persist_state="session",
-    )
-    tabs = (
-        display_order.loc[display_order["페이지 구분"].eq(selected_page), "탭 구분"]
-        .drop_duplicates()
-        .tolist()
-    )
-    selected_tab = st.selectbox(
-        "탭 구분",
-        options=tabs,
-        key="display_order_tab",
-        persist_state="session",
-    )
+    # 고칠 범위 고르기는 표 제목 줄 곁이다 — 전폭 두 줄이면 표가 그만큼 밀린다(설계 규칙 UI-LAY-11).
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        st.markdown("#### 직접 편집", width="content")
+        pages = display_order["페이지 구분"].drop_duplicates().tolist()
+        selected_page = st.selectbox(
+            "페이지 구분",
+            options=pages,
+            key="display_order_page",
+            persist_state="session",
+            width=SCOPE_PICKER_WIDTH,
+        )
+        tabs = (
+            display_order.loc[display_order["페이지 구분"].eq(selected_page), "탭 구분"]
+            .drop_duplicates()
+            .tolist()
+        )
+        selected_tab = st.selectbox(
+            "탭 구분",
+            options=tabs,
+            key="display_order_tab",
+            persist_state="session",
+            width=SCOPE_PICKER_WIDTH,
+        )
     scope_mask = display_order["페이지 구분"].eq(selected_page) & display_order["탭 구분"].eq(
         selected_tab
     )
@@ -286,6 +292,7 @@ def _render_direct_editor(
                 placeholder="예: 환산 탭 제품 표시순서 변경",
                 key="display_order_note",
             )
+        unchanged_note = st.container()
         # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
         # 9장 「표 도구 막대」).
         toolbar_clearance()
@@ -351,12 +358,12 @@ def _render_direct_editor(
             # 대조에 맡긴다. 방금 저장한 같은 범위의 느린 둘째 누름(새로 그린 표에 닿았다)이면 알림
             # 칸이 그 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
             if held_notice(DISPLAY_ORDER_FLASH_KEY) is None:
-                notice.info(DISPLAY_ORDER_UNCHANGED_MESSAGE, icon=":material/info:")
-            # 표에 남은 표시명 경고도 그 알림 아래 같은 칸에 그린다(막지 않고 알리기만 —
-            # 저장 회차와 같은 판정). 창 안의 느린 둘째 누름이면 그 저장의 경고다 — 앞 회차(이
-            # version 을 본 값으로 적은 회차)가 꺼내 그려 이 회차에는 없다. 창이 지난 뒤의
-            # 누름이면 「바뀐 것이 없습니다」 만 남아 표의 표시명이 정렬에 걸리지 않는 것을 알
-            # 길이 없었다(2026-11-02 결정 A3).
+                unchanged_note.info(DISPLAY_ORDER_UNCHANGED_MESSAGE, icon=":material/info:")
+            # 표에 남은 표시명 경고도 저장 회차와 같은 칸에 그린다(막지 않고 알리기만 — 저장
+            # 회차와 같은 판정). 창 안의 느린 둘째 누름이면 그 저장의 경고다 — 앞 회차(이 version
+            # 을 본 값으로 적은 회차)가 꺼내 그려 이 회차에는 없다. 창이 지난 뒤의 누름이면
+            # 「바뀐 것이 없습니다」 만 남아 표의 표시명이 정렬에 걸리지 않는 것을 알 길이
+            # 없었다(2026-11-02 결정 A3).
             _draw_label_warnings(
                 notice, display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
             )

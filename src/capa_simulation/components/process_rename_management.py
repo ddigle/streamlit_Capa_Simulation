@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
 from capa_simulation.components.admin_dialog import (
@@ -139,8 +138,7 @@ def render_process_rename_management(
             on_click=open_admin_dialog,
             args=(PASTE_DIALOG,),
         )
-    # 직접 편집 저장의 「바뀐 것이 없습니다」 도 이 칸(성공 알림 자리)에 선다.
-    notice = render_flash(PROCESS_RENAME_FLASH_KEY)
+    render_flash(PROCESS_RENAME_FLASH_KEY)
 
     labels = process_labels_from_rules(profile.rules, profile.version)
     unmatched = labels.unmatched(available_processes)
@@ -173,7 +171,7 @@ def render_process_rename_management(
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules, csv_bytes, profile.version)
-    _render_direct_editor(repository, profile, available_processes, notice, unmatched)
+    _render_direct_editor(repository, profile, available_processes, unmatched)
 
 
 def _listed(names: list[str], limit: int = 10) -> str:
@@ -264,7 +262,6 @@ def _render_direct_editor(
     repository: DuckDBScenarioRepository,
     profile: GlobalProcessRename,
     available_processes: list[str],
-    notice: DeltaGenerator,
     unmatched: list[str],
 ) -> None:
     """직접 편집 표. 저장은 **버전 대조**다 — 판정 기준과 같은 결로 편집을 시작한 회차의 version 을
@@ -272,8 +269,9 @@ def _render_direct_editor(
     거부한다(그대로 쓰면 그 사람이 넣은 표시명을 모르는 채 덮는다).
 
     **바꾼 것 없는 저장은 새 버전을 만들지 않는다**(2026-11-01 개선 I5) — 최신 저장본을 보고 고친
-    표가 그 저장본과 같으면 쓰지 않고 `notice`(머리 알림 칸)에 「바뀐 것이 없습니다」 를 적는다(변경
-    메모만 적은 저장도 같다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
+    표가 그 저장본과 같으면 쓰지 않고 폼 안 저장 줄 바로 아래 칸에 「바뀐 것이 없습니다」 를 적는다
+    (변경 메모만 적은 저장도 같다 — 칸은 늘 서 있어 글이 생기고 빠져도 표의 순번이 밀리지 않고,
+    단추는 제자리다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
 
     보유 공정에 없는 공정에 지정된 표시명(`unmatched`)은 표에 있지만 이 시나리오의 계산 화면에는
     그리지 않는 항목이라 표 머리 표지 + 풍선으로 둔다(설계 규칙 UI-TXT-04 — 숨은 데이터 안내).
@@ -314,6 +312,7 @@ def _render_direct_editor(
                 placeholder="예: LOB 차트 공정명 축약",
                 key="admin_area_process_rename_note",
             )
+        unchanged_note = st.container()
         # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
         # 9장 「표 도구 막대」).
         toolbar_clearance()
@@ -369,7 +368,7 @@ def _render_direct_editor(
             # 이미 다시 그렸다 — 「바뀐 것이 없습니다」 로 덮지도 겹쳐 쓰지도
             # 않는다(write_guard.held_notice).
             if held_notice(PROCESS_RENAME_FLASH_KEY) is None:
-                notice.info(PROCESS_RENAME_UNCHANGED_MESSAGE, icon=":material/info:")
+                unchanged_note.info(PROCESS_RENAME_UNCHANGED_MESSAGE, icon=":material/info:")
             return
         _save_process_rename(
             repository,

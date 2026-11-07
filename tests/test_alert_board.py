@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
+from capa_simulation.components import alert_board
 from capa_simulation.components.alert_board import collect_alerts
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
@@ -57,8 +60,8 @@ def test_uncounted_demand_and_assumptions_are_warnings_with_the_gate_sentences()
 
 
 def test_the_cells_carry_values_without_a_way_there() -> None:
-    """칸 글은 값이다 — 목록 자리 · 고칠 차례 같은 길 안내는 탭 아래 링크와 Guide 몫이다(설계 규칙
-    UI-TXT-04). 알림 · 기록의 같은 문장은 목록 자리 말을 그대로 든다."""
+    """칸 글은 값이다 — 목록 자리 · 고칠 차례 같은 길 안내는 Guide 몫이다(설계 규칙 UI-TXT-04).
+    알림 · 기록의 같은 문장은 목록 자리 말을 그대로 든다."""
     demand = collect_alerts(_outcome(excluded_routes=2), None)[1].message
     assert demand.endswith("나올 수 있습니다.")
     assert REQUIRED_LIST_NOTE not in demand
@@ -70,6 +73,11 @@ def test_the_cells_carry_values_without_a_way_there() -> None:
         "계산이 멈춰 셀 수 없음",
         "계산이 멈춰 셀 수 없음",
     ]
+
+
+def test_the_board_ends_with_the_cells_and_no_link() -> None:
+    """탭 끝 「산출 결과」 링크는 걷었다 — 그 길은 사이드바이고 Guide 가 말한다."""
+    assert "render_page_link" not in Path(alert_board.__file__).read_text(encoding="utf-8")
 
 
 def test_a_stopped_calculation_leads_and_the_rest_cannot_be_counted() -> None:

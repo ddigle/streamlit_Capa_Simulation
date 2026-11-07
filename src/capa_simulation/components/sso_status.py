@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 import streamlit as st
+from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts
 from capa_simulation.auth import access_store, names, runtime
@@ -64,6 +65,8 @@ ANONYMOUS_EVENT_LIMIT = 10
 ANONYMOUS_COUNT_LIMIT = 8
 DENIED_ACCOUNT_LIMIT = 20
 CERT_WARNING_DAYS = 30
+# 진단 펼침의 시각 꼴 — 서버 시각대 초까지(`container_start_check` 도 이 꼴로 적는다).
+CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # 비밀값 줄의 까닭 — 값은 싣지 않고 검사를 지났다는 사실만. 사람이 고른 문장인지는 가리지 못한다.
 SECRET_CHECKS_PASSED = "길이 · 글자 가짓수 · 자리표 · 되풀이 · 차례 검사 통과(무작위 값인지는 모름)"
@@ -144,7 +147,7 @@ def started_environment_caption(presence: dict[str, bool] | None) -> str | None:
         return None
     present = [name for name in names.SSO_ENVIRONMENT if presence.get(name)]
     listed = " · ".join(f"`{name}`" for name in present) if present else "없음"
-    return f"시작 때 있던 통합인증 환경변수: {listed}"
+    return f"**시작 때 있던 통합인증 환경변수** · {listed}"
 
 
 def _problem_text(problems: list[SsoProblem]) -> str:
@@ -184,6 +187,17 @@ def environment_table(cfg: SsoConfig) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["환경변수", "상태", "까닭"])
 
 
+def environment_column_config() -> dict[str, ColumnConfig]:
+    """까닭은 기본 폭에서 잘려 넓히고 나머지 칸은 줄인다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
+
+    px 로 적는 까닭은 `container_start_check.step_column_config` 와 같다."""
+    return {
+        "환경변수": st.column_config.TextColumn(width=220),
+        "상태": st.column_config.TextColumn(width=70),
+        "까닭": st.column_config.TextColumn(width=620),
+    }
+
+
 def _days_left(now: datetime, not_after: datetime) -> int:
     return (not_after - now).days
 
@@ -192,10 +206,10 @@ def access_line(cfg: SsoConfig) -> str:
     """접속 명단 사실 한 줄 — 개수만. 통합인증이 켜져 있지 않으면 명단은 아직 듣지 않는다."""
     access = runtime.current_access(cfg)
     if not access.enforced:
-        return "접속 명단: 꺼짐(인증된 사람 전부)"
+        return "**접속 명단** · 꺼짐(인증된 사람 전부)"
     state = "켜짐" if cfg.mode is SsoMode.ON else "통합인증이 켜지면 적용"
     return (
-        f"접속 명단: {state} · 관리자 {access.admin_count} · 사용자 {access.user_count} · "
+        f"**접속 명단** · {state} · 관리자 {access.admin_count} · 사용자 {access.user_count} · "
         f"읽지 못함 {access.unreadable_count}"
     )
 
@@ -211,22 +225,22 @@ def access_problem_text(problem: SourceProblem) -> str:
 def _write_text(saved_at: int | None, problem: SourceProblem | None) -> str:
     if problem is not None:
         verdict = "결과 모름" if problem.unconfirmed else "실패"
-        return f"쓰기: {verdict} · {access_problem_text(problem)}"
+        return f"쓰기 {verdict} · {access_problem_text(problem)}"
     if saved_at is not None:
-        return f"쓰기: 정상 · {_clock_text(saved_at)}"
-    return "쓰기: 저장할 때 알게 됨"
+        return f"쓰기 정상 · {_clock_text(saved_at)}"
+    return "쓰기 저장할 때 알게 됨"
 
 
 def access_s3_line(cfg: SsoConfig) -> str:
     """S3 명단 한 줄 — 꺼짐 · 정상 · 실패와 그 까닭. 키 · 서명 · 주소 · 명단 값을 싣지 않는다."""
     if not cfg.access_s3_requested:
-        return "S3 명단: 꺼짐"
+        return "**S3 명단** · 꺼짐"
     if cfg.mode is not SsoMode.ON:
-        return "S3 명단: 통합인증이 켜지면 적용"
+        return "**S3 명단** · 통합인증이 켜지면 적용"
     source = runtime.access_source()
     if source is None:
-        return "S3 명단: 실패 · 아직 읽지 않음 · 관리자만 들어옴"
-    parts = ["S3 명단: 정상" if source.problem is None else "S3 명단: 실패"]
+        return "**S3 명단** · 실패 · 아직 읽지 않음 · 관리자만 들어옴"
+    parts = ["**S3 명단** · 정상" if source.problem is None else "**S3 명단** · 실패"]
     if source.problem is not None:
         parts.append(access_problem_text(source.problem))
         if source.attempted_at is not None:
@@ -269,9 +283,9 @@ def fact_lines(
         redirect = "있음" if cfg.redirect_uri else redirect
         issuer = "있음" if cfg.issuer else issuer
     lines = [
-        f"redirect\\_uri: {redirect}",
-        f"`{names.ENV_ISSUER}`: {issuer}",
-        f"`{names.ENV_CLIENT_ID}`: {'있음' if cfg.client_id else '없음'}",
+        f"**redirect\\_uri** · {redirect}",
+        f"`{names.ENV_ISSUER}` · {issuer}",
+        f"`{names.ENV_CLIENT_ID}` · {'있음' if cfg.client_id else '없음'}",
     ]
     for cert in cfg.signing_certs:
         days = _days_left(moment, cert.not_after)
@@ -281,14 +295,14 @@ def fact_lines(
             else f"x5t {literal_markdown(cert.x5t)} · SHA-256 {cert.sha256[:16]}… · "
         )
         lines.append(
-            f"서명 인증서 {thumbprint}만료 {cert.not_after.strftime('%Y-%m-%d')}"
+            f"**서명 인증서** · {thumbprint}만료 {cert.not_after.strftime('%Y-%m-%d')}"
             f"(남은 날 {days}) · RSA {cert.key_bits}비트"
         )
     lines += [
-        f"로그인 유지: 마지막 사용 뒤 {cfg.session_hours}시간 · 최대 {cfg.session_max_hours}시간 · "
-        f"세션 쿠키 이름: {literal_markdown(cfg.session_cookie)}",
-        f"문지기: {'있음' if runtime.gate_installed() else '없음(app.py 로 뜸)'} · "
-        f"잠금(`{names.ENV_SSO}=required`): {'예' if cfg.locked else '아니오'}",
+        f"**로그인 유지** · 마지막 사용 뒤 {cfg.session_hours}시간 · "
+        f"최대 {cfg.session_max_hours}시간 · 세션 쿠키 이름 {literal_markdown(cfg.session_cookie)}",
+        f"**문지기** · {'있음' if runtime.gate_installed() else '없음(app.py 로 뜸)'} · "
+        f"잠금(`{names.ENV_SSO}=required`) {'예' if cfg.locked else '아니오'}",
         access_line(cfg),
         access_s3_line(cfg),
     ]
@@ -299,7 +313,7 @@ def last_claims_line() -> str:
     """마지막 로그인의 클레임 이름 한 줄 — 값은 없다. 그룹 클레임이 있는지 여기서 본다."""
     claim_names = runtime.last_login_claims()
     listed = " · ".join(literal_markdown(name) for name in claim_names) or "아직 없음"
-    return f"마지막 로그인의 클레임 이름: {listed}"
+    return f"**마지막 로그인의 클레임 이름** · {listed}"
 
 
 def refresh_count_line() -> str:
@@ -313,15 +327,15 @@ def refresh_count_line() -> str:
         f"{REFRESH_OUTCOME_LABELS[outcome]} {counts[outcome]}"
         for outcome in runtime.REFRESH_OUTCOMES
     )
-    return f"로그인 갱신(기동 뒤 누계): {items}"
+    return f"**로그인 갱신(기동 뒤 누계)** · {items}"
 
 
 def readiness_line(cfg: SsoConfig) -> str:
     """꺼짐 때 「켜면 막힐 문제」 한 줄 — client id 를 넣기 전에 나머지 값을 미리 본다."""
     if not cfg.readiness:
-        return "켜면 막힐 문제: 없음"
+        return "**켜면 막힐 문제** · 없음"
     items = " · ".join(f"`{problem.env}` — {problem.reason}" for problem in cfg.readiness)
-    return f"켜면 막힐 문제: {items}"
+    return f"**켜면 막힐 문제** · {items}"
 
 
 def _event_code(fields: dict[str, str]) -> str:
@@ -340,7 +354,7 @@ def _event_code(fields: dict[str, str]) -> str:
 
 
 def _clock_text(at: int) -> str:
-    return datetime.fromtimestamp(at).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.fromtimestamp(at).astimezone().strftime(CLOCK_FORMAT)
 
 
 def recent_event_table(limit: int = RECENT_EVENT_LIMIT, *, anonymous: bool = False) -> pd.DataFrame:
@@ -391,7 +405,7 @@ def anonymous_failure_line(limit: int = ANONYMOUS_COUNT_LIMIT) -> str | None:
     items = list(counts.items())
     shown = " · ".join(f"{literal_markdown(key)} {count}" for key, count in items[:limit])
     rest = f" · 그 밖 {len(items) - limit}가지" if len(items) > limit else ""
-    return f"로그인 전 실패: 누계 {total} · {shown}{rest}"
+    return f"**로그인 전 실패** · 누계 {total} · {shown}{rest}"
 
 
 def _cert_warning() -> str:
@@ -543,7 +557,12 @@ def render_sso_status() -> None:
             st.caption(readiness_line(cfg))
         else:
             st.error(BROKEN_CONCLUSION, icon=":material/gpp_bad:")
-        st.dataframe(environment_table(cfg), hide_index=True, width="stretch")
+        st.dataframe(
+            environment_table(cfg),
+            column_config=environment_column_config(),
+            hide_index=True,
+            width="stretch",
+        )
         redirect, *facts = fact_lines(cfg, now=now)
         st.caption(redirect, help=REDIRECT_HELP)
         st.caption("  \n".join(facts))

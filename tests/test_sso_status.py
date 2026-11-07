@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -75,18 +76,18 @@ def test_off_in_production_warns_and_lists_what_would_block() -> None:
     assert conclusion.proto.help == sso_status.OFF_IN_PRODUCTION_HELP
     assert "포털 승인 메일" not in conclusion.value and "포털 승인 메일" in note["full"]
     text = _all_text(app)
-    assert "켜면 막힐 문제: " in text and f"`{names.ENV_ISSUER}` — 값이 없음" in text
+    assert "**켜면 막힐 문제** · " in text and f"`{names.ENV_ISSUER}` — 값이 없음" in text
     assert f"`{names.ENV_PUBLIC_URL}` — https 가 아님" in text
 
 
 def test_off_in_production_with_everything_else_ready_says_nothing_blocks() -> None:
-    """첫 배포 ①: client id 만 비우고 나머지를 넣으면 「켜면 막힐 문제: 없음」 이다."""
+    """첫 배포 ①: client id 만 비우고 나머지를 넣으면 「켜면 막힐 문제 · 없음」 이다."""
     use_config(drop=[names.ENV_CLIENT_ID])
 
     app = AppTest.from_string(SCRIPT).run()
 
     assert _labels(app) == ["통합인증 점검 · 꺼짐(운영)"]
-    assert "켜면 막힐 문제: 없음" in _all_text(app)
+    assert "**켜면 막힐 문제** · 없음" in _all_text(app)
 
 
 def test_on_shows_facts_without_any_secret() -> None:
@@ -110,9 +111,19 @@ def test_on_shows_facts_without_any_secret() -> None:
     )
     secret_row = environment.set_index("환경변수").loc[names.ENV_SECRET]
     assert (secret_row["상태"], secret_row["까닭"]) == ("있음", sso_status.SECRET_CHECKS_PASSED)
+    widths = {
+        name: column["width"]
+        for name, column in json.loads(app.dataframe[0].proto.columns).items()
+        if name in environment.columns
+    }
+    assert widths["까닭"] > widths["환경변수"] + widths["상태"], "까닭 칸이 잘리지 않게 넓다"
+    assert sum(widths.values()) <= 918, "창 1283 의 표 폭(샘플 관측) 안이다"
     assert "redirect\\_uri" in text and "auth\\/callback" in text
     assert signing().x5t.replace("-", "\\-").replace("_", "\\_") in text
-    assert "문지기: 있음" in text and "로그인 유지: 마지막 사용 뒤 6시간 · 최대 24시간" in text
+    assert (
+        "**문지기** · 있음" in text
+        and "**로그인 유지** · 마지막 사용 뒤 6시간 · 최대 24시간" in text
+    )
     events = app.dataframe[1].value
     assert events["사건"].tolist() == ["login_fail", "login_ok", "config"]
     assert events["사유 코드"].tolist()[0] == "aud_mismatch"
@@ -136,7 +147,7 @@ def test_recent_events_tell_an_idle_end_from_the_maximum() -> None:
 
 
 def _refresh_caption_elements(app: AppTest) -> list[Any]:
-    return [item for item in app.caption if str(item.value).startswith("로그인 갱신(")]
+    return [item for item in app.caption if str(item.value).startswith("**로그인 갱신(")]
 
 
 def _refresh_caption(app: AppTest) -> list[str]:
@@ -154,9 +165,11 @@ def test_the_status_shows_how_long_a_login_lasts_and_the_refresh_counts() -> Non
     app = AppTest.from_string(SCRIPT).run()
 
     assert not list(app.exception)
-    assert "로그인 유지: 마지막 사용 뒤 4시간 · 최대 10시간 · 세션 쿠키 이름: " in _all_text(app)
+    assert "**로그인 유지** · 마지막 사용 뒤 4시간 · 최대 10시간 · 세션 쿠키 이름 " in _all_text(
+        app
+    )
     assert _refresh_caption(app) == [
-        "로그인 갱신(기동 뒤 누계): 다시 발급 3 · 건너뜀 2 · 로그인 없음 1 · "
+        "**로그인 갱신(기동 뒤 누계)** · 다시 발급 3 · 건너뜀 2 · 로그인 없음 1 · "
         "출처·머리 거절 0 · 꼴 거절 0"
     ]
     # 사건 표는 그대로 둘째 데이터프레임이다 — 갱신은 사건 고리에 적지 않는다.
@@ -201,7 +214,7 @@ def test_the_lines_of_the_status_say_nothing_about_a_restart() -> None:
     text = _all_text(AppTest.from_string(SCRIPT).run())
 
     assert "재시작" not in text and "한 글자도" not in text
-    assert "redirect\\_uri: " in text
+    assert "**redirect\\_uri** · " in text
 
 
 def test_the_redirect_help_stands_on_the_redirect_line() -> None:
@@ -213,7 +226,7 @@ def test_the_redirect_help_stands_on_the_redirect_line() -> None:
 
     assert not list(app.exception)
     helped = [item for item in app.caption if item.proto.help == sso_status.REDIRECT_HELP]
-    assert [item.value.split(": ")[0] for item in helped] == ["redirect\\_uri"]
+    assert [item.value.split(" · ")[0] for item in helped] == ["**redirect\\_uri**"]
     assert "\n" not in helped[0].value
 
 
@@ -225,7 +238,7 @@ def test_the_refresh_counts_are_not_shown_while_off_in_production() -> None:
 
     assert _labels(app) == ["통합인증 점검 · 꺼짐(운영)"]
     assert _refresh_caption(app) == []
-    assert "로그인 유지: 마지막 사용 뒤 6시간 · 최대 24시간" in _all_text(app)
+    assert "**로그인 유지** · 마지막 사용 뒤 6시간 · 최대 24시간" in _all_text(app)
 
 
 def test_the_start_check_row_follows_the_current_setting() -> None:
@@ -258,10 +271,10 @@ def test_a_broken_setting_marks_the_wrong_rows() -> None:
     ("presence", "expected"),
     [
         (None, None),
-        ({}, "시작 때 있던 통합인증 환경변수: 없음"),
+        ({}, "**시작 때 있던 통합인증 환경변수** · 없음"),
         (
             {names.ENV_SECRET: True, names.ENV_CLIENT_ID: True, names.ENV_SCOPE: False},
-            f"시작 때 있던 통합인증 환경변수: `{names.ENV_CLIENT_ID}` · `{names.ENV_SECRET}`",
+            f"**시작 때 있던 통합인증 환경변수** · `{names.ENV_CLIENT_ID}` · `{names.ENV_SECRET}`",
         ),
     ],
 )
@@ -331,7 +344,7 @@ def test_the_status_shows_audit_events_and_anonymous_failures_apart() -> None:
     assert not list(app.exception)
     events = app.dataframe[1].value
     assert events["사건"].tolist() == ["login_ok", "config"]
-    caption = [str(c.value) for c in app.caption if str(c.value).startswith("로그인 전 실패")]
+    caption = [str(c.value) for c in app.caption if str(c.value).startswith("**로그인 전 실패")]
     assert len(caption) == 1 and "누계 60" in caption[0]
     anonymous = app.dataframe[2].value
     assert len(anonymous) == sso_status.ANONYMOUS_EVENT_LIMIT

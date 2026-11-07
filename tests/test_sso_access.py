@@ -1054,7 +1054,7 @@ def test_the_status_shows_counts_only() -> None:
     assert not list(app.exception)
     text = _status_text(app)
     assert_absent(text, ADMIN, "demo.boss", USER, "demo.x", GONE, CONTACT, "DOMAIN")
-    assert "접속 명단: 켜짐 · 관리자 2 · 사용자 1 · 읽지 못함 1" in text
+    assert "**접속 명단** · 켜짐 · 관리자 2 · 사용자 1 · 읽지 못함 1" in text
     environment = app.dataframe[0].value.set_index("환경변수")
     for name in (names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS, names.ENV_ACCESS_CONTACT):
         assert environment.loc[name, "상태"] == "있음"
@@ -1084,26 +1084,29 @@ def test_the_on_caption_says_who_gets_in() -> None:
     runtime.mark_gate_installed()
     listed = _status_text(AppTest.from_string(STATUS_SCRIPT).run())
     assert "로그인하고 접속 명단에 있는 사람만 앱에 들어옵니다" in listed
-    assert "접속 명단: 켜짐" in listed
+    assert "**접속 명단** · 켜짐" in listed
 
     runtime.reset()
     runtime.start(dev_environ())
     runtime.mark_gate_installed()
     open_to_all = _status_text(AppTest.from_string(STATUS_SCRIPT).run())
     assert "접속 명단이 꺼져 있어 로그인한 사람은 모두 들어옵니다" in open_to_all
-    assert "접속 명단: 꺼짐(인증된 사람 전부)" in open_to_all
+    assert "**접속 명단** · 꺼짐(인증된 사람 전부)" in open_to_all
 
 
 def test_the_status_says_how_the_list_stands_in_each_mode() -> None:
-    assert sso_status.access_line(load_config(dev_environ())) == "접속 명단: 꺼짐(인증된 사람 전부)"
+    assert (
+        sso_status.access_line(load_config(dev_environ()))
+        == "**접속 명단** · 꺼짐(인증된 사람 전부)"
+    )
     off_in_production = load_config(sso_environ(drop=[names.ENV_CLIENT_ID]))
     assert off_in_production.mode is SsoMode.OFF
     assert sso_status.access_line(off_in_production).startswith(
-        "접속 명단: 통합인증이 켜지면 적용 · 관리자 1 · 사용자 1 · 읽지 못함 0"
+        "**접속 명단** · 통합인증이 켜지면 적용 · 관리자 1 · 사용자 1 · 읽지 못함 0"
     )
     blocked = load_config(sso_environ(drop=[names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS]))
     assert sso_status.access_line(blocked).startswith(
-        "접속 명단: 통합인증이 켜지면 적용 · 관리자 0"
+        "**접속 명단** · 통합인증이 켜지면 적용 · 관리자 0"
     )
 
 

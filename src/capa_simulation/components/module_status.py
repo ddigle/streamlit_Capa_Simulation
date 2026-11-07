@@ -46,7 +46,8 @@ RESTART_NOTICE = "`module.json`·환경변수를 바꾼 것은 앱을 다시 띄
 # 차례로 선다 — 글 칸이면 「12,346」 < 「123」 < 「2」 처럼 글자 차례라 느린 모듈이 위로 안 온다.
 RUN_TIME_COLUMN = "마지막 회차 시간(ms)"
 # 「모듈 이름」 은 `module.json` 의 `name` 이다 — 화면 이름(`pages[].title`)과 가른다(같은 줄의 까닭
-# 「화면 이름 겹침: …」 은 화면 이름을 말한다).
+# 「화면 이름 겹침: …」 은 화면 이름을 말한다). 「빠진 화면」 은 「화면」 곁이다 — 끝에 두면 좁은
+# 창에서 가로 스크롤 뒤로 숨어 빠진 수가 보이지 않는다.
 COLUMNS = (
     "모듈",
     "모듈 이름",
@@ -56,10 +57,10 @@ COLUMNS = (
     "담당",
     "API",
     "화면",
+    "빠진 화면",
     "마지막 오류",
     RUN_TIME_COLUMN,
     "접두 없는 키",
-    "빠진 화면",
 )
 
 
@@ -67,7 +68,7 @@ def status_title(scan: ModuleScan) -> str:
     counts = {state: 0 for state in STATE_LABELS}
     for record in scan.records:
         counts[record.state] += 1
-    return f"모듈 상태 — 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
+    return f"모듈 상태 · 켜짐 {counts['on']} · 꺼짐 {counts['off']} · 실패 {counts['failed']}"
 
 
 def run_time_ms(seconds: float) -> int:
@@ -99,6 +100,7 @@ def build_status_table(scan: ModuleScan) -> pd.DataFrame:
                 "" if manifest is None else manifest.owner,
                 "" if manifest is None else f"{manifest.api}.{manifest.api_minor}",
                 0 if manifest is None else len(manifest.pages),
+                sum(1 for owner, _ in excluded if owner == module_id),
                 ""
                 if failure is None
                 else " · ".join(
@@ -106,7 +108,6 @@ def build_status_table(scan: ModuleScan) -> pd.DataFrame:
                 ),
                 None if module_id not in seconds else run_time_ms(seconds[module_id]),
                 len(warnings.get(module_id, ())),
-                sum(1 for owner, _ in excluded if owner == module_id),
             )
         )
     table = pd.DataFrame(rows, columns=list(COLUMNS))
@@ -116,7 +117,8 @@ def build_status_table(scan: ModuleScan) -> pd.DataFrame:
 
 def status_column_config() -> dict[str, ColumnConfig]:
     """까닭·마지막 오류는 기본 폭에서 잘리므로 넓힌다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
-    회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표를 붙인다."""
+    까닭은 줄이지 않는다 — 좁은 창에서 끝 칸이 가로 스크롤 뒤로 가도 빠진 수는 「화면」 곁에서
+    보인다(`COLUMNS`). 회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표를 붙인다."""
     return {
         "까닭": st.column_config.TextColumn(width="large"),
         "마지막 오류": st.column_config.TextColumn(width="medium"),

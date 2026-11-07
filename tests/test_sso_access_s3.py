@@ -1130,11 +1130,11 @@ def test_a_404_after_a_good_read_does_not_empty_the_list(
     source = runtime.access_source()
     assert source is not None and source.document is not None
     assert source.document.revision == 1
-    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 실패 · ")
+    assert sso_status.access_s3_line(cfg).startswith("**S3 명단** · 실패 · ")
 
     store.raw.clear()
     assert access_store.reread(cfg, identity) is None
-    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 정상 · ")
+    assert sso_status.access_s3_line(cfg).startswith("**S3 명단** · 정상 · ")
 
 
 def test_a_file_really_deleted_after_a_good_read_says_so_and_keeps_the_list(
@@ -1195,7 +1195,7 @@ def test_a_404_from_the_front_at_start_is_unread_and_heals_by_itself(
     access_store.read_at_start(cfg)
 
     assert access_store.is_unread(cfg)
-    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 실패 · 그 밖의 응답(HTTP 404")
+    assert sso_status.access_s3_line(cfg).startswith("**S3 명단** · 실패 · 그 밖의 응답(HTTP 404")
     assert problem_of(cfg, USER) is IdentityProblem.DENIED
 
     store.raw.clear()
@@ -1503,7 +1503,7 @@ def test_a_put_with_no_answer_is_unconfirmed_and_a_refused_one_is_not(
     assert caught.value.kind == s3_small.KIND_TIMEOUT
     assert OTHER in store.objects[OBJECT].decode(), "저장소에는 들어갔다"
     assert problem_of(cfg, OTHER) is IdentityProblem.DENIED, "메모리는 그대로다"
-    assert "쓰기: 결과 모름 · 시간 초과" in sso_status.access_s3_line(cfg)
+    assert "쓰기 결과 모름 · 시간 초과" in sso_status.access_s3_line(cfg)
 
     store.answer_delay.clear()
     with pytest.raises(access_store.StoreConflictError):
@@ -1516,7 +1516,7 @@ def test_a_put_with_no_answer_is_unconfirmed_and_a_refused_one_is_not(
     with pytest.raises(S3Failure) as refused:
         access_store.save_changes(cfg, identity, add=[GONE])
     assert not isinstance(refused.value, access_store.SaveUnconfirmedError)
-    assert "쓰기: 실패 · 인증 거절" in sso_status.access_s3_line(cfg)
+    assert "쓰기 실패 · 인증 거절" in sso_status.access_s3_line(cfg)
 
 
 def test_a_check_that_timed_out_before_the_put_left_the_file_alone(
@@ -1551,8 +1551,8 @@ def test_a_good_save_clears_the_read_failure(mock_s3: tuple[MockStore, str]) -> 
     source = runtime.access_source()
     assert source is not None and source.problem is None
     line = sso_status.access_s3_line(cfg)
-    assert line.startswith("S3 명단: 정상 · 마지막 읽기 ")
-    assert "판 2 · 쓰기: 정상" in line
+    assert line.startswith("**S3 명단** · 정상 · 마지막 읽기 ")
+    assert "판 2 · 쓰기 정상" in line
 
 
 def test_a_failed_save_leaves_the_read_failure_where_it_was(
@@ -2296,7 +2296,9 @@ def test_the_read_alert_goes_only_to_those_who_can_act(
     assert active_state(status, "AD-08") is None
     assert [item["active"] for item in states(status, "AD-08")] == [False]
     captions = "\n".join(str(item.value) for item in status.caption)
-    assert "S3 명단: 실패 · 그 밖의 응답(HTTP 503 · SlowDown)" in captions, "점검 줄은 그대로다"
+    assert "**S3 명단** · 실패 · 그 밖의 응답(HTTP 503 · SlowDown)" in captions, (
+        "점검 줄은 그대로다"
+    )
 
     _as_person(cfg, ADMIN, monkeypatch)
     status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
@@ -2328,7 +2330,7 @@ def test_the_read_alert_is_gone_after_a_good_save(
 def test_the_check_line_says_off_when_there_is_no_key() -> None:
     cfg = use_config({names.ENV_ACCESS_ADMINS: ADMIN})
 
-    assert sso_status.access_s3_line(cfg) == "S3 명단: 꺼짐"
+    assert sso_status.access_s3_line(cfg) == "**S3 명단** · 꺼짐"
 
 
 def test_the_check_line_when_it_can_read(mock_s3: tuple[MockStore, str]) -> None:
@@ -2337,17 +2339,17 @@ def test_the_check_line_when_it_can_read(mock_s3: tuple[MockStore, str]) -> None
 
     line = sso_status.access_s3_line(cfg)
 
-    assert line.startswith("S3 명단: 정상 · 마지막 읽기 ")
-    assert "사용자 2 · 판 1 · 쓰기: 저장할 때 알게 됨" in line
+    assert line.startswith("**S3 명단** · 정상 · 마지막 읽기 ")
+    assert "사용자 2 · 판 1 · 쓰기 저장할 때 알게 됨" in line
     assert_absent(line, USER, OTHER, store.access_key, store.secret_key, endpoint, store.bucket)
 
     access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[GONE])
-    assert "사용자 3 · 판 2 · 쓰기: 정상 · " in sso_status.access_s3_line(cfg)
+    assert "사용자 3 · 판 2 · 쓰기 정상 · " in sso_status.access_s3_line(cfg)
 
     store.force["PUT"] = (403, "AccessDenied")
     with pytest.raises(S3Failure):
         access_store.save_changes(cfg, identity_of(cfg, ADMIN), remove=[GONE])
-    assert "쓰기: 실패 · 인증 거절(HTTP 403 · AccessDenied)" in sso_status.access_s3_line(cfg)
+    assert "쓰기 실패 · 인증 거절(HTTP 403 · AccessDenied)" in sso_status.access_s3_line(cfg)
 
 
 @pytest.mark.parametrize(
@@ -2369,7 +2371,7 @@ def test_the_check_line_names_each_answer(
 
     line = sso_status.access_s3_line(cfg)
 
-    assert line.startswith(f"S3 명단: 실패 · {text} · 시도 ")
+    assert line.startswith(f"**S3 명단** · 실패 · {text} · 시도 ")
     assert "마지막 읽기 없음 · 관리자만 들어옴" in line
     assert_absent(line, store.access_key, store.secret_key, endpoint)
 
@@ -2382,20 +2384,20 @@ def test_the_check_line_for_a_timeout_a_closed_port_and_a_broken_file(
     monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.1)
     cfg = s3_config(store, endpoint)
     access_store.read_at_start(cfg)
-    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 실패 · 시간 초과 · ")
+    assert sso_status.access_s3_line(cfg).startswith("**S3 명단** · 실패 · 시간 초과 · ")
 
     store.delay_seconds = 0.0
     store.put(OBJECT, b"not json")
     cfg = s3_config(store, endpoint)
     access_store.read_at_start(cfg)
-    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 실패 · 파일 깨짐 · ")
+    assert sso_status.access_s3_line(cfg).startswith("**S3 명단** · 실패 · 파일 깨짐 · ")
 
     closed, closed_endpoint = start_mock(store)
     closed.shutdown()
     closed.server_close()
     cfg = s3_config(store, closed_endpoint)
     access_store.read_at_start(cfg)
-    assert sso_status.access_s3_line(cfg).startswith("S3 명단: 실패 · 주소에 닿지 못함 · ")
+    assert sso_status.access_s3_line(cfg).startswith("**S3 명단** · 실패 · 주소에 닿지 못함 · ")
 
 
 def test_the_check_line_keeps_the_last_good_read_after_a_failure(
@@ -2408,7 +2410,7 @@ def test_the_check_line_keeps_the_last_good_read_after_a_failure(
     access_store.reread(cfg, identity_of(cfg, ADMIN))
 
     line = sso_status.access_s3_line(cfg)
-    assert line.startswith("S3 명단: 실패 · 그 밖의 응답(HTTP 503 · SlowDown) · 시도 ")
+    assert line.startswith("**S3 명단** · 실패 · 그 밖의 응답(HTTP 503 · SlowDown) · 시도 ")
     assert " · 마지막 읽기 " in line and "사용자 1 · 판 1" in line
 
 
@@ -2417,7 +2419,7 @@ def test_the_check_line_says_it_waits_for_sso(mock_s3: tuple[MockStore, str]) ->
     runtime.reset()
     cfg = runtime.start(s3_environ(store, endpoint))
 
-    assert sso_status.access_s3_line(cfg) == "S3 명단: 통합인증이 켜지면 적용"
+    assert sso_status.access_s3_line(cfg) == "**S3 명단** · 통합인증이 켜지면 적용"
 
 
 def test_the_status_panel_shows_the_line_and_only_names(
@@ -2432,8 +2434,8 @@ def test_the_status_panel_shows_the_line_and_only_names(
 
     assert not list(app.exception)
     captions = "\n".join(str(item.value) for item in app.caption)
-    assert "S3 명단: 정상" in captions
-    assert "접속 명단: 켜짐 · 관리자 1 · 사용자 2 · 읽지 못함 0" in captions
+    assert "**S3 명단** · 정상" in captions
+    assert "**접속 명단** · 켜짐 · 관리자 1 · 사용자 2 · 읽지 못함 0" in captions
     table = app.dataframe[0].value.set_index("환경변수")
     assert table.loc[names.ENV_S3_SECRET_KEY, "상태"] == "있음"
     frames = "\n".join(frame.value.to_csv() for frame in app.dataframe)

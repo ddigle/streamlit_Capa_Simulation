@@ -139,8 +139,8 @@ def test_the_copy_of_the_sso_status_leaves_the_portal_values_out(
     text = diagnostic_copies[_copy_key("sso_status")]
     assert text.splitlines()[0] == "통합인증 점검 · 켜짐"
     assert "환경변수\t상태\t까닭" in text
-    assert "redirect_uri: 있음" in text and "ADFS_ISSUER: 있음" in text
-    assert "서명 인증서 만료" in text and "로그인 갱신(기동 뒤 누계)" in text
+    assert "redirect_uri · 있음" in text and "ADFS_ISSUER · 있음" in text
+    assert "서명 인증서 · 만료" in text and "로그인 갱신(기동 뒤 누계)" in text
     for value in (PUBLIC_URL, ISSUER, CLIENT_ID, sso_secret(), cert.x5t, cert.sha256[:16]):
         assert value not in text, value
     # 화면은 포털과 대 보는 자리라 글자 그대로다.
@@ -161,7 +161,7 @@ def test_the_copy_of_the_sso_status_carries_the_failures_too(
         "",
         sso_status.OFF_IN_PRODUCTION_CONCLUSION,
     ]
-    assert lines[3].startswith("켜면 막힐 문제: ")
+    assert lines[3].startswith("켜면 막힐 문제 · ")
 
 
 def test_the_copy_of_the_start_check_carries_the_table_and_the_pip_tail(
@@ -195,9 +195,10 @@ def test_the_copy_of_the_start_check_carries_the_table_and_the_pip_tail(
     assert not list(app.exception), [item.message for item in app.exception]
     text = diagnostic_copies[_copy_key("container_start_check")]
     assert text.splitlines()[0] == "서버 시작 점검 · 실패 있음"
-    assert "시작 기록 · 2026-11-07T09:00:00+09:00" in text
+    started = container_start_check.clock_text("2026-11-07T09:00:00+09:00")
+    assert f"시작 기록 · {started} · scripts/container_start.py" in text
     assert "단계\t결과\t까닭" in text and "pip 설치 실패" in text
-    assert "시작 때 비어 있던 CD 환경변수: CAPA_BDQ_TOKEN" in text
+    assert "시작 때 비어 있던 CD 환경변수 · CAPA_BDQ_TOKEN" in text
     # pip 출력은 마크다운이 아니라 받은 글 그대로다(빈칸도) — 주소만 가린다.
     assert f"{container_start_check.COPY_PIP_TAIL_LABEL}\nERROR: No matching" in text
     assert "ERROR: No matching distribution  found" in text
@@ -317,9 +318,9 @@ def test_the_copy_of_the_module_status_is_its_table() -> None:
     )
 
     table = module_status.build_status_table(scan)
-    text = module_status.status_text("모듈 상태 — 켜짐 0 · 꺼짐 0 · 실패 1", scan, table)
+    text = module_status.status_text("모듈 상태 · 켜짐 0 · 꺼짐 0 · 실패 1", scan, table)
 
-    assert text.startswith("모듈 상태 — 켜짐 0 · 꺼짐 0 · 실패 1\n\n뿌리를 읽지 못함\n\n모듈\t")
+    assert text.startswith("모듈 상태 · 켜짐 0 · 꺼짐 0 · 실패 1\n\n뿌리를 읽지 못함\n\n모듈\t")
     assert "demo_a\t\t실패\t선언을 읽지 못함" in text
     assert "CAPA_MODULES_DISABLED 없음" in text
     assert "None" not in text and "<NA>" not in text

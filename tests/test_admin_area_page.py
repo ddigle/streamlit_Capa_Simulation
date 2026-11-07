@@ -434,10 +434,16 @@ def test_a_direct_edit_save_without_changes_makes_no_new_version(
     app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
     assert app.text[-1].value == "v1|SAW>절단"
 
+    kinds_before = _kinds_in_order(app.main)
     app = _press_rename_save(app)
     assert [str(item.value) for item in infos(app)] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
     assert not successes(app) and not place_errors(app)
     assert app.text[-1].value == "v1|SAW>절단"
+    # 글은 폼 안 저장 줄 바로 아래 칸이다 — 칸이 늘 서 있어 그 밖의 요소 차례는 그대로다(g8-16).
+    kinds = _kinds_in_order(app.main)
+    assert kinds.index("form") < kinds.index("text_input") < kinds.index("info")
+    assert kinds.index("info") < len(kinds) - kinds[::-1].index("dataframe") - 1
+    assert [kind for kind in kinds if kind != "info"] == kinds_before
 
     app.text_input(key="admin_area_process_rename_note").set_value("메모만 적음")
     app = _press_rename_save(app)
@@ -701,6 +707,14 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     # 넷째 줄 「통합인증」 은 결과 파일이 아니라 지금 설정에서 판정한다(시험 환경은 꺼짐).
     assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀"]
     assert steps.value["단계"].iloc[3] == "통합인증"
+    # 까닭 칸은 잘리지 않게 넓고 세 칸 합은 창 1283 의 표 폭(샘플 관측 918px) 안이다(g8-21).
+    widths = {
+        name: column["width"]
+        for name, column in json.loads(steps.proto.columns).items()
+        if name in {"단계", "결과", "까닭"}
+    }
+    assert widths["까닭"] > widths["단계"] + widths["결과"]
+    assert sum(widths.values()) <= 918
     assert steps.value["까닭"].iloc[3] == "ADFS_CLIENT_ID 없음"
     assert "pip 종료 코드 1" in steps.value["까닭"].iloc[0]
     # 옛 결과 파일에는 통합인증 칸이 없어 그 캡션도 없다.
@@ -773,10 +787,10 @@ def test_the_server_start_check_adds_the_sync_lines_when_the_server_has_them(
     ]
     assert steps.value["까닭"].iloc[5] == "판 다름 2.36.8"
     captions = "\n".join(caption.value for caption in app.caption)
-    assert "/project 디스크: 여유 40.0 GiB · 전체 100.0 GiB" in captions
-    assert "한도: 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions
+    assert "**/project 디스크** · 여유 40.0 GiB · 전체 100.0 GiB" in captions
+    assert "**한도** · 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions
     assert "받기 2.5초 · 앱 응답까지 45초" in captions
-    assert "앞 pod 마지막 올림 → 이번 앱 준비: 105초" in captions
+    assert "**앞 pod 마지막 올림 → 이번 앱 준비** · 105초" in captions
 
 
 def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(
@@ -943,7 +957,7 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     app = AppTest.from_string(script).run(timeout=120)
     assert not list(app.exception), [element.message for element in app.exception]
 
-    assert _module_status_labels(app) == ["모듈 상태 — 켜짐 3 · 꺼짐 1 · 실패 2"]
+    assert _module_status_labels(app) == ["모듈 상태 · 켜짐 3 · 꺼짐 1 · 실패 2"]
     table = app.dataframe[0].value
     rows = {row["모듈"]: row for row in table.to_dict("records")}
     # 회차 시간은 단위를 칸 이름에 적고 ms 정수로 싣는다(초 소수 둘째 자리면 가벼운 모듈이 0.00).
@@ -952,6 +966,9 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     assert rows["demo_off"]["까닭"] == "module.json enabled=false"
     assert rows["demo_bad_manifest"]["상태"] == "실패"
     assert rows["demo_future_api"]["API"] == "99.0"
+    # 「빠진 화면」 은 「화면」 곁이다 — 끝 칸이면 가로 스크롤 뒤로 숨는다(g8-21).
+    columns = table.columns.tolist()
+    assert columns.index("빠진 화면") == columns.index("화면") + 1
     assert rows["demo_crash"]["마지막 오류"].endswith("RuntimeError · page · main")
     # `module.json` 의 name 은 「모듈 이름」 이다 — 같은 줄 까닭의 「화면 이름 겹침」
     # (pages[].title)과 가른다. 까닭 · 마지막 오류는 기본 폭에서 잘리므로 넓힌 칸으로 싣는다.
