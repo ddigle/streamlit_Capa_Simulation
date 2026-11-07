@@ -4,7 +4,7 @@
 
 - 표시 항목·기간·공정 필터·상세·PKG 기준(로직 분석이면 고르는 일곱 칸)은 사이드바 조건 카드
   `표준 목표 조건` 이다. 카드는 계산이 멈추는 회차에도 먼저 선다.
-- 주차별 가용설비 입력은 결과 상자 위 작업 줄이다 — 붙여넣기·입력 초기화는 팝업, 양식은 내려받기.
+- 주차별 가용설비 입력은 결과 상자 위 작업 줄이다 — 붙여넣기·입력 초기화는 팝업, 양식은 붙여넣기 창.
 - 설명(산식·세션 적용 범위·예외 처리 규칙)은 Guide(`guides/standard_target_capa.md`)다.
 """
 
@@ -53,8 +53,6 @@ from capa_simulation.components.state_alerts import (
     simulation_scope,
 )
 from capa_simulation.components.table_toolbar import (
-    CSV_TEMPLATE_LABEL,
-    render_csv_download,
     render_table_heading,
     toolbar_clearance,
 )
@@ -176,7 +174,7 @@ MISSING_LIST_TITLE = "누락 공정·주차"
 # 그 표의 공정 칸 머리 풍선 — 표시명이 입혀진 동안만 단다(숨은 데이터 안내는 칸 머리 풍선 —
 # UI-TXT-04).
 MISSING_PROCESS_HELP = (
-    "화면 표시명입니다 — 붙여넣기에는 작업 줄 「CSV 양식 다운로드」 양식의 원본 공정명을 씁니다."
+    "화면 표시명입니다 — 붙여넣기에는 「가용설비 붙여넣기」 창 양식의 원본 공정명을 씁니다."
 )
 # 창을 연 회차의 알림 글 — 창 안 글 · 칸 풍선 대신 알림창 · Alarm 이다(UI-NTF-09, 2026-11-05 검수
 # static-37). 앞 60자가 결과를 말한다(알림창 짧은 글).
@@ -947,17 +945,6 @@ with card:
     logic_filters = st.container()
 
 target_processes = selected_processes or process_options
-# 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
-# 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
-# 덮인다(2026-09-29 버그 보고).
-# 바이트는 (공정 차례·기간·저장값 지문) 키 캐시다 — 결과와 무관한 조작마다 다시 만들지 않는다.
-template_csv = get_weekly_availability_template_csv(
-    tuple(target_processes),
-    start_date,
-    end_date,
-    frame_digest(availability),
-    _saved=availability,
-)
 
 
 def _close_dialog() -> None:
@@ -972,6 +959,16 @@ def _open_dialog(name: str) -> None:
 def _paste_dialog() -> None:
     """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다)."""
     paste_generation = generation(AVAILABILITY_SAVE_GENERATION_KEY)
+    # 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
+    # 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
+    # 덮인다(2026-09-29 버그 보고). 양식 단추는 이 창 한 곳이다(설계 규칙 UI-LAY-12 · UI-INP-08).
+    template_csv = get_weekly_availability_template_csv(
+        tuple(target_processes),
+        start_date,
+        end_date,
+        frame_digest(availability),
+        _saved=availability,
+    )
     submit = render_paste_form(
         PASTE_FORM_KEY,
         text_key="standard_target_availability_clipboard_text",
@@ -1070,12 +1067,6 @@ with action_row:
             type="primary",
             on_click=_open_dialog,
             args=(PASTE_DIALOG,),
-        )
-        render_csv_download(
-            data=template_csv,
-            file_name=f"Weekly_Available_Equipment_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv",
-            key="download_standard_target_availability_template",
-            label=CSV_TEMPLATE_LABEL,
         )
         st.button(
             "입력 초기화",
@@ -1180,7 +1171,7 @@ else:
             ):
                 displayed_missing = missing_availability.copy()
                 displayed_missing["공정"] = process_labels.series(displayed_missing["공정"])
-                # 이 표가 가리키는 입력은 작업 줄의 `주차별 가용설비 CSV 양식`이고 그 양식과
+                # 이 표가 가리키는 입력은 붙여넣기 창의 `주차별 가용설비 CSV 양식`이고 그 양식과
                 # 붙여넣기 파서는 원본 공정명을 요구한다. 표시명이 입혀진 동안은 공정 칸 머리
                 # 풍선이 그것을 말한다 — 화면 이름을 그대로 적어 붙여넣지 않게. 표가 펼침의 첫
                 # 요소라 도구 막대가 펼침 머리를 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」).

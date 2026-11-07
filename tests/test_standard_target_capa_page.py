@@ -260,6 +260,7 @@ finally:
     st.download_button = original_download_button
 """
 
+TEMPLATE_KEY = "dialog_standard_target_availability_template"
 RENAMED_TEST_SCRIPT = TEST_SCRIPT.replace("APPLY_RENAME = False", "APPLY_RENAME = True")
 # 석 달 기준정보 + 시험이 바꾸는 조회기간 — 기간을 좁혔다 넓히는 왕복을 본다.
 WIDE_PERIOD_SCRIPT = TEST_SCRIPT.replace(
@@ -689,46 +690,35 @@ def test_exception_process_notice_stays_original_without_a_rename_profile() -> N
     assert _frame_with_value(app, "공정", "Pre B/D") is not None
 
 
-def test_weekly_availability_template_keeps_the_original_process_name() -> None:
-    """양식 CSV 는 그대로 되붙는 왕복이다. 표시명이 새면 파서가 공정을 찾지 못한다."""
-    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
-
+def _paste_window_template(app: AppTest) -> pd.DataFrame:
+    """붙여넣기 창을 열고 그 창의 양식을 읽는다 — 양식 단추는 창 한 곳이다(설계 규칙 UI-LAY-12)."""
     assert not app.exception
-    template = pd.read_csv(
-        BytesIO(
-            bytes(
-                app.session_state["captured_download_data"][
-                    "download_standard_target_availability_template"
-                ]
-            )
-        ),
+    assert TEMPLATE_KEY not in app.session_state.filtered_state.get("captured_download_data", {})
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    return pd.read_csv(
+        BytesIO(bytes(app.session_state["captured_download_data"][TEMPLATE_KEY])),
         encoding="utf-8-sig",
         dtype="object",
+    )
+
+
+def test_weekly_availability_template_keeps_the_original_process_name() -> None:
+    """양식 CSV 는 그대로 되붙는 왕복이다. 표시명이 새면 파서가 공정을 찾지 못한다."""
+    template = _paste_window_template(
+        AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
     )
 
     assert set(template["공정"]) == {"Process-A", "Process-B"}
 
 
 def test_weekly_availability_template_carries_saved_counts_and_blanks_the_rest() -> None:
-    """작업 줄 양식은 저장된 가용대수를 싣고, 저장값이 없는 공정·주차는 빈칸이다.
+    """창의 양식은 저장된 가용대수를 싣고, 저장값이 없는 공정·주차는 빈칸이다.
 
     예전에는 모든 칸이 0.0 이라, 한 공정만 고쳐 통째로 되붙이면 다른 공정이 0 대로 덮였다
     (2026-09-29 버그 보고). 가짜 저장소는 Process-A 의 26-W32~W36 만 2 대를 갖고 있다.
     """
-    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
-
-    assert not app.exception
-    template = pd.read_csv(
-        BytesIO(
-            bytes(
-                app.session_state["captured_download_data"][
-                    "download_standard_target_availability_template"
-                ]
-            )
-        ),
-        encoding="utf-8-sig",
-        dtype="object",
-    )
+    template = _paste_window_template(AppTest.from_string(TEST_SCRIPT, default_timeout=60).run())
     saved_weeks = {"26-W32", "26-W33", "26-W34", "26-W35", "26-W36"}
     saved_cells = template["공정"].eq("Process-A") & template["Weeknum"].isin(saved_weeks)
     assert saved_cells.sum() == len(saved_weeks)
@@ -789,7 +779,7 @@ def test_missing_availability_table_shows_the_display_name_with_a_source_notice(
     assert set(missing["공정"]) == set(table["shown"]["공정"])
     assert set(table["shown"]["공정"].values()) == {"가공"}
     assert not [caption.value for caption in app.caption if "CSV 양식" in caption.value]
-    assert "CSV 양식 다운로드" in table["help"]["공정"]
+    assert "「가용설비 붙여넣기」 창 양식" in table["help"]["공정"]
     assert table["file"].startswith("Capa_Standard_Target_Missing_Availability_")
 
 
@@ -824,7 +814,7 @@ def test_the_missing_availability_notice_does_not_move_the_weekly_table(
     app = AppTest.from_string(RENAMED_MISSING_WEEK_SCRIPT, default_timeout=60).run()
     assert not app.exception
     assert "누락 공정·주차 확인" in {expander.label for expander in app.expander}
-    assert any("CSV 양식 다운로드" in text for text in _process_column_helps(app))
+    assert any("「가용설비 붙여넣기」 창 양식" in text for text in _process_column_helps(app))
     note = active_state(app, "ST-17")
     assert note is not None and "tables" not in note
     assert "결과 상자 안 「누락 공정·주차 확인」" in note["short"]
