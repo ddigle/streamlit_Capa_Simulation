@@ -237,7 +237,7 @@ APPLY_LOCKED_HELP = "고친 칸이 있으면 누를 수 있습니다."
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
 # 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
 OWN_CHANGE_KEY = "load_conversion_own_change"
-# 편집표·붙여넣기 대기 이름 — 사이드바 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
+# 편집표·붙여넣기 대기 이름 — 변경 판 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
 EDITOR_NAMES = {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"}
 STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
 # 줄 차례 지문은 두 편집표 캐시 키와 같은 표시순서 지문이다 — PKG PLAN·수율 모두 이 표시순서로 줄을

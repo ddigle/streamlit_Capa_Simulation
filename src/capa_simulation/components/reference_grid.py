@@ -14,7 +14,7 @@
 - **편집은 출납 콜백이 세션 inbox 에 쌓기만** 하고(`edit_grid.collect_outbox`) 본문이 원본 토큰을 본
   뒤 반영한다(`apply_grid_inbox`) — 원본이 바뀌어 초안·이력을 버린 회차에는 새 `gen` 이 서서 그 전에
   보낸 op 가 버려지고 수가 토스트로 간다. 지금 보이지 않는 표의 op 도 그 표 초안에 쓴다. 반영이 초안
-  칸을 비우면 화면이 한 번 다시 돈다(본문보다 먼저 그린 사이드바·탭 점이 옛 칸으로 섰다).
+  칸을 비우면 화면이 한 번 다시 돈다(본문보다 먼저 그린 칩·탭 점이 옛 칸으로 섰다).
 - **오류의 자리는 둘이다.** 숫자·범위·해석 오류는 칸 안(빨강 + 상태 줄 문구 — 그리드가 그린다)이고
   「변경사항 적용」 을 누르면 고칠 칸 알림으로 멈춘다(`error_notice`). 업무 규칙 오류
   (`reference_consistency`)는 적용할 때 문장으로(오늘과 같다 — 화면이 쓴다).
@@ -71,7 +71,7 @@ from capa_simulation.services.simulation_cache import (
     get_edit_grid_base_within,
 )
 
-# 변경 목록 이름 — 사이드바 「적용 전 편집」·단추 「변경사항 적용」 과 같은 말.
+# 변경 목록 이름 — 변경 칩 · 변경 판 「적용 전 편집」·단추 「변경사항 적용」 과 같은 말.
 CHANGES_LABEL: Final = "적용 전 변경"
 KEYS: Final = edit_grid.GridKeys(
     inbox=INBOX_KEY, applied=APPLIED_KEY, toast=TOAST_KEY, discarded=DISCARDED_KEY
@@ -300,9 +300,9 @@ def collect_outbox() -> None:
     """출납 콜백 — 새 op 를 inbox 에 쌓고(`edit_grid.collect_outbox`), 초안이 없던 표에는 빈 초안
     자리를 둔다.
 
-    사이드바 「적용 전 편집」·화면 탭 점(`scenario_edit_bar.pending_edit_pages` — 세션 칸이 None
+    변경 칩 · 변경 판·화면 탭 점(`scenario_edit_bar.pending_edit_pages` — 세션 칸이 None
     이 아니면 센다)은 `app.py` 가 페이지 본문보다 **먼저** 그린다. op 는 본문이 반영하므로 빈 자리가
-    없으면 첫 편집이 그 회차 사이드바에 서지 않고 다음 조작까지 늦는다(그리드는 첫 편집 뒤 다시
+    없으면 첫 편집이 그 회차 칩에 서지 않고 다음 조작까지 늦는다(그리드는 첫 편집 뒤 다시
     보내지 않는다). 빈 자리(`{"cells": {}, "bad": {}}`)는 초안으로는 비어 있어(`draft_from` 이
     None) 「변경사항 적용」·단추 점·변경 수에 들지 않고, 같은 회차 본문의 반영이 진짜 초안(또는
     None)으로 덮는다.
@@ -317,9 +317,9 @@ def apply_grid_inbox(tables: Mapping[str, GridTable]) -> bool:
     """inbox 의 op 를 표별 초안·이력에 반영한다(받을 표가 없는 op 는 버리고 수를 알린다).
 
     반영이 어느 표의 초안 칸을 **비웠으면** 참이다 — None 이 아니던 칸이 None 이 됨(Ctrl+Z 로
-    0칸, 초안 없던 표의 첫 op 가 아무것도 바꾸지 않아 출납 콜백의 빈 자리를 걷음). 사이드바 「적용
-    전 편집」·화면 탭 점·테마 표지는 `app.py` 가 본문보다 먼저 그 칸으로 그렸으므로 부르는 쪽이 한
-    번 다시 돈다(`st.rerun()` — 다음 회차엔 inbox 가 비어 거짓이라 되풀이되지 않는다)."""
+    0칸, 초안 없던 표의 첫 op 가 아무것도 바꾸지 않아 출납 콜백의 빈 자리를 걷음). 변경 칩·화면 탭
+    점·테마 표지는 `app.py` 가 본문보다 먼저 그 칸으로 그렸으므로 부르는 쪽이 한 번 다시
+    돈다(`st.rerun()` — 다음 회차엔 inbox 가 비어 거짓이라 되풀이되지 않는다)."""
     held = [name for name in tables if st.session_state.get(cells_key(name)) is not None]
     edit_grid.apply_inbox(KEYS, {name: table.slot for name, table in tables.items()})
     return any(st.session_state.get(cells_key(name)) is None for name in held)
