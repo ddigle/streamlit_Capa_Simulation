@@ -37,7 +37,7 @@ def test_the_panel_opens_in_the_browser_without_a_python_rerun() -> None:
     assert "const { data, setTriggerValue } = component" in JS
     assert "C.ask = setTriggerValue" in JS
     assert JS.count("C.ask(") == 1
-    asker = JS[JS.index("function connectionMoved(") : JS.index("function retireCenter(")]
+    asker = JS[JS.index("function connectionMoved(") : JS.index("function endReconnectWait(")]
     assert "C.ask('reconnected', Date.now())" in asker
     assert "on_reconnected_change=_reconnected" in Path(alert_center.__file__).read_text(
         encoding="utf-8"
@@ -534,6 +534,74 @@ console.log(JSON.stringify({
     assert "const RECONNECT_LIMIT_MS = 5000\n" in JS
 
 
+def test_a_press_during_the_wait_holds_the_run_until_its_mark_comes_back() -> None:
+    """표지는 왕복해야 움직인다 — 누름이 서버로 가는 동안 부르면 누름의 회차를 끊어 그 누름이
+    사라진다(2026-11-08 사본 실측, 왕복 200ms 에서 다시 붙은 뒤 240ms 에 누른 적용 단추). 손이
+    닿으면 표지가 돌아오기를 더 기다리고, 끝내 움직이지 않으면 그때 부른다. 상한도 손을 넘지
+    않는다."""
+    out = _node(
+        """
+const need = RECONNECT_WAIT_MS
+const step = (touched, moves = 0, waited = 400) =>
+  reconnectStep('CONNECTED', 'notRunning', moves, need, waited, need, touched)
+console.log(JSON.stringify({
+  untouched: step(Infinity),
+  just_touched: step(10),
+  touched_inside: step(need + RECONNECT_TOUCH_MS - 1),
+  touched_long_ago: step(need + RECONNECT_TOUCH_MS),
+  run_came_back: step(10, 1),
+  over_the_limit: step(10, 0, RECONNECT_LIMIT_MS + 1),
+  events: TOUCH_EVENTS,
+}))
+"""
+    )
+    assert out == {
+        "untouched": "ask",
+        "just_touched": "wait",
+        "touched_inside": "wait",
+        "touched_long_ago": "ask",
+        "run_came_back": "stop",
+        "over_the_limit": "wait",
+        "events": ["pointerdown", "click", "keydown"],
+    }
+    assert "const RECONNECT_TOUCH_MS = 700\n" in JS
+    mover = JS[JS.index("function connectionMoved(") : JS.index("function endReconnectWait(")]
+    # 기다리는 동안만 듣는다 — 듣기는 다시 붙을 때 서고 틱이 끝나면 걷힌다.
+    assert "passive: true, signal: C.reconnectTouch.signal" in mover
+    assert mover.index("addEventListener") < mover.index("setTimeout(tick")
+    assert "at - touchedAt" in mover
+    assert "endReconnectWait(C)\n    if (step === 'ask' && C.ask)" in mover
+
+
+def test_the_wait_adds_the_round_trip_the_socket_took() -> None:
+    """프런트가 스스로 돈 회차의 표지는 망을 왕복해야 닿는다 — 왕복 500ms 에서 300ms 만 기다리면
+    표지가 닿기 전에 불러 회차가 두 번 돈다(2026-11-08 사본 실측). 소켓이 붙는 데 걸린 시간으로
+    어림한다."""
+    out = _node(
+        """
+console.log(JSON.stringify({
+  local: reconnectWait(0),
+  far: reconnectWait(500),
+  odd: reconnectWait(-5),
+  huge: reconnectWait(60000),
+  far_early: reconnectStep('CONNECTED', 'notRunning', 0, 500, 500, reconnectWait(500)),
+  far_quiet: reconnectStep('CONNECTED', 'notRunning', 0, 800, 800, reconnectWait(500)),
+}))
+"""
+    )
+    assert out == {
+        "local": 300,
+        "far": 800,
+        "odd": 300,
+        "huge": 5300,
+        "far_early": "wait",
+        "far_quiet": "ask",
+    }
+    mover = JS[JS.index("function connectionMoved(") : JS.index("function endReconnectWait(")]
+    assert "if (now === CONNECTING) C.connectingAt = performance.now()" in mover
+    assert "reconnectWait(before === CONNECTING ? begun - C.connectingAt : 0)" in mover
+
+
 def test_one_observer_watches_both_marks_and_the_center_does_not_add_another() -> None:
     """회차 표지와 연결 표지는 관찰자 하나가 본다. 칸이 다시 그려져도 뿌리가 같으면 그대로이고,
     뿌리가 바뀌거나 칸을 새로 세우면 앞 관찰자를 끊는다 — 남으면 다시 붙을 때 회차를 두 번
@@ -547,12 +615,14 @@ def test_one_observer_watches_both_marks_and_the_center_does_not_add_another() -
     assert entry.index("retireCenter(C)") < entry.index("createCenter(data)")
     retire = JS[JS.index("function retireCenter(") :]
     retire = retire[: retire.index("\n}\n")]
-    assert "C.runObserver.disconnect()" in retire and "clearTimeout(C.reconnectTimer)" in retire
+    assert "C.runObserver.disconnect()" in retire and "endReconnectWait(C)" in retire
+    ending = JS[JS.index("function endReconnectWait(") : JS.index("function retireCenter(")]
+    assert "clearTimeout(C.reconnectTimer)" in ending and "C.reconnectTouch.abort()" in ending
 
 
 def test_the_dialog_is_read_at_the_moment_the_connection_leaves() -> None:
     """대화상자는 끊기는 순간에 읽는다 — 다시 붙은 뒤에는 새 회차가 걷고 있을 수 있다."""
-    mover = JS[JS.index("function connectionMoved(") : JS.index("function retireCenter(")]
+    mover = JS[JS.index("function connectionMoved(") : JS.index("function endReconnectWait(")]
     assert (
         "if (before === CONNECTED) C.dialogAtCut = Boolean(document.querySelector(DIALOG))" in mover
     )
