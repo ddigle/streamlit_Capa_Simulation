@@ -613,13 +613,55 @@ process.stdout.write(JSON.stringify({
     assert out["nothing"] is False
 
 
+def test_focus_that_falls_out_of_an_open_dialog_comes_back() -> None:
+    """대화상자의 Esc 는 그 안의 키 사건으로만 듣는다 — 초점이 문서로 빠지면 나간 칸으로, 그 칸이
+    없거나 초점을 받지 못하면 대화상자로 되돌린다. 초점이 이미 다른 곳에 갔거나 대화상자가 닫혔으면
+    두고 본다."""
+    out = _node(
+        _FOCUS_FAKES
+        + """
+const run = ({ open = true, leftAlive = true, elsewhere = false }) => {
+  const doc = docOf([], null)
+  doc.activeElement = elsewhere ? { other: true } : doc.body
+  const dialog = node({}, { isConnected: open })
+  const left = node({}, { isConnected: leftAlive })
+  left.focus = () => { left.focused += 1; doc.activeElement = left }
+  dialog.focus = () => { dialog.focused += 1; doc.activeElement = dialog }
+  return [returnDialogFocus(doc, dialog, left), left.focused, dialog.focused]
+}
+const stuck = () => {
+  const doc = docOf([], null)
+  doc.activeElement = doc.body
+  const dialog = node({}, { isConnected: true })
+  const left = node({}, { isConnected: true })
+  return [returnDialogFocus(doc, dialog, left), left.focused, dialog.focused]
+}
+process.stdout.write(JSON.stringify({
+  back: run({}),
+  gone: run({ leftAlive: false }),
+  elsewhere: run({ elsewhere: true }),
+  closed: run({ open: false }),
+  unfocusable: stuck(),
+}))
+"""
+    )
+    assert out["back"] == [True, 1, 0]
+    assert out["gone"] == [True, 0, 1]
+    assert out["elsewhere"] == [False, 0, 0]
+    assert out["closed"] == [False, 0, 0]
+    # 나간 칸이 초점을 받지 못하는 꼴(꺼진 단추)이면 대화상자가 받는다.
+    assert out["unfocusable"] == [True, 1, 1]
+
+
 def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> None:
-    """처리기는 문서에 한 벌이고(알림 칸이 다시 서도 늘지 않는다), 두 일은 사건 자리에서 묶인다 —
+    """처리기는 문서에 한 벌이고(알림 칸이 다시 서도 늘지 않는다), 세 일은 사건 자리에서 묶인다 —
     Tab 을 누른 순간 맞추어 회차 없이 열린 팝오버 안 단추도 들고 평소에는 값이 들지 않는다."""
     shell = JS[JS.index("function installFocusShell(") :]
     shell = shell[: shell.index("\n}\n")]
     assert "if (window.__capaFocusShell) return" in shell
     assert "event.key === 'Tab'" in shell and "syncLockedTips(document)" in shell
     assert "'pointerout'" in shell and "releaseHeldTip(document, event)" in shell
+    assert "'focusout'" in shell and "!event.relatedTarget" in shell
+    assert "returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS" in shell
     assert "installFocusShell()" in JS[JS.index("export default function") :]
     assert "MutationObserver" not in shell

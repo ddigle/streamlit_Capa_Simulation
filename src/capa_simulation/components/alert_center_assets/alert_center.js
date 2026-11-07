@@ -34,10 +34,11 @@
 //   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
 //   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
 //   복사에 넣지 않고 표 이름 · 행 수만 적는다(최대 2000행 — 표는 「CSV 내려받기」 가 맡는다).
-// - 초점 껍데기(`installFocusShell`): 앱 전체 꼴이라 화면마다 고치지 않고 이 칸이 문서에 처리기 둘을 둔다. 회차를 돌리지 않는다.
+// - 초점 껍데기(`installFocusShell`): 앱 전체 꼴이라 화면마다 고치지 않고 이 칸이 문서에 처리기 셋을 둔다. 회차를 돌리지 않는다.
 //   ① 꺼진 단추는 Tab 이 건너뛰므로 감싼 풍선 칸(`stTooltipHoverTarget`)이 탭 자리를 맡는다(설계 규칙 UI-INP-07). 상시 훑지 않고 Tab
 //   키를 누른 순간 한 번 맞춘다 — 회차 없이 열리는 팝오버 안 단추까지 든다. ② Streamlit 풍선은 초점이 칸 안에 있으면 마우스가 떠나도
-//   닫지 않아 마우스로 누른 단추의 풍선이 남는다 — 키보드 초점이 아니면 마우스가 떠날 때 닫는다.
+//   닫지 않아 마우스로 누른 단추의 풍선이 남는다 — 키보드 초점이 아니면 마우스가 떠날 때 닫는다. ③ 대화상자의 Esc 는 그 안의 키 사건으로만
+//   듣는데 고른 탭이 회차 중 `tabindex` 를 잠깐 잃으면 초점이 문서로 빠진다 — 열린 대화상자 안으로 되돌린다.
 // `// <alerts-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_alert_center_assets.py`).
 const HOST_ID = 'capa-alert-host'
 const APP_ROOT = '[data-testid="stApp"]'
@@ -61,6 +62,8 @@ const PENDING_TAB_MS = 20000
 // 「복사했습니다」 가 서 있는 시간.
 const COPIED_MS = 1800
 const TAB_BUTTON = '[data-testid="stTabs"] [role="tab"]'
+// 빠진 초점을 되돌리기 전에 기다리는 시간 — 고른 탭은 회차 중 `tabindex` 를 잠깐 잃어 그동안 초점을 받지 못한다(되찾기까지 50ms 안쪽).
+const FOCUS_RETURN_MS = 120
 
 // <alerts-rows>
 // 사건 알림의 「같은 알림」 열쇠 — 코드 + 짧은 글.
@@ -228,6 +231,7 @@ function copyText(pairs) {
 
 // <alerts-focus>
 const TIP_HOST = '[data-testid="stTooltipHoverTarget"]'
+const DIALOG = '[role="dialog"]'
 const BUTTON_LABEL = '[data-testid="stMarkdownContainer"]'
 
 function buttonName(button) {
@@ -258,6 +262,14 @@ function releaseHeldTip(doc, event) {
   if (!host || !host.contains(event.target) || host.contains(event.relatedTarget)) return false
   if (held.matches(':focus-visible')) return false
   held.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
+  return true
+}
+
+function returnDialogFocus(doc, dialog, left) {
+  const active = doc.activeElement
+  if (!dialog.isConnected || (active && active !== doc.body)) return false
+  if (left.isConnected) left.focus({ preventScroll: true })
+  if (!doc.activeElement || doc.activeElement === doc.body) dialog.focus({ preventScroll: true })
   return true
 }
 // </alerts-focus>
@@ -346,6 +358,15 @@ function installFocusShell() {
     true,
   )
   document.addEventListener('pointerout', (event) => releaseHeldTip(document, event), true)
+  document.addEventListener(
+    'focusout',
+    (event) => {
+      const left = event.target
+      const dialog = !event.relatedTarget && left.closest ? left.closest(DIALOG) : null
+      if (dialog) setTimeout(() => returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS)
+    },
+    true,
+  )
 }
 
 function createCenter(data) {
