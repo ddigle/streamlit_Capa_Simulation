@@ -1216,3 +1216,16 @@ def test_the_reset_button_warns_before_it_drops_the_undo_history() -> None:
     )
     click = JS[JS.index("resetButton.onclick = () => {") :]
     assert "S.undo = []" in click[: click.index("for (const button of")]
+
+
+def test_a_locked_canvas_panel_says_why_in_a_tip_and_red_text_is_only_for_a_refusal() -> None:
+    """가정 시나리오의 꺼진 캔버스 칸은 오류가 아니다 — 까닭은 칸을 감싼 묶음의 풍선이고(마우스 ·
+    키보드), 빨간 글(`.sle-area-note`)은 방금 거부(`S.note`)에만 쓴다(설계 규칙 UI-INP-07)."""
+    assert "areaNote.textContent = S.note\n" in JS
+    assert "areaNote.textContent = data.canvasLock" not in JS
+    assert "S.note || (data.canvasEditable" not in JS
+    assert "setTip(q('.sle-area'), canvasLocked ? canvasLockReason : '')" in JS
+    assert "q('.sle-area').classList.toggle('is-locked', canvasLocked)" in JS
+    assert "bindTip(q('.sle-area'))" in JS
+    assert ".sle-area.is-locked :disabled" in CSS
+    assert "color: var(--sle-danger)" in _rule(".sle-area-note")

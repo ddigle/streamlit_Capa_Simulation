@@ -4471,7 +4471,7 @@ export default function (component) {
     lockButton(unplaceButton, chosen.some((m) => onCanvas(m) || m.created) ? '' : noPickReason(chosen))
     lockButton(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
-    areaNote.textContent = S.note || (data.canvasEditable === false ? (data.canvasLock || '') : '')
+    areaNote.textContent = S.note
     syncInspector()
     syncFormatPanel()
     renderSheet()
@@ -6591,16 +6591,15 @@ export default function (component) {
     if (!Number.isFinite(value)) { input.value = current; return null }
     return value
   }
-  // 캔버스 칸을 끄면 까닭을 풍선·알림 칸에 둔다(보기는 그대로 — 폭·높이 값은 지금 캔버스). 회차마다 받은
-  // 값대로 켜고 끈다 — 가정 세션에서 끈 칸이 공식 세션으로 돌아와도(편집기 key·DOM 이 같다) 꺼진 채 남지 않게.
+  // 캔버스 칸을 끄면 까닭은 칸을 감싼 묶음의 풍선이다(보기는 그대로 — 폭·높이 값은 지금 캔버스, 설계 규칙 UI-INP-07 — 빨간
+  // 글은 방금 거부 `S.note` 에만 쓴다). 회차마다 받은 값대로 켜고 끈다 — 가정 세션에서 끈 칸이 공식 세션으로 돌아와도(편집기
+  // key·DOM 이 같다) 꺼진 채 남지 않게.
   const canvasLocked = data.canvasEditable === false
-  lockCanvasControls(
-    q('.sle-area').querySelectorAll('input, button'),
-    canvasLocked,
-    data.canvasLock || '이 편집기에서는 캔버스를 바꾸지 않습니다',
-  )
-  if (canvasLocked) areaNote.textContent = data.canvasLock || ''
-  else if (!S.note) areaNote.textContent = ''
+  const canvasLockReason = data.canvasLock || '이 편집기에서는 캔버스를 바꾸지 않습니다'
+  lockCanvasControls(q('.sle-area').querySelectorAll('input, button'), canvasLocked, canvasLockReason)
+  q('.sle-area').classList.toggle('is-locked', canvasLocked)
+  setTip(q('.sle-area'), canvasLocked ? canvasLockReason : '')
+  if (!S.note) areaNote.textContent = ''
   areaW.onchange = () => { const v = areaValue(areaW, W()); if (v !== null) setCanvas(v, H()) }
   areaH.onchange = () => { const v = areaValue(areaH, H()); if (v !== null) setCanvas(W(), v) }
   // Enter 로 바로 반영한다(숫자 칸은 Enter 만으로는 change 가 안 나는 경우가 있다).
