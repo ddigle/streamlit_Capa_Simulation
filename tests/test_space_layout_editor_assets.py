@@ -1050,3 +1050,15 @@ def test_the_new_unit_size_inputs_shrink_inside_the_form() -> None:
     size = _rule('.sle-form-row input[type="number"]')
     assert "flex: 1" in size and "min-width: 0" in size
     assert "width: 4.2em" not in size
+
+
+def test_the_canvas_and_the_unplaced_panel_keep_one_name_on_screen() -> None:
+    """층 캔버스는 사이드바 · 층 목록과 같은 「캔버스」, 오른쪽 칸은 「미배치 칸」 한 이름이다(설계
+    규칙 UI-CON-02). 코드 이름(`sle-tray` · 주석의 트레이)은 화면 글이 아니라 그대로 둔다."""
+    assert "편집 영역" not in HTML + JS + CSS
+    assert "트레이" not in HTML
+    code = "\n".join(line for line in JS.splitlines() if not line.lstrip().startswith("//"))
+    literals = re.findall(r"'[^'\n]*'|`[^`\n]*`", code)
+    assert not [text for text in literals if "트레이" in text]
+    assert 'class="sle-sec-head" aria-expanded="true">캔버스</button>' in HTML
+    assert "add('캔버스 ', " in JS

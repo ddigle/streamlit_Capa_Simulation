@@ -8,7 +8,7 @@
 화면 y = 캔버스 높이 − (Y좌표 + Ysize) 로 바꿔 그린다.
 
 편집 상태는 **브라우저에 둔다.** 끌고 키우는 동안에는 파이썬으로 아무것도 보내지 않는다(Streamlit
-은 값을 받을 때마다 페이지를 다시 돌린다). `적용` 을 누를 때 바뀐 호기·새로 넣은 호기·편집 영역
+은 값을 받을 때마다 페이지를 다시 돌린다). `적용` 을 누를 때 바뀐 호기·새로 넣은 호기·캔버스
 크기·도면 요소를 한 번에 보낸다. 같은 `epoch` 로 다시 그려지는 회차(다른 위젯을 건드린 경우)에는
 진행 중인 편집과 확대 배율을 그대로 두고 단계 색·라벨만 다시 칠한다. epoch 는 층·저장본·편집본
 세대로 만들어, 편집본이 바뀌면(적용·설비 마스터 탭 제출·저장) 브라우저가 새 값으로 다시 선다.
@@ -45,7 +45,7 @@ JS(`// <unit-sheet>`)라 필터를 고쳐도 앱이 다시 돌지 않는다. 창
 「오늘로」를, 배치 편집기는 도구 줄 제목 옆에 「YYYY-MM-DD 고정」 칩(핀 아이콘)을 둔다.
 
 **편집기 몸은 가로 세 칸**이다(2026-11-03 사용자 요청) — 왼쪽 칸(층 보기는 범례, 편집은 범례·도면
-요소·선택·서식·격자·편집 영역) · 무대 · 오른쪽 미배치 칸(층 편집). 두 칸의 폭·접힘은
+요소·선택·서식·격자·캔버스) · 무대 · 오른쪽 미배치 칸(층 편집). 두 칸의 폭·접힘은
 브라우저(localStorage)에만 둔다. 범례는 data `legend` (epoch 밖)로 보낸다. 도구 줄 「고정」(스크롤
 고정)은 `<html data-space-lock>` 을 달고, 그 속성을 읽는 규칙은 페이지가 그리는 `space_lock_style()`
 이다.
@@ -151,7 +151,7 @@ def _palette() -> dict[str, str]:
         "block": tokens.SPACE_BLOCK_FILL,
         # 비활성 층 블록의 면 — 위에 영역 빗금과 흐린 사유 글자(직접 적은 사유, 길면 줄임).
         "block-off": tokens.SPACE_BLOCK_OFF_FILL,
-        # 무대 바탕 — 편집 영역 둘레의 여백이 이 색이다.
+        # 무대 바탕 — 캔버스 둘레의 여백이 이 색이다.
         "stage": tokens.SURFACE_PAGE,
         # 단추 글자는 앱 단추와 같은 TEXT(도면 글자 SPACE_TEXT 와 따로).
         "ui-text": tokens.TEXT,
@@ -767,7 +767,7 @@ def render_space_layout_editor(
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
-    `canvas_editable` 이 거짓이면 「편집 영역」 칸(폭·높이·±·맞춤)을 끄고 `canvas_lock` 을 풍선으로
+    `canvas_editable` 이 거짓이면 「캔버스」 칸(폭·높이·±·맞춤)을 끄고 `canvas_lock` 을 풍선으로
     둔다 — 층 캔버스는 공용 값이라 가정 설비 시나리오에서는 고치지 않는다(설계 8-4). 옛 브라우저가
     보낸 캔버스 값은 서버(`app_pages/space_status.py`)가 다시 거부한다(두 겹).
 
@@ -798,7 +798,7 @@ def render_space_layout_editor(
       한 항목이고 Main 설비가 따라간다. 이름 바꿈은 표시 별칭이 아니라 설비 마스터의 설비명
       자체다(2026-10-08 사용자 결정) — 검증·반영은 `services/space_layout_edit` 의
       `parse_editor_apply`·`apply_name_changes` 다.
-    - ``canvas``: 편집 영역을 바꿨을 때만 ``{width, height}``.
+    - ``canvas``: 캔버스를 바꿨을 때만 ``{width, height}``.
     - ``marks``: 도면 요소를 바꿨을 때만 이 층 요소 전체 목록, 아니면 None.
     - ``groupLabels``: 이 층에 남는 모듈 묶음마다의 Main 설비명 위치
       ``[{"group": 옛 Main 설비, "position": "center"|"top"|"bottom"}]``(다른 층으로 보낸 묶음은

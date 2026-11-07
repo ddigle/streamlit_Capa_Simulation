@@ -124,7 +124,7 @@ export default function (component) {
   // 좁은 화면 겹침 서랍이 무대 가장자리에서 들어앉은 거리(CSS `.sle.is-narrow .sle-side` 의 8px). 놓은 호기를 서랍 왼쪽으로
   // 이만큼 더 꺼낸다.
   const DRAWER_INSET_PX = 8
-  // 편집 영역 둘레의 여백(영역 긴 변의 비율). 전체 보기는 영역+여백이 다 보이는 크기다.
+  // 캔버스 둘레의 여백(캔버스 긴 변의 비율). 전체 보기는 캔버스+여백이 다 보이는 크기다.
   const VIEW_MARGIN = 0.03
   // 무대 높이(px). 기본은 화면에 맞추고(MIN_DEFAULT_H 이상), 손잡이로는 MIN_DRAG_H ~ 화면 높이의 MAX_H_RATIO 배.
   const MIN_DEFAULT_H = 320
@@ -2289,7 +2289,7 @@ export default function (component) {
       return true
     })
   }
-  // 놓인 호기·요소가 차지한 가장 먼 오른쪽·위. 편집 영역은 이보다 작게 줄일 수 없다.
+  // 놓인 호기·요소가 차지한 가장 먼 오른쪽·위. 캔버스는 이보다 작게 줄일 수 없다.
   const extents = () => {
     let right = RESERVED.right
     let top = RESERVED.top
@@ -3323,7 +3323,7 @@ export default function (component) {
     chip.append(size)
     if (leaving) {
       chip.classList.add('is-leaving')
-      chip.title = '적용하면 그 층으로 갑니다. 놓여 있던 호기는 같은 좌표·크기로, 미배치였던 호기는 그 층 트레이로. 되돌리려면 실행 취소.'
+      chip.title = '적용하면 그 층으로 갑니다. 놓여 있던 호기는 같은 좌표·크기로, 미배치였던 호기는 그 층 미배치 칸으로. 되돌리려면 실행 취소.'
       return chip
     }
     chip.title = lead.group ? `${list.map((m) => m.label).join(', ')} — 함께 놓입니다${list.length >= 2 ? '(범위 안 바둑판)' : ''}` : lead.label
@@ -4291,7 +4291,7 @@ export default function (component) {
     updateStatus()
   }
 
-  // 브라우저가 쥔 적용 전 편집(요소·편집 영역)이 있는가.
+  // 브라우저가 쥔 적용 전 편집(요소·캔버스)이 있는가.
   function hasPendingEdits() {
     return markChangeCount() > 0 || canvasChanged()
   }
@@ -4406,7 +4406,7 @@ export default function (component) {
       const doubled = [...seen.values()].filter((n) => n > 1).length
       if (doubled) add('같은 층을 가리키는 블록(저장은 됨) ', `${doubled}개 층`)
     }
-    if (canvasChanged()) add('편집 영역 ', `${S.originalCanvas.w}×${S.originalCanvas.h} → ${W()}×${H()}`)
+    if (canvasChanged()) add('캔버스 ', `${S.originalCanvas.w}×${S.originalCanvas.h} → ${W()}×${H()}`)
     if (S.passthrough.length) add('그리지 못한 도면 요소(그대로 둡니다) ', `${S.passthrough.length}개`)
     if (S.overlapPairs) add('겹침(저장은 됨) ', `${S.overlapPairs}쌍`)
     if (S.blocked) add('반입구·문·기둥·설비 금지 영역을 덮은 호기(저장은 됨) ', `${S.blocked}대`)
@@ -4518,7 +4518,7 @@ export default function (component) {
   }
   const commit = (entries) => pushUndo(entries.map((e) => ({ op: 'set', id: e.id, before: e.before })))
 
-  // ---------------------------------------------------------------- 편집 영역(캔버스) 크기
+  // ---------------------------------------------------------------- 캔버스 크기
   function setCanvas(requestedW, requestedH, { record = true } = {}) {
     // 층 캔버스를 고치지 않는 편집기(가정 설비 시나리오 — 공용 값). 칸은 꺼져 있지만 옛 단축키·되돌리기
     // 길도 막는다. 서버도 적용의 캔버스 값을 거부한다(두 겹).
@@ -4656,7 +4656,7 @@ export default function (component) {
 
   // 칩에서 Enter — 끌어 놓기의 키보드 길. 놓는 점은 지금 보이는 도면 가운데(열린 서랍이 덮은 오른쪽은 빼고)이고, 고른 칩
   // 여럿 가운데 하나면 끌 때처럼 함께 놓는다. 놓았으면 초점을 놓은 호기로 옮긴다 — 이어서 방향키로 자리를 다듬는다.
-  // 못 놓았으면(편집 영역보다 큼 — 까닭은 편집 영역 칸 알림) 초점은 칩에 남는다.
+  // 못 놓았으면(캔버스보다 큼 — 까닭은 캔버스 칸 알림) 초점은 칩에 남는다.
   function placeChipByKey(lead, list, free) {
     const picked = pickedTrayEntries()
     const together = picked.length > 1 && picked.some((entry) => entry.lead.id === lead.id)
@@ -4728,7 +4728,7 @@ export default function (component) {
     const { pieces, cols, rows, cellW, cellH, footprint } = trayPlan(list)
     if (footprint.w > W() || footprint.h > H()) {
       const who = name || lead.group || lead.label
-      S.note = `${who} (${footprint.w}×${footprint.h})${josaOf(who, '이')} 편집 영역 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 영역을 넓힌 뒤 놓으세요`
+      S.note = `${who} (${footprint.w}×${footprint.h})${josaOf(who, '이')} 캔버스 ${W()}×${H()} 보다 커서 놓지 않았습니다 — 캔버스를 넓힌 뒤 놓으세요`
       updateStatus()
       return
     }
@@ -4892,12 +4892,12 @@ export default function (component) {
       shift = pasteShift(clip.marks, canvas, null, Math.max(S.step, 1) * S.pasteSerial, SCALE)
     }
     if (!shift) {
-      S.note = `붙일 도면 요소(${roundTo(outer.w)}×${roundTo(outer.h)})가 편집 영역 ${W()}×${H()} 보다 커서 붙이지 않았습니다`
+      S.note = `붙일 도면 요소(${roundTo(outer.w)}×${roundTo(outer.h)})가 캔버스 ${W()}×${H()} 보다 커서 붙이지 않았습니다`
       updateStatus()
       return true
     }
     if (stacksOnMarks(clip.marks, shift)) {
-      S.note = '붙일 자리가 같은 요소와 똑같이 겹쳐 붙이지 않았습니다 — 마우스를 비어 있는 자리에 두고 Ctrl+V 하거나 편집 영역을 넓히세요'
+      S.note = '붙일 자리가 같은 요소와 똑같이 겹쳐 붙이지 않았습니다 — 마우스를 비어 있는 자리에 두고 Ctrl+V 하거나 캔버스를 넓히세요'
       updateStatus()
       return true
     }
@@ -5257,7 +5257,7 @@ export default function (component) {
   // 가운데를 축으로 90° 돌린다(상자 폭·높이가 바뀐다).
   function rotateMark(item) {
     if (item.h > W() || item.w > H()) {
-      S.note = `돌리면 ${item.h}×${withJosa(item.w, '이')} 되어 편집 영역 ${W()}×${withJosa(H(), '을')} 넘어 돌리지 않았습니다`
+      S.note = `돌리면 ${item.h}×${withJosa(item.w, '이')} 되어 캔버스 ${W()}×${withJosa(H(), '을')} 넘어 돌리지 않았습니다`
       updateStatus()
       return
     }
@@ -6534,13 +6534,13 @@ export default function (component) {
     if (!Number.isFinite(value)) { input.value = current; return null }
     return value
   }
-  // 편집 영역 칸을 끄면 까닭을 풍선·알림 칸에 둔다(보기는 그대로 — 폭·높이 값은 지금 캔버스). 회차마다 받은
+  // 캔버스 칸을 끄면 까닭을 풍선·알림 칸에 둔다(보기는 그대로 — 폭·높이 값은 지금 캔버스). 회차마다 받은
   // 값대로 켜고 끈다 — 가정 세션에서 끈 칸이 공식 세션으로 돌아와도(편집기 key·DOM 이 같다) 꺼진 채 남지 않게.
   const canvasLocked = data.canvasEditable === false
   lockCanvasControls(
     q('.sle-area').querySelectorAll('input, button'),
     canvasLocked,
-    data.canvasLock || '이 편집기에서는 편집 영역을 바꾸지 않습니다',
+    data.canvasLock || '이 편집기에서는 캔버스를 바꾸지 않습니다',
   )
   if (canvasLocked) areaNote.textContent = data.canvasLock || ''
   else if (!S.note) areaNote.textContent = ''
@@ -6772,7 +6772,7 @@ export default function (component) {
   }
 
   // ---------------------------------------------------------------- 왼쪽 칸 묶음 접힘(브라우저 안에서만)
-  // 묶음(범례·도면 요소·선택·서식·격자·편집 영역)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
+  // 묶음(범례·도면 요소·선택·서식·격자·캔버스)과 미배치 칸 도움말의 접힘 — `capa.space.sections.v1` = {이름: 접힘}. 처음엔
   // 미배치 칸 도움말만 접힘. 층 보기(범례 하나)는 묶음 머리가 없어 늘 펼침이다.
   function sectionFolded(name, fallback) {
     if (!S.sections) {

@@ -29,7 +29,7 @@
     </div>
     <button type="button" class="sle-undo sle-edit-only" title="Ctrl+Z">실행 취소</button>
     <button type="button" class="sle-reset sle-edit-only">처음 상태로</button>
-    <button type="button" class="sle-unplace sle-edit-only" title="Delete — 호기는 트레이로, 도면 요소는 지웁니다">빼기·지우기</button>
+    <button type="button" class="sle-unplace sle-edit-only" title="Delete — 호기는 미배치 칸으로, 도면 요소는 지웁니다">빼기·지우기</button>
     <span class="sle-pick sle-view-only" aria-live="polite"></span>
     <span class="sle-spacer"></span>
     <span class="sle-asof sle-fab-only sle-view-only" hidden><span class="sle-asof-label">기준일 </span><span
@@ -187,18 +187,18 @@
             </div>
           </section>
           <section class="sle-sec sle-edit-only" data-sec="area">
-            <button type="button" class="sle-sec-head" aria-expanded="true">편집 영역</button>
-            <div class="sle-sec-body sle-area" role="group" aria-label="편집 영역 크기">
+            <button type="button" class="sle-sec-head" aria-expanded="true">캔버스</button>
+            <div class="sle-sec-body sle-area" role="group" aria-label="캔버스 크기">
             <span class="sle-field">
               <span aria-hidden="true">폭</span>
               <button type="button" class="sle-nudge" data-area="w-10" aria-label="폭 10 줄이기">−</button>
-              <input class="sle-area-w" type="number" step="1" inputmode="decimal" aria-label="편집 영역 폭">
+              <input class="sle-area-w" type="number" step="1" inputmode="decimal" aria-label="캔버스 폭">
               <button type="button" class="sle-nudge" data-area="w+10" aria-label="폭 10 늘리기">+</button>
             </span>
             <span class="sle-field">
               <span aria-hidden="true">높이</span>
               <button type="button" class="sle-nudge" data-area="h-10" aria-label="높이 10 줄이기">−</button>
-              <input class="sle-area-h" type="number" step="1" inputmode="decimal" aria-label="편집 영역 높이">
+              <input class="sle-area-h" type="number" step="1" inputmode="decimal" aria-label="캔버스 높이">
               <button type="button" class="sle-nudge" data-area="h+10" aria-label="높이 10 늘리기">+</button>
             </span>
             <button type="button" class="sle-area-fit" title="놓인 호기·요소가 다 들어가는 가장 작은 크기">맞춤</button>

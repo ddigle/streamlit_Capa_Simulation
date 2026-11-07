@@ -54,7 +54,7 @@
 .sle-split.is-right { grid-column: 4; grid-row: 1; }
 .sle-side.is-right { grid-column: 5; grid-row: 1; }
 /* 무대는 열 폭을 채우고 높이는 JS 가 정한다(화면에 맞춘 기본값, 또는 아래 손잡이로 고른 값). SVG 는 무대를 꽉
-   채우고, 편집 영역은 그 가운데에 여백을 두고 뜬다 — 남는 자리는 무대 바탕이다. 여기 높이는 JS 가 서기 전 자리값. */
+   채우고, 캔버스는 그 가운데에 여백을 두고 뜬다 — 남는 자리는 무대 바탕이다. 여기 높이는 JS 가 서기 전 자리값. */
 .sle-stage {
   grid-column: 3; grid-row: 1; position: relative; height: 480px; min-width: 0; overflow: hidden;
   border: 1px solid var(--sle-border); border-radius: 8px; background: var(--sle-stage);
@@ -326,7 +326,7 @@
 .sle-split:hover::before, .sle-split.is-dragging::before { background: var(--sle-accent); }
 .sle-split:focus-visible::before { background: var(--sle-accent); box-shadow: 0 0 0 2px var(--sle-accent); }
 .sle-split.is-off { pointer-events: none; }
-/* 묶음(범례·도면 요소·선택·서식·격자·편집 영역) — 머리를 누르면 접힌다(접힘은 묶음별로 브라우저가 기억). */
+/* 묶음(범례·도면 요소·선택·서식·격자·캔버스) — 머리를 누르면 접힌다(접힘은 묶음별로 브라우저가 기억). */
 .sle-sec { padding: 6px 0; border-bottom: 1px solid var(--sle-border); }
 .sle-sec:last-child { border-bottom: none; }
 .sle-sec[hidden] { display: none; }
