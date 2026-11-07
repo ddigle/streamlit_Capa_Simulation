@@ -383,6 +383,56 @@ def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: C
     assert _draft(app) is None
 
 
+def test_the_edit_scope_moved_to_the_status_line_under_the_table(calls: Calls) -> None:
+    """표 위 줄을 합쳤다(UI-LAY-11) — 편집 범위 값은 표 위가 아니라 표 아래 상태 줄이고, 필터로
+    줄이 빠지면 그 사실도 함께 간다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT, "효율")
+    assert not any("편집 범위" in item.value for item in app.markdown)
+    scope = last(calls, FEED)["scope"]
+    assert scope.startswith("편집 범위 ") and "전체 2개 행" in scope and "필터로" not in scope
+    _filtered_editor_app("효율", "capa_run_rate_editor", "공정")
+    filtered = last(calls, FEED)["scope"]
+    assert "전체 2개 행" in filtered and filtered.endswith("필터로 1개 행 표시")
+
+
+def test_a_read_view_leaves_the_status_line_without_a_scope(calls: Calls) -> None:
+    app = _open(TWO_PROCESS_TEST_SCRIPT, "효율")
+    app.session_state[DATASET_KEY] = DATASET["설비대수 현황"]
+    app.run()
+    assert not app.exception
+    assert last(calls, FEED).get("scope") is None
+
+
+def test_the_one_line_rule_needs_the_action_row_last_and_only_on_the_base_window() -> None:
+    """단추 줄과 도구 막대를 한 줄로 세우는 규칙(UI-LAY-11)은 기준 창에서만 걸린다(좁으면 막대가
+    제 줄로 내려앉는다). 표지 · 거부 칸은 단추 줄 뒤에 서므로 단추 줄이 끝 자식일 때만 걸려야
+    거부 칸이 단추 바로 아래에 남는다(UI-LAY-03). 그리드 칸을 끌어올리는 값은 단추 줄 높이 + 칸
+    간격이고, 어떤 창에서도 단추 줄은 그리드 위에 있어야 눌린다."""
+    style = reference_grid.ONE_LINE_STYLE
+    rule = style[style.index("@media") :]
+    assert f"min-width: {reference_grid.ONE_LINE_MIN_WINDOW_PX}px" in rule
+    assert (
+        f".st-key-{reference_grid.ACTIONS_BOX} > :last-child > .st-key-{reference_grid.ACTION_ROW}"
+    ) in rule
+    assert f":has(> .st-key-{reference_grid.GRID_BOX})" in rule
+    assert "margin-top: -3.5rem" in rule and "--eg-tb-height: 2.5rem" in rule
+    before = style[: style.index("@media")]
+    assert f".st-key-{reference_grid.ACTION_ROW}" in before
+    assert "z-index: 1" in before and "width: fit-content" in before
+
+
+def test_a_refused_apply_stands_right_under_the_buttons_after_the_action_row(calls: Calls) -> None:
+    """고칠 칸 알림은 단추 줄 뒤에 그려진다 — 그래야 한 줄 규칙이 풀리고 단추 바로 아래 선다."""
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    app = _grid_write(app, calls, "Process-A", "202608", "20.5")
+    app = app.button(key=APPLY).click().run()
+    assert not app.exception
+    elements = _walk(app.main)
+    keys = [getattr(node, "key", None) for node in elements]
+    kinds = [getattr(node, "type", None) for node in elements]
+    assert keys.index(APPLY) < kinds.index("error")
+
+
 def test_the_locked_apply_says_why_and_the_open_one_says_what_it_does(calls: Calls) -> None:
     """잠긴 「변경사항 적용」 풍선은 까닭을 말하고(UI-INP-07), 풀리면 하는 일을 말한다."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)

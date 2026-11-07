@@ -53,6 +53,7 @@ def test_the_feed_and_the_grid_mount_in_a_fixed_order_with_fixed_keys(
     assert shell["palette"] == edit_grid.palette()
     assert shell["texts"]["changes"] == "적용 전 변경"
     assert edit_grid.hide_feed_style(HOST) == "<style>.st-key-demo_grid-feed{display:none}</style>"
+    assert feed["scope"] is None
 
 
 def test_host_keys_refuse_the_component_id_delimiter() -> None:

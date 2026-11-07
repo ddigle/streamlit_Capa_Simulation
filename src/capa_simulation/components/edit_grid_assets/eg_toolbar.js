@@ -2,7 +2,7 @@
 // 다시 실행 단추(feed 의 수가 0 이면 꺼짐, ack 까지 기다림 표시)·칸 폭 맞춤(전체 — 머리 경계를 두 번 누르면 그 칸)·머리 경계 끌어
 // 폭 바꾸기(40~480px, 표마다 브라우저 저장 — 저장이 없는 첫 진입에 맞춤 한 번)·적용 전 변경 서랍(옛 값 → 새 값, 누르면 그 칸,
 // ✕ 는 revert)·전체 화면(그림자 DOM 안 <dialog>.showModal() — top layer 라 긴 회차의 opacity·머리 띠·사이드바에 묻히지 않는다)·
-// 상태 줄 선택 범위 요약(개수 · 합계 · 평균). 순수 구획 `// <eg-search>`·`// <eg-summary>`·`// <eg-width>` 은 node 시험이 떼어
+// 상태 줄 선택 범위 요약(개수 · 합계 · 평균)·상태 줄 편집 범위 글(feed `scope`). 순수 구획 `// <eg-search>`·`// <eg-summary>`·`// <eg-width>` 은 node 시험이 떼어
 // 돌린다. 갈고리는 `feature({ name: 'toolbar', ... })` 하나로 단다.
 //
 // core 의 고정 API 밖에서 부르는 것 둘(이름을 바꾸면 이 파일도 고친다 — test_edit_grid_toolbar_js 가 본다):
@@ -304,7 +304,9 @@ function tbInit(S) {
   const dialog = tbEl('dialog', 'eg-dialog')
   S.host.appendChild(dialog)
   S.dom.dialog = dialog
-  tb.dom = { input, prev, next, count, undo, redo, fit, changes, full, drawer, title, close, list, more, empty, dialog }
+  const scope = tbEl('span', 'eg-scope')
+  S.dom.status.appendChild(scope)
+  tb.dom = { input, prev, next, count, undo, redo, fit, changes, full, drawer, title, close, list, more, empty, dialog, scope }
   tbLabels(S)
   tbListen(S, input, 'input', () => tbFindSoon(S))
   tbListen(S, input, 'keydown', (event) => tbFindKey(S, event))
@@ -976,9 +978,19 @@ function tbSummary(S) {
 
 // ---------------------------------------------------------------- feed·정리
 
+// 상태 줄 편집 범위 글 — 좁아 말줄임이 되면 풍선으로 다 읽는다. 글은 feed 가 준 값뿐이다.
+function tbScope(S) {
+  const scope = S.tb.dom.scope
+  const text = S.feedData && typeof S.feedData.scope === 'string' ? S.feedData.scope : ''
+  if (scope.textContent === text) return
+  scope.textContent = text
+  scope.title = text
+}
+
 function tbOnFeed(S) {
   if (!S.tb) return
   tbSync(S)
+  tbScope(S)
   if (S.tb.drawerOpen) tbRenderDrawer(S)
   tbSummarySoon(S)
 }

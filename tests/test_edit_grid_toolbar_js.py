@@ -20,6 +20,8 @@ from capa_simulation.services.edit_grid_payload import build_base, encode_base, 
 
 TOOLBAR = asset("eg_toolbar.js")
 TOOLBAR_CSS = asset("eg_toolbar.css")
+# 색이 아니라 자리 · 크기 값 — 페이지가 내려보낸다(`reference_grid.ONE_LINE_STYLE`).
+LAYOUT_VARS = {"toolbar-justify", "toolbar-reserve", "tb-height", "tb-radius", "tb-font"}
 PURE = asset("eg_pure.js")
 CORE = asset("eg_core.js")
 REGISTERED_JS = edit_grid.registered_js()
@@ -72,13 +74,54 @@ def test_every_toolbar_text_is_shipped_by_python() -> None:
 
 
 def test_the_toolbar_css_draws_with_palette_colours_only() -> None:
-    used = set(re.findall(r"var\(--eg-([a-z-]+)", TOOLBAR_CSS))
+    used = set(re.findall(r"var\(--eg-([a-z-]+)", TOOLBAR_CSS)) - LAYOUT_VARS
     assert used and used <= set(edit_grid.palette()), used - set(edit_grid.palette())
     assert "/*" not in TOOLBAR_CSS
     assert not re.search(r"#[0-9A-Fa-f]{3,8}\b", TOOLBAR_CSS)
     assert "rgb(" not in TOOLBAR_CSS and "hsl(" not in TOOLBAR_CSS
     # 찾기 일치 칠은 고른 범위 칠에 진다(명세 10-1 — 고른 범위가 찾기 일치 위).
     assert ".eg-c.is-match:not(.is-sel)" in TOOLBAR_CSS
+
+
+def test_the_page_can_stand_the_toolbar_beside_its_action_row_but_fullscreen_stays_as_it_was() -> (
+    None
+):
+    """표 위 줄을 합치는 값은 페이지가 CSS 변수로 내려보낸다(변수가 없으면 옛 꼴 그대로). 전체 화면
+    창에는 곁에 설 단추 줄이 없어 그 창이 값을 되돌린다."""
+    bar = TOOLBAR_CSS[TOOLBAR_CSS.index(".eg-toolbar {") :]
+    assert "justify-content: var(--eg-toolbar-justify, flex-start)" in bar
+    assert "padding-left: var(--eg-toolbar-reserve, 0)" in bar
+    assert "height: var(--eg-tb-height, 28px)" in TOOLBAR_CSS
+    dialog = TOOLBAR_CSS[TOOLBAR_CSS.index(".eg-dialog {") :]
+    dialog = dialog[: dialog.index("}")]
+    for name in LAYOUT_VARS:
+        assert f"--eg-{name}:" in dialog, name
+
+
+def test_the_status_line_shows_the_edit_scope_the_feed_carries() -> None:
+    """편집 범위 글은 표 아래 상태 줄이다 — 표 위 줄을 먹지 않고, 고른 칸 요약과 같은 줄에 선다.
+    좁아 말줄임이 되면 풍선으로 다 읽는다."""
+    body = r"""
+  const scope = q('.eg-scope')
+  R.home = scope.parentNode === S.dom.status
+  R.first = [scope.textContent, scope.title]
+  sendFeed({ ...input.feed, scope: input.feed.scope + ' · 필터로 1개 행 표시' })
+  R.next = [scope.textContent, scope.title]
+  sendFeed({ ...input.feed, scope: null })
+  R.gone = [scope.textContent, scope.title]
+"""
+    payload = _payloads()
+    payload["feed"] = {
+        **payload["feed"],
+        "scope": "편집 범위 202601 – 202602 · 2개월 · 전체 2개 행",
+    }
+    result = _run(body, payload)
+    assert result["home"] is True
+    assert result["first"] == [payload["feed"]["scope"]] * 2
+    assert (
+        result["next"][0].endswith("필터로 1개 행 표시") and result["next"][0] == result["next"][1]
+    )
+    assert result["gone"] == ["", ""]
 
 
 def test_fullscreen_is_a_dialog_in_the_shadow_root_not_a_fixed_overlay() -> None:

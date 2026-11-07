@@ -29,7 +29,11 @@ from capa_simulation.components import reference_grid
 from capa_simulation.components.column_filter import render_column_filter_controls
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.month_editor import classification_styled, paste_dialog
+from capa_simulation.components.month_editor import (
+    classification_styled,
+    paste_dialog,
+    scope_text,
+)
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -212,8 +216,8 @@ current_dataset = _chosen if isinstance(_chosen, str) and _chosen in DATASETS el
 # 출납을 잃는다. 읽기 보기(설비대수 현황·STEP 구성)는 그리드 **아래**라 그 높이가 그리드 자리를
 # 밀지 않는다. 편집 표를 고른 회차에는 보기 칸이 비어 표 아래에 아무것도 없다(명세 1-2 의 19 — 표
 # 아래 단추에 초점이 가면 본문이 내려가 머리와 도구 막대가 탭 줄 밑으로 숨는다).
-actions_box = st.container(key="reference_actions")
-grid_box = st.container(key="reference_grid_box")
+actions_box = st.container(key=reference_grid.ACTIONS_BOX)
+grid_box = st.container(key=reference_grid.GRID_BOX)
 view_box = st.container(key="reference_view")
 
 
@@ -1152,7 +1156,7 @@ grid_actions: reference_grid.Actions | None = None
 if current_grid is not None:
     grid_filter_prefix = _filter_prefix(current_dataset)
     # 필터는 보기만 좁힌다 — 초안이 업무 키라 필터를 바꿔도 편집이 다른 줄에 붙지 않아 잠그지
-    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 줄은 서버가 같은 선택으로 센다). 행이
+    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 글은 서버가 같은 선택으로 센다). 행이
     # 없는 표(측정률이 통째로 빈 기간)에는 거를 것이 없어 세우지 않는다.
     grid_visible = current_grid.template
     if not current_grid.template.empty:
@@ -1172,11 +1176,14 @@ if current_grid is not None:
             )
         grid_actions = reference_grid.render_actions(
             current_grid,
-            grid_visible,
             open_paste=partial(_open_grid_paste, current_grid.editor_key),
         )
     with grid_box:
-        reference_grid.render_grid(current_grid, key_prefix=grid_filter_prefix)
+        reference_grid.render_grid(
+            current_grid,
+            key_prefix=grid_filter_prefix,
+            scope=scope_text(current_grid.template, grid_visible, current_grid.months),
+        )
     if st.session_state.get(DIALOG_KEY) == current_grid.editor_key:
         grid_editor = _editor(current_dataset, current_grid.template)
         fmt = reference_grid.GRID_FORMATS[current_dataset]

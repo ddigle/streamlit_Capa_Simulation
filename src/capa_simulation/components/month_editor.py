@@ -8,7 +8,7 @@
 
 - `paste_dialog` — 「Excel 붙여넣기」 표 전체 팝업(CSV 양식 왕복). **왕복 CSV·붙여넣기는 전체 표
   계약이다** — 걸러진 표를 넘기면 그 부분 표가 검증을 통과해 나머지 공정을 조회기간에서 지운다.
-- `render_scope` — 「편집 범위」 한 줄(월 · 개월 수 · 행 수 · 필터로 보이는 행 수).
+- `scope_text` — 표 아래 상태 줄의 「편집 범위」 값 글(월 · 개월 수 · 행 수 · 필터로 보이는 행 수).
 - `classification_styled` — 분류 컬럼 배경색(작은 표만 — `CLASSIFICATION_STYLE_MAX_CELLS`).
 - `float_month_columns` — 정수 dtype 월 칸을 실수로(생산 계획 편집표가 소수를 버리지 않게).
 
@@ -154,28 +154,27 @@ def paste_dialog(
     _body()
 
 
-def render_scope(
+def scope_text(
     default_table: pd.DataFrame, visible_table: pd.DataFrame, month_columns: Sequence[str]
-) -> None:
-    """무엇을 편집하고 있는지 한 줄. 표를 보기 전에 범위를 알려 준다.
+) -> str | None:
+    """무엇을 편집하고 있는지 값 글 한 줄(표 아래 상태 줄 — 달 칸이 없으면 None).
 
     월 이름은 표 머리글에 쓰는 컬럼명 그대로다 — 여기서만 다른 형식으로 적으면 같은
     달을 두 이름으로 부르게 된다. 필터가 행을 줄였으면 그 사실도 적는다 — 필터는 사이드바
     카드에 있어 접혀 있으면 본문만 보고는 행이 빠진 까닭을 알 수 없다.
     """
     if not month_columns:
-        return
+        return None
     span = (
         f"{month_columns[0]} – {month_columns[-1]}"
         if len(month_columns) > 1
         else str(month_columns[0])
     )
     filtered = (
-        f" · :material/filter_alt: 필터로 {len(visible_table):,}개 행 표시"
+        f" · 필터로 {len(visible_table):,}개 행 표시"
         if len(visible_table) != len(default_table)
         else ""
     )
-    st.markdown(
-        f"**편집 범위** &nbsp;{span} · {len(month_columns)}개월 · "
-        f"전체 {len(default_table):,}개 행{filtered}"
+    return (
+        f"편집 범위 {span} · {len(month_columns)}개월 · 전체 {len(default_table):,}개 행{filtered}"
     )

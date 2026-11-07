@@ -2165,12 +2165,12 @@ def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
         "이 기간에 Lot측정률 행이 없습니다."
     ]
     assert not any("측정률" in item.value for item in infos(app))
-    assert not any("편집 범위" in item.value for item in app.markdown)
+    assert last(grid_calls, feed_key(GRID_HOST))["scope"] is None
 
     # 다른 탭은 그대로 동작한다 — WF 표는 행이 있고, UPEH 의 있던 칸은 고칠 수 있다.
     app.session_state[DATASET_KEY] = DATASET["WF측정률"]
     app.run()
-    assert any("전체 1개 행" in item.value for item in app.markdown)
+    assert "전체 1개 행" in last(grid_calls, feed_key(GRID_HOST))["scope"]
     assert not any("행이 없습니다" in item.value for item in app.caption)
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()
