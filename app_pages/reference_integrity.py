@@ -47,6 +47,7 @@ from capa_simulation.components.status_metric import (
     shortage_tone,
 )
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
+from capa_simulation.design import tokens
 from capa_simulation.navigation import EXECUTION_MANAGEMENT
 from capa_simulation.page_bootstrap import prune_choice
 from capa_simulation.services.dynamic_capacity import (
@@ -89,8 +90,11 @@ PENDING_SCREEN_HELP = (
     "않고 비율로 비교합니다."
 )
 
-# 관리 우선순위 표 — 이 줄 수까지는 내용 높이로 서서 빈 줄이 없고, 넘으면 이 높이 안에서 스크롤한다.
-PRIORITY_TABLE_FULL_ROWS = 10
+# 관리 우선순위 표 — 줄 높이를 못박아 높이를 내용만큼 셈한다. 곁 칸이 좁으면 가로 스크롤 막대가
+# 표 안 아래쪽을 차지해 내용 높이로는 마지막 줄이 덮이므로 막대 몫을 늘 더하고, 상한을 넘으면 그
+# 안에서 스크롤한다.
+PRIORITY_TABLE_ROW_HEIGHT_PX = 31
+PRIORITY_TABLE_BORDER_PX = 3
 PRIORITY_TABLE_MAX_HEIGHT_PX = 365
 
 # 손실 한 칸과 그 칸을 파고드는 화면. 워터폴에 서는 칸은 **그 차례 그대로** 둔다 — 화면 목록이
@@ -218,11 +222,12 @@ def _render_summary(
             priority,
             hide_index=True,
             width="stretch",
-            # 높이를 못박으면 공정이 적을 때 빈 줄이 남아 데이터가 잘린 것처럼 보인다.
-            height=(
-                "content"
-                if len(priority) <= PRIORITY_TABLE_FULL_ROWS
-                else PRIORITY_TABLE_MAX_HEIGHT_PX
+            row_height=PRIORITY_TABLE_ROW_HEIGHT_PX,
+            height=min(
+                PRIORITY_TABLE_MAX_HEIGHT_PX,
+                (len(priority) + 1) * PRIORITY_TABLE_ROW_HEIGHT_PX
+                + PRIORITY_TABLE_BORDER_PX
+                + tokens.SCROLLBAR_HEIGHT_PX,
             ),
             column_config={
                 "순위": st.column_config.NumberColumn(width="small", format="%d"),

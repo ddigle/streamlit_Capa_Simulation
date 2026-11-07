@@ -12,6 +12,7 @@ from widget_browser import BrowserChoice
 
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+from capa_simulation.design import tokens
 from capa_simulation.services.dynamic_capacity import (
     aggregate_dynamic_capacity,
     build_dynamic_capacity_demo,
@@ -97,22 +98,27 @@ def test_the_priority_table_shows_the_verdict_right_after_the_process() -> None:
     assert priority["Capa 실현률"].is_monotonic_increasing
 
 
-def test_the_priority_table_leaves_no_blank_line_and_keeps_its_ceiling(
+def test_the_priority_table_keeps_its_last_line_clear_of_the_bar_and_its_ceiling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """높이 셈이 줄 높이보다 크면 표 아래에 값 없는 빈 줄이 선다 — 공정이 적으면 내용 높이이고,
-    공정이 많을 때만 상한 안에서 스크롤한다(후보 g7-08 · 샘플 관측 줄 높이 31px)."""
-    heights: list[object] = []
+    """곁 칸이 좁으면 가로 스크롤 막대가 표 안 아래쪽을 차지한다 — 높이에 막대 몫을 더해 마지막 줄이
+    덮이지 않고, 남는 자리는 한 줄에 못 미쳐 빈 줄로 보이지 않으며, 공정이 많을 때만 상한 안에서
+    스크롤한다(후보 g7-08 · 샘플 관측 — 창 1283 에서 막대 10px 가 5행 아래쪽 9px 를 덮었다)."""
+    heights: list[int] = []
+    row_heights: list[int] = []
     draw = st.dataframe
 
     def recorded(*args: Any, **kwargs: Any) -> Any:
-        heights.append(kwargs.get("height"))
+        heights.append(kwargs["height"])
+        row_heights.append(kwargs["row_height"])
         return draw(*args, **kwargs)
 
     monkeypatch.setattr(st, "dataframe", recorded)
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
     assert not app.exception
-    assert heights[:1] == ["content"]
+    row_height = row_heights[0]
+    content = (len(_priority_frame(app)) + 1) * row_height
+    assert content + tokens.SCROLLBAR_HEIGHT_PX < heights[0] < content + row_height
 
     demo = build_dynamic_capacity_demo()
     summary = aggregate_dynamic_capacity(demo, ["공정"])
