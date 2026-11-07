@@ -153,5 +153,6 @@ def render_module_status() -> None:
                 column_config=status_column_config(),
                 hide_index=True,
                 width="stretch",
+                placeholder="",
             )
         st.caption(environment_caption(scan), help=RESTART_NOTICE)
