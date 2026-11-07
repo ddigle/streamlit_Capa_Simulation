@@ -39,6 +39,15 @@ key 꼴은 넷이다. 옛 key 글자를 바이트까지 지킨다 — 바뀌면 
 
 이 모듈 밖에서 세대 꼬리 글자를 손으로 짓지 않는다(`tests/test_widget_generation.py` 의 AST
 그물).
+
+**앞 세션의 탭**(2026-11-08). 서버 재시작이나 세션 만료 뒤 같은 문서가 새 세션에 붙으면 브라우저는
+앞 세션의 위젯 값을 그대로 다시 보낸다 — 편집표는 칸에 고친 값이 남아 있다가 다음 앱 전체 회차에
+고침으로 되살아나 알림 「사라졌습니다」 가 거짓이 됐다. 세대는 새 세션에서 0 으로 돌아가므로 앞
+세션과 key 가 같다. 그래서 세션의 첫 앱 전체 회차 맨 앞에서 브라우저가 위젯 값을 함께 보냈는지
+보고(`note_session_start` — 새 탭 · 새로고침은 값이 없다) 보냈으면 이 세션의 표지를 정해
+`session_widget_key` 가 key 꼬리(`__s`)에 단다. 처음부터 이 세션이던 탭은 key 가 그대로다.
+폼 밖 편집표는 모두 이 길을 지난다(`editor_state.editor_widget_key`,
+`tests/test_widget_generation.py` 의 그물) — 폼 안 표는 왜 빼는지 `editor_widget_key` 에 적었다.
 """
 
 from __future__ import annotations
@@ -47,8 +56,10 @@ import threading
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
 from typing import Generic, Literal, TypeVar, cast
+from uuid import uuid4
 
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation.components.write_guard import (
     SeenToken,
@@ -64,7 +75,9 @@ __all__ = [
     "Written",
     "bump",
     "generation",
+    "note_session_start",
     "seed_field",
+    "session_widget_key",
     "widget_key",
     "write_once_value",
 ]
@@ -77,6 +90,9 @@ T = TypeVar("T")
 # **전에** 받아 둔다 — dict 칸 쓰기는 둘째 누름의 회차가 멈춤을 건 자리에서도 끊기지 않는다
 # (`write_guard` 의 표지와 같은 까닭).
 WRITE_RESULTS_KEY = "widget_generation_write_results"
+
+# 앞 세션의 탭이 붙은 세션의 표지. 처음부터 이 세션이던 탭은 빈 글자다(`note_session_start`).
+REJOINED_MARK_KEY = "widget_generation_rejoined_mark_v1"
 
 # 처음 쓰는 두 회차가 결과 dict 를 따로 만들어 한쪽이 지워지지 않게 하는 잠금. 잠그는 동안
 # 하는 일은 세션 칸 하나를 읽고 적는 것이다.
@@ -111,6 +127,25 @@ def bump(counter_key: str) -> int:
     number = generation(counter_key) + 1
     st.session_state[counter_key] = number
     return number
+
+
+def note_session_start() -> None:
+    """세션의 첫 앱 전체 회차에 브라우저가 위젯 값을 함께 보냈으면 앞 세션의 탭으로 적는다.
+
+    `app.py` 맨 앞, 어떤 위젯보다 먼저 부른다 — 그 회차에 그린 위젯의 값이 섞이면 가르지 못한다.
+    세션마다 한 번만 정한다."""
+    if REJOINED_MARK_KEY in st.session_state:
+        return
+    context = get_script_run_ctx()
+    kept = context is not None and bool(context.session_state.get_widget_states())
+    st.session_state[REJOINED_MARK_KEY] = uuid4().hex[:6] if kept else ""
+
+
+def session_widget_key(key: str) -> str:
+    """앞 세션의 탭이면 이 세션 표지를 꼬리로 단 위젯 key — 브라우저에게는 처음 보는 위젯이라 앞
+    세션의 값을 보낼 곳이 없다(모듈 머리말). 처음부터 이 세션이던 탭은 `key` 그대로다."""
+    mark = st.session_state.get(REJOINED_MARK_KEY)
+    return f"{key}__s{mark}" if mark else key
 
 
 @dataclass(frozen=True)

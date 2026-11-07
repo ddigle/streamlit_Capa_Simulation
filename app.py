@@ -63,6 +63,7 @@ from capa_simulation.components.sso_reconnect import sso_reconnect_scripts
 from capa_simulation.components.sso_refresh import sso_refresh_scripts
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
+from capa_simulation.components.widget_generation import note_session_start
 from capa_simulation.constraint_simulation_state import CONSTRAINT_CHART_KEY, CONSTRAINT_SHEET_KEY
 from capa_simulation.design import theme
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
@@ -186,6 +187,8 @@ CELL_SELECT_CHART_KEYS = (
 # 실행이 앞 실행의 「끝났다」를 남겨 두면 상자 여닫기·조건 패널 값 칸이 페이지 없이 프래그먼트만
 # 돌린다.
 app_run = begin_app_run()
+# 어떤 위젯보다 먼저다 — 그린 위젯의 값이 섞이면 앞 세션의 탭을 가르지 못한다.
+note_session_start()
 st.set_page_config(
     page_title=APP_NAME,
     # 문자열 경로여야 한다 — Streamlit 은 `.svg` 로 끝나는 **파일**만 읽어 data URI 로 싣는다.

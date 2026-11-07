@@ -129,13 +129,30 @@ def test_old_generation_edits_are_counted_but_a_pick_is_not_lost() -> None:
     assert result.dropped == 3
     assert result.draft.scenarios == {} and result.draft.order is None
     assert result.draft.picked == "r2"
-    # 세션 표지가 다른 값도 옛 세대다(세션이 바뀐 뒤 프런트가 다시 보낸 값).
-    assert (
-        fold_ops(
-            DRAFT, [_box(_name("scenario", "a", "새", "가"), base="다른 세션:0")], ROWS
-        ).dropped
-        == 1
+
+
+def test_a_box_from_the_session_before_is_dropped_without_a_count() -> None:
+    """세션이 바뀐 뒤 브라우저가 다시 보낸 앞 세션의 출납 — 그 손실은 재시작 · 세션 만료 알림이 이미
+    알렸다. 또 세어 알리면 같은 손실을 두 번 말한다. 고침도 고름도 반영하지 않고, 받았다는 ack 는
+    나가도록 seq 는 기억한다."""
+    opened = replace(DRAFT, opened="a")
+    result = fold_ops(
+        opened,
+        [
+            _box(
+                _name("scenario", "b", "새 나", "나"),
+                {"op": "open", "id": "b"},
+                {"op": "pick", "owner": "a", "id": "r2"},
+                mount="m-before",
+                base="다른 세션:0",
+            )
+        ],
+        ROWS,
     )
+    assert result.dropped == 0 and result.opened is False
+    assert result.draft.scenarios == {} and result.draft.opened == "a"
+    assert result.draft.picked is None
+    assert result.draft.applied["m-before"] > 0
 
 
 def test_a_move_inserts_compares_the_seen_order_and_returning_clears_it() -> None:

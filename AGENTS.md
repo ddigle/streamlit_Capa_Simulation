@@ -2888,11 +2888,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   브라우저까지 버리는 초기화(`discard_editor`)다.
   - 키가 있는 편집표는 모두 세대 번호를 붙인 `editor_widget_key` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
     `discard_editor` 를 부른다 — 세션만 지우면 브라우저가 옛 편집을 다음 회차에 되보낸다. key 짓기와 세대 올리기는
-    `widget_generation`(`widget_key`·`bump`)이 한다.
+    `widget_generation`(`widget_key`·`bump`)이 한다. 폼 밖 표의 key 는 앞 세션의 고침이 새 세션에 되살아나지 않게 세션
+    표지를 지나고 폼 안 표는 `in_form=True` 로 뺀다(9장 「앞 세션의 탭」, `tests/test_widget_generation.py` 그물).
 - `src/capa_simulation/components/side_panel.py` (+ `side_panel_assets/` CSS · JS) — 편집기 영역 안 두 칸(왼쪽 표 · 오른쪽 칸)의 공용 틀. 칸막이 · 접기 · 폭 기억 · 서식(`side_layout_style`) · 칸 고르기 머리(`render_side_head`) · 다음 고르기(`switch_side`)를 맡고, 화면마다 갈리는 값은 스펙 `SidePanel`(key 앞붙이 · 저장소 이름 · `<html>` 표지 이름 · 처음 폭)이다. 설비 마스터 `MASTER_SIDE` 와 시나리오 목록 관리 `LIST_SIDE`(`capa-scenario-list-side-v1`, `--sls-side-w` · `--sls-top` · `data-sls-side`, 처음 폭 40%)가 쓴다(설계 규칙 UI-LAY-09 · UI-CON-04). 읽을 때 등록하므로 그 편집기를 그리는 회차에만 불러온다.
 - `src/capa_simulation/components/save_section.py` — 저장 구획의 「모두 버리기」 확인 팝오버(`discard_popover` — 설비 마스터 · 시나리오 목록 관리, UI-NTF-09).
 - `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>`) · `dom.js` · `cells.css`(칸 상태 차례 그대로 · 꺼진 단추를 감싼 칸의 풍선 `.emg-tip`) · `changes.css`. 등록이 없어 어디서 불러도 된다.
-- `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
+- `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`)와 앞 세션 op 빼기(`this_session` — 두 표의 `base` 는 `세션 표지:나머지` 꼴이다) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 세 마운트 data, 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
 - `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key. 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다.
 - `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 세 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY`. 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다.
@@ -3327,7 +3328,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   으로 든다)·세대마다 한 번 쓰기
   (`write_once_value` — `write_guard.write_once` 위에 그 세대·입력 지문 쓰기의 결과를 세션 dict 에 들어 겹쳐 온 둘째
   회차가 끊긴 첫 회차의 뒷정리를 그 결과로 잇는다. 뒷정리 뒤 `release()` 로 놓고, 놓지 못한 결과는 그 세대 칸의 다음
-  쓰기가 바꿔 든다). 세대 칸 읽기·쓰기 거름은 `write_guard` 의 `current_generation`·`write_once` 를 부른다. 꼴 넷의 세대
+  쓰기가 바꿔 든다)·앞 세션의 탭 가르기(`note_session_start` · `session_widget_key` — 9장 「앞 세션의 탭」, 폼 밖 편집표가 쓴다). 세대 칸 읽기·쓰기 거름은 `write_guard` 의 `current_generation`·`write_once` 를 부른다. 꼴 넷의 세대
   꼬리 글자를 이 모듈 밖에서 짓지 않는다(`tests/test_widget_generation.py` — 아직 옮기지 않은 `_{n}` 꼴 다섯 자리는
   그 시험의 남은 목록·`docs/TODO.md` 코드 정리 ①).
 - `src/capa_simulation/components/write_guard.py` — 쓰기 콜백의 key 세대 거름(`write_once`·`current_generation`)과 **비교 후
@@ -3417,7 +3418,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `LAYOUT_EDITS_MEMO_KEY`). 역할이 찍힌 세션은 회차마다 `live_layout_role` 이 부르므로 편집본 전체 `layout_edits`(합성 3천 대에
     0.13~0.17 s)를 회차마다 돌리면 8장 예산을 넘었다. 표 출납이 배치에 닿지 않는 op(칸 고침·값 넣기·붙여넣기·날짜 밀기 — 배치·설비명·
     Main 설비 칸이 아닐 때)만이면 얹기 전 판정을 새 세대로 옮긴다(`layout_memo_mark`·`carry_layout_memo`).
-    `buffer_base` 는 편집본 출발점 표지(저장본 쌍 토큰 + 씨뿌린 세대 — 표 출납 `base` 와 「리비전 저장」 두 번 누름 잣대). 층 대기분은 캔버스·요소·Main
+    `buffer_base` 는 편집본 출발점 표지(세션 표지 + 저장본 쌍 토큰 + 씨뿌린 세대 — 표 출납 `base` 와 「리비전 저장」 두 번 누름 잣대). 층 대기분은 캔버스·요소·Main
     설비명 위치(`PENDING_GROUP_LABELS_KEY`) 셋이고 첫 대기분이 본 저장값(`PENDING_BASES_KEY`)을 함께 쓴다.
   - 설비 마스터를 쓰는 모든 저장(설비 마스터 탭 「리비전 저장」 — 표·붙여넣기·CSV·작은 편집표 —, Space 배치 저장, 사이드바
     팝업 저장)은 `_save_equipment_frames` 에서 모듈 묶음 좌표·크기 검사(`saved_master_violations` — 저장본 사본
@@ -6240,14 +6241,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **다시 붙은 탭의 재연결 회차**(2026-11-07 2차 보드 R1 (가)). Streamlit 프런트는 회차가 돌던 탭 · 마지막 회차가 프래그먼트였던 탭 · `run_every` 프래그먼트가 있는
   탭에만 다시 붙으며 회차를 요청한다(번들의 재접속 처리). 마지막이 앱 전체였던 탭은 다음 조작까지 옛 화면이었고, 그 탭에서 프래그먼트 · 대화상자 안 조작을 먼저 하면
   새 세션이 모르는 프래그먼트의 요청을 `AppSession.request_rerun` 이 회차 없이 돌려보내 **저장이 조용히 버려졌다**. 그래서 알림 칸 JS 가 앱 뿌리의
-  연결 표지(`data-test-connection-state`)를 보고 붙음으로 돌아오면 본 스레드가 300ms(`RECONNECT_WAIT_MS`) 조용해지기를 기다려, 그 사이 회차 표지가 움직이지 않았고 도는 회차가 없으면
-  트리거 `reconnected`(`alert_center._reconnected` — 콜백은 하는 일이 없다)로 앱 전체 회차를 부른다. 프런트가 스스로 돈 회차와 겹치면 회차가 두 번 돌기 때문에 기다린다. 시계로만 재면 겹친다 — HOME 은 다시 붙자마자
+  연결 표지(`data-test-connection-state`)를 보고 붙음으로 돌아오면 본 스레드가 300ms(`RECONNECT_WAIT_MS`) + 왕복 시간 조용해지기를 기다려, 그 사이 회차 표지가 움직이지 않았고 도는 회차가 없으면
+  트리거 `reconnected`(`alert_center._reconnected` — 콜백은 하는 일이 없다)로 앱 전체 회차를 부른다. 프런트가 스스로 돈 회차와 겹치면 회차가 두 번 돌기 때문에 기다린다. 회차 표지는 망을 한 번 왕복해야 닿아 왕복 시간을 더한다 — 소켓이 붙는 데 걸린 시간(연결 표지 `CONNECTING` → `CONNECTED`)으로 어림한다(`reconnectWait` — 2026-11-08 사본 실측, 왕복 500ms 에서 300ms 만 기다리면 회차가 두 번 돌았다). 시계로만 재면 겹친다 — HOME 은 다시 붙자마자
   다시 그리느라 본 스레드가 0.8 ~ 1초 묶이고(샘플 관측) 그 사이 프런트 회차의 표지는 메시지 큐에 묶여 있다. 그래서 제때 깬 틱만 조용한 시간으로 세고(`quietAfter`), 가려진 탭처럼 타이머가 늘 늦으면 5초 상한(`RECONNECT_LIMIT_MS`)에서 부른다. data 가 닿아도 회차로 센다 — 묶인 사이 끝난 회차는 메시지가 한꺼번에 처리돼(`handleMessage`) 표지가 움직이지 않는데, 새 세션은 세션 표지로 data 가 달라 알 수 있다.
+  **기다리는 동안 사람 손이 닿으면 부르지 않는다**: 누름의 회차 표지도 왕복해야 움직여, 그 사이 부르면 누름의 회차를 끊어 그 누름이 사라진다(2026-11-08 사본 실측 — 왕복 200ms 에서 다시 붙은 뒤 160 ~ 280ms 에 누른 `on_click` 없는 적용 단추. 고친 뒤 화면 이동도 같은 조건에서 8번 모두 살았다). 기다리는 동안만 `pointerdown` · `click` · `keydown` 을 듣고(`TOUCH_EVENTS`, 듣기는 틱이 끝나면 걷는다) 손이 닿은 뒤 대기 시간 + 700ms(`RECONNECT_TOUCH_MS`) 안에는 부르지 않는다 — 그 사이 표지가 움직이면 그 회차가 재연결 회차를 대신하고, 끝내 움직이지 않으면(회차가 없는 누름) 그때 부른다. 부른 뒤의 누름은 차례가 맞아(서버가 부름 → 누름 순서로 받는다) 사라지지 않는다.
   **남은 겹침**: 세션이 남아 있고 서버 회차가 본 스레드가 묶인 시간보다 짧으면(합성 표본 HOME — 마지막이 프래그먼트 회차인 탭) 표지도 data 도 움직이지 않아 회차가 두 번 돈다. 입력은 그대로이고 값은 앱 전체 회차 한 번이다 — 드문 일을 가르려고 모든 회차에 표지를 더하지 않았다.
   **이 칸이 파이썬을 부르는 자리는 이 하나뿐이다** — 패널 · 칩 판은 지금도 브라우저 안에서만 연다. 연결 표지 · 회차 표지는 관찰자 하나(`watchRoot`)가 보고 칸이 다시 그려져도 늘지 않는다.
   세션이 남아 있었는지는 회차를 돌려야 알 수 있어 **짧은 끊김에도 회차가 한 번 돈다**(샘플 관측 0.27 ~ 0.45초, 입력 · 고침은 남는다). 대가: 재시작 · 세션 만료 뒤에는 열린
   대화상자 입력이 사라지고 시나리오 · 조회기간 · 화면 탭이 처음으로 돌아간다(사용자가 받아들임). **남은 틈**: 새 세션의 회차가 그 프래그먼트까지 닿기 전에 누른 저장은 여전히 버려진다(샘플 관측 — 다시 붙은 뒤 약 2.6초까지, 그 뒤는 저장됨).
   조용히 버려지지는 않는다 — `GL-07` 이 곧 뜨고, 폼이 남아 있으면 다시 누르면 저장된다(폼이 닫히는 때도 있다). 누른 회차에만 여는 대화상자(HOME 공정 필터 · 주요공정 히트맵 · Guide — 22개 중 3개)는 짧은 끊김에도 닫힌다 — 공정 필터의 고른 초안은 앞 판에서도 프런트의 회차로 닫혔고, 나머지 둘은 입력이 없다.
+- **앞 세션의 탭 — 브라우저가 든 값**(2026-11-08). 재시작 · 세션 만료 뒤 같은 문서가 새 세션에 붙으면 브라우저는 앞 세션의 위젯 값을 그대로 다시 보낸다. 편집표는 칸에 고친 값이 남아 있다가 다음 앱 전체 회차에 고침으로 되살아나 적용까지 됐고(재연결 회차가 표보다 먼저 판정해 그 사이 칩 0 · 단추 잠김으로 어긋났다), 알림 「사라졌습니다」 가 거짓이 됐다. 세대는 새 세션에서 0 이라 앞 세션과 key 가 같다. 그래서 `app.py` 가 어떤 위젯보다 먼저 `widget_generation.note_session_start` 를 불러 세션의 첫 회차에 브라우저가 위젯 값을 함께 보냈는지 본다(`ScriptRunContext.session_state.get_widget_states` — 새 탭 · 새로고침은 값이 없다). 보냈으면 이 세션의 표지를 정해 `session_widget_key` 가 편집표 key 꼬리(`__s`)에 단다 — 브라우저에게는 처음 보는 위젯이라 앞 세션의 값을 보낼 곳이 없다. 처음부터 이 세션이던 탭은 key 가 그대로다. **폼 안 표(`editor_widget_key(…, in_form=True)` · 세대를 쓰지 않는 key)는 빼어 고침이 칸에 남는다** — 보내지 않은 값은 서버에 없어 되살아날 것이 없고 칸에 보이는 대로 저장되며, 변경 칩에 들지 않아 지우면 세션 만료 때(`GL-08` 없이) 알림 없이 사라진다. 그래서 `GL-07` 글의 「입력은 사라졌습니다」 는 폼 안 표에서는 넓은 말이다. 표는 출납이 같은 일을 한다 — 설비 마스터 `buffer_base` · 목록 표 `draft_base` 는 세션 표지를 들어 앞 세션의 op 를 받지 않고, `grid_outbox.this_session` 이 그 op 를 세지 않고 뺀다(그 손실은 `GL-07` · `GL-08` 이 이미 알렸다). 편집표가 아닌 칸(글 칸 · 고르기)의 값은 새 세션에도 남는다 — 칸에 보이는 값과 서버가 받은 값이 같아 어긋나지 않는다.
 - **세션만 사라진 탭**(2차 보드 R2 (가) — `GL-08`, 사건 · 확인 필요). 서버는 그대로인데 끊긴 지 `server.disconnectedSessionTTL`(기본 120초, 우리 설정 없음)이 지나 다시 붙으면
   새 세션이라 미저장 고침이 사라지는데 부트 표지가 같아 `GL-07` 이 뜨지 않는다. 세션마다 한 번 정하는 표지(`alert_center.session_mark`)와 알림(`alerts.session_lost_note`)을 data 에 싣고,
   JS(`sessionLost`)가 **문서 메모리**의 앞 data 와 견준다 — 세션 표지가 다르고 부트 표지가 같고, 앞 data 의 변경 목록이 있었거나 끊길 때 대화상자가 열려 있던 탭에만 띄운다.
@@ -6591,8 +6594,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   그리면 Arrow 가 `UnicodeEncodeError` 로 편집표를 깨고 DuckDB 에 쓰면 `FatalException` 으로 그 DB 를 무효로 만든다(2026-10-26
   리뷰 — Space 층 사유). 칸 값을 읽는 자리에서 U+D800~U+DFFF 를 뗀다(`floor_state.floor_reason_code`). `st.text_input`·
   `st.text_area` 의 `max_chars` 는 넘는 입력을 받지 않을 뿐 자르지 않아 이 길이 아니다.
-- **키가 있는 모든 편집표는 `editor_state.editor_widget_key(키)` 로 그리고, 버릴 때 세션을 `pop` 하지 않고
-  `discard_editor` 를 부른다** — 세션 칸만 지우면 브라우저가 옛 편집을 다음 회차에 되보내 취소한 편집이 되살아난다. 원본을
+- **키가 있는 모든 편집표는 `editor_state.editor_widget_key(키)` 로 그리고(폼 안 표는 `in_form=True` — 폼 밖 표의 그물은
+  `tests/test_widget_generation.py`), 버릴 때 세션을 `pop` 하지 않고 `discard_editor` 를 부른다** — 세션 칸만 지우면 브라우저가 옛 편집을 다음 회차에 되보내 취소한 편집이 되살아난다. 원본을
   갈아 끼울 때(Import 저장·편집 버퍼 교체)도 같다 — 옛 delta 가 새 프레임에 얹혀 Import 가 조용히 되돌려진다. 「변경사항
   적용」은 고친 것이 있을 때만 연다(같은 값 적용도 리비전을 올려 `미저장 변경` 을 켠다).
 - **`st.data_editor` 의 편집은 행 위치로 기록된다.** 보이는 행 집합이 바뀌면 남은 편집이 다른 행에 붙으므로, 적용하지

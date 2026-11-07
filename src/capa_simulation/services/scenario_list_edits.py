@@ -13,7 +13,8 @@
   끼워 넣고, 처음 옮길 때의 저장 차례를 `order_base` 로 적는다.
 - **세대(`base`)는 초안을 통째로 갈아 끼울 때만 오른다** — 저장 성공 · 모두 버리기. 옛 세대의 고침은
   반영하지 않고 세어 알린다(`FoldResult.dropped`). 세션 표지(`session`)를 함께 실어 세션이 바뀐 뒤
-  프런트가 다시 보낸 옛 값이 되살지 않는다.
+  프런트가 다시 보낸 옛 값이 되살지 않는다 — 그 값은 세지 않고 뺀다. 그 손실은 재시작 · 세션 만료
+  알림이 이미 알렸다.
 - **지금 저장본에 맞추기**(`reconcile`)는 회차마다 한다 — 사라진 줄의 고침을 세어 빼고, 지금 이름과
   같아진 고침을 빼고(`settled` — 끊긴 첫 저장의 뒷정리를 여기서 잇는다), 고친 차례를 지금 행에
   맞춘다.
@@ -28,7 +29,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal
 
-from capa_simulation.services.grid_outbox import pending_ops
+from capa_simulation.services.grid_outbox import pending_ops, this_session
 from capa_simulation.services.korean_particle import with_direction_particle
 
 SCENARIO_LABEL: Final = "시나리오명"
@@ -351,10 +352,11 @@ def fold_ops(
 
     같은 출납이 여러 회차에 다시 와도 한 번이다(`applied`). 고침 op 의 `base` 가 지금 세대와 다르면
     반영하지 않고 센다 — `open` · `pick` 은 세대를 보지 않는다(고름은 초안을 바꾸지 않는다). 꼴이
-    다른 op 는 세지 않고 버린다.
+    다른 op 와 앞 세션의 op 는 세지 않고 버린다(`this_session`).
     """
     ops, applied = pending_ops(outboxes, draft.applied)
     base = draft_base(draft)
+    ops = this_session(ops, base)
     folded = replace(draft, applied=applied)
     dropped = 0
     refused = False

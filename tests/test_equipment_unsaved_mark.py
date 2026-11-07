@@ -191,6 +191,27 @@ def test_clearing_the_mark_keeps_the_base_so_an_op_already_on_its_way_still_land
     _assert_marked(app, True)
 
 
+def test_an_outbox_from_the_session_before_changes_nothing_and_says_nothing(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """끊긴 사이 낸 고침은 브라우저 출납에만 남아 새 세션에 닿는다. 저장본과 세대가 같아도 세션
+    표지가 달라 편집본에 들어가지 않고, 그 손실은 재시작 · 세션 만료 알림이 이미 알렸으므로 또 세지
+    않는다."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = _page(repository)
+    base = last(grid, emg.GRID_KEY)["base"]
+    session, rest = base.split(":", 1)
+    assert session and rest
+    old = {"seq": 1, "at": 1, "base": f"앞세션:{rest}", "op": "undo", "step": "없음"}
+    _ok(send(app, emg.GRID_KEY, "outbox", {"mount": "m-before", "ops": [old]}))
+
+    table = last(grid, emg.GRID_KEY)
+    assert table["base"] == base
+    assert table["ack"] == {"mount": "m-before", "seq": 1}
+    assert not table.get("toast")
+    _assert_marked(app, False)
+
+
 def test_a_deleted_saved_unit_keeps_the_mark_until_it_comes_back(
     tmp_path: Path, grid: Calls
 ) -> None:

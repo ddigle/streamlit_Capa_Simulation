@@ -222,6 +222,7 @@ from capa_simulation.services.floor_state import (
     inactive_floor_warnings,
     master_location_options,
 )
+from capa_simulation.services.grid_outbox import this_session
 from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.layout_overlay import assumption_group_refusal
 from capa_simulation.services.schedule_confirmation import (
@@ -621,7 +622,8 @@ def _applied() -> dict[str, int]:
 def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     """두 마운트(표·오른쪽 칸)의 출납에서 아직 반영하지 않은 op 를 `(at, mount, seq)` 차례로
     편집본에 얹는다. 받기 콜백과 「리비전 저장」·「한 단계 되돌리기」 콜백이 먼저 부른다(콜백
-    차례에 기대지 않는다). `base` 가 다른 op 는 서비스가 버리고 토스트로 센다."""
+    차례에 기대지 않는다). `base` 가 다른 op 는 서비스가 버리고 토스트로 세고, 앞 세션의 op 는 세지
+    않고 뺀다(`this_session`)."""
     values = [grid_component.outbox_value(key) for key in _MOUNT_KEYS.values()]
     targets = {
         mount: target
@@ -630,6 +632,7 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     }
     ops, applied = pending_ops(values, _applied())
     st.session_state[APPLIED_KEY] = applied
+    ops = this_session(ops, context.base)
     if not ops:
         return
     before = layout_memo_mark()
