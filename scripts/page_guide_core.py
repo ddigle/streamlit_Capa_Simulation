@@ -76,7 +76,7 @@ TARGET_KINDS: Final = frozenset({"key", "button", "tab", "nav", "text", "named"}
 NAMED_TARGETS: Final[dict[str, bool]] = {
     "SIDEBAR_SCEN": False,
     "SIDEBAR_BADGE": False,
-    "SIDEBAR_PENDING": False,
+    "CHANGES_CHIP": False,
     "SIDEBAR_FOOTER": False,
     "HEADER_BAND": False,
     "PAGE_TITLE": False,

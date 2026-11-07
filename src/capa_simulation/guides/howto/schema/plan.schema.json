@@ -77,7 +77,7 @@
     "int_value": {"oneOf": [{"type": "integer"}, {"$ref": "#/$defs/param_ref"}]},
     "target_word": {
       "type": "string",
-      "pattern": "^(?:key:[A-Za-z0-9_-]+|(?:button|tab|nav|text):\\S.*|named:(?:LIST_TABLE|LIST_REVISIONS|LIST_OPEN_ROW|SIDEBAR_SCEN|SIDEBAR_BADGE|SIDEBAR_PENDING|SIDEBAR_FOOTER|HEADER_BAND|PAGE_TITLE|DIALOG|DIALOG_SECTIONS|GRID|LAST_GRID|EDIT_CELL|EDIT_ROW|EGRID|EGRID_CELL|LOB_CHART|LOB_BN_BARS|KEY_PROCESS_GRID|DETAIL_BN|BN_CELL|PROC_HEAD|PROC_MONTH_CANVAS|PF_TILES)|named:(?:MAIN_LINK|MAIN_ALERT|HEAD_BOX|WIDGET|FORM_OF|EXPANDER|KEY_BUTTON|GRID_COLUMN|LIST_HEAD|LIST_OPEN_CELL|EDIT_ROW_CELL|LOB_LABEL|LOB_ROW)\\(.+\\))$",
+      "pattern": "^(?:key:[A-Za-z0-9_-]+|(?:button|tab|nav|text):\\S.*|named:(?:LIST_TABLE|LIST_REVISIONS|LIST_OPEN_ROW|SIDEBAR_SCEN|SIDEBAR_BADGE|CHANGES_CHIP|SIDEBAR_FOOTER|HEADER_BAND|PAGE_TITLE|DIALOG|DIALOG_SECTIONS|GRID|LAST_GRID|EDIT_CELL|EDIT_ROW|EGRID|EGRID_CELL|LOB_CHART|LOB_BN_BARS|KEY_PROCESS_GRID|DETAIL_BN|BN_CELL|PROC_HEAD|PROC_MONTH_CANVAS|PF_TILES)|named:(?:MAIN_LINK|MAIN_ALERT|HEAD_BOX|WIDGET|FORM_OF|EXPANDER|KEY_BUTTON|GRID_COLUMN|LIST_HEAD|LIST_OPEN_CELL|EDIT_ROW_CELL|LOB_LABEL|LOB_ROW)\\(.+\\))$",
       "description": "표적 낱말. 글자로 찾는 것: key:<st-key 이름> · button:<글자> · tab:<글자> · nav:<사이드바 메뉴 글자> · text:<글자>. 코드로 찾는 것: named:<이름> 또는 named:<이름>(<글자>) — 이름 목록은 이 pattern 이 정본이고 생성기가 같은 목록을 구현한다. 팝업이 열려 있으면 글자로 찾는 표적은 팝업 안부터 찾는다."
     },
     "target": {

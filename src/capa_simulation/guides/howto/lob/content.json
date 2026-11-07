@@ -492,8 +492,8 @@
         },
         {
           "state": "09_ref_edited",
-          "t": "sidebar_pending_notice",
-          "name": "사이드바 「적용 전 편집」 줄",
+          "t": "changes_chip",
+          "name": "머리 「변경」 칩",
           "say": "적용 안 한 편집이 남아 있음 — 시나리오 · 기간을 바꾸면 사라짐"
         }
       ]
