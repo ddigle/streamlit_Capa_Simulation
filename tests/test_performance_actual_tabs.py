@@ -158,6 +158,20 @@ def test_the_metric_meaning_is_the_tooltip_of_the_actual_card() -> None:
     assert actual.proto.help == EFFICIENCY_METRIC.description
 
 
+def test_the_detail_conditions_stand_on_one_wrapping_row() -> None:
+    """「제품」 만 가로 줄 밖이면 폭이 남아도 혼자 둘째 줄로 내려간다(후보 g7-19)."""
+    app = _open("상세 분석")
+
+    (row,) = [
+        inner
+        for outer in _tab(app, "상세 분석").children.values()
+        for inner in outer.children.values()
+        if inner.type == "flex_container" and inner.proto.flex_container.direction == 2
+    ]
+    assert row.proto.flex_container.wrap
+    assert [element.label for element in row.children.values()] == ["분석 기간", "공정", "제품"]
+
+
 def test_the_sample_switch_line_is_a_badge_with_its_meaning_in_a_tooltip() -> None:
     """켜진 샘플 스위치 곁은 「합성 샘플」 배지와 표지 「실적 아님」 이고 뜻은 그 풍선이다 — 끄면
     스위치만 서고 「… 미연결」 은 머리 배지 몫이라 거듭 세우지 않으며, 끈 상태의 뜻은 스위치 풍선이

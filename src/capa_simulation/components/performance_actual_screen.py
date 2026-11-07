@@ -241,14 +241,14 @@ def _render_detail(
                 persist_state="session",
                 width=320,
             )
-        product_options = [_ALL, *sorted(monthly["제품정보"].astype(str).unique().tolist())]
-        product = st.selectbox(
-            "제품",
-            product_options,
-            key=f"{key_prefix}_product_filter",
-            persist_state="session",
-            width=220,
-        )
+            product_options = [_ALL, *sorted(monthly["제품정보"].astype(str).unique().tolist())]
+            product = st.selectbox(
+                "제품",
+                product_options,
+                key=f"{key_prefix}_product_filter",
+                persist_state="session",
+                width=220,
+            )
 
     view = monthly.loc[monthly["생산계획년월"].between(start_month, end_month)]
     if selected_processes:
