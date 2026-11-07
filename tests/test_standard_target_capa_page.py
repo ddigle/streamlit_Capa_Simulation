@@ -261,6 +261,16 @@ finally:
 """
 
 RENAMED_TEST_SCRIPT = TEST_SCRIPT.replace("APPLY_RENAME = False", "APPLY_RENAME = True")
+# 석 달 기준정보 + 시험이 바꾸는 조회기간 — 기간을 좁혔다 넓히는 왕복을 본다.
+WIDE_PERIOD_SCRIPT = TEST_SCRIPT.replace(
+    'scenario_tables["RQ_UPEH"] = pd.DataFrame({"생산계획년월": [202608]})',
+    'scenario_tables["RQ_UPEH"] = pd.DataFrame({"생산계획년월": [202607, 202608, 202609]})',
+).replace(
+    'st.session_state["production_month_range_v2"] = ("2026-08", "2026-08")',
+    'st.session_state["production_month_range_v2"] = st.session_state.get(\n'
+    '        "test_period", ("2026-07", "2026-09")\n    )',
+)
+assert WIDE_PERIOD_SCRIPT.count("test_period") == 1 and "202609]}" in WIDE_PERIOD_SCRIPT
 MISSING_WEEK_SCRIPT = TEST_SCRIPT.replace("DROP_ONE_WEEK = False", "DROP_ONE_WEEK = True")
 RENAMED_MISSING_WEEK_SCRIPT = RENAMED_TEST_SCRIPT.replace(
     "DROP_ONE_WEEK = False", "DROP_ONE_WEEK = True"
@@ -543,6 +553,58 @@ def test_saved_view_dates_in_reverse_order_are_corrected() -> None:
     notices = [note.value for note in flashed(app, "warning")]
     assert any("시작일이 종료일보다 늦어" in notice for notice in notices)
     assert not any("조회기간 밖이라" in notice for notice in notices)
+
+
+def _dates(app: AppTest) -> tuple[date, date]:
+    return (
+        app.session_state["standard_target_start_date"],
+        app.session_state["standard_target_end_date"],
+    )
+
+
+def test_dates_fitted_to_a_narrowed_period_come_back_when_it_widens() -> None:
+    """두 칸이 한꺼번에 기간 밖이면 한쪽 끝 하나로 몰려 한 날이 된다. 맞춤으로 바뀐 값은 기간을 넓힐
+    때 돌아온다 — 돌아오는 일은 사용자가 고른 값이라 다시 알리지 않는다."""
+    app = AppTest.from_string(WIDE_PERIOD_SCRIPT, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 7, 5)
+    app.session_state["standard_target_end_date"] = date(2026, 7, 20)
+    app = app.run()
+    assert not app.exception
+    assert _dates(app) == (date(2026, 7, 5), date(2026, 7, 20))
+    assert not flashed(app, "warning")
+
+    app.session_state["test_period"] = ("2026-09", "2026-09")
+    app = app.run()
+    assert _dates(app) == (date(2026, 9, 1), date(2026, 9, 1))
+    assert len(flashed(app, "warning")) == 1
+
+    # 더 좁혀도 값이 그대로면 알릴 것이 없다.
+    app = app.run()
+    assert not flashed(app, "warning")
+
+    app.session_state["test_period"] = ("2026-07", "2026-09")
+    app = app.run()
+    assert not app.exception
+    assert _dates(app) == (date(2026, 7, 5), date(2026, 7, 20))
+    assert not flashed(app, "warning")
+
+
+def test_a_date_chosen_while_narrowed_stays_when_the_period_widens() -> None:
+    """맞춘 뒤 사용자가 조회일을 고르면 그 값이 사용자 값이다 — 넓혀도 옛 값으로 돌아가지 않는다."""
+    app = AppTest.from_string(WIDE_PERIOD_SCRIPT, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 7, 5)
+    app.session_state["standard_target_end_date"] = date(2026, 7, 20)
+    app.session_state["test_period"] = ("2026-09", "2026-09")
+    app = app.run()
+    assert _dates(app) == (date(2026, 9, 1), date(2026, 9, 1))
+
+    app.session_state["standard_target_end_date"] = date(2026, 9, 10)
+    app = app.run()
+    app.session_state["test_period"] = ("2026-07", "2026-09")
+    app = app.run()
+
+    assert not app.exception
+    assert _dates(app) == (date(2026, 9, 1), date(2026, 9, 10))
 
 
 def test_fallback_constants_exist_in_the_page_option_lists() -> None:

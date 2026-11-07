@@ -136,7 +136,8 @@ OUTPUT_METRIC_KEY = STANDARD_TARGET_OUTPUT_METRIC_KEY
 # 직전 회차에 그린 표시 항목. 위젯이 아닌 칸이라 선택을 비운 회차에도 남는다.
 OUTPUT_METRIC_SHOWN_KEY = f"{OUTPUT_METRIC_KEY}__shown"
 PKG_BASIS_KEY = "standard_target_pkg_basis"
-# 조회일을 맞춘 회차의 알림 칸.
+# 조회기간에 맞춘 조회일 곁 칸 — (맞추기 전 두 값, 맞춘 두 값). 조회일을 맞춘 회차의 알림 칸.
+DATES_BEFORE_FIT_KEY = "standard_target_dates_before_fit"
 DATE_FIT_FLASH_KEY = "standard_target_date_fit_flash"
 # 사이드바 조건 카드와 팝업. 팝업은 한 칸이라 한 회차에 하나다.
 CARD_NAME = "standard_target"
@@ -211,19 +212,29 @@ def _last_day(month: int) -> date:
     return date(year, month_number, monthrange(year, month_number)[1])
 
 
-def _initialize_date_state(key: str, default: date, lower: date, upper: date) -> bool:
-    """리비전이 저장한 조회일을 현재 조회기간 안으로 맞추고 조정 여부를 돌려준다.
-
-    사이드바 조회기간을 좁힌 뒤 과거 리비전을 열면 저장된 날짜가 범위 밖이 된다.
-    잘라 넣어야 맞춘 사실을 알릴 수 있다(날짜 칸은 범위 밖 값을 말없이 맞춘다).
-    """
+def _saved_day(key: str, default: date) -> date:
     saved = st.session_state.get(key)
-    if not isinstance(saved, date):
-        st.session_state[key] = default
-        return False
-    clamped = min(max(saved, lower), upper)
-    st.session_state[key] = clamped
-    return clamped != saved
+    return saved if isinstance(saved, date) else default
+
+
+def _fit_dates_to_period(defaults: tuple[date, date], lower: date, upper: date) -> bool:
+    """조회일 두 칸을 현재 조회기간 안으로 맞추고, 맞추느라 값이 달라졌으면 True 다.
+
+    조회기간을 좁히거나 좁힌 뒤 과거 리비전을 열면 저장된 날짜가 범위 밖이 된다. 잘라 넣어야 맞춘
+    사실을 알릴 수 있다(날짜 칸은 범위 밖 값을 말없이 맞춘다). 두 칸이 한꺼번에 범위 밖이면 끝
+    하나로 몰려 한 날이 되므로 맞추기 전 두 값을 곁 칸에 적어 둔다 — 기간을 넓히면 그 값으로
+    돌아오고, 사용자가 그 사이 조회일을 고쳤으면(두 칸이 맞춘 값과 달라지면) 곁 칸을 버린다.
+    """
+    saved = (_saved_day(START_DATE_KEY, defaults[0]), _saved_day(END_DATE_KEY, defaults[1]))
+    held = st.session_state.get(DATES_BEFORE_FIT_KEY)
+    wanted = held[0] if held is not None and held[1] == saved else saved
+    fitted = (min(max(wanted[0], lower), upper), min(max(wanted[1], lower), upper))
+    st.session_state[START_DATE_KEY], st.session_state[END_DATE_KEY] = fitted
+    if fitted == wanted:
+        st.session_state.pop(DATES_BEFORE_FIT_KEY, None)
+    else:
+        st.session_state[DATES_BEFORE_FIT_KEY] = (wanted, fitted)
+    return fitted not in (wanted, saved)
 
 
 def _ordered_text_options(values: pd.Series) -> list[str]:
@@ -748,16 +759,12 @@ default_start_date = _first_day(effective_start_month)
 default_end_date = _last_day(effective_end_month)
 # 날짜를 맞춘 사실은 사건 알림이다 — 조회일 칸은 접힌 카드 안이라 그 곁에 둘 수 없고, 본문에 두면
 # 그 회차에만 결과 상자가 밀린다(설계 규칙 UI-NTF-01). 칸 `render_flash` 는 결과 상자 작업 줄이다.
-date_clamped = _initialize_date_state(
-    START_DATE_KEY, default_start_date, minimum_date, maximum_date
-)
-date_clamped |= _initialize_date_state(END_DATE_KEY, default_end_date, minimum_date, maximum_date)
 date_notes = (
     [
         "조회일이 현재 조회기간 밖이라 "
         f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
     ]
-    if date_clamped
+    if _fit_dates_to_period((default_start_date, default_end_date), minimum_date, maximum_date)
     else []
 )
 if st.session_state[START_DATE_KEY] > st.session_state[END_DATE_KEY]:
