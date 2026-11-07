@@ -73,6 +73,46 @@ def test_the_copy_tree_parent_exists_before_git_archive_writes_into_it() -> None
     assert linux is not None, "리눅스 줄도 사본 폴더를 먼저 만든다"
 
 
+def _fenced_blocks(text: str) -> list[list[str]]:
+    """펜스 코드 블록마다의 줄(앞 공백을 뗀다)."""
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            if current is not None:
+                blocks.append(current)
+            current = [] if current is None else None
+        elif current is not None:
+            current.append(line.strip())
+    return blocks
+
+
+def test_a_git_bash_session_has_its_own_copy_tree_line() -> None:
+    """`powershell -Command` 로 넘긴 블록은 Git Bash 가 `$` 를 먼저 풀어 경로가 깨졌다
+    (`202611060842` 사외 요청 1)."""
+    section = _section("### 1) 사본 트리", "### 2)")
+
+    assert "`powershell -Command` 로 넘기지 않는다" in section
+    [line] = [line for line in _code_lines(section) if line.startswith('e2e="$HOME/e2e_copy/')]
+    assert 'mkdir -p "$e2e" && git archive HEAD | tar -x -C "$e2e"' in line
+    assert line.endswith('cygpath -w "$e2e"'), "2) 의 PowerShell 창에 넣을 값을 찍는다"
+
+
+def test_the_copy_block_and_chapter_eight_start_at_the_repository_root() -> None:
+    """두 블록의 경로는 상대 경로다 — 사용자가 어디서 치는지 물었다(`202611060842` 사외 요청 1)."""
+    place = "git rev-parse --show-toplevel"
+    copy = _section("### 2) DB 복사", "### 3)")
+    chapter_eight = _section("### 8-0.", "### 8-1.")
+
+    for section, marker in (
+        (copy, "$db = "),
+        (chapter_eight, "scripts/inspect_real_data_checks.py --output"),
+    ):
+        [block] = [lines for lines in _fenced_blocks(section) if marker in "\n".join(lines)]
+        assert block[0] == "Set-Location <저장소>"
+        assert place in section
+
+
 def test_every_revision_inspection_names_the_copy_database() -> None:
     calls = [
         line

@@ -1391,6 +1391,14 @@ Expand-Archive "$e2e.zip" $e2e
 $py = "$PWD\.venv\Scripts\python.exe"
 ```
 
+**에이전트 셸이 Git Bash 면 위 블록을 `powershell -Command` 로 넘기지 않는다** — 큰따옴표 안의 `$` 를 Git Bash 가 먼저 풀어 PowerShell
+변수가 빠지고 경로가 `e2e_copy$ts` 꼴로 풀린다(`202611060842` 리뷰). 그때는 저장소 뿌리에서 Git Bash 꼴 한 줄이다. 끝에 찍힌 Windows
+경로가 2) 의 PowerShell 창에서 쓸 `$e2e` 값이다.
+
+```bash
+e2e="$HOME/e2e_copy/$(date +%Y%m%d%H%M)"; mkdir -p "$e2e" && git archive HEAD | tar -x -C "$e2e"; py="$PWD/.venv/Scripts/python.exe"; cygpath -w "$e2e"
+```
+
 `git archive -o` 는 상위 폴더를 만들지 않는다 — 둘째 줄이 없으면 처음 따라 할 때(`e2e_copy` 가 아직 없다) 「could not open
 … for writing」으로 멈춘다. `git archive` 는 커밋된 것만 푼다 — 사용자가 지시한 임시 수정(1-5)은 사본에 없다. 그 수정이 걸린
 채로 봐야 하면 이 확인은 하지 않는다.
@@ -1407,7 +1415,11 @@ DuckDB 는 저장을 먼저 `<DB>.wal` 에 적고 나중에 본 파일로 옮긴
 열리지 않는다. 앱은 rerun 하는 동안만 DB 를 쥐고 쉬는 동안에는 `.wal` 을 남기지 않으므로, **복사 앞뒤로 두 번** 본다. `.wal` 만
 보면 복사 **도중에** 저장과 체크포인트가 다 끝난 경우(앞뒤 모두 `.wal` 없음)를 놓치므로 원본의 크기·마지막 쓴 시각도 앞뒤로 견준다.
 
+`<저장소>` 는 저장소 뿌리(`.venv` · `data\` 가 있는 폴더)다 — 사용자에게 줄 때 `git rev-parse --show-toplevel` 값으로 채워 준다. 이 블록의 경로가
+상대 경로라 다른 폴더의 창에서 치면 빈 값으로 지나간다.
+
 ```powershell
+Set-Location <저장소>
 $db = "data\capa_simulation.duckdb", "data\equipment_availability.duckdb"
 $wal = "data\capa_simulation.duckdb.wal", "data\equipment_availability.duckdb.wal"
 $before = Get-Item $db | ForEach-Object { "$($_.Name) $($_.Length) $($_.LastWriteTimeUtc.Ticks)" }
@@ -2224,11 +2236,13 @@ uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq --output 
 설비 DB 는 `가용설비 현황` 을 한 번 연 뒤라야 마이그레이션이 다 걸려 있다(4-2). 7장을 했다면 이미 걸렸다.
 
 ```powershell
+Set-Location <저장소>
 uv run --no-sync python scripts/inspect_real_data_checks.py --output $HOME/real_data_check.md
 uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq --output $HOME/real_data_check_bdq.md
 ```
 
-**이 두 줄은 처음부터 사용자에게 준다**(`! ` 를 앞에 붙여 치게) — 에이전트의 권한 판단이 이 스크립트를 매번 막았다(6장).
+`<저장소>` 는 저장소 뿌리(`.venv` · `data\` 가 있는 폴더)다 — PowerShell 창에서 치는 사용자에게 줄 때 `git rev-parse --show-toplevel` 값으로 채워 준다.
+**`uv run` 두 줄은 처음부터 사용자에게 준다**(`! ` 를 앞에 붙여 치게) — 에이전트의 권한 판단이 이 스크립트를 매번 막았다(6장).
 앞의 7-8 두 줄과 뒤의 `inspect_wf_division.py` 도 같다 — 운영 DB 를 여는 줄은 모두 처음부터 사용자에게 준다(6장 표).
 사용자가 친 뒤 에이전트는 두 `--output` 파일을 읽어 리뷰 전문에 붙이고 요약 줄을 압축본에 옮긴다(8-6). 파일은 저장소 밖이라
 커밋되지 않는다.
