@@ -50,8 +50,8 @@ OVERLAP_LABELS: dict[OverlapPolicy, str] = {
 
 def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
     # 무엇을 합치고 겹침 · 무월 표 · 가상제품 이력을 어떻게 다루는지는 늘 띄워 두지 않고 Guide 와
-    # 겹침 처리 칸 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02).
-    st.subheader("월 머지")
+    # 겹침 처리 칸 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02). 구획 이름은 바로 위 전환 단추가
+    # 말한다(UI-TXT-07).
     try:
         _render_merge(repository, database_path)
     except ValueError as exc:

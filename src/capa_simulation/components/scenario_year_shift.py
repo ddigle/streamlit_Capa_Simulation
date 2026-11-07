@@ -36,7 +36,7 @@ ZERO_SHIFT_HELP = "이동할 연수가 0 이면 원본과 같아 저장하지 �
 
 
 def render_scenario_year_shift(repository: DuckDBScenarioRepository, database_path: str) -> None:
-    st.subheader("연도 Shift")
+    # 구획 이름은 바로 위 전환 단추가 말한다(설계 규칙 UI-TXT-07).
     try:
         _render_shift(repository, database_path)
     except ValueError as exc:

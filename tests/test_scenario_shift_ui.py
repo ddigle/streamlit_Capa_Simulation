@@ -166,6 +166,15 @@ def test_a_shift_made_here_moves_the_base_of_the_unsaved_list_order(source: Sour
     assert app.session_state[DRAFT_KEY].order_base == after
 
 
+def test_the_section_leaves_its_name_to_the_switch_above_it(source: Source) -> None:
+    """구획 이름은 바로 위 전환 단추가 말한다 — 같은 이름 소제목을 거듭 세우지 않는다(UI-TXT-07)."""
+    _, database, snapshot = source
+
+    app = _app(database, snapshot)
+
+    assert not app.subheader
+
+
 def test_zero_shift_has_preview_but_no_save_and_invalid_shift_recovers(source: Source) -> None:
     repository, database, snapshot = source
     app = _app(database, snapshot)

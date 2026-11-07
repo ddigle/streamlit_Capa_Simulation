@@ -125,6 +125,15 @@ def _with_history(
     )
 
 
+def test_the_section_leaves_its_name_to_the_switch_above_it(sources: Sources) -> None:
+    """구획 이름은 바로 위 전환 단추가 말한다 — 같은 이름 소제목을 거듭 세우지 않는다(UI-TXT-07)."""
+    _, database, base, donor = sources
+
+    app = _app(database, base, donor)
+
+    assert not app.subheader
+
+
 def test_a_merge_made_here_moves_the_base_of_the_unsaved_list_order(sources: Sources) -> None:
     """목록 관리에 미저장 순서를 둔 채 이 세션이 만든 시나리오는 「다른 곳에서」 가 아니다 — 본
     차례를 그 줄이 든 차례로 옮긴다."""
