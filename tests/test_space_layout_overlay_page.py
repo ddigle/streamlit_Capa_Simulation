@@ -27,6 +27,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, alert_notes, infos, place_errors, shown, successes
+from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -154,6 +155,35 @@ def _drawn_texts(app: AppTest) -> list[str]:
         for kind in ("caption", "info", "warning", "success", "error", "markdown")
         for item in shown(app, kind)
     ]
+
+
+# 사이드바 「Space 도면」 상자의 표지 · 잠긴 단추 풍선 머리(페이지 상수 — 페이지는 import 하지
+# 않는다).
+LAYOUT_LOCK_MARK = ":material/lock: 배치 잠김"
+FAST_FORWARD_MARK = ":material/fast_forward: 최신 일정에 저장"
+DISCARD_CHECK_HELP = "「변경을 버리고 불러오기」 를 체크하면 풀립니다."
+
+
+def _sidebar_popovers(app: AppTest) -> list[str]:
+    """사이드바 팝오버 라벨."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        proto = getattr(node, "proto", None)
+        if isinstance(proto, BlockProto) and proto.HasField("popover"):
+            found.append(proto.popover.label)
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    walk(app.sidebar)
+    return found
+
+
+def _mark_help(app: AppTest, mark: str) -> str:
+    """사이드바 「Space 도면」 상자 표지(`mark` 글 그대로)의 풍선 — 까닭 · 저장되는 곳은 자리가
+    아니라 여기다(설계 규칙 UI-INP-07 · UI-TXT-01)."""
+    (item,) = [item for item in app.caption if item.value == mark]
+    return str(item.proto.help)
 
 
 def _texts(app: AppTest) -> list[str]:
@@ -396,8 +426,13 @@ def test_a_stale_assumption_with_another_layout_locks_and_loads_the_latest(
     )
     app = _ok(_space(tmp_path, setup, pinned).run())
 
-    assert any("r3에 다른 배치가 저장됐습니다" in text for text in _texts(app))
+    assert "r3에 다른 배치가 저장됐습니다" in _mark_help(app, LAYOUT_LOCK_MARK)
+    assert not any("다른 배치가 저장됐습니다" in text for text in _texts(app))
     assert app.toggle(key="space_layout_edit_mode_locked").disabled
+    # 잃을 것이 없어 묻지 않는다 — 팝오버 · 체크 없이 단추 하나이고 설명은 그 풍선이다(UI-STA-02).
+    assert "space_load_latest_discard" not in [item.key for item in app.checkbox]
+    assert not _sidebar_popovers(app)
+    assert "그 시나리오의 최신 r3으로 옮깁니다" in str(app.button(key="space_load_latest").help)
     app.button(key="space_load_latest").click().run()
     _ok(app)
     latest = _scenario(repository, setup).latest_schedule_revision_id
@@ -480,6 +515,27 @@ def test_the_one_step_load_waits_while_other_equipment_edits_remain(
 
     assert app.button(key="space_layout_discard_layout")
     assert not _one_step_buttons(app)
+
+
+def test_unsaved_edits_keep_the_switch_behind_a_check_with_the_reason_on_the_locked_button(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """잃을 것이 있을 때만 묻는다 — 팝오버 안 체크 뒤이고, 잠긴 동안 단추 풍선이 체크가 푼다고
+    말한다(설계 규칙 UI-STA-02 · UI-INP-07, 표준 목표 「입력 초기화」 와 같은 꼴). 체크하면 풍선은
+    옮기는 일만 말한다."""
+    app, _, _ = _lock_with_my_eq02_move(tmp_path, editor_calls, other_edit=True)
+
+    assert "최신 r3 불러오기" in _sidebar_popovers(app)
+    button = app.button(key="space_load_latest")
+    assert button.disabled
+    assert str(button.help).startswith(DISCARD_CHECK_HELP)
+
+    app.checkbox(key="space_load_latest_discard").check().run()
+    _ok(app)
+    button = app.button(key="space_load_latest")
+    assert not button.disabled
+    assert not str(button.help).startswith(DISCARD_CHECK_HELP)
+    assert "그 시나리오의 최신 r3으로 옮깁니다" in str(button.help)
 
 
 def test_an_official_revision_from_its_assumption_days_is_locked_with_a_notice(

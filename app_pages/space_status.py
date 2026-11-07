@@ -316,6 +316,8 @@ SWITCH_ERROR_KEY = "space_scenario_switch_error"
 SAVE_BUTTON_KEY = "space_layout_save"
 DISCARD_BUTTON_KEY = "space_layout_discard"
 DISCARD_FAB_BUTTON_KEY = "space_layout_discard_fab"
+# 잠긴 「최신 rM 불러오기」 · 「공식으로 바꾸기」 풍선 머리 — 곁 체크가 푼다는 말이다.
+DISCARD_CHECK_HELP = "「변경을 버리고 불러오기」 를 체크하면 풀립니다."
 # 저장 안 한 배치 상자의 「버리기」 팝오버와 「바뀐 호기 n건」 펼침. 위 Space 알림·저장 오류가
 # 생기고 사라지거나 라벨의 건수가 바뀌어도 같은 블록으로 남게 key 로 고정한다(AGENTS 9장 「조건부
 # 알림」 — 알림 다음 회차에 key 없는 팝오버가 저절로 닫혔다).
@@ -1085,16 +1087,28 @@ def _render_switch_popover(
     explanation: str,
     done: str,
 ) -> None:
-    """설비 시나리오를 옮기는 팝오버 하나 — 미저장 편집이면 「변경을 버리고 불러오기」 체크 뒤.
+    """설비 시나리오를 옮기는 단추 하나 — 잃을 것이 없으면 묻지 않고 바로 옮긴다(설계 규칙
+    UI-STA-02). 미저장 편집이 있을 때만 팝오버 안 「변경을 버리고 불러오기」 체크 뒤다. 무엇을
+    옮기는지는 단추 풍선이다.
 
     팝오버는 단추 key 로 고정한다 — 라벨(「최신 rN 불러오기」)이 바뀌거나 위 알림이 생기고 사라져도
     같은 팝오버로 남는다(AGENTS 9장 「조건부 알림」).
     """
+    told = markdown_safe_tildes(explanation)
+    nowhere = None if target[0] else "옮겨 갈 설비 시나리오가 없습니다."
+    if not has_unsaved_equipment_edits():
+        st.button(
+            label,
+            icon=":material/swap_horiz:",
+            key=key,
+            disabled=not target[0],
+            on_click=_switch_scenario,
+            args=(equipment_database_path, target[0], target[1], True, done),
+            help=nowhere or told,
+        )
+        return
     with st.popover(label, icon=":material/swap_horiz:", key=f"{key}_popover"):
-        st.caption(markdown_safe_tildes(explanation))
-        discard = True
-        if has_unsaved_equipment_edits():
-            discard = st.checkbox("변경을 버리고 불러오기", key=f"{key}_discard")
+        discard = st.checkbox("변경을 버리고 불러오기", key=f"{key}_discard")
         st.button(
             label,
             type="primary",
@@ -1102,6 +1116,7 @@ def _render_switch_popover(
             disabled=not discard or not target[0],
             on_click=_switch_scenario,
             args=(equipment_database_path, target[0], target[1], discard, done),
+            help=nowhere or (told if discard else f"{DISCARD_CHECK_HELP} {told}"),
         )
 
 
