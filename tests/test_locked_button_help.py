@@ -3,8 +3,9 @@
 """잠긴 단추 까닭 그물(설계 규칙 UI-INP-07 — `docs/design_rules.md`).
 
 못 하는 조작은 잠그고 까닭 풍선을 단다 — 곁 글로 까닭을 적지 않는다. 이 그물은 화면 코드에서
-`disabled=` 를 받는 단추(`st.button` · `st.download_button` · `st.form_submit_button` · `st.popover` ·
-`st.link_button`)가 `help=` 도 받는지 (파일, 맨 바깥 함수) 마다 세어 허용 목록과 **정확히** 맞댄다.
+`disabled=` 를 받는 단추(`st.button` · `st.download_button` · `st.form_submit_button` ·
+`st.popover` · `st.link_button`)가 `help=` 도 받는지 (파일, 맨 바깥 함수) 마다 세어 허용 목록과
+**정확히** 맞댄다.
 `help=None if 켜짐 else 까닭` 꼴은 풍선이 있는 것으로 센다 — 글이 까닭인지는 화면 시험과 판단 질문이
 본다. 브라우저 컴포넌트 안 단추(설비 마스터 표 · Space 편집기)는 자산 시험이 본다.
 
@@ -49,6 +50,7 @@ def locked_without_help() -> Counter[tuple[str, str]]:
 def test_a_button_that_can_lock_says_why_in_a_balloon() -> None:
     allowed = {site: count for site, (count, _) in ALLOWED.items()}
     assert dict(locked_without_help()) == allowed, (
-        "잠글 수 있는 단추에 까닭 풍선이 없습니다 — `help=` 로 달거나(`help=None if 켜짐 else 까닭`),"
-        " 달 수 없으면 tests/test_locked_button_help.py ALLOWED 에 까닭과 함께 두세요."
+        "잠글 수 있는 단추에 까닭 풍선이 없습니다 — `help=` 로 달거나"
+        "(`help=None if 켜짐 else 까닭`), 달 수 없으면 tests/test_locked_button_help.py ALLOWED 에"
+        " 까닭과 함께 두세요."
     )
