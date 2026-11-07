@@ -145,8 +145,6 @@ def render_cutoff_management(
     missing = missing_cutoff_processes(equipment_processes, stored)
     if missing:
         _render_missing_cutoffs(missing)
-    elif equipment_processes:
-        st.caption(f"설비가 있는 공정 {len(equipment_processes)}개가 모두 채워졌습니다.")
 
     if locked_reason is not None:
         # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-04 · UI-INP-07).
