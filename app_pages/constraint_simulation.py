@@ -248,6 +248,16 @@ NEW_UNITS_HELP = (
     "오지 않은 모듈은 그 증가에 붙지 않습니다. 남은 보유 제약 설비만으로 제약 기간 끝까지 남은 "
     "증가가 덮이면 그 증가부터 신규는 붙이지 않습니다(기존 제품 몫)."
 )
+NEW_SINCE_HELP = "기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다."
+
+
+def new_since_help(*, modify: bool, new_units_on: bool) -> str:
+    """「신규 기준일」 풍선 — 잠긴 동안은 왜 잠겼는지를 먼저 말한다(설계 규칙 UI-INP-07)."""
+    if not modify:
+        return f"「개조 필요」 를 켜면 씁니다. {NEW_SINCE_HELP}"
+    if not new_units_on:
+        return f"「신규 설비는 개조 없이」 를 켜면 씁니다. {NEW_SINCE_HELP}"
+    return NEW_SINCE_HELP
 
 
 # 주소 `?process=` 는 **무엇보다 먼저** 꺼내고 그 키 하나만 지운다 — 부트스트랩이 멈춘 회차에도
@@ -661,7 +671,7 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         key=CONSTRAINT_NEW_SINCE_KEY,
         default=today,
         disabled=not (modify and new_units_on),
-        help="기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다.",
+        help=new_since_help(modify=modify, new_units_on=new_units_on),
     )
     # 개조 끔이면 두 옵션은 걸리지 않는다 — 결과·머리에 걸리지 않은 조건이 남지 않게 넘기지 않는다.
     owned_value = int(owned_units) if modify and isinstance(owned_units, int) else 0

@@ -149,6 +149,10 @@ def test_the_defaults_keep_the_first_version_and_skip_the_timeline(
     assert not app.number_input(key=CONSTRAINT_OWNED_KEY).disabled
     assert not app.toggle(key=CONSTRAINT_NEW_UNITS_KEY).disabled
     assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["disabled"]
+    # 잠긴 동안 풍선이 왜 잠겼는지 먼저 말한다(설계 규칙 UI-INP-07).
+    assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["help"].startswith(
+        "「신규 설비는 개조 없이」 를 켜면 씁니다."
+    )
     assert _metric(app, "개조 대수") == "1대"
     assert _metric_caption(app, "개조 대수").startswith("1번에 나눠 개조 · 첫 비가동 ")
     assert "보유" not in _header_line(app) and "신규" not in _header_line(app)
@@ -167,6 +171,9 @@ def test_turning_modification_off_locks_both_options(
     assert app.number_input(key=CONSTRAINT_OWNED_KEY).disabled
     assert app.toggle(key=CONSTRAINT_NEW_UNITS_KEY).disabled
     assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["disabled"]
+    assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["help"].startswith(
+        "「개조 필요」 를 켜면 씁니다."
+    )
     # 걸리지 않은 조건은 머리·결과에 남지 않는다 — 위젯 값은 세션에 그대로다.
     header = _header_line(app)
     assert "개조 없음" in header and "보유" not in header and "신규" not in header
@@ -206,6 +213,7 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     없어 1판과 같다."""
     app = _with_new_units(_opened(arriving_databases), BEFORE_NEW_UNIT)
     assert not date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["disabled"]
+    assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["help"].startswith("기여 시작이")
     captions = _plain(_captions(app))
     assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {NEW_UNIT}" in captions
     # 띠에는 값(날 · 대수)만, 뜻은 띠 끝 풍선이다(설계 규칙 UI-TXT-01).
