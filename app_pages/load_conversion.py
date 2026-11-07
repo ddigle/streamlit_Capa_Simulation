@@ -664,27 +664,25 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
             "— 먼저 그 표의 「변경사항 적용」을 누르세요."
         )
 
-    def _source_stack(position: int) -> str:
-        return str(source_candidates.iloc[position]["Stack"])
-
-    def _follow_source_stack() -> None:
-        st.session_state[VIRTUAL_STACK_KEY] = _source_stack(st.session_state[VIRTUAL_SOURCE_KEY])
-
     # 기준 제품은 폼 밖이다 — 폼 안 칸은 제출 때까지 서버에 오지 않아 제품을 바꿔도 Stack 칸이 첫
-    # 제품 값으로 남고, 그대로 누르면 기준과 다른 Stack 으로 등록됐다. 고를 때마다 Stack 칸을 그
-    # 제품 값으로 맞추고, 그 뒤에 사람이 고친 Stack 은 그대로 등록한다.
+    # 제품 값으로 남고, 그대로 누르면 기준과 다른 Stack 으로 등록됐다.
     selected_source = st.selectbox(
         "기준이 될 제품",
         options=range(len(source_labels)),
         format_func=lambda index: source_labels[index],
         key=VIRTUAL_SOURCE_KEY,
-        on_change=_follow_source_stack,
     )
-    st.session_state.setdefault(VIRTUAL_STACK_KEY, _source_stack(selected_source))
     with st.form("virtual_product_form", border=False):
         with st.container(horizontal=True, gap="small"):
             new_product = st.text_input("제품정보", key="virtual_product_name")
-            new_stack = st.text_input("Stack", key=VIRTUAL_STACK_KEY)
+            # Stack 칸은 기준 제품마다 다른 위젯이다. 같은 칸에 세션으로 값을 써 넣으면 화면만
+            # 바뀌고 브라우저 폼이 들고 있던 미제출 값이 그대로 제출돼, 보이는 값과 등록 값이
+            # 어긋난다.
+            new_stack = st.text_input(
+                "Stack",
+                value=str(source_candidates.iloc[selected_source]["Stack"]),
+                key=f"{VIRTUAL_STACK_KEY}_{selected_source}",
+            )
         registered = st.form_submit_button(
             "가상 제품 등록", icon=":material/library_add:", type="primary"
         )

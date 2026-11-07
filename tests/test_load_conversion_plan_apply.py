@@ -22,7 +22,7 @@ from alert_marks import (
 )
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import Dataframe, ElementTree
+from streamlit.testing.v1.element_tree import Dataframe, ElementTree, TextInput
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
@@ -156,33 +156,43 @@ def test_the_plan_paste_window_calls_the_table_by_its_screen_name(seeded_databas
     assert refused.value.startswith("PKG PLAN 입력 표의 열이 다운로드 양식과 다릅니다")
 
 
+def _stack_field(app: AppTest) -> TextInput:
+    """가상 제품 팝업의 Stack 칸 — 기준 제품마다 다른 위젯이라 라벨로 찾는다."""
+    return next(field for field in app.text_input if field.label == "Stack")
+
+
 def test_the_stack_field_follows_the_chosen_source_product(seeded_database: Path) -> None:
     """폼 안이던 기준 제품을 바꿔도 Stack 칸이 첫 제품 값으로 남아, 그대로 누르면 기준과 다른 Stack
-    으로 말없이 등록됐다. 고를 때마다 그 제품 값이 오고, 사람이 고친 값은 그대로 남는다."""
+    으로 말없이 등록됐다. 고를 때마다 그 제품 값이 오고, 사람이 고친 값은 그대로 남는다.
+
+    기준 제품마다 위젯이 달라야 한다 — 브라우저 폼은 제출 전 값을 위젯마다 들고 있어 같은 칸에
+    서버가 값을 써도 미제출 값이 그대로 제출된다. AppTest 는 그 값을 재현하지 못해 key 로 본다."""
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     app.button(key="open_virtual_product").click().run()
     assert not list(app.exception)
     source = app.selectbox(key="virtual_product_source")
     stacks = [str(option).rsplit(" · ", 1)[1] for option in source.options]
-    assert app.text_input(key="virtual_product_stack").value == stacks[0]
+    assert _stack_field(app).value == stacks[0]
+    first_key = _stack_field(app).key
     other = next(index for index, stack in enumerate(stacks) if stack != stacks[0])
 
     source.set_value(other).run()
     assert not list(app.exception)
-    assert app.text_input(key="virtual_product_stack").value == stacks[other]
+    assert _stack_field(app).value == stacks[other]
+    assert _stack_field(app).key != first_key
 
-    app.text_input(key="virtual_product_stack").set_value("99H").run()
-    assert app.text_input(key="virtual_product_stack").value == "99H"
+    _stack_field(app).set_value("99H").run()
+    assert _stack_field(app).value == "99H"
     app.selectbox(key="virtual_product_source").set_value(0).run()
     assert not list(app.exception)
-    assert app.text_input(key="virtual_product_stack").value == stacks[0]
+    assert _stack_field(app).value == stacks[0]
 
 
 def _register(app: AppTest, product: str, stack: str) -> None:
     """작업 줄의 「가상 제품 등록」 팝업을 열고 등록한다."""
     app.button(key="open_virtual_product").click().run()
     app.text_input(key="virtual_product_name").set_value(product)
-    app.text_input(key="virtual_product_stack").set_value(stack)
+    _stack_field(app).set_value(stack)
     for button in app.button:
         if "가상 제품 등록" in str(button.label) and button.key != "open_virtual_product":
             button.click().run()
