@@ -238,8 +238,11 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
-        what="시나리오 관리 설비 시나리오 탭 — 옛 판 흔적이 있는 설비 시나리오 이름 · 개수 줄",
-        why="UI-TXT-04 · UI-NTF-02",
+        what=(
+            "시나리오 관리 설비 시나리오 탭 — 옛 판 흔적이 있는 설비 시나리오 이름 · 개수 줄 ·"
+            " 리비전 표 위 고른 시나리오 흔적 상자(빠진 리비전 · 되살리는 길은 전문)"
+        ),
+        why="UI-TXT-04 · UI-NTF-02 · 사용자 답 place-box · g2-04",
         file="src/capa_simulation/components/equipment_scenario_management.py",
         function="report_layout_traces",
         code="SC-03",
@@ -295,6 +298,18 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         test=(
             "tests/test_space_layout_editor_page.py"
             "::test_overlaps_in_a_pending_layout_go_to_a_state_alert_not_the_box"
+        ),
+    ),
+    Withdrawn(
+        what="Space 층 화면 맨 위 — 저장된 캔버스 밖 호기 경고 상자(전 층을 훑는 한 알림으로)",
+        why="사용자 답 place-box · g6-01",
+        file="src/capa_simulation/components/space_floor_layout.py",
+        function="report_canvas_outside",
+        code="EQ-18",
+        route="state",
+        test=(
+            "tests/test_equipment_pages.py"
+            "::test_units_outside_a_saved_canvas_are_one_alert_for_the_whole_fab"
         ),
     ),
     Withdrawn(

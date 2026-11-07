@@ -79,10 +79,6 @@ REASONS = frozenset(
 
 # (파일, 맨 바깥 함수) → (경고 호출 수, 까닭).
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
-    ("app_pages/load_conversion.py", "_virtual_product_dialog"): (2, PLACE_FORM),
-    ("app_pages/reference_data.py", "_step_dialog"): (1, PLACE_FORM),
-    ("app_pages/reference_integrity.py", "_render_summary"): (1, PLACE_VERDICT),
-    ("app_pages/space_status.py", ""): (1, PLACE_DETAIL),
     ("app_pages/space_status.py", "_render_fab_editor"): (1, PLACE_RESULT),
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
@@ -131,11 +127,11 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_CONFIRM,
     ),
-    # 고른 시나리오의 옛 코드 흔적 줄과, 지울 배치 차이가 없어져 단추째 사라진 회차의 체크 풀림 줄.
+    # 지울 배치 차이가 없어져 「배치 차이 모두 지우기」 확인 창이 단추째 사라진 회차의 체크 풀림 줄.
     (
         "src/capa_simulation/components/equipment_scenario_management.py",
         "render_equipment_scenario_management",
-    ): (2, PLACE_DETAIL),
+    ): (1, PLACE_CONFIRM),
     ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (
         2,
         PLACE_FORM,
@@ -145,26 +141,14 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         2,
         PLACE_FORM,
     ),
-    ("src/capa_simulation/components/performance_actual_screen.py", "_render_summary"): (
-        1,
-        PLACE_VERDICT,
-    ),
     ("src/capa_simulation/components/period_field.py", "_render_pending_notice"): (1, PLACE_FORM),
     ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (1, PLACE_CONFIRM),
     ("src/capa_simulation/components/scenario_management.py", "_render_official"): (
         1,
         PLACE_CONFIRM,
     ),
-    ("src/capa_simulation/components/scenario_management.py", "_render_detail"): (
-        1,
-        PLACE_CONFIRM,
-    ),
     ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (2, PLACE_FORM),
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PLACE_FORM),
-    ("src/capa_simulation/components/source_quality.py", "render_source_quality"): (
-        1,
-        PLACE_VERDICT,
-    ),
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),
     ("src/capa_simulation/components/sso_identity.py", "_stop_signed_out"): (1, PLACE_STOP),
@@ -209,7 +193,6 @@ SAME_SCREEN = "제 화면의 탭을 말한다 — 「그 화면으로」 가 이
 COMPARED = "다른 화면을 견주어 말할 뿐 고칠 곳이 아니다"
 TWO_PLACES = "고칠 곳이 둘이라 한 화면으로 보낼 수 없다"
 LIST_HERE = "내역 표가 이 화면 탭에 있다 — 탭으로 먼저 가고 고칠 화면은 글이 말한다"
-OPEN_GOTO = "미정리 — `goto` 를 달 자리(이 표를 줄인다)"
 # (파일, 맨 바깥 함수) → 글이 다른 화면을 말하는데 `goto` 가 없는 상태 알림의 까닭.
 NAMED_WITHOUT_GOTO: dict[tuple[str, str], str] = {
     ("app_pages/constraint_simulation.py", "report_locked_arrival"): COMPARED,
@@ -222,10 +205,6 @@ NAMED_WITHOUT_GOTO: dict[tuple[str, str], str] = {
         "src/capa_simulation/components/equipment_scenario_management.py",
         "report_layout_traces",
     ): SAME_SCREEN,
-    (
-        "src/capa_simulation/components/equipment_scenario_status.py",
-        "render_legacy_trace_warning",
-    ): OPEN_GOTO,
     (
         "src/capa_simulation/components/required_exclusion_notice.py",
         "alert_capacity_exclusions",

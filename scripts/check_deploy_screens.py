@@ -214,7 +214,7 @@ EQUIPMENT_DROPPED_HEADER: Final = "설비가동현황"
 EQUIPMENT_GRID_KEY: Final = "equipment_grid_table"
 EQUIPMENT_LOADER_KEY: Final = "equipment_grid_loader"
 EQUIPMENT_MENU_KEY: Final = "equipment_master_tools"
-BULK_IMPORT_BUTTON: Final = "한꺼번에 넣기"
+BULK_IMPORT_BUTTON: Final = "엑셀·CSV로 한꺼번에"
 BULK_IMPORT_TITLE: Final = "엑셀·CSV로 한꺼번에"
 GRID_ALL_COLUMNS_SET: Final = "전체 39칸"
 GRID_COLUMN_SETS: Final = 5
@@ -280,7 +280,7 @@ PROCESS_DETAIL_CARD_KEY: Final = "condition_card_process_capa_detail"
 UPEH_PERCENT_LABEL: Final = "UPEH 가정 (%)"
 UPEH_TRIAL_PERCENT: Final = 110
 UPEH_DEFAULT_PERCENT: Final = 100
-UPEH_ROW_NAMES: Final = ("소요대수", "확보율", "확보기준 과부족")
+UPEH_ROW_NAMES: Final = ("소요대수", "확보율", "확보 기준 과부족")
 # 표 도구 줄의 「구획」 칩(`st.pills` — 누른 칩이 펼친 구획, `aria-pressed`)과 칩 글자 차례. 밖에서
 # 들어온 길이 다시 펴는 구획 — HOME 칸 → ①, 가용설비 현황 근거 카드 링크 → ④.
 PROCESS_DETAIL_SECTIONS_KEY: Final = "process_detail_sections"
@@ -2343,7 +2343,7 @@ def open_equipment_tab(screen: Screen, name: str) -> None:
 
 
 def open_bulk_import(screen: Screen) -> None:
-    """탭 ① 불러오기 줄 끝 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 를 눌러 팝업이 보일 때까지
+    """탭 ① 불러오기 줄 끝 메뉴 「엑셀·CSV」 안 단추를 눌러 팝업이 보일 때까지
     기다린다. 메뉴는 Streamlit 팝오버라 패널이 본문 밖 포털에 뜬다."""
     menu = screen.page.locator(f'[data-testid="stMain"] .st-key-{EQUIPMENT_MENU_KEY}')
     menu.locator("button").first.click()
@@ -2795,8 +2795,9 @@ def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
         tab.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
         tab.click()
     tray = screen.wait_for(lambda: box.evaluate(_TRAY_JS), timeout=15)
-    total_match = re.fullmatch(r"(\d+)대", str(tray["count"]).strip())
-    total = int(total_match.group(1)) if total_match else -1
+    # 칸 머리는 「n대」 이고, 묶음이 든 층은 「n대(모듈 m)」 이다 — 셈은 모듈(호기 행) 수로 맞댄다.
+    total_match = re.fullmatch(r"(\d+)대(?:\(모듈 (\d+)\))?", str(tray["count"]).strip())
+    total = int(total_match.group(2) or total_match.group(1)) if total_match else -1
     head = (
         summarize_drawer_counts(
             floors, unplaced, total, tray["floorless"], tray["modules"], tray.get("groups")
@@ -2812,10 +2813,10 @@ def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
         return box.evaluate(_TRAY_STATE_JS)
 
     def narrowed(value: Any) -> re.Match[str] | None:
-        return re.fullmatch(r"(\d+)/(\d+)대", str(value["count"]).strip())
+        return re.fullmatch(r"(\d+)/(\d+)대(?:\(모듈 \d+\))?", str(value["count"]).strip())
 
     def restored(value: Any) -> bool:
-        return value["query"] == "" and str(value["count"]).strip() == f"{total}대"
+        return value["query"] == "" and str(value["count"]).strip() == str(tray["count"]).strip()
 
     # 사내 요령: `fill` 은 반응이 없다 — 한 글자씩 친다.
     search.click()
@@ -5468,7 +5469,7 @@ def summarize_upeh_rows(
 
 def check_upeh_rows(screen: Screen) -> str:
     """공정 Capa 상세 — 조건 카드 「이 세션만」 UPEH 가정 % 를 110 으로 바꿔 ① 끝 가정 세
-    줄(소요대수 · 확보율 · 확보기준 과부족)과 머리 배지를 세고 100 으로 되돌린다(세션 값 — DB 에
+    줄(소요대수 · 확보율 · 확보 기준 과부족)과 머리 배지를 세고 100 으로 되돌린다(세션 값 — DB 에
     쓰지 않는다). 세 줄은 그 달이 가정 구간 밖이어도 늘 선다(구간 밖 달은 빈칸) — 근거 카드의 가정
     한 줄은 고른 달이 구간 안일 때만 서므로 그것으로 세지 않는다."""
     screen.step("페이지 열기")

@@ -78,13 +78,10 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 8
+UNSETTLED_SITES = 6
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
-    # 사이드바 조건 패널 맨 위 「적용 전 편집 … — 시나리오·기간을 바꾸면 사라집니다」 — 바로 밑
-    # 시나리오 · 기간 칸을 바꾸기 전에 알아야 하는 되돌릴 수 없는 결과다(UI-NTF-09).
-    ("app.py", ""): (BESIDE_INPUT,),
     ("app_pages/admin_area.py", ""): (EMPTY,),
     ("app_pages/available_equipment_status.py", ""): (EMPTY,),
     ("app_pages/calculation_result.py", ""): (EMPTY,),
@@ -109,15 +106,15 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         UNSETTLED,
         UNSETTLED,
         UNSETTLED,
-        UNSETTLED,
     ),
-    ("app_pages/reference_integrity.py", "_render_summary"): (EMPTY,),
+    # 결론 한 줄 — 「없음」 이면 빈 결과, 있으면 가장 낮은 공정 값(답 place-box — 상자 없는 평문).
+    ("app_pages/reference_integrity.py", "_render_summary"): (EMPTY, VALUE),
     ("app_pages/required_shortening.py", ""): (EMPTY,),
     ("app_pages/standard_target_capa.py", ""): (EMPTY,),
     ("app_pages/standard_target_capa.py", "_render_logic_analysis"): (EMPTY,),
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
-    ("app_pages/wip_status.py", ""): (EMPTY, EMPTY, EMPTY, UNSETTLED),
+    ("app_pages/wip_status.py", ""): (EMPTY, EMPTY, EMPTY),
     ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (EMPTY,),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_history"): (
         EMPTY,
@@ -172,9 +169,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/display_order_management.py", "_render_direct_editor"): (
         BESIDE_INPUT,
     ),
-    ("src/capa_simulation/components/equipment_data_workspace.py", "_render_bulk_delete_status"): (
-        BESIDE_INPUT,
-    ),
     ("src/capa_simulation/components/equipment_data_workspace.py", "_render_history"): (
         EMPTY,
         EMPTY,
@@ -193,9 +187,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
         BESIDE_INPUT,
     ),
-    ("src/capa_simulation/components/equipment_scenario_management.py", "_render_load"): (
-        BESIDE_INPUT,
-    ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_restore"): (
         EMPTY,
         EMPTY,
@@ -211,10 +202,7 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
         EMPTY,
     ),
-    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (
-        EMPTY,
-        EMPTY,
-    ),
+    ("src/capa_simulation/components/equipment_scenario_status.py", "_render_save"): (EMPTY,),
     ("src/capa_simulation/components/grouped_monthly_table.py", "render_grouped_monthly_table"): (
         EMPTY,
         EMPTY,
