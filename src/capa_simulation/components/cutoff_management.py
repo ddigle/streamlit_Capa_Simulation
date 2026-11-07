@@ -16,6 +16,8 @@ Cut-off 는 「그 공정 이후의 공정~입고까지 TAT 누적 합」이지�
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 import pandas as pd
 import streamlit as st
 
@@ -180,27 +182,12 @@ def render_cutoff_management(
             :, PROCESS_CUTOFF_EDIT_COLUMNS
         ]
 
-    with st.container(horizontal=True, gap="small"):
-        if st.button(
-            "설비 공정으로 채우기",
-            icon=":material/playlist_add:",
-            help=(
-                "설비 마스터와 기존보유대수에 있는데 표에 없는 공정을 빈 행으로 덧붙입니다. "
-                "적어 둔 값은 그대로 둡니다."
-            ),
-            width="content",
-        ):
-            st.session_state[CUTOFF_DRAFT_KEY] = add_missing_cutoff_rows(draft, equipment_processes)
-            # 편집 델타는 행 위치다. 표가 바뀌는데 옛 델타를 남기면 다른 공정에 붙는다.
-            # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 위젯 키를 바꾼다.
-            discard_editor(_EDITOR_KEY)
-            st.rerun()
-        # 왕복 CSV 는 다른 설비 표와 같은 인코딩을 쓴다 — Excel 이 BOM 없이는 한글을 깬다.
-        render_csv_download(
-            data=stored.to_csv(index=False).encode("utf-8-sig"),
-            file_name="process_cutoff.csv",
-            key="equipment_cutoff_csv_v1",
-        )
+    # 왕복 CSV 는 다른 설비 표와 같은 인코딩을 쓴다 — Excel 이 BOM 없이는 한글을 깬다.
+    render_csv_download(
+        data=stored.to_csv(index=False).encode("utf-8-sig"),
+        file_name="process_cutoff.csv",
+        key="equipment_cutoff_csv_v1",
+    )
 
     view = render_table_view_controls(
         draft,
@@ -212,13 +199,25 @@ def render_cutoff_management(
     )
 
     with st.form(_FORM_KEY, border=True):
-        submitted = st.form_submit_button(
-            "Cut-off 저장",
-            help=CUTOFF_SAVE_HELP,
-            icon=":material/save:",
-            type="primary",
-            width="content",
-        )
+        # 표에 친 칸은 폼을 제출해야 서버에 온다. 「설비 공정으로 채우기」 도 그 칸 위에 얹으므로 폼
+        # 밖 단추로 두지 않는다 — 친 값을 모른 채 표를 다시 세우면 그 값이 말없이 사라진다.
+        with st.container(horizontal=True, gap="small"):
+            submitted = st.form_submit_button(
+                "Cut-off 저장",
+                help=CUTOFF_SAVE_HELP,
+                icon=":material/save:",
+                type="primary",
+                width="content",
+            )
+            filling = st.form_submit_button(
+                "설비 공정으로 채우기",
+                help=(
+                    "설비 마스터와 기존보유대수에 있는데 표에 없는 공정을 빈 행으로 덧붙입니다. "
+                    "적어 둔 값은 그대로 둡니다."
+                ),
+                icon=":material/playlist_add:",
+                width="content",
+            )
         # 저장 결과는 누른 버튼 바로 아래 한 자리다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다
         # — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다. 충돌 거부도 거부
         # 회차가 담아 둔 글을 여기서 꺼낸다(`write_guard.queue_refusal` — dict 칸이라 끊기지
@@ -254,6 +253,9 @@ def render_cutoff_management(
 
     merged = merge_edited_rows(draft, edited, filtered=view.filtered)
     st.session_state[CUTOFF_DRAFT_KEY] = merged
+
+    if filling:
+        _fill_missing_rows(merged, equipment_processes)
 
     if submitted:
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
@@ -317,6 +319,19 @@ def render_cutoff_management(
             st.rerun()
 
     return stored
+
+
+def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> NoReturn:
+    """친 칸까지 얹은 초안(`draft`)에 빠진 공정을 빈 행으로 덧붙인다. 저장은 하지 않는다.
+
+    더할 공정이 없으면 표를 다시 세우지 않는다."""
+    filled = add_missing_cutoff_rows(draft, equipment_processes)
+    if len(filled) > len(draft):
+        st.session_state[CUTOFF_DRAFT_KEY] = filled
+        # 편집 델타는 행 위치다. 표가 바뀌는데 옛 델타를 남기면 다른 공정에 붙는다.
+        # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 위젯 키를 바꾼다.
+        discard_editor(_EDITOR_KEY)
+    st.rerun()
 
 
 def _same_as_saved(stored: pd.DataFrame, edited: pd.DataFrame, expected: str) -> bool:
