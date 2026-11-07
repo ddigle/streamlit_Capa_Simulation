@@ -1171,8 +1171,8 @@ def test_the_inactive_floor_warning_shows_a_typed_reason_as_written(
 def test_the_history_revision_box_shows_only_the_revision_and_leaves_the_note_to_the_table(
     tmp_path: Path,
 ) -> None:
-    """「조회 리비전」 닫힌 칸은 칸 폭을 넘겨 끊겼다(g5-20, 샘플 관측) — 「r3 · 이름」 만 적고 메모는
-    바로 위 표에서 본다."""
+    """「조회 리비전」 닫힌 칸은 칸 폭을 넘겨 끊겼다(g5-20, 샘플 관측) — 「r3 · 이름」 만 적고
+    메모는 바로 위 표에서 본다."""
     path = tmp_path / "equipment.duckdb"
     _repository(path).save_snapshot(
         empty_equipment_baseline(),
