@@ -453,12 +453,13 @@ def test_the_undo_button_stays_live_and_answers_when_there_is_nothing_to_undo(
 ) -> None:
     """「한 단계 되돌리기」 는 「리비전 저장」 과 같은 제출 단추다 — 출납은 300ms 묶음이라 회차의
     단계 수는 브라우저보다 늦어 잠그면 방금 고친 것을 되돌리는 누름을 놓친다. 잠그지 않고 누른
-    회차에 판정해 알림창이 알린다(설계 규칙 UI-INP-07, g5-09)."""
+    회차에 판정해 알림창이 알린다(설계 규칙 UI-INP-07, g5-09). 무엇을 되돌리나는 풍선이다."""
     app = _app(tmp_path / "equipment.duckdb")
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     assert not app.button(key=UNDO_BUTTON_KEY).disabled
     assert app.button(key=UNDO_BUTTON_KEY).label == UNDO_LABEL
+    assert "일괄 삭제" in str(app.button(key=UNDO_BUTTON_KEY).help)
 
     app.button(key=UNDO_BUTTON_KEY).click().run()
 

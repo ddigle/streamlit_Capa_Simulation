@@ -104,6 +104,7 @@ from capa_simulation.components.equipment_data_workspace import (
     render_name_changes,
     render_small_editor,
     reset_equipment_drafts,
+    restore_bulk_deletion,
     save_equipment_buffer,
     saved_master_violations,
     settle_grid_toasts,
@@ -285,6 +286,10 @@ IMPORT_MENU_LABEL: Final = IMPORT_DIALOG_TITLE
 SAVE_LABEL: Final = "리비전 저장"
 DISCARD_LABEL: Final = "모두 버리기"
 UNDO_LABEL: Final = "한 단계 되돌리기"
+UNDO_HELP: Final = (
+    "표 · 상세의 마지막 고침부터 한 단계씩 되돌립니다. 표 고침을 다 되돌리면 기존 보유대수 · "
+    "비가동 일정의 일괄 삭제를 되살립니다 — 되살린 표의 적용하지 않은 편집은 사라집니다."
+)
 NOTE_PLACEHOLDER: Final = "예: 10월 신규 호기 반입일정 갱신"
 DOWNLOAD_NOTE: Final = (
     "표에서 고친 값은 곧바로 편집본에 들어가 이 파일에 함께 실립니다(못 읽은 칸 초안은 빼고)."
@@ -881,7 +886,8 @@ def _on_dialog(name: str) -> None:
 
 
 def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
-    """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다.
+    """「한 단계 되돌리기」 — 출납을 먼저 반영하고 맨 위 단계 하나를 되돌린다. 표 단계가 없으면 그
+    아래 일괄 삭제를 되살린다 — 일괄 삭제가 표 단계를 비우므로 삭제는 늘 표 단계 밑이다.
 
     더블클릭(0.15초)은 한 번으로 친다. 옛 코드는 둘째 누름이 한 단계를 더 꺼내 메모3·메모2 가
     함께 돌아갔고, 첫 회차의 알림(「되돌림: 메모3 고침」)을 둘째의 것이 덮었다(2026-10-27 E2E).
@@ -902,6 +908,8 @@ def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
         return
     note_written(UNDO_PRESS_KEY)
     st.session_state[UNDO_PRESS_KEY] = press + 1
+    if not grid_undo_steps() and restore_bulk_deletion():
+        return
     ops = [{"op": "undo", "base": context.base}]
     before = layout_memo_mark()
     result = apply_ops(_grid_state(), ops, context)
@@ -1265,6 +1273,7 @@ def _render_save_section(
             UNDO_LABEL,
             key=UNDO_BUTTON_KEY,
             icon=":material/undo:",
+            help=UNDO_HELP,
             on_click=_undo_step,
             args=(context, layout, current_generation(UNDO_PRESS_KEY)),
         )
