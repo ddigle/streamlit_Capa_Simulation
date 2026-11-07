@@ -608,6 +608,8 @@ STEP_SUMMARY_NUMBER_COLUMNS = ("월", "STEP 수", "수요 변형 수")
 # 조회기간에 편집할 경로 STEP 이 없을 때의 빈 결과 한 줄과 그 풍선.
 STEP_EMPTY_TEXT = "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다."
 STEP_EMPTY_HELP = "사이드바 조회기간을 넓히면 그 기간의 경로 STEP 이 나옵니다."
+# 버려질 편집이 있을 때 STEP 실행 단추의 풍선 — 남기는 법. 무엇이 버려지는지는 창 맨 위 값 줄이다.
+STEP_DROP_HELP = "편집을 남기려면 먼저 그 표의 「변경사항 적용」 을 누릅니다."
 
 
 def _compact_step_summary(summary: pd.DataFrame) -> pd.DataFrame:
@@ -645,10 +647,8 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
         if reference_grid.draft_pending(table_name)
     ]
     if dropped_edits:
-        st.warning(
-            f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. STEP 을 바꾸면 "
-            "버려집니다 — 먼저 그 표의 「변경사항 적용」을 누르세요."
-        )
+        st.caption(f"적용 안 한 편집 {len(dropped_edits)}개 버림 · {' · '.join(dropped_edits)}")
+    drop_help = STEP_DROP_HELP if dropped_edits else None
     step_mode = st.segmented_control(
         "작업",
         options=["STEP 추가", "STEP 삭제"],
@@ -698,6 +698,7 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
                 "STEP 일괄 추가",
                 icon=":material/add:",
                 type="primary",
+                help=drop_help,
             )
             delete_confirmed = False
         else:
@@ -709,6 +710,7 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
                 "STEP 일괄 삭제",
                 icon=":material/delete:",
                 type="primary",
+                help=drop_help,
             )
             new_mcp_seq = ""
             new_step_seq = ""

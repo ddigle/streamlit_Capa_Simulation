@@ -1704,7 +1704,10 @@ def test_the_step_popup_warns_before_it_drops_unapplied_upeh_edits(grid_calls: C
 
     app = _open_step_dialog(app)
     assert not app.exception
-    assert any("UPEH·Lot측정률 표에 적용하지 않은 편집" in item.value for item in app.warning)
+    assert not list(app.warning)
+    assert "적용 안 한 편집 2개 버림 · UPEH · Lot측정률" in [item.value for item in app.caption]
+    add_button = next(b for b in app.button if b.label == "STEP 일괄 추가")
+    assert "「변경사항 적용」" in str(add_button.help)
 
     app = next(w for w in app.text_input if w.label == "신규 MCP_SEQ").set_value("2A").run()
     app = next(w for w in app.text_input if w.label == "신규 STEP_SEQ").set_value("P200").run()

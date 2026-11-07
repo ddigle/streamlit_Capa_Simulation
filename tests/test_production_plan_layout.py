@@ -145,7 +145,8 @@ def test_leaving_the_page_forgets_an_open_popup() -> None:
 
 
 def test_registering_warns_before_it_drops_an_unapplied_paste(database: Path) -> None:
-    """붙여넣고 아직 적용하지 않은 PKG PLAN 표가 있으면 등록 팝업이 먼저 경고한다."""
+    """붙여넣고 아직 적용하지 않은 PKG PLAN 표가 있으면 등록 팝업 맨 위 값 줄이 먼저 말하고 남기는
+    법은 등록 단추 풍선이 말한다(설계 규칙 UI-NTF-09 — 경고 상자 문장을 두지 않는다)."""
     from test_load_conversion_plan_apply import _clipboard_text, _paste
 
     app = _app(database)
@@ -154,7 +155,10 @@ def test_registering_warns_before_it_drops_an_unapplied_paste(database: Path) ->
 
     app.button(key="open_virtual_product").click().run()
     assert not list(app.exception)
-    assert any("등록하면 버려집니다" in item.value for item in app.warning)
+    assert not list(app.warning)
+    assert "적용 안 한 편집 1개 버림 · PKG PLAN 붙여넣기" in [item.value for item in app.caption]
+    register = [button for button in app.button if button.label == "가상 제품 등록"][-1]
+    assert "「변경사항 적용」" in str(register.help) and "다시 붙여넣어도" in str(register.help)
 
 
 def test_the_guide_explains_every_card_setting_and_action() -> None:
@@ -232,4 +236,5 @@ def test_registering_warns_before_it_drops_unapplied_table_edits(database: Path)
     app.button(key="open_virtual_product").click().run()
 
     assert not list(app.exception)
-    assert any("수율 표에 적용하지 않은 편집" in item.value for item in app.warning)
+    assert not list(app.warning)
+    assert "적용 안 한 편집 1개 버림 · 수율" in [item.value for item in app.caption]

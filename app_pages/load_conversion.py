@@ -234,6 +234,11 @@ PLAN_APPLY_HELP = "누르면 환산·소요대수·확보율과 홈 대시보드
 YIELD_APPLY_HELP = "누르면 환산수량과 다른 페이지의 산출값이 이 수율로 다시 계산됩니다."
 # 잠긴 적용 단추의 풍선은 하는 일이 아니라 까닭이다(설계 규칙 UI-INP-07).
 APPLY_LOCKED_HELP = "고친 칸이 있으면 누를 수 있습니다."
+# 버려질 편집이 있을 때 등록 단추의 풍선 — 남기는 법. 무엇이 버려지는지는 창 맨 위 값 줄이다.
+VIRTUAL_DROP_HELP = (
+    "편집을 남기려면 먼저 그 표의 「변경사항 적용」 을 누릅니다. 붙여넣기는 등록한 뒤 다시 "
+    "붙여넣어도 됩니다."
+)
 # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다. 이 화면이
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
 # 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
@@ -661,22 +666,15 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     # 등록하면 시나리오가 바뀌어 붙여넣고 아직 적용하지 않은 PKG PLAN 표는 행 구성이 맞지 않아
     # 버린다(그대로 적용하면 새 제품의 0 계획 행을 기간에서 지운다). 버리기 전에 말한다.
     staged_paste = isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame)
-    if staged_paste:
-        st.warning(
-            "적용하지 않은 PKG PLAN 붙여넣기가 있습니다. 등록하면 버려집니다 — 먼저 "
-            "「PKG PLAN 변경사항 적용」을 누르거나, 등록한 뒤 다시 붙여넣으세요."
-        )
     # 두 표에 행이 더해지므로 표에서 고치고 적용하지 않은 편집도 버려진다(2026-09-29 2차 리뷰).
     dropped_edits = [
         name
         for key, name in ((PLAN_EDITOR_KEY, "PKG PLAN"), (YIELD_EDITOR_KEY, "수율"))
         if editor_has_edits(key)
     ]
-    if dropped_edits:
-        st.warning(
-            f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. 등록하면 버려집니다 "
-            "— 먼저 그 표의 「변경사항 적용」을 누르세요."
-        )
+    dropped = [*dropped_edits, *([STAGED_NAMES[PLAN_STAGED_KEY]] if staged_paste else [])]
+    if dropped:
+        st.caption(f"적용 안 한 편집 {len(dropped)}개 버림 · {' · '.join(dropped)}")
 
     # 기준 제품은 폼 밖이다 — 폼 안 칸은 제출 때까지 서버에 오지 않아 제품을 바꿔도 Stack 칸이 첫
     # 제품 값으로 남고, 그대로 누르면 기준과 다른 Stack 으로 등록됐다.
@@ -698,7 +696,10 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
                 key=f"{VIRTUAL_STACK_KEY}_{selected_source}",
             )
         registered = st.form_submit_button(
-            "가상 제품 등록", icon=":material/library_add:", type="primary"
+            "가상 제품 등록",
+            icon=":material/library_add:",
+            type="primary",
+            help=VIRTUAL_DROP_HELP if dropped else None,
         )
     registered_records = session_virtual_products()
     if registered_records:
