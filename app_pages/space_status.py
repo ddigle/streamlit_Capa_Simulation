@@ -335,6 +335,10 @@ SWITCH_TO_OFFICIAL_KEY = "space_switch_to_official"
 # 층 배치 편집이 잠긴 회차(남이 그 시나리오에 다른 배치를 저장·가정이던 때 리비전)의 「최신 rM
 # 불러오기」, 꺼진 「배치 편집」 토글, 저장 안 한 상자의 「배치 변경만 버리기」.
 LOAD_LATEST_KEY = "space_load_latest"
+# 사이드바 「Space 도면」 상자의 표지 — 자리에는 한 마디, 까닭 · 저장되는 곳은 그 풍선이다(설계 규칙
+# UI-INP-07 · UI-TXT-01).
+LAYOUT_LOCK_MARK = ":material/lock: 배치 잠김"
+FAST_FORWARD_MARK = ":material/fast_forward: 최신 일정에 저장"
 # 「배치 저장」 의 낡은 세션 거절 곁 「최신 rN 불러오기(변경 버림)」.
 SAVE_LOAD_LATEST_KEY = "space_save_load_latest"
 LOCKED_EDIT_TOGGLE_KEY = "space_layout_edit_mode_locked"
@@ -1135,12 +1139,13 @@ def _render_switch_to_official(key: str) -> None:
 
 
 def _render_edit_lock_line() -> None:
-    """층 배치 편집이 잠긴 회차의 까닭 한 줄(+ 「최신 rM 불러오기」), 또는 배치 빨리 감기 캡션.
-    「배치 변경만 버리기」 는 저장 안 한 배치 상자에 선다(그 변경이 있을 때만)."""
+    """층 배치 편집이 잠긴 회차의 표지 한 마디(+ 「최신 rM 불러오기」), 또는 배치 빨리 감기 표지.
+    까닭 · 저장되는 곳은 표지 풍선이다. 「배치 변경만 버리기」 는 저장 안 한 배치 상자에 선다(그
+    변경이 있을 때만)."""
     if not edit_mode.layout_editable and edit_mode.lock_reason:
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.caption(
-                f":material/lock: {literal_markdown(edit_mode.lock_reason)}", width="content"
+                LAYOUT_LOCK_MARK, help=literal_markdown(edit_mode.lock_reason), width="content"
             )
             if edit_mode.lock_action == "latest":
                 latest = equipment_session.latest_revision_no
@@ -1158,7 +1163,7 @@ def _render_edit_lock_line() -> None:
                     ),
                 )
     elif edit_mode.notice:
-        st.caption(f":material/fast_forward: {literal_markdown(edit_mode.notice)}")
+        st.caption(FAST_FORWARD_MARK, help=literal_markdown(edit_mode.notice))
 
 
 def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
@@ -1307,16 +1312,13 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> bool:
                     + (f" {renamed_to_common}" if not names.empty else "")
                 )
         if layout_locked:
-            # 잠금 까닭은 사이드바 「Space 도면」 상자의 잠금 줄(`_render_edit_lock_line` — 「최신
-            # rM 불러오기」 곁)이 한 번 적는다. 상자는 저장하지 않는다는 것과 「배치 변경만 버리기」
-            # 만(한 화면에 한 번).
-            # 자리에는 표지 한 마디, 까닭이 있는 곳은 풍선이다(설계 규칙 UI-TXT-03 · UI-TXT-04).
+            # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-03 · UI-TXT-04).
             st.caption(
                 ":material/lock: 배치 저장 잠김",
                 help=(
                     "배치 편집이 잠겨 이 배치 변경은 저장하지 않습니다 — "
                     + (
-                        "까닭은 사이드바 「Space 도면」 상자의 잠금 줄에 있습니다."
+                        literal_markdown(edit_mode.lock_reason)
                         if edit_mode.lock_reason
                         else "최신을 불러온 뒤 다시 고칩니다."
                     )
@@ -1488,7 +1490,7 @@ def _discard_layout_and_load_latest(
     if discard_layout_edits():
         _queue_space_flash(
             "배치 변경만 버렸습니다 — 설비 마스터의 다른 편집이 남아 있어 최신 "
-            f"{with_object_particle(revision)} 불러오지 않았습니다. 잠금 줄의 「최신 {revision} "
+            f"{with_object_particle(revision)} 불러오지 않았습니다. 사이드바 「최신 {revision} "
             "불러오기」 에서 변경을 버리고 불러오세요."
         )
         return
@@ -2034,7 +2036,7 @@ with space_box:
                 ),
             )
         elif buffer_frames is not None:
-            # 꺼진 단추 — 까닭은 풍선과 바로 아래 잠금 줄(「최신 rM 불러오기」)이 말한다.
+            # 꺼진 단추 — 까닭은 풍선이고 바로 아래 표지 곁에 「최신 rM 불러오기」 가 선다.
             st.toggle(
                 "배치 편집",
                 value=False,
@@ -2060,8 +2062,8 @@ with space_box:
         # 않는다(1단계 규칙 그대로).
         _render_switch_to_official(SWITCH_TO_OFFICIAL_KEY)
     if buffer_frames is not None:
-        # 층 배치 편집이 잠긴 회차의 까닭 한 줄(「최신 rM 불러오기」)·배치 빨리 감기 캡션 — `배치
-        # 편집` 바로 아래(FAB 에서도 선다 — 저장 안 한 배치 상자가 이 줄을 가리킨다).
+        # 층 배치 편집이 잠긴 회차의 표지(「최신 rM 불러오기」)·배치 빨리 감기 표지 — `배치 편집`
+        # 바로 아래(FAB 에서도 선다).
         _render_edit_lock_line()
     # 견주기 — 이름 줄 없이 토글 하나(라벨이 이름이다). 층 배치 편집 중에는 견주지 않는다(편집기에는
     # 보내지 않는다).
