@@ -265,6 +265,8 @@ UNDO_PRESS_KEY: Final = "equipment_master_undo_press_v1"
 DISCARD_POPOVER_KEY: Final = "equipment_master_discard_v1"
 DISCARD_CONFIRM_KEY: Final = "equipment_master_discard_confirm_v1"
 SAVE_RESULT_KEY: Final = "equipment_master_save_result_v1"
+# 불러오기 · 목록 비우기 결과 칸 — 고칠 입력이 없어 알림창 · Alarm 으로만 낸다(`_load_result`).
+LOAD_RESULT_KEY: Final = "equipment_master_load_result_v1"
 # 불러오기 줄 끝 메뉴 — 팝오버 key 꼬리는 메뉴 세대다. 「한꺼번에 넣기」 가 세대를 올려 메뉴가 팝업
 # 뒤에 남지 않고 닫힌 채 다시 선다(`on_change` 로 여닫힘을 받으면 메뉴를 열 때마다 앱이 다시 돈다).
 DATA_MENU_KEY: Final = "equipment_master_data_menu_v1"
@@ -359,6 +361,13 @@ def _result(kind: FlashKind, text: str) -> None:
     글에 설비 시나리오·호기 이름이 들어 물결표를 막는다(「NEW~01~」 가 지움선이 되지 않게).
     """
     queue_flash(SAVE_RESULT_KEY, markdown_safe_tildes(text), kind=kind)
+
+
+def _load_result(kind: FlashKind, text: str) -> None:
+    """불러오기 · 목록 비우기 결과 — 표 안 띠가 아니라 알림창 · Alarm 으로만(설계 규칙 UI-NTF-03).
+    띠는 닫을 때까지 남아 표를 밀어내고 그 뒤 호기를 더해도 옛 대수를 적었다. 글에 호기 이름 ·
+    조건 값이 들어 구두점을 막는다."""
+    queue_flash(LOAD_RESULT_KEY, literal_markdown(text), kind=kind, popup_only=True)
 
 
 # ------------------------------------------------------------------ 표 조건·모양
@@ -744,13 +753,15 @@ def _on_load(request: grid_component.LoadRequest) -> None:
         text += f"({result.already:,}대는 이미 목록에 있음)"
     if result.cut or (request.kind == "all" and len(index.live) > GRID_ROW_LIMIT):
         text = f"앞 {GRID_ROW_LIMIT:,}대만 불러왔습니다 — 공정·설비명으로 좁혀 불러오세요"
-    queue_grid_toast("grid", text)
+        _load_result("warning", text)
+        return
+    _load_result("success" if result.added else "info", text)
 
 
 def _on_clear() -> None:
     _store_loaded(())
     st.session_state[MISSING_KEY] = ()
-    queue_grid_toast("grid", "목록을 비웠습니다 — 고친 내용은 그대로 남습니다")
+    _load_result("info", "목록을 비웠습니다 — 고친 내용은 그대로 남습니다")
 
 
 def _open_detail(row_id: str) -> None:
@@ -1057,6 +1068,7 @@ def _render_notices(
 ) -> None:
     """알림 — 늘 서 있는 한 칸 안에(아래 컴포넌트 마운트의 자리를 고정한다, 개편 명세 2-3)."""
     with st.container():
+        render_flash(LOAD_RESULT_KEY)
         if basis is not None and basis.stale:
             st.warning(literal_markdown(_stale_lock_message(basis)), icon=":material/lock_clock:")
         layout = layout_mode.layout

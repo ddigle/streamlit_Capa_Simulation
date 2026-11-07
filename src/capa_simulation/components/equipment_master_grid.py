@@ -113,7 +113,7 @@ def _texts(value: object, limit: int | None = None) -> list[str]:
 
 @dataclass(frozen=True)
 class LoadRequest:
-    """불러오기 한 번 — 갈래, 브라우저가 찾은 행 id, 못 찾은 낱말, 토스트 머리 글."""
+    """불러오기 한 번 — 갈래, 브라우저가 찾은 행 id, 못 찾은 낱말, 결과 알림 머리 글."""
 
     kind: str
     ids: tuple[str, ...]
