@@ -377,7 +377,7 @@ def test_the_picks_survive_a_round_trip(early_databases: tuple[Path, Path]) -> N
 
 
 def test_a_stopped_branch_stands_an_idle_picker(empty_databases: tuple[Path, Path]) -> None:
-    """설비 일정이 서지 않는 공정(빈 설비 DB)은 까닭 카드 갈래다 — 카드에는 잠긴 빈 고르기 칸이 제
+    """설비 일정이 서지 않는 공정(빈 설비 DB)은 멈춘 갈래다 — 카드에는 잠긴 빈 고르기 칸이 제
     key 로 선다(카드 모양이 같게 — 페이지 위젯은 key 를 받는다, AGENTS 9장). 정본은 건드리지
     않는다."""
     app = _app(empty_databases)
@@ -386,9 +386,10 @@ def test_a_stopped_branch_stands_an_idle_picker(empty_databases: tuple[Path, Pat
     _ok(app.run())
     idle = [element for element in app.multiselect if element.label == HELD_LABEL]
     assert len(idle) == 1 and idle[0].disabled and idle[0].options == []
-    assert app.multiselect(key=CONSTRAINT_HELD_IDLE_KEY).proto.placeholder == (
-        "설비 일정이 서는 공정에서 고릅니다"
-    )
+    # 칸에 드는 표지만 두고 까닭은 칸 풍선이다 — 긴 안내는 칸 끝에서 잘렸다(설계 규칙 UI-ACC-02).
+    picker = app.multiselect(key=CONSTRAINT_HELD_IDLE_KEY)
+    assert picker.proto.placeholder == "고를 호기 없음"
+    assert str(picker.help).startswith("설비 일정이 서는 공정에서 고릅니다.")
     assert app.session_state[CONSTRAINT_HELD_KEY] == {DYNAMIC_PROCESS: ["CA-01"]}
 
 

@@ -227,7 +227,9 @@ HELD_HELP = (
     "않는 동안과 기간 밖에는 기존 제품에 씁니다. 고른 호기는 신규 후보에서 빠집니다(두 번 "
     "세지 않습니다). 설비 시나리오나 조회기간을 바꿔 목록에서 사라진 호기는 빼고 알립니다."
 )
-HELD_IDLE_PLACEHOLDER = "설비 일정이 서는 공정에서 고릅니다"
+# 계획 앞에서 멈춘 회차의 잠긴 칸 — 칸에는 표지, 까닭은 칸 풍선이다(설계 규칙 UI-ACC-02).
+HELD_IDLE_PLACEHOLDER = "고를 호기 없음"
+HELD_IDLE_HELP = "설비 일정이 서는 공정에서 고릅니다."
 # 출처 띠 「신규 = 기여 시작 …」 의 뜻 — 띠에는 값(날 · 대수)만 둔다(설계 규칙 UI-TXT-01).
 NEW_START_HELP = "신규의 기여 시작은 공정 Capa 상세 ③ 의 Qual 다음 날이고 묶음은 첫 모듈입니다."
 OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
@@ -678,7 +680,7 @@ def render_idle_held_picker() -> None:
             key=CONSTRAINT_HELD_IDLE_KEY,
             disabled=True,
             placeholder=HELD_IDLE_PLACEHOLDER,
-            help=HELD_HELP,
+            help=f"{HELD_IDLE_HELP} {HELD_HELP}",
         )
 
 
