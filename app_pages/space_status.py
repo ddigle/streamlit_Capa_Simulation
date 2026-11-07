@@ -477,6 +477,12 @@ def _units(value: float) -> str:
 SPACE_CARD_LABEL = "Space 조건"
 # 사이드바 `Space 조건` 카드의 공정소분류 필터 칸(세션에 남는 보기 조건).
 PROCESS_FILTER_KEY = "space_status_process_filter"
+# 그 칸 풍선 — 도구 줄 요약 끝 표지(`_filter_mark`)의 뜻을 말한다(카드는 접혀 있어도 요약은 보인다).
+PROCESS_FILTER_HELP = (
+    "고른 공정의 호기만 도면 · 요약 · 층 목록에 셉니다. 요약 끝 「공정 필터 n개」 가 건 수이고, "
+    "층의 호기가 이 필터로 모두 빠지면 「필터로 0대」 라 적습니다. 배치 편집은 필터와 상관없이 "
+    "그 층 호기를 모두 봅니다."
+)
 # 배치 편집 토글 도움말 끝 — 켜기 전에 필요 단축 보기가 쉰다는 것을 알 수 있게(결정 D7·명세 4-4).
 LAYER_REST_HELP = (
     "색 기준이 「필요 단축」 이면 편집하는 동안 그 보기를 쉬고, 편집을 끄면 다시 보입니다."
@@ -738,6 +744,7 @@ else:
             placeholder="전체",
             key=PROCESS_FILTER_KEY,
             persist_state="session",
+            help=PROCESS_FILTER_HELP,
         )
         # 도면 색 기준은 하나만 고른다(2026-10-16 사용자 결정 — 질문 7). 고른 기준의 그룹마다
         # 체크(처음엔 모두 켬)이고, 체크한 그룹만 그 색이다. 바꾸면 도면은 같은 epoch 로 색만 다시
@@ -839,6 +846,24 @@ location_unknown = pd.Series(
     index=unplaced_equipment.index,
     dtype=bool,
 )
+
+
+def _filter_mark(*, emptied: bool = False) -> str:
+    """도구 줄 요약 끝 표지 — 공정 필터가 걸렸다는 것과, 그 때문에 층이 비었으면 그 말(설계 규칙
+    UI-STA-03). 뜻은 `공정소분류` 칸 풍선이다. 필터가 없으면 빈 글이다."""
+    if not selected_processes:
+        return ""
+    return f" · 공정 필터 {len(selected_processes)}개" + (" · 필터로 0대" if emptied else "")
+
+
+def _floor_units_before_filter(key: FloorKey) -> bool:
+    """공정 필터를 걸기 전 그 층에 배치 · 미배치로 셀 호기가 있는가(도면 이탈 뒤 · 레이아웃
+    제외는 빼고) — 요약의 0대가 필터 때문인지 가른다."""
+    on_floor = all_status["동"].eq(key[0]).fillna(False).astype(bool) & all_status["층"].eq(
+        key[1]
+    ).fillna(False).astype(bool)
+    wanted = all_status["레이아웃표시"].eq("Y").fillna(False).astype(bool)
+    return bool((on_floor & wanted & ~_exited_mask(all_status)).any())
 
 
 def _canvas_of(key: FloorKey) -> tuple[float, float]:
@@ -2135,6 +2160,7 @@ if selected is None:
     )
     if inactive_units > 0:
         fab_summary += f" · 비활성 층 {_units(inactive_units)}"
+    fab_summary += _filter_mark()
     # 보기는 저장본이다(저장된 요소가 없으면 기본 배치). 저장 안 한 FAB 편집은 편집기와 상자가
     # 말한다.
     fab_canvas, fab_marks = effective_fab_layout(fab_profile, fab_stored_marks)
@@ -2334,6 +2360,11 @@ else:
             f"{with_topic_particle(_units(equipment_unit_total(unplaced_equipment.loc[floor_unknown_here])))}"
             " 배치 편집 미배치 칸에"
         )
+    summary += _filter_mark(
+        emptied=floor_counted.empty
+        and floor_unplaced.empty
+        and _floor_units_before_filter(selected)
+    )
 
     # 층 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
     # 제목은 도구 줄 제목, 캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자, 범례는 편집기

@@ -62,6 +62,58 @@ def _open_editor(tmp_path: Path, equipment: pd.DataFrame | None = None) -> tuple
     return app, database
 
 
+def _two_process_fleet() -> pd.DataFrame:
+    """C1 1F 는 Process-A 둘, C2 2F 는 Process-B 하나 — 공정 필터로 층 하나가 빈다."""
+    fleet = _equipment()
+    fleet.loc[1, ["공정소분류", "동", "층"]] = ["Process-B", "C2", "2F"]
+    return fleet
+
+
+def test_the_summary_says_a_process_filter_is_on_and_when_it_emptied_the_floor(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """필터로 층이 비면 빈 층과 같은 모습이었다 — 건 조건이 보이게 요약 끝에 표지를 잇는다
+    (설계 규칙 UI-STA-03, 사외 점검 g6-02). 뜻은 공정소분류 칸 풍선이다."""
+    app, _ = _open_editor(tmp_path, _two_process_fleet())
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    assert "공정 필터" not in str(editor_calls[-1]["summary"])
+    assert "「필터로 0대」" in str(app.multiselect(key="space_status_process_filter").help)
+
+    # 이 층 호기가 남는 필터 — 건 수만 말한다.
+    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert str(editor_calls[-1]["summary"]).endswith(" · 공정 필터 1개")
+
+    # 이 층 호기가 모두 빠지는 필터 — 왜 비었는지 말한다.
+    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    assert not app.exception, [item.message for item in app.exception]
+    summary = str(editor_calls[-1]["summary"])
+    assert summary.startswith("배치 0대 · 미배치 0대")
+    assert summary.endswith(" · 공정 필터 1개 · 필터로 0대")
+
+    # FAB 요약도 건 수를 말한다.
+    app.button(key="space_status_fab_breadcrumb").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert str(editor_calls[-1]["summary"]).endswith(" · 공정 필터 1개")
+    clear_equipment_repository()
+
+
+def test_a_floor_with_nothing_on_it_is_not_blamed_on_the_filter(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """원래 빈 층은 필터를 걸어도 「필터로 0대」 라 하지 않는다 — 필터 때문이 아니다."""
+    app, _ = _open_editor(tmp_path, _two_process_fleet())
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    app.session_state["space_status_selected_building"] = "C3"
+    app.session_state["space_status_selected_floor"] = "1F"
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert str(editor_calls[-1]["summary"]).endswith(" · 공정 필터 1개")
+    clear_equipment_repository()
+
+
 def test_the_editor_receives_the_floor_from_the_shared_draft(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
