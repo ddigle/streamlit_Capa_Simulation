@@ -461,7 +461,7 @@ function sendOnce(S, op, cells) {
 function enqueue(S, op, cells) {
   const queued = queueOp(S.box, op, S.limit, Date.now())
   if (!queued) {
-    showNote(S, '보낼 고침이 너무 많습니다 — 잠시 뒤 다시 하거나 「엑셀·CSV」 의 「한꺼번에 넣기」 를 씁니다')
+    showNote(S, '보낼 고침이 너무 많습니다 — 잠시 뒤 다시 하거나 「엑셀·CSV」 의 「엑셀·CSV로 한꺼번에」 를 씁니다')
     return null
   }
   for (const [id, col, text] of cells || []) S.pending.set(id + '\t' + col, { seq: queued.seq, text })
@@ -619,7 +619,7 @@ function drawLoader(host, S, data) {
   const focus = S.refocus
   S.refocus = null
   // 「엑셀·CSV로 한꺼번에」 팝업이 닫혔다(파이썬이 닫힐 때마다 센 수 `dialogClosed`) — Streamlit 은 닫은 뒤 초점을 그림자
-  // DOM 안 여는 단추로도, 팝업을 열며 닫힌 메뉴 안 「한꺼번에 넣기」 로도 돌려주지 못해 BODY 로 빠진다. 첫 화면 단추로
+  // DOM 안 여는 단추로도, 팝업을 열며 닫힌 메뉴 안 단추로도 돌려주지 못해 BODY 로 빠진다. 첫 화면 단추로
   // 열었으면 그 단추(넣어서 사라졌으면 메뉴 단추), 메뉴로 열었으면(`dialogFromMenu`) 메뉴 단추로 초점이 빈 때만 돌린다.
   const closed = Number(data.dialogClosed) || 0
   const justClosed = S.dialogClosed !== null && closed !== S.dialogClosed
@@ -1948,7 +1948,7 @@ function onPaste(S, event) {
   const byId = new Map(live.map((row) => [row.id, row]))
   const plan = planPaste(cells, start.row, start.col, live.map((row) => row.id), names, (rowId, name) => editableIn(S, byId.get(rowId), byName.get(name)), Number((S.data.limits || {}).pasteCells) || 5000)
   if (plan.tooMany) {
-    showNote(S, '한 번에 ' + (Number((S.data.limits || {}).pasteCells) || 5000).toLocaleString() + '칸까지 붙입니다 — 더 많으면 「엑셀·CSV」 의 「한꺼번에 넣기」 를 씁니다')
+    showNote(S, '한 번에 ' + (Number((S.data.limits || {}).pasteCells) || 5000).toLocaleString() + '칸까지 붙입니다 — 더 많으면 「엑셀·CSV」 의 「엑셀·CSV로 한꺼번에」 를 씁니다')
     return
   }
   S.edit = null

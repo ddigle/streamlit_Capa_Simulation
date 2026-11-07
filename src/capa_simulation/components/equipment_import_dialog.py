@@ -2,8 +2,8 @@
 
 """가용설비 현황 「엑셀·CSV로 한꺼번에」 팝업(개편 명세 4-8 — 옛 설비 마스터 탭 「입력」 탭을 옮김).
 
-- **자리**: 탭 ① 불러오기 줄 끝 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」·첫 화면 「엑셀·CSV로
-  한꺼번에」 단추(표 컴포넌트 `dialog` 트리거)·첫 데이터 안내 단추 → 큰 팝업. 열림 칸은 페이지 한
+- **자리**: 탭 ① 불러오기 줄 끝 메뉴 「엑셀·CSV」 안 단추·첫 화면의 같은
+  이름 단추(표 컴포넌트 `dialog` 트리거)·첫 데이터 안내 단추 → 큰 팝업. 열림 칸은 페이지 한
   칸(`EQUIPMENT_DIALOG_KEY` — 값 `import`, 「가용설비 설정」 팝업과 한 칸이라 한 실행에 팝업
   하나)이고 여는 콜백은 `forget_page_dialogs()` 부터 부른다.
 - **안은 옛 입력 탭 그대로**: 등록할 표(기본 설비 마스터) · Excel 표 붙여넣기 · CSV 업로드(50MB) ·
@@ -172,7 +172,7 @@ def import_closed_count() -> int:
 
 
 def import_opened_from_menu() -> bool:
-    """마지막으로 연 팝업이 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 로 열렸나. 표 불러오기 data 의
+    """마지막으로 연 팝업이 메뉴 「엑셀·CSV」 안 단추로 열렸나. 표 불러오기 data 의
     `dialogFromMenu` 다."""
     return st.session_state.get(IMPORT_FROM_MENU_KEY) is True
 

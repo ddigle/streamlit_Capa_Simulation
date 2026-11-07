@@ -478,16 +478,27 @@ def _menu_keys(app: AppTest) -> list[str]:
     ]
 
 
+def test_the_menu_item_and_the_first_screen_button_are_one_name() -> None:
+    """같은 팝업을 여는 두 자리(메뉴 안 단추 · 호기 없는 첫 화면 단추)는 팝업 제목과 한 이름이다."""
+    js = (
+        Path(__file__).resolve().parents[1]
+        / "src/capa_simulation/components/equipment_master_grid_assets/grid.js"
+    ).read_text(encoding="utf-8")
+    assert f"button('emg-btn is-primary', '{IMPORT_MENU_LABEL}', () => {{" in js
+
+
 def test_the_data_menu_opens_the_import_dialog_and_closes_itself(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 는 같은 팝업을 열고 메뉴는 팝업 뒤에 남지 않는다 —
-    세대 꼬리 key 로 닫힌 채 다시 선다(여닫힘을 받으면 메뉴를 열 때마다 회차가 돈다). 닫힌 뒤 초점을
-    메뉴 단추로 돌리도록 불러오기 data 가 그 길을 말한다. 다른 길로 열면 그 표지가 걷힌다."""
+    """메뉴 「엑셀·CSV」 의 「엑셀·CSV로 한꺼번에」 는 같은 팝업을 열고 메뉴는 팝업 뒤에 남지
+    않는다 — 세대 꼬리 key 로 닫힌 채 다시 선다(여닫힘을 받으면 메뉴를 열 때마다 회차가 돈다). 닫힌
+    뒤 초점을 메뉴 단추로 돌리도록 불러오기 data 가 그 길을 말한다. 다른 길로 열면 그 표지가
+    걷힌다."""
     app = _app(tmp_path / "equipment.duckdb")
     assert not app.exception, app.exception
     press = app.button(key=IMPORT_MENU_BUTTON_KEY)
-    assert press.label == IMPORT_MENU_LABEL and DATA_MENU_LABEL == "엑셀·CSV"
+    assert press.label == IMPORT_MENU_LABEL == "엑셀·CSV로 한꺼번에"
+    assert DATA_MENU_LABEL == "엑셀·CSV"
     assert _menu_keys(app) == [f"{DATA_MENU_KEY}__g0"]
     assert last(grid, emg.LOADER_KEY)["menuKey"] == emg.TOOLS_KEY
     assert last(grid, emg.LOADER_KEY)["dialogFromMenu"] is False
