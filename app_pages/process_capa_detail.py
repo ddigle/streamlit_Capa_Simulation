@@ -5,7 +5,8 @@
 정체성(2026-10-22 사용자 요청): **어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지**다. 공정
 전부의 진척 관리는 필요 단축 일정이 맡는다.
 
-차례(2026-10-15 사용자 결정 4 — 목업 그대로):
+차례(2026-10-15 사용자 결정 4 — 목업 그대로, CSV 는 표 곁 · 필요 단축 일정 링크는 다른 길이 없는
+공정만 — 2026-11-07 사용자 답):
 
 0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보 기준
    미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
@@ -16,10 +17,11 @@
    아래 부족 원인마다 다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 →
    필요 단축 일정).
 2. ~ 7. **본문 프래그먼트**(`components/process_capa_view.render_process_detail_view`, key
-   `process_detail_view`) — 표 도구 줄, 결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준
-   가용 · ③ 신규 설비와 단축 · ④ 호기별 비가동), 범례, 산출 근거 패널. 칸을 누르면 그 구획만
-   다시 돈다.
-8. **정리 줄** — 알림, 「이 공정 단축 일정 CSV」, 필요 단축 일정 화면 링크(설비 일정이 설 때만).
+   `process_detail_view`) — 표 도구 줄(오른쪽 끝 「이 공정 단축 일정 CSV」 는 설비 일정이 설
+   때만), 결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준 가용 · ③ 신규 설비와 단축 · ④ 호기별
+   비가동), 범례, 산출 근거 패널. 칸을 누르면 그 구획만 다시 돈다.
+8. **정리 줄**(설비 일정이 설 때만) — 값 표지, 필요 단축 일정 화면 링크(이 공정 화면에 그리로 가는
+   다른 길이 없을 때만 — `shortening_link_needed`).
 9. **Guide**(`guides/process_capa_detail.md`) — 헤더의 Guide 단추.
 
 입력은 이 화면이 직접 모은다.
@@ -83,6 +85,7 @@ from capa_simulation.components.process_capa_view import (
     render_process_kpis,
     render_process_steps,
     reopen_entry_section,
+    shortening_link_needed,
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
@@ -674,8 +677,8 @@ def csv_bytes(frame: pd.DataFrame) -> bytes:
 readiness: DynamicReadiness | None = None
 dynamic: DynamicView | None = None
 dynamic_error = ""
-# 정리 줄 「필요 단축 일정에서 …」 단추의 풍선 — HOME 칸 방문이라 이 화면과 그 화면의 설비 기준이
-# 갈릴 때만(자리 글로 두지 않는다, 설계 규칙 UI-TXT-01).
+# 필요 단축 일정으로 옮기는 단추의 풍선 — HOME 칸 방문이라 이 화면과 그 화면의 설비 기준이 갈릴
+# 때만(자리 글로 두지 않는다, 설계 규칙 UI-TXT-01).
 shortening_link_help: str | None = None
 # 정리 줄의 값 표지 — (값 한 마디, 풍선).
 closing_marks: list[tuple[str, str]] = []
@@ -978,7 +981,9 @@ render_process_kpis(
     dynamic=dynamic,
     official=official_kpis if upeh_token else None,
 )
-render_cause_links(kpis, dynamic=dynamic, process=process)
+upeh_suffix = f"_upeh{upeh_token[0]}_{upeh_token[1][0]}_{upeh_token[1][-1]}" if upeh_token else ""
+units_csv_file_name = f"process_capa_detail_units_{months[0]}_{months[-1]}{upeh_suffix}.csv"
+render_cause_links(kpis, dynamic=dynamic, process=process, shortening_help=shortening_link_help)
 
 render_process_detail_view(
     ProcessDetailView(
@@ -1003,6 +1008,9 @@ render_process_detail_view(
         assumed_summary=assumed_summary,
         upeh_token=upeh_token,
         initial_month=entry.scroll_month,
+        units_csv=units_csv,
+        units_csv_file_name=units_csv_file_name,
+        shortening_link_help=shortening_link_help,
     )
 )
 
@@ -1056,13 +1064,11 @@ def report_usage_excluded(names: list[str], full: str, *, active: bool) -> None:
 
 report_usage_excluded(usage_excluded_names, usage_excluded_full, active=dynamic is not None)
 if dynamic is not None:
-    upeh_suffix = (
-        f"_upeh{upeh_token[0]}_{upeh_token[1][0]}_{upeh_token[1][-1]}" if upeh_token else ""
-    )
     render_closing_row(
         process=process,
         marks=closing_marks,
+        show_link=shortening_link_needed(
+            dynamic, arrived_from_card=entry.shortening_origin is not None
+        ),
         link_help=shortening_link_help,
-        csv_bytes=units_csv,
-        csv_file_name=f"process_capa_detail_units_{months[0]}_{months[-1]}{upeh_suffix}.csv",
     )
