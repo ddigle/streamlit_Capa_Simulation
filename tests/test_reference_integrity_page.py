@@ -130,7 +130,11 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     }
     assert "90% 이상 정상" in helps["#### :material/bar_chart: 공정별 Capa 실현 수준"]
     assert "제품 Mix" in helps["#### :material/priority_high: 관리 우선순위"]
-    assert "워터폴" in helps["#### :material/alt_route: 손실을 파고드는 화면"]
+    # 카드 다섯 가운데 워터폴에 서는 것은 셋이다 — 나머지 둘이 어디 있는지도 같은 풍선이 말한다.
+    routes_help = helps["#### :material/alt_route: 손실을 파고드는 화면"]
+    assert "효율 손실 · UPEH 손실 · 재공부족 미활용은 워터폴에서" in routes_help
+    assert "수율 손실은 워터폴에 칸이 따로 없어 기타 Gap 에" in routes_help
+    assert "설비 가용은 손실 이전의 전제" in routes_help
     needs_action = next(metric for metric in app.metric if metric.label == "개선 필요")
     assert "80% 미만" in str(needs_action.proto.help)
     warnings: list[Any] = list(summary_tab.get("warning"))

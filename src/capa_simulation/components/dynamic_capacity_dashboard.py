@@ -87,7 +87,9 @@ def build_process_comparison_figure(
 
 def build_capacity_waterfall_figure(summary: pd.Series) -> go.Figure:
     """Show the sequential bridge from standard Capa to production actual."""
-    labels = ["표준 Capa", "효율 Gap", "UPEH Gap", "Rundown", "기타 Gap", "실제 실적"]
+    # 손실 칸은 수량이고 이름은 「손실을 파고드는 화면」 카드와 같다 — 「효율 Gap」 · 「UPEH
+    # Gap」 은 공정 상세 표의 비율 차이 이름이다(설계 규칙 UI-CON-02).
+    labels = ["표준 Capa", "효율 손실", "UPEH 손실", "재공부족 미활용", "기타 Gap", "실제 실적"]
     values = [
         float(summary["표준 Capa"]),
         -float(summary["효율 손실 Capa"]),
@@ -112,6 +114,13 @@ def build_capacity_waterfall_figure(summary: pd.Series) -> go.Figure:
     )
     _apply_common_layout(figure)
     figure.update_layout(height=380, margin={"l": 20, "r": 20, "t": 20, "b": 30})
+    # 칸이 눈금 글자보다 좁으면 Plotly 가 눈금을 통째로 눕혀 이웃과 겹친다(1283 창 반쪽 그림). 긴
+    # 이름은 눈금에서만 두 줄로 접는다 — 값과 hover 의 이름은 한 줄 그대로다.
+    figure.update_xaxes(
+        tickmode="array",
+        tickvals=labels,
+        ticktext=[label.replace(" 미활용", "<br>미활용") for label in labels],
+    )
     figure.update_yaxes(title=None, rangemode="tozero")
     return figure
 
