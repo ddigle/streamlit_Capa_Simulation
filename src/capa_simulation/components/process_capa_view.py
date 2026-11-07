@@ -205,8 +205,13 @@ PREVIOUS_MONTH_KEY: Final = "process_detail_previous_month"
 NEXT_MONTH_KEY: Final = "process_detail_next_month"
 # 닫힌 「경로별 인자」 상자(편 상태를 기억한다).
 ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
-# 표 도구 줄의 CSV 단추.
+# 표 도구 줄의 CSV 단추. 곁의 「구획」 칩과 같은 높이로 둔다(설계 규칙 UI-CON-01 — 칩 28px). 서식은
+# 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
+UNITS_CSV_STYLE: Final = (
+    f"<style>.st-key-{UNITS_CSV_KEY} button "
+    "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
+)
 # 정리 줄의 필요 단축 일정 화면 링크.
 SHORTENING_TAB_LINK_KEY: Final = "process_detail_open_shortening_tab"
 # 부족 원인별 다음 화면 단추 — KPI 아래 줄과 근거 패널(그 달)이 따로 그린다.
@@ -442,6 +447,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
             view.months,
             assumed=bool(view.upeh_token),
         )
+        + UNITS_CSV_STYLE
     )
     if view.dynamic is None:
         _render_dynamic_absent(view)

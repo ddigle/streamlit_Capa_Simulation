@@ -51,6 +51,7 @@ from capa_simulation.components.process_capa_view import (
     SHORTENING_TAB_LINK_KEY,
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
+    UNITS_CSV_STYLE,
     step_button_label,
 )
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
@@ -871,6 +872,8 @@ def test_the_unit_csv_stands_on_the_tool_row_above_the_canvas(
 
     order = [element.type for element in _main_order(app.main)]
     assert order.index("download_button") < order.index("plotly_chart")
+    # 곁의 칩과 같은 높이 서식은 보이는 글(범례)과 한 `st.html` 이라 이벤트 칸을 쓰지 않는다.
+    assert any("pcd-legend" in body and UNITS_CSV_STYLE in body for body in _html(app))
 
 
 def _closing_link(app: AppTest) -> bool:
