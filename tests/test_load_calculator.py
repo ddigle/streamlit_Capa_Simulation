@@ -8,6 +8,7 @@ from capa_simulation.services.load_calculator import (
     YIELD_EDITOR_DIMENSIONS,
     build_monthly_volume,
     calculate_chip_and_wafer_loads,
+    count_plan_value_changes,
     drop_unplanned_rows,
     filter_edp_plan,
     plan_from_edit_table,
@@ -448,3 +449,28 @@ def test_monthly_volume_names_the_row_of_a_non_numeric_plan_quantity() -> None:
         build_monthly_volume(plan, pd.DataFrame(), pd.DataFrame(), "PKG")
 
     assert "202608 · DEMO-B · 12H → '약 50'" in str(caught.value)
+
+
+def _plan_table(values: list[object]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            **{column: [f"{column}{row}" for row in range(2)] for column in PLAN_EDITOR_DIMENSIONS},
+            "202601": values,
+            "202602": [10.0, 20.0],
+        }
+    )
+
+
+def test_changed_plan_cells_are_matched_by_business_key_not_by_position() -> None:
+    """붙여넣기 대기 표는 붙여넣은 차례 그대로다 — 표시순서가 바뀌어도 수가 부풀지 않는다."""
+    before = _plan_table([1.0, 2.0])
+    assert count_plan_value_changes(before, before.iloc[::-1].reset_index(drop=True)) == 0
+    changed = _plan_table([1.0, 5.0]).iloc[::-1].reset_index(drop=True)
+    assert count_plan_value_changes(before, changed) == 1
+
+
+def test_changed_plan_cells_read_text_and_blanks_as_the_plan_does() -> None:
+    """글자로 붙여넣은 같은 수 · 빈칸과 0 은 바뀐 값이 아니다(`plan_from_edit_table` 의 읽기)."""
+    before = _plan_table([0.0, 2.5])
+    assert count_plan_value_changes(before, _plan_table(["", "2.5"])) == 0
+    assert count_plan_value_changes(before, _plan_table(["3", "2.5"])) == 1

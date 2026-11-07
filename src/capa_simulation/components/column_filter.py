@@ -66,11 +66,13 @@ def render_column_filter_controls(
     column_labels: Mapping[str, str] | None = None,
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
     disabled: bool = False,
+    disabled_help: str | None = None,
 ) -> pd.DataFrame:
     """조건 카드 안에 필터를 **세로로** 쌓고 거른 프레임을 돌려준다(접는 틀 없음).
 
     사이드바 폭이라 가로로 늘어놓지 않는다. `disabled` 는 필터를 바꾸면 사라질 것(적용하지
-    않은 편집)이 있을 때 부르는 쪽이 잠그는 데 쓴다 — 선택은 그대로 걸린다.
+    않은 편집)이 있을 때 부르는 쪽이 잠그는 데 쓴다 — 선택은 그대로 걸린다. `disabled_help` 는 잠근
+    까닭이고 잠긴 동안만 「필터 초기화」 풍선에 선다(설계 규칙 UI-INP-07).
     """
     filter_keys = {column: column_filter_key(key_prefix, column) for column in columns}
     if st.button(
@@ -79,6 +81,7 @@ def render_column_filter_controls(
         icon=":material/filter_alt_off:",
         width="stretch",
         disabled=disabled,
+        help=disabled_help if disabled else None,
     ):
         for filter_key in filter_keys.values():
             st.session_state[filter_key] = []

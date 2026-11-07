@@ -50,6 +50,8 @@ PLAN_EDITOR_DIMENSIONS = [
     "CS",
     "Pack Code",
 ]
+# 글자로 붙여넣은 수를 다시 읽을 때 생기는 부동소수 끝자리는 고친 값이 아니다.
+PLAN_VALUE_TOLERANCE = 1e-9
 PLAN_REQUIRED_COLUMNS = [
     "생산계획년월",
     *CLASSIFICATION_COLUMNS,
@@ -164,6 +166,27 @@ def plan_from_edit_table(plan_table: pd.DataFrame) -> pd.DataFrame:
     # 내려받은 CSV 와 행 수가 달라져 붙여넣기가 어긋난다. 0 은 "이 달 계획 없음" 이라는
     # 사용자의 입력이므로 그대로 보존하고, 계산 경계(_prepare_plan)에서 제외한다.
     return long_plan.sort_values(["생산계획년월", *PLAN_EDITOR_DIMENSIONS]).reset_index(drop=True)
+
+
+def count_plan_value_changes(before: pd.DataFrame, after: pd.DataFrame) -> int:
+    """두 PKG PLAN 편집 표에서 생산수량이 다른 칸 수.
+
+    줄은 업무 키로 맞댄다 — 붙여넣기 대기 표는 붙여넣은 차례 그대로라 표시순서가 바뀌면 자리가
+    어긋난다. 빈 칸은 `plan_from_edit_table` 이 0 으로 읽고, 한쪽에만 있는 칸은 없는 쪽을 0 으로
+    본다.
+    """
+    long_before, long_after = (
+        _normalize_text(plan_from_edit_table(table), PLAN_EDITOR_DIMENSIONS)
+        for table in (before, after)
+    )
+    joined = long_before.merge(
+        long_after,
+        on=["생산계획년월", *PLAN_EDITOR_DIMENSIONS],
+        how="outer",
+        suffixes=("_before", "_after"),
+    )
+    difference = joined["생산수량_before"].fillna(0.0) - joined["생산수량_after"].fillna(0.0)
+    return int(difference.abs().gt(PLAN_VALUE_TOLERANCE).sum())
 
 
 def attach_plan_attributes(long_plan: pd.DataFrame, source_plan: pd.DataFrame) -> pd.DataFrame:

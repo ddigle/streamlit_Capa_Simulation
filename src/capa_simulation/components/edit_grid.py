@@ -431,8 +431,10 @@ def feed_data(
     *,
     base_key: str,
     filters: Mapping[int, Sequence[int]] | None = None,
+    scope: str | None = None,
 ) -> dict[str, Any]:
-    """feed — 그 표의 초안·이력과 마운트별 ack(반영한 마지막 seq)·마지막 토스트·필터."""
+    """feed — 그 표의 초안·이력과 마운트별 ack(반영한 마지막 seq)·마지막 토스트·필터·상태 줄
+    편집 범위 글."""
     _check_host(host)
     applied = st.session_state.get(keys.applied)
     acks = applied if isinstance(applied, Mapping) else {}
@@ -442,7 +444,7 @@ def feed_data(
         return encode_feed(
             None, None, None, host=host, base_key=base_key, acks=acks, toast=toast_value
         )
-    return encode_feed(
+    feed = encode_feed(
         slot.index,
         draft_of(slot.cells_key),
         history_of(slot.history_key),
@@ -452,6 +454,8 @@ def feed_data(
         toast=toast_value,
         filters=filters,
     )
+    feed["scope"] = scope
+    return feed
 
 
 def hide_feed_style(host: str) -> str:
@@ -466,10 +470,12 @@ def render_edit_grid(
     feed: Mapping[str, Any],
     *,
     on_outbox: Callable[[], None],
+    page_style: str = "",
 ) -> None:
     """늘 같은 자리에서 부른다 — feed 요소, 그다음 무거운 요소(이 차례 고정). 둘 다 key 가
-    고정이다."""
+    고정이다. `page_style` 은 그 그리드를 둘러싼 칸의 페이지 CSS(`<style>…</style>`)다 — feed 를
+    숨기는 스타일과 함께 이벤트 칸으로 가 자리를 먹지 않는다."""
     _check_host(host)
-    st.html(hide_feed_style(host))
+    st.html(hide_feed_style(host) + page_style)
     _FEED(key=feed_key(host), data=dict(feed), width="stretch")
     _GRID(key=host, data=dict(shell), on_outbox_change=on_outbox, width="stretch")

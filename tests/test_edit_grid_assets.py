@@ -154,7 +154,15 @@ def test_local_storage_is_touched_only_inside_try() -> None:
 def test_colours_come_only_from_the_palette() -> None:
     """등록 CSS 는 테마를 따라오지 않는다 — 색은 팔레트 data 의 `var(--eg-*)` 로만."""
     used = set(re.findall(r"var\(--eg-([a-z-]+)", REGISTERED_CSS + REGISTERED_JS))
-    layout_vars = {"row-h", "head-h"}
+    layout_vars = {
+        "row-h",
+        "head-h",
+        "toolbar-justify",
+        "toolbar-reserve",
+        "tb-height",
+        "tb-radius",
+        "tb-font",
+    }
     assert used - layout_vars <= set(edit_grid.palette()), used - set(edit_grid.palette())
     for text in (REGISTERED_CSS, REGISTERED_JS, asset("grid.html"), FEED):
         assert not re.search(r"#[0-9A-Fa-f]{3,8}\b", text)

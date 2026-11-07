@@ -20,6 +20,8 @@ from capa_simulation.services.edit_grid_payload import build_base, encode_base, 
 
 TOOLBAR = asset("eg_toolbar.js")
 TOOLBAR_CSS = asset("eg_toolbar.css")
+# 색이 아니라 자리 · 크기 값 — 페이지가 내려보낸다(`reference_grid.ONE_LINE_STYLE`).
+LAYOUT_VARS = {"toolbar-justify", "toolbar-reserve", "tb-height", "tb-radius", "tb-font"}
 PURE = asset("eg_pure.js")
 CORE = asset("eg_core.js")
 REGISTERED_JS = edit_grid.registered_js()
@@ -72,13 +74,85 @@ def test_every_toolbar_text_is_shipped_by_python() -> None:
 
 
 def test_the_toolbar_css_draws_with_palette_colours_only() -> None:
-    used = set(re.findall(r"var\(--eg-([a-z-]+)", TOOLBAR_CSS))
+    used = set(re.findall(r"var\(--eg-([a-z-]+)", TOOLBAR_CSS)) - LAYOUT_VARS
     assert used and used <= set(edit_grid.palette()), used - set(edit_grid.palette())
     assert "/*" not in TOOLBAR_CSS
     assert not re.search(r"#[0-9A-Fa-f]{3,8}\b", TOOLBAR_CSS)
     assert "rgb(" not in TOOLBAR_CSS and "hsl(" not in TOOLBAR_CSS
     # 찾기 일치 칠은 고른 범위 칠에 진다(명세 10-1 — 고른 범위가 찾기 일치 위).
     assert ".eg-c.is-match:not(.is-sel)" in TOOLBAR_CSS
+
+
+def test_the_page_can_stand_the_toolbar_beside_its_action_row_but_fullscreen_stays_as_it_was() -> (
+    None
+):
+    """표 위 줄을 합치는 값은 페이지가 CSS 변수로 내려보낸다(변수가 없으면 옛 꼴 그대로). 전체 화면
+    창에는 곁에 설 단추 줄이 없어 그 창이 값을 되돌린다."""
+    bar = TOOLBAR_CSS[TOOLBAR_CSS.index(".eg-toolbar {") :]
+    assert "justify-content: var(--eg-toolbar-justify, flex-start)" in bar
+    assert "padding-left: var(--eg-toolbar-reserve, 0)" in bar
+    assert "height: var(--eg-tb-height, 28px)" in TOOLBAR_CSS
+    dialog = TOOLBAR_CSS[TOOLBAR_CSS.index(".eg-dialog {") :]
+    dialog = dialog[: dialog.index("}")]
+    for name in LAYOUT_VARS:
+        assert f"--eg-{name}:" in dialog, name
+
+
+def test_the_status_line_shows_the_edit_scope_the_feed_carries() -> None:
+    """편집 범위 글은 표 아래 상태 줄이다 — 표 위 줄을 먹지 않고, 고른 칸 요약과 같은 줄에 선다.
+    좁아 말줄임이 되면 풍선으로 다 읽는다."""
+    body = r"""
+  const scope = q('.eg-scope')
+  R.home = scope.parentNode === S.dom.status
+  R.first = [scope.textContent, scope.title]
+  sendFeed({ ...input.feed, scope: input.feed.scope + ' · 필터로 1개 행 표시' })
+  R.next = [scope.textContent, scope.title]
+  sendFeed({ ...input.feed, scope: null })
+  R.gone = [scope.textContent, scope.title]
+"""
+    payload = _payloads()
+    payload["feed"] = {
+        **payload["feed"],
+        "scope": "편집 범위 202601 – 202602 · 2개월 · 전체 2개 행",
+    }
+    result = _run(body, payload)
+    assert result["home"] is True
+    assert result["first"] == [payload["feed"]["scope"]] * 2
+    assert (
+        result["next"][0].endswith("필터로 1개 행 표시") and result["next"][0] == result["next"][1]
+    )
+    assert result["gone"] == ["", ""]
+
+
+def test_the_edit_scope_gives_way_before_the_cell_error_at_the_end_of_the_status_line() -> None:
+    """칸 오류 문구는 상태 줄 왼쪽 글의 맨 끝에만 있다. 편집 범위 글이 칸을 버티면 좁은 창에서
+    그 문구가 말줄임으로 사라진다 — 범위 글이 먼저 줄어야 하고, 그래도 잘리면 풍선으로 읽는다."""
+    scope = TOOLBAR_CSS[TOOLBAR_CSS.index(".eg-scope {") :]
+    scope = scope[: scope.index("}")]
+    grow, shrink, basis = re.search(r"flex: (\S+) (\S+) (\S+);", scope).groups()  # type: ignore[union-attr]
+    # 왼쪽 글(`flex: 1 1 auto`)이 0.1px 만 줄어도 말줄임이 서므로 비율이 커야 한다.
+    assert (grow, basis) == ("0", "auto") and int(shrink) >= 10_000
+    assert "min-width: 0" in scope
+    # 빈 칸은 접는다 — 남으면 줄 사이 틈(12px)마다 왼쪽 글이 좁아진다.
+    assert ".eg-scope:empty {\n  display: none;" in TOOLBAR_CSS
+    core_css = asset("eg_core.css")
+    assert ".eg-note:empty,\n.eg-summary:empty {\n  display: none;" in core_css
+
+    body = r"""
+  const where = q('.eg-where')
+  sendFeed(input.feed2)
+  await tick(5)
+  scroller.focus()
+  key(scroller, 'ArrowRight')
+  key(scroller, 'ArrowRight')
+  key(scroller, 'ArrowDown')
+  key(scroller, 'ArrowDown')
+  await tick(5)
+  R.where = [where.textContent, where.title]
+"""
+    draft: eg.DraftState = {"cells": {}, "bad": {"DEMO_P02\x1f양산": {"202703": ("85", "max")}}}
+    text, title = _run(body, _payloads(draft=draft))["where"]
+    assert " — " in text and title == text
 
 
 def test_fullscreen_is_a_dialog_in_the_shadow_root_not_a_fixed_overlay() -> None:

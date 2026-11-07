@@ -14,12 +14,14 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_load_conversion_plan_apply import _isolated_custom_renderers, _script  # noqa: F401
 
 import capa_simulation.components.tab_marks as tab_marks
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
+from capa_simulation.services.load_calculator import PLAN_EDITOR_DIMENSIONS
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, remembered_box_key
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,7 +147,8 @@ def test_leaving_the_page_forgets_an_open_popup() -> None:
 
 
 def test_registering_warns_before_it_drops_an_unapplied_paste(database: Path) -> None:
-    """붙여넣고 아직 적용하지 않은 PKG PLAN 표가 있으면 등록 팝업이 먼저 경고한다."""
+    """붙여넣고 아직 적용하지 않은 PKG PLAN 표가 있으면 등록 팝업 맨 위 값 줄이 먼저 말하고 남기는
+    법은 등록 단추 풍선이 말한다(설계 규칙 UI-NTF-09 — 경고 상자 문장을 두지 않는다)."""
     from test_load_conversion_plan_apply import _clipboard_text, _paste
 
     app = _app(database)
@@ -154,7 +157,24 @@ def test_registering_warns_before_it_drops_an_unapplied_paste(database: Path) ->
 
     app.button(key="open_virtual_product").click().run()
     assert not list(app.exception)
-    assert any("등록하면 버려집니다" in item.value for item in app.warning)
+    assert not list(app.warning)
+    # 수는 지금 표와 다른 칸 수다 — 배율을 곱했으니 0 이 아닌 칸이 모두 다르다(수는 합성 시드 값).
+    staged = app.session_state["pkg_plan_staged_paste"]
+    months = [column for column in staged.columns if column not in PLAN_EDITOR_DIMENSIONS]
+    changed = int(staged[months].apply(pd.to_numeric).fillna(0).ne(0).sum().sum())
+    assert changed > 1
+    expected = f"적용 안 한 편집 {changed:,}개 버림 · PKG PLAN 붙여넣기"
+    assert expected in [item.value for item in app.caption]
+    register = [button for button in app.button if button.label == "가상 제품 등록"][-1]
+    assert "「변경사항 적용」" in str(register.help) and "다시 붙여넣어도" in str(register.help)
+
+
+def test_the_yield_guide_says_how_to_keep_edits_a_paste_would_drop() -> None:
+    """붙여넣기 창 알림은 버려진다는 결과만 말한다 — 남기는 법은 두 탭 Guide 가 저마다 말한다."""
+    guide = load_guide("load_conversion")
+    plan_part, yield_part = guide.split("**수율** — ", 1)
+    assert "**PKG PLAN 변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in plan_part
+    assert "**수율 변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in yield_part
 
 
 def test_the_guide_explains_every_card_setting_and_action() -> None:
@@ -225,11 +245,12 @@ def test_registering_warns_before_it_drops_unapplied_table_edits(database: Path)
         else 0
     )
     app.session_state[f"yield_editor__g{generation}" if generation else "yield_editor"] = {
-        "edited_rows": {0: {"202601": 0.5}},
+        "edited_rows": {0: {"202601": 0.5, "202602": 0.5}},
         "added_rows": [],
         "deleted_rows": [],
     }
     app.button(key="open_virtual_product").click().run()
 
     assert not list(app.exception)
-    assert any("수율 표에 적용하지 않은 편집" in item.value for item in app.warning)
+    assert not list(app.warning)
+    assert "적용 안 한 편집 2개 버림 · 수율" in [item.value for item in app.caption]

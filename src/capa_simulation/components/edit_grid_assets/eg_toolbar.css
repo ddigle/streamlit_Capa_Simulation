@@ -1,3 +1,8 @@
+.eg-toolbar {
+  justify-content: var(--eg-toolbar-justify, flex-start);
+  padding-left: var(--eg-toolbar-reserve, 0);
+}
+
 .eg-tb-find {
   display: inline-flex;
   align-items: center;
@@ -6,10 +11,10 @@
 
 .eg-tb-q {
   width: 180px;
-  height: 28px;
+  height: var(--eg-tb-height, 28px);
   padding: 0 8px;
   border: 1px solid var(--eg-border-strong);
-  border-radius: 6px;
+  border-radius: var(--eg-tb-radius, 6px);
   background: var(--eg-surface);
   outline: none;
 }
@@ -31,11 +36,15 @@
   white-space: nowrap;
 }
 
+.eg .eg-tb-btn {
+  font-size: var(--eg-tb-font, 13px);
+}
+
 .eg-tb-btn {
-  height: 28px;
+  height: var(--eg-tb-height, 28px);
   padding: 0 10px;
   border: 1px solid var(--eg-border);
-  border-radius: 6px;
+  border-radius: var(--eg-tb-radius, 6px);
   background: var(--eg-surface);
   font-size: 12px;
   line-height: 26px;
@@ -221,7 +230,25 @@
   color: var(--eg-muted);
 }
 
+.eg-scope {
+  flex: 0 100000 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eg-scope:empty {
+  display: none;
+}
+
 .eg-dialog {
+  --eg-toolbar-justify: flex-start;
+  --eg-toolbar-reserve: 0;
+  --eg-tb-height: 28px;
+  --eg-tb-radius: 6px;
+  --eg-tb-font: 13px;
   width: calc(100vw - 16px);
   height: calc(100vh - 16px);
   max-width: none;

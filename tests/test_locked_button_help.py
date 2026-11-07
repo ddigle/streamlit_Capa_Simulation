@@ -23,11 +23,8 @@ from source_sites import method, screen_calls, screen_files
 BUTTONS = frozenset({"button", "download_button", "form_submit_button", "popover", "link_button"})
 # 답이 바로 아래 있는 추천 질문 — 누른 자리가 곧 까닭이다.
 ANSWERED = "이미 답한 질문 — 눌린 답이 바로 아래 선다"
-# 잠금을 부르는 쪽이 정하는 공용 부품 — 부품에 까닭 인자가 아직 없다.
-PART = "공용 부품 — 잠그는 쪽이 까닭을 넘길 인자가 없다(미정리)"
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/capa_chatbot.py", ""): (1, ANSWERED),
-    ("src/capa_simulation/components/column_filter.py", "render_column_filter_controls"): (1, PART),
 }
 
 

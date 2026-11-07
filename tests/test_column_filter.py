@@ -124,6 +124,36 @@ def _apply_app() -> None:
     st.session_state["visible_index"] = filtered.index
 
 
+def _locked_filter_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.column_filter import render_column_filter_controls
+
+    render_column_filter_controls(
+        pd.DataFrame({"공정": ["DA"], "202608": [1.0]}),
+        ["공정"],
+        key_prefix="locked_filter",
+        disabled=bool(st.session_state.get("locked", False)),
+        disabled_help="적용하지 않은 편집이 있어 잠겼습니다.",
+    )
+
+
+def test_the_reset_button_says_why_only_while_it_is_locked() -> None:
+    """잠긴 동안만 까닭 풍선이 선다 — 풀린 단추에 까닭을 달지 않는다(설계 규칙 UI-INP-07)."""
+    app = AppTest.from_function(_locked_filter_app)
+    app.session_state["locked"] = True
+    app.run()
+    assert not app.exception
+    reset = app.button(key="locked_filter_reset")
+    assert reset.disabled and reset.help == "적용하지 않은 편집이 있어 잠겼습니다."
+
+    app.session_state["locked"] = False
+    app.run()
+    reset = app.button(key="locked_filter_reset")
+    assert not reset.disabled and not reset.help
+
+
 def test_a_filter_that_keeps_every_row_returns_the_table_with_its_range_index() -> None:
     """모든 값을 고르면(「Select all」 로 다 담은 중간 상태) 원본 표 그대로다. `.loc` 로 거르면
     `RangeIndex` 가 일반 `Index` 로 바뀌어 숨은 인덱스 열이 더 실리고, 편집표는 인덱스 꼴이 위젯

@@ -7,6 +7,7 @@ import streamlit as st
 
 from capa_simulation.components.editor_state import (
     discard_editor,
+    editor_edit_count,
     editor_has_edits,
     editor_widget_key,
 )
@@ -37,6 +38,25 @@ def test_an_editor_has_edits_only_when_a_change_is_recorded(
     if state is not None:
         session["sheet"] = state
     assert editor_has_edits("sheet") is expected
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        (None, 0),
+        ({"edited_rows": {}, "added_rows": [], "deleted_rows": []}, 0),
+        (EDITED, 1),
+        ({"edited_rows": {0: {"a": 1.0, "b": 2.0}, 3: {"a": 3.0}}}, 3),
+        ({"edited_rows": {0: {"a": 1.0}}, "added_rows": [{"공정": "A"}], "deleted_rows": [3]}, 3),
+    ],
+)
+def test_the_edit_count_is_cells_not_rows_or_tables(
+    state: dict[str, object] | None, expected: int, session: dict[str, object]
+) -> None:
+    """무엇을 잃는지 알리는 수라 고친 칸을 하나씩 센다(`적용 안 한 편집 n개 버림`)."""
+    if state is not None:
+        session["sheet"] = state
+    assert editor_edit_count("sheet") == expected
 
 
 def test_the_first_generation_keeps_the_plain_key(session: dict[str, object]) -> None:

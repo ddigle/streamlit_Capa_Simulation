@@ -1704,7 +1704,10 @@ def test_the_step_popup_warns_before_it_drops_unapplied_upeh_edits(grid_calls: C
 
     app = _open_step_dialog(app)
     assert not app.exception
-    assert any("UPEH·Lot측정률 표에 적용하지 않은 편집" in item.value for item in app.warning)
+    assert not list(app.warning)
+    assert "적용 안 한 편집 2개 버림 · UPEH · Lot측정률" in [item.value for item in app.caption]
+    add_button = next(b for b in app.button if b.label == "STEP 일괄 추가")
+    assert "「변경사항 적용」" in str(add_button.help)
 
     app = next(w for w in app.text_input if w.label == "신규 MCP_SEQ").set_value("2A").run()
     app = next(w for w in app.text_input if w.label == "신규 STEP_SEQ").set_value("P200").run()
@@ -1979,6 +1982,21 @@ _add("RQ_VITAL", 생산계획년월=202609, 양산구분="개발")
 )
 
 
+def test_the_step_popup_counts_the_cells_it_drops_not_the_tables(grid_calls: Calls) -> None:
+    """수는 도구 막대 「적용 전 변경 (n)」 과 같은 칸 수다 — 한 표에서 여러 칸을 고쳐도 다 센다."""
+    app = AppTest.from_string(NEW_PATH_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
+    app.run()
+    rows = _visible_keys(grid_calls)
+    assert len(rows) > 1
+    app = _grid_write(app, grid_calls, rows[0], "202608", "11")
+    app = _grid_write(app, grid_calls, rows[1], "202609", "12")
+
+    app = _open_step_dialog(app)
+    assert not app.exception
+    assert "적용 안 한 편집 2개 버림 · UPEH" in [item.value for item in app.caption]
+
+
 def _scenario_unit_capacity(app: AppTest) -> pd.DataFrame:
     """세션의 활성 시나리오로 대당 Capa 를 실제로 돌린다. 멈추면 `ValueError` 가 난다."""
     from capa_simulation.services.unit_capacity import calculate_unit_capacity
@@ -2165,12 +2183,12 @@ def test_emptying_a_ratio_table_keeps_the_page_open(grid_calls: Calls) -> None:
         "이 기간에 Lot측정률 행이 없습니다."
     ]
     assert not any("측정률" in item.value for item in infos(app))
-    assert not any("편집 범위" in item.value for item in app.markdown)
+    assert last(grid_calls, feed_key(GRID_HOST))["scope"] is None
 
     # 다른 탭은 그대로 동작한다 — WF 표는 행이 있고, UPEH 의 있던 칸은 고칠 수 있다.
     app.session_state[DATASET_KEY] = DATASET["WF측정률"]
     app.run()
-    assert any("전체 1개 행" in item.value for item in app.markdown)
+    assert "전체 1개 행" in last(grid_calls, feed_key(GRID_HOST))["scope"]
     assert not any("행이 없습니다" in item.value for item in app.caption)
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()

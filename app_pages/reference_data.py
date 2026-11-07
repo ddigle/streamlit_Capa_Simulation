@@ -29,7 +29,11 @@ from capa_simulation.components import reference_grid
 from capa_simulation.components.column_filter import render_column_filter_controls
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.month_editor import classification_styled, paste_dialog
+from capa_simulation.components.month_editor import (
+    classification_styled,
+    paste_dialog,
+    scope_text,
+)
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -173,7 +177,7 @@ EDITOR_KEYS: dict[str, str] = {
     **{table_name: editor_key for table_name, _, _, editor_key in EQUIPMENT_EDITORS},
 }
 assert set(EDITOR_KEYS) == set(EDIT_TABLES)
-# 편집 표 이름 — 사이드바 「적용 전 편집」 목록·고칠 칸 알림·STEP 팝업 경고가 같은 이름을 쓴다
+# 편집 표 이름 — 변경 판 「적용 전 편집」 목록·고칠 칸 알림·STEP 팝업 경고가 같은 이름을 쓴다
 # (종류 단추 글). 값 칸의 표시·다듬기 규칙(형식·하한·상한·정수·빈칸 = 0)은
 # `reference_grid.GRID_FORMATS` 다 — UPEH 는 유효숫자 여섯 자리(MI 행 값은 ST(분)라 0.01 보다 작은
 # 값이 정의대로 들어온다).
@@ -212,8 +216,8 @@ current_dataset = _chosen if isinstance(_chosen, str) and _chosen in DATASETS el
 # 출납을 잃는다. 읽기 보기(설비대수 현황·STEP 구성)는 그리드 **아래**라 그 높이가 그리드 자리를
 # 밀지 않는다. 편집 표를 고른 회차에는 보기 칸이 비어 표 아래에 아무것도 없다(명세 1-2 의 19 — 표
 # 아래 단추에 초점이 가면 본문이 내려가 머리와 도구 막대가 탭 줄 밑으로 숨는다).
-actions_box = st.container(key="reference_actions")
-grid_box = st.container(key="reference_grid_box")
+actions_box = st.container(key=reference_grid.ACTIONS_BOX)
+grid_box = st.container(key=reference_grid.GRID_BOX)
 view_box = st.container(key="reference_view")
 
 
@@ -449,7 +453,7 @@ grid_kept, grid_dropped = _grid_survivors(st.session_state.get(SOURCE_TOKEN_KEY)
 kept_grid_keys = {
     key for table_name in grid_kept for key in (cells_key(table_name), history_key(table_name))
 }
-# 앱 머리(칩 · 탭 점 · 사이드바 줄)는 이 본문보다 먼저 이 값으로 그렸다.
+# 앱 머리(칩 · 탭 점)는 이 본문보다 먼저 이 값으로 그렸다.
 edits_in_head = pending_edit_labels("reference_data.py")
 reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
@@ -517,7 +521,7 @@ grid_tables = {
 }
 if reference_grid.apply_grid_inbox(grid_tables) or head_is_stale:
     # 원본이 바뀌어 초안을 버렸거나, 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던
-    # 표의 첫 op 가 아무것도 바꾸지 않음). 사이드바 「적용 전 편집」·화면 탭 점·변경 칩·테마 표지는
+    # 표의 첫 op 가 아무것도 바꾸지 않음). 화면 탭 점·변경 칩·테마 표지는
     # `app.py` 가 이 본문보다 **먼저** 옛 칸으로 그렸다 — 그대로 두면 다음 조작까지 남는다(그리드는
     # 다시 보내지 않는다). 한 번 다시 돈다(양식·색인은 캐시라 싸고, 다음 회차는 버릴 초안도 inbox
     # 도 없어 되풀이되지 않는다).
@@ -604,6 +608,8 @@ STEP_SUMMARY_NUMBER_COLUMNS = ("월", "STEP 수", "수요 변형 수")
 # 조회기간에 편집할 경로 STEP 이 없을 때의 빈 결과 한 줄과 그 풍선.
 STEP_EMPTY_TEXT = "선택한 조회기간에 편집할 공정 경로 STEP이 없습니다."
 STEP_EMPTY_HELP = "사이드바 조회기간을 넓히면 그 기간의 경로 STEP 이 나옵니다."
+# 버려질 편집이 있을 때 STEP 실행 단추의 풍선 — 남기는 법. 무엇이 버려지는지는 창 맨 위 값 줄이다.
+STEP_DROP_HELP = "편집을 남기려면 먼저 그 표의 「변경사항 적용」 을 누릅니다."
 
 
 def _compact_step_summary(summary: pd.DataFrame) -> pd.DataFrame:
@@ -635,16 +641,16 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
     팝업 안 조작(fragment 재실행)도 같은 목록 인자와 그 회차 `edit_slices` 로 다시 불린다.
     """
     # STEP 을 더하거나 빼면 UPEH·측정률 표의 행이 바뀌어 그 표의 적용하지 않은 편집이 버려진다.
-    dropped_edits = [
-        TABLE_NAMES[table_name]
+    dropped_edits = {
+        TABLE_NAMES[table_name]: reference_grid.draft_counts(table_name)[0]
         for table_name in STEP_ROUTE_EDIT_TABLES
         if reference_grid.draft_pending(table_name)
-    ]
+    }
     if dropped_edits:
-        st.warning(
-            f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. STEP 을 바꾸면 "
-            "버려집니다 — 먼저 그 표의 「변경사항 적용」을 누르세요."
+        st.caption(
+            f"적용 안 한 편집 {sum(dropped_edits.values()):,}개 버림 · {' · '.join(dropped_edits)}"
         )
+    drop_help = STEP_DROP_HELP if dropped_edits else None
     step_mode = st.segmented_control(
         "작업",
         options=["STEP 추가", "STEP 삭제"],
@@ -694,6 +700,7 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
                 "STEP 일괄 추가",
                 icon=":material/add:",
                 type="primary",
+                help=drop_help,
             )
             delete_confirmed = False
         else:
@@ -705,6 +712,7 @@ def _step_dialog(step_catalog: pd.DataFrame) -> None:
                 "STEP 일괄 삭제",
                 icon=":material/delete:",
                 type="primary",
+                help=drop_help,
             )
             new_mcp_seq = ""
             new_step_seq = ""
@@ -1152,7 +1160,7 @@ grid_actions: reference_grid.Actions | None = None
 if current_grid is not None:
     grid_filter_prefix = _filter_prefix(current_dataset)
     # 필터는 보기만 좁힌다 — 초안이 업무 키라 필터를 바꿔도 편집이 다른 줄에 붙지 않아 잠그지
-    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 줄은 서버가 같은 선택으로 센다). 행이
+    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 글은 서버가 같은 선택으로 센다). 행이
     # 없는 표(측정률이 통째로 빈 기간)에는 거를 것이 없어 세우지 않는다.
     grid_visible = current_grid.template
     if not current_grid.template.empty:
@@ -1172,11 +1180,14 @@ if current_grid is not None:
             )
         grid_actions = reference_grid.render_actions(
             current_grid,
-            grid_visible,
             open_paste=partial(_open_grid_paste, current_grid.editor_key),
         )
     with grid_box:
-        reference_grid.render_grid(current_grid, key_prefix=grid_filter_prefix)
+        reference_grid.render_grid(
+            current_grid,
+            key_prefix=grid_filter_prefix,
+            scope=scope_text(current_grid.template, grid_visible, current_grid.months),
+        )
     if st.session_state.get(DIALOG_KEY) == current_grid.editor_key:
         grid_editor = _editor(current_dataset, current_grid.template)
         fmt = reference_grid.GRID_FORMATS[current_dataset]

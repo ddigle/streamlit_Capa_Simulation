@@ -23,6 +23,7 @@ from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.editor_state import (
     discard_editor,
+    editor_edit_count,
     editor_has_edits,
     editor_widget_key,
 )
@@ -50,6 +51,7 @@ from capa_simulation.components.required_exclusion_notice import (
 )
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
+    pending_edit_labels,
     register_pending_edits,
     reset_editors_on_source_change,
     show_row_order_reset,
@@ -99,6 +101,7 @@ from capa_simulation.services.load_calculator import (
     YIELD_VALUE_COLUMNS,
     DemandBasis,
     attach_plan_attributes,
+    count_plan_value_changes,
     filter_edp_plan,
     load_exclusions,
     plan_from_edit_table,
@@ -233,11 +236,18 @@ PLAN_APPLY_HELP = "누르면 환산·소요대수·확보율과 홈 대시보드
 YIELD_APPLY_HELP = "누르면 환산수량과 다른 페이지의 산출값이 이 수율로 다시 계산됩니다."
 # 잠긴 적용 단추의 풍선은 하는 일이 아니라 까닭이다(설계 규칙 UI-INP-07).
 APPLY_LOCKED_HELP = "고친 칸이 있으면 누를 수 있습니다."
+# 버려질 편집이 있을 때 등록 단추의 풍선 — 남기는 법. 무엇이 버려지는지는 창 맨 위 값 줄이다.
+VIRTUAL_DROP_HELP = (
+    "편집을 남기려면 먼저 그 표의 「변경사항 적용」 을 누릅니다. 붙여넣기는 등록한 뒤 다시 "
+    "붙여넣어도 됩니다."
+)
 # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다. 이 화면이
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
 # 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
 OWN_CHANGE_KEY = "load_conversion_own_change"
-# 편집표·붙여넣기 대기 이름 — 사이드바 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
+# 앱 머리를 고치려 다시 도는 회차가 넘기는 줄 차례 비움 결과 — 알림은 다시 돈 회차가 낸다.
+SOURCE_RESET_KEY = "load_conversion_source_reset"
+# 편집표·붙여넣기 대기 이름 — 변경 판 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
 EDITOR_NAMES = {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"}
 STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
 # 줄 차례 지문은 두 편집표 캐시 키와 같은 표시순서 지문이다 — PKG PLAN·수율 모두 이 표시순서로 줄을
@@ -252,6 +262,8 @@ plan_order_free: tuple[str, ...] = (
     and set(PLAN_EDITOR_DIMENSIONS).issubset(_staged_plan.columns)
     else (PLAN_STAGED_KEY,)
 )
+# 앱 머리(칩 · 탭 점)는 이 본문보다 먼저 이 값으로 그렸다.
+edits_in_head = pending_edit_labels("load_conversion.py")
 source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(
@@ -267,8 +279,14 @@ source_reset = reset_editors_on_source_change(
     names={**EDITOR_NAMES, **STAGED_NAMES},
     order_free_keys=plan_order_free,
 )
+if set(edits_in_head) - set(pending_edit_labels("load_conversion.py")):
+    # 원본이 바뀌어 편집을 버렸는데 칩 · 탭 점은 버리기 전 값으로 섰다 — 그대로 두면 다음 조작까지
+    # 남는다. 한 번 다시 돈다(다음 회차엔 버릴 편집이 없어 되풀이되지 않는다). 알림을 지금 내면
+    # 끊긴 회차와 함께 사라질 수 있어 결과를 넘긴다.
+    st.session_state[SOURCE_RESET_KEY] = source_reset
+    st.rerun()
 # 줄 차례가 바뀌어 적용 전 편집을 버린 회차는 오른쪽 아래 알림창에 한 번 알린다(사건 알림 `ST-09`).
-show_row_order_reset(source_reset)
+show_row_order_reset(st.session_state.pop(SOURCE_RESET_KEY, source_reset))
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
 # 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
 register_pending_edits(
@@ -650,22 +668,21 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     # 등록하면 시나리오가 바뀌어 붙여넣고 아직 적용하지 않은 PKG PLAN 표는 행 구성이 맞지 않아
     # 버린다(그대로 적용하면 새 제품의 0 계획 행을 기간에서 지운다). 버리기 전에 말한다.
     staged_paste = isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame)
-    if staged_paste:
-        st.warning(
-            "적용하지 않은 PKG PLAN 붙여넣기가 있습니다. 등록하면 버려집니다 — 먼저 "
-            "「PKG PLAN 변경사항 적용」을 누르거나, 등록한 뒤 다시 붙여넣으세요."
-        )
     # 두 표에 행이 더해지므로 표에서 고치고 적용하지 않은 편집도 버려진다(2026-09-29 2차 리뷰).
-    dropped_edits = [
-        name
-        for key, name in ((PLAN_EDITOR_KEY, "PKG PLAN"), (YIELD_EDITOR_KEY, "수율"))
-        if editor_has_edits(key)
-    ]
-    if dropped_edits:
-        st.warning(
-            f"{'·'.join(dropped_edits)} 표에 적용하지 않은 편집이 있습니다. 등록하면 버려집니다 "
-            "— 먼저 그 표의 「변경사항 적용」을 누르세요."
-        )
+    dropped_edits = {
+        name: cells for key, name in EDITOR_NAMES.items() if (cells := editor_edit_count(key))
+    }
+    pasted_cells = (
+        count_plan_value_changes(default_plan_table, st.session_state[PLAN_STAGED_KEY])
+        if staged_paste
+        else 0
+    )
+    dropped = {
+        **dropped_edits,
+        **({STAGED_NAMES[PLAN_STAGED_KEY]: pasted_cells} if pasted_cells else {}),
+    }
+    if dropped:
+        st.caption(f"적용 안 한 편집 {sum(dropped.values()):,}개 버림 · {' · '.join(dropped)}")
 
     # 기준 제품은 폼 밖이다 — 폼 안 칸은 제출 때까지 서버에 오지 않아 제품을 바꿔도 Stack 칸이 첫
     # 제품 값으로 남고, 그대로 누르면 기준과 다른 Stack 으로 등록됐다.
@@ -687,7 +704,10 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
                 key=f"{VIRTUAL_STACK_KEY}_{selected_source}",
             )
         registered = st.form_submit_button(
-            "가상 제품 등록", icon=":material/library_add:", type="primary"
+            "가상 제품 등록",
+            icon=":material/library_add:",
+            type="primary",
+            help=VIRTUAL_DROP_HELP if dropped else None,
         )
     registered_records = session_virtual_products()
     if registered_records:
