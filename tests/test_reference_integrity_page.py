@@ -8,6 +8,7 @@ from streamlit.testing.v1 import AppTest
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.process_labels as process_labels_module
+from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.services.dynamic_capacity import build_dynamic_capacity_demo
 
 TEST_SCRIPT = r"""
@@ -144,6 +145,22 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     page_captions = [str(caption.value) for caption in app.caption]
     assert f"사이드바에서 {EXECUTION_MANAGEMENT.title}" in page_captions
     assert not any("A/Item" in text for text in page_captions)
+
+
+def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:
+    """샘플을 끄면 자리 글은 들어올 값뿐이다 — 연결되면 하는 일은 「표준 대비 실적 Capa」 제목
+    풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    app.run()
+
+    assert not app.exception
+    (title,) = [item for item in app.markdown if str(item.value).startswith("####")]
+    assert title.value == "#### :material/pending: 표준 대비 실적 Capa"
+    tooltip = str(title.proto.help)
+    assert "이 자리에 들어옵니다" in tooltip
+    for meaning in ("손실 한 칸씩", "어느 하위 화면부터", "합산하지 않고 비율로 비교"):
+        assert meaning in tooltip
 
 
 def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:

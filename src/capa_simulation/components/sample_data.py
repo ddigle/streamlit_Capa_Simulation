@@ -87,16 +87,16 @@ def render_pending_source(
     subject: str,
     expects: Sequence[str],
     source: str,
+    more_help: str = "",
 ) -> None:
     """스위치를 껐을 때의 자리표시자. 무엇이 이 자리를 채우는지 적는다.
 
     빈 화면에 「데이터 연결 후 표시됩니다」한 줄만 두면 그 자리에 무엇이 오는지 알 수
-    없다. 들어올 값의 이름을 적어 두면 연결 협의에서 그대로 요구사항이 된다.
+    없다. 들어올 값의 이름을 적어 두면 연결 협의에서 그대로 요구사항이 된다. 그 값으로 이 화면이
+    무엇을 하는지는 `more_help` 로 받아 제목 풍선 뒤에 잇는다.
     """
+    arrives = f"{with_subject_particle(source)} 붙으면 아래 값이 이 자리에 들어옵니다."
     with st.container(border=True):
         # 이 자리의 뜻은 제목 곁 풍선, 자리에는 들어올 값의 이름만(설계 규칙 UI-TXT-01 · UI-LAY-10).
-        st.markdown(
-            f"#### :material/pending: {subject}",
-            help=f"{with_subject_particle(source)} 붙으면 아래 값이 이 자리에 들어옵니다.",
-        )
+        st.markdown(f"#### :material/pending: {subject}", help=f"{arrives} {more_help}".strip())
         st.markdown("\n".join(f"- {item}" for item in expects))

@@ -82,6 +82,11 @@ LOSS_ROUTES_HELP = (
     "깎아먹는 쪽이 먼저 볼 화면입니다."
 )
 TREND_HELP = "표준 Capa, 설비 성능 기준 실효 Capa와 실제 생산실적을 일별로 비교합니다."
+PENDING_SCREEN_HELP = (
+    "그 값으로 표준 Capa 부터 실제 실적까지를 손실 한 칸씩 이어 붙이고, 각 칸의 크기로 어느 하위 "
+    "화면부터 봐야 하는지를 정합니다. 공정 간 단위(WF 매 · CHIP/PKG Kea)가 달라 수량은 합산하지 "
+    "않고 비율로 비교합니다."
+)
 
 # 손실 한 칸과 그 칸을 파고드는 화면. 워터폴에 서는 칸은 **그 차례 그대로** 둔다 — 화면 목록이
 # 손실 순서와 다르면 목차 구실을 못 한다. 수율 손실 · 설비 가용은 워터폴에 칸이 없다.
@@ -131,14 +136,8 @@ def _render_pending_screen() -> None:
             "이 분류가 곧 손실의 이름이 되므로 컬럼 매핑을 먼저 확정해야 합니다",
             "표준 Capa 는 지금처럼 활성 시나리오·리비전 스냅샷에서 옵니다",
         ),
+        more_help=PENDING_SCREEN_HELP,
     )
-    with st.container(border=True):
-        st.markdown("#### :material/route: 연결되면 이 화면이 하는 일")
-        st.markdown(
-            "- 표준 Capa 부터 실제 실적까지를 **손실 한 칸씩** 이어 붙입니다.\n"
-            "- 각 칸의 크기로 **어느 하위 화면부터 봐야 하는지**를 정합니다.\n"
-            "- 공정 간 단위(WF 매 · CHIP/PKG Kea)가 달라 수량은 합산하지 않고 비율로 비교합니다."
-        )
 
 
 def _render_summary(
