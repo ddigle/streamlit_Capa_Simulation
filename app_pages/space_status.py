@@ -1276,11 +1276,27 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
         parts.append(f"설비 마스터 다른 편집 {others}건")
     if side_tables:
         parts.append(f"{'·'.join(side_tables)} 표 편집")
-    # 저장의 범위(세션에만 있음 · 함께 저장되는 것 · FAB 은 따로)는 자리 글이 아니라 `배치 저장`
-    # 풍선이다(설계 규칙 UI-TXT-01 · UI-NTF-09).
+    # 어디로 저장되나 — 가정 설비 시나리오의 배치는 그 시나리오 새 리비전의 배치 차이로 간다.
+    # 이름 바꿈은 어느 설비 시나리오에서나 같은 호기의 이름이라 공통 대장으로 간다 — 이름만 바꿨으면
+    # 가정 배치 리비전을 만들지 않는다(E2E r6 — 「새 리비전(가정 배치)으로 저장합니다」 라 했지만
+    # 공통 대장에만 저장됐다).
+    save_place = ""
+    if frames is not None and edit_mode.layout == "overlay" and not fab_only_layout:
+        renamed_to_common = (
+            "이름 바꿈은 공통 대장에 저장합니다(어느 설비 시나리오에서나 같은 호기의 이름). "
+        )
+        layout_changed = not changes.empty or bool(canvases or marks or group_labels)
+        save_place = (
+            f"{_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 "
+            "않습니다. " + (renamed_to_common if not names.empty else "")
+            if layout_changed
+            else renamed_to_common
+        )
+    # 저장의 범위(어디로 · 세션에만 있음 · 함께 저장되는 것 · FAB 은 따로)는 자리 글이 아니라 `배치
+    # 저장` 풍선이다(설계 규칙 UI-TXT-01 · UI-NTF-09).
     save_help = (
-        "적용한 변경은 이 화면(세션)에만 있습니다. 저장해야 도면·요약과 다른 사람 화면에 "
-        "반영됩니다."
+        save_place + "적용한 변경은 이 화면(세션)에만 있습니다. 저장해야 도면·요약과 다른 사람 "
+        "화면에 반영됩니다."
         + (
             f" 가용설비 현황 설비 마스터 탭의 저장 안 한 다른 편집 {others}건도 함께 저장됩니다."
             if others
@@ -1305,24 +1321,6 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
     )
     with st.container(border=True, key="space_unsaved_layout_panel"):
         st.markdown(f"**:material/edit_note: 저장 안 한 배치 변경** — {' · '.join(parts)}")
-        # 이름 바꿈은 어느 설비 시나리오에서나 같은 호기의 이름이라 공통 대장으로 간다 — 이름만
-        # 바꿨으면 가정 배치 리비전을 만들지 않는다(E2E r6 — 「새 리비전(가정 배치)으로 저장합니다」
-        # 라 했지만 공통 대장에만 저장됐다).
-        renamed_to_common = (
-            "이름 바꿈은 공통 대장에 저장합니다(어느 설비 시나리오에서나 같은 호기의 이름)."
-        )
-        if frames is not None and edit_mode.layout == "overlay" and not fab_only_layout:
-            # 가정 설비 시나리오의 배치 저장 — 그 시나리오 새 리비전의 배치 차이로 간다. 빨리 감기
-            # 글(「rM 이 더 새롭지만 배치는 같습니다 — …」)은 사이드바 「Space 도면」 상자의 잠금
-            # 줄(`_render_edit_lock_line`)이 한 번 적는다(한 화면에 한 번 — 잠금 까닭과 같은 꼴).
-            if changes.empty and not canvases and not marks and not group_labels:
-                st.caption(f":material/badge: {renamed_to_common}")
-            else:
-                st.caption(
-                    f":material/layers: {_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 "
-                    "— 공식 배치는 바뀌지 않습니다."
-                    + (f" {renamed_to_common}" if not names.empty else "")
-                )
         if layout_locked:
             # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-03 · UI-TXT-04).
             st.caption(

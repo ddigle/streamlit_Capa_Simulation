@@ -164,6 +164,11 @@ FAST_FORWARD_MARK = ":material/fast_forward: 최신 일정에 저장"
 DISCARD_CHECK_HELP = "「변경을 버리고 불러오기」 를 체크하면 풀립니다."
 
 
+def _save_help(app: AppTest) -> str:
+    """`배치 저장` 풍선 — 어디로 저장되나와 저장 범위를 말하는 자리다."""
+    return str(app.button(key="space_layout_save").help)
+
+
 def _sidebar_popovers(app: AppTest) -> list[str]:
     """사이드바 팝오버 라벨."""
     found: list[str] = []
@@ -292,7 +297,10 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     }
     _ok(app.run())
     assert app.session_state[LAYOUT_ROLE_KEY] == "overlay"
-    assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in _texts(app))
+    # 어디로 저장되나는 자리 글이 아니라 저장 단추 풍선 앞머리다(설계 규칙 UI-NTF-09).
+    assert not any("새 리비전(가정 배치)으로 저장합니다" in text for text in _texts(app))
+    assert "의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
+    assert "공식 배치는 바뀌지 않습니다" in _save_help(app)
     # 저장 칸 체크는 없다 — 저장자 칸만(검수표 11/02 equip-13).
     assert not [box for box in app.checkbox if "space_layout_save_fields" in str(box.key)]
     assert app.text_input(key="space_layout_save_fields_saved_by").label == "저장자(선택)"
@@ -338,8 +346,8 @@ def test_a_rename_only_apply_in_an_assumption_names_the_common_ledger(
 
     texts = _texts(app)
     assert not any("가정 배치로 들어가고" in text for text in texts), texts
-    assert not any("새 리비전(가정 배치)으로 저장합니다" in text for text in texts), texts
-    assert any("이름 바꿈은 공통 대장에 저장합니다" in text for text in texts), texts
+    assert "새 리비전(가정 배치)으로 저장합니다" not in _save_help(app)
+    assert _save_help(app).startswith("이름 바꿈은 공통 대장에 저장합니다")
 
     common_before = len(repository.list_revisions())
     app.button(key="space_layout_save").click().run()
@@ -359,8 +367,8 @@ def test_a_move_with_a_rename_in_an_assumption_names_both_places(
 
     texts = _texts(app)
     assert any("가정 배치로 들어가고" in text for text in texts), texts
-    caption = next(text for text in texts if "새 리비전(가정 배치)으로 저장합니다" in text)
-    assert "이름 바꿈은 공통 대장에 저장합니다" in caption, caption
+    assert "새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
+    assert "이름 바꿈은 공통 대장에 저장합니다" in _save_help(app)
 
 
 def test_a_stale_assumption_with_the_same_layout_fast_forwards(
@@ -412,7 +420,7 @@ def test_the_fast_forward_line_is_written_once_beside_an_unsaved_layout(
     _ok(app.run())
 
     texts = _texts(app)
-    assert any("의 새 리비전(가정 배치)으로 저장합니다" in text for text in texts)
+    assert "의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
     assert not any("더 새롭지만 배치는 같습니다" in text for text in texts), texts
     assert "더 새롭지만 배치는 같습니다" in _mark_help(app, FAST_FORWARD_MARK)
 
@@ -774,10 +782,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_the_apply_box_and_save_notice
     assert any(
         f"저장하면 「{TILDE_ESCAPED}」의 가정 배치로" in str(item.value) for item in successes(app)
     )
-    assert any(
-        f"「{TILDE_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
-        for item in app.caption
-    )
+    assert f"「{TILDE_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
     _assert_tildes_escaped(app)
 
     app.button(key="space_layout_save").click().run()
@@ -886,10 +891,7 @@ def test_an_asterisk_scenario_name_stays_literal_in_the_apply_box_and_notice(
     assert any(
         f"저장하면 「{STAR_ESCAPED}」의 가정 배치로" in str(item.value) for item in successes(app)
     )
-    assert any(
-        f"「{STAR_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in str(item.value)
-        for item in app.caption
-    )
+    assert f"「{STAR_ESCAPED}」의 새 리비전(가정 배치)으로 저장합니다" in _save_help(app)
     _assert_stars_escaped(app)
 
 
