@@ -137,6 +137,32 @@ def test_the_waterfall_names_quantities_not_the_gap_rates() -> None:
             summary["실적수량"],
         ]
     )
-    # 눈금 글자만 접는다 — 한 줄이면 1283 창에서 칸보다 길어 눈금이 통째로 눕는다.
-    assert "재공부족<br>미활용" in figure.layout.xaxis.ticktext
-    assert list(figure.layout.xaxis.tickvals) == list(waterfall.x)
+
+
+def test_the_waterfall_ticks_stay_flat_at_any_window_width() -> None:
+    """자동 각도는 칸이 좁으면 눈금을 30도 · 90도로 눕히고 어느 쪽인지가 창 폭과 앞 그림 상태에
+    달린다 — 각도를 못 박고 이름을 모두 두 줄로 접어 좁은 칸에 들인다."""
+    summary = aggregate_dynamic_capacity(build_dynamic_capacity_demo(), ["공정"]).iloc[0]
+
+    axis = build_capacity_waterfall_figure(summary).layout.xaxis
+
+    assert axis.tickangle == 0
+    assert list(axis.ticktext) == [
+        "표준<br>Capa",
+        "효율<br>손실",
+        "UPEH<br>손실",
+        "재공부족<br>미활용",
+        "기타<br>Gap",
+        "실제<br>실적",
+    ]
+
+
+def test_the_waterfall_hover_says_what_the_bar_says() -> None:
+    """풍선 값은 막대 글과 같은 그 칸의 증감이다 — `%{y}` 는 누계라 손실 이름에 누계가 붙는다.
+    눈금을 배열로 주면 `%{x}` 는 접은 눈금 글자를 내므로 이름은 `customdata` 로 받는다."""
+    summary = aggregate_dynamic_capacity(build_dynamic_capacity_demo(), ["공정"]).iloc[0]
+
+    (waterfall,) = build_capacity_waterfall_figure(summary).data
+
+    assert list(waterfall.customdata) == list(waterfall.x)
+    assert waterfall.hovertemplate == "%{customdata}<br>%{delta:,.1f}<extra></extra>"

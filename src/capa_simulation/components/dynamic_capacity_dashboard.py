@@ -105,21 +105,26 @@ def build_capacity_waterfall_figure(summary: pd.Series) -> go.Figure:
             measure=["absolute", "relative", "relative", "relative", "relative", "total"],
             text=[f"{value:,.0f}" for value in values],
             textposition="outside",
+            customdata=labels,
             connector={"line": {"color": tokens.HEADER_BACKGROUND, "width": 1}},
             increasing={"marker": {"color": tokens.STATUS_SECURE}},
             decreasing={"marker": {"color": tokens.STATUS_SHORTAGE}},
             totals={"marker": {"color": tokens.SERIES_ACTUAL}},
-            hovertemplate="%{x}<br>%{y:,.1f}<extra></extra>",
+            # 값은 막대 글과 같은 그 칸의 증감이다 — `%{y}` 는 그 칸까지의 누계라 손실 이름에 누계가
+            # 붙는다. 이름은 `customdata` 다 — `%{x}` 는 아래 접은 눈금 글자를 낸다.
+            hovertemplate="%{customdata}<br>%{delta:,.1f}<extra></extra>",
         )
     )
     _apply_common_layout(figure)
     figure.update_layout(height=380, margin={"l": 20, "r": 20, "t": 20, "b": 30})
-    # 칸이 눈금 글자보다 좁으면 Plotly 가 눈금을 통째로 눕혀 이웃과 겹친다(1283 창 반쪽 그림). 긴
-    # 이름은 눈금에서만 두 줄로 접는다 — 값과 hover 의 이름은 한 줄 그대로다.
+    # 자동 각도는 칸이 눈금 글자보다 좁으면 눈금을 30도 · 90도로 눕히고, 어느 쪽인지가 창 폭과 앞
+    # 그림 상태에 달려 이웃과 겹치기도 한다. 눕히지 않게 각도를 못 박고, 좁은 칸에 들도록 이름을
+    # 모두 두 줄로 접는다.
     figure.update_xaxes(
         tickmode="array",
         tickvals=labels,
-        ticktext=[label.replace(" 미활용", "<br>미활용") for label in labels],
+        ticktext=[label.replace(" ", "<br>") for label in labels],
+        tickangle=0,
     )
     figure.update_yaxes(title=None, rangemode="tozero")
     return figure
