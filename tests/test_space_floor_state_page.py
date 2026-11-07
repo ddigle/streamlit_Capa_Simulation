@@ -18,6 +18,7 @@ import pandas as pd
 import pytest
 from alert_marks import infos, successes
 from source_sites import ends_as_sentence
+from streamlit.proto.GapSize_pb2 import GapSize
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Dataframe, get_widget_state
@@ -994,24 +995,30 @@ def _holds(node: Any, found: Any) -> bool:
     return isinstance(node, Block) and any(_holds(child, found) for child in node.children.values())
 
 
-def _siblings_between(app: AppTest, head: Any, table: Any) -> list[Any]:
-    """`head` 를 품은 칸과 `table` 이 형제인 줄에서 둘 사이의 형제들(차례대로)."""
+def _children(block: Any) -> list[Any]:
+    return [child for _, child in sorted(block.children.items())]
+
+
+def _before_table(app: AppTest, table: Any) -> list[Any]:
+    """`table` 을 바로 품은 칸에서 표 앞의 형제들(차례대로)."""
     stack: list[Any] = [app.main]
     while stack:
-        block = stack.pop()
-        children = [child for _, child in sorted(block.children.items())]
-        heads = [index for index, child in enumerate(children) if _holds(child, head)]
+        children = _children(stack.pop())
         tables = [index for index, child in enumerate(children) if table(child)]
-        if heads and tables and not table(children[heads[0]]):
-            return children[heads[0] + 1 : tables[0]]
+        if tables:
+            return children[: tables[0]]
         stack.extend(child for child in children if isinstance(child, Block))
-    raise AssertionError("머리 줄과 표가 형제인 칸이 없다")
+    raise AssertionError("표가 없다")
+
+
+def _is_space(node: Any) -> bool:
+    return getattr(node, "type", "") == "space"
 
 
 def _toolbar_clearance_is_last(between: list[Any]) -> None:
     """표 바로 앞 형제가 띄움 하나다 — 표 도구 막대(표 위 37px 까지 솟는다)가 머리 줄 오른쪽 끝을
     덮지 않게(AGENTS 9장 「표 도구 막대」)."""
-    spaces = [node for node in between if getattr(node, "type", "") == "space"]
+    spaces = [node for node in between if _is_space(node)]
     assert len(spaces) == 1
     assert between[-1] is spaces[0]
     assert TABLE_TOOLBAR_CLEARANCE >= 20
@@ -1019,18 +1026,25 @@ def _toolbar_clearance_is_last(between: list[Any]) -> None:
 
 def test_the_floor_list_table_keeps_its_toolbar_off_the_edit_switch(tmp_path: Path) -> None:
     """표에서 머리 줄 오른쪽 끝 `사용 편집` 으로 옮긴 누름을 표 도구 막대가 가로챘다(2026-10-26
-    E2E)."""
+    E2E). 그 띄움은 남기되 빈 알림 칸은 표 앞에 틈을 더하지 않는다 — 머리 칸이 `gap=None` 이고 위
+    구획과는 구획 사이만큼 떨어져 제목이 표의 머리로 읽힌다(설계 규칙 UI-CON-05)."""
     app = _app(_database(tmp_path)).run()
     _ok(app)
 
-    between = _siblings_between(
-        app,
+    before = _before_table(
+        app, lambda node: isinstance(node, Dataframe) and "미배치대수" in node.value.columns
+    )
+    lead = before[-1]
+    assert lead.proto.flex_container.gap_config.gap_size == GapSize.NONE
+    inside = _children(lead)
+    assert _holds(
+        inside[0],
         lambda node: (
             getattr(node, "type", "") == "toggle" and getattr(node, "key", None) == EDIT_TOGGLE_KEY
         ),
-        lambda node: isinstance(node, Dataframe) and "미배치대수" in node.value.columns,
     )
-    _toolbar_clearance_is_last(between)
+    _toolbar_clearance_is_last(inside[1:])
+    assert _is_space(before[-2])
     clear_equipment_repository()
 
 

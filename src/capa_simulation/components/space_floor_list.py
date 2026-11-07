@@ -66,6 +66,7 @@ from capa_simulation.components.write_guard import (
     remember_seen,
     seen,
 )
+from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.equipment_cache import (
@@ -1013,36 +1014,41 @@ def render_space_floor_list(
     덧붙이는 칸이다(`FloorListColumn` — 편집 모드 표에는 붙이지 않는다). 「공식과 견주기」 의
     「공식과 다름」 은 두 표에, 색 기준 「필요 단축」 을 켠 동안의 칸 넷(`layer_columns`)은 사용 층
     표에만 선다."""
-    with st.container(
-        horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
-    ):
-        st.caption("층 목록", width="content", help=f"{_LIST_HELP} {_INACTIVE_HELP}")
-        st.space("stretch")
-        if not editable:
-            # 켜진 채 잠그면 스위치와 화면이 서로 다른 말을 한다(FAB `배치 편집` 과 같은 까닭).
-            st.session_state[EDIT_TOGGLE_KEY] = False
-        editing = (
-            st.toggle(
-                "사용 편집",
-                key=EDIT_TOGGLE_KEY,
-                disabled=not editable,
-                on_change=_toggle_changed,
-                args=(database_path,),
-                help=(locked_reason or SAMPLE_LOCKED) if not editable else _TOGGLE_HELP,
+    # 제목이 위 줄의 꼬리가 아니라 아래 표의 머리로 읽히게 한다(설계 규칙 UI-CON-05) — 위 구획과는
+    # 구획 사이만큼 띄우고, 머리 줄 · 알림 칸 · 띄움은 한 칸(`gap=None`)이라 빈 알림 칸이 표 앞에
+    # 틈을 더하지 않는다.
+    st.space(tokens.SECTION_GAP_PX)
+    with st.container(key="space_floor_list_lead", gap=None):
+        with st.container(
+            horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
+        ):
+            st.caption("층 목록", width="content", help=f"{_LIST_HELP} {_INACTIVE_HELP}")
+            st.space("stretch")
+            if not editable:
+                # 켜진 채 잠그면 스위치와 화면이 서로 다른 말을 한다(FAB `배치 편집` 과 같은 까닭).
+                st.session_state[EDIT_TOGGLE_KEY] = False
+            editing = (
+                st.toggle(
+                    "사용 편집",
+                    key=EDIT_TOGGLE_KEY,
+                    disabled=not editable,
+                    on_change=_toggle_changed,
+                    args=(database_path,),
+                    help=(locked_reason or SAMPLE_LOCKED) if not editable else _TOGGLE_HELP,
+                )
+                and editable
             )
-            and editable
-        )
-    if not editing:
-        # 토글은 FAB 화면을 그리지 않는 회차(층을 열었을 때·다른 페이지)에 위젯 상태가 버려져 꺼진
-        # 채 돌아온다 — 남은 초안을 지워 「저장 안 한 편집」 표지가 거짓을 말하지 않게.
-        _forget()
+        if not editing:
+            # 토글은 FAB 화면을 그리지 않는 회차(층을 열었을 때·다른 페이지)에 위젯 상태가 버려져
+            # 꺼진 채 돌아온다 — 남은 초안을 지워 「저장 안 한 편집」 표지가 거짓을 말하지 않게.
+            _forget()
+            # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
+            with st.container(key="space_floor_state_notices"):
+                _render_notices()
+            # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을
+            # 가로채지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+            toolbar_clearance()
     if editing:
         _render_edit(database_path, placements, unit_counts)
         return
-    # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
-    with st.container(key="space_floor_state_notices"):
-        _render_notices()
-    # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을 가로채지
-    # 않게 띄운다(AGENTS 9장 「표 도구 막대」).
-    toolbar_clearance()
     _render_tables(placements, canvas_text, states, on_open, extra_columns)
