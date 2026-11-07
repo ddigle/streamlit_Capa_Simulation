@@ -625,6 +625,47 @@ def test_a_stale_unset_does_not_clear_another_sessions_choice(tmp_path: Path) ->
     assert _profile(database)[0] == (None, None)
 
 
+def test_a_second_pick_on_an_undrawn_box_is_not_taken_for_another_user(tmp_path: Path) -> None:
+    """앞 고름의 회차가 상자를 다시 그리기 전에 끊기면 뒤 고름의 콜백 인자는 앞 고름 전의 짝이다.
+
+    지금 짝은 제가 방금 저장한 값이다 — 「다른 사용자가 먼저」 로 거절하면 제 고름이 남의 것으로
+    알려지고 마지막 고름이 버려진다. 그 사이 남이 저장했으면 제 저장이 아니니 그대로 거절한다.
+    회차를 끊을 수 없어 끊긴 회차가 남기는 것(같은 낡은 인자)으로 콜백을 잇달아 부른다.
+    """
+    database = tmp_path / "scenario.duckdb"
+    s1, s1_revision, s2, s2_older, s2_newer = _two_scenarios(database)
+    s3 = _third_scenario(database)
+    repository = DuckDBScenarioRepository(database)
+    repository.replace_global_main_case(1, s2, s2_newer, source="테스트")
+    clear_global_main_cases_cache()
+    script = """
+import streamlit as st
+
+import capa_simulation.components.home_main_cases as picker
+
+picker._save_case_scenario(st.session_state["database_path"], 1, st.session_state["seen"])
+"""
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state["database_path"] = str(database)
+    app.session_state["seen"] = (s2, s2_newer)
+
+    app.session_state[CASE1_SCENARIO] = s1
+    _ran(app.run())
+    assert _profile(database)[0] == (s1, s1_revision)
+
+    for chosen in (s3, s1, s3):
+        app.session_state[CASE1_SCENARIO] = chosen
+        _ran(app.run())
+        assert _profile(database)[0][0] == chosen
+        assert MAIN_CASE_NOTICE_KEY not in app.session_state
+
+    repository.replace_global_main_case(1, s2, s2_older, source="다른 사용자")
+    app.session_state[CASE1_SCENARIO] = s1
+    _ran(app.run())
+    assert _profile(database)[0] == (s2, s2_older)
+    assert MAIN_CASE_NOTICE_KEY in app.session_state
+
+
 def test_a_hidden_preference_tab_neither_reads_nor_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

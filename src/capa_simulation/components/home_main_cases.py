@@ -25,6 +25,10 @@ HOME 슬롯은 셋으로 고정이다 — 슬롯 1 은 지금 최신 공식버�
 때 그 시나리오 첫 리비전으로 메우기(본 version 대조 — 그 사이 남이 고른 값을 덮지 않는다). 선택지
 라벨에는 활성 상태를 붙이지 않는다(`_comparison_active_note` 와 같은 까닭).
 
+**겹친 고름은 덮지 않는다.** 두 상자의 콜백은 그 회차가 그린 짝을 받아 그 Case 의 지금 짝과 같은
+쓰기 트랜잭션에서 견준다(`_replace_case`). 다르면 쓰지 않고 진 쪽 상자 안 · 알림창에 알린다. 다른
+Case 나 이름 바꾸기는 그 Case 의 짝을 바꾸지 않아 막지 않는다.
+
 **숨은 탭 회차는 DB 를 읽지도 쓰지도 않는다.** 팝업 안 탭은 `stateful_tabs` 라 다른 탭(판정 기준 ·
 Past Data 등)을 보는 동안에도 숨은 이 탭 본문이 회차마다 돈다 — 그 조작마다 목록 읽기 넷이 실리고,
 위 두 쓰기와 그 한 번뿐인 알림이 아무도 보지 않는 탭에서 소비된다. 그래서 탭이 숨으면 마지막으로
@@ -57,6 +61,7 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
+from capa_simulation.components.write_guard import is_own_save, own_save_marks, save_remembered
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
@@ -537,20 +542,31 @@ def _replace_case(
     version 이 오른다. 고르는 것이 곧 저장이라 그 Case 의 지금 짝이 화면이 그린 짝 `seen` 일 때만
     쓴다(같은 쓰기 트랜잭션에서 대조 — 프로필 version 이 아니라 이 짝이라 다른 Case 나 이름 바꾸기는
     막지 않는다). 저장하지 못하면 다음 회차 상자 안에 한 줄 남긴다(상자는 프로필 값으로 돌아간다).
+
+    앞 고름의 회차가 상자를 다시 그리기 전에 끊기면 뒤 고름의 `seen` 은 앞 고름 전의 짝이다 — 지금
+    짝이 그 고름의 제 저장이면 지금 짝을 대조한다(`write_guard` 의 제 저장 판정). 짝이 다르면 그
+    사이 남이 저장한 것이라 그대로 거절한다.
     """
+    marks = own_save_marks()
+    name = f"home_main_case{case_no}"
     with pinned_connections(Path(database_path)):
         try:
             repository = get_scenario_repository(database_path)
             chosen = choose(repository)
             if chosen is None:
                 return
-            if repository.load_global_main_cases().case(case_no) == chosen:
+            stored = repository.load_global_main_cases().case(case_no)
+            if stored == chosen:
                 return
-            repository.replace_global_main_case(
-                case_no,
-                *chosen,
-                source=MAIN_CASE_SOURCE,
-                expected_pair=seen,
+            expected = stored if is_own_save(name, seen, stored, marks) else seen
+            save_remembered(
+                name,
+                seen,
+                lambda: repository.replace_global_main_case(
+                    case_no, *chosen, source=MAIN_CASE_SOURCE, expected_pair=expected
+                ),
+                stored=lambda _profile: chosen,
+                marks=marks,
             )
         except ProfileVersionConflict as exc:
             _notify(bootstrap_error_message(exc))
