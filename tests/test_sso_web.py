@@ -684,6 +684,18 @@ def test_logout_page_links_idp_logout_only_when_configured() -> None:
     assert response.header("location") is None
 
 
+def test_plain_links_on_the_outer_pages_take_the_accent_token() -> None:
+    """바깥 화면의 보조 링크(「통합인증에서도 로그아웃」 등)는 브라우저 기본 파랑 · 보라가 아니라
+    두 팔레트의 강조 토큰이다 — 단추 꼴 링크(`a.button`)는 선택자가 더 구체적이라 제 글자색을
+    지킨다."""
+    css = web.page_css()
+
+    assert "\na { color: var(--accent); }\n" in css
+    assert "--accent: #" in css.split("@media (prefers-color-scheme: dark)")[0]
+    assert "--accent: #" in css.split("@media (prefers-color-scheme: dark)")[1]
+    assert "color: var(--accent-text)" in css.split("a.button", 1)[1]
+
+
 def test_identity_survives_until_logout() -> None:
     cfg = use_config()
     token, _ = issue_session(cfg, loginid=LOGINID, name="이름", dept="부서", now=int(time.time()))
