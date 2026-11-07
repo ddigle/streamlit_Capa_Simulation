@@ -29,6 +29,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     EQUIPMENT_SCREEN,
     UPEH_NOT_APPLIED_NOTE,
     EquipmentPlanSource,
+    absent_note,
     equipment_readiness,
     render_equipment_plan,
     source_equipment_text,
@@ -128,12 +129,13 @@ def _run(
     *,
     subject: str = "개조 일정",
     before_plan: Any = None,
+    process: str = PROCESS,
 ) -> object:
     return render_equipment_plan(
         source,
         readiness,
-        process=PROCESS,
-        process_label=PROCESS,
+        process=process,
+        process_label=process,
         subject=subject,
         render_header=recorder.header,
         before_plan=before_plan,
@@ -223,11 +225,34 @@ def test_a_missing_input_is_a_mark_that_opens_the_equipment_screen(
 
 
 @pytest.mark.usefixtures("no_plan_loading")
+def test_no_snapshot_is_one_alert_whichever_process_is_open(recorder: _Recorder) -> None:
+    """저장본 없음은 설비 DB 전체의 일이다 — 글에 공정을 넣으면 공정을 넘길 때마다 Alarm 줄이
+    는다. 짧은 글과 전문이 공정과 무관해야 같은 알림 하나다(설계 규칙 UI-NTF-07)."""
+    readiness = DynamicReadiness(NO_SNAPSHOT)
+    for process in ("DEMO_공정가", "DEMO_공정나"):
+        assert _run(_source(), readiness, recorder, process=process) is None
+
+    (one, other) = recorder.errors
+    assert one == other
+    assert one["text"] == readiness.badge and one["goto"] == EQUIPMENT_SCREEN
+    assert one["message"].startswith("개조 일정 — 설비 DB 에 저장된 설비 마스터가 없습니다.")
+
+
+def test_a_note_about_one_process_names_it() -> None:
+    """공정마다 까닭이 다른 멈춤은 줄이 공정마다 따로다 — 어느 공정인지 글이 말한다."""
+    note = absent_note("설비 일정 없음: 설비 없음", "까닭", screen="개조 일정", process_label="AVI")
+
+    assert note == ("개조 일정 · AVI — 까닭", "AVI — 설비 일정 없음: 설비 없음")
+
+
+@pytest.mark.usefixtures("no_plan_loading")
 def test_a_process_without_counted_units_is_a_plain_line_not_an_error(
     recorder: _Recorder,
 ) -> None:
     """HBM·EDP 호기도 기존보유도 없는 공정은 채울 입력이 없는 빈 상태다 — 고를 때마다 Alarm 에
-    오류가 쌓이지 않게 평문 한 줄이고 서는 조건은 풍선이다(설계 규칙 UI-TXT-04 · UI-NTF-08)."""
+    오류가 쌓이지 않게 평문 한 줄이고 서는 조건은 풍선이다(설계 규칙 UI-TXT-04 · UI-NTF-08).
+    저장본 · 이름 · Cut-off 를 다 지난 공정이라 풍선은 이 공정에 빠진 조건만 적고, 평문이 까닭이라
+    바로 위 머리 배지는 상태 낱말까지다(UI-TXT-07)."""
     readiness = DynamicReadiness(NO_COUNTED_UNITS, cutoff_days=7)
 
     assert _run(_source(), readiness, recorder, subject="개조 일정") is None
@@ -236,8 +261,9 @@ def test_a_process_without_counted_units_is_a_plain_line_not_an_error(
     ((body, help_text),) = recorder.captions
     assert body == readiness.detail
     assert help_text is not None and "개조 일정은 설비 일정 기준 가용" in help_text
+    assert "사용기준 HBM·EDP" in help_text and "Cut-off" not in help_text
     ((_, line),) = recorder.headers
-    assert line.endswith(":blue-badge[설비 일정 없음: HBM·EDP 호기 없음]")
+    assert line.endswith(":blue-badge[설비 일정 없음]")
 
 
 @pytest.mark.usefixtures("no_plan_loading")

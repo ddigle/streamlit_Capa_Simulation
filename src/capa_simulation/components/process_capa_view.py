@@ -150,6 +150,7 @@ from capa_simulation.services.process_capa_detail import (
 )
 from capa_simulation.services.process_equipment_timeline import (
     NO_COUNTED_UNITS,
+    NO_SNAPSHOT,
     ROW_SHORTENED,
     ROW_VIRTUAL,
     DynamicReadiness,
@@ -288,10 +289,17 @@ ROUTE_FACTORS_UPEH_HELP: Final = (
     "경로별 인자는 기준정보 UPEH 그대로입니다 — UPEH 가정은 소요대수에만 사후로 "
     "겁니다(대당 Capa ×f 와 같습니다)."
 )
-# ②~④ 가 서는 조건 — 멈춘 자리 알림 전문의 끝, 빈 상태 평문 줄의 풍선.
-DYNAMIC_ABSENT_HELP: Final = (
+# 설비 일정이 멈춘 알림 전문의 끝. Alarm 줄에는 표 곁이 없어 「위」 라 하지 않고 ① 로 가리킨다.
+DYNAMIC_OFFICIAL_KEPT: Final = "① 공식 기준은 그대로입니다."
+# ②~④ 가 서는 조건 — 입력이 빠져 멈춘 자리 알림 전문의 끝.
+DYNAMIC_ABSENT_RULE: Final = (
     "설비 일정 기준 가용·신규 설비·비가동(②~④)은 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
-    "적힌 공정에만 섭니다. 위 공식 기준 표는 그대로입니다."
+    f"적힌 공정에만 섭니다. {DYNAMIC_OFFICIAL_KEPT}"
+)
+# 입력은 다 있고 셀 호기가 없는 공정의 빈 상태 평문 줄 풍선 — 그 공정에 빠진 조건만 적는다.
+NO_COUNTED_UNITS_HELP: Final = (
+    "설비 일정 기준 가용·신규 설비·비가동(②~④)은 사용기준 HBM·EDP 호기나 기존보유가 있는 공정에만 "
+    "섭니다."
 )
 # 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 알림 짧은 글(머리 배지와 같은 말).
 DYNAMIC_ERROR_TITLE: Final = "설비 일정 없음: 계산 오류"
@@ -880,19 +888,20 @@ def _render_dynamic_absent(view: ProcessDetailView) -> None:
         elif view.dynamic_error:
             # 판정은 통과했는데 계획·설비 일정 계산이 멈춘 갈래 — 조건은 이미 맞아 안내하지 않는다.
             render_data_error(
-                f"{view.dynamic_error} 위 공식 기준 표는 그대로입니다.",
+                f"{view.dynamic_error} {DYNAMIC_OFFICIAL_KEPT}",
                 code="PD-01",
                 text=DYNAMIC_ERROR_TITLE,
             )
         elif view.readiness.status == NO_COUNTED_UNITS:
             # 채울 입력이 없는 빈 상태다 — 평문 한 줄(설계 규칙 UI-TXT-04).
-            st.caption(view.readiness.detail, help=DYNAMIC_ABSENT_HELP)
+            st.caption(view.readiness.detail, help=NO_COUNTED_UNITS_HELP)
         else:
+            whole_database = view.readiness.status == NO_SNAPSHOT
             note = absent_note(
                 view.readiness.badge,
-                f"{view.readiness.detail} {DYNAMIC_ABSENT_HELP}",
+                f"{view.readiness.detail} {DYNAMIC_ABSENT_RULE}",
                 screen="공정 Capa 상세",
-                process_label=view.process_label,
+                process_label=None if whole_database else view.process_label,
             )
             render_data_error(note.message, code="PD-01", text=note.text, goto=EQUIPMENT_SCREEN)
 

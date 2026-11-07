@@ -327,7 +327,8 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     (note,) = events(app, "PD-01")
     assert note["page"] == tab_label(AVAILABLE_EQUIPMENT_STATUS)
     assert note["href"] == AVAILABLE_EQUIPMENT_STATUS.href
-    assert note["full"].startswith(f"공정 Capa 상세 · {process_box.value} — ")
+    # 저장본 없음은 설비 DB 전체의 일이라 글에 공정이 없다 — 공정을 넘겨도 같은 알림이다(UI-NTF-07).
+    assert note["full"].startswith("공정 Capa 상세 — ") and process_box.value not in note["full"]
     assert "설비 마스터가 없습니다" in note["full"]
     assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
     # 정리 줄(CSV·탭 링크)은 설비 일정이 설 때만이다.

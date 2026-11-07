@@ -454,7 +454,7 @@ class DynamicReadiness:
 
     @property
     def detail(self) -> str:
-        """「설비 일정 없음」 카드에 적는 한 줄. 통과했으면 빈 글자다."""
+        """까닭 한 줄 — 멈춘 자리 알림 전문과 빈 상태 평문에 쓴다. 통과했으면 빈 글자다."""
         return _READINESS_DETAILS.get(self.status, "")
 
     @property

@@ -18,7 +18,9 @@
   이름 · Cut-off)이 빠진 자리는 데이터 Error 마크다. 까닭은 알림 전문, 고치는 화면은 Alarm 줄의
   「그 화면으로」 다(설계 규칙 UI-NTF-08 — 자리에 링크를 두지 않는다). 호기가 있어도 사용기준
   HBM·EDP 가 없고 기존보유도 없는 공정(`NO_COUNTED_UNITS`)은 채울 입력이 없는 빈 상태라 회색 평문
-  한 줄이다(UI-TXT-04 — 마크로 세우면 그 공정을 고를 때마다 Alarm 에 오류가 쌓인다).
+  한 줄이다(UI-TXT-04 — 마크로 세우면 그 공정을 고를 때마다 Alarm 에 오류가 쌓인다). 그 줄이 까닭을
+  적으므로 머리 배지는 「설비 일정 없음」 까지다(UI-TXT-07). 저장본 없음은 공정마다 다른 일이 아니라
+  설비 DB 전체의 일이라 알림 글에 공정을 넣지 않는다 — 공정을 넘겨도 같은 알림 하나다(UI-NTF-07).
 - **계획** — 공정 Capa 상세 ② 와 같은 칸을 **같은 키**로(`load_required_shortening_for_target`,
   목표는 키 맞춤용 HOME 확보기준 — 단축 열은 읽지 않는다). 계산 함수는 부를 때 `simulation_cache`
   모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 제약 영향 모드는 같은 `try` 안에서 두 가지를 더
@@ -63,6 +65,7 @@ from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.process_equipment_timeline import (
     NO_COUNTED_UNITS,
+    NO_SNAPSHOT,
     DynamicReadiness,
     HeldUnitChoice,
     ProcessEquipmentTimeline,
@@ -117,6 +120,9 @@ SOURCE_BAND_HELP: Final = (
     "대수는 환산 대수입니다 — HOME·Static 확보율(기준정보 가용)과 다를 수 있습니다."
 )
 """출처 띠 끝 풍선 — 띠에는 값만 두고 읽는 법은 늘 두지 않는다(설계 규칙 UI-TXT-01)."""
+
+_NO_SCHEDULE_BADGE: Final = "설비 일정 없음"
+"""빈 상태의 머리 배지 — 까닭은 바로 아래 평문 한 줄이 적는다(설계 규칙 UI-TXT-07)."""
 
 UPEH_NOT_APPLIED_NOTE: Final = " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
 """UPEH 가정을 켠 세션의 출처 띠 단서(`upeh_assumption_note`, 앞 「 · 」 까지 든다)."""
@@ -221,21 +227,26 @@ def render_equipment_plan(
         return None
     snapshot = source.snapshot
     if not readiness.ready or readiness.cutoff_days is None or snapshot is None:
-        render_header(process, f"{bold} :blue-badge[{readiness.badge}]")
+        empty = readiness.status == NO_COUNTED_UNITS
+        badge = _NO_SCHEDULE_BADGE if empty else readiness.badge
+        render_header(process, f"{bold} :blue-badge[{badge}]")
         rule = (
             f"{subject}{topic_particle(subject)} 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 "
-            "값)으로 계산하므로 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 적힌 공정에만 "
-            "섭니다."
+            "값)으로 계산하므로"
         )
         with st.container(key=CONSTRAINT_ABSENT_KEY):
-            if readiness.status == NO_COUNTED_UNITS:
-                st.caption(readiness.detail, help=rule)
+            if empty:
+                st.caption(
+                    readiness.detail,
+                    help=f"{rule} 사용기준 HBM·EDP 호기나 기존보유가 있는 공정에만 섭니다.",
+                )
             else:
                 _render_absent(
                     readiness.badge,
-                    f"{readiness.detail} {rule}",
+                    f"{readiness.detail} {rule} 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
+                    "적힌 공정에만 섭니다.",
                     screen=subject,
-                    process_label=process_label,
+                    process_label=None if readiness.status == NO_SNAPSHOT else process_label,
                 )
         return None
     if before_plan is not None and not before_plan():
@@ -296,17 +307,22 @@ class AbsentNote(NamedTuple):
     text: str
 
 
-def absent_note(badge: str, reason: str, *, screen: str, process_label: str) -> AbsentNote:
+def absent_note(badge: str, reason: str, *, screen: str, process_label: str | None) -> AbsentNote:
     """멈춘 자리 알림 글 — 줄의 화면 칸은 고칠 화면이라 전문 첫머리가 어느 화면 · 공정의 일인지
     적는다(설계 규칙 UI-NTF-02). 마크는 `EQUIPMENT_SCREEN` 을 `goto` 로 받아 그 화면의 코드로
-    그린다."""
+    그린다.
+
+    `process_label` 이 None 이면 공정의 일이 아니라 설비 DB 전체의 일이다(저장본 없음). 글에 공정을
+    넣지 않아야 공정을 넘겨도 알림 id 와 묶음 열쇠(코드 + 짧은 글)가 같다(UI-NTF-07)."""
+    if process_label is None:
+        return AbsentNote(f"{screen} — {reason}", badge)
     return AbsentNote(
         f"{screen} · {literal_markdown(process_label)} — {reason}",
         f"{process_label} — {badge}",
     )
 
 
-def _render_absent(badge: str, reason: str, *, screen: str, process_label: str) -> None:
+def _render_absent(badge: str, reason: str, *, screen: str, process_label: str | None) -> None:
     """두 모드의 멈춘 자리 — 데이터 Error 마크 한 칸(`CS-01`)."""
     note = absent_note(badge, reason, screen=screen, process_label=process_label)
     render_data_error(note.message, code="CS-01", text=note.text, goto=EQUIPMENT_SCREEN)

@@ -290,7 +290,8 @@ def test_an_empty_equipment_database_stands_the_card_and_one_mark(
     assert data_error_marks(app) == 1
     (note,) = events(app, "CS-01")
     assert note["page"] == EQUIPMENT_SCREEN[0] and note["href"] == EQUIPMENT_SCREEN[1]
-    assert note["full"].startswith(f"제약 시뮬레이션 · {process} — ")
+    # 저장본 없음은 설비 DB 전체의 일이라 글에 공정이 없다 — 공정을 넘겨도 같은 알림이다(UI-NTF-07).
+    assert note["full"].startswith("제약 시뮬레이션 — ") and process not in note["full"]
     assert "설비 마스터가 없습니다" in note["full"]
     assert "설비 마스터가 없습니다" not in _captions(app)
     assert AVAILABLE_EQUIPMENT_STATUS.path not in {
