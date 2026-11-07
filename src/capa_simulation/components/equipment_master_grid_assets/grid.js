@@ -336,6 +336,11 @@ function popoverShift(left, width, viewport, margin) {
   if (over <= 0) return 0
   return -Math.min(over, Math.max(left - margin, 0))
 }
+
+// `end` 가 `start` 를 넘어간 px(올림, 안 넘으면 0) — 가려진 만큼만 옮길 때 쓴다.
+function overPx(end, start) {
+  return Math.max(Math.ceil(Number(end) - Number(start)), 0)
+}
 // </grid-place>
 
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
@@ -485,7 +490,20 @@ function tipWrap(target, id) {
   host.setAttribute('aria-describedby', id)
   host.appendChild(target)
   host.appendChild(tip)
+  const place = () => placeTip(host, tip)
+  host.addEventListener('pointerenter', place)
+  host.addEventListener('focusin', place)
   return { host, tip, target }
+}
+
+// 풍선은 단추 오른쪽 끝에 맞춰 왼쪽으로 자란다 — 단추가 칸 왼쪽 끝에 오면(띠가 접힌 줄의 「넣기」) 사이드바 밑으로 들어가니
+// 그만큼 칸 안으로 민다. 창 폭 · 줄 접힘에 따라 달라져 뜰 때 잰다.
+function placeTip(host, tip) {
+  const frame = host.closest('.emg')
+  if (!frame) return
+  tip.style.transform = ''
+  const shift = overPx(frame.getBoundingClientRect().left, tip.getBoundingClientRect().left)
+  if (shift) tip.style.transform = 'translateX(' + shift + 'px)'
 }
 
 function holdFocus(wrap, fk) {

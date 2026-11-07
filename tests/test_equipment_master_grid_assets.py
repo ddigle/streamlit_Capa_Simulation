@@ -991,6 +991,47 @@ def test_the_selection_bar_floats_above_the_table_head_and_moves_no_row() -> Non
     assert frame is not None and "overflow" not in frame["body"]
 
 
+_PLACE_TIP_RUNNER = """
+const box = (left) => ({ getBoundingClientRect: () => ({ left }) })
+const place = (frameLeft, tipLeft) => {
+  const tip = { ...box(tipLeft), style: { transform: 'translateX(9px)' } }
+  placeTip({ closest: () => box(frameLeft) }, tip)
+  return tip.style.transform
+}
+const orphan = { style: { transform: '' } }
+placeTip({ closest: () => null }, orphan)
+process.stdout.write(JSON.stringify({
+  left: place(332, 232),
+  inside: place(332, 340),
+  edge: place(332, 332),
+  rounded: place(332, 331.5),
+  orphan: orphan.style.transform,
+  over: [overPx(911, 781), overPx(700, 781), overPx(100.2, 100)],
+}))
+"""
+
+
+def test_a_tip_that_would_go_under_the_sidebar_moves_back_into_the_frame() -> None:
+    """풍선은 단추 오른쪽 끝에 맞춰 왼쪽으로 자라, 띠가 접혀 「넣기」 가 둘째 줄 맨 앞에 오면 x
+    232 ~ 419 로 떠서 오른쪽 끝 300 인 사이드바 밑에 앞 글자가 잘렸다(샘플 관측 · UI-INP-07 ·
+    UI-ACC-02).
+    뜰 때 칸 왼쪽 끝 밖으로 나간 만큼만 민다 — 칸 안이면 그대로다. 줄 접힘이 창 폭을 따라 달라
+    서식으로 정하지 않는다. 꺼진 단추는 감싼 칸이 마우스 · 초점을 받는다."""
+    result = _node({}, _PLACE_TIP_RUNNER, source=_sections() + _function("placeTip"))
+
+    assert result == {
+        "left": "translateX(100px)",
+        "inside": "",
+        "edge": "",
+        "rounded": "translateX(1px)",
+        "orphan": "",
+        "over": [130, 0, 1],
+    }
+    wrap = _function("tipWrap")
+    assert "host.addEventListener('pointerenter', place)" in wrap
+    assert "host.addEventListener('focusin', place)" in wrap
+
+
 def test_the_add_tip_shows_on_hover_and_keyboard_focus_and_has_the_app_tip_look() -> None:
     """풍선은 마우스(꺼진 단추 위에서도 감싼 칸이 받는다)와 키보드 초점으로 뜨고, 눌렀을 때 초점이
     남아 있어도 떠 있지 않도록 `:focus-within` 은 쓰지 않는다. 꼴은 편집 표 풍선(`.eg-tip`)과 같다
