@@ -933,7 +933,6 @@ def _dynamic_rows(
     plan = _by_month(dynamic.process_months, axis, unique=True)
     bridge = _by_month(dynamic.bridge, axis)
     impacts = _by_month(downtime_impact(dynamic.bridge, dynamic.process_months), axis)
-    target_text = _target_text(dynamic.target, axis)
     detail = f"참고 · 설비 DB · 환산대수 · 생산월(Cut-off {dynamic.cutoff_days}일)"
     if any(
         round(_number(bridge.get(month, {}).get("입력 비가동")) or 0.0, 9) > 0 for month in axis
@@ -1071,7 +1070,7 @@ def _dynamic_rows(
     hidden_units = 0
     hidden_arrow_units = 0
     # 표지(◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작)는 캔버스 아래 범례가 적는다.
-    rows.append(_section_title_row(SECTION_UNITS, f"{target_text} · 호기마다 한 줄", folded))
+    rows.append(_section_title_row(SECTION_UNITS, "", folded))
     if SECTION_UNITS not in folded:
         unit_rows, hidden_units = _unit_rows(axis, dynamic)
         rows += unit_rows
@@ -1601,13 +1600,6 @@ def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
         head = f"{html.escape(module)} · " if module else ""
         lines.append(f"{head}{kind} · {start}~{end} · {effect}")
     return "<br>".join(lines)
-
-
-def _target_text(target: TargetLevel, axis: Sequence[int]) -> str:
-    value = single_target(target, axis)
-    if value is not None:
-        return f"단축 목표 {threshold_percent_label(value)}"
-    return "단축 목표 = 확보기준(달마다)"
 
 
 def _target_balance_label(target: TargetLevel, axis: Sequence[int]) -> str:

@@ -529,12 +529,13 @@ def reopen_entry_section(source: str | None) -> None:
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """단축 목표 표기 — 「확보기준(월별)」, 달마다 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
-    풍선(`TARGET_HELP`)이다."""
+    """단축 목표 표기 — 「확보기준(월별)」, 모든 달이 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
+    풍선(`TARGET_HELP`)이다. 화면에서 단축 목표를 적는 자리는 표 도구 줄 하나다(설계 규칙
+    UI-TXT-07)."""
     value = single_target(target, months)
     if value is not None:
         return f"{TARGET_NAME} {target_label(value)}"
-    return f"{TARGET_NAME} — 달마다 다름"
+    return TARGET_NAME
 
 
 def target_label(value: float) -> str:
@@ -810,7 +811,7 @@ def canvas_legend_html(
             for color in (tokens.STATUS_SECURE, tokens.STATUS_WARNING, tokens.STATUS_SHORTAGE)
         )
         + "확보율·과부족 칸 = 판정(확보 · 경고 · 부족)",
-        f'<span style="color:{tokens.TEXT_MUTED}">기준 확보율 줄은 참고(달마다 확보기준)</span>',
+        f'<span style="color:{tokens.TEXT_MUTED}">기준 확보율 줄은 참고(월별 확보기준)</span>',
     ]
     if dynamic is not None:
         qual = tokens.QUAL_CONFIRMATION_COLORS
@@ -1524,25 +1525,12 @@ def render_process_kpis(
             "대책",
             prescription_text(plan),
             key="process_detail_kpi_prescription",
-            caption=(
-                "설비 일정 기준 · 목표 "
-                + short_target_text(dynamic.canvas.target, _plan_months(dynamic))
-                + prescription_note
-                if dynamic is not None
-                else "설비 일정 기준"
-            ),
+            caption=f"설비 일정 기준{prescription_note}",
             help=(
                 "필요 단축 일정과 같은 계산을 이 공정 하나로 본 것입니다 — "
                 "단축은 Qual 을 당길 호기, 신규는 당겨도 모자라 더 들여야 하는 추가N 입니다."
             ),
         )
-
-
-def _plan_months(dynamic: DynamicView) -> list[int]:
-    frame = dynamic.canvas.process_months
-    if frame.empty or MONTH not in frame.columns:
-        return [0]
-    return [int(month) for month in frame[MONTH]]
 
 
 def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
@@ -1555,14 +1543,6 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
     ]
     shown = [f"{name} {count}" for name, count in parts if count]
     return " · ".join(shown) if shown else "없음"
-
-
-def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """대책 카드의 목표 — 달마다 같으면 「110%」, 다르면 「달마다 확보기준」."""
-    value = single_target(target, months)
-    if value is not None:
-        return target_label(value)
-    return "달마다 확보기준"
 
 
 def prescription_text(plan: Prescription | None) -> str:

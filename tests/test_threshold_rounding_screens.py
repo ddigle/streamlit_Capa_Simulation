@@ -11,7 +11,6 @@ from capa_simulation.components.modification_schedule_figures import relief_poin
 from capa_simulation.components.process_capa_canvas import _balance_hover
 from capa_simulation.components.process_capa_view import (
     judgement_card,
-    short_target_text,
     target_label,
     target_text,
 )
@@ -38,7 +37,6 @@ def test_the_process_detail_target_is_a_plain_whole_percent() -> None:
 
     assert target_label(target.for_month(MONTH)) == "110%"
     assert target_text(target, [MONTH]) == "확보기준(월별) 110%"
-    assert short_target_text(target, [MONTH]) == "110%"
     assert "1.095" not in target_text(target, [MONTH])
 
 

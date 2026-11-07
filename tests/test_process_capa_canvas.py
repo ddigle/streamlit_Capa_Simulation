@@ -529,7 +529,6 @@ def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> N
     details = [
         SUMMARY_TITLE_DETAIL,
         "참고 · 설비 DB · 환산대수 · 생산월(Cut-off 10일) · 점선은 오늘(11.10)",
-        "단축 목표 110% · 호기마다 한 줄",
     ]
     for detail in details:
         lines = title_detail_lines(detail)
@@ -1500,12 +1499,14 @@ def test_the_dark_theme_paints_with_dark_tokens() -> None:
     assert tokens._PALETTES["light"]["SHORTAGE_MONTH_BAND"] not in json.dumps(_json(canvas.months))
 
 
-def test_a_monthly_target_names_itself_once_in_the_titles() -> None:
+def test_the_shortening_target_is_not_repeated_in_the_section_titles() -> None:
+    """단축 목표는 표 도구 줄 한 자리에 선다 — 캔버스 구획 머리에 거듭하지 않는다(설계 규칙
+    UI-TXT-07). 줄 이름 「목표 과부족」 은 값 줄의 이름이라 남는다."""
     target = MonthlyTarget(1.095, ((202703, 1.2),))
     canvas = _canvas(dynamic=_dynamic(target=target))
     texts = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
 
-    assert "단축 목표 = 확보기준(달마다)" in texts
+    assert "단축 목표" not in texts
     assert "목표 과부족" in {item["text"] for item in _annotations(canvas.labels)}
 
 

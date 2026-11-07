@@ -815,6 +815,8 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
     assert len(targets) == 1
     assert str(targets[0].value).startswith("단축 목표 = 확보기준(월별)")
     assert "HOME 설정 → 판정 기준 › 확보기준(월별)" in str(targets[0].help)
+    # 단축 목표를 적는 자리는 이 한 줄이다 — KPI 칩이 거듭하지 않는다(설계 규칙 UI-TXT-07).
+    assert _metric(app, "대책").delta == "설비 일정 기준"
     # 공정 상자 뒤의 선택 상자는 「이 세션만」 UPEH 적용 구간 둘뿐이다(목표를 고르는 상자가 아니다).
     assert {box.key for box in app.get("selectbox")[1:]} <= {
         UPEH_ASSUMPTION_START_KEY,
