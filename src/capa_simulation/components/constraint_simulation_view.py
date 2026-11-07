@@ -1,4 +1,4 @@
-# Purpose: 제약 시뮬레이션 본문(보기 전환·월별 그래프·계산표·고른 달 계산·개조 일정·모자란 달)을
+# Purpose: 제약 시뮬레이션 본문(보기 전환·월별 그래프·계산표·고른 달 계산·개조 창·모자란 달)을
 # 프래그먼트로 그린다.
 
 """제약 시뮬레이션 — 본문 프래그먼트(`constraint_sim_view`)와 그 둘레(요약 넷).
@@ -21,7 +21,7 @@
   걸린다. 칸을 누르면 `on_select` **콜백**이 고른 달을 적는다 — 회차마다 두 그림의 선택
   상태를 읽으면 브라우저에 남은 다른 그림의 옛 선택이 마지막 누름을 덮는다. 세대 번호는
   두 그림이 한 칸을 나눠 써 누를 때마다 둘 다 새 요소가 된다(AGENTS 9장 「칸 선택 Plotly」).
-- **맨 아래** — 개조 일정 · 가용이 모자란 달. 생겼다 사라지는 알림은 늘 서 있는 `st.container()` 칸
+- **맨 아래** — 개조 창 · 가용이 모자란 달. 생겼다 사라지는 알림은 늘 서 있는 `st.container()` 칸
   안에 그린다(AGENTS 9장 「자리는 고정한다」).
 
 **이벤트 칸 수는 갈래마다 같다** — 이 프래그먼트가 이벤트 칸에 쓰는 것은 스타일만 든 `st.html` 넷(위
@@ -35,10 +35,10 @@
 
 보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
 대수를 `FILL_ORDER` 차례(지금 「신규 · 보유 · 개조」)로 나눠 적는다 — 2·3단계 회색 줄, 요약 넷
-「개조 대수」(값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성), 개조 일정 카드 머리 한
-줄(`free_units_line`). 신규 대기는 3단계(개조 중 비가동 옆)·4단계 식·개조 일정 카드의 「신규 대기」
+「개조 대수」(값 = 실제로 개조하는 대수, 회색 줄 = 전용 최대의 구성), 개조 창 카드 머리 한
+줄(`free_units_line`). 신규 대기는 3단계(개조 중 비가동 옆)·4단계 식·개조 창 카드의 「신규 대기」
 줄(`waiting_lines`)과 일반 설비가 된 신규 한 줄(`ordinary_line`)에 선다. 걸리지 않으면 1판 글
-그대로다. 보유의 출처와 크기(고른 호기 · 입력 칸 · 그 달 W/D 첫날 보유가 바뀌는 달)는 개조 일정 카드
+그대로다. 보유의 출처와 크기(고른 호기 · 입력 칸 · 그 달 W/D 첫날 보유가 바뀌는 달)는 개조 창 카드
 머리 한 줄에 적고(`holdings_text`, 2026-11-01 결정 B3), 남은 보유가 남은 증가를 다 덮어 신규를
 붙이지 않은 호기가 있으면 그 카드가 한 줄로 말한다(`new_stopped_line` — 결정 B1, 증가마다: 첫
 증가부터면 `NEW_SKIPPED_TEXT`, 뒤 증가부터면 그 달. B1 없이도 붙지 않았을 신규뿐이면 서지 않는다).
@@ -136,6 +136,7 @@ __all__ = [
     "KPI_ROW_KEY",
     "MODIFY_OFF_TEXT",
     "NEW_SKIPPED_TEXT",
+    "SCHEDULE_CARD_TITLE",
     "SCHEDULE_DEFINITION",
     "SHEET_HELP",
     "SHORT_REASON_TEXT",
@@ -191,6 +192,8 @@ _TOP_ROW_CONTAINER_NAME: Final = "capa-constraint-top"
 # 선다).
 TOP_ROW_STACK_BELOW_PX: Final = 900
 _EMPTY: Final = "—"
+# 맨 아래 왼쪽 칸 — 지금 조건이 낳은 개조 창이다. 모드 「개조 일정」(언제 할지 찾는 계산)과 가른다.
+SCHEDULE_CARD_TITLE: Final = "이 조건의 개조 창"
 SCHEDULE_DEFINITION: Final = (
     "개조 비가동은 그 달 W/D 첫날(그 달 1일 − Cut-off)을 끝으로, 개조 기간만큼 앞서 "
     "잡습니다. 그동안 그 대수는 공정 전체 가용대수에서 빠집니다(달마다 W/D 일수 비율)."
@@ -206,8 +209,8 @@ NEW_SKIPPED_TEXT: Final = (
 )
 # 일반 설비가 된 신규 한 줄에 까닭마다 적는 이름 수 — 넘으면 「외 n호기」.
 ORDINARY_NAME_LIMIT: Final = 4
-# 개조를 끈 회차의 개조 일정 칸 — 빈 결과 한 줄(켜면 무엇이 잡히는지는 「개조 필요」 풍선).
-MODIFY_OFF_TEXT: Final = "개조를 꺼 개조 일정이 없습니다."
+# 개조를 끈 회차의 개조 창 칸 — 빈 결과 한 줄(켜면 무엇이 잡히는지는 「개조 필요」 풍선).
+MODIFY_OFF_TEXT: Final = "개조를 꺼 개조 창이 없습니다."
 # 표 앞에서 시작하는 개조 · 대기 — 숨은 데이터라 표지 + 풍선이다(설계 규칙 UI-TXT-04).
 BEFORE_RANGE_MARK: Final = ":material/info: 첫 개조 비가동 — 표 첫 달 앞에서 시작"
 BEFORE_RANGE_TEXT: Final = (
@@ -688,7 +691,7 @@ def holdings_text(result: ConstraintResult) -> str:
 
 
 def free_units_line(result: ConstraintResult) -> str:
-    """개조 일정 카드 머리 한 줄 — 개조 없이 쓰는 전용(`FILL_ORDER` 차례). 나눠 보이지 않으면 빈
+    """개조 창 카드 머리 한 줄 — 개조 없이 쓰는 전용(`FILL_ORDER` 차례). 나눠 보이지 않으면 빈
     글자."""
     conditions = result.conditions
     if not conditions.splits_dedicated:
@@ -767,7 +770,7 @@ def new_stopped_line(result: ConstraintResult) -> str:
 
 
 def new_stopped_mark(result: ConstraintResult) -> str:
-    """개조 일정 카드의 「신규를 붙이지 않음」 표지 — 붙이지 않은 증가 달만 적는다. 까닭 · 뒤 신규의
+    """개조 창 카드의 「신규를 붙이지 않음」 표지 — 붙이지 않은 증가 달만 적는다. 까닭 · 뒤 신규의
     몫(`new_stopped_line`)은 그 표지의 풍선이다(설계 규칙 UI-TXT-04). `new_stopped_line` 이 빈
     글자면 빈 글자."""
     if not new_stopped_line(result):
@@ -779,7 +782,7 @@ def new_stopped_mark(result: ConstraintResult) -> str:
 
 
 def schedule_lines(windows: Sequence[ModificationWindow], *, today: date) -> list[str]:
-    """개조 일정 줄 — 「27년 6월 몫 · 2027-04-25 ~ 2027-05-24 비가동 · **6대**」. 첫날이 오늘보다
+    """개조 창 줄 — 「27년 6월 몫 · 2027-04-25 ~ 2027-05-24 비가동 · **6대**」. 첫날이 오늘보다
     앞이면 꼬리."""
     lines: list[str] = []
     for window in windows:
@@ -831,7 +834,7 @@ def overdrawn_lines(result: ConstraintResult) -> list[str]:
     """개조 비가동이 그 달 가용보다 많은 달마다 한 줄."""
     return [
         f"{month_label(row.month)}: 개조 비가동 {units_text(row.downtime)}대가 가용 "
-        f"{units_text(row.available)}대보다 많습니다 — 이 공정 설비로는 이 개조 일정이 "
+        f"{units_text(row.available)}대보다 많습니다 — 이 공정 설비로는 이 개조 창이 "
         "서지 않습니다."
         for row in result.months
         if row.overdrawn
@@ -912,7 +915,7 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             value4, caption4 = _EMPTY, "개조를 끄면 비가동 없이 배정만 바꿉니다"
         elif splits and kpis.max_dedicated > 0:
             # 값은 실제로 개조하는(비가동을 만드는) 대수, 회색 줄은 전용 최대의 구성이다. 회색 줄은
-            # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창 수·첫 비가동은 개조 일정 카드가
+            # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창 수·첫 비가동은 개조 창 카드가
             # 말한다(2026-10-26 사본 앱 1440px: 긴 줄이면 넷째 카드가 아래 줄로 내려갔다).
             modified = kpis.modified_units or 0
             pieces = free_parts(
@@ -957,7 +960,7 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
 
 @st.fragment(key=CONSTRAINT_VIEW_FRAGMENT_KEY)
 def render_constraint_view(view: ConstraintView) -> None:
-    """보기 줄 → 위 줄(그래프 · 고른 달 계산) → 계산표(온 폭) → 개조 일정 · 모자란 달."""
+    """보기 줄 → 위 줄(그래프 · 고른 달 계산) → 계산표(온 폭) → 개조 창 · 모자란 달."""
     result = view.result
     months = tuple(row.month for row in result.months)
     seed_toggle(CONSTRAINT_PROPORTIONAL_KEY, DEFAULT_PROPORTIONAL)
@@ -1144,7 +1147,7 @@ def _render_schedule(view: ConstraintView) -> None:
     result = view.result
     with st.container(border=True, key=SCHEDULE_CARD_KEY):
         # 개조 비가동을 잡는 규칙은 제목 풍선이다 — 카드 밑에 늘 두지 않는다(설계 규칙 UI-TXT-01).
-        st.markdown("**개조 일정**", help=SCHEDULE_DEFINITION)
+        st.markdown(f"**{SCHEDULE_CARD_TITLE}**", help=SCHEDULE_DEFINITION)
         with st.container():
             free_line = free_units_line(result)
             if free_line:

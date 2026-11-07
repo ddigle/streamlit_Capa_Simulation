@@ -318,7 +318,8 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     assert _has_chart(app, CONSTRAINT_SHEET_KEY)
     steps = [text for text in _markdown(app) if text[:4] in {f"**{n}*" for n in range(1, 6)}]
     assert len(steps) == 5
-    assert "**개조 일정**" in _markdown(app)
+    assert "**이 조건의 개조 창**" in _markdown(app)
+    assert "**개조 일정**" not in _markdown(app)
     # 머리 한 줄 — 기본값(D8): 제약 120% · 기준 HOME · 개조 30일.
     header = _header_line(app)
     assert "제약 120%" in header and "기준 HOME" in header and "개조 30일" in header

@@ -837,7 +837,7 @@ new_shares = (
 
 def new_units_caption(shares: NewUnitAvailability) -> str:
     """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름. 어느 호기를
-    붙였는지(전용 · 일반 설비)는 본문 개조 일정 카드가 말한다."""
+    붙였는지(전용 · 일반 설비)는 본문 개조 창 카드가 말한다."""
     if not shares.units:
         return "기준일 이후 기여를 시작하는 신규 설비가 없습니다."
     names = ", ".join(literal_markdown(name) for name in shares.units[:4])
