@@ -2299,7 +2299,7 @@ else:
         if invalid_rows:
             st.warning(
                 f"캔버스 {canvas_width:g} × {with_object_particle(f'{canvas_height:g}')} 벗어난 "
-                "호기가 있습니다: " + ", ".join(map(str, invalid_rows))
+                "호기가 있습니다: " + literal_markdown(", ".join(invalid_rows))
             )
     # 비활성 층을 연 회차(층 목록 표 「비활성 층」·주소)의 배너. 자리는 늘 선다 — 남이 층을 켜고
     # 끌 때 아래 층 상세가 밀리지 않게. 사유는 사람이 적은 글이라 글자 그대로 막는다.

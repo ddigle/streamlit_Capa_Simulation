@@ -627,10 +627,12 @@ def invalid_equipment_rows(
     *,
     canvas_width: float = DEFAULT_CANVAS_WIDTH,
     canvas_height: float = DEFAULT_CANVAS_HEIGHT,
-) -> list[int]:
+) -> list[str]:
+    """캔버스를 벗어났거나 좌표 · 크기가 맞지 않는 호기의 설비명(표 차례 그대로)."""
+    names = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip().tolist()
     required = {"X좌표", "Y좌표", "Xsize", "Ysize"}
     if not required.issubset(equipment.columns):
-        return list(range(1, len(equipment) + 1))
+        return [str(name) for name in names]
     numeric = equipment.loc[:, ["X좌표", "Y좌표", "Xsize", "Ysize"]].apply(
         pd.to_numeric, errors="coerce"
     )
@@ -643,7 +645,7 @@ def invalid_equipment_rows(
         | numeric["X좌표"].add(numeric["Xsize"]).gt(canvas_width)
         | numeric["Y좌표"].add(numeric["Ysize"]).gt(canvas_height)
     )
-    return [int(index) + 1 for index in numeric.index[invalid].tolist()]
+    return [str(name) for name, bad in zip(names, invalid.tolist(), strict=True) if bad]
 
 
 # 층 상세 「호기 정보」 창(도면 위 — 2026-11-03 사용자 요청 「하단이 아니라 편집기 안에서」)의 칸 —
