@@ -1640,7 +1640,8 @@ def test_loading_over_unsaved_edits_needs_the_discard_check(tmp_path: Path) -> N
     load_key = f"{CARD_LOAD_KEY}_{other.scenario.scenario_id}"
     assert app.button(key=load_key).disabled
     assert app.button(key=load_key).help == DISCARD_LOCK_HELP
-    assert any("저장하지 않은 편집" in item.value for item in app.warning)
+    # 미저장 표지는 머리가 단다 — 여기에는 체크 글과 잠긴 단추 풍선만 선다(사이드바 불러오기처럼).
+    assert not any("저장하지 않은 편집" in item.value for item in app.warning)
 
     app.checkbox(key=DISCARD_UNSAVED_KEY).check().run()
     assert not app.button(key=load_key).disabled

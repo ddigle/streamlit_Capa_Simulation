@@ -987,7 +987,6 @@ def _render_detail(
         discard_changes = True
         with st.container():
             if has_unsaved_scenario_changes():
-                st.warning("지금 올라와 있는 시나리오에 저장하지 않은 편집이 있습니다.")
                 discard_changes = st.checkbox(
                     "변경을 버리고 불러오기",
                     key=DISCARD_UNSAVED_KEY,
