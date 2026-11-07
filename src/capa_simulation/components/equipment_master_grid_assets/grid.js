@@ -2597,9 +2597,10 @@ export default function (component) {
   host.dataset.mode = String(data.mode || '')
   if (!S.bound) {
     S.bound = true
-    // 표 밖으로 초점이 나가거나(「리비전 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다 — 보낼 것이 있을 때만.
+    // 표 밖으로 초점이 나가거나(「리비전 저장」 누름 포함) 창이 숨으면 기다리지 않고 보낸다 — 보낼 것이 있을 때만. 그리는 중의
+    // focusout 은 다시 그려 초점 든 칸이 사라진 것이다 — 나간 것이 아니라 300ms 묶음을 끊지 않는다.
     listen(S, host, 'focusout', (event) => {
-      if (!event.relatedTarget || !host.contains(event.relatedTarget)) send(S)
+      if (!S.painting && (!event.relatedTarget || !host.contains(event.relatedTarget))) send(S)
       // 불러오기 밖(표 칸 등)으로 초점을 옮겼다 — 돌아온 불러오기 회차가 찾기 칸으로 초점을 빼앗지 않는다.
       if (!S.painting && event.relatedTarget && !host.contains(event.relatedTarget)) S.refocus = null
     })

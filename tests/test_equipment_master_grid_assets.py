@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from edit_grid_node import FAKE_DOM
 from js_runner import run_js_json
 from test_design_tokens import SMALL_TEXT_MINIMUM, contrast_ratio
 
@@ -2061,3 +2062,116 @@ def test_the_shared_css_fragments_come_first_and_keep_the_cell_state_order() -> 
     assert places == sorted(places)
     assert CSS.endswith(OWN_CSS)
     assert not any(rule in OWN_CSS for rule in order)
+
+
+_BURST_RUNNER = """
+FakeNode.prototype.select = function () {}
+FakeNode.prototype.scrollIntoView = function () {}
+Object.defineProperty(FakeNode.prototype, 'innerHTML', {
+  set() {
+    this.textContent = ''
+  },
+})
+// 브라우저처럼 — 초점 든 칸이 그리기로 사라지면 그 자리에서 대상 없는 focusout 이 난다.
+const leaveIfGone = (node) => {
+  const active = document.activeElement
+  if (active && node.contains(active)) {
+    fire(active, 'focusout', { relatedTarget: null })
+    document.activeElement = null
+  }
+}
+FakeNode.prototype.replaceWith = function (node) {
+  leaveIfGone(this)
+  this.parentNode.children[this.parentNode.children.indexOf(this)] = node
+  node.parentNode = this.parentNode
+  this.parentNode = null
+}
+const docListeners = {}
+document.addEventListener = (type, fn) => {
+  ;(docListeners[type] = docListeners[type] || []).push(fn)
+}
+document.removeEventListener = () => {}
+document.querySelector = () => null
+document.documentElement = { clientWidth: 1200 }
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const sent = []
+const data = {
+  mode: 'grid', base: 'b1', view: 'v1', limits: { outboxCells: 10000, pasteCells: 5000 },
+  columns: [
+    { name: '설비명', kind: 'name', width: 'name' },
+    { name: 'Model', kind: 'text', width: 'm' },
+    { name: 'Area', kind: 'text', width: 'm' },
+  ],
+  colSets: [['all', '전체', '', [1, 2]]],
+  rows: [
+    { id: 'a', values: ['EQ-1', 'x', 'p'] },
+    { id: 'b', values: ['EQ-2', 'y', 'q'] },
+    { id: 'c', values: ['EQ-3', 'z', 'r'] },
+  ],
+}
+const cleanup = globalThis.__mount({
+  data, parentElement, setTriggerValue() {},
+  setStateValue: (name, value) => sent.push(value.ops.length),
+})
+const S = host.__emg
+const body = S.body
+const clear = Object.getOwnPropertyDescriptor(FakeNode.prototype, 'textContent')
+Object.defineProperty(body, 'textContent', {
+  get: () => clear.get.call(body),
+  set(value) {
+    leaveIfGone(body)
+    clear.set.call(body, value)
+  },
+})
+const typed = (id, col, text, leave) => {
+  if (!S.edit) startEdit(S, id, col)
+  const input = body.querySelector('.emg-ed')
+  input.value = text
+  fire(input, 'input')
+  leave(input)
+}
+const press = (name) => (input) => fire(input, 'keydown', { key: name })
+const R = {}
+;(async () => {
+  typed('a', 1, 'T0', press('Tab'))
+  typed('a', 2, 'T1', press('ArrowDown'))
+  typed('b', 2, 'T2', press('ArrowDown'))
+  typed('c', 2, 'T3', press('Enter'))
+  R.moved = { sent: sent.length, box: S.box.ops.length }
+  await tick(360)
+  R.movedQuiet = { sent: sent.slice() }
+  for (const text of ['E0', 'E1', 'E2']) typed('a', 1, text, press('Enter'))
+  R.enter = { sent: sent.length }
+  await tick(360)
+  R.enterQuiet = { sent: sent.length }
+  // 진짜로 표 밖을 누르면 — 그리기 밖의 focusout 이다 — 기다리지 않고 보낸다.
+  typed('b', 1, 'OUT', (input) => {
+    document.activeElement = null
+    fire(input, 'focusout', { relatedTarget: null })
+  })
+  R.outside = { sent: sent.length, edit: S.edit }
+  // 창이 숨어도 기다리지 않고 보낸다.
+  typed('c', 1, 'VIS', press('Enter'))
+  const queued = sent.length
+  for (const run of docListeners.visibilitychange) run()
+  R.hidden = { queued, sent: sent.length }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+
+
+def test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time() -> None:
+    """칸을 잇달아 고치면 보냄은 300ms 묶음 한 번이다(UI-PRF-02 「연속 N회 → 보냄 1회」). 확정 ·
+    다음 칸 열기가 표 본문을 다시 그리면 초점 든 칸이 사라져 대상 없는 focusout 이 나고, 그것을 표
+    밖으로 나간 것으로 읽어 칸마다 회차가 돌았다(u4-02 — 6칸 6회차, 샘플 관측). 진짜로 표 밖을 누른
+    때와 창이 숨을 때는 지금처럼 곧바로 보낸다."""
+    result = _node({}, _BURST_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["moved"] == {"sent": 0, "box": 4}
+    assert result["movedQuiet"] == {"sent": [4]}, "Tab · 아래 · Enter 4칸 → 보냄 1회"
+    assert result["enter"] == {"sent": 1}
+    assert result["enterQuiet"] == {"sent": 2}, "Enter 연속 3칸 → 보냄 1회"
+    assert result["outside"] == {"sent": 3, "edit": None}, "표 밖 누름은 곧바로 보낸다"
+    assert result["hidden"] == {"queued": 3, "sent": 4}, "창이 숨으면 곧바로 보낸다"
