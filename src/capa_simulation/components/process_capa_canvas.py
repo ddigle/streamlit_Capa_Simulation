@@ -426,7 +426,7 @@ def build_process_capa_canvas(
       None 이면 접힌 것이다(소요대수 ▸).
     - `home_rates` 를 넘기면 맨 아래에 「확보율 (HOME 표시)」 줄이 선다(확보율 보정·선행 반영 값,
       회색).
-    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 페이지가 까닭 카드를 둔다).
+    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 그 자리는 화면이 둔다).
     - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
     - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
       id 는 무시한다.
@@ -933,7 +933,6 @@ def _dynamic_rows(
     plan = _by_month(dynamic.process_months, axis, unique=True)
     bridge = _by_month(dynamic.bridge, axis)
     impacts = _by_month(downtime_impact(dynamic.bridge, dynamic.process_months), axis)
-    target_text = _target_text(dynamic.target, axis)
     detail = f"참고 · 설비 DB · 환산대수 · 생산월(Cut-off {dynamic.cutoff_days}일)"
     if any(
         round(_number(bridge.get(month, {}).get("입력 비가동")) or 0.0, 9) > 0 for month in axis
@@ -1071,17 +1070,12 @@ def _dynamic_rows(
     hidden_units = 0
     hidden_arrow_units = 0
     # 표지(◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작)는 캔버스 아래 범례가 적는다.
-    rows.append(_section_title_row(SECTION_UNITS, f"{target_text} · 호기마다 한 줄", folded))
+    rows.append(_section_title_row(SECTION_UNITS, "", folded))
     if SECTION_UNITS not in folded:
         unit_rows, hidden_units = _unit_rows(axis, dynamic)
         rows += unit_rows
-    rows.append(
-        _section_title_row(
-            SECTION_DOWNTIME,
-            "진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다",
-            folded,
-        )
-    )
+    # 진한 화살표 · 끝 날의 읽는 법은 캔버스 아래 범례와 그 풍선이 말한다(설계 규칙 UI-TXT-01).
+    rows.append(_section_title_row(SECTION_DOWNTIME, "", folded))
     if SECTION_DOWNTIME not in folded:
         if manual_row is not None:
             rows.append(manual_row)
@@ -1606,13 +1600,6 @@ def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
         head = f"{html.escape(module)} · " if module else ""
         lines.append(f"{head}{kind} · {start}~{end} · {effect}")
     return "<br>".join(lines)
-
-
-def _target_text(target: TargetLevel, axis: Sequence[int]) -> str:
-    value = single_target(target, axis)
-    if value is not None:
-        return f"단축 목표 {threshold_percent_label(value)}"
-    return "단축 목표 = 확보기준(달마다)"
 
 
 def _target_balance_label(target: TargetLevel, axis: Sequence[int]) -> str:

@@ -14,7 +14,7 @@
   개조(대수 · 기간 버튼 + 직접 · 동시 상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준
   확보율 — 제약 모드와 **한 정본**, 정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
 - **설비 일정 확인 · 계획** — 제약 모드와 같은 함수 하나(`constraint_equipment_plan.
-  render_equipment_plan` — 멈추는 갈래 · 까닭 카드 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
+  render_equipment_plan` — 멈추는 갈래 · 멈춘 자리 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
   키**로).
 - **계산** — 순수 서비스 `services/modification_schedule.py`. 「가장 고르게」 는 이분 탐색이라 수백
   ms 까지 가므로 결과를 조건 값으로 세션에 몇 벌 기억한다(`remembered_result` — Streamlit 캐시가
@@ -35,12 +35,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from capa_simulation.components.constraint_equipment_plan import (
-    CONVERTED_UNITS_NOTE,
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
     EquipmentPlanSource,
-    ReasonCard,
     equipment_readiness,
     render_equipment_plan,
     source_equipment_text,
@@ -199,7 +198,7 @@ CHART_NOTE: Final = (
 CHART_HELP: Final = (
     "막대는 W/D 구간 좌표라 달력 앞 달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 있습니다."
 )
-LIST_NOTE: Final = (
+LIST_HELP: Final = (
     "차수 = 같은 날 시작하는 묶음 · 날짜는 비가동 첫날 ~ 마지막 날(다음 날부터 일반 "
     "가용) · 끝은 걸친 W/D 달별 일수 · 대수는 환산 대수(호기는 고르지 않음)"
 )
@@ -225,7 +224,7 @@ DEADLINE_HELP: Final = (
 
 class ScheduleModeContext(NamedTuple):
     """페이지가 넘기는 것 — 설비 일정 확인 · 계획 입력(제약 모드와 같은 묶음)·설비 세션·카드 이름과
-    머리·까닭 카드 그리기."""
+    머리 그리기."""
 
     source: EquipmentPlanSource
     """공통 진입 · 설비 스냅샷 · Cut-off · 설비 DB 오류 · 오늘 · 입력 비가동 — 제약 모드와 한
@@ -237,7 +236,6 @@ class ScheduleModeContext(NamedTuple):
     card_name: str
     card_icon: str
     render_header: Callable[[str, str], None]
-    render_reason_card: ReasonCard
 
 
 class ScheduleChoice(NamedTuple):
@@ -616,7 +614,6 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
         process_label=process_label,
         subject="개조 일정",
         render_header=context.render_header,
-        render_reason_card=context.render_reason_card,
     )
     if equipment_plan is None:
         return
@@ -707,12 +704,11 @@ def _render_source_band(
         f":material/database: 소요 = 활성 시나리오 {scenario_text} "
         f"{literal_markdown(process_label)} 공정 소요 · 가용 = 설비 일정 기준"
         + source_equipment_text(equipment_text)
-        + CONVERTED_UNITS_NOTE
     )
     if manual_note:
         band += f" · {manual_note}"
     band += upeh_assumption_note()
-    st.caption(band)
+    st.caption(band, help=SOURCE_BAND_HELP, width="content")
 
 
 # ================================================================== 요약 넷
@@ -856,10 +852,9 @@ def _render_body(result: ScheduleResult, labels: ScheduleLabels) -> None:
                 config=hover_chart_config(),
             )
     with st.container(border=True, key=LIST_CARD_KEY):
-        st.markdown("**개조 일정**")
+        st.markdown("**개조 일정**", help=LIST_HELP)
         with st.container():
             if not result.batches:
                 st.caption(NO_BATCH_TEXT)
             for number, batch in enumerate(result.batches, start=1):
                 st.markdown(batch_line(number, batch))
-        st.caption(LIST_NOTE)

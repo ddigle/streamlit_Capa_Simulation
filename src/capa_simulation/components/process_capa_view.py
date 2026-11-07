@@ -21,7 +21,7 @@
   누르기·더블클릭)은 보던 달을 둔다. 그림은 세션에 몇 벌 기억한다(`remembered_canvas`, 재공
   현황 꼴) — 새 `st.cache_data` 를 두지 않는다.
 - **범례**(HTML 한 줄)·**「더 보기」 토글 둘**(③·④ 30줄 상한, 그 구획이 접히면 숨는다)·**설비
-  일정 없음 카드**(까닭 + 가용설비 현황 링크).
+  일정 없음 자리**(데이터 Error 마크 또는 빈 상태 평문 — 제약 시뮬레이션과 같은 꼴).
 - **산출 근거 패널** — ① 소요 ② 가용 ③ 판정·원인 ④ 단축 근거(설비 일정 공정·그 달이 충족이
   아닐 때)와 ◀▶ 달 이동, 그 달 부족 원인의 다음 화면 링크, 닫힌 「경로별 인자」(`st.dataframe` 만
   — Plotly 를 넣지 않는다).
@@ -69,6 +69,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.constraint_equipment_plan import EQUIPMENT_SCREEN, absent_note
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.formula_text import APPROX, equals_mark, written_value
 from capa_simulation.components.home_dimensions import (
@@ -148,6 +149,8 @@ from capa_simulation.services.process_capa_detail import (
     ProcessMonthTrace,
 )
 from capa_simulation.services.process_equipment_timeline import (
+    NO_COUNTED_UNITS,
+    NO_SNAPSHOT,
     ROW_SHORTENED,
     ROW_VIRTUAL,
     DynamicReadiness,
@@ -286,12 +289,19 @@ ROUTE_FACTORS_UPEH_HELP: Final = (
     "경로별 인자는 기준정보 UPEH 그대로입니다 — UPEH 가정은 소요대수에만 사후로 "
     "겁니다(대당 Capa ×f 와 같습니다)."
 )
-# 설비 일정 없음 카드의 까닭 줄 풍선 — ②~④ 가 서는 조건.
-DYNAMIC_ABSENT_HELP: Final = (
+# 설비 일정이 멈춘 알림 전문의 끝. Alarm 줄에는 표 곁이 없어 「위」 라 하지 않고 ① 로 가리킨다.
+DYNAMIC_OFFICIAL_KEPT: Final = "① 공식 기준은 그대로입니다."
+# ②~④ 가 서는 조건 — 입력이 빠져 멈춘 자리 알림 전문의 끝.
+DYNAMIC_ABSENT_RULE: Final = (
     "설비 일정 기준 가용·신규 설비·비가동(②~④)은 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
-    "적힌 공정에만 섭니다. 위 공식 기준 표는 그대로입니다."
+    f"적힌 공정에만 섭니다. {DYNAMIC_OFFICIAL_KEPT}"
 )
-# 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 카드 제목(머리 배지와 같은 말).
+# 입력은 다 있고 셀 호기가 없는 공정의 빈 상태 평문 줄 풍선 — 그 공정에 빠진 조건만 적는다.
+NO_COUNTED_UNITS_HELP: Final = (
+    "설비 일정 기준 가용·신규 설비·비가동(②~④)은 사용기준 HBM·EDP 호기나 기존보유가 있는 공정에만 "
+    "섭니다."
+)
+# 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 알림 짧은 글(머리 배지와 같은 말).
 DYNAMIC_ERROR_TITLE: Final = "설비 일정 없음: 계산 오류"
 DYNAMIC_DB_ERROR_TITLE: Final = "설비 일정 없음: 설비 DB 를 읽지 못했습니다"
 
@@ -527,12 +537,13 @@ def reopen_entry_section(source: str | None) -> None:
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """단축 목표 표기 — 「확보기준(월별)」, 달마다 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
-    풍선(`TARGET_HELP`)이다."""
+    """단축 목표 표기 — 「확보기준(월별)」, 모든 달이 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
+    풍선(`TARGET_HELP`)이다. 화면에서 단축 목표를 적는 자리는 표 도구 줄 하나다(설계 규칙
+    UI-TXT-07)."""
     value = single_target(target, months)
     if value is not None:
         return f"{TARGET_NAME} {target_label(value)}"
-    return f"{TARGET_NAME} — 달마다 다름"
+    return TARGET_NAME
 
 
 def target_label(value: float) -> str:
@@ -808,7 +819,7 @@ def canvas_legend_html(
             for color in (tokens.STATUS_SECURE, tokens.STATUS_WARNING, tokens.STATUS_SHORTAGE)
         )
         + "확보율·과부족 칸 = 판정(확보 · 경고 · 부족)",
-        f'<span style="color:{tokens.TEXT_MUTED}">기준 확보율 줄은 참고(달마다 확보기준)</span>',
+        f'<span style="color:{tokens.TEXT_MUTED}">기준 확보율 줄은 참고(월별 확보기준)</span>',
     ]
     if dynamic is not None:
         qual = tokens.QUAL_CONFIRMATION_COLORS
@@ -866,8 +877,8 @@ def production_month_example(cutoff_days: int, months: Sequence[int]) -> str:
 
 
 def _render_dynamic_absent(view: ProcessDetailView) -> None:
-    """설비 일정(②~④) 대신 서는 카드 한 장 — 까닭과 가용설비 현황 링크."""
-    with st.container(border=True, key=DYNAMIC_ABSENT_KEY):
+    """설비 일정(②~④) 대신 서는 자리 한 칸 — 데이터 Error 마크 또는 빈 상태 평문 한 줄."""
+    with st.container(key=DYNAMIC_ABSENT_KEY):
         if view.readiness is None:
             render_data_error(
                 view.dynamic_error or "설비 DB 를 열지 못했습니다.",
@@ -877,18 +888,22 @@ def _render_dynamic_absent(view: ProcessDetailView) -> None:
         elif view.dynamic_error:
             # 판정은 통과했는데 계획·설비 일정 계산이 멈춘 갈래 — 조건은 이미 맞아 안내하지 않는다.
             render_data_error(
-                f"{view.dynamic_error} 위 공식 기준 표는 그대로입니다.",
+                f"{view.dynamic_error} {DYNAMIC_OFFICIAL_KEPT}",
                 code="PD-01",
                 text=DYNAMIC_ERROR_TITLE,
             )
+        elif view.readiness.status == NO_COUNTED_UNITS:
+            # 채울 입력이 없는 빈 상태다 — 평문 한 줄(설계 규칙 UI-TXT-04).
+            st.caption(view.readiness.detail, help=NO_COUNTED_UNITS_HELP)
         else:
-            st.markdown(f":material/event_busy: **{view.readiness.badge}**")
-            st.caption(view.readiness.detail, help=DYNAMIC_ABSENT_HELP)
-        render_page_link(
-            AVAILABLE_EQUIPMENT_PAGE,
-            label="가용설비 현황에서 설비·설정(Cut-off) 보기",
-            icon=":material/precision_manufacturing:",
-        )
+            whole_database = view.readiness.status == NO_SNAPSHOT
+            note = absent_note(
+                view.readiness.badge,
+                f"{view.readiness.detail} {DYNAMIC_ABSENT_RULE}",
+                screen="공정 Capa 상세",
+                process_label=None if whole_database else view.process_label,
+            )
+            render_data_error(note.message, code="PD-01", text=note.text, goto=EQUIPMENT_SCREEN)
 
 
 # ================================================================== 산출 근거 패널
@@ -1445,7 +1460,6 @@ def render_process_kpis(
     *,
     thresholds: SecurementThresholds,
     dynamic: DynamicView | None,
-    absent_reason: str,
     official: ProcessCapaKpis | None = None,
 ) -> None:
     """KPI 넷 — 최저 확보율, 확보기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
@@ -1520,25 +1534,12 @@ def render_process_kpis(
             "대책",
             prescription_text(plan),
             key="process_detail_kpi_prescription",
-            caption=(
-                "설비 일정 기준 · 목표 "
-                + short_target_text(dynamic.canvas.target, _plan_months(dynamic))
-                + prescription_note
-                if dynamic is not None
-                else absent_reason
-            ),
+            caption=f"설비 일정 기준{prescription_note}",
             help=(
                 "필요 단축 일정과 같은 계산을 이 공정 하나로 본 것입니다 — "
                 "단축은 Qual 을 당길 호기, 신규는 당겨도 모자라 더 들여야 하는 추가N 입니다."
             ),
         )
-
-
-def _plan_months(dynamic: DynamicView) -> list[int]:
-    frame = dynamic.canvas.process_months
-    if frame.empty or MONTH not in frame.columns:
-        return [0]
-    return [int(month) for month in frame[MONTH]]
 
 
 def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
@@ -1553,17 +1554,9 @@ def cause_summary(kpis: ProcessCapaKpis, plan: Prescription | None) -> str:
     return " · ".join(shown) if shown else "없음"
 
 
-def short_target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """대책 카드의 목표 — 달마다 같으면 「110%」, 다르면 「달마다 확보기준」."""
-    value = single_target(target, months)
-    if value is not None:
-        return target_label(value)
-    return "달마다 확보기준"
-
-
 def prescription_text(plan: Prescription | None) -> str:
     """대책 글 — 「단축 n대 · 신규 m대」, 할 것이 없으면 「목표 충족」, 설비 일정이 없으면
-    「일정 없음」(까닭은 회색 줄)."""
+    「일정 없음」(까닭은 머리 배지)."""
     if plan is None:
         return "일정 없음"
     if plan.shortened == 0 and plan.new == 0:

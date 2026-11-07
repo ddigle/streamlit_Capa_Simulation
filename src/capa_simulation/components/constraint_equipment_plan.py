@@ -1,5 +1,5 @@
-# Purpose: 제약 시뮬레이션 두 모드(제약 영향 · 개조 일정)가 함께 쓰는 설비 일정 확인(판정 · 까닭
-# 카드) · 계획 칸 받기와 조건 카드 · 출처 띠의 같은 글 조각을 한 곳에 둔다.
+# Purpose: 제약 시뮬레이션 두 모드(제약 영향 · 개조 일정)가 함께 쓰는 설비 일정 확인(판정 · 멈춘
+# 자리) · 계획 칸 받기와 조건 카드 · 출처 띠의 같은 글 조각을 한 곳에 둔다.
 
 """제약 시뮬레이션 — 두 모드가 함께 쓰는 「설비 일정 확인 → 계획」 블록.
 
@@ -13,7 +13,14 @@
 - **멈추는 갈래**(차례 그대로) — 설비 DB 오류 · 설비 일정이 서지 않음(`readiness.badge`) · (그
   모드의 앞 갈래 `before_plan` — 제약 영향의 제품 갈래) · 계획 계산 오류(「설비 일정을 계산하지
   못했습니다」 + 두 DB 경로) · 계획에 공정 없음(「Cut-off 미기재」 · 「계획에 공정 없음」). 갈래마다
-  머리 한 줄과 까닭(카드 또는 오류)을 그리고 None 을 돌려준다 — `st.stop` 은 부르는 쪽이 쥔다.
+  머리 한 줄과 멈춘 자리를 그리고 None 을 돌려준다 — `st.stop` 은 부르는 쪽이 쥔다.
+- **멈춘 자리**(공정 Capa 상세도 같은 꼴 — `absent_note`) — 가용설비 현황에서 채울 입력(저장본 ·
+  이름 · Cut-off)이 빠진 자리는 데이터 Error 마크다. 까닭은 알림 전문, 고치는 화면은 Alarm 줄의
+  「그 화면으로」 다(설계 규칙 UI-NTF-08 — 자리에 링크를 두지 않는다). 호기가 있어도 사용기준
+  HBM·EDP 가 없고 기존보유도 없는 공정(`NO_COUNTED_UNITS`)은 채울 입력이 없는 빈 상태라 회색 평문
+  한 줄이다(UI-TXT-04 — 마크로 세우면 그 공정을 고를 때마다 Alarm 에 오류가 쌓인다). 그 줄이 까닭을
+  적으므로 머리 배지는 「설비 일정 없음」 까지다(UI-TXT-07). 저장본 없음은 공정마다 다른 일이 아니라
+  설비 DB 전체의 일이라 알림 글에 공정을 넣지 않는다 — 공정을 넘겨도 같은 알림 하나다(UI-NTF-07).
 - **계획** — 공정 Capa 상세 ② 와 같은 칸을 **같은 키**로(`load_required_shortening_for_target`,
   목표는 키 맞춤용 HOME 확보기준 — 단축 열은 읽지 않는다). 계산 함수는 부를 때 `simulation_cache`
   모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 제약 영향 모드는 같은 `try` 안에서 두 가지를 더
@@ -24,7 +31,7 @@
   페이지가 고른 뒤에 한다(호기 고르기는 이 블록 뒤에 서므로).
 - **같은 글 조각** — 두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리
   (`SESSION_ONLY_CAPTION`)와 출처 띠 조각: 소요 시나리오 이름표(`source_scenario_text`) · 설비 기준
-  괄호(`source_equipment_text`) · 환산 대수 단서(`CONVERTED_UNITS_NOTE`) · UPEH 가정을 켠 세션의
+  괄호(`source_equipment_text`) · 띠 끝 풍선(`SOURCE_BAND_HELP` — 환산 대수) · UPEH 가정을 켠 세션의
   단서(`upeh_assumption_note`). 띠의 나머지(소요 설명 · 입력 비가동 · 보유 · 신규)는 모드마다
   다르다.
 
@@ -35,7 +42,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date
-from typing import Final, NamedTuple, Protocol
+from typing import Final, NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -44,16 +51,21 @@ import streamlit as st
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.constraint_simulation_state import CONSTRAINT_ABSENT_KEY
+from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     ProcessPageInputs,
     bootstrap_error_message,
 )
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
 from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.process_equipment_timeline import (
+    NO_COUNTED_UNITS,
+    NO_SNAPSHOT,
     DynamicReadiness,
     HeldUnitChoice,
     ProcessEquipmentTimeline,
@@ -71,14 +83,16 @@ from capa_simulation.upeh_assumption_state import (
 )
 
 __all__ = [
-    "CONVERTED_UNITS_NOTE",
     "CUTOFF_SOURCE_HELP",
+    "EQUIPMENT_SCREEN",
     "SESSION_ONLY_CAPTION",
     "SESSION_ONLY_HELP",
+    "SOURCE_BAND_HELP",
     "UPEH_NOT_APPLIED_NOTE",
     "EquipmentPlan",
+    "AbsentNote",
     "EquipmentPlanSource",
-    "ReasonCard",
+    "absent_note",
     "equipment_readiness",
     "first_ready_process",
     "render_equipment_plan",
@@ -102,21 +116,19 @@ CUTOFF_SOURCE_HELP: Final = (
 """조건 카드 Cut-off 값 줄의 풍선 — 값이 어디서 오는지(고치는 곳)는 자리에 적지
 않는다(UI-TXT-03)."""
 
-CONVERTED_UNITS_NOTE: Final = (
-    " · 대수는 환산 대수 — HOME·Static 확보율(기준정보 가용)과 다를 수 있음"
+SOURCE_BAND_HELP: Final = (
+    "대수는 환산 대수입니다 — HOME·Static 확보율(기준정보 가용)과 다를 수 있습니다."
 )
-"""출처 띠의 대수 단서 — 설비 기준 괄호 바로 뒤에 잇는다(앞 「 · 」 까지 든다)."""
+"""출처 띠 끝 풍선 — 띠에는 값만 두고 읽는 법은 늘 두지 않는다(설계 규칙 UI-TXT-01)."""
+
+_NO_SCHEDULE_BADGE: Final = "설비 일정 없음"
+"""빈 상태의 머리 배지 — 까닭은 바로 아래 평문 한 줄이 적는다(설계 규칙 UI-TXT-07)."""
 
 UPEH_NOT_APPLIED_NOTE: Final = " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
 """UPEH 가정을 켠 세션의 출처 띠 단서(`upeh_assumption_note`, 앞 「 · 」 까지 든다)."""
 
-
-class ReasonCard(Protocol):
-    """페이지의 까닭 카드 그리기(제목 · 풀이 · 가용설비 현황 링크)."""
-
-    def __call__(
-        self, title: str, detail: str, *, equipment_link: bool, help: str | None = None
-    ) -> None: ...
+EQUIPMENT_SCREEN: Final = (tab_label(AVAILABLE_EQUIPMENT_STATUS), AVAILABLE_EQUIPMENT_STATUS.href)
+"""채울 입력이 있는 화면(이름, 주소) — 멈춘 자리 알림 줄의 「그 화면으로」 가 연다."""
 
 
 class EquipmentPlanSource(NamedTuple):
@@ -167,8 +179,8 @@ def equipment_readiness(
 
 def first_ready_process(source: EquipmentPlanSource, options: Sequence[str]) -> str | None:
     """공정 칸이 비었을 때(사이드바로 처음 열기)의 기본 공정 — 설비 일정이 서는 첫 공정(선택지
-    차례). 처음 화면이 까닭 카드가 아니라 계산이게(2026-10-25 E2E). 서는 공정이 없거나 설비 DB 를
-    못 읽으면 첫 공정이다. 판정은 `equipment_readiness`(까닭 카드)와 같은 `dynamic_readiness` 이고
+    차례). 처음 화면이 멈춘 자리가 아니라 계산이게(2026-10-25 E2E). 서는 공정이 없거나 설비 DB 를
+    못 읽으면 첫 공정이다. 판정은 `equipment_readiness`(멈춘 자리)와 같은 `dynamic_readiness` 이고
     설비 프레임은 한 번만 거른다 — 캐시된 스냅샷을 거를 뿐이라 DB 를 열지 않는다(칸이 빈 회차에만
     부른다)."""
     if not options:
@@ -193,40 +205,49 @@ def render_equipment_plan(
     process_label: str,
     subject: str,
     render_header: Callable[[str, str], None],
-    render_reason_card: ReasonCard,
     before_plan: Callable[[], bool] | None = None,
     with_timeline: bool = False,
     with_held_units: bool = False,
 ) -> EquipmentPlan | None:
-    """설비 일정 확인 → (`before_plan`) → 계획. 멈추는 갈래면 머리 한 줄과 까닭을 그리고 None.
+    """설비 일정 확인 → (`before_plan`) → 계획. 멈추는 갈래면 머리 한 줄과 멈춘 자리를 그리고 None.
 
-    `subject` 는 서지 않는 까닭 카드 풀이의 주어(「제약 시뮬레이션」 · 「개조 일정」)다.
+    `subject` 는 멈춘 자리 풀이의 주어이자 알림 전문 첫머리(「제약 시뮬레이션」 · 「개조 일정」)다.
     `before_plan` 은 판정을 지난 뒤 계획 앞에 볼 그 모드의 갈래다 — 까닭을 그리고 거짓을 돌려주면
     멈춘다(계획을 받지 않는다).
     """
     bold = f"**{literal_markdown(process_label)}**"
     if readiness is None:
         render_header(process, f"{bold} :blue-badge[설비 일정 없음: 설비 DB 오류]")
-        render_reason_card(
-            "설비 일정 없음: 설비 DB 를 읽지 못했습니다",
-            source.equipment_error or "설비 DB 를 열지 못했습니다.",
-            equipment_link=False,
-        )
+        with st.container(key=CONSTRAINT_ABSENT_KEY):
+            render_data_error(
+                source.equipment_error or "설비 DB 를 열지 못했습니다.",
+                code="CS-01",
+                text="설비 일정 없음: 설비 DB 를 읽지 못했습니다",
+            )
         return None
     snapshot = source.snapshot
     if not readiness.ready or readiness.cutoff_days is None or snapshot is None:
-        render_header(process, f"{bold} :blue-badge[{readiness.badge}]")
-        # 자리에는 까닭(값)만, 어느 공정에 서는지의 규칙은 풍선이다(설계 규칙 UI-TXT-01).
-        render_reason_card(
-            readiness.badge,
-            readiness.detail,
-            equipment_link=True,
-            help=(
-                f"{subject}{topic_particle(subject)} 설비 일정 기준 가용(공정 Capa 상세 ② 와 "
-                "같은 값)으로 계산하므로 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 적힌 "
-                "공정에만 섭니다."
-            ),
+        empty = readiness.status == NO_COUNTED_UNITS
+        badge = _NO_SCHEDULE_BADGE if empty else readiness.badge
+        render_header(process, f"{bold} :blue-badge[{badge}]")
+        rule = (
+            f"{subject}{topic_particle(subject)} 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 "
+            "값)으로 계산하므로"
         )
+        with st.container(key=CONSTRAINT_ABSENT_KEY):
+            if empty:
+                st.caption(
+                    readiness.detail,
+                    help=f"{rule} 사용기준 HBM·EDP 호기나 기존보유가 있는 공정에만 섭니다.",
+                )
+            else:
+                _render_absent(
+                    readiness.badge,
+                    f"{readiness.detail} {rule} 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
+                    "적힌 공정에만 섭니다.",
+                    screen=subject,
+                    process_label=None if readiness.status == NO_SNAPSHOT else process_label,
+                )
         return None
     if before_plan is not None and not before_plan():
         return None
@@ -251,24 +272,24 @@ def render_equipment_plan(
     if process not in plan.processes:
         # 판정을 지나도 계획은 「가용 공정 ∩ 소요 공정」 만 맞댄다 — KeyError 로 떨어뜨리지 않는다.
         missing_cutoff = process in plan.missing_cutoff
-        render_header(process, f"{bold} :blue-badge[설비 일정 없음]")
-        render_reason_card(
+        badge = (
             "설비 일정 없음: Cut-off 미기재"
             if missing_cutoff
-            else "설비 일정 없음: 계획에 공정 없음",
-            (
-                "가용설비 현황의 공정별 Cut-off 에 이 공정이 없습니다."
-                if missing_cutoff
-                else "설비 일정 기준 가용에 이 공정이 없습니다."
-            ),
-            equipment_link=True,
-            help=(
-                None
-                if missing_cutoff
-                else "설비 마스터 공정소분류·기존보유 공정 이름이 시나리오 공정과 완전히 같아야 "
-                "맞댑니다."
-            ),
+            else "설비 일정 없음: 계획에 공정 없음"
         )
+        render_header(process, f"{bold} :blue-badge[{badge}]")
+        with st.container(key=CONSTRAINT_ABSENT_KEY):
+            _render_absent(
+                badge,
+                (
+                    "가용설비 현황의 공정별 Cut-off 에 이 공정이 없습니다."
+                    if missing_cutoff
+                    else "설비 일정 기준 가용에 이 공정이 없습니다. 설비 마스터 "
+                    "공정소분류·기존보유 공정 이름이 시나리오 공정과 완전히 같아야 맞댑니다."
+                ),
+                screen=subject,
+                process_label=process_label,
+            )
         return None
     return EquipmentPlan(
         plan=plan,
@@ -277,6 +298,34 @@ def render_equipment_plan(
         timeline=timeline,
         held_choices=held_choices,
     )
+
+
+class AbsentNote(NamedTuple):
+    """채울 입력이 빠져 멈춘 자리의 알림 글 — `message` 전문, `text` 알림창 짧은 글."""
+
+    message: str
+    text: str
+
+
+def absent_note(badge: str, reason: str, *, screen: str, process_label: str | None) -> AbsentNote:
+    """멈춘 자리 알림 글 — 줄의 화면 칸은 고칠 화면이라 전문 첫머리가 어느 화면 · 공정의 일인지
+    적는다(설계 규칙 UI-NTF-02). 마크는 `EQUIPMENT_SCREEN` 을 `goto` 로 받아 그 화면의 코드로
+    그린다.
+
+    `process_label` 이 None 이면 공정의 일이 아니라 설비 DB 전체의 일이다(저장본 없음). 글에 공정을
+    넣지 않아야 공정을 넘겨도 알림 id 와 묶음 열쇠(코드 + 짧은 글)가 같다(UI-NTF-07)."""
+    if process_label is None:
+        return AbsentNote(f"{screen} — {reason}", badge)
+    return AbsentNote(
+        f"{screen} · {literal_markdown(process_label)} — {reason}",
+        f"{process_label} — {badge}",
+    )
+
+
+def _render_absent(badge: str, reason: str, *, screen: str, process_label: str | None) -> None:
+    """두 모드의 멈춘 자리 — 데이터 Error 마크 한 칸(`CS-01`)."""
+    note = absent_note(badge, reason, screen=screen, process_label=process_label)
+    render_data_error(note.message, code="CS-01", text=note.text, goto=EQUIPMENT_SCREEN)
 
 
 def _load_plan(

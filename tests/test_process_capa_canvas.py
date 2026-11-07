@@ -529,8 +529,6 @@ def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> N
     details = [
         SUMMARY_TITLE_DETAIL,
         "참고 · 설비 DB · 환산대수 · 생산월(Cut-off 10일) · 점선은 오늘(11.10)",
-        "단축 목표 110% · 호기마다 한 줄",
-        "진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다",
     ]
     for detail in details:
         lines = title_detail_lines(detail)
@@ -547,6 +545,8 @@ def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> N
         # 펼친 구획은 제목 끝에 ▾ 다(소요대수 줄과 같은 꼴).
         assert f"<b>{title} ▾</b>" in label_texts
         assert title not in month_texts
+    # 읽는 법은 범례 풍선이 말한다 — 구획 머리에 늘 두지 않는다(설계 규칙 UI-TXT-01).
+    assert not any("화살표" in text or "다음 날부터" in text for text in label_texts)
     # 세부 글 줄은 라벨 칸 폭(좌우 여백 뺀 240px, 11px 글자) 안이다.
     budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 20) / 11
     assert all(
@@ -560,7 +560,7 @@ def test_a_title_row_grows_with_its_detail_lines() -> None:
     assert title_row_height("") == TITLE_HEIGHT_PX
     one = title_row_height(SUMMARY_TITLE_DETAIL)
     assert one == SUMMARY_TITLE_HEIGHT_PX > TITLE_HEIGHT_PX
-    assert title_row_height("진한 화살표만 가용을 깎았습니다 · 끝은 다음 날부터 셉니다") > one
+    assert title_row_height(f"{SUMMARY_TITLE_DETAIL} · {SUMMARY_TITLE_DETAIL}") > one
     # 마디 하나가 칸보다 길면 그 줄만 말줄임한다.
     (line,) = title_detail_lines("가" * 60)
     assert line.endswith("…") and len(line) < 60
@@ -1499,12 +1499,14 @@ def test_the_dark_theme_paints_with_dark_tokens() -> None:
     assert tokens._PALETTES["light"]["SHORTAGE_MONTH_BAND"] not in json.dumps(_json(canvas.months))
 
 
-def test_a_monthly_target_names_itself_once_in_the_titles() -> None:
+def test_the_shortening_target_is_not_repeated_in_the_section_titles() -> None:
+    """단축 목표는 표 도구 줄 한 자리에 선다 — 캔버스 구획 머리에 거듭하지 않는다(설계 규칙
+    UI-TXT-07). 줄 이름 「목표 과부족」 은 값 줄의 이름이라 남는다."""
     target = MonthlyTarget(1.095, ((202703, 1.2),))
     canvas = _canvas(dynamic=_dynamic(target=target))
     texts = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
 
-    assert "단축 목표 = 확보기준(달마다)" in texts
+    assert "단축 목표" not in texts
     assert "목표 과부족" in {item["text"] for item in _annotations(canvas.labels)}
 
 

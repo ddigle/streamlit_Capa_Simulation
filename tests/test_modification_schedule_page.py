@@ -27,7 +27,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import data_error_texts
+from alert_marks import data_error_marks, data_error_texts, events
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import (
     DYNAMIC_PROCESS,
@@ -40,6 +40,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
 )
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.modification_schedule_figures import (
@@ -53,6 +54,7 @@ from capa_simulation.components.modification_schedule_view import (
     DEADLINE_HELP,
     DOUBLE_COUNT_NOTE,
     FELL_BACK_LABEL,
+    LIST_HELP,
     UNITS_HELP,
     deadline_options,
 )
@@ -274,6 +276,11 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
     assert "공정 소요 · 가용 = 설비 일정 기준" in captions
+    # 환산 대수 단서 · 목록의 읽는 법은 풍선이다(설계 규칙 UI-TXT-01).
+    (band,) = [item for item in app.caption if "가용 = 설비 일정 기준" in str(item.value)]
+    assert band.proto.help == SOURCE_BAND_HELP and "HOME·Static" not in captions
+    (listing,) = [item for item in app.markdown if str(item.value) == "**개조 일정**"]
+    assert listing.proto.help == LIST_HELP and "같은 날 시작하는 묶음" not in captions
     (cutoff,) = [item for item in app.caption if str(item.value).startswith("Cut-off ")]
     assert str(cutoff.value) == "Cut-off 7일" and cutoff.proto.help == CUTOFF_SOURCE_HELP
     # 그래프 막대 좌표의 읽는 법은 제목 풍선이다.
@@ -566,11 +573,12 @@ def test_a_process_without_equipment_stops_with_its_reason(databases: tuple[Path
     app = _schedule(databases, OTHER_PROCESS)
 
     assert "설비 일정 없음: 설비 없음" in " ".join(_markdown(app))
-    # 까닭 카드 풀이의 주어는 이 모드 이름이다(제약 모드와 같은 함수 — `render_equipment_plan`).
-    # 어느 공정에 서는지의 규칙은 까닭 줄 풍선이다 — 카드에 늘 서는 설명 문장이 아니다(설계 규칙
-    # UI-TXT-01).
-    helps = " ".join(str(item.proto.help) for item in app.caption)
-    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in helps
+    # 자리에는 마크만 — 풀이의 주어는 이 모드 이름이고 까닭 · 규칙은 알림 전문이다(제약 모드와 같은
+    # 함수 — `render_equipment_plan`, 설계 규칙 UI-NTF-08).
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "CS-01")
+    assert note["full"].startswith("개조 일정 · ")
+    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in note["full"]
     assert "공정 Capa 상세 ② 와 같은 값" not in _captions(app)
     assert not app.metric
     assert app.number_input(key=SCHEDULE_UNITS_KEY).value == 4
@@ -640,7 +648,7 @@ def _called_names(path: Path) -> set[str]:
 
 
 def test_both_modes_check_equipment_and_load_the_plan_through_one_function() -> None:
-    """설비 일정 판정 · 까닭 카드 · 계획 칸 받기는 두 모드가 함수 하나(`render_equipment_plan`)로
+    """설비 일정 판정 · 멈춘 자리 · 계획 칸 받기는 두 모드가 함수 하나(`render_equipment_plan`)로
     한다 — 페이지(제약 영향)와 개조 일정 컴포넌트가 같은 꼴의 블록을 따로 들면 한쪽만 고쳐져 두
     모드의 멈춤 갈래 · 계획 키가 어긋난다."""
     block = {

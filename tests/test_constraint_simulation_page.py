@@ -1,4 +1,4 @@
-# Purpose: 제약 시뮬레이션 화면의 진입·주소 인자·조건 카드·까닭 카드·캐시 공유·쓰기 없음·달 고르기를
+# Purpose: 제약 시뮬레이션 화면의 진입·주소 인자·조건 카드·멈춘 자리·캐시 공유·쓰기 없음·달 고르기를
 # 본다.
 
 """제약 시뮬레이션 화면(AppTest).
@@ -26,7 +26,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, data_error_texts, events, place_errors, states
+from alert_marks import active_state, data_error_marks, data_error_texts, events, states
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
@@ -39,8 +39,10 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
+    EQUIPMENT_SCREEN,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
 )
 from capa_simulation.components.constraint_simulation_view import MODIFY_OFF_TEXT
 from capa_simulation.components.preset_number_field import CUSTOM_OPTION
@@ -68,7 +70,11 @@ from capa_simulation.constraint_simulation_state import (
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.modification_schedule_state import CONSTRAINT_MODE_KEY
-from capa_simulation.navigation import CONSTRAINT_SIMULATION, PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    CONSTRAINT_SIMULATION,
+    PROCESS_CAPA_DETAIL,
+)
 from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -171,7 +177,7 @@ def _equipment_database(path: Path, process: str = DYNAMIC_PROCESS) -> Path:
 
 @pytest.fixture(scope="module")
 def databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """설비 DB 가 빈 하네스 — 까닭 카드 갈래."""
+    """설비 DB 가 빈 하네스 — 데이터 Error 마크 갈래."""
     root = tmp_path_factory.mktemp("constraint_simulation_empty")
     return root / "scenario.duckdb", root / "equipment.duckdb"
 
@@ -271,13 +277,26 @@ def test_a_fractional_cutoff_is_named_as_the_floored_days_it_counts(tmp_path: Pa
     assert line.proto.help == CUTOFF_SOURCE_HELP
 
 
-def test_an_empty_equipment_database_stands_the_card_and_one_reason_card(
+def test_an_empty_equipment_database_stands_the_card_and_one_mark(
     databases: tuple[Path, Path],
 ) -> None:
     app = _ok(_app(databases).run())
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value is not None
+    process = app.selectbox(key=CONSTRAINT_PROCESS_KEY).value
+    assert process is not None
     markdown = " ".join(_markdown(app))
     assert "설비 일정 없음: 저장본 없음" in markdown
+    # 채울 입력이 가용설비 현황에 있다 — 자리에는 마크만, 까닭은 알림이고 길은 그 줄이다(설계 규칙
+    # UI-NTF-08). 링크 · 회색 까닭 글이 자리에 남지 않는다.
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "CS-01")
+    assert note["page"] == EQUIPMENT_SCREEN[0] and note["href"] == EQUIPMENT_SCREEN[1]
+    # 저장본 없음은 설비 DB 전체의 일이라 글에 공정이 없다 — 공정을 넘겨도 같은 알림이다(UI-NTF-07).
+    assert note["full"].startswith("제약 시뮬레이션 — ") and process not in note["full"]
+    assert "설비 마스터가 없습니다" in note["full"]
+    assert "설비 마스터가 없습니다" not in _captions(app)
+    assert AVAILABLE_EQUIPMENT_STATUS.path not in {
+        link["page"] for link in app.session_state["captured_page_links"]
+    }
     assert not app.metric
     assert not _has_chart(app, CONSTRAINT_CHART_KEY)
 
@@ -309,10 +328,24 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
     assert "가용 = 설비 일정 기준" in _captions(app)
+    # 환산 대수 단서는 출처 띠 끝 풍선이다(설계 규칙 UI-TXT-01).
+    (band,) = [item for item in app.caption if "가용 = 설비 일정 기준" in str(item.value)]
+    assert band.proto.help == SOURCE_BAND_HELP and "환산 대수" not in str(band.value)
     # 머리 「← 공정 Capa 상세」 는 그 공정으로 돌아간다(테마 인자 없음).
     links = app.session_state["captured_page_links"]
     back = [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
     assert back and back[0]["query_params"] == {"process": DYNAMIC_PROCESS}
+
+
+def test_the_header_keeps_only_the_identity_sentence(dynamic_databases: tuple[Path, Path]) -> None:
+    """사용법 · 저장 규칙은 머리에 늘 두지 않는다 — 모드 전환 풍선과 「이 세션만」 표지 풍선이
+    말한다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    app = _opened(dynamic_databases)
+    captions = _captions(app)
+
+    assert "기존 제품 확보율이 언제부터 얼마나 떨어지는가." in captions
+    assert "언제 할지 찾습니다" not in captions and "그때그때 보기" not in captions
+    assert "N대 × D일 개조" in str(app.get("button_group")[0].proto.help)
 
 
 def test_the_process_param_is_taken_once_and_the_theme_stays(
@@ -351,7 +384,7 @@ def test_the_sidebar_first_open_picks_the_first_process_with_an_equipment_schedu
     tmp_path: Path,
 ) -> None:
     """사이드바로 처음 열면(공정 칸이 빔) 첫 공정이 아니라 설비 일정이 서는 첫 공정이다 — 첫 화면이
-    까닭 카드가 아니라 계산이게(2026-10-25 E2E #106). 설비는 첫 공정이 아닌 공정 하나에만 둔다.
+    멈춘 자리가 아니라 계산이게(2026-10-25 E2E #106). 설비는 첫 공정이 아닌 공정 하나에만 둔다.
     고른 공정은 그 뒤로 그대로다."""
     databases = (
         tmp_path / "scenario.duckdb",
@@ -449,6 +482,7 @@ def test_a_process_without_equipment_stops_with_its_reason(
 ) -> None:
     app = _opened(dynamic_databases, OTHER_PROCESS)
     assert "설비 일정 없음: 설비 없음" in " ".join(_markdown(app))
+    assert data_error_marks(app) == 1
     assert not app.metric
 
 
@@ -1140,7 +1174,7 @@ def test_a_sum_mismatch_is_a_constraint_error_not_an_equipment_error(
     assert "설비 일정을 계산하지 못했습니다" not in errors
 
 
-def test_a_ready_process_missing_from_the_plan_stops_with_a_reason_card(
+def test_a_ready_process_missing_from_the_plan_stops_with_a_mark(
     dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original = simulation_cache.load_required_shortening_for_target
@@ -1159,7 +1193,10 @@ def test_a_ready_process_missing_from_the_plan_stops_with_a_reason_card(
     monkeypatch.setattr(simulation_cache, "load_required_shortening_for_target", without_process)
     app = _opened(dynamic_databases)
     assert "설비 일정 없음: 계획에 공정 없음" in " ".join(_markdown(app))
-    assert not place_errors(app)
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "CS-01")
+    assert note["page"] == EQUIPMENT_SCREEN[0]
+    assert "이름이 시나리오 공정과 완전히 같아야 맞댑니다" in note["full"]
     assert not app.metric
 
 

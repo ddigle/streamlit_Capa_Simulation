@@ -31,7 +31,7 @@
 받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로), 어댑터·서비스의
 `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」, DB 경로 없음).
 `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError` 가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로
-둔갑한다. 설비 일정 확인(판정 · 까닭 카드)과 계획 받기는 「개조 일정」 모드와 같은 함수
+둔갑한다. 설비 일정 확인(판정 · 멈춘 자리)과 계획 받기는 「개조 일정」 모드와 같은 함수
 (`components/constraint_equipment_plan.render_equipment_plan`)이고, 제품 갈래는 그 사이
 (`before_plan`)에 선다.
 
@@ -57,10 +57,10 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.components.constraint_equipment_plan import (
-    CONVERTED_UNITS_NOTE,
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
     EquipmentPlanSource,
     equipment_readiness,
     first_ready_process,
@@ -106,7 +106,6 @@ from capa_simulation.components.state_alerts import (
     missing_handover_text,
 )
 from capa_simulation.constraint_simulation_state import (
-    CONSTRAINT_ABSENT_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
@@ -151,7 +150,7 @@ from capa_simulation.equipment_scenario_activation import (
     resolve_equipment_session,
 )
 from capa_simulation.modification_schedule_state import SCHEDULE_MODE
-from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -215,10 +214,8 @@ NO_PRODUCT_MARK = "제품 · 읽지 못함"
 PAGE_TITLE = "제약 시뮬레이션"
 PAGE_DESCRIPTION = (
     "공정 하나에 미래 제약(제약 제품 전용 설비)이 생기면 — 제약 제품에 먼저 떼어 준 뒤 기존 제품 "
-    "확보율이 언제부터 얼마나 떨어지는가. 「개조 일정」 은 N대 × D일 개조를 기준 확보율을 지키며 "
-    "언제 할지 찾습니다. 저장하지 않는 그때그때 보기입니다."
+    "확보율이 언제부터 얼마나 떨어지는가."
 )
-AVAILABLE_EQUIPMENT_PAGE = AVAILABLE_EQUIPMENT_STATUS.path
 HELD_LABEL = "보유 제약 호기"
 HELD_HELP = (
     "이미 제약 제품을 돌릴 수 있게 개조·Qual 된 호기를 이 공정의 세션 설비 시나리오 호기에서 "
@@ -230,7 +227,11 @@ HELD_HELP = (
     "않는 동안과 기간 밖에는 기존 제품에 씁니다. 고른 호기는 신규 후보에서 빠집니다(두 번 "
     "세지 않습니다). 설비 시나리오나 조회기간을 바꿔 목록에서 사라진 호기는 빼고 알립니다."
 )
-HELD_IDLE_PLACEHOLDER = "설비 일정이 서는 공정에서 고릅니다"
+# 계획 앞에서 멈춘 회차의 잠긴 칸 — 칸에는 표지, 까닭은 칸 풍선이다(설계 규칙 UI-ACC-02).
+HELD_IDLE_PLACEHOLDER = "고를 호기 없음"
+HELD_IDLE_HELP = "설비 일정이 서는 공정에서 고릅니다."
+# 출처 띠 「신규 = 기여 시작 …」 의 뜻 — 띠에는 값(날 · 대수)만 둔다(설계 규칙 UI-TXT-01).
+NEW_START_HELP = "신규의 기여 시작은 공정 Capa 상세 ③ 의 Qual 다음 날이고 묶음은 첫 모듈입니다."
 OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
 OWNED_HELP = (
     "위 「보유 제약 호기」 목록에 없는 보유(기존보유처럼 설비 마스터 호기가 아닌 대수)를 "
@@ -247,6 +248,16 @@ NEW_UNITS_HELP = (
     "오지 않은 모듈은 그 증가에 붙지 않습니다. 남은 보유 제약 설비만으로 제약 기간 끝까지 남은 "
     "증가가 덮이면 그 증가부터 신규는 붙이지 않습니다(기존 제품 몫)."
 )
+NEW_SINCE_HELP = "기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다."
+
+
+def new_since_help(*, modify: bool, new_units_on: bool) -> str:
+    """「신규 기준일」 풍선 — 잠긴 동안은 왜 잠겼는지를 먼저 말한다(설계 규칙 UI-INP-07)."""
+    if not modify:
+        return f"「개조 필요」 를 켜면 씁니다. {NEW_SINCE_HELP}"
+    if not new_units_on:
+        return f"「신규 설비는 개조 없이」 를 켜면 씁니다. {NEW_SINCE_HELP}"
+    return NEW_SINCE_HELP
 
 
 # 주소 `?process=` 는 **무엇보다 먼저** 꺼내고 그 키 하나만 지운다 — 부트스트랩이 멈춘 회차에도
@@ -401,21 +412,6 @@ with notices:
     report_locked_arrival(opened_process)
 
 
-def render_reason_card(
-    title: str, detail: str, *, equipment_link: bool, help: str | None = None
-) -> None:
-    """설비 일정이 서지 않는 까닭 카드 한 장(+ 다음 화면 링크). `help` 는 까닭 줄의 풍선(규칙)."""
-    with st.container(border=True, key=CONSTRAINT_ABSENT_KEY):
-        st.markdown(f":material/event_busy: **{title}**")
-        st.caption(detail, help=help)
-        if equipment_link:
-            render_page_link(
-                AVAILABLE_EQUIPMENT_PAGE,
-                label="가용설비 현황에서 설비·Cut-off 보기",
-                icon=":material/precision_manufacturing:",
-            )
-
-
 def render_header(process: str, line: str) -> None:
     """머리 한 줄(공정·조건)과 오른쪽 끝 「← 공정 Capa 상세」."""
     with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -445,7 +441,6 @@ if schedule_mode:
             card_name=CARD_NAME,
             card_icon=CARD_ICON,
             render_header=render_header,
-            render_reason_card=render_reason_card,
         )
     )
     st.stop()
@@ -676,7 +671,7 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         key=CONSTRAINT_NEW_SINCE_KEY,
         default=today,
         disabled=not (modify and new_units_on),
-        help="기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다.",
+        help=new_since_help(modify=modify, new_units_on=new_units_on),
     )
     # 개조 끔이면 두 옵션은 걸리지 않는다 — 결과·머리에 걸리지 않은 조건이 남지 않게 넘기지 않는다.
     owned_value = int(owned_units) if modify and isinstance(owned_units, int) else 0
@@ -695,7 +690,7 @@ def render_idle_held_picker() -> None:
             key=CONSTRAINT_HELD_IDLE_KEY,
             disabled=True,
             placeholder=HELD_IDLE_PLACEHOLDER,
-            help=HELD_HELP,
+            help=f"{HELD_IDLE_HELP} {HELD_HELP}",
         )
 
 
@@ -810,7 +805,6 @@ equipment_plan = render_equipment_plan(
     process_label=process_label,
     subject="제약 시뮬레이션",
     render_header=render_header,
-    render_reason_card=render_reason_card,
     before_plan=product_ready,
     with_timeline=new_unit_since is not None,
     with_held_units=True,
@@ -956,8 +950,8 @@ band = (
     f"{literal_markdown(process_label)} 소요를 제품정보로 나눔"
     f"({literal_markdown(product)} / 그 밖) · 가용 = 설비 일정 기준"
     + source_equipment_text(equipment_text)
-    + CONVERTED_UNITS_NOTE
 )
+band_help = SOURCE_BAND_HELP
 # 계획이 실제로 건 칸으로 적는다 — 이 공정에 0 아닌 칸이 있을 때만.
 manual_note = manual_effect_band(plan.manual_downtime, (process,))
 if manual_note:
@@ -971,9 +965,9 @@ if conditions.held_units:
 if new_shares is not None:
     band += (
         f" · 신규 = 기여 시작 {new_shares.since.isoformat()} 이후 호기 {len(new_shares.units)}대"
-        "(공정 Capa 상세 ③ 의 Qual 다음 날 — 묶음은 첫 모듈)"
     )
-st.caption(band)
+    band_help += f" {NEW_START_HELP}"
+st.caption(band, help=band_help, width="content")
 if result.kpis.constrained_months == 0:
     st.caption(
         f"제약 기간({period_text})에 {literal_markdown(product)} 소요가 없어 떼어 줄 대수가 "

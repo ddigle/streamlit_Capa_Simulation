@@ -235,11 +235,11 @@ PAGE_DESCRIPTION = (
 )
 # HOME 표시 확보율이 원 확보율과 같다고 보는 차이.
 HOME_RATE_TOLERANCE = 1e-9
-# 조건 카드 기간 줄의 풍선 — 기본 공정 · 달을 고르는 규칙(자리에 늘 두지 않는다, 설계 규칙
-# UI-TXT-01).
-PERIOD_HELP = (
-    "이 화면의 기간(RQ_REQB 유효 기간 ∩ 조회기간)입니다. 기본 공정은 이 기간 최저 확보율 "
-    "공정이고, 그 공정의 첫 확보기준 미달 달을 엽니다."
+# 「공정」 칸 풍선 — 기본 공정 · 달을 고르는 규칙(자리에 늘 두지 않는다, 설계 규칙 UI-TXT-01). 이
+# 화면 기간은 사이드바 「적용」 표지가 보인다.
+PROCESS_HELP = (
+    "기본 공정은 이 화면 기간(RQ_REQB 유효 기간 ∩ 조회기간)의 최저 확보율 공정이고, 그 공정의 첫 "
+    "확보기준 미달 달을 엽니다."
 )
 # HOME 칸 방문(공식 설비 시나리오로 고정)일 때 「필요 단축 일정에서 …」 단추의 풍선 — 그 화면은 이
 # 고정을 따르지 않는다.
@@ -444,6 +444,7 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         # 표시만 바꾼다. 선택값은 원본이다 — 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다
         # (`unique_format_func`). 기본값은 위에서 세션에 적었으므로 `index=` 를 주지 않는다.
         format_func=process_labels.unique_format_func(process_options),
+        help=PROCESS_HELP,
     )
     if selected_process is not None:
         try:
@@ -463,10 +464,6 @@ with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
             "본문 「제품별 소요대수」를 펼친 행에만 걸립니다 — 고르지 않은 제품의 소요는 「그 밖」 "
             "한 행에 합쳐 소요대수 합은 그대로입니다."
         ),
-    )
-    st.caption(
-        f"기간 {month_label(effective_start)}–{month_label(effective_end)}",
-        help=PERIOD_HELP,
     )
     # 「이 세션만」 묶음 — 필요 단축 일정과 같은 세션 칸을 쓴다. 역산 줄은 계획을 세운 뒤 채운다.
     assumption: UpehAssumption | None = render_upeh_assumption_controls(
@@ -984,11 +981,6 @@ render_process_kpis(
     kpis,
     thresholds=thresholds,
     dynamic=dynamic,
-    absent_reason=(
-        "설비 DB 오류"
-        if readiness is None
-        else (readiness.reason if not readiness.ready else "설비 일정 계산 오류")
-    ),
     official=official_kpis if upeh_token else None,
 )
 render_cause_links(kpis, dynamic=dynamic, process=process)

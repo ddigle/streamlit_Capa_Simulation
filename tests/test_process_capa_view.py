@@ -15,6 +15,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
+from alert_marks import data_error_marks, events
 from streamlit.testing.v1 import AppTest
 from test_process_capa_canvas import (
     MONTHS,
@@ -26,6 +27,7 @@ from test_process_capa_canvas import (
 )
 from test_required_shortening import PROCESS
 
+from capa_simulation.components.constraint_equipment_plan import EQUIPMENT_SCREEN
 from capa_simulation.components.process_capa_canvas import (
     SECTION_DOWNTIME,
     SECTION_IDS,
@@ -35,7 +37,10 @@ from capa_simulation.components.process_capa_canvas import (
 )
 from capa_simulation.components.process_capa_view import (
     CANVAS_MEMO_LIMIT,
+    DYNAMIC_ABSENT_RULE,
+    DYNAMIC_OFFICIAL_KEPT,
     ENTRY_SECTIONS,
+    NO_COUNTED_UNITS_HELP,
     TARGET_HELP,
     DynamicView,
     NextScreens,
@@ -57,7 +62,6 @@ from capa_simulation.components.process_capa_view import (
     prescription_text,
     production_month_example,
     schedule_short_month,
-    short_target_text,
     shortening_card,
     target_text,
 )
@@ -69,7 +73,14 @@ from capa_simulation.services.process_capa_detail import (
     ProcessCapaKpis,
     build_process_capa_summary,
 )
-from capa_simulation.services.process_equipment_timeline import ROW_SHORTENED, ROW_VIRTUAL
+from capa_simulation.services.process_equipment_timeline import (
+    MISSING_CUTOFF,
+    NO_COUNTED_UNITS,
+    NO_SNAPSHOT,
+    ROW_SHORTENED,
+    ROW_VIRTUAL,
+    DynamicReadiness,
+)
 from capa_simulation.services.required_shortening import (
     STATUS_MET,
     MonthlyTarget,
@@ -374,7 +385,89 @@ def _kpi_row_app() -> None:
 
     from capa_simulation.components.process_capa_view import render_process_kpis
 
-    render_process_kpis(_kpis(), thresholds=THRESHOLDS, dynamic=None, absent_reason="일정 없음")
+    render_process_kpis(_kpis(), thresholds=THRESHOLDS, dynamic=None)
+
+
+def _absent_app(status: str) -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from capa_simulation.components.process_capa_view import _render_dynamic_absent
+    from capa_simulation.services.process_equipment_timeline import DynamicReadiness
+
+    readiness = DynamicReadiness(status)
+    _render_dynamic_absent(
+        cast(Any, SimpleNamespace(readiness=readiness, dynamic_error="", process_label="AVI"))
+    )
+
+
+def test_an_input_missing_from_another_screen_is_a_mark_with_the_road_in_its_alert() -> None:
+    """Cut-off 를 적을 곳은 가용설비 현황이다 — 자리에는 마크만, 길은 Alarm 줄이다(UI-NTF-08)."""
+    app = AppTest.from_function(_absent_app, args=(MISSING_CUTOFF,)).run()
+
+    assert not app.exception and data_error_marks(app) == 1 and not app.caption
+    (note,) = events(app, "PD-01")
+    assert note["short"] == "AVI — 설비 일정 없음: Cut-off 미기재"
+    assert note["full"].startswith("공정 Capa 상세 · AVI — 가용설비 현황의 공정별 Cut-off")
+    assert (note["page"], note["href"]) == EQUIPMENT_SCREEN
+
+
+def test_the_missing_input_alarm_points_at_the_official_table_without_a_place_word() -> None:
+    """Alarm 줄에는 표 곁이 없다 — 전문 끝은 「위」 가 아니라 ① 로 가리킨다."""
+    assert DYNAMIC_ABSENT_RULE.endswith(DYNAMIC_OFFICIAL_KEPT) and "위" not in DYNAMIC_ABSENT_RULE
+    app = AppTest.from_function(_absent_app, args=(MISSING_CUTOFF,)).run()
+
+    (note,) = events(app, "PD-01")
+    assert note["full"].endswith(DYNAMIC_OFFICIAL_KEPT)
+
+
+def _no_snapshot_app(process_label: str) -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from capa_simulation.components.process_capa_view import _render_dynamic_absent
+    from capa_simulation.services.process_equipment_timeline import (
+        NO_SNAPSHOT,
+        DynamicReadiness,
+    )
+
+    _render_dynamic_absent(
+        cast(
+            Any,
+            SimpleNamespace(
+                readiness=DynamicReadiness(NO_SNAPSHOT),
+                dynamic_error="",
+                process_label=process_label,
+            ),
+        )
+    )
+
+
+def test_no_snapshot_is_one_alert_whichever_process_is_open() -> None:
+    """저장본 없음은 공정마다 다른 일이 아니라 설비 DB 전체의 일이다 — 글에 공정을 넣으면 고를
+    때마다 Alarm 줄이 는다. id · 코드 · 짧은 글이 같아야 알림창 한 번, 줄 하나다(UI-NTF-07)."""
+    first = AppTest.from_function(_no_snapshot_app, args=("WF 입고검사",)).run()
+    second = AppTest.from_function(_no_snapshot_app, args=("Wafer Saw",)).run()
+
+    assert data_error_marks(first) == 1
+    (one,) = events(first, "PD-01")
+    (other,) = events(second, "PD-01")
+    assert (one["id"], one["code"], one["short"]) == (other["id"], other["code"], other["short"])
+    assert one["short"] == DynamicReadiness(NO_SNAPSHOT).badge
+    assert one["full"].startswith("공정 Capa 상세 — 설비 DB 에 저장된 설비 마스터가 없습니다.")
+    assert (one["page"], one["href"]) == EQUIPMENT_SCREEN
+
+
+def test_a_process_without_counted_units_is_a_plain_line_with_the_rule_in_its_help() -> None:
+    """HBM·EDP 호기도 기존보유도 없는 공정은 채울 입력이 없다 — 빈 상태 평문이다(UI-TXT-04).
+    저장본 · 이름 · Cut-off 를 다 지난 공정이라 풍선은 이 공정에 빠진 조건만 적는다."""
+    app = AppTest.from_function(_absent_app, args=(NO_COUNTED_UNITS,)).run()
+
+    assert not app.exception and data_error_marks(app) == 0
+    (line,) = app.caption
+    assert line.value == DynamicReadiness(NO_COUNTED_UNITS).detail
+    assert line.proto.help == NO_COUNTED_UNITS_HELP
+    assert "사용기준 HBM·EDP" in NO_COUNTED_UNITS_HELP and "Cut-off" not in NO_COUNTED_UNITS_HELP
 
 
 def test_the_shortage_caption_keeps_its_negation_in_the_help() -> None:
@@ -426,12 +519,10 @@ def test_the_schedule_cause_skips_months_before_today() -> None:
 def test_the_target_reads_the_preference_threshold_by_month() -> None:
     uniform = MonthlyTarget(1.095)
     assert target_text(uniform, MONTHS) == "확보기준(월별) 110%"
-    assert short_target_text(uniform, MONTHS) == "110%"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
-    assert target_text(varied, MONTHS) == "확보기준(월별) — 달마다 다름"
+    assert target_text(varied, MONTHS) == "확보기준(월별)"
     # 그 값을 고치는 곳은 자리 글이 아니라 풍선이다(UI-TXT-03).
     assert "HOME 설정 → 판정 기준 › 확보기준(월별)" in TARGET_HELP
-    assert short_target_text(varied, MONTHS) == "달마다 확보기준"
 
 
 # ------------------------------------------------------------------ 범례·스크롤
