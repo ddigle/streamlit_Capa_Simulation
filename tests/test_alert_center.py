@@ -108,9 +108,10 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
 def test_the_data_carries_the_restart_notice_built_through_the_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """부트 표지와 등록부를 지난 재시작 알림 한 줄이 data 에 실린다(2026-11-07 통합 검수 D4 (가)).
-    어느 화면의 일도 아니라 화면 · 주소가 없고(「그 화면으로」 가 서지 않는다), 표지 · 알림은 화면이
-    달라도 값이 같다 — 알림 id 를 회차마다 뽑으면 data 가 달라져 JS 가 회차마다 다시 불린다."""
+    """부트 표지와 등록부를 지난 재시작 알림 한 줄이 data 에 실린다(2026-11-07 통합 검수 D4 (가) ·
+    2차 보드 R3 (가)). 어느 화면의 일도 아니라 화면 · 주소가 없고(「그 화면으로」 가 서지 않는다),
+    표지 · 알림은 화면이 달라도 값이 같다 — 알림 id 를 회차마다 뽑으면 data 가 달라져 JS 가 회차마다
+    다시 불린다."""
     boot = alert_center.alert_center_data(changes=[], events=[])["boot"]
     assert re.fullmatch(r"[0-9a-f]{16}", boot["mark"]) and boot["mark"] == alert_center.BOOT_MARK
     notice = boot["notice"]
@@ -119,7 +120,9 @@ def test_the_data_carries_the_restart_notice_built_through_the_registry(
     assert (notice["code"], notice["kind"], notice["level"]) == ("GL-07", "event", "check")
     assert notice["id"] == f"restart-{alert_center.BOOT_MARK}"
     assert notice["short"] == notice["full"] == entry.short
-    assert notice["short"] == "서버가 다시 시작됐습니다. 저장하지 않은 고침은 사라졌습니다."
+    assert notice["short"] == (
+        "서버가 다시 시작돼 화면을 처음으로 돌렸습니다. 저장하지 않은 고침과 입력은 사라졌습니다."
+    )
     assert notice["cause"] == alerts.SERVER_RESTART_CAUSE
     assert "page" not in notice and "href" not in notice
 
@@ -127,6 +130,51 @@ def test_the_data_carries_the_restart_notice_built_through_the_registry(
     other = alert_center.alert_center_data(changes=[], events=[])
     assert other["here"] == "process-capa-detail"
     assert other["boot"] == boot
+
+
+def test_the_data_carries_the_session_notice_built_through_the_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """세션 표지와 등록부를 지난 세션 만료 알림 한 줄이 data 에 실린다(2차 보드 R2 (가)) — 재시작
+    알림과 같은 꼴이고, 표지 · 알림은 화면이 달라도 값이 같다."""
+    session = alert_center.alert_center_data(changes=[], events=[])["session"]
+    assert re.fullmatch(r"[0-9a-f]{16}", session["mark"])
+    notice = session["notice"]
+    entry = alerts.spec(alerts.SESSION_LOST_CODE)
+    assert (entry.code, entry.kind, entry.level) == ("GL-08", "event", "check")
+    assert (notice["code"], notice["kind"], notice["level"]) == ("GL-08", "event", "check")
+    assert notice["id"] == f"session-{session['mark']}"
+    assert notice["short"] == notice["full"] == entry.short
+    assert notice["short"] == "연결이 오래 끊겨 저장하지 않은 고침이 사라졌습니다."
+    assert notice["cause"] == alerts.SESSION_LOST_CAUSE
+    assert "page" not in notice and "href" not in notice
+
+    monkeypatch.setattr(alerts, "current_page", lambda: ("공정 Capa 상세", "process-capa-detail"))
+    assert alert_center.alert_center_data(changes=[], events=[])["session"] == session
+
+
+def test_the_session_mark_stays_in_a_session_and_differs_between_sessions(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """세션마다 한 번 정한다 — 회차가 달라도 그대로라 data 약속이 깨지지 않고, 새 세션은 달라 JS 가
+    세션이 바뀐 것을 안다."""
+    app = _ok(_app.run())
+    _ok(app.run())
+    _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
+    first, again, other = (call["data"]["session"] for call in sent)
+    assert first == again
+    assert first["mark"] != other["mark"]
+    assert first["notice"]["id"] != other["notice"]["id"]
+
+
+def test_the_component_declares_the_reconnect_trigger_with_a_callback_that_does_nothing(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """재연결 회차(2차 보드 R1 (가))는 회차가 도는 것이 목적이다 — 콜백은 상태를 건드리지 않는다."""
+    _ok(_app.run())
+    callback = sent[0]["on_reconnected_change"]
+    assert callback is alert_center._reconnected
+    assert callback() is None
 
 
 def test_the_boot_mark_is_the_same_in_every_run_and_session_of_this_process(

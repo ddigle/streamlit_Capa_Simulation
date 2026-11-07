@@ -16,15 +16,31 @@
   줄(`change_summary.session_changes`)과 콜백이 담은 사건 알림(`alerts.drain_outbox`), 이번 화면
   주소(`here`)뿐이라, 셋이 그대로면 data 가 같아 JS 가 다시 불리지 않는다. 색은 이 회차 테마의
   토큰이다(테마 전환은 새로고침이라 다음 data 가 새 색을 싣는다).
-- **서버 재시작은 브라우저가 가른다**(2026-11-07 통합 검수 D4 (가)). 재시작 뒤 세션은 새것이라
-  파이썬만으로는 재시작과 첫 접속을 가르지 못한다. 프로세스마다 한 번 정하는 부트
+- **다시 붙은 탭은 앱 전체 회차를 한 번 돈다**(2026-11-07 2차 보드 R1 (가)). 프런트는 마지막 회차가
+  앱 전체였던 탭에 다시 붙어도 회차를 요청하지 않고, 새 세션은 모르는 프래그먼트의 요청을 회차
+  없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. JS 가 앱 뿌리의 연결
+  표지가 붙음으로 돌아온 것을 보고 본 스레드가 300ms + 왕복 시간 조용해지기를 기다려, 그 사이
+  프런트가 스스로 돈 회차가 없으면 트리거(`reconnected`)로 회차를 부른다. 시계로만 기다리면 무거운
+  화면에서 겹친다 — 다시 그리느라 바쁜 동안 프런트 회차의 표지가 메시지 큐에 묶여 있다. 기다리는
+  동안 사람 손이 닿으면 그 누름의 회차가 돌아오기를 더 기다린다 — 그 사이 부르면 누름의 회차를 끊어
+  누름이 사라진다. 콜백은 하는 일이 없다 — 회차가 도는 것이 목적이다.
+  **이 칸이 파이썬을 부르는 자리는 여기 하나뿐이다.** 세션이 남아 있었는지는 회차를 돌려야 알
+  수 있어 짧은 끊김에도 한 번 돈다(입력 · 고침은 남는다).
+- **서버 재시작은 브라우저가 가른다**(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가)). 재시작 뒤
+  세션은 새것이라 파이썬만으로는 재시작과 첫 접속을 가르지 못한다. 프로세스마다 한 번 정하는 부트
   표지(`BOOT_MARK`)와 알림 `GL-07`(`alerts.server_restart_note`)을 data 에 미리 싣고, JS 가 이
   탭에 적어 둔 앞 표지와 다를 때만 그 알림을 띄운다 — 첫 접속 · 새 탭(앞 표지 없음)과 새로고침 ·
   테마 전환 · 복제한 탭(같은 프로세스 — 표지 같음)에는 뜨지 않는다. 둘 다 프로세스 안에서 값이 같아
-  위 data 약속이 그대로다. data 는 앱 전체 회차에만 가고 회차를 스스로 돌리지 않으므로 열어 둔
-  탭에는 다음 앱 전체 회차에 뜬다(AGENTS 9장 「서버 재시작 알림」).
-- **패널은 브라우저 안에서만 열고 닫는다** — 트리거를 보내지 않아 열어도 파이썬 회차가 돌지
-  않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 기록은 이 브라우저 탭의
+  위 data 약속이 그대로다. 열어 둔 탭에는 위 재연결 회차의 data 로 조작 없이 뜬다(AGENTS 9장
+  「서버 재시작 알림」).
+- **세션만 사라진 탭도 브라우저가 가른다**(2차 보드 R2 (가)). 서버는 그대로인데 끊긴 지
+  `server.disconnectedSessionTTL`(기본 120초)이 지나면 새 세션이라 부트 표지로는 알 수 없다.
+  세션마다 한 번 정하는 표지(`session_mark`)와 알림 `GL-08`(`alerts.session_lost_note`)을 data 에
+  싣고, JS 가 **문서 메모리**의 앞 data 와 견준다 — 새 문서(새로고침 · 테마 전환 · 새 탭 · 복제한
+  탭 · 첫 접속)에는 앞 data 가 없어 뜨지 않는다. 앞 data 의 변경 목록이 있었거나 끊길 때 대화상자가
+  열려 있던 탭에만 띄워, 잃은 것이 없는 탭이 노트북 덮개를 여닫을 때마다 뜨지 않게 한다.
+- **패널은 브라우저 안에서만 열고 닫는다** — 패널 · 칩 판은 트리거를 보내지 않아 열어도 파이썬
+  회차가 돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 기록은 이 브라우저 탭의
   `sessionStorage`(`STORAGE`)다(D1 (가)).
 - **알림에 딸린 표**(`alerts.AlertTable` — 산출 결과의 제외 목록 · 표준 목표 누락 공정·주차 · 생산
   계획 · 필요 단축 일정의 목록, 한 줄에 여럿일 수 있다)는 Alarm 줄의 「… 보기」 단추가 표마다 펼치고
@@ -78,6 +94,8 @@ STORAGE: Final = {
 }
 # 이 서버 프로세스의 부트 표지 — 프로세스마다 한 번 정해 세션 · 회차가 달라도 그대로다.
 BOOT_MARK: Final = alerts.new_id()
+# 이 세션의 표지가 사는 세션 칸 — 세션마다 한 번 정해 회차가 달라도 그대로다.
+SESSION_MARK_KEY: Final = "alert_center_session_mark_v1"
 
 # 알림 칸이 쓰는 글. `{…}` 는 JS 가 채운다. 「사내」 를 쓰지 않는다.
 TEXT: Final[dict[str, str]] = {
@@ -179,10 +197,20 @@ def palette() -> dict[str, str]:
     }
 
 
+def session_mark() -> str:
+    """이 세션의 표지. 앱 전체 회차에 처음 그릴 때 한 번 정한다."""
+    mark = st.session_state.get(SESSION_MARK_KEY)
+    if not isinstance(mark, str):
+        mark = alerts.new_id()
+        st.session_state[SESSION_MARK_KEY] = mark
+    return mark
+
+
 def alert_center_data(
     *, changes: list[ChangeItem], events: list[alerts.AlertNote]
 ) -> dict[str, Any]:
     """알림 칸 data. 같은 변경 · 사건이면 회차마다 같은 값이다(시각 · 카운터를 싣지 않는다)."""
+    mark = session_mark()
     return {
         "events": events,
         "changes": changes,
@@ -215,10 +243,15 @@ def alert_center_data(
         "here": alerts.current_page()[1],
         "storage": dict(STORAGE),
         "boot": {"mark": BOOT_MARK, "notice": alerts.server_restart_note(BOOT_MARK)},
+        "session": {"mark": mark, "notice": alerts.session_lost_note(mark)},
         "palette": palette(),
         "font": tokens.FONT_FAMILY,
         "text": dict(TEXT),
     }
+
+
+def _reconnected() -> None:
+    """재연결 트리거의 콜백 — 회차가 도는 것이 목적이라 할 일이 없다."""
 
 
 def render_alert_center(*, changes: list[ChangeItem]) -> None:
@@ -232,4 +265,5 @@ def render_alert_center(*, changes: list[ChangeItem]) -> None:
         key=ALERT_CENTER_KEY,
         data=alert_center_data(changes=changes, events=alerts.drain_outbox()),
         width="stretch",
+        on_reconnected_change=_reconnected,
     )

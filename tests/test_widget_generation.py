@@ -7,6 +7,8 @@
 - **닫힌 팝오버 칸** — 브라우저는 닫혀 있던 칸을 나중에 열 때 마지막 회차가 실어 보낸 값으로만
   세운다(`_late_mount`). 처음 회차에 한 번 적는 꼴은 한 회차 뒤 빈 칸으로 섰다(2026-10-26 E2E —
   설비 시나리오 「리비전명」). `seed_field` 는 고치지 않은 동안 매 회차 싣는다.
+- **앞 세션의 탭** — 브라우저가 앞 세션의 위젯 값을 든 채 새 세션에 붙으면 위젯 key 를 바꿔 그 값이
+  닿지 않게 한다(`note_session_start` · `session_widget_key`). 폼 밖 편집표는 모두 이 길을 지난다.
 - **AST 그물** — 도우미 밖에서 세대 꼬리 글자(`__g{…}`·`_g{…}`·`__p{…}` 뒤 아무 식, `__{…}`·`_{…}`
   뒤 세대·nonce 식 — f-문자열·`+` 잇기·`.format`)를 짓거나(아직 옮기지 않은 `_{n}` 꼴 다섯 자리는
   `_REMAINING_HAND_MADE`), 팝오버 안에 그리는 입력 칸 key 에 그 함수가 세션 대입·`setdefault`·같은
@@ -21,6 +23,7 @@ from __future__ import annotations
 import ast
 import warnings
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -33,12 +36,20 @@ import capa_simulation.components.preset_number_field as preset_number_field
 import capa_simulation.components.scenario_management as scenario_management
 import capa_simulation.components.scenario_status as scenario_status
 import capa_simulation.components.shortening_progress_panel as shortening_progress_panel
-from capa_simulation.components.editor_state import discard_editor, editor_widget_key
+import capa_simulation.components.widget_generation as widget_generation
+from capa_simulation.components.editor_state import (
+    discard_editor,
+    editor_has_edits,
+    editor_widget_key,
+)
 from capa_simulation.components.widget_generation import (
+    REJOINED_MARK_KEY,
     KeyStyle,
     bump,
     generation,
+    note_session_start,
     seed_field,
+    session_widget_key,
     widget_key,
 )
 
@@ -158,6 +169,123 @@ def test_discarding_an_editor_bumps_through_the_helper(session: dict[str, object
     assert "sheet" not in session
     assert session["sheet__generation"] == 1
     assert editor_widget_key("sheet") == "sheet__g1"
+
+
+# ------------------------------------------------------------------ 앞 세션의 탭
+
+
+def _kept_values(monkeypatch: pytest.MonkeyPatch, values: list[object]) -> None:
+    context = SimpleNamespace(session_state=SimpleNamespace(get_widget_states=lambda: values))
+    monkeypatch.setattr(widget_generation, "get_script_run_ctx", lambda: context)
+
+
+def test_a_tab_that_was_always_this_session_keeps_every_key(
+    session: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """새 탭 · 새로고침은 든 값이 없다 — key 꼴이 그대로라 처음 그린 화면이 바뀌지 않는다."""
+    _kept_values(monkeypatch, [])
+    note_session_start()
+    assert session_widget_key("sheet") == "sheet"
+    assert editor_widget_key("sheet") == "sheet"
+    # 표지를 정하기 전(시험 · 스크립트)에도 그대로다.
+    session.clear()
+    assert session_widget_key("sheet") == "sheet"
+
+
+def test_a_tab_from_the_session_before_gets_a_new_widget_for_each_editor(
+    session: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앞 세션의 탭은 브라우저가 든 편집을 다시 보낸다 — key 가 바뀌어야 그 값이 닿지 않는다. 세대가
+    0 이어도 앞 세션과 다르고, 버리면 세대도 함께 오른다."""
+    _kept_values(monkeypatch, ["앞 세션의 값"])
+    note_session_start()
+    mark = session[REJOINED_MARK_KEY]
+    assert isinstance(mark, str) and mark
+    assert editor_widget_key("sheet") == f"sheet__s{mark}"
+    session[f"sheet__s{mark}"] = {"edited_rows": {0: {"a": 1}}}
+    assert editor_has_edits("sheet")
+    discard_editor("sheet")
+    assert f"sheet__s{mark}" not in session
+    assert editor_widget_key("sheet") == f"sheet__g1__s{mark}"
+
+
+def test_the_session_is_read_once_so_later_widget_values_do_not_turn_it_into_a_rejoined_tab(
+    session: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """둘째 회차부터는 그 세션이 그린 위젯의 값이 실린다 — 표지는 첫 회차에 한 번만 정한다."""
+    _kept_values(monkeypatch, [])
+    note_session_start()
+    _kept_values(monkeypatch, ["이 세션의 값"])
+    note_session_start()
+    assert session_widget_key("sheet") == "sheet"
+
+
+def test_a_form_editor_stays_out_of_the_session_mark(
+    session: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """폼 안 표의 보내지 않은 고침은 서버에 없어 되살아날 것이 없고, 변경 칩에 들지 않아 지우면 세션
+    만료 때 알림 없이 사라진다 — 그 표는 앞 세션의 탭에서도 key 가 그대로다."""
+    _kept_values(monkeypatch, ["앞 세션의 값"])
+    note_session_start()
+    assert editor_widget_key("sheet", in_form=True) == "sheet"
+    assert editor_widget_key("sheet") != "sheet"
+
+
+def _data_editors(tree: ast.Module) -> list[tuple[ast.Call, bool]]:
+    """모듈의 `data_editor` 호출과 그 호출이 폼 안인가."""
+
+    def walk(node: ast.AST, in_form: bool) -> list[tuple[ast.Call, bool]]:
+        if isinstance(node, ast.With) and any(
+            ".form(" in ast.unparse(item.context_expr) for item in node.items
+        ):
+            in_form = True
+        found: list[tuple[ast.Call, bool]] = []
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "data_editor"
+        ):
+            found.append((node, in_form))
+        for child in ast.iter_child_nodes(node):
+            found.extend(walk(child, in_form))
+        return found
+
+    return walk(tree, False)
+
+
+def test_every_editor_outside_a_form_passes_through_the_session_mark() -> None:
+    """앞 세션의 고침이 새 세션에 되살아나지 않으려면 폼 밖 편집표마다 이 길을 지나야 한다. 새 표가
+    그냥 key 를 쓰면 알림 「저장하지 않은 고침이 사라졌습니다」 가 그 표에서 거짓이 된다."""
+
+    def carries(value: ast.AST, tree: ast.AST) -> bool:
+        text = ast.unparse(value)
+        if "editor_widget_key(" in text:
+            return "in_form" not in text
+        if not isinstance(value, ast.Name):
+            return False
+        return any(
+            isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == value.id for t in node.targets)
+            and "editor_widget_key(" in ast.unparse(node.value)
+            and "in_form" not in ast.unparse(node.value)
+            for node in ast.walk(tree)
+        )
+
+    outside = 0
+    forms = 0
+    bare: list[str] = []
+    for path in _sources():
+        tree = _parse(path)
+        for node, in_form in _data_editors(tree):
+            if in_form:
+                forms += 1
+                continue
+            outside += 1
+            key = next((word.value for word in node.keywords if word.arg == "key"), None)
+            if key is None or not carries(key, tree):
+                bare.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
+    assert outside >= 5 and forms >= 7
+    assert not bare, f"폼 밖 편집표 key 는 editor_widget_key 로 짓는다: {bare}"
 
 
 # ------------------------------------------------------------------ 닫힌 팝오버 칸

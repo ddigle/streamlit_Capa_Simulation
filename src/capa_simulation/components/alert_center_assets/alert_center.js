@@ -15,9 +15,17 @@
 // - 기록(L1)은 이 브라우저 탭의 `sessionStorage` 다(D1 (가) — 200줄 · 12시간). 새로고침 · 테마 전환(새 세션)에도 남고 탭을 닫으면
 //   사라진다. 읽기 · 쓰기는 모두 try/catch — 막힌 브라우저에서는 이 문서 안에만 쌓인다. 서버에는 아무것도 보내지 않는다(L2 는
 //   usage-log 와 함께 — D6).
-// - 서버 재시작(2026-11-07 통합 검수 D4 (가)): 재시작 뒤 세션은 새것이라 파이썬은 첫 접속과 가르지 못한다. data 의 부트 표지
-//   (`boot.mark`)를 이 탭에 적어 둔 앞 표지와 견주어 앞 표지가 있고 다를 때만 함께 실린 알림(`boot.notice` — `GL-07`)을 띄우고
-//   어느 경우든 지금 표지로 고쳐 적는다. 회차를 스스로 돌리지 않는다 — 다음 앱 전체 회차의 data 가 닿을 때 뜬다.
+// - 다시 붙은 탭(2026-11-07 2차 보드 R1 (가)): 프런트는 마지막 회차가 앱 전체였던 탭에 다시 붙어도 회차를 요청하지 않고, 새 세션은 모르는
+//   프래그먼트의 요청을 회차 없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. 앱 뿌리의 연결 표지(`data-test-connection-state`)가
+//   붙음으로 돌아오면 본 스레드가 `RECONNECT_WAIT_MS` + 왕복 시간(`reconnectWait`) 조용해지기를 기다리고, 그 사이 프런트가 스스로 돈 회차가 없으면 트리거로 앱 전체 회차를
+//   한 번 부른다. 기다리는 동안 사람 손이 닿으면 그 누름의 회차가 돌아오기를 더 기다린다 — 표지는 왕복해야 움직이므로 그 사이 부르면 누름의 회차를 끊어 누름이 사라진다.
+//   이 JS 가 파이썬을 부르는 자리는 여기 하나뿐이다. 연결 표지와 회차 표지는 관찰자 하나가 본다(`watchRoot` — 칸이 다시 그려져도 늘지 않는다).
+// - 서버 재시작(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가)): 재시작 뒤 세션은 새것이라 파이썬은 첫 접속과 가르지 못한다. data 의 부트
+//   표지(`boot.mark`)를 이 탭에 적어 둔 앞 표지와 견주어 앞 표지가 있고 다를 때만 함께 실린 알림(`boot.notice` — `GL-07`)을 띄우고
+//   어느 경우든 지금 표지로 고쳐 적는다.
+// - 세션만 사라진 탭(2차 보드 R2 (가)): 서버는 그대로이고 세션만 끊긴 지 오래돼 사라진 탭이다. data 의 세션 표지(`session.mark`)를 이 문서
+//   메모리의 앞 data 와 견주고, 앞 data 의 변경 목록이 있었거나 끊길 때 대화상자가 열려 있었으면 함께 실린 알림(`session.notice` — `GL-08`)을
+//   띄운다. 새 문서(새로고침 · 테마 전환 · 새 탭 · 복제한 탭 · 첫 접속)에는 앞 data 가 없어 뜨지 않고, 잃은 것이 없는 탭은 덮개를 여닫아도 뜨지 않는다.
 // - 머리 툴바: Guide 오른쪽에 `Alarm`(안 읽음 수 배지 · 패널), Guide 왼쪽에 바뀐 것이 있을 때만 서는 변경 칩(D5 (가) · 판). 차례는
 //   파이썬 `theme_toggle.TOOLBAR_BUTTON_ORDER` 한 벌이다(다른 툴바 단추와 같은 규칙 — `capaToolbar.place`). 패널은 브라우저
 //   안에서만 열고 닫아 파이썬 회차가 돌지 않는다.
@@ -38,6 +46,8 @@
 const HOST_ID = 'capa-alert-host'
 const APP_ROOT = '[data-testid="stApp"]'
 const RUN_STATE = 'data-test-script-state'
+const CONNECTION_STATE = 'data-test-connection-state'
+const DIALOG = '[data-testid="stDialog"]'
 const OPEN_PAGE_EVENT = 'capa-open-page'
 const TOOLBAR_ATTRIBUTE = 'data-capa-toolbar'
 const TOOLBAR_VARIABLE = '--capa-toolbar-width'
@@ -246,7 +256,7 @@ function storageSet(key, value) {
 
 // 서버가 다시 시작됐나 — 이 탭에 적어 둔 앞 부트 표지(`key`)와 지금 표지(`mark`)를 견주고 지금 표지로 고쳐 적는다. 앞 표지가
 // 있고 다를 때만 참이다 — 첫 접속 · 새 탭(앞 표지 없음)과 같은 프로세스의 새 세션(표지 같음)은 거짓이고, 저장소가 막힌
-// 브라우저는 앞 표지를 읽지 못해 거짓이다. 프로세스의 표지라 세션만 사라져 고침을 잃은 탭도 거짓이다(TODO 4장 「세션만 사라진 탭」).
+// 브라우저는 앞 표지를 읽지 못해 거짓이다. 프로세스의 표지라 세션만 사라진 탭도 거짓이다 — 그 탭은 `sessionLost` 가 맡는다.
 function bootChanged(key, mark) {
   if (!key || !mark) return false
   const before = storageGet(key, null)
@@ -255,6 +265,49 @@ function bootChanged(key, mark) {
   return typeof before === 'string' && before !== ''
 }
 // </alerts-storage>
+
+// <alerts-reconnect>
+const CONNECTED = 'CONNECTED'
+const CONNECTING = 'CONNECTING'
+// 다시 붙은 뒤 앱 전체 회차를 부르기 전에 본 스레드가 조용해야 하는 시간. 시계로만 기다리지 않는다 — 무거운 화면은 다시 그리느라 1초 남짓
+// 바빠, 프런트가 스스로 돈 회차의 표지가 메시지 큐에 묶인 채 시계가 먼저 끝나 회차가 겹친다. 끝없이 기다리지는 않는다(가려진 탭은 타이머가
+// 늘 늦어 조용한 것으로 세지 못한다).
+const RECONNECT_WAIT_MS = 300
+const RECONNECT_TICK_MS = 50
+const RECONNECT_LIMIT_MS = 5000
+// 사람 손이 닿으면 그 누름의 회차 표지가 돌아오기를 이만큼 더 기다린다. 표지가 끝내 움직이지 않으면(회차가 없는 누름) 그때 부른다.
+const RECONNECT_TOUCH_MS = 700
+const TOUCH_EVENTS = ['pointerdown', 'click', 'keydown']
+// 조용해야 하는 시간 — 회차 표지는 망을 한 번 왕복해야 닿으므로 왕복 시간을 더한다. 왕복은 소켓이 붙는 데 걸린 시간(`handshake`)으로 어림한다.
+function reconnectWait(handshake) {
+  return RECONNECT_WAIT_MS + Math.min(Math.max(handshake, 0), RECONNECT_LIMIT_MS)
+}
+// 다시 붙었나 — 붙어 있지 않다가 붙음으로 돌아온 순간만 참이다. 앞 상태를 모르면(처음 본 순간) 거짓이다.
+function cameBack(before, now) {
+  return now === CONNECTED && typeof before === 'string' && before !== CONNECTED
+}
+// 틱 사이 간격(`gap`)을 조용한 시간에 더한다. 제때 깨지 못했으면 본 스레드가 바빴던 것이라 처음부터 센다.
+function quietAfter(quiet, gap) {
+  return gap > RECONNECT_TICK_MS * 2 ? 0 : quiet + gap
+}
+// 다시 붙은 뒤 틱마다 할 일 — 'stop'(다시 끊겼거나 회차가 보였거나 돌고 있다 — 프런트가 스스로 돈 회차다), 'wait'(아직 바쁘다 · 사람 손이 막
+// 닿았다), 'ask'(앱 전체 회차를 부른다). `touched` 는 마지막으로 손이 닿은 뒤 지난 시간이다 — 손이 닿은 동안은 상한에서도 부르지 않는다.
+function reconnectStep(connection, runState, moves, quiet, waited, need = RECONNECT_WAIT_MS, touched = Infinity) {
+  if (connection !== CONNECTED || moves > 0 || runState === 'running' || runState === 'rerunRequested') return 'stop'
+  if (touched < need + RECONNECT_TOUCH_MS) return 'wait'
+  return quiet >= need || waited >= RECONNECT_LIMIT_MS ? 'ask' : 'wait'
+}
+// 세션만 사라졌나 — 같은 문서의 앞 data(`before`)와 세션 표지가 다른데 부트 표지는 같고, 잃은 것이 있었을 때만 참이다. 부트 표지가 다르면
+// 재시작이라 `GL-07` 이 맡고, 앞 data 가 없는 새 문서는 표지가 없어 거짓이다.
+function sessionLost(before, after, dialogOpen) {
+  const session = (data) => ((data || {}).session || {}).mark
+  const boot = (data) => ((data || {}).boot || {}).mark
+  if (!session(before) || !session(after) || session(before) === session(after)) return false
+  if (boot(before) !== boot(after)) return false
+  const changes = before.changes
+  return Boolean(dialogOpen) || (Array.isArray(changes) && changes.length > 0)
+}
+// </alerts-reconnect>
 
 function el(tag, className, text) {
   const node = document.createElement(tag)
@@ -314,6 +367,17 @@ function createCenter(data) {
     pendingTab: null,
     runRoot: null,
     runObserver: null,
+    // 회차가 보인 수(표지가 움직임 · data 가 닿음) — 다시 붙은 뒤 기다리는 사이 회차가 돌았는지 본다.
+    runMoves: 0,
+    connection: null,
+    connectingAt: 0,
+    // 마지막으로 끊길 때 대화상자가 열려 있었나.
+    dialogAtCut: false,
+    reconnectTimer: 0,
+    // 다시 붙은 뒤 기다리는 동안만 사람 손을 보는 듣기(`connectionMoved`)의 끊개.
+    reconnectTouch: null,
+    // 앱 전체 회차를 부르는 트리거 — 그림마다 새것으로 고쳐 쥔다.
+    ask: null,
     scanTimer: 0,
     placeTries: 0,
     placeTimer: 0,
@@ -593,13 +657,70 @@ function scanSoon(C) {
   C.scanTimer = setTimeout(() => scan(C), 0)
 }
 
-function watchRuns(C) {
+// 앱 뿌리의 회차 표지 · 연결 표지를 관찰자 하나로 본다. 칸이 다시 그려져도 뿌리가 같으면 늘지 않는다.
+function watchRoot(C) {
   const root = document.querySelector(APP_ROOT)
   if (!root || (C.runRoot === root && C.runObserver)) return
   if (C.runObserver) C.runObserver.disconnect()
   C.runRoot = root
-  C.runObserver = new MutationObserver(() => scanSoon(C))
-  C.runObserver.observe(root, { attributes: true, attributeFilter: [RUN_STATE] })
+  C.connection = root.getAttribute(CONNECTION_STATE)
+  C.runObserver = new MutationObserver((records) => {
+    if (records.some((record) => record.attributeName === CONNECTION_STATE)) connectionMoved(C, root)
+    if (records.some((record) => record.attributeName === RUN_STATE)) {
+      C.runMoves += 1
+      scanSoon(C)
+    }
+  })
+  C.runObserver.observe(root, { attributes: true, attributeFilter: [RUN_STATE, CONNECTION_STATE] })
+}
+
+function connectionMoved(C, root) {
+  const before = C.connection
+  const now = root.getAttribute(CONNECTION_STATE)
+  if (now === before) return
+  C.connection = now
+  endReconnectWait(C)
+  // 끊기는 순간에 본다 — 다시 붙은 뒤에는 새 회차가 대화상자를 걷고 있을 수 있다.
+  if (before === CONNECTED) C.dialogAtCut = Boolean(document.querySelector(DIALOG))
+  if (now === CONNECTING) C.connectingAt = performance.now()
+  if (!cameBack(before, now)) return
+  const movesAtBack = C.runMoves
+  const begun = performance.now()
+  const need = reconnectWait(before === CONNECTING ? begun - C.connectingAt : 0)
+  let last = begun
+  let quiet = 0
+  let touchedAt = -Infinity
+  C.reconnectTouch = new AbortController()
+  const touched = () => {
+    touchedAt = performance.now()
+  }
+  for (const type of TOUCH_EVENTS) {
+    document.addEventListener(type, touched, { capture: true, passive: true, signal: C.reconnectTouch.signal })
+  }
+  const tick = () => {
+    const at = performance.now()
+    quiet = quietAfter(quiet, at - last)
+    last = at
+    const step = reconnectStep(C.connection, root.getAttribute(RUN_STATE), C.runMoves - movesAtBack, quiet, at - begun, need, at - touchedAt)
+    if (step === 'wait') {
+      C.reconnectTimer = setTimeout(tick, RECONNECT_TICK_MS)
+      return
+    }
+    endReconnectWait(C)
+    if (step === 'ask' && C.ask) C.ask('reconnected', Date.now())
+  }
+  C.reconnectTimer = setTimeout(tick, RECONNECT_TICK_MS)
+}
+
+function endReconnectWait(C) {
+  clearTimeout(C.reconnectTimer)
+  if (C.reconnectTouch) C.reconnectTouch.abort()
+  C.reconnectTouch = null
+}
+
+function retireCenter(C) {
+  if (C.runObserver) C.runObserver.disconnect()
+  endReconnectWait(C)
 }
 
 // ------------------------------------------------------------------------------------------- 알림창
@@ -1301,20 +1422,26 @@ function closePanel(C, refocus) {
 }
 
 export default function (component) {
-  const { data } = component
+  const { data, setTriggerValue } = component
   if (!data) return undefined
   let C = window.__capaAlertCenter
   if (!C || !C.host || !C.host.isConnected) {
+    if (C) retireCenter(C)
     C = createCenter(data)
     window.__capaAlertCenter = C
   }
+  const before = C.data
   C.data = data
+  C.ask = setTriggerValue
+  // data 가 닿았으면 앱 전체 회차가 돈 것이다. 표지만으로는 놓친다 — 본 스레드가 묶인 사이 끝난 회차는 메시지가 한꺼번에 처리돼 표지가 움직이지 않는다.
+  C.runMoves += 1
   palette(C, C.host)
-  watchRuns(C)
+  watchRoot(C)
   let changed = false
   for (const note of Array.isArray(data.events) ? data.events : []) if (handle(C, note)) changed = true
   const boot = data.boot || {}
   if (bootChanged((data.storage || {}).boot, boot.mark) && handle(C, boot.notice)) changed = true
+  if (sessionLost(before, data, C.dialogAtCut) && handle(C, data.session.notice)) changed = true
   if (changed) persist(C)
   scan(C)
   return undefined
