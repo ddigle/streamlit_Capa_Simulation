@@ -804,10 +804,13 @@ def test_the_general_target_takes_whole_percent_and_home(
     assert field.value == 110
     assert field.step == 1
     assert field.proto.format == "%.0f"
+    assert _sheet_legend(app).startswith("머리 옅은 칠 = 제약 기간 · 칸 색 = 확보 · 경고 · 부족")
     app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107)
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] == 107
     assert "기준 107%" in _header_line(app)
+    # 직접 넣은 기준에는 경고 경계가 없어 계산표가 두 단계다 — 범례도 그 말이다.
+    assert "부족색 칸 = 기준" in _sheet_legend(app)
     app.button_group(key=CONSTRAINT_GENERAL_PILLS_KEY).set_value("__none__")
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] is None

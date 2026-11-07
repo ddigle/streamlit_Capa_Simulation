@@ -164,6 +164,7 @@ __all__ = [
     "render_constraint_view",
     "schedule_lines",
     "settle_selected_month",
+    "sheet_legend",
     "short_lines",
     "short_month_lines",
     "top_row_style",
@@ -1012,10 +1013,7 @@ def render_constraint_view(view: ConstraintView) -> None:
         _render_month_steps(view, month, show_proportional=bool(show_proportional))
     with st.container(border=True):
         st.markdown("**월별 계산표**", help=SHEET_HELP)
-        st.caption(
-            "머리 옅은 칠 = 제약 기간 · 부족색 칸 = 기준(제약 칸은 제약 목표)에 못 미침 · "
-            "파란 글자 = 줄어든 값 · 대수는 환산 대수"
-        )
+        st.caption(sheet_legend(view.labels))
         _render_sheet(sheet, months)
     schedule_column, shortage_column = st.columns(2, gap="medium")
     with schedule_column:
@@ -1119,6 +1117,16 @@ def _render_sheet(sheet: SheetCanvas, months: tuple[int, ...]) -> None:
                     on_select=partial(pick_sheet_month, months),
                     selection_mode="points",
                 )
+
+
+def sheet_legend(labels: ConstraintLabels) -> str:
+    """월별 계산표 범례 — 기준이 HOME 이면 칸 색이 세 단계다(`ConstraintLabels.warning_targets`)."""
+    colors = (
+        "칸 색 = 확보 · 경고 · 부족(제약 칸은 제약 목표에 못 미치면 부족색)"
+        if labels.warning_targets
+        else "부족색 칸 = 기준(제약 칸은 제약 목표)에 못 미침"
+    )
+    return f"머리 옅은 칠 = 제약 기간 · {colors} · 파란 글자 = 줄어든 값 · 대수는 환산 대수"
 
 
 def _render_month_steps(view: ConstraintView, month: int, *, show_proportional: bool) -> None:

@@ -1105,7 +1105,7 @@ def _assumed_demand_note(
     mark = equals_mark(_two(value), _two(round(required, 2) / factor))
     return (
         f"UPEH 가정 {token_percent(token)}%: 소요 {_two(required)} ÷ {factor:g} {mark} "
-        f"{_two(value)} ({_signed_two(value - required)}대)"
+        f"{_two(value)} ({change}대)"
     )
 
 

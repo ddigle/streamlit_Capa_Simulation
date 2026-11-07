@@ -916,6 +916,11 @@ labels = ConstraintLabels(
     product=product,
     target_percent=target_percent,
     general_percent=None if general_value is None else float(general_value),
+    warning_targets=(
+        tuple((month, thresholds.boundary_for(month)[1]) for month in months)
+        if general_value is None
+        else ()
+    ),
 )
 period_text = (
     month_label(period.start)
