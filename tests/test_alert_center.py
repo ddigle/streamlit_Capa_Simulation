@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -100,8 +101,44 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
     assert (data["toolbar"]["alarm"], data["toolbar"]["chip"]) == (ALARM_BUTTON_ID, CHANGES_CHIP_ID)
     assert data["marker"] == alerts.MARKER_ATTRIBUTE
     assert data["here"] == ""
-    assert set(data["storage"]) == {"log", "states", "seen"}
+    assert set(data["storage"]) == {"log", "states", "seen", "boot"}
     assert [group["id"] for group in data["groups"]] == ["lose", "keep", "assume"]
+
+
+def test_the_data_carries_the_restart_notice_built_through_the_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """부트 표지와 등록부를 지난 재시작 알림 한 줄이 data 에 실린다(2026-11-07 통합 검수 D4 (가)).
+    어느 화면의 일도 아니라 화면 · 주소가 없고(「그 화면으로」 가 서지 않는다), 표지 · 알림은 화면이
+    달라도 값이 같다 — 알림 id 를 회차마다 뽑으면 data 가 달라져 JS 가 회차마다 다시 불린다."""
+    boot = alert_center.alert_center_data(changes=[], events=[])["boot"]
+    assert re.fullmatch(r"[0-9a-f]{16}", boot["mark"]) and boot["mark"] == alert_center.BOOT_MARK
+    notice = boot["notice"]
+    entry = alerts.spec(alerts.SERVER_RESTART_CODE)
+    assert (entry.code, entry.kind, entry.level) == ("GL-07", "event", "check")
+    assert (notice["code"], notice["kind"], notice["level"]) == ("GL-07", "event", "check")
+    assert notice["id"] == f"restart-{alert_center.BOOT_MARK}"
+    assert notice["short"] == notice["full"] == entry.short
+    assert notice["short"] == "서버가 다시 시작됐습니다. 저장하지 않은 고침은 사라졌습니다."
+    assert notice["cause"] == alerts.SERVER_RESTART_CAUSE
+    assert "page" not in notice and "href" not in notice
+
+    monkeypatch.setattr(alerts, "current_page", lambda: ("공정 Capa 상세", "process-capa-detail"))
+    other = alert_center.alert_center_data(changes=[], events=[])
+    assert other["here"] == "process-capa-detail"
+    assert other["boot"] == boot
+
+
+def test_the_boot_mark_is_the_same_in_every_run_and_session_of_this_process(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """새로고침 · 테마 전환은 같은 프로세스의 새 세션이다 — 회차와 세션이 달라도 표지 · 알림이 같아
+    JS 가 재시작으로 읽지 않는다."""
+    app = _ok(_app.run())
+    _ok(app.run())
+    _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
+    assert len(sent) == 3
+    assert all(call["data"]["boot"] == sent[0]["data"]["boot"] for call in sent)
 
 
 def test_the_palette_follows_the_theme_tokens_in_both_themes() -> None:

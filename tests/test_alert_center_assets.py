@@ -191,7 +191,7 @@ console.log(JSON.stringify([
     assert "t.log_table_value_clipped" in pairs
 
 
-_SECTIONS = ("alerts-rows",)
+_SECTIONS = ("alerts-rows", "alerts-storage")
 
 
 def _sections() -> str:
@@ -314,6 +314,87 @@ out.copy = copyText([
 ])
 console.log(JSON.stringify(out))
 """
+
+
+def test_a_restart_is_a_different_boot_mark_stored_in_this_tab() -> None:
+    """앞 표지가 있고 다를 때만 재시작이다(2026-11-07 통합 검수 D4 (가)) — 어느 경우든 지금 표지를
+    적어 둔다. 저장소가 막힌 브라우저에서는 예외 없이 뜨지 않는다.
+
+    `same` 은 재시작이 아니라는 뜻일 뿐 고침이 남았다는 뜻이 아니다 — 서버는 그대로이고 세션만
+    사라진 탭도 여기로 온다(`docs/TODO.md` 4장 「세션만 사라진 탭」)."""
+    out = _node(
+        """
+function fakeWindow(start) {
+  const values = new Map(Object.entries(start))
+  const sessionStorage = {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, value),
+  }
+  return { values, sessionStorage }
+}
+const KEY = 'capa-alerts-boot-v1'
+const out = {}
+const run = (start, key, mark) => {
+  globalThis.window = fakeWindow(start)
+  const changed = bootChanged(key, mark)
+  return [changed, globalThis.window.values.get(KEY) ?? null]
+}
+out.first = run({}, KEY, 'b')
+out.same = run({ [KEY]: '"b"' }, KEY, 'b')
+out.different = run({ [KEY]: '"a"' }, KEY, 'b')
+out.broken = run({ [KEY]: '{' }, KEY, 'b')
+out.not_text = run({ [KEY]: '7' }, KEY, 'b')
+out.no_mark = run({ [KEY]: '"a"' }, KEY, undefined)
+out.no_key = run({ [KEY]: '"a"' }, undefined, 'b')
+
+globalThis.window = fakeWindow({ [KEY]: '"a"' })
+out.twice = [bootChanged(KEY, 'b'), bootChanged(KEY, 'b')]
+
+globalThis.window = {
+  sessionStorage: {
+    getItem: () => {
+      throw new Error('막힘')
+    },
+    setItem: () => {
+      throw new Error('막힘')
+    },
+  },
+}
+out.calls_throw = bootChanged(KEY, 'b')
+globalThis.window = {
+  get sessionStorage() {
+    throw new Error('SecurityError')
+  },
+}
+out.access_throws = bootChanged(KEY, 'b')
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out == {
+        "first": [False, '"b"'],
+        "same": [False, '"b"'],
+        "different": [True, '"b"'],
+        "broken": [False, '"b"'],
+        "not_text": [False, '"b"'],
+        "no_mark": [False, '"a"'],
+        "no_key": [False, '"a"'],
+        "twice": [True, False],
+        "calls_throw": False,
+        "access_throws": False,
+    }
+
+
+def test_the_restart_notice_goes_through_the_event_path_on_receiving_data() -> None:
+    """data 를 받을 때 판정하고 보통 사건 알림 길(`handle` — 기록 · 알림창 · 본 사건 id)로 낸다. id
+    로도 한 번이라 저장소를 못 고쳐 앞 표지가 남아도 거듭 뜨지 않는다. 회차를 스스로 돌리지 않는다
+    (범위 밖 — 파이썬으로 가는 값이 없다는 것은 위 패널 시험이 본다)."""
+    entry = JS[JS.index("export default function (component)") :]
+    assert (
+        "if (bootChanged((data.storage || {}).boot, boot.mark) && handle(C, boot.notice)) "
+        "changed = true" in entry
+    )
+    assert entry.index("bootChanged(") < entry.index("if (changed) persist(C)")
+    assert "C.seenSet.has(note.id)" in JS[JS.index("function handleEvent") :]
 
 
 def test_a_kept_error_row_comes_back_when_the_alarm_no_longer_carries_it() -> None:

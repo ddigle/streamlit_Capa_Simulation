@@ -16,6 +16,13 @@
   줄(`change_summary.session_changes`)과 콜백이 담은 사건 알림(`alerts.drain_outbox`), 이번 화면
   주소(`here`)뿐이라, 셋이 그대로면 data 가 같아 JS 가 다시 불리지 않는다. 색은 이 회차 테마의
   토큰이다(테마 전환은 새로고침이라 다음 data 가 새 색을 싣는다).
+- **서버 재시작은 브라우저가 가른다**(2026-11-07 통합 검수 D4 (가)). 재시작 뒤 세션은 새것이라
+  파이썬만으로는 재시작과 첫 접속을 가르지 못한다. 프로세스마다 한 번 정하는 부트
+  표지(`BOOT_MARK`)와 알림 `GL-07`(`alerts.server_restart_note`)을 data 에 미리 싣고, JS 가 이
+  탭에 적어 둔 앞 표지와 다를 때만 그 알림을 띄운다 — 첫 접속 · 새 탭(앞 표지 없음)과 새로고침 ·
+  테마 전환 · 복제한 탭(같은 프로세스 — 표지 같음)에는 뜨지 않는다. 둘 다 프로세스 안에서 값이 같아
+  위 data 약속이 그대로다. data 는 앱 전체 회차에만 가고 회차를 스스로 돌리지 않으므로 열어 둔
+  탭에는 다음 앱 전체 회차에 뜬다(AGENTS 9장 「서버 재시작 알림」).
 - **패널은 브라우저 안에서만 열고 닫는다** — 트리거를 보내지 않아 열어도 파이썬 회차가 돌지
   않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 기록은 이 브라우저 탭의
   `sessionStorage`(`STORAGE`)다(D1 (가)).
@@ -62,12 +69,15 @@ _ASSETS = Path(__file__).with_name("alert_center_assets")
 # 않는다.
 ALERT_CENTER_KEY: Final = "capa_alert_center"
 HEADER_SELECTOR: Final = '[data-testid="stHeader"]'
-# 이 브라우저 탭의 `sessionStorage` 칸 — 기록 줄 · 상태 표 · 본 사건 id.
+# 이 브라우저 탭의 `sessionStorage` 칸 — 기록 줄 · 상태 표 · 본 사건 id · 앞 부트 표지.
 STORAGE: Final = {
     "log": "capa-alerts-log-v1",
     "states": "capa-alerts-states-v1",
     "seen": "capa-alerts-seen-v1",
+    "boot": "capa-alerts-boot-v1",
 }
+# 이 서버 프로세스의 부트 표지 — 프로세스마다 한 번 정해 세션 · 회차가 달라도 그대로다.
+BOOT_MARK: Final = alerts.new_id()
 
 # 알림 칸이 쓰는 글. `{…}` 는 JS 가 채운다. 「사내」 를 쓰지 않는다.
 TEXT: Final[dict[str, str]] = {
@@ -204,6 +214,7 @@ def alert_center_data(
         # 이번 화면 주소 — 「그 화면으로」 가 탭을 고를 때 그 화면에 닿았는지 본다.
         "here": alerts.current_page()[1],
         "storage": dict(STORAGE),
+        "boot": {"mark": BOOT_MARK, "notice": alerts.server_restart_note(BOOT_MARK)},
         "palette": palette(),
         "font": tokens.FONT_FAMILY,
         "text": dict(TEXT),

@@ -3265,7 +3265,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
   테두리)와 머리 툴바 슬롯에 두 호스트(변경 칩 · Alarm 단추)를 세우고 칸 자체는 접는다(`_HIDE_STYLE`). data 는 세션만 읽는다
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
-  `palette()` · 글 `TEXT`). 패널은 브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id 는
+  `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」). 패널은
+  브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id · 앞 부트 표지는
   이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
   문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 딸린 표(`tables`)는 표마다 「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저
   안에서 파일을 만든다(원본 값 · BOM — 서버를 부르지 않는다, 표는 코드마다 가장 새 줄에만 남기고 탭 저장소가 넘치면 저장본에서 오래된
@@ -3279,7 +3280,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Guide · Print · 테마 단추와 같이 툴바 글꼴을 물려받는다(`:host(.capa-alert-alarm)` 의 `font-family: inherit` — alarm-01, 변경
   칩은 한글 글이라 앱 글꼴). 시험:
   `tests/test_alert_center.py`(data · 자리 · 변경 목록) · `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node
-  순수 구획 `<alerts-rows>`).
+  순수 구획 `<alerts-rows>` · `<alerts-storage>`).
 - `src/capa_simulation/components/state_alerts.py` — 화면이 상태 알림 · 화면 오류 알림을 낼 때 쓰는 공용 조각(알림 체계 2단계).
   `simulation_scope(active, period | dates=)`(활성 리비전 `content_token` + 조회기간 · 조회일 — 지문 재료, 로그의 범위 줄
   「시나리오 · rN · 26.01–26.12」, 미저장 편집이면 그 말을 붙인다 — 세션만 읽는다) · `equipment_scope`(세션의 (공통 대장, 일정)
@@ -6209,6 +6210,20 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   옮기지 않는다(`role=status` · polite). 대화상자가 열린 동안 호스트에 `inert` 가 붙지만 그리기는 그대로다.
 - **기록(L1)은 이 브라우저 탭 `sessionStorage`** 다(D1 (가) — 200줄 · 12시간, 새로고침 · 테마 전환에도 남음). 서버 분석 기록(L2)은
   usage-log 1단계와 함께 만든다(D6 — 자리만 `alerts.record_server_event`).
+- **서버 재시작 알림**(2026-11-07 통합 검수 D4 (가) — `GL-07`, 사건 · 확인 필요). 재시작 뒤 세션은 새것이라 파이썬만으로는
+  재시작과 첫 접속을 가르지 못해 브라우저가 판정한다(`TAB-02` 와 같은 길) — 프로세스마다 한 번 정하는 부트 표지(`alert_center.BOOT_MARK`)와
+  등록부를 지나 미리 만든 알림(`alerts.server_restart_note`)을 data 에 싣고, JS(`bootChanged`)가 이 탭 `sessionStorage` 의 앞 표지와
+  다를 때만 그 알림을 사건 길로 낸다. 첫 접속 · 새 탭(앞 표지 없음)과 새로고침 · 테마 전환 · 복제한 탭(같은 프로세스)에는 뜨지 않고,
+  저장소가 막히면 뜨지 않을 뿐 오류가 없다. 표지 · 알림은 프로세스 안에서 값이 같아야 한다 — 회차마다 새 값을 실으면 data 가 달라져 JS 가 회차마다
+  불린다(그래서 알림에 화면 · 주소를 싣지 않고 id 도 표지에서 짓는다). **회차를 스스로 돌리지 않는다**(D4 고르기에 없던 일 — 다시 정할 것은 `docs/TODO.md` 4장) — data 가 닿는 앱 전체 회차에 뜬다.
+  다시 붙은 뒤 회차가 도는지는 Streamlit 프런트가 정한다 — 마지막 회차가 프래그먼트였거나 `run_every` 프래그먼트가 있으면 회차를 요청해 곧바로 뜨고, 마지막이
+  앱 전체였던 탭은 요청하지 않아 다음 조작까지 옛 화면이다(2026-11-07 사본 실측, 까닭은 번들의 재접속 처리). **그 탭에서 프래그먼트 · 대화상자 안 조작을 먼저 하면
+  버려진다** — 새 세션이 모르는 프래그먼트의 요청을 `AppSession.request_rerun` 이 회차 없이 돌려보내 값만 바뀐 것처럼 보이고, **저장 단추는 콜백이 돌지 않아
+  저장되지 않는다.** 알림창 · `GL-07` · 오류가 모두 없고 폼은 열린 채다(사본 실측 — 필요 단축 일정 「기준선 저장」 · 「가상 제품 등록」 대화상자). `GL-07` 은 앱 전체 회차를
+  부르는 조작(화면 이동 · 사이드바)에서야 뜬다. **세션만 사라진 탭은 그 알림도 없다** — 끊긴 지 `server.disconnectedSessionTTL`(기본 120초, 우리 설정 없음)이 지나면
+  서버가 그대로여도 새 세션이라 미저장 고침이 사라지는데 표지가 같아 `GL-07` 이 뜨지 않는다(사본 실측 — TTL 을 줄여 잼). 두 길 다 사용자 결정 대기이고
+  기대는 Streamlit 동작은 `tests/test_reconnect_limits.py` 가 붙든다. 입장 화면이 덮는 회차(아직 들어가지 않은 탭을 새로고침)에는 알림창이 그
+  밑에 가려도 Alarm 줄 · 안 읽음 배지가 남는다(z-index 입장 화면 2147483000 > 알림창).
 - **머리 변경 칩**(D5 (가))은 바뀐 것이 있을 때만 Guide 왼쪽에 선다 — 판정은 탭 줄 주황 점과 같은 등록부에 시나리오 미저장 ·
   설비 가정 · UPEH 가정을 더한 것(`change_summary.session_changes` — 세션만 읽음). 600px 미만에서는 칩을 Alarm 점으로 합치고
   툴바 `Print` 를 숨긴다(`app_header.SHELL_STYLE`).

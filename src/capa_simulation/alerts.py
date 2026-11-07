@@ -133,6 +133,9 @@ ALERT_LOG_SWITCH: Final = "CAPA_USAGE_LOG"
 
 # 그리지 못한 오류의 로그 「계기」 — 누른 동작의 결과가 아니라 화면을 그리다 난 일이다.
 PAGE_ERROR_CAUSE: Final = "데이터 때문에 화면을 그리지 못함"
+# 서버 재시작 알림의 코드와 로그 「계기」(`server_restart_note`).
+SERVER_RESTART_CODE: Final = "GL-07"
+SERVER_RESTART_CAUSE: Final = "이 탭을 연 뒤 서버가 다시 시작됨"
 
 _CODE_PATTERN: Final = re.compile(r"^[A-Z]{2,4}-\d{2}$")
 # 세션 칸. 이름은 알림 칸(`components/alert_center.py`)과 시험만 읽는다.
@@ -275,6 +278,15 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("SY-05", "error", "state", "버킷의 정본을 받지 않은 서버 — 모드 칸이 비었음"),
     # 접속 명단 파일이 아직 없어 환경변수 목록을 첫 판으로 쓰는 동안(`auth/access_store.py`).
     AlertSpec("AD-09", "check", "state", "접속 명단이 환경변수 첫 판 — S3 파일 없음"),
+    # 알림 칸이 data 에 미리 싣고 JS 가 이 탭의 앞 부트 표지와 다를 때만 띄운다
+    # (`server_restart_note`).
+    AlertSpec(
+        "GL-07",
+        "check",
+        "event",
+        "열어 둔 탭 — 서버가 다시 시작돼 저장하지 않은 고침이 사라짐",
+        short="서버가 다시 시작됐습니다. 저장하지 않은 고침은 사라졌습니다.",
+    ),
 )
 
 
@@ -495,6 +507,21 @@ def page_error_note(
     )
     if goto is not None:
         note["page"], note["href"] = goto
+    return note
+
+
+def server_restart_note(boot_mark: str) -> AlertNote:
+    """서버 재시작 알림 표지 한 칸(그리지 않는다) — 알림 칸이 data 에 미리 싣고 JS 가 이 탭의 앞
+    부트 표지와 다를 때만 띄운다(`components/alert_center.py`).
+
+    어느 화면의 일도 아니라 화면 · 주소를 싣지 않는다(「그 화면으로」 가 서지 않는다). id 도
+    표지에서 나와 **한 프로세스 안에서는 어느 세션 · 회차 · 화면이든 값이 같다** — 알림 칸 data 가
+    같으면 JS 가 다시 불리지 않는다는 약속을 깨지 않는다."""
+    note = event_note(
+        SERVER_RESTART_CODE, cause=SERVER_RESTART_CAUSE, alert_id=f"restart-{boot_mark}"
+    )
+    note.pop("page", None)
+    note.pop("href", None)
     return note
 
 
