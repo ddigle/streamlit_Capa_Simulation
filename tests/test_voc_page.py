@@ -34,6 +34,9 @@ from capa_simulation.services.voc_board import VOC_CATEGORIES
 VOC_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "voc.py"
 ON_VOC = "test_on_voc"
 AUTHOR_KEY = "voc_author"
+KEPT_CLOSE_KEY = "voc_kept_reply_close"
+GONE = "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
+GONE_KEPT = f"{GONE} 적어 둔 답변은 화면 맨 위에 있습니다."
 
 
 def _script(database_path: Path) -> str:
@@ -605,18 +608,17 @@ def test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept(
     assert not app.exception
     assert not successes(app)
     assert not app.warning, [message.value for message in app.warning]
-    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
-        ("그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다.", "FL-03")
-    ]
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [(GONE_KEPT, "FL-03")]
     assert [block.value for block in app.code] == ["지워진 글에 적은 답변"]
     assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
 
 
 @pytest.mark.parametrize(
-    ("typed", "kept"), [("지워진 글에 적은 답변", ["지워진 글에 적은 답변"]), ("  ", [])]
+    ("typed", "message", "kept"),
+    [("지워진 글에 적은 답변", GONE_KEPT, ["지워진 글에 적은 답변"]), ("  ", GONE, [])],
 )
 def test_a_reply_refused_for_its_input_on_a_deleted_post_still_says_the_post_is_gone(
-    tmp_path: Path, typed: str, kept: list[str]
+    tmp_path: Path, typed: str, message: str, kept: list[str]
 ) -> None:
     """저장소는 입력을 글 확인보다 먼저 본다 — 작성자가 빈 세션의 거절이 지운 글 상자 안 칸에 담겨
     어디에도 그려지지 않았고 적은 답변까지 사라졌다(2026-11-08 미검증 경로 점검 u2-05)."""
@@ -629,12 +631,75 @@ def test_a_reply_refused_for_its_input_on_a_deleted_post_still_says_the_post_is_
     _reply_button(app, post_id).click().run()
 
     assert not app.exception
-    assert not app.error, [message.value for message in app.error]
-    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
-        ("그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다.", "FL-03")
-    ]
+    assert not app.error, [box.value for box in app.error]
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [(message, "FL-03")]
     assert [block.value for block in app.code] == kept
     assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
+
+
+def _refused_reply(database_path: Path) -> tuple[AppTest, str]:
+    """위 글에 답변을 적는 동안 지워져 거절된 화면과 남은 아래 글 id 를 돌려준다."""
+    upper, lower = _two_posts(database_path)
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자").run()
+    app.text_area(key=f"voc_reply_body_{upper}").input("보지 못한 답변")
+    DuckDBScenarioRepository(database_path).remove_voc_post(upper)
+    _reply_button(app, upper).click().run()
+    assert [block.value for block in app.code] == ["보지 못한 답변"]
+    return app, lower
+
+
+def test_a_kept_reply_stays_until_it_is_closed(tmp_path: Path) -> None:
+    """글이 화면 아래쪽이면 거절 직후 「적어 둔 답변」 은 창 위로 벗어나 있다. 다음 회차에 꺼내
+    버리면 다른 글을 처리하는 사이 맨 위를 한 번도 보지 않은 답변이 사라진다(u2-06)."""
+    database_path = tmp_path / "scenario.duckdb"
+    app, lower = _refused_reply(database_path)
+
+    app.text_input(key=AUTHOR_KEY).input("담당자2").run()
+    assert [block.value for block in app.code] == ["보지 못한 답변"]
+    app.button(key=f"voc_resolve_{lower}").click().run()
+    assert not app.exception
+    assert [block.value for block in app.code] == ["보지 못한 답변"]
+    app.session_state[ON_VOC] = False
+    app.run()
+    app.session_state[ON_VOC] = True
+    app.run()
+    assert [block.value for block in app.code] == ["보지 못한 답변"]
+
+    app.button(key=KEPT_CLOSE_KEY).click().run()
+
+    assert not app.exception
+    assert not app.code
+    assert KEPT_CLOSE_KEY not in [button.key for button in app.button]
+
+
+def test_the_close_button_warns_that_the_kept_reply_goes_away(tmp_path: Path) -> None:
+    """「닫기」 는 글을 되돌릴 수 없이 버린다 — 누르기 전에 풍선이 말한다(UI-NTF-09)."""
+    app, _ = _refused_reply(tmp_path / "scenario.duckdb")
+
+    assert "되돌릴 수 없습니다" in str(app.button(key=KEPT_CLOSE_KEY).help)
+
+
+@pytest.mark.parametrize(
+    ("second", "kept"),
+    [
+        ("다음 답변", "보지 못한 답변\n\n다음 답변"),
+        ("보지 못한 답변", "보지 못한 답변"),
+    ],
+)
+def test_a_second_refusal_adds_to_the_kept_reply_instead_of_replacing_it(
+    tmp_path: Path, second: str, kept: str
+) -> None:
+    """남은 글 위에 또 거절되면 앞 글을 덮지 않고, 겹쳐 온 같은 글은 두 번 붙이지 않는다(u2-06)."""
+    database_path = tmp_path / "scenario.duckdb"
+    app, lower = _refused_reply(database_path)
+    app.text_area(key=f"voc_reply_body_{lower}").input(second)
+    DuckDBScenarioRepository(database_path).remove_voc_post(lower)
+
+    _reply_button(app, lower).click().run()
+
+    assert not app.exception
+    assert [block.value for block in app.code] == [kept]
 
 
 def test_resolving_a_post_deleted_by_another_session_is_refused(tmp_path: Path) -> None:

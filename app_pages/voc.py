@@ -69,10 +69,12 @@ POST_BODY_KEY = "voc_post_body"
 POST_FORM_ERROR_KEY = "voc_post_form_error"
 # 그 사이 다른 세션이 지운 글에 답변·답변 완료 표시·글 삭제를 하려던 거절. 아무것도 하지 않았고 그
 # 자리에 고칠 입력이 없어(지운 글의 상자는 다시 그리지 않는다) 알림창 · Alarm 에만 낸다(설계 규칙
-# UI-NTF-03 — `queue_flash(…, popup_only=True)`). 적어 둔 답변(`KEPT_REPLY_KEY`)은 알림이 아니라
-# 사용자의 글이라 머리 알림 칸에 남겨 복사해 가게 한다.
+# UI-NTF-03 — `queue_flash(…, popup_only=True)`). 적어 둔 답변(`KEPT_REPLY_KEY` — 거절된 차례대로 든
+# 튜플)은 알림이 아니라 사용자의 글이라 머리 알림 칸에 「닫기」 까지 남겨 복사해 가게 한다.
 GONE_FLASH_KEY = "voc_gone_flash"
 KEPT_REPLY_KEY = "voc_kept_reply"
+KEPT_REPLY_CLOSE_KEY = "voc_kept_reply_close"
+KEPT_REPLY_WHERE = "적어 둔 답변은 화면 맨 위에 있습니다."
 # 쓰기 단추의 key 세대(AGENTS 9장 「쓰기 콜백은 빠른 두 번 누름을 거른다」). 새 글 폼은 하나,
 # 답변 폼과 답변 완료 단추는 글마다 하나다. 비교와 쓰기는 `write_guard.write_once` 가
 # 한다 — 더블클릭은 두 회차의 콜백이 겹쳐 와 세션 칸 비교만으로는 둘 다 지났다. 지운 글은
@@ -84,6 +86,12 @@ DELETE_HANDLED_KEY = "voc_delete_handled"
 POSTED_MESSAGE = "글을 올렸습니다."
 REPLIED_MESSAGE = "답변을 남겼습니다."
 
+
+def _close_kept_replies() -> None:
+    """「닫기」 콜백 — 적어 둔 답변을 걷는다."""
+    st.session_state.pop(KEPT_REPLY_KEY, None)
+
+
 render_page_header("VOC")
 render_page_guide("voc", title="VOC")
 
@@ -93,11 +101,20 @@ render_page_guide("voc", title="VOC")
 # 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다. 지운 글에 적어 둔 답변도 같은
 # 칸에 그린다.
 notices = render_flash(FLASH_KEY, GONE_FLASH_KEY)
-kept_reply = st.session_state.pop(KEPT_REPLY_KEY, None)
-# 적어 둔 답변은 버리지 않는다 — 답변 칸은 글과 함께 사라지므로 여기서 복사해 갈 수 있게 둔다.
-if isinstance(kept_reply, str) and kept_reply.strip():
+# 적어 둔 답변은 꺼내 버리지 않는다 — 답변 칸은 글과 함께 사라지고, 글이 화면 아래쪽이면 거절 직후
+# 이 칸은 창 위로 벗어나 있어 다른 글을 처리하는 회차에 비우면 본 적 없는 답변을 잃는다.
+kept_replies = st.session_state.get(KEPT_REPLY_KEY, ())
+if kept_replies:
     notices.caption("적어 둔 답변")
-    notices.code(kept_reply, language=None, wrap_lines=True)
+    notices.code("\n\n".join(kept_replies), language=None, wrap_lines=True)
+    notices.button(
+        "닫기",
+        key=KEPT_REPLY_CLOSE_KEY,
+        icon=":material/close:",
+        type="tertiary",
+        help="적어 둔 답변을 지웁니다. 되돌릴 수 없습니다.",
+        on_click=_close_kept_replies,
+    )
 
 database_path = str(DUCKDB_PATH.resolve())
 try:
@@ -118,16 +135,19 @@ replies_by_post: dict[str, pd.DataFrame] = (
 
 def _refuse_gone_press(message: str, kept_reply: str = "") -> None:
     """그 사이 지운 글에 한 누름 — 아무것도 쓰지 않았다고 알림창 · Alarm 에만 알리고(`FL-03`), 적어
-    둔 답변은 머리 알림 칸에 남긴다."""
+    둔 답변은 머리 알림 칸에 남긴다. 남은 글 위에 또 거절되면 덮지 않고 뒤에 붙이고, 겹쳐 온 둘째
+    누름의 같은 글은 다시 붙이지 않는다."""
+    keeping = bool(kept_reply.strip())
     queue_flash(
         GONE_FLASH_KEY,
-        message,
+        f"{message} {KEPT_REPLY_WHERE}" if keeping else message,
         kind="warning",
         icon=":material/delete_forever:",
         popup_only=True,
     )
-    if kept_reply.strip():
-        st.session_state[KEPT_REPLY_KEY] = kept_reply
+    kept_replies = st.session_state.get(KEPT_REPLY_KEY, ())
+    if keeping and kept_reply not in kept_replies:
+        st.session_state[KEPT_REPLY_KEY] = (*kept_replies, kept_reply)
 
 
 def _post_is_gone(database_path: str, post_id: str) -> bool:
