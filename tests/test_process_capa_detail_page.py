@@ -7,7 +7,7 @@ HOME 칸 클릭과 월 그림의 칸 선택은 AppTest 가 재현하지 못하�
 인자·세션 달)을 넣고 돌린다(`tests/test_process_detail_state.py`·`tests/test_process_capa_view.py`
 가 콜백 쪽을 본다).
 
-- 설비 DB 가 빈 하네스는 「설비 일정 없음: 저장본 없음」 카드와 ① 공식 기준만 선다.
+- 설비 DB 가 빈 하네스는 「설비 일정 없음: 저장본 없음」 마크와 ① 공식 기준만 선다.
 - 설비 일정은 시드 공정 하나(`DEMO_Chip_Attach`)에 저장본·Cut-off 를 넣은 따로 된 하네스로 본다.
 - 칸 누름·◀▶ 는 **진짜 프래그먼트 회차**(`tests/fragment_browser.py`)로 본문 프래그먼트만 도는지,
   그 회차가 이벤트 칸에 앱 전체 회차와 같은 수를 쓰는지 본다.
@@ -55,7 +55,12 @@ from capa_simulation.components.shortening_board import (
     SHORTENING_HIGHLIGHT_KEY,
 )
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
-from capa_simulation.navigation import CONSTRAINT_SIMULATION, PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    CONSTRAINT_SIMULATION,
+    PROCESS_CAPA_DETAIL,
+)
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.cache import (
     clear_global_execution_capacity_cache,
     clear_global_process_rename_cache,
@@ -312,8 +317,15 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
     assert "④ 단축 근거" not in cards
-    # 설비 일정 없음 카드와 가용설비 현황 링크(단독 실행은 글자로 물러선다).
-    assert any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
+    # 채울 입력이 가용설비 현황에 있다 — 자리에는 마크만, 까닭은 알림 전문이고 길은 그 줄의 「그
+    # 화면으로」 다(설계 규칙 UI-NTF-08). 머리 배지가 까닭을 적으니 KPI 칩은 거듭하지 않는다.
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "PD-01")
+    assert note["page"] == tab_label(AVAILABLE_EQUIPMENT_STATUS)
+    assert note["href"] == AVAILABLE_EQUIPMENT_STATUS.href
+    assert note["full"].startswith(f"공정 Capa 상세 · {process_box.value} — ")
+    assert "설비 마스터가 없습니다" in note["full"]
+    assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
     # 정리 줄(CSV·탭 링크)은 설비 일정이 설 때만이다.
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
     # HOME 에서 오지 않았으므로 출처 띠가 없다.
@@ -1111,7 +1123,7 @@ def test_an_assumption_does_not_leak_into_the_official_rate_cache(
 def test_a_broken_equipment_database_keeps_the_official_section(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """설비 DB 를 못 읽어도 ① 공식 구획·KPI·근거 패널은 남는다. 머리 배지와 까닭 카드가 같은
+    """설비 DB 를 못 읽어도 ① 공식 구획·KPI·근거 패널은 남는다. 머리 배지와 알림 짧은 글이 같은
     말이다."""
     root = tmp_path_factory.mktemp("process_capa_detail_broken_equipment")
     broken = root / "equipment.duckdb"
@@ -1131,7 +1143,7 @@ def test_a_broken_equipment_database_keeps_the_official_section(
 def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_section(
     dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """판정은 통과했는데 설비 일정 계산이 멈추면 까닭 카드 제목이 머리 배지와 같은 「계산 오류」다 —
+    """판정은 통과했는데 설비 일정 계산이 멈추면 알림 짧은 글이 머리 배지와 같은 「계산 오류」다 —
     「설비 일정 참고」로 서지 않고, 이미 맞은 조건(저장본·이름·Cut-off)을 까닭처럼 적지 않는다."""
 
     def fail(*args: object, **kwargs: object) -> None:

@@ -426,7 +426,7 @@ def build_process_capa_canvas(
       None 이면 접힌 것이다(소요대수 ▸).
     - `home_rates` 를 넘기면 맨 아래에 「확보율 (HOME 표시)」 줄이 선다(확보율 보정·선행 반영 값,
       회색).
-    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 페이지가 까닭 카드를 둔다).
+    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 그 자리는 화면이 둔다).
     - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
     - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
       id 는 무시한다.

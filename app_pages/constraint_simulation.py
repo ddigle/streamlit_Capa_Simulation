@@ -31,7 +31,7 @@
 받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로), 어댑터·서비스의
 `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」, DB 경로 없음).
 `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError` 가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로
-둔갑한다. 설비 일정 확인(판정 · 까닭 카드)과 계획 받기는 「개조 일정」 모드와 같은 함수
+둔갑한다. 설비 일정 확인(판정 · 멈춘 자리)과 계획 받기는 「개조 일정」 모드와 같은 함수
 (`components/constraint_equipment_plan.render_equipment_plan`)이고, 제품 갈래는 그 사이
 (`before_plan`)에 선다.
 
@@ -106,7 +106,6 @@ from capa_simulation.components.state_alerts import (
     missing_handover_text,
 )
 from capa_simulation.constraint_simulation_state import (
-    CONSTRAINT_ABSENT_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
@@ -151,7 +150,7 @@ from capa_simulation.equipment_scenario_activation import (
     resolve_equipment_session,
 )
 from capa_simulation.modification_schedule_state import SCHEDULE_MODE
-from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -218,7 +217,6 @@ PAGE_DESCRIPTION = (
     "확보율이 언제부터 얼마나 떨어지는가. 「개조 일정」 은 N대 × D일 개조를 기준 확보율을 지키며 "
     "언제 할지 찾습니다. 저장하지 않는 그때그때 보기입니다."
 )
-AVAILABLE_EQUIPMENT_PAGE = AVAILABLE_EQUIPMENT_STATUS.path
 HELD_LABEL = "보유 제약 호기"
 HELD_HELP = (
     "이미 제약 제품을 돌릴 수 있게 개조·Qual 된 호기를 이 공정의 세션 설비 시나리오 호기에서 "
@@ -401,21 +399,6 @@ with notices:
     report_locked_arrival(opened_process)
 
 
-def render_reason_card(
-    title: str, detail: str, *, equipment_link: bool, help: str | None = None
-) -> None:
-    """설비 일정이 서지 않는 까닭 카드 한 장(+ 다음 화면 링크). `help` 는 까닭 줄의 풍선(규칙)."""
-    with st.container(border=True, key=CONSTRAINT_ABSENT_KEY):
-        st.markdown(f":material/event_busy: **{title}**")
-        st.caption(detail, help=help)
-        if equipment_link:
-            render_page_link(
-                AVAILABLE_EQUIPMENT_PAGE,
-                label="가용설비 현황에서 설비·Cut-off 보기",
-                icon=":material/precision_manufacturing:",
-            )
-
-
 def render_header(process: str, line: str) -> None:
     """머리 한 줄(공정·조건)과 오른쪽 끝 「← 공정 Capa 상세」."""
     with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -445,7 +428,6 @@ if schedule_mode:
             card_name=CARD_NAME,
             card_icon=CARD_ICON,
             render_header=render_header,
-            render_reason_card=render_reason_card,
         )
     )
     st.stop()
@@ -810,7 +792,6 @@ equipment_plan = render_equipment_plan(
     process_label=process_label,
     subject="제약 시뮬레이션",
     render_header=render_header,
-    render_reason_card=render_reason_card,
     before_plan=product_ready,
     with_timeline=new_unit_since is not None,
     with_held_units=True,

@@ -26,7 +26,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, data_error_texts, events, place_errors, states
+from alert_marks import active_state, data_error_marks, data_error_texts, events, states
 from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
@@ -39,6 +39,7 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
+    EQUIPMENT_SCREEN,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
 )
@@ -68,7 +69,11 @@ from capa_simulation.constraint_simulation_state import (
 )
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.modification_schedule_state import CONSTRAINT_MODE_KEY
-from capa_simulation.navigation import CONSTRAINT_SIMULATION, PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    CONSTRAINT_SIMULATION,
+    PROCESS_CAPA_DETAIL,
+)
 from capa_simulation.page_bootstrap import PAGE_VISIT_KEY
 from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -271,13 +276,25 @@ def test_a_fractional_cutoff_is_named_as_the_floored_days_it_counts(tmp_path: Pa
     assert line.proto.help == CUTOFF_SOURCE_HELP
 
 
-def test_an_empty_equipment_database_stands_the_card_and_one_reason_card(
+def test_an_empty_equipment_database_stands_the_card_and_one_mark(
     databases: tuple[Path, Path],
 ) -> None:
     app = _ok(_app(databases).run())
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value is not None
+    process = app.selectbox(key=CONSTRAINT_PROCESS_KEY).value
+    assert process is not None
     markdown = " ".join(_markdown(app))
     assert "설비 일정 없음: 저장본 없음" in markdown
+    # 채울 입력이 가용설비 현황에 있다 — 자리에는 마크만, 까닭은 알림이고 길은 그 줄이다(설계 규칙
+    # UI-NTF-08). 링크 · 회색 까닭 글이 자리에 남지 않는다.
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "CS-01")
+    assert note["page"] == EQUIPMENT_SCREEN[0] and note["href"] == EQUIPMENT_SCREEN[1]
+    assert note["full"].startswith(f"제약 시뮬레이션 · {process} — ")
+    assert "설비 마스터가 없습니다" in note["full"]
+    assert "설비 마스터가 없습니다" not in _captions(app)
+    assert AVAILABLE_EQUIPMENT_STATUS.path not in {
+        link["page"] for link in app.session_state["captured_page_links"]
+    }
     assert not app.metric
     assert not _has_chart(app, CONSTRAINT_CHART_KEY)
 
@@ -449,6 +466,7 @@ def test_a_process_without_equipment_stops_with_its_reason(
 ) -> None:
     app = _opened(dynamic_databases, OTHER_PROCESS)
     assert "설비 일정 없음: 설비 없음" in " ".join(_markdown(app))
+    assert data_error_marks(app) == 1
     assert not app.metric
 
 
@@ -1140,7 +1158,7 @@ def test_a_sum_mismatch_is_a_constraint_error_not_an_equipment_error(
     assert "설비 일정을 계산하지 못했습니다" not in errors
 
 
-def test_a_ready_process_missing_from_the_plan_stops_with_a_reason_card(
+def test_a_ready_process_missing_from_the_plan_stops_with_a_mark(
     dynamic_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original = simulation_cache.load_required_shortening_for_target
@@ -1159,7 +1177,10 @@ def test_a_ready_process_missing_from_the_plan_stops_with_a_reason_card(
     monkeypatch.setattr(simulation_cache, "load_required_shortening_for_target", without_process)
     app = _opened(dynamic_databases)
     assert "설비 일정 없음: 계획에 공정 없음" in " ".join(_markdown(app))
-    assert not place_errors(app)
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "CS-01")
+    assert note["page"] == EQUIPMENT_SCREEN[0]
+    assert "이름이 시나리오 공정과 완전히 같아야 맞댑니다" in note["full"]
     assert not app.metric
 
 

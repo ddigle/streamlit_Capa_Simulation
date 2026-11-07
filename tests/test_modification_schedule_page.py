@@ -27,7 +27,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import data_error_texts
+from alert_marks import data_error_marks, data_error_texts, events
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import (
     DYNAMIC_PROCESS,
@@ -566,11 +566,12 @@ def test_a_process_without_equipment_stops_with_its_reason(databases: tuple[Path
     app = _schedule(databases, OTHER_PROCESS)
 
     assert "설비 일정 없음: 설비 없음" in " ".join(_markdown(app))
-    # 까닭 카드 풀이의 주어는 이 모드 이름이다(제약 모드와 같은 함수 — `render_equipment_plan`).
-    # 어느 공정에 서는지의 규칙은 까닭 줄 풍선이다 — 카드에 늘 서는 설명 문장이 아니다(설계 규칙
-    # UI-TXT-01).
-    helps = " ".join(str(item.proto.help) for item in app.caption)
-    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in helps
+    # 자리에는 마크만 — 풀이의 주어는 이 모드 이름이고 까닭 · 규칙은 알림 전문이다(제약 모드와 같은
+    # 함수 — `render_equipment_plan`, 설계 규칙 UI-NTF-08).
+    assert data_error_marks(app) == 1
+    (note,) = events(app, "CS-01")
+    assert note["full"].startswith("개조 일정 · ")
+    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in note["full"]
     assert "공정 Capa 상세 ② 와 같은 값" not in _captions(app)
     assert not app.metric
     assert app.number_input(key=SCHEDULE_UNITS_KEY).value == 4

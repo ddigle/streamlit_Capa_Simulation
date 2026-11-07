@@ -1,12 +1,12 @@
 # Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인 · 계획 블록(`render_equipment_plan`)의
-# 멈추는 갈래 차례와 까닭 글, 같은 출처 띠 글 조각을 화면 없이 본다.
+# 멈추는 갈래 차례와 멈춘 자리 알림, 같은 출처 띠 글 조각을 화면 없이 본다.
 
 """`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출)와 같은 글 조각.
 
 페이지 시험(`tests/test_constraint_simulation_page.py` ·
 `tests/test_modification_schedule_page.py`)은 두 모드의 화면 갈래를 AppTest 로 본다. 여기서는 함수
 하나가 두 모드에 같은 갈래 차례를 주는지 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어
-`subject`) · 그 모드의 앞 갈래(`before_plan`) · 계획 계산 오류 — 를 머리 · 까닭 카드 그리기를 적는
+`subject`) · 그 모드의 앞 갈래(`before_plan`) · 계획 계산 오류 — 를 머리 그리기와 마크 알림을 적는
 가짜로 본다. 계획 받기가 불리면 실패하는 가짜 `simulation_cache` 함수로 「앞 갈래가 멈추면 계획을
 받지 않는다」 를 잡는다. 두 모드 출처 띠의 같은 조각(소요 시나리오 이름표 · 설비 기준 괄호 · UPEH
 가정 단서)의 글도 여기서 못 박는다.
@@ -26,6 +26,7 @@ import streamlit as st
 import capa_simulation.components.constraint_equipment_plan as constraint_equipment_plan
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.constraint_equipment_plan import (
+    EQUIPMENT_SCREEN,
     UPEH_NOT_APPLIED_NOTE,
     EquipmentPlanSource,
     equipment_readiness,
@@ -34,11 +35,15 @@ from capa_simulation.components.constraint_equipment_plan import (
     source_scenario_text,
     upeh_assumption_note,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.page_bootstrap import ProcessPageInputs
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
 from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.process_equipment_timeline import (
+    MISSING_CUTOFF,
+    NO_COUNTED_UNITS,
     NO_EQUIPMENT,
+    NO_SNAPSHOT,
     READY,
     DynamicReadiness,
 )
@@ -51,22 +56,30 @@ PROCESS = "DEMO_Chip_Attach"
 
 
 class _Recorder:
-    """머리 한 줄 · 까닭 카드 · 오류 글을 차례대로 적는다."""
+    """머리 한 줄 · 마크 알림 · 평문 줄을 차례대로 적는다."""
 
     def __init__(self) -> None:
         self.headers: list[tuple[str, str]] = []
-        self.cards: list[tuple[str, str, bool]] = []
-        # 까닭 줄 풍선(규칙) — 카드마다 같은 차례.
-        self.helps: list[str | None] = []
+        self.errors: list[dict[str, Any]] = []
+        self.captions: list[tuple[str, str | None]] = []
 
     def header(self, process: str, line: str) -> None:
         self.headers.append((process, line))
 
-    def card(
-        self, title: str, detail: str, *, equipment_link: bool, help: str | None = None
-    ) -> None:
-        self.cards.append((title, detail, equipment_link))
-        self.helps.append(help)
+    def error(self, message: str, **kwargs: Any) -> None:
+        self.errors.append({"message": message, **kwargs})
+
+    def caption(self, body: str, *, help: str | None = None) -> None:
+        self.captions.append((body, help))
+
+
+@pytest.fixture
+def recorder(monkeypatch: pytest.MonkeyPatch) -> _Recorder:
+    """멈춘 자리의 마크 · 평문 줄을 적는 가짜를 끼운다."""
+    written = _Recorder()
+    monkeypatch.setattr(constraint_equipment_plan, "render_data_error", written.error)
+    monkeypatch.setattr(st, "caption", written.caption)
+    return written
 
 
 class _BrokenSnapshot:
@@ -123,7 +136,6 @@ def _run(
         process_label=PROCESS,
         subject=subject,
         render_header=recorder.header,
-        render_reason_card=recorder.card,
         before_plan=before_plan,
     )
 
@@ -134,15 +146,19 @@ def test_readiness_is_none_when_the_equipment_db_failed_or_no_process_is_chosen(
 
 
 @pytest.mark.usefixtures("no_plan_loading")
-def test_an_equipment_db_error_stops_with_its_own_reason_and_no_equipment_link() -> None:
-    recorder = _Recorder()
-
+def test_an_equipment_db_error_stops_with_its_own_mark_and_no_other_screen(
+    recorder: _Recorder,
+) -> None:
     assert _run(_source(equipment_error="설비 DB 가 잠겼습니다."), None, recorder) is None
 
     ((process, line),) = recorder.headers
     assert process == PROCESS and line.endswith(":blue-badge[설비 일정 없음: 설비 DB 오류]")
-    assert recorder.cards == [
-        ("설비 일정 없음: 설비 DB 를 읽지 못했습니다", "설비 DB 가 잠겼습니다.", False)
+    assert recorder.errors == [
+        {
+            "message": "설비 DB 가 잠겼습니다.",
+            "code": "CS-01",
+            "text": "설비 일정 없음: 설비 DB 를 읽지 못했습니다",
+        }
     ]
 
 
@@ -158,11 +174,10 @@ def test_an_equipment_db_error_stops_with_its_own_reason_and_no_equipment_link()
     ],
 )
 def test_a_process_whose_schedule_cannot_stand_names_the_mode_and_skips_the_mode_branch(
-    subject: str, phrase: str
+    subject: str, phrase: str, recorder: _Recorder
 ) -> None:
-    """설비 일정이 서지 않으면 그 모드의 앞 갈래(제약 영향의 제품 갈래)보다 먼저 멈춘다 — 까닭 카드
-    풀이의 주어만 모드마다 다르다."""
-    recorder = _Recorder()
+    """설비 일정이 서지 않으면 그 모드의 앞 갈래(제약 영향의 제품 갈래)보다 먼저 멈춘다 — 마크
+    알림의 첫머리와 풀이의 주어만 모드마다 다르다."""
     asked: list[bool] = []
 
     def before_plan() -> bool:
@@ -178,19 +193,56 @@ def test_a_process_whose_schedule_cannot_stand_names_the_mode_and_skips_the_mode
     )
 
     assert stopped is None and not asked
-    ((title, detail, link),) = recorder.cards
-    assert title == "설비 일정 없음: 설비 없음" and link
-    # 까닭 줄은 까닭만, 어느 공정에 서는지의 규칙(주어가 모드 이름)은 그 풍선이다(설계 규칙
-    # UI-TXT-01).
-    (help_text,) = recorder.helps
-    assert help_text is not None and phrase in help_text and phrase not in detail
+    (error,) = recorder.errors
+    assert error["code"] == "CS-01"
+    assert error["text"] == f"{PROCESS} — 설비 일정 없음: 설비 없음"
+    # 채울 입력은 가용설비 현황에 있다 — 길은 Alarm 줄의 「그 화면으로」, 자리에는 글이 없다.
+    assert error["goto"] == EQUIPMENT_SCREEN
+    assert error["message"].startswith(f"{subject} · {literal_markdown(PROCESS)} — ")
+    assert phrase in error["message"]
+    assert not recorder.captions
 
 
 @pytest.mark.usefixtures("no_plan_loading")
-def test_the_mode_branch_stops_after_the_check_and_before_the_plan() -> None:
-    """판정을 지난 뒤 `before_plan` 이 거짓이면 계획을 받지 않고 멈춘다(까닭은 그 갈래가 그린다)."""
-    recorder = _Recorder()
+@pytest.mark.parametrize(
+    ("status", "words"),
+    [
+        (NO_SNAPSHOT, "설비 일정 없음: 저장본 없음"),
+        (MISSING_CUTOFF, "설비 일정 없음: Cut-off 미기재"),
+        (NO_EQUIPMENT, "설비 일정 없음: 설비 없음"),
+    ],
+)
+def test_a_missing_input_is_a_mark_that_opens_the_equipment_screen(
+    status: str, words: str, recorder: _Recorder
+) -> None:
+    assert _run(_source(), DynamicReadiness(status), recorder) is None
 
+    (error,) = recorder.errors
+    assert error["text"].endswith(words) and error["goto"] == EQUIPMENT_SCREEN
+    assert not recorder.captions
+
+
+@pytest.mark.usefixtures("no_plan_loading")
+def test_a_process_without_counted_units_is_a_plain_line_not_an_error(
+    recorder: _Recorder,
+) -> None:
+    """HBM·EDP 호기도 기존보유도 없는 공정은 채울 입력이 없는 빈 상태다 — 고를 때마다 Alarm 에
+    오류가 쌓이지 않게 평문 한 줄이고 서는 조건은 풍선이다(설계 규칙 UI-TXT-04 · UI-NTF-08)."""
+    readiness = DynamicReadiness(NO_COUNTED_UNITS, cutoff_days=7)
+
+    assert _run(_source(), readiness, recorder, subject="개조 일정") is None
+
+    assert not recorder.errors
+    ((body, help_text),) = recorder.captions
+    assert body == readiness.detail
+    assert help_text is not None and "개조 일정은 설비 일정 기준 가용" in help_text
+    ((_, line),) = recorder.headers
+    assert line.endswith(":blue-badge[설비 일정 없음: HBM·EDP 호기 없음]")
+
+
+@pytest.mark.usefixtures("no_plan_loading")
+def test_the_mode_branch_stops_after_the_check_and_before_the_plan(recorder: _Recorder) -> None:
+    """판정을 지난 뒤 `before_plan` 이 거짓이면 계획을 받지 않고 멈춘다(까닭은 그 갈래가 그린다)."""
     stopped = _run(
         _source(snapshot=_BrokenSnapshot()),
         DynamicReadiness(READY, cutoff_days=7, has_units=True),
@@ -200,22 +252,12 @@ def test_the_mode_branch_stops_after_the_check_and_before_the_plan() -> None:
     )
 
     assert stopped is None
-    assert not recorder.headers and not recorder.cards
+    assert not recorder.headers and not recorder.errors
 
 
-def test_a_failure_while_building_the_plan_key_is_the_plan_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_failure_while_building_the_plan_key_is_the_plan_error(recorder: _Recorder) -> None:
     """계획 키를 만드는 단계(계산 칸 꺼내기)에서 깨져도 「설비 일정을 계산하지 못했습니다」 갈래다 —
     두 모드가 같은 `try` 를 쓴다(제약 영향 모드는 합치기 전에는 키 만들기가 `try` 밖이었다)."""
-    recorder = _Recorder()
-    errors: list[str] = []
-    monkeypatch.setattr(
-        constraint_equipment_plan,
-        "render_data_error",
-        lambda message, **_: errors.append(message),
-    )
-
     stopped = _run(
         _source(snapshot=_BrokenSnapshot()),
         DynamicReadiness(READY, cutoff_days=7, has_units=True),
@@ -227,10 +269,10 @@ def test_a_failure_while_building_the_plan_key_is_the_plan_error(
     assert stopped is None
     ((_, line),) = recorder.headers
     assert line.endswith(":blue-badge[설비 일정 없음: 계산 오류]")
-    (error,) = errors
-    assert error.startswith("설비 일정을 계산하지 못했습니다 — ")
-    assert "계산 칸을 꺼내지 못했습니다" in error
-    assert not recorder.cards
+    (error,) = recorder.errors
+    assert error["message"].startswith("설비 일정을 계산하지 못했습니다 — ")
+    assert "계산 칸을 꺼내지 못했습니다" in error["message"]
+    assert "goto" not in error
 
 
 # ------------------------------------------------------------------ 같은 글 조각

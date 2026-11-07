@@ -14,7 +14,7 @@
   개조(대수 · 기간 버튼 + 직접 · 동시 상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준
   확보율 — 제약 모드와 **한 정본**, 정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
 - **설비 일정 확인 · 계획** — 제약 모드와 같은 함수 하나(`constraint_equipment_plan.
-  render_equipment_plan` — 멈추는 갈래 · 까닭 카드 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
+  render_equipment_plan` — 멈추는 갈래 · 멈춘 자리 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
   키**로).
 - **계산** — 순수 서비스 `services/modification_schedule.py`. 「가장 고르게」 는 이분 탐색이라 수백
   ms 까지 가므로 결과를 조건 값으로 세션에 몇 벌 기억한다(`remembered_result` — Streamlit 캐시가
@@ -40,7 +40,6 @@ from capa_simulation.components.constraint_equipment_plan import (
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
     EquipmentPlanSource,
-    ReasonCard,
     equipment_readiness,
     render_equipment_plan,
     source_equipment_text,
@@ -225,7 +224,7 @@ DEADLINE_HELP: Final = (
 
 class ScheduleModeContext(NamedTuple):
     """페이지가 넘기는 것 — 설비 일정 확인 · 계획 입력(제약 모드와 같은 묶음)·설비 세션·카드 이름과
-    머리·까닭 카드 그리기."""
+    머리 그리기."""
 
     source: EquipmentPlanSource
     """공통 진입 · 설비 스냅샷 · Cut-off · 설비 DB 오류 · 오늘 · 입력 비가동 — 제약 모드와 한
@@ -237,7 +236,6 @@ class ScheduleModeContext(NamedTuple):
     card_name: str
     card_icon: str
     render_header: Callable[[str, str], None]
-    render_reason_card: ReasonCard
 
 
 class ScheduleChoice(NamedTuple):
@@ -616,7 +614,6 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
         process_label=process_label,
         subject="개조 일정",
         render_header=context.render_header,
-        render_reason_card=context.render_reason_card,
     )
     if equipment_plan is None:
         return

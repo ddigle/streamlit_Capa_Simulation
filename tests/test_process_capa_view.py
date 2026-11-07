@@ -15,6 +15,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
+from alert_marks import data_error_marks, events
 from streamlit.testing.v1 import AppTest
 from test_process_capa_canvas import (
     MONTHS,
@@ -26,6 +27,7 @@ from test_process_capa_canvas import (
 )
 from test_required_shortening import PROCESS
 
+from capa_simulation.components.constraint_equipment_plan import EQUIPMENT_SCREEN
 from capa_simulation.components.process_capa_canvas import (
     SECTION_DOWNTIME,
     SECTION_IDS,
@@ -35,6 +37,7 @@ from capa_simulation.components.process_capa_canvas import (
 )
 from capa_simulation.components.process_capa_view import (
     CANVAS_MEMO_LIMIT,
+    DYNAMIC_ABSENT_HELP,
     ENTRY_SECTIONS,
     TARGET_HELP,
     DynamicView,
@@ -69,7 +72,13 @@ from capa_simulation.services.process_capa_detail import (
     ProcessCapaKpis,
     build_process_capa_summary,
 )
-from capa_simulation.services.process_equipment_timeline import ROW_SHORTENED, ROW_VIRTUAL
+from capa_simulation.services.process_equipment_timeline import (
+    MISSING_CUTOFF,
+    NO_COUNTED_UNITS,
+    ROW_SHORTENED,
+    ROW_VIRTUAL,
+    DynamicReadiness,
+)
 from capa_simulation.services.required_shortening import (
     STATUS_MET,
     MonthlyTarget,
@@ -374,7 +383,41 @@ def _kpi_row_app() -> None:
 
     from capa_simulation.components.process_capa_view import render_process_kpis
 
-    render_process_kpis(_kpis(), thresholds=THRESHOLDS, dynamic=None, absent_reason="일정 없음")
+    render_process_kpis(_kpis(), thresholds=THRESHOLDS, dynamic=None)
+
+
+def _absent_app(status: str) -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from capa_simulation.components.process_capa_view import _render_dynamic_absent
+    from capa_simulation.services.process_equipment_timeline import DynamicReadiness
+
+    readiness = DynamicReadiness(status)
+    _render_dynamic_absent(
+        cast(Any, SimpleNamespace(readiness=readiness, dynamic_error="", process_label="AVI"))
+    )
+
+
+def test_an_input_missing_from_another_screen_is_a_mark_with_the_road_in_its_alert() -> None:
+    """Cut-off 를 적을 곳은 가용설비 현황이다 — 자리에는 마크만, 길은 Alarm 줄이다(UI-NTF-08)."""
+    app = AppTest.from_function(_absent_app, args=(MISSING_CUTOFF,)).run()
+
+    assert not app.exception and data_error_marks(app) == 1 and not app.caption
+    (note,) = events(app, "PD-01")
+    assert note["short"] == "AVI — 설비 일정 없음: Cut-off 미기재"
+    assert note["full"].startswith("공정 Capa 상세 · AVI — 가용설비 현황의 공정별 Cut-off")
+    assert (note["page"], note["href"]) == EQUIPMENT_SCREEN
+
+
+def test_a_process_without_counted_units_is_a_plain_line_with_the_rule_in_its_help() -> None:
+    """HBM·EDP 호기도 기존보유도 없는 공정은 채울 입력이 없다 — 빈 상태 평문이다(UI-TXT-04)."""
+    app = AppTest.from_function(_absent_app, args=(NO_COUNTED_UNITS,)).run()
+
+    assert not app.exception and data_error_marks(app) == 0
+    (line,) = app.caption
+    assert line.value == DynamicReadiness(NO_COUNTED_UNITS).detail
+    assert line.proto.help == DYNAMIC_ABSENT_HELP
 
 
 def test_the_shortage_caption_keeps_its_negation_in_the_help() -> None:

@@ -984,11 +984,6 @@ render_process_kpis(
     kpis,
     thresholds=thresholds,
     dynamic=dynamic,
-    absent_reason=(
-        "설비 DB 오류"
-        if readiness is None
-        else (readiness.reason if not readiness.ready else "설비 일정 계산 오류")
-    ),
     official=official_kpis if upeh_token else None,
 )
 render_cause_links(kpis, dynamic=dynamic, process=process)
