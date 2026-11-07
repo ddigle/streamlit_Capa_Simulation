@@ -31,6 +31,7 @@ from typing import Any
 import pytest
 from alert_marks import active_state, alert_notes, states
 from asgi_driver import http, websocket_talk
+from child_env import narrow_child_env
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -399,7 +400,7 @@ def test_the_light_import_does_not_bring_streamlit() -> None:
         capture_output=True,
         text=True,
         check=True,
-        env={"PYTHONPATH": str(PROJECT_ROOT / "src"), "PATH": ""},
+        env=narrow_child_env({"PYTHONPATH": str(PROJECT_ROOT / "src"), "PATH": ""}),
     )
 
     assert found.stdout.strip() == "[]"

@@ -1,6 +1,14 @@
 # 검증 4종을 PR 과 main 에서 돌린다. 개발 PC 의 네 명령과 같은 순서·같은 도구다. 둘째 작업
 # `windows-pytest` 는 사내와 같은 Windows 에서 pytest 만 돌리고 막지 않는다(아래 그 작업 머리).
 #
+# **시험은 두 작업 모두 8 조각으로 나눠 돈다.** 시험이 15,000 건을 넘어(2026-11) 러너 한 대로는 제한
+# 시간 안에 끝나지 못했고, 끝나지 못하면 초록도 빨강도 없다 — 2026-10-25 뒤로 그렇게 멈춰 있었다.
+# `uv.lock` 을 사내가 그대로 쓰므로 `pytest-xdist` 를 더하지 않고 matrix 와 `scripts/run_test_shard.py` 로
+# 나눈다. 어림 — 사외 8 묶음 합계 약 72분(2026-11-07), 러너가 비슷하면 조각 하나가 Linux 약 10분이다.
+# Windows 는 끝난 적이 없어 합계를 모른다(120분을 넘겼다). 480분까지는 가장 무거운 조각도 80분 안이다.
+# 조각 수는 matrix 목록 하나로 정하고 두 작업이 같은 수를 쓴다 — 같은 번호가 같은 파일이라 Windows 빨간
+# 조각을 Linux 같은 번호와 그대로 견준다. 러너 동시 사용 상한 20 안이다(8 + 8 + 판정 1).
+#
 # 병행 개발에서 이 파일이 하는 일은 하나다 — 두 후보 브랜치 중 **무엇이 진짜 통과했는지**를
 # 사람이 아니라 기계가 말하게 하는 것. `main` 에 브랜치 보호를 걸지 않아 「통과해야만 병합」을
 # 강제하지 않으므로, 초록·빨강을 보여 주는 데까지가 이 파일의 몫이다.
@@ -14,6 +22,7 @@ on:
     branches: [main, "cand/**"]
 
 # 같은 브랜치에 연달아 올리면 앞의 실행을 취소한다. 같은 일을 두 번 돌리지 않는 곳이 여기다.
+# 취소된 판은 빨강이 아니라 회색으로 끝난다 — 아래 `verify-result` 머리.
 #
 # **브랜치 이름으로 묶는다.** `github.ref` 로 묶으면 후보 브랜치에 PR 이 열려 있을 때
 # push 와 pull_request 가 서로 다른 ref 를 갖게 되어 **같은 커밋을 두 번** 돌린다.
@@ -35,8 +44,13 @@ jobs:
     # **사외 저장소 이름을 바꾸면 이 줄도 같이 고친다.**
     if: github.repository == 'ddigle/streamlit_Capa_Simulation'
     runs-on: ubuntu-latest
-    # 사외 WSL 에서 pytest 한 판이 약 12분이다(2026-10-13). 러너는 2코어 공용이라 더 걸린다.
+    # 조각 하나의 마지막 상한이다. 시험이 오래 걸리면 「4/4 테스트」 단계 상한이 먼저 끊는다.
     timeout-minutes: 60
+    strategy:
+      # 한 조각이 빨개도 나머지가 끝까지 돌아 결과를 낸다.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,45 +81,80 @@ jobs:
         run: uv sync --frozen --python 3.10.11
 
       # 단계 이름에 번호를 붙인 것은 개발자가 아닌 사람이 Checks 탭만 보고 「어디서
-      # 멈췄나」를 읽게 하려는 것이다.
+      # 멈췄나」를 읽게 하려는 것이다. 앞의 셋은 파일을 나눌 일이 없어 1 조각에서만 돈다.
       - name: 1/4 포맷
+        if: matrix.shard == 1
         run: uv run --no-sync python -m ruff format --check .
 
       - name: 2/4 린트
+        if: matrix.shard == 1
         run: uv run --no-sync python -m ruff check .
 
       - name: 3/4 타입
+        if: matrix.shard == 1
         run: uv run --no-sync python -m mypy
 
+      # 단계 상한을 작업 상한보다 낮게 둔다. 단계 상한에 끊기면 결과가 `failure` 지만, 작업 상한에
+      # 끊기면 `cancelled` 라 밀려 취소된 판과 결과 값이 같아진다.
       - name: 4/4 테스트
+        timeout-minutes: 50
         env:
           PYTHONIOENCODING: utf-8
-        run: uv run --no-sync python -m pytest -q
+        run: uv run --no-sync python scripts/run_test_shard.py --shard ${{ matrix.shard }} --of ${{ strategy.job-total }}
 
       - name: 결과 한 줄
         if: always()
         run: |
           if [ "${{ job.status }}" = "success" ]; then
+            echo "## 조각 ${{ matrix.shard }}/${{ strategy.job-total }} 통과" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## 조각 ${{ matrix.shard }}/${{ strategy.job-total }} 에서 멈췄습니다 — 위 단계 중 빨간 것을 엽니다" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # 조각이 여럿이라도 판정은 한 줄이다. 조각이 빨갛거나 끊겼으면 이 작업도 빨갛다. 막지 않는
+  # `windows-pytest` 는 기다리지 않는다.
+  #
+  # **`always()` 를 쓰지 않는다.** 판이 취소돼도 참이라, 밀려 취소된 판의 판정이 빨갛게 끝나고 같은
+  # 커밋에 빨강과 초록이 함께 남는다. `cancelled()` 는 조각 하나의 결과가 아니라 판 전체의 취소만
+  # 보므로 취소된 판만 판정에서 빠지고, 조각이 끊긴 판은 여기까지 와서 빨강이 된다. 맨 앞 `!` 는
+  # YAML 태그로 읽히므로 `${{ }}` 로 감싼다.
+  verify-result:
+    if: ${{ !cancelled() && github.repository == 'ddigle/streamlit_Capa_Simulation' }}
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 결과 한 줄
+        run: |
+          if [ "${{ needs.verify.result }}" = "success" ]; then
             echo "## 검증 4종 전부 통과" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "## 검증에서 멈췄습니다 — 위 단계 중 빨간 것을 엽니다" >> "$GITHUB_STEP_SUMMARY"
+            echo "## 검증에서 멈췄습니다 — 빨간 조각을 엽니다" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
   # **Windows 에서도 pytest 를 돌린다 — 막지 않는다**(2026-11-01 사용자 결정 A7). 사내는 Windows 에서 4관문을
   # 도는데 사외 CI 가 Linux 뿐이라, 경로 구분자 · 명령줄 길이 · 권한 비트처럼 Windows 에서만 깨지는 시험이 사내
   # 리뷰 한 바퀴 뒤에야 보였다(리뷰 202610271800 발견 2 — 16개). 처음에는 DuckDB 잠금 · 임시 경로 같은 차이가
   # 더 보일 수 있어 **작업 단위 `continue-on-error`** 로 둔다 — 이 작업이 빨개도 워크플로는 초록이고 위
-  # `verify` 가 판정이다. 두어 판 본 뒤 굳힐 때 그 한 줄을 뺀다.
+  # `verify-result` 가 판정이다. 두어 판 본 뒤 굳힐 때 그 한 줄을 뺀다.
   #
   # 설치는 위 작업과 **같은 세 줄**이다(`setup-uv` · `uv python install 3.10.11` · `uv sync --frozen`) — 다른
   # 길로 깔면 Windows 차이와 설치 차이를 가를 수 없다(`tests/test_ci_workflow.py` 가 두 작업의 그 줄을 견준다).
   # 포맷 · 린트 · 타입은 OS 와 상관없어 Linux 쪽에서만 본다. 셸은 기본(pwsh)이다 — 사내도 PowerShell 이다.
+  #
+  # 러너 로캘은 영어라 사내 한국어 로캘(cp949 · 한글 오류 글)까지는 흉내 내지 못한다. 그 차이는 리뷰로 온다.
   windows-pytest:
     if: github.repository == 'ddigle/streamlit_Capa_Simulation'
     runs-on: windows-latest
     continue-on-error: true
-    # Windows 러너는 같은 시험이 Linux 보다 느리다(파일 열기 · 프로세스 띄우기).
+    # 조각 하나의 상한이다. Windows 러너는 같은 시험이 Linux 보다 느리다(파일 열기 · 프로세스 띄우기).
     timeout-minutes: 120
+    strategy:
+      # 조각마다 결과가 나와야 Windows 에서만 깨지는 시험을 조각 번호로 찾는다.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -127,13 +176,13 @@ jobs:
       - name: 테스트 (Windows — 막지 않음)
         env:
           PYTHONIOENCODING: utf-8
-        run: uv run --no-sync python -m pytest -q
+        run: uv run --no-sync python scripts/run_test_shard.py --shard ${{ matrix.shard }} --of ${{ strategy.job-total }}
 
       - name: 결과 한 줄
         if: always()
         run: |
           if ("${{ job.status }}" -eq "success") {
-            "## Windows pytest 통과" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            "## Windows 조각 ${{ matrix.shard }}/${{ strategy.job-total }} 통과" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           } else {
-            "## Windows pytest 에서 멈췄습니다 — 막지 않는 작업이라 병합 판정은 verify 입니다" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            "## Windows 조각 ${{ matrix.shard }}/${{ strategy.job-total }} 에서 멈췄습니다 — 막지 않는 작업이라 병합 판정은 verify-result 입니다" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           }

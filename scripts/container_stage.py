@@ -20,6 +20,7 @@ C-DEP 의 상태 검사는 시작 제한이 1분이고 무엇을 묻는지 모�
 from __future__ import annotations
 
 import html
+import os
 import re
 import socket
 import socketserver
@@ -144,7 +145,8 @@ class _Display:
 class _StageServer(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
-    allow_reuse_address = True
+    # Windows 의 `SO_REUSEADDR` 는 남이 듣는 포트까지 함께 잡는다 — 「포트를 못 잡음」 이 사라진다.
+    allow_reuse_address = os.name == "posix"
     display: _Display
     base_path: str
 

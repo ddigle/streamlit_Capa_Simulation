@@ -196,6 +196,7 @@ class SubprocessCommandRunner:
                 env=merged,
                 capture_output=True,
                 text=True,
+                errors="replace",  # 사내 PC 의 로캘 밖 바이트 하나로 실행기가 죽지 않는다
                 check=False,
                 shell=False,
                 timeout=timeout_seconds,

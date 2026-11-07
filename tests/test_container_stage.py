@@ -31,6 +31,19 @@ FAKE_BUCKET = "Demo_ops_bucket"
 FAKE_KEY = "FAKE-s3-access-key-0001"
 
 
+def _ipv6_loopback_works() -> bool:
+    """IPv6 를 끈 PC · 컨테이너가 있다. 임시 응답은 그때 IPv4 로 물러난다(`open_stage`)."""
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
+
+
+NEEDS_IPV6 = pytest.mark.skipif(not _ipv6_loopback_works(), reason="IPv6 루프백이 없다")
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
@@ -215,6 +228,7 @@ def test_the_same_port_can_be_taken_right_after_closing() -> None:
         next_owner.bind(("127.0.0.1", port))
 
 
+@NEEDS_IPV6
 def test_a_port_taken_by_someone_else_leaves_an_empty_stage() -> None:
     with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as holder:
         holder.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
@@ -250,6 +264,7 @@ def test_children_of_the_start_script_do_not_hold_the_port(
     assert port > 0
 
 
+@NEEDS_IPV6
 def test_both_address_families_are_answered(
     stage: tuple[container_stage.Stage, int],
 ) -> None:
