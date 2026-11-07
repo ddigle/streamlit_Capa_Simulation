@@ -146,6 +146,7 @@ from capa_simulation.scenario_state import (
 from capa_simulation.services.korean_particle import object_particle, with_topic_particle
 from capa_simulation.services.revision_compatibility import revision_block_reason
 from capa_simulation.services.scenario_list_edits import (
+    ChangeCounts,
     ListDraft,
     ListProblems,
     ListRules,
@@ -255,6 +256,13 @@ ARCHIVE_GONE_MESSAGE = (
 )
 # 「공식 이력」 칸에 보이는 최근 건수.
 HISTORY_LIMIT = 20
+# 「공식 이력」 표 칸 폭(px)과 시각 꼴(`_short_time` 과 같은 글자). 앞 네 칸의 합이 옆 칸 처음 폭
+# 안에 들어 「지정시각」 이 기준 창에서 보인다 — 시나리오 칸이 줄고 공식버전명은 남는 폭을 쓴다.
+HISTORY_VERSION_WIDTH_PX = 66
+HISTORY_SCENARIO_WIDTH_PX = 96
+HISTORY_REVISION_WIDTH_PX = 54
+HISTORY_TIME_WIDTH_PX = 112
+HISTORY_TIME_FORMAT = "YY.MM.DD HH:mm"
 # 복제 폼 입력칸의 세대. 저장에 성공하면 올라 다음 회차에 빈 폼으로 선다(`clone_field_key`).
 CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
 # 「상세」 칸 작업 줄 아래 결과 · 오류 칸(종류, 글).
@@ -405,7 +413,12 @@ class _ListView:
     saved: SavedList
     releases: Sequence[OfficialReleaseSummary]
     problems: ListProblems
-    pending: int
+    counts: ChangeCounts
+
+    @property
+    def pending(self) -> int:
+        """배지 「저장 전 변경 n건」 — 「저장 전 변경」 칸의 수 셋을 더한다(순서는 옮긴 줄 수)."""
+        return self.counts.scenario + self.counts.order + self.counts.revision
 
 
 def _list_view(view: _ListView | None) -> _ListView:
@@ -539,12 +552,8 @@ def _settle_list_draft(
     if fitted.draft != draft:
         store_draft(fitted.draft)
     problems = list_problems(fitted.draft, saved, LIST_RULES)
-    pending = (
-        len(fitted.draft.scenarios)
-        + len(fitted.draft.revisions)
-        + (1 if fitted.draft.order is not None else 0)
-    )
-    return _ListView(fitted.draft, saved, releases, problems, pending)
+    counts = change_counts(fitted.draft, saved, problems)
+    return _ListView(fitted.draft, saved, releases, problems, counts)
 
 
 def _on_list_outbox() -> None:
@@ -655,7 +664,7 @@ def _render_changes(database_path: str, view: _ListView) -> None:
                 view.draft,
                 view.saved,
                 view.problems,
-                change_counts(view.draft, view.saved, view.problems),
+                view.counts,
             ),
         },
         on_outbox=_on_list_outbox,
@@ -980,7 +989,6 @@ def _render_detail(
         discard_changes = True
         with st.container():
             if has_unsaved_scenario_changes():
-                st.warning("지금 올라와 있는 시나리오에 저장하지 않은 편집이 있습니다.")
                 discard_changes = st.checkbox(
                     "변경을 버리고 불러오기",
                     key=DISCARD_UNSAVED_KEY,
@@ -1434,14 +1442,22 @@ def _render_official_history(releases: Sequence[OfficialReleaseSummary]) -> None
                     "공식버전": f"v{release.release_no}",
                     "시나리오": release.scenario_name,
                     "리비전": f"r{release.revision_no}",
-                    "공식버전명": release.release_name,
                     "지정시각": release.published_at,
+                    "공식버전명": release.release_name,
                 }
                 for release in releases[:HISTORY_LIMIT]
             ]
         ),
         hide_index=True,
         width="stretch",
+        column_config={
+            "공식버전": st.column_config.TextColumn(width=HISTORY_VERSION_WIDTH_PX),
+            "시나리오": st.column_config.TextColumn(width=HISTORY_SCENARIO_WIDTH_PX),
+            "리비전": st.column_config.TextColumn(width=HISTORY_REVISION_WIDTH_PX),
+            "지정시각": st.column_config.DatetimeColumn(
+                format=HISTORY_TIME_FORMAT, width=HISTORY_TIME_WIDTH_PX
+            ),
+        },
     )
     if len(releases) > HISTORY_LIMIT:
         st.caption(f"최근 {HISTORY_LIMIT}건만 보입니다.")

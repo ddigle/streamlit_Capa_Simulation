@@ -10,9 +10,9 @@
 
 - **지금 상태**: 이 실행(앱 프로세스)에서 예약이 서 있는가 — 실행 줄 허락
   (`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 「이 서버에서는 꺼짐」 값 줄, 서 있으면 다음 실행
-  시각(오늘 회차를 이미 잡았으면 내일), 그리고 현재 공식버전의 주차(또는 오류). 설정 값은 바로 아래
-  설정 칸이 말한다. 회차가 오래 돌거나 배경 확인이 멈춘 것 같으면 경고한다(사내 조회에는 시간
-  제한이 없다).
+  시각(오늘 회차를 이미 잡았으면 내일), 그리고 현재 공식버전의 주차(공식버전이 없으면 값 줄
+  「없음」, 읽지 못하면 오류). 설정 값은 바로 아래 설정 칸이 말한다. 회차가 오래 돌거나 배경 확인이
+  멈춘 것 같으면 경고한다(사내 조회에는 시간 제한이 없다).
 - **설정**: 켜기·확인 시각·시뮬레이션명 키워드·기준 확보율. 공용 프로필이라 저장은 편집을 시작할
   때 본 version 과 대조하고, 바꾼 칸을 설정 변경 기록에 남긴다. **켤 때** 현재 공식버전에 주차가
   없으면 저장하지 않고 오류로 알린다.
@@ -124,6 +124,7 @@ from capa_simulation.services.auto_official_update import (
     MissingOfficialWeek,
     auto_off_mark,
     describe_config_change,
+    missing_official_message,
     next_scheduled_run,
     percent_text,
     scheduled_run_key,
@@ -183,6 +184,9 @@ MISSING_WEEK_MARK: Final = ":red[주차 없음]"
 # 실행 기록 「경고」 칸의 표지 — 발행한 회차의 사유 끝에 소요대수에 들지 않은 수요 경고가 이어
 # 적혔다. 문장 전체는 「사유」 칸에 그대로 남는다.
 UNCOUNTED_DEMAND_MARK: Final = "⚠ 소요대수 밖 수요"
+# 실행 기록 표에서 짧은 값이 칸에 잘리지 않게 주는 폭(px) — 「사유」 처럼 긴 칸은 잘린 채 둔다.
+RUN_WARNING_WIDTH_PX: Final = 120
+RUN_RECEIVED_WIDTH_PX: Final = 124
 SETTINGS_SOURCE: Final = "시나리오 관리 · 자동 갱신"
 
 
@@ -195,16 +199,15 @@ def render_auto_official_update(
 ) -> None:
     """탭 본문. `sources`·`clock` 은 시험이 가짜 원천·시계를 넣는 자리다(화면은 넘기지 않는다).
     `alert_tab` 은 이 탭 이름(상태 알림 `AU-01` · `AU-02` 의 「그 화면으로」 —
-    `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
-    st.subheader("공식버전 자동 갱신")
+    `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다
+    (`_report_read_failure`도 같다)."""
     try:
         settings = repository.load_auto_official_update_settings()
     except BOOTSTRAP_ERRORS as exc:
-        render_data_error(
+        _report_read_failure(
             "자동 갱신 설정을 읽지 못했습니다: " + bootstrap_error_message(exc),
-            code="SC-02",
-            tab=AUTO_UPDATE_TAB_NAME,
             text="자동 갱신 설정을 읽지 못했습니다",
+            alert_tab=alert_tab,
         )
         return
     _render_status(repository, settings, now=clock(), alert_tab=alert_tab)
@@ -217,16 +220,25 @@ def render_auto_official_update(
         )
         changes = repository.list_auto_official_update_setting_changes(limit=SETTING_HISTORY_LIMIT)
     except BOOTSTRAP_ERRORS as exc:
-        render_data_error(
+        _report_read_failure(
             "자동 갱신 기록을 읽지 못했습니다: " + bootstrap_error_message(exc),
-            code="SC-02",
-            tab=AUTO_UPDATE_TAB_NAME,
             text="자동 갱신 기록을 읽지 못했습니다",
+            alert_tab=alert_tab,
         )
         return
     labels = get_process_labels()
     _render_run_history(runs, exclusions, labels)
     _render_setting_history(changes)
+
+
+def _report_read_failure(message: str, *, text: str, alert_tab: str | None) -> None:
+    """이 탭을 그리지 못한 자리의 데이터 Error 마크 + 사건 알림(`SC-02`). 닫힌 탭(`alert_tab`
+    None)은 마크도 알림도 내지 않는다 — 다른 탭을 보는 사람에게 이 탭 오류를 띄우지 않고, 탭을 연
+    회차가 다시 읽어 그 회차에 낸다(설계 규칙 UI-NTF-02). 부르는 네 자리는 모두 제 칸의 맨 끝이라
+    마크가 빠져도 뒤 칸이 밀리지 않는다."""
+    if alert_tab is None:
+        return
+    render_data_error(message, code="SC-02", tab=AUTO_UPDATE_TAB_NAME, text=text)
 
 
 # ---------------------------------------------------------------------------
@@ -299,25 +311,25 @@ def _render_status(
         try:
             baseline = current_official_baseline(repository)
         except MissingOfficialWeek as exc:
-            # 켜져 있으면 예약 회차가 이 까닭으로 멈춘다 — 오류다. 꺼져 있으면 켤 때 막히는 것을
-            # 미리 알리는 표지 + 풍선이다(켜거나 「지금 실행」을 누르면 그때 오류로 막는다).
-            if config.enabled:
-                render_data_error(
-                    bootstrap_error_message(exc),
-                    code="SC-02",
-                    tab=AUTO_UPDATE_TAB_NAME,
-                    text="현재 공식버전의 주차를 읽지 못했습니다",
+            message = bootstrap_error_message(exc)
+            if str(exc) == missing_official_message():
+                # 공식버전이 아예 없는 것은 못 읽은 것이 아니라 값이다 — 없다는 알림은 Capa 시나리오
+                # 탭의 `SC-01` 이 낸다(설계 규칙 UI-TXT-04 · UI-NTF-08).
+                st.markdown("**현재 공식버전** · 없음", help=message)
+            elif config.enabled:
+                # 켜져 있으면 예약 회차가 이 까닭으로 멈춘다 — 오류다.
+                _report_read_failure(
+                    message, text="현재 공식버전의 주차를 읽지 못했습니다", alert_tab=alert_tab
                 )
             else:
-                st.markdown(
-                    f"**현재 공식버전** · {MISSING_WEEK_MARK}", help=bootstrap_error_message(exc)
-                )
+                # 꺼져 있으면 켤 때 막히는 것을 미리 알리는 표지 + 풍선이다(켜거나 「지금 실행」을
+                # 누르면 그때 오류로 막는다).
+                st.markdown(f"**현재 공식버전** · {MISSING_WEEK_MARK}", help=message)
         except BOOTSTRAP_ERRORS as exc:
-            render_data_error(
+            _report_read_failure(
                 "현재 공식버전을 읽지 못했습니다: " + bootstrap_error_message(exc),
-                code="SC-02",
-                tab=AUTO_UPDATE_TAB_NAME,
                 text="현재 공식버전을 읽지 못했습니다",
+                alert_tab=alert_tab,
             )
         else:
             st.markdown(
@@ -480,8 +492,8 @@ def _render_settings_form(
                 changed_by = st.text_input(
                     "바꾼 사람(선택)",
                     value="",
-                    placeholder="이름을 적으면 설정 변경 기록에 남습니다",
                     width=280,
+                    help="이름을 적으면 설정 변경 기록에 남습니다.",
                 )
         notice = render_flash(SETTINGS_FLASH_KEY)
         refused = take_refusal(SETTINGS_SAVE_NAME)
@@ -766,7 +778,15 @@ def _render_run_history(
             st.caption("아직 돈 회차가 없습니다.")
             return
         st.caption(f"최근 {RUN_HISTORY_LIMIT}회차까지 · 최근 것이 위")
-        st.dataframe(run_history_frame(runs, exclusions, labels), hide_index=True, width="stretch")
+        st.dataframe(
+            run_history_frame(runs, exclusions, labels),
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "경고": st.column_config.TextColumn(width=RUN_WARNING_WIDTH_PX),
+                "받은 코드": st.column_config.TextColumn(width=RUN_RECEIVED_WIDTH_PX),
+            },
+        )
         offs = off_process_frame(runs, exclusions, labels)
         with st.expander(
             f"off 공정 목록 · {len(offs):,}건",

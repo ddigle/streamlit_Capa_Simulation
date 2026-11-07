@@ -11,6 +11,10 @@
 그려져야 프리필의 `st.session_state[...] = ...` 대입이 위젯 생성 전이 된다. 이미 만든
 위젯 key 에 같은 런에서 대입하면 `StreamlitAPIException` 이라, 순서를 바꾸면 행을 고를
 때마다 페이지 전체가 죽는다.
+
+폼 글자 칸의 key 는 세대를 단다(`form_field_key`). 폼 안 칸에 친 글자는 제출 전까지 브라우저만
+들고 있어, 같은 칸에 서버가 값을 써 넣으면 화면만 바뀌고 친 글자가 그대로 제출된다. 그래서 서버가
+칸을 채우거나 비울 때마다(행 고름 · 폼 초기화) 세대를 올려 새 위젯으로 세운다.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ from capa_simulation.components.scenario_list_state import follow_created_scenar
 from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
 from capa_simulation.components.state_alerts import alarm_table_place, alert_table
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.design import tokens
 from capa_simulation.io.bigdataquery_catalog import (
     fetch_simulation_catalog,
@@ -135,6 +140,8 @@ DETAIL_WINDOW_HELP: Final = (
     "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 끝 날을 늘립니다 — 기간이 길수록 "
     "조회가 오래 걸립니다."
 )
+# 빈 필수 칸을 모아 알릴 때 기간 자리의 이름 — 둘 가운데 하나만 있으면 된다.
+DETAIL_WINDOW_FIELDS: Final = "상세 조회 기간 또는 원천 DB 등록시점"
 # 조회 SQL 이 없어 잠긴 두 단추의 풍선 — 잠긴 동안만 까닭을 말한다(설계 규칙 UI-INP-07). 채울 자리는
 # 상태 알림 `AD-04` 전문(Alarm)이 적는다.
 CATALOG_LOCKED_HELP: Final = (
@@ -184,6 +191,8 @@ FORM_NOTE_KEY = "bigdataquery_form_note"
 # 상세 조회 기간(포함). 둘 다 비면 「원천 DB 등록시점」으로 기본 창을 정한다.
 FORM_DETAIL_START_KEY = "bigdataquery_form_detail_start"
 FORM_DETAIL_END_KEY = "bigdataquery_form_detail_end"
+# 폼 글자 칸의 세대(`form_field_key`).
+FORM_GENERATION_KEY = "bigdataquery_form_generation"
 FORM_DEFAULTS: Final[dict[str, str]] = {
     FORM_CODE_KEY: "",
     FORM_SOURCE_NAME_KEY: "",
@@ -251,8 +260,6 @@ def render_bigdataquery_registration(
     # 같은 까닭으로 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은 되살리지 않는다.
     _restore_dropped_prefill()
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
-    st.subheader("BigDataQuery 시나리오 등록")
-
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
     _render_configuration_banner(
@@ -373,7 +380,7 @@ def _render_configuration_banner(
                 if notice is not None and not (catalog_ready and detail_ready)
                 else "bigdataquery 패키지가 없어 실제 조회가 실패합니다 — 패키지를 깐 PC 에서"
             ),
-            full=notice,
+            full=alerts.plain_text(notice) if notice else None,
             tab=alert_tab,
         )
     line = banner_line(
@@ -494,7 +501,8 @@ def _render_catalog_list(toolbar: DeltaGenerator, *, registered_codes: frozenset
             # 붙어, 전체 목록으로 되돌리는 조작이 한 번에 끝난다.
             type="search",
             width=360,
-            placeholder="시뮬레이션명·코드·PLAN 부분 일치(공백은 AND)",
+            # 빈 글자라야 칸이 빈다 — None 이면 `type="search"` 기본 글 「Search」 가 선다.
+            placeholder="",
             help=CATALOG_KEYWORD_HELP,
         )
         scope = st.segmented_control(
@@ -609,15 +617,23 @@ def _apply_pick(pick: CatalogPick) -> None:
     _write_form_prefill(pick)
 
 
+def form_field_key(field: str) -> str:
+    """폼 글자 칸(`FORM_DEFAULTS` 의 이름)의 지금 세대 key. 세대 0 은 이름 그대로다."""
+    return widget_key(field, FORM_GENERATION_KEY)
+
+
 def _write_form_prefill(pick: CatalogPick) -> None:
-    """고른 행의 값으로 등록 폼 글자 칸 여섯(`FORM_DEFAULTS`)을 채운다. 상세 조회 기간은 뺀다."""
+    """고른 행의 값으로 등록 폼 글자 칸 여섯(`FORM_DEFAULTS`)을 채운다. 상세 조회 기간은 뺀다.
+
+    새 세대의 칸에 쓴다 — 칸에 친 채 제출하지 않은 글자가 고른 행의 값과 함께 남지 않게 한다."""
     prefill = registration_prefill(pick.row, catalog_window_label=pick.window.label())
-    st.session_state[FORM_CODE_KEY] = prefill.simulation_code
-    st.session_state[FORM_SOURCE_NAME_KEY] = prefill.source_name
-    st.session_state[FORM_SCENARIO_NAME_KEY] = prefill.scenario_name
-    st.session_state[FORM_REVISION_NAME_KEY] = prefill.revision_name
-    st.session_state[FORM_REGISTERED_AT_KEY] = prefill.registered_at
-    st.session_state[FORM_NOTE_KEY] = prefill.note
+    bump(FORM_GENERATION_KEY)
+    st.session_state[form_field_key(FORM_CODE_KEY)] = prefill.simulation_code
+    st.session_state[form_field_key(FORM_SOURCE_NAME_KEY)] = prefill.source_name
+    st.session_state[form_field_key(FORM_SCENARIO_NAME_KEY)] = prefill.scenario_name
+    st.session_state[form_field_key(FORM_REVISION_NAME_KEY)] = prefill.revision_name
+    st.session_state[form_field_key(FORM_REGISTERED_AT_KEY)] = prefill.registered_at
+    st.session_state[form_field_key(FORM_NOTE_KEY)] = prefill.note
 
 
 def _restore_dropped_prefill() -> None:
@@ -630,7 +646,7 @@ def _restore_dropped_prefill() -> None:
     건드리지 않는다. 위젯을 만들기 전에 불러야 한다.
     """
     pick = _stored_pick()
-    if pick is None or FORM_CODE_KEY in st.session_state:
+    if pick is None or form_field_key(FORM_CODE_KEY) in st.session_state:
         return
     if st.session_state.get(CATALOG_APPLIED_KEY) != pick.row.signature:
         return
@@ -666,9 +682,9 @@ def _consume_reset_request() -> None:
         CATALOG_FORM_PICKED_WINDOW_KEY,
         FORM_DETAIL_START_KEY,
         FORM_DETAIL_END_KEY,
-        *FORM_DEFAULTS,
     ):
         st.session_state.pop(key, None)
+    bump(FORM_GENERATION_KEY)
 
 
 def _render_registration_form(
@@ -679,7 +695,7 @@ def _render_registration_form(
     existing_names: frozenset[str],
 ) -> None:
     for key, value in FORM_DEFAULTS.items():
-        st.session_state.setdefault(key, value)
+        st.session_state.setdefault(form_field_key(key), value)
     st.session_state.setdefault(FORM_DETAIL_START_KEY, None)
     st.session_state.setdefault(FORM_DETAIL_END_KEY, None)
     pick = _stored_pick()
@@ -703,13 +719,13 @@ def _render_registration_form(
         width=DATE_FIELD_WIDTH_PX,
     )
     with st.form("bigdataquery_registration_form"):
-        st.text_input("조회할 시뮬레이션 코드", key=FORM_CODE_KEY)
-        st.text_input("원천 시뮬레이션명", key=FORM_SOURCE_NAME_KEY)
-        st.text_input("저장할 시나리오명", key=FORM_SCENARIO_NAME_KEY)
-        st.text_input("초기 리비전명", key=FORM_REVISION_NAME_KEY)
+        st.text_input("조회할 시뮬레이션 코드", key=form_field_key(FORM_CODE_KEY))
+        st.text_input("원천 시뮬레이션명", key=form_field_key(FORM_SOURCE_NAME_KEY))
+        st.text_input("저장할 시나리오명", key=form_field_key(FORM_SCENARIO_NAME_KEY))
+        st.text_input("초기 리비전명", key=form_field_key(FORM_REVISION_NAME_KEY))
         st.text_input(
             "원천 DB 등록시점 (선택)",
-            key=FORM_REGISTERED_AT_KEY,
+            key=form_field_key(FORM_REGISTERED_AT_KEY),
             placeholder="2026-08-29 14:30:00",
             # 빈 값은 검증을 건너뛰므로 (선택) 의미가 그대로다. 앞뒤 공백을 허용하는 것은
             # 원천 DB 값을 붙여넣는 칸이고 `_optional_datetime` 이 `strip()` 하기 때문이다.
@@ -719,7 +735,7 @@ def _render_registration_form(
                 "등록시점은 YYYY-MM-DD HH:MM:SS 형식으로 입력하세요.",
             ),
         )
-        st.text_area("등록 메모", key=FORM_NOTE_KEY, height=90)
+        st.text_area("등록 메모", key=form_field_key(FORM_NOTE_KEY), height=90)
         submitted = st.form_submit_button(
             "DB 조회 후 시나리오 저장",
             icon=":material/cloud_download:",
@@ -763,20 +779,40 @@ def _save_scenario(
     existing_names: frozenset[str],
 ) -> None:
     st.session_state.pop(CONFLICT_REPORT_STATE_KEY, None)
-    scenario_name = str(st.session_state.get(FORM_SCENARIO_NAME_KEY, "")).strip()
+    scenario_name = str(st.session_state.get(form_field_key(FORM_SCENARIO_NAME_KEY), "")).strip()
     if scenario_name in existing_names:
         # 같은 이름이 둘이면 사이드바에서 구분되지 않는다. 사내 조회 한 번을 아끼려고
         # 조회 전에 막는다.
         st.error("같은 이름의 시나리오가 이미 있습니다. 이름을 바꿔 저장하세요.")
         return
-    simulation_code = str(st.session_state.get(FORM_CODE_KEY, ""))
-    source_name = str(st.session_state.get(FORM_SOURCE_NAME_KEY, ""))
-    revision_name = str(st.session_state.get(FORM_REVISION_NAME_KEY, "")) or "초기 리비전"
-    note = str(st.session_state.get(FORM_NOTE_KEY, ""))
+    simulation_code = str(st.session_state.get(form_field_key(FORM_CODE_KEY), ""))
+    source_name = str(st.session_state.get(form_field_key(FORM_SOURCE_NAME_KEY), ""))
+    revision_name = (
+        str(st.session_state.get(form_field_key(FORM_REVISION_NAME_KEY), "")) or "초기 리비전"
+    )
+    note = str(st.session_state.get(form_field_key(FORM_NOTE_KEY), ""))
     try:
-        registered_at = _optional_datetime(str(st.session_state.get(FORM_REGISTERED_AT_KEY, "")))
+        registered_at = _optional_datetime(
+            str(st.session_state.get(form_field_key(FORM_REGISTERED_AT_KEY), ""))
+        )
     except ValueError as exc:
         st.error(bootstrap_error_message(exc))
+        return
+    # 빈 칸을 **한 번에** 모두 알린다 — 사내 조회 앞에서 막아 조회 한 번을 아끼고, 한 칸씩 말해 여러
+    # 번 누르지 않게 한다(복제 폼과 같은 꼴). 기간만 빈 회차는 `_submitted_detail_window` 가 말한다.
+    missing = [
+        label
+        for label, value in (
+            ("조회할 시뮬레이션 코드", simulation_code),
+            ("원천 시뮬레이션명", source_name),
+            ("저장할 시나리오명", scenario_name),
+        )
+        if not value.strip()
+    ]
+    if missing:
+        if registered_at is None and _detail_window_is_empty():
+            missing.append(DETAIL_WINDOW_FIELDS)
+        st.error(f"필수 칸이 비어 있습니다: {', '.join(missing)}")
         return
     window = _submitted_detail_window(registered_at, simulation_code=simulation_code)
     if window is None:
@@ -887,6 +923,13 @@ def _registered_span_line() -> str | None:
     return f"**고른 코드의 원천 등록일** · {seen}"
 
 
+def _detail_window_is_empty() -> bool:
+    """상세 조회 기간 두 칸이 모두 비었는가."""
+    start = st.session_state.get(FORM_DETAIL_START_KEY)
+    end = st.session_state.get(FORM_DETAIL_END_KEY)
+    return not isinstance(start, date) and not isinstance(end, date)
+
+
 def _submitted_detail_window(
     registered_at: datetime | None, *, simulation_code: str = ""
 ) -> QueryWindow | None:
@@ -900,7 +943,7 @@ def _submitted_detail_window(
     end = st.session_state.get(FORM_DETAIL_END_KEY)
     other = _picked_for_another_code(simulation_code)
     if other is not None:
-        typed_at = str(st.session_state.get(FORM_REGISTERED_AT_KEY, "")).strip()
+        typed_at = str(st.session_state.get(form_field_key(FORM_REGISTERED_AT_KEY), "")).strip()
         if other.registered_at.strip() and typed_at == other.registered_at.strip():
             # 등록시점은 저장 메타데이터(`source_registered_at`)이기도 하다. 기간을 고쳤어도
             # 남의 등록시점이 이 코드의 원천 등록시점으로 저장되면 안 된다.
@@ -925,11 +968,7 @@ def _submitted_detail_window(
         st.error("상세 조회 시작일과 종료일을 모두 지정하거나 둘 다 비우세요.")
         return None
     if registered_at is None:
-        st.error(
-            "상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요 — 기간을 비워 두면 그 "
-            f"등록일 {DETAIL_WINDOW_DAYS_BEFORE}일 전 ~ {DETAIL_WINDOW_DAYS_AFTER}일 뒤로 "
-            "조회합니다."
-        )
+        st.error("상세 조회 기간을 지정하거나 「원천 DB 등록시점」을 적으세요.")
         return None
     return registration_detail_window(registered_at.date())
 

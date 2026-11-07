@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import datetime, time
@@ -50,6 +51,8 @@ from capa_simulation.components.auto_official_update_tab import (
     EMPTY,
     RUN_NOW_BUTTON_KEY,
     RUN_NOW_HELP,
+    RUN_RECEIVED_WIDTH_PX,
+    RUN_WARNING_WIDTH_PX,
     RUNNING_MESSAGE,
     UNCOUNTED_DEMAND_MARK,
 )
@@ -253,6 +256,86 @@ def test_a_missing_week_is_a_status_line_while_off(database: Path) -> None:
     assert "주차 없음" in str(status.value)
     assert MISSING_WEEK_MESSAGE not in str(status.value)
     assert MISSING_WEEK_MESSAGE in str(status.proto.help)
+
+
+def _closed_tab(path: Path) -> AppTest:
+    """닫힌 탭 — 시나리오 관리가 다른 탭을 보는 회차에 이 본문을 그리는 꼴."""
+    script = TAB_SCRIPT.format(path=str(path)).replace(
+        "clock=fixed_clock,", "clock=fixed_clock,\n    alert_tab=None,"
+    )
+    app = AppTest.from_string(script, default_timeout=180).run()
+    assert not app.exception, [element.message for element in app.exception]
+    return app
+
+
+def test_a_store_without_an_official_version_is_a_value_line_not_an_error(database: Path) -> None:
+    """공식버전이 아예 없는 것은 값이다 — 켜져 있어도 마크 · 오류 알림 없이 「없음」 값 줄이 서고
+    까닭은 풍선이다. 없다는 알림은 Capa 시나리오 탭의 `SC-01` 몫이다."""
+    repository = new_repository(database)
+    settings = repository.load_auto_official_update_settings()
+    repository.replace_auto_official_update_settings(
+        replace(settings.config, enabled=True), expected_version=settings.version
+    )
+
+    app = _tab(database)
+
+    assert not data_error_marks(app) and not events(app, "SC-02")
+    status = next(element for element in app.markdown if "현재 공식버전" in str(element.value))
+    assert status.value == "**현재 공식버전** · 없음"
+    assert "아직 공식버전이 없습니다" in str(status.proto.help)
+
+
+def test_a_closed_tab_neither_marks_nor_alerts_what_it_could_not_read(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 탭을 보는 사람에게 닫힌 이 탭의 오류를 띄우지 않는다 — 네 자리 모두 탭을 연 회차에
+    낸다(설계 규칙 UI-NTF-02). 켜진 설정 · 주차 없는 공식버전과 세 읽기 실패를 돈다."""
+    import capa_simulation.components.auto_official_update_tab as tab
+
+    def enable(repository: DuckDBScenarioRepository) -> None:
+        settings = repository.load_auto_official_update_settings()
+        repository.replace_auto_official_update_settings(
+            replace(settings.config, enabled=True), expected_version=settings.version
+        )
+
+    def assert_closed_then_open() -> None:
+        closed = _closed_tab(database)
+        assert not data_error_marks(closed) and not events(closed, "SC-02")
+        opened = _tab(database)
+        assert data_error_marks(opened) == 1
+        assert [note["tab"] for note in events(opened, "SC-02")] == ["자동 갱신"]
+
+    enable(_without_week(database))
+    assert_closed_then_open()
+    _republish(new_repository(database), "PSM W40 공식")
+
+    def broken(*_args: object, **_kwargs: object) -> object:
+        raise ValueError("시험 — 읽지 못함")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tab, "current_official_baseline", broken)
+        assert_closed_then_open()
+    with monkeypatch.context() as patch:
+        patch.setattr(DuckDBScenarioRepository, "load_auto_official_update_settings", broken)
+        assert_closed_then_open()
+    with monkeypatch.context() as patch:
+        patch.setattr(DuckDBScenarioRepository, "list_auto_official_update_runs", broken)
+        assert_closed_then_open()
+
+
+def test_the_tab_opens_on_its_status_card_and_the_name_field_keeps_its_note_in_a_balloon(
+    database: Path,
+) -> None:
+    """탭 이름을 거듭하는 소제목이 없고, 「바꾼 사람」 칸의 안내는 칸이 비었을 때 보이는 글이 아니라
+    풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-07)."""
+    _with_w40(database)
+
+    app = _tab(database)
+
+    assert not app.subheader
+    field = _field(app.text_input, "바꾼 사람(선택)")
+    assert field.placeholder == ""  # type: ignore[attr-defined]
+    assert field.help == "이름을 적으면 설정 변경 기록에 남습니다."  # type: ignore[attr-defined]
 
 
 def test_an_unreadable_official_version_is_a_mark_not_a_red_box(
@@ -940,6 +1023,20 @@ def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]
     run = repository.find_manual_auto_official_update_run("cut0ff")
     assert run is not None and run.status == STATUS_PUBLISHED
     return repository, run.run_id
+
+
+def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Path) -> None:
+    """「⚠ 소요대수 밖 수요」 · 「W44 코드」 처럼 짧은 값까지 칸에서 잘렸다 — 두 칸에 폭을 준다.
+    사유는 긴 칸이라 폭을 주지 않고 잘린 채 둔다."""
+    _cut_off_published_round(database)
+
+    app = _tab(database)
+
+    table = next(element for element in app.dataframe if "받은 코드" in element.value.columns)
+    config = json.loads(table.proto.columns)
+    assert config["경고"]["width"] == RUN_WARNING_WIDTH_PX
+    assert config["받은 코드"]["width"] == RUN_RECEIVED_WIDTH_PX
+    assert "사유" not in config
 
 
 def _running_notices(app: AppTest) -> list[str]:
