@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import datetime, time
@@ -50,6 +51,8 @@ from capa_simulation.components.auto_official_update_tab import (
     EMPTY,
     RUN_NOW_BUTTON_KEY,
     RUN_NOW_HELP,
+    RUN_RECEIVED_WIDTH_PX,
+    RUN_WARNING_WIDTH_PX,
     RUNNING_MESSAGE,
     UNCOUNTED_DEMAND_MARK,
 )
@@ -1020,6 +1023,20 @@ def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]
     run = repository.find_manual_auto_official_update_run("cut0ff")
     assert run is not None and run.status == STATUS_PUBLISHED
     return repository, run.run_id
+
+
+def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Path) -> None:
+    """「⚠ 소요대수 밖 수요」 · 「W44 코드」 처럼 짧은 값까지 칸에서 잘렸다 — 두 칸에 폭을 준다.
+    사유는 긴 칸이라 폭을 주지 않고 잘린 채 둔다."""
+    _cut_off_published_round(database)
+
+    app = _tab(database)
+
+    table = next(element for element in app.dataframe if "받은 코드" in element.value.columns)
+    config = json.loads(table.proto.columns)
+    assert config["경고"]["width"] == RUN_WARNING_WIDTH_PX
+    assert config["받은 코드"]["width"] == RUN_RECEIVED_WIDTH_PX
+    assert "사유" not in config
 
 
 def _running_notices(app: AppTest) -> list[str]:
