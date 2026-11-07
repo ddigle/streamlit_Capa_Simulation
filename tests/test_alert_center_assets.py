@@ -416,6 +416,17 @@ def test_the_restart_notice_goes_through_the_event_path_on_receiving_data() -> N
     assert entry.index("const before = C.data") < entry.index("C.data = data")
 
 
+def test_a_data_arrival_counts_as_a_run_the_marks_can_miss() -> None:
+    """본 스레드가 묶인 사이 끝난 회차는 메시지가 한꺼번에 처리돼 회차 표지가 움직이지 않는다
+    (Streamlit 1.63 `handleMessage` — 2026-11-08 사본 실측 HOME). 새 세션은 세션 표지로 data 가
+    달라 JS 가 불리므로 그 도착을 회차로 센다 — 재시작 · 세션 만료 뒤 회차가 겹치지 않는다."""
+    entry = JS[JS.index("export default function (component)") :]
+    assert "C.runMoves += 1" in entry
+    assert entry.index("C.runMoves += 1") < entry.index("if (changed) persist(C)")
+    watcher = JS[JS.index("function watchRoot(") : JS.index("function connectionMoved(")]
+    assert "C.runMoves += 1" in watcher
+
+
 def test_a_lost_session_is_told_only_by_a_tab_that_had_something_to_lose() -> None:
     """같은 문서에서 세션 표지가 바뀌었고 서버는 그대로이며, 변경 목록이 있었거나 끊길 때 대화상자가
     열려 있던 탭에만 뜬다(2차 보드 R2 (가)). 새 문서(새로고침 · 테마 전환 · 새 탭 · 복제한 탭 · 첫

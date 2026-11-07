@@ -281,7 +281,7 @@ function cameBack(before, now) {
 function quietAfter(quiet, gap) {
   return gap > RECONNECT_TICK_MS * 2 ? 0 : quiet + gap
 }
-// 다시 붙은 뒤 틱마다 할 일 — 'stop'(다시 끊겼거나 회차 표지가 움직였거나 회차가 돌고 있다 — 프런트가 스스로 돈 회차다), 'wait'(아직 바쁘다),
+// 다시 붙은 뒤 틱마다 할 일 — 'stop'(다시 끊겼거나 회차가 보였거나 돌고 있다 — 프런트가 스스로 돈 회차다), 'wait'(아직 바쁘다),
 // 'ask'(앱 전체 회차를 부른다).
 function reconnectStep(connection, runState, moves, quiet, waited) {
   if (connection !== CONNECTED || moves > 0 || runState === 'running' || runState === 'rerunRequested') return 'stop'
@@ -357,7 +357,7 @@ function createCenter(data) {
     pendingTab: null,
     runRoot: null,
     runObserver: null,
-    // 회차 표지가 움직인 수 — 다시 붙은 뒤 기다리는 사이 회차가 돌았는지 본다.
+    // 회차가 보인 수(표지가 움직임 · data 가 닿음) — 다시 붙은 뒤 기다리는 사이 회차가 돌았는지 본다.
     runMoves: 0,
     connection: null,
     // 마지막으로 끊길 때 대화상자가 열려 있었나.
@@ -1400,6 +1400,8 @@ export default function (component) {
   const before = C.data
   C.data = data
   C.ask = setTriggerValue
+  // data 가 닿았으면 앱 전체 회차가 돈 것이다. 표지만으로는 놓친다 — 본 스레드가 묶인 사이 끝난 회차는 메시지가 한꺼번에 처리돼 표지가 움직이지 않는다.
+  C.runMoves += 1
   palette(C, C.host)
   watchRoot(C)
   let changed = false
