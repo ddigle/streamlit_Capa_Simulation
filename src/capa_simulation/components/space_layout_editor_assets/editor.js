@@ -72,7 +72,7 @@ export default function (component) {
   // 선다. FAB 전체에는 페이더가 없고 도구 줄에 기준일·「오늘로」가 선다.
   const TODAY = dayOr(data.today) || ''
   const RANGE = { min: dayOr(data.asOfMin) || '', max: dayOr(data.asOfMax) || '' }
-  // 색 기준 「필요 단축」 을 켠 층 보기 — 파이썬이 `asOfPinned`(고정 줄 뒷글)를 실을 때만이다. 기준일은 오늘로
+  // 색 기준 「필요 단축」 을 켠 층 보기 — 파이썬이 `asOfPinned`(고정 줄 풍선 글)를 실을 때만이다. 기준일은 오늘로
   // 고정이라 페이더 자리에 배치 편집과 같은 꼴의 고정 줄이 서고, 표시된 호기(`layer`)는 겹쳐 숨기지 않으며, 모든 호기의
   // 지연·보관 면을 칠하지 않는다(결정 D12 — 풍선 글로만). 배지(`shortBadges`)도 이때만 그린다. 끈 동안 data 에 두 칸이
   // 없다. 같은 epoch 안에서 고정 ↔ 페이더가 오가도 `adoptAsOf` 가 받은 날을 따른다(고정 동안 FADER 가 거짓).
@@ -7748,8 +7748,10 @@ export default function (component) {
   const faderNote = q('.sle-fader-note')
   const faderToday = q('.sle-fader-today')
   const pinnedDate = q('.sle-pinned-date')
+  const pinnedRow = q('.sle-pinned')
   const pinnedNote = q('.sle-pinned-note')
-  // 고정 줄 뒷글 — 편집기는 HTML 글(「· 편집 중 고정 …」) 그대로, 「필요 단축」 보기는 `data.asOfPinned`.
+  // 고정 줄 뒷글 — 편집기는 HTML 글(「· 편집 중 고정 …」) 그대로, 「필요 단축」 보기는 표지 「오늘 고정」 이고 왜 고정인지는
+  // 그 줄 풍선 `data.asOfPinned` 다(설계 규칙 UI-TXT-01).
   if (S.pinnedNoteDefault === undefined) S.pinnedNoteDefault = pinnedNote ? pinnedNote.textContent : ''
   const fabAsOf = q('.sle-asof')
   const fabAsOfDate = q('.sle-asof-date')
@@ -7962,7 +7964,8 @@ export default function (component) {
   if (PINNED) setText(pinnedDate, `기준일 ${S.asOf || '—'}`)
   // 층 편집 도구 줄 칩 「YYYY-MM-DD 고정」(핀 아이콘 — 결정 D12, 풍선이 「기준일은 편집하는 동안 고정」 을 말한다).
   if (!VIEW && !FAB) setText(pinChipDate, S.asOf || '—')
-  if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault)
+  if (pinnedNote) setText(pinnedNote, ASOF_PINNED ? ' · 오늘 고정' : S.pinnedNoteDefault)
+  if (pinnedRow) setAttr(pinnedRow, 'title', ASOF_PINNED ? data.asOfPinned : '')
   if (VIEW && FAB) {
     // 좁은 도구 줄에서는 「기준일」 말머리를 접고 날짜도 말줄임으로 줄 수 있어(CSS) 풍선에 온 글을 둔다.
     fabAsOf.hidden = !S.asOf

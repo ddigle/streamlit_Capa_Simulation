@@ -623,7 +623,7 @@
   overflow: hidden; font-variant-numeric: tabular-nums;
 }
 .sle-pinned-note { color: var(--sle-muted); overflow: hidden; text-overflow: ellipsis; }
-/* 「필요 단축」 보기는 기준일이 오늘로 고정이다 — 페이더 대신 같은 높이의 고정 줄이 선다(뒷글은 JS 가 `data.asOfPinned`).
+/* 「필요 단축」 보기는 기준일이 오늘로 고정이다 — 페이더 대신 같은 높이의 고정 줄이 선다(풍선은 JS 가 `data.asOfPinned`).
    보기의 편집 전용 숨김(`.sle.is-view .sle-edit-only`)을 이기려면 같은 `!important` + 더 높은 선택자다. */
 .sle.is-view.is-pinned .sle-fader { display: none !important; }
 .sle.is-view.is-pinned .sle-pinned { display: flex !important; }

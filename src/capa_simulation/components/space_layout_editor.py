@@ -547,7 +547,7 @@ def render_space_layout_viewer(
     층만 다시 그린다. None 이면 그 층을 비운다.
 
     색 기준 「필요 단축」 을 켠 동안에는 `badges`(설비키마다 하나 — `shortBadges`)와
-    `as_of_pinned`(기준일 고정 줄의 뒷글 — `asOfPinned`)를 싣는다. 고정 줄이 있으면 브라우저는
+    `as_of_pinned`(기준일 고정 줄의 풍선 글 — `asOfPinned`)를 싣는다. 고정 줄이 있으면 브라우저는
     페이더 대신 그 줄을 세우고 (기준일 = 오늘), 겹친 반입 예정 숨기기를 표시된 호기에는 쓰지 않으며
     모든 호기의 지연·보관 면을 칠하지 않는다(결정 D12). 둘 다 epoch 밖이고 끈 동안에는 키가
     없다(payload 그대로).

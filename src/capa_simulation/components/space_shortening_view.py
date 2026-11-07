@@ -147,7 +147,7 @@ LAYER_PARAM: Final = "layer"
 LAYER_SHORT: Final = "short"
 PROCESS_PARAM: Final = "proc"
 TARGET_PARAM: Final = "target"
-# 층 상세 뷰어 기준일 고정 줄의 뒷글(앞 칸은 「기준일 …」).
+# 층 상세 뷰어 기준일 고정 줄의 풍선 글(줄에 선 글은 「기준일 … · 오늘 고정」 — 편집기가 쓴다).
 PINNED_NOTE: Final = "필요 단축은 오늘 기준 — 색 기준을 바꾸면 페이더로 돌아갑니다"
 # 추가N 의 뜻 — FAB 요약 줄 · 층 칸 「도면에 자리가 없는 호기」 의 풍선(설계 규칙 UI-TXT-01).
 _VIRTUAL_HELP: Final = (

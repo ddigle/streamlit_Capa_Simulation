@@ -1025,7 +1025,9 @@ def test_the_shortening_view_pins_the_date_and_draws_badges_only_when_python_say
     assert "drawShortBadges()" in JS[JS.index("function drawGroupNames() {") :]
     assert "// <short-badge>" in JS and "function badgeSpot(" in JS
     # 고정 줄 뒷글 — 보기는 data 글, 편집기는 HTML 글 그대로.
-    assert "ASOF_PINNED ? ` · ${data.asOfPinned}` : S.pinnedNoteDefault" in JS
+    # 줄에 선 글은 표지 한 마디이고 왜 고정인지는 그 줄 풍선이다(설계 규칙 UI-TXT-01).
+    assert "ASOF_PINNED ? ' · 오늘 고정' : S.pinnedNoteDefault" in JS
+    assert "setAttr(pinnedRow, 'title', ASOF_PINNED ? data.asOfPinned : '')" in JS
     assert '<g class="sle-short-badges"></g>' in HTML
     for rule in (".sle.is-view .sle-unit.is-dim", ".sle.is-view.is-pinned .sle-fader"):
         assert rule in CSS, rule
