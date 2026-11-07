@@ -2343,8 +2343,7 @@ def checks(
     overlaps = overlap_counts_touching(status, status["설비명"].astype(str).tolist())
     check(sum(overlaps.values()) == 1, f"겹침 {sum(overlaps.values())}쌍 {overlaps}")
     marks = {key: repo.load_floor_layout_marks(*key) for key in fleet.canvases}
-    warnings_text = layout_warnings(status, marks, limit=20)
-    blocked = [w for w in warnings_text if w.startswith("반입구")]
+    blocked = layout_warnings(status, marks).blocked
     check(not blocked, "도면 요소를 덮은 호기 없음" + (f" — {blocked[:3]}" if blocked else ""))
     canvases = repo.load_floor_layout_canvases()
     lines.append(
