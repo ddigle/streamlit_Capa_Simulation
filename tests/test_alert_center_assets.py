@@ -573,15 +573,17 @@ process.stdout.write(JSON.stringify({
 
 def test_tab_from_an_open_popover_button_steps_into_its_body() -> None:
     """팝오버 본문은 문서 끝 포털이라 Tab 이 단추 다음 칸으로 건너뛴다 — 열린 단추에서 Tab 을 누르면
-    본문 첫 탭 자리(꺼진 단추만 있으면 감싼 칸)로 들어간다. 닫힌 단추 · Shift+Tab · 다른 칸 · 탭
-    자리가 없는 본문은 브라우저에 맡긴다."""
+    본문 첫 탭 자리(꺼진 단추만 있으면 감싼 칸)로 들어간다. 제목의 숨은 고리처럼 초점을 받지 못하는
+    칸은 건너뛴다. 닫힌 단추 · Shift+Tab · 다른 칸 · 탭 자리가 없는 본문은 브라우저에 맡긴다."""
     out = _node(
         """
 const run = ({ testid = 'stPopoverButton', expanded = 'true', shift = false, first = true }) => {
-  const stop = { focused: 0, focus() { this.focused += 1 } }
-  const body = { querySelector: () => (first ? stop : null) }
   const active = { getAttribute: (name) => (name === 'data-testid' ? testid : expanded) }
-  const doc = { activeElement: active, querySelector: () => body }
+  const doc = { activeElement: active }
+  const hidden = { focus() {} }
+  const stop = { focused: 0, focus() { this.focused += 1; doc.activeElement = this } }
+  const body = { querySelectorAll: () => (first ? [hidden, stop] : [hidden]) }
+  doc.querySelector = () => body
   let prevented = 0
   const done = enterOpenPopover(doc, { shiftKey: shift, preventDefault: () => { prevented += 1 } })
   return [done, stop.focused, prevented]

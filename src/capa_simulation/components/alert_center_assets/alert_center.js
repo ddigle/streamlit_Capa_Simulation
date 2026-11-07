@@ -265,11 +265,14 @@ function enterOpenPopover(doc, event) {
   if (event.shiftKey || !active || active.getAttribute('data-testid') !== POPOVER_BUTTON) return false
   if (active.getAttribute('aria-expanded') !== 'true') return false
   const body = doc.querySelector(POPOVER_BODY)
-  const first = body ? body.querySelector(TABBABLE) : null
-  if (!first) return false
-  event.preventDefault()
-  first.focus({ preventScroll: true })
-  return true
+  for (const stop of body ? body.querySelectorAll(TABBABLE) : []) {
+    // 제목의 숨은 고리처럼 초점을 받지 못하는 칸은 건너뛴다.
+    stop.focus({ preventScroll: true })
+    if (doc.activeElement !== stop) continue
+    event.preventDefault()
+    return true
+  }
+  return false
 }
 
 // 풍선을 닫는 길은 칸의 초점 나감뿐이다 — 초점은 옮기지 않고 그 사건만 칸에 보낸다.
