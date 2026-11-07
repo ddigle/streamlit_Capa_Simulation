@@ -27,15 +27,11 @@ import streamlit as st
 from capa_simulation.components.page_header import MATURITY_BADGES, page_badges, render_page_header
 from capa_simulation.design import tokens
 
-# 머리말 설명 한 줄 — 머리 화면과 샘플 페이지가 같은 글이다(이름만 다르다).
-MODULE_SLOT_PAGE_DESCRIPTION = (
-    "생산 진도를 보는 화면 묶음입니다. 내용은 아래 자리에 모듈 화면으로 들어옵니다."
-)
 # 자리 글 — 제목 한 줄과 안내 한 줄. 화면 확인·따라하기 가이드가 이 글을 보지 않는다.
 MODULE_SLOT_TITLE = "모듈 화면 자리"
 MODULE_SLOT_TEXT = "모듈에 스크립트를 넣으면 이 자리에 표시됩니다."
 # 머리말 아래를 거의 채우는 높이 — 창이 낮아도 360px 은 선다.
-MODULE_SLOT_MIN_HEIGHT = "max(360px, calc(100vh - 340px))"
+MODULE_SLOT_MIN_HEIGHT = "max(360px, calc(100vh - 306px))"
 
 
 def slot_html(
@@ -81,12 +77,8 @@ def module_slot_html() -> str:
 
 
 def render_module_slot_page(title: str) -> None:
-    """머리말(제목 · 「화면 초안」 배지 · 설명 한 줄)과 그 아래 모듈 화면 자리 하나를 그린다.
+    """머리말(제목 · 「화면 초안」 배지)과 그 아래 모듈 화면 자리 하나를 그린다.
 
     `title` 은 사이드바 라벨과 같은 화면 이름이다(`navigation` 선언 — 시험이 맞댄다)."""
-    render_page_header(
-        title,
-        description=MODULE_SLOT_PAGE_DESCRIPTION,
-        badges=page_badges(MATURITY_BADGES["draft"]),
-    )
+    render_page_header(title, badges=page_badges(MATURITY_BADGES["draft"]))
     st.html(module_slot_html())

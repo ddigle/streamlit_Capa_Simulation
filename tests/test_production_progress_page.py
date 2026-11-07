@@ -5,9 +5,9 @@
 다르다(2026-11-04 검수 의견 prog-02 「샘플페이지 1,2,3 화면에 이대로 임시 반영」).
 
 화면마다 단독으로 띄워 DB 연결을 막은 채 머리말 아래에 점선 테두리 「모듈 화면 자리」 하나만 서는지,
-옛 「준비 중」 한 줄이 없는지, 제목이 사이드바 라벨과 같은지, 넷의 자리 · 설명 · 배지가 같은지, 자리
-색이 밝게·어둡게 테마 토큰을 따르는지 본다. 사이드바 상자 · 조건 줄은 `tests/test_app_navigation.py`
-가 본다.
+옛 「준비 중」 한 줄과 설명 줄이 없는지, 제목이 사이드바 라벨과 같은지, 넷의 자리 · 배지가 같은지,
+자리 색이 밝게·어둡게 테마 토큰을 따르는지 본다. 사이드바 상자 · 조건 줄은
+`tests/test_app_navigation.py` 가 본다.
 """
 
 from pathlib import Path
@@ -30,7 +30,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGES = (PRODUCTION_PROGRESS, *PRODUCTION_PROGRESS_SUBPAGES)
 SLOT_TITLE = "모듈 화면 자리"
 SLOT_TEXT = "모듈에 스크립트를 넣으면 이 자리에 표시됩니다."
-DESCRIPTION = "생산 진도를 보는 화면 묶음입니다. 내용은 아래 자리에 모듈 화면으로 들어옵니다."
 
 
 def _run(spec: PageSpec) -> AppTest:
@@ -86,8 +85,9 @@ def test_each_page_draws_one_module_slot_without_opening_any_database(
     assert f"<strong>{SLOT_TITLE}</strong>" in body
     assert f"<span>{SLOT_TEXT}</span>" in body
     assert "border:2px dashed" in body
+    # 머리에는 배지뿐이다 — 이 화면이 무엇인지는 제목과 자리 글이 말한다.
+    assert not app.caption
     header = _header_text(app)
-    assert DESCRIPTION in header
     assert "화면 초안" in header
     # 옛 빈 화면의 한 줄은 걷혔다.
     assert "준비 중" not in header and "준비 중" not in body

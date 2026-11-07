@@ -1,10 +1,12 @@
-# Purpose: 모든 페이지가 같은 모양의 제목·설명·상태 배지를 그리도록 한다.
+# Purpose: 모든 페이지가 같은 모양의 제목·상태 배지를 그리도록 한다.
 
 """One page header for every screen.
 
-제목 다음에 설명 한 줄이 오는 형태는 14개 페이지 중 11개가 이미 쓰고 있었지만 나머지는
-설명이 없거나 곧바로 탭이 이어져 페이지마다 첫인상이 달랐다. 여기로 모아 간격과 배지
-표기를 한 번에 정한다.
+코어 화면 머리에는 설명 줄을 두지 않는다 — 화면 소개는 그 화면 Guide 가 맡는다(설계 규칙
+UI-TXT-01 · UI-TXT-02). 설명 인자 `description` 이 남은 것은 모듈 공개 창구
+(`module_api.page_header`)가 계약으로 쓰고, 필요 단축 일정 문구가 사용자 전달 대기라서다 — 다른
+호출은 `tests/test_page_header_description.py` 가 막는다. 여기로 모아 간격과 배지 표기를 한 번에
+정한다.
 
 `(구현중)` 은 제목 문자열에 섞어 두지 않고 배지로 뽑는다. 사이드바 라벨은 여전히
 `navigation.py` 가 소유하며 그쪽 표기와 어긋나면 테스트가 잡는다.
@@ -13,7 +15,7 @@
 줄(`components/page_tabs.py`)이 지금 화면의 이름을 말한다. 제목은 그대로 `st.title` 로 내보내되 키
 컨테이너(`PAGE_TITLE_KEY`)에 담고, 껍데기 스타일(`app_header.SHELL_STYLE`)이 화면에서만 그 칸을
 시각적으로 숨긴다(sr-only — `display: none` 이 아니라 h1 이 읽기 도구에 남는다). 인쇄에는 보인다.
-배지·설명 줄은 화면에 그대로 둔다.
+배지 줄은 화면에 그대로 둔다.
 """
 
 from __future__ import annotations
@@ -68,7 +70,7 @@ def render_page_header(
     show_status: bool = True,
     trailing: Callable[[], None] | None = None,
 ) -> None:
-    """페이지 제목과 설명을 그린다.
+    """페이지 제목과 배지를 그린다.
 
     `title` 에 `(구현중)` 이 붙어 있으면 제목에서 떼어 배지로 보여준다. 제목 줄이
     짧아지고 미구현 여부가 색으로 먼저 읽힌다. `show_status=False` 면 배지를 그리지 않는다 —
@@ -90,7 +92,6 @@ def render_page_header(
 def render_page_header_with_status(
     title: str,
     *,
-    description: str | None = None,
     badges: str | None = None,
     trailing: Callable[[], None] | None = None,
 ) -> DeltaGenerator:
@@ -122,7 +123,7 @@ def render_page_header_with_status(
     _render_title_row(heading, trailing)
     with st.container(key=STATUS_SLOT_KEY):
         slot = st.empty()
-    _render_marks(status_badge, badges, description)
+    _render_marks(status_badge, badges, None)
     return slot
 
 

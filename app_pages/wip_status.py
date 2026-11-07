@@ -9,6 +9,7 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -77,7 +78,7 @@ DEFAULT_PRODUCT_COUNT = 4
 # 시나리오 소요대수에서만 나오는 준비물(경로·선택지) 한 벌과 그 키(세션 칸).
 ROUTE_CHOICES_MEMO_KEY = "wip_status_route_choices_memo"
 # 격자를 읽는 법은 자리에 늘 두지 않고 구획 제목 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 —
-# 구현중 화면이라 Guide 는 화면을 완성할 때 붙인다).
+# 화면 소개는 `guides/wip_status.md`).
 GRID_HELP = (
     "가로는 STEP 순서, 세로는 제품 표시순서이며 각 칸은 같은 11일 구간입니다. Flow 막대는 표준 "
     "이상이면 초록색, 미달이면 빨간색입니다. 점선은 현재 `표준 목표 Capa`와 같은 산식(공정별 대당 "
@@ -117,9 +118,9 @@ def _route_choices(
 
 render_page_header(
     "표준 대비 재공 현황 (구현중)",
-    description="공정·제품·STEP별 보유 재공, 유입과 Flow를 일 표준 가능량과 비교합니다.",
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(SOURCE)),
 )
+render_page_guide("wip_status", title="표준 대비 재공 현황")
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 if not render_sample_switch(key="wip_status_sample_switch", source=SOURCE):

@@ -114,14 +114,7 @@ def _render_subpages() -> None:
 
 # 사이드바 상자 라벨(`EXECUTION_MANAGEMENT.title`)과 같은 글자다 — 두 제목이 같다는 계약은
 # `tests/test_app_navigation.py` 가 AST 로 첫 인자를 읽어 본다.
-render_page_header(
-    "실행 관리",
-    description=(
-        "실행 관리: 약속된 Capa(Static)가 실제로 확보되고 있는지 공정·기간·호기 단위로 확인합니다. "
-        "어긋난 곳은 유관부서에 이행을 요청하고, 지킬 수 없는 약속은 Static 기준정보에 반영되도록 "
-        "진척을 관리합니다."
-    ),
-)
+render_page_header("실행 관리")
 render_page_guide("execution_management", title="실행 관리")
 render_roadmap_panel(
     purpose=(

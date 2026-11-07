@@ -44,10 +44,10 @@ def test_the_head_draws_without_opening_any_database(monkeypatch: pytest.MonkeyP
 
     assert not app.exception, [element.message for element in app.exception]
     assert opened == []
-    # 사이드바 상자 제목과 본문 머리가 같다. 설명 첫머리가 「실행 관리」 정의다.
+    # 사이드바 상자 제목과 본문 머리가 같다. 「실행 관리」 정의는 머리가 아니라 Guide 가 말한다.
     assert [title.value for title in app.title] == [EXECUTION_MANAGEMENT.title]
     captions = [str(caption.value) for caption in app.caption]
-    assert captions[0].startswith("실행 관리: 약속된 Capa(Static)")
+    assert not any(caption.startswith("실행 관리:") for caption in captions)
     # 공통 조건을 읽지 않는 화면이다 — 조건 카드도 위젯도 없고, Guide 숨은 단추만 있다.
     assert [button.key for button in app.button] == [GUIDE_TRIGGER_KEY]
     assert not app.selectbox and not app.toggle
@@ -83,10 +83,9 @@ def test_explanations_ride_tooltips_and_the_next_release_is_a_dashed_slot(
     app, _ = _run_without_databases(monkeypatch)
     captions = [str(caption.value) for caption in app.caption]
 
-    # 머리말 설명 한 줄과 닫힌 로드맵 상자(눌러야 보인다) 밖의 캡션은 링크 물러섬 · 목차 「보는
-    # 것」 한 줄 · 「지금 여기」 다 — 영역 뜻풀이(「…입니다.」)와 차례 · 다음 판 문장은 자리에
-    # 없다.
-    for caption in captions[1:]:
+    # 닫힌 로드맵 상자(눌러야 보인다) 밖의 캡션은 링크 물러섬 · 목차 「보는 것」 한 줄 · 「지금
+    # 여기」 다 — 머리 설명 줄과 영역 뜻풀이(「…입니다.」), 차례 · 다음 판 문장은 자리에 없다.
+    for caption in captions:
         if caption.startswith("부서별 Gap"):
             continue
         assert "합니다." not in caption and "입니다." not in caption, caption

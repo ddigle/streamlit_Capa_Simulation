@@ -33,6 +33,7 @@ from test_required_shortening import _cutoff, _downtime, _master, _unit
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.page_guide import load_guide
 from capa_simulation.components.process_capa_canvas import (
     SECTION_DOWNTIME,
     SECTION_DYNAMIC,
@@ -1026,12 +1027,13 @@ def test_a_renamed_process_label_reads_as_written_in_the_header_and_the_evidence
         clear_global_process_rename_cache()
 
 
-def test_the_header_states_the_page_identity(databases: tuple[Path, Path]) -> None:
+def test_the_page_identity_lives_in_the_guide_not_in_the_header(
+    databases: tuple[Path, Path],
+) -> None:
     app = _ok(_app(databases).run())
-    assert any(
-        "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지" in str(item.value)
-        for item in app.caption
-    )
+    identity = "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지"
+    assert not any(identity in str(item.value) for item in app.caption)
+    assert identity in load_guide("process_capa_detail")
 
 
 # ------------------------------------------------------------------ UPEH 가정
