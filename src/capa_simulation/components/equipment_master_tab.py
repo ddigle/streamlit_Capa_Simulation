@@ -1217,7 +1217,6 @@ def save_button_help(basis: EquipmentSaveBasis | None, layout: LayoutMode) -> st
 def _render_save_section(
     repository: DuckDBEquipmentRepository,
     *,
-    view: GridView,
     basis: EquipmentSaveBasis | None,
     session: EquipmentSession,
     context: GridContext,
@@ -1231,19 +1230,12 @@ def _render_save_section(
         st.session_state[_NOTE_KEY] = ""
     st.text_input("변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER)
     render_saved_by_field(SAVE_FIELDS_PREFIX, persist=True)
-    counts = change_counts(view)
-    errors = counts.errors
-    # 무엇이 어디로 저장되나는 「리비전 저장」 풍선이 말한다 — 이 칸은 지금 저장 못 하는 까닭만(늘
-    # 서 있는 칸이라 아래 단추 줄의 자리가 밀리지 않는다).
-    if session.legacy_trace_count:
-        hint = legacy_trace_message(session.legacy_trace_count)
-    elif errors:
-        hint = f"오류 {errors:,}개를 고쳐야 저장됩니다"
-    else:
-        hint = "" if _has_changes(frames) else NOTHING_TO_SAVE
+    # 수 칸 · 「저장하기 전에 고칠 것」 줄이 고친 것 없음 · 오류 수를 이미 말하고 저장 뒤의 거부는
+    # 단추 아래에 선다 — 이 칸은 다른 자리에 없는 옛 배포 흔적만(늘 서 있는 칸이라 아래 단추 줄의
+    # 자리가 밀리지 않는다, 설계 규칙 UI-TXT-07).
     with st.container():
-        if hint:
-            st.caption(hint)
+        if session.legacy_trace_count:
+            st.caption(legacy_trace_message(session.legacy_trace_count))
     has_fab = pending_fab_layout() is not None
     floor_pending = bool(
         pending_floor_canvases() or pending_floor_marks() or pending_floor_group_labels()
@@ -1440,7 +1432,6 @@ def render_equipment_master_tab(
             )
             _render_save_section(
                 repository,
-                view=view,
                 basis=basis,
                 session=session,
                 context=context,

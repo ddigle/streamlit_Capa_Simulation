@@ -158,7 +158,6 @@ def test_an_assumption_group_across_official_floors_is_a_fix_first_line_without_
     changes = last(grid, emg.side_key("changes"))
     assert changes["counts"]["errors"] >= 1
     assert any(GROUP_REFUSAL in " ".join(map(str, line)) for line in changes["errors"])
-    assert any("오류" in text and "고쳐야 저장됩니다" in text for text in _texts(app, "caption"))
     before = len(repository.list_revisions())
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())

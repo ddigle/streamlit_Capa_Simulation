@@ -614,7 +614,7 @@ def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
     assert not any(label.endswith("· 표 보기 설정") for label in labels)
     for table, label, prefix in (
         ("기존 보유대수", "기존 보유대수 · 표 보기 설정", "equipment_baseline_view"),
-        ("비가동 일정", "운영 비가동 일정 · 표 보기 설정", "equipment_downtime_view"),
+        ("비가동 일정", "비가동 일정 · 표 보기 설정", "equipment_downtime_view"),
     ):
         app.session_state["equipment_master_table_v1"] = table
         app.run()
