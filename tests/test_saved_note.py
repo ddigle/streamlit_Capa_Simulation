@@ -91,6 +91,26 @@ def test_a_field_holding_another_text_is_not_emptied() -> None:
     assert app.text_input(key=KEY).value == "둘째 메모"
 
 
+def test_another_text_sent_right_after_the_field_was_emptied_is_written_back() -> None:
+    """앞 회차의 빈 값이 둘째 누름을 보낸 뒤에 브라우저에 닿으면 칸은 비고 그 글은 서버에만 남는다 —
+    제출 회차가 글을 다시 실어 보낸다. 다음 제출부터는 다시 적지 않는다."""
+    app = _press(_app(), "첫 메모")
+    app = _press(app, "둘째 메모", outcome="refused")
+    assert app.text_input(key=KEY).value == "둘째 메모"
+    assert app.text_input(key=KEY).proto.set_value
+
+    app = _press(app, "둘째 메모", outcome="refused")
+    assert not app.text_input(key=KEY).proto.set_value
+
+
+def test_the_same_text_of_a_double_press_is_not_written_back() -> None:
+    """같은 글의 둘째 누름은 첫 누름이 쓴 글이다 — 다시 적으면 비운 메모가 칸에 되살아나 다음 저장의
+    기록에 실린다."""
+    app = _press(_app(), "첫 메모")
+    app = _press(app, "첫 메모", outcome="refused")
+    assert not app.text_input(key=KEY).proto.set_value
+
+
 def test_the_second_press_empties_only_the_note_of_the_first_press() -> None:
     """끊긴 첫 회차가 표지를 남기지 못한 자리 — 첫 누름의 글이면 비우고, 다른 글이면 쓰이지 않은
     글이라 남긴다."""

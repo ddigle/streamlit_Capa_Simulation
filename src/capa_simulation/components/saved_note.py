@@ -22,6 +22,11 @@ key 세대(`widget_generation.bump`)로 비우면 칸이 새 위젯으로 갈려
 남기지 못한 자리는 그 판정 갈래가 잇되(`mark_note_saved_again`), 이 글이 같은 출발점의 첫 누름 글일
 때만이다. 첫 글은 쓰기 **전**인 칸 앞에서 적어 둔다 — 쓴 뒤 뒷정리는 둘째 누름의 회차에 끊길 수
 있다.
+
+**비운 뒤 온 다른 글은 다시 실어 보낸다.** 칸 글은 브라우저가 들고 있어 비우는 회차는 그 사이 친
+글을 모른다. 그 회차의 빈 값이 다른 글의 둘째 누름을 보낸 뒤에 닿으면 칸은 비고 그 글은 서버에만
+남아, 그 제출 회차가 글을 칸에 다시 적는다. 같은 글이면 첫 누름이 쓴 글이라 다시 적지 않는다.
+둘째 누름 앞에 빈 값이 닿아 지워진 글은 서버가 받지 못해 살리지 못한다.
 """
 
 from __future__ import annotations
@@ -37,6 +42,10 @@ def _saved_key(key: str) -> str:
     return f"{key}__note_saved"
 
 
+def _emptied_key(key: str) -> str:
+    return f"{key}__note_emptied"
+
+
 def _first_press_key(key: str) -> str:
     return f"{key}__note_first_press"
 
@@ -44,9 +53,10 @@ def _first_press_key(key: str) -> str:
 def ready_note_field(key: str, *, submitted: bool, start: SeenToken | None = None) -> None:
     """메모 칸 `key` 를 그리기 **바로 앞**, 저장 단추를 그린 **뒤**에 부른다.
 
-    제출 회차(`submitted`)는 칸을 그대로 두고, 대조 저장이면 그 출발점(`start` — 본 version)의 첫
-    누름 글을 적는다. 제출이 아닌 회차는 표지가 있고 칸 글이 그 글이면 빈 값을 적는다. 그 사이 칸
-    글이 달라졌으면(다른 입력의 둘째 누름) 표지만 걷는다.
+    제출 회차(`submitted`)는 칸을 비우지 않고, 대조 저장이면 그 출발점(`start` — 본 version)의 첫
+    누름 글을 적는다. 앞 회차가 비운 글과 다른 글이 오면 그 글을 다시 적는다. 제출이 아닌 회차는
+    표지가 있고 칸 글이 그 글이면 빈 값을 적는다. 그 사이 칸 글이 달라졌으면(다른 입력의 둘째 누름)
+    표지만 걷는다.
     """
     text = st.session_state.get(key)
     if submitted:
@@ -54,12 +64,17 @@ def ready_note_field(key: str, *, submitted: bool, start: SeenToken | None = Non
         fresh = not (isinstance(held, tuple) and held[0] == start)
         if start is not None and fresh:
             st.session_state[_first_press_key(key)] = (start, text)
+        emptied = st.session_state.pop(_emptied_key(key), None)
+        if text and emptied is not None and text != emptied:
+            st.session_state[key] = text
         return
+    st.session_state.pop(_emptied_key(key), None)
     saved = st.session_state.get(_saved_key(key))
     if saved is None:
         return
     if text == saved:
         st.session_state[key] = ""
+        st.session_state[_emptied_key(key)] = saved
     st.session_state.pop(_saved_key(key), None)
 
 
