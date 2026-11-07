@@ -798,12 +798,34 @@ def test_the_session_month_survives_a_rerun() -> None:
     assert _entry(app).month == 202603
 
 
-def test_changing_the_process_keeps_the_month_being_viewed() -> None:
-    """공정을 바꿔도 보던 달은 그대로다 — 새 공정의 첫 미달 달로 옮기지 않는다(Guide 와 같은 말)."""
+def test_changing_the_process_opens_its_first_shortfall_month() -> None:
+    """공정을 바꾸면 ◀▶ 처럼 그 공정의 첫 미달 달을 연다 — 표에 미달 칸이 없는 달이 남지 않는다."""
     app = AppTest.from_function(_detail_entry_app).run()
     app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202603
     app.run()
     app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
+
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-A", 202602)
+
+
+def test_changing_to_a_process_without_a_shortfall_keeps_the_month_being_viewed() -> None:
+    """미달이 없는 공정은 옮길 달이 없다 — 첫 달로 되돌리지 않고 보던 달을 둔다."""
+    app = AppTest.from_function(_detail_entry_app).run()
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
+    app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202603
+    app.run()
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-B").run()
+
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-B", 202603)
+
+
+def test_staying_on_the_process_keeps_the_picked_month() -> None:
+    """같은 공정을 다시 그리는 회차는 고른 달을 그대로 둔다 — 첫 미달 달로 끌어가지 않는다."""
+    app = AppTest.from_function(_detail_entry_app).run()
+    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
+    app.session_state[PROCESS_DETAIL_MONTH_KEY] = 202603
+    app.run()
+    app.run()
 
     assert (_entry(app).process, _entry(app).month) == ("DEMO-A", 202603)
 
@@ -820,9 +842,9 @@ def test_the_scroll_start_stays_while_the_viewed_month_moves() -> None:
     app.run()
     assert (_entry(app).month, _entry(app).scroll_month) == (202603, 202601)
 
-    # 공정을 바꾸면 그 회차의 달로 다시 정한다.
+    # 공정을 바꾸면 그 회차의 달(그 공정의 첫 미달 달)로 다시 정한다.
     app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value("DEMO-A").run()
-    assert (_entry(app).month, _entry(app).scroll_month) == (202603, 202603)
+    assert (_entry(app).month, _entry(app).scroll_month) == (202602, 202602)
 
     # 밖에서 들어오면(전달 칸) 넘겨받은 달이다.
     app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
