@@ -231,6 +231,8 @@ def test_wip_status_page_renders_filtered_step_product_grid(
     assert "Flow 막대는 표준 이상이면 초록색" in str(grid_heading.proto.help)
     assert "11일" in str(grid_heading.proto.help)
     assert not any("Flow 막대" in str(caption.value) for caption in app.caption)
+    # 연결 계약 메모는 할 일 문서 몫이다 — 접힌 칸으로도 화면에 두지 않는다(UI-TXT-01).
+    assert not [item.label for item in app.expander if "경계" in item.label]
 
 
 def test_wip_status_page_without_a_choice_stops_on_one_plain_line() -> None:
