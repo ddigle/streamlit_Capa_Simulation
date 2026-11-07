@@ -405,12 +405,13 @@ def render_actions(
     table: GridTable, visible: pd.DataFrame, *, open_paste: Callable[[], None]
 ) -> Actions:
     """표 위 작업 줄 — 「변경사항 적용」 · 「Excel 붙여넣기」 · 「편집 취소」(초안이 있을 때) ·
-    변경 수, 그 아래 편집 범위 줄과 알림 자리. key·글은 옛 편집표 작업 줄과 같다
+    「고칠 칸 n개」(칸 오류가 있을 때), 그 아래 편집 범위 줄과 알림 자리. 고친 수는 표 도구 막대
+    「적용 전 변경 (n)」 하나가 말한다(UI-TXT-07). key·글은 옛 편집표 작업 줄과 같다
     (`f"{editor_key}_apply"` 등).
 
     「변경사항 적용」 은 초안이 없으면 잠근다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙). 첫
     편집은 그리드가 기다리지 않고 바로 보내므로 고친 뒤 한 회차 안에 켜진다."""
-    cells, rows, errors = draft_counts(table.table)
+    cells, _, errors = draft_counts(table.table)
     pending = cells > 0
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         submitted = st.button(
@@ -436,8 +437,8 @@ def render_actions(
                 args=(table.table,),
                 help=DISCARD_HELP,
             )
-            fix = f" · :red[고칠 칸 {errors:,}개]" if errors else ""
-            st.markdown(f"**변경사항 확인** &nbsp;{cells:,}개 값 · {rows:,}개 행{fix}")
+            if errors:
+                st.markdown(f":red[고칠 칸 {errors:,}개]")
     render_scope(table.template, visible, table.months)
     if table.cap_notice is not None:
         st.caption(table.cap_notice, help=CAP_HELP)

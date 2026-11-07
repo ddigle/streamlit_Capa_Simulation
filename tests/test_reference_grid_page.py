@@ -369,7 +369,7 @@ def test_undo_and_redo_go_through_the_server_history(calls: Calls) -> None:
 
 
 def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: Calls) -> None:
-    """작업 줄(적용·붙여넣기·편집 취소·변경 수)은 표 위다 — 「편집 취소」 는 그 표 초안만 버린다."""
+    """작업 줄(적용·붙여넣기·편집 취소)은 표 위다 — 「편집 취소」 는 그 표 초안만 버린다."""
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     assert app.button(key=APPLY).disabled
     assert "capa_run_day_editor_discard" not in {button.key for button in app.button}
@@ -377,7 +377,6 @@ def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: C
     elements = _walk(app.main)
     keys = [getattr(node, "key", None) for node in elements]
     assert keys.index(APPLY) < keys.index("capa_run_day_editor_discard")
-    assert "**변경사항 확인** &nbsp;1개 값 · 1개 행" in {str(item.value) for item in app.markdown}
     app.button(key="capa_run_day_editor_discard").click().run()
     assert not app.exception
     assert _draft(app) is None
