@@ -9,11 +9,14 @@ AppTest 는 `st.dataframe` 의 줄 고르기를 재현하지 못한다 — 콜�
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 from test_shortening_watch import TODAY, _level
 
+from capa_simulation.components import shortening_board
 from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_BOARD,
     HIGHLIGHT_FROM_DETAIL,
@@ -69,6 +72,80 @@ def test_a_board_pick_highlights_that_process_and_renews_the_table_key() -> None
     app.run()
     assert SHORTENING_HIGHLIGHT_KEY not in app.session_state
     assert app.session_state["test_highlight"] is None
+
+
+def _notice_app() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.components.shortening_board import (
+        _pick_board_row,
+        current_highlight,
+        render_highlight_notice,
+    )
+
+    if st.session_state.pop("test_action", None) == "pick":
+        st.session_state["test_board"] = {"selection": {"rows": [1], "columns": []}}
+        _pick_board_row(("DEMO_A", "DEMO_B"), "test_board")
+    highlight = current_highlight()
+    if highlight is not None:
+        matched = bool(st.session_state.get("test_matched", True))
+        render_highlight_notice(highlight, labels=ProcessLabels(), matched=matched, in_scope=True)
+
+
+@pytest.fixture
+def reveals(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """카드로 굴리는 컴포넌트(`_CARD_REVEAL`)가 받은 `data` — AppTest 는 그 JS 를 못 돌린다."""
+    sent: list[dict[str, Any]] = []
+
+    def _fake(*, key: str, data: dict[str, Any], **_: Any) -> None:
+        sent.append({"key": key, **data})
+
+    monkeypatch.setattr(shortening_board, "_CARD_REVEAL", _fake)
+    return sent
+
+
+def test_a_board_pick_scrolls_to_the_card_once(reveals: list[dict[str, Any]]) -> None:
+    """강조 카드는 표 아래 화면 밖이다 — 줄을 고른 회차에 한 번만 그 카드로 굴린다(설계 규칙
+    UI-NAV-01). 다음 회차 · 다른 길로 건 강조는 스크롤을 움직이지 않는다(UI-PRF-03)."""
+    app = AppTest.from_function(_notice_app)
+    app.session_state[SHORTENING_HIGHLIGHT_KEY] = ("DEMO_A", HIGHLIGHT_FROM_DETAIL)
+    app.run()
+    assert not app.exception and reveals == []
+
+    app.session_state["test_action"] = "pick"
+    app.run()
+    assert not app.exception
+    (first,) = reveals
+    assert first["nonce"] and first["notice"] == "equipment_shortening_highlight_notice"
+
+    app.run()
+    assert not app.exception and len(reveals) == 1
+
+    app.session_state["test_action"] = "pick"
+    app.run()
+    assert len(reveals) == 2 and reveals[1]["nonce"] != first["nonce"]
+
+
+def test_a_pick_without_a_card_does_not_scroll(reveals: list[dict[str, Any]]) -> None:
+    """맞대지 못한 공정은 카드가 없다 — 굴릴 곳이 없고 표지도 남기지 않는다."""
+    app = AppTest.from_function(_notice_app)
+    app.session_state["test_matched"] = False
+    app.session_state["test_action"] = "pick"
+    app.run()
+
+    assert not app.exception and reveals == []
+    assert not any(key.endswith("board_reveal") for key in app.session_state.filtered_state)
+
+
+def test_the_arrival_is_a_still_outline_when_motion_is_reduced() -> None:
+    """움직임 줄이기면 바로 옮기고 강조 움직임을 걸지 않는다 — 카드의 강조 테두리가 윤곽으로 남는다
+    (설계 규칙 UI-NAV-02)."""
+    script = shortening_board._REVEAL_JS
+
+    assert "prefers-reduced-motion: reduce" in script
+    assert "behavior: calm ? 'auto' : 'smooth'" in script
+    assert "if (!calm) arrive(card)" in script
 
 
 def test_a_malformed_highlight_is_ignored() -> None:

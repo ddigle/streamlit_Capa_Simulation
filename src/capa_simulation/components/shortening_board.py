@@ -10,7 +10,9 @@
 - **공정 진척 보드** — KPI 아래·카드 위. 공정마다 한 줄(`process_board`)이고 진척 비교를 고르면
   기준선 대비·이행 지연 칸이 붙는다. 줄을 고르면 그 공정 카드가 맨 위로 올라 강조된다(「진척
   보드에서 고른 공정」) — 카드의 「공정 Capa 상세에서 근거 보기」 로 깊게 본다. 고른 줄은 남기지
-  않는다(표 key 세대를 올린다) — 강조를 끄면 표에 옛 선택이 남지 않게.
+  않는다(표 key 세대를 올린다) — 강조를 끄면 표에 옛 선택이 남지 않게. 카드는 표 아래 화면 밖에
+  서므로 줄을 고른 회차에 한 번 그 카드로 굴리고 도착 칸 강조를 건다(`_CARD_REVEAL` — 설계 규칙
+  UI-NAV-01 · UI-NAV-02, 움직임 줄이기면 바로 옮기고 카드의 강조 테두리만 남는다).
 - **카드 차례** — 표시순서 / 목표 Qual 이른 순 / 최대 부족 큰 순 / 기준선 대비 악화 먼저(세션 값,
   선택지 넷 고정). 보드와 카드가 같은 차례이고 강조 공정만 그 앞이다.
 - **기한 임박·이행 지연** — 보드 아래 두 상자(편 상태 기억). 이행 지연은 진척 비교의 기준선이 있어야
@@ -29,6 +31,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -41,6 +44,7 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.table_toolbar import toolbar_clearance
+from capa_simulation.design import tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.navigation import PROCESS_CAPA_DETAIL, SPACE_STATUS
 from capa_simulation.process_detail_state import shortening_card_query_params
@@ -127,6 +131,71 @@ DELAYED_HELP = (
 )
 
 
+# 보드 줄을 고른 회차의 표지(세션 값, 일회) · 강조 안내 줄 칸 · 카드로 굴리는 컴포넌트 key.
+_REVEAL_NONCE_KEY = "equipment_shortening_board_reveal"
+_NOTICE_KEY = "equipment_shortening_highlight_notice"
+_REVEAL_KEY = "equipment_shortening_card_reveal"
+# 도착 칸 강조 값(설계 규칙 4장 — 1초 남짓 한 번 · 옅은 면 + 테두리 빛). 굴림이 끝난 뒤에 보이게
+# 조금 늦춘다.
+_ARRIVAL_SECONDS = 1.4
+_ARRIVAL_DELAY_SECONDS = 0.4
+_ARRIVAL_RING_PX = 6
+# 회차가 끝나고 카드가 설 때까지 기다린다 — 카드는 안내 줄 뒤에 그려진다.
+_REVEAL_LOOKS = 60
+_REVEAL_WAIT_MS = 50
+# 머리 띠 · 화면 탭 줄 밑과 안내 줄 사이 틈(px).
+_REVEAL_GAP_PX = 8
+_REVEAL_JS = """
+export default function (component) {
+  const data = component.data || {}
+  const host = component.parentElement
+  const doc = (host && host.ownerDocument) || document
+  const win = doc.defaultView
+  if (!data.nonce || win.__capaShkReveal === data.nonce) return
+  win.__capaShkReveal = data.nonce
+  const calm = win.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const app = doc.querySelector('.stApp[data-test-script-state]')
+  let looks = 0
+  function arrive(card) {
+    const dim = '0 0 0 0 transparent, 0 0 0 0 transparent'
+    const ring = `0 0 0 ${data.ring}px ${data.tint}, 0 0 0 ${data.ring + 2}px ${data.accent}`
+    card.animate(
+      [
+        { boxShadow: dim, offset: 0 },
+        { boxShadow: ring, offset: 0.25 },
+        { boxShadow: ring, offset: 0.65 },
+        { boxShadow: dim, offset: 1 },
+      ],
+      { duration: data.seconds * 1000, delay: data.delay * 1000, easing: 'ease-in-out' },
+    )
+  }
+  function look() {
+    const card = doc.querySelector('section.shk-card[data-highlight]')
+    const running = app && app.getAttribute('data-test-script-state') !== 'notRunning'
+    if ((!card || running) && looks < data.looks) {
+      looks += 1
+      win.setTimeout(look, data.wait)
+      return
+    }
+    if (!card) return
+    const main = doc.querySelector('[data-testid="stMain"]')
+    const strip = doc.querySelector('.st-key-page_tabs_strip')
+    const top = main && strip
+      ? strip.getBoundingClientRect().bottom - main.getBoundingClientRect().top
+      : 0
+    const notice = doc.querySelector(`.st-key-${data.notice}`) || card
+    notice.style.scrollMarginTop = `${Math.max(top, 0) + data.gap}px`
+    notice.scrollIntoView({ block: 'start', behavior: calm ? 'auto' : 'smooth' })
+    if (!calm) arrive(card)
+  }
+  look()
+}
+"""
+_CARD_REVEAL = st.components.v2.component(
+    "capa_shortening_card_reveal", js=_REVEAL_JS, isolate_styles=False
+)
+
+
 @dataclass(frozen=True)
 class ShorteningHighlight:
     """강조 공정 하나 — 원본 공정명과 그 강조를 건 곳(`HIGHLIGHT_FROM_*`)."""
@@ -196,7 +265,8 @@ def render_highlight_notice(
     label = labels.label(highlight.process)
     # 사람이 적은 공정 표시명이라 마크다운에 싣는 글만 escape 하고 조사는 원래 이름으로 고른다.
     name = f"「{literal_markdown(label)}」"
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    reveal = st.session_state.pop(_REVEAL_NONCE_KEY, None)
+    with st.container(horizontal=True, vertical_alignment="center", gap="small", key=_NOTICE_KEY):
         if not matched:
             st.caption(
                 f":material/link_off: 강조 공정 {name}{topic_particle(label)} 지금 시나리오·설비 "
@@ -216,6 +286,29 @@ def render_highlight_notice(
             icon=":material/close:",
             on_click=clear_highlight,
         )
+        if matched and reveal is not None:
+            _render_card_reveal(str(reveal))
+
+
+def _render_card_reveal(nonce: str) -> None:
+    """줄을 고른 회차에 한 번 — 강조 카드로 굴리고 도착 칸 강조를 건다(`_REVEAL_JS`). 색은 그 회차
+    테마 토큰이라 `data` 로 싣는다."""
+    _CARD_REVEAL(
+        key=_REVEAL_KEY,
+        data={
+            "nonce": nonce,
+            "notice": _NOTICE_KEY,
+            "gap": _REVEAL_GAP_PX,
+            "looks": _REVEAL_LOOKS,
+            "wait": _REVEAL_WAIT_MS,
+            "seconds": _ARRIVAL_SECONDS,
+            "delay": _ARRIVAL_DELAY_SECONDS,
+            "ring": _ARRIVAL_RING_PX,
+            "tint": tokens.NAV_CONTROL_TINT,
+            "accent": tokens.ACCENT,
+        },
+        width="content",
+    )
 
 
 # ------------------------------------------------------------------ 상세 근거 링크
@@ -306,7 +399,8 @@ def _board_generation() -> int:
 
 
 def _pick_board_row(processes: tuple[str, ...], key: str) -> None:
-    """보드 줄 고르기 콜백 — 그 공정을 강조하고 표 key 세대를 올린다(고른 줄을 남기지 않는다)."""
+    """보드 줄 고르기 콜백 — 그 공정을 강조하고 표 key 세대를 올린다(고른 줄을 남기지 않는다).
+    카드로 한 번 굴리라는 표지도 적는다(`render_highlight_notice` 가 꺼낸다)."""
     state = st.session_state.get(key)
     rows: Sequence[object] = ()
     try:
@@ -317,6 +411,7 @@ def _pick_board_row(processes: tuple[str, ...], key: str) -> None:
     picked = [int(str(row)) for row in rows if str(row).isdigit()]
     if picked and 0 <= picked[0] < len(processes):
         highlight_shortening_process(processes[picked[0]], source=HIGHLIGHT_FROM_BOARD)
+        st.session_state[_REVEAL_NONCE_KEY] = uuid.uuid4().hex
     st.session_state[_BOARD_GENERATION_KEY] = _board_generation() + 1
 
 
