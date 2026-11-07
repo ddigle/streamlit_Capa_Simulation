@@ -3,6 +3,7 @@
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -119,6 +120,28 @@ def _paste(app: AppTest, text: str) -> None:
         if "붙여넣기 일괄 적용" in str(button.label):
             button.click().run()
             break
+
+
+def test_a_staged_paste_blanks_the_zero_cells_like_the_plain_table(seeded_database: Path) -> None:
+    """붙여넣기 대기 표의 달 칸은 글자로 온다 — 숫자로 읽지 않으면 0 가림이 듣지 않아, 양식을 그대로
+    붙여넣기만 했는데 빈칸이던 칸이 0 으로 보여 값이 바뀐 것처럼 읽혔다. 적용하면 값은 그대로다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    wide = pd.read_csv(StringIO(_clipboard_text(app, scale=1.0)), sep="\t", dtype="object")
+    months = [column for column in wide.columns if column.isdigit()]
+    filled = wide[months[0]].astype(float).gt(0).idxmax()
+    plain_blanks = _editor_node(app, "pkg_plan_editor").value[months].isna().to_numpy().sum()
+    wide.loc[filled, months[0]] = "0.0"
+    _paste(app, wide.to_csv(index=False, sep="\t"))
+    assert not list(app.exception)
+
+    shown = _editor_node(app, "pkg_plan_editor").value
+    assert shown[months].isna().to_numpy().sum() == plain_blanks + 1
+    assert not shown[months].eq(0).to_numpy().any()
+    assert all(pd.api.types.is_float_dtype(shown[month]) for month in months)
+
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
 
 
 def test_the_plan_paste_window_calls_the_table_by_its_screen_name(seeded_database: Path) -> None:

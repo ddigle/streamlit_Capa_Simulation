@@ -817,9 +817,12 @@ with pkg_plan_tab:
         column for column in plan_editor_source.columns if column not in PLAN_EDITOR_DIMENSIONS
     ]
     displayed_plan_table = plan_editor_source.copy()
-    displayed_plan_table[plan_month_columns] = displayed_plan_table[plan_month_columns].mask(
-        displayed_plan_table[plan_month_columns].eq(0)
+    # 붙여넣기 대기 표의 달 칸은 붙여넣은 글자 그대로다 — 숫자로 읽어야 기본 표처럼 0 칸이 가려진다.
+    # 판정은 붙여넣기 검증(`assert_numeric_edit_values`)과 같은 `to_numeric` 이라 값을 잃지 않는다.
+    plan_month_values = displayed_plan_table[plan_month_columns].apply(
+        pd.to_numeric, errors="coerce"
     )
+    displayed_plan_table[plan_month_columns] = plan_month_values.mask(plan_month_values.eq(0))
     edited_plan_table = st.data_editor(
         classification_styled(displayed_plan_table, PLAN_EDITOR_DIMENSIONS),
         key=editor_widget_key(PLAN_EDITOR_KEY),
