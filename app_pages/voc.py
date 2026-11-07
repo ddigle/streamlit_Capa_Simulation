@@ -56,7 +56,7 @@ RESOLVE_KEY = "voc_resolve"
 DELETE_CONFIRM_KEY = "voc_delete_confirm"
 DELETE_KEY = "voc_delete"
 # 글 하나의 처리(답변·답변 완료 표시·지우기)가 실패한 문구. 다음 회차에 그 글 상자 안 칸이
-# 그린다(`flash`).
+# 그린다(`flash`). 답변은 그 회차에 상자가 설 때만 이 칸이다(`_refuse_reply`).
 POST_ERROR_KEY = "voc_post_error"
 CATEGORY_FILTER_KEY = "voc_category_filter"
 OPEN_ONLY_KEY = "voc_open_only"
@@ -67,14 +67,16 @@ POST_CATEGORY_KEY = "voc_post_category"
 POST_TITLE_KEY = "voc_post_title"
 POST_BODY_KEY = "voc_post_body"
 POST_FORM_ERROR_KEY = "voc_post_form_error"
-# 그 사이 다른 세션이 지운 글에 답변·답변 완료 표시·글 삭제를 하려던 거절. 아무것도 하지 않았고 그
-# 자리에 고칠 입력이 없어(지운 글의 상자는 다시 그리지 않는다) 알림창 · Alarm 에만 낸다(설계 규칙
-# UI-NTF-03 — `queue_flash(…, popup_only=True)`). 적어 둔 답변(`KEPT_REPLY_KEY` — 거절된 차례대로 든
-# 튜플)은 알림이 아니라 사용자의 글이라 머리 알림 칸에 「닫기」 까지 남겨 복사해 가게 한다.
-GONE_FLASH_KEY = "voc_gone_flash"
+# 글 상자가 서지 않는 회차의 거절 — 그 사이 다른 세션이 지운 글에 답변·답변 완료 표시·글 삭제를
+# 하려던 누름과, 글은 있어도 상자가 서지 않아(VOC 필터에서 빠짐 · 글을 읽지 못함) 남지 못한 답변.
+# 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03 —
+# `queue_flash(…, popup_only=True)`). 적어 둔 답변(`KEPT_REPLY_KEY` — 거절된 차례대로 든 튜플)은
+# 알림이 아니라 사용자의 글이라 머리 알림 칸에 「닫기」 까지 남겨 복사해 가게 한다.
+NO_BOX_FLASH_KEY = "voc_no_box_flash"
 KEPT_REPLY_KEY = "voc_kept_reply"
 KEPT_REPLY_CLOSE_KEY = "voc_kept_reply_close"
 KEPT_REPLY_WHERE = "적어 둔 답변은 화면 맨 위에 둡니다."
+REPLY_NOT_LEFT = "답변을 남기지 못했습니다."
 # 쓰기 단추의 key 세대(AGENTS 9장 「쓰기 콜백은 빠른 두 번 누름을 거른다」). 새 글 폼은 하나,
 # 답변 폼과 답변 완료 단추는 글마다 하나다. 비교와 쓰기는 `write_guard.write_once` 가
 # 한다 — 더블클릭은 두 회차의 콜백이 겹쳐 와 세션 칸 비교만으로는 둘 다 지났다. 지운 글은
@@ -98,9 +100,9 @@ render_page_guide("voc", title="VOC")
 # 알림은 **늘 서 있는 한 칸** 안에 그린다(`render_flash` 가 세운다). 알림이 생기거나 사라질 때 아래
 # 형제가 한 칸 밀리면, 알림 없는 회차와 알림 있는 회차 사이에서 key 있는 글 상자가 옛 자리에 회색
 # 사본으로 남아 — 적은 답변까지 든 채로 — 새로고침 전까지 Admin·HOME 에도 따라왔다(2026-10-05 E2E,
-# 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다. 지운 글에 적어 둔 답변도 같은
+# 답변 0 인 글에 첫 답변을 남길 때). 가용설비 현황과 같은 까닭이다. 적어 둔 답변도 같은
 # 칸에 그린다.
-notices = render_flash(FLASH_KEY, GONE_FLASH_KEY)
+notices = render_flash(FLASH_KEY, NO_BOX_FLASH_KEY)
 # 적어 둔 답변은 꺼내 버리지 않는다 — 답변 칸은 글과 함께 사라지고, 글이 화면 아래쪽이면 거절 직후
 # 이 칸은 창 위로 벗어나 있어 다른 글을 처리하는 회차에 비우면 본 적 없는 답변을 잃는다.
 kept_replies = st.session_state.get(KEPT_REPLY_KEY, ())
@@ -133,30 +135,73 @@ replies_by_post: dict[str, pd.DataFrame] = (
 )
 
 
+def _keep_reply(reply: str) -> None:
+    """적어 둔 답변에 더한다. 남은 글 위에 또 거절되면 덮지 않고 뒤에 붙이고, 겹쳐 온 둘째 누름의
+    같은 글은 다시 붙이지 않는다."""
+    kept_replies = st.session_state.get(KEPT_REPLY_KEY, ())
+    if reply.strip() and reply not in kept_replies:
+        st.session_state[KEPT_REPLY_KEY] = (*kept_replies, reply)
+
+
 def _refuse_gone_press(message: str, kept_reply: str = "") -> None:
     """그 사이 지운 글에 한 누름 — 아무것도 쓰지 않았다고 알림창 · Alarm 에만 알리고(`FL-03`), 적어
-    둔 답변은 머리 알림 칸에 남긴다. 남은 글 위에 또 거절되면 덮지 않고 뒤에 붙이고, 겹쳐 온 둘째
-    누름의 같은 글은 다시 붙이지 않는다."""
-    keeping = bool(kept_reply.strip())
+    둔 답변은 머리 알림 칸에 남긴다."""
     queue_flash(
-        GONE_FLASH_KEY,
-        f"{message} {KEPT_REPLY_WHERE}" if keeping else message,
+        NO_BOX_FLASH_KEY,
+        f"{message} {KEPT_REPLY_WHERE}" if kept_reply.strip() else message,
         kind="warning",
         icon=":material/delete_forever:",
         popup_only=True,
     )
-    kept_replies = st.session_state.get(KEPT_REPLY_KEY, ())
-    if keeping and kept_reply not in kept_replies:
-        st.session_state[KEPT_REPLY_KEY] = (*kept_replies, kept_reply)
+    _keep_reply(kept_reply)
 
 
-def _post_is_gone(database_path: str, post_id: str) -> bool:
-    """글이 지금 목록에 없는가. 목록을 읽지 못하면 있다고 본다 — 거절은 그 글 상자 칸이 받는다."""
+def _refuse_boxless_reply(cause: str, reply: str) -> None:
+    """글은 있는데 이번 회차에 상자가 서지 않는 답변의 거절(`FL-04`). 까닭이 길면 알림창 짧은 글에서
+    잘리므로 맨 뒤에 둔다 — 답변이 남지 않았다는 말과 적은 글의 자리가 먼저다."""
+    place = f" {KEPT_REPLY_WHERE}" if reply.strip() else ""
+    queue_flash(NO_BOX_FLASH_KEY, f"{REPLY_NOT_LEFT}{place} {cause}", kind="error", popup_only=True)
+    _keep_reply(reply)
+
+
+def _filtered_posts(posts: pd.DataFrame) -> pd.DataFrame:
+    """VOC 필터에 드는 글 — 목록을 그리는 본문과, 글 상자가 서는지 보는 콜백이 같은 판정을 쓴다."""
+    visible = posts.copy()
+    selected_categories = list(st.session_state.get(CATEGORY_FILTER_KEY, []))
+    if selected_categories and not visible.empty:
+        visible = visible.loc[visible["category"].isin(selected_categories)]
+    if bool(st.session_state.get(OPEN_ONLY_KEY, False)) and not visible.empty:
+        visible = visible.loc[~visible["resolved"].astype(bool)]
+    keyword = str(st.session_state.get(SEARCH_KEY, "")).strip()
+    if keyword and not visible.empty:
+        haystack = (
+            visible["title"].astype("string").fillna("")
+            + "\n"
+            + visible["body"].astype("string").fillna("")
+            + "\n"
+            + visible["author"].astype("string").fillna("")
+        )
+        visible = visible.loc[haystack.str.contains(keyword, case=False, regex=False)]
+    return visible
+
+
+def _refuse_reply(database_path: str, post_id: str, refused: Exception, reply: str) -> None:
+    """남지 못한 답변의 거절을 둘 자리를 가른다. 거절 칸(`POST_ERROR_KEY`)도 적은 답변도 글 상자
+    안이라 이번 회차에 그 상자가 서야 남는다 — 서지 않으면 아무 말 없이 적은 답변까지 사라진다.
+    저장소는 입력(작성자 빈칸 등)을 글 확인보다 먼저 봐, 지운 글의 거절도 여기로 온다. 목록을 읽지
+    못하면 본문도 같은 읽기에서 멈춰 상자가 서지 않는다."""
+    cause = bootstrap_error_message(refused)
     try:
-        posts = get_scenario_repository(database_path).list_voc_posts()
+        listed = get_scenario_repository(database_path).list_voc_posts()
     except BOOTSTRAP_ERRORS:
-        return False
-    return post_id not in set(posts["post_id"].astype(str))
+        _refuse_boxless_reply(cause, reply)
+        return
+    if post_id not in set(listed["post_id"].astype(str)):
+        _refuse_gone_press(bootstrap_error_message(VocPostGoneError()), reply)
+    elif post_id in set(_filtered_posts(listed)["post_id"].astype(str)):
+        queue_flash(f"{POST_ERROR_KEY}_{post_id}", cause, kind="error")
+    else:
+        _refuse_boxless_reply(cause, reply)
 
 
 def _timestamp(value: object) -> str:
@@ -253,12 +298,7 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
         _refuse_gone_press(bootstrap_error_message(exc), body)
         return
     except BOOTSTRAP_ERRORS as exc:
-        # 저장소는 입력(작성자 빈칸 등)을 글 확인보다 먼저 본다. 글이 지워졌으면 그 거절을 담는 칸이
-        # 다시 그리지 않는 글 상자 안이라 아무 말 없이 적은 답변까지 사라진다.
-        if _post_is_gone(database_path, post_id):
-            _refuse_gone_press(bootstrap_error_message(VocPostGoneError()), body)
-        else:
-            queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
+        _refuse_reply(database_path, post_id, exc, body)
         return
     if not written:
         st.session_state[reply_key] = ""
@@ -398,22 +438,7 @@ with condition_card("VOC 필터", name="voc", icon=":material/filter_alt:"):
     )
     st.toggle("미답변만", key=OPEN_ONLY_KEY, persist_state="session")
 
-visible = posts.copy()
-selected_categories = list(st.session_state.get(CATEGORY_FILTER_KEY, []))
-if selected_categories and not visible.empty:
-    visible = visible.loc[visible["category"].isin(selected_categories)]
-if bool(st.session_state.get(OPEN_ONLY_KEY, False)) and not visible.empty:
-    visible = visible.loc[~visible["resolved"].astype(bool)]
-keyword = str(st.session_state.get(SEARCH_KEY, "")).strip()
-if keyword and not visible.empty:
-    haystack = (
-        visible["title"].astype("string").fillna("")
-        + "\n"
-        + visible["body"].astype("string").fillna("")
-        + "\n"
-        + visible["author"].astype("string").fillna("")
-    )
-    visible = visible.loc[haystack.str.contains(keyword, case=False, regex=False)]
+visible = _filtered_posts(posts)
 
 open_count = 0 if posts.empty else int((~posts["resolved"].astype(bool)).sum())
 st.caption(f"전체 {len(posts):,}건 · 미답변 {open_count:,}건 · 지금 보는 글 {len(visible):,}건")

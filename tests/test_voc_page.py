@@ -19,6 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pytest
 from alert_marks import flashed, place_errors, successes
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
@@ -37,7 +38,10 @@ ON_VOC = "test_on_voc"
 AUTHOR_KEY = "voc_author"
 KEPT_CLOSE_KEY = "voc_kept_reply_close"
 GONE = "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
-GONE_KEPT = f"{GONE} 적어 둔 답변은 화면 맨 위에 둡니다."
+KEPT_WHERE = "적어 둔 답변은 화면 맨 위에 둡니다."
+GONE_KEPT = f"{GONE} {KEPT_WHERE}"
+NOT_LEFT = "답변을 남기지 못했습니다."
+OPEN_ONLY_KEY = "voc_open_only"
 
 
 def _script(database_path: Path) -> str:
@@ -702,6 +706,108 @@ def test_a_second_refusal_adds_to_the_kept_reply_instead_of_replacing_it(
 
     assert not app.exception
     assert [block.value for block in app.code] == [kept]
+
+
+def _reply_on_filtered_post(database_path: Path, typed: str) -> tuple[AppTest, str]:
+    """「미답변만」 을 켠 빈 작성자 세션이 적는 동안 그 글이 답변 완료가 되고, 「답변 남기기」 를
+    누른 화면과 글 id 를 돌려준다."""
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.toggle(key=OPEN_ONLY_KEY).set_value(True).run()
+    app.text_area(key=f"voc_reply_body_{post_id}").input(typed)
+    DuckDBScenarioRepository(database_path).set_voc_post_resolved(post_id, resolved=True)
+    _reply_button(app, post_id).click().run()
+    return app, post_id
+
+
+@pytest.mark.parametrize(
+    ("typed", "message", "kept"),
+    [
+        (
+            "필터에서 빠진 글에 적은 답변",
+            f"{NOT_LEFT} {KEPT_WHERE} 작성자를 입력하세요.",
+            ["필터에서 빠진 글에 적은 답변"],
+        ),
+        ("  ", f"{NOT_LEFT} 답변 내용을 입력하세요.", []),
+    ],
+)
+def test_a_refused_reply_on_a_post_the_filter_dropped_meanwhile_is_kept(
+    tmp_path: Path, typed: str, message: str, kept: list[str]
+) -> None:
+    """글이 남아 있어도 VOC 필터에서 빠지면 그 회차에 상자가 서지 않는다 — 거절 칸도 적은 답변도
+    상자 안이라 알림 없이 사라지고, 필터를 끄면 그제야 거절만 뒤늦게 떴다(2026-11-08 u2-05 검토)."""
+    database_path = tmp_path / "scenario.duckdb"
+
+    app, _ = _reply_on_filtered_post(database_path, typed)
+
+    assert not app.exception
+    assert not app.error, [box.value for box in app.error]
+    assert [(item.value, item.code) for item in flashed(app, "error")] == [(message, "FL-04")]
+    assert short_text(message) == message, "자리를 말하는 글이 알림창에서 잘리지 않는다"
+    assert [block.value for block in app.code] == kept
+    assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
+
+    app.toggle(key=OPEN_ONLY_KEY).set_value(False).run()
+
+    assert not app.exception
+    assert not app.error, "상자가 다시 서도 지난 거절을 뒤늦게 내지 않는다"
+    assert not flashed(app, "error")
+    assert [block.value for block in app.code] == kept
+
+
+def test_a_refused_reply_stays_in_its_box_while_the_filter_still_shows_the_post(
+    tmp_path: Path,
+) -> None:
+    """상자가 서는 글은 그대로 곁 칸이 거절을 받고 적은 답변이 칸에 남는다 — 맨 위로 올리지
+    않는다."""
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    reply_key = f"voc_reply_body_{post_id}"
+    app = _app(database_path)
+    app.toggle(key=OPEN_ONLY_KEY).set_value(True).run()
+    app.text_area(key=reply_key).input("필터 안 글에 적은 답변")
+
+    _reply_button(app, post_id).click().run()
+
+    assert not app.exception
+    assert [box.value for box in app.error] == ["작성자를 입력하세요."]
+    assert app.text_area(key=reply_key).value == "필터 안 글에 적은 답변"
+    assert not app.code
+
+
+def test_a_reply_that_failed_while_the_posts_cannot_be_read_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """쓰기와 읽기가 함께 실패하면 본문이 데이터 Error 에서 멈춰 상자가 서지 않는다. 답변이 남지
+    않았다는 말 없이 적은 글이 사라졌고, 풀린 뒤에야 거절만 뒤늦게 떴다(2026-11-08 u2-05 검토)."""
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    reply_key = f"voc_reply_body_{post_id}"
+    app = _app(database_path)
+    app.text_input(key=AUTHOR_KEY).input("담당자").run()
+    app.text_area(key=reply_key).input("잠금 중 보낸 답변")
+
+    def locked(*_args: object, **_kwargs: object) -> None:
+        raise duckdb.IOException("Could not set lock on file")
+
+    with monkeypatch.context() as broken:
+        broken.setattr(DuckDBScenarioRepository, "create_voc_reply", locked)
+        broken.setattr(DuckDBScenarioRepository, "list_voc_posts", locked)
+        _reply_button(app, post_id).click().run()
+
+        assert not app.exception
+        [note] = flashed(app, "error")
+        assert note.code == "FL-04"
+        assert short_text(note.value).startswith(f"{NOT_LEFT} {KEPT_WHERE}")
+        assert [block.value for block in app.code] == ["잠금 중 보낸 답변"]
+
+    app.run()
+
+    assert not app.exception
+    assert not app.error, "풀린 뒤 지난 거절을 뒤늦게 내지 않는다"
+    assert not flashed(app, "error")
+    assert [block.value for block in app.code] == ["잠금 중 보낸 답변"]
+    assert app.text_area(key=reply_key).value == ""
 
 
 def test_resolving_a_post_deleted_by_another_session_is_refused(tmp_path: Path) -> None:
