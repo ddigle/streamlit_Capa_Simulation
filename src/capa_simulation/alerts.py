@@ -255,6 +255,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "EQ-16", "action", "state", "Space 캔버스 — 고치는 크기 밖으로 나가는 호기 · 도면 요소"
     ),
+    # Space 층 화면 맨 위에 서던 캔버스 밖 호기 상자를 상태 알림으로 — 전 층을 훑어 고른 층에 기대지
+    # 않는다(설계 규칙 UI-NTF-02 · UI-TXT-04). 범위가 층인 팝업의 `EQ-16` 과 코드를 나눈다.
+    AlertSpec("EQ-18", "action", "state", "Space — 저장된 캔버스를 벗어난 호기(전 층)"),
     # 공정 Capa 상세 정리 줄에 늘 서던 「사용기준 제외 n대」 를 상태 알림으로(화면에 내역을 늘 두지
     # 않는다 — 설계 규칙 UI-TXT-04 · UI-NTF-02).
     AlertSpec(

@@ -26,12 +26,7 @@ from capa_simulation.services.equipment_units import (
 )
 from capa_simulation.services.fab_layout import FLOOR_KEYS, floor_label
 from capa_simulation.services.floor_layout_mark import MARK_COLOR_KEYS
-from capa_simulation.services.floor_layout_profile import (
-    DEFAULT_CANVAS_HEIGHT,
-    DEFAULT_CANVAS_WIDTH,
-    CanvasSize,
-    FloorKey,
-)
+from capa_simulation.services.floor_layout_profile import CanvasSize, FloorKey
 from capa_simulation.services.space_color_basis import (
     COLOR_BASIS_CAPA,
     COLOR_BASIS_LINE_TYPE,
@@ -620,32 +615,6 @@ def color_check_style(swatches: Sequence[tuple[str, str]]) -> str:
         + "\n".join(rules)
         + "\n</style>"
     )
-
-
-def invalid_equipment_rows(
-    equipment: pd.DataFrame,
-    *,
-    canvas_width: float = DEFAULT_CANVAS_WIDTH,
-    canvas_height: float = DEFAULT_CANVAS_HEIGHT,
-) -> list[str]:
-    """캔버스를 벗어났거나 좌표 · 크기가 맞지 않는 호기의 설비명(표 차례 그대로)."""
-    names = equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip().tolist()
-    required = {"X좌표", "Y좌표", "Xsize", "Ysize"}
-    if not required.issubset(equipment.columns):
-        return [str(name) for name in names]
-    numeric = equipment.loc[:, ["X좌표", "Y좌표", "Xsize", "Ysize"]].apply(
-        pd.to_numeric, errors="coerce"
-    )
-    invalid = (
-        numeric.isna().any(axis=1)
-        | numeric["X좌표"].lt(0)
-        | numeric["Y좌표"].lt(0)
-        | numeric["Xsize"].le(0)
-        | numeric["Ysize"].le(0)
-        | numeric["X좌표"].add(numeric["Xsize"]).gt(canvas_width)
-        | numeric["Y좌표"].add(numeric["Ysize"]).gt(canvas_height)
-    )
-    return [str(name) for name, bad in zip(names, invalid.tolist(), strict=True) if bad]
 
 
 # 층 상세 「호기 정보」 창(도면 위 — 2026-11-03 사용자 요청 「하단이 아니라 편집기 안에서」)의 칸 —

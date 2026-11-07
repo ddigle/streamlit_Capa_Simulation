@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any, NamedTuple
 
 import pandas as pd
@@ -37,8 +37,14 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_marks,
     load_schedule_layout_overlay,
 )
+from capa_simulation.services.fab_layout import floor_label
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
-from capa_simulation.services.floor_layout_profile import FloorKey
+from capa_simulation.services.floor_layout_profile import (
+    DEFAULT_CANVAS_HEIGHT,
+    DEFAULT_CANVAS_WIDTH,
+    FloorCanvasMap,
+    FloorKey,
+)
 from capa_simulation.services.layout_overlay import (
     EMPTY_LAYOUT_DIGEST,
     LayoutOverlay,
@@ -118,6 +124,8 @@ LAYOUT_WARNING_ALERT = "EQ-17"
 LAYOUT_WARNING_TABLE = "편집본의 겹침"
 LAYOUT_WARNING_FILE = "space_layout_overlaps.csv"
 LAYOUT_WARNING_COLUMNS = ("종류", "층", "호기", "상대")
+# 저장된 캔버스를 벗어난 호기(`report_canvas_outside`).
+CANVAS_OUTSIDE_SAVED_ALERT = "EQ-18"
 
 
 class LayoutNotice(NamedTuple):
@@ -432,3 +440,57 @@ def floor_moved_overlaps(session: EquipmentSession, status: pd.DataFrame) -> dic
         snapshot.unscheduled_units,
     )
     return overlap_counts_touching(status, moved)
+
+
+def report_canvas_outside(
+    session: EquipmentSession,
+    outside: Mapping[FloorKey, Sequence[str]],
+    floor_canvases: FloorCanvasMap,
+) -> None:
+    """저장된 캔버스를 벗어난 호기를 상태 알림(`CANVAS_OUTSIDE_SAVED_ALERT`)으로 낸다 — 층 화면 맨
+    위 상자이던 것이다(설계 규칙 UI-NTF-02 · UI-TXT-04).
+
+    `outside` 는 전 층을 훑은 값(`get_floors_outside_canvas`)이라 지문이 고른 층 · 기준일 · 공정
+    필터에 기대지 않는다. 지문에는 호기 이름과 그 층 캔버스 크기가 든다 — 전문이 크기를 적으므로,
+    밖 호기가 그대로여도 크기가 바뀌면 줄을 새로 세운다(지문이 같으면 브라우저가 옛 글을 둔다).
+    늘 같은 자리에서 조건이 없어도 부른다(`active=False` — 해소 줄이 서고 표지 자리 수가 회차마다
+    같다). 설비 샘플 화면이면 빈 값이다."""
+    scope = equipment_scope(session)
+    if not outside:
+        alerts.state(
+            CANVAS_OUTSIDE_SAVED_ALERT,
+            scope=scope.scope,
+            content=None,
+            active=False,
+            scope_label=scope.label,
+        )
+        return
+    floors = [floor_label(key) for key in outside]
+    total = sum(len(names) for names in outside.values())
+    where = floors[0] if len(floors) == 1 else f"{floors[0]} 외 {len(floors) - 1}개 층"
+    default = (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
+    lines = []
+    content = []
+    for key, names in outside.items():
+        width, height = floor_canvases.get(key, default)
+        content.append([floor_label(key), [width, height], list(names)])
+        lines.append(
+            f"{floor_label(key)} 캔버스 {width:g} × {height:g} 밖 {len(names):,}대: "
+            + ", ".join(names)
+        )
+    alerts.state(
+        CANVAS_OUTSIDE_SAVED_ALERT,
+        scope=scope.scope,
+        content=content,
+        active=True,
+        text=f"캔버스 밖 호기 {total:,}대({where})",
+        full="\n".join(
+            [
+                *lines,
+                "이대로면 설비 마스터 저장이 막힙니다 — 저장은 마스터 전체를 한 번에 검증합니다. "
+                "공식 설비 시나리오에서 그 층의 「캔버스 편집」 으로 넓히거나 설비 마스터에서 "
+                "호기 좌표를 고치세요.",
+            ]
+        ),
+        scope_label=scope.label,
+    )
