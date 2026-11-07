@@ -186,8 +186,11 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
     assert run_now.help == RUN_NOW_HELP and "공식버전을 발행합니다" in RUN_NOW_HELP
     text = _markdown(app)
     assert "공식 v1 W40" in text
-    assert "꺼짐 · 매일 07:00 · 키워드 「PSM」 · 기준 확보율 80%" in text
-    assert "꺼져 있어 돌지 않습니다." in text
+    # 설정 값은 바로 아래 칸이, 꺼진 실행의 「다음 실행」 은 예약 줄이 이미 말한다(UI-TXT-07).
+    assert "**설정**" not in text
+    assert "**다음 실행**" not in text
+    # 카드 안 단추 하나를 거듭 부르는 카드 제목을 두지 않는다.
+    assert "지금 실행" not in text
     assert _field(app.toggle, "자동 갱신 켜기").value is False  # type: ignore[attr-defined]
     assert _field(app.time_input, "확인 시각").value == time(7, 0)  # type: ignore[attr-defined]
     assert _field(app.text_input, "시뮬레이션명 키워드").value == "PSM"  # type: ignore[attr-defined]
@@ -282,19 +285,14 @@ def _republish(repository: DuckDBScenarioRepository, release_name: str) -> None:
 
 
 def test_the_status_lines_keep_tildes_in_the_release_name_and_keyword(database: Path) -> None:
-    """「현재 공식버전」 줄의 공식버전명과 설정 줄의 키워드는 마크다운이다 — 물결표 둘이 지움선
+    """「현재 공식버전」 줄의 공식버전명은 마크다운이다 — 물결표 둘이 지움선
     (「W43<del>W44 확정</del>본」)이 되지 않고 적은 글자 그대로 보인다."""
     repository = _with_w40(database)
     _republish(repository, "PSM W40 확정~본~")
-    repository.replace_auto_official_update_settings(
-        AutoUpdateConfig(enabled=False, check_time=time(7, 0), keyword="P~S~M", threshold=0.8),
-        expected_version=0,
-    )
 
     text = _markdown(app := _tab(database))
 
     assert f"공식 v2 W40 · {literal_markdown('PSM W40 확정~본~')} (" in text
-    assert f"키워드 「{literal_markdown('P~S~M')}」" in text
     assert not place_errors(app)
 
 
@@ -413,7 +411,7 @@ def test_saving_the_settings_records_what_changed(database: Path) -> None:
     ]
     # 칸이 저장본을 따라온다(키 없는 칸).
     assert _field(app.text_input, "시뮬레이션명 키워드").value == "PSS"  # type: ignore[attr-defined]
-    assert "이 실행에서는 돌지 않습니다(실행 줄 허락 없음)." in _markdown(app)
+    assert "**다음 실행**" not in _markdown(app)
 
 
 def test_turning_on_without_an_official_week_is_refused(database: Path) -> None:
@@ -810,12 +808,48 @@ def test_the_next_run_skips_to_tomorrow_once_today_is_claimed() -> None:
 
     config = AutoUpdateConfig(enabled=True, check_time=time(9, 0), keyword="PSM", threshold=0.8)
 
-    assert next_run_line(config, True, NOW) == "2026-10-15 09:00"
-    assert next_run_line(config, True, NOW, claimed_today=True) == (
+    assert next_run_line(config, NOW) == "2026-10-15 09:00"
+    assert next_run_line(config, NOW, claimed_today=True) == (
         "2026-10-16 09:00 (오늘 회차는 이미 돌았습니다)"
     )
     later = AutoUpdateConfig(enabled=True, check_time=time(6, 0), keyword="PSM", threshold=0.8)
-    assert next_run_line(later, True, NOW, claimed_today=True) == "2026-10-16 06:00"
+    assert next_run_line(later, NOW, claimed_today=True) == "2026-10-16 06:00"
+
+
+@pytest.mark.parametrize(
+    ("enabled", "line"),
+    [(True, "**다음 실행** · 2026-"), (False, "**다음 실행** · 꺼져 있어 돌지 않습니다.")],
+    ids=["자동 갱신 켜짐", "자동 갱신 꺼짐"],
+)
+def test_the_next_run_stands_where_the_schedule_runs(
+    database: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool, line: str
+) -> None:
+    """예약이 서 있는 실행의 다음 실행은 값이다 — 시각이 남고, 설정이 꺼졌으면 돌지 않는다고
+    적는다."""
+    import capa_simulation.components.auto_official_update_tab as tab
+
+    class _Scheduler:
+        def status(self) -> SchedulerStatus:
+            return SchedulerStatus(
+                started_at=datetime(2026, 10, 12, 7, 0),
+                last_tick_at=None,
+                last_outcome=None,
+                pending_day=None,
+                alive=True,
+                tick_seconds=60.0,
+            )
+
+    monkeypatch.setattr(tab, "running_scheduler", lambda: _Scheduler())
+    repository = _with_w40(database)
+    repository.replace_auto_official_update_settings(
+        AutoUpdateConfig(enabled=enabled, check_time=time(7, 0), keyword="PSM", threshold=0.8),
+        expected_version=0,
+    )
+
+    text = _markdown(_tab(database))
+
+    assert line in text
+    assert "**설정**" not in text
 
 
 def test_a_long_round_or_a_silent_thread_is_warned() -> None:
