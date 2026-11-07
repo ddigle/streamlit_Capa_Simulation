@@ -258,9 +258,9 @@ def state_alerts_naming_a_screen_without_goto() -> set[tuple[str, str]]:
 
 
 def test_a_state_alert_that_names_another_screen_goes_there() -> None:
-    """고칠 입력이 다른 화면이면 줄의 「그 화면으로」 가 그 화면을 연다(`goto` — 설계 규칙 UI-NTF-08 ·
-    AGENTS 9장 「알림 칸」). 글로 화면 이름만 말하는 새 자리는 실패한다 — `goto` 를 주거나 고칠 곳이
-    아니면 `NAMED_WITHOUT_GOTO` 에 까닭과 함께 둔다."""
+    """고칠 입력이 다른 화면이면 줄의 「그 화면으로」 가 그 화면을 연다(`goto` — 설계 규칙
+    UI-NTF-08 · AGENTS 9장 「알림 칸」). 글로 화면 이름만 말하는 새 자리는 실패한다 — `goto` 를
+    주거나 고칠 곳이 아니면 `NAMED_WITHOUT_GOTO` 에 까닭과 함께 둔다."""
     assert state_alerts_naming_a_screen_without_goto() == set(NAMED_WITHOUT_GOTO)
 
 

@@ -299,6 +299,14 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         " 견주고, 체크가 풀렸으면 그 까닭(「r2 → 지금 r3」)을 같은 회차에 체크 칸 위나 단추가"
         " 사라진 자리에 그린다"
     ),
+    (
+        "src/capa_simulation/components/shortening_board.py",
+        "render_highlight_notice",
+        "_REVEAL_NONCE_KEY",
+    ): (
+        "알림 칸이 아니라 보드 줄을 고른 회차의 카드 굴림 표지다 — 글이 없고 그 회차에 한 번 꺼내"
+        " 스크롤 컴포넌트에 넘긴다. 함수 이름의 notice 는 카드 위 강조 줄을 가리킨다"
+    ),
     ("app_pages/space_status.py", "_render_unsaved_layout_panel", "SAVE_ERROR_KEY"): (
         "배치 저장 실패는 회차의 상자 유무로 두 자리 가운데 하나에 선다 — 저장 안 한 상자가"
         " 서면 상자 안(상자 꼴마다 머리 글이 「배치를 저장하지 못했습니다」·「저장하지"
