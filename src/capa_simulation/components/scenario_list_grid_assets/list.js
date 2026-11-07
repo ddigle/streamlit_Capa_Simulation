@@ -105,13 +105,18 @@ function typedStart(key, ctrl, meta, alt) {
 // </list-ime>
 
 // <list-head>
-// 작업 줄 아래 간격(px) — 왼쪽 표 머리를 오른쪽 칸 표 머리와 같은 높이에 둔다. 고르기 한 줄이면 CSS 값과 같고, 칸이 좁아 고르기가
-// 두 줄로 접히면 늘어난 만큼 넓어진다. 맞출 짝이 없으면 null 이고 CSS 값으로 돌아간다 — 칸을 접었거나(고르기 높이 0) 위아래로
-// 쌓였다(고르기가 작업 줄 오른쪽에 있지 않다). 오른쪽 칸은 붙는 칸이라 두 칸의 위치 차이가 아니라 머리 높이로 잰다.
-function toolsGap(tools, choice, body) {
-  if (!choice.height || choice.left < tools.right) return null
-  const gap = body.top - choice.top - tools.height
-  return gap > 0 ? gap : null
+// 두 표 머리를 같은 높이에 두는 값 — `gap` 은 왼쪽 작업 줄 아래 간격(px), `push` 는 오른쪽 칸 본문을 내리는 값(px)이다. 머리는 두
+// 쪽 가운데 높은 쪽에 맞춘다: 고르기가 접혀 오른쪽이 높으면 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 간격을 줄여서는 왼쪽을
+// 올릴 수 없으니(`TOOLS_GAP` 은 CSS 값이고 그보다 붙이지 않는다) 오른쪽 본문을 내린다. 맞출 짝이 없으면 `gap` 이 null 이고
+// CSS 값으로 돌아간다 — 칸을 접었거나(고르기 높이 0) 위아래로 쌓였다(고르기가 작업 줄 오른쪽에 있지 않다). 오른쪽 칸은 붙는
+// 칸이라 두 칸의 위치 차이가 아니라 머리 높이로 재고, 지금 내려 둔 값 `pushed` 를 덜어 본래 머리 높이를 본다.
+const TOOLS_GAP = 12
+
+function headFit(tools, choice, body, pushed) {
+  if (!choice.height || choice.left < tools.right) return { gap: null, push: 0 }
+  const right = body.top - choice.top - pushed
+  const left = tools.height + TOOLS_GAP
+  return { gap: Math.max(left, right) - tools.height, push: Math.max(left - right, 0) }
 }
 // </list-head>
 
@@ -394,15 +399,17 @@ function sideHeadNodes(side) {
   return choice && body ? { choice, body } : null
 }
 
-function alignTools(S) {
+function alignHead(S) {
   const nodes = sideHeadNodes(S.data.side)
   if (!nodes) return
-  const gap = toolsGap(S.toolsNode.getBoundingClientRect(), nodes.choice.getBoundingClientRect(), nodes.body.getBoundingClientRect())
-  S.toolsNode.style.marginBottom = gap === null ? '' : gap + 'px'
+  const pushed = parseFloat(nodes.body.style.marginTop) || 0
+  const fit = headFit(S.toolsNode.getBoundingClientRect(), nodes.choice.getBoundingClientRect(), nodes.body.getBoundingClientRect(), pushed)
+  S.toolsNode.style.marginBottom = fit.gap === null ? '' : fit.gap + 'px'
+  nodes.body.style.marginTop = fit.push ? fit.push + 'px' : ''
 }
 
-// 고르기가 접히고 펴지는 것은 회차 없이 일어난다(칸 끌기 · 창 크기 · 칸 접기) — 고르기 크기를 지켜본다. 왼쪽 표가 먼저 그려지므로
-// 오른쪽 칸이 설 때까지 잠깐 기다리고, 고르기 칸이 새로 서면 그것을 다시 지켜본다.
+// 고르기와 작업 줄이 접히고 펴지는 것은 회차 없이 일어나고(칸 끌기 · 창 크기 · 칸 접기) 칸 폭이 그대로면 한쪽만 바뀐다 — 둘의 크기를
+// 지켜본다. 왼쪽 표가 먼저 그려지므로 오른쪽 칸이 설 때까지 잠깐 기다리고, 고르기 칸이 새로 서면 그것을 다시 지켜본다.
 function watchSideHead(S) {
   if (!S.toolsNode || !S.data.side) return
   if (S.headTimer) clearTimeout(S.headTimer)
@@ -419,10 +426,19 @@ function watchSideHead(S) {
   if (S.headWatched !== nodes.choice) {
     if (S.headObserver) S.headObserver.disconnect()
     S.headWatched = nodes.choice
-    S.headObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => alignTools(S)) : null
-    if (S.headObserver) S.headObserver.observe(nodes.choice)
+    S.headObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => alignHead(S)) : null
+    if (S.headObserver) {
+      S.headObserver.observe(nodes.choice)
+      S.headObserver.observe(S.toolsNode)
+    }
   }
-  alignTools(S)
+  alignHead(S)
+}
+
+// 오른쪽 본문의 내림은 이 표가 넣은 값이라 표가 내려갈 때 거둔다 — 시나리오가 없어져 표만 사라져도 오른쪽 칸은 남는다.
+function releaseHead(S) {
+  const nodes = S.data && S.data.side ? sideHeadNodes(S.data.side) : null
+  if (nodes) nodes.body.style.marginTop = ''
 }
 
 function paintTable(S) {
@@ -1055,6 +1071,7 @@ export default function (component) {
     if (S.settleTimer) clearTimeout(S.settleTimer)
     if (S.headTimer) clearTimeout(S.headTimer)
     if (S.headObserver) S.headObserver.disconnect()
+    releaseHead(S)
     S.timer = 0
     S.settleTimer = 0
     S.headTimer = 0

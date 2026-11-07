@@ -163,6 +163,9 @@ def test_the_tools_line_is_as_tall_as_the_side_head() -> None:
     )
     assert tools
     assert int(tools[1]) + int(tools[2]) == side_panel.SIDE_HEAD_PX
+    # 맞춤이 지키는 간격 하한은 이 CSS 값이다 — 어긋나면 머리 맞춤이 CSS 와 다른 간격을 만든다.
+    floor = re.search(r"const TOOLS_GAP = (\d+)", OWN_JS)
+    assert floor and floor[1] == tools[2]
     small = re.search(r"\.emg-btn\.is-small \{\s*height: (\d+)px;", CSS)
     assert small and int(small[1]) == int(tools[1])
     assert "button('emg-btn is-small'" in OWN_JS
@@ -172,24 +175,70 @@ def test_the_tools_line_is_as_tall_as_the_side_head() -> None:
     assert not re.search(r"\.sgl-box \{[^}]*\n\s*(margin|padding)", OWN_CSS)
 
 
-def test_the_tools_gap_follows_the_side_head() -> None:
-    """고르기가 두 줄로 접힌 만큼 간격이 는다. 맞출 짝이 없으면(접힘 · 쌓임) CSS 값으로 돌아간다."""
+_HEAD_FIT_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({ fits: input.cases.map((item) => headFit(...item)) }))
+"""
+
+
+def _head_fits(cases: list[list[Any]]) -> list[dict[str, Any]]:
+    fits: list[dict[str, Any]] = _node({"cases": cases}, _HEAD_FIT_RUNNER, _sections())["fits"]
+    return fits
+
+
+def test_the_two_heads_meet_at_the_taller_one() -> None:
+    """머리는 두 쪽 가운데 높은 쪽에 맞춘다. 오른쪽이 높으면 간격이 늘고, 작업 줄이 접혀 왼쪽이 높으면
+    간격으로는 왼쪽을 올릴 수 없어 오른쪽 본문을 내린다. 맞출 짝이 없으면(접힘 · 쌓임) CSS 값이다."""
     tools = {"right": 700, "height": 30}
+    wrapped = {"right": 700, "height": 66}
     one = {"left": 720, "top": 200, "height": 28}
     two = {"left": 720, "top": 200, "height": 59.5}
-    runner = """
-const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
-process.stdout.write(JSON.stringify({ gaps: input.cases.map((item) => toolsGap(...item)) }))
-"""
     cases = [
-        [tools, one, {"top": 242}],
-        [tools, two, {"top": 273.5}],
-        [tools, {"left": 0, "top": 0, "height": 0}, {"top": 0}],
-        [tools, {"left": 20, "top": 572, "height": 28}, {"top": 614}],
-        [{"right": 700, "height": 66}, one, {"top": 242}],
+        [tools, one, {"top": 242}, 0],
+        [tools, two, {"top": 273.5}, 0],
+        [tools, {"left": 0, "top": 0, "height": 0}, {"top": 0}, 0],
+        [tools, {"left": 20, "top": 572, "height": 28}, {"top": 614}, 0],
+        # 작업 줄만 접힘 — 창 916 ~ 948 에 칸 폭을 저장해 둔 꼴. 66 + 12 = 78 인데 오른쪽 머리는 42 다.
+        [wrapped, one, {"top": 242}, 0],
+        # 둘 다 접혀도 간격을 CSS 값 밑으로 붙이지 않고 모자란 만큼만 내린다.
+        [wrapped, two, {"top": 273.5}, 0],
+        [{"right": 700, "height": 102}, two, {"top": 273.5}, 0],
+        # 오른쪽 머리가 더 높아 내릴 일이 없다.
+        [wrapped, {"left": 720, "top": 200, "height": 122.5}, {"top": 336.5}, 0],
     ]
-    out = _node({"cases": cases}, runner, _sections())
-    assert out["gaps"] == [12, 43.5, None, None, None]
+    assert _head_fits(cases) == [
+        {"gap": 12, "push": 0},
+        {"gap": 43.5, "push": 0},
+        {"gap": None, "push": 0},
+        {"gap": None, "push": 0},
+        {"gap": 12, "push": 36},
+        {"gap": 12, "push": 4.5},
+        {"gap": 12, "push": 40.5},
+        {"gap": 70.5, "push": 0},
+    ]
+
+
+def test_the_head_fit_lands_both_tables_on_one_line() -> None:
+    """어떤 줄 수 조합이든 왼쪽 머리 위 끝과 오른쪽 머리 위 끝이 같고, 이미 내려 둔 상태에서 다시
+    재도 같은 답이다(내린 값을 머리 높이로 잘못 읽어 회차마다 쌓이지 않는다)."""
+    top = 200.0
+    cases: list[list[Any]] = []
+    for tools_height in (30, 66, 102):
+        for choice_height in (28, 59.5, 91, 122.5):
+            right_head = choice_height + 14
+            tools = {"right": 700, "height": tools_height}
+            choice = {"left": 720, "top": top, "height": choice_height}
+            cases.append([tools, choice, {"top": top + right_head}, 0])
+    fits = _head_fits(cases)
+    for case, fit in zip(cases, fits, strict=True):
+        tools, choice, body, _ = case
+        assert tools["height"] + fit["gap"] == body["top"] + fit["push"] - choice["top"]
+        assert fit["gap"] >= 12 and fit["push"] >= 0
+    again = [
+        [tools, choice, {"top": body["top"] + fit["push"]}, fit["push"]]
+        for (tools, choice, body, _), fit in zip(cases, fits, strict=True)
+    ]
+    assert _head_fits(again) == fits
 
 
 _PURE_RUNNER = """
@@ -1003,7 +1052,7 @@ globalThis.ResizeObserver = class {
 }
 const side = {}
 document.querySelector = (selector) => side[selector] || null
-const placed = (top, height, left) => ({ getBoundingClientRect: () => ({ top, height, left, bottom: top + height }) })
+const placed = (top, height, left) => ({ style: {}, getBoundingClientRect: () => ({ top, height, left, bottom: top + height }) })
 const SIDE = { choice: 'c', body: 'b' }
 ;(async () => {
   // 제목 · 부제는 표 아래, 값 줄 바로 위다 — 빈 표에서도 사라지지 않는다.
@@ -1023,21 +1072,38 @@ const SIDE = { choice: 'c', body: 'b' }
   tools.getBoundingClientRect = () => ({ right: 700, height: 30 })
   out.beforeSide = { observers: observers.length, gap: tools.style.marginBottom }
   const choice = placed(200, 28, 720)
+  const body = placed(242, 300, 720)
   side['.st-key-c'] = choice
-  side['.st-key-b'] = placed(242, 300, 720)
+  side['.st-key-b'] = body
   await tick(230)
-  out.oneLine = tools.style.marginBottom
+  out.oneLine = { gap: tools.style.marginBottom, push: body.style.marginTop }
   const seen = observers[observers.length - 1]
-  out.watching = seen.watched[0] === choice
+  out.watching = seen.watched.length === 2 && seen.watched[0] === choice && seen.watched[1] === tools
+
+  // 작업 줄만 접힘 — 고르기는 그대로라 작업 줄을 지켜봐야 안다. 왼쪽을 올릴 수 없어 오른쪽 본문을 내린다.
+  tools.getBoundingClientRect = () => ({ right: 700, height: 66 })
+  seen.callback()
+  out.toolsWrapped = { gap: tools.style.marginBottom, push: body.style.marginTop }
+  // 내린 뒤 다시 재도 내린 값이 쌓이지 않는다 — 본문 위치는 내린 만큼 내려와 있다.
+  body.getBoundingClientRect = () => ({ top: 278, height: 300, left: 720, bottom: 578 })
+  seen.callback()
+  out.toolsWrappedAgain = body.style.marginTop
+  // 작업 줄이 펴지면 내림을 거두고 간격은 CSS 값이다.
+  tools.getBoundingClientRect = () => ({ right: 700, height: 30 })
+  seen.callback()
+  out.toolsBack = { gap: tools.style.marginBottom, push: body.style.marginTop }
+  body.getBoundingClientRect = () => ({ top: 242, height: 300, left: 720, bottom: 542 })
 
   // 회차 없이 일어나는 접힘 — 지켜보던 고르기 크기로 다시 맞춘다.
   choice.getBoundingClientRect = () => ({ top: 200, height: 59.5, left: 720, bottom: 259.5 })
-  side['.st-key-b'] = placed(273.5, 300, 720)
+  body.getBoundingClientRect = () => ({ top: 273.5, height: 300, left: 720, bottom: 573.5 })
   seen.callback()
   out.twoLines = tools.style.marginBottom
+  // 내려 둔 채 칸을 접으면 내림도 거둔다.
+  body.style.marginTop = '36px'
   choice.getBoundingClientRect = () => ({ top: 0, height: 0, left: 0, bottom: 0 })
   seen.callback()
-  out.folded = tools.style.marginBottom
+  out.folded = { gap: tools.style.marginBottom, push: body.style.marginTop }
 
   // 같은 고르기면 옵저버를 새로 만들지 않고, 새로 선 고르기는 그것을 지켜본다.
   const count = observers.length
@@ -1048,9 +1114,11 @@ const SIDE = { choice: 'c', body: 'b' }
   side['.st-key-b'] = placed(242, 300, 720)
   m.rerender({ ...SCENARIOS, side: SIDE })
   const next = observers[observers.length - 1]
-  out.swapped = { oldStopped: seen.stopped, watching: next.watched[0] === fresh, gap: tools.style.marginBottom }
+  out.swapped = { oldStopped: seen.stopped, watching: next.watched[0] === fresh && next.watched[1] === tools, gap: tools.style.marginBottom }
+  // 표가 내려가면 오른쪽 칸은 남는다 — 넣어 둔 내림을 거두고 간다.
+  side['.st-key-b'].style.marginTop = '36px'
   m.cleanup()
-  out.cleanedUp = next.stopped
+  out.cleanedUp = { stopped: next.stopped, push: side['.st-key-b'].style.marginTop }
 
   // 칸이 끝내 안 서면 기다림은 끝나고, 내리면 기다림도 멈춘다.
   delete side['.st-key-c']
@@ -1068,7 +1136,7 @@ const SIDE = { choice: 'c', body: 'b' }
 
 def test_the_revision_table_comes_first_and_the_head_lines_up() -> None:
     """리비전 표가 칸 맨 위라 머리가 왼쪽 표 머리와 윗선이 같고, 제목 · 부제는 표 아래 값 줄 바로
-    위다. 고르기가 두 줄로 접혀도 왼쪽이 따라간다."""
+    위다. 고르기가 접히면 왼쪽이, 작업 줄만 접히면 오른쪽이 따라간다."""
     out = _node({}, _HEAD_LINE, _MOUNT_SOURCE)
     # 맨 뒤 낭독 칸(`.sgl-status`)은 자리를 차지하지 않는다.
     order = ["sgl-box", "sgl-title", "sgl-sub", "sgl-values", "sgl-status"]
@@ -1078,12 +1146,15 @@ def test_the_revision_table_comes_first_and_the_head_lines_up() -> None:
     assert out["revisionObservers"] == 0
     assert out["scenarios"][:2] == ["sgl-tools", "sgl-box"]
     assert out["beforeSide"] == {"observers": 0}
-    assert out["oneLine"] == "12px" and out["watching"] is True
+    assert out["oneLine"] == {"gap": "12px", "push": ""} and out["watching"] is True
+    assert out["toolsWrapped"] == {"gap": "12px", "push": "36px"}
+    assert out["toolsWrappedAgain"] == "36px"
+    assert out["toolsBack"] == {"gap": "12px", "push": ""}
     assert out["twoLines"] == "43.5px"
-    assert out["folded"] == ""
+    assert out["folded"] == {"gap": "", "push": ""}
     assert out["sameChoice"] is True
     assert out["swapped"] == {"oldStopped": True, "watching": True, "gap": "12px"}
-    assert out["cleanedUp"] is True
+    assert out["cleanedUp"] == {"stopped": True, "push": ""}
     assert out["stoppedWaiting"] is True
 
 
