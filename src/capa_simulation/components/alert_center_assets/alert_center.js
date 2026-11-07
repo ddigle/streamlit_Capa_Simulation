@@ -17,7 +17,7 @@
 //   usage-log 와 함께 — D6).
 // - 다시 붙은 탭(2026-11-07 2차 보드 R1 (가)): 프런트는 마지막 회차가 앱 전체였던 탭에 다시 붙어도 회차를 요청하지 않고, 새 세션은 모르는
 //   프래그먼트의 요청을 회차 없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. 앱 뿌리의 연결 표지(`data-test-connection-state`)가
-//   붙음으로 돌아오면 `RECONNECT_WAIT_MS` 기다리고, 그 사이 프런트가 스스로 돈 회차가 없으면 트리거로 앱 전체 회차를 한 번 부른다. 이 JS 가
+//   붙음으로 돌아오면 본 스레드가 `RECONNECT_WAIT_MS` 조용해지기를 기다리고, 그 사이 프런트가 스스로 돈 회차가 없으면 트리거로 앱 전체 회차를 한 번 부른다. 이 JS 가
 //   파이썬을 부르는 자리는 여기 하나뿐이다. 연결 표지와 회차 표지는 관찰자 하나가 본다(`watchRoot` — 칸이 다시 그려져도 늘지 않는다).
 // - 서버 재시작(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가)): 재시작 뒤 세션은 새것이라 파이썬은 첫 접속과 가르지 못한다. data 의 부트
 //   표지(`boot.mark`)를 이 탭에 적어 둔 앞 표지와 견주어 앞 표지가 있고 다를 때만 함께 실린 알림(`boot.notice` — `GL-07`)을 띄우고
@@ -65,8 +65,6 @@ const PLACE_RETRIES = 40
 const PENDING_TAB_MS = 20000
 // 「복사했습니다」 가 서 있는 시간.
 const COPIED_MS = 1800
-// 다시 붙은 뒤 앱 전체 회차를 부르기 전에 기다리는 시간 — 프런트가 스스로 돌리는 회차와 겹치지 않게 그 회차가 보일 틈을 둔다.
-const RECONNECT_WAIT_MS = 300
 const TAB_BUTTON = '[data-testid="stTabs"] [role="tab"]'
 
 // <alerts-rows>
@@ -269,13 +267,25 @@ function bootChanged(key, mark) {
 
 // <alerts-reconnect>
 const CONNECTED = 'CONNECTED'
+// 다시 붙은 뒤 앱 전체 회차를 부르기 전에 본 스레드가 조용해야 하는 시간. 시계로만 기다리지 않는다 — 무거운 화면은 다시 그리느라 1초 남짓
+// 바빠, 프런트가 스스로 돈 회차의 표지가 메시지 큐에 묶인 채 시계가 먼저 끝나 회차가 겹친다. 끝없이 기다리지는 않는다(가려진 탭은 타이머가
+// 늘 늦어 조용한 것으로 세지 못한다).
+const RECONNECT_WAIT_MS = 300
+const RECONNECT_TICK_MS = 50
+const RECONNECT_LIMIT_MS = 5000
 // 다시 붙었나 — 붙어 있지 않다가 붙음으로 돌아온 순간만 참이다. 앞 상태를 모르면(처음 본 순간) 거짓이다.
 function cameBack(before, now) {
   return now === CONNECTED && typeof before === 'string' && before !== CONNECTED
 }
-// 기다린 뒤 앱 전체 회차를 부를까 — 아직 붙어 있고, 기다리는 사이 회차 표지가 움직이지 않았고(`moves`), 도는 회차가 없을 때만.
-function needsRun(connection, runState, moves) {
-  return connection === CONNECTED && moves === 0 && runState !== 'running' && runState !== 'rerunRequested'
+// 틱 사이 간격(`gap`)을 조용한 시간에 더한다. 제때 깨지 못했으면 본 스레드가 바빴던 것이라 처음부터 센다.
+function quietAfter(quiet, gap) {
+  return gap > RECONNECT_TICK_MS * 2 ? 0 : quiet + gap
+}
+// 다시 붙은 뒤 틱마다 할 일 — 'stop'(다시 끊겼거나 회차 표지가 움직였거나 회차가 돌고 있다 — 프런트가 스스로 돈 회차다), 'wait'(아직 바쁘다),
+// 'ask'(앱 전체 회차를 부른다).
+function reconnectStep(connection, runState, moves, quiet, waited) {
+  if (connection !== CONNECTED || moves > 0 || runState === 'running' || runState === 'rerunRequested') return 'stop'
+  return quiet >= RECONNECT_WAIT_MS || waited >= RECONNECT_LIMIT_MS ? 'ask' : 'wait'
 }
 // 세션만 사라졌나 — 같은 문서의 앞 data(`before`)와 세션 표지가 다른데 부트 표지는 같고, 잃은 것이 있었을 때만 참이다. 부트 표지가 다르면
 // 재시작이라 `GL-07` 이 맡고, 앞 data 가 없는 새 문서는 표지가 없어 거짓이다.
@@ -661,10 +671,18 @@ function connectionMoved(C, root) {
   if (before === CONNECTED) C.dialogAtCut = Boolean(document.querySelector(DIALOG))
   if (!cameBack(before, now)) return
   const movesAtBack = C.runMoves
-  C.reconnectTimer = setTimeout(() => {
-    const moves = C.runMoves - movesAtBack
-    if (C.ask && needsRun(C.connection, root.getAttribute(RUN_STATE), moves)) C.ask('reconnected', Date.now())
-  }, RECONNECT_WAIT_MS)
+  const begun = performance.now()
+  let last = begun
+  let quiet = 0
+  const tick = () => {
+    const at = performance.now()
+    quiet = quietAfter(quiet, at - last)
+    last = at
+    const step = reconnectStep(C.connection, root.getAttribute(RUN_STATE), C.runMoves - movesAtBack, quiet, at - begun)
+    if (step === 'wait') C.reconnectTimer = setTimeout(tick, RECONNECT_TICK_MS)
+    else if (step === 'ask' && C.ask) C.ask('reconnected', Date.now())
+  }
+  C.reconnectTimer = setTimeout(tick, RECONNECT_TICK_MS)
 }
 
 function retireCenter(C) {

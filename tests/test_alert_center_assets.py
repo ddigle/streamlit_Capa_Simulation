@@ -459,11 +459,11 @@ console.log(JSON.stringify({
 
 
 def test_a_reconnected_tab_asks_for_one_run_only_when_the_front_did_not() -> None:
-    """붙어 있지 않다가 붙음으로 돌아온 순간만 다시 붙은 것이다. 기다린 뒤 다시 끊겼거나, 그 사이
-    회차 표지가 움직였거나(프런트가 스스로 돈 회차 — 겹치면 이중 회차다), 회차가 돌고 있으면 부르지
-    않는다."""
+    """붙어 있지 않다가 붙음으로 돌아온 순간만 다시 붙은 것이다. 다시 끊겼거나, 회차 표지가
+    움직였거나(프런트가 스스로 돈 회차 — 겹치면 이중 회차다), 회차가 돌고 있으면 부르지 않는다."""
     out = _node(
         """
+const step = (connection, runState, moves) => reconnectStep(connection, runState, moves, 300, 400)
 console.log(JSON.stringify({
   back: [
     cameBack('PINGING_SERVER', 'CONNECTED'),
@@ -473,21 +473,54 @@ console.log(JSON.stringify({
     cameBack(null, 'CONNECTED'),
     cameBack(undefined, 'CONNECTED'),
   ],
-  run: [
-    needsRun('CONNECTED', 'notRunning', 0),
-    needsRun('CONNECTED', 'initial', 0),
-    needsRun('CONNECTED', 'notRunning', 2),
-    needsRun('CONNECTED', 'running', 0),
-    needsRun('CONNECTED', 'rerunRequested', 0),
-    needsRun('PINGING_SERVER', 'notRunning', 0),
+  step: [
+    step('CONNECTED', 'notRunning', 0),
+    step('CONNECTED', 'initial', 0),
+    step('CONNECTED', 'notRunning', 2),
+    step('CONNECTED', 'running', 0),
+    step('CONNECTED', 'rerunRequested', 0),
+    step('PINGING_SERVER', 'notRunning', 0),
   ],
 }))
 """
     )
     assert out == {
         "back": [True, True, False, False, False, False],
-        "run": [True, True, False, False, False, False],
+        "step": ["ask", "ask", "stop", "stop", "stop", "stop"],
     }
+
+
+def test_the_wait_counts_quiet_time_on_the_main_thread_not_the_clock() -> None:
+    """무거운 화면은 다시 붙자마자 다시 그리느라 1초 남짓 바쁘고, 그 사이 프런트가 스스로 돈 회차의
+    표지는 메시지 큐에 묶여 있다 — 시계로 300ms 만 기다리면 표지를 못 보고 회차를 겹친다(2026-11-08
+    사본 실측 HOME). 그래서 제때 깬 틱만 조용한 시간으로 세고, 늦게 깨면 처음부터 센다. 가려진 탭은
+    타이머가 늘 늦어 조용한 시간이 쌓이지 않으므로 상한에서 부른다."""
+    out = _node(
+        """
+const walk = (gaps) => {
+  let quiet = 0
+  let waited = 0
+  return gaps.map((gap) => {
+    quiet = quietAfter(quiet, gap)
+    waited += gap
+    return reconnectStep('CONNECTED', 'notRunning', 0, quiet, waited)
+  })
+}
+console.log(JSON.stringify({
+  idle: walk([50, 50, 50, 50, 50, 50]),
+  busy: walk([800, 50, 50, 140, 50, 50, 50, 50, 50, 50]),
+  hidden: walk([1000, 1000, 1000, 1000, 1000]),
+}))
+"""
+    )
+    assert out == {
+        "idle": ["wait", "wait", "wait", "wait", "wait", "ask"],
+        "busy": ["wait"] * 9 + ["ask"],
+        "hidden": ["wait", "wait", "wait", "wait", "ask"],
+    }
+    assert "const RECONNECT_WAIT_MS = 300\n" in JS
+    assert "const RECONNECT_TICK_MS = 50\n" in JS
+    assert "const RECONNECT_LIMIT_MS = 5000\n" in JS
 
 
 def test_one_observer_watches_both_marks_and_the_center_does_not_add_another() -> None:
@@ -506,15 +539,13 @@ def test_one_observer_watches_both_marks_and_the_center_does_not_add_another() -
     assert "C.runObserver.disconnect()" in retire and "clearTimeout(C.reconnectTimer)" in retire
 
 
-def test_the_dialog_is_read_when_the_connection_leaves_and_the_wait_covers_the_front_run() -> None:
-    """대화상자는 끊기는 순간에 읽는다 — 다시 붙은 뒤에는 새 회차가 걷고 있을 수 있다. 기다림은 약
-    300ms 다(2026-11-07 시제품 — 그보다 짧으면 프런트의 회차와 겹친다)."""
+def test_the_dialog_is_read_at_the_moment_the_connection_leaves() -> None:
+    """대화상자는 끊기는 순간에 읽는다 — 다시 붙은 뒤에는 새 회차가 걷고 있을 수 있다."""
     mover = JS[JS.index("function connectionMoved(") : JS.index("function retireCenter(")]
     assert (
         "if (before === CONNECTED) C.dialogAtCut = Boolean(document.querySelector(DIALOG))" in mover
     )
     assert mover.index("C.dialogAtCut =") < mover.index("cameBack(before, now)")
-    assert "const RECONNECT_WAIT_MS = 300\n" in JS
     assert "const DIALOG = '[data-testid=\"stDialog\"]'\n" in JS
 
 
