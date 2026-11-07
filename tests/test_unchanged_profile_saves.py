@@ -190,7 +190,7 @@ def _seed_display_order(repository: DuckDBScenarioRepository) -> None:
 def test_a_display_order_save_without_changes_makes_no_new_version(
     repository: DuckDBScenarioRepository,
 ) -> None:
-    """고친 칸 없이 누른 「공용 표시순서 저장」 은 새 버전 없이 머리 알림 칸에 「바뀐 것이
+    """고친 칸 없이 누른 「공용 표시순서 저장」 은 새 버전 없이 저장 줄 바로 아래 칸에 「바뀐 것이
     없습니다」 를 띄운다. 변경 메모만 적어도 같고, 칸을 고치면 평소대로 저장한다."""
     _seed_display_order(repository)
     app = _app(repository, _DISPLAY_ORDER)

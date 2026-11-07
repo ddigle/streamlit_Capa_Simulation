@@ -434,10 +434,16 @@ def test_a_direct_edit_save_without_changes_makes_no_new_version(
     app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
     assert app.text[-1].value == "v1|SAW>절단"
 
+    kinds_before = _kinds_in_order(app.main)
     app = _press_rename_save(app)
     assert [str(item.value) for item in infos(app)] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
     assert not successes(app) and not place_errors(app)
     assert app.text[-1].value == "v1|SAW>절단"
+    # 글은 폼 안 저장 줄 바로 아래 칸이다 — 칸이 늘 서 있어 그 밖의 요소 차례는 그대로다(g8-16).
+    kinds = _kinds_in_order(app.main)
+    assert kinds.index("form") < kinds.index("text_input") < kinds.index("info")
+    assert kinds.index("info") < len(kinds) - kinds[::-1].index("dataframe") - 1
+    assert [kind for kind in kinds if kind != "info"] == kinds_before
 
     app.text_input(key="admin_area_process_rename_note").set_value("메모만 적음")
     app = _press_rename_save(app)
