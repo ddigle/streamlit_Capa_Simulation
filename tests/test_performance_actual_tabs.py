@@ -178,3 +178,20 @@ def test_the_sample_switch_line_is_a_badge_with_its_meaning_in_a_tooltip() -> No
     assert not [item.value for item in app.caption]
     (title,) = [item for item in app.markdown if ":material/pending:" in str(item.value)]
     assert "이 자리에 들어옵니다" in title.proto.help
+
+
+def test_the_pending_screen_keeps_what_it_will_calculate_in_the_title_tooltip() -> None:
+    """샘플을 끄면 「연결되면 계산할 것」 네 줄은 제목 풍선이다 — 자리에는 제목과 연결 대기 표지
+    한 줄뿐이다(설계 규칙 UI-LAY-10 · UI-TXT-01, 사용자 답 desc-blocks)."""
+    app = _open("요약")
+    app.toggle(key="dynamic_capa_sample_data").set_value(False).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    (title,) = [item for item in app.markdown if str(item.value).startswith("####")]
+    tooltip = str(title.proto.help)
+    assert "연결되면 계산할 것" in tooltip
+    assert EFFICIENCY_METRIC.gap_formula in tooltip
+    for name in ("**상태**", "**우선순위 점수**", "**비율 집계**"):
+        assert name in tooltip
+    (slot,) = [item for item in app.get("html") if "연결 대기" in item.proto.body]
+    assert f"<strong>{EFFICIENCY_METRIC.source} 연결 대기</strong>" in slot.proto.body

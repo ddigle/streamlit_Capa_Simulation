@@ -108,15 +108,15 @@ def _render_pending_screen(metric: MetricSpec) -> None:
             "한 줄에 세우려면 반드시 필요합니다",
             "집계 구간(월 마감 시점)과 공정 코드 매핑 규칙",
         ),
-    )
-    with st.container(border=True):
-        st.markdown("#### :material/rule: 연결되면 계산할 것")
-        st.markdown(f"- **Gap** = `{metric.gap_formula}` ({metric.gap_unit})")
-        st.markdown(
+        # 연결되면 무엇을 셈하는지는 자리 글이 아니라 제목 풍선이다(설계 규칙 UI-TXT-01).
+        more_help=(
+            "연결되면 계산할 것\n\n"
+            f"- **Gap** = `{metric.gap_formula}` ({metric.gap_unit})\n"
             "- **상태** = 마지막 달 기준 연속 미달 개월. 0 정상 · 1~2 관찰 · 3 이상 개선 필요\n"
             "- **우선순위 점수** = `미달폭 × 영향 비중 × 연속 미달 가중`\n"
             "- **비율 집계** = 월별 비율의 평균이 아니라 생산수량 가중으로 다시 계산"
-        )
+        ),
+    )
 
 
 def _render_summary(

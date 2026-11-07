@@ -163,8 +163,8 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
 
 
 def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:
-    """샘플을 끄면 자리 글은 들어올 값뿐이다 — 연결되면 하는 일은 「표준 대비 실적 Capa」 제목
-    풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    """샘플을 끄면 자리는 점선 상자에 연결 대기 표지 한 줄뿐이다 — 들어올 값과 연결되면 하는 일은
+    「표준 대비 실적 Capa」 제목 풍선이다(설계 규칙 UI-LAY-10 · UI-TXT-01 · UI-TXT-02)."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state[SAMPLE_TOGGLE_KEY] = False
     app.run()
@@ -176,6 +176,12 @@ def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:
     assert "이 자리에 들어옵니다" in tooltip
     for meaning in ("손실 한 칸씩", "어느 하위 화면부터", "합산하지 않고 비율로 비교"):
         assert meaning in tooltip
+    # 들어올 값의 이름은 풍선 목록으로 남고, 자리에는 표지 한 줄만 선다.
+    assert "- 같은 분류의 **생산실적 수량**" in tooltip
+    (slot,) = [item for item in app.get("html") if "연결 대기" in item.proto.body]
+    assert "<strong>실적 DB 연결 대기</strong>" in slot.proto.body
+    assert "dashed" in slot.proto.body
+    assert not any("생산실적 수량" in str(item.value) for item in app.markdown)
 
 
 def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
