@@ -3587,9 +3587,7 @@ def _render_history(
         options=list(by_id),
         key="equipment_history_revision_id_v4",
         persist_state="session",
-        format_func=lambda value: (
-            f"{schedule_revision_title(by_id[value])} · {by_id[value].note or '메모 없음'}"
-        ),
+        format_func=lambda value: schedule_revision_title(by_id[value]),
     )
     chosen = by_id[selected_id]
     common_id = chosen.common_revision_id or latest_common

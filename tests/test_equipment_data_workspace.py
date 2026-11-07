@@ -1168,6 +1168,25 @@ def test_the_inactive_floor_warning_shows_a_typed_reason_as_written(
     assert warning.endswith(f": {literal_markdown('EQ-NONE')}")
 
 
+def test_the_history_revision_box_shows_only_the_revision_and_leaves_the_note_to_the_table(
+    tmp_path: Path,
+) -> None:
+    """「조회 리비전」 닫힌 칸은 칸 폭을 넘겨 끊겼다(g5-20, 샘플 관측) — 「r3 · 이름」 만 적고 메모는
+    바로 위 표에서 본다."""
+    path = tmp_path / "equipment.duckdb"
+    _repository(path).save_snapshot(
+        empty_equipment_baseline(),
+        _master(["EQ-A"]),
+        empty_downtime_schedule(),
+        note="칸을 넘기는 긴 메모",
+    )
+    app = _app(path)
+    app.session_state[SIDE_KEY] = SIDE_HISTORY
+    _ok(app.run())
+
+    assert app.selectbox(key="equipment_history_revision_id_v4").options == ["r1"]
+
+
 def test_history_filters_survive_a_trip_to_summary(tmp_path: Path) -> None:
     """저장 이력의 조회 조건(공정소분류·비가동유형·기간)과 조회 리비전은 보기 조건이다 — 탭 ① 은
     숨은 회차에 그리지 않으므로(개편 명세 2-3) Summary 에 갔다 와도 남는 것은
