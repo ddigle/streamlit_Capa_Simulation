@@ -621,9 +621,9 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: MUST · 확정
 - 범위: 앱 껍데기(머리 띠 · 탭 줄 · 사이드바) · 패널 · 칩 줄 · 큰 표
-- 예외: 없음
+- 예외: 화면 조작 상자가 바닥 카드에 걸린 채 설 때 — 회차가 끝났을 때 상자 줄 수가 달라졌고 걸렸으면 걸린 만큼만 사이드바를 올린다(`page_box_reveal`). 사람의 보기 조작(휠 · 끌기 · 상자 여닫기 · 폭 끌기)은 그대로 지킨다
 - 판단: 이 조작 뒤 사용자가 보던 줄이 그 자리에 있나?
-- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정)
+- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `tests/test_page_box_reveal.py`(상자 예외의 판정 — 가짜 문서) · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정)
 - 그물 후보: 보기 조작 전후 스크롤 같음
 - 근거: 검수 home-u04(2026-11-03), 검수 「괜찮음」 frame-u01(2026-11-03), 사용자 UI 요청 ①(2026-11-02) — 「창 틀: 스크롤 아래로 내릴 때 틀이 살짝 움직임. 항상 고정되도록」
 - 지금 값: 없음
@@ -1524,5 +1524,6 @@ AGENTS 8 · 9장의 구현 규칙(글자 표기 · 위젯 상태 · 회차 · �
   - 글을 고친 규칙: UI-LAY-03(예외 — 시나리오 목록 상세 칸 작업 줄), UI-LAY-09(표가 나란히 서는 칸은 머리선을 맞춘다 — 판단 · 그물 · 근거도). 4장 값은 보드가 묻지 않아 앞 값 그대로이고, 안 A 뒤 작업 줄 · 왼쪽 칸 아래 한계 두 줄을 「검수 전」 으로 더했다.
   - 화면 쪽 이름: `scenario_list_grid_assets/list.js` `headFit` · `TOOLS_GAP`, `alert_center.BOOT_MARK` · `alerts.server_restart_note`, 알림 코드 `GL-07`. 마이그레이션은 늘지 않았다.
   - 그물: `tests/test_design_rules_doc.py` 가 6-8 여섯 줄과 답 · 규칙 글을 본다. `tests/test_scenario_list_grid_assets.py`(줄 수 조합마다 두 표 머리 높이 · 다시 재도 내림이 쌓이지 않음) · `tests/test_alert_center_assets.py`(재시작 판정) · `tests/test_reconnect_limits.py`(재연결 때 기대는 Streamlit 동작)를 더했다.
+  - 사내 리뷰 `202611060842` B 1) 고침(`fix/sidebar-cover-1107`): UI-PRF-03 에 상자 예외 한 줄을 더했다. D10 · AMB-09(접힘 · 상자 차례를 화면마다 달리하지 않는다)는 그대로이고 사이드바가 사람 대신 굴리는 것만 더했다. 사용자 확인 전이다.
   - 안 A(6-8 equip-toolbar · `feat/equip-toolbar-1107`): 작업 줄 한 줄 · 「+ 새 호기」 뺌 · 메뉴 「엑셀·CSV」 · 찾기 칸 flex 기준 220px. 왼쪽 칸이 좁을 때는 불러오기 줄이 왼쪽 칸 폭으로 꼴을 고르고(`grid.js` `loaderFit`, 파이썬 회차 없음 — UI-PRF-04) 오른쪽 칸 최대가 왼쪽 안쪽 224px 를 남긴다(`side_panel.SIDE_LEFT_MIN_PX`). 그물은 `tests/test_equipment_master_grid_assets.py` · `tests/test_equipment_side_panel.py` 다.
   - 재기(2-2 6): 그림 15칸 가운데 고침 1 — 규칙에 없던 꼴이라 누수 1 · 규칙 밖 1 이 같은 칸이고 UI-LAY-09 로 올렸다. 그물 미정리는 늘지 않았다. 새로 물은 것(`docs/TODO.md` 4장): 재시작 · 세션 만료 뒤 프래그먼트 · 대화상자 안 저장, 세션만 사라진 탭.
