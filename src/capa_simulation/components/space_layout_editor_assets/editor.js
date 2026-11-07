@@ -3895,10 +3895,7 @@ export default function (component) {
     let hidden = 0
     for (const share of S.covered.values()) hidden += share
     const text = hidden > 0 ? `${base} · 겹쳐 숨긴 반입 예정 ${unitCountText(hidden)}대` : base
-    const node = q('.sle-summary')
-    setText(node, text)
-    // 좁은 FAB 도구 줄에서는 요약도 말줄임으로 줄 수 있다(`fitToolbar`) — 풍선에 온 글.
-    setAttr(node, 'title', text)
+    setText(q('.sle-summary'), text)
   }
   // 보기 화면의 호기 겹침 짝(호기 → 겹치는 호기들). 격자 칸에 나눠 담아 같은 칸끼리만 견준다. 그린 호기가 바뀔 때
   // (`renderItems`)만 다시 만든다.
@@ -8071,15 +8068,15 @@ export default function (component) {
     setAttr(flagNote, 'title', `미확인 ${flagged.toLocaleString('ko-KR')}대 — 오늘 기준으로 반입·Qual 일정이 지났는데 실적이 `
       + '비고 상태가 계획·확정인 설비입니다. 가용설비 현황 설비 마스터에서 고칩니다.')
   }
-  // 도구 줄이 넘치면 접는 차례를 하나씩 더한다. FAB 보기는 `is-fit1`~`is-fit6`(CSS 「FAB 도구 줄」) — 요약은 마지막에야
-  // 준다(읽히는 앞머리까지만 줄이고, 그래도 넘치면 둘째 줄로 내린다). 층 보기는 접을 것이 요약뿐이라 넘치면 곧장 둘째
+  // 도구 줄이 넘치면 접는 차례를 하나씩 더한다. FAB 보기는 `is-fit1`~`is-fit3` 다음 둘째 줄 `is-fit6`(CSS 「FAB 도구 줄」)
+  // 이다 — 말머리만 접고 제목·날짜·요약은 줄이지 않는다. 층 보기는 접을 것이 요약뿐이라 넘치면 곧장 둘째
   // 줄(⑥)이다 — 390px 에서 확대 묶음 뒤 「배치 n대 · 미배치 · 점유율」 이 줄 밖으로 밀려 보이지 않았다(E2E r1). 편집은
   // `is-efit1`(「호기 정보」·「화면 고정」 은 아이콘만, 기준일 칩은 날짜만 — 낭독기용 글은 남김) 다음 ⑥(빈 칸 뒤 「호기 정보」·
   // 「화면 고정」·「적용」 을 둘째 줄로)이다 — 사이드바를 연 1100px 창의 층 편집에서 「화면 고정」 이 줄 밖으로 밀려 스크롤 고정을
   // 켤 길이 없었다(도구 줄은 굴림 막대를 숨겨 옆으로 밀 수도 없다). 크기가 바뀔 때(`S.onResize` — 무대 높이를 재기 전)
   // 다시 잰다.
   const toolbar = q('.sle-toolbar')
-  const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']
+  const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit6']
   const EDIT_FIT_STEPS = ['is-efit1', 'is-fit6']
   function fitToolbar() {
     toolbar.classList.remove(...FIT_STEPS, ...EDIT_FIT_STEPS)

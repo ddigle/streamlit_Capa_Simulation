@@ -12,7 +12,7 @@
 }
 .sle-toolbar::-webkit-scrollbar { display: none; }
 .sle-toolbar > * { flex: none; }
-.sle-title { font-weight: 700; margin-right: 8px; flex: 0 1 auto; min-width: 3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sle-title { font-weight: 700; margin-right: 8px; flex: none; white-space: nowrap; }
 .sle-steps, .sle-zoom { display: inline-flex; align-items: center; gap: 2px; margin-right: 6px; }
 .sle-zoom-label { min-width: 3.4em; text-align: center; font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--sle-muted); }
 /* 단추는 앱 단추와 같은 결이다 — 13px·600 · 모서리 8px · 테두리 BORDER · 글자 TEXT. 촘촘한 도구 줄에 맞춰 높이 27px. */
@@ -641,13 +641,12 @@
 .sle.is-view.is-pinned .sle-pinned { display: flex !important; }
 
 /* ---- FAB 도구 줄의 기준일·「오늘로」·미확인 대수(요약 앞) ----
-   요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1024px 창) JS `fitToolbar` 가 접는
+   요약(배치·미배치·레이아웃 제외)이 먼저 보인다. 도구 줄이 넘치면(사이드바를 연 1283px 창) JS `fitToolbar` 가 접는
    차례를 하나씩 더한다 — ① 선택 안내와 「기준일」·「미확인」 말머리(화면에서만 — 낭독기는 읽는다), ② 미확인 대수
-   (「!」만 — 대수는 풍선), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 그래도 넘치면(더 좁은 창) 요약도
-   말줄임(풍선에 온 글) — 화면 밖으로 밀려 안 보이는 것보다 낫다. 말줄임은 앞머리가 읽히는 폭(기준일 4em·요약
-   6em)까지만 준다 — 그 아래는 「2」·「배」 같은 조각만 남고 터치 창은 풍선도 못 띄운다(E2E 390px). ⑥ 그래도 넘치면
-   (390px 휴대폰 폭 — 확대 묶음만으로 줄이 거의 찬다) 기준일·「오늘」·미확인·요약을 둘째 줄로 내린다. 두 줄도 창 폭으로만
-   정해져 고를 때 높이가 바뀌지 않는다. 대수 글자는 반만 잘리지 않는다 — 잘린 「4」가 411대를 4대로 읽히게 한다. */
+   (「!」만 — 대수는 풍선), ③ 「오늘로」 → 「오늘」, ⑥ 그래도 넘치면 기준일·「오늘」·미확인·요약을 둘째 줄로 내린다(층 도구
+   줄과 같은 꼴). 제목·날짜·요약은 말줄임하지 않는다 — 넘친 것을 그 셋이 나눠 먹으면 줄은 맞아도 반만 읽혔다(사이드바를 연
+   1100px 창 「S.PKG F…」·「2026-…」). 두 줄도 창 폭으로만 정해져 고를 때 높이가 바뀌지 않는다. 대수 글자는 반만 잘리지
+   않는다 — 잘린 「4」가 411대를 4대로 읽히게 한다. */
 .sle-asof { font-size: 0.82rem; color: var(--sle-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sle-flagnote {
   display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; font-size: 0.82rem; white-space: nowrap;
@@ -663,11 +662,6 @@
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
 .sle-toolbar.is-fit3 .sle-totoday-tail { display: none; }
-.sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary {
-  flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis;
-}
-.sle-toolbar.is-fit4 .sle-asof { min-width: 4em; }
-.sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }
 /* ⑥ 둘째 줄 — 빈 칸(`sle-spacer` — 보기에서는 숨는 칸, 선택 줄 바로 뒤 · 편집에서는 「빼기·지우기」 뒤)이 온 폭 줄바꿈이
    된다. 층 보기 도구 줄은 넘치면 곧장 이 차례다(요약만 둘째 줄). 둘째 줄의 요약은 말줄임 대신 줄을 바꿔 다 읽힌다 — 390px
    에서 「배치 …」 로 잘렸다(E2E r1). 편집은 「호기 정보」·「화면 고정」·「적용」 이 둘째 줄이다(글도 다시 선다 — 자리가 넉넉하다). */

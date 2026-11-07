@@ -894,8 +894,7 @@ location_unknown = pd.Series(
 
 def _filter_mark(*, emptied: bool = False) -> str:
     """도구 줄 요약 맨 앞 표지 — 공정 필터가 걸렸다는 것과, 그 때문에 층이 비었으면 그 말(설계 규칙
-    UI-STA-03). 좁은 FAB 도구 줄은 요약 뒤부터 말줄임하므로 앞에 둔다(`fitToolbar`). 뜻은
-    `공정소분류` 칸 풍선이다. 필터가 없으면 빈 글이다."""
+    UI-STA-03). 뜻은 `공정소분류` 칸 풍선이다. 필터가 없으면 빈 글이다."""
     if not selected_processes:
         return ""
     return f"공정 필터 {len(selected_processes)}개 · " + ("필터로 0대 · " if emptied else "")

@@ -415,9 +415,6 @@ def test_a_narrow_floor_viewer_moves_its_summary_to_a_second_line() -> None:
     assert "const steps = !VIEW ? EDIT_FIT_STEPS : FAB ? FIT_STEPS : FIT_STEPS.slice(-1)" in fit
     summary = _rule(".sle-toolbar.is-fit6 .sle-summary")
     assert "white-space: normal" in summary and "overflow: visible" in summary
-    assert CSS.index(".sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }") < CSS.index(
-        ".sle-toolbar.is-fit6 .sle-summary"
-    )
 
 
 def test_a_dropped_unit_keeps_the_drawer_open_and_is_revealed() -> None:
@@ -889,8 +886,8 @@ def test_the_fab_toolbar_shows_the_as_of_date_a_back_to_today_button_and_unconfi
 def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -> None:
     """사이드바를 연 1024px 창처럼 FAB 도구 줄이 넘치면 `fitToolbar` 가 접는 차례를 하나씩
     더한다 — ① 선택 안내·「기준일」·「미확인」 말머리(화면에서만 — 낭독기용으로 남김), ② 미확인
-    대수(「!」만), ③ 「오늘로」 → 「오늘」, ④ 기준일 날짜 말줄임, ⑤ 요약 말줄임. 요약은 마지막에야
-    줄고, 대수 글자는 반만 잘리지 않는다."""
+    대수(「!」만), ③ 「오늘로」 → 「오늘」. 그래도 넘치면 ⑥ 둘째 줄이다. 대수 글자는 반만 잘리지
+    않는다."""
     toolbar = HTML[HTML.index('<div class="sle-toolbar">') : HTML.index('<div class="sle-body">')]
     assert '<span class="sle-asof-label">기준일 </span>' in toolbar
     assert 'class="sle-flagnote-word">미확인 </span>' in toolbar
@@ -898,9 +895,7 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
         "function fitToolbar() {",
         "// ---------------------------------------------------------------- 높이 손잡이",
     )
-    assert (
-        "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit4', 'is-fit5', 'is-fit6']" in JS
-    )
+    assert "const FIT_STEPS = ['is-fit1', 'is-fit2', 'is-fit3', 'is-fit6']" in JS
     assert fit.index("toolbar.classList.remove(...FIT_STEPS, ...EDIT_FIT_STEPS)") < fit.index(
         "const steps ="
     )
@@ -921,30 +916,23 @@ def test_a_narrow_fab_toolbar_folds_step_by_step_and_keeps_the_summary_whole() -
     assert "align-self: stretch" in _rule(".sle-pick:empty")
     assert "dataset.hint" not in JS
     assert "display: none" in _rule(".sle-toolbar.is-fit3 .sle-totoday-tail")
-    # 기준일 날짜 말줄임 다음, 마지막에야 요약도 말줄임(풍선에 온 글)이다.
-    last = _rule(".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary")
-    assert "text-overflow: ellipsis" in last
-    # 요약 글(겹쳐 숨긴 반입 예정 대수를 붙인 것)이 그대로 풍선이다(`showSummary`).
-    summary = _between("function showSummary() {", "function overlapPairs() {")
-    assert "setText(node, text)" in summary and "setAttr(node, 'title', text)" in summary
     # 대수 글자(미확인)는 말줄임으로 반만 잘리지 않는다 — 접을 때는 통째로.
     assert "ellipsis" not in _rule(".sle-flagnote")
     assert "flex: none" in _rule(".sle-toolbar > *")
     assert "flex" not in _rule(".sle-summary")
 
 
-def test_a_fab_toolbar_too_narrow_for_a_readable_summary_moves_it_to_a_second_line() -> None:
-    """390px 휴대폰 폭에서는 확대 묶음(268px)만으로 FAB 도구 줄(327px)이 거의 차 ④·⑤
-    말줄임이 기준일을 2px(「2」 조각)·요약을 9px(「배」)로 깎았다(2026-10-26 E2E).
+def test_a_fab_toolbar_too_narrow_moves_its_date_and_summary_to_a_second_line() -> None:
+    """사이드바를 연 1100px 창에서 FAB 제목·기준일·요약이 넘친 폭을 나눠 먹어 「S.PKG F…」·
+    「2026-…」 로 반만 남았고, 1283px 창은 제목이 먼저 줄어 넘침 판정이 사라져 접는 차례가 하나도
+    걸리지 않았다(2026-11-07 점검 g6-09).
 
-    말줄임은 앞머리가 읽히는 폭까지만 주고(기준일 4em·요약 6em), 그래도 넘치면 ⑥
-    기준일·「오늘」·미확인·요약을 둘째 줄로 내린다 — 보기에서 숨는 빈 칸이 온 폭 줄바꿈이
-    된다. 한 줄 설계의 까닭(고를 때 높이가 튀지 않음)은 두 줄도 창 폭으로만 정해져 그대로다."""
-    assert "\n.sle-toolbar.is-fit4 .sle-asof { min-width: 4em; }" in CSS
-    assert "\n.sle-toolbar.is-fit5 .sle-summary { min-width: 6em; }" in CSS
-    assert "min-width: 0" not in _rule(
-        ".sle-toolbar.is-fit4 .sle-asof, .sle-toolbar.is-fit5 .sle-summary"
-    )
+    제목은 줄지 않고(그래야 넘침이 보인다) 날짜·요약도 말줄임하지 않는다 — 말머리를 접은 다음 ⑥
+    기준일·「오늘」·미확인·요약을 둘째 줄로 내린다. 보기에서 숨는 빈 칸이 온 폭 줄바꿈이 된다. 한 줄
+    설계의 까닭(고를 때 높이가 튀지 않음)은 두 줄도 창 폭으로만 정해져 그대로다."""
+    title = _rule(".sle-title")
+    assert "flex: none" in title and "ellipsis" not in title and "min-width" not in title
+    assert ".sle-toolbar.is-fit4" not in CSS and ".sle-toolbar.is-fit5" not in CSS
     wrap = _rule(".sle-toolbar.is-fit6")
     assert "flex-wrap: wrap" in wrap and "height: auto" in wrap
     spacer = _rule(".sle-toolbar.is-fit6 .sle-spacer")
@@ -957,8 +945,8 @@ def test_a_fab_toolbar_too_narrow_for_a_readable_summary_moves_it_to_a_second_li
         < toolbar.index('class="sle-asof')
         < toolbar.index('class="sle-summary')
     )
-    # ⑥ 은 ⑤ 뒤 마지막 차례다(읽히는 말줄임이 되면 둘째 줄로 내리지 않는다).
-    assert "'is-fit5', 'is-fit6']" in JS
+    # ⑥ 은 말머리를 다 접은 뒤 마지막 차례다(말머리만 접어 맞으면 둘째 줄로 내리지 않는다).
+    assert "'is-fit3', 'is-fit6']" in JS
 
 
 def test_a_narrow_edit_toolbar_keeps_the_lock_and_the_sheet_buttons_reachable() -> None:
