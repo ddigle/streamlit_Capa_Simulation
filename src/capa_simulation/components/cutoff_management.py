@@ -83,6 +83,13 @@ _EDITOR_KEY = "equipment_cutoff_editor_v1"
 _FORM_KEY = "equipment_cutoff_form_v1"
 _VIEW_PREFIX = "equipment_cutoff_view_v1"
 _FLASH_KEY = "equipment_cutoff_flash_v1"
+# 채우기 결과 칸. 빠른 둘째 누름의 창(`write_guard.held_notice`)은 칸마다 보므로 저장 칸과 가른다 —
+# 한 칸이면 다른 단추의 누름을 같은 단추의 둘째 누름으로 읽어 그 누름에 답하지 못한다.
+_FILL_FLASH_KEY = "equipment_cutoff_fill_flash_v1"
+# 저장 제출의 곁 답을 다음 회차로 넘기는 이름(`write_guard.queue_refusal` — 남의 저장에 거부된 답은
+# `CUTOFF_SAVE_NAME`).
+_REJECTED_NAME = "equipment_process_cutoff_rejected"
+_UNCHANGED_NAME = "equipment_process_cutoff_unchanged"
 _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 # 「Cut-off 저장」 단추 풍선 — 팝업 머리에 안내 글을 두지 않으므로 꼭 남길 둘(공용 설정 · 저장하지
 # 않고 닫으면 사라짐)을 누르는 자리에 둔다(HOME `home_preference.SHARED_SAVE_HELP` 와 같은 꼴).
@@ -217,15 +224,19 @@ def render_cutoff_management(
                 width="content",
             )
         # 저장 결과는 누른 버튼 바로 아래 한 자리다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다
-        # — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다. 충돌 거부도 거부
-        # 회차가 담아 둔 글을 여기서 꺼낸다(`write_guard.queue_refusal` — dict 칸이라 끊기지
-        # 않는다).
-        notice = st.container()
-        with notice:
-            render_flash(_FLASH_KEY)
+        # — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다. 거부 ·
+        # 「바뀐 것이 없습니다」 도 제출 회차가 담아 둔 글을 여기서 꺼낸다
+        # (`write_guard.queue_refusal` — dict 칸이라 끊기지 않는다).
+        with st.container():
+            render_flash(_FLASH_KEY, _FILL_FLASH_KEY)
             refused = take_refusal(CUTOFF_SAVE_NAME)
             if refused is not None:
                 st.warning(refused, icon=":material/sync_problem:")
+            rejected = take_refusal(_REJECTED_NAME)
+            if rejected is not None:
+                st.error(rejected)
+            if take_refusal(_UNCHANGED_NAME) is not None:
+                st.info(CUTOFF_UNCHANGED_MESSAGE, icon=":material/info:")
         edited = st.data_editor(
             view.frame,
             key=editor_widget_key(_EDITOR_KEY, in_form=True),
@@ -249,9 +260,15 @@ def render_cutoff_management(
             },
         )
 
-    merged = merge_edited_rows(draft, edited, filtered=view.filtered)
+    # 행을 더하거나 지운 제출의 편집표는 RangeIndex 가 아니다. 그 꼴이 초안이 되면 다음 표가
+    # `hide_index=True` 를 무시하고 인덱스를 머리 없는 필수 칸으로 세우고(`table_view_controls`), 그
+    # 칸이 빈 새 행은 브라우저가 보내지 않아 저장에서 빠진다.
+    merged = merge_edited_rows(draft, edited, filtered=view.filtered).reset_index(drop=True)
     st.session_state[CUTOFF_DRAFT_KEY] = merged
 
+    # 제출을 받은 회차는 어느 갈래로 끝나든 `st.rerun()` 으로 표를 이 초안으로 다시 그린다 — 행
+    # 추가가 열린 표의 위젯 id 는 데이터로 지어져, 초안만 바꾸고 끝나면 화면의 표는 옛 id 로 남아
+    # 다음 제출의 칸 편집이 버려진다. 그래서 곁 답도 그리지 않고 담아 넘긴다.
     if filling:
         _fill_missing_rows(merged, equipment_processes)
 
@@ -264,11 +281,9 @@ def render_cutoff_management(
             # 남의 저장에 거부된 누름의 둘째 누름이다. 거부 회차가 초안·출발점을 최신으로 다시
             # 세웠으므로 이 누름은 고친 칸 없이 대조를 지난다 — 저장하면 같은 내용을 다시 쓰며
             # 「저장했습니다」 가 거부 알림을 덮고, 버려진 편집이 말없이 지나간다. 저장하지 않고 그
-            # 거부를 다시 알린다(write_guard). 이 회차가 거부 회차의 글을 이미 꺼내 그렸으면 한
-            # 번만.
-            if refused != held:
-                notice.warning(held, icon=":material/sync_problem:")
-            return stored
+            # 거부를 다시 알린다(write_guard).
+            queue_refusal(CUTOFF_SAVE_NAME, held)
+            st.rerun()
         expected = str(seen(CUTOFF_BASE_KEY))
         notices = notice_marks()
         try:
@@ -276,8 +291,8 @@ def render_cutoff_management(
                 # 방금 저장한 같은 표의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시 그렸다 —
                 # 「바뀐 것이 없습니다」 로 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
                 if held_notice(_FLASH_KEY) is None:
-                    notice.info(CUTOFF_UNCHANGED_MESSAGE, icon=":material/info:")
-                return stored
+                    queue_refusal(_UNCHANGED_NAME, CUTOFF_UNCHANGED_MESSAGE)
+                st.rerun()
             saved = repository.save_process_cutoff(merged, expected_fingerprint=expected)
         except ProcessCutoffConflict as exc:
             clear_process_cutoff_cache()
@@ -302,7 +317,8 @@ def render_cutoff_management(
             _reset_draft(latest)
             st.rerun()
         except ValueError as exc:
-            st.error(bootstrap_error_message(exc))
+            queue_refusal(_REJECTED_NAME, bootstrap_error_message(exc))
+            st.rerun()
         else:
             remember_own_save(
                 CUTOFF_SAVE_NAME, expected, process_cutoff_fingerprint(saved), save_marks
@@ -325,7 +341,7 @@ def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> N
 
     잠그지 않고 누른 회차에 답한다 — 초안의 빈 행과 손으로 더한 행까지 보려면 폼을 받아야 해서
     그리는 회차에는 더할 공정이 있는지 모른다(설계 규칙 UI-INP-07). 새 행은 표 끝이라 첫 화면에 안
-    보여 알림이 그 변화를 말한다. 더할 공정이 없으면 표를 다시 세우지 않는다.
+    보여 알림이 그 변화를 말한다. 더할 공정이 없으면 행을 바꾸지 않고 그렇게 답한다.
 
     빠른 두 번 누름의 둘째 누름은 더할 공정이 없어도 그렇게 답하지 않는다 — 첫 누름이 방금 더한
     것을 「더할 공정이 없습니다」 로 덮게 된다. 첫 누름의 알림은 알림 칸이 다시 낸다
@@ -339,10 +355,10 @@ def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> N
         # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 위젯 키를 바꾼다.
         discard_editor(_EDITOR_KEY)
         message = f"{added}개 행을 표 끝에 더했습니다."
-        note_notice(notices, _FLASH_KEY, message)
-        queue_flash(_FLASH_KEY, message)
-    elif held_notice(_FLASH_KEY) is None:
-        queue_flash(_FLASH_KEY, "더할 공정이 없습니다.", kind="info")
+        note_notice(notices, _FILL_FLASH_KEY, message)
+        queue_flash(_FILL_FLASH_KEY, message)
+    elif held_notice(_FILL_FLASH_KEY) is None:
+        queue_flash(_FILL_FLASH_KEY, "더할 공정이 없습니다.", kind="info")
     st.rerun()
 
 
