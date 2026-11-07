@@ -1168,8 +1168,8 @@ def _render_grid_section(
         on_dialog=_on_dialog,
         on_new=_on_new,
     )
-    # 메뉴는 불러오기 다음 차례다 — 서식(`tools_menu_style`)이 불러오기 줄 끝에 얹고, 키보드 차례는
-    # 찾기 칸부터 왼쪽에서 오른쪽으로 간다.
+    # 메뉴는 불러오기 마운트 다음 차례다 — 서식(`tools_menu_style`)이 불러오기 줄 끝에 얹어도 키보드
+    # 차례는 불러오기 줄 → 값 줄(「목록 비우기」 · 「전체 N대 불러오기」) 다음이 메뉴다.
     with st.container(key=grid_component.TOOLS_KEY, horizontal=True, horizontal_alignment="right"):
         _render_data_menu(repository, latest_snapshot, context.scenario_name)
     grid_component.render_grid_table(

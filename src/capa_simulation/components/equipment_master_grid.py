@@ -342,11 +342,16 @@ SPLIT_KEY: Final = MASTER_SIDE.split_key
 LEFT_KEY: Final = MASTER_SIDE.left_key
 RIGHT_KEY: Final = MASTER_SIDE.right_key
 TOOLS_KEY: Final = MASTER_SIDE.tools_key
-# 메뉴 「엑셀·CSV」 단추 — 곁 `.emg-btn` 과 같은 높이, 찾기 칸(42px) 줄 가운데, 곁 단추와 같은 간격.
-TOOLS_MENU_WIDTH_PX: Final = 96
+# 메뉴 「엑셀·CSV」 단추 — 곁 `.emg-btn` 과 같은 높이 · 안쪽 여백 · 글자와 꺾쇠 사이, 찾기 칸(42px)
+# 줄 가운데, 곁 단추와 같은 간격. 폭은 글자 54.4 + 사이 6 + 꺾쇠 14 + 양옆 13 · 13 의 올림이다(1.63
+# 측정).
+TOOLS_MENU_WIDTH_PX: Final = 101
 TOOLS_MENU_HEIGHT_PX: Final = 34
 TOOLS_MENU_TOP_PX: Final = 4
 TOOLS_MENU_GAP_PX: Final = 8
+TOOLS_MENU_CARET_GAP_PX: Final = 6
+# 메뉴가 찾기 칸과 한 줄에 못 들면 불러오기 줄이 이만큼 내려가 메뉴가 제 줄에 선다 — 찾기 칸 높이.
+TOOLS_MENU_ROW_PX: Final = 42
 SIDE_CHOICE_KEY: Final = MASTER_SIDE.choice_key
 SIDE_BODY_KEY: Final = MASTER_SIDE.body_key
 SPLITTER_KEY: Final = MASTER_SIDE.splitter_key
@@ -377,18 +382,24 @@ def tools_menu_style() -> str:
     경계를 넘어 상속된다)로 그만큼 비운다. 값 줄 · 빈 안내는 폭을 그대로 쓰고, 좁아지면 줄이
     바뀌어도 메뉴는 첫 줄 끝이다. 접은 동안은 떠 있는 단추 자리(`side_panel` 의 작업 줄 칸 오른쪽
     여백)만큼 더 비운다. 폭은 팝오버 `width` 로 고정이라 글꼴이 달라도 비움과 어긋나지 않는다.
+
+    왼쪽 칸이 찾기 칸 한 줄 + 비움보다 좁으면 메뉴가 찾기 칸을 누르지 않고 불러오기 줄이 제 몫
+    `--emd-tools-drop` 만큼 내려간다 — 메뉴는 같은 자리에 혼자 서고 찾기 칸은 칸 폭을 다 쓴다.
+    갈림은 불러오기 JS 의 `ResizeObserver` 가 마운트의 `data-lb` 로 고른다(`loaderFit`, 파이썬 회차
+    없음 — UI-PRF-04). `container-type` 은 쓰지 않는다 — 그 칸의 쌓임 문맥과 fixed 기준이 바뀐다.
     """
     item = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{TOOLS_KEY})'
     button = f'.st-key-{TOOLS_KEY} [data-testid="stPopoverButton"]'
     loader = f".st-key-{LOADER_KEY}"
     folded = f'html[data-{MASTER_SIDE.css_name}-side="min"]'
     room = TOOLS_MENU_WIDTH_PX + TOOLS_MENU_GAP_PX
+    drop = TOOLS_MENU_ROW_PX
     return "".join(
         [
             "<style>",
             f".st-key-{LEFT_KEY} {{ position: relative; }}",
             f"{item} {{ position: absolute; top: {TOOLS_MENU_TOP_PX}px; right: 0; width: auto; }}",
-            f"{loader} {{ --emd-tools-reserve: {room}px; }}",
+            f"{loader} {{ --emd-tools-reserve: {room}px; --emd-tools-drop: {drop}px; }}",
             (
                 f"{button} {{ height: {TOOLS_MENU_HEIGHT_PX}px; "
                 f"min-height: {TOOLS_MENU_HEIGHT_PX}px; padding: 0 12px; border-radius: 6px; "
@@ -396,6 +407,11 @@ def tools_menu_style() -> str:
                 f"color: {tokens.TEXT}; }}"
             ),
             f"{button}:hover {{ background: {tokens.SURFACE_SUBTLE}; }}",
+            (
+                f"{button}:focus-visible {{ outline: 2px solid {tokens.ACCENT}; "
+                "outline-offset: -2px; box-shadow: none; }"
+            ),
+            f"{button} > div {{ gap: {TOOLS_MENU_CARET_GAP_PX}px; margin-right: 0; }}",
             f"{button} p {{ font: 400 13px/1.45 {tokens.FONT_FAMILY}; }}",
             f"@media screen and (width > {side_panel.SIDE_STACK_MAX_PX}px) {{ ",
             f"{folded} {loader} {{ ",

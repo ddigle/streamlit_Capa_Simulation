@@ -306,6 +306,8 @@ const KEYS_HELP = '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc �
 const DELETE_TIP = '리비전을 저장하면 모든 설비 시나리오에서 지워집니다 — 이 시나리오에서만 빼려면 정지·반출/이설일정을 적습니다'
 // 불러오기 줄은 줄인 이름 「일정 확인」 이다 — 원래 뜻은 풍선이 말한다.
 const ALERTS_TIP = '일정 확인 필요 — 일정이 지났는데 실적이 없거나, 상태와 실적이 맞지 않는 호기'
+// 찾기 칸 한 줄에 입력 칸 180 · 테 · 여백 · 돋보기 · 「불러오기」 가 드는 폭(1.63 측정 298 + 여유).
+const SEARCH_LINE_PX = 300
 const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
@@ -491,15 +493,18 @@ function drawLoader(host, S, data) {
   const bar = el('div', 'emg-lb')
   root.appendChild(bar)
   bar.appendChild(searchBox(S, model))
-  bar.appendChild(processPopover(S, model))
-  bar.appendChild(conditionPopover(S, model))
+  // 단추 셋은 한 덩이로 줄을 바꾼다 — 낱개로 바뀌면 찾기 칸 곁에 하나둘 남아 입력 칸을 누른다.
+  const picks = el('div', 'emg-lb-picks')
+  bar.appendChild(picks)
+  picks.appendChild(processPopover(S, model))
+  picks.appendChild(conditionPopover(S, model))
   const alertIds = Array.isArray(data.alertIds) ? data.alertIds : []
   const alerts = button('emg-btn is-warn', '일정 확인 ' + alertIds.length.toLocaleString() + '대', () => {
     load(S, 'alerts', alertIds, [], '일정 확인')
   })
   alerts.disabled = alertIds.length === 0
   alerts.title = ALERTS_TIP
-  bar.appendChild(alerts)
+  picks.appendChild(alerts)
   const loaded = Array.isArray(data.loaded) ? data.loaded.length : 0
   const total = Number(data.total) || 0
   // 불러온 수는 전체(살아 있는 호기)와 같은 기준 — 지울 목록에 든 호기는 표에 남아도 세지 않는다.
@@ -535,6 +540,29 @@ function drawLoader(host, S, data) {
     S.searchInput.focus()
     S.searchInput.setSelectionRange(S.query.length, S.query.length)
   } else restoreFocus(host, saved)
+}
+
+// 왼쪽 칸 폭으로 고르는 불러오기 줄 꼴 — 메뉴 자리(`reserve`)까지 한 줄에 못 들면 `stack`(메뉴가 찾기 칸 위 제 줄에 서고 찾기
+// 칸은 폭을 다 쓴다), 찾기 칸 혼자도 못 들면 `tight`(「불러오기」 가 입력 칸 아래로 내려간다). 브라우저 안 보기 상태다(UI-PRF-04).
+function loaderFit(width, reserve) {
+  if (width < SEARCH_LINE_PX) return 'tight'
+  return width < SEARCH_LINE_PX + reserve ? 'stack' : ''
+}
+
+// 숨은 탭에서는 폭이 0 이다 — 탭을 열어 폭이 생기면 관찰자가 다시 고른다. 메뉴 자리는 접힘에 따라 페이지 CSS 가 정한다.
+function fitLoader(host) {
+  const width = host.clientWidth
+  if (!width) return
+  const reserve = parseFloat(window.getComputedStyle(host).getPropertyValue('--emd-tools-reserve')) || 0
+  const fit = loaderFit(width, reserve)
+  if (host.dataset.lb !== fit) host.dataset.lb = fit
+}
+
+function watchLoaderFit(host, S) {
+  fitLoader(host)
+  if (S.fitObserver || typeof ResizeObserver !== 'function') return
+  S.fitObserver = new ResizeObserver(() => fitLoader(host))
+  S.fitObserver.observe(host)
 }
 
 // 불러오기 줄 끝의 메뉴 「엑셀·CSV」 를 여는 단추 — 표 컴포넌트 밖 Streamlit 팝오버다(패널은 포털이라 이 칸의 단추는 이것 하나).
@@ -2461,8 +2489,10 @@ export default function (component) {
       closeOtherPress(S, path, event.target)
     })
   }
-  if (data.mode === 'loader') drawLoader(host, S, data)
-  else if (data.mode === 'grid') drawGrid(host, S, data)
+  if (data.mode === 'loader') {
+    drawLoader(host, S, data)
+    watchLoaderFit(host, S)
+  } else if (data.mode === 'grid') drawGrid(host, S, data)
   else drawSide(host, S, data)
   // Streamlit 은 마지막 실행이 돌려준 정리 함수를 컴포넌트를 내릴 때 부른다.
   return () => {
@@ -2472,6 +2502,8 @@ export default function (component) {
     if (S.timer) clearTimeout(S.timer)
     if (S.noteTimer) clearTimeout(S.noteTimer)
     if (S.scrollFrame) cancelAnimationFrame(S.scrollFrame)
+    if (S.fitObserver) S.fitObserver.disconnect()
+    S.fitObserver = null
     S.timer = 0
     S.noteTimer = 0
     S.scrollFrame = 0

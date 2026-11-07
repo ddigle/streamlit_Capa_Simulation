@@ -48,6 +48,10 @@ SIDE_MIN_PX: Final = 360
 SIDE_MIN_SHARE: Final = 0.4
 SIDE_MAX_PX: Final = 760
 SIDE_MAX_SHARE: Final = 0.6
+# 왼쪽 칸 안쪽 폭의 아래 한계 — 오른쪽 칸 최대가 왼쪽에 이만큼은 남긴다. 설비 마스터 찾기 칸의
+# 입력 칸 180 + 테 4 + 안쪽 여백 16 + 돋보기 18 + 사이 6(1.63 측정). 줄이 아주 좁으면 오른쪽 칸
+# 최소가 이긴다.
+SIDE_LEFT_MIN_PX: Final = 224
 # 본문 높이 상한 = max(360px, 창 높이 − 붙는 높이 − 200px). 200px = 고르기 42 + 간격 16 +
 # Streamlit 본문 아래 여백 약 140(1500×950 측정). 붙는 높이(CSS 변수 `top`)는 칸막이가 화면 탭 줄이
 # 붙었을 때의 아래 끝 + 8px 로 잰다(1.63 — 탭 줄 sticky top 52.5 + 높이 36 → 97px). 재기 전에는 그
@@ -60,6 +64,8 @@ SIDE_HEAD_PX: Final = 42
 # 칸막이를 잡는 폭 — 두 칸 경계선이 그 한가운데다. 표 · 오른쪽 칸은 경계선에서 각각 이만큼 띄운다.
 SIDE_GUTTER_PX: Final = 16
 SIDE_INSET_PX: Final = 14
+# 줄에서 왼쪽 감싸개가 차지하는 아래 한계 — 안쪽 폭 + 경계선 쪽 여백 + 경계선 1px.
+SIDE_LEFT_KEEP_PX: Final = SIDE_LEFT_MIN_PX + SIDE_INSET_PX + 1
 # 본문 칸 스크롤 막대 자리(`scrollbar-gutter: stable`, 1.63 측정) — 편집기 영역 안쪽 여백(13px)으로
 # 내보내 본문 내용의 오른쪽 끝이 칸 머리 접기 단추의 오른쪽 끝과 맞는다.
 SIDE_SCROLLBAR_PX: Final = 10
@@ -128,6 +134,7 @@ def side_bounds(spec: SidePanel) -> dict[str, float]:
         "minShare": SIDE_MIN_SHARE,
         "maxPx": SIDE_MAX_PX,
         "maxShare": SIDE_MAX_SHARE,
+        "leftKeep": SIDE_LEFT_KEEP_PX,
         "defaultShare": spec.default_share,
         "defaultOffset": spec.default_offset_px,
     }
@@ -141,7 +148,8 @@ def side_width_rule(spec: SidePanel) -> str:
     """오른쪽 칸 감싸개의 폭 — 창 폭이 바뀌어도 JS 없이 한계를 지킨다(칸막이는 폭 변수만 바꾼다)."""
     low = f"min({SIDE_MIN_PX}px, {_percent(SIDE_MIN_SHARE)})"
     default = f"calc({_percent(spec.default_share)} - {spec.default_offset_px}px)"
-    high = f"min({SIDE_MAX_PX}px, {_percent(SIDE_MAX_SHARE)})"
+    keep = f"calc(100% - {SIDE_LEFT_KEEP_PX}px)"
+    high = f"min({SIDE_MAX_PX}px, {_percent(SIDE_MAX_SHARE)}, {keep})"
     return f"clamp({low}, var(--{spec.css_name}-side-w, {default}), {high})"
 
 

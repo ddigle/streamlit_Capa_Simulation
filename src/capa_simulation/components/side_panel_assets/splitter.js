@@ -10,14 +10,13 @@ const COVER_GAP = 8
 const STORED_LIMIT = 4000
 
 // <splitter-clamp>
-// 폭 한계 — 페이지 CSS `clamp(min(최소px, 최소몫), 폭, min(최대px, 최대몫))` 과 같은 식(몫은 두 칸 줄 폭의 비율).
-// `bounds` = {minPx, minShare, maxPx, maxShare, defaultShare, defaultOffset}(파이썬 data).
+// 폭 한계 — 페이지 CSS `clamp(min(최소px, 최소몫), 폭, min(최대px, 최대몫, 줄 − 왼쪽 몫))` 과 같은 식(몫은 두 칸 줄 폭의 비율).
+// 최대가 최소 아래로 내려가면 CSS clamp 처럼 최소가 이긴다.
+// `bounds` = {minPx, minShare, maxPx, maxShare, leftKeep, defaultShare, defaultOffset}(파이썬 data).
 function sideBounds(rowWidth, bounds) {
   const row = Math.max(0, Number(rowWidth) || 0)
-  return {
-    lo: Math.min(bounds.minPx, row * bounds.minShare),
-    hi: Math.min(bounds.maxPx, row * bounds.maxShare),
-  }
+  const lo = Math.min(bounds.minPx, row * bounds.minShare)
+  return { lo, hi: Math.max(lo, Math.min(bounds.maxPx, row * bounds.maxShare, row - bounds.leftKeep)) }
 }
 function clampWidth(px, rowWidth, bounds) {
   const { lo, hi } = sideBounds(rowWidth, bounds)

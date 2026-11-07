@@ -1212,6 +1212,107 @@ def _fake_dom_source() -> str:
     return JS.replace(_MOUNT_HEAD, "globalThis.__mount = function (component) {")
 
 
+def test_the_loader_line_picks_its_shape_from_the_left_column_width() -> None:
+    """메뉴 자리를 늘 비워 두면 왼쪽 칸이 좁을 때 입력 칸이 4 ~ 58px 로 사라지고 「불러오기」 가
+    메뉴 밑에 깔렸다(2026-11-07 — 오른쪽 칸을 넓힌 뒤 창을 줄이면). 찾기 칸 한 줄 + 메뉴 자리가
+    못 들면 `stack`(메뉴가 제 줄), 찾기 칸 혼자도 못 들면 `tight`(「불러오기」 가 아래로)다. 폭이
+    바뀌어도 파이썬을 부르지 않고(UI-PRF-04), 숨은 탭(폭 0)은 앞 꼴을 두며, 내릴 때 관찰을 푼다."""
+    runner = (
+        _FAKE_DOM
+        + """
+const observers = []
+globalThis.ResizeObserver = class {
+  constructor(callback) {
+    this.callback = callback
+    this.disconnected = false
+    observers.push(this)
+  }
+  observe(node) {
+    this.target = node
+  }
+  disconnect() {
+    this.disconnected = true
+  }
+}
+let reserve = '109px'
+globalThis.window = { getComputedStyle: () => ({ getPropertyValue: () => reserve }) }
+"""
+        + _MOUNT_LOADER
+        + """
+const sent = []
+const data = input.data
+const run = () => globalThis.__mount({
+  data, parentElement,
+  setStateValue: (...a) => sent.push(a),
+  setTriggerValue: (...a) => sent.push(a),
+})
+const seen = {}
+host.clientWidth = 862
+const cleanup = run()
+seen.first = [host.dataset.lb, observers.length, observers[0].target === host]
+const resize = (width) => {
+  host.clientWidth = width
+  observers[0].callback([])
+  return host.dataset.lb
+}
+seen.widths = [862, 409, 408, 300, 299, 224].map(resize)
+reserve = '221px'
+seen.folded = [resize(521), resize(520)]
+reserve = '109px'
+resize(862)
+seen.hidden = [resize(0), host.dataset.lb]
+resize(408)
+run()
+seen.again = [observers.length, host.dataset.lb]
+seen.sent = sent.length
+seen.picks = host.querySelector('.emg-lb-picks').querySelectorAll('button')
+  .map((node) => node.textContent.trim()).filter((text) => !text.startsWith('DEMO'))
+cleanup()
+seen.gone = observers[0].disconnected
+process.stdout.write(JSON.stringify(seen))
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    assert result["first"] == ["", 1, True]
+    assert result["widths"] == ["", "", "stack", "stack", "tight", "tight"]
+    assert result["folded"] == ["", "stack"]
+    assert result["hidden"] == ["", ""]
+    assert result["again"] == [1, "stack"]
+    assert result["sent"] == 0
+    assert result["picks"][:2] == ["공정별", "조건별"]
+    assert result["picks"][-1].startswith("일정 확인")
+    assert result["gone"] is True
+
+    # 꼴은 그림자 안 서식만 받는다 — 메뉴는 같은 자리에 머문다.
+    assert re.search(
+        r'\.emg\[data-lb="stack"\] \.emg-lb,\n\.emg\[data-lb="tight"\] \.emg-lb \{\n'
+        r"  padding-top: var\(--emd-tools-drop, 0px\);\n  padding-right: 0;",
+        CSS,
+    )
+    tight = re.search(r'\.emg\[data-lb="tight"\] \.emg-search \{(?P<body>[^}]*)\}', CSS)
+    assert tight and "flex-wrap: wrap" in tight.group("body")
+    assert "height: auto" in tight.group("body")
+    assert re.search(r"\.emg-search-wrap \{[^}]*flex: 1 1 220px;", CSS)
+
+
+def test_the_guide_calls_the_loader_buttons_by_their_screen_names() -> None:
+    """안 A 로 이름이 바뀐 뒤 줄바꿈에 걸려 옛 이름이 남았다 — 줄을 이어 붙여 본다. 「엑셀·CSV로
+    한꺼번에」 는 팝업 제목 · 첫 화면 단추 이름으로만 남는다."""
+    guide = (
+        Path(__file__).resolve().parents[1]
+        / "src/capa_simulation/guides/available_equipment_status.md"
+    ).read_text(encoding="utf-8")
+    joined = re.sub(r"\s*\n\s*", " ", guide)
+    assert "조건으로 불러오기" not in joined
+    assert "공정으로 불러오기" not in joined
+    assert "더 많으면 메뉴 **엑셀·CSV** 의 **한꺼번에 넣기** 를 씁니다" in joined
+    assert "새 호기 칸 머리·**조건별** 단추의 하는 법" in joined
+    left = [m.start() for m in re.finditer(r"엑셀·CSV로 한꺼번에", joined)]
+    assert all(joined[at + len("엑셀·CSV로 한꺼번에") :].startswith("**") for at in left)
+    assert all("팝업" in joined[at : at + 40] for at in left)
+
+
 def test_a_loader_popover_closes_when_the_keyboard_leaves_it() -> None:
     """「조건별 ▾」 를 연 채 Tab 으로 패널 밖(「일정 확인」 단추)에 가면 패널이
     열린 채 남아 초점 받은 오른쪽 호기 상세 칸을 덮었고, 그 칸의 Esc 로도 닫히지 않았다(2026-10-26

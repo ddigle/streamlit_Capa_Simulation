@@ -507,7 +507,10 @@ def test_the_data_menu_rests_on_the_loader_line_without_squeezing_the_lines_belo
         "right": "0",
         "width": "auto",
     }
-    assert rules[("", loader)] == {"--emd-tools-reserve": f"{room}px"}
+    assert rules[("", loader)] == {
+        "--emd-tools-reserve": f"{room}px",
+        "--emd-tools-drop": f"{emg.TOOLS_MENU_ROW_PX}px",
+    }
     assert rules[(wide, f"{folded} {loader}")] == {
         "--emd-tools-reserve": f"{room + sp.SIDE_REOPEN_RESERVE_PX}px"
     }
@@ -531,6 +534,51 @@ def test_the_data_menu_rests_on_the_loader_line_without_squeezing_the_lines_belo
     assert layout[(wide, f"{folded} .st-key-{emg.TOOLS_KEY}")] == {
         "padding-right": f"{sp.SIDE_REOPEN_RESERVE_PX}px"
     }
+
+
+def test_the_menu_button_looks_like_the_buttons_beside_it() -> None:
+    """메뉴는 Streamlit 팝오버 단추라 곁 `.emg-btn` 과 치수가 갈렸다 — 글자와 꺾쇠 사이 1.75 ·
+    안쪽 내어 뺌 때문에 왼쪽 15 · 오른쪽 11, 초점은 앱 공통 반투명 그림자였다. 사이는 `.emg-btn`
+    간격, 양옆은 테 + 안쪽 여백으로 같고, 키보드 초점은 곁 단추의 `.emg :focus-visible` 과 같다."""
+    rules = _css_rules(emg.tools_menu_style())
+    button = f'.st-key-{emg.TOOLS_KEY} [data-testid="stPopoverButton"]'
+    plain = _grid_block(".emg-btn")
+
+    assert rules[("", f"{button} > div")] == {
+        "gap": plain["gap"],
+        "margin-right": "0",
+    }
+    # 글자 54.4 + 사이 + 꺾쇠 14 + 양옆(테 1 + 안쪽 12) — 고정 폭이 글자를 누르지 않는다.
+    inside = 54.4 + emg.TOOLS_MENU_CARET_GAP_PX + 14
+    assert emg.TOOLS_MENU_WIDTH_PX >= inside + 2 * (12 + 1)
+    assert emg.TOOLS_MENU_WIDTH_PX - inside - 2 * (12 + 1) < 1
+
+    ring = _grid_block(".emg :focus-visible")
+    assert ring == {"outline": "2px solid var(--emg-accent)", "outline-offset": "-2px"}
+    assert rules[("", f"{button}:focus-visible")] == {
+        "outline": f"2px solid {tokens.ACCENT}",
+        "outline-offset": "-2px",
+        "box-shadow": "none",
+    }
+
+
+def test_the_right_panel_leaves_the_left_column_room_for_the_search_box() -> None:
+    """오른쪽 칸을 끝까지 넓힌 뒤 창을 줄이면 왼쪽 칸이 줄의 40% 까지 줄어 800 창에서 160px 였다 —
+    찾기 칸의 입력 칸 180 이 들 자리가 없었다. 오른쪽 칸 최대가 왼쪽 감싸개 몫(안쪽 + 여백 +
+    경계선)을 남긴다. 두 화면이 같은 식이고 줄이 아주 좁으면 오른쪽 칸 최소가 이긴다(JS 도 같다)."""
+    assert sp.SIDE_LEFT_MIN_PX == 180 + 4 + 16 + 18 + 6
+    assert sp.SIDE_LEFT_KEEP_PX == sp.SIDE_LEFT_MIN_PX + sp.SIDE_INSET_PX + 1
+    assert f"calc(100% - {sp.SIDE_LEFT_KEEP_PX}px))" in emg.side_width_rule()
+    assert emg.side_bounds()["leftKeep"] == sp.SIDE_LEFT_KEEP_PX
+
+    # 줄 437(800 창 · 사이드바 열림)과 537(900 창) — 왼쪽 안쪽이 아래 한계 그대로다.
+    for row in (437, 537):
+        assert row - _css_width(row, 760) == sp.SIDE_LEFT_KEEP_PX
+    # 넓은 줄은 옛 한계 그대로, 몫이 먼저 걸리는 줄의 끝은 왼쪽 몫이다.
+    assert _css_width(1237, 760) == pytest.approx(742.2)
+    assert _css_width(700, 760) == 420
+    # 줄이 아주 좁으면 최소(40%)가 이긴다.
+    assert _css_width(300, 760) == 120
 
 
 def _css_block(selector: str) -> dict[str, str]:
@@ -647,13 +695,14 @@ def _css_width(row: float, px: float | None) -> float:
     """페이지 CSS 의 폭 식을 그 글자에서 읽어 계산한다 — JS 가 같은 값을 내는지 본다."""
     match = re.fullmatch(
         r"clamp\(min\((\d+)px, (\d+)%\), var\(--emd-side-w, calc\((\d+)% - (\d+)px\)\), "
-        r"min\((\d+)px, (\d+)%\)\)",
+        r"min\((\d+)px, (\d+)%, calc\(100% - (\d+)px\)\)\)",
         emg.side_width_rule(),
     )
     assert match, emg.side_width_rule()
-    low_px, low_pct, def_pct, def_off, high_px, high_pct = (float(x) for x in match.groups())
+    numbers = (float(x) for x in match.groups())
+    low_px, low_pct, def_pct, def_off, high_px, high_pct, keep = numbers
     low = min(low_px, row * low_pct / 100)
-    high = min(high_px, row * high_pct / 100)
+    high = min(high_px, row * high_pct / 100, row - keep)
     value = row * def_pct / 100 - def_off if px is None else px
     return max(low, min(value, high))
 
@@ -662,7 +711,7 @@ def test_the_width_formula_matches_the_page_css_clamp() -> None:
     """칸막이가 쓰는 폭(저장값·키·끌기)은 페이지 CSS clamp 와 같은 식 — 줄 1,137px(1500 창·
     사이드바 열림, 영역 테두리 안)에서 최소 360 · 최대 682 · 처음 360, 좁은 줄은 몫(40%)이 최소를
     이긴다."""
-    rows = [1137, 1500, 1000, 700, 500]
+    rows = [1137, 1500, 1000, 700, 500, 300]
     cases = [(px, row) for row in rows for px in (0, 150, 320, 400, 699, 760, 2000)]
     result = _node(
         {
@@ -698,7 +747,9 @@ def test_the_width_formula_matches_the_page_css_clamp() -> None:
     assert result["defaults"] == [round(_css_width(row, None)) for row in rows]
     assert result["defaults"][0] == 360
     assert result["bounds"][0] == {"lo": 360, "hi": 682.1999999999999}
-    assert result["bounds"][4] == {"lo": 200, "hi": 300}
+    assert result["bounds"][4] == {"lo": 200, "hi": 261}
+    # 왼쪽 몫을 남기면 최대가 최소 아래로 내려가는 줄 — CSS clamp 처럼 최소가 이긴다.
+    assert result["bounds"][5] == {"lo": 120, "hi": 120}
     assert result["drag"] == [440, 240, 500]
     assert result["keys"] == [
         {"width": 356},
