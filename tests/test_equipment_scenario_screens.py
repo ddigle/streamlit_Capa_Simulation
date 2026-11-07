@@ -1741,6 +1741,50 @@ def test_the_tab_starts_a_new_scenario_from_an_old_revision(
     assert len(repository.list_schedule_revisions(OPERATIONS)) == 2
 
 
+def test_the_picked_scenario_and_revision_survive_a_tab_and_a_page_round_trip(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """고른 설비 시나리오 · 리비전은 작업 대상이라 탭이 열린 회차에만 그려져도 세션에 남는다 — 다른
+    탭 · 다른 화면에 다녀오면 그대로이고(설계 규칙 UI-STA-03 · 04), 다른 시나리오를 고르면 앞
+    시나리오의 리비전이 남지 않고 그 시나리오 최신으로 간다(`prune_named_choice`)."""
+    repository = _repository(tmp_path)
+    setup = _clone(repository).equipment_scenario_id
+    official = _session(repository)
+    repository.save_equipment(
+        _request(official, equipment=_set(official.equipment, "EQ-02", "Qual일정", "2027-01-01"))
+    )
+    older = repository.list_schedule_revisions(OPERATIONS)[-1].schedule_revision_id
+    assert older != repository.list_schedule_revisions(OPERATIONS)[0].schedule_revision_id
+
+    def tab_round_trip(app: AppTest) -> None:
+        app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = CAPA_SCENARIO_TAB
+        _ok(app.run())
+        assert not [item for item in app.selectbox if item.key == REVISION_KEY]
+        app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = EQUIPMENT_SCENARIO_TAB
+        _ok(app.run())
+
+    app = _equipment_section(_ok(_shell.run()))
+    _ok(app.selectbox(key=SCENARIO_KEY).set_value(setup).run())
+    tab_round_trip(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == setup
+
+    _ok(app.selectbox(key=SCENARIO_KEY).set_value(OPERATIONS).run())
+    _ok(app.selectbox(key=REVISION_KEY).set_value(older).run())
+    tab_round_trip(app)
+    assert app.selectbox(key=REVISION_KEY).value == older
+
+    _ok(app.switch_page(AVAILABLE_EQUIPMENT_STATUS.path).run())
+    _equipment_section(app)
+    assert app.selectbox(key=SCENARIO_KEY).value == OPERATIONS
+    assert app.selectbox(key=REVISION_KEY).value == older
+
+    _ok(app.selectbox(key=SCENARIO_KEY).set_value(setup).run())
+    assert (
+        app.selectbox(key=REVISION_KEY).value
+        == repository.list_schedule_revisions(setup)[0].schedule_revision_id
+    )
+
+
 def test_a_legacy_trace_warns_and_the_section_continues_writing(
     _shell: AppTest, tmp_path: Path
 ) -> None:

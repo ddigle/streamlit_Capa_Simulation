@@ -803,7 +803,8 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
 
 
 def render_equipment_scenario_management(database_path: str, session: EquipmentSession) -> None:
-    """탭 본문. 「설비 시나리오」 탭이 열린 회차에만 부른다 — 입력은 위젯이 세션에 지킨다.
+    """탭 본문. 「설비 시나리오」 탭이 열린 회차에만 부른다 — 고른 설비 시나리오 · 리비전은 작업
+    대상이라 다른 탭 · 화면에 다녀와도 남고(`persist_state`), 입력 칸에 적던 글은 초안이라 버려진다.
 
     한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는 회차에 팝오버 세대를 올려 팝오버를
     닫힌 채 세우고, 알림·옛 배포 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게 늘 서 있는
@@ -878,6 +879,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             options=list(scenarios),
             format_func=lambda value: scenarios[value].scenario_name,
             key=SCENARIO_KEY,
+            persist_state="session",
         )
         with st.popover(
             "시나리오 이름 바꾸기", icon=":material/edit:", key=_popover_key(RENAME_POPOVER_KEY)
@@ -976,6 +978,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         options=list(by_id),
         format_func=lambda value: labels[value],
         key=REVISION_KEY,
+        persist_state="session",
     )
     chosen = by_id[chosen_id]
     with st.container(horizontal=True, gap="small"):
