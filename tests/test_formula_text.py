@@ -45,10 +45,13 @@ from capa_simulation.components import formula_text
 from capa_simulation.components.availability_sheet_canvas import _hover as sheet_hover
 from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
+    _delta_cell,
     _downtime_cell,
     _existing_available_cell,
     _need_cell,
+    rate_delta_text,
     rate_text,
+    signed_points,
     units_text,
 )
 from capa_simulation.components.constraint_simulation_view import month_steps
@@ -551,10 +554,76 @@ def test_the_assumed_demand_lines_recompute(official: float, percent: int) -> No
     token = (percent, (202611,))
     assumed = official / (percent / 100)
     _assert_checked(_assumed_required_line(official, assumed, token), 1)
-    _assert_checked(_assumed_demand_note(official, {"소요대수": assumed}, token), 1)
+    note = _assumed_demand_note(official, {"소요대수": assumed}, token)
+    _assert_checked(note, 1)
+    # 괄호 차이도 적힌 두 소요로 다시 빼면 맞거나, 어긋날 때만(그때는 늘) 앞이 「≈」 다.
+    shown_official, shown_assumed, change = _note_numbers(note)
+    marked = f"({APPROX} " in note
+    formula = parse_formula(f"{shown_assumed} {MINUS} {shown_official} = {change}")
+    assert formula.holds() != marked, (note, formula.value())
+
+
+def _note_numbers(note: str) -> tuple[str, str, str]:
+    """「…소요 a ÷ f = b (c대)」 의 a · b · c 글자."""
+    match = re.search(
+        rf"소요 ([\d,.]+) ÷ \S+ [={APPROX}] ([\d,.]+) \((?:{APPROX} )?([{MINUS}+]?[\d,.]+)대\)",
+        note,
+    )
+    assert match is not None, note
+    return match[1], match[2], match[3]
+
+
+def test_the_assumed_demand_note_marks_the_review_case() -> None:
+    """소요 7.95 ÷ 1.2 ≈ 6.63 — 적힌 수로 차이는 −1.32 인데 값의 차이는 −1.33 이다."""
+    note = _assumed_demand_note(7.954, {"소요대수": 7.954 / 1.2}, (120, (202611,)))
+    assert note == f"UPEH 가정 120%: 소요 7.95 ÷ 1.2 {APPROX} 6.63 ({APPROX} {MINUS}1.33대)"
 
 
 # ================================================================== 검산 그물 — 제약 시뮬레이션
+
+
+def _assert_difference(rate: float, base: float, text: str) -> None:
+    """차이 글이 적힌 두 확보율의 뺄셈과 끝자리까지 맞거나, 어긋날 때만(그때는 늘) 앞이 「≈」 다."""
+    marked = text.startswith(f"{APPROX} ")
+    difference = text.removeprefix(f"{APPROX} ")
+    formula = parse_formula(f"{rate_text(rate)} {MINUS} {rate_text(base)} = {difference}")
+    assert formula.holds() != marked, (text, formula.value())
+
+
+RATE_PAIRS = [
+    (rate / 1000, base / 1000)
+    for rate, base in itertools.product(
+        (1004.6, 1149.04, 1232.4, 1225.4, 1000.5, 1099.5), (1142.9, 1258.04, 1302.4, 1288.4, 1000.0)
+    )
+]
+
+
+@pytest.mark.parametrize(("rate", "base"), RATE_PAIRS)
+def test_the_rate_difference_marks_a_written_mismatch(rate: float, base: float) -> None:
+    """제약 없을 때 대비 — 표 칸과 5단계 회색 줄이 같은 글이다. 값은 원값의 차이 그대로이고 적힌 두
+    값으로 다시 빼면 어긋날 때만 「≈」 다(「125.8% · 114.9%」 곁 「≈ −11.0%」)."""
+    text = rate_delta_text(rate, base)
+    assert text.removeprefix(f"{APPROX} ") == signed_points(rate - base)
+    _assert_difference(rate, base, text)
+    result = _run()
+    row = replace(result.month(202706), existing_rate=rate, baseline_rate=base)
+    steps = month_steps(row, result, LABELS, show_proportional=False).steps
+    assert steps[4].note == f"제약 없을 때 {rate_text(base)} · {text}"
+    if abs(rate - base) * 100 >= 0.05:
+        assert _delta_cell(row).text == text
+
+
+@pytest.mark.parametrize(
+    ("rate", "base", "text"),
+    [
+        (1.1486, 1.2584, "≈ −11.0%"),  # 적힌 114.9 − 125.8 = −10.9
+        (1.2316, 1.3024, "≈ −7.1%"),  # 적힌 123.2 − 130.2 = −7.0
+        (1.2246, 1.2884, "≈ −6.4%"),  # 적힌 122.5 − 128.8 = −6.3
+        (1.005, 1.1429, "−13.8%"),
+    ],
+)
+def test_the_rate_difference_keeps_the_review_cases(rate: float, base: float, text: str) -> None:
+    assert rate_delta_text(rate, base) == text
 
 
 @pytest.mark.parametrize("demand", VALUES + LARGE)

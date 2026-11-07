@@ -1080,8 +1080,9 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     계산표 「신규 기여 시작」 풍선의 일반 설비 까닭을 호기마다 되짚고(2026-11-01 E2E — 「개조 30일
     안에 늘어날 전용 없음」 이 일부 모듈만 온 묶음에도 섰다) B1 을 증가마다로 넓혀 뒤 증가부터 덮인
     호기에 「27년 7월부터 보유로 다 덮음」 을 적은 판이다(같은 날 — 두 갈래 모두 배포 전이라 한 번
-    올렸다)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 11
+    올렸다). 12 는 기준이 HOME 일 때 계산표 확보율 칸을 세 단계 색으로 칠하고 제약 없을 때 대비
+    칸의 어긋난 차이에 「≈」 를 단 판이다(2026-11-07 사용자 답 — 한 번 올렸다)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 12
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:

@@ -78,9 +78,9 @@ from capa_simulation.components.constraint_simulation_figures import (
     month_name,
     ordinary_reason_text,
     rate_axis,
+    rate_delta_text,
     rate_figure,
     rate_text,
-    signed_points,
     units_text,
     waiting_text,
 )
@@ -537,7 +537,7 @@ def month_steps(
     else:
         note5 = f"제약 없을 때 {rate_text(row.baseline_rate)}"
         if row.baseline_rate is not None:
-            note5 += f" · {signed_points(row.existing_rate - row.baseline_rate)}"
+            note5 += f" · {rate_delta_text(row.existing_rate, row.baseline_rate)}"
         rate_digits, rate_sign = digits_within(card_digits, existing_ratio, rate_shown)
         available_text = operand_text(row.existing_available, rate_digits, units_text)
         demand_text = operand_text(row.existing_demand, rate_digits, units_text)

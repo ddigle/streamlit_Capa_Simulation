@@ -1095,7 +1095,8 @@ def _assumed_demand_note(
     required: float | None, assumed: Mapping[str, object] | None, token: UpehToken
 ) -> str:
     """「UPEH 가정 110%: 소요 12.40 ÷ 1.1 = 11.27 (−1.13대)」 — 구간 밖이면 빈 글자. 적힌 소요로
-    다시 셈한 값이 가정 소요와 다르면 「≈」 다(③ 의 「소요 = 공식 ÷ f」 와 같은 검산)."""
+    다시 셈한 값이 가정 소요와 다르면 「≈」 다(③ 의 「소요 = 공식 ÷ f」 와 같은 검산). 괄호 차이도
+    적힌 두 소요로 다시 빼면 어긋날 때 앞에 「≈」 다(값은 원값의 차이 그대로)."""
     if assumed is None or required is None:
         return ""
     value = _number(assumed.get("소요대수"))
@@ -1103,6 +1104,9 @@ def _assumed_demand_note(
         return ""
     factor = token_factor(token)
     mark = equals_mark(_two(value), _two(round(required, 2) / factor))
+    change = _signed_two(value - required)
+    if equals_mark(change, _signed_two(round(value, 2) - round(required, 2))) == APPROX:
+        change = f"{APPROX} {change}"
     return (
         f"UPEH 가정 {token_percent(token)}%: 소요 {_two(required)} ÷ {factor:g} {mark} "
         f"{_two(value)} ({change}대)"

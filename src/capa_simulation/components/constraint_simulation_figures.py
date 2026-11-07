@@ -45,7 +45,8 @@
 테두리(`finish_hook`)다. 칸 풍선의 식(필요 「소요 × 제약 % = 곱」·기존 가용 「가용 − 개조 중 −
 배정」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한 값이 결과와 다르면 「≈」 다
 (`formula_text.equals_mark`). 비가동 몫 「n대 × d/w일」 은 인수가 정수라 늘 맞고, 신규 대기 몫은
-환산 대수가 소수라 같은 「≈」 길이다.
+환산 대수가 소수라 같은 「≈」 길이다. 제약 없을 때 대비 칸은 곁에 적힌 두 확보율로 다시 빼면 어긋날
+때 앞에 「≈」 가 붙는다(`rate_delta_text`).
 
 보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
 대수를 `FILL_ORDER` 차례(지금 「신규 · 보유 · 개조」)로 나눠 보인다(`dedicated_split_text`) —
@@ -67,7 +68,7 @@ from typing import Any, Final, NamedTuple
 
 import plotly.graph_objects as go
 
-from capa_simulation.components.formula_text import equals_mark
+from capa_simulation.components.formula_text import APPROX, equals_mark, written_value
 from capa_simulation.components.home_figure_common import keep_unselected_opaque
 from capa_simulation.components.month_sheet_canvas import (
     EMPTY,
@@ -147,6 +148,7 @@ __all__ = [
     "rate_axis",
     "rate_figure",
     "rate_text",
+    "rate_delta_text",
     "signed_points",
     "units_text",
     "waiting_text",
@@ -292,6 +294,20 @@ def signed_points(value: float | None) -> str:
     if points < 0:
         return f"{MINUS}{abs(points):.1f}%"
     return "0.0%"
+
+
+def rate_delta_text(rate: float | None, base: float | None) -> str:
+    """두 확보율의 차이 글 — 값은 원값의 차이 그대로다(`signed_points`). 곁에 적힌 두 값
+    (`rate_text`)으로 다시 빼면 끝자리가 어긋나는 차이는 앞에 「≈」 를 붙인다(공정 Capa 상세 비가동
+    영향 풍선과 같은 꼴 — 125.8% · 114.9% 곁의 「≈ −11.0%」). 없으면 「—」."""
+    if rate is None or base is None or not math.isfinite(rate) or not math.isfinite(base):
+        return EMPTY
+    shown = signed_points(rate - base)
+    written_rate, written_base = written_value(rate_text(rate)), written_value(rate_text(base))
+    if written_rate is None or written_base is None:
+        return shown
+    mark = equals_mark(shown, signed_points(written_rate - written_base))
+    return f"{APPROX} {shown}" if mark == APPROX else shown
 
 
 def minimum_unit(row: ConstraintMonth) -> bool:
@@ -1540,7 +1556,7 @@ def _delta_cell(row: ConstraintMonth) -> Cell:
     if abs(delta * 100) < _DELTA_HIDDEN_POINTS:
         return Cell("", muted=True, hover=f"{_head(row)} · 제약 없을 때와 같음")
     return Cell(
-        signed_points(delta),
+        rate_delta_text(row.existing_rate, row.baseline_rate),
         text_color=tokens.DELTA_DECREASE if delta < 0 else None,
         muted=delta > 0,
     )
