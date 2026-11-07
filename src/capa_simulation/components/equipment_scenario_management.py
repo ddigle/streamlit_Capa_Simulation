@@ -174,6 +174,12 @@ LEGACY_TRACE_GOTO_KEY = "equipment_legacy_trace_goto_v1"
 
 SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
+# 사용자가 기본값과 다르게 고른 값 — (그때의 세션 기준, 값). 두 상자에 `persist_state` 를 주면
+# `prune_named_choice` 가 매 회차 되쓰는 기본값까지 굳어, 저장 · 불러오기로 세션이 옮겨 간 뒤에도
+# 탭이 옛 시나리오 · 리비전에 남고 「공식으로 발행」 이 그 옛 리비전에 걸린다. 그래서 상자 칸은 탭과
+# 함께 사라지게 두고(돌아오면 그때의 기본값이 선다) 고른 값만 이 칸에서 되돌린다(`_named_pick`).
+SCENARIO_PICK_KEY = "equipment_scenario_manage_scenario_pick_v1"
+REVISION_PICK_KEY = "equipment_scenario_manage_revision_pick_v1"
 DISCARD_KEY = "equipment_scenario_manage_discard_v1"
 LOAD_BUTTON_KEY = "equipment_scenario_manage_load_v1"
 # 저장하지 않은 편집이 있어 잠긴 「불러오기」 의 까닭 — 사이드바 팝업의 불러오기도 같은 글이다.
@@ -813,8 +819,9 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
 
 
 def render_equipment_scenario_management(database_path: str, session: EquipmentSession) -> None:
-    """탭 본문. 「설비 시나리오」 탭이 열린 회차에만 부른다 — 고른 설비 시나리오 · 리비전은 작업
-    대상이라 다른 탭 · 화면에 다녀와도 남고(`persist_state`), 입력 칸에 적던 글은 초안이라 버려진다.
+    """탭 본문. 「설비 시나리오」 탭이 열린 회차에만 부른다 — 사용자가 고른 설비 시나리오 · 리비전은
+    작업 대상이라 다른 탭 · 화면에 다녀와도 남고(`_named_pick`), 고르지 않은 상자는 돌아왔을 때
+    그때의 기본값을 다시 보며, 입력 칸에 적던 글은 초안이라 버려진다.
 
     한 번뿐인 알림(작업 알림·거절 알림·세션 이동 알림)을 그리는 회차에 팝오버 세대를 올려 팝오버를
     닫힌 채 세우고, 알림·옛 배포 흔적 줄은 생기거나 빠져도 뒤 형제의 자리가 그대로이게 늘 서 있는
@@ -871,11 +878,13 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     # 튀고 같은 회차의 「이름 바꾸기」 누름이 운영 일정에 같은 이름 쓰기를 하고 그 이름으로 성공을
     # 알렸다(2026-10-27 E2E). 앞 회차들이 그린 이름으로 고른 시나리오를
     # 잇는다(`prune_named_choice`).
-    selected_id = prune_named_choice(
+    selected_id = _named_pick(
         SCENARIO_KEY,
+        SCENARIO_PICK_KEY,
         {scenario_id: item.scenario_name for scenario_id, item in scenarios.items()},
         default=default_scenario,
-    ).value
+        basis=session.scenario_id,
+    )
     # 앞 회차에 켠 「배치 차이 모두 지우기」 확인 — 그 사이 최신이 바뀌어 체크가 풀렸으면 알린다.
     clearable = clearable_layout(session, scenarios[selected_id])
     clear_notice = clear_layout_unchecked_notice(
@@ -889,7 +898,6 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             options=list(scenarios),
             format_func=lambda value: scenarios[value].scenario_name,
             key=SCENARIO_KEY,
-            persist_state="session",
         )
         with st.popover(
             "시나리오 이름 바꾸기", icon=":material/edit:", key=_popover_key(RENAME_POPOVER_KEY)
@@ -982,13 +990,18 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         revision_id: _revision_label(revision, official_id=official_id, official_no=official_no)
         for revision_id, revision in by_id.items()
     }
-    chosen_id = prune_named_choice(REVISION_KEY, labels, default=default_revision).value
+    chosen_id = _named_pick(
+        REVISION_KEY,
+        REVISION_PICK_KEY,
+        labels,
+        default=default_revision,
+        basis=_revision_pick_basis(session, selected_id),
+    )
     st.selectbox(
         "리비전",
         options=list(by_id),
         format_func=lambda value: labels[value],
         key=REVISION_KEY,
-        persist_state="session",
     )
     chosen = by_id[chosen_id]
     with st.container(horizontal=True, gap="small"):
@@ -1014,6 +1027,37 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             "공식으로 발행", icon=":material/verified:", key=_popover_key(PUBLISH_POPOVER_KEY)
         ):
             _render_publish(database_path, session, scenario, chosen)
+
+
+def _named_pick(
+    key: str, pick_key: str, names: Mapping[str, str], *, default: str, basis: object
+) -> str:
+    """상자의 이번 회차 값(`prune_named_choice`) — 사용자가 고른 값만 탭 왕복 뒤로 넘긴다.
+
+    상자 칸이 없는 회차(탭을 다시 연 회차)에는 적어 둔 값을 칸에 되돌리되, 고를 때의 세션
+    기준(`basis`)이 지금과 같을 때만이다 — 기준이 달라졌으면 세션이 옮겨 간 것이라 그 고름에 다음
+    동작이 걸리지 않게 기본값이 선다(AGENTS 9장 「활성 리비전을 씨앗으로 쓰는 위젯」). 기본값과 같은
+    값은 적지 않아 다음에 열 때 그때의 기본값을 따른다.
+    """
+    saved = st.session_state.get(pick_key)
+    if key not in st.session_state and isinstance(saved, tuple) and saved[0] == basis:
+        st.session_state[key] = saved[1]
+    value = prune_named_choice(key, names, default=default).value
+    if value == default:
+        st.session_state.pop(pick_key, None)
+    else:
+        st.session_state[pick_key] = (basis, value)
+    return value
+
+
+def _revision_pick_basis(
+    session: EquipmentSession, scenario_id: str
+) -> tuple[str | None, str | None]:
+    """고른 리비전이 기대는 세션 기준 — 세션이 보는 시나리오의 리비전이면 세션 리비전까지 본다.
+    다른 시나리오를 살펴보는 고름은 세션이 자기 시나리오 안에서 옮겨 가도 그대로다."""
+    if scenario_id == session.scenario_id:
+        return scenario_id, session.schedule_revision_id
+    return session.scenario_id, None
 
 
 def _revision_label(
