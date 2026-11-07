@@ -176,6 +176,8 @@ SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
 DISCARD_KEY = "equipment_scenario_manage_discard_v1"
 LOAD_BUTTON_KEY = "equipment_scenario_manage_load_v1"
+# 저장하지 않은 편집이 있어 잠긴 「불러오기」 의 까닭 — 사이드바 팝업의 불러오기도 같은 글이다.
+LOAD_DISCARD_HELP = "「변경을 버리고 불러오기」 를 체크하면 누를 수 있습니다."
 # 「여기서 새 시나리오」 — 고른 리비전을 r1 로 복제한다.
 CLONE_NAME_KEY = "equipment_scenario_manage_clone_name_v1"
 CLONE_BY_KEY = "equipment_scenario_manage_clone_by_v1"
@@ -1037,7 +1039,12 @@ def _render_load(
     if has_unsaved_equipment_edits():
         discard = st.checkbox("변경을 버리고 불러오기", key=DISCARD_KEY)
     if st.button(
-        "불러오기", type="primary", disabled=not discard, key=LOAD_BUTTON_KEY, width="stretch"
+        "불러오기",
+        type="primary",
+        disabled=not discard,
+        key=LOAD_BUTTON_KEY,
+        width="stretch",
+        help=None if discard else LOAD_DISCARD_HELP,
     ):
         failure = select_equipment_scenario(
             database_path,

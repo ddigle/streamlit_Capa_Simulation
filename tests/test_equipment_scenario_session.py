@@ -1035,6 +1035,83 @@ def _popup_with_edits(database: str, page_file: str) -> None:
     render_equipment_scenario_dialog_body(Path(database), page_file=page_file)
 
 
+def _section_with_edits(database: str) -> None:
+    """시나리오 관리 「설비 시나리오」 탭 — 처음 한 번 `edits` 를 편집본에 넣는다."""
+    import streamlit as st
+
+    from capa_simulation.components.equipment_data_workspace import (
+        ensure_equipment_drafts,
+        replace_equipment_buffer,
+    )
+    from capa_simulation.components.equipment_scenario_management import (
+        render_equipment_scenario_management,
+    )
+    from capa_simulation.equipment_scenario_activation import resolve_equipment_session
+
+    session = resolve_equipment_session(database)
+    frames = ensure_equipment_drafts(session.snapshot)
+    if not st.session_state.get("edited"):
+        edited = frames[1].copy()
+        for name, column, value in st.session_state["edits"]:
+            edited.loc[edited["설비명"].eq(name), column] = value
+        replace_equipment_buffer((frames[0], edited, frames[2]))
+        st.session_state["edited"] = True
+    render_equipment_scenario_management(database, session)
+
+
+@pytest.mark.parametrize("place", ["팝업", "시나리오 관리"])
+def test_a_load_locked_by_unsaved_edits_says_why_only_while_locked(
+    tmp_path: Path, place: str
+) -> None:
+    """저장하지 않은 편집이 있으면 「불러오기」 가 잠기고 그 동안만 풍선이 까닭을 말한다 — 체크로
+    풀리면 풍선이 없다(설계 규칙 UI-INP-07)."""
+    from capa_simulation.components import equipment_scenario_management as management
+    from capa_simulation.components import equipment_scenario_status as status
+
+    repository = _seeded(tmp_path)
+    database = str(repository.database_path)
+    popup = place == "팝업"
+    app = (
+        AppTest.from_function(
+            _popup_with_edits,
+            args=(database, Path(AVAILABLE_EQUIPMENT_STATUS.path).name),
+            default_timeout=60,
+        )
+        if popup
+        else AppTest.from_function(_section_with_edits, args=(database,), default_timeout=60)
+    )
+    load_key = status.LOAD_BUTTON_KEY if popup else management.LOAD_BUTTON_KEY
+    discard_key = status.DISCARD_KEY if popup else management.DISCARD_KEY
+    app.session_state["edits"] = [("EQ-01", "시나리오 메모", "저장 안 한 메모")]
+    app.run()
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    locked = app.button(key=load_key)
+    assert locked.disabled
+    assert locked.help == management.LOAD_DISCARD_HELP
+
+    app.checkbox(key=discard_key).check().run()
+    assert not app.exception, [item.message for item in app.exception]
+    unlocked = app.button(key=load_key)
+    assert not unlocked.disabled
+    assert not unlocked.help
+
+
+def test_a_load_with_no_revision_says_so_before_the_discard_check() -> None:
+    """리비전이 없으면 체크로도 풀리지 않는다 — 그 까닭이 먼저고, 잠기지 않았으면 풍선이 없다."""
+    from capa_simulation.components.equipment_scenario_management import LOAD_DISCARD_HELP
+    from capa_simulation.components.equipment_scenario_status import (
+        NO_REVISIONS_LINE,
+        load_locked_help,
+    )
+
+    assert load_locked_help(discard=False, has_revisions=False) == NO_REVISIONS_LINE
+    assert load_locked_help(discard=True, has_revisions=False) == NO_REVISIONS_LINE
+    assert load_locked_help(discard=False, has_revisions=True) == LOAD_DISCARD_HELP
+    assert load_locked_help(discard=True, has_revisions=True) is None
+
+
 def test_a_stale_popup_save_names_the_schedule_cells_to_undo_before_and_after_the_click(
     tmp_path: Path,
 ) -> None:
