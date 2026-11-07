@@ -324,6 +324,12 @@ KEY_PROCESS_FIELD_KEY = "home_key_process_field"
 KEY_PROCESS_FIELD_LABEL = "주요공정 히트맵"
 # `grid_view` 는 사이드바 `Space 현황` 링크 아이콘과 겹쳐 데이터 묶음을 뜻하는 `dataset` 이다.
 KEY_PROCESS_ICON = ":material/dataset:"
+# 프리셋이 하나도 없어 잠긴 칸의 까닭 풍선.
+KEY_PROCESS_LOCKED_HELP = "HOME 설정 → 공지 · 표시 탭에서 프리셋을 먼저 만드세요."
+# 「기본으로」 의 뜻 · 잠긴 까닭과 「프리셋 삭제」 가 잠긴 까닭.
+PRESET_DEFAULT_HELP = "맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다."
+PRESET_DEFAULT_LOCKED_HELP = "이미 기본 프리셋입니다."
+PRESET_DELETE_LOCKED_HELP = "삭제 확인을 체크하면 누를 수 있습니다."
 KEY_PROCESS_EDIT_TARGET_KEY = "home_key_process_preset_edit"
 NEW_KEY_PROCESS_PRESET = "＋ 새 프리셋"
 # 「고칠 프리셋」 밑 값 줄 — 지금 기본(맨 앞) 프리셋 이름. 「기본」 의 뜻은 풍선이다.
@@ -2069,7 +2075,7 @@ def render_key_process_field(
     B/N 판정 대상(공정 필터)과 **따로** 서는 줄이다. 공정 필터는 판정에 넣을 공정이고, 이것은
     히트맵이 **보여 줄** 행이다. 고른 값은 이 세션의 보는 조건이라 공용 프로필에 쓰지 않는다 —
     프리셋 자체만 공용이다. 아직 고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다.
-    프리셋이 없으면 칸을 잠그고 어디서 만드는지 이름 줄에 적는다. 부르는 쪽이 페이지 칸 안으로
+    프리셋이 없으면 칸을 잠그고 어디서 만드는지는 까닭 풍선이 말한다. 부르는 쪽이 페이지 칸 안으로
     들어간 뒤에 부른다.
     """
     names = list(profile.preset_names)
@@ -2080,7 +2086,7 @@ def render_key_process_field(
             slug="key_process",
             key=KEY_PROCESS_FIELD_KEY,
             icon=KEY_PROCESS_ICON,
-            status="HOME 설정에서 만듭니다",
+            help=KEY_PROCESS_LOCKED_HELP,
             disabled=True,
         )
         return
@@ -2104,6 +2110,20 @@ def render_key_process_field(
         args=(applied,),
     ):
         show_key_process_dialog(names, previews)
+
+
+def render_stopped_key_process_field() -> None:
+    """계산이 멈춘 회차의 `주요공정 히트맵` 줄 — 프리셋의 공정 수는 계산 뒤에야 나온다. 잠긴 채 정상
+    회차와 같은 자리에 선다(공정 필터 줄과 같다). 부르는 쪽이 페이지 칸 안으로 들어간 뒤에
+    부른다."""
+    condition_field(
+        KEY_PROCESS_FIELD_LABEL,
+        "계산 멈춤",
+        slug="key_process",
+        key=KEY_PROCESS_FIELD_KEY,
+        icon=KEY_PROCESS_ICON,
+        disabled=True,
+    )
 
 
 def key_process_preview(
@@ -2446,13 +2466,14 @@ def _render_key_process_preset_actions(
     있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다.
     """
     names = list(profile.preset_names)
+    already_default = names[0] == target
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         make_default = st.button(
             "기본으로",
             icon=":material/vertical_align_top:",
             key="home_key_process_preset_default",
-            disabled=names[0] == target,
-            help="맨 앞 프리셋이 새로 연 HOME 이 처음 보는 프리셋입니다.",
+            disabled=already_default,
+            help=PRESET_DEFAULT_LOCKED_HELP if already_default else PRESET_DEFAULT_HELP,
         )
         # 라벨에 이름을 넣어 프리셋마다 다른 칸이 되게 한다 — 다른 프리셋으로 옮기면 체크가 풀린다.
         confirmed = st.checkbox(f"{quoted(target)} 삭제 확인")
@@ -2461,6 +2482,7 @@ def _render_key_process_preset_actions(
             icon=":material/delete:",
             key="home_key_process_preset_delete",
             disabled=not confirmed,
+            help=None if confirmed else PRESET_DELETE_LOCKED_HELP,
         )
     if not (make_default or delete):
         return

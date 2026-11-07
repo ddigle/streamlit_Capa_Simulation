@@ -43,6 +43,9 @@ BOTTLENECK_RANK_FONT_SIZE_PX = 14
 # 말줄임이다. 전체 이름은 hover 의 `customdata` 에 잘리지 않고 뜬다.
 BOTTLENECK_NAME_ELLIPSIS = "…"
 
+# HOME 표 그림 풍선의 글자.
+HOVER_LABEL_FONT_SIZE_PX = 12
+
 
 def _execution_note_parts(delta: object, note: object) -> tuple[float, str] | None:
     """확보율 보정 문구의 재료. 조정이 없으면 `None` 이라 두 포맷터가 빈 문자열을 낸다.
@@ -461,13 +464,22 @@ def _grid_month_layout_options(
         "showlegend": False,
         "dragmode": False,
         "hovermode": "closest",
-        "hoverlabel": {
-            "bgcolor": tokens.SURFACE,
-            "bordercolor": tokens.BORDER_STRONG,
-            "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
-        },
+        "hoverlabel": _hover_label(),
         "xaxis": {**_HIDDEN_AXIS, "range": [0, month_count]},
         "yaxis": {**_HIDDEN_AXIS, "range": [0, table_height]},
+    }
+
+
+def _hover_label() -> dict[str, Any]:
+    """HOME 표 그림의 풍선 꼴. **토큰은 부를 때 읽는다.**"""
+    return {
+        "bgcolor": tokens.SURFACE,
+        "bordercolor": tokens.BORDER_STRONG,
+        "font": {
+            "color": tokens.TEXT,
+            "size": HOVER_LABEL_FONT_SIZE_PX,
+            "family": tokens.FONT_FAMILY,
+        },
     }
 
 

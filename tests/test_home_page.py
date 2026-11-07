@@ -25,6 +25,13 @@ from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
     DETAIL_VALUE_FONT_SIZE_PX,
 )
+from capa_simulation.components.home_preference import (
+    KEY_PROCESS_FIELD_KEY,
+    KEY_PROCESS_LOCKED_HELP,
+    PRESET_DEFAULT_HELP,
+    PRESET_DEFAULT_LOCKED_HELP,
+    PRESET_DELETE_LOCKED_HELP,
+)
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
     HOME_CELL_CHART_KEYS,
@@ -40,6 +47,7 @@ from capa_simulation.home_state import (
     EDP_TOGGLE_KEY,
     PRODUCT_SHARE_BASIS_KEY,
 )
+from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.process_detail_state import (
     HOME_BOTTLENECK_SECTION,
     HOME_KEY_PROCESS_SECTION,
@@ -576,6 +584,10 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     ]
     assert list(app.number_input) == []
     assert [button.label for button in app.download_button] == []
+    # 프리셋이 없는 칸은 잠기고 만드는 자리는 풍선이 말한다 — 이름 줄에 길 안내를 적지 않는다.
+    assert app.button(key=KEY_PROCESS_FIELD_KEY).disabled
+    assert app.button(key=KEY_PROCESS_FIELD_KEY).help == KEY_PROCESS_LOCKED_HELP
+    assert "HOME 설정에서 만듭니다" not in [element.value for element in app.sidebar.caption]
 
     app = _open_settings(app)
 
@@ -959,6 +971,75 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     keys = _sidebar_keys(app)
     assert keys.index(SETTINGS_BOX) == keys.index(VIEW_CARD) - 1
     assert app.session_state["spy_traces"]
+
+
+def _publish_blank_run_rate(database_path: Path) -> None:
+    """공식 리비전의 효율(`RQ_RUN_RATE`) 값 한 칸을 비운 리비전을 새 공식버전으로 낸다 — 기준 정보의
+    빈 칸을 채우면 풀리는 계산 멈춤이다."""
+    from capa_simulation.persistence.cache import load_scenario_snapshot
+    from capa_simulation.persistence.models import ScenarioCreate
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    repository = DuckDBScenarioRepository(database_path)
+    official = repository.latest_official_release()
+    assert official is not None
+    snapshot = load_scenario_snapshot(str(database_path), official.revision_id)
+    tables = dict(snapshot.tables)
+    run_rate = tables["RQ_RUN_RATE"].copy()
+    run_rate["CAPA_RUN_RATE"] = run_rate["CAPA_RUN_RATE"].astype("object")
+    run_rate.loc[run_rate.index[0], "CAPA_RUN_RATE"] = None
+    tables["RQ_RUN_RATE"] = run_rate
+    created = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="효율 빈 칸",
+            source_simulation_code="BLANK-RATE-1",
+            source_simulation_name="효율 빈 칸",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        tables,
+        snapshot.preset,
+    )
+    repository.publish_official_revision(
+        str(created.scenario.scenario_id),
+        str(created.revision.revision_id),
+        release_name="효율 빈 칸",
+    )
+
+
+def test_a_blank_stop_on_home_opens_the_screen_to_fill(tmp_path: Path) -> None:
+    """기준 정보의 빈 칸으로 멈춘 HOME 의 오류 알림은 무엇을 · 어디서 채우는지 말하고 「그
+    화면으로」 가 기준 정보를 연다(UI-NTF-06 · UI-NTF-08). 전문 첫머리의 화면 이름은 앱이 적은
+    화면에서 온다 — 이 실행은 `app.py` 를 거치지 않아 비어 있다(`tests/test_page_bootstrap.py`)."""
+    database_path = tmp_path / "scenario.duckdb"
+    AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    _publish_blank_run_rate(database_path)
+
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    (note,) = [item for item in alert_notes(app) if item["code"] == "HM-01"]
+    assert note["short"].startswith("대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 ")
+    assert (note["page"], note["href"]) == ("기준 정보", REFERENCE_DATA.href)
+    assert note["full"].startswith("대당 Capa 계산이 멈췄습니다. 기준 정보 「효율」 표의 ")
+    assert "RQ_RUN_RATE" not in note["full"]
+
+
+def test_a_stopped_home_keeps_both_page_rows_locked_in_the_panel(tmp_path: Path) -> None:
+    """계산이 멈춰도 패널의 공정 필터 · 주요공정 히트맵 줄은 잠긴 채 선다 — 한 줄이라도 빠지면 그
+    아래 상자가 줄 높이만큼 움직인다(UI-PRF-03). 잠긴 「HOME 설정」 풍선은 오류 글이 있는 Alarm 을
+    가리킨다."""
+    database_path = tmp_path / "scenario.duckdb"
+    AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    _publish_blank_run_rate(database_path)
+
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    for key in ("dashboard_bottleneck_process_dialog_open", KEY_PROCESS_FIELD_KEY):
+        assert app.button(key=key).label == "계산 멈춤"
+        assert app.button(key=key).disabled
+    assert "Alarm 의 오류" in str(app.button(key=SETTINGS_BUTTON_KEY).help)
 
 
 def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it(
@@ -2287,17 +2368,23 @@ def test_presets_are_made_renamed_promoted_and_deleted_from_preference(tmp_path:
     # B 를 기본으로 올린다.
     app.selectbox(key=target).set_value("B 그룹").run()
     labels_before = set(app.selectbox(key=target).options)
+    assert app.button(key="home_key_process_preset_default").help == PRESET_DEFAULT_HELP
     app.button(key="home_key_process_preset_default").click().run()
     assert repository.load_global_key_process().preset_names == ("B 그룹", "A 그룹(개정)")
+    # 맨 앞이 된 프리셋의 「기본으로」 는 잠기고 풍선이 뜻이 아니라 잠긴 까닭을 말한다(UI-INP-07).
+    assert app.button(key="home_key_process_preset_default").disabled
+    assert app.button(key="home_key_process_preset_default").help == PRESET_DEFAULT_LOCKED_HELP
     # 선택지 라벨은 기본이 바뀌어도 같다 — 라벨이 바뀌면 브라우저가 옛 라벨을 되보낸다. 무엇이
     # 기본인지는 캡션이 말한다.
     assert set(app.selectbox(key=target).options) == labels_before
     assert not [label for label in labels_before if "기본" in label]
     assert any("「B 그룹」" in caption.value and "기본" in caption.value for caption in app.caption)
 
-    # 삭제는 확인을 체크해야 열린다.
+    # 삭제는 확인을 체크해야 열린다. 잠긴 동안만 까닭 풍선이 있다.
     assert app.button(key="home_key_process_preset_delete").disabled
+    assert app.button(key="home_key_process_preset_delete").help == PRESET_DELETE_LOCKED_HELP
     next(box for box in app.checkbox if box.label == "「B 그룹」 삭제 확인").check().run()
+    assert not app.button(key="home_key_process_preset_delete").help
     app.button(key="home_key_process_preset_delete").click().run()
     assert not list(app.exception)
     assert repository.load_global_key_process().preset_names == ("A 그룹(개정)",)

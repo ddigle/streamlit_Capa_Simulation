@@ -23,8 +23,9 @@ PRODUCTION_DETAIL_CUSTOMER_DIMENSIONS = [*PRODUCTION_DETAIL_DIMENSIONS, "Custome
 # 두고 표시 글자만 여기서 정한다.
 DETAIL_DIMENSION_HEADERS = {"제품정보": "제품", "Stack": "Stack", "Customer": "거래선"}
 
-# 라벨 칸 안에서 분류 컬럼이 나눠 갖는 폭. 제품명이 길고 Stack 은 짧다.
-DETAIL_DIMENSION_WIDTHS = {"제품정보": 1.4, "Stack": 0.6, "Customer": 1.0}
+# 라벨 칸 안에서 분류 컬럼이 나눠 갖는 폭. 제품명이 길고 Stack 은 짧다. 거래선은 끝 글자로 갈리는
+# 이름이라 한 칸에 온전히 들어야 한다(라벨 칸 260px 의 약 102px).
+DETAIL_DIMENSION_WIDTHS = {"제품정보": 1.4, "Stack": 0.6, "Customer": 1.3}
 
 
 def build_production_dashboard(

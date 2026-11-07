@@ -188,7 +188,7 @@ def test_the_ratio_assumption_is_a_state_alert_with_where_to_fix_it() -> None:
     app = AppTest.from_string(ASSUMPTION).run()
     assert not app.exception and not app.warning
     (note,) = alert_notes(app)
-    assert (note["code"], note["active"], note["tab"]) == ("HM-02", True, "대당 Capa")
+    assert (note["code"], note["active"], note["page"]) == ("HM-02", True, "기준 정보")
     assert (
         note["short"] == "측정률 빈 경로를 1.0 으로 계산(Lot측정률 3건) — 기준 정보 그 표에서 채움"
     )

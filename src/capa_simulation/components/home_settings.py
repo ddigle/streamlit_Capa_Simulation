@@ -100,7 +100,7 @@ SETTINGS_HELP = (
     "주요공정 프리셋 / Past Data: 과거 구간"
 )
 PENDING_HELP = "읽어 두고 저장하지 않은 Past Data 가 있습니다 — 팝업의 Past Data 탭에서 저장합니다."
-STOPPED_HELP = "계산이 멈춰 열 수 없습니다 — 본문의 오류를 먼저 고칩니다."
+STOPPED_HELP = "계산이 멈춰 열 수 없습니다 — Alarm 의 오류를 먼저 고칩니다."
 
 
 def settings_box_key(*, pending: bool) -> str:

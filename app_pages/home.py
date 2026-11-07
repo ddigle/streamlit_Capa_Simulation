@@ -33,6 +33,7 @@ from capa_simulation.components.home_preference import (
     render_home_view_card,
     render_key_process_field,
     render_lob_title_row,
+    render_stopped_key_process_field,
     seed_comparison_selection,
 )
 from capa_simulation.components.home_rendering import (
@@ -98,6 +99,7 @@ from capa_simulation.io.reference_cache import (
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
+    calculation_stop_notice,
     forget_page_dialogs,
     selected_month_range,
 )
@@ -548,8 +550,8 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     # 막대를 남긴 채 멈추면 오류 문구 위에 멈춰 선 진행률이 함께 보인다.
     loading.close()
-    # 패널의 공정 필터 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
-    # 회차마다 흔들리지 않게 한다 — 까닭은 본문 오류가 말한다.
+    # 패널의 공정 필터 · 주요공정 히트맵 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를
+    # 지켜 패널 높이가 회차마다 흔들리지 않게 한다 — 까닭은 Alarm 의 오류가 말한다.
     with page_condition_slot(0).container():
         condition_field(
             PROCESS_FIELD_LABEL,
@@ -560,7 +562,17 @@ except BOOTSTRAP_ERRORS as exc:
             status=PROCESS_FIELD_HINT,
             disabled=True,
         )
-    render_data_error(bootstrap_error_message(exc), code="HM-01")
+    with page_condition_slot(1).container():
+        render_stopped_key_process_field()
+    # 기준 정보의 빈 칸으로 멈췄으면 알림이 채울 화면을 연다. 같은 `except` 가 받는 DB 오류 · 자료
+    # 없는 달은 그 화면이 없어 HOME 줄 그대로다.
+    stop = calculation_stop_notice(exc)
+    render_data_error(
+        bootstrap_error_message(exc) if stop is None else stop.message,
+        code="HM-01",
+        text=None if stop is None else stop.text,
+        goto=None if stop is None else stop.goto,
+    )
     # 보는 조건 카드는 멈춘 회차에도 선다. 오류가 시키는 조치(EDP 포함을 켜기·GAP 끄기)가 이 카드의
     # 토글이라 여기서도 그려야 화면에서 따를 수 있다(2026-10-22 사용자 결정). key 가 정상 회차와
     # 같아 바꾼 값으로 다음 회차가 다시 계산한다. 주요 Case 칩도 그대로 선다 — 다른 Case 로 옮기는

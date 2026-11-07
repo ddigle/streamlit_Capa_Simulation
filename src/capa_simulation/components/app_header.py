@@ -149,6 +149,7 @@ _RETURN_LABEL_LIMIT = 60
 STATUS_SLOT_SELECTOR = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{STATUS_SLOT_KEY})'
 # 큰 제목 칸(`page_header.PAGE_TITLE_KEY`)도 같은 꼴로 감싼 칸이 본문 세로 블록의 flex 항목이다.
 PAGE_TITLE_SELECTOR = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{PAGE_TITLE_KEY})'
+TOOLTIP_TEXT_SELECTOR = '[data-testid="stTooltipContent"]'
 # 화면 탭 줄(`components/page_tabs.py`)의 요소 칸. 컴포넌트는 컨테이너가 아니라 요소라 감싼 칸 없이
 # key 클래스를 단 요소 칸(`stElementContainer`)이 곧 flex 항목이다(1.63 브라우저 확인).
 PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
@@ -215,6 +216,11 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 # - 큰 제목 칸(`PAGE_TITLE_SELECTOR`)은 화면에서만 시각적으로 숨긴다(sr-only — 1px 상자 밖을
 #   자른다). `display: none` 이 아니라 h1 이 읽기 도구에 남는다. 흐름에서 빠져 요소 간격도 먹지
 #   않는다.
+# - 풍선 글은 마우스를 받지 않는다(`TOOLTIP_TEXT_SELECTOR`). Streamlit 풍선은 글 위에 마우스가
+#   있으면 닫히지 않고(1.63 `interactive` 기본값 — 파이썬에서 끌 인자가 없다) 단추 바로 위에 떠 곁
+#   칸을 덮는다 — HOME 설정 상자 풍선이 위 「주요공정 히트맵」 칸의 까닭 풍선 · 누름을 막았다.
+#   풍선은 `body` 끝에 붙어 어느 칸의 것인지 서식으로 고를 수 없어 앱 전체에 건다. 풍선 안에 누를
+#   링크는 없다.
 SHELL_STYLE = (
     """<style>
 [data-testid="stMainMenu"],
@@ -247,6 +253,9 @@ SHELL_STYLE = (
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  __TOOLTIP_TEXT__ {
+    pointer-events: none;
+  }
 }
 @media print {
   @page { margin: 10mm; } [data-testid="stSidebar"], [data-testid="stHeader"], __STATUS_SLOT__,
@@ -271,6 +280,7 @@ SHELL_STYLE = (
     .replace("__PRINT_BUTTON__", PRINT_BUTTON_ID)
     .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
     .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)
+    .replace("__TOOLTIP_TEXT__", TOOLTIP_TEXT_SELECTOR)
     .replace("__TABS_TOP__", tokens.rem(tokens.HEADER_BAND_REM))
     .replace("__TABS_LIFT__", tokens.rem(tokens.PAGE_TABS_LIFT_REM))
 )

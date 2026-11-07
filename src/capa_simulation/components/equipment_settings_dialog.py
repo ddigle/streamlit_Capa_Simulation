@@ -76,7 +76,7 @@ SETTINGS_HELP = (
     "가용설비 현황 공용 설정(모든 설비 시나리오가 함께 씀) — 공정별 Cut-off: 월별 가용대수를 세는 "
     "W/D 구간의 기준입니다."
 )
-LOCKED_HELP = "설비 DB 를 읽지 못해 열 수 없습니다 — 본문의 오류를 먼저 고칩니다."
+LOCKED_HELP = "설비 DB 를 읽지 못해 열 수 없습니다 — Alarm 의 오류를 먼저 고칩니다."
 # 엑셀·CSV 팝업 열림 값(`equipment_import_dialog.IMPORT_DIALOG` 와 같은 글 — 그 모듈이 이 모듈을
 # 불러오므로 거꾸로 부르지 않는다).
 IMPORT_DIALOG = "import"
