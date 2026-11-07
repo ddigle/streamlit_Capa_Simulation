@@ -47,22 +47,22 @@ _HTML: Final = f"""
 """
 
 # 색은 적지 않는다 — 테마 변수만 쓴다(`st.components.v2.component` 는 등록 때의 CSS 를 그대로 쓴다).
+# 치수는 `st.button` 과 같다(높이 2.5rem · 글자 1rem · 안쪽 0.25rem 0.75rem). 글꼴은 물려받는다.
 _CSS: Final = """
 .capa-diag-copy {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.6rem;
-  font-family: var(--st-font);
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: var(--st-text-color);
 }
 .capa-diag-copy-button {
-  min-height: 2rem;
+  min-height: 2.5rem;
   padding: 0.25rem 0.75rem;
   border: 1px solid var(--st-border-color);
-  border-radius: var(--st-base-radius);
-  background: var(--st-background-color);
+  border-radius: var(--st-button-radius);
+  background: var(--st-secondary-background-color);
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -71,7 +71,8 @@ _CSS: Final = """
   border-color: var(--st-primary-color);
   color: var(--st-primary-color);
 }
-.capa-diag-copy-button:focus-visible {
+.capa-diag-copy-button:focus-visible,
+.capa-diag-copy-area:focus-visible {
   outline: 2px solid var(--st-primary-color);
   outline-offset: 1px;
 }
@@ -86,8 +87,8 @@ _CSS: Final = """
   border-radius: var(--st-base-radius);
   background: var(--st-secondary-background-color);
   color: inherit;
-  font-family: var(--st-code-font, monospace);
-  font-size: 0.75rem;
+  font-family: var(--st-code-font);
+  font-size: 0.875rem;
   line-height: 1.4;
   resize: vertical;
 }
