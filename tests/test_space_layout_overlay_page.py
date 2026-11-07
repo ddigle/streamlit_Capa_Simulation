@@ -1289,11 +1289,9 @@ def test_turning_off_a_floor_only_an_assumption_uses_asks_with_the_overlay_line(
 
     assert CONFIRM_KEY in app.session_state
     assert repository.load_floor_states().inactive == {}
-    assert any("공식 배치에는 이 층에 호기가 없지만" in str(item.value) for item in app.warning)
-    assert any(
-        "가정 설비 시나리오 「셋업 실무」의 배치에서 C1 2F 에 놓인 호기 1대도" in str(item.value)
-        for item in app.caption
-    )
+    captions = [str(item.value) for item in app.caption]
+    assert "호기 남은 층 C1 2F · 공식 배치 호기 0대" in captions
+    assert any(text.endswith("가정 배치 「셋업 실무」 · C1 2F · 호기 1대") for text in captions)
     app.button(key=CONFIRM_BUTTON_KEY).click()
     _ok(tables.run())
     assert repository.load_floor_states().inactive == {("C1", "2F"): "UNUSED"}
@@ -1302,8 +1300,8 @@ def test_turning_off_a_floor_only_an_assumption_uses_asks_with_the_overlay_line(
 def test_the_floor_off_overlay_line_keeps_tildes_in_the_scenario_name(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """E2E r3 같은 꼴 — 층 끄기 확인의 덧줄(「가정 설비 시나리오 「…」의 배치에서 …」)이 설비
-    시나리오 이름의 물결표를 막는다(「가정<del>R3</del>X」 가 되지 않게)."""
+    """E2E r3 같은 꼴 — 층 끄기 확인의 덧줄(「가정 배치 「…」 · …」)이 설비 시나리오 이름의 물결표를
+    막는다(「가정<del>R3</del>X」 가 되지 않게)."""
     repository, _ = _moved_floor(tmp_path, TILDE_NAME)
     app = _space(tmp_path, OPERATIONS, floor=False)
     tables = BrowserTables(app)
@@ -1317,8 +1315,7 @@ def test_the_floor_off_overlay_line_keeps_tildes_in_the_scenario_name(
 
     assert CONFIRM_KEY in app.session_state
     assert any(
-        f"가정 설비 시나리오 「{TILDE_ESCAPED}」의 배치에서 C1 2F 에 놓인 호기 1대도"
-        in str(item.value)
+        f"가정 배치 「{TILDE_ESCAPED}」 · C1 2F · 호기 1대" in str(item.value)
         for item in app.caption
     )
     _assert_tildes_escaped(app)
