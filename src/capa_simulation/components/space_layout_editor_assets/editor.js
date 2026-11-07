@@ -7951,7 +7951,9 @@ export default function (component) {
     setText(faderDate, S.asOf || TODAY)
     setText(faderRel, `· ${relText(S.asOf)}`)
     faderRel.classList.toggle('is-today', isToday)
-    lockWith(faderToday, isToday ? '이미 오늘' : '')
+    // 초점은 누를 때 페이더로 먼저 옮긴다(`faderToday.onclick`) — 칸으로 넘길 일이 없다.
+    faderToday.disabled = isToday
+    setTip(faderToday.parentElement, isToday ? '이미 오늘' : '')
     setAttr(faderInput, 'aria-valuetext', `${S.asOf || TODAY} (${relText(S.asOf)})`)
     setText(faderNote, !S.dataAsOf || S.asOf === S.dataAsOf
       ? ''

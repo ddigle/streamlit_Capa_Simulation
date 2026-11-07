@@ -1197,7 +1197,7 @@ def test_every_toolbar_button_that_can_lock_sits_in_a_tip_host() -> None:
         assert host and "sle-edit-only" in host.group(1), name
     for name in ("zoomOut", "zoomIn", "zoomSel", "applyButton", "resetButton", "undoButton"):
         assert f"{name}.disabled =" not in JS, name
-    assert "unplaceButton.disabled =" not in JS and "faderToday.disabled =" not in JS
+    assert "unplaceButton.disabled =" not in JS
     assert ".sle-tiphost > button:disabled" in CSS and "pointer-events: none" in CSS
     assert 'class="sle-tip" id="sle-tip" role="tooltip" hidden' in HTML
     tip = _rule(".sle-tip")
@@ -1227,7 +1227,7 @@ def test_the_toolbar_reasons_are_short_values() -> None:
     assert "(chosen.length ? '고른 것이 도면에 없음' : '고른 것 없음')" in JS
     assert "lockWith(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')" in JS
     assert "lockWith(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')" in JS
-    assert "lockWith(faderToday, isToday ? '이미 오늘' : '')" in JS
+    assert "setTip(faderToday.parentElement, isToday ? '이미 오늘' : '')" in JS
 
 
 def test_the_reset_button_warns_before_it_drops_the_undo_history() -> None:
