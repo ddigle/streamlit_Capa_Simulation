@@ -103,12 +103,12 @@ def render_source_quality(profile: pd.DataFrame, source_rows: int) -> None:
         st.caption("이 시나리오에는 원천 컬럼 프로필이 없습니다.")
         return
 
+    # 점검 결론은 문제가 있든 없든 값이라 평문 한 줄로 둔다 — 초록 성공 상자는 알림창 몫이고(설계
+    # 규칙 UI-NTF-01 · AMB-02 (가)), 어느 컬럼이 어떤 등급인지는 바로 아래 표가 말한다(UI-TXT-04).
     warning = source_quality_warning(table)
     if warning is not None:
-        st.warning(warning)
+        st.caption(warning)
     else:
-        # 점검 결론 「문제 없음」 은 값이라 평문 한 줄로 둔다 — 초록 성공 상자는 알림창 몫이다(설계
-        # 규칙 UI-NTF-01 · AMB-02 (가)).
         st.caption(f"{len(table):,}개 컬럼 모두 값이 차 있고 상수 컬럼이 없습니다.")
 
     st.dataframe(
