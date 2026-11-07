@@ -6850,6 +6850,8 @@ export default function (component) {
   const keysList = q('.sle-keys-list')
   const keysOpen = () => !keysPanel.hidden
   function placeKeys() {
+    // 앞 자리를 지우고 잰다 — 남은 `left` 로 재면 판이 편집기 오른쪽 끝까지의 자리만큼 눌린 폭이 나온다.
+    keysPanel.style.left = ''
     const frame = bodyBox.getBoundingClientRect()
     const anchor = keysToggle.getBoundingClientRect()
     const width = keysPanel.offsetWidth

@@ -1035,3 +1035,18 @@ def test_the_shortening_view_pins_the_date_and_draws_badges_only_when_python_say
     # 블록 셋째 줄(단축)은 비활성 블록에 서지 않는다(사유 줄만).
     lines = JS[JS.index("const blockLines = (item) => {") : JS.index("const opensFloor")]
     assert lines.index("if (blockOff(item))") < lines.index("stats.short")
+
+
+def test_the_shortcut_panel_measures_its_width_after_clearing_the_old_spot() -> None:
+    """단축키 판은 왼쪽 자리(`left`)를 지운 뒤 폭을 잰다. 큰 창에서 놓인 자리가 남은 채 재면 판이
+    편집기 오른쪽 끝까지의 자리만큼 눌려, 창을 줄인 뒤 다시 열 때 설명이 한 글자씩 세로로 쌓였다."""
+    place = JS[JS.index("function placeKeys() {") : JS.index("function setKeysOpen(")]
+    assert place.index("keysPanel.style.left = ''") < place.index("keysPanel.offsetWidth")
+
+
+def test_the_new_unit_size_inputs_shrink_inside_the_form() -> None:
+    """호기 추가 폼의 크기 칸은 폼 폭 안에서 줄어든다 — 글자 폭으로 못박으면 좁은 칸에서 폼
+    테두리를 넘어 칸 끝에서 잘린다."""
+    size = _rule('.sle-form-row input[type="number"]')
+    assert "flex: 1" in size and "min-width: 0" in size
+    assert "width: 4.2em" not in size
