@@ -20,7 +20,7 @@ from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
-from capa_simulation.components.scenario_month_merge import _record_keys
+from capa_simulation.components.scenario_month_merge import LOCKED_SAVE_HELP, _record_keys
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
@@ -94,6 +94,14 @@ if not st.session_state.get({HIDE_KEY!r}):
 
 def _save_button(app: AppTest) -> Button:
     return next(button for button in app.button if button.label == "새 시나리오로 저장")
+
+
+def _assert_save_locked(app: AppTest) -> None:
+    """막힌 회차의 저장 자리 — 저장 칸(이름 · 메모) 없이 잠긴 단추가 풍선과 함께 선다(UI-INP-07)."""
+    assert [button.label for button in app.button].count("새 시나리오로 저장") == 1
+    locked = _save_button(app)
+    assert locked.disabled and locked.help == LOCKED_SAVE_HELP
+    assert not any(item.key == "scenario_merge_name" for item in app.text_input)
 
 
 def _expected_non_monthly(
@@ -222,11 +230,11 @@ def test_history_conflict_blocks_save_and_revision_change_recovers(
     app = _app(database, base, conflicting)
     assert any("가상제품 복제 이력이 충돌" in error.value for error in app.error)
     assert any("Product-A · 8H" in error.value for error in app.error)
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
     app.selectbox(key=f"merge_start_{conflicting.revision.revision_id}").set_value(202802).run()
     assert any("가상제품 복제 이력이 충돌" in error.value for error in app.error)
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     app.selectbox(key=f"merge_donor_revision_{donor.scenario.scenario_id}").set_value(
         donor.revision.revision_id
     ).run()
@@ -292,7 +300,7 @@ def test_overlapping_months_block_save_until_the_source_changes(sources: Sources
 
     assert not app.exception
     assert any("겹쳐 저장할 수 없습니다" in error.value for error in app.error)
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
 
     app.selectbox(key="merge_donor_scenario").set_value(donor.scenario.scenario_id).run()
@@ -360,7 +368,7 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
     assert app.segmented_control[0].value == "reject"
     assert _source_rows(app).loc["2027-01", "겹침"] == "겹침"
     assert _source_rows(app).loc["2027-01", "선택 출처"] == "미선택 · 저장 차단"
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
 
     for policy, label, quantity in (("base", "베이스", 100.0), ("donor", "덧붙일 쪽", 900.0)):
         app.segmented_control[0].set_value(policy).run()
@@ -413,11 +421,11 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
     # 같은 월 범위에서도 처리 기준을 바꾸면 새 저장이 가능하고 차단으로 되돌릴 수도 있다.
     app.segmented_control[0].set_value("reject").run()
     assert app.error
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     app.segmented_control[0].set_value("donor").run()
     app.selectbox(key=f"merge_end_{donor.revision.revision_id}").set_value(202801).run()
     assert app.segmented_control[0].value == "reject"
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 4
     for source in (base, donor):
         reloaded = repository.load_revision(
@@ -437,7 +445,7 @@ def test_overlap_choice_never_overrides_virtual_history_conflict(sources: Source
         app.segmented_control[0].set_value(policy).run()
         assert not app.exception
         assert any("가상제품 복제 이력이 충돌" in item.value for item in app.error)
-        assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+        _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
 
 
@@ -549,8 +557,29 @@ def test_a_module_gap_blocks_the_save_with_examples(sources: Sources) -> None:
 
     blocked = [item.value for item in app.error if "RQ_MODULE" in item.value]
     assert blocked and "Process-Z" in blocked[0] and "2028-01~2028-02" in blocked[0]
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
+
+
+def test_a_refused_save_form_does_not_grow_a_second_save_button(
+    sources: Sources, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장 칸이 선 뒤 누른 저장의 거부는 칸을 그대로 둔다 — 잠긴 단추를 더 세우지 않는다."""
+    import capa_simulation.components.scenario_transform as scenario_transform
+
+    _, database, base, donor = sources
+
+    def refuse(*args: object) -> object:
+        raise ValueError("저장 쪽 거부")
+
+    monkeypatch.setattr(scenario_transform, "derived_save_verdict", refuse)
+    app = _app(database, base, donor)
+    _save_button(app).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert place_errors(app) == ["저장 쪽 거부"]
+    assert [button.label for button in app.button].count("새 시나리오로 저장") == 1
+    assert not _save_button(app).disabled
 
 
 def test_empty_calendar_months_between_the_sources_are_warned(sources: Sources) -> None:

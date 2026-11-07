@@ -46,6 +46,10 @@ OVERLAP_LABELS: dict[OverlapPolicy, str] = {
     "base": "겹치는 월은 베이스 사용",
     "donor": "겹치는 월은 덧붙일 쪽 사용",
 }
+# 막힌 회차의 잠긴 저장 단추 — 저장 칸을 숨기지 않고 잠근 채 푸는 길을 풍선에 둔다(설계 규칙
+# UI-INP-07). 까닭은 그 회차 오류 칸이 적으므로 풍선은 까닭을 거듭하지 않는다(UI-TXT-07).
+LOCKED_SAVE_KEY = "scenario_merge_save_locked"
+LOCKED_SAVE_HELP = "오류 칸의 까닭을 풀면 열립니다 — 원본 · 월 범위 · 겹치는 월 처리를 바꿉니다."
 # 값 줄의 풍선 — 자리에는 수 · 달 · 키만 두고 왜 확인해야 하는지는 풍선과 Guide 가 말한다(설계 규칙
 # UI-TXT-01 · UI-TXT-04).
 EMPTY_MONTHS_HELP = (
@@ -69,6 +73,7 @@ def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_p
         # 고른 원본 · 월 범위 · 겹침 처리로 고치는 거부다(겹침 · 이력 충돌 — 입력이 바로 위에 있다,
         # 설계 규칙 UI-NTF-03).
         st.error(bootstrap_error_message(exc))
+        _render_locked_save()
     except BOOTSTRAP_ERRORS as exc:
         # 저장소 · 표를 못 읽어 구획을 그리지 못했다 — 글은 알림이다(설계 규칙 UI-NTF-08).
         render_data_error(
@@ -77,6 +82,17 @@ def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_p
             tab=CAPA_SCENARIO_TAB_NAME,
             text="월 머지를 그리지 못했습니다",
         )
+
+
+def _render_locked_save() -> None:
+    """저장을 막는 것이 남은 회차의 저장 자리 — 이름 · 메모 칸 없이 잠긴 단추만 선다."""
+    st.button(
+        "새 시나리오로 저장",
+        type="primary",
+        disabled=True,
+        key=LOCKED_SAVE_KEY,
+        help=LOCKED_SAVE_HELP,
+    )
 
 
 def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
@@ -100,6 +116,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     donor_months = scenario_months(donor_tables)
     if not donor_months:
         st.error("덧붙일 시나리오에 월 데이터가 없습니다.")
+        _render_locked_save()
         return
     st.markdown("#### 덧붙일 월 범위")
     start_column, end_column = st.columns(2)
@@ -162,6 +179,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     st.markdown("#### 저장 전 월별 출처")
     st.dataframe(source_display, hide_index=True, width="stretch")
     if result is None:
+        _render_locked_save()
         return
     # 점검 결론은 값 — 평문 한 줄(설계 규칙 UI-TXT-04 · AMB-02 (가), 초록 상자 아님).
     st.caption(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
@@ -184,6 +202,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     for message in gaps.warnings:
         st.warning(message)
     if gaps.blocking:
+        _render_locked_save()
         return
     base_history = virtual_product_records(
         repository.list_virtual_products(base.revision.revision_id)
@@ -237,24 +256,28 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         + (f"\n결과의 빈 달: {format_month_runs(empty_months)}" if empty_months else "")
         + "".join(f"\n경고: {message}" for message in gaps.warnings)
     )
-    render_derived_save(
-        repository,
-        tables=result,
-        source=base,
-        operation="SCENARIO_MONTH_MERGE",
-        provenance=provenance,
-        default_name=f"{base.scenario.scenario_name} · 월 머지",
-        key="scenario_merge",
-        request=(
-            base.revision.revision_id,
-            donor.revision.revision_id,
-            str(start),
-            str(end),
-            policy,
-        ),
-        virtual_products=history.records,
-        gate_sources=(base, donor),
-    )
+    try:
+        render_derived_save(
+            repository,
+            tables=result,
+            source=base,
+            operation="SCENARIO_MONTH_MERGE",
+            provenance=provenance,
+            default_name=f"{base.scenario.scenario_name} · 월 머지",
+            key="scenario_merge",
+            request=(
+                base.revision.revision_id,
+                donor.revision.revision_id,
+                str(start),
+                str(end),
+                policy,
+            ),
+            virtual_products=history.records,
+            gate_sources=(base, donor),
+        )
+    except ValueError as exc:
+        # 저장 칸이 이미 섰다 — 누른 저장의 거부라 잠긴 단추를 더 세우지 않는다.
+        st.error(bootstrap_error_message(exc))
 
 
 def _record_keys(records: tuple[VirtualProductRecord, ...], *, markdown: bool = False) -> str:
