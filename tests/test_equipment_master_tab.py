@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, place_errors, successes
+from alert_marks import alert_notes, flashed, place_errors, successes
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _page_script
@@ -411,7 +411,9 @@ def test_load_and_clear_results_go_to_the_alert_popup_and_leave_the_table_alone(
     assert kept["undo"]
 
     def results(kind: str) -> list[str]:
-        return [str((item.note or {})["full"]) for item in flashed(app, kind)]
+        # 대역 콜백은 마운트에서 돌아 `send` 의 첫 회차가 알림을 내고 둘째 회차가 다시 보낸다.
+        notes = alert_notes(app, again=True)
+        return [str(note["full"]) for note in notes if note.get("flash") == kind]
 
     send(app, emg.LOADER_KEY, "clear", {})
     assert results("info") == ["목록을 비웠습니다 — 고친 내용은 그대로 남습니다"]
