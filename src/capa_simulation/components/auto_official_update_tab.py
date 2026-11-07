@@ -183,6 +183,9 @@ MISSING_WEEK_MARK: Final = ":red[주차 없음]"
 # 실행 기록 「경고」 칸의 표지 — 발행한 회차의 사유 끝에 소요대수에 들지 않은 수요 경고가 이어
 # 적혔다. 문장 전체는 「사유」 칸에 그대로 남는다.
 UNCOUNTED_DEMAND_MARK: Final = "⚠ 소요대수 밖 수요"
+# 실행 기록 표에서 짧은 값이 칸에 잘리지 않게 주는 폭(px) — 「사유」 처럼 긴 칸은 잘린 채 둔다.
+RUN_WARNING_WIDTH_PX: Final = 120
+RUN_RECEIVED_WIDTH_PX: Final = 124
 SETTINGS_SOURCE: Final = "시나리오 관리 · 자동 갱신"
 
 
@@ -766,7 +769,15 @@ def _render_run_history(
             st.caption("아직 돈 회차가 없습니다.")
             return
         st.caption(f"최근 {RUN_HISTORY_LIMIT}회차까지 · 최근 것이 위")
-        st.dataframe(run_history_frame(runs, exclusions, labels), hide_index=True, width="stretch")
+        st.dataframe(
+            run_history_frame(runs, exclusions, labels),
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "경고": st.column_config.TextColumn(width=RUN_WARNING_WIDTH_PX),
+                "받은 코드": st.column_config.TextColumn(width=RUN_RECEIVED_WIDTH_PX),
+            },
+        )
         offs = off_process_frame(runs, exclusions, labels)
         with st.expander(
             f"off 공정 목록 · {len(offs):,}건",
