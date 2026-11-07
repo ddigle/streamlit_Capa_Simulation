@@ -98,6 +98,7 @@ from capa_simulation.io.reference_cache import (
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
+    calculation_stop_notice,
     forget_page_dialogs,
     selected_month_range,
 )
@@ -560,7 +561,15 @@ except BOOTSTRAP_ERRORS as exc:
             status=PROCESS_FIELD_HINT,
             disabled=True,
         )
-    render_data_error(bootstrap_error_message(exc), code="HM-01")
+    # 기준 정보의 빈 칸으로 멈췄으면 알림이 채울 화면을 연다. 같은 `except` 가 받는 DB 오류 · 자료
+    # 없는 달은 그 화면이 없어 HOME 줄 그대로다.
+    stop = calculation_stop_notice(exc)
+    render_data_error(
+        bootstrap_error_message(exc) if stop is None else stop.message,
+        code="HM-01",
+        text=None if stop is None else stop.text,
+        goto=None if stop is None else stop.goto,
+    )
     # 보는 조건 카드는 멈춘 회차에도 선다. 오류가 시키는 조치(EDP 포함을 켜기·GAP 끄기)가 이 카드의
     # 토글이라 여기서도 그려야 화면에서 따를 수 있다(2026-10-22 사용자 결정). key 가 정상 회차와
     # 같아 바꾼 값으로 다음 회차가 다시 계산한다. 주요 Case 칩도 그대로 선다 — 다른 Case 로 옮기는

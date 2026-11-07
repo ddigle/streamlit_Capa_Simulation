@@ -40,6 +40,7 @@ from capa_simulation.home_state import (
     EDP_TOGGLE_KEY,
     PRODUCT_SHARE_BASIS_KEY,
 )
+from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.process_detail_state import (
     HOME_BOTTLENECK_SECTION,
     HOME_KEY_PROCESS_SECTION,
@@ -959,6 +960,58 @@ def test_a_stopped_home_still_offers_the_edp_toggle_its_error_asks_for(tmp_path:
     keys = _sidebar_keys(app)
     assert keys.index(SETTINGS_BOX) == keys.index(VIEW_CARD) - 1
     assert app.session_state["spy_traces"]
+
+
+def _publish_blank_run_rate(database_path: Path) -> None:
+    """공식 리비전의 효율(`RQ_RUN_RATE`) 값 한 칸을 비운 리비전을 새 공식버전으로 낸다 — 기준 정보의
+    빈 칸을 채우면 풀리는 계산 멈춤이다."""
+    from capa_simulation.persistence.cache import load_scenario_snapshot
+    from capa_simulation.persistence.models import ScenarioCreate
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    repository = DuckDBScenarioRepository(database_path)
+    official = repository.latest_official_release()
+    assert official is not None
+    snapshot = load_scenario_snapshot(str(database_path), official.revision_id)
+    tables = dict(snapshot.tables)
+    run_rate = tables["RQ_RUN_RATE"].copy()
+    run_rate["CAPA_RUN_RATE"] = run_rate["CAPA_RUN_RATE"].astype("object")
+    run_rate.loc[run_rate.index[0], "CAPA_RUN_RATE"] = None
+    tables["RQ_RUN_RATE"] = run_rate
+    created = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="효율 빈 칸",
+            source_simulation_code="BLANK-RATE-1",
+            source_simulation_name="효율 빈 칸",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="duckdb-rq-snapshot-v3",
+        ),
+        tables,
+        snapshot.preset,
+    )
+    repository.publish_official_revision(
+        str(created.scenario.scenario_id),
+        str(created.revision.revision_id),
+        release_name="효율 빈 칸",
+    )
+
+
+def test_a_blank_stop_on_home_opens_the_screen_to_fill(tmp_path: Path) -> None:
+    """기준 정보의 빈 칸으로 멈춘 HOME 의 오류 알림은 무엇을 · 어디서 채우는지 말하고 「그
+    화면으로」 가 기준 정보를 연다(UI-NTF-06 · UI-NTF-08). 전문 첫머리의 화면 이름은 앱이 적은
+    화면에서 온다 — 이 실행은 `app.py` 를 거치지 않아 비어 있다(`tests/test_page_bootstrap.py`)."""
+    database_path = tmp_path / "scenario.duckdb"
+    AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    _publish_blank_run_rate(database_path)
+
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    (note,) = [item for item in alert_notes(app) if item["code"] == "HM-01"]
+    assert note["short"].startswith("대당 Capa 계산 멈춤 — 기준 정보 「효율」 빈 칸 ")
+    assert (note["page"], note["href"]) == ("기준 정보", REFERENCE_DATA.href)
+    assert note["full"].startswith("대당 Capa 계산이 멈췄습니다. 기준 정보 「효율」 표의 ")
+    assert "RQ_RUN_RATE" not in note["full"]
 
 
 def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it(
