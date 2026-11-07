@@ -290,9 +290,7 @@ def test_apply_raises_the_revision_and_drops_only_that_tables_draft(calls: Calls
     assert after["revision"] == revision + 1
     assert after["content_token"] != token
     assert _scenario_table(app, "RQ_RUN_DAY")["RUN_DAY"].tolist() == [20.0]
-    assert any(
-        "RQ_RUN_DAY 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in successes(app)
-    )
+    assert any("일수 편집값을 활성 시나리오에 적용했습니다" in str(s.value) for s in successes(app))
     assert _draft(app) is None
     assert last(calls, FEED)["counts"]["cells"] == 0
     assert app.button(key=APPLY).disabled

@@ -159,7 +159,7 @@ def performance_from_edit_table(
         edit_table,
         PERFORMANCE_EDITOR_DIMENSIONS,
         "기준값",
-        "RQ_UPEH 편집값",
+        "UPEH 편집값",
     )
     if source is not None:
         months = [

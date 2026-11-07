@@ -970,7 +970,7 @@ class _Editor:
 
 def _edit_flash(
     editor_key: str,
-    table_name: str,
+    label: str,
     *,
     imported: bool,
     removed: int = 0,
@@ -1000,7 +1000,7 @@ def _edit_flash(
         removal = removed_notice.format(count=removed)
     return (
         f"{editor_key}_apply",
-        f"{table_name} {origin} 활성 시나리오에 적용했습니다. "
+        f"{label} {origin} 활성 시나리오에 적용했습니다. "
         f"{removal}"
         "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
     )
@@ -1061,7 +1061,7 @@ def _apply_edit(editor: _Editor, source: pd.DataFrame, *, imported: bool) -> Non
     rows = editor.to_rows(source)
     flash = _edit_flash(
         editor.editor_key,
-        editor.table_name,
+        TABLE_NAMES[editor.table_name],
         imported=imported,
         removed=_removed_values(editor, source if imported else None),
         removed_notice=editor.removed_notice,
@@ -1188,7 +1188,7 @@ if current_grid is not None:
         # 85·1.2·음수·일수 30.5 가 들어온다).
         paste_dialog(
             current_grid.template,
-            table_name=current_dataset,
+            table_name=TABLE_NAMES[current_dataset],
             dimensions=list(current_grid.dimensions),
             file_name=f"{current_dataset}_{effective_start_month}_{effective_end_month}.csv",
             editor_key=current_grid.editor_key,
