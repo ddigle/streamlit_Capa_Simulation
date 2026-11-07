@@ -220,13 +220,14 @@ def _viewer_is_admin() -> bool:
 
 
 def _upload_now() -> None:
-    """「지금 올리기」 콜백 — 위젯 콜백은 본문보다 먼저 돌아 보인 회차의 권한을 믿지 않는다."""
+    """「지금 올리기」 콜백 — 위젯 콜백은 본문보다 먼저 돌아 보인 회차의 권한을 믿지 않는다. 거부는
+    그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03)."""
     if not _viewer_is_admin():
-        queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error")
+        queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
     worker = object_sync_worker.running_worker()
     if worker is None:
-        queue_flash(FLASH_KEY, NO_WORKER_MESSAGE, kind="error")
+        queue_flash(FLASH_KEY, NO_WORKER_MESSAGE, kind="error", popup_only=True)
         return
     worker.request_now()
     queue_flash(FLASH_KEY, "올리기를 시작했습니다")

@@ -2212,6 +2212,32 @@ def test_reading_again_from_the_screen(
     assert problem_of(cfg, OTHER) is None
 
 
+def test_a_failed_action_of_the_list_goes_to_the_alert_popup_only(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다시 읽기 · 지우기의 실패는 곁에 고칠 입력이 없다 — 곁 상자 없이 알림창에만 뜬다(UI-NTF-03).
+    고를 사람을 고르지 않은 누름만 곁 칸을 고치는 말이라 곁에 선다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    app = _admin_app(cfg, monkeypatch)
+    app = _button(app, "admin_area_access_list_remove_button").click().run()
+    assert [item.value for item in app.warning] == ["지울 사람을 고르세요"]
+
+    store.force["GET"] = (403, "AccessDenied")
+    app = _button(app, "admin_area_access_list_reread").click().run()
+
+    assert not list(app.error), [item.value for item in app.error]
+    assert "인증 거절(HTTP 403 · AccessDenied)" in _flash_text(app)
+
+    store.force.clear()
+    store.force["PUT"] = (403, "AccessDenied")
+    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
+    app = _button(app, "admin_area_access_list_remove_button").click().run()
+
+    assert not list(app.error), [item.value for item in app.error]
+    assert "S3 에 저장하지 못했습니다" in _flash_text(app)
+
+
 def test_a_list_that_shrinks_on_reading_again_leaves_no_stale_choice(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
