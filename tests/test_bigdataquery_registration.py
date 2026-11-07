@@ -21,6 +21,8 @@ from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
+from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+from capa_simulation.services.bigdataquery_catalog_view import UNSAVABLE_REASON, CatalogRow
 from capa_simulation.services.scenario_list_edits import ListDraft
 
 
@@ -240,6 +242,53 @@ def test_both_steps_render_in_one_run(date_panels: dict[str, dict[str, Any]]) ->
     assert {"조회할 시뮬레이션 코드", "저장할 시나리오명"} <= {
         widget.label for widget in app.text_input
     }
+
+
+def _save_button(app: AppTest) -> Any:
+    return next(button for button in app.button if button.label == "DB 조회 후 시나리오 저장")
+
+
+def test_an_unsavable_row_locks_the_save_button_with_its_reason_in_the_balloon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """원천 코드가 저장을 막으면 빨간 상자를 세우지 않고 꺼진 저장 단추 풍선이 까닭을 말한다 — 표
+    「저장가능」 칸이 이미 값이다(설계 규칙 UI-INP-07 · UI-TXT-07)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+
+    row = CatalogRow("DEMO SIM#9", "저장 불가 줄", "P9", "PLAN 9", "2026-09-02", False)
+    pick = registration.CatalogPick(row=row, window=QueryWindow(date(2026, 9, 1), date(2026, 9, 8)))
+
+    app = _run(**{registration.CATALOG_PICK_KEY: pick})
+
+    assert not app.error
+    locked = _save_button(app)
+    assert locked.disabled and locked.help == UNSAVABLE_REASON
+
+    savable = _save_button(_run(__pick_row__=0))
+    assert not savable.disabled and not savable.help
+
+
+@pytest.mark.parametrize(
+    ("catalog_ready", "detail_ready"),
+    [(False, False), (False, True), (True, False), (True, True)],
+    ids=["둘 다 없음", "목록 없음", "상세 없음", "둘 다 있음"],
+)
+def test_the_buttons_a_missing_query_locks_say_why_in_their_balloons(
+    monkeypatch: pytest.MonkeyPatch, catalog_ready: bool, detail_ready: bool
+) -> None:
+    """조회 SQL 이 없어 꺼진 단추는 잠긴 동안만 까닭 풍선을 단다(설계 규칙 UI-INP-07)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: catalog_ready)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: detail_ready)
+
+    app = _run()
+
+    query = app.button(key=registration.CATALOG_QUERY_BUTTON_KEY)
+    assert query.disabled is (not catalog_ready)
+    assert (query.help or None) == (None if catalog_ready else registration.CATALOG_LOCKED_HELP)
+    save = _save_button(app)
+    assert save.disabled is (not detail_ready)
+    assert (save.help or None) == (None if detail_ready else registration.DETAIL_LOCKED_HELP)
 
 
 @pytest.mark.parametrize("package_ready", [False, True], ids=["패키지 없음", "패키지 있음"])

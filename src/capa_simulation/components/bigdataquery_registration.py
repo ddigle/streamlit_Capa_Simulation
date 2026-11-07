@@ -135,6 +135,14 @@ DETAIL_WINDOW_HELP: Final = (
     "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 끝 날을 늘립니다 — 기간이 길수록 "
     "조회가 오래 걸립니다."
 )
+# 조회 SQL 이 없어 잠긴 두 단추의 풍선 — 잠긴 동안만 까닭을 말한다(설계 규칙 UI-INP-07). 채울 자리는
+# 상태 알림 `AD-04` 전문(Alarm)이 적는다.
+CATALOG_LOCKED_HELP: Final = (
+    "목록 조회 SQL 이 설정되지 않아 조회할 수 없습니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+)
+DETAIL_LOCKED_HELP: Final = (
+    "상세 조회 SQL 이 설정되지 않아 조회 · 저장할 수 없습니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+)
 # 고른 행이 검색에 가려졌을 때의 표지 풍선.
 PICK_HIDDEN_HELP: Final = (
     "고른 행이 지금 검색 결과에 없습니다 — 아래 등록 폼의 값은 그대로 유지됩니다."
@@ -405,6 +413,7 @@ def _render_catalog_form(*, configured: bool) -> None:
         icon=":material/search:",
         type="primary",
         disabled=not configured,
+        help=None if configured else CATALOG_LOCKED_HELP,
     ):
         return
     window = _submitted_window()
@@ -659,9 +668,9 @@ def _render_registration_form(
     st.session_state.setdefault(FORM_DETAIL_START_KEY, None)
     st.session_state.setdefault(FORM_DETAIL_END_KEY, None)
     pick = _stored_pick()
+    # 저장 불가는 목록 표 「저장가능」 칸이 값으로, 까닭은 잠긴 저장 단추 풍선이 말한다(설계 규칙
+    # UI-INP-07 — 막힘을 상자로 세우지 않는다).
     unsavable = pick is not None and not pick.row.savable
-    if unsavable:
-        st.error(UNSAVABLE_REASON)
     # 상세 조회 기간을 채우는 규칙은 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른 코드의
     # 원천 등록일 값 줄만 둔다(설계 규칙 UI-TXT-01 · UI-TXT-04). 늘 서 있는 칸 안이라 값 줄이 생기고
     # 빠져도 아래 폼의 자리가 밀리지 않는다. 날짜 칸은 「적용」 트리거를 바로 받아야 해 폼 밖이다 —
@@ -702,6 +711,7 @@ def _render_registration_form(
             type="primary",
             width="stretch",
             disabled=not configured or unsavable,
+            help=DETAIL_LOCKED_HELP if not configured else UNSAVABLE_REASON if unsavable else None,
         )
     # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
     # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CS 빈 행 · 대당 Capa 멈춤)는 알림창 ·
