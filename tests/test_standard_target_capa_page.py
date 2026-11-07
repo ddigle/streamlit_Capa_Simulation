@@ -542,6 +542,26 @@ def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -
     assert not [caption.value for caption in app.main.caption if "맞췄습니다" in caption.value]
 
 
+def test_the_clamp_notice_goes_out_on_the_round_a_calculation_stop_cuts_short() -> None:
+    """맞춘 회차가 계산 멈춤으로 끊겨도 알림은 그 회차에 나간다 — 세션에 남으면 기간을 바꾼 뒤 정상
+    회차가 지나간 기간을 적은 글을 꺼내 맞춘 일이 없는 회차에 거짓 알림이 된다."""
+    error = "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 2건, 예시 []"
+    script = TEST_SCRIPT.replace(
+        "RAISE_IN_CALCULATION = None", f"RAISE_IN_CALCULATION = ValueError({error!r})"
+    )
+    assert script != TEST_SCRIPT
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["standard_target_start_date"] = date(2026, 6, 15)
+    app.session_state["standard_target_end_date"] = date(2027, 3, 20)
+    app = app.run()
+
+    assert not app.exception
+    assert data_error_texts(app)
+    (note,) = flashed(app, "warning")
+    assert "조회일이 현재 조회기간 밖이라 2026-08-01 ~ 2026-08-31 안으로" in note.value
+    assert "standard_target_date_fit_flash" not in app.session_state
+
+
 def test_saved_view_dates_in_reverse_order_are_corrected() -> None:
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state["standard_target_start_date"] = date(2026, 8, 25)

@@ -756,7 +756,8 @@ maximum_date = _last_day(effective_end_month)
 default_start_date = _first_day(effective_start_month)
 default_end_date = _last_day(effective_end_month)
 # 날짜를 맞춘 사실은 사건 알림이다 — 조회일 칸은 접힌 카드 안이라 그 곁에 둘 수 없고, 본문에 두면
-# 그 회차에만 결과 상자가 밀린다(설계 규칙 UI-NTF-01). 칸 `render_flash` 는 결과 상자 작업 줄이다.
+# 그 회차에만 결과 상자가 밀린다(설계 규칙 UI-NTF-01). 맞춘 회차에 바로 내보낸다 — 아래 계산 멈춤
+# 뒤에서 꺼내면 멈춘 회차의 글이 세션에 남아 뒤 회차에 지나간 기간을 말한다.
 date_notes = (
     [
         "조회일이 현재 조회기간 밖이라 "
@@ -770,6 +771,7 @@ if st.session_state[START_DATE_KEY] > st.session_state[END_DATE_KEY]:
     date_notes.append("시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
 if date_notes:
     queue_flash(DATE_FIT_FLASH_KEY, " ".join(date_notes), kind="warning", popup_only=True)
+render_flash(DATE_FIT_FLASH_KEY)
 
 # 저장된 선택지 문자열이 현재 옵션에 없으면 위젯 생성이 실패한다. 옵션은 화면이 소유하므로
 # 검증도 여기서 한다. 상세 토글이 꺼져 위젯이 없는 실행에서도 세션값을 정상으로 유지한다.
@@ -1078,7 +1080,7 @@ with action_row:
             # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
             help=CLEAR_LOCKED_HELP if availability.empty else None,
         )
-    render_flash(AVAILABILITY_FLASH_KEY, DATE_FIT_FLASH_KEY)
+    render_flash(AVAILABILITY_FLASH_KEY)
 if st.session_state.get(DIALOG_KEY) == PASTE_DIALOG:
     _paste_dialog()
 elif st.session_state.get(DIALOG_KEY) == CLEAR_DIALOG:
