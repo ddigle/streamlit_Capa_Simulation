@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alert_marks import alert_notes
 from grid_fake import Calls, install_fake_grid, last, outbox, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _two_scenarios
@@ -432,14 +433,23 @@ def _their_common_save(repository: DuckDBEquipmentRepository) -> None:
     clear_equipment_repository()
 
 
-def _head_counts_my_edit(app: AppTest, grid: Calls) -> None:
-    _ok(send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": "담당자", "text": "담당Z"}))
+def _head_counts_my_edit(
+    app: AppTest, grid: Calls, column: str = "담당자", text: str = "담당Z"
+) -> None:
+    _ok(send_ops(app, grid, {"op": "cell", "id": "s:EQ-01", "col": column, "text": text}))
     chips, dots = app.session_state[HEAD]
     assert CHIP_TOP in chips and dots, app.session_state[HEAD]
 
 
 def _discard_warnings(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.warning if "버리고" in str(item.value)]
+
+
+def _discard_events(app: AppTest) -> list[dict[str, Any]]:
+    """마지막 회차 표지에 실린 버림 사건 알림(`EQ-05` — 다시 보낸 것 포함). 다시 돈 회차도 같은 id
+    로 보내야 브라우저가 놓치지 않는다 — 다시 돌기 전 회차의 표지는 브라우저가 훑기 전에 다음
+    회차가 덮을 수 있다(사본 앱 확인: 탭만 옮긴 회차에 알림창 · Alarm 에서 빠졌다)."""
+    return [note for note in alert_notes(app, again=True) if note.get("code") == "EQ-05"]
 
 
 def test_the_head_drops_an_edit_another_users_save_threw_away_in_the_same_run(
@@ -460,9 +470,11 @@ def test_the_head_drops_an_edit_another_users_save_threw_away_in_the_same_run(
     assert app.session_state[HEAD] == ([], [])
     assert app.session_state[RUNS] == runs + 2
     assert len(_discard_warnings(app)) == 1
+    assert len(_discard_events(app)) == 1
 
     _ok(app.run())
     assert app.session_state[RUNS] == runs + 3
+    assert not _discard_events(app)
 
 
 def test_a_save_refused_by_another_users_common_save_keeps_its_refusal_after_the_head_run(
@@ -498,6 +510,7 @@ def test_a_save_refused_by_another_users_common_save_keeps_its_refusal_after_the
     assert refusals[0].endswith("최신 저장본을 확인한 뒤 다시 고쳐 저장하세요."), refusals
     assert len(sent) == 1, sent
     assert len(_discard_warnings(app)) == 1
+    assert len(_discard_events(app)) == 1
 
 
 def test_a_reopen_without_lost_edits_does_not_spend_one_more_run(
@@ -560,3 +573,43 @@ def test_space_drops_the_head_marks_too_when_it_reopens_the_buffer(
     assert app.session_state[HEAD] == ([], [])
     assert app.session_state[RUNS] == runs + 2
     assert len(_discard_warnings(app)) == 1
+    assert len(_discard_events(app)) == 1
+
+
+def test_a_space_save_refused_by_another_users_common_save_keeps_its_refusal_after_the_head_run(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """Space 「배치 저장」 도 같다 — 남의 공통 저장에 거부되고 본문이 편집을 버려 한 번 더 돌면,
+    거부 글은 다시 돈 회차가 그린다(앞 회차가 꺼내 그리면 다시 돈 회차에 사라진다)."""
+    repository, _ = _two_scenarios(tmp_path)
+    database = repository.database_path
+    clear_equipment_repository()
+    app = AppTest.from_string(
+        _head_probe("space_status.py")
+        + _ROUTER.format(
+            database=str(database),
+            simulation=str(database.with_name(f"{database.stem}_simulation.duckdb")),
+            space=str(SPACE_PAGE),
+            equipment=str(PAGE),
+        )
+        + _READ_MARKS,
+        default_timeout=90,
+    )
+    app.session_state[EQUIPMENT_TAB_KEY] = EQUIPMENT_MASTER_TAB
+    app.session_state[SELECTION_KEY] = {"scenario_id": OPERATIONS, "schedule_revision_id": None}
+    _ok(app.run())
+    # 공식 배치 편집 — 남의 공통 저장 뒤에 다시 얹지 않는다(가정 배치만 다시 얹는다).
+    _head_counts_my_edit(app, grid, "X좌표", "55")
+    app.session_state["test_page"] = "space"
+    _ok(app.run())
+    _their_common_save(repository)
+    runs = app.session_state[RUNS]
+
+    app.button(key="space_layout_save").click()
+    _ok(app.run())
+
+    assert app.session_state[HEAD] == ([], [])
+    assert app.session_state[RUNS] == runs + 2
+    refusals = [str(item.value) for item in app.error if "저장하지 않았습니다" in str(item.value)]
+    assert len(refusals) == 1, [str(item.value) for item in app.error]
+    assert len(_discard_events(app)) == 1

@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 import pandas as pd
@@ -333,6 +333,10 @@ HEAD_STALE_KEY = "equipment_workspace_head_stale_v1"
 # 그 회차에 비켜 둔 곁 알림 칸 {칸 이름: 담아 둔 값} — 다시 도는 회차가 그 칸에 한 번 그리고 한 번
 # 보낸다(`hold_until_head_rerun`).
 _HEAD_HELD_KEY = "equipment_workspace_head_held_v1"
+# 그 회차에 담은 사건 알림(버림 `EQ-05`)을 다시 도는 회차가 같은 id 로 한 번 더 보낼 목록 — 다시
+# 돌기 전 회차의 표지는 브라우저가 훑기 전에 다음 회차가 덮을 수 있다(브라우저는 id 로 한 번만
+# 띄운다 — `flash` 의 `again` 과 같은 꼴).
+_HEAD_RESEND_KEY = "equipment_workspace_head_resend_v1"
 # 편집본을 저장본에서 새로 세운 직후의 세대. 지금 세대가 이보다 크면 저장 안 한 편집이 있다.
 _SEEDED_GENERATION_KEY = "equipment_workspace_seeded_generation_v1"
 # 편집본이 저장본으로 돌아온 세대(`_note_if_back_to_saved`). 세운 세대를 옮기지 않고 따로 둔다 —
@@ -603,11 +607,18 @@ def _head_marks() -> tuple[bool, tuple[str, ...]]:
 
 
 def _release_head_hold() -> None:
-    """비켜 둔 곁 알림을 제 칸으로 되돌린다."""
+    """비켜 둔 곁 알림을 제 칸으로 되돌리고, 다시 보낼 사건 알림을 담아 둔 사건 알림 끝에 잇는다."""
     held = st.session_state.pop(_HEAD_HELD_KEY, None)
     if isinstance(held, dict):
         for key, value in held.items():
             st.session_state[key] = value
+    resend = st.session_state.pop(_HEAD_RESEND_KEY, None)
+    if isinstance(resend, list) and resend:
+        outbox = st.session_state.get(alerts.OUTBOX_KEY)
+        st.session_state[alerts.OUTBOX_KEY] = [
+            *(outbox if isinstance(outbox, list) else []),
+            *resend,
+        ]
 
 
 def hold_until_head_rerun(*keys: str) -> None:
@@ -695,7 +706,8 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     """
     # 앞 회차가 다시 돌기 전에 끊겼으면(본문 `st.rerun()` · `st.stop()`) 표지와 비켜 둔 알림이
     # 남는다 — 끊긴 뒤 이 회차가 머리를 이미 새 값으로 그렸으니 알림만 제 칸으로 되돌린다.
-    if st.session_state.pop(HEAD_STALE_KEY, None) is not None or _HEAD_HELD_KEY in st.session_state:
+    lingering = st.session_state.pop(HEAD_STALE_KEY, None) is not None
+    if lingering or _HEAD_HELD_KEY in st.session_state or _HEAD_RESEND_KEY in st.session_state:
         _release_head_hold()
     token = revision_token(latest_snapshot)
     previous = st.session_state.get(_REVISION_KEY)
@@ -829,8 +841,16 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             _bump_buffer_generation()
     if head_before is not None and _head_marks() != head_before:
         # 머리는 버린 편집을 센 채 그렸다 — 부르는 화면이 회차 끝에 한 번 다시 돈다. 다시 얹은
-        # 편집이 남아 표시가 그대로면 머리가 맞아 돌지 않는다.
+        # 편집이 남아 표시가 그대로면 머리가 맞아 돌지 않는다. 방금 담은 사건 알림(버림 `EQ-05`)은
+        # 다시 도는 회차가 같은 id 로 한 번 더 보낸다 — 이 회차의 표지만으로는 탭만 옮긴 회차에
+        # 알림창 · Alarm 에서 빠졌다(사본 앱 확인). 다시 열었다는 안내 칸은 `flash` 가 다시 보낸다.
         st.session_state[HEAD_STALE_KEY] = True
+        outbox = st.session_state.get(alerts.OUTBOX_KEY)
+        st.session_state[_HEAD_RESEND_KEY] = [
+            cast(alerts.AlertNote, {**note, "again": True})
+            for note in (outbox if isinstance(outbox, list) else [])
+            if isinstance(note, dict)
+        ]
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
 
