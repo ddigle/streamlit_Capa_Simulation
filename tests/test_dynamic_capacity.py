@@ -7,6 +7,7 @@ import pytest
 
 from capa_simulation.components.dynamic_capacity_dashboard import (
     build_capacity_waterfall_figure,
+    build_process_comparison_figure,
 )
 from capa_simulation.services.dynamic_capacity import (
     aggregate_dynamic_capacity,
@@ -109,6 +110,18 @@ def test_dynamic_capacity_demo_filters_process_product_and_date() -> None:
 def test_dynamic_capacity_demo_has_one_requirement_basis_per_process() -> None:
     demo = build_dynamic_capacity_demo()
     assert demo.groupby("공정")["소요기준"].nunique().le(1).all()
+
+
+def test_the_process_comparison_puts_the_worst_process_on_top() -> None:
+    """나란한 「관리 우선순위」 표와 같은 차례다 — 범주는 실현률 오름차순이고 축을 뒤집어 나쁜
+    공정이 맨 위에 온다(후보 g7-20)."""
+    summary = aggregate_dynamic_capacity(build_dynamic_capacity_demo(), ["공정"])
+    worst = summary.sort_values("Capa 실현률", ascending=True, kind="stable").iloc[0]
+
+    figure = build_process_comparison_figure(summary)
+
+    assert figure.layout.yaxis.autorange == "reversed"
+    assert figure.data[0].y[0] == str(worst["공정"])
 
 
 def test_the_waterfall_names_quantities_not_the_gap_rates() -> None:
