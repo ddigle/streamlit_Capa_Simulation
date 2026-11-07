@@ -47,7 +47,8 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     assert [heading.value for heading in app.title] == ["Admin Area"]
     # 운영 관리 기능은 이미 쓰는 화면이라 `(구현중)` 배지를 달지 않는다.
     assert not any("구현중" in markdown.value for markdown in app.markdown)
-    assert any("Proc Rename" in subheader.value for subheader in app.subheader)
+    # 탭 이름 밑에 같은 글의 제목을 다시 그리지 않는다(설계 규칙 UI-TXT-07).
+    assert not [subheader.value for subheader in app.subheader]
     # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 왔고, 원천 품질과 HOME 에서 걷은 계산
     # 알림을 모은 「알림 모음」 이 뒤에 붙어 네 탭이다.
     assert [tab.label for tab in app.main.tabs] == [
