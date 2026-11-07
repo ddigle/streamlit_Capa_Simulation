@@ -41,6 +41,7 @@ from capa_simulation.components.equipment_scenario_management import (
     CLEAR_LAYOUT_CONFIRM_KEY,
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
+    CONFIRM_LOCKED_HELP,
     LAYOUT_BLOCKED_LINE,
     LEGACY_TRACE_BLOCKED_LINE,
     PUBLISH_BUTTON_HELP,
@@ -754,8 +755,11 @@ def test_clearing_the_layout_writes_a_new_revision_and_moves_the_session(tmp_pat
     (confirm,) = [box for box in app.checkbox if str(box.key).startswith(CLEAR_LAYOUT_CONFIRM_KEY)]
     clear = next(button for button in app.button if button.key == CLEAR_LAYOUT_BUTTON_KEY)
     assert clear.disabled
+    # 잠긴 동안은 까닭이 먼저다(설계 규칙 UI-INP-07) — 체크를 켜면 뜻만 남는다.
+    assert str(clear.help).startswith(CONFIRM_LOCKED_HELP)
 
     confirm.check().run()
+    assert str(app.button(key=CLEAR_LAYOUT_BUTTON_KEY).help).startswith("최신 r2의 일정")
     _ok(app.button(key=CLEAR_LAYOUT_BUTTON_KEY).click().run())
 
     newest = repository.list_schedule_revisions(setup, limit=1)[0]

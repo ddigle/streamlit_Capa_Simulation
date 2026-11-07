@@ -245,8 +245,8 @@ LEGACY_TRACE_BLOCKED_LINE = ":material/block: 옛 배포 흔적으로 막힘"
 CONTINUE_BUTTON_HELP = (
     "백업을 복원할 수 있으면 복원이 먼저입니다(런북 4-2). 이어 쓰기는 되돌릴 수 없습니다."
 )
-# 체크가 꺼져 잠긴 동안 그 풍선 앞에 붙는 까닭(설계 규칙 UI-INP-07).
-CONTINUE_LOCKED_HELP = "위 확인 체크를 켜면 누를 수 있습니다."
+# 체크가 꺼져 잠긴 동안 그 풍선 앞에 붙는 까닭(설계 규칙 UI-INP-07 — `_confirm_help`).
+CONFIRM_LOCKED_HELP = "위 확인 체크를 켜면 누를 수 있습니다."
 REVISION_NAME_SAVE_NAME = "equipment_schedule_revision_name"
 SCENARIO_NAME_SAVE_NAME = "equipment_scenario_name"
 # 「배치 차이 모두 지우기」(설비 시나리오 2단계 S4 — 가정 시나리오 최신에 배치 차이가 있을 때만).
@@ -1032,6 +1032,12 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
             _render_publish(database_path, session, scenario, chosen)
 
 
+def _confirm_help(detail: str, *, agreed: bool) -> str:
+    """확인 체크로 잠기는 단추의 풍선 — 잠긴 동안은 까닭이 먼저, 그 뒤에 늘 말하는 뜻(설계 규칙
+    UI-INP-07)."""
+    return detail if agreed else f"{CONFIRM_LOCKED_HELP} {detail}"
+
+
 def _named_pick(
     key: str, pick_key: str, names: Mapping[str, str], *, default: str, basis: object
 ) -> str:
@@ -1601,7 +1607,10 @@ def _render_restore(
         disabled=not agreed,
         key=RESTORE_BUTTON_KEY,
         width="stretch",
-        help=restore_button_help(scenario, revision, preview, official_scenario=official_scenario),
+        help=_confirm_help(
+            restore_button_help(scenario, revision, preview, official_scenario=official_scenario),
+            agreed=agreed,
+        ),
     )
     if not clicked or not agreed:
         return
@@ -2076,7 +2085,7 @@ def _render_clear_layout(
         disabled=not agreed,
         key=CLEAR_LAYOUT_BUTTON_KEY,
         width="stretch",
-        help=clear_layout_button_help(scenario),
+        help=_confirm_help(clear_layout_button_help(scenario), agreed=agreed),
     )
     if not clicked or not agreed:
         return
@@ -2721,7 +2730,7 @@ def _render_legacy_trace(database_path: str, count: int) -> None:
         icon=":material/fast_forward:",
         key=CONTINUE_BUTTON_KEY,
         disabled=not agreed,
-        help=CONTINUE_BUTTON_HELP if agreed else f"{CONTINUE_LOCKED_HELP} {CONTINUE_BUTTON_HELP}",
+        help=_confirm_help(CONTINUE_BUTTON_HELP, agreed=agreed),
     ):
         try:
             get_equipment_repository(database_path).acknowledge_legacy_trace(

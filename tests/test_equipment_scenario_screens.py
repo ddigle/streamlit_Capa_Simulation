@@ -46,10 +46,10 @@ from capa_simulation.components.equipment_scenario_management import (
     CAPA_SCENARIO_TAB,
     CLONE_BUTTON_KEY,
     CLONE_NAME_KEY,
+    CONFIRM_LOCKED_HELP,
     CONTINUE_BLOCKED_LINE,
     CONTINUE_BUTTON_HELP,
     CONTINUE_BUTTON_KEY,
-    CONTINUE_LOCKED_HELP,
     EQUIPMENT_SCENARIO_TAB,
     LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
@@ -1391,8 +1391,9 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     assert "새 리비전 r3 · 비가동 1행 → 1행 · 일정 없음 1대(새로 빠짐 1대) · 공식 v3 지정" in texts
     assert not any("그대로 남습니다" in text or "「일정 없음」 이 됩니다" in text for text in texts)
     balloon = str(app.button(key=RESTORE_BUTTON_KEY).help)
+    # 잠긴 동안은 까닭이 먼저다(설계 규칙 UI-INP-07) — 체크를 켜면 뜻만 남는다.
     assert balloon.startswith(
-        "r1의 일정(날짜 여섯·시나리오 메모·비가동)을 새 리비전 r3으로 저장합니다"
+        f"{CONFIRM_LOCKED_HELP} r1의 일정(날짜 여섯·시나리오 메모·비가동)을 새 리비전 r3으로 저장"
     )
     assert balloon.endswith(RESTORE_PUBLISH_HELP)
     confirm = _restore_confirm(app)
@@ -1405,6 +1406,7 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
 
     confirm.check()
     _ok(app.run())
+    assert str(app.button(key=RESTORE_BUTTON_KEY).help).startswith("r1의 일정(날짜 여섯")
     app.button(key=RESTORE_BUTTON_KEY).click()
     _ok(app.run())
 
@@ -1973,7 +1975,7 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     # 판에서 만든 두 호기 — 옛 배포 리비전 r2 는 비어 있다).
     locked = app.button(key=CONTINUE_BUTTON_KEY)
     assert locked.disabled
-    assert str(locked.help).startswith(CONTINUE_LOCKED_HELP)
+    assert str(locked.help).startswith(CONFIRM_LOCKED_HELP)
     assert "이어 쓰기는 되돌릴 수 없습니다" in str(locked.help)
     confirm = next(box for box in app.checkbox if "이대로 이어 씁니다" in str(box.label))
     assert "옛 배포 리비전 r2를 공통 대장 최신으로" in str(confirm.label)
