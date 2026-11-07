@@ -284,7 +284,6 @@
   border: 1px solid var(--emg-border);
   border-radius: 8px;
   background: var(--emg-surface);
-  overflow: hidden;
 }
 
 .emg-grid.is-empty {
@@ -327,6 +326,13 @@
   background: var(--emg-accent);
   color: var(--emg-on-accent);
   font-weight: 700;
+}
+
+.emg-sel-anchor {
+  order: -1;
+  position: relative;
+  z-index: 7;
+  height: 0;
 }
 
 .emg-sel {

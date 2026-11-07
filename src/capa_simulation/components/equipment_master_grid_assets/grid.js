@@ -1089,7 +1089,7 @@ function buildGridSkeleton(host, S) {
   }
   foot.appendChild(keys)
   foot.appendChild(legend)
-  for (const part of [bar, sel, toast, box, foot]) root.appendChild(part)
+  for (const part of [bar, selAnchor, toast, box, foot]) root.appendChild(part)
   host.appendChild(root)
   Object.assign(S, { skeleton: true, root, bar, selBar: sel, toastBar: toast, scroller: box, table, head, body, foot })
   S.repaintToast = () => paintToast(S)
@@ -1122,6 +1122,11 @@ function buildGridSkeleton(host, S) {
     }
   })
   listen(S, body, 'focusin', (event) => {
+  // 고른 줄 띠는 흐름 밖에 떠서 표 틀 윗변에서 위로 자란다 — 줄을 고를 때 표가 밀리지 않고(설계 규칙 UI-PRF-03) 칸 묶음 ·
+  // 표 머리는 그대로 쓴다. 덮는 불러오기 줄은 고른 동안 쓸 일이 없다 — 불러오면 목록이 바뀌어 고름이 풀린다. 칸 차례(Tab)는
+  // 칸 묶음 다음 그대로다(서식 `order`).
+  const selAnchor = el('div', 'emg-sel-anchor')
+  selAnchor.appendChild(sel)
     const cell = event.target.closest && event.target.closest('.emg-c[data-col]')
     if (cell && !S.painting) S.focus = { id: cell.dataset.id, col: Number(cell.dataset.col) }
   })
