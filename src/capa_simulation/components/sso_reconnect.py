@@ -168,8 +168,11 @@ def reconnect_script(cfg: SsoConfig) -> str:
     fill = tokens.palette_value("light", "ACCENT")
     ink = tokens.palette_value("light", "ACCENT_TEXT")
     shade = tokens.palette_value("light", "NAV_SHADOW")
+    # 양옆 12px 안에서 내용 폭으로 서고 가운데 놓인다 — `left:50%` 로 밀면 내용 맞춤 폭의 상한이
+    # 남은 절반이 되어 좁은 창에서 띠가 창의 절반 폭으로 접힌다.
     box_style = (
-        "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;"
+        "position:fixed;top:12px;left:12px;right:12px;margin-inline:auto;width:fit-content;"
+        "z-index:2147483647;"
         "max-width:min(720px,calc(100vw - 24px));box-sizing:border-box;padding:12px 16px;"
         f"border-radius:8px;background:{fill};color:{ink};font-family:{tokens.FONT_FAMILY};"
         f"font-size:14px;line-height:1.5;box-shadow:0 6px 24px {shade};"

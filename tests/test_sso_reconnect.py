@@ -102,6 +102,15 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     assert 'link.target = "_self"' in script
 
 
+def test_the_band_is_centred_within_side_gutters_not_half_the_window() -> None:
+    """띠는 양옆 12px 안에서 내용 폭으로 가운데 선다 — `left:50%` 로 밀면 내용 맞춤 폭의 상한이
+    창의 절반이 되어 좁은 창에서 글이 여러 줄로 접힌다(창 600px 에서 폭 300px)."""
+    script = reconnect_script(use_config())
+
+    assert "left:12px;right:12px;margin-inline:auto;width:fit-content;" in script
+    assert "left:50%" not in script and "translateX" not in script
+
+
 def test_script_text_cannot_break_out_of_its_script_tag() -> None:
     cfg = use_config({names.ENV_PUBLIC_URL: "https://capa.example.invalid/x</script>y"})
 
