@@ -11,11 +11,11 @@
   행 — 설비 0031 — 와 괄호 안 실효 표지 「공식과 같음」·「실효 호기 n대」·「지운 호기 n행」)·올라와
   있음. 고른 시나리오에 「시나리오 이름 바꾸기」 와, 가정 시나리오 최신에 배치 차이가 있으면 「배치
   차이 모두 지우기」(차이만 비운 새 리비전 — 설계 6-6). 옛 판(0031 을 모르는
-  배포)이 저장해 가정 배치가 빠진 리비전이 있으면 그 시나리오 이름과 수를 한 줄로(설계 14장).
+  배포)이 저장해 가정 배치가 빠진 리비전은 상태 알림(`SC-03`)이 시나리오 전부를 적는다(설계 14장).
 - **리비전 표**: 고른 시나리오의 일정 리비전(r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동
   행·배치·공식·메모). 「배치」 는 저장된 배치 차이 행 수(최신 줄에는 시나리오 표와 같은 실효 표지),
-  옛 판 흔적은 「옛 판 저장 — rN 배치 빠짐」 이고 표 위에 되살리는 길(그 리비전으로 되돌리기)을
-  적는다. 표와 리비전 상자는 리비전을 **전부** 싣는다(2026-11-01 사용자 결정 A4 — 표는 스크롤·
+  옛 판 흔적은 칸 표지 「옛 판 저장 — rN 배치 빠짐」 하나이고 되살리는 길은 `SC-03` 전문이 말한다.
+  표와 리비전 상자는 리비전을 **전부** 싣는다(2026-11-01 사용자 결정 A4 — 표는 스크롤·
   찾기, 상자는 글로 찾음. 사이드바 팝업 라디오만 최근 50). 표 아래 한 줄이 늘 전체 수와 출처별 수를
   적는다(「전체 82줄(이관 70 · 저장 12)」).
 - **고른 리비전의 작업 다섯**: 「이 리비전 불러오기」(세션을 옮김 — 미저장이면 「변경을 버리고
@@ -657,33 +657,22 @@ def layout_trace_sources(revisions: Sequence[EquipmentScheduleRevisionSummary]) 
     return result
 
 
-def layout_trace_sentence(
+def layout_trace_words(
     scenario: EquipmentScenarioSummary, revisions: Sequence[EquipmentScheduleRevisionSummary]
-) -> str | None:
-    """고른 설비 시나리오의 옛 코드 흔적 경고 한 문장(없으면 None) — 가장 늦은 흔적과 그 앞
-    배치안."""
+) -> str:
+    """`SC-03` 전문의 시나리오 한 칸 — 「이름」 가장 늦은 흔적(그 앞 배치안, 여럿이면 수). 알림은
+    평문이라 이름을 막지 않는다. 리비전을 읽지 못해 흔적을 짚지 못하면 이름과 수만 적는다."""
+    name = f"「{scenario.scenario_name}」"
     traces = layout_trace_sources(revisions)
-    if not traces and not scenario.layout_trace_count:
-        return None
-    name = quoted(scenario.scenario_name)
     if not traces:
-        return (
-            f"{name} 에 옛 판이 저장해 앞 리비전의 가정 배치가 빠진 리비전이 "
-            f"{scenario.layout_trace_count:,}개 있습니다 — 빠지기 전 "
-            "리비전으로 되돌리면(이 리비전으로 되돌리기) 되살아납니다."
-        )
+        return f"{name} {scenario.layout_trace_count:,}개"
     latest = max(traces)
-    source = f"r{traces[latest]}"
     more = (
-        f" 옛 판이 저장한 리비전은 모두 {scenario.layout_trace_count:,}개입니다."
+        f" · 옛 판 저장 모두 {scenario.layout_trace_count:,}개"
         if scenario.layout_trace_count > 1
         else ""
     )
-    return (
-        f"{name} r{latest}{topic_particle(f'r{latest}')} 옛 판이 저장해 {source}의 가정 배치가 "
-        f"빠졌습니다 — {with_direction_particle(source)} 되돌리기(이 리비전으로 되돌리기)로 "
-        f"되살립니다.{more}"
-    )
+    return f"{name} r{latest}(r{traces[latest]} 배치 빠짐{more})"
 
 
 def open_equipment_scenario_management() -> None:
@@ -751,20 +740,18 @@ def render_equipment_scenario_section() -> None:
     # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은 알림
     # 칸으로 낸다.
     report_session_notices(session, tab=EQUIPMENT_SCENARIO_TAB_NAME)
-    report_layout_traces(session)
+    report_layout_traces(database_path, session)
     render_equipment_scenario_management(database_path, session)
 
 
-def report_layout_traces(session: EquipmentSession) -> None:
+def report_layout_traces(database_path: str, session: EquipmentSession) -> None:
     """옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오를 상태
-    알림(`SC-03`)으로 낸다 — 시나리오 이름 · 개수 목록은 내역이라 자리에 늘어놓지 않는다(설계 규칙
-    UI-TXT-04 · UI-NTF-02). 없어도 부른다(해소 · 이벤트 칸 한 자리). 고른 시나리오의 흔적과 되살리는
-    길은 리비전 칸 글(`layout_trace_sentence`)이 말한다. DB 전체의 조건이라 범위가 없다(None).
-    「그 화면으로」 는 이 탭을 연다."""
+    알림(`SC-03`)으로 낸다 — 시나리오 · 빠진 리비전 · 되살리는 길은 내역이라 자리에 늘어놓지 않는다
+    (설계 규칙 UI-TXT-04 · UI-NTF-02). 자리에는 리비전 표 「배치」 칸 표지만 남는다. 없어도 부른다
+    (해소 · 이벤트 칸 한 자리). DB 전체의 조건이라 범위가 없고(None) 지문 · 전문은 고른 시나리오에
+    기대지 않는다 — 흔적이 있는 시나리오 전부를 적는다(AGENTS 9장). 「그 화면으로」 는 이 탭을
+    연다."""
     traced = [item for item in session.catalog.scenarios if item.layout_trace_count]
-    listing = ", ".join(
-        f"{quoted(item.scenario_name)} {item.layout_trace_count:,}개" for item in traced
-    )
     alerts.state(
         "SC-03",
         scope=None,
@@ -774,15 +761,32 @@ def report_layout_traces(session: EquipmentSession) -> None:
             f"옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 {len(traced)}개 — "
             "시나리오 관리 › 설비 시나리오"
         ),
-        full=(
-            "옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 있는 설비 "
-            f"시나리오 — {listing}. 시나리오 관리 「설비 시나리오」 에서 그 시나리오를 고르면 "
-            "리비전 칸이 빠지기 전 리비전과 되살리는 길(이 리비전으로 되돌리기)을 말합니다."
-        )
-        if traced
-        else None,
+        full=_layout_traces_full(database_path, traced) if traced else None,
         tab=EQUIPMENT_SCENARIO_TAB_NAME,
     )
+
+
+def _layout_traces_full(database_path: str, traced: Sequence[EquipmentScenarioSummary]) -> str:
+    """`SC-03` 전문 — 흔적이 있는 시나리오마다 빠진 리비전(`layout_trace_words`)과 되살리는 길."""
+    listing = ", ".join(
+        layout_trace_words(item, _scenario_revisions(database_path, item)) for item in traced
+    )
+    return (
+        "옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 — "
+        f"{listing}. 빠지기 전 리비전을 시나리오 관리 「설비 시나리오」 에서 고르고 「이 리비전으로"
+        " 되돌리기」 로 되살립니다."
+    )
+
+
+def _scenario_revisions(
+    database_path: str, scenario: EquipmentScenarioSummary
+) -> tuple[EquipmentScheduleRevisionSummary, ...]:
+    """그 시나리오의 리비전(캐시). 읽지 못하면 빈 묶음 — 알림은 이름과 수로 남고, 그 오류는 탭
+    본문의 리비전 목록이 알린다(`SC-02`)."""
+    try:
+        return load_equipment_schedule_revisions(database_path, scenario.equipment_scenario_id)
+    except BOOTSTRAP_ERRORS:
+        return ()
 
 
 def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
@@ -941,10 +945,6 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     if not revisions:
         st.caption("이 설비 시나리오에 저장된 리비전이 없습니다.")
         return
-    trace = layout_trace_sentence(scenario, revisions)
-    with st.container():
-        if trace is not None:
-            st.warning(trace, icon=":material/history:")
     # 표 도구 막대(열 보기·내려받기·찾기·전체 화면)는 표 오른쪽 위에 떠 표 위로 솟는다 — 붙어 있으면
     # 바로 위 줄 맨 오른쪽 팝오버 단추(「시나리오 이름 바꾸기」·「배치 차이 모두 지우기」)를 덮어
     # 표에서 단추로 옮긴 누름을 가로챈다. 그 막대가 위 줄에 닿지 않을 만큼 띄운다.

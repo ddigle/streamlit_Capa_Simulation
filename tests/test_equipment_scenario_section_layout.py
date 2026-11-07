@@ -168,7 +168,7 @@ def test_a_popover_keeps_its_place_and_key_when_the_alert_goes_away(tmp_path: Pa
 
 def test_the_revision_table_stands_clear_of_the_row_above_it(tmp_path: Path) -> None:
     """시나리오 줄(맨 오른쪽 팝오버 단추)과 리비전 표 사이에 띄움이 선다 — 표 도구 막대가 그 단추를
-    덮지 않게. 그 사이의 칸(옛 판 흔적 경고 자리)은 비어 있으면 높이가 없다."""
+    덮지 않게. 그 사이의 칸(확인 체크 풀림 줄 자리)은 비어 있으면 높이가 없다."""
     path, _ = _two_revisions(tmp_path)
     app = _ok(_section(path).run())
     siblings = sorted(app.main.children.items())
