@@ -339,7 +339,7 @@ function writeColSet(value) {
 
 function freshState() {
   return {
-    mount: newMount(), box: createBox(), pending: new Map(), timer: 0, base: null, view: null,
+    mount: newMount(), box: createBox(), sentSeq: 0, pending: new Map(), timer: 0, base: null, view: null,
     selected: new Set(), anchor: null, sort: null, colSet: null, edit: null, focus: null, toastClosed: null,
     note: '', noteTimer: 0, scrollFrame: 0, query: '', pop: null, pops: {}, procQuery: '', conds: [{ col: 4, text: null }],
     suggest: -1, drafts: new Map(), unitId: null, listeners: [], bulkCol: 'Qual상태', bulkValue: '', days: '7',
@@ -387,10 +387,15 @@ function receive(S, data) {
   S.limit = Number((data.limits || {}).outboxCells) || 10000
 }
 
+// 이미 보낸 op 만 남았으면 보내지 않는다 — 「호기 추가」 는 그 회차가 「새 호기」 마운트를 내리고 칸 고르기를 「호기 상세」 로
+// 적는데, ack 를 못 받은 마운트가 내려가며 다시 보내면 그 회차가 고르기 값을 브라우저에 적용하기 전의 옛 값을 실어 눌림은
+// 「호기 상세」, 본문은 「새 호기」 로 어긋났다.
 function send(S) {
   if (S.timer) clearTimeout(S.timer)
   S.timer = 0
-  if (!S.box.ops.length || !S.setState) return
+  const last = S.box.ops[S.box.ops.length - 1]
+  if (!last || last.seq <= S.sentSeq || !S.setState) return
+  S.sentSeq = last.seq
   S.setState('outbox', { mount: S.mount, ops: S.box.ops.slice() })
 }
 

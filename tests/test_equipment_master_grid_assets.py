@@ -809,6 +809,49 @@ def test_the_add_button_says_why_in_a_tip_and_the_panel_keeps_no_line() -> None:
     }
 
 
+_LEAVING_RUNNER = """
+const sent = []
+const data = {
+  mode: 'side', panel: 'new', base: 'b1', columns: [{ name: '설비명', kind: 'name' }],
+  groups: [[0, '호기 정보', 'common', '', [0]]], blank: [''], required: [0],
+  tiers: { required: [[0, false]] }, blocked: false, hint: '',
+  draft: { seq: 6, values: ['EQ-09'] }, checked: 6, errors: {}, warns: {}, locks: {},
+}
+const cleanup = globalThis.__mount({
+  data, parentElement, setTriggerValue() {},
+  setStateValue(name, value) {
+    if (name === 'outbox') sent.push(value.ops.map((op) => op.op))
+  },
+})
+const S = host.__emg
+fire(buttonOf('호기 추가'), 'click')
+results.pressed = sent.length
+for (const handler of host.listeners.focusout) handler({ relatedTarget: null })
+results.focusLeft = sent.length
+cleanup()
+results.left = sent.length
+enqueue(S, { op: 'cell', id: 'a', col: '설비명', text: 'EQ-10' }, [])
+cleanup()
+results.unsentLeft = sent
+process.stdout.write(JSON.stringify(results))
+"""
+
+
+def test_a_mount_leaving_does_not_resend_what_it_already_sent() -> None:
+    """「호기 추가」 는 그 회차가 「새 호기」 마운트를 내리고 칸 고르기를 「호기 상세」 로 적는다.
+    보낸 `add` 의 ack 를 받지 못한 채 내려가는 마운트가 다시 보내면 그 둘째 회차가 고르기 값을
+    브라우저에 적용하기 전의 옛 「새 호기」 를 실어, 눌림은 「호기 상세」 인데 본문은 빈 「새 호기
+    추가」 폼으로 어긋났다(g5-01 — 같은 세션 이어 추가 10번에 6번, 샘플 관측). 초점이 나갈 때도
+    마찬가지다. 아직 보내지 않은 op 는 내려갈 때도 보낸다."""
+    runner = _FAKE_DOM + _MOUNT_LOADER + _LEAVING_RUNNER
+    result = _node({}, runner, source=_fake_dom_source())
+
+    assert result["pressed"] == 1
+    assert result["focusLeft"] == 1
+    assert result["left"] == 1
+    assert result["unsentLeft"] == [["add"], ["add", "cell"]]
+
+
 def test_the_add_tip_shows_on_hover_and_keyboard_focus_and_has_the_app_tip_look() -> None:
     """풍선은 마우스(꺼진 단추 위에서도 감싼 칸이 받는다)와 키보드 초점으로 뜨고, 눌렀을 때 초점이
     남아 있어도 떠 있지 않도록 `:focus-within` 은 쓰지 않는다. 꼴은 편집 표 풍선(`.eg-tip`)과 같다
