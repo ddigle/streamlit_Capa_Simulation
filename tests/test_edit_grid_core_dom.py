@@ -558,3 +558,99 @@ def test_read_view_takes_acks_and_a_flush_sends_only_unsent_ops() -> None:
     assert result["flushed"] == {"sent": 2, "seqs": [2]}, "묶음 안의 op 는 탭을 바꾸면 보낸다"
     assert result["timed"] == {"sent": 3, "seqs": [2, 3]}, "보낼 때는 ack 안 된 op 전부를 싣는다"
     assert result["cleanup"] == {"sent": 3}, "정리 함수는 이미 보낸 op 를 다시 보내지 않는다"
+
+
+RUNNER_BURST = (
+    RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
+    + r"""
+const R = {}
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const editor = q('.eg-ed')
+  // 브라우저처럼 — 초점 든 칸을 숨기면 대상 없는 focusout 이 난다(초점을 먼저 옮기면 나지 않는다).
+  let hidden = editor.hidden
+  Object.defineProperty(editor, 'hidden', {
+    get: () => hidden,
+    set(value) {
+      hidden = value
+      if (value && document.activeElement === editor) {
+        document.activeElement = null
+        fire(editor, 'focusout', { relatedTarget: null })
+      }
+    },
+  })
+  const typing = (value, leave) => {
+    key(scroller, 'Enter')
+    editor.value = value
+    leave()
+  }
+  const xOf = (c) => S.lefts[c] + S.widths[c] / 2
+  const yOf = (r) => S.headH + r * S.rowH + S.rowH / 2
+  const press = (r, c) => {
+    const at = { clientX: xOf(c), clientY: yOf(r), pointerId: 1 }
+    fire(scroller, 'pointerdown', at)
+    fire(scroller, 'pointerup', at)
+  }
+  // 앞서 고친 칸이 있는 표 — 첫 편집을 곧바로 보내는 갈래를 타지 않는다.
+  const enter = () => key(editor, 'Enter')
+  for (const value of ['61%', '62%', '63%', '64%', '65%', '66%']) typing(value, enter)
+  const active = () => document.activeElement === scroller
+  R.enter = { sent: sent.length, box: S.box.ops.length, active: active() }
+  await tick(360)
+  R.enterQuiet = { sent: sent.length, ops: sent[sent.length - 1].ops.length }
+  for (const value of ['71%', '72%', '73%']) typing(value, () => key(editor, 'Tab'))
+  R.tab = { sent: sent.length }
+  await tick(360)
+  R.tabQuiet = { sent: sent.length }
+  for (let r = 0; r < 3; r += 1) typing('8' + r + '%', () => press(r, 4))
+  R.press = { sent: sent.length, edit: S.edit, active: active() }
+  await tick(360)
+  R.pressQuiet = { sent: sent.length }
+  // 칸 편집 취소도 묶음을 끊지 않는다.
+  typing('91%', enter)
+  key(scroller, 'Enter')
+  key(editor, 'Escape')
+  R.cancel = { sent: sent.length, active: active() }
+  await tick(360)
+  R.cancelQuiet = { sent: sent.length }
+  // 진짜로 표 밖을 누르면 — 초점이 먼저 나가고 blur 뒤 focusout 이 온다 — 기다리지 않고 보낸다.
+  typing('92%', () => {
+    document.activeElement = null
+    fire(editor, 'blur', { relatedTarget: null })
+    fire(editor, 'focusout', { relatedTarget: null })
+  })
+  R.outside = { sent: sent.length, edit: S.edit }
+  // 창이 숨어도 기다리지 않고 보낸다.
+  typing('93%', enter)
+  const queued = sent.length
+  fireDoc('visibilitychange')
+  R.hidden = { queued, sent: sent.length }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time() -> None:
+    """칸을 잇달아 고치면 보냄은 300ms 묶음 한 번이다(UI-PRF-02 「연속 N회 → 보냄 1회」). 확정이
+    초점 든 편집 칸을 숨기면 브라우저가 대상 없는 focusout 을 내고, 그것을 표 밖으로 나간 것으로
+    읽어 칸마다 회차가 돌았다(u4-02 — 기준 정보 10칸 7회차, 샘플 관측). 진짜로 표 밖을 누른 때와
+    창이 숨을 때는 지금처럼 곧바로 보낸다."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    feed = _feed(index, "k1", {"cells": {"DEMO_B\x1f양산": {"202702": 0.5}}, "bad": {}}, undo=1)
+    source = FAKE_DOM + mountable(edit_grid.registered_js())
+    result = run_node(source, RUNNER_BURST, {"shell": shell, "feed": feed})
+    assert result["enter"] == {"sent": 0, "box": 6, "active": True}
+    assert result["enterQuiet"] == {"sent": 1, "ops": 6}, "Enter 연속 6칸 → 보냄 1회"
+    assert result["tab"] == {"sent": 1}
+    assert result["tabQuiet"] == {"sent": 2}, "Tab 연속 3칸 → 보냄 1회"
+    assert result["press"] == {"sent": 2, "edit": None, "active": True}
+    assert result["pressQuiet"] == {"sent": 3}, "칸을 눌러 옮긴 3칸 → 보냄 1회"
+    assert result["cancel"] == {"sent": 3, "active": True}
+    assert result["cancelQuiet"] == {"sent": 4}, "칸 편집 취소는 묶음을 끊지 않는다"
+    assert result["outside"] == {"sent": 5, "edit": None}, "표 밖 누름은 곧바로 보낸다"
+    assert result["hidden"] == {"queued": 5, "sent": 6}, "창이 숨으면 곧바로 보낸다"

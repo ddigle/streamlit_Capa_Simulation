@@ -500,7 +500,7 @@ function selKey(S, event) {
 function selPointerDown(S, event, hit) {
   if (hit.kind !== 'cell') return false
   event.preventDefault()
-  if (S.edit) commitEdit(S, null, false)
+  if (S.edit) commitEdit(S)
   selClearPageSelection()
   focusGrid(S)
   const cell = { r: hit.r, c: hit.c }
