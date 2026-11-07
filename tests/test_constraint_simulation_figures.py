@@ -74,6 +74,7 @@ from capa_simulation.components.constraint_simulation_view import (
     overdrawn_lines,
     render_constraint_kpis,
     schedule_lines,
+    sheet_legend,
     short_lines,
     short_month_lines,
     waiting_lines,
@@ -88,8 +89,10 @@ from capa_simulation.services.constraint_simulation import (
     ConstraintMonthInput,
     ConstraintResult,
     NewUnit,
+    secure,
     simulate_constraint,
 )
+from capa_simulation.services.securement_threshold import capacity_status
 from capa_simulation.services.wd_window import wd_window
 
 LABELS = ConstraintLabels(
@@ -145,7 +148,7 @@ def test_the_proportional_hover_picks_the_object_particle_by_the_number(
 ) -> None:
     """비중 칸 풍선의 목적격 조사는 가용 수의 끝소리로 고른다 — 「가용 4 을」 이 아니다."""
     row = next(row for row in _run().months if row.in_period)
-    hover = figures._proportional_cell(replace(row, available=available)).hover
+    hover = figures._proportional_cell(replace(row, available=available), {}).hover
     assert words in hover
 
 
@@ -546,6 +549,71 @@ def test_the_sheet_fills_shortfall_cells_and_marks_decreases() -> None:
     assert "−13.8%" in decreases
 
 
+def _home_labels(result: Any) -> ConstraintLabels:
+    """기준이 HOME 인 화면 글자 — 달마다 경고 기준 100% 의 판정 경계."""
+    return replace(LABELS, warning_targets=tuple((row.month, 0.995) for row in result.months))
+
+
+def _judged_rates(result: Any) -> list[tuple[int, float]]:
+    """기준 확보율에 견주는 세 줄의 (달, 확보율) — 비중대로 줄은 기간 안 달만 값이다."""
+    rates = [
+        (row.month, rate)
+        for row in result.months
+        for rate in (row.baseline_rate, row.existing_rate)
+        if rate is not None
+    ]
+    return rates + [
+        (row.month, row.proportional_existing_rate)
+        for row in result.months
+        if row.in_period and row.proportional_existing_rate is not None
+    ]
+
+
+def test_the_sheet_paints_the_three_status_colors_on_the_home_basis() -> None:
+    """기준이 HOME 이면 확보율 칸이 다른 화면과 같은 세 단계 색이다(설계 규칙 UI-DAT-03) — 경고 구간
+    값이 부족색으로 서지 않는다. 판정은 `capacity_status` 한 길이다."""
+    result = _run()
+    canvas = build_sheet_canvas(
+        result, _home_labels(result), selected_month=None, show_proportional=True
+    )
+    statuses = [
+        capacity_status(rate, secure_threshold=1.1, warning_threshold=1.0)
+        for _, rate in _judged_rates(result)
+    ]
+    assert statuses.count("warning") >= 1, "합성 예에 경고 구간 값이 있어야 시험이 뜻이 있다"
+    fills = _fills(canvas)
+    assert fills.count(tokens.STATUS_WARNING) == statuses.count("warning")
+    assert fills.count(tokens.STATUS_SHORTAGE) == statuses.count("shortage")
+    assert fills.count(tokens.STATUS_SECURE) == statuses.count("secure")
+
+
+def test_a_typed_general_target_keeps_two_steps_because_it_has_no_warning_line() -> None:
+    """직접 넣은 기준에는 경고 경계가 없다 — 못 미친 칸만 부족색이고 지킨 칸은 칠하지 않는다."""
+    result = _run()
+    canvas = build_sheet_canvas(result, LABELS, selected_month=None, show_proportional=True)
+    below = sum(
+        1
+        for month, rate in _judged_rates(result)
+        if not secure(rate, result.month(month).general_target)
+    )
+    fills = _fills(canvas)
+    assert fills.count(tokens.STATUS_SHORTAGE) == below
+    assert tokens.STATUS_WARNING not in fills and tokens.STATUS_SECURE not in fills
+
+
+def test_the_constrained_rate_keeps_its_own_target_on_the_home_basis() -> None:
+    """제약 제품 확보율은 제약 목표에 견주는 칸이라 HOME 세 단계를 입히지 않는다."""
+    row = _run().month(202706)
+    assert figures._constrained_rate_cell(replace(row, met=False)).fill == tokens.STATUS_SHORTAGE
+    assert figures._constrained_rate_cell(replace(row, met=True)).fill is None
+
+
+def test_the_sheet_legend_names_the_colors_of_the_basis() -> None:
+    result = _run()
+    assert "칸 색 = 확보 · 경고 · 부족" in sheet_legend(_home_labels(result))
+    assert "부족색 칸 = 기준" in sheet_legend(LABELS)
+
+
 def test_the_sheet_outlines_the_selected_month_and_tints_the_period_head() -> None:
     result = _run()
     canvas = build_sheet_canvas(
@@ -591,7 +659,8 @@ def test_the_month_steps_walk_through_the_five_calculations() -> None:
         "기존 가용 = 48 − 5.81 = **42.19대**",
         "기존 확보율 = 42.19 ÷ 42 = **100.5%**",
     ]
-    assert may.steps[0].note == "제약 기간 밖이라 HBM라E 도 기존 제품에 함께 셉니다."
+    # 달마다 같은 읽는 법은 카드 제목 풍선(`STEPS_HELP`)이다 — 단계 곁에 두지 않는다.
+    assert may.steps[0].note == ""
     assert may.steps[2].note == "27년 6월 몫 6대가 이 달 30일 개조 중 → 5.81대"
     assert may.steps[3].note == "공정 가용 − 개조 중"
     assert may.steps[4].note == "제약 없을 때 114.3% · −13.8%"
@@ -682,7 +751,7 @@ def test_the_demand_split_step_recomputes_from_the_written_numbers(
     written_required, written_existing, written_constrained = _written_numbers(step.body)
     assert units_text(written_existing + written_constrained) == units_text(written_required)
     assert units_text(existing + constrained) == units_text(written_required)
-    assert step.note == "제약 기간이라 공정 소요를 두 갈래로 나눕니다(합하면 원래 소요와 같습니다)."
+    assert step.note == ""
 
 
 @pytest.mark.parametrize(
@@ -1012,8 +1081,9 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     계산표 「신규 기여 시작」 풍선의 일반 설비 까닭을 호기마다 되짚고(2026-11-01 E2E — 「개조 30일
     안에 늘어날 전용 없음」 이 일부 모듈만 온 묶음에도 섰다) B1 을 증가마다로 넓혀 뒤 증가부터 덮인
     호기에 「27년 7월부터 보유로 다 덮음」 을 적은 판이다(같은 날 — 두 갈래 모두 배포 전이라 한 번
-    올렸다)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 11
+    올렸다). 12 는 기준이 HOME 일 때 계산표 확보율 칸을 세 단계 색으로 칠하고 제약 없을 때 대비
+    칸의 어긋난 차이에 「≈」 를 단 판이다(2026-11-07 사용자 답 — 한 번 올렸다)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 12
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
@@ -1141,10 +1211,7 @@ def test_the_steps_split_the_dedicated_units_and_the_growth() -> None:
     """보유 4 의 6월 — 2단계 회색 줄에 구성, 3단계 회색 줄 머리에 늘어난 전용의 갈림."""
     result = _owned()
     june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    assert (
-        june.steps[1].note
-        == "전용 6대 = 보유 4 · 개조 2 · 제약 확보율을 먼저 맞추도록 정수로 올립니다."
-    )
+    assert june.steps[1].note == "전용 6대 = 보유 4 · 개조 2"
     assert june.steps[2].note.startswith(
         "이 달 늘어난 전용 6대 — 보유 제약 설비 4대는 개조 없이, 개조 2대"
     )

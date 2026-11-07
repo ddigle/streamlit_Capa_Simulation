@@ -6,12 +6,14 @@
 정해 `ProcessDetailView` 하나로 넘기면, 여기서는 **지금 보는 달**에 닿는 것만 그린다.
 
 - **표 도구 줄** — 「구획」 칩(`st.pills`, ①~④ 가운데 고른 것 = 펼침), 「제품별 소요대수」
-  펼침(`st.toggle`)과 펼쳤을 때의 「분류」(`st.segmented_control`), 그리고 단축 목표 표시(고르는
-  위젯 없음 — 2026-10-15 사용자 결정 2). 셋 다 조건 카드가 아니라 본문이다 — 2026-09-29 「상세는
-  카드」 규칙의 예외다(펼침·분류는 2026-10-15 사용자 결정 4 — 목업 그대로, 구획은 2026-10-22 사용자
-  요청 「소요대수처럼 접기」). 구획 칩은 선택지 넷을 늘 고정한다 — 설비 일정이 없는 공정에서 ②~④
-  를 빼면 세션 값이 선택지 밖으로 나가 지워진다. 밖에서 들어온 회차에는 그 길이 가리키는 구획을
-  다시 편다(`reopen_entry_section` — HOME → ①, 가용설비 현황 → ④, 필요 단축 일정 카드 → ③).
+  펼침(`st.toggle`)과 펼쳤을 때의 「분류」(`st.segmented_control`), 단축 목표 표시(고르는 위젯 없음
+  — 2026-10-15 사용자 결정 2), 그리고 오른쪽 끝 「이 공정 단축 일정 CSV」(설비 일정이 설 때만 —
+  ③ 구획의 호기 표 곁, 설계 규칙 UI-LAY-03). 앞의 셋은 조건 카드가 아니라 본문이다 — 2026-09-29
+  「상세는 카드」 규칙의 예외다(펼침·분류는 2026-10-15 사용자 결정 4 — 목업 그대로, 구획은
+  2026-10-22 사용자 요청 「소요대수처럼 접기」). 구획 칩은 선택지 넷을 늘 고정한다 — 설비 일정이
+  없는 공정에서 ②~④ 를 빼면 세션 값이 선택지 밖으로 나가 지워진다. 밖에서 들어온 회차에는 그 길이
+  가리키는 구획을 다시 편다(`reopen_entry_section` — HOME → ①, 가용설비 현황 → ④, 필요 단축 일정
+  카드 → ③).
 - **결합 월 캔버스** — HOME 틀 그대로 라벨 Figure(260px) + 월 Figure(달마다 100px, hover)를 스크롤
   상자 하나에 둔다. 라벨 Figure 는 줄 이름 칸 풍선(② 비가동 영향·③ 호기 줄·④ 입력 비가동)이
   있을 때만 hover 를 켜고 아니면 `staticPlot` 이다. 월 Figure 의 칸을 누르면 `on_select` 콜백이 세션
@@ -35,9 +37,9 @@
 **프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓴다** — 오늘·판정 기준·설비 일정·표시명이
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
-정리 줄(알림·「이 공정 단축 일정 CSV」·필요 단축 일정 화면 링크), KPI 넷과 그 아래 부족 원인별
-다음 화면 줄, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서
-페이지가 그린다 — 그 그리기 함수도 여기 있다.
+정리 줄(값 표지, 다른 길이 없는 공정의 필요 단축 일정 화면 링크 — `shortening_link_needed`), KPI
+넷과 그 아래 부족 원인별 다음 화면 줄, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지
+않아 프래그먼트 밖에서 페이지가 그린다 — 그 그리기 함수도 여기 있다.
 
 **UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
 페이지가 가정 요약(`ProcessDetailView.assumed_summary`)과 가정 계획(`DynamicView`)을 넘긴다.
@@ -203,8 +205,14 @@ PREVIOUS_MONTH_KEY: Final = "process_detail_previous_month"
 NEXT_MONTH_KEY: Final = "process_detail_next_month"
 # 닫힌 「경로별 인자」 상자(편 상태를 기억한다).
 ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
-# 정리 줄의 CSV·탭 링크 단추.
+# 표 도구 줄의 CSV 단추. 곁의 「구획」 칩과 같은 높이로 둔다(설계 규칙 UI-CON-01 — 칩 28px). 서식은
+# 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
+UNITS_CSV_STYLE: Final = (
+    f"<style>.st-key-{UNITS_CSV_KEY} button "
+    "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
+)
+# 정리 줄의 필요 단축 일정 화면 링크.
 SHORTENING_TAB_LINK_KEY: Final = "process_detail_open_shortening_tab"
 # 부족 원인별 다음 화면 단추 — KPI 아래 줄과 근거 패널(그 달)이 따로 그린다.
 CAUSE_LINKS_KEY: Final = "process_detail_cause_links"
@@ -376,6 +384,15 @@ class ProcessDetailView:
     회차에만 바뀐다. 스크롤바는 이 값이 바뀔 때만 오프셋을 다시 걸므로, 칸을 눌러 달을 옮긴 뒤의
     앱 전체 회차가 보던 가로 위치를 되돌리지 않는다."""
 
+    units_csv: bytes | None = None
+    """표 도구 줄 「이 공정 단축 일정 CSV」 의 바이트. 설비 일정이 서지 않으면 None(단추 없음)."""
+
+    units_csv_file_name: str = ""
+    """그 파일 이름(가정 계획이면 끝에 UPEH 가정 꼬리)."""
+
+    shortening_link_help: str | None = None
+    """필요 단축 일정으로 옮기는 단추의 풍선(`render_closing_row` 의 `link_help` 와 같은 글)."""
+
     @property
     def judgement_summary(self) -> pd.DataFrame:
         """판정·부족 원인을 읽는 요약 — UPEH 가정이 켜졌으면 가정 요약, 아니면 공식 요약."""
@@ -430,6 +447,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
             view.months,
             assumed=bool(view.upeh_token),
         )
+        + UNITS_CSV_STYLE
     )
     if view.dynamic is None:
         _render_dynamic_absent(view)
@@ -446,9 +464,12 @@ def viewed_month(months: Sequence[int]) -> int:
 
 
 def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str, frozenset[str]]:
-    """「구획」 칩 · 「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시.
+    """「구획」 칩 · 「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시 · 오른쪽 끝
+    호기 CSV(설비 일정이 설 때만).
 
     돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획) 이다. ① 이 접혔으면 제품 행을 그리지 않는다.
+    CSV 를 안쪽 칸에 두는 것은 `st.space("stretch")` 를 쓰면 틈이 한 번 더 들어 기준 창에서 줄이
+    넘어가기 때문이다.
     """
     options = list(view.splits) or [DEFAULT_PRODUCT_SPLIT]
     seed_sections()
@@ -501,6 +522,14 @@ def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str, frozenset[str]
                 width="content",
                 help=TARGET_HELP,
             )
+        if view.units_csv is not None:
+            with st.container(horizontal=True, horizontal_alignment="right"):
+                render_csv_download(
+                    data=view.units_csv,
+                    file_name=view.units_csv_file_name,
+                    key=UNITS_CSV_KEY,
+                    label="이 공정 단축 일정 CSV",
+                )
     return bool(expanded) and summary_open, split, collapsed
 
 
@@ -1072,7 +1101,8 @@ def _assumed_demand_note(
     required: float | None, assumed: Mapping[str, object] | None, token: UpehToken
 ) -> str:
     """「UPEH 가정 110%: 소요 12.40 ÷ 1.1 = 11.27 (−1.13대)」 — 구간 밖이면 빈 글자. 적힌 소요로
-    다시 셈한 값이 가정 소요와 다르면 「≈」 다(③ 의 「소요 = 공식 ÷ f」 와 같은 검산)."""
+    다시 셈한 값이 가정 소요와 다르면 「≈」 다(③ 의 「소요 = 공식 ÷ f」 와 같은 검산). 괄호 차이도
+    적힌 두 소요로 다시 빼면 어긋날 때 앞에 「≈」 다(값은 원값의 차이 그대로)."""
     if assumed is None or required is None:
         return ""
     value = _number(assumed.get("소요대수"))
@@ -1080,9 +1110,12 @@ def _assumed_demand_note(
         return ""
     factor = token_factor(token)
     mark = equals_mark(_two(value), _two(round(required, 2) / factor))
+    change = _signed_two(value - required)
+    if equals_mark(change, _signed_two(round(value, 2) - round(required, 2))) == APPROX:
+        change = f"{APPROX} {change}"
     return (
         f"UPEH 가정 {token_percent(token)}%: 소요 {_two(required)} ÷ {factor:g} {mark} "
-        f"{_two(value)} ({_signed_two(value - required)}대)"
+        f"{_two(value)} ({change}대)"
     )
 
 
@@ -1564,30 +1597,33 @@ def prescription_text(plan: Prescription | None) -> str:
     return f"단축 {plan.shortened}대 · 신규 {plan.new}대"
 
 
+def shortening_link_needed(dynamic: DynamicView, *, arrived_from_card: bool) -> bool:
+    """맨 아래 필요 단축 일정 링크가 서는가 — 이 공정 화면에 그리로 가는 다른 길이 없을 때만이다.
+
+    다른 길은 도착 「← 필요 단축 일정」(`arrived_from_card`), KPI 아래 「일정 n개월 — 필요 단축
+    일정」, 근거 카드 「이 달 일정 부족 — 필요 단축 일정」 이다. 뒤의 둘은 같은 달을 센다
+    (`schedule_short_month` · `Prescription.dynamic_short_months`) — 근거 카드 단추가 서는 달이
+    있으면 KPI 달 수가 이미 1 이상이라 달 수 하나로 둘을 함께 본다(설계 규칙 UI-LAY-12).
+    """
+    return not arrived_from_card and prescription(dynamic).dynamic_short_months == 0
+
+
 def render_closing_row(
     *,
     process: str,
     marks: Sequence[tuple[str, str]],
+    show_link: bool,
     link_help: str | None,
-    csv_bytes: bytes | None,
-    csv_file_name: str,
 ) -> None:
-    """정리 줄 — 값 표지(있을 때만), 「이 공정 단축 일정 CSV」, 필요 단축 일정 화면 링크.
+    """정리 줄 — 값 표지(있을 때만), 다른 길이 없는 공정의 필요 단축 일정 화면 링크.
 
     `marks` 는 (값 한 마디, 그 풍선) 이다 — 지금은 입력 비가동 반영(n칸 · 합 x대) 하나. 늘 서던
     설명 · 내역 글은 걷었다(설계 규칙 UI-TXT-01 · 04 · 07 — 같은 말이 캔버스 · Guide · 풍선 · 상태
-    알림에 있다). `link_help` 는 링크의 풍선이다(HOME 칸 방문이라 두 화면의 설비 기준이 갈릴
-    때)."""
+    알림에 있다). `show_link` 는 `shortening_link_needed` 이고, `link_help` 는 링크의 풍선이다(HOME
+    칸 방문이라 두 화면의 설비 기준이 갈릴 때)."""
     for mark, mark_help in marks:
         st.caption(f":material/event_busy: {mark}", help=mark_help)
-    with st.container(horizontal=True, gap="small", vertical_alignment="center"):
-        if csv_bytes is not None:
-            render_csv_download(
-                data=csv_bytes,
-                file_name=csv_file_name,
-                key=UNITS_CSV_KEY,
-                label="이 공정 단축 일정 CSV",
-            )
+    if show_link:
         st.button(
             "필요 단축 일정에서 전체 공정·진척 비교 보기",
             key=SHORTENING_TAB_LINK_KEY,
@@ -1709,7 +1745,13 @@ def schedule_short_month(dynamic: DynamicView, month: int) -> bool:
     return int(month) >= today_month
 
 
-def render_cause_links(kpis: ProcessCapaKpis, *, dynamic: DynamicView | None, process: str) -> None:
+def render_cause_links(
+    kpis: ProcessCapaKpis,
+    *,
+    dynamic: DynamicView | None,
+    process: str,
+    shortening_help: str | None = None,
+) -> None:
     """KPI 아래 한 줄 — 부족 원인마다 다음 화면. 원인이 없으면 그리지 않는다(앱 전체 회차)."""
     screens = kpi_next_screens(kpis, prescription(dynamic) if dynamic is not None else None)
     if not screens.present():
@@ -1720,6 +1762,7 @@ def render_cause_links(kpis: ProcessCapaKpis, *, dynamic: DynamicView | None, pr
             process=process,
             gap_key=CAUSE_GAP_BUTTON_KEY,
             shortening_key=CAUSE_SHORTENING_BUTTON_KEY,
+            shortening_help=shortening_help,
         )
 
 
@@ -1732,11 +1775,17 @@ def _render_month_next_screens(view: ProcessDetailView, month: int) -> None:
             process=view.process,
             gap_key=EVIDENCE_GAP_BUTTON_KEY,
             shortening_key=EVIDENCE_SHORTENING_BUTTON_KEY,
+            shortening_help=view.shortening_link_help,
         )
 
 
 def _render_next_screens(
-    screens: NextScreens, *, process: str, gap_key: str, shortening_key: str
+    screens: NextScreens,
+    *,
+    process: str,
+    gap_key: str,
+    shortening_key: str,
+    shortening_help: str | None,
 ) -> None:
     """다음 화면 줄 — 「다음 화면」 글 뒤에 원인마다 링크·단추. 화면을 옮기는 단추는 본문에서
     옮긴다(근거 패널은 프래그먼트다)."""
@@ -1759,6 +1808,7 @@ def _render_next_screens(
             key=shortening_key,
             type="tertiary",
             icon=":material/event_upcoming:",
+            help=shortening_help,
         ):
             open_shortening_page(process)
 

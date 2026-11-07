@@ -286,6 +286,8 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     # 그래프 막대 좌표의 읽는 법은 제목 풍선이다.
     (title,) = [item for item in app.markdown if "개조 전 · 뒤" in str(item.value)]
     assert title.proto.help == CHART_HELP and "W/D 구간 좌표라" not in captions
+    # 범례는 색 · 띠의 뜻만 — 글이 들지 않는 막대를 읽는 법도 그 풍선이다.
+    assert "글이 들지 않는 막대" in CHART_HELP and "글이 들지 않는 막대" not in captions
     assert "**다 넣지 못했습니다 — 대안**" not in _markdown(app)
 
 

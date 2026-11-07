@@ -78,9 +78,9 @@ from capa_simulation.components.constraint_simulation_figures import (
     month_name,
     ordinary_reason_text,
     rate_axis,
+    rate_delta_text,
     rate_figure,
     rate_text,
-    signed_points,
     units_text,
     waiting_text,
 )
@@ -139,6 +139,7 @@ __all__ = [
     "SCHEDULE_CARD_TITLE",
     "SCHEDULE_DEFINITION",
     "SHEET_HELP",
+    "STEPS_HELP",
     "SHORT_REASON_TEXT",
     "WAITING_DEFINITION",
     "WAIT_BEFORE_RANGE_MARK",
@@ -164,6 +165,7 @@ __all__ = [
     "render_constraint_view",
     "schedule_lines",
     "settle_selected_month",
+    "sheet_legend",
     "short_lines",
     "short_month_lines",
     "top_row_style",
@@ -201,6 +203,14 @@ SCHEDULE_DEFINITION: Final = (
 # 그래프 · 계산표를 누르는 법은 제목 풍선이다 — 범례만 자리에 둔다(설계 규칙 UI-TXT-01).
 CHART_HELP: Final = "달 칸을 누르면 그 달의 계산이 옆 카드에 나옵니다."
 SHEET_HELP: Final = "칸을 누르면 그 달을 고릅니다."
+# 고른 달 계산의 읽는 법 — 달마다 같은 글이라 단계 곁에 두지 않고 카드 제목 풍선이다(설계 규칙
+# UI-TXT-01). 수가 든 줄은 카드에 남는다.
+STEPS_HELP: Final = (
+    "제약 기간 안의 달은 공정 소요를 기존 · 제약 제품 두 갈래로 나눕니다(합하면 원래 소요와 "
+    "같습니다). 기간 밖 달은 제약 제품도 기존 제품에 함께 셉니다. 제약 필요 대수는 제약 확보율을 "
+    "먼저 맞추도록 정수로 올립니다. 「비중대로만 나눴다면」 은 개조 비가동 없이 가용을 소요 "
+    "비중대로 정수로 나눈 경우입니다."
+)
 NO_WINDOWS_TEXT: Final = "개조가 필요한 달이 없습니다."
 FREE_ONLY_TEXT: Final = "늘어난 전용 대수를 모두 보유·신규 설비로 채워 개조가 없습니다."
 NEW_SKIPPED_TEXT: Final = (
@@ -460,9 +470,7 @@ def month_steps(
         f"소요 **{required_shown}대** {split_sign} 기존 "
         f"{operand_text(row.existing_demand, split_digits, units_text)} + "
         f"{product} {operand_text(row.constrained_demand, split_digits, units_text)}",
-        "제약 기간이라 공정 소요를 두 갈래로 나눕니다(합하면 원래 소요와 같습니다)."
-        if row.in_period
-        else f"제약 기간 밖이라 {product} 도 기존 제품에 함께 셉니다.",
+        "",
     )
 
     if has_need:
@@ -490,8 +498,6 @@ def month_steps(
             "소요가 1대 미만이어도 정수로 올려 최소 1대를 뗍니다 — 제약 제품 확보율이 아주 크게 "
             "나오는 까닭입니다."
         )
-    elif row.in_period and row.constrained_demand > 0:
-        note2 = "제약 확보율을 먼저 맞추도록 정수로 올립니다."
     else:
         note2 = ""
     if split:
@@ -536,7 +542,7 @@ def month_steps(
     else:
         note5 = f"제약 없을 때 {rate_text(row.baseline_rate)}"
         if row.baseline_rate is not None:
-            note5 += f" · {signed_points(row.existing_rate - row.baseline_rate)}"
+            note5 += f" · {rate_delta_text(row.existing_rate, row.baseline_rate)}"
         rate_digits, rate_sign = digits_within(card_digits, existing_ratio, rate_shown)
         available_text = operand_text(row.existing_available, rate_digits, units_text)
         demand_text = operand_text(row.existing_demand, rate_digits, units_text)
@@ -571,7 +577,6 @@ def month_steps(
             f"비중대로만 나눴다면: 제약 {row.proportional_constrained}대"
             f"({rate_text(row.proportional_constrained_rate)}) · 기존 "
             f"{units_text(row.proportional_existing)}대({rate_text(row.proportional_existing_rate)})"
-            " — 개조 비가동 없이 가용을 소요 비중대로 정수로 나눈 경우입니다."
         )
     return MonthSteps(
         title=title,
@@ -1012,10 +1017,7 @@ def render_constraint_view(view: ConstraintView) -> None:
         _render_month_steps(view, month, show_proportional=bool(show_proportional))
     with st.container(border=True):
         st.markdown("**월별 계산표**", help=SHEET_HELP)
-        st.caption(
-            "머리 옅은 칠 = 제약 기간 · 부족색 칸 = 기준(제약 칸은 제약 목표)에 못 미침 · "
-            "파란 글자 = 줄어든 값 · 대수는 환산 대수"
-        )
+        st.caption(sheet_legend(view.labels))
         _render_sheet(sheet, months)
     schedule_column, shortage_column = st.columns(2, gap="medium")
     with schedule_column:
@@ -1121,11 +1123,21 @@ def _render_sheet(sheet: SheetCanvas, months: tuple[int, ...]) -> None:
                 )
 
 
+def sheet_legend(labels: ConstraintLabels) -> str:
+    """월별 계산표 범례 — 기준이 HOME 이면 칸 색이 세 단계다(`ConstraintLabels.warning_targets`)."""
+    colors = (
+        "칸 색 = 확보 · 경고 · 부족(제약 칸은 제약 목표에 못 미치면 부족색)"
+        if labels.warning_targets
+        else "부족색 칸 = 기준(제약 칸은 제약 목표)에 못 미침"
+    )
+    return f"머리 옅은 칠 = 제약 기간 · {colors} · 파란 글자 = 줄어든 값 · 대수는 환산 대수"
+
+
 def _render_month_steps(view: ConstraintView, month: int, *, show_proportional: bool) -> None:
     row = view.result.month(month)
     steps = month_steps(row, view.result, view.labels, show_proportional=show_proportional)
     with st.container(border=True, key=STEPS_CARD_KEY):
-        st.markdown(f"**{steps.title}**")
+        st.markdown(f"**{steps.title}**", help=STEPS_HELP)
         for number, step in enumerate(steps.steps, start=1):
             st.markdown(f"**{number}** · {step.body}")
             if step.note:

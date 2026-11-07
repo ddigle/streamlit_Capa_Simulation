@@ -604,7 +604,8 @@ def resolve_process_and_month(
        (`PROCESS_DETAIL_QUERY_SEEN_KEY`)과 다를 때만. 이 화면에 머무는 동안 같은 묶음이 다시 오면
        (옛 주소가 되돌아옴·뒤로가기로 인자 달린 기록 칸에 닿음) 적용하지 않는다. 읽은 인자는 어느
        쪽이든 그 키만 지운다.
-    3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정을 바꿔도 보던 달은 그대로다.
+    3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정 상자로 공정을 바꾼 회차는 ◀▶ 와 같이
+       그 공정의 첫 미달 달(`default_month`)을 열고, 미달이 없는 공정은 보던 달을 둔다.
     4. 세션도 비었으면 기본값 — 공정은 `default_process`, 달은 `default_month`. 둘 다 함수일 수
        있고(공정은 인자 없이, 달은 공정을 받아 — 그 공정의 첫 확보 기준 미달 달 같은 것), 함수는
        **기본값이 필요한 회차에만** 부른다. 세션·전달 칸·주소로 공정이 정해진 회차는 기본 공정
@@ -680,12 +681,17 @@ def resolve_process_and_month(
         default=None if keeps_saved else fallback_process(),
     )
 
-    def default_month_of(chosen: str | None) -> int | None:
+    def named_month_of(chosen: str | None) -> int | None:
         value = default_month(chosen) if callable(default_month) else default_month
-        if value in month_options:
+        return value if value in month_options else None
+
+    def default_month_of(chosen: str | None) -> int | None:
+        value = named_month_of(chosen)
+        if value is not None:
             return value
         return month_options[0] if month_options else None
 
+    anchor = st.session_state.get(PROCESS_DETAIL_SCROLL_ANCHOR_KEY)
     month_outside: int | None = None
     if wanted_month is not None and wanted_month in month_options:
         month: int | None = wanted_month
@@ -695,12 +701,15 @@ def resolve_process_and_month(
     else:
         saved = st.session_state.get(PROCESS_DETAIL_MONTH_KEY)
         month = saved if isinstance(saved, int) and saved in month_options else None
+        # 스크롤 기준 칸은 앞 회차에 그린 공정을 안다 — 다르면 공정을 바꾼 회차다.
+        if isinstance(anchor, tuple) and len(anchor) == 2 and anchor[0] != process:
+            named = named_month_of(process)
+            month = named if named is not None else month
         if month is None:
             month = default_month_of(process)
     st.session_state[PROCESS_DETAIL_MONTH_KEY] = month
 
     continues = _continues_this_page()
-    anchor = st.session_state.get(PROCESS_DETAIL_SCROLL_ANCHOR_KEY)
     if (
         entered
         or not continues

@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import json
 import re
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -42,12 +43,15 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_UNITS,
 )
 from capa_simulation.components.process_capa_view import (
+    CAUSE_SHORTENING_BUTTON_KEY,
     DYNAMIC_DB_ERROR_TITLE,
     DYNAMIC_ERROR_TITLE,
     INVESTMENT_BADGE,
     NEXT_MONTH_KEY,
+    SHORTENING_TAB_LINK_KEY,
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
+    UNITS_CSV_STYLE,
     step_button_label,
 )
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
@@ -332,8 +336,9 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert note["full"].startswith("공정 Capa 상세 — ") and process_box.value not in note["full"]
     assert "설비 마스터가 없습니다" in note["full"]
     assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
-    # 정리 줄(CSV·탭 링크)은 설비 일정이 설 때만이다.
+    # 호기 CSV 와 정리 줄의 탭 링크는 설비 일정이 설 때만이다.
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
+    assert SHORTENING_TAB_LINK_KEY not in {str(button.key) for button in app.button}
     # HOME 에서 오지 않았으므로 출처 띠가 없다.
     assert _origin_bands(app) == []
     # 머리 오른쪽 「← HOME」 링크(단독 실행은 갈 페이지가 없어 글자로 물러선다).
@@ -849,6 +854,90 @@ def test_the_unit_csv_is_this_process_only_with_the_tab_columns(
     assert captured["data"].startswith("﻿".encode())
 
 
+def _main_order(block: Any) -> Iterator[Any]:
+    """본문 요소를 화면 차례로."""
+    for child in block.children.values():
+        if hasattr(child, "children"):
+            yield from _main_order(child)
+        else:
+            yield child
+
+
+def test_the_unit_csv_stands_on_the_tool_row_above_the_canvas(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """단추를 표에서 떼어 페이지 끝에 두지 않는다(설계 규칙 UI-LAY-03) — 표 도구 줄이 캔버스보다
+    먼저 서고 CSV 는 그 줄의 끝, 곧 첫 그림 앞이다."""
+    app = _dynamic_app(dynamic_databases)
+
+    order = [element.type for element in _main_order(app.main)]
+    assert order.index("download_button") < order.index("plotly_chart")
+    # 곁의 칩과 같은 높이 서식은 보이는 글(범례)과 한 `st.html` 이라 이벤트 칸을 쓰지 않는다.
+    assert any("pcd-legend" in body and UNITS_CSV_STYLE in body for body in _html(app))
+
+
+def _closing_link(app: AppTest) -> bool:
+    return SHORTENING_TAB_LINK_KEY in {str(button.key) for button in app.button}
+
+
+def test_the_closing_link_steps_aside_for_the_other_ways_to_the_shortening_page(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """일정 부족 달이 있는 공정은 KPI 아래 「일정 n개월 — 필요 단축 일정」 이 같은 길이다(설계 규칙
+    UI-LAY-12) — 맨 아래 링크는 서지 않고 CSV 는 그대로다."""
+    app = _dynamic_app(dynamic_databases)
+
+    assert app.button(key=CAUSE_SHORTENING_BUTTON_KEY).label.endswith("필요 단축 일정")
+    assert not _closing_link(app)
+    assert UNITS_CSV_KEY in {str(button.key) for button in app.get("download_button")}
+
+
+@pytest.fixture(scope="module")
+def calm_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """기존보유가 넉넉해 일정 부족 달이 없는 공정 — 필요 단축 일정으로 가는 다른 길이 없다."""
+    root = tmp_path_factory.mktemp("process_capa_detail_calm")
+    equipment_path = root / "equipment.duckdb"
+    repository = DuckDBEquipmentRepository(equipment_path)
+    repository.initialize()
+    master = _master(
+        [_unit("DA-01", date(2026, 12, 10), process=DYNAMIC_PROCESS, arrival=date(2026, 11, 1))]
+    )
+    baseline = pd.DataFrame(
+        [{"공정": DYNAMIC_PROCESS, "분류": "시험", "기존보유대수": 9000.0, "비고": ""}]
+    )
+    repository.save_snapshot(baseline, master, _downtime([]))
+    repository.save_process_cutoff(_cutoff(10, DYNAMIC_PROCESS))
+    return root / "scenario.duckdb", equipment_path
+
+
+def test_the_closing_link_stands_when_nothing_else_leads_to_the_shortening_page(
+    calm_databases: tuple[Path, Path],
+) -> None:
+    """다른 길이 없는 공정에만 맨 아래 링크가 서고, 그 카드에서 왔으면(「← 필요 단축 일정」) 서지
+    않는다."""
+    app = _dynamic_app(calm_databases)
+
+    assert CAUSE_SHORTENING_BUTTON_KEY not in {str(button.key) for button in app.button}
+    assert _closing_link(app)
+
+    app.query_params.update(
+        shortening_card_query_params(
+            process=DYNAMIC_PROCESS,
+            month=app.session_state[PROCESS_DETAIL_MONTH_KEY],
+            target=1.2,
+            start_month=202601,
+            end_month=202606,
+            shortened=0,
+            new=0,
+            theme=None,
+        )
+    )
+    _ok(app.run())
+
+    assert app.button(key="process_detail_back_to_shortening").label == "필요 단축 일정"
+    assert not _closing_link(app)
+
+
 @pytest.fixture(scope="module")
 def usage_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
     """`dynamic_databases` 의 두 호기에 사용기준이 HBM·EDP 가 아닌 호기 하나를 더한 한 벌."""
@@ -896,7 +985,7 @@ def test_units_left_out_by_usage_basis_raise_an_alert_and_leave_the_closing_row_
     )
     for gone in gone_texts:
         assert not any(gone in caption for caption in captions), gone
-    # 정리 줄은 CSV 와 필요 단축 일정 링크다.
+    # 호기 CSV 는 표 도구 줄에 그대로다.
     assert UNITS_CSV_KEY in {str(button.key) for button in app.get("download_button")}
     head = next(item for item in app.markdown if "산출 근거 ·" in str(item.value))
     assert "공식 확보율" in str(head.help)
@@ -914,7 +1003,7 @@ def test_the_shortening_link_highlights_the_card_without_planting_the_filter(
     app = _dynamic_app(dynamic_databases)
     repository = DuckDBEquipmentRepository(dynamic_databases[1])
     before = repository.load_shortening_filter_profile()
-    app.button(key="process_detail_open_shortening_tab").click()
+    app.button(key=CAUSE_SHORTENING_BUTTON_KEY).click()
     _ok(app.run())
 
     assert "equipment_active_tab" not in app.session_state
@@ -1169,8 +1258,9 @@ def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_sectio
     assert "Cut-off 가 적힌 공정에만" not in note["full"]
     labels = _label_texts(app)
     assert "① 공식 기준" in labels and "② 설비 일정 기준 가용" not in labels
-    # 정리 줄(CSV·탭 링크)은 설비 일정이 설 때만이다.
+    # 호기 CSV 와 정리 줄의 탭 링크는 설비 일정이 설 때만이다.
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
+    assert SHORTENING_TAB_LINK_KEY not in {str(button.key) for button in app.button}
 
 
 # ------------------------------------------------------------------ 본문 프래그먼트

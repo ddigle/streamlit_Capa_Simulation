@@ -17,8 +17,21 @@ import pytest
 
 import capa_simulation.services.display_order as display_order_module
 from capa_simulation.components.required_shortening_panel import (
+    _LABEL_COLUMN_PX,
+    _MONTH_COLUMN_MIN_PX,
+    _UNIT_NAME_PX,
+    _UNIT_RESULT_PX,
+    _UNIT_STICKY_MIN_PX,
     _bottlenecks,
     _ordered_processes,
+    _style,
+)
+from capa_simulation.components.shortening_progress_panel import (
+    _NAME_PX,
+    _RESULT_PX,
+    _STICKY_MIN_PX,
+    UNITS_CONTAINER,
+    progress_style,
 )
 from capa_simulation.page_bootstrap import PageContext
 from capa_simulation.services.display_order import apply_display_order, prepare_display_order
@@ -156,3 +169,42 @@ def test_process_order_uses_the_prepared_rules_and_follows_them(
 
     assert ordered == expected
     assert ordered[0] == first
+
+
+def test_the_tables_keep_their_row_names_and_fit_fourteen_months() -> None:
+    """가로로 흐르는 표의 줄 이름 칸은 붙박이고(`position:sticky`), 기준 창(1600 · 사이드바 펼침) 표
+    폭 1227px 에 14달이 스크롤 막대 자리까지 남기고 든다 — 끝 달이 숫자 중간에서 잘려 보이지
+    않는다. 카드 표의 좌우 틈은 스크롤 상자 밖 여백이다(안쪽 여백이면 붙박인 칸 왼쪽으로 달 칸이
+    비친다)."""
+    assert _LABEL_COLUMN_PX + 14 * _MONTH_COLUMN_MIN_PX + 15 <= 1227
+    style = _style()
+    for selector in (".shk-grid > div.shk-row, .shk-grid > div.shk-row-muted", ".shk-unit-label"):
+        rule = style.split(selector + " {", 1)[1].split("}", 1)[0]
+        assert "position:sticky" in rule and "left:0" in rule and "background:" in rule
+    rule = progress_style().split(".shk-prog-label {", 1)[1].split("}", 1)[0]
+    assert "position:sticky" in rule and "left:0" in rule and "background:" in rule
+    assert "padding:8px 0 4px" in style.split(".shk-card-body {", 1)[1].split("}", 1)[0]
+
+
+@pytest.mark.parametrize(
+    ("style", "label", "name_px", "result_px", "threshold"),
+    [
+        (_style(), ".shk-unit-label", _UNIT_NAME_PX, _UNIT_RESULT_PX, _UNIT_STICKY_MIN_PX),
+        (progress_style(), ".shk-prog-label", _NAME_PX, _RESULT_PX, _STICKY_MIN_PX),
+    ],
+)
+def test_narrow_unit_rows_let_the_row_name_scroll_away(
+    style: str, label: str, name_px: int, result_px: int, threshold: int
+) -> None:
+    """호기 줄 묶음이 붙박인 이름 칸과 결과 칸을 나란히 담지 못할 만큼 좁으면(폰 폭 · 사이드바를 편
+    좁은 창) 이름 칸을 붙박지 않는다 — 붙박으면 끝까지 굴려도 결과 칸 앞쪽이 이름 칸 밑에 가려 끝내
+    못 읽는다. 갈림은 창이 아니라 묶음 폭의 컨테이너 질의다(사이드바를 펴도 따라간다)."""
+    units = _style().split(".shk-units {", 1)[1].split("}", 1)[0]
+    assert f"container:{UNITS_CONTAINER} / inline-size" in units
+    query = f"@container {UNITS_CONTAINER} (width < {threshold}px) {{"
+    assert query in style
+    body = style.split(query, 1)[1].split("}", 1)[0]
+    assert label in body and "position:static" in body
+    # 이름 칸 + 칸 사이 + 결과 칸 + 줄 안쪽 여백 · 테 — 이보다 넓어야 굴린 끝에서 결과 칸이 다
+    # 보인다.
+    assert threshold >= name_px + result_px + 10 + 11

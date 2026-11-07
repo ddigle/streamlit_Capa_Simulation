@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import date
 
 import pandas as pd
@@ -63,6 +64,7 @@ from capa_simulation.components.process_capa_view import (
     production_month_example,
     schedule_short_month,
     shortening_card,
+    shortening_link_needed,
     target_text,
 )
 from capa_simulation.design import theme
@@ -819,6 +821,45 @@ def test_the_month_next_screens_read_that_month_cause_and_schedule() -> None:
     assert month_next_screens(view, short[0]).schedule == "이 달 일정 부족 — 필요 단축 일정"
     # 설비 일정이 없으면 일정 단추가 없다.
     assert month_next_screens(_view(summary=summary), short[0]).schedule is None
+
+
+def _next_screens_app() -> None:
+    from capa_simulation.components.process_capa_view import NextScreens, _render_next_screens
+
+    _render_next_screens(
+        NextScreens(schedule="일정 1개월 — 필요 단축 일정"),
+        process="DEMO",
+        gap_key="gap",
+        shortening_key="to_shortening",
+        shortening_help="두 화면의 설비 기준이 다릅니다",
+    )
+
+
+def test_the_next_screen_button_keeps_the_balloon_of_the_closing_link() -> None:
+    """맨 아래 링크가 서지 않는 공정에서도 두 화면의 설비 기준이 갈린다는 풍선이 남는다."""
+    app = AppTest.from_function(_next_screens_app).run()
+
+    assert not app.exception
+    assert app.button(key="to_shortening").help == "두 화면의 설비 기준이 다릅니다"
+
+
+def test_the_closing_link_is_needed_only_without_another_way() -> None:
+    """맨 아래 필요 단축 일정 링크 — 일정 부족 달이 있으면 KPI 줄이, 그 카드에서 왔으면 「← 필요
+    단축 일정」 이 같은 길이다(설계 규칙 UI-LAY-12). 근거 카드 단추가 서는 달이 있는데 KPI 줄이 없는
+    갈래는 없다 — 달 수 하나로 둘을 함께 본다."""
+    short = _dynamic_view()
+    plan = prescription(short)
+    months = [int(month) for month in short.canvas.process_months["생산계획년월"]]
+    assert kpi_next_screens(_kpis(), plan).schedule is not None
+    assert any(month_next_screens(_view(dynamic=short), m).schedule for m in months)
+    assert not shortening_link_needed(short, arrived_from_card=False)
+
+    filled = short.canvas.process_months.assign(과부족=0.0)
+    calm = replace(short, canvas=replace(short.canvas, process_months=filled))
+    assert kpi_next_screens(_kpis(), prescription(calm)).schedule is None
+    assert not any(month_next_screens(_view(dynamic=calm), m).schedule for m in months)
+    assert shortening_link_needed(calm, arrived_from_card=False)
+    assert not shortening_link_needed(calm, arrived_from_card=True)
 
 
 @pytest.mark.parametrize(

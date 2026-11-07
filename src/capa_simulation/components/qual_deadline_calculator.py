@@ -26,8 +26,9 @@
 `parse_pasted_months`. 편집표에 바로 붙여 넣는 길은 덤이다: 표의 붙여넣기는 브라우저 클립보드 읽기라
 보안 문맥이 아닌 주소(평문 HTTP 로 다른 호스트)에서는 아무것도 들어가지 않고, 신규 호기 칸 뒤의 칸은
 버린다. 목표 칸에는 `step` 을 주지 않는다 — Streamlit 1.63 편집표는 `step` 의 소수 자릿수에서 값을
-**잘라** 저장해(19.3456 → 19.34) 원본과 다른 마감을 낸다. 원본의 「복사」 두 단추는 같은 표를 CSV 로
-내려받는 단추다(`table_toolbar` 관례 — 결과 표도 칸을 골라 Ctrl+C 로 복사된다).
+**잘라** 저장해(19.3456 → 19.34) 원본과 다른 마감을 낸다. 원본의 「복사」 두 단추 몫은 결과 표의 표
+도구 막대 내려받기와 칸 Ctrl+C 다 — 읽기만 하는 표 곁에 CSV 단추를 따로 두지 않는다(설계 규칙
+UI-LAY-12).
 
 **배치는 원본과 같다** — 넓으면 입력 칸(고정 폭) 옆에 결과 칸, 좁으면 위아래로 쌓는다(원본 `.cols`).
 원본은 창 폭으로 갈랐지만 앱은 사이드바가 본문 폭을 바꾸므로 두 칸을 담은 줄의 폭으로 가른다(CSS
@@ -64,7 +65,6 @@ from capa_simulation.components.status_metric import (
 )
 from capa_simulation.components.table_toolbar import (
     TABLE_TOOLBAR_CLEARANCE,
-    render_csv_download,
     toolbar_clearance,
 )
 from capa_simulation.design import tokens
@@ -89,10 +89,8 @@ from capa_simulation.services.qual_deadline import (
     format_day,
     format_short_day,
     is_example,
-    month_check_rows,
     parse_number,
     parse_pasted_months,
-    unit_result_rows,
     unit_table_rows,
 )
 from capa_simulation.sidebar_status import remembered_expander
@@ -151,8 +149,6 @@ _LAYOUT_KEY = "equipment_qualcalc_layout"
 _INPUTS_BOX_KEY = "equipment_qualcalc_inputs_box"
 _RESULTS_BOX_KEY = "equipment_qualcalc_results_box"
 _LAYOUT_CONTAINER_NAME = "capa-qualcalc"
-_UNITS_CSV_KEY = "equipment_qualcalc_units_csv_v1"
-_MONTHS_CSV_KEY = "equipment_qualcalc_months_csv_v1"
 
 MONTH_COLUMN = "월"
 TARGET_COLUMN = "목표 가용대수"
@@ -501,12 +497,6 @@ def _checks_styler(rows: list[CheckTableRow]) -> Styler:
     return styler
 
 
-def _csv_bytes(rows: list[list[str]]) -> bytes:
-    """복사 표를 CSV 로 — 다른 설비 표와 같은 BOM 붙은 UTF-8. 열두 달·호기 수십 줄이라 회차마다
-    만들어도 1ms 안이다(`cutoff_management` 의 Cut-off CSV 와 같다)."""
-    return pd.DataFrame(rows[1:], columns=rows[0]).to_csv(index=False).encode("utf-8-sig")
-
-
 def _text_column(
     label: str,
     *,
@@ -555,27 +545,13 @@ def _render_kpis(result: QualDeadlineResult) -> None:
         )
 
 
-def _render_heading(title: str, *, csv: bytes, file_name: str, key: str, label: str) -> None:
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown(f"##### {title}", width="content")
-        render_csv_download(data=csv, file_name=file_name, key=key, label=label)
-
-
 def _render_results(result: QualDeadlineResult) -> None:
     st.markdown("##### :material/insights: 결과")
     _render_kpis(result)
 
     unit_rows = unit_table_rows(result)
-    _render_heading(
-        "호기별 Qual 마감",
-        csv=_csv_bytes(unit_result_rows(result)),
-        file_name=f"qual_deadline_units_{result.year}.csv",
-        key=_UNITS_CSV_KEY,
-        label="호기별 결과 CSV",
-    )
+    st.markdown("##### 호기별 Qual 마감")
     if unit_rows:
-        # 표 도구 막대가 바로 위 제목 줄의 CSV 단추에 닿지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
-        toolbar_clearance()
         st.dataframe(
             _units_styler(unit_rows),
             hide_index=True,
@@ -606,7 +582,7 @@ def _render_results(result: QualDeadlineResult) -> None:
                     width=_UNIT_COLUMN_PX["메모"],
                     help=(
                         "메모가 둘 이상 붙어 잘리면 이 머리 칸 오른쪽 경계를 끌어 넓히거나 "
-                        "「호기별 결과 CSV」 로 봅니다."
+                        "표 오른쪽 위 내려받기로 봅니다."
                     ),
                 ),
             },
@@ -614,15 +590,8 @@ def _render_results(result: QualDeadlineResult) -> None:
     else:
         st.caption(EMPTY_UNITS_MESSAGE)
 
-    _render_heading(
-        "월 점검",
-        csv=_csv_bytes(month_check_rows(result)),
-        file_name=f"qual_deadline_months_{result.year}.csv",
-        key=_MONTHS_CSV_KEY,
-        label="월 점검 CSV",
-    )
+    st.markdown("##### 월 점검")
     check_rows = check_table_rows(result)
-    toolbar_clearance()
     st.dataframe(
         _checks_styler(check_rows),
         hide_index=True,

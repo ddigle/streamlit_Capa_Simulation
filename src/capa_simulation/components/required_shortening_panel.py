@@ -76,6 +76,7 @@ from capa_simulation.components.shortening_board import (
 )
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
+    UNITS_CONTAINER,
     BaselineSaveContext,
     consume_baseline_write,
     load_baseline_options,
@@ -178,6 +179,7 @@ from capa_simulation.services.undated_equipment import (
 from capa_simulation.services.upeh_assumption import UpehAssumption
 from capa_simulation.services.usage_basis import usage_exclusion_mark
 from capa_simulation.settings import DUCKDB_PATH
+from capa_simulation.sidebar_status import NO_PROCESS_MARK
 
 __all__ = [
     "MANUAL_NOTICE_HELP",
@@ -226,13 +228,17 @@ USAGE_NOTICE_HELP = (
     "있습니다."
 )
 
-# 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐른다.
+# 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐르고 첫 칸은 붙박인다. 기준 창(1600 ·
+# 사이드바 펼침)의 표 폭 1227px 에 14달이 스크롤 막대 자리까지 남기고 든다.
 _LABEL_COLUMN_PX = 170
-_MONTH_COLUMN_MIN_PX = 84
+_MONTH_COLUMN_MIN_PX = 74
 # 호기 줄: 이름·일정 칸 · 타임라인 · 단축일수 칸. 한 줄에 이름과 「기존 MM.DD → 단축 MM.DD」
 # (해가 다르면 `YY.MM.DD`)를 나란히 두므로 이름 칸이 넓고, 오른쪽은 「−N일」 하나뿐이라 좁다.
 _UNIT_NAME_PX = 250
 _UNIT_RESULT_PX = 70
+# 호기 줄 묶음 폭이 이보다 좁으면 붙박인 이름 칸이 끝까지 굴린 결과 칸을 덮는다(이름 칸 + 칸 사이
+# 10 + 결과 칸 + 줄 안쪽 여백 10 · 테 1) — 그때는 이름 칸을 붙박지 않고 줄 전체가 같이 구른다.
+_UNIT_STICKY_MIN_PX = _UNIT_NAME_PX + 10 + _UNIT_RESULT_PX + 10 + 1
 # 타임라인 한 줄의 높이와 표지(선·◀·●·◌)의 세로 가운데. 표지는 모두 이 가운데에 맞춘다.
 _TRACK_HEIGHT_PX = 24
 _TRACK_CENTER_PX = _TRACK_HEIGHT_PX / 2
@@ -400,13 +406,13 @@ def _prepare(
         or required_equipment is None
         or required_equipment_key is None
     ):
-        return ShorteningStop("scenario", scenario_error)
+        return _mark_empty_card(ShorteningStop("scenario", scenario_error), controls)
     demand = ShorteningDemand(
         context=context, key=required_equipment_key, loader=required_equipment
     )
     month_options = shortening_month_options(demand, cutoff)
     if isinstance(month_options, ShorteningStop):
-        return month_options
+        return _mark_empty_card(month_options, controls)
     profile = shortening_filter_profile_or_default(database_path)
     with controls:
         if database_path is not None:
@@ -461,6 +467,16 @@ def _prepare(
         labels=labels,
         assumption=assumption,
     )
+
+
+def _mark_empty_card(
+    stop: ShorteningStop, controls: AbstractContextManager[object]
+) -> ShorteningStop:
+    """칸을 세우기 전에 멈춘 회차 — 조건 카드에 표지 한 줄을 둔다(공정 Capa 상세 · 제약 시뮬레이션과
+    같은 꼴, 제목만 남은 빈 구역을 만들지 않는다). 까닭은 본문 마크의 알림이다."""
+    with controls:
+        st.caption(NO_PROCESS_MARK)
+    return stop
 
 
 @st.fragment
@@ -1388,6 +1404,9 @@ def _style() -> str:
   font-family:{display};font-weight:700}}
 .shk-grid > div.shk-row {{align-items:flex-start;text-align:left;font-weight:600}}
 .shk-grid > div.shk-row-muted {{align-items:flex-start;text-align:left;color:{tokens.TEXT_MUTED}}}
+.shk-grid > div.shk-row, .shk-grid > div.shk-row-muted {{position:sticky;left:0;z-index:1;
+  background:{tokens.SURFACE};box-shadow:1px 0 0 {tokens.BORDER}}}
+.shk-grid > div.shk-head.shk-row-muted {{background:{tokens.SURFACE_CLASSIFICATION}}}
 .shk-num {{font-family:{display};font-weight:700;font-size:14px}}
 .shk-sub {{font-size:10.5px;color:{tokens.TEXT_MUTED};white-space:nowrap}}
 .shk-bn-name {{max-width:100%;overflow:hidden;text-overflow:ellipsis}}
@@ -1406,14 +1425,18 @@ def _style() -> str:
 .shk-card-cutoff {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-badge {{font-size:12.5px;font-weight:700;border-radius:999px;padding:4px 12px;
   color:{tokens.TEXT}}}
-.shk-card-body {{padding:8px 18px 4px}}
-.shk-units {{padding:10px 18px 16px;display:flex;flex-direction:column;gap:6px}}
+.shk-card-body {{margin:0 18px;padding:8px 0 4px}}
+.shk-units {{padding:10px 18px 16px;display:flex;flex-direction:column;gap:6px;
+  container:{UNITS_CONTAINER} / inline-size}}
 .shk-units-legend {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-unit {{display:grid;grid-template-columns:{_UNIT_NAME_PX}px minmax({_TRACK_MIN_PX}px,1fr)
   {_UNIT_RESULT_PX}px;align-items:center;gap:10px;background:{tokens.SURFACE_SUBTLE};
   border:1px solid {tokens.BORDER};border-radius:8px;padding:3px 10px}}
 .shk-unit-axis {{background:none;border:none;padding:0 10px}}
-.shk-unit-label {{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap}}
+.shk-unit-label {{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap;
+  position:sticky;left:0;z-index:1;background:{tokens.SURFACE_SUBTLE}}}
+@container {UNITS_CONTAINER} (width < {_UNIT_STICKY_MIN_PX}px) {{
+  .shk-unit-label {{position:static}}}}
 .shk-unit-name {{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;min-width:0}}
 .shk-unit-dates {{flex:none;font-size:13px;color:{tokens.TEXT};white-space:nowrap;
@@ -1691,8 +1714,8 @@ def _card_table(
         gap, after_gap = float(str(row["과부족"])), float(str(row["단축후과부족"]))
         status = str(row["상태"])
         if gap < 0:
-            # 단축 후 값과 상태 글은 따로 한 줄씩이다 — 한 줄로 이으면 `nowrap` 이라 84px 달
-            # 칸을 넘어 옆 달에 얹힌다.
+            # 단축 후 값과 상태 글은 따로 한 줄씩이다 — 한 줄로 이으면 `nowrap` 이라 달 칸을 넘어
+            # 옆 달에 얹힌다.
             notes = [f'<span class="shk-sub">→ {_escape(_signed(after_gap))}</span>']
             if status in _STATUS_NOTES:
                 notes.append(f'<span class="shk-sub">{_escape(_STATUS_NOTES[status])}</span>')

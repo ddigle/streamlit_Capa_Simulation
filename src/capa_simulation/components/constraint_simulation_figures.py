@@ -37,13 +37,16 @@
 
 **월별 계산표**(`build_sheet_canvas`) — 공정 Capa 상세·Static 대비 일정 비교 시트와 같은
 `month_sheet_canvas` 엔진(라벨 260px · 달 100px). 구획은 공정 전체 → 제약 제품 → 개조(켬일 때) →
-기존 제품. 기준(제약 칸은 제약 목표) 미달 칸은 부족색 면(`STATUS_SHORTAGE` — 공정 Capa 상세 ① 판정
-칸과 같은 꼴, 글자는 본문색이라 두 테마에서 읽힌다), 줄어든 값(개조 중 비가동 · 제약 없을 때 대비
+기존 제품. 기준이 HOME 이면(`ConstraintLabels.warning_targets`) 공정 전체 · 기존 제품 확보율 칸은
+`capacity_status` 세 단계 판정색 면이고(공정 Capa 상세 ① 판정 칸과 같다, 글자는 본문색이라 두
+테마에서 읽힌다), 직접 넣은 기준에는 경고 경계가 없어 못 미친 칸만 부족색 면이다. 제약 제품 확보율
+칸은 제약 목표에 견주므로 늘 두 단계다. 줄어든 값(개조 중 비가동 · 제약 없을 때 대비
 −)은 감소 글자색(`DELTA_DECREASE`), 기간 안 달 머리는 옅은 칠(`header_hook`), 고른 달은 열
 테두리(`finish_hook`)다. 칸 풍선의 식(필요 「소요 × 제약 % = 곱」·기존 가용 「가용 − 개조 중 −
 배정」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한 값이 결과와 다르면 「≈」 다
 (`formula_text.equals_mark`). 비가동 몫 「n대 × d/w일」 은 인수가 정수라 늘 맞고, 신규 대기 몫은
-환산 대수가 소수라 같은 「≈」 길이다.
+환산 대수가 소수라 같은 「≈」 길이다. 제약 없을 때 대비 칸은 곁에 적힌 두 확보율로 다시 빼면 어긋날
+때 앞에 「≈」 가 붙는다(`rate_delta_text`).
 
 보유 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 전용
 대수를 `FILL_ORDER` 차례(지금 「신규 · 보유 · 개조」)로 나눠 보인다(`dedicated_split_text`) —
@@ -65,7 +68,7 @@ from typing import Any, Final, NamedTuple
 
 import plotly.graph_objects as go
 
-from capa_simulation.components.formula_text import equals_mark
+from capa_simulation.components.formula_text import APPROX, equals_mark, written_value
 from capa_simulation.components.home_figure_common import keep_unselected_opaque
 from capa_simulation.components.month_sheet_canvas import (
     EMPTY,
@@ -109,6 +112,7 @@ from capa_simulation.services.korean_particle import (
     with_topic_particle,
 )
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.securement_threshold import capacity_status
 from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.services.wd_window import wd_window
 
@@ -144,6 +148,7 @@ __all__ = [
     "rate_axis",
     "rate_figure",
     "rate_text",
+    "rate_delta_text",
     "signed_points",
     "units_text",
     "waiting_text",
@@ -153,7 +158,7 @@ __all__ = [
 SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 11
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 12
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -240,6 +245,10 @@ class ConstraintLabels:
     general_percent: float | None
     """기준 확보율(%). None 이면 HOME 판정 기준(달마다)."""
 
+    warning_targets: tuple[tuple[int, float], ...] = ()
+    """기준이 HOME 일 때 (달, 경고 기준의 판정 경계) — 계산표 세 단계 색의 재료. 직접 넣은 기준에는
+    경고 경계가 없어 비어 있다(두 단계)."""
+
 
 class SheetCanvas(NamedTuple):
     """계산표 캔버스 한 쌍. 두 Figure 는 높이가 같고 행이 맞는다."""
@@ -285,6 +294,20 @@ def signed_points(value: float | None) -> str:
     if points < 0:
         return f"{MINUS}{abs(points):.1f}%"
     return "0.0%"
+
+
+def rate_delta_text(rate: float | None, base: float | None) -> str:
+    """두 확보율의 차이 글 — 값은 원값의 차이 그대로다(`signed_points`). 곁에 적힌 두 값
+    (`rate_text`)으로 다시 빼면 끝자리가 어긋나는 차이는 앞에 「≈」 를 붙인다(공정 Capa 상세 비가동
+    영향 풍선과 같은 꼴 — 125.8% · 114.9% 곁의 「≈ −11.0%」). 없으면 「—」."""
+    if rate is None or base is None or not math.isfinite(rate) or not math.isfinite(base):
+        return EMPTY
+    shown = signed_points(rate - base)
+    written_rate, written_base = written_value(rate_text(rate)), written_value(rate_text(base))
+    if written_rate is None or written_base is None:
+        return shown
+    mark = equals_mark(shown, signed_points(written_rate - written_base))
+    return f"{APPROX} {shown}" if mark == APPROX else shown
 
 
 def minimum_unit(row: ConstraintMonth) -> bool:
@@ -1037,6 +1060,7 @@ def build_sheet_canvas(
         raise ValueError("월별 계산표의 달이 비었습니다.")
     target = labels.target_percent
     conditions = result.conditions
+    warnings = dict(labels.warning_targets)
     rows: list[Row] = [
         Row(
             "header",
@@ -1070,7 +1094,7 @@ def build_sheet_canvas(
             rows_in,
             lambda row: Cell(
                 rate_text(row.baseline_rate),
-                fill=_shortage_fill(row.baseline_secure),
+                fill=_general_fill(row.baseline_rate, row, warnings),
                 bold=row.baseline_secure is False,
             ),
         ),
@@ -1151,14 +1175,19 @@ def build_sheet_canvas(
             lambda row: Cell(
                 rate_text(row.existing_rate),
                 bold=True,
-                fill=_shortage_fill(row.existing_secure),
+                fill=_general_fill(row.existing_rate, row, warnings),
             ),
         ),
         _row("rate_delta", "제약 없을 때 대비 (%)", rows_in, _delta_cell),
     ]
     if show_proportional:
         rows.append(
-            _row("proportional_rate", "확보율 — 비중대로 나눴을 때", rows_in, _proportional_cell)
+            _row(
+                "proportional_rate",
+                "확보율 — 비중대로 나눴을 때",
+                rows_in,
+                lambda row: _proportional_cell(row, warnings),
+            )
         )
 
     height = stack_rows(rows)
@@ -1251,6 +1280,25 @@ def _shortage_fill(secure: bool | None) -> str | None:
     """기준(또는 제약 목표)에 못 미친 칸의 면 — 부족색(공정 Capa 상세 ① 판정 칸과 같은 꼴, 글자는
     본문 색이라 두 테마에서 읽힌다). 판정이 없거나 지키면 칠하지 않는다."""
     return tokens.STATUS_SHORTAGE if secure is False else None
+
+
+def _general_fill(
+    rate: float | None, row: ConstraintMonth, warnings: Mapping[int, float]
+) -> str | None:
+    """기준 확보율에 견주는 칸의 면. `warnings` 에 그 달 경고 경계가 있으면(기준이 HOME) HOME 과
+    같은 세 단계 판정색이고, 없으면 못 미친 칸만 부족색이다(`_shortage_fill`). 확보율이 없으면
+    칠하지 않는다."""
+    if rate is None:
+        return None
+    warning = warnings.get(row.month)
+    if warning is None:
+        return _shortage_fill(secure(rate, row.general_target))
+    # 상태 → 색 짝은 함수 안에서 만든다 — 모듈 상수면 테마를 바꿔도 색이 따라오지 않는다.
+    return {
+        "secure": tokens.STATUS_SECURE,
+        "warning": tokens.STATUS_WARNING,
+        "shortage": tokens.STATUS_SHORTAGE,
+    }[capacity_status(rate, secure_threshold=row.general_target, warning_threshold=warning)]
 
 
 def _head(row: ConstraintMonth) -> str:
@@ -1508,19 +1556,19 @@ def _delta_cell(row: ConstraintMonth) -> Cell:
     if abs(delta * 100) < _DELTA_HIDDEN_POINTS:
         return Cell("", muted=True, hover=f"{_head(row)} · 제약 없을 때와 같음")
     return Cell(
-        signed_points(delta),
+        rate_delta_text(row.existing_rate, row.baseline_rate),
         text_color=tokens.DELTA_DECREASE if delta < 0 else None,
         muted=delta > 0,
     )
 
 
-def _proportional_cell(row: ConstraintMonth) -> Cell:
+def _proportional_cell(row: ConstraintMonth, warnings: Mapping[int, float]) -> Cell:
     if not row.in_period:
         return Cell("", muted=True, hover=f"{_head(row)} · 제약 기간 밖")
     rate = row.proportional_existing_rate
     return Cell(
         rate_text(rate),
-        fill=_shortage_fill(None if rate is None else secure(rate, row.general_target)),
+        fill=_general_fill(rate, row, warnings),
         hover=(
             f"{_head(row)} · 가용 {with_object_particle(units_text(row.available))} "
             "소요 비중대로: 제약 "

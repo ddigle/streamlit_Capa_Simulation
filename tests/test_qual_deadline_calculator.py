@@ -154,8 +154,8 @@ def test_the_example_draws_the_original_results() -> None:
     assert units.loc[2, "Qual 완료 마감"] == "2027-04-05"
     checks = app.dataframe[2].value
     assert checks["판정"].tolist() == ["충족"] * 12
-    labels = {getattr(button, "label", None) for button in app.main.get("download_button")}
-    assert labels == {"호기별 결과 CSV", "월 점검 CSV"}
+    # 읽기만 하는 결과 표의 파일은 표 도구 막대 하나다 — 곁에 CSV 단추를 두지 않는다(UI-LAY-12).
+    assert not app.main.get("download_button")
 
 
 def test_clear_keeps_cutoff_year_and_today_and_reset_brings_the_example_back() -> None:
