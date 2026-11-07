@@ -415,8 +415,17 @@ function restoreFocus(root, saved) {
 
 // ---------------------------------------------------------------- 출납(표·오른쪽 칸 공용)
 
+// 칸을 연 채 편집본이 다시 섰다 — 친 글도 옛 base op 로 보내 서버가 함께 세어 알린다(`receive` 가 칸을 닫는다).
+function queueOpenEdit(S) {
+  const edit = S.edit
+  if (!edit || edit.draft === edit.original) return
+  enqueue(S, { op: 'cell', id: edit.id, col: S.model.columns[edit.col].name, text: edit.draft }, [])
+  schedule(S)
+}
+
 function receive(S, data) {
   const base = String(data.base || '')
+  if (S.box.base !== base) queueOpenEdit(S)
   if (rebaseBox(S.box, base)) {
     S.pending.clear()
     S.edit = null

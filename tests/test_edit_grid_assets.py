@@ -399,7 +399,7 @@ const other = boxQueue(box, { op: 'undo', table: 'U', gen: 'x' }, 20, 104)
 const repeat = boxHasOp(box, { op: 'undo', table: 'U', gen: 'x' })
 const fresh = boxHasOp(box, { op: 'redo', table: 'U', gen: 'x' })
 const acked = boxAck(box, 1)
-const stale = boxDropStale(box, 'T', 'g2').map((op) => op.seq)
+const stale = boxStale(box, 'T', 'g2').map((op) => op.seq)
 done({ first: [first.seq, first.at], second: second.seq, tooMany, clear: clear && clear.seq,
   cells: [opCells(write(4)), opCells({ op: 'fill', rows: ['a', 'b'], cols: ['m'] }),
     opCells({ op: 'undo' })],
@@ -417,7 +417,7 @@ done({ first: [first.seq, first.at], second: second.seq, tooMany, clear: clear &
         "fresh": False,
         "acked": 1,
         "stale": [2, 3],
-        "left": [4],
+        "left": [2, 3, 4],
         "other": 4,
     }
 

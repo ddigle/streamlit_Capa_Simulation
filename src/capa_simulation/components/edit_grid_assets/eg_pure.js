@@ -244,11 +244,10 @@ function boxAck(box, seq) {
   return before - box.ops.length
 }
 
-// 그 표의 이력 세대(gen)가 바뀌었다 — 옛 세대 op 를 뺀다(서버도 버린다). 뺀 op 목록.
-function boxDropStale(box, table, gen) {
-  const stale = box.ops.filter((op) => op.table === table && op.gen !== gen)
-  if (stale.length) box.ops = box.ops.filter((op) => !stale.includes(op))
-  return stale
+// 그 표의 이력 세대(gen)가 바뀐 뒤의 옛 세대 op. 출납에서 빼지 않는다 — 서버가 버리면서 세어 알리고 ack 가 지운다. 묶음이 아직 든
+// op 도 서버까지 가야 세이고, 보낸 op 도 다음 보냄에 함께 실려야 합쳐진 회차에서 수가 빠지지 않는다.
+function boxStale(box, table, gen) {
+  return box.ops.filter((op) => op.table === table && op.gen !== gen)
 }
 
 // 아직 ack 가 오지 않은 같은 op(seq·at 밖의 칸이 모두 같은 것)가 있는가 — 더블클릭의 둘째 누름을 거른다.

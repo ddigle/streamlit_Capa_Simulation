@@ -656,6 +656,62 @@ def test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time() -> None:
     assert result["hidden"] == {"queued": 5, "sent": 6}, "창이 숨으면 곧바로 보낸다"
 
 
+RUNNER_NEW_GEN = (
+    RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
+    + r"""
+const R = {}
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const newGen = Object.assign({}, input.feed, { gen: 'g2' })
+  edit('61%')
+  await tick(360)
+  R.sentOne = { sent: sent.length, seqs: seqs() }
+  // 적용이 도는 사이 친 칸 — 묶음이 든 채 새 세대가 온다.
+  edit('62%')
+  edit('63%')
+  sendFeed(newGen)
+  R.newGen = { sent: sent.length, box: S.box.ops.length, previews: S.pending.size, gen: S.gen }
+  edit('64%')
+  await tick(360)
+  R.quiet = { sent: sent.length }
+  R.outbox = sent[sent.length - 1]
+  sendFeed(Object.assign({}, newGen, { acks: { [S.mount]: 4 }, toast: { id: 1, text: '셌다' } }))
+  R.acked = { box: S.box.ops.length, toast: S.dom.toast.hidden ? '' : S.dom.toast.textContent }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_ops_held_by_the_batch_when_the_table_renews_are_sent_and_counted() -> None:
+    """세대가 바뀌어도 보낼 목록에서 빼지 않는다. 묶음이 든 op 는 묶음이 끝나 나가고, 이미 보낸 op
+    도 함께 실린다 — 서버가 옛 세대를 세어 알리고 ack 가 지운다. 전에는 브라우저가 묶음이 든 op 를
+    말없이 뺐다(「변경사항 적용」 이 도는 사이 잇달아 친 칸이 토스트 없이 사라졌다, 샘플 관측)."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    feed = _feed(index, "k1", {"cells": {"DEMO_B\x1f양산": {"202702": 0.5}}, "bad": {}}, undo=1)
+    source = FAKE_DOM + mountable(edit_grid.registered_js())
+    result = run_node(source, RUNNER_NEW_GEN, {"shell": shell, "feed": feed})
+    assert result["sentOne"] == {"sent": 1, "seqs": [1]}
+    assert result["newGen"] == {"sent": 1, "box": 3, "previews": 0, "gen": "g2"}
+    assert result["quiet"] == {"sent": 2}
+    outbox = result["outbox"]
+    assert [(op["seq"], op["gen"]) for op in outbox["ops"]] == [
+        (1, "g1"),
+        (2, "g1"),
+        (3, "g1"),
+        (4, "g2"),
+    ]
+    assert result["acked"] == {"box": 0, "toast": "셌다"}
+    ops, _ = eg.new_ops({"demo_grid": outbox}, {})
+    history: eg.HistoryState = {"gen": "g2", "undo": [], "redo": []}
+    applied = eg.apply_ops(index, SPEC, None, history, ops)
+    assert applied.toasts == [eg.DROPPED_TOAST.format(n="3")], "서버가 옛 세대 셋을 센다"
+    assert eg.change_counts(applied.draft)[0] == 1, "새 세대 칸은 들어간다"
+
+
 RUNNER_FILTERED_PASTE = (
     RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
     + r"""

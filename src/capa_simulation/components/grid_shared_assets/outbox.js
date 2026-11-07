@@ -1,8 +1,7 @@
-// 표 공용 조각 — 보낼 목록(순수). 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. base 가 바뀔 때 무엇을 하는지는 표마다 다르다
-// (설비 마스터는 `rebaseBox` 로 비우고 목록 표는 남겨 서버가 세어 알린다).
+// 표 공용 조각 — 보낼 목록(순수). 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. base 가 바뀌어도 op 를 남겨 서버가 세어 알린다.
 
 // <grid-outbox>
-// 보낼 목록. seq 는 마운트 안에서 늘 늘고, ack 가 온 seq 이하는 뺀다. base 가 바뀌면 통째로 버린다.
+// 보낼 목록. seq 는 마운트 안에서 늘 늘고, ack 가 온 seq 이하는 뺀다.
 function opCells(op) {
   if (op.op === 'paste') return (op.rows || []).reduce((sum, line) => sum + line.filter((v) => v !== null).length, 0)
   if (op.op === 'set') return (op.ids || []).length
@@ -32,11 +31,12 @@ function ackBox(box, seq) {
   return before - box.ops.length
 }
 
+// base 가 바뀌었으면 옛 편집본에서 돌아온 것이라 참이다. 든 op 는 빼지 않는다 — 옛 base op 는 서버가 버리면서 세어 알리고 ack 가
+// 지운다. 묶음이 아직 든 op 도 서버까지 가야 세이고, 보낸 op 도 다음 보냄에 함께 실려야 합쳐진 회차에서 수가 빠지지 않는다.
 function rebaseBox(box, base) {
   if (box.base === base) return false
   const had = box.base !== null
   box.base = base
-  box.ops = []
   return had
 }
 

@@ -141,9 +141,8 @@ function freshState() {
 function receive(S, data) {
   const base = String(data.base || '')
   S.base = base
-  // 설비 마스터 `rebaseBox` 와 달리 비우지 않는다 — 옛 base op 는 서버가 세어 알리고 ack 로 지운다. 사라지는 고침을 한 길로
-  // 알리기 위해서다. 낙관 표시는 `liveOps` 가 base 로 걷는다.
-  S.box.base = base
+  // 옛 base op 는 서버가 세어 알리고 ack 로 지운다(`rebaseBox`). 낙관 표시는 `liveOps` 가 base 로 걷는다.
+  rebaseBox(S.box, base)
   const ack = data.ack || {}
   if (ack.mount === S.mount && Number.isInteger(ack.seq)) ackBox(S.box, ack.seq)
   S.limit = Number((data.limits || {}).outboxCells) || S.limit

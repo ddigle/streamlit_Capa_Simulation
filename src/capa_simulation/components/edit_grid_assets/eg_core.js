@@ -328,7 +328,7 @@ function egApplyFeed(S, feed) {
   const m = S.model
   S.feedData = feed
   S.gen = String(feed.gen || '')
-  for (const op of boxDropStale(S.box, m.table, S.gen)) egDropPreview(S, op.seq)
+  for (const op of boxStale(S.box, m.table, S.gen)) egDropPreview(S, op.seq)
   const decoded = decodeDraft(feed, m.valueCount)
   m.draft = decoded.draft
   m.bad = decoded.bad
