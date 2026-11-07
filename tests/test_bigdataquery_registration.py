@@ -477,6 +477,20 @@ def test_only_a_blank_period_says_the_short_period_refusal(
     ]
 
 
+def test_the_tab_opens_on_its_settings_line_and_the_search_has_no_sentence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """탭 이름을 거듭하는 소제목이 없다(뜻은 Guide 첫머리). 검색 칸의 말은 풍선 한 곳이다."""
+    _configured(monkeypatch)
+    app = _run()
+    assert not app.subheader
+    assert any(str(item.value).startswith(registration.BANNER_LABEL) for item in app.caption)
+    picked = _run(__pick_row__=0)
+    search = picked.text_input(key=registration.CATALOG_KEYWORD_KEY)
+    assert search.placeholder == ""
+    assert search.help == registration.CATALOG_KEYWORD_HELP
+
+
 CATALOG_FAILURE_SCRIPT = """
 import sys
 from datetime import date

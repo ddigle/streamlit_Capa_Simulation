@@ -255,6 +255,21 @@ def test_a_missing_week_is_a_status_line_while_off(database: Path) -> None:
     assert MISSING_WEEK_MESSAGE in str(status.proto.help)
 
 
+def test_the_tab_opens_on_its_status_card_and_the_name_field_keeps_its_note_in_a_balloon(
+    database: Path,
+) -> None:
+    """탭 이름을 거듭하는 소제목이 없고, 「바꾼 사람」 칸의 안내는 칸이 비었을 때 보이는 글이 아니라
+    풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-07)."""
+    _with_w40(database)
+
+    app = _tab(database)
+
+    assert not app.subheader
+    field = _field(app.text_input, "바꾼 사람(선택)")
+    assert field.placeholder == ""  # type: ignore[attr-defined]
+    assert field.help == "이름을 적으면 설정 변경 기록에 남습니다."  # type: ignore[attr-defined]
+
+
 def test_an_unreadable_official_version_is_a_mark_not_a_red_box(
     database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -253,8 +253,6 @@ def render_bigdataquery_registration(
     # 같은 까닭으로 위젯 앞이다. 리셋이 선택을 지운 뒤라 초기화한 폼은 되살리지 않는다.
     _restore_dropped_prefill()
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
-    st.subheader("BigDataQuery 시나리오 등록")
-
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
     _render_configuration_banner(
@@ -496,7 +494,8 @@ def _render_catalog_list(toolbar: DeltaGenerator, *, registered_codes: frozenset
             # 붙어, 전체 목록으로 되돌리는 조작이 한 번에 끝난다.
             type="search",
             width=360,
-            placeholder="시뮬레이션명·코드·PLAN 부분 일치(공백은 AND)",
+            # 빈 글자라야 칸이 빈다 — None 이면 `type="search"` 기본 글 「Search」 가 선다.
+            placeholder="",
             help=CATALOG_KEYWORD_HELP,
         )
         scope = st.segmented_control(

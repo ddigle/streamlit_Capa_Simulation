@@ -199,7 +199,6 @@ def render_auto_official_update(
     """탭 본문. `sources`·`clock` 은 시험이 가짜 원천·시계를 넣는 자리다(화면은 넘기지 않는다).
     `alert_tab` 은 이 탭 이름(상태 알림 `AU-01` · `AU-02` 의 「그 화면으로」 —
     `state_alerts.open_tab_name`)이고 None 이면 닫힌 탭이라 그 회차에는 알리지 않는다."""
-    st.subheader("공식버전 자동 갱신")
     try:
         settings = repository.load_auto_official_update_settings()
     except BOOTSTRAP_ERRORS as exc:
@@ -483,8 +482,8 @@ def _render_settings_form(
                 changed_by = st.text_input(
                     "바꾼 사람(선택)",
                     value="",
-                    placeholder="이름을 적으면 설정 변경 기록에 남습니다",
                     width=280,
+                    help="이름을 적으면 설정 변경 기록에 남습니다.",
                 )
         notice = render_flash(SETTINGS_FLASH_KEY)
         refused = take_refusal(SETTINGS_SAVE_NAME)
