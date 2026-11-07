@@ -61,6 +61,7 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
+from capa_simulation.components.scenario_management_tabs import EQUIPMENT_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
     floor_state_draft_pending,
@@ -78,6 +79,7 @@ from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
     EQUIPMENT_MASTER_TAB,
     REQUIRED_SHORTENING,
+    SCENARIO_MANAGEMENT,
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -232,8 +234,8 @@ def render_legacy_trace_warning(session: EquipmentSession) -> None:
     """옛 배포로 저장한 설비 리비전의 상태 알림(`SB-19` — 저장 거부 문구와 같은 글)과, 있으면 맨 위
     「시나리오 관리에서 이어 쓰기」 단추 — 「이대로 이어 쓰기」 는 다른 화면(시나리오 관리 「설비
     시나리오」 탭)에 있어 그리로 옮기는 길을 둔다. 경고 상자는 자리에 그리지 않는다(2026-11-03
-    결정 보드 D2 (나) — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 설비 DB 를 여는 회차마다
-    부른다."""
+    결정 보드 D2 (나) — 흔적 수가 바뀔 때만 알림창, Alarm 에 남음). 알림의 「그 화면으로」 도 그
+    탭을 연다(`goto` — 어느 설비 화면이 먼저 내도 줄이 같다). 설비 DB 를 여는 회차마다 부른다."""
     count = session.legacy_trace_count
     alerts.state(
         "SB-19",
@@ -242,6 +244,8 @@ def render_legacy_trace_warning(session: EquipmentSession) -> None:
         active=bool(count),
         text=f"옛 배포 설비 리비전 {count}개 — 설비 저장이 막힘. 시나리오 관리 › 설비 시나리오",
         full=legacy_trace_message(count) if count else None,
+        tab=EQUIPMENT_SCENARIO_TAB_NAME,
+        goto=(tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href),
     )
     if count:
         render_legacy_trace_goto()

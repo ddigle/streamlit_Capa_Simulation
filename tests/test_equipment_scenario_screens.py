@@ -88,6 +88,7 @@ from capa_simulation.components.equipment_settings_dialog import SETTINGS_BUTTON
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_management import MODE_KEY
+from capa_simulation.components.scenario_management_tabs import EQUIPMENT_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
@@ -97,7 +98,7 @@ from capa_simulation.navigation import (
     SCENARIO_MANAGEMENT,
     SPACE_STATUS,
 )
-from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY
+from capa_simulation.page_tabs_state import PAGE_TABS_OPEN_KEY, tab_label
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_equipment_scenario_cache,
@@ -1947,6 +1948,10 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert trace["active"] is True and trace["level"] == "action"
     assert "옛 배포로 저장한 설비 리비전 1개" in trace["full"]
     assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in trace["full"]
+    # 고칠 자리가 다른 화면이라 「그 화면으로」 가 그 화면 그 탭을 연다(`goto` — UI-NTF-08).
+    assert trace["page"] == tab_label(SCENARIO_MANAGEMENT)
+    assert trace["href"] == SCENARIO_MANAGEMENT.href
+    assert trace["tab"] == EQUIPMENT_SCENARIO_TAB_NAME
     # 단추는 탭 기억 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
     # 옮긴다 — 다음 `run()` 의 화면으로 기억하지는 않는다).
     app.button(key=LEGACY_TRACE_GOTO_KEY).click()
