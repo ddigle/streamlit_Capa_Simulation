@@ -39,6 +39,11 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
 from capa_simulation.components.equipment_master_tab import (
+    DATA_MENU_GENERATION_KEY,
+    DATA_MENU_KEY,
+    DATA_MENU_LABEL,
+    IMPORT_MENU_BUTTON_KEY,
+    IMPORT_MENU_LABEL,
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
     SIDE_HISTORY,
@@ -371,7 +376,7 @@ def test_the_history_and_downloads_render_in_the_tab(tmp_path: Path, grid: Calls
     app.session_state[SIDE_KEY] = SIDE_CHANGES
     app.run()
     app.button(key=SAVE_BUTTON_KEY).click().run()
-    # 내려받기 팝오버 — 양식 셋 + 현재 데이터 셋.
+    # 메뉴 「엑셀·CSV」 — 양식 셋 + 현재 데이터 셋.
     keys = {button.key for button in app.get("download_button")}
     assert {
         "equipment_master_template_download_v3",
@@ -388,6 +393,53 @@ def test_the_history_and_downloads_render_in_the_tab(tmp_path: Path, grid: Calls
     # 조회의 동작 설명(바로 다시 그림 · 편집본을 바꾸지 않음)은 자리에 늘 두지 않는다 — Guide 가
     # 말한다(설계 규칙 UI-TXT-01).
     assert not any("바로 다시 그립니다" in item.value for item in app.caption)
+
+
+def _menu_keys(app: AppTest) -> list[str]:
+    """메뉴 「엑셀·CSV」 팝오버의 key — 세대 꼬리까지(한 회차에 하나)."""
+
+    def walk(node: Any) -> Any:
+        yield node
+        for child in getattr(node, "children", {}).values():
+            yield from walk(child)
+
+    return [
+        str(item.key)
+        for root in app._tree.children.values()
+        for item in walk(root)
+        if str(getattr(item, "key", "") or "").startswith(DATA_MENU_KEY)
+    ]
+
+
+def test_the_data_menu_opens_the_import_dialog_and_closes_itself(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 는 같은 팝업을 열고 메뉴는 팝업 뒤에 남지 않는다 —
+    세대 꼬리 key 로 닫힌 채 다시 선다(여닫힘을 받으면 메뉴를 열 때마다 회차가 돈다). 닫힌 뒤 초점을
+    메뉴 단추로 돌리도록 불러오기 data 가 그 길을 말한다. 다른 길로 열면 그 표지가 걷힌다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    assert not app.exception, app.exception
+    press = app.button(key=IMPORT_MENU_BUTTON_KEY)
+    assert press.label == IMPORT_MENU_LABEL and DATA_MENU_LABEL == "엑셀·CSV"
+    assert _menu_keys(app) == [f"{DATA_MENU_KEY}__g0"]
+    assert last(grid, emg.LOADER_KEY)["menuKey"] == emg.TOOLS_KEY
+    assert last(grid, emg.LOADER_KEY)["dialogFromMenu"] is False
+
+    press.click().run()
+    assert not app.exception, app.exception
+    assert app.session_state[EQUIPMENT_DIALOG_KEY] == "import"
+    assert app.session_state[DATA_MENU_GENERATION_KEY] == 1
+    assert _menu_keys(app) == [f"{DATA_MENU_KEY}__g1"]
+    assert last(grid, emg.LOADER_KEY)["dialogFromMenu"] is True
+
+    # 표 컴포넌트 첫 화면 단추로 다시 열면 메뉴 표지는 걷히고 메뉴 세대는 그대로다.
+    del app.session_state[EQUIPMENT_DIALOG_KEY]
+    app.run()
+    send(app, emg.LOADER_KEY, "dialog", {"name": "import"})
+    assert not app.exception, app.exception
+    assert app.session_state[EQUIPMENT_DIALOG_KEY] == "import"
+    assert last(grid, emg.LOADER_KEY)["dialogFromMenu"] is False
+    assert app.session_state[DATA_MENU_GENERATION_KEY] == 1
 
 
 def test_a_cell_draft_blocks_every_save_path(tmp_path: Path, grid: Calls) -> None:

@@ -2187,7 +2187,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭 줄이 붙었을 때의 아래 끝 + 8px, 1.63 에서 97px — 950 창 653px · 800 창 503px) 안에서 스크롤하고(`overflow-y: auto` — 페이지를 늘리지 않는다, 스크롤 막대 자리는 영역 안쪽 여백으로 내보내 내용 끝이 머리 단추와 맞는다), 오른쪽
     칸은 그 높이에 붙고(sticky) 내용이 짧아도 머리 + 상한만큼 높이를 잡는다(칸을 바꿔도 영역이 뛰지 않고 칸막이를 잡을 자리가 있다). 접어도 패널은 `display:none` 으로 그대로 그려 두어 다시 마운트되지 않고 보내지 않은 출납을
     잃지 않는다. 폭·접힘은 브라우저에만 둔다(9장 「브라우저 전용 보기 상태」). 받기 콜백이 오른쪽 칸을 열면(`_switch_side` —
-    표 설비명·「+ 새 호기」·가져오기·「호기 추가」·저장 전 변경의 고칠 것 줄) 연 수 `SIDE_REVEAL_KEY` 를 올려 칸막이 data
+    표 설비명·첫 화면 「+ 새 호기」·가져오기·「호기 추가」·저장 전 변경의 고칠 것 줄) 연 수 `SIDE_REVEAL_KEY` 를 올려 칸막이 data
     `reveal` 로 보내고, 칸막이는 그 수가 오르면 접힌 칸을 펴고 본문 칸을 맨 위로 올린다(누른 것이 보이게 — 본문 칸은 key 칸이라
     다른 호기를 그려도 스크롤 자리가 남아 새 호기 이름 머리가 칸 위로 나가 있었다). 칸 안 너비 560px 이상이면 상세·새 호기 칸
     묶음이 3열(`grid.css` container query)이다. 「저장 전 변경」 목록 `max-height 420px`(본문 칸 안 겹 스크롤)은 그대로 둔다.
@@ -2201,7 +2201,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세션 초안으로 둔다 — 세션 초안보다 번호가 작은 `add`(버린 두 번 누름)는 보지 않는다(다음 회차에 따로 온 둘째 누름이 넣은 뒤
     초안을 옛 초안으로 덮지 않게). 호기마다의 함께 넣기 고름은 없다(2026-11-05 사용자 답 — 옛 체크 · 경고를 걷었다): 새 호기는 어느 길로
     들든 저장 때 다른 설비 시나리오에 함께 넣고 결과 알림이 대수를 적는다. 옛 세션의 초안 · `add` op · 고름 칸(`propagate` · `equipment_new_unit_propagate_v1`)은 읽지 않는다. 가져오기(`copy` 트리거 — 상세 「이 호기로 새 호기 만들기」 는 빈 초안에,
-    「비슷한 호기에서 값 가져오기」 는 브라우저 초안 위에)와 불러오기 「+ 새 호기」(`new`)가 이 칸을 연다. 가정 설비 시나리오면 칸
+    「비슷한 호기에서 값 가져오기」 는 브라우저 초안 위에)와 첫 화면 「+ 새 호기」(`new`)가 이 칸을 연다(불러오기 줄에는 두지 않는다 — 칸 고르기 「새 호기」 와 같은 일이다). 가정 설비 시나리오면 칸
     위에 새 호기 자리 안내(공식 배치에는 자리 없이 — Q1)를 싣는다. 지우기 토스트는 값 한 줄(`_delete_toast` — 저장본 호기 「n대 지울 목록에 넣음」, 지울 목록에 들지 않고 바로 빠지는 새 호기
     「새 호기 n대 뺌」, 섞이면 둘을 「 · 」 로 잇는다 — 어느 쪽이든 그 단계를 「되돌리기」 가 가리킨다)이고
     저장해야 지워진다 · 모든 설비 시나리오에서 빠진다는 말은 지우기 단추 풍선(`DELETE_TIP`, UI-NTF-09)과 Guide 다.
@@ -2210,7 +2210,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 한 회차에 표 모양(`build_view` → `equipment_grid.build_grid_view`)을 한 번 내고 세 마운트 data 를 그것에서 낸다. 칸 결과
     (`equipment_master_issues` — 저장과 같은 인자: 캔버스·오늘)는 편집본 세대·`buffer_base`·오늘·캔버스 열쇠로 세션 메모
     (`GRID_MEMO_KEY`, 튜플로 풂)에 한 번. 표 글자(`text_matrix` — 편집본은 편집본 세대·`buffer_base`, 저장본은 저장본 사본 토큰
-    열쇠 → `GridSource.texts`)와 「내려받기」 현재 데이터 바이트(`_render_current_data_downloads(memo_key=)`)도 같은 메모 칸이다 —
+    열쇠 → `GridSource.texts`)와 메뉴 「엑셀·CSV」 현재 데이터 바이트(`_render_current_data_downloads(memo_key=)`)도 같은 메모 칸이다 —
     고친 편집본이 있는 세션의 바뀐 것 없는 회차가 3천 대 × 39칸 글자·직렬화를 다시 내지 않는다(개편 명세 8장 「payload 메모」).
     편집본을 이 두 함수(`replace_equipment_buffer`·`apply_master_grid_result`) 밖에서 세대를 올리지 않고 바꾸면 메모가 옛 글자를
     그린다 — 시험도 `BUFFER_GENERATION_KEY` 를 함께 올린다. 미저장 표시(머리 변경 칩·사이드바 「미저장 변경」·머리 띠·탭 점·떠나기 확인 — 모두 `has_unsaved_equipment_edits`)는
@@ -2254,7 +2254,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `official_layout_cells`, 공식 스냅샷의 그 호기 칸 그대로)을 적는다 — `official_places` 는 견줄 꼴(`CANVAS_DECIMALS` 반올림)이라
     그대로 적으면 공식 좌표 12.25 가 12.2 로 들어가 모듈 묶음 바둑판이 어긋나 저장이 막힌다. 원래 값이 견줄 꼴과 맞지 않으면(낡은
     세션 등) 견줄 꼴을 적는다. 공식 층이 다른 호기를 한 묶음으로 묶는 고침의 「저장하기 전에 고칠 것」 줄은 `official_places` 가
-    비어도(배치 차이가 없는 가정 시나리오) 판정한다. 「내려받기」 팝오버는 양식 셋 + 현재 데이터 셋(`_render_current_data_downloads`).
+    비어도(배치 차이가 없는 가정 시나리오) 판정한다.
+  - **불러오기 줄 끝 메뉴 「엑셀·CSV」**(`_render_data_menu`): 표 위 작업 단추는 한 줄이다 — 찾기 칸 · 「공정별」 · 「조건별」 · 「일정 확인 n대」 · 메뉴(줄인 말의 원래 뜻은 풍선 · 패널 접근성 이름). 메뉴는 맨 위 「한꺼번에 넣기」(팝업) + 양식 셋 + 현재 데이터 셋(`_render_current_data_downloads`)이고 내려받기가 파이썬 위젯이라 Streamlit 팝오버로 남았다.
+    그림자 DOM 불러오기와 한 flex 줄에 넣지 못해 메뉴 칸(`TOOLS_KEY`)을 왼쪽 칸 기준 절대 위치로 띄우고(흐름 높이 0, 불러오기 **뒤** 차례 — 키보드 차례가 왼쪽에서 오른쪽) 불러오기 줄 `.emg-lb` 만 CSS 변수 `--emd-tools-reserve` 로 비운다(`tools_menu_style` — 값 줄 · 빈 안내는 폭을 그대로 쓴다). 폭은 팝오버 `width` 로 고정이라 글꼴과 무관하고, 접은 동안은 떠 있는 단추 자리(`SIDE_REOPEN_RESERVE_PX`)만큼 더 비운다. 좁아지면 줄이 바뀌어도 메뉴는 첫 줄 끝이다. Streamlit 1.63 DOM(`stLayoutWrapper` · `stPopoverButton`)에 기대므로 올리면 다시 본다.
+    「한꺼번에 넣기」 는 팝오버 세대(`DATA_MENU_GENERATION_KEY`)를 올려 메뉴를 닫은 채 다시 세운다(`on_change` 로 여닫힘을 받으면 메뉴를 열 때마다 회차가 돈다). 팝업이 닫힌 회차(`dialogClosed`)에 메뉴로 연 팝업이면(`dialogFromMenu`) 초점을 메뉴 단추로, 첫 화면 단추로 열었으면 그 단추(넣어서 사라졌으면 메뉴 단추)로 돌린다 — 표 컴포넌트가 `menuKey` 로 그림자 DOM 밖 단추를 찾는다. 저장된 데이터가 없는 첫 화면에는 「엑셀·CSV로 한꺼번에」 · 「+ 새 호기」 단추가 남는다.
 - `src/capa_simulation/components/equipment_import_dialog.py` — 가용설비 현황 「엑셀·CSV로 한꺼번에」 팝업(옛 입력 탭을 옮김, 개편
   명세 4-8). 열림 값 `import`(「가용설비 설정」 과 한 열림 칸·한 호스트 — `render_equipment_dialog_host(import_dialog=)`), 여는 콜백은
   `forget_page_dialogs()` 부터. 미리보기는 옛 입력 탭 그대로(`build_import_review` + 낡은 세션 거절 + 배치 잠금·가정 묶음 거절 +
@@ -2297,7 +2300,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `add` op), 상태 값은 그 밖에 「새 호기」 초안 `draft`(편집본을 바꾸지 않는다 — `draft_value` 가 거른다) 하나다. 트리거는
     불러오기 `load`·`clear`·`new`·`dialog`, 표 `open`·`unload`, 오른쪽 칸 `open`·`goto`·`copy`(`copy_request`) 이다. 받기 콜백이 꼴을 거르고(표 트리거는
     그린 회차의 `view` 와 같을 때만) 화면 쪽 처리 함수에 넘긴다 — 출납 처리 함수는 `outbox_value` 로 두 마운트를 함께 읽는다.
-  - 브라우저: 불러오기(설비명 부분 일치·목록 같음/앞부분·못 찾음, 공정, 조건 — 사용자 R1, 일정 확인 필요, 전체), 칸 묶음·정렬·
+  - 브라우저: 불러오기(설비명 부분 일치·목록 같음/앞부분·못 찾음, 공정, 조건 — 사용자 R1, 일정 확인, 전체), 칸 묶음·정렬·
     고름(브라우저 몫 — 칸 묶음만 localStorage), 가상 스크롤(줄 34px), 칸 고치기 키(Enter·Esc·Tab·↑↓·F2 — 줄바꿈이 든 값은 표 칸·
     호기 상세·「새 호기」 칸 모두 여러 줄 칸(`textEditor` — textarea)으로 열어 줄바꿈을 지킨다, Enter 는 확정이고 줄을 새로 넣는
     키는 없다), 엑셀 여러 칸 붙여넣기

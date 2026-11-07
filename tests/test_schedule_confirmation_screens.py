@@ -2,7 +2,7 @@
 
 """일정 확인 알림의 화면 연결(2026-10-16 사용자 결정 3 — 저장은 막지 않는다).
 
-- **설비 마스터 탭**(가용설비 현황 ①, 개편 명세 4-1·4-4) — 불러오기 줄 「일정 확인 필요 n대」 가
+- **설비 마스터 탭**(가용설비 현황 ①, 개편 명세 4-1·4-4) — 불러오기 줄 「일정 확인 n대」 가
   그 호기를 세고(누르면 그 호기를 불러온다) 표 줄 설비명 풍선이 「반입 미확인」 같은 단계·갈래를
   말한다. 편집본 기준이라 표에서 고친 저장 전 실적·넣은 행이 바로 보인다. 0 이면 단추가 꺼진다.
   AppTest 는 표 JS 를 못 돌려 대역(`tests/grid_fake.py`)이 받은 data 를 본다.
@@ -141,7 +141,7 @@ def _app(path: Path) -> AppTest:
 
 
 def _alert_ids(grid: Calls) -> list[str]:
-    """불러오기 줄 「일정 확인 필요 n대」 의 호기(행 id)."""
+    """불러오기 줄 「일정 확인 n대」 의 호기(행 id)."""
     return list(last(grid, emg.LOADER_KEY)["alertIds"])
 
 
@@ -229,14 +229,14 @@ def test_the_cached_issues_follow_the_content_and_the_day(
 
 
 def test_the_master_tab_marks_each_unit_and_stage_to_check(tmp_path: Path, grid: Calls) -> None:
-    """불러오기 줄 「일정 확인 필요 n대」 가 그 호기를 세고, 표 줄 설비명 풍선이 단계·갈래를
+    """불러오기 줄 「일정 확인 n대」 가 그 호기를 세고, 표 줄 설비명 풍선이 단계·갈래를
     말한다(개편 명세 4-1·4-4). 저장은 막지 않는다 — 고칠 것(오류)이 없다."""
     path = tmp_path / "equipment.duckdb"
     _saved(path, _late(), _done_without_actual(), _actual_but_open(), _unit("EQ-OK"))
 
     app = _app(path)
     assert sorted(_alert_ids(grid)) == ["s:EQ-DONE", "s:EQ-LATE", "s:EQ-MOVED"]
-    # 「일정 확인 필요」 단추 — 브라우저가 그 호기 id 를 보낸다.
+    # 「일정 확인」 단추 — 브라우저가 그 호기 id 를 보낸다.
     load(app, _alert_ids(grid), kind="alerts")
     assert _row_alerts(grid) == {
         "s:EQ-LATE": f"반입 {UNCONFIRMED}",

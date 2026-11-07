@@ -872,7 +872,7 @@ if goto:
 def test_an_assumption_counts_schedule_alerts_by_the_official_schedule(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """가정 설비 시나리오의 「일정 확인 필요」 는 공식 일정 기준이다(4-1·4-10) — 그 시나리오 일정을
+    """가정 설비 시나리오의 「일정 확인」 은 공식 일정 기준이다(4-1·4-10) — 그 시나리오 일정을
     모두 뒤로 미뤄도 공식 일정에서 미확인인 호기가 불러오기 줄 수에 든다."""
     repository, setup = _two_scenarios(tmp_path)
     _page(repository, OPERATIONS)

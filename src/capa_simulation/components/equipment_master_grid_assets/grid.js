@@ -304,6 +304,8 @@ const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 �
 const KEYS_HELP = '칸을 누르면 바로 고칩니다 · Enter 확정 · Esc 취소 · Tab ↑ ↓ 옆·위아래 칸 · 엑셀 여러 칸을 칸 위에서 Ctrl+V · 칸 위 Space = 줄 고르기 · 체크 Shift+클릭 = 범위 · 줄 끝 − 는 목록에서 빼기'
 // 지우기 단추 풍선 — 저장본 호기를 지우면 어떻게 되나(누르기 전에 보이게, 설계 규칙 UI-NTF-09). 지운 뒤 칸 머리 글은 값 한 줄이다.
 const DELETE_TIP = '리비전을 저장하면 모든 설비 시나리오에서 지워집니다 — 이 시나리오에서만 빼려면 정지·반출/이설일정을 적습니다'
+// 불러오기 줄은 줄인 이름 「일정 확인」 이다 — 원래 뜻은 풍선이 말한다.
+const ALERTS_TIP = '일정 확인 필요 — 일정이 지났는데 실적이 없거나, 상태와 실적이 맞지 않는 호기'
 const ROW_H = 34
 const BUFFER_ROWS = 10
 const SEND_MS = 300
@@ -408,7 +410,7 @@ function sendOnce(S, op, cells) {
 function enqueue(S, op, cells) {
   const queued = queueOp(S.box, op, S.limit, Date.now())
   if (!queued) {
-    showNote(S, '보낼 고침이 너무 많습니다 — 잠시 뒤 다시 하거나 「엑셀·CSV로 한꺼번에」 를 씁니다')
+    showNote(S, '보낼 고침이 너무 많습니다 — 잠시 뒤 다시 하거나 「엑셀·CSV」 의 「한꺼번에 넣기」 를 씁니다')
     return null
   }
   for (const [id, col, text] of cells || []) S.pending.set(id + '\t' + col, { seq: queued.seq, text })
@@ -492,18 +494,12 @@ function drawLoader(host, S, data) {
   bar.appendChild(processPopover(S, model))
   bar.appendChild(conditionPopover(S, model))
   const alertIds = Array.isArray(data.alertIds) ? data.alertIds : []
-  const alerts = button('emg-btn is-warn', '일정 확인 필요 ' + alertIds.length.toLocaleString() + '대', () => {
-    load(S, 'alerts', alertIds, [], '일정 확인 필요')
+  const alerts = button('emg-btn is-warn', '일정 확인 ' + alertIds.length.toLocaleString() + '대', () => {
+    load(S, 'alerts', alertIds, [], '일정 확인')
   })
   alerts.disabled = alertIds.length === 0
-  alerts.title = '일정이 지났는데 실적이 없거나, 상태와 실적이 맞지 않는 호기'
+  alerts.title = ALERTS_TIP
   bar.appendChild(alerts)
-  if (data.newEnabled) {
-    const fresh = button('emg-btn', '+ 새 호기', () => S.setTrigger('new', {}))
-    fresh.disabled = Boolean(data.newRowsLocked)
-    bar.appendChild(fresh)
-  }
-  bar.appendChild(importButton(S, 'emg-btn', 'import-bar'))
   const loaded = Array.isArray(data.loaded) ? data.loaded.length : 0
   const total = Number(data.total) || 0
   // 불러온 수는 전체(살아 있는 호기)와 같은 기준 — 지울 목록에 든 호기는 표에 남아도 세지 않는다.
@@ -523,13 +519,17 @@ function drawLoader(host, S, data) {
   S.painting = false
   const focus = S.refocus
   S.refocus = null
-  // 이 불러오기가 연 「엑셀·CSV로 한꺼번에」 팝업이 닫혔다(파이썬이 닫힐 때마다 센 수 `dialogClosed`) — Streamlit 은 닫은
-  // 뒤 초점을 그림자 DOM 안 여는 단추로 돌려주지 못해 BODY 로 빠진다. 초점이 아무 데도 없으면 여는 단추로 돌린다.
+  // 「엑셀·CSV로 한꺼번에」 팝업이 닫혔다(파이썬이 닫힐 때마다 센 수 `dialogClosed`) — Streamlit 은 닫은 뒤 초점을 그림자
+  // DOM 안 여는 단추로도, 팝업을 열며 닫힌 메뉴 안 「한꺼번에 넣기」 로도 돌려주지 못해 BODY 로 빠진다. 첫 화면 단추로
+  // 열었으면 그 단추(넣어서 사라졌으면 메뉴 단추), 메뉴로 열었으면(`dialogFromMenu`) 메뉴 단추로 초점이 빈 때만 돌린다.
   const closed = Number(data.dialogClosed) || 0
-  const opener = S.dialogClosed !== null && closed !== S.dialogClosed ? S.dialogOpener : null
+  const justClosed = S.dialogClosed !== null && closed !== S.dialogClosed
+  const opener = justClosed ? S.dialogOpener : null
   S.dialogClosed = closed
   if (opener) S.dialogOpener = null
-  const back = opener ? root.querySelector('[data-fk="' + opener + '"]') || root.querySelector('[data-fk="import-bar"]') : null
+  let back = null
+  if (opener) back = root.querySelector('[data-fk="' + opener + '"]') || menuButton(data)
+  else if (justClosed && data.dialogFromMenu) back = menuButton(data)
   if (back && focusIsFree(host)) back.focus()
   else if (focus === 'search' && S.searchInput && focusIsFree(host)) {
     S.searchInput.focus()
@@ -537,13 +537,18 @@ function drawLoader(host, S, data) {
   } else restoreFocus(host, saved)
 }
 
-// 「엑셀·CSV로 한꺼번에」 — 누른 단추(`fk`)를 적어 두고 팝업이 닫힌 회차에 초점을 그리로 돌린다(`drawLoader`).
-function importButton(S, cls, fk) {
-  const press = button(cls, '엑셀·CSV로 한꺼번에', () => {
-    S.dialogOpener = fk
+// 불러오기 줄 끝의 메뉴 「엑셀·CSV」 를 여는 단추 — 표 컴포넌트 밖 Streamlit 팝오버다(패널은 포털이라 이 칸의 단추는 이것 하나).
+function menuButton(data) {
+  return data.menuKey ? document.querySelector('.st-key-' + data.menuKey + ' button') : null
+}
+
+// 첫 화면 「엑셀·CSV로 한꺼번에」 — 누른 단추를 적어 두고 팝업이 닫힌 회차에 초점을 그리로 돌린다(`drawLoader`).
+function firstImportButton(S) {
+  const press = button('emg-btn is-primary', '엑셀·CSV로 한꺼번에', () => {
+    S.dialogOpener = 'import-first'
     S.setTrigger('dialog', { name: 'import' })
   })
-  press.dataset.fk = fk
+  press.dataset.fk = 'import-first'
   return press
 }
 
@@ -577,7 +582,7 @@ function emptyState(S, data, alertIds, total) {
   if (data.firstData) {
     box.appendChild(el('b', null, '저장된 설비 데이터가 없습니다'))
     box.title = '첫 데이터는 「엑셀·CSV로 한꺼번에」 로 붙여 넣고, 「저장 전 변경」 에서 리비전을 저장합니다'
-    buttons.appendChild(importButton(S, 'emg-btn is-primary', 'import-first'))
+    buttons.appendChild(firstImportButton(S))
     if (data.newEnabled) {
       const fresh = button('emg-btn', '+ 새 호기', () => S.setTrigger('new', {}))
       fresh.disabled = Boolean(data.newRowsLocked)
@@ -585,9 +590,10 @@ function emptyState(S, data, alertIds, total) {
     }
   } else {
     box.appendChild(el('b', null, '불러온 호기가 없습니다'))
-    box.title = '고칠 호기를 먼저 불러옵니다 — 위 칸에 설비명을 치거나, 메일·엑셀의 설비명 목록을 붙여 넣거나, 공정으로 불러옵니다'
-    const alerts = button('emg-btn', '일정 확인 필요 ' + alertIds.length.toLocaleString() + '대 불러오기', () => load(S, 'alerts', alertIds, [], '일정 확인 필요'))
+    box.title = '고칠 호기를 먼저 불러옵니다 — 위 칸에 설비명을 치거나, 메일·엑셀의 설비명 목록을 붙여 넣거나, 「공정별」 로 불러옵니다'
+    const alerts = button('emg-btn', '일정 확인 ' + alertIds.length.toLocaleString() + '대 불러오기', () => load(S, 'alerts', alertIds, [], '일정 확인'))
     alerts.disabled = !alertIds.length
+    alerts.title = ALERTS_TIP
     buttons.appendChild(alerts)
     const all = button('emg-btn', '전체 ' + total.toLocaleString() + '대 불러오기', () => load(S, 'all', [], [], '전체'))
     all.disabled = !total
@@ -611,6 +617,8 @@ function searchBox(S, model) {
   input.type = 'text'
   input.value = S.query
   input.placeholder = '설비명으로 불러오기 — 일부만 쳐도 되고(WBA), 여러 대는 쉼표·줄바꿈(엑셀 한 열 붙여넣기)'
+  // 작업 줄이 한 줄이라 좁으면 자리표시 글이 잘린다(말줄임) — 다 읽는 자리는 풍선이다.
+  input.title = input.placeholder
   input.setAttribute('aria-label', '설비명으로 불러오기')
   input.autocomplete = 'off'
   input.dataset.fk = 'search'
@@ -738,7 +746,8 @@ function enterPanel(panel) {
   if (first) first.focus()
 }
 
-function popover(S, name, label, build, wide) {
+// `label` 은 줄에 서는 짧은 이름, `fullName` 은 풍선 · 패널 접근성 이름에 남는 원래 이름이다.
+function popover(S, name, label, fullName, build, wide) {
   const wrap = el('div', 'emg-pop-wrap')
   const toggle = button('emg-btn', label + ' ', () => {
     S.pop = S.pop === name ? null : name
@@ -749,11 +758,12 @@ function popover(S, name, label, build, wide) {
   caret.innerHTML = ICONS.down
   toggle.appendChild(caret)
   toggle.setAttribute('aria-haspopup', 'dialog')
+  toggle.title = fullName
   // 패널 안에서 불러오고 닫으면 초점이 여는 단추로 온다 — 불러오기 회차가 다시 지어도 그 단추로 돌아온다(data-fk).
   toggle.dataset.fk = 'pop-' + name
   const panel = el('div', 'emg-pop' + (wide ? ' is-wide' : ''))
   panel.setAttribute('role', 'dialog')
-  panel.setAttribute('aria-label', label)
+  panel.setAttribute('aria-label', fullName)
   // 패널이 초점을 받는다(Tab 정지는 아님) — 안내 글·여백을 누르면 초점이 초점 받는 가장 가까운 조상으로 가는데, 패널이 그
   // 조상이 아니면 본문 stMain 으로 빠져 Esc 가 패널의 keydown 에 닿지 않고 열린 채 남았다(2026-10-27 E2E).
   panel.tabIndex = -1
@@ -814,7 +824,7 @@ function popover(S, name, label, build, wide) {
   return wrap
 }
 
-// 불러오기 줄 안에서 열린 팝오버 밖(일정 확인 필요·+ 새 호기·엑셀·CSV·목록 비우기·전체 불러오기·찾기·다른 팝오버)을 누르면 그
+// 불러오기 줄 안에서 열린 팝오버 밖(일정 확인·목록 비우기·전체 불러오기·찾기·다른 팝오버)을 누르면 그
 // 팝오버를 닫는다 — 열린 채 남아 오른쪽 칸을 덮었다(E2E). 누른 단추가 지워지면 click 이 서지 않으므로 다시 짓지 않고 패널만 닫는다.
 function closeOtherPress(S, path, target) {
   const open = S.pops[S.pop]
@@ -824,7 +834,7 @@ function closeOtherPress(S, path, target) {
 }
 
 function processPopover(S, model) {
-  return popover(S, 'process', '공정으로 불러오기', (panel, repaint, done) => {
+  return popover(S, 'process', '공정별', '공정으로 불러오기', (panel, repaint, done) => {
     const find = el('input', 'emg-input')
     find.placeholder = '공정 이름 찾기'
     find.setAttribute('aria-label', '공정 이름 찾기')
@@ -864,7 +874,7 @@ function conditionPopover(S, model) {
   const columns = model.conds.columns || []
   const values = model.conds.values || []
   // 팝업 머리에 하는 법을 늘 두지 않는다 — 여는 단추의 풍선이다(설계 규칙 UI-TXT-01).
-  const wrap = popover(S, 'conditions', '조건으로 불러오기', (panel, repaint, done) => {
+  const wrap = popover(S, 'conditions', '조건별', '조건으로 불러오기', (panel, repaint, done) => {
     S.conds = S.conds.filter((pick) => pick.col >= 0 && pick.col < columns.length)
     if (!S.conds.length) S.conds = [{ col: Math.max(columns.indexOf('동'), 0), text: null }]
     // 값은 글로 기억한다 — 목록에서 사라진 값은 비운다(번호로 기억하면 다른 값을 가리킨다).
@@ -944,7 +954,7 @@ function conditionPopover(S, model) {
   }, true)
   // 감싸개의 첫 칸이 여는 단추다(`popover` — 둘째 칸이 패널).
   const toggle = wrap.children[0]
-  if (toggle) toggle.title = '칸과 값을 골라 모두 맞는 호기를 불러옵니다'
+  if (toggle) toggle.title = '조건으로 불러오기 — 칸과 값을 골라 모두 맞는 호기를 불러옵니다'
   return wrap
 }
 
@@ -1777,7 +1787,7 @@ function onPaste(S, event) {
   const byId = new Map(live.map((row) => [row.id, row]))
   const plan = planPaste(cells, start.row, start.col, live.map((row) => row.id), names, (rowId, name) => editableIn(S, byId.get(rowId), byName.get(name)), Number((S.data.limits || {}).pasteCells) || 5000)
   if (plan.tooMany) {
-    showNote(S, '한 번에 ' + (Number((S.data.limits || {}).pasteCells) || 5000).toLocaleString() + '칸까지 붙입니다 — 더 많으면 「엑셀·CSV로 한꺼번에」 를 씁니다')
+    showNote(S, '한 번에 ' + (Number((S.data.limits || {}).pasteCells) || 5000).toLocaleString() + '칸까지 붙입니다 — 더 많으면 「엑셀·CSV」 의 「한꺼번에 넣기」 를 씁니다')
     return
   }
   S.edit = null

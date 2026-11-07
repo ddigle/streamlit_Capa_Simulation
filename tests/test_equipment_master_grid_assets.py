@@ -1092,20 +1092,20 @@ const open = (label) => {
 const results = {}
 ;(async () => {
   // 공정 — 열고 잠시 뒤 Esc(비교 기준).
-  let toggle = open('공정으로 불러오기')
+  let toggle = open('공정별')
   await wait()
   results.process = { focus: focusLabel(), open: !panelOf(toggle).hidden }
   fire(document.activeElement, 'keydown', { key: 'Escape' })
   results.process.closed = panelOf(toggle).hidden
   results.process.back = document.activeElement === toggle
   // 조건 — 열자마자 Esc.
-  toggle = open('조건으로 불러오기')
+  toggle = open('조건별')
   results.conditions = { focus: focusLabel(), open: !panelOf(toggle).hidden }
   fire(document.activeElement, 'keydown', { key: 'Escape' })
   results.conditions.closed = panelOf(toggle).hidden
   results.conditions.back = document.activeElement === toggle
   // 조건 — 값을 고르면 패널을 다시 지어도 고른 칸에 초점이 남는다.
-  toggle = open('조건으로 불러오기')
+  toggle = open('조건별')
   const value = panelOf(toggle).querySelector('[data-fk="cond-val-0"]')
   value.focus()
   value.value = '0'
@@ -1167,7 +1167,7 @@ def test_the_loader_counts_loaded_units_like_the_total() -> None:
 
 
 def test_both_loader_popovers_close_on_escape_right_after_opening() -> None:
-    """「조건으로 불러오기 ▾」 를 열자마자 누른 Esc 로도 닫힌다 — 「공정으로 불러오기 ▾」 처럼 열면
+    """「조건별 ▾」 를 열자마자 누른 Esc 로도 닫힌다 — 「공정별 ▾」 처럼 열면
     초점이 패널 안 첫 칸으로 가고(Esc 는 패널이 받는다), 열린 채 여는 단추로 돌아와도 Esc 로 닫는다.
     닫히면 초점은 여는 단추로 돌아온다. 값을 골라 패널을 다시 지어도 고른 칸의 초점은 그대로다."""
     assert JS.count(_MOUNT_HEAD) == 1
@@ -1213,7 +1213,7 @@ def _fake_dom_source() -> str:
 
 
 def test_a_loader_popover_closes_when_the_keyboard_leaves_it() -> None:
-    """「조건으로 불러오기 ▾」 를 연 채 Tab 으로 패널 밖(「일정 확인 필요」 단추)에 가면 패널이
+    """「조건별 ▾」 를 연 채 Tab 으로 패널 밖(「일정 확인」 단추)에 가면 패널이
     열린 채 남아 초점 받은 오른쪽 호기 상세 칸을 덮었고, 그 칸의 Esc 로도 닫히지 않았다(2026-10-26
     E2E). 초점이 패널·여는 단추 밖으로 나가면 닫는다 — 패널 안 칸끼리 옮김과 다시 지으며 지운
     칸(받을 칸 없음)은 닫지 않는다."""
@@ -1222,7 +1222,7 @@ def test_a_loader_popover_closes_when_the_keyboard_leaves_it() -> None:
         + _MOUNT_LOADER
         + """
 mount(input.data)
-const toggle = buttonOf('조건으로 불러오기')
+const toggle = buttonOf('조건별')
 const panel = toggle.parentNode.children[1]
 toggle.focus()
 toggle.click()
@@ -1234,7 +1234,7 @@ fire(inside, 'focusout', { relatedTarget: null })
 results.repaint = !panel.hidden
 fire(inside, 'focusout', { relatedTarget: toggle })
 results.backToToggle = !panel.hidden
-const outside = buttonOf('일정 확인 필요')
+const outside = buttonOf('일정 확인')
 fire(inside, 'focusout', { relatedTarget: outside })
 results.left = { open: !panel.hidden, expanded: toggle.getAttribute('aria-expanded') }
 process.stdout.write(JSON.stringify(results))
@@ -1271,8 +1271,8 @@ const openPanel = (label) => {
 const leaveTo = (target) => fire(document.activeElement, 'focusout', { relatedTarget: target })
 ;(async () => {
   mount(input.data)
-  const outside = buttonOf('일정 확인 필요')
-  const spots = [['조건으로 불러오기', '.emg-cond'], ['공정으로 불러오기', '.emg-pop-list']]
+  const outside = buttonOf('일정 확인')
+  const spots = [['조건별', '.emg-cond'], ['공정별', '.emg-pop-list']]
   for (const [label, spot] of spots) {
     let { toggle, panel } = openPanel(label)
     const row = {}
@@ -1304,7 +1304,7 @@ const leaveTo = (target) => fire(document.activeElement, 'focusout', { relatedTa
         "tabOut": {"open": False, "expanded": "false"},
         "pressOutside": False,
     }
-    assert result == {"조건으로 불러오기": expected, "공정으로 불러오기": expected}
+    assert result == {"조건별": expected, "공정별": expected}
 
 
 def test_escape_closes_a_loader_popover_after_a_press_on_its_text_or_margin() -> None:
@@ -1333,7 +1333,7 @@ const press = (node) => {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 ;(async () => {
   mount(input.data)
-  const spots = [['조건으로 불러오기', '.emg-cond'], ['공정으로 불러오기', '.emg-pop-list']]
+  const spots = [['조건별', '.emg-cond'], ['공정별', '.emg-pop-list']]
   for (const [label, spot] of spots) {
     const toggle = buttonOf(label)
     const panel = toggle.parentNode.children[1]
@@ -1359,36 +1359,50 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 
     expected = {"open": True, "closed": True, "back": True}
     row = {"text": expected, "margin": expected}
-    assert result == {"조건으로 불러오기": row, "공정으로 불러오기": row}
+    assert result == {"조건별": row, "공정별": row}
     assert re.search(r"\.emg-pop:focus\s*\{\s*outline:\s*none", CSS)
 
 
-def test_closing_the_import_dialog_returns_focus_to_the_button_that_opened_it() -> None:
-    """불러오기 줄 「엑셀·CSV로 한꺼번에」 로 연 팝업을 Esc·닫기로 닫으면 초점이 BODY 로 빠지고 다음
-    Tab 이 사이드바 머리로 갔다(2026-10-26 E2E — Streamlit 이 그림자 DOM 안 여는 단추로 돌려주지
-    못한다). 팝업이 닫힌 수(`dialogClosed`)가 바뀐 회차에 이 불러오기가 연 팝업이고 초점이 아무
-    데도 없으면 여는 단추로 돌린다 — 다른 칸에 초점이 있거나 다른 길로 연 팝업이면 그대로 둔다."""
+def test_closing_the_import_dialog_returns_focus_to_where_it_was_opened() -> None:
+    """첫 화면 단추나 메뉴 「엑셀·CSV」 로 연 팝업을 Esc·닫기로 닫으면 초점이 BODY 로 빠지고 다음
+    Tab 이 사이드바 머리로 갔다(2026-10-26 E2E — Streamlit 이 그림자 DOM 안 여는 단추로도, 팝업을
+    열며 닫힌 메뉴 안으로도 돌려주지 못한다). 팝업이 닫힌 수(`dialogClosed`)가 바뀐 회차에 초점이
+    아무 데도 없으면 연 자리로 돌린다 — 첫 화면 단추(넣어서 사라졌으면 메뉴 단추), 메뉴로 열었으면
+    (`dialogFromMenu`) 메뉴 단추다. 다른 칸에 초점이 있거나 다른 길로 연 팝업이면 그대로 둔다."""
     runner = (
         _FAKE_DOM
         + _MOUNT_LOADER
         + """
-const at = (closed) => Object.assign({}, input.data, { dialogClosed: closed })
+const menu = new FakeNode('button')
+menu.textContent = 'menu'
+document.querySelector = (selector) => (selector === '.st-key-tools button' ? menu : null)
+const first = { firstData: true }
+const at = (closed, extra) => Object.assign(
+  {}, input.data, { menuKey: 'tools', dialogClosed: closed }, extra)
 const label = () => (document.activeElement ? document.activeElement.textContent : null)
-mount(at(0))
-let opener = buttonOf('엑셀·CSV로 한꺼번에')
-opener.focus()
-opener.click()
-document.activeElement = null
-mount(at(1))
-results.returned = label()
-results.marked = buttonOf('엑셀·CSV로 한꺼번에').dataset.fk
-document.activeElement = null
-mount(at(2))
+const pressed = (extra) => {
+  document.activeElement = null
+  return extra
+}
+const FIRST = '엑셀·CSV로 한꺼번에'
+mount(at(0, first))
+buttonOf(FIRST).focus()
+buttonOf(FIRST).click()
+mount(at(1, pressed(first)))
+results.firstScreen = label()
+results.marked = buttonOf(FIRST).dataset.fk
+buttonOf(FIRST).click()
+mount(at(2, pressed({ loaded: ['s:DEMO-01'] })))
+results.firstGone = label()
+mount(at(3, pressed({ loaded: ['s:DEMO-01'], dialogFromMenu: true })))
+results.fromMenu = label()
+mount(at(3, pressed({ loaded: ['s:DEMO-01'], dialogFromMenu: true })))
+results.sameCount = label()
+mount(at(4, pressed({ loaded: ['s:DEMO-01'] })))
 results.notOpenedHere = label()
-buttonOf('엑셀·CSV로 한꺼번에').click()
 const elsewhere = new FakeNode('input')
 elsewhere.focus()
-mount(at(3))
+mount(at(5, { loaded: ['s:DEMO-01'], dialogFromMenu: true }))
 results.busy = document.activeElement === elsewhere
 process.stdout.write(JSON.stringify(results))
 """
@@ -1396,11 +1410,53 @@ process.stdout.write(JSON.stringify(results))
     result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
 
     assert result == {
-        "returned": "엑셀·CSV로 한꺼번에",
-        "marked": "import-bar",
+        "firstScreen": "엑셀·CSV로 한꺼번에",
+        "marked": "import-first",
+        "firstGone": "menu",
+        "fromMenu": "menu",
+        "sameCount": None,
         "notOpenedHere": None,
         "busy": True,
     }
+
+
+def test_the_loader_line_holds_short_names_and_only_the_first_screen_keeps_its_buttons() -> None:
+    """표 위 작업 줄은 한 줄이다(2026-11-07 사용자 답 안 A) — 찾기 칸 · 「공정별」 · 「조건별」 ·
+    「일정 확인 n대」 뒤에 메뉴 「엑셀·CSV」(표 컴포넌트 밖)가 선다. 줄인 말의 원래 뜻은 풍선 · 패널
+    접근성 이름에 남는다. 「+ 새 호기」(오른쪽 칸 고르기와 같은 일)와 팝업 단추는 저장된 데이터가
+    없는 첫 화면에만 남는다."""
+    runner = (
+        _FAKE_DOM
+        + _MOUNT_LOADER
+        + """
+const labels = (root) => root.querySelectorAll('button').map((node) => node.textContent.trim())
+const line = () => labels(host.querySelector('.emg-lb')).filter(
+  (text) => !text.startsWith('DEMO') && !text.startsWith('맞는'))
+const on = { newEnabled: true, alertIds: ['s:DEMO-01'] }
+mount(Object.assign({}, input.data, on))
+results.line = line()
+results.tips = ['공정별', '조건별', '일정 확인'].map((name) => buttonOf(name).title)
+results.panels = host.querySelectorAll('.emg-pop').map((node) => node.getAttribute('aria-label'))
+results.empty = labels(host.querySelector('.emg-empty'))
+results.emptyTip = host.querySelector('.emg-empty').title
+mount(Object.assign({}, input.data, on, { firstData: true }))
+results.firstLine = line()
+results.first = labels(host.querySelector('.emg-empty'))
+process.stdout.write(JSON.stringify(results))
+"""
+    )
+    result = _node({"data": _loader_payload()}, runner, source=_fake_dom_source())
+
+    line = ["불러오기", "공정별", "조건별", "일정 확인 1대"]
+    assert result["line"] == line
+    assert result["firstLine"] == line
+    assert result["tips"][0] == "공정으로 불러오기"
+    assert result["tips"][1].startswith("조건으로 불러오기")
+    assert result["tips"][2].startswith("일정 확인 필요")
+    assert result["panels"] == ["맞는 설비명", "공정으로 불러오기", "조건으로 불러오기"]
+    assert result["empty"] == ["일정 확인 1대 불러오기", "전체 2대 불러오기"]
+    assert "「공정별」" in result["emptyTip"]
+    assert result["first"] == ["엑셀·CSV로 한꺼번에", "+ 새 호기"]
 
 
 def test_the_changes_panel_does_not_say_nothing_was_fixed_when_cells_need_fixing() -> None:
@@ -1498,7 +1554,7 @@ process.stdout.write(JSON.stringify(results))
 
 
 def test_a_loader_popover_closes_after_its_load_and_on_another_loader_button() -> None:
-    """「조건으로 불러오기」 로 불러온 뒤나 불러오기 줄의 다른 단추를 누른 뒤에도 팝오버가 열린 채
+    """「조건별」 로 불러온 뒤나 불러오기 줄의 다른 단추를 누른 뒤에도 팝오버가 열린 채
     오른쪽 칸을 덮었다(2026-10-25 E2E #29). 패널 안에서 불러오면 바로 닫고 초점은 여는 단추로,
     불러오기 줄의 다른 단추(다른 팝오버의 여는 단추도)를 누르면 그 단추를 지우지 않고 패널만
     닫는다. 패널 안 누름은 닫지 않는다."""
@@ -1530,12 +1586,12 @@ const press = (node) => {
 const isOpen = (toggle) => !toggle.parentNode.children[1].hidden
 const results = {}
 // 조건 팝오버 — 패널 안 누름은 닫지 않고, 다른 단추 누름은 그 단추를 남긴 채 닫는다.
-let toggle = buttonOf('조건으로 불러오기')
+let toggle = buttonOf('조건별')
 toggle.click()
 const inside = toggle.parentNode.children[1].querySelector('[data-fk="cond-val-0"]')
 press(inside)
 results.insidePress = isOpen(toggle)
-const alerts = buttonOf('일정 확인 필요')
+const alerts = buttonOf('일정 확인')
 press(alerts)
 results.otherButton = {
   open: isOpen(toggle),
@@ -1543,12 +1599,12 @@ results.otherButton = {
   kept: host.contains(alerts),
 }
 // 공정 팝오버를 연 채 조건 여는 단추를 누르면 공정 쪽이 닫힌다.
-const byProcess = buttonOf('공정으로 불러오기')
+const byProcess = buttonOf('공정별')
 byProcess.click()
 press(toggle)
 toggle.click()
 results.otherToggle = { process: isOpen(byProcess), conditions: isOpen(toggle) }
-// 조건으로 불러오기 — 값을 고르고 「맞는 n대 불러오기」 를 누르면 바로 닫고 여는 단추로 초점.
+// 조건별 — 값을 고르고 「맞는 n대 불러오기」 를 누르면 바로 닫고 여는 단추로 초점.
 const value = toggle.parentNode.children[1].querySelector('[data-fk="cond-val-0"]')
 value.value = '0'
 fire(value, 'change')
@@ -1558,7 +1614,7 @@ results.conditionsLoad = {
   focus: document.activeElement === toggle,
   trigger: triggers[triggers.length - 1],
 }
-// 공정으로 불러오기 — 공정 하나를 누르면 바로 닫는다.
+// 공정별 — 공정 하나를 누르면 바로 닫는다.
 byProcess.click()
 buttonOf('DEMO-P2').click()
 results.processLoad = { open: isOpen(byProcess), trigger: triggers[triggers.length - 1] }
