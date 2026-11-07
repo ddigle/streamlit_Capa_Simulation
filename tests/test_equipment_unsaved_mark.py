@@ -493,6 +493,9 @@ def test_a_save_refused_by_another_users_common_save_keeps_its_refusal_after_the
     assert app.session_state[RUNS] == runs + 2
     refusals = [str(item.value) for item in app.error if "저장하지 않았습니다" in str(item.value)]
     assert len(refusals) == 1, refusals
+    # 편집이 모두 버려졌다 — 「남은 편집을 확인」 하라고 하지 않는다(있지도 않은 편집을 찾는다).
+    assert "남은 편집" not in refusals[0]
+    assert refusals[0].endswith("최신 저장본을 확인한 뒤 다시 고쳐 저장하세요."), refusals
     assert len(sent) == 1, sent
     assert len(_discard_warnings(app)) == 1
 

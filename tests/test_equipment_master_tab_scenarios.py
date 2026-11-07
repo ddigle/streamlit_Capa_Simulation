@@ -73,6 +73,8 @@ from capa_simulation.services.korean_particle import object_particle
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 OPERATIONS = "operations"
 GROUP_REFUSAL = "가정 설비 시나리오에서는 공식 층이 다른 호기를 한 묶음으로 묶지 않습니다"
+# 남의 공통 저장에 진 「리비전 저장」 거부 글의 끝 문장(`common_conflict_reopened`).
+REOPENED_TAIL = "최신 저장본을 확인한 뒤 다시 고쳐 저장하세요."
 
 
 @pytest.fixture(autouse=True)
@@ -640,6 +642,8 @@ def test_a_save_pressed_right_after_another_common_save_says_the_reopen_path(
     assert any("그 위에 다시 얹었습니다" in text for text in _texts(app, "warning"))
     errors = [text for text in _texts(app, "error") if "저장하지 않았습니다" in text]
     assert len(errors) == 1 and "이 화면을 그 저장본으로 다시 열었습니다" in errors[0], errors
+    # 끝 문장은 다시 얹은 편집이 남든 모두 버려지든 맞는 말이다 — 콜백은 그 차이를 모른다.
+    assert errors[0].endswith(REOPENED_TAIL), errors
     every = [*_texts(app, "error"), *_texts(app, "warning"), *_texts(app, "caption")]
     assert not any("화면을 다시 불러와" in text for text in every), every
     assert _buffer_value(app, "EQ-01", "X좌표") == 55
