@@ -114,6 +114,27 @@ def test_a_floor_with_nothing_on_it_is_not_blamed_on_the_filter(
     clear_equipment_repository()
 
 
+def test_the_discard_button_says_what_goes_with_it(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """팝오버에 설명 문장을 세우지 않는다 — 다른 탭 편집까지 버려진다는 말은 누르기 전에 보이는
+    단추 풍선이다(설계 규칙 UI-NTF-09, 사외 점검 g6-16)."""
+    app, _ = _open_editor(tmp_path)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 40, "y": 20, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    told = str(app.button(key="space_layout_discard").help)
+    assert "가용설비 설비 마스터 탭의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다" in told
+    assert not any("함께 버려집니다" in str(item.value) for item in app.caption)
+    clear_equipment_repository()
+
+
 def test_overlaps_in_a_pending_layout_go_to_a_state_alert_not_the_box(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

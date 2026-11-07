@@ -1429,18 +1429,20 @@ def _render_unsaved_layout_panel(frames: Frames | None) -> UnsavedPanel:
                 ),
             )
             with st.popover("버리기", icon=":material/undo:", key=DISCARD_POPOVER_KEY):
-                st.caption(
-                    "저장 안 한 설비 편집을 모두 버리고 최신 저장본으로 돌아갑니다. 가용설비 "
-                    "설비 마스터 탭의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다."
-                    if frames is not None
-                    else "저장 안 한 S.PKG FAB 전체 배치를 버리고 저장본(없으면 기본 배치)으로 "
-                    "돌아갑니다."
-                )
+                # 되돌릴 수 없는 결과는 누르기 전에 보이는 풍선이다 — 건수는 머리 줄 값이다(설계
+                # 규칙 UI-NTF-09).
                 st.button(
                     "모두 버리기",
                     key=DISCARD_BUTTON_KEY,
                     on_click=_discard_space_layout,
                     args=(frames is not None,),
+                    help=(
+                        "저장 안 한 설비 편집을 모두 버리고 최신 저장본으로 돌아갑니다. 가용설비 "
+                        "설비 마스터 탭의 저장 안 한 편집과 FAB 전체 배치도 함께 버려집니다."
+                        if frames is not None
+                        else "저장 안 한 S.PKG FAB 전체 배치를 버리고 저장본(없으면 기본 배치)으로 "
+                        "돌아갑니다."
+                    ),
                 )
                 if frames is not None and fab_pending is not None:
                     # FAB 는 별도 쓰기라 따로 버릴 수 있어야 한다 — 남이 먼저 FAB 를 저장해 거부된
