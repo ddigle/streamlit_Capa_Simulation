@@ -13,10 +13,15 @@ from pathlib import Path
 
 import pytest
 
+import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     NARROW_LABEL_COLUMN_WIDTH_PX,
     NARROW_VIEWPORT_MAX_PX,
+)
+from capa_simulation.components.monthly_table_base import (
+    MONTH_COLUMN_WIDTH_PX,
+    MONTH_ROOM_COLUMNS,
 )
 from capa_simulation.components.scroll_shell import (
     PLOTLY_MIN_CHART_WIDTH_PX,
@@ -66,6 +71,96 @@ def test_month_column_may_shrink_below_its_content() -> None:
     )
 
     assert "min-width: 0 !important;" in css
+
+
+def test_month_room_shares_a_tight_body_between_label_and_month_columns() -> None:
+    """분류 합이 본문보다 넓으면 1100 창(사이드바 펼침)에서 달 칸이 아래로 떨어지고 분류 칸이 본문
+    밖으로 94px 나갔다. 라벨 폭의 위 끝을 본문 비율로 건다 — 본문이 라벨 폭 + 달 칸 몫보다 넓으면
+    `min()` 이 라벨 폭 그대로라 넓은 창의 칸은 줄지 않는다."""
+    expected = "min(876px, 81.413%)"
+
+    assert _rules(
+        split_scroll_columns_style(
+            label_key="demo_label_canvas",
+            month_key="demo_month_region",
+            label_width_px=876,
+            month_room_px=200,
+        )
+    ) == _rules(
+        f"""
+        [data-testid="stColumn"]:has(.st-key-demo_label_canvas) {{
+            flex: 0 0 {expected} !important;
+            width: {expected} !important;
+            min-width: {expected} !important;
+        }}
+        [data-testid="stColumn"]:has(.st-key-demo_month_region) {{
+            flex: 1 1 0 !important;
+            width: auto !important;
+            min-width: 0 !important;
+        }}
+        """
+    )
+
+
+@pytest.mark.parametrize(
+    ("body_px", "label_px"),
+    [
+        (1265, 876.0),  # 1600 창 — 라벨 폭 그대로, 달 칸은 남는 폭 전부
+        (1076, 876.0),  # 라벨 폭 + 달 칸 몫 — 여기까지는 줄지 않는다
+        (948, 771.8),  # 1283 창 — 달 칸 한 칸이 다 보인다
+        (765, 622.8),  # 1100 창 — 넘치지 않고 달 칸이 곁에 남는다
+    ],
+)
+def test_month_room_shrinks_only_when_the_body_cannot_hold_both_columns(
+    body_px: float, label_px: float
+) -> None:
+    """규칙의 비율을 본문 폭에 대어 본다 — 브라우저가 `min()` 으로 풀 값과 같은 셈이다."""
+    css = split_scroll_columns_style(
+        label_key="demo_label_canvas",
+        month_key="demo_month_region",
+        label_width_px=876,
+        month_room_px=200,
+    )
+    found = re.search(r"width: min\(876px, ([\d.]+)%\)", css)
+
+    assert found is not None
+    assert min(876.0, body_px * float(found[1]) / 100) == pytest.approx(label_px, abs=0.1)
+
+
+def _split_table_app() -> None:
+    import plotly.graph_objects as go
+
+    from capa_simulation.components.monthly_table_base import render_split_scroll_table
+
+    render_split_scroll_table(
+        key="demo",
+        label_figure=go.Figure(),
+        month_figure=go.Figure(),
+        classification_widths=[400, 476],
+        month_count=12,
+    )
+
+
+def test_monthly_tables_ask_for_the_month_room(monkeypatch: pytest.MonkeyPatch) -> None:
+    """월별 표 두 종류의 껍데기가 달 칸 몫을 걸고, 그 몫은 달 칸 두 칸이다. HOME · 가용설비 · 제약 ·
+    공정 상세는 이 인자를 주지 않아 지금 폭 그대로다."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda **_: None)
+    app = AppTest.from_function(_split_table_app).run()
+
+    assert not app.exception
+    assert MONTH_ROOM_COLUMNS * MONTH_COLUMN_WIDTH_PX == 200
+    bodies = [element.proto.body for element in app.get("html")]
+    assert any("min(876px, 81.413%)" in body for body in bodies)
+    for relative in (
+        "src/capa_simulation/components/home_rendering.py",
+        "src/capa_simulation/components/availability_gap_panel.py",
+        "src/capa_simulation/components/constraint_simulation_view.py",
+        "src/capa_simulation/components/process_capa_view.py",
+    ):
+        source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+        assert "month_room_px" not in source, relative
 
 
 def test_home_dashboard_label_width_fits_its_longest_label() -> None:

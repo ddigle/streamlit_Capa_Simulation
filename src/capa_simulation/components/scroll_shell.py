@@ -104,6 +104,7 @@ def split_scroll_columns_style(
     label_width_px: float,
     narrow_label_width_px: float | None = None,
     narrow_viewport_max_px: float | None = None,
+    month_room_px: float | None = None,
 ) -> str:
     """고정 라벨 컬럼과 남는 폭을 채우는 월 컬럼의 폭을 CSS 로 못박는다.
 
@@ -121,13 +122,22 @@ def split_scroll_columns_style(
     글은 그림의 SVG 가 자른다 — 그 SVG 의 `overflow` 를 푼 화면은 좁은 창에서 다시 걸어야 한다,
     `process_capa_view.label_overflow_style`). 컬럼에는 `overflow` 를 걸지 않는다 — 걸면 라벨 칸
     풍선(그림보다 넓다)도 잘린다. 줄 이름 하나짜리 라벨(월 시트 캔버스)만 준다.
+
+    `month_room_px` 를 주면 본문이 라벨 폭 + 그 몫보다 좁을 때 라벨과 월 컬럼이 같은 비율로 준다 —
+    분류 칸이 많은 표에서 월 컬럼이 아래로 떨어지거나 라벨이 본문 밖으로 밀리지 않는다. 본문이
+    그보다 넓으면 라벨 폭 그대로다. 본문 폭 기준이라 사이드바를 접고 펴도 따라간다. 라벨이 줄면
+    Figure 가 칸 폭으로 다시 그려져 칸마다 같은 비율로 준다.
     """
+    label_width = f"{label_width_px}px"
+    if month_room_px is not None:
+        label_share = label_width_px / (label_width_px + month_room_px)
+        label_width = f"min({label_width}, {label_share:.3%})"
     rules = [
         "<style>",
         f'[data-testid="stColumn"]:has(.st-key-{label_key}) {{',
-        f"    flex: 0 0 {label_width_px}px !important;",
-        f"    width: {label_width_px}px !important;",
-        f"    min-width: {label_width_px}px !important;",
+        f"    flex: 0 0 {label_width} !important;",
+        f"    width: {label_width} !important;",
+        f"    min-width: {label_width} !important;",
         "}",
         f'[data-testid="stColumn"]:has(.st-key-{month_key}) {{',
         "    flex: 1 1 0 !important;",
