@@ -630,14 +630,14 @@ def test_the_intro_overlay_is_drawn_before_the_bootstrap_on_every_run(
 
     # 요약은 부트스트랩 뒤·페이지 앞이다 — 로딩에 들어가고, 페이지가 멈춰도 이미 보냈다. 툴바는
     # Guide·Summary·Print 스크립트 셋과 칸 선택 그림의 터치 스크롤 막이·HOME 칸 둘째 누름 거름,
-    # 꺼진 링크 표지를 함께 싣는다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기 스타일도 부트스트랩
-    # 앞이다 — 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않고, 그 화면을
-    # 인쇄해도 사이드바가 빠져야 한다. 서체 스타일(페이지 제목 등의 Archivo)도 그 바로 뒤다 — 오류
-    # 화면의 제목도 같은 서체로 선다.
+    # 꺼진 링크 표지, 화면 조작 상자 보이기를 함께 싣는다. ⋮ 메뉴 감춤과 인쇄 규칙을 담은 껍데기
+    # 스타일도 부트스트랩 앞이다 — 부트스트랩 오류 화면(`st.stop()`)에서도 메뉴가 보이지 않고, 그
+    # 화면을 인쇄해도 사이드바가 빠져야 한다. 서체 스타일(페이지 제목 등의 Archivo)도 그 바로 뒤다
+    # — 오류 화면의 제목도 같은 서체로 선다.
     # 「준비 중」으로 보낸 Summary GAP 은 페이지를 다 그린 **뒤** 만든다(`warm_intro_summary`).
     # 통합인증 확인(`require_signed_in`)은 입장 화면보다도 앞이다 — 로그인하지 않은 세션에 입장
     # 화면 · DB · 예약 스레드가 돌지 않는다(꺼짐이면 아무것도 그리지 않는다).
-    one_run = ["sso", "intro", "shell", "type", "toolbar:6", "bootstrap", "summary", "warm"]
+    one_run = ["sso", "intro", "shell", "type", "toolbar:7", "bootstrap", "summary", "warm"]
     assert order == one_run * 2
     # 고정 문자열을 회차마다 한 번씩 보낸다 — 빠진 회차에는 규칙이 사라진다.
     sent = [el.proto.body for el in app.get("html") if el.proto.body == typography.TYPOGRAPHY_STYLE]

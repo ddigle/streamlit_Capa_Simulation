@@ -2775,6 +2775,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바닥에 붙은 카드 밑으로 칸이 들어가지 않게 사이드바 스크롤 칸에 `scroll-padding-bottom`(두 줄 `APP_CREDITS_SCROLL_ROOM`,
     통합인증 셋째 줄까지 `APP_CREDITS_SCROLL_ROOM_SSO` — `app.py` 가 `app_credit_lines` 로 고른다)을 둔다 — 초점 이동·
     `scrollIntoView` 가 긴 조건 카드의 마지막 칸을 카드 위에 세운다(덮인 자리를 누르면 카드 링크가 눌렸다).
+- `src/capa_simulation/components/page_box_reveal.py` — 화면 조작 상자(`PAGE_BOX_PREFIX`)가 바닥 앱 정보 카드에 걸린 채 서면
+  사이드바를 상자가 다 보일 만큼 굴리는 스크립트다(9장 「사이드바·조건 카드·본문」). 테마 버튼 iframe 의 `extra_scripts` 로 실린 고정
+  문자열이고, 듣개는 회차 표지(`data-test-script-state`) 속성만 본다. 굴림 양은 순수 구획 `<page-box-reveal>`, 시험은
+  `tests/test_page_box_reveal.py`(판정 · 가짜 부모 문서 위 회차 끝 동작) — 실제 자리는 사본 앱을 브라우저로 잰다.
 - `src/capa_simulation/components/sidebar_style.py` — 탐색 그룹·활성 경로·`Support` 상자 key 와 현재 테마로
   사이드바 스타일 문자열을 만든다. 위젯 생성·HTML 주입은 하지 않는다.
   - 접두어·구역 제목 선택자는 선언 모듈(`sidebar_status`·`navigation.SIDEBAR_SECTIONS`)에서 읽는다 — 빌더에 필수
@@ -5966,6 +5970,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   Space 현황 「Space 도면」 하나다(자리 · 배치 편집 · 캔버스 · 공식으로 바꾸기 · 잠금 줄 · 공식과 견주기 — 조작만, 상태 문장은 알림 —
   3장 `space_status.py`). 그 화면을
   볼 때만 패널 바로 밑 · 카드 위에 서고(페이지가 카드보다 먼저 자리를 세운다), 팝업은 상자 안에서 열지 않고 본문 호스트가 연다.
+  그룹이 펼쳐져 상자가 바닥 앱 정보 카드에 걸리면 접힘 · 차례는 그대로 두고 사이드바가 스스로 굴린다(`components/page_box_reveal.py`) —
+  회차가 끝났을 때 상자 줄 수가 달라졌으면(화면 진입 · 가정 설비 시나리오의 「공식으로 바꾸기」 줄) 카드에 걸린 만큼만 한 번 올린다. 줄
+  수가 그대로인 회차 · 상자 여닫기 · 폭 끌기는 스크롤 자리를 지키고(UI-PRF-03), 접은 사이드바는 건드리지 않는다.
   다른 화면은 이 꼴을 늘리지 않는다. 쓰기
   작업(붙여넣기·등록)은 카드에 넣지 않고 표 위 작업 줄의 버튼·팝업으로 둔다. 본문에는 결과·그에 대한 행동·상태 알림만
   남기고 설명은 Guide 로 옮긴다(8장).
