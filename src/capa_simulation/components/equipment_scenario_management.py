@@ -671,7 +671,7 @@ def layout_trace_sentence(
     return (
         f"{name} r{latest}{topic_particle(f'r{latest}')} 옛 판이 저장해 {source}의 가정 배치가 "
         f"빠졌습니다 — {with_direction_particle(source)} 되돌리기(이 리비전으로 되돌리기)로 "
-        f"되살립니다.{more} 옛 판으로 저장하지 않게 런북 4-2 「되돌림」 을 보세요."
+        f"되살립니다.{more}"
     )
 
 

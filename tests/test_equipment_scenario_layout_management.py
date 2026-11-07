@@ -133,6 +133,8 @@ def test_the_tables_name_the_stored_layout_rows_and_the_old_code_traces() -> Non
     assert "「셋업 실무」 r5는 옛 판이 저장해 r4의 가정 배치가 빠졌습니다" in sentence
     assert "r4로 되돌리기" in sentence
     assert "모두 2개" in sentence
+    # 런북으로 보내는 길 안내는 Guide 몫이다(설계 규칙 UI-TXT-03).
+    assert "런북" not in sentence
     assert layout_trace_sentence(_scenario(), [_revision(1), _revision(2, "d2")]) is None
 
 
