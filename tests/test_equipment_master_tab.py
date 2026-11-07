@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
 import pytest
+import streamlit as st
 from alert_marks import alert_notes, flashed, place_errors, successes
 from grid_fake import Calls, install_fake_grid, last, send, send_ops
 from streamlit.testing.v1 import AppTest
@@ -23,6 +25,7 @@ from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components import equipment_master_grid as emg
+from capa_simulation.components import equipment_master_tab as emt
 from capa_simulation.components.equipment_data_workspace import (
     _NOTE_KEY as NOTE_KEY,
 )
@@ -36,6 +39,7 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_TOAST_KEY,
     PENDING_RENAMES_KEY,
     PREVIEW_BUTTON_KEY,
+    reset_equipment_drafts,
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
 from capa_simulation.components.equipment_master_tab import (
@@ -334,6 +338,88 @@ def test_renaming_in_the_detail_is_the_same_unit_and_follows_the_save(
     assert keys_after["DA-11"] == keys_before["DA-01"]
     assert list(app.session_state[GRID_LOADED_KEY]) == ["s:DA-11", "s:DA-02"]
     assert app.session_state[GRID_DETAIL_KEY] == "s:DA-11"
+
+
+# 대본 맨 앞에서 부르는 시험용 손 — 진짜 회차에서 콜백이 도는 자리다(`send` 대역은 그리는 자리다).
+RUN_HEAD_KEY = "test_master_tab_run_head"
+_RUN_HEAD = f"""
+import streamlit as st
+
+_run_head = st.session_state.pop({RUN_HEAD_KEY!r}, None)
+if _run_head is not None:
+    _run_head()
+"""
+
+
+def _kept_grid_kwargs(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, Any]]:
+    """대역 앞에 끼워 마운트마다 받은 인자(받기 콜백)를 든다."""
+    kept: dict[str, dict[str, Any]] = {}
+    fake = emg._GRID
+
+    def _keep(**kwargs: Any) -> Any:
+        kept[kwargs["key"]] = kwargs
+        return fake(**kwargs)
+
+    monkeypatch.setattr(emg, "_GRID", _keep)
+    return kept
+
+
+def _saved_app(path: Path, grid: Calls) -> AppTest:
+    app = AppTest.from_string(_RUN_HEAD + _page_script(PAGE, path) + _TAIL, default_timeout=60)
+    _import(app, _rows("DA-01", "DA-02"))
+    _save_now(app)
+    return app
+
+
+def test_an_outbox_in_the_hole_a_save_leaves_is_counted_after_the_buffer_is_rebuilt(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「리비전 저장」 콜백이 편집본을 비운 뒤 본문이 다시 세우기 전에 회차가 끊기면 받기 콜백이
+    편집본 없이 돈다. 전에는 앱 전체가 `KeyError` 로 멈췄다(샘플 관측). 이제 op 를 남겨 두었다가
+    다시 세운 편집본을 본 본문이 세어 알린다."""
+    kept = _kept_grid_kwargs(monkeypatch)
+    app = _saved_app(tmp_path / "equipment.duckdb", grid)
+    outbox = {
+        "mount": "m-hole",
+        "ops": [
+            {"seq": 1, "at": 1, "base": last(grid, emg.GRID_KEY)["base"], "op": "cell"}
+            | {"id": "s:DA-01", "col": "담당자", "text": "저장 중 친 글"}
+        ],
+    }
+
+    def hole() -> None:
+        reset_equipment_drafts()
+        st.session_state[emg.GRID_KEY] = SimpleNamespace(outbox=outbox)
+        kept[emg.GRID_KEY]["on_outbox_change"]()
+
+    app.session_state[RUN_HEAD_KEY] = hole
+    app.run()
+    assert not app.exception, app.exception
+    master = app.session_state[BUFFER_KEY][1]
+    assert not master["담당자"].eq("저장 중 친 글").any()
+    table = last(grid, emg.GRID_KEY)
+    assert table["ack"] == {"mount": "m-hole", "seq": 1}
+    assert "고침 1건은 반영하지 않았습니다" in table["toast"]["text"]
+
+
+def test_other_callbacks_in_the_same_hole_do_not_stop_the_app(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 틈에 도는 「한 단계 되돌리기」 · 불러오기 · 가져오기도 앱 전체를 멈추지 않는다."""
+    kept = _kept_grid_kwargs(monkeypatch)
+    app = _saved_app(tmp_path / "equipment.duckdb", grid)
+
+    def hole() -> None:
+        reset_equipment_drafts()
+        context, layout = kept[emg.GRID_KEY]["on_outbox_change"].args
+        emt._undo_step(context, layout, 0)
+        emt._on_load(emg.LoadRequest(kind="all", ids=(), missing=(), label=""))
+        emt._on_copy(emg.CopyRequest(row_id="s:DA-01", draft=None))
+
+    app.session_state[RUN_HEAD_KEY] = hole
+    app.run()
+    assert not app.exception, app.exception
+    assert list(last(grid, emg.GRID_KEY)["rows"]) != []
 
 
 def _save_now(app: AppTest) -> str:

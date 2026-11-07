@@ -255,6 +255,8 @@ SIDE_REVEAL_KEY: Final = grid_component.MASTER_SIDE.reveal_key
 # 못 찾은 설비명(다음 불러오기까지)·마운트별 마지막으로 반영한 출납 seq.
 MISSING_KEY: Final = "equipment_grid_missing_v1"
 APPLIED_KEY: Final = "equipment_grid_applied_v1"
+# 편집본이 없을 때 온 출납을 본문에 넘긴다는 표지(`apply_outbox`).
+OUTBOX_HELD_KEY: Final = "equipment_grid_outbox_held_v1"
 # 저장 구획의 단추·결과 칸.
 SAVE_BUTTON_KEY: Final = "equipment_master_save_v1"
 # 낡은 세션 저장 거절 곁 「최신 rN 불러오기(변경 버림)」.
@@ -634,7 +636,14 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     """두 마운트(표·오른쪽 칸)의 출납에서 아직 반영하지 않은 op 를 `(at, mount, seq)` 차례로
     편집본에 얹는다. 받기 콜백과 「리비전 저장」·「한 단계 되돌리기」 콜백이 먼저 부른다(콜백
     차례에 기대지 않는다). `base` 가 다른 op 는 서비스가 버리고 토스트로 세고, 앞 세션의 op 는 세지
-    않고 뺀다(`this_session`)."""
+    않고 뺀다(`this_session`).
+
+    편집본이 없으면(저장 · 모두 버리기 콜백이 비운 뒤 본문이 다시 세우기 전에 회차가 끊김) 얹을 곳이
+    없다 — op 를 건드리지 않고 표지만 남겨, 다시 세운 편집본을 본 본문이 부른다. 토스트는 그 회차에
+    다시 세우면서 비우는 칸이라 여기서 세면 사라진다."""
+    if BUFFER_KEY not in st.session_state:
+        st.session_state[OUTBOX_HELD_KEY] = True
+        return
     values = [grid_component.outbox_value(key) for key in _MOUNT_KEYS.values()]
     targets = {
         mount: target
@@ -737,6 +746,8 @@ def _on_outbox(context: GridContext, layout: LayoutMode) -> None:
 
 
 def _on_load(request: grid_component.LoadRequest) -> None:
+    if BUFFER_KEY not in st.session_state:
+        return
     frames: Frames = st.session_state[BUFFER_KEY]
     saved = st.session_state[EQUIPMENT_DRAFT_KEY]
     index = grid_index(frames[1], saved, pending_unit_renames().units)
@@ -791,6 +802,8 @@ def _on_copy(request: grid_component.CopyRequest) -> None:
     """가져오기 — 상세 「이 호기로 새 호기 만들기」(빈 초안에 그 호기 값) 또는 「비슷한 호기에서
     값 가져오기」(브라우저 초안 위에 설비명이 같거나 앞부분이 맞는 첫 호기 값). 「새 호기」 칸을
     연다."""
+    if BUFFER_KEY not in st.session_state:
+        return
     frames: Frames = st.session_state[BUFFER_KEY]
     master = frames[1].reset_index(drop=True)
     seq, values = _new_draft()
@@ -881,6 +894,8 @@ def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
     뒤에 끊기면 둘째 누름이 다시 되돌리지 않고 이번 누름이 빈손으로 끝날 뿐이다(다시 누르면
     된다)."""
     apply_outbox(context, layout)
+    if BUFFER_KEY not in st.session_state:
+        return
     if press != current_generation(UNDO_PRESS_KEY) or just_written(UNDO_PRESS_KEY):
         return
     note_written(UNDO_PRESS_KEY)
@@ -1369,6 +1384,8 @@ def render_equipment_master_tab(
         floor_canvases=floor_canvases,
         today=today,
     )
+    if st.session_state.pop(OUTBOX_HELD_KEY, False):
+        apply_outbox(context, layout)
     view = build_view(
         context,
         floor_canvases=floor_canvases,
