@@ -115,9 +115,7 @@ st.write(st.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY])
     assert repository.latest_official_release() is not None
 
 
-def test_existing_unpublished_store_is_not_overwritten(tmp_path: Path) -> None:
-    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
-    repository.initialize()
+def _create_user_scenario(repository: DuckDBScenarioRepository) -> str:
     prepared = build_builtin_seed_dataset()
     snapshot = repository.create_scenario(
         ScenarioCreate(
@@ -135,10 +133,52 @@ def test_existing_unpublished_store_is_not_overwritten(tmp_path: Path) -> None:
         ),
         source_data=prepared.source_data,
     )
+    return snapshot.scenario.scenario_id
+
+
+def test_existing_unpublished_store_is_not_overwritten(tmp_path: Path) -> None:
+    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
+    repository.initialize()
+    scenario_id = _create_user_scenario(repository)
 
     result = ensure_initial_scenario(repository)
 
     assert result.status == "existing_without_official"
     assert result.release is None
     scenarios = repository.list_scenarios()
-    assert [scenario.scenario_id for scenario in scenarios] == [snapshot.scenario.scenario_id]
+    assert [scenario.scenario_id for scenario in scenarios] == [scenario_id]
+
+
+def test_store_with_only_archived_scenarios_is_not_seeded(tmp_path: Path) -> None:
+    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
+    repository.initialize()
+    scenario_id = _create_user_scenario(repository)
+    repository.archive_scenario(scenario_id)
+
+    result = ensure_initial_scenario(repository)
+
+    assert result.status == "existing_without_official"
+    assert result.release is None
+    assert repository.latest_official_release() is None
+    assert repository.list_scenarios() == []
+    every = repository.list_scenarios(include_archived=True)
+    assert [(item.scenario_id, item.status) for item in every] == [(scenario_id, "ARCHIVED")]
+
+
+def test_archived_builtin_seed_is_not_republished(tmp_path: Path) -> None:
+    repository = DuckDBScenarioRepository(tmp_path / "scenario.duckdb")
+    repository.initialize()
+    seeded = ensure_initial_scenario(repository).release
+    assert seeded is not None
+    scenario_id = seeded.scenario_id
+    with repository._write_transaction() as connection:
+        connection.execute("DELETE FROM app_meta.official_release")
+    repository.archive_scenario(scenario_id)
+
+    result = ensure_initial_scenario(repository)
+
+    assert result.status == "existing_without_official"
+    assert result.release is None
+    assert repository.latest_official_release() is None
+    every = repository.list_scenarios(include_archived=True)
+    assert [(item.scenario_id, item.status) for item in every] == [(scenario_id, "ARCHIVED")]

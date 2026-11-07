@@ -51,7 +51,8 @@ def ensure_initial_scenario(
         if release is not None:
             return InitialScenarioBootstrap("existing_official", release)
 
-        scenarios = repository.list_scenarios()
+        # 보관본만 남아도 빈 저장소가 아니다 — 보관본을 빼고 세면 그 위에 데모가 공식으로 선다.
+        scenarios = repository.list_scenarios(include_archived=True)
         interrupted_seed = next(
             (
                 scenario
