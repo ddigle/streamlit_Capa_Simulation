@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from alert_marks import flashed, infos, successes
+from alert_marks import alert_notes, flashed, infos, successes
 from edit_grid_fake import (
     FAKE_EVENT_KEY,
     Calls,
@@ -40,6 +40,7 @@ from test_reference_data_page import (
     _walk,
 )
 
+from capa_simulation import alerts
 from capa_simulation.components import page_tabs, reference_grid
 from capa_simulation.components.edit_grid import feed_key
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -883,12 +884,29 @@ def test_another_pages_apply_keeps_the_drafts_of_the_tables_it_did_not_touch(
     assert toast is None or DROPPED_TOAST.format(n="1") not in toast["text"]
 
 
+def _sent_drop_notices(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """버림 알림이 표지로 나갈 때마다 id 를 적는다 — 앱 시험의 트리는 마지막 회차만 보여, 다시
+    돌기 전에 나간 표지는 여기서만 잡힌다. 표지 하나가 알림창 · Alarm 의 한 번이다."""
+    sent: list[str] = []
+    remember_sent = alerts.remember_sent
+
+    def spy(key: str, note: alerts.AlertNote) -> None:
+        if "다른 화면의 적용으로" in str(note.get("full")):
+            sent.append(str(note.get("id")))
+        remember_sent(key, note)
+
+    monkeypatch.setattr(alerts, "remember_sent", spy)
+    return sent
+
+
 def test_another_pages_apply_that_changed_a_table_drops_only_its_draft_and_says_so(
-    calls: Calls,
+    calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """다른 화면의 적용이 일수 표 내용도 바꿨다 — 그 표 초안만 버리고(옛 양식에 붙은 값이다) 작업
-    줄에 한 번 알린다. 효율 초안은 남는다."""
+    줄에 한 번 알린다. 효율 초안은 남는다. 버린 초안을 앱 머리에서 걷으려 다시 도는 회차가 있어도
+    표지는 하나다 — 둘이면 Alarm 줄이 「×2」 로 센다."""
     app = _drafts_in_two_tables(calls)
+    sent = _sent_drop_notices(monkeypatch)
 
     app = _other_page_apply(app, run_day=25.0)
     assert _draft(app) is None
@@ -898,17 +916,23 @@ def test_another_pages_apply_that_changed_a_table_drops_only_its_draft_and_says_
         "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집(일수 1칸)을 버렸습니다" in text
         for text in warnings
     ), warnings
+    assert len(sent) == 1, sent
+    assert [
+        note["id"] for note in alert_notes(app) if "다른 화면의 적용으로" in note["full"]
+    ] == sent
     app.run()
     assert not any("다른 화면의 적용으로" in str(item.value) for item in app.warning)
+    assert len(sent) == 1, sent
 
 
 def test_the_dropped_notice_survives_the_rerun_of_a_run_that_emptied_a_draft(
-    early_calls: Calls,
+    early_calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """다른 화면의 적용이 일수 표를 바꾼 회차에 효율 초안을 비우는 op(Ctrl+Z)도 함께 왔다 — 반영이
-    초안을 비워 그 회차가 다시 돌아도(C1) 일수 초안을 버렸다는 알림은 다시 돈 회차에 선다. 그다음
-    회차에는 없다."""
+    초안을 비워 그 회차가 다시 돌아도(C1) 일수 초안을 버렸다는 알림은 다시 돈 회차에 한 번 선다.
+    그다음 회차에는 없다."""
     app = _drafts_in_two_tables(early_calls)
+    sent = _sent_drop_notices(monkeypatch)
     gen = app.session_state[history_key("RQ_RUN_RATE")]["gen"]
     app.session_state["probe_revision"] = 2
     app.session_state["probe_token"] = "test-capacity-other-page-apply-carry"
@@ -923,9 +947,11 @@ def test_the_dropped_notice_survives_the_rerun_of_a_run_that_emptied_a_draft(
         "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집(일수 1칸)을 버렸습니다" in text
         for text in warnings
     ), warnings
+    assert len(sent) == 1, sent
     app.run()
     assert not app.exception
     assert not any("다른 화면의 적용으로" in str(item.value) for item in app.warning)
+    assert len(sent) == 1, sent
 
 
 def test_discarding_right_after_an_edit_drops_the_batched_op_without_a_retry_toast(

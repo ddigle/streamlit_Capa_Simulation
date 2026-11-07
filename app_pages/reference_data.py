@@ -463,21 +463,20 @@ reset_editors_on_source_change(
     order_free_keys=(*step_widget_keys, *grid_session_keys),
 )
 head_is_stale = bool(set(edits_in_head) - set(pending_edit_labels("reference_data.py")))
-# 버림 알림은 이 회차에 한 번이다 — 아래에서 이 회차를 다시 돌리면(초안을 버리거나 비운 회차) 다시
-# 담아 다시 돈 회차가 그린다(그 회차에는 `_grid_survivors` 가 더 버리지 않는다).
-grid_dropped_notice = (
-    GRID_DROPPED_NOTICE.format(
-        tables=" · ".join(
-            f"{TABLE_NAMES[table_name]} {cells:,}칸" for table_name, cells in grid_dropped.items()
-        )
+# 버림 알림은 담아 두기만 한다 — 아래에서 이 회차를 다시 돌리는지(초안을 버리거나 비운 회차) 정해진
+# 뒤에 꺼낸다. 먼저 꺼내면 두 회차가 표지를 따로 보내 한 번 일어난 일을 Alarm 이 「×2」 로 센다.
+if grid_dropped:
+    queue_flash(
+        GRID_DROPPED_FLASH_KEY,
+        GRID_DROPPED_NOTICE.format(
+            tables=" · ".join(
+                f"{TABLE_NAMES[table_name]} {cells:,}칸"
+                for table_name, cells in grid_dropped.items()
+            )
+        ),
+        kind="warning",
+        icon=GRID_DROPPED_ICON,
     )
-    if grid_dropped
-    else None
-)
-if grid_dropped_notice is not None:
-    queue_flash(GRID_DROPPED_FLASH_KEY, grid_dropped_notice, kind="warning", icon=GRID_DROPPED_ICON)
-with actions_box:
-    render_flash(GRID_DROPPED_FLASH_KEY)
 
 
 def _filter_prefix(table_name: str) -> str:
@@ -522,11 +521,9 @@ if reference_grid.apply_grid_inbox(grid_tables) or head_is_stale:
     # `app.py` 가 이 본문보다 **먼저** 옛 칸으로 그렸다 — 그대로 두면 다음 조작까지 남는다(그리드는
     # 다시 보내지 않는다). 한 번 다시 돈다(양식·색인은 캐시라 싸고, 다음 회차는 버릴 초안도 inbox
     # 도 없어 되풀이되지 않는다).
-    if grid_dropped_notice is not None:
-        queue_flash(
-            GRID_DROPPED_FLASH_KEY, grid_dropped_notice, kind="warning", icon=GRID_DROPPED_ICON
-        )
     st.rerun()
+with actions_box:
+    render_flash(GRID_DROPPED_FLASH_KEY)
 _remember_grid_digests()
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집을 알린다. 그리드
 # 초안은 세션 칸이라 어느 화면에서나 센다(화면 탭 점·테마 단추·새로고침 확인이 함께 따라오고, 떠날
