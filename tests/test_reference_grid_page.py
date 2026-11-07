@@ -348,7 +348,7 @@ def test_the_paste_popup_warns_about_the_draft_and_applying_it_drops_the_draft(
     app.text_area(key="capa_run_day_editor_csv_clipboard").set_value(
         "공정\t202608\nProcess-A\t28\nProcess-B\t31\n"
     )
-    app = next(b for b in app.button if b.label == "붙여넣기 일괄 적용").click().run()
+    app = next(b for b in app.button if b.label == "붙여넣기 적용").click().run()
     assert not app.exception
     saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
     assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {
