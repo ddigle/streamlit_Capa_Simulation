@@ -550,7 +550,7 @@ except BOOTSTRAP_ERRORS as exc:
     # 막대를 남긴 채 멈추면 오류 문구 위에 멈춰 선 진행률이 함께 보인다.
     loading.close()
     # 패널의 공정 필터 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
-    # 회차마다 흔들리지 않게 한다 — 까닭은 본문 오류가 말한다.
+    # 회차마다 흔들리지 않게 한다 — 까닭은 Alarm 의 오류가 말한다.
     with page_condition_slot(0).container():
         condition_field(
             PROCESS_FIELD_LABEL,

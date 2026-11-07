@@ -1,4 +1,4 @@
-# Purpose: 화면 글 · Guide 가 없어진 HOME 「Preference」 탭을 가리키지 않는지 훑는다.
+# Purpose: 화면 글 · Guide 가 없어진 자리(HOME 「Preference」 탭 · 본문 오류)를 가리키는지 훑는다.
 
 """HOME 설정 팝업은 2026-11-04(검수 의견 home-u01)부터 쓰는 묶음 다섯 탭이다 — `Preference`
 탭이 없다.
@@ -16,6 +16,9 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+
+from capa_simulation.components.equipment_settings_dialog import LOCKED_HELP
+from capa_simulation.components.home_settings import STOPPED_HELP
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDES = ROOT / "src" / "capa_simulation" / "guides"
@@ -104,5 +107,19 @@ def test_screen_texts_do_not_point_to_the_old_home_preference_tab() -> None:
         for path in _sources()
         for line, text in _source_texts(path)
         for match in STALE_POINTER.finditer(_folded(text))
+    ]
+    assert stale == []
+
+
+def test_locked_settings_boxes_point_to_the_alarm_not_the_body() -> None:
+    """오류 글은 본문에 서지 않고 Alarm 에만 있다(UI-NTF-08) — 잠긴 상자 풍선이 없는 자리를 가리키면
+    고칠 글을 찾지 못한다."""
+    assert "Alarm 의 오류" in STOPPED_HELP
+    assert "Alarm 의 오류" in LOCKED_HELP
+    stale = [
+        f"{path.relative_to(ROOT)}:{line}"
+        for path in _sources()
+        for line, text in _source_texts(path)
+        if "본문의 오류를" in _folded(text)
     ]
     assert stale == []
