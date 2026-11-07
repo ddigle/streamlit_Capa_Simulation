@@ -1175,7 +1175,8 @@ def floors_outside_canvas(
 
     `floor_equipment_outside_canvas` 와 같은 행이다 — 레이아웃표시·상태·화면 필터를 보지 않아 값이
     고른 층·기준일·조건 카드에 기대지 않는다. 층을 하나씩 재지 않고 한 번에 훑는다. 저장된 캔버스가
-    없는 층은 기본 크기다.
+    없는 층은 기본 크기다. 저장 검증과 맞추려면 저장된 마스터 전체(`snapshot.equipment`)를 넘긴다 —
+    계산 표(`calculation_frames`)는 일정 없는 호기를 뺀다.
     """
     if equipment.empty or not {"동", "층", *COORDINATE_COLUMNS} <= set(equipment.columns):
         return {}

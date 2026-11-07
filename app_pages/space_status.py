@@ -692,10 +692,11 @@ with notices:
         else space_layout_notices(equipment_session, floor_differences),
     )
     report_unscheduled_units(equipment_session, unscheduled_units)
-    # 저장된 캔버스 밖 호기(전 층 — 고른 층에 기대지 않는다). 조건이 없어도 늘 부른다.
+    # 저장된 캔버스 밖 호기(전 층 — 고른 층에 기대지 않는다). 조건이 없어도 늘 부른다. 저장 검증이
+    # 보는 표 전체를 넘긴다 — 이 시나리오에 일정 없는 호기도 저장을 막는다.
     report_canvas_outside(
         equipment_session,
-        get_floors_outside_canvas(latest_snapshot.token, equipment, floor_canvases)
+        get_floors_outside_canvas(latest_snapshot.token, latest_snapshot.equipment, floor_canvases)
         if latest_snapshot is not None and not using_sample_equipment
         else {},
         floor_canvases,

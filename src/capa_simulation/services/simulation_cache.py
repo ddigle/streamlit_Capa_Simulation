@@ -1604,7 +1604,7 @@ def get_floors_outside_canvas(
 
     Space 현황은 위젯 하나에도 페이지 전체가 다시 돌고 상태 알림은 회차마다 낸다. 키는 설비
     스냅샷 토큰(공통 대장 · 일정 리비전 쌍 — 불변)과 층 캔버스다. 프레임은 해시하지 않는다 — 그
-    토큰의 스냅샷에서 뽑은 바로 그 표여야 한다.
+    토큰의 스냅샷 `equipment` 표여야 한다.
     """
     return _cached_floors_outside_canvas(
         (snapshot_token, tuple(sorted(floor_canvases.items()))), equipment

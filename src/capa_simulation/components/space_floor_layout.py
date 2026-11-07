@@ -451,8 +451,10 @@ def report_canvas_outside(
     위 상자이던 것이다(설계 규칙 UI-NTF-02 · UI-TXT-04).
 
     `outside` 는 전 층을 훑은 값(`get_floors_outside_canvas`)이라 지문이 고른 층 · 기준일 · 공정
-    필터에 기대지 않는다. 늘 같은 자리에서 조건이 없어도 부른다(`active=False` — 해소 줄이 서고 표지
-    자리 수가 회차마다 같다). 설비 샘플 화면이면 빈 값이다."""
+    필터에 기대지 않는다. 지문에는 호기 이름과 그 층 캔버스 크기가 든다 — 전문이 크기를 적으므로,
+    밖 호기가 그대로여도 크기가 바뀌면 줄을 새로 세운다(지문이 같으면 브라우저가 옛 글을 둔다).
+    늘 같은 자리에서 조건이 없어도 부른다(`active=False` — 해소 줄이 서고 표지 자리 수가 회차마다
+    같다). 설비 샘플 화면이면 빈 값이다."""
     scope = equipment_scope(session)
     if not outside:
         alerts.state(
@@ -468,8 +470,10 @@ def report_canvas_outside(
     where = floors[0] if len(floors) == 1 else f"{floors[0]} 외 {len(floors) - 1}개 층"
     default = (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT)
     lines = []
+    content = []
     for key, names in outside.items():
         width, height = floor_canvases.get(key, default)
+        content.append([floor_label(key), [width, height], list(names)])
         lines.append(
             f"{floor_label(key)} 캔버스 {width:g} × {height:g} 밖 {len(names):,}대: "
             + ", ".join(names)
@@ -477,14 +481,15 @@ def report_canvas_outside(
     alerts.state(
         CANVAS_OUTSIDE_SAVED_ALERT,
         scope=scope.scope,
-        content=[[floor_label(key), list(names)] for key, names in outside.items()],
+        content=content,
         active=True,
         text=f"캔버스 밖 호기 {total:,}대({where})",
         full="\n".join(
             [
                 *lines,
                 "이대로면 설비 마스터 저장이 막힙니다 — 저장은 마스터 전체를 한 번에 검증합니다. "
-                "그 층의 「캔버스 편집」 으로 넓히거나 설비 마스터에서 호기 좌표를 고치세요.",
+                "공식 설비 시나리오에서 그 층의 「캔버스 편집」 으로 넓히거나 설비 마스터에서 "
+                "호기 좌표를 고치세요.",
             ]
         ),
         scope_label=scope.label,

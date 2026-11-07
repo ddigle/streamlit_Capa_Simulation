@@ -555,7 +555,7 @@ def test_units_outside_a_saved_canvas_are_one_alert_for_the_whole_fab(tmp_path: 
     assert fab["level"] == "action"
     assert fab["short"] == "캔버스 밖 호기 2대(C1 1F)"
     assert fab["full"].startswith("C1 1F 캔버스 100 × 100 밖 2대: DEMO-EQ01, DEMO-EQ02\n")
-    assert "「캔버스 편집」" in fab["full"]
+    assert "공식 설비 시나리오에서 그 층의 「캔버스 편집」" in fab["full"]
 
     app.session_state["space_status_selected_building"] = "C1"
     app.session_state["space_status_selected_floor"] = "1F"
@@ -568,12 +568,57 @@ def test_units_outside_a_saved_canvas_are_one_alert_for_the_whole_fab(tmp_path: 
     filtered = active_state(app, "EQ-18")
     assert filtered is not None and filtered["fp"] == fab["fp"]
 
+    # 밖 호기가 그대로여도 크기가 바뀌면 지문이 바뀐다 — 지문이 같으면 브라우저가 옛 전문을 둔다.
+    DuckDBEquipmentRepository(database_path).save_floor_layout_canvas("C1", "1F", 120.0, 100.0)
+    clear_equipment_repository()
+    app.run()
+    resized = active_state(app, "EQ-18")
+    assert resized is not None and resized["short"] == fab["short"]
+    assert resized["scope"] == fab["scope"] and resized["fp"] != fab["fp"]
+    assert resized["full"].startswith("C1 1F 캔버스 120 × 100 밖 2대: DEMO-EQ01, DEMO-EQ02\n")
+
     DuckDBEquipmentRepository(database_path).save_floor_layout_canvas("C1", "1F", 200.0, 100.0)
     clear_equipment_repository()
     app.run()
     assert not app.exception
     assert active_state(app, "EQ-18") is None
     assert [note["active"] for note in states(app, "EQ-18")] == [False]
+    clear_equipment_repository()
+
+
+def test_the_outside_alert_counts_units_without_a_schedule(tmp_path: Path) -> None:
+    """저장 검증은 일정 없는 호기까지 보므로 `EQ-18` 도 센다 — 계산 표(`calculation_frames`)는 그
+    호기를 빼 저장이 막히는데도 알림이 안 설 수 있다."""
+    database_path = tmp_path / "space_unscheduled.duckdb"
+    _wide_floor_with_hidden_units(database_path)
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.save_floor_layout_canvas("C1", "1F", 100.0, 100.0)
+    scenario = next(
+        item
+        for item in repository.list_equipment_scenarios()
+        if item.equipment_scenario_id == "operations"
+    )
+    schedule = scenario.latest_schedule_revision_id
+    assert schedule is not None
+    unit_key = repository.load_saved_pair(schedule).unit_keys["DEMO-EQ02"]
+    with repository._connect() as connection:
+        connection.execute(
+            "DELETE FROM equipment_ops.equipment_schedule_snapshot "
+            "WHERE schedule_revision_id = ? AND unit_key = ?",
+            [schedule, unit_key],
+        )
+    clear_equipment_repository()
+    assert repository.load_saved_pair(schedule).unscheduled_units == frozenset({"DEMO-EQ02"})
+
+    page_path = PROJECT_ROOT / "app_pages" / "space_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60)
+    app.run()
+
+    assert not app.exception
+    note = active_state(app, "EQ-18")
+    assert note is not None
+    assert note["full"].startswith("C1 1F 캔버스 100 × 100 밖 2대: DEMO-EQ01, DEMO-EQ02\n")
+    assert active_state(app, "EQ-04") is not None
     clear_equipment_repository()
 
 
