@@ -431,6 +431,13 @@ def build_sidebar_stylesheet(
             word-break: keep-all;
             overflow-wrap: anywhere;
         }}"""
+        # 사이드바 값 글(캡션 — 판정 기준 · 표준 목표 조건 줄)도 같은 규칙이다. Streamlit 이 문단에
+        # 거는 `word-break: break-word` 가 「월별 예 / 외 2개월」 처럼 낱말 가운데서 접었다.
+        f"""
+        [data-testid="stSidebarContent"] [data-testid="stCaptionContainer"] p {{
+            word-break: keep-all;
+            overflow-wrap: anywhere;
+        }}"""
         # 그룹 상자 제목은 **한 줄**이고 넘치면 말줄임이다. 기본 폭(300px)에서는 가장 긴 「Dynamic
         # Capa」 도 한 줄이고, 사이드바를 약 205px 보다 좁게 끌면 말줄임으로 준다. 이 규칙이 없으면
         # 좁은 사이드바에서 긴 제목이 두 줄로 접히고 칸보다 긴 낱말은 가운데서 끊긴다(위

@@ -282,7 +282,12 @@ def test_sidebar_link_labels_ellipsize_and_folding_titles_break_at_spaces() -> N
         "text-overflow: ellipsis",
     ]
 
-    (title_rule,) = _rules_with(block, "word-break: keep-all;")
+    (title_rule, caption_rule) = _rules_with(block, "word-break: keep-all;")
+    assert caption_rule == ['[data-testid="stSidebarContent"] [data-testid="stCaptionContainer"] p']
+    assert _declarations(block, caption_rule) == [
+        "word-break: keep-all",
+        "overflow-wrap: anywhere",
+    ]
     assert '.st-key-test_admin summary [data-testid="stMarkdownContainer"] p' in title_rule
     assert (
         f'[class*="st-key-{CONDITION_CARD_PREFIX}"] summary [data-testid="stMarkdownContainer"] p'
