@@ -140,7 +140,7 @@ def _performance_screen(labels: dict[str, str]) -> None:
     )
 
 
-def test_the_performance_summary_warning_blocks_the_display_name() -> None:
+def test_the_performance_summary_conclusion_blocks_the_display_name() -> None:
     priority = build_priority_table(build_monthly_actual_demo(), EFFICIENCY_METRIC, ["공정"])
     worst = str(priority.loc[priority["상태"].eq("개선 필요"), "공정"].iloc[0])
 
@@ -148,5 +148,5 @@ def test_the_performance_summary_warning_blocks_the_display_name() -> None:
         AppTest.from_function(_performance_screen, args=({worst: TILDE},), default_timeout=60).run()
     )
 
-    warnings = _texts(app, "warning")
-    assert any(text.startswith(f"**{literal_markdown(TILDE)}** — ") for text in warnings), warnings
+    captions = _texts(app, "caption")
+    assert any(text.startswith(f"**{literal_markdown(TILDE)}** — ") for text in captions), captions
