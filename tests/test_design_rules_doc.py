@@ -7,8 +7,9 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 다시 묻게 된다(PRC-02). 여기서는 글의 뜻이 아니라 꼴을 본다 — id 꼴 · 겹침 · 묶음
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
 답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 사용자 기록
-5줄 · 이번 배포 전후 보드 7줄과 답 · 통합 검수 보드 줄과 답 · 작업 줄 규칙 둘(v1.9) · 문서 안팎의
-id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+5줄 · 이번 배포 전후 보드 7줄과 답 · 통합 검수 보드 줄과 답 · 작업 줄 규칙 둘(v1.9) · 전 화면 점검
+보드 15줄 · 2차 보드 7줄과 답(v1.10) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS ·
+CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -101,6 +102,46 @@ INTEGRATION_BOARD_ANSWERS = {
     "D4": "(가)",
     "D5": "(가)",
     "equip-toolbar": "안 A",
+}
+# 2026-11-07 전 화면 규칙 점검 보드(6-9)의 사용자 답 — 고른 선택지 글. 권장이 아닌 셋은 head-desc ·
+# filter-empty · pickers 다.
+SWEEP_BOARD_ANSWERS = {
+    "narrow": "셋 다 손본다",
+    "table-top": "줄을 합친다",
+    "place-box": "흔적 · 호기는 Alarm 으로 옮기고, 결론 둘은 상자 없는 한 줄로 바꾼다",
+    "undo-strip": "띠를 걷고 되돌리기는 오른쪽 칸 「한 단계 되돌리기」 로 모은다",
+    "head-desc": "머리말을 모두 걷는다",
+    "side-pending": "왼쪽 문장을 걷고 칩 · 변경 판에 맡긴다",
+    "filter-empty": "지금대로",
+    "bottom-row": (
+        "CSV 는 단축 일정 표 곁으로 올리고, 필요 단축 일정 단추는 다른 길이 없는 공정에만 남긴다"
+    ),
+    "csv-dup": "왕복 양식 · 전체 행은 두고, 읽기만 하는 표의 곁 CSV 단추는 걷는다",
+    "csv-name": "지금대로",
+    "desc-blocks": (
+        "개발 메모는 할 일 문서로 옮기고, 연결 전 설명은 한 줄 표지로 줄이고, 산식 설명은 화면을"
+        " 완성할 때 Guide 로 옮긴다"
+    ),
+    "pickers": "공정 고르기까지 모두 같은 꼴로 바꾼다(큰 고침)",
+    "names": "권장 이름표대로 모두 바꾼다",
+    "small-fixes": "권장대로 모두 고친다",
+    "rule-notes": "화면 그대로, 규칙에 적는다",
+}
+# 같은 날 2차 보드(6-10)의 결정 일곱 — 모두 (가).
+SECOND_BOARD_ANSWERS = {f"R{n}": "가" for n in range(1, 8)}
+# rule-notes 열한 칸이 적힌 규칙과 칸(규칙 id → (칸, 후보 꼬리표)).
+RULE_NOTES = {
+    "UI-TXT-01": ("예외", "rule-notes g1-15"),
+    "UI-LAY-03": ("예외", "rule-notes g2-10"),
+    "UI-INP-03": ("예외", "rule-notes g2-19"),
+    "UI-INP-01": ("예외", "rule-notes g2-20"),
+    "UI-NTF-03": ("text", "rule-notes g2-21"),
+    "UI-DAT-02": ("예외", "rule-notes g2-26"),
+    "UI-INP-08": ("예외", "rule-notes g3-14"),
+    "UI-LAY-09": ("근거", "rule-notes g5-21"),
+    "UI-LAY-12": ("예외", "rule-notes g6-23"),
+    "UI-STA-06": ("예외", "rule-notes g6-29"),
+    "UI-LAY-02": ("예외", "2026-09-29 범위 결정"),
 }
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
@@ -481,7 +522,7 @@ def test_the_integration_board_answers_are_recorded_and_written_into_the_rules()
     """
     document = _text()
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-8. ") :]
+    board = section[section.index("\n### 6-8. ") : section.index("\n### 6-9. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -529,7 +570,6 @@ def test_the_work_row_rules_carry_the_remarks_of_the_day() -> None:
     이고(1-2) 근거에 원문이 있다. 기준 창은 4장에 「검수 전」 이고 사내 보고 창은 두 줄까지라 안 A
     의 문턱 1,363 과 어긋나지 않는다. 짝 규칙은 경계를 맞췄고 표 머리선은 패널 밖 두 표로 넓혔다."""
     document = _text()
-    assert "판 v1.9" in document.split("\n## 1. ")[0]
     assert "- **v1.9 — 2026-11-07.**" in _chapter(document, 8)
 
     rules = {rule.id: rule for rule in _rules()}
@@ -623,3 +663,93 @@ def test_entry_documents_point_at_the_rules() -> None:
     assert RULES_LINK in section(agents, "\n## 13. ")
     assert RULES_LINK in section(claude, "\n## 문서 우선순위")
     assert f"| `{RULES_LINK}` |" in readme
+
+
+def test_the_sweep_board_answers_are_recorded_and_written_into_the_rules() -> None:
+    """v1.10 — 6-9 는 전 화면 점검 보드 한 칸에 한 줄이고 답이 사용자 답과 같다. 권장이 아닌 둘의
+    메모 원문이 줄에 있다. 답이 규칙 글로 들어갔는지 핵심만 본다 — head-desc: 머리 설명 줄 없음 ·
+    남은 두 자리 · 그물, 정체성은 Guide 첫 단락. csv-name: UI-DAT-10 범위를 왕복 양식과 Static 두
+    표로 좁히고 예외 칸은 그대로. csv-dup: UI-LAY-12 예외. names: 이름 바꿈 사전 그물이 섰다.
+    table-top: 꼴 그물은 섰고 줄 수 그물은 후보로 남는다. pickers 는 조사 중이다."""
+    document = _text()
+    assert "판 v1.10" in document.split("\n## 1. ")[0]
+    assert "- **v1.10 — 2026-11-08.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-9. ") : section.index("\n### 6-10. ")]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\* .+\((2026-11-07) · (.+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert len(lines) == len(SWEEP_BOARD_ANSWERS)
+    assert found == SWEEP_BOARD_ANSWERS
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    assert "「꼭 필요한 소개 문구는 guide에 포함.」" in by_id["head-desc"]
+    assert "기준정보 페이지로 갔을때도 자동적으로 공정 A에 필터가" in by_id["pickers"]
+    assert "조사 중" in by_id["pickers"]
+
+    rules = {rule.id: rule for rule in _rules()}
+    txt01 = rules["UI-TXT-01"]
+    assert "화면 머리(제목 줄)" in txt01.text and "Guide 첫 단락" in txt01.text
+    for phrase in ("module_api.page_header(description=)", "필요 단축 일정 머리말"):
+        assert phrase in txt01.fields["예외"][0], phrase
+    assert "tests/test_page_header_description.py" in txt01.fields["그물"][0]
+    assert "tests/test_page_header_description.py" in rules["UI-TXT-02"].fields["그물"][0]
+    assert "Guide 첫 단락" in rules["UI-LAY-08"].text
+
+    dat10 = rules["UI-DAT-10"]
+    assert "Static Capa 두 부족 표" in dat10.fields["범위"][0]
+    assert "6-9 csv-name" in dat10.text and dat10.fields["예외"] == ["없음"]
+    lay12 = rules["UI-LAY-12"].fields["예외"][0]
+    assert "왕복 양식 · 전체 행" in lay12 and "6-9 csv-dup" in lay12
+
+    con02 = rules["UI-CON-02"]
+    assert "tests/test_one_concept_one_name.py" in con02.fields["그물"][0]
+    assert con02.fields["그물 후보"] == ["없음"]
+    assert "이름 바꿈 사전 그물" not in _chapter(document, 5)
+
+    lay11 = rules["UI-LAY-11"]
+    assert "tests/test_table_top_rows.py" in lay11.fields["그물"][0]
+    assert lay11.fields["그물 후보"] == ["표 위 작업 줄 줄 수"]
+    values = _chapter(document, 4)
+    for name in ("기준 정보 표 위 한 줄", "달 표 분류 칸 곁 달 몫", "생산 진도 자리 높이"):
+        row = next(line for line in values.splitlines() if line.startswith(f"| {name} |"))
+        assert "검수 전" in row, row
+    side = next(
+        line for line in values.splitlines() if line.startswith("| 설비 마스터 오른쪽 칸 폭 |")
+    )
+    assert "줄의 40%" in side
+
+    for rule_id, (place, tag) in RULE_NOTES.items():
+        written = rules[rule_id].text if place == "text" else rules[rule_id].fields[place][0]
+        assert tag in written, (rule_id, tag)
+    assert "여덟 곳" in rules["UI-NTF-03"].fields["예외"][0]
+
+
+def test_the_second_board_answers_are_recorded_and_close_the_open_check() -> None:
+    """6-10 은 2차 보드 결정 하나에 한 줄이고 모두 (가)다. R6 은 v1.8 이 「사용자 확인 전」 으로
+    더한 UI-PRF-03 상자 예외를 확정하므로 그 말이 문서에 남지 않는다."""
+    document = _text()
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-10. ") :]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- (R\d) · .+ → \*\*\((가|나)\)\*\* .+\((2026-11-07) · (.+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert found == SECOND_BOARD_ANSWERS
+
+    assert "사용자 확인 전" not in document
+    rules = {rule.id: rule for rule in _rules()}
+    assert "2차 보드 R6 · R7 (가)" in rules["UI-PRF-03"].fields["근거"][0]
+    assert "2차 보드 R5 (가)" in rules["UI-CON-02"].fields["근거"][0]
+    assert "2차 보드 R4 (가)" in rules["UI-LAY-11"].fields["근거"][0]
