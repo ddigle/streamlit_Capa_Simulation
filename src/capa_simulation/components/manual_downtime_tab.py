@@ -54,6 +54,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     held_profile_conflict,
@@ -92,6 +93,7 @@ __all__ = [
     "MANUAL_EDITOR_KEY",
     "MANUAL_FLASH_KEY",
     "MANUAL_FORM_KEY",
+    "MANUAL_NOTE_GENERATION_KEY",
     "MANUAL_NOTE_KEY",
     "MANUAL_PROCESS_COLUMN",
     "MANUAL_SAVED_BY_KEY",
@@ -109,6 +111,9 @@ __all__ = [
 MANUAL_FORM_KEY: Final = "equipment_manual_downtime_form"
 MANUAL_EDITOR_KEY: Final = "equipment_manual_downtime_editor"
 MANUAL_NOTE_KEY: Final = "equipment_manual_downtime_note"
+# 변경 메모 칸 key 세대 — 저장에 성공한 회차에만 올라 다음 회차에 빈 칸으로 선다. 저장자 칸은 다음
+# 저장에 그대로 선다(`equipment_save_fields.render_saved_by_field`).
+MANUAL_NOTE_GENERATION_KEY: Final = "equipment_manual_downtime_note_generation"
 MANUAL_SAVED_BY_KEY: Final = "equipment_manual_downtime_saved_by"
 MANUAL_BASE_VERSION_KEY: Final = "equipment_manual_downtime_base_version"
 MANUAL_SAVE_NAME: Final = "equipment_manual_downtime"
@@ -296,7 +301,7 @@ def _render_editor(
             note = st.text_input(
                 "변경 메모",
                 placeholder="예: 26.07 Wafer Mount PM 1.5대",
-                key=MANUAL_NOTE_KEY,
+                key=widget_key(MANUAL_NOTE_KEY, MANUAL_NOTE_GENERATION_KEY),
                 disabled=locked,
             )
         # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
@@ -403,8 +408,10 @@ def _render_editor(
         # 이 회차는 본 version 을 올리지 않는다(다음 회차가 최신을 그리며 적는다).
         clear_manual_downtime_cache()
         if is_own_save(MANUAL_SAVE_NAME, exc.expected, exc.stored, save_marks):
-            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 끊긴 첫 회차가
+            # 못 비운 메모 칸도 비운다.
             queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
+            bump(MANUAL_NOTE_GENERATION_KEY)
         else:
             message = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
             note_profile_conflict(conflict_marks, MANUAL_SAVE_NAME, message)
@@ -423,10 +430,12 @@ def _render_editor(
         # 같은 입력의 꼬리 누름 — 첫 누름이 이미 그 version 을 썼다(`save_once` 가 첫 결과를 돌려준
         # 것). 제 저장 짝은 첫 누름이 적었으므로 바꾸지 않고 성공만 다시 알린다.
         queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
+        bump(MANUAL_NOTE_GENERATION_KEY)
         st.rerun(scope="app")
     # 저장마다 공정 Capa 상세·필요 단축 일정 등의 계산 키(칸 자체)가 바뀐다 — 프로필 캐시만 비운다.
     clear_manual_downtime_cache()
     queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
+    bump(MANUAL_NOTE_GENERATION_KEY)
     st.rerun(scope="app")
 
 
