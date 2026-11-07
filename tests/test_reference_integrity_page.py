@@ -191,6 +191,8 @@ def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
     assert not app.exception
     assert any("Capa 단계" in markdown.value for markdown in app.markdown)
     assert any("Gap 해석" in markdown.value for markdown in app.markdown)
+    # 산식만 남고 연결 계획 메모는 할 일 문서로 갔다(설계 규칙 UI-TXT-01).
+    assert not any("실제 DB 연결 시 적용" in markdown.value for markdown in app.markdown)
 
 
 def test_the_efficiency_gap_reads_percent_not_percent_point() -> None:
