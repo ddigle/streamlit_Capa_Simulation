@@ -1,6 +1,7 @@
 # Purpose: 바꾼 것 없는 공용 저장의 「그대로」 알림과 쓰지 않은 저장 회차의 안내 줄을 잰다.
 
-"""표시순서 직접 편집·확보율 보정·Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적.
+"""표시순서 직접 편집·확보율 보정·Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적·
+공정별 Cut-off.
 
 2026-11-01 사용자 답(개선 I5 를 일곱 자리로 넓힘). I5 가 Proc Rename·판정 기준에 둔 꼴과 같다 — 최신
 저장본을 보고 누른 저장의 값이 그 저장본과 같으면 저장소에 가지 않고 그 폼 알림 칸에 「바뀐 것이
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -24,6 +26,10 @@ from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.cutoff_management import (
+    CUTOFF_DRAFT_KEY,
+    CUTOFF_UNCHANGED_MESSAGE,
+)
 from capa_simulation.components.display_order_management import (
     DISPLAY_ORDER_EDITOR_KEY,
     DISPLAY_ORDER_SAVED_MESSAGE,
@@ -52,6 +58,11 @@ from capa_simulation.persistence.cache import (
     clear_global_top5_band_cache,
     clear_scenario_repository,
 )
+from capa_simulation.persistence.equipment_cache import (
+    clear_equipment_repository,
+    clear_process_cutoff_cache,
+)
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.monthly_amount import same_monthly_amounts
 
@@ -686,6 +697,113 @@ def test_a_failed_monthly_amount_save_keeps_the_note_on_months_outside_the_view(
 
 
 # --------------------------------------------------------------------- 저장본 없는 v0 첫 저장
+
+
+# ------------------------------------------------------------------- 공정별 Cut-off
+
+_CUTOFF = """
+from pathlib import Path
+
+from capa_simulation.components.cutoff_management import render_cutoff_management
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+render_cutoff_management(
+    DuckDBEquipmentRepository(Path({path!r})),
+    equipment_processes=["Process-A"],
+)
+"""
+
+
+@pytest.fixture
+def cutoff_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[DuckDBEquipmentRepository]:
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    store = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    store.initialize()
+    store.save_process_cutoff(pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [10.0]}))
+    clear_process_cutoff_cache()
+    yield store
+    clear_process_cutoff_cache()
+    clear_equipment_repository()
+
+
+def _cutoff_app(store: DuckDBEquipmentRepository) -> AppTest:
+    app = AppTest.from_string(
+        _CUTOFF.format(path=str(store.database_path)), default_timeout=60
+    ).run()
+    assert not app.exception, [item.message for item in app.exception]
+    return app
+
+
+def _edit_cutoff(app: AppTest, days: float) -> None:
+    draft = app.session_state[CUTOFF_DRAFT_KEY].copy()
+    draft["Cutoff일수"] = days
+    app.session_state[CUTOFF_DRAFT_KEY] = draft
+
+
+def _cutoff_writes(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """저장소 쓰기를 센다 — 같은 내용을 다시 쓰면 managed 서버에서 세대가 하나 는다."""
+    writes: list[int] = []
+    original = DuckDBEquipmentRepository.save_process_cutoff
+
+    def counted(self: DuckDBEquipmentRepository, *args: Any, **kwargs: Any) -> pd.DataFrame:
+        writes.append(1)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DuckDBEquipmentRepository, "save_process_cutoff", counted)
+    return writes
+
+
+def test_a_cutoff_save_without_changes_writes_nothing(
+    cutoff_store: DuckDBEquipmentRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    writes = _cutoff_writes(monkeypatch)
+    app = _press(_cutoff_app(cutoff_store), "Cut-off 저장")
+
+    assert _infos(app) == [CUTOFF_UNCHANGED_MESSAGE]
+    assert not _successes(app)
+    assert not writes
+
+    app = _cutoff_app(cutoff_store)
+    _edit_cutoff(app, 12.0)
+    app = _press(app, "Cut-off 저장")
+
+    assert _successes(app) == ["공정별 Cut-off 1건을 저장했습니다."]
+    assert len(writes) == 1
+    assert cutoff_store.load_process_cutoff()["Cutoff일수"].tolist() == [12.0]
+
+
+def test_a_slow_second_press_of_the_cutoff_save_repeats_the_success(
+    cutoff_store: DuckDBEquipmentRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """새로 그린 같은 표에 닿은 둘째 누름 — 창 안이면 쓰지 않고 방금 성공을 다시 낸다."""
+    app = _cutoff_app(cutoff_store)
+    _edit_cutoff(app, 12.0)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 60.0)
+    app = _press(app, "Cut-off 저장")
+    writes = _cutoff_writes(monkeypatch)
+    app = _press(app, "Cut-off 저장")
+
+    assert _successes(app) == ["공정별 Cut-off 1건을 저장했습니다."]
+    assert CUTOFF_UNCHANGED_MESSAGE not in _infos(app)
+    assert not writes
+
+
+def test_an_old_screen_still_reaches_the_cutoff_conflict(
+    cutoff_store: DuckDBEquipmentRepository,
+) -> None:
+    """남의 저장 뒤 옛 화면의 누름은 견주지 않는다 — 「바뀐 것이 없습니다」 가 충돌을 덮지
+    않는다."""
+    app = _cutoff_app(cutoff_store)
+    cutoff_store.save_process_cutoff(pd.DataFrame({"공정": ["Process-A"], "Cutoff일수": [7.0]}))
+    clear_process_cutoff_cache()
+
+    app = _press(app, "Cut-off 저장")
+
+    assert CUTOFF_UNCHANGED_MESSAGE not in _infos(app)
+    assert any("다른 사용자" in text for text in [str(item.value) for item in app.warning])
+    assert cutoff_store.load_process_cutoff()["Cutoff일수"].tolist() == [7.0]
 
 
 @pytest.mark.parametrize(

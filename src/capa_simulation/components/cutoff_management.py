@@ -31,9 +31,12 @@ from capa_simulation.components.table_view_controls import (
 )
 from capa_simulation.components.write_guard import (
     forget_seen,
+    held_notice,
     held_profile_conflict,
     is_own_save,
+    note_notice,
     note_profile_conflict,
+    notice_marks,
     own_save_marks,
     profile_conflict_marks,
     queue_refusal,
@@ -63,6 +66,7 @@ __all__ = [
     "CUTOFF_BASE_KEY",
     "CUTOFF_DRAFT_KEY",
     "CUTOFF_SAVE_HELP",
+    "CUTOFF_UNCHANGED_MESSAGE",
     "forget_cutoff_draft",
     "render_cutoff_management",
 ]
@@ -83,6 +87,10 @@ _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 CUTOFF_SAVE_HELP = (
     "모든 설비 시나리오가 함께 쓰는 공용 Cut-off 로 저장합니다. 저장하지 않고 팝업을 닫으면 고친 "
     "칸은 사라집니다."
+)
+# 바꾼 것 없는 저장의 알림(설계 규칙 UI-STA-01 — 쓰지 않는다). 다른 공용 저장과 같이 단추 곁이다.
+CUTOFF_UNCHANGED_MESSAGE = (
+    "바뀐 것이 없습니다 — 표가 지금 공용 Cut-off 그대로라 저장하지 않았습니다."
 )
 
 
@@ -262,7 +270,14 @@ def render_cutoff_management(
                 notice.warning(held, icon=":material/sync_problem:")
             return stored
         expected = str(seen(CUTOFF_BASE_KEY))
+        notices = notice_marks()
         try:
+            if _same_as_saved(stored, merged, expected):
+                # 방금 저장한 같은 표의 느린 둘째 누름이면 알림 칸이 그 성공을 이미 다시 그렸다 —
+                # 「바뀐 것이 없습니다」 로 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+                if held_notice(_FLASH_KEY) is None:
+                    notice.info(CUTOFF_UNCHANGED_MESSAGE, icon=":material/info:")
+                return stored
             saved = repository.save_process_cutoff(merged, expected_fingerprint=expected)
         except ProcessCutoffConflict as exc:
             clear_process_cutoff_cache()
@@ -292,6 +307,9 @@ def render_cutoff_management(
             remember_own_save(
                 CUTOFF_SAVE_NAME, expected, process_cutoff_fingerprint(saved), save_marks
             )
+            # 느린 둘째 누름이 이 알림을 다시 낸다(write_guard.held_notice — 위 「바뀐 것이
+            # 없습니다」 갈래).
+            note_notice(notices, _FLASH_KEY, _saved_message(saved))
             # 다음 회차가 저장된 값을 읽는다 — Static 대비 일정·필요 단축 일정이 이 값으로 센다.
             clear_process_cutoff_cache()
             _reset_draft(saved)
@@ -299,6 +317,17 @@ def render_cutoff_management(
             st.rerun()
 
     return stored
+
+
+def _same_as_saved(stored: pd.DataFrame, edited: pd.DataFrame, expected: str) -> bool:
+    """편집본이 이 회차가 그린 최신 저장본과 같은가.
+
+    출발점(`expected`)이 그 저장본이어야 한다 — 옛 화면의 저장은 견주지 않고 저장소의 지문 대조에
+    맡긴다(남의 저장 뒤라면 거부). 같음은 저장소가 쓸 꼴끼리다(`process_cutoff_fingerprint` — 칸을
+    잘못 적었으면 `ValueError`).
+    """
+    saved = process_cutoff_fingerprint(stored)
+    return expected == saved and process_cutoff_fingerprint(edited) == saved
 
 
 def _saved_message(saved: pd.DataFrame) -> str:

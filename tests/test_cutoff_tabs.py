@@ -18,12 +18,16 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, states, successes
+from alert_marks import active_state, infos, states
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 
 import capa_simulation.components.write_guard as write_guard
-from capa_simulation.components.cutoff_management import CUTOFF_DRAFT_KEY, CUTOFF_SAVE_HELP
+from capa_simulation.components.cutoff_management import (
+    CUTOFF_DRAFT_KEY,
+    CUTOFF_SAVE_HELP,
+    CUTOFF_UNCHANGED_MESSAGE,
+)
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_process_cutoff_cache,
@@ -289,7 +293,7 @@ def test_reopening_settings_shows_a_cutoff_saved_by_someone_else(tmp_path: Path)
     assert not app.exception, [item.message for item in app.exception]
     warnings = [str(item.value) for item in app.warning]
     assert not any("다른 사용자가 먼저" in text for text in warnings), warnings
-    assert any("Cut-off 1건을 저장했습니다" in str(item.value) for item in successes(app))
+    assert CUTOFF_UNCHANGED_MESSAGE in [str(item.value) for item in infos(app)]
     assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0]
     clear_equipment_repository()
 
