@@ -30,8 +30,18 @@ def _rule(selector: str) -> str:
 
 def test_the_panel_opens_in_the_browser_without_a_python_rerun() -> None:
     """패널 · 칩 판은 브라우저 안에서만 열고 닫는다 — 트리거 · 상태 값을 보내지 않아 파이썬 회차가
-    돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다)."""
-    assert "setTriggerValue" not in JS and "setStateValue" not in JS
+    돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 이 JS 가 파이썬을 부르는 자리는 다시
+    붙은 탭의 회차 하나뿐이다(2차 보드 R1 (가))."""
+    assert "setStateValue" not in JS
+    assert JS.count("setTriggerValue") == 2
+    assert "const { data, setTriggerValue } = component" in JS
+    assert "C.ask = setTriggerValue" in JS
+    assert JS.count("C.ask(") == 1
+    asker = JS[JS.index("function connectionMoved(") : JS.index("function retireCenter(")]
+    assert "C.ask('reconnected', Date.now())" in asker
+    assert "on_reconnected_change=_reconnected" in Path(alert_center.__file__).read_text(
+        encoding="utf-8"
+    )
 
 
 def test_the_popup_stack_floats_above_dialogs_and_lets_presses_through() -> None:
@@ -79,10 +89,12 @@ def test_storage_is_this_browser_tab_and_never_throws() -> None:
 
 def test_markers_are_read_once_per_run_state_change_without_a_document_observer() -> None:
     """표지는 앱 뿌리의 회차 표지(`data-test-script-state`)가 바뀔 때 훑는다 — 문서 전체를 지켜보는
-    상시 MutationObserver 는 쓰지 않는다(큰 표 화면의 DOM 변화가 많다)."""
-    assert "attributeFilter: [RUN_STATE]" in JS
+    상시 MutationObserver 는 쓰지 않는다(큰 표 화면의 DOM 변화가 많다). 관찰자는 앱 뿌리의 표지
+    두 칸(회차 · 연결)만 본다."""
+    assert "attributeFilter: [RUN_STATE, CONNECTION_STATE]" in JS
     assert "subtree: true" not in JS and "childList: true" not in JS
     assert "const RUN_STATE = 'data-test-script-state'" in JS
+    assert "const CONNECTION_STATE = 'data-test-connection-state'" in JS
 
 
 def test_colours_come_from_the_palette_not_literals() -> None:
@@ -191,7 +203,7 @@ console.log(JSON.stringify([
     assert "t.log_table_value_clipped" in pairs
 
 
-_SECTIONS = ("alerts-rows", "alerts-storage")
+_SECTIONS = ("alerts-rows", "alerts-storage", "alerts-reconnect")
 
 
 def _sections() -> str:
@@ -321,7 +333,7 @@ def test_a_restart_is_a_different_boot_mark_stored_in_this_tab() -> None:
     적어 둔다. 저장소가 막힌 브라우저에서는 예외 없이 뜨지 않는다.
 
     `same` 은 재시작이 아니라는 뜻일 뿐 고침이 남았다는 뜻이 아니다 — 서버는 그대로이고 세션만
-    사라진 탭도 여기로 온다(`docs/TODO.md` 4장 「세션만 사라진 탭」)."""
+    사라진 탭도 여기로 온다. 그 탭은 `sessionLost` 가 맡는다."""
     out = _node(
         """
 function fakeWindow(start) {
@@ -386,8 +398,8 @@ console.log(JSON.stringify(out))
 
 def test_the_restart_notice_goes_through_the_event_path_on_receiving_data() -> None:
     """data 를 받을 때 판정하고 보통 사건 알림 길(`handle` — 기록 · 알림창 · 본 사건 id)로 낸다. id
-    로도 한 번이라 저장소를 못 고쳐 앞 표지가 남아도 거듭 뜨지 않는다. 회차를 스스로 돌리지 않는다
-    (범위 밖 — 파이썬으로 가는 값이 없다는 것은 위 패널 시험이 본다)."""
+    로도 한 번이라 저장소를 못 고쳐 앞 표지가 남아도 거듭 뜨지 않는다. 세션 만료 알림도 같은
+    길이다."""
     entry = JS[JS.index("export default function (component)") :]
     assert (
         "if (bootChanged((data.storage || {}).boot, boot.mark) && handle(C, boot.notice)) "
@@ -395,6 +407,115 @@ def test_the_restart_notice_goes_through_the_event_path_on_receiving_data() -> N
     )
     assert entry.index("bootChanged(") < entry.index("if (changed) persist(C)")
     assert "C.seenSet.has(note.id)" in JS[JS.index("function handleEvent") :]
+    assert (
+        "if (sessionLost(before, data, C.dialogAtCut) && handle(C, data.session.notice)) "
+        "changed = true" in entry
+    )
+    assert entry.index("sessionLost(") < entry.index("if (changed) persist(C)")
+    # 앞 data 는 이번 data 로 고쳐 쓰기 전에 쥔다 — 그 뒤에 쥐면 늘 같은 값이라 뜨지 않는다.
+    assert entry.index("const before = C.data") < entry.index("C.data = data")
+
+
+def test_a_lost_session_is_told_only_by_a_tab_that_had_something_to_lose() -> None:
+    """같은 문서에서 세션 표지가 바뀌었고 서버는 그대로이며, 변경 목록이 있었거나 끊길 때 대화상자가
+    열려 있던 탭에만 뜬다(2차 보드 R2 (가)). 새 문서(새로고침 · 테마 전환 · 새 탭 · 복제한 탭 · 첫
+    접속)는 앞 data 가 없고, 재시작은 부트 표지가 달라 `GL-07` 이 맡고, 잃은 것이 없는 탭은 덮개를
+    여닫아도 뜨지 않는다."""
+    out = _node(
+        """
+const data = (session, boot, changes) => ({
+  session: { mark: session },
+  boot: { mark: boot },
+  changes,
+})
+const one = [{ top: '목록 미저장' }]
+console.log(JSON.stringify({
+  changes: sessionLost(data('s1', 'b', one), data('s2', 'b', []), false),
+  dialog: sessionLost(data('s1', 'b', []), data('s2', 'b', []), true),
+  nothing: sessionLost(data('s1', 'b', []), data('s2', 'b', []), false),
+  same_session: sessionLost(data('s1', 'b', one), data('s1', 'b', one), true),
+  restart: sessionLost(data('s1', 'a', one), data('s2', 'b', []), true),
+  new_document: sessionLost(undefined, data('s2', 'b', []), true),
+  own_first_data: (() => {
+    const first = data('s1', 'b', one)
+    return sessionLost(first, first, true)
+  })(),
+  old_server_data: sessionLost({ boot: { mark: 'b' }, changes: one }, data('s2', 'b', []), true),
+  no_list: sessionLost(data('s1', 'b', undefined), data('s2', 'b', []), false),
+}))
+"""
+    )
+    assert out == {
+        "changes": True,
+        "dialog": True,
+        "nothing": False,
+        "same_session": False,
+        "restart": False,
+        "new_document": False,
+        "own_first_data": False,
+        "old_server_data": False,
+        "no_list": False,
+    }
+
+
+def test_a_reconnected_tab_asks_for_one_run_only_when_the_front_did_not() -> None:
+    """붙어 있지 않다가 붙음으로 돌아온 순간만 다시 붙은 것이다. 기다린 뒤 다시 끊겼거나, 그 사이
+    회차 표지가 움직였거나(프런트가 스스로 돈 회차 — 겹치면 이중 회차다), 회차가 돌고 있으면 부르지
+    않는다."""
+    out = _node(
+        """
+console.log(JSON.stringify({
+  back: [
+    cameBack('PINGING_SERVER', 'CONNECTED'),
+    cameBack('CONNECTING', 'CONNECTED'),
+    cameBack('CONNECTED', 'CONNECTED'),
+    cameBack('CONNECTED', 'PINGING_SERVER'),
+    cameBack(null, 'CONNECTED'),
+    cameBack(undefined, 'CONNECTED'),
+  ],
+  run: [
+    needsRun('CONNECTED', 'notRunning', 0),
+    needsRun('CONNECTED', 'initial', 0),
+    needsRun('CONNECTED', 'notRunning', 2),
+    needsRun('CONNECTED', 'running', 0),
+    needsRun('CONNECTED', 'rerunRequested', 0),
+    needsRun('PINGING_SERVER', 'notRunning', 0),
+  ],
+}))
+"""
+    )
+    assert out == {
+        "back": [True, True, False, False, False, False],
+        "run": [True, True, False, False, False, False],
+    }
+
+
+def test_one_observer_watches_both_marks_and_the_center_does_not_add_another() -> None:
+    """회차 표지와 연결 표지는 관찰자 하나가 본다. 칸이 다시 그려져도 뿌리가 같으면 그대로이고,
+    뿌리가 바뀌거나 칸을 새로 세우면 앞 관찰자를 끊는다 — 남으면 다시 붙을 때 회차를 두 번
+    부른다."""
+    assert JS.count("new MutationObserver") == 1
+    watcher = JS[JS.index("function watchRoot(") : JS.index("function connectionMoved(")]
+    assert "if (!root || (C.runRoot === root && C.runObserver)) return" in watcher
+    assert "if (C.runObserver) C.runObserver.disconnect()" in watcher
+    assert "attributeFilter: [RUN_STATE, CONNECTION_STATE]" in watcher
+    entry = JS[JS.index("export default function (component)") :]
+    assert entry.index("retireCenter(C)") < entry.index("createCenter(data)")
+    retire = JS[JS.index("function retireCenter(") :]
+    retire = retire[: retire.index("\n}\n")]
+    assert "C.runObserver.disconnect()" in retire and "clearTimeout(C.reconnectTimer)" in retire
+
+
+def test_the_dialog_is_read_when_the_connection_leaves_and_the_wait_covers_the_front_run() -> None:
+    """대화상자는 끊기는 순간에 읽는다 — 다시 붙은 뒤에는 새 회차가 걷고 있을 수 있다. 기다림은 약
+    300ms 다(2026-11-07 시제품 — 그보다 짧으면 프런트의 회차와 겹친다)."""
+    mover = JS[JS.index("function connectionMoved(") : JS.index("function retireCenter(")]
+    assert (
+        "if (before === CONNECTED) C.dialogAtCut = Boolean(document.querySelector(DIALOG))" in mover
+    )
+    assert mover.index("C.dialogAtCut =") < mover.index("cameBack(before, now)")
+    assert "const RECONNECT_WAIT_MS = 300\n" in JS
+    assert "const DIALOG = '[data-testid=\"stDialog\"]'\n" in JS
 
 
 def test_a_kept_error_row_comes_back_when_the_alarm_no_longer_carries_it() -> None:

@@ -1,8 +1,9 @@
-# Purpose: 재시작 · 세션 만료 뒤 열어 둔 탭의 남은 한계가 기대는 Streamlit 동작을 붙든다.
+# Purpose: 다시 붙은 탭의 재연결 회차와 세션 만료 알림이 기대는 Streamlit 동작을 붙든다.
 
-"""`docs/TODO.md` 4장의 두 물음(「프래그먼트 · 대화상자 안 저장이 조용히 버려진다」 · 「세션만
-사라진 탭」)이 기대는 Streamlit 동작이다. 앱의 동작을 정답으로 박는 시험이 아니라 파수다 —
-Streamlit 을 올려 하나라도 바뀌면 두 물음과 AGENTS 9장 「서버 재시작 알림」 의 사실부터 본다."""
+"""2026-11-07 2차 보드 R1 · R2 (가) — 알림 칸이 다시 붙은 탭에 앱 전체 회차를 한 번 부르고 세션이
+사라진 탭에 `GL-08` 을 띄우는 까닭과 길이 기대는 Streamlit 동작이다. 앱의 동작을 정답으로 박는
+시험이 아니라 파수다 — Streamlit 을 올려 하나라도 바뀌면 재연결 회차가 아직 필요한지, 표지를 그대로
+읽을 수 있는지를 AGENTS 9장 「서버 재시작 알림」 과 함께 다시 본다."""
 
 from __future__ import annotations
 
@@ -22,7 +23,8 @@ TTL_OPTION = "server.disconnectedSessionTTL"
 
 def test_a_press_from_a_fragment_the_new_session_does_not_know_starts_no_run() -> None:
     """새 세션의 프래그먼트 저장소는 비어 있어 앞 세션 프래그먼트의 요청은 회차 없이 돌아간다 —
-    콜백이 돌지 않으니 저장 실패 글도 `GL-07` 도 나올 자리가 없다. 저장이 버려지는 밑바닥이다."""
+    콜백이 돌지 않아 저장이 버려진다. 재연결 회차가 앱 전체 요청으로 부르는 까닭이다(아래 줄의
+    빈 `ClientState` 는 회차가 선다)."""
     started: list[object] = []
     session = SimpleNamespace(
         _state=AppSessionState.APP_NOT_RUNNING,
@@ -40,9 +42,9 @@ def test_a_press_from_a_fragment_the_new_session_does_not_know_starts_no_run() -
 
 
 def test_a_reconnected_tab_asks_for_a_run_only_after_a_fragment_run() -> None:
-    """다시 붙은 탭의 회차는 Streamlit 프런트가 정한다 — 마지막 회차가 프래그먼트였거나 `run_every`
-    프래그먼트가 있을 때만 요청한다. 마지막이 앱 전체였던 탭은 다음 조작까지 옛 화면이라 위 시험의
-    길에 들어선다."""
+    """Streamlit 프런트는 회차가 돌던 탭 · 마지막 회차가 프래그먼트였던 탭 · `run_every`
+    프래그먼트가 있는 탭에만 스스로 회차를 요청한다. 마지막이 앱 전체였던 탭은 요청하지 않아 알림
+    칸이 부르고, 스스로 요청하는 탭과 겹치지 않게 약 300ms 기다린다(`RECONNECT_WAIT_MS`)."""
     bundles = Path(streamlit.__file__).parent.glob("static/static/js/index.*.js")
     rule = [
         text
@@ -53,9 +55,24 @@ def test_a_reconnected_tab_asks_for_a_run_only_after_a_fragment_run() -> None:
     assert "this.state.fragmentIdsThisRun.length>0||this.autoRerunIntervals.size>0" in rule[0]
 
 
+def test_the_front_writes_the_two_marks_the_alert_center_watches() -> None:
+    """알림 칸은 앱 뿌리의 두 표지를 관찰자 하나로 본다 — 비공식 표지다. 사라지면 재연결 회차가 서지
+    않을 뿐 앱은 돈다(그 탭은 앞의 조용한 저장 버림으로 돌아간다)."""
+    bundles = Path(streamlit.__file__).parent.glob("static/static/js/index.*.js")
+    rule = [
+        text
+        for path in bundles
+        if "Requesting a script run" in (text := path.read_text(encoding="utf-8"))
+    ]
+    assert len(rule) == 1
+    assert '"data-testid":`stApp`,"data-test-script-state":' in rule[0]
+    assert '"data-test-connection-state":' in rule[0]
+    assert "CONNECTED=`CONNECTED`" in rule[0]
+
+
 def test_a_disconnected_session_is_kept_for_the_default_two_minutes() -> None:
     """끊긴 세션은 2분까지만 남는다 — 그 뒤 다시 붙으면 서버가 그대로여도 새 세션이고 미저장 고침이
-    사라진다. 값을 바꾸면 4장 「세션만 사라진 탭」 의 고르기도 같이 고친다."""
+    사라져 `GL-08` 이 뜬다. 값을 바꾸면 Guide 「2분」 글과 AGENTS 9장을 같이 고친다."""
     assert config.get_option(TTL_OPTION) == 120
     assert "disconnectedSessionTTL" not in (PROJECT_ROOT / ".streamlit/config.toml").read_text(
         encoding="utf-8"
