@@ -89,7 +89,7 @@ def test_an_empty_stage_list_is_rejected() -> None:
 _HEADER_SLOT_SCRIPT = """
 from capa_simulation.components.page_header import render_page_header_with_status
 
-slot = render_page_header_with_status("Capa LOB Summary", description="설명")
+slot = render_page_header_with_status("Capa LOB Summary")
 slot.progress(0.05, text="Capa 를 계산하는 중 · 5%")
 """
 
@@ -103,7 +103,7 @@ def test_the_header_slot_is_a_keyed_container_right_after_a_plain_title() -> Non
     app = AppTest.from_string(_HEADER_SLOT_SCRIPT).run()
 
     assert not app.exception
-    title_box, slot, caption = app.main.children.values()
+    title_box, slot = app.main.children.values()
     assert title_box.type == "flex_container"
     assert str(title_box.proto.id).endswith(f"-{PAGE_TITLE_KEY}")
     assert [child.type for child in title_box.children.values()] == ["title"]
@@ -111,5 +111,4 @@ def test_the_header_slot_is_a_keyed_container_right_after_a_plain_title() -> Non
     assert slot.type == "flex_container"
     assert str(slot.proto.id).endswith(f"-{STATUS_SLOT_KEY}")
     assert [element.proto.value for element in slot.get("progress")] == [5]
-    assert caption.type == "caption"
     assert len(app.columns) == 0

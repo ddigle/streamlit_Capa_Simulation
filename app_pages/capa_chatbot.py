@@ -22,6 +22,7 @@ from typing import Any
 import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -131,12 +132,9 @@ def _render_answer(answer: SampleAnswer) -> None:
 
 render_page_header(
     "Capa Chatbot (구현중)",
-    description=(
-        "활성 시나리오의 Capa 데이터와 계산 결과를 근거로 데이터 조회, 부족 공정 파악과 "
-        "원인 탐색을 지원하는 대화형 분석 화면입니다."
-    ),
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(SOURCE)),
 )
+render_page_guide("capa_chatbot", title="Capa Chatbot")
 
 if not render_sample_switch(key="capa_chatbot_sample_switch", source=SOURCE):
     render_pending_source(

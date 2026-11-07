@@ -92,7 +92,7 @@ def _baseline_refusal(*, sample: bool, session: EquipmentSession | None = None) 
     return baseline_equipment_refusal(session)
 
 
-# 머리말 한 줄 — 이 화면의 정체성. 공정 Capa 상세 머리말과 짝이다.
+# 머리말 한 줄 — 이 화면의 정체성. 필요 단축 일정 문구 전달 대기라 다른 화면과 달리 아직 남아 있다.
 PAGE_DESCRIPTION = (
     "단축이 필요한 공정 전부의 진척 관리 한 페이지 — 공정 진척 보드 · 기한 임박 · 이행 지연 · "
     "공정 카드. 공정 하나를 깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다."

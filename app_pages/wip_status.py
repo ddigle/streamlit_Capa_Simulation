@@ -9,6 +9,7 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -117,9 +118,9 @@ def _route_choices(
 
 render_page_header(
     "표준 대비 재공 현황 (구현중)",
-    description="공정·제품·STEP별 보유 재공, 유입과 Flow를 일 표준 가능량과 비교합니다.",
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(SOURCE)),
 )
+render_page_guide("wip_status", title="표준 대비 재공 현황")
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 if not render_sample_switch(key="wip_status_sample_switch", source=SOURCE):

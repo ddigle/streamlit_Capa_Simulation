@@ -12,6 +12,7 @@ from __future__ import annotations
 import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.module_registry import MATURITY_LABELS
@@ -19,10 +20,8 @@ from capa_simulation.navigation import module_page_specs, module_scan
 
 OFF_FAILED_HELP = "꺼지거나 실패한 모듈의 까닭은 Admin Area 「모듈 상태」 에서 봅니다."
 
-render_page_header(
-    "모듈",
-    description="동료가 만든 화면입니다 — 아직 코어 계산과 이어지지 않습니다.",
-)
+render_page_header("모듈")
+render_page_guide("internal_modules", title="모듈")
 
 scan = module_scan()
 pages_by_module: dict[str, list[tuple[str, str, str | None]]] = {}

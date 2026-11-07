@@ -28,6 +28,7 @@ from capa_simulation.components.dynamic_capacity_dashboard import (
     build_process_comparison_figure,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
@@ -575,12 +576,9 @@ process_labels = get_process_labels()
 
 render_page_header(
     "Dynamic Capa",
-    description=(
-        "실행 관리가 모은 실적(효율·UPEH·생산실적)으로 표준 Capa 가 실제로 얼마나 실현됐는지 다시 "
-        "계산합니다. 손실을 설비 성능(효율·UPEH)과 가용 Capa 활용(Rundown·재공부족)으로 나눕니다."
-    ),
     badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(_SOURCE)),
 )
+render_page_guide("reference_integrity", title="Dynamic Capa")
 # 부서별 Gap·A/Item 로드맵은 실행 관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그 화면
 # 링크 하나만 두고, 무엇을 하러 가는지는 링크 풍선이 말한다(설계 규칙 UI-TXT-03 · UI-LAY-08).
 render_page_link(

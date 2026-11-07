@@ -228,11 +228,6 @@ CARD_ICON = ":material/troubleshoot:"
 OFFICIAL_BADGE = ":gray-badge[공식 · Core Data]"
 # 필요 단축 일정 카드 출처 띠 옆 「← 필요 단축 일정」 단추(그 카드를 강조해 돌아간다).
 BACK_TO_SHORTENING_KEY = "process_detail_back_to_shortening"
-# 머리말 한 줄 — 이 화면의 정체성(2026-10-22 사용자 요청). 필요 단축 일정 머리말과 짝이다.
-PAGE_DESCRIPTION = (
-    "어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지 — 산출 근거 → 부족한 달 → 그 달을 "
-    "메울 설비 일정. 공정 전부의 진척은 「필요 단축 일정」 입니다."
-)
 # HOME 표시 확보율이 원 확보율과 같다고 보는 차이.
 HOME_RATE_TOLERANCE = 1e-9
 # 「공정」 칸 풍선 — 기본 공정 · 달을 고르는 규칙(자리에 늘 두지 않는다, 설계 규칙 UI-TXT-01). 이
@@ -264,7 +259,7 @@ INVERSE_NONE_HELP = "적용 구간이 이 화면 기간과 겹치지 않아 역�
 # 「HOME 에서 온 것」으로 읽는다.
 home_request = take_process_detail_request()
 
-render_page_header("공정 Capa 상세", description=PAGE_DESCRIPTION)
+render_page_header("공정 Capa 상세")
 # 공정 표시명·배지 자리. 공정과 설비 일정 판정이 정해진 뒤 채운다 — 제목 바로 아래에 선다.
 # 블록이라 계산 동안 앞 회차 줄이 남는다(AGENTS 9장). 빈 블록은 그려지지 않으므로 border·height 를
 # 주지 않는다.

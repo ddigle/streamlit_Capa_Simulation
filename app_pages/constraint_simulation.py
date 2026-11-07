@@ -212,10 +212,6 @@ CARD_ICON = ":material/call_split:"
 # 제품별 소요를 읽지 못한 회차의 카드 표지 — 까닭은 본문 마크의 알림이다(설계 규칙 UI-NTF-08).
 NO_PRODUCT_MARK = "제품 · 읽지 못함"
 PAGE_TITLE = "제약 시뮬레이션"
-PAGE_DESCRIPTION = (
-    "공정 하나에 미래 제약(제약 제품 전용 설비)이 생기면 — 제약 제품에 먼저 떼어 준 뒤 기존 제품 "
-    "확보율이 언제부터 얼마나 떨어지는가."
-)
 HELD_LABEL = "보유 제약 호기"
 HELD_HELP = (
     "이미 제약 제품을 돌릴 수 있게 개조·Qual 된 호기를 이 공정의 세션 설비 시나리오 호기에서 "
@@ -264,7 +260,7 @@ def new_since_help(*, modify: bool, new_units_on: bool) -> str:
 # 주소에 남지 않게(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」 이 싣는다).
 requested_process = take_constraint_process_request()
 
-render_page_header("제약 시뮬레이션", description=PAGE_DESCRIPTION)
+render_page_header("제약 시뮬레이션")
 # 공정·조건 한 줄과 「← 공정 Capa 상세」 자리. 공정과 계산이 정해진 뒤 채운다 — 블록이라 계산 동안
 # 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로 border·height 를 주지 않는다).
 header_marks = st.container()
