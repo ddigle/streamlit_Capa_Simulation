@@ -32,8 +32,9 @@ from capa_simulation.shared_widget_state import carry_shared_widget_value
 
 SAMPLE_TOGGLE_KEY = "dynamic_capa_sample_data"
 SAMPLE_TOGGLE_LABEL = "샘플 데이터"
-# 호기가 없고 샘플도 끈 설비 화면(가용설비 현황 · 필요 단축 일정 · Space 현황)의 조건 카드 값 한
-# 마디(`NO_UNITS_MARK`)에 다는 풍선 — 하는 법은 자리에 적지 않는다(설계 규칙 UI-TXT-04).
+# 호기가 없고 샘플도 끈 설비 화면(가용설비 현황 · 필요 단축 일정 · Space 현황)의 값 한 마디
+# (`NO_UNITS_MARK` — 조건 카드, 카드에 조회 조건이 있는 Static 대비 일정은 본문 머리)에 다는 풍선 —
+# 하는 법은 자리에 적지 않는다(설계 규칙 UI-TXT-04).
 # Space 현황은 이 풍선 뒤에 그 화면의 한 마디를 잇는다(`app_pages/space_status.py` 의
 # `SPACE_NO_UNITS_HELP`).
 NO_UNITS_MARK = "조회할 호기 없음"
