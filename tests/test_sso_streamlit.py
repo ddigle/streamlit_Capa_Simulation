@@ -28,7 +28,14 @@ from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import SHELL_STYLE
 from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script
 from capa_simulation.components.sso_refresh import refresh_script
-from capa_simulation.components.theme_toggle import TOOLBAR_BUTTON_ORDER
+from capa_simulation.components.theme_toggle import (
+    ALARM_BUTTON_ID,
+    CHANGES_CHIP_ID,
+    GUIDE_BUTTON_ID,
+    PRINT_BUTTON_ID,
+    THEME_BUTTON_ID,
+    TOOLBAR_BUTTON_ORDER,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -343,8 +350,10 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
     cookies: dict[str, str], stop: str
 ) -> None:
     """멈춤은 `app.py` 가 껍데기 스타일을 보내기 전이다 — 멈춤 화면 셋이 스스로 ⋮ 메뉴 · Deploy
-    감춤을 보내고, 앞 회차가 남긴 툴바 단추(눌러도 아무 일도 하지 않는다)를 감춘다. 정상 회차는
-    그 감춤을 보내지 않는다(요소 순번 그대로)."""
+    감춤을 보내고, 앞 회차의 툴바 iframe 이 남긴 Guide · Print · 테마(눌러도 아무 일도 하지
+    않는다)를 감춘다. 알림 칸이 세운 변경 칩 · Alarm 은 듣개가 살아 판이 열리므로 감추지 않는다 —
+    새로고침하면 비는 이 세션의 변경 목록을 볼 마지막 자리다. 정상 회차는 그 감춤을 보내지
+    않는다(요소 순번 그대로)."""
     cfg = use_config()
     if stop != "without_gate":
         runtime.mark_gate_installed()
@@ -367,8 +376,14 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
     styles = _styles(app)
     assert SHELL_STYLE in styles
     assert sso_identity._STOP_TOOLBAR_STYLE in styles
-    for button_id in TOOLBAR_BUTTON_ORDER:
-        assert f"#{button_id}" in sso_identity._STOP_TOOLBAR_STYLE
+    hidden = {
+        button_id
+        for button_id in TOOLBAR_BUTTON_ORDER
+        if f"#{button_id}" in sso_identity._STOP_TOOLBAR_STYLE
+    }
+    assert hidden == {GUIDE_BUTTON_ID, PRINT_BUTTON_ID, THEME_BUTTON_ID}
+    assert CHANGES_CHIP_ID not in sso_identity._STOP_TOOLBAR_STYLE
+    assert ALARM_BUTTON_ID not in sso_identity._STOP_TOOLBAR_STYLE
     assert '[data-testid="stAppDeployButton"]' in SHELL_STYLE
 
 
