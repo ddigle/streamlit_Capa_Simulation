@@ -28,6 +28,7 @@ from streamlit.runtime.state.safe_session_state import SafeSessionState
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.alerts import short_text
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.voc_board import VOC_CATEGORIES
 
@@ -36,7 +37,7 @@ ON_VOC = "test_on_voc"
 AUTHOR_KEY = "voc_author"
 KEPT_CLOSE_KEY = "voc_kept_reply_close"
 GONE = "그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다."
-GONE_KEPT = f"{GONE} 적어 둔 답변은 화면 맨 위에 있습니다."
+GONE_KEPT = f"{GONE} 적어 둔 답변은 화면 맨 위에 둡니다."
 
 
 def _script(database_path: Path) -> str:
@@ -609,6 +610,7 @@ def test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept(
     assert not successes(app)
     assert not app.warning, [message.value for message in app.warning]
     assert [(item.value, item.code) for item in flashed(app, "warning")] == [(GONE_KEPT, "FL-03")]
+    assert short_text(GONE_KEPT) == GONE_KEPT, "자리를 말하는 끝이 알림창에서 잘리지 않는다"
     assert [block.value for block in app.code] == ["지워진 글에 적은 답변"]
     assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
 

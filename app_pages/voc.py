@@ -74,7 +74,7 @@ POST_FORM_ERROR_KEY = "voc_post_form_error"
 GONE_FLASH_KEY = "voc_gone_flash"
 KEPT_REPLY_KEY = "voc_kept_reply"
 KEPT_REPLY_CLOSE_KEY = "voc_kept_reply_close"
-KEPT_REPLY_WHERE = "적어 둔 답변은 화면 맨 위에 있습니다."
+KEPT_REPLY_WHERE = "적어 둔 답변은 화면 맨 위에 둡니다."
 # 쓰기 단추의 key 세대(AGENTS 9장 「쓰기 콜백은 빠른 두 번 누름을 거른다」). 새 글 폼은 하나,
 # 답변 폼과 답변 완료 단추는 글마다 하나다. 비교와 쓰기는 `write_guard.write_once` 가
 # 한다 — 더블클릭은 두 회차의 콜백이 겹쳐 와 세션 칸 비교만으로는 둘 다 지났다. 지운 글은
