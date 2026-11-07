@@ -87,7 +87,9 @@ def build_process_comparison_figure(
 
 def build_capacity_waterfall_figure(summary: pd.Series) -> go.Figure:
     """Show the sequential bridge from standard Capa to production actual."""
-    labels = ["표준 Capa", "효율 Gap", "UPEH Gap", "Rundown", "기타 Gap", "실제 실적"]
+    # 손실 칸은 수량이고 이름은 「손실을 파고드는 화면」 카드와 같다 — 「효율 Gap」 · 「UPEH
+    # Gap」 은 공정 상세 표의 비율 차이 이름이다(설계 규칙 UI-CON-02).
+    labels = ["표준 Capa", "효율 손실", "UPEH 손실", "재공부족 미활용", "기타 Gap", "실제 실적"]
     values = [
         float(summary["표준 Capa"]),
         -float(summary["효율 손실 Capa"]),
@@ -103,15 +105,27 @@ def build_capacity_waterfall_figure(summary: pd.Series) -> go.Figure:
             measure=["absolute", "relative", "relative", "relative", "relative", "total"],
             text=[f"{value:,.0f}" for value in values],
             textposition="outside",
+            customdata=labels,
             connector={"line": {"color": tokens.HEADER_BACKGROUND, "width": 1}},
             increasing={"marker": {"color": tokens.STATUS_SECURE}},
             decreasing={"marker": {"color": tokens.STATUS_SHORTAGE}},
             totals={"marker": {"color": tokens.SERIES_ACTUAL}},
-            hovertemplate="%{x}<br>%{y:,.1f}<extra></extra>",
+            # 값은 막대 글과 같은 그 칸의 증감이다 — `%{y}` 는 그 칸까지의 누계라 손실 이름에 누계가
+            # 붙는다. 이름은 `customdata` 다 — `%{x}` 는 아래 접은 눈금 글자를 낸다.
+            hovertemplate="%{customdata}<br>%{delta:,.1f}<extra></extra>",
         )
     )
     _apply_common_layout(figure)
     figure.update_layout(height=380, margin={"l": 20, "r": 20, "t": 20, "b": 30})
+    # 자동 각도는 칸이 눈금 글자보다 좁으면 눈금을 30도 · 90도로 눕히고, 어느 쪽인지가 창 폭과 앞
+    # 그림 상태에 달려 이웃과 겹치기도 한다. 눕히지 않게 각도를 못 박고, 좁은 칸에 들도록 이름을
+    # 모두 두 줄로 접는다.
+    figure.update_xaxes(
+        tickmode="array",
+        tickvals=labels,
+        ticktext=[label.replace(" ", "<br>") for label in labels],
+        tickangle=0,
+    )
     figure.update_yaxes(title=None, rangemode="tozero")
     return figure
 
