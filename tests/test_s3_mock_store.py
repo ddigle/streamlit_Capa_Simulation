@@ -16,7 +16,7 @@ from capa_simulation.io.s3_small import canonical_request, credential_scope, sig
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from s3_mock_store import MockStore, start_mock  # noqa: E402
+from s3_mock_store import MockStore, _Server, start_mock  # noqa: E402
 
 NAMESPACE = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -153,3 +153,40 @@ def test_a_fault_fires_after_its_count_on_its_prefix(mock: tuple[MockStore, str]
             return error.code
 
     assert [get(), get(), get()] == [200, 503, 200]
+
+
+def _server_meets(error: Exception) -> None:
+    """요청 처리 스레드가 예외를 받은 자리 — `socketserver` 가 `except Exception` 안에서 부른다."""
+    server = _Server.__new__(_Server)
+    try:
+        raise error
+    except Exception:
+        server.handle_error(None, ("127.0.0.1", 1))
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConnectionAbortedError(10053, "현재 연결은 호스트 시스템의 소프트웨어에 의해 중단"),
+        ConnectionResetError(10054, "현재 연결은 원격 호스트에 의해 강제로 끊겼습니다"),
+        BrokenPipeError(32, "Broken pipe"),
+    ],
+    ids=["aborted", "reset", "pipe"],
+)
+def test_a_dropped_connection_stays_off_the_standard_error(
+    error: Exception, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """클라이언트가 덜 읽고 끊는 것은 시험의 일이다 — 현지 언어 글이 표준 오류로 나가지 않는다."""
+    _server_meets(error)
+
+    assert capsys.readouterr().err == ""
+
+
+def test_a_real_failure_is_told_in_one_ascii_line(capsys: pytest.CaptureFixture[str]) -> None:
+    """진짜 예외는 삼키지 않는다. 어느 터미널 인코딩으로 나가도 다음 시험을 깨지 않게 ASCII 다."""
+    _server_meets(ValueError("합성 처리 오류"))
+
+    written = capsys.readouterr().err
+    assert "ValueError" in written
+    assert written.isascii()
+    assert len(written.splitlines()) == 1

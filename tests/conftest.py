@@ -1,4 +1,4 @@
-# Purpose: 시험 공용 자동 복원·권한 비트 판정·명령줄 재기와 Space·탭 줄·알림 칸·설비 표·그리드 대역.
+# Purpose: 시험 공용 자동 복원·권한 비트 판정·명령줄 재기·붙잡기 보호와 화면 컴포넌트 대역.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from capture_guard import keep_capture_tolerant
 from js_runner import refuse_overlong_command_line
 from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
@@ -70,6 +71,8 @@ def _popen_within_the_windows_limit(
 
 
 subprocess.Popen.__init__ = _popen_within_the_windows_limit  # type: ignore[method-assign]
+
+keep_capture_tolerant()
 
 
 # 공식버전 자동 갱신 예약의 실행 줄 허락(`auto_update_scheduler.ENV_VAR`). 그 모듈을 여기서 읽으면

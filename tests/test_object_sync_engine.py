@@ -16,6 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from child_env import narrow_child_env
 from object_store_fakes import (
     CONNECT_TEXT,
     Failure,
@@ -1269,7 +1270,7 @@ def test_the_engine_loads_without_streamlit() -> None:
         text=True,
         check=False,
         timeout=120,
-        env={"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        env=narrow_child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}),
     )
 
     assert result.returncode == 0, result.stderr

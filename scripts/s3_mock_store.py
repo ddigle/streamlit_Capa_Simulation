@@ -361,10 +361,24 @@ class _Handler(BaseHTTPRequestHandler):
     do_DELETE = _handle
 
 
+class _Server(ThreadingHTTPServer):
+    def handle_error(self, request: object, client_address: object) -> None:
+        """끊긴 연결은 넘기고, 그 밖의 예외는 ASCII 한 줄로 알린다.
+
+        시험의 클라이언트는 상한 · 제한 시간에서 답을 덜 읽고 끊는다. 기본 구현은 그때마다
+        traceback 을 표준 오류에 찍는데, Windows 의 소켓 오류 글은 현지 언어라(`WinError 10053` 은
+        한글) 그 줄이 터미널 인코딩으로 나간다.
+        """
+        error = sys.exc_info()[1]
+        if isinstance(error, ConnectionError):
+            return
+        print(f"s3-mock: {type(error).__name__} {ascii(str(error))}", file=sys.stderr)
+
+
 def start_mock(store: MockStore, *, port: int = 0) -> tuple[ThreadingHTTPServer, str]:
     """시험 · 손 확인용 — 데몬 스레드로 띄우고 `(서버, 주소)` 를 돌려준다."""
     handler = type("Handler", (_Handler,), {"store": store})
-    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    server = _Server(("127.0.0.1", port), handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"
