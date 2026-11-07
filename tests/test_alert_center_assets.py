@@ -691,6 +691,10 @@ def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> No
     assert "event.key !== 'Tab'" in shell and "syncLockedTips(document)" in shell
     assert "enterOpenPopover(document, event)" in shell
     assert "'pointerout'" in shell and "releaseHeldTip(document, event)" in shell
+    # 돌아온 초점의 풍선은 React 가 연 뒤에 닫는다 — 거품 단계이고, 마우스가 위에 있으면 두고 본다.
+    arrived = shell[shell.index("'focusin'") : shell.index("'focusout'")]
+    assert "!host.matches(':hover')" in arrived
+    assert "\n  })\n" in arrived, "포착 단계(세 번째 인자 true)가 아니라 거품 단계다"
     assert "'focusout'" in shell and "!event.relatedTarget" in shell
     assert "returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS" in shell
     assert "installFocusShell()" in JS[JS.index("export default function") :]

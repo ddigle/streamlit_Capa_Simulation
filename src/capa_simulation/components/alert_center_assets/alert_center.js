@@ -37,8 +37,8 @@
 // - 초점 껍데기(`installFocusShell`): 앱 전체 꼴이라 화면마다 고치지 않고 이 칸이 문서에 처리기를 둔다. 회차를 돌리지 않는다.
 //   ① 꺼진 단추는 Tab 이 건너뛰므로 감싼 풍선 칸(`stTooltipHoverTarget`)이 탭 자리를 맡는다(설계 규칙 UI-INP-07). 상시 훑지 않고 Tab
 //   키를 누른 순간 한 번 맞추고, 열린 팝오버 단추에서는 본문으로 들여보낸다 — 회차 없이 열리는 팝오버 안 단추까지 든다. ② Streamlit 풍선은
-//   초점이 칸 안에 있으면 마우스가 떠나도 닫지 않아 마우스로 누른 단추의 풍선이 남는다 — 키보드 초점이
-//   아니면 마우스가 떠날 때 닫는다. ③ 대화상자의 Esc 는 그 안의 키 사건으로만
+//   초점이 칸 안에 있으면 마우스가 떠나도 닫지 않아 마우스로 누른 단추 · 대화상자를 닫은 뒤 돌아온 초점의 풍선이 남는다 — 키보드 초점이
+//   아니면 마우스가 떠날 때 · 마우스 없이 초점이 왔을 때 닫는다. ③ 대화상자의 Esc 는 그 안의 키 사건으로만
 //   듣는데 고른 탭이 회차 중 `tabindex` 를 잠깐 잃으면 초점이 문서로 빠진다 — 열린 대화상자 안으로 되돌린다.
 // `// <alerts-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_alert_center_assets.py`).
 const HOST_ID = 'capa-alert-host'
@@ -377,6 +377,11 @@ function installFocusShell() {
     true,
   )
   document.addEventListener('pointerout', (event) => releaseHeldTip(document, event), true)
+  // 대화상자를 마우스로 닫으면 초점이 여는 단추로 돌아와 마우스 없이 풍선이 선다 — React 가 연 뒤(거품 단계) 닫는다.
+  document.addEventListener('focusin', (event) => {
+    const host = event.target.closest ? event.target.closest(TIP_HOST) : null
+    if (host && !host.matches(':hover')) releaseHeldTip(document, event)
+  })
   document.addEventListener(
     'focusout',
     (event) => {
