@@ -210,7 +210,7 @@ PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 # 「공식으로 지정」 확인 글을 그린 회차의 {고른 리비전, 지금 공식 번호, 그 시나리오 최신}
 # (`publish_seen_token`). 단추를 누른 회차에는 확인 글이 이미 새 목록으로 다시 그려지므로, 누르기
 # **전** 회차에 본 값을 여기 남겨 누른 회차의 값과 견준다 — 그 사이 남이 발행했으면 본 적 없는 새
-# 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신이 아닙니다」 로 말없이 발행하지
+# 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신 아님」 표지로 말없이 발행하지
 # 않는다.
 PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
 # 탭 쓰기의 제 저장 표지 이름(`write_guard.own_save_marks` — `<이름>:<시나리오·리비전 id>`). 빠른
@@ -1081,7 +1081,7 @@ def _render_load(
 ) -> None:
     name = quoted(scenario.scenario_name)
     title = f"r{revision.revision_no}"
-    st.caption(f"{name} {with_object_particle(title)} 이 세션의 설비 시나리오로 올립니다.")
+    st.caption(f"{literal_markdown(scenario.scenario_name)} {title}")
     discard = True
     if has_unsaved_equipment_edits():
         discard = st.checkbox("변경을 버리고 불러오기", key=DISCARD_KEY)
@@ -2206,21 +2206,15 @@ def publish_preview(
         )
     next_no = (release.release_no if release is not None else 0) + 1
     released = already_official(session, revision)
-    lines = [
+    line = (
         current
         if released
         else f"{current} → 새 공식 v{next_no} · 「{literal_markdown(scenario.scenario_name)}」 "
         f"r{revision.revision_no}"
-    ]
+    )
     if revision.schedule_revision_id != scenario.latest_schedule_revision_id:
-        lines.append(
-            f"{with_topic_particle(f'r{revision.revision_no}')} "
-            f"「{literal_markdown(scenario.scenario_name)}」 의 최신"
-            f"(r{scenario.latest_revision_no})이 아닙니다."
-        )
-    if released:
-        lines.append(ALREADY_OFFICIAL_LINE)
-    return lines
+        line += f" · 최신 아님(r{scenario.latest_revision_no})"
+    return [line, ALREADY_OFFICIAL_LINE] if released else [line]
 
 
 def already_official(session: EquipmentSession, revision: EquipmentScheduleRevisionSummary) -> bool:
@@ -2259,7 +2253,7 @@ def publish_seen_token(
 ) -> dict[str, object]:
     """발행 확인 글을 정하는 값 — 고른 리비전·공식 번호·그 시나리오 최신(id 와 번호).
 
-    확인 글의 「지금 공식 → 새 공식」 은 공식 번호가, 「rN은 … 의 최신(rM)이 아닙니다」 와 배치 줄은
+    확인 글의 「지금 공식 → 새 공식」 은 공식 번호가, 값 줄 끝 「최신 아님(rM)」 과 배치 줄은
     그 시나리오 최신이 정한다(되돌리기 `restore_seen_token` 과 같은 꼴). 그린 회차에
     `PUBLISH_SEEN_KEY` 에 남기고 누른 회차에 `publish_seen_refusal` 이 지금 값과 견준다.
     """
@@ -2287,7 +2281,7 @@ def publish_seen_refusal(
 
     단추를 누른 회차에는 확인 글이 지금 목록으로 다시 그려진다. 그 사이 남이 발행했으면 지금 번호로
     대조해도 맞아 「지금 공식 v4 → 새 공식 v5」 를 본 사람이 말없이 v6 을 내게 된다(E7 리뷰).
-    그 사이 남이 같은 시나리오에 새 리비전을 저장했으면, 「rN은 최신이 아닙니다」 를 본 적 없는
+    그 사이 남이 같은 시나리오에 새 리비전을 저장했으면, 「최신 아님」 표지를 본 적 없는
     사람이 최신이 아닌 리비전을 말없이 공식으로 낸다(2026-10-26 E2E) — 그것도 거절해 바뀐 확인
     글을 보게 한다.
     """

@@ -5,7 +5,7 @@
 - 「공식으로 지정」 은 누르기 **전** 회차의 확인 글이 보인 공식 번호를 남겨 두고, 누른 회차에 그
   번호가 달라졌으면(그 사이 남이 발행) 거절하고 까닭을 알린다 — 「지금 공식 v1 → 새 공식 v2」 를
   본 사람이 말없이 v3 을 내지 않게. 그 사이 남이 같은 시나리오에 새 리비전을 저장해 최신이
-  바뀌었어도 거절한다 — 「rN은 최신이 아닙니다」 를 본 적 없는 사람이 최신이 아닌 리비전을 말없이
+  바뀌었어도 거절한다 — 「최신 아님」 표지를 본 적 없는 사람이 최신이 아닌 리비전을 말없이
   내지 않게(2026-10-26 E2E).
 - 확인 글의 「지금 공식 v1 · 「운영 일정」 r1」 은 공식이 그 시나리오 최신이 아니고 이 세션이 그
   리비전을 들고 있지 않아도 번호를 적는다(2026-10-26 E2E). 번호는 발행 줄이 들고 온다 — 리비전
@@ -117,7 +117,7 @@ def test_the_publish_refusal_compares_the_seen_number_with_the_click_run() -> No
 
 def test_the_publish_refusal_sees_a_newer_revision_of_the_same_scenario() -> None:
     """확인 글을 본 뒤 그 시나리오에 r5 가 저장되면(최신 r4 → r5) 거절하고 까닭을 알린다 — 다시 그린
-    확인 글은 「r4는 「셋업 실무」 의 최신(r5)이 아닙니다」 를 보인다."""
+    확인 글은 값 줄 끝에 「최신 아님(r5)」 을 보인다."""
     newer = _setup("r-newer", 5)
 
     refusal = publish_seen_refusal(
@@ -226,7 +226,7 @@ def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(
     app = _ok(_tab(path).run())
     captions = [str(item.value) for item in app.caption]
     assert any("새 공식 v2 · 「운영 일정」 r2" in text for text in captions)
-    assert not any("의 최신(r" in text for text in captions)
+    assert not any("최신 아님" in text for text in captions)
 
     other = _session(repository)
     repository.save_equipment(
@@ -246,7 +246,7 @@ def test_a_newer_revision_saved_after_the_preview_stops_the_publish_once(
         in str(item.value)
         for item in app.error
     )
-    assert "r2는 「운영 일정」 의 최신(r3)이 아닙니다." in [str(item.value) for item in app.caption]
+    assert any(str(item.value).endswith(" · 최신 아님(r3)") for item in app.caption)
 
     # 바뀐 확인 글을 보고 다시 누른 발행이다(창이 지났다 — 위 시험과 같은 까닭).
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
