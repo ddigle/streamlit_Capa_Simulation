@@ -64,6 +64,9 @@ SIDE_HEAD_PX: Final = 42
 # 칸막이를 잡는 폭 — 두 칸 경계선이 그 한가운데다. 표 · 오른쪽 칸은 경계선에서 각각 이만큼 띄운다.
 SIDE_GUTTER_PX: Final = 16
 SIDE_INSET_PX: Final = 14
+# 편집기 영역(`st.container(border=True)`)의 안쪽 여백(1.63 측정) — 경계선과 칸막이 잡는 칸이
+# 이만큼 위아래로 나가 영역 테두리에 닿는다. 칸막이 쪽 값은 `splitter.css` 에 같게 적는다.
+SIDE_FRAME_PAD_PX: Final = 13
 # 줄에서 왼쪽 감싸개가 차지하는 아래 한계 — 안쪽 폭 + 경계선 쪽 여백 + 경계선 1px.
 SIDE_LEFT_KEEP_PX: Final = SIDE_LEFT_MIN_PX + SIDE_INSET_PX + 1
 # 본문 칸 스크롤 막대 자리(`scrollbar-gutter: stable`, 1.63 측정) — 편집기 영역 안쪽 여백(13px)으로
@@ -161,7 +164,8 @@ def side_layout_style(spec: SidePanel) -> str:
     계산기와 같은 꼴). `:has()` 는 한 겹만 쓴다(겹치면 규칙 전체가 버려진다). `wrap=False` 가로
     칸은 스크롤 칸이 되어 sticky 가 줄 기준으로 잡히므로 줄에 `overflow: visible` 을 건다.
     테두리는 바깥 칸(`frame_key`) 하나이고 두 칸 경계선은 왼쪽 감싸개의 오른쪽 테두리다 — 왼쪽은 줄
-    높이로 늘어나 경계선이 영역 끝까지 간다. 칸막이 마운트는 붙는(sticky) 오른쪽 감싸개를 기준으로
+    높이로 늘어난 뒤 음수 여백으로 영역 안쪽 여백까지 나가 경계선이 영역 테두리에 닿고, 같은 값의
+    안쪽 여백이 내용 자리를 그대로 둔다. 칸막이 마운트는 붙는(sticky) 오른쪽 감싸개를 기준으로
     경계선부터 칸 오른쪽 끝까지 덮는 절대 위치(흐름 높이 0)이고, 눌림은 칸막이·접기 단추만 받는다
     (`pointer-events`). 접힘(`data-<이름>-side="min"`)은 넓은 화면에서만 — 칸 자리가 0 이 되어 표가
     줄을 다 쓰고 떠 있는 단추만 남는다. 좁은 화면(쌓임)과 인쇄는 펼친 꼴이다.
@@ -187,6 +191,7 @@ def side_layout_style(spec: SidePanel) -> str:
             f"{left} {{ flex: 1 1 0; min-width: 0; }}",
             (
                 f"{left_item} {{ flex: 1 1 0; min-width: 0; align-self: stretch; "
+                f"margin-block: -{SIDE_FRAME_PAD_PX}px; padding-block: {SIDE_FRAME_PAD_PX}px; "
                 f"padding-right: {SIDE_INSET_PX}px; border-right: {line}; }}"
             ),
             (
@@ -219,8 +224,8 @@ def side_layout_style(spec: SidePanel) -> str:
             f"@media (width <= {SIDE_STACK_MAX_PX}px) {{ ",
             f".st-key-{spec.split_key} {{ flex-wrap: wrap; }} ",
             (
-                f"{left_item} {{ flex: 1 1 100%; position: static; "
-                "padding-right: 0; border-right: none; } "
+                f"{left_item} {{ flex: 1 1 100%; position: static; margin-block: 0; "
+                "padding-block: 0; padding-right: 0; border-right: none; } "
             ),
             (
                 f"{right_item} {{ flex: 1 1 100%; position: static; padding-left: 0; "
