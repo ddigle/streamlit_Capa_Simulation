@@ -33,6 +33,7 @@ from capa_simulation.components.intro_summary import (
     warm_intro_summary,
 )
 from capa_simulation.components.object_sync_status import render_object_sync_alerts
+from capa_simulation.components.page_box_reveal import page_box_reveal_script
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.page_link import disabled_link_aria_script
 from capa_simulation.components.page_tabs import (
@@ -247,6 +248,8 @@ render_theme_toggle(
         plotly_touch_scroll_script(CELL_SELECT_CHART_KEYS),
         cell_press_guard_script(HOME_CELL_CHART_KEYS),
         disabled_link_aria_script(),
+        # 화면 조작 상자가 바닥 앱 정보 카드에 걸린 채 서면 사이드바를 굴려 보인다.
+        page_box_reveal_script(),
         # 통합인증이 켜진 서버만 — 만료 · 로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠.
         *sso_reconnect_scripts(signed_in),
         # 통합인증이 켜진 서버만 — 사람이 앱을 쓰면(입력) 5분에 한 번 로그인을 늘린다(타이머 없음 ·
