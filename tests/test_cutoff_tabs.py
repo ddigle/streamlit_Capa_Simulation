@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, infos, states
+from alert_marks import active_state, infos, states, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
 from widget_browser import BrowserTables
@@ -369,6 +369,7 @@ def test_filling_keeps_a_typed_value_and_adds_the_missing_process(tmp_path: Path
     assert draft["공정"].tolist() == ["Process-A", "Process-B"]
     assert draft["Cutoff일수"].iloc[0] == 31.5
     assert pd.isna(draft["Cutoff일수"].iloc[1])
+    assert "1개 행을 표 끝에 더했습니다." in [str(item.value) for item in successes(app)]
     # 채우기는 저장이 아니다 — 저장은 「Cut-off 저장」 만 한다.
     assert _saved(outside) == {"Process-A": 10.0}
 
@@ -394,6 +395,7 @@ def test_filling_with_nothing_to_add_keeps_the_table_and_says_so(tmp_path: Path)
 
     assert _editor_key(app) == editor
     assert app.session_state[CUTOFF_DRAFT_KEY]["Cutoff일수"].tolist() == [33.5, 5.0]
+    assert "더할 공정이 없습니다." in [str(item.value) for item in infos(app)]
     assert _saved(outside) == {"Process-A": 10.0, "Process-B": 5.0}
 
     _press(tables, "Cut-off 저장")
@@ -414,6 +416,7 @@ def test_filling_sees_a_row_added_in_the_table_but_not_saved(tmp_path: Path) -> 
     _press(tables, "설비 공정으로 채우기")
 
     assert app.session_state[CUTOFF_DRAFT_KEY]["공정"].tolist() == ["Process-A", "Process-B"]
+    assert "더할 공정이 없습니다." in [str(item.value) for item in infos(app)]
 
     _press(tables, "Cut-off 저장")
 

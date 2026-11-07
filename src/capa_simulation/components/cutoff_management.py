@@ -322,15 +322,22 @@ def render_cutoff_management(
 
 
 def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> NoReturn:
-    """친 칸까지 얹은 초안(`draft`)에 빠진 공정을 빈 행으로 덧붙인다. 저장은 하지 않는다.
+    """친 칸까지 얹은 초안(`draft`)에 빠진 공정을 빈 행으로 덧붙이고 결과를 알린다. 저장은 하지
+    않는다.
 
-    더할 공정이 없으면 표를 다시 세우지 않는다."""
+    잠그지 않고 누른 회차에 답한다 — 초안의 빈 행과 손으로 더한 행까지 보려면 폼을 받아야 해서
+    그리는 회차에는 더할 공정이 있는지 모른다(설계 규칙 UI-INP-07). 새 행은 표 끝이라 첫 화면에 안
+    보여 알림이 그 변화를 말한다. 더할 공정이 없으면 표를 다시 세우지 않는다."""
     filled = add_missing_cutoff_rows(draft, equipment_processes)
-    if len(filled) > len(draft):
+    added = len(filled) - len(draft)
+    if added:
         st.session_state[CUTOFF_DRAFT_KEY] = filled
         # 편집 델타는 행 위치다. 표가 바뀌는데 옛 델타를 남기면 다른 공정에 붙는다.
         # 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 위젯 키를 바꾼다.
         discard_editor(_EDITOR_KEY)
+        queue_flash(_FLASH_KEY, f"{added}개 행을 표 끝에 더했습니다.")
+    else:
+        queue_flash(_FLASH_KEY, "더할 공정이 없습니다.", kind="info")
     st.rerun()
 
 
