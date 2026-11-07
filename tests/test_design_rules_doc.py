@@ -7,8 +7,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 다시 묻게 된다(PRC-02). 여기서는 글의 뜻이 아니라 꼴을 본다 — id 꼴 · 겹침 · 묶음
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
 답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 사용자 기록
-5줄 · 이번 배포 전후 보드 7줄과 답 · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS ·
-CLAUDE.md · README)의 연결.
+5줄 · 이번 배포 전후 보드 7줄과 답 · 통합 검수 보드 줄과 답 · 작업 줄 규칙 둘(v1.9) · 문서 안팎의
+id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -494,7 +494,6 @@ def test_the_integration_board_answers_are_recorded_and_written_into_the_rules()
 
     assert len(lines) == len(INTEGRATION_BOARD_ANSWERS)
     assert found == INTEGRATION_BOARD_ANSWERS
-    assert "판 v1.8" in document.split("\n## 1. ")[0]
     assert "- **v1.8 — 2026-11-07.**" in _chapter(document, 8)
 
     rules = {rule.id: rule for rule in _rules()}
@@ -522,6 +521,47 @@ def test_the_integration_board_answers_are_recorded_and_written_into_the_rules()
     row = next(line for line in values.splitlines() if line.startswith("| 설비 마스터 작업 줄 |"))
     assert "flex 기준 220px" in row and "안 A" in row and "검수 전" in row
     assert "| 편집기 왼쪽 칸 아래 한계 | 안쪽 224px" in values
+
+
+def test_the_work_row_rules_carry_the_remarks_of_the_day() -> None:
+    """v1.9 — 2026-11-07 지적을 규칙이 잡지 못해 올렸다. 작업 줄 석 줄은 UI-LAY-11(기준 창 한 줄 ·
+    메뉴로 묶음), 같은 일 단추는 UI-LAY-12 다. 단추를 두고 한 사용자 글이 하나씩이라 둘 다 SHOULD
+    이고(1-2) 근거에 원문이 있다. 기준 창은 4장에 「검수 전」 이고 사내 보고 창은 두 줄까지라 안 A
+    의 문턱 1,363 과 어긋나지 않는다. 짝 규칙은 경계를 맞췄고 표 머리선은 패널 밖 두 표로 넓혔다."""
+    document = _text()
+    assert "판 v1.9" in document.split("\n## 1. ")[0]
+    assert "- **v1.9 — 2026-11-07.**" in _chapter(document, 8)
+
+    rules = {rule.id: rule for rule in _rules()}
+    toolbar = rules["UI-LAY-11"]
+    assert _level_and_state(toolbar) == ("SHOULD", "확정")
+    assert "기준 창(4장)에서 한 줄" in toolbar.text and "메뉴 하나로 묶는다" in toolbar.text
+    assert "이 버튼들이 많아서 현재 총 3줄로 보임" in toolbar.fields["근거"][0]
+    assert "「표 위 작업 줄 기준 창」" in toolbar.fields["지금 값"][0]
+
+    same_job = rules["UI-LAY-12"]
+    assert _level_and_state(same_job) == ("SHOULD", "확정")
+    assert "옆 칸 탭 · 고르기 · 표 도구 막대" in same_job.text
+    for phrase in ("「기능 중복」", "중복된 내용 표기에 걸림", "「+ 새 호기」 를 뺌"):
+        assert phrase in same_job.fields["근거"][0], phrase
+    for phrase in ("빈 표 자리의 시작 단추", "단축키", "결과가 다르면 같은 일이 아니다"):
+        assert phrase in same_job.fields["예외"][0], phrase
+
+    values = _chapter(document, 4)
+    row = next(line for line in values.splitlines() if line.startswith("| 표 위 작업 줄 기준 창 |"))
+    for phrase in ("1600×1000", "1283×911", "두 줄까지", "창 1,363", "검수 전"):
+        assert phrase in row, phrase
+
+    assert "UI-LAY-11" in rules["UI-LAY-03"].text and "UI-LAY-12" in rules["UI-LAY-03"].text
+    assert "표 위 작업 줄" in rules["UI-ACC-02"].fields["범위"][0]
+    assert "UI-LAY-12" in rules["UI-TXT-07"].fields["범위"][0]
+    panel = rules["UI-LAY-09"]
+    assert "나란히 선 두 표 전부" in panel.fields["범위"][0]
+    assert "작업 줄이 접혀" in panel.text and "작업 줄이 접혀도" in panel.fields["판단"][0]
+
+    nets = _chapter(document, 5)
+    for rule_id in ("UI-LAY-09", "UI-LAY-11", "UI-LAY-12"):
+        assert f"({rule_id})" in nets, rule_id
 
 
 def test_ids_cited_in_and_around_the_rules_exist() -> None:
