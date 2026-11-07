@@ -50,6 +50,7 @@ from capa_simulation.components.required_exclusion_notice import (
 )
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
+    pending_edit_labels,
     register_pending_edits,
     reset_editors_on_source_change,
     show_row_order_reset,
@@ -237,6 +238,8 @@ APPLY_LOCKED_HELP = "고친 칸이 있으면 누를 수 있습니다."
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
 # 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
 OWN_CHANGE_KEY = "load_conversion_own_change"
+# 앱 머리를 고치려 다시 도는 회차가 넘기는 줄 차례 비움 결과 — 알림은 다시 돈 회차가 낸다.
+SOURCE_RESET_KEY = "load_conversion_source_reset"
 # 편집표·붙여넣기 대기 이름 — 변경 판 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
 EDITOR_NAMES = {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"}
 STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
@@ -252,6 +255,8 @@ plan_order_free: tuple[str, ...] = (
     and set(PLAN_EDITOR_DIMENSIONS).issubset(_staged_plan.columns)
     else (PLAN_STAGED_KEY,)
 )
+# 앱 머리(칩 · 탭 점)는 이 본문보다 먼저 이 값으로 그렸다.
+edits_in_head = pending_edit_labels("load_conversion.py")
 source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     source_token(
@@ -267,8 +272,14 @@ source_reset = reset_editors_on_source_change(
     names={**EDITOR_NAMES, **STAGED_NAMES},
     order_free_keys=plan_order_free,
 )
+if set(edits_in_head) - set(pending_edit_labels("load_conversion.py")):
+    # 원본이 바뀌어 편집을 버렸는데 칩 · 탭 점은 버리기 전 값으로 섰다 — 그대로 두면 다음 조작까지
+    # 남는다. 한 번 다시 돈다(다음 회차엔 버릴 편집이 없어 되풀이되지 않는다). 알림을 지금 내면
+    # 끊긴 회차와 함께 사라질 수 있어 결과를 넘긴다.
+    st.session_state[SOURCE_RESET_KEY] = source_reset
+    st.rerun()
 # 줄 차례가 바뀌어 적용 전 편집을 버린 회차는 오른쪽 아래 알림창에 한 번 알린다(사건 알림 `ST-09`).
-show_row_order_reset(source_reset)
+show_row_order_reset(st.session_state.pop(SOURCE_RESET_KEY, source_reset))
 # 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
 # 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
 register_pending_edits(

@@ -493,6 +493,49 @@ def test_the_plan_editor_drops_an_unapplied_edit_only_when_the_order_changes(
         }
 
 
+# 앱 머리(칩 · 탭 점)처럼 페이지 본문보다 **먼저** 세는 자리 — 마지막 회차가 본 값.
+_PLAN_HEAD_PROBE = (
+    "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels as _labels\n"
+    '    st.session_state["probe_head"] = _labels("load_conversion.py")\n'
+    '    st.session_state["probe_runs"] = st.session_state.get("probe_runs", 0) + 1\n'
+    '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n'
+)
+
+
+def test_the_head_stops_counting_a_plan_edit_the_page_dropped_and_the_notice_still_goes() -> None:
+    """원본이 바뀌어 본문이 PKG PLAN 편집을 버리면 앱 머리는 이미 그 편집을 세어 그렸다 — 그 회차에
+    한 번 다시 돌아 칩 · 탭 점을 걷는다(UI-DAT-11). 줄 차례 알림은 다시 돈 회차에 한 번 나간다."""
+    script = PLAN_ORDER_SWAP_TEST_SCRIPT.replace(
+        '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n',
+        _PLAN_HEAD_PROBE,
+        1,
+    )
+    assert script != PLAN_ORDER_SWAP_TEST_SCRIPT
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state["load_conversion_active_tab"] = PLAN_TAB
+    app.run()
+    assert not app.exception
+    edit = _edit(MONTH, 555.0)
+    app.session_state[editor_widget_key_in(app, "pkg_plan_editor")] = edit
+    app.run()
+    assert not app.exception
+    assert app.session_state["probe_head"] == ["생산 계획 · PKG PLAN"]
+
+    runs = app.session_state["probe_runs"]
+    app.session_state["test_display_order_descending"] = True
+    app.session_state[editor_widget_key_in(app, "pkg_plan_editor")] = edit
+    app.run()
+    assert not app.exception
+    assert app.session_state["probe_head"] == []
+    assert app.session_state["probe_runs"] == runs + 2
+    assert len(_notices(app)) == 1
+
+    # 다시 돈 회차가 되풀이되지 않고 알림도 한 번이다.
+    app.run()
+    assert app.session_state["probe_runs"] == runs + 3
+    assert not _notices(app)
+
+
 PLAN_STAGED_KEY = "pkg_plan_staged_paste"
 
 
