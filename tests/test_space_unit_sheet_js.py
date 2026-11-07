@@ -630,3 +630,28 @@ def test_a_list_row_zooms_to_three_hundred_percent_and_the_pick_view_stays_at_mo
     assert "zoomToBox(bbox(VIEW ? [item] : expanded([item])), LIST_ROW_ZOOM)" in go
     assert JS.count("zoomToBox(") == 3
     assert "if (list.length) zoomToBox(bbox(list))\n" in JS
+
+
+def test_a_list_row_of_a_module_kept_out_of_the_drawer_goes_to_its_standing_bundle() -> None:
+    """도면에 선 묶음의 좌표 없는 모듈(자리 잃은 모듈 · 상자를 한 모듈에만 그린 옛
+    설비)은 서랍에 따로 서지 않는다(`trayKeep`). 그 모듈의 목록 줄 누르기는 「오른쪽
+    미배치 칸에 있습니다」 라 하지 않고 그 모듈을 고른 채(모듈은 묶음째 골라져 선택 칸에
+    「범위에 맞춰 n등분」) 화면을 그 묶음의 도면에 선 모듈로 도면 호기와 같은 길로 옮기고
+    창 아래에 그 Main 설비를 적는다. 서랍 칩을 찾는 갈래는 서랍에 서는 모듈만 받는다."""
+    keep = JS[JS.index("  function trayKeep() {") : JS.index("  function trayEntries(")]
+    assert "!m.placed && !m.moveTo && !(m.group && standing.has(m.group))" in keep
+    go = JS[JS.index("  function goToUnit(id) {") : JS.index("  function setRule(")]
+    lead = (
+        "const lead = own && isUnit(own) && !VIEW && !onCanvas(own) && !own.moveTo"
+        " ? placedMembers(own)[0] || null : null"
+    )
+    on_canvas = "if (item && isUnit(item) && onCanvas(item)) {"
+    assert lead in go
+    assert go.index(lead) < go.index("const item = lead || own") < go.index(on_canvas)
+    canvas = go[go.index(on_canvas) : go.index("    if (item && isUnit(item) && !VIEW")]
+    assert "const group = S.groups.get(item.id)" in canvas and "      select(id)\n" in canvas
+    assert "if (lead) setSheetNote(`${id} — 도면에 없음 · Main 설비 ${own.group}`)" in canvas
+    assert "오른쪽 미배치 칸에 있습니다" not in canvas
+    # 「범위에 맞춰 n등분」 · 칩 놓기 같은 편집 뒤에는 그 한 줄이 틀릴 수 있어 지운다.
+    undo = JS[JS.index("  function pushUndo(ops) {") : JS.index("  const commit = (entries)")]
+    assert "if (sheetNote) setSheetNote('')" in undo
