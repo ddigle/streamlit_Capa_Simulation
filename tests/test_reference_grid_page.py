@@ -788,6 +788,61 @@ def _drafts_in_two_tables(calls: Calls) -> AppTest:
     return _choose(app, "일수")
 
 
+# 앱 머리(칩 · 탭 점 · 사이드바 줄)처럼 페이지 본문보다 **먼저** 세는 자리 — 마지막 회차가 본 값.
+_HEAD_COUNT_PROBE = (
+    "    from capa_simulation.components.scenario_edit_bar import pending_edit_labels as _labels\n"
+    '    st.session_state["probe_head"] = _labels("reference_data.py")\n'
+    '    st.session_state["probe_runs"] = st.session_state.get("probe_runs", 0) + 1\n'
+    '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n'
+)
+
+
+def _head_count_script(script: str) -> str:
+    probed = script.replace(
+        '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n',
+        _HEAD_COUNT_PROBE,
+        1,
+    )
+    assert probed != script
+    return probed
+
+
+def test_the_head_stops_counting_a_draft_the_page_dropped_on_a_source_change(
+    calls: Calls,
+) -> None:
+    """기간 등 원본이 바뀌어 본문이 초안을 버리면 앱 머리는 이미 그 초안을 세어 그렸다 — 다음 조작을
+    기다리지 않고 그 회차에 한 번 다시 돌아 칩 · 탭 점 · 사이드바 줄을 함께 걷는다(UI-DAT-11)."""
+    app = _open(_head_count_script(TWO_PROCESS_TEST_SCRIPT))
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    assert app.session_state["probe_head"] == ["기준 정보 · 일수"]
+
+    runs = app.session_state["probe_runs"]
+    app.session_state["reference_data_source_token"] = "다른 원본"
+    app.run()
+    assert not app.exception
+    assert _draft(app) is None
+    assert app.session_state["probe_head"] == []
+    assert app.session_state["probe_runs"] == runs + 2
+
+    # 다시 돈 회차가 되풀이되지 않는다.
+    app.run()
+    assert app.session_state["probe_runs"] == runs + 3
+
+
+def test_an_own_apply_does_not_spend_one_more_run_on_the_head(calls: Calls) -> None:
+    """이 화면이 적용한 표의 초안은 머리가 이미 빼고 센다 — 적용 뒤 회차를 한 번 더 돌지 않는다."""
+    app = _open(_head_count_script(REAL_APPLY_TEST_SCRIPT))
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    runs = app.session_state["probe_runs"]
+
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    assert _draft(app) is None
+    assert app.session_state["probe_head"] == []
+    # 누른 회차 · 적용의 `st.rerun()` 회차 둘뿐이다.
+    assert app.session_state["probe_runs"] == runs + 2
+
+
 def test_another_pages_apply_keeps_the_drafts_of_the_tables_it_did_not_touch(
     calls: Calls,
 ) -> None:

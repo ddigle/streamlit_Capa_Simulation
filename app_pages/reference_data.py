@@ -38,6 +38,7 @@ from capa_simulation.components.reference_csv_tools import queue_reference_impor
 from capa_simulation.components.scenario_edit_bar import (
     mark_own_change,
     only_revision_changed,
+    pending_edit_labels,
     register_pending_edits,
     reset_editors_on_source_change,
     source_token,
@@ -448,6 +449,8 @@ grid_kept, grid_dropped = _grid_survivors(st.session_state.get(SOURCE_TOKEN_KEY)
 kept_grid_keys = {
     key for table_name in grid_kept for key in (cells_key(table_name), history_key(table_name))
 }
+# 앱 머리(칩 · 탭 점 · 사이드바 줄)는 이 본문보다 먼저 이 값으로 그렸다.
+edits_in_head = pending_edit_labels("reference_data.py")
 reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
     reference_token,
@@ -459,7 +462,8 @@ reset_editors_on_source_change(
     own_change_key=OWN_CHANGE_KEY,
     order_free_keys=(*step_widget_keys, *grid_session_keys),
 )
-# 버림 알림은 이 회차에 한 번이다 — 아래 inbox 반영이 이 회차를 다시 돌리면(초안을 비운 회차) 다시
+head_is_stale = bool(set(edits_in_head) - set(pending_edit_labels("reference_data.py")))
+# 버림 알림은 이 회차에 한 번이다 — 아래에서 이 회차를 다시 돌리면(초안을 버리거나 비운 회차) 다시
 # 담아 다시 돈 회차가 그린다(그 회차에는 `_grid_survivors` 가 더 버리지 않는다).
 grid_dropped_notice = (
     GRID_DROPPED_NOTICE.format(
@@ -512,11 +516,12 @@ grid_tables = {
     for table_name in EDIT_TABLES
     if table_name == current_dataset or table_name in _inbox_tables
 }
-if reference_grid.apply_grid_inbox(grid_tables):
-    # 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던 표의 첫 op 가 아무것도 바꾸지
-    # 않음). 사이드바 「적용 전 편집」·화면 탭 점·테마 표지는 `app.py` 가 이 본문보다 **먼저** 옛
-    # 칸으로 그렸다 — 그대로 두면 다음 조작까지 남는다(그리드는 다시 보내지 않는다). 한 번 다시
-    # 돈다(양식·색인은 캐시라 싸고, 다음 회차는 inbox 가 비어 되풀이되지 않는다).
+if reference_grid.apply_grid_inbox(grid_tables) or head_is_stale:
+    # 원본이 바뀌어 초안을 버렸거나, 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던
+    # 표의 첫 op 가 아무것도 바꾸지 않음). 사이드바 「적용 전 편집」·화면 탭 점·변경 칩·테마 표지는
+    # `app.py` 가 이 본문보다 **먼저** 옛 칸으로 그렸다 — 그대로 두면 다음 조작까지 남는다(그리드는
+    # 다시 보내지 않는다). 한 번 다시 돈다(양식·색인은 캐시라 싸고, 다음 회차는 버릴 초안도 inbox
+    # 도 없어 되풀이되지 않는다).
     if grid_dropped_notice is not None:
         queue_flash(
             GRID_DROPPED_FLASH_KEY, grid_dropped_notice, kind="warning", icon=GRID_DROPPED_ICON
