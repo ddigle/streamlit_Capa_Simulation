@@ -795,10 +795,6 @@ def _conditions_panel_style() -> str:
         f'{panel} {_CONDITION_FIELDS}[class*="{PENDING_SUFFIX}"] [data-testid="stButton"] button'
     )
     name_row = f"{panel} {_CONDITION_NAME_ROWS}"
-    notice = (
-        f'{panel} > [data-testid="stLayoutWrapper"]:first-child'
-        ' [data-testid="stCaptionContainer"] p'
-    )
     return (
         # 패널 면과 줄 사이. 사이드바 세로 블록의 촘촘한 간격(위 규칙)보다 뒤라야 이긴다 — 같은
         # 특정도라 차례가 정한다.
@@ -811,12 +807,6 @@ def _conditions_panel_style() -> str:
         }}
         {sidebar} {panel} {_CONDITION_FIELDS} {{
             gap: {_FIELD_INNER_GAP};
-        }}"""
-        # 패널 맨 위 「적용 전 편집」 한 줄은 이름 줄과 같은 작은 글이다.
-        f"""
-        {notice} {{
-            font-size: 0.75rem;
-            line-height: 1.35;
         }}"""
         # 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
         # 않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄 위로

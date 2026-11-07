@@ -147,19 +147,16 @@ NO_REVISION_HELP = "선택한 시나리오에 저장된 리비전이 없어 불�
 SAVE_BUTTON_HELP = "지금 화면의 편집과 함께 조회기간·공정 필터도 새 리비전에 담깁니다."
 
 
-def render_scenario_field(*, pending_edits: Sequence[str] = ()) -> None:
+def render_scenario_field() -> None:
     """패널의 시나리오 줄. **세션만 읽는다** — 회차마다 저장소를 보지 않는다.
 
     이름 줄 오른쪽에 상태 배지 하나(미저장 변경 / 공식 vN / 최신 rN 있음 / 저장된 리비전 — 낡음은
     `app.py` 가 30초에 한 번 확인해 둔 세션 값 `newer_active_revision_no`), 값 칸에
     「시나리오명 · rN」. 저장하지 않은 편집이 있으면 값 칸 왼쪽에 주황 띠가 서고 팝업이 저장
     구획으로 열린다. 불러오기·저장 결과와 저장 뒤 경고는 다음 회차에 한 번 알림창 · Alarm 으로
-    낸다 — 값 칸 밑 칸에는 그리지 않는다.
-
-    `pending_edits` 는 이 화면에 적용하지 않은 편집이다. 패널 맨 위 주황 한 줄이 이미 말하므로
-    여기서는 읽지 않는다 — 팝업이 누른 회차에 다시 센다(`render_scenario_dialog_body`).
+    낸다 — 값 칸 밑 칸에는 그리지 않는다. 적용하지 않은 편집은 팝업이 누른 회차에 다시 센다
+    (`render_scenario_dialog_body`).
     """
-    del pending_edits
     label = active_scenario_label()
     unsaved = has_unsaved_scenario_changes()
     # 값 칸은 버튼 라벨이라 마크다운으로 그려진다 — 사람이 적은 시나리오명은 글자 그대로 싣는다

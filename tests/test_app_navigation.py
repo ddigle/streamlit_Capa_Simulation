@@ -1122,8 +1122,9 @@ def test_the_theme_marker_counts_a_pending_fab_layout(_app: AppTest) -> None:
 
 def test_the_theme_marker_counts_pending_unapplied_edits(_app: AppTest) -> None:
     """적용하지 않은 편집(편집표·붙여넣기 대기)은 시나리오에 들어 있지 않아 미저장 판정에 잡히지
-    않는다. 사이드바 패널 맨 위 「적용 전 편집」 줄이 서는 회차면 테마 단추도 묻게 표지를 단다 —
-    새로고침한 새 세션에는 그 편집이 없다."""
+    않는다. 변경 칩 · 탭 점이 서는 회차면 테마 단추도 묻게 표지를 단다 — 새로고침한 새 세션에는 그
+    편집이 없다. 조건 패널에는 그 말을 세우지 않는다(칩 · 판 한 곳, 버려지는 순간은 팝업이 묻는다 —
+    설계 규칙 UI-LAY-04)."""
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert not _has_theme_unsaved_marker(app)
@@ -1134,7 +1135,8 @@ def test_the_theme_marker_counts_pending_unapplied_edits(_app: AppTest) -> None:
     }
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
-    assert any("생산 계획 · PKG PLAN 붙여넣기" in caption.value for caption in app.sidebar.caption)
+    assert not any("PKG PLAN 붙여넣기" in caption.value for caption in app.sidebar.caption)
+    assert not any("적용 전 편집" in caption.value for caption in app.sidebar.caption)
     assert _has_theme_unsaved_marker(app)
 
 
@@ -1665,7 +1667,7 @@ def test_applying_a_period_keeps_the_unapplied_edit_list(
     """조회기간 「적용」은 적용하지 않은 편집 목록을 비우지 않는다(2026-10-11 병합 전 리뷰).
 
     고른 범위가 바뀌어도 데이터가 있는 달이 그대로면 편집표의 원본도 그대로라 편집이 남는다. 목록을
-    비우면 그 회차에 패널 맨 위 「적용 전 편집」 줄과 저장 확인이 사라져 편집을 잃을 수 있다.
+    비우면 그 회차에 변경 칩과 저장 확인이 사라져 편집을 잃을 수 있다.
     """
     registry_key = "scenario_pending_edit_registry"
     app = _app.run()
@@ -1674,8 +1676,7 @@ def test_applying_a_period_keeps_the_unapplied_edit_list(
         "load_conversion.py": ("생산 계획", {}, {"test_staged_paste": "PKG PLAN 붙여넣기"}, None)
     }
     app.run()
-    notice = "생산 계획 · PKG PLAN 붙여넣기"
-    assert any(notice in caption.value for caption in app.sidebar.caption)
+    assert _has_theme_unsaved_marker(app)
 
     app.button(key=PERIOD_FIELD_KEY).click().run()
     _press_apply_with(monkeypatch, ("2026-01", "2027-06"))
@@ -1683,7 +1684,7 @@ def test_applying_a_period_keeps_the_unapplied_edit_list(
     assert not list(app.exception), [element.message for element in app.exception]
     assert PERIOD_DIALOG_KEY not in app.session_state
     assert registry_key in app.session_state
-    assert any(notice in caption.value for caption in app.sidebar.caption)
+    assert _has_theme_unsaved_marker(app)
 
 
 def test_an_out_of_range_period_is_snapped_back_each_run(_app: AppTest) -> None:
