@@ -271,7 +271,7 @@ def test_an_unchanged_preset_save_reruns_the_whole_app_like_a_save(
 ) -> None:
     """고치지 않고 누른 「프리셋 저장」(「바뀐 것이 없습니다」)도 저장처럼 앱 전체 회차로 바뀐다.
 
-    카드만 돌면 다른 저장 칸이 앞 회차에 그린 알림(Summary 공지의 「바뀐 것이 없습니다」)이 그대로
+    카드만 돌면 다른 저장 칸이 앞 회차에 그린 알림(공지의 「바뀐 것이 없습니다」)이 그대로
     남아 이 알림과 두 줄로 섰다(2026-11-01 리뷰 — 다른 저장 칸끼리는 새 알림이 앞 알림을 대신한다).
     앱 전체 회차는 프리셋 알림 하나만 세우고 버전은 그대로다.
     """
@@ -288,7 +288,7 @@ def test_an_unchanged_preset_save_reruns_the_whole_app_like_a_save(
     app.session_state[HOME_DIALOG_KEY] = "settings"
     app.run()
     _assert_clean(app)
-    next(button for button in app.button if button.label == "Summary 저장").click().run()
+    next(button for button in app.button if button.label == "공지 저장").click().run()
     _assert_clean(app)
     assert home_preference.SUMMARY_UNCHANGED_MESSAGE in [str(item.value) for item in infos(app)]
     full_runs = app.session_state[FULL_RUNS_KEY]

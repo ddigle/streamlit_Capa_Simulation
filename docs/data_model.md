@@ -79,7 +79,7 @@ app_meta.global_past_data            1 ── N global_past_month               
 app_meta.global_comparison_scenario  1                                       GAP 비교 대상(0020 — 아래 예외)
 app_meta.global_execution_capacity   1 ── N global_execution_capacity_row    확보율 보정(0021)
 app_meta.global_top5_band            1                                       B/N Top5 구간(0022)
-app_meta.global_summary_note         1                                       HOME Summary 공지(0023)
+app_meta.global_summary_note         1                                       HOME 공지(0023)
 app_meta.global_key_process          1 ── N global_key_process_preset        주요공정 프리셋(0024·0028)
                                        ├── N global_key_process_preset_item
                                        └── N global_key_process_item         (0024 옛 목록 — 0028 뒤 읽지 않음)
@@ -260,7 +260,7 @@ DDL에 선언하지 않는다. 대신 Repository가 같은 트랜잭션 안에�
   안 한 Case 는 두 값이 NULL 이고, 리비전만 있는 짝은 Case 마다 `CHECK` 가 막는다. 한 Case 교체는 다른 Case 를
   같은 쓰기 트랜잭션에서 옮겨 적는다(위 「스키마 관계」 아래 문단).
 - `global_top5_band`(0022): B/N Top5 막대가 표현하는 확보율 구간(기본 50~200%).
-- `global_summary_note`(0023): HOME 상단 Summary 공지. 빈 문자열은 「공지를 내린 상태」다.
+- `global_summary_note`(0023): HOME 상단 공지. 빈 문자열은 「공지를 내린 상태」다.
 - `global_key_process`(0024)·`global_key_process_preset`·`global_key_process_preset_item`(0028):
   HOME 주요공정 히트맵의 이름 붙은 프리셋 여럿. 머리(version)는 0024 것을 쓰고 `프리셋순서` 0 번이
   새 세션의 기본이다. 0024 의 단일 목록 `global_key_process_item` 은 0028 이 「기본」 프리셋으로 옮긴

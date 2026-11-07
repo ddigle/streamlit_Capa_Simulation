@@ -117,11 +117,11 @@ def test_a_summary_save_from_a_stale_screen_is_rejected_not_reported_as_saved(
     )
     clear_global_summary_note_cache()
     app.text_area[0].input("A 공지 — 옛 화면에서 저장")
-    app = _press(app, "Summary 저장")
+    app = _press(app, "공지 저장")
 
     assert not list(app.exception)
     assert not _successes(app)
-    assert any("다른 사용자가 먼저 Summary 공지를 저장" in message for message in _errors(app))
+    assert any("다른 사용자가 먼저 공지를 저장" in message for message in _errors(app))
     profile = DuckDBScenarioRepository(database).load_global_summary_note()
     assert (profile.version, profile.note, profile.source) == (1, "B 공지 — 먼저 저장", "다른 세션")
     # 칸은 최신 저장본으로 다시 섰다 — 다음 저장은 그 version 에서 출발한다.
@@ -359,8 +359,8 @@ def test_a_save_on_a_fresh_screen_still_saves(
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _app(database)
     app.text_area[0].input("새 공지")
-    app = _press(app, "Summary 저장")
-    assert _successes(app) == ["Summary 공지를 저장했습니다."]
+    app = _press(app, "공지 저장")
+    assert _successes(app) == ["공지를 저장했습니다."]
     app.number_input[1].set_value(170.0)
     app = _press(app, "확보율 구간 저장")
     assert _successes(app) == ["B/N Top5 확보율 구간을 저장했습니다."]
@@ -378,7 +378,7 @@ def test_a_save_on_a_fresh_screen_still_saves(
 @pytest.mark.parametrize(
     ("label", "base_key", "saved_message"),
     [
-        ("Summary 저장", SUMMARY_BASE_VERSION_KEY, "Summary 공지를 저장했습니다."),
+        ("공지 저장", SUMMARY_BASE_VERSION_KEY, "공지를 저장했습니다."),
         ("확보율 구간 저장", TOP5_BASE_VERSION_KEY, "B/N Top5 확보율 구간을 저장했습니다."),
         ("프리셋 저장", KEY_PROCESS_SEEN_KEY, "주요공정 히트맵 프리셋을 저장했습니다."),
     ],
@@ -437,7 +437,7 @@ def _stored_version(database: Path, editor: str) -> int:
 @pytest.mark.parametrize(
     ("editor", "label", "first_version"),
     [
-        ("summary", "Summary 저장", 1),
+        ("summary", "공지 저장", 1),
         ("top5", "확보율 구간 저장", 1),
         ("key_process", "프리셋 저장", 2),
         ("key_process_default", "기본으로", 2),

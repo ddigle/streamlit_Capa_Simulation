@@ -1,6 +1,6 @@
 # Purpose: 바꾼 것 없는 공용 저장의 「그대로」 알림과 쓰지 않은 저장 회차의 안내 줄을 잰다.
 
-"""표시순서 직접 편집·확보율 보정·Summary 공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적·
+"""표시순서 직접 편집·확보율 보정·공지·Top5 구간·주요공정 프리셋·선행 B/O·선행 입고 실적·
 공정별 Cut-off.
 
 2026-11-01 사용자 답(개선 I5 를 일곱 자리로 넓힘). I5 가 Proc Rename·판정 기준에 둔 꼴과 같다 — 최신
@@ -308,7 +308,7 @@ def test_a_slow_second_press_of_the_execution_save_repeats_the_success(
     assert repository.load_global_execution_capacity().version == 2
 
 
-# ---------------------------------------------------------------------------- Summary 공지
+# ---------------------------------------------------------------------------- 공지
 
 _SUMMARY = """
 preference._render_summary_note_editor(
@@ -320,22 +320,22 @@ preference._render_summary_note_editor(
 def test_a_summary_note_save_without_changes_makes_no_new_version(
     repository: DuckDBScenarioRepository,
 ) -> None:
-    """지금 공지 그대로 누른 「Summary 저장」 은 새 버전 없이 「바뀐 것이 없습니다」 다. 글을 고치면
+    """지금 공지 그대로 누른 「공지 저장」 은 새 버전 없이 「바뀐 것이 없습니다」 다. 글을 고치면
     저장한다."""
     repository.replace_global_summary_note("DEMO 잠정 계획", source="처음 저장")
     clear_global_summary_note_cache()
     app = _app(repository, _SUMMARY)
 
-    app = _press(app, "Summary 저장")
+    app = _press(app, "공지 저장")
     assert _infos(app) == [SUMMARY_UNCHANGED_MESSAGE]
     assert not successes(app) and not place_errors(app), _errors(app)
     stored = repository.load_global_summary_note()
     assert (stored.version, stored.source) == (1, "처음 저장")
 
     app.text_area[0].set_value("DEMO 확정 계획")
-    app = _press(app, "Summary 저장")
+    app = _press(app, "공지 저장")
     assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
-    assert _successes(app) == ["Summary 공지를 저장했습니다."]
+    assert _successes(app) == ["공지를 저장했습니다."]
     stored = repository.load_global_summary_note()
     assert (stored.version, stored.note) == (2, "DEMO 확정 계획")
 
@@ -350,7 +350,7 @@ def test_a_slow_second_press_of_the_summary_note_repeats_the_success(
     clear_global_summary_note_cache()
     app = _app(repository, _SUMMARY)
     app.text_area[0].set_value("DEMO 확정 계획")
-    pressed = _pressed_states(app, "Summary 저장")
+    pressed = _pressed_states(app, "공지 저장")
     app.run()
     assert repository.load_global_summary_note().version == 2
 
@@ -358,7 +358,7 @@ def test_a_slow_second_press_of_the_summary_note_repeats_the_success(
 
     assert not app.exception, [item.message for item in app.exception]
     assert not infos(app) and not place_errors(app), _infos(app) + _errors(app)
-    assert _successes(app) == ["Summary 공지를 저장했습니다."]
+    assert _successes(app) == ["공지를 저장했습니다."]
     assert repository.load_global_summary_note().version == 2
 
 
@@ -400,7 +400,7 @@ def test_a_slow_second_press_of_the_top5_band_repeats_the_success(
     repository: DuckDBScenarioRepository, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """느린 두 번 누름(둘째 누름이 누른 화면의 구간을 한 번 더 보낸다)은 새로 그린 저장본과 같아
-    바뀐 것이 없지만, 창 안이라 방금 성공을 그대로 둔다(write_guard.held_notice — Summary 공지와
+    바뀐 것이 없지만, 창 안이라 방금 성공을 그대로 둔다(write_guard.held_notice — 공지와
     같다)."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     repository.replace_global_top5_band(0.7, 1.3, source="처음 저장")
@@ -810,7 +810,7 @@ def test_an_old_screen_still_reaches_the_cutoff_conflict(
     ("body", "label", "load"),
     [
         (_EXECUTION, "확보율 보정 저장", "load_global_execution_capacity"),
-        (_SUMMARY, "Summary 저장", "load_global_summary_note"),
+        (_SUMMARY, "공지 저장", "load_global_summary_note"),
         (_TOP5, "확보율 구간 저장", "load_global_top5_band"),
         (_ADVANCE_LOAD, "선행 B/O 저장", "load_global_advance_load"),
         (_ADVANCE_SHIPMENT, "선행 입고 저장", "load_global_advance_shipment"),
