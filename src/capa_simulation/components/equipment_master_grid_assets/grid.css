@@ -328,26 +328,18 @@
   font-weight: 700;
 }
 
-.emg-sel-anchor {
-  order: -1;
-  position: relative;
-  z-index: 7;
-  height: 0;
-}
-
 .emg-sel {
-  position: absolute;
-  right: -1px;
+  position: sticky;
   bottom: 0;
-  left: -1px;
+  z-index: 7;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 8px 10px;
   background: var(--emg-subtle);
-  border: 1px solid var(--emg-border-strong);
-  border-radius: 8px 8px 0 0;
+  border-top: 1px solid var(--emg-border-strong);
+  border-radius: 0 0 7px 7px;
 }
 
 .emg-sel select {

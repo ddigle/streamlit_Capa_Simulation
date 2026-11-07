@@ -1153,12 +1153,9 @@ function buildGridSkeleton(host, S) {
   host.textContent = ''
   const root = el('div', 'emg-grid')
   const bar = el('div', 'emg-bar')
+  // 고른 줄 띠는 표 틀 맨 끝에 서고, 표 아래 끝이 창 밖이면 창 아래 끝에 붙는다(서식 `sticky`). 맨 끝이라 줄을 골라도 위 칸이
+  // 밀리지 않고(설계 규칙 UI-PRF-03) 다른 칸을 덮어 두지 않으며, 본문을 어디까지 굴렸든 조작이 창 안에 있다.
   const sel = el('div', 'emg-sel')
-  // 고른 줄 띠는 흐름 밖에 떠서 표 틀 윗변에서 위로 자란다 — 줄을 고를 때 표가 밀리지 않고(설계 규칙 UI-PRF-03) 칸 묶음 ·
-  // 표 머리는 그대로 쓴다. 덮는 불러오기 줄은 고른 동안 쓸 일이 없다 — 불러오면 목록이 바뀌어 고름이 풀린다. 칸 차례(Tab)는
-  // 칸 묶음 다음 그대로다(서식 `order`).
-  const selAnchor = el('div', 'emg-sel-anchor')
-  selAnchor.appendChild(sel)
   const toast = el('div', 'emg-toast')
   toast.setAttribute('role', 'status')
   const box = el('div', 'emg-box')
@@ -1183,7 +1180,7 @@ function buildGridSkeleton(host, S) {
   }
   foot.appendChild(keys)
   foot.appendChild(legend)
-  for (const part of [bar, selAnchor, toast, box, foot]) root.appendChild(part)
+  for (const part of [bar, toast, box, foot, sel]) root.appendChild(part)
   host.appendChild(root)
   Object.assign(S, { skeleton: true, root, bar, selBar: sel, toastBar: toast, scroller: box, table, head, body, foot })
   S.repaintToast = () => paintToast(S)
@@ -1218,6 +1215,8 @@ function buildGridSkeleton(host, S) {
   listen(S, body, 'focusin', (event) => {
     const cell = event.target.closest && event.target.closest('.emg-c[data-col]')
     if (cell && !S.painting) S.focus = { id: cell.dataset.id, col: Number(cell.dataset.col) }
+    // 표 밖에서 들어온 초점만 — 표를 굴려 칸을 다시 그릴 때 돌려준 초점은 사람이 옮긴 것이 아니다.
+    if (cell && event.relatedTarget && !body.contains(event.relatedTarget)) clearOfBar(S, cell.dataset.id)
   })
 }
 
@@ -1299,12 +1298,28 @@ function selectedRows(S) {
 
 function paintSelection(S) {
   const bar = S.selBar
+  const main = pageMain()
+  const scrolled = main ? main.scrollTop : 0
   const saved = captureFocus(bar)
   S.painting = true
   bar.textContent = ''
   buildSelection(S, bar)
   S.painting = false
   restoreFocus(bar, saved)
+  holdPlace(S, main, scrolled)
+}
+
+// 띠를 닫아 본문이 줄면 띠 자리까지 굴려 둔 스크롤이 잘려 표가 그만큼 내려앉는다 — 잘린 만큼 표 틀 아래 자리를 남겨 표를 그 자리에
+// 둔다(설계 규칙 UI-PRF-03). 띠가 다시 서면 걷는다.
+function holdPlace(S, main, scrolled) {
+  if (!S.selBar.hidden) {
+    S.root.style.marginBottom = ''
+    return
+  }
+  const cut = main ? overPx(scrolled, main.scrollTop) : 0
+  if (!cut) return
+  S.root.style.marginBottom = cut + 'px'
+  main.scrollTop = scrolled
 }
 
 function buildSelection(S, bar) {
@@ -1748,6 +1763,20 @@ function ensureVisible(S, id) {
   const headH = 42
   if (top < box.scrollTop) box.scrollTop = top
   else if (top + ROW_H + headH > box.scrollTop + box.clientHeight) box.scrollTop = top + ROW_H + headH - box.clientHeight
+  clearOfBar(S, id)
+}
+
+// 띠가 창 아래 끝에 붙으면 그 자리의 줄을 덮는다 — 방금 고른 줄 · 초점이 간 줄이 그 밑에 들면 덮인 만큼만 본문을 올린다. 덮이지
+// 않으면 아무것도 움직이지 않는다(설계 규칙 UI-PRF-03). 다시 그린 뒤의 자리를 재려고 다음 프레임에 본다.
+function clearOfBar(S, id) {
+  const frame = typeof window !== 'undefined' && window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (fn) => setTimeout(fn, 0)
+  frame(() => {
+    const main = pageMain()
+    const line = S.body.querySelector('[data-id="' + cssEscape(id) + '"]')
+    if (!main || !line || S.selBar.hidden) return
+    const lift = overPx(line.getBoundingClientRect().bottom, S.selBar.getBoundingClientRect().top)
+    if (lift) main.scrollTop += lift
+  })
 }
 
 function onBodyClick(S, event) {
@@ -1801,6 +1830,7 @@ function toggleRow(S, id, shift) {
   paintHead(S)
   paintSelection(S)
   paintWindow(S)
+  clearOfBar(S, id)
 }
 
 function onBodyKey(S, event) {
@@ -1985,6 +2015,10 @@ function revealToast(toast) {
     // 그래도 머리 띠 아래로 가려 있으면(칸이 페이지 흐름에 있을 때 — 좁은 창에서 쌓인 칸 등) 칸 머리를 보인다.
     if (needsReveal(toast.getBoundingClientRect().top, TOAST_REVEAL_MARGIN)) toast.scrollIntoView({ block: 'start' })
   })
+}
+
+function pageMain() {
+  return typeof document !== 'undefined' && document.querySelector ? document.querySelector(PAGE_SCROLLER) : null
 }
 
 // 토스트를 감싼 가장 가까운 넘치는 스크롤 칸 — 그림자 DOM 밖으로 건너 올라간다. 페이지 본문(`PAGE_SCROLLER`)에 닿거나 못

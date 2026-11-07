@@ -971,24 +971,64 @@ def test_the_locked_loader_buttons_keep_a_tip_host_that_follows_the_lock() -> No
     assert result["allOpen"] == {**on, "keys": ["", "load-all"]}
 
 
-def test_the_selection_bar_floats_above_the_table_head_and_moves_no_row() -> None:
-    """체크 상자 하나를 누르면 고른 줄 띠가 흐름에 끼어 표가 91px 내려가 누른 줄이 손 밑에서
-    달아났다(g5-03, 샘플 관측 · 설계 규칙 UI-PRF-03). 띠는 높이 0 받침에 매달려 표 틀 윗변에서 위로
-    자라 칸 묶음 · 표 머리를 덮지 않고, 칸 차례는 칸 묶음 다음 그대로이며(서식 `order` — DOM 차례는
-    안 바꾼다), 표 틀이 잘라 내지 않게 표 틀의 `overflow` 를 걷는다."""
-    skeleton = _function("buildGridSkeleton")
-    assert "selAnchor.appendChild(sel)" in skeleton
-    assert "[bar, selAnchor, toast, box, foot]" in skeleton
-    anchor = re.search(r"\.emg-sel-anchor \{(?P<body>[^}]*)\}", CSS)
-    assert anchor is not None
-    for rule in ("order: -1", "position: relative", "height: 0"):
-        assert rule in anchor["body"]
+def test_the_selection_bar_stands_at_the_frame_end_and_sticks_to_the_window_bottom() -> None:
+    """체크 상자 하나를 누르면 고른 줄 띠가 표 위 흐름에 끼어 표가 91px 내려갔고(g5-03), 표 틀
+    윗변 위에 띄우니 본문을 굴린 뒤 고른 줄의 띠가 머리 띠 뒤 · 창 밖으로 나가 조작 11개 가운데
+    0 ~ 4개만 눌렸으며 덮인 불러오기 줄에 초점이 갔다(샘플 관측 · 설계 규칙 UI-PRF-03). 띠는 표 틀
+    맨 끝 흐름에 서서 위 칸을 밀지도 덮어 두지도 않고, 표 아래 끝이 창 밖이면 창 아래 끝에 붙는다
+    — 표 틀이 스크롤 칸이 되지 않게 `overflow` 를 두지 않는다. 칸 차례도 보이는 차례(표 다음)다."""
+    assert "[bar, toast, box, foot, sel]" in _function("buildGridSkeleton")
+    assert "emg-sel-anchor" not in CSS and "selAnchor" not in JS
     bar = re.search(r"\n\.emg-sel \{(?P<body>[^}]*)\}", CSS)
     assert bar is not None
-    for rule in ("position: absolute", "bottom: 0"):
+    for rule in ("position: sticky", "bottom: 0"):
         assert rule in bar["body"]
     frame = re.search(r"\n\.emg-grid \{(?P<body>[^}]*)\}", CSS)
     assert frame is not None and "overflow" not in frame["body"]
+
+
+def test_a_row_under_the_stuck_bar_lifts_only_by_what_it_covers() -> None:
+    """창 아래 끝에 붙은 띠는 그 자리 줄을 덮는다 — 고른 줄 · 초점이 간 줄이 그 밑이면 덮인 만큼만
+    본문을 올리고(`overPx`), 표를 굴려 다시 그릴 때 돌려준 초점(표 밖에서 온 초점이 아님)으로는
+    움직이지 않는다 — 표를 굴리는 손이 본문까지 끌고 가지 않게."""
+    for name in ("toggleRow", "ensureVisible"):
+        assert "clearOfBar(S, id)" in _function(name)
+    focus_in = _function("buildGridSkeleton")
+    assert "event.relatedTarget && !body.contains(event.relatedTarget)" in focus_in
+    assert "main.scrollTop += lift" in _function("clearOfBar")
+    assert "overPx(line.getBoundingClientRect().bottom" in _function("clearOfBar")
+
+
+_HOLD_PLACE_RUNNER = """
+const hold = (hidden, before, after) => {
+  const root = { style: { marginBottom: '129px' } }
+  const main = { scrollTop: after }
+  holdPlace({ selBar: { hidden }, root }, main, before)
+  return [root.style.marginBottom, main.scrollTop]
+}
+const noMain = { style: { marginBottom: '' } }
+holdPlace({ selBar: { hidden: true }, root: noMain }, null, 0)
+process.stdout.write(JSON.stringify({
+  cut: hold(true, 469, 340),
+  kept: hold(true, 340, 340),
+  open: hold(false, 469, 469),
+  noMain: noMain.style.marginBottom,
+}))
+"""
+
+
+def test_closing_the_bar_at_the_scroll_end_keeps_the_table_where_it_was() -> None:
+    """띠가 맨 끝 흐름이라 닫으면 본문이 준다 — 띠 자리까지 굴려 둔 채 닫으면 스크롤이 잘려 표가
+    내려앉는다. 잘린 만큼 표 틀 아래 자리를 남겨 그 자리를 지키고(설계 규칙 UI-PRF-03), 잘리지
+    않았으면 아무것도 바꾸지 않으며, 띠가 다시 서면 남긴 자리를 걷는다."""
+    result = _node({}, _HOLD_PLACE_RUNNER, source=_sections() + _function("holdPlace"))
+
+    assert result == {
+        "cut": ["129px", 469],
+        "kept": ["129px", 340],
+        "open": ["", 469],
+        "noMain": "",
+    }
 
 
 _PLACE_TIP_RUNNER = """
