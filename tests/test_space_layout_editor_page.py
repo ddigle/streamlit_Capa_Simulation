@@ -724,6 +724,65 @@ def _save_row(app: AppTest) -> dict[str, bool]:
     return {"save_locked": bool(save[0].disabled)} if save else {}
 
 
+def test_the_idle_save_row_stays_true_while_a_master_edit_is_unsaved(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 마스터 · 곁표에만 저장 안 한 편집이 있어도 잠긴 머리 줄이 선다 — 그 말은 머리 띠 · 사이드바
+    의 미저장 표지와 어긋나지 않게 「배치」 로 좁혀 적는다."""
+    app, _ = _open_editor(tmp_path)
+    baseline, equipment, downtime = app.session_state[BUFFER_KEY]
+    edited = equipment.copy()
+    edited.loc[edited["설비명"].eq("EQ-02"), "설비이력"] = "저장 안 한 다른 편집"
+    app.session_state[BUFFER_KEY] = (baseline, edited, downtime)
+    app.session_state[BUFFER_GENERATION_KEY] = int(app.session_state[BUFFER_GENERATION_KEY]) + 1
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert _save_row(app) == {"save_locked": True}
+    assert any(item.value == ":material/edit_note: 저장할 배치 변경 없음" for item in app.caption)
+    tips = [
+        str(app.button(key="space_layout_save").help),
+        *(node.proto.popover.help for node in _popover_nodes(app)),
+    ]
+    assert len(tips) == 3 and all("배치 변경이 없습니다" in tip for tip in tips)
+    clear_equipment_repository()
+
+
+def test_an_overlap_stays_open_on_a_round_that_could_not_measure_it(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """설비 마스터의 검증 실패 편집으로 겹침을 재지 못한 회차는 조건을 모른다 — `active=False` 를 보내면
+    겹침이 남았는데 Alarm 줄이 「해소」 로 닫힌다. 표지를 비워 앞 줄을 두고 마크로만 알린다."""
+    app, _ = _open_editor(tmp_path)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [{"id": "EQ-01", "placed": True, "x": 34, "y": 15, "w": 12, "h": 7}],
+        "canvas": None,
+        "marks": None,
+    }
+    app.run()
+    measured = active_state(app, "EQ-17")
+    assert measured is not None
+
+    baseline, master, downtime = app.session_state[BUFFER_KEY]
+    app.session_state[BUFFER_KEY] = (
+        baseline,
+        pd.concat([master, master.iloc[[1]]], ignore_index=True),
+        downtime,
+    )
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("겹침 경고를 계산하지 못했습니다" in text for text in data_error_texts(app))
+    assert states(app, "EQ-17") == []
+
+    app.session_state[BUFFER_KEY] = (baseline, master, downtime)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    again = active_state(app, "EQ-17")
+    assert again is not None and again["fp"] == measured["fp"]
+    clear_equipment_repository()
+
+
 def test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_drawing(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -738,6 +797,7 @@ def test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     idle = _popover_labels(app)
     assert idle == {"변경 내용": True, "버리기": True}
+    idle_ids = _popover_ids(app)
     assert not [item for item in app.text_input if item.label == "변경 메모"]
 
     app.session_state[FAKE_APPLY_KEY] = {
@@ -789,6 +849,29 @@ def _popover_nodes(app: AppTest) -> list[Any]:
 def _popover_labels(app: AppTest) -> dict[str, bool]:
     """본문 팝오버 라벨 → 잠김."""
     return {node.proto.popover.label: node.proto.popover.disabled for node in _popover_nodes(app)}
+
+
+def _popover_ids(app: AppTest) -> dict[str, str]:
+    """본문 팝오버 라벨 → 블록 id(브라우저가 같은 팝오버로 잇는 값)."""
+    return {node.proto.popover.label: str(node.proto.id) for node in _popover_nodes(app)}
+
+
+def _popover_box_keys(app: AppTest, label: str) -> list[str]:
+    """그 팝오버 안 key 달린 칸의 key(블록 id `$$ID-…-` 꼬리)."""
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        block_id = str(getattr(getattr(node, "proto", None), "id", "") or "")
+        if block_id.startswith("$$ID-"):
+            found.append(block_id.split("-", 2)[-1])
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    for node in _popover_nodes(app):
+        if node.proto.popover.label == label:
+            for child in node.children.values():
+                walk(child)
+    return found
 
 
 def _popover_widgets(app: AppTest, label: str) -> set[str]:

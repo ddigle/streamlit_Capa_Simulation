@@ -340,10 +340,16 @@ DETAILS_ICON = ":material/notes:"
 DETAILS_WIDTH = 640
 DETAILS_HELP = "변경 메모 · 저장자를 적고 바뀐 호기 · 이름 바꿈 목록을 봅니다."
 DETAILS_NONE_HELP = "FAB 전체 배치만 바뀌어 메모가 남을 리비전을 만들지 않습니다."
-IDLE_MARK = ":material/edit_note: 저장할 변경 없음"
-IDLE_DETAILS_HELP = "적용한 변경이 없습니다."
-IDLE_SAVE_HELP = "적용한 변경이 없습니다 — 편집기에서 「적용」 을 누르면 저장할 수 있습니다."
-IDLE_DISCARD_HELP = "버릴 변경이 없습니다."
+# 저장할 배치 변경이 없는 회차의 머리 줄 — 저장 안 한 설비 마스터 · 곁표 편집이 있어도 맞는 말이게
+# 「배치」 로 좁혀 적는다(머리 띠 · 사이드바의 미저장 표지와 어긋나지 않게). 두 팝오버 key 는 저장할
+# 변경이 있는 줄과 따로다 — 같은 key 면 브라우저가 같은 팝오버로 이어 「모두 버리기」 뒤 잠긴 채 빈
+# 상자로 열려 남는다(AGENTS 9장 — 작업을 마친 팝오버는 key 로 닫는다).
+IDLE_MARK = ":material/edit_note: 저장할 배치 변경 없음"
+IDLE_DETAILS_POPOVER_KEY = "space_layout_idle_details_popover"
+IDLE_DISCARD_POPOVER_KEY = "space_layout_idle_discard_popover"
+IDLE_DETAILS_HELP = "적용한 배치 변경이 없습니다."
+IDLE_SAVE_HELP = "적용한 배치 변경이 없습니다 — 편집기에서 「적용」 을 누르면 저장할 수 있습니다."
+IDLE_DISCARD_HELP = "버릴 배치 변경이 없습니다."
 # 설비 샘플 화면에서 FAB 대기분 저장을 막은 까닭(상자 안내와 단추 풍선).
 SAMPLE_SAVE_BLOCKED = (
     "설비 샘플을 보는 동안에는 FAB 전체 배치를 저장할 수 없습니다 — 샘플 스위치를 끄면 "
@@ -1209,7 +1215,7 @@ def _render_idle_save_row() -> None:
             st.popover(
                 DETAILS_LABEL,
                 icon=DETAILS_ICON,
-                key=DETAILS_POPOVER_KEY,
+                key=IDLE_DETAILS_POPOVER_KEY,
                 disabled=True,
                 help=IDLE_DETAILS_HELP,
             )
@@ -1224,7 +1230,7 @@ def _render_idle_save_row() -> None:
             st.popover(
                 "버리기",
                 icon=":material/undo:",
-                key=DISCARD_POPOVER_KEY,
+                key=IDLE_DISCARD_POPOVER_KEY,
                 disabled=True,
                 help=IDLE_DISCARD_HELP,
             )
