@@ -28,6 +28,7 @@ from capa_simulation.components.paste_form import (
 )
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -76,6 +77,10 @@ PASTE_DIALOG = "display_order_paste"
 CLIPBOARD_CONFIRM_KEY = "global_display_order_clipboard_confirm"
 CLIPBOARD_FORM_KEY = "global_display_order"
 DISPLAY_ORDER_EDITOR_KEY = "display_order_editor"
+# 직접 편집 변경 메모 칸과 그 key 세대 — 세대는 저장에 성공한 회차에만 올라 다음 회차에 빈 칸으로
+# 선다. 거절·바꾼 것 없는 저장은 세대를 그대로 두어 적은 글이 남는다.
+DISPLAY_ORDER_NOTE_KEY = "display_order_note"
+DISPLAY_ORDER_NOTE_GENERATION_KEY = "display_order_note_generation"
 # 저장 뒤 「화면 표시명」 경고의 자리. 저장 성공은 곧바로 `st.rerun()` 하므로 그 회차에
 # 그린 경고는 화면에 닿지 않는다. 성공 문구처럼 세션에 담았다가 다음 회차에 한 번 그린다.
 LABEL_WARNINGS_KEY = "display_order_label_warnings"
@@ -284,7 +289,7 @@ def _render_direct_editor(
             note = st.text_input(
                 "변경 메모",
                 placeholder="예: 환산 탭 제품 표시순서 변경",
-                key="display_order_note",
+                key=widget_key(DISPLAY_ORDER_NOTE_KEY, DISPLAY_ORDER_NOTE_GENERATION_KEY),
             )
         # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
         # 9장 「표 도구 막대」).
@@ -385,8 +390,10 @@ def _render_direct_editor(
         # 그리며 적는다.
         clear_global_display_order_cache()
         if is_own_save(DISPLAY_ORDER_SAVE_NAME, exc.expected, exc.stored, save_marks):
-            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+            # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 끊긴 첫 회차가
+            # 못 비운 메모 칸도 비운다.
             queue_flash(DISPLAY_ORDER_FLASH_KEY, DISPLAY_ORDER_SAVED_MESSAGE)
+            bump(DISPLAY_ORDER_NOTE_GENERATION_KEY)
         else:
             message = bootstrap_error_message(exc)
             note_profile_conflict(conflict_marks, DISPLAY_ORDER_SAVE_NAME, message)
@@ -399,6 +406,7 @@ def _render_direct_editor(
         # 갈래).
         note_notice(notices, DISPLAY_ORDER_FLASH_KEY, DISPLAY_ORDER_SAVED_MESSAGE)
         queue_flash(DISPLAY_ORDER_FLASH_KEY, DISPLAY_ORDER_SAVED_MESSAGE)
+        bump(DISPLAY_ORDER_NOTE_GENERATION_KEY)
         st.rerun()
 
 
