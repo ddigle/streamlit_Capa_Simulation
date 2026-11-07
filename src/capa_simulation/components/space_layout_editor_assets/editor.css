@@ -43,7 +43,7 @@
 .sle button.sle-apply.is-pending { background: var(--sle-accent); color: var(--sle-on-accent); border-color: var(--sle-accent); }
 .sle-spacer { flex: 1; }
 /* 꺼진 단추의 까닭 풍선(설계 규칙 UI-INP-07) — 꺼진 단추는 마우스 · 초점을 받지 않아 감싼 칸이 받는다. 칸은 꺼진 동안만 탭
-   자리다(JS `lockButton`). 도구 줄이 넘침을 잘라 풍선은 칸 안에 두지 않고 `.sle` 뿌리의 판 하나를 JS 가 칸 아래로 옮겨 쓴다
+   자리다(JS `lockWith`). 도구 줄이 넘침을 잘라 풍선은 칸 안에 두지 않고 `.sle` 뿌리의 판 하나를 JS 가 칸 아래로 옮겨 쓴다
    (`showTip`). 꼴은 설비 마스터 「호기 추가」 풍선과 같다 — 글자색 바탕에 면 색 글자, 12px. */
 .sle-tiphost { display: inline-flex; flex: none; border-radius: 8px; }
 .sle-tiphost:focus-visible, .sle-area:focus-visible { outline: 2px solid var(--sle-accent); outline-offset: 1px; }

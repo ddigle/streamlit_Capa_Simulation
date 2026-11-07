@@ -345,7 +345,7 @@ export default function (component) {
   const blockColor = q('.sle-block-color')
   const blockOpen = q('.sle-block-open')
   // 꺼진 단추의 까닭 풍선(설계 규칙 UI-INP-07) — 감싼 칸이 마우스 · 키보드를 받고, 풍선은 편집기 뿌리의 판 하나다(도구 줄이
-  // 넘침을 자른다). 글은 칸의 `data-tip` 이고 비면 칸은 탭 자리에서 빠진다(`lockButton`).
+  // 넘침을 자른다). 글은 칸의 `data-tip` 이고 비면 칸은 탭 자리에서 빠진다(`lockWith`).
   const tipBox = q('.sle-tip')
   function placeTip(spot) {
     const frame = host.getBoundingClientRect()
@@ -374,7 +374,7 @@ export default function (component) {
     else spot.removeAttribute('tabindex')
     if (S.tipFor === spot) showTip(spot)
   }
-  function lockButton(button, reason) {
+  function lockWith(button, reason) {
     button.disabled = Boolean(reason)
     setTip(button.parentElement, reason)
   }
@@ -2693,8 +2693,8 @@ export default function (component) {
     clampView()
     svg.setAttribute('viewBox', `${S.view.x} ${S.view.top} ${viewW()} ${viewH()}`)
     zoomLabel.textContent = `${Math.round(S.view.z * 100)}%`
-    lockButton(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')
-    lockButton(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')
+    lockWith(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')
+    lockWith(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')
     svg.classList.toggle('is-zoomed', S.view.z > 1)
     // 손잡이 크기·글자 숨김은 화면 px 로 정하므로 배율이 바뀌면 다시 맞춘다.
     if (!reposition) return
@@ -4416,7 +4416,7 @@ export default function (component) {
       pickBox.textContent = chosen.length === 1 ? pickText(chosen[0]) : ''
       // 한 줄에서 잘리면 전체 문구는 풍선으로, 비었으면 안내 풍선(`pickTip`).
       pickBox.title = pickBox.textContent || pickTip
-      lockButton(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
+      lockWith(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
       renderSheet()
       return
     }
@@ -4481,12 +4481,12 @@ export default function (component) {
     // 잠긴 동안만 풍선이 까닭을 말한다(설계 규칙 UI-INP-07). 「처음 상태로」 는 실행 취소 기록까지 지워 되돌릴 수 없다 — 평소
     // 풍선이 그 결과를 말한다(UI-NTF-09).
     const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''
-    lockButton(applyButton, noChange)
-    lockButton(resetButton, noChange)
+    lockWith(applyButton, noChange)
+    lockWith(resetButton, noChange)
     applyButton.classList.toggle('is-pending', changed > 0)
-    lockButton(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')
-    lockButton(unplaceButton, chosen.some((m) => onCanvas(m) || m.created) ? '' : noPickReason(chosen))
-    lockButton(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
+    lockWith(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')
+    lockWith(unplaceButton, chosen.some((m) => onCanvas(m) || m.created) ? '' : noPickReason(chosen))
+    lockWith(zoomSel, chosen.some(onCanvas) ? '' : noPickReason(chosen))
     for (const b of host.querySelectorAll('.sle-steps button')) b.setAttribute('aria-pressed', String(Number(b.dataset.step) === S.step))
     areaNote.textContent = S.note
     syncInspector()
@@ -7947,7 +7947,7 @@ export default function (component) {
     setText(faderDate, S.asOf || TODAY)
     setText(faderRel, `· ${relText(S.asOf)}`)
     faderRel.classList.toggle('is-today', isToday)
-    lockButton(faderToday, isToday ? '이미 오늘' : '')
+    lockWith(faderToday, isToday ? '이미 오늘' : '')
     setAttr(faderInput, 'aria-valuetext', `${S.asOf || TODAY} (${relText(S.asOf)})`)
     setText(faderNote, !S.dataAsOf || S.asOf === S.dataAsOf
       ? ''

@@ -1093,13 +1093,13 @@ const button = node()
 button.parentElement = node()
 button.parentElement.getBoundingClientRect = () => box(input.left, input.top, 60, 27)
 const out = []
-lockButton(button, '고른 것 없음')
+lockWith(button, '고른 것 없음')
 out.push(seen(button))
 showTip(button.parentElement)
 out.push(seen(button))
-lockButton(button, '고른 것이 도면에 없음')
+lockWith(button, '고른 것이 도면에 없음')
 out.push(seen(button))
-lockButton(button, '')
+lockWith(button, '')
 out.push(seen(button))
 showTip(button.parentElement)
 out.push(seen(button))
@@ -1115,7 +1115,7 @@ def _tip_source() -> str:
             "function hideTip(",
             "function showTip(",
             "function setTip(",
-            "function lockButton(",
+            "function lockWith(",
         )
     )
 
@@ -1202,13 +1202,13 @@ def test_the_toolbar_reasons_are_short_values() -> None:
     """잠긴 까닭은 짧은 값이다 — 변경 0건이면 「적용」 · 「처음 상태로」 가 함께 잠긴다."""
     status = JS[JS.index("function updateStatus() {") : JS.index("function commitTyping(")]
     assert "const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''" in status
-    assert "lockButton(applyButton, noChange)" in status
-    assert "lockButton(resetButton, noChange)" in status
-    assert "lockButton(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')" in status
+    assert "lockWith(applyButton, noChange)" in status
+    assert "lockWith(resetButton, noChange)" in status
+    assert "lockWith(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')" in status
     assert "(chosen.length ? '고른 것이 도면에 없음' : '고른 것 없음')" in JS
-    assert "lockButton(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')" in JS
-    assert "lockButton(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')" in JS
-    assert "lockButton(faderToday, isToday ? '이미 오늘' : '')" in JS
+    assert "lockWith(zoomOut, S.view.z <= 1 ? '전체 보기보다 줄일 수 없음' : '')" in JS
+    assert "lockWith(zoomIn, S.view.z >= MAX_ZOOM ? '최대 배율' : '')" in JS
+    assert "lockWith(faderToday, isToday ? '이미 오늘' : '')" in JS
 
 
 def test_the_reset_button_warns_before_it_drops_the_undo_history() -> None:
@@ -1286,3 +1286,19 @@ def test_a_zone_keeps_its_name_in_the_tip_and_its_label_is_rechecked_when_units_
     assert "tip.textContent = `${markTitle(item)}${item.keepOut ? ' · 설비 금지' : ''}`" in draw
     marks = JS[JS.index("function markOverlaps(flipped) {") :]
     assert marks.index("syncZoneTag(group)") < marks.index("if (VIEW) {")
+
+
+_PARSE_RUNNER = """
+const source = require('fs').readFileSync(0, 'utf8')
+const body = JSON.parse(source).body
+new Function(body)
+process.stdout.write(JSON.stringify({ parsed: true }))
+"""
+
+
+def test_the_editor_script_parses_as_a_whole() -> None:
+    """다른 시험은 선언을 글자로 떼어 돌려 파일 전체의 문법은 보지 못한다 — 같은 이름을 두 번
+    선언하면 브라우저에서만 편집기가 통째로 안 뜬다. 파일 전체를 파서에 넣어 본다."""
+    assert JS.startswith("export default function (component) {")
+    body = JS.replace("export default function (component) {", "return function (component) {", 1)
+    assert _node(_PARSE_RUNNER, {"body": body})["parsed"] is True
