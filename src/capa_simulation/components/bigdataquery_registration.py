@@ -135,6 +135,14 @@ DETAIL_WINDOW_HELP: Final = (
     "규칙을 씁니다. 등록 뒤에도 원천이 계속 수정·재적재됐으면 끝 날을 늘립니다 — 기간이 길수록 "
     "조회가 오래 걸립니다."
 )
+# 조회 SQL 이 없어 잠긴 두 단추의 풍선 — 잠긴 동안만 까닭을 말한다(설계 규칙 UI-INP-07). 채울 자리는
+# 상태 알림 `AD-04` 전문(Alarm)이 적는다.
+CATALOG_LOCKED_HELP: Final = (
+    "목록 조회 SQL 이 설정되지 않아 조회할 수 없습니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+)
+DETAIL_LOCKED_HELP: Final = (
+    "상세 조회 SQL 이 설정되지 않아 조회 · 저장할 수 없습니다 — 채울 자리는 Alarm 그 줄이 적습니다."
+)
 # 고른 행이 검색에 가려졌을 때의 표지 풍선.
 PICK_HIDDEN_HELP: Final = (
     "고른 행이 지금 검색 결과에 없습니다 — 아래 등록 폼의 값은 그대로 유지됩니다."
@@ -156,6 +164,13 @@ CATALOG_START_DATE_KEY = "bigdataquery_catalog_start_date"
 CATALOG_END_DATE_KEY = "bigdataquery_catalog_end_date"
 CATALOG_QUERY_BUTTON_KEY = "bigdataquery_catalog_query"
 DATE_FIELD_WIDTH_PX: Final = 300
+CATALOG_TOOLBAR_KEY = "bigdataquery_catalog_toolbar"
+# 표 위 한 줄의 전환 단추는 이웃 칸 · 단추와 같은 높이다 — 기본 28px 이면 라벨과 윗선이 7px 어긋난다
+# (설계 규칙 UI-CON-01).
+CATALOG_TOOLBAR_STYLE: Final = (
+    f'<style>.st-key-{CATALOG_TOOLBAR_KEY} [data-testid="stButtonGroup"] button '
+    "{ min-height: 2.5rem; }</style>"
+)
 CATALOG_KEYWORD_KEY = "bigdataquery_catalog_keyword"
 CATALOG_SCOPE_KEY = "bigdataquery_catalog_scope"
 CATALOG_LIST_KEY_PREFIX = "bigdataquery_catalog_rows_"
@@ -247,8 +262,14 @@ def render_bigdataquery_registration(
         alert_tab=alert_tab,
     )
     registered_codes, existing_names = _registered_scenarios(repository)
-    _render_catalog_form(configured=catalog_ready)
-    _render_catalog_list(registered_codes=registered_codes)
+    # 찾기 칸과 그 표의 작업은 표 위 한 줄이다 — 기준 창보다 좁으면 줄이 내려앉는다(설계 규칙
+    # UI-LAY-11 · UI-ACC-02). 조회의 거부 · 스피너와 조회 결과 줄은 이 줄 바로 아래 · 표 바로 위다.
+    st.html(CATALOG_TOOLBAR_STYLE)
+    toolbar = st.container(
+        key=CATALOG_TOOLBAR_KEY, horizontal=True, gap="small", vertical_alignment="bottom"
+    )
+    _render_catalog_form(toolbar, configured=catalog_ready)
+    _render_catalog_list(toolbar, registered_codes=registered_codes)
     _render_registration_form(
         repository,
         database_path,
@@ -385,27 +406,30 @@ def _registered_scenarios(
     )
 
 
-def _render_catalog_form(*, configured: bool) -> None:
+def _render_catalog_form(toolbar: DeltaGenerator, *, configured: bool) -> None:
     today = datetime.now().date()
     st.session_state.setdefault(
         CATALOG_START_DATE_KEY, today - timedelta(days=DEFAULT_CATALOG_DAYS)
     )
     st.session_state.setdefault(CATALOG_END_DATE_KEY, today)
-    # 칸이 「적용」 때만 서버로 보내므로 폼이 없어도 고르는 동안 회차가 돌지 않는다.
-    date_range_field(
-        "조회일",
-        start_key=CATALOG_START_DATE_KEY,
-        end_key=CATALOG_END_DATE_KEY,
-        default=(today - timedelta(days=DEFAULT_CATALOG_DAYS), today),
-        width=DATE_FIELD_WIDTH_PX,
-    )
-    if not st.button(
-        "시뮬레이션 코드 조회",
-        key=CATALOG_QUERY_BUTTON_KEY,
-        icon=":material/search:",
-        type="primary",
-        disabled=not configured,
-    ):
+    with toolbar:
+        # 칸이 「적용」 때만 서버로 보내므로 폼이 없어도 고르는 동안 회차가 돌지 않는다.
+        date_range_field(
+            "조회일",
+            start_key=CATALOG_START_DATE_KEY,
+            end_key=CATALOG_END_DATE_KEY,
+            default=(today - timedelta(days=DEFAULT_CATALOG_DAYS), today),
+            width=DATE_FIELD_WIDTH_PX,
+        )
+        clicked = st.button(
+            "시뮬레이션 코드 조회",
+            key=CATALOG_QUERY_BUTTON_KEY,
+            icon=":material/search:",
+            type="primary",
+            disabled=not configured,
+            help=None if configured else CATALOG_LOCKED_HELP,
+        )
+    if not clicked:
         return
     window = _submitted_window()
     if window is not None:
@@ -448,7 +472,7 @@ def _run_catalog_query(window: QueryWindow) -> None:
         st.error(bootstrap_error_message(exc))
 
 
-def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
+def _render_catalog_list(toolbar: DeltaGenerator, *, registered_codes: frozenset[str]) -> None:
     result = _stored_result()
     if result is None:
         st.caption("조회한 시뮬레이션 코드 목록이 없습니다.")
@@ -461,7 +485,7 @@ def _render_catalog_list(*, registered_codes: frozenset[str]) -> None:
         st.caption("이 기간에는 시뮬레이션 코드가 없습니다.")
         return
 
-    with st.container(horizontal=True, gap="small"):
+    with toolbar:
         keyword = st.text_input(
             "검색",
             key=CATALOG_KEYWORD_KEY,
@@ -659,9 +683,9 @@ def _render_registration_form(
     st.session_state.setdefault(FORM_DETAIL_START_KEY, None)
     st.session_state.setdefault(FORM_DETAIL_END_KEY, None)
     pick = _stored_pick()
+    # 저장 불가는 목록 표 「저장가능」 칸이 값으로, 까닭은 잠긴 저장 단추 풍선이 말한다(설계 규칙
+    # UI-INP-07 — 막힘을 상자로 세우지 않는다).
     unsavable = pick is not None and not pick.row.savable
-    if unsavable:
-        st.error(UNSAVABLE_REASON)
     # 상세 조회 기간을 채우는 규칙은 칸 풍선(`DETAIL_WINDOW_HELP`)이 말하고, 자리에는 고른 코드의
     # 원천 등록일 값 줄만 둔다(설계 규칙 UI-TXT-01 · UI-TXT-04). 늘 서 있는 칸 안이라 값 줄이 생기고
     # 빠져도 아래 폼의 자리가 밀리지 않는다. 날짜 칸은 「적용」 트리거를 바로 받아야 해 폼 밖이다 —
@@ -702,6 +726,7 @@ def _render_registration_form(
             type="primary",
             width="stretch",
             disabled=not configured or unsavable,
+            help=DETAIL_LOCKED_HELP if not configured else UNSAVABLE_REASON if unsavable else None,
         )
     # 저장 결과 칸은 누른 단추 바로 아래 늘 서 있는 한 칸이다(`flash` — 버튼과 같은 상자, VOC 글
     # 올리기와 같은 꼴). 성공 · 저장 뒤 경고(업무 키 충돌 · CS 빈 행 · 대당 Capa 멈춤)는 알림창 ·

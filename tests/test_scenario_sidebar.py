@@ -21,6 +21,7 @@ from capa_simulation.components.equipment_scenario_management import (
     CAPA_SCENARIO_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
+from capa_simulation.components.scenario_management import DISCARD_LOCK_HELP
 from capa_simulation.components.scenario_status import (
     LOAD_MODE,
     SAVE_BUTTON_HELP,
@@ -692,8 +693,10 @@ def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
     assert any("기준 정보 · UPEH" in item.value for item in app.caption)
     # 불러오기는 「변경을 버리고 불러오기」를 체크해야 열린다.
     assert app.button(key="sidebar_load_revision").disabled
+    assert app.button(key="sidebar_load_revision").help == DISCARD_LOCK_HELP
     app = app.checkbox(key="sidebar_discard_unsaved_changes").check().run()
     assert not app.button(key="sidebar_load_revision").disabled
+    assert not app.button(key="sidebar_load_revision").help
 
     # 저장은 「적용하지 않은 편집을 버리고 저장」을 체크해야 된다. 버튼은 잠그지 않는다 — 체크하지
     # 않고 누르면 저장하지 않고 그렇다고 알린다(아래 테스트가 잠그지 않는 까닭을 말한다).

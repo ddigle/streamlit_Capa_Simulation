@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_transform import (
@@ -46,18 +46,34 @@ OVERLAP_LABELS: dict[OverlapPolicy, str] = {
     "base": "겹치는 월은 베이스 사용",
     "donor": "겹치는 월은 덧붙일 쪽 사용",
 }
+# 막힌 회차의 잠긴 저장 단추 — 저장 칸을 숨기지 않고 잠근 채 푸는 길을 풍선에 둔다(설계 규칙
+# UI-INP-07). 까닭은 그 회차 오류 칸이 적으므로 풍선은 까닭을 거듭하지 않는다(UI-TXT-07).
+LOCKED_SAVE_KEY = "scenario_merge_save_locked"
+LOCKED_SAVE_HELP = "오류 칸의 까닭을 풀면 열립니다 — 원본 · 월 범위 · 겹치는 월 처리를 바꿉니다."
+# 값 줄의 풍선 — 자리에는 수 · 달 · 키만 두고 왜 확인해야 하는지는 풍선과 Guide 가 말한다(설계 규칙
+# UI-TXT-01 · UI-TXT-04).
+EMPTY_MONTHS_HELP = (
+    "어느 표에도 없는 달이라 계획·설비가 없는 달로 남고, 필요 단축 일정 같은 화면에서 부족이 없는 "
+    "달처럼 보일 수 있습니다. 이어진 기간이 필요하면 원본이나 덧붙일 월 범위를 바꿉니다."
+)
+MIXED_PRODUCTS_HELP = (
+    "한쪽에서는 가상 제품이고 다른 쪽에서는 실제 제품인 키입니다. 결과에서 그 제품은 달마다 그 달 "
+    "원본의 값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 공식버전 지정 "
+    "때 확인을 받습니다."
+)
 
 
 def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
     # 무엇을 합치고 겹침 · 무월 표 · 가상제품 이력을 어떻게 다루는지는 늘 띄워 두지 않고 Guide 와
-    # 겹침 처리 칸 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02).
-    st.subheader("월 머지")
+    # 겹침 처리 칸 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02). 구획 이름은 바로 위 전환 단추가
+    # 말한다(UI-TXT-07).
     try:
         _render_merge(repository, database_path)
     except ValueError as exc:
         # 고른 원본 · 월 범위 · 겹침 처리로 고치는 거부다(겹침 · 이력 충돌 — 입력이 바로 위에 있다,
         # 설계 규칙 UI-NTF-03).
         st.error(bootstrap_error_message(exc))
+        _render_locked_save()
     except BOOTSTRAP_ERRORS as exc:
         # 저장소 · 표를 못 읽어 구획을 그리지 못했다 — 글은 알림이다(설계 규칙 UI-NTF-08).
         render_data_error(
@@ -66,6 +82,17 @@ def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_p
             tab=CAPA_SCENARIO_TAB_NAME,
             text="월 머지를 그리지 못했습니다",
         )
+
+
+def _render_locked_save() -> None:
+    """저장을 막는 것이 남은 회차의 저장 자리 — 이름 · 메모 칸 없이 잠긴 단추만 선다."""
+    st.button(
+        "새 시나리오로 저장",
+        type="primary",
+        disabled=True,
+        key=LOCKED_SAVE_KEY,
+        help=LOCKED_SAVE_HELP,
+    )
 
 
 def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
@@ -84,16 +111,12 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     donor_tables = copy_scenario_tables(donor.tables)
     st.markdown("#### 월 없는 기준정보 4표")
     comparison = compare_non_monthly_tables(base_tables, donor_tables)
+    # 두 원본의 차이는 표 「비교」 칸이, 합치는 규칙은 「합치는 규칙」 칸과 Guide 가 말한다.
     st.dataframe(comparison, hide_index=True, width="stretch")
-    if comparison["비교"].ne("같음").any():
-        st.warning(
-            "두 시나리오의 월 없는 기준정보가 다릅니다. 겹치는 제품·공정은 베이스 값을 쓰고, "
-            "베이스에 없는 제품·공정만 덧붙일 쪽에서 보충합니다. 겹치는 키의 Density·Chip·모듈 "
-            "기준 차이를 확인하세요."
-        )
     donor_months = scenario_months(donor_tables)
     if not donor_months:
         st.error("덧붙일 시나리오에 월 데이터가 없습니다.")
+        _render_locked_save()
         return
     st.markdown("#### 덧붙일 월 범위")
     start_column, end_column = st.columns(2)
@@ -121,41 +144,51 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     overlap = sources.loc[sources["베이스"] & sources["덧붙일 쪽"], "생산계획년월"].tolist()
     policy: OverlapPolicy = "reject"
     if overlap:
-        st.warning(f"{len(overlap)}개월이 겹칩니다. 겹치는 월 전체에 같은 선택을 적용합니다.")
-        st.caption("겹치는 월: " + ", ".join(format_month(month) for month in overlap))
-        policy = cast(
-            OverlapPolicy,
-            st.segmented_control(
-                "겹치는 월 처리",
-                options=list(OVERLAP_LABELS),
-                default="reject",
-                format_func=OVERLAP_LABELS.__getitem__,
-                key=f"merge_overlap_{base.revision.revision_id}_{owner}_{start}_{end}",
-                persist_state="session",
-                help=(
-                    "선택한 쪽의 월 전체를 12개 월표에 동일하게 적용합니다. "
-                    "서로의 행을 섞지 않습니다. 원본 리비전이나 월 범위를 바꾸면 다시 고릅니다."
-                ),
+        # 겹친 달 수는 고를 칸 곁 값이고, 달마다의 겹침은 아래 표 「겹침」 칸이, 겹친 달 전체에 한
+        # 선택을 쓴다는 말은 칸 풍선이 말한다(설계 규칙 UI-TXT-07).
+        with st.container(horizontal=True, gap="small", vertical_alignment="bottom"):
+            policy = cast(
+                OverlapPolicy,
+                st.segmented_control(
+                    "겹치는 월 처리",
+                    options=list(OVERLAP_LABELS),
+                    default="reject",
+                    format_func=OVERLAP_LABELS.__getitem__,
+                    key=f"merge_overlap_{base.revision.revision_id}_{owner}_{start}_{end}",
+                    persist_state="session",
+                    help=(
+                        "선택한 쪽의 월 전체를 12개 월표에 동일하게 적용합니다. "
+                        "서로의 행을 섞지 않습니다. 원본 리비전이나 월 범위를 바꾸면 다시 고릅니다."
+                    ),
+                )
+                or "reject",
             )
-            or "reject",
-        )
+            st.caption(f"**겹침** {len(overlap)}개월", width="content")
         if policy != "reject":
             sources = preview_month_sources(
                 base_tables, donor_tables, start, end, overlap_policy=policy
             )
+    # 합치기의 거부(겹침 저장 차단)는 고칠 칸 바로 아래다 — 표 뒤에 그리면 첫 화면 밖으로 밀린다
+    # (설계 규칙 UI-LAY-03).
+    result: dict[str, pd.DataFrame] | None = None
+    try:
+        result = merge_scenario_months(base_tables, donor_tables, start, end, overlap_policy=policy)
+    except ValueError as exc:
+        st.error(bootstrap_error_message(exc))
     source_display = _month_source_display(sources, base, donor)
     st.markdown("#### 저장 전 월별 출처")
     st.dataframe(source_display, hide_index=True, width="stretch")
-    result = merge_scenario_months(base_tables, donor_tables, start, end, overlap_policy=policy)
+    if result is None:
+        _render_locked_save()
+        return
     # 점검 결론은 값 — 평문 한 줄(설계 규칙 UI-TXT-04 · AMB-02 (가), 초록 상자 아님).
     st.caption(f"12개 표의 월 축 일치 · {format_month_range(scenario_months(result))}")
     empty_months = missing_calendar_months(scenario_months(result))
     if empty_months:
-        st.warning(
-            f"결과 월 사이에 빈 달이 {len(empty_months)}개월 있습니다: "
-            f"{format_month_runs(empty_months)}. 빈 달은 어느 표에도 없어 계획·설비가 없는 달로 "
-            "남고, 필요 단축 일정 같은 화면에서 부족이 없는 달처럼 보일 수 있습니다. 이어진 기간이 "
-            "필요하면 원본이나 덧붙일 월 범위를 바꾸세요."
+        st.caption(
+            f"**빈 달** :orange[{len(empty_months)}개월] · "
+            f"{markdown_safe_tildes(format_month_runs(empty_months))}",
+            help=EMPTY_MONTHS_HELP,
         )
     preview = month_table_summary(base_tables, label="베이스").merge(
         month_table_summary(result, label="결과"), on="표", validate="one_to_one"
@@ -169,6 +202,7 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     for message in gaps.warnings:
         st.warning(message)
     if gaps.blocking:
+        _render_locked_save()
         return
     base_history = virtual_product_records(
         repository.list_virtual_products(base.revision.revision_id)
@@ -184,11 +218,10 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         result_tables=result,
     )
     if history.mixed:
-        st.warning(
-            f"한쪽에서는 가상 제품이고 다른 쪽에서는 실제 제품인 키가 {len(history.mixed)}개 "
-            f"있습니다: {_record_keys(history.mixed, markdown=True)}. 결과에서 그 제품은 달마다 "
-            "그 달 원본의 값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 "
-            "공식버전 지정 때 확인을 받습니다."
+        st.caption(
+            f"**가상·실제 섞임** :orange[{len(history.mixed)}개] · "
+            f"{_record_keys(history.mixed, markdown=True)}",
+            help=MIXED_PRODUCTS_HELP,
         )
     if history.dropped:
         st.warning(
@@ -223,24 +256,28 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
         + (f"\n결과의 빈 달: {format_month_runs(empty_months)}" if empty_months else "")
         + "".join(f"\n경고: {message}" for message in gaps.warnings)
     )
-    render_derived_save(
-        repository,
-        tables=result,
-        source=base,
-        operation="SCENARIO_MONTH_MERGE",
-        provenance=provenance,
-        default_name=f"{base.scenario.scenario_name} · 월 머지",
-        key="scenario_merge",
-        request=(
-            base.revision.revision_id,
-            donor.revision.revision_id,
-            str(start),
-            str(end),
-            policy,
-        ),
-        virtual_products=history.records,
-        gate_sources=(base, donor),
-    )
+    try:
+        render_derived_save(
+            repository,
+            tables=result,
+            source=base,
+            operation="SCENARIO_MONTH_MERGE",
+            provenance=provenance,
+            default_name=f"{base.scenario.scenario_name} · 월 머지",
+            key="scenario_merge",
+            request=(
+                base.revision.revision_id,
+                donor.revision.revision_id,
+                str(start),
+                str(end),
+                policy,
+            ),
+            virtual_products=history.records,
+            gate_sources=(base, donor),
+        )
+    except ValueError as exc:
+        # 저장 칸이 이미 섰다 — 누른 저장의 거부라 잠긴 단추를 더 세우지 않는다.
+        st.error(bootstrap_error_message(exc))
 
 
 def _record_keys(records: tuple[VirtualProductRecord, ...], *, markdown: bool = False) -> str:

@@ -9,9 +9,10 @@
 설정을 바꾼다.
 
 - **지금 상태**: 이 실행(앱 프로세스)에서 예약이 서 있는가 — 실행 줄 허락
-  (`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 「이 실행에서는 꺼짐」 안내, 다음 실행 시각(오늘 회차를
-  이미 잡았으면 내일), 현재 공식버전의 주차(또는 오류). 회차가 오래 돌거나 배경 확인이 멈춘 것
-  같으면 경고한다(사내 조회에는 시간 제한이 없다).
+  (`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 「이 실행에서는 꺼짐」 값 줄, 서 있으면 다음 실행
+  시각(오늘 회차를 이미 잡았으면 내일), 그리고 현재 공식버전의 주차(또는 오류). 설정 값은 바로 아래
+  설정 칸이 말한다. 회차가 오래 돌거나 배경 확인이 멈춘 것 같으면 경고한다(사내 조회에는 시간
+  제한이 없다).
 - **설정**: 켜기·확인 시각·시뮬레이션명 키워드·기준 확보율. 공용 프로필이라 저장은 편집을 시작할
   때 본 version 과 대조하고, 바꾼 칸을 설정 변경 기록에 남긴다. **켤 때** 현재 공식버전에 주차가
   없으면 저장하지 않고 오류로 알린다.
@@ -272,6 +273,17 @@ def _render_status(
             if status.pending_day is not None:
                 parts.append(f"{status.pending_day.isoformat()} 회차를 다시 시도하는 중")
             st.caption(" · ".join(parts))
+            try:
+                claimed_today = repository.auto_official_update_run_key_exists(
+                    scheduled_run_key(now.date())
+                )
+            except BOOTSTRAP_ERRORS:
+                claimed_today = False
+            # 다음 실행은 이 실행에 예약이 서 있을 때만 값이다 — 꺼진 실행은 위 줄이 이미 말한다
+            # (설계 규칙 UI-TXT-07).
+            st.markdown(
+                f"**다음 실행** · {next_run_line(config, now, claimed_today=claimed_today)}"
+            )
         elif missing_thread:
             # 허락했는데 스레드가 없다 — 까닭 · 할 일은 알림(`AU-02`)에 있다. 상태 줄만 남긴다.
             st.markdown(f"**예약** · :red[스레드 없음] — 실행 줄은 허락했습니다(`{ENV_VAR}=1`).")
@@ -284,17 +296,6 @@ def _render_status(
                     "실행」은 이 실행에서도 됩니다."
                 ),
             )
-        st.markdown(f"**설정** · {_config_line(config)}")
-        try:
-            claimed_today = repository.auto_official_update_run_key_exists(
-                scheduled_run_key(now.date())
-            )
-        except BOOTSTRAP_ERRORS:
-            claimed_today = False
-        st.markdown(
-            f"**다음 실행** · "
-            f"{next_run_line(config, scheduler is not None, now, claimed_today=claimed_today)}"
-        )
         try:
             baseline = current_official_baseline(repository)
         except MissingOfficialWeek as exc:
@@ -335,16 +336,14 @@ def _config_line(config: AutoUpdateConfig) -> str:
 
 def next_run_line(
     config: AutoUpdateConfig,
-    scheduled_here: bool,
     now: datetime,
     *,
     claimed_today: bool = False,
 ) -> str:
-    """「다음 실행」 한 줄. 오늘 예약 회차를 이미 잡았으면 오늘 남은 지정 시각이 아니라 내일이다."""
+    """예약이 서 있는 실행의 「다음 실행」 한 줄. 오늘 예약 회차를 이미 잡았으면 오늘 남은 지정
+    시각이 아니라 내일이다."""
     if not config.enabled:
-        return "꺼져 있어 돌지 않습니다."
-    if not scheduled_here:
-        return "이 실행에서는 돌지 않습니다(실행 줄 허락 없음)."
+        return "없음 (자동 갱신 꺼짐)"
     upcoming = next_scheduled_run(now, config.check_time)
     if claimed_today and upcoming.date() == now.date():
         upcoming += timedelta(days=1)
@@ -610,7 +609,6 @@ def _render_run_now(
     clock: Clock,
 ) -> None:
     with st.container(border=True):
-        st.markdown("#### :material/play_circle: 지금 실행")
         clicked = st.button(
             "지금 실행",
             key=RUN_NOW_BUTTON_KEY,

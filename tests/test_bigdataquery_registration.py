@@ -21,6 +21,8 @@ from capa_simulation.components import bigdataquery_registration as registration
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
+from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
+from capa_simulation.services.bigdataquery_catalog_view import UNSAVABLE_REASON, CatalogRow
 from capa_simulation.services.scenario_list_edits import ListDraft
 
 
@@ -242,6 +244,62 @@ def test_both_steps_render_in_one_run(date_panels: dict[str, dict[str, Any]]) ->
     }
 
 
+def _page_scripts(app: AppTest) -> list[Any]:
+    """알림 표지 · 표 위 줄 꾸밈을 뺀 `st.html` — 저장 결과 칸의 스크립트만 남는다."""
+    return [
+        element
+        for element in page_html(app)
+        if element.proto.body != registration.CATALOG_TOOLBAR_STYLE
+    ]
+
+
+def _save_button(app: AppTest) -> Any:
+    return next(button for button in app.button if button.label == "DB 조회 후 시나리오 저장")
+
+
+def test_an_unsavable_row_locks_the_save_button_with_its_reason_in_the_balloon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """원천 코드가 저장을 막으면 빨간 상자를 세우지 않고 꺼진 저장 단추 풍선이 까닭을 말한다 — 표
+    「저장가능」 칸이 이미 값이다(설계 규칙 UI-INP-07 · UI-TXT-07)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: True)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
+
+    row = CatalogRow("DEMO SIM#9", "저장 불가 줄", "P9", "PLAN 9", "2026-09-02", False)
+    pick = registration.CatalogPick(row=row, window=QueryWindow(date(2026, 9, 1), date(2026, 9, 8)))
+
+    app = _run(**{registration.CATALOG_PICK_KEY: pick})
+
+    assert not app.error
+    locked = _save_button(app)
+    assert locked.disabled and locked.help == UNSAVABLE_REASON
+
+    savable = _save_button(_run(__pick_row__=0))
+    assert not savable.disabled and not savable.help
+
+
+@pytest.mark.parametrize(
+    ("catalog_ready", "detail_ready"),
+    [(False, False), (False, True), (True, False), (True, True)],
+    ids=["둘 다 없음", "목록 없음", "상세 없음", "둘 다 있음"],
+)
+def test_the_buttons_a_missing_query_locks_say_why_in_their_balloons(
+    monkeypatch: pytest.MonkeyPatch, catalog_ready: bool, detail_ready: bool
+) -> None:
+    """조회 SQL 이 없어 꺼진 단추는 잠긴 동안만 까닭 풍선을 단다(설계 규칙 UI-INP-07)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: catalog_ready)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: detail_ready)
+
+    app = _run()
+
+    query = app.button(key=registration.CATALOG_QUERY_BUTTON_KEY)
+    assert query.disabled is (not catalog_ready)
+    assert (query.help or None) == (None if catalog_ready else registration.CATALOG_LOCKED_HELP)
+    save = _save_button(app)
+    assert save.disabled is (not detail_ready)
+    assert (save.help or None) == (None if detail_ready else registration.DETAIL_LOCKED_HELP)
+
+
 @pytest.mark.parametrize("package_ready", [False, True], ids=["패키지 없음", "패키지 있음"])
 def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
     monkeypatch: pytest.MonkeyPatch, package_ready: bool
@@ -279,7 +337,7 @@ def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
     assert banner_lines == ([registration.BANNER_READY_LINE] if package_ready else [])
     assert not app.warning
     assert [(item.value, item.code) for item in flashed(app, "warning")] == [(notice, "FL-03")]
-    assert not page_html(app)
+    assert not _page_scripts(app)
     banner_note = active_state(app, "AD-04")
     if not package_ready:
         assert banner_note is not None and "bigdataquery 패키지가 없어" in banner_note["full"]
@@ -328,7 +386,7 @@ def test_the_saved_notices_go_to_the_alert_popup_not_under_the_save_button(
     assert ("Warning", stopped) not in drawn
     assert saved in [item.value for item in successes(app)]
     assert [(item.value, item.code) for item in flashed(app, "warning")] == [(stopped, "FL-03")]
-    assert not page_html(app)
+    assert not _page_scripts(app)
 
     app.run()
 
@@ -345,7 +403,7 @@ def test_a_refused_save_stands_in_the_same_slot_and_is_revealed(
     monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: True)
     monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: True)
     app = _run()
-    assert not page_html(app)
+    assert not _page_scripts(app)
 
     next(button for button in app.button if button.label == "DB 조회 후 시나리오 저장").click()
     app.run()
@@ -355,7 +413,7 @@ def test_a_refused_save_stands_in_the_same_slot_and_is_revealed(
     button = drawn.index(("Button", "DB 조회 후 시나리오 저장"))
     kind, message = drawn[button + 1]
     assert kind == "Error" and message.startswith("상세 조회 기간을 지정하거나")
-    (reveal,) = page_html(app)
+    (reveal,) = _page_scripts(app)
     assert reveal.proto.unsafe_allow_javascript and "scrollIntoView" in reveal.proto.body
 
 
@@ -471,6 +529,29 @@ def test_a_package_that_fails_to_import_does_not_stop_the_catalog_query(
     assert "불러오지 못했습니다" in error.value and "DLL load failed" in error.value
     assert app.session_state[registration.CATALOG_RESULT_KEY] == "직전 목록"
     assert any(block.value == "목록 조회 뒤" for block in app.markdown)
+
+
+def test_the_catalog_search_controls_share_one_line_above_the_result_line_and_the_table() -> None:
+    """조회일 · 조회 단추 · 검색 · 표시 범위는 표 위 한 줄이고, 조회 결과 줄은 그 아래 표 바로 위다
+    (설계 규칙 UI-LAY-11)."""
+    app = _run()
+
+    row = next(
+        block
+        for block in app.main.children.values()
+        if getattr(getattr(block, "proto", None), "flex_container", None) is not None
+        and block.proto.flex_container.direction == 2
+    )
+    labels = [text for _, text in _drawn_in_order(row)]
+    assert labels == ["시뮬레이션 코드 조회", "검색", "표시 범위"]
+    assert row.proto.flex_container.wrap
+    assert registration.CATALOG_TOOLBAR_KEY in registration.CATALOG_TOOLBAR_STYLE
+
+    drawn = _drawn_in_order(app.main)
+    scope = next(at for at, (_, text) in enumerate(drawn) if text == "표시 범위")
+    summary = next(at for at, (_, text) in enumerate(drawn) if "코드·PLAN 기준" in text)
+    table = next(at for at, (kind, _) in enumerate(drawn) if kind == "Dataframe")
+    assert scope < summary < table
 
 
 def test_catalog_list_is_drawn_with_a_fixed_height_for_scrolling() -> None:

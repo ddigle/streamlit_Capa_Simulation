@@ -38,6 +38,8 @@ from capa_simulation.components.scenario_list_grid import (
 from capa_simulation.components.scenario_list_state import DRAFT_KEY, SIDE_NEXT_KEY
 from capa_simulation.components.scenario_management import (
     ACTION_KEY,
+    ARCHIVE_EFFECT_HELP,
+    ARCHIVE_LOCK_HELP,
     ARCHIVED_SELECT_KEY,
     CARD_LOAD_KEY,
     CARD_NOTICE_KEY,
@@ -47,13 +49,16 @@ from capa_simulation.components.scenario_management import (
     DELETE_BUTTON_KEY,
     DELETE_BUTTON_LABEL,
     DELETE_CONFIRM_KEY,
+    DELETE_LOCK_HELP,
     DISCARD_CONFIRM_KEY,
+    DISCARD_LOCK_HELP,
     DISCARD_POPOVER_KEY,
     DISCARD_UNSAVED_KEY,
     FLASH_KEY,
     FLASH_WARNING_KEY,
     LIST_NOTICE_KEY,
     MODE_KEY,
+    OFFICIAL_CONFIRM_HELP,
     OFFICIAL_DIALOG_KEY,
     OPENED_MOVED_MESSAGE,
     SAME_AS_OFFICIAL_HELP,
@@ -170,9 +175,14 @@ def test_list_management_opens_a_scenario_in_the_side_panel(
     assert "보관합니다" in "".join(widget.label for widget in app.checkbox)
     execute = next(button for button in app.button if button.label == "보관 실행")
     assert execute.disabled
-    # 보관의 뜻은 파란 안내 상자가 아니라 단추 풍선이다(검수표 11/02 equip-41 같은 기준).
+    # 보관의 뜻은 파란 안내 상자가 아니라 단추 풍선이다(검수표 11/02 equip-41 같은 기준). 잠긴
+    # 동안은 그 풍선이 푸는 길도 말한다(설계 규칙 UI-INP-07).
+    assert execute.help == ARCHIVE_LOCK_HELP
     assert "새 리비전 저장·공식버전 지정이 막힙니다" in str(execute.help)
     assert not any("보관하면" in item.value for item in infos(app))
+    app.checkbox(key=archive_confirm_key(other.scenario.scenario_id)).check().run()
+    execute = next(button for button in app.button if button.label == "보관 실행")
+    assert not execute.disabled and execute.help == ARCHIVE_EFFECT_HELP
 
 
 def test_a_database_held_by_another_program_shows_the_notice_instead_of_a_traceback(
@@ -1135,6 +1145,7 @@ def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmati
         "실적과 대조할 수 없는 값입니다. 그대로 공식버전으로 지정할까요?"
     ) in [item.value for item in app.warning]
     assert _official_button(app).disabled
+    assert _official_button(app).help == OFFICIAL_CONFIRM_HELP
 
     # 잠긴 버튼은 누를 수 없다(AppTest 도 브라우저처럼 거절한다). 발행 이력은 그대로다.
     with pytest.raises(AppTestError):
@@ -1145,6 +1156,7 @@ def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmati
     app.run()
     assert not app.exception
     assert not _official_button(app).disabled
+    assert not _official_button(app).help
 
     # 확인은 리비전마다 따로다. 한 리비전에 남긴 체크가 가상 제품이 든 다른 리비전의 지정을
     # 열어 주면, 확인하지 않은 리비전이 공식버전이 된다. 팝업을 닫고 다른 리비전으로 다시 연다.
@@ -1626,10 +1638,12 @@ def test_loading_over_unsaved_edits_needs_the_discard_check(tmp_path: Path) -> N
     assert not app.exception
     load_key = f"{CARD_LOAD_KEY}_{other.scenario.scenario_id}"
     assert app.button(key=load_key).disabled
+    assert app.button(key=load_key).help == DISCARD_LOCK_HELP
     assert any("저장하지 않은 편집" in item.value for item in app.warning)
 
     app.checkbox(key=DISCARD_UNSAVED_KEY).check().run()
     assert not app.button(key=load_key).disabled
+    assert not app.button(key=load_key).help
     app.button(key=load_key).click().run()
     assert not app.exception
     assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == other.revision.revision_id
@@ -1680,12 +1694,14 @@ def test_permanent_delete_says_what_goes_with_it_right_above_an_empty_box(
     execute = app.button(key=DELETE_BUTTON_KEY)
     assert execute.proto.type == "secondary"
     assert execute.disabled
+    assert execute.help == DELETE_LOCK_HELP
     assert execute.label == DELETE_BUTTON_LABEL
     confirm.set_value("지울 시나리오")
     app.run()
     execute = app.button(key=DELETE_BUTTON_KEY)
     assert execute.proto.type == "secondary"
     assert not execute.disabled
+    assert not execute.help
     assert execute.label == f":red[{DELETE_BUTTON_LABEL}]"
     assert execute.proto.icon == ":material/delete_forever:"
 

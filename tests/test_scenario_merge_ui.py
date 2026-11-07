@@ -20,7 +20,7 @@ from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
-from capa_simulation.components.scenario_month_merge import _record_keys
+from capa_simulation.components.scenario_month_merge import LOCKED_SAVE_HELP, _record_keys
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
@@ -31,6 +31,8 @@ from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
 from capa_simulation.services.scenario_list_edits import ListDraft
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.virtual_product import VirtualProductRecord, records_to_frame
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _monthly_tables(months: list[int]) -> dict[str, pd.DataFrame]:
@@ -94,6 +96,14 @@ def _save_button(app: AppTest) -> Button:
     return next(button for button in app.button if button.label == "새 시나리오로 저장")
 
 
+def _assert_save_locked(app: AppTest) -> None:
+    """막힌 회차의 저장 자리 — 저장 칸(이름 · 메모) 없이 잠긴 단추가 풍선과 함께 선다(UI-INP-07)."""
+    assert [button.label for button in app.button].count("새 시나리오로 저장") == 1
+    locked = _save_button(app)
+    assert locked.disabled and locked.help == LOCKED_SAVE_HELP
+    assert not any(item.key == "scenario_merge_name" for item in app.text_input)
+
+
 def _expected_non_monthly(
     base: ScenarioSnapshot, donor: ScenarioSnapshot
 ) -> dict[str, pd.DataFrame]:
@@ -123,6 +133,15 @@ def _with_history(
         parent_revision_id=source.revision.revision_id,
         virtual_products=[asdict(record) for record in records],
     )
+
+
+def test_the_section_leaves_its_name_to_the_switch_above_it(sources: Sources) -> None:
+    """구획 이름은 바로 위 전환 단추가 말한다 — 같은 이름 소제목을 거듭 세우지 않는다(UI-TXT-07)."""
+    _, database, base, donor = sources
+
+    app = _app(database, base, donor)
+
+    assert not app.subheader
 
 
 def test_a_merge_made_here_moves_the_base_of_the_unsaved_list_order(sources: Sources) -> None:
@@ -211,11 +230,11 @@ def test_history_conflict_blocks_save_and_revision_change_recovers(
     app = _app(database, base, conflicting)
     assert any("가상제품 복제 이력이 충돌" in error.value for error in app.error)
     assert any("Product-A · 8H" in error.value for error in app.error)
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
     app.selectbox(key=f"merge_start_{conflicting.revision.revision_id}").set_value(202802).run()
     assert any("가상제품 복제 이력이 충돌" in error.value for error in app.error)
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     app.selectbox(key=f"merge_donor_revision_{donor.scenario.scenario_id}").set_value(
         donor.revision.revision_id
     ).run()
@@ -243,7 +262,9 @@ def test_preview_reports_monthless_differences_and_does_not_save(sources: Source
     assert comparison.loc["RQ_CHIP_EQ", "덧붙일 쪽 행 수"] == 2
     assert comparison.loc["RQ_CHIP_EQ", "보충 행 수"] == 1
     assert comparison.loc["RQ_DISPLAY_ORDER", "비교"] == "다름 · 베이스 유지"
-    assert any("베이스에 없는 제품" in warning.value for warning in app.warning)
+    # 차이는 표 「비교」 칸이 말하고 합치는 규칙은 표 칸 · Guide 몫이라 경고 상자를 세우지 않는다
+    # (설계 규칙 UI-TXT-01).
+    assert not app.warning
     assert set(_preview(app)["결과 월 수"]) == {3}
     assert set(_preview(app)["행 수 증감"]) == {2}
     assert len(repository.list_scenarios()) == 2
@@ -279,7 +300,7 @@ def test_overlapping_months_block_save_until_the_source_changes(sources: Sources
 
     assert not app.exception
     assert any("겹쳐 저장할 수 없습니다" in error.value for error in app.error)
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
 
     app.selectbox(key="merge_donor_scenario").set_value(donor.scenario.scenario_id).run()
@@ -316,6 +337,26 @@ def _source_rows(app: AppTest) -> pd.DataFrame:
     ).set_index("월")
 
 
+def test_the_overlap_refusal_stands_right_under_the_choice_and_the_count_beside_it(
+    sources: Sources,
+) -> None:
+    """겹친 달 수는 고를 칸 곁 값 하나이고, 저장 차단 거부는 고칠 칸 바로 아래다 — 표 뒤로 밀리지
+    않는다(설계 규칙 UI-TXT-07 · UI-LAY-03)."""
+    repository, database, base, donor = sources
+    donor = _overlapping_donor(repository, donor)
+
+    app = _app(database, base, donor)
+
+    assert "**겹침** 1개월" in [item.value for item in app.caption]
+    assert not any("겹칩니다" in item.value for item in app.warning)
+    assert not any("겹치는 월:" in item.value for item in app.caption)
+    order = [(item.type, getattr(item, "value", None)) for item in app.main]
+    (refusal,) = [at for at, (kind, _) in enumerate(order) if kind == "error"]
+    table_title = order.index(("markdown", "#### 저장 전 월별 출처"))
+    choice = next(at for at, (kind, _) in enumerate(order) if kind == "button_group")
+    assert choice < refusal < table_title
+
+
 def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
     sources: Sources,
 ) -> None:
@@ -327,7 +368,7 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
     assert app.segmented_control[0].value == "reject"
     assert _source_rows(app).loc["2027-01", "겹침"] == "겹침"
     assert _source_rows(app).loc["2027-01", "선택 출처"] == "미선택 · 저장 차단"
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
 
     for policy, label, quantity in (("base", "베이스", 100.0), ("donor", "덧붙일 쪽", 900.0)):
         app.segmented_control[0].set_value(policy).run()
@@ -380,11 +421,11 @@ def test_overlap_choice_changes_preview_saved_values_and_resets_with_range(
     # 같은 월 범위에서도 처리 기준을 바꾸면 새 저장이 가능하고 차단으로 되돌릴 수도 있다.
     app.segmented_control[0].set_value("reject").run()
     assert app.error
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     app.segmented_control[0].set_value("donor").run()
     app.selectbox(key=f"merge_end_{donor.revision.revision_id}").set_value(202801).run()
     assert app.segmented_control[0].value == "reject"
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 4
     for source in (base, donor):
         reloaded = repository.load_revision(
@@ -404,7 +445,7 @@ def test_overlap_choice_never_overrides_virtual_history_conflict(sources: Source
         app.segmented_control[0].set_value(policy).run()
         assert not app.exception
         assert any("가상제품 복제 이력이 충돌" in item.value for item in app.error)
-        assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+        _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
 
 
@@ -516,8 +557,29 @@ def test_a_module_gap_blocks_the_save_with_examples(sources: Sources) -> None:
 
     blocked = [item.value for item in app.error if "RQ_MODULE" in item.value]
     assert blocked and "Process-Z" in blocked[0] and "2028-01~2028-02" in blocked[0]
-    assert not any(button.label == "새 시나리오로 저장" for button in app.button)
+    _assert_save_locked(app)
     assert len(repository.list_scenarios()) == 2
+
+
+def test_a_refused_save_form_does_not_grow_a_second_save_button(
+    sources: Sources, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장 칸이 선 뒤 누른 저장의 거부는 칸을 그대로 둔다 — 잠긴 단추를 더 세우지 않는다."""
+    import capa_simulation.components.scenario_transform as scenario_transform
+
+    _, database, base, donor = sources
+
+    def refuse(*args: object) -> object:
+        raise ValueError("저장 쪽 거부")
+
+    monkeypatch.setattr(scenario_transform, "derived_save_verdict", refuse)
+    app = _app(database, base, donor)
+    _save_button(app).click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert place_errors(app) == ["저장 쪽 거부"]
+    assert [button.label for button in app.button].count("새 시나리오로 저장") == 1
+    assert not _save_button(app).disabled
 
 
 def test_empty_calendar_months_between_the_sources_are_warned(sources: Sources) -> None:
@@ -526,9 +588,21 @@ def test_empty_calendar_months_between_the_sources_are_warned(sources: Sources) 
 
     app = _app(database, base, donor)
 
-    gaps = [item.value for item in app.warning if "빈 달" in item.value]
-    assert gaps and "11개월" in gaps[0] and "2027-02~2027-12" in gaps[0]
+    (gap,) = [item for item in app.caption if "빈 달" in item.value]
+    assert gap.value == "**빈 달** :orange[11개월] · 2027-02\\~2027-12"
+    assert "부족이 없는" in gap.help and "월 범위를 바꿉니다" in gap.help
     assert not _save_button(app).disabled
+
+
+def test_the_guide_carries_what_the_merge_warnings_used_to_say() -> None:
+    """값 줄 · 표 칸으로 걷은 경고의 말은 Guide 에 남는다(설계 규칙 UI-TXT-02)."""
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/scenario_management.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "부족이 없는 달처럼 보일 수 있습니다" in guide
+    assert "겹치는 키의 Density·Chip·모듈 기준 차이를" in guide
+    assert "두 값이 섞입니다" in guide
 
 
 def test_the_merge_warnings_draw_the_virtual_product_keys_literally() -> None:
@@ -554,9 +628,11 @@ def test_virtual_history_follows_the_result_and_a_clash_is_warned(sources: Sourc
     app = _app(database, base, donor)
 
     warnings = [item.value for item in app.warning]
-    # 경고는 마크다운이라 키를 막아 싣는다(`-` 도 `\-`).
+    # 글은 마크다운이라 키를 막아 싣는다(`-` 도 `\-`). 키는 값 줄, 뜻은 그 줄 풍선이다.
     clash_key = f"{literal_markdown('Product-A')} · 8H"
-    assert any(clash_key in item and "실제 제품" in item for item in warnings)
+    (clash_line,) = [item for item in app.caption if "가상·실제 섞임" in item.value]
+    assert clash_key in clash_line.value and "실제 제품" in clash_line.help
+    assert not any(clash_key in item for item in warnings)
     assert any(f"{literal_markdown('Product-Gone')} · 8H" in item for item in warnings)
     app.text_input(key="scenario_merge_name").set_value("이력 정리 머지")
     _save_button(app).click().run()
