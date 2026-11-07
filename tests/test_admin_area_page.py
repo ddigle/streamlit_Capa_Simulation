@@ -978,7 +978,7 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
         name: config.get("width")
         for name, config in json.loads(app.dataframe[0].proto.columns).items()
     }
-    assert widths["까닭"] == 280 and widths["마지막 오류"] == "medium"
+    assert widths["까닭"] == "large" and widths["마지막 오류"] == "medium"
     # 회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표 꼴이다.
     run_time = json.loads(app.dataframe[0].proto.columns)["마지막 회차 시간(ms)"]
     assert run_time["type_config"] == {"type": "number", "format": "localized"}

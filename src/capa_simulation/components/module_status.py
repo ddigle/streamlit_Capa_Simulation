@@ -117,10 +117,10 @@ def build_status_table(scan: ModuleScan) -> pd.DataFrame:
 
 def status_column_config() -> dict[str, ColumnConfig]:
     """까닭·마지막 오류는 기본 폭에서 잘리므로 넓힌다 — 앱 관리자가 셀을 눌러 펴지 않고 읽는다.
-    까닭 폭은 칸 합이 창 1600 의 표 폭 안에 들게 둔다 — 넘으면 끝 칸이 가로 스크롤 뒤로 숨는다.
-    회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표를 붙인다."""
+    까닭은 줄이지 않는다 — 좁은 창에서 끝 칸이 가로 스크롤 뒤로 가도 빠진 수는 「화면」 곁에서
+    보인다(`COLUMNS`). 회차 시간은 숫자 칸(오른쪽 맞춤 · 값 차례 정렬)에 천 단위 쉼표를 붙인다."""
     return {
-        "까닭": st.column_config.TextColumn(width=280),
+        "까닭": st.column_config.TextColumn(width="large"),
         "마지막 오류": st.column_config.TextColumn(width="medium"),
         RUN_TIME_COLUMN: st.column_config.NumberColumn(format="localized"),
     }
