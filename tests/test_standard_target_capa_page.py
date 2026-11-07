@@ -514,7 +514,8 @@ def test_a_blank_stop_sends_the_alarm_to_the_reference_screen() -> None:
 
 
 def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -> None:
-    """조회기간을 바꾼 뒤 과거 리비전을 열어도 페이지가 죽지 않고 범위 안으로 맞춘다."""
+    """조회기간을 바꾼 뒤 과거 리비전을 열어도 페이지가 죽지 않고 범위 안으로 맞춘다. 맞춘 일은 사건
+    알림이다 — 조회일 칸이 접힌 카드라 본문에 글을 두면 결과 상자가 그 회차에만 밀린다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state["standard_target_start_date"] = date(2026, 6, 15)
     app.session_state["standard_target_end_date"] = date(2027, 3, 20)
@@ -523,7 +524,11 @@ def test_saved_view_date_outside_the_current_period_is_clamped_with_a_notice() -
     assert not app.exception
     assert app.session_state["standard_target_start_date"] == date(2026, 8, 1)
     assert app.session_state["standard_target_end_date"] == date(2026, 8, 31)
-    assert any("조정됨" in element.value for element in app.caption)
+    (note,) = flashed(app, "warning")
+    assert "조회일이 현재 조회기간 밖이라 2026-08-01 ~ 2026-08-31 안으로" in note.value
+    assert note.code == "FL-03"
+    assert not app.warning
+    assert not [caption.value for caption in app.main.caption if "맞췄습니다" in caption.value]
 
 
 def test_saved_view_dates_in_reverse_order_are_corrected() -> None:
@@ -535,9 +540,9 @@ def test_saved_view_dates_in_reverse_order_are_corrected() -> None:
     assert not app.exception
     assert app.session_state["standard_target_end_date"] == date(2026, 8, 25)
     # 두 조정 원인은 문구가 다르다. 한 깃발로 합치면 기간 안인 날짜에도 범위 문구가 뜬다.
-    captions = [element.value for element in app.caption]
-    assert any("시작일이 종료일보다 늦어" in caption for caption in captions)
-    assert not any("조회기간 밖이라" in caption for caption in captions)
+    notices = [note.value for note in flashed(app, "warning")]
+    assert any("시작일이 종료일보다 늦어" in notice for notice in notices)
+    assert not any("조회기간 밖이라" in notice for notice in notices)
 
 
 def test_fallback_constants_exist_in_the_page_option_lists() -> None:

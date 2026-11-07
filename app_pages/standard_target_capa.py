@@ -136,6 +136,8 @@ OUTPUT_METRIC_KEY = STANDARD_TARGET_OUTPUT_METRIC_KEY
 # 직전 회차에 그린 표시 항목. 위젯이 아닌 칸이라 선택을 비운 회차에도 남는다.
 OUTPUT_METRIC_SHOWN_KEY = f"{OUTPUT_METRIC_KEY}__shown"
 PKG_BASIS_KEY = "standard_target_pkg_basis"
+# 조회일을 맞춘 회차의 알림 칸.
+DATE_FIT_FLASH_KEY = "standard_target_date_fit_flash"
 # 사이드바 조건 카드와 팝업. 팝업은 한 칸이라 한 회차에 하나다.
 CARD_NAME = "standard_target"
 DIALOG_KEY = f"standard_target{PAGE_DIALOG_SUFFIX}"
@@ -210,10 +212,10 @@ def _last_day(month: int) -> date:
 
 
 def _initialize_date_state(key: str, default: date, lower: date, upper: date) -> bool:
-    """리비전이 저장한 조회일을 현재 조회기간 안으로 맞추고 조정 여부를 알린다.
+    """리비전이 저장한 조회일을 현재 조회기간 안으로 맞추고 조정 여부를 돌려준다.
 
     사이드바 조회기간을 좁힌 뒤 과거 리비전을 열면 저장된 날짜가 범위 밖이 된다.
-    잘라 넣어야 맞춘 사실을 본문에 알릴 수 있다(날짜 칸은 범위 밖 값을 말없이 맞춘다).
+    잘라 넣어야 맞춘 사실을 알릴 수 있다(날짜 칸은 범위 밖 값을 말없이 맞춘다).
     """
     saved = st.session_state.get(key)
     if not isinstance(saved, date):
@@ -744,14 +746,25 @@ minimum_date = _first_day(effective_start_month)
 maximum_date = _last_day(effective_end_month)
 default_start_date = _first_day(effective_start_month)
 default_end_date = _last_day(effective_end_month)
+# 날짜를 맞춘 사실은 사건 알림이다 — 조회일 칸은 접힌 카드 안이라 그 곁에 둘 수 없고, 본문에 두면
+# 그 회차에만 결과 상자가 밀린다(설계 규칙 UI-NTF-01). 칸 `render_flash` 는 결과 상자 작업 줄이다.
 date_clamped = _initialize_date_state(
     START_DATE_KEY, default_start_date, minimum_date, maximum_date
 )
 date_clamped |= _initialize_date_state(END_DATE_KEY, default_end_date, minimum_date, maximum_date)
-date_reordered = False
+date_notes = (
+    [
+        "조회일이 현재 조회기간 밖이라 "
+        f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
+    ]
+    if date_clamped
+    else []
+)
 if st.session_state[START_DATE_KEY] > st.session_state[END_DATE_KEY]:
     st.session_state[END_DATE_KEY] = st.session_state[START_DATE_KEY]
-    date_reordered = True
+    date_notes.append("시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
+if date_notes:
+    queue_flash(DATE_FIT_FLASH_KEY, " ".join(date_notes), kind="warning", popup_only=True)
 
 # 저장된 선택지 문자열이 현재 옵션에 없으면 위젯 생성이 실패한다. 옵션은 화면이 소유하므로
 # 검증도 여기서 한다. 상세 토글이 꺼져 위젯이 없는 실행에서도 세션값을 정상으로 유지한다.
@@ -789,15 +802,6 @@ with card:
         min_date=minimum_date,
         max_date=maximum_date,
     )
-# 날짜를 맞춘 사실은 본문에 알린다. 카드는 기본으로 접혀 있어 그 안에 두면 저장된 날짜가
-# 바뀐 줄 모른다.
-if date_clamped:
-    st.caption(
-        ":orange-badge[조정됨] 조회일이 현재 조회기간 밖이라 "
-        f"{minimum_date:%Y-%m-%d} ~ {maximum_date:%Y-%m-%d} 안으로 맞췄습니다."
-    )
-if date_reordered:
-    st.caption(":orange-badge[조정됨] 시작일이 종료일보다 늦어 종료일을 시작일에 맞췄습니다.")
 if start_date > end_date:
     st.error("시작일은 종료일보다 늦을 수 없습니다.")
     st.stop()
@@ -1076,7 +1080,7 @@ with action_row:
             # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
             help=CLEAR_LOCKED_HELP if availability.empty else None,
         )
-    render_flash(AVAILABILITY_FLASH_KEY)
+    render_flash(AVAILABILITY_FLASH_KEY, DATE_FIT_FLASH_KEY)
 if st.session_state.get(DIALOG_KEY) == PASTE_DIALOG:
     _paste_dialog()
 elif st.session_state.get(DIALOG_KEY) == CLEAR_DIALOG:
