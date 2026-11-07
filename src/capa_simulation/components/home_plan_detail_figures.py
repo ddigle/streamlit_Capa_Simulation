@@ -5,13 +5,17 @@
 왼쪽 분류 칸과 오른쪽 월 칸을 두 Figure 로 나눠 돌려준다. 표 꼴이지만 `go.Table` 이 아니라
 숨긴 축 위에 칸 면색 도형과 글자 trace 를 얹어 그린다 — `go.Table` 은 칸을 세로 가운데에
 세울 방법이 마크업(`<br>`)뿐이고, 마크업 칸은 칸마다 그린 뒤 재서 옮겨 칸 수만큼 느리다.
-글자 자리는 `go.Table` 칸이 놓던 자리를 따르고(`plotly_layout.table_text_y`), 칸 폭을 넘칠 수
-있는 긴 제품명·거래선은 `go.Table` 처럼 제 칸 경계에서 잘린다(`plotly_layout.table_text_layer`).
-비교 시나리오를 주면 값 아래에 증감을 주석으로 얹는다 — 칸 안에 두 줄을 담으면 행 높이가 부푼다.
+글자 자리는 `go.Table` 칸이 놓던 자리를 따른다(`plotly_layout.table_text_y`). 칸에 들지 않는 긴
+제품명·거래선은 끝을 말줄임으로 줄이고(`_fit_label` — 가운데 정렬이라 그대로 자르면 앞뒤가 함께
+잘려 끝의 구분 글자를 못 읽는다), 폭을 어림한 글자가 그래도 넘치면 제 칸 경계에서 잘린다
+(`plotly_layout.table_text_layer`). 넘칠 수 있는 칸은 마우스를 올리면 전체 이름이 뜬다
+(`_label_hover_bar`). 비교 시나리오를 주면 값 아래에 증감을 주석으로 얹는다 — 칸 안에 두 줄을 담으면
+행 높이가 부푼다.
 """
 
 from __future__ import annotations
 
+import html
 from collections.abc import Collection, Iterable, Sequence
 from itertools import groupby
 from typing import Any
@@ -26,9 +30,12 @@ from capa_simulation.components.home_dimensions import (
     table_row_height,
 )
 from capa_simulation.components.home_figure_common import (
+    _fit_to_units,
+    _hover_label,
     _paper_hrule,
     _paper_month_lines,
     _past_surface,
+    _text_width_units,
 )
 from capa_simulation.components.plotly_layout import (
     TableText,
@@ -40,6 +47,7 @@ from capa_simulation.components.plotly_layout import (
     flush_layout_items,
     table_header_band,
     table_text_layer,
+    table_text_max_width_px,
     table_text_y,
 )
 from capa_simulation.design import tokens
@@ -54,6 +62,9 @@ DETAIL_VALUE_FONT_SIZE_PX = 14
 
 # 계획 세부수량 머리글. 칸 높이가 이 크기에서 나온다.
 DETAIL_HEADER_FONT_SIZE_PX = 15
+
+# 분류 이름 말줄임 예산을 잡을 때 칸 양쪽에 남기는 여백.
+DETAIL_LABEL_INSET_PX = 4
 
 
 def _detail_month_cell_values(
@@ -190,6 +201,50 @@ def _cell_surface_rects(
     return rects
 
 
+def _fit_label(value: str, column_px: float) -> str:
+    """분류 이름이 칸에 들면 그대로, 넘으면 끝을 말줄임으로 줄인다."""
+    budget = (column_px - 2 * DETAIL_LABEL_INSET_PX) / DETAIL_VALUE_FONT_SIZE_PX
+    return _fit_to_units(value, budget, _text_width_units)
+
+
+def _label_hover_bar(
+    values: Sequence[Sequence[str]],
+    *,
+    column_widths: Sequence[float],
+    row_tops: Sequence[float],
+    row_height: float,
+    xaxis: str,
+) -> go.Bar | None:
+    """제 칸을 넘칠 수 있는 분류 이름의 전체 글 풍선. 그런 칸이 없으면 None 이다.
+
+    칸을 덮는 보이지 않는 막대에 건다(`_grid_hover_target_bar` 와 같은 표적) — 글자 trace 에 걸면
+    글자 가운데 점 둘레에서만 뜬다. Plotly 는 마우스 밑 맨 위 축 영역의 trace 만 보므로 자르는 축
+    (`table_text_layer`)보다 위에 놓인 전폭 축 `xaxis` 에 얹는다.
+    """
+    px_per_unit = DASHBOARD_LABEL_COLUMN_WIDTH_PX / sum(column_widths)
+    cells = [
+        (column, row, value)
+        for column, column_values in enumerate(values)
+        for row, value in enumerate(column_values)
+        if table_text_max_width_px(value, DETAIL_VALUE_FONT_SIZE_PX)
+        > column_widths[column] * px_per_unit
+    ]
+    if not cells:
+        return None
+    return go.Bar(
+        orientation="h",
+        base=[sum(column_widths[:column]) for column, _, _ in cells],
+        x=[column_widths[column] for column, _, _ in cells],
+        y=[row_tops[row] + row_height / 2 for _, row, _ in cells],
+        width=row_height,
+        xaxis=xaxis,
+        marker={"color": tokens.HIT_TARGET, "line": {"width": 0}},
+        hovertext=[html.escape(value) for _, _, value in cells],
+        hoverinfo="text",
+        showlegend=False,
+    )
+
+
 def build_plan_detail_figures(
     *,
     production_detail: pd.DataFrame,
@@ -304,10 +359,16 @@ def build_plan_detail_figures(
         ],
         font=header_font,
     )
+    label_column_px = [
+        width / sum(detail_dimension_widths) * DASHBOARD_LABEL_COLUMN_WIDTH_PX
+        for width in detail_dimension_widths
+    ]
     label_value_texts = TableText(
         cells=[
-            (column_index, centered_value_y[row_index], value)
-            for column_index, values in enumerate(grouped_dimension_values)
+            (column_index, centered_value_y[row_index], _fit_label(value, column_px))
+            for column_index, (values, column_px) in enumerate(
+                zip(grouped_dimension_values, label_column_px, strict=True)
+            )
             for row_index, value in enumerate(values)
         ],
         font=value_font,
@@ -319,9 +380,38 @@ def build_plan_detail_figures(
         width_px=DASHBOARD_LABEL_COLUMN_WIDTH_PX,
         height_px=detail_figure_height,
     )
-    detail_label_figure = figure_from_spec(
-        {"data": label_texts, "layout": {**detail_layout, **label_text_layout}}
+    # 자르는 축 다음 번호 — 뒤 번호 축의 영역이 위에 놓여 칸 어디서든 풍선 막대가 마우스를 받는다.
+    label_hover_axis = 1 + sum(name.startswith("xaxis") for name in label_text_layout)
+    label_hover_bar = _label_hover_bar(
+        grouped_dimension_values,
+        column_widths=detail_dimension_widths,
+        row_tops=row_tops,
+        row_height=detail_row_height,
+        xaxis=f"x{label_hover_axis}",
     )
+    detail_label_figure = figure_from_spec(
+        {
+            "data": label_texts,
+            "layout": {
+                **detail_layout,
+                **label_text_layout,
+                "dragmode": False,
+                "hovermode": "closest",
+                "hoverlabel": _hover_label(),
+            },
+        }
+    )
+    if label_hover_bar is not None:
+        detail_label_figure.update_layout(
+            {
+                f"xaxis{label_hover_axis}": {
+                    **label_text_layout["xaxis"],
+                    "domain": [0, 1],
+                    "anchor": "y",
+                }
+            }
+        )
+        detail_label_figure.add_trace(label_hover_bar)
     detail_month_cells = [
         _detail_month_cell_values(
             displayed_detail,

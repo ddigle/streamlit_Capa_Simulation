@@ -324,8 +324,9 @@ HOME_FIGURE_CACHE_MAX_ENTRIES = 8
 # 그 그림의 선택 흐림 막기(막대 안 글자 포함), 53 은 계획 세부수량을 `go.Table` 대신 면색 도형과
 # 글자 trace 로 그리는 것, 54 는 그 글자의 기준선(맑은 고딕 어센트)·넘칠 수 있는 글자를 제 칸
 # 경계에서 자르는 축(그때 축 바탕은 투명), 55 는 판정 경계에 긋는 기준선 자리와 「확보율 보정 ±n%」
-# 풍선 글자(「%p」 없음 — 2026-11-01 사용자 결정).
-HOME_FIGURE_SCHEMA_VERSION = 55
+# 풍선 글자(「%p」 없음 — 2026-11-01 사용자 결정), 56 은 계획 세부수량 분류 칸의 거래선 폭 ·
+# 말줄임 · 전체 이름 풍선 막대.
+HOME_FIGURE_SCHEMA_VERSION = 56
 
 # 누적 퍼센트는 합성 시드 콜드 실행의 단계별 소요 시간 비율에서 잡았다. 차트 생성이
 # 대부분을 쓰고 계산 파이프라인이 그 다음이다. 단계 수로 균등 분할하면 막대가 30% 까지
@@ -881,7 +882,9 @@ def render_home_figures(
                 figures.plan_detail_labels,
                 width="stretch",
                 key="production_detail_labels",
-                config=static_chart_config(),
+                # 칸을 넘칠 수 있는 제품명 · 거래선은 전체 이름 풍선이 뜬다 — `staticPlot` 은 hover
+                # 까지 끈다.
+                config=hover_chart_config(),
             )
             # `주요공정 확보율` 제목. 네 구획이 같은 줄 컴포넌트를 쓰므로 제목과 표
             # 사이 간격이 넷 다 같다.

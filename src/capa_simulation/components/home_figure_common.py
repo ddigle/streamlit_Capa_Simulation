@@ -461,13 +461,18 @@ def _grid_month_layout_options(
         "showlegend": False,
         "dragmode": False,
         "hovermode": "closest",
-        "hoverlabel": {
-            "bgcolor": tokens.SURFACE,
-            "bordercolor": tokens.BORDER_STRONG,
-            "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
-        },
+        "hoverlabel": _hover_label(),
         "xaxis": {**_HIDDEN_AXIS, "range": [0, month_count]},
         "yaxis": {**_HIDDEN_AXIS, "range": [0, table_height]},
+    }
+
+
+def _hover_label() -> dict[str, Any]:
+    """HOME 표 그림의 풍선 꼴. **토큰은 부를 때 읽는다.**"""
+    return {
+        "bgcolor": tokens.SURFACE,
+        "bordercolor": tokens.BORDER_STRONG,
+        "font": {"color": tokens.TEXT, "size": 12, "family": tokens.FONT_FAMILY},
     }
 
 

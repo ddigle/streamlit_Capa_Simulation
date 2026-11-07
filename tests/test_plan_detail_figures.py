@@ -15,13 +15,19 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from capa_simulation.components.home_dimensions import lower_delta_row_height, table_row_height
+from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
+    lower_delta_row_height,
+    table_row_height,
+)
 from capa_simulation.components.home_figures import build_plan_detail_figures
 from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
+    DETAIL_LABEL_INSET_PX,
     DETAIL_VALUE_FONT_SIZE_PX,
 )
 from capa_simulation.components.plotly_layout import table_text_y
+from capa_simulation.services.dashboard import DETAIL_DIMENSION_WIDTHS
 
 MONTHS = ["202608", "202609"]
 HEADER_HEIGHT = table_row_height(DETAIL_HEADER_FONT_SIZE_PX)
@@ -210,3 +216,82 @@ def test_an_empty_cell_gets_no_text(with_comparison: bool) -> None:
     )
 
     assert _values(month_figure) == ["1,000K", "500K", "2,000K", "300K"]
+
+
+def _customer_detail(customers: list[str]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "제품정보": ["A"] * len(customers),
+            "Stack": ["12H"] * len(customers),
+            "Customer": customers,
+            "202608": [1000.0] * len(customers),
+            "202609": [2000.0] * len(customers),
+        }
+    )
+
+
+def _value_texts(figure: Any) -> list[str]:
+    """분류 칸 값 글자 전부(자르지 않는 trace + 자르는 trace, 머리글 제외)."""
+    headers = {"<b>제품</b>", "<b>Stack</b>", "<b>거래선</b>"}
+    return [
+        str(text)
+        for trace in figure.data
+        if trace.type == "scatter"
+        for text in trace.text
+        if text not in headers
+    ]
+
+
+DIMENSIONS = ["제품정보", "Stack", "Customer"]
+
+
+def test_a_customer_name_of_the_sample_length_stays_whole_in_its_column() -> None:
+    """거래선은 끝 글자로 갈린다(「-1」 · 「-2」) — 칸이 좁아 앞뒤가 잘리면 값을 읽지 못한다. 값
+    길이는 합성 표본 기준이다."""
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=_customer_detail(["DEMO_CUST-1", "DEMO_CUST-2"]),
+        month_labels=MONTHS,
+        detail_dimensions=DIMENSIONS,
+    )
+
+    assert {"DEMO_CUST-1", "DEMO_CUST-2"} <= set(_value_texts(label_figure))
+    column_px = (
+        DETAIL_DIMENSION_WIDTHS["Customer"]
+        / sum(DETAIL_DIMENSION_WIDTHS.values())
+        * DASHBOARD_LABEL_COLUMN_WIDTH_PX
+    )
+    assert column_px >= 94 + 2 * DETAIL_LABEL_INSET_PX
+
+
+def test_a_name_that_does_not_fit_ends_in_an_ellipsis_and_shows_whole_on_hover() -> None:
+    """칸보다 긴 이름은 끝을 줄이고 마우스를 올린 칸에 전체 이름이 뜬다. 풍선 막대는 칸 전체를 덮고
+    자르는 축보다 뒤 번호 축에 얹혀 마우스를 받는다."""
+    whole = "DEMO_CUSTOMER_WITH_A_VERY_LONG_NAME-1"
+    label_figure, _ = build_plan_detail_figures(
+        production_detail=_customer_detail([whole, "B"]),
+        month_labels=MONTHS,
+        detail_dimensions=DIMENSIONS,
+    )
+
+    (shown,) = [text for text in _value_texts(label_figure) if text.startswith("DEMO_")]
+    assert shown.endswith("…") and shown != whole
+    (bar,) = [trace for trace in label_figure.data if trace.type == "bar"]
+    assert list(bar.hovertext) == [whole]
+    assert bar.hoverinfo == "text"
+    assert list(bar.base) == [2.0]
+    assert list(bar.x) == [DETAIL_DIMENSION_WIDTHS["Customer"]]
+    axes = sorted(key for key in label_figure.layout if key.startswith("xaxis"))
+    assert bar.xaxis == f"x{axes[-1].removeprefix('xaxis')}"
+    assert label_figure.layout[axes[-1]].domain == (0, 1)
+
+
+def test_names_that_cannot_overflow_get_no_hover_bar() -> None:
+    label_figure, _ = build_plan_detail_figures(production_detail=_detail(), month_labels=MONTHS)
+
+    assert [trace for trace in label_figure.data if trace.type == "bar"] == []
+
+
+def test_the_two_column_split_does_not_move_when_the_customer_column_widens() -> None:
+    """거래선 폭은 거래선이 있을 때만 쓴다 — 기본 두 칸의 경계는 그대로다."""
+    assert DETAIL_DIMENSION_WIDTHS["제품정보"] / 2.0 == pytest.approx(0.7)
+    assert DETAIL_DIMENSION_WIDTHS["Stack"] / 2.0 == pytest.approx(0.3)
