@@ -167,6 +167,10 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "캔버스 밖 가정 차이 요소 — 상태 알림 EQ-16 전문이다. 알림 칸 JS 가 textContent 로 그린다"
         "(마크다운 자리가 아니다)"
     ),
+    ("src/capa_simulation/components/equipment_scenario_management.py", "layout_trace_words"): (
+        "옛 판 흔적 시나리오 한 칸 — 상태 알림 SC-03 전문이다. 알림 칸 JS 가 textContent 로 그린다"
+        "(마크다운 자리가 아니다)"
+    ),
     ("src/capa_simulation/components/state_alerts.py", "alarm_table_place"): (
         "딸린 표가 있는 알림 전문의 목록 자리 — 알림 칸 JS 가 textContent 로 그린다(마크다운 "
         "자리가 아니다). 이름은 코드의 표 이름 상수다"
