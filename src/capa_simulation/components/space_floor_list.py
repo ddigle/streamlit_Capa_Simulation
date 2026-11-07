@@ -47,7 +47,13 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
-from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
+from capa_simulation.components.flash import (
+    BESIDE_KINDS,
+    FlashKind,
+    pending_flash,
+    queue_flash,
+    render_flash,
+)
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
@@ -134,6 +140,9 @@ REVERT_BUTTON_KEY = "space_floor_state_revert"
 CONFIRM_BUTTON_KEY = "space_floor_state_confirm_save"
 CANCEL_BUTTON_KEY = "space_floor_state_confirm_cancel"
 SOURCE = "space_status"
+# 틈 없는 머리 칸(`gap=None`)에서 알림 칸에 경고가 설 때 머리 줄과 두는 틈 — 본문 세로 블록 간격
+# (`tokens.BLOCK_GAP_REM` 1rem, `baseFontSize` 14)과 같은 값이다.
+_NOTICE_LEAD_PX = 14
 
 _USE_COLUMN = "사용"
 _REASON_COLUMN = "사유"
@@ -170,12 +179,12 @@ _REASON_HELP = (
     "사유를 적으면 그 사유로 끕니다. 적은 글 그대로 보입니다(FAB 도면 블록에서는 길면 줄이고 "
     "풍선에 다 보입니다)."
 )
-# `끄고 저장` 의 풍선 — 끄는 일의 뜻과 그대로인 것. 확인 칸 자리에는 값 줄만 둔다(설계 규칙
-# UI-NTF-09).
+# `끄고 저장` 의 풍선 — 끄는 일의 뜻과 그대로인 것, 값 줄에 적지 않은 층. 확인 칸 자리에는 값 줄만
+# 둔다(설계 규칙 UI-NTF-09).
 _CONFIRM_HELP = (
     "호기는 그대로 남고 목록·도면에서만 숨습니다. 가정 설비 시나리오의 배치에 놓인 호기도 그 "
     "시나리오 목록·도면에서 숨습니다. 설비 마스터의 동·층 값은 바뀌지 않고 다시 켜면 그대로 "
-    "보입니다."
+    "보입니다. 호기가 없어 적지 않은 층도 함께 꺼집니다."
 )
 _PLACED_HELP = "도면에 그린 설비입니다. Main 설비로 묶은 모듈 행은 합쳐 1대입니다."
 _UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
@@ -807,15 +816,21 @@ def _render_tables(
             )
 
 
-def _render_notices() -> None:
+def _render_notices(*, lead_px: int = 0) -> None:
     """성공 flash 와 그 밖의 알림(충돌·검증 오류·바뀐 층 없음). 그린 뒤 지운다.
 
     담아 둔 알림이 없고 남의 저장에 거부된 지 `write_guard` 창 안이면 그 거부를 다시 그린다 — 거부
     회차가 꺼내 그린 알림을 빠른 둘째 누름의 회차(쓰지 않고 끝난다)가 화면을 다시 그리며 지웠다
-    (2026-10-26 E2E 5회차)."""
-    queued = pending_flash(NOTICE_KEY) is not None
+    (2026-10-26 E2E 5회차).
+
+    `lead_px` 는 칸에 글이 서는 회차에만 그 앞에 두는 띄움이다 — 틈 없는 칸에서 경고가 위 줄에
+    붙지 않게 하고, 글이 없는 칸은 높이 없이 둔다(성공 · 안내는 알림창으로만 가 칸에 서지
+    않는다)."""
+    queued = pending_flash(NOTICE_KEY)
+    held = None if queued is not None else _refused_just_now()
+    if lead_px and (held is not None or (queued is not None and queued.kind in BESIDE_KINDS)):
+        st.space(lead_px)
     slot = render_flash(FLASH_KEY, NOTICE_KEY)
-    held = None if queued else _refused_just_now()
     if held is not None:
         slot.warning(markdown_safe_tildes(held), icon=":material/sync_problem:")
 
@@ -828,7 +843,7 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
         return
     shown: tuple[tuple[str, int], ...] = tuple((str(a), int(b)) for a, b in held[1])
     with st.container(border=True):
-        st.caption(f"끄는 층 {_units_value(shown)}")
+        st.caption(_risky_line(shown))
         for line in _overlay_lines(database_path, shown):
             # 줄은 설비 시나리오 이름을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
             st.caption(f":material/layers: {markdown_safe_tildes(line)}")
@@ -844,14 +859,22 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
             st.button("취소", key=CANCEL_BUTTON_KEY, on_click=_cancel_confirm)
 
 
-def _units_value(floors: Sequence[tuple[str, int]]) -> str:
+def _units_value(floors: Sequence[tuple[str, int]], *, noun: str = "호기") -> str:
     """값 줄의 층과 호기 수 — 한 층이면 「C3 1F · 호기 83대」, 여러 층이면 합과 층마다의 수
-    「호기 138대 · C3 1F 83 · C3 2F 55」."""
+    「호기 138대 · C3 1F 83 · C3 2F 55」. `noun` 은 그 수의 이름이다."""
     if len(floors) == 1:
         label, count = floors[0]
-        return f"{label} · 호기 {count}대"
+        return f"{label} · {noun} {count}대"
     by_floor = " · ".join(f"{label} {count}" for label, count in floors)
-    return f"호기 {sum(count for _, count in floors)}대 · {by_floor}"
+    return f"{noun} {sum(count for _, count in floors)}대 · {by_floor}"
+
+
+def _risky_line(shown: Sequence[tuple[str, int]]) -> str:
+    """확인 칸 첫 값 줄 — 끄는 층 전부가 아니라 호기가 남아 묻는 층만 적고(호기 없는 층은 묻지 않고
+    함께 꺼진다 — `_CONFIRM_HELP`), 수는 공식 배치 기준이다. 수가 0 인 층은 가정 배치 덧줄이 까닭을
+    적는다(`_risky`)."""
+    value = _units_value(shown, noun="공식 배치 호기")
+    return f"호기 남은 층 {value}" if len(shown) == 1 else f"호기 남은 층 {len(shown)}개 · {value}"
 
 
 def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list[str]:
@@ -1016,7 +1039,7 @@ def render_space_floor_list(
     표에만 선다."""
     # 제목이 위 줄의 꼬리가 아니라 아래 표의 머리로 읽히게 한다(설계 규칙 UI-CON-05) — 위 구획과는
     # 구획 사이만큼 띄우고, 머리 줄 · 알림 칸 · 띄움은 한 칸(`gap=None`)이라 빈 알림 칸이 표 앞에
-    # 틈을 더하지 않는다.
+    # 틈을 더하지 않는다. 경고가 서는 회차의 틈은 알림 칸이 든다(`_render_notices`).
     st.space(tokens.SECTION_GAP_PX)
     with st.container(key="space_floor_list_lead", gap=None):
         with st.container(
@@ -1043,8 +1066,8 @@ def render_space_floor_list(
             # 꺼진 채 돌아온다 — 남은 초안을 지워 「저장 안 한 편집」 표지가 거짓을 말하지 않게.
             _forget()
             # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
-            with st.container(key="space_floor_state_notices"):
-                _render_notices()
+            with st.container(key="space_floor_state_notices", gap=None):
+                _render_notices(lead_px=_NOTICE_LEAD_PX)
             # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을
             # 가로채지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
             toolbar_clearance()
