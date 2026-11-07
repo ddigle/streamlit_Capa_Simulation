@@ -73,6 +73,8 @@ const PENDING_TAB_MS = 20000
 // 「복사했습니다」 가 서 있는 시간.
 const COPIED_MS = 1800
 const TAB_BUTTON = '[data-testid="stTabs"] [role="tab"]'
+// 탭이 아닌 전환 단추(기준 정보 종류 — `st.segmented_control`). 같은 글의 탭이 있으면 탭이 먼저다.
+const SEGMENT_BUTTON = '[data-testid="stMain"] [data-testid="stButtonGroup"] [role="radio"]'
 // 빠진 초점을 되돌리기 전에 기다리는 시간 — 고른 탭은 회차 중 `tabindex` 를 잠깐 잃어 그동안 초점을 받지 못한다(되찾기까지 50ms 안쪽).
 const FOCUS_RETURN_MS = 120
 
@@ -207,6 +209,11 @@ function tabMatches(text, label) {
   const plain = String(text || '').replace(/\s+/g, ' ').trim()
   const want = String(label || '').replace(/\s+/g, ' ').trim()
   return want !== '' && plain.endsWith(want)
+}
+
+// 이미 고른 단추인가 — 탭은 `aria-selected`, 전환 단추는 `aria-checked` 다.
+function tabChosen(button) {
+  return ['aria-selected', 'aria-checked'].some((name) => button.getAttribute(name) === 'true')
 }
 
 // 줄에 「그 화면으로」 를 세우는가 — 지금 화면을 가리키는 줄은 열 탭이 있을 때만 할 일이 있다.
@@ -1133,7 +1140,7 @@ function running() {
   return Boolean(root) && root.getAttribute(RUN_STATE) === 'running'
 }
 
-// 「그 화면으로」 가 맡긴 탭 고르기 — 그 화면(`here`)에 닿고 회차가 끝났으면 이름이 맞는 탭 단추를 누른다. 이미 열린 탭이면
+// 「그 화면으로」 가 맡긴 탭 고르기 — 그 화면(`here`)에 닿고 회차가 끝났으면 이름이 맞는 탭 · 전환 단추를 누른다. 이미 열린 탭이면
 // 누르지 않는다. 탭 안 탭이면 바깥 탭부터 한 칸씩 연다 — 누른 칸은 그 회차가 끝난 뒤 다음 칸을, 이미 열린 칸은 곧바로 다음 칸을
 // 본다. 기다리는 시간이 지나면 버린다.
 function settleTab(C) {
@@ -1146,8 +1153,9 @@ function settleTab(C) {
     if (C.data.here !== pending.href || running()) return
     const [first, rest] = tabStep(pending.tab)
     C.pendingTab = rest ? { ...pending, tab: rest } : null
-    const button = [...document.querySelectorAll(TAB_BUTTON)].find((item) => tabMatches(item.textContent, first))
-    if (button && button.getAttribute('aria-selected') !== 'true') {
+    const buttons = [...document.querySelectorAll(TAB_BUTTON), ...document.querySelectorAll(SEGMENT_BUTTON)]
+    const button = buttons.find((item) => tabMatches(item.textContent, first))
+    if (button && !tabChosen(button)) {
       button.click()
       return
     }

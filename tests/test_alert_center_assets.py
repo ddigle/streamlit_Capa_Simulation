@@ -316,6 +316,14 @@ out.tabs = [
   tabMatches('anything', ''),
 ]
 out.steps = [tabStep('Summary › Static 대비 일정'), tabStep('소요대수'), tabStep('')]
+const button = (attrs) => ({ getAttribute: (name) => (name in attrs ? attrs[name] : null) })
+out.chosen = [
+  tabChosen(button({ 'aria-selected': 'true' })),
+  tabChosen(button({ 'aria-checked': 'true' })),
+  tabChosen(button({ 'aria-selected': 'false' })),
+  tabChosen(button({ 'aria-checked': 'false' })),
+  tabChosen(button({})),
+]
 out.go = [
   showsGo('reference_data', '', ''),
   showsGo('', '', ''),
@@ -715,6 +723,8 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     assert out["tabs"] == [True, True, False, False]
     # 탭 안 탭은 바깥 칸부터 한 칸씩 연다(가용설비 현황 「Summary › Static 대비 일정」).
     assert out["steps"] == [["Summary", "Static 대비 일정"], ["소요대수", ""], ["", ""]]
+    # 탭은 aria-selected, 전환 단추(기준 정보 종류)는 aria-checked 로 고른 상태를 말한다.
+    assert out["chosen"] == [True, True, False, False, False]
     # 지금 화면을 가리키는 줄은 열 탭이 있을 때만 「그 화면으로」 를 세운다. HOME 주소는 빈 글이다.
     assert out["go"] == [True, False, True, False, True, False]
     # 로그 복사 글 — 빈 값 · 이름 없는 짝은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
@@ -742,7 +752,12 @@ def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_
     settle = JS[JS.index("function settleTab(") :]
     settle = settle[: settle.index("\n}\n")]
     assert "C.data.here !== pending.href || running()" in settle
-    assert "aria-selected" in settle and "button.click()" in settle
+    assert "!tabChosen(button)" in settle and "button.click()" in settle
+    # 전환 단추(기준 정보 종류)도 찾되 같은 글이면 탭이 먼저다.
+    assert (
+        "...document.querySelectorAll(TAB_BUTTON), ...document.querySelectorAll(SEGMENT_BUTTON)"
+        in (settle)
+    )
     assert "goTo(C, row.href, row.tab)" in JS
     # 변경 칩 줄도 같다 — 줄이 그 화면 안 탭을 들고 있으면 그 탭까지 연다.
     assert "goTo(C, item.href, item.tab)" in JS

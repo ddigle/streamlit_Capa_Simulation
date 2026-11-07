@@ -223,8 +223,8 @@ class CalculationStop(NamedTuple):
     text: str
     """알림창 짧은 글 — 무엇이 멈췄고 어디서 무엇을 채우는가."""
 
-    goto: tuple[str, str]
-    """Alarm 줄의 화면 칸 · 「그 화면으로」 가 열 화면(이름, 주소)."""
+    goto: tuple[str, str, str]
+    """Alarm 줄의 화면 칸 · 「그 화면으로」 가 열 화면과 그 화면의 표(이름, 주소, 종류 단추 글)."""
 
     message: str
     """알림 전문 — 어느 화면의 멈춤인지 · 고칠 곳 · 건수와 예시 행. 표 이름은 화면 이름이다."""
@@ -246,7 +246,7 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
     page = alerts.current_page()[0]
     return CalculationStop(
         text=f"대당 Capa 계산 멈춤 — 기준 정보 {name} 빈 칸 {found['count']}건을 채움",
-        goto=(tab_label(REFERENCE_DATA), REFERENCE_DATA.href),
+        goto=(tab_label(REFERENCE_DATA), REFERENCE_DATA.href, DATASETS[found["table"]]),
         message=(
             f"{f'{page} — ' if page else ''}대당 Capa 계산이 멈췄습니다. 기준 정보 {name} 표의 빈 "
             "칸에 0보다 큰 값을 넣고 「변경사항 적용」 뒤 새 리비전으로 저장하세요.\n\n"

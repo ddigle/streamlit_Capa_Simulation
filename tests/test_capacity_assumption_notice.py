@@ -21,6 +21,7 @@ from capa_simulation.components.capacity_assumption_notice import (
 )
 from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.navigation import REFERENCE_DATA
+from capa_simulation.reference_grid_keys import DATASETS
 from capa_simulation.services.unit_capacity import CapacityAssumptions
 
 
@@ -67,7 +68,8 @@ def test_the_alarm_line_opens_the_screen_to_fill_and_the_text_says_whose_it_is(
     monkeypatch: pytest.MonkeyPatch, tab: str, where: str
 ) -> None:
     """고칠 표는 기준 정보에 있다 — 줄이 그 화면을 열고(UI-NTF-02) 화면 칸이 기준 정보가 되므로 어느
-    화면의 일인지는 전문 첫머리가 말한다. 화면 안 탭은 기준 정보의 탭이 아니라 줄에 싣지 않는다."""
+    화면의 일인지는 전문 첫머리가 말한다. 이 화면 안 탭은 기준 정보의 탭이 아니라 전문에만 들고,
+    줄의 탭은 고칠 표의 종류 단추다."""
     sent: dict[str, object] = {}
     page = where.split(" › ")[0]
     monkeypatch.setattr(alerts, "current_page", lambda: (page, "somewhere"))
@@ -80,6 +82,24 @@ def test_the_alarm_line_opens_the_screen_to_fill_and_the_text_says_whose_it_is(
     )
 
     assert sent["goto"] == ("기준 정보", REFERENCE_DATA.href)
-    assert "tab" not in sent
+    assert sent["tab"] == DATASETS["RQ_LOT_RATIO"]
     assert str(sent["full"]).startswith(f"{where} — 측정률 행이 없어 ")
     assert "**" not in str(sent["full"])
+
+
+def test_the_alarm_line_picks_a_table_only_when_there_is_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표가 둘이면 어느 종류 단추를 열지 정할 수 없어 기준 정보까지만 연다. 건수가 0 인 표는 세지
+    않는다."""
+    sent: dict[str, object] = {}
+    monkeypatch.setattr(alerts, "state", lambda code, **kwargs: sent.update(kwargs))
+    scope = AlertScope({"token": "t"}, "범위")
+
+    both = {"RQ_LOT_RATIO": 3, "RQ_WF_RATIO": 2}
+    render_capacity_assumption_notice(CapacityAssumptions(both, {}), scope=scope)
+    assert sent["tab"] == ""
+
+    one = {"RQ_LOT_RATIO": 0, "RQ_WF_RATIO": 2}
+    render_capacity_assumption_notice(CapacityAssumptions(one, {}), scope=scope)
+    assert sent["tab"] == DATASETS["RQ_WF_RATIO"]

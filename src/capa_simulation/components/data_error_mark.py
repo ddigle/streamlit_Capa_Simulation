@@ -7,7 +7,8 @@ Error 마크를 넣고 Alarm 확인 필요 문구까지만 배치, 나머지는 
 고름(`page_bootstrap.resolve_effective_months`), 계산 멈춤(`stop_calculation_on_error`), DB ·
 기준정보를 읽지 못함, 다른 화면에서 채울 입력이 빠져 멈춤(재공 현황 주차별 가용대수 · 필요 단축
 일정과 Space 「필요 단축」 Cut-off · 공정 Capa 상세 · 제약 시뮬레이션 · 개조 일정의 저장본 · 이름 ·
-Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면을 연다, 자리에 길 안내를 두지 않는다).
+Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면(셋째 칸이 있으면 그 탭 · 종류 단추까지)을
+연다, 자리에 길 안내를 두지 않는다).
 자리에는 마크와 「Alarm 확인 필요」 만 서고, 오류 글(까닭 · 예시 행 · 고칠 곳)은 오류 단계 사건
 알림으로만 간다 — 오른쪽 아래 알림창에 한 번, 머리 `Alarm` 줄에 전문 · 로그 ·
 복사.
@@ -23,7 +24,7 @@ Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면을 연
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, TypeAlias
 
 import streamlit as st
 
@@ -36,6 +37,9 @@ MARK_NEXT: Final = "Alarm 확인 필요"
 MARK_CLASS: Final = "capa-data-error-mark"
 # 칠한 칸 옆 면의 농도 — 글이 묻히지 않을 만큼만 물들인다.
 _TINT_ALPHA: Final = 0.08
+
+# 「그 화면으로」 가 열 화면 — (이름, 주소), 그 화면의 탭 · 종류 단추까지 열면 셋째 칸이 그 글이다.
+ErrorGoto: TypeAlias = tuple[str, str] | tuple[str, str, str]
 
 
 def data_error_mark_html() -> str:
@@ -64,6 +68,24 @@ def data_error_mark_html() -> str:
     )
 
 
+def data_error_note(
+    message: str,
+    *,
+    code: str,
+    tab: str = "",
+    text: str | None = None,
+    goto: ErrorGoto | None = None,
+) -> alerts.AlertNote:
+    """오류 글의 사건 알림 표지 한 칸(`alerts.page_error_note`) — `goto` 셋째 칸을 `tab` 으로 푼다.
+    그 칸이 있으면 줄의 화면 칸이 「화면 › 표」 이고 「그 화면으로」 가 그 표까지 연다."""
+    if goto is None:
+        return alerts.page_error_note(message, code=code, tab=tab, text=text)
+    name, href, *rest = goto
+    return alerts.page_error_note(
+        message, code=code, tab=rest[0] if rest else tab, text=text, goto=(name, href)
+    )
+
+
 def render_data_error_mark() -> None:
     """마크만 그린다 — 알림을 따로 한 번 보내는 자리(`state_alerts.alert_page_error`)가 쓴다."""
     st.html(data_error_mark_html())
@@ -75,11 +97,11 @@ def render_data_error(
     code: str,
     tab: str = "",
     text: str | None = None,
-    goto: tuple[str, str] | None = None,
+    goto: ErrorGoto | None = None,
 ) -> None:
-    """마크를 그리고 오류 글을 사건 알림으로 보낸다(`alerts.page_error_note` — 같은 글이면 알림창
+    """마크를 그리고 오류 글을 사건 알림으로 보낸다(`data_error_note` — 같은 글이면 알림창
     한 번). 담아 둔 사건 알림도 같은 표지로 보낸다 — 이 뒤에 `st.stop()` 이 오면 표지 자리가 더
     없다. `code` 는 그 화면의 코드, `tab` 은 「그 화면으로」 가 열 탭, `text` 는 알림창 짧은
-    글, `goto` 는 채울 입력이 다른 화면에 있을 때 「그 화면으로」 가 열 화면(이름, 주소)이다."""
-    note = alerts.page_error_note(message, code=code, tab=tab, text=text, goto=goto)
+    글, `goto` 는 채울 입력이 다른 화면에 있을 때 「그 화면으로」 가 열 화면(`ErrorGoto`)이다."""
+    note = data_error_note(message, code=code, tab=tab, text=text, goto=goto)
     st.html(data_error_mark_html() + alerts.hidden_marker([*alerts.drain_outbox(), note]))
