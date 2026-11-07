@@ -168,6 +168,23 @@ def test_dot_and_underscore_folders_and_plain_files_are_skipped(tmp_path: Path) 
     assert [record.folder_name for record in scan_modules(tmp_path).records] == ["demo_a"]
 
 
+def test_an_unreadable_root_is_named_apart_from_one_modules_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """뿌리를 못 읽은 것은 「모듈 전체 폴더」 다 — 모듈 하나의 「모듈 폴더를 읽지 못했습니다」
+    (`page_problems`)와 한 이름이 두 뜻이 되지 않게. 예외 이름은 Admin 진단 글로 남는다."""
+    _write_module(tmp_path, "demo_a")
+
+    def refused(path: object) -> Iterator[os.DirEntry[str]]:
+        raise PermissionError(13, "막힘")
+
+    monkeypatch.setattr(os, "scandir", refused)
+    scan = scan_modules(tmp_path)
+
+    assert (scan.root_exists, scan.records) == (True, ())
+    assert scan.root_error == "모듈 전체 폴더를 읽지 못했습니다 — PermissionError"
+
+
 # ------------------------------------------------------------------ 선언 파일
 
 

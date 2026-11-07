@@ -232,7 +232,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("AD-05", "action", "state", "표시순서 분류값이 대소문자 · 공백만 달라 겹침"),
     AlertSpec("AD-06", "check", "state", "공정 표시명이 다른 공정의 원본명과 같음"),
     AlertSpec("AD-07", "error", "event", "Admin Area 를 그리지 못함 — 같은 글이면 한 번"),
-    AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
+    AlertSpec("MO-01", "error", "state", "모듈 전체 폴더를 읽지 못함"),
     AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
     AlertSpec("VO-01", "error", "event", "VOC 를 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec(
