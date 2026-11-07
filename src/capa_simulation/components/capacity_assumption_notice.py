@@ -16,7 +16,8 @@
 화면에서 말한다 — 2026-11-03(결정 보드 D2 (나))부터 자리에 그리지 않고 상태 알림 `HM-02` 로 낸다.
 가정이 바뀔 때만 오른쪽 아래 알림창에 뜨고 Alarm 에 남는다. HOME 과 산출 결과 대당 Capa 가 같은 코드
 · 같은 범위(활성 리비전 내용 — 시나리오 전체 기준이라 조회기간은 범위에 넣지 않는다)라 한 화면에서
-본 가정은 다른 화면에서 다시 뜨지 않는다.
+본 가정은 다른 화면에서 다시 뜨지 않는다. 고칠 표는 기준 정보에 있어 Alarm 줄의 화면 칸과 「그
+화면으로」 가 기준 정보이고(`goto`, 설계 규칙 UI-NTF-02), 어느 화면의 일인지는 전문 첫머리가 말한다.
 """
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from capa_simulation import alerts
-from capa_simulation.components.state_alerts import AlertScope
+from capa_simulation.components.state_alerts import TAB_PATH, AlertScope
+from capa_simulation.navigation import REFERENCE_DATA
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.services.month_columns import iso_month_text
 from capa_simulation.services.unit_capacity import CapacityAssumptions
 
@@ -89,8 +92,10 @@ def render_capacity_assumption_notice(
 ) -> None:
     """측정률 가정 상태 알림(`HM-02`) — 이 조건을 보는 회차마다(가정이 없어도) 부른다. 자리에는
     그리지 않는다. `scope` 는 시나리오 전체 기간 범위(`state_alerts.simulation_scope(활성)`), `tab`
-    은 그 화면 안 탭 이름이다."""
+    은 그 화면 안 탭 이름이다 — 줄이 기준 정보를 가리키므로 전문 첫머리에만 든다."""
     message = assumption_message(assumptions.counts, assumptions.months)
+    where = TAB_PATH.join(part for part in (alerts.current_page()[0], tab) if part)
+    full = f"{where} — {alerts.plain_text(message)}" if where else alerts.plain_text(message)
     alerts.state(
         "HM-02",
         scope=scope.scope,
@@ -101,7 +106,7 @@ def render_capacity_assumption_notice(
         },
         active=bool(message),
         text=assumption_short(assumptions.counts) if message else None,
-        full=alerts.plain_text(message) if message else None,
+        full=full if message else None,
         scope_label=scope.label,
-        tab=tab,
+        goto=(tab_label(REFERENCE_DATA), REFERENCE_DATA.href),
     )

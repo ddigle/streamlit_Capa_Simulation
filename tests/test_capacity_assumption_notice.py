@@ -12,7 +12,16 @@
 
 from __future__ import annotations
 
-from capa_simulation.components.capacity_assumption_notice import assumption_message
+import pytest
+
+from capa_simulation import alerts
+from capa_simulation.components.capacity_assumption_notice import (
+    assumption_message,
+    render_capacity_assumption_notice,
+)
+from capa_simulation.components.state_alerts import AlertScope
+from capa_simulation.navigation import REFERENCE_DATA
+from capa_simulation.services.unit_capacity import CapacityAssumptions
 
 
 def test_the_message_names_the_tab_the_user_must_open() -> None:
@@ -49,3 +58,28 @@ def test_the_message_names_the_months_and_says_it_covers_the_scenario() -> None:
     assert "시나리오 전체 기준" in message
     assert "Lot측정률 8건(2027-01, 2027-02" in message
     assert "외 2개월" in message
+
+
+@pytest.mark.parametrize(
+    ("tab", "where"), [("", "HOME"), ("대당 Capa", "산출 결과 › 대당 Capa")], ids=["home", "tab"]
+)
+def test_the_alarm_line_opens_the_screen_to_fill_and_the_text_says_whose_it_is(
+    monkeypatch: pytest.MonkeyPatch, tab: str, where: str
+) -> None:
+    """고칠 표는 기준 정보에 있다 — 줄이 그 화면을 열고(UI-NTF-02) 화면 칸이 기준 정보가 되므로 어느
+    화면의 일인지는 전문 첫머리가 말한다. 화면 안 탭은 기준 정보의 탭이 아니라 줄에 싣지 않는다."""
+    sent: dict[str, object] = {}
+    page = where.split(" › ")[0]
+    monkeypatch.setattr(alerts, "current_page", lambda: (page, "somewhere"))
+    monkeypatch.setattr(alerts, "state", lambda code, **kwargs: sent.update(kwargs))
+
+    render_capacity_assumption_notice(
+        CapacityAssumptions({"RQ_LOT_RATIO": 3}, {"RQ_LOT_RATIO": (202601,)}),
+        scope=AlertScope({"token": "t"}, "범위"),
+        tab=tab,
+    )
+
+    assert sent["goto"] == ("기준 정보", REFERENCE_DATA.href)
+    assert "tab" not in sent
+    assert str(sent["full"]).startswith(f"{where} — 측정률 행이 없어 ")
+    assert "**" not in str(sent["full"])
