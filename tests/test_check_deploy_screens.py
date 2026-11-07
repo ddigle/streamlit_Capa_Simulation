@@ -2482,9 +2482,10 @@ def test_the_equipment_grid_contract_matches_the_app() -> None:
 
     assert screens.EQUIPMENT_GRID_KEY == emg.GRID_KEY
     assert screens.EQUIPMENT_LOADER_KEY == emg.LOADER_KEY
+    assert screens.EQUIPMENT_MENU_KEY == emg.TOOLS_KEY
+    assert screens.BULK_IMPORT_BUTTON == tab.IMPORT_MENU_LABEL
     assert screens.BULK_IMPORT_TITLE == IMPORT_DIALOG_TITLE
     js = _text(COMPONENTS / "equipment_master_grid_assets" / "grid.js")
-    assert f"'{screens.BULK_IMPORT_BUTTON}'" in js
     assert "'전체 ' + total.toLocaleString() + '대 불러오기'" in js
     assert len(eg.COLUMN_SETS) == screens.GRID_COLUMN_SETS
     assert any(item.label == screens.GRID_ALL_COLUMNS_SET for item in eg.COLUMN_SETS)

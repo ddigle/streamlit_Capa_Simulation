@@ -11,16 +11,17 @@
   표 컴포넌트 모듈이 읽힐 때 등록한다.
 - **자리**: 맨 위 줄(표 고르기 · 설비 시나리오 알약 · 저장 전 변경 수) → 알림 칸(늘 서 있는 칸 —
   CCv2 마운트 앞에 생겼다 사라지는 요소를 모두 그 안에 둔다, 명세 2-3) → 테두리 하나의 편집기 영역
-  (`equipment_master_grid.FRAME_KEY`) 안 두 칸(key 가로 칸 — `SPLIT_KEY`). 왼쪽은 표 구획(내려받기
-  · 불러오기 · 표) 또는 작은 편집표, 오른쪽은 칸막이(끌어 폭 바꾸기 · 칸 머리의 접기 단추 — 브라우저
-  몫) → 「호기 상세 · 새 호기 · 저장 전 변경 · 저장 이력」 고르기 → 본문 칸(`SIDE_BODY_KEY` — 그
-  칸, 창 높이 상한 안에서 스크롤). 오른쪽 칸은 붙어 있다(sticky). 받기 콜백이 오른쪽 칸을
-  열면(`_switch_side`) 접힌 칸을 편다.
+  (`equipment_master_grid.FRAME_KEY`) 안 두 칸(key 가로 칸 — `SPLIT_KEY`). 왼쪽은 표 구획(불러오기
+  · 그 줄 끝의 메뉴 「엑셀·CSV」 · 표) 또는 작은 편집표, 오른쪽은 칸막이(끌어 폭 바꾸기 · 칸 머리의
+  접기 단추 — 브라우저 몫) → 「호기 상세 · 새 호기 · 저장 전 변경 · 저장 이력」 고르기 → 본문
+  칸(`SIDE_BODY_KEY` — 그 칸, 창 높이 상한 안에서 스크롤). 오른쪽 칸은 붙어 있다(sticky). 받기
+  콜백이 오른쪽 칸을 열면(`_switch_side`) 접힌 칸을 편다.
 - **새 호기**(개편 단계 C): 오른쪽 「새 호기」 칸 — 초안(세션 `NEW_UNIT_DRAFT_KEY`, 브라우저가
   칸을 확정할 때마다 상태 값 `draft` 로 보낸다)을 `equipment_grid.new_unit_check` 로 보고 체크 상자
   셋(에러 없이 추가 · 가용대수 · 도면)과 칸 오류를 싣는다. 「호기 추가」 는 출납 op `add` 라 받은
-  초안을 다시 보고 편집본 끝·불러온 목록 맨 위에 넣은 뒤 그 호기를 「호기 상세」 로 연다. 불러오기
-  「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「비슷한 호기에서 값 가져오기」 가 이 칸을 연다.
+  초안을 다시 보고 편집본 끝·불러온 목록 맨 위에 넣은 뒤 그 호기를 「호기 상세」 로 연다. 오른쪽 칸
+  고르기 말고도 첫 화면 「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「비슷한 호기에서 값
+  가져오기」 가 이 칸을 연다.
   오른쪽 칸 고르기는 받기 콜백이 바로 적지 않고 다음 고르기 앞에서 적는다(`side_panel.switch_side` —
   그 고르기 뒤에 그린 마운트의 콜백도 같은 길).
 - **출납**: 표·오른쪽 칸이 보낸 상태 값 `outbox` 를 받기 콜백(본문보다 먼저 돈다)이 두 마운트를 함께
@@ -117,6 +118,7 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.components.equipment_import_dialog import (
     import_closed_count,
+    import_opened_from_menu,
     open_equipment_import,
 )
 from capa_simulation.components.equipment_save_fields import (
@@ -140,6 +142,7 @@ from capa_simulation.components.save_section import discard_popover
 from capa_simulation.components.side_panel import render_side_head, split_frame, switch_side
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import current_generation, just_written, note_written
 from capa_simulation.equipment_scenario_activation import (
     UNMERGED_LOCK_REASON,
@@ -262,7 +265,13 @@ UNDO_PRESS_KEY: Final = "equipment_master_undo_press_v1"
 DISCARD_POPOVER_KEY: Final = "equipment_master_discard_v1"
 DISCARD_CONFIRM_KEY: Final = "equipment_master_discard_confirm_v1"
 SAVE_RESULT_KEY: Final = "equipment_master_save_result_v1"
-DOWNLOAD_POPOVER_KEY: Final = "equipment_master_downloads_v1"
+# 불러오기 줄 끝 메뉴 — 팝오버 key 꼬리는 메뉴 세대다. 「한꺼번에 넣기」 가 세대를 올려 메뉴가 팝업
+# 뒤에 남지 않고 닫힌 채 다시 선다(`on_change` 로 여닫힘을 받으면 메뉴를 열 때마다 앱이 다시 돈다).
+DATA_MENU_KEY: Final = "equipment_master_data_menu_v1"
+DATA_MENU_GENERATION_KEY: Final = "equipment_master_data_menu_generation_v1"
+IMPORT_MENU_BUTTON_KEY: Final = "equipment_master_import_open_v1"
+DATA_MENU_LABEL: Final = "엑셀·CSV"
+IMPORT_MENU_LABEL: Final = "한꺼번에 넣기"
 SAVE_LABEL: Final = "리비전 저장"
 DISCARD_LABEL: Final = "모두 버리기"
 UNDO_LABEL: Final = "한 단계 되돌리기"
@@ -725,7 +734,7 @@ def _on_load(request: grid_component.LoadRequest) -> None:
     result = load_ids(grid_loaded_ids(), ids)
     _store_loaded(result.loaded)
     st.session_state[MISSING_KEY] = request.missing if request.kind == "names" else ()
-    label = request.label or {"all": "전체", "alerts": "일정 확인 필요"}.get(request.kind, "")
+    label = request.label or {"all": "전체", "alerts": "일정 확인"}.get(request.kind, "")
     text = (
         f"{label} — {result.added:,}대를 새로 불러왔습니다"
         if label
@@ -750,7 +759,7 @@ def _open_detail(row_id: str) -> None:
 
 
 def _on_new() -> None:
-    """불러오기 「+ 새 호기」 — 오른쪽 칸을 「새 호기」 로."""
+    """첫 화면 「+ 새 호기」 — 오른쪽 칸을 「새 호기」 로."""
     _switch_side(SIDE_NEW)
 
 
@@ -819,6 +828,12 @@ def _on_goto(table: str, unit: str) -> None:
     if table == DOWNTIME_TARGET and unit:
         st.session_state[filter_widget_key(DOWNTIME_VIEW_PREFIX, EQUIPMENT_ID_COLUMN)] = [unit]
         st.session_state.pop(f"{DOWNTIME_EDITOR_KEY}_applied_view", None)
+
+
+def _on_import_menu() -> None:
+    """메뉴 「한꺼번에 넣기」 — 팝업을 열고 메뉴는 세대를 올려 닫는다."""
+    open_equipment_import(from_menu=True)
+    bump(DATA_MENU_GENERATION_KEY)
 
 
 def _on_dialog(name: str) -> None:
@@ -1067,13 +1082,24 @@ def _render_notices(
                 st.warning(message, icon=":material/block:")
 
 
-def _render_downloads(
+def _render_data_menu(
     repository: DuckDBEquipmentRepository,
     latest_snapshot: EquipmentSnapshot | None,
     scenario_name: str | None,
 ) -> None:
-    """「내려받기」 팝오버 — 양식 셋 + 현재 데이터 셋(개편 명세 4-9)."""
-    with st.popover("내려받기", icon=":material/download:", key=DOWNLOAD_POPOVER_KEY):
+    """메뉴 「엑셀·CSV」 — 맨 위 「한꺼번에 넣기」(팝업), 그 아래 양식 셋 + 현재 데이터 셋(개편 명세
+    4-9). 폭 고정은 불러오기 줄이 비워 두는 자리와 맞추려는 것이다(`tools_menu_style`)."""
+    with st.popover(
+        DATA_MENU_LABEL,
+        key=widget_key(DATA_MENU_KEY, DATA_MENU_GENERATION_KEY, bare_zero=False),
+        width=grid_component.TOOLS_MENU_WIDTH_PX,
+    ):
+        st.button(
+            IMPORT_MENU_LABEL,
+            key=IMPORT_MENU_BUTTON_KEY,
+            icon=":material/upload_file:",
+            on_click=_on_import_menu,
+        )
         for label, payload, filename, key in (
             (
                 "설비 마스터 양식",
@@ -1122,8 +1148,6 @@ def _render_grid_section(
     toasts: Mapping[str, Mapping[str, Any]],
     top: str | None,
 ) -> None:
-    with st.container(key=grid_component.TOOLS_KEY, horizontal=True, horizontal_alignment="right"):
-        _render_downloads(repository, latest_snapshot, context.scenario_name)
     loaded = prune_loaded(grid_loaded_ids(), view.index)
     missing = st.session_state.get(MISSING_KEY)
     alert_ids = [row_id for row_id in view.index.live if row_id in view.alerts]
@@ -1136,12 +1160,18 @@ def _render_grid_section(
             first_data=latest_snapshot is None and not view.index.live,
             new_enabled=True,
             dialog_closed=import_closed_count(),
+            dialog_from_menu=import_opened_from_menu(),
+            menu_key=grid_component.TOOLS_KEY,
         ),
         on_load=_on_load,
         on_clear=_on_clear,
         on_dialog=_on_dialog,
         on_new=_on_new,
     )
+    # 메뉴는 불러오기 다음 차례다 — 서식(`tools_menu_style`)이 불러오기 줄 끝에 얹고, 키보드 차례는
+    # 찾기 칸부터 왼쪽에서 오른쪽으로 간다.
+    with st.container(key=grid_component.TOOLS_KEY, horizontal=True, horizontal_alignment="right"):
+        _render_data_menu(repository, latest_snapshot, context.scenario_name)
     grid_component.render_grid_table(
         grid_data(
             view,
@@ -1346,6 +1376,7 @@ def render_equipment_master_tab(
     # 테두리 하나의 편집기 영역 안 두 칸 — 왼쪽 표, 오른쪽 칸(칸막이로 폭을 바꾸고 칸 머리 단추로
     # 접는다). 간격은 서식이 경계선 양쪽 여백으로 둔다. 배치 서식은 늘 같은 글 한 덩이다.
     left, right = split_frame(grid_component.MASTER_SIDE)
+    st.html(grid_component.tools_menu_style())
     with left:
         if table == TABLE_MASTER:
             _render_grid_section(

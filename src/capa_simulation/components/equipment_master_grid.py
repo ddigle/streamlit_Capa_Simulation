@@ -45,6 +45,7 @@ from typing import Any, Final, Literal
 import streamlit as st
 
 from capa_simulation.components import grid_shared, side_panel
+from capa_simulation.design import tokens
 
 _ASSETS = Path(__file__).with_name("equipment_master_grid_assets")
 
@@ -253,9 +254,9 @@ def render_grid_loader(
     on_new: Callable[[], None] | None = None,
     key: str = LOADER_KEY,
 ) -> None:
-    """불러오기 자리 — 설비명 찾기(부분 일치·목록)·공정·조건(사용자 R1)·일정 확인 필요·전체
-    불러오기, 「엑셀·CSV로 한꺼번에」 팝업 열기, 불러온 수·못 찾은 설비명. 목록이 비면 빈 안내와
-    단추가 선다."""
+    """불러오기 자리 — 설비명 찾기(부분 일치·목록)·공정별·조건별(사용자 R1)·일정 확인·전체
+    불러오기, 불러온 수·못 찾은 설비명. 목록이 비면 빈 안내와 단추가 서고, 저장된 데이터가 없는 첫
+    화면에는 「엑셀·CSV로 한꺼번에」 팝업 열기 · 「+ 새 호기」 도 선다(`on_dialog` · `on_new`)."""
     _GRID(
         key=key,
         data=_with_palette(data),
@@ -341,6 +342,11 @@ SPLIT_KEY: Final = MASTER_SIDE.split_key
 LEFT_KEY: Final = MASTER_SIDE.left_key
 RIGHT_KEY: Final = MASTER_SIDE.right_key
 TOOLS_KEY: Final = MASTER_SIDE.tools_key
+# 메뉴 「엑셀·CSV」 단추 — 곁 `.emg-btn` 과 같은 높이, 찾기 칸(42px) 줄 가운데, 곁 단추와 같은 간격.
+TOOLS_MENU_WIDTH_PX: Final = 96
+TOOLS_MENU_HEIGHT_PX: Final = 34
+TOOLS_MENU_TOP_PX: Final = 4
+TOOLS_MENU_GAP_PX: Final = 8
 SIDE_CHOICE_KEY: Final = MASTER_SIDE.choice_key
 SIDE_BODY_KEY: Final = MASTER_SIDE.body_key
 SPLITTER_KEY: Final = MASTER_SIDE.splitter_key
@@ -359,3 +365,42 @@ def side_width_rule() -> str:
 def side_layout_style() -> str:
     """두 칸 배치 CSS 한 덩이."""
     return side_panel.side_layout_style(MASTER_SIDE)
+
+
+def tools_menu_style() -> str:
+    """메뉴 「엑셀·CSV」(작업 줄 칸 `TOOLS_KEY`)를 불러오기 줄 첫 줄 오른쪽 끝에 얹는 CSS 한 덩이.
+
+    불러오기 줄은 그림자 DOM 컴포넌트, 메뉴는 Streamlit 팝오버(내려받기 단추가 파이썬 위젯이라)라
+    한 flex 줄에 넣지 못한다. 불러오기 마운트 전체와 나란히 두면 값 줄 · 첫 화면 안내까지 눌리므로
+    메뉴를 왼쪽 칸 기준 절대 위치로 띄우고(흐름 높이 0 — 가로 칸의 flex 항목은 `stLayoutWrapper`
+    다, `side_layout_style` 과 같은 1.63 꼴) 불러오기 줄만 CSS 변수 `--emd-tools-reserve`(그림자
+    경계를 넘어 상속된다)로 그만큼 비운다. 값 줄 · 빈 안내는 폭을 그대로 쓰고, 좁아지면 줄이
+    바뀌어도 메뉴는 첫 줄 끝이다. 접은 동안은 떠 있는 단추 자리(`side_panel` 의 작업 줄 칸 오른쪽
+    여백)만큼 더 비운다. 폭은 팝오버 `width` 로 고정이라 글꼴이 달라도 비움과 어긋나지 않는다.
+    """
+    item = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{TOOLS_KEY})'
+    button = f'.st-key-{TOOLS_KEY} [data-testid="stPopoverButton"]'
+    loader = f".st-key-{LOADER_KEY}"
+    folded = f'html[data-{MASTER_SIDE.css_name}-side="min"]'
+    room = TOOLS_MENU_WIDTH_PX + TOOLS_MENU_GAP_PX
+    return "".join(
+        [
+            "<style>",
+            f".st-key-{LEFT_KEY} {{ position: relative; }}",
+            f"{item} {{ position: absolute; top: {TOOLS_MENU_TOP_PX}px; right: 0; width: auto; }}",
+            f"{loader} {{ --emd-tools-reserve: {room}px; }}",
+            (
+                f"{button} {{ height: {TOOLS_MENU_HEIGHT_PX}px; "
+                f"min-height: {TOOLS_MENU_HEIGHT_PX}px; padding: 0 12px; border-radius: 6px; "
+                f"border-color: {tokens.BORDER_STRONG}; background: {tokens.SURFACE}; "
+                f"color: {tokens.TEXT}; }}"
+            ),
+            f"{button}:hover {{ background: {tokens.SURFACE_SUBTLE}; }}",
+            f"{button} p {{ font: 400 13px/1.45 {tokens.FONT_FAMILY}; }}",
+            f"@media screen and (width > {side_panel.SIDE_STACK_MAX_PX}px) {{ ",
+            f"{folded} {loader} {{ ",
+            f"--emd-tools-reserve: {room + side_panel.SIDE_REOPEN_RESERVE_PX}px; }} ",
+            "}",
+            "</style>",
+        ]
+    )

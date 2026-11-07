@@ -151,7 +151,7 @@ def _downtime_machines(app: AppTest) -> list[str]:
 
 
 def _delete_building(app: AppTest, grid: Calls, seed: _Seed) -> list[str]:
-    """그 동 호기를 불러와(조건으로 불러오기 — 브라우저가 고른 id) 모두 고르고 지운다."""
+    """그 동 호기를 불러와(조건별 — 브라우저가 고른 id) 모두 고르고 지운다."""
     ids = [f"s:{name}" for name in sorted(seed.building_machines)]
     load(app, ids, kind="conditions", label=f"동 {seed.building}")
     assert [row["id"] for row in last(grid, emg.GRID_KEY)["rows"]] == ids

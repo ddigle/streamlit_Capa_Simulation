@@ -2,7 +2,7 @@
 
 """탭 ① 「설비 마스터」 오른쪽 「새 호기」 칸(개편 명세 4-6 나·10장 C).
 
-표 대역(`tests/grid_fake.py`)으로 불러오기 「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「새
+표 대역(`tests/grid_fake.py`)으로 첫 화면 「+ 새 호기」·상세 「이 호기로 새 호기 만들기」·「새
 호기」 칸의 초안(`draft`)·가져오기(`copy`)·「호기 추가」(출납 `add`)를 보내고, 「리비전 저장」 이
 새 호기를 늘 다른 설비 시나리오에 함께 넣는지 본다(옛 판 세션의 고름이 남아 있어도). 설비 시나리오는
 「운영 일정」(공식) 과 그 복제 「셋업 실무」 둘이다.
@@ -85,7 +85,7 @@ def _ok(app: AppTest) -> AppTest:
 
 
 def _open_new(app: AppTest) -> dict[str, Any]:
-    """불러오기 「+ 새 호기」 — 오른쪽 칸이 「새 호기」 로 선다."""
+    """첫 화면 「+ 새 호기」 — 오른쪽 칸이 「새 호기」 로 선다."""
     _ok(send(app, emg.LOADER_KEY, "new", {}))
     assert app.session_state[SIDE_KEY] == SIDE_NEW
     return (

@@ -120,7 +120,7 @@ Frames = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
 # ------------------------------------------------------------------ 한계(합성 표본 측정으로 정한다)
 # 한 번에 불러오는 호기(개편 명세 13장 D6 — 사용자 R3 「1,000대」). 넘으면 앞 1,000대만 불러온다.
 GRID_ROW_LIMIT: Final = 1_000
-# 한 번에 붙이는 칸. 넘으면 브라우저가 넣지 않고 「엑셀·CSV로 한꺼번에」 를 권한다.
+# 한 번에 붙이는 칸. 넘으면 브라우저가 넣지 않고 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 를 권한다.
 GRID_PASTE_CELLS: Final = 5_000
 # 브라우저가 들고 있는 보낼 목록의 칸 상한. 붙여넣기 상한이 먼저 걸린다.
 GRID_OUTBOX_CELLS: Final = 10_000
@@ -1017,7 +1017,7 @@ def grid_data(
     }
 
 
-# 불러오기 「조건으로 불러오기」 칸(사용자 R1 — 옛 RawData 표 보기 거르기 13칸).
+# 불러오기 「조건별」 칸(사용자 R1 — 옛 RawData 표 보기 거르기 13칸).
 CONDITION_COLUMNS: Final = (
     "공정소분류",
     "공정구분",
@@ -1078,18 +1078,22 @@ def loader_data(
     first_data: bool = False,
     new_enabled: bool = False,
     dialog_closed: int = 0,
+    dialog_from_menu: bool = False,
+    menu_key: str = "",
 ) -> dict[str, Any]:
-    """불러오기 마운트(`loader`)의 data. `new_enabled` 면 「+ 새 호기」 단추가 선다(개편 단계 C —
-    누르면 오른쪽 칸 「새 호기」, 낡은 세션이면 꺼진다). 살아 있는 호기 전부(편집본 차례)의 설비명과
-    조건 칸 값을 싣는다 — 이름·조건 칸이 바뀔 때만 바뀌어, 다른 칸만 고친 회차에는 같은 메시지다.
-    `dialog_closed` 는 「엑셀·CSV로 한꺼번에」 팝업이 닫힌 수다 — 바뀐 회차에 그 불러오기가 연
-    팝업이면 초점을 여는 단추로 돌린다(`dialogClosed`).
+    """불러오기 마운트(`loader`)의 data. `new_enabled` 면 저장된 데이터가 없는 첫 화면에 「+ 새
+    호기」 단추가 선다(개편 단계 C — 누르면 오른쪽 칸 「새 호기」, 낡은 세션이면 꺼진다). 살아 있는
+    호기 전부(편집본 차례)의 설비명과 조건 칸 값을 싣는다 — 이름·조건 칸이 바뀔 때만 바뀌어, 다른
+    칸만 고친 회차에는 같은 메시지다. `dialog_closed` 는 「엑셀·CSV로 한꺼번에」 팝업이 닫힌 수다 —
+    바뀐 회차에 첫 화면 단추나 메뉴로 연 팝업이면 초점을 연 자리로 돌린다(`dialogClosed`).
+    `dialog_from_menu` 는 그 팝업을 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 로 열었는가, `menu_key`
+    는 메뉴 칸의 key 다(메뉴는 표 컴포넌트 밖이라 브라우저가 이 key 로 찾는다).
 
     - `names` — 설비명. 행 id 는 `s:` + 설비명이 아닌 자리만 `ids`(자리 → id)에 싣는다(새 호기·이름
       바꾼 호기).
     - `conditions` — 조건 칸(`CONDITION_COLUMNS`, 공정소분류·동·층 포함)의 값 목록(빈 값 `""` 은 맨
       끝)과 칸마다 줄 차례로 이은 값 번호 글자(`CODE_ALPHABET`, 폭 `widths`). 공정·동층 제안과
-      「조건으로 불러오기」(사용자 R1)가 이것을 쓴다.
+      「조건별」(사용자 R1)이 이것을 쓴다.
     - `processes` — 공정소분류와 대수(자연 차례, 「(빈칸)」 맨 끝).
     - `loaded` 는 표에 든 행 id 전부(지울 목록에 든 호기도 표에 남는다 — 개편 명세 4-5)이고,
       `loadedCount` 는 그 가운데 살아 있는 호기 수다 — 「불러온 호기 n대 / 전체 N대」 는 둘 다 살아
@@ -1142,6 +1146,8 @@ def loader_data(
         "newEnabled": new_enabled,
         "newRowsLocked": view.context.new_rows_locked,
         "dialogClosed": dialog_closed,
+        "dialogFromMenu": dialog_from_menu,
+        "menuKey": menu_key,
     }
 
 

@@ -2,9 +2,10 @@
 
 """가용설비 현황 「엑셀·CSV로 한꺼번에」 팝업(개편 명세 4-8 — 옛 설비 마스터 탭 「입력」 탭을 옮김).
 
-- **자리**: 탭 ① 불러오기 줄의 「엑셀·CSV로 한꺼번에」 단추(표 컴포넌트 `dialog` 트리거)·첫 데이터
-  안내 단추 → 큰 팝업. 열림 칸은 페이지 한 칸(`EQUIPMENT_DIALOG_KEY` — 값 `import`, 「가용설비
-  설정」 팝업과 한 칸이라 한 실행에 팝업 하나)이고 여는 콜백은 `forget_page_dialogs()` 부터 부른다.
+- **자리**: 탭 ① 불러오기 줄 끝 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」·첫 화면 「엑셀·CSV로
+  한꺼번에」 단추(표 컴포넌트 `dialog` 트리거)·첫 데이터 안내 단추 → 큰 팝업. 열림 칸은 페이지 한
+  칸(`EQUIPMENT_DIALOG_KEY` — 값 `import`, 「가용설비 설정」 팝업과 한 칸이라 한 실행에 팝업
+  하나)이고 여는 콜백은 `forget_page_dialogs()` 부터 부른다.
 - **안은 옛 입력 탭 그대로**: 등록할 표(기본 설비 마스터) · Excel 표 붙여넣기 · CSV 업로드(50MB) ·
   「변경 미리보기」 · 미리보기(두 쪽 한 줄 · 신규/기존 대체/변경 없음 수 · 변경 표 · 저장 후 행 수).
   「바뀔 행」·「기존 대체」 는 넣으면 실제로 바뀌는 줄만 센다(같은 값 그대로인 대체 줄은 「변경
@@ -121,10 +122,11 @@ IMPORT_REVIEW_NOTICE_KEY: Final = "equipment_import_review_notice_v1"
 IMPORT_REVIEW_CAUTION_KEY: Final = "equipment_import_review_caution_v1"
 IMPORT_NOTE_SLOT_KEY: Final = "capa_paste_note_equipment_import_review"
 IMPORT_LOCKED_HELP: Final = "「변경 미리보기」 를 먼저 누르면 넣을 수 있습니다."
-# 팝업이 닫힌 수(넣은 뒤·Esc·바깥 누름 — `_close_dialog`). 표 불러오기 data 에 실려, 그 불러오기의
-# 단추로 연 팝업이 닫힌 회차에 초점을 여는 단추로 돌린다(Streamlit 은 그림자 DOM 안 단추로 돌려주지
-# 못해 BODY 로 빠진다).
+# 팝업이 닫힌 수(넣은 뒤·Esc·바깥 누름 — `_close_dialog`). 표 불러오기 data 에 실려, 첫 화면 단추나
+# 메뉴 「엑셀·CSV」 로 연 팝업이 닫힌 회차에 초점을 연 자리로 돌린다(Streamlit 은 그림자 DOM 안
+# 단추로도, 팝업을 열며 닫힌 메뉴 안으로도 돌려주지 못해 BODY 로 빠진다). 메뉴로 열었는지가 표지다.
 IMPORT_CLOSED_KEY: Final = "equipment_import_closed_v1"
+IMPORT_FROM_MENU_KEY: Final = "equipment_import_from_menu_v1"
 FIX_FIRST_HINT: Final = (
     "편집본 설비 마스터에 고칠 것이 남아 있으면 미리보기도 막힙니다 — 「저장 전 변경」 의 고칠 "
     "것을 "
@@ -143,12 +145,14 @@ class ImportContext:
     official_places: dict[str, Place] = field(default_factory=dict)
 
 
-def open_equipment_import() -> None:
+def open_equipment_import(*, from_menu: bool = False) -> None:
     """「엑셀·CSV로 한꺼번에」 를 여는 콜백 — 다른 팝업 칸부터 비운다(한 실행에 팝업 하나). 남은
     미리보기도 거둔다 — 팝업이 닫혀 있던 회차에 입력 칸은 버려져 늘 빈 칸으로 열린다
-    (`_close_dialog`)."""
+    (`_close_dialog`). `from_menu` 는 메뉴 「엑셀·CSV」 로 열었다는 표지다 — 닫힌 뒤 초점을 메뉴
+    단추로 돌리는 데 쓴다(`import_opened_from_menu`)."""
     forget_page_dialogs()
     st.session_state.pop(PREVIEW_KEY, None)
+    st.session_state[IMPORT_FROM_MENU_KEY] = from_menu
     st.session_state[EQUIPMENT_DIALOG_KEY] = IMPORT_DIALOG
 
 
@@ -165,6 +169,12 @@ def import_closed_count() -> int:
     """이 세션에서 팝업이 닫힌 수(`IMPORT_CLOSED_KEY`). 표 불러오기 data 의 `dialogClosed` 다."""
     value = st.session_state.get(IMPORT_CLOSED_KEY, 0)
     return value if isinstance(value, int) else 0
+
+
+def import_opened_from_menu() -> bool:
+    """마지막으로 연 팝업이 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 로 열렸나. 표 불러오기 data 의
+    `dialogFromMenu` 다."""
+    return st.session_state.get(IMPORT_FROM_MENU_KEY) is True
 
 
 def withdraw_preview_on_new_visit() -> None:

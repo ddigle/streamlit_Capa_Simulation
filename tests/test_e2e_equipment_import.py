@@ -187,7 +187,7 @@ def test_the_untouched_template_row_can_be_previewed_but_not_saved(
     assert not app.exception
     # 사용자가 실제로 내려받는 버튼이 이 화면에 있다는 것까지 함께 묶어 둔다.
     # 없는 키를 찾으면 `KeyError` 라, 이 한 줄이 곧 존재 검사다.
-    # 양식은 설비 마스터 탭 「내려받기」 팝오버에 있다.
+    # 양식은 설비 마스터 탭 메뉴 「엑셀·CSV」 에 있다.
     assert (
         app.download_button("equipment_baseline_template_download_v3").label == "기존 보유대수 양식"
     )

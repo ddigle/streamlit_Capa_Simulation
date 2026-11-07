@@ -158,7 +158,14 @@ def test_the_right_column_holds_the_splitter_then_the_choice_then_one_body(
     assert GapSize.Name(flex.gap_config.gap_size) == "NONE"
     assert _child_keys(split) == [emg.LEFT_KEY, emg.RIGHT_KEY]
     assert _bordered_blocks(_node_of(app, emg.LEFT_KEY)) == 0
-    assert emg.TOOLS_KEY in _descendant_keys(_node_of(app, emg.LEFT_KEY))
+    # 메뉴 칸은 불러오기 다음 차례다(서식이 불러오기 줄 끝에 얹고 키보드 차례는 왼쪽에서 오른쪽).
+    left_keys = _child_keys(_node_of(app, emg.LEFT_KEY))
+    loader_at = left_keys.index(PLACE + emg.LOADER_KEY)
+    assert left_keys[loader_at : loader_at + 3] == [
+        PLACE + emg.LOADER_KEY,
+        emg.TOOLS_KEY,
+        PLACE + emg.GRID_KEY,
+    ]
     assert SIDE_KEY == emg.SIDE_CHOICE_KEY
     right = _node_of(app, emg.RIGHT_KEY)
     assert _child_keys(right) == [PLACE + emg.SPLITTER_KEY, SIDE_KEY, emg.SIDE_BODY_KEY]
@@ -389,7 +396,7 @@ def test_the_splitter_names_the_open_panel_and_unfolds_when_the_table_opens_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """칸막이 data — 떠 있는 단추에 쓸 지금 칸 이름, 한계(CSS 와 같은 수), 줄·오른쪽 칸 key, 화면 탭
-    줄 선택자. 표에서 설비명을 누르거나(`open`) 불러오기 「+ 새 호기」(`new`)로 오른쪽 칸을 연
+    줄 선택자. 표에서 설비명을 누르거나(`open`) 첫 화면 「+ 새 호기」(`new`)로 오른쪽 칸을 연
     회차에만 `reveal` 이 오른다 — 접혀 있으면 편다(누른 것이 보이게). 다시 그리기·고르기 바꿈은
     올리지 않는다."""
     calls, splits = _install(monkeypatch)
@@ -468,6 +475,64 @@ def test_the_splitter_colours_come_from_the_palette_and_text_goes_in_as_text() -
     assert "S.railLabel.textContent = S.label" in JS
 
 
+def _grid_block(selector: str) -> dict[str, str]:
+    match = re.search(rf"(?m)^{re.escape(selector)} \{{\n(?P<body>[^}}]*)\}}", GRID_CSS)
+    assert match, selector
+    props = {}
+    for declaration in filter(str.strip, match.group("body").split(";")):
+        name, _, value = declaration.partition(":")
+        props[name.strip()] = value.strip()
+    return props
+
+
+def test_the_data_menu_rests_on_the_loader_line_without_squeezing_the_lines_below() -> None:
+    """메뉴 「엑셀·CSV」 는 Streamlit 팝오버, 불러오기 줄은 그림자 DOM 이라 한 flex 줄에 못 넣는다
+    (2026-11-07 사용자 답 안 A). 메뉴 칸을 왼쪽 칸 기준으로 첫 줄 오른쪽 끝에 띄우고 불러오기 줄만
+    CSS 변수로 비운다 — 값 줄 · 첫 화면 안내는 그 변수를 보지 않아 눌리지 않는다. 접은 동안은 떠
+    있는 단추 자리만큼 더 비운다(그 자리는 작업 줄 칸의 오른쪽 여백이 메뉴도 함께 민다). 단추
+    치수는 곁 `.emg-btn` 과 같고 세로는 찾기 칸 줄 가운데다. 인쇄(`screen` 밖)는 접힘을 모른다."""
+    style = emg.tools_menu_style()
+    rules = _css_rules(style)
+    item = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{emg.TOOLS_KEY})'
+    button = f'.st-key-{emg.TOOLS_KEY} [data-testid="stPopoverButton"]'
+    loader = f".st-key-{emg.LOADER_KEY}"
+    folded = 'html[data-emd-side="min"]'
+    wide = f"screen and (width > {sp.SIDE_STACK_MAX_PX}px)"
+    room = emg.TOOLS_MENU_WIDTH_PX + emg.TOOLS_MENU_GAP_PX
+
+    assert rules[("", f".st-key-{emg.LEFT_KEY}")] == {"position": "relative"}
+    assert rules[("", item)] == {
+        "position": "absolute",
+        "top": f"{emg.TOOLS_MENU_TOP_PX}px",
+        "right": "0",
+        "width": "auto",
+    }
+    assert rules[("", loader)] == {"--emd-tools-reserve": f"{room}px"}
+    assert rules[(wide, f"{folded} {loader}")] == {
+        "--emd-tools-reserve": f"{room + sp.SIDE_REOPEN_RESERVE_PX}px"
+    }
+    assert (wide, f"{folded} .st-key-{emg.TOOLS_KEY}") not in rules
+
+    # 비움은 불러오기 줄 하나에만 건다.
+    assert _grid_block(".emg-lb")["padding-right"] == "var(--emd-tools-reserve, 0px)"
+    assert GRID_CSS.count("--emd-tools-reserve") == 1
+    # 곁 단추와 같은 치수 · 같은 간격, 찾기 칸 줄의 가운데.
+    plain = _grid_block(".emg-btn")
+    menu = rules[("", button)]
+    for name in ("height", "padding", "border-radius"):
+        assert menu[name] == plain[name], name
+    assert menu["min-height"] == plain["height"]
+    assert _grid_block(".emg-lb")["gap"] == f"{emg.TOOLS_MENU_GAP_PX}px"
+    search = int(_grid_block(".emg-search")["height"].removesuffix("px"))
+    assert emg.TOOLS_MENU_TOP_PX == (search - emg.TOOLS_MENU_HEIGHT_PX) / 2
+    assert rules[("", f"{button} p")]["font"].startswith(f"400 {_grid_block('.emg')['font-size']}/")
+    # 떠 있는 단추 자리는 두 칸 서식이 작업 줄 칸의 오른쪽 여백으로 비운다 — 메뉴도 함께 밀린다.
+    layout = _css_rules(emg.side_layout_style())
+    assert layout[(wide, f"{folded} .st-key-{emg.TOOLS_KEY}")] == {
+        "padding-right": f"{sp.SIDE_REOPEN_RESERVE_PX}px"
+    }
+
+
 def _css_block(selector: str) -> dict[str, str]:
     match = re.search(rf"(?m)^{re.escape(selector)} \{{\n(?P<body>[^}}]*)\}}", CSS)
     assert match, selector
@@ -521,7 +586,7 @@ def test_the_fold_button_sits_in_the_head_and_the_reopen_button_floats_like_the_
     gutter = _css_block(".ess-gutter")
     assert gutter["pointer-events"] == "auto" and gutter["width"] == f"{sp.SIDE_GUTTER_PX}px"
     # 머리 한 줄이 최소 폭에 든다(고르기 넷의 자연 폭 310 — 1.63 측정) · 떠 있는 단추의 가장 긴 칸
-    # 이름(「저장 전 변경」 89 — 측정)이 칸 끝에서 5 나가도 「내려받기」 를 덮지 않는다.
+    # 이름(「저장 전 변경」 89 — 측정)이 칸 끝에서 5 나가도 메뉴 「엑셀·CSV」 를 덮지 않는다.
     head = 310 + sp.SIDE_TOGGLE_GAP_PX + sp.SIDE_TOGGLE_PX
     assert sp.SIDE_MIN_PX - sp.SIDE_INSET_PX >= head
     assert sp.SIDE_REOPEN_RESERVE_PX >= 89 - 5

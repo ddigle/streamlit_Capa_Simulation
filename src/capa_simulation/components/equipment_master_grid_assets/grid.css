@@ -93,11 +93,12 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  padding-right: var(--emd-tools-reserve, 0px);
 }
 
 .emg-search-wrap {
   position: relative;
-  flex: 1 1 360px;
+  flex: 1 1 220px;
   min-width: 0;
 }
 
@@ -122,6 +123,7 @@
   height: 38px;
   font-size: 14px;
   color: var(--emg-text);
+  text-overflow: ellipsis;
 }
 
 .emg-pop-wrap {

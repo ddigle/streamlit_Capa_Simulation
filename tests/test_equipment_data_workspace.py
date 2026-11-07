@@ -520,7 +520,7 @@ def _download_labels(app: AppTest) -> list[str]:
 def test_current_data_downloads_stand_beside_the_templates_and_name_their_basis(
     tmp_path: Path,
 ) -> None:
-    """「내려받기」 팝오버 — 세 표의 「현재 데이터」 단추가 양식 셋 곁에 서고, 캡션과 파일 이름이
+    """메뉴 「엑셀·CSV」 — 세 표의 「현재 데이터」 단추가 양식 셋 곁에 서고, 캡션과 파일 이름이
     저장본 번호를 말한다.
 
     저장본과 같은 편집본이면 캡션이 「저장본과 같음」이고 이름에 `_edited` 가 없다. 빈 표도

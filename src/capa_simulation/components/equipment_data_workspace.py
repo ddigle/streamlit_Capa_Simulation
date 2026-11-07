@@ -2257,7 +2257,7 @@ def _render_current_data_downloads(
     edit_note: str,
     memo_key: tuple[object, ...],
 ) -> None:
-    """세 표의 **현재 데이터**를 내려받는 단추 셋 — 설비 마스터 탭 「내려받기」 팝오버의 양식 단추
+    """세 표의 **현재 데이터**를 내려받는 단추 셋 — 설비 마스터 탭 메뉴 「엑셀·CSV」 의 양식 단추
     아래에 같은 차례로 선다. `edit_note` 는 편집본이 언제 이 파일에 드는지 말하는 캡션 글이다.
     내보낼 바이트와 「편집본」 판정은 `memo_key`(편집본 세대·출발점·저장본 토큰) 열쇠로 세션
     메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해 합성 3천 대에 수십 ms 가
@@ -3684,13 +3684,13 @@ def common_revision_words(
     return f"r{number}" if number is not None else ""
 
 
-# 가정 설비 시나리오의 일정 확인(설비 마스터 탭 「일정 확인 필요」·표 풍선)이 볼 마스터 한 벌 —
+# 가정 설비 시나리오의 일정 확인(설비 마스터 탭 「일정 확인」·표 풍선)이 볼 마스터 한 벌 —
 # ((공식 토큰, 편집본 세대), 표).
 _CONFIRMATION_OFFICIAL_KEY = "equipment_schedule_confirmation_official_v1"
 
 
 def official_confirmation_master(master: pd.DataFrame, official: EquipmentSnapshot) -> pd.DataFrame:
-    """가정 설비 시나리오의 일정 확인(설비 마스터 탭 「일정 확인 필요」·표 풍선)이 볼 마스터 —
+    """가정 설비 시나리오의 일정 확인(설비 마스터 탭 「일정 확인」·표 풍선)이 볼 마스터 —
     편집본의 공통 칸 + 공식 일정 일곱 칸.
 
     미확인은 공식 시나리오 일정 기준이다(결정). 공통 칸(실적·상태)은 편집본 그대로라 실적·상태를

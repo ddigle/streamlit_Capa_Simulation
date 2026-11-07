@@ -213,7 +213,8 @@ EQUIPMENT_DROPPED_HEADER: Final = "설비가동현황"
 # 본다). 시나리오 칸은 머리 둘째 줄 「시나리오」 표지로 센다.
 EQUIPMENT_GRID_KEY: Final = "equipment_grid_table"
 EQUIPMENT_LOADER_KEY: Final = "equipment_grid_loader"
-BULK_IMPORT_BUTTON: Final = "엑셀·CSV로 한꺼번에"
+EQUIPMENT_MENU_KEY: Final = "equipment_master_tools"
+BULK_IMPORT_BUTTON: Final = "한꺼번에 넣기"
 BULK_IMPORT_TITLE: Final = "엑셀·CSV로 한꺼번에"
 GRID_ALL_COLUMNS_SET: Final = "전체 39칸"
 GRID_COLUMN_SETS: Final = 5
@@ -2342,10 +2343,14 @@ def open_equipment_tab(screen: Screen, name: str) -> None:
 
 
 def open_bulk_import(screen: Screen) -> None:
-    """탭 ① 불러오기 줄의 「엑셀·CSV로 한꺼번에」(표 컴포넌트 단추 — 그림자 DOM)를 눌러 팝업이 보일
-    때까지 기다린다."""
-    loader = screen.page.locator(f'[data-testid="stMain"] .st-key-{EQUIPMENT_LOADER_KEY}')
-    loader.get_by_role("button", name=BULK_IMPORT_BUTTON).first.click()
+    """탭 ① 불러오기 줄 끝 메뉴 「엑셀·CSV」 의 「한꺼번에 넣기」 를 눌러 팝업이 보일 때까지
+    기다린다. 메뉴는 Streamlit 팝오버라 패널이 본문 밖 포털에 뜬다."""
+    menu = screen.page.locator(f'[data-testid="stMain"] .st-key-{EQUIPMENT_MENU_KEY}')
+    menu.locator("button").first.click()
+    panel = screen.page.locator('[data-testid="stPopoverBody"]')
+    panel.get_by_role("button", name=BULK_IMPORT_BUTTON).first.click()
+    # 메뉴 패널도 `role="dialog"` 다 — 패널이 걷힌 뒤에야 `dialog_count` 가 팝업을 센다.
+    screen.wait_for(panel.count, timeout=30, accept=lambda count: count == 0)
     screen.wait_for(screen.dialog_count, timeout=30, accept=lambda count: count > 0)
 
 
