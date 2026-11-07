@@ -589,3 +589,14 @@ def test_the_sidebar_scroller_keeps_a_height_cap_while_the_width_is_dragged() ->
     block = _style_block()
 
     assert _rules_with(block, "max-height: 100dvh;") == [['[data-testid="stSidebarContent"]']]
+
+
+def test_the_tip_host_of_a_locked_button_shows_where_the_focus_is() -> None:
+    """꺼진 단추의 탭 자리는 감싼 풍선 칸이라(`alert_center.js`) Streamlit 의 단추 초점 그림이 닿지
+    않는다 — 칸에 앱의 2px 윤곽을 두른다. 마우스로 눌러도 칸이 초점을 받으므로 `:focus-visible`
+    뿐이다."""
+    block = _style_block()
+    rule = re.search(r'\[data-testid="stTooltipHoverTarget"\]:focus-visible \{([^}]*)\}', block)
+    assert rule is not None
+    assert f"outline: 2px solid {tokens.ACCENT};" in rule.group(1)
+    assert 'stTooltipHoverTarget"]:focus ' not in block

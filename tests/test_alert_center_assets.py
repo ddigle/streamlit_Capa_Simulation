@@ -191,7 +191,7 @@ console.log(JSON.stringify([
     assert "t.log_table_value_clipped" in pairs
 
 
-_SECTIONS = ("alerts-rows", "alerts-storage")
+_SECTIONS = ("alerts-rows", "alerts-focus", "alerts-storage")
 
 
 def _sections() -> str:
@@ -510,3 +510,73 @@ def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_
     persist = persist[: persist.index("\n}\n")]
     assert persist.index("storage.states") < persist.index("storage.log")
     assert "withoutOldestTables(saving)" in persist
+
+
+_FOCUS_FAKES = """
+const node = (attrs, extra) => ({
+  attrs: { ...attrs },
+  focused: 0,
+  hasAttribute(name) { return name in this.attrs },
+  getAttribute(name) { return name in this.attrs ? this.attrs[name] : null },
+  setAttribute(name, value) { this.attrs[name] = value },
+  removeAttribute(name) { delete this.attrs[name] },
+  focus() { this.focused += 1 },
+  ...extra,
+})
+const hostOf = (button, attrs) => node(attrs, {
+  querySelector: (selector) => {
+    if (selector === 'button:disabled') return button && button.disabled ? button : null
+    return button
+  },
+})
+const docOf = (hosts, active) => ({
+  querySelectorAll: () => hosts,
+  activeElement: active,
+  body: { body: true },
+})
+"""
+
+
+def test_a_locked_button_lends_its_tab_stop_to_the_tip_host() -> None:
+    """꺼진 단추를 감싼 칸이 탭 자리를 맡고 이름을 단다 — 단추가 풀리면 걷어 탭 자리가 둘이 되지
+    않는다. 그 칸이 초점을 쥐고 있었으면 단추로 넘겨 Tab 이 제자리에서 잇는다. 잠긴 단추가 없던
+    칸은 건드리지 않는다."""
+    out = _node(
+        _FOCUS_FAKES
+        + """
+const locked = node({ 'aria-label': '이전' }, { disabled: true })
+const labelled = node({}, { disabled: true, querySelector: () => ({ textContent: ' 보관 실행 ' }) })
+const freed = node({}, { disabled: false })
+const plain = node({}, { disabled: false })
+const hosts = [
+  hostOf(locked, {}),
+  hostOf(labelled, {}),
+  hostOf(freed, { tabindex: '0', 'aria-label': '옛 이름' }),
+  hostOf(plain, {}),
+]
+const doc = docOf(hosts, hosts[2])
+syncLockedTips(doc)
+process.stdout.write(JSON.stringify({
+  attrs: hosts.map((host) => host.attrs),
+  freedFocus: freed.focused,
+}))
+"""
+    )
+    assert out["attrs"] == [
+        {"tabindex": "0", "aria-label": "이전"},
+        {"tabindex": "0", "aria-label": "보관 실행"},
+        {},
+        {},
+    ]
+    assert out["freedFocus"] == 1
+
+
+def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> None:
+    """처리기는 문서에 한 벌이고(알림 칸이 다시 서도 늘지 않는다), Tab 을 누른 순간 맞추어 회차 없이
+    열린 팝오버 안 단추도 들고 평소에는 값이 들지 않는다."""
+    shell = JS[JS.index("function installFocusShell(") :]
+    shell = shell[: shell.index("\n}\n")]
+    assert "if (window.__capaFocusShell) return" in shell
+    assert "event.key === 'Tab'" in shell and "syncLockedTips(document)" in shell
+    assert "installFocusShell()" in JS[JS.index("export default function") :]
+    assert "MutationObserver" not in shell

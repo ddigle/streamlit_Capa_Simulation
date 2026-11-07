@@ -34,6 +34,9 @@
 //   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
 //   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
 //   복사에 넣지 않고 표 이름 · 행 수만 적는다(최대 2000행 — 표는 「CSV 내려받기」 가 맡는다).
+// - 초점 껍데기(`installFocusShell`): 앱 전체 꼴이라 화면마다 고치지 않고 이 칸이 문서에 처리기를 둔다. 회차를 돌리지 않는다.
+//    꺼진 단추는 Tab 이 건너뛰므로 감싼 풍선 칸(`stTooltipHoverTarget`)이 탭 자리를 맡는다(설계 규칙 UI-INP-07). 상시 훑지 않고 Tab
+//   키를 누른 순간 한 번 맞춘다 — 회차 없이 열리는 팝오버 안 단추까지 든다.
 // `// <alerts-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_alert_center_assets.py`).
 const HOST_ID = 'capa-alert-host'
 const APP_ROOT = '[data-testid="stApp"]'
@@ -222,6 +225,32 @@ function copyText(pairs) {
 }
 // </alerts-rows>
 
+// <alerts-focus>
+const TIP_HOST = '[data-testid="stTooltipHoverTarget"]'
+const BUTTON_LABEL = '[data-testid="stMarkdownContainer"]'
+
+function buttonName(button) {
+  const label = button.getAttribute('aria-label') || (button.querySelector(BUTTON_LABEL) || button).textContent
+  return String(label || '').trim()
+}
+
+// 칸의 `tabindex` 는 Streamlit 이 쓰지 않는 자리라 이 함수가 단 것만 있다 — 단추가 풀린 칸은 도로 걷어 탭 자리가 둘이 되지 않게 한다.
+function syncLockedTips(doc) {
+  for (const host of doc.querySelectorAll(TIP_HOST)) {
+    const locked = host.querySelector('button:disabled')
+    if (locked) {
+      host.setAttribute('tabindex', '0')
+      host.setAttribute('aria-label', buttonName(locked))
+    } else if (host.hasAttribute('tabindex')) {
+      const live = host.querySelector('button')
+      if (live && doc.activeElement === host) live.focus({ preventScroll: true })
+      host.removeAttribute('tabindex')
+      host.removeAttribute('aria-label')
+    }
+  }
+}
+// </alerts-focus>
+
 // <alerts-storage>
 function storageGet(key, fallback) {
   try {
@@ -293,6 +322,18 @@ function reducedMotion() {
   } catch (error) {
     return false
   }
+}
+
+function installFocusShell() {
+  if (window.__capaFocusShell) return
+  window.__capaFocusShell = true
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Tab') syncLockedTips(document)
+    },
+    true,
+  )
 }
 
 function createCenter(data) {
@@ -1303,6 +1344,7 @@ function closePanel(C, refocus) {
 export default function (component) {
   const { data } = component
   if (!data) return undefined
+  installFocusShell()
   let C = window.__capaAlertCenter
   if (!C || !C.host || !C.host.isConnected) {
     C = createCenter(data)

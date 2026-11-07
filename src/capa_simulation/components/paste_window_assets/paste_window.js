@@ -8,7 +8,8 @@
 //
 // 잠금: 글 칸이 비었거나 전체 교체 확인 체크가 꺼져 있으면 「적용」 을 잠그고 까닭 풍선을 단다. 판정이 브라우저
 // 안에서 끝나는 잠금이다 — 서버는 눌린 회차에 같은 조건을 다시 보아 알림창으로 거절한다(자바스크립트가 못 돌아도
-// 쓰이지 않는다).
+// 쓰이지 않는다). 꺼진 단추는 Tab 이 건너뛰므로 잠긴 동안은 감싼 칸이 탭 자리를 맡아 키보드로도 풍선이 뜬다(설계 규칙
+// UI-INP-07).
 
 // <paste-window-core>
 const MIN_WIDTH = 360
@@ -218,6 +219,12 @@ function install(host, data) {
     if (center && typeof center.scan === 'function') center.scan()
   }
 
+  const unlock = (holder) => {
+    holder.removeAttribute(LOCK_ATTRIBUTE)
+    holder.removeAttribute('tabindex')
+    holder.removeAttribute('aria-label')
+  }
+
   const judge = () => {
     if (!data.lock) return
     const area = dialog.querySelector(TEXT_SELECTOR + ' textarea')
@@ -229,9 +236,11 @@ function install(host, data) {
     if (button.disabled !== Boolean(why)) button.disabled = Boolean(why)
     if (why) {
       holder.setAttribute(LOCK_ATTRIBUTE, why)
+      holder.setAttribute('tabindex', '0')
+      holder.setAttribute('aria-label', why)
       const room = tipRoom(box.getBoundingClientRect().right, holder.getBoundingClientRect().left)
       holder.style.setProperty(TIP_ROOM_VARIABLE, room + 'px')
-    } else holder.removeAttribute(LOCK_ATTRIBUTE)
+    } else unlock(holder)
   }
   dialog.addEventListener('input', judge, true)
   dialog.addEventListener('change', judge, true)
@@ -258,7 +267,7 @@ function install(host, data) {
     win.removeEventListener('resize', judge)
     handles.forEach((handle) => handle.remove())
     const holder = dialog.querySelector(APPLY_SELECTOR)
-    if (holder) holder.removeAttribute(LOCK_ATTRIBUTE)
+    if (holder) unlock(holder)
     root.removeAttribute('data-capa-paste-dragging')
     unpaint()
   }
