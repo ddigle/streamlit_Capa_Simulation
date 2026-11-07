@@ -332,6 +332,17 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     assert back and back[0]["query_params"] == {"process": DYNAMIC_PROCESS}
 
 
+def test_the_header_keeps_only_the_identity_sentence(dynamic_databases: tuple[Path, Path]) -> None:
+    """사용법 · 저장 규칙은 머리에 늘 두지 않는다 — 모드 전환 풍선과 「이 세션만」 표지 풍선이
+    말한다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    app = _opened(dynamic_databases)
+    captions = _captions(app)
+
+    assert "기존 제품 확보율이 언제부터 얼마나 떨어지는가." in captions
+    assert "언제 할지 찾습니다" not in captions and "그때그때 보기" not in captions
+    assert "N대 × D일 개조" in str(app.get("button_group")[0].proto.help)
+
+
 def test_the_process_param_is_taken_once_and_the_theme_stays(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
