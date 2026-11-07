@@ -291,7 +291,7 @@ def test_the_lock_reason_stands_below_the_button() -> None:
     (body,) = [
         body
         for selector, body in _css_rules()
-        if selector == "[data-capa-paste-locked]:hover::after"
+        if selector.startswith("[data-capa-paste-locked]:hover::after")
     ]
     assert "top: calc(100% + 6px)" in body
     assert "bottom:" not in body
@@ -304,13 +304,32 @@ def test_the_lock_reason_wraps_inside_the_room_the_window_leaves() -> None:
     (body,) = [
         body
         for selector, body in _css_rules()
-        if selector == "[data-capa-paste-locked]:hover::after"
+        if selector.startswith("[data-capa-paste-locked]:hover::after")
     ]
     assert "white-space: normal" in body
     assert "nowrap" not in body
     assert "width: max-content" in body
     assert re.search(r"max-width:\s*var\(--capa-paste-tip-room,\s*\S+\)", body), body
     assert "--capa-paste-tip-room" in WINDOW_JS
+
+
+def test_the_lock_reason_opens_for_the_keyboard_too() -> None:
+    """꺼진 단추는 Tab 이 건너뛴다 — 잠긴 동안 감싼 칸이 탭 자리를 맡고 풍선이 초점으로도 선다(설계
+    규칙 UI-INP-07). 마우스로 눌러도 칸이 초점을 받으므로 `:focus-visible` 이라야 떠난 뒤 남지
+    않는다."""
+    (selector,) = [
+        selector
+        for selector, _ in _css_rules()
+        if selector.startswith("[data-capa-paste-locked]:hover::after")
+    ]
+    assert "[data-capa-paste-locked]:focus-visible::after" in selector
+    assert "[data-capa-paste-locked]:focus::after" not in WINDOW_CSS
+    (ring,) = [
+        body
+        for selector, body in _css_rules()
+        if selector == "[data-capa-paste-locked]:focus-visible"
+    ]
+    assert "outline: 2px solid" in ring
 
 
 def test_the_opening_note_goes_up_once_per_opening() -> None:
@@ -469,7 +488,7 @@ const root = {
 // 스크롤되면 화면 자리는 그만큼 올라간다.
 const textBox = { getBoundingClientRect: () => rect((narrow() ? 200 : 120) - input.scroll, 300) }
 const confirmBox = { getBoundingClientRect: () => rect((narrow() ? 510 : 430) - input.scroll, 30) }
-const area = { value: '' }
+const area = { value: input.text || '' }
 const applyButton = { disabled: false }
 const holder = {
   querySelector: () => applyButton,
@@ -527,19 +546,23 @@ process.stdout.write(JSON.stringify({
   text: styles['--capa-paste-text-h'],
   width: styles['--capa-paste-w'],
   room: holderStyles['--capa-paste-tip-room'],
-  locked: attrs['data-capa-paste-locked'],
+  locked: attrs['data-capa-paste-locked'] ?? null,
+  tab: attrs.tabindex ?? null,
+  label: attrs['aria-label'] ?? null,
   sizedWithText: root.sizedWithText,
 }))
 """
 
 
 def _run_install(
-    *, width: int, confirm: bool = False, scroll: int = 0, in_box: bool = False
+    *, width: int, confirm: bool = False, scroll: int = 0, in_box: bool = False, text: str = ""
 ) -> Any:
     body = WINDOW_JS[: WINDOW_JS.index("export default function")]
     return run_js_json(
         body + _INSTALL_RUNNER,
-        stdin=json.dumps({"width": width, "confirm": confirm, "scroll": scroll, "inBox": in_box}),
+        stdin=json.dumps(
+            {"width": width, "confirm": confirm, "scroll": scroll, "inBox": in_box, "text": text}
+        ),
         what="창 크기 install 시험",
     )
 
@@ -584,6 +607,17 @@ def test_the_install_gives_the_lock_tip_its_room() -> None:
     out = _run_install(width=360)
     assert out["locked"] == "E"
     assert out["room"] == "182px"
+
+
+def test_a_locked_apply_takes_the_tab_stop_and_gives_it_back() -> None:
+    """잠긴 회차에는 칸이 탭 자리와 이름(까닭)을 맡고, 풀리면 걷어 탭 자리가 둘이 되지 않는다."""
+    locked = _run_install(width=360)
+    assert locked["tab"] == "0"
+    assert locked["label"] == "E"
+    freed = _run_install(width=360, text="a\t1")
+    assert freed["locked"] is None
+    assert freed["tab"] is None
+    assert freed["label"] is None
 
 
 def test_a_stored_size_that_cannot_be_read_is_no_size() -> None:

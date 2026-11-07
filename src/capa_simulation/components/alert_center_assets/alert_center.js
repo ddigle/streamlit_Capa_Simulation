@@ -34,6 +34,12 @@
 //   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
 //   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
 //   복사에 넣지 않고 표 이름 · 행 수만 적는다(최대 2000행 — 표는 「CSV 내려받기」 가 맡는다).
+// - 초점 껍데기(`installFocusShell`): 앱 전체 꼴이라 화면마다 고치지 않고 이 칸이 문서에 처리기를 둔다. 회차를 돌리지 않는다.
+//   ① 꺼진 단추는 Tab 이 건너뛰므로 감싼 풍선 칸(`stTooltipHoverTarget`)이 탭 자리를 맡는다(설계 규칙 UI-INP-07). 상시 훑지 않고 Tab
+//   키를 누른 순간 한 번 맞추고, 열린 팝오버 단추에서는 본문으로 들여보낸다 — 회차 없이 열리는 팝오버 안 단추까지 든다. ② Streamlit 풍선은
+//   초점이 칸 안에 있으면 마우스가 떠나도 닫지 않아 마우스로 누른 단추 · 대화상자를 닫은 뒤 돌아온 초점의 풍선이 남는다 — 키보드 초점이
+//   아니면 마우스가 떠날 때 · 마우스 없이 초점이 왔을 때 닫는다. ③ 대화상자의 Esc 는 그 안의 키 사건으로만
+//   듣는데 고른 탭이 회차 중 `tabindex` 를 잠깐 잃으면 초점이 문서로 빠진다 — 열린 대화상자 안으로 되돌린다.
 // `// <alerts-…>` 구획은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다(`tests/test_alert_center_assets.py`).
 const HOST_ID = 'capa-alert-host'
 const APP_ROOT = '[data-testid="stApp"]'
@@ -57,6 +63,8 @@ const PENDING_TAB_MS = 20000
 // 「복사했습니다」 가 서 있는 시간.
 const COPIED_MS = 1800
 const TAB_BUTTON = '[data-testid="stTabs"] [role="tab"]'
+// 빠진 초점을 되돌리기 전에 기다리는 시간 — 고른 탭은 회차 중 `tabindex` 를 잠깐 잃어 그동안 초점을 받지 못한다(되찾기까지 50ms 안쪽).
+const FOCUS_RETURN_MS = 120
 
 // <alerts-rows>
 // 사건 알림의 「같은 알림」 열쇠 — 코드 + 짧은 글.
@@ -222,6 +230,70 @@ function copyText(pairs) {
 }
 // </alerts-rows>
 
+// <alerts-focus>
+const TIP_HOST = '[data-testid="stTooltipHoverTarget"]'
+const DIALOG = '[role="dialog"]'
+const BUTTON_LABEL = '[data-testid="stMarkdownContainer"]'
+const POPOVER_BUTTON = 'stPopoverButton'
+const POPOVER_BODY = '[data-testid="stPopoverBody"]'
+const TABBABLE = 'button:enabled, input:enabled, textarea:enabled, a[href], [tabindex="0"]'
+
+function buttonName(button) {
+  const label = button.getAttribute('aria-label') || (button.querySelector(BUTTON_LABEL) || button).textContent
+  return String(label || '').trim()
+}
+
+// 칸의 `tabindex` 는 Streamlit 이 쓰지 않는 자리라 이 함수가 단 것만 있다 — 단추가 풀린 칸은 도로 걷어 탭 자리가 둘이 되지 않게 한다.
+function syncLockedTips(doc) {
+  for (const host of doc.querySelectorAll(TIP_HOST)) {
+    const locked = host.querySelector('button:disabled')
+    if (locked) {
+      host.setAttribute('tabindex', '0')
+      host.setAttribute('aria-label', buttonName(locked))
+    } else if (host.hasAttribute('tabindex')) {
+      const live = host.querySelector('button')
+      if (live && doc.activeElement === host) live.focus({ preventScroll: true })
+      host.removeAttribute('tabindex')
+      host.removeAttribute('aria-label')
+    }
+  }
+}
+
+// Streamlit 팝오버 본문은 문서 끝 포털이라 Tab 이 단추 다음 칸으로 건너뛴다 — 열린 단추에서 Tab 을 누르면 본문 첫 탭 자리로 들어간다.
+function enterOpenPopover(doc, event) {
+  const active = doc.activeElement
+  if (event.shiftKey || !active || active.getAttribute('data-testid') !== POPOVER_BUTTON) return false
+  if (active.getAttribute('aria-expanded') !== 'true') return false
+  const body = doc.querySelector(POPOVER_BODY)
+  for (const stop of body ? body.querySelectorAll(TABBABLE) : []) {
+    // 제목의 숨은 고리처럼 초점을 받지 못하는 칸은 건너뛴다.
+    stop.focus({ preventScroll: true })
+    if (doc.activeElement !== stop) continue
+    event.preventDefault()
+    return true
+  }
+  return false
+}
+
+// 풍선을 닫는 길은 칸의 초점 나감뿐이다 — 초점은 옮기지 않고 그 사건만 칸에 보낸다.
+function releaseHeldTip(doc, event) {
+  const held = doc.activeElement
+  const host = held && held.closest ? held.closest(TIP_HOST) : null
+  if (!host || !host.contains(event.target) || host.contains(event.relatedTarget)) return false
+  if (held.matches(':focus-visible')) return false
+  held.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
+  return true
+}
+
+function returnDialogFocus(doc, dialog, left) {
+  const active = doc.activeElement
+  if (!dialog.isConnected || (active && active !== doc.body)) return false
+  if (left.isConnected) left.focus({ preventScroll: true })
+  if (!doc.activeElement || doc.activeElement === doc.body) dialog.focus({ preventScroll: true })
+  return true
+}
+// </alerts-focus>
+
 // <alerts-storage>
 function storageGet(key, fallback) {
   try {
@@ -293,6 +365,35 @@ function reducedMotion() {
   } catch (error) {
     return false
   }
+}
+
+function installFocusShell() {
+  if (window.__capaFocusShell) return
+  window.__capaFocusShell = true
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Tab') return
+      syncLockedTips(document)
+      enterOpenPopover(document, event)
+    },
+    true,
+  )
+  document.addEventListener('pointerout', (event) => releaseHeldTip(document, event), true)
+  // 대화상자를 마우스로 닫으면 초점이 여는 단추로 돌아와 마우스 없이 풍선이 선다 — React 가 연 뒤(거품 단계) 닫는다.
+  document.addEventListener('focusin', (event) => {
+    const host = event.target.closest ? event.target.closest(TIP_HOST) : null
+    if (host && !host.matches(':hover')) releaseHeldTip(document, event)
+  })
+  document.addEventListener(
+    'focusout',
+    (event) => {
+      const left = event.target
+      const dialog = !event.relatedTarget && left.closest ? left.closest(DIALOG) : null
+      if (dialog) setTimeout(() => returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS)
+    },
+    true,
+  )
 }
 
 function createCenter(data) {
@@ -1303,6 +1404,7 @@ function closePanel(C, refocus) {
 export default function (component) {
   const { data } = component
   if (!data) return undefined
+  installFocusShell()
   let C = window.__capaAlertCenter
   if (!C || !C.host || !C.host.isConnected) {
     C = createCenter(data)

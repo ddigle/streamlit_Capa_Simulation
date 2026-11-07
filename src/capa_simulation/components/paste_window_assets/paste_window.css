@@ -124,7 +124,14 @@ html[data-capa-paste-dragging] {
   overflow: visible !important;
 }
 
-[data-capa-paste-locked]:hover::after {
+[data-capa-paste-locked]:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+[data-capa-paste-locked]:hover::after,
+[data-capa-paste-locked]:focus-visible::after {
   content: attr(data-capa-paste-locked);
   position: absolute;
   left: 0;

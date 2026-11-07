@@ -191,7 +191,7 @@ console.log(JSON.stringify([
     assert "t.log_table_value_clipped" in pairs
 
 
-_SECTIONS = ("alerts-rows", "alerts-storage")
+_SECTIONS = ("alerts-rows", "alerts-focus", "alerts-storage")
 
 
 def _sections() -> str:
@@ -510,3 +510,194 @@ def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_
     persist = persist[: persist.index("\n}\n")]
     assert persist.index("storage.states") < persist.index("storage.log")
     assert "withoutOldestTables(saving)" in persist
+
+
+_FOCUS_FAKES = """
+const node = (attrs, extra) => ({
+  attrs: { ...attrs },
+  focused: 0,
+  hasAttribute(name) { return name in this.attrs },
+  getAttribute(name) { return name in this.attrs ? this.attrs[name] : null },
+  setAttribute(name, value) { this.attrs[name] = value },
+  removeAttribute(name) { delete this.attrs[name] },
+  focus() { this.focused += 1 },
+  ...extra,
+})
+const hostOf = (button, attrs) => node(attrs, {
+  querySelector: (selector) => {
+    if (selector === 'button:disabled') return button && button.disabled ? button : null
+    return button
+  },
+})
+const docOf = (hosts, active) => ({
+  querySelectorAll: () => hosts,
+  activeElement: active,
+  body: { body: true },
+})
+"""
+
+
+def test_a_locked_button_lends_its_tab_stop_to_the_tip_host() -> None:
+    """꺼진 단추를 감싼 칸이 탭 자리를 맡고 이름을 단다 — 단추가 풀리면 걷어 탭 자리가 둘이 되지
+    않는다. 그 칸이 초점을 쥐고 있었으면 단추로 넘겨 Tab 이 제자리에서 잇는다. 잠긴 단추가 없던
+    칸은 건드리지 않는다."""
+    out = _node(
+        _FOCUS_FAKES
+        + """
+const locked = node({ 'aria-label': '이전' }, { disabled: true })
+const labelled = node({}, { disabled: true, querySelector: () => ({ textContent: ' 보관 실행 ' }) })
+const freed = node({}, { disabled: false })
+const plain = node({}, { disabled: false })
+const hosts = [
+  hostOf(locked, {}),
+  hostOf(labelled, {}),
+  hostOf(freed, { tabindex: '0', 'aria-label': '옛 이름' }),
+  hostOf(plain, {}),
+]
+const doc = docOf(hosts, hosts[2])
+syncLockedTips(doc)
+process.stdout.write(JSON.stringify({
+  attrs: hosts.map((host) => host.attrs),
+  freedFocus: freed.focused,
+}))
+"""
+    )
+    assert out["attrs"] == [
+        {"tabindex": "0", "aria-label": "이전"},
+        {"tabindex": "0", "aria-label": "보관 실행"},
+        {},
+        {},
+    ]
+    assert out["freedFocus"] == 1
+
+
+def test_tab_from_an_open_popover_button_steps_into_its_body() -> None:
+    """팝오버 본문은 문서 끝 포털이라 Tab 이 단추 다음 칸으로 건너뛴다 — 열린 단추에서 Tab 을 누르면
+    본문 첫 탭 자리(꺼진 단추만 있으면 감싼 칸)로 들어간다. 제목의 숨은 고리처럼 초점을 받지 못하는
+    칸은 건너뛴다. 닫힌 단추 · Shift+Tab · 다른 칸 · 탭 자리가 없는 본문은 브라우저에 맡긴다."""
+    out = _node(
+        """
+const run = ({ testid = 'stPopoverButton', expanded = 'true', shift = false, first = true }) => {
+  const active = { getAttribute: (name) => (name === 'data-testid' ? testid : expanded) }
+  const doc = { activeElement: active }
+  const hidden = { focus() {} }
+  const stop = { focused: 0, focus() { this.focused += 1; doc.activeElement = this } }
+  const body = { querySelectorAll: () => (first ? [hidden, stop] : [hidden]) }
+  doc.querySelector = () => body
+  let prevented = 0
+  const done = enterOpenPopover(doc, { shiftKey: shift, preventDefault: () => { prevented += 1 } })
+  return [done, stop.focused, prevented]
+}
+process.stdout.write(JSON.stringify({
+  open: run({}),
+  closed: run({ expanded: 'false' }),
+  back: run({ shift: true }),
+  other: run({ testid: 'stBaseButton-secondary' }),
+  empty: run({ first: false }),
+}))
+"""
+    )
+    assert out["open"] == [True, 1, 1]
+    for case in ("closed", "back", "other", "empty"):
+        assert out[case] == [False, 0, 0]
+
+
+def test_a_tip_held_by_a_mouse_press_closes_when_the_pointer_leaves() -> None:
+    """마우스로 누른 단추는 초점을 쥔 채 남고 Streamlit 풍선은 초점이 든 동안 닫지 않는다 — 마우스가
+    칸을 떠날 때 칸에 초점 나감을 보낸다. 키보드 초점의 풍선은 그대로 두고, 칸 안에서 옮겨 다니거나
+    다른 칸을 떠난 마우스에는 움직이지 않는다."""
+    out = _node(
+        """
+globalThis.FocusEvent = class {
+  constructor(type, init) {
+    this.type = type
+    this.bubbles = init.bubbles
+    this.relatedTarget = init.relatedTarget
+  }
+}
+const run = ({ keyboard = false, target = 'inside', related = 'outside', inTip = true }) => {
+  const sent = []
+  const host = { contains: (other) => other === 'inside' || other === 'held' }
+  const held = {
+    closest: () => (inTip ? host : null),
+    matches: () => keyboard,
+    dispatchEvent: (event) => sent.push([event.type, event.bubbles, event.relatedTarget]),
+  }
+  const done = releaseHeldTip({ activeElement: held }, { target, relatedTarget: related })
+  return [done, sent]
+}
+process.stdout.write(JSON.stringify({
+  mouse: run({}),
+  keyboard: run({ keyboard: true }),
+  within: run({ related: 'inside' }),
+  elsewhere: run({ target: 'outside' }),
+  noTip: run({ inTip: false }),
+  nothing: releaseHeldTip({ activeElement: null }, { target: 'inside', relatedTarget: null }),
+}))
+"""
+    )
+    assert out["mouse"] == [True, [["focusout", True, None]]]
+    assert out["keyboard"] == [False, []]
+    assert out["within"] == [False, []]
+    assert out["elsewhere"] == [False, []]
+    assert out["noTip"] == [False, []]
+    assert out["nothing"] is False
+
+
+def test_focus_that_falls_out_of_an_open_dialog_comes_back() -> None:
+    """대화상자의 Esc 는 그 안의 키 사건으로만 듣는다 — 초점이 문서로 빠지면 나간 칸으로, 그 칸이
+    없거나 초점을 받지 못하면 대화상자로 되돌린다. 초점이 이미 다른 곳에 갔거나 대화상자가 닫혔으면
+    두고 본다."""
+    out = _node(
+        _FOCUS_FAKES
+        + """
+const run = ({ open = true, leftAlive = true, elsewhere = false }) => {
+  const doc = docOf([], null)
+  doc.activeElement = elsewhere ? { other: true } : doc.body
+  const dialog = node({}, { isConnected: open })
+  const left = node({}, { isConnected: leftAlive })
+  left.focus = () => { left.focused += 1; doc.activeElement = left }
+  dialog.focus = () => { dialog.focused += 1; doc.activeElement = dialog }
+  return [returnDialogFocus(doc, dialog, left), left.focused, dialog.focused]
+}
+const stuck = () => {
+  const doc = docOf([], null)
+  doc.activeElement = doc.body
+  const dialog = node({}, { isConnected: true })
+  const left = node({}, { isConnected: true })
+  return [returnDialogFocus(doc, dialog, left), left.focused, dialog.focused]
+}
+process.stdout.write(JSON.stringify({
+  back: run({}),
+  gone: run({ leftAlive: false }),
+  elsewhere: run({ elsewhere: true }),
+  closed: run({ open: false }),
+  unfocusable: stuck(),
+}))
+"""
+    )
+    assert out["back"] == [True, 1, 0]
+    assert out["gone"] == [True, 0, 1]
+    assert out["elsewhere"] == [False, 0, 0]
+    assert out["closed"] == [False, 0, 0]
+    # 나간 칸이 초점을 받지 못하는 꼴(꺼진 단추)이면 대화상자가 받는다.
+    assert out["unfocusable"] == [True, 1, 1]
+
+
+def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> None:
+    """처리기는 문서에 한 벌이고(알림 칸이 다시 서도 늘지 않는다), 세 일은 사건 자리에서 묶인다 —
+    Tab 을 누른 순간 맞추어 회차 없이 열린 팝오버 안 단추도 들고 평소에는 값이 들지 않는다."""
+    shell = JS[JS.index("function installFocusShell(") :]
+    shell = shell[: shell.index("\n}\n")]
+    assert "if (window.__capaFocusShell) return" in shell
+    assert "event.key !== 'Tab'" in shell and "syncLockedTips(document)" in shell
+    assert "enterOpenPopover(document, event)" in shell
+    assert "'pointerout'" in shell and "releaseHeldTip(document, event)" in shell
+    # 돌아온 초점의 풍선은 React 가 연 뒤에 닫는다 — 거품 단계이고, 마우스가 위에 있으면 두고 본다.
+    arrived = shell[shell.index("'focusin'") : shell.index("'focusout'")]
+    assert "!host.matches(':hover')" in arrived
+    assert "\n  })\n" in arrived, "포착 단계(세 번째 인자 true)가 아니라 거품 단계다"
+    assert "'focusout'" in shell and "!event.relatedTarget" in shell
+    assert "returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS" in shell
+    assert "installFocusShell()" in JS[JS.index("export default function") :]
+    assert "MutationObserver" not in shell

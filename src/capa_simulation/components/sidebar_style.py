@@ -37,6 +37,9 @@ _DIALOG_BOXES = f'[class*="st-key-{DIALOG_BOX_PREFIX}"]'
 # Space 현황 「Space 도면」 — `sidebar_status.PAGE_BOX_PREFIX`).
 _PAGE_BOXES = f'[class*="st-key-{PAGE_BOX_PREFIX}"]'
 
+# 단추 풍선을 감싼 Streamlit 칸.
+_TIP_HOST = '[data-testid="stTooltipHoverTarget"]'
+
 # 사이드바 세로 블록의 칸 사이.
 _SIDEBAR_BLOCK_GAP = "0.42rem"
 # 조건 패널(`CONDITIONS_BOX_KEY`)과 그 안의 필드. 패널 안 줄 사이는 칸 사이보다 한 뼘 넓고, 한 필드
@@ -408,6 +411,15 @@ def build_sidebar_stylesheet(
             outline-offset: 2px;
         }}
 {active_nav_style}
+"""
+        # 꺼진 단추를 감싼 풍선 칸의 초점 윤곽. 탭 자리는 알림 칸 JS 가 단다(`syncLockedTips` — 설계
+        # 규칙 UI-INP-07). Streamlit 의 초점 그림은 단추에만 있어 칸에는 이 규칙이 윤곽이다.
+        f"""
+        {_TIP_HOST}:focus-visible {{
+            outline: 2px solid {tokens.ACCENT};
+            outline-offset: 2px;
+            border-radius: 2px;
+        }}
 """
         # 그룹 이름을 옆 상자의 제목(h4·1rem·700)과 같은 선에 세운다. 접히는 제목(조건
         # 카드·`Support`)은 한글 낱말의 음절 사이가 아니라 띄어쓰기에서 접는다 — 좁은 사이드바에서
