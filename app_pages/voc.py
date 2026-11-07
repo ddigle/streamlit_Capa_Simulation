@@ -130,6 +130,15 @@ def _refuse_gone_press(message: str, kept_reply: str = "") -> None:
         st.session_state[KEPT_REPLY_KEY] = kept_reply
 
 
+def _post_is_gone(database_path: str, post_id: str) -> bool:
+    """글이 지금 목록에 없는가. 목록을 읽지 못하면 있다고 본다 — 거절은 그 글 상자 칸이 받는다."""
+    try:
+        posts = get_scenario_repository(database_path).list_voc_posts()
+    except BOOTSTRAP_ERRORS:
+        return False
+    return post_id not in set(posts["post_id"].astype(str))
+
+
 def _timestamp(value: object) -> str:
     """DuckDB 가 돌려준 시각 한 칸. 결측이면 대시 하나로 둔다."""
     moment = pd.Timestamp(cast(Any, value))
@@ -224,7 +233,12 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
         _refuse_gone_press(bootstrap_error_message(exc), body)
         return
     except BOOTSTRAP_ERRORS as exc:
-        queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
+        # 저장소는 입력(작성자 빈칸 등)을 글 확인보다 먼저 본다. 글이 지워졌으면 그 거절을 담는 칸이
+        # 다시 그리지 않는 글 상자 안이라 아무 말 없이 적은 답변까지 사라진다.
+        if _post_is_gone(database_path, post_id):
+            _refuse_gone_press(bootstrap_error_message(VocPostGoneError()), body)
+        else:
+            queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
         return
     if not written:
         st.session_state[reply_key] = ""

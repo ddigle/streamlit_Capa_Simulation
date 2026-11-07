@@ -612,6 +612,31 @@ def test_a_reply_to_a_post_deleted_by_another_session_is_refused_and_kept(
     assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
 
 
+@pytest.mark.parametrize(
+    ("typed", "kept"), [("지워진 글에 적은 답변", ["지워진 글에 적은 답변"]), ("  ", [])]
+)
+def test_a_reply_refused_for_its_input_on_a_deleted_post_still_says_the_post_is_gone(
+    tmp_path: Path, typed: str, kept: list[str]
+) -> None:
+    """저장소는 입력을 글 확인보다 먼저 본다 — 작성자가 빈 세션의 거절이 지운 글 상자 안 칸에 담겨
+    어디에도 그려지지 않았고 적은 답변까지 사라졌다(2026-11-08 미검증 경로 점검 u2-05)."""
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.text_area(key=f"voc_reply_body_{post_id}").input(typed)
+    DuckDBScenarioRepository(database_path).remove_voc_post(post_id)
+
+    _reply_button(app, post_id).click().run()
+
+    assert not app.exception
+    assert not app.error, [message.value for message in app.error]
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
+        ("그 사이 지운 글입니다. 답변·답변 완료 표시는 반영하지 않았습니다.", "FL-03")
+    ]
+    assert [block.value for block in app.code] == kept
+    assert DuckDBScenarioRepository(database_path).list_voc_replies().empty
+
+
 def test_resolving_a_post_deleted_by_another_session_is_refused(tmp_path: Path) -> None:
     """다른 세션이 지운 글의 「답변 완료로 표시」는 알림 없이 글만 사라지지 않고 거절을 알린다."""
     database_path = tmp_path / "scenario.duckdb"
