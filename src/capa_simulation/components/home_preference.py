@@ -324,6 +324,8 @@ KEY_PROCESS_FIELD_KEY = "home_key_process_field"
 KEY_PROCESS_FIELD_LABEL = "주요공정 히트맵"
 # `grid_view` 는 사이드바 `Space 현황` 링크 아이콘과 겹쳐 데이터 묶음을 뜻하는 `dataset` 이다.
 KEY_PROCESS_ICON = ":material/dataset:"
+# 프리셋이 하나도 없어 잠긴 칸의 까닭 풍선.
+KEY_PROCESS_LOCKED_HELP = "HOME 설정 → 공지 · 표시 탭에서 프리셋을 먼저 만드세요."
 KEY_PROCESS_EDIT_TARGET_KEY = "home_key_process_preset_edit"
 NEW_KEY_PROCESS_PRESET = "＋ 새 프리셋"
 # 「고칠 프리셋」 밑 값 줄 — 지금 기본(맨 앞) 프리셋 이름. 「기본」 의 뜻은 풍선이다.
@@ -2069,7 +2071,7 @@ def render_key_process_field(
     B/N 판정 대상(공정 필터)과 **따로** 서는 줄이다. 공정 필터는 판정에 넣을 공정이고, 이것은
     히트맵이 **보여 줄** 행이다. 고른 값은 이 세션의 보는 조건이라 공용 프로필에 쓰지 않는다 —
     프리셋 자체만 공용이다. 아직 고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다.
-    프리셋이 없으면 칸을 잠그고 어디서 만드는지 이름 줄에 적는다. 부르는 쪽이 페이지 칸 안으로
+    프리셋이 없으면 칸을 잠그고 어디서 만드는지는 까닭 풍선이 말한다. 부르는 쪽이 페이지 칸 안으로
     들어간 뒤에 부른다.
     """
     names = list(profile.preset_names)
@@ -2080,7 +2082,7 @@ def render_key_process_field(
             slug="key_process",
             key=KEY_PROCESS_FIELD_KEY,
             icon=KEY_PROCESS_ICON,
-            status="HOME 설정에서 만듭니다",
+            help=KEY_PROCESS_LOCKED_HELP,
             disabled=True,
         )
         return

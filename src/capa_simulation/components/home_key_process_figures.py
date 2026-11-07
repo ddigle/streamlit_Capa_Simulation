@@ -66,9 +66,10 @@ KEY_PROCESS_HOVER_TEMPLATE = (
     "<extra></extra>"
 )
 
-KEY_PROCESS_EMPTY_NOTICE = "HOME 설정 → 공지 · 표시 탭에서 주요 공정을 고르세요"
-# 프리셋에 공정은 있는데 이 시나리오·조회기간에 하나도 없을 때. 「고르세요」는 거짓 안내다.
-KEY_PROCESS_ABSENT_NOTICE = "고른 프리셋의 공정이 이 시나리오·조회기간에 없습니다"
+# 표 자리 표지 — 라벨 칸(260px) 한 줄에 든다. 만드는 자리는 잠긴 사이드바 칸 풍선 · Guide 가 말한다.
+KEY_PROCESS_EMPTY_NOTICE = "프리셋 없음"
+# 프리셋에 공정은 있는데 이 시나리오·조회기간에 하나도 없을 때의 빈 결과.
+KEY_PROCESS_ABSENT_NOTICE = "이 조건에 프리셋 공정이 없습니다"
 
 
 def _key_process_name_markup(value: object) -> str:

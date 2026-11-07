@@ -61,6 +61,7 @@ def condition_field(
     key: str,
     icon: str,
     status: str | None = None,
+    help: str | None = None,
     disabled: bool = False,
     pending: bool = False,
     on_click: Callable[..., None] | None = None,
@@ -72,7 +73,8 @@ def condition_field(
     값 칸은 한 줄을 넘지 않는다(`wrap=False`). 넘치면 말줄임하고, 마우스를 올리면 전체 글이
     풍선으로 보인다(`help` 를 주지 않은 한 줄 버튼의 Streamlit 동작). 팝업을 세션 키로 여는
     조건(시나리오·조회기간)은 `on_click` 으로, 버튼이 눌린 회차에만 여는 조건(공정 필터·히트맵)은
-    돌려준 값으로 연다.
+    돌려준 값으로 연다. `help` 는 잠긴 칸의 까닭 풍선이다(이름 줄에 길 안내를 적지 않는다 — 설계
+    규칙 UI-TXT-03).
     """
     box_key = f"{FIELD_KEY_PREFIX}{slug}{PENDING_SUFFIX if pending else ''}"
     with st.container(key=box_key, gap=None):
@@ -85,6 +87,7 @@ def condition_field(
             width="stretch",
             wrap=False,
             disabled=disabled,
+            help=help,
             on_click=on_click,
             args=tuple(args) if args is not None else None,
         )

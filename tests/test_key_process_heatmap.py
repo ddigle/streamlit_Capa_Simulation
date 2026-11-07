@@ -9,13 +9,17 @@ import plotly.graph_objects as go
 import pytest
 
 from capa_simulation.components.home_dimensions import (
+    DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     KEY_PROCESS_HEADER_HEIGHT_PX,
+    KEY_PROCESS_NAME_FONT_SIZE_PX,
     KEY_PROCESS_ROW_HEIGHT_PX,
 )
 from capa_simulation.components.home_figures import (
+    KEY_PROCESS_ABSENT_NOTICE,
     KEY_PROCESS_EMPTY_NOTICE,
     build_key_process_heatmap_figures,
 )
+from capa_simulation.components.plotly_layout import table_text_max_width_px
 from capa_simulation.design import tokens
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.process_detail_state import HOME_CELL_LINK_FIELDS, parse_home_cell_link
@@ -128,6 +132,14 @@ def test_an_empty_selection_still_draws_one_row_with_a_notice() -> None:
         for annotation in label_figure.layout.annotations
     )
     assert len(month_figure.data[1].base) == 0
+
+
+@pytest.mark.parametrize("notice", [KEY_PROCESS_EMPTY_NOTICE, KEY_PROCESS_ABSENT_NOTICE])
+def test_the_notices_fit_the_label_column(notice: str) -> None:
+    """표 자리 글은 라벨 칸 가운데에 선다 — 칸보다 길면 양끝이 잘려 말이 되지 않는다."""
+    width = table_text_max_width_px(notice, KEY_PROCESS_NAME_FONT_SIZE_PX)
+
+    assert width <= DASHBOARD_LABEL_COLUMN_WIDTH_PX
 
 
 def test_a_process_missing_from_the_scenario_is_skipped_without_failing() -> None:

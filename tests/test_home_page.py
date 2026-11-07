@@ -25,6 +25,10 @@ from capa_simulation.components.home_plan_detail_figures import (
     DETAIL_HEADER_FONT_SIZE_PX,
     DETAIL_VALUE_FONT_SIZE_PX,
 )
+from capa_simulation.components.home_preference import (
+    KEY_PROCESS_FIELD_KEY,
+    KEY_PROCESS_LOCKED_HELP,
+)
 from capa_simulation.components.home_rendering import (
     BOTTLENECK_MONTHS_CHART_KEY,
     HOME_CELL_CHART_KEYS,
@@ -577,6 +581,10 @@ def test_home_renders_summary_dashboard_from_the_builtin_seed(seeded_database: P
     ]
     assert list(app.number_input) == []
     assert [button.label for button in app.download_button] == []
+    # 프리셋이 없는 칸은 잠기고 만드는 자리는 풍선이 말한다 — 이름 줄에 길 안내를 적지 않는다.
+    assert app.button(key=KEY_PROCESS_FIELD_KEY).disabled
+    assert app.button(key=KEY_PROCESS_FIELD_KEY).help == KEY_PROCESS_LOCKED_HELP
+    assert "HOME 설정에서 만듭니다" not in [element.value for element in app.sidebar.caption]
 
     app = _open_settings(app)
 
