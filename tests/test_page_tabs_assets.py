@@ -186,7 +186,7 @@ def test_a_resting_tab_lends_its_close_room_to_the_name() -> None:
     tab = ".capa-tabs-item:not(.is-pinned):not(.is-active)"
     rest = re.search(re.escape(f"{tab} .capa-tabs-x") + r" \{([^}]*)\}", hover.group(1))
     assert rest is not None
-    assert "flex: 0 1000 1.5rem" in rest.group(1) and "min-width: 0" in rest.group(1)
+    assert "flex: 0 1000000 1.5rem" in rest.group(1) and "min-width: 0" in rest.group(1)
     assert "opacity: 0" in rest.group(1) and "pointer-events: none" in rest.group(1)
     live = re.search(
         re.escape(f"{tab}:focus-within .capa-tabs-x") + r" \{([^}]*)\}", hover.group(1)
