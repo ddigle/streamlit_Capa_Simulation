@@ -1,6 +1,6 @@
 # Purpose: 겹침 정책으로 월별 원본을 정해 16표를 합치고 무월 표 보충·결과 결손·월 축을 검증한다.
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Literal, NamedTuple
 
 import pandas as pd
@@ -253,13 +253,47 @@ def _uncovered_keys(
     return [(key, tuple(sorted(set(found[key]))), len(found[key])) for key in sorted(found)]
 
 
-def _gap_examples(gaps: list[tuple[tuple[str, ...], tuple[int, ...], int]]) -> str:
+def gap_examples(
+    gaps: Sequence[tuple[tuple[str, ...], tuple[int, ...], int]],
+    *,
+    escape: Callable[[str], str] = str,
+) -> str:
+    """결손 키 다섯까지(「키 · 키(달)」)와 나머지 개수. `escape` 는 키 글자에 씌운다 — 마크다운
+    자리에 싣는 쪽이 사람이 적은 키를 막는다."""
     shown = ", ".join(
-        f"{' · '.join(key)}({format_month_runs(months)})"
+        f"{' · '.join(escape(part) for part in key)}({format_month_runs(months)})"
         for key, months, _ in gaps[:GAP_EXAMPLE_LIMIT]
     )
     rest = len(gaps) - GAP_EXAMPLE_LIMIT
     return shown + (f" 외 {rest}개" if rest > 0 else "")
+
+
+class PlanKeyGap(NamedTuple):
+    """계획 제품 키가 월 없는 표 하나에 없는 결손 — 표 이름, 빠지는 계산, 키마다 (키, 달, 행 수)."""
+
+    table: str
+    effect: str
+    keys: tuple[tuple[tuple[str, ...], tuple[int, ...], int], ...]
+
+    @property
+    def rows(self) -> int:
+        """빠지는 계획 행 수."""
+        return sum(count for _, _, count in self.keys)
+
+
+def plan_key_gaps(tables: Mapping[str, pd.DataFrame]) -> tuple[PlanKeyGap, ...]:
+    """계획(생산수량 > 0) 제품이 `RQ_CHIP_QTY`·`RQ_CHIP_EQ` 에 없는 결손 — 그 계획이 부하량·Density
+    에서 멈추지 않고 빠진다(`merged_table_gaps` 경고의 재료)."""
+    plan = drop_unplanned_rows(tables["RQ_PKG_PLAN"])
+    found: list[PlanKeyGap] = []
+    for name, effect in (
+        ("RQ_CHIP_QTY", "부하량·소요대수"),
+        ("RQ_CHIP_EQ", "Density 환산(HOME)"),
+    ):
+        keys = _uncovered_keys(plan, PRODUCT_KEY_COLUMNS, tables[name])
+        if keys:
+            found.append(PlanKeyGap(name, effect, tuple(keys)))
+    return tuple(found)
 
 
 def merged_table_gaps(tables: Mapping[str, pd.DataFrame]) -> TableGaps:
@@ -282,22 +316,14 @@ def merged_table_gaps(tables: Mapping[str, pd.DataFrame]) -> TableGaps:
     if module_gaps:
         blocking.append(
             f"RQ_MODULE(모듈수)에 없는 공정 {len(module_gaps)}개 — RQ_UPEH 가 쓰는 공정이라 대당 "
-            f"Capa 계산이 멈춥니다: {_gap_examples(module_gaps)}. RQ_MODULE 은 앱에서 고칠 수 "
+            f"Capa 계산이 멈춥니다: {gap_examples(module_gaps)}. RQ_MODULE 은 앱에서 고칠 수 "
             "없어 이대로 저장하면 그 시나리오는 계산도 공식 지정도 할 수 없습니다. 이 공정의 "
             "모듈수를 가진 시나리오를 베이스나 덧붙일 쪽으로 골라 다시 머지하거나, 원천을 다시 "
             "등록하세요."
         )
-    warnings: list[str] = []
-    plan = drop_unplanned_rows(tables["RQ_PKG_PLAN"])
-    for name, effect in (
-        ("RQ_CHIP_QTY", "부하량·소요대수"),
-        ("RQ_CHIP_EQ", "Density 환산(HOME)"),
-    ):
-        gaps = _uncovered_keys(plan, PRODUCT_KEY_COLUMNS, tables[name])
-        if gaps:
-            rows = sum(count for _, _, count in gaps)
-            warnings.append(
-                f"{name}에 없는 제품 {len(gaps)}개 · 계획 {rows}행은 {effect}에서 빠집니다"
-                f"(계산은 멈추지 않습니다): {_gap_examples(gaps)}."
-            )
-    return TableGaps(tuple(blocking), tuple(warnings))
+    warnings = tuple(
+        f"{gap.table}에 없는 제품 {len(gap.keys)}개 · 계획 {gap.rows}행은 {gap.effect}에서 빠집니다"
+        f"(계산은 멈추지 않습니다): {gap_examples(gap.keys)}."
+        for gap in plan_key_gaps(tables)
+    )
+    return TableGaps(tuple(blocking), warnings)
