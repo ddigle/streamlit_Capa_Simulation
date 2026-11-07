@@ -76,6 +76,7 @@ from capa_simulation.components.shortening_board import (
 )
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
+    UNITS_CONTAINER,
     BaselineSaveContext,
     consume_baseline_write,
     load_baseline_options,
@@ -235,6 +236,9 @@ _MONTH_COLUMN_MIN_PX = 74
 # (해가 다르면 `YY.MM.DD`)를 나란히 두므로 이름 칸이 넓고, 오른쪽은 「−N일」 하나뿐이라 좁다.
 _UNIT_NAME_PX = 250
 _UNIT_RESULT_PX = 70
+# 호기 줄 묶음 폭이 이보다 좁으면 붙박인 이름 칸이 끝까지 굴린 결과 칸을 덮는다(이름 칸 + 칸 사이
+# 10 + 결과 칸 + 줄 안쪽 여백 10 · 테 1) — 그때는 이름 칸을 붙박지 않고 줄 전체가 같이 구른다.
+_UNIT_STICKY_MIN_PX = _UNIT_NAME_PX + 10 + _UNIT_RESULT_PX + 10 + 1
 # 타임라인 한 줄의 높이와 표지(선·◀·●·◌)의 세로 가운데. 표지는 모두 이 가운데에 맞춘다.
 _TRACK_HEIGHT_PX = 24
 _TRACK_CENTER_PX = _TRACK_HEIGHT_PX / 2
@@ -1422,7 +1426,8 @@ def _style() -> str:
 .shk-badge {{font-size:12.5px;font-weight:700;border-radius:999px;padding:4px 12px;
   color:{tokens.TEXT}}}
 .shk-card-body {{margin:0 18px;padding:8px 0 4px}}
-.shk-units {{padding:10px 18px 16px;display:flex;flex-direction:column;gap:6px}}
+.shk-units {{padding:10px 18px 16px;display:flex;flex-direction:column;gap:6px;
+  container:{UNITS_CONTAINER} / inline-size}}
 .shk-units-legend {{font-size:12px;color:{tokens.TEXT_MUTED}}}
 .shk-unit {{display:grid;grid-template-columns:{_UNIT_NAME_PX}px minmax({_TRACK_MIN_PX}px,1fr)
   {_UNIT_RESULT_PX}px;align-items:center;gap:10px;background:{tokens.SURFACE_SUBTLE};
@@ -1430,6 +1435,8 @@ def _style() -> str:
 .shk-unit-axis {{background:none;border:none;padding:0 10px}}
 .shk-unit-label {{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap;
   position:sticky;left:0;z-index:1;background:{tokens.SURFACE_SUBTLE}}}
+@container {UNITS_CONTAINER} (width < {_UNIT_STICKY_MIN_PX}px) {{
+  .shk-unit-label {{position:static}}}}
 .shk-unit-name {{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;min-width:0}}
 .shk-unit-dates {{flex:none;font-size:13px;color:{tokens.TEXT};white-space:nowrap;

@@ -103,6 +103,7 @@ __all__ = [
     "BASELINE_SAVE_HELP",
     "NO_COMPARISON",
     "SHORTENING_COMPARE_KEY",
+    "UNITS_CONTAINER",
     "BaselineSaveContext",
     "ProgressView",
     "consume_baseline_write",
@@ -157,6 +158,12 @@ _TRACK_MIN_PX = 420
 _LANE_PX = 18
 _LANE_CENTER_PX = _LANE_PX / 2
 _LANE_GAP_PX = 4
+# 호기 줄 묶음(`.shk-units`)의 컨테이너 이름 — 선언은 `required_shortening_panel._style` 이고 두
+# 화면 조각의 붙박인 이름 칸이 이 이름으로 묶음 폭을 묻는다.
+UNITS_CONTAINER = "shk-units"
+# 묶음 폭이 이보다 좁으면 붙박인 이름 칸이 끝까지 굴린 결과 칸을 덮는다(이름 칸 + 칸 사이 10 + 결과
+# 칸 + 줄 안쪽 여백 10 · 테 1) — 그때는 이름 칸을 붙박지 않고 줄 전체가 같이 구른다.
+_STICKY_MIN_PX = _NAME_PX + 10 + _RESULT_PX + 10 + 1
 _MAX_AXIS_LABELS = 12
 # 두 줄 타임라인에 서는 날짜 칸. 카드의 달 축은 이 날짜가 모두 들도록 넓힌다.
 _LANE_DATE_COLUMNS = ("과거 필요 시점", "과거 확보 시점", "현재 필요 시점", "현재 확보 시점")
@@ -704,6 +711,7 @@ def progress_style() -> str:
 .shk-prog-unit.shk-unit-axis {{background:none;border:none;padding:0 10px}}
 .shk-prog-label {{display:flex;flex-direction:column;gap:3px;min-width:0;position:sticky;left:0;
   z-index:1;background:{tokens.SURFACE_SUBTLE}}}
+@container {UNITS_CONTAINER} (width < {_STICKY_MIN_PX}px) {{.shk-prog-label {{position:static}}}}
 .shk-prog-meta {{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;
   color:{tokens.TEXT_MUTED};white-space:nowrap}}
 .shk-prog-badge {{font-size:11px;font-weight:700;padding:0 7px;border-radius:999px;
