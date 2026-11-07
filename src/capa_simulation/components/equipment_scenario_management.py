@@ -301,6 +301,8 @@ POPOVER_GENERATION_KEY = "equipment_scenario_manage_popover_generation_v1"
 # 리비전 표 위 띄움(px, `st.space`) — 표 도구 막대가 바로 위 줄 팝오버 단추에 닿지 않을 만큼(그리는
 # 자리의 설명). 숫자는 표 도구 막대 공용 띄움 하나다(`table_toolbar.TABLE_TOOLBAR_CLEARANCE`).
 REVISION_TABLE_TOOLBAR_CLEARANCE = TABLE_TOOLBAR_CLEARANCE
+# 리비전 표 「출처」 칸 폭 — 가장 긴 값 「배치 차이 정리」 가 잘리지 않을 만큼.
+REVISION_ORIGIN_COLUMN_WIDTH = 112
 
 # 리비전명 칸 글자 수 한도 — 저장소도 같은 한도로 거절한다.
 REVISION_NAME_MAX_CHARS = SCHEDULE_REVISION_NAME_MAX_CHARS
@@ -968,6 +970,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
         placeholder="",
         column_config={
             "저장시각": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
+            "출처": st.column_config.TextColumn(width=REVISION_ORIGIN_COLUMN_WIDTH),
             # 최신 줄의 실효 괄호(「호기 1행 (공식과 같음)」)가 잘리지 않을 만큼.
             "배치": st.column_config.TextColumn(width="medium"),
         },

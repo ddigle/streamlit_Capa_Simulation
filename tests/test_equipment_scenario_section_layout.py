@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ from capa_simulation.components.equipment_scenario_management import (
     REVISION_KEY,
     REVISION_NAME_BUTTON_KEY,
     REVISION_NAME_KEY,
+    REVISION_ORIGIN_COLUMN_WIDTH,
     REVISION_TABLE_TOOLBAR_CLEARANCE,
     SCENARIO_KEY,
     publish_preview,
@@ -195,6 +197,15 @@ def test_the_revision_table_stands_clear_of_the_row_above_it(tmp_path: Path) -> 
     assert all(
         isinstance(node, Block) and not node.children for node in between if node is not spaces[0]
     )
+
+
+def test_the_origin_column_fits_its_longest_word(tmp_path: Path) -> None:
+    """리비전 표 「출처」 칸은 내용 폭을 따르지 않고 가장 긴 값 「배치 차이 정리」 가 드는 폭을
+    받는다 — 1600 에서도 「배치 차이 정」 으로 잘렸다(캔버스 표라 그림으로 잰 값)."""
+    path, _ = _two_revisions(tmp_path)
+    app = _ok(_section(path).run())
+    table = next(item for item in app.dataframe if "리비전명" in item.value.columns)
+    assert json.loads(table.proto.columns)["출처"]["width"] == REVISION_ORIGIN_COLUMN_WIDTH
 
 
 def test_loading_a_revision_picks_the_particle_by_its_number(tmp_path: Path) -> None:
