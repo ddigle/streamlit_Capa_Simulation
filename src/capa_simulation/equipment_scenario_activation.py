@@ -249,7 +249,7 @@ FLOOR_STATE_LOCK_REASON = (
 )
 UNMERGED_LOCK_REASON = (
     "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 일정 없이 연 상태라 배치 "
-    "편집을 잠갔습니다 — 런북 4-2 대로 백업을 복원하세요."
+    "편집을 잠갔습니다 — 백업을 복원하세요."
 )
 SpaceLockAction = Literal["latest", "discard_layout"]
 

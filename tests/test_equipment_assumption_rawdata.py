@@ -45,7 +45,12 @@ from capa_simulation.components.equipment_data_workspace import (
     layout_edits,
     layout_paste_refusal,
 )
-from capa_simulation.components.equipment_master_tab import SAVE_BUTTON_KEY, SIDE_CHANGES, SIDE_KEY
+from capa_simulation.components.equipment_master_tab import (
+    LAYOUT_LOCK_MARK,
+    SAVE_BUTTON_KEY,
+    SIDE_CHANGES,
+    SIDE_KEY,
+)
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.equipment_scenario_activation import (
@@ -641,7 +646,6 @@ def test_the_page_passes_the_space_judgment_to_the_master_tab(tmp_path: Path) ->
     app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": pinned}
     _ok(app.run())
 
-    assert any(
-        "배치 편집이 잠겨 있어" in text and "r2에 다른 배치가 저장됐습니다" in text
-        for text in _texts(app, "caption")
-    )
+    (mark,) = [item for item in app.caption if item.value == LAYOUT_LOCK_MARK]
+    tip = str(mark.proto.help)
+    assert "배치 편집이 잠겨 있어" in tip and "r2에 다른 배치가 저장됐습니다" in tip

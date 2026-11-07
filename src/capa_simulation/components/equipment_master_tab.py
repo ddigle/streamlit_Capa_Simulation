@@ -1050,19 +1050,21 @@ def _render_head(
     return str(table)
 
 
-LAYOUT_LOCK_CAPTION: Final = (
-    ":material/lock: 배치 편집이 잠겨 있어, 원래 있던 호기의 배치 칸은 고칠 수 없고 새 호기는 자리 "
-    "없이 들어갑니다."
+# 배치 잠금 표지 — Space 현황의 같은 표지(`LAYOUT_LOCK_MARK`)와 같은 한 마디다. 무엇이 잠기는지와
+# 까닭은 풍선이 말한다(`layout_lock_help`, 설계 규칙 UI-TXT-01 · UI-INP-07).
+LAYOUT_LOCK_MARK: Final = ":material/lock: 배치 잠김"
+LAYOUT_LOCK_HELP: Final = (
+    "배치 편집이 잠겨 있어, 원래 있던 호기의 배치 칸은 고칠 수 없고 새 호기는 자리 없이 들어갑니다."
 )
 
 
-def layout_lock_caption(reason: str | None) -> str:
-    """배치 잠금 한 줄 — 무엇이 잠기는지 한 문장, 까닭(`master_tab_lock_reason`)은 둘째 문장. 까닭
-    글에도 대시가 있어 「— 까닭」 으로 이으면 대시 둘이 이어 붙는다. 까닭은 평문 겸용 글이라 통째로
-    `literal_markdown` 으로 막는다."""
+def layout_lock_help(reason: str | None) -> str:
+    """배치 잠김 표지의 풍선 — 무엇이 잠기는지 한 문장, 까닭(`master_tab_lock_reason`)은 둘째 문장.
+    까닭 글에도 대시가 있어 「— 까닭」 으로 이으면 대시 둘이 이어 붙는다. 까닭은 평문 겸용 글이라
+    통째로 `literal_markdown` 으로 막는다."""
     if not reason:
-        return LAYOUT_LOCK_CAPTION
-    return f"{LAYOUT_LOCK_CAPTION} {literal_markdown(reason)}"
+        return LAYOUT_LOCK_HELP
+    return f"{LAYOUT_LOCK_HELP} {literal_markdown(reason)}"
 
 
 def _render_notices(
@@ -1078,7 +1080,11 @@ def _render_notices(
             st.warning(literal_markdown(_stale_lock_message(basis)), icon=":material/lock_clock:")
         layout = layout_mode.layout
         if layout == "locked":
-            st.caption(layout_lock_caption(layout_mode.master_tab_lock_reason))
+            st.caption(
+                LAYOUT_LOCK_MARK,
+                help=layout_lock_help(layout_mode.master_tab_lock_reason),
+                width="content",
+            )
         # 가정 배치가 어디에 저장되나는 맨 위 줄 설비 시나리오 알약의 풍선이 말한다 — 자리에 같은
         # 설명 줄을 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-07).
         frames: Frames = st.session_state[BUFFER_KEY]
