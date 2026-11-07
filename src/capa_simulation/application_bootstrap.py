@@ -53,19 +53,17 @@ def ensure_initial_scenario(
 
         # 보관본만 남아도 빈 저장소가 아니다 — 보관본을 빼고 세면 그 위에 데모가 공식으로 선다.
         scenarios = repository.list_scenarios(include_archived=True)
-        interrupted_seed = next(
-            (
-                scenario
-                for scenario in scenarios
-                if scenario.status == "ACTIVE"
-                and scenario.source_simulation_code == BUILTIN_SEED_SOURCE_CODE
-            ),
-            None,
-        )
-        if interrupted_seed is not None:
+        # 발행 전에 멈춘 시드는 저장소에 그것 하나뿐이다. 곁에 다른 시나리오가 있으면 보관에서
+        # 되돌린 시드이고, 발행하면 공식은 지울 수 없으니 데모가 공식 자리를 차지한다.
+        lone_scenario = scenarios[0] if len(scenarios) == 1 else None
+        if (
+            lone_scenario is not None
+            and lone_scenario.status == "ACTIVE"
+            and lone_scenario.source_simulation_code == BUILTIN_SEED_SOURCE_CODE
+        ):
             release = repository.publish_official_revision(
-                interrupted_seed.scenario_id,
-                interrupted_seed.active_revision_id,
+                lone_scenario.scenario_id,
+                lone_scenario.active_revision_id,
                 release_name=BUILTIN_SEED_RELEASE_NAME,
                 note="내장 시드 생성 후 중단된 공식 발행 단계를 복구",
             )
