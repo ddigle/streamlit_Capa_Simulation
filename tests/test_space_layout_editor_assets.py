@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 
 from test_space_module_group import _js_decl, _node
 
@@ -1251,9 +1252,9 @@ process.stdout.write(JSON.stringify({ shown: nodes.map((n) => n.style.display) }
 _TAG = {"x": 10, "top": 20, "w": 30, "h": 4}
 
 
-def _zone_tag(items: list[dict[str, object]], box: dict[str, int] | None = None) -> list[str]:
+def _zone_tag(items: Sequence[Mapping[str, object]]) -> list[str]:
     source = _ZONE_TAG_RUNNER % _js_decl("function syncZoneTag(")
-    return list(_node(source, {"items": items, "box": box or _TAG})["shown"])
+    return list(_node(source, {"items": list(items), "box": _TAG})["shown"])
 
 
 def test_a_zone_label_hides_under_a_unit_and_comes_back_when_it_leaves() -> None:
