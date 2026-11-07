@@ -2106,7 +2106,7 @@ function drawDetail(S, root, data) {
   title.appendChild(el('span', 'emg-scope is-scenario', '시나리오'))
   downtime.appendChild(title)
   const rows = Array.isArray(unit.downtime) ? unit.downtime : []
-  if (!rows.length) downtime.appendChild(el('span', 'emg-muted', '없음'))
+  if (!rows.length) downtime.appendChild(el('span', 'emg-muted emg-none', '없음'))
   else {
     const table = el('table', 'emg-mini')
     const headRow = el('tr')

@@ -220,9 +220,11 @@
 }
 
 .emg-option .emg-tail {
+  flex: none;
   margin-left: auto;
   font-size: 12px;
   color: var(--emg-muted);
+  white-space: nowrap;
 }
 
 .emg-cond {
@@ -642,6 +644,10 @@
 .emg-side-group {
   padding: 12px;
   border-bottom: 1px solid var(--emg-border);
+}
+
+.emg-side-group .emg-none {
+  margin-right: 10px;
 }
 
 .emg-side-group h4 {

@@ -1155,6 +1155,17 @@ def test_the_scope_legend_keeps_three_words_and_puts_the_saving_words_in_tips() 
     assert "mark.title = tip" in bar and "el('span', null, ' '" not in bar
 
 
+def test_the_process_count_and_the_none_value_keep_their_shape() -> None:
+    """공정별 판의 대수는 한 덩이로 서고(g5-17 — 「20 / 대」 로 접혔다), 호기 상세의 「없음」 은
+    곁 링크와 떨어진다(g5-23 — 「없음비가동 일정 표에서 고치기」 로 읽혔다)."""
+    tail = re.search(r"\.emg-option \.emg-tail \{(?P<body>[^}]*)\}", CSS)
+    assert tail is not None
+    for rule in ("flex: none", "white-space: nowrap"):
+        assert rule in tail["body"]
+    assert "el('span', 'emg-muted emg-none', '없음')" in _function("drawDetail")
+    assert re.search(r"\.emg-none \{[^}]*margin-right: 10px", CSS)
+
+
 _PENDING_RUNNER = """
 const box = createBox()
 rebaseBox(box, 'b1')
