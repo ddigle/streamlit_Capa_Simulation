@@ -1,6 +1,7 @@
 # Purpose: 과거 구간 공용 프로필의 정규화·저장과 계산 결과 병합 규칙을 고정한다.
 
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -673,6 +674,81 @@ def test_a_paste_the_dialog_cannot_read_queues_nothing_so_save_cannot_wipe_the_t
     kept = repository.load_global_past_data()
     assert kept.version == stored.version
     pd.testing.assert_frame_equal(kept.securement, stored.securement)
+
+
+def _read_past_paste(app: Any, tail: str) -> None:
+    """확보율 표에 붙여넣기 칸을 펴 `tail` 행을 읽어 둔다 — 「과거 구간 저장」 이 켜진다."""
+    app.button(key="home_past_clipboard_확보율_open").click().run(timeout=60)
+    app.text_area(key="home_past_clipboard_확보율").set_value(_SECUREMENT_HEADER + tail)
+    next(button for button in app.button if button.label == "붙여넣기 읽기").click()
+    app.run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+
+def _past_memo(app: Any) -> Any:
+    """변경 메모 칸 — 저장에 성공할 때마다 key 세대가 올라 라벨로 찾는다."""
+    return next(field for field in app.text_input if field.label == "변경 메모")
+
+
+def _press_past_save(app: Any) -> None:
+    next(button for button in app.button if button.label == "과거 구간 저장").click()
+    app.run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+
+def test_a_saved_past_note_is_not_carried_into_the_next_save(tmp_path: Path) -> None:
+    """저장에 성공하면 변경 메모 칸이 빈다 — 다시 적지 않은 메모가 다음 붙여넣기 저장의 기록에
+    실렸다(2026-11-08 점검 u3-02). 메모 없는 저장의 기록은 기본 출처다."""
+    from streamlit.testing.v1 import AppTest
+
+    database_path = tmp_path / "past.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_past_data(_stored_profile_tables(), source="기존")
+    app = AppTest.from_string(
+        _PAST_COMPONENT_SCRIPT.replace("__DATABASE__", str(database_path))
+    ).run(timeout=60)
+
+    _read_past_paste(app, "202511\tDEMO-P\t1.05\n")
+    _past_memo(app).set_value("첫 메모")
+    _press_past_save(app)
+    assert _past_memo(app).value == ""
+    stored = repository.load_global_past_data()
+    assert (stored.version, stored.source) == (2, "첫 메모")
+
+    _read_past_paste(app, "202511\tDEMO-P\t1.06\n")
+    _press_past_save(app)
+    assert _past_memo(app).value == ""
+    stored = repository.load_global_past_data()
+    assert (stored.version, stored.source) == (3, "웹 붙여넣기")
+
+
+def test_a_failed_past_save_keeps_the_typed_note_and_the_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장이 오류로 끝난 회차는 적은 메모와 읽어 둔 표를 지우지 않는다 — 다시 누르면 그대로
+    실린다."""
+    from streamlit.testing.v1 import AppTest
+
+    database_path = tmp_path / "past.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_past_data(_stored_profile_tables(), source="기존")
+    app = AppTest.from_string(
+        _PAST_COMPONENT_SCRIPT.replace("__DATABASE__", str(database_path))
+    ).run(timeout=60)
+    _read_past_paste(app, "202511\tDEMO-P\t1.05\n")
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise OSError("디스크에 쓸 수 없습니다")
+
+    monkeypatch.setattr(DuckDBScenarioRepository, "replace_global_past_data", refuse)
+    _past_memo(app).set_value("실패할 메모")
+    _press_past_save(app)
+
+    assert any("디스크에 쓸 수 없습니다" in str(element.value) for element in app.error)
+    assert _past_memo(app).value == "실패할 메모"
+    assert not next(button for button in app.button if button.label == "과거 구간 저장").disabled
 
 
 def test_the_paste_box_says_its_rules_by_alert_and_stands_the_template_in_its_action_row(

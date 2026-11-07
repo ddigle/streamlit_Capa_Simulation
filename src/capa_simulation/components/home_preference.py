@@ -48,6 +48,7 @@ from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.table_toolbar import toolbar_clearance
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -182,7 +183,11 @@ from capa_simulation.services.threshold_label import (
 from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
 
 EXECUTION_EDITOR_KEY = "home_preference_execution_editor"
+# 공용 저장 폼의 변경 메모 칸은 `*_NOTE_GENERATION_KEY` 세대를 key 꼬리로 단다 — 저장에 성공한
+# 회차에만 올라 다음 회차에 빈 칸으로 선다. 그대로 두면 다시 적지 않은 메모가 다음 저장의 기록에
+# 실린다. 거절·오류·바꾼 것 없는 저장은 세대를 그대로 두어 적은 글이 남는다.
 EXECUTION_NOTE_KEY = "home_preference_execution_note"
+EXECUTION_NOTE_GENERATION_KEY = "home_preference_execution_note_generation"
 # 확보율 보정 편집을 시작한 회차가 본 공용 version. 저장 회차에 저장소가 대조한다(판정 기준과 같다).
 EXECUTION_BASE_VERSION_KEY = "home_preference_execution_base_version"
 # 이 세션이 한 확보율 보정 저장의 표지 이름(`write_guard.own_save_marks`)과 성공 알림.
@@ -193,8 +198,10 @@ COMPARISON_SCENARIO_KEY = "home_preference_comparison_scenario"
 COMPARISON_REVISION_KEY = "home_preference_comparison_revision"
 ADVANCE_EDITOR_KEY = "home_preference_advance_editor"
 ADVANCE_NOTE_KEY = "home_preference_advance_note"
+ADVANCE_NOTE_GENERATION_KEY = "home_preference_advance_note_generation"
 ADVANCE_SHIPMENT_EDITOR_KEY = "home_preference_advance_shipment_editor"
 ADVANCE_SHIPMENT_NOTE_KEY = "home_preference_advance_shipment_note"
+ADVANCE_SHIPMENT_NOTE_GENERATION_KEY = "home_preference_advance_shipment_note_generation"
 ADVANCE_SHIPMENT_FLASH_KEY = "home_advance_shipment_flash"
 # 월별 판정 기준 편집표와 기본 확보·경고 두 칸의 key 머리 — 끝에 그 회차가 그린 저장본을 붙인다
 # (`threshold_widget_key`).
@@ -202,6 +209,7 @@ THRESHOLD_EDITOR_KEY = "home_preference_threshold_editor"
 THRESHOLD_DEFAULT_SECURE_KEY = "home_preference_threshold_default_secure"
 THRESHOLD_DEFAULT_WARNING_KEY = "home_preference_threshold_default_warning"
 THRESHOLD_NOTE_KEY = "home_preference_threshold_note"
+THRESHOLD_NOTE_GENERATION_KEY = "home_preference_threshold_note_generation"
 THRESHOLD_CLEAR_OUTSIDE_KEY = "home_preference_threshold_clear_outside"
 # 판정 기준 편집을 시작할 때 본 공용 version. 저장 회차에는 이 회차가 새로 읽은 version 이 아니라
 # **앞 회차(사용자가 보고 고친 화면)** 의 version 을 대조해야 다른 세션의 먼저 저장을 잡는다.
@@ -1059,7 +1067,7 @@ def render_threshold_editor(
                 note = st.text_input(
                     "변경 메모",
                     placeholder="예: 27년 이후 확보 기준 120% 적용",
-                    key=THRESHOLD_NOTE_KEY,
+                    key=widget_key(THRESHOLD_NOTE_KEY, THRESHOLD_NOTE_GENERATION_KEY),
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
@@ -1242,8 +1250,10 @@ def render_threshold_editor(
             # 캐시를 비운다. 이 회차는 본 version 을 올리지 않는다 — 다음 회차(제출 아님)가 적는다.
             clear_global_securement_threshold_cache()
             if is_own_save(THRESHOLD_SAVE_NAME, exc.expected, exc.stored, save_marks):
-                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 끊긴 첫
+                # 회차가 못 비운 메모 칸도 비운다.
                 queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
+                bump(THRESHOLD_NOTE_GENERATION_KEY)
             else:
                 # 버전 충돌의 원문이 무엇을 할지 말한다(물결표만 막아 그대로).
                 message = bootstrap_error_message(exc)
@@ -1259,6 +1269,7 @@ def render_threshold_editor(
             # 없습니다」 갈래).
             note_notice(notices, THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
+            bump(THRESHOLD_NOTE_GENERATION_KEY)
             st.rerun(scope="app")
 
 
@@ -1476,6 +1487,7 @@ class _MonthlyAmountEditor:
     form_key: str
     save_label: str
     note_key: str
+    note_generation_key: str
     placeholder: str
     flash_key: str
     editor_key: str
@@ -1491,6 +1503,7 @@ _ADVANCE_LOAD_EDITOR = _MonthlyAmountEditor(
     form_key="home_advance_load_form",
     save_label="선행 B/O 저장",
     note_key=ADVANCE_NOTE_KEY,
+    note_generation_key=ADVANCE_NOTE_GENERATION_KEY,
     placeholder="예: 26.07 선행 B/O 재공 반영",
     flash_key="home_advance_flash",
     editor_key=ADVANCE_EDITOR_KEY,
@@ -1507,6 +1520,7 @@ _ADVANCE_SHIPMENT_EDITOR = _MonthlyAmountEditor(
     form_key="home_advance_shipment_form",
     save_label="선행 입고 저장",
     note_key=ADVANCE_SHIPMENT_NOTE_KEY,
+    note_generation_key=ADVANCE_SHIPMENT_NOTE_GENERATION_KEY,
     placeholder="예: 26.03 선행 입고 실적 반영",
     flash_key=ADVANCE_SHIPMENT_FLASH_KEY,
     editor_key=ADVANCE_SHIPMENT_EDITOR_KEY,
@@ -1676,7 +1690,7 @@ def _render_monthly_amount_editor(
                 note = st.text_input(
                     "변경 메모",
                     placeholder=editor.placeholder,
-                    key=editor.note_key,
+                    key=widget_key(editor.note_key, editor.note_generation_key),
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
@@ -1723,6 +1737,7 @@ def _render_monthly_amount_editor(
             # 없습니다」 갈래).
             note_notice(notices, editor.flash_key, editor.saved_message)
             queue_flash(editor.flash_key, editor.saved_message)
+            bump(editor.note_generation_key)
             st.rerun()
 
 
@@ -2623,7 +2638,7 @@ def _render_execution_editor(
                 note = st.text_input(
                     "변경 메모",
                     placeholder="예: 26.07 Wafer Mount 비가동 3대",
-                    key=EXECUTION_NOTE_KEY,
+                    key=widget_key(EXECUTION_NOTE_KEY, EXECUTION_NOTE_GENERATION_KEY),
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
@@ -2719,8 +2734,10 @@ def _render_execution_editor(
             # 최신을 그리며 적는다.
             clear_global_execution_capacity_cache()
             if is_own_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks):
-                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 끊긴 첫
+                # 회차가 못 비운 메모 칸도 비운다.
                 queue_flash(EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
+                bump(EXECUTION_NOTE_GENERATION_KEY)
             else:
                 message = bootstrap_error_message(exc)
                 note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, message)
@@ -2737,6 +2754,7 @@ def _render_execution_editor(
         # 갈래).
         note_notice(notices, EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
         queue_flash(EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
+        bump(EXECUTION_NOTE_GENERATION_KEY)
         st.rerun(scope="app")
 
 

@@ -24,6 +24,7 @@ import pytest
 from alert_marks import infos, place_errors, successes
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import TextInput
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.cutoff_management import (
@@ -39,7 +40,9 @@ from capa_simulation.components.home_preference import (
     ADVANCE_EDITOR_KEY,
     ADVANCE_NOTE_KEY,
     ADVANCE_SHIPMENT_EDITOR_KEY,
+    EXECUTION_BASE_VERSION_KEY,
     EXECUTION_EDITOR_KEY,
+    EXECUTION_NOTE_GENERATION_KEY,
     EXECUTION_NOTE_KEY,
     EXECUTION_SAVED_MESSAGE,
     EXECUTION_UNCHANGED_MESSAGE,
@@ -152,6 +155,11 @@ def _errors(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.error]
 
 
+def _memo(app: AppTest) -> TextInput:
+    """변경 메모 칸 — 저장에 성공할 때마다 key 세대가 올라 라벨로 찾는다."""
+    return next(field for field in app.text_input if field.label == "변경 메모")
+
+
 def _edit_cells(app: AppTest, key: str, edits: dict[int, dict[str, object]]) -> None:
     """편집표 `key` 의 칸을 고친 것처럼 채운다(다음 회차가 그 편집을 보낸다)."""
     app.session_state[key] = {"edited_rows": edits, "added_rows": [], "deleted_rows": []}
@@ -213,6 +221,35 @@ def test_a_display_order_save_without_changes_makes_no_new_version(
     stored = repository.load_global_display_order()
     assert stored.version == 2
     assert stored.rules.loc[stored.rules["분류값"].eq("DEMO_B"), "값표시순서"].tolist() == [9]
+
+
+def test_a_saved_display_order_note_is_not_carried_into_the_next_save(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """저장에 성공하면 변경 메모 칸이 빈다 — 다시 적지 않은 메모가 값만 고친 다음 저장의 기록에
+    실렸다(2026-11-08 점검 u3-m2). 바꾼 것 없는 저장은 쓰지 않아 칸을 지킨다."""
+    _seed_display_order(repository)
+    app = _app(repository, _DISPLAY_ORDER)
+    editor = f"{DISPLAY_ORDER_EDITOR_KEY}::생산 계획::수율"
+
+    _memo(app).set_value("메모만 적음")
+    app = _press(app, "공용 표시순서 저장")
+    assert _infos(app) == [DISPLAY_ORDER_UNCHANGED_MESSAGE]
+    assert _memo(app).value == "메모만 적음"
+
+    _edit_cells(app, editor, {1: {"값표시순서": 9}})
+    _memo(app).set_value("첫 메모")
+    app = _press(app, "공용 표시순서 저장")
+    assert _memo(app).value == ""
+    stored = repository.load_global_display_order()
+    assert (stored.version, stored.source) == (2, "첫 메모")
+
+    _edit_cells(app, editor, {1: {"값표시순서": 8}})
+    app = _press(app, "공용 표시순서 저장")
+    assert _memo(app).value == ""
+    stored = repository.load_global_display_order()
+    assert stored.version == 3
+    assert stored.source == "웹 직접 편집 · 생산 계획/수율"
 
 
 def test_a_slow_second_press_of_the_display_order_save_repeats_the_success(
@@ -284,6 +321,86 @@ def test_an_execution_capacity_save_without_changes_makes_no_new_version(
     profile = repository.load_global_execution_capacity()
     assert profile.version == 2
     assert profile.rows["증감 확보율"].tolist() == [-12.5]
+
+
+def test_a_saved_execution_note_is_not_carried_into_the_next_save(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """저장에 성공하면 변경 메모 칸이 빈다 — 다시 적지 않은 메모가 값만 고친 다음 저장의 기록에
+    실렸다(2026-11-08 점검 u3-02). 바꾼 것 없는 저장은 쓰지 않아 칸을 지킨다."""
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202607, "DEMO_A", -10.0, "")]), source="처음 저장"
+    )
+    clear_global_execution_capacity_cache()
+    app = _app(repository, _EXECUTION)
+
+    _memo(app).set_value("메모만 적음")
+    app = _press(app, "확보율 보정 저장")
+    assert _infos(app) == [EXECUTION_UNCHANGED_MESSAGE]
+    assert _memo(app).value == "메모만 적음"
+
+    _edit_cells(app, EXECUTION_EDITOR_KEY, {0: {"증감 확보율": -12.5}})
+    _memo(app).set_value("첫 메모")
+    app = _press(app, "확보율 보정 저장")
+    assert _memo(app).value == ""
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (2, "첫 메모")
+
+    _edit_cells(app, EXECUTION_EDITOR_KEY, {0: {"증감 확보율": -13.5}})
+    app = _press(app, "확보율 보정 저장")
+    assert _memo(app).value == ""
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (3, "웹 직접 편집")
+
+
+def test_a_refused_execution_save_keeps_the_typed_note(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """남의 저장에 거부된 저장은 적은 메모를 지우지 않는다."""
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202607, "DEMO_A", -10.0, "")]), source="처음 저장"
+    )
+    clear_global_execution_capacity_cache()
+    app = _app(repository, _EXECUTION)
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202607, "DEMO_A", -11.0, "")]), source="다른 세션", expected_version=1
+    )
+    clear_global_execution_capacity_cache()
+
+    _edit_cells(app, EXECUTION_EDITOR_KEY, {0: {"증감 확보율": -12.5}})
+    _memo(app).set_value("거부될 메모")
+    app = _press(app, "확보율 보정 저장")
+
+    assert any("다른 사용자가 먼저" in text for text in _errors(app)), _errors(app)
+    assert _memo(app).value == "거부될 메모"
+
+
+def test_a_double_press_of_the_execution_save_that_cut_the_first_run_still_empties_the_note(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸 세대가 그대로다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 세대·본
+    version 을 되살려 한 번 더 보낸다."""
+    repository.replace_global_execution_capacity(
+        _execution_rows([(202607, "DEMO_A", -10.0, "")]), source="처음 저장"
+    )
+    clear_global_execution_capacity_cache()
+    app = _app(repository, _EXECUTION)
+    _edit_cells(app, EXECUTION_EDITOR_KEY, {0: {"증감 확보율": -12.5}})
+    _memo(app).set_value("첫 메모")
+    pressed = _pressed_states(app, "확보율 보정 저장")
+    app.run()
+    assert repository.load_global_execution_capacity().version == 2
+
+    app.session_state[EXECUTION_BASE_VERSION_KEY] = 1
+    app.session_state[EXECUTION_NOTE_GENERATION_KEY] = 0
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert _successes(app) == [EXECUTION_SAVED_MESSAGE]
+    assert _memo(app).value == ""
+    profile = repository.load_global_execution_capacity()
+    assert (profile.version, profile.source) == (2, "첫 메모")
 
 
 def test_a_slow_second_press_of_the_execution_save_repeats_the_success(
@@ -640,7 +757,7 @@ def test_a_slow_second_press_of_the_advance_load_repeats_the_success(
     assert repository.load_global_advance_load().version == 2
 
 
-@pytest.mark.parametrize(
+_MONTHLY_EDITORS = pytest.mark.parametrize(
     ("body", "label", "editor_key", "write", "value_column"),
     [
         (
@@ -660,6 +777,73 @@ def test_a_slow_second_press_of_the_advance_load_repeats_the_success(
     ],
     ids=["advance-load", "advance-shipment"],
 )
+
+
+@_MONTHLY_EDITORS
+def test_a_saved_monthly_amount_note_is_not_carried_into_the_next_save(
+    repository: DuckDBScenarioRepository,
+    body: str,
+    label: str,
+    editor_key: str,
+    write: str,
+    value_column: str,
+) -> None:
+    """저장에 성공하면 변경 메모 칸이 빈다 — 다시 적지 않은 메모가 값만 고친 다음 저장의 기록에
+    실렸다(2026-11-08 점검 u3-02). 바꾼 것 없는 저장은 쓰지 않아 칸을 지킨다."""
+    load = getattr(repository, write.replace("replace_", "load_"))
+    getattr(repository, write)(
+        pd.DataFrame({"생산계획년월": [202610], value_column: [1.25]}), source="처음 저장"
+    )
+    _clear_caches()
+    app = _app(repository, body)
+
+    _memo(app).set_value("메모만 적음")
+    app = _press(app, label)
+    assert len(_infos(app)) == 1 and _infos(app)[0].startswith("바뀐 것이 없습니다")
+    assert _memo(app).value == "메모만 적음"
+
+    _edit_cells(app, editor_key, {0: {"26.11": 2.0}})
+    _memo(app).set_value("첫 메모")
+    app = _press(app, label)
+    assert _memo(app).value == ""
+    assert (load().version, load().source) == (2, "첫 메모")
+
+    _edit_cells(app, editor_key, {0: {"26.11": 3.0}})
+    app = _press(app, label)
+    assert _memo(app).value == ""
+    assert (load().version, load().source) == (3, "웹 직접 편집")
+
+
+@_MONTHLY_EDITORS
+def test_a_failed_monthly_amount_save_keeps_the_typed_memo(
+    repository: DuckDBScenarioRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    body: str,
+    label: str,
+    editor_key: str,
+    write: str,
+    value_column: str,
+) -> None:
+    """저장이 오류로 끝난 회차는 적은 메모를 지우지 않는다 — 다시 누르면 그 메모가 실린다."""
+    getattr(repository, write)(
+        pd.DataFrame({"생산계획년월": [202610], value_column: [1.25]}), source="처음 저장"
+    )
+    _clear_caches()
+    app = _app(repository, body)
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise OSError("디스크에 쓸 수 없습니다")
+
+    monkeypatch.setattr(DuckDBScenarioRepository, write, refuse)
+    _edit_cells(app, editor_key, {0: {"26.11": 2.0}})
+    _memo(app).set_value("실패할 메모")
+    app = _press(app, label)
+
+    assert len(_errors(app)) == 1, _errors(app)
+    assert _memo(app).value == "실패할 메모"
+
+
+@_MONTHLY_EDITORS
 def test_a_failed_monthly_amount_save_keeps_the_note_on_months_outside_the_view(
     repository: DuckDBScenarioRepository,
     monkeypatch: pytest.MonkeyPatch,
