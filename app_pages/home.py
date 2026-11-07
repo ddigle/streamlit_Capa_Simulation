@@ -33,6 +33,7 @@ from capa_simulation.components.home_preference import (
     render_home_view_card,
     render_key_process_field,
     render_lob_title_row,
+    render_stopped_key_process_field,
     seed_comparison_selection,
 )
 from capa_simulation.components.home_rendering import (
@@ -549,8 +550,8 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     # 막대를 남긴 채 멈추면 오류 문구 위에 멈춰 선 진행률이 함께 보인다.
     loading.close()
-    # 패널의 공정 필터 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
-    # 회차마다 흔들리지 않게 한다 — 까닭은 Alarm 의 오류가 말한다.
+    # 패널의 공정 필터 · 주요공정 히트맵 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를
+    # 지켜 패널 높이가 회차마다 흔들리지 않게 한다 — 까닭은 Alarm 의 오류가 말한다.
     with page_condition_slot(0).container():
         condition_field(
             PROCESS_FIELD_LABEL,
@@ -561,6 +562,8 @@ except BOOTSTRAP_ERRORS as exc:
             status=PROCESS_FIELD_HINT,
             disabled=True,
         )
+    with page_condition_slot(1).container():
+        render_stopped_key_process_field()
     # 기준 정보의 빈 칸으로 멈췄으면 알림이 채울 화면을 연다. 같은 `except` 가 받는 DB 오류 · 자료
     # 없는 달은 그 화면이 없어 HOME 줄 그대로다.
     stop = calculation_stop_notice(exc)

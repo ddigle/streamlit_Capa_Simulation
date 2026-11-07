@@ -1025,6 +1025,23 @@ def test_a_blank_stop_on_home_opens_the_screen_to_fill(tmp_path: Path) -> None:
     assert "RQ_RUN_RATE" not in note["full"]
 
 
+def test_a_stopped_home_keeps_both_page_rows_locked_in_the_panel(tmp_path: Path) -> None:
+    """계산이 멈춰도 패널의 공정 필터 · 주요공정 히트맵 줄은 잠긴 채 선다 — 한 줄이라도 빠지면 그
+    아래 상자가 줄 높이만큼 움직인다(UI-PRF-03). 잠긴 「HOME 설정」 풍선은 오류 글이 있는 Alarm 을
+    가리킨다."""
+    database_path = tmp_path / "scenario.duckdb"
+    AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+    _publish_blank_run_rate(database_path)
+
+    app = AppTest.from_string(_home_script(database_path), default_timeout=300).run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    for key in ("dashboard_bottleneck_process_dialog_open", KEY_PROCESS_FIELD_KEY):
+        assert app.button(key=key).label == "계산 멈춤"
+        assert app.button(key=key).disabled
+    assert "Alarm 의 오류" in str(app.button(key=SETTINGS_BUTTON_KEY).help)
+
+
 def test_a_stopped_home_still_offers_the_gap_toggle_when_the_comparison_stops_it(
     tmp_path: Path,
 ) -> None:

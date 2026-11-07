@@ -2112,6 +2112,20 @@ def render_key_process_field(
         show_key_process_dialog(names, previews)
 
 
+def render_stopped_key_process_field() -> None:
+    """계산이 멈춘 회차의 `주요공정 히트맵` 줄 — 프리셋의 공정 수는 계산 뒤에야 나온다. 잠긴 채 정상
+    회차와 같은 자리에 선다(공정 필터 줄과 같다). 부르는 쪽이 페이지 칸 안으로 들어간 뒤에
+    부른다."""
+    condition_field(
+        KEY_PROCESS_FIELD_LABEL,
+        "계산 멈춤",
+        slug="key_process",
+        key=KEY_PROCESS_FIELD_KEY,
+        icon=KEY_PROCESS_ICON,
+        disabled=True,
+    )
+
+
 def key_process_preview(
     processes: Sequence[str], process_labels: ProcessLabels, process_options: Sequence[str]
 ) -> str:
