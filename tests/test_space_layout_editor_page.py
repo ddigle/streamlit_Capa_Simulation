@@ -156,7 +156,7 @@ def test_overlaps_in_a_pending_layout_go_to_a_state_alert_not_the_box(
     note = active_state(app, "EQ-17")
     assert note is not None
     assert note["short"] == "겹친 호기 1건(C1 1F) — 목록: Alarm › 이 줄"
-    assert note["full"].startswith("Space 저장 안 한 배치 · 겹친 호기 1건(C1 1F)")
+    assert note["full"].startswith("Space 편집본 · 겹친 호기 1건(C1 1F)")
     assert "저장은 막지 않습니다" in note["full"]
     (table,) = note["tables"]
     assert table["columns"] == ["종류", "층", "호기", "상대"]

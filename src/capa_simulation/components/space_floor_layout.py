@@ -113,9 +113,9 @@ LAYOUT_DIFFERENCE_ALERT = "EQ-13"
 LAYOUT_REGROUPED_ALERT = "EQ-14"
 LAYOUT_ORPHANS_ALERT = "EQ-15"
 LAYOUT_ALERT_CODES = (LAYOUT_DIFFERENCE_ALERT, LAYOUT_REGROUPED_ALERT, LAYOUT_ORPHANS_ALERT)
-# 저장 안 한 배치의 겹침 · 중복 블록(`report_layout_warnings`)과 그 알림에 딸린 표.
+# 편집본의 겹침 · 중복 블록(`report_layout_warnings`)과 그 알림에 딸린 표.
 LAYOUT_WARNING_ALERT = "EQ-17"
-LAYOUT_WARNING_TABLE = "저장 안 한 배치의 겹침"
+LAYOUT_WARNING_TABLE = "편집본의 겹침"
 LAYOUT_WARNING_FILE = "space_layout_overlaps.csv"
 LAYOUT_WARNING_COLUMNS = ("종류", "층", "호기", "상대")
 
@@ -299,9 +299,10 @@ def report_layout_notices(session: EquipmentSession, notices: Sequence[LayoutNot
 def report_layout_warnings(
     session: EquipmentSession, warnings: LayoutWarnings, doubled: Sequence[str]
 ) -> None:
-    """저장 안 한 배치의 겹친 호기 · 막는 요소를 덮은 호기와 같은 층을 가리키는 FAB 블록을 상태
-    알림(`LAYOUT_WARNING_ALERT`)으로 낸다 — 저장 상자 안 줄이던 것이다(설계 규칙 UI-NTF-02). 저장은
-    경고 없이 늘 같은 동작이다(UI-NTF-09). 줄 내역은 Alarm 줄 표이고 편집기 상태 줄 값은 그대로다.
+    """저장 안 한 배치가 있는 동안 편집본의 겹친 호기 · 막는 요소를 덮은 호기와 같은 층을 가리키는
+    FAB 블록을 상태 알림(`LAYOUT_WARNING_ALERT`)으로 낸다 — 저장 상자 안 줄이던 것이다(설계 규칙
+    UI-NTF-02). 저장은 경고 없이 늘 같은 동작이다(UI-NTF-09). 줄 내역은 Alarm 줄 표이고 편집기 상태
+    줄 값은 그대로다.
 
     늘 같은 자리에서 조건이 없어도 부른다(`active=False` — 표지 자리 수가 회차마다 같다). 전 층을
     훑은 값이라 지문이 고른 층에 기대지 않는다. `doubled` 는 `duplicate_block_links` 의 층
@@ -339,7 +340,7 @@ def report_layout_warnings(
         active=True,
         text=f"{counted}({where}) — 목록: {ALARM_ROW_PLACE}",
         full=(
-            f"Space 저장 안 한 배치 · {counted}({where}) — 저장은 막지 않습니다. "
+            f"Space 편집본 · {counted}({where}) — 저장은 막지 않습니다. "
             f"목록: {alarm_table_place(LAYOUT_WARNING_TABLE)}"
         ),
         scope_label=scope.label,

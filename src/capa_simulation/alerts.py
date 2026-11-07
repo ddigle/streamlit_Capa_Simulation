@@ -246,9 +246,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("AD-08", "action", "state", "접속 명단을 S3 에서 읽지 못함"),
     # 저장 안 한 배치 상자에 서던 겹침 · 중복 블록 줄을 상태 알림으로(저장은 늘 같은 동작이다 — 설계
     # 규칙 UI-NTF-02 · UI-NTF-09).
-    AlertSpec(
-        "EQ-17", "check", "state", "Space — 저장 안 한 배치의 겹친 호기 · 가린 요소 · 중복 층 블록"
-    ),
+    AlertSpec("EQ-17", "check", "state", "Space — 편집본의 겹친 호기 · 가린 요소 · 중복 층 블록"),
     AlertSpec("EQ-15", "info", "state", "Space — 공통 대장에서 지운 호기의 배치 차이를 버림"),
     # 「캔버스 편집」 팝업에 서던 이탈 경고를 상태 알림으로 — 팝업 자리에는 잠긴 단추와 짧은 풍선만.
     AlertSpec(
