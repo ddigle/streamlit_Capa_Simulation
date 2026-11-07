@@ -47,7 +47,13 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
-from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
+from capa_simulation.components.flash import (
+    BESIDE_KINDS,
+    FlashKind,
+    pending_flash,
+    queue_flash,
+    render_flash,
+)
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
@@ -66,6 +72,7 @@ from capa_simulation.components.write_guard import (
     remember_seen,
     seen,
 )
+from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict
 from capa_simulation.persistence.equipment_cache import (
@@ -133,6 +140,9 @@ REVERT_BUTTON_KEY = "space_floor_state_revert"
 CONFIRM_BUTTON_KEY = "space_floor_state_confirm_save"
 CANCEL_BUTTON_KEY = "space_floor_state_confirm_cancel"
 SOURCE = "space_status"
+# 틈 없는 머리 칸(`gap=None`)에서 알림 칸에 경고가 설 때 머리 줄과 두는 틈 — 본문 세로 블록 간격
+# (`tokens.BLOCK_GAP_REM` 1rem, `baseFontSize` 14)과 같은 값이다.
+_NOTICE_LEAD_PX = 14
 
 _USE_COLUMN = "사용"
 _REASON_COLUMN = "사유"
@@ -144,10 +154,11 @@ _SAVED_REASON_LIMIT = 5
 SAMPLE_LOCKED = "샘플 데이터를 보는 중에는 층 사용 설정을 바꾸지 않습니다."
 # 층 목록 머리의 이름 풍선 — 하는 법은 자리 글이 아니라 여기다(설계 규칙 UI-TXT-01 · UI-TXT-04).
 _LIST_HELP = "행을 고르면 그 층이 열립니다(키보드는 행에 초점을 두고 Shift+Space)."
-# 접힌 「비활성 층 n개」 앞 표지의 풍선 — FAB 도면에서의 모습과 여는 곳(Guide 「비활성 층」).
+# 같은 풍선에 잇는 글 — 비활성 층의 FAB 도면 모습과 여는 곳(Guide 「비활성 층」). 펼침 머리 「비활성
+# 층 n개」 곁에 같은 이름의 표지를 또 세우지 않는다(설계 규칙 UI-TXT-07).
 _INACTIVE_HELP = (
-    "FAB 도면에서는 회색 빗금으로 흐리고 눌러도 열리지 않습니다. 호기는 그대로이고 아래 펼침에서 "
-    "행을 고르면 열어 볼 수 있습니다."
+    "비활성 층은 FAB 도면에서 회색 빗금으로 흐리고 눌러도 열리지 않습니다. 호기는 그대로이고 표 "
+    "아래 펼침에서 행을 고르면 열어 볼 수 있습니다."
 )
 # 사용 편집 `저장` 의 풍선 — 저장 범위와 저장 없이 떠날 때 잃는 것(설계 규칙 UI-NTF-09). 자리에는
 # 바뀐 층 수만 둔다.
@@ -167,6 +178,13 @@ _REASON_HELP = (
     + f". 비운 채 끄면 {quoted(FLOOR_REASON_LABELS[DEFAULT_FLOOR_REASON])} 이고, 사용 층에 "
     "사유를 적으면 그 사유로 끕니다. 적은 글 그대로 보입니다(FAB 도면 블록에서는 길면 줄이고 "
     "풍선에 다 보입니다)."
+)
+# `끄고 저장` 의 풍선 — 끄는 일의 뜻과 그대로인 것, 값 줄에 적지 않은 층. 확인 칸 자리에는 값 줄만
+# 둔다(설계 규칙 UI-NTF-09).
+_CONFIRM_HELP = (
+    "호기는 그대로 남고 목록·도면에서만 숨습니다. 가정 설비 시나리오의 배치에 놓인 호기도 그 "
+    "시나리오 목록·도면에서 숨습니다. 설비 마스터의 동·층 값은 바뀌지 않고 다시 켜면 그대로 "
+    "보입니다. 호기가 없어 적지 않은 층도 함께 꺼집니다."
 )
 _PLACED_HELP = "도면에 그린 설비입니다. Main 설비로 묶은 모듈 행은 합쳐 1대입니다."
 _UNPLACED_HELP = "레이아웃표시 Y 인데 좌표가 없어 도면에 그리지 못한 설비입니다."
@@ -239,10 +257,6 @@ def layer_columns(cells: Mapping[FloorKey, Mapping[str, object]]) -> tuple[Floor
         )
         for name, config in _LAYER_COLUMNS.items()
     )
-
-
-# 끄기 확인 목록에서 공식 배치에는 호기가 없고 가정 설비 시나리오 배치에만 호기가 있는 층의 꼬리.
-_OVERLAY_ONLY = "공식 배치 호기 없음(가정 배치에만)"
 
 
 # ---------------------------------------------------------------- 세션 초안
@@ -777,8 +791,6 @@ def _render_tables(
         inactive = [placement for placement in placements if not states.is_active(placement.key)]
         if not inactive:
             return
-        # 자리에는 표지만, 뜻은 풍선(설계 규칙 UI-TXT-01 · UI-TXT-04).
-        st.caption(":material/block: 비활성 층", help=_INACTIVE_HELP)
         with st.expander(f"비활성 층 {len(inactive)}개", expanded=False, key=INACTIVE_EXPANDER_KEY):
             # 표 도구 막대가 바로 위 펼침 머리의 오른쪽 끝(접는 자리)을 덮지 않게(AGENTS 9장).
             toolbar_clearance()
@@ -804,15 +816,21 @@ def _render_tables(
             )
 
 
-def _render_notices() -> None:
+def _render_notices(*, lead_px: int = 0) -> None:
     """성공 flash 와 그 밖의 알림(충돌·검증 오류·바뀐 층 없음). 그린 뒤 지운다.
 
     담아 둔 알림이 없고 남의 저장에 거부된 지 `write_guard` 창 안이면 그 거부를 다시 그린다 — 거부
     회차가 꺼내 그린 알림을 빠른 둘째 누름의 회차(쓰지 않고 끝난다)가 화면을 다시 그리며 지웠다
-    (2026-10-26 E2E 5회차)."""
-    queued = pending_flash(NOTICE_KEY) is not None
+    (2026-10-26 E2E 5회차).
+
+    `lead_px` 는 칸에 글이 서는 회차에만 그 앞에 두는 띄움이다 — 틈 없는 칸에서 경고가 위 줄에
+    붙지 않게 하고, 글이 없는 칸은 높이 없이 둔다(성공 · 안내는 알림창으로만 가 칸에 서지
+    않는다)."""
+    queued = pending_flash(NOTICE_KEY)
+    held = None if queued is not None else _refused_just_now()
+    if lead_px and (held is not None or (queued is not None and queued.kind in BESIDE_KINDS)):
+        st.space(lead_px)
     slot = render_flash(FLASH_KEY, NOTICE_KEY)
-    held = None if queued else _refused_just_now()
     if held is not None:
         slot.warning(markdown_safe_tildes(held), icon=":material/sync_problem:")
 
@@ -824,38 +842,11 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
             st.session_state.pop(CONFIRM_KEY, None)
         return
     shown: tuple[tuple[str, int], ...] = tuple((str(a), int(b)) for a, b in held[1])
-    total = sum(count for _, count in shown)
     with st.container(border=True):
-        if len(shown) == 1:
-            label, count = shown[0]
-            there = (
-                f"이 층에 호기 {count}대가 있습니다"
-                if count
-                else "공식 배치에는 이 층에 호기가 없지만 가정 설비 시나리오의 배치에 호기가 "
-                "있습니다"
-            )
-            st.warning(
-                f"**{label}** — {there} — 호기는 그대로 남고 목록·도면에서만 숨습니다.",
-                icon=":material/warning:",
-            )
-        else:
-            head = (
-                f"끄려는 층에 호기 {total}대가 있습니다"
-                if total
-                else "끄려는 층의 가정 설비 시나리오 배치에 호기가 있습니다"
-            )
-            st.warning(
-                f"{head} — 호기는 그대로 남고 목록·도면에서만 숨습니다.\n\n"
-                + "\n".join(
-                    f"- {label} · 호기 {count}대" if count else f"- {label} · {_OVERLAY_ONLY}"
-                    for label, count in shown
-                ),
-                icon=":material/warning:",
-            )
+        st.caption(_risky_line(shown))
         for line in _overlay_lines(database_path, shown):
             # 줄은 설비 시나리오 이름을 싣는다 — 물결표를 막는다(지움선 짝이 되지 않게).
             st.caption(f":material/layers: {markdown_safe_tildes(line)}")
-        st.caption("설비 마스터의 동·층 값은 바뀌지 않습니다. 다시 켜면 그대로 보입니다.")
         with st.container(horizontal=True, gap="small"):
             st.button(
                 "끄고 저장",
@@ -863,14 +854,34 @@ def _render_confirm(database_path: str, counts: Mapping[str, int]) -> None:
                 key=CONFIRM_BUTTON_KEY,
                 on_click=_confirm_save,
                 args=(database_path, _generation(), shown, dict(counts)),
+                help=_CONFIRM_HELP,
             )
             st.button("취소", key=CANCEL_BUTTON_KEY, on_click=_cancel_confirm)
 
 
+def _units_value(floors: Sequence[tuple[str, int]], *, noun: str = "호기") -> str:
+    """값 줄의 층과 호기 수 — 한 층이면 「C3 1F · 호기 83대」, 여러 층이면 합과 층마다의 수
+    「호기 138대 · C3 1F 83 · C3 2F 55」. `noun` 은 그 수의 이름이다."""
+    if len(floors) == 1:
+        label, count = floors[0]
+        return f"{label} · {noun} {count}대"
+    by_floor = " · ".join(f"{label} {count}" for label, count in floors)
+    return f"{noun} {sum(count for _, count in floors)}대 · {by_floor}"
+
+
+def _risky_line(shown: Sequence[tuple[str, int]]) -> str:
+    """확인 칸 첫 값 줄 — 끄는 층 전부가 아니라 호기가 남아 묻는 층만 적고(호기 없는 층은 묻지 않고
+    함께 꺼진다 — `_CONFIRM_HELP`), 수는 공식 배치 기준이다. 수가 0 인 층은 가정 배치 덧줄이 까닭을
+    적는다(`_risky`)."""
+    value = _units_value(shown, noun="공식 배치 호기")
+    return f"호기 남은 층 {value}" if len(shown) == 1 else f"호기 남은 층 {len(shown)}개 · {value}"
+
+
 def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list[str]:
-    """끄기 확인의 덧줄 — 가정 설비 시나리오의 배치에서 그 층에 놓인 호기(층 사용은 공통이라 그
-    시나리오 목록·도면에서도 숨는다). 못 읽으면 덧줄 없이 둔다(확인을 막지 않는다)."""
-    lines: list[str] = []
+    """끄기 확인의 덧줄 — 가정 설비 시나리오마다 값 줄 하나(그 시나리오 배치에서 끄는 층에 놓인
+    호기, 층 사용은 공통이라 그 시나리오 목록·도면에서도 숨는다). 못 읽으면 덧줄 없이 둔다(확인을
+    막지 않는다)."""
+    by_scenario: dict[str, list[tuple[str, int]]] = {}
     for label, _ in shown:
         key = floor_from_label(label)
         if key is None:
@@ -880,11 +891,10 @@ def _overlay_lines(database_path: str, shown: Sequence[tuple[str, int]]) -> list
         except BOOTSTRAP_ERRORS:
             continue
         for name, count in counts:
-            lines.append(
-                f"가정 설비 시나리오 {quoted(name)}의 배치에서 {label} 에 놓인 호기 {count}대도 "
-                "그 시나리오 목록·도면에서 숨습니다."
-            )
-    return lines
+            by_scenario.setdefault(name, []).append((label, count))
+    return [
+        f"가정 배치 {quoted(name)} · {_units_value(rows)}" for name, rows in by_scenario.items()
+    ]
 
 
 def _render_buildings(draft: Draft) -> None:
@@ -1027,36 +1037,41 @@ def render_space_floor_list(
     덧붙이는 칸이다(`FloorListColumn` — 편집 모드 표에는 붙이지 않는다). 「공식과 견주기」 의
     「공식과 다름」 은 두 표에, 색 기준 「필요 단축」 을 켠 동안의 칸 넷(`layer_columns`)은 사용 층
     표에만 선다."""
-    with st.container(
-        horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
-    ):
-        st.caption("층 목록", width="content", help=_LIST_HELP)
-        st.space("stretch")
-        if not editable:
-            # 켜진 채 잠그면 스위치와 화면이 서로 다른 말을 한다(FAB `배치 편집` 과 같은 까닭).
-            st.session_state[EDIT_TOGGLE_KEY] = False
-        editing = (
-            st.toggle(
-                "사용 편집",
-                key=EDIT_TOGGLE_KEY,
-                disabled=not editable,
-                on_change=_toggle_changed,
-                args=(database_path,),
-                help=(locked_reason or SAMPLE_LOCKED) if not editable else _TOGGLE_HELP,
+    # 제목이 위 줄의 꼬리가 아니라 아래 표의 머리로 읽히게 한다(설계 규칙 UI-CON-05) — 위 구획과는
+    # 구획 사이만큼 띄우고, 머리 줄 · 알림 칸 · 띄움은 한 칸(`gap=None`)이라 빈 알림 칸이 표 앞에
+    # 틈을 더하지 않는다. 경고가 서는 회차의 틈은 알림 칸이 든다(`_render_notices`).
+    st.space(tokens.SECTION_GAP_PX)
+    with st.container(key="space_floor_list_lead", gap=None):
+        with st.container(
+            horizontal=True, gap="small", vertical_alignment="center", key="space_floor_list_head"
+        ):
+            st.caption("층 목록", width="content", help=f"{_LIST_HELP} {_INACTIVE_HELP}")
+            st.space("stretch")
+            if not editable:
+                # 켜진 채 잠그면 스위치와 화면이 서로 다른 말을 한다(FAB `배치 편집` 과 같은 까닭).
+                st.session_state[EDIT_TOGGLE_KEY] = False
+            editing = (
+                st.toggle(
+                    "사용 편집",
+                    key=EDIT_TOGGLE_KEY,
+                    disabled=not editable,
+                    on_change=_toggle_changed,
+                    args=(database_path,),
+                    help=(locked_reason or SAMPLE_LOCKED) if not editable else _TOGGLE_HELP,
+                )
+                and editable
             )
-            and editable
-        )
-    if not editing:
-        # 토글은 FAB 화면을 그리지 않는 회차(층을 열었을 때·다른 페이지)에 위젯 상태가 버려져 꺼진
-        # 채 돌아온다 — 남은 초안을 지워 「저장 안 한 편집」 표지가 거짓을 말하지 않게.
-        _forget()
+        if not editing:
+            # 토글은 FAB 화면을 그리지 않는 회차(층을 열었을 때·다른 페이지)에 위젯 상태가 버려져
+            # 꺼진 채 돌아온다 — 남은 초안을 지워 「저장 안 한 편집」 표지가 거짓을 말하지 않게.
+            _forget()
+            # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
+            with st.container(key="space_floor_state_notices", gap=None):
+                _render_notices(lead_px=_NOTICE_LEAD_PX)
+            # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을
+            # 가로채지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+            toolbar_clearance()
     if editing:
         _render_edit(database_path, placements, unit_counts)
         return
-    # 알림 칸은 늘 선다(저장 flash 가 생기고 사라질 때 아래 표가 밀리지 않게).
-    with st.container(key="space_floor_state_notices"):
-        _render_notices()
-    # 표 도구 막대가 바로 위 머리 줄 오른쪽 끝 `사용 편집` 토글을 덮어 표에서 옮긴 누름을 가로채지
-    # 않게 띄운다(AGENTS 9장 「표 도구 막대」).
-    toolbar_clearance()
     _render_tables(placements, canvas_text, states, on_open, extra_columns)

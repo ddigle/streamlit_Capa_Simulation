@@ -17,6 +17,8 @@ import duckdb
 import pandas as pd
 import pytest
 from alert_marks import infos, successes
+from source_sites import ends_as_sentence
+from streamlit.proto.GapSize_pb2 import GapSize
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Dataframe, get_widget_state
@@ -25,7 +27,7 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_space_layout_edit import _master
 from widget_browser import BrowserTables
 
-from capa_simulation.components import space_layout_editor, write_guard
+from capa_simulation.components import space_floor_list, space_layout_editor, write_guard
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.space_floor_list import (
@@ -271,6 +273,11 @@ def test_cell_edits_keep_the_same_editor_widget_so_the_view_stays_put(tmp_path: 
     clear_equipment_repository()
 
 
+def _asked(app: AppTest) -> list[str]:
+    """끄기 확인 칸의 값 줄."""
+    return [item.value for item in app.caption if item.value.startswith("호기 남은 층 ")]
+
+
 def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
     """C1 1F 에는 단일 둘 + 모듈 묶음 넷 = 설비 3대. 막지 않고 확인한다(S4)."""
     database = _database(tmp_path)
@@ -282,15 +289,14 @@ def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
 
     _press(app, tables, SAVE_BUTTON_KEY)
     assert _version(database) == 0
-    assert any("호기 3대" in item.value for item in app.warning)
-    assert any("설비 마스터의 동·층 값은 바뀌지 않습니다" in item.value for item in app.caption)
+    assert _asked(app) == ["호기 남은 층 C1 1F · 공식 배치 호기 3대"]
 
     _press(app, tables, CANCEL_BUTTON_KEY)
-    assert not any("호기 3대" in item.value for item in app.warning)
+    assert not _asked(app)
     assert _version(database) == 0
 
     _press(app, tables, SAVE_BUTTON_KEY)
-    assert any("호기 3대" in item.value for item in app.warning)
+    assert _asked(app) == ["호기 남은 층 C1 1F · 공식 배치 호기 3대"]
     _press(app, tables, CONFIRM_BUTTON_KEY)
 
     assert _states(database) == {("C1", "1F"): "UNUSED"}
@@ -303,6 +309,72 @@ def test_turning_off_a_floor_with_units_asks_first(tmp_path: Path) -> None:
     clear_equipment_repository()
 
 
+def test_the_off_confirm_stands_a_value_line_and_keeps_its_words_in_the_button_balloon(
+    tmp_path: Path,
+) -> None:
+    """확인 칸은 값 줄과 단추뿐이고 경고 상자 · 설명 문장을 늘어놓지 않는다 — 뜻은 `끄고 저장`
+    풍선이다(설계 규칙 UI-NTF-09, 그림 검수표 equip-41 과 같은 꼴)."""
+    app, tables = _start_editing(_database(tmp_path))
+    tables.edit(_editor_key(app), _position("C1", "1F"), "사용", False)
+    tables.run()
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert not list(app.warning)
+    assert all(not ends_as_sentence(text) for text in _asked(app))
+    assert not [item.value for item in app.caption if "바뀌지 않습니다" in item.value]
+    balloon = str(app.button(key=CONFIRM_BUTTON_KEY).help)
+    for word in (
+        "호기는 그대로 남고 목록·도면에서만 숨습니다",
+        "그 시나리오 목록·도면에서 숨습니다",
+        "설비 마스터의 동·층 값은 바뀌지 않고 다시 켜면 그대로 보입니다",
+    ):
+        assert word in balloon
+    clear_equipment_repository()
+
+
+def test_the_off_confirm_lines_sum_floors_and_stand_one_line_per_assumption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """여러 층은 합 + 층마다의 수 한 줄이고, 가정 배치 덧줄은 층마다가 아니라 시나리오마다 한
+    줄이다 — 끄는 층이 늘어도 줄이 불어나지 않는다."""
+
+    def _counts(_database_path: str, building: str, floor: str) -> tuple[tuple[str, int], ...]:
+        assert building == "C3"
+        return {"1F": (("셋업 실무", 4), ("가정 B", 2)), "2F": (("셋업 실무", 1),)}[floor]
+
+    monkeypatch.setattr(space_floor_list, "load_layout_overlay_floor_counts", _counts)
+    shown = (("C3 1F", 83), ("C3 2F", 55))
+
+    assert space_floor_list._risky_line(shown) == (
+        "호기 남은 층 2개 · 공식 배치 호기 138대 · C3 1F 83 · C3 2F 55"
+    )
+    assert space_floor_list._overlay_lines("ignored", shown) == [
+        "가정 배치 「셋업 실무」 · 호기 5대 · C3 1F 4 · C3 2F 1",
+        "가정 배치 「가정 B」 · C3 1F · 호기 2대",
+    ]
+
+
+def test_the_off_confirm_names_only_floors_with_units_and_counts_the_official_layout(
+    tmp_path: Path,
+) -> None:
+    """값 줄은 끄는 층 전부가 아니라 호기가 남아 묻는 층만 적는다 — 호기 없는 층을 함께 꺼도 「끄는
+    층」 이라 말해 그 층이 어디에도 없었다. 수는 공식 배치 기준이라고 밝힌다 — 가정 배치에만 호기가
+    있는 층의 「호기 0대」 가 호기가 있어 묻는 확인과 어긋나 보였다."""
+    app, tables = _start_editing(_database(tmp_path))
+    tables.edit(_editor_key(app), _position("C1", "1F"), "사용", False)
+    tables.edit(_editor_key(app), _position("C3", "3F"), "사용", False)
+    tables.run()
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert any(item.value == "바뀐 층 2개" for item in app.caption)
+    assert _asked(app) == ["호기 남은 층 C1 1F · 공식 배치 호기 3대"]
+    assert "적지 않은 층도 함께 꺼집니다" in str(app.button(key=CONFIRM_BUTTON_KEY).help)
+    assert space_floor_list._risky_line((("C4 1F", 0),)) == (
+        "호기 남은 층 C4 1F · 공식 배치 호기 0대"
+    )
+    clear_equipment_repository()
+
+
 def test_changing_only_the_reason_does_not_ask(tmp_path: Path) -> None:
     database = _database(tmp_path, {("C1", "1F"): "UNUSED"})
     app, tables = _start_editing(database)
@@ -311,7 +383,7 @@ def test_changing_only_the_reason_does_not_ask(tmp_path: Path) -> None:
 
     _press(app, tables, SAVE_BUTTON_KEY)
 
-    assert not any("호기" in item.value for item in app.warning)
+    assert not _asked(app)
     assert _states(database) == {("C1", "1F"): "창고(임시)"}
     assert _version(database) == 2
     clear_equipment_repository()
@@ -379,7 +451,7 @@ def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest
         app.button(key=SAVE_BUTTON_KEY).click()
     else:
         _press(app, tables, SAVE_BUTTON_KEY)
-        assert any("호기 3대" in item.value for item in app.warning)
+        assert _asked(app) == ["호기 남은 층 C1 1F · 공식 배치 호기 3대"]
         repository.save_floor_states(_C1, expected_version=0, source="남")
         app.button(key=CONFIRM_BUTTON_KEY).click()
     pressed = tables._states()
@@ -391,7 +463,7 @@ def test_a_fast_second_press_after_another_save_keeps_the_refusal_and_the_latest
     _ok(app)
 
     assert len(_refusals(app)) == 1, [item.value for item in app.warning]
-    assert not any("호기 3대" in item.value for item in app.warning)
+    assert not _asked(app)
     assert app.session_state[DRAFT_KEY] == {f"C1 {floor}": "NOT_LINE" for _, floor in _C1}
     assert app.session_state[BASE_KEY][0] == 1
     assert any("바뀐 층 0개" in item.value for item in app.caption)
@@ -422,7 +494,7 @@ def test_turning_off_a_floor_with_units_after_someone_else_saved_skips_the_confi
     _press(app, tables, SAVE_BUTTON_KEY)
 
     assert CONFIRM_KEY not in app.session_state
-    assert not any("호기 3대" in item.value for item in app.warning)
+    assert not _asked(app)
     assert any("다른 사용자가 먼저 층 사용 설정을 저장해" in item.value for item in app.warning)
     assert _states(database) == {("C4", "6F"): "NOT_LINE"}
     assert app.session_state[BASE_KEY][0] == 1
@@ -568,6 +640,22 @@ def _inactive_marks(app: AppTest) -> list[str]:
     marks = [item for item in app.main.caption if item.value.startswith(INACTIVE_MARK)]
     assert all("「사용 편집」에서 다시 켭니다" in item.proto.help for item in marks)
     return [item.value for item in marks]
+
+
+def test_inactive_floors_stand_one_head_and_their_words_sit_in_the_list_balloon(
+    tmp_path: Path,
+) -> None:
+    """펼침 머리 「비활성 층 n개」 곁에 같은 이름의 표지를 또 세우지 않고, 표지의 몫이던 풍선 글은
+    「층 목록」 풍선 뒤에 잇는다(설계 규칙 UI-TXT-07)."""
+    app = _app(_database(tmp_path, {("C1", "6F"): "UNUSED"})).run()
+    _ok(app)
+
+    assert [item.label for item in app.expander if "비활성 층" in item.label] == ["비활성 층 1개"]
+    assert not [item.value for item in app.main.caption if "비활성 층" in item.value]
+    head = next(item for item in app.main.caption if item.value == "층 목록")
+    assert "행을 고르면 그 층이 열립니다" in head.proto.help
+    assert "회색 빗금으로 흐리고 눌러도 열리지 않습니다" in head.proto.help
+    clear_equipment_repository()
 
 
 def test_a_row_of_the_inactive_table_opens_that_floor_with_a_banner(tmp_path: Path) -> None:
@@ -930,24 +1018,30 @@ def _holds(node: Any, found: Any) -> bool:
     return isinstance(node, Block) and any(_holds(child, found) for child in node.children.values())
 
 
-def _siblings_between(app: AppTest, head: Any, table: Any) -> list[Any]:
-    """`head` 를 품은 칸과 `table` 이 형제인 줄에서 둘 사이의 형제들(차례대로)."""
+def _children(block: Any) -> list[Any]:
+    return [child for _, child in sorted(block.children.items())]
+
+
+def _before_table(app: AppTest, table: Any) -> list[Any]:
+    """`table` 을 바로 품은 칸에서 표 앞의 형제들(차례대로)."""
     stack: list[Any] = [app.main]
     while stack:
-        block = stack.pop()
-        children = [child for _, child in sorted(block.children.items())]
-        heads = [index for index, child in enumerate(children) if _holds(child, head)]
+        children = _children(stack.pop())
         tables = [index for index, child in enumerate(children) if table(child)]
-        if heads and tables and not table(children[heads[0]]):
-            return children[heads[0] + 1 : tables[0]]
+        if tables:
+            return children[: tables[0]]
         stack.extend(child for child in children if isinstance(child, Block))
-    raise AssertionError("머리 줄과 표가 형제인 칸이 없다")
+    raise AssertionError("표가 없다")
+
+
+def _is_space(node: Any) -> bool:
+    return getattr(node, "type", "") == "space"
 
 
 def _toolbar_clearance_is_last(between: list[Any]) -> None:
     """표 바로 앞 형제가 띄움 하나다 — 표 도구 막대(표 위 37px 까지 솟는다)가 머리 줄 오른쪽 끝을
     덮지 않게(AGENTS 9장 「표 도구 막대」)."""
-    spaces = [node for node in between if getattr(node, "type", "") == "space"]
+    spaces = [node for node in between if _is_space(node)]
     assert len(spaces) == 1
     assert between[-1] is spaces[0]
     assert TABLE_TOOLBAR_CLEARANCE >= 20
@@ -955,18 +1049,89 @@ def _toolbar_clearance_is_last(between: list[Any]) -> None:
 
 def test_the_floor_list_table_keeps_its_toolbar_off_the_edit_switch(tmp_path: Path) -> None:
     """표에서 머리 줄 오른쪽 끝 `사용 편집` 으로 옮긴 누름을 표 도구 막대가 가로챘다(2026-10-26
-    E2E)."""
+    E2E). 그 띄움은 남기되 빈 알림 칸은 표 앞에 틈을 더하지 않는다 — 머리 칸이 `gap=None` 이고 위
+    구획과는 구획 사이만큼 떨어져 제목이 표의 머리로 읽힌다(설계 규칙 UI-CON-05)."""
     app = _app(_database(tmp_path)).run()
     _ok(app)
 
-    between = _siblings_between(
-        app,
+    before = _before_table(
+        app, lambda node: isinstance(node, Dataframe) and "미배치대수" in node.value.columns
+    )
+    lead = before[-1]
+    assert lead.proto.flex_container.gap_config.gap_size == GapSize.NONE
+    inside = _children(lead)
+    assert _holds(
+        inside[0],
         lambda node: (
             getattr(node, "type", "") == "toggle" and getattr(node, "key", None) == EDIT_TOGGLE_KEY
         ),
-        lambda node: isinstance(node, Dataframe) and "미배치대수" in node.value.columns,
     )
-    _toolbar_clearance_is_last(between)
+    _toolbar_clearance_is_last(inside[1:])
+    assert _is_space(before[-2])
+    assert not [node for node in _children(inside[1]) if _is_space(node)]
+    clear_equipment_repository()
+
+
+def _view_notices(app: AppTest) -> list[Any]:
+    """보기 모드 머리 칸 안 알림 칸의 자식들(차례대로)."""
+    lead = _before_table(
+        app, lambda node: isinstance(node, Dataframe) and "미배치대수" in node.value.columns
+    )[-1]
+    return _children(_children(lead)[1])
+
+
+def test_a_warning_in_the_view_notices_stands_off_the_head_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """머리 칸이 `gap=None` 이라 보기 모드 알림 칸의 경고가 머리 줄에 틈 없이 붙었다 — 남의 저장에
+    거부된 직후 스위치를 끈 회차다. 경고가 서는 회차에만 칸이 틈을 든다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 600.0)
+    database = _database(tmp_path)
+    app, tables = _start_editing(database)
+    DuckDBEquipmentRepository(database).save_floor_states(_C1, expected_version=0, source="남")
+    tables.edit(_editor_key(app), _position("C2", "3F"), "사용", False)
+    tables.run()
+    _press(app, tables, SAVE_BUTTON_KEY)
+    assert len(_refusals(app)) == 1
+
+    app.toggle(key=EDIT_TOGGLE_KEY).set_value(False)
+    tables.run()
+    _ok(app)
+
+    assert len(_refusals(app)) == 1
+    notices = _view_notices(app)
+    assert _is_space(notices[0])
+    assert any(
+        _holds(node, lambda found: getattr(found, "type", "") == "warning") for node in notices
+    )
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize(("kind", "stands"), [("warning", True), ("error", True), ("info", False)])
+def test_only_what_stands_in_the_view_notices_adds_the_gap(
+    tmp_path: Path, kind: str, stands: bool
+) -> None:
+    """담아 둔 알림도 칸에 서는 경고 · 오류만 틈을 든다 — 안내는 알림창으로만 간다."""
+    app = _app(_database(tmp_path)).run()
+    _ok(app)
+    app.session_state[space_floor_list.NOTICE_KEY] = (kind, "알림")
+    app.run()
+
+    assert bool([node for node in _view_notices(app) if _is_space(node)]) is stands
+    assert len([*app.warning, *app.error]) == int(stands)
+    clear_equipment_repository()
+
+
+def test_a_save_success_adds_no_gap_to_the_view_notices(tmp_path: Path) -> None:
+    """성공은 알림창으로만 가 칸에 서지 않는다 — 저장 뒤 표가 틈만큼 밀렸다 돌아오지 않는다."""
+    database = _database(tmp_path, {("C1", "1F"): "UNUSED"})
+    app, tables = _start_editing(database)
+    tables.edit(_editor_key(app), _position("C1", "1F"), "사용", True)
+    tables.run()
+    _press(app, tables, SAVE_BUTTON_KEY)
+
+    assert any("층 사용 설정을 저장했습니다" in item.value for item in successes(app))
+    assert not [node for node in _view_notices(app) if _is_space(node)]
     clear_equipment_repository()
 
 
