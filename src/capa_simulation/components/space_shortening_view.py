@@ -138,9 +138,9 @@ _TABLE_GENERATION_KEY: Final = "space_shortening_table_generation"
 _CHIP_LEVELS_KEY: Final = "space_shortening_chip_levels"
 # 이번 회차에 도면에서 호기를 눌렀다는 표지(`note_unit_pick` — 뷰어 누르기 콜백이 적는다).
 _PICKED_NOW_KEY: Final = "space_shortening_picked_now"
-# 「도면에서 보기」 로 온 공정 — 공정소분류 필터에 걸러졌는지 알리는 한 줄. (공정, 도착 층, 도착 때
-# 필터)를 쥐고 **그 층·필터가 처음 바뀔 때**(또는 보기를 끌 때) 거둔다 — 알림은 도착한 링크에 대한
-# 것이라 나중에 사용자가 고른 상관없는 필터에 남지 않는다.
+# 「도면에서 보기」 로 온 공정 — 공정소분류 필터(공용 공정 칸)에 걸러졌는지 알리는 한 줄. (공정,
+# 도착 층, 도착 때 공용 공정 값)을 쥐고 **그 층·값이 처음 바뀔 때**(또는 보기를 끌 때) 거둔다 —
+# 알림은 도착한 링크에 대한 것이라 나중에 사용자가 고른 상관없는 필터에 남지 않는다.
 _ARRIVED_PROCESS_KEY: Final = "space_shortening_arrived_process"
 _OPEN_BOARD_PREFIX: Final = "space_shortening_open_board"
 LAYER_PARAM: Final = "layer"
@@ -196,15 +196,16 @@ def consume_layer_link(
     clear_keys: Sequence[str],
     edit_keys: Sequence[str],
     inactive: Collection[FloorKey],
-    filter_key: str,
+    filter_values: Sequence[str],
 ) -> bool:
     """필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=C1-2F&proc=W/B&target=1.1`)를 한 번
     받는다.
 
     색 기준 칸 = 필요 단축, 목표 칸 = `target`(다섯 가운데 하나일 때만), 그 층의 공정 칩 칸 =
     `proc`(선택지 확인은 칩을 그릴 때), `clear_keys`(누른 호기) 비움, `edit_keys`(층·FAB 배치 편집
-    토글) 끔 — 링크로 보러 왔다. `filter_key` 는 Space 공정소분류 필터 칸이다 — 도착 때 값을 알림
-    칸에 함께 적어 그 필터가 바뀌면 알림을 거둔다(필터 자체는 건드리지 않는다). `floor` 가 사용
+    토글) 끔 — 링크로 보러 왔다. `filter_values` 는 지금 공용 공정 값(`shared_process.values()` —
+    Space 공정소분류가 따라가는 값)이다 — 도착 때 값을 알림 칸에 함께 적어 그 값이 바뀌면 알림을
+    거둔다(공정 값 자체는 건드리지 않는다). `floor` 가 사용
     층이면 세션 층을 **덮는다**(지금 규칙은 세션이 먼저 — 링크만 예외), 없거나 비활성 층이면(링크
     대상이 아니다) 세션 층을 지워 FAB 전체로 연다. 남길 인자(`floor`·테마·그 밖)는 `from_dict` **한
     번**으로 다시 싣는다(기록이 키 수만큼 쌓이지 않게). 받았으면 참이다(받는 쪽이 사이드바를
@@ -233,11 +234,7 @@ def consume_layer_link(
     process = params.get(PROCESS_PARAM)
     process = process.strip() if isinstance(process, str) else ""
     if process:
-        st.session_state[_ARRIVED_PROCESS_KEY] = (
-            process,
-            floor,
-            _filter_values(st.session_state.get(filter_key)),
-        )
+        st.session_state[_ARRIVED_PROCESS_KEY] = (process, floor, _filter_values(filter_values))
         if floor is not None:
             st.session_state[process_chip_key(floor)] = process
             # 링크가 목표와 칩을 함께 정했다 — 「목표를 바꿨다」 로 보고 칩을 풀지 않게.
@@ -500,7 +497,7 @@ def render_layer_stop(stop: ShorteningStop) -> None:
 
 
 def _filter_values(value: object) -> tuple[str, ...]:
-    """공정소분류 필터 칸 값(목록)을 견줄 수 있는 글자 튜플로."""
+    """공용 공정 값(목록)을 견줄 수 있는 글자 튜플로."""
     if not isinstance(value, (list, tuple)):
         return ()
     return tuple(str(item) for item in value)
@@ -512,16 +509,19 @@ def forget_arrival_note() -> None:
     st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
 
 
-def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKey | None) -> None:
-    """「도면에서 보기」 로 온 공정이 Space 공정소분류 필터에 걸러졌으면 한 줄(필터는 건드리지
-    않는다). 도착한 층·필터가 그대로인 동안만 — 층을 옮기거나 필터를 바꾸면 칸을 거두고 다시 서지
-    않는다."""
+def render_arrival_filter_note(
+    selected_processes: Sequence[str], floor: FloorKey | None, filter_values: Sequence[str]
+) -> None:
+    """「도면에서 보기」 로 온 공정이 Space 공정소분류 거름(공용 공정 칸)에 걸러졌으면 한
+    줄(공정 값은 건드리지 않는다). 도착한 층 · 공용 값(`filter_values`)이 그대로인 동안만 — 층을
+    옮기거나 값이 바뀌면 칸을 거두고 다시 서지 않는다. `selected_processes` 는 이 화면에 걸린
+    공정이다."""
     held = st.session_state.get(_ARRIVED_PROCESS_KEY)
     if not (isinstance(held, tuple) and len(held) == 3 and isinstance(held[0], str)):
         st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
         return
     process, arrived_floor, arrived_filter = held
-    if arrived_floor != floor or arrived_filter != _filter_values(list(selected_processes)):
+    if arrived_floor != floor or arrived_filter != _filter_values(filter_values):
         st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
         return
     if not process or not selected_processes or process in set(selected_processes):
@@ -531,8 +531,8 @@ def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKe
         f":material/filter_alt_off: 필터 밖 「{literal_markdown(process)}」",
         width="stretch",
         help=(
-            "공정소분류 필터에 이 공정이 없어 그 단축 호기가 보이지 않습니다 — 필터를 비우거나 "
-            "더하면 보입니다."
+            "사이드바 「공정」 칸에 이 공정이 없어 그 단축 호기가 보이지 않습니다 — 공정을 "
+            "비우거나 더하면 보입니다."
         ),
     )
 

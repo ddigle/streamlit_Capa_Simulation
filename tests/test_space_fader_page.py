@@ -20,8 +20,10 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_process_field import share
 
 from capa_simulation.components import space_layout_editor
+from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.space_unit_state import as_of_range
@@ -136,7 +138,9 @@ def test_the_sidebar_has_no_as_of_date_and_no_stage_filter(
     before = [item["id"] for item in _last(calls, "floor")["items"]]
 
     assert not date_panels
-    assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류"]
+    # 공정소분류는 조회 조건 패널의 공용 공정 칸(값 칸 하나)이다(2026-11-08 사용자 답 P1).
+    assert not app.sidebar.multiselect
+    assert PROCESS_FIELD_KEY in {button.key for button in app.sidebar.button}
     app.session_state["space_status_stage_filter"] = ["가용"]
     app.run()
     assert not app.exception
@@ -252,8 +256,9 @@ def test_the_fab_toolbar_gets_the_as_of_date_and_the_unconfirmed_count(
     assert not app.exception
     assert app.session_state[AS_OF_KEY] == today
     assert _last(calls, "fab")["asOf"] == today.isoformat()
-    # 공정소분류 필터 밖이면 세지 않는다(미확인 두 대는 Process-A).
-    app.sidebar.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    # 공정소분류 필터(공용 공정 칸) 밖이면 세지 않는다(미확인 두 대는 Process-A).
+    share(app, ["Process-B"])
+    app.run()
     assert not app.exception
     assert _last(calls, "fab")["unconfirmed"] == 0
     clear_equipment_repository()

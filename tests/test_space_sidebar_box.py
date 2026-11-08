@@ -13,6 +13,7 @@
   않는다).
 - 상자에는 조작(자리 · 도면 · 견주기)만 둔다 — 상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태
   알림이다(2026-11-04 Space 결정 보드 답 — `EQ-13` ~ `EQ-15` · `EQ-04`).
+- 공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1).
 """
 
 from __future__ import annotations
@@ -32,8 +33,12 @@ from test_equipment_scenario_repository import (
     _with_unit,
 )
 from test_equipment_scenario_screens import _ok, _repository, _select, _shell
+from test_process_field import share
 
 from capa_simulation.components.equipment_scenario_status import unscheduled_notice
+from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.process_field import CHIP_KEY, CONTEXT_KEY
+from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
 from capa_simulation.components.space_layout_editor import space_lock_style
 from capa_simulation.navigation import SPACE_STATUS
@@ -278,3 +283,42 @@ def test_the_runbook_space_lines_name_the_box_and_not_the_old_head() -> None:
     ):
         assert gone not in chapter, gone
     assert "오른쪽 아래 알림창 「가정 배치 · 공식과 같음」" in chapter
+
+
+# ------------------------------------------------------------------ 공용 공정 칸(P1)
+
+
+def test_the_process_field_follows_the_shared_value_and_marks_a_missing_name(
+    _shell: AppTest,
+) -> None:
+    """공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1) — 카드 안 칩 칸이
+    없고, 다른 화면(HOME)에서 고른 공정을 따라가 본문 위 칩 「공정 … · HOME 에서」 가 선다. 글자는
+    원본 공정소분류다(2026-10-24 D10 · D11). 이 화면에 없는 공정이면 전체를 보이고 이름 줄에
+    「… 없음」 배지를 단다(값은 지우지 않는다)."""
+    app = _ok(_shell.run())
+    _ok(app.switch_page(SPACE_STATUS.path).run())
+    assert not _keys_in(_box(app), "multiselect")
+    assert "space_status_process_filter" not in {
+        str(widget.key) for widget in app.sidebar.multiselect
+    }
+    options = list(app.session_state[CONTEXT_KEY].options)
+    assert options, "Space 공정소분류 선택지가 없다"
+    field = app.sidebar.button(key=PROCESS_FIELD_KEY)
+    assert field.label == f"전체 {len(options)}공정"
+    assert not [button for button in app.button if button.key == CHIP_KEY]
+
+    share(app, [options[0]])
+    _ok(app.run())
+    shown = literal_markdown(options[0])
+    assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == shown
+    (chip,) = [button for button in app.button if button.key == CHIP_KEY]
+    assert chip.label == f"공정 {shown} · HOME 에서"
+    assert app.session_state[CONTEXT_KEY].selected == (options[0],)
+
+    share(app, ["DEMO-없는-공정"])
+    _ok(app.run())
+    assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == f"전체 {len(options)}공정"
+    badge = f":orange-badge[{literal_markdown('DEMO-없는-공정')} 없음]"
+    assert badge in _texts(app.sidebar, "caption")
+    assert not [button for button in app.button if button.key == CHIP_KEY]
+

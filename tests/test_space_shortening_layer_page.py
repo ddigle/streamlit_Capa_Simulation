@@ -23,6 +23,7 @@ from shortening_script import months_from_today, shortening_script
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_equipment_scenario_repository import _clone, _request, _set
+from test_process_field import share, shared_values
 
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.io.reference_cache as reference_cache
@@ -850,28 +851,28 @@ def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
     note = ":material/filter_alt_off: 필터 밖 「Final Test」"
 
     app = _app(database)
-    app.session_state["space_status_process_filter"] = ["Mold"]
+    share(app, ["Mold"])
     app.query_params["layer"] = "short"
     app.query_params["floor"] = f"{building}-{floor}"
     app.query_params["proc"] = "Final Test"
     _ok(app.run())
-    assert app.session_state["space_status_process_filter"] == ["Mold"]
+    assert shared_values(app) == ["Mold"]
     assert any(note in text for text in _texts(app)), _texts(app)
     # 같은 층·같은 필터로 한 회차 더(다른 조작) — 그대로 선다.
     _level(app).set_value(1.2)
     _ok(app.run())
     assert any(note in text for text in _texts(app))
-    # 필터를 바꾸면 거둔다 — 그 뒤 다른 필터(여전히 Final Test 없음)에도 다시 서지 않는다.
-    app.sidebar.multiselect(key="space_status_process_filter").set_value(["Mold", "Burn-In"])
+    # 공용 값을 바꾸면 거둔다 — 그 뒤 다른 값(여전히 Final Test 없음)에도 다시 서지 않는다.
+    share(app, ["Mold", "Burn-In"])
     _ok(app.run())
     assert not any(note in text for text in _texts(app))
-    app.sidebar.multiselect(key="space_status_process_filter").set_value(["Underfill"])
+    share(app, ["Underfill"])
     _ok(app.run())
     assert not any(note in text for text in _texts(app))
 
     # 층을 옮겨도 거둔다.
     moved = _app(database)
-    moved.session_state["space_status_process_filter"] = ["Mold"]
+    share(moved, ["Mold"])
     moved.query_params["layer"] = "short"
     moved.query_params["floor"] = f"{building}-{floor}"
     moved.query_params["proc"] = "Final Test"

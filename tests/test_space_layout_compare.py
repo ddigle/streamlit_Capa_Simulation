@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import OPERATIONS, _request, _session, _set
+from test_process_field import share
 from test_space_layout_overlay_page import FAKE_APPLY_KEY, _ok, _overlay, _space, _viewer
 from test_space_module_group import _node
 
@@ -404,7 +405,7 @@ def test_the_fab_difference_column_follows_the_process_filter(
     clear_equipment_repository()
     app = _ok(_space(tmp_path, setup, floor=False).run())
     app.session_state[SELECTION_KEY] = {"scenario_id": setup, "schedule_revision_id": None}
-    app.session_state["space_status_process_filter"] = ["Process-B"]
+    share(app, ["Process-B"])
     _ok(app.run())
 
     app.toggle(key=COMPARE_KEY).set_value(True).run()
@@ -415,7 +416,7 @@ def test_the_fab_difference_column_follows_the_process_filter(
     assert by_floor[("C1", "2F")] == 0
     fab = next(call for call in reversed(editor_calls) if call.get("scope") == "fab")
     assert "layout" not in fab["linkStats"]["C1 2F"]
-    app.session_state["space_status_process_filter"] = ["Process-A"]
+    share(app, ["Process-A"])
     _ok(app.run())
     table = app.dataframe[0].value
     by_floor = {(row["동"], row["층"]): row["공식과 다름"] for _, row in table.iterrows()}

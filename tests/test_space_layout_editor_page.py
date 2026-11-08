@@ -25,6 +25,7 @@ from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_process_field import share
 from test_space_layout_edit import _master
 
 from capa_simulation.components import space_layout_editor, write_guard
@@ -86,19 +87,25 @@ def test_the_summary_says_a_process_filter_is_on_and_when_it_emptied_the_floor(
 ) -> None:
     """필터로 층이 비면 빈 층과 같은 모습이었다 — 건 조건이 보이게 요약 맨 앞에 표지를 둔다(설계
     규칙 UI-STA-03, 사외 점검 g6-02). 좁은 FAB 도구 줄은 요약 뒤부터 말줄임하므로 끝에 두면 표지부터
-    잘린다. 뜻은 공정소분류 칸 풍선이다."""
+    잘린다. 공정은 조회 조건 패널의 공용 공정 칸이고(2026-11-08 사용자 답 P1) 표지의 뜻은
+    Guide 다."""
     app, _ = _open_editor(tmp_path, _two_process_fleet())
     app.toggle(key="space_layout_edit_mode").set_value(False).run()
     assert "공정 필터" not in str(editor_calls[-1]["summary"])
-    assert "「필터로 0대」" in str(app.multiselect(key="space_status_process_filter").help)
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/space_status.md").read_text(
+        encoding="utf-8"
+    )
+    assert "「공정 필터 n개」" in guide and "「필터로 0대」" in guide
 
     # 이 층 호기가 남는 필터 — 건 수만 말한다.
-    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
+    share(app, ["Process-A"])
+    app.run()
     assert not app.exception, [item.message for item in app.exception]
     assert str(editor_calls[-1]["summary"]).startswith("공정 필터 1개 · 배치 ")
 
     # 이 층 호기가 모두 빠지는 필터 — 왜 비었는지 말한다.
-    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    share(app, ["Process-B"])
+    app.run()
     assert not app.exception, [item.message for item in app.exception]
     summary = str(editor_calls[-1]["summary"])
     assert summary.startswith("공정 필터 1개 · 필터로 0대 · 배치 0대 · 미배치 0대")
@@ -116,7 +123,8 @@ def test_a_floor_with_nothing_on_it_is_not_blamed_on_the_filter(
     """원래 빈 층은 필터를 걸어도 「필터로 0대」 라 하지 않는다 — 필터 때문이 아니다."""
     app, _ = _open_editor(tmp_path, _two_process_fleet())
     app.toggle(key="space_layout_edit_mode").set_value(False).run()
-    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    share(app, ["Process-B"])
+    app.run()
     app.session_state["space_status_selected_building"] = "C3"
     app.session_state["space_status_selected_floor"] = "1F"
     app.run()
