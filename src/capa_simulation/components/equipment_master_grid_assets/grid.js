@@ -885,7 +885,8 @@ function enterPanel(panel) {
   if (first) first.focus()
 }
 
-// `label` 은 줄에 서는 짧은 이름, `fullName` 은 풍선 · 패널 접근성 이름에 남는 원래 이름이다.
+// `label` 은 줄에 서는 짧은 이름, `fullName` 은 풍선 · 패널 접근성 이름에 남는 원래 이름이다. `wide` 는 참이면 넓은 패널,
+// 글이면 그 꼴(`is-<글>` — 고른 줄 띠의 한 줄 패널 `bulk`)이다.
 function popover(S, name, label, fullName, build, wide) {
   const wrap = el('div', 'emg-pop-wrap')
   const toggle = button('emg-btn', label + ' ', () => {
@@ -900,7 +901,7 @@ function popover(S, name, label, fullName, build, wide) {
   toggle.title = fullName
   // 패널 안에서 불러오고 닫으면 초점이 여는 단추로 온다 — 불러오기 회차가 다시 지어도 그 단추로 돌아온다(data-fk).
   toggle.dataset.fk = 'pop-' + name
-  const panel = el('div', 'emg-pop' + (wide ? ' is-wide' : ''))
+  const panel = el('div', 'emg-pop' + (wide === true ? ' is-wide' : wide ? ' is-' + wide : ''))
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', fullName)
   // 패널이 초점을 받는다(Tab 정지는 아님) — 안내 글·여백을 누르면 초점이 초점 받는 가장 가까운 조상으로 가는데, 패널이 그
@@ -1170,9 +1171,12 @@ function buildGridSkeleton(host, S) {
   host.textContent = ''
   const root = el('div', 'emg-grid')
   const bar = el('div', 'emg-bar')
-  // 고른 줄 띠는 표 틀 맨 끝에 서고, 표 아래 끝이 창 밖이면 창 아래 끝에 붙는다(서식 `sticky`). 맨 끝이라 줄을 골라도 위 칸이
-  // 밀리지 않고(설계 규칙 UI-PRF-03) 다른 칸을 덮어 두지 않으며, 본문을 어디까지 굴렸든 조작이 창 안에 있다.
+  // 고른 줄 띠는 고른 동안 표 위 작업 줄(불러오기 줄 · 메뉴 「엑셀·CSV」) 자리에 같은 높이로 대신 선다 — 흐름 밖이라 줄을
+  // 골라도 표가 밀리지 않는다(설계 규칙 UI-PRF-03, 2026-11-08 사용자 결정 g01 (가)). 자리는 `placeBand` 가 불러오기 칸에서 잰다.
+  // 키보드 차례는 표 앞이다(틀 맨 앞).
   const sel = el('div', 'emg-sel')
+  sel.setAttribute('role', 'toolbar')
+  sel.setAttribute('aria-label', '고른 호기')
   const note = el('div', 'emg-note')
   note.setAttribute('role', 'status')
   const box = el('div', 'emg-box')
@@ -1197,10 +1201,11 @@ function buildGridSkeleton(host, S) {
   }
   foot.appendChild(keys)
   foot.appendChild(legend)
-  for (const part of [bar, note, box, foot, sel]) root.appendChild(part)
+  for (const part of [sel, bar, note, box, foot]) root.appendChild(part)
   host.appendChild(root)
   Object.assign(S, { skeleton: true, root, bar, selBar: sel, noteBar: note, scroller: box, table, head, body, foot })
   S.repaintNote = () => fillNote(S, S.noteBar, null)
+  watchBand(S)
   listen(S, box, 'scroll', () => {
     if (S.scrollFrame) return
     S.scrollFrame = requestAnimationFrame(() => {
@@ -1232,8 +1237,6 @@ function buildGridSkeleton(host, S) {
   listen(S, body, 'focusin', (event) => {
     const cell = event.target.closest && event.target.closest('.emg-c[data-col]')
     if (cell && !S.painting) S.focus = { id: cell.dataset.id, col: Number(cell.dataset.col) }
-    // 표 밖에서 들어온 초점만 — 표를 굴려 칸을 다시 그릴 때 돌려준 초점은 사람이 옮긴 것이 아니다.
-    if (cell && event.relatedTarget && !body.contains(event.relatedTarget)) clearOfBar(S, cell.dataset.id)
   })
 }
 
@@ -1300,39 +1303,63 @@ function selectedRows(S) {
 
 function paintSelection(S) {
   const bar = S.selBar
-  const main = pageMain()
-  const scrolled = main ? main.scrollTop : 0
   const saved = captureFocus(bar)
   S.painting = true
   bar.textContent = ''
+  S.pops = {}
   buildSelection(S, bar)
   S.painting = false
   restoreFocus(bar, saved)
-  holdPlace(S, main, scrolled)
+  markSelecting(S, !bar.hidden)
+  placeBand(S)
 }
 
-// 띠를 닫아 본문이 줄면 띠 자리까지 굴려 둔 스크롤이 잘려 표가 그만큼 내려앉는다 — 잘린 만큼 표 틀 아래 자리를 남겨 표를 그 자리에
-// 둔다(설계 규칙 UI-PRF-03). 띠가 다시 서면 걷는다.
-function holdPlace(S, main, scrolled) {
-  if (!S.selBar.hidden) {
-    S.root.style.marginBottom = ''
-    return
-  }
-  const cut = main ? overPx(scrolled, main.scrollTop) : 0
-  if (!cut) return
-  S.root.style.marginBottom = cut + 'px'
-  main.scrollTop = scrolled
+// 고르는 동안 `<html data-emg-sel>` — 페이지 서식(`tools_menu_style`)이 불러오기 줄과 메뉴 「엑셀·CSV」 를 숨긴다(자리는 그대로라
+// 표가 움직이지 않는다). 불러오기 줄은 그림자 DOM 이라 상속되는 CSS 변수로 숨는다.
+function markSelecting(S, on) {
+  const root = typeof document !== 'undefined' ? document.documentElement : null
+  if (!root || !root.dataset) return
+  if (on) root.dataset.emgSel = '1'
+  else if (root.dataset.emgSel !== undefined) delete root.dataset.emgSel
 }
 
-function buildSelection(S, bar) {
-  const rows = selectedRows(S)
-  bar.hidden = rows.length === 0
-  if (!rows.length) return
+// 불러오기 칸(`loaderKey` 의 Streamlit 칸)의 자리 — 띠를 그 위에 얹는다. 표 틀 기준 좌표다(틀이 `position: relative`).
+function loaderBox(S) {
+  const key = S.data && S.data.loaderKey
+  if (!key || typeof document === 'undefined' || !document.querySelector) return null
+  return document.querySelector('.st-key-' + key)
+}
+
+function placeBand(S) {
+  const band = S.selBar
+  if (!band || band.hidden || !S.root) return
+  const loader = loaderBox(S)
+  if (!loader || !S.root.getBoundingClientRect) return
+  const from = S.root.getBoundingClientRect()
+  const to = loader.getBoundingClientRect()
+  if (!to.width) return
+  const left = Math.round(to.left - from.left - (S.root.clientLeft || 0))
+  const top = Math.round(to.top - from.top - (S.root.clientTop || 0))
+  band.style.left = left + 'px'
+  band.style.top = top + 'px'
+  band.style.width = Math.round(to.width) + 'px'
+}
+
+// 창 폭 · 오른쪽 칸 폭 · 접힘이 바뀌면 불러오기 칸 자리도 바뀐다 — 띠가 서 있는 동안 다시 잰다(파이썬 회차 없음 — UI-PRF-04).
+function watchBand(S) {
+  if (S.bandObserver || typeof ResizeObserver !== 'function') return
+  S.bandObserver = new ResizeObserver(() => placeBand(S))
+  S.bandObserver.observe(S.root)
+  const loader = loaderBox(S)
+  if (loader) S.bandObserver.observe(loader)
+}
+
+// 「값 넣기 ▾」 팝업 — 칸 고르기 · 값(고르는 칸이면 낱말 칩, 아니면 글 칸) · 「넣기 (n칸)」. 넣으면 닫고 여는 단추로 돌아온다.
+function bulkSetPanel(S, rows, panel, repaint, done) {
   const columns = S.model.columns
-  bar.appendChild(el('span', null, '선택 ' + rows.length.toLocaleString() + '대'))
   const pick = el('select')
   pick.setAttribute('aria-label', '값을 넣을 칸')
-  columns.forEach((column, k) => {
+  columns.forEach((column) => {
     if (column.kind === 'name') return
     const option = el('option', null, column.name + (SCOPE_LABELS[column.scope] ? ' (' + SCOPE_LABELS[column.scope] + ')' : ''))
     option.value = column.name
@@ -1344,11 +1371,10 @@ function buildSelection(S, bar) {
     S.bulkCol = pick.value
     S.bulkValue = ''
     S.bulkChosen = false
-    paintSelection(S)
+    repaint()
   })
-  pick.addEventListener('keydown', stopKeys)
-  bar.appendChild(pick)
-  bar.appendChild(el('span', null, '에'))
+  panel.appendChild(pick)
+  panel.appendChild(el('span', null, '에'))
   const col = columns.findIndex((column) => column.name === S.bulkCol)
   const column = columns[col] || {}
   const locked = (row, k) => !editableIn(S, row, k)
@@ -1357,7 +1383,10 @@ function buildSelection(S, bar) {
   const apply = button('emg-btn is-small is-primary', '', () => {
     const targets = rows.filter((row) => !locked(row, col)).map((row) => row.id)
     if (!targets.length || !ready) return
-    if (sendOnce(S, { op: 'set', ids: targets, col: column.name, text: S.bulkValue }, targets.map((id) => [id, col, S.bulkValue]))) paintWindow(S)
+    if (sendOnce(S, { op: 'set', ids: targets, col: column.name, text: S.bulkValue }, targets.map((id) => [id, col, S.bulkValue]))) {
+      paintWindow(S)
+      done()
+    }
   })
   const applyTip = tipWrap(apply, 'emg-apply-tip')
   const repaintApply = () => {
@@ -1370,16 +1399,17 @@ function buildSelection(S, bar) {
     const chips = el('div', 'emg-chips')
     // 여러 줄에 한 값을 넣으니 줄마다 다른 동으로 좁히지 않는다 — 칸 단위 선택지 그대로(`choiceOptions` 를 거치지 않음).
     const options = (column.options || []).concat(column.blank ? [''] : [])
-    for (const value of options) {
+    options.forEach((value, index) => {
       const chip = button('emg-chip', value || '(비움)', () => {
         S.bulkValue = value
         S.bulkChosen = true
-        paintSelection(S)
+        repaint()
       })
+      chip.dataset.fk = 'bulk-chip-' + index
       chip.setAttribute('aria-pressed', S.bulkChosen && S.bulkValue === value ? 'true' : 'false')
       chips.appendChild(chip)
-    }
-    bar.appendChild(chips)
+    })
+    panel.appendChild(chips)
   } else {
     const input = el('input', 'emg-input')
     input.value = S.bulkValue
@@ -1390,12 +1420,16 @@ function buildSelection(S, bar) {
       S.bulkValue = input.value
       repaintApply()
     })
-    input.addEventListener('keydown', stopKeys)
-    bar.appendChild(input)
+    panel.appendChild(input)
   }
   repaintApply()
-  bar.appendChild(applyTip.host)
-  bar.appendChild(el('span', 'emg-vsep'))
+  panel.appendChild(applyTip.host)
+}
+
+// 「일정 밀기 ▾」 팝업 — 「반입·Qual 일정 [n] 일 밀기 (n칸)」. 밀면 닫고 여는 단추로 돌아온다.
+function bulkShiftPanel(S, rows, panel, repaint, done) {
+  const columns = S.model.columns
+  const locked = (row, k) => !editableIn(S, row, k)
   // 「반입·Qual 일정 [n] 일 밀기」 는 한 덩이로 줄을 바꾼다 — 줄이 좁으면 단위 「일」 만 다음 줄로 넘어가 칸과 떨어졌다(E2E).
   const shiftGroup = el('span', 'emg-shift')
   shiftGroup.appendChild(el('span', null, '반입·Qual 일정'))
@@ -1406,13 +1440,16 @@ function buildSelection(S, bar) {
   shiftGroup.appendChild(days)
   shiftGroup.appendChild(el('span', null, '일'))
   const dateCols = columns.map((c, k) => (c.name === '반입일정' || c.name === 'Qual일정' ? k : -1)).filter((k) => k >= 0)
-  const shift = button('emg-btn is-small', '', () => {
+  const shift = button('emg-btn is-small is-primary', '', () => {
     const value = parseDays(S.days)
     if (value === null) return
     const targets = rows.map((row) => row.id)
     const cells = []
     for (const row of rows) for (const k of dateCols) if (!locked(row, k) && shiftIso(String(row.values[k] || ''), value)) cells.push([row.id, k, shiftIso(String(row.values[k]), value)])
-    if (sendOnce(S, { op: 'shift', ids: targets, days: value }, cells)) paintWindow(S)
+    if (sendOnce(S, { op: 'shift', ids: targets, days: value }, cells)) {
+      paintWindow(S)
+      done()
+    }
   })
   const shiftTip = tipWrap(shift, 'emg-shift-tip')
   const held = lockedShiftCell(rows, dateCols, locked)
@@ -1427,11 +1464,22 @@ function buildSelection(S, bar) {
     S.days = days.value
     repaintShift()
   })
-  days.addEventListener('keydown', stopKeys)
   repaintShift()
   shiftGroup.appendChild(shiftTip.host)
-  bar.appendChild(shiftGroup)
-  bar.appendChild(el('span', 'emg-vsep'))
+  panel.appendChild(shiftGroup)
+}
+
+// 고른 줄 띠 한 줄 — 「선택 n대 · 값 넣기 ▾ · 일정 밀기 ▾ · 선택 n대 지우기 · 선택 풀기」. 넣기 · 밀기 조작은 팝업 안이다.
+function buildSelection(S, bar) {
+  const rows = selectedRows(S)
+  bar.hidden = rows.length === 0
+  if (!rows.length) {
+    S.pop = null
+    return
+  }
+  bar.appendChild(el('span', 'emg-sel-count', '선택 ' + rows.length.toLocaleString() + '대'))
+  bar.appendChild(popover(S, 'bulk-set', '값 넣기', '고른 호기의 칸에 값 넣기', (panel, repaint, done) => bulkSetPanel(S, rows, panel, repaint, done), 'bulk'))
+  bar.appendChild(popover(S, 'bulk-shift', '일정 밀기', '고른 호기의 반입·Qual 일정 밀기', (panel, repaint, done) => bulkShiftPanel(S, rows, panel, repaint, done), 'bulk'))
   const lock = S.data.deleteLock
   const deletable = rows.filter((row) => !(lock && row.tag !== 'new'))
   const remove = button('emg-btn is-small is-danger', '선택 ' + rows.length.toLocaleString() + '대 지우기', () => {
@@ -1775,20 +1823,6 @@ function ensureVisible(S, id) {
   const headH = 42
   if (top < box.scrollTop) box.scrollTop = top
   else if (top + ROW_H + headH > box.scrollTop + box.clientHeight) box.scrollTop = top + ROW_H + headH - box.clientHeight
-  clearOfBar(S, id)
-}
-
-// 띠가 창 아래 끝에 붙으면 그 자리의 줄을 덮는다 — 방금 고른 줄 · 초점이 간 줄이 그 밑에 들면 덮인 만큼만 본문을 올린다. 덮이지
-// 않으면 아무것도 움직이지 않는다(설계 규칙 UI-PRF-03). 다시 그린 뒤의 자리를 재려고 다음 프레임에 본다.
-function clearOfBar(S, id) {
-  const frame = typeof window !== 'undefined' && window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (fn) => setTimeout(fn, 0)
-  frame(() => {
-    const main = pageMain()
-    const line = S.body.querySelector('[data-id="' + cssEscape(id) + '"]')
-    if (!main || !line || S.selBar.hidden) return
-    const lift = overPx(line.getBoundingClientRect().bottom, S.selBar.getBoundingClientRect().top)
-    if (lift) main.scrollTop += lift
-  })
 }
 
 function onBodyClick(S, event) {
@@ -1842,7 +1876,6 @@ function toggleRow(S, id, shift) {
   paintHead(S)
   paintSelection(S)
   paintWindow(S)
-  clearOfBar(S, id)
 }
 
 function onBodyKey(S, event) {
@@ -2023,10 +2056,6 @@ function revealHead(head) {
     // 그래도 머리 띠 아래로 가려 있으면(칸이 페이지 흐름에 있을 때 — 좁은 창에서 쌓인 칸 등) 칸 머리를 보인다.
     if (needsReveal(head.getBoundingClientRect().top, HEAD_REVEAL_MARGIN)) head.scrollIntoView({ block: 'start' })
   })
-}
-
-function pageMain() {
-  return typeof document !== 'undefined' && document.querySelector ? document.querySelector(PAGE_SCROLLER) : null
 }
 
 // 칸 머리를 감싼 가장 가까운 넘치는 스크롤 칸 — 그림자 DOM 밖으로 건너 올라간다. 페이지 본문(`PAGE_SCROLLER`)에 닿거나 못
@@ -2619,8 +2648,13 @@ export default function (component) {
       const inside = path ? path.includes(host) : host.contains(event.target)
       if (!S.pop || S.pop === 'search') return
       if (!inside) {
-        S.pop = null
-        if (S.data && S.data.mode === 'loader') drawLoader(host, S, S.data)
+        // 표 마운트(고른 줄 띠의 팝업)는 다시 짓지 않고 그 패널만 닫는다.
+        const open = S.pops[S.pop]
+        if (S.data && S.data.mode === 'loader') {
+          S.pop = null
+          drawLoader(host, S, S.data)
+        } else if (open) open.hide()
+        else S.pop = null
         return
       }
       closeOtherPress(S, path, event.target)
@@ -2641,6 +2675,9 @@ export default function (component) {
     if (S.scrollFrame) cancelAnimationFrame(S.scrollFrame)
     if (S.fitObserver) S.fitObserver.disconnect()
     S.fitObserver = null
+    if (S.bandObserver) S.bandObserver.disconnect()
+    S.bandObserver = null
+    if (data.mode === 'grid') markSelecting(S, false)
     S.timer = 0
     S.noteTimer = 0
     S.scrollFrame = 0
