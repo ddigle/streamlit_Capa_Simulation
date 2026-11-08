@@ -684,6 +684,33 @@ def test_logout_page_links_idp_logout_only_when_configured() -> None:
     assert response.header("location") is None
 
 
+def _first_paragraph(page: AsgiResponse) -> str:
+    body = page.text.split("<main>", 1)[1]
+    return body.split("<p>", 1)[1].split("</p>", 1)[0]
+
+
+def test_outer_pages_do_not_repeat_their_title_as_the_first_sentence() -> None:
+    """바깥 화면(앱 밖 · 규칙 예외)의 설명 문장은 남기되 제목을 거듭하는 첫 문장은 걷고, 단추 이름은
+    「 」 로 감싼다(2026-11-08 사용자 답 b1). 모르는 사유 코드는 제목과 사유 코드만이다."""
+    cfg = use_config()
+
+    logout = http(routes_app(), "GET", names.LOGOUT_PATH)
+    loop = http(
+        routes_app(), "GET", names.LOGIN_PATH, headers={"cookie": f"{cfg.attempt_cookie}=3"}
+    )
+    unknown = http(routes_app(), "GET", f"{names.ERROR_PATH}?code=zzz")
+
+    assert _first_paragraph(logout).startswith("이 앱의 로그인만 끝냈습니다")
+    assert "「다시 들어가기」" in logout.text and "[다시 들어가기]" not in logout.text
+    assert "로그아웃했습니다. " not in logout.text
+    assert _first_paragraph(loop).startswith("로그인 쿠키가 저장되지 않는 것 같습니다")
+    assert "되풀이되고 있습니다" not in loop.text
+    assert "사유 코드 <code>unknown</code>" in unknown.text
+    assert "<p>로그인하지 못했습니다.</p>" not in unknown.text
+    for page in (logout, loop, unknown):
+        assert "[" not in page.text.split("<main>", 1)[1]
+
+
 def test_plain_links_on_the_outer_pages_take_the_accent_token() -> None:
     """바깥 화면의 보조 링크(「통합인증에서도 로그아웃」 등)는 브라우저 기본 파랑 · 보라가 아니라
     두 팔레트의 강조 토큰이다 — 단추 꼴 링크(`a.button`)는 선택자가 더 구체적이라 제 글자색을

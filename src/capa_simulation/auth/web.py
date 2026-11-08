@@ -137,6 +137,8 @@ _KEY_REASON = "서명 인증서가 맞지 않습니다 — 인증서 교체가 �
 _TIME_REASON = "시각이 맞지 않습니다(서버 시계가 어긋났거나 오래된 토큰을 다시 보냄)."
 _NONCE_REASON = "다른 로그인의 토큰입니다."
 _COOKIE_REASON = "로그인 쿠키를 저장하지 못했습니다."
+# 오류 화면 제목. 모르는 사유 코드는 본문에 이 말을 다시 적지 않고 제목과 사유 코드만 둔다.
+ERROR_PAGE_TITLE = "로그인하지 못했습니다"
 REASON_TEXT: Mapping[str, str] = {
     "bad_content_type": _FORM_REASON,
     "body_too_large": _FORM_REASON,
@@ -557,6 +559,8 @@ def config_page(cfg: SsoConfig, *, status: int, now: int | None = None) -> HTMLR
 
 
 def reason_text(code: str) -> str:
+    """사유 코드의 한 줄 설명. 모르는 코드는 빈 글이다 — 화면 제목(`ERROR_PAGE_TITLE`)을 본문에서
+    거듭하지 않는다."""
     if code.startswith("idp_error:"):
         detail = code.split(":", 1)[1]
         if detail == "access_denied":
@@ -564,7 +568,7 @@ def reason_text(code: str) -> str:
         return "통합인증이 거절했습니다."
     if code.startswith(("claim_missing:", "claim_invalid:")):
         return "필요한 클레임이 없거나 꼴이 다릅니다 — 아래 받은 클레임 이름 목록을 보세요."
-    return REASON_TEXT.get(code, "로그인하지 못했습니다.")
+    return REASON_TEXT.get(code, "")
 
 
 def allowed_reason_codes(cfg: SsoConfig) -> frozenset[str]:
@@ -593,15 +597,15 @@ def error_page(
         for key, label in DIAGNOSTIC_LABELS
         if details and details.get(key)
     )
-    body = [
-        f"<p>사유 코드 <code>{_esc(code)}</code></p>",
-        f"<p>{_esc(reason_text(code))}</p>",
-    ]
+    body = [f"<p>사유 코드 <code>{_esc(code)}</code></p>"]
+    reason = reason_text(code)
+    if reason:
+        body.append(f"<p>{_esc(reason)}</p>")
     if rows:
         body.append(f"<table><tbody>{rows}</tbody></table>")
     retry = public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': '/'})}")
     body.append(f'<a class="button" href="{_esc(retry)}">다시 시도</a>')
-    return html_page("로그인하지 못했습니다", "".join(body), status=status)
+    return html_page(ERROR_PAGE_TITLE, "".join(body), status=status)
 
 
 def denied_page(cfg: SsoConfig, *, status: int, unread: bool = False) -> HTMLResponse:
@@ -628,10 +632,12 @@ def denied_page(cfg: SsoConfig, *, status: int, unread: bool = False) -> HTMLRes
 
 
 def logout_page(cfg: SsoConfig) -> HTMLResponse:
+    """로그아웃 안내 화면. 앱 밖 화면이라 Guide 가 없어 하는 법을 문장으로 둔다(설계 규칙 예외 —
+    2026-11-08 사용자 답 b1) — 제목을 거듭하는 첫 문장은 두지 않는다."""
     again = public_link(cfg, "/")
     body = [
-        "<p>로그아웃했습니다. 이 앱의 로그인만 끝냈습니다 — 브라우저의 통합인증(AD) 로그인은 "
-        "남아 있어 [다시 들어가기]를 누르면 묻지 않고 다시 들어갑니다.</p>",
+        "<p>이 앱의 로그인만 끝냈습니다 — 브라우저의 통합인증(AD) 로그인은 "
+        "남아 있어 「다시 들어가기」 를 누르면 묻지 않고 다시 들어갑니다.</p>",
         f'<a class="button" href="{_esc(again)}">다시 들어가기</a>',
     ]
     if cfg.logout_url:
@@ -642,8 +648,9 @@ def logout_page(cfg: SsoConfig) -> HTMLResponse:
 
 
 def loop_page(cfg: SsoConfig) -> HTMLResponse:
+    """로그인 되풀이 화면 — 로그아웃 안내와 같은 예외 꼴(제목을 거듭하는 첫 문장 없음)."""
     body = (
-        "<p>로그인이 되풀이되고 있습니다. 로그인 쿠키가 저장되지 않는 것 같습니다 — "
+        "<p>로그인 쿠키가 저장되지 않는 것 같습니다 — "
         "주소가 https 인지, 브라우저가 이 사이트의 쿠키를 막지 않는지 확인하세요. 관리자는 실제 "
         f"접속 주소가 설정값(<code>{_esc(names.ENV_PUBLIC_URL)}</code>)과 같은지 봅니다.</p>"
         '<p class="muted">사유 코드 <code>login_loop</code> · 2분 뒤 다시 시도할 수 있습니다.</p>'
