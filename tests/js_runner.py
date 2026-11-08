@@ -82,6 +82,28 @@ def run_js_json(
     return json.loads(completed.stdout)
 
 
+def check_js_module(
+    source: str, *, what: str, timeout: float = 60
+) -> subprocess.CompletedProcess[str]:
+    """`source` 를 돌리지 않고 ES 모듈로 읽기만 한다(`node --check`) — 임시 `.mjs` 파일이라 가까운
+    `package.json` 과 node 의 모듈 짐작에 기대지 않는다. 컴포넌트 JS 는 브라우저가 모듈로 들이므로
+    같은 꼴(엄격 모드)로 읽는다. 읽기만 하는 깃발은 bun 에 없어 node 가 아니면 건너뛴다."""
+    runtime = need_js_runtime(what)
+    if not Path(runtime).name.lower().startswith("node"):
+        pytest.skip("문법 읽기(`--check`)는 node 에만 있다 — CI 에서 돈다")
+    with tempfile.TemporaryDirectory() as folder:
+        script = Path(folder) / "case.mjs"
+        script.write_text(source, encoding="utf-8", newline="\n")
+        return subprocess.run(
+            [runtime, "--check", str(script)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=timeout,
+            check=False,
+        )
+
+
 def windows_command_line_length(args: Command) -> int:
     """`args` 를 Windows 가 짓는 꼴(`list2cmdline`)로 이었을 때의 UTF-16 글자 수."""
     if isinstance(args, str | bytes | os.PathLike):
