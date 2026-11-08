@@ -28,8 +28,10 @@ from capa_simulation.components.literal_markdown import literal_names
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import (
+    TableView,
     merge_edited_rows,
     render_table_view_controls,
+    view_of,
 )
 from capa_simulation.components.write_guard import (
     forget_seen,
@@ -91,6 +93,11 @@ _FILL_FLASH_KEY = "equipment_cutoff_fill_flash_v1"
 _REJECTED_NAME = "equipment_process_cutoff_rejected"
 _UNCHANGED_NAME = "equipment_process_cutoff_unchanged"
 _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
+# 편집표에 건 보기(행 필터 · 감춘 칸) — 보기 설정은 폼 안이라 「보기 적용」 · 다른 제출 단추를
+# 눌러야 오고, 편집표는 그 앞 제출의 보기로 그려 그 제출의 칸 편집을 옛 행 자리로 읽는다(2026-11-08
+# 사용자 답 X1).
+_APPLIED_VIEW_KEY = "equipment_cutoff_applied_view_v1"
+_VIEW_APPLY_KEY = "equipment_cutoff_view_apply_v1"
 # 「Cut-off 저장」 단추 풍선 — 팝업 머리에 안내 글을 두지 않으므로 꼭 남길 둘(공용 설정 · 저장하지
 # 않고 닫으면 사라짐)을 누르는 자리에 둔다(HOME `home_preference.SHARED_SAVE_HELP` 와 같은 꼴).
 CUTOFF_SAVE_HELP = (
@@ -114,6 +121,7 @@ def forget_cutoff_draft() -> None:
     사라진다」 이므로 여는 때 걷는 것과 뜻이 같다(닫힘은 X·Esc 말고 페이지 이동으로도 와 여는 쪽에
     둔다)."""
     st.session_state.pop(CUTOFF_DRAFT_KEY, None)
+    st.session_state.pop(_APPLIED_VIEW_KEY, None)
     forget_seen(CUTOFF_BASE_KEY)
     discard_editor(_EDITOR_KEY)
 
@@ -192,15 +200,6 @@ def render_cutoff_management(
         key="equipment_cutoff_csv_v1",
     )
 
-    view = render_table_view_controls(
-        draft,
-        key_prefix=_VIEW_PREFIX,
-        editor_key=_EDITOR_KEY,
-        filter_columns=["공정"],
-        locked_columns=["공정", "Cutoff일수"],
-        value_labels=process_labels.value_labels() if process_labels else None,
-    )
-
     with st.form(_FORM_KEY, border=True):
         # 표에 친 칸은 폼을 제출해야 서버에 온다. 「설비 공정으로 채우기」 도 그 칸 위에 얹으므로 폼
         # 밖 단추로 두지 않는다 — 친 값을 모른 채 표를 다시 세우면 그 값이 말없이 사라진다.
@@ -235,6 +234,25 @@ def render_cutoff_management(
                 st.error(rejected)
             if take_refusal(_UNCHANGED_NAME) is not None:
                 st.info(CUTOFF_UNCHANGED_MESSAGE, icon=":material/info:")
+        # 보기 설정도 폼 안이다 — 칸을 친 채 공정 필터 · 볼 컬럼을 바꿔도 회차가 돌지 않아 친 칸이
+        # 남고, 「보기 적용」 이 친 칸과 새 보기를 함께 가져간다(2026-11-08 사용자 답 X1).
+        view_applied = False
+
+        def view_button() -> None:
+            nonlocal view_applied
+            view_applied = st.form_submit_button("보기 적용", key=_VIEW_APPLY_KEY)
+
+        requested = render_table_view_controls(
+            draft,
+            key_prefix=_VIEW_PREFIX,
+            # 고른 보기의 행이 바뀌어도 편집표는 버리지 않는다 — 적용한 보기로 그린다.
+            editor_key=f"{_EDITOR_KEY}_requested_view",
+            filter_columns=["공정"],
+            locked_columns=["공정", "Cutoff일수"],
+            value_labels=process_labels.value_labels() if process_labels else None,
+            footer=view_button,
+        )
+        view = _applied_view(draft, requested)
         edited = st.data_editor(
             view.frame,
             key=editor_widget_key(_EDITOR_KEY, in_form=True),
@@ -263,6 +281,13 @@ def render_cutoff_management(
     # 칸이 빈 새 행은 브라우저가 보내지 않아 저장에서 빠진다.
     merged = merge_edited_rows(draft, edited, filtered=view.filtered).reset_index(drop=True)
     st.session_state[CUTOFF_DRAFT_KEY] = merged
+    # 친 칸을 앞 보기로 얹은 뒤 새 보기를 건다 — 보이는 행이 바뀌니 편집표는 새로 선다.
+    if _store_view(requested):
+        discard_editor(_EDITOR_KEY)
+        if not (filling or submitted):
+            st.rerun()
+    elif view_applied:
+        st.rerun()
 
     # 제출을 받은 회차는 어느 갈래로 끝나든 `st.rerun()` 으로 표를 이 초안으로 다시 그린다 — 행
     # 추가가 열린 표의 위젯 id 는 데이터로 지어져, 초안만 바꾸고 끝나면 화면의 표는 옛 id 로 남아
@@ -358,6 +383,29 @@ def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> N
     elif held_notice(_FILL_FLASH_KEY) is None:
         queue_flash(_FILL_FLASH_KEY, "더할 공정이 없습니다.", kind="info")
     st.rerun()
+
+
+def _view_state(view: TableView) -> tuple[dict[str, tuple[str, ...]], tuple[str, ...]]:
+    return dict(view.filters), tuple(view.hidden_columns)
+
+
+def _applied_view(draft: pd.DataFrame, requested: TableView) -> TableView:
+    """편집표에 건 보기 — 앞 제출의 고름(`_APPLIED_VIEW_KEY`)을 지금 초안에 다시 건다. 처음 그리는
+    회차는 고른 보기 그대로다."""
+    state = st.session_state.get(_APPLIED_VIEW_KEY)
+    if not (isinstance(state, tuple) and len(state) == 2 and isinstance(state[0], dict)):
+        st.session_state[_APPLIED_VIEW_KEY] = _view_state(requested)
+        return requested
+    return view_of(draft, filters=state[0], hidden_columns=state[1])
+
+
+def _store_view(requested: TableView) -> bool:
+    """고른 보기를 편집표에 건다 — 앞 보기와 달랐으면 참이다."""
+    state = _view_state(requested)
+    if st.session_state.get(_APPLIED_VIEW_KEY) == state:
+        return False
+    st.session_state[_APPLIED_VIEW_KEY] = state
+    return True
 
 
 def _same_as_saved(stored: pd.DataFrame, edited: pd.DataFrame, expected: str) -> bool:

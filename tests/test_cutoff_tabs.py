@@ -510,7 +510,7 @@ def test_filling_under_a_row_filter_keeps_the_typed_value(tmp_path: Path) -> Non
     )
     tables = BrowserTables(app, forms=True)
     app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
-    tables.run()
+    _press(tables, "보기 적용")
     tables.edit(_editor_key(app), 0, "Cutoff일수", 21.5)
 
     _press(tables, "설비 공정으로 채우기")
@@ -582,7 +582,7 @@ def test_a_cell_fixed_after_a_refused_save_under_a_row_filter_reaches_the_next_s
     )
     tables = BrowserTables(app, forms=True)
     app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
-    tables.run()
+    _press(tables, "보기 적용")
     tables.edit(_editor_key(app), 0, "Cutoff일수", 99999.0)
 
     _press(tables, "Cut-off 저장")
@@ -826,4 +826,38 @@ render_cutoff_management(
     assert not app.exception
     assert not app.warning, [str(item.value) for item in app.warning]
     assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0, 5.0]
+    clear_equipment_repository()
+
+
+def test_changing_the_view_keeps_a_typed_cell_and_the_view_apply_brings_both(
+    tmp_path: Path,
+) -> None:
+    """칸을 친 채 「표 보기 설정」 의 공정 필터 · 볼 컬럼을 바꾸면 회차가 돌며 표를 새로 세워 친
+    칸이 말없이 사라졌다(AVI 44.5 → 20.8, 저장 「바뀐 것이 없습니다」 — X1). 보기 설정은 폼 안이라
+    바꾸기만 해서는 회차가 돌지 않고, 「보기 적용」 이 친 칸과 새 보기를 함께 가져간다 — 친 칸은
+    앞 보기의 행 자리로 읽힌다."""
+    app, outside = _cutoff_app(
+        tmp_path / "view.duckdb",
+        {"Process-A": 10.0, "Process-C": 20.0},
+        ["Process-A", "Process-C"],
+    )
+    assert app.button(key="equipment_cutoff_view_apply_v1").proto.form_id
+    tables = BrowserTables(app, forms=True)
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 44.5)
+    app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
+    app.multiselect(key="equipment_cutoff_view_v1_columns").set_value([])
+
+    _press(tables, "보기 적용")
+
+    draft = app.session_state[CUTOFF_DRAFT_KEY]
+    assert dict(zip(draft["공정"], draft["Cutoff일수"], strict=True)) == {
+        "Process-A": 44.5,
+        "Process-C": 20.0,
+    }
+    (editor,) = app.dataframe
+    assert len(editor.value) == 1
+
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 44.5, "Process-C": 20.0}
     clear_equipment_repository()
