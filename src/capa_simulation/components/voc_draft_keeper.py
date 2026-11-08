@@ -1,6 +1,7 @@
-# Purpose: VOC 새 글 폼의 제목·내용 초안을 브라우저 탭에 두었다가 화면 이동·새로고침 뒤 되살린다.
+# Purpose: VOC 의 아직 남지 않은 글을 지킨다 — 새 글 초안을 브라우저 탭에 두었다 되살리고, 적어 둔
+# 답변을 「잃을 것」 판정에 내준다.
 
-"""VOC 새 글 초안 보관.
+"""VOC 새 글 초안 보관 · 적어 둔 답변의 「잃을 것」 판정.
 
 새 글 폼(`st.form`)의 제목·내용은 「글 올리기」 를 누르기 전에는 서버가 모른다. 그래서 쓰다가 다른
 화면·화면 탭으로 옮기거나 테마를 바꾸면(테마 전환은 문서를 새로 읽어 세션이 새로 선다) 적은 글이
@@ -25,6 +26,14 @@
 판정은 DOM 을 모르는 순수 구획(`// <voc-draft>`)이라 node 시험이 떼어 돌린다
 (`tests/test_voc_draft_keeper.py`). **비공식 경로다** — Streamlit 의 `st-key-` 칸 이름과 React 입력
 칸의 값 설정 꼴에 기댄다. 판올림에서 바뀌면 되살리기만 멈추고 폼은 그대로다.
+
+**적어 둔 답변**(`KEPT_REPLY_KEY`)은 남지 못한 답변을 머리 알림 칸에 「닫기」 까지 두는 서버 세션
+칸이다(`app_pages/voc.py`). 다른 화면에 갔다 와도 남지만 새로고침 · 테마 전환 · 브라우저 탭 닫기에는
+세션과 함께 사라진다. 그래서 「잃을 것」 에 든다 — 화면 탭 「VOC」 주황 점
+(`page_tabs.page_unsaved_marks`)과 머리 변경 칩 「저장 안 함」 한 줄
+(`change_summary.session_changes`)이 같은 판정(`kept_reply_count`)을 읽고, 그 점이 테마 단추 ·
+떠나기 확인 창의 표지가 된다. 탭 점 · 변경 칩은 페이지 앞에서 세션만 읽으므로 화면 파일이 아니라
+여기에 키를 둔다.
 """
 
 from __future__ import annotations
@@ -38,6 +47,10 @@ from capa_simulation import alerts
 
 # 브라우저 탭(`sessionStorage`)의 초안 칸 이름.
 DRAFT_STORAGE_KEY: Final = "capa-voc-post-draft"
+# 적어 둔 답변 — 거절된 차례대로 든 답변 글 튜플(`app_pages/voc.py` 가 적고 「닫기」 가 걷는다).
+KEPT_REPLY_KEY: Final = "voc_kept_reply"
+# VOC 화면 파일 이름(탭 점 · 변경 칩이 그 화면을 찾는 값 — `navigation.ADMIN_BOX_PAGES`).
+VOC_PAGE_FILE: Final = "voc.py"
 # 이 세션의 표지(세션마다 새로 뽑는다).
 _SESSION_TOKEN_KEY: Final = "voc_draft_session_token"
 # 되살림 알림(`VO-02`)의 짧은 글과 전문 — 보관 범위(이 탭 · 올리기 전에는 탭을 닫으면 사라짐)는
@@ -171,6 +184,12 @@ function draftAction(stored, session, generation, current) {
 _DRAFT_KEEPER = st.components.v2.component(
     "capa_voc_draft_keeper", html=_HTML, js=_JS, isolate_styles=False
 )
+
+
+def kept_reply_count() -> int:
+    """적어 둔 답변의 수 — 세션만 읽는다(화면 탭 점 · 머리 변경 칩이 페이지 앞에서 부른다)."""
+    kept = st.session_state.get(KEPT_REPLY_KEY)
+    return len(kept) if isinstance(kept, tuple) else 0
 
 
 def _session_token() -> str:

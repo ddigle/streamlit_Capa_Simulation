@@ -1023,6 +1023,70 @@ def test_a_floor_state_draft_marks_only_the_space_tab_and_asks_before_leaving(
         assert leave == ""
 
 
+_VOC_PAGE = "app_pages/voc.py"
+
+
+def _kept_reply_marks_script() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.change_summary import session_changes
+    from capa_simulation.components.page_tabs import leave_notice, page_unsaved_marks
+
+    page = st.session_state["test_page_file"]
+    st.session_state["test_marks"] = page_unsaved_marks(page)
+    st.session_state["test_leave"] = leave_notice(page)
+    st.session_state["test_changes"] = session_changes(page, hrefs={"app_pages/voc.py": "voc"})
+
+
+@pytest.mark.parametrize("page_file", ["home.py", "voc.py"])
+def test_a_kept_voc_reply_marks_the_voc_tab_and_the_change_chip_from_any_page(
+    page_file: str,
+) -> None:
+    """VOC 「적어 둔 답변」 은 세션 칸이라 화면을 옮겨도 남지만 새로고침 · 테마 전환에는 사라진다 —
+    「잃을 것」 이다(아침 보드 X1). 어느 화면에서나 VOC 탭에 점, 머리 변경 칩 「저장 안 함」 에 한
+    줄이 선다. 떠나도 남으므로 떠나기 확인 글에는 들지 않는다. 닫으면 둘 다 걷힌다."""
+    from capa_simulation.components.voc_draft_keeper import KEPT_REPLY_KEY
+
+    app = AppTest.from_function(_kept_reply_marks_script)
+    app.session_state["test_page_file"] = page_file
+    app.session_state[KEPT_REPLY_KEY] = ("남지 못한 답변", "또 남지 못한 답변")
+    _ok(app.run())
+
+    assert app.session_state["test_marks"] == {_VOC_PAGE: "적어 둔 답변 2건"}
+    assert app.session_state["test_leave"] == ""
+    assert [
+        (item["group"], item["page"], item["text"], item["top"], item["href"])
+        for item in app.session_state["test_changes"]
+    ] == [("keep", "VOC", "적어 둔 답변 2건", "VOC 적어 둔 답변", "voc")]
+
+    del app.session_state[KEPT_REPLY_KEY]
+    _ok(app.run())
+    assert app.session_state["test_marks"] == {}
+    assert app.session_state["test_changes"] == []
+
+
+def test_a_kept_voc_reply_marks_the_voc_tab_and_the_theme_button(
+    _app: AppTest, sent: list[dict[str, Any]]
+) -> None:
+    """적어 둔 답변이 있으면 다른 화면에서도 VOC 탭에 점이 서고 테마 단추 · 떠나기 확인 표지가
+    선다 — 새로고침 · 테마 전환이 확인 없이 지우지 않는다(아침 보드 X1)."""
+    from capa_simulation.components.voc_draft_keeper import KEPT_REPLY_KEY
+
+    app = _ok(_app.run())
+    app.session_state[PAGE_TABS_OPEN_KEY] = (H, _VOC_PAGE, B)
+    _ok(app.switch_page(B).run())
+    assert _tab(sent, _VOC_PAGE)["dirty"] is False
+    assert not _has_theme_unsaved_marker(app)
+
+    app.session_state[KEPT_REPLY_KEY] = ("남지 못한 답변",)
+    _ok(app.switch_page(B).run())
+    voc = _tab(sent, _VOC_PAGE)
+    assert voc["dirty"] is True
+    assert voc["title"] == "VOC — 적어 둔 답변 1건"
+    assert _tab(sent, B)["dirty"] is False
+    assert _has_theme_unsaved_marker(app)
+
+
 # ------------------------------------------------------------------ 탭 왕복에 남는 보기 조건
 
 _CALCULATION_RESULT = "app_pages/calculation_result.py"

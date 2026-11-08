@@ -679,6 +679,21 @@ def test_a_kept_reply_stays_until_it_is_closed(tmp_path: Path) -> None:
     assert KEPT_CLOSE_KEY not in [button.key for button in app.button]
 
 
+def test_a_kept_reply_is_counted_where_the_unsaved_marks_read_it(tmp_path: Path) -> None:
+    """화면 탭 점 · 머리 변경 칩은 페이지 앞에서 `voc_draft_keeper.kept_reply_count` 로 적어 둔
+    답변을 센다 — 화면이 그 칸에 적고 「닫기」 가 걷는다(아침 보드 X1 — 새로고침 · 테마 전환 앞에서
+    묻는다)."""
+    from capa_simulation.components.voc_draft_keeper import KEPT_REPLY_KEY
+
+    app, _ = _refused_reply(tmp_path / "scenario.duckdb")
+    assert app.session_state[KEPT_REPLY_KEY] == ("보지 못한 답변",)
+
+    app.button(key=KEPT_CLOSE_KEY).click().run()
+
+    assert not app.exception
+    assert KEPT_REPLY_KEY not in app.session_state
+
+
 def test_the_close_button_warns_that_the_kept_reply_goes_away(tmp_path: Path) -> None:
     """「닫기」 는 글을 되돌릴 수 없이 버린다 — 누르기 전에 풍선이 말한다(UI-NTF-09)."""
     app, _ = _refused_reply(tmp_path / "scenario.duckdb")

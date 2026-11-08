@@ -25,7 +25,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.voc_draft_keeper import render_voc_draft_keeper
+from capa_simulation.components.voc_draft_keeper import KEPT_REPLY_KEY, render_voc_draft_keeper
 from capa_simulation.components.widget_generation import widget_key
 from capa_simulation.components.write_guard import (
     current_generation,
@@ -71,9 +71,10 @@ POST_FORM_ERROR_KEY = "voc_post_form_error"
 # 하려던 누름과, 글은 있어도 상자가 서지 않아(VOC 필터에서 빠짐 · 글을 읽지 못함) 남지 못한 답변.
 # 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03 —
 # `queue_flash(…, popup_only=True)`). 적어 둔 답변(`KEPT_REPLY_KEY` — 거절된 차례대로 든 튜플)은
-# 알림이 아니라 사용자의 글이라 머리 알림 칸에 「닫기」 까지 남겨 복사해 가게 한다.
+# 알림이 아니라 사용자의 글이라 머리 알림 칸에 「닫기」 까지 남겨 복사해 가게 한다. 새로고침 · 테마
+# 전환에는 세션과 함께 사라지므로 「잃을 것」(화면 탭 점 · 머리 변경 칩 · 떠나기 확인)에 든다 — 그
+# 판정이 페이지 앞에서 읽어 키는 `components/voc_draft_keeper.py` 에 있다.
 NO_BOX_FLASH_KEY = "voc_no_box_flash"
-KEPT_REPLY_KEY = "voc_kept_reply"
 KEPT_REPLY_CLOSE_KEY = "voc_kept_reply_close"
 KEPT_REPLY_WHERE = "적어 둔 답변은 화면 맨 위에 둡니다."
 REPLY_NOT_LEFT = "답변을 남기지 못했습니다."
