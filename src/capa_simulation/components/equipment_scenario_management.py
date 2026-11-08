@@ -780,7 +780,7 @@ def report_layout_traces(database_path: str, session: EquipmentSession) -> None:
         content=[(item.equipment_scenario_id, item.layout_trace_count) for item in traced],
         active=bool(traced),
         text=(
-            f"옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 {len(traced)}개 — "
+            f"옛 판 저장으로 가정 배치가 빠진 설비 시나리오 {len(traced)}개 — "
             "시나리오 관리 › 설비 시나리오"
         ),
         full=_layout_traces_full(database_path, traced) if traced else None,
@@ -788,16 +788,21 @@ def report_layout_traces(database_path: str, session: EquipmentSession) -> None:
     )
 
 
+# `SC-03` 전문 머리 — Alarm 은 전문을 두 줄까지 보이므로(펴면 전부) 되살리는 길을 시나리오 목록보다
+# 먼저 둔다. 어디서 고르는지는 「그 화면으로」(설비 시나리오 탭)가 말한다.
+LAYOUT_TRACES_FULL_HEAD = (
+    "옛 판 저장으로 가정 배치가 빠짐 — 빠지기 전 리비전을 고르고 「이 리비전으로 되돌리기」 로"
+    " 되살립니다."
+)
+
+
 def _layout_traces_full(database_path: str, traced: Sequence[EquipmentScenarioSummary]) -> str:
-    """`SC-03` 전문 — 흔적이 있는 시나리오마다 빠진 리비전(`layout_trace_words`)과 되살리는 길."""
+    """`SC-03` 전문 — 머리(되살리는 길) 뒤에 흔적이 있는 시나리오마다 빠진
+    리비전(`layout_trace_words`)."""
     listing = ", ".join(
         layout_trace_words(item, _scenario_revisions(database_path, item)) for item in traced
     )
-    return (
-        "옛 판(설비 0031 을 모르는 배포)이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 — "
-        f"{listing}. 빠지기 전 리비전을 시나리오 관리 「설비 시나리오」 에서 고르고 「이 리비전으로"
-        " 되돌리기」 로 되살립니다."
-    )
+    return f"{LAYOUT_TRACES_FULL_HEAD} {listing}"
 
 
 def _scenario_revisions(

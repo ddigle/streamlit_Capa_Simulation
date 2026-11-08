@@ -36,6 +36,7 @@ from test_equipment_scenario_repository import (
 
 import capa_simulation.components.equipment_scenario_management as management
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.alerts import SHORT_LIMIT
 from capa_simulation.components.equipment_scenario_management import (
     CLEAR_LAYOUT_BUTTON_KEY,
     CLEAR_LAYOUT_CONFIRM_KEY,
@@ -178,13 +179,18 @@ def test_the_old_code_traces_list_is_a_state_alert_not_a_place_line(
 
     note = active_state(app, "SC-03")
     assert note is not None
-    assert note["short"].startswith(
-        "옛 판이 저장해 가정 배치가 빠진 리비전이 있는 설비 시나리오 2개"
+    assert (
+        note["short"]
+        == "옛 판 저장으로 가정 배치가 빠진 설비 시나리오 2개 — 시나리오 관리 › 설비 시나리오"
     )
     # 알림은 평문이라 이름을 막지 않는다.
     assert "「셋업 실무」 r4(r3 배치 빠짐 · 옛 판 저장 모두 2개)" in note["full"]
     assert "「지연*안」 r2(r1 배치 빠짐)" in note["full"]
-    assert "「이 리비전으로 되돌리기」 로 되살립니다" in note["full"]
+    # Alarm 은 전문을 두 줄(알림창 짧은 글 길이 안팎)까지 보인다 — 되살리는 길이 시나리오 목록보다
+    # 먼저, 그 안에 든다(아침 보드 a9).
+    restore = "「이 리비전으로 되돌리기」 로 되살립니다."
+    assert note["full"].index(restore) + len(restore) <= SHORT_LIMIT
+    assert note["full"].index(restore) < note["full"].index("「셋업 실무」")
     assert "운영 일정" not in note["full"] and "런북" not in note["full"]
     # 「그 화면으로」 가 설비 시나리오 탭을 연다.
     assert note["tab"] == "설비 시나리오"
