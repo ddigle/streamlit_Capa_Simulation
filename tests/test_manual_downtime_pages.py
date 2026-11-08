@@ -172,18 +172,22 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
     clear_equipment_repository()
 
 
-def test_constraint_simulation_names_the_entered_downtime_in_its_band(tmp_path: Path) -> None:
+def test_constraint_simulation_names_the_entered_downtime_in_its_header(tmp_path: Path) -> None:
+    """입력 비가동을 뺀 계획이면 머리 줄에 「입력 비가동 반영(n칸 · 합 x대)」 표지가 서고 뜻은 그
+    풍선이다 — 출처 띠는 걷었다(2026-11-08 사용자 그림 메모 g12)."""
+    from capa_simulation.components.constraint_equipment_plan import MANUAL_DOWNTIME_HELP
+
     databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
     before = constraint_opened(databases)
     assert MANUAL_DOWNTIME_BAND not in constraint_captions(before)
 
     _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
     app = constraint_opened(databases)
-    band = constraint_captions(app)
-    assert "가용 = 설비 일정 기준" in band
-    assert f"{MANUAL_DOWNTIME_BAND}(" in band
+    (mark,) = [item for item in app.caption if f"{MANUAL_DOWNTIME_BAND}(" in str(item.value)]
+    assert mark.proto.help == MANUAL_DOWNTIME_HELP
+    assert "가용 = 설비 일정 기준" not in constraint_captions(app)
     # 모든 달 가용 12 라 넘친 칸은 없다.
-    assert "가용 넘침" not in band
+    assert "가용 넘침" not in str(mark.value)
     clear_equipment_repository()
 
 

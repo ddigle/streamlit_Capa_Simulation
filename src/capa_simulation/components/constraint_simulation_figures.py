@@ -158,7 +158,7 @@ __all__ = [
 SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 12
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 13
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -478,7 +478,7 @@ def _hit_hover(
         text += f"<br>개조 중 비가동 {MINUS}{units_text(row.downtime)}대"
     if row.waiting > 0:
         text += f"<br>신규 대기 {MINUS}{units_text(row.waiting)}대"
-    return text + "<br>누르면 이 달 계산"
+    return text
 
 
 def percent_or_none(value: float | None) -> float | None:
@@ -1333,7 +1333,7 @@ def _constrained_rate_cell(row: ConstraintMonth) -> Cell:
 
 def _need_cell(row: ConstraintMonth, target: int) -> Cell:
     """제약 필요 대수 칸 — 풍선 「소요 × 제약 % = 곱 → 정수」. 적힌 소요(둘째 자리)로 다시 셈한 곱이
-    적힌 곱과 다르면 「≈」 다(고른 달 계산 2단계는 같은 식의 인수 자릿수를 늘린다)."""
+    적힌 곱과 다르면 「≈」 다."""
     if not row.in_period:
         return Cell("", muted=True, hover=f"{_head(row)} · 제약 기간 밖")
     product = f"{row.constrained_demand * target / 100:.2f}"
@@ -1532,7 +1532,7 @@ def _downtime_cell(row: ConstraintMonth) -> Cell:
 def _existing_available_cell(row: ConstraintMonth) -> Cell:
     """기존 가용 칸 — 풍선 「가용 − 개조 중 − 제약 배정 = 기존 가용」. 적힌 수로 다시 셈한 값이
     적힌 기존 가용과 다르면 「≈」 다 — 비가동이 가용보다 많으면 쓸 수 있는 가용을 0 으로 두는
-    것까지 고른 달 계산 4단계와 같은 차례로 셈한다."""
+    것까지 계산 서비스(`simulate_constraint`)와 같은 차례로 셈한다."""
     text = f"가용 {units_text(row.available)}"
     if row.downtime > 0:
         text += f" − 개조 중 {units_text(row.downtime)}"

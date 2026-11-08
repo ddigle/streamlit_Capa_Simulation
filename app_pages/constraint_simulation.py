@@ -7,11 +7,12 @@
 제품에 먼저 떼어 준 뒤 기존 제품의 확보율이 언제부터 얼마나 떨어지는가」 를 그때그때 본다.
 **저장하지 않는다** — 조건은 이 세션에만 있고 시뮬레이션·설비 DB 어디에도 쓰지 않는다.
 
-모드는 둘이다 — 본문 맨 위 「제약 영향 | 개조 일정」(2026-10-26 결정 3). 「개조 일정」 은 「제약
-없이 N대 × D일 개조를 모든 달 기준 확보율을 지키며 언제 할까」 를 찾는 역방향 계산이고, 공통
-진입·설비 세션 뒤에 `components/modification_schedule_view.render_schedule_mode` 하나가
-카드·계획·계산·본문을 그린 뒤 이 화면이 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다). 두 모드는
-공정 칸·기준 확보율 정본을 나눈다.
+모드는 둘이다 — 사이드바 조건 카드 맨 위 「제약 영향 | 개조 일정」(2026-10-26 결정 3, 자리는
+2026-11-08 사용자 그림 메모 g12 — 모드 전환이 그 안이라 카드는 처음 펼친 채 선다). 「개조 일정」 은
+「제약 없이 N대 × D일 개조를 모든 달 기준 확보율을 지키며 언제 할까」 를 찾는 역방향 계산이고, 공통
+진입·설비 세션 뒤에 `components/modification_schedule_view.render_schedule_mode` 하나가 카드의
+나머지·계획·계산·본문을 그린 뒤 이 화면이 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다). 두
+모드는 공정 칸(조회 조건 패널의 공용 공정 칸 — 하나 고름)·기준 확보율 정본을 나눈다.
 
 입력(새 무거운 계산이 없다 — 공정 Capa 상세가 쓰는 캐시 래퍼를 **같은 키로** 다시 받는다):
 
@@ -35,8 +36,11 @@
 (`components/constraint_equipment_plan.render_equipment_plan`)이고, 제품 갈래는 그 사이
 (`before_plan`)에 선다.
 
-본문은 머리 한 줄 → 출처 띠 → 요약 넷(프래그먼트 밖) → 본문
-프래그먼트(`components/constraint_simulation_view` — 달 누름·비중 토글만 그 안에서 돈다).
+본문은 머리 줄 → 요약 넷(프래그먼트 밖) → 본문 프래그먼트(`components/constraint_simulation_view`
+— 달 누름·비중 토글만 그 안에서 돈다). 머리 줄 왼쪽은 멈춘 갈래의 공정 · 배지이거나 계산이 건
+표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)이고 오른쪽 끝은 「← 공정 Capa 상세」 다.
+조건을 되읊는 줄과 출처 띠(소요 · 가용의 출처)는 걷었다 — 조건은 사이드바, 출처와 읽는 법은
+Guide 다(2026-11-08 사용자 그림 메모 g12).
 
 개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 호기」 고르기
 (그 공정 세션 설비 시나리오의 호기 — 2026-11-01 결정 B3)와 「목록에 없는 보유 제약 설비」 숫자
@@ -60,18 +64,14 @@ from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
-    SOURCE_BAND_HELP,
     EquipmentPlanSource,
+    applied_marks,
     equipment_readiness,
     first_ready_process,
     render_equipment_plan,
-    source_equipment_text,
-    source_scenario_text,
-    upeh_assumption_note,
 )
 from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
-    general_label,
     units_text,
 )
 from capa_simulation.components.constraint_simulation_view import (
@@ -229,8 +229,6 @@ HELD_HELP = (
 # 계획 앞에서 멈춘 회차의 잠긴 칸 — 칸에는 표지, 까닭은 칸 풍선이다(설계 규칙 UI-ACC-02).
 HELD_IDLE_PLACEHOLDER = "고를 호기 없음"
 HELD_IDLE_HELP = "설비 일정이 서는 공정에서 고릅니다."
-# 출처 띠 「신규 = 기여 시작 …」 의 뜻 — 띠에는 값(날 · 대수)만 둔다(설계 규칙 UI-TXT-01).
-NEW_START_HELP = "신규의 기여 시작은 공정 Capa 상세 ③ 의 Qual 다음 날이고 묶음은 첫 모듈입니다."
 OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
 OWNED_HELP = (
     "위 「보유 제약 호기」 목록에 없는 보유(기존보유처럼 설비 마스터 호기가 아닌 대수)를 "
@@ -264,8 +262,9 @@ def new_since_help(*, modify: bool, new_units_on: bool) -> str:
 requested_process = take_constraint_process_request()
 
 render_page_header("제약 시뮬레이션")
-# 공정·조건 한 줄과 「← 공정 Capa 상세」 자리. 공정과 계산이 정해진 뒤 채운다 — 블록이라 계산 동안
-# 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로 border·height 를 주지 않는다).
+# 머리 줄(멈춘 갈래의 공정 · 배지 또는 계산이 건 표지)과 「← 공정 Capa 상세」 자리. 공정과 계산이
+# 정해진 뒤 채운다 — 블록이라 계산 동안 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로
+# border·height 를 주지 않는다).
 header_marks = st.container()
 render_page_guide("constraint_simulation", title=PAGE_TITLE)
 # 설비 DB 경고(이 코드보다 새 스키마·옛 배포 흔적)와 알림 표지 자리 — 맨 위에 선다.
@@ -277,7 +276,7 @@ try:
     page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
-    with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
+    with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON, default=True):
         st.caption(NO_PROCESS_MARK)
     message = bootstrap_error_message(exc)
     render_data_error(message, code="CS-01", text="제약 시뮬레이션을 준비하지 못했습니다")
@@ -288,8 +287,12 @@ context = page_inputs.context
 active_scenario = context.active_scenario
 months = list(page_inputs.months)
 process_options = page_inputs.process_options
-# 본문 맨 위 모드 전환 「제약 영향 | 개조 일정」 — 카드에 무엇이 설지 정하므로 앱 전체 회차로 돈다.
-schedule_mode = render_mode_switch() == SCHEDULE_MODE
+# 사이드바 조건 카드 하나를 세워 두 모드가 차례로 채운다. 맨 위는 모드 전환 「제약 영향 | 개조
+# 일정」 — 카드에 무엇이 설지 정하므로 앱 전체 회차로 돈다. 그 전환이 카드 안이라 카드는 처음 펼친
+# 채 선다(한 번 접으면 기억 칸을 따른다 — 2026-11-08 사용자 그림 메모 g12).
+card = condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON, default=True)
+with card:
+    schedule_mode = render_mode_switch() == SCHEDULE_MODE
 
 # 설비 — 세션 설비 시나리오(새 세션은 공식). 못 읽으면 까닭을 들고 카드는 그대로 세운다.
 equipment_session: EquipmentSession | None = None
@@ -427,10 +430,14 @@ with notices:
     report_locked_arrival(opened_process)
 
 
-def render_header(process: str, line: str) -> None:
-    """머리 한 줄(공정·조건)과 오른쪽 끝 「← 공정 Capa 상세」."""
+def render_header(process: str, line: str = "", *, marks: str = "", marks_help: str = "") -> None:
+    """머리 줄 — 왼쪽은 멈춘 갈래의 공정 · 배지(`line`)나 계산이 건 표지(`marks` — 뜻은
+    `marks_help` 풍선), 오른쪽 끝은 「← 공정 Capa 상세」. 둘 다 없으면 링크만 선다."""
     with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown(line, width="content")
+        if line:
+            st.markdown(line, width="content")
+        if marks:
+            st.caption(marks, help=marks_help or None, width="content")
         st.space("stretch")
         theme_value = st.query_params.get(THEME_QUERY_PARAM)
         params = {DETAIL_PROCESS_PARAM: process}
@@ -452,9 +459,7 @@ if schedule_mode:
             source=plan_source,
             process_labels=process_labels,
             equipment_session=equipment_session,
-            card_label=CARD_LABEL,
-            card_name=CARD_NAME,
-            card_icon=CARD_ICON,
+            card=card,
             render_header=render_header,
             process=selected_process,
         )
@@ -499,7 +504,7 @@ product_options: list[str] = []
 # 「소요가 있는 제품이 없다」 와 가른다.
 product_error = ""
 cutoff_line = "Cut-off 미기재"
-with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
+with card:
     st.caption("**대상**")
     if selected_process is not None and months:
         try:
@@ -938,48 +943,11 @@ period_text = (
     if period.start == period.end
     else f"{month_label(period.start)}–{month_label(period.end)}"
 )
-modification_text = f"개조 {conditions.modification_days}일" if conditions.modifies else "개조 없음"
-if conditions.uses_owned_units:
-    holdings = [f"호기 {len(conditions.held_units)}대"] if conditions.held_units else []
-    if conditions.owned_units:
-        holdings.append(f"{conditions.owned_units}대")
-    modification_text += " · 보유 제약 " + " + ".join(holdings)
-if conditions.uses_new_units and new_unit_since is not None:
-    modification_text += f" · 신규 개조 없이({new_unit_since.isoformat()}~)"
-render_header(
-    process,
-    f"**{literal_markdown(process_label)}** · {literal_markdown(product)} · {period_text} · "
-    f"제약 {target_percent}% · 기준 {literal_markdown(general_label(labels, result))} · "
-    f"{modification_text}",
-)
-
-# 출처 띠 — 소요는 활성 시나리오(세션만 읽음), 가용은 세션 설비 시나리오. 두 모드가 같은 조각은
-# `constraint_equipment_plan` 에서 받는다.
-scenario_text = source_scenario_text()
-equipment_text = equipment_basis_label(equipment_session) if equipment_session is not None else None
-band = (
-    f":material/database: 소요 = 활성 시나리오 {scenario_text} "
-    f"{literal_markdown(process_label)} 소요를 제품정보로 나눔"
-    f"({literal_markdown(product)} / 그 밖) · 가용 = 설비 일정 기준"
-    + source_equipment_text(equipment_text)
-)
-band_help = SOURCE_BAND_HELP
-# 계획이 실제로 건 칸으로 적는다 — 이 공정에 0 아닌 칸이 있을 때만.
-manual_note = manual_effect_band(plan.manual_downtime, (process,))
-if manual_note:
-    band += f" · {manual_note}"
-band += upeh_assumption_note()
-if conditions.held_units:
-    band += (
-        f" · 보유 호기 = {literal_markdown(equipment_text or '세션 설비 시나리오')}에서 고른 "
-        f"{len(conditions.held_units)}대"
-    )
-if new_shares is not None:
-    band += (
-        f" · 신규 = 기여 시작 {new_shares.since.isoformat()} 이후 호기 {len(new_shares.units)}대"
-    )
-    band_help += f" {NEW_START_HELP}"
-st.caption(band, help=band_help, width="content")
+# 머리 줄 — 조건을 되읊지 않고(사이드바가 조건이다) 계산이 건 표지만 둔다. 소요 · 가용의 출처와 읽는
+# 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 입력 비가동은 계획이 실제로 건 칸으로 적는다 — 이
+# 공정에 0 아닌 칸이 있을 때만.
+marks, marks_help = applied_marks(manual_effect_band(plan.manual_downtime, (process,)))
+render_header(process, marks=marks, marks_help=marks_help)
 if result.kpis.constrained_months == 0:
     st.caption(
         f"제약 기간({period_text})에 {literal_markdown(product)} 소요가 없어 떼어 줄 대수가 "
@@ -988,4 +956,4 @@ if result.kpis.constrained_months == 0:
 
 render_constraint_kpis(result, labels)
 settle_selected_month(result)
-render_constraint_view(ConstraintView(result=result, labels=labels, today=today))
+render_constraint_view(ConstraintView(result=result, labels=labels))

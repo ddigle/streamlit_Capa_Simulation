@@ -31,7 +31,7 @@ from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto.WidgetStates_pb2 import WidgetState
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import ButtonGroup
+from streamlit.testing.v1.element_tree import ButtonGroup, Expander, Status
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 from widget_browser import BrowserChoice
 
@@ -42,15 +42,18 @@ from capa_simulation.components.constraint_equipment_plan import (
     EQUIPMENT_SCREEN,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
-    SOURCE_BAND_HELP,
 )
-from capa_simulation.components.constraint_simulation_view import MODIFY_OFF_TEXT, STEPS_HELP
+from capa_simulation.components.constraint_simulation_figures import (
+    ConstraintLabels,
+    general_label,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.preset_number_field import CUSTOM_OPTION
 from capa_simulation.components.process_field import CONTEXT_KEY as PROCESS_CONTEXT_KEY
 from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
+    CONSTRAINT_FIGURE_MEMO_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
@@ -87,6 +90,8 @@ from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_EQUIPMENT_BASIS_KEY,
 )
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
+from capa_simulation.services.constraint_simulation import ConstraintResult
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import ShorteningPlan, plan_required_shortening
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -280,11 +285,38 @@ def _plain(text: str) -> str:
     return re.sub(r"\\(.)", r"\1", text)
 
 
+def _shown(app: AppTest) -> tuple[ConstraintResult, ConstraintLabels]:
+    """지금 그린 계산 결과와 화면 글자 — 그림 memo 의 마지막 벌이다(꺼낸 벌을 맨 뒤로 —
+    `remembered_figures`)."""
+    memo = app.session_state[CONSTRAINT_FIGURE_MEMO_KEY]
+    key = memo[-1][0]
+    result, labels = key[2], key[3]
+    assert isinstance(result, ConstraintResult) and isinstance(labels, ConstraintLabels)
+    return result, labels
+
+
 def _header_line(app: AppTest) -> str:
-    """머리 한 줄(escape 를 걷은 글)."""
-    lines = [_plain(text) for text in _markdown(app) if " · 제약 " in text and "기준 " in text]
-    assert len(lines) == 1, _markdown(app)
-    return lines[0]
+    """계산에 걸린 조건을 옛 머리 줄 꼴(「26.01–26.12 · 제약 120% · 기준 HOME · 개조 30일 · 보유
+    제약 호기 1대 + 2대 · 신규 개조 없이(2025-12-01~)」)로 — 시험 몫의 글이다. 머리 줄은 조건을
+    되읊지 않으므로(2026-11-08 사용자 그림 메모 g12 — 조건은 사이드바 칸) 계산 결과에서 읽는다.
+    화면 머리 줄에 이 글이 없는 것은 `test_the_header_repeats_no_conditions_and_no_source_band` 가
+    본다."""
+    result, labels = _shown(app)
+    conditions = result.conditions
+    start, end = conditions.period_start, conditions.period_end
+    period = month_label(start) if start == end else f"{month_label(start)}–{month_label(end)}"
+    modification = f"개조 {conditions.modification_days}일" if conditions.modifies else "개조 없음"
+    if conditions.uses_owned_units:
+        holdings = [f"호기 {len(conditions.held_units)}대"] if conditions.held_units else []
+        if conditions.owned_units:
+            holdings.append(f"{conditions.owned_units}대")
+        modification += " · 보유 제약 " + " + ".join(holdings)
+    if conditions.uses_new_units and conditions.new_unit_since is not None:
+        modification += f" · 신규 개조 없이({conditions.new_unit_since.isoformat()}~)"
+    return (
+        f"{period} · 제약 {labels.target_percent}% · 기준 {general_label(labels, result)} · "
+        f"{modification}"
+    )
 
 
 # ------------------------------------------------------------------ 진입·갈래
@@ -328,7 +360,7 @@ def test_an_empty_equipment_database_stands_the_card_and_one_mark(
     assert not _has_chart(app, CONSTRAINT_CHART_KEY)
 
 
-def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
+def test_a_process_with_equipment_shows_kpis_and_figures(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     app = _opened(dynamic_databases)
@@ -343,11 +375,13 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     ]
     assert _has_chart(app, CONSTRAINT_CHART_KEY)
     assert _has_chart(app, CONSTRAINT_SHEET_KEY)
+    # 고른 달 계산 풀이 · 「이 조건의 개조 창」 카드는 걷었다(2026-11-08 사용자 그림 메모 g12).
     steps = [text for text in _markdown(app) if text[:4] in {f"**{n}*" for n in range(1, 6)}]
-    assert len(steps) == 5
-    assert "**이 조건의 개조 창**" in _markdown(app)
+    assert steps == []
+    assert "**이 조건의 개조 창**" not in _markdown(app)
     assert "**개조 일정**" not in _markdown(app)
-    # 머리 한 줄 — 기본값(D8): 제약 120% · 기준 HOME · 개조 30일.
+    assert "**월별 확보율**" in _markdown(app) and "**월별 계산표**" in _markdown(app)
+    # 계산에 걸린 조건 — 기본값(D8): 제약 120% · 기준 HOME · 개조 30일.
     header = _header_line(app)
     assert "제약 120%" in header and "기준 HOME" in header and "개조 30일" in header
     # 「저장하지 않음」 은 카드 「이 세션만」 표지와 그 풍선이 말한다 — 머리 밑에 늘 서는 설명 줄이
@@ -355,10 +389,6 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     assert "저장하지 않는 시뮬레이션입니다" not in _captions(app)
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
-    assert "가용 = 설비 일정 기준" in _captions(app)
-    # 환산 대수 단서는 출처 띠 끝 풍선이다(설계 규칙 UI-TXT-01).
-    (band,) = [item for item in app.caption if "가용 = 설비 일정 기준" in str(item.value)]
-    assert band.proto.help == SOURCE_BAND_HELP and "환산 대수" not in str(band.value)
     # 머리 「← 공정 Capa 상세」 는 그 공정으로 돌아간다(테마 인자 없음).
     links = app.session_state["captured_page_links"]
     back = [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
@@ -374,6 +404,56 @@ def test_the_header_has_no_description_line(dynamic_databases: tuple[Path, Path]
     assert "기존 제품 확보율이 언제부터" not in captions
     assert "언제 할지 찾습니다" not in captions and "그때그때 보기" not in captions
     assert "N대 × D일 개조" in str(app.get("button_group")[0].proto.help)
+
+
+def test_the_header_repeats_no_conditions_and_no_source_band(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """머리 줄은 조건을 되읊지 않고 출처 띠 · 계산표 범례도 두지 않는다 — 조건은 사이드바 칸, 출처와
+    읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 계산이 건 표지가 없으면 머리 줄은 「←
+    공정 Capa 상세」 하나다."""
+    app = _opened(dynamic_databases)
+    texts = " ".join([*_markdown(app), _captions(app)])
+    assert " · 제약 120%" not in texts and "기준 HOME(" not in texts
+    assert "가용 = 설비 일정 기준" not in texts and "소요 = 활성 시나리오" not in texts
+    assert "머리 옅은 칠" not in texts and "대수는 환산 대수" not in texts
+    assert not [item for item in app.markdown if str(item.value).startswith("**DEMO")]
+    guide = " ".join(
+        (PROJECT_ROOT / "src/capa_simulation/guides/constraint_simulation.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    for moved in (
+        "머리 옅은 칠 = 제약 기간",
+        "파란 글자 = 줄어든 값",
+        "대수는 환산 대수",
+        "제약 제품 / 그 밖 두 갈래",
+        "설비 일정 기준(단축 전)",
+        "개조 기간만큼 앞서 잡고",
+        "신규 대기",
+        "두 갈래로 나눕니다",
+    ):
+        assert moved in guide, moved
+
+
+def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """모드 전환 「제약 영향 | 개조 일정」 은 본문이 아니라 사이드바 조건 카드 맨 위다(2026-11-08
+    사용자 그림 메모 g12). 카드는 처음 펼친 채 선다 — 전환이 그 안이다."""
+    app = _opened(dynamic_databases)
+    (switch,) = [group for group in app.sidebar.button_group if group.key == CONSTRAINT_MODE_KEY]
+    assert switch.value == "constraint"
+    assert not [group for group in app.main.button_group if group.key == CONSTRAINT_MODE_KEY]
+    # 아이콘을 단 확장 패널은 AppTest 가 `Status` 로 담는다(`tests/test_app_navigation.py`).
+    cards = [
+        node
+        for node in app.sidebar
+        if isinstance(node, Status | Expander) and node.label == "제약 시뮬레이션 조건"
+    ]
+    assert len(cards) == 1
+    assert cards[0].proto.expanded
+    assert cards[0].button_group[0].key == CONSTRAINT_MODE_KEY
 
 
 def test_the_process_param_is_taken_once_and_the_theme_stays(
@@ -918,37 +998,18 @@ def test_the_general_target_takes_whole_percent_and_home(
     assert field.value == 110
     assert field.step == 1
     assert field.proto.format == "%.0f"
-    assert _sheet_legend(app).startswith("머리 옅은 칠 = 제약 기간 · 칸 색 = 확보 · 경고 · 부족")
+    assert _shown(app)[1].warning_targets
     app.number_input(key=CONSTRAINT_GENERAL_INPUT_KEY).set_value(107)
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] == 107
     assert "기준 107%" in _header_line(app)
-    # 직접 넣은 기준에는 경고 경계가 없어 계산표가 두 단계다 — 범례도 그 말이다.
-    assert "부족색 칸 = 기준" in _sheet_legend(app)
+    # 직접 넣은 기준에는 경고 경계가 없어 계산표가 두 단계다(읽는 법은 Guide).
+    assert _shown(app)[1].warning_targets == ()
     app.button_group(key=CONSTRAINT_GENERAL_PILLS_KEY).set_value("__none__")
     _ok(app.run())
     assert app.session_state[CONSTRAINT_GENERAL_KEY] is None
     assert "기준 HOME" in _header_line(app)
-    assert "칸 색 = 확보 · 경고 · 부족" in _sheet_legend(app)
-
-
-def _sheet_legend(app: AppTest) -> str:
-    (legend,) = [str(item.value) for item in app.caption if "머리 옅은 칠" in str(item.value)]
-    return legend
-
-
-def test_the_month_steps_keep_their_reading_in_the_title_balloon(
-    dynamic_databases: tuple[Path, Path],
-) -> None:
-    """달마다 같은 읽는 법은 고른 달 카드 제목 풍선이다(설계 규칙 UI-TXT-01) — 수가 든 줄은
-    남는다."""
-    app = _opened(dynamic_databases)
-
-    (title,) = [item for item in app.markdown if item.proto.help == STEPS_HELP]
-    assert str(title.value).startswith("**")
-    captions = " ".join(str(item.value) for item in app.caption)
-    for moved in ("두 갈래로 나눕니다", "정수로 올립니다", "정수로 나눈 경우입니다"):
-        assert moved in STEPS_HELP and moved not in captions
+    assert _shown(app)[1].warning_targets
 
 
 def test_the_general_target_field_takes_the_home_threshold_range(
@@ -1088,7 +1149,7 @@ def test_turning_modification_off_locks_the_days_and_blanks_the_fourth_kpi(
     assert app.button_group(key=CONSTRAINT_MOD_DAYS_PILLS_KEY).disabled
     assert _metric(app, "개조 대수") == "—"
     assert "개조 없음" in _header_line(app)
-    assert MODIFY_OFF_TEXT in _captions(app)
+    assert _metric_caption(app, "개조 대수") == "개조를 끄면 비가동 없이 배정만 바꿉니다"
     app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(True)
     _ok(app.run())
 
@@ -1239,7 +1300,7 @@ def test_conditions_and_the_picked_month_survive_a_round_trip_and_get_pruned(
     assert app.session_state[CONSTRAINT_TARGET_KEY] == 110
     assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == "DEMO PRODUCT B"
     assert app.session_state[CONSTRAINT_MONTH_KEY] == 202604
-    assert any("**26.04 · " in text for text in _markdown(app))
+    assert _picked_title_month(app) == 202604
 
     # 고른 제품이 선택지에서 빠지면(시나리오를 바꾼 뒤) 첫 제품으로 적는다(pop 하지 않는다).
     original = simulation_cache.get_process_product_demand
@@ -1255,11 +1316,10 @@ def test_conditions_and_the_picked_month_survive_a_round_trip_and_get_pruned(
 
 
 def _picked_title_month(app: AppTest) -> int:
-    """고른 달 계산 카드 제목(「**26.08 · …**」)의 달."""
-    titles = [text for text in _markdown(app) if re.match(r"\*\*\d\d\.\d\d · ", text)]
-    assert len(titles) == 1, _markdown(app)
-    year, month = titles[0][2:7].split(".")
-    return 200000 + int(year) * 100 + int(month)
+    """그래프 · 계산표가 짚은 달 — 지금 그린 그림 벌의 고른 달(그림 memo 의 마지막 벌)."""
+    month = app.session_state[CONSTRAINT_FIGURE_MEMO_KEY][-1][0][4]
+    assert isinstance(month, int)
+    return month
 
 
 def test_the_selected_month_follows_the_conditions_until_a_month_is_clicked(
@@ -1432,7 +1492,8 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
     app = _opened(dynamic_databases)
     view = browser.fragment_keyed(CONSTRAINT_VIEW_FRAGMENT_KEY)
     full_slots = {slot for slot, owner in _event_slots(browser.messages).items() if owner == view}
-    # 스타일만 든 `st.html` 넷 — 위 줄 배치 · 계산표 두 컬럼 폭 · 라벨 칸 위 여백 · 스크롤 상자.
+    # 스타일만 든 `st.html` 넷 — 그래프 가장 좁은 폭 · 계산표 두 컬럼 폭 · 라벨 칸 위 여백 ·
+    # 스크롤 상자.
     assert len(full_slots) == 4
 
     browser.fragment_queue = [view]
@@ -1441,7 +1502,7 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
     _ok(app.run())
     assert browser.started == [[view]]
     assert set(_event_slots(browser.messages)) == full_slots
-    assert any("**26.09 · " in text for text in _markdown(app))
+    assert _picked_title_month(app) == 202609
     in_fragment = json.dumps(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["shapes"])
 
     # 비중 토글도 프래그먼트 회차다.
@@ -1462,7 +1523,6 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
 def _pick_script() -> None:
     """두 그림 콜백을 앱 회차에서 직접 부른다(AppTest 는 Plotly 칸 누름을 못 낸다 — 공정 Capa 상세
     `pick_canvas_month` 시험과 같은 꼴). 부른 뒤 지금 세대로 두 그림을 만들어 세대를 적어 둔다."""
-    from datetime import date
 
     import streamlit as st
     from test_constraint_simulation import _run
@@ -1495,7 +1555,6 @@ def _pick_script() -> None:
     view = ConstraintView(
         result=result,
         labels=ConstraintLabels("TC Bonding", "TC Bonding", "HBM라E", 120, None),
-        today=date(2027, 1, 1),
     )
     chart, sheet = remembered_figures(
         view,
@@ -1563,7 +1622,6 @@ def test_the_chart_and_sheet_callbacks_write_the_month_and_bump_one_shared_gener
 def _short_months_script() -> None:
     """전용 6대를 다섯 달 다 배정하지 못하는 결과로 본문 프래그먼트를 그린다."""
     from dataclasses import replace
-    from datetime import date
 
     from test_constraint_simulation import CONDITIONS
 
@@ -1590,7 +1648,6 @@ def _short_months_script() -> None:
         ConstraintView(
             result=result,
             labels=ConstraintLabels("TC Bonding", "TC Bonding", "HBM라E", 100, None),
-            today=date(2027, 1, 1),
         )
     )
 
@@ -1698,43 +1755,19 @@ def test_a_stale_process_param_does_not_overwrite_a_later_pick(
     assert _process_box(app).value == DYNAMIC_PROCESS
 
 
-def test_the_chart_and_steps_row_stacks_below_the_narrow_width(
+def test_the_chart_and_the_sheet_stand_full_width_one_after_another(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
-    """그래프 카드와 고른 달 계산 카드는 한 가로 컨테이너에 서고(3 : 2), 줄이
-    `TOP_ROW_STACK_BELOW_PX` 보다 좁으면 위아래로 쌓인다 — 사이드바를 편 900px 창에서 3 : 2 그대로면
-    그래프 그림 칸이 169px(달 한 칸 14px)로 줄어 칸 누름이 어려웠다(2026-10-25 리뷰). 쌓이는 폭은
-    1280px 창 · 사이드바 펼침(줄 약 930px)보다 좁고 900px 창 · 사이드바 펼침(약 550px)보다 넓다."""
-    from capa_simulation.components.constraint_simulation_view import (
-        CHART_CARD_KEY,
-        STEPS_CARD_KEY,
-        TOP_ROW_KEY,
-        TOP_ROW_STACK_BELOW_PX,
-        top_row_style,
-    )
+    """고른 달 계산 카드를 걷어(2026-11-08 사용자 그림 메모 g12) 그래프 카드는 가로 줄에 서지 않고
+    온 폭이다 — 본문 차례는 보기 토글 → 그래프 카드 → 계산표 카드."""
+    from capa_simulation.components.constraint_simulation_view import CHART_CARD_KEY
 
-    assert 550 < TOP_ROW_STACK_BELOW_PX < 930
     app = _opened(dynamic_databases)
-    style = top_row_style(
-        len(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["xaxis"]["tickvals"])
-    )
-    assert f".st-key-{TOP_ROW_KEY} {{ container: " in style
-    assert f"(width < {TOP_ROW_STACK_BELOW_PX}px)" in style
-    for key in (CHART_CARD_KEY, STEPS_CARD_KEY):
-        assert f'[data-testid="stLayoutWrapper"]:has(> .st-key-{key})' in style
-    assert any(str(element.proto.body) == style for element in app.get("html"))
-
-    def keyed(node: Any) -> Iterator[Any]:
-        if getattr(node, "key", None):
-            yield node
-        children = getattr(node, "children", None)
-        for child in children.values() if isinstance(children, dict) else ():
-            yield from keyed(child)
-
-    (row,) = [node for node in keyed(app._tree) if node.key == TOP_ROW_KEY]
-    container = row.proto.flex_container
-    assert container.direction == container.HORIZONTAL and container.wrap
-    assert [child.key for child in row.children.values()] == [CHART_CARD_KEY, STEPS_CARD_KEY]
+    (card,) = [node for node in _keyed(app._tree) if node.key == CHART_CARD_KEY]
+    assert not card.proto.flex_container.direction == card.proto.flex_container.HORIZONTAL
+    assert not [node for node in _keyed(app._tree) if node.key == "constraint_sim_top_row"]
+    assert not [node for node in _keyed(app._tree) if node.key == "constraint_sim_steps"]
+    assert not [node for node in _keyed(app._tree) if node.key == "constraint_sim_schedule"]
 
 
 def _keyed(node: Any) -> Iterator[Any]:
@@ -1760,7 +1793,7 @@ def test_the_rate_chart_keeps_a_minimum_width_and_scrolls_inside_a_narrow_card(
     from capa_simulation.components.constraint_simulation_view import (
         CHART_CARD_KEY,
         CHART_SCROLL_PREFIX,
-        top_row_style,
+        chart_style,
     )
     from capa_simulation.components.scroll_shell import min_width_scroll_rules
 
@@ -1773,7 +1806,7 @@ def test_the_rate_chart_keeps_a_minimum_width_and_scrolls_inside_a_narrow_card(
     margin = spec["layout"]["margin"]
     count = len(spec["layout"]["xaxis"]["tickvals"])
     assert chart_min_width_px(count) == margin["l"] + margin["r"] + count * MONTH_SLOT_PX
-    style = top_row_style(count)
+    style = chart_style(count)
     rules = min_width_scroll_rules(CHART_SCROLL_PREFIX, min_width_px=chart_min_width_px(count))
     assert rules in style
     assert any(str(element.proto.body) == style for element in app.get("html"))

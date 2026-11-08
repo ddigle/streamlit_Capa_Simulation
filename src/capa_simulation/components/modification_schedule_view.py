@@ -4,12 +4,15 @@
 """개조 일정 모드 — 「N대 × D일 개조를 기준 확보율을 지키며 언제 할까」(2026-10-26 사용자 결정 3).
 
 제약 시뮬레이션 화면(`app_pages/constraint_simulation.py`)의 둘째 모드다. 페이지는 공통 진입(판정
-기준·시나리오 키·달·공정 선택지)과 설비 세션까지만 내고 모드 전환(`render_mode_switch` — 본문 맨 위
-`segmented_control`)이 「개조 일정」 이면 `render_schedule_mode` 하나를 부른 뒤 멈춘다. 그 뒤는 모두
-여기다 — 제약 모드의 카드·본문은 그리지 않는다(1판은 두 모드를 함께 쓰지 않는다, C14).
+기준·시나리오 키·달·공정 선택지)과 설비 세션까지만 내고 모드 전환(`render_mode_switch` — 사이드바
+조건 카드 맨 위 `segmented_control`)이 「개조 일정」 이면 `render_schedule_mode` 하나를 부른 뒤
+멈춘다. 그 뒤는 모두 여기다 — 제약 모드의 카드·본문은 그리지 않는다(1판은 두 모드를 함께 쓰지
+않는다, C14).
 
-- **모드 전환은 본문이다**(하위 보기 전환 규칙). 다만 카드에 무엇이 설지를 바꾸므로 프래그먼트가
-  아닌 앱 전체 회차로 돈다(AGENTS 9장 「본문 프래그먼트」).
+- **모드 전환은 조건 카드 맨 위다**(2026-11-08 사용자 그림 메모 g12 — 본문에서 옮겼다). 카드에
+  무엇이 설지를 바꾸므로 프래그먼트가 아닌 앱 전체 회차로 돈다(AGENTS 9장 「본문 프래그먼트」).
+  페이지가 카드 하나를 세워 그 안 맨 위에 전환을 그리고 나머지를 이 모드가 채운다
+  (`ScheduleModeContext.card`).
 - **공정**은 조회 조건 패널의 공정 값 칸(하나 고름 — 공용 공정 칸)이고 제약 모드와 같은 칸이다 —
   페이지가 정해 넘긴다(`ScheduleModeContext.process`).
 - **조건 카드**(제약 모드와 같은 카드 이름·자리) — 이 세션만 / 개조(대수 · 기간 버튼 + 직접 · 동시
@@ -21,32 +24,33 @@
 - **계산** — 순수 서비스 `services/modification_schedule.py`. 「가장 고르게」 는 이분 탐색이라 수백
   ms 까지 가므로 결과를 조건 값으로 세션에 몇 벌 기억한다(`remembered_result` — Streamlit 캐시가
   아니다, CLAUDE.md 캐시 경계). 그림도 같다(`remembered_figure` — 테마가 키에 든다).
-- **본문** — 머리 한 줄 · 「저장하지 않음」 · 출처 띠 · 「아직 일정에 넣지 않은 개조만」 → 요약 넷 →
+- **본문** — 머리 줄(계산이 건 표지 — 입력 비가동 반영 · UPEH 가정 미적용, 뜻은 풍선) → 요약 넷 →
   (못 맞추면) 대안 셋 → 월별 확보율 그래프(개조 전·뒤 · 기준선 · 차수 막대) → 개조 일정(차수 목록).
+  조건을 되읊는 줄과 출처 띠는 두지 않는다 — 조건은 사이드바, 출처는 Guide 다(제약 영향 모드와 같은
+  머리 칸 · 같은 표지).
 
 저장하지 않는다 — 조건은 세션 칸뿐이고 어느 DB 에도 쓰지 않는다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Final, NamedTuple
 
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
-    SOURCE_BAND_HELP,
     EquipmentPlanSource,
+    HeaderRenderer,
+    applied_marks,
     equipment_readiness,
     render_equipment_plan,
-    source_equipment_text,
-    source_scenario_text,
-    upeh_assumption_note,
 )
 from capa_simulation.components.constraint_simulation_figures import (
     chart_min_width_px,
@@ -54,7 +58,6 @@ from capa_simulation.components.constraint_simulation_figures import (
     signed_points,
 )
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.equipment_scenario_status import equipment_basis_label
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.modification_schedule_figures import (
     SCHEDULE_FIGURE_SCHEMA_VERSION,
@@ -147,7 +150,6 @@ from capa_simulation.services.securement_threshold import (
 )
 from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.services.wd_window import wd_window
-from capa_simulation.sidebar_status import condition_card
 
 __all__ = [
     "CHART_CARD_KEY",
@@ -156,7 +158,6 @@ __all__ = [
     "DOUBLE_COUNT_NOTE",
     "KPI_ROW_KEY",
     "LIST_CARD_KEY",
-    "FELL_BACK_LABEL",
     "SHORTFALL_CARD_KEY",
     "UNITS_HELP",
     "ScheduleChoice",
@@ -209,7 +210,6 @@ UNITS_HELP: Final = (
     "개조를 마쳤거나 제약 제품 전용으로 들고 있는 설비, 개조된 채 들어오는 신규 설비는 빼고 "
     "넣으세요. 어느 호기인지는 고르지 않습니다. " + DOUBLE_COUNT_NOTE
 )
-FELL_BACK_LABEL: Final = "가장 고르게 → 가장 빨리로 배치"
 # 요약 넷째 칸 「기한」 풍선 — 칸이 실제로 적는 것만 말한다. 「못 맞춤」 은 기한을 골랐을 때만
 # 서고(안 골랐으면 「없음」), 낮출 폭은 기준을 낮춰 다 들어갈 때만 캡션에 붙는다(0% 까지 낮춰도 못
 # 넣으면 그 까닭은 대안 셋 카드가 말한다).
@@ -224,7 +224,7 @@ DEADLINE_HELP: Final = (
 
 
 class ScheduleModeContext(NamedTuple):
-    """페이지가 넘기는 것 — 설비 일정 확인 · 계획 입력(제약 모드와 같은 묶음)·설비 세션·카드 이름과
+    """페이지가 넘기는 것 — 설비 일정 확인 · 계획 입력(제약 모드와 같은 묶음)·설비 세션·조건 카드와
     머리 그리기."""
 
     source: EquipmentPlanSource
@@ -233,10 +233,10 @@ class ScheduleModeContext(NamedTuple):
 
     process_labels: ProcessLabels
     equipment_session: EquipmentSession | None
-    card_label: str
-    card_name: str
-    card_icon: str
-    render_header: Callable[[str, str], None]
+    card: DeltaGenerator
+    """사이드바 조건 카드 — 페이지가 세워 맨 위에 모드 전환을 그렸다. 이 모드는 그 아래를 채운다."""
+
+    render_header: HeaderRenderer
     process: str | None
     """지금 공정(원본) — 페이지가 조회 조건 패널의 공정 값 칸(하나 고름)으로 정했다. 고를 공정이
     없으면 None."""
@@ -264,7 +264,8 @@ class ScheduleChoice(NamedTuple):
 
 
 def render_mode_switch() -> str:
-    """본문 맨 위 「제약 영향 | 개조 일정」. 고른 모드를 돌려준다(`persist_state="session"`)."""
+    """「제약 영향 | 개조 일정」 — 페이지가 사이드바 조건 카드 맨 위(지금 컨테이너)에서 부른다. 고른
+    모드를 돌려준다(`persist_state="session"`)."""
     settle_mode()
     mode = st.segmented_control(
         "시뮬레이션 모드",
@@ -533,6 +534,12 @@ def _render_conditions(
 # ================================================================== 계산 memo
 
 
+def _move_to_end(memo_key: str, entries: Sequence[tuple[object, object]], index: int) -> None:
+    """꺼낸 벌을 맨 뒤로 — 마지막 벌이 늘 지금 보이는 것이다(오래 안 쓴 벌부터 버린다)."""
+    if index != len(entries) - 1:
+        st.session_state[memo_key] = [*entries[:index], *entries[index + 1 :], entries[index]]
+
+
 def remembered_result(
     inputs: Sequence[ScheduleMonthInput], conditions: ScheduleConditions
 ) -> ScheduleResult:
@@ -544,8 +551,9 @@ def remembered_result(
         if isinstance(memo, list)
         else []
     )
-    for stored_key, stored in entries:
+    for index, (stored_key, stored) in enumerate(entries):
         if stored_key == key:
+            _move_to_end(SCHEDULE_RESULT_MEMO_KEY, entries, index)
             return stored
     result = plan_modification_schedule(inputs, conditions)
     entries = [entry for entry in entries if entry[0] != key][-(_MEMO_LIMIT - 1) :]
@@ -563,8 +571,9 @@ def remembered_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figu
         if isinstance(memo, list)
         else []
     )
-    for stored_key, stored in entries:
+    for index, (stored_key, stored) in enumerate(entries):
         if stored_key == key:
+            _move_to_end(SCHEDULE_FIGURE_MEMO_KEY, entries, index)
             return stored
     figure = schedule_figure(result, labels)
     entries = [entry for entry in entries if entry[0] != key][-(_MEMO_LIMIT - 1) :]
@@ -583,7 +592,7 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
     months = list(page_inputs.months)
     process_labels = context.process_labels
     selected = context.process
-    with condition_card(context.card_label, name=context.card_name, icon=context.card_icon):
+    with context.card:
         readiness = equipment_readiness(source, None if selected is None else str(selected))
         cutoff_days = readiness.cutoff_days if readiness is not None and readiness.ready else None
         choice = _render_conditions(page_inputs, today=source.today, cutoff_days=cutoff_days)
@@ -660,50 +669,13 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
         return
 
     labels = ScheduleLabels(process_label=process_label, general_percent=choice.general_percent)
-    context.render_header(process, _header_line(bold, result, labels))
-    _render_source_band(
-        context, process_label, manual_note=manual_effect_band(plan.manual_downtime, (process,))
-    )
+    # 머리 줄 — 조건을 되읊지 않고(사이드바가 조건이다) 계산이 건 표지만 둔다(제약 영향 모드와 같은
+    # 표지 — 2026-11-08 사용자 그림 메모 g12). 넣는 법(아직 일정에 넣지 않은 개조만)은 「개조 대수」
+    # 칸 풍선, 저장하지 않음은 카드 「이 세션만」 표지 풍선이다.
+    marks, marks_help = applied_marks(manual_effect_band(plan.manual_downtime, (process,)))
+    context.render_header(process, marks=marks, marks_help=marks_help)
     render_schedule_kpis(result, labels)
     _render_body(result, labels)
-
-
-def _header_line(bold: str, result: ScheduleResult, labels: ScheduleLabels) -> str:
-    conditions = result.conditions
-    parts = [
-        bold,
-        f"개조 {conditions.units}대 × {conditions.days}일",
-        f"기준 {literal_markdown(general_text(labels, result))}"
-        + (f" +{conditions.margin * 100:g}%" if conditions.margin > 0 else ""),
-        FELL_BACK_LABEL if result.fell_back else OBJECTIVE_LABELS[conditions.objective],
-        "동시 상한 없음"
-        if conditions.concurrent is None
-        else f"동시 {conditions.concurrent}대까지",
-    ]
-    if conditions.aligned:
-        parts.append("달 맞춤 창")
-    return " · ".join(parts)
-
-
-def _render_source_band(
-    context: ScheduleModeContext, process_label: str, *, manual_note: str = ""
-) -> None:
-    """출처 띠 — 「저장하지 않음」 은 조건 카드 「이 세션만」 표지 풍선, 「아직 일정에 넣지 않은
-    개조만」 은 「개조 대수」 칸 풍선이 말한다(설계 규칙 UI-TXT-01).
-
-    `manual_note` 는 계획이 건 입력 비가동(`manual_effect_band` — 없으면 빈 글자)이다."""
-    scenario_text = source_scenario_text()
-    session = context.equipment_session
-    equipment_text = equipment_basis_label(session) if session is not None else None
-    band = (
-        f":material/database: 소요 = 활성 시나리오 {scenario_text} "
-        f"{literal_markdown(process_label)} 공정 소요 · 가용 = 설비 일정 기준"
-        + source_equipment_text(equipment_text)
-    )
-    if manual_note:
-        band += f" · {manual_note}"
-    band += upeh_assumption_note()
-    st.caption(band, help=SOURCE_BAND_HELP, width="content")
 
 
 # ================================================================== 요약 넷

@@ -40,11 +40,15 @@ from test_constraint_simulation_page import (
     _ok,
     _opened,
     _plain,
+    _shown,
 )
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 import capa_simulation.services.constraint_simulation as constraint_simulation
-from capa_simulation.components.constraint_simulation_view import NEW_SKIPPED_TEXT
+from capa_simulation.components.constraint_simulation_figures import (
+    SKIPPED_REASON,
+    ordinary_reason_text,
+)
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_HELD_DROPPED_KEY,
     CONSTRAINT_HELD_IDLE_KEY,
@@ -147,11 +151,6 @@ def _pick(app: AppTest, *names: str) -> AppTest:
     return _ok(app.run())
 
 
-def _helps(app: AppTest) -> str:
-    """캡션 풍선 글 — 개조 창 카드의 「신규 설비 붙이지 않음」 표지가 까닭을 여기에 싣는다."""
-    return " ".join(str(element.proto.help) for element in app.caption)
-
-
 def _dropped(app: AppTest) -> str:
     """카드 「보유 제약 호기」 칸 밑 「…를 뺐습니다」 줄."""
     return " ".join(
@@ -216,21 +215,25 @@ def test_picking_a_unit_holds_it_without_a_modification(
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 보유 1 · 개조 0"
     assert "보유 제약 호기 1대" in _header_line(app)
     captions = _plain(_captions(app))
+    # 고른 호기의 수와 환산 합은 카드 칸 밑 한 줄이다 — 출처 띠 · 개조 창 카드는 걷었다(2026-11-08
+    # 사용자 그림 메모 g12).
     assert "고른 호기 1대 · 환산 합 1대" in captions
-    assert "개조 없이 쓰는 전용 — 보유 제약 설비 1대(고른 호기 1대 · 보유 1대 중)" in captions
-    assert "보유 호기 = " in captions and "에서 고른 1대" in captions
+    assert "보유 호기 = " not in captions and "개조 없이 쓰는 전용" not in captions
+    result, _ = _shown(app)
+    assert [unit.name for unit in result.conditions.held_units] == ["CA-01"]
+    assert result.kpis.owned_used == 1 and result.windows == ()
     assert app.session_state[CONSTRAINT_HELD_KEY] == {DYNAMIC_PROCESS: ["CA-01"]}
 
 
 def test_picked_units_and_the_number_field_add_up(early_databases: tuple[Path, Path]) -> None:
-    """고른 호기 + 목록에 없는 보유 칸 — 머리는 「보유 제약 호기 1대 + 2대」, 개조 창 카드는
-    출처를 둘 다 적는다."""
+    """고른 호기 + 목록에 없는 보유 칸 — 계산은 둘을 함께 보유로 센다(보유 3대)."""
     app = _opened(early_databases)
     app.number_input(key=CONSTRAINT_OWNED_KEY).set_value(2)
     app = _pick(_ok(app.run()), "CA-03")
     assert "보유 제약 호기 1대 + 2대" in _header_line(app)
-    captions = _plain(_captions(app))
-    assert "보유 제약 설비 1대(고른 호기 1대 · 입력 2대 · 보유 3대 중)" in captions
+    result, _ = _shown(app)
+    assert {row.holdings for row in result.months if row.in_period} == {3.0}
+    assert result.kpis.owned_used == 1
 
 
 def test_a_picked_new_unit_is_no_longer_a_new_unit(
@@ -245,7 +248,7 @@ def test_a_picked_new_unit_is_no_longer_a_new_unit(
     captions = _plain(_captions(app))
     assert "기준일 이후 기여를 시작하는 신규 설비가 없습니다." in captions
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 0 · 보유 1 · 개조 0"
-    assert "**신규 대기**" not in captions
+    assert _shown(app)[0].assignments == ()
 
 
 def test_holdings_covering_the_period_skip_the_new_unit(
@@ -254,61 +257,47 @@ def test_holdings_covering_the_period_skip_the_new_unit(
     """보유(고른 CA-01)만으로 제약 기간을 다 덮으면 CA-N1(12/21)을 붙이지 않는다(결정 B1) — 옛
     차례였다면 CA-N1 이 1월 몫에 붙어 12/21 ~ 12/24 대기가 섰다."""
     app = _with_new_units(_opened(early_databases), BEFORE_NEW_UNIT)
-    assert "**신규 대기** — 셋업 때부터 제약용으로 붙인 신규 설비" in _captions(app)
+    assert [item.label for item in _shown(app)[0].assignments] == [EARLY_UNIT]
     app = _pick(app, "CA-01")
-    captions = _plain(_captions(app))
-    # 카드에는 표지(값)만, 까닭 문장은 그 풍선이다(설계 규칙 UI-TXT-04).
-    assert ":material/block: 신규 설비 붙이지 않음 — 보유로 다 덮음" in captions
-    assert NEW_SKIPPED_TEXT in _helps(app) and NEW_SKIPPED_TEXT not in captions
-    assert "**신규 대기**" not in captions
-    assert (
-        f"일반 설비가 된 신규 1대 — {EARLY_UNIT} · 보유 제약 설비로 제약 기간을 다 덮어 기존 "
-        "제품 몫" in captions
-    )
+    # 붙지 않은 까닭은 계산표 「들어오는 신규 설비」 칸 풍선이 적는다(개조 창 카드는 걷었다).
+    result, _ = _shown(app)
+    assert result.new_units_skipped and result.assignments == ()
+    (ordinary,) = result.ordinary_units
+    assert ordinary.name == EARLY_UNIT
+    assert ordinary_reason_text(ordinary, result) == SKIPPED_REASON
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 0 · 보유 1 · 개조 0"
     assert not any("대기 4일" in _plain(text) for text in _markdown(app))
 
 
-def test_a_later_cover_names_its_month_on_the_schedule_card(
+def test_a_later_cover_names_its_month_in_the_reason(
     later_cover_databases: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """뒤 증가에서만 덮이는 꼴(결정 B1 — 증가마다). 1월 증가는 보유가 아직 없어(CA-N5 는 3/11)
     개조로 채우고, 6월 증가(W/D 첫날 5/25)에서 남은 보유 CA-N5 가 남은 증가를 다 덮어 그 증가부터
-    신규를 붙이지 않는다 — B1 이 없었다면 CA-N6(5/20)이 6월 몫에 붙었다. 카드 한 줄은 그 달을
-    적는다(첫 증가 꼴의 `NEW_SKIPPED_TEXT` 가 아니다 — 화면이 `new_stopped_line` 을 그리는지,
-    2026-11-01 리뷰)."""
+    신규를 붙이지 않는다 — B1 이 없었다면 CA-N6(5/20)이 6월 몫에 붙었다. 그 호기의 까닭은 그 달을
+    적는다(첫 증가 꼴이 아니다 — 2026-11-01 리뷰)."""
     _june_step(monkeypatch)
     app = _with_new_units(_opened(later_cover_databases), date(2026, 1, 1))
     app = _pick(app, ARRIVING_HELD)
-    captions = _plain(_captions(app))
-    assert "26년 6월 증가부터 신규 설비 붙이지 않음" in captions
-    assert (
-        "26년 6월 증가부터는 남은 보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워 신규 "
-        "설비를 더 붙이지 않았습니다" in _helps(app)
-    )
-    assert NEW_SKIPPED_TEXT not in _helps(app)
-    assert (
-        f"일반 설비가 된 신규 1대 — {LATE_NEW} · 26년 6월 증가부터 보유 제약 설비로 다 덮어 기존 "
-        "제품 몫" in captions
-    )
-    assert "**신규 대기**" not in captions
+    result, _ = _shown(app)
+    assert result.new_units_stopped_month == 202606 and not result.new_units_skipped
+    (ordinary,) = result.ordinary_units
+    assert ordinary.name == LATE_NEW
+    assert ordinary_reason_text(ordinary, result) == "26년 6월 증가부터 보유 제약 설비로 다 덮어"
 
 
 def test_a_first_cover_holding_back_no_unit_says_nothing_on_the_card(
     far_databases: tuple[Path, Path],
 ) -> None:
     """첫 증가에서 보유(CA-01)가 다 덮었지만 신규 CA-N0(11/21)은 1월 증가(12/25)가 34일 뒤라 B1 이
-    없어도 붙지 않았다 — 카드 한 줄(`NEW_SKIPPED_TEXT`)은 서지 않고, 까닭은 창 안 증가 없음이다."""
+    없어도 붙지 않았다 — 「보유로 덮여 붙지 않은 호기」 가 아니고, 까닭은 창 안 증가 없음이다."""
     app = _with_new_units(_opened(far_databases), date(2025, 11, 1))
     app = _pick(app, "CA-01")
-    captions = _plain(_captions(app))
-    assert NEW_SKIPPED_TEXT not in _helps(app)
-    assert "신규 설비를 더 붙이지 않았습니다" not in _helps(app)
-    assert "신규 설비 붙이지 않음" not in captions
-    assert (
-        f"일반 설비가 된 신규 1대 — {FAR_UNIT} · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫"
-        in captions
-    )
+    result, _ = _shown(app)
+    assert result.held_back_units == ()
+    (ordinary,) = result.ordinary_units
+    assert ordinary.name == FAR_UNIT
+    assert ordinary_reason_text(ordinary, result) == "개조 30일 안에 늘어날 전용이 없어"
 
 
 # ------------------------------------------------------------------ 시나리오에 없는 호기(B3-2)
