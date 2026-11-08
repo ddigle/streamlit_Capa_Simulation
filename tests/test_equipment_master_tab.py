@@ -399,7 +399,7 @@ def test_an_outbox_in_the_hole_a_save_leaves_is_counted_after_the_buffer_is_rebu
     assert not master["담당자"].eq("저장 중 친 글").any()
     table = last(grid, emg.GRID_KEY)
     assert table["ack"] == {"mount": "m-hole", "seq": 1}
-    assert "고침 1건은 반영하지 않았습니다" in table["toast"]["text"]
+    assert any("고침 1건은 반영하지 않았습니다" in text for text in grid_results(app, "warning"))
 
 
 def test_other_callbacks_in_the_same_hole_do_not_stop_the_app(
