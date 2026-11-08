@@ -84,13 +84,13 @@ from capa_simulation.components.equipment_data_workspace import (
     buffer_base,
     buffer_has_layout_edits,
     carry_layout_memo,
+    carry_until_head_rerun,
     equipment_buffer_generation,
     floor_layout_words,
     grid_loaded_ids,
     grid_overlay,
     grid_toasts,
     grid_undo_steps,
-    hold_until_head_rerun,
     layout_lock_origins,
     layout_memo_mark,
     official_layout_cells,
@@ -268,6 +268,10 @@ UNDO_PRESS_KEY: Final = "equipment_master_undo_press_v1"
 DISCARD_POPOVER_KEY: Final = "equipment_master_discard_v1"
 DISCARD_CONFIRM_KEY: Final = "equipment_master_discard_confirm_v1"
 SAVE_RESULT_KEY: Final = "equipment_master_save_result_v1"
+# 머리를 다시 그리려 다시 도는 회차가 그리는 앞 누름의 결과(남의 공통 저장에 진 거부) — 결과 칸과
+# 한 자리에 그린다. 결과 칸에 되돌리면 그 회차가 그리기 전에 온 둘째 누름의 결과가 덮는다
+# (`carry_until_head_rerun`).
+SAVE_RESULT_CARRIED_KEY: Final = "equipment_master_save_result_carried_v1"
 # 불러오기 · 목록 비우기 결과 칸 — 고칠 입력이 없어 알림창 · Alarm 으로만 낸다(`_load_result`).
 LOAD_RESULT_KEY: Final = "equipment_master_load_result_v1"
 # 불러오기 줄 끝 메뉴 — 팝오버 key 꼬리는 메뉴 세대다. 「엑셀·CSV로 한꺼번에」 가 세대를 올려
@@ -1291,7 +1295,7 @@ def _render_save_section(
                 "drawn_base": context.base,
             },
         )
-    slot = render_flash(SAVE_RESULT_KEY)
+    slot = render_flash(SAVE_RESULT_CARRIED_KEY, SAVE_RESULT_KEY)
     # 낡은 세션의 낡기 전 편집(버려질 칸·지운 호기)이 저장을 막으면 그 거절 곁에서 최신으로 옮긴다 —
     # 버려질 칸은 「저장하기 전에 고칠 것」 줄이 적는다.
     if stale_save_refusal(frames, basis) is not None:
@@ -1358,7 +1362,7 @@ def render_equipment_master_tab(
 ) -> None:
     """탭 ① 본문. 페이지가 `ensure_equipment_drafts` 를 부른 뒤, 탭이 열린 회차에만 부른다."""
     # 남의 저장에 진 「리비전 저장」 거부는 머리를 다시 그리려 다시 도는 회차가 그린다(페이지 끝).
-    hold_until_head_rerun(SAVE_RESULT_KEY)
+    carry_until_head_rerun(SAVE_RESULT_KEY, into=SAVE_RESULT_CARRIED_KEY)
     basis = session.save_basis()
     layout: LayoutMode = layout_mode.layout
     frames: Frames = st.session_state[BUFFER_KEY]

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import streamlit as st
 from alert_marks import alert_notes
 from grid_fake import Calls, install_fake_grid, last, outbox, send, send_ops
 from streamlit.testing.v1 import AppTest
@@ -23,6 +24,7 @@ from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_equipment_scenario_repository import _request, _session, _set
 
 from capa_simulation import alerts
+from capa_simulation.components import equipment_data_workspace as workspace
 from capa_simulation.components import equipment_master_grid as emg
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
@@ -511,6 +513,50 @@ def test_a_save_refused_by_another_users_common_save_keeps_its_refusal_after_the
     assert len(sent) == 1, sent
     assert len(_discard_warnings(app)) == 1
     assert len(_discard_events(app)) == 1
+
+
+def test_a_refusal_survives_a_second_press_that_cuts_the_head_run_before_it_draws(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """거부된 「리비전 저장」 을 곧 한 번 더 누르면 둘째 누름이 다시 도는 회차를 거부를 그리기 전에
+    끊을 수 있다 — 그 누름의 결과(「고친 것이 없습니다」)가 결과 칸에 담긴다. 비켜 둔 거부는 그 칸이
+    아닌 곳으로 되돌려 둘째 누름의 회차가 결과와 함께 그리고 한 번 보낸다(사본 앱 두 세션 확인 —
+    결과 칸으로 되돌리면 곁 글 · 알림창 · Alarm 어디에도 남지 않았다)."""
+    repository, _ = _two_scenarios(tmp_path)
+    app = _head_page(repository)
+    _head_counts_my_edit(app, grid)
+    _their_common_save(repository)
+    sent: list[str] = []
+    remember_sent = alerts.remember_sent
+
+    def spy(key: str, note: alerts.AlertNote) -> None:
+        if "저장하지 않았습니다" in str(note.get("full")):
+            sent.append(str(note.get("id")))
+        remember_sent(key, note)
+
+    def cut_before_drawing() -> None:
+        # 다시 도는 회차가 칸을 그리기 전에 끊긴 꼴 — 표지만 걷고 비켜 둔 것을 되돌린다.
+        if st.session_state.pop(workspace.HEAD_STALE_KEY, None) is True:
+            workspace._release_head_hold()
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(alerts, "remember_sent", spy)
+        patch.setattr(workspace, "rerun_if_head_stale", cut_before_drawing)
+        app.button(key=SAVE_BUTTON_KEY).click()
+        _ok(app.run())
+        app.button(key=SAVE_BUTTON_KEY).click()
+        _ok(app.run())
+
+    refusals = [str(item.value) for item in app.error if "저장하지 않았습니다" in str(item.value)]
+    assert len(refusals) == 1, [str(item.value) for item in app.error]
+    assert len(sent) == 1, sent
+    flashes = [(note["code"], note["full"]) for note in alert_notes(app) if note.get("flash")]
+    assert [code for code, _ in flashes] == [
+        alerts.FLASH_CODES["error"],
+        alerts.FLASH_CODES["info"],
+    ]
+    assert "저장하지 않았습니다" in flashes[0][1]
+    assert flashes[1][1] == "고친 것이 없습니다"
 
 
 def test_a_reopen_without_lost_edits_does_not_spend_one_more_run(

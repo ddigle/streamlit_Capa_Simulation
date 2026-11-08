@@ -330,8 +330,8 @@ DRAFTS_REPLACED_KEY = "equipment_workspace_drafts_replaced_v1"
 # 다시 돈다(`rerun_if_head_stale`, AGENTS 9장 「`st.rerun()` 은 그 화면의 모든 편집표를 그린
 # 뒤에만」).
 HEAD_STALE_KEY = "equipment_workspace_head_stale_v1"
-# 그 회차에 비켜 둔 곁 알림 칸 {칸 이름: 담아 둔 값} — 다시 도는 회차가 그 칸에 한 번 그리고 한 번
-# 보낸다(`hold_until_head_rerun`).
+# 그 회차에 비켜 둔 곁 알림 {되돌릴 칸 이름: 담아 둔 값} — 다시 도는 회차가 그 칸에 한 번 그리고 한
+# 번 보낸다(`hold_until_head_rerun` · `carry_until_head_rerun`).
 _HEAD_HELD_KEY = "equipment_workspace_head_held_v1"
 # 그 회차에 담은 사건 알림(버림 `EQ-05`)을 다시 도는 회차가 같은 id 로 한 번 더 보낼 목록 — 다시
 # 돌기 전 회차의 표지는 브라우저가 훑기 전에 다음 회차가 덮을 수 있다(브라우저는 id 로 한 번만
@@ -624,15 +624,29 @@ def _release_head_hold() -> None:
 def hold_until_head_rerun(*keys: str) -> None:
     """머리를 다시 그리려 다시 돌 회차(`HEAD_STALE_KEY`)면 `keys` 에 담아 둔 곁 알림을 다시 도는
     회차까지 비켜 둔다 — 그 칸을 그리기 **전**에 부른다. 이 회차에 꺼내 그리면 다시 돈 회차가 빈
-    칸을 그려 곁 글(남의 저장에 진 「리비전 저장」 거부)이 깜빡 사라지고, 다시 담으면 알림창 ·
-    Alarm 이 한 번 일어난 일을 두 번 센다."""
-    if st.session_state.get(HEAD_STALE_KEY) is not True:
+    칸을 그려 곁 글(남의 저장에 진 「배치 저장」 거부)이 깜빡 사라지고, 다시 담으면 알림창 ·
+    Alarm 이 한 번 일어난 일을 두 번 센다. 다시 도는 회차는 같은 칸에 되돌린다 — 그 회차가 칸을
+    그리기 전에 둘째 누름이 같은 칸에 결과를 담을 수 있으면 `carry_until_head_rerun` 이다."""
+    for key in keys:
+        _hold_for_head_rerun(key, key)
+
+
+def carry_until_head_rerun(key: str, *, into: str) -> None:
+    """`hold_until_head_rerun` 과 같되 다시 도는 회차에 `into` 칸으로 되돌린다 — 부르는 화면은 그
+    칸을 `key` 칸과 한 자리에 그린다(`render_flash(into, key)`). 같은 칸으로 되돌리면, 다시 도는
+    회차가 그 칸을 그리기 전에 온 둘째 누름의 결과(「고친 것이 없습니다」)가 그 칸을 덮어 비켜 둔
+    거부(남의 공통 저장에 진 「리비전 저장」)가 곁 글 · 알림창 · Alarm 어디에도 남지 않는다."""
+    _hold_for_head_rerun(key, into)
+
+
+def _hold_for_head_rerun(key: str, into: str) -> None:
+    """다시 돌 회차면 `key` 칸에 담아 둔 값을 꺼내 다시 도는 회차에 `into` 칸으로 되돌릴 목록에
+    적는다."""
+    if st.session_state.get(HEAD_STALE_KEY) is not True or key not in st.session_state:
         return
     held = st.session_state.get(_HEAD_HELD_KEY)
     kept = dict(held) if isinstance(held, dict) else {}
-    for key in keys:
-        if key in st.session_state:
-            kept[key] = st.session_state.pop(key)
+    kept[into] = st.session_state.pop(key)
     st.session_state[_HEAD_HELD_KEY] = kept
 
 
