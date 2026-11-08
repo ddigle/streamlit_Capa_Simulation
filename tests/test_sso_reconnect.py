@@ -24,6 +24,7 @@ from capa_simulation.auth.identity import Identity
 from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
 from capa_simulation.components.sso_reconnect import (
     BANNER_ID,
+    CONNECTION_DIALOG_TEXT,
     HOST_CONFIG_PATH,
     PROBE_GAP_MS,
     PROBE_WAIT_MS,
@@ -191,3 +192,39 @@ process.stdout.write(JSON.stringify([
         f"{base}/proxy/8581{names.LOGIN_PATH}?next=%2F",
         f"{base}{names.LOGIN_PATH}?next=%2F",
     ]
+
+
+def test_only_the_401_connection_window_counts_as_the_one_the_band_replaces() -> None:
+    """띠가 선 동안 감추는 창은 Streamlit 의 401 연결 오류 창뿐이다 — 같은 꼴의 앱 팝업은 아니다
+    (2026-11-08 사용자 답 b2)."""
+    script = reconnect_script(use_config())
+    texts = [
+        "Connection error Connection failed with status 401.",
+        "Connection error Connection failed with status 500.",
+        "공식 지정 · 메모",
+        "",
+        None,
+    ]
+    runner = f"""
+const texts = {json.dumps(texts)};
+process.stdout.write(JSON.stringify(texts.map(connectionDialog)));
+"""
+    assert _node(script, runner) == [True, False, False, False, False]
+    assert CONNECTION_DIALOG_TEXT == "Connection failed with status 401"
+
+
+def test_the_band_hides_that_window_while_it_stands_and_gives_it_back_after() -> None:
+    """창은 띠보다 늦게 뜰 때가 있어 띠가 선 동안 매 틱 찾고, 띠를 걷으면 감춘 창만 되돌린다 —
+    띠가 없을 때의 창은 건드리지 않는다."""
+    script = reconnect_script(use_config())
+
+    assert "doc.querySelectorAll('[data-testid=\"stDialog\"]')" in script
+    assert 'dialog.style.setProperty("display", "none", "important");' in script
+    show = script.split("function showBanner()", 1)[1].split("function tick()", 1)[0]
+    assert show.rstrip().endswith("hideConnectionDialogs();\n  }")
+    hide = script.split("function hideBanner()", 1)[1].split("function showBanner()", 1)[0]
+    assert "restoreConnectionDialogs();" in hide
+    tick = script.split("function tick()", 1)[1]
+    assert "if (doc.getElementById(" in tick and "hideConnectionDialogs();" in tick
+    restore = script.split("function restoreConnectionDialogs()", 1)[1].split("function", 1)[0]
+    assert 'boxes[i].style.removeProperty("display");' in restore

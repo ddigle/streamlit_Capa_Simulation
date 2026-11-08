@@ -26,6 +26,12 @@ react-aria 모달이라 열리는 동안 바깥 요소를 `inert` 로 만든다 
 떨어진다(브라우저 실측). react-aria 가 비워 두는 표지 `data-react-aria-top-layer` 를 띠에 달아 그
 대상에서 뺀다.
 
+**띠가 선 동안 그 영어 창(「Connection failed with status 401.」)은 감춘다**(2026-11-08 사용자 답
+b2). 띠가 창 제목과 닫기 X 를 덮고 본문 줄만 삐져나와 같은 일을 두 번(그것도 영어로) 말했다. 창은
+띠보다 늦게 뜰 때가 있어 띠가 선 동안 매 틱 찾는다. 가르는 표는 창 글(`connectionDialog` — 판정
+구획)이다 — 같은 꼴의 앱 팝업(`st.dialog`)은 건드리지 않는다. 띠를 걷으면 감춘 창을 되돌린다(띠가
+없을 때의 창은 그대로다).
+
 링크는 `CAPA_PUBLIC_URL` 바탕의 `/auth/sso/login?next=<지금 경로 + 질의>` 다 — 경로에서 공개 주소의
 경로 접두(WebIDE `/proxy/<포트>`)를 떼는 것은 `sso_identity.return_path` 와 같은 규칙이고, 서버가
 `next` 를 다시 정화한다. 물음은 지금 창의 출처로 보낸다(공개 주소가 다른 출처면 쿠키가 실리지
@@ -61,6 +67,9 @@ PROBE_WAIT_MS = 3_000
 PROBE_GAP_MS = 10_000
 TICK_MS = 1_000
 HOST_CONFIG_PATH = "/_stcore/host-config"
+# 띠가 선 동안 감추는 Streamlit 연결 오류 창의 글 — 401 이라 띠가 선 그 창만 고른다(Streamlit 1.63
+# 프런트 글, 비공식 — 판올림으로 글이 바뀌면 창이 남을 뿐 띠는 그대로다).
+CONNECTION_DIALOG_TEXT = "Connection failed with status 401"
 # 열린 탭이 끝나면 사용자가 실제로 보는 것은 이 띠다 — 문지기가 앱 스크립트의 만료 화면보다 먼저
 # 연결을 닫는다. 그래서 끝난 까닭 넷(쓰지 않음 · 하루 최대 시간 · 로그아웃 · 명단에서 빠짐)을 여기에
 # 다 적는다.
@@ -87,6 +96,10 @@ function probeDue(since, lastProbe, now, waitMs, gapMs) {
   if (since === null || now - since < waitMs) return false;
   return lastProbe === null || now - lastProbe >= gapMs;
 }
+// 띠가 대신 말하는 Streamlit 연결 오류 창인가 — 그 창의 글로 가른다(앱 팝업은 아니다).
+function connectionDialog(text) {
+  return typeof text === "string" && text.indexOf(%(dialog_text)s) !== -1;
+}
 // 다시 로그인 주소 — 공개 주소 + 로그인 경로 + next(지금 경로에서 공개 주소의 경로 접두를 뗀
 // 것 + 질의).
 function loginHref(base, prefix, loginPath, pathname, search) {
@@ -105,9 +118,28 @@ function loginHref(base, prefix, loginPath, pathname, search) {
   function dark() {
     return typeof capaTheme !== "undefined" && capaTheme.resolve(parentWindow).choice === "Dark";
   }
+  // 띠가 선 동안 감춘 연결 오류 창 표지 — 띠를 걷을 때 이 표지가 있는 창만 되돌린다.
+  var HIDDEN_MARK = "data-capa-sso-hidden";
+  function hideConnectionDialogs() {
+    var boxes = doc.querySelectorAll('[data-testid="stDialog"]');
+    for (var i = 0; i < boxes.length; i++) {
+      var dialog = boxes[i];
+      if (dialog.hasAttribute(HIDDEN_MARK) || !connectionDialog(dialog.textContent)) continue;
+      dialog.setAttribute(HIDDEN_MARK, "");
+      dialog.style.setProperty("display", "none", "important");
+    }
+  }
+  function restoreConnectionDialogs() {
+    var boxes = doc.querySelectorAll("[" + HIDDEN_MARK + "]");
+    for (var i = 0; i < boxes.length; i++) {
+      boxes[i].removeAttribute(HIDDEN_MARK);
+      boxes[i].style.removeProperty("display");
+    }
+  }
   function hideBanner() {
     var box = doc.getElementById(%(banner_id)s);
     if (box) box.remove();
+    restoreConnectionDialogs();
   }
   function showBanner() {
     if (doc.getElementById(%(banner_id)s)) return;
@@ -131,6 +163,7 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     box.appendChild(text);
     box.appendChild(link);
     doc.body.appendChild(box);
+    hideConnectionDialogs();
   }
   function tick() {
     var root = doc.querySelector('[data-testid="stApp"]');
@@ -143,6 +176,8 @@ function loginHref(base, prefix, loginPath, pathname, search) {
       return;
     }
     if (since === null) since = now;
+    // 창이 띠보다 늦게 떠도 띠가 선 동안은 감춘다.
+    if (doc.getElementById(%(banner_id)s)) hideConnectionDialogs();
     if (probing || !probeDue(since, lastProbe, now, %(wait_ms)d, %(gap_ms)d)) return;
     probing = true;
     lastProbe = now;
@@ -207,6 +242,7 @@ def reconnect_script(cfg: SsoConfig) -> str:
         "prefix": script_literal(prefix),
         "login_path": script_literal(names.LOGIN_PATH),
         "host_config": script_literal(HOST_CONFIG_PATH),
+        "dialog_text": script_literal(CONNECTION_DIALOG_TEXT),
         "wait_ms": PROBE_WAIT_MS,
         "gap_ms": PROBE_GAP_MS,
         "tick_ms": TICK_MS,

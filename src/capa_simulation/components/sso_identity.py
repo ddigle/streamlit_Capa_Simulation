@@ -42,7 +42,7 @@ from urllib.parse import urlencode, urlsplit
 
 import streamlit as st
 
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import (
     Identity,
@@ -50,8 +50,14 @@ from capa_simulation.auth.identity import (
     identity_from_cookies,
     session_end_of,
 )
-from capa_simulation.auth.web import NOT_ON_LIST_TEXT, public_link, sanitize_next
+from capa_simulation.auth.web import (
+    LIST_UNREAD_TEXT,
+    NOT_ON_LIST_TEXT,
+    public_link,
+    sanitize_next,
+)
 from capa_simulation.components.app_header import render_shell_style
+from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
@@ -66,9 +72,10 @@ SSO_LOGINID_KEY = "sso_signed_in_loginid"
 EXPIRY_WARNING_SECONDS = 30 * 60
 
 # 앱 정보 카드 셋째 줄 끝의 남은 시간 — 쓰는 동안은 유휴 끝이 늘 멀어서 사실상 최대 시간 앞에만
-# 선다. 유휴 끝 경고는 오래 쉬다 돌아온 첫 회차에 잠깐 보일 수 있다(그 글도 사실이다).
-CAP_WARNING_SUFFIX = " · 로그인 최대 시간까지 {minutes}분 — 저장해 두세요"
-IDLE_WARNING_SUFFIX = " · 로그인 {minutes}분 남음 — 저장해 두세요"
+# 선다. 유휴 끝 경고는 오래 쉬다 돌아온 첫 회차에 잠깐 보일 수 있다(그 글도 사실이다). 값(남은
+# 시간)만 적고 하는 법(끝나기 전에 저장)은 HOME Guide 가 말한다(2026-11-08 사용자 답 b3).
+CAP_WARNING_SUFFIX = " · 로그인 최대 시간까지 {minutes}분"
+IDLE_WARNING_SUFFIX = " · 로그인 {minutes}분 남음"
 
 EXPIRED_NOTICE = (
     "통합인증 로그인 시간이 끝났습니다(오래 쓰지 않았거나 로그인 최대 시간이 지났습니다). "
@@ -101,9 +108,12 @@ _STOP_HIDDEN_TOOLBAR_BUTTONS = tuple(
     for button_id in TOOLBAR_BUTTON_ORDER
     if button_id not in (CHANGES_CHIP_ID, ALARM_BUTTON_ID)
 )
+# 같은 iframe 이 사이드바 머리칸에 세운 앱 이름 라벨(누르면 Summary)도 듣개가 함께 죽어 눌러도
+# 반응이 없다 — 멈춤 화면에서 함께 감춘다(2026-11-08 사용자 답 b6).
+_STOP_HIDDEN_IDS = (*_STOP_HIDDEN_TOOLBAR_BUTTONS, SUMMARY_LABEL_ID)
 _STOP_TOOLBAR_STYLE = (
     "<style>"
-    + ", ".join(f"#{button_id}" for button_id in _STOP_HIDDEN_TOOLBAR_BUTTONS)
+    + ", ".join(f"#{element_id}" for element_id in _STOP_HIDDEN_IDS)
     + " { display: none !important; }</style>"
 )
 
@@ -149,8 +159,8 @@ def login_again_link(cfg: SsoConfig) -> str:
 
 def _render_stop_chrome() -> None:
     """멈춤 화면의 머리 — 정상 회차와 같은 껍데기 스타일(⋮ 메뉴 · Deploy 감춤 · 인쇄 규칙)과 앞
-    회차가 남긴 죽은 툴바 단추 감춤. 멈춤은 `app.py` 가 껍데기 스타일을 보내기 전이라 여기서
-    보낸다(스타일만 든 `st.html` 이라 자리를 먹지 않는다)."""
+    회차가 남긴 죽은 툴바 단추 · 사이드바 앱 이름 라벨 감춤. 멈춤은 `app.py` 가 껍데기 스타일을
+    보내기 전이라 여기서 보낸다(스타일만 든 `st.html` 이라 자리를 먹지 않는다)."""
     render_shell_style()
     st.html(_STOP_TOOLBAR_STYLE)
 
@@ -165,9 +175,18 @@ def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
     st.stop()
 
 
+def signed_out_notice(cfg: SsoConfig, problem: IdentityProblem) -> str:
+    """멈춤 화면 글. 명단 밖(`DENIED`)이어도 S3 명단을 아직 못 읽은 동안이면 「확인하지 못했습니다」
+    다 — 재시작 뒤 S3 를 못 읽은 서버에서는 명단에 든 사람의 열린 탭도 여기서 멈춘다(거절 화면과
+    같은 글 — `auth/web.LIST_UNREAD_TEXT`)."""
+    if problem is IdentityProblem.DENIED and access_store.is_unread(cfg):
+        return LIST_UNREAD_TEXT
+    return _PROBLEM_NOTICES[problem]
+
+
 def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
     _render_stop_chrome()
-    st.warning(_PROBLEM_NOTICES[problem], icon=":material/lock_clock:")
+    st.warning(signed_out_notice(cfg, problem), icon=":material/lock_clock:")
     st.markdown(login_again_link(cfg), unsafe_allow_html=True)
     st.stop()
 

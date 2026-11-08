@@ -134,13 +134,121 @@ def test_the_scope_pickers_stand_on_the_heading_line(tmp_path: Path) -> None:
     page = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_page")
     tab = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_tab")
 
-    assert heading[:-1] == page[:-1] == tab[:-1]
-    assert heading[-1] < page[-1] < tab[-1]
+    # 제목은 공용 버전 줄과 한 칸(`render_profile_heading`)이고, 그 칸을 감싼 제 폭 칸이 고르기
+    # 둘의 형제다(전폭이면 고르기가 줄 오른쪽 끝으로 밀린다).
+    assert heading[:-3] == page[:-1] == tab[:-1]
+    assert heading[-3] < page[-1] < tab[-1]
     line: Any = app.main
-    for index in heading[:-1]:
+    for index in heading[:-3]:
         line = line.children[index]
+    holder = line.children[heading[-3]]
+    assert holder.proto.width_config.WhichOneof("width_spec") == "use_content"
     assert line.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
     assert line.proto.flex_container.wrap
+
+
+def test_a_long_change_memo_folds_the_version_line_instead_of_pushing_the_pickers(
+    tmp_path: Path,
+) -> None:
+    """버전 줄은 사람이 적은 변경 메모(출처)를 싣는다. 메모가 길어도 고르기 둘이 다음 줄로 밀려 표
+    위가 석 줄이 되지 않게, 서식이 제목 칸을 줄 폭에서 고르기 둘 몫을 뺀 폭까지만 넓히고 버전 줄을
+    제목 곁에서 접는다. 줄이 고르기 둘과 제목 칸 바닥을 담지 못하면 제목 칸이 줄을 다 쓰고 고르기가
+    내려앉는다(설계 규칙 UI-LAY-11 · UI-ACC-02). 실제 줄 수는 브라우저 배치라 서식의 꼴만 본다."""
+    from capa_simulation.components import display_order_management as dom
+    from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX
+
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-fold.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    line = _path_of(app, lambda node: getattr(node, "key", "") == dom.HEADING_ROW_KEY)
+    holder = _path_of(app, lambda node: getattr(node, "key", "") == dom.HEADING_BOX_KEY)
+    page = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_page")
+    heading = _path_of(
+        app,
+        lambda node: getattr(node, "key", "") == f"{HEADING_KEY_PREFIX}{dom.HEADING_PROFILE_KEY}",
+    )
+    assert holder[:-1] == line == page[:-1] and heading[: len(holder)] == holder
+
+    css = dom.HEADING_ROW_CSS
+    assert css in dom.DIRECT_EDITOR_STYLE
+    assert dom.DIRECT_EDITOR_STYLE in [str(element.proto.body) for element in app.get("html")]
+    assert dom.SCOPE_PICKERS_ROOM >= 2 * dom.SCOPE_PICKER_WIDTH + 2 * 14
+    assert f"max-width: calc(100% - {dom.SCOPE_PICKERS_ROOM}px);" in css
+    assert f"@container (max-width: {dom.SCOPE_PICKERS_ROOM + dom.HEADING_MIN_WIDTH}px)" in css
+    assert f".st-key-{dom.HEADING_ROW_KEY} {{ container-type: inline-size; }}" in css
+    assert f".st-key-{HEADING_KEY_PREFIX}{dom.HEADING_PROFILE_KEY} {{ flex-wrap: nowrap; }}" in css
+    assert "flex-shrink: 1; min-width: 0;" in css
+    assert "word-break: keep-all;" in css
+
+
+def _block_of(app: AppTest, path: tuple[int, ...]) -> Any:
+    node: Any = app.main
+    for index in path:
+        node = node.children[index]
+    return node
+
+
+def test_the_version_line_stands_beside_the_heading(tmp_path: Path) -> None:
+    """공용 버전 줄은 「직접 편집」 제목 바로 옆 한 칸이다(2026-11-08 사용자 그림 메모 g18 — 표 위
+    따로 서던 줄을 걷는다)."""
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-heading.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    heading = _path_of(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "markdown"
+            and "직접 편집" in str(getattr(node, "value", ""))
+        ),
+    )
+    version = _path_of(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "caption"
+            and "공용 버전 v1" in str(getattr(node, "value", ""))
+        ),
+    )
+    assert heading[:-1] == version[:-1] and heading[-1] < version[-1]
+    assert _block_of(app, heading[:-1]).proto.flex_container.direction == (
+        BlockProto.FlexContainer.Direction.HORIZONTAL
+    )
+
+
+def test_the_csv_and_paste_buttons_share_the_save_row(tmp_path: Path) -> None:
+    """표 위는 두 줄이다 — CSV 다운로드 · Excel 붙여넣기는 따로 줄을 세우지 않고 저장 · 메모 줄
+    오른쪽 끝에 선다(2026-11-08 사용자 답 d7). 둘은 폼에 둘 수 없는 위젯이라 폼 바로 앞 칸이고(폼
+    뒤면 표 안 Tab 이 칸마다 옮겨 가 둘이 표의 모든 칸 뒤로 밀린다), 서식이 그 칸을 저장 줄 높이에
+    얹고 저장 줄은 그 폭만큼 비운다."""
+    from capa_simulation.components import display_order_management as dom
+
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-row.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    box = _path_of(app, lambda node: getattr(node, "key", "") == dom.EDIT_BOX_KEY)
+    tools = _path_of(app, lambda node: getattr(node, "key", "") == dom.EDIT_TOOLS_KEY)
+    save_row = _path_of(app, lambda node: getattr(node, "key", "") == dom.SAVE_ROW_KEY)
+    download = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_download")
+    paste = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_open_paste")
+    save = _path_of(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "button"
+            and getattr(node, "label", "") == "공용 표시순서 저장"
+        ),
+    )
+    assert tools[:-1] == box and download[:-1] == paste[:-1] == tools
+    assert save[: len(save_row)] == save_row and save_row[: len(box)] == box
+    assert tools[-1] + 1 == save_row[len(box)], "도구 칸은 폼 바로 앞이다"
+    styles = [str(element.proto.body) for element in app.get("html")]
+    assert dom.DIRECT_EDITOR_STYLE in styles
+    assert dom.ACTION_ROW_CSS in dom.DIRECT_EDITOR_STYLE
+    assert f".st-key-{dom.SAVE_ROW_KEY} {{ padding-right: " in dom.ACTION_ROW_CSS
+    assert "position: absolute;" in dom.ACTION_ROW_CSS
+    # CSV · Excel 만 선 따로 줄이 없다 — 내려받기 단추는 이 문서에 하나이고 도구 칸 안이다.
+    assert len(app.get("download_button")) == 1
 
 
 def test_display_label_warning_survives_the_rerun_after_saving(
@@ -262,12 +370,12 @@ def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
     assert len(warnings) == 1
     assert "`거래선` → `Customer`" in warnings[0].value
     assert warnings[0].icon == ":material/help:"
-    # 경고는 저장 회차와 같은 머리 칸, 「바뀐 것이 없습니다」 는 폼 안이다 — 어느 쪽도 아래 직접
-    # 편집의 순번을 밀지 않는다.
+    # 경고와 「바뀐 것이 없습니다」 는 같은 칸 — 폼 안 저장 줄 바로 아래다(2026-11-08 사용자 답
+    # d5). 어느 쪽도 아래 직접 편집의 순번을 밀지 않는다.
     info_path = _alert_path(app, "info", _UNCHANGED_PREFIX)
     warning_path = _alert_path(app, "warning", "화면 표시명을 적었습니다")
-    assert warning_path < editor_path[: len(warning_path)]
-    assert info_path[: len(editor_path) - 2] == editor_path[: len(editor_path) - 2]
+    assert warning_path[:-1] == info_path[:-1] and info_path[-1] < warning_path[-1]
+    assert info_path[: len(editor_path) - 1] == editor_path[: len(editor_path) - 1]
     assert _editor_path(app) == editor_path
     assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
 
@@ -311,8 +419,10 @@ def test_an_unchanged_press_warns_only_about_a_display_label_left_in_the_table(
     assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 1
 
 
-def test_the_label_warning_stands_in_the_flash_slot_and_moves_no_editor(tmp_path: Path) -> None:
-    """표시명 경고는 저장 성공 칸 안에 선다 — 경고가 생기고 빠져도 아래 직접 편집의 자리가 그대로다.
+def test_the_label_warning_stands_under_the_save_row_and_moves_no_editor(tmp_path: Path) -> None:
+    """표시명 경고는 「바뀐 것이 없습니다」 와 같은 칸 — 폼 안 저장 줄 바로 아래다(2026-11-08 사용자
+    답 d5 — 전에는 머리 칸에 서서 저장 단추를 밀었다). 경고가 생기고 빠져도 아래 직접 편집의 자리가
+    그대로다.
 
     저장 회차는 `st.rerun()` 으로 끊기고 다음 회차에 경고가 생긴다. 그 사이 key 있는 편집표·저장
     단추가 경고 수만큼 밀리면 브라우저에 옛 자리의 흐린 사본이 남는다(AGENTS 9장 「조건부 알림」).
@@ -346,6 +456,11 @@ def test_the_label_warning_stands_in_the_flash_slot_and_moves_no_editor(tmp_path
     assert not app.exception
     assert any("화면 표시명을 적었습니다" in element.value for element in app.warning)
     assert places() == before
+    warning = _alert_path(app, "warning", "화면 표시명을 적었습니다")
+    save, editor = before
+    depth = len(editor) - 1
+    assert warning[:depth] == editor[:depth], "저장 폼 안이다"
+    assert save[depth] < warning[depth] < editor[depth], "저장 줄과 표 사이다"
 
     app.run(timeout=30)
     assert not any("화면 표시명을 적었습니다" in element.value for element in app.warning)

@@ -744,6 +744,48 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
     assert not list(app.exception), [element.message for element in app.exception]
     assert any("공용 버전 v1" in caption.value for caption in app.caption)
     assert any("테스트 초기값" in caption.value for caption in app.caption)
+    # 공용 버전 줄은 「직접 편집」 제목 바로 옆 한 칸이다(2026-11-08 사용자 그림 메모 g18) —
+    # 내려받기 · 붙여넣기 줄에는 단추만 남는다.
+    heading = _path_of(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "markdown"
+            and "직접 편집" in str(getattr(node, "value", ""))
+        ),
+    )
+    version = _path_of(
+        app,
+        lambda node: (
+            getattr(node, "type", "") == "caption"
+            and "공용 버전 v1" in str(getattr(node, "value", ""))
+        ),
+    )
+    download = _path_of(
+        app, lambda node: getattr(node, "key", "") == "admin_area_process_rename_download"
+    )
+    assert heading[:-1] == version[:-1] and heading[-1] < version[-1]
+    toolbar: Any = app.main
+    for index in download[:-1]:
+        toolbar = toolbar.children[index]
+    assert [type(child).__name__ for child in toolbar.children.values()] == [
+        "DownloadButton",
+        "Button",
+    ]
+
+
+def _path_of(app: AppTest, matches: Any) -> tuple[int, ...]:
+    """`matches` 에 맞는 노드 하나의 델타 경로(본문 기준 자식 번호 차례)."""
+    found: list[tuple[int, ...]] = []
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        if matches(node):
+            found.append(path)
+        for index, child in getattr(node, "children", {}).items():
+            walk(child, (*path, index))
+
+    walk(app.main, ())
+    assert len(found) == 1, found
+    return found[0]
 
 
 def test_unowned_display_name_is_reported_as_a_note_not_as_an_error(tmp_path: Path) -> None:

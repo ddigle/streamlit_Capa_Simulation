@@ -114,7 +114,7 @@ def _remove_selected() -> None:
     if outcome.changed:
         queue_flash(
             ACCESS_LIST_FLASH_KEY,
-            f"접속 명단에서 {outcome.removed}명을 뺐습니다 — 판 {outcome.revision}",
+            f"접속 명단에서 {outcome.removed}명을 뺐습니다 — 버전 {outcome.revision}",
         )
     else:
         queue_flash(ACCESS_LIST_FLASH_KEY, "바뀐 것이 없습니다", kind="info")
@@ -140,7 +140,7 @@ def _reread() -> None:
     document = ListDocument() if source is None else source.document or ListDocument()
     queue_flash(
         ACCESS_LIST_FLASH_KEY,
-        f"접속 명단을 다시 읽었습니다 — 사용자 {len(document.entries)} · 판 {document.revision}",
+        f"접속 명단을 다시 읽었습니다 — 사용자 {len(document.entries)} · 버전 {document.revision}",
     )
 
 
@@ -172,7 +172,7 @@ def _added_message(result: access_store.SaveResult, unreadable: int) -> str:
         parts.append(f"이미 있음 {result.already}")
     if unreadable:
         parts.append(f"꼴이 아니라 뺌 {unreadable}")
-    parts.append(f"판 {result.revision}")
+    parts.append(f"버전 {result.revision}")
     return " · ".join(parts)
 
 
@@ -232,7 +232,8 @@ def _render_remove_picker(document: ListDocument) -> None:
     이름이다.
 
     칩은 줄을 접는다 — 가로 칸 안의 기본값은 한 줄 가로 스크롤이라 고른 사람이 칸 밖으로 밀려
-    보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다).
+    보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다). 펼친 목록 맨 위의
+    「Select all」 줄은 없다 — 한 번에 전원을 골라 지우면 되돌릴 단추가 없어 한 사람씩 고른다.
     """
     options = [entry.loginid for entry in document.entries]
     # 다시 읽기로 빠진 사람이 고른 칸에 남으면 위젯이 옵션 밖 값을 받는다.
@@ -246,6 +247,7 @@ def _render_remove_picker(document: ListDocument) -> None:
         key=ACCESS_LIST_REMOVE_KEY,
         placeholder=REMOVE_PICKER_LABEL,
         label_visibility="collapsed",
+        select_all=False,
         wrap=True,
     )
     st.button(
@@ -276,7 +278,7 @@ def render_access_list_admin() -> None:
     source = runtime.access_source()
     document = None if source is None else source.document
     with remembered_expander("접속 명단", icon=":material/group:", key=EXPANDER_KEY):
-        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 판 · 사용자 값).
+        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 버전 · 사용자 값).
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.button(
                 "추가",
@@ -298,7 +300,7 @@ def render_access_list_admin() -> None:
             if document is not None:
                 access = runtime.current_access(cfg)
                 st.caption(
-                    f"판 {document.revision} · 사용자 {len(document.entries)} · "
+                    f"버전 {document.revision} · 사용자 {len(document.entries)} · "
                     f"관리자 {access.admin_count}(환경변수)",
                     width="content",
                 )

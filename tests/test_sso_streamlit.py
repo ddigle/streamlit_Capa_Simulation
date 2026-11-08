@@ -26,6 +26,7 @@ from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import SHELL_STYLE
+from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script
 from capa_simulation.components.sso_refresh import refresh_script
 from capa_simulation.components.theme_toggle import (
@@ -176,7 +177,7 @@ def test_the_card_warns_thirty_minutes_before_the_end() -> None:
     line = sso_identity.sso_credit_line(identity, now=later)
     assert line is not None
     assert line.endswith(sso_identity.IDLE_WARNING_SUFFIX.format(minutes=25))
-    assert line.endswith(" · 로그인 25분 남음 — 저장해 두세요")
+    assert line.endswith(" · 로그인 25분 남음"), "하는 법(「저장해 두세요」)은 Guide 가 말한다"
     earlier = identity.exp - 31 * 60
     line = sso_identity.sso_credit_line(identity, now=earlier)
     assert line is not None and "남음" not in line and "최대" not in line
@@ -197,7 +198,7 @@ def test_the_card_warns_before_the_maximum_in_its_own_words() -> None:
 
     assert line is not None
     assert line.endswith(sso_identity.CAP_WARNING_SUFFIX.format(minutes=25))
-    assert line.endswith(" · 로그인 최대 시간까지 25분 — 저장해 두세요")
+    assert line.endswith(" · 로그인 최대 시간까지 25분")
     assert "남음" not in line
     line = sso_identity.sso_credit_line(identity, now=cap - 31 * 60)
     assert line is not None and "최대" not in line
@@ -382,6 +383,8 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
         if f"#{button_id}" in sso_identity._STOP_TOOLBAR_STYLE
     }
     assert hidden == {GUIDE_BUTTON_ID, PRINT_BUTTON_ID, THEME_BUTTON_ID}
+    # 같은 iframe 이 세운 사이드바 앱 이름 라벨도 죽은 단추다 — 함께 감춘다(사용자 답 b6).
+    assert f"#{SUMMARY_LABEL_ID}" in sso_identity._STOP_TOOLBAR_STYLE
     assert CHANGES_CHIP_ID not in sso_identity._STOP_TOOLBAR_STYLE
     assert ALARM_BUTTON_ID not in sso_identity._STOP_TOOLBAR_STYLE
     assert '[data-testid="stAppDeployButton"]' in SHELL_STYLE

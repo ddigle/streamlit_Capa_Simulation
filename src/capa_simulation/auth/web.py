@@ -13,7 +13,8 @@
   자동으로 보내지 않는다.
 - `GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. 진단이 없거나 지났으면 질의 `code` 를
   싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다. `code=not_on_list` 는 거절 화면
-  (403)이다.
+  (403)이고, S3 명단을 아직 읽지 못해 확인하지 못한 거절은 `code=list_unread` 의 같은 꼴 화면이다
+  (명단에 든 사람에게 「명단에 없습니다」 를 보이지 않는다).
 - `POST /auth/sso/refresh` — 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다(204). 같은
   출처 · 갱신 머리 · 본문 없음 · 접속 명단 안의 유효한 세션 쿠키가 있어야 하고, 사건 고리에 적지
   않고 누계만 센다.
@@ -79,6 +80,11 @@ LOGIN_REQUIRED = "login required"
 NOT_ON_LIST = "not_on_list"
 NOT_ON_LIST_TITLE = "접속 권한이 없습니다"
 NOT_ON_LIST_TEXT = "이 앱을 쓸 수 있는 명단에 없습니다."
+# S3 명단을 아직 한 번도 읽지 못해(관리자만 들어옴) 명단에 있는지 확인하지 못한 거절의 사유 코드와
+# 화면 글. 사람이 명단에 있는지는 말하지 않는다 — 읽지 못했으니 모른다.
+LIST_UNREAD = "list_unread"
+LIST_UNREAD_TITLE = "접속 권한을 확인하지 못했습니다"
+LIST_UNREAD_TEXT = "접속 명단을 읽지 못했습니다 — 잠시 뒤 다시 확인하세요."
 HTML_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
@@ -131,6 +137,8 @@ _KEY_REASON = "서명 인증서가 맞지 않습니다 — 인증서 교체가 �
 _TIME_REASON = "시각이 맞지 않습니다(서버 시계가 어긋났거나 오래된 토큰을 다시 보냄)."
 _NONCE_REASON = "다른 로그인의 토큰입니다."
 _COOKIE_REASON = "로그인 쿠키를 저장하지 못했습니다."
+# 오류 화면 제목. 모르는 사유 코드는 본문에 이 말을 다시 적지 않고 제목과 사유 코드만 둔다.
+ERROR_PAGE_TITLE = "로그인하지 못했습니다"
 REASON_TEXT: Mapping[str, str] = {
     "bad_content_type": _FORM_REASON,
     "body_too_large": _FORM_REASON,
@@ -155,6 +163,7 @@ REASON_TEXT: Mapping[str, str] = {
     "login_loop": _COOKIE_REASON,
     "config_broken": "통합인증 설정을 마치지 못했습니다.",
     NOT_ON_LIST: NOT_ON_LIST_TEXT,
+    LIST_UNREAD: LIST_UNREAD_TEXT,
 }
 # 진단에서 화면에 보여도 되는 칸(비밀 아님)과 그 이름표. 이 목록 밖의 칸은 보이지 않는다.
 DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
@@ -550,6 +559,8 @@ def config_page(cfg: SsoConfig, *, status: int, now: int | None = None) -> HTMLR
 
 
 def reason_text(code: str) -> str:
+    """사유 코드의 한 줄 설명. 모르는 코드는 빈 글이다 — 화면 제목(`ERROR_PAGE_TITLE`)을 본문에서
+    거듭하지 않는다."""
     if code.startswith("idp_error:"):
         detail = code.split(":", 1)[1]
         if detail == "access_denied":
@@ -557,7 +568,7 @@ def reason_text(code: str) -> str:
         return "통합인증이 거절했습니다."
     if code.startswith(("claim_missing:", "claim_invalid:")):
         return "필요한 클레임이 없거나 꼴이 다릅니다 — 아래 받은 클레임 이름 목록을 보세요."
-    return REASON_TEXT.get(code, "로그인하지 못했습니다.")
+    return REASON_TEXT.get(code, "")
 
 
 def allowed_reason_codes(cfg: SsoConfig) -> frozenset[str]:
@@ -586,26 +597,30 @@ def error_page(
         for key, label in DIAGNOSTIC_LABELS
         if details and details.get(key)
     )
-    body = [
-        f"<p>사유 코드 <code>{_esc(code)}</code></p>",
-        f"<p>{_esc(reason_text(code))}</p>",
-    ]
+    body = [f"<p>사유 코드 <code>{_esc(code)}</code></p>"]
+    reason = reason_text(code)
+    if reason:
+        body.append(f"<p>{_esc(reason)}</p>")
     if rows:
         body.append(f"<table><tbody>{rows}</tbody></table>")
     retry = public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': '/'})}")
     body.append(f'<a class="button" href="{_esc(retry)}">다시 시도</a>')
-    return html_page("로그인하지 못했습니다", "".join(body), status=status)
+    return html_page(ERROR_PAGE_TITLE, "".join(body), status=status)
 
 
-def denied_page(cfg: SsoConfig, *, status: int) -> HTMLResponse:
+def denied_page(cfg: SsoConfig, *, status: int, unread: bool = False) -> HTMLResponse:
     """접속 명단 밖의 거절 화면. 로그인 없이 열리는 주소라 loginid · 이름 · 클레임을 싣지 않는다.
 
     「다시 확인」 은 로그인 경로다 — 명단에 들어간 뒤 누르면 그대로 들어온다. 통합인증 로그아웃은
     다른 계정으로 바꾸는 길이다(브라우저의 통합인증 로그인이 남아 있으면 IdP 가 묻지 않고 같은
-    계정을 준다).
+    계정을 준다). `unread` 면 S3 명단을 읽지 못해 확인하지 못한 거절이다 — 제목 · 글만 다르고
+    「다시 확인」 은 같다(그 길이 거절 직전에 명단을 다시 읽어 본다).
     """
     again = public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': '/'})}")
-    body = [f"<p>{_esc(NOT_ON_LIST_TEXT)}</p>"]
+    title, text = (
+        (LIST_UNREAD_TITLE, LIST_UNREAD_TEXT) if unread else (NOT_ON_LIST_TITLE, NOT_ON_LIST_TEXT)
+    )
+    body = [f"<p>{_esc(text)}</p>"]
     if cfg.access.contact:
         body.append(f"<p>요청: {_esc(cfg.access.contact)}</p>")
     body.append(f'<a class="button" href="{_esc(again)}">다시 확인</a>')
@@ -613,14 +628,16 @@ def denied_page(cfg: SsoConfig, *, status: int) -> HTMLResponse:
         body.append(
             f'<p class="muted"><a href="{_esc(cfg.logout_url)}">통합인증에서도 로그아웃</a></p>'
         )
-    return html_page(NOT_ON_LIST_TITLE, "".join(body), status=status)
+    return html_page(title, "".join(body), status=status)
 
 
 def logout_page(cfg: SsoConfig) -> HTMLResponse:
+    """로그아웃 안내 화면. 앱 밖 화면이라 Guide 가 없어 하는 법을 문장으로 둔다(설계 규칙 예외 —
+    2026-11-08 사용자 답 b1) — 제목을 거듭하는 첫 문장은 두지 않는다."""
     again = public_link(cfg, "/")
     body = [
-        "<p>로그아웃했습니다. 이 앱의 로그인만 끝냈습니다 — 브라우저의 통합인증(AD) 로그인은 "
-        "남아 있어 [다시 들어가기]를 누르면 묻지 않고 다시 들어갑니다.</p>",
+        "<p>이 앱의 로그인만 끝냈습니다 — 브라우저의 통합인증(AD) 로그인은 "
+        "남아 있어 「다시 들어가기」 를 누르면 묻지 않고 다시 들어갑니다.</p>",
         f'<a class="button" href="{_esc(again)}">다시 들어가기</a>',
     ]
     if cfg.logout_url:
@@ -631,8 +648,9 @@ def logout_page(cfg: SsoConfig) -> HTMLResponse:
 
 
 def loop_page(cfg: SsoConfig) -> HTMLResponse:
+    """로그인 되풀이 화면 — 로그아웃 안내와 같은 예외 꼴(제목을 거듭하는 첫 문장 없음)."""
     body = (
-        "<p>로그인이 되풀이되고 있습니다. 로그인 쿠키가 저장되지 않는 것 같습니다 — "
+        "<p>로그인 쿠키가 저장되지 않는 것 같습니다 — "
         "주소가 https 인지, 브라우저가 이 사이트의 쿠키를 막지 않는지 확인하세요. 관리자는 실제 "
         f"접속 주소가 설정값(<code>{_esc(names.ENV_PUBLIC_URL)}</code>)과 같은지 봅니다.</p>"
         '<p class="muted">사유 코드 <code>login_loop</code> · 2분 뒤 다시 시도할 수 있습니다.</p>'
@@ -680,16 +698,16 @@ def _deny(cfg: SsoConfig, state_cookie: str, loginid: str) -> Response:
 
     진단을 보관하지 않는다 — 그 화면은 로그인 없이 열리고 loginid · 이름을 싣지 않는다. 상태 쿠키 ·
     시도 쿠키 · 남아 있는 세션 쿠키를 지운다(시도 쿠키가 남으면 「다시 확인」 을 몇 번 누른 사람에게
-    「로그인이 되풀이됩니다」 가 잘못 뜬다).
+    「로그인이 되풀이됩니다」 가 잘못 뜬다). S3 명단을 아직 못 읽었으면 사유 코드가 `list_unread`
+    다 — 명단에 든 사람도 막히는 동안이라 「명단에 없습니다」 라고 하지 않는다.
     """
-    response = redirect(cfg, f"{names.ERROR_PATH}?{urlencode({'code': NOT_ON_LIST})}", 303)
+    code = LIST_UNREAD if access_store.is_unread(cfg) else NOT_ON_LIST
+    response = redirect(cfg, f"{names.ERROR_PATH}?{urlencode({'code': code})}", 303)
     response.headers["Referrer-Policy"] = "no-referrer"
     clear_state_cookie(response, state_cookie)
     clear_attempt_cookie(response, cfg)
     clear_session_cookie(response, cfg)
-    runtime.record_event(
-        runtime.DENIED_EVENT, level=logging.WARNING, reason=NOT_ON_LIST, loginid=loginid
-    )
+    runtime.record_event(runtime.DENIED_EVENT, level=logging.WARNING, reason=code, loginid=loginid)
     return response
 
 
@@ -864,7 +882,8 @@ async def logout(request: Request) -> Response:
 async def error(request: Request) -> Response:
     """`GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. id 가 없거나 지났으면 사유 코드만.
 
-    사유 코드가 `not_on_list` 면 거절 화면(403)이다 — 콜백이 진단 없이 이 코드로 보낸다.
+    사유 코드가 `not_on_list` · `list_unread` 면 거절 화면(403)이다 — 콜백이 진단 없이 이 코드로
+    보낸다.
     """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
@@ -876,8 +895,8 @@ async def error(request: Request) -> Response:
         code = record.get("code", "unknown")
     else:
         code = request.query_params.get("code", "")
-        if code == NOT_ON_LIST:
-            return denied_page(cfg, status=403)
+        if code in (NOT_ON_LIST, LIST_UNREAD):
+            return denied_page(cfg, status=403, unread=code == LIST_UNREAD)
         if code not in allowed_reason_codes(cfg):
             code = "unknown"
     return error_page(cfg, code, record, status=400)
