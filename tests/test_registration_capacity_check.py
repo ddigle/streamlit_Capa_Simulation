@@ -128,6 +128,68 @@ def test_zero_and_blank_siblings_stand_today_but_a_revision_saved_earlier_stays_
     assert (earlier.problem.table, earlier.problem.shape) == ("RQ_RUN_RATE", JOIN_BLANK_VALUE)
 
 
+def _plan_only_source() -> pd.DataFrame:
+    """계획 행만 있는 원천 — 경로 행(계획기초정보여부 N)이 하나도 없다."""
+    frame = SEED.source_data
+    return frame.loc[frame["계획기초정보여부"].eq("Y")].reset_index(drop=True)
+
+
+def test_a_plan_only_source_is_caught_by_its_empty_route_tables() -> None:
+    """경로 행이 없으면 대당 Capa 는 멈추지 않고 0행으로 끝난다 — 그 리비전을 불러온 계산 화면이
+    조회기간 자리에서 처음 멈췄다(2026-11-08 사용자 결정 U3 — 등록 점검이 빈 표를 잡는다). 글은 표
+    이름 대신 기준 정보 화면 이름을 쓰고, 앱에서 고칠 수 없으니 원천을 다시 등록하라고 한다."""
+    tables = _prepared(_plan_only_source()).reference_tables
+    assert tables["RQ_UPEH"].empty and tables["RQ_REQB"].empty and tables["RQ_EQP_AVBL"].empty
+
+    check = check_registration_capacity(tables)
+
+    assert check.stopped
+    assert check.empty == ("RQ_UPEH", "RQ_REQB", "RQ_EQP_AVBL")
+    assert check.memo() == "대당 Capa 계산 멈춤(빈 표 RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)"
+    notice = check.notice(1)
+    assert notice == (
+        "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 경로 행(계획기초정보여부 N)이 없는 "
+        "원천이라 「UPEH」 · 「STEP 구성」 · 「설비대수 가용」 표가 비었습니다. 앱에서 고칠 수 "
+        "없어 새 리비전으로는 풀리지 않습니다 — 원천에 경로 행을 넣어 다시 등록하세요."
+    )
+    assert "RQ_" not in notice
+
+
+def test_one_empty_route_table_names_only_itself() -> None:
+    tables = dict(SEED.reference_tables)
+    tables["RQ_EQP_AVBL"] = tables["RQ_EQP_AVBL"].iloc[:0]
+
+    check = check_registration_capacity(tables)
+
+    assert check.empty == ("RQ_EQP_AVBL",)
+    assert "— 경로 행(계획기초정보여부 N)이 없는 원천이라 「설비대수 가용」 표가 비었습니다." in (
+        check.notice(1)
+    )
+
+
+def test_a_plan_only_source_is_still_saved_with_its_empty_tables_in_the_memo(
+    tmp_path: Path,
+) -> None:
+    repository = DuckDBScenarioRepository(tmp_path / "registration.duckdb")
+    repository.initialize()
+    repository.initialize_global_display_order(DISPLAY_ORDER)
+    prepared = _prepared(_plan_only_source())
+
+    registration = save_bigdataquery_scenario(
+        repository,
+        prepared,
+        full_data_scenario_preset(prepared.reference_tables),
+        scenario_name="PSM W44 (SIM-W44)",
+        revision_name="초기 리비전",
+        note="",
+    )
+
+    assert registration.capacity.stopped
+    [scenario] = repository.list_scenarios()
+    saved = repository.load_revision(scenario.active_revision_id)
+    assert saved.revision.note == registration.capacity.memo()
+
+
 def test_a_stopping_source_is_still_saved_with_its_shape_in_the_memo(tmp_path: Path) -> None:
     repository = DuckDBScenarioRepository(tmp_path / "registration.duckdb")
     repository.initialize()

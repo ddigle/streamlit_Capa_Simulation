@@ -56,6 +56,15 @@ _CELL_SHAPES: Final = frozenset({JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC, JOIN_NO_MAT
 # 글(컬럼 없음·월 형식·연결 키 누락·Area_Name·키 중복)은 표 자체가 깨진 꼴이다.
 _CELL_MESSAGE_MARKERS: Final = ("0보다 커야 합니다", "누락값 또는 숫자가 아닌 값")
 _TABLE_NAME = re.compile(r"^(RQ_[A-Z_]+)")
+# 원천의 경로 행(계획기초정보여부 N)에서 나오고 계산 화면이 행을 읽어야 서는 표 → 기준 정보 화면의
+# 표(종류 단추 글). 계획 행만 있는 원천이면 셋 다 빈다 — 대당 Capa 는 멈추지 않고 0행으로 끝나, 그
+# 리비전을 불러온 계산 화면이 조회기간 자리에서 처음 멈춘다(내부 표 이름 글로). 측정률 표는 비어도
+# 계산이 1.0 가정으로 도는 정당한 상태라 넣지 않는다.
+_ROUTE_TABLES: Final = {
+    "RQ_UPEH": "「UPEH」",
+    "RQ_REQB": "「STEP 구성」",
+    "RQ_EQP_AVBL": "「설비대수 가용」",
+}
 
 
 @dataclass(frozen=True)
@@ -68,11 +77,13 @@ class RegistrationCapacityCheck:
     알림 밑 경고 띠, 자동 갱신은 실행 기록 사유 — 와 리비전 메모의 꼴·개수.
 
     `error` 는 계산 페이지와 같은 글(키 예시를 싣는다), `problem` 은 기준정보 연결 오류의 꼴·개수(값
-    없음)다. 멈추지 않았으면 둘 다 None 이다.
+    없음)다. 멈추지 않았으면 둘 다 None 이다. `empty` 는 계산 화면이 행을 읽어야 서는데 빈 경로 표
+    (`_ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다.
     """
 
     error: str | None = None
     problem: ReferenceJoinProblem | None = None
+    empty: tuple[str, ...] = ()
 
     @property
     def stopped(self) -> bool:
@@ -83,6 +94,8 @@ class RegistrationCapacityCheck:
         """멈춘 표 이름. 기준정보 연결 오류가 아니면 글 머리의 표 이름이다."""
         if self.problem is not None:
             return self.problem.table
+        if self.empty:
+            return self.empty[0]
         if self.error is None:
             return None
         match = _TABLE_NAME.match(self.error)
@@ -94,10 +107,18 @@ class RegistrationCapacityCheck:
             return ""
         if self.problem is not None:
             return f"대당 Capa 계산 멈춤({self.problem.table} {self.problem.summary()})"
+        if self.empty:
+            return f"대당 Capa 계산 멈춤(빈 표 {' · '.join(self.empty)})"
         return f"대당 Capa 계산 멈춤({self.table or '기준정보'})"
 
     def fix_hint(self, revision_no: int) -> str:
         """어떻게 푸는지 — 고칠 표와 다음 리비전 번호."""
+        if self.empty:
+            # 계산 멈춤 알림의 모듈수 글(`page_bootstrap.calculation_stop_notice`)과 같은 말이다.
+            return (
+                "앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천에 경로 행을 넣어 다시 "
+                "등록하세요."
+            )
         table = self.table
         if table == "RQ_MODULE":
             return (
@@ -142,7 +163,17 @@ def check_registration_capacity(tables: Mapping[str, pd.DataFrame]) -> Registrat
     소요대수까지 가지 않는다 — 원천에서 바로 고칠 수 있는 기준정보 연결 오류를 보려는 것이고, 한
     번에 합성 표본 약 0.2초다(샘플 관측). 기준정보 계약 위반(`ValueError`)만 결과로 담고, 다른
     예외는 코드 결함이라 그대로 올린다(`simulation_cache._capacity_outcome` 과 같은 갈래).
+
+    계산 앞에서 빈 경로 표(`_ROUTE_TABLES`)부터 본다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
+    멈춤으로 잡히지 않는다(2026-11-08 사용자 결정 U3 — 등록은 그대로 하고 「계산 멈춤」 으로
+    알린다).
     """
+    empty = tuple(name for name in _ROUTE_TABLES if tables[name].empty)
+    if empty:
+        names = " · ".join(_ROUTE_TABLES[name] for name in empty)
+        return RegistrationCapacityCheck(
+            f"경로 행(계획기초정보여부 N)이 없는 원천이라 {names} 표가 비었습니다.", empty=empty
+        )
     try:
         calculate_unit_capacity(
             upeh=tables["RQ_UPEH"],
