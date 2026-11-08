@@ -27,7 +27,7 @@ import streamlit as st
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.paste_form import PasteTemplate, refuse_paste, render_paste_form
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.saved_note import mark_note_saved, ready_note_field
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -134,8 +134,12 @@ def render_past_data_management(database_path: str, profile: GlobalPastData) -> 
     }
     draft = st.session_state.setdefault(PAST_DRAFT_KEY, {})
     with st.container(border=True):
-        st.markdown("#### :material/history: 과거 구간")
-        st.caption(profile_version_caption(profile, empty="아직 넣은 과거 구간이 없습니다"))
+        render_profile_heading(
+            "#### :material/history: 과거 구간",
+            profile,
+            key="home_past_data",
+            empty="아직 넣은 과거 구간이 없습니다",
+        )
         _render_save(database_path, draft)
     for spec in PAST_TABLE_SPECS:
         _render_table_editor(database_path, profile.version, spec, stored[spec.name], draft)

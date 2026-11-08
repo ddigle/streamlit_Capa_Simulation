@@ -71,7 +71,7 @@ from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.write_guard import (
@@ -105,6 +105,7 @@ from capa_simulation.services.main_cases import (
 CasePair: TypeAlias = tuple[str | None, str | None]
 
 MAIN_CASE_TITLE = "주요 Case"
+MAIN_CASE_HEADING = f"#### :material/star: {MAIN_CASE_TITLE}"
 MAIN_CASE_SOURCE = "HOME 주요 Case 선택"
 MAIN_CASE_FILL_SOURCE = "HOME 주요 Case 리비전 메움"
 # 콜백이 저장하지 못했을 때 남기는 한 줄. 다음 보이는 회차의 상자 안 알림 칸이 꺼내 보이고, 그 전에
@@ -191,7 +192,6 @@ def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = N
     목록뿐이고, 쓰기는 위 모듈 설명의 두 메우기뿐이다. 숨은 회차는 지난 화면을 다시 그린다.
     """
     with st.container(border=True):
-        st.markdown(f"#### :material/star: {MAIN_CASE_TITLE}")
         if tab_is_hidden(owner_tab):
             _render_hidden(database_path)
             return
@@ -199,6 +199,7 @@ def render_main_case_picker(database_path: str, *, owner_tab: OpenTab | None = N
         try:
             view = _read_view(database_path, notices=notices)
         except BOOTSTRAP_ERRORS as exc:
+            st.markdown(MAIN_CASE_HEADING)
             render_data_error(
                 bootstrap_error_message(exc), code="HM-01", text="주요 Case 를 읽지 못했습니다"
             )
@@ -221,6 +222,7 @@ def _render_hidden(database_path: str) -> None:
             view = _read_view(database_path, notices=None)
         except BOOTSTRAP_ERRORS:
             # 보이는 회차가 같은 오류를 알린다.
+            st.markdown(MAIN_CASE_HEADING)
             return
         st.session_state[MAIN_CASE_VIEW_KEY] = view
     _draw(database_path, view, [], callback_notice=False)
@@ -258,13 +260,20 @@ def _draw(
     callback_notice: bool,
     focus: object = None,
 ) -> None:
-    """상자 본문 — 공식버전 줄, 알림 칸, Case 두 칸, 겹침 값 줄, 버전 캡션.
+    """상자 본문 — 제목과 버전 줄(한 줄 — `render_profile_heading`), 공식버전 줄, 알림 칸, Case 두
+    칸, 겹침 값 줄.
 
     `callback_notice` 면 콜백이 담은 실패 알림(`MAIN_CASE_NOTICE_KEY`)을 알림 칸 맨 앞에 한 번
     그린다. 숨은 회차는 꺼내지 않는다 — 보이는 회차가 그린다. `focus` 는 이 회차에 한 번 강조할
     Case 번호다(미지정 칩 — `focus_main_case`). 겹침은 「**같은 리비전** · Case1 · Case2」 값 줄이고
     그 뜻은 풍선이다.
     """
+    render_profile_heading(
+        MAIN_CASE_HEADING,
+        view.profile,
+        key="home_main_cases",
+        empty="아직 지정한 주요 Case 가 없습니다.",
+    )
     st.markdown(_official_line(view.official), help=OFFICIAL_SLOT_HELP)
     # 알림은 생겼다 사라진다 — 늘 서 있는 한 칸 안에 그려 아래 상자의 자리를 고정한다(AGENTS
     # 9장).
@@ -287,7 +296,6 @@ def _draw(
     with st.container():
         for note in notes:
             st.caption(f"**{MAIN_CASE_OVERLAP_LABEL}** · {note}", help=MAIN_CASE_OVERLAP_HELP)
-    st.caption(profile_version_caption(view.profile, empty="아직 지정한 주요 Case 가 없습니다."))
 
 
 def _notify(text: str) -> None:

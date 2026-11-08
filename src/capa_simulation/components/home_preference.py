@@ -45,7 +45,7 @@ from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import (
     HasProfileVersion as VersionedProfile,
 )
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.saved_note import (
     mark_note_saved,
@@ -1047,17 +1047,16 @@ def render_threshold_editor(
     """
     submitted_base = seen(THRESHOLD_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/rule: 확보율 판정 기준")
-        st.caption(
-            profile_version_caption(
-                threshold_profile,
-                empty=(
-                    f"아직 저장하지 않아 {threshold_profile.fallback} 값"
-                    f"(확보 {_exact_percent(threshold_profile.default_secure)} · 경고 "
-                    f"{_exact_percent(threshold_profile.default_warning)})을 씁니다"
-                ),
-                detail=_threshold_detail(threshold_profile),
-            )
+        render_profile_heading(
+            "#### :material/rule: 확보율 판정 기준",
+            threshold_profile,
+            key="home_threshold",
+            empty=(
+                f"아직 저장하지 않아 {threshold_profile.fallback} 값"
+                f"(확보 {_exact_percent(threshold_profile.default_secure)} · 경고 "
+                f"{_exact_percent(threshold_profile.default_warning)})을 씁니다"
+            ),
+            detail=_threshold_detail(threshold_profile),
         )
         stored = _thresholds_by_month(threshold_profile)
         outside = sorted(set(stored) - set(months))
@@ -1671,8 +1670,7 @@ def _render_monthly_amount_editor(
     견줄 저장본은 제출 회차가 읽은 최신이다. 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
     """
     with st.container(border=True):
-        st.markdown(editor.title)
-        st.caption(profile_version_caption(profile, empty=editor.empty))
+        render_profile_heading(editor.title, profile, key=editor.form_key, empty=editor.empty)
         if not months:
             st.caption("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
             return
@@ -1793,13 +1791,12 @@ def _render_summary_note_editor(
     """
     submitted_base = seen(SUMMARY_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/campaign: 공지")
-        st.caption(
-            profile_version_caption(
-                summary_profile,
-                empty="아직 공지를 올린 적이 없습니다",
-                suffix="공지 중" if summary_profile.is_visible else "내림",
-            )
+        render_profile_heading(
+            "#### :material/campaign: 공지",
+            summary_profile,
+            key="home_summary",
+            empty="아직 공지를 올린 적이 없습니다",
+            suffix="공지 중" if summary_profile.is_visible else "내림",
         )
         with st.form("home_summary_note_form"):
             submitted = st.form_submit_button(
@@ -1906,15 +1903,14 @@ def _render_top5_band_editor(
     """
     submitted_base = seen(TOP5_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/straighten: B/N Top5 확보율 구간")
-        st.caption(
-            profile_version_caption(
-                top5_band_profile,
-                empty=(
-                    f"기본값 {top5_band_profile.min_rate:.0%}~"
-                    f"{with_object_particle(f'{top5_band_profile.max_rate:.0%}')} 씁니다"
-                ),
-            )
+        render_profile_heading(
+            "#### :material/straighten: B/N Top5 확보율 구간",
+            top5_band_profile,
+            key="home_top5",
+            empty=(
+                f"기본값 {top5_band_profile.min_rate:.0%}~"
+                f"{with_object_particle(f'{top5_band_profile.max_rate:.0%}')} 씁니다"
+            ),
         )
         with st.form("home_top5_band_form"):
             submitted = st.form_submit_button(
@@ -2287,13 +2283,12 @@ def _render_key_process_editor(
         )
         return
     with st.container(border=True):
-        st.markdown("#### :material/dataset: 주요공정 히트맵 프리셋")
-        st.caption(
-            profile_version_caption(
-                profile,
-                empty="아직 만든 프리셋이 없습니다",
-                detail=f"{len(profile.presets)}개 프리셋",
-            )
+        render_profile_heading(
+            "#### :material/dataset: 주요공정 히트맵 프리셋",
+            profile,
+            key="home_key_process",
+            empty="아직 만든 프리셋이 없습니다",
+            detail=f"{len(profile.presets)}개 프리셋",
         )
         names = list(profile.preset_names)
         targets = [*names, NEW_KEY_PROCESS_PRESET]
@@ -2701,9 +2696,11 @@ def _render_execution_editor(
     """
     submitted_base = seen(EXECUTION_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/exposure: 확보율 보정")
-        st.caption(
-            profile_version_caption(execution_profile, empty="아직 넣은 확보율 보정이 없습니다")
+        render_profile_heading(
+            "#### :material/exposure: 확보율 보정",
+            execution_profile,
+            key="home_execution",
+            empty="아직 넣은 확보율 보정이 없습니다",
         )
         if not months or not process_options:
             st.caption("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
