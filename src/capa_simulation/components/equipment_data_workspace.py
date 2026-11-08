@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 from uuid import uuid4
 
 import pandas as pd
@@ -23,6 +23,7 @@ from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
+    markdown_safe_tildes,
     quoted,
 )
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -126,6 +127,7 @@ from capa_simulation.services.equipment_grid import (
     move_ids,
     prune_overlay,
     renamed_saved_ids,
+    save_id_map,
     stale_scenario_edit_spots,
     undo_from_state,
     undo_step_tables,
@@ -736,6 +738,9 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     lingering = st.session_state.pop(HEAD_STALE_KEY, None) is not None
     if lingering or _HEAD_HELD_KEY in st.session_state or _HEAD_RESEND_KEY in st.session_state:
         _release_head_hold()
+    # 이 세션의 저장이 쓰기 뒤 · 뒷정리 전에 끊겼으면(빠른 다음 조작의 회차 — fastReruns) 그
+    # 뒷정리와 성공 알림을 여기서 잇는다 — 잇지 않으면 아래가 제 저장을 남의 저장으로 읽는다(a5).
+    own_head = _settle_own_save()
     token = revision_token(latest_snapshot)
     previous = st.session_state.get(_REVISION_KEY)
     # 남의 저장으로 다시 세우면 버리는 가정 배치 편집을 옛 저장본 사본이 바뀌기 **전**에 센다. 남의
@@ -743,7 +748,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     # 9장 — 재료도 옛 사본이 바뀌기 전에 든다).
     swapped = previous is not None and previous != token
     # 앱 머리가 이 회차에 센 미저장 표시(다시 세운 뒤와 견준다).
-    head_before = _head_marks() if swapped else None
+    head_before = own_head.marks if own_head is not None else _head_marks() if swapped else None
     overlay_dropped = _stamped_overlay_edits() if swapped else 0
     reapply = _reapply_material(previous, token) if swapped else None
     # 저장 안 한 이름 바꿈은 다시 얹지 않고 버린다 — 다시 얹은 알림이 그 수를 버린 것에 적는다(같은
@@ -878,8 +883,69 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             for note in (outbox if isinstance(outbox, list) else [])
             if isinstance(note, dict)
         ]
+    if own_head is not None and own_head.moved:
+        # 제 저장이 새 일정 리비전을 썼다 — 세션을 그리로 옮기는 것은 다음 회차(페이지가
+        # `pop_saved_schedule` 로 읽는다)다. 이 회차의 저장본 표지를 남기지 않아 다음 회차가 옮긴
+        # 리비전에서 말없이 새로 세운다(남의 저장으로 읽지 않는다). 머리도 그 회차에 다시 그린다.
+        st.session_state.pop(_REVISION_KEY, None)
+        st.session_state[HEAD_STALE_KEY] = True
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
+
+
+class _OwnSaveSettled(NamedTuple):
+    """끊긴 제 저장의 뒷정리를 이은 회차 — 그 전 머리 표시(`marks`)와 새 일정 리비전을 썼는가."""
+
+    marks: tuple[bool, tuple[str, ...]]
+    moved: bool
+
+
+def _settle_own_save() -> _OwnSaveSettled | None:
+    """「리비전 저장」 · 「배치 저장」 이 DB 에 쓴 뒤 뒷정리(`_after_equipment_save`) 전에 끊겼으면
+    그 뒷정리와 성공 알림을 잇는다(2026-11-08 사용자 답 a5 — 「제 저장 표지로 뒷정리 · 성공 알림을
+    잇는다」).
+
+    끊긴 회차는 `fastReruns` 다 — 저장 중 표 출납 같은 다음 조작이 새 회차를 세우고 옛 콜백은 쓰기
+    뒤 다음 세션 칸 접근에서 멈춘다. 그때도 끊기지 않는 dict 칸의 제 저장 짝(`remember_own_save` —
+    본 값, 쓴 값)과 알림(`note_notice`)은 남는다. 편집본 출발점(`_BASE_KEY`)이 아직 그 짝의 본
+    값이고 알림이 창(`write_guard.TRAILING_PRESS_SECONDS`) 안일 때만 끊긴 제 저장으로 본다 —
+    뒷정리를 마친 저장은 출발점을 쓴 값으로 옮기고, 창 밖은 옛 리비전을 일부러 다시 불러온 세션일
+    수 있다. 잇지 않으면 다음 판정이 새 저장본을 남의 저장으로 읽어 「다른 사용자가 … 저장해 …
+    버렸습니다」 를 알리고 성공 알림이 사라졌다. 알림은 남의 저장 안내와 같은
+    칸(`REOPENED_NOTICE_KEY` — 성공이라 알림창)이다."""
+    base = seen(_BASE_KEY)
+    if not isinstance(base, dict) or not isinstance(base.get("common"), str):
+        return None
+    schedule = base.get("schedule")
+    expected = (str(base["common"]), schedule if isinstance(schedule, str) else "")
+    for name, pair in own_save_marks().items():
+        if not name.startswith(f"{EQUIPMENT_SAVE_NAME}:") or not isinstance(pair, tuple):
+            continue
+        if len(pair) != 2 or pair[0] != expected or pair[1] == expected:
+            continue
+        message = held_notice(name)
+        if message is None:
+            continue
+        stored = pair[1]
+        written = stored[1] if isinstance(stored, tuple) and len(stored) == 2 else None
+        moved = written if isinstance(written, str) and written != expected[1] else None
+        marks = _head_marks()
+        # 저장 뒤 목록 · 상세 id 를 새 저장본 id 로 — 저장 길(`_save_revision`)이 못 한 몫이다.
+        frames = st.session_state.get(BUFFER_KEY)
+        ids: dict[str, str | None] = {}
+        if isinstance(frames, tuple):
+            renames = pending_unit_renames().units
+            ids = save_id_map(grid_index(frames[1], _saved_master(), renames), frames[1])
+        loaded, detail = grid_loaded_ids(), st.session_state.get(GRID_DETAIL_KEY)
+        _after_equipment_save(name.partition(":")[2], moved or None)
+        st.session_state[GRID_LOADED_KEY] = move_ids(loaded, ids)
+        if isinstance(detail, str) and ids.get(detail, detail):
+            st.session_state[GRID_DETAIL_KEY] = ids.get(detail, detail)
+        else:
+            st.session_state.pop(GRID_DETAIL_KEY, None)
+        queue_flash(REOPENED_NOTICE_KEY, markdown_safe_tildes(message))
+        return _OwnSaveSettled(marks, bool(moved))
+    return None
 
 
 def grid_loaded_ids() -> tuple[str, ...]:

@@ -993,3 +993,68 @@ def test_undo_that_changes_the_downtime_table_keeps_its_unapplied_edits(
     assert sorted(app.session_state[BUFFER_KEY][2]["설비명"]) == ["DA-01", "DA-02"]
     assert _downtime_reason(app, "DA-01") == "점검"
     assert grid_results(app)[-1].startswith("되돌림:")
+
+
+def _page_texts(app: AppTest) -> list[str]:
+    """화면의 글(마크다운 · 캡션 — 알약은 마크다운 꼴로 온다)."""
+    return [str(item.value) for item in (*app.markdown, *app.caption)]
+
+
+def test_a_save_cut_after_its_write_is_settled_as_my_own_save_on_the_next_run(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「리비전 저장」 콜백이 DB 쓰기 뒤 · 뒷정리 전에 끊기면(fastReruns — 저장 중 다음 조작이 새
+    회차를 세움) 다음 회차가 새 저장본을 남의 저장으로 읽어 「다른 사용자가 … 저장해 … 버렸습니다」
+    를 알리고 성공 알림이 사라졌다(a5). 끊기지 않는 제 저장 표지로 뒷정리 · 성공 알림을 잇는다 —
+    목록은 새 저장본 id 로 옮고 머리 변경 칩도 걷힌다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01"))
+    app.session_state[GRID_LOADED_KEY] = ("n:DA-01",)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    # 누른 회차의 콜백이 쓰기 뒤에 끊기고, 다음 회차는 저장 단추가 아닌 다른 조작의 회차다.
+    _first_callback(
+        app, monkeypatch, "_save_revision", cut_after=(DuckDBEquipmentRepository, "save_equipment")
+    )
+    app.run()
+
+    assert not app.exception, app.exception
+    notes = alert_notes(app, again=True)
+    texts = [str(note.get("full") or note.get("text") or "") for note in notes]
+    assert not [text for text in texts if "다른 사용자" in text], texts
+    assert not [note for note in notes if note.get("code") == "EQ-05"], notes
+    assert [text for text in texts if "저장했습니다" in text], texts
+    assert app.session_state[GRID_LOADED_KEY] == ("s:DA-01",)
+    assert not [text for text in _page_texts(app) if "저장 전 변경" in text or "미저장" in text]
+
+
+def test_a_cut_save_that_wrote_a_new_schedule_revision_moves_the_session_quietly(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """끊긴 저장이 새 일정 리비전을 썼으면 다음 회차가 세션을 그 리비전으로 옮긴다 — 옮긴 회차도
+    남의 일정 저장으로 읽지 않는다(a5)."""
+    database = tmp_path / "equipment.duckdb"
+    app = _app(database)
+    _import(app, _rows("DA-01"))
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+    assert not app.exception, app.exception
+    send_ops(app, grid, {"op": "cell", "id": "s:DA-01", "col": "반입일정", "text": "2026-12-01"})
+    app.run()
+    _first_callback(
+        app, monkeypatch, "_save_revision", cut_after=(DuckDBEquipmentRepository, "save_equipment")
+    )
+    app.run()
+    app.run()
+
+    assert not app.exception, app.exception
+    texts = [
+        str(note.get("full") or note.get("text") or "") for note in alert_notes(app, again=True)
+    ]
+    assert not [text for text in texts if "다른 사용자" in text], texts
+    master = app.session_state[BUFFER_KEY][1].set_index("설비명")
+    assert str(master.loc["DA-01", "반입일정"])[:10] == "2026-12-01"
+    assert not [str(item.value) for item in app.warning if "더 새롭습니다" in str(item.value)]
+    page = _page_texts(app)
+    assert not [text for text in page if "최신 r" in text or "미저장" in text], page
