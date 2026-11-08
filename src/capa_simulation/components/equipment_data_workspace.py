@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 from uuid import uuid4
 
 import pandas as pd
@@ -23,6 +23,7 @@ from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
+    markdown_safe_tildes,
     quoted,
 )
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -126,8 +127,10 @@ from capa_simulation.services.equipment_grid import (
     move_ids,
     prune_overlay,
     renamed_saved_ids,
+    save_id_map,
     stale_scenario_edit_spots,
     undo_from_state,
+    undo_step_tables,
     undo_to_state,
 )
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
@@ -270,6 +273,10 @@ LAST_REMOVED_KEY = "equipment_workspace_last_removed_v1"
 # 「한 단계 되돌리기」 가 미룬 일괄 삭제 되살리기(값은 표 이름 — `restore_bulk_deletion`). 그 표에
 # 적용하지 않은 편집이 있을 때만 서고, 그 표 편집표가 선 회차의 제출이 편집을 먼저 넣고 되살린다.
 RESTORE_REQUEST_KEY = "equipment_workspace_restore_request_v1"
+# 「한 단계 되돌리기」 가 미룬 표 단계 되돌리기(값은 표 이름 — `defer_grid_undo`). 그 단계가 바꿀
+# 작은 편집표에 적용하지 않은 편집이 있을 때만 서고, 그 표 편집표가 선 회차의 제출이 편집을 먼저
+# 넣고 되돌린다.
+GRID_UNDO_REQUEST_KEY = "equipment_workspace_grid_undo_request_v1"
 CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
 # Space 편집기가 쌓는 미저장 층 캔버스·도면 요소((동, 층) → 값). 호기 편집본(BUFFER_KEY)과
 # **함께 저장되고 함께 버려진다** — 어느 저장 단추를 눌러도 같은 저장 helper 를 탄다.
@@ -441,6 +448,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         PENDING_DELETE_KEY,
         LAST_REMOVED_KEY,
         RESTORE_REQUEST_KEY,
+        GRID_UNDO_REQUEST_KEY,
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
         PENDING_GROUP_LABELS_KEY,
@@ -730,6 +738,9 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     lingering = st.session_state.pop(HEAD_STALE_KEY, None) is not None
     if lingering or _HEAD_HELD_KEY in st.session_state or _HEAD_RESEND_KEY in st.session_state:
         _release_head_hold()
+    # 이 세션의 저장이 쓰기 뒤 · 뒷정리 전에 끊겼으면(빠른 다음 조작의 회차 — fastReruns) 그
+    # 뒷정리와 성공 알림을 여기서 잇는다 — 잇지 않으면 아래가 제 저장을 남의 저장으로 읽는다(a5).
+    own_head = _settle_own_save()
     token = revision_token(latest_snapshot)
     previous = st.session_state.get(_REVISION_KEY)
     # 남의 저장으로 다시 세우면 버리는 가정 배치 편집을 옛 저장본 사본이 바뀌기 **전**에 센다. 남의
@@ -737,7 +748,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
     # 9장 — 재료도 옛 사본이 바뀌기 전에 든다).
     swapped = previous is not None and previous != token
     # 앱 머리가 이 회차에 센 미저장 표시(다시 세운 뒤와 견준다).
-    head_before = _head_marks() if swapped else None
+    head_before = own_head.marks if own_head is not None else _head_marks() if swapped else None
     overlay_dropped = _stamped_overlay_edits() if swapped else 0
     reapply = _reapply_material(previous, token) if swapped else None
     # 저장 안 한 이름 바꿈은 다시 얹지 않고 버린다 — 다시 얹은 알림이 그 수를 버린 것에 적는다(같은
@@ -872,8 +883,69 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             for note in (outbox if isinstance(outbox, list) else [])
             if isinstance(note, dict)
         ]
+    if own_head is not None and own_head.moved:
+        # 제 저장이 새 일정 리비전을 썼다 — 세션을 그리로 옮기는 것은 다음 회차(페이지가
+        # `pop_saved_schedule` 로 읽는다)다. 이 회차의 저장본 표지를 남기지 않아 다음 회차가 옮긴
+        # 리비전에서 말없이 새로 세운다(남의 저장으로 읽지 않는다). 머리도 그 회차에 다시 그린다.
+        st.session_state.pop(_REVISION_KEY, None)
+        st.session_state[HEAD_STALE_KEY] = True
     frames: Frames = st.session_state[BUFFER_KEY]
     return frames
+
+
+class _OwnSaveSettled(NamedTuple):
+    """끊긴 제 저장의 뒷정리를 이은 회차 — 그 전 머리 표시(`marks`)와 새 일정 리비전을 썼는가."""
+
+    marks: tuple[bool, tuple[str, ...]]
+    moved: bool
+
+
+def _settle_own_save() -> _OwnSaveSettled | None:
+    """「리비전 저장」 · 「배치 저장」 이 DB 에 쓴 뒤 뒷정리(`_after_equipment_save`) 전에 끊겼으면
+    그 뒷정리와 성공 알림을 잇는다(2026-11-08 사용자 답 a5 — 「제 저장 표지로 뒷정리 · 성공 알림을
+    잇는다」).
+
+    끊긴 회차는 `fastReruns` 다 — 저장 중 표 출납 같은 다음 조작이 새 회차를 세우고 옛 콜백은 쓰기
+    뒤 다음 세션 칸 접근에서 멈춘다. 그때도 끊기지 않는 dict 칸의 제 저장 짝(`remember_own_save` —
+    본 값, 쓴 값)과 알림(`note_notice`)은 남는다. 편집본 출발점(`_BASE_KEY`)이 아직 그 짝의 본
+    값이고 알림이 창(`write_guard.TRAILING_PRESS_SECONDS`) 안일 때만 끊긴 제 저장으로 본다 —
+    뒷정리를 마친 저장은 출발점을 쓴 값으로 옮기고, 창 밖은 옛 리비전을 일부러 다시 불러온 세션일
+    수 있다. 잇지 않으면 다음 판정이 새 저장본을 남의 저장으로 읽어 「다른 사용자가 … 저장해 …
+    버렸습니다」 를 알리고 성공 알림이 사라졌다. 알림은 남의 저장 안내와 같은
+    칸(`REOPENED_NOTICE_KEY` — 성공이라 알림창)이다."""
+    base = seen(_BASE_KEY)
+    if not isinstance(base, dict) or not isinstance(base.get("common"), str):
+        return None
+    schedule = base.get("schedule")
+    expected = (str(base["common"]), schedule if isinstance(schedule, str) else "")
+    for name, pair in own_save_marks().items():
+        if not name.startswith(f"{EQUIPMENT_SAVE_NAME}:") or not isinstance(pair, tuple):
+            continue
+        if len(pair) != 2 or pair[0] != expected or pair[1] == expected:
+            continue
+        message = held_notice(name)
+        if message is None:
+            continue
+        stored = pair[1]
+        written = stored[1] if isinstance(stored, tuple) and len(stored) == 2 else None
+        moved = written if isinstance(written, str) and written != expected[1] else None
+        marks = _head_marks()
+        # 저장 뒤 목록 · 상세 id 를 새 저장본 id 로 — 저장 길(`_save_revision`)이 못 한 몫이다.
+        frames = st.session_state.get(BUFFER_KEY)
+        ids: dict[str, str | None] = {}
+        if isinstance(frames, tuple):
+            renames = pending_unit_renames().units
+            ids = save_id_map(grid_index(frames[1], _saved_master(), renames), frames[1])
+        loaded, detail = grid_loaded_ids(), st.session_state.get(GRID_DETAIL_KEY)
+        _after_equipment_save(name.partition(":")[2], moved or None)
+        st.session_state[GRID_LOADED_KEY] = move_ids(loaded, ids)
+        if isinstance(detail, str) and ids.get(detail, detail):
+            st.session_state[GRID_DETAIL_KEY] = ids.get(detail, detail)
+        else:
+            st.session_state.pop(GRID_DETAIL_KEY, None)
+        queue_flash(REOPENED_NOTICE_KEY, markdown_safe_tildes(message))
+        return _OwnSaveSettled(marks, bool(moved))
+    return None
 
 
 def grid_loaded_ids() -> tuple[str, ...]:
@@ -917,7 +989,10 @@ def same_frame_content(left: pd.DataFrame, right: pd.DataFrame) -> bool:
     return bool(units) and left.astype(units).equals(right.astype(units))
 
 
-def _remember_edits(frames: Frames) -> None:
+def _remember_edits(frames: Frames, *, keep_undo: bool = False) -> None:
+    """작은 편집표의 편집을 편집본에 넣는다. `keep_undo` 면 표의 되돌리기를 비우지 않는다 — 미룬
+    표 단계 되돌리기가 곧바로 그 위에 얹힌다(`defer_grid_undo` — 칸만 고친 편집이라 줄 자리가
+    그대로일 때만)."""
     # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다.
     current = st.session_state.get(BUFFER_KEY)
     unchanged = isinstance(current, tuple) and all(
@@ -929,7 +1004,8 @@ def _remember_edits(frames: Frames) -> None:
     # 편집이 있다」로 보여, 남의 저장 때 버린 것도 없는데 버렸다고 알린다.
     if not unchanged:
         _bump_buffer_generation()
-        _forget_grid_undo()
+        if not keep_undo:
+            _forget_grid_undo()
         _note_if_back_to_saved()
 
 
@@ -2982,8 +3058,8 @@ def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool]:
     return confirm, cancel
 
 
-def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bool) -> None:
-    """선택 · 삭제를 편집본에 반영한다. `_remember_edits` 뒤에 부른다.
+def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bool) -> bool:
+    """선택 · 삭제를 편집본에 반영한다. `_remember_edits` 뒤에 부른다. 삭제를 확정했으면 참이다.
 
     **확인 대기는 어떤 제출이든 한 번 쓰고 버린다.** 삭제 버튼이 다시 세우지 않는 한 남지
     않는다 — 확인 상자가 누른 순간보다 오래 살아 있으면 나중에 다른 뜻으로 눌린다.
@@ -3030,7 +3106,10 @@ def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bo
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
         queue_flash(_NOTICE_KEY, done, kind="info")
+        st.session_state[SELECTION_KEY] = selection
+        return True
     st.session_state[SELECTION_KEY] = selection
+    return False
 
 
 def restore_bulk_deletion() -> bool:
@@ -3052,6 +3131,47 @@ def restore_bulk_deletion() -> bool:
             st.session_state[RESTORE_REQUEST_KEY] = name
             return True
     return _restore_removed()
+
+
+def defer_grid_undo() -> bool:
+    """표의 맨 위 단계가 바꿀 작은 편집표(기존 보유대수·비가동 일정)에 적용하지 않은 편집이 있으면
+    되돌리기를 미루고 참이다. 되돌리면 그 표의 편집표를 새로 세워야 해(줄 번호 delta 가 바뀐 표에
+    얹히지 않게) 적용 전 편집이 말없이 사라졌다(X1). 표지(`GRID_UNDO_REQUEST_KEY`)만 세우고 그 표
+    편집표가 선 회차의 제출(`render_small_editor` 의 `undo`)이 편집을 먼저 넣고 되돌린다 — 일괄 삭제
+    되살리기(`restore_bulk_deletion`)와 같은 차례다."""
+    steps = grid_undo_steps()
+    if not steps:
+        return False
+    touched = undo_step_tables(steps[-1])
+    for name in small_editor_edits():
+        if touched[TARGET_LAYOUT[name][0]]:
+            st.session_state[GRID_UNDO_REQUEST_KEY] = name
+            return True
+    return False
+
+
+def settle_grid_undo(undo: Callable[[], None]) -> None:
+    """미룬 표 단계 되돌리기의 표를 이번 회차에 그리지 않으면 곧바로 되돌린다 — 누른 회차가 끊긴
+    사이 표 고르기를 바꿨다(그 표의 적용 전 편집은 그리지 않아 어차피 걷힌다)."""
+    request = st.session_state.get(GRID_UNDO_REQUEST_KEY)
+    if request is not None and request != st.session_state.get(MASTER_TABLE_KEY):
+        st.session_state.pop(GRID_UNDO_REQUEST_KEY, None)
+        undo()
+
+
+def _undo_lines_up(before: pd.DataFrame, after: pd.DataFrame) -> bool:
+    """표 단계의 역 patch(줄 자리 기준)가 편집을 넣은 표에도 맞는가 — 편집이 표 내용을 바꾸지
+    않았거나(「선택」 칸만 고름 등 — 통째 단계여도 표가 그대로라 맞는다), 통째 단계가 아니고 편집이
+    줄을 지우거나 옮기지 않았을 때(칸 고침 · 끝에 더한 줄)다. 값이 그대로인 편집을 맞지 않는다고
+    보면 편집본이 그대로라 되돌리기를 비우지도 않아 단추가 말없이 듣지 않는다."""
+    steps = grid_undo_steps()
+    if not steps:
+        return False
+    if same_frame_content(before, after):
+        return True
+    if steps[-1].kind == "whole" or len(after) < len(before):
+        return False
+    return list(after.index[: len(before)]) == list(before.index)
 
 
 def settle_bulk_restore() -> None:
@@ -3420,6 +3540,8 @@ def render_small_editor(
     stale: bool,
     delete_locked: str | None,
     drafts_replaced: bool,
+    undo: Callable[[], None] | None = None,
+    on_deleted: Callable[[], None] | None = None,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
     그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
@@ -3434,7 +3556,11 @@ def render_small_editor(
     제출을 받았으면 그 처리(편집본 적용 → `st.rerun()`)를 돌려준다 — 화면의 모든 위젯(오른쪽 칸
     포함)을 그린 **뒤에** 부른다(AGENTS 9장 「`st.rerun()` 은 그 화면의 모든 편집표를 그린
     뒤에만」). 받은 제출이 없으면 None. 비가동 일정은 시나리오 쪽이라 낡은 세션이면 통째로
-    잠근다. 저장은 오른쪽 「저장 전 변경」 한 곳이다."""
+    잠근다. 저장은 오른쪽 「저장 전 변경」 한 곳이다. `undo` 는 미룬 표 단계
+    되돌리기(`defer_grid_undo`)를 편집을 넣은 뒤 잇는 길이다 — 값을 바꾼 편집이 줄을 지웠거나 통째
+    단계면 되돌리기를 비우고 편집을 지킨다(그 사실은 알림창이 말한다). 값이 그대로인 편집(「선택」
+    칸만 고름)은 그대로 되돌린다(`_undo_lines_up`). `on_deleted` 는 「삭제 확정」 을
+    받은 제출 뒤에 부른다 — 화면이 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다(c6)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     baseline_table = target == BASELINE_TARGET
     position = 0 if baseline_table else 2
@@ -3539,6 +3665,8 @@ def render_small_editor(
             )
     # 「한 단계 되돌리기」 가 미룬 이 표의 되살리기(`restore_bulk_deletion`) — 제출로 받는다.
     restoring = st.session_state.get(RESTORE_REQUEST_KEY) == target
+    # 「한 단계 되돌리기」 가 미룬 표 단계 되돌리기(`defer_grid_undo`) — 제출로 받는다.
+    undoing = st.session_state.get(GRID_UNDO_REQUEST_KEY) == target
     if not any(
         (
             apply_clicked,
@@ -3547,6 +3675,7 @@ def render_small_editor(
             confirm_delete,
             cancel_delete,
             restoring,
+            undoing,
         )
     ):
         return None
@@ -3563,8 +3692,11 @@ def render_small_editor(
         current: Frames = st.session_state[BUFFER_KEY]
         updated = list(current)
         updated[position] = edited
-        _remember_edits((updated[0], updated[1], updated[2]))
-        _apply_bulk_actions(
+        if undoing:
+            st.session_state.pop(GRID_UNDO_REQUEST_KEY, None)
+        keep_undo = undoing and undo is not None and _undo_lines_up(current[position], edited)
+        _remember_edits((updated[0], updated[1], updated[2]), keep_undo=keep_undo)
+        deleted = _apply_bulk_actions(
             EditorResult(
                 frames=(updated[0], updated[1], updated[2]),
                 checked={**selection, target: checked},
@@ -3574,8 +3706,12 @@ def render_small_editor(
             confirm=confirm_delete,
             view_applied=view_clicked,
         )
+        if deleted and on_deleted is not None:
+            on_deleted()
         if restoring:
             _restore_removed()
+        if keep_undo and undo is not None:
+            undo()
         st.rerun()
 
     return submit

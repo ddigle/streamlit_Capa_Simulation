@@ -98,6 +98,13 @@ def render_table_view_controls(
     저장값·거르는 값은 원본이고 편집표의 칸은 건드리지 않는다.
 
     `footer` 는 펼침 맨 끝에 그릴 것이다(그 보기를 표에 거는 단추 — 고르는 칸과 한 자리).
+
+    **폼 안에 그려도 된다**(Cut-off — 2026-11-08 사용자 답 X1). 폼 안이면 고른 값이 그 폼을 제출할
+    때에만 서버에 온다 — 칸을 친 채 보기를 바꿔도 회차가 돌지 않아 친 칸이 사라지지 않고, 「보기
+    적용」(폼 제출 단추 — `footer`)이 친 칸과 새 보기를 함께 가져간다. 그때 부르는 쪽은 편집표를
+    **적용한 보기**(`view_of` — 앞 제출의 고름)로 그려 그 제출의 칸 편집을 옛 행 자리로 읽고, 새
+    보기는 그 뒤에 건다. `editor_key` 에는 편집표가 아닌 이름을 준다(고른 보기의 행이 바뀌어도
+    편집표를 버리지 않게).
     """
     if data.empty:
         return TableView(data)
@@ -155,17 +162,12 @@ def render_table_view_controls(
         if footer is not None:
             footer()
 
-    visible = data
-    for column, chosen in selections.items():
-        if chosen:
-            visible = visible.loc[visible[column].astype(str).str.strip().isin(chosen)]
-    filtered = len(visible) != len(data)
-    if not filtered:
-        # 모든 행이 남은 거름(「Select all」·한 호기뿐인 표의 「표에서 고치기」)은 원본을 그대로
-        # 쓴다 — `.loc` 가 RangeIndex 를 일반 정수 Index 로 바꾸면 Streamlit 1.63 은 행 추가가
-        # 열린(`num_rows="dynamic"`) 편집표에서 `hide_index=True` 를 무시하고 인덱스를 머리 없는
-        # 필수 칸으로 세운다. 보이는 행이 같아 행 지문(아래)도 그대로다.
-        visible = data
+    view = view_of(
+        data,
+        filters=selections,
+        hidden_columns=[column for column in hideable if column not in shown],
+    )
+    visible = view.frame
     # `st.data_editor` 의 편집 델타는 행 **위치** 기반이다. 보이는 행 집합이 바뀌면 남아
     # 있던 편집이 다른 행에 붙는다. 위젯을 만들기 전에 버려야 그 오염이 저장까지 가지
     # 않는다. 세션 칸만 지우면 브라우저가 옛 편집을 다시 보내므로 `discard_editor` 로 위젯 키를
@@ -178,16 +180,38 @@ def render_table_view_controls(
         if previous is not None:
             discard_editor(editor_key)
         st.session_state[signature_key] = signature
-    if filtered:
+    if view.filtered:
         st.caption(FILTERED_NOTICE)
+    return view
 
-    hidden = tuple(column for column in hideable if column not in shown)
+
+def view_of(
+    data: pd.DataFrame,
+    *,
+    filters: Mapping[str, Sequence[str]],
+    hidden_columns: Sequence[str] = (),
+) -> TableView:
+    """고른 행 필터(칸 → 값 목록 — 빈 목록은 거르지 않음)와 감출 칸으로 보기 한 벌을 짓는다. 표에
+    없는 칸은 건너뛴다 — 폼 안 보기(`render_table_view_controls` 설명)는 앞 제출의 고름을 지금
+    초안에 다시 건다."""
+    visible = data
+    for column, chosen in filters.items():
+        if chosen and column in data.columns:
+            visible = visible.loc[visible[column].astype(str).str.strip().isin(list(chosen))]
+    filtered = len(visible) != len(data)
+    if not filtered:
+        # 모든 행이 남은 거름(「Select all」·한 호기뿐인 표의 「표에서 고치기」)은 원본을 그대로
+        # 쓴다 — `.loc` 가 RangeIndex 를 일반 정수 Index 로 바꾸면 Streamlit 1.63 은 행 추가가
+        # 열린(`num_rows="dynamic"`) 편집표에서 `hide_index=True` 를 무시하고 인덱스를 머리 없는
+        # 필수 칸으로 세운다. 보이는 행이 같아 행 지문도 그대로다.
+        visible = data
+    hidden = tuple(column for column in hidden_columns if column in data.columns)
     return TableView(
         frame=visible,
         hidden_columns=hidden,
         filtered=filtered,
         column_config={column: None for column in hidden},
-        filters={column: tuple(chosen) for column, chosen in selections.items() if chosen},
+        filters={column: tuple(chosen) for column, chosen in filters.items() if chosen},
     )
 
 

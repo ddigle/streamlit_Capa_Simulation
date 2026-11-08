@@ -359,7 +359,12 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     assert len(_downtime_machines(app)) == seed.downtime_count - count
     assert _machines(app) == sorted(seed.machines)  # 비가동만 지운다
     assert not app.info, [item.value for item in app.info]
-    assert not [item for item in app.button if "되돌리기" in str(item.label)]
+    # 확정하면 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸이 열리고 접힌 칸은 펴진다(c6). 표
+    # 위에는 되살리기 단추가 따로 서지 않는다.
+    assert app.session_state[SIDE_KEY] == SIDE_CHANGES
+    assert app.session_state[emg.MASTER_SIDE.reveal_key] >= 1
+    undo = [item.key for item in app.button if "되돌리기" in str(item.label)]
+    assert undo == [UNDO_BUTTON_KEY], undo
     _press_undo(app)
     assert grid_results(app, "info") == ["방금 지운 행을 편집본에 되살렸습니다."]
     assert len(_downtime_machines(app)) == seed.downtime_count

@@ -215,18 +215,19 @@ def _locked_cutoff_body(database_path: str) -> None:
     )
 
 
-def test_the_locked_table_keeps_only_the_toolbar_download(tmp_path: Path) -> None:
-    """잠긴 표는 읽기만 해 곁 CSV 단추를 두지 않는다 — 내려받기는 표 도구 막대 한 곳이다(설계 규칙
-    UI-LAY-12 · 답 csv-dup). 고치는 표의 CSV 는 왕복 양식이라 그대로다. 표 위에 누를 것이 없어 앞
-    띄움도 없다(`tests/test_table_toolbar.py`)."""
+def test_the_locked_table_keeps_the_round_trip_csv_beside_its_lock_mark(tmp_path: Path) -> None:
+    """잠긴 표에도 왕복 양식 CSV 단추를 둔다 — 표 도구 막대 내려받기에는 감춘 「제품구분」 칸이
+    없고 표가 비면 받을 길이 없었다(2026-11-08 사용자 답 d6 — 「왕복 양식은 둔다」). 단추는 잠김
+    표지와 한 줄 오른쪽 끝이고, 표 위 줄에 누를 것이 생겨 앞 띄움을 둔다
+    (`tests/test_table_toolbar.py`). 고치는 표는 같은 단추가 「Cut-off 저장」 줄 끝이다(g17)."""
     locked = AppTest.from_function(
         _locked_cutoff_body, args=(str(tmp_path / "locked.duckdb"),), default_timeout=60
     ).run()
 
     assert not locked.exception, [item.message for item in locked.exception]
     assert len(locked.dataframe) == 1
-    assert not locked.get("download_button")
-    assert not locked.get("space")
+    assert [item.proto.url != "" for item in locked.get("download_button")] == [True]
+    assert locked.get("space")
     assert any("Cut-off 잠김" in str(item.value) for item in locked.caption)
 
     editable = AppTest.from_function(
@@ -234,6 +235,45 @@ def test_the_locked_table_keeps_only_the_toolbar_download(tmp_path: Path) -> Non
     ).run()
 
     assert [item.proto.url != "" for item in editable.get("download_button")] == [True]
+    clear_equipment_repository()
+
+
+def test_the_round_trip_csv_carries_the_hidden_column_and_an_empty_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """왕복 양식은 저장된 표 그대로(감춘 「제품구분」 칸 포함)이고, 표가 비면 머리 줄만 든 빈
+    양식이다(d6)."""
+    from capa_simulation.components import cutoff_management
+
+    sent: list[bytes] = []
+    monkeypatch.setattr(
+        cutoff_management, "render_csv_download", lambda **kwargs: sent.append(kwargs["data"])
+    )
+    cutoff_management._render_roundtrip_csv(pd.DataFrame(columns=["공정", "Cutoff일수"]))
+    cutoff_management._render_roundtrip_csv(
+        pd.DataFrame({"공정": ["DEMO-P"], "제품구분": ["*"], "Cutoff일수": [3.0], "비고": [""]})
+    )
+
+    assert sent[0].decode("utf-8-sig").splitlines() == ["공정,Cutoff일수,제품구분,비고"]
+    assert sent[1].decode("utf-8-sig").splitlines()[0] == "공정,제품구분,Cutoff일수,비고"
+
+
+def test_the_csv_button_sits_at_the_end_of_the_cutoff_save_line(tmp_path: Path) -> None:
+    """「CSV 다운로드」 는 「Cut-off 저장」 · 「설비 공정으로 채우기」 와 한 줄 오른쪽 끝이다(g17 —
+    창 작업 줄은 적용 왼쪽 · 내려받기 오른쪽). 내려받기 단추는 폼 안에 둘 수 없어 폼 앞에 두고
+    서식이 제출 줄 끝에 얹는다 — 서식은 빈 칸과 함께 제출 줄 안에 서서 이벤트 칸을 쓰지 않는다."""
+    from capa_simulation.components import cutoff_management as cm
+
+    app = AppTest.from_function(
+        _cutoff_body, args=(str(tmp_path / "line.duckdb"),), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    style = cm._actions_style()
+    assert f".st-key-{cm._CSV_KEY} {{ position: absolute;" in style
+    assert style.endswith("</style><span></span>")
+    bodies = [str(element.proto.body) for element in app.get("html")]
+    assert style in bodies
     clear_equipment_repository()
 
 
@@ -510,7 +550,7 @@ def test_filling_under_a_row_filter_keeps_the_typed_value(tmp_path: Path) -> Non
     )
     tables = BrowserTables(app, forms=True)
     app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
-    tables.run()
+    _press(tables, "보기 적용")
     tables.edit(_editor_key(app), 0, "Cutoff일수", 21.5)
 
     _press(tables, "설비 공정으로 채우기")
@@ -582,7 +622,7 @@ def test_a_cell_fixed_after_a_refused_save_under_a_row_filter_reaches_the_next_s
     )
     tables = BrowserTables(app, forms=True)
     app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
-    tables.run()
+    _press(tables, "보기 적용")
     tables.edit(_editor_key(app), 0, "Cutoff일수", 99999.0)
 
     _press(tables, "Cut-off 저장")
@@ -826,4 +866,38 @@ render_cutoff_management(
     assert not app.exception
     assert not app.warning, [str(item.value) for item in app.warning]
     assert outsider.load_process_cutoff()["Cutoff일수"].tolist() == [12.0, 5.0]
+    clear_equipment_repository()
+
+
+def test_changing_the_view_keeps_a_typed_cell_and_the_view_apply_brings_both(
+    tmp_path: Path,
+) -> None:
+    """칸을 친 채 「표 보기 설정」 의 공정 필터 · 볼 컬럼을 바꾸면 회차가 돌며 표를 새로 세워 친
+    칸이 말없이 사라졌다(AVI 44.5 → 20.8, 저장 「바뀐 것이 없습니다」 — X1). 보기 설정은 폼 안이라
+    바꾸기만 해서는 회차가 돌지 않고, 「보기 적용」 이 친 칸과 새 보기를 함께 가져간다 — 친 칸은
+    앞 보기의 행 자리로 읽힌다."""
+    app, outside = _cutoff_app(
+        tmp_path / "view.duckdb",
+        {"Process-A": 10.0, "Process-C": 20.0},
+        ["Process-A", "Process-C"],
+    )
+    assert app.button(key="equipment_cutoff_view_apply_v1").proto.form_id
+    tables = BrowserTables(app, forms=True)
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 44.5)
+    app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
+    app.multiselect(key="equipment_cutoff_view_v1_columns").set_value([])
+
+    _press(tables, "보기 적용")
+
+    draft = app.session_state[CUTOFF_DRAFT_KEY]
+    assert dict(zip(draft["공정"], draft["Cutoff일수"], strict=True)) == {
+        "Process-A": 44.5,
+        "Process-C": 20.0,
+    }
+    (editor,) = app.dataframe
+    assert len(editor.value) == 1
+
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 44.5, "Process-C": 20.0}
     clear_equipment_repository()

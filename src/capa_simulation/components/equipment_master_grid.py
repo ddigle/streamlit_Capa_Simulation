@@ -277,11 +277,13 @@ def render_grid_table(
     key: str = GRID_KEY,
 ) -> None:
     """표 자리 — 칸 묶음·정렬(브라우저 몫), 칸 고치기·엑셀 여러 칸 붙여넣기·고르기·한꺼번에 고치기·
-    지우기·되살리기(출납), 설비명 누름(`open`)·목록에서 빼기(`unload`)."""
+    지우기·되살리기(출납), 설비명 누름(`open`)·목록에서 빼기(`unload`). 고른 줄 띠는 고른 동안
+    불러오기 칸(`loaderKey`) 자리에 대신 선다(`tools_menu_style` 이 그동안 불러오기 줄 · 메뉴를
+    숨긴다)."""
     view = str(data.get("view") or "")
     _GRID(
         key=key,
-        data=_with_palette(data),
+        data={**_with_palette(data), "loaderKey": LOADER_KEY},
         on_outbox_change=on_outbox,
         on_open_change=partial(_dispatch_open, key, view, on_open),
         on_unload_change=partial(_dispatch_unload, key, view, on_unload),
@@ -352,6 +354,9 @@ TOOLS_MENU_GAP_PX: Final = 8
 TOOLS_MENU_CARET_GAP_PX: Final = 6
 # 메뉴가 찾기 칸과 한 줄에 못 들면 불러오기 줄이 이만큼 내려가 메뉴가 제 줄에 선다 — 찾기 칸 높이.
 TOOLS_MENU_ROW_PX: Final = 42
+# 표에서 줄을 고른 동안 표 JS 가 `<html>` 에 다는 표지(`markSelecting`) — 불러오기 줄 · 메뉴를
+# 숨긴다.
+SELECTING: Final = "html[data-emg-sel]"
 SIDE_CHOICE_KEY: Final = MASTER_SIDE.choice_key
 SIDE_BODY_KEY: Final = MASTER_SIDE.body_key
 SPLITTER_KEY: Final = MASTER_SIDE.splitter_key
@@ -387,6 +392,11 @@ def tools_menu_style() -> str:
     `--emd-tools-drop` 만큼 내려간다 — 메뉴는 같은 자리에 혼자 서고 찾기 칸은 칸 폭을 다 쓴다.
     갈림은 불러오기 JS 의 `ResizeObserver` 가 마운트의 `data-lb` 로 고른다(`loaderFit`, 파이썬 회차
     없음 — UI-PRF-04). `container-type` 은 쓰지 않는다 — 그 칸의 쌓임 문맥과 fixed 기준이 바뀐다.
+
+    표에서 줄을 고른 동안(`<html data-emg-sel>` — 표 JS 가 단다) 불러오기 줄과 메뉴를 숨긴다 — 그
+    자리에 고른 줄 띠가 같은 높이로 대신 서고(2026-11-08 사용자 결정 g01 (가)) 숨긴 칸은 자리를
+    그대로 지켜 표가 움직이지 않는다. 불러오기 줄은 그림자 DOM 이라 상속되는 변수
+    `--emd-sel-hide` 로 숨는다(값 줄 「불러온 호기 n대」 는 남는다).
     """
     item = f'[data-testid="stLayoutWrapper"]:has(> .st-key-{TOOLS_KEY})'
     button = f'.st-key-{TOOLS_KEY} [data-testid="stPopoverButton"]'
@@ -400,6 +410,8 @@ def tools_menu_style() -> str:
             f".st-key-{LEFT_KEY} {{ position: relative; }}",
             f"{item} {{ position: absolute; top: {TOOLS_MENU_TOP_PX}px; right: 0; width: auto; }}",
             f"{loader} {{ --emd-tools-reserve: {room}px; --emd-tools-drop: {drop}px; }}",
+            f"{SELECTING} {loader} {{ --emd-sel-hide: hidden; }}",
+            f"{SELECTING} {item} {{ visibility: hidden; }}",
             (
                 f"{button} {{ height: {TOOLS_MENU_HEIGHT_PX}px; "
                 f"min-height: {TOOLS_MENU_HEIGHT_PX}px; padding: 0 12px; border-radius: 6px; "

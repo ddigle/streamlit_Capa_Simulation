@@ -1770,6 +1770,20 @@ def undo_to_state(steps: Sequence[UndoStep]) -> tuple[dict[str, Any], ...]:
     )
 
 
+def undo_step_tables(step: UndoStep) -> tuple[bool, bool, bool]:
+    """되돌리면 바뀌는 표(기존 보유대수, 설비 마스터, 비가동 일정). 통째 단계는 셋 다다 — 화면이
+    작은 편집표의 적용 전 편집을 먼저 편집본에 넣을지 가른다(`defer_grid_undo`)."""
+    if step.kind == "whole":
+        return (True, True, True)
+
+    def rows(frame: pd.DataFrame | None) -> bool:
+        return frame is not None and not frame.empty
+
+    master = bool(step.master) or bool(step.master_added) or rows(step.master_removed)
+    downtime = bool(step.downtime) or bool(step.downtime_added) or rows(step.downtime_removed)
+    return (False, master, downtime)
+
+
 def undo_from_state(value: object) -> tuple[UndoStep, ...]:
     """세션 칸의 기본형을 되살린다. 꼴이 다르면 빈 목록이다(되돌리기만 사라지고 편집은 그대로)."""
     if not isinstance(value, tuple):

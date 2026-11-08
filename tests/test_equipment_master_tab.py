@@ -36,8 +36,11 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
     GRID_OVERLAY_KEY,
+    GRID_UNDO_KEY,
+    GRID_UNDO_REQUEST_KEY,
     PENDING_RENAMES_KEY,
     PREVIEW_BUTTON_KEY,
+    SELECTION_KEY,
     reset_equipment_drafts,
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
@@ -946,3 +949,157 @@ def test_a_double_press_landing_on_the_redrawn_undo_is_still_one_step(
     assert not app.exception, app.exception
     assert _memos(app, "DA-01") == memos
     assert grid_results(app) == ["되돌림: 메모3 고침" if window else "되돌림: 메모2 고침"]
+
+
+def _downtime_reason(app: AppTest, name: str) -> str:
+    downtime = app.session_state[BUFFER_KEY][2]
+    rows = downtime.loc[downtime["설비명"] == name, "상세사유"]
+    return "" if rows.empty or pd.isna(rows.iloc[0]) else str(rows.iloc[0])
+
+
+def test_undo_that_changes_the_downtime_table_keeps_its_unapplied_edits(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """「한 단계 되돌리기」 가 비가동 일정 표를 바꾸면(지운 새 호기의 비가동을 되살림) 그 표의 적용
+    전 편집이 말없이 사라졌다(X1 — 바탕부터, 편집표를 새로 세우며 버림). 적용 전 편집을 먼저
+    편집본에 넣고 되돌린다 — 되살린 줄과 고친 칸이 함께 남는다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02"))
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.run()
+    tables = BrowserTables(app)
+    key = _small_key(app, DOWNTIME_EDITOR_KEY)
+    tables.add(key, {"설비명": "DA-01", "비가동유형": "PM", "시작일": "2026-11-03"})
+    tables.add(key, {"설비명": "DA-02", "비가동유형": "PM", "시작일": "2026-11-05"})
+    tables.run()
+    app.button(key="equipment_downtime_apply_v1").click()
+    tables.run()
+    assert sorted(app.session_state[BUFFER_KEY][2]["설비명"]) == ["DA-01", "DA-02"]
+
+    app.session_state[TABLE_KEY] = "설비 마스터"
+    app.run()
+    send_ops(app, grid, {"op": "delete", "ids": ["n:DA-02"]})
+    assert app.session_state[BUFFER_KEY][2]["설비명"].tolist() == ["DA-01"]
+
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    tables = BrowserTables(app)
+    tables.edit(_small_key(app, DOWNTIME_EDITOR_KEY), 0, "상세사유", "점검")
+    tables.run()
+    assert _downtime_reason(app, "DA-01") == ""
+
+    app.button(key=UNDO_BUTTON_KEY).click()
+    tables.run()
+    assert not app.exception, app.exception
+    assert sorted(app.session_state[BUFFER_KEY][1]["설비명"]) == ["DA-01", "DA-02"]
+    assert sorted(app.session_state[BUFFER_KEY][2]["설비명"]) == ["DA-01", "DA-02"]
+    assert _downtime_reason(app, "DA-01") == "점검"
+    assert grid_results(app)[-1].startswith("되돌림:")
+
+
+def test_undo_over_an_import_with_only_a_checked_row_in_the_downtime_table_still_undoes(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """맨 위 단계가 통째 단계(엑셀·CSV 넣기)이고 비가동 일정 표의 적용 전 편집이 「선택」 칸
+    체크뿐이면 미룬 「한 단계 되돌리기」 가 아무 일도 하지 않았다 — 체크도 편집으로 세 미뤘는데,
+    통째 단계라 되돌리기를 잇지 않고 편집본도 그대로라 비우지도 알리지도 않았다(몇 번을 눌러도
+    같음). 값이 그대로인 편집은 넣기를 그대로 되돌리고 체크(고른 줄)는 남긴다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02"))
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.run()
+    tables = BrowserTables(app)
+    tables.add(
+        _small_key(app, DOWNTIME_EDITOR_KEY),
+        {"설비명": "DA-01", "비가동유형": "PM", "시작일": "2026-11-03"},
+    )
+    tables.run()
+    app.button(key="equipment_downtime_apply_v1").click()
+    tables.run()
+    app.session_state[TABLE_KEY] = "설비 마스터"
+    app.run()
+    _import(app, _rows("DA-01", "DA-02", "DA-03"))
+    assert len(app.session_state[GRID_UNDO_KEY]) == 1
+
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    tables = BrowserTables(app)
+    tables.edit(_small_key(app, DOWNTIME_EDITOR_KEY), 0, "선택", True)
+    tables.run()
+    app.button(key=UNDO_BUTTON_KEY).click()
+    tables.run()
+
+    assert not app.exception, app.exception
+    assert sorted(app.session_state[BUFFER_KEY][1]["설비명"]) == ["DA-01", "DA-02"]
+    assert app.session_state[BUFFER_KEY][2]["설비명"].tolist() == ["DA-01"]
+    assert GRID_UNDO_KEY not in app.session_state
+    assert GRID_UNDO_REQUEST_KEY not in app.session_state
+    assert grid_results(app)[-1].startswith("되돌림:")
+    assert app.session_state[SELECTION_KEY].get("비가동 일정")
+
+
+def _page_texts(app: AppTest) -> list[str]:
+    """화면의 글(마크다운 · 캡션 — 알약은 마크다운 꼴로 온다)."""
+    return [str(item.value) for item in (*app.markdown, *app.caption)]
+
+
+def test_a_save_cut_after_its_write_is_settled_as_my_own_save_on_the_next_run(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「리비전 저장」 콜백이 DB 쓰기 뒤 · 뒷정리 전에 끊기면(fastReruns — 저장 중 다음 조작이 새
+    회차를 세움) 다음 회차가 새 저장본을 남의 저장으로 읽어 「다른 사용자가 … 저장해 … 버렸습니다」
+    를 알리고 성공 알림이 사라졌다(a5). 끊기지 않는 제 저장 표지로 뒷정리 · 성공 알림을 잇는다 —
+    목록은 새 저장본 id 로 옮고 머리 변경 칩도 걷힌다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01"))
+    app.session_state[GRID_LOADED_KEY] = ("n:DA-01",)
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    # 누른 회차의 콜백이 쓰기 뒤에 끊기고, 다음 회차는 저장 단추가 아닌 다른 조작의 회차다.
+    _first_callback(
+        app, monkeypatch, "_save_revision", cut_after=(DuckDBEquipmentRepository, "save_equipment")
+    )
+    app.run()
+
+    assert not app.exception, app.exception
+    notes = [note for note in alert_notes(app, again=True) if note.get("active") is not False]
+    texts = [str(note.get("full") or note.get("text") or "") for note in notes]
+    assert not [text for text in texts if "다른 사용자" in text], texts
+    assert not [note for note in notes if note.get("code") in ("EQ-05", "EQ-19")], notes
+    assert [text for text in texts if "저장했습니다" in text], texts
+    assert app.session_state[GRID_LOADED_KEY] == ("s:DA-01",)
+    assert not [text for text in _page_texts(app) if "저장 전 변경" in text or "미저장" in text]
+
+
+def test_a_cut_save_that_wrote_a_new_schedule_revision_moves_the_session_quietly(
+    tmp_path: Path, grid: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """끊긴 저장이 새 일정 리비전을 썼으면 다음 회차가 세션을 그 리비전으로 옮긴다 — 옮긴 회차도
+    남의 일정 저장으로 읽지 않는다(a5)."""
+    database = tmp_path / "equipment.duckdb"
+    app = _app(database)
+    _import(app, _rows("DA-01"))
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=SAVE_BUTTON_KEY).click().run()
+    assert not app.exception, app.exception
+    send_ops(app, grid, {"op": "cell", "id": "s:DA-01", "col": "반입일정", "text": "2026-12-01"})
+    app.run()
+    _first_callback(
+        app, monkeypatch, "_save_revision", cut_after=(DuckDBEquipmentRepository, "save_equipment")
+    )
+    app.run()
+    app.run()
+
+    assert not app.exception, app.exception
+    notes = [note for note in alert_notes(app, again=True) if note.get("active") is not False]
+    texts = [str(note.get("full") or note.get("text") or "") for note in notes]
+    assert not [text for text in texts if "다른 사용자" in text], texts
+    assert not [note for note in notes if note.get("code") in ("EQ-05", "EQ-19")], notes
+    master = app.session_state[BUFFER_KEY][1].set_index("설비명")
+    assert str(master.loc["DA-01", "반입일정"])[:10] == "2026-12-01"
+    assert not [str(item.value) for item in app.warning if "더 새롭습니다" in str(item.value)]
+    page = _page_texts(app)
+    assert not [text for text in page if "최신 r" in text or "미저장" in text], page
