@@ -71,9 +71,10 @@ SSO_LOGINID_KEY = "sso_signed_in_loginid"
 EXPIRY_WARNING_SECONDS = 30 * 60
 
 # 앱 정보 카드 셋째 줄 끝의 남은 시간 — 쓰는 동안은 유휴 끝이 늘 멀어서 사실상 최대 시간 앞에만
-# 선다. 유휴 끝 경고는 오래 쉬다 돌아온 첫 회차에 잠깐 보일 수 있다(그 글도 사실이다).
-CAP_WARNING_SUFFIX = " · 로그인 최대 시간까지 {minutes}분 — 저장해 두세요"
-IDLE_WARNING_SUFFIX = " · 로그인 {minutes}분 남음 — 저장해 두세요"
+# 선다. 유휴 끝 경고는 오래 쉬다 돌아온 첫 회차에 잠깐 보일 수 있다(그 글도 사실이다). 값(남은
+# 시간)만 적고 하는 법(끝나기 전에 저장)은 HOME Guide 가 말한다(2026-11-08 사용자 답 b3).
+CAP_WARNING_SUFFIX = " · 로그인 최대 시간까지 {minutes}분"
+IDLE_WARNING_SUFFIX = " · 로그인 {minutes}분 남음"
 
 EXPIRED_NOTICE = (
     "통합인증 로그인 시간이 끝났습니다(오래 쓰지 않았거나 로그인 최대 시간이 지났습니다). "

@@ -176,7 +176,7 @@ def test_the_card_warns_thirty_minutes_before_the_end() -> None:
     line = sso_identity.sso_credit_line(identity, now=later)
     assert line is not None
     assert line.endswith(sso_identity.IDLE_WARNING_SUFFIX.format(minutes=25))
-    assert line.endswith(" · 로그인 25분 남음 — 저장해 두세요")
+    assert line.endswith(" · 로그인 25분 남음"), "하는 법(「저장해 두세요」)은 Guide 가 말한다"
     earlier = identity.exp - 31 * 60
     line = sso_identity.sso_credit_line(identity, now=earlier)
     assert line is not None and "남음" not in line and "최대" not in line
@@ -197,7 +197,7 @@ def test_the_card_warns_before_the_maximum_in_its_own_words() -> None:
 
     assert line is not None
     assert line.endswith(sso_identity.CAP_WARNING_SUFFIX.format(minutes=25))
-    assert line.endswith(" · 로그인 최대 시간까지 25분 — 저장해 두세요")
+    assert line.endswith(" · 로그인 최대 시간까지 25분")
     assert "남음" not in line
     line = sso_identity.sso_credit_line(identity, now=cap - 31 * 60)
     assert line is not None and "최대" not in line
