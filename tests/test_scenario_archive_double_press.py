@@ -23,10 +23,15 @@ from alert_marks import flashed, successes
 from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
 from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
+from test_equipment_scenario_repository import _seeded as _seeded_equipment
 from test_scenario_management_page import PAGE_PATH, _clone_official
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation.components.equipment_scenario_management import (
+    RENAME_BUTTON_KEY,
+    RENAME_KEY,
+)
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_management import (
     ACTION_KEY,
@@ -37,6 +42,10 @@ from capa_simulation.components.scenario_management import (
     SIDE_ARCHIVE,
     SIDE_KEY,
     archive_confirm_key,
+)
+from capa_simulation.components.scenario_management_tabs import (
+    EQUIPMENT_SCENARIO_TAB,
+    SCENARIO_MANAGEMENT_TABS_KEY,
 )
 from capa_simulation.persistence.models import ScenarioSummary
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -163,6 +172,93 @@ def test_restoring_an_archive_restored_elsewhere_writes_nothing_and_says_so(
         (ARCHIVED_GONE_MESSAGE, "FL-03")
     ]
     assert not any("되돌렸습니다" in text for text in _texts(successes(app)))
+
+
+def test_a_delete_press_on_an_archive_restored_elsewhere_empties_the_box_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 가 고른 보관본의 이름을 확인 칸에 적어 「영구 삭제 실행」 을 켰는데 B 가 먼저 되돌렸다 —
+    A 의 누름은 고름이 다른 보관본으로 옮은 회차에 닿아 꺼진 단추라 버려진다. 아무것도 지우지 않고,
+    옛 이름이 남은 확인 칸을 비우고, 아무것도 하지 않았다고 알린다(알림창 · Alarm — 설계 규칙
+    UI-NTF-03)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    script, repository = _archives(tmp_path)
+    app, browser, target = _picked(script)
+    app.text_input(key=DELETE_CONFIRM_KEY).set_value(target)
+    _ok(browser.run())
+    assert not app.button(key=DELETE_BUTTON_KEY).disabled
+    target_id = next(
+        item.scenario_id
+        for item in repository.list_scenarios(include_archived=True)
+        if item.scenario_name == target
+    )
+    repository.restore_scenario(target_id)
+
+    app.button(key=DELETE_BUTTON_KEY).click()
+    _ok(browser.run())
+    statuses = _statuses(repository)
+    assert len(statuses) == len(NAMES), statuses
+    assert [name for name, status in statuses.items() if status == "ACTIVE"] == [target]
+    assert app.text_input(key=DELETE_CONFIRM_KEY).value == ""
+    assert app.button(key=DELETE_BUTTON_KEY).disabled
+    assert ARCHIVED_GONE_MESSAGE not in _texts(app.warning)
+    assert [(item.value, item.code) for item in flashed(app, "warning")] == [
+        (ARCHIVED_GONE_MESSAGE, "FL-03")
+    ]
+
+    # 한 번만 — 비운 칸으로 다시 돈 회차는 또 알리지 않는다.
+    _ok(browser.run())
+    assert flashed(app, "warning") == []
+
+
+def test_restoring_with_a_name_in_the_delete_box_empties_the_box_without_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """확인 칸에 이름을 적어 둔 보관본을 이 세션이 되돌리면 칸만 비운다 — 이 세션이 한 일이라 「그
+    사이 빠졌다」 고 알리지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    script, repository = _archives(tmp_path)
+    app, browser, target = _picked(script)
+    app.text_input(key=DELETE_CONFIRM_KEY).set_value(target)
+    _ok(browser.run())
+
+    app.button(key=RESTORE_KEY).click()
+    _ok(browser.run())
+    assert _statuses(repository)[target] == "ACTIVE"
+    assert app.text_input(key=DELETE_CONFIRM_KEY).value == ""
+    assert any(target in text and "되돌렸습니다" in text for text in _texts(successes(app)))
+    assert ARCHIVED_GONE_MESSAGE not in _texts([*app.warning, *flashed(app, "warning")])
+
+
+def test_a_press_in_the_equipment_tab_is_not_swallowed_by_an_archive_restored_elsewhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 가 고른 보관본의 이름을 확인 칸에 적은 채 「설비 시나리오」 탭으로 옮겼는데 B 가 그
+    보관본을 먼저 되돌렸다. 숨은 「Capa 시나리오」 탭도 그 회차에 돌아 고름이 옮는다 — 「영구 삭제
+    실행」 을 누르지 않았으니 칸만 비우고 회차를 끊지 않아, 설비 탭의 누름(이름 바꾸기)이 그대로
+    쓴다. 「그 사이 빠짐」 알림도 내지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    equipment = _seeded_equipment(tmp_path)
+    script, repository = _archives(tmp_path)
+    app, browser, target = _picked(script)
+    app.text_input(key=DELETE_CONFIRM_KEY).set_value(target)
+    _ok(browser.run())
+    app.session_state[SCENARIO_MANAGEMENT_TABS_KEY] = EQUIPMENT_SCENARIO_TAB
+    _ok(browser.run())
+    target_id = next(
+        item.scenario_id
+        for item in repository.list_scenarios(include_archived=True)
+        if item.scenario_name == target
+    )
+    repository.restore_scenario(target_id)
+
+    (field,) = [item for item in app.text_input if str(item.key).startswith(RENAME_KEY)]
+    field.input("A 새 이름")
+    app.button(key=RENAME_BUTTON_KEY).click()
+    _ok(browser.run())
+    assert [item.scenario_name for item in equipment.list_equipment_scenarios()] == ["A 새 이름"]
+    assert app.text_input(key=DELETE_CONFIRM_KEY).value == ""
+    assert ARCHIVED_GONE_MESSAGE not in _texts([*app.warning, *flashed(app, "warning")])
 
 
 def _stale_archive_reads(

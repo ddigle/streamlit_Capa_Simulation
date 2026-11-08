@@ -47,6 +47,9 @@ from capa_simulation.components.equipment_scenario_status import (
     SAVE_MODE,
 )
 from capa_simulation.components.equipment_scenario_status import (
+    FLASH_KEY as POPUP_FLASH_KEY,
+)
+from capa_simulation.components.equipment_scenario_status import (
     SAVE_BUTTON_HELP as POPUP_SAVE_BUTTON_HELP,
 )
 from capa_simulation.components.equipment_scenario_status import (
@@ -207,7 +210,10 @@ def test_the_sidebar_popup_save_refuses_with_the_same_judgement(tmp_path: Path) 
     assert not app.exception, [item.message for item in app.exception]
     line = STALE_SCENARIO_EDITS_ELSEWHERE.format(cells=1, units=1, spots=SPOTS_MARKDOWN)
     assert CORE in line and WAY_OUT in line
-    assert _errors(app) == [f"저장하지 못했습니다: {line}"]
+    # 팝업 저장의 거부는 알림창 · Alarm 으로 가는 칸에 담긴다(설계 규칙 UI-NTF-03 — 이 대본에는
+    # 그 칸을 꺼내는 사이드바 줄이 없다).
+    assert _errors(app) == []
+    assert app.session_state[POPUP_FLASH_KEY].message == f"저장하지 못했습니다: {line}"
     assert len(repository.list_revisions()) == before
 
 

@@ -3,7 +3,7 @@
 """설비 시나리오 1단계의 화면 몫(설계 5·6장 — 세션·화면 시험).
 
 - 시나리오 관리: 「설비 시나리오」 탭(표·복제·이름·발행·이어 쓰기 — 가용설비 현황의 탭이던 것,
-  2026-10-24), 설비 화면 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」.
+  2026-10-24), 설비 화면 옛 배포 흔적 알림(`SB-19`)의 「그 화면으로」.
 - 가용설비 현황: 「일정 없음 n대」, 가정 설비 시나리오의 미확인 = 공식 일정 기준(Main·RawData 일정
   확인 목록), Preference(공용 Cut-off) 잠금.
 - 필요 단축 일정: 기준선 저장은 공식 발행 쌍에서만(거부 까닭 둘), 기준선 머리의 설비 시나리오 출처,
@@ -27,7 +27,15 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, alert_notes, data_error_texts, events, infos, shown
+from alert_marks import (
+    active_state,
+    alert_notes,
+    data_error_texts,
+    events,
+    flashed,
+    infos,
+    shown,
+)
 from streamlit.testing.v1 import AppTest
 from test_equipment_scenario_repository import (
     OPERATIONS,
@@ -51,8 +59,8 @@ from capa_simulation.components.equipment_scenario_management import (
     CONTINUE_BUTTON_HELP,
     CONTINUE_BUTTON_KEY,
     EQUIPMENT_SCENARIO_TAB,
-    LEGACY_TRACE_GOTO_KEY,
     PUBLISH_BUTTON_KEY,
+    PUBLISH_NOTE_KEY,
     RENAME_BUTTON_KEY,
     RENAME_KEY,
     RESTORE_BUTTON_KEY,
@@ -88,8 +96,8 @@ from capa_simulation.components.equipment_settings_dialog import SETTINGS_BUTTON
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
 from capa_simulation.components.scenario_management import MODE_KEY
-from capa_simulation.components.scenario_management_tabs import EQUIPMENT_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_status import SCENARIO_DIALOG_KEY, SCENARIO_FIELD_KEY
+from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY, EquipmentSession
 from capa_simulation.navigation import (
@@ -1582,6 +1590,92 @@ def test_a_restore_confirmed_before_someone_else_saved_waits_for_a_new_confirm(
     assert "r1의 일정으로 되돌려 r4를 저장했습니다(일정이 바뀐 호기 3대)." in message
 
 
+def test_a_restore_confirmed_before_someone_else_restored_the_same_says_nothing_was_done(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """확인 체크 뒤 다른 사용자가 같은 r1 로 먼저 되돌려 최신이 r1 과 같아졌다 — 누른 회차에는
+    단추가 빠져 그 누름이 버려진다. 아무것도 하지 않았다는 것을 알림창 · Alarm 에 한 번 내고(설계
+    규칙 UI-NTF-03) 다음 회차에는 다시 내지 않는다."""
+    repository = _repository(tmp_path)
+    _moved_on(repository)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    _restore_confirm(app).check()
+    _ok(app.run())
+    assert not app.button(key=RESTORE_BUTTON_KEY).disabled
+
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.restore_schedule_revision(
+        first,
+        expected_common_revision_id=str(repository.latest_revision_id()),
+        expected_latest_schedule_revision_id=_revision_id(repository, 2),
+        expected_release_no=release.release_no,
+        expected_layout_role="official",
+    )
+    clear_equipment_scenario_cache()
+    app.button(key=RESTORE_BUTTON_KEY).click()
+    _ok(app.run())
+
+    assert len(repository.list_schedule_revisions(OPERATIONS)) == 3
+    assert any("모두 같아 되돌릴 것이 없습니다" in text for text in _texts(app))
+    (gone,) = flashed(app, "warning")
+    assert gone.code == "FL-03"
+    assert gone.value == (
+        "그 사이 다른 사용자가 저장해 「운영 일정」 최신 r3이 r1의 일정·비가동과 모두 같아져 "
+        "되돌릴 것이 없습니다 — 아무것도 바꾸지 않았습니다."
+    )
+    _ok(app.run())
+    assert flashed(app, "warning") == []
+
+
+def test_a_branch_press_after_someone_else_restored_the_same_is_not_eaten_by_the_restore_notice(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """r1 되돌리기 확인 체크를 켠 채 같은 r1 의 「여기서 새 시나리오」 를 누른다 — 그 사이 다른
+    사용자가 같은 r1 로 되돌려 되돌리기 단추가 빠졌다. 되돌리기를 누르지 않았으니 「그 사이 같아짐」
+    알림으로 회차를 끊지 않고 새 시나리오를 만든다 — 끊으면 되돌리기 뒤에 그리는 단추의 누름이
+    버려진다. 쳐 둔 「공식 지정 메모」 도 남는다."""
+    repository = _repository(tmp_path)
+    _moved_on(repository)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    _restore_confirm(app).check()
+    _ok(app.run())
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.restore_schedule_revision(
+        first,
+        expected_common_revision_id=str(repository.latest_revision_id()),
+        expected_latest_schedule_revision_id=_revision_id(repository, 2),
+        expected_release_no=release.release_no,
+        expected_layout_role="official",
+    )
+    clear_equipment_scenario_cache()
+
+    (memo,) = [item for item in app.text_input if str(item.key).startswith(PUBLISH_NOTE_KEY)]
+    memo.input("B 공식 지정 메모")
+    _ok(app.run())
+    (memo,) = [item for item in app.text_input if str(item.key).startswith(PUBLISH_NOTE_KEY)]
+    assert memo.value == "B 공식 지정 메모"
+    assert flashed(app, "warning") == []
+
+    (field,) = [item for item in app.text_input if str(item.key).startswith(CLONE_NAME_KEY)]
+    field.input("B 분기 시나리오")
+    app.button(key=CLONE_BUTTON_KEY).click()
+    _ok(app.run())
+    assert "B 분기 시나리오" in [
+        item.scenario_name for item in repository.list_equipment_scenarios()
+    ]
+    assert not any(
+        "되돌릴 것이 없습니다 — 아무것도" in item.value for item in flashed(app, "warning")
+    )
+
+
 def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(
     _shell: AppTest, tmp_path: Path
 ) -> None:
@@ -1927,9 +2021,9 @@ def test_a_picked_scenario_stays_while_the_session_only_moves_within_its_own_sce
 def test_a_legacy_trace_warns_and_the_section_continues_writing(
     _shell: AppTest, tmp_path: Path
 ) -> None:
-    """옛 배포가 0027 경계 뒤에 계약 v3 리비전을 남기면 설비 화면이 상태 알림(`SB-19` — 자리에는
-    그리지 않는다)을 내고 맨 위에 「시나리오 관리에서 이어 쓰기」 단추가 서며, 그 단추는 시나리오
-    관리 「설비 시나리오」 탭으로 옮긴다. 그 탭의 「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
+    """옛 배포가 0027 경계 뒤에 계약 v3 리비전을 남기면 설비 화면이 상태 알림(`SB-19`)을 낸다 —
+    자리에는 경고 상자도 링크 단추도 그리지 않고(설계 규칙 UI-NTF-02), 그 줄의 「그 화면으로」 가
+    시나리오 관리 「설비 시나리오」 탭을 연다. 그 탭의 「이대로 이어 쓰기」 뒤에는 경고가 걷힌다."""
     import duckdb
 
     repository = _repository(tmp_path)
@@ -1950,20 +2044,13 @@ def test_a_legacy_trace_warns_and_the_section_continues_writing(
     assert trace["active"] is True and trace["level"] == "action"
     assert "옛 배포로 저장한 설비 리비전 1개" in trace["full"]
     assert "시나리오 관리 › 설비 시나리오의 「이대로 이어 쓰기」" in trace["full"]
-    # 고칠 자리가 다른 화면이라 「그 화면으로」 가 그 화면 그 탭을 연다(`goto` — UI-NTF-08).
-    assert trace["page"] == tab_label(SCENARIO_MANAGEMENT)
-    assert trace["href"] == SCENARIO_MANAGEMENT.href
-    assert trace["tab"] == EQUIPMENT_SCENARIO_TAB_NAME
-    # 단추는 탭 기억 칸을 적고 그 화면으로 옮긴다(`app.py` 를 연 AppTest 는 그 회차에 진짜로
-    # 옮긴다 — 다음 `run()` 의 화면으로 기억하지는 않는다).
-    app.button(key=LEGACY_TRACE_GOTO_KEY).click()
-    _ok(app.run())
-    assert app.session_state[remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)] == (
-        EQUIPMENT_SCENARIO_TAB
+    # 「그 화면으로」 는 시나리오 관리 「설비 시나리오」 탭이다 — 자리에는 그리로 가는 단추가 없다.
+    assert (trace["page"], trace["href"], trace["tab"]) == (
+        tab_label(SCENARIO_MANAGEMENT),
+        SCENARIO_MANAGEMENT.href,
+        tab_name(EQUIPMENT_SCENARIO_TAB),
     )
-    assert any("설비 시나리오" in frame.value.columns for frame in app.dataframe), (
-        "설비 시나리오 탭으로 옮기지 않았다"
-    )
+    assert not any("이어 쓰기" in str(button.label) for button in app.button)
     _equipment_section(app)
     # 이 칸은 값 한 줄이다 — 바로 아래 단추를 가리키는 긴 글(저장 거부 · 알림 전문)은 세우지 않고,
     # 복원이 먼저라는 말과 되돌릴 수 없다는 말은 단추 풍선이 누르기 전에 한다.
@@ -2044,7 +2131,13 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     )
     assert not any("준비하지 못했습니다" in text for text in texts)
     assert any("일정 없이 열었습니다" in text for text in texts)
-    assert "tab" not in (active_state(app, "SB-20") or {"tab": "없어야 한다"})
+    # 「그 화면으로」 는 어느 화면에서 내도 시나리오 관리 「설비 시나리오」 탭이다(`SB-19` 와 같다).
+    unmerged = active_state(app, "SB-20") or {}
+    assert (unmerged.get("page"), unmerged.get("href"), unmerged.get("tab")) == (
+        tab_label(SCENARIO_MANAGEMENT),
+        SCENARIO_MANAGEMENT.href,
+        "설비 시나리오",
+    )
     assert any("옛 배포로 저장한 설비 리비전 1개" in text for text in texts)
     field = _field(app)
     assert field is not None and field.label == "운영 일정"
@@ -2055,7 +2148,6 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     texts = _texts(app)
     assert _heading(app).startswith("이 세션: 운영 일정 · 일정 없이 엶")
     assert any("일정 없이 열었습니다" in text for text in texts)
-    # 이 탭에서 낸 줄은 그 탭까지 연다(사이드바 줄이 낸 위 회차는 탭이 없다).
     assert (active_state(app, "SB-20") or {}).get("tab") == "설비 시나리오"
     # 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선이다(검수표 11/02 equip-44 와 같은 꼴).
     assert CONTINUE_BLOCKED_LINE in texts

@@ -1244,9 +1244,10 @@ def test_the_official_popup_does_not_publish_over_a_release_made_while_it_was_op
     """팝업을 연 사이 다른 사람이 먼저 공식버전을 지정하면 지정하지 않는다(S9 — 「지금 공식」 대조).
 
     팝업이 보인 「지금 공식」 번호를 저장소에 넘긴다. 그 사이 번호가 올랐으면 저장소가 쓰지 않고,
-    팝업은 배경 회차 말투가 아니라 할 일(닫고 다시 열기)을 적는다. 브라우저에서 팝업 안 제출은
-    프래그먼트 회차라 「지금 공식」이 마지막 전체 회차의 값이지만, `AppTest` 는 전체 회차로 다시
-    읽으므로 남의 지정을 지정 단추를 누른 회차의 쓰기 바로 앞에 끼운다.
+    배경 회차 말투가 아니라 할 일을 적은 거부를 알림창 · Alarm 에만 낸다(고칠 입력이 그 자리에
+    없다 — 설계 규칙 UI-NTF-03). 팝업은 열린 채 다시 선다. 브라우저에서 팝업 안 제출은 프래그먼트
+    회차라 「지금 공식」이 마지막 전체 회차의 값이지만, `AppTest` 는 전체 회차로 다시 읽으므로 남의
+    지정을 지정 단추를 누른 회차의 쓰기 바로 앞에 끼운다.
     """
     from capa_simulation.components.scenario_management import official_moved_message
 
@@ -1272,11 +1273,44 @@ def test_the_official_popup_does_not_publish_over_a_release_made_while_it_was_op
     monkeypatch.undo()
 
     assert not app.exception
-    assert official_moved_message(release.release_no + 1) in [item.value for item in app.error]
+    refusal = official_moved_message(release.release_no + 1)
+    assert refusal not in [item.value for item in app.error]
+    assert [(item.value, item.code) for item in flashed(app, "error")] == [(refusal, "FL-04")]
     latest = repository.latest_official_release()
     assert latest is not None
     assert (latest.release_no, latest.release_name) == (release.release_no + 1, "남이 먼저 지정")
     assert app.session_state[OFFICIAL_DIALOG_KEY] == (release.scenario_id, release.revision_id)
+
+
+def test_an_official_popup_refused_by_the_repository_says_so_in_the_alert_center(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장소가 지정을 거부하면(그 사이 보관된 시나리오 · 파일 잠금 따위) 아무것도 지정하지 않았고
+    그 자리에 고칠 입력이 없다 — 팝업 안 상자가 아니라 알림창 · Alarm 에 낸다(설계 규칙
+    UI-NTF-03)."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    assert not AppTest.from_string(script, default_timeout=120).run().exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    refusal = "보관된 시나리오는 공식버전으로 지정할 수 없습니다."
+
+    def refused(self: DuckDBScenarioRepository, *args: Any, **kwargs: Any) -> object:
+        raise ValueError(refusal)
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _open_official(app, release.scenario_id, release.revision_id)
+    monkeypatch.setattr(DuckDBScenarioRepository, "publish_official_revision", refused)
+    _official_button(app).click()
+    app.run()
+    monkeypatch.undo()
+
+    assert not app.exception
+    assert refusal not in [item.value for item in app.error]
+    assert [(item.value, item.code) for item in flashed(app, "error")] == [(refusal, "FL-04")]
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == release.release_no
 
 
 def test_official_release_with_demand_left_out_of_the_requirement_warns_after_publishing(

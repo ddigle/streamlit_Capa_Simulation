@@ -1164,7 +1164,12 @@ def test_a_stale_popup_save_names_the_schedule_cells_to_undo_before_and_after_th
     before = len(repository.list_revisions())
     app.button(key=SAVE_BUTTON_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
-    assert [str(item.value) for item in app.error] == [f"저장하지 못했습니다: {line}"]
+    # 아무것도 저장하지 않은 거부는 팝업 안 상자가 아니라 알림창 · Alarm 이다(설계 규칙 UI-NTF-03 —
+    # 사이드바 줄의 알림 칸이 다음 회차에 낸다, 이 대본에는 그 줄이 없어 담긴 채 남는다).
+    assert [str(item.value) for item in app.error] == []
+    refused = app.session_state[FLASH_KEY]
+    assert (refused.kind, refused.popup_only) == ("error", True)
+    assert refused.message == f"저장하지 못했습니다: {line}"
     assert len(repository.list_revisions()) == before
 
     frames = app.session_state[BUFFER_KEY]
@@ -1189,6 +1194,7 @@ def test_a_popup_save_refusal_keeps_the_tildes_of_the_scenario_name(tmp_path: Pa
     거부하고, 그 글을 마크다운이 「E2E<del>가정</del>D」 로 그렸다."""
     from capa_simulation.components.equipment_scenario_status import (
         EQUIPMENT_SCENARIO_DIALOG_MODE_KEY,
+        FLASH_KEY,
         SAVE_BUTTON_KEY,
         SAVE_MODE,
     )
@@ -1217,10 +1223,9 @@ def test_a_popup_save_refusal_keeps_the_tildes_of_the_scenario_name(tmp_path: Pa
     app.button(key=SAVE_BUTTON_KEY).click().run()
 
     assert not app.exception, [item.message for item in app.exception]
-    errors = [str(item.value) for item in app.error]
-    assert any("다른 사용자가 먼저 「E2E\\~가정\\~D」 r2를 저장해" in text for text in errors), (
-        errors
-    )
+    # 거부는 알림창 · Alarm 으로 가는 칸에 마크다운 원문으로 담긴다(물결표를 막은 채).
+    refused = app.session_state[FLASH_KEY].message
+    assert "다른 사용자가 먼저 「E2E\\~가정\\~D」 r2를 저장해" in refused, refused
 
 
 def _row_and_popup(database: str, page_file: str) -> None:

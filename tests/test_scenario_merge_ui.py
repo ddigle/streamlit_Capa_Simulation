@@ -20,7 +20,11 @@ from test_duckdb_repository import _metadata, _reference_tables
 
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.scenario_list_state import DRAFT_KEY
-from capa_simulation.components.scenario_month_merge import LOCKED_SAVE_HELP, _record_keys
+from capa_simulation.components.scenario_month_merge import (
+    DROPPED_HISTORY_HELP,
+    LOCKED_SAVE_HELP,
+    _record_keys,
+)
 from capa_simulation.persistence.models import ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.scenario_activation import (
@@ -598,6 +602,40 @@ def test_empty_calendar_months_between_the_sources_are_warned(sources: Sources) 
     assert not _save_button(app).disabled
 
 
+def test_plans_left_out_of_the_chip_tables_stand_as_value_lines(sources: Sources) -> None:
+    """감사 D3: 결과 계획의 제품이 Chip 구성 · Chip EQ 에 없으면 그 계획이 조용히 빠진다 — 막지 않고
+    표마다 값 줄(표 · 제품 수 · 계획 행 수 · 키) 한 줄로 알리고, 무엇이 빠지는지는 그 줄 풍선이
+    말한다(빈 달 · 섞임과 한 꼴 — 설계 규칙 UI-TXT-04). 경고 상자는 서지 않는다."""
+    repository, database, base, donor = sources
+    tables = dict(donor.tables)
+    plan = tables["RQ_PKG_PLAN"]
+    tables["RQ_PKG_PLAN"] = pd.concat(
+        [plan, plan.assign(제품정보="Product~Z", 생산수량=50.0)], ignore_index=True
+    )
+    unknown = repository.save_revision(
+        donor.scenario.scenario_id,
+        tables,
+        donor.preset,
+        revision_name="Chip 구성 없는 계획",
+        parent_revision_id=donor.revision.revision_id,
+    )
+
+    app = _app(database, base, unknown)
+
+    assert [item.value for item in app.warning] == []
+    lines = {
+        name: next(item for item in app.caption if item.value.startswith(f"**{name}"))
+        for name in (literal_markdown("RQ_CHIP_QTY"), literal_markdown("RQ_CHIP_EQ"))
+    }
+    key = f"{literal_markdown('Product~Z')} · 8H(2028-01\\~2028-02)"
+    for name, effect in (("RQ_CHIP_QTY", "부하량·소요대수"), ("RQ_CHIP_EQ", "Density 환산(HOME)")):
+        line = lines[literal_markdown(name)]
+        assert line.value.startswith(f"**{literal_markdown(name)} 없음** :orange[제품 1개 · 계획 ")
+        assert line.value.endswith(f"행] · {key}"), line.value
+        assert name in line.help and effect in line.help and "멈추지 않습니다" in line.help
+    assert not _save_button(app).disabled
+
+
 def test_the_guide_carries_what_the_merge_warnings_used_to_say() -> None:
     """값 줄 · 표 칸으로 걷은 경고의 말은 Guide 에 남는다(설계 규칙 UI-TXT-02)."""
     guide = (PROJECT_ROOT / "src/capa_simulation/guides/scenario_management.md").read_text(
@@ -610,8 +648,8 @@ def test_the_guide_carries_what_the_merge_warnings_used_to_say() -> None:
 
 
 def test_the_merge_warnings_draw_the_virtual_product_keys_literally() -> None:
-    """섞인 키·빠진 이력 경고는 `st.warning`(마크다운)이다 — 사람이 적은 제품정보·Stack 을 막아
-    싣는다(2026-10-26 E2E 같은 꼴 — 가상 제품 등록 알림). 출처 메모(평문)는 그대로다."""
+    """섞인 키·빠진 이력 값 줄은 마크다운이다 — 사람이 적은 제품정보·Stack 을 막아 싣는다
+    (2026-10-26 E2E 같은 꼴 — 가상 제품 등록 알림). 출처 메모(평문)는 그대로다."""
     record = VirtualProductRecord("HBM4~시제~", "E2E~가상~*1*", "DEMO PRODUCT A", "8H")
     assert _record_keys((record,), markdown=True) == (
         f"{literal_markdown('HBM4~시제~')} · {literal_markdown('E2E~가상~*1*')}"
@@ -631,13 +669,16 @@ def test_virtual_history_follows_the_result_and_a_clash_is_warned(sources: Sourc
 
     app = _app(database, base, donor)
 
-    warnings = [item.value for item in app.warning]
-    # 글은 마크다운이라 키를 막아 싣는다(`-` 도 `\-`). 키는 값 줄, 뜻은 그 줄 풍선이다.
+    # 글은 마크다운이라 키를 막아 싣는다(`-` 도 `\-`). 키는 값 줄, 뜻은 그 줄 풍선이다 — 경고
+    # 상자는 서지 않는다(설계 규칙 UI-TXT-04).
+    assert [item.value for item in app.warning] == []
     clash_key = f"{literal_markdown('Product-A')} · 8H"
     (clash_line,) = [item for item in app.caption if "가상·실제 섞임" in item.value]
     assert clash_key in clash_line.value and "실제 제품" in clash_line.help
-    assert not any(clash_key in item for item in warnings)
-    assert any(f"{literal_markdown('Product-Gone')} · 8H" in item for item in warnings)
+    (gone_line,) = [item for item in app.caption if "보존 안 함" in item.value]
+    gone_key = f"{literal_markdown('Product-Gone')} · 8H"
+    assert gone_line.value == f"**보존 안 함** :orange[1건] · {gone_key}"
+    assert gone_line.help == DROPPED_HISTORY_HELP
     app.text_input(key="scenario_merge_name").set_value("이력 정리 머지")
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]

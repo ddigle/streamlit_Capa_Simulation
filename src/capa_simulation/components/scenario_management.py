@@ -1371,14 +1371,12 @@ def _render_official(
                 current = None
         if current is None or current.release_no != exc.current:
             # 저장소 문구는 배경 회차(자동 갱신) 말투라 팝업에서는 무엇을 하면 되는지로 바꿔 적는다.
-            st.error(official_moved_message(exc.current))
-            return
+            _refuse_official(official_moved_message(exc.current))
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 지정했다(write_guard). 첫 누름의 뒷정리가
         # 끊겼을 수 있어 여기서 다시 한다(경고 글은 첫 누름의 회차가 냈다).
         _official_published(current, revision_id, warning=None)
     except BOOTSTRAP_ERRORS as exc:
-        st.error(bootstrap_error_message(exc))
-        return
+        _refuse_official(bootstrap_error_message(exc))
     remember_own_save(OFFICIAL_SAVE_NAME, expected_no, release.release_no, save_marks)
     _official_published(release, revision_id, warning=verdict.message or None)
 
@@ -1417,12 +1415,27 @@ def _official_published(
     st.rerun()
 
 
+def _refuse_official(message: str) -> NoReturn:
+    """아무것도 지정하지 않은 거부 — 그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 내고(설계 규칙
+    UI-NTF-03) 앱 전체를 다시 돌린다. 팝업 안 제출은 팝업만 도는 회차라 탭 맨 위 칸이 서지 않는다 —
+    다시 도는 회차가 그 칸에서 알림을 내고, 열림 칸이 남은 팝업은 지금 「지금 공식」 으로 다시
+    선다."""
+    queue_flash(
+        FLASH_WARNING_KEY,
+        markdown_safe_tildes(message),
+        kind="error",
+        icon=_NOTICE_ICONS["error"],
+        popup_only=True,
+    )
+    st.rerun()
+
+
 def official_moved_message(current_release_no: int) -> str:
     """팝업을 연 사이 다른 사람이 먼저 공식버전을 지정해 지정하지 않았을 때의 알림."""
     return (
         f"팝업을 연 사이 다른 사람이 공식 v{current_release_no}"
-        f"{object_particle(str(current_release_no))} 먼저 지정해 지정하지 않았습니다 — 팝업을 "
-        "닫고 다시 열어 「지금 공식」을 확인하세요."
+        f"{object_particle(str(current_release_no))} 먼저 지정해 지정하지 않았습니다 — 팝업의 "
+        "「지금 공식」을 확인한 뒤 다시 지정하세요."
     )
 
 
@@ -1620,6 +1633,8 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
         {scenario_id: item.scenario_name for scenario_id, item in by_id.items()},
         default=next(iter(by_id)),
     )
+    if choice.moved:
+        _clear_gone_delete_confirm(by_id[choice.value].scenario_name)
     selected_id = st.selectbox(
         "보관본",
         options=list(by_id),
@@ -1639,6 +1654,29 @@ def _render_archived_scenarios(repository: DuckDBScenarioRepository) -> None:
                 _refuse_gone_press()
             _restore_scenario(repository, summary)
     _render_delete(repository, summary)
+
+
+def _clear_gone_delete_confirm(current_name: str) -> None:
+    """고름이 옮은 회차 — 영구 삭제 확인 칸에 빠진 보관본의 이름이 남았으면 칸을 비운다(칸을 그리기
+    전이라 새 값을 적는다). 지금 고른 보관본(`current_name`)의 이름이면 그대로 둔다.
+
+    그 칸이 켠 「영구 삭제 실행」 을 이 회차에 눌렀으면 단추가 꺼져 그 누름이 말없이 버려진다(남이
+    그 보관본을 먼저 되돌렸거나 지웠다). 그때만 아무것도 하지 않았다는 것을 알린다
+    (`_refuse_gone_press` — 설계 규칙 UI-NTF-03). 다른 단추의 누름이나 입력으로 온 회차는 칸만
+    비우고 잇는다 — 이 칸은 숨은 탭에서도 늘 돌아, 끊으면 그 회차의 다른 탭 누름(설비 시나리오 지정
+    등)을 버린다. 이 세션이 방금 지우거나(`DELETE_CLEAR_KEY`) 되돌린 보관본이면(`held_flash`) 칸만
+    비운다."""
+    typed = st.session_state.get(DELETE_CONFIRM_KEY)
+    if not isinstance(typed, str) or typed.strip() in ("", current_name):
+        return
+    st.session_state[DELETE_CONFIRM_KEY] = ""
+    # 단추를 그리기 전이라 브라우저가 보낸 앞 회차 단추의 누름이 그대로 읽힌다 — 꺼진 채 그리면
+    # Streamlit 이 그 누름을 지운다.
+    if st.session_state.get(DELETE_BUTTON_KEY) is not True:
+        return
+    if st.session_state.get(DELETE_CLEAR_KEY) or held_flash(FLASH_KEY) is not None:
+        return
+    _refuse_gone_press()
 
 
 def _refuse_gone_press(message: str = ARCHIVED_GONE_MESSAGE) -> NoReturn:
@@ -1709,12 +1747,18 @@ def _render_delete(repository: DuckDBScenarioRepository, summary: ScenarioSummar
     )
     if st.session_state.pop(DELETE_CLEAR_KEY, False):
         st.session_state[DELETE_CONFIRM_KEY] = ""
-    typed = st.text_input(
-        f"확인: 「{literal_markdown(summary.scenario_name)}」"
-        f"{object_particle(summary.scenario_name)} 그대로 입력하세요",
-        key=DELETE_CONFIRM_KEY,
-        placeholder="",
-    )
+    # 라벨은 숨기고 같은 글을 바로 위에 보인다 — 위젯 라벨은 마크다운이라 이름을 막아 넘기면 그 막음
+    # 글자(`\(`)가 낭독기 이름(aria-label)에 그대로 들었다. 숨긴 라벨은 평문 이름 그대로다.
+    name = summary.scenario_name
+    particle = object_particle(name)
+    with st.container(gap="xxsmall"):
+        st.markdown(f":small[확인: 「{literal_markdown(name)}」{particle} 그대로 입력하세요]")
+        typed = st.text_input(
+            f"확인: 「{name}」{particle} 그대로 입력하세요",
+            key=DELETE_CONFIRM_KEY,
+            placeholder="",
+            label_visibility="collapsed",
+        )
     ready = typed.strip() == summary.scenario_name
     if not st.button(
         f":red[{DELETE_BUTTON_LABEL}]" if ready else DELETE_BUTTON_LABEL,

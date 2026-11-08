@@ -20,9 +20,12 @@ from capa_simulation.persistence.models import ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.scenario_month_merge import (
     OverlapPolicy,
+    PlanKeyGap,
     compare_non_monthly_tables,
+    gap_examples,
     merge_scenario_months,
     merged_table_gaps,
+    plan_key_gaps,
     preview_month_sources,
 )
 from capa_simulation.services.scenario_transform import (
@@ -61,6 +64,18 @@ MIXED_PRODUCTS_HELP = (
     "원본의 값을, 월 없는 Chip 기준은 베이스 값을 써 두 값이 섞입니다. 이력은 남겨 공식버전 지정 "
     "때 확인을 받습니다."
 )
+DROPPED_HISTORY_HELP = (
+    "원본의 가상제품 복제 이력 가운데 결과 표에 그 제품이 없는 것입니다 — 새 시나리오에 남기지 "
+    "않고, 결과 표에 남은 제품의 이력만 보존합니다."
+)
+
+
+def plan_gap_help(gap: PlanKeyGap) -> str:
+    """계획 키 결손 값 줄의 풍선 — 무엇이 빠지는지(값 줄은 표 · 수 · 키만 둔다)."""
+    return (
+        f"계획(생산수량 > 0)이 있는 제품인데 {gap.table}에 그 제품 행이 없습니다 — 이대로 저장하면 "
+        f"그 계획이 {gap.effect}에서 빠집니다(계산은 멈추지 않습니다)."
+    )
 
 
 def render_scenario_month_merge(repository: DuckDBScenarioRepository, database_path: str) -> None:
@@ -199,8 +214,15 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
     gaps = merged_table_gaps(result)
     for message in gaps.blocking:
         st.error(message)
-    for message in gaps.warnings:
-        st.warning(message)
+    # 조용히 빠지는 계획은 값 줄 — 표 · 수 · 키만 두고 무엇이 빠지는지는 풍선이 말한다(빈 달 ·
+    # 섞임과 한 꼴, 설계 규칙 UI-TXT-04).
+    for gap in plan_key_gaps(result):
+        st.caption(
+            f"**{literal_markdown(gap.table)} 없음** :orange[제품 {len(gap.keys)}개 · 계획 "
+            f"{gap.rows}행] · "
+            f"{markdown_safe_tildes(gap_examples(gap.keys, escape=literal_markdown))}",
+            help=plan_gap_help(gap),
+        )
     if gaps.blocking:
         _render_locked_save()
         return
@@ -224,9 +246,10 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
             help=MIXED_PRODUCTS_HELP,
         )
     if history.dropped:
-        st.warning(
-            f"결과 표에 그 제품이 없는 가상제품 이력 {len(history.dropped)}건은 보존하지 "
-            f"않습니다: {_record_keys(history.dropped, markdown=True)}."
+        st.caption(
+            f"**보존 안 함** :orange[{len(history.dropped)}건] · "
+            f"{_record_keys(history.dropped, markdown=True)}",
+            help=DROPPED_HISTORY_HELP,
         )
     differences = comparison.loc[comparison["비교"].ne("같음"), "표"].tolist()
     provenance = (
@@ -281,8 +304,8 @@ def _render_merge(repository: DuckDBScenarioRepository, database_path: str) -> N
 
 
 def _record_keys(records: tuple[VirtualProductRecord, ...], *, markdown: bool = False) -> str:
-    """가상 제품 키 다섯까지(「제품 · Stack」)와 나머지 건수. `markdown` 이면 경고 상자(마크다운)에
-    싣는 글이라 사람이 적은 제품정보·Stack 을 막는다 — 출처 메모(평문)는 그대로 싣는다."""
+    """가상 제품 키 다섯까지(「제품 · Stack」)와 나머지 건수. `markdown` 이면 값 줄(마크다운)에 싣는
+    글이라 사람이 적은 제품정보·Stack 을 막는다 — 출처 메모(평문)는 그대로 싣는다."""
     escape = literal_markdown if markdown else str
     shown = ", ".join(
         f"{escape(record.product)} · {escape(record.stack)}" for record in records[:5]

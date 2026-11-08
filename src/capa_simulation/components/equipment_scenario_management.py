@@ -4,8 +4,8 @@
 
 자리는 시나리오 관리 화면의 둘째 탭이다. 그 화면에는 사이드바 설비 시나리오 줄이 서지 않아 탭
 머리에 「이 세션: …」 한 줄을 그리고 세션 알림을 낸다(`render_equipment_scenario_section`). 다른
-설비 화면 맨 위 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」 는 이 탭으로 옮긴다
-(`open_equipment_scenario_management`).
+설비 화면의 옛 배포 흔적 · 일정 없이 연 세션 알림(`SB-19` · `SB-20`)의 「그 화면으로」 가 이 탭을
+연다.
 
 - **시나리오 표**: 이름·상태(공식 vN · rM / 활성)·최신 rN·리비전 수·저장된 배치 차이(최신의 원시
   행 — 설비 0031 — 와 괄호 안 실효 표지 「공식과 같음」·「실효 호기 n대」·「지운 호기 n행」)·올라와
@@ -44,6 +44,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from typing import NoReturn
 
 import pandas as pd
 import streamlit as st
@@ -74,7 +75,6 @@ from capa_simulation.components.scenario_management_tabs import (
     EQUIPMENT_SCENARIO_TAB,
     EQUIPMENT_SCENARIO_TAB_NAME,
     SCENARIO_MANAGEMENT_TABS_KEY,
-    open_scenario_management_tab,
 )
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_CLEARANCE
 from capa_simulation.components.widget_generation import (
@@ -106,12 +106,14 @@ from capa_simulation.equipment_scenario_activation import (
     resolve_equipment_session,
     select_equipment_scenario,
 )
+from capa_simulation.navigation import SCENARIO_MANAGEMENT
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     prune_named_choice,
     render_schema_ahead_warning,
 )
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_scenario_cache,
     clear_equipment_snapshot_cache,
@@ -147,6 +149,7 @@ from capa_simulation.services.equipment_scenario import (
 )
 from capa_simulation.services.korean_particle import (
     object_particle,
+    subject_particle,
     topic_particle,
     with_direction_particle,
     with_object_particle,
@@ -164,13 +167,13 @@ __all__ = [
     "CAPA_SCENARIO_TAB",
     "EQUIPMENT_SCENARIO_TAB",
     "SCENARIO_MANAGEMENT_TABS_KEY",
-    "open_equipment_scenario_management",
     "render_equipment_scenario_management",
     "render_equipment_scenario_section",
 ]
 
-# 「시나리오 관리에서 이어 쓰기」 단추(설비 화면 맨 위 옛 배포 흔적 경고 옆).
-LEGACY_TRACE_GOTO_KEY = "equipment_legacy_trace_goto_v1"
+# 옛 배포 흔적 · 일정 없이 연 세션 알림(`SB-19` · `SB-20`)의 「그 화면으로」 — 이 탭이다(그 알림을
+# 내는 설비 화면 어디서나 같은 줄이다).
+LEGACY_TRACE_GOTO = (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href)
 
 SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
@@ -202,7 +205,8 @@ RESTORE_BY_KEY = "equipment_scenario_manage_restore_by_v1"
 RESTORE_CONFIRM_KEY = "equipment_scenario_manage_restore_confirm_v1"
 RESTORE_BUTTON_KEY = "equipment_scenario_manage_restore_v1"
 # 확인 체크가 켜진 회차의 그 값 다섯 — 다음 회차에 값이 바뀌어 체크가 풀렸으면 그 까닭을 알린다
-# (Streamlit 1.63 은 잠가 그린 단추의 클릭을 서버에서 버려 누른 회차에 코드가 알 수 없다).
+# (Streamlit 1.63 은 잠가 그리거나 그리지 않은 단추의 클릭을 서버에서 버린다 — 그 누름은 단추를
+# 그리기 전에만 읽힌다, `_pressed_before_drawn`).
 RESTORE_AGREED_KEY = "equipment_scenario_manage_restore_agreed_v1"
 PUBLISH_BY_KEY = "equipment_scenario_manage_publish_by_v1"
 PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
@@ -213,6 +217,14 @@ PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 # 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신 아님」 표지로 말없이 발행하지
 # 않는다.
 PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
+# 「공식으로 지정」 을 켜 그린 회차(누르지 않은 회차만)의 확인 글 값. 다음 회차가 그 단추의 누름으로
+# 왔는데 같은 리비전의 단추가 남의 지정 · 저장으로 꺼졌으면 — 그 누름은 서버가 버린다
+# (`RESTORE_AGREED_KEY` 와 같은 까닭) — 아무것도 하지 않았다는 것을 한 번 알린다
+# (`_announce_gone_press`). 누름 없이 온 회차는 알리지 않는다 — 팝오버를 열지 않아도 이 값은 적힌다.
+PUBLISH_ARMED_KEY = "equipment_scenario_manage_publish_armed_v1"
+# 그 사이 남의 쓰기로 꺼진 단추의 누름 알림 — 다음 회차 탭 맨 위 칸이 알림창 · Alarm 으로만
+# 낸다(아무것도 쓰지 않았고 그 자리에 고칠 입력이 없다 — 설계 규칙 UI-NTF-03).
+GONE_KEY = "equipment_scenario_manage_gone_v1"
 # 탭 쓰기의 제 저장 표지 이름(`write_guard.own_save_marks` — `<이름>:<시나리오·리비전 id>`). 빠른
 # 두 번 누름의 둘째가 받는 「다른 사용자가 먼저」 를 제 저장으로 알아본다.
 RESTORE_SAVE_NAME = "equipment_scenario_restore"
@@ -466,6 +478,30 @@ def _refused(message: str) -> None:
     st.rerun()
 
 
+def _pressed_before_drawn(key: str) -> bool:
+    """이번 회차가 `key` 단추의 누름으로 왔는가 — 그 단추를 그리기 **전**에 부른다.
+
+    브라우저가 보낸 앞 회차 단추의 누름은 그리기 전까지 세션 칸에 남고, 꺼진 채 그리면 Streamlit 이
+    지운다(그리지 않으면 아무도 읽지 않는다). 그 사이 꺼지거나 빠진 단추의 알림
+    (`_announce_gone_press`)은 이 누름이 있을 때만 낸다 — 누름 없이 온 회차(같은 탭의 다른 단추 ·
+    입력)를 끊으면 그 회차의 누름을 버린다."""
+    return st.session_state.get(key) is True
+
+
+def _announce_gone_press(message: str) -> NoReturn:
+    """켜져 있던 단추가 그 사이 남의 쓰기로 꺼지거나 빠진 회차 — 그 회차의 누름은 서버가 버려
+    아무것도 쓰지 않았다. 다음 회차 맨 위 칸이 알림창 · Alarm 으로 알리게 담고 다시 돈다(설계 규칙
+    UI-NTF-03 — 고칠 입력이 없는 거부). 팝오버는 닫지 않는다 — 바뀐 확인 글이 그 안에 선다."""
+    queue_flash(
+        GONE_KEY,
+        markdown_safe_tildes(message),
+        kind="warning",
+        icon=":material/warning:",
+        popup_only=True,
+    )
+    st.rerun()
+
+
 def _refused_noted(conflicts: dict[str, tuple[str, float]], name: str, message: str) -> None:
     """`_refused` 앞에 거부 표지를 적는다(`write_guard.note_profile_conflict` — dict 칸이라 끊기지
     않는다). 입력 칸이나 확인 글의 본 값을 거부 뒤 회차가 지금 값으로 새로 세우는 쓰기(이름 바꾸기·
@@ -677,22 +713,6 @@ def layout_trace_words(
     return f"{name} r{latest}(r{traces[latest]} 배치 빠짐{more})"
 
 
-def open_equipment_scenario_management() -> None:
-    """시나리오 관리 「설비 시나리오」 탭으로 옮긴다(`open_scenario_management_tab`)."""
-    open_scenario_management_tab(EQUIPMENT_SCENARIO_TAB)
-
-
-def render_legacy_trace_goto() -> None:
-    """설비 화면 맨 위 옛 배포 흔적 경고 옆 「시나리오 관리에서 이어 쓰기」 단추."""
-    if st.button(
-        "시나리오 관리에서 이어 쓰기",
-        icon=":material/arrow_forward:",
-        key=LEGACY_TRACE_GOTO_KEY,
-        type="tertiary",
-    ):
-        open_equipment_scenario_management()
-
-
 def session_heading(session: EquipmentSession) -> str:
     """탭 머리 한 줄 — 「이 세션: 운영 일정 · r12 · 공식 v3」.
 
@@ -797,7 +817,8 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
     - 이 회차에 「합칠 수 없음」 으로 다른 리비전으로 옮겼으면 사건 알림(`SB-14` — 미저장 설비
       편집을 버렸다는 말이 든다). 담기만 하고 아래 상태 알림의 표지가 함께 싣는다.
     - 일정 없이 연 세션(`unmerged` — 옛 배포 공통 대장)은 회차마다 다시 나오는 조건이라 상태
-      알림(`SB-20`)이다. 아니어도 부른다(해소 · 이벤트 칸 한 자리).
+      알림(`SB-20`)이다. 아니어도 부른다(해소 · 이벤트 칸 한 자리). 「그 화면으로」 는 어디서 내도
+      이 탭이다(`LEGACY_TRACE_GOTO` — 백업 복원 · 이어 쓰기 막힘을 그 탭이 말한다).
 
     알림 글은 설비 시나리오 이름을 두 번 싣기도 한다(「…」 r1 을 … 「…」 r2 로 열었습니다) —
     알림창 · 패널은 평문(`textContent`)이라 막지 않는다. 사이드바 설비 시나리오 줄과 시나리오 관리
@@ -820,7 +841,8 @@ def report_session_notices(session: EquipmentSession, *, tab: str = "") -> None:
         active=session.unmerged and bool(session.notice),
         text="옛 배포 공통 대장이 일정과 합쳐지지 않아 일정 없이 열었습니다 — 백업 복원 필요",
         full=session.notice if session.unmerged else None,
-        tab=tab,
+        tab=EQUIPMENT_SCENARIO_TAB_NAME,
+        goto=LEGACY_TRACE_GOTO,
     )
 
 
@@ -853,7 +875,7 @@ def render_equipment_scenario_management(database_path: str, session: EquipmentS
     ):
         bump(POPOVER_GENERATION_KEY)
     with st.container():
-        render_flash(FLASH_KEY, REFUSED_KEY)
+        render_flash(FLASH_KEY, REFUSED_KEY, GONE_KEY)
     with st.container():
         if session.legacy_trace_count:
             _render_legacy_trace(database_path, session.legacy_trace_count)
@@ -1507,6 +1529,22 @@ def restore_result_message(
     return " ".join(sentences)
 
 
+def restore_gone_message(
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+    *,
+    official_scenario: bool,
+) -> str:
+    """확인 체크를 켠 되돌리기가 그 사이 남의 저장으로 쓸 것이 없어진 회차의 알림."""
+    latest = f"r{scenario.latest_revision_no}"
+    same = "일정·비가동과" if official_scenario else "일정·비가동·가정 배치와"
+    return (
+        f"그 사이 다른 사용자가 저장해 {quoted(scenario.scenario_name)} 최신 "
+        f"{latest}{subject_particle(latest)} r{revision.revision_no}의 {same} 모두 같아져 되돌릴 "
+        "것이 없습니다 — 아무것도 바꾸지 않았습니다."
+    )
+
+
 def _render_restore(
     database_path: str,
     session: EquipmentSession,
@@ -1565,6 +1603,18 @@ def _render_restore(
             st.caption(marker)
         same = "일정·비가동과" if official_scenario else "일정·비가동·가정 배치와"
         st.caption(f"최신 r{scenario.latest_revision_no}의 {same} 모두 같아 되돌릴 것이 없습니다.")
+        # 앞 회차에 확인 체크를 켠 같은 리비전의 「되돌리기」 를 눌렀는데 그 사이 남의 저장으로
+        # 단추가 빠졌다 — 그 누름은 버려졌다.
+        if (
+            isinstance(agreed_before, str)
+            and agreed_before.startswith(
+                f"{scenario.equipment_scenario_id}__{revision.schedule_revision_id}__"
+            )
+            and _pressed_before_drawn(RESTORE_BUTTON_KEY)
+        ):
+            _announce_gone_press(
+                restore_gone_message(scenario, revision, official_scenario=official_scenario)
+            )
         return
     st.caption(
         restore_value_line(
@@ -2341,6 +2391,7 @@ def _render_publish(
 ) -> None:
     # 앞 회차(누르기 전)에 그린 확인 글의 값 — 단추를 누르지 않은 회차만 적는다(write_guard).
     seen_before = _publish_seen_before(seen(PUBLISH_SEEN_KEY))
+    armed_before = st.session_state.pop(PUBLISH_ARMED_KEY, None)
     release_no = session.catalog.release_no or 0
     for line in publish_preview(session, scenario, revision):
         st.caption(line)
@@ -2384,12 +2435,14 @@ def _render_publish(
     # (`ALREADY_OFFICIAL_HELP` — 배치 차이로 막혔으면 그 까닭 글). 첫 발행 뒤 다시 그린 화면은 그
     # 리비전이 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은
     # 탭 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래 `note_notice`).
+    disabled = blocked or released
+    pressed = _pressed_before_drawn(PUBLISH_BUTTON_KEY)
     if not st.button(
         "공식으로 지정",
         type="primary",
         key=PUBLISH_BUTTON_KEY,
         width="stretch",
-        disabled=blocked or released,
+        disabled=disabled,
         # 꺼졌으면 까닭을 앞에, 공식이 무엇에 쓰이는지(늘 그 단추 풍선이 말하는 뜻)를 뒤에 둔다.
         help=" ".join(
             [
@@ -2401,6 +2454,19 @@ def _render_publish(
     ):
         # 이 회차가 그린 확인 글이 다음 누름이 본 글이다 — 누른 회차에는 적지 않는다.
         remember_seen(PUBLISH_SEEN_KEY, token)
+        if not disabled:
+            st.session_state[PUBLISH_ARMED_KEY] = token
+        elif (
+            pressed
+            and isinstance(armed_before, tuple)
+            and dict(armed_before).get("revision") == revision.schedule_revision_id
+            and armed_before != token
+        ):
+            # 앞 회차에 켜 그린 같은 리비전의 단추를 눌렀는데 그 사이 남의 지정 · 저장으로 꺼졌다 —
+            # 그 누름은 버려졌다(이 세션의 지정 뒤 회차는 누른 회차가 적지 않아 여기 오지 않는다).
+            _announce_gone_press(
+                publish_gone_message(scenario, revision, release_no, released=released)
+            )
         return
     seen_release = seen_before.get("release_no") if seen_before is not None else None
     # 표지 dict 는 쓰기 전에 받아 둔다 — 쓴 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
@@ -2515,6 +2581,29 @@ def _render_publish(
     # 칸이라 끊기지 않는다.
     note_notice(messages, FLASH_KEY, published_message(False, False))
     _written(published_message(False, False))
+
+
+def publish_gone_message(
+    scenario: EquipmentScenarioSummary,
+    revision: EquipmentScheduleRevisionSummary,
+    release_no: int,
+    *,
+    released: bool,
+) -> str:
+    """켜 둔 「공식으로 지정」 이 그 사이 남의 지정(`released`) · 저장(배치 차이로 막힘)으로 꺼진
+    회차의 알림."""
+    name = quoted(scenario.scenario_name)
+    title = f"r{revision.revision_no}"
+    if released:
+        return (
+            f"그 사이 다른 사용자가 {name} {with_object_particle(title)} 공식 "
+            f"{with_direction_particle(f'v{release_no}')} 지정해 지정할 것이 없습니다 — 아무것도 "
+            "바꾸지 않았습니다."
+        )
+    return (
+        f"그 사이 다른 사용자의 저장으로 {name} {title} 지정이 막혔습니다 — 아무것도 바꾸지 "
+        "않았습니다."
+    )
 
 
 def already_released_message(
