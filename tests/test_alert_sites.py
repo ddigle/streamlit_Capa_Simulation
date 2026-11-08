@@ -99,7 +99,7 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         PLACE_FORM,
     ),
     ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (
-        2,
+        1,
         PLACE_RESULT,
     ),
     ("src/capa_simulation/components/display_order_management.py", "_draw_label_warnings"): (
@@ -147,7 +147,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_CONFIRM,
     ),
-    ("src/capa_simulation/components/scenario_month_merge.py", "_render_merge"): (2, PLACE_FORM),
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PLACE_FORM),
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),

@@ -242,7 +242,7 @@
 
 #### UI-NTF-03 · 동작 결과는 알림창 하나로
 
-동작 결과(저장 · 적용 · 불러옴 · 발행 · 삭제)는 알림창 하나로만 알리고, 누른 자리 곁에는 그 자리에서 고칠 입력이 있는 오류 · 거부만 남긴다. 동작이 끝났고 그 자리에 고칠 입력이 없는 경고 · 거부(HOME 주요 Case 칩을 누른 뒤의 「읽지 못했습니다」 · 「지정이 그사이 바뀌어 불러오지 않았습니다」, 사이드바 리비전 저장 · 복제 · 공식 지정 · 월 머지 · 연도 Shift · DB 등록 · 자동 갱신 「지금 실행」 뒤 남은 Capa 계산 오류 · 소요대수에 들지 않은 수요, 그 사이 빠진 대상이라 아무것도 하지 않은 누름 등)는 알림창 · Alarm 에만 사건으로 낸다(`queue_flash(…, popup_only=True)` — 해소 줄은 없다). 동작 결과 · 끝난 동작의 사건은 같은 글을 두 자리에 띄우지 않는다 — 곁에 남는 고칠 입력의 오류 · 거부는 알림창에도 한 번 뜨는 것이 기본 꼴이고, 폼 · 팝업 안 검증 거부(필수 칸 · 같은 이름 · 입력 차례)는 곁 한 줄만이다(알림창 · 기록 없음 — 6-9 rule-notes g2-21). 표 조작 결과(붙여넣기 · 일괄 삭제 · 호기 지우기)도 표 위 띠가 아니라 알림창이고, 되돌리기는 그 편집기의 「한 단계 되돌리기」 하나에 모은다(6-9 undo-strip).
+동작 결과(저장 · 적용 · 불러옴 · 발행 · 삭제)는 알림창 하나로만 알리고, 누른 자리 곁에는 그 자리에서 고칠 입력이 있는 오류 · 거부만 남긴다. 동작이 끝났고 그 자리에 고칠 입력이 없는 경고 · 거부(HOME 주요 Case 칩을 누른 뒤의 「읽지 못했습니다」 · 「지정이 그사이 바뀌어 불러오지 않았습니다」, 사이드바 리비전 저장 · 복제 · 공식 지정 · 월 머지 · 연도 Shift · DB 등록 · 자동 갱신 「지금 실행」 뒤 남은 Capa 계산 오류 · 소요대수에 들지 않은 수요, 그 사이 빠진 대상이라 아무것도 하지 않은 누름 등)는 알림창 · Alarm 에만 사건으로 낸다(`queue_flash(…, popup_only=True)` — 해소 줄은 없다). 동작 결과 · 끝난 동작의 사건은 같은 글을 두 자리에 띄우지 않는다 — 곁에 남는 고칠 입력의 오류 · 거부는 곁 한 줄이 기본 꼴이다. 폼 · 팝업 안 검증 거부(필수 칸 · 같은 이름 · 입력 차례 · 범위 밖 값 — 판정 기준 0% · Top5 상한 < 하한 · 빈 리비전명 등)는 곁 한 줄만이고 알림창 · 기록에는 가지 않는다(6-9 rule-notes g2-21 — 화면 그대로, 규칙 글을 시험과 맞춤). 누른 회차를 넘겨 그 칸에 남겨야 해 알림 칸(`flash`)으로 넘기는 곁 거부(VOC 답변 거부 등)만 알림창에도 한 번 뜬다. 표 조작 결과(붙여넣기 · 일괄 삭제 · 호기 지우기)도 표 위 띠가 아니라 알림창이고, 되돌리기는 그 편집기의 「한 단계 되돌리기」 하나에 모은다(6-9 undo-strip).
 
 - 수준: MUST · 확정
 - 범위: 모든 쓰기 단추 · 팝업 · 편집표
@@ -408,7 +408,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 머리 띠 · 툴바
 - 예외: 숨김과 잠금의 경계는 UI-INP-07 — 이 화면에 아예 없는 기능만 숨긴다.
 - 판단: 이 단추는 모든 화면에서 같은 뜻인가? 아니면 화면 안으로.
-- 그물: `tests/test_theme_toggle.py`(toolbar_buttons_stand_in_one_shared_order…) · `tests/test_alert_center_assets.py`(툴바 차례) · `scripts/check_deploy_screens.py` toolbar
+- 그물: `tests/test_theme_toggle.py`(toolbar_buttons_stand_in_one_shared_order…) · `tests/test_alert_center_assets.py`(툴바 차례) · `scripts/check_deploy_screens.py` toolbar · `tests/test_sso_streamlit.py::test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar`(통합인증 멈춤 화면 — ⋮ 메뉴 · Deploy · 죽은 툴바 단추 감춤)
 - 그물 후보: 없음
 - 근거: 검수 home-08(2026-11-02), 검수 「괜찮음」 home-12(2026-11-03), 추가 요청 8(2026-10-08) — 「헤더의 가이드 버튼 옆에 Alarm 버튼을 만들고 여기서 누적시키고 조회가능하도록하고」
 - 지금 값: 없음
@@ -637,8 +637,8 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 앱이 만든 컴포넌트(탭 줄 · 편집기 · 도면 · 사이드바 폭 · 기간 판 · Summary − · +)의 되풀이 입력. 되풀이 조작을 새로 만들 때는 컴포넌트로 만든다(Streamlit 기본 단추 · 슬라이더로 만들지 않는다).
 - 예외: 없음
 - 판단: 이 키를 열 번 누르면 서버 회차는 몇 번인가?
-- 그물: `scripts/check_deploy_screens.py` page_tabs_frame(묶어 보냄)
-- 그물 후보: 연속 N회 → 보냄 1회
+- 그물: `scripts/check_deploy_screens.py` page_tabs_frame(묶어 보냄) · 칸 연속 입력 → 보냄 1회(`tests/test_edit_grid_core_dom.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 기준 정보 편집표, `tests/test_equipment_master_grid_assets.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 설비 마스터 표)
+- 그물 후보: 연속 N회 → 보냄 1회 — 편집표 · 설비 마스터 표 밖의 되풀이 입력 컴포넌트(Ctrl+Z 연속은 물음 repeat-press 답 뒤)
 - 근거: 검수 frame-u03(2026-11-03) — 「몇번 연속으로 좌우로 움직이는 경우  불필요한 로딩이 발생하거나 멈추는 경우가 있음」
 - 지금 값: 탭 끌기 묶어 보냄 손 뗀 뒤 0.4초 — 출처 4장
 
@@ -1034,7 +1034,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 앱 서식 · 컴포넌트 자산
 - 예외: 없음
 - 판단: 어두운 테마에서 이 색은 무엇이 되나?
-- 그물: `tests/test_design_tokens.py` · `tests/test_theme_tokens_follow_the_run.py` · 자산별 팔레트 시험(`tests/test_alert_center_assets.py`) · `tests/test_equipment_master_grid_assets.py`(칠한 단추 호버 대비)
+- 그물: `tests/test_design_tokens.py` · `tests/test_theme_tokens_follow_the_run.py` · 자산별 팔레트 시험(`tests/test_alert_center_assets.py`) · `tests/test_equipment_master_grid_assets.py`(칠한 단추 호버 대비) · `tests/test_sso_reconnect.py::test_the_band_carries_both_palettes_and_picks_the_app_theme_when_it_stands`(다시 로그인 띠 두 팔레트) · `tests/test_sso_web.py::test_plain_links_on_the_outer_pages_take_the_accent_token`(바깥 화면 보조 링크 색)
 - 그물 후보: JS · CSS 자산 전체의 색 리터럴 훑기
 - 근거: AGENTS 8장, TODO 3장 기록(2026-11-03), 이번 배포 전후 보드 q-hover(2026-11-06)
 - 지금 값: 없음
@@ -1262,7 +1262,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 ### 5-4. 행동 시험 틀(AppTest · 자산)
 
 - **앱 전체 회차 0**(UI-PRF-01) — 새 컴포넌트 · 상자 `on_change` 마다
-- **연속 N회 → 보냄 1회**(UI-PRF-02) — 되풀이 입력이 있는 컴포넌트마다
+- **연속 N회 → 보냄 1회**(UI-PRF-02) — 되풀이 입력이 있는 컴포넌트마다(기준 정보 편집표 · 설비 마스터 표는 세움 — 규칙의 「그물」 줄)
 - **문제 없는 날 기준선**(UI-TXT-08) — 합성 시드 회차의 화면별 조건부 칸 수
 
 ## 6. 결정 기록
@@ -1616,3 +1616,4 @@ AGENTS 8 · 9장의 구현 규칙(글자 표기 · 위젯 상태 · 회차 · �
   - 그물: 세운 셋 — 이름 바꿈 사전(`tests/test_one_concept_one_name.py` — 5장 후보에서 UI-CON-02 그물로), 머리 설명 인자 자리 · 옮긴 소개 말(`tests/test_page_header_description.py` — UI-TXT-01 · 02), 표 위 줄 합침의 꼴(`tests/test_table_top_rows.py` — UI-LAY-11). 표 위 작업 줄 **줄 수** 그물은 세우지 못했다 — 줄 수는 브라우저 배치라 AppTest 로 재지 못하고, 화면 확인 항목(`scripts/check_deploy_screens.py` `ITEMS`)은 이번 점검에서 늘리지 않기로 해 5-3 후보로 남는다. `tests/test_design_rules_doc.py` 가 6-9 · 6-10 줄과 답 · 고친 규칙 글을 본다.
   - 장부: 화면 글 문장 그물 미정리 8 → 6(Dynamic Capa DB 연결 메모 구획 · 재공 현황 「데이터·계산 경계」 펼침을 걷음 — 둘은 `docs/TODO.md` 개발 메모로), 알림 꼴 · 자리 오류 · 걷은 경고 장부를 묶음 결과에 맞췄다(걷은 경고 `EQ-18` 한 줄 · `SB-19` 의 `goto` · 경고 상자 자리 일곱 줄 뺌 · 한 줄 줄임).
   - 재기(2-2 6): 후보 186(위반 76 · 애매 86 · 규칙 밖 24) 가운데 사용자 몫 15칸 — 권장이 아닌 답이 셋이다. head-desc 는 권장보다 더 걷어 「자리에 남기는 권장안은 사용자 기준보다 느슨하기 쉽다」(7-1)가 다시 맞았고, filter-empty 는 권장(표지 둘)보다 덜, pickers 는 권장(지금대로)보다 더 고치는 답이다. 규칙 밖 의견으로 새 규칙을 세우지는 않았다 — 열한 칸은 예외 · 값으로 적었다(rule-notes).
+  - 못 본 상태 점검 고침(같은 날 — 앞 점검이 닿지 못한 쓰기 겹침 · 드문 상태를 다시 재 후보 45 + 검증이 찾은 6 → 고침 묶음 열둘(`sweep/u-d1` ~ `sweep/u-d5` · `sweep/u-grid` · `sweep/u-acl` · `sweep/u-sso` · `sweep/u-eql` · `sweep/u-scn` · `sweep/u-stop` · `sweep/u-misc`)과 물을 칸 16). 판은 올리지 않았다 — 규칙 수 · 수준이 그대로이고 사용자 답이 새로 온 것이 없어 6장 칸도 늘지 않았다. 데이터가 말없이 사라지거나 덮이던 다섯(주요 Case 겹친 고름 · Cut-off 채우기 · 변경 메모 · VOC 적어 둔 답변 · 보관본만 남은 저장소의 데모 발행)을 앞 다섯 묶음이 고쳤다. 글을 고친 규칙: UI-NTF-03(곁 거부는 곁 한 줄이 기본 꼴 — u3-06 은 rule-notes g2-21 이 이미 답이라 글만 시험과 맞춤). 그물만 더한 규칙: UI-PRF-02(칸 연속 입력 → 보냄 1회 — 기준 정보 편집표 · 설비 마스터 표, 5장 후보에서), UI-LAY-05(통합인증 멈춤 화면의 죽은 툴바 단추), UI-ACC-01(다시 로그인 띠 · 바깥 화면 링크 색). 장부: 화면 글 문장 그물(Cut-off 「모두 채워졌습니다」 를 걷어 빈 결과 한 칸과 `EMPTY_ENDING` 의 「채워졌습니다」 를 뺌, 설비 마스터 배치 잠금 캡션 → 표지 「배치 잠김」, 영구 삭제 확인 칸의 보이는 라벨 한 칸 더함), 알림 꼴(Cut-off 곁 상자 2 → 1, 월 머지 경고 상자 둘 뺌), 자리 오류(공식 지정 5 → 3, 사이드바 설비 저장 1 → 0). 규칙 밖 그물 하나를 세웠다 — 등록되는 컴포넌트 JS 와 자산 · static JS 를 모두 `node --check` 로 읽는다(`tests/test_component_js_syntax.py`). 앞 묶음들의 바탕(`7c2e199`)에서 알림 칸 JS 맨 위 `const DIALOG` 가 두 번 남아 알림창 · Alarm 이 앱 전체에서 서지 않았는데 구획 시험이 놓쳤다. 화면 확인 항목(`ITEMS`)은 늘리지 않았다.

@@ -72,8 +72,8 @@ TEXT_METHODS = frozenset({"caption", "info", "markdown", "write", "text", "html"
 # 값 · 표지 · 빈 결과가 설 수 있는 꼴 — 평문 부름(상자 `st.info` 는 아니다).
 PLAIN_METHODS = frozenset({"caption", "markdown", "write", "text"})
 # 빈 결과 · 점검 결론의 끝 — 「…없습니다」 · 「…않습니다」 · 「…같습니다」 · 「…마쳤습니다」 ·
-# 「…채워졌습니다」 · 「… 0 입니다」(끝 꾸밈은 걷고 본다).
-EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습니다|채워졌습니다|0 입니다)[.!…]*$")
+# 「… 0 입니다」(끝 꾸밈은 걷고 본다).
+EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습니다|0 입니다)[.!…]*$")
 # 하는 법 · 길 안내 꼬리 — 값 · 표지 · 빈 결과 자리 글은 이렇게 끝나지 않는다(UI-TXT-03 · AMB-02
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
@@ -163,7 +163,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ),
     # 저장 단추 곁 「바뀐 것이 없습니다」 — 누른 회차에 그 자리에서 답한다(UI-NTF-03).
     ("src/capa_simulation/components/cutoff_management.py", "render_cutoff_management"): (
-        EMPTY,
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/display_order_management.py", "_render_direct_editor"): (
@@ -181,7 +180,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         "src/capa_simulation/components/equipment_lifecycle_gantt.py",
         "render_equipment_lifecycle_gantt",
     ): (EMPTY,),
-    ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (BESIDE_INPUT,),
     # 호기 지움 잠금 까닭 한 줄 · 「모두 버리기」 팝오버의 뜻 한 줄(UI-NTF-09).
     ("src/capa_simulation/components/equipment_master_tab.py", "_render_save_section"): (
         BESIDE_INPUT,
@@ -278,6 +276,9 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         VALUE,
     ),
     ("src/capa_simulation/components/scenario_management.py", "_render_detail"): (EMPTY,),
+    # 영구 삭제 확인 칸의 보이는 라벨 — 라벨을 숨긴 칸이라(낭독기 이름을 평문으로) 같은 글을 따로
+    # 그린다(입력 곁).
+    ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (BESIDE_INPUT,),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_body"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_dialog_header"): (EMPTY,),
     ("src/capa_simulation/components/scenario_status.py", "_render_load"): (BESIDE_INPUT, EMPTY),
