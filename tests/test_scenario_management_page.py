@@ -11,6 +11,7 @@ import duckdb
 import pandas as pd
 import pytest
 from alert_marks import flashed, infos, place_errors, successes
+from fragment_browser import FragmentBrowser, install_fragment_browser
 from scenario_list_fake import (
     Calls,
     ListBrowser,
@@ -62,6 +63,9 @@ from capa_simulation.components.scenario_management import (
     MODE_KEY,
     OFFICIAL_CONFIRM_HELP,
     OFFICIAL_DIALOG_KEY,
+    OFFICIAL_HOST,
+    OFFICIAL_NAME_KEY,
+    OFFICIAL_SEEN_KEY,
     OPENED_MOVED_MESSAGE,
     SAME_AS_OFFICIAL_HELP,
     SAME_AS_OFFICIAL_LINE,
@@ -1097,6 +1101,72 @@ def _close_official(app: AppTest) -> None:
 
 def _official_button(app: AppTest) -> Button:
     return next(button for button in app.button if button.label == OFFICIAL_BUTTON)
+
+
+def _host_only(browser: FragmentBrowser) -> bool:
+    """마지막 `run()` 이 보낸 델타가 모두 프래그먼트 회차의 것인가 — 페이지가 다시 돌지 않았다."""
+    return all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    )
+
+
+def test_opening_and_closing_the_official_popup_runs_only_its_host_and_rereads_the_official(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「공식으로 지정…」 을 여닫아도 페이지를 다시 계산하지 않는다 — 여는 콜백 뒤 호스트
+    (`scenario_official_dialog_host`)만 돌고 닫기도 호스트만 돈다(2026-11-08 사용자 결정 U5, 설계
+    규칙 UI-PRF-01 — u4-01 의 「공식 지정 1·0·158 / 1·0·143」).
+
+    호스트만 도는 여는 회차의 인자는 마지막 앱 전체 회차의 것이라, 「지금 공식」 은 팝업 본문이 다시
+    읽는다 — 그 사이 다른 세션이 지정한 공식이 팝업에 서고 지정의 대조 값도 그 번호다
+    (`components/dialog_host.py` 쓰는 쪽이 지키는 것 1).
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = (
+        "from capa_simulation.sidebar_status import begin_app_run\n"
+        "app_run = begin_app_run()\n"
+        + _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+        + "app_run.finish()\n"
+    )
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    _check_row(app, release.scenario_id)
+    app.run()
+    app.session_state[DRAFT_KEY] = replace(_draft(app), picked=release.revision_id)
+    app.run()
+    assert not app.exception
+    host = browser.fragment_keyed(OFFICIAL_HOST.key)
+
+    # 다른 세션이 지정했다 — 이 화면의 마지막 앱 전체 회차는 그 전의 공식을 읽었다.
+    repository.publish_official_revision(
+        release.scenario_id, release.revision_id, release_name="다른 세션 지정"
+    )
+    app.button(key=f"{CARD_OFFICIAL_KEY}_{release.scenario_id}").click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]], "여는 회차가 호스트만 돌지 않았다"
+    assert _host_only(browser), "페이지가 다시 돌았다"
+    assert app.session_state[OFFICIAL_DIALOG_KEY] == (release.scenario_id, release.revision_id)
+    shown = " ".join(item.value for item in app.markdown)
+    assert f"**v{release.release_no + 1}** · " in shown and "다른 세션 지정" in shown
+    assert f"**v{release.release_no + 2}** · " in shown
+    assert app.session_state[OFFICIAL_SEEN_KEY] == release.release_no + 1
+
+    # 공식버전명을 고친 뒤 닫는다(X · 바깥 · Esc — `on_dismiss`). 닫기 요청은 브라우저처럼 그려진
+    # 팝업 위젯 값과 닫기 트리거를 함께 싣고 호스트만 돈다. 닫으면 친 글도 지운다(지키는 것 5).
+    dialog_id = browser.dialog_widget_id()
+    app.text_input(key=OFFICIAL_NAME_KEY).set_value("고치다 만 이름")
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert _host_only(browser), "닫는 회차에 페이지가 다시 돌았다"
+    assert OFFICIAL_DIALOG_KEY not in app.session_state
+    assert OFFICIAL_NAME_KEY not in app.session_state
 
 
 def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmation(
