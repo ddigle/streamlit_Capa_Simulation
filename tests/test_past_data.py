@@ -387,16 +387,27 @@ def test_the_past_tab_is_given_the_stored_profile_not_the_display_filtered_one()
     """HOME 이 「HOME 설정」 팝업의 Past Data 탭에 넘기는 것은 **저장된** 프로필이어야 한다.
 
     표시용으로 비운 쪽을 넘기면 화면이 「저장 0행」으로 보이고, 저장이 그 빈 값을 되쓴다.
-    배선이 한 글자만 어긋나도 데이터가 사라지므로 소스에서 고정한다.
+    배선이 한 글자만 어긋나도 데이터가 사라지므로 소스에서 고정한다. 팝업은 HOME 팝업 호스트만
+    도는 회차에도 열리므로 탭 본문(`_render_past_data_tab`)이 저장본을 그 회차에 다시 읽어 넘긴다 —
+    앱 전체 회차가 잡은 프로필을 실으면 그 사이 남의 저장이 빠진다(`dialog_host` 「쓰는 쪽이 지키는
+    것」 1).
     """
+    import ast
+
     source = (Path(__file__).resolve().parents[1] / "app_pages" / "home.py").read_text(
         encoding="utf-8"
     )
+    tree = ast.parse(source)
+    (tab,) = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_render_past_data_tab"
+    ]
+    body = ast.unparse(tab)
 
-    assert (
-        "partial(render_past_data_management, str(DUCKDB_PATH.resolve()), stored_past_profile)"
-        in source
-    )
+    assert "stored = load_global_past_data(database_path)" in body
+    assert "render_past_data_management(database_path, stored)" in body
+    assert "past_data=_render_past_data_tab" in source
 
 
 # 붙여넣기의 빈칸·못 읽는 글자(2026-09-29 빈칸 횡전개). 이전에는 값 칸을

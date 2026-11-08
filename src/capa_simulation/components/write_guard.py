@@ -1,4 +1,4 @@
-# Purpose: 쓰기 단추의 빠른 두 번 누름이 한 번만 쓰고 저장과 거부를 뒤바꿔 알리지 않게 한다.
+# Purpose: 쓰기 단추의 빠른 두 번 누름이 한 번만 쓰고 저장 · 거부를 바르게 알리게 한다.
 
 """빠른 두 번 누름이 **겹쳐** 올 때의 거름.
 
@@ -64,6 +64,13 @@
   저장이 옛 본 값으로 또 거부됐다(2026-10-26·27 E2E — 판정 기준·확보율 보정·공정 표시명·표시순서·
   자동 갱신 설정). 거부 회차가 초안과 출발점을 함께 다시 세우는 편집(Cut-off·층 사용)은 그 회차가
   이미 적었다.
+- **남의 저장에 진 거부는 곁 + 알림창 · Alarm**(2026-11-08 사용자 답 a1 「곁 + 알림창 · Alarm 으로
+  맞춘다 — 입력 탓 거부는 곁만 그대로」). 거부를 담는 `queue_refusal` 이 그 글이 이 저장 이름의
+  충돌 표지(`note_profile_conflict` 가 방금 적은 글)와 같으면 오류 사건(`FL-04`)으로도 보낸다 —
+  다음 회차의 곁 칸(`take_refusal`)은 그대로 그린다. 팝업을 닫아도 Alarm 에 기록이 남는다. 같은
+  거부의 둘째 누름(표지 시각이 같다)은 다시 보내지 않는다. 충돌 표지가 없는 거부 — 입력 탓 거부 ·
+  본 값 없음(`SEEN_MISSING_MESSAGE`) · 「바뀐 것이 없습니다」 처럼 이 길로 넘기는 다른 곁 답 — 는
+  곁만이다.
 
 **아주 빠른** 두 번 누름(0.05~0.15초)은 둘째 누름이 아직 옛 화면의 단추에 닿는다. 그 회차는
 쓰지 않고(지나간 세대·이미 지운 글·잠긴 단추) 끝나는데, 첫 쓰기의 성공 알림은 앞 회차가 이미 꺼내
@@ -113,6 +120,8 @@ from typing import Any, TypeAlias, TypeVar, cast
 
 import streamlit as st
 
+from capa_simulation import alerts
+
 # 본 값·제 저장 짝의 토큰 — 프로필 version(int)·지문·이름(str)·여러 값의 짝(tuple)·편집본 출발점처럼
 # 이름 붙은 값 묶음(dict).
 SeenToken: TypeAlias = int | str | tuple[object, ...] | dict[str, object]
@@ -149,6 +158,12 @@ SEEN_MISSING_MESSAGE = (
 # 이 세션이 마지막으로 받은 버전 충돌 거부(저장 이름 → (거부 알림 글, 받은 시각)). 시각은
 # `time.monotonic()` 이다.
 PROFILE_CONFLICTS_KEY = "write_guard_profile_conflicts"
+
+# 남의 저장에 진 거부를 알림창 · Alarm 으로 보낸 표지(저장 이름 → 그 거부의 충돌 표지 시각). 같은
+# 거부의 둘째 누름이 다시 보내지 않게 한다(`queue_refusal`).
+REFUSAL_ALERTS_KEY = "write_guard_refusal_alerts"
+# 그 사건 알림의 코드 — 동작 결과 실패(`alerts.FLASH_CODES["error"]`).
+REFUSAL_ALERT_CODE = "FL-04"
 
 # 이 세션이 마지막으로 낸 쓰기 알림(알림 칸 이름 → (알림 글, 쓴 시각 `time.monotonic()`, 아이콘,
 # 종류)).
@@ -469,9 +484,32 @@ is_own_profile_save = is_own_save
 
 def queue_refusal(name: str, message: str) -> None:
     """`name` 저장의 거부 알림(`message`)을 다음 회차에 그리게 담는다 — 충돌·본 값 없음으로 거부한
-    회차가 본 값을 올리지 않고 `st.rerun()` 하기 직전에 부른다. dict 칸 쓰기라 끊기지 않는다."""
+    회차가 본 값을 올리지 않고 `st.rerun()` 하기 직전에 부른다. dict 칸 쓰기라 끊기지 않는다.
+
+    남의 저장에 진 거부(이 저장 이름의 충돌 표지 글과 같은 글)는 오류 사건으로도 보낸다(모듈 설명
+    「남의 저장에 진 거부는 곁 + 알림창 · Alarm」) — 곁 칸 글을 담은 **뒤**라 사건 알림 칸 쓰기가
+    끊겨도 곁 답은 남는다.
+    """
     refusals = _session_dict(REFUSALS_KEY)
     refusals[name] = message
+    _alert_conflict_refusal(name, message)
+
+
+def _alert_conflict_refusal(name: str, message: str) -> None:
+    """`name` 의 충돌 표지가 이 글이면 그 거부를 오류 사건(`REFUSAL_ALERT_CODE`)으로 담는다 —
+    `alerts.event` 는 그리지 않으므로 다음 앱 전체 회차의 알림 칸(또는 그 앞 표지 자리)이 보낸다.
+    같은 표지(시각)로 이미 보냈으면 다시 담지 않는다."""
+    conflicts = st.session_state.get(PROFILE_CONFLICTS_KEY)
+    entry = conflicts.get(name) if isinstance(conflicts, dict) else None
+    if not (isinstance(entry, tuple) and len(entry) == 2 and entry[0] == message):
+        return
+    moment = entry[1]
+    sent = _session_dict(REFUSAL_ALERTS_KEY)
+    if sent.get(name) == moment:
+        return
+    sent[name] = moment
+    text = alerts.plain_text(message)
+    alerts.event(REFUSAL_ALERT_CODE, text=text, full=text)
 
 
 def take_refusal(name: str) -> str | None:

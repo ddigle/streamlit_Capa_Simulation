@@ -39,7 +39,7 @@ from capa_simulation.persistence.cache import load_global_key_process
 database = {str(database)!r}
 options = list({PROCESSES!r})
 profile = load_global_key_process(database)
-render_key_process_field(profile, process_labels=ProcessLabels(), process_options=options)
+render_key_process_field(profile, process_options=options, database_path=database)
 render_key_process_dialog_body(list(profile.preset_names), ["미리보기"] * len(profile.presets))
 _render_key_process_editor(
     process_options=options, process_labels=ProcessLabels(), database_path=database

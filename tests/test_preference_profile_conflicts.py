@@ -237,7 +237,8 @@ def test_after_a_refused_preset_save_name_and_processes_show_the_latest_save(
     assert not _successes(app)
     assert any("다른 사용자가 먼저 주요공정 프리셋을 저장" in message for message in _errors(app))
     assert (app.text_input[0].value, app.multiselect[0].value) == (expected[0], list(expected[1]))
-    assert app.session_state[KEY_PROCESS_SEEN_KEY] == (2, expected[0], expected[1])
+    # 본 값은 (version, 고칠 프리셋, 그 공정, 기본 프리셋) — 기본은 맨 앞 이름이다(2026-11-08 U2).
+    assert app.session_state[KEY_PROCESS_SEEN_KEY] == (2, expected[0], expected[1], other[0][0])
 
     # 거부 창이 지난 뒤 다시 누르면 실제로 대조한다 — 두 칸이 고칠 프리셋의 최신 저장본 그대로라
     # 바뀐 것이 없어 새 버전을 만들지 않는다(2026-11-01 개선 I5 넓힘 — Top5 구간과 같은 꼴).
@@ -333,7 +334,7 @@ def test_make_default_on_a_stale_screen_is_rejected(database: Path) -> None:
     app = _app(database)
     app.selectbox[0].set_value("뒤 묶음")
     app = app.run()
-    assert app.session_state[KEY_PROCESS_SEEN_KEY] == (1, "뒤 묶음", PROCESSES[2:])
+    assert app.session_state[KEY_PROCESS_SEEN_KEY] == (1, "뒤 묶음", PROCESSES[2:], "기본")
     DuckDBScenarioRepository(database).replace_global_key_process_presets(
         [("기본", PROCESSES[:2]), ("뒤 묶음", PROCESSES[1:])],
         source="다른 세션",
@@ -349,6 +350,70 @@ def test_make_default_on_a_stale_screen_is_rejected(database: Path) -> None:
     profile = DuckDBScenarioRepository(database).load_global_key_process()
     assert profile.version == 2
     assert profile.preset_names == ("기본", "뒤 묶음")
+
+
+def _three_presets(database: Path) -> None:
+    """기본 · 둘째 · 셋째 세 프리셋(v2) — 「기본으로」 대조 시험의 출발점."""
+    DuckDBScenarioRepository(database).replace_global_key_process_presets(
+        [("기본", PROCESSES[:1]), ("둘째", PROCESSES[1:2]), ("셋째", PROCESSES[2:])],
+        source="시험",
+        expected_version=1,
+    )
+    clear_global_key_process_cache()
+
+
+def test_make_default_after_someone_else_changed_the_default_is_rejected(database: Path) -> None:
+    """화면이 본 기본과 지금 기본이 다르면 「기본으로」 를 거절한다(2026-11-08 사용자 답 U2 — 묶음에
+    하나뿐인 값이라 이 값만 본다). 고칠 프리셋(셋째)은 그대로라 고칠 프리셋 대조로는 지나던 길이다 —
+    전에는 남이 방금 정한 기본을 말없이 덮고 「기본 프리셋으로 옮겼습니다」 를 띄웠다(u2-02)."""
+    _three_presets(database)
+    app = _app(database)
+    app.selectbox[0].set_value("셋째")
+    app = app.run()
+    assert app.session_state[KEY_PROCESS_SEEN_KEY] == (2, "셋째", PROCESSES[2:], "기본")
+    # 다른 세션이 「둘째」 를 기본으로 옮긴다(v3).
+    DuckDBScenarioRepository(database).replace_global_key_process_presets(
+        [("둘째", PROCESSES[1:2]), ("기본", PROCESSES[:1]), ("셋째", PROCESSES[2:])],
+        source="다른 세션",
+        expected_version=2,
+    )
+    clear_global_key_process_cache()
+    app.button(key="home_key_process_preset_default").click()
+    app = app.run()
+
+    assert not list(app.exception)
+    assert not _successes(app)
+    assert any(
+        "다른 사용자가 먼저 기본 프리셋을 「둘째」로 바꿔" in message for message in _errors(app)
+    ), _errors(app)
+    profile = DuckDBScenarioRepository(database).load_global_key_process()
+    assert (profile.version, profile.preset_names) == (3, ("둘째", "기본", "셋째"))
+
+
+def test_make_default_after_another_preset_changed_keeps_working(database: Path) -> None:
+    """기본이 그대로면(다른 프리셋의 공정만 바뀐 저장) 「기본으로」 는 지금처럼 쓴다 — 다시 읽은
+    묶음에 고칠 프리셋만 맨 앞으로 옮긴다."""
+    _three_presets(database)
+    app = _app(database)
+    app.selectbox[0].set_value("셋째")
+    app = app.run()
+    DuckDBScenarioRepository(database).replace_global_key_process_presets(
+        [("기본", PROCESSES[:1]), ("둘째", PROCESSES[:2]), ("셋째", PROCESSES[2:])],
+        source="다른 세션",
+        expected_version=2,
+    )
+    clear_global_key_process_cache()
+    app.button(key="home_key_process_preset_default").click()
+    app = app.run()
+
+    assert not _errors(app), _errors(app)
+    profile = DuckDBScenarioRepository(database).load_global_key_process()
+    assert profile.version == 4
+    assert profile.presets == (
+        ("셋째", PROCESSES[2:]),
+        ("기본", PROCESSES[:1]),
+        ("둘째", PROCESSES[:2]),
+    )
 
 
 def test_a_save_on_a_fresh_screen_still_saves(

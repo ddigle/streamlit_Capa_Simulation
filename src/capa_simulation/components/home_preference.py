@@ -23,6 +23,7 @@ import hashlib
 import html
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from math import isclose
 from pathlib import Path
 from typing import NoReturn
@@ -34,16 +35,17 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation import alerts
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.dialog_host import DialogBody, DialogHost
+from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
-from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import (
     HasProfileVersion as VersionedProfile,
 )
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.saved_note import (
     mark_note_saved,
@@ -89,7 +91,10 @@ from capa_simulation.home_state import (
 )
 from capa_simulation.home_state import (
     HOME_CASES_TAB,
+    HOME_DIALOG_HOST_KEY,
+    HOME_DIALOG_KEY,
     HOME_DISPLAY_TAB,
+    HOME_KEY_PROCESS_DIALOG,
     HOME_MONTHLY_TAB,
     HOME_THRESHOLD_TAB,
     HOME_TOGGLE_DEFAULTS,
@@ -107,7 +112,6 @@ from capa_simulation.home_state import (
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
-    forget_page_dialogs,
     prune_choice,
 )
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
@@ -162,6 +166,7 @@ from capa_simulation.services.key_process import (
     resolve_preset_name,
 )
 from capa_simulation.services.korean_particle import (
+    direction_particle,
     object_particle,
     with_object_particle,
     with_topic_particle,
@@ -325,6 +330,10 @@ KEY_PROCESS_SAVED_MESSAGE = "주요공정 히트맵 프리셋을 저장했습니
 KEY_PROCESS_PRESET_KEY = "home_key_process_preset"
 # 팝업 안 라디오의 초안. 칸을 누를 때 지금 보는 프리셋으로 적는다.
 KEY_PROCESS_PICK_KEY = "home_key_process_preset_pick"
+# HOME 팝업 호스트(`home_settings.HOME_DIALOG_HOST` 와 같은 값 — 그 모듈은 import 할 수 없다,
+# `home_state.HOME_DIALOG_HOST_KEY`). 「주요공정 히트맵」 팝업은 열림 값 `key_process` 로 이
+# 호스트가 연다.
+HOME_DIALOG_HOST = DialogHost(HOME_DIALOG_HOST_KEY, HOME_DIALOG_KEY)
 KEY_PROCESS_FIELD_KEY = "home_key_process_field"
 KEY_PROCESS_FIELD_LABEL = "주요공정 히트맵"
 # `grid_view` 는 사이드바 `Space 현황` 링크 아이콘과 겹쳐 데이터 묶음을 뜻하는 `dataset` 이다.
@@ -1038,17 +1047,16 @@ def render_threshold_editor(
     """
     submitted_base = seen(THRESHOLD_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/rule: 확보율 판정 기준")
-        st.caption(
-            profile_version_caption(
-                threshold_profile,
-                empty=(
-                    f"아직 저장하지 않아 {threshold_profile.fallback} 값"
-                    f"(확보 {_exact_percent(threshold_profile.default_secure)} · 경고 "
-                    f"{_exact_percent(threshold_profile.default_warning)})을 씁니다"
-                ),
-                detail=_threshold_detail(threshold_profile),
-            )
+        render_profile_heading(
+            "#### :material/rule: 확보율 판정 기준",
+            threshold_profile,
+            key="home_threshold",
+            empty=(
+                f"아직 저장하지 않아 {threshold_profile.fallback} 값"
+                f"(확보 {_exact_percent(threshold_profile.default_secure)} · 경고 "
+                f"{_exact_percent(threshold_profile.default_warning)})을 씁니다"
+            ),
+            detail=_threshold_detail(threshold_profile),
         )
         stored = _thresholds_by_month(threshold_profile)
         outside = sorted(set(stored) - set(months))
@@ -1662,8 +1670,7 @@ def _render_monthly_amount_editor(
     견줄 저장본은 제출 회차가 읽은 최신이다. 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
     """
     with st.container(border=True):
-        st.markdown(editor.title)
-        st.caption(profile_version_caption(profile, empty=editor.empty))
+        render_profile_heading(editor.title, profile, key=editor.form_key, empty=editor.empty)
         if not months:
             st.caption("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
             return
@@ -1784,13 +1791,12 @@ def _render_summary_note_editor(
     """
     submitted_base = seen(SUMMARY_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/campaign: 공지")
-        st.caption(
-            profile_version_caption(
-                summary_profile,
-                empty="아직 공지를 올린 적이 없습니다",
-                suffix="공지 중" if summary_profile.is_visible else "내림",
-            )
+        render_profile_heading(
+            "#### :material/campaign: 공지",
+            summary_profile,
+            key="home_summary",
+            empty="아직 공지를 올린 적이 없습니다",
+            suffix="공지 중" if summary_profile.is_visible else "내림",
         )
         with st.form("home_summary_note_form"):
             submitted = st.form_submit_button(
@@ -1897,15 +1903,14 @@ def _render_top5_band_editor(
     """
     submitted_base = seen(TOP5_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/straighten: B/N Top5 확보율 구간")
-        st.caption(
-            profile_version_caption(
-                top5_band_profile,
-                empty=(
-                    f"기본값 {top5_band_profile.min_rate:.0%}~"
-                    f"{with_object_particle(f'{top5_band_profile.max_rate:.0%}')} 씁니다"
-                ),
-            )
+        render_profile_heading(
+            "#### :material/straighten: B/N Top5 확보율 구간",
+            top5_band_profile,
+            key="home_top5",
+            empty=(
+                f"기본값 {top5_band_profile.min_rate:.0%}~"
+                f"{with_object_particle(f'{top5_band_profile.max_rate:.0%}')} 씁니다"
+            ),
         )
         with st.form("home_top5_band_form"):
             submitted = st.form_submit_button(
@@ -2083,9 +2088,9 @@ def _queue_selection(key: str, value: str) -> None:
 def render_key_process_field(
     profile: GlobalKeyProcess,
     *,
-    process_labels: ProcessLabels,
     process_options: Sequence[str],
-) -> None:
+    database_path: str,
+) -> DialogBody | None:
     """사이드바 조건 패널의 `주요공정 히트맵` 줄 — 볼 프리셋을 고르는 팝업 칸(2026-10-10).
 
     B/N 판정 대상(공정 필터)과 **따로** 서는 줄이다. 공정 필터는 판정에 넣을 공정이고, 이것은
@@ -2093,6 +2098,14 @@ def render_key_process_field(
     프리셋 자체만 공용이다. 아직 고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다.
     프리셋이 없으면 칸을 잠그고 어디서 만드는지는 까닭 풍선이 말한다. 부르는 쪽이 페이지 칸 안으로
     들어간 뒤에 부른다.
+
+    돌려주는 것은 팝업을 여는 함수다(프리셋이 없으면 None) — HOME 팝업 호스트가 열림 값
+    `key_process` 로 부른다(`home_settings.render_home_dialog_host` 의 `dialogs`). 칸을 누르면
+    호스트만 다시 돌아 HOME 을 다시 계산하지 않고 열린다(2026-11-08 사용자 답 U5 — 설계 규칙
+    UI-PRF-01). 그 함수는 이 회차의 프리셋 목록을 싣지 않는다 — 호스트만 도는 여는 회차의 인자는
+    직전 앱 전체 회차의 것이라, 그 사이 남이 이름을 바꾸거나 지운 프리셋이 팝업에 남는다. 팝업
+    본문이 공용 프리셋을 다시 읽는다(`show_key_process_dialog` — `dialog_host` 「쓰는 쪽이 지키는
+    것」 1).
     """
     names = list(profile.preset_names)
     if not names:
@@ -2105,16 +2118,12 @@ def render_key_process_field(
             help=KEY_PROCESS_LOCKED_HELP,
             disabled=True,
         )
-        return
+        return None
     applied = resolve_preset_name(names, st.session_state.get(KEY_PROCESS_PRESET_KEY))
-    previews = [
-        key_process_preview(profile.processes_of(name), process_labels, process_options)
-        for name in names
-    ]
     shown_count = sum(
         1 for process in profile.processes_of(applied) if process in set(process_options)
     )
-    if condition_field(
+    condition_field(
         KEY_PROCESS_FIELD_LABEL,
         # 값 칸은 버튼 라벨이라 마크다운으로 그려진다 — 사람이 지은 프리셋 이름은 글자 그대로
         # 싣는다(「P~1~2 *k*」 가 지움선·기울임이 됐다, 2026-10-26 E2E).
@@ -2124,8 +2133,8 @@ def render_key_process_field(
         icon=KEY_PROCESS_ICON,
         on_click=_open_key_process_dialog,
         args=(applied,),
-    ):
-        show_key_process_dialog(names, previews)
+    )
+    return partial(show_key_process_dialog, database_path, tuple(process_options))
 
 
 def render_stopped_key_process_field() -> None:
@@ -2166,24 +2175,56 @@ def key_process_preview(
 
 
 def _open_key_process_dialog(applied: str | None) -> None:
-    """칸의 콜백. 다른 팝업 칸을 비우고 라디오 초안을 지금 보는 프리셋으로 적는다."""
-    forget_page_dialogs()
+    """칸의 콜백. 라디오 초안을 지금 보는 프리셋으로 적고 HOME 팝업 호스트로 연다(다른 팝업 칸부터
+    비운다 — `DialogHost.open`). 호스트만 다시 돌 수 있으면 HOME 은 다시 계산하지 않는다."""
     st.session_state[KEY_PROCESS_PICK_KEY] = applied
+    HOME_DIALOG_HOST.open(HOME_KEY_PROCESS_DIALOG, KEY_PROCESS_FIELD_KEY)
 
 
-@st.dialog(KEY_PROCESS_FIELD_LABEL, width="small", icon=KEY_PROCESS_ICON)
-def show_key_process_dialog(names: list[str], previews: list[str]) -> None:
-    """칸을 누른 회차에만 연다(버튼 반환값). 본문은 아래 함수다."""
-    render_key_process_dialog_body(names, previews)
+@st.dialog(
+    KEY_PROCESS_FIELD_LABEL,
+    width="small",
+    icon=KEY_PROCESS_ICON,
+    on_dismiss=HOME_DIALOG_HOST.close,
+)
+@keeps_app_run_open
+def show_key_process_dialog(database_path: str, process_options: Sequence[str]) -> None:
+    """HOME 팝업 호스트가 열림 값 `key_process` 로 연다. 닫기(X · 바깥 · Esc)는 호스트만 돈다 — 닫는
+    회차에 HOME 이 할 일이 없다. 본문은 아래 함수다.
+
+    공용 프리셋과 공정 표시명은 **여기서 다시 읽는다** — 여는 회차는 호스트만 돌아 HOME 이 읽은
+    프로필이 그 사이 남의 저장으로 낡았을 수 있다(옛 이름을 고르면 다음 앱 전체 회차가 그 이름을
+    찾지 못해 기본 프리셋으로 말없이 바뀐다). `process_options` 는 이 세션의 계산 결과라 직전 앱
+    전체 회차의 것을 그대로 쓴다. 그 사이 프리셋이 모두 지워졌으면 고를 것이 없으니 팝업을 닫고 앱
+    전체를 다시 돌린다 — 칸이 「프리셋 없음」 으로 잠긴다.
+    """
+    try:
+        profile = load_global_key_process(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        render_data_error(
+            bootstrap_error_message(exc), code="HM-01", text="주요공정 프리셋을 읽지 못했습니다"
+        )
+        return
+    names = list(profile.preset_names)
+    if not names:
+        HOME_DIALOG_HOST.finish()
+    process_labels = get_process_labels()
+    render_key_process_dialog_body(
+        names,
+        [
+            key_process_preview(profile.processes_of(name), process_labels, process_options)
+            for name in names
+        ],
+    )
 
 
 def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]) -> None:
     """프리셋 라디오와 프리셋마다의 공정 미리보기. **고르면 곧바로 적용하고 닫힌다.**
 
     라디오 조작은 팝업(프래그먼트)만 다시 돌린다. 그래서 돌려받은 값을 지금 보는 프리셋과 견주어
-    다르면 세션에 적고 앱 전체를 다시 돌린다 — 그 회차에는 칸이 눌리지 않아 팝업이 다시 불리지
-    않는다(닫힘). 견주는 값은 **세션의 지금 값**이다 — 적은 뒤 다시 도는 회차에 같아져 되풀이되지
-    않는다.
+    다르면 세션에 적고 열림 칸을 지운 뒤 앱 전체를 다시 돌린다(`HOME_DIALOG_HOST.finish`) — 그
+    회차에는 열림 칸이 비어 팝업이 다시 불리지 않는다(닫힘). 견주는 값은 **세션의 지금 값**이다 —
+    적은 뒤 다시 도는 회차에 같아져 되풀이되지 않는다.
 
     머리 설명 글은 두지 않는다(2026-11-04 검수 의견 home-21). 고르면 곧바로 닫히며 바뀌는 것은
     누름이 말하고, 프리셋을 고치는 자리는 Guide 가 말한다.
@@ -2201,7 +2242,7 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     applied = resolve_preset_name(list(names), st.session_state.get(KEY_PROCESS_PRESET_KEY))
     if choice is not None and choice != applied:
         st.session_state[KEY_PROCESS_PRESET_KEY] = choice
-        st.rerun(scope="app")
+        HOME_DIALOG_HOST.finish()
 
 
 @st.fragment
@@ -2265,13 +2306,12 @@ def _render_key_process_editor(
         )
         return
     with st.container(border=True):
-        st.markdown("#### :material/dataset: 주요공정 히트맵 프리셋")
-        st.caption(
-            profile_version_caption(
-                profile,
-                empty="아직 만든 프리셋이 없습니다",
-                detail=f"{len(profile.presets)}개 프리셋",
-            )
+        render_profile_heading(
+            "#### :material/dataset: 주요공정 히트맵 프리셋",
+            profile,
+            key="home_key_process",
+            empty="아직 만든 프리셋이 없습니다",
+            detail=f"{len(profile.presets)}개 프리셋",
         )
         names = list(profile.preset_names)
         targets = [*names, NEW_KEY_PROCESS_PRESET]
@@ -2295,8 +2335,13 @@ def _render_key_process_editor(
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         stale = _stale_key_process_target(seen_target, profile, target, current)
-        # 결과가 무엇이든 다음 쓰기는 이 회차가 그린 저장본에서 출발한다.
-        remember_seen(KEY_PROCESS_SEEN_KEY, (profile.version, target, tuple(current)))
+        stale_default = _stale_key_process_default(seen_target, profile)
+        # 결과가 무엇이든 다음 쓰기는 이 회차가 그린 저장본에서 출발한다. 본 기본 프리셋(맨 앞
+        # 이름)도 함께 적는다 — 「기본으로」 가 대조한다(2026-11-08 사용자 답 U2).
+        remember_seen(
+            KEY_PROCESS_SEEN_KEY,
+            (profile.version, target, tuple(current), names[0] if names else ""),
+        )
         known_options = set(process_options)
         # 이 시나리오·조회기간에 없는 공정도 **선택지에 남긴다**(표시만 「이 화면에 없음」). 빼 두면
         # 저장이 그 공정을 공용 프리셋에서 조용히 지웠고, 공정이 모두 없는 프리셋은 이름조차 못
@@ -2336,6 +2381,9 @@ def _render_key_process_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
+                # 이 회차가 꺼내 그리는 담아 둔 알림 — 거부의 둘째 누름이 같은 글을 두 번 세우지
+                # 않게 견준다.
+                shown = pending_flash(KEY_PROCESS_FLASH_KEY)
                 _render_key_process_flash()
             # 이 화면에 없는 공정은 칩의 「· 이 화면에 없음」 이 표지이고, 그것이 남는 까닭은
             # 칸 머리 풍선이다 — 칸 밑에 늘 서던 안내 문장을 걷었다(설계 규칙 UI-TXT-01 ·
@@ -2357,7 +2405,14 @@ def _render_key_process_editor(
                 ),
             )
         if not is_new:
-            _render_key_process_preset_actions(profile, target, database_path, stale=stale)
+            _render_key_process_preset_actions(
+                profile,
+                target,
+                database_path,
+                stale=stale,
+                stale_default=stale_default,
+                shown=None if shown is None else shown.message,
+            )
         if not submitted:
             return
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
@@ -2367,7 +2422,10 @@ def _render_key_process_editor(
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 거부한 회차가 고칠 프리셋을 새로 적어 두어
             # 대조를 지나므로, 옛 화면의 입력으로 저장하지 않고 그 거부를 다시 알린다(write_guard).
-            notice.error(held)
+            # 이 회차가 거부 회차의 알림을 이미 꺼내 그렸으면 한 번만 — 알림창 · Alarm 은 첫 거부가
+            # 냈다.
+            if shown is None or shown.message != held:
+                notice.error(held)
             return
         if stale is not None:
             _reject_key_process_write(stale, notice, save_marks, conflict_marks)
@@ -2475,11 +2533,17 @@ def _render_key_process_preset_actions(
     database_path: str,
     *,
     stale: ProfileVersionConflict | None = None,
+    stale_default: ProfileVersionConflict | None = None,
+    shown: str | None = None,
 ) -> None:
     """고르고 있는 프리셋의 `기본으로`·`삭제`. 둘 다 묶음 전체를 다시 쓴다.
 
     `stale` 은 단추를 그린 화면이 본 고칠 프리셋이 그 사이 바뀌었다는 거부다(편집 카드가 넘긴다).
-    있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다.
+    있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다. `stale_default` 는 그 화면이
+    본 기본 프리셋(맨 앞)이 그 사이 남의 저장으로 바뀌었다는 거부다 — 「기본으로」 만 쓰지 않는다
+    (2026-11-08 사용자 답 U2 「화면이 본 기본과 지금 기본이 다르면 거절한다 — 묶음에 하나뿐인
+    값이라 이 값만 본다」). 「삭제」 는 고칠 프리셋만 대조한다(2026-10-26 결정). `shown` 은 이
+    회차에 편집 카드 알림 칸이 꺼내 그린 글이다(둘째 누름이 같은 거부를 두 번 세우지 않게).
     """
     names = list(profile.preset_names)
     already_default = names[0] == target
@@ -2518,10 +2582,14 @@ def _render_key_process_preset_actions(
     held = held_profile_conflict(conflict_marks, KEY_PROCESS_SAVE_NAME)
     if held is not None:
         # 남의 저장에 거부된 쓰기의 둘째 누름이다(편집 카드의 저장과 같다).
-        st.error(held)
+        if shown != held:
+            st.error(held)
         return
     if stale is not None:
         _reject_key_process_write(stale, st.container(), save_marks, conflict_marks)
+        return
+    if make_default and stale_default is not None:
+        _reject_key_process_write(stale_default, st.container(), save_marks, conflict_marks)
         return
     try:
         saved = get_scenario_repository(database_path).replace_global_key_process_presets(
@@ -2547,9 +2615,9 @@ def _stale_key_process_target(
     공정이 바뀌었거나 그 이름이 없어져 「고칠 프리셋」 이 다른 프리셋으로 넘어갔으면 거부한다. 첫
     회차(`seen` 없음)와 version 이 그대로인 회차는 대조할 것이 없다.
     """
-    if not (isinstance(seen, tuple) and len(seen) == 3 and isinstance(seen[0], int)):
+    if not (isinstance(seen, tuple) and len(seen) in (3, 4) and isinstance(seen[0], int)):
         return None
-    seen_version, seen_target, seen_processes = seen
+    seen_version, seen_target, seen_processes = seen[:3]
     if seen_version == profile.version:
         return None
     if seen_target == target and tuple(seen_processes) == tuple(current):
@@ -2558,6 +2626,35 @@ def _stale_key_process_target(
         "다른 사용자가 먼저 주요공정 프리셋을 저장해 이번 저장은 반영하지 않았습니다"
         f"(편집 시작 v{seen_version} · 지금 v{profile.version}). 최신 저장본을 확인한 뒤 다시 "
         "저장하세요.",
+        expected=seen_version,
+        stored=profile.version,
+    )
+
+
+def _stale_key_process_default(
+    seen: object, profile: GlobalKeyProcess
+) -> ProfileVersionConflict | None:
+    """직전 회차가 그린 기본 프리셋(맨 앞 이름 — `seen` 의 넷째 값)이 그 사이 남의 저장으로
+    바뀌었으면 그 거부 — 「기본으로」 만 쓴다(2026-11-08 사용자 답 U2).
+
+    「기본으로」 는 묶음에 하나뿐인 기본을 바꾸는 쓰기라, 고칠 프리셋만 견주면 남이 방금 정한 기본을
+    말없이 덮는다. 기본이 같으면(다른 프리셋만 바뀐 저장) 막지 않는다. 본 값이 없거나 옛 꼴(세 값 —
+    기본을 적기 전 판)이면 대조할 것이 없다.
+    """
+    if not (isinstance(seen, tuple) and len(seen) == 4 and isinstance(seen[0], int)):
+        return None
+    seen_version, _target, _processes, seen_default = seen
+    if seen_version == profile.version:
+        return None
+    names = list(profile.preset_names)
+    current_default = names[0] if names else ""
+    if seen_default == current_default:
+        return None
+    return ProfileVersionConflict(
+        f"다른 사용자가 먼저 기본 프리셋을 {quoted(current_default)}"
+        f"{direction_particle(current_default)} 바꿔 이번 「기본으로」 는 반영하지 않았습니다"
+        f"(편집 시작 v{seen_version} · 지금 v{profile.version}). 최신 저장본을 확인한 뒤 다시 "
+        "누르세요.",
         expected=seen_version,
         stored=profile.version,
     )
@@ -2591,8 +2688,11 @@ def _reject_key_process_write(
             if not st.session_state.get(KEY_PROCESS_FLASH_KEY):
                 queue_flash(KEY_PROCESS_FLASH_KEY, KEY_PROCESS_SAVED_MESSAGE)
             st.rerun(scope="app")
-        notice.error(message)
-        return
+        # 남의 저장에 진 거부는 저장 단추 곁 + 알림창 · Alarm 이다(2026-11-08 사용자 답 a1 — 팝업을
+        # 닫아도 기록이 남게). 담아 두고 앱 전체를 다시 돌려 카드 알림 칸(`render_flash`)이 꺼낸다 —
+        # 다음 회차는 최신 저장본을 그린다.
+        queue_flash(KEY_PROCESS_FLASH_KEY, message, kind="error")
+        st.rerun(scope="app")
     # 이름에 걸린 거부(「같은 이름의 프리셋이 이미 있습니다: …」)는 막은 이름으로 다시 짓는다.
     notice.error(_key_process_error_message(exc))
 
@@ -2619,9 +2719,11 @@ def _render_execution_editor(
     """
     submitted_base = seen(EXECUTION_BASE_VERSION_KEY)
     with st.container(border=True):
-        st.markdown("#### :material/exposure: 확보율 보정")
-        st.caption(
-            profile_version_caption(execution_profile, empty="아직 넣은 확보율 보정이 없습니다")
+        render_profile_heading(
+            "#### :material/exposure: 확보율 보정",
+            execution_profile,
+            key="home_execution",
+            empty="아직 넣은 확보율 보정이 없습니다",
         )
         if not months or not process_options:
             st.caption("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")

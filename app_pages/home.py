@@ -14,6 +14,7 @@ from capa_simulation.components.capacity_assumption_notice import (
 )
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import DialogBody
 from capa_simulation.components.home_figures import (
     BOTTLENECK_DETAIL_RANK_LIMIT,
     KEY_PROCESS_ABSENT_NOTICE,
@@ -28,6 +29,7 @@ from capa_simulation.components.home_main_cases import MAIN_CASE_NOTICE_KEY
 from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
+    KEY_PROCESS_PICK_KEY,
     KEY_PROCESS_PRESET_KEY,
     forget_unlisted_comparison,
     render_home_preference,
@@ -61,8 +63,12 @@ from capa_simulation.components.home_rendering import (
     take_home_figures,
 )
 from capa_simulation.components.home_settings import (
+    HOME_DIALOG_HOST,
+    HomeSettingsInputs,
     close_home_settings,
+    home_settings_inputs,
     home_settings_open,
+    remember_settings_inputs,
     render_home_dialog_host,
     render_home_settings_box,
 )
@@ -87,6 +93,8 @@ from capa_simulation.home_state import (
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
     EXECUTION_TOGGLE_KEY,
+    HOME_KEY_PROCESS_DIALOG,
+    HOME_PROCESS_FILTER_DIALOG,
     PAST_DATA_TOGGLE_KEY,
     PLAN_DETAIL_CUSTOMER_KEY,
     PRODUCT_SHARE_BASIS_DEFAULT,
@@ -101,7 +109,6 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
     calculation_stop_notice,
-    forget_page_dialogs,
     selected_month_range,
 )
 from capa_simulation.performance import PerformanceTrace
@@ -184,7 +191,10 @@ from capa_simulation.services.product_share import (
     combine_product_volume,
     past_product_volume,
 )
-from capa_simulation.services.securement_threshold import securement_threshold_caption
+from capa_simulation.services.securement_threshold import (
+    SecurementThresholds,
+    securement_threshold_caption,
+)
 from capa_simulation.services.simulation_cache import (
     build_home_simulation_cache_key,
     get_home_comparison_plan,
@@ -193,7 +203,9 @@ from capa_simulation.services.simulation_cache import (
     get_home_simulation,
 )
 from capa_simulation.settings import DUCKDB_PATH
+from capa_simulation.shared_process import publish_from_home
 from capa_simulation.sidebar_status import (
+    keeps_app_run_open,
     page_condition_slot,
     show_applied_month_range,
     show_calculation_stopped,
@@ -650,14 +662,28 @@ def toggle_process_dialog_selection(process: str) -> None:
     set_process_dialog_selection(selected)
 
 
-# 닫기(X·바깥·Esc)는 HOME 을 다시 돌리지 않는다(`on_dismiss` 기본값). 닫는 회차에 서버가 할 일이
-# 없다 — 초안은 팝업 안에서만 읽히고 열 때마다 `set_process_dialog_selection` 이 다시 적으며, 판정
-# 대상을 바꾸는 것은 「선택 공정 적용」(앱 전체 재실행) 하나다. 주요공정 히트맵 팝업도 같다.
+def open_process_filter(included: list[str]) -> None:
+    """공정 필터 칸의 콜백 — 초안을 지금 판정 대상으로 적고 HOME 팝업 호스트로 연다(다른 팝업 칸부터
+    비운다 — `DialogHost.open`). 호스트만 다시 돌 수 있으면 HOME 은 다시 계산하지 않고 진행 막대도
+    뜨지 않는다(2026-11-08 사용자 답 U5 — 설계 규칙 UI-PRF-01, 전에는 칸을 누른 회차가 앱 전체였다).
+    `included` 는 칸을 그린 회차의 판정 대상이다."""
+    set_process_dialog_selection(included)
+    HOME_DIALOG_HOST.open(HOME_PROCESS_FILTER_DIALOG, PROCESS_FIELD_KEY)
+
+
+# HOME 팝업 호스트가 열림 값 `process_filter` 로 연다. 닫기(X·바깥·Esc)는 호스트만 돈다 — 닫는
+# 회차에 HOME 이 할 일이 없다. 초안은 팝업 안에서만 읽히고 열 때마다 `open_process_filter` 가 다시
+# 적으며, 판정 대상을 바꾸는 것은 「선택 공정 적용」(열림 칸을 지우고 앱 전체 재실행) 하나다.
+# 주요공정 히트맵 팝업도 같다. 호스트만 도는 여는 회차의 인자(선택지 · 확보율 · 기간)는 직전 앱 전체
+# 회차의 것이고, 공정 단추 묶음과 자동 갱신 표지는 팝업을 여는 회차에만
+# 만든다(`_process_filter_dialog`).
 @st.dialog(
     PROCESS_FIELD_LABEL,
     width="large",
     icon=PROCESS_FIELD_ICON,
+    on_dismiss=HOME_DIALOG_HOST.close,
 )
+@keeps_app_run_open
 def show_process_filter_dialog(
     options: list[str],
     items: tuple[ProcessPickerItem, ...],
@@ -717,11 +743,12 @@ def show_process_filter_dialog(
 
     # 버튼에 보이는 글자만 표시명이며 콜백과 선택값은 반드시 원본 `공정` 이다.
     # 값을 표시명으로 바꾸면 아래 세션 되쓰기가 옵션에 없는 값을 만들어 대시보드가 오류
-    # 없이 텅 빈다.
+    # 없이 텅 빈다. 표시명이 다른 공정의 글자와 겹치면 「표시명 (원본)」 으로 가른다
+    # (`unique_format_func` — 같은 「AVI」 두 단추가 미달 · 충족에 따로 섰다, 2026-11-07 조사).
     render_process_picker(
         items,
         selected_set,
-        format_func=process_labels.format_func(),
+        format_func=process_labels.unique_format_func(options),
         on_toggle=toggle_process_dialog_selection,
         marks=auto_off_marks,
     )
@@ -731,7 +758,38 @@ def show_process_filter_dialog(
             selected_set, options, st.session_state[PROCESS_SELECTION_KEY]
         )
         st.session_state.pop(PROCESS_DIALOG_DRAFT_KEY, None)
-        st.rerun(scope="app")
+        # 좁힌 공정을 다른 화면(기준 정보 · 산출 결과 · 가용설비 Main · Space 등)의 공용 공정 칸으로
+        # 복사만 한다(2026-11-08 사용자 답 P1 · P2-1 — HOME 은 보내기만). 다른 화면에서 고른 값은
+        # 이 판정 대상과 리비전 저장값(`PROCESS_SELECTION_KEY`)에 들지 않는다. 모두 켰으면 공용 값을
+        # 지운다(전체).
+        publish_from_home(selected_set, options)
+        HOME_DIALOG_HOST.finish()
+
+
+def _process_filter_dialog(
+    options: list[str],
+    securement: pd.DataFrame,
+    thresholds: SecurementThresholds,
+    start_month: int,
+    end_month: int,
+) -> None:
+    """공정 필터 팝업을 연다 — 공정 단추 묶음(구역 · 최저 확보율)과 자동 갱신 표지는 여는 회차에만
+    만든다. 앱 전체 회차마다 만들지 않는다(DB 를 더 열지 않는다)."""
+    show_process_filter_dialog(
+        options,
+        build_process_picker_summary(
+            securement,
+            options,
+            start_month=start_month,
+            end_month=end_month,
+            thresholds=thresholds,
+        ),
+        securement_threshold_caption(thresholds, start_month=start_month, end_month=end_month),
+        start_month,
+        end_month,
+        # 공식버전 자동 갱신이 이 리비전(과 조상)에서 확보율로 뺀 공정의 표지.
+        load_auto_off_marks(str(DUCKDB_PATH.resolve())),
+    )
 
 
 # 화면이 읽는 것은 이번 선택지 안의 포함 공정이다. 보이지 않는 공정은 세션 값에만 남아 리비전을
@@ -744,10 +802,12 @@ thresholds = threshold_profile.thresholds
 # 사이드바 조건 패널의 공정 필터 줄. HOME 에서 늘 선다 — 판정 대상은 HOME 의 결론·Top5·상세
 # B/N 이 읽고 리비전을 저장할 때 프리셋에 담긴다. 좁혀 놓은 수가 값 칸에 늘 보여, B/N 결론이 일부
 # 공정으로만 계산됐다는 것을 팝업을 열지 않아도 읽는다. 공정을 좁혀도 미저장이 아니다(리비전
-# 프리셋이 저장 때 담는다) — 주황을 쓰지 않는다. 팝업은 칸을 누른 회차에만 연다. 콜백이 다른 팝업
-# 칸(사이드바의 시나리오·조회기간 팝업)부터 비운다 — 한 실행에 팝업은 하나뿐이다.
+# 프리셋이 저장 때 담는다) — 주황을 쓰지 않는다. 다른 화면에서 고른 공용 공정은 이 칸이 읽지
+# 않으므로(HOME 은 보내기만) 값 칸 강조도 없다. 팝업은 HOME 팝업 호스트가 연다(아래
+# `render_home_dialog_host`). 콜백이 다른 팝업 칸(사이드바의 시나리오·조회기간 팝업)부터 비운다 —
+# 한 실행에 팝업은 하나뿐이다.
 with page_condition_slot(0).container():
-    process_field_clicked = condition_field(
+    condition_field(
         PROCESS_FIELD_LABEL,
         process_field_value(
             len(set(included_processes) & set(process_options)), len(process_options)
@@ -757,27 +817,8 @@ with page_condition_slot(0).container():
         icon=PROCESS_FIELD_ICON,
         status=PROCESS_FIELD_HINT,
         disabled=not process_options,
-        on_click=forget_page_dialogs,
-    )
-if process_field_clicked:
-    set_process_dialog_selection(included_processes)
-    show_process_filter_dialog(
-        process_options,
-        build_process_picker_summary(
-            securement_rate,
-            process_options,
-            start_month=effective_start,
-            end_month=effective_end,
-            thresholds=thresholds,
-        ),
-        securement_threshold_caption(
-            thresholds, start_month=effective_start, end_month=effective_end
-        ),
-        effective_start,
-        effective_end,
-        # 공식버전 자동 갱신이 이 리비전(과 조상)에서 확보율로 뺀 공정의 표지. 팝업을 여는 회차에만
-        # 읽는다 — HOME 의 다른 회차는 DB 를 더 열지 않는다.
-        load_auto_off_marks(str(DUCKDB_PATH.resolve())),
+        on_click=open_process_filter,
+        args=(list(included_processes),),
     )
 # 월 축에 완전한 해의 연간 Total 칸을 끼운다. 표·차트·가로 스크롤 폭이 모두 이 축 하나를
 # 본다 — 축을 두 벌로 만들면 칸이 어긋난다.
@@ -1058,8 +1099,10 @@ else:
 # 밖으로 밀린다 — 팝업에 닿는 길이 이 상자 하나뿐이다. 계산이 멈춘 회차의 상자·카드는 위 `except` 가
 # 같은 차례로 그린다.
 with page_condition_slot(1).container():
-    render_key_process_field(
-        key_process_profile, process_labels=process_labels, process_options=process_options
+    key_process_dialog = render_key_process_field(
+        key_process_profile,
+        process_options=process_options,
+        database_path=str(DUCKDB_PATH.resolve()),
     )
 # 붙여넣기로 읽고 아직 저장하지 않은 과거 구간이 남으면 상자 왼쪽에 주황 띠, 팝업 안 `Past Data` 탭
 # 이름 옆에 점을 찍는다 — 다른 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가
@@ -1125,33 +1168,90 @@ def _render_preference_tabs(tabs: Mapping[str, OpenTab]) -> None:
 
     선행 B/O·선행 입고 실적은 실제 달에만 넣는다. 화면 축에 끼운 연간 Total 칸은 입력할 자리가
     아니다. 달은 `Capa LOB 현황` 월 축 그대로라 Past Data 를 켰으면 과거 구간 달도 든다.
+
+    호스트만 도는 여는 회차에도 불린다 — HOME 계산 결과(달 · 공정 목록 · 확보율 보정 대조 표)는
+    앱 전체 회차가 남긴 것(`home_settings_inputs`)을 읽고, 공용 저장값은 여기서 다시 읽는다(그 사이
+    다른 세션이 저장한 값을 놓치지 않게 — 캐시라 값싸다).
     """
-    advance_months = [int(value) for value in baseline_density["생산계획년월"]]
+    inputs = home_settings_inputs()
+    if inputs is None:
+        return
+    database_path = str(DUCKDB_PATH.resolve())
+    try:
+        dialog_threshold = load_global_securement_threshold(database_path)
+        dialog_advance = load_global_advance_load(database_path)
+        dialog_shipment = load_global_advance_shipment(database_path)
+        dialog_execution = load_global_execution_capacity(database_path)
+        dialog_top5 = load_global_top5_band(database_path)
+        dialog_summary = load_global_summary_note(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        render_data_error(
+            bootstrap_error_message(exc), code="HM-01", text="HOME 설정을 읽지 못했습니다"
+        )
+        return
     render_home_preference(
         tabs=tabs,
-        months=advance_months,
-        month_labels=[month_label(value) for value in advance_months],
-        threshold_profile=threshold_profile,
-        advance_profile=advance_profile,
-        advance_shipment_profile=advance_shipment_profile,
-        execution_profile=execution_profile,
-        top5_band_profile=top5_band_profile,
-        summary_profile=summary_profile,
+        months=list(inputs.months),
+        month_labels=[month_label(value) for value in inputs.months],
+        threshold_profile=dialog_threshold,
+        advance_profile=dialog_advance,
+        advance_shipment_profile=dialog_shipment,
+        execution_profile=dialog_execution,
+        top5_band_profile=dialog_top5,
+        summary_profile=dialog_summary,
         # 확보율 보정은 **원본 공정명** 기준이다. 표시명은 고르는 화면에서만 보인다.
-        process_options=process_options,
-        process_labels=process_labels,
-        unmatched_execution=unmatched_execution,
-        clamped_execution=clamped_execution,
-        database_path=str(DUCKDB_PATH.resolve()),
+        process_options=list(inputs.process_options),
+        process_labels=get_process_labels(),
+        unmatched_execution=inputs.unmatched,
+        clamped_execution=inputs.clamped,
+        database_path=database_path,
     )
 
 
-# 팝업 호스트는 본문 끝 한 자리다 — 열렸으면 「HOME 설정」 팝업, 아니면 빈 스타일(이벤트 칸 자리
-# 수를 회차마다 같게). Past Data 는 **저장된** 프로필을 받는다. 표시용으로 비운 것을 주면 화면이
-# 「저장 0행」으로 보이고, 저장이 그 빈 값을 DB 에 되쓴다.
+def _render_past_data_tab() -> None:
+    """「HOME 설정」 팝업의 `Past Data` 탭 본문 — **저장된** 프로필을 다시 읽어 넘긴다. 표시용으로
+    비운 것(과거 구간을 끈 화면)을 주면 화면이 「저장 0행」으로 보이고, 저장이 그 빈 값을 DB 에
+    되쓴다."""
+    database_path = str(DUCKDB_PATH.resolve())
+    try:
+        stored = load_global_past_data(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        render_data_error(
+            bootstrap_error_message(exc), code="HM-01", text="과거 구간을 읽지 못했습니다"
+        )
+        return
+    render_past_data_management(database_path, stored)
+
+
+# 「HOME 설정」 팝업이 읽는 계산 결과 — 호스트만 도는 여는 회차는 이 값을 읽는다(`home_settings`).
+remember_settings_inputs(
+    HomeSettingsInputs(
+        months=tuple(int(value) for value in baseline_density["생산계획년월"]),
+        process_options=tuple(process_options),
+        unmatched=unmatched_execution,
+        clamped=clamped_execution,
+    )
+)
+# 팝업 호스트는 본문 끝 한 자리다 — 열림 값이 고른 팝업 하나(「HOME 설정」 · 공정 필터 · 주요공정
+# 히트맵), 아니면 닫힌 팝업의 알림 표지(이벤트 칸 자리 수를 회차마다 같게). 매 앱 전체 회차 빠짐없이
+# 세운다 — 세우지 않은 회차 뒤의 여는 콜백은 호스트를 찾지 못해 앱 전체로 물러난다.
+home_dialogs: dict[str, DialogBody] = {}
+if process_options:
+    home_dialogs[HOME_PROCESS_FILTER_DIALOG] = partial(
+        _process_filter_dialog,
+        list(process_options),
+        securement_rate,
+        thresholds,
+        effective_start,
+        effective_end,
+    )
+if key_process_dialog is not None:
+    home_dialogs[HOME_KEY_PROCESS_DIALOG] = key_process_dialog
 render_home_dialog_host(
     preference=_render_preference_tabs,
-    past_data=partial(render_past_data_management, str(DUCKDB_PATH.resolve()), stored_past_profile),
+    past_data=_render_past_data_tab,
+    dialogs=home_dialogs,
+    widget_keys={HOME_KEY_PROCESS_DIALOG: (KEY_PROCESS_PICK_KEY,)},
     closed_notices=(MAIN_CASE_NOTICE_KEY,),
 )
 home_trace.mark("Plotly 전달")
