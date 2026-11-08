@@ -152,14 +152,16 @@ CONFLICTS = frozenset(
 OWN_CHECKS = frozenset({"is_own_save", "is_own_profile_save"})
 # 제 저장일 수 없는 충돌(모듈 파일 이름 → 예외 이름). 판정을 넣으면 실행될 수 없는 갈래만 는다.
 NOT_OWN_SAVE_CONFLICTS = {
-    # HOME 주요 Case — 쓰기는 대조 없이(`expected_version` 없이) 하고, 충돌은 「리비전만 고른 쓰기」
-    # 의 시나리오 대조(그 Case 의 지금 시나리오 ≠ 고른 짝의 시나리오)뿐이라 지금 짝이 고른 짝일 수
-    # 없다. 같은 짝을 겹쳐 고른 둘째 콜백은 쓰기 전 「지금 짝과 같으면 쓰지 않음」 이 거른다.
+    # HOME 주요 Case — 두 상자 모두 화면이 그린 짝을 대조한다(`expected_pair`). 대조 토큰이 version
+    # 이 아니라 되돌아올 수 있는 값 짝이라, 판정을 넣으면 지난 표지가 남의 같은 값과 맞아떨어져 남의
+    # 저장을 제 저장으로 읽는다. 제 저장일 일도 없다 — 팝업 본문은 프래그먼트라 앞 고름의 회차가
+    # 끊기지 않아 뒤 고름의 인자가 앞 고름의 짝이고, 같은 짝을 겹쳐 고른 둘째 콜백은 쓰기 전 「지금
+    # 짝과 같으면 쓰지 않음」 이 거른다.
     "home_main_cases.py": frozenset({"ProfileVersionConflict"}),
 }
-# 대조 값의 대체로 보는 「지금 값」 — 프로필 version 과 그 회차에 다시 읽은 지금 이름.
+# 대조 값의 대체로 보는 「지금 값」 — 프로필 version 과 그 회차에 다시 읽은 지금 값의 이름.
 CURRENT_ATTRIBUTES = frozenset({"version"})
-CURRENT_NAMES = frozenset({"current"})
+CURRENT_NAMES = frozenset({"current", "stored"})
 # 본 값을 이름 토막으로 알아보는 말 — 「bases」 는 여러 층의 본 값 묶음(`PENDING_BASES_KEY`).
 SEEN_PARTS = frozenset({"base", "bases", "seen"})
 # 이름에 BASE·SEEN 이 들었지만 write_guard 밖에서 적는 세션 칸(모듈 파일 이름, 칸 이름).
@@ -551,6 +553,18 @@ def _session_app(body: str) -> AppTest:
         "import capa_simulation.components.write_guard as write_guard\n" + body,
         default_timeout=30,
     )
+
+
+def test_a_fallback_to_the_value_just_read_is_caught() -> None:
+    """방금 읽은 지금 값(`stored`)으로 대조 값을 바꾸는 꼴도 대체다 — 이름이 `seen` 인자라도 같다.
+    판정 조건이 붙어도 그 값이 대조를 지나 남의 저장을 덮는다."""
+    source = """
+def save(repository, seen, marks):
+    stored = repository.load().case(1)
+    expected = stored if is_own_save("name", seen, stored, marks) else seen
+    repository.replace(expected_pair=expected)
+"""
+    assert current_fallbacks(source) == [4]
 
 
 def test_seen_returns_no_fallback_and_own_save_needs_the_exact_pair() -> None:

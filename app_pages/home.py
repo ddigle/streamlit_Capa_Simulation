@@ -24,6 +24,7 @@ from capa_simulation.components.home_figures import (
     build_plan_detail_figures,
 )
 from capa_simulation.components.home_main_case_chips import render_main_case_chips
+from capa_simulation.components.home_main_cases import MAIN_CASE_NOTICE_KEY
 from capa_simulation.components.home_preference import (
     COMPARISON_REVISION_KEY,
     COMPARISON_SCENARIO_KEY,
@@ -1151,6 +1152,7 @@ def _render_preference_tabs(tabs: Mapping[str, OpenTab]) -> None:
 render_home_dialog_host(
     preference=_render_preference_tabs,
     past_data=partial(render_past_data_management, str(DUCKDB_PATH.resolve()), stored_past_profile),
+    closed_notices=(MAIN_CASE_NOTICE_KEY,),
 )
 home_trace.mark("Plotly 전달")
 loading.close()

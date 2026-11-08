@@ -25,6 +25,22 @@ HOME 슬롯은 셋으로 고정이다 — 슬롯 1 은 지금 최신 공식버�
 때 그 시나리오 첫 리비전으로 메우기(본 version 대조 — 그 사이 남이 고른 값을 덮지 않는다). 선택지
 라벨에는 활성 상태를 붙이지 않는다(`_comparison_active_note` 와 같은 까닭).
 
+**겹친 고름은 덮지 않는다.** 두 상자의 콜백은 그 회차가 그린 짝을 받아 그 Case 의 지금 짝과 같은
+쓰기 트랜잭션에서 견준다(`_replace_case`). 다르면 쓰지 않고 진 쪽 상자 안 · 알림창에 알린다. 다른
+Case 나 이름 바꾸기는 그 Case 의 짝을 바꾸지 않아 막지 않는다. 대조 값을 제 저장 판정으로 바꾸지
+않는다(`write_guard.is_own_save`) — 토큰이 version 이 아니라 되돌아올 수 있는 값 짝이라 지난 표지가
+남의 같은 값과 맞아떨어지면 대조를 건너뛴 말없는 덮어쓰기가 된다. 잇단 제 고름은 판정 없이도 남는다
+— 팝업 본문은 프래그먼트라 앞 고름의 회차가 끊기지 않아 뒤 고름의 인자가 앞 고름의 짝이다.
+
+**되돌아온 옛 값은 고름이 아니다.** 회차가 상자를 프로필 값으로 옮기면(거절된 고름을 되돌리거나 남의
+지정을 처음 보이는 회차) 브라우저는 새 값을 받기 전까지 옛 값을 들고 있다가 그 틈의 다음 신호(팝업
+닫기 · Esc · 탭 누름)에 실어 보낸다. 서버는 그것을 바뀐 값으로 읽어 콜백을 다시 부르는데 콜백 인자는
+방금 그린 새 짝이라 대조를 지난다 — 아무도 고르지 않은 값이 남의 지정을 덮는다. 대조 값으로는 가를
+수 없어 상자를 옮긴 회차가 그 Case 에 거부 표지를 적고(`_hold_moved_boxes`) 창
+(`write_guard.TRAILING_PRESS_SECONDS`) 안의 콜백은 쓰지 않는다. 표지를 거절한 콜백이 아니라 상자를
+옮기는 회차가 적는 까닭이 둘이다 — 고름 없이 탭만 왕복해도 같은 틈이 생기고, 창이 거절 시각부터면
+회차가 창보다 길 때 브라우저가 새 값을 받기도 전에 창이 끝난다.
+
 **숨은 탭 회차는 DB 를 읽지도 쓰지도 않는다.** 팝업 안 탭은 `stateful_tabs` 라 다른 탭(판정 기준 ·
 Past Data 등)을 보는 동안에도 숨은 이 탭 본문이 회차마다 돈다 — 그 조작마다 목록 읽기 넷이 실리고,
 위 두 쓰기와 그 한 번뿐인 알림이 아무도 보지 않는 탭에서 소비된다. 그래서 탭이 숨으면 마지막으로
@@ -47,15 +63,22 @@ import html
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias
 
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
+from capa_simulation.components.write_guard import (
+    held_profile_conflict,
+    note_profile_conflict,
+    profile_conflict_marks,
+)
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
@@ -78,10 +101,14 @@ from capa_simulation.services.main_cases import (
     official_slot_label,
 )
 
+# Case 한 칸의 (시나리오, 리비전) 짝. 비운 Case 는 `(None, None)` 이다.
+CasePair: TypeAlias = tuple[str | None, str | None]
+
 MAIN_CASE_TITLE = "주요 Case"
 MAIN_CASE_SOURCE = "HOME 주요 Case 선택"
 MAIN_CASE_FILL_SOURCE = "HOME 주요 Case 리비전 메움"
-# 콜백이 저장하지 못했을 때 남기는 한 줄. 다음 보이는 회차의 상자 안 알림 칸이 꺼내 보인다.
+# 콜백이 저장하지 못했을 때 남기는 한 줄. 다음 보이는 회차의 상자 안 알림 칸이 꺼내 보이고, 그 전에
+# 팝업이 닫히면 닫힌 회차의 호스트가 알림창으로 넘긴다(`render_home_dialog_host`).
 MAIN_CASE_NOTICE_KEY = "home_preference_main_case_notice"
 # 마지막으로 보인 상자의 재료(`_PickerView`). 숨은 탭 회차가 DB 없이 다시 그린다.
 MAIN_CASE_VIEW_KEY = "home_preference_main_case_view"
@@ -268,6 +295,19 @@ def _notify(text: str) -> None:
     queue_flash(MAIN_CASE_NOTICE_KEY, text, kind="warning", icon=":material/info:")
 
 
+def _notify_held(text: str) -> None:
+    """거부 표지에 걸린 고름을 알린다 — 담아 둔 알림이 있거나 방금 보냈으면 더 담지 않는다.
+
+    거절된 고름이 되돌아온 것이면 첫 거절이 이미 알렸다. 그 칸이 다시 서는 회차가 같은 id 로 다시
+    보내므로(`flash.render_flash`) 새 알림을 담으면 같은 일이 두 번 뜬다.
+    """
+    if (
+        pending_flash(MAIN_CASE_NOTICE_KEY) is None
+        and alerts.recent_sent(MAIN_CASE_NOTICE_KEY) is None
+    ):
+        _notify(text)
+
+
 def unset_choice_label(scenario_names: Iterable[str]) -> str:
     """「지정 안 함」 선택지 글자. 같은 이름의 시나리오가 있으면 겹치지 않는 글로 바꾼다.
 
@@ -436,8 +476,11 @@ def _render_case(
     st.html(case_head_markup(case_no, focused=focused))
     scenario_key = main_case_scenario_key(case_no)
     revision_key = main_case_revision_key(case_no)
+    _hold_moved_boxes(case_no, plan)
     # 적기는 `on_change` 를 부르지 않아 프로필을 다시 쓰지 않는다. 목록에 없는 값은 앞에서 비웠다.
     st.session_state[scenario_key] = plan.scenario_id
+    # 콜백은 이 회차가 그린 짝을 받아 대조한다(`_replace_case`).
+    seen = (plan.scenario_id, plan.revision_id)
     st.selectbox(
         "시나리오",
         options=[None, *scenario_by_id],
@@ -445,7 +488,7 @@ def _render_case(
         key=scenario_key,
         placeholder=unset_label,
         on_change=_save_case_scenario,
-        args=(database_path, case_no),
+        args=(database_path, case_no, seen),
     )
     if plan.scenario_id is None:
         st.session_state.pop(revision_key, None)
@@ -474,8 +517,34 @@ def _render_case(
         format_func=lambda value: revision_label(revision_by_id[value]),
         key=revision_key,
         on_change=_save_case_revision,
-        args=(database_path, case_no),
+        args=(database_path, case_no, seen),
     )
+
+
+def _save_name(case_no: int) -> str:
+    """Case 의 거부 표지 이름(`write_guard` — Case 마다 따로 막는다)."""
+    return f"home_main_case{case_no}"
+
+
+def _hold_moved_boxes(case_no: int, plan: _CasePlan) -> None:
+    """이 회차가 Case 의 상자를 프로필 값으로 옮기면 거부 표지를 적는다 — 상자에 적기 전에 부른다.
+
+    상자 칸의 값이 이번에 적을 값과 다르면 브라우저는 아직 옛 값을 들고 있다(거절된 고름 · 남이
+    바꾸기 전 값). 그 값이 되돌아와도 창 안에서는 쓰지 않는다(`_replace_case`). 팝업을 처음 그리는
+    회차는 칸이 없고, 제 고름은 콜백이 칸을 맞춰 두어 여기 걸리지 않는다. 틈에 사용자가 정말 고른
+    값과 가를 수 없어 알림 글은 둘 다에 맞는 말로 둔다.
+    """
+    boxes = (
+        (main_case_scenario_key(case_no), plan.scenario_id),
+        (main_case_revision_key(case_no), plan.revision_id),
+    )
+    if any(key in st.session_state and st.session_state[key] != value for key, value in boxes):
+        note_profile_conflict(
+            profile_conflict_marks(),
+            _save_name(case_no),
+            f"{case_title(case_no)} 지정이 방금 바뀌어 상자를 지금 지정으로 돌렸습니다. 고르던 "
+            "값은 저장하지 않았으니 지금 지정을 확인한 뒤 다시 고르세요.",
+        )
 
 
 def _scenario_choice_label(
@@ -487,7 +556,7 @@ def _scenario_choice_label(
     return scenarios[value].scenario_name
 
 
-def _save_case_scenario(database_path: str, case_no: int) -> None:
+def _save_case_scenario(database_path: str, case_no: int, seen: CasePair) -> None:
     """「시나리오」 상자의 콜백. 고른 시나리오를 **그 첫 리비전과 짝으로** 저장한다.
 
     위젯 기본값은 `on_change` 를 부르지 않는다 — 시나리오만 저장하면 뒤이어 서는 리비전 상자의
@@ -496,15 +565,16 @@ def _save_case_scenario(database_path: str, case_no: int) -> None:
     함」은 두 칸을 함께 비운다.
     """
     chosen = st.session_state.get(main_case_scenario_key(case_no))
-    _replace_case(database_path, case_no, lambda repository: _scenario_pair(repository, chosen))
+    _replace_case(
+        database_path, case_no, lambda repository: _scenario_pair(repository, chosen), seen
+    )
 
 
-def _save_case_revision(database_path: str, case_no: int) -> None:
+def _save_case_revision(database_path: str, case_no: int, seen: CasePair) -> None:
     """「리비전」 상자의 콜백. 고른 리비전이 고른 시나리오의 것일 때만 저장한다.
 
-    상자의 리비전은 화면이 본 시나리오의 것이다 — 그 사이 다른 세션이 이 Case 의 시나리오를 바꿨으면
-    저장하지 않고 알린다(`expected_scenario_id`). 짝으로 통째 덮으면 남의 시나리오 고름이 알림 없이
-    되돌아간다.
+    상자의 리비전은 화면이 본 시나리오의 것이다 — 짝으로 통째 쓰므로 그 사이 다른 세션이 이 Case 를
+    바꿨으면 대조(`seen`)에 걸려 저장하지 않고 알린다.
     """
     scenario_id = st.session_state.get(main_case_scenario_key(case_no))
     revision_id = st.session_state.get(main_case_revision_key(case_no))
@@ -512,26 +582,29 @@ def _save_case_revision(database_path: str, case_no: int) -> None:
         database_path,
         case_no,
         lambda repository: _revision_pair(repository, scenario_id, revision_id),
-        keep_scenario=True,
+        seen,
     )
 
 
 def _replace_case(
     database_path: str,
     case_no: int,
-    choose: Callable[[DuckDBScenarioRepository], tuple[str | None, str | None] | None],
-    *,
-    keep_scenario: bool = False,
+    choose: Callable[[DuckDBScenarioRepository], CasePair | None],
+    seen: CasePair,
 ) -> None:
     """`choose` 가 낸 짝을 그 Case 에 쓴다. 짝이 없거나(id 가 아니다) 프로필과 같으면 쓰지 않는다.
 
     콜백은 `app.py` 의 실행 핀 밖(본문 전)에서 돈다 — 목록 읽기·프로필 읽기·쓰기가 연결마다 DuckDB
     인스턴스를 새로 만들지 않게 여기서 핀을 잡는다(`home_preference._replace_comparison_profile` 와
     같다). 프로필은 캐시가 아니라 DB 에서 읽어 견준다 — 같은 짝을 다시 쓰면 아무도 바꾸지 않았는데
-    version 이 오른다. `keep_scenario` 면 그 Case 의 지금 시나리오가 고른 짝의 시나리오일 때만
-    쓴다(같은 쓰기 트랜잭션에서 대조). 저장하지 못하면 다음 회차 상자 안에 한 줄 남긴다(상자는
-    프로필 값으로 돌아간다).
+    version 이 오른다. 고르는 것이 곧 저장이라 그 Case 의 지금 짝이 화면이 그린 짝 `seen` 일 때만
+    쓴다(같은 쓰기 트랜잭션에서 대조 — 프로필 version 이 아니라 이 짝이라 다른 Case 나 이름 바꾸기는
+    막지 않는다). 저장하지 못하면 다음 회차 상자 안에 한 줄 남긴다(상자는 프로필 값으로 돌아간다).
+
+    상자가 막 옮겨진 창 안의 콜백은 쓰지 않는다(`_hold_moved_boxes` — `seen` 이 새 짝이라 대조로는
+    못 막는다). 그 값이 지금 짝과 같으면 잃은 고름이 없어 알리지도 않는다.
     """
+    conflicts = profile_conflict_marks()
     with pinned_connections(Path(database_path)):
         try:
             repository = get_scenario_repository(database_path)
@@ -540,11 +613,15 @@ def _replace_case(
                 return
             if repository.load_global_main_cases().case(case_no) == chosen:
                 return
+            held = held_profile_conflict(conflicts, _save_name(case_no))
+            if held is not None:
+                _notify_held(held)
+                return
             repository.replace_global_main_case(
                 case_no,
                 *chosen,
                 source=MAIN_CASE_SOURCE,
-                expected_scenario_id=chosen[0] if keep_scenario else None,
+                expected_pair=seen,
             )
         except ProfileVersionConflict as exc:
             _notify(bootstrap_error_message(exc))
@@ -555,11 +632,12 @@ def _replace_case(
             )
             return
     clear_global_main_cases_cache()
+    # 시나리오 고름은 리비전 상자도 제 손으로 옮겼다 — 다음 회차가 남이 옮긴 상자로 보지 않게
+    # 맞춘다.
+    st.session_state[main_case_revision_key(case_no)] = chosen[1]
 
 
-def _scenario_pair(
-    repository: DuckDBScenarioRepository, scenario_id: object
-) -> tuple[str | None, str | None] | None:
+def _scenario_pair(repository: DuckDBScenarioRepository, scenario_id: object) -> CasePair | None:
     """시나리오 상자가 받은 값의 저장할 짝. 활성 시나리오 id 가 아니면(되보낸 라벨 등) `None`."""
     if scenario_id is None:
         return None, None
@@ -572,7 +650,7 @@ def _scenario_pair(
 
 def _revision_pair(
     repository: DuckDBScenarioRepository, scenario_id: object, revision_id: object
-) -> tuple[str | None, str | None] | None:
+) -> CasePair | None:
     """리비전 상자가 받은 값의 저장할 짝. 고른 시나리오의 실제 리비전이 아니면 `None`."""
     if scenario_id is None or revision_id is None:
         return None
