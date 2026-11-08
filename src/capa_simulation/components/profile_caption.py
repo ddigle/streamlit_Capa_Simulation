@@ -1,4 +1,4 @@
-# Purpose: 공용 프로필의 버전·출처·저장시각 캡션 한 줄을 한 규칙으로 만든다.
+# Purpose: 공용 프로필의 버전·출처·저장시각 캡션 한 줄을 한 규칙으로 만들어 제목 옆에 그린다.
 
 """공용 프로필 버전 캡션.
 
@@ -22,17 +22,36 @@ Proc Rename 의 「변경 메모」가 그대로 출처가 되고, 캡션은 늘
 모델을 import 하지 않는다. `persistence.models` 를 붙잡으면 화면 조각 하나가 저장 계층을
 끌고 들어오고, 프로필이 늘 때마다 이 모듈도 같이 고쳐야 한다. 구조적 타입(Protocol)으로
 세 필드만 요구한다.
+
+**제목 옆 버전 줄**(`render_profile_heading`). 구획 제목 아래 따로 서던 버전 캡션을 제목과 한 줄에
+둔다(2026-11-08 사용자 그림 메모 g18 「공용 버전 … 타임스탬프 줄을 각 타이틀 옆으로」). 줄은 가로 칸
+(`st.container(horizontal=True)` — 기본 줄 바꿈)이라 칸이 좁으면 버전 줄이 제목 아래로 내려간다.
+버전 줄 글은 `profile_version_caption` 그대로라 출처를 막는 규칙도 같다.
+
+```python
+render_profile_heading(
+    "#### :material/rule: 확보율 판정 기준",
+    threshold_profile,
+    empty="아직 저장하지 않아 …",
+    detail=_threshold_detail(threshold_profile),
+    help=THRESHOLD_HELP,  # 제목 풍선(있으면)
+)
+```
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from typing import Final, Protocol
+
+import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
 
 VERSION_CAPTION_PREFIX = "공용 버전 "
 CAPTION_SEPARATOR = " · "
+# 제목과 버전 줄 사이 — 같은 줄의 짝이라 본문 칸 사이(medium)보다 좁다.
+HEADING_GAP: Final = "small"
 
 
 class HasProfileVersion(Protocol):
@@ -81,3 +100,26 @@ def profile_version_caption(
     if suffix is not None:
         parts.append(suffix)
     return VERSION_CAPTION_PREFIX + CAPTION_SEPARATOR.join(parts)
+
+
+def render_profile_heading(
+    title: str,
+    profile: HasProfileVersion,
+    *,
+    empty: str,
+    detail: str | None = None,
+    suffix: str | None = None,
+    help: str | None = None,
+    key: str | None = None,
+) -> None:
+    """구획 제목과 그 공용 버전 줄(`profile_version_caption`)을 한 줄에 그린다.
+
+    `title` 은 앱이 지은 마크다운 제목(「#### :material/…: 이름」)이고 `help` 는 그 제목의 풍선이다.
+    버전 줄은 제목 오른쪽에 붙고(가운데 맞춤), 칸이 좁으면 제목 아래로 내려간다. `empty`·`detail`·
+    `suffix` 는 `profile_version_caption` 과 같다. 본문 칸에만 쓰고 이벤트 칸에는 아무것도 쓰지 않아
+    팝업 본문 · 프래그먼트 어디서나 부를 수 있다.
+    """
+    caption = profile_version_caption(profile, empty=empty, detail=detail, suffix=suffix)
+    with st.container(horizontal=True, vertical_alignment="center", gap=HEADING_GAP, key=key):
+        st.markdown(title, help=help, width="content")
+        st.caption(caption, width="content")
