@@ -166,6 +166,7 @@ from capa_simulation.services.key_process import (
     resolve_preset_name,
 )
 from capa_simulation.services.korean_particle import (
+    direction_particle,
     object_particle,
     with_object_particle,
     with_topic_particle,
@@ -2316,8 +2317,13 @@ def _render_key_process_editor(
         is_new = target == NEW_KEY_PROCESS_PRESET
         current = () if is_new else profile.processes_of(target)
         stale = _stale_key_process_target(seen_target, profile, target, current)
-        # 결과가 무엇이든 다음 쓰기는 이 회차가 그린 저장본에서 출발한다.
-        remember_seen(KEY_PROCESS_SEEN_KEY, (profile.version, target, tuple(current)))
+        stale_default = _stale_key_process_default(seen_target, profile)
+        # 결과가 무엇이든 다음 쓰기는 이 회차가 그린 저장본에서 출발한다. 본 기본 프리셋(맨 앞
+        # 이름)도 함께 적는다 — 「기본으로」 가 대조한다(2026-11-08 사용자 답 U2).
+        remember_seen(
+            KEY_PROCESS_SEEN_KEY,
+            (profile.version, target, tuple(current), names[0] if names else ""),
+        )
         known_options = set(process_options)
         # 이 시나리오·조회기간에 없는 공정도 **선택지에 남긴다**(표시만 「이 화면에 없음」). 빼 두면
         # 저장이 그 공정을 공용 프리셋에서 조용히 지웠고, 공정이 모두 없는 프리셋은 이름조차 못
@@ -2378,7 +2384,13 @@ def _render_key_process_editor(
                 ),
             )
         if not is_new:
-            _render_key_process_preset_actions(profile, target, database_path, stale=stale)
+            _render_key_process_preset_actions(
+                profile,
+                target,
+                database_path,
+                stale=stale,
+                stale_default=stale_default,
+            )
         if not submitted:
             return
         # 표지 dict 는 저장 전에 받아 둔다 — 저장 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수 있다.
@@ -2496,11 +2508,15 @@ def _render_key_process_preset_actions(
     database_path: str,
     *,
     stale: ProfileVersionConflict | None = None,
+    stale_default: ProfileVersionConflict | None = None,
 ) -> None:
     """고르고 있는 프리셋의 `기본으로`·`삭제`. 둘 다 묶음 전체를 다시 쓴다.
 
     `stale` 은 단추를 그린 화면이 본 고칠 프리셋이 그 사이 바뀌었다는 거부다(편집 카드가 넘긴다).
-    있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다.
+    있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다. `stale_default` 는 그 화면이
+    본 기본 프리셋(맨 앞)이 그 사이 남의 저장으로 바뀌었다는 거부다 — 「기본으로」 만 쓰지 않는다
+    (2026-11-08 사용자 답 U2 「화면이 본 기본과 지금 기본이 다르면 거절한다 — 묶음에 하나뿐인
+    값이라 이 값만 본다」). 「삭제」 는 고칠 프리셋만 대조한다(2026-10-26 결정).
     """
     names = list(profile.preset_names)
     already_default = names[0] == target
@@ -2544,6 +2560,9 @@ def _render_key_process_preset_actions(
     if stale is not None:
         _reject_key_process_write(stale, st.container(), save_marks, conflict_marks)
         return
+    if make_default and stale_default is not None:
+        _reject_key_process_write(stale_default, st.container(), save_marks, conflict_marks)
+        return
     try:
         saved = get_scenario_repository(database_path).replace_global_key_process_presets(
             presets, source="웹 직접 편집", expected_version=profile.version
@@ -2568,9 +2587,9 @@ def _stale_key_process_target(
     공정이 바뀌었거나 그 이름이 없어져 「고칠 프리셋」 이 다른 프리셋으로 넘어갔으면 거부한다. 첫
     회차(`seen` 없음)와 version 이 그대로인 회차는 대조할 것이 없다.
     """
-    if not (isinstance(seen, tuple) and len(seen) == 3 and isinstance(seen[0], int)):
+    if not (isinstance(seen, tuple) and len(seen) in (3, 4) and isinstance(seen[0], int)):
         return None
-    seen_version, seen_target, seen_processes = seen
+    seen_version, seen_target, seen_processes = seen[:3]
     if seen_version == profile.version:
         return None
     if seen_target == target and tuple(seen_processes) == tuple(current):
@@ -2579,6 +2598,35 @@ def _stale_key_process_target(
         "다른 사용자가 먼저 주요공정 프리셋을 저장해 이번 저장은 반영하지 않았습니다"
         f"(편집 시작 v{seen_version} · 지금 v{profile.version}). 최신 저장본을 확인한 뒤 다시 "
         "저장하세요.",
+        expected=seen_version,
+        stored=profile.version,
+    )
+
+
+def _stale_key_process_default(
+    seen: object, profile: GlobalKeyProcess
+) -> ProfileVersionConflict | None:
+    """직전 회차가 그린 기본 프리셋(맨 앞 이름 — `seen` 의 넷째 값)이 그 사이 남의 저장으로
+    바뀌었으면 그 거부 — 「기본으로」 만 쓴다(2026-11-08 사용자 답 U2).
+
+    「기본으로」 는 묶음에 하나뿐인 기본을 바꾸는 쓰기라, 고칠 프리셋만 견주면 남이 방금 정한 기본을
+    말없이 덮는다. 기본이 같으면(다른 프리셋만 바뀐 저장) 막지 않는다. 본 값이 없거나 옛 꼴(세 값 —
+    기본을 적기 전 판)이면 대조할 것이 없다.
+    """
+    if not (isinstance(seen, tuple) and len(seen) == 4 and isinstance(seen[0], int)):
+        return None
+    seen_version, _target, _processes, seen_default = seen
+    if seen_version == profile.version:
+        return None
+    names = list(profile.preset_names)
+    current_default = names[0] if names else ""
+    if seen_default == current_default:
+        return None
+    return ProfileVersionConflict(
+        f"다른 사용자가 먼저 기본 프리셋을 {quoted(current_default)}"
+        f"{direction_particle(current_default)} 바꿔 이번 「기본으로」 는 반영하지 않았습니다"
+        f"(편집 시작 v{seen_version} · 지금 v{profile.version}). 최신 저장본을 확인한 뒤 다시 "
+        "누르세요.",
         expected=seen_version,
         stored=profile.version,
     )

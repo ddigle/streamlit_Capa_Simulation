@@ -207,7 +207,7 @@ LEDGER: dict[tuple[str, str, str], str] = {
         f"{_PARTS}/home_preference.py",
         "_render_key_process_preset_actions",
         "replace_global_key_process_presets",
-    ): SAME_REPLACE,
+    ): VERSION_CHECK,
     (
         f"{_PARTS}/home_preference.py",
         "_save_execution_capacity",
