@@ -26,13 +26,16 @@ import streamlit as st
 import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation import alerts
+from capa_simulation import alerts, settings
 from capa_simulation.components import write_guard
 from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
 from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
-from capa_simulation.persistence.cache import load_global_securement_threshold
+from capa_simulation.persistence.cache import (
+    get_scenario_repository,
+    load_global_securement_threshold,
+)
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
 from capa_simulation.reference_grid_keys import DATASETS, EDIT_TABLES
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
@@ -144,12 +147,33 @@ _CELL_STOPS = (
 # 모듈수 표 — 기준 정보 편집표가 아니라 앱에서 고칠 수 없다. 원천을 고쳐 다시 등록해야 풀린다
 # (`scenario_registration.RegistrationCapacityCheck.fix_hint` 와 같은 말).
 _MODULE_TABLE = "RQ_MODULE"
-# 조회기간 밖 오류 글(`simulation_cache.outside_period_error`)이 고칠 화면을 드는 대목 — 모듈수는
-# 그 화면들에서 고칠 수 없어 모듈수 전문에서는 뺀다. 두면 첫머리의 「원천을 고쳐 다시 등록」 과
-# 맞부딪친다.
-_OUTSIDE_PERIOD_SCREENS = re.compile(
-    r" — 오류가 가리키는 화면\([^)]*\)에서 고친 뒤 새 리비전으로 저장하세요"
+
+
+# 이 세션에 불러온 리비전이 없고(`reference_cache.NoActiveRevision`) 저장소의 시나리오가 모두
+# 보관본일 때의 글 — 첫 접속이 불러올 공식버전도, 목록에서 고를 시나리오도 없다. 되살리는 길(목록
+# 관리 오른쪽 「보관함」 칸의 「되돌리기」)을 Alarm 줄 두 줄 안에 든다.
+ARCHIVED_ONLY_MESSAGE = (
+    "보관본만 있어 불러올 시나리오가 없습니다 — 시나리오 관리 › Capa 시나리오 › 목록 관리의 "
+    "「보관함」 에서 「되돌리기」 한 뒤 불러오세요."
 )
+
+
+def _only_archived_scenarios() -> bool:
+    """시뮬레이션 저장소에 시나리오가 있고 모두 보관본인가 — 활성 리비전이 없는 회차에만 부른다.
+
+    DB 파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면 아니라고 본다 — 지금
+    글이 그대로 선다. 경로는 부를 때 설정에서 읽는다(시험이 바꾼다).
+    """
+    path = settings.DUCKDB_PATH
+    if not path.exists():
+        return False
+    try:
+        scenarios = get_scenario_repository(str(path.resolve())).list_scenarios(
+            include_archived=True
+        )
+    except (OSError, duckdb.Error):
+        return False
+    return bool(scenarios) and all(scenario.status != "ACTIVE" for scenario in scenarios)
 
 
 def _original_line(exc: BaseException) -> str:
@@ -200,7 +224,13 @@ def bootstrap_error_message(
     **어느 파일이 잠겼는지는 부르는 쪽만 안다.** 이 앱은 DB 가 둘이고(시뮬레이션·설비) 한
     `try` 가 둘 다 받는 자리도 있다. 경로를 여기에 박아 두면 설비 DB 가 잠겼을 때 사용자가
     멀쩡한 시뮬레이션 파일을 들여다보게 된다.
+
+    **불러온 리비전이 없는 오류**(`reference_cache.NoActiveRevision`)는 저장소의 시나리오가 모두
+    보관본일 때만 글을 갈라(`ARCHIVED_ONLY_MESSAGE`) 보관함에서 되돌리라고 한다 — 그때는 목록에도
+    고를 것이 없다. 그 판정만 이 갈래에서 저장소를 읽는다(드문 상태라 회차 비용이 없다).
     """
+    if isinstance(exc, reference_cache.NoActiveRevision) and _only_archived_scenarios():
+        return ARCHIVED_ONLY_MESSAGE
     if not isinstance(exc, duckdb.Error):
         return markdown_safe_tildes(exc) if markdown else str(exc)
     files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
@@ -284,7 +314,7 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
     표를 말하고 「그 화면으로」 가 기준 정보를 연다. 모듈수(`RQ_MODULE`)는 앱에서 고칠 수 없어
     화면을 달지 않고 원천을 다시 등록하라고 말한다. 줄의 화면 칸이 고칠 화면이 되므로 어느 화면의
     일인지는 전문 첫머리가 말한다. 서비스의 오류 글은 바꾸지 않고 전문 뒤에 싣되 내부 표 이름만
-    화면 이름으로 바꾼다 — 모듈수 전문만 조회기간 밖 글의 고칠 화면 안내를 뺀다.
+    화면 이름으로 바꾼다 — 모듈수 전문만 조회기간 밖 글의 고칠 곳 안내(첫머리와 같은 말)를 뺀다.
     """
     if not isinstance(exc, ValueError):
         return None
@@ -313,7 +343,8 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
     page = alerts.current_page()[0]
     lead = f"{f'{page} — ' if page else ''}대당 Capa 계산이 멈췄습니다."
     if module:
-        body = _OUTSIDE_PERIOD_SCREENS.sub("", body)
+        # 조회기간 밖 글의 고칠 곳 대목은 첫머리와 같은 말이라 뺀다(두 번 읽히지 않게).
+        body = body.replace(f" — {simulation_cache.OUTSIDE_PERIOD_MODULE_FIX}", "")
         return CalculationStop(
             text=f"대당 Capa 계산 멈춤 — 모듈수 {what} · 앱에서 고칠 수 없음 — 원천을 다시 등록",
             goto=None,

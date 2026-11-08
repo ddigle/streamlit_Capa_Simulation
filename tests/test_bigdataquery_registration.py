@@ -1072,6 +1072,9 @@ class FakeProvider:
 
     def fetch(self, simulation_code):
         frame = build_builtin_seed_dataset().source_data.copy()
+        # 시험이 켜면 계획 행만 남긴다 — 경로 행(계획기초정보여부 N)이 없는 원천의 꼴.
+        if st.session_state.get("__plan_only__"):
+            frame = frame.loc[frame["계획기초정보여부"].eq("Y")].reset_index(drop=True)
         # 시험이 고른 행의 CS 를 비운다(행 번호 → 넣을 값). 사내 원천에 CS 가 빈 행이 온 꼴.
         for index, value in st.session_state.get("__blank_cs__", {}).items():
             frame.loc[int(index), "CS"] = value
@@ -1294,6 +1297,48 @@ def test_a_registration_whose_capacity_stops_still_saves_and_says_how_to_fix_it(
     snapshot = repository.load_revision(scenario.active_revision_id)
     assert (snapshot.revision.note or "").startswith(
         "상세 조회기간 2026-10-23 ~ 2026-11-01 · 대당 Capa 계산 멈춤(RQ_RUN_RATE 빈 값 키 "
+    )
+
+
+def test_a_plan_only_registration_still_saves_and_says_the_calculation_will_stop(
+    tmp_path: Path,
+) -> None:
+    """계획 행만 있는 원천은 알림 없이 등록되고 불러와야 계산 화면이 내부 표 이름 글로 멈췄다
+    (2026-11-08 사용자 결정 U3). 등록은 그대로 하고 성공 알림 뒤 「계산 멈춤」 경고를 알림창 ·
+    Alarm 에 낸다 — 무엇이 비었는지(화면 이름)와 어디서 고칠지(원천)를 말한다."""
+    from capa_simulation.components.flash import FlashNote
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = _registration_database(tmp_path)
+    app = AppTest.from_string(SAVE_SCRIPT, default_timeout=60)
+    app.session_state["__database__"] = str(database)
+    app.session_state["__plan_only__"] = True
+    app.session_state[registration.FORM_CODE_KEY] = "SIM-W46"
+    app.session_state[registration.FORM_SOURCE_NAME_KEY] = "PSM W46"
+    app.session_state[registration.FORM_SCENARIO_NAME_KEY] = "PSM W46 (SIM-W46)"
+    app.session_state[registration.FORM_REVISION_NAME_KEY] = "초기 리비전"
+    app.session_state[registration.FORM_REGISTERED_AT_KEY] = "2026-11-06 09:00:00"
+    app.session_state[registration.FORM_NOTE_KEY] = ""
+    app.session_state[registration.FORM_DETAIL_START_KEY] = date(2026, 10, 30)
+    app.session_state[registration.FORM_DETAIL_END_KEY] = date(2026, 11, 6)
+    app.run()
+
+    assert not app.exception
+    assert not place_errors(app)
+    assert "올렸습니다" in app.session_state[registration.REGISTRATION_FLASH_KEY]
+    warning = FlashNote(*app.session_state[registration.REGISTRATION_CAPACITY_FLASH_KEY])
+    assert warning.kind == "warning" and warning.popup_only
+    assert warning.message.startswith(
+        "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 공정이 든 경로 행(계획기초정보여부 N)이 "
+        "없는 원천이라 "
+    )
+    assert warning.message.endswith("원천에 경로 행을 넣어 다시 등록하세요.")
+    assert "RQ_" not in warning.message
+    repository = DuckDBScenarioRepository(database)
+    [scenario] = repository.list_scenarios()
+    snapshot = repository.load_revision(scenario.active_revision_id)
+    assert (snapshot.revision.note or "").endswith(
+        "대당 Capa 계산 멈춤(빈 표 RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)"
     )
 
 

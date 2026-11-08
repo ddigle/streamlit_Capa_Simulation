@@ -1,14 +1,18 @@
 # Purpose: 계산 페이지 공통 준비 절차의 조회기간 해석과 예외 계약을 검증한다.
 
+from pathlib import Path
+
 import duckdb
 import pandas as pd
 import pytest
 
-from capa_simulation import alerts, page_bootstrap
+from capa_simulation import alerts, page_bootstrap, settings
+from capa_simulation.io.reference_cache import NoActiveRevision
 from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
+    bootstrap_error_message,
     calculation_stop_notice,
     resolve_effective_months,
 )
@@ -132,6 +136,81 @@ def test_database_error_message_follows_who_holds_the_lock() -> None:
         lock_error(other_pid), database_paths=(equipment,)
     )
     assert page_bootstrap.bootstrap_error_message(ValueError("한국어 문장")) == "한국어 문장"
+
+
+def _store_with_scenarios(path: Path, *, archived: int, active: int) -> None:
+    """내장 합성 시드로 시나리오를 만들어 앞 `archived` 개를 보관한다 — 공식버전은 없다."""
+    from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import (
+        build_builtin_seed_dataset,
+        load_builtin_display_order,
+    )
+
+    repository = DuckDBScenarioRepository(path)
+    repository.initialize()
+    repository.initialize_global_display_order(load_builtin_display_order())
+    prepared = build_builtin_seed_dataset()
+    for number in range(archived + active):
+        snapshot = repository.create_scenario(
+            ScenarioCreate(
+                scenario_name=f"DEMO 시나리오 {number}",
+                source_simulation_code=f"DEMO-SIM-{number}",
+                source_simulation_name="DEMO",
+                source_type="BUILTIN_SEED",
+                pipeline_version="test",
+            ),
+            prepared.reference_tables,
+            ScenarioPreset(start_month=202601, end_month=202612, included_processes=()),
+            source_data=prepared.source_data,
+            revision_name="r1",
+            note="",
+        )
+        if number < archived:
+            repository.archive_scenario(snapshot.scenario.scenario_id)
+
+
+def test_no_active_revision_over_a_store_of_archived_scenarios_points_at_the_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시나리오가 모두 보관본이면 첫 접속이 불러올 것도, 목록에서 고를 것도 없다 — 「활성 DuckDB
+    리비전 버전이 없습니다」 대신 보관함에서 되돌리라고 한다(2026-11-08 결정 a8)."""
+    database = tmp_path / "archived.duckdb"
+    _store_with_scenarios(database, archived=2, active=0)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+
+    message = bootstrap_error_message(NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다."))
+
+    assert message == page_bootstrap.ARCHIVED_ONLY_MESSAGE
+    assert "보관함" in message and "되돌리기" in message
+    assert "DuckDB" not in message
+
+
+@pytest.mark.parametrize(("archived", "active"), [(1, 1), (0, 0)], ids=["listed", "empty"])
+def test_no_active_revision_keeps_its_message_unless_every_scenario_is_archived(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, archived: int, active: int
+) -> None:
+    database = tmp_path / "store.duckdb"
+    _store_with_scenarios(database, archived=archived, active=active)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+
+    assert (
+        bootstrap_error_message(NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다."))
+        == "활성 DuckDB 리비전 버전이 없습니다."
+    )
+
+
+def test_no_active_revision_does_not_create_a_missing_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """글을 고르려고 없는 DB 를 만들지 않는다 — 판정은 있는 저장소만 읽는다."""
+    database = tmp_path / "absent.duckdb"
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+
+    message = bootstrap_error_message(NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다."))
+
+    assert message == "활성 DuckDB 리비전 버전이 없습니다."
+    assert not database.exists()
 
 
 @pytest.mark.parametrize(
@@ -457,6 +536,40 @@ def test_a_module_count_stop_outside_the_period_drops_the_screen_to_fix_it(
     assert "어느 달이든 고쳐야 풀립니다. 오류: 모듈수 표의 빈 칸: 1건, 예시 " in stop.message
     assert stop.message.count("새 리비전") == 1
     assert "기준 정보" not in stop.message and "생산 계획" not in stop.message
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _service_stop(unit_capacity._VALUE_BLANK, "RQ_MODULE", "모듈수"),
+        "RQ_MODULE의 연결 키가 중복되었습니다: 1건, 예시 []",
+    ],
+    ids=["blank", "broken"],
+)
+def test_the_outside_period_message_of_a_module_count_stop_points_at_the_source(
+    error: str,
+) -> None:
+    """조회기간 밖 모듈수 멈춤의 서비스 글도 앱에서 고칠 수 없다고 말한다 — 계산 멈춤 알림을 거치지
+    않는 화면(표가 깨진 꼴 · 공정 Capa 상세 따위)은 이 글을 그대로 싣는다(2026-11-08 결정 a10)."""
+    message = outside_period_error(202601, 202612, error)
+
+    assert "밖의 달에 기준정보 오류가 있어 계산을 멈췄습니다" in message
+    assert (
+        "어느 달이든 고쳐야 풀립니다 — 모듈수는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 "
+        "않습니다 — 원천의 모듈수를 고쳐 다시 등록하세요. 오류: RQ_MODULE"
+    ) in message
+    assert "기준 정보" not in message and "생산 계획" not in message
+
+
+def test_the_outside_period_message_of_other_tables_keeps_the_screen_to_fix_them() -> None:
+    message = outside_period_error(
+        202601, 202612, _service_stop(unit_capacity._VALUE_BLANK, "RQ_VITAL", "편중률")
+    )
+
+    assert (
+        "오류가 가리키는 화면(수율·PKG PLAN 은 생산 계획, 그 밖은 기준 정보 페이지)에서 고친 뒤 새 "
+        "리비전으로 저장하세요. 오류: RQ_VITAL"
+    ) in message
 
 
 @pytest.mark.parametrize(

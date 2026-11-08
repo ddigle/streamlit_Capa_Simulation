@@ -128,6 +128,125 @@ def test_zero_and_blank_siblings_stand_today_but_a_revision_saved_earlier_stays_
     assert (earlier.problem.table, earlier.problem.shape) == ("RQ_RUN_RATE", JOIN_BLANK_VALUE)
 
 
+def _plan_only_source() -> pd.DataFrame:
+    """계획 행만 있는 원천 — 경로 행(계획기초정보여부 N)이 하나도 없다."""
+    frame = SEED.source_data
+    return frame.loc[frame["계획기초정보여부"].eq("Y")].reset_index(drop=True)
+
+
+def test_a_plan_only_source_is_caught_by_its_empty_route_tables() -> None:
+    """경로 행이 없으면 대당 Capa 는 멈추지 않고 0행으로 끝난다 — 그 리비전을 불러온 계산 화면이
+    조회기간 자리에서 처음 멈췄다(2026-11-08 사용자 결정 U3 — 등록 점검이 빈 표를 잡는다). 글은 표
+    이름 대신 기준 정보 화면 이름을 쓰고, 앱에서 고칠 수 없으니 원천을 다시 등록하라고 한다."""
+    tables = _prepared(_plan_only_source()).reference_tables
+    assert tables["RQ_UPEH"].empty and tables["RQ_REQB"].empty and tables["RQ_EQP_AVBL"].empty
+
+    check = check_registration_capacity(tables)
+
+    assert check.stopped
+    assert check.empty == ("RQ_UPEH", "RQ_REQB", "RQ_EQP_AVBL")
+    assert check.memo() == "대당 Capa 계산 멈춤(빈 표 RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)"
+    notice = check.notice(1)
+    assert notice == (
+        "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 공정이 든 경로 행(계획기초정보여부 N)이 "
+        "없는 원천이라 「UPEH」 · 「STEP 구성」 · 「설비대수 가용」 표가 비었습니다. 앱에서 "
+        "고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천에 경로 행을 넣어 다시 등록하세요."
+    )
+    assert "RQ_" not in notice
+
+
+def _blank_route_cs_source() -> pd.DataFrame:
+    """경로 행(계획기초정보여부 N)은 그대로 있고 그 CS 만 모두 빈 원천."""
+    frame = SEED.source_data.copy()
+    frame.loc[frame["계획기초정보여부"].eq("N"), "CS"] = pd.NA
+    return frame
+
+
+def test_route_rows_dropped_for_blank_cs_point_at_their_cs_not_at_missing_rows() -> None:
+    """경로 행이 있어도 CS 가 모두 비면 등록 파생이 빼 같은 세 표가 빈다(2026-10-27 결정). 글이
+    「경로 행이 없는 원천」 이라 하면 바로 앞 CS 경고(「CS 가 빈 행 …(계획 0행 · 경로 n행)는 … 빼고
+    저장했습니다」)와 맞부딪치고, 이미 있는 경로 행을 다시 넣으라고 가리킨다 — 뺀 경로 행 수를
+    들고 그 CS 를 채우라고 한다."""
+    prepared = _prepared(_blank_route_cs_source())
+    routes = prepared.blank_cs.route_rows
+    assert routes > 0 and prepared.blank_cs.plan_rows == 0
+
+    check = check_registration_capacity(prepared.reference_tables, blank_cs_routes=routes)
+
+    assert check.empty == ("RQ_UPEH", "RQ_REQB", "RQ_EQP_AVBL")
+    notice = check.notice(1)
+    assert notice == (
+        f"저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — CS 가 빈 경로 행 {routes:,}개를 빼자 "
+        "공정이 든 행이 남지 않아 「UPEH」 · 「STEP 구성」 · 「설비대수 가용」 표가 비었습니다. "
+        "앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천 경로 행의 CS 를 채워 다시 "
+        "등록하세요."
+    )
+    assert "없는 원천" not in notice and "경로 행을 넣어" not in notice
+
+
+def test_a_registration_carries_its_blank_cs_route_rows_into_the_check(tmp_path: Path) -> None:
+    repository = DuckDBScenarioRepository(tmp_path / "registration.duckdb")
+    repository.initialize()
+    repository.initialize_global_display_order(DISPLAY_ORDER)
+    prepared = _prepared(_blank_route_cs_source())
+
+    registration = save_bigdataquery_scenario(
+        repository,
+        prepared,
+        full_data_scenario_preset(prepared.reference_tables),
+        scenario_name="PSM W44 (SIM-W44)",
+        revision_name="초기 리비전",
+        note="",
+    )
+
+    assert registration.capacity.blank_cs_routes == prepared.blank_cs.route_rows
+    assert registration.capacity.notice(1).endswith("원천 경로 행의 CS 를 채워 다시 등록하세요.")
+    [scenario] = repository.list_scenarios()
+    saved = repository.load_revision(scenario.active_revision_id)
+    assert saved.revision.note == (
+        f"{prepared.blank_cs.memo()} · 대당 Capa 계산 멈춤(빈 표 RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)"
+    )
+
+
+def test_one_empty_route_table_names_only_itself_without_guessing_why() -> None:
+    """세 표는 파생에서 함께 빈다 — 하나만 빈 꼴은 등록 파생에서 나오지 않으니 경로 행이 없다고도,
+    CS 가 비었다고도 단정하지 않는다."""
+    tables = dict(SEED.reference_tables)
+    tables["RQ_EQP_AVBL"] = tables["RQ_EQP_AVBL"].iloc[:0]
+
+    for routes in (0, 3):
+        check = check_registration_capacity(tables, blank_cs_routes=routes)
+
+        assert check.empty == ("RQ_EQP_AVBL",)
+        assert check.notice(1) == (
+            "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 「설비대수 가용」 표가 비었습니다. "
+            "앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천을 고쳐 다시 등록하세요."
+        )
+
+
+def test_a_plan_only_source_is_still_saved_with_its_empty_tables_in_the_memo(
+    tmp_path: Path,
+) -> None:
+    repository = DuckDBScenarioRepository(tmp_path / "registration.duckdb")
+    repository.initialize()
+    repository.initialize_global_display_order(DISPLAY_ORDER)
+    prepared = _prepared(_plan_only_source())
+
+    registration = save_bigdataquery_scenario(
+        repository,
+        prepared,
+        full_data_scenario_preset(prepared.reference_tables),
+        scenario_name="PSM W44 (SIM-W44)",
+        revision_name="초기 리비전",
+        note="",
+    )
+
+    assert registration.capacity.stopped
+    [scenario] = repository.list_scenarios()
+    saved = repository.load_revision(scenario.active_revision_id)
+    assert saved.revision.note == registration.capacity.memo()
+
+
 def test_a_stopping_source_is_still_saved_with_its_shape_in_the_memo(tmp_path: Path) -> None:
     repository = DuckDBScenarioRepository(tmp_path / "registration.duckdb")
     repository.initialize()

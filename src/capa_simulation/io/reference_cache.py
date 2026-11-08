@@ -17,6 +17,14 @@ SESSION_REFERENCE_VERSION_KEY = "persisted_reference_version"
 HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 
+class NoActiveRevision(RuntimeError):
+    """이 세션에 불러온 리비전이 없다 — 첫 접속에 불러올 공식버전이 없었거나 아직 고르지 않았다.
+
+    저장소의 시나리오가 모두 보관본이면 `page_bootstrap.bootstrap_error_message` 가 글을 갈라
+    보관함을 가리킨다. 이 잎 모듈은 저장소를 읽지 않는다 — 그 판정은 오류를 글로 바꾸는 쪽이 한다.
+    """
+
+
 def get_effective_reference_tables() -> dict[str, pd.DataFrame]:
     """Return the DuckDB revision activated in this browser session."""
     saved = st.session_state.get(SESSION_REFERENCE_TABLES_KEY)
@@ -26,7 +34,7 @@ def get_effective_reference_tables() -> dict[str, pd.DataFrame]:
         and all(isinstance(frame, pd.DataFrame) for frame in saved.values())
     ):
         return saved
-    raise RuntimeError(
+    raise NoActiveRevision(
         "활성 DuckDB 시나리오가 없습니다. 시나리오 페이지에서 공식버전을 지정하거나 "
         "저장된 리비전을 불러오세요."
     )
@@ -36,7 +44,7 @@ def get_effective_reference_version() -> int:
     saved = st.session_state.get(SESSION_REFERENCE_VERSION_KEY)
     if isinstance(saved, int) and not isinstance(saved, bool):
         return saved
-    raise RuntimeError("활성 DuckDB 리비전 버전이 없습니다.")
+    raise NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다.")
 
 
 def reference_version_for_revision(revision_id: str) -> int:
