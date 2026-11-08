@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 두 모드(제약 영향 · 개조 일정)가 함께 쓰는 설비 일정 확인(판정 · 멈춘
-# 자리) · 계획 칸 받기와 조건 카드 · 출처 띠의 같은 글 조각을 한 곳에 둔다.
+# 자리) · 계획 칸 받기와 조건 카드 · 머리 줄 표지 · 출처 띠의 같은 글 조각을 한 곳에 둔다.
 
 """제약 시뮬레이션 — 두 모드가 함께 쓰는 「설비 일정 확인 → 계획」 블록.
 
@@ -30,10 +30,13 @@
   그 계산이 터져도 「설비 일정을 계산하지 못했습니다」 갈래다. 기준일 거르기 · 고른 호기 빼기는
   페이지가 고른 뒤에 한다(호기 고르기는 이 블록 뒤에 서므로).
 - **같은 글 조각** — 두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리
-  (`SESSION_ONLY_CAPTION`)와 출처 띠 조각: 소요 시나리오 이름표(`source_scenario_text`) · 설비 기준
-  괄호(`source_equipment_text`) · 띠 끝 풍선(`SOURCE_BAND_HELP` — 환산 대수) · UPEH 가정을 켠 세션의
-  단서(`upeh_assumption_note`). 띠의 나머지(소요 설명 · 입력 비가동 · 보유 · 신규)는 모드마다
-  다르다.
+  (`SESSION_ONLY_CAPTION`). 머리 줄을 그리는 함수의 꼴은 `HeaderRenderer` 다. 제약 영향 모드의 머리
+  줄은 조건을 되읊지 않고 계산이 건 표지만 둔다(`applied_marks` — 계획이 건 입력 비가동 · UPEH
+  가정을 켠 세션의 「미적용」, 뜻은 풍선. 출처와 읽는 법은 Guide — 2026-11-08 사용자 그림 메모 g12).
+  개조 일정 모드는 머리 한 줄(공정 · 조건)과 출처 띠를 둔다 — 띠 조각은 소요 시나리오
+  이름표(`source_scenario_text`) · 설비 기준 괄호(`source_equipment_text`) · 띠 끝 풍선
+  (`SOURCE_BAND_HELP` — 환산 대수) · UPEH 가정을 켠 세션의 단서(`upeh_assumption_note`)다. 두 길의
+  UPEH 판정은 하나다(`_upeh_assumption_on`).
 
 저장하지 않는다 — 어느 DB 에도 쓰지 않는다.
 """
@@ -42,7 +45,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date
-from typing import Final, NamedTuple
+from typing import Final, NamedTuple, Protocol
 
 import pandas as pd
 import streamlit as st
@@ -88,11 +91,15 @@ __all__ = [
     "SESSION_ONLY_CAPTION",
     "SESSION_ONLY_HELP",
     "SOURCE_BAND_HELP",
+    "UPEH_NOT_APPLIED_HELP",
+    "UPEH_NOT_APPLIED_MARK",
     "UPEH_NOT_APPLIED_NOTE",
     "EquipmentPlan",
     "AbsentNote",
     "EquipmentPlanSource",
+    "HeaderRenderer",
     "absent_note",
+    "applied_marks",
     "equipment_readiness",
     "first_ready_process",
     "render_equipment_plan",
@@ -119,13 +126,29 @@ CUTOFF_SOURCE_HELP: Final = (
 SOURCE_BAND_HELP: Final = (
     "대수는 환산 대수입니다 — HOME·Static 확보율(기준정보 가용)과 다를 수 있습니다."
 )
-"""출처 띠 끝 풍선 — 띠에는 값만 두고 읽는 법은 늘 두지 않는다(설계 규칙 UI-TXT-01)."""
+"""개조 일정 모드 출처 띠 끝 풍선 — 띠에는 값만 두고 읽는 법은 늘 두지 않는다(설계 규칙
+UI-TXT-01)."""
 
 _NO_SCHEDULE_BADGE: Final = "설비 일정 없음"
 """빈 상태의 머리 배지 — 까닭은 바로 아래 평문 한 줄이 적는다(설계 규칙 UI-TXT-07)."""
 
+UPEH_NOT_APPLIED_MARK: Final = "UPEH 가정 미적용"
+"""UPEH 가정을 켠 세션의 머리 줄 표지(`applied_marks`)."""
+
+UPEH_NOT_APPLIED_HELP: Final = (
+    "공정 Capa 상세 · 필요 단축 일정의 UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)."
+)
+"""「UPEH 가정 미적용」 표지의 풍선."""
+
 UPEH_NOT_APPLIED_NOTE: Final = " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
-"""UPEH 가정을 켠 세션의 출처 띠 단서(`upeh_assumption_note`, 앞 「 · 」 까지 든다)."""
+"""UPEH 가정을 켠 세션의 개조 일정 모드 출처 띠 단서(`upeh_assumption_note`, 앞 「 · 」 까지
+든다)."""
+
+MANUAL_DOWNTIME_HELP: Final = (
+    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 가용에서 뺐습니다(공정 Capa 상세 ② 와 "
+    "같은 가용)."
+)
+"""「입력 비가동 반영(…)」 표지의 풍선."""
 
 EQUIPMENT_SCREEN: Final = (tab_label(AVAILABLE_EQUIPMENT_STATUS), AVAILABLE_EQUIPMENT_STATUS.href)
 """채울 입력이 있는 화면(이름, 주소) — 멈춘 자리 알림 줄의 「그 화면으로」 가 연다."""
@@ -387,9 +410,41 @@ def _load_plan(
 # ================================================================== 같은 글 조각
 
 
+class HeaderRenderer(Protocol):
+    """머리 줄을 그리는 함수(페이지의 `render_header`) — 왼쪽은 멈춘 갈래의 공정 · 배지(`line`)나
+    계산이 건 표지(`marks` · 풍선 `marks_help`), 오른쪽 끝은 「← 공정 Capa 상세」."""
+
+    def __call__(
+        self, process: str, line: str = "", *, marks: str = "", marks_help: str = ""
+    ) -> None: ...
+
+
+def _upeh_assumption_on() -> bool:
+    """세션 UPEH 가정 %(정수)가 기본값이 아닌가. 정수가 아닌 칸 값은 켬으로 보지 않는다."""
+    upeh_percent = st.session_state.get(
+        UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT
+    )
+    return isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT
+
+
+def applied_marks(manual_note: str) -> tuple[str, str]:
+    """제약 영향 모드 머리 줄 표지와 그 풍선 — 계획이 건 입력 비가동(`manual_effect_band` 글, 없으면
+    빈 글자)과 UPEH 가정을 켠 세션의 「UPEH 가정 미적용」(두 모드 모두 UPEH 가정을 걸지 않는다 —
+    공식 소요). 둘 다 없으면 ("", "")."""
+    marks: list[str] = []
+    helps: list[str] = []
+    if manual_note:
+        marks.append(manual_note)
+        helps.append(MANUAL_DOWNTIME_HELP)
+    if _upeh_assumption_on():
+        marks.append(UPEH_NOT_APPLIED_MARK)
+        helps.append(UPEH_NOT_APPLIED_HELP)
+    return " · ".join(marks), " ".join(helps)
+
+
 def source_scenario_text() -> str:
-    """출처 띠의 소요 시나리오 — 이 세션 활성 리비전 이름표 「이름 rN」(이름은 막는다). 이름표가
-    없으면(`active_scenario_label` 이 None) 「활성 시나리오」."""
+    """개조 일정 모드 출처 띠의 소요 시나리오 — 이 세션 활성 리비전 이름표 「이름 rN」(이름은
+    막는다). 이름표가 없으면(`active_scenario_label` 이 None) 「활성 시나리오」."""
     scenario_label = active_scenario_label()
     return (
         f"「{literal_markdown(scenario_label.scenario_name)} r{scenario_label.revision_no}」"
@@ -399,18 +454,12 @@ def source_scenario_text() -> str:
 
 
 def source_equipment_text(equipment_text: str | None) -> str:
-    """출처 띠 「가용 = 설비 일정 기준」 뒤 괄호 — 「(설비 기준 글, 단축 전)」(글은 막는다). 설비
-    기준 글이 없거나 비면 「(단축 전)」."""
+    """개조 일정 모드 출처 띠 「가용 = 설비 일정 기준」 뒤 괄호 — 「(설비 기준 글, 단축 전)」(글은
+    막는다). 설비 기준 글이 없거나 비면 「(단축 전)」."""
     return f"({literal_markdown(equipment_text)}, 단축 전)" if equipment_text else "(단축 전)"
 
 
 def upeh_assumption_note() -> str:
-    """세션 UPEH 가정 %(정수)가 기본값이 아니면 출처 띠 끝 단서(`UPEH_NOT_APPLIED_NOTE`), 아니면 빈
-    글자 — 두 모드 모두 UPEH 가정을 걸지 않는다(공식 소요). 정수가 아닌 칸 값은 켬으로 보지
-    않는다."""
-    upeh_percent = st.session_state.get(
-        UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT
-    )
-    if isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT:
-        return UPEH_NOT_APPLIED_NOTE
-    return ""
+    """세션 UPEH 가정 %(정수)가 기본값이 아니면 개조 일정 모드 출처 띠 끝 단서
+    (`UPEH_NOT_APPLIED_NOTE`), 아니면 빈 글자. 판정은 머리 줄 표지와 같다(`_upeh_assumption_on`)."""
+    return UPEH_NOT_APPLIED_NOTE if _upeh_assumption_on() else ""

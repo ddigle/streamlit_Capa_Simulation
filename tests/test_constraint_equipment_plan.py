@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인 · 계획 블록(`render_equipment_plan`)의
-# 멈추는 갈래 차례와 멈춘 자리 알림, 같은 출처 띠 글 조각을 화면 없이 본다.
+# 멈추는 갈래 차례와 멈춘 자리 알림, 머리 줄 표지 · 출처 띠 글 조각을 화면 없이 본다.
 
 """`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출)와 같은 글 조각.
 
@@ -8,8 +8,9 @@
 하나가 두 모드에 같은 갈래 차례를 주는지 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어
 `subject`) · 그 모드의 앞 갈래(`before_plan`) · 계획 계산 오류 — 를 머리 그리기와 마크 알림을 적는
 가짜로 본다. 계획 받기가 불리면 실패하는 가짜 `simulation_cache` 함수로 「앞 갈래가 멈추면 계획을
-받지 않는다」 를 잡는다. 두 모드 출처 띠의 같은 조각(소요 시나리오 이름표 · 설비 기준 괄호 · UPEH
-가정 단서)의 글도 여기서 못 박는다.
+받지 않는다」 를 잡는다. 제약 영향 모드 머리 줄의 표지(입력 비가동 반영 · UPEH 가정 미적용)와 개조
+일정 모드 출처 띠 조각(소요 시나리오 이름표 · 설비 기준 괄호 · UPEH 가정 단서)의 글도 여기서 못
+박는다.
 """
 
 from __future__ import annotations
@@ -27,9 +28,13 @@ import capa_simulation.components.constraint_equipment_plan as constraint_equipm
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.constraint_equipment_plan import (
     EQUIPMENT_SCREEN,
+    MANUAL_DOWNTIME_HELP,
+    UPEH_NOT_APPLIED_HELP,
+    UPEH_NOT_APPLIED_MARK,
     UPEH_NOT_APPLIED_NOTE,
     EquipmentPlanSource,
     absent_note,
+    applied_marks,
     equipment_readiness,
     render_equipment_plan,
     source_equipment_text,
@@ -304,10 +309,44 @@ def test_a_failure_while_building_the_plan_key_is_the_plan_error(recorder: _Reco
 # ------------------------------------------------------------------ 같은 글 조각
 
 
-def test_the_shared_source_band_pieces_keep_their_words(monkeypatch: pytest.MonkeyPatch) -> None:
-    """두 모드 출처 띠의 같은 조각 — 소요 시나리오 이름표는 이름을 막고 없으면 「활성 시나리오」,
+def test_the_header_marks_keep_their_words(monkeypatch: pytest.MonkeyPatch) -> None:
+    """제약 영향 모드 머리 줄의 표지 — 계획이 건 입력 비가동 글은 그대로, UPEH 가정 미적용은 세션
+    칸이 기본값이 아닌 정수일 때만(소수 · 글자 칸은 켬으로 보지 않는다 — 개조 일정 모드 출처 띠
+    단서와 같은 판정). 뜻은 표지 풍선이고 둘 다 없으면 빈 글자다. 출처는 Guide 다(2026-11-08 사용자
+    그림 메모 g12)."""
+    state: dict[str, object] = {}
+    monkeypatch.setattr(st, "session_state", state)
+    assert applied_marks("") == ("", "")
+    manual = "입력 비가동 반영(2칸 · 합 2.5대)"
+    assert applied_marks(manual) == (manual, MANUAL_DOWNTIME_HELP)
+    for value, on in (
+        (UPEH_ASSUMPTION_DEFAULT_PERCENT, False),
+        (110, True),
+        (90, True),
+        (110.0, False),
+        ("110", False),
+        (None, False),
+    ):
+        state[UPEH_ASSUMPTION_PERCENT_KEY] = value
+        marks = applied_marks(manual)
+        if on:
+            assert marks == (
+                f"{manual} · {UPEH_NOT_APPLIED_MARK}",
+                f"{MANUAL_DOWNTIME_HELP} {UPEH_NOT_APPLIED_HELP}",
+            ), value
+            assert applied_marks("") == (UPEH_NOT_APPLIED_MARK, UPEH_NOT_APPLIED_HELP)
+        else:
+            assert marks == (manual, MANUAL_DOWNTIME_HELP), value
+    # 표지는 한두 낱말이고 문장은 풍선에만 있다(설계 규칙 UI-TXT-04).
+    assert not UPEH_NOT_APPLIED_MARK.endswith("다")
+
+
+def test_the_schedule_source_band_pieces_keep_their_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """개조 일정 모드 출처 띠 조각 — 소요 시나리오 이름표는 이름을 막고 없으면 「활성 시나리오」,
     설비 기준 글이 없거나 비면 「(단축 전)」, UPEH 가정 단서는 세션 칸이 기본값이 아닌 정수일 때만
-    (소수 · 글자 칸은 켬으로 보지 않는다 — 두 모드가 따로 들던 판정 그대로)."""
+    (머리 줄 표지와 같은 판정)."""
     label = SimpleNamespace(scenario_name="DEMO_*~가정", revision_no=3)
     monkeypatch.setattr(constraint_equipment_plan, "active_scenario_label", lambda: label)
     assert source_scenario_text() == "「DEMO\\_\\*\\~가정 r3」"

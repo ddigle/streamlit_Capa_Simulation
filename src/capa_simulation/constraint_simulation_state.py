@@ -27,7 +27,8 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
   쓴다(`components/preset_number_field.py`).
 - **고른 달**(위젯 아님)과 사용자가 눌러 고른 적이 있는가 표지, 두 그림의 칸 누름 세대(한 칸 — 어느
   그림을 눌러도 둘 다 새 요소가 된다).
-- **주소 인자 막이**(위젯 아님) — 마지막으로 적용한 `?process=` 값(`CONSTRAINT_QUERY_SEEN_KEY`).
+- **주소 인자 막이**(위젯 아님) — 마지막으로 적용한 `?process=` 값과 그 페이지 방문
+  차례(`CONSTRAINT_QUERY_SEEN_KEY`).
 - **잠긴 상세에서 온 방문**(위젯 아님) — 그 인자로 HOME 칸 공정 Capa 상세(설비 공식 고정)에서
   넘어온 (공정, 페이지 방문 차례)(`CONSTRAINT_LOCKED_ARRIVAL_KEY`).
 
@@ -109,6 +110,8 @@ __all__ = [
 ]
 
 # ------------------------------------------------------------------ 위젯 칸
+# 공정은 위젯이 아닌 세션 칸이다 — 조회 조건 패널의 공정 값 칸(하나 고름 — 공용 공정 칸,
+# `components/process_field.render_process_choice`)이 읽고 그 팝업이 적는다. 두 모드가 나눈다.
 CONSTRAINT_PROCESS_KEY: Final = "constraint_sim_process"
 CONSTRAINT_PRODUCT_KEY: Final = "constraint_sim_product"
 CONSTRAINT_PERIOD_START_KEY: Final = "constraint_sim_period_start"
@@ -187,9 +190,10 @@ CONSTRAINT_PRODUCT_LIMIT: Final = 10_000
 # 공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」 링크가 싣는 원본 공정명. 받는 쪽은 무엇보다 먼저
 # 꺼내고 그 키 하나만 지운다(테마 인자는 남는다).
 PROCESS_PARAM: Final = "process"
-# 주소 `?process=` 를 마지막으로 적용한 값(위젯 아님). 지운 것이 브라우저에 닿기 전에 옛 주소를 실은
-# 회차가 와도 사용자가 그 뒤 고른 공정을 덮지 않는다 — 공정 Capa 상세
-# `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이다. 주소에 인자가 없는 회차에 비운다.
+# 주소 `?process=` 를 마지막으로 적용한 (값, 페이지 방문 차례)(위젯 아님). 같은 방문 안에서 지운
+# 것이 브라우저에 닿기 전에 옛 주소를 실은 회차가 와도 사용자가 그 뒤 고른 공정을 덮지 않는다 — 공정
+# Capa 상세 `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이다. 다른 화면에서 다시 들어온 방문은 같은
+# 값이어도 다시 적용한다. 주소에 인자가 없는 회차에 비운다.
 CONSTRAINT_QUERY_SEEN_KEY: Final = "constraint_sim_query_seen"
 # HOME 칸으로 연 공정 Capa 상세(설비 「공식 고정」)의 머리 링크로 넘어온 방문 — (공정, 페이지 방문
 # 차례)(위젯 아님). 이 화면은 늘 세션 설비 시나리오라(D6) 설비 기준이 공식에서 가정으로 말없이
@@ -206,24 +210,27 @@ def constraint_query_params(process: str, *, theme: str | None) -> dict[str, str
     return params
 
 
-def take_constraint_process_request() -> str | None:
+def take_constraint_process_request(visit: int) -> str | None:
     """주소의 `?process=` 를 꺼내고 그 키 하나만 지운다. 페이지가 **무엇보다 먼저** 부른다.
 
     부트스트랩이 오류로 멈춘 회차에도 주소에 남지 않게 맨 앞에서 꺼낸다(그 회차는 넘겨받은 공정만
-    잃는다). 빈 글자는 None 이다.
+    잃는다). 빈 글자는 None 이다. `visit` 은 지금 페이지 방문 차례(`page_bootstrap.page_visit`)다.
 
-    한 번 적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY` 에 남긴다 — 같은 값이 다시 오면(지운 것이
-    브라우저에 닿기 전에 옛 주소를 실은 회차) 적용하지 않고 지우기만 한다. 인자가 걷힌 회차에 그
-    칸을 비우므로 같은 링크로 다시 들어오면 다시 적용한다.
+    한 번 적용한 값은 그 방문 차례와 함께 `CONSTRAINT_QUERY_SEEN_KEY` 에 남긴다 — 같은 방문에 같은
+    값이 다시 오면(지운 것이 브라우저에 닿기 전에 옛 주소를 실은 회차) 적용하지 않고 지우기만 한다.
+    다른 화면에서 다시 들어온 방문은 방문 차례가 달라 같은 값이어도 다시 적용한다 — 인자가 걷힌
+    회차가 돌기 전에 이 화면을 떠났어도 넘겨받은 공정이 공용 공정에 지지 않는다. 인자가 걷힌 회차에
+    그 칸을 비운다.
     """
     if PROCESS_PARAM not in st.query_params:
         st.session_state.pop(CONSTRAINT_QUERY_SEEN_KEY, None)
         return None
     value = str(st.query_params.get(PROCESS_PARAM, "")).strip()
     del st.query_params[PROCESS_PARAM]
-    if st.session_state.get(CONSTRAINT_QUERY_SEEN_KEY) == value:
+    seen = (value, int(visit))
+    if st.session_state.get(CONSTRAINT_QUERY_SEEN_KEY) == seen:
         return None
-    st.session_state[CONSTRAINT_QUERY_SEEN_KEY] = value
+    st.session_state[CONSTRAINT_QUERY_SEEN_KEY] = seen
     return value or None
 
 

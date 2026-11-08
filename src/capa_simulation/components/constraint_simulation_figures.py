@@ -13,8 +13,10 @@
 - x 는 **수 축**이다 — 달 i 가 [i − 0.5, i + 0.5) 이고 눈금 글자는 `month_label`. 개조 비가동 막대를
   날짜 비례로 놓으려면 수 축이어야 한다(범주 축 규칙은 「26.07」 글자를 x 값으로 쓸 때의 것이고
   여기서는 글자를 x 에 쓰지 않는다).
-- 선: 제약 없을 때(`TEXT_MUTED` 파선) · 기존 제품 — 제약 반영(`ACCENT` 굵게, 점은 기준 미달이면
-  `STATUS_SHORTAGE`) · 제약 제품(`STATUS_WARNING`, 기간 안만 — 점은 `LINE` 테두리) · 비중대로
+- 선: 제약 없을 때(`TEXT_MUTED` 파선) · 기존 제품 — 제약 반영(`ACCENT` 굵게, 점은 판정색 —
+  기준이 HOME 이면 계산표와 같은 세 단계로 경고 `STATUS_WARNING`(테두리는 선 색 `ACCENT` — 제약 제품
+  점과 가른다) · 부족 `STATUS_SHORTAGE`, 직접 넣은 기준이면 미달만 `STATUS_SHORTAGE` —
+  `general_status`) · 제약 제품(`STATUS_WARNING`, 기간 안만 — 점은 `LINE` 테두리) · 비중대로
   (`SERIES_STANDARD` 점선, 토글 켬·기간 안만). 기준선은 달마다 G 가 다르면 `hv` 계단, 같으면
   수평선이고 제약 목표 수평선이 함께 선다. 오른쪽 끝 글(「기준 …」 `TEXT_MUTED` · 「제약 n%」
   `TEXT`)은 글자색이라 주의 색(면색)을 쓰지 않는다. 두 글은 늘 제 선 높이에 서되, 그림 칸이 가장
@@ -27,8 +29,11 @@
   눈금을 솎지 않는다 — 서버는 칸 폭을 모르고, 넓은 창에서는 모든 달이 읽힌다.
 - 아래 띠(y2): 개조 비가동 가로 막대 trace **하나**(`base` = 시작 위치, `x` = 길이). 날 → x 는 그
   날이 든 보이는 달 j 의 **W/D 구간**에서 `j − 0.5 + (날 − 첫날) ÷ 일수` 다 — 가용대수가 일할된 바로
-  그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다. 겹치는 창은 아래 줄로 내린다. 신규
-  대기가 있으면 같은 띠에 빗금 막대 trace(「신규 대기」)가 하나 더 서고 개조 창 뒤 줄 자리를 잇는다.
+  그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다 — 표 첫 달 앞에서 끝나는 창은 길이 0
+  이라 보이지 않고, 그 날짜는 계산표 머리 「표 첫 달 앞에서 시작」 표지 풍선이 적는다. 겹치는 창은
+  아래 줄로 내린다. 신규 대기가 있으면 같은 띠에 빗금 막대 trace(「신규 대기」)가 하나 더 서고 개조
+  창 뒤 줄 자리를 잇는다. 첫날이 오늘(`ConstraintLabels.today`)보다 앞인 막대의 풍선은 「이미 지난
+  날짜」 꼬리를 단다.
 - 제약 기간 칠과 고른 달 띠는 도형 둘(`append_layout_items` → `flush_layout_items`) — 새 색 토큰을
   더하지 않고 기존 토큰에 도형 `opacity` 를 준다(14-5).
 - **달 고르기**(D9): 달마다 보이지 않는 표적 막대(`HIT_TARGET`, `customdata = (달, 풍선)`) 하나가
@@ -112,7 +117,7 @@ from capa_simulation.services.korean_particle import (
     with_topic_particle,
 )
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.services.securement_threshold import capacity_status
+from capa_simulation.services.securement_threshold import CapacityStatus, capacity_status
 from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.services.wd_window import wd_window
 
@@ -128,6 +133,8 @@ __all__ = [
     "ROW_IDS",
     "ConstraintLabels",
     "SKIPPED_REASON",
+    "WAIT_LATE_TEXT",
+    "WINDOW_LATE_TEXT",
     "RateAxis",
     "SheetCanvas",
     "axis_bounds",
@@ -139,10 +146,13 @@ __all__ = [
     "end_label_anchors",
     "free_parts",
     "general_label",
+    "late_waits",
+    "late_windows",
     "minimum_rate",
     "minimum_unit",
     "month_name",
     "new_unit_fate",
+    "general_status",
     "ordinary_reason_text",
     "percent_or_none",
     "rate_axis",
@@ -151,14 +161,16 @@ __all__ = [
     "rate_delta_text",
     "signed_points",
     "units_text",
+    "waiting_line",
     "waiting_text",
+    "window_line",
 ]
 
 # 첫 증가부터 보유만으로 제약 기간을 다 덮어 신규를 붙이지 않은(결정 B1) 신규의 까닭(잇는 꼴).
 SKIPPED_REASON: Final = "보유 제약 설비로 제약 기간을 다 덮어"
 
 # 그림 모양을 바꾸면 올린다 — 세션 memo 의 옛 그림을 쓰지 않게(AGENTS 5장 16).
-CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 12
+CONSTRAINT_FIGURE_SCHEMA_VERSION: Final = 13
 CHART_HEIGHT_PX: Final = 340
 # 그래프 좌우 여백(px) — 왼쪽은 y 눈금, 오른쪽은 끝 글 「기준 …」 · 「제약 n%」 자리.
 _MARGIN_LEFT_PX: Final = 52
@@ -189,6 +201,11 @@ _ABOVE_MARKER_SIZE: Final = 10
 MINIMUM_UNIT_WORDS: Final = "최소 1대"
 # 「제약 없을 때 대비」 칸이 빈칸인 차이(%).
 _DELTA_HIDDEN_POINTS: Final = 0.05
+# 첫날이 오늘보다 앞인 개조 창 · 신규 대기의 꼬리 — 그 달의 감소는 「지금 시작하면」 이 아니라
+# 「제때 시작했다면」 의 모습이다. 띠 막대 풍선 · 표 첫 달 앞 표지 풍선 · 상태 알림 `CS-04` 가 같은
+# 글을 쓴다.
+WINDOW_LATE_TEXT: Final = "이미 지난 날짜(개조를 이미 시작했어야 합니다)"
+WAIT_LATE_TEXT: Final = "이미 지난 날짜(셋업 때 이미 제약용으로 붙였어야 합니다)"
 
 _FILL_ROW_IDS: Final[Mapping[FillSource, str]] = {
     FILL_OWNED: "owned_increment",
@@ -248,6 +265,10 @@ class ConstraintLabels:
     warning_targets: tuple[tuple[int, float], ...] = ()
     """기준이 HOME 일 때 (달, 경고 기준의 판정 경계) — 계산표 세 단계 색의 재료. 직접 넣은 기준에는
     경고 경계가 없어 비어 있다(두 단계)."""
+
+    today: date | None = None
+    """오늘 — 개조 창 · 신규 대기 첫날이 이보다 앞이면 띠 막대 풍선에 「이미 지난 날짜」 꼬리를 단다
+    (`WINDOW_LATE_TEXT` · `WAIT_LATE_TEXT`). None 이면 달지 않는다."""
 
 
 class SheetCanvas(NamedTuple):
@@ -362,6 +383,39 @@ def waiting_text(item: NewUnitAssignment) -> str:
     return f"{item.start.isoformat()} ~ {item.last_day.isoformat()} 대기 {item.days}일"
 
 
+def window_line(window: ModificationWindow) -> str:
+    """개조 창 한 줄(평문) — 「26년 11월 몫 · 2026-09-25 ~ 2026-10-24 비가동 · 3대」. 마크다운
+    자리에 그리면 물결표를 막는다."""
+    return (
+        f"{month_name(window.month)} 몫 · {window.start.isoformat()} ~ "
+        f"{window.last_day.isoformat()} 비가동 · {window.units}대"
+    )
+
+
+def waiting_line(item: NewUnitAssignment) -> str:
+    """신규 대기 한 줄(평문) — 「27년 7월 몫 · 신규 HB-07 · 2027-06-10 ~ 2027-06-23 대기 14일 ·
+    1대」. 마크다운 자리에 그리면 글 통째로 막는다(설비키가 든다)."""
+    return (
+        f"{month_name(item.month)} 몫 · 신규 {item.label} · {waiting_text(item)} · "
+        f"{units_text(item.units)}대"
+    )
+
+
+def late_windows(result: ConstraintResult, today: date | None) -> tuple[ModificationWindow, ...]:
+    """첫날이 `today` 보다 앞인 개조 창(창 차례). `today` 가 None 이면 빈다."""
+    if today is None:
+        return ()
+    return tuple(window for window in result.windows if window.start < today)
+
+
+def late_waits(result: ConstraintResult, today: date | None) -> tuple[NewUnitAssignment, ...]:
+    """대기가 있고(대기 일수 > 0) 첫날이 `today` 보다 앞인 신규 대기(붙인 차례). `today` 가 None
+    이면 빈다."""
+    if today is None:
+        return ()
+    return tuple(item for item in result.assignments if item.days > 0 and item.start < today)
+
+
 def general_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
     """기준 확보율 한 마디 — 「HOME 110%」·「HOME(월별)」·「105%」."""
     if labels.general_percent is not None:
@@ -373,8 +427,8 @@ def general_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
 
 
 def _line_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
-    """그래프 기준선 끝 글 — 「110%」·「(월별)」. 「HOME」 은 머리 한 줄이 말한다(오른쪽 여백이
-    좁다)."""
+    """그래프 기준선 끝 글 — 「110%」·「(월별)」. 「HOME」 은 사이드바 「기준 확보율」 칸이
+    말한다(오른쪽 여백이 좁다)."""
     if labels.general_percent is not None:
         return f"{labels.general_percent:g}%"
     targets = {row.general_target for row in result.months}
@@ -420,10 +474,12 @@ def _window_lanes(
     return chosen
 
 
-def _window_hover(window: ModificationWindow) -> str:
+def _window_hover(window: ModificationWindow, today: date | None) -> str:
+    late = today is not None and window.start < today
     return (
         f"<b>{html.escape(month_name(window.month))} 몫 {window.units}대 개조</b>"
         f"<br>{window.start.isoformat()} ~ {window.last_day.isoformat()} 비가동"
+        + (f"<br>{html.escape(WINDOW_LATE_TEXT)}" if late else "")
     )
 
 
@@ -435,11 +491,12 @@ def _first_overlapped_month(window: ModificationWindow, result: ConstraintResult
     return window.month
 
 
-def _waiting_hover(item: NewUnitAssignment) -> str:
+def _waiting_hover(item: NewUnitAssignment, today: date | None) -> str:
+    late = today is not None and item.days > 0 and item.start < today
     return (
         f"<b>{html.escape(month_name(item.month))} 몫 · 신규 {html.escape(item.label)} "
         f"{units_text(item.units)}대 대기</b><br>{html.escape(waiting_text(item))} — 셋업 때부터 "
-        "제약용이라 기존 제품이 못 씀"
+        "제약용이라 기존 제품이 못 씀" + (f"<br>{html.escape(WAIT_LATE_TEXT)}" if late else "")
     )
 
 
@@ -478,7 +535,7 @@ def _hit_hover(
         text += f"<br>개조 중 비가동 {MINUS}{units_text(row.downtime)}대"
     if row.waiting > 0:
         text += f"<br>신규 대기 {MINUS}{units_text(row.waiting)}대"
-    return text + "<br>누르면 이 달 계산"
+    return text
 
 
 def percent_or_none(value: float | None) -> float | None:
@@ -657,6 +714,7 @@ def _reference_traces(
 
 def _rate_lines(
     result: ConstraintResult,
+    labels: ConstraintLabels,
     xs: list[int],
     above: list[bool],
     *,
@@ -718,6 +776,11 @@ def _rate_lines(
             "name": "제약 제품",
         }
     )
+    # 기존 제품 점은 판정색이다 — 기준이 HOME 이면 계산표와 같은 세 단계(2026-11-08 사용자 답 d11).
+    # 경고 점은 주의 색 면에 선 색 테두리를 둘러 같은 주의 색인 제약 제품 점(`LINE` 테두리)과
+    # 가른다.
+    warnings = dict(labels.warning_targets)
+    statuses = [general_status(row.existing_rate, row, warnings) for row in rows]
     lines.append(
         {
             "type": "scatter",
@@ -726,12 +789,15 @@ def _rate_lines(
             "mode": "lines+markers",
             "line": {"color": tokens.ACCENT, "width": 3},
             "marker": {
-                "color": [
-                    tokens.STATUS_SHORTAGE if row.existing_secure is False else tokens.ACCENT
-                    for row in rows
-                ],
+                "color": [_existing_point_color(status) for status in statuses],
                 "size": 8,
-                "line": {"color": tokens.SURFACE, "width": 1.5},
+                "line": {
+                    "color": [
+                        tokens.ACCENT if status == "warning" else tokens.SURFACE
+                        for status in statuses
+                    ],
+                    "width": 1.5,
+                },
             },
             "hoverinfo": "skip",
             "name": "기존 제품 — 제약 반영",
@@ -740,8 +806,11 @@ def _rate_lines(
     return lines
 
 
-def _band_traces(result: ConstraintResult, band: _RateBand) -> list[dict[str, Any]]:
-    """아래 띠(y2)의 가로 막대 — 개조 비가동(있으면) · 신규 대기(있으면) trace 하나씩."""
+def _band_traces(
+    result: ConstraintResult, band: _RateBand, today: date | None
+) -> list[dict[str, Any]]:
+    """아래 띠(y2)의 가로 막대 — 개조 비가동(있으면) · 신규 대기(있으면) trace 하나씩. 첫날이
+    `today` 보다 앞인 막대의 풍선은 「이미 지난 날짜」 꼬리를 단다."""
     traces: list[dict[str, Any]] = []
     windows, spans = band.windows, band.spans
     if windows:
@@ -764,7 +833,7 @@ def _band_traces(result: ConstraintResult, band: _RateBand) -> list[dict[str, An
                 "textangle": 0,
                 "textfont": {"color": tokens.TEXT, "size": 11},
                 "customdata": [
-                    [_first_overlapped_month(window, result), _window_hover(window)]
+                    [_first_overlapped_month(window, result), _window_hover(window, today)]
                     for window in windows
                 ],
                 "hovertemplate": "%{customdata[1]}<extra></extra>",
@@ -794,7 +863,8 @@ def _band_traces(result: ConstraintResult, band: _RateBand) -> list[dict[str, An
                 "textangle": 0,
                 "textfont": {"color": tokens.TEXT, "size": 11},
                 "customdata": [
-                    [_first_waiting_month(item, result), _waiting_hover(item)] for item in waits
+                    [_first_waiting_month(item, result), _waiting_hover(item, today)]
+                    for item in waits
                 ],
                 "hovertemplate": "%{customdata[1]}<extra></extra>",
                 "name": "신규 대기",
@@ -1000,8 +1070,8 @@ def rate_figure(
     data: list[dict[str, Any]] = [
         _hit_trace(result, xs, above, low=low, high=high),
         *_reference_traces(general, target_percent, xs),
-        *_rate_lines(result, xs, above, high=high, show_proportional=show_proportional),
-        *_band_traces(result, band),
+        *_rate_lines(result, labels, xs, above, high=high, show_proportional=show_proportional),
+        *_band_traces(result, band, labels.today),
     ]
     layout = _rate_layout(
         result, xs, band, low=low, high=high, main_domain=main_domain, generation=generation
@@ -1282,23 +1352,47 @@ def _shortage_fill(secure: bool | None) -> str | None:
     return tokens.STATUS_SHORTAGE if secure is False else None
 
 
+def general_status(
+    rate: float | None, row: ConstraintMonth, warnings: Mapping[int, float]
+) -> CapacityStatus | None:
+    """기준 확보율에 견준 판정 — `warnings` 에 그 달 경고 경계가 있으면(기준이 HOME) HOME 과 같은
+    세 단계(`capacity_status`), 없으면 확보 · 부족 두 단계다. 확보율이 없으면 None. 계산표 칸 ·
+    그래프 점 · 요약 테두리가 이 한 판정을 본다(설계 규칙 UI-DAT-03)."""
+    if rate is None:
+        return None
+    warning = warnings.get(row.month)
+    if warning is None:
+        return "secure" if secure(rate, row.general_target) else "shortage"
+    return capacity_status(rate, secure_threshold=row.general_target, warning_threshold=warning)
+
+
+def _existing_point_color(status: CapacityStatus | None) -> str:
+    """기존 제품 점의 판정색 — 경고는 주의 색, 부족은 부족색, 확보 · 판정 없음은 선 색. 토큰은
+    그리는 때 읽는다(테마를 따라온다)."""
+    if status == "warning":
+        return tokens.STATUS_WARNING
+    if status == "shortage":
+        return tokens.STATUS_SHORTAGE
+    return tokens.ACCENT
+
+
 def _general_fill(
     rate: float | None, row: ConstraintMonth, warnings: Mapping[int, float]
 ) -> str | None:
     """기준 확보율에 견주는 칸의 면. `warnings` 에 그 달 경고 경계가 있으면(기준이 HOME) HOME 과
     같은 세 단계 판정색이고, 없으면 못 미친 칸만 부족색이다(`_shortage_fill`). 확보율이 없으면
     칠하지 않는다."""
-    if rate is None:
+    status = general_status(rate, row, warnings)
+    if status is None:
         return None
-    warning = warnings.get(row.month)
-    if warning is None:
-        return _shortage_fill(secure(rate, row.general_target))
+    if row.month not in warnings:
+        return _shortage_fill(status == "secure")
     # 상태 → 색 짝은 함수 안에서 만든다 — 모듈 상수면 테마를 바꿔도 색이 따라오지 않는다.
     return {
         "secure": tokens.STATUS_SECURE,
         "warning": tokens.STATUS_WARNING,
         "shortage": tokens.STATUS_SHORTAGE,
-    }[capacity_status(rate, secure_threshold=row.general_target, warning_threshold=warning)]
+    }[status]
 
 
 def _head(row: ConstraintMonth) -> str:
@@ -1333,7 +1427,7 @@ def _constrained_rate_cell(row: ConstraintMonth) -> Cell:
 
 def _need_cell(row: ConstraintMonth, target: int) -> Cell:
     """제약 필요 대수 칸 — 풍선 「소요 × 제약 % = 곱 → 정수」. 적힌 소요(둘째 자리)로 다시 셈한 곱이
-    적힌 곱과 다르면 「≈」 다(고른 달 계산 2단계는 같은 식의 인수 자릿수를 늘린다)."""
+    적힌 곱과 다르면 「≈」 다."""
     if not row.in_period:
         return Cell("", muted=True, hover=f"{_head(row)} · 제약 기간 밖")
     product = f"{row.constrained_demand * target / 100:.2f}"
@@ -1532,7 +1626,7 @@ def _downtime_cell(row: ConstraintMonth) -> Cell:
 def _existing_available_cell(row: ConstraintMonth) -> Cell:
     """기존 가용 칸 — 풍선 「가용 − 개조 중 − 제약 배정 = 기존 가용」. 적힌 수로 다시 셈한 값이
     적힌 기존 가용과 다르면 「≈」 다 — 비가동이 가용보다 많으면 쓸 수 있는 가용을 0 으로 두는
-    것까지 고른 달 계산 4단계와 같은 차례로 셈한다."""
+    것까지 계산 서비스(`simulate_constraint`)와 같은 차례로 셈한다."""
     text = f"가용 {units_text(row.available)}"
     if row.downtime > 0:
         text += f" − 개조 중 {units_text(row.downtime)}"

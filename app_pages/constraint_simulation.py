@@ -7,11 +7,12 @@
 제품에 먼저 떼어 준 뒤 기존 제품의 확보율이 언제부터 얼마나 떨어지는가」 를 그때그때 본다.
 **저장하지 않는다** — 조건은 이 세션에만 있고 시뮬레이션·설비 DB 어디에도 쓰지 않는다.
 
-모드는 둘이다 — 본문 맨 위 「제약 영향 | 개조 일정」(2026-10-26 결정 3). 「개조 일정」 은 「제약
-없이 N대 × D일 개조를 모든 달 기준 확보율을 지키며 언제 할까」 를 찾는 역방향 계산이고, 공통
-진입·설비 세션 뒤에 `components/modification_schedule_view.render_schedule_mode` 하나가
-카드·계획·계산·본문을 그린 뒤 이 화면이 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다). 두 모드는
-공정 칸·기준 확보율 정본을 나눈다.
+모드는 둘이다 — 사이드바 조건 카드 맨 위 「제약 영향 | 개조 일정」(2026-10-26 결정 3, 자리는
+2026-11-08 사용자 그림 메모 g12 — 모드 전환이 그 안이라 카드는 처음 펼친 채 선다). 「개조 일정」 은
+「제약 없이 N대 × D일 개조를 모든 달 기준 확보율을 지키며 언제 할까」 를 찾는 역방향 계산이고, 공통
+진입·설비 세션 뒤에 `components/modification_schedule_view.render_schedule_mode` 하나가 카드의
+나머지·계획·계산·본문을 그린 뒤 이 화면이 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다). 두
+모드는 공정 칸(조회 조건 패널의 공용 공정 칸 — 하나 고름)·기준 확보율 정본을 나눈다.
 
 입력(새 무거운 계산이 없다 — 공정 Capa 상세가 쓰는 캐시 래퍼를 **같은 키로** 다시 받는다):
 
@@ -35,8 +36,12 @@
 (`components/constraint_equipment_plan.render_equipment_plan`)이고, 제품 갈래는 그 사이
 (`before_plan`)에 선다.
 
-본문은 머리 한 줄 → 출처 띠 → 요약 넷(프래그먼트 밖) → 본문
-프래그먼트(`components/constraint_simulation_view` — 달 누름·비중 토글만 그 안에서 돈다).
+본문은 머리 줄 → 요약 넷(프래그먼트 밖) → 본문 프래그먼트(`components/constraint_simulation_view`
+— 달 누름·비중 토글만 그 안에서 돈다). 머리 줄 왼쪽은 멈춘 갈래의 공정 · 배지이거나 계산이 건
+표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)이고 오른쪽 끝은 「← 공정 Capa 상세」 다.
+조건은 사이드바 칸이 보이고 소요 · 가용의 출처와 읽는 법은 Guide 다 — 머리 줄은 조건을 되읊지
+않는다(2026-11-08 사용자 그림 메모 g12). 개조 · 신규 대기 첫날이 오늘보다 앞이면(그래프 · 계산표가
+「제때 시작했다면」 의 값) 상태 알림 `CS-04` 다(`report_late_starts` — 자리에는 그리지 않는다).
 
 개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 호기」 고르기
 (그 공정 세션 설비 시나리오의 호기 — 2026-11-01 결정 B3)와 「목록에 없는 보유 제약 설비」 숫자
@@ -55,24 +60,26 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from capa_simulation import alerts
+from capa_simulation import alerts, shared_process
 from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
-    SOURCE_BAND_HELP,
     EquipmentPlanSource,
+    applied_marks,
     equipment_readiness,
     first_ready_process,
     render_equipment_plan,
-    source_equipment_text,
-    source_scenario_text,
-    upeh_assumption_note,
 )
 from capa_simulation.components.constraint_simulation_figures import (
+    WAIT_LATE_TEXT,
+    WINDOW_LATE_TEXT,
     ConstraintLabels,
-    general_label,
+    late_waits,
+    late_windows,
     units_text,
+    waiting_line,
+    window_line,
 )
 from capa_simulation.components.constraint_simulation_view import (
     ConstraintView,
@@ -100,6 +107,7 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.preset_number_field import render_preset_number_field
+from capa_simulation.components.process_field import render_process_choice
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
     equipment_scope,
@@ -207,6 +215,8 @@ from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, condition_card
 
 CARD_LABEL = "제약 시뮬레이션 조건"
+# 공용 공정 칸의 출처 이름. 이 화면은 공용 값을 받기만 한다(2026-11-08 사용자 답 P2-2).
+SCREEN = "제약 시뮬레이션"
 CARD_NAME = "constraint_simulation"
 CARD_ICON = ":material/call_split:"
 # 제품별 소요를 읽지 못한 회차의 카드 표지 — 까닭은 본문 마크의 알림이다(설계 규칙 UI-NTF-08).
@@ -226,8 +236,6 @@ HELD_HELP = (
 # 계획 앞에서 멈춘 회차의 잠긴 칸 — 칸에는 표지, 까닭은 칸 풍선이다(설계 규칙 UI-ACC-02).
 HELD_IDLE_PLACEHOLDER = "고를 호기 없음"
 HELD_IDLE_HELP = "설비 일정이 서는 공정에서 고릅니다."
-# 출처 띠 「신규 = 기여 시작 …」 의 뜻 — 띠에는 값(날 · 대수)만 둔다(설계 규칙 UI-TXT-01).
-NEW_START_HELP = "신규의 기여 시작은 공정 Capa 상세 ③ 의 Qual 다음 날이고 묶음은 첫 모듈입니다."
 OWNED_LABEL = "목록에 없는 보유 제약 설비 (환산 대수)"
 OWNED_HELP = (
     "위 「보유 제약 호기」 목록에 없는 보유(기존보유처럼 설비 마스터 호기가 아닌 대수)를 "
@@ -257,12 +265,14 @@ def new_since_help(*, modify: bool, new_units_on: bool) -> str:
 
 
 # 주소 `?process=` 는 **무엇보다 먼저** 꺼내고 그 키 하나만 지운다 — 부트스트랩이 멈춘 회차에도
-# 주소에 남지 않게(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」 이 싣는다).
-requested_process = take_constraint_process_request()
+# 주소에 남지 않게(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」 이 싣는다). 같은 값은 같은 방문
+# 안에서만 한 번 적용하고, 다른 화면에서 다시 들어온 방문은 다시 적용한다.
+requested_process = take_constraint_process_request(page_visit())
 
 render_page_header("제약 시뮬레이션")
-# 공정·조건 한 줄과 「← 공정 Capa 상세」 자리. 공정과 계산이 정해진 뒤 채운다 — 블록이라 계산 동안
-# 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로 border·height 를 주지 않는다).
+# 머리 줄(멈춘 갈래의 공정 · 배지 또는 계산이 건 표지)과 「← 공정 Capa 상세」 자리. 공정과 계산이
+# 정해진 뒤 채운다 — 블록이라 계산 동안 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로
+# border·height 를 주지 않는다).
 header_marks = st.container()
 render_page_guide("constraint_simulation", title=PAGE_TITLE)
 # 설비 DB 경고(이 코드보다 새 스키마·옛 배포 흔적)와 알림 표지 자리 — 맨 위에 선다.
@@ -274,7 +284,7 @@ try:
     page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
-    with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
+    with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON, default=True):
         st.caption(NO_PROCESS_MARK)
     message = bootstrap_error_message(exc)
     render_data_error(message, code="CS-01", text="제약 시뮬레이션을 준비하지 못했습니다")
@@ -285,8 +295,12 @@ context = page_inputs.context
 active_scenario = context.active_scenario
 months = list(page_inputs.months)
 process_options = page_inputs.process_options
-# 본문 맨 위 모드 전환 「제약 영향 | 개조 일정」 — 카드에 무엇이 설지 정하므로 앱 전체 회차로 돈다.
-schedule_mode = render_mode_switch() == SCHEDULE_MODE
+# 사이드바 조건 카드 하나를 세워 두 모드가 차례로 채운다. 맨 위는 모드 전환 「제약 영향 | 개조
+# 일정」 — 카드에 무엇이 설지 정하므로 앱 전체 회차로 돈다. 그 전환이 카드 안이라 카드는 처음 펼친
+# 채 선다(한 번 접으면 기억 칸을 따른다 — 2026-11-08 사용자 그림 메모 g12).
+card = condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON, default=True)
+with card:
+    schedule_mode = render_mode_switch() == SCHEDULE_MODE
 
 # 설비 — 세션 설비 시나리오(새 세션은 공식). 못 읽으면 까닭을 들고 카드는 그대로 세운다.
 equipment_session: EquipmentSession | None = None
@@ -322,8 +336,18 @@ plan_source = EquipmentPlanSource(
     manual_downtime=manual_downtime,
 )
 
-# 공정 — 넘겨받은 공정이 선택지에 있으면 위젯 칸에 적는다(공정 선택 상자보다 먼저). HOME 칸으로 연
-# 공정 Capa 상세(설비 공식 고정)에서 넘어왔으면 그 방문을 적어 둔다 — 설비 기준이 바뀐 것을 알린다.
+# 공정 — 공정 값 칸보다 먼저 정해 세션 칸에 적는다. 공용 공정(다른 화면에서 고른 공정)은 값이 바뀐
+# 뒤 처음 그리는 회차에 하나이고 이 목록에 있을 때만 연다 — 넘겨받은 공정(주소 `process` — 공정 Capa
+# 상세 머리 링크)이 이긴다(2026-11-08 사용자 답 P2-2). 따라 연 공정은 설비 일정이 서지 않아도 그대로
+# 연다 — 고른 것과 같은 멈춘 자리다. 처음 연 화면의 기본(`first_ready_process`)은 세션 칸이 빈
+# 회차에만 쓴다.
+followed_process = shared_process.follow_single(
+    SCREEN, process_options, entered=requested_process is not None
+)
+if followed_process is not None:
+    st.session_state[CONSTRAINT_PROCESS_KEY] = followed_process
+# 넘겨받은 공정이 선택지에 있으면 세션 칸에 적는다. HOME 칸으로 연 공정 Capa 상세(설비 공식
+# 고정)에서 넘어왔으면 그 방문을 적어 둔다 — 설비 기준이 바뀐 것을 알린다.
 missing_label: str | None = None
 if requested_process is not None:
     if requested_process in process_options:
@@ -361,6 +385,12 @@ if missing_label is not None:
     )
 with notices:
     alerts.flush()
+# 조회 조건 패널의 공정 값 칸(하나 고름 — 두 모드가 나눈다). 값은 원본이고 글자만 표시명이다.
+# 여기서 고른 공정은 공용 값을 바꾸지 않는다 — 한 공정을 들여다본 일로 다른 화면의 거름이 사라지지
+# 않게(P2-2).
+selected_process = render_process_choice(
+    process_options, screen=SCREEN, key=CONSTRAINT_PROCESS_KEY, labels=process_labels
+)
 
 
 def locked_arrival_label(process: str | None) -> str | None:
@@ -408,10 +438,14 @@ with notices:
     report_locked_arrival(opened_process)
 
 
-def render_header(process: str, line: str) -> None:
-    """머리 한 줄(공정·조건)과 오른쪽 끝 「← 공정 Capa 상세」."""
+def render_header(process: str, line: str = "", *, marks: str = "", marks_help: str = "") -> None:
+    """머리 줄 — 왼쪽은 멈춘 갈래의 공정 · 배지(`line`)나 계산이 건 표지(`marks` — 뜻은
+    `marks_help` 풍선), 오른쪽 끝은 「← 공정 Capa 상세」. 둘 다 없으면 링크만 선다."""
     with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown(line, width="content")
+        if line:
+            st.markdown(line, width="content")
+        if marks:
+            st.caption(marks, help=marks_help or None, width="content")
         st.space("stretch")
         theme_value = st.query_params.get(THEME_QUERY_PARAM)
         params = {DETAIL_PROCESS_PARAM: process}
@@ -433,10 +467,9 @@ if schedule_mode:
             source=plan_source,
             process_labels=process_labels,
             equipment_session=equipment_session,
-            card_label=CARD_LABEL,
-            card_name=CARD_NAME,
-            card_icon=CARD_ICON,
+            card=card,
             render_header=render_header,
+            process=selected_process,
         )
     )
     st.stop()
@@ -479,17 +512,8 @@ product_options: list[str] = []
 # 「소요가 있는 제품이 없다」 와 가른다.
 product_error = ""
 cutoff_line = "Cut-off 미기재"
-with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
+with card:
     st.caption("**대상**")
-    selected_process = st.selectbox(
-        "공정",
-        process_options,
-        key=CONSTRAINT_PROCESS_KEY,
-        persist_state="session",
-        disabled=not process_options,
-        # 표시만 바꾼다. 선택값은 원본이다 — 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다.
-        format_func=process_labels.unique_format_func(process_options),
-    )
     if selected_process is not None and months:
         try:
             product_table = get_process_product_demand(
@@ -833,7 +857,7 @@ new_shares = (
 
 def new_units_caption(shares: NewUnitAvailability) -> str:
     """카드 개조 묶음의 신규 한 줄 — 기준일 이후 기여 시작 호기 수와 앞 몇 대의 이름. 어느 호기를
-    붙였는지(전용 · 일반 설비)는 본문 개조 창 카드가 말한다."""
+    붙였는지(전용 · 일반 설비)는 계산표 「들어오는 신규 설비」 칸 풍선이 말한다."""
     if not shares.units:
         return "기준일 이후 기여를 시작하는 신규 설비가 없습니다."
     names = ", ".join(literal_markdown(name) for name in shares.units[:4])
@@ -921,60 +945,73 @@ labels = ConstraintLabels(
         if general_value is None
         else ()
     ),
+    today=today,
 )
 period_text = (
     month_label(period.start)
     if period.start == period.end
     else f"{month_label(period.start)}–{month_label(period.end)}"
 )
-modification_text = f"개조 {conditions.modification_days}일" if conditions.modifies else "개조 없음"
-if conditions.uses_owned_units:
-    holdings = [f"호기 {len(conditions.held_units)}대"] if conditions.held_units else []
-    if conditions.owned_units:
-        holdings.append(f"{conditions.owned_units}대")
-    modification_text += " · 보유 제약 " + " + ".join(holdings)
-if conditions.uses_new_units and new_unit_since is not None:
-    modification_text += f" · 신규 개조 없이({new_unit_since.isoformat()}~)"
-render_header(
-    process,
-    f"**{literal_markdown(process_label)}** · {literal_markdown(product)} · {period_text} · "
-    f"제약 {target_percent}% · 기준 {literal_markdown(general_label(labels, result))} · "
-    f"{modification_text}",
-)
-
-# 출처 띠 — 소요는 활성 시나리오(세션만 읽음), 가용은 세션 설비 시나리오. 두 모드가 같은 조각은
-# `constraint_equipment_plan` 에서 받는다.
-scenario_text = source_scenario_text()
-equipment_text = equipment_basis_label(equipment_session) if equipment_session is not None else None
-band = (
-    f":material/database: 소요 = 활성 시나리오 {scenario_text} "
-    f"{literal_markdown(process_label)} 소요를 제품정보로 나눔"
-    f"({literal_markdown(product)} / 그 밖) · 가용 = 설비 일정 기준"
-    + source_equipment_text(equipment_text)
-)
-band_help = SOURCE_BAND_HELP
-# 계획이 실제로 건 칸으로 적는다 — 이 공정에 0 아닌 칸이 있을 때만.
-manual_note = manual_effect_band(plan.manual_downtime, (process,))
-if manual_note:
-    band += f" · {manual_note}"
-band += upeh_assumption_note()
-if conditions.held_units:
-    band += (
-        f" · 보유 호기 = {literal_markdown(equipment_text or '세션 설비 시나리오')}에서 고른 "
-        f"{len(conditions.held_units)}대"
-    )
-if new_shares is not None:
-    band += (
-        f" · 신규 = 기여 시작 {new_shares.since.isoformat()} 이후 호기 {len(new_shares.units)}대"
-    )
-    band_help += f" {NEW_START_HELP}"
-st.caption(band, help=band_help, width="content")
+# 머리 줄 — 조건을 되읊지 않고(사이드바가 조건이다) 계산이 건 표지만 둔다. 소요 · 가용의 출처와 읽는
+# 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 입력 비가동은 계획이 실제로 건 칸으로 적는다 — 이
+# 공정에 0 아닌 칸이 있을 때만.
+marks, marks_help = applied_marks(manual_effect_band(plan.manual_downtime, (process,)))
+render_header(process, marks=marks, marks_help=marks_help)
 if result.kpis.constrained_months == 0:
     st.caption(
         f"제약 기간({period_text})에 {literal_markdown(product)} 소요가 없어 떼어 줄 대수가 "
         "없습니다."
     )
 
+
+def report_late_starts(process: str, result: ConstraintResult) -> None:
+    """첫날이 오늘보다 앞인 개조 창 · 신규 대기의 상태 알림(`CS-04`) — 그래프 · 계산표의 그 달
+    감소가 「지금 시작하면」 이 아니라 「제때 시작했다면」 의 모습이라는 가정이다(설계 규칙
+    UI-NTF-05 — 자리에는 그리지 않는다). 범위는 세션 설비 기준과 공정, 내용은 그 창 · 대기의
+    (달, 첫날, 끝, 대수)다. 계산이 선 회차마다 부르고, 없으면 「해소」 다. 알림 칸 JS 가 평문으로
+    그린다."""
+    windows = late_windows(result, today)
+    waits = late_waits(result, today)
+    scope = equipment_scope(equipment_session) if equipment_session is not None else None
+    parts = [f"개조 창 {len(windows)}개"] if windows else []
+    if waits:
+        parts.append(f"신규 대기 {len(waits)}개")
+    lines = [f"{window_line(window)} — {WINDOW_LATE_TEXT}" for window in windows] + [
+        f"{waiting_line(item)} — {WAIT_LATE_TEXT}" for item in waits
+    ]
+    alerts.state(
+        "CS-04",
+        scope={**(scope.scope if scope is not None else {}), "process": process},
+        content=[
+            ["window", window.month, window.start.isoformat(), window.end.isoformat(), window.units]
+            for window in windows
+        ]
+        + [
+            ["wait", item.month, item.unit, item.module, item.start.isoformat(), item.units]
+            for item in waits
+        ]
+        or None,
+        active=bool(lines),
+        text=f"첫날이 지난 {' · '.join(parts)} — 제때 시작했다면의 확보율" if lines else None,
+        full=(
+            "\n".join(
+                [
+                    f"{process_label} — 그래프 · 계산표의 그 달 감소는 「지금 시작하면」 이 아니라 "
+                    "「제때 시작했다면」 의 모습입니다.",
+                    *lines,
+                ]
+            )
+            if lines
+            else None
+        ),
+        scope_label=" · ".join(
+            part for part in ((scope.label if scope is not None else ""), process_label) if part
+        ),
+    )
+
+
+with notices:
+    report_late_starts(process, result)
 render_constraint_kpis(result, labels)
 settle_selected_month(result)
-render_constraint_view(ConstraintView(result=result, labels=labels, today=today))
+render_constraint_view(ConstraintView(result=result, labels=labels))

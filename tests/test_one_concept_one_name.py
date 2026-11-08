@@ -87,10 +87,15 @@ def test_guides_and_readme_use_the_current_names() -> None:
     assert stale == []
 
 
-def test_the_mode_keeps_its_name_and_the_section_takes_its_own() -> None:
-    """모드 「개조 일정」 은 그대로이고 제약 영향 맨 아래 구획만 「이 조건의 개조 창」 이다."""
-    from capa_simulation.components.constraint_simulation_view import SCHEDULE_CARD_TITLE
+def test_the_mode_keeps_its_name_and_no_section_takes_it() -> None:
+    """모드 「개조 일정」 은 그대로다. 제약 영향 본문에는 개조 창 구획이 없다(2026-11-08 사용자
+    그림 메모 g12) — 본문 구획 제목에 「개조 일정」 이 서지 않는다."""
+    from capa_simulation.components import constraint_simulation_view
     from capa_simulation.modification_schedule_state import MODE_LABELS
 
-    assert SCHEDULE_CARD_TITLE == "이 조건의 개조 창"
     assert "개조 일정" in MODE_LABELS.values()
+    assert not hasattr(constraint_simulation_view, "SCHEDULE_CARD_TITLE")
+    view = (ROOT / "src/capa_simulation/components/constraint_simulation_view.py").read_text(
+        encoding="utf-8"
+    )
+    assert "**개조 일정**" not in view

@@ -4,35 +4,43 @@
 """개조 일정 모드 — 「N대 × D일 개조를 기준 확보율을 지키며 언제 할까」(2026-10-26 사용자 결정 3).
 
 제약 시뮬레이션 화면(`app_pages/constraint_simulation.py`)의 둘째 모드다. 페이지는 공통 진입(판정
-기준·시나리오 키·달·공정 선택지)과 설비 세션까지만 내고 모드 전환(`render_mode_switch` — 본문 맨 위
-`segmented_control`)이 「개조 일정」 이면 `render_schedule_mode` 하나를 부른 뒤 멈춘다. 그 뒤는 모두
-여기다 — 제약 모드의 카드·본문은 그리지 않는다(1판은 두 모드를 함께 쓰지 않는다, C14).
+기준·시나리오 키·달·공정 선택지)과 설비 세션까지만 내고 모드 전환(`render_mode_switch` — 사이드바
+조건 카드 맨 위 `segmented_control`)이 「개조 일정」 이면 `render_schedule_mode` 하나를 부른 뒤
+멈춘다. 그 뒤는 모두 여기다 — 제약 모드의 카드·본문은 그리지 않는다(1판은 두 모드를 함께 쓰지
+않는다, C14).
 
-- **모드 전환은 본문이다**(하위 보기 전환 규칙). 다만 카드에 무엇이 설지를 바꾸므로 프래그먼트가
-  아닌 앱 전체 회차로 돈다(AGENTS 9장 「본문 프래그먼트」).
-- **조건 카드**(제약 모드와 같은 카드 이름·자리) — 대상(공정 — 제약 모드와 같은 칸) / 이 세션만 /
-  개조(대수 · 기간 버튼 + 직접 · 동시 상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준
-  확보율 — 제약 모드와 **한 정본**, 정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
+- **모드 전환은 조건 카드 맨 위다**(2026-11-08 사용자 그림 메모 g12). 카드에 무엇이 설지를
+  바꾸므로 프래그먼트가 아닌 앱 전체 회차로 돈다(AGENTS 9장 「본문 프래그먼트」).
+  페이지가 카드 하나를 세워 그 안 맨 위에 전환을 그리고 나머지를 이 모드가 채운다
+  (`ScheduleModeContext.card`).
+- **공정**은 조회 조건 패널의 공정 값 칸(하나 고름 — 공용 공정 칸)이고 제약 모드와 같은 칸이다 —
+  페이지가 정해 넘긴다(`ScheduleModeContext.process`).
+- **조건 카드**(제약 모드와 같은 카드 이름·자리) — 이 세션만 / 개조(대수 · 기간 버튼 + 직접 · 동시
+  상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준 확보율 — 제약 모드와 **한 정본**,
+  정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
 - **설비 일정 확인 · 계획** — 제약 모드와 같은 함수 하나(`constraint_equipment_plan.
   render_equipment_plan` — 멈추는 갈래 · 멈춘 자리 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
   키**로).
 - **계산** — 순수 서비스 `services/modification_schedule.py`. 「가장 고르게」 는 이분 탐색이라 수백
   ms 까지 가므로 결과를 조건 값으로 세션에 몇 벌 기억한다(`remembered_result` — Streamlit 캐시가
   아니다, CLAUDE.md 캐시 경계). 그림도 같다(`remembered_figure` — 테마가 키에 든다).
-- **본문** — 머리 한 줄 · 「저장하지 않음」 · 출처 띠 · 「아직 일정에 넣지 않은 개조만」 → 요약 넷 →
-  (못 맞추면) 대안 셋 → 월별 확보율 그래프(개조 전·뒤 · 기준선 · 차수 막대) → 개조 일정(차수 목록).
+- **본문** — 머리 한 줄(공정 · 조건, 오른쪽 끝 「← 공정 Capa 상세」 — 제약 영향 모드와 같은 머리 칸)
+  · 출처 띠(소요 · 가용 · 입력 비가동 · UPEH 가정 단서 — 조각은 `constraint_equipment_plan`) → 요약
+  넷 → (못 맞추면) 대안 셋 → 월별 확보율 그래프(개조 전·뒤 · 기준선 · 차수 막대) → 개조 일정(차수
+  목록).
 
 저장하지 않는다 — 조건은 세션 칸뿐이고 어느 DB 에도 쓰지 않는다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import date, timedelta
 from typing import Final, NamedTuple
 
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
@@ -40,6 +48,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     SESSION_ONLY_HELP,
     SOURCE_BAND_HELP,
     EquipmentPlanSource,
+    HeaderRenderer,
     equipment_readiness,
     render_equipment_plan,
     source_equipment_text,
@@ -79,7 +88,6 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
-    CONSTRAINT_PROCESS_KEY,
     GENERAL_PRESETS,
     MOD_DAY_PRESETS,
     seed_toggle,
@@ -146,7 +154,6 @@ from capa_simulation.services.securement_threshold import (
 )
 from capa_simulation.services.threshold_label import threshold_percent
 from capa_simulation.services.wd_window import wd_window
-from capa_simulation.sidebar_status import condition_card
 
 __all__ = [
     "CHART_CARD_KEY",
@@ -223,7 +230,7 @@ DEADLINE_HELP: Final = (
 
 
 class ScheduleModeContext(NamedTuple):
-    """페이지가 넘기는 것 — 설비 일정 확인 · 계획 입력(제약 모드와 같은 묶음)·설비 세션·카드 이름과
+    """페이지가 넘기는 것 — 설비 일정 확인 · 계획 입력(제약 모드와 같은 묶음)·설비 세션·조건 카드와
     머리 그리기."""
 
     source: EquipmentPlanSource
@@ -232,10 +239,13 @@ class ScheduleModeContext(NamedTuple):
 
     process_labels: ProcessLabels
     equipment_session: EquipmentSession | None
-    card_label: str
-    card_name: str
-    card_icon: str
-    render_header: Callable[[str, str], None]
+    card: DeltaGenerator
+    """사이드바 조건 카드 — 페이지가 세워 맨 위에 모드 전환을 그렸다. 이 모드는 그 아래를 채운다."""
+
+    render_header: HeaderRenderer
+    process: str | None
+    """지금 공정(원본) — 페이지가 조회 조건 패널의 공정 값 칸(하나 고름)으로 정했다. 고를 공정이
+    없으면 None."""
 
 
 class ScheduleChoice(NamedTuple):
@@ -260,7 +270,8 @@ class ScheduleChoice(NamedTuple):
 
 
 def render_mode_switch() -> str:
-    """본문 맨 위 「제약 영향 | 개조 일정」. 고른 모드를 돌려준다(`persist_state="session"`)."""
+    """「제약 영향 | 개조 일정」 — 페이지가 사이드바 조건 카드 맨 위(지금 컨테이너)에서 부른다. 고른
+    모드를 돌려준다(`persist_state="session"`)."""
     settle_mode()
     mode = st.segmented_control(
         "시뮬레이션 모드",
@@ -529,6 +540,12 @@ def _render_conditions(
 # ================================================================== 계산 memo
 
 
+def _move_to_end(memo_key: str, entries: Sequence[tuple[object, object]], index: int) -> None:
+    """꺼낸 벌을 맨 뒤로 — 마지막 벌이 늘 지금 보이는 것이다(오래 안 쓴 벌부터 버린다)."""
+    if index != len(entries) - 1:
+        st.session_state[memo_key] = [*entries[:index], *entries[index + 1 :], entries[index]]
+
+
 def remembered_result(
     inputs: Sequence[ScheduleMonthInput], conditions: ScheduleConditions
 ) -> ScheduleResult:
@@ -540,8 +557,9 @@ def remembered_result(
         if isinstance(memo, list)
         else []
     )
-    for stored_key, stored in entries:
+    for index, (stored_key, stored) in enumerate(entries):
         if stored_key == key:
+            _move_to_end(SCHEDULE_RESULT_MEMO_KEY, entries, index)
             return stored
     result = plan_modification_schedule(inputs, conditions)
     entries = [entry for entry in entries if entry[0] != key][-(_MEMO_LIMIT - 1) :]
@@ -559,8 +577,9 @@ def remembered_figure(result: ScheduleResult, labels: ScheduleLabels) -> go.Figu
         if isinstance(memo, list)
         else []
     )
-    for stored_key, stored in entries:
+    for index, (stored_key, stored) in enumerate(entries):
         if stored_key == key:
+            _move_to_end(SCHEDULE_FIGURE_MEMO_KEY, entries, index)
             return stored
     figure = schedule_figure(result, labels)
     entries = [entry for entry in entries if entry[0] != key][-(_MEMO_LIMIT - 1) :]
@@ -577,18 +596,9 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
     source = context.source
     page_inputs = source.page_inputs
     months = list(page_inputs.months)
-    options = page_inputs.process_options
     process_labels = context.process_labels
-    with condition_card(context.card_label, name=context.card_name, icon=context.card_icon):
-        st.caption("**대상**")
-        selected = st.selectbox(
-            "공정",
-            options,
-            key=CONSTRAINT_PROCESS_KEY,
-            persist_state="session",
-            disabled=not options,
-            format_func=process_labels.unique_format_func(options),
-        )
+    selected = context.process
+    with context.card:
         readiness = equipment_readiness(source, None if selected is None else str(selected))
         cutoff_days = readiness.cutoff_days if readiness is not None and readiness.ready else None
         choice = _render_conditions(page_inputs, today=source.today, cutoff_days=cutoff_days)

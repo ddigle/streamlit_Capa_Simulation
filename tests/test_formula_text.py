@@ -9,7 +9,7 @@
   자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 일곱(① 가용·
   가정 소요·확보율·과부족, ② 목표 과부족·비가동 영향의 갈림 합과 확보율 짝)·근거 카드
   (① 원수요 부하량 ÷ 실효 대당 Capa·가정 소요, ② 가용, ③ 판정·가정 소요·원인), 제약
-  시뮬레이션 계산표 풍선 셋·고른 달 계산 다섯 단계, 가용설비 현황 비교 시트 풍선 넷(Static
+  시뮬레이션 계산표 풍선 셋, 가용설비 현황 비교 시트 풍선 넷(Static
   가용·보유·가용·GAP), 표준 목표 로직 분석 식 세 줄(화면 대본 — 페이지 파일은 import 하지
   않는다). 결과가 앞 줄이나 다른 줄에 있고 식 줄에 등호가 없는 풍선은 결과를 붙여 읽는다.
 - **AST 가드** — UI 모듈(`app_pages/`·`components/`)의 식 꼴 f-string 마다 `formula_text` 를
@@ -44,7 +44,6 @@ from test_standard_target_capa_page import LOGIC_SELECTIONS, TEST_SCRIPT
 from capa_simulation.components import formula_text
 from capa_simulation.components.availability_sheet_canvas import _hover as sheet_hover
 from capa_simulation.components.constraint_simulation_figures import (
-    ConstraintLabels,
     _delta_cell,
     _downtime_cell,
     _existing_available_cell,
@@ -54,7 +53,6 @@ from capa_simulation.components.constraint_simulation_figures import (
     signed_points,
     units_text,
 )
-from capa_simulation.components.constraint_simulation_view import month_steps
 from capa_simulation.components.formula_text import (
     APPROX,
     EQUALS,
@@ -106,13 +104,6 @@ from capa_simulation.services.securement_threshold import SecurementThresholds
 ROOT = Path(__file__).resolve().parents[1]
 MINUS = "−"
 THRESHOLDS = SecurementThresholds(1.095, 0.995)
-LABELS = ConstraintLabels(
-    process="TC Bonding",
-    process_label="TC Bonding",
-    product="HBM라E",
-    target_percent=120,
-    general_percent=None,
-)
 
 # 반올림 경계(x.xx5 · x.xx49 · x.x5 · x.x49)·0 근처·큰 수.
 VALUES = (0.0049, 0.005, 0.0151, 0.046, 0.46, 1.005, 1.0049, 2.675, 3.3549, 12.345, 12.3449, 40.24)
@@ -600,15 +591,13 @@ RATE_PAIRS = [
 
 @pytest.mark.parametrize(("rate", "base"), RATE_PAIRS)
 def test_the_rate_difference_marks_a_written_mismatch(rate: float, base: float) -> None:
-    """제약 없을 때 대비 — 표 칸과 5단계 회색 줄이 같은 글이다. 값은 원값의 차이 그대로이고 적힌 두
-    값으로 다시 빼면 어긋날 때만 「≈」 다(「125.8% · 114.9%」 곁 「≈ −11.0%」)."""
+    """제약 없을 때 대비 — 표 칸의 글이다. 값은 원값의 차이 그대로이고 적힌 두 값으로 다시 빼면
+    어긋날 때만 「≈」 다(「125.8% · 114.9%」 곁 「≈ −11.0%」)."""
     text = rate_delta_text(rate, base)
     assert text.removeprefix(f"{APPROX} ") == signed_points(rate - base)
     _assert_difference(rate, base, text)
     result = _run()
     row = replace(result.month(202706), existing_rate=rate, baseline_rate=base)
-    steps = month_steps(row, result, LABELS, show_proportional=False).steps
-    assert steps[4].note == f"제약 없을 때 {rate_text(base)} · {text}"
     if abs(rate - base) * 100 >= 0.05:
         assert _delta_cell(row).text == text
 
@@ -666,46 +655,6 @@ def test_the_existing_available_balloon_recomputes(
         existing_available=usable - allocated,
     )
     _assert_checked(_existing_available_cell(row).hover, 1)
-
-
-@pytest.mark.parametrize(("existing", "constrained"), PAIRS)
-def test_the_month_steps_recompute(existing: float, constrained: float) -> None:
-    """고른 달 계산 1·2·5단계 — 소요 나눔·필요 대수·기존 확보율(자릿수 늘리기 길)."""
-    result = _run()
-    row = replace(
-        result.month(202706),
-        required=existing + constrained,
-        existing_demand=existing,
-        constrained_demand=constrained,
-        existing_rate=result.month(202706).existing_available / existing,
-    )
-    steps = month_steps(row, result, LABELS, show_proportional=False).steps
-    _assert_checked(steps[0].body, 1)
-    _assert_checked(steps[1].body, 1)
-    _assert_checked(steps[4].body, 1)
-
-
-@pytest.mark.parametrize(
-    ("available", "downtime"),
-    [
-        (available, downtime)
-        for available, downtime in itertools.product((3.3549, 48.004, 12.345, 40.24), VALUES)
-        if downtime <= available
-    ],
-)
-def test_the_month_step_four_recomputes(available: float, downtime: float) -> None:
-    result = _run()
-    usable = max(0.0, available - downtime)
-    row = replace(
-        result.month(202706),
-        available=available,
-        downtime=downtime,
-        usable=usable,
-        overdrawn=False,
-        allocated=0,
-        existing_available=usable,
-    )
-    _assert_checked(month_steps(row, result, LABELS, show_proportional=False).steps[3].body, 1)
 
 
 # ================================================================== 검산 그물 — 가용설비 현황

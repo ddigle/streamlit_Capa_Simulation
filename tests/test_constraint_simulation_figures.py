@@ -1,5 +1,4 @@
-# Purpose: 제약 시뮬레이션 그래프·계산표 그림과 고른 달 계산 글·개조 일정 줄·요약 넷 글을
-# 손계산 하네스로 본다.
+# Purpose: 제약 시뮬레이션 그래프·계산표 그림과 모자란 달 줄·요약 넷 글을 손계산 하네스로 본다.
 
 """제약 시뮬레이션 그림(`components/constraint_simulation_figures.py`)과 순수
 글(`constraint_simulation_view`).
@@ -10,8 +9,8 @@
 - 그래프: 선 넷(비중 토글 끄면 셋)·기준선(달마다 다르면 `hv` 계단)·개조 막대 다섯(W/D 비례 — 202706
   몫은 202705 칸 안)·표적 `customdata` = 달·`layout.meta` 세대·`HIT_TARGET`·모든 trace `unselected`
   불투명 1·오른쪽 끝 두 글이 가까우면 비켜 서로 덮지 않음.
-- 계산표: 행 차례·기간 밖 제약 칸 빈칸·미달 칸 글자색·고른 달 열 테두리.
-- 고른 달 계산 다섯 줄(202705·202706·202801)·개조 일정 줄·모자란 달 줄.
+- 계산표: 행 차례·기간 밖 제약 칸 빈칸·미달 칸 글자색·고른 달 열 테두리·칸 풍선 까닭 글.
+- 모자란 달 줄.
 - 요약 넷의 값·회색 줄(`render_constraint_kpis` — 지표 카드 그리기를 바꿔 끼워 글만 받는다).
 - 정규형 spec — 검증을 켠 길과 끈 길의 Figure JSON 이 같다(`tests/test_plotly_fast_path.py` 규칙).
 """
@@ -20,7 +19,6 @@ from __future__ import annotations
 
 import json
 import random
-import re
 from contextlib import nullcontext
 from dataclasses import replace
 from datetime import date
@@ -61,23 +59,12 @@ from capa_simulation.components.constraint_simulation_figures import (
     units_text,
 )
 from capa_simulation.components.constraint_simulation_view import (
-    FREE_ONLY_TEXT,
-    LATE_SUFFIX,
-    NEW_SKIPPED_TEXT,
     SHORT_INLINE_LIMIT,
-    WAIT_LATE_SUFFIX,
     default_month,
-    free_units_line,
-    month_steps,
-    new_stopped_line,
-    ordinary_line,
     overdrawn_lines,
     render_constraint_kpis,
-    schedule_lines,
-    sheet_legend,
     short_lines,
     short_month_lines,
-    waiting_lines,
 )
 from capa_simulation.components.month_sheet_canvas import CUSTOMDATA_MONTH, CUSTOMDATA_ROW, MINUS
 from capa_simulation.components.plotly_layout import plotly_validation
@@ -121,6 +108,12 @@ def _traces(figure: Any, name: str) -> list[dict[str, Any]]:
 
 def _traces_in(spec: dict[str, Any], name: str) -> list[dict[str, Any]]:
     return [trace for trace in spec["data"] if trace.get("name") == name]
+
+
+def _stopped(result: ConstraintResult) -> bool:
+    """결정 B1 로 신규를 더 붙이지 않았고 실제로 붙지 않은 호기가 있는가 — 덮지 않았다면 붙었을
+    신규가 있을 때만 참이다(그 호기의 까닭이 「보유로 덮음」 — 계산표 풍선)."""
+    return result.new_units_stopped_month is not None and bool(result.held_back_units)
 
 
 # ------------------------------------------------------------------ 서식
@@ -587,6 +580,87 @@ def test_the_sheet_paints_the_three_status_colors_on_the_home_basis() -> None:
     assert fills.count(tokens.STATUS_SECURE) == statuses.count("secure")
 
 
+def test_the_chart_points_follow_the_same_three_steps_on_the_home_basis() -> None:
+    """기준이 HOME 이면 기존 제품 점도 계산표와 같은 세 단계다(2026-11-08 사용자 답 d11) — 경고는
+    주의 색 면에 선 색 테두리(같은 주의 색인 제약 제품 점의 `LINE` 테두리와 가른다), 부족은 부족색,
+    확보는 선 색. 직접 넣은 기준은 미달만 부족색이다(두 단계)."""
+    result = _run()
+    labels = _home_labels(result)
+    figure = rate_figure(result, labels, selected_month=None, show_proportional=False)
+    marker = _traces(figure, "기존 제품 — 제약 반영")[0]["marker"]
+    statuses = [
+        figures.general_status(row.existing_rate, row, dict(labels.warning_targets))
+        for row in result.months
+    ]
+    assert "warning" in statuses, "합성 예에 경고 구간 점이 있어야 시험이 뜻이 있다"
+    expected = {
+        "warning": (tokens.STATUS_WARNING, tokens.ACCENT),
+        "shortage": (tokens.STATUS_SHORTAGE, tokens.SURFACE),
+        "secure": (tokens.ACCENT, tokens.SURFACE),
+        None: (tokens.ACCENT, tokens.SURFACE),
+    }
+    assert list(zip(marker["color"], marker["line"]["color"], strict=True)) == [
+        expected[status] for status in statuses
+    ]
+    constrained = _traces(figure, "제약 제품")[0]["marker"]
+    assert constrained["line"]["color"] == tokens.LINE != tokens.ACCENT
+
+    typed = rate_figure(result, LABELS, selected_month=None, show_proportional=False)
+    typed_colors = _traces(typed, "기존 제품 — 제약 반영")[0]["marker"]["color"]
+    assert tokens.STATUS_WARNING not in typed_colors
+    assert typed_colors == [
+        tokens.STATUS_SHORTAGE if row.existing_secure is False else tokens.ACCENT
+        for row in result.months
+    ]
+
+
+def test_the_existing_kpi_borders_follow_the_same_three_steps_on_the_home_basis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """기존 제품 요약 두 칸의 테두리도 같은 판정이다(d11) — 기준이 HOME 이면 최저 확보율이 경고
+    구간이면 주황(`attention`), 부족 구간이면 빨강(`critical`), 기준 미달 달은 그 가운데 가장 나쁜
+    판정이다. 직접 넣은 기준은 확보 · 부족 두 단계다."""
+    tones: dict[str, str] = {}
+
+    def capture(label: str, value: str, *, tone: str = "neutral", **_: object) -> None:
+        tones[label] = tone
+
+    monkeypatch.setattr(view_module, "metric_row", lambda **_: nullcontext())
+    monkeypatch.setattr(view_module, "render_status_metric", capture)
+    result = _run()
+    labels = _home_labels(result)
+    warnings = dict(labels.warning_targets)
+    assert result.kpis.lowest_existing_month is not None
+    lowest = result.month(result.kpis.lowest_existing_month)
+    below = {
+        figures.general_status(result.month(month).existing_rate, result.month(month), warnings)
+        for month in result.kpis.below_months
+    }
+    render_constraint_kpis(result, labels)
+    lowest_status = figures.general_status(lowest.existing_rate, lowest, warnings)
+    assert tones["기존 제품 최저 확보율"] == {
+        "shortage": "critical",
+        "warning": "attention",
+    }.get(str(lowest_status), "neutral")
+    assert tones["기준 미달 달 (기존 제품)"] == (
+        "critical" if "shortage" in below else ("attention" if below else "neutral")
+    )
+
+    # 경고 구간만 미달인 꼴 — 경고 경계를 아주 낮게(50%) 두면 미달 달이 모두 경고다.
+    lenient = replace(LABELS, warning_targets=tuple((row.month, 0.5) for row in result.months))
+    tones.clear()
+    render_constraint_kpis(result, lenient)
+    if result.kpis.below_months:
+        assert tones["기준 미달 달 (기존 제품)"] == "attention"
+        assert tones["기존 제품 최저 확보율"] == "attention"
+
+    tones.clear()
+    render_constraint_kpis(result, LABELS)
+    assert tones["기존 제품 최저 확보율"] == (
+        "critical" if lowest.existing_secure is False else "neutral"
+    )
+
+
 def test_a_typed_general_target_keeps_two_steps_because_it_has_no_warning_line() -> None:
     """직접 넣은 기준에는 경고 경계가 없다 — 못 미친 칸만 부족색이고 지킨 칸은 칠하지 않는다."""
     result = _run()
@@ -606,12 +680,6 @@ def test_the_constrained_rate_keeps_its_own_target_on_the_home_basis() -> None:
     row = _run().month(202706)
     assert figures._constrained_rate_cell(replace(row, met=False)).fill == tokens.STATUS_SHORTAGE
     assert figures._constrained_rate_cell(replace(row, met=True)).fill is None
-
-
-def test_the_sheet_legend_names_the_colors_of_the_basis() -> None:
-    result = _run()
-    assert "칸 색 = 확보 · 경고 · 부족" in sheet_legend(_home_labels(result))
-    assert "부족색 칸 = 기준" in sheet_legend(LABELS)
 
 
 def test_the_sheet_outlines_the_selected_month_and_tints_the_period_head() -> None:
@@ -648,241 +716,15 @@ def test_the_default_month_is_the_first_impact_month() -> None:
     assert default_month(no_impact) == 202701
 
 
-def test_the_month_steps_walk_through_the_five_calculations() -> None:
-    result = _run()
-    may = month_steps(result.month(202705), result, LABELS, show_proportional=True)
-    assert may.title == "27.05 · TC Bonding"
-    assert [step.body for step in may.steps] == [
-        "소요 **42대** = 기존 42 + HBM라E 0",
-        "제약 제품에 따로 떼는 대수 없음",
-        "개조 중 비가동 **−5.81대**",
-        "기존 가용 = 48 − 5.81 = **42.19대**",
-        "기존 확보율 = 42.19 ÷ 42 = **100.5%**",
-    ]
-    # 달마다 같은 읽는 법은 카드 제목 풍선(`STEPS_HELP`)이다 — 단계 곁에 두지 않는다.
-    assert may.steps[0].note == ""
-    assert may.steps[2].note == "27년 6월 몫 6대가 이 달 30일 개조 중 → 5.81대"
-    assert may.steps[3].note == "공정 가용 − 개조 중"
-    assert may.steps[4].note == "제약 없을 때 114.3% · −13.8%"
-    assert may.verdict == "기존 제품이 기준 110% 에 못 미칩니다"
-    assert may.verdict_secure is False
-    assert may.proportional == ""
-
-    june = month_steps(result.month(202706), result, LABELS, show_proportional=True)
-    assert june.title == "27.06 · TC Bonding · 제약 기간"
-    assert june.steps[0].body == "소요 **43대** = 기존 38 + HBM라E 5"
-    assert june.steps[1].body == "HBM라E 필요 대수 = 5 × 120% = 6.00 → **6대**"
-    assert june.steps[2].note == "27년 7월 몫 2대가 이 달 30일 개조 중 → 2대"
-    assert june.steps[3].body == "기존 가용 = 48 − 2 − 6 = **40대**"
-    assert june.steps[4].body == "기존 확보율 = 40 ÷ 38 = **105.3%**"
-    assert june.verdict == (
-        "기존 제품이 기준 110% 에 못 미칩니다 · 제약 제품 120.0% (제약 120% 충족)"
-    )
-    assert june.proportional.startswith("비중대로만 나눴다면: 제약 6대(120.0%) · 기존 42대(110.5%)")
-
-    after = month_steps(result.month(202801), result, LABELS, show_proportional=True)
-    assert after.steps[0].body == "소요 **48대** = 기존 48 + HBM라E 0"
-    assert after.steps[2].body == "이 달 개조 비가동 없음"
-    assert after.steps[3].body == "기존 가용 = 공정 가용 **54대**"
-    assert after.steps[4].body == "기존 확보율 = 54 ÷ 48 = **112.5%**"
-    assert after.verdict == "기존 제품이 기준 110%를 지킵니다"
-    assert after.verdict_secure is True
-
-
-def _written_numbers(text: str) -> list[float]:
-    return [float(number.replace(",", "")) for number in re.findall(r"\d[\d,]*(?:\.\d+)?", text)]
-
-
-@pytest.mark.parametrize("demand", [0.0215, 1.5703, 0.0549, 5.0, 2.345])
-def test_the_need_step_recomputes_from_the_written_numbers(demand: float) -> None:
-    """2단계 「소요 × 제약 % = 곱」 은 적힌 소요로 다시 셈해도 적힌 곱이 나온다.
-
-    소요를 둘째 자리로 깎아 적고 곱은 원값으로 내면 「0.02 × 120% = 0.03」 처럼 어긋났다. 그때만
-    소요를 한 자리씩 더 적는다(맞으면 둘째 자리 그대로 — 「5 × 120% = 6.00」).
-    """
-    result = _run()
-    row = replace(result.month(202706), constrained_demand=demand)
-    body = month_steps(row, result, LABELS, show_proportional=False).steps[1].body
-    written_demand, target, written_product = _written_numbers(body.split("→")[0].split("=", 1)[1])
-    assert target == 120
-    assert f"{written_demand * target / 100:.2f}" == f"{written_product:.2f}"
-    assert f"{demand * target / 100:.2f}" == f"{written_product:.2f}"
-
-
-@pytest.mark.parametrize(
-    ("available", "demand"), [(2.0, 1.9375), (40.0, 38.0), (42.1935, 42.0), (3.3349, 2.8751)]
-)
-def test_the_existing_rate_step_recomputes_from_the_written_numbers(
-    available: float, demand: float
-) -> None:
-    """5단계 「가용 ÷ 소요 = 확보율」 도 적힌 수로 다시 셈하면 적힌 확보율이다(「2 ÷ 1.94 = 103.2%」
-    가 아니다 — 적힌 수로는 103.1%)."""
-    result = _run()
-    row = replace(
-        result.month(202706),
-        existing_available=available,
-        existing_demand=demand,
-        existing_rate=available / demand,
-    )
-    body = month_steps(row, result, LABELS, show_proportional=False).steps[4].body
-    written_available, written_demand, written_rate = _written_numbers(body.split("=", 1)[1])
-    assert f"{written_available / written_demand * 100:.1f}" == f"{written_rate:.1f}"
-    assert f"{available / demand * 100:.1f}" == f"{written_rate:.1f}"
-
-
-@pytest.mark.parametrize(
-    ("existing", "constrained"),
-    [(141.2649, 1.3649), (38.0, 5.0), (41.996, 0.0), (2.0041, 0.0049), (12.3333, 4.6667)],
-)
-def test_the_demand_split_step_recomputes_from_the_written_numbers(
-    existing: float, constrained: float
-) -> None:
-    """1단계 「소요 = 기존 + 제약」 도 적힌 두 수를 더하면 적힌 소요다 — 「142.63 = 141.26 + 1.36」
-    이 아니다(적힌 수의 합은 142.62, 2026-10-26 E2E). 회색 줄은 「합하면 원래 소요와 같습니다」."""
-    result = _run()
-    row = replace(
-        result.month(202706),
-        required=existing + constrained,
-        existing_demand=existing,
-        constrained_demand=constrained,
-    )
-    step = month_steps(row, result, LABELS, show_proportional=False).steps[0]
-    assert "≈" not in step.body
-    written_required, written_existing, written_constrained = _written_numbers(step.body)
-    assert units_text(written_existing + written_constrained) == units_text(written_required)
-    assert units_text(existing + constrained) == units_text(written_required)
-    assert step.note == ""
-
-
-@pytest.mark.parametrize(
-    ("available", "downtime", "allocated"),
-    [(3.3549, 0.9651, 0), (48.004, 2.006, 6), (48.0, 2.0, 6), (40.0, 0.0, 7), (5.0, 5.806, 0)],
-)
-def test_the_existing_available_step_recomputes_from_the_written_numbers(
-    available: float, downtime: float, allocated: int
-) -> None:
-    """4단계 「공정 가용 − 개조 중 − 제약 배정 = 기존 가용」 도 적힌 수로 다시 셈하면 적힌 기존
-    가용이다 — 「3.35 − 0.97 = 2.39」 가 아니다(적힌 수로는 2.38, 2026-10-26 E2E). 비가동이 가용보다
-    많으면 쓸 수 있는 가용을 0 으로 두는 것까지 같은 셈이다."""
-    result = _run()
-    usable = max(0.0, available - downtime)
-    row = replace(
-        result.month(202706),
-        available=available,
-        downtime=downtime,
-        usable=usable,
-        overdrawn=available - downtime < 0,
-        allocated=allocated,
-        existing_available=usable - allocated,
-    )
-    body = month_steps(row, result, LABELS, show_proportional=False).steps[3].body
-    assert "≈" not in body
-    # 비가동이 가용보다 많은 달은 식이 「max(0, 가용 − 개조 중)」 이다 — 그 0 은 인수가 아니다.
-    assert ("max(0, " in body) is (available - downtime < 0)
-    *operands, written_available = _written_numbers(body.replace("max(0, ", "("))
-    written_usable = max(0.0, operands[0] - (operands[1] if downtime > 0 else 0.0))
-    written_allocated = operands[-1] if allocated > 0 else 0
-    assert units_text(written_usable - written_allocated) == units_text(written_available)
-    assert units_text(usable - allocated) == units_text(written_available)
-
-
-def test_an_overdrawn_month_shows_the_zero_floor_in_the_formula() -> None:
-    """과개조 달 4단계는 「기존 가용 = 9 − 16.45 = 0대」 가 아니라 「max(0, 9 − 16.45) = 0대」 다 —
-    0 이 되는 까닭이 식에 보인다(2026-10-25 E2E #110)."""
-    result = _run()
-    row = replace(
-        result.month(202705),
-        available=9.0,
-        downtime=16.45,
-        usable=0.0,
-        overdrawn=True,
-        allocated=0,
-        existing_available=0.0,
-    )
-    step = month_steps(row, result, LABELS, show_proportional=False).steps[3]
-    assert step.body == "기존 가용 = max(0, 9 − 16.45) = **0대**"
-    assert step.note.endswith("비가동이 가용보다 많아 쓸 수 있는 가용을 0 으로 둡니다")
-    # 신규 대기도 쓸 수 있는 가용에서 빠지므로 0 바닥 괄호 안에 들고, 제약 배정은 괄호 밖이다.
-    waiting = replace(row, downtime=5.0, waiting=6.25, allocated=0)
-    body = month_steps(waiting, result, LABELS, show_proportional=False).steps[3].body
-    assert body == "기존 가용 = max(0, 9 − 5 − 6.25) = **0대**"
-
-
-def _operand_after(text: str, name: str) -> str:
-    """식 글에서 `name` 바로 뒤 수 글자(「기존 1.9637」 → 「1.9637」)."""
-    match = re.search(rf"{re.escape(name)} (\d[\d,]*(?:\.\d+)?)", text)
-    assert match is not None, text
-    return match.group(1)
-
-
-def test_one_quantity_keeps_one_form_across_the_month_steps() -> None:
-    """같은 달 1단계 「소요 1.96대 = 기존 1.96」 과 5단계 「3 ÷ 1.9637」 처럼 같은 수가 두 꼴로
-    보이지 않는다(2026-10-25 E2E #109) — 카드에 서는 식이 함께 맞는 한 자릿수로 모든 인수를 적는다.
-    굵은 결과는 화면 자릿수 그대로다."""
-    result = _run()
-    row = replace(
-        result.month(202705),
-        required=1.9637,
-        existing_demand=1.9637,
-        constrained_demand=0.0,
-        downtime=0.0,
-        downtime_shares=(),
-        usable=3.0,
-        overdrawn=False,
-        allocated=0,
-        available=3.0,
-        existing_available=3.0,
-        existing_rate=3.0 / 1.9637,
-    )
-    steps = month_steps(row, result, LABELS, show_proportional=False).steps
-    assert steps[0].body == "소요 **1.96대** = 기존 1.9637 + HBM라E 0"
-    assert steps[4].body == "기존 확보율 = 3 ÷ 1.9637 = **152.8%**"
-
-    # 기간 안 — 1단계·2단계의 제약 소요, 1단계·5단계의 기존 소요, 4단계·5단계의 가용이 한 꼴이다.
-    june = result.month(202706)
-    for existing, constrained in ((38.123, 4.8771), (2.0041, 0.0249), (141.2649, 1.3649)):
-        inside = replace(
-            june,
-            required=existing + constrained,
-            existing_demand=existing,
-            constrained_demand=constrained,
-            existing_rate=june.existing_available / existing,
-        )
-        steps = month_steps(inside, result, LABELS, show_proportional=False).steps
-        assert all("≈" not in step.body for step in steps)
-        assert _operand_after(steps[0].body, "기존") == _operand_after(steps[4].body, "÷")
-        assert _operand_after(steps[0].body, "HBM라E") == _operand_after(
-            steps[1].body, "필요 대수 ="
-        )
-
-
-def test_a_step_that_no_digits_can_match_says_approximately() -> None:
-    """어느 자릿수 후보로도 적힌 결과가 안 나오면 둘째 자리로 적고 등호를 「≈」 로 둔다(AGENTS
-    「화면 숫자는 검산되어야 한다」) — 여섯째 자리까지 늘린 「=」 가 아니다."""
-    result = _run()
-    row = replace(
-        result.month(202706),
-        required=100.0,
-        existing_demand=90.123456789,
-        constrained_demand=4.0,
-    )
-    body = month_steps(row, result, LABELS, show_proportional=False).steps[0].body
-    assert body == "소요 **100대** ≈ 기존 90.12 + HBM라E 4"
-
-
 def test_a_constraint_demand_below_one_unit_says_the_minimum_one_unit() -> None:
     """제약 소요가 1대 미만(0.025대)이면 필요 대수를 올림해 1대를 떼 제약 제품 확보율이 4000% 다 —
-    고른 달 2단계·결과 상자·계산표 두 칸 풍선·그래프 풍선이 「최소 1대」 를 곁들여 그 까닭을
-    말한다(2026-10-25 E2E #64). 소요가 1대 이상인 달에는 붙지 않는다."""
+    계산표 두 칸 풍선·그래프 풍선이 「최소 1대」 를 곁들여 그 까닭을 말한다(2026-10-25 E2E #64).
+    소요가 1대 이상인 달에는 붙지 않는다."""
     product = (0, 0, 0, 0, 0, 0.025, 6, 7, 8, 8, 9, 9, 10, 10, 11)
     result = _run(product=product)
     june = result.month(202706)
     assert (june.need, june.allocated) == (1, 1)
     assert figures.minimum_unit(june)
-    steps = month_steps(june, result, LABELS, show_proportional=False)
-    assert steps.steps[1].body == "HBM라E 필요 대수 = 0.025 × 120% = 0.03 → **1대**(최소)"
-    assert steps.steps[1].note.startswith("소요가 1대 미만이어도 정수로 올려 최소 1대를 뗍니다")
-    assert steps.verdict.endswith("제약 제품 4000.0% (제약 120% 충족 · 소요 1대 미만에 최소 1대)")
     assert figures._need_cell(june, 120).hover.endswith("→ 1대(최소)")
     rate_hover = figures._constrained_rate_cell(june).hover
     assert "0.03대가 1대 미만이라도 최소 1대를 떼어" in rate_hover
@@ -890,26 +732,19 @@ def test_a_constraint_demand_below_one_unit_says_the_minimum_one_unit() -> None:
 
     july = result.month(202707)
     assert not figures.minimum_unit(july)
-    july_steps = month_steps(july, result, LABELS, show_proportional=False)
-    assert "(최소)" not in july_steps.steps[1].body
-    assert "최소" not in july_steps.verdict
     assert "최소" not in figures._hit_hover(july, result.conditions)
     assert "최소" not in figures._need_cell(july, 120).hover
 
 
 def test_the_minimum_unit_explains_the_rate_only_when_that_one_unit_is_allocated() -> None:
-    """「최소 1대」 는 필요 대수 쪽(2단계 · 필요 칸)에는 늘 붙지만, 확보율 쪽(결과 상자 ·
-    확보율 칸 · 그래프 풍선)에는 그 1대를 배정한 달에만 붙는다. 소요가 0.3대로 줄어도 개조한
+    """「최소 1대」 는 필요 대수 쪽(필요 칸)에는 늘 붙지만, 확보율 쪽(확보율 칸 · 그래프 풍선)에는
+    그 1대를 배정한 달에만 붙는다. 소요가 0.3대로 줄어도 개조한
     전용 6대를 남긴 달의 2000% 는 남긴 전용 때문이고, 가용이 모자라 배정하지 못한 달은 0% 라
     「최소 1대를 떼어 크게 나온다」 가 틀린 말이다."""
     retained = _run(product=(0, 0, 0, 0, 0, 5, 0.3, 7, 8, 8, 9, 9, 10, 10, 11))
     july = retained.month(202707)
     assert (july.need, july.dedicated, july.allocated) == (1, 6, 6)
     assert figures.minimum_unit(july) and not figures.minimum_rate(july)
-    steps = month_steps(july, retained, LABELS, show_proportional=False)
-    assert steps.steps[1].body.endswith("→ **1대**(최소)")
-    assert steps.steps[1].note.startswith("이미 개조한 6대는 전용으로 남습니다")
-    assert steps.verdict.endswith("제약 제품 2000.0% (제약 120% 충족)")
     assert figures._need_cell(july, 120).hover.endswith("→ 1대(최소)")
     assert "최소" not in figures._constrained_rate_cell(july).hover
     assert "최소" not in figures._hit_hover(july, retained.conditions)
@@ -924,38 +759,9 @@ def test_the_minimum_unit_explains_the_rate_only_when_that_one_unit_is_allocated
     june = short.month(202706)
     assert (june.need, june.dedicated, june.allocated, june.short) == (1, 1, 0, True)
     assert figures.minimum_unit(june) and not figures.minimum_rate(june)
-    steps = month_steps(june, short, LABELS, show_proportional=False)
-    assert steps.steps[1].body.endswith("→ **1대**(최소)")
-    assert "크게" not in steps.steps[1].note
-    assert steps.verdict.endswith("제약 제품 0.0% (제약 120% 미달)")
+    assert figures._need_cell(june, 120).hover.endswith("→ 1대(최소)")
     assert "최소" not in figures._constrained_rate_cell(june).hover
     assert "최소" not in figures._hit_hover(june, short.conditions)
-
-
-def test_a_dedicated_pool_above_need_says_it_stays() -> None:
-    """누적 최대 — 202710 소요가 8 → 7 로 줄어도 전용 10대가 남는다(합성 한 줄)."""
-    product = (0, 0, 0, 0, 0, 5, 6, 7, 8, 7, 9, 9, 10, 10, 11)
-    result = _run(product=product)
-    october = month_steps(result.month(202710), result, LABELS, show_proportional=False)
-    assert october.steps[1].note == "이미 개조한 10대는 전용으로 남습니다(줄여도 되돌리지 않음)."
-
-
-def test_the_steps_without_modification_say_so() -> None:
-    result = _run(replace(CONDITIONS, modification_days=None))
-    steps = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    assert steps.steps[2].body == "개조 없음 — 비가동 없이 나누기만 합니다"
-
-
-def test_the_schedule_lines_mark_late_windows() -> None:
-    result = _run()
-    lines = schedule_lines(result.windows, today=date(2027, 5, 1))
-    assert lines[0] == ("27년 6월 몫 · 2027-04-25 \\~ 2027-05-24 비가동 · **6대**" + LATE_SUFFIX)
-    assert not lines[1].endswith(LATE_SUFFIX)
-    assert len(lines) == 5
-    assert all(
-        not line.endswith(LATE_SUFFIX)
-        for line in schedule_lines(result.windows, today=date(2027, 1, 1))
-    )
 
 
 def test_the_short_and_overdrawn_lines_name_each_month() -> None:
@@ -975,8 +781,6 @@ def test_the_short_and_overdrawn_lines_name_each_month() -> None:
         "서지 않습니다."
     ]
     assert short_lines(_run()) == ""
-    may = month_steps(result.month(202705), result, LABELS, show_proportional=False)
-    assert "0 으로 둡니다" in may.steps[3].note
 
 
 def test_the_short_line_names_the_dedicated_units_and_folds_many_months() -> None:
@@ -1082,8 +886,11 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     안에 늘어날 전용 없음」 이 일부 모듈만 온 묶음에도 섰다) B1 을 증가마다로 넓혀 뒤 증가부터 덮인
     호기에 「27년 7월부터 보유로 다 덮음」 을 적은 판이다(같은 날 — 두 갈래 모두 배포 전이라 한 번
     올렸다). 12 는 기준이 HOME 일 때 계산표 확보율 칸을 세 단계 색으로 칠하고 제약 없을 때 대비
-    칸의 어긋난 차이에 「≈」 를 단 판이다(2026-11-07 사용자 답 — 한 번 올렸다)."""
-    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 12
+    칸의 어긋난 차이에 「≈」 를 단 판이다(2026-11-07 사용자 답 — 한 번 올렸다). 13 은 고른 달 계산
+    카드를 걷어 달 칸 풍선 끝의 「누르면 이 달 계산」 을 빼고(2026-11-08 사용자 그림 메모 g12)
+    기준이 HOME 일 때 기존 제품 점을 세 단계 판정색으로 칠하고 첫날이 지난 개조 · 대기 막대 풍선에
+    「이미 지난 날짜」 꼬리를 단 판이다(같은 날 답 d11 · 검토 — 같은 배포라 한 번 올렸다)."""
+    assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 13
 
 
 def test_each_option_row_stands_only_with_its_option() -> None:
@@ -1207,150 +1014,104 @@ def test_the_waiting_bars_share_the_band_with_the_modification() -> None:
     assert spec["layout"]["yaxis2"]["range"][0] >= 1 - 0.5
 
 
-def test_the_steps_split_the_dedicated_units_and_the_growth() -> None:
-    """보유 4 의 6월 — 2단계 회색 줄에 구성, 3단계 회색 줄 머리에 늘어난 전용의 갈림."""
-    result = _owned()
-    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    assert june.steps[1].note == "전용 6대 = 보유 4 · 개조 2"
-    assert june.steps[2].note.startswith(
-        "이 달 늘어난 전용 6대 — 보유 제약 설비 4대는 개조 없이, 개조 2대"
-    )
-    new = _new()
-    october = month_steps(new.month(202710), new, LABELS, show_proportional=False)
-    assert october.steps[1].note.startswith("전용 10대 = 신규 4 · 개조 6")
-    # 기간 밖 달은 구성 글이 없다.
-    may = month_steps(new.month(202705), new, LABELS, show_proportional=False)
-    assert may.steps[1].note == ""
-
-
-def test_the_steps_show_the_wait_beside_the_modification() -> None:
-    """6월 — 3단계 본문에 개조 중 비가동과 신규 대기가 나란히, 회색 줄에 N03 대기·이 달 몫 신규의
-    대기 날짜, 4단계 식에 「신규 대기」 가 끼고 적힌 수로 셈이 맞는다."""
+def test_a_bar_whose_first_day_has_passed_says_so_in_its_hover() -> None:
+    """첫날이 오늘보다 앞인 개조 창 · 신규 대기 막대의 풍선은 「이미 지난 날짜」 꼬리를 단다 — 그
+    달의 감소가 「제때 시작했다면」 의 값이라는 가정이다(설계 규칙 UI-NTF-05). 오늘이 없으면 달지
+    않는다. 꼬리를 단 막대는 상태 알림 `CS-04` 가 세는 것(`late_windows` · `late_waits`)과 같다."""
     result = _new()
-    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    assert june.steps[2].body == "개조 중 비가동 **−1대** · 신규 대기 **−0.47대**"
-    note = june.steps[2].note
-    assert note.startswith("이 달 늘어난 전용 6대 — 신규 설비 2대는 개조 없이, 개조 4대")
-    assert "신규 N03 1대가 이 달 14일 대기(27년 7월 몫) → 0.47대" in note
-    assert "이 달 몫 신규 N01 1대 — 2027-05-10 \\~ 2027-05-24 대기 15일" in note
-    assert "이 달 몫 신규 N02 1대 — 대기 없음(W/D 첫날 기여 시작)" in note
-    row = result.month(202706)
-    assert june.steps[3].body == (
-        f"기존 가용 = 48 − 1 − 0.47 − 6 = **{units_text(row.existing_available)}대**"
+    today = date(2027, 5, 20)
+    dated = replace(LABELS, today=today)
+    spec = _spec(rate_figure(result, dated, selected_month=None, show_proportional=False))
+    modification = next(trace for trace in spec["data"] if trace.get("name") == "개조 비가동")
+    windows = [window.start < today for window in result.windows]
+    assert [figures.WINDOW_LATE_TEXT in item[1] for item in modification["customdata"]] == windows
+    waits_bar = next(trace for trace in spec["data"] if trace.get("name") == "신규 대기")
+    waiting = [item for item in result.assignments if item.days > 0]
+    waits = [item.start < today for item in waiting]
+    assert [figures.WAIT_LATE_TEXT in item[1] for item in waits_bar["customdata"]] == waits
+    assert any(windows) and any(waits) and not all(windows + waits)
+    assert figures.late_windows(result, today) == tuple(
+        window for window in result.windows if window.start < today
     )
-    assert june.steps[3].note.startswith("공정 가용 − 개조 중 − 신규 대기 − 제약 배정")
-    september = month_steps(result.month(202709), result, LABELS, show_proportional=False)
-    assert "이 달 들어온 신규 N05 — 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫" in (
-        september.steps[2].note
+    assert figures.late_waits(result, today) == tuple(
+        item for item in waiting if item.start < today
     )
-    # 신규만 켜고 이 달 비가동·대기가 없으면 본문이 둘을 함께 말한다.
-    december = month_steps(result.month(202712), result, LABELS, show_proportional=False)
-    assert december.steps[2].body == "이 달 개조 비가동·신규 대기 없음"
+    assert figures.late_windows(result, None) == () and figures.late_waits(result, None) == ()
 
-
-def test_a_kept_pool_with_options_says_dedicated_instead_of_modified() -> None:
-    """보유·신규가 섞이면 「이미 개조한」 이 틀린 말이라 「전용 n대는 … 그대로 남습니다」 다."""
-    product = (0, 0, 0, 0, 0, 5, 6, 7, 8, 7, 9, 9, 10, 10, 11)
-    months = tuple(
-        replace(row, constrained_demand=float(demand))
-        for row, demand in zip(_inputs(), product, strict=True)
+    plain = json.dumps(
+        _spec(rate_figure(result, LABELS, selected_month=None, show_proportional=False)),
+        ensure_ascii=False,
     )
-    result = simulate_constraint(months, replace(CONDITIONS, owned_units=4))
-    october = month_steps(result.month(202710), result, LABELS, show_proportional=False)
-    assert october.steps[1].note == (
-        "전용 10대 = 보유 4 · 개조 6 · 전용 10대는 기간 안에서 그대로 남습니다(줄여도 되돌리지 "
-        "않음)."
-    )
+    assert "이미 지난 날짜" not in plain
 
 
-def test_the_schedule_card_names_the_units_used_without_modification() -> None:
-    assert free_units_line(_run()) == ""
-    assert free_units_line(_owned()) == "개조 없이 쓰는 전용 — 보유 제약 설비 4대(입력 4대 중)"
-    line = free_units_line(_new(owned=3))
-    assert line == (
-        "개조 없이 쓰는 전용 — 신규 설비 4대(기준일 2026-10-26 이후 기여 시작 · 개조 30일 안에 "
-        "늘어날 전용에 붙임) · 보유 제약 설비 3대(입력 3대 중)"
-    )
-    assert FREE_ONLY_TEXT.startswith("늘어난 전용 대수를 모두 보유·신규 설비로 채워")
+def test_the_before_range_mark_names_the_windows_the_band_cannot_show() -> None:
+    """표 첫 달 W/D 첫날보다 앞에서 끝나는 창은 그래프 띠에서 길이 0 이라 막대 풍선에 닿지 않는다 —
+    「표 첫 달 앞에서 시작」 표지 풍선이 그 창의 몫 · 날짜 · 대수를 적고, 첫날이 오늘보다 앞이면
+    「이미 지난 날짜」 꼬리를 단다."""
+    from test_constraint_simulation import _one
 
+    from capa_simulation.services.constraint_simulation import ConstraintConditions
 
-def test_the_schedule_card_lists_the_waits_and_the_ordinary_units() -> None:
-    result = _new()
-    lines = waiting_lines(result.assignments, today=date(2026, 10, 26))
-    assert lines == [
-        "27년 6월 몫 · 신규 N01 · 2027-05-10 \\~ 2027-05-24 대기 15일 · **1대**",
-        "27년 6월 몫 · 신규 N02 · 대기 없음(W/D 첫날 기여 시작) · **1대**",
-        "27년 7월 몫 · 신규 N03 · 2027-06-10 \\~ 2027-06-23 대기 14일 · **1대**",
-        "27년 9월 몫 · 신규 N04 · 2027-08-01 \\~ 2027-08-24 대기 24일 · **1대**",
+    months = [
+        _one(month, required=10, available=12, demand=2) for month in (202701, 202702, 202703)
     ]
-    late = waiting_lines(result.assignments, today=date(2027, 6, 1))
-    assert late[0].endswith(WAIT_LATE_SUFFIX)
-    assert not late[1].endswith(WAIT_LATE_SUFFIX)
-    assert ordinary_line(result) == (
-        "일반 설비가 된 신규 1대 — N05 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 "
-        "쓰려면 개조)"
-    )
-    assert ordinary_line(_owned()) == ""
-    assert waiting_lines(_run().assignments, today=date(2026, 10, 26)) == []
+    result = simulate_constraint(months, ConstraintConditions(202701, 202703, 1.0, 30, 7))
+    bar = _traces(
+        rate_figure(result, LABELS, selected_month=None, show_proportional=False), "개조 비가동"
+    )[0]
+    assert bar["x"] == [pytest.approx(0.0)]
+
+    before = view_module.before_range_help(result, date(2026, 11, 1))
+    assert before.startswith(view_module.BEFORE_RANGE_TEXT)
+    assert "- 27년 1월 몫 · 2026-11-25 \\~ 2026-12-24 비가동 · 2대" in before
+    assert figures.WINDOW_LATE_TEXT not in before
+    assert before.endswith("2대")
+    late = view_module.before_range_help(result, date(2026, 12, 1))
+    assert late.endswith(f"2대 — {figures.WINDOW_LATE_TEXT}")
+    # 표 앞에서 시작하는 대기가 없으면 뜻 한 줄뿐이다.
+    assert view_module.wait_before_range_help(result, None) == view_module.WAIT_BEFORE_RANGE_TEXT
 
 
 def test_a_later_cover_names_its_month_and_splits_the_reasons() -> None:
     """B1 증가마다(2026-11-01 넓힘) — 필요 6월 2 → 7월 3 → 8월 3, 고른 H1(6/1). 7월 증가부터
-    남은 보유가 남은 증가를 다 덮어 신규를 붙이지 않았다. 카드 한 줄은 그 달을 적고, 일반 설비가 된
-    신규의 까닭은 호기마다 — N1(6/20)은 7월 증가에 붙을 수 있었으니 「27년 7월 증가부터 보유 제약
-    설비로 다 덮어」, N2(7/1)는 창 안에 증가가 없어 「개조 30일 안에 늘어날 전용이 없어」 다. 풍선 ·
-    고른 달 회색 줄이 같은 갈래를 쓴다."""
+    남은 보유가 남은 증가를 다 덮어 신규를 붙이지 않았다. 일반 설비가 된 신규의 까닭은 호기마다 —
+    N1(6/20)은 7월 증가에 붙을 수 있었으니 「27년 7월 증가부터 보유 제약 설비로 다 덮어」, N2(7/1)는
+    창 안에 증가가 없어 「개조 30일 안에 늘어날 전용이 없어」 다. 계산표 풍선이 같은 갈래를 쓴다."""
     months = _months(2, 3, 3)
     units = (LATE_UNIT, NewUnit("N2", date(2027, 7, 1), 1.0))
     result = simulate_constraint(months, _conditions(months, held=LATE_HELD, new=True), units)
-    assert new_stopped_line(result) == (
-        "27년 7월 증가부터는 남은 보유 제약 설비만으로 제약 기간 끝까지 늘어난 전용을 다 채워 신규 "
-        "설비를 더 붙이지 않았습니다 — 그 뒤 신규는 기존 제품 몫입니다."
-    )
-    assert ordinary_line(result) == (
-        "일반 설비가 된 신규 2대 — N1 · 27년 7월 증가부터 보유 제약 설비로 다 덮어 기존 제품 몫 / "
-        "N2 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 쓰려면 개조)"
-    )
+    assert _stopped(result) and not result.new_units_skipped
+    assert result.new_units_stopped_month == 202707
     first, second = result.new_units
+    assert figures.ordinary_reason_text(first, result) == (
+        "27년 7월 증가부터 보유 제약 설비로 다 덮어"
+    )
+    assert figures.ordinary_reason_text(second, result) == "개조 30일 안에 늘어날 전용이 없어"
     assert figures.new_unit_fate(first, result) == "일반 설비(27년 7월부터 보유로 다 덮음)"
     assert figures.new_unit_fate(second, result) == "일반 설비(개조 30일 안에 늘어날 전용 없음)"
-    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    assert (
-        "이 달 들어온 신규 N1 — 27년 7월 증가부터 보유 제약 설비로 다 덮어 기존 제품 몫입니다"
-        in june.steps[2].note
-    )
-    july = month_steps(result.month(202707), result, LABELS, show_proportional=False)
-    assert (
-        "이 달 들어온 신규 N2 — 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫입니다"
-        in july.steps[2].note
-    )
 
 
 def test_a_first_growth_cover_speaks_only_when_a_unit_was_held_back() -> None:
-    """첫 증가부터 덮이면(옛 「기간 전체로 한 번」) 카드 한 줄은 `NEW_SKIPPED_TEXT` 그대로다. 다만
-    이제 붙지 않은 호기가 있을 때만 선다 — 6/20 신규는 6월 증가(t 5/25) 앞이고 7월 증가가 없어
-    어차피 붙지 않았을 호기라 한 줄이 서지 않고, 까닭도 「보유 제약 설비로 제약 기간을 다 덮어」 가
-    아니라 「개조 30일 안에 늘어날 전용이 없어」 다(옛 판은 두 글을 썼다 — cs2 리뷰가 남긴 작은
-    어긋남). 5/25 신규는 6월 증가에 붙을 수 있었으니 옛 글 그대로다."""
+    """첫 증가부터 덮여도 「보유로 덮여 붙지 않은 호기」 는 붙지 않은 호기가 있을 때만이다 — 6/20
+    신규는 6월 증가(t 5/25) 앞이고 7월 증가가 없어 어차피 붙지 않았을 호기라 까닭이 「보유 제약
+    설비로 제약 기간을 다 덮어」 가 아니라 「개조 30일 안에 늘어날 전용이 없어」 다(cs2 리뷰가 남긴
+    작은 어긋남). 5/25 신규는 6월 증가에 붙을 수 있었으니 「보유로 덮음」 이다."""
     months = _months(2, 2)
     conditions = _conditions(months, held=(_held("H1"), _held("H2")), new=True)
     late = simulate_constraint(months, conditions, (LATE_UNIT,))
     assert late.new_units_skipped
-    assert new_stopped_line(late) == ""
-    assert ordinary_line(late) == (
-        "일반 설비가 된 신규 1대 — N1 · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫(제약에 "
-        "쓰려면 개조)"
+    assert not _stopped(late)
+    assert figures.ordinary_reason_text(late.new_units[0], late) == (
+        "개조 30일 안에 늘어날 전용이 없어"
     )
     early = simulate_constraint(months, conditions, (NewUnit("N0", JUNE_FIRST, 1.0),))
-    assert new_stopped_line(early) == NEW_SKIPPED_TEXT
-    assert ordinary_line(early) == (
-        "일반 설비가 된 신규 1대 — N0 · 보유 제약 설비로 제약 기간을 다 덮어 기존 제품 몫(제약에 "
-        "쓰려면 개조)"
-    )
+    assert _stopped(early) and early.new_units_skipped
+    assert figures.ordinary_reason_text(early.new_units[0], early) == figures.SKIPPED_REASON
     assert (
         figures.new_unit_fate(early.new_units[0], early) == "일반 설비(보유로 제약 기간을 다 덮음)"
     )
-    assert new_stopped_line(_new()) == ""
+    assert not _stopped(_new())
 
 
 def test_the_stop_line_and_the_reasons_tell_the_same_story() -> None:
@@ -1362,8 +1123,9 @@ def test_the_stop_line_and_the_reasons_tell_the_same_story() -> None:
       같고, 그 달은 신규를 붙이지 않기 시작한 달이다 — 글에 「보유」 가 드는 것도 그 호기뿐이다.
       붙지 않은 호기는 멈춘 달부터의 증가 가운데 붙일 수 있던 증가가 있다(무엇이 붙지 않은
       호기인지는 `tests/test_constraint_simulation_holdings.py` 가 B1 없이 돈 답과 맞댄다).
-    - 카드 한 줄(`new_stopped_line`)은 그런 호기가 있을 때만 선다 — 한 줄은 없는데 까닭만 「보유로
-      덮어」 이거나, 한 줄은 섰는데 그렇게 적힌 호기가 없는 일이 없다.
+    - 「신규를 더 붙이지 않음」(멈춘 달 + 붙지 않은 호기 — `_stopped`)은 그런 호기가 있을 때만이다 —
+      그 표지는 없는데 까닭만 「보유로 덮어」 이거나, 표지는 섰는데 그렇게 적힌 호기가 없는 일이
+      없다.
     - 멈춘 달부터의 증가는 신규가 0 이라 「신규가 채움」 의 달에 들지 않는다. 「들어온 몫이 1대가
       안 됨」 에는 들 수 있다 — B1 없이도 그 증가에 1대가 되지 않는 몫이다.
     - 「신규가 채움」 의 달은 신규로 다 채운 증가이고, 「이 호기 몫으로 다 참」 의 달은 그 달 붙은
@@ -1416,7 +1178,7 @@ def test_the_stop_line_and_the_reasons_tell_the_same_story() -> None:
                     assert all(month < stopped for month in reason.months), reason
             if stopped is not None and reason.cause != "skipped":
                 seen["other_after_stop"] += 1
-        assert bool(new_stopped_line(result)) == skipped, (months, conditions, units)
+        assert _stopped(result) == skipped, (months, conditions, units)
     # 표본이 갈래(붙지 않은 호기 · 멈춘 뒤 다른 까닭 · 제 몫으로 참)를 실제로 지나는지 — 표본이
     # 바뀌면 다시 센다.
     assert seen["skipped"] >= 20 and seen["other_after_stop"] >= 20 and seen["own"] >= 5, seen
@@ -1424,17 +1186,16 @@ def test_the_stop_line_and_the_reasons_tell_the_same_story() -> None:
 
 def test_a_cover_where_no_unit_would_have_attached_says_nothing_on_the_card() -> None:
     """2026-11-01 리뷰의 보기 — 보유가 6월 증가부터 다 덮어 멈췄지만 신규 N0(5/05 · 0.5대)은 B1 이
-    없어도 내림 0 이라 붙지 않았다. 카드 한 줄은 서지 않고(옛 판은 `NEW_SKIPPED_TEXT`), N0 의 까닭은
-    「보유로 덮어」 가 아니라 그 0.5대다."""
+    없어도 내림 0 이라 붙지 않았다. 「보유로 덮여 붙지 않은 호기」 는 없고, N0 의 까닭은 「보유로
+    덮어」 가 아니라 그 0.5대다."""
     months = _months(1, 2, 2)
     held = (_held("H1"), _held("H2"), _held("H3"))
     unit = NewUnit("N0", date(2027, 5, 5), 0.5)
     result = simulate_constraint(months, _conditions(months, owned=1, held=held, new=True), (unit,))
     assert result.new_units_skipped
-    assert new_stopped_line(result) == ""
-    assert ordinary_line(result) == (
-        "일반 설비가 된 신규 0.50대 — N0 · 27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않아 기존 "
-        "제품 몫(제약에 쓰려면 개조)"
+    assert not _stopped(result)
+    assert figures.ordinary_reason_text(unit, result) == (
+        "27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않아"
     )
 
 
@@ -1447,10 +1208,7 @@ def test_an_increase_the_unit_filled_by_itself_is_not_said_to_be_filled_by_anoth
     conditions = replace(_conditions(months, new=True), modification_days=45)
     bundle = _bundle("G", ("G-A", date(2027, 5, 20), 0.75), ("G-B", date(2027, 6, 5), 0.75))
     result = simulate_constraint(months, conditions, (bundle,))
-    assert ordinary_line(result) == (
-        "일반 설비가 된 신규 0.50대 — G 남는 0.50대 · 27년 7월 증가는 이 호기 몫으로 다 차 기존 "
-        "제품 몫(제약에 쓰려면 개조)"
-    )
+    assert figures.ordinary_reason_text(bundle, result) == "27년 7월 증가는 이 호기 몫으로 다 차"
     assert figures.new_unit_fate(bundle, result).endswith(
         " · 남는 0.50대 일반 설비(27년 7월 증가는 이 호기 몫으로 다 참)"
     )
@@ -1468,63 +1226,40 @@ def test_an_increase_the_unit_filled_by_itself_is_not_said_to_be_filled_by_anoth
 
 
 def test_a_partly_attached_unit_is_named_with_its_leftover() -> None:
-    """환산 1.5 인 신규 C(5/25)는 6월 몫에 1대가 붙고 0.5대가 남는다 — 화면 글은 C 를 「붙음」 과
-    「기존 제품 몫」 으로 통째로 함께 적지 않고 남는 0.50대만 기존 제품 몫으로 적는다(2026-10-26
-    리뷰). 일반 설비 대수도 호기 수가 아니라 남는 몫의 환산 합이다. 남는 까닭은 「창 안 증가
+    """환산 1.5 인 신규 C(5/25)는 6월 몫에 1대가 붙고 0.5대가 남는다 — 계산표 풍선은 C 를 「붙음」
+    과 「기존 제품 몫」 으로 통째로 함께 적지 않고 남는 0.50대만 일반 설비로 적는다(2026-10-26
+    리뷰). 남는 까닭은 「창 안 증가
     없음」 이 아니다 — 6월(개조 5대)·7월(W/D 첫날 6/24 = 5/25 + 30일) 증가가 창 안에 있었지만 남은
     0.5대가 내림 정수 1대가 되지 않았다(2026-11-01 E2E — 까닭 글은 호기마다 되짚는다)."""
     result = simulate_constraint(_inputs(), NEW_ON, (_unit("C", date(2027, 5, 25), units=1.5),))
-    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    note = june.steps[2].note
-    assert "이 달 몫 신규 C 1대 — 대기 없음(W/D 첫날 기여 시작)" in note
-    assert (
-        "이 달 들어온 신규 C 남는 0.50대 — 27년 6월 · 27년 7월 증가 때 남은 0.50대로는 1대가 되지 "
-        "않아 기존 제품 몫" in note
+    (unit,) = result.new_units
+    assert result.assigned_units(unit) == 1 and result.left_units(unit) == 0.5
+    assert figures.ordinary_reason_text(unit, result) == (
+        "27년 6월 · 27년 7월 증가 때 남은 0.50대로는 1대가 되지 않아"
     )
-    assert "이 달 들어온 신규 C —" not in note
-    assert ordinary_line(result) == (
-        "일반 설비가 된 신규 0.50대 — C 남는 0.50대 · 27년 6월 · 27년 7월 증가 때 남은 0.50대로는 "
-        "1대가 되지 않아 기존 제품 몫(제약에 쓰려면 개조)"
-    )
-    # 같은 호기의 계산표 풍선(`new_unit_fate`)과 같은 말이다.
     assert figures.new_unit_fate(result.new_units[0], result) == (
         "27년 6월 몫 1대 전용(대기 없음(W/D 첫날 기여 시작)) · 남는 0.50대 일반 설비(27년 6월 · "
         "27년 7월 증가 때 남은 0.50대로는 1대가 되지 않음)"
     )
 
 
-def test_the_ordinary_line_says_why_each_unit_became_ordinary() -> None:
-    """일반 설비가 된 신규 한 줄 · 3단계 회색 줄 · 계산표 풍선은 호기마다 까닭을 적는다(2026-11-01
-    E2E). 묶음 G(G-A 5/25 · G-B 6/10)는 6월 증가(W/D 첫날 5/25)가 창 안에 있었는데 G-A 0.5대만 와
-    있었고 G-B 는 오지 않았다 — 「개조 30일 안에 늘어날 전용이 없어」 가 아니다. F 는 창 안 증가가
-    없어 그 글 그대로다."""
+def test_the_reasons_say_why_each_unit_became_ordinary() -> None:
+    """계산표 풍선은 호기마다 까닭을 적는다(2026-11-01 E2E). 묶음 G(G-A 5/25 · G-B 6/10)는 6월
+    증가(W/D 첫날 5/25)가 창 안에 있었는데 G-A 0.5대만 와 있었고 G-B 는 오지 않았다 — 「개조 30일
+    안에 늘어날 전용이 없어」 가 아니다. F 는 창 안 증가가 없어 그 글 그대로다."""
     months = _months(1, 1, 1)
     bundle = _bundle("G", ("G-A", date(2027, 5, 25), 0.5), ("G-B", date(2027, 6, 10), 0.5))
     late = NewUnit("F", date(2027, 7, 20), 1.0)
     result = simulate_constraint(months, _conditions(months, new=True), (bundle, late))
 
-    assert ordinary_line(result) == (
-        "일반 설비가 된 신규 2대 — G · 27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않고 "
-        "G\\-B는 아직 오지 않아 기존 제품 몫 / F · 개조 30일 안에 늘어날 전용이 없어 기존 제품 "
-        "몫(제약에 쓰려면 개조)"
+    assert figures.ordinary_reason_text(bundle, result) == (
+        "27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않고 G-B는 아직 오지 않아"
     )
-    june = month_steps(result.month(202706), result, LABELS, show_proportional=False)
-    assert (
-        "이 달 들어온 신규 G — 27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않고 G\\-B는 아직 "
-        "오지 않아 기존 제품 몫입니다" in june.steps[2].note
-    )
+    assert figures.ordinary_reason_text(late, result) == "개조 30일 안에 늘어날 전용이 없어"
     assert figures.new_unit_fate(bundle, result) == (
         "일반 설비(27년 6월 증가 때 들어온 0.50대로는 1대가 되지 않고 G-B는 아직 오지 않음)"
     )
     assert figures.new_unit_fate(late, result) == "일반 설비(개조 30일 안에 늘어날 전용 없음)"
-
-
-def test_the_ordinary_line_counts_leftovers_and_hosts_beyond_four() -> None:
-    """일반 설비가 된 신규가 넷을 넘으면 이름 넷 뒤에 「외 n호기」 — 대수(환산 합)와 섞이지 않게
-    호기로 센다. 기간 끝 뒤(2028)에 들어온 여섯 대는 붙일 증가가 없다."""
-    units = tuple(_unit(f"L{index}", date(2028, 1, index + 1)) for index in range(6))
-    result = simulate_constraint(_inputs(), NEW_ON, units)
-    assert ordinary_line(result).startswith("일반 설비가 된 신규 6대 — L0, L1, L2, L3 외 2호기 · ")
 
 
 def test_the_modification_kpi_counts_only_the_modified_units(

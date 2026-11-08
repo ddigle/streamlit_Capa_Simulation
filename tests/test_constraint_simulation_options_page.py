@@ -38,11 +38,12 @@ from test_constraint_simulation_page import (
     _ok,
     _opened,
     _plain,
+    _shown,
 )
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 
 import capa_simulation.services.simulation_cache as simulation_cache
-from capa_simulation.components.constraint_simulation_view import FREE_ONLY_TEXT, WAIT_LATE_SUFFIX
+from capa_simulation.components.constraint_simulation_figures import ordinary_reason_text
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_MODIFY_KEY,
@@ -194,9 +195,11 @@ def test_owned_units_replace_the_modification_and_say_so(
     assert _metric(app, "개조 대수") == "0대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 보유 1 · 개조 0"
     assert "보유 제약 1대" in _header_line(app)
-    captions = _captions(app)
-    assert "개조 없이 쓰는 전용 — 보유 제약 설비 1대(입력 1대 중)" in captions
-    assert FREE_ONLY_TEXT in captions
+    # 늘어난 전용을 모두 보유로 채워 개조 창이 없다 — 요약 회색 줄이 그 구성을 말하고 본문에 개조 창
+    # 줄은 서지 않는다(2026-11-08 사용자 그림 메모 g12).
+    result, _ = _shown(app)
+    assert result.windows == () and result.kpis.owned_used == 1
+    assert "개조 없이 쓰는 전용" not in _captions(app)
     assert not any("비가동 · **" in text for text in _markdown(app))
 
 
@@ -216,22 +219,19 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["help"].startswith("기여 시작이")
     captions = _plain(_captions(app))
     assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {NEW_UNIT}" in captions
-    # 띠에는 값(날 · 대수)만, 뜻은 띠 끝 풍선이다(설계 규칙 UI-TXT-01).
-    assert "신규 = 기여 시작 2025-12-01 이후 호기 1대" in captions
-    assert "Qual 다음 날 — 묶음은 첫 모듈" not in captions
-    (band,) = [item for item in app.caption if "신규 = 기여 시작" in str(item.value)]
-    assert "공정 Capa 상세 ③ 의 Qual 다음 날이고 묶음은 첫 모듈" in str(band.proto.help)
-    assert "대수는 환산 대수" in str(band.proto.help)
+    # 신규 호기 수 · 이름은 카드 한 줄이고 본문에 「신규 = 기여 시작 …」 띠는 없다(2026-11-08 사용자
+    # 그림 메모 g12).
+    assert "신규 = 기여 시작" not in captions
     assert "신규 개조 없이(2025-12-01~)" in _header_line(app)
     assert _metric(app, "개조 대수") == "0대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 1 · 개조 0"
-    assert (
-        "신규 설비 1대(기준일 2025-12-01 이후 기여 시작 · 개조 30일 안에 늘어날 전용에 붙임)"
-        in captions
-    )
-    assert "**신규 대기** — 셋업 때부터 제약용으로 붙인 신규 설비" in captions
-    lines = [_plain(text) for text in _markdown(app)]
-    assert f"26년 1월 몫 · 신규 {NEW_UNIT} · 대기 없음(W/D 첫날 기여 시작) · **1대**" in lines
+    # 붙은 몫은 그래프 띠 · 계산표 풍선이 말한다(본문에 신규 대기 줄이 없다).
+    result, _ = _shown(app)
+    assert result.kpis.new_used == 1
+    assert [(item.month, item.label, item.days, item.units) for item in result.assignments] == [
+        (202601, NEW_UNIT, 0, 1.0)
+    ]
+    assert "**신규 대기**" not in captions
     assert timeline_builds == [DYNAMIC_PROCESS]
 
     app.session_state[CONSTRAINT_NEW_SINCE_KEY] = AFTER_NEW_UNIT
@@ -253,13 +253,11 @@ def test_a_new_unit_four_days_before_the_period_waits_instead_of_a_modification(
     assert "제약 기간 전에 기여를 시작한" not in captions
     assert _metric(app, "개조 대수") == "0대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 1 · 개조 0"
-    lines = [_plain(text) for text in _markdown(app)]
-    waiting = [line for line in lines if line.startswith("26년 1월 몫 · 신규 ")]
-    assert waiting == [
-        f"26년 1월 몫 · 신규 {EARLY_UNIT} · 2025-12-21 ~ 2025-12-24 대기 4일 · **1대**"
-        + WAIT_LATE_SUFFIX
-    ]
-    assert "일반 설비가 된 신규" not in captions
+    result, _ = _shown(app)
+    assert [
+        (item.month, item.label, item.start, item.days, item.units) for item in result.assignments
+    ] == [(202601, EARLY_UNIT, date(2025, 12, 21), 4, 1.0)]
+    assert result.ordinary_units == ()
 
 
 def test_a_new_unit_more_than_the_modification_days_early_is_ordinary(
@@ -272,11 +270,11 @@ def test_a_new_unit_more_than_the_modification_days_early_is_ordinary(
     assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {FAR_UNIT}" in captions
     assert _metric(app, "개조 대수") == "1대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 0 · 개조 1"
-    assert (
-        f"일반 설비가 된 신규 1대 — {FAR_UNIT} · 개조 30일 안에 늘어날 전용이 없어 기존 제품 몫"
-        in captions
-    )
-    assert "**신규 대기**" not in captions
+    result, _ = _shown(app)
+    (ordinary,) = result.ordinary_units
+    assert ordinary.name == FAR_UNIT
+    assert ordinary_reason_text(ordinary, result) == "개조 30일 안에 늘어날 전용이 없어"
+    assert result.assignments == ()
 
 
 def test_the_detail_page_and_this_page_share_one_timeline(
