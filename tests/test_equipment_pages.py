@@ -11,6 +11,7 @@ from alert_marks import active_state, data_error_texts, events, place_errors, st
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
 from test_equipment_availability import _baseline, _downtime, _equipment
+from test_process_field import share
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.components.equipment_settings_dialog import (
@@ -345,10 +346,12 @@ def test_space_page_counts_placement_and_leaves_stage_transitions_to_availabilit
     stats = fab["linkStats"]
     assert isinstance(stats, dict) and set(stats) == labels
     assert not any("가용" in str(value) for floor in stats.values() for value in floor.values())
-    # 사이드바 카드의 고르기는 공정소분류뿐이다 — 전환 조회기간·전환단계 폼이 없고, 기준일 칸과
-    # 「단계」 필터도 없다(기준일은 층 상세 도면 위 페이더, 2026-10-16 사용자 결정).
+    # 사이드바 카드에는 고르는 칸이 없다 — 전환 조회기간·전환단계 폼이 없고, 기준일 칸과 「단계」
+    # 필터도 없다(기준일은 층 상세 도면 위 페이더, 2026-10-16 사용자 결정). 공정소분류는 조회 조건
+    # 패널의 공용 공정 칸(값 칸 하나)이다(2026-11-08 사용자 답 P1).
     assert not date_panels
-    assert [widget.label for widget in app.sidebar.multiselect] == ["공정소분류"]
+    assert not app.sidebar.multiselect
+    assert PROCESS_FIELD_KEY in {button.key for button in app.sidebar.button}
     assert not any("단계 전환" in element.value for element in app.markdown)
     # FAB 아래는 30개 층 목록 표다(행을 고르면 그 층이 열린다).
     floor_table = app.dataframe[0].value
@@ -472,7 +475,8 @@ def _open_wide_floor_dialog(database_path: Path) -> AppTest:
     app.session_state["space_status_selected_building"] = "C1"
     app.session_state["space_status_selected_floor"] = "1F"
     app.run()
-    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
+    share(app, ["Process-A"])
+    app.run()
     app.button(key="space_floor_layout_open_C1_1F").click().run()
     assert not app.exception
     return app
@@ -567,7 +571,8 @@ def test_units_outside_a_saved_canvas_are_one_alert_for_the_whole_fab(tmp_path: 
     floor = active_state(app, "EQ-18")
     assert floor is not None and floor["fp"] == fab["fp"] and floor["scope"] == fab["scope"]
 
-    app.multiselect(key="space_status_process_filter").set_value(["Process-A"]).run()
+    share(app, ["Process-A"])
+    app.run()
     filtered = active_state(app, "EQ-18")
     assert filtered is not None and filtered["fp"] == fab["fp"]
 

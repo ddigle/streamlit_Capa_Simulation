@@ -26,6 +26,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime
 from test_equipment_pages import PROJECT_ROOT, _page_script
+from test_process_field import share
 from test_space_layout_edit import _master
 
 from capa_simulation.components import space_layout_editor
@@ -283,8 +284,9 @@ def test_the_floor_view_sends_this_floors_rows_with_their_place(
         "MOD-1A",
         "MOD-1B",
     ]
-    # 공정 필터를 지난 행만이다(도면과 같다).
-    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    # 공정 필터(공용 공정 칸)를 지난 행만이다(도면과 같다).
+    share(app, ["Process-B"])
+    app.run()
     assert not app.exception
     filtered = _floor_data(editor_data, view=True)
     assert set(_places(filtered)) == {"MOD-1A", "MOD-1B"}
@@ -298,7 +300,8 @@ def test_the_editor_sends_the_draft_floor_and_the_tray_units(
     """배치 편집 — 편집기 호기(층 미정 미배치 포함)는 편집기 자리(배치·미배치), 편집기 밖의 이 층
     행은 레이아웃표시로. 공정 필터와 상관없이 이 층 전부다."""
     app = _app(_database(tmp_path))
-    app.multiselect(key="space_status_process_filter").set_value(["Process-B"]).run()
+    share(app, ["Process-B"])
+    app.run()
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
     assert not app.exception, [item.message for item in app.exception]
     editor = _floor_data(editor_data, view=False)

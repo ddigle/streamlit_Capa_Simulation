@@ -23,6 +23,7 @@ from shortening_script import months_from_today, shortening_script
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
 from test_equipment_scenario_repository import _clone, _request, _set
+from test_process_field import share, shared_values
 
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.io.reference_cache as reference_cache
@@ -189,6 +190,22 @@ def _rest_notes(app: AppTest) -> int:
     marks = [item for item in app.caption if "필요 단축 보기 쉼" in str(item.value)]
     assert all("배치 편집 중에는 필요 단축 보기를 쉽니다" in item.proto.help for item in marks)
     return len(marks)
+
+
+def _rest_level(app: AppTest) -> tuple[bool, str] | None:
+    """사이드바 목표 확보율 줄의 (잠김, 이름 줄 풍선). 줄이 없으면 None — 배치 편집으로 쉬는 회차도
+    줄은 잠근 채 서야 켜고 끌 때 아래 「Space 도면」 상자가 밀리지 않는다(설계 규칙 UI-PRF-03)."""
+    levels = [
+        item
+        for item in app.sidebar.get("button_group")
+        if getattr(item, "label", None) == "목표 확보율"
+    ]
+    assert len(levels) <= 1
+    if not levels:
+        return None
+    names = [item for item in app.sidebar.caption if str(item.value) == "목표 확보율"]
+    assert len(names) == 1
+    return bool(levels[0].proto.disabled), str(names[0].proto.help)
 
 
 def _views(calls: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
@@ -577,6 +594,9 @@ def test_layout_editing_rests_the_layer_and_shows_the_default_colours(
     app.session_state["space_status_selected_floor"] = floor
     _ok(app.run())
     assert _views(editor_calls, "floor")[-1].get("shortBadges")
+    assert _rest_level(app) == (False, "")
+    _level(app).set_value(1.2)
+    _ok(app.run())
     app.toggle(key=EDIT_KEY).set_value(True)
     _ok(app.run())
     editor = editor_calls[-1]
@@ -585,12 +605,17 @@ def test_layout_editing_rests_the_layer_and_shows_the_default_colours(
     assert all("layer" not in item for item in editor["items"])
     # 쉬는 까닭은 편집기 위 한 줄뿐이다 — 본문 조작 줄이 같은 글을 거듭 적지 않는다(E2E).
     assert _rest_notes(app) == 1, _texts(app)
+    # 사이드바 목표 줄은 잠근 채 같은 자리에 선다 — 까닭은 이름 줄 풍선, 고른 값은 그대로다.
+    assert _rest_level(app) == (True, space_shortening_view.LEVEL_REST_HELP)
+    assert _level(app).value == 1.2
     # 라디오 값은 그대로다(결정 D7) — 끄면 다시 보인다.
     assert app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).value == COLOR_BASIS_SHORTENING
     app.toggle(key=EDIT_KEY).set_value(False)
     _ok(app.run())
     assert _views(editor_calls, "floor")[-1].get("shortBadges")
     assert _rest_notes(app) == 0
+    assert _rest_level(app) == (False, "")
+    assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.2
 
 
 def test_fab_layout_editing_rests_the_layer_with_one_note(
@@ -602,13 +627,16 @@ def test_fab_layout_editing_rests_the_layer_with_one_note(
     app = _app(tmp_path / "equipment.duckdb")
     _turn_on(_ok(app.run()))
     assert _rest_notes(app) == 0
+    assert _rest_level(app) == (False, "")
     app.toggle(key="space_fab_edit_mode").set_value(True)
     _ok(app.run())
     assert editor_calls[-1].get("scope") == "fab" and editor_calls[-1].get("mode") != "view"
     assert _rest_notes(app) == 1, _texts(app)
+    assert _rest_level(app) == (True, space_shortening_view.LEVEL_REST_HELP)
     app.toggle(key="space_fab_edit_mode").set_value(False)
     _ok(app.run())
     assert _rest_notes(app) == 0
+    assert _rest_level(app) == (False, "")
 
 
 # ------------------------------------------------------------------ T-P9·T-P12 도착·칩
@@ -835,12 +863,60 @@ def test_the_floor_view_counts_only_units_drawn_today_like_the_fab_counts(
     assert {"TC Bonding", "Mold"} <= heads, options
 
 
+def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_stays_on_the_toolbar(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """보기 상태의 목표 확보율 고르기는 사이드바 조회 조건 패널의 한 줄이다(2026-11-08 그림 메모
+    g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동」). 줄 꼴은 패널의
+    다른 줄과 같은 이름 줄 + 값(전환 단추 — 라벨은 이름 줄이 말한다)이고 위젯 key 는 그대로다.
+    「단축 없는 호기 흐리게」 는 본문 조작 줄에 남는다. 끈 회차에는 줄이 서지 않는다(그 회차는
+    목표를 읽지 않는다). 배치 편집으로 쉬는 회차는 `_rest_level` 시험이 본다."""
+    from capa_simulation.components.condition_field import FIELD_KEY_PREFIX
+
+    def levels(node: Any) -> list[Any]:
+        return [
+            item
+            for item in node.get("button_group")
+            if getattr(item, "label", None) == "목표 확보율"
+        ]
+
+    def styles(node: Any) -> list[str]:
+        return [str(item.proto.body) for item in node.get("html")]
+
+    app = _app(_empty_database(tmp_path))
+    _ok(app.run())
+    assert not levels(app)
+    # 다섯 단추를 패널 폭에 한 줄로 두는 서식은 켜지 않은 회차에도 그린다(표지 자리 수가 같게).
+    assert styles(app).count(space_shortening_view.LEVEL_FIELD_STYLE) == 1
+    _turn_on(app)
+    assert styles(app).count(space_shortening_view.LEVEL_FIELD_STYLE) == 1
+    sidebar = levels(app.sidebar)
+    assert len(sidebar) == 1
+    assert not levels(app.main)
+    level = sidebar[0]
+    assert level.key == SPACE_SHORT_LEVEL_KEY
+    assert level.proto.label_visibility.value == level.proto.label_visibility.COLLAPSED
+
+    def block_ids(node: Any) -> list[str]:
+        found = [str(getattr(getattr(node, "proto", None), "id", "") or "")]
+        for child in getattr(node, "children", {}).values():
+            found += block_ids(child)
+        return found
+
+    assert any(key.endswith(f"{FIELD_KEY_PREFIX}space_target") for key in block_ids(app.sidebar))
+    assert "목표 확보율" in [str(item.value) for item in app.sidebar.caption]
+    assert app.main.checkbox(key=SPACE_SHORT_DIM_KEY).value is True
+    level.set_value(1.3)
+    _ok(app.run())
+    assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.3
+
+
 def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """T-P9 덧붙임 — 링크 공정이 Space 공정소분류 필터에 걸러졌으면 조작 줄에 알림 한 줄(필터는
-    건드리지 않는다). 알림은 도착한 링크에 대한 것이라 그 필터·층이 처음 바뀌면 거두고, 나중에
-    사용자가 고른 상관없는 필터에 다시 서지 않는다(리뷰)."""
+    """T-P9 덧붙임 — 링크 공정이 Space 공정소분류 필터(공용 공정 칸 — 2026-11-08 사용자 답 P1)에
+    걸러졌으면 조작 줄에 알림 한 줄(공정 값은 건드리지 않는다). 알림은 도착한 링크에 대한 것이라 그
+    값·층이 처음 바뀌면 거두고, 나중에 사용자가 고른 상관없는 값에 다시 서지 않는다(리뷰)."""
     database = _empty_database(tmp_path)
     probe = _app(database)
     _turn_on(_ok(probe.run()))
@@ -850,28 +926,28 @@ def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
     note = ":material/filter_alt_off: 필터 밖 「Final Test」"
 
     app = _app(database)
-    app.session_state["space_status_process_filter"] = ["Mold"]
+    share(app, ["Mold"])
     app.query_params["layer"] = "short"
     app.query_params["floor"] = f"{building}-{floor}"
     app.query_params["proc"] = "Final Test"
     _ok(app.run())
-    assert app.session_state["space_status_process_filter"] == ["Mold"]
+    assert shared_values(app) == ["Mold"]
     assert any(note in text for text in _texts(app)), _texts(app)
     # 같은 층·같은 필터로 한 회차 더(다른 조작) — 그대로 선다.
     _level(app).set_value(1.2)
     _ok(app.run())
     assert any(note in text for text in _texts(app))
-    # 필터를 바꾸면 거둔다 — 그 뒤 다른 필터(여전히 Final Test 없음)에도 다시 서지 않는다.
-    app.sidebar.multiselect(key="space_status_process_filter").set_value(["Mold", "Burn-In"])
+    # 공용 값을 바꾸면 거둔다 — 그 뒤 다른 값(여전히 Final Test 없음)에도 다시 서지 않는다.
+    share(app, ["Mold", "Burn-In"])
     _ok(app.run())
     assert not any(note in text for text in _texts(app))
-    app.sidebar.multiselect(key="space_status_process_filter").set_value(["Underfill"])
+    share(app, ["Underfill"])
     _ok(app.run())
     assert not any(note in text for text in _texts(app))
 
     # 층을 옮겨도 거둔다.
     moved = _app(database)
-    moved.session_state["space_status_process_filter"] = ["Mold"]
+    share(moved, ["Mold"])
     moved.query_params["layer"] = "short"
     moved.query_params["floor"] = f"{building}-{floor}"
     moved.query_params["proc"] = "Final Test"
@@ -1076,6 +1152,7 @@ def test_the_off_payload_carries_no_residue_of_a_layer_round(
         (space_shortening_layer, "fab_layer_summary"),
         (space_shortening_view, "load_space_layer"),
         (space_shortening_view, "render_layer_controls"),
+        (space_shortening_view, "render_level_field"),
         (space_shortening_view, "render_floor_layer_panel"),
         (space_shortening_view, "render_fab_layer_summary"),
         (space_shortening_view, "layer_table_columns"),

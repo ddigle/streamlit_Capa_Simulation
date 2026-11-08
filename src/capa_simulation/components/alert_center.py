@@ -127,6 +127,9 @@ TEXT: Final[dict[str, str]] = {
     "table_csv": "CSV 내려받기",
     "open": "지금도 있음",
     "resolved": "해소 {time}",
+    # 범위(리비전 · 시나리오 · 조회기간)가 바뀌어 닫힌 상태 알림 줄 — 조건이 사라진 것이
+    # 아니다(2026-11-08 사용자 답 a3 — 모든 상태 알림).
+    "scope_moved": "범위 바뀜 {time}",
     "kind_event": "사건 알림",
     "kind_state": "상태 알림(바뀔 때만)",
     "log_code": "코드",
@@ -137,6 +140,7 @@ TEXT: Final[dict[str, str]] = {
     "log_cause": "계기",
     "log_scope": "범위",
     "log_resolved": "해소",
+    "log_scope_moved": "범위 바뀜",
     "log_detail": "원본 오류",
     "log_full": "전문",
     "log_table": "딸린 표",
@@ -148,7 +152,6 @@ TEXT: Final[dict[str, str]] = {
     "log_copy_manual": "Ctrl+C 로 복사하세요",
     "resolved_gone": "조건이 사라짐",
     "resolved_changed": "내용이 바뀜",
-    "resolved_scope": "범위가 바뀜",
     "not_yet": "아직",
     "cause_new": "조건이 처음 보임",
     "cause_change": "내용이 바뀜",

@@ -8,8 +8,11 @@
 한 길이고, 설비 쪽은 **Space 가 그리는 세션 설비 시나리오**의 계산 세 표다(설비 시나리오 2단계 LY6 —
 필요 단축 일정 화면과 늘 같은 키·같은 칸).
 
-- **본문 조작 줄**(결정 D6) — 목표 확보율(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)·「단축
-  없는 호기 흐리게」, 기준 캡션, 못 읽음 알림. FAB·층 상세가 같은 줄을 쓴다.
+- **목표 확보율**(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)은 사이드바 조회 조건 패널의 한
+  줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건 상자로). 위젯 key 는 그대로다.
+  배치 편집으로 보기가 쉬는 회차에도 잠근 채 선다(`render_level_field`).
+- **본문 조작 줄**(결정 D6) — 「단축 없는 호기 흐리게」, 기준 캡션, 못 읽음 알림. FAB·층 상세가 같은
+  줄을 쓴다.
 - **달** — 필요 단축 일정 시작·끝 월 칸 → 공용 프로필(0019) 심기를 **읽기만** 한다(결정 D3). 임박
   날수는 필요 단축 일정 「기한 임박」 칸(결정 D9). 어느 칸에도 쓰지 않는다.
 - **층 보기 칸** — 이 층 요약 · 공정 칩(원본 공정소분류 — 결정 D10, 공정 표시명을 읽지 않는다) ·
@@ -40,6 +43,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
+from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import equipment_value_label
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -94,10 +98,12 @@ from capa_simulation.services.space_shortening_layer import (
     day_text,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
+from capa_simulation.sidebar_status import page_condition_slot
 
 __all__ = [
     "LAYER_PARAM",
     "LAYER_SHORT",
+    "LEVEL_FIELD_STYLE",
     "PINNED_NOTE",
     "PROCESS_PARAM",
     "SPACE_SHORT_DIM_KEY",
@@ -119,6 +125,7 @@ __all__ = [
     "render_layer_basis",
     "render_layer_controls",
     "render_layer_stop",
+    "render_level_field",
     "forget_arrival_note",
     "render_arrival_filter_note",
     "switch_to_queued_shortening",
@@ -129,6 +136,28 @@ __all__ = [
 
 SPACE_SHORT_LEVEL_KEY: Final = "space_shortening_level_v1"
 SPACE_SHORT_DIM_KEY: Final = "space_shortening_dim_v1"
+# 목표 확보율 줄 — 조회 조건 패널의 둘째 페이지 칸(첫째는 공용 공정 칸). 줄 꼴(이름 줄 + 값)은
+# 패널의 다른 줄과 같은 칸 key 접두어로 맞춘다(`condition_field.FIELD_KEY_PREFIX` — 줄 안 간격).
+LEVEL_SLOT: Final = 1
+LEVEL_LABEL: Final = "목표 확보율"
+LEVEL_FIELD_SLUG: Final = "space_target"
+# 그 줄의 전환 단추 다섯을 패널 폭(245px 상자 — 안쪽 223px)에 한 줄로 — 기본 안쪽 여백이면 넷째
+# 뒤에서 접혀 줄이 두 줄(높이 60px)이 됐다(2026-11-08 사본 실측). 단추를 같은 폭으로 나누고 좌우
+# 여백만 줄인다. 글자 크기는 그대로다(설계 규칙 UI-CON-01). 페이지가 회차마다 늘
+# 그린다(`render_level_field` 는 보기를 고른 회차에만 돈다 — 스타일 표지 자리 수가 회차마다 같게).
+LEVEL_FIELD_STYLE: Final = (
+    "<style>"
+    f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"]'
+    "{flex-wrap:nowrap;}"
+    f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"] button'
+    "{flex:1 1 0;min-width:0;padding-left:0.25rem;padding-right:0.25rem;}"
+    "</style>"
+)
+# 배치 편집으로 보기가 쉬는 회차의 목표 줄 — 줄은 잠근 채 서고 까닭은 이름 줄 풍선이다(설계 규칙
+# UI-INP-07). 값 칸이 전환 단추라 단추 풍선을 달 자리가 없다(라벨을 접은 위젯은 풍선도 숨는다).
+LEVEL_REST_HELP: Final = (
+    "배치 편집 중에는 필요 단축 보기를 쉬어 고를 수 없습니다 — 편집을 끄면 다시 고릅니다."
+)
 SPACE_SHORT_PROCESS_PREFIX: Final = "space_shortening_process"
 SPACE_SHORT_SWITCH_KEY: Final = "space_shortening_switch_v1"
 SPACE_SHORT_TABLE_PREFIX: Final = "space_shortening_table"
@@ -138,9 +167,9 @@ _TABLE_GENERATION_KEY: Final = "space_shortening_table_generation"
 _CHIP_LEVELS_KEY: Final = "space_shortening_chip_levels"
 # 이번 회차에 도면에서 호기를 눌렀다는 표지(`note_unit_pick` — 뷰어 누르기 콜백이 적는다).
 _PICKED_NOW_KEY: Final = "space_shortening_picked_now"
-# 「도면에서 보기」 로 온 공정 — 공정소분류 필터에 걸러졌는지 알리는 한 줄. (공정, 도착 층, 도착 때
-# 필터)를 쥐고 **그 층·필터가 처음 바뀔 때**(또는 보기를 끌 때) 거둔다 — 알림은 도착한 링크에 대한
-# 것이라 나중에 사용자가 고른 상관없는 필터에 남지 않는다.
+# 「도면에서 보기」 로 온 공정 — 공정소분류 필터(공용 공정 칸)에 걸러졌는지 알리는 한 줄. (공정,
+# 도착 층, 도착 때 공용 공정 값)을 쥐고 **그 층·값이 처음 바뀔 때**(또는 보기를 끌 때) 거둔다 —
+# 알림은 도착한 링크에 대한 것이라 나중에 사용자가 고른 상관없는 필터에 남지 않는다.
 _ARRIVED_PROCESS_KEY: Final = "space_shortening_arrived_process"
 _OPEN_BOARD_PREFIX: Final = "space_shortening_open_board"
 LAYER_PARAM: Final = "layer"
@@ -196,15 +225,16 @@ def consume_layer_link(
     clear_keys: Sequence[str],
     edit_keys: Sequence[str],
     inactive: Collection[FloorKey],
-    filter_key: str,
+    filter_values: Sequence[str],
 ) -> bool:
     """필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=C1-2F&proc=W/B&target=1.1`)를 한 번
     받는다.
 
     색 기준 칸 = 필요 단축, 목표 칸 = `target`(다섯 가운데 하나일 때만), 그 층의 공정 칩 칸 =
     `proc`(선택지 확인은 칩을 그릴 때), `clear_keys`(누른 호기) 비움, `edit_keys`(층·FAB 배치 편집
-    토글) 끔 — 링크로 보러 왔다. `filter_key` 는 Space 공정소분류 필터 칸이다 — 도착 때 값을 알림
-    칸에 함께 적어 그 필터가 바뀌면 알림을 거둔다(필터 자체는 건드리지 않는다). `floor` 가 사용
+    토글) 끔 — 링크로 보러 왔다. `filter_values` 는 지금 공용 공정 값(`shared_process.values()` —
+    Space 공정소분류가 따라가는 값)이다 — 도착 때 값을 알림 칸에 함께 적어 그 값이 바뀌면 알림을
+    거둔다(공정 값 자체는 건드리지 않는다). `floor` 가 사용
     층이면 세션 층을 **덮는다**(지금 규칙은 세션이 먼저 — 링크만 예외), 없거나 비활성 층이면(링크
     대상이 아니다) 세션 층을 지워 FAB 전체로 연다. 남길 인자(`floor`·테마·그 밖)는 `from_dict` **한
     번**으로 다시 싣는다(기록이 키 수만큼 쌓이지 않게). 받았으면 참이다(받는 쪽이 사이드바를
@@ -233,11 +263,7 @@ def consume_layer_link(
     process = params.get(PROCESS_PARAM)
     process = process.strip() if isinstance(process, str) else ""
     if process:
-        st.session_state[_ARRIVED_PROCESS_KEY] = (
-            process,
-            floor,
-            _filter_values(st.session_state.get(filter_key)),
-        )
+        st.session_state[_ARRIVED_PROCESS_KEY] = (process, floor, _filter_values(filter_values))
         if floor is not None:
             st.session_state[process_chip_key(floor)] = process
             # 링크가 목표와 칩을 함께 정했다 — 「목표를 바꿨다」 로 보고 칩을 풀지 않게.
@@ -297,36 +323,59 @@ class LayerControls:
     dim_others: bool
 
 
-def render_layer_controls() -> LayerControls:
-    """목표 확보율·「단축 없는 호기 흐리게」 — 본문 조작 줄 안에서 부른다(결정 D6).
+def render_level_field(*, resting: bool = False) -> float:
+    """목표 확보율 줄 — 사이드바 조회 조건 패널의 페이지 칸(`LEVEL_SLOT`)에 이름 줄 + 전환 단추로
+    선다(2026-11-08 그림 메모 g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로
+    이동」). 처음 값이 무엇인지는 Guide 가 말한다(이름 줄에 길 안내를 적지 않는다 — 설계 규칙
+    UI-TXT-03). 고른 목표를 돌려준다.
 
-    목표 칸이 없으면 필요 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심고, 흐리게 칸이 없으면
-    켬으로 심는다. 위젯에는 기본값을 주지 않는다(세션 API 와 함께 쓰면 경고 — AGENTS 9장).
+    `resting` 은 보기를 골랐지만 배치 편집으로 쉬는 회차다 — 줄은 잠근 채 같은 자리에 서고 까닭은
+    이름 줄 풍선이다. 줄이 빠지면 켜고 끌 때마다 아래 「Space 도면」 상자와 방금 누른 「배치 편집」
+    토글이 줄 높이만큼 오르내렸다(설계 규칙 UI-PRF-03 · UI-INP-07).
+
+    목표 칸이 없으면 필요 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심는다. 위젯에는 기본값을
+    주지 않는다(세션 API 와 함께 쓰면 경고 — AGENTS 9장).
     """
     if _target_level(st.session_state.get(SPACE_SHORT_LEVEL_KEY)) is None:
         st.session_state[SPACE_SHORT_LEVEL_KEY] = (
             _target_level(st.session_state.get(SHORTENING_LEVEL_KEY)) or DEFAULT_TARGET_LEVEL
         )
+    with (
+        page_condition_slot(LEVEL_SLOT).container(),
+        st.container(key=f"{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG}", gap=None),
+    ):
+        condition_name_row(
+            LEVEL_LABEL, slug=LEVEL_FIELD_SLUG, help=LEVEL_REST_HELP if resting else None
+        )
+        level = st.segmented_control(
+            LEVEL_LABEL,
+            options=list(TARGET_LEVELS),
+            format_func=_percent,
+            required=True,
+            key=SPACE_SHORT_LEVEL_KEY,
+            persist_state="session",
+            disabled=resting,
+            label_visibility="collapsed",
+            width="stretch",
+        )
+    return _target_level(level) or DEFAULT_TARGET_LEVEL
+
+
+def render_layer_controls() -> LayerControls:
+    """목표 확보율 · 「단축 없는 호기 흐리게」 — 본문 조작 줄 안에서 부른다(결정 D6).
+
+    목표 확보율은 사이드바 조회 조건 패널의 줄이다(`render_level_field`). 흐리게 칸은 부른
+    자리(본문 조작 줄)에 선다. 흐리게 칸이 없으면 켬으로 심는다.
+    """
+    level = render_level_field()
     if not isinstance(st.session_state.get(SPACE_SHORT_DIM_KEY), bool):
         st.session_state[SPACE_SHORT_DIM_KEY] = True
-    level = st.segmented_control(
-        "목표 확보율",
-        options=list(TARGET_LEVELS),
-        format_func=_percent,
-        required=True,
-        key=SPACE_SHORT_LEVEL_KEY,
-        persist_state="session",
-        help=(
-            "필요 단축 일정 화면의 목표 확보율과 같은 다섯 값입니다. 처음엔 그 화면의 목표로 "
-            "엽니다."
-        ),
-    )
     dim = st.checkbox(
         "단축 없는 호기 흐리게",
         key=SPACE_SHORT_DIM_KEY,
         persist_state="session",
     )
-    return LayerControls(level=_target_level(level) or DEFAULT_TARGET_LEVEL, dim_others=bool(dim))
+    return LayerControls(level=level, dim_others=bool(dim))
 
 
 @dataclass(frozen=True)
@@ -500,7 +549,7 @@ def render_layer_stop(stop: ShorteningStop) -> None:
 
 
 def _filter_values(value: object) -> tuple[str, ...]:
-    """공정소분류 필터 칸 값(목록)을 견줄 수 있는 글자 튜플로."""
+    """공용 공정 값(목록)을 견줄 수 있는 글자 튜플로."""
     if not isinstance(value, (list, tuple)):
         return ()
     return tuple(str(item) for item in value)
@@ -512,16 +561,19 @@ def forget_arrival_note() -> None:
     st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
 
 
-def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKey | None) -> None:
-    """「도면에서 보기」 로 온 공정이 Space 공정소분류 필터에 걸러졌으면 한 줄(필터는 건드리지
-    않는다). 도착한 층·필터가 그대로인 동안만 — 층을 옮기거나 필터를 바꾸면 칸을 거두고 다시 서지
-    않는다."""
+def render_arrival_filter_note(
+    selected_processes: Sequence[str], floor: FloorKey | None, filter_values: Sequence[str]
+) -> None:
+    """「도면에서 보기」 로 온 공정이 Space 공정소분류 거름(공용 공정 칸)에 걸러졌으면 한
+    줄(공정 값은 건드리지 않는다). 도착한 층 · 공용 값(`filter_values`)이 그대로인 동안만 — 층을
+    옮기거나 값이 바뀌면 칸을 거두고 다시 서지 않는다. `selected_processes` 는 이 화면에 걸린
+    공정이다."""
     held = st.session_state.get(_ARRIVED_PROCESS_KEY)
     if not (isinstance(held, tuple) and len(held) == 3 and isinstance(held[0], str)):
         st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
         return
     process, arrived_floor, arrived_filter = held
-    if arrived_floor != floor or arrived_filter != _filter_values(list(selected_processes)):
+    if arrived_floor != floor or arrived_filter != _filter_values(filter_values):
         st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
         return
     if not process or not selected_processes or process in set(selected_processes):
@@ -531,8 +583,8 @@ def render_arrival_filter_note(selected_processes: Sequence[str], floor: FloorKe
         f":material/filter_alt_off: 필터 밖 「{literal_markdown(process)}」",
         width="stretch",
         help=(
-            "공정소분류 필터에 이 공정이 없어 그 단축 호기가 보이지 않습니다 — 필터를 비우거나 "
-            "더하면 보입니다."
+            "사이드바 「공정」 칸에 이 공정이 없어 그 단축 호기가 보이지 않습니다 — 공정을 "
+            "비우거나 더하면 보입니다."
         ),
     )
 

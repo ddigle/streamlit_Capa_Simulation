@@ -340,6 +340,14 @@ out.kept = [
   keptRowMissing([{ kind: 'event', code: 'ST-20', short: '다른 글', noteId: 'page-a' }], kept),
   keptRowMissing([], { code: 'ST-20', short: '읽지 못함', id: 'page-a' }),
 ]
+out.marks = [
+  stateMark({ kind: 'state', state: 'open', resolvedWhy: '' }),
+  stateMark({ kind: 'state', state: 'resolved', resolvedWhy: 'scope' }),
+  stateMark({ kind: 'state', state: 'resolved', resolvedWhy: 'gone' }),
+  stateMark({ kind: 'state', state: 'resolved', resolvedWhy: 'changed' }),
+  stateMark({ kind: 'event', state: null }),
+  stateMark(null),
+]
 out.copy = copyText([
   ['코드', 'ST-15 · 확인 필요 · 상태 알림(바뀔 때만)'],
   ['범위', ''],
@@ -727,12 +735,38 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     assert out["chosen"] == [True, True, False, False, False]
     # 지금 화면을 가리키는 줄은 열 탭이 있을 때만 「그 화면으로」 를 세운다. HOME 주소는 빈 글이다.
     assert out["go"] == [True, False, True, False, True, False]
+    # 상태 알림 줄 표지 — 범위(리비전 · 시나리오 · 조회기간)가 바뀌어 닫힌 줄은 「해소」 가
+    # 아니라 「범위 바뀜」 이다(2026-11-08 사용자 답 a3). 조건이 사라진 줄 · 내용이 바뀐 줄은
+    # 「해소」 그대로.
+    assert out["marks"] == ["open", "scope", "resolved", "resolved", None, None]
     # 로그 복사 글 — 빈 값 · 이름 없는 짝은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
     assert out["copy"] == (
         "코드: ST-15 · 확인 필요 · 상태 알림(바뀔 때만)\n"
         "원본 오류:\n  Traceback\n    line 1\n  ValueError\n"
         "전문: 대당 Capa 가 없어 뺀 경로 2건"
     )
+
+
+def test_a_row_closed_by_a_scope_change_reads_scope_moved_not_resolved() -> None:
+    """리비전이 오르면 같은 상태 알림이 새 범위 줄로 다시 서고 앞 줄은 닫힌다 — 조건은 그대로라
+    「해소」 로 읽히면 풀린 것처럼 보였다(2026-11-08 사용자 답 a3 · 재현 u3-09 Space 가정 배치
+    `EQ-13`). 줄 표지와 로그 짝이 같은 판정(`stateMark`)을 쓰고, 모든 상태 알림에 걸린다."""
+    assert alert_center.TEXT["scope_moved"] == "범위 바뀜 {time}"
+    assert alert_center.TEXT["log_scope_moved"] == "범위 바뀜"
+    assert alert_center.TEXT["resolved"] == "해소 {time}"
+    assert "resolved_scope" not in alert_center.TEXT
+    panel = JS[JS.index("const mark = stateMark(row)\n    if (mark) {") :]
+    panel = panel[: panel.index("const acts = ")]
+    assert "mark === 'scope' ? t.scope_moved : t.resolved" in panel
+    pairs = JS[JS.index("function logPairs(") :]
+    pairs = pairs[: pairs.index("\n}\n")]
+    assert "pairs.push([t.log_scope_moved, (forCopy ? stamp : hm)(row.resolvedAt)])" in pairs
+    # 줄을 닫는 까닭은 그대로 셋이다 — 범위 교체만 `scope` 다.
+    state = JS[JS.index("function handleState(") :]
+    state = state[: state.index("\n}\n")]
+    assert "resolveRow(C, entry.row, now, 'scope')" in state
+    assert "resolveRow(C, entry.row, now, 'gone')" in state
+    assert "resolveRow(C, entry.row, now, 'changed')" in state
 
 
 def test_the_js_limits_match_the_registry_constants() -> None:

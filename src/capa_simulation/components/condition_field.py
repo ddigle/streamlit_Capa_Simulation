@@ -36,10 +36,12 @@ def condition_name_row(
     slug: str,
     status: str | None = None,
     on_row: Callable[[DeltaGenerator], None] | None = None,
+    help: str | None = None,
 ) -> DeltaGenerator:
     """이름 줄. 이름은 왼쪽, `status` 는 오른쪽 끝이다. `on_row` 는 오른쪽에 칸을 더 세운다.
 
     조회기간처럼 상태가 페이지 계산 뒤에야 정해지는 줄은 `on_row` 로 빈 칸을 세워 등록해 둔다.
+    `help` 는 값 칸에 풍선을 달 수 없는 잠긴 줄(전환 단추 줄)의 까닭 풍선이다 — 이름 곁에 선다.
     """
     row = st.container(
         key=f"{NAME_ROW_KEY_PREFIX}{slug}",
@@ -48,7 +50,7 @@ def condition_name_row(
         vertical_alignment="center",
         gap="small",
     )
-    row.caption(name, width="content")
+    row.caption(name, width="content", help=help)
     if status:
         row.caption(status, width="content")
     if on_row is not None:

@@ -2314,7 +2314,8 @@ def test_space_shows_the_common_boxes_only_while_the_shortening_basis_is_chosen(
 ) -> None:
     """D4 B — Space 현황은 사이드바 색 기준이 `필요 단축` 인 동안만 활성 시나리오·조회기간을 읽어 그
     두 줄을 세운다(`ConditionTabs` 를 보기 값으로). 실제 `app.py` 가 라디오 값을 읽고, 페이지는 켠
-    회차에 예외 없이 계획까지 돈다(본문 조작 줄의 목표 확보율이 선다)."""
+    회차에 예외 없이 계획까지 돈다(목표 확보율이 선다 — 사이드바 조회 조건 패널의 줄, 2026-11-08
+    그림 메모 g05)."""
     app = _fleet_app.run()
     app.switch_page(SPACE_STATUS.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
@@ -2324,6 +2325,11 @@ def test_space_shows_the_common_boxes_only_while_the_shortening_basis_is_chosen(
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "scenario", "period", "equipment"}
     assert [
+        item
+        for item in app.sidebar.get("button_group")
+        if getattr(item, "label", None) == "목표 확보율"
+    ]
+    assert not [
         item
         for item in app.main.get("button_group")
         if getattr(item, "label", None) == "목표 확보율"

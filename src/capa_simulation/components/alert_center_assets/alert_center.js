@@ -8,7 +8,8 @@
 //   (`data-test-script-state`)가 바뀔 때마다 문서를 **한 번** 훑는다 — 상시 MutationObserver 는 쓰지 않는다(큰 표 화면의 DOM 변화가 많다). 회차 시작에도 훑어 끊긴 회차의 표지를 놓치지
 //   않는다. 같은 표지를 또 봐도 사건은 id, 상태는 지문으로 한 번만 띄운다.
 // - 상태 알림(`kind: "state"`)은 「코드 + 범위 → 마지막 지문」 표로 바뀔 때만 띄운다. 같은 코드의 다른 범위가 오면 앞 범위는
-//   「범위가 바뀜」 으로 해소, `active: false` 가 오면 「조건이 사라짐」 으로 해소한다.
+//   「범위가 바뀜」 으로 닫고, `active: false` 가 오면 「조건이 사라짐」 으로 해소한다. 범위 교체로 닫힌 줄은 Alarm 에 「해소」
+//   대신 「범위 바뀜」 이라 적는다(2026-11-08 사용자 답 a3 — 리비전이 오르면 조건이 그대로여도 앞 줄이 풀린 것처럼 읽혔다).
 // - 같은 사건 알림(코드 + 짧은 글)이 앞 알림창이 떠 있거나 사라진 지 반복 창(60초) 안에 다시 나면 새 칸을 쌓지 않고 앞 칸을
 //   구석으로 옮겨 「×n」 을 붙이고 창 가장자리 테두리가 그 칸으로 모인다(D4 A — 한 겹 · 450ms · easeOutQuad · 한 번만). 움직임
 //   줄이기에서는 움직이지 않는 윤곽만 1.6초 선다.
@@ -110,6 +111,13 @@ function stateVerdict(entry, note) {
     return entry.fp === note.fp ? 'same' : 'change'
   }
   return entry && entry.active ? 'resolved' : 'none'
+}
+// 상태 알림 줄의 표지 — 'open'(지금도 있음) · 'scope'(범위가 바뀌어 닫힘 — 조건은 새 범위 줄에 그대로일 수 있다) ·
+// 'resolved'(조건이 사라짐 · 내용이 바뀜). 사건 알림 줄은 null.
+function stateMark(row) {
+  if (!row || row.kind !== 'state') return null
+  if (row.state === 'open') return 'open'
+  return row.resolvedWhy === 'scope' ? 'scope' : 'resolved'
 }
 // 같은 사건 알림이 반복 창 안인가 — 앞 알림창이 떠 있거나 사라진 지 `windowMs` 안.
 function isRepeat(live, now, windowMs) {
@@ -698,7 +706,7 @@ function handleState(C, note) {
   const now = Date.now()
   const key = stateKey(note)
   let changed = false
-  // 같은 코드의 다른 범위(시나리오 · 조회기간을 바꿈)는 지금 범위가 아니다 — 「범위가 바뀜」 으로 해소한다.
+  // 같은 코드의 다른 범위(시나리오 · 조회기간 · 리비전을 바꿈)는 지금 범위가 아니다 — 「범위가 바뀜」(`scope`)으로 닫는다.
   for (const [other, entry] of Object.entries(C.states)) {
     if (other !== key && entry && entry.code === note.code && entry.active) {
       resolveRow(C, entry.row, now, 'scope')
@@ -1285,7 +1293,7 @@ function pageLabel(row) {
 // 로그 칸 짝. 복사(`forCopy`)는 시각에 날짜를 붙이고 끝에 전문 · 딸린 표(이름 · 행 수만)를 더한다.
 function logPairs(C, row, forCopy) {
   const t = text(C)
-  const why = { gone: t.resolved_gone, changed: t.resolved_changed, scope: t.resolved_scope }
+  const why = { gone: t.resolved_gone, changed: t.resolved_changed }
   const time = forCopy ? stamp : hms
   const pairs = [
     [t.log_code, `${row.code} · ${levelLabel(C, row.level)} · ${row.kind === 'state' ? t.kind_state : t.kind_event}`],
@@ -1295,10 +1303,13 @@ function logPairs(C, row, forCopy) {
     [t.log_cause, row.cause || (row.kind === 'state' ? t.cause_new : t.cause_event) || '—'],
   ]
   if (row.scopeLabel) pairs.push([t.log_scope, row.scopeLabel])
-  if (row.kind === 'state') {
+  const mark = stateMark(row)
+  if (mark === 'scope') {
+    pairs.push([t.log_scope_moved, (forCopy ? stamp : hm)(row.resolvedAt)])
+  } else if (mark) {
     pairs.push([
       t.log_resolved,
-      row.state === 'resolved' ? `${(forCopy ? stamp : hm)(row.resolvedAt)} — ${why[row.resolvedWhy] || ''}` : t.not_yet,
+      mark === 'resolved' ? `${(forCopy ? stamp : hm)(row.resolvedAt)} — ${why[row.resolvedWhy] || ''}` : t.not_yet,
     ])
   }
   if (row.detail) pairs.push([t.log_detail, row.detail])
@@ -1416,10 +1427,10 @@ function paintList(C) {
     const meta = el('div', 'meta')
     if (row.page) meta.append(el('span', '', pageLabel(row)))
     meta.append(el('span', '', hm(row.last) + (row.n > 1 ? ` · ×${row.n}` : '')))
-    if (row.kind === 'state') {
-      meta.append(
-        el('span', `state${row.state === 'open' ? ' open' : ''}`, row.state === 'open' ? t.open : fill(t.resolved, { time: hm(row.resolvedAt) })),
-      )
+    const mark = stateMark(row)
+    if (mark) {
+      const label = mark === 'open' ? t.open : fill(mark === 'scope' ? t.scope_moved : t.resolved, { time: hm(row.resolvedAt) })
+      meta.append(el('span', `state${mark === 'open' ? ' open' : ''}`, label))
     }
     const acts = el('span', 'acts')
     if (showsGo(row.href, row.tab, C.data.here)) {

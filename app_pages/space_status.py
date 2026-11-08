@@ -12,6 +12,7 @@ from typing import Any, NamedTuple
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import shared_process
 from capa_simulation.components.condition_field import condition_name_row
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
@@ -71,6 +72,7 @@ from capa_simulation.components.literal_markdown import (
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.popover_field_commit import ESC_COMMIT_PREFIX
+from capa_simulation.components.process_field import render_process_filter
 from capa_simulation.components.sample_data import (
     NO_UNITS_HELP,
     NO_UNITS_MARK,
@@ -122,6 +124,7 @@ from capa_simulation.components.space_layout_editor import (
     space_lock_style,
 )
 from capa_simulation.components.space_shortening_view import (
+    LEVEL_FIELD_STYLE,
     PINNED_NOTE,
     SpaceLayer,
     consume_layer_link,
@@ -136,6 +139,7 @@ from capa_simulation.components.space_shortening_view import (
     render_layer_basis,
     render_layer_controls,
     render_layer_stop,
+    render_level_field,
     switch_to_queued_shortening,
     take_unit_pick,
     unit_keys_by_name,
@@ -511,15 +515,11 @@ def _units(value: float) -> str:
 
 
 SPACE_CARD_LABEL = "Space 조건"
-# 사이드바 `Space 조건` 카드의 공정소분류 필터 칸(세션에 남는 보기 조건).
-PROCESS_FILTER_KEY = "space_status_process_filter"
-# 그 칸 풍선 — 도구 줄 요약 맨 앞 표지(`_filter_mark`)의 뜻을 말한다(카드는 접혀 있어도 요약은
-# 보인다).
-PROCESS_FILTER_HELP = (
-    "고른 공정의 호기만 도면 · 요약 · 층 목록에 셉니다. 요약 맨 앞 「공정 필터 n개」 가 건 수이고, "
-    "층의 호기가 이 필터로 모두 빠지면 「필터로 0대」 라 적습니다. 배치 편집은 필터와 상관없이 "
-    "그 층 호기를 모두 봅니다."
-)
+# 공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1 —
+# `components/process_field.py`). 이 이름은 다른 화면 칩 · 이름 줄의 출처(「Space 에서」)다. 글자는
+# 원본 공정소분류다(2026-10-24 D10 · D11 — 다른 화면의 표시명과 다를 수 있다). 도구 줄 요약 맨 앞
+# 표지(`_filter_mark`)의 뜻은 Guide 다.
+SHARED_PROCESS_SCREEN = "Space"
 # 배치 편집 토글 도움말 끝 — 켜기 전에 필요 단축 보기가 쉰다는 것을 알 수 있게(결정 D7·명세 4-4).
 LAYER_REST_HELP = (
     "색 기준이 「필요 단축」 이면 편집하는 동안 그 보기를 쉬고, 편집을 끄면 다시 보입니다."
@@ -609,7 +609,7 @@ if consume_layer_link(
     clear_keys=(SPACE_PICKED_KEY,),
     edit_keys=(EDIT_MODE_KEY, FAB_EDIT_MODE_KEY),
     inactive=frozenset(inactive_floors),
-    filter_key=PROCESS_FILTER_KEY,
+    filter_values=shared_process.values(),
 ):
     st.rerun()
 
@@ -655,6 +655,9 @@ with notices:
     # 풀린다(AGENTS 9장).
     st.html(space_lock_style())
     st.html(UNSAVED_PANEL_STYLE)
+    # 필요 단축 보기의 목표 확보율 줄(사이드바 조회 조건 패널)을 한 줄로 — 켜지 않은 회차에도
+    # 그린다.
+    st.html(LEVEL_FIELD_STYLE)
 # 편집본은 실제 저장본이 있을 때만 세운다 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이
 # 막힌다. 가용설비 설비 마스터와 **같은 편집본**이고 세션 토큰 하나라 어느 화면을 먼저 열어도 같다.
 buffer_frames: Frames | None = None
@@ -783,18 +786,18 @@ if no_fleet:
     selected_processes: list[str] = []
     color_choice = default_color_choice()
 else:
-    # 필터는 사이드바 조건 카드 `Space 조건` 이다(2026-09-29 사용자 결정). 기준일은 층 상세 도면
-    # 맨 위의 페이더이고, 단계 필터는 두지 않는다(2026-10-16 사용자 결정). 이 화면은 배치·공간만
-    # 본다 — 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다(2026-10-01 사용자 결정).
+    # 조건은 사이드바다(2026-09-29 사용자 결정 — 색 기준은 조건 카드 `Space 조건`). 기준일은 층
+    # 상세 도면 맨 위의 페이더이고, 단계 필터는 두지 않는다(2026-10-16 사용자 결정). 이 화면은
+    # 배치·공간만 본다 — 기간별 단계 전환은 가용설비 현황 Main 의 「단계 전환」이다(2026-10-01
+    # 사용자 결정).
+    # 공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1) — 다른 화면에서 고른
+    # 공정을 따라가고, 이 화면에 없는 공정이면 전체를 보이며 이름 줄에 「없음」 배지를 단다. 글자는
+    # 원본이다(labels 없음 — 2026-10-24 D10 · D11).
+    selected_processes = render_process_filter(
+        all_status["공정소분류"].dropna().drop_duplicates().tolist(),
+        screen=SHARED_PROCESS_SCREEN,
+    )
     with condition_card(SPACE_CARD_LABEL, name=SPACE_CARD_NAME):
-        selected_processes = st.multiselect(
-            "공정소분류",
-            options=all_status["공정소분류"].dropna().drop_duplicates().tolist(),
-            placeholder="전체",
-            key=PROCESS_FILTER_KEY,
-            persist_state="session",
-            help=PROCESS_FILTER_HELP,
-        )
         # 도면 색 기준은 하나만 고른다(2026-10-16 사용자 결정 — 질문 7). 고른 기준의 그룹마다
         # 체크(처음엔 모두 켬)이고, 체크한 그룹만 그 색이다. 바꾸면 도면은 같은 epoch 로 색만 다시
         # 칠한다(배율 유지).
@@ -899,7 +902,7 @@ location_unknown = pd.Series(
 
 def _filter_mark(*, emptied: bool = False) -> str:
     """도구 줄 요약 맨 앞 표지 — 공정 필터가 걸렸다는 것과, 그 때문에 층이 비었으면 그 말(설계 규칙
-    UI-STA-03). 뜻은 `공정소분류` 칸 풍선이다. 필터가 없으면 빈 글이다."""
+    UI-STA-03). 공정은 조회 조건 패널의 공용 공정 칸이고 뜻은 Guide 다. 필터가 없으면 빈 글이다."""
     if not selected_processes:
         return ""
     return f"공정 필터 {len(selected_processes)}개 · " + ("필터로 0대 · " if emptied else "")
@@ -2218,8 +2221,9 @@ with st.container(key="space_edit_lock_slot"):
 
 # 필요 단축 보기의 본문 조작 줄(결정 D6 — 목표 확보율·흐리게·못 읽음 알림). 자리는 늘 선다 — 빈 칸은
 # 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지 않는다(AGENTS 5장 9 —
-# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 FAB 편집이면 까닭 한 줄만 — 층 상세는 편집기 위
-# 캡션이 같은 글을 적어 여기는 비운다(한 화면에 한 번).
+# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 사이드바 목표 줄만 잠근 채 세우고(켜고 끌 때
+# 아래 「Space 도면」 상자가 밀리지 않게 — 설계 규칙 UI-PRF-03), FAB 편집이면 까닭 한 줄을 더한다 —
+# 층 상세는 편집기 위 캡션이 같은 글을 적어 여기는 비운다(한 화면에 한 번).
 space_layer: SpaceLayer | None = None
 layer_dim = True
 with st.container(
@@ -2242,8 +2246,10 @@ with st.container(
             render_layer_stop(loaded)
         else:
             space_layer = loaded
-    elif layer_requested and layer_editing and selected is None:
-        _render_layer_rest_caption()
+    elif layer_requested and layer_editing:
+        render_level_field(resting=True)
+        if selected is None:
+            _render_layer_rest_caption()
 # 필요 단축 FAB 요약(공정소분류 필터를 따름 — 결정 D11). 비활성 층은 층 대수를 싣지 않는다.
 layer_scope = frozenset(selected_processes) if selected_processes else None
 layer_summary: FabSummary | None = (
@@ -2262,7 +2268,7 @@ with st.container(key="space_shortening_basis_slot"):
         render_layer_basis(
             equipment_session, space_layer, sample=showing_sample, summary=layer_summary
         )
-        render_arrival_filter_note(selected_processes, selected)
+        render_arrival_filter_note(selected_processes, selected, shared_process.values())
     elif not layer_active:
         forget_arrival_note()
 

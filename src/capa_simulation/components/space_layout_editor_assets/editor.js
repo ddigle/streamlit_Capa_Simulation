@@ -3342,10 +3342,11 @@ export default function (component) {
   }
 
   // 그려 둔 칩에 검색을 건다 — 목록을 다시 만들지 않고 칩만 감춘다. 수는 「보이는/전체」로 적는다.
-  // 칸 머리 수는 칩 수다 — 묶음도 1대라 도구 줄 요약 · 층 목록의 설비 대수와 같은 셈이다. 칩이 모듈 여럿을 담으면 칩들이 담은
-  // 호기 행 수를 곁에 적는다(「1대(모듈 4)」 — 단독 호기 칩도 1 로 더하므로 섞이면 묶음 칩 「모듈 n」 의 합보다 크다).
+  // 칸 머리 수는 칩 수다 — 묶음도 1대라 도구 줄 요약 · 층 목록의 설비 대수와 같은 셈이다. 묶음 칩이 모듈 여럿을 담으면 묶음 칩의
+  // 모듈만 세어 곁에 적는다(「3대(모듈 4)」 — 칩의 「모듈 n」 합과 같다. 단독 호기 칩은 세지 않는다 — 2026-11-08 사용자 답 d13).
   function applyTrayFilter() {
     let total = 0
+    let groups = 0
     let modules = 0
     let shown = 0
     for (const chip of trayList.children) {
@@ -3353,11 +3354,14 @@ export default function (component) {
       chip.hidden = !visible
       if (!chip.__entry) continue
       total += 1
-      modules += chip.__entry.list.length
+      if (chip.__entry.lead.group) {
+        groups += 1
+        modules += chip.__entry.list.length
+      }
       if (visible) shown += 1
     }
     const searching = Boolean(String(S.trayQuery || '').trim())
-    const count = modules === total ? `${total}대` : `${total}대(모듈 ${modules})`
+    const count = modules === groups ? `${total}대` : `${total}대(모듈 ${modules})`
     trayCount.textContent = searching ? `${shown}/${count}` : count
     trayEmpty.hidden = !(searching && total > 0 && shown === 0)
   }
@@ -3514,20 +3518,14 @@ export default function (component) {
         layer.append(group)
       } else (onZoneLayer(item) ? zonesLayer : marksLayer).append(buildMark(item))
     }
-    let trayN = 0
-    for (const entry of trayEntries(trayKeep())) {
-      trayN += entry.list.length
-      trayList.append(buildChip(entry, false))
-    }
+    // 접힌 단추 수도 칸 머리와 같은 설비 대수다 — 칩 하나가 1대(묶음도 1대, 2026-11-08 사용자 답 d13).
+    const tray = trayEntries(trayKeep())
+    for (const entry of tray) trayList.append(buildChip(entry, false))
     const leaving = trayEntries((m) => Boolean(m.moveTo))
-    let leavingN = 0
-    for (const entry of leaving) {
-      leavingN += entry.list.length
-      leavingList.append(buildChip(entry, true))
-    }
+    for (const entry of leaving) leavingList.append(buildChip(entry, true))
     leavingBox.hidden = leaving.length === 0
     applyTrayFilter()
-    drawerCount.textContent = leavingN ? `${trayN} · 보냄 ${leavingN}` : String(trayN)
+    drawerCount.textContent = leaving.length ? `${tray.length} · 보냄 ${leaving.length}` : String(tray.length)
     trayScroll.scrollTop = trayTop
     // 보기 화면은 기준일이 바뀌어도 바뀐 호기만 칠하도록 경계 날짜 목록을 새로 만든다.
     if (VIEW && !FAB) buildEvents()
