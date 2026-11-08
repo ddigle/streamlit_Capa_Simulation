@@ -18,9 +18,10 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, infos, states
+from alert_marks import active_state, infos, states, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
+from widget_browser import BrowserTables
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.cutoff_management import (
@@ -348,6 +349,337 @@ def test_filling_from_equipment_processes_keeps_the_values_already_written() -> 
     assert list(filled.columns) == PROCESS_CUTOFF_EDIT_COLUMNS
     # 빠진 공정이 없으면 표를 그대로 돌려준다.
     assert add_missing_cutoff_rows(draft, ["Die Attach"]) is draft
+
+
+def _cutoff_app(
+    database_path: Path, stored: dict[str, float], processes: list[str]
+) -> tuple[AppTest, DuckDBEquipmentRepository]:
+    """`stored` 를 저장해 둔 Cut-off 표를 그린다. 돌려주는 저장소는 화면 밖에서 DB 를 읽는다."""
+    outside = DuckDBEquipmentRepository(database_path)
+    outside.initialize()
+    outside.save_process_cutoff(
+        pd.DataFrame({"공정": list(stored), "Cutoff일수": list(stored.values())})
+    )
+    clear_equipment_repository()
+    script = f"""
+from pathlib import Path
+
+from capa_simulation.components.cutoff_management import render_cutoff_management
+from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+
+render_cutoff_management(
+    DuckDBEquipmentRepository(Path({str(database_path)!r})),
+    equipment_processes={processes!r},
+)
+"""
+    return AppTest.from_string(script, default_timeout=60).run(), outside
+
+
+def _editor_key(app: AppTest) -> str:
+    """지금 그려진 Cut-off 편집표의 위젯 key — 표를 다시 세우면 세대 꼬리가 바뀐다."""
+    (found,) = [
+        proto_id
+        for node in app._tree
+        if isinstance(proto_id := getattr(getattr(node, "proto", None), "id", ""), str)
+        and "equipment_cutoff_editor_v1" in proto_id
+    ]
+    return found.rsplit("-", 1)[-1]
+
+
+def _press(tables: BrowserTables, label: str) -> AppTest:
+    """브라우저처럼 단추를 누른다 — 폼 안 단추면 그 폼을 제출해 표에 친 칸이 이 회차에 함께 가고, 폼
+    밖 단추면 친 칸은 브라우저에 남는다."""
+    button = next(item for item in tables.app.button if item.label == label)
+    form_id = button.proto.form_id
+    button.click()
+    app = tables.run(submit=form_id or None)
+    assert not app.exception, [item.message for item in app.exception]
+    return app
+
+
+def _saved(outside: DuckDBEquipmentRepository) -> dict[str, float]:
+    saved = outside.load_process_cutoff()
+    return dict(zip(saved["공정"], saved["Cutoff일수"], strict=True))
+
+
+def test_filling_keeps_a_typed_value_and_adds_the_missing_process(tmp_path: Path) -> None:
+    """저장 안 한 칸을 친 채 「설비 공정으로 채우기」 를 눌렀다. 단추가 폼 밖이라 친 칸이 서버에
+    없는데 표를 새로 세워 그 값이 말없이 사라졌고, 이어 저장하면 「바뀐 것이 없습니다」
+    였다(2026-11-08 점검). 풍선은 「적어 둔 값은 그대로 둡니다」 라고 한다."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A", "Process-B"]
+    )
+    tables = BrowserTables(app, forms=True)
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 31.5)
+
+    _press(tables, "설비 공정으로 채우기")
+
+    draft = app.session_state[CUTOFF_DRAFT_KEY]
+    assert draft["공정"].tolist() == ["Process-A", "Process-B"]
+    assert draft["Cutoff일수"].iloc[0] == 31.5
+    assert pd.isna(draft["Cutoff일수"].iloc[1])
+    assert "1개 행을 표 끝에 더했습니다." in [str(item.value) for item in successes(app)]
+    # 채우기는 저장이 아니다 — 저장은 「Cut-off 저장」 만 한다.
+    assert _saved(outside) == {"Process-A": 10.0}
+
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 31.5}
+    clear_equipment_repository()
+
+
+def test_filling_with_nothing_to_add_keeps_the_table_and_says_so(tmp_path: Path) -> None:
+    """더할 공정이 없으면 표를 다시 세우지 않고 누른 회차에 그렇게 답한다 — 친 값은 저장까지
+    간다. 전에는 무응답으로 표만 새로 서서 친 값을 버렸다(2026-11-08 점검)."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb",
+        {"Process-A": 10.0, "Process-B": 5.0},
+        ["Process-A", "Process-B"],
+    )
+    editor = _editor_key(app)
+    tables = BrowserTables(app, forms=True)
+    tables.edit(editor, 0, "Cutoff일수", 33.5)
+
+    _press(tables, "설비 공정으로 채우기")
+
+    assert _editor_key(app) == editor
+    assert app.session_state[CUTOFF_DRAFT_KEY]["Cutoff일수"].tolist() == [33.5, 5.0]
+    assert "더할 공정이 없습니다." in [str(item.value) for item in infos(app)]
+    assert _saved(outside) == {"Process-A": 10.0, "Process-B": 5.0}
+
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 33.5, "Process-B": 5.0}
+    clear_equipment_repository()
+
+
+def test_a_second_press_of_fill_does_not_cover_what_the_first_added(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """빠른 두 번 누름은 첫 누름이 행을 더한 뒤라 둘째 누름에 더할 공정이 없다. 그 답이 「1개 행을
+    더했습니다」 를 덮어 행이 늘었는데 「더할 공정이 없습니다」 만 떴다(2026-11-08 브라우저 측정).
+    창이 지난 뒤의 누름에는 그대로 답한다."""
+    app, _ = _cutoff_app(tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A", "Process-B"])
+    tables = BrowserTables(app, forms=True)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+
+    _press(tables, "설비 공정으로 채우기")
+    _press(tables, "설비 공정으로 채우기")
+
+    assert app.session_state[CUTOFF_DRAFT_KEY]["공정"].tolist() == ["Process-A", "Process-B"]
+    assert "1개 행을 표 끝에 더했습니다." in [str(item.value) for item in successes(app)]
+    assert "더할 공정이 없습니다." not in [str(item.value) for item in infos(app)]
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    _press(tables, "설비 공정으로 채우기")
+
+    assert "더할 공정이 없습니다." in [str(item.value) for item in infos(app)]
+    clear_equipment_repository()
+
+
+def test_filling_sees_a_row_added_in_the_table_but_not_saved(tmp_path: Path) -> None:
+    """표에 손으로 더한 행은 제출 전에는 서버에 없다 — 채우기가 폼을 받아야 같은 공정을 두 번 더하지
+    않는다."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A", "Process-B"]
+    )
+    tables = BrowserTables(app, forms=True)
+    tables.add(_editor_key(app), {"공정": "Process-B", "Cutoff일수": 7.0})
+
+    _press(tables, "설비 공정으로 채우기")
+
+    draft = app.session_state[CUTOFF_DRAFT_KEY]
+    assert draft["공정"].tolist() == ["Process-A", "Process-B"]
+    assert "더할 공정이 없습니다." in [str(item.value) for item in infos(app)]
+    # 행을 더한 제출의 초안이 RangeIndex 가 아니면 다음 표가 인덱스를 머리 없는 필수 칸으로 세우고,
+    # 그 칸이 빈 새 행은 브라우저가 보내지 않아 저장 알림은 뜨는데 그 행만 빠졌다(2026-11-08 검토).
+    assert isinstance(draft.index, pd.RangeIndex)
+
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 10.0, "Process-B": 7.0}
+    clear_equipment_repository()
+
+
+def test_filling_under_a_row_filter_keeps_the_typed_value(tmp_path: Path) -> None:
+    """공정 필터가 걸린 표는 일부 행만 보이지만 초안 전체에 값을 얹고 그 끝에 더한다."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb",
+        {"Process-A": 10.0, "Process-C": 20.0},
+        ["Process-A", "Process-B", "Process-C"],
+    )
+    tables = BrowserTables(app, forms=True)
+    app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
+    tables.run()
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 21.5)
+
+    _press(tables, "설비 공정으로 채우기")
+
+    draft = app.session_state[CUTOFF_DRAFT_KEY]
+    assert draft["공정"].tolist() == ["Process-A", "Process-C", "Process-B"]
+    assert draft["Cutoff일수"].iloc[:2].tolist() == [10.0, 21.5]
+    assert pd.isna(draft["Cutoff일수"].iloc[2])
+
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 10.0, "Process-C": 21.5}
+    clear_equipment_repository()
+
+
+def test_a_cell_fixed_after_a_refused_save_reaches_the_next_save(tmp_path: Path) -> None:
+    """거부된 저장 뒤 칸을 고쳐 다시 저장했다. 거부 회차가 초안만 바꾸고 끝나 화면의 표가 옛
+    위젯으로 남았고, 고친 칸은 그 옛 위젯 앞으로 가 버려져 표가 거부된 값으로 돌아갔다(2026-11-08
+    검토)."""
+    app, outside = _cutoff_app(tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A"])
+    tables = BrowserTables(app, forms=True)
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 99999.0)
+
+    _press(tables, "Cut-off 저장")
+
+    assert ["넘습니다" in str(item.value) for item in app.error] == [True]
+    assert app.session_state[CUTOFF_DRAFT_KEY]["Cutoff일수"].tolist() == [99999.0]
+    assert _saved(outside) == {"Process-A": 10.0}
+
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 30.5)
+    _press(tables, "Cut-off 저장")
+
+    assert not app.error
+    assert _saved(outside) == {"Process-A": 30.5}
+    clear_equipment_repository()
+
+
+def test_a_cell_fixed_after_a_refused_save_survives_filling(tmp_path: Path) -> None:
+    """채우기도 같은 폼의 제출이다 — 거부 뒤 고친 칸이 풍선 말대로 그대로 남아 저장까지 간다."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A", "Process-B"]
+    )
+    tables = BrowserTables(app, forms=True)
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 99999.0)
+    _press(tables, "Cut-off 저장")
+
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 36.5)
+    _press(tables, "설비 공정으로 채우기")
+
+    draft = app.session_state[CUTOFF_DRAFT_KEY]
+    assert draft["공정"].tolist() == ["Process-A", "Process-B"]
+    assert draft["Cutoff일수"].iloc[0] == 36.5
+
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 36.5}
+    clear_equipment_repository()
+
+
+def test_a_cell_fixed_after_a_refused_save_under_a_row_filter_reaches_the_next_save(
+    tmp_path: Path,
+) -> None:
+    """필터가 걸린 표는 행 고정이라 위젯이 그대로 서고 편집이 남는다 — 다시 그려도 거른 행의 칸이
+    다른 행에 붙거나 사라지지 않는다."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb",
+        {"Process-A": 10.0, "Process-C": 20.0},
+        ["Process-A", "Process-C"],
+    )
+    tables = BrowserTables(app, forms=True)
+    app.multiselect(key="equipment_cutoff_view_v1_filter_공정").select("Process-C")
+    tables.run()
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 99999.0)
+
+    _press(tables, "Cut-off 저장")
+
+    assert ["넘습니다" in str(item.value) for item in app.error] == [True]
+
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 21.5)
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 10.0, "Process-C": 21.5}
+    clear_equipment_repository()
+
+
+def test_a_cell_typed_after_an_unchanged_save_reaches_the_next_save(tmp_path: Path) -> None:
+    """「바뀐 것이 없습니다」 도 초안을 바꾼다 — 저장에 들지 않는 빈 행의 비고가 그렇다. 그 회차가
+    표를 다시 그리지 않으면 다음 칸이 버려져 같은 답만 되풀이했다(2026-11-08 검토)."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A", "Process-B"]
+    )
+    tables = BrowserTables(app, forms=True)
+    _press(tables, "설비 공정으로 채우기")
+    tables.edit(_editor_key(app), 1, "비고", "memo")
+
+    _press(tables, "Cut-off 저장")
+
+    assert [str(item.value) for item in app.info] == [CUTOFF_UNCHANGED_MESSAGE]
+    assert _saved(outside) == {"Process-A": 10.0}
+
+    tables.edit(_editor_key(app), 1, "Cutoff일수", 6.0)
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 10.0, "Process-B": 6.0}
+    assert outside.load_process_cutoff()["비고"].tolist()[1] == "memo"
+    clear_equipment_repository()
+
+
+def test_a_cell_typed_in_the_refusal_window_reaches_the_next_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """남의 저장에 거부된 창 안의 누름은 쓰지 않지만, 거기 실린 칸은 다음 저장까지 간다."""
+    app, outside = _cutoff_app(
+        tmp_path / "fill.duckdb", {"Process-A": 10.0, "Process-B": 5.0}, ["Process-A", "Process-B"]
+    )
+    tables = BrowserTables(app, forms=True)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    outside.save_process_cutoff(
+        pd.DataFrame({"공정": ["Process-A", "Process-B"], "Cutoff일수": [12.0, 5.0]})
+    )
+    clear_process_cutoff_cache()
+    _press(tables, "Cut-off 저장")
+    assert any("다른 사용자가 먼저" in str(item.value) for item in app.warning)
+
+    tables.edit(_editor_key(app), 1, "Cutoff일수", 8.5)
+    _press(tables, "Cut-off 저장")
+
+    assert ["다른 사용자가 먼저" in str(item.value) for item in app.warning] == [True]
+    assert _saved(outside) == {"Process-A": 12.0, "Process-B": 5.0}
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 13.5)
+    _press(tables, "Cut-off 저장")
+
+    assert _saved(outside) == {"Process-A": 13.5, "Process-B": 8.5}
+    clear_equipment_repository()
+
+
+def test_a_save_right_after_filling_answers_for_the_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """채우기와 저장의 표지 칸이 하나면 1초 창 안의 저장을 채우기의 둘째 누름으로 읽어, 저장을 누른
+    사람이 저장 쪽 답을 받지 못했다(2026-11-08 검토)."""
+    app, _ = _cutoff_app(tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A", "Process-B"])
+    tables = BrowserTables(app, forms=True)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+
+    _press(tables, "설비 공정으로 채우기")
+    _press(tables, "Cut-off 저장")
+
+    assert CUTOFF_UNCHANGED_MESSAGE in [str(item.value) for item in app.info]
+    clear_equipment_repository()
+
+
+def test_a_fill_right_after_a_save_answers_for_the_fill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 까닭의 반대 차례 — 저장 뒤 창 안의 채우기도 제 답을 받는다."""
+    app, outside = _cutoff_app(tmp_path / "fill.duckdb", {"Process-A": 10.0}, ["Process-A"])
+    tables = BrowserTables(app, forms=True)
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    tables.edit(_editor_key(app), 0, "Cutoff일수", 12.5)
+
+    _press(tables, "Cut-off 저장")
+    _press(tables, "설비 공정으로 채우기")
+
+    assert "더할 공정이 없습니다." in [str(item.value) for item in infos(app)]
+    assert _saved(outside) == {"Process-A": 12.5}
+    clear_equipment_repository()
 
 
 def test_reopening_settings_shows_a_cutoff_saved_by_someone_else(tmp_path: Path) -> None:

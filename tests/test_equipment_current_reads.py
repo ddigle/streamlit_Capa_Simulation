@@ -434,7 +434,8 @@ def test_a_cutoff_saved_on_the_screen_is_what_the_next_run_counts_with(
     assert not app.exception
     assert not any("Cut-off 를 적지 않은 공정" in str(item.value) for item in app.warning)
     assert active_state(app, "EQ-12") is None
-    assert any("모두 채워졌습니다" in str(item.value) for item in app.caption)
+    # 다 찬 날 팝업 머리는 빈다(설계 규칙 UI-TXT-08) — 해소는 Alarm 이 알린다.
+    assert not any("모두 채워졌습니다" in str(item.value) for item in app.caption)
     # 저장 뒤에도 팝업은 열린 채 저장 알림이 누른 단추 아래에 선다(팝업 칸이 남는다).
     assert app.session_state[EQUIPMENT_DIALOG_KEY] == "settings"
     assert any(
