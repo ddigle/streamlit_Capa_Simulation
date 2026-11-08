@@ -13,6 +13,7 @@ from collections.abc import Iterator
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from test_process_field import share
 from test_reference_data_page import (
     CALC_TAB_KEY,
     REQUIRED_TAB,
@@ -21,7 +22,6 @@ from test_reference_data_page import (
 )
 
 HEATMAP_EXPANDER_KEY = "securement_heatmap_expander"
-PROCESS_FILTER_KEY = "securement_filter_공정"
 TABLE_PROCESSES = "captured_processes::securement_rate_monthly_table"
 HEATMAP_PROCESSES = "captured_heatmap_processes"
 
@@ -87,7 +87,7 @@ def test_an_opened_heatmap_stays_open_after_a_trip_to_another_tab() -> None:
 
 
 def test_the_heatmap_follows_the_table_filter_and_carries_no_extra_parts() -> None:
-    """표 조건 카드의 필터로 표를 좁히면 히트맵도 같은 공정만 그린다."""
+    """조회 조건의 공정(공용 공정 칸)으로 표를 좁히면 히트맵도 같은 공정만 그린다."""
     app = _open(AppTest.from_string(SPIED_RESULT_SCRIPT, default_timeout=60), SECUREMENT_TAB)
 
     # 상자 이름은 「히트맵」 하나다. 따로 고르는 목록·부족 요약·범례는 없다.
@@ -99,7 +99,8 @@ def test_the_heatmap_follows_the_table_filter_and_carries_no_extra_parts() -> No
     assert app.session_state[HEATMAP_PROCESSES] == ["Process-A", "Process-B"]
     assert app.session_state[HEATMAP_PROCESSES] == app.session_state[TABLE_PROCESSES]
 
-    app.multiselect(key=PROCESS_FILTER_KEY).set_value(["Process-B"]).run()
+    share(app, ["Process-B"])
+    app.run()
     assert not app.exception
 
     assert app.session_state[TABLE_PROCESSES] == ["Process-B"]

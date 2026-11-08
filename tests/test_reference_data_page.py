@@ -829,9 +829,11 @@ def test_step_unit_capacity_stays_empty_until_a_process_is_selected() -> None:
 
 
 def test_step_unit_capacity_draws_only_the_selected_process() -> None:
+    from test_process_field import share
+
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
     app.session_state["unit_capacity_view_mode"] = STEP_VIEW
-    app.session_state["unit_capacity_process_filter"] = ["Process-A"]
+    share(app, ["Process-A"])
     app.run()
 
     assert not app.exception
@@ -853,17 +855,20 @@ def test_effective_process_capacity_still_shows_every_process_without_a_filter()
 
 
 def test_the_view_mode_and_the_filters_sit_in_the_card() -> None:
-    """`표시 방식`(공정별·STEP별)은 집계 수준·공정 필터와 함께 `표 조건` 카드에 선다.
+    """`표시 방식`(공정별·STEP별)은 집계 수준과 함께 `표 조건` 카드에 선다.
 
-    「하위 보기 전환은 본문」 의 예외다(2026-11-02 사용자 요청(검수표)).
-    본문에는 조건 위젯이 하나도 남지 않는다.
+    「하위 보기 전환은 본문」 의 예외다(2026-11-02 사용자 요청(검수표)). 공정은 카드가 아니라
+    조회 조건의 공용 공정 칸이다(2026-11-08 사용자 답 P1). 본문에는 조건 위젯이 하나도 남지 않는다.
     """
+    from capa_simulation.components.process_field import FIELD_KEY
+
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
     assert [widget.key for widget in app.sidebar.segmented_control] == ["unit_capacity_view_mode"]
     assert not app.main.segmented_control
-    assert "unit_capacity_process_filter" in {widget.key for widget in app.sidebar.multiselect}
+    assert not app.sidebar.multiselect
+    assert FIELD_KEY in {button.key for button in app.sidebar.button}
     assert "unit_capacity_detail_level" in {widget.key for widget in app.sidebar.selectbox}
 
 
@@ -873,7 +878,9 @@ def test_the_card_view_mode_switches_the_table_and_belongs_to_its_tab() -> None:
     assert not app.exception
     process_columns = app.session_state[CAPACITY_TABLE_KEY]
 
-    app.multiselect(key="unit_capacity_process_filter").set_value(["Process-A"])
+    from test_process_field import share
+
+    share(app, ["Process-A"])
     app.sidebar.segmented_control(key="unit_capacity_view_mode").set_value(STEP_VIEW).run()
 
     assert not app.exception
@@ -889,20 +896,18 @@ def test_the_card_view_mode_switches_the_table_and_belongs_to_its_tab() -> None:
 
 
 def test_the_process_filter_placeholder_follows_the_view() -> None:
-    """`미선택 시 전체 공정` 은 STEP 뷰에서 거짓말이 된다."""
+    """공정을 고르지 않은 값 칸의 「전체 N공정」 은 STEP 뷰에서 거짓말이 된다 — 고르라고 한다."""
+    from capa_simulation.components.process_field import FIELD_KEY
+
     app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
     assert not app.exception
-    assert app.multiselect(key="unit_capacity_process_filter").proto.placeholder == (
-        "미선택 시 전체 공정"
-    )
+    assert app.sidebar.button(key=FIELD_KEY).label == "전체 2공정"
 
     app.session_state["unit_capacity_view_mode"] = STEP_VIEW
     app.run()
 
     assert not app.exception
-    assert app.multiselect(key="unit_capacity_process_filter").proto.placeholder == (
-        "공정을 선택하세요"
-    )
+    assert app.sidebar.button(key=FIELD_KEY).label == "공정을 선택하세요"
 
 
 def _shell_codes(calls: Calls) -> list[tuple[int, ...]]:
@@ -1151,21 +1156,26 @@ def test_run_rate_and_vital_tabs_do_not_share_their_process_filter(grid_calls: C
 
 
 def test_unit_capacity_controls_keep_their_choice_across_tabs() -> None:
-    """조건 카드는 열린 탭 것만 선다. 닫힌 동안 위젯은 없어도 선택은 `persist_state` 로 남는다."""
-    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60)
-    app.session_state["unit_capacity_process_filter"] = ["Process-B"]
+    """조건 카드는 열린 탭 것만 선다. 닫힌 동안 위젯은 없어도 선택은 `persist_state` 로 남는다.
+    공정은 세 탭이 같이 쓰는 공용 공정 칸이라 탭을 옮겨도 그대로 걸린다."""
+    from test_process_field import share
+
+    from capa_simulation.components.process_field import FIELD_KEY
+
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
+    share(app, ["Process-B"])
     app.run()
     assert not app.exception
     assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-B"]
-    assert "unit_capacity_process_filter" in {widget.key for widget in app.sidebar.multiselect}
 
     app = _open_calc_tab(app, SECUREMENT_TAB)
-    # 확보율 탭의 카드에는 대당 Capa 조건이 없다. 계산 결과를 쓰는 표·CSV 도 건너뛴다.
-    assert "unit_capacity_process_filter" not in {widget.key for widget in app.multiselect}
+    # 확보율 탭에는 대당 Capa 조건이 없다. 계산 결과를 쓰는 표·CSV 도 건너뛴다.
+    assert "unit_capacity_detail_level" not in {widget.key for widget in app.selectbox}
     assert "download_unit_capacity_csv" not in {button.key for button in app.download_button}
+    assert app.sidebar.button(key=FIELD_KEY).label == "Process\\-B"
 
     app = _open_calc_tab(app, ":material/insights: 대당 Capa")
-    assert app.multiselect(key="unit_capacity_process_filter").value == ["Process-B"]
+    assert app.session_state[CAPACITY_PROCESS_KEY] == ["Process-B"]
     assert app.selectbox(key="unit_capacity_detail_level").value == "공정"
 
 
