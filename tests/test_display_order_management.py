@@ -147,6 +147,41 @@ def test_the_scope_pickers_stand_on_the_heading_line(tmp_path: Path) -> None:
     assert line.proto.flex_container.wrap
 
 
+def test_a_long_change_memo_folds_the_version_line_instead_of_pushing_the_pickers(
+    tmp_path: Path,
+) -> None:
+    """버전 줄은 사람이 적은 변경 메모(출처)를 싣는다. 메모가 길어도 고르기 둘이 다음 줄로 밀려 표
+    위가 석 줄이 되지 않게, 서식이 제목 칸을 줄 폭에서 고르기 둘 몫을 뺀 폭까지만 넓히고 버전 줄을
+    제목 곁에서 접는다. 줄이 고르기 둘과 제목 칸 바닥을 담지 못하면 제목 칸이 줄을 다 쓰고 고르기가
+    내려앉는다(설계 규칙 UI-LAY-11 · UI-ACC-02). 실제 줄 수는 브라우저 배치라 서식의 꼴만 본다."""
+    from capa_simulation.components import display_order_management as dom
+    from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX
+
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-fold.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    line = _path_of(app, lambda node: getattr(node, "key", "") == dom.HEADING_ROW_KEY)
+    holder = _path_of(app, lambda node: getattr(node, "key", "") == dom.HEADING_BOX_KEY)
+    page = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_page")
+    heading = _path_of(
+        app,
+        lambda node: getattr(node, "key", "") == f"{HEADING_KEY_PREFIX}{dom.HEADING_PROFILE_KEY}",
+    )
+    assert holder[:-1] == line == page[:-1] and heading[: len(holder)] == holder
+
+    css = dom.HEADING_ROW_CSS
+    assert css in dom.DIRECT_EDITOR_STYLE
+    assert dom.DIRECT_EDITOR_STYLE in [str(element.proto.body) for element in app.get("html")]
+    assert dom.SCOPE_PICKERS_ROOM >= 2 * dom.SCOPE_PICKER_WIDTH + 2 * 14
+    assert f"max-width: calc(100% - {dom.SCOPE_PICKERS_ROOM}px);" in css
+    assert f"@container (max-width: {dom.SCOPE_PICKERS_ROOM + dom.HEADING_MIN_WIDTH}px)" in css
+    assert f".st-key-{dom.HEADING_ROW_KEY} {{ container-type: inline-size; }}" in css
+    assert f".st-key-{HEADING_KEY_PREFIX}{dom.HEADING_PROFILE_KEY} {{ flex-wrap: nowrap; }}" in css
+    assert "flex-shrink: 1; min-width: 0;" in css
+    assert "word-break: keep-all;" in css
+
+
 def _block_of(app: AppTest, path: tuple[int, ...]) -> Any:
     node: Any = app.main
     for index in path:
@@ -183,9 +218,9 @@ def test_the_version_line_stands_beside_the_heading(tmp_path: Path) -> None:
 
 def test_the_csv_and_paste_buttons_share_the_save_row(tmp_path: Path) -> None:
     """표 위는 두 줄이다 — CSV 다운로드 · Excel 붙여넣기는 따로 줄을 세우지 않고 저장 · 메모 줄
-    오른쪽 끝에 선다(2026-11-08 사용자 답 d7). 둘은 폼에 둘 수 없는 위젯이라 폼 바로 앞 칸이고,
-    서식이 그
-    칸을 저장 줄 높이에 얹고 저장 줄은 그 폭만큼 비운다."""
+    오른쪽 끝에 선다(2026-11-08 사용자 답 d7). 둘은 폼에 둘 수 없는 위젯이라 폼 바로 앞 칸이고(폼
+    뒤면 표 안 Tab 이 칸마다 옮겨 가 둘이 표의 모든 칸 뒤로 밀린다), 서식이 그 칸을 저장 줄 높이에
+    얹고 저장 줄은 그 폭만큼 비운다."""
     from capa_simulation.components import display_order_management as dom
 
     app = AppTest.from_string(_label_script(tmp_path / "display-order-row.duckdb"))
@@ -206,11 +241,12 @@ def test_the_csv_and_paste_buttons_share_the_save_row(tmp_path: Path) -> None:
     )
     assert tools[:-1] == box and download[:-1] == paste[:-1] == tools
     assert save[: len(save_row)] == save_row and save_row[: len(box)] == box
-    assert tools[-1] < save_row[len(box)], "도구 칸은 폼 바로 앞이다"
+    assert tools[-1] + 1 == save_row[len(box)], "도구 칸은 폼 바로 앞이다"
     styles = [str(element.proto.body) for element in app.get("html")]
-    assert dom.ACTION_ROW_STYLE in styles
-    assert f".st-key-{dom.SAVE_ROW_KEY} {{ padding-right: " in dom.ACTION_ROW_STYLE
-    assert "position: absolute;" in dom.ACTION_ROW_STYLE
+    assert dom.DIRECT_EDITOR_STYLE in styles
+    assert dom.ACTION_ROW_CSS in dom.DIRECT_EDITOR_STYLE
+    assert f".st-key-{dom.SAVE_ROW_KEY} {{ padding-right: " in dom.ACTION_ROW_CSS
+    assert "position: absolute;" in dom.ACTION_ROW_CSS
     # CSV · Excel 만 선 따로 줄이 없다 — 내려받기 단추는 이 문서에 하나이고 도구 칸 안이다.
     assert len(app.get("download_button")) == 1
 

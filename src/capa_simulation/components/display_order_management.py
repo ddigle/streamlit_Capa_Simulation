@@ -4,12 +4,20 @@
 
 표 위는 두 줄이다(설계 규칙 UI-LAY-11 — 2026-11-08 사용자 답 d7 · g18). 첫 줄은 「직접 편집」 제목과
 그 옆 공용 버전 줄(`profile_caption.render_profile_heading`) · 범위 고르기 둘, 둘째 줄은 폼 안
-저장 · 변경 메모 줄이고 그 오른쪽 끝에 CSV 다운로드 · Excel 붙여넣기가 함께 선다. 둘은 파이썬
-위젯이라 폼 안에 둘 수 없어(`st.download_button` · `st.button` 은 폼에서 막힌다) 폼 바로 앞 칸에
-그리고, 서식
-(`ACTION_ROW_STYLE`)이 그 칸을 저장 줄 높이의 오른쪽 끝에 얹는다 — 저장 줄은 그 폭만큼 오른쪽을 비워
-두어 창이 좁아 줄이 접혀도 겹치지 않는다. 결과 알림(「바뀐 것이 없습니다」 · 표시명 경고)은 저장 줄
-바로 아래 늘 서 있는 칸이다(사용자 답 d5).
+저장 · 변경 메모 줄이고 그 오른쪽 끝에 CSV 다운로드 · Excel 붙여넣기가 함께 선다.
+
+버전 줄은 사람이 적은 변경 메모(출처)를 실어 길이가 정해져 있지 않다. 서식(`HEADING_ROW_CSS`)이
+제목 칸을 줄 폭에서 고르기 둘 몫을 뺀 만큼까지만 넓히고 버전 줄을 제목 곁에서 여러 줄로 접어, 메모가
+길어도 고르기 둘이 다음 줄로 밀려 표 위가 석 줄이 되지 않는다. 기준 창보다 좁아 고르기 둘과 제목 칸
+바닥을 한 줄에 다 담지 못하면 고르기가 다음 줄로 내려앉는다(UI-ACC-02).
+
+CSV · Excel 둘은 파이썬 위젯이라 폼 안에 둘 수 없어(`st.download_button` · `st.button` 은 폼에서
+막힌다) 폼 바로 앞 칸에 그리고, 서식(`ACTION_ROW_CSS`)이 그 칸을 저장 줄 높이의 오른쪽 끝에 얹는다
+— 저장 줄은 그 폭만큼 오른쪽을 비워 두어 창이 좁아 줄이 접혀도 겹치지 않는다. 문서 차례가 폼 앞이라
+키보드 Tab 은 범위 고르기 → CSV → Excel → 저장 → 변경 메모 → 표이고, 보이는 차례(저장 · 메모가
+왼쪽)와 어긋난다. 폼 뒤에 두면 표 안에서 Tab 이 칸마다 옮겨 가 CSV · Excel 이 표의 모든 칸 뒤로
+밀린다(샘플 관측). 결과 알림(「바뀐 것이 없습니다」 · 표시명 경고)은 저장 줄 바로 아래 늘 서 있는
+칸이다(사용자 답 d5).
 """
 
 from __future__ import annotations
@@ -36,7 +44,7 @@ from capa_simulation.components.paste_form import (
     render_paste_form,
     tell_paste,
 )
-from capa_simulation.components.profile_caption import render_profile_heading
+from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX, render_profile_heading
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
@@ -106,8 +114,37 @@ DISPLAY_ORDER_UNCHANGED_MESSAGE = (
 )
 # 저장 결과 알림 칸(`flash`·`write_guard.held_notice`).
 DISPLAY_ORDER_FLASH_KEY = "display_order_flash"
-# 직접 편집 제목 줄의 범위 고르기 칸 폭(px) — 범위 이름이 한 칸에 들고 창 1100 에서도 한 줄이다.
+# 직접 편집 제목 줄의 범위 고르기 칸 폭(px) — 범위 이름이 한 칸에 든다.
 SCOPE_PICKER_WIDTH = 240
+# 제목 줄(모듈 설명)의 칸 key 와 서식. 제목 칸(제목 + 공용 버전 줄)은 줄 폭에서 고르기 둘 몫
+# (`SCOPE_PICKERS_ROOM` — 고르기 둘과 그 앞 간격 둘, 간격은 `gap="small"` 14px 를 넉넉히 16px 로
+# 센다)을 뺀 폭까지만 넓어지고, 그 안에서 버전 줄이 제목 곁에 줄바꿈 없이 서서 제 글을 여러 줄로
+# 접는다. 줄 폭이 고르기 둘 몫과 제목 칸 바닥(`HEADING_MIN_WIDTH` — 제목 69px 곁에 버전 줄이 너덧
+# 낱말 드는 폭)을 다 담지 못하면 제목 칸은 줄 폭을 다 쓰고 고르기가 다음 줄로 내려앉는다(줄 칸의 폭
+# 질의). 접히는 버전 줄은 낱말 사이에서 접고(음절 사이에서 끊지 않음), 띄어쓰기 없는 긴 글만 칸
+# 끝에서 접는다.
+HEADING_ROW_KEY = "display_order_heading_row"
+HEADING_BOX_KEY = "display_order_heading_box"
+HEADING_PROFILE_KEY = "display_order"
+SCOPE_PICKERS_ROOM = 2 * SCOPE_PICKER_WIDTH + 2 * 16
+HEADING_MIN_WIDTH = 200
+_HEADING_HOLDER = (
+    f'.st-key-{HEADING_ROW_KEY} > [data-testid="stLayoutWrapper"]:has(> .st-key-{HEADING_BOX_KEY})'
+)
+_HEADING_LINE = f".st-key-{HEADING_KEY_PREFIX}{HEADING_PROFILE_KEY}"
+HEADING_ROW_CSS = f"""
+.st-key-{HEADING_ROW_KEY} {{ container-type: inline-size; }}
+{_HEADING_HOLDER} {{ max-width: calc(100% - {SCOPE_PICKERS_ROOM}px); }}
+@container (max-width: {SCOPE_PICKERS_ROOM + HEADING_MIN_WIDTH}px) {{
+  {_HEADING_HOLDER} {{ max-width: 100%; }}
+}}
+{_HEADING_LINE} {{ flex-wrap: nowrap; }}
+{_HEADING_LINE} > [data-testid="stElementContainer"]:last-child {{ flex-shrink: 1; min-width: 0; }}
+{_HEADING_LINE} > [data-testid="stElementContainer"]:last-child * {{
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}}
+"""
 # 저장 줄에 얹는 CSV · Excel 칸(모듈 설명). 칸 셋의 key 와 서식이다 — 바깥 칸이 기준 자리, 도구 칸은
 # 폼 테두리 안 저장 단추 높이(폼 테두리 · 안쪽 여백 1rem + 변경 메모 라벨 1.5rem + 라벨 아래
 # 0.25rem)의 오른쪽 끝, 저장 줄은 도구 칸 폭(`ACTION_ROW_RESERVE_REM` — CSV 다운로드 · Excel
@@ -116,7 +153,7 @@ EDIT_BOX_KEY = "display_order_edit_box"
 EDIT_TOOLS_KEY = "display_order_edit_tools"
 SAVE_ROW_KEY = "display_order_save_row"
 ACTION_ROW_RESERVE_REM = 20
-ACTION_ROW_STYLE = f"""<style>
+ACTION_ROW_CSS = f"""
 .st-key-{EDIT_BOX_KEY} {{ position: relative; }}
 .st-key-{EDIT_BOX_KEY} > [data-testid="stLayoutWrapper"]:has(> .st-key-{EDIT_TOOLS_KEY}) {{
   position: absolute;
@@ -126,7 +163,9 @@ ACTION_ROW_STYLE = f"""<style>
   z-index: 1;
 }}
 .st-key-{SAVE_ROW_KEY} {{ padding-right: {ACTION_ROW_RESERVE_REM}rem; }}
-</style>"""
+"""
+# 직접 편집 서식 한 벌 — 서식만 든 `st.html` 은 이벤트 칸으로 가므로 하나로 묶어 한 번 보낸다.
+DIRECT_EDITOR_STYLE = f"<style>{HEADING_ROW_CSS}{ACTION_ROW_CSS}</style>"
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시순서 그대로라 새 버전을 만들지 않았습니다."
@@ -285,15 +324,17 @@ def _render_direct_editor(
     submitted_base = seen(BASE_VERSION_KEY)
     # 고칠 범위 고르기는 표 제목 줄 곁이다 — 전폭 두 줄이면 표가 그만큼 밀린다(설계 규칙 UI-LAY-11).
     # 제목 바로 옆에 공용 버전 줄이 선다(사용자 그림 메모 g18).
-    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    with st.container(
+        horizontal=True, vertical_alignment="bottom", gap="small", key=HEADING_ROW_KEY
+    ):
         # 이 프로필만 `version == 0` 이 없다. 저장소가 1 부터 올리고 미초기화는 예외라, 공통 캡션의
         # 「없음」 갈래에는 닿지 않는다. 제목 · 버전 줄 칸은 제 폭만 차지한다 — 기본(전폭)이면
-        # 고르기 둘이 줄 오른쪽 끝으로 밀린다.
-        with st.container(width="content"):
+        # 고르기 둘이 줄 오른쪽 끝으로 밀린다. 그 폭의 끝은 서식이 정한다(`HEADING_ROW_CSS`).
+        with st.container(width="content", key=HEADING_BOX_KEY):
             render_profile_heading(
                 "#### 직접 편집",
                 profile,
-                key="display_order",
+                key=HEADING_PROFILE_KEY,
                 empty="아직 저장한 표시순서가 없습니다",
             )
         pages = display_order["페이지 구분"].drop_duplicates().tolist()
@@ -325,7 +366,7 @@ def _render_direct_editor(
     # 저장 오류는 저장 버튼 **바로 위**에 띄운다. 460px 표 아래에 두면 화면 밖이라 저장을 눌러도
     # 아무 일이 없는 것처럼 보였다(2026-10-05 E2E). 칸은 늘 세워 둬 아래 폼의 자리를 고정한다.
     save_status = st.container()
-    st.html(ACTION_ROW_STYLE)
+    st.html(DIRECT_EDITOR_STYLE)
     edit_box = st.container(key=EDIT_BOX_KEY)
     with edit_box:
         _render_edit_tools(profile, csv_bytes)
