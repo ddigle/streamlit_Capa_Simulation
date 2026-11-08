@@ -188,6 +188,14 @@ UNCOUNTED_DEMAND_MARK: Final = "⚠ 소요대수 밖 수요"
 # 실행 기록 표에서 짧은 값이 칸에 잘리지 않게 주는 폭(px) — 「사유」 처럼 긴 칸은 잘린 채 둔다.
 RUN_WARNING_WIDTH_PX: Final = 120
 RUN_RECEIVED_WIDTH_PX: Final = 124
+# 잘린 채 두는 「사유」 칸의 머리 풍선 — 그 칸에 무엇이 적히는지와 잘린 글을 읽는 길(표 칸은 칸마다
+# 풍선을 달 수 없어 머리에 단다).
+RUN_REASON_HELP: Final = (
+    "회차가 그 결과로 끝난 까닭입니다 — 지정한 공식 번호 · 주차 · 받은 코드, 건너뛰거나 지정하지 "
+    "않은 까닭, 그 뒤에 이어 적힌 경고(소요대수에 들지 않은 수요 · CS 빈 행 · 대당 Capa 계산 "
+    "멈춤과 푸는 길). 잘린 글은 이 칸 머리의 오른쪽 끝을 끌어 넓히거나 표 오른쪽 위 도구로 크게 "
+    "보고 내려받아 읽습니다."
+)
 SETTINGS_SOURCE: Final = "시나리오 관리 · 자동 갱신"
 
 
@@ -788,6 +796,7 @@ def _render_run_history(
             column_config={
                 "경고": st.column_config.TextColumn(width=RUN_WARNING_WIDTH_PX),
                 "받은 코드": st.column_config.TextColumn(width=RUN_RECEIVED_WIDTH_PX),
+                "사유": st.column_config.TextColumn(help=RUN_REASON_HELP),
             },
         )
         offs = off_process_frame(runs, exclusions, labels)

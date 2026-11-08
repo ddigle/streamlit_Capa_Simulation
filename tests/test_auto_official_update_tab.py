@@ -51,6 +51,7 @@ from capa_simulation.components.auto_official_update_tab import (
     EMPTY,
     RUN_NOW_BUTTON_KEY,
     RUN_NOW_HELP,
+    RUN_REASON_HELP,
     RUN_RECEIVED_WIDTH_PX,
     RUN_WARNING_WIDTH_PX,
     RUNNING_MESSAGE,
@@ -1041,7 +1042,8 @@ def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]
 
 def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Path) -> None:
     """「⚠ 소요대수 밖 수요」 · 「W44 코드」 처럼 짧은 값까지 칸에서 잘렸다 — 두 칸에 폭을 준다.
-    사유는 긴 칸이라 폭을 주지 않고 잘린 채 둔다."""
+    사유는 긴 칸이라 폭을 주지 않고 잘린 채 두고, 그 칸 머리 풍선이 무엇이 적히는지와 잘린 글을 읽는
+    길을 말한다(작은 결정 d9 — 「풍선에 맡긴다」 의 풍선. 표 칸마다 풍선은 달 수 없다)."""
     _cut_off_published_round(database)
 
     app = _tab(database)
@@ -1050,7 +1052,8 @@ def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Pa
     config = json.loads(table.proto.columns)
     assert config["경고"]["width"] == RUN_WARNING_WIDTH_PX
     assert config["받은 코드"]["width"] == RUN_RECEIVED_WIDTH_PX
-    assert "사유" not in config
+    assert "width" not in config["사유"]
+    assert config["사유"]["help"] == RUN_REASON_HELP
 
 
 def _running_notices(app: AppTest) -> list[str]:
