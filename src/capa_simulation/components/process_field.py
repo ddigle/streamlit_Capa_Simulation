@@ -63,6 +63,8 @@ CHIP_KEY = "shared_process_chip"
 CHIP_ICON = ":material/close:"
 MULTI = "multi"
 SINGLE = "single"
+# 고를 공정이 없는 값 칸 · 팝업의 값(빈 결과 — 설계 규칙 UI-TXT-04).
+NO_PROCESS_VALUE = "고를 공정 없음"
 # 이 화면에 없는 공정 표지(이름 줄 배지).
 MISSING_BADGE = ":orange-badge[{text}]"
 
@@ -129,7 +131,7 @@ def filter_value(
     셋부터는
     「n / N 공정」(HOME 공정 필터 칸과 같은 꼴)."""
     if not options:
-        return "고를 공정 없음"
+        return NO_PROCESS_VALUE
     if not hits:
         return empty if empty is not None else f"전체 {len(options)}공정"
     if len(hits) <= 2:
@@ -246,7 +248,7 @@ def render_process_choice(
     with page_condition_slot(0).container():
         condition_field(
             FIELD_LABEL,
-            literal_markdown(text(selected)) if selected is not None else "고를 공정 없음",
+            literal_markdown(text(selected)) if selected is not None else NO_PROCESS_VALUE,
             slug=FIELD_SLUG,
             key=FIELD_KEY,
             icon=MISSING_ICON if gone else FIELD_ICON,
@@ -309,7 +311,7 @@ def render_process_dialog_body() -> None:
     """
     context = _context()
     if context is None:
-        st.caption("고를 공정이 없습니다.")
+        st.caption(NO_PROCESS_VALUE)
         return
     result = render_process_picker_apply(
         mode=context.mode,

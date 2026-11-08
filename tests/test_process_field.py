@@ -304,7 +304,7 @@ def test_a_dialog_on_another_page_has_nothing_to_pick(picker: dict[str, Any]) ->
 
     assert not app.exception
     assert picker["calls"] == []
-    assert "고를 공정이 없습니다." in [str(item.value) for item in app.caption]
+    assert "고를 공정 없음" in [str(item.value) for item in app.caption]
 
 
 # ------------------------------------------------------------------ 판 트리거 해석
