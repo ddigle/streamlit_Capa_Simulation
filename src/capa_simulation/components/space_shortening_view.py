@@ -8,8 +8,10 @@
 한 길이고, 설비 쪽은 **Space 가 그리는 세션 설비 시나리오**의 계산 세 표다(설비 시나리오 2단계 LY6 —
 필요 단축 일정 화면과 늘 같은 키·같은 칸).
 
-- **본문 조작 줄**(결정 D6) — 목표 확보율(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)·「단축
-  없는 호기 흐리게」, 기준 캡션, 못 읽음 알림. FAB·층 상세가 같은 줄을 쓴다.
+- **목표 확보율**(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)은 사이드바 조회 조건 패널의 한
+  줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건 상자로). 위젯 key 는 그대로다.
+- **본문 조작 줄**(결정 D6) — 「단축 없는 호기 흐리게」, 기준 캡션, 못 읽음 알림. FAB·층 상세가 같은
+  줄을 쓴다.
 - **달** — 필요 단축 일정 시작·끝 월 칸 → 공용 프로필(0019) 심기를 **읽기만** 한다(결정 D3). 임박
   날수는 필요 단축 일정 「기한 임박」 칸(결정 D9). 어느 칸에도 쓰지 않는다.
 - **층 보기 칸** — 이 층 요약 · 공정 칩(원본 공정소분류 — 결정 D10, 공정 표시명을 읽지 않는다) ·
@@ -40,6 +42,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
+from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import equipment_value_label
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -94,6 +97,7 @@ from capa_simulation.services.space_shortening_layer import (
     day_text,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
+from capa_simulation.sidebar_status import page_condition_slot
 
 __all__ = [
     "LAYER_PARAM",
@@ -129,6 +133,11 @@ __all__ = [
 
 SPACE_SHORT_LEVEL_KEY: Final = "space_shortening_level_v1"
 SPACE_SHORT_DIM_KEY: Final = "space_shortening_dim_v1"
+# 목표 확보율 줄 — 조회 조건 패널의 둘째 페이지 칸(첫째는 공용 공정 칸). 줄 꼴(이름 줄 + 값)은
+# 패널의 다른 줄과 같은 칸 key 접두어로 맞춘다(`condition_field.FIELD_KEY_PREFIX` — 줄 안 간격).
+LEVEL_SLOT: Final = 1
+LEVEL_LABEL: Final = "목표 확보율"
+LEVEL_FIELD_SLUG: Final = "space_target"
 SPACE_SHORT_PROCESS_PREFIX: Final = "space_shortening_process"
 SPACE_SHORT_SWITCH_KEY: Final = "space_shortening_switch_v1"
 SPACE_SHORT_TABLE_PREFIX: Final = "space_shortening_table"
@@ -295,7 +304,12 @@ class LayerControls:
 
 
 def render_layer_controls() -> LayerControls:
-    """목표 확보율·「단축 없는 호기 흐리게」 — 본문 조작 줄 안에서 부른다(결정 D6).
+    """목표 확보율 · 「단축 없는 호기 흐리게」 — 본문 조작 줄 안에서 부른다(결정 D6).
+
+    목표 확보율은 사이드바 조회 조건 패널의 페이지 칸(`LEVEL_SLOT`)에 이름 줄 + 전환 단추로
+    선다(2026-11-08 그림 메모 g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로
+    이동」). 흐리게 칸은 부른 자리(본문 조작 줄)에 선다. 처음 값이 무엇인지는 Guide 가 말한다(이름
+    줄에 길 안내를 적지 않는다 — 설계 규칙 UI-TXT-03).
 
     목표 칸이 없으면 필요 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심고, 흐리게 칸이 없으면
     켬으로 심는다. 위젯에는 기본값을 주지 않는다(세션 API 와 함께 쓰면 경고 — AGENTS 9장).
@@ -306,18 +320,21 @@ def render_layer_controls() -> LayerControls:
         )
     if not isinstance(st.session_state.get(SPACE_SHORT_DIM_KEY), bool):
         st.session_state[SPACE_SHORT_DIM_KEY] = True
-    level = st.segmented_control(
-        "목표 확보율",
-        options=list(TARGET_LEVELS),
-        format_func=_percent,
-        required=True,
-        key=SPACE_SHORT_LEVEL_KEY,
-        persist_state="session",
-        help=(
-            "필요 단축 일정 화면의 목표 확보율과 같은 다섯 값입니다. 처음엔 그 화면의 목표로 "
-            "엽니다."
-        ),
-    )
+    with (
+        page_condition_slot(LEVEL_SLOT).container(),
+        st.container(key=f"{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG}", gap=None),
+    ):
+        condition_name_row(LEVEL_LABEL, slug=LEVEL_FIELD_SLUG)
+        level = st.segmented_control(
+            LEVEL_LABEL,
+            options=list(TARGET_LEVELS),
+            format_func=_percent,
+            required=True,
+            key=SPACE_SHORT_LEVEL_KEY,
+            persist_state="session",
+            label_visibility="collapsed",
+            width="stretch",
+        )
     dim = st.checkbox(
         "단축 없는 호기 흐리게",
         key=SPACE_SHORT_DIM_KEY,

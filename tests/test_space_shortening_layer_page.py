@@ -836,12 +836,54 @@ def test_the_floor_view_counts_only_units_drawn_today_like_the_fab_counts(
     assert {"TC Bonding", "Mold"} <= heads, options
 
 
+def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_stays_on_the_toolbar(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """보기 상태의 목표 확보율 고르기는 사이드바 조회 조건 패널의 한 줄이다(2026-11-08 그림 메모
+    g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동」). 줄 꼴은 패널의
+    다른 줄과 같은 이름 줄 + 값(전환 단추 — 라벨은 이름 줄이 말한다)이고 위젯 key 는 그대로다.
+    「단축 없는 호기 흐리게」 는 본문 조작 줄에 남는다. 끈 회차 · 배치 편집 중에는 줄이 서지
+    않는다(그 회차는 목표를 읽지 않는다)."""
+    from capa_simulation.components.condition_field import FIELD_KEY_PREFIX
+
+    def levels(node: Any) -> list[Any]:
+        return [
+            item
+            for item in node.get("button_group")
+            if getattr(item, "label", None) == "목표 확보율"
+        ]
+
+    app = _app(_empty_database(tmp_path))
+    _ok(app.run())
+    assert not levels(app)
+    _turn_on(app)
+    sidebar = levels(app.sidebar)
+    assert len(sidebar) == 1
+    assert not levels(app.main)
+    level = sidebar[0]
+    assert level.key == SPACE_SHORT_LEVEL_KEY
+    assert level.proto.label_visibility.value == level.proto.label_visibility.COLLAPSED
+
+    def block_ids(node: Any) -> list[str]:
+        found = [str(getattr(getattr(node, "proto", None), "id", "") or "")]
+        for child in getattr(node, "children", {}).values():
+            found += block_ids(child)
+        return found
+
+    assert any(key.endswith(f"{FIELD_KEY_PREFIX}space_target") for key in block_ids(app.sidebar))
+    assert "목표 확보율" in [str(item.value) for item in app.sidebar.caption]
+    assert app.main.checkbox(key=SPACE_SHORT_DIM_KEY).value is True
+    level.set_value(1.3)
+    _ok(app.run())
+    assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.3
+
+
 def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """T-P9 덧붙임 — 링크 공정이 Space 공정소분류 필터에 걸러졌으면 조작 줄에 알림 한 줄(필터는
-    건드리지 않는다). 알림은 도착한 링크에 대한 것이라 그 필터·층이 처음 바뀌면 거두고, 나중에
-    사용자가 고른 상관없는 필터에 다시 서지 않는다(리뷰)."""
+    """T-P9 덧붙임 — 링크 공정이 Space 공정소분류 필터(공용 공정 칸 — 2026-11-08 사용자 답 P1)에
+    걸러졌으면 조작 줄에 알림 한 줄(공정 값은 건드리지 않는다). 알림은 도착한 링크에 대한 것이라 그
+    값·층이 처음 바뀌면 거두고, 나중에 사용자가 고른 상관없는 값에 다시 서지 않는다(리뷰)."""
     database = _empty_database(tmp_path)
     probe = _app(database)
     _turn_on(_ok(probe.run()))
