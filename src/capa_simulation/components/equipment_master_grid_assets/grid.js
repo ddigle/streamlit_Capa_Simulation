@@ -423,9 +423,29 @@ function queueOpenEdit(S) {
   schedule(S)
 }
 
+// 호기 상세 칸에 친 채 확정하지 않은 글(`S.drafts`)도 표의 연 칸과 같은 길이다 — 편집본이 다시 서면 옛 base op 로 보내
+// 서버가 세어 알린다. 보내지 않으면 칸을 비우며 말없이 사라졌다(2026-11-08 사용자 답 c4). 보이던 값 그대로인 글은 고침이
+// 아니다.
+function queueOpenDrafts(S) {
+  const unit = S.data && S.data.unit
+  if (!S.drafts || !S.drafts.size || !unit || unit.id !== S.unitId) return
+  const columns = Array.isArray(S.data.columns) ? S.data.columns : []
+  let queued = false
+  for (const [k, text] of S.drafts) {
+    const shown = pendingText(S, unit.id, k)
+    if (!columns[k] || text === (shown !== null ? shown : String((unit.values || [])[k] || ''))) continue
+    enqueue(S, { op: 'cell', id: unit.id, col: columns[k].name, text }, [])
+    queued = true
+  }
+  if (queued) schedule(S)
+}
+
 function receive(S, data) {
   const base = String(data.base || '')
-  if (S.box.base !== base) queueOpenEdit(S)
+  if (S.box.base !== base) {
+    queueOpenEdit(S)
+    queueOpenDrafts(S)
+  }
   if (rebaseBox(S.box, base)) {
     S.pending.clear()
     S.edit = null

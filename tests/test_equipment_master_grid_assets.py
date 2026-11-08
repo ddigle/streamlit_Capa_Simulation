@@ -2392,3 +2392,60 @@ def test_the_table_note_floats_over_the_column_bar_without_pushing_the_table() -
     assert rule is not None
     for part in ("position: absolute", "top: 0", "left: 0", "right: 0"):
         assert part in rule["body"], part
+
+
+_DETAIL_DRAFT_RUNNER = """
+FakeNode.prototype.select = function () {}
+FakeNode.prototype.scrollIntoView = function () {}
+Object.defineProperty(FakeNode.prototype, 'innerHTML', { set() { this.textContent = '' } })
+document.querySelector = () => null
+document.documentElement = { clientWidth: 1200 }
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const outgoing = []
+const data = (base, memo) => ({
+  mode: 'side', panel: 'detail', base,
+  columns: [
+    { name: '설비명', kind: 'name' },
+    { name: '메모1', kind: 'memo' },
+    { name: '메모2', kind: 'memo' },
+  ],
+  groups: [['memo', '메모', '', '', [1, 2]]],
+  unit: { id: 's:D-1', values: ['D-1', memo, 'same'], downtime: [], deletable: true },
+})
+const component = {
+  parentElement, setTriggerValue() {},
+  setStateValue: (name, value) => {
+    outgoing.push(value.ops.map((op) => [op.op, op.base, op.col, op.text]))
+  },
+}
+globalThis.__mount({ data: data('b1', 'old'), ...component })
+const S = host.__emg
+const fields = () => host.querySelectorAll('.emg-input')
+const R = {}
+;(async () => {
+  const [memo1, memo2] = fields()
+  memo1.value = 'typed'
+  fire(memo1, 'input')
+  memo2.value = 'same'
+  fire(memo2, 'input')
+  // 남의 저장으로 편집본이 다시 섰다 — 바탕 값도 바뀌어 왔다.
+  globalThis.__mount({ data: data('b2', 'theirs'), ...component })
+  R.drafts = S.drafts.size
+  R.shown = fields()[0].value
+  await tick(360)
+  R.sent = outgoing[outgoing.length - 1] || null
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+
+
+def test_text_typed_in_the_detail_panel_goes_out_like_an_open_cell_when_the_base_changes() -> None:
+    """호기 상세 칸에 친 채 확정하지 않은 글은 남의 저장으로 편집본이 다시 서면 말없이 비워졌다
+    (c4). 표의 연 칸과 같이 옛 base op 로 보내 서버가 세어 알린다 — 보이던 값 그대로인 글은
+    보내지 않는다."""
+    result = _node({}, _DETAIL_DRAFT_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["drafts"] == 0
+    assert result["shown"] == "theirs"
+    assert result["sent"] == [["cell", "b1", "메모1", "typed"]]
