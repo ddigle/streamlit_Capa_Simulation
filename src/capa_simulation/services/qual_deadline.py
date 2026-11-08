@@ -45,10 +45,8 @@ __all__ = [
     "EXAMPLE_YEAR",
     "LEFTOVER_MEMO",
     "MONTHS_PER_YEAR",
-    "MONTH_CHECK_HEADER",
     "NO_PASTED_LINES_MESSAGE",
     "PASTE_HINT",
-    "UNIT_RESULT_HEADER",
     "UNIT_TABLE_COLUMNS",
     "AssignedUnit",
     "CheckTableRow",
@@ -70,14 +68,11 @@ __all__ = [
     "is_example",
     "js_round",
     "js_trim",
-    "month_check_rows",
     "parse_number",
     "parse_pasted_months",
     "split_unit_names",
-    "tab_separated_text",
     "to_fixed",
     "unit_memo",
-    "unit_result_rows",
     "unit_table_rows",
     "verdict",
     "window_label",
@@ -105,17 +100,6 @@ _FLOAT_PREFIX = re.compile(r"[+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+
 VerdictTone = Literal["ok", "warn", "bad"]
 CheckState = Literal["skip", "short", "ok"]
 
-# 복사(내려받기) 표의 머리 — 원본의 「호기별 결과 복사」·「월 점검 복사」 첫 줄 그대로다.
-UNIT_RESULT_HEADER = ("호기", "쓰이는 달", "그 달 기여", "Qual 완료 마감", "기여 시작")
-MONTH_CHECK_HEADER = (
-    "월",
-    "W/D 시작(다음 날부터)",
-    "W/D 끝",
-    "목표",
-    "기존+앞달",
-    "이 달 채움",
-    "부족",
-)
 # 화면 표의 머리 — 원본 표 머리 그대로다.
 UNIT_TABLE_COLUMNS = ("호기", "쓰이는 달", "그 달 기여", "Qual 완료 마감", "기여 시작", "메모")
 CHECK_TABLE_COLUMNS = (
@@ -570,43 +554,3 @@ def check_table_rows(result: QualDeadlineResult) -> list[CheckTableRow]:
             )
         )
     return rows
-
-
-def unit_result_rows(result: QualDeadlineResult) -> list[list[str]]:
-    """「호기별 결과」 복사 표 — 머리 한 줄 + 쓰인 호기마다 한 줄. 남은 호기는 싣지 않는다
-    (원본대로)."""
-    rows = [list(UNIT_RESULT_HEADER)]
-    rows.extend(
-        [
-            unit.name,
-            f"{result.year}-{unit.month:02d}",
-            to_fixed(unit.part),
-            format_day(unit.deadline),
-            format_day(unit.contribution_start),
-        ]
-        for unit in result.assigned
-    )
-    return rows
-
-
-def month_check_rows(result: QualDeadlineResult) -> list[list[str]]:
-    """「월 점검」 복사 표 — 머리 한 줄 + 열두 달. 목표를 비운 달의 목표 칸은 빈칸이다."""
-    rows = [list(MONTH_CHECK_HEADER)]
-    rows.extend(
-        [
-            f"{result.year}-{check.month:02d}",
-            format_day(check.window.boundary_start),
-            format_day(check.window.boundary_end),
-            "" if check.target is None else to_fixed(check.target),
-            to_fixed(check.carried),
-            to_fixed(check.added),
-            to_fixed(check.shortfall) if check.shortfall else "0.00",
-        ]
-        for check in result.checks
-    )
-    return rows
-
-
-def tab_separated_text(rows: Sequence[Sequence[str]]) -> str:
-    """엑셀에 붙여 넣는 글 — 칸은 탭, 줄은 줄바꿈(원본의 복사 글)."""
-    return "\n".join("\t".join(row) for row in rows)
