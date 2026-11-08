@@ -272,6 +272,8 @@ def render_cutoff_management(
             footer=view_button,
         )
         view = _applied_view(draft, requested)
+        # 바로 위가 누를 것이 든 펼침이다 — 표 도구 막대가 그 오른쪽 끝을 덮지 않게 띄운다.
+        toolbar_clearance()
         edited = st.data_editor(
             view.frame,
             key=editor_widget_key(_EDITOR_KEY, in_form=True),
