@@ -853,10 +853,16 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_stays_on
             if getattr(item, "label", None) == "목표 확보율"
         ]
 
+    def styles(node: Any) -> list[str]:
+        return [str(item.proto.body) for item in node.get("html")]
+
     app = _app(_empty_database(tmp_path))
     _ok(app.run())
     assert not levels(app)
+    # 다섯 단추를 패널 폭에 한 줄로 두는 서식은 켜지 않은 회차에도 그린다(표지 자리 수가 같게).
+    assert styles(app).count(space_shortening_view.LEVEL_FIELD_STYLE) == 1
     _turn_on(app)
+    assert styles(app).count(space_shortening_view.LEVEL_FIELD_STYLE) == 1
     sidebar = levels(app.sidebar)
     assert len(sidebar) == 1
     assert not levels(app.main)

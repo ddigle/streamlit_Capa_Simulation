@@ -124,6 +124,7 @@ from capa_simulation.components.space_layout_editor import (
     space_lock_style,
 )
 from capa_simulation.components.space_shortening_view import (
+    LEVEL_FIELD_STYLE,
     PINNED_NOTE,
     SpaceLayer,
     consume_layer_link,
@@ -653,6 +654,9 @@ with notices:
     # 풀린다(AGENTS 9장).
     st.html(space_lock_style())
     st.html(UNSAVED_PANEL_STYLE)
+    # 필요 단축 보기의 목표 확보율 줄(사이드바 조회 조건 패널)을 한 줄로 — 켜지 않은 회차에도
+    # 그린다.
+    st.html(LEVEL_FIELD_STYLE)
 # 편집본은 실제 저장본이 있을 때만 세운다 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이
 # 막힌다. 가용설비 설비 마스터와 **같은 편집본**이고 세션 토큰 하나라 어느 화면을 먼저 열어도 같다.
 buffer_frames: Frames | None = None

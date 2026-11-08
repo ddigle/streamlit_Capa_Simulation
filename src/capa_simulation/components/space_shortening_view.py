@@ -102,6 +102,7 @@ from capa_simulation.sidebar_status import page_condition_slot
 __all__ = [
     "LAYER_PARAM",
     "LAYER_SHORT",
+    "LEVEL_FIELD_STYLE",
     "PINNED_NOTE",
     "PROCESS_PARAM",
     "SPACE_SHORT_DIM_KEY",
@@ -138,6 +139,18 @@ SPACE_SHORT_DIM_KEY: Final = "space_shortening_dim_v1"
 LEVEL_SLOT: Final = 1
 LEVEL_LABEL: Final = "목표 확보율"
 LEVEL_FIELD_SLUG: Final = "space_target"
+# 그 줄의 전환 단추 다섯을 패널 폭(245px 상자 — 안쪽 223px)에 한 줄로 — 기본 안쪽 여백이면 넷째
+# 뒤에서 접혀 줄이 두 줄(높이 60px)이 됐다(2026-11-08 사본 실측). 단추를 같은 폭으로 나누고 좌우
+# 여백만 줄인다. 글자 크기는 그대로다(설계 규칙 UI-CON-01). 페이지가 회차마다 늘
+# 그린다(`render_layer_controls` 는 켠 회차에만 돈다 — 스타일 표지 자리 수가 회차마다 같게).
+LEVEL_FIELD_STYLE: Final = (
+    "<style>"
+    f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"]'
+    "{flex-wrap:nowrap;}"
+    f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"] button'
+    "{flex:1 1 0;min-width:0;padding-left:0.25rem;padding-right:0.25rem;}"
+    "</style>"
+)
 SPACE_SHORT_PROCESS_PREFIX: Final = "space_shortening_process"
 SPACE_SHORT_SWITCH_KEY: Final = "space_shortening_switch_v1"
 SPACE_SHORT_TABLE_PREFIX: Final = "space_shortening_table"
