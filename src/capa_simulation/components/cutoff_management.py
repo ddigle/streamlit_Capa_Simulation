@@ -26,7 +26,7 @@ from capa_simulation.components.editor_state import discard_editor, editor_widge
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_names
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.components.table_view_controls import (
     TableView,
     merge_edited_rows,
@@ -59,6 +59,7 @@ from capa_simulation.persistence.equipment_repository import (
     ProcessCutoffConflict,
 )
 from capa_simulation.services.process_cutoff import (
+    PROCESS_CUTOFF_COLUMNS,
     PROCESS_CUTOFF_EDIT_COLUMNS,
     add_missing_cutoff_rows,
     build_process_cutoff_template,
@@ -98,6 +99,16 @@ _LOCKED_VIEW_KEY = "equipment_cutoff_locked_view_v1"
 # 사용자 답 X1).
 _APPLIED_VIEW_KEY = "equipment_cutoff_applied_view_v1"
 _VIEW_APPLY_KEY = "equipment_cutoff_view_apply_v1"
+# 왕복 양식 CSV 단추와, 그 단추를 폼 제출 줄(「Cut-off 저장」 · 「설비 공정으로 채우기」) 오른쪽
+# 끝에 얹는 칸 · 제출 줄(2026-11-08 사용자 답 g17 · d6). 내려받기 단추는 폼 안에 둘 수
+# 없다(Streamlit).
+_CSV_KEY = "equipment_cutoff_csv_v1"
+_ACTIONS_KEY = "equipment_cutoff_actions_v1"
+_SUBMIT_ROW_KEY = "equipment_cutoff_submit_row_v1"
+# 폼 테두리(1px) + 안쪽 여백(1em − 1px) — 제출 줄의 윗선 · 오른쪽 끝(Streamlit 1.63 폼 꼴).
+CSV_INSET_PX = 16
+# 제출 줄이 CSV 단추 밑으로 들어가지 않게 비우는 오른쪽 자리(단추 폭 + 간격의 올림).
+CSV_RESERVE_PX = 156
 # 「Cut-off 저장」 단추 풍선 — 팝업 머리에 안내 글을 두지 않으므로 꼭 남길 둘(공용 설정 · 저장하지
 # 않고 닫으면 사라짐)을 누르는 자리에 둔다(HOME `home_preference.SHARED_SAVE_HELP` 와 같은 꼴).
 CUTOFF_SAVE_HELP = (
@@ -165,10 +176,15 @@ def render_cutoff_management(
             _render_missing_cutoffs(missing)
 
     if locked_reason is not None:
-        # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-04 · UI-INP-07).
-        st.caption(":material/lock: Cut-off 잠김", help=locked_reason)
-        # 읽기만 하는 표라 내려받기는 표 도구 막대 한 곳이다(설계 규칙 UI-LAY-12). 표 위 줄에 누를
-        # 것이 없어 앞 띄움도 두지 않는다.
+        # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-04 · UI-INP-07). 왕복 양식 CSV 는
+        # 잠긴 표에도 둔다 — 표 도구 막대 내려받기에는 감춘 「제품구분」 칸이 없고 표가 비면 받을
+        # 길이 없다(2026-11-08 사용자 답 d6). 고치는 표와 같은 꼴로 줄 오른쪽 끝이다.
+        with st.container(
+            horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"
+        ):
+            st.caption(":material/lock: Cut-off 잠김", help=locked_reason, width="content")
+            _render_roundtrip_csv(stored)
+        toolbar_clearance()
         st.dataframe(
             stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS] if not stored.empty else stored,
             hide_index=True,
@@ -193,17 +209,17 @@ def render_cutoff_management(
             :, PROCESS_CUTOFF_EDIT_COLUMNS
         ]
 
-    # 왕복 CSV 는 다른 설비 표와 같은 인코딩을 쓴다 — Excel 이 BOM 없이는 한글을 깬다.
-    render_csv_download(
-        data=stored.to_csv(index=False).encode("utf-8-sig"),
-        file_name="process_cutoff.csv",
-        key="equipment_cutoff_csv_v1",
-    )
-
-    with st.form(_FORM_KEY, border=True):
+    # 왕복 CSV 는 「Cut-off 저장」 · 「설비 공정으로 채우기」 와 한 줄 오른쪽 끝이다(2026-11-08
+    # 사용자 답 g17 — 창 작업 줄은 적용 왼쪽 · 내려받기 오른쪽, 설계 규칙 UI-INP-08). 내려받기
+    # 단추는 폼 안에 둘 수 없어 폼 앞에 두고 서식(`_actions_style`)이 제출 줄 끝에 얹는다(흐름 높이
+    # 0).
+    with st.container(key=_ACTIONS_KEY):
+        _render_roundtrip_csv(stored)
+        form = st.form(_FORM_KEY, border=True)
+    with form:
         # 표에 친 칸은 폼을 제출해야 서버에 온다. 「설비 공정으로 채우기」 도 그 칸 위에 얹으므로 폼
         # 밖 단추로 두지 않는다 — 친 값을 모른 채 표를 다시 세우면 그 값이 말없이 사라진다.
-        with st.container(horizontal=True, gap="small"):
+        with st.container(key=_SUBMIT_ROW_KEY, horizontal=True, gap="small"):
             submitted = st.form_submit_button(
                 "Cut-off 저장",
                 help=CUTOFF_SAVE_HELP,
@@ -220,6 +236,9 @@ def render_cutoff_management(
                 icon=":material/playlist_add:",
                 width="content",
             )
+            # 서식만 든 글은 이벤트 칸으로 가 팝업 본문이 그 칸을 쓰게 된다 — 빈 칸 하나를 함께 둬
+            # 제출 줄 안 제자리에 둔다(폭 0).
+            st.html(_actions_style())
         # 저장 결과는 누른 버튼 바로 아래 한 자리다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다
         # — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다. 거부 ·
         # 「바뀐 것이 없습니다」 도 제출 회차가 담아 둔 글을 여기서 꺼낸다
@@ -383,6 +402,32 @@ def _fill_missing_rows(draft: pd.DataFrame, equipment_processes: list[str]) -> N
     elif held_notice(_FILL_FLASH_KEY) is None:
         queue_flash(_FILL_FLASH_KEY, "더할 공정이 없습니다.", kind="info")
     st.rerun()
+
+
+def _render_roundtrip_csv(stored: pd.DataFrame) -> None:
+    """왕복 양식 `process_cutoff.csv` — 저장된 표 그대로(감춘 「제품구분」 칸 포함), 비었으면 머리
+    줄만 든 빈 양식이다. 다른 설비 표와 같은 인코딩을 쓴다 — Excel 이 BOM 없이는 한글을 깬다."""
+    missing = [column for column in PROCESS_CUTOFF_COLUMNS if column not in stored.columns]
+    frame = stored.reindex(columns=[*stored.columns, *missing]) if missing else stored
+    render_csv_download(
+        data=frame.to_csv(index=False).encode("utf-8-sig"),
+        file_name="process_cutoff.csv",
+        key=_CSV_KEY,
+    )
+
+
+def _actions_style() -> str:
+    """CSV 단추를 폼 제출 줄 오른쪽 끝에 얹는 서식 — 단추 칸은 폼 앞 흐름에서 빠지고(절대 위치)
+    제출 줄은 그 폭만큼 오른쪽을 비워 좁은 창에서 줄이 바뀌어도 단추 밑으로 들어가지 않는다.
+    빈 칸 하나를 함께 담는다(`st.html` 의 서식만 든 글은 이벤트 칸으로 간다)."""
+    return (
+        "<style>"
+        f".st-key-{_ACTIONS_KEY} {{ position: relative; }}"
+        f".st-key-{_CSV_KEY} {{ position: absolute; top: {CSV_INSET_PX}px; "
+        f"right: {CSV_INSET_PX}px; width: auto; z-index: 1; }}"
+        f".st-key-{_SUBMIT_ROW_KEY} {{ padding-right: {CSV_RESERVE_PX}px; }}"
+        "</style><span></span>"
+    )
 
 
 def _view_state(view: TableView) -> tuple[dict[str, tuple[str, ...]], tuple[str, ...]]:

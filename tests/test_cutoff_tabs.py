@@ -215,18 +215,19 @@ def _locked_cutoff_body(database_path: str) -> None:
     )
 
 
-def test_the_locked_table_keeps_only_the_toolbar_download(tmp_path: Path) -> None:
-    """잠긴 표는 읽기만 해 곁 CSV 단추를 두지 않는다 — 내려받기는 표 도구 막대 한 곳이다(설계 규칙
-    UI-LAY-12 · 답 csv-dup). 고치는 표의 CSV 는 왕복 양식이라 그대로다. 표 위에 누를 것이 없어 앞
-    띄움도 없다(`tests/test_table_toolbar.py`)."""
+def test_the_locked_table_keeps_the_round_trip_csv_beside_its_lock_mark(tmp_path: Path) -> None:
+    """잠긴 표에도 왕복 양식 CSV 단추를 둔다 — 표 도구 막대 내려받기에는 감춘 「제품구분」 칸이
+    없고 표가 비면 받을 길이 없었다(2026-11-08 사용자 답 d6 — 「왕복 양식은 둔다」). 단추는 잠김
+    표지와 한 줄 오른쪽 끝이고, 표 위 줄에 누를 것이 생겨 앞 띄움을 둔다
+    (`tests/test_table_toolbar.py`). 고치는 표는 같은 단추가 「Cut-off 저장」 줄 끝이다(g17)."""
     locked = AppTest.from_function(
         _locked_cutoff_body, args=(str(tmp_path / "locked.duckdb"),), default_timeout=60
     ).run()
 
     assert not locked.exception, [item.message for item in locked.exception]
     assert len(locked.dataframe) == 1
-    assert not locked.get("download_button")
-    assert not locked.get("space")
+    assert [item.proto.url != "" for item in locked.get("download_button")] == [True]
+    assert locked.get("space")
     assert any("Cut-off 잠김" in str(item.value) for item in locked.caption)
 
     editable = AppTest.from_function(
@@ -234,6 +235,45 @@ def test_the_locked_table_keeps_only_the_toolbar_download(tmp_path: Path) -> Non
     ).run()
 
     assert [item.proto.url != "" for item in editable.get("download_button")] == [True]
+    clear_equipment_repository()
+
+
+def test_the_round_trip_csv_carries_the_hidden_column_and_an_empty_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """왕복 양식은 저장된 표 그대로(감춘 「제품구분」 칸 포함)이고, 표가 비면 머리 줄만 든 빈
+    양식이다(d6)."""
+    from capa_simulation.components import cutoff_management
+
+    sent: list[bytes] = []
+    monkeypatch.setattr(
+        cutoff_management, "render_csv_download", lambda **kwargs: sent.append(kwargs["data"])
+    )
+    cutoff_management._render_roundtrip_csv(pd.DataFrame(columns=["공정", "Cutoff일수"]))
+    cutoff_management._render_roundtrip_csv(
+        pd.DataFrame({"공정": ["DEMO-P"], "제품구분": ["*"], "Cutoff일수": [3.0], "비고": [""]})
+    )
+
+    assert sent[0].decode("utf-8-sig").splitlines() == ["공정,Cutoff일수,제품구분,비고"]
+    assert sent[1].decode("utf-8-sig").splitlines()[0] == "공정,제품구분,Cutoff일수,비고"
+
+
+def test_the_csv_button_sits_at_the_end_of_the_cutoff_save_line(tmp_path: Path) -> None:
+    """「CSV 다운로드」 는 「Cut-off 저장」 · 「설비 공정으로 채우기」 와 한 줄 오른쪽 끝이다(g17 —
+    창 작업 줄은 적용 왼쪽 · 내려받기 오른쪽). 내려받기 단추는 폼 안에 둘 수 없어 폼 앞에 두고
+    서식이 제출 줄 끝에 얹는다 — 서식은 빈 칸과 함께 제출 줄 안에 서서 이벤트 칸을 쓰지 않는다."""
+    from capa_simulation.components import cutoff_management as cm
+
+    app = AppTest.from_function(
+        _cutoff_body, args=(str(tmp_path / "line.duckdb"),), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    style = cm._actions_style()
+    assert f".st-key-{cm._CSV_KEY} {{ position: absolute;" in style
+    assert style.endswith("</style><span></span>")
+    bodies = [str(element.proto.body) for element in app.get("html")]
+    assert style in bodies
     clear_equipment_repository()
 
 
