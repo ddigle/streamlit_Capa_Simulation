@@ -9,24 +9,31 @@
   화면을 떠나도 남고, 적용하지 않은 편집이 남은 종류 단추 옆에는 주황 점이 찍힌다.
 - 읽기 보기 둘(「설비대수 현황」·「STEP 구성」)은 그리드 자리 **아래** 보기 칸에 그 종류를 골랐을
   때만 그린다 — 그 회차에도 그리드 마운트는 표 없이 같은 자리에 남는다.
-- 표 필터와 설비대수 현황의 「상세」는 사이드바 조건 카드 `표 조건` 이다. 모든 종류가 같은 카드를
-  써서 한 번 편 카드는 종류를 바꿔도 편 채다. 그리드 표의 필터는 보기만 좁히고(브라우저가 거른다)
-  초안이 업무 키라 잠그지 않는다.
+- **공정은 사이드바 조회 조건의 공용 공정 칸이다**(2026-11-08 사용자 답 P1 — 공정 공유 1차). 편집
+  표 아홉과 설비대수 현황이 화면들이 같이 쓰는 공정 값을 따라간다 — HOME 「선택 공정 적용」 이나
+  다른 화면에서 좁힌 공정이 이 표에도 걸리고, 여기서 고른 공정도 그 화면들에 걸린다(`SCREEN`).
+  STEP 구성은 잇지 않는다.
+- 공정 밖 표 필터와 설비대수 현황의 「상세」는 사이드바 조건 카드 `표 조건` 이다(표마다 따로). 모든
+  종류가 같은 카드를 써서 한 번 편 카드는 종류를 바꿔도 편 채다. 거를 칸이 공정 하나뿐인 표(일수 ·
+  설비대수 보유 · 대여 · 가용)는 카드를 세우지 않는다. 그리드 표의 필터는 보기만 좁히고(브라우저가
+  거른다) 초안이 업무 키라 잠그지 않는다.
 - 작업 버튼(변경사항 적용·Excel 붙여넣기·편집 취소, STEP 추가·삭제)은 표 **위**다. 붙여넣기와
   STEP 추가·삭제는 팝업이다.
 - 설명은 Guide(`guides/reference_data.md`)다.
 """
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
 from capa_simulation.components import reference_grid
-from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components.column_filter import PROCESS_COLUMN, render_column_filter_controls
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.month_editor import (
@@ -120,6 +127,9 @@ from capa_simulation.sidebar_status import table_card
 # 종류 단추의 차례·글은 `reference_grid_keys.DATASETS` 다(옛 탭 차례 — 사용자가 정한 입력 순서).
 # 조건 카드 이름(사이드바 `표 조건`). 모든 종류가 하나를 쓴다.
 CARD_NAME = "reference_data"
+# 공용 공정 칸의 출처 이름 — 여기서 고른 공정이 다른 화면에 걸리면 그 칩에 「기준 정보 에서」 로
+# 선다.
+SCREEN = "기준 정보"
 # 지금 열린 팝업: 편집 표 key(붙여넣기) 또는 `STEP_DIALOG`. 한 칸이라 한 회차에 팝업은 하나다.
 DIALOG_KEY = f"reference_data{PAGE_DIALOG_SUFFIX}"
 STEP_DIALOG = "step"
@@ -484,8 +494,17 @@ if grid_dropped:
 
 
 def _filter_prefix(table_name: str) -> str:
-    """사이드바 「표 조건」 필터 key 앞머리 — 표마다 따로라 한 표의 선택이 다른 표에 새지 않는다."""
+    """사이드바 「표 조건」 필터 key 앞머리 — 공정 밖 칸(양산 · Area 등)은 표마다 따로라 한 표의
+    선택이 다른 표에 새지 않는다. 공정은 화면들이 같이 쓰는 공용 공정 값이다(`SCREEN`)."""
     return f"{EDITOR_KEYS[table_name]}_filter"
+
+
+def _table_conditions(dimensions: list[str]) -> nullcontext[None] | DeltaGenerator:
+    """표 필터를 그릴 자리 — 공정 밖 거를 칸이 있으면 「표 조건」 카드, 공정뿐이면 카드 없이(공정은
+    조회 조건 패널의 값 칸이라 빈 카드가 선다)."""
+    if any(column != PROCESS_COLUMN for column in dimensions):
+        return table_card(CARD_NAME)
+    return nullcontext()
 
 
 def _grid_table(table_name: str) -> reference_grid.GridTable:
@@ -507,6 +526,7 @@ def _grid_table(table_name: str) -> reference_grid.GridTable:
         value_labels=process_labels.value_labels(),
         value_help=EDITOR_VALUE_HELP.get(table_name),
         filter_prefix=_filter_prefix(table_name),
+        shared_screen=SCREEN,
     )
 
 
@@ -857,8 +877,9 @@ if step_tables is not None:
         _step_dialog(step_catalog)
 
 # `현황` 은 보는 표다(보유·대여를 합친 값에 숫자를 쓸 자리가 없어 편집 대상이 아니다). 「상세」와
-# 필터는 사이드바 `표 조건` 카드이고 그 종류를 골랐을 때만 선다. 선택은 `persist_state` 로 남는다.
-# 표도 그 회차에만, 「상세」 값에 맞는 한 벌만 만든다.
+# 공정 밖 필터는 사이드바 `표 조건` 카드이고 그 종류를 골랐을 때만 선다. 선택은 `persist_state` 로
+# 남는다. 공정은 조회 조건 패널의 공용 공정 칸이다(`SCREEN`). 표도 그 회차에만, 「상세」 값에 맞는
+# 한 벌만 만든다.
 if current_dataset == EQUIPMENT_OVERVIEW:
     # 조각은 카드 밖에서 자른다 — 자르다 난 오류 문구가 사이드바 카드가 아니라 본문에 선다.
     own_count, lent_count, available_count = (
@@ -888,6 +909,7 @@ if current_dataset == EQUIPMENT_OVERVIEW:
             equipment_dimensions,
             key_prefix="equipment_count_filter",
             value_labels=process_labels.value_labels(),
+            shared_screen=SCREEN,
         )
     with view_box:
         equipment_month_columns = [
@@ -1160,17 +1182,19 @@ grid_actions: reference_grid.Actions | None = None
 if current_grid is not None:
     grid_filter_prefix = _filter_prefix(current_dataset)
     # 필터는 보기만 좁힌다 — 초안이 업무 키라 필터를 바꿔도 편집이 다른 줄에 붙지 않아 잠그지
-    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 글은 서버가 같은 선택으로 센다). 행이
-    # 없는 표(측정률이 통째로 빈 기간)에는 거를 것이 없어 세우지 않는다.
+    # 않는다. 고른 값은 feed 로 가 브라우저가 거른다(편집 범위 글은 서버가 같은 선택으로 센다).
+    # 공정은 공용 공정 값이라 다른 화면에서 바꿔도 따라 좁혀진다. 행이 없는 표(측정률이 통째로 빈
+    # 기간)에는 거를 것이 없어 세우지 않는다.
     grid_visible = current_grid.template
     if not current_grid.template.empty:
-        with table_card(CARD_NAME):
+        with _table_conditions(list(current_grid.dimensions)):
             grid_visible = render_column_filter_controls(
                 current_grid.template,
                 list(current_grid.dimensions),
                 key_prefix=grid_filter_prefix,
                 column_labels=COLUMN_LABELS,
                 value_labels=process_labels.value_labels(),
+                shared_screen=SCREEN,
             )
     with actions_box:
         # 그 종류를 골랐을 때만 조각을 본다 — 고르지 않은 표 때문에 자르지 않는다.

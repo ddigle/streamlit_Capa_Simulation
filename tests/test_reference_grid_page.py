@@ -22,6 +22,7 @@ from edit_grid_fake import (
     send_ops,
 )
 from streamlit.testing.v1 import AppTest
+from test_process_field import share
 from test_reference_data_page import (
     DATASET,
     DISPLAY_ORDER_SWAP_TEST_SCRIPT,
@@ -184,16 +185,36 @@ def test_a_row_order_change_keeps_the_grid_draft_on_its_business_key(calls: Call
 
 
 def test_the_filter_is_not_locked_while_a_grid_draft_is_pending(calls: Calls) -> None:
+    """초안이 있어도 거름을 잠그지 않는다 — 공용 공정 값 칸도 표 조건 칸도 열려 있고, 풀어도 초안은
+    그대로다(업무 키)."""
+    from capa_simulation.components.process_field import FIELD_KEY
+
     app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
     app = _grid_write(app, calls, "Process-B", "202608", "20")
-    widget = app.sidebar.multiselect(key="capa_run_day_editor_filter_공정")
-    assert not widget.disabled
+    assert not app.sidebar.button(key=FIELD_KEY).disabled
     assert OLD_FILTER_LOCKED_NOTICE not in {str(item.value) for item in app.sidebar.caption}
-    # 필터를 풀어도 초안은 그대로다(업무 키).
-    widget.set_value([]).run()
+    # 공용 공정을 지워도(다른 화면 · 칩) 초안은 그대로다.
+    share(app, [])
+    app.run()
     assert not app.exception
     assert last(calls, FEED)["filters"] is None
     assert _draft(app) == {"cells": {"Process-B": {"202608": 20.0}}, "bad": {}}
+
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["효율"]
+    app.session_state["capa_run_rate_editor_filter_양산구분"] = ["양산"]
+    app.run()
+    assert last(calls, FEED)["filters"] is not None
+    app = _grid_write(app, calls, "Process-A\x1f양산", "202608", "0.5")
+    widget = app.sidebar.multiselect(key="capa_run_rate_editor_filter_양산구분")
+    assert not widget.disabled
+    widget.set_value([]).run()
+    assert not app.exception
+    assert last(calls, FEED)["filters"] is None
+    assert app.session_state[cells_key("RQ_RUN_RATE")] == {
+        "cells": {"Process-A\x1f양산": {"202608": 0.5}},
+        "bad": {},
+    }
 
 
 _LEAVE_PROBE = (
@@ -599,7 +620,7 @@ def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole
     assert not any("줄만" in str(item.value) for item in infos(app))
     app = _grid_write(app, calls, "Process-A", "202608", "20")
 
-    app.session_state["capa_run_day_editor_filter_공정"] = ["Process-B"]
+    share(app, ["Process-B"])
     app.run()
     assert not app.exception
     assert _visible_keys(calls) == ["Process-B"]
@@ -629,7 +650,7 @@ def test_a_capped_table_counts_the_errors_of_rows_it_does_not_load(
     monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     app = _grid_write(app, calls, "Process-A", "202608", "30.5")
-    app.session_state["capa_run_day_editor_filter_공정"] = ["Process-B"]
+    share(app, ["Process-B"])
     app.run()
     app.button(key=APPLY).click().run()
     assert not app.exception

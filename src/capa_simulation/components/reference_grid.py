@@ -9,8 +9,12 @@
   자리에 표만 바꿔 싣는다. 읽기 보기(설비대수 현황·STEP 구성)를 고른 회차에는 표 없는 껍데기를 실어
   마운트만 남긴다(다시 마운트되면 보내지 않은 출납을 잃는다).
 - **초안은 표마다 세션 칸**(업무 키 + 월 — `services/edit_grid`). 그리지 않는 표의 편집도 남고, 줄
-  차례(공용 표시순서)만 바뀐 회차에도 같은 칸에 붙는다 — 그래서 사이드바 「표 조건」 필터를 잠그지
-  않는다(브라우저가 feed `filters` 로 거른다).
+  차례(공용 표시순서)만 바뀐 회차에도 같은 칸에 붙는다 — 그래서 사이드바 필터를 잠그지 않는다
+  (브라우저가 feed `filters` 로 거른다).
+- **공정은 화면들이 같이 쓰는 공용 공정 값으로 거른다**(2026-11-08 사용자 답 P1 — 공정 공유 1차 ·
+  `GridTable.shared_screen`). 다른 화면에서 공정을 바꾸면 이 표도 따라 좁혀진다. 「표 조건」 카드의
+  나머지 칸(양산 · Area 등)은 표마다 따로다. 좁혀진 표의 여러 줄 붙여넣기 막기는 feed `filters` 를
+  보는 그리드가 맡는다 — 공용 공정도 그 `filters` 에 실린다.
 - **편집은 출납 콜백이 세션 inbox 에 쌓기만** 하고(`edit_grid.collect_outbox`) 본문이 원본 토큰을 본
   뒤 반영한다(`apply_grid_inbox`) — 원본이 바뀌어 초안·이력을 버린 회차에는 새 `gen` 이 서서 그 전에
   보낸 op 가 버려지고 수가 토스트로 간다. 지금 보이지 않는 표의 op 도 그 표 초안에 쓴다. 반영이 초안
@@ -38,8 +42,13 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import shared_process
 from capa_simulation.components import edit_grid
-from capa_simulation.components.column_filter import apply_column_filters, column_filter_key
+from capa_simulation.components.column_filter import (
+    PROCESS_COLUMN,
+    apply_column_filters,
+    column_filter_key,
+)
 from capa_simulation.components.flash import render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.month_editor import APPLY_NOTICE
@@ -167,6 +176,8 @@ class GridTable:
     labels: Labels | None
     # 큰 표 상한에 걸려 일부 줄만 실었으면 그 표지(아니면 None — 본문 색인이 곧 전체 양식이다).
     cap_notice: str | None = None
+    # 공용 공정 값을 따라가는 화면의 출처 이름(None 이면 공정도 표마다의 카드 선택으로 거른다).
+    shared_screen: str | None = None
 
     @property
     def table(self) -> str:
@@ -207,13 +218,18 @@ def grid_spec(
 
 
 def _capped_rows(
-    template: pd.DataFrame, dimensions: Sequence[str], filter_prefix: str | None
+    template: pd.DataFrame,
+    dimensions: Sequence[str],
+    filter_prefix: str | None,
+    shared_screen: str | None,
 ) -> tuple[pd.DataFrame, bool]:
     """상한에 걸린 표에서 실을 줄 — (줄, 사이드바 필터로 골랐는가). 필터로 골라도 칸 수가 넘치면
-    그 앞 `CAP_ROWS` 줄이다."""
+    그 앞 `CAP_ROWS` 줄이다. 공정은 `shared_screen` 이 있으면 공용 공정 값이다."""
     months = len(template.columns) - len(dimensions)
     if filter_prefix is not None:
-        chosen = apply_column_filters(template, list(dimensions), key_prefix=filter_prefix)
+        chosen = apply_column_filters(
+            template, list(dimensions), key_prefix=filter_prefix, shared_screen=shared_screen
+        )
         if len(chosen) < len(template):
             if len(chosen) * months <= CAP_CELLS:
                 return chosen, True
@@ -239,12 +255,14 @@ def build_grid_table(
     value_labels: Labels | None,
     value_help: str | None = None,
     filter_prefix: str | None = None,
+    shared_screen: str | None = None,
 ) -> GridTable:
     """표 하나를 그리드에 싣는 묶음 — 색인·본문은 내용 토큰·줄 차례·표시명 지문으로 캐시한다.
 
     `cache_key`·`order_digest` 는 `template` 을 만든 바로 그 키여야 한다(`get_reference_edit_table`
     과 같은 값 — 다르면 키와 내용이 어긋난다). 표가 큰 표 상한(`CAP_CELLS`·`CAP_BYTES`)을 넘으면
-    `filter_prefix` 의 사이드바 필터 선택(세션 값)으로 고른 줄이나 앞 `CAP_ROWS` 줄만 싣는다."""
+    `filter_prefix` 의 사이드바 필터 선택(세션 값)으로 고른 줄이나 앞 `CAP_ROWS` 줄만 싣는다.
+    `shared_screen`(출처 이름)을 주면 공정은 화면들이 같이 쓰는 공용 공정 값으로 거른다."""
     spec = grid_spec(table, title, template, dimensions, value_help=value_help)
     labels = {
         column: mapping
@@ -269,8 +287,10 @@ def build_grid_table(
         )
         if whole is not None:
             key = base_key(table, content, order_digest, digest)
-            return GridTable(spec, editor_key, template, whole, key, labels)
-    shown, filtered = _capped_rows(template, spec.key_columns, filter_prefix)
+            return GridTable(
+                spec, editor_key, template, whole, key, labels, shared_screen=shared_screen
+            )
+    shown, filtered = _capped_rows(template, spec.key_columns, filter_prefix, shared_screen)
     rows_key = f"{digest}:{_rows_digest(shown)}"
     base = get_edit_grid_base(
         cache_key,
@@ -285,7 +305,7 @@ def build_grid_table(
         rows=len(template), cells=cells, shown=len(shown)
     )
     key = base_key(table, content, order_digest, rows_key)
-    return GridTable(spec, editor_key, template, base, key, labels, notice)
+    return GridTable(spec, editor_key, template, base, key, labels, notice, shared_screen)
 
 
 def inbox_tables() -> set[str]:
@@ -359,12 +379,20 @@ def filter_codes(table: GridTable, key_prefix: str) -> dict[int, list[int]] | No
     """사이드바 「표 조건」 의 고른 값(세션 칸)을 껍데기 분류 사전 코드로 — 브라우저가 거른다.
 
     빈 선택은 「전체」 라 싣지 않는다. 고른 값이 사전에 하나도 없으면 빈 목록을 실어 줄이 없게
-    거른다(필터가 행을 다 지운 것과 같다)."""
+    거른다(필터가 행을 다 지운 것과 같다). 공용 공정 값을 따라가는 표(`shared_screen`)의 공정은 공용
+    값 가운데 이 표에 있는 것이다 — 하나도 없으면 「전체」 다(`shared_process.applied`). 여기 실린
+    거름이 곧 그리드의 「좁힌 표」 판정이라 공용 공정으로 좁혀진 표도 여러 줄 붙여넣기를 막는다."""
     dims = table.base.body.get("dims", [])
     filters: dict[int, list[int]] = {}
     for position, column in enumerate(table.dimensions):
-        selected = st.session_state.get(column_filter_key(key_prefix, column))
-        if not isinstance(selected, list) or not selected or position >= len(dims):
+        if position >= len(dims):
+            continue
+        selected: object
+        if table.shared_screen is not None and column == PROCESS_COLUMN:
+            selected = shared_process.applied(dims[position])
+        else:
+            selected = st.session_state.get(column_filter_key(key_prefix, column))
+        if not isinstance(selected, list) or not selected:
             continue
         codes = {str(value): code for code, value in enumerate(dims[position])}
         filters[position] = [codes[str(value)] for value in selected if str(value) in codes]
