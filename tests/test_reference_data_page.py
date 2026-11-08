@@ -724,11 +724,7 @@ def test_equipment_editor_saves_the_edited_month_to_the_scenario(grid_calls: Cal
     필터로 좁힌 화면에서 고쳐도 걸러진 공정이 조회기간에서 지워지지 않아야 한다 —
     `replace_month_range` 가 구간을 통째로 갈아끼우기 때문이다.
     """
-    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
-    app.session_state["capa_eqp_own_editor_filter_공정"] = ["Process-B"]
-    app.run()
-    assert not app.exception
+    app = _filtered_editor_app("설비대수 보유", "capa_eqp_own_editor", "공정")
 
     app = _edit_and_apply(app, grid_calls, "capa_eqp_own_editor", "202608", 7.0)
 
@@ -966,10 +962,17 @@ def _edit_and_apply(
 
 
 def _filtered_editor_app(tab_name: str, editor_key: str, filter_column: str) -> AppTest:
-    """편집기 탭 하나를 열고 공정 필터로 Process-B 만 남긴 화면."""
+    """편집기 탭 하나를 열고 Process-B 만 남긴 화면. 공정은 화면들이 같이 쓰는 공용 공정 값으로
+    좁힌다(2026-11-08 사용자 답 P1 — 다른 화면에서 고른 공정을 따라간 것과 같다). 공정 밖 칸은 그
+    표의 「표 조건」 선택이다."""
+    from test_process_field import share
+
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET[tab_name]
-    app.session_state[f"{editor_key}_filter_{filter_column}"] = ["Process-B"]
+    if filter_column == "공정":
+        share(app, ["Process-B"])
+    else:
+        app.session_state[f"{editor_key}_filter_{filter_column}"] = ["Process-B"]
     app.run()
     assert not app.exception
     return app
@@ -1123,36 +1126,97 @@ def test_the_sidebar_does_not_count_the_table_just_applied_as_pending(grid_calls
     assert log[-1] == []
 
 
-def test_run_rate_and_vital_tabs_do_not_share_their_process_filter(grid_calls: Calls) -> None:
+def test_run_rate_and_vital_tabs_share_the_process_but_keep_their_other_filters(
+    grid_calls: Calls,
+) -> None:
     """두 탭은 `dimensions` 가 `공정`·`양산구분` 으로 완전히 같다.
 
-    필터 상태를 갈라 놓는 것은 `editor_key` 로 만든 위젯 key 뿐이다. 한쪽 선택이 다른 쪽에
-    새면 사용자가 보지도 않은 필터로 편집표가 좁아진다.
+    **공정은 화면들이 같이 쓰는 공용 공정 값이다**(2026-11-08 사용자 답 P1 — 공정 공유 1차). 예전
+    에이전트 규칙 「표마다 필터 따로」(2026-09-15 시험 · 2026-11-02 주석)는 사용자 결정이 아니었고
+    이번 답과 정면으로 부딪혀 공정만 뒤집는다 — 효율에서 본 Process-B 가 여유율에도 걸린다. 공정
+    밖 칸(양산구분)은 그대로 표마다 따로라 한쪽 선택이 다른 쪽에 새지 않는다.
     """
     app = _filtered_editor_app("효율", "capa_run_rate_editor", "공정")
+    process_b = last(grid_calls, GRID_HOST)["dims"][0].index("Process-B")
+    assert last(grid_calls, feed_key(GRID_HOST))["filters"] == {"0": [process_b]}
 
-    # 열린 탭의 필터만 그려진다. 두 key 가 같으면 여기서 여유율 쪽도 함께 잡힌다.
-    assert app.multiselect(key="capa_run_rate_editor_filter_공정").value == ["Process-B"]
-    assert "capa_vital_editor_filter_공정" not in {widget.key for widget in app.multiselect}
-
-    # 여유율 탭을 열면서 효율 쪽 선택을 그대로 남겨 둔다. key 가 겹치면 여유율 필터가
-    # 그 선택을 그대로 집어 편집표가 Process-B 한 줄로 좁아진다.
-    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    # 효율의 양산구분 선택을 남긴 채 여유율을 연다 — 공정은 따라오고 양산구분은 새지 않는다.
+    app.session_state["capa_run_rate_editor_filter_양산구분"] = ["개발"]
     app.session_state[DATASET_KEY] = DATASET["여유율"]
-    app.session_state["capa_run_rate_editor_filter_공정"] = ["Process-B"]
     app.run()
     assert not app.exception
-    assert app.multiselect(key="capa_vital_editor_filter_공정").value == []
+    assert app.multiselect(key="capa_vital_editor_filter_양산구분").value == []
+    assert "capa_vital_editor_filter_공정" not in {widget.key for widget in app.multiselect}
+    process_b = last(grid_calls, GRID_HOST)["dims"][0].index("Process-B")
+    assert last(grid_calls, feed_key(GRID_HOST))["filters"] == {"0": [process_b]}
 
-    # 필터가 새지 않았으니 여유율 편집표의 첫 행은 걸러지지 않은 Process-A 다.
+    # 보이는 첫 줄은 공용 공정으로 좁혀진 Process-B 다 — 걸러진 Process-A 는 그대로 남는다.
     app = _edit_and_apply(app, grid_calls, "capa_vital_editor", "202608", 0.5)
 
     assert not app.exception
     saved = app.session_state["test_month_updates"]["RQ_VITAL"]
     assert dict(zip(saved["공정"], saved["편중률"], strict=True)) == {
-        "Process-A": 0.5,
-        "Process-B": 1.0,
+        "Process-A": 1.0,
+        "Process-B": 0.5,
     }
+
+
+@pytest.mark.parametrize("name", list(EDITOR_KEYS))
+def test_every_edit_table_follows_the_shared_process_from_another_screen(
+    grid_calls: Calls, name: str
+) -> None:
+    """편집 표 아홉이 모두 다른 화면(HOME)에서 좁힌 공정을 따라간다 — 그리드가 그 공정만 보이고
+    (feed `filters`), 공정은 카드 칸이 아니라 조회 조건 패널의 값 칸이며 「HOME 에서」 출처가 선다.
+    값 칸의 선택지는 이 표의 공정이고 출처 이름은 「기준 정보」 다."""
+    from test_process_field import share
+
+    from capa_simulation.components.process_field import CONTEXT_KEY, FIELD_KEY
+
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = name
+    share(app, ["Process-B"])
+    app.run()
+
+    assert not app.exception
+    dims = last(grid_calls, GRID_HOST)["dims"]
+    assert last(grid_calls, feed_key(GRID_HOST))["filters"] == {"0": [dims[0].index("Process-B")]}
+    assert not any(str(widget.key).endswith("_filter_공정") for widget in app.sidebar.multiselect)
+    field = app.sidebar.button(key=FIELD_KEY)
+    assert field.label == "Process\\-B"
+    assert "HOME 에서" in [str(item.value) for item in app.sidebar.caption]
+    context = app.session_state[CONTEXT_KEY]
+    assert context.screen == "기준 정보"
+    assert set(context.options) == {"Process-A", "Process-B"}
+    assert context.selected == ("Process-B",)
+
+
+def test_a_shared_process_this_screen_lacks_leaves_the_table_whole(grid_calls: Calls) -> None:
+    """공용 값이 이 화면에 없는 공정뿐이면 표는 전체를 보인다(값은 지우지 않는다)."""
+    from test_process_field import share, shared_values
+
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
+    share(app, ["HB 접합"])
+    app.run()
+
+    assert not app.exception
+    assert last(grid_calls, feed_key(GRID_HOST))["filters"] is None
+    assert shared_values(app) == ["HB 접합"]
+
+
+def test_the_step_view_does_not_follow_the_shared_process() -> None:
+    """STEP 구성은 공용 공정 칸을 잇지 않는다 — 그 종류에서는 값 칸이 서지 않는다."""
+    from test_process_field import share
+
+    from capa_simulation.components.process_field import FIELD_KEY
+
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["STEP 구성"]
+    share(app, ["Process-B"])
+    app.run()
+
+    assert not app.exception
+    assert FIELD_KEY not in {button.key for button in app.sidebar.button}
 
 
 def test_unit_capacity_controls_keep_their_choice_across_tabs() -> None:
@@ -1388,10 +1452,13 @@ def _equipment_sub_tab_app(sub_tab: str, script: str = RENAMED_TEST_SCRIPT) -> A
 
 def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays_original() -> None:
     """설비대수 조회 표는 표시명이고, 편집 탭의 왕복 양식은 원본 공정명이다."""
+    from capa_simulation.components.process_field import CONTEXT_KEY
+
     app = _equipment_sub_tab_app("현황")
 
     assert set(_frame_with_column(app, "공정")["공정"]) == {"가공"}
-    assert app.multiselect(key="equipment_count_filter_공정").options == ["가공"]
+    context = app.session_state[CONTEXT_KEY]
+    assert (context.options, context.texts) == (("Process-A",), ("가공",))
     for sub_tab, editor_key in (
         ("보유", "capa_eqp_own_editor"),
         ("대여", "capa_eqp_lent_editor"),
@@ -1403,19 +1470,20 @@ def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays
 
 
 def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
-    """필터 표기만 표시명이다. 선택값이 표시명이면 `isin` 이 원본과 맞지 않아 표가 빈다."""
-    from widget_browser import BrowserChoice
+    """설비대수 현황은 공용 공정 값(원본)을 따라간다 — 글자만 표시명이다. 값이 표시명이면 `isin` 이
+    원본과 맞지 않아 표가 빈다."""
+    from test_process_field import share
 
-    app = _equipment_sub_tab_app("현황")
-    # 사용자는 보이는 글자 「가공」 을 고르고 브라우저는 그 글자를 보낸다(Streamlit 1.63).
-    browser = BrowserChoice(app, "multiselect", "equipment_count_filter_공정")
-    browser.sync()
-    browser.pick(["가공"])
-    browser.run()
+    from capa_simulation.components.process_field import FIELD_KEY
+
+    app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["설비대수 현황"]
+    share(app, ["Process-A"])
+    app.run()
 
     assert not app.exception
-    assert app.session_state["equipment_count_filter_공정"] == ["Process-A"]
     assert set(_frame_with_column(app, "공정")["공정"]) == {"가공"}
+    assert app.sidebar.button(key=FIELD_KEY).label == "가공"
 
 
 def test_month_editor_shows_the_label_but_returns_the_original_process(
@@ -1576,13 +1644,24 @@ def test_the_edited_tab_gets_a_pending_dot(
 
 
 def test_the_table_filters_and_the_overview_detail_live_in_the_sidebar_card() -> None:
+    """공정은 조회 조건 패널의 공용 공정 값 칸이고 공정 밖 필터 · 「상세」 는 「표 조건」 카드다.
+    거를 칸이 공정뿐인 표(일수)에는 카드가 서지 않는다 — 빈 카드를 두지 않는다."""
+    from capa_simulation.components.process_field import FIELD_KEY
+
     app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
-    assert "capa_run_day_editor_filter_공정" in {widget.key for widget in app.sidebar.multiselect}
+    assert FIELD_KEY in {button.key for button in app.sidebar.button}
+    assert not app.sidebar.multiselect
+    assert not [item for item in app.sidebar.expander if "표 조건" in str(item.label)]
     assert not app.main.multiselect
+
+    app = _filtered_editor_app("효율", "capa_run_rate_editor", "공정")
+    assert [widget.key for widget in app.sidebar.multiselect] == [
+        "capa_run_rate_editor_filter_양산구분"
+    ]
 
     app = _equipment_sub_tab_app("현황")
     assert "equipment_count_detail" in {widget.key for widget in app.sidebar.toggle}
-    assert "equipment_count_filter_공정" in {widget.key for widget in app.sidebar.multiselect}
+    assert FIELD_KEY in {button.key for button in app.sidebar.button}
     assert not app.main.toggle
 
 
@@ -2302,3 +2381,149 @@ def test_a_display_order_swap_reorders_the_cached_edit_table(
     app.run()
     assert not app.exception
     assert processes() == ["Process-A", "Process-B"]
+
+
+# 앱 전체 회차의 시작 · 끝 표지를 단 대본 — 팝업 호스트의 여는 콜백이 호스트만 돌릴 수 있는지 그
+# 표지로 가른다(`sidebar_status.fragment_rerun_is_safe`). 표시명이 있어 창을 연 회차에 알림(PA-01)이
+# 선다.
+FRAGMENT_SCRIPT = (
+    "from capa_simulation.sidebar_status import begin_app_run\n"
+    "app_run = begin_app_run()\n" + RENAMED_TEST_SCRIPT + "app_run.finish()\n"
+)
+PASTE_HOST_KEY = "reference_data_dialog_host"
+UPEH_PASTE_TEXT_KEY = "capa_upeh_editor_csv_clipboard"
+
+
+def _event_slots(app_messages: Any) -> dict[int, tuple[str, str]]:
+    """이벤트 칸(본문 밖 최상위 칸) 자리마다 (종류, 프래그먼트 id)."""
+    from streamlit.proto.RootContainer_pb2 import RootContainer
+
+    slots: dict[int, tuple[str, str]] = {}
+    for message in app_messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        path = list(message.metadata.delta_path)
+        if len(path) != 2 or path[0] != RootContainer.EVENT:
+            continue
+        delta = message.delta
+        kind = (
+            str(delta.add_block.WhichOneof("type"))
+            if delta.WhichOneof("type") == "add_block"
+            else str(delta.new_element.WhichOneof("type"))
+        )
+        slots[path[1]] = (kind, delta.fragment_id)
+    return slots
+
+
+def test_opening_and_closing_the_paste_dialog_runs_only_its_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「Excel 붙여넣기」 를 여닫아도 페이지를 다시 계산하지 않는다 — 여는 콜백 뒤 호스트
+    (`reference_data_dialog_host`)만 돌고 닫기(X · 바깥 · Esc)도 호스트만 돈다(2026-11-08 사용자 답
+    U5, 설계 규칙 UI-PRF-01 — 전에는 열기 · 닫기가 앱 전체 회차였다). 팝업은 호스트가 앱 전체 회차에
+    잡아 둔 이벤트 칸 한 자리에 서고 그 자리로 돌아간다. 닫으면 글 칸 값을 지워 다시 연 창이 여는
+    알림을 또 낸다."""
+    from fragment_browser import install_fragment_browser
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
+    app.run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+    page_slots = _event_slots(browser.messages)
+    (host_slot,) = [index for index, slot in page_slots.items() if slot[1] == host]
+    assert page_slots[host_slot][0] == "html"
+    open_id = app.button(key="capa_upeh_editor_open_paste").id
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    ), "페이지가 다시 돌았다"
+    assert _event_slots(browser.messages) == {host_slot: ("dialog", host)}
+    assert app.text_area(key=UPEH_PASTE_TEXT_KEY).label == "UPEH 표 붙여넣기"
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    dialog_id = browser.dialog_widget_id()
+    dialog = browser.fragment_of(UPEH_PASTE_TEXT_KEY)
+
+    app.text_area(key=UPEH_PASTE_TEXT_KEY).set_value("남은글")
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert app.session_state[UPEH_PASTE_TEXT_KEY] == "남은글"
+
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert _event_slots(browser.messages) == {host_slot: ("html", host)}
+    assert "reference_data_open_dialog" not in app.session_state
+    assert UPEH_PASTE_TEXT_KEY not in app.session_state, "닫은 팝업의 글 칸 값이 세션에 남았다"
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    assert app.text_area(key=UPEH_PASTE_TEXT_KEY).value == ""
+
+
+def test_applying_the_paste_reruns_the_whole_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """붙여넣기 적용은 활성 시나리오를 바꾼다 — 팝업 회차 뒤 앱 전체 회차가 돌아 결과 알림이 작업 줄
+    아래 서고 팝업은 닫힌다. 사람 속도의 둘째 누름이 닫힌 팝업 본문을 다시 돌리지 않는다."""
+    from fragment_browser import install_fragment_browser
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["일수"]
+    app.run()
+    assert not app.exception
+    app.button(key="capa_run_day_editor_open_paste").click().run()
+    assert not app.exception
+    dialog = browser.fragment_of("capa_run_day_editor_csv_clipboard")
+
+    app.text_area(key="capa_run_day_editor_csv_clipboard").set_value(
+        "공정\t202608\nProcess-A\t29\n"
+    )
+    next(button for button in app.button if button.label == "붙여넣기 적용").click()
+    pressed = app._tree.get_widget_states()
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert browser.started[0] == [dialog]
+    assert browser.started[-1] == []
+    assert "reference_data_open_dialog" not in app.session_state
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {"Process-A": 29.0}
+    assert any("붙여넣기 데이터를" in str(item.value) for item in successes(app))
+
+    app._run(widget_state=pressed)
+    stale = [
+        message
+        for message in browser.emitted
+        if message.WhichOneof("type") == "delta" and message.delta.fragment_id == dialog
+    ]
+    assert not stale, "닫힌 팝업의 본문이 다시 돌아 걷힌 팝업 자리에 요소를 보냈다"
+
+
+def test_the_step_popup_still_opens_with_a_page_round(monkeypatch: pytest.MonkeyPatch) -> None:
+    """「STEP 추가·삭제」 는 여덟 팝업(U5)에 들지 않아 같은 열림 칸으로 페이지가 부른다 — 여는
+    회차는 앱 전체이고, 호스트는 그 값을 지우지 않고 빈 자리만 쓴다."""
+    from fragment_browser import install_fragment_browser
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["STEP 구성"]
+    app.run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+
+    app.button(key="open_capacity_step_dialog").click().run()
+    assert not app.exception
+    assert browser.started == [[]]
+    assert app.session_state["reference_data_open_dialog"] == "step"
+    slots = _event_slots(browser.messages)
+    assert [slot for slot in slots.values() if slot[1] == host] == [("html", host)]
+    assert ("dialog", "") in slots.values()

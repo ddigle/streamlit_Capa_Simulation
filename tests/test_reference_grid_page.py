@@ -22,6 +22,7 @@ from edit_grid_fake import (
     send_ops,
 )
 from streamlit.testing.v1 import AppTest
+from test_process_field import share
 from test_reference_data_page import (
     DATASET,
     DISPLAY_ORDER_SWAP_TEST_SCRIPT,
@@ -184,16 +185,36 @@ def test_a_row_order_change_keeps_the_grid_draft_on_its_business_key(calls: Call
 
 
 def test_the_filter_is_not_locked_while_a_grid_draft_is_pending(calls: Calls) -> None:
+    """초안이 있어도 거름을 잠그지 않는다 — 공용 공정 값 칸도 표 조건 칸도 열려 있고, 풀어도 초안은
+    그대로다(업무 키)."""
+    from capa_simulation.components.process_field import FIELD_KEY
+
     app = _filtered_editor_app("일수", "capa_run_day_editor", "공정")
     app = _grid_write(app, calls, "Process-B", "202608", "20")
-    widget = app.sidebar.multiselect(key="capa_run_day_editor_filter_공정")
-    assert not widget.disabled
+    assert not app.sidebar.button(key=FIELD_KEY).disabled
     assert OLD_FILTER_LOCKED_NOTICE not in {str(item.value) for item in app.sidebar.caption}
-    # 필터를 풀어도 초안은 그대로다(업무 키).
-    widget.set_value([]).run()
+    # 공용 공정을 지워도(다른 화면 · 칩) 초안은 그대로다.
+    share(app, [])
+    app.run()
     assert not app.exception
     assert last(calls, FEED)["filters"] is None
     assert _draft(app) == {"cells": {"Process-B": {"202608": 20.0}}, "bad": {}}
+
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["효율"]
+    app.session_state["capa_run_rate_editor_filter_양산구분"] = ["양산"]
+    app.run()
+    assert last(calls, FEED)["filters"] is not None
+    app = _grid_write(app, calls, "Process-A\x1f양산", "202608", "0.5")
+    widget = app.sidebar.multiselect(key="capa_run_rate_editor_filter_양산구분")
+    assert not widget.disabled
+    widget.set_value([]).run()
+    assert not app.exception
+    assert last(calls, FEED)["filters"] is None
+    assert app.session_state[cells_key("RQ_RUN_RATE")] == {
+        "cells": {"Process-A\x1f양산": {"202608": 0.5}},
+        "bad": {},
+    }
 
 
 _LEAVE_PROBE = (
@@ -584,29 +605,34 @@ def test_an_emptied_ratio_table_rides_the_grid_as_an_empty_table(calls: Calls) -
 def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole(
     calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """큰 표 안전 상한(칸 수 · 껍데기 바이트)을 넘으면 사이드바 필터로 고른 줄이나 앞 줄만 싣고
-    작업 줄 아래 표지 한 줄(풍선 — 고르는 법 · 적용 범위)로 알린다(파란 상자 아님). 초안은 업무
-    키라 실은 줄이 바뀌어도 제 줄에 남고, 적용은 언제나 전체 양식에 덮는다. 고칠 칸 알림도 지금
-    싣지 않은 줄의 오류까지 센다."""
+    """큰 표 안전 상한(칸 수 · 껍데기 바이트)을 넘으면 공용 공정 · 표 조건으로 고른 줄이나 앞 줄만
+    싣고 작업 줄 아래 표지 한 줄(풍선 — 고르는 법 · 적용 범위)로 알린다(파란 상자 아님). 일수는 거를
+    칸이 공정뿐이라 「표 조건」 카드가 없다 — 표지 · 풍선도 그 카드를 가리키지 않고 다른 화면과 같이
+    쓰는 공정 칸으로 골랐다고 말한다. 초안은 업무 키라 실은 줄이 바뀌어도 제 줄에 남고, 적용은
+    언제나 전체 양식에 덮는다. 고칠 칸 알림도 지금 싣지 않은 줄의 오류까지 센다."""
     monkeypatch.setattr(reference_grid, "CAP_CELLS", 1)
     monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
+    help_text = (
+        "칸이 아주 많은 표는 사이드바 「공정」 으로 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
+        "「공정」 은 다른 화면과 같이 쓰는 칸입니다. "
+        "「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
+    )
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     assert _visible_keys(calls) == ["Process-A"]
     notices = {str(item.value): item.proto.help for item in app.caption}
-    assert notices[reference_grid.CAP_HEAD_NOTICE.format(rows=2, cells=2, shown=1)] == (
-        reference_grid.CAP_HELP
-    )
+    assert notices[":material/filter_alt: 큰 표 · 앞 1줄만 실음(전체 2줄 · 2칸)"] == help_text
     assert not any("줄만" in str(item.value) for item in infos(app))
     app = _grid_write(app, calls, "Process-A", "202608", "20")
 
-    app.session_state["capa_run_day_editor_filter_공정"] = ["Process-B"]
+    share(app, ["Process-B"])
     app.run()
     assert not app.exception
     assert _visible_keys(calls) == ["Process-B"]
     notices = {str(item.value): item.proto.help for item in app.caption}
-    assert notices[reference_grid.CAP_FILTERED_NOTICE.format(rows=2, cells=2, shown=1)] == (
-        reference_grid.CAP_HELP
+    assert notices[":material/filter_alt: 큰 표 · 공정으로 고른 1줄만 실음(전체 2줄 · 2칸)"] == (
+        help_text
     )
+    assert not app.sidebar.multiselect
     app = _grid_write(app, calls, "Process-B", "202608", "15")
     assert _draft(app) == {
         "cells": {"Process-A": {"202608": 20.0}, "Process-B": {"202608": 15.0}},
@@ -622,6 +648,87 @@ def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole
     }
 
 
+def _capped_run_rate_script() -> None:
+    """공정 · 양산구분 두 칸 표(4줄)를 큰 표 상한으로 싣고 표지 · 풍선만 그린다 — 공용 공정을
+    따라가는 기준 정보 효율 표와 같은 인자."""
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components import reference_grid
+
+    template = pd.DataFrame(
+        {
+            "공정": ["DEMO_A", "DEMO_A", "DEMO_B", "DEMO_B"],
+            "양산구분": ["양산", "ER", "양산", "ER"],
+            "202701": [0.5, 0.6, 0.7, 0.8],
+        }
+    )
+    table = reference_grid.build_grid_table(
+        "RQ_RUN_RATE",
+        "효율",
+        "capa_run_rate_editor",
+        template,
+        ("공정", "양산구분"),
+        cache_key=(1, "test-cap-places", 202701, 202701),
+        order_digest="order",
+        value_labels=None,
+        filter_prefix="capa_run_rate_editor_filter",
+        shared_screen="기준 정보",
+    )
+    st.caption(str(table.cap_notice), help=table.cap_help)
+
+
+@pytest.mark.parametrize(
+    ("process", "mass", "by", "shown"),
+    [
+        (None, None, None, 1),
+        (["DEMO_B"], None, "공정", 2),
+        (None, ["ER"], "표 조건", 2),
+        (["DEMO_B"], ["ER"], "공정 · 표 조건", 1),
+    ],
+)
+def test_a_capped_table_names_the_filters_that_chose_its_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    process: list[str] | None,
+    mass: list[str] | None,
+    by: str | None,
+    shown: int,
+) -> None:
+    """큰 표 표지는 줄을 실제로 좁힌 거름 자리(조회 조건의 공용 「공정」 칸 · 「표 조건」 카드)를
+    이름으로 단다. 공정 밖 거를 칸이 있는 표의 풍선은 두 자리를 다 적고, 공정 칸은 다른 화면과 같이
+    쓴다고 말한다."""
+    monkeypatch.setattr(reference_grid, "CAP_CELLS", 2)
+    monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
+    app = AppTest.from_function(_capped_run_rate_script, default_timeout=60)
+    if process is not None:
+        share(app, process)
+    if mass is not None:
+        app.session_state["capa_run_rate_editor_filter_양산구분"] = mass
+    app.run()
+    assert not app.exception, app.exception
+    [caption] = app.caption
+    if by is None:
+        assert caption.value == f":material/filter_alt: 큰 표 · 앞 {shown}줄만 실음(전체 4줄 · 4칸)"
+    else:
+        assert caption.value == (
+            f":material/filter_alt: 큰 표 · {by}으로 고른 {shown}줄만 실음(전체 4줄 · 4칸)"
+        )
+    assert caption.proto.help == (
+        "칸이 아주 많은 표는 사이드바 「공정」 · 「표 조건」 으로 고른 줄만, "
+        "고르지 않았으면 앞 줄만 싣습니다. 「공정」 은 다른 화면과 같이 쓰는 칸입니다. "
+        "「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
+    )
+
+
+def test_the_table_card_columns_leave_out_the_shared_process() -> None:
+    """「표 조건」 카드 칸은 공용 공정을 따라가는 표의 공정을 뺀 나머지다 — 비면 화면이 카드를
+    세우지 않고 큰 표 풍선도 「표 조건」 을 적지 않는다. 공용 값을 따라가지 않는 표는 공정도
+    카드 칸이다."""
+    assert reference_grid.card_columns(("공정",), "기준 정보") == ()
+    assert reference_grid.card_columns(("공정", "양산구분"), "기준 정보") == ("양산구분",)
+    assert reference_grid.card_columns(("공정",), None) == ("공정",)
+
+
 def test_a_capped_table_counts_the_errors_of_rows_it_does_not_load(
     calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -629,7 +736,7 @@ def test_a_capped_table_counts_the_errors_of_rows_it_does_not_load(
     monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     app = _grid_write(app, calls, "Process-A", "202608", "30.5")
-    app.session_state["capa_run_day_editor_filter_공정"] = ["Process-B"]
+    share(app, ["Process-B"])
     app.run()
     app.button(key=APPLY).click().run()
     assert not app.exception
@@ -1133,3 +1240,135 @@ def test_a_table_over_the_byte_cap_never_caches_or_unpacks_its_whole_body(
     served.clear()
     roomy = _build(10_000_000)
     assert roomy.cap_notice is None and len(roomy.base.index.keys) == 60
+
+
+# 공용 공정으로 좁혀진 표에 Excel 여러 줄 · 한 줄을 붙이는 브라우저 대역 — 페이지가 그리드에 보낸
+# 껍데기 · feed 를 그대로 진짜 그리드 JS(`edit_grid.registered_js`)에 싣는다.
+SHARED_PASTE_RUNNER = r"""
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.setAttribute('data-eg-root', '')
+host.className = 'eg'
+const mount = (data) => globalThis.__mount({ data, parentElement, setStateValue: () => {} })
+const sendFeed = (feed) => {
+  const store = (window.__capaEditGrid = window.__capaEditGrid || {})
+  ;(store[feed.host] = store[feed.host] || {}).feed = feed
+  window.dispatchEvent(new CustomEvent('capa-edit-grid', { detail: feed.host }))
+}
+const q = (selector) => host.querySelector(selector)
+const paste = (text) => fire(q('.eg-scroll'), 'paste', { clipboardData: { getData: () => text } })
+const R = {}
+;(async () => {
+  sendFeed(input.narrowed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const seen = () => ({
+    rows: S.view.order.length,
+    ops: S.box.ops.map((op) => [op.rows, op.values]),
+    note: q('.eg-note').textContent,
+  })
+  paste('11\n12\n13\n14\n15\n')
+  R.many = seen()
+  paste('21\n')
+  R.one = seen()
+  sendFeed(input.whole)
+  paste('31\n32\n')
+  R.wholeMany = seen()
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+
+
+def test_a_table_narrowed_by_the_shared_process_takes_one_row_of_paste_only(calls: Calls) -> None:
+    """다른 화면에서 고른 공정으로 저절로 좁혀진 표도 여러 줄 붙여넣기를 막는다 — 시제품
+    (2026-11-07)에서 좁혀진 표에 다섯 줄을 붙이자 보이는 줄에 차례로 들어가 다른 공정 값이
+    바뀌었다. 그리드는 feed `filters` 로 「좁힌 표」 를 가르므로(`eg_select.selNarrowed`) 공용
+    공정도 그 거름에 실려야 한다. 한 줄은 그대로 붙고, 공정 거름이 풀리면 여러 줄을 받는다(사용자
+    답 c2 — 지금대로)."""
+    from edit_grid_node import FAKE_DOM, mountable, run_node
+
+    from capa_simulation.components import edit_grid
+
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["일수"]
+    share(app, ["Process-B"])
+    app.run()
+    assert not app.exception
+    shell, narrowed = last(calls, GRID_HOST), last(calls, FEED)
+    assert narrowed["filters"]
+    share(app, [])
+    app.run()
+    assert not app.exception
+    whole = last(calls, FEED)
+    assert whole["filters"] is None
+
+    result = run_node(
+        FAKE_DOM + mountable(edit_grid.registered_js()),
+        SHARED_PASTE_RUNNER,
+        {"shell": shell, "narrowed": narrowed, "whole": whole},
+    )
+    refused = str(shell["texts"]["pasteFiltered"])
+    assert "Excel 붙여넣기" in refused
+    assert result["many"] == {"rows": 1, "ops": [], "note": refused}, "여러 줄은 막는다"
+    assert result["one"]["ops"] == [[["Process-B"], [["21"]]]], "한 줄은 보이는 줄에 붙는다"
+    # 거름이 풀린 표는 여러 줄을 받는다 — 고른 칸(Process-B)부터 붙고 표 끝을 넘은 줄만 버린다.
+    assert result["wholeMany"]["rows"] == 2
+    assert result["wholeMany"]["note"] != refused
+    assert len(result["wholeMany"]["ops"]) == 2
+
+
+def test_a_draft_the_shared_process_hides_is_marked_and_still_applied(calls: Calls) -> None:
+    """Process-A 를 고친 뒤 다른 화면에서 공정을 Process-B 로 바꾸면 고친 줄이 표에서 안 보이지만
+    「변경사항 적용」 에는 들어간다 — 놀라지 않게 작업 줄 아래 「거름 밖 n개」 표지(값) + 풍선을
+    단다. 보이는 줄의 편집 · 공정을 고르지 않은 표에는 서지 않는다. 적용하면 안 보이던 편집도
+    들어가고 걸러진 줄은 그대로 남는다."""
+
+    def outside_marks(app: AppTest) -> dict[str, str]:
+        return {
+            str(item.value): str(item.proto.help)
+            for item in app.caption
+            if "거름 밖" in str(item.value)
+        }
+
+    app = _open(TWO_PROCESS_TEST_SCRIPT)
+    share(app, ["Process-A"])
+    app.run()
+    app = _grid_write(app, calls, "Process-A", "202608", "20")
+    assert outside_marks(app) == {}, "보이는 줄의 편집에는 서지 않는다"
+
+    share(app, ["Process-B"])
+    app.run()
+    assert not app.exception
+    assert _visible_keys(calls) == ["Process-B"]
+    notice = reference_grid.OUTSIDE_NOTICE.format(n=1)
+    assert outside_marks(app) == {notice: reference_grid.OUTSIDE_HELP.format(n=1)}
+
+    share(app, [])
+    app.run()
+    assert outside_marks(app) == {}, "공정을 고르지 않으면 모두 보인다"
+
+    share(app, ["Process-B"])
+    app.run()
+    app.button(key=APPLY).click().run()
+    assert not app.exception
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {
+        "Process-A": 20.0,
+        "Process-B": 31.0,
+    }
+
+
+def test_the_outside_mark_reads_the_process_out_of_a_multi_column_key(calls: Calls) -> None:
+    """초안 키는 업무 키다 — 분류 칸이 여럿인 표(효율)도 공정 자리만 떼어 센다. 칸 오류(읽을 수 없는
+    글)도 적용하지 않은 편집이라 센다."""
+    app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["효율"]
+    app.run()
+    app = _grid_write(app, calls, "Process-A\x1f양산", "202608", "abc")
+    share(app, ["Process-B"])
+    app.run()
+    assert not app.exception
+    notice = reference_grid.OUTSIDE_NOTICE.format(n=1)
+    assert notice in {str(item.value) for item in app.caption}
