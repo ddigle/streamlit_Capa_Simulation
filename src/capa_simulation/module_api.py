@@ -215,11 +215,15 @@ def context(file: str | os.PathLike[str]) -> ModuleContext:
 
 
 def page_header(ctx: ModuleContext, title: str, *, description: str | None = None) -> None:
-    """화면 맨 위 머리말 한 번. L0·L1 은 「(구현중)」 배지를 단다. 세션 키를 만들지 않는다."""
+    """화면 맨 위 머리말 한 번. L0·L1 은 「(구현중)」 배지를 단다. 세션 키를 만들지 않는다.
+
+    `description` 은 받기만 하고 그리지 않는다(창구 1.1 — 화면 머리에 소개 줄을 두지 않는다, 설계
+    규칙 UI-TXT-01). 넘기던 모듈이 깨지지 않게 인자는 남긴다. 모듈 소개는 `module.json` 의
+    `description` 이 모듈 색인에서 맡는다.
+    """
+    del description
     implementing = ctx.maturity in _module_registry.IMPLEMENTING_LEVELS
-    _render_page_header(
-        f"{title} {IMPLEMENTING_SUFFIX}" if implementing else title, description=description
-    )
+    _render_page_header(f"{title} {IMPLEMENTING_SUFFIX}" if implementing else title)
 
 
 def palette() -> Mapping[str, str]:

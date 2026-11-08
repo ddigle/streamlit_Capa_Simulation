@@ -4,9 +4,9 @@
 guide에 포함.」).
 
 화면 소개는 그 화면 Guide 가 맡는다(설계 규칙 UI-TXT-01 · UI-TXT-02). 설명 인자가 남은 자리는
-둘이다 — 모듈 공개 창구(`module_api.page_header`, 계약이다)와 필요 단축 일정(문구 사용자 전달 대기,
-`docs/TODO.md` 2장). 문장 그물(`tests/test_place_sentence_sites.py`)은 `description=` 을 훑지 않아
-여기서 호출 자리를 맞댄다.
+필요 단축 일정(문구 사용자 전달 대기, `docs/TODO.md` 2장) 하나다 — 모듈 공개 창구
+(`module_api.page_header`)는 창구 1.1 부터 그 인자를 받기만 하고 그리지 않는다(답 d1). 문장
+그물(`tests/test_place_sentence_sites.py`)은 `description=` 을 훑지 않아 여기서 호출 자리를 맞댄다.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ from capa_simulation.components.page_header import render_page_header_with_statu
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER_CALLS = {"render_page_header", "_render_page_header", "render_page_header_with_status"}
-# 설명 인자를 넘겨도 되는 자리.
-DESCRIPTION_SITES = {"app_pages/required_shortening.py", "src/capa_simulation/module_api.py"}
+# 설명 인자를 넘겨도 되는 자리. 모듈 창구(`module_api.page_header`)는 1.1 부터 받기만 한다.
+DESCRIPTION_SITES = {"app_pages/required_shortening.py"}
 # 머리말에서 옮긴 말 — (화면 파일, Guide 에 남아야 할 글).
 MOVED_WORDS = (
     ("actual_efficiency", "생산이력의 공정·제품별 효율 실적을 Capa 효율 기준정보와 비교"),
@@ -67,7 +67,7 @@ def _guide_text(page: str) -> str:
     return " ".join(load_guide(page).replace("**", "").split())
 
 
-def test_only_the_module_window_and_the_waiting_screen_pass_a_description() -> None:
+def test_only_the_waiting_screen_passes_a_description() -> None:
     sites = {path.relative_to(ROOT).as_posix() for path in _sources() if _passes_description(path)}
     assert sites == DESCRIPTION_SITES
 

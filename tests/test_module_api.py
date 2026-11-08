@@ -118,7 +118,8 @@ def test_the_header_marks_unfinished_maturity_and_makes_no_session_key(
     assert not app.exception
     assert [title.value for title in app.title] == ["시험 화면"]
     assert any("구현중" in str(markdown.value) for markdown in app.markdown) is badge
-    assert [caption.value for caption in app.caption] == ["설명 한 줄"]
+    # 설명 인자는 받기만 하고 그리지 않는다(창구 1.1 — 화면 머리에 소개 줄을 두지 않는다).
+    assert [caption.value for caption in app.caption] == []
     assert list(app.session_state.filtered_state) == []
 
 

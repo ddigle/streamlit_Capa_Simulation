@@ -146,6 +146,16 @@ def test_appendix_c_first_version_names_every_surface_name() -> None:
         assert f"`{name}`" in record, name
 
 
+def test_the_guide_screens_put_no_introduction_in_the_header() -> None:
+    """화면 머리에 소개 줄을 두지 않는다(설계 규칙 UI-TXT-01) — 창구 1.1 부터 `page_header` 의
+    `description` 은 받기만 하고 그리지 않는다. 화면 계약(3-5)과 예시 화면(3-8 · 3-9)은 그 인자를
+    넘기지 않고, 부록 A 가 그렇다고 적는다."""
+    assert '`api.page_header(ctx, "<화면 이름>")`' in _section("3-5.")
+    for purpose in ("데모 메모 모듈의 첫 화면", "데모 표 모듈의 첫 화면"):
+        assert "description=" not in _python_block(purpose), purpose
+    assert "`description` 은 받기만 하고 그리지 않는다" in _section("부록 A")
+
+
 def test_rule_numbers_in_the_guide_are_the_checkers_rules() -> None:
     appendix_rules = set(_RULE_ROW.findall(_section("부록 B")))
     conflict_rules = set(re.findall(r"M\d{2}", _section("4. 부딪치지 않게")))
