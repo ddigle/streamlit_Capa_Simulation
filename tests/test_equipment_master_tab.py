@@ -1019,10 +1019,10 @@ def test_a_save_cut_after_its_write_is_settled_as_my_own_save_on_the_next_run(
     app.run()
 
     assert not app.exception, app.exception
-    notes = alert_notes(app, again=True)
+    notes = [note for note in alert_notes(app, again=True) if note.get("active") is not False]
     texts = [str(note.get("full") or note.get("text") or "") for note in notes]
     assert not [text for text in texts if "다른 사용자" in text], texts
-    assert not [note for note in notes if note.get("code") == "EQ-05"], notes
+    assert not [note for note in notes if note.get("code") in ("EQ-05", "EQ-19")], notes
     assert [text for text in texts if "저장했습니다" in text], texts
     assert app.session_state[GRID_LOADED_KEY] == ("s:DA-01",)
     assert not [text for text in _page_texts(app) if "저장 전 변경" in text or "미저장" in text]
@@ -1049,10 +1049,10 @@ def test_a_cut_save_that_wrote_a_new_schedule_revision_moves_the_session_quietly
     app.run()
 
     assert not app.exception, app.exception
-    texts = [
-        str(note.get("full") or note.get("text") or "") for note in alert_notes(app, again=True)
-    ]
+    notes = [note for note in alert_notes(app, again=True) if note.get("active") is not False]
+    texts = [str(note.get("full") or note.get("text") or "") for note in notes]
     assert not [text for text in texts if "다른 사용자" in text], texts
+    assert not [note for note in notes if note.get("code") in ("EQ-05", "EQ-19")], notes
     master = app.session_state[BUFFER_KEY][1].set_index("설비명")
     assert str(master.loc["DA-01", "반입일정"])[:10] == "2026-12-01"
     assert not [str(item.value) for item in app.warning if "더 새롭습니다" in str(item.value)]

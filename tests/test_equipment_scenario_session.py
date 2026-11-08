@@ -506,12 +506,15 @@ def test_a_stale_session_locks_the_schedule_cells_and_row_adds_but_not_common_ce
     assert table["rows"]
     assert all(("stale" in row.get("locks", ())) is stale for row in table["rows"])
     assert table["newRowsLocked"] is stale
+    # 낡음은 머리 줄 표지 「일정 잠김」 의 풍선 · 상태 알림이고 경고 상자는 서지 않는다(c1).
+    helps = [str(item.proto.help) for item in app.caption if item.proto.help]
+    assert not any("가 더 새롭습니다" in item.value for item in app.warning)
     if stale:
         assert "최신 r2를 불러온 뒤 지우세요" in str(table["deleteLock"])
-        assert any("가 더 새롭습니다" in item.value for item in app.warning)
+        assert any("가 더 새롭습니다" in text for text in helps), helps
     else:
         assert table["deleteLock"] is None
-        assert not any("가 더 새롭습니다" in item.value for item in app.warning)
+        assert not any("가 더 새롭습니다" in text for text in helps)
     columns = {column["name"]: column for column in table["columns"]}
     assert columns["Qual일정"]["help"].startswith("시나리오 — 「운영 일정」 에만 저장")
     assert columns["담당자"]["help"].startswith("공통 — 모든 설비 시나리오에 같은 값")
