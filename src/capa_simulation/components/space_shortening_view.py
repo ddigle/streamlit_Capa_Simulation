@@ -10,6 +10,7 @@
 
 - **목표 확보율**(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)은 사이드바 조회 조건 패널의 한
   줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건 상자로). 위젯 key 는 그대로다.
+  배치 편집으로 보기가 쉬는 회차에도 잠근 채 선다(`render_level_field`).
 - **본문 조작 줄**(결정 D6) — 「단축 없는 호기 흐리게」, 기준 캡션, 못 읽음 알림. FAB·층 상세가 같은
   줄을 쓴다.
 - **달** — 필요 단축 일정 시작·끝 월 칸 → 공용 프로필(0019) 심기를 **읽기만** 한다(결정 D3). 임박
@@ -124,6 +125,7 @@ __all__ = [
     "render_layer_basis",
     "render_layer_controls",
     "render_layer_stop",
+    "render_level_field",
     "forget_arrival_note",
     "render_arrival_filter_note",
     "switch_to_queued_shortening",
@@ -142,7 +144,7 @@ LEVEL_FIELD_SLUG: Final = "space_target"
 # 그 줄의 전환 단추 다섯을 패널 폭(245px 상자 — 안쪽 223px)에 한 줄로 — 기본 안쪽 여백이면 넷째
 # 뒤에서 접혀 줄이 두 줄(높이 60px)이 됐다(2026-11-08 사본 실측). 단추를 같은 폭으로 나누고 좌우
 # 여백만 줄인다. 글자 크기는 그대로다(설계 규칙 UI-CON-01). 페이지가 회차마다 늘
-# 그린다(`render_layer_controls` 는 켠 회차에만 돈다 — 스타일 표지 자리 수가 회차마다 같게).
+# 그린다(`render_level_field` 는 보기를 고른 회차에만 돈다 — 스타일 표지 자리 수가 회차마다 같게).
 LEVEL_FIELD_STYLE: Final = (
     "<style>"
     f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"]'
@@ -150,6 +152,11 @@ LEVEL_FIELD_STYLE: Final = (
     f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"] button'
     "{flex:1 1 0;min-width:0;padding-left:0.25rem;padding-right:0.25rem;}"
     "</style>"
+)
+# 배치 편집으로 보기가 쉬는 회차의 목표 줄 — 줄은 잠근 채 서고 까닭은 이름 줄 풍선이다(설계 규칙
+# UI-INP-07). 값 칸이 전환 단추라 단추 풍선을 달 자리가 없다(라벨을 접은 위젯은 풍선도 숨는다).
+LEVEL_REST_HELP: Final = (
+    "배치 편집 중에는 필요 단축 보기를 쉬어 고를 수 없습니다 — 편집을 끄면 다시 고릅니다."
 )
 SPACE_SHORT_PROCESS_PREFIX: Final = "space_shortening_process"
 SPACE_SHORT_SWITCH_KEY: Final = "space_shortening_switch_v1"
@@ -316,28 +323,30 @@ class LayerControls:
     dim_others: bool
 
 
-def render_layer_controls() -> LayerControls:
-    """목표 확보율 · 「단축 없는 호기 흐리게」 — 본문 조작 줄 안에서 부른다(결정 D6).
-
-    목표 확보율은 사이드바 조회 조건 패널의 페이지 칸(`LEVEL_SLOT`)에 이름 줄 + 전환 단추로
+def render_level_field(*, resting: bool = False) -> float:
+    """목표 확보율 줄 — 사이드바 조회 조건 패널의 페이지 칸(`LEVEL_SLOT`)에 이름 줄 + 전환 단추로
     선다(2026-11-08 그림 메모 g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로
-    이동」). 흐리게 칸은 부른 자리(본문 조작 줄)에 선다. 처음 값이 무엇인지는 Guide 가 말한다(이름
-    줄에 길 안내를 적지 않는다 — 설계 규칙 UI-TXT-03).
+    이동」). 처음 값이 무엇인지는 Guide 가 말한다(이름 줄에 길 안내를 적지 않는다 — 설계 규칙
+    UI-TXT-03). 고른 목표를 돌려준다.
 
-    목표 칸이 없으면 필요 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심고, 흐리게 칸이 없으면
-    켬으로 심는다. 위젯에는 기본값을 주지 않는다(세션 API 와 함께 쓰면 경고 — AGENTS 9장).
+    `resting` 은 보기를 골랐지만 배치 편집으로 쉬는 회차다 — 줄은 잠근 채 같은 자리에 서고 까닭은
+    이름 줄 풍선이다. 줄이 빠지면 켜고 끌 때마다 아래 「Space 도면」 상자와 방금 누른 「배치 편집」
+    토글이 줄 높이만큼 오르내렸다(설계 규칙 UI-PRF-03 · UI-INP-07).
+
+    목표 칸이 없으면 필요 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심는다. 위젯에는 기본값을
+    주지 않는다(세션 API 와 함께 쓰면 경고 — AGENTS 9장).
     """
     if _target_level(st.session_state.get(SPACE_SHORT_LEVEL_KEY)) is None:
         st.session_state[SPACE_SHORT_LEVEL_KEY] = (
             _target_level(st.session_state.get(SHORTENING_LEVEL_KEY)) or DEFAULT_TARGET_LEVEL
         )
-    if not isinstance(st.session_state.get(SPACE_SHORT_DIM_KEY), bool):
-        st.session_state[SPACE_SHORT_DIM_KEY] = True
     with (
         page_condition_slot(LEVEL_SLOT).container(),
         st.container(key=f"{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG}", gap=None),
     ):
-        condition_name_row(LEVEL_LABEL, slug=LEVEL_FIELD_SLUG)
+        condition_name_row(
+            LEVEL_LABEL, slug=LEVEL_FIELD_SLUG, help=LEVEL_REST_HELP if resting else None
+        )
         level = st.segmented_control(
             LEVEL_LABEL,
             options=list(TARGET_LEVELS),
@@ -345,15 +354,28 @@ def render_layer_controls() -> LayerControls:
             required=True,
             key=SPACE_SHORT_LEVEL_KEY,
             persist_state="session",
+            disabled=resting,
             label_visibility="collapsed",
             width="stretch",
         )
+    return _target_level(level) or DEFAULT_TARGET_LEVEL
+
+
+def render_layer_controls() -> LayerControls:
+    """목표 확보율 · 「단축 없는 호기 흐리게」 — 본문 조작 줄 안에서 부른다(결정 D6).
+
+    목표 확보율은 사이드바 조회 조건 패널의 줄이다(`render_level_field`). 흐리게 칸은 부른
+    자리(본문 조작 줄)에 선다. 흐리게 칸이 없으면 켬으로 심는다.
+    """
+    level = render_level_field()
+    if not isinstance(st.session_state.get(SPACE_SHORT_DIM_KEY), bool):
+        st.session_state[SPACE_SHORT_DIM_KEY] = True
     dim = st.checkbox(
         "단축 없는 호기 흐리게",
         key=SPACE_SHORT_DIM_KEY,
         persist_state="session",
     )
-    return LayerControls(level=_target_level(level) or DEFAULT_TARGET_LEVEL, dim_others=bool(dim))
+    return LayerControls(level=level, dim_others=bool(dim))
 
 
 @dataclass(frozen=True)

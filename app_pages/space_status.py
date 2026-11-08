@@ -139,6 +139,7 @@ from capa_simulation.components.space_shortening_view import (
     render_layer_basis,
     render_layer_controls,
     render_layer_stop,
+    render_level_field,
     switch_to_queued_shortening,
     take_unit_pick,
     unit_keys_by_name,
@@ -2220,8 +2221,9 @@ with st.container(key="space_edit_lock_slot"):
 
 # 필요 단축 보기의 본문 조작 줄(결정 D6 — 목표 확보율·흐리게·못 읽음 알림). 자리는 늘 선다 — 빈 칸은
 # 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지 않는다(AGENTS 5장 9 —
-# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 FAB 편집이면 까닭 한 줄만 — 층 상세는 편집기 위
-# 캡션이 같은 글을 적어 여기는 비운다(한 화면에 한 번).
+# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 사이드바 목표 줄만 잠근 채 세우고(켜고 끌 때
+# 아래 「Space 도면」 상자가 밀리지 않게 — 설계 규칙 UI-PRF-03), FAB 편집이면 까닭 한 줄을 더한다 —
+# 층 상세는 편집기 위 캡션이 같은 글을 적어 여기는 비운다(한 화면에 한 번).
 space_layer: SpaceLayer | None = None
 layer_dim = True
 with st.container(
@@ -2244,8 +2246,10 @@ with st.container(
             render_layer_stop(loaded)
         else:
             space_layer = loaded
-    elif layer_requested and layer_editing and selected is None:
-        _render_layer_rest_caption()
+    elif layer_requested and layer_editing:
+        render_level_field(resting=True)
+        if selected is None:
+            _render_layer_rest_caption()
 # 필요 단축 FAB 요약(공정소분류 필터를 따름 — 결정 D11). 비활성 층은 층 대수를 싣지 않는다.
 layer_scope = frozenset(selected_processes) if selected_processes else None
 layer_summary: FabSummary | None = (

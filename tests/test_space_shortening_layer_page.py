@@ -192,6 +192,22 @@ def _rest_notes(app: AppTest) -> int:
     return len(marks)
 
 
+def _rest_level(app: AppTest) -> tuple[bool, str] | None:
+    """사이드바 목표 확보율 줄의 (잠김, 이름 줄 풍선). 줄이 없으면 None — 배치 편집으로 쉬는 회차도
+    줄은 잠근 채 서야 켜고 끌 때 아래 「Space 도면」 상자가 밀리지 않는다(설계 규칙 UI-PRF-03)."""
+    levels = [
+        item
+        for item in app.sidebar.get("button_group")
+        if getattr(item, "label", None) == "목표 확보율"
+    ]
+    assert len(levels) <= 1
+    if not levels:
+        return None
+    names = [item for item in app.sidebar.caption if str(item.value) == "목표 확보율"]
+    assert len(names) == 1
+    return bool(levels[0].proto.disabled), str(names[0].proto.help)
+
+
 def _views(calls: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
     return [call for call in calls if call.get("mode") == "view" and call.get("scope") == scope]
 
@@ -578,6 +594,9 @@ def test_layout_editing_rests_the_layer_and_shows_the_default_colours(
     app.session_state["space_status_selected_floor"] = floor
     _ok(app.run())
     assert _views(editor_calls, "floor")[-1].get("shortBadges")
+    assert _rest_level(app) == (False, "")
+    _level(app).set_value(1.2)
+    _ok(app.run())
     app.toggle(key=EDIT_KEY).set_value(True)
     _ok(app.run())
     editor = editor_calls[-1]
@@ -586,12 +605,17 @@ def test_layout_editing_rests_the_layer_and_shows_the_default_colours(
     assert all("layer" not in item for item in editor["items"])
     # 쉬는 까닭은 편집기 위 한 줄뿐이다 — 본문 조작 줄이 같은 글을 거듭 적지 않는다(E2E).
     assert _rest_notes(app) == 1, _texts(app)
+    # 사이드바 목표 줄은 잠근 채 같은 자리에 선다 — 까닭은 이름 줄 풍선, 고른 값은 그대로다.
+    assert _rest_level(app) == (True, space_shortening_view.LEVEL_REST_HELP)
+    assert _level(app).value == 1.2
     # 라디오 값은 그대로다(결정 D7) — 끄면 다시 보인다.
     assert app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).value == COLOR_BASIS_SHORTENING
     app.toggle(key=EDIT_KEY).set_value(False)
     _ok(app.run())
     assert _views(editor_calls, "floor")[-1].get("shortBadges")
     assert _rest_notes(app) == 0
+    assert _rest_level(app) == (False, "")
+    assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.2
 
 
 def test_fab_layout_editing_rests_the_layer_with_one_note(
@@ -603,13 +627,16 @@ def test_fab_layout_editing_rests_the_layer_with_one_note(
     app = _app(tmp_path / "equipment.duckdb")
     _turn_on(_ok(app.run()))
     assert _rest_notes(app) == 0
+    assert _rest_level(app) == (False, "")
     app.toggle(key="space_fab_edit_mode").set_value(True)
     _ok(app.run())
     assert editor_calls[-1].get("scope") == "fab" and editor_calls[-1].get("mode") != "view"
     assert _rest_notes(app) == 1, _texts(app)
+    assert _rest_level(app) == (True, space_shortening_view.LEVEL_REST_HELP)
     app.toggle(key="space_fab_edit_mode").set_value(False)
     _ok(app.run())
     assert _rest_notes(app) == 0
+    assert _rest_level(app) == (False, "")
 
 
 # ------------------------------------------------------------------ T-P9·T-P12 도착·칩
@@ -842,8 +869,8 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_stays_on
     """보기 상태의 목표 확보율 고르기는 사이드바 조회 조건 패널의 한 줄이다(2026-11-08 그림 메모
     g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동」). 줄 꼴은 패널의
     다른 줄과 같은 이름 줄 + 값(전환 단추 — 라벨은 이름 줄이 말한다)이고 위젯 key 는 그대로다.
-    「단축 없는 호기 흐리게」 는 본문 조작 줄에 남는다. 끈 회차 · 배치 편집 중에는 줄이 서지
-    않는다(그 회차는 목표를 읽지 않는다)."""
+    「단축 없는 호기 흐리게」 는 본문 조작 줄에 남는다. 끈 회차에는 줄이 서지 않는다(그 회차는
+    목표를 읽지 않는다). 배치 편집으로 쉬는 회차는 `_rest_level` 시험이 본다."""
     from capa_simulation.components.condition_field import FIELD_KEY_PREFIX
 
     def levels(node: Any) -> list[Any]:
@@ -1125,6 +1152,7 @@ def test_the_off_payload_carries_no_residue_of_a_layer_round(
         (space_shortening_layer, "fab_layer_summary"),
         (space_shortening_view, "load_space_layer"),
         (space_shortening_view, "render_layer_controls"),
+        (space_shortening_view, "render_level_field"),
         (space_shortening_view, "render_floor_layer_panel"),
         (space_shortening_view, "render_fab_layer_summary"),
         (space_shortening_view, "layer_table_columns"),
