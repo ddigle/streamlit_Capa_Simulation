@@ -2450,12 +2450,15 @@ def test_only_the_screens_that_reopen_the_equipment_db_declare_its_pin() -> None
 def test_the_process_detail_page_opens_from_its_address_inside_the_app(_app: AppTest) -> None:
     """HOME 칸 클릭은 `st.switch_page(공정 Capa 상세, query_params=…)` 다(콜백 쪽은
     `tests/test_process_detail_state.py`). 실제 `app.py` 내비게이션에서 그 주소로 들어오면 사이드바
-    `공정 상세 조건` 카드의 공정 상자가 그 공정을 보이고, 읽은 키만 지워 테마 인자는 남는다.
+    조회 조건 패널의 공정 값 칸(공용 공정 칸 — 하나 고름)이 그 공정을 보이고, 읽은 키만 지워 테마
+    인자는 남는다.
     """
+    from capa_simulation.components.process_field import CONTEXT_KEY, FIELD_KEY
+
     app = _app.run()
     app.switch_page(PROCESS_CAPA_DETAIL.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
-    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    options = list(app.session_state[CONTEXT_KEY].options)
     target = options[-1]
 
     app.query_params.update({"process": target, "from": "home"})
@@ -2463,7 +2466,8 @@ def test_the_process_detail_page_opens_from_its_address_inside_the_app(_app: App
     app.run()
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == target
+    assert app.session_state[PROCESS_DETAIL_PROCESS_KEY] == target
+    assert FIELD_KEY in {button.key for button in app.sidebar.button}
     assert "process" not in app.query_params
     assert "from" not in app.query_params
     assert app.query_params.get("theme") == ["dark"]

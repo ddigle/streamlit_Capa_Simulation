@@ -681,6 +681,75 @@ def test_an_address_process_without_a_month_opens_that_process_default_month() -
     assert (_entry(app).process, _entry(app).month) == ("DEMO-A", 202602)
 
 
+def _following_entry_app() -> None:
+    import streamlit as st
+
+    from capa_simulation import shared_process
+    from capa_simulation.process_detail_state import (
+        resolve_process_and_month,
+        take_process_detail_request,
+    )
+
+    options = ["DEMO-A", "DEMO-B", "DEMO-C"]
+    st.session_state["test_entry"] = resolve_process_and_month(
+        options,
+        [202601, 202602, 202603],
+        request=take_process_detail_request(),
+        default_process="DEMO-B",
+        default_month=lambda process: {"DEMO-A": 202602, "DEMO-C": 202603}.get(process or ""),
+        follow=lambda entered: shared_process.follow_single(
+            "공정 Capa 상세", options, entered=entered
+        ),
+    )
+
+
+def test_a_single_shared_process_opens_once_with_its_first_shortfall_month() -> None:
+    """공용 공정이 하나이고 목록에 있으면 값이 바뀐 뒤 첫 회차에 그 공정 · 첫 미달 달을 연다(받기만
+    — 2026-11-08 사용자 답 P2-2). 이 화면에서 다른 공정을 고르면 다음 회차에 덮지 않는다."""
+    from test_process_field import share
+
+    app = AppTest.from_function(_following_entry_app).run()
+    assert _entry(app).process == "DEMO-B"
+
+    share(app, ["DEMO-C"])
+    app.run()
+    assert (_entry(app).process, _entry(app).month) == ("DEMO-C", 202603)
+
+    app.session_state[PROCESS_DETAIL_PROCESS_KEY] = "DEMO-A"
+    app.run()
+    assert _entry(app).process == "DEMO-A"
+
+
+def test_several_shared_processes_keep_the_process_being_viewed() -> None:
+    from test_process_field import share
+
+    app = AppTest.from_function(_following_entry_app).run()
+    share(app, ["DEMO-A", "DEMO-C"])
+    app.run()
+    assert _entry(app).process == "DEMO-B"
+
+
+def test_a_home_cell_wins_over_the_shared_process_and_is_not_overridden_later() -> None:
+    """HOME 그림 칸 · 카드 링크 · 주소로 들어온 공정이 공용 값보다 이긴다(2026-10-22 정체성 결정) —
+    들어온 다음 회차에도 공용 값이 덮지 않는다."""
+    from test_process_field import share
+
+    app = AppTest.from_function(_following_entry_app).run()
+    share(app, ["DEMO-C"])
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process="DEMO-A", month=202602, section=HOME_KEY_PROCESS_SECTION, displayed_rate=1.0
+    )
+    app.run()
+    assert _entry(app).process == "DEMO-A"
+    app.run()
+    assert _entry(app).process == "DEMO-A"
+
+    app.query_params.update({"process": "DEMO-B"})
+    share(app, ["DEMO-C"])
+    app.run()
+    assert _entry(app).process == "DEMO-B"
+
+
 def test_the_transfer_slot_wins_is_consumed_and_starts_the_origin_band() -> None:
     app = AppTest.from_function(_detail_entry_app).run()
     request = ProcessDetailRequest(

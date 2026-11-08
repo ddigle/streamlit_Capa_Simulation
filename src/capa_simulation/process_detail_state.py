@@ -594,8 +594,9 @@ def resolve_process_and_month(
     request: ProcessDetailRequest | None,
     default_process: Callable[[], str | None] | str | None,
     default_month: Callable[[str | None], int | None] | int | None = None,
+    follow: Callable[[bool], str | None] | None = None,
 ) -> ProcessDetailEntry:
-    """페이지 첫머리, **공정 선택 상자를 만들기 전에** 부른다. 공정·달을 정해 세션에 적는다.
+    """페이지 첫머리, **공정 값 칸을 그리기 전에** 부른다. 공정·달을 정해 세션에 적는다.
 
     차례:
     1. 페이지가 맨 앞에서 꺼낸 전달 칸(`request` — `take_process_detail_request`). HOME 이 적은 값이
@@ -604,7 +605,10 @@ def resolve_process_and_month(
        (`PROCESS_DETAIL_QUERY_SEEN_KEY`)과 다를 때만. 이 화면에 머무는 동안 같은 묶음이 다시 오면
        (옛 주소가 되돌아옴·뒤로가기로 인자 달린 기록 칸에 닿음) 적용하지 않는다. 읽은 인자는 어느
        쪽이든 그 키만 지운다.
-    3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정 상자로 공정을 바꾼 회차는 ◀▶ 와 같이
+    2-1. `follow`(공용 공정 따라가기 — `shared_process.follow_single`)를 들어온 회차인지(1·2)와 함께
+       부른다. 들어온 길이 이기고, 아니면 돌려준 공정(공용 값이 바뀐 뒤 처음이고 하나일 때만)을 세션
+       값으로 적는다 — 아래 3 처럼 그 공정의 첫 미달 달을 연다(2026-11-08 사용자 답 P2-2).
+    3. 둘 다 없으면 세션 값(지난번에 보던 공정·달)이다. 공정 칸으로 공정을 바꾼 회차는 ◀▶ 와 같이
        그 공정의 첫 미달 달(`default_month`)을 열고, 미달이 없는 공정은 보던 달을 둔다.
     4. 세션도 비었으면 기본값 — 공정은 `default_process`, 달은 `default_month`. 둘 다 함수일 수
        있고(공정은 인자 없이, 달은 공정을 받아 — 그 공정의 첫 확보 기준 미달 달 같은 것), 함수는
@@ -656,6 +660,11 @@ def resolve_process_and_month(
         # 걷힌 뒤)은 칸을 남긴다 — 뒤로가기로 인자 달린 기록 칸에 닿아도 그 링크를 다시 적용하지
         # 않게. 다른 화면에서 다시 들어오면 새 방문이라 칸과 상관없이 적용한다.
         st.session_state.pop(PROCESS_DETAIL_QUERY_SEEN_KEY, None)
+
+    if follow is not None:
+        followed = follow(entered)
+        if followed is not None and not entered and followed in set(options):
+            st.session_state[PROCESS_DETAIL_PROCESS_KEY] = followed
 
     fallback_memo: list[str | None] = []
 
