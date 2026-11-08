@@ -430,7 +430,7 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             value4, caption4 = _EMPTY, "개조를 끄면 비가동 없이 배정만 바꿉니다"
         elif splits and kpis.max_dedicated > 0:
             # 값은 실제로 개조하는(비가동을 만드는) 대수, 회색 줄은 전용 최대의 구성이다. 회색 줄은
-            # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창 수·첫 비가동은 개조 창 카드가
+            # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창마다 날짜는 그래프 띠 막대 풍선이
             # 말한다(2026-10-26 사본 앱 1440px: 긴 줄이면 넷째 카드가 아래 줄로 내려갔다).
             modified = kpis.modified_units or 0
             pieces = free_parts(

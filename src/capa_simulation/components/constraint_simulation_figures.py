@@ -376,8 +376,8 @@ def general_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
 
 
 def _line_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
-    """그래프 기준선 끝 글 — 「110%」·「(월별)」. 「HOME」 은 머리 한 줄이 말한다(오른쪽 여백이
-    좁다)."""
+    """그래프 기준선 끝 글 — 「110%」·「(월별)」. 「HOME」 은 사이드바 「기준 확보율」 칸이
+    말한다(오른쪽 여백이 좁다)."""
     if labels.general_percent is not None:
         return f"{labels.general_percent:g}%"
     targets = {row.general_target for row in result.months}
