@@ -24,6 +24,7 @@ from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.runtime.fragment import MemoryFragmentStorage
 from streamlit.runtime.scriptrunner import RerunData, ScriptRunnerEvent
 from streamlit.runtime.scriptrunner_utils.script_requests import ScriptRequests
+from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1 import app_test as app_test_module
 from streamlit.testing.v1.element_tree import ElementTree, parse_tree_from_messages
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner, require_widgets_deltas
@@ -67,6 +68,30 @@ class FragmentBrowser:
         """`@st.fragment(key=...)` 로 단 프래그먼트의 id. 이번 앱 전체 회차에 등록돼 있어야 한다."""
         (fragment_id,) = self.storage.resolve_target(key)
         return fragment_id
+
+    def dialog_widget_id(self) -> str:
+        """마지막 `run()` 이 그린 팝업 블록의 위젯 id — 브라우저는 닫기(X · 바깥 · Esc)를 이 id 의
+        트리거로 보낸다(`on_dismiss` 를 준 팝업만 id 가 있다)."""
+        for message in self.messages:
+            if message.WhichOneof("type") != "delta":
+                continue
+            delta = message.delta
+            if delta.WhichOneof("type") != "add_block":
+                continue
+            if delta.add_block.WhichOneof("type") == "dialog" and delta.add_block.dialog.id:
+                return str(delta.add_block.dialog.id)
+        raise AssertionError("마지막 run() 이 그린 팝업이 없다")
+
+    def send_trigger(self, app: AppTest, widget_id: str, fragment_queue: list[str]) -> AppTest:
+        """브라우저처럼 트리거 하나를 실은 회차를 청한다 — 마지막 회차 트리의 위젯 값도 함께 보낸다.
+        `fragment_queue` 가 비면 앱 전체 요청이다. 팝업 닫기(`dialog_widget_id`)처럼 AppTest 가 누를
+        위젯을 주지 않는 트리거를 보낸다."""
+        states = app._tree.get_widget_states()
+        pressed = states.widgets.add()
+        pressed.id = widget_id
+        pressed.trigger_value = True
+        self.fragment_queue = list(fragment_queue)
+        return app._run(widget_state=states)
 
 
 def install_fragment_browser(monkeypatch: pytest.MonkeyPatch) -> FragmentBrowser:

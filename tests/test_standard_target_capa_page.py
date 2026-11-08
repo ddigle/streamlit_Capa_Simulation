@@ -9,6 +9,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pandas as pd
 import pytest
 import streamlit as st
@@ -29,6 +30,7 @@ from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
 
 from capa_simulation import alerts
+from capa_simulation.persistence import equipment_cache
 from capa_simulation.scenario_preset_state import (
     STANDARD_TARGET_PROCESS_SELECTION_KEY,
     STANDARD_TARGET_SHOW_DETAIL_KEY,
@@ -929,6 +931,141 @@ def test_the_clear_dialog_still_opens_with_a_page_round(monkeypatch: pytest.Monk
     assert [slot for slot in slots.values() if slot[1] == host] == [("html", host)]
     assert ("dialog", "") in slots.values()
     assert app.checkbox(key="standard_target_clear_confirm") is not None
+
+
+PASTE_TEXT_KEY = "standard_target_availability_clipboard_text"
+
+
+def _record_downloads(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
+    """`st.download_button` 이 받은 바이트를 key 별로 잡는다 — 대본의 대역은 페이지를 도는 동안만
+    끼워져 호스트 · 팝업 회차의 양식을 잡지 못한다."""
+    downloads: dict[str, bytes] = {}
+    original = st.download_button
+
+    def record(label: str, *args: Any, **kwargs: Any) -> Any:
+        data = kwargs.get("data")
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        downloads[str(kwargs.get("key"))] = bytes(data or b"")
+        return original(label, *args, **kwargs)
+
+    monkeypatch.setattr(st, "download_button", record)
+    return downloads
+
+
+def test_the_paste_template_carries_what_another_session_saved_after_the_page_round(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """호스트만 도는 여는 회차에도 양식은 지금 저장값을 싣는다 — 페이지가 마지막 앱 전체 회차에
+    읽은 값이 아니라 팝업 본문이 다시 읽는다(`components/dialog_host.py` 쓰는 쪽이 지키는 것 1). 옛
+    값을 실으면 「고칠 칸만 고치고 양식을 통째로 되붙인다」 는 이 창의 쓰는 법대로 쓸 때 그 사이
+    남이 저장한 값을 알림 없이 덮는다(리비전 없는 upsert)."""
+    saved_by_other = pd.DataFrame(
+        {
+            "공정": ["Process-A", "Process-B"],
+            "Weeknum": ["26-W32", "26-W32"],
+            "가용대수": [9.0, 4.0],
+        }
+    )
+
+    class OtherSessionRepository:
+        schema_ahead = None
+
+        def load_standard_target_availability(self) -> pd.DataFrame:
+            return saved_by_other.copy()
+
+    browser = install_fragment_browser(monkeypatch)
+    downloads = _record_downloads(monkeypatch)
+    # 페이지 회차 밖(호스트 · 팝업 회차)의 설비 저장소 — 대본은 페이지를 도는 동안만 제
+    # 대역(가용대수 Process-A 2 대)을 끼우고 끝나면 이것으로 되돌린다.
+    monkeypatch.setattr(
+        equipment_cache, "get_equipment_repository", lambda _path: OtherSessionRepository()
+    )
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+
+    # 다른 세션이 저장했다 — 같은 프로세스의 읽기 캐시를 비우고 쓰기 세대를 올린다.
+    equipment_cache.clear_standard_target_availability_cache()
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]], "여는 회차가 호스트만 돌지 않았다"
+
+    template = pd.read_csv(
+        BytesIO(downloads[TEMPLATE_KEY]), encoding="utf-8-sig", dtype="object"
+    ).set_index(["공정", "Weeknum"])["가용대수"]
+    assert template[("Process-A", "26-W32")] == "9.0"
+    assert template[("Process-B", "26-W32")] == "4.0"
+    assert template.loc["Process-A"].drop("26-W32").isna().all()
+
+
+def test_a_saved_availability_the_dialog_cannot_read_refuses_instead_of_an_old_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """팝업 본문이 저장값을 다시 읽지 못하면(설비 DB 잠김 등) 옛 값으로 양식을 만들지 않는다 —
+    알림창으로 거절하고 글 칸 · 양식을 세우지 않는다."""
+
+    class LockedRepository:
+        schema_ahead = None
+
+        def load_standard_target_availability(self) -> pd.DataFrame:
+            raise duckdb.IOException("설비 DB 가 다른 프로세스에 잠겼다")
+
+    browser = install_fragment_browser(monkeypatch)
+    downloads = _record_downloads(monkeypatch)
+    monkeypatch.setattr(
+        equipment_cache, "get_equipment_repository", lambda _path: LockedRepository()
+    )
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+
+    equipment_cache.clear_standard_target_availability_cache()
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    (refused,) = flashed(app, "error")
+    assert refused.code == "FL-04"
+    assert not app.text_area
+    assert TEMPLATE_KEY not in downloads
+
+
+def test_dismissing_the_paste_dialog_drops_its_text_so_reopening_announces_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """닫기(X · 바깥 · Esc)는 호스트만 돌아 Streamlit 이 팝업의 글 칸 값을 거두지 않는다 — 호스트가
+    그 값을 지운다(`render(widget_keys=)`). 남기면 앱 전체 회차 없이 다시 연 창에서 여는 알림 PA-01
+    이 뜨지 않는다(`paste_form.announce_on_open` 은 글 칸 값이 없을 때 방금 열린 것으로 본다)."""
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+    open_id = app.button(key="open_standard_target_availability_paste").id
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    dialog_id = browser.dialog_widget_id()
+    dialog = browser.fragment_of(PASTE_TEXT_KEY)
+
+    app.text_area(key=PASTE_TEXT_KEY).set_value("남은글\t26-W46\t1")
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert app.session_state[PASTE_TEXT_KEY] == "남은글\t26-W46\t1"
+
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert "standard_target_open_dialog" not in app.session_state
+    assert PASTE_TEXT_KEY not in app.session_state, "닫은 팝업의 글 칸 값이 세션에 남았다"
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    assert app.text_area(key=PASTE_TEXT_KEY).value == ""
 
 
 def _process_column_helps(app: AppTest) -> list[str]:

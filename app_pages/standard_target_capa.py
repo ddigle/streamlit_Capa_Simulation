@@ -146,6 +146,9 @@ PASTE_BUTTON_KEY = "open_standard_target_availability_paste"
 CLEAR_DIALOG = "availability_clear"
 AVAILABILITY_FLASH_KEY = "standard_target_availability_flash"
 PASTE_FORM_KEY = "standard_target_availability"
+# 붙여넣기 글 칸 — 팝업의 입력 위젯이라 닫을 때 호스트가 값을 지운다
+# (`DIALOG_HOST.render(widget_keys=)`).
+PASTE_TEXT_KEY = "standard_target_availability_clipboard_text"
 CLEAR_FORM_KEY = "standard_target_clear"
 CLEAR_CONFIRM_KEY = "standard_target_clear_confirm"
 # 「붙여넣기 적용」 쓰기의 세대 — 저장에 성공한 회차에 오른다. 같은 세대의 누름은 한 번만 쓴다.
@@ -980,24 +983,35 @@ def _open_dialog(name: str) -> None:
 def _paste_dialog() -> None:
     """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다).
 
-    호스트(`DIALOG_HOST`)가 부르는 팝업이라 이 본문은 직전 앱 전체 회차의 값(공정 필터 · 조회일 ·
-    저장된 가용설비)을 쓴다. 저장에 성공하면 열림 칸을 지우고 앱 전체를 다시 돌린다
-    (`DIALOG_HOST.finish`).
+    호스트(`DIALOG_HOST`)가 부르는 팝업이라 이 본문의 공정 필터 · 조회일은 직전 앱 전체 회차의
+    값이다(이 세션만 바꾸는 값). 저장된 가용설비는 다른 세션이 바꾸는 공용 현행값이라 본문에서 다시
+    읽는다. 저장에 성공하면 열림 칸을 지우고 앱 전체를 다시 돌린다(`DIALOG_HOST.finish`).
     """
     paste_generation = generation(AVAILABILITY_SAVE_GENERATION_KEY)
     # 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
     # 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
     # 덮인다(2026-09-29 버그 보고). 양식 단추는 이 창 한 곳이다(설계 규칙 UI-LAY-12 · UI-INP-08).
+    # 저장값은 페이지가 읽은 `availability` 가 아니라 여기서 다시 읽는다 — 호스트만 도는 여는
+    # 회차의 그 값은 이 화면의 마지막 앱 전체 회차의 것이라, 그 뒤 다른 세션이 저장한 값을 양식에
+    # 싣지 못하고 그 양식을 되붙이면 남의 저장을 옛 값으로 덮는다(리비전 없는 upsert 라 되돌릴
+    # 판도 없다). 읽기 캐시는 DB stamp · 쓰기 세대가 키라 값싸다.
+    try:
+        saved_availability = load_standard_target_availability(equipment_database)
+    except BOOTSTRAP_ERRORS as exc:
+        refuse_paste(
+            PASTE_FORM_KEY, bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        )
+        return
     template_csv = get_weekly_availability_template_csv(
         tuple(target_processes),
         start_date,
         end_date,
-        frame_digest(availability),
-        _saved=availability,
+        frame_digest(saved_availability),
+        _saved=saved_availability,
     )
     submit = render_paste_form(
         PASTE_FORM_KEY,
-        text_key="standard_target_availability_clipboard_text",
+        text_key=PASTE_TEXT_KEY,
         text_label="가용설비 표 붙여넣기",
         apply_label="붙여넣기 적용",
         template=PasteTemplate(
@@ -1106,7 +1120,7 @@ with action_row:
     render_flash(AVAILABILITY_FLASH_KEY)
 # 붙여넣기 팝업의 호스트 — 매 앱 전체 회차 빠짐없이, 아래 멈춤(`st.stop()`)보다 앞이다. 이벤트 칸에
 # 늘 한 자리를 쓰므로 「입력 초기화」 팝업은 그 뒤 자리에 선다.
-DIALOG_HOST.render({PASTE_DIALOG: _paste_dialog})
+DIALOG_HOST.render({PASTE_DIALOG: _paste_dialog}, widget_keys={PASTE_DIALOG: (PASTE_TEXT_KEY,)})
 if st.session_state.get(DIALOG_KEY) == CLEAR_DIALOG:
     _clear_dialog()
 

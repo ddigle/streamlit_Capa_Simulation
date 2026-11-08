@@ -18,7 +18,7 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.components.dialog_host import IDLE_MARKUP, DialogHost
+from capa_simulation.components.dialog_host import IDLE_MARKUP, WIDGET_KEYS_SUFFIX, DialogHost
 
 HOST_KEY = "demo_dialog_host"
 OPEN_KEY = "demo_open_dialog"
@@ -42,8 +42,12 @@ IDLE = False
 @keeps_app_run_open
 def paste_dialog(label: str = "기본") -> None:
     st.session_state["dialog_runs"] = st.session_state.get("dialog_runs", 0) + 1
+    # 여는 알림(`paste_form.announce_on_open`)과 같은 판정 — 입력 칸 값이 세션에 없으면 방금 열렸다.
+    st.caption(f"방금 열림 {'demo_paste_text' not in st.session_state}")
     st.text_input("붙여넣을 글", key="demo_paste_text")
+    confirmed = st.checkbox("확인합니다", key="demo_confirm")
     st.caption(f"인자 {label}")
+    st.button("지우기", key="demo_delete", disabled=not confirmed)
     if st.button("적용", key="demo_apply"):
         st.session_state["applied"] = st.session_state.get("demo_paste_text", "")
         HOST.finish()
@@ -66,10 +70,14 @@ st.caption("뒤 본문")
 if PICKER:
     HOST.render(
         lambda value: partial(paste_dialog, label=value[1]) if isinstance(value, tuple) else None,
+        widget_keys=lambda value: ("demo_paste_text", f"demo_confirm_{value[1]}"),
         idle=(lambda: st.html("<style>/* 닫힘 표지 */</style>")) if IDLE else None,
     )
 else:
-    HOST.render({"paste": paste_dialog, "other": other_dialog})
+    HOST.render(
+        {"paste": paste_dialog, "other": other_dialog},
+        widget_keys={"paste": ("demo_paste_text", "demo_confirm"), "other": ()},
+    )
 # 호스트 뒤의 페이지 이벤트 칸 요소 — 팝업이 이 자리를 덮으면 안 된다.
 st.html("<style>.page-rule{display:block}</style>")
 run.finish()
@@ -157,6 +165,74 @@ def test_opening_and_closing_run_only_the_host(monkeypatch: pytest.MonkeyPatch) 
     assert browser.started == [[host]]
     assert app.session_state["page_runs"] == 1
     assert _event_slots(browser.messages) == {host_slot: page_slots[host_slot]}
+
+
+def test_dismissing_drops_the_dialog_inputs_so_a_reopened_dialog_starts_fresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """닫기(`on_dismiss`)는 호스트만 돌아 Streamlit 이 팝업 프래그먼트의 위젯을 거두지 않는다 —
+    닫기가 `render(widget_keys=)` 로 받은 그 팝업의 입력 위젯 값을 지운다(지키는 것 5). 앱 전체 회차
+    없이 다시 열어도 서버 판정이 기본값을 그린 화면과 같다 — 여는 알림이 다시 뜨고(방금 열림), 확인
+    체크로 잠근 단추가 잠긴 채 선다. 닫기 요청은 브라우저처럼 그려진 팝업 위젯 값과 닫기 트리거를
+    함께 싣는다."""
+    app, browser = _start(monkeypatch)
+    host = browser.fragment_keyed(HOST_KEY)
+    open_id = app.button(key="demo_open_paste").id
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert any(caption.value == "방금 열림 True" for caption in app.caption)
+    assert app.session_state[f"{HOST_KEY}{WIDGET_KEYS_SUFFIX}"] == (
+        "demo_paste_text",
+        "demo_confirm",
+    )
+    dialog_id = browser.dialog_widget_id()
+    dialog = browser.fragment_of("demo_paste_text")
+
+    app.text_input(key="demo_paste_text").set_value("남은 글")
+    app.checkbox(key="demo_confirm").check()
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert browser.started == [[dialog]]
+    assert app.button(key="demo_delete").disabled is False
+
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert app.session_state["page_runs"] == 1
+    assert OPEN_KEY not in app.session_state
+    for key in ("demo_paste_text", "demo_confirm", f"{HOST_KEY}{WIDGET_KEYS_SUFFIX}"):
+        assert key not in app.session_state, key
+
+    # 다시 열기. AppTest 는 `run()` 마다 러너를 새로 만들어 요청에 없는 위젯 값을 페이지 바뀜으로
+    # 거두므로 이 회차만으로는 남은 값을 가리지 못한다(위 단언이 가린다) — 지운 key 가 기본값으로
+    # 다시 서는지를 본다.
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert app.session_state["page_runs"] == 1
+    assert any(caption.value == "방금 열림 True" for caption in app.caption)
+    assert app.text_input(key="demo_paste_text").value == ""
+    assert app.checkbox(key="demo_confirm").value is False
+    assert app.button(key="demo_delete").disabled is True
+
+
+def test_finishing_drops_the_dialog_inputs_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`finish` 도 닫기를 거쳐 열림 칸과 함께 입력 위젯 값 · 그 key 칸을 지운다."""
+    app, browser = _start(monkeypatch)
+    app.button(key="demo_open_paste").click().run()
+    dialog = browser.fragment_of("demo_apply")
+
+    app.text_input(key="demo_paste_text").set_value("붙인 글")
+    app.button(key="demo_apply").click()
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert app.session_state["applied"] == "붙인 글"
+    for key in ("demo_paste_text", "demo_confirm", f"{HOST_KEY}{WIDGET_KEYS_SUFFIX}"):
+        assert key not in app.session_state, key
 
 
 def test_a_sidebar_box_opener_takes_no_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -269,6 +345,11 @@ def test_a_picker_passes_the_value_to_the_dialog_and_an_idle_marker_fills_the_cl
     app.run()
     assert not app.exception
     assert any(caption.value == "인자 r7" for caption in app.caption)
+    # key 가 열림 값에 달린 팝업은 `widget_keys` 도 함수다 — 그 값의 key 를 닫기가 볼 칸에 적는다.
+    assert app.session_state[f"{HOST_KEY}{WIDGET_KEYS_SUFFIX}"] == (
+        "demo_paste_text",
+        "demo_confirm_r7",
+    )
 
 
 def test_the_open_slot_must_be_a_page_dialog_slot() -> None:
