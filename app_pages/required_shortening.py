@@ -33,6 +33,7 @@ from capa_simulation.components.equipment_data_workspace import (
     calculation_drafts,
     ensure_equipment_drafts,
     render_reopen_notices,
+    rerun_if_head_stale,
 )
 from capa_simulation.components.equipment_scenario_status import (
     baseline_equipment_refusal,
@@ -194,6 +195,7 @@ if using_dashboard_sample and not show_sample_fleet:
     with conditions_card:
         st.caption(NO_UNITS_MARK, help=NO_UNITS_HELP)
     st.caption("등록된 호기가 없습니다.")
+    rerun_if_head_stale()
     st.stop()
 
 # 소요대수는 활성 시나리오에 있다. 여기서는 계산이 서는지만 본다(적중이면 프레임을 풀지 않는다 —
@@ -248,3 +250,6 @@ render_required_shortening_tab(
     ),
     inactive_floors=inactive_floors,
 )
+# 남의 저장으로 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버린 회차 — 모든 위젯을 그린 뒤 한 번 다시
+# 돈다(`ensure_equipment_drafts` 가 표지를 단다).
+rerun_if_head_stale()

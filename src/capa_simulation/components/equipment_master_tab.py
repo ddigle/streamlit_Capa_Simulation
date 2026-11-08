@@ -85,6 +85,7 @@ from capa_simulation.components.equipment_data_workspace import (
     buffer_base,
     buffer_has_layout_edits,
     carry_layout_memo,
+    carry_until_head_rerun,
     equipment_buffer_generation,
     floor_layout_words,
     grid_loaded_ids,
@@ -276,6 +277,10 @@ UNDO_PRESS_KEY: Final = "equipment_master_undo_press_v1"
 DISCARD_POPOVER_KEY: Final = "equipment_master_discard_v1"
 DISCARD_CONFIRM_KEY: Final = "equipment_master_discard_confirm_v1"
 SAVE_RESULT_KEY: Final = "equipment_master_save_result_v1"
+# 머리를 다시 그리려 다시 도는 회차가 그리는 앞 누름의 결과(남의 공통 저장에 진 거부) — 결과 칸과
+# 한 자리에 그린다. 결과 칸에 되돌리면 그 회차가 그리기 전에 온 둘째 누름의 결과가 덮는다
+# (`carry_until_head_rerun`).
+SAVE_RESULT_CARRIED_KEY: Final = "equipment_master_save_result_carried_v1"
 # 불러오기 · 목록 비우기 결과 칸 — 고칠 입력이 없어 알림창 · Alarm 으로만 낸다(`_load_result`).
 LOAD_RESULT_KEY: Final = "equipment_master_load_result_v1"
 # 불러오기 줄 끝 메뉴 — 팝오버 key 꼬리는 메뉴 세대다. 「엑셀·CSV로 한꺼번에」 가 세대를 올려
@@ -1091,19 +1096,21 @@ def _render_head(
     return str(table)
 
 
-LAYOUT_LOCK_CAPTION: Final = (
-    ":material/lock: 배치 편집이 잠겨 있어, 원래 있던 호기의 배치 칸은 고칠 수 없고 새 호기는 자리 "
-    "없이 들어갑니다."
+# 배치 잠금 표지 — Space 현황의 같은 표지(`LAYOUT_LOCK_MARK`)와 같은 한 마디다. 무엇이 잠기는지와
+# 까닭은 풍선이 말한다(`layout_lock_help`, 설계 규칙 UI-TXT-01 · UI-INP-07).
+LAYOUT_LOCK_MARK: Final = ":material/lock: 배치 잠김"
+LAYOUT_LOCK_HELP: Final = (
+    "배치 편집이 잠겨 있어, 원래 있던 호기의 배치 칸은 고칠 수 없고 새 호기는 자리 없이 들어갑니다."
 )
 
 
-def layout_lock_caption(reason: str | None) -> str:
-    """배치 잠금 한 줄 — 무엇이 잠기는지 한 문장, 까닭(`master_tab_lock_reason`)은 둘째 문장. 까닭
-    글에도 대시가 있어 「— 까닭」 으로 이으면 대시 둘이 이어 붙는다. 까닭은 평문 겸용 글이라 통째로
-    `literal_markdown` 으로 막는다."""
+def layout_lock_help(reason: str | None) -> str:
+    """배치 잠김 표지의 풍선 — 무엇이 잠기는지 한 문장, 까닭(`master_tab_lock_reason`)은 둘째 문장.
+    까닭 글에도 대시가 있어 「— 까닭」 으로 이으면 대시 둘이 이어 붙는다. 까닭은 평문 겸용 글이라
+    통째로 `literal_markdown` 으로 막는다."""
     if not reason:
-        return LAYOUT_LOCK_CAPTION
-    return f"{LAYOUT_LOCK_CAPTION} {literal_markdown(reason)}"
+        return LAYOUT_LOCK_HELP
+    return f"{LAYOUT_LOCK_HELP} {literal_markdown(reason)}"
 
 
 def _render_notices(
@@ -1119,7 +1126,11 @@ def _render_notices(
             st.warning(literal_markdown(_stale_lock_message(basis)), icon=":material/lock_clock:")
         layout = layout_mode.layout
         if layout == "locked":
-            st.caption(layout_lock_caption(layout_mode.master_tab_lock_reason))
+            st.caption(
+                LAYOUT_LOCK_MARK,
+                help=layout_lock_help(layout_mode.master_tab_lock_reason),
+                width="content",
+            )
         # 가정 배치가 어디에 저장되나는 맨 위 줄 설비 시나리오 알약의 풍선이 말한다 — 자리에 같은
         # 설명 줄을 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-07).
         frames: Frames = st.session_state[BUFFER_KEY]
@@ -1323,7 +1334,7 @@ def _render_save_section(
                 "drawn_base": context.base,
             },
         )
-    slot = render_flash(SAVE_RESULT_KEY)
+    slot = render_flash(SAVE_RESULT_CARRIED_KEY, SAVE_RESULT_KEY)
     # 낡은 세션의 낡기 전 편집(버려질 칸·지운 호기)이 저장을 막으면 그 거절 곁에서 최신으로 옮긴다 —
     # 버려질 칸은 「저장하기 전에 고칠 것」 줄이 적는다.
     if stale_save_refusal(frames, basis) is not None:
@@ -1389,6 +1400,8 @@ def render_equipment_master_tab(
     drafts_replaced: bool = False,
 ) -> None:
     """탭 ① 본문. 페이지가 `ensure_equipment_drafts` 를 부른 뒤, 탭이 열린 회차에만 부른다."""
+    # 남의 저장에 진 「리비전 저장」 거부는 머리를 다시 그리려 다시 도는 회차가 그린다(페이지 끝).
+    carry_until_head_rerun(SAVE_RESULT_KEY, into=SAVE_RESULT_CARRIED_KEY)
     basis = session.save_basis()
     layout: LayoutMode = layout_mode.layout
     settle_bulk_restore()

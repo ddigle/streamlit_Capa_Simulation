@@ -56,6 +56,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_fab_layout,
     pop_drafts_replaced,
     render_reopen_notices,
+    rerun_if_head_stale,
     settle_grid_toasts,
     small_editor_edits,
 )
@@ -612,3 +613,6 @@ with master_tab:
         # 표 마운트가 사라진 회차 — 실어 보낸 토스트를 거둔다(돌아왔을 때 닫은 토스트가 되살아나지
         # 않게, `settle_grid_toasts`).
         settle_grid_toasts(())
+# 남의 저장으로 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버린 회차 — 모든 위젯을 그린 뒤 한 번 다시
+# 돈다(`ensure_equipment_drafts` 가 표지를 단다).
+rerun_if_head_stale()

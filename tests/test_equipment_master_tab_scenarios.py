@@ -51,14 +51,15 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
 from capa_simulation.components.equipment_master_tab import (
-    LAYOUT_LOCK_CAPTION,
+    LAYOUT_LOCK_HELP,
+    LAYOUT_LOCK_MARK,
     SAVE_BUTTON_KEY,
     SIDE_CHANGES,
     SIDE_HISTORY,
     SIDE_KEY,
     STALE_SCENARIO_EDITS,
     TABLE_KEY,
-    layout_lock_caption,
+    layout_lock_help,
     save_target,
 )
 from capa_simulation.components.equipment_save_fields import EquipmentSaveBasis
@@ -73,6 +74,8 @@ from capa_simulation.services.korean_particle import object_particle
 PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 OPERATIONS = "operations"
 GROUP_REFUSAL = "가정 설비 시나리오에서는 공식 층이 다른 호기를 한 묶음으로 묶지 않습니다"
+# 남의 공통 저장에 진 「리비전 저장」 거부 글의 끝 문장(`common_conflict_reopened`).
+REOPENED_TAIL = "최신 저장본을 확인한 뒤 다시 고쳐 저장하세요."
 
 
 @pytest.fixture(autouse=True)
@@ -406,12 +409,14 @@ def test_a_stale_session_import_is_refused_and_a_locked_layout_paste_too(
     assert isinstance(app.session_state[PREVIEW_KEY], ImportReview)
 
 
-def test_the_layout_lock_line_gives_its_reason_as_a_second_sentence(
+def test_the_layout_lock_is_a_mark_whose_help_gives_the_reason_as_a_second_sentence(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """남이 그 가정 시나리오에 다른 배치를 저장한 낡은 세션의 배치 잠금 한 줄 —
-    「잠겨 있어 있던」 이 어색했고, 까닭 글(「… 저장됐습니다 — 배치를 고치려면 …」)을 「— 까닭」
-    으로 이어 대시 둘이 이어 붙었다(E2E). 무엇이 잠기는지 한 문장, 까닭은 그 뒤 둘째 문장이다."""
+    """남이 그 가정 시나리오에 다른 배치를 저장한 낡은 세션의 배치 잠금 — 자리에는 표지
+    「배치 잠김」 한 마디이고(Space 현황 표지와 같은 꼴, 설계 규칙 UI-TXT-01 · UI-INP-07), 무엇이
+    잠기는지 한 문장과 까닭은 풍선이다. 「잠겨 있어 있던」 이 어색했고, 까닭 글(「… 저장됐습니다 —
+    배치를 고치려면 …」)을 「— 까닭」 으로 이어 대시 둘이 이어 붙었다(E2E) — 까닭은 그 뒤 둘째
+    문장이다."""
     repository, setup = _two_scenarios(tmp_path)
     pinned = _scenario(repository, setup).latest_schedule_revision_id
     theirs = _session(repository, setup)
@@ -421,14 +426,15 @@ def test_the_layout_lock_line_gives_its_reason_as_a_second_sentence(
 
     app = _page(repository, setup, pinned)
 
-    lines = [text for text in _texts(app, "caption") if text.startswith(LAYOUT_LOCK_CAPTION)]
-    assert len(lines) == 1, lines
-    line = lines[0]
-    assert line.startswith(LAYOUT_LOCK_CAPTION + " ")
-    assert "잠겨 있어 있던" not in line
-    assert line.count(" — ") == 1, line
-    assert "다른 배치가 저장됐습니다 — 배치를 고치려면 최신" in line
-    assert layout_lock_caption(None) == LAYOUT_LOCK_CAPTION
+    marks = [item for item in app.caption if item.value == LAYOUT_LOCK_MARK]
+    assert len(marks) == 1, _texts(app, "caption")
+    assert not [text for text in _texts(app, "caption") if "배치 편집이 잠겨" in text]
+    tip = str(marks[0].proto.help)
+    assert tip.startswith(LAYOUT_LOCK_HELP + " ")
+    assert "잠겨 있어 있던" not in tip
+    assert tip.count(" — ") == 1, tip
+    assert "다른 배치가 저장됐습니다 — 배치를 고치려면 최신" in tip
+    assert layout_lock_help(None) == LAYOUT_LOCK_HELP
 
 
 def test_an_assumption_import_grouping_across_official_floors_is_refused_before_preview(
@@ -638,6 +644,8 @@ def test_a_save_pressed_right_after_another_common_save_says_the_reopen_path(
     assert any("그 위에 다시 얹었습니다" in text for text in _texts(app, "warning"))
     errors = [text for text in _texts(app, "error") if "저장하지 않았습니다" in text]
     assert len(errors) == 1 and "이 화면을 그 저장본으로 다시 열었습니다" in errors[0], errors
+    # 끝 문장은 다시 얹은 편집이 남든 모두 버려지든 맞는 말이다 — 콜백은 그 차이를 모른다.
+    assert errors[0].endswith(REOPENED_TAIL), errors
     every = [*_texts(app, "error"), *_texts(app, "warning"), *_texts(app, "caption")]
     assert not any("화면을 다시 불러와" in text for text in every), every
     assert _buffer_value(app, "EQ-01", "X좌표") == 55
@@ -1004,8 +1012,8 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_ta
 def test_an_asterisk_scenario_name_stays_literal_in_every_markdown_spot_of_the_tab(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """설비 시나리오 이름 「E2E*가정*A」 — 낡은 세션 경고·배치 잠금 줄·비가동 「선택 행 삭제」
-    풍선이 별표를 `\\*` 로 막는다. 물결표만 막아 「E2E<em>가정</em>A」 로 기울고 별표가
+    """설비 시나리오 이름 「E2E*가정*A」 — 낡은 세션 경고·배치 잠김 표지 풍선·비가동 「선택 행
+    삭제」 풍선이 별표를 `\\*` 로 막는다. 물결표만 막아 「E2E<em>가정</em>A」 로 기울고 별표가
     사라졌다(2026-10-26 E2E r5 — 이 글들은 표(JS)의 평문 잠금 글에도 가서 그리는 자리에서
     막는다)."""
     repository = _seeded(tmp_path)
@@ -1021,17 +1029,19 @@ def test_an_asterisk_scenario_name_stays_literal_in_every_markdown_spot_of_the_t
 
     escaped = "E2E\\*가정\\*A"
     helps = [str(button.help) for button in app.button if button.help]
+    marks = [str(item.proto.help) for item in app.caption if item.proto.help]
     texts = [
         *_texts(app, "markdown"),
         *_texts(app, "caption"),
         *_texts(app, "warning"),
         *helps,
+        *marks,
     ]
     named = [text for text in texts if "가정" in text and "E2E" in text]
     assert named
     assert all(escaped in text for text in named), named
     assert any("가 더 새롭습니다" in text and escaped in text for text in _texts(app, "warning"))
-    assert any("다른 배치가 저장됐습니다" in text and escaped in text for text in named), named
+    assert any("다른 배치가 저장됐습니다" in text and escaped in text for text in marks), marks
     assert any("지울 수 없습니다" in text and escaped in text for text in helps), helps
 
 
