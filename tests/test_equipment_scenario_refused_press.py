@@ -207,6 +207,32 @@ def test_a_publish_press_on_a_revision_someone_else_just_published_says_nothing_
     assert flashed(app, "warning") == []
 
 
+def test_a_revision_someone_else_published_while_only_looked_at_says_nothing(
+    tmp_path: Path,
+) -> None:
+    """B 는 리비전을 고르기만 하고 「공식으로 지정」 을 누르지도 팝오버를 열지도 않았다 — 그 사이
+    A 가 같은 리비전을 지정했다. 누름 없이 온 B 의 회차(다른 칸 입력 · 화면을 오갔다 돌아옴)는
+    「지정할 것이 없습니다」 를 내지 않는다 — 팝오버 본문은 닫혀 있어도 늘 돌아 켜 둔 값을
+    적는다."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository).equipment_scenario_id
+    app = _opened(tmp_path, setup)
+    assert not app.button(key=PUBLISH_BUTTON_KEY).disabled
+    latest = next(
+        item.latest_schedule_revision_id
+        for item in repository.list_equipment_scenarios()
+        if item.equipment_scenario_id == setup
+    )
+    assert latest is not None
+    repository.publish_equipment_release(
+        latest, released_by=None, note=None, expected_latest_release_no=1
+    )
+
+    _ok(app.run())
+    assert app.button(key=PUBLISH_BUTTON_KEY).disabled
+    assert flashed(app, "warning") == []
+
+
 def test_an_own_publish_is_not_told_as_someone_elses(tmp_path: Path) -> None:
     """이 세션이 지정한 뒤 단추가 꺼진 회차는 「그 사이 다른 사용자가」 를 내지 않는다 — 누른 회차는
     켜 둔 값을 적지 않는다."""

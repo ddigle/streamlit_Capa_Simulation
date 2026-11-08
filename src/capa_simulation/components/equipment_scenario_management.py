@@ -205,7 +205,8 @@ RESTORE_BY_KEY = "equipment_scenario_manage_restore_by_v1"
 RESTORE_CONFIRM_KEY = "equipment_scenario_manage_restore_confirm_v1"
 RESTORE_BUTTON_KEY = "equipment_scenario_manage_restore_v1"
 # 확인 체크가 켜진 회차의 그 값 다섯 — 다음 회차에 값이 바뀌어 체크가 풀렸으면 그 까닭을 알린다
-# (Streamlit 1.63 은 잠가 그린 단추의 클릭을 서버에서 버려 누른 회차에 코드가 알 수 없다).
+# (Streamlit 1.63 은 잠가 그리거나 그리지 않은 단추의 클릭을 서버에서 버린다 — 그 누름은 단추를
+# 그리기 전에만 읽힌다, `_pressed_before_drawn`).
 RESTORE_AGREED_KEY = "equipment_scenario_manage_restore_agreed_v1"
 PUBLISH_BY_KEY = "equipment_scenario_manage_publish_by_v1"
 PUBLISH_NOTE_KEY = "equipment_scenario_manage_publish_note_v1"
@@ -216,9 +217,10 @@ PUBLISH_BUTTON_KEY = "equipment_scenario_manage_publish_v1"
 # 번호(v5 → v6)로, 남이 새 리비전을 저장했으면 본 적 없는 「최신이 아닙니다」 로 말없이 발행하지
 # 않는다.
 PUBLISH_SEEN_KEY = "equipment_scenario_manage_publish_seen_v1"
-# 「공식으로 지정」 을 켜 그린 회차(누르지 않은 회차만)의 확인 글 값. 다음 회차에 같은 리비전의
-# 단추가 남의 지정 · 저장으로 꺼졌으면 — 그 회차의 누름은 서버가 버린다(`RESTORE_AGREED_KEY` 와 같은
-# 까닭) — 아무것도 하지 않았다는 것을 한 번 알린다(`_announce_gone_press`).
+# 「공식으로 지정」 을 켜 그린 회차(누르지 않은 회차만)의 확인 글 값. 다음 회차가 그 단추의 누름으로
+# 왔는데 같은 리비전의 단추가 남의 지정 · 저장으로 꺼졌으면 — 그 누름은 서버가 버린다
+# (`RESTORE_AGREED_KEY` 와 같은 까닭) — 아무것도 하지 않았다는 것을 한 번 알린다
+# (`_announce_gone_press`). 누름 없이 온 회차는 알리지 않는다 — 팝오버를 열지 않아도 이 값은 적힌다.
 PUBLISH_ARMED_KEY = "equipment_scenario_manage_publish_armed_v1"
 # 그 사이 남의 쓰기로 꺼진 단추의 누름 알림 — 다음 회차 탭 맨 위 칸이 알림창 · Alarm 으로만
 # 낸다(아무것도 쓰지 않았고 그 자리에 고칠 입력이 없다 — 설계 규칙 UI-NTF-03).
@@ -472,6 +474,16 @@ def _refused(message: str) -> None:
     st.session_state.pop(RESTORE_AGREED_KEY, None)
     st.session_state.pop(CLEAR_LAYOUT_AGREED_KEY, None)
     st.rerun()
+
+
+def _pressed_before_drawn(key: str) -> bool:
+    """이번 회차가 `key` 단추의 누름으로 왔는가 — 그 단추를 그리기 **전**에 부른다.
+
+    브라우저가 보낸 앞 회차 단추의 누름은 그리기 전까지 세션 칸에 남고, 꺼진 채 그리면 Streamlit 이
+    지운다(그리지 않으면 아무도 읽지 않는다). 그 사이 꺼지거나 빠진 단추의 알림
+    (`_announce_gone_press`)은 이 누름이 있을 때만 낸다 — 누름 없이 온 회차(같은 탭의 다른 단추 ·
+    입력)를 끊으면 그 회차의 누름을 버린다."""
+    return st.session_state.get(key) is True
 
 
 def _announce_gone_press(message: str) -> NoReturn:
@@ -1582,10 +1594,14 @@ def _render_restore(
             st.caption(marker)
         same = "일정·비가동과" if official_scenario else "일정·비가동·가정 배치와"
         st.caption(f"최신 r{scenario.latest_revision_no}의 {same} 모두 같아 되돌릴 것이 없습니다.")
-        # 앞 회차에 확인 체크를 켠 같은 리비전인데 그 사이 남의 저장으로 단추가 빠졌다 — 그 회차의
-        # 누름은 버려졌다.
-        if isinstance(agreed_before, str) and agreed_before.startswith(
-            f"{scenario.equipment_scenario_id}__{revision.schedule_revision_id}__"
+        # 앞 회차에 확인 체크를 켠 같은 리비전의 「되돌리기」 를 눌렀는데 그 사이 남의 저장으로
+        # 단추가 빠졌다 — 그 누름은 버려졌다.
+        if (
+            isinstance(agreed_before, str)
+            and agreed_before.startswith(
+                f"{scenario.equipment_scenario_id}__{revision.schedule_revision_id}__"
+            )
+            and _pressed_before_drawn(RESTORE_BUTTON_KEY)
         ):
             _announce_gone_press(
                 restore_gone_message(scenario, revision, official_scenario=official_scenario)
@@ -2414,6 +2430,7 @@ def _render_publish(
     # 리비전이 공식이라 꺼진다 — 그 단추에 닿은 빠른 둘째 누름은 Streamlit 이 버리고, 첫 발행 알림은
     # 탭 맨 위 칸이 같은 id 로 다시 낸다(`flash.render_flash` — 아래 `note_notice`).
     disabled = blocked or released
+    pressed = _pressed_before_drawn(PUBLISH_BUTTON_KEY)
     if not st.button(
         "공식으로 지정",
         type="primary",
@@ -2434,12 +2451,13 @@ def _render_publish(
         if not disabled:
             st.session_state[PUBLISH_ARMED_KEY] = token
         elif (
-            isinstance(armed_before, tuple)
+            pressed
+            and isinstance(armed_before, tuple)
             and dict(armed_before).get("revision") == revision.schedule_revision_id
             and armed_before != token
         ):
-            # 앞 회차에 켜 그린 같은 리비전의 단추가 그 사이 남의 지정 · 저장으로 꺼졌다 — 그 회차의
-            # 누름은 버려졌다(이 세션의 지정 뒤 회차는 누른 회차가 적지 않아 여기 오지 않는다).
+            # 앞 회차에 켜 그린 같은 리비전의 단추를 눌렀는데 그 사이 남의 지정 · 저장으로 꺼졌다 —
+            # 그 누름은 버려졌다(이 세션의 지정 뒤 회차는 누른 회차가 적지 않아 여기 오지 않는다).
             _announce_gone_press(
                 publish_gone_message(scenario, revision, release_no, released=released)
             )

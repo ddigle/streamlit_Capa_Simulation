@@ -1644,14 +1644,20 @@ def _clear_gone_delete_confirm(current_name: str) -> None:
     """고름이 옮은 회차 — 영구 삭제 확인 칸에 빠진 보관본의 이름이 남았으면 칸을 비운다(칸을 그리기
     전이라 새 값을 적는다). 지금 고른 보관본(`current_name`)의 이름이면 그대로 둔다.
 
-    그 칸이 켠 「영구 삭제 실행」 은 이 회차에 꺼져 누름이 말없이 버려진다(남이 그 보관본을 먼저
-    되돌렸거나 지웠다). 그때는 아무것도 하지 않았다는 것을 알린다(`_refuse_gone_press` — 설계 규칙
-    UI-NTF-03). 이 세션이 방금 지우거나(`DELETE_CLEAR_KEY`) 되돌린 보관본이면(`held_flash`) 칸만
+    그 칸이 켠 「영구 삭제 실행」 을 이 회차에 눌렀으면 단추가 꺼져 그 누름이 말없이 버려진다(남이
+    그 보관본을 먼저 되돌렸거나 지웠다). 그때만 아무것도 하지 않았다는 것을 알린다
+    (`_refuse_gone_press` — 설계 규칙 UI-NTF-03). 다른 단추의 누름이나 입력으로 온 회차는 칸만
+    비우고 잇는다 — 이 칸은 숨은 탭에서도 늘 돌아, 끊으면 그 회차의 다른 탭 누름(설비 시나리오 지정
+    등)을 버린다. 이 세션이 방금 지우거나(`DELETE_CLEAR_KEY`) 되돌린 보관본이면(`held_flash`) 칸만
     비운다."""
     typed = st.session_state.get(DELETE_CONFIRM_KEY)
     if not isinstance(typed, str) or typed.strip() in ("", current_name):
         return
     st.session_state[DELETE_CONFIRM_KEY] = ""
+    # 단추를 그리기 전이라 브라우저가 보낸 앞 회차 단추의 누름이 그대로 읽힌다 — 꺼진 채 그리면
+    # Streamlit 이 그 누름을 지운다.
+    if st.session_state.get(DELETE_BUTTON_KEY) is not True:
+        return
     if st.session_state.get(DELETE_CLEAR_KEY) or held_flash(FLASH_KEY) is not None:
         return
     _refuse_gone_press()

@@ -3,7 +3,7 @@
 """설비 시나리오 1단계의 화면 몫(설계 5·6장 — 세션·화면 시험).
 
 - 시나리오 관리: 「설비 시나리오」 탭(표·복제·이름·발행·이어 쓰기 — 가용설비 현황의 탭이던 것,
-  2026-10-24), 설비 화면 옛 배포 흔적 경고의 「시나리오 관리에서 이어 쓰기」.
+  2026-10-24), 설비 화면 옛 배포 흔적 알림(`SB-19`)의 「그 화면으로」.
 - 가용설비 현황: 「일정 없음 n대」, 가정 설비 시나리오의 미확인 = 공식 일정 기준(Main·RawData 일정
   확인 목록), Preference(공용 Cut-off) 잠금.
 - 필요 단축 일정: 기준선 저장은 공식 발행 쌍에서만(거부 까닭 둘), 기준선 머리의 설비 시나리오 출처,
@@ -60,6 +60,7 @@ from capa_simulation.components.equipment_scenario_management import (
     CONTINUE_LOCKED_HELP,
     EQUIPMENT_SCENARIO_TAB,
     PUBLISH_BUTTON_KEY,
+    PUBLISH_NOTE_KEY,
     RENAME_BUTTON_KEY,
     RENAME_KEY,
     RESTORE_BUTTON_KEY,
@@ -1627,6 +1628,51 @@ def test_a_restore_confirmed_before_someone_else_restored_the_same_says_nothing_
     )
     _ok(app.run())
     assert flashed(app, "warning") == []
+
+
+def test_a_branch_press_after_someone_else_restored_the_same_is_not_eaten_by_the_restore_notice(
+    _shell: AppTest, tmp_path: Path
+) -> None:
+    """r1 되돌리기 확인 체크를 켠 채 같은 r1 의 「여기서 새 시나리오」 를 누른다 — 그 사이 다른
+    사용자가 같은 r1 로 되돌려 되돌리기 단추가 빠졌다. 되돌리기를 누르지 않았으니 「그 사이 같아짐」
+    알림으로 회차를 끊지 않고 새 시나리오를 만든다 — 끊으면 되돌리기 뒤에 그리는 단추의 누름이
+    버려진다. 쳐 둔 「공식 지정 메모」 도 남는다."""
+    repository = _repository(tmp_path)
+    _moved_on(repository)
+    first = _revision_id(repository, 1)
+    app = _scenario_tab(_shell)
+    app.selectbox(key=REVISION_KEY).set_value(first)
+    _ok(app.run())
+    _restore_confirm(app).check()
+    _ok(app.run())
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.restore_schedule_revision(
+        first,
+        expected_common_revision_id=str(repository.latest_revision_id()),
+        expected_latest_schedule_revision_id=_revision_id(repository, 2),
+        expected_release_no=release.release_no,
+        expected_layout_role="official",
+    )
+    clear_equipment_scenario_cache()
+
+    (memo,) = [item for item in app.text_input if str(item.key).startswith(PUBLISH_NOTE_KEY)]
+    memo.input("B 공식 지정 메모")
+    _ok(app.run())
+    (memo,) = [item for item in app.text_input if str(item.key).startswith(PUBLISH_NOTE_KEY)]
+    assert memo.value == "B 공식 지정 메모"
+    assert flashed(app, "warning") == []
+
+    (field,) = [item for item in app.text_input if str(item.key).startswith(CLONE_NAME_KEY)]
+    field.input("B 분기 시나리오")
+    app.button(key=CLONE_BUTTON_KEY).click()
+    _ok(app.run())
+    assert "B 분기 시나리오" in [
+        item.scenario_name for item in repository.list_equipment_scenarios()
+    ]
+    assert not any(
+        "되돌릴 것이 없습니다 — 아무것도" in item.value for item in flashed(app, "warning")
+    )
 
 
 def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(
