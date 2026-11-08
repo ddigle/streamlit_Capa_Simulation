@@ -265,7 +265,7 @@ function fillPaintOverlay(S) {
 function fillPointerDown(S, event, hit) {
   if (hit.kind !== 'handle' || !S.view.order.length) return false
   event.preventDefault()
-  if (S.edit) commitEdit(S, null, false)
+  if (S.edit) commitEdit(S)
   selClearPageSelection()
   focusGrid(S)
   S.fill.drag = { src: S.range(), plan: null }

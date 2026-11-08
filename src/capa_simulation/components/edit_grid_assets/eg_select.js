@@ -386,12 +386,23 @@ function selClear(S) {
   if (queueOp(S, { op: 'clear', rows: keys, cols })) setStatus(S, selText(S, 'cleared', '{n}칸 비움', keys.length * cols.length))
 }
 
+// 필터가 걸린 표인가 — 줄 수로 재지 않는다. 큰 표는 서버가 필터로 고른 줄만 실어 보기 줄 수가 실은 줄 수와 같다.
+function selNarrowed(S) {
+  const filters = S.feedData && S.feedData.table === S.model.table ? S.feedData.filters : null
+  return Boolean(filters && Object.keys(filters).length)
+}
+
 function selOnPaste(S, event) {
   if (event.defaultPrevented || !S.model || S.edit || event.target === S.dom.editor || !S.view.order.length) return
   event.preventDefault()
   const text = (event.clipboardData && event.clipboardData.getData('text/plain')) || ''
   if (!text) return
   const matrix = parseClipboard(text)
+  // 좁힌 표에 여러 줄을 붙이면 덩어리 줄이 보이는 줄에 차례로 들어가 다른 줄 값이 바뀐다 — 한 줄만 받는다.
+  if (matrix.length > 1 && selNarrowed(S)) {
+    setStatus(S, selText(S, 'pasteFiltered', ''))
+    return
+  }
   for (const item of FEATURES) if (item.name !== 'select' && item.paste && item.paste(S, matrix, event) === true) return
   selPaste(S, matrix)
 }
@@ -500,7 +511,7 @@ function selKey(S, event) {
 function selPointerDown(S, event, hit) {
   if (hit.kind !== 'cell') return false
   event.preventDefault()
-  if (S.edit) commitEdit(S, null, false)
+  if (S.edit) commitEdit(S)
   selClearPageSelection()
   focusGrid(S)
   const cell = { r: hit.r, c: hit.c }

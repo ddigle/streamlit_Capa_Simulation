@@ -823,6 +823,69 @@ const many = {
 )
 
 
+_BURST = (
+    _DOM
+    + """
+// 브라우저처럼 — 초점 든 칸이 다시 그리기로 사라지면 그 자리에서 대상 없는 focusout 이 난다.
+const leaveIfGone = (node) => {
+  const active = document.activeElement
+  if (active && node.contains(active)) {
+    document.activeElement = null
+    fireOnly(active, 'focusout', { relatedTarget: null })
+  }
+}
+const replaceChild = FakeNode.prototype.replaceChild
+FakeNode.prototype.replaceChild = function (next, old) {
+  leaveIfGone(old)
+  return replaceChild.call(this, next, old)
+}
+const clearText = Object.getOwnPropertyDescriptor(FakeNode.prototype, 'textContent')
+Object.defineProperty(FakeNode.prototype, 'textContent', {
+  get() { return clearText.get.call(this) },
+  set(value) {
+    if (this.children.length) leaveIfGone(this)
+    clearText.set.call(this, value)
+  },
+})
+const out = {}
+;(async () => {
+  const m = mount(SCENARIOS)
+  click(press(cell(m.host, 'a', 'name')))
+  for (const [i, leave] of ['ArrowDown', 'ArrowDown', 'Enter'].entries()) {
+    type(editor(m.host), '이름' + i)
+    key(editor(m.host), leave)
+  }
+  out.burst = { sent: m.sent.length, box: m.host.__sgl.box.ops.length }
+  // 묶음이 든 동안 회차가 돌아와 표를 다시 그려도 끊지 않는다.
+  m.rerender({ ...SCENARIOS, orderToken: 'tok2' })
+  out.repaint = { sent: m.sent.length, edit: m.host.__sgl.edit }
+  await tick(330)
+  out.quiet = { sent: m.sent.length, ops: m.sent[m.sent.length - 1][1].ops.length }
+  // 진짜로 표 밖을 누르면 기다리지 않고 보낸다.
+  click(press(cell(m.host, 'a', 'name')))
+  const input = editor(m.host)
+  type(input, '밖')
+  document.activeElement = null
+  fireOnly(input, 'focusout', { relatedTarget: null })
+  out.outside = { sent: m.sent.length, edit: m.host.__sgl.edit }
+  m.cleanup()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+)
+
+
+def test_a_burst_of_name_edits_goes_out_once_after_the_quiet_time() -> None:
+    """이름 칸을 잇달아 고치면 보냄은 300ms 묶음 한 번이다(UI-PRF-02 「연속 N회 → 보냄 1회」). 확정이
+    입력 칸을 다시 그리면 대상 없는 focusout 이 나고, 그것을 부품 밖으로 나간 것으로 읽어 칸마다
+    회차가 돌았다(이름 4칸 3회차, 샘플 관측). 진짜로 표 밖을 누른 때는 곧바로 보낸다."""
+    out = _node({}, _BURST, _MOUNT_SOURCE)
+    assert out["burst"] == {"sent": 0, "box": 3}
+    assert out["repaint"] == {"sent": 0, "edit": None}
+    assert out["quiet"] == {"sent": 1, "ops": 3}, "이름 3칸 → 보냄 1회"
+    assert out["outside"] == {"sent": 2, "edit": None}, "표 밖 누름은 곧바로 보낸다"
+
+
 def test_repainting_keeps_speed_scroll_and_focus() -> None:
     source = _MOUNT_SOURCE.replace(
         "function applyMoves(order, moves) {\n",

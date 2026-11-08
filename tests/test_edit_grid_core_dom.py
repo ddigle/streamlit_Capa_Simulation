@@ -558,3 +558,240 @@ def test_read_view_takes_acks_and_a_flush_sends_only_unsent_ops() -> None:
     assert result["flushed"] == {"sent": 2, "seqs": [2]}, "묶음 안의 op 는 탭을 바꾸면 보낸다"
     assert result["timed"] == {"sent": 3, "seqs": [2, 3]}, "보낼 때는 ack 안 된 op 전부를 싣는다"
     assert result["cleanup"] == {"sent": 3}, "정리 함수는 이미 보낸 op 를 다시 보내지 않는다"
+
+
+RUNNER_BURST = (
+    RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
+    + r"""
+const R = {}
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const editor = q('.eg-ed')
+  // 브라우저처럼 — 초점 든 칸을 숨기면 대상 없는 focusout 이 난다(초점을 먼저 옮기면 나지 않는다).
+  let hidden = editor.hidden
+  Object.defineProperty(editor, 'hidden', {
+    get: () => hidden,
+    set(value) {
+      hidden = value
+      if (value && document.activeElement === editor) {
+        document.activeElement = null
+        fire(editor, 'focusout', { relatedTarget: null })
+      }
+    },
+  })
+  const typing = (value, leave) => {
+    key(scroller, 'Enter')
+    editor.value = value
+    leave()
+  }
+  const xOf = (c) => S.lefts[c] + S.widths[c] / 2
+  const yOf = (r) => S.headH + r * S.rowH + S.rowH / 2
+  const press = (r, c) => {
+    const at = { clientX: xOf(c), clientY: yOf(r), pointerId: 1 }
+    fire(scroller, 'pointerdown', at)
+    fire(scroller, 'pointerup', at)
+  }
+  // 앞서 고친 칸이 있는 표 — 첫 편집을 곧바로 보내는 갈래를 타지 않는다.
+  const enter = () => key(editor, 'Enter')
+  for (const value of ['61%', '62%', '63%', '64%', '65%', '66%']) typing(value, enter)
+  const active = () => document.activeElement === scroller
+  R.enter = { sent: sent.length, box: S.box.ops.length, active: active() }
+  await tick(360)
+  R.enterQuiet = { sent: sent.length, ops: sent[sent.length - 1].ops.length }
+  for (const value of ['71%', '72%', '73%']) typing(value, () => key(editor, 'Tab'))
+  R.tab = { sent: sent.length }
+  await tick(360)
+  R.tabQuiet = { sent: sent.length }
+  for (let r = 0; r < 3; r += 1) typing('8' + r + '%', () => press(r, 4))
+  R.press = { sent: sent.length, edit: S.edit, active: active() }
+  await tick(360)
+  R.pressQuiet = { sent: sent.length }
+  // 칸 편집 취소도 묶음을 끊지 않는다.
+  typing('91%', enter)
+  key(scroller, 'Enter')
+  key(editor, 'Escape')
+  R.cancel = { sent: sent.length, active: active() }
+  await tick(360)
+  R.cancelQuiet = { sent: sent.length }
+  // 진짜로 표 밖을 누르면 — 초점이 먼저 나가고 blur 뒤 focusout 이 온다 — 기다리지 않고 보낸다.
+  typing('92%', () => {
+    document.activeElement = null
+    fire(editor, 'blur', { relatedTarget: null })
+    fire(editor, 'focusout', { relatedTarget: null })
+  })
+  R.outside = { sent: sent.length, edit: S.edit }
+  // 창이 숨어도 기다리지 않고 보낸다.
+  typing('93%', enter)
+  const queued = sent.length
+  fireDoc('visibilitychange')
+  R.hidden = { queued, sent: sent.length }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time() -> None:
+    """칸을 잇달아 고치면 보냄은 300ms 묶음 한 번이다(UI-PRF-02 「연속 N회 → 보냄 1회」). 확정이
+    초점 든 편집 칸을 숨기면 브라우저가 대상 없는 focusout 을 내고, 그것을 표 밖으로 나간 것으로
+    읽어 칸마다 회차가 돌았다(u4-02 — 기준 정보 10칸 7회차, 샘플 관측). 진짜로 표 밖을 누른 때와
+    창이 숨을 때는 지금처럼 곧바로 보낸다."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    feed = _feed(index, "k1", {"cells": {"DEMO_B\x1f양산": {"202702": 0.5}}, "bad": {}}, undo=1)
+    source = FAKE_DOM + mountable(edit_grid.registered_js())
+    result = run_node(source, RUNNER_BURST, {"shell": shell, "feed": feed})
+    assert result["enter"] == {"sent": 0, "box": 6, "active": True}
+    assert result["enterQuiet"] == {"sent": 1, "ops": 6}, "Enter 연속 6칸 → 보냄 1회"
+    assert result["tab"] == {"sent": 1}
+    assert result["tabQuiet"] == {"sent": 2}, "Tab 연속 3칸 → 보냄 1회"
+    assert result["press"] == {"sent": 2, "edit": None, "active": True}
+    assert result["pressQuiet"] == {"sent": 3}, "칸을 눌러 옮긴 3칸 → 보냄 1회"
+    assert result["cancel"] == {"sent": 3, "active": True}
+    assert result["cancelQuiet"] == {"sent": 4}, "칸 편집 취소는 묶음을 끊지 않는다"
+    assert result["outside"] == {"sent": 5, "edit": None}, "표 밖 누름은 곧바로 보낸다"
+    assert result["hidden"] == {"queued": 5, "sent": 6}, "창이 숨으면 곧바로 보낸다"
+
+
+RUNNER_NEW_GEN = (
+    RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
+    + r"""
+const R = {}
+;(async () => {
+  sendFeed(input.feed)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const newGen = Object.assign({}, input.feed, { gen: 'g2' })
+  edit('61%')
+  await tick(360)
+  R.sentOne = { sent: sent.length, seqs: seqs() }
+  // 적용이 도는 사이 친 칸 — 묶음이 든 채 새 세대가 온다.
+  edit('62%')
+  edit('63%')
+  sendFeed(newGen)
+  R.newGen = { sent: sent.length, box: S.box.ops.length, previews: S.pending.size, gen: S.gen }
+  edit('64%')
+  await tick(360)
+  R.quiet = { sent: sent.length }
+  R.outbox = sent[sent.length - 1]
+  sendFeed(Object.assign({}, newGen, { acks: { [S.mount]: 4 }, toast: { id: 1, text: '셌다' } }))
+  R.acked = { box: S.box.ops.length, toast: S.dom.toast.hidden ? '' : S.dom.toast.textContent }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_ops_held_by_the_batch_when_the_table_renews_are_sent_and_counted() -> None:
+    """세대가 바뀌어도 보낼 목록에서 빼지 않는다. 묶음이 든 op 는 묶음이 끝나 나가고, 이미 보낸 op
+    도 함께 실린다 — 서버가 옛 세대를 세어 알리고 ack 가 지운다. 전에는 브라우저가 묶음이 든 op 를
+    말없이 뺐다(「변경사항 적용」 이 도는 사이 잇달아 친 칸이 토스트 없이 사라졌다, 샘플 관측)."""
+    shell, index = _shell(SPEC, _frame(), "k1")
+    feed = _feed(index, "k1", {"cells": {"DEMO_B\x1f양산": {"202702": 0.5}}, "bad": {}}, undo=1)
+    source = FAKE_DOM + mountable(edit_grid.registered_js())
+    result = run_node(source, RUNNER_NEW_GEN, {"shell": shell, "feed": feed})
+    assert result["sentOne"] == {"sent": 1, "seqs": [1]}
+    assert result["newGen"] == {"sent": 1, "box": 3, "previews": 0, "gen": "g2"}
+    assert result["quiet"] == {"sent": 2}
+    outbox = result["outbox"]
+    assert [(op["seq"], op["gen"]) for op in outbox["ops"]] == [
+        (1, "g1"),
+        (2, "g1"),
+        (3, "g1"),
+        (4, "g2"),
+    ]
+    assert result["acked"] == {"box": 0, "toast": "셌다"}
+    ops, _ = eg.new_ops({"demo_grid": outbox}, {})
+    history: eg.HistoryState = {"gen": "g2", "undo": [], "redo": []}
+    applied = eg.apply_ops(index, SPEC, None, history, ops)
+    assert applied.toasts == [eg.DROPPED_TOAST.format(n="3")], "서버가 옛 세대 셋을 센다"
+    assert eg.change_counts(applied.draft)[0] == 1, "새 세대 칸은 들어간다"
+
+
+RUNNER_FILTERED_PASTE = (
+    RUNNER_ACKS[: RUNNER_ACKS.index("const R = {}")]
+    + r"""
+const R = {}
+const paste = (scroller, text) => fire(scroller, 'paste', {
+  clipboardData: { getData: () => text },
+})
+;(async () => {
+  sendFeed(input.filtered)
+  const cleanup = mount(input.shell)
+  const S = host.__eg
+  const scroller = q('.eg-scroll')
+  const note = () => q('.eg-note').textContent
+  const ops = () => S.box.ops.map((op) => [op.rows, op.cols, op.values])
+  const seen = () => ({ rows: S.view.order.length, ops: ops(), note: note() })
+  R.shown = S.view.order.length
+  paste(scroller, '1\t2\n3\t4\n5\t6\n')
+  R.many = seen()
+  paste(scroller, '1\r\n2\r\n')
+  R.column = seen()
+  paste(scroller, '11%\t12%\r\n')
+  R.oneRow = seen()
+  paste(scroller, '21%\r\n')
+  R.oneCell = seen()
+  sendFeed(input.whole)
+  R.wholeShown = S.view.order.length
+  paste(scroller, '31%\n32%\n')
+  R.wholeMany = seen()
+  // 큰 표는 서버가 필터로 고른 줄만 싣는다 — 보기 줄 수가 실은 줄 수와 같아도 좁힌 표다.
+  sendFeed(input.capped)
+  mount(input.cappedShell)
+  const before = S.box.ops.length
+  R.cappedShown = [S.view.order.length, S.model.rows]
+  paste(scroller, '41%\n42%\n')
+  R.capped = { added: S.box.ops.length - before, note: note() }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_filtered_table_takes_one_row_of_paste_only() -> None:
+    """필터로 좁힌 표에 여러 줄을 붙이면 덩어리 줄이 보이는 줄에 차례로 들어가 다른 공정 값이
+    바뀐다 — 다섯 줄이 보이는 두 줄에 6칸 들어갔다(샘플 관측). 여러 줄은 막고 까닭을 상태 줄에
+    적는다. 한 줄 붙여넣기는 그대로 되고, 필터가 없는 표는 전처럼 여러 줄을 받는다."""
+    frame = _frame()
+    shell, index = _shell(SPEC, frame, "k1")
+    codes = {str(value): code for code, value in enumerate(shell["dims"][0])}
+    picked = {"0": [codes["DEMO_A"], codes["DEMO_C"]]}
+    whole = _feed(index, "k1", None)
+    filtered = {**whole, "filters": picked}
+    capped_shell, capped_index = _shell(SPEC, frame[frame["공정"] != "DEMO_B"], "k2")
+    capped_codes = {str(value): code for code, value in enumerate(capped_shell["dims"][0])}
+    capped = {
+        **_feed(capped_index, "k2", None),
+        "filters": {"0": [capped_codes["DEMO_A"], capped_codes["DEMO_C"]]},
+    }
+    result = run_node(
+        FAKE_DOM + mountable(edit_grid.registered_js()),
+        RUNNER_FILTERED_PASTE,
+        {
+            "shell": shell,
+            "filtered": filtered,
+            "whole": whole,
+            "capped": capped,
+            "cappedShell": capped_shell,
+        },
+    )
+    refused = str(edit_grid.texts(SPEC, changes_label="적용 전 변경")["pasteFiltered"])
+    assert "Excel 붙여넣기" in refused and "필터" in refused
+    assert result["shown"] == 2
+    assert result["many"] == {"rows": 2, "ops": [], "note": refused}, "여러 줄은 막는다"
+    assert result["column"] == {"rows": 2, "ops": [], "note": refused}, "한 칸 여러 줄도 막는다"
+    assert result["oneRow"]["ops"] == [
+        [["DEMO_A\x1f양산"], ["202701", "202702"], [["11%", "12%"]]]
+    ], "한 줄은 그대로 붙는다"
+    assert result["oneRow"]["note"] == "2칸 붙여넣음"
+    assert result["oneCell"]["ops"][-1][2] == [["21%"]], "끝 줄바꿈 하나는 여러 줄이 아니다"
+    assert result["wholeShown"] == 3
+    assert result["wholeMany"]["ops"][-1][2] == [["31%"], ["32%"]], "필터가 없으면 여러 줄을 받는다"
+    assert result["cappedShown"] == [2, 2]
+    assert result["capped"] == {"added": 0, "note": refused}, "서버가 좁힌 큰 표도 막는다"

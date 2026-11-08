@@ -328,7 +328,7 @@ function egApplyFeed(S, feed) {
   const m = S.model
   S.feedData = feed
   S.gen = String(feed.gen || '')
-  for (const op of boxDropStale(S.box, m.table, S.gen)) egDropPreview(S, op.seq)
+  for (const op of boxStale(S.box, m.table, S.gen)) egDropPreview(S, op.seq)
   const decoded = decodeDraft(feed, m.valueCount)
   m.draft = decoded.draft
   m.bad = decoded.bad
@@ -803,7 +803,7 @@ function egOnPointerDown(S, event) {
   for (const item of FEATURES) if (item.pointerdown && item.pointerdown(S, event, hit) === true) return
   if (hit.kind !== 'cell') return
   event.preventDefault()
-  if (S.edit) commitEdit(S, null, false)
+  if (S.edit) commitEdit(S)
   const selection = document.getSelection ? document.getSelection() : null
   if (selection && selection.rangeCount) selection.removeAllRanges()
   focusGrid(S)
@@ -984,6 +984,9 @@ function commitEdit(S, move, refocus) {
   const editor = S.dom.editor
   const text = editor.value
   S.edit = null
+  // 초점을 먼저 표로 옮기고 숨긴다 — 초점 든 칸을 숨기면 브라우저가 대상 없는 focusout 을 내고, 그것이 표 밖으로 나간 것으로
+  // 읽혀 300ms 묶음을 끊는다. refocus 가 false 면 초점이 이미 표 밖이다(blur · 앞 표 넘김 · 머리 누름 · 도구 단추).
+  if (refocus !== false) focusGrid(S)
   editor.hidden = true
   const m = S.model
   if (m && text !== edit.original && edit.r < S.view.order.length) {
@@ -995,7 +998,6 @@ function commitEdit(S, move, refocus) {
     setRange(S, next, next)
     scrollToCell(S, next.r, next.c)
   }
-  if (refocus !== false) focusGrid(S)
   S.committing = false
   paint(S)
   egWhere(S)
@@ -1005,8 +1007,8 @@ function cancelEdit(S) {
   if (!S.edit) return
   S.committing = true
   S.edit = null
-  S.dom.editor.hidden = true
   focusGrid(S)
+  S.dom.editor.hidden = true
   S.committing = false
   paint(S)
 }
