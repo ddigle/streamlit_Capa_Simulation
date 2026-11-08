@@ -1,6 +1,16 @@
 # Purpose: Web editor and Excel clipboard import for the global display-order profile.
 
-"""Web editor and Excel clipboard import for the global display-order profile."""
+"""Web editor and Excel clipboard import for the global display-order profile.
+
+표 위는 두 줄이다(설계 규칙 UI-LAY-11 — 2026-11-08 사용자 답 d7 · g18). 첫 줄은 「직접 편집」 제목과
+그 옆 공용 버전 줄(`profile_caption.render_profile_heading`) · 범위 고르기 둘, 둘째 줄은 폼 안
+저장 · 변경 메모 줄이고 그 오른쪽 끝에 CSV 다운로드 · Excel 붙여넣기가 함께 선다. 둘은 파이썬
+위젯이라 폼 안에 둘 수 없어(`st.download_button` · `st.button` 은 폼에서 막힌다) 폼 바로 앞 칸에
+그리고, 서식
+(`ACTION_ROW_STYLE`)이 그 칸을 저장 줄 높이의 오른쪽 끝에 얹는다 — 저장 줄은 그 폭만큼 오른쪽을 비워
+두어 창이 좁아 줄이 접혀도 겹치지 않는다. 결과 알림(「바뀐 것이 없습니다」 · 표시명 경고)은 저장 줄
+바로 아래 늘 서 있는 칸이다(사용자 답 d5).
+"""
 
 from __future__ import annotations
 
@@ -26,7 +36,7 @@ from capa_simulation.components.paste_form import (
     render_paste_form,
     tell_paste,
 )
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
@@ -98,6 +108,25 @@ DISPLAY_ORDER_UNCHANGED_MESSAGE = (
 DISPLAY_ORDER_FLASH_KEY = "display_order_flash"
 # 직접 편집 제목 줄의 범위 고르기 칸 폭(px) — 범위 이름이 한 칸에 들고 창 1100 에서도 한 줄이다.
 SCOPE_PICKER_WIDTH = 240
+# 저장 줄에 얹는 CSV · Excel 칸(모듈 설명). 칸 셋의 key 와 서식이다 — 바깥 칸이 기준 자리, 도구 칸은
+# 폼 테두리 안 저장 단추 높이(폼 테두리 · 안쪽 여백 1rem + 변경 메모 라벨 1.5rem + 라벨 아래
+# 0.25rem)의 오른쪽 끝, 저장 줄은 도구 칸 폭(`ACTION_ROW_RESERVE_REM` — CSV 다운로드 · Excel
+# 붙여넣기 둘과 사이, 사내 글꼴이 조금 넓어도 남게)만큼 오른쪽을 비운다.
+EDIT_BOX_KEY = "display_order_edit_box"
+EDIT_TOOLS_KEY = "display_order_edit_tools"
+SAVE_ROW_KEY = "display_order_save_row"
+ACTION_ROW_RESERVE_REM = 20
+ACTION_ROW_STYLE = f"""<style>
+.st-key-{EDIT_BOX_KEY} {{ position: relative; }}
+.st-key-{EDIT_BOX_KEY} > [data-testid="stLayoutWrapper"]:has(> .st-key-{EDIT_TOOLS_KEY}) {{
+  position: absolute;
+  top: 2.75rem;
+  right: 1rem;
+  width: auto;
+  z-index: 1;
+}}
+.st-key-{SAVE_ROW_KEY} {{ padding-right: {ACTION_ROW_RESERVE_REM}rem; }}
+</style>"""
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시순서 그대로라 새 버전을 만들지 않았습니다."
@@ -145,27 +174,9 @@ def render_display_order_management(
         )
         return
 
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        # 이 프로필만 `version == 0` 이 없다. 저장소가 1 부터 올리고 미초기화는
-        # 예외라, 공통 캡션의 「없음」 갈래에는 닿지 않는다.
-        st.caption(profile_version_caption(profile, empty="아직 저장한 표시순서가 없습니다"))
-        render_csv_download(
-            data=csv_bytes,
-            file_name=f"RQ_DISPLAY_ORDER_v{profile.version}.csv",
-            key="display_order_download",
-        )
-        st.button(
-            "Excel 붙여넣기",
-            icon=":material/content_paste:",
-            key="display_order_open_paste",
-            on_click=open_admin_dialog,
-            args=(PASTE_DIALOG,),
-        )
-    # 저장 성공과 그 저장의 표시명 경고는 같은 칸이다 — 경고 수만큼 아래 직접 편집(key 있는
-    # 편집표)이 밀리면 저장 회차(`st.rerun()` 으로 끊김)의 옛 자리에 흐린 사본이 남는다(AGENTS 9장
-    # 「조건부 알림」). 「바뀐 것이 없습니다」 는 이 칸이 아니라 저장 줄 바로 아래 칸이다.
-    notice = render_flash(DISPLAY_ORDER_FLASH_KEY)
-    _render_label_warnings(notice)
+    # 저장 · 붙여넣기 성공은 알림창으로만 나간다(칸은 늘 선다 — 비어 있다). 표시명 경고 ·
+    # 「바뀐 것이 없습니다」 는 저장 줄 바로 아래 칸이다(`_render_direct_editor`).
+    render_flash(DISPLAY_ORDER_FLASH_KEY)
     # 저장된 프로필의 겹친 분류값은 상태 알림(`AD-05` — 알림창 · Alarm, 자리에 그리지 않는다)이다.
     # 없어도 부른다(해소).
     if alert_tab is not None:
@@ -173,7 +184,7 @@ def render_display_order_management(
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, display_order, csv_bytes, profile.version)
-    _render_direct_editor(repository, display_order, profile.version, notice)
+    _render_direct_editor(repository, display_order, profile, csv_bytes)
 
 
 @st.dialog("Excel 붙여넣기 · 표시순서", width="large", on_dismiss=close_admin_dialog)
@@ -227,11 +238,30 @@ def _clipboard_dialog(
         st.rerun()
 
 
+def _render_edit_tools(profile: GlobalDisplayOrder, csv_bytes: bytes) -> None:
+    """저장 줄 오른쪽 끝에 얹는 CSV 다운로드 · Excel 붙여넣기(모듈 설명 — 폼 바로 앞 칸)."""
+    with st.container(
+        horizontal=True, vertical_alignment="center", gap="small", key=EDIT_TOOLS_KEY
+    ):
+        render_csv_download(
+            data=csv_bytes,
+            file_name=f"RQ_DISPLAY_ORDER_v{profile.version}.csv",
+            key="display_order_download",
+        )
+        st.button(
+            "Excel 붙여넣기",
+            icon=":material/content_paste:",
+            key="display_order_open_paste",
+            on_click=open_admin_dialog,
+            args=(PASTE_DIALOG,),
+        )
+
+
 def _render_direct_editor(
     repository: DuckDBScenarioRepository,
     display_order: pd.DataFrame,
-    version: int,
-    notice: DeltaGenerator,
+    profile: GlobalDisplayOrder,
+    csv_bytes: bytes,
 ) -> None:
     """범위 하나의 직접 편집 표. 저장은 **버전 대조**다 — Proc Rename 과 같은 결로 폼을 제출하지
     않은 회차가 그린 version 을 본 값(`BASE_VERSION_KEY` — `write_guard.remember_seen`)으로 두고
@@ -248,13 +278,22 @@ def _render_direct_editor(
     꼴) — 최신 저장본을 보고 고친 범위가 그 저장본 그대로면(합친 전체 규칙이 같다) 쓰지 않고 폼 안
     저장 줄 바로 아래 칸에 「바뀐 것이 없습니다」 를 적는다(변경 메모만 적은 저장도 같다 — 칸은 늘
     서 있어 글이 생기고 빠져도 표의 순번이 밀리지 않고, 단추는 제자리다). 표에 화면 표시명을 적은
-    분류컬럼이 남아 있으면 `notice`(머리 알림 칸)에 저장 회차와 같은 표시명 경고를 그린다(막지
-    않는다).
+    분류컬럼이 남아 있으면 같은 칸에 저장 회차와 같은 표시명 경고를 그린다(막지 않는다 — 저장한
+    회차의 경고도 다음 회차에 이 칸이다, 2026-11-08 사용자 답 d5).
     """
+    version = profile.version
     submitted_base = seen(BASE_VERSION_KEY)
     # 고칠 범위 고르기는 표 제목 줄 곁이다 — 전폭 두 줄이면 표가 그만큼 밀린다(설계 규칙 UI-LAY-11).
+    # 제목 바로 옆에 공용 버전 줄이 선다(사용자 그림 메모 g18).
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-        st.markdown("#### 직접 편집", width="content")
+        # 이 프로필만 `version == 0` 이 없다. 저장소가 1 부터 올리고 미초기화는 예외라, 공통
+        # 캡션의 「없음」 갈래에는 닿지 않는다.
+        render_profile_heading(
+            "#### 직접 편집",
+            profile,
+            key="display_order",
+            empty="아직 저장한 표시순서가 없습니다",
+        )
         pages = display_order["페이지 구분"].drop_duplicates().tolist()
         selected_page = st.selectbox(
             "페이지 구분",
@@ -284,10 +323,16 @@ def _render_direct_editor(
     # 저장 오류는 저장 버튼 **바로 위**에 띄운다. 460px 표 아래에 두면 화면 밖이라 저장을 눌러도
     # 아무 일이 없는 것처럼 보였다(2026-10-05 E2E). 칸은 늘 세워 둬 아래 폼의 자리를 고정한다.
     save_status = st.container()
-    with st.form("display_order_edit_form"):
-        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
-        # 정렬 규칙을 쓰는 법은 Admin Area Guide 가 말한다.
-        with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+    st.html(ACTION_ROW_STYLE)
+    edit_box = st.container(key=EDIT_BOX_KEY)
+    with edit_box:
+        _render_edit_tools(profile, csv_bytes)
+    with edit_box, st.form("display_order_edit_form"):
+        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다. 정렬 규칙을 쓰는 법은 Admin Area Guide 가
+        # 말한다. 오른쪽 끝의 CSV · Excel 은 폼 바로 앞 칸이다(모듈 설명).
+        with st.container(
+            horizontal=True, vertical_alignment="bottom", gap="small", key=SAVE_ROW_KEY
+        ):
             submitted = st.form_submit_button(
                 "공용 표시순서 저장",
                 icon=":material/save:",
@@ -300,8 +345,10 @@ def _render_direct_editor(
                 key=DISPLAY_ORDER_NOTE_KEY,
             )
         unchanged_note = st.container()
-        # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
-        # 9장 「표 도구 막대」).
+        # 저장한 회차의 표시명 경고는 다음 회차에 이 칸에 한 번 선다(저장은 곧 `st.rerun()` 한다).
+        _render_label_warnings(unchanged_note)
+        # 「변경 메모」 칸 · 오른쪽 끝 CSV · Excel 에 표 도구 막대가 닿지 않게 띄운다(AGENTS 9장
+        # 「표 도구 막대」).
         toolbar_clearance()
         edited = st.data_editor(
             scope_rules,
@@ -366,13 +413,13 @@ def _render_direct_editor(
             # 칸이 그 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
             if held_notice(DISPLAY_ORDER_FLASH_KEY) is None:
                 unchanged_note.info(DISPLAY_ORDER_UNCHANGED_MESSAGE, icon=":material/info:")
-            # 표에 남은 표시명 경고도 저장 회차와 같은 칸에 그린다(막지 않고 알리기만 — 저장
-            # 회차와 같은 판정). 창 안의 느린 둘째 누름이면 그 저장의 경고다 — 앞 회차(이 version
+            # 표에 남은 표시명 경고도 그 아래 같은 칸에 그린다(막지 않고 알리기만 — 저장 회차와
+            # 같은 판정). 창 안의 느린 둘째 누름이면 그 저장의 경고다 — 앞 회차(이 version
             # 을 본 값으로 적은 회차)가 꺼내 그려 이 회차에는 없다. 창이 지난 뒤의 누름이면
             # 「바뀐 것이 없습니다」 만 남아 표의 표시명이 정렬에 걸리지 않는 것을 알 길이
             # 없었다(2026-11-02 결정 A3).
             _draw_label_warnings(
-                notice, display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
+                unchanged_note, display_label_mistakes(pd.DataFrame(edited), COLUMN_LABELS)
             )
             return
         source = note.strip() or f"웹 직접 편집 · {selected_page}/{selected_tab}"
@@ -451,7 +498,7 @@ def _report_clashes(clashes: list[ValueClash], *, tab: str = "") -> None:
 
 
 def _render_label_warnings(slot: DeltaGenerator) -> None:
-    """저장한 회차에 담아 둔 표시명 경고를 성공 문구 칸(`slot`) 안 그 아래에 한 번 그리고 비운다.
+    """저장한 회차에 담아 둔 표시명 경고를 저장 줄 바로 아래 칸(`slot`)에 한 번 그리고 비운다.
 
     꺼내기와 그리기를 이 함수 한 곳에 둔다 — 알림 칸을 flash.py 밖에서 꺼내 그리는 자리를 찾는
     그물(`tests/test_flash_messages.py` 의 `FLASH_POP_ALLOWED`)이 이 자리를 본다."""
