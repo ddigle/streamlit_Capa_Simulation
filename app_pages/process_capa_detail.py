@@ -11,8 +11,8 @@
 0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보 기준
    미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
    왔으면 출처 띠, 필요 단축 일정 카드에서 왔으면 그 카드 출처 띠(주소 인자만 읽는다)와 「←
-   필요 단축 일정」. 사이드바 `공정 상세 조건` 카드 — 공정 하나와 제품 거르기(펼친 제품 행에만
-   걸린다).
+   필요 단축 일정」. 사이드바 조회 조건 패널의 「공정」 값 칸(하나 고름 — 공용 공정 칸)과
+   `공정 상세 조건` 카드 — 제품 거르기(펼친 제품 행에만 걸린다)와 UPEH 가정.
 1. **KPI 넷** — 최저 확보율, 확보 기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준). 그
    아래 부족 원인마다 다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 →
    필요 단축 일정).
@@ -49,9 +49,10 @@
   계획은 HOME 과 **같은 캐시 키**(`display_month_range` 범위)로 받는다. 원 확보율과 같으면 줄을
   두지 않는다.
 
-공정·달은 **공정 선택 상자보다 먼저** 정한다(`process_detail_state.resolve_process_and_month`)
-— HOME 전달 칸 → 주소 인자 → 세션 → 기본값(기간 최저 확보율 공정, 그 공정의 첫 확보 기준 미달
-달). 공정 상자로 공정을 바꾸면 ◀▶ 처럼 그 공정의 첫 미달 달을 열고 미달이 없으면 보던 달이다. 전달
+공정·달은 **공정 값 칸보다 먼저** 정한다(`process_detail_state.resolve_process_and_month`)
+— HOME 전달 칸 → 주소 인자 → 공용 공정(값이 바뀐 뒤 처음이고 이 목록에서 하나일 때만 — 받기만,
+2026-11-08 사용자 답 P2-2) → 세션 → 기본값(기간 최저 확보율 공정, 그 공정의 첫 확보 기준 미달
+달). 공정 칸으로 공정을 바꾸면 ◀▶ 처럼 그 공정의 첫 미달 달을 열고 미달이 없으면 보던 달이다. 전달
 칸은 그보다도 앞, 부트스트랩 전에 꺼낸다 — 오류로 멈춘 회차가 칸을 남기지 않게. 밖에서
 들어온 회차에는 그 길(`from`)이 가리키는 구획을 다시 편다(`reopen_entry_section`).
 """
@@ -63,7 +64,7 @@ from typing import NoReturn
 import pandas as pd
 import streamlit as st
 
-from capa_simulation import alerts
+from capa_simulation import alerts, shared_process
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import (
     HOME_VISIT_LOCK_REASON,
@@ -88,6 +89,7 @@ from capa_simulation.components.process_capa_view import (
     reopen_entry_section,
     shortening_link_needed,
 )
+from capa_simulation.components.process_field import render_process_choice
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
     equipment_scope,
@@ -224,7 +226,8 @@ from capa_simulation.services.usage_basis import usage_excluded_count, usage_exc
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, condition_card
 
-# 사이드바 조건 카드. 이 화면이 실제로 읽는 고유 조건(공정 하나, 펼친 제품 행의 거르기)을 모은다.
+# 사이드바 조건 카드. 이 화면이 실제로 읽는 고유 조건(펼친 제품 행의 거르기 · UPEH 가정)을 모은다.
+# 공정 하나는 조회 조건 패널의 공용 공정 칸(하나 고름 — `components/process_field.py`)이다.
 CARD_LABEL = "공정 상세 조건"
 CARD_NAME = "process_capa_detail"
 CARD_ICON = ":material/troubleshoot:"
@@ -234,12 +237,8 @@ OFFICIAL_BADGE = ":gray-badge[공식 · Core Data]"
 BACK_TO_SHORTENING_KEY = "process_detail_back_to_shortening"
 # HOME 표시 확보율이 원 확보율과 같다고 보는 차이.
 HOME_RATE_TOLERANCE = 1e-9
-# 「공정」 칸 풍선 — 기본 공정 · 달을 고르는 규칙(자리에 늘 두지 않는다, 설계 규칙 UI-TXT-01). 이
-# 화면 기간은 사이드바 「적용」 표지가 보인다.
-PROCESS_HELP = (
-    "기본 공정은 이 화면 기간(RQ_REQB 유효 기간 ∩ 조회기간)의 최저 확보율 공정이고, 그 공정의 첫 "
-    "확보 기준 미달 달을 엽니다."
-)
+# 공용 공정 칸의 출처 이름. 이 화면은 공용 값을 받기만 한다(2026-11-08 사용자 답 P2-2).
+SCREEN = "공정 Capa 상세"
 # HOME 칸 방문(공식 설비 시나리오로 고정)일 때 필요 단축 일정으로 옮기는 단추의 풍선 — 그 화면은 이
 # 고정을 따르지 않는다.
 SHORTENING_LINK_OFFICIAL_HELP = (
@@ -373,14 +372,16 @@ def product_choices(process: str) -> tuple[list[str], int]:
     return ordered, bases
 
 
-# 공정 선택 상자보다 **먼저** 공정·달을 정해 세션에 적는다. HOME 이 넘긴 공정은 위젯 키가 아니라
-# 전달 칸으로 오므로 여기서 위젯 키에 옮겨 적어야 첫 회차에도 상자가 그 공정을 보인다.
+# 공정 값 칸보다 **먼저** 공정·달을 정해 세션에 적는다. HOME 이 넘긴 공정은 전달 칸으로 온다. 공용
+# 공정(다른 화면에서 고른 공정)은 하나이고 이 목록에 있을 때만, 값이 바뀐 뒤 처음 그리는 회차에 연다
+# — HOME 그림 칸 · 카드 링크 · 주소 `process` 로 들어온 공정이 이긴다(2026-10-22 정체성 결정).
 entry = resolve_process_and_month(
     process_options,
     months,
     request=home_request,
     default_process=default_process_choice,
     default_month=default_month_for,
+    follow=lambda entered: shared_process.follow_single(SCREEN, process_options, entered=entered),
 )
 # HOME → ①, 가용설비 현황 「④ 에서 비가동 화살표로 보기」 → ④, 필요 단축 일정 카드 → ③. 본문
 # 프래그먼트의 「구획」 칩보다 앞이라 세션에 적어도 된다.
@@ -433,18 +434,12 @@ equipment_here = (
 
 product_options: list[str] = []
 demand_bases = 0
+# 조회 조건 패널의 공정 값 칸(하나 고름). 값은 원본이고 글자만 표시명이다. 여기서 고른 공정은 공용
+# 값을 바꾸지 않는다 — 한 공정을 들여다본 일로 다른 화면의 거름이 사라지지 않게(P2-2).
+selected_process = render_process_choice(
+    process_options, screen=SCREEN, key=PROCESS_DETAIL_PROCESS_KEY, labels=process_labels
+)
 with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
-    selected_process = st.selectbox(
-        "공정",
-        process_options,
-        key=PROCESS_DETAIL_PROCESS_KEY,
-        persist_state="session",
-        disabled=not process_options,
-        # 표시만 바꾼다. 선택값은 원본이다 — 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다
-        # (`unique_format_func`). 기본값은 위에서 세션에 적었으므로 `index=` 를 주지 않는다.
-        format_func=process_labels.unique_format_func(process_options),
-        help=PROCESS_HELP,
-    )
     if selected_process is not None:
         try:
             product_options, demand_bases = product_choices(selected_process)

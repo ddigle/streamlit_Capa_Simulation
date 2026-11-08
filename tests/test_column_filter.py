@@ -1,6 +1,6 @@
 # Purpose: 분류 컬럼 필터가 겹친 공정 표시명을 가르고 글자가 바뀌어도 잡은 원본 값을 지키는지 본다.
 
-"""`components/column_filter.py` 의 공정 필터.
+"""`components/column_filter.py` 의 공정 필터 — 카드 상자와, 부르는 쪽이 켜면 공용 공정 칸.
 
 산출 결과 소요대수·확보율, 기준 정보 설비대수, 월별 편집기 필터가 이 한 벌을 쓴다. Streamlit 1.63
 multiselect 는 브라우저와 값을 **보이는 글자**로 주고받는다. 표시명이 다른 공정의 원본 이름과
@@ -174,3 +174,82 @@ def test_a_filter_that_keeps_every_row_returns_the_table_with_its_range_index() 
         assert not app.exception
         assert app.session_state["visible_processes"] == ["DA", "WB"]
         assert app.session_state["visible_index"].tolist() == [0, 2]
+
+
+# ------------------------------------------------------------------ 공용 공정 칸(부르는 쪽이 켤
+# 때만)
+
+
+def _shared_filter_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.column_filter import (
+        apply_column_filters,
+        render_column_filter_controls,
+    )
+
+    data = pd.DataFrame(
+        {
+            "공정": ["DA", "DA2", "WB"],
+            "Area_Name": ["Main", "Main", "MI"],
+            "202608": [1.0, 2.0, 3.0],
+        }
+    )
+    filtered = render_column_filter_controls(
+        data, ["공정", "Area_Name"], key_prefix="shared_filter", shared_screen="시험 화면"
+    )
+    st.session_state["visible_processes"] = list(filtered["공정"])
+    closed = apply_column_filters(
+        data, ["공정", "Area_Name"], key_prefix="shared_filter", shared_screen="시험 화면"
+    )
+    st.session_state["closed_processes"] = list(closed["공정"])
+
+
+def test_the_process_column_becomes_the_shared_field_only_when_asked() -> None:
+    """`shared_screen` 을 주면 `공정` 은 카드 상자가 아니라 조회 조건의 공용 공정 칸이고 공용 값으로
+    거른다(2026-11-08 사용자 답 P1). 다른 칸은 카드 그대로, 「필터 초기화」 는 카드 칸만 지운다."""
+    from test_process_field import share, shared_values
+
+    from capa_simulation.components.process_field import FIELD_KEY
+
+    app = AppTest.from_function(_shared_filter_app).run()
+    assert not app.exception
+    assert "shared_filter_공정" not in {widget.key for widget in app.multiselect}
+    assert "shared_filter_Area_Name" in {widget.key for widget in app.multiselect}
+    assert app.button(key=FIELD_KEY).label == "전체 3공정"
+
+    share(app, ["WB", "Ghost"])
+    app.session_state["shared_filter_Area_Name"] = ["MI", "Main"]
+    app.run()
+    assert app.session_state["visible_processes"] == ["WB"]
+    # 카드가 없는 회차(닫힌 탭)도 같은 공용 값으로 거른다.
+    assert app.session_state["closed_processes"] == ["WB"]
+
+    app.button(key="shared_filter_reset").click().run()
+    assert not app.exception
+    assert app.session_state["shared_filter_Area_Name"] == []
+    assert shared_values(app) == ["WB", "Ghost"]
+
+
+def _securement_only_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.column_filter import render_shared_process_filter
+
+    data = pd.DataFrame({"공정": ["DA", "WB"], "202608": [1.0, 3.0]})
+    filtered = render_shared_process_filter(data, screen="시험 화면")
+    st.session_state["visible_processes"] = list(filtered["공정"])
+
+
+def test_a_table_filtered_only_by_process_keeps_no_card_controls() -> None:
+    from test_process_field import share
+
+    app = AppTest.from_function(_securement_only_app).run()
+    assert not app.exception
+    assert not [button.key for button in app.button if str(button.key).endswith("_reset")]
+    assert app.session_state["visible_processes"] == ["DA", "WB"]
+    share(app, ["DA"])
+    app.run()
+    assert app.session_state["visible_processes"] == ["DA"]

@@ -223,18 +223,29 @@ def _required_csv(app: AppTest) -> pd.DataFrame:
 
 
 def test_the_required_csv_follows_the_table_filter() -> None:
-    """소요대수 CSV 바이트는 표 내용 지문 키 캐시다. 필터로 표가 바뀌면 파일도 그 표를 싣는다."""
+    """소요대수 CSV 바이트는 표 내용 지문 키 캐시다. 필터로 표가 바뀌면 파일도 그 표를 싣는다.
+
+    공정은 공용 공정 칸이다(2026-11-08 사용자 답 P1) — 좁혀진 채 내려받는 CSV 에는 그 공정만 담기고
+    파일 이름은 그대로다(보드 답 「지금대로」)."""
+    from test_process_field import share
+
     app = _open_calc_tab(
         AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60), REQUIRED_TAB
     )
     both = _required_csv(app)
     assert set(both["공정"]) == {"Process-A", "Process-B"}
 
-    app.multiselect(key="required_equipment_filter_공정").set_value(["Process-B"]).run()
+    share(app, ["Process-B"])
+    app.run()
     assert not app.exception
     assert set(_required_csv(app)["공정"]) == {"Process-B"}
+    downloads = app.session_state["captured_downloads"]
+    assert downloads["download_required_equipment_summary_csv"]["file_name"].startswith(
+        "Capa_Required_Equipment_Summary_"
+    )
 
-    app.multiselect(key="required_equipment_filter_공정").set_value([]).run()
+    share(app, [])
+    app.run()
     assert not app.exception
     pd.testing.assert_frame_equal(_required_csv(app), both)
 

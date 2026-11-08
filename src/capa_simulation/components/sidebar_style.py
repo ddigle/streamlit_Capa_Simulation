@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from capa_simulation.components.app_credits import APP_CREDITS_KEY
 from capa_simulation.components.condition_field import (
+    ACCENT_SUFFIX,
     FIELD_KEY_PREFIX,
     NAME_ROW_KEY_PREFIX,
     PENDING_SUFFIX,
@@ -48,6 +49,10 @@ _CONDITIONS_PANEL = f".st-key-{CONDITIONS_BOX_KEY}"
 _CONDITION_FIELDS = f'[class*="st-key-{FIELD_KEY_PREFIX}"]'
 _CONDITION_NAME_ROWS = f'[class*="st-key-{NAME_ROW_KEY_PREFIX}"]'
 _PANEL_ROW_GAP = "0.6rem"
+# 빈 세로 블록 하나만 담은 칸(높이 0 인데 줄 사이를 먹는다).
+_EMPTY_BLOCK_WRAPPER = (
+    '[data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"]:empty)'
+)
 _FIELD_INNER_GAP = "0.2rem"
 # **상자 오른쪽 끝의 표식.** 누르면 무슨 일이 일어나는지를 오른쪽 끝 기호가 늘 보이게 말한다. 곧바로
 # 다른 화면으로 가는 링크 상자는 `→`(`arrow_forward`), 이 자리에서 펼쳐지는 확장 패널은
@@ -801,6 +806,9 @@ def _conditions_panel_style() -> str:
     pending_button = (
         f'{panel} {_CONDITION_FIELDS}[class*="{PENDING_SUFFIX}"] [data-testid="stButton"] button'
     )
+    accent_button = (
+        f'{panel} {_CONDITION_FIELDS}[class*="{ACCENT_SUFFIX}"] [data-testid="stButton"] button'
+    )
     name_row = f"{panel} {_CONDITION_NAME_ROWS}"
     return (
         # 패널 면과 줄 사이. 사이드바 세로 블록의 촘촘한 간격(위 규칙)보다 뒤라야 이긴다 — 같은
@@ -814,6 +822,15 @@ def _conditions_panel_style() -> str:
         }}
         {sidebar} {panel} {_CONDITION_FIELDS} {{
             gap: {_FIELD_INNER_GAP};
+        }}"""
+        # 줄 사이는 한 값이다. 칸 안에 빈 블록(설비 시나리오 줄 아래 알림 칸 — 알림이 없으면
+        # 비어 있다)이 서면 높이는 0 이어도 사이드바 칸 사이(0.42rem)를 한 번 더 먹어 그 줄 밑만
+        # 넓어졌다(공정 Capa 상세 · 가용설비 Main 의 설비 시나리오 → 공정 사이 14.2px, 다른 줄 사이
+        # 8.4px — 2026-11-08 사용자 메모). 빈 블록의 칸은 그리지 않는다 — 안에 무엇이 서면 다시
+        # 선다.
+        f"""
+        {sidebar} {panel} {_EMPTY_BLOCK_WRAPPER} {{
+            display: none;
         }}"""
         # 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
         # 않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄 위로
@@ -924,6 +941,16 @@ def _conditions_panel_style() -> str:
         f"""
         {pending_button} {{
             box-shadow: inset 3px 0 0 {tokens.PENDING_MARK};
+        }}"""
+        # 다른 화면과 같이 쓰는 값이 이 화면에 걸린 칸(공용 공정 — `components/process_field.py`) —
+        # 테두리를 `ACCENT` 2px 로 세운다. 테두리 폭을 바꾸면 글이 1px 밀리므로 1px 테두리 + 안쪽
+        # 1px 그림자로 두께를 낸다. 마우스를 올려도 그대로다.
+        f"""
+        {accent_button},
+        {accent_button}:hover,
+        {accent_button}:active {{
+            border-color: {tokens.ACCENT};
+            box-shadow: inset 0 0 0 1px {tokens.ACCENT};
         }}"""
     )
 

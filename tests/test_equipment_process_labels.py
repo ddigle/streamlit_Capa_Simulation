@@ -16,12 +16,14 @@ import pandas as pd
 from alert_marks import active_state
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import _open_settings, _open_tab, _page_script
+from test_process_field import share, shared_values
 from widget_browser import BrowserChoice
 
 from capa_simulation.components.availability_gap_panel import PROCESS_FILTER_KEY
-from capa_simulation.components.equipment_explorer import SMALL_PROCESS_KEY
 from capa_simulation.components.equipment_settings_dialog import EQUIPMENT_DIALOG_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.process_field import CONTEXT_KEY as PROCESS_CONTEXT_KEY
+from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -69,7 +71,8 @@ def _save_labels(database_path: Path, labels: dict[str, str]) -> None:
 
 
 def _main_options(app: AppTest) -> list[str]:
-    return list(app.multiselect(key=SMALL_PROCESS_KEY).options)
+    """Main `공정소분류` 의 보이는 글자 — 조회 조건 패널의 공용 공정 칸 팝업이 쓸 이 화면의 글자."""
+    return list(app.session_state[PROCESS_CONTEXT_KEY].texts)
 
 
 def test_without_display_names_the_page_keeps_the_original_names(tmp_path: Path) -> None:
@@ -102,8 +105,10 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     options = _main_options(app)
     assert {"표시-첫공정", "표시-둘째공정"} <= set(options)
     assert first not in options and second not in options
-    app.multiselect(key=SMALL_PROCESS_KEY).set_value([second]).run()
-    assert app.session_state[SMALL_PROCESS_KEY] == [second]
+    share(app, [second])
+    app.run()
+    assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == literal_markdown("표시-둘째공정")
+    assert shared_values(app) == [second]
 
     # 「설정」 팝업 — 편집표의 `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고는 원본(새 행에 그
     # 이름을 적어야 맞댄다), `표 보기 설정` 의 공정 필터 선택지만 표시명이다.

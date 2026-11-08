@@ -9,6 +9,12 @@
 결정 — 필터는 사이드바 조건 카드). 카드는 그 탭이 열렸을 때만 서므로, 닫힌 탭의 표를 걸러야
 할 때는 위젯 없이 세션에 남은 선택만 읽는다(`apply_column_filters`). 선택은
 `persist_state="session"` 이라 위젯이 없는 회차에도 남는다.
+
+**`공정` 칸은 부르는 쪽이 `shared_screen` 을 줄 때만 공용 공정 칸이 된다**(2026-11-08 사용자 답 P1 —
+공정 공유 1차). 그때 `공정` 은 카드 안 상자가 아니라 사이드바 조회 조건 패널의 값 칸 + 팝업
+(`process_field.render_process_filter`)이고, 거르는 값은 화면들이 같이 쓰는 공용 값이다
+(`shared_process.applied`). 「필터 초기화」 는 카드 안 칸만 지운다 — 공정은 값 칸 · 본문 칩으로
+지운다.
 """
 
 from __future__ import annotations
@@ -18,8 +24,13 @@ from collections.abc import Callable, Mapping, Sequence
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import shared_process
+from capa_simulation.components.process_field import render_process_filter
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.page_bootstrap import prune_list_selection
+
+# 공용 공정 칸이 될 수 있는 컬럼.
+PROCESS_COLUMN = "공정"
 
 
 def column_filter_key(key_prefix: str, column: str) -> str:
@@ -31,14 +42,38 @@ def apply_column_filters(
     columns: Sequence[str],
     *,
     key_prefix: str,
+    shared_screen: str | None = None,
 ) -> pd.DataFrame:
-    """세션에 남은 선택으로만 거른다. 위젯을 그리지 않는 회차(카드가 없는 탭)에 쓴다."""
+    """세션에 남은 선택으로만 거른다. 위젯을 그리지 않는 회차(카드가 없는 탭)에 쓴다.
+
+    `shared_screen` 을 주면 `공정` 은 공용 공정 값으로 거른다(그 컬럼의 위젯 선택은 읽지 않는다).
+    """
     selections: dict[str, list[str]] = {}
     for column in columns:
+        if column not in data.columns:
+            continue
+        if shared_screen is not None and column == PROCESS_COLUMN:
+            selections[column] = shared_process.applied(_options(data, column))
+            continue
         selected = st.session_state.get(column_filter_key(key_prefix, column))
-        if isinstance(selected, list) and column in data.columns:
+        if isinstance(selected, list):
             selections[column] = selected
     return _filtered_rows(data, selections)
+
+
+def _options(data: pd.DataFrame, column: str) -> list[object]:
+    return list(data[column].dropna().drop_duplicates().tolist())
+
+
+def render_shared_process_filter(
+    data: pd.DataFrame,
+    *,
+    screen: str,
+    labels: ProcessLabels | None = None,
+) -> pd.DataFrame:
+    """`공정` 하나만 공용 공정 칸으로 거르는 표 — 카드에 다른 칸이 없는 표(산출 결과 확보율)."""
+    chosen = render_process_filter(_options(data, PROCESS_COLUMN), screen=screen, labels=labels)
+    return _filtered_rows(data, {PROCESS_COLUMN: chosen})
 
 
 def _filtered_rows(data: pd.DataFrame, selections: Mapping[str, list[str]]) -> pd.DataFrame:
@@ -67,14 +102,33 @@ def render_column_filter_controls(
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
     disabled: bool = False,
     disabled_help: str | None = None,
+    shared_screen: str | None = None,
 ) -> pd.DataFrame:
     """조건 카드 안에 필터를 **세로로** 쌓고 거른 프레임을 돌려준다(접는 틀 없음).
 
     사이드바 폭이라 가로로 늘어놓지 않는다. `disabled` 는 필터를 바꾸면 사라질 것(적용하지
     않은 편집)이 있을 때 부르는 쪽이 잠그는 데 쓴다 — 선택은 그대로 걸린다. `disabled_help` 는 잠근
     까닭이고 잠긴 동안만 「필터 초기화」 풍선에 선다(설계 규칙 UI-INP-07).
+
+    `shared_screen`(출처 이름)을 주면 `공정` 은 카드가 아니라 조회 조건 패널의 공용 공정 칸이다 — 그
+    칸은 `disabled` 와 상관없이 열린다(보기만 좁히고 숨은 줄은 지워지지 않는다 — 붙여넣기 지킴은 표
+    쪽이 맡는다).
     """
-    filter_keys = {column: column_filter_key(key_prefix, column) for column in columns}
+    shared_process_column = (
+        PROCESS_COLUMN if shared_screen is not None and PROCESS_COLUMN in columns else None
+    )
+    card_columns = [column for column in columns if column != shared_process_column]
+    selections: dict[str, list[str]] = {}
+    if shared_process_column is not None and shared_screen is not None:
+        process_labels = (value_labels or {}).get(PROCESS_COLUMN)
+        selections[PROCESS_COLUMN] = render_process_filter(
+            _options(data, PROCESS_COLUMN),
+            screen=shared_screen,
+            labels=ProcessLabels(labels=process_labels) if process_labels else None,
+        )
+    if not card_columns:
+        return _filtered_rows(data, selections)
+    filter_keys = {column: column_filter_key(key_prefix, column) for column in card_columns}
     if st.button(
         "필터 초기화",
         key=f"{key_prefix}_reset",
@@ -85,8 +139,7 @@ def render_column_filter_controls(
     ):
         for filter_key in filter_keys.values():
             st.session_state[filter_key] = []
-    selections: dict[str, list[str]] = {}
-    for column in columns:
+    for column in card_columns:
         options = data[column].dropna().drop_duplicates().tolist()
         labels = (value_labels or {}).get(column)
         # 값은 원본이고 글자만 표시명이다. 보이는 글자가 다른 선택지와 겹치면 「표시명 (원본)」 으로

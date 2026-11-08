@@ -269,6 +269,8 @@ report_unscheduled_units(equipment_session, draft_unscheduled_units())
 # 표시명 때문에 막지 않는다. 계산 캐시 결과의 복사본에만 입히므로 캐시 키에 넣지 않는다. Admin 에서
 # 고치면 프로필 캐시가 비워져 다음 회차에 그대로 보인다.
 process_labels = process_labels_module.get_process_labels()
+# 공용 공정 칸의 출처 이름(다른 화면 칩 · 이름 줄의 「가용설비 에서」).
+SHARED_PROCESS_SCREEN = "가용설비"
 
 first_action = st.empty()
 sample_notice = st.empty()
@@ -405,6 +407,8 @@ with main_tab:
                 confirmation_basis=(
                     OFFICIAL_CONFIRMATION_BASIS if official_snapshot is not None else None
                 ),
+                # 공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1).
+                shared_screen=SHARED_PROCESS_SCREEN,
             )
 
 with gap_tab:

@@ -151,6 +151,7 @@ def _render_fixture() -> None:
             today=date(2026, 10, 6),
             owner_tab=main_tab,
             process_labels=ProcessLabels(version=1, labels=label_map) if label_map else None,
+            shared_screen="가용설비" if st.session_state.get("shared", False) else None,
         )
 
 
@@ -616,3 +617,36 @@ def test_the_question_buttons_wrap_instead_of_running_off_a_narrow_window() -> N
     assert QUESTION_WRAP_STYLE in bodies
     assert f".st-key-{QUESTION_KEY} " in QUESTION_WRAP_STYLE
     assert "flex-wrap: wrap" in QUESTION_WRAP_STYLE
+
+
+def test_the_shared_process_field_filters_main_and_marks_a_missing_name() -> None:
+    """`shared_screen` 을 주면 `공정소분류` 는 조회 조건의 공용 공정 칸이다(2026-11-08 사용자 답
+    P1). 시뮬레이션 공정과 이름이 같을 때만 걸리고, 이름이 다르면 전체를 보이며 「없음」 배지를
+    단다. 공정은 본문 위 칩이 말하므로 걸린 조건 줄에 거듭 적지 않는다(UI-TXT-07)."""
+    from test_process_field import share
+
+    from capa_simulation.components.process_field import FIELD_KEY
+
+    app = AppTest.from_function(_render_fixture, default_timeout=30)
+    app.session_state["shared"] = True
+    app.session_state["labels"] = True
+    app.run()
+    assert not app.exception
+    assert SMALL_PROCESS_KEY not in {widget.key for widget in app.multiselect}
+    assert app.button(key=FIELD_KEY).label == "전체 2공정"
+
+    app.session_state[QUESTION_KEY] = "호기 현황"
+    app.session_state["equipment_explorer_unit_view"] = "호기 목록"
+    share(app, ["Other"])
+    app.run()
+    assert not app.exception
+    (table,) = [frame.value for frame in app.dataframe if "설비명" in frame.value.columns]
+    assert list(table["설비명"]) == ["EQ-OTHER"]
+    assert not [item for item in app.caption if "공정소분류:" in str(item.value)]
+
+    share(app, ["HB 접합"])
+    app.run()
+    (table,) = [frame.value for frame in app.dataframe if "설비명" in frame.value.columns]
+    assert len(table) == 4
+    assert app.button(key=FIELD_KEY).label == "전체 2공정"
+    assert ":orange-badge[HB 접합 없음]" in [str(item.value) for item in app.caption]

@@ -3,8 +3,13 @@
 """산출 결과 — 표를 보는 조건은 사이드바 `표 조건` 카드, 설명은 Guide(2026-09-29 사용자 결정).
 
 세 탭이 **한 카드**를 쓰고 안의 내용만 열린 탭 것으로 바뀐다(대당 Capa: 표시 방식·집계
-수준·공정 필터 / 소요대수: 상세·필터 / 확보율: 필터). 카드는 열린 탭 하나의 것만 서므로 닫힌
+수준 / 소요대수: 상세·필터 / 확보율: 카드 없음). 카드는 열린 탭 하나의 것만 서므로 닫힌
 탭의 선택은 `persist_state` 가 지킨다. 본문에는 결과·표만 남는다.
+
+**공정은 세 탭 모두 조회 조건 패널의 공용 공정 칸이다**(2026-11-08 사용자 답 P1 — 공정 공유 1차,
+`components/process_field.py`). HOME 에서 좁힌 공정 · 다른 화면에서 고른 공정을 그대로 따라가고,
+여기서 고른 공정도 다른 화면이 따라간다. 좁혀진 채 내려받는 CSV 에는 그 공정만 담기고 파일 이름은
+그대로다(보드 답 「지금대로」) — 좁혀졌다는 사실은 값 칸 강조와 본문 위 칩이 알린다.
 
 제외 · 가정 알림은 자리에 그리지 않고 상태 알림으로 낸다(2026-11-03 결정 보드 D2 (나)) — 바뀔 때만
 오른쪽 아래 알림창, 쌓이는 곳은 머리 `Alarm`. 제외 목록(대당 Capa `제외 기준정보` · 소요대수 탭의
@@ -13,7 +18,7 @@
 있게」, 2026-11-05 같은 검수표 — 「Alarm 안 표로 이동」). 표가 알림에 싣기에 크면
 (`alerts.TABLE_ROW_LIMIT`) 그 목록만 본문 펼침으로 남긴다.
 
-확보율 탭의 `히트맵` 은 **표와 같은 행**을 그린다 — 표 조건 카드의 필터가 히트맵에도 걸린다
+확보율 탭의 `히트맵` 은 **표와 같은 행**을 그린다 — 조회 조건의 공정이 히트맵에도 걸린다
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
 """
 
@@ -25,7 +30,10 @@ import streamlit as st
 from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
-from capa_simulation.components.column_filter import render_column_filter_controls
+from capa_simulation.components.column_filter import (
+    render_column_filter_controls,
+    render_shared_process_filter,
+)
 from capa_simulation.components.data_error_mark import render_data_error, render_data_error_mark
 from capa_simulation.components.exclusion_table import exclusion_export, render_exclusion_table
 from capa_simulation.components.hierarchical_monthly_table import (
@@ -35,6 +43,7 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_field import render_process_filter
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.required_exclusion_notice import (
     CAPACITY_EXCLUSION_TITLE,
@@ -55,7 +64,6 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     calculation_stop_notice,
     load_page_context,
-    prune_list_selection,
     resolve_effective_months,
     stop_calculation_on_error,
 )
@@ -100,13 +108,17 @@ HEATMAP_EXPANDER_KEY = "securement_heatmap_expander"
 CAPACITY_EXCLUSIONS_EXPANDER_KEY = "unit_capacity_exclusions_expander"
 # 사이드바 `표 조건` 카드 이름. 세 탭이 한 카드를 쓴다.
 CARD_NAME = "calculation_result"
+# 공용 공정 칸의 출처 이름(다른 화면 칩 · 이름 줄의 「산출 결과 에서」).
+SCREEN = "산출 결과"
 # STEP 뷰에서 공정을 고르지 않았을 때의 빈 결과 한 줄(값 — 설계 규칙 UI-TXT-04). 고르는 법은
-# 공정 필터의 자리 글(placeholder) · `표시 방식` 풍선 · Guide 가 말한다(UI-TXT-01 · 02).
+# 공정 값 칸의 글자 · `표시 방식` 풍선 · Guide 가 말한다(UI-TXT-01 · 02).
 STEP_VIEW_EMPTY = "STEP별로 그릴 공정이 없습니다."
+# STEP 뷰에서 공정이 걸리지 않았을 때 공정 값 칸의 글자(지금처럼 고르라고 한다).
+STEP_VIEW_PROCESS_EMPTY = "공정을 선택하세요"
 # `표시 방식` 풍선 — 두 값의 뜻과 STEP별이 공정을 골라야 하는 까닭.
 VIEW_MODE_HELP = (
     "공정별은 공정 단위 대당 Capa(집계 수준으로 나눠 봄), STEP별은 MCP_SEQ · STEP_SEQ 경로마다 "
-    "한 줄이라 공정 필터에서 고른 공정만 그립니다."
+    "한 줄이라 조회 조건 「공정」 에서 고른 공정만 그립니다."
 )
 # STEP별에서 잠긴 `집계 수준` 의 까닭 풍선(UI-INP-07 — 잠근 칸에만 단다).
 LEVEL_LOCKED_HELP = "STEP별은 경로마다 한 줄이라 집계 수준을 쓰지 않습니다."
@@ -224,7 +236,6 @@ else:
         ),
         unit_capacity_tab,
     )
-    process_filter_key = "unit_capacity_process_filter"
     # 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 인자는
     # 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
     process_options = get_display_ordered_values(
@@ -234,16 +245,15 @@ else:
         TAB_UNIT_CAPACITY,
         _display_order=display_order,
     )
-    prune_list_selection(process_filter_key, process_options)
 
     if open_tab is unit_capacity_tab:
         with table_card(CARD_NAME):
             # 표시 방식은 탭 안의 하위 보기지만 사용자 요청으로 카드 첫 칸이다(2026-11-02 사용자
-            # 요청(검수표) — 「하위 보기 전환은 본문」 의 예외, AGENTS 9장). 아래 두 칸이 이 값을
-            # 따라 바뀌므로(집계 수준 잠금·공정 필터 안내) 그 위에 둔다. 탭 이름이 이미 `대당 Capa`
-            # 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계 단위가 다른 것이지 다른 지표가 아니다.
-            # 같은 카드의 「집계 수준」·「공정 필터」처럼 다른 화면(탭)에 갔다 와도 남는다 — 하위
-            # 보기 전환도 보기 조건이다(2026-10-24 사용자 결정).
+            # 요청(검수표) — 「하위 보기 전환은 본문」 의 예외, AGENTS 9장). 아래 칸과 공정 값 칸이
+            # 이 값을 따라 바뀌므로(집계 수준 잠금·공정 칸 글자) 그 위에 둔다. 탭 이름이 이미 `대당
+            # Capa` 라 선택지에서는 그 낱말을 뺀다. 두 값은 집계 단위가 다른 것이지 다른 지표가
+            # 아니다. 같은 카드의 「집계 수준」 처럼 다른 화면(탭)에 갔다 와도 남는다 — 하위 보기
+            # 전환도 보기 조건이다(2026-10-24 사용자 결정).
             capacity_view = st.segmented_control(
                 "표시 방식",
                 options=["공정별", "STEP별"],
@@ -263,17 +273,13 @@ else:
                 # 칸 정체성은 key 라(Streamlit 1.63) 풍선이 바뀌어도 고른 값은 그대로다.
                 help=LEVEL_LOCKED_HELP if step_view else None,
             )
-            selected_processes = st.multiselect(
-                "공정 필터",
-                options=process_options,
-                placeholder=("공정을 선택하세요" if step_view else "미선택 시 전체 공정"),
-                key=process_filter_key,
-                persist_state="session",
-                # 표시만 바꾼다. 선택값은 원본이어야 아래 `isin` 이 원본 컬럼과 맞는다. 보이는
-                # 글자가 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func` — 같은 글자면
-                # 다른 공정이 돌아온다). 잡은 값은 위 `prune_list_selection` 이 매 회차 다시 적는다.
-                format_func=process_labels.unique_format_func(process_options),
-            )
+        # 공용 공정 칸 — 값은 원본이라 아래 `isin` 이 원본 컬럼과 맞고, 글자만 표시명이다.
+        selected_processes = render_process_filter(
+            process_options,
+            screen=SCREEN,
+            labels=process_labels,
+            empty=STEP_VIEW_PROCESS_EMPTY if step_view else None,
+        )
         selected_level = next(
             level for level, label in CAPACITY_LEVEL_LABELS.items() if label == selected_level_label
         )
@@ -436,6 +442,7 @@ else:
                 key_prefix="required_equipment_filter",
                 column_labels=COLUMN_LABELS,
                 value_labels=process_labels.value_labels(),
+                shared_screen=SCREEN,
             )
         with required_tab:
             # 대당 Capa 제외 표는 **대당 Capa 탭**의 알림이 든다. 두 탭이 한 페이지에 있게 된
@@ -535,13 +542,10 @@ else:
             st.stop()
         # 히트맵은 칸마다 **그 달의** 실효 기준으로 판정한다(월별 예외가 없으면 기본값).
         thresholds = threshold_profile.thresholds
-        with table_card(CARD_NAME):
-            displayed_securement_table = render_column_filter_controls(
-                securement_table,
-                SECUREMENT_DIMENSIONS,
-                key_prefix="securement_filter",
-                value_labels=process_labels.value_labels(),
-            )
+        # 거르는 칸이 공정 하나라 카드를 세우지 않는다 — 공정은 조회 조건 패널의 공용 공정 칸이다.
+        displayed_securement_table = render_shared_process_filter(
+            securement_table, screen=SCREEN, labels=process_labels
+        )
         with availability_tab:
             securement_export = build_hierarchical_monthly_export(
                 displayed_securement_table,
@@ -568,7 +572,7 @@ else:
                 owner_tab=availability_tab,
             )
             # 표는 숫자를 답하고 히트맵은 모양을 답한다. 「어느 공정이 **언제** 무너지나」는
-            # 66행을 훑어서 알 것이 아니다. 행은 **위 표와 같다**(표 조건 카드의 필터) — 따로 고르는
+            # 66행을 훑어서 알 것이 아니다. 행은 **위 표와 같다**(조회 조건의 공정) — 따로 고르는
             # 목록을 두지 않는다(2026-10-06 사용자 결정).
             # 편 상자는 다른 탭에 갔다 와도 편 채다. 닫힌 탭의 본문은 그리지 않으므로 `key` 없는
             # 상자는 돌아올 때 새로 만들어져 접혔다(2026-10-01 브라우저 점검).

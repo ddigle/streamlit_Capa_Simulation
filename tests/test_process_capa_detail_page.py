@@ -54,6 +54,8 @@ from capa_simulation.components.process_capa_view import (
     UNITS_CSV_STYLE,
     step_button_label,
 )
+from capa_simulation.components.process_field import CONTEXT_KEY as PROCESS_CONTEXT_KEY
+from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
 from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_DETAIL,
@@ -233,6 +235,30 @@ def _app(databases: tuple[Path, Path], *, fail_bootstrap: bool = False) -> AppTe
     )
 
 
+class _ProcessBox:
+    """공정 값 칸(하나 고름 — 공용 공정 칸, 2026-11-08)을 예전 상자처럼 읽는다. 값은 세션 칸,
+    선택지는 팝업이 쓸 이 화면의 선택지이고, 고르기는 팝업 판이 하는 대로 세션 칸에 적는다."""
+
+    def __init__(self, app: AppTest) -> None:
+        self.app = app
+
+    @property
+    def value(self) -> Any:
+        return self.app.session_state[PROCESS_DETAIL_PROCESS_KEY]
+
+    @property
+    def options(self) -> list[str]:
+        return list(self.app.session_state[PROCESS_CONTEXT_KEY].options)
+
+    def set_value(self, value: str) -> _ProcessBox:
+        self.app.session_state[PROCESS_DETAIL_PROCESS_KEY] = value
+        return self
+
+
+def _process_box(app: AppTest) -> _ProcessBox:
+    return _ProcessBox(app)
+
+
 def _ok(app: AppTest) -> AppTest:
     assert not app.exception, [element.message for element in app.exception]
     return app
@@ -292,13 +318,13 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
 ) -> None:
     app = _ok(_app(databases).run())
 
-    process_box = app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY)
+    process_box = _process_box(app)
     assert process_box.value in process_box.options
     month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
     assert isinstance(month, int)
-    # 기간은 사이드바 「적용」 표지가 보인다 — 카드가 거듭하지 않고 기본 공정 규칙은 칸 풍선이다
-    # (설계 규칙 UI-TXT-07).
-    assert "최저 확보율" in str(process_box.help)
+    # 기간은 사이드바 「적용」 표지가 보인다 — 카드가 거듭하지 않는다(설계 규칙 UI-TXT-07). 공정은
+    # 조회 조건 패널의 값 칸(하나 고름)이고 기본 공정 규칙은 Guide 다.
+    assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == literal_markdown(process_box.value)
     assert not [item for item in app.sidebar.caption if str(item.value).startswith("기간 ")]
     header = _header(app)
     assert header.startswith(f"**{literal_markdown(process_box.value)}**")
@@ -364,17 +390,17 @@ def test_a_chosen_process_survives_reruns_and_keeps_the_month(
     databases: tuple[Path, Path],
 ) -> None:
     app = _ok(_app(databases).run())
-    process_box = app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY)
+    process_box = _process_box(app)
     other = next(option for option in process_box.options if option != process_box.value)
     months = _months(app)
     app.session_state[PROCESS_DETAIL_MONTH_KEY] = months[-1]
     _ok(app.run())
 
-    app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).set_value(other)
+    _process_box(app).set_value(other)
     _ok(app.run())
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == other
+    assert _process_box(app).value == other
     _ok(app.run())
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == other
+    assert _process_box(app).value == other
     assert _header(app).startswith(f"**{literal_markdown(other)}**")
     # 공정을 바꿔도 보던 달은 그대로다.
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == months[-1]
@@ -459,7 +485,7 @@ def test_the_product_filter_lists_the_process_products_and_folds_the_rest(
 
 def test_the_address_opens_that_process_and_month(databases: tuple[Path, Path]) -> None:
     app = _ok(_app(databases).run())
-    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    options = list(_process_box(app).options)
     first_month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
     target = options[-1]
 
@@ -467,7 +493,7 @@ def test_the_address_opens_that_process_and_month(databases: tuple[Path, Path]) 
     app.query_params["theme"] = "dark"
     _ok(app.run())
 
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == target
+    assert _process_box(app).value == target
     assert app.session_state[PROCESS_DETAIL_MONTH_KEY] == first_month
     # 읽은 키만 지운다 — 테마 인자는 남는다.
     assert dict(app.query_params) == {"theme": ["dark"]}
@@ -493,7 +519,7 @@ def test_an_address_process_outside_the_list_is_shown_as_literal_text(
     알림창 · Alarm)이고 알림창 · 패널은 글을 `textContent` 로 넣어 마크다운이 그려지지 않는다 —
     이름은 글자 그대로 싣고 경고 상자(마크다운)는 그리지 않는다."""
     app = _ok(_app(databases).run())
-    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    options = list(_process_box(app).options)
     assert wanted not in options
 
     app.query_params["process"] = wanted
@@ -504,14 +530,14 @@ def test_an_address_process_outside_the_list_is_shown_as_literal_text(
     assert len(bodies) == 1, bodies
     assert shown in bodies[0]
     # 목록에 없는 공정이므로 기본 공정으로 열린다.
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value in options
+    assert _process_box(app).value in options
 
 
 def test_the_home_transfer_slot_opens_the_cell_and_shows_the_origin_band(
     databases: tuple[Path, Path],
 ) -> None:
     app = _ok(_app(databases).run())
-    target = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)[0]
+    target = list(_process_box(app).options)[0]
     month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
     app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
         process=target,
@@ -523,13 +549,37 @@ def test_the_home_transfer_slot_opens_the_cell_and_shows_the_origin_band(
     )
     _ok(app.run())
 
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == target
+    assert _process_box(app).value == target
     assert _origin_bands(app) == [
         f"{ORIGIN_BAND_ICON} HOME 상세 B/N 공정 · {month_label(month)} 칸에서 열었습니다 · "
         "표시 103% = 원 확보율 98% + 확보율 보정 +5.0% · 아래는 원 확보율"
     ]
     # 알림 상자 세 색은 뜻으로 가른다 — 출처는 「조건에 맞는 것이 없다」(`st.info`)가 아니다.
     assert not any("칸에서 열었습니다" in str(element.value) for element in app.info)
+
+
+def test_a_single_shared_process_opens_on_the_detail_page_and_names_its_origin(
+    databases: tuple[Path, Path],
+) -> None:
+    """HOME 에서 공정 하나로 좁히면 이 화면이 그 공정을 열고 값 칸이 「HOME 에서」 를 단다. 이
+    화면에서 다른 공정을 고르면 출처가 걷히고 공용 값은 그대로다(받기만 — 2026-11-08 사용자 답
+    P2-2)."""
+    from test_process_field import share, shared_values
+
+    app = _ok(_app(databases).run())
+    first = _process_box(app).value
+    target = next(option for option in _process_box(app).options if option != first)
+    share(app, [target])
+    _ok(app.run())
+
+    assert _process_box(app).value == target
+    assert "HOME 에서" in [str(item.value) for item in app.sidebar.caption]
+
+    _process_box(app).set_value(first)
+    _ok(app.run())
+    assert _process_box(app).value == first
+    assert "HOME 에서" not in [str(item.value) for item in app.sidebar.caption]
+    assert shared_values(app) == [target]
 
 
 def test_a_stopped_visit_consumes_the_transfer_slot(databases: tuple[Path, Path]) -> None:
@@ -550,7 +600,7 @@ def test_a_month_outside_the_page_axis_opens_the_default_month_with_a_notice(
     databases: tuple[Path, Path],
 ) -> None:
     app = _ok(_app(databases).run())
-    target = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)[0]
+    target = list(_process_box(app).options)[0]
     app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
         process=target, month=199001
     )
@@ -574,7 +624,7 @@ def test_the_home_display_row_appears_only_when_home_adds_an_execution_delta(
     root = tmp_path_factory.mktemp("process_capa_detail_home_rate")
     databases = (root / "scenario.duckdb", root / "equipment.duckdb")
     app = _ok(_app(databases).run())
-    process = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    process = str(_process_box(app).value)
     month = int(app.session_state[PROCESS_DETAIL_MONTH_KEY])
     DuckDBScenarioRepository(databases[0]).replace_global_execution_capacity(
         pd.DataFrame(
@@ -679,7 +729,7 @@ def test_a_home_cell_reopens_the_summary_section(databases: tuple[Path, Path]) -
     app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([])
     _ok(app.run())
     assert "① 공식 기준 ▸" in _label_texts(app)
-    target = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    target = str(_process_box(app).value)
 
     app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
         process=target, month=app.session_state[PROCESS_DETAIL_MONTH_KEY]
@@ -724,7 +774,7 @@ def test_the_header_steps_through_shortfall_processes(
     """머리 ◀▶ 는 확보 기준 미달 공정을 최저 확보율이 낮은 차례로 넘기고, 옮긴 공정의 첫 미달 달을
     연다. 기본 공정(최저 확보율)이 첫째라 ◀ 는 쓸 수 없다."""
     app = _ok(_app(strict_databases).run())
-    first = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    first = str(_process_box(app).value)
     caption = _step_caption(app)
     assert caption.startswith("미달 1/")
     assert app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).proto.disabled
@@ -732,7 +782,7 @@ def test_the_header_steps_through_shortfall_processes(
 
     app.button(key=PROCESS_DETAIL_NEXT_PROCESS_KEY).click()
     _ok(app.run())
-    second = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    second = str(_process_box(app).value)
     assert second != first
     assert _step_caption(app).startswith("미달 2/")
     assert _header(app).startswith(f"**{literal_markdown(second)}**")
@@ -741,7 +791,7 @@ def test_the_header_steps_through_shortfall_processes(
 
     app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).click()
     _ok(app.run())
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == first
+    assert _process_box(app).value == first
 
 
 def test_the_header_step_buttons_are_named_by_where_they_go(
@@ -764,7 +814,7 @@ def test_the_header_step_buttons_are_named_by_where_they_go(
 
     following.click()
     _ok(app.run())
-    second = str(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value)
+    second = str(_process_box(app).value)
     assert app.button(key=PROCESS_DETAIL_PREVIOUS_PROCESS_KEY).label.startswith("이전 미달 공정: ")
     assert second
 
@@ -806,7 +856,7 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
 ) -> None:
     app = _dynamic_app(dynamic_databases)
 
-    assert app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert _process_box(app).value == DYNAMIC_PROCESS
     assert "설비 일정 참고 · Cut-off 10일" in _header(app)
     labels = _label_texts(app)
     for title in ("② 설비 일정 기준 가용", "③ 신규 설비 일정과 단축", "④ 호기별 비가동"):
@@ -1093,7 +1143,7 @@ def test_a_renamed_process_label_reads_as_written_in_the_header_and_the_evidence
     링크가 됐다(E2E 2026-10-26). 제약 시뮬레이션 머리처럼 글자 그대로 막는다."""
     databases = (tmp_path / "scenario.duckdb", tmp_path / "equipment.duckdb")
     app = _ok(_app(databases).run())
-    options = list(app.selectbox(key=PROCESS_DETAIL_PROCESS_KEY).options)
+    options = list(_process_box(app).options)
     tilde, link = options[0], options[1]
     labels = {
         tilde: "Chip Attach 1~2차/3~4차",

@@ -40,42 +40,49 @@ CALC_SCRIPT = _swap(
     '        columns=["공정", "표시명"],\n'
     "    )",
 )
-CALC_FILTER_KEY = "unit_capacity_process_filter"
 
 
 def test_calculation_result_filter_splits_a_colliding_display_name() -> None:
-    """Process-A 의 표시명이 원본 Process-B 와 같다 — 「Process-B (Process-A)」 로 가른다."""
+    """Process-A 의 표시명이 원본 Process-B 와 같다 — 판 타일 · 값 칸은 「Process-B (Process-A)」 로
+    가르고, 고른 값은 원본이다(공용 공정 칸 — 2026-11-08 사용자 답 P1, 판은 원본 값을 보낸다)."""
+    from test_process_field import share
+
+    from capa_simulation.components.process_field import CONTEXT_KEY, FIELD_KEY
+
     app = AppTest.from_string(CALC_SCRIPT, default_timeout=60)
     app.session_state["test_rename_rules"] = [("Process-A", "Process-B")]
-    browser = BrowserChoice(app, "multiselect", CALC_FILTER_KEY)
-    browser.start()
+    app.run()
     assert not app.exception
-    # 차례는 표시순서 그대로다(이 상자에는 「보이는 글자순」 규칙이 없었다).
-    assert browser.options() == ["Process-B (Process-A)", "Process-B"]
+    # 차례는 표시순서 그대로다(이 칸에는 「보이는 글자순」 규칙이 없었다).
+    context = app.session_state[CONTEXT_KEY]
+    assert context.options == ("Process-A", "Process-B")
+    assert context.texts == ("Process-B (Process-A)", "Process-B")
 
-    browser.pick(["Process-B (Process-A)"])
-    browser.run()
-
+    share(app, ["Process-A"])
+    app.run()
     assert not app.exception
-    assert app.session_state[CALC_FILTER_KEY] == ["Process-A"]
+    assert app.sidebar.button(key=FIELD_KEY).label == "Process\\-B \\(Process\\-A\\)"
 
 
 def test_calculation_result_filter_keeps_its_value_when_the_display_name_changes() -> None:
-    """「가공」(= Process-A)을 고른 뒤 Admin 이 표시명을 Process-B 로 바꾸면 글자가 바뀐다 — 잡은
-    값은 Process-A 그대로이고 브라우저는 새 글자를 받는다."""
-    app = AppTest.from_string(CALC_SCRIPT, default_timeout=60)
-    browser = BrowserChoice(app, "multiselect", CALC_FILTER_KEY)
-    browser.start()
-    browser.pick(["가공"])
-    browser.run()
-    assert app.session_state[CALC_FILTER_KEY] == ["Process-A"]
+    """「가공」(= Process-A)을 고른 뒤 Admin 이 표시명을 Process-B 로 바꾸면 글자가 바뀐다 — 공용
+    값은
+    원본 Process-A 그대로이고 값 칸은 새 글자를 보인다."""
+    from test_process_field import share, shared_values
+
+    from capa_simulation.components.process_field import FIELD_KEY
+
+    app = AppTest.from_string(CALC_SCRIPT, default_timeout=60).run()
+    share(app, ["Process-A"])
+    app.run()
+    assert app.sidebar.button(key=FIELD_KEY).label == "가공"
 
     app.session_state["test_rename_rules"] = [("Process-A", "Process-B")]
     for _ in range(2):
-        browser.run()
+        app.run()
         assert not app.exception
-        assert app.session_state[CALC_FILTER_KEY] == ["Process-A"]
-    assert browser.wire == ["Process-B (Process-A)"]
+        assert shared_values(app) == ["Process-A"]
+    assert app.sidebar.button(key=FIELD_KEY).label == "Process\\-B \\(Process\\-A\\)"
 
 
 # ------------------------------------------------------- 표준 목표 · 공정 필터 · 로직 분석
