@@ -105,8 +105,8 @@ _VIEW_APPLY_KEY = "equipment_cutoff_view_apply_v1"
 _CSV_KEY = "equipment_cutoff_csv_v1"
 _ACTIONS_KEY = "equipment_cutoff_actions_v1"
 _SUBMIT_ROW_KEY = "equipment_cutoff_submit_row_v1"
-# 폼 테두리(1px) + 안쪽 여백(1em − 1px) — 제출 줄의 윗선 · 오른쪽 끝(Streamlit 1.63 폼 꼴).
-CSV_INSET_PX = 16
+# 폼 윗선 · 오른쪽 끝에서 제출 줄 단추까지(Streamlit 1.63 폼 꼴 — 사본 앱에서 잰 값).
+CSV_INSET_PX = 14
 # 제출 줄이 CSV 단추 밑으로 들어가지 않게 비우는 오른쪽 자리(단추 폭 + 간격의 올림).
 CSV_RESERVE_PX = 156
 # 「Cut-off 저장」 단추 풍선 — 팝업 머리에 안내 글을 두지 않으므로 꼭 남길 둘(공용 설정 · 저장하지
