@@ -36,7 +36,7 @@ from capa_simulation import alerts
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogBody, DialogHost
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
 from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
@@ -2363,6 +2363,9 @@ def _render_key_process_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
             notice = st.container()
             with notice:
+                # 이 회차가 꺼내 그리는 담아 둔 알림 — 거부의 둘째 누름이 같은 글을 두 번 세우지
+                # 않게 견준다.
+                shown = pending_flash(KEY_PROCESS_FLASH_KEY)
                 _render_key_process_flash()
             # 이 화면에 없는 공정은 칩의 「· 이 화면에 없음」 이 표지이고, 그것이 남는 까닭은
             # 칸 머리 풍선이다 — 칸 밑에 늘 서던 안내 문장을 걷었다(설계 규칙 UI-TXT-01 ·
@@ -2390,6 +2393,7 @@ def _render_key_process_editor(
                 database_path,
                 stale=stale,
                 stale_default=stale_default,
+                shown=None if shown is None else shown.message,
             )
         if not submitted:
             return
@@ -2400,7 +2404,10 @@ def _render_key_process_editor(
         if held is not None:
             # 남의 저장에 거부된 누름의 둘째 누름이다 — 거부한 회차가 고칠 프리셋을 새로 적어 두어
             # 대조를 지나므로, 옛 화면의 입력으로 저장하지 않고 그 거부를 다시 알린다(write_guard).
-            notice.error(held)
+            # 이 회차가 거부 회차의 알림을 이미 꺼내 그렸으면 한 번만 — 알림창 · Alarm 은 첫 거부가
+            # 냈다.
+            if shown is None or shown.message != held:
+                notice.error(held)
             return
         if stale is not None:
             _reject_key_process_write(stale, notice, save_marks, conflict_marks)
@@ -2509,6 +2516,7 @@ def _render_key_process_preset_actions(
     *,
     stale: ProfileVersionConflict | None = None,
     stale_default: ProfileVersionConflict | None = None,
+    shown: str | None = None,
 ) -> None:
     """고르고 있는 프리셋의 `기본으로`·`삭제`. 둘 다 묶음 전체를 다시 쓴다.
 
@@ -2516,7 +2524,8 @@ def _render_key_process_preset_actions(
     있으면 쓰지 않는다 — 이름이 바뀌었으면 단추가 다른 프리셋에 닿는다. `stale_default` 는 그 화면이
     본 기본 프리셋(맨 앞)이 그 사이 남의 저장으로 바뀌었다는 거부다 — 「기본으로」 만 쓰지 않는다
     (2026-11-08 사용자 답 U2 「화면이 본 기본과 지금 기본이 다르면 거절한다 — 묶음에 하나뿐인
-    값이라 이 값만 본다」). 「삭제」 는 고칠 프리셋만 대조한다(2026-10-26 결정).
+    값이라 이 값만 본다」). 「삭제」 는 고칠 프리셋만 대조한다(2026-10-26 결정). `shown` 은 이
+    회차에 편집 카드 알림 칸이 꺼내 그린 글이다(둘째 누름이 같은 거부를 두 번 세우지 않게).
     """
     names = list(profile.preset_names)
     already_default = names[0] == target
@@ -2555,7 +2564,8 @@ def _render_key_process_preset_actions(
     held = held_profile_conflict(conflict_marks, KEY_PROCESS_SAVE_NAME)
     if held is not None:
         # 남의 저장에 거부된 쓰기의 둘째 누름이다(편집 카드의 저장과 같다).
-        st.error(held)
+        if shown != held:
+            st.error(held)
         return
     if stale is not None:
         _reject_key_process_write(stale, st.container(), save_marks, conflict_marks)
@@ -2660,8 +2670,11 @@ def _reject_key_process_write(
             if not st.session_state.get(KEY_PROCESS_FLASH_KEY):
                 queue_flash(KEY_PROCESS_FLASH_KEY, KEY_PROCESS_SAVED_MESSAGE)
             st.rerun(scope="app")
-        notice.error(message)
-        return
+        # 남의 저장에 진 거부는 저장 단추 곁 + 알림창 · Alarm 이다(2026-11-08 사용자 답 a1 — 팝업을
+        # 닫아도 기록이 남게). 담아 두고 앱 전체를 다시 돌려 카드 알림 칸(`render_flash`)이 꺼낸다 —
+        # 다음 회차는 최신 저장본을 그린다.
+        queue_flash(KEY_PROCESS_FLASH_KEY, message, kind="error")
+        st.rerun(scope="app")
     # 이름에 걸린 거부(「같은 이름의 프리셋이 이미 있습니다: …」)는 막은 이름으로 다시 짓는다.
     notice.error(_key_process_error_message(exc))
 
