@@ -561,3 +561,116 @@ def test_opening_the_dialog_keeps_the_event_slot_count(
     assert _event_slot_count(browser.messages) == closed
     markup = calculator_style_markup()
     assert any(markup in str(element.proto.body) for element in app.get("html"))
+
+
+HOST_KEY = "required_shortening_dialog_host"
+
+
+def _hosted_page(tmp_path: Path) -> str:
+    """앱 전체 회차의 실행 표지(`app.py` 처럼)를 단 페이지 — 여는 콜백이 호스트만 다시 돌릴지 가르는
+    판정이 이 표지를 본다."""
+    return (
+        "from capa_simulation.sidebar_status import begin_app_run\n"
+        "app_run = begin_app_run()\n"
+        + _page_script(PAGE_PATH, tmp_path / "qual_calculator.duckdb")
+        + "app_run.finish()\n"
+    )
+
+
+def _event_slots(messages: Sequence[ForwardMsg]) -> dict[int, tuple[str, str]]:
+    """메시지가 이벤트 칸(본문 밖 최상위 칸)의 몇째 자리에 무엇을 썼나 — (종류, 프래그먼트 id)."""
+    slots: dict[int, tuple[str, str]] = {}
+    for message in messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        path = list(message.metadata.delta_path)
+        if len(path) != 2 or path[0] != RootContainer.EVENT:
+            continue
+        delta = message.delta
+        kind = (
+            str(delta.add_block.WhichOneof("type"))
+            if delta.WhichOneof("type") == "add_block"
+            else str(delta.new_element.WhichOneof("type"))
+        )
+        slots[path[1]] = (kind, delta.fragment_id)
+    return slots
+
+
+def _only_fragment_deltas(messages: Sequence[ForwardMsg]) -> bool:
+    return all(
+        message.delta.fragment_id for message in messages if message.WhichOneof("type") == "delta"
+    )
+
+
+def test_opening_and_closing_the_calculator_runs_only_its_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「Qual 마감 계산기」 를 여닫아도 필요 단축 일정을 다시 계산하지 않는다 — 여는 콜백 뒤
+    호스트(`required_shortening_dialog_host`)만 돌고 닫기(X · 바깥 · Esc)도 호스트만 돈다
+    (2026-11-08 사용자 결정 U5, 설계 규칙 UI-PRF-01). 팝업은 호스트가 앱 전체 회차에 잡아 둔 이벤트
+    칸 한 자리에 서고 닫으면 그 자리가 빈 스타일로 돌아간다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(_hosted_page(tmp_path), default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(HOST_KEY)
+    page_slots = _event_slots(browser.messages)
+    (host_slot,) = [index for index, slot in page_slots.items() if slot[1] == host]
+    assert page_slots[host_slot][0] == "html"
+
+    app.button(key=OPEN_BUTTON_KEY).click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert _only_fragment_deltas(browser.messages), "페이지가 다시 돌았다"
+    assert _event_slots(browser.messages) == {host_slot: ("dialog", host)}
+    assert _metrics(app)["마감 낸 호기"] == "9대"
+
+    browser.send_trigger(app, browser.dialog_widget_id(), [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert _only_fragment_deltas(browser.messages)
+    assert _event_slots(browser.messages) == {host_slot: ("html", host)}
+    assert DIALOG_KEY not in app.session_state
+
+
+def test_inputs_survive_a_host_only_close_and_the_paste_draft_does_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """호스트만 도는 닫기 · 다시 열기에도 숫자 칸 · 편집표 값은 남는다(입력은 이 세션에 남는다).
+    닫기가 지우는 것은 붙여넣기 글 칸 초안 하나다 — 다시 연 칸이 빈 글로 서고 서버도 빈 값을
+    본다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(_hosted_page(tmp_path), default_timeout=60).run()
+    host = browser.fragment_keyed(HOST_KEY)
+    open_id = app.button(key=OPEN_BUTTON_KEY).id
+    browser.send_trigger(app, open_id, [])
+    assert browser.started == [[], [host]]
+    dialog = browser.fragment_of(CUTOFF_KEY)
+    dialog_id = browser.dialog_widget_id()
+
+    browser.fragment_queue = [dialog]
+    app.number_input(key=CUTOFF_KEY).set_value(15).run()
+    browser.fragment_queue = [dialog]
+    app.number_input(key=BASE_KEY).set_value(17.5).run()
+    browser.fragment_queue = [dialog]
+    app.text_area(key=PASTE_TEXT_KEY).set_value("19\tU1")
+    app.button(key=PASTE_APPLY_KEY).click().run()
+    assert not app.exception
+    assert browser.started == [[dialog]]
+    first = _metrics(app)
+    assert app.session_state[MONTHS_KEY].loc[0, UNITS_COLUMN] == "U1"
+    assert PASTE_TEXT_KEY in app.session_state
+
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert PASTE_TEXT_KEY not in app.session_state
+    assert app.session_state[CUTOFF_KEY] == 15
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert app.number_input(key=CUTOFF_KEY).value == 15
+    assert app.number_input(key=BASE_KEY).value == 17.5
+    assert app.text_area(key=PASTE_TEXT_KEY).value == ""
+    assert app.session_state[MONTHS_KEY].loc[0, UNITS_COLUMN] == "U1"
+    assert _metrics(app) == first

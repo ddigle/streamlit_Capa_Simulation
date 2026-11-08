@@ -13,21 +13,26 @@
 `required_shortening_panel` 이다.
 
 머리 끝의 「Qual 마감 계산기」 단추는 큰 팝업을 연다(2026-10-24 사용자 결정 — 가용설비 현황의
-탭이던 것). 계산기는 설비 데이터와 잇지 않아 호기가 없어도 열리므로 팝업 호스트는 머리 바로 뒤,
-데이터를 읽기 전이다. 호스트는 이벤트 칸에 늘 한 자리를 쓴다 — 열렸으면 팝업, 아니면 빈 스타일
-자리표시자다. 그 뒤의 기준선 결과 알림 표지 자리(`shortening_progress_panel` — 머리 · 본문
-프래그먼트 안)가 팝업을 여닫을 때 밀리지 않게 한다.
+탭이던 것). 팝업은 키 붙은 호스트 프래그먼트가 부른다(`components/dialog_host.py` — 열기 · 닫기가
+페이지를 다시 계산하지 않는다, 설계 규칙 UI-PRF-01). 계산기는 설비 데이터와 잇지 않아 호기가 없어도
+열리므로 호스트는 머리 바로 뒤, 데이터를 읽기 전 · 멈춤(`st.stop()`) 앞에서 매 앱 전체 회차 선다.
+호스트는 이벤트 칸에 늘 한 자리를 쓴다 — 열렸으면 팝업, 아니면 빈 스타일 자리표시자다. 그 뒤의
+기준선 결과 알림 표지 자리(`shortening_progress_panel` — 본문 프래그먼트 안)가 팝업을 여닫을 때
+밀리지 않게 한다. 계산기 입력은 닫아도 남는다(`persist_state` · 원본 표 칸) — 닫기가 지우는 것은
+붙여넣기 글 칸 초안 하나다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from functools import partial
 
 import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
     calculation_drafts,
@@ -43,7 +48,10 @@ from capa_simulation.components.equipment_scenario_status import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.qual_deadline_calculator import render_qual_deadline_calculator
+from capa_simulation.components.qual_deadline_calculator import (
+    PASTE_TEXT_KEY,
+    render_qual_deadline_calculator,
+)
 from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
 from capa_simulation.components.sample_data import (
     NO_UNITS_HELP,
@@ -64,7 +72,6 @@ from capa_simulation.page_bootstrap import (
     PAGE_DIALOG_SUFFIX,
     PageContext,
     bootstrap_error_message,
-    forget_page_dialogs,
     render_schema_ahead_warning,
 )
 from capa_simulation.persistence.equipment_cache import (
@@ -99,24 +106,18 @@ PAGE_DESCRIPTION = (
     "공정 카드. 공정 하나를 깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다."
 )
 
-# 이 화면의 팝업 칸(페이지에 한 칸 — 값이 팝업을 가른다, AGENTS 9장 「팝업과 콜백」).
+# 이 화면의 팝업 칸(페이지에 한 칸 — 값이 팝업을 가른다, AGENTS 9장 「팝업과 콜백」)과 그 호스트.
 DIALOG_KEY = f"required_shortening{PAGE_DIALOG_SUFFIX}"
+DIALOG_HOST = DialogHost("required_shortening_dialog_host", DIALOG_KEY)
 QUAL_CALCULATOR_DIALOG = "qual_calculator"
 QUAL_CALCULATOR_BUTTON_KEY = "required_shortening_qual_calculator_v1"
 
 
-def _open_qual_calculator() -> None:
-    """여는 단추의 콜백 — 다른 팝업 칸(사이드바 조건 팝업 등)부터 비운다."""
-    forget_page_dialogs()
-    st.session_state[DIALOG_KEY] = QUAL_CALCULATOR_DIALOG
-
-
-def _close_dialog() -> None:
-    st.session_state.pop(DIALOG_KEY, None)
-
-
-@st.dialog("Qual 마감 계산기", width="large", icon=":material/calculate:", on_dismiss=_close_dialog)
+@st.dialog(
+    "Qual 마감 계산기", width="large", icon=":material/calculate:", on_dismiss=DIALOG_HOST.close
+)
 def _qual_calculator_dialog(today: date) -> None:
+    """설비 데이터와 잇지 않는 계산기 — 원본을 바꾸는 동작이 없어 앱 전체를 다시 돌리지 않는다."""
     render_qual_deadline_calculator(today=today)
 
 
@@ -125,7 +126,8 @@ def _render_header_actions() -> None:
         "Qual 마감 계산기",
         icon=":material/calculate:",
         key=QUAL_CALCULATOR_BUTTON_KEY,
-        on_click=_open_qual_calculator,
+        on_click=DIALOG_HOST.open,
+        args=(QUAL_CALCULATOR_DIALOG, QUAL_CALCULATOR_BUTTON_KEY),
         help=(
             "Cut-off · 월별 목표 가용대수 · 신규 호기로 호기마다 Qual 완료 마감을 내는 "
             "계산기입니다. 설비 데이터와 잇지 않습니다."
@@ -138,12 +140,13 @@ render_page_guide("required_shortening", title="필요 단축 일정")
 notices = st.container()
 
 today = date.today()
-# 팝업 호스트 — 이벤트 칸에 늘 한 자리(모듈 설명). 데이터를 읽기 전이라 호기가 없거나 설비 DB 를
-# 못 읽어도 계산기는 열린다.
-if st.session_state.get(DIALOG_KEY) == QUAL_CALCULATOR_DIALOG:
-    _qual_calculator_dialog(today)
-else:
-    st.html("<style></style>")
+# 팝업 호스트 — 매 앱 전체 회차 빠짐없이, 이벤트 칸에 늘 한 자리(모듈 설명). 데이터를 읽기 전이라
+# 호기가 없거나 설비 DB 를 못 읽어도 계산기는 열린다. 닫기는 붙여넣기 글 칸 초안만 지운다 — 숫자 ·
+# 날짜 칸과 편집표는 닫아도 남는 입력이다(`qual_deadline_calculator` 모듈 설명).
+DIALOG_HOST.render(
+    {QUAL_CALCULATOR_DIALOG: partial(_qual_calculator_dialog, today)},
+    widget_keys={QUAL_CALCULATOR_DIALOG: (PASTE_TEXT_KEY,)},
+)
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     repository = get_equipment_repository(equipment_database_path)
