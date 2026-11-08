@@ -580,6 +580,87 @@ def test_the_sheet_paints_the_three_status_colors_on_the_home_basis() -> None:
     assert fills.count(tokens.STATUS_SECURE) == statuses.count("secure")
 
 
+def test_the_chart_points_follow_the_same_three_steps_on_the_home_basis() -> None:
+    """기준이 HOME 이면 기존 제품 점도 계산표와 같은 세 단계다(2026-11-08 사용자 답 d11) — 경고는
+    주의 색 면에 선 색 테두리(같은 주의 색인 제약 제품 점의 `LINE` 테두리와 가른다), 부족은 부족색,
+    확보는 선 색. 직접 넣은 기준은 미달만 부족색이다(두 단계)."""
+    result = _run()
+    labels = _home_labels(result)
+    figure = rate_figure(result, labels, selected_month=None, show_proportional=False)
+    marker = _traces(figure, "기존 제품 — 제약 반영")[0]["marker"]
+    statuses = [
+        figures.general_status(row.existing_rate, row, dict(labels.warning_targets))
+        for row in result.months
+    ]
+    assert "warning" in statuses, "합성 예에 경고 구간 점이 있어야 시험이 뜻이 있다"
+    expected = {
+        "warning": (tokens.STATUS_WARNING, tokens.ACCENT),
+        "shortage": (tokens.STATUS_SHORTAGE, tokens.SURFACE),
+        "secure": (tokens.ACCENT, tokens.SURFACE),
+        None: (tokens.ACCENT, tokens.SURFACE),
+    }
+    assert list(zip(marker["color"], marker["line"]["color"], strict=True)) == [
+        expected[status] for status in statuses
+    ]
+    constrained = _traces(figure, "제약 제품")[0]["marker"]
+    assert constrained["line"]["color"] == tokens.LINE != tokens.ACCENT
+
+    typed = rate_figure(result, LABELS, selected_month=None, show_proportional=False)
+    typed_colors = _traces(typed, "기존 제품 — 제약 반영")[0]["marker"]["color"]
+    assert tokens.STATUS_WARNING not in typed_colors
+    assert typed_colors == [
+        tokens.STATUS_SHORTAGE if row.existing_secure is False else tokens.ACCENT
+        for row in result.months
+    ]
+
+
+def test_the_existing_kpi_borders_follow_the_same_three_steps_on_the_home_basis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """기존 제품 요약 두 칸의 테두리도 같은 판정이다(d11) — 기준이 HOME 이면 최저 확보율이 경고
+    구간이면 주황(`attention`), 부족 구간이면 빨강(`critical`), 기준 미달 달은 그 가운데 가장 나쁜
+    판정이다. 직접 넣은 기준은 옛 두 단계 그대로다."""
+    tones: dict[str, str] = {}
+
+    def capture(label: str, value: str, *, tone: str = "neutral", **_: object) -> None:
+        tones[label] = tone
+
+    monkeypatch.setattr(view_module, "metric_row", lambda **_: nullcontext())
+    monkeypatch.setattr(view_module, "render_status_metric", capture)
+    result = _run()
+    labels = _home_labels(result)
+    warnings = dict(labels.warning_targets)
+    assert result.kpis.lowest_existing_month is not None
+    lowest = result.month(result.kpis.lowest_existing_month)
+    below = {
+        figures.general_status(result.month(month).existing_rate, result.month(month), warnings)
+        for month in result.kpis.below_months
+    }
+    render_constraint_kpis(result, labels)
+    lowest_status = figures.general_status(lowest.existing_rate, lowest, warnings)
+    assert tones["기존 제품 최저 확보율"] == {
+        "shortage": "critical",
+        "warning": "attention",
+    }.get(str(lowest_status), "neutral")
+    assert tones["기준 미달 달 (기존 제품)"] == (
+        "critical" if "shortage" in below else ("attention" if below else "neutral")
+    )
+
+    # 경고 구간만 미달인 꼴 — 경고 경계를 아주 낮게(50%) 두면 미달 달이 모두 경고다.
+    lenient = replace(LABELS, warning_targets=tuple((row.month, 0.5) for row in result.months))
+    tones.clear()
+    render_constraint_kpis(result, lenient)
+    if result.kpis.below_months:
+        assert tones["기준 미달 달 (기존 제품)"] == "attention"
+        assert tones["기존 제품 최저 확보율"] == "attention"
+
+    tones.clear()
+    render_constraint_kpis(result, LABELS)
+    assert tones["기존 제품 최저 확보율"] == (
+        "critical" if lowest.existing_secure is False else "neutral"
+    )
+
+
 def test_a_typed_general_target_keeps_two_steps_because_it_has_no_warning_line() -> None:
     """직접 넣은 기준에는 경고 경계가 없다 — 못 미친 칸만 부족색이고 지킨 칸은 칠하지 않는다."""
     result = _run()
@@ -806,8 +887,9 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     호기에 「27년 7월부터 보유로 다 덮음」 을 적은 판이다(같은 날 — 두 갈래 모두 배포 전이라 한 번
     올렸다). 12 는 기준이 HOME 일 때 계산표 확보율 칸을 세 단계 색으로 칠하고 제약 없을 때 대비
     칸의 어긋난 차이에 「≈」 를 단 판이다(2026-11-07 사용자 답 — 한 번 올렸다). 13 은 고른 달 계산
-    카드를 걷어 달 칸 풍선 끝의 「누르면 이 달 계산」 을 뺀 판이다(2026-11-08 사용자 그림 메모
-    g12)."""
+    카드를 걷어 달 칸 풍선 끝의 「누르면 이 달 계산」 을 빼고(2026-11-08 사용자 그림 메모 g12)
+    기준이 HOME 일 때 기존 제품 점을 세 단계 판정색으로 칠한 판이다(같은 날 답 d11 — 같은 배포라
+    한 번 올렸다)."""
     assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 13
 
 

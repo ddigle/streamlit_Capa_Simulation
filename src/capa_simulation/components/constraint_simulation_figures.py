@@ -13,8 +13,10 @@
 - x 는 **수 축**이다 — 달 i 가 [i − 0.5, i + 0.5) 이고 눈금 글자는 `month_label`. 개조 비가동 막대를
   날짜 비례로 놓으려면 수 축이어야 한다(범주 축 규칙은 「26.07」 글자를 x 값으로 쓸 때의 것이고
   여기서는 글자를 x 에 쓰지 않는다).
-- 선: 제약 없을 때(`TEXT_MUTED` 파선) · 기존 제품 — 제약 반영(`ACCENT` 굵게, 점은 기준 미달이면
-  `STATUS_SHORTAGE`) · 제약 제품(`STATUS_WARNING`, 기간 안만 — 점은 `LINE` 테두리) · 비중대로
+- 선: 제약 없을 때(`TEXT_MUTED` 파선) · 기존 제품 — 제약 반영(`ACCENT` 굵게, 점은 판정색 —
+  기준이 HOME 이면 계산표와 같은 세 단계로 경고 `STATUS_WARNING`(테두리는 선 색 `ACCENT` — 제약 제품
+  점과 가른다) · 부족 `STATUS_SHORTAGE`, 직접 넣은 기준이면 미달만 `STATUS_SHORTAGE` —
+  `general_status`) · 제약 제품(`STATUS_WARNING`, 기간 안만 — 점은 `LINE` 테두리) · 비중대로
   (`SERIES_STANDARD` 점선, 토글 켬·기간 안만). 기준선은 달마다 G 가 다르면 `hv` 계단, 같으면
   수평선이고 제약 목표 수평선이 함께 선다. 오른쪽 끝 글(「기준 …」 `TEXT_MUTED` · 「제약 n%」
   `TEXT`)은 글자색이라 주의 색(면색)을 쓰지 않는다. 두 글은 늘 제 선 높이에 서되, 그림 칸이 가장
@@ -112,7 +114,7 @@ from capa_simulation.services.korean_particle import (
     with_topic_particle,
 )
 from capa_simulation.services.month_columns import month_label
-from capa_simulation.services.securement_threshold import capacity_status
+from capa_simulation.services.securement_threshold import CapacityStatus, capacity_status
 from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.services.wd_window import wd_window
 
@@ -143,6 +145,7 @@ __all__ = [
     "minimum_unit",
     "month_name",
     "new_unit_fate",
+    "general_status",
     "ordinary_reason_text",
     "percent_or_none",
     "rate_axis",
@@ -657,6 +660,7 @@ def _reference_traces(
 
 def _rate_lines(
     result: ConstraintResult,
+    labels: ConstraintLabels,
     xs: list[int],
     above: list[bool],
     *,
@@ -718,6 +722,11 @@ def _rate_lines(
             "name": "제약 제품",
         }
     )
+    # 기존 제품 점은 판정색이다 — 기준이 HOME 이면 계산표와 같은 세 단계(2026-11-08 사용자 답 d11).
+    # 경고 점은 주의 색 면에 선 색 테두리를 둘러 같은 주의 색인 제약 제품 점(`LINE` 테두리)과
+    # 가른다.
+    warnings = dict(labels.warning_targets)
+    statuses = [general_status(row.existing_rate, row, warnings) for row in rows]
     lines.append(
         {
             "type": "scatter",
@@ -726,12 +735,15 @@ def _rate_lines(
             "mode": "lines+markers",
             "line": {"color": tokens.ACCENT, "width": 3},
             "marker": {
-                "color": [
-                    tokens.STATUS_SHORTAGE if row.existing_secure is False else tokens.ACCENT
-                    for row in rows
-                ],
+                "color": [_existing_point_color(status) for status in statuses],
                 "size": 8,
-                "line": {"color": tokens.SURFACE, "width": 1.5},
+                "line": {
+                    "color": [
+                        tokens.ACCENT if status == "warning" else tokens.SURFACE
+                        for status in statuses
+                    ],
+                    "width": 1.5,
+                },
             },
             "hoverinfo": "skip",
             "name": "기존 제품 — 제약 반영",
@@ -1000,7 +1012,7 @@ def rate_figure(
     data: list[dict[str, Any]] = [
         _hit_trace(result, xs, above, low=low, high=high),
         *_reference_traces(general, target_percent, xs),
-        *_rate_lines(result, xs, above, high=high, show_proportional=show_proportional),
+        *_rate_lines(result, labels, xs, above, high=high, show_proportional=show_proportional),
         *_band_traces(result, band),
     ]
     layout = _rate_layout(
@@ -1282,23 +1294,47 @@ def _shortage_fill(secure: bool | None) -> str | None:
     return tokens.STATUS_SHORTAGE if secure is False else None
 
 
+def general_status(
+    rate: float | None, row: ConstraintMonth, warnings: Mapping[int, float]
+) -> CapacityStatus | None:
+    """기준 확보율에 견준 판정 — `warnings` 에 그 달 경고 경계가 있으면(기준이 HOME) HOME 과 같은
+    세 단계(`capacity_status`), 없으면 확보 · 부족 두 단계다. 확보율이 없으면 None. 계산표 칸 ·
+    그래프 점 · 요약 테두리가 이 한 판정을 본다(설계 규칙 UI-DAT-03)."""
+    if rate is None:
+        return None
+    warning = warnings.get(row.month)
+    if warning is None:
+        return "secure" if secure(rate, row.general_target) else "shortage"
+    return capacity_status(rate, secure_threshold=row.general_target, warning_threshold=warning)
+
+
+def _existing_point_color(status: CapacityStatus | None) -> str:
+    """기존 제품 점의 판정색 — 경고는 주의 색, 부족은 부족색, 확보 · 판정 없음은 선 색. 토큰은
+    그리는 때 읽는다(테마를 따라온다)."""
+    if status == "warning":
+        return tokens.STATUS_WARNING
+    if status == "shortage":
+        return tokens.STATUS_SHORTAGE
+    return tokens.ACCENT
+
+
 def _general_fill(
     rate: float | None, row: ConstraintMonth, warnings: Mapping[int, float]
 ) -> str | None:
     """기준 확보율에 견주는 칸의 면. `warnings` 에 그 달 경고 경계가 있으면(기준이 HOME) HOME 과
     같은 세 단계 판정색이고, 없으면 못 미친 칸만 부족색이다(`_shortage_fill`). 확보율이 없으면
     칠하지 않는다."""
-    if rate is None:
+    status = general_status(rate, row, warnings)
+    if status is None:
         return None
-    warning = warnings.get(row.month)
-    if warning is None:
-        return _shortage_fill(secure(rate, row.general_target))
+    if row.month not in warnings:
+        return _shortage_fill(status == "secure")
     # 상태 → 색 짝은 함수 안에서 만든다 — 모듈 상수면 테마를 바꿔도 색이 따라오지 않는다.
     return {
         "secure": tokens.STATUS_SECURE,
         "warning": tokens.STATUS_WARNING,
         "shortage": tokens.STATUS_SHORTAGE,
-    }[capacity_status(rate, secure_threshold=row.general_target, warning_threshold=warning)]
+    }[status]
 
 
 def _head(row: ConstraintMonth) -> str:

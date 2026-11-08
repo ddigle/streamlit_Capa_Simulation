@@ -59,6 +59,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     chart_point_month,
     free_parts,
     general_label,
+    general_status,
     rate_axis,
     rate_figure,
     rate_text,
@@ -333,10 +334,24 @@ def overdrawn_lines(result: ConstraintResult) -> list[str]:
 # ================================================================== 요약 넷(프래그먼트 밖)
 
 
+def _status_tone(status: str | None) -> MetricTone:
+    """판정 → 요약 테두리 — 부족은 빨강, 경고는 주황, 확보 · 판정 없음은 평상."""
+    if status == "shortage":
+        return "critical"
+    if status == "warning":
+        return "attention"
+    return "neutral"
+
+
 def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -> None:
-    """요약 넷 — 제약 확보율 충족 · 기존 최저 확보율 · 기준 미달 달 · 개조 대수."""
+    """요약 넷 — 제약 확보율 충족 · 기존 최저 확보율 · 기준 미달 달 · 개조 대수.
+
+    기존 제품 칸 둘의 테두리는 계산표 · 그래프 점과 같은 판정이다(`general_status`) — 기준이 HOME
+    이면 세 단계(경고 주황 · 부족 빨강, 2026-11-08 사용자 답 d11), 직접 넣은 기준이면 확보 · 부족 두
+    단계다."""
     kpis = result.kpis
     target = labels.target_percent
+    warnings = dict(labels.warning_targets)
     with metric_row(key=KPI_ROW_KEY):
         count = kpis.constrained_months
         met = kpis.constrained_met_months
@@ -364,8 +379,8 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             if kpis.lowest_existing_month is not None
             else None
         )
-        tone2: MetricTone = (
-            "critical" if lowest is not None and lowest.existing_secure is False else "neutral"
+        tone2 = _status_tone(
+            None if lowest is None else general_status(lowest.existing_rate, lowest, warnings)
         )
         render_status_metric(
             "기존 제품 최저 확보율",
@@ -382,7 +397,18 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
 
         below = len(kpis.below_months)
         newly = len(kpis.newly_below_months)
-        tone3: MetricTone = "critical" if newly else ("attention" if below else "neutral")
+        tone3: MetricTone
+        if warnings:
+            # 기준이 HOME 이면 미달 달 가운데 가장 나쁜 판정 — 경고 구간만이면 주황이다.
+            worst = {
+                general_status(result.month(month).existing_rate, result.month(month), warnings)
+                for month in kpis.below_months
+            }
+            tone3 = _status_tone(
+                "shortage" if "shortage" in worst else ("warning" if below else None)
+            )
+        else:
+            tone3 = "critical" if newly else ("attention" if below else "neutral")
         impact = (
             month_label(kpis.first_impact_month) if kpis.first_impact_month is not None else "없음"
         )
