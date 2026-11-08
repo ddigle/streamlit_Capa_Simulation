@@ -20,7 +20,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import flashed, infos, texts
+from alert_marks import active_state, flashed, infos, texts
 from grid_fake import Calls, grid_results, install_fake_grid, last, load, send, send_ops
 from streamlit.testing.v1 import AppTest
 from test_equipment_assumption_rawdata import _grouped_fleet, _two_scenarios
@@ -57,6 +57,7 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_CHANGES,
     SIDE_HISTORY,
     SIDE_KEY,
+    STALE_LOCK_MARK,
     STALE_SCENARIO_EDITS,
     TABLE_KEY,
     layout_lock_help,
@@ -569,9 +570,11 @@ def _path_of(app: AppTest, key: str) -> tuple[int, ...]:
 def test_a_stale_warning_that_appears_keeps_the_tab_layout_in_place(
     tmp_path: Path, grid: Calls
 ) -> None:
-    """남이 그 설비 시나리오에 새 리비전을 저장해 세션이 낡으면 맨 위 낡음 경고와 시나리오 칸 잠금이
-    선다 — 경고는 늘 서 있는 알림 칸 안이라 오른쪽 칸·표 고르기 자리가 그 회차 전후로 같다(R21 —
-    CCv2 마운트 앞 요소가 생기면 마운트가 다시 선다). 표 data 의 잠금 까닭에 낡음 글이 실린다."""
+    """남이 그 설비 시나리오에 새 리비전을 저장해 세션이 낡으면 머리 줄 표지 「일정 잠김」(풍선이
+    낡음 글) · 상태 알림 `EQ-19` 와 시나리오 칸 잠금이 선다 — 세 문장 상자는 걷었다(2026-11-08
+    사용자 답 c1). 표지는 머리 줄의 늘 서 있는 칸 안이라 오른쪽 칸·표 고르기 자리가 그 회차 전후로
+    같다(R21 — CCv2 마운트 앞 요소가 생기면 마운트가 다시 선다). 표 data 의 잠금 까닭에 낡음 글이
+    실린다."""
     repository, setup = _two_scenarios(tmp_path)
     pinned = _scenario(repository, setup).latest_schedule_revision_id
     app = _page(repository, setup, pinned)
@@ -584,7 +587,11 @@ def test_a_stale_warning_that_appears_keeps_the_tab_layout_in_place(
     )
     clear_equipment_repository()
     _ok(app.run())
-    assert any("가 더 새롭습니다" in text for text in _texts(app, "warning"))
+    assert not any("가 더 새롭습니다" in text for text in _texts(app, "warning"))
+    marks = {str(item.value): str(item.proto.help) for item in app.caption}
+    assert "가 더 새롭습니다" in marks[STALE_LOCK_MARK]
+    note = active_state(app, "EQ-19")
+    assert note is not None and "가 더 새롭습니다" in str(note["full"])
     assert (_path_of(app, SIDE_KEY), _path_of(app, "equipment_master_table_v1")) == before
     reasons = last(grid, emg.GRID_KEY)["lockReasons"]
     assert "가 더 새롭습니다" in reasons["stale"]
@@ -919,7 +926,8 @@ def test_scenario_cells_edited_before_the_session_went_stale_block_the_save_with
     line = STALE_SCENARIO_EDITS.format(cells=1, units=1, spots="EQ-01 시나리오 메모")
     changes = last(grid, emg.side_key("changes"))
     assert any(line in " ".join(map(str, item)) for item in changes["errors"])
-    assert any("「저장 전 변경」 에서 되돌려야" in text for text in _texts(app, "warning"))
+    helps = [str(item.proto.help) for item in app.caption if item.proto.help]
+    assert any("「저장 전 변경」 에서 되돌려야" in text for text in helps), helps
     before = len(repository.list_revisions())
     app.button(key=SAVE_BUTTON_KEY).click()
     _ok(app.run())
@@ -1002,7 +1010,8 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_ta
     named = [text for text in texts if "가정" in text and "E2E" in text]
     assert named
     assert all(escaped in text for text in named), named
-    assert any("가 더 새롭습니다" in text and escaped in text for text in _texts(app, "warning"))
+    stale = [str(item.proto.help) for item in app.caption if item.proto.help]
+    assert any("가 더 새롭습니다" in text and escaped in text for text in stale), stale
     assert any("의 일정 리비전" in text and escaped in text for text in _texts(app, "caption"))
     assert any("설비 시나리오 ·" in text and escaped in text for text in _texts(app, "markdown")), (
         _texts(app, "markdown")
@@ -1040,7 +1049,7 @@ def test_an_asterisk_scenario_name_stays_literal_in_every_markdown_spot_of_the_t
     named = [text for text in texts if "가정" in text and "E2E" in text]
     assert named
     assert all(escaped in text for text in named), named
-    assert any("가 더 새롭습니다" in text and escaped in text for text in _texts(app, "warning"))
+    assert any("가 더 새롭습니다" in text and escaped in text for text in marks), marks
     assert any("다른 배치가 저장됐습니다" in text and escaped in text for text in marks), marks
     assert any("지울 수 없습니다" in text and escaped in text for text in helps), helps
 

@@ -52,6 +52,7 @@ from typing import Any, Final
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components import equipment_master_grid as grid_component
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
@@ -148,6 +149,7 @@ from capa_simulation.components.literal_markdown import (
 )
 from capa_simulation.components.save_section import discard_popover
 from capa_simulation.components.side_panel import render_side_head, split_frame, switch_side
+from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.table_view_controls import filter_widget_key
 from capa_simulation.components.widget_generation import bump, widget_key
@@ -157,6 +159,7 @@ from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     SpaceEditMode,
 )
+from capa_simulation.navigation import EQUIPMENT_MASTER_TAB
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -1104,7 +1107,45 @@ def _render_head(
         with st.container():
             if pending:
                 st.badge(f"저장 전 변경 {pending:,}건", icon=":material/edit_note:", color="orange")
+        # 남이 이 시나리오에 일정을 저장해 지금 보는 리비전이 낡았다 — 자리에는 표지 한 마디, 무엇이
+        # 잠겼고 어떻게 푸는지는 풍선 · 상태 알림이다(Space 배치 잠김과 같은 꼴, 2026-11-08 사용자
+        # 답 c1 · 설계 규칙 UI-NTF-02 · UI-INP-07).
+        with st.container(width="content"):
+            if basis is not None and basis.stale:
+                st.caption(
+                    STALE_LOCK_MARK,
+                    help=literal_markdown(_stale_lock_message(basis)),
+                    width="content",
+                )
+    report_stale_lock(basis)
     return str(table)
+
+
+# 낡은 세션 잠김 표지 — 무엇이 잠겼고 어떻게 푸는지는 풍선(`_stale_lock_message`)과 상태 알림
+# `EQ-19` 다.
+STALE_LOCK_MARK: Final = ":material/lock_clock: 일정 잠김"
+
+
+def report_stale_lock(basis: EquipmentSaveBasis | None) -> None:
+    """낡은 세션의 상태 알림(`EQ-19` — 다른 사용자가 이 설비 시나리오에 일정을 저장해 최신 리비전이
+    있음). 머리 줄 표지가 서는 회차와 같은 조건이고 없어도 부른다(해소). 범위는 본 리비전, 내용은
+    최신 번호다 — 더 새 리비전이 또 생기면 다시 알린다."""
+    stale = basis is not None and basis.stale
+    latest = basis.latest_revision_no if basis is not None else None
+    alerts.state(
+        "EQ-19",
+        scope=(basis.equipment_scenario_id, basis.revision_no) if basis is not None else None,
+        content=latest if stale else None,
+        active=stale,
+        text=(
+            f"「{basis.scenario_name}」 최신 r{latest} 있음 — 일정 칸 잠김 · 사이드바 「설비 "
+            "시나리오」 에서 최신 불러오기"
+            if stale and basis is not None
+            else None
+        ),
+        full=_stale_lock_message(basis) if stale and basis is not None else None,
+        tab=tab_name(EQUIPMENT_MASTER_TAB),
+    )
 
 
 # 배치 잠금 표지 — Space 현황의 같은 표지(`LAYOUT_LOCK_MARK`)와 같은 한 마디다. 무엇이 잠기는지와
@@ -1133,8 +1174,6 @@ def _render_notices(
 ) -> None:
     """알림 — 늘 서 있는 한 칸 안에(아래 컴포넌트 마운트의 자리를 고정한다, 개편 명세 2-3)."""
     with st.container():
-        if basis is not None and basis.stale:
-            st.warning(literal_markdown(_stale_lock_message(basis)), icon=":material/lock_clock:")
         layout = layout_mode.layout
         if layout == "locked":
             st.caption(
