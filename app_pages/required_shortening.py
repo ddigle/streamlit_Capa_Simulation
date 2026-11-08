@@ -186,8 +186,10 @@ dashboard_baseline, dashboard_equipment, dashboard_downtime = shortening_frames(
     today=today,
 )
 
-# 무엇을 볼지(목표 확보율·진척 비교)와 거르는 조건(기간·공정)은 모두 사이드바 조건 카드다.
-conditions_card = condition_card("필요 단축 일정 조건", name="shortening")
+# 무엇을 볼지(목표 확보율·진척 비교)와 거르는 조건(기간·공정)은 모두 사이드바 조건 카드다. 맨 위
+# 두 칸이 본문 머리 줄에서 옮겨 온 가장 자주 쓰는 칸이라 카드는 처음 펼친 채 선다(설계 규칙
+# UI-LAY-06 — HOME 「LOB 표시 조건」 과 같은 까닭, 한 번 접으면 기억 칸을 따른다).
+conditions_card = condition_card("필요 단축 일정 조건", name="shortening", default=True)
 if using_dashboard_sample and not show_sample_fleet:
     # 카드에는 값 한 마디와 풍선(하는 법), 본문에는 빈 결과 한 줄만 둔다 — 같은 말을 두 번 그리지
     # 않는다(설계 규칙 UI-TXT-04 · UI-TXT-07).

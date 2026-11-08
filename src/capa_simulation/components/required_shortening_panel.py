@@ -9,15 +9,17 @@ rerun 은 계산을 다시 돌리지 않는다. 본문은 키 붙은 프래그�
 바꾸면 그 칸의 콜백이 본문 프래그먼트만 다시 돌린다(`_rerun_view` — 설계 규칙 UI-PRF-01).
 
 무엇을 볼지(목표 확보율 · 진척 비교)와 거르는 조건(시작 월·끝 월·공정)은 모두 사이드바 `필요 단축
-일정 조건` 카드다 — 볼 것이 맨 위, 그 밑이 「공용 설정」 묶음(2026-11-08 사용자 그림 메모 g03 — 본문
-맨 위 머리 줄에서 옮김, 설계 규칙 UI-LAY-02). 공정을 고르지 않으면 **고른 목표에서 한 달이라도
-모자란 공정 전체**를 카드로 보인다 — 공정 필터의 「미선택 시 전체」 관례를 「미선택 시 목표 미달
-전체」로 읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
+일정 조건` 카드다 — 볼 것이 맨 위(카드 폭을 다 쓰는 위아래 두 칸), 그 밑이 「공용 설정」 묶음
+(2026-11-08 사용자 그림 메모 g03 — 본문 맨 위 머리 줄에서 옮김, 설계 규칙 UI-LAY-02). 카드는 처음
+펼친 채 선다(설계 규칙 UI-LAY-06 — 옮겨 온 칸이 첫 화면에 보이게). 공정을 고르지 않으면 **고른
+목표에서 한 달이라도 모자란 공정 전체**를 카드로 보인다 — 공정 필터의 「미선택 시 전체」 관례를
+「미선택 시 목표 미달 전체」로 읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
 
 본문 맨 위는 값 한 줄이다 — 「설비 일정 기준 가용(환산) · 오늘」 과 그 끝에 조건이 있을 때만
 서는 상태 표지(일정 미정 · 사용기준 밖 · 입력 비가동 반영)를 한 줄로 두고, 뜻은 표지 풍선,
 내역(미정구분 · 합 대수 · 가용 넘침 자리)은 상태 알림 `RS-03` ~ `RS-05` 다(g03, 설계 규칙
-UI-TXT-04 · UI-NTF-02).
+UI-TXT-04 · UI-NTF-02). 고칠 입력이 가용설비 현황에 있는 일정 미정(설비 마스터 일정 칸) · 입력
+비가동(Preference)은 그 줄의 「그 화면으로」 가 그 탭을 연다(`goto`).
 
 **거르는 조건 셋은 공용 프로필이다**(2026-10-08 사용자 요청, 설비 DB 0019). 세션에 값이 없을 때만
 프로필로 심고(HOME 비교 대상과 같은 관례), 사용자가 바꾸면 그 위젯의 `on_change` 가 그 자리에서
@@ -120,6 +122,7 @@ from capa_simulation.components.state_alerts import (
     alarm_table_place,
     alert_table,
     simulation_scope,
+    tab_name,
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -127,12 +130,19 @@ from capa_simulation.components.typography import FIGURE_CLASS
 from capa_simulation.components.upeh_assumption_controls import render_upeh_assumption_controls
 from capa_simulation.design import tokens
 from capa_simulation.home_state import PAST_DATA_TOGGLE_KEY, home_toggle
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    EQUIPMENT_MASTER_TAB,
+    EQUIPMENT_PREFERENCE_TAB,
+    REQUIRED_SHORTENING,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PageContext,
     bootstrap_error_message,
     prune_list_selection,
 )
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import (
     clear_shortening_filter_cache,
     get_equipment_repository,
@@ -250,6 +260,13 @@ USAGE_NOTICE_HELP = (
 _UNDATED_ICON = ":material/event_busy:"
 _USAGE_ICON = ":material/filter_alt_off:"
 _MANUAL_ICON = ":material/event_busy:"
+# 상태 알림 `RS-03` · `RS-05` 의 고칠 자리 — 일정 칸은 설비 마스터, 입력 비가동은 Preference 다
+# (둘 다 가용설비 현황). 줄의 「그 화면으로」 가 그 탭을 열고(`goto` · `tab`), 전문 첫머리는 이 화면
+# 이름이다(설계 규칙 UI-NTF-02 · UI-NTF-06).
+_FIX_SCREEN = (tab_label(AVAILABLE_EQUIPMENT_STATUS), AVAILABLE_EQUIPMENT_STATUS.href)
+_UNDATED_FIX = "설비 마스터 일정 칸"
+_UNDATED_FIX_FULL = "날짜는 가용설비 현황 › 설비 마스터의 일정 칸에 적어 저장합니다."
+_MANUAL_FIX = "가용설비 현황 › Preference"
 
 # 표 첫 칸(행 이름)과 월 칸의 최소 폭. 달이 많으면 가로로 흐르고 첫 칸은 붙박인다. 기준 창(1600 ·
 # 사이드바 펼침)의 표 폭 1227px 에 14달이 스크롤 막대 자리까지 남기고 든다.
@@ -328,6 +345,9 @@ class _Plan:
     marks: tuple[_StatusMark, ...] = ()
     """본문 맨 위 값 줄 끝의 상태 표지(일정 미정 · 사용기준 밖 · 입력 비가동 반영) — 앱 전체 회차가
     상태 알림과 함께 세운다(`_report_status_marks`)."""
+    shown_baselines: tuple[str, ...] | None = None
+    """카드 `진척 비교` 상자에 세운 기준선 id 들(상자가 없으면 None) — 본문 프래그먼트 회차가 지금
+    목록과 견준다(`_view_choices`)."""
 
     @property
     def plan(self) -> ShorteningPlan:
@@ -467,7 +487,7 @@ def _prepare(
     profile = shortening_filter_profile_or_default(database_path)
     with controls:
         # 무엇을 볼지가 맨 위 — 그 밑이 「공용 설정」 묶음(기간·공정)이다.
-        _render_view_choices(database_path)
+        shown_baselines = _render_view_choices(database_path)
         if database_path is not None:
             # 표지만 자리에 둔다 — 저장 규칙(바꾸면 모두의 기본값)은 풍선이 말한다.
             st.caption(":material/groups: 공용 설정", help=SHARED_FILTER_HELP)
@@ -519,6 +539,7 @@ def _prepare(
         selected=tuple(selected),
         labels=labels,
         assumption=assumption,
+        shown_baselines=shown_baselines,
     )
 
 
@@ -551,18 +572,21 @@ def _render_view(
     콜백(`_rerun_view`)은 이것만 다시 돌린다. 인자(계획·고른 달·공정·표시명·오늘·설비 마스터·상태
     표지)는 직전 앱 전체 회차의 것이다 — 조건 카드의 거르는 조건·탭·저장처럼 계산 입력을 바꾸는
     조작은 앱 전체 회차라 새 인자로 다시 부른다. **회차마다 다시 읽는 것**: 목표 확보율 · 진척 비교
-    세션 값, 기준선 목록·고른 기준선(다른 세션이 지운 기준선은 다음 회차에 비교하지 않는다 —
-    `_view_choices`), 공용 판정 기준(`_thresholds`), 미저장 시나리오 편집 여부(`_save_context`).
+    세션 값, 기준선 목록·고른 기준선(목록이 카드 상자에 세운 것과 다르면 — 다른 세션이 지웠거나
+    새로 저장했다 — 앱 전체를 다시 돌려 카드 칸과 맞춘다, `_view_choices`), 공용 판정
+    기준(`_thresholds`), 미저장 시나리오 편집 여부(`_save_context`).
     기준선을 저장·지운 콜백이 표지를 남기면 앱 전체를 다시 돌린다 — 쓰기 뒤에는 앱 전체 회차다.
     """
     if consume_baseline_write():
         st.rerun(scope="app")
-    level, compare_id = _view_choices(database_path)
-    _render_value_line(today, prepared.marks if isinstance(prepared, _Plan) else ())
-    render_baseline_notice()
     if isinstance(prepared, ShorteningStop):
+        _render_value_line(today, ())
+        render_baseline_notice()
         _render_stop(prepared)
         return
+    level, compare_id = _view_choices(database_path, prepared.shown_baselines)
+    _render_value_line(today, prepared.marks)
+    render_baseline_notice()
     _render_body(
         prepared,
         level=level,
@@ -770,20 +794,21 @@ def _scenario_error_text(reason: str | None) -> str:
 # ------------------------------------------------------------------ 위젯
 
 
-def _render_view_choices(database_path: str | None) -> None:
+def _render_view_choices(database_path: str | None) -> tuple[str, ...] | None:
     """조건 카드 맨 위 — `목표 확보율` 과 `진척 비교`(2026-11-08 그림 메모 g03 — 본문 머리 줄에서
     옮김). 둘 다 무엇을 볼지라 계획을 다시 세우지 않는다 — 바꾸면 콜백이 본문 프래그먼트만 다시
     돌린다(`_rerun_view`). 값은 세션 칸이고 key 는 그대로다(Space 「필요 단축」 보기가 같은 목표
-    칸을 읽는다). `database_path` 가 없으면(설비 DB 없음) 진척 비교 상자를 세우지 않는다."""
+    칸을 읽는다). `database_path` 가 없으면(설비 DB 없음) 진척 비교 상자를 세우지 않는다.
+
+    둘은 카드 폭을 다 쓰는 위아래 두 칸이다 — 기준선 라벨 「이름 · 저장일」 이 나란한 반 칸에서는
+    닫힌 칸 · 펼친 목록 모두 저장일 몫이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가
+    없으면 None)이다 — 본문 프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
+    _render_level_select()
     baselines = load_baseline_options(database_path)
     if baselines is None:
-        _render_level_select()
-        return
-    level_column, compare_column = st.columns([1, 1.6], vertical_alignment="bottom")
-    with level_column:
-        _render_level_select()
-    with compare_column:
-        render_compare_select(baselines, on_change=_rerun_view, args=(SHORTENING_COMPARE_KEY,))
+        return None
+    render_compare_select(baselines, on_change=_rerun_view, args=(SHORTENING_COMPARE_KEY,))
+    return tuple(summary.baseline_id for summary in baselines)
 
 
 def _render_level_select() -> None:
@@ -807,18 +832,24 @@ def _rerun_view(widget_key: str) -> None:
     rerun_fragment_if_alone(VIEW_FRAGMENT_KEY, widget_key)
 
 
-def _view_choices(database_path: str | None) -> tuple[float, str]:
+def _view_choices(database_path: str | None, shown: tuple[str, ...] | None) -> tuple[float, str]:
     """본문이 볼 목표 확보율 · 진척 비교 — 프래그먼트 회차마다 세션 칸에서 읽는다.
 
-    고른 기준선이 지금 목록에 없으면(다른 세션이 지웠다) 비교하지 않는다. 카드의 칸은 프래그먼트
-    밖이라 이 회차에 고쳐 적지 않고, 다음 앱 전체 회차가 「비교 안 함」 으로 되돌린다
-    (`render_compare_select`)."""
+    `shown` 은 직전 앱 전체 회차가 카드 `진척 비교` 상자에 세운 기준선 id 들이다. 지금 목록이 그와
+    다르면(다른 세션이 지웠거나 새로 저장했다) 앱 전체를 다시 돌린다 — 카드 칸은 프래그먼트 밖이라
+    이 회차에 고쳐 그릴 수 없고, 앱 전체 회차의 `render_compare_select` 가 선택지를 다시 세우며
+    지워진 기준선이면 「비교 안 함」 으로 되적는다. 그래야 카드 칸과 본문이 같은 비교를 말한다
+    (설계 규칙 UI-DAT-11). 그 밖의 회차(카드가 상자를 세우지 않았거나 목록이 같다)는 세션 값을
+    그대로 쓴다."""
     level = st.session_state.get(SHORTENING_LEVEL_KEY, DEFAULT_TARGET_LEVEL)
     if level not in TARGET_LEVELS:
         level = DEFAULT_TARGET_LEVEL
     compare = st.session_state.get(SHORTENING_COMPARE_KEY, NO_COMPARISON)
     baselines = load_baseline_options(database_path)
-    if baselines is None or compare not in {summary.baseline_id for summary in baselines}:
+    current = None if baselines is None else tuple(summary.baseline_id for summary in baselines)
+    if shown is not None and current is not None and current != shown:
+        st.rerun(scope="app")
+    if current is None or compare not in current:
         compare = NO_COMPARISON
     return float(level), str(compare)
 
@@ -970,6 +1001,12 @@ def _save_processes(database_path: str, visible: tuple[str, ...]) -> None:
         clear_shortening_filter_cache()
 
 
+def _here() -> str:
+    """상태 알림 전문 첫머리의 화면 이름 — 줄의 화면 칸이 고칠 화면(`goto`)일 때 어느 화면의 일인지
+    전문이 말한다(설계 규칙 UI-NTF-02)."""
+    return tab_label(REQUIRED_SHORTENING)
+
+
 def _undated_note(equipment: pd.DataFrame, chosen: Sequence[str] | None) -> _StatusNote | None:
     """반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비. 0대면 None.
 
@@ -993,8 +1030,8 @@ def _undated_note(equipment: pd.DataFrame, chosen: Sequence[str] | None) -> _Sta
     meaning = UNDATED_HELP + (f" {note}" if note else "")
     return _StatusNote(
         mark=_StatusMark(_UNDATED_ICON, f"일정 미정 {format_unit_count(total)}대", meaning),
-        text=f"{detail} — 가용대수에 세지 않음",
-        full=f"{detail} — {meaning}",
+        text=f"{detail} — 가용대수에 세지 않음 · {_UNDATED_FIX}",
+        full=f"{_here()} — {detail} — {meaning} {_UNDATED_FIX_FULL}",
         content=[detail, note],
     )
 
@@ -1064,8 +1101,8 @@ def _manual_note(
     tail = f" · 가용 넘침 {len(over)}칸" if not over.empty else ""
     return _StatusNote(
         mark=_StatusMark(_MANUAL_ICON, f"{MANUAL_DOWNTIME_BAND} {len(rows)}칸{tail}", meaning),
-        text=band,
-        full=f"{band} — {meaning}",
+        text=f"{band} — {_MANUAL_FIX}",
+        full=f"{_here()} — {band} — {meaning}",
         content=[band, places],
     )
 
@@ -1110,6 +1147,8 @@ def _report_status_marks(
         text=None if undated is None else undated.text,
         full=None if undated is None else undated.full,
         scope_label=fleet_label,
+        tab=tab_name(EQUIPMENT_MASTER_TAB),
+        goto=_FIX_SCREEN,
     )
     usage = _usage_note(equipment, chosen)
     alerts.state(
@@ -1130,6 +1169,8 @@ def _report_status_marks(
         text=None if manual is None else manual.text,
         full=None if manual is None else manual.full,
         scope_label=f"{sim.label} · {equipment_label}",
+        tab=tab_name(EQUIPMENT_PREFERENCE_TAB),
+        goto=_FIX_SCREEN,
     )
     marks = tuple(note.mark for note in (undated, usage, manual) if note is not None)
     return replace(prepared, marks=marks)

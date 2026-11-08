@@ -29,6 +29,8 @@ from test_required_shortening_tab import _database as shortening_database
 from test_required_shortening_tab import _run as shortening_run
 
 from capa_simulation.components.required_shortening_panel import MANUAL_NOTICE_HELP
+from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
     clear_manual_downtime_cache,
@@ -155,6 +157,17 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
     assert str(band.proto.help).startswith(MANUAL_NOTICE_HELP)
     note = active_state(app, "RS-05")
     assert note is not None and note["short"].startswith(f"{MANUAL_DOWNTIME_BAND}(")
+    # 고칠 입력은 가용설비 현황 › Preference 에 있다 — 짧은 글이 그 자리를 말하고 줄의 「그
+    # 화면으로」 가 그 탭을 열며, 전문 첫머리가 이 화면의 일임을 말한다(설계 규칙 UI-NTF-02 ·
+    # UI-NTF-06).
+    assert note["short"].endswith("— 가용설비 현황 › Preference")
+    assert (note["page"], note["href"], note.get("tab")) == (
+        tab_label(AVAILABLE_EQUIPMENT_STATUS),
+        AVAILABLE_EQUIPMENT_STATUS.href,
+        "Preference",
+    )
+    assert note["full"].startswith(f"필요 단축 일정 — {MANUAL_DOWNTIME_BAND}(")
+    assert MANUAL_NOTICE_HELP in note["full"]
 
     _, entered = _csv(app, "equipment_shortening_months_csv")
 
@@ -219,4 +232,7 @@ def test_the_overdrawn_places_sit_in_the_band_tooltip_not_on_the_line() -> None:
     assert note.mark.help.startswith(MANUAL_NOTICE_HELP)
     places = "가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): DEMO\\-A 26.08."
     assert places in note.mark.help and places in note.full
-    assert note.text == f"{MANUAL_DOWNTIME_BAND}(2칸 · 합 2.75대 · 가용 넘침 1칸)"
+    # 짧은 글은 합 대수 띠와 고칠 자리다(설계 규칙 UI-NTF-06).
+    assert note.text == (
+        f"{MANUAL_DOWNTIME_BAND}(2칸 · 합 2.75대 · 가용 넘침 1칸) — 가용설비 현황 › Preference"
+    )

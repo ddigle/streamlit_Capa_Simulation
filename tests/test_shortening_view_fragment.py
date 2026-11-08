@@ -13,8 +13,9 @@
 - 같은 숫자: 목표를 바꾼 프래그먼트 회차의 KPI·LOB·공정 카드·CSV 세 벌이, 같은 목표의 앱 전체
   회차와 바이트까지 같다.
 - 무효화: 거르는 조건(공정)을 바꾸면 앱 전체 회차로 다시 계산하고, 프래그먼트 회차는 그 회차의
-  공정 선택을 쓴다. 기준선 저장은 앱 전체 회차로 바뀌고, 다른 세션이 지운 기준선·바꾼 공용 판정
-  기준은 다음 프래그먼트 회차에 보인다.
+  공정 선택을 쓴다. 기준선 저장은 앱 전체 회차로 바뀌고, 다른 세션이 지우거나 저장한 기준선은
+  다음 프래그먼트 회차가 앱 전체로 올려 카드 칸과 맞추며, 바꾼 공용 판정 기준은 다음 프래그먼트
+  회차에 보인다.
 
 시나리오 쪽은 `test_required_shortening_tab` 처럼 모듈 속성을 갈아 끼우되, 프래그먼트 회차는
 스크립트 머리를 지나지 않으므로 스크립트 안이 아니라 시험의 `monkeypatch` 로 회차 내내 갈아 끼운다.
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -62,6 +64,10 @@ from capa_simulation.persistence.equipment_cache import (
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.services.shortening_baseline import (
+    ShorteningBaselineDraft,
+    baseline_label,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
@@ -392,16 +398,66 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     assert any("진척 비교 요약" in body for body in _screen(app, world)[0])
 
-    # 다른 세션이 그 기준선을 지웠다 — 다음 프래그먼트 회차가 목록을 다시 읽어 비교하지 않는다.
+    # 다른 세션이 그 기준선을 지웠다 — 목표만 바꾼 프래그먼트 회차가 목록이 카드에 세운 것과 다른
+    # 것을 보고 앱 전체를 다시 돌린다. 카드 칸이 「비교 안 함」 하나로 되적히고 본문도 비교하지
+    # 않는다 — 카드 칸과 본문이 같은 비교를 말한다(설계 규칙 UI-DAT-11).
     DuckDBEquipmentRepository(database_path).delete_shortening_baseline(stored.baseline_id)
     clear_shortening_baseline_cache()
-    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 0.9)
-    assert not any("진척 비교 요약" in body for body in _screen(app, world)[0])
-    # 다음 앱 전체 회차의 카드 칸은 「비교 안 함」 하나다.
-    runner.fragment_queue = []
+    view = _view(runner)
+    app.session_state[SHORTENING_LEVEL_KEY] = 0.9
+    runner.fragment_queue = [view]
     _run(app, world)
+    assert runner.started == [[view], []]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 2
+    assert not any("진척 비교 요약" in body for body in _screen(app, world)[0])
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 0.9
+    clear_equipment_repository()
+
+
+def test_a_baseline_another_session_saved_joins_the_card_on_the_next_view_run(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 세션이 저장한 기준선도 다음 본문 프래그먼트 회차가 앱 전체로 올려 카드 선택지에 세운다
+    — 카드 칸은 프래그먼트 밖이라 프래그먼트 회차만으로는 목록이 그대로였다. 목록이 같으면
+    프래그먼트 회차 그대로다."""
+    runner = _runner(request)
+    database_path, _ = _saved_database(tmp_path)
+    world = _install(monkeypatch, database_path)
+    app = _open(runner)
+    assert list(app.selectbox(key=SHORTENING_COMPARE_KEY).options) == ["비교 안 함"]
+    full_runs = app.session_state[FULL_RUNS_KEY]
+
+    # 목록이 그대로면 목표를 바꾼 회차는 본문 프래그먼트만 돈다.
+    _choose_level(app, runner, world, 0.9)
+    assert app.session_state[FULL_RUNS_KEY] == full_runs
+
+    # 다른 세션이 기준선을 저장했다 — 다음 프래그먼트 회차가 앱 전체로 올라 카드에 선다.
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.save_shortening_baseline(
+        ShorteningBaselineDraft(
+            name="다른 세션 기준선",
+            plan_today=date.today(),
+            start_month=_months()[0],
+            end_month=_months()[-1],
+            processes=(),
+            cutoff_days={},
+            units=pd.DataFrame(),
+        )
+    )
+    clear_shortening_baseline_cache()
+    (other,) = repository.list_shortening_baselines()
+    view = _view(runner)
+    app.session_state[SHORTENING_LEVEL_KEY] = 1.3
+    runner.fragment_queue = [view]
+    _run(app, world)
+    assert runner.started == [[view], []]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
+    picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
+    assert list(picker.options) == ["비교 안 함", baseline_label(other)]
+    assert picker.value == NO_COMPARISON
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.3
     clear_equipment_repository()
 
 

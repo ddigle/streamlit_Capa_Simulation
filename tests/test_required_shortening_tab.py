@@ -59,6 +59,7 @@ from capa_simulation.components.shortening_board import (
     ORDER_FALLBACK_HELP,
     SHORTENING_HIGHLIGHT_KEY,
 )
+from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -82,7 +83,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP, ORDER_WORSENED_FIRST
-from capa_simulation.sidebar_status import NO_PROCESS_MARK
+from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, NO_PROCESS_MARK
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
     UPEH_ASSUMPTION_PERCENT_KEY,
@@ -198,6 +199,21 @@ def _same_row_as_the_value(app: AppTest, text: str) -> bool:
     return bool(horizontal and flex.wrap and paths[text][:-1] == value[:-1])
 
 
+def _sidebar_block_paths(app: AppTest, keys: tuple[str, ...]) -> dict[str, list[str]]:
+    """사이드바에서 그 key 위젯까지 지나는 블록 종류(바깥 → 안 — `expander` · `column` …)."""
+    found: dict[str, list[str]] = {}
+
+    def walk(node: Any, kinds: list[str]) -> None:
+        for child in getattr(node, "children", {}).values():
+            if getattr(child, "key", None) in keys:
+                found[str(child.key)] = kinds
+            if hasattr(child, "children"):
+                walk(child, [*kinds, str(child.type)])
+
+    walk(app.sidebar, [])
+    return found
+
+
 def _cards(app: AppTest) -> list[str]:
     body = _html(app)
     return [
@@ -228,6 +244,13 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     # 줄에 고르는 칸이 없다(그림 메모 g03).
     sidebar_selects = [widget.label for widget in app.sidebar.selectbox]
     assert sidebar_selects[:4] == ["목표 확보율", "진척 비교", "시작 월", "끝 월"]
+    # 카드는 처음 펼친 채 서고(설계 규칙 UI-LAY-06 — 옮겨 온 칸이 첫 화면에 보이게), 두 칸은 카드
+    # 폭을 다 쓰는 위아래 칸이다 — 나란한 반 칸이면 기준선 라벨 「이름 · 저장일」 의 저장일이
+    # 잘렸다.
+    assert app.session_state[f"{CONDITION_CARD_PREFIX}shortening"] is True
+    paths = _sidebar_block_paths(app, (SHORTENING_LEVEL_KEY, SHORTENING_COMPARE_KEY))
+    assert paths[SHORTENING_LEVEL_KEY] == paths[SHORTENING_COMPARE_KEY], paths
+    assert "column" not in paths[SHORTENING_LEVEL_KEY], paths
     assert "공정 (표시순서)" in {widget.label for widget in app.sidebar.multiselect}
     assert not {"목표 확보율", "진척 비교"} & {widget.label for widget in app.main.selectbox}
     downloads = {str(button.key) for button in app.get("download_button")}
@@ -452,8 +475,19 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     assert _same_row_as_the_value(app, str(line.value))
     note = active_state(app, "RS-03")
     assert note is not None
-    assert note["short"] == "일정 미정 1대 (반입 미정 1) — 가용대수에 세지 않음"
+    assert note["short"] == (
+        "일정 미정 1대 (반입 미정 1) — 가용대수에 세지 않음 · 설비 마스터 일정 칸"
+    )
     assert "단축 후보에도 들지 않습니다" in note["full"]
+    # 고칠 입력(일정 칸)은 가용설비 현황 › 설비 마스터에 있다 — 줄의 「그 화면으로」 가 그 탭을
+    # 열고, 전문 첫머리가 이 화면의 일임을 말한다(설계 규칙 UI-NTF-02 · UI-NTF-06).
+    assert (note["page"], note["href"], note.get("tab")) == (
+        tab_label(AVAILABLE_EQUIPMENT_STATUS),
+        AVAILABLE_EQUIPMENT_STATUS.href,
+        "설비 마스터",
+    )
+    assert note["full"].startswith("필요 단축 일정 — 일정 미정 1대")
+    assert "가용설비 현황 › 설비 마스터의 일정 칸" in note["full"]
     # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 표지가 사라지고 알림은 해소된다.
     others = [
         name for name in app.multiselect(key=SHORTENING_PROCESS_KEY).options if name != process
@@ -523,6 +557,8 @@ def test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_to
     assert note is not None
     assert note["short"].startswith("사용기준 HBM·EDP 밖 ") and note["short"].endswith("대 제외")
     assert USAGE_NOTICE_HELP in note["full"]
+    # 고칠 것이 아니라 뺀 사실을 알린다 — 줄은 다른 화면으로 보내지 않는다.
+    assert note["href"] != AVAILABLE_EQUIPMENT_STATUS.href and "tab" not in note
     clear_equipment_repository()
 
 
