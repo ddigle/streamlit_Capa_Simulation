@@ -25,6 +25,8 @@ from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GO
 from capa_simulation.components.scenario_management import DISCARD_LOCK_HELP
 from capa_simulation.components.scenario_status import (
     LOAD_MODE,
+    PENDING_DISCARD_HELP,
+    PENDING_SAVE_REFUSAL,
     SAVE_BUTTON_HELP,
     SAVE_MODE,
     SCENARIO_DIALOG_KEY,
@@ -707,7 +709,15 @@ def test_unapplied_edits_gate_both_load_and_save(sidebar_app: AppTest) -> None:
     # 저장은 「적용하지 않은 편집을 버리고 저장」을 체크해야 된다. 버튼은 잠그지 않는다 — 체크하지
     # 않고 누르면 저장하지 않고 그렇다고 알린다(아래 테스트가 잠그지 않는 까닭을 말한다).
     app.session_state[SCENARIO_DIALOG_MODE_KEY] = SAVE_MODE
-    app = _save(app.run(), "체크 없이 누른 저장안")
+    app = app.run()
+    # 저장 구획 맨 위는 상자가 아니라 값 줄 한 줄이고, 편집이 어떻게 되는지 · 남기는 길은 확인 체크
+    # 풍선이 말한다(u3-05 — 위 상자와 거절 상자가 같은 말을 거듭하지 않는다).
+    assert not any("적용 전 편집" in item.value for item in app.warning)
+    assert any(
+        "적용 전 편집" in item.value and "기준 정보 · UPEH" in item.value for item in app.caption
+    )
+    assert app.checkbox(key="sidebar_save_discards_pending_edits").help == PENDING_DISCARD_HELP
+    app = _save(app, "체크 없이 누른 저장안")
     assert "test_saved_revision_name" not in app.session_state
     refusals = [item.value for item in app.warning if "저장하지 않았습니다" in item.value]
     assert refusals
@@ -742,15 +752,19 @@ def test_a_save_pressed_as_unapplied_edits_resurface_is_refused_out_loud(
 
     assert not app.exception
     assert "test_saved_revision_name" not in app.session_state
-    # 막았다는 알림은 팝업 안에 선다 — 팝업은 프래그먼트 재실행으로 닫히지 않는다.
+    # 막았다는 알림은 팝업 안에 한 줄로 선다 — 팝업은 프래그먼트 재실행으로 닫히지 않는다. 어느 표의
+    # 편집인지는 그 회차에 선 맨 위 값 줄이 말한다(u3-05 — 상자 둘이 같은 말을 거듭하지 않는다).
     refusals = [item.value for item in app.warning if "저장하지 않았습니다" in item.value]
-    assert refusals and all("생산 계획 · 수율" in refusal for refusal in refusals)
+    assert refusals == [PENDING_SAVE_REFUSAL]
+    assert any(
+        "적용 전 편집" in item.value and "생산 계획 · 수율" in item.value for item in app.caption
+    )
     assert app.session_state[SCENARIO_DIALOG_KEY] is True
 
-    # 막은 회차는 다시 돌리지 않았다 — 다음 조작에도 적용 전 편집 경고가 그대로 선다.
+    # 막은 회차는 다시 돌리지 않았다 — 다음 조작에도 적용 전 편집 값 줄이 그대로 선다.
     app = app.run()
     assert "test_saved_revision_name" not in app.session_state
-    assert any("생산 계획 · 수율" in item.value for item in app.warning)
+    assert any("생산 계획 · 수율" in item.value for item in app.caption)
 
 
 def test_without_unapplied_edits_nothing_extra_is_asked(sidebar_app: AppTest) -> None:

@@ -146,6 +146,15 @@ _NOTE_PREVIEW_LIMIT = 40
 NO_REVISION_HELP = "선택한 시나리오에 저장된 리비전이 없어 불러올 수 없습니다."
 # 「신규 리비전 저장」 풍선 — 새 리비전에 무엇이 담기는지.
 SAVE_BUTTON_HELP = "지금 화면의 편집과 함께 조회기간·공정 필터도 새 리비전에 담깁니다."
+# 저장 구획의 적용 전 편집 확인 체크와 그 풍선 — 적용하지 않은 편집이 어떻게 되는지와 남기는 길은
+# 체크 풍선이 말하고, 자리에는 값 줄(`_pending_edits_line`)만 둔다(설계 규칙 UI-NTF-09).
+PENDING_DISCARD_LABEL = "적용하지 않은 편집을 버리고 저장"
+PENDING_DISCARD_HELP = (
+    "적용하지 않은 편집은 새 리비전에 들어가지 않고 저장하면 사라집니다. 남기려면 먼저 그 화면에서 "
+    "「변경사항 적용」을 누릅니다."
+)
+# 체크 없이 누른 저장의 거절 한 줄 — 저장 단추 곁.
+PENDING_SAVE_REFUSAL = "저장하지 않았습니다 — 위 확인을 체크한 뒤 다시 저장하세요."
 
 
 def render_scenario_field() -> None:
@@ -614,14 +623,10 @@ def _pending_edits_notice(pending_edits: Sequence[str]) -> str:
     )
 
 
-def _pending_save_refusal(pending_edits: Sequence[str]) -> str:
-    """적용 전 편집을 버린다는 확인 없이 누른 저장을 막았을 때의 알림. 무엇을 하면 되는지까지."""
-    return (
-        "신규 리비전을 저장하지 않았습니다. "
-        + ", ".join(pending_edits)
-        + " 에 적용하지 않은 편집이 있습니다 — 먼저 「변경사항 적용」을 누르거나, 그 편집을 버려도"
-        " 되면 「적용하지 않은 편집을 버리고 저장」을 체크한 뒤 다시 저장하세요."
-    )
+def _pending_edits_line(pending_edits: Sequence[str]) -> str:
+    """저장 구획 맨 위 값 줄 — 「적용 전 편집」 표지와 그 편집이 남은 표 이름들. 그 편집이 어떻게
+    되는지는 확인 체크 풍선(`PENDING_DISCARD_HELP`)이 말한다."""
+    return ":orange-badge[적용 전 편집] " + " · ".join(pending_edits)
 
 
 def missing_scenario_notice(name: str | None, status: str | None) -> str:
@@ -695,10 +700,11 @@ def _render_revision_save(
     # 확인 칸을 체크해야 저장한다. 확인 칸은 폼 **밖**이라 체크가 곧바로 세션에 남는다.
     dropping_confirmed = True
     if pending_edits:
-        st.warning(_pending_edits_notice(pending_edits) + " 먼저 「변경사항 적용」을 누르세요.")
+        st.caption(_pending_edits_line(pending_edits))
         dropping_confirmed = st.checkbox(
-            "적용하지 않은 편집을 버리고 저장",
+            PENDING_DISCARD_LABEL,
             key="sidebar_save_discards_pending_edits",
+            help=PENDING_DISCARD_HELP,
         )
     # `clear_on_submit` 을 쓰지 않는다. 그것은 **거절된 저장**에도 리비전명·메모를 지워, 막힌
     # 까닭을 고친 뒤 처음부터 다시 적어야 했다. 성공한 회차에만 칸의 key 세대를 올려 새 빈
@@ -730,7 +736,7 @@ def _render_revision_save(
     if not submitted:
         return
     if not dropping_confirmed:
-        st.warning(_pending_save_refusal(pending_edits), icon=":material/block:")
+        st.warning(PENDING_SAVE_REFUSAL, icon=":material/block:")
         return
 
     written: Written[ScenarioSnapshot] | None = None
