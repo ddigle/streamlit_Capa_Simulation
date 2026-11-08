@@ -1803,17 +1803,34 @@ def get_period_capacity_error(
     return _capacity_outcome(tables).error
 
 
+# 조회기간 밖 오류 글(`outside_period_error`)이 고칠 곳으로 드는 말. 모듈수(`RQ_MODULE`)는 기준 정보
+# 편집표가 아니라 앱에서 고칠 수 없다 — 계산 멈춤 알림의 모듈수 글(`page_bootstrap`)과 같은 말이고,
+# 그 알림은 첫머리에 같은 말을 두므로 전문에서는 이 대목을 뺀다.
+OUTSIDE_PERIOD_SCREENS_FIX = (
+    "오류가 가리키는 화면(수율·PKG PLAN 은 생산 계획, 그 밖은 기준 정보 페이지)에서 고친 뒤 새 "
+    "리비전으로 저장하세요"
+)
+OUTSIDE_PERIOD_MODULE_FIX = (
+    "모듈수는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천의 모듈수를 고쳐 다시 "
+    "등록하세요"
+)
+_MODULE_TABLE = "RQ_MODULE"
+
+
 def outside_period_error(start_month: int, end_month: int, error: str) -> str:
     """조회기간 밖의 달 때문에 멈췄다고 말한다. 보는 기간이 고장 났다고 읽히지 않게 한다.
 
     고칠 화면은 표마다 다르다 — 수율·PKG PLAN 은 생산 계획 화면이다. 「기준 정보 페이지에서」로
-    못 박으면 수율 오류문이 가리키는 곳(생산 계획 → 수율 탭)과 어긋난다(2026-09-29 리뷰).
+    못 박으면 수율 오류문이 가리키는 곳(생산 계획 → 수율 탭)과 어긋난다(2026-09-29 리뷰). 모듈수
+    표의 오류(글 머리가 `RQ_MODULE`)는 고칠 화면이 없어 원천을 다시 등록하라고 한다.
     """
+    fix = (
+        OUTSIDE_PERIOD_MODULE_FIX if error.startswith(_MODULE_TABLE) else OUTSIDE_PERIOD_SCREENS_FIX
+    )
     return (
         f"조회기간({iso_month_text(start_month)}~{iso_month_text(end_month)}) 밖의 달에 기준정보 "
         "오류가 있어 계산을 멈췄습니다. Capa 는 시나리오 전체 기간을 한 번에 계산하므로 어느 "
-        "달이든 고쳐야 풀립니다 — 오류가 가리키는 화면(수율·PKG PLAN 은 생산 계획, 그 밖은 기준 "
-        f"정보 페이지)에서 고친 뒤 새 리비전으로 저장하세요. 오류: {error}"
+        f"달이든 고쳐야 풀립니다 — {fix}. 오류: {error}"
     )
 
 

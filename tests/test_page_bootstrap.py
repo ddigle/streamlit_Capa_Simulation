@@ -462,6 +462,40 @@ def test_a_module_count_stop_outside_the_period_drops_the_screen_to_fix_it(
 @pytest.mark.parametrize(
     "error",
     [
+        _service_stop(unit_capacity._VALUE_BLANK, "RQ_MODULE", "모듈수"),
+        "RQ_MODULE의 연결 키가 중복되었습니다: 1건, 예시 []",
+    ],
+    ids=["blank", "broken"],
+)
+def test_the_outside_period_message_of_a_module_count_stop_points_at_the_source(
+    error: str,
+) -> None:
+    """조회기간 밖 모듈수 멈춤의 서비스 글도 앱에서 고칠 수 없다고 말한다 — 계산 멈춤 알림을 거치지
+    않는 화면(표가 깨진 꼴 · 공정 Capa 상세 따위)은 이 글을 그대로 싣는다(2026-11-08 결정 a10)."""
+    message = outside_period_error(202601, 202612, error)
+
+    assert "밖의 달에 기준정보 오류가 있어 계산을 멈췄습니다" in message
+    assert (
+        "어느 달이든 고쳐야 풀립니다 — 모듈수는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 "
+        "않습니다 — 원천의 모듈수를 고쳐 다시 등록하세요. 오류: RQ_MODULE"
+    ) in message
+    assert "기준 정보" not in message and "생산 계획" not in message
+
+
+def test_the_outside_period_message_of_other_tables_keeps_the_screen_to_fix_them() -> None:
+    message = outside_period_error(
+        202601, 202612, _service_stop(unit_capacity._VALUE_BLANK, "RQ_VITAL", "편중률")
+    )
+
+    assert (
+        "오류가 가리키는 화면(수율·PKG PLAN 은 생산 계획, 그 밖은 기준 정보 페이지)에서 고친 뒤 새 "
+        "리비전으로 저장하세요. 오류: RQ_VITAL"
+    ) in message
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
         duckdb.IOException("Could not set lock on file: Conflicting lock is held"),
         duckdb.CatalogException("Table with name RQ_RUN_RATE does not exist"),
         OSError("읽지 못함"),
