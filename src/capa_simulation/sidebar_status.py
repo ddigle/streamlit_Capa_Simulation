@@ -381,8 +381,10 @@ def condition_card(
     그 탭이 열렸을 때만 그려지는데, 안 그려진 회차에는 위젯 값이 버려지므로
     `sidebar_expander` 의 기억 칸이 되돌린다. 페이지가 그리는 요소라 파이썬 차례로는
     `Support` 뒤에 붙지만 CSS 의 `order` 가 `Support` 를 맨 아래로 민다. `default=True` 는 처음
-    펼친 채 서는 카드다 — HOME 「LOB 표시 조건」 하나(주요 Case 칩이 그 안이라 접혀 있으면 칩이
-    보이지 않는다, 2026-11-02). 한 번 접으면 그 뒤로는 기억 칸을 따른다.
+    펼친 채 서는 카드다 — 맨 위 칸이 그 화면에서 가장 자주 쓰는 칸이라 접혀 있으면 첫 화면에
+    보이지 않는 카드 둘: HOME 「LOB 표시 조건」(주요 Case 칩, 2026-11-02)과 필요 단축 일정 「필요
+    단축 일정 조건」(본문 머리 줄에서 옮겨 온 목표 확보율 · 진척 비교, 2026-11-08 — 설계 규칙
+    UI-LAY-06). 한 번 접으면 그 뒤로는 기억 칸을 따른다.
     """
     return sidebar_expander(label, key=f"{CONDITION_CARD_PREFIX}{name}", icon=icon, default=default)
 

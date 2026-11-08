@@ -268,3 +268,50 @@ def test_the_drawing_link_carries_the_layer_the_process_the_target_and_the_floor
         "proc": "D/A",
         "target": "1",
     }
+
+
+def _board_app(collapsible: bool) -> None:
+    import streamlit as st
+    from test_shortening_watch import TODAY, _level
+
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.components.shortening_board import render_progress_board
+
+    st.session_state["board_order"] = render_progress_board(
+        _level(),
+        ["DEMO_A", "DEMO_B"],
+        scope=["DEMO_A", "DEMO_B"],
+        labels=ProcessLabels(),
+        today=TODAY,
+        months=[202605, 202606],
+        managers={},
+        collapsible=collapsible,
+    )
+
+
+@pytest.mark.parametrize("collapsible", [False, True])
+def test_the_board_folds_only_when_asked_and_keeps_the_same_order(collapsible: bool) -> None:
+    """접는 보드는 인자로만 켠다(필요 단축 일정 — 그림 메모 g03 「접고 펼 수 있게, 기본은 접힘」).
+    켜면 테 두른 칸 대신 처음 접힌 기억 상자이고 제목 줄 · 읽는 법 풍선이 따로 서지 않는다. 끄면
+    지금 꼴(테 두른 칸 + 제목 풍선) 그대로다. 접혀 있어도 상자 안 칸은 돌아 카드 차례가 같다."""
+    from capa_simulation.components.shortening_board import (
+        BOARD_BOX_KEY,
+        BOARD_HELP,
+        BOARD_ORDER_KEY,
+        BOARD_TITLE,
+    )
+
+    app = AppTest.from_function(_board_app, args=(collapsible,)).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    titles = [item for item in app.markdown if str(item.value) == f"**{BOARD_TITLE}**"]
+    boxes = [box for box in app.status if str(box.label) == BOARD_TITLE]
+    if collapsible:
+        assert not titles and len(boxes) == 1
+        assert app.session_state[BOARD_BOX_KEY] is False
+    else:
+        (title,) = titles
+        assert title.proto.help == BOARD_HELP and not boxes
+        assert BOARD_BOX_KEY not in app.session_state
+    assert app.session_state["board_order"] == ["DEMO_A", "DEMO_B"]
+    assert app.selectbox(key=BOARD_ORDER_KEY).label == "카드 차례"

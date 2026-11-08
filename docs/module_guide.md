@@ -207,7 +207,9 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
 - 화면 파일은 보통 Streamlit 스크립트다. 앱은 그 화면에 들어갈 때마다, 그리고 위젯을 만질 때마다 파일 전체를 처음부터 다시 돈다.
 - 맨 위 차례는 늘 같다.
   1. `ctx = api.context(__file__)` — 모듈 문맥(id · 이름 · 데이터 자리 · 키 접두)을 받는다.
-  2. `api.page_header(ctx, "<화면 이름>", description="<한 줄>")` — 머리말을 **한 번**, 맨 위에 그린다.
+  2. `api.page_header(ctx, "<화면 이름>")` — 머리말을 **한 번**, 맨 위에 그린다. 화면 머리에 소개 줄을 두지 않는다 —
+     `description=` 은 창구 1.1 부터 받기만 하고 그리지 않는다(넘기던 모듈이 깨지지 않게 남긴 인자다. 새로 적지 않고, 뼈대(3-7)가
+     적는 그 줄은 지워도 된다). 모듈 소개는 `module.json` 의 `description` 이 모듈 색인에서 맡는다.
   3. 본문.
 - 코어에서는 `from capa_simulation import module_api as api` 하나만 import 한다(부록 A).
 - 화면 파일은 `__main__` 으로 돈다. 상대 import(`from . import x`)를 쓰지 않는다.
@@ -361,7 +363,7 @@ from capa_simulation import module_api as api
 from modules.demo_memo import cache, store
 
 ctx = api.context(__file__)
-api.page_header(ctx, "데모 메모", description="메모를 적어 두고 종류별로 셉니다.")
+api.page_header(ctx, "데모 메모")
 
 KINDS = ("확인", "요청", "기타")
 
@@ -557,7 +559,7 @@ from capa_simulation import module_api as api
 from modules.demo_table import cache
 
 ctx = api.context(__file__)
-api.page_header(ctx, "데모 표", description="올린 합성 표를 종류로 걸러 봅니다.")
+api.page_header(ctx, "데모 표")
 
 
 def _keep_upload() -> None:
@@ -644,7 +646,7 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 - **모듈의 저장하지 않은 편집은 탭의 점 · 테마 단추 확인에 잡히지 않는다.** 코어만 센다. 그래서 저장 단추를 분명히 두고, 저장 전에
   화면을 옮기면 사라진다는 것은 저장 단추 풍선(`help=`)에 적는다.
 - **화면에 설명 문장을 늘 띄워 두지 않는다.** 사용법 · 저장 규칙 · 범위를 풀어 쓴 캡션 · 안내 상자를 두지 않고, 꼭 필요한 말은 그 칸 ·
-  단추의 풍선(`help=`)에 둔다(머리말 `description` 한 줄 — 3-7 — 은 그대로 둔다). 화면에 늘 두는 글은 값(지금 보고 있는 것)과 조건이
+  단추의 풍선(`help=`)에 둔다(머리말에도 소개 줄을 두지 않는다 — 3-5). 화면에 늘 두는 글은 값(지금 보고 있는 것)과 조건이
   있을 때만 서는 짧은 표지로 둔다 — 권장이다. 건수 목록 · 까닭 같은 내역을 자리에 두면 커밋 메시지에 그 까닭을 적는다. 「…이
   없습니다」 같은 빈 결과는 평문 한 줄로 두고 초록 성공 상자(`st.success`)나 파란 안내 상자(`st.info`)를 쓰지 않는다. 화면 안팎 어디를 가리키든 길 안내
   글(「… 에서 고칩니다」 · 「이름은 … 표에서 바로 고칩니다」)을 두지 않고, 그 자리에 바로 가기 단추도 새로 두지 않는다.
@@ -1000,7 +1002,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 
 ### 9-4. API 판과 호환
 
-- 모듈은 `module.json` 의 `api` 로 큰 판 하나를 요구한다. 지금 코어는 `1.0` 이다(`api.API_VERSION`).
+- 모듈은 `module.json` 의 `api` 로 큰 판 하나를 요구한다. 지금 코어는 `1.1` 이다(`api.API_VERSION`).
 - 판이 맞지 않으면 그 모듈만 「실패」 로 등록되지 않는다. 까닭에 두 판이 적힌다.
 - 코어는 같은 큰 판 안에서 **더하기만** 한다(새 함수 · 새 선택 인자 · 새 `PALETTE_KEYS` 항목 · `module.json` 의 새 선택 칸). 더하면 작은 판을 올리고
   부록 C 에 한 줄을 적는다. 새 이름을 쓰는 모듈은 `api_minor` 를 그 판으로 적는다 — 예전 코어로 되돌아갔을 때 import 오류 대신 까닭이 보인다.
@@ -1025,14 +1027,14 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 
 | 이름 | 꼴 | 뜻 |
 |---|---|---|
-| `API_VERSION` | `tuple[int, int]` — `(1, 0)` | 이 코어의 창구 판(큰 판, 작은 판) |
+| `API_VERSION` | `tuple[int, int]` — `(1, 1)` | 이 코어의 창구 판(큰 판, 작은 판) |
 | `FONT_FAMILY` | `str` | 앱 서체 이름 |
 | `IMPLEMENTING_SUFFIX` | `str` — `"(구현중)"` | 성숙도 `L0` · `L1` 화면에 붙는 표기 |
 | `PALETTE_KEYS` | `tuple[str, ...]` — `("surface", "surface_subtle", "border", "text", "text_muted", "accent", "secure", "warning", "shortage")` | `palette()` 의 키 |
 | `ModuleContext` | 바꿀 수 없는 dataclass | 모듈 문맥(아래) |
 | `ModuleContextError` | `RuntimeError` 의 하위 | 문맥을 못 찾거나 선언이 틀렸을 때 |
 | `context` | `context(file: str \| os.PathLike[str]) -> ModuleContext` | 보통 `api.context(__file__)`. 파일 위치에서 가장 가까운 `module.json` 을 찾는다 |
-| `page_header` | `page_header(ctx: ModuleContext, title: str, *, description: str \| None = None) -> None` | 머리말. 성숙도 `L0` · `L1` 이면 `(구현중)` 배지를 붙인다. 한 회차에 한 번, 화면 맨 위. 세션 키를 만들지 않는다 |
+| `page_header` | `page_header(ctx: ModuleContext, title: str, *, description: str \| None = None) -> None` | 머리말. 성숙도 `L0` · `L1` 이면 `(구현중)` 배지를 붙인다. 한 회차에 한 번, 화면 맨 위. 세션 키를 만들지 않는다. `description` 은 받기만 하고 그리지 않는다(1.1) |
 | `palette` | `palette() -> Mapping[str, str]` | 이번 회차 테마의 역할 색. 키는 `PALETTE_KEYS`. 캐시 함수 안에서 부르지 않고 값을 인자로 넘긴다 |
 
 `ModuleContext` 의 칸과 메서드:
@@ -1122,3 +1124,4 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 | 판 | 날짜 | 바뀐 것 |
 |---|---|---|
 | v1.0 | 2026-11-01 | 첫 판 — `API_VERSION` · `FONT_FAMILY` · `IMPLEMENTING_SUFFIX` · `PALETTE_KEYS` · `ModuleContext`(`key` · `data_dir` · `callback` · `guard`) · `ModuleContextError` · `context` · `page_header` · `palette` |
+| v1.1 | 2026-11-08 | `page_header` 의 `description` 을 받기만 하고 그리지 않는다 — 이름 · 서명은 그대로라 넘기던 모듈도 그대로 돈다(화면 머리에 소개 줄을 두지 않는다) |

@@ -43,7 +43,7 @@ MATURITY_LABELS: Final = {"L0": "L0 Lab", "L1": "L1 연결", "L2": "L2 검증"}
 # 사이드바·머리말에 「(구현중)」 을 다는 성숙도.
 IMPLEMENTING_LEVELS: Final = frozenset({"L0", "L1"})
 API_MAJOR: Final = 1
-API_MINOR: Final = 0
+API_MINOR: Final = 1
 # 받는 큰 판. 큰 판을 올리면 옛 판을 남겨 두고, 압축본 판 분포에서 그 판이 0 이 된 다음 배포에 뺀다.
 SUPPORTED_API_MAJORS: Final = frozenset({1})
 # 모듈 뿌리를 바꾸는 환경변수. 비면 `settings.MODULES_DIR`, `off`(대소문자 무시)면 뿌리가 없다 —

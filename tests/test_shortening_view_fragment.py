@@ -1,16 +1,21 @@
 # Purpose: 필요 단축 일정 머리·본문 프래그먼트 회차의 숫자와 다시 읽기를 앱 전체 회차와 견준다.
 
-"""필요 단축 일정 머리(`진척 비교`·`목표 확보율`)·본문은 프래그먼트다(`_render_view`).
+"""필요 단축 일정 본문은 키 붙은 프래그먼트다(`_render_view` · `VIEW_FRAGMENT_KEY`).
 
-조건 카드(시작 월·끝 월·공정)와 계획은 앱 전체 회차가 먼저 끝내고 인자로 넘긴다. 시험은 AppTest 의
-러너가 프래그먼트 저장소를 회차 사이에 쥐고 브라우저처럼 `fragment_id_queue` 로 프래그먼트만 돌리는
-대역(`tests/fragment_browser.py`)으로 **진짜 프래그먼트 회차**를 돌린다.
+조건 카드(목표 확보율·진척 비교·시작 월·끝 월·공정)와 계획은 앱 전체 회차가 먼저 끝내고 인자로
+넘긴다. 목표 확보율 · 진척 비교는 카드에 서지만(그림 메모 g03) 계획을 바꾸지 않아, 그 칸의 콜백이
+본문 프래그먼트만 다시 돌린다(`_rerun_view` — 콜백만 도는 회차 뒤 프래그먼트 회차). 시험은 AppTest
+의 러너가 프래그먼트 저장소를 회차 사이에 쥐고 브라우저처럼 `fragment_id_queue` 로 프래그먼트만
+돌리는 대역(`tests/fragment_browser.py`)으로 **진짜 프래그먼트 회차**를 돌린다. 페이지는 `app.py`
+처럼 실행 표지(`begin_app_run` · `finish`)를 단다 — 콜백이 프래그먼트만 돌릴지 가르는 판정이 이
+표지를 본다.
 
 - 같은 숫자: 목표를 바꾼 프래그먼트 회차의 KPI·LOB·공정 카드·CSV 세 벌이, 같은 목표의 앱 전체
   회차와 바이트까지 같다.
-- 무효화: 조건 카드는 프래그먼트 밖이라 바꾸면 앱 전체 회차로 다시 계산하고, 프래그먼트 회차는 그
-  회차의 공정 선택을 쓴다. 기준선 저장은 앱 전체 회차로 바뀌고, 다른 세션이 지운 기준선·바꾼 공용
-  판정 기준은 다음 프래그먼트 회차에 보인다.
+- 무효화: 거르는 조건(공정)을 바꾸면 앱 전체 회차로 다시 계산하고, 프래그먼트 회차는 그 회차의
+  공정 선택을 쓴다. 기준선 저장은 앱 전체 회차로 바뀌고, 다른 세션이 지우거나 저장한 기준선은
+  다음 프래그먼트 회차가 앱 전체로 올려 카드 칸과 맞추며, 바꾼 공용 판정 기준은 다음 프래그먼트
+  회차에 보인다.
 
 시나리오 쪽은 `test_required_shortening_tab` 처럼 모듈 속성을 갈아 끼우되, 프래그먼트 회차는
 스크립트 머리를 지나지 않으므로 스크립트 안이 아니라 시험의 `monkeypatch` 로 회차 내내 갈아 끼운다.
@@ -20,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -45,6 +51,7 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
     SHORTENING_START_KEY,
+    VIEW_FRAGMENT_KEY,
 )
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
@@ -57,6 +64,10 @@ from capa_simulation.persistence.equipment_cache import (
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.services.shortening_baseline import (
+    ShorteningBaselineDraft,
+    baseline_label,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
@@ -163,11 +174,15 @@ from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.sidebar_status import begin_app_run
+
+app_run = begin_app_run()
 {theme_lines}st.session_state[{FULL_RUNS_KEY!r}] = st.session_state.get({FULL_RUNS_KEY!r}, 0) + 1
 st.session_state["production_month_range_v2"] = ("{first // 100}-{first % 100:02d}",
                                                   "{last // 100}-{last % 100:02d}")
 page_source = Path({str(PAGE)!r}).read_text(encoding="utf-8")
 exec(compile(page_source, {str(PAGE)!r}, "exec"), {{"__name__": "__main__"}})
+app_run.finish()
 """
 
 
@@ -231,8 +246,28 @@ def _run_refused(app: AppTest, world: _World, step: Callable[[AppTest], Any], re
     assert len(errors) == 1 and refusal in errors[0], errors
 
 
-def _choose_level(app: AppTest, world: _World, level: float) -> None:
+def _view(runner: FragmentBrowser) -> str:
+    """본문 프래그먼트 id — 이번 앱 전체 회차에 등록된 키 붙은 프래그먼트."""
+    return runner.fragment_keyed(VIEW_FRAGMENT_KEY)
+
+
+def _choose_level(app: AppTest, runner: FragmentBrowser, world: _World, level: float) -> None:
+    """조건 카드의 `목표 확보율` 을 바꾼다 — 브라우저는 앱 전체 요청을 보내고, 칸의 콜백이 본문
+    프래그먼트만 다시 돌린다(콜백만 도는 회차 뒤 프래그먼트 회차). 카드 칸이 든 앱 전체 회차
+    트리에서 부른다."""
+    runner.fragment_queue = []
     _run(app, world, lambda app: app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(level))
+    assert runner.started == [[], [_view(runner)]], level
+
+
+def _view_with(app: AppTest, runner: FragmentBrowser, world: _World, key: str, value: Any) -> None:
+    """카드 칸 값을 바꾼 콜백의 몫(그 칸 세션 값 + 본문 프래그먼트 회차)을 바로 돌린다 — 직전 회차가
+    프래그먼트 회차라 트리에 카드 칸이 없을 때 쓴다(AppTest 의 프래그먼트 회차 트리는 그 회차의
+    델타뿐이다)."""
+    app.session_state[key] = value
+    runner.fragment_queue = [_view(runner)]
+    _run(app, world)
+    assert runner.started == [[_view(runner)]], key
 
 
 def test_switching_the_target_reruns_only_the_view_with_the_full_run_numbers(
@@ -241,19 +276,21 @@ def test_switching_the_target_reruns_only_the_view_with_the_full_run_numbers(
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
     app = _open(runner)
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
-    assert view, "목표 확보율은 프래그먼트 안이다"
-    assert _fragment_of(runner, SHORTENING_COMPARE_KEY) == view
-    # 조건 카드는 프래그먼트 밖이다 — 바꾸면 앱 전체 회차로 계획을 다시 세운다.
-    for key in (SHORTENING_START_KEY, SHORTENING_END_KEY, SHORTENING_PROCESS_KEY):
+    assert _view(runner)
+    # 조건 카드는 모두 프래그먼트 밖이다 — 목표 확보율 · 진척 비교도 카드에 선다(그림 메모 g03).
+    for key in (
+        SHORTENING_LEVEL_KEY,
+        SHORTENING_COMPARE_KEY,
+        SHORTENING_START_KEY,
+        SHORTENING_END_KEY,
+        SHORTENING_PROCESS_KEY,
+    ):
         assert _fragment_of(runner, key) == "", key
     full_runs = app.session_state[FULL_RUNS_KEY]
     default = _screen(app, world)
 
     for level in (0.9, 1.3, 1.1):
-        runner.fragment_queue = [view]
-        _choose_level(app, world, level)
-        assert runner.started == [[view]], level
+        _choose_level(app, runner, world, level)
         assert app.session_state[FULL_RUNS_KEY] == full_runs
         in_fragment = _screen(app, world)
         assert f"목표 {round(level * 100)}% 기준" in " ".join(in_fragment[0])
@@ -288,13 +325,10 @@ def test_a_dark_session_draws_the_view_run_in_dark_colors_like_the_full_run(
     app.query_params["theme"] = "dark"
     app.run()
     _assert_clean(app)
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
     dark_card = f"background:{tokens.palette_value('dark', 'SURFACE')}"
     assert dark_card in " ".join(_screen(app, world)[0])
 
-    runner.fragment_queue = [view]
-    _choose_level(app, world, 1.3)
-    assert runner.started == [[view]]
+    _choose_level(app, runner, world, 1.3)
     in_fragment = _screen(app, world)
     assert dark_card in " ".join(in_fragment[0])
 
@@ -314,7 +348,6 @@ def test_the_card_filter_is_a_full_run_and_the_next_view_run_keeps_it(
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
     app = _open(runner)
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
     before = _cards(app)
     unfiltered = _screen(app, world)
     options = list(app.multiselect(key=SHORTENING_PROCESS_KEY).options)
@@ -328,9 +361,7 @@ def test_the_card_filter_is_a_full_run_and_the_next_view_run_keeps_it(
     assert _screen(app, world) != unfiltered
 
     # 목표만 바꾼 프래그먼트 회차는 직전 앱 전체 회차의 공정 선택을 쓴다.
-    runner.fragment_queue = [view]
-    _choose_level(app, world, 0.9)
-    assert runner.started == [[view]]
+    _choose_level(app, runner, world, 0.9)
     assert _cards(app) == [chosen]
     clear_equipment_repository()
 
@@ -342,7 +373,7 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     database_path, _ = _saved_database(tmp_path)
     world = _install(monkeypatch, database_path)
     app = _open(runner)
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
+    view = _view(runner)
     full_runs = app.session_state[FULL_RUNS_KEY]
 
     # 저장 단추는 프래그먼트 안이다 — 누른 회차는 프래그먼트 회차이고, 쓴 뒤 앱 전체 회차로 바뀐다.
@@ -352,29 +383,81 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
     assert "기준선을 저장했습니다" in _notices(app)
-    # 앱 전체 회차가 그린 `진척 비교` 상자에 방금 저장한 기준선이 선다(선택지 글자는 이름 · 저장일).
+    # 앱 전체 회차가 그린 카드의 `진척 비교` 상자에 방금 저장한 기준선이 선다(선택지 글자는 이름 ·
+    # 저장일).
     assert len(list(app.selectbox(key=SHORTENING_COMPARE_KEY).options)) == 2
 
-    # 그 기준선을 고르면(프래그먼트 회차) 진척 비교로 바뀐다 — 앱 전체를 다시 돌리지 않는다.
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
-    runner.fragment_queue = [view]
+    # 그 기준선을 고르면 칸의 콜백이 본문 프래그먼트만 다시 돌린다 — 진척 비교로 바뀐다.
+    runner.fragment_queue = []
     _run(
         app,
         world,
         lambda app: app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id),
     )
-    assert runner.started == [[view]]
+    assert runner.started == [[], [_view(runner)]]
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     assert any("진척 비교 요약" in body for body in _screen(app, world)[0])
 
-    # 다른 세션이 그 기준선을 지웠다 — 다음 프래그먼트 회차가 목록을 다시 읽어 「비교 안 함」 이다.
+    # 다른 세션이 그 기준선을 지웠다 — 목표만 바꾼 프래그먼트 회차가 목록이 카드에 세운 것과 다른
+    # 것을 보고 앱 전체를 다시 돌린다. 카드 칸이 「비교 안 함」 하나로 되적히고 본문도 비교하지
+    # 않는다 — 카드 칸과 본문이 같은 비교를 말한다(설계 규칙 UI-DAT-11).
     DuckDBEquipmentRepository(database_path).delete_shortening_baseline(stored.baseline_id)
     clear_shortening_baseline_cache()
-    _choose_level(app, world, 0.9)
-    assert runner.started == [[view]]
+    view = _view(runner)
+    app.session_state[SHORTENING_LEVEL_KEY] = 0.9
+    runner.fragment_queue = [view]
+    _run(app, world)
+    assert runner.started == [[view], []]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 2
+    assert not any("진척 비교 요약" in body for body in _screen(app, world)[0])
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
-    assert not any("진척 비교 요약" in body for body in _screen(app, world)[0])
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 0.9
+    clear_equipment_repository()
+
+
+def test_a_baseline_another_session_saved_joins_the_card_on_the_next_view_run(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 세션이 저장한 기준선도 다음 본문 프래그먼트 회차가 앱 전체로 올려 카드 선택지에 세운다
+    — 카드 칸은 프래그먼트 밖이라 프래그먼트 회차만으로는 목록이 그대로였다. 목록이 같으면
+    프래그먼트 회차 그대로다."""
+    runner = _runner(request)
+    database_path, _ = _saved_database(tmp_path)
+    world = _install(monkeypatch, database_path)
+    app = _open(runner)
+    assert list(app.selectbox(key=SHORTENING_COMPARE_KEY).options) == ["비교 안 함"]
+    full_runs = app.session_state[FULL_RUNS_KEY]
+
+    # 목록이 그대로면 목표를 바꾼 회차는 본문 프래그먼트만 돈다.
+    _choose_level(app, runner, world, 0.9)
+    assert app.session_state[FULL_RUNS_KEY] == full_runs
+
+    # 다른 세션이 기준선을 저장했다 — 다음 프래그먼트 회차가 앱 전체로 올라 카드에 선다.
+    repository = DuckDBEquipmentRepository(database_path)
+    repository.save_shortening_baseline(
+        ShorteningBaselineDraft(
+            name="다른 세션 기준선",
+            plan_today=date.today(),
+            start_month=_months()[0],
+            end_month=_months()[-1],
+            processes=(),
+            cutoff_days={},
+            units=pd.DataFrame(),
+        )
+    )
+    clear_shortening_baseline_cache()
+    (other,) = repository.list_shortening_baselines()
+    view = _view(runner)
+    app.session_state[SHORTENING_LEVEL_KEY] = 1.3
+    runner.fragment_queue = [view]
+    _run(app, world)
+    assert runner.started == [[view], []]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
+    picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
+    assert list(picker.options) == ["비교 안 함", baseline_label(other)]
+    assert picker.value == NO_COMPARISON
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.3
     clear_equipment_repository()
 
 
@@ -385,14 +468,14 @@ def test_deleting_this_sessions_baseline_reruns_the_whole_app_and_a_failed_save_
     database_path, _ = _saved_database(tmp_path)
     world = _install(monkeypatch, database_path)
     app = _open(runner)
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
+    view = _view(runner)
     runner.fragment_queue = [view]
     _run(app, world, lambda app: _save_button(app).click())
     assert runner.started == [[view], []]
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
 
     # 같은 이름으로 다시 저장하면 쓰지 않는다 — 프래그먼트 회차만 돌고 알림이 뜬다.
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
+    view = _view(runner)
     full_runs = app.session_state[FULL_RUNS_KEY]
     runner.fragment_queue = [view]
     _run(app, world, lambda app: _name_input(app).set_value(stored.name))
@@ -403,12 +486,7 @@ def test_deleting_this_sessions_baseline_reruns_the_whole_app_and_a_failed_save_
     assert "같은 이름" in _notices(app)
 
     # 고르고 확인한 뒤 지우면 쓴 회차라 앱 전체 회차로 바뀐다 — 목록이 「비교 안 함」 하나로 선다.
-    runner.fragment_queue = [view]
-    _run(
-        app,
-        world,
-        lambda app: app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id),
-    )
+    _view_with(app, runner, world, SHORTENING_COMPARE_KEY, stored.baseline_id)
     confirm = next(box for box in app.checkbox if box.label == "정말 지웁니다")
     runner.fragment_queue = [view]
     _run(app, world, lambda app: confirm.check())
@@ -431,16 +509,13 @@ def test_the_view_reads_the_shared_thresholds_on_every_run(
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
     app = _open(runner)
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
-    runner.fragment_queue = [view]
-    _choose_level(app, world, 0.9)
+    _choose_level(app, runner, world, 0.9)
     strict = _screen(app, world)
 
     # 다른 세션이 기준을 낮췄다(확보 0% · 경고 0%) — 모든 칩이 확보 색이 된다.
     world.thresholds = SecurementThresholds(0.0, 0.0)
-    _choose_level(app, world, 1.1)
-    _choose_level(app, world, 0.9)
-    assert runner.started == [[view]]
+    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 1.1)
+    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 0.9)
     relaxed = _screen(app, world)
     assert relaxed[0] != strict[0]
     # CSV 는 판정 기준과 상관없다.

@@ -24,14 +24,14 @@ from test_required_shortening_tab import _run as _run_page
 from test_shortening_progress_tab import _name_input, _notices, _save_button, _saved_database
 from test_shortening_view_fragment import (
     FULL_RUNS_KEY,
-    _fragment_of,
     _install,
     _open,
     _run,
     _runner,
+    _view,
+    _view_with,
 )
 
-from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
 from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
@@ -115,24 +115,21 @@ def test_a_second_press_of_a_finished_delete_neither_writes_nor_notifies(tmp_pat
     clear_equipment_repository()
 
 
-def test_deleting_a_baseline_another_session_deleted_warns_and_reruns_only_the_view(
+def test_deleting_a_baseline_another_session_deleted_warns_and_reruns_the_whole_app(
     tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """다른 세션이 먼저 지운 기준선을 지우면 쓰지 않고 경고만 알린다. 「진척 비교」 상자가 조건
+    카드(앱 전체 회차)라 그 목록을 다시 세우도록 앱 전체 회차로 바뀐다(그림 메모 g03 뒤)."""
     runner = _runner(request)
     database_path, _ = _saved_database(tmp_path)
     world = _install(monkeypatch, database_path)
     app = _open(runner)
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
+    view = _view(runner)
     runner.fragment_queue = [view]
     _run(app, world, lambda app: _save_button(app).click())
     (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
-    runner.fragment_queue = [view]
-    _run(
-        app,
-        world,
-        lambda app: app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id),
-    )
+    _view_with(app, runner, world, SHORTENING_COMPARE_KEY, stored.baseline_id)
+    view = _view(runner)
     confirm = next(box for box in app.checkbox if box.label == "정말 지웁니다")
     runner.fragment_queue = [view]
     _run(app, world, lambda app: confirm.check())
@@ -143,8 +140,8 @@ def test_deleting_a_baseline_another_session_deleted_warns_and_reruns_only_the_v
     runner.fragment_queue = [view]
     _run(app, world, lambda app: app.button(key="equipment_shortening_baseline_delete").click())
 
-    assert runner.started == [[view]]
-    assert app.session_state[FULL_RUNS_KEY] == full_runs
+    assert runner.started == [[view], []]
+    assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     (notice,) = flashed(app)
     assert "이미 지워진 기준선입니다" in notice.value
     # 거절은 경고 단계로 알림창 · Alarm 에만 낸다 — 머리 밑 자리에 상자로 그리지 않는다.

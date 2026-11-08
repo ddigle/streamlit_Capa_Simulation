@@ -16,6 +16,7 @@ import json
 import re
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -30,6 +31,7 @@ from alert_marks import (
     table_frame,
 )
 from shortening_script import shortening_script
+from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.required_shortening_panel as required_shortening_panel
@@ -46,8 +48,10 @@ from capa_simulation.components.required_shortening_panel import (
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.shortening_board import (
+    BOARD_BOX_KEY,
     BOARD_HELP,
     BOARD_ORDER_KEY,
+    BOARD_TITLE,
     DELAYED_HELP,
     HIGHLIGHT_FROM_DETAIL,
     HIGHLIGHT_OFF_KEY,
@@ -55,6 +59,7 @@ from capa_simulation.components.shortening_board import (
     ORDER_FALLBACK_HELP,
     SHORTENING_HIGHLIGHT_KEY,
 )
+from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -78,7 +83,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.securement_threshold import SecurementThresholds
 from capa_simulation.services.shortening_filter_profile import ShorteningFilterProfile
 from capa_simulation.services.shortening_watch import ORDER_LARGEST_GAP, ORDER_WORSENED_FIRST
-from capa_simulation.sidebar_status import NO_PROCESS_MARK
+from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, NO_PROCESS_MARK
 from capa_simulation.upeh_assumption_state import (
     UPEH_ASSUMPTION_END_KEY,
     UPEH_ASSUMPTION_PERCENT_KEY,
@@ -87,6 +92,8 @@ from capa_simulation.upeh_assumption_state import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
+# 본문 맨 위 값 줄의 값 글 — 상태 표지가 그 끝에 한 줄로 선다(그림 메모 g03).
+VALUE_LINE_TEXT = "설비 일정 기준 가용(환산) · 오늘"
 
 
 def _months(count: int = 6) -> list[int]:
@@ -165,6 +172,48 @@ def _html(app: AppTest) -> str:
     return "\n".join(str(element.proto.body) for element in app.get("html"))
 
 
+def _caption_paths(app: AppTest) -> dict[str, tuple[int, ...]]:
+    """본문 캡션 글마다 트리 안 자리(자식 차례의 길)."""
+    found: dict[str, tuple[int, ...]] = {}
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "type", "") == "caption":
+                found[str(child.value)] = here
+            walk(child, here)
+
+    walk(app.main, ())
+    return found
+
+
+def _same_row_as_the_value(app: AppTest, text: str) -> bool:
+    """`text` 캡션이 「설비 일정 기준 가용(환산) · 오늘」 값과 한 가로 줄(같은 부모)에 서는가."""
+    paths = _caption_paths(app)
+    (value,) = [path for caption, path in paths.items() if caption.startswith(VALUE_LINE_TEXT)]
+    row: Any = app.main
+    for index in value[:-1]:
+        row = row.children[index]
+    flex = row.proto.flex_container
+    horizontal = flex.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
+    return bool(horizontal and flex.wrap and paths[text][:-1] == value[:-1])
+
+
+def _sidebar_block_paths(app: AppTest, keys: tuple[str, ...]) -> dict[str, list[str]]:
+    """사이드바에서 그 key 위젯까지 지나는 블록 종류(바깥 → 안 — `expander` · `column` …)."""
+    found: dict[str, list[str]] = {}
+
+    def walk(node: Any, kinds: list[str]) -> None:
+        for child in getattr(node, "children", {}).values():
+            if getattr(child, "key", None) in keys:
+                found[str(child.key)] = kinds
+            if hasattr(child, "children"):
+                walk(child, [*kinds, str(child.type)])
+
+    walk(app.sidebar, [])
+    return found
+
+
 def _cards(app: AppTest) -> list[str]:
     body = _html(app)
     return [
@@ -191,10 +240,19 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     # 호기 줄은 한 줄이다 — 늘어난 환산대수 줄과 「(기여 …)」 는 줄에 없고 풍선에만 있다.
     assert 'class="shk-unit"' in body
     assert "shk-gain" not in body and "(기여 " not in body
-    # 조건 카드에는 기간과 공정이, 본문 머리에는 목표 확보율이 선다.
-    assert {"시작 월", "끝 월"} <= {widget.label for widget in app.sidebar.selectbox}
+    # 조건 카드에 볼 것(목표 확보율 · 진척 비교)과 거르는 조건(기간 · 공정)이 모두 선다 — 본문 머리
+    # 줄에 고르는 칸이 없다(그림 메모 g03).
+    sidebar_selects = [widget.label for widget in app.sidebar.selectbox]
+    assert sidebar_selects[:4] == ["목표 확보율", "진척 비교", "시작 월", "끝 월"]
+    # 카드는 처음 펼친 채 서고(설계 규칙 UI-LAY-06 — 옮겨 온 칸이 첫 화면에 보이게), 두 칸은 카드
+    # 폭을 다 쓰는 위아래 칸이다 — 나란한 반 칸이면 기준선 라벨 「이름 · 저장일」 의 저장일이
+    # 잘렸다.
+    assert app.session_state[f"{CONDITION_CARD_PREFIX}shortening"] is True
+    paths = _sidebar_block_paths(app, (SHORTENING_LEVEL_KEY, SHORTENING_COMPARE_KEY))
+    assert paths[SHORTENING_LEVEL_KEY] == paths[SHORTENING_COMPARE_KEY], paths
+    assert "column" not in paths[SHORTENING_LEVEL_KEY], paths
     assert "공정 (표시순서)" in {widget.label for widget in app.sidebar.multiselect}
-    assert "목표 확보율" in {widget.label for widget in app.main.selectbox}
+    assert not {"목표 확보율", "진척 비교"} & {widget.label for widget in app.main.selectbox}
     downloads = {str(button.key) for button in app.get("download_button")}
     assert {
         "equipment_shortening_units_csv",
@@ -402,23 +460,43 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     app = _run(database_path)
 
     assert not app.exception, [element.message for element in app.exception]
-    # 자리에는 값만, 규칙 · 후보 아님은 그 줄의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
+    # 자리에는 값 줄 끝 표지만, 규칙 · 후보 아님은 그 풍선, 미정구분은 상태 알림이다(그림 메모 g03,
+    # 설계 규칙 UI-TXT-04 · UI-NTF-02).
     (line,) = [
         item
         for item in app.main.caption
         if str(item.value).startswith(":material/event_busy: 일정")
     ]
-    assert str(line.value) == ":material/event_busy: 일정 미정 1대 (반입 미정 1)"
+    assert str(line.value) == ":material/event_busy: 일정 미정 1대"
     assert line.proto.help == (
         "날짜가 들어올 때까지 가용대수에 세지 않습니다. 단축 후보에도 들지 않습니다."
     )
-    # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 줄이 사라진다.
+    # 늘 서던 줄이 아니라 값 줄 끝 표지다 — 값과 한 가로 줄(좁으면 접힘)이다.
+    assert _same_row_as_the_value(app, str(line.value))
+    note = active_state(app, "RS-03")
+    assert note is not None
+    assert note["short"] == (
+        "일정 미정 1대 (반입 미정 1) — 가용대수에 세지 않음 · 설비 마스터 일정 칸"
+    )
+    assert "단축 후보에도 들지 않습니다" in note["full"]
+    # 고칠 입력(일정 칸)은 가용설비 현황 › 설비 마스터에 있다 — 줄의 「그 화면으로」 가 그 탭을
+    # 열고, 전문 첫머리가 이 화면의 일임을 말한다(설계 규칙 UI-NTF-02 · UI-NTF-06).
+    assert (note["page"], note["href"], note.get("tab")) == (
+        tab_label(AVAILABLE_EQUIPMENT_STATUS),
+        AVAILABLE_EQUIPMENT_STATUS.href,
+        "설비 마스터",
+    )
+    assert note["full"].startswith("필요 단축 일정 — 일정 미정 1대")
+    assert "가용설비 현황 › 설비 마스터의 일정 칸" in note["full"]
+    # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 표지가 사라지고 알림은 해소된다.
     others = [
         name for name in app.multiselect(key=SHORTENING_PROCESS_KEY).options if name != process
     ]
     narrowed = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value(others[:1]).run()
     assert not narrowed.exception
     assert not any("일정 미정" in str(item.value) for item in narrowed.main.caption)
+    assert active_state(narrowed, "RS-03") is None
+    assert states(narrowed, "RS-03")
     clear_equipment_repository()
 
 
@@ -445,15 +523,18 @@ def test_a_missing_cutoff_stops_with_the_mark_and_the_alarm_opens_the_equipment_
     )
     assert not _cards(app)
     assert _card_marks(app) == [NO_PROCESS_MARK]
+    # 멈춘 회차에는 상태 표지가 없고 그 알림은 해소다(갈래마다 같은 자리 수로 낸다).
+    for code in ("RS-03", "RS-04", "RS-05"):
+        assert active_state(app, code) is None and states(app, code), code
     clear_equipment_repository()
 
 
 def test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_tooltip(
     tmp_path: Path,
 ) -> None:
-    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 가용설비 현황과
-    같은 표지 한 줄(「사용기준 HBM·EDP 밖 N대 제외」), 뺀 곳 · 후보 아님은 풍선이다(설계 규칙
-    UI-TXT-01 · UI-TXT-04)."""
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 값 줄 끝 표지
+    「사용기준 밖 N대」, 뺀 곳 · 후보 아님은 풍선, 「사용기준 HBM·EDP 밖 N대 제외」(가용설비 현황과
+    같은 글)는 상태 알림이다(그림 메모 g03, 설계 규칙 UI-TXT-01 · UI-TXT-04 · UI-NTF-02)."""
     from capa_simulation.components.required_shortening_panel import USAGE_NOTICE_HELP
 
     database_path = _database(tmp_path)
@@ -467,9 +548,17 @@ def test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_to
 
     assert not app.exception, [element.message for element in app.exception]
     (line,) = [item for item in app.main.caption if "사용기준" in str(item.value)]
-    assert str(line.value).startswith(":material/filter_alt_off: 사용기준 HBM·EDP 밖 ")
-    assert str(line.value).endswith("대 제외")
+    assert str(line.value).startswith(":material/filter_alt_off: 사용기준 밖 ")
+    assert str(line.value).endswith("대")
+    assert _same_row_as_the_value(app, str(line.value))
     assert line.proto.help == USAGE_NOTICE_HELP
+    assert "HBM·EDP" in USAGE_NOTICE_HELP
+    note = active_state(app, "RS-04")
+    assert note is not None
+    assert note["short"].startswith("사용기준 HBM·EDP 밖 ") and note["short"].endswith("대 제외")
+    assert USAGE_NOTICE_HELP in note["full"]
+    # 고칠 것이 아니라 뺀 사실을 알린다 — 줄은 다른 화면으로 보내지 않는다.
+    assert note["href"] != AVAILABLE_EQUIPMENT_STATUS.href and "tab" not in note
     clear_equipment_repository()
 
 
@@ -1145,17 +1234,21 @@ def _highlighted(database_path: Path, process: str) -> AppTest:
 
 
 def test_the_page_states_its_identity_and_draws_the_progress_board(tmp_path: Path) -> None:
-    """머리말은 이 화면의 정체성, KPI 아래·카드 위에 공정 진척 보드(카드와 같은 공정·차례)와 기한
-    임박, 이행 지연 안내가 선다. 샘플 fleet 에서는 상세 근거 링크를 숨긴다(상세는 저장본만 본다)."""
+    """머리에 소개 줄이 없고(정체성은 Guide 첫 단락 — 그림 메모 g03), KPI 아래·카드 위에 접힌 공정
+    진척 보드 상자(카드와 같은 공정·차례)와 그 안의 기한 임박, 이행 지연 안내가 선다. 샘플 fleet
+    에서는 상세 근거 링크를 숨긴다(상세는 저장본만 본다)."""
     app = _run(_database(tmp_path))
 
     assert not app.exception, [element.message for element in app.exception]
     captions = _captions(app)
-    assert any("단축이 필요한 공정 전부의 진척 관리 한 페이지" in text for text in captions)
-    # 보드 읽는 법은 제목 풍선이다 — 자리에 늘 서는 설명 줄이 아니다(설계 규칙 UI-TXT-01).
-    (title,) = [item for item in app.markdown if str(item.value) == "**공정 진척 보드**"]
-    assert title.proto.help == BOARD_HELP
+    assert not any("단축이 필요한 공정 전부의 진척 관리 한 페이지" in text for text in captions)
+    # 보드는 접는 상자이고 처음은 접혀 있다 — 상자 머리가 제목이라 제목 줄 · 읽는 법 풍선이 따로
+    # 서지 않는다(읽는 법은 Guide). 아이콘을 단 접는 상자는 AppTest 에서 `status` 로 잡힌다.
+    assert [str(box.label) for box in app.status if str(box.label) == BOARD_TITLE] == [BOARD_TITLE]
+    assert app.session_state[BOARD_BOX_KEY] is False
+    assert not [item for item in app.markdown if str(item.value) == f"**{BOARD_TITLE}**"]
     assert not any("공정마다 한 줄입니다" in text for text in captions)
+    assert BOARD_HELP not in captions
     board = _board(app)
     cards = _cards(app)
     assert list(board["공정"]) == cards and cards

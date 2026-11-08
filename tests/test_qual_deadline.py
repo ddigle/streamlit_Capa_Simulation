@@ -1,13 +1,13 @@
-# Purpose: Qual 마감 계산기 계산이 원본 계산기와 화면 글자·복사 글까지 같은지 검사한다.
+# Purpose: Qual 마감 계산기 계산이 원본 계산기와 화면 글자·마감 값까지 같은지 검사한다.
 
 """Qual 마감 계산기 순수 계산(`services/qual_deadline.py`).
 
 **기대값은 손으로 낸 값이 아니다.** 원본 계산기(2026-10-07 HTML)의 `<script>` 를 node 에서 가짜
-DOM 위에 그대로 돌려 화면 표 칸·지표·두 복사 글을 뽑아 박았다(2026-10-22, node v22 — 이 시험은
+DOM 위에 그대로 돌려 화면 표 칸·지표를 뽑아 박았다(2026-10-22, node v22 — 이 시험은
 node 없이 돈다). 그래서 이 시험이 깨지면 원본과 다르게 계산하거나 다르게 적는 것이다. 사례는 원본
 예시와 경계 다섯이다 — 목표를 비운 달·남는 호기, Cut-off 0·윤년 2월·지난 마감, Cut-off 31·부족,
 구분자·반올림 동점(18.125 → 「18.13」)·여유, 빈 입력. 붙여넣기 칸(「표에 넣기」)의 사례도 같은
-방법으로 원본의 `bulk-apply` 를 돌려 넣은 달·토스트 글자·복사 글을 뽑았다(2026-10-23).
+방법으로 원본의 `bulk-apply` 를 돌려 넣은 달·토스트 글자·마감 값을 뽑았다(2026-10-23).
 """
 
 from __future__ import annotations
@@ -22,22 +22,21 @@ from capa_simulation.services.qual_deadline import (
     MONTHS_PER_YEAR,
     NO_PASTED_LINES_MESSAGE,
     QualDeadlineInput,
+    QualDeadlineResult,
     QualMonthInput,
     check_table_rows,
     cleared_input,
     compute_qual_deadlines,
     example_input,
+    format_day,
     format_short_day,
     is_example,
     js_round,
     js_trim,
-    month_check_rows,
     parse_number,
     parse_pasted_months,
     split_unit_names,
-    tab_separated_text,
     to_fixed,
-    unit_result_rows,
     unit_table_rows,
 )
 from capa_simulation.services.wd_window import wd_window
@@ -203,33 +202,6 @@ EXPECTED: dict[str, dict[str, object]] = {
             ("12월", "(11.20, 12.21] 31일", "27.00", "26.00", "+1.00", "충족", "ok"),
         ],
         "kpi": ("9", "01.21", "0", "0"),
-        "copy_units": (
-            "호기\t쓰이는 달\t그 달 기여\tQual 완료 마감\t기여 시작",
-            "U21\t2027-02\t1.00\t2027-01-21\t2027-01-22",
-            "U22\t2027-03\t1.00\t2027-02-18\t2027-02-19",
-            "U23\t2027-04\t0.50\t2027-04-05\t2027-04-06",
-            "U24\t2027-05\t1.00\t2027-04-20\t2027-04-21",
-            "U25\t2027-07\t1.00\t2027-06-20\t2027-06-21",
-            "U26\t2027-07\t1.00\t2027-06-20\t2027-06-21",
-            "U27\t2027-09\t1.00\t2027-08-21\t2027-08-22",
-            "U28\t2027-10\t1.00\t2027-09-20\t2027-09-21",
-            "U29\t2027-12\t1.00\t2027-11-20\t2027-11-21",
-        ),
-        "copy_months": (
-            "월\tW/D 시작(다음 날부터)\tW/D 끝\t목표\t기존+앞달\t이 달 채움\t부족",
-            "2027-01\t2026-12-21\t2027-01-21\t18.00\t18.00\t0.00\t0.00",
-            "2027-02\t2027-01-21\t2027-02-18\t19.00\t18.00\t1.00\t0.00",
-            "2027-03\t2027-02-18\t2027-03-21\t20.00\t19.00\t1.00\t0.00",
-            "2027-04\t2027-03-21\t2027-04-20\t20.50\t20.00\t0.50\t0.00",
-            "2027-05\t2027-04-20\t2027-05-21\t22.00\t21.00\t1.00\t0.00",
-            "2027-06\t2027-05-21\t2027-06-20\t22.00\t22.00\t0.00\t0.00",
-            "2027-07\t2027-06-20\t2027-07-21\t24.00\t22.00\t2.00\t0.00",
-            "2027-08\t2027-07-21\t2027-08-21\t24.00\t24.00\t0.00\t0.00",
-            "2027-09\t2027-08-21\t2027-09-20\t25.00\t24.00\t1.00\t0.00",
-            "2027-10\t2027-09-20\t2027-10-21\t26.00\t25.00\t1.00\t0.00",
-            "2027-11\t2027-10-21\t2027-11-20\t26.00\t26.00\t0.00\t0.00",
-            "2027-12\t2027-11-20\t2027-12-21\t27.00\t26.00\t1.00\t0.00",
-        ),
     },
     "skip_and_leftover": {
         "units": [
@@ -411,28 +383,6 @@ EXPECTED: dict[str, dict[str, object]] = {
             ("12월", "(11.23, 12.24] 31일", "—", "22.00", "—", "목표 없음", "warn"),
         ],
         "kpi": ("4", "02.21", "3", "1"),
-        "copy_units": (
-            "호기\t쓰이는 달\t그 달 기여\tQual 완료 마감\t기여 시작",
-            "U1\t2026-03\t1.00\t2026-02-21\t2026-02-22",
-            "U2\t2026-03\t0.90\t2026-02-24\t2026-02-25",
-            "U3\t2026-04\t1.00\t2026-03-24\t2026-03-25",
-            "U4\t2026-05\t0.03\t2026-05-23\t2026-05-24",
-        ),
-        "copy_months": (
-            "월\tW/D 시작(다음 날부터)\tW/D 끝\t목표\t기존+앞달\t이 달 채움\t부족",
-            "2026-01\t2025-12-24\t2026-01-24\t18.13\t18.00\t0.00\t0.13",
-            "2026-02\t2026-01-24\t2026-02-21\t17.00\t18.00\t0.00\t0.00",
-            "2026-03\t2026-02-21\t2026-03-24\t19.88\t18.00\t1.90\t0.00",
-            "2026-04\t2026-03-24\t2026-04-23\t21.00\t20.00\t1.00\t0.00",
-            "2026-05\t2026-04-23\t2026-05-24\t21.00\t21.00\t0.03\t0.00",
-            "2026-06\t2026-05-24\t2026-06-23\t20.00\t22.00\t0.00\t0.00",
-            "2026-07\t2026-06-23\t2026-07-24\t\t22.00\t0.00\t0.00",
-            "2026-08\t2026-07-24\t2026-08-24\t\t22.00\t0.00\t0.00",
-            "2026-09\t2026-08-24\t2026-09-23\t\t22.00\t0.00\t0.00",
-            "2026-10\t2026-09-23\t2026-10-24\t\t22.00\t0.00\t0.00",
-            "2026-11\t2026-10-24\t2026-11-23\t\t22.00\t0.00\t0.00",
-            "2026-12\t2026-11-23\t2026-12-24\t\t22.00\t0.00\t0.00",
-        ),
     },
     "empty": {
         "units": [],
@@ -451,22 +401,6 @@ EXPECTED: dict[str, dict[str, object]] = {
             ("12월", "(11.20, 12.21] 31일", "—", "0.00", "—", "목표 없음", "warn"),
         ],
         "kpi": ("0", "\u2014", "0", "0"),
-        "copy_units": ("호기\t쓰이는 달\t그 달 기여\tQual 완료 마감\t기여 시작",),
-        "copy_months": (
-            "월\tW/D 시작(다음 날부터)\tW/D 끝\t목표\t기존+앞달\t이 달 채움\t부족",
-            "2027-01\t2026-12-21\t2027-01-21\t\t0.00\t0.00\t0.00",
-            "2027-02\t2027-01-21\t2027-02-18\t\t0.00\t0.00\t0.00",
-            "2027-03\t2027-02-18\t2027-03-21\t\t0.00\t0.00\t0.00",
-            "2027-04\t2027-03-21\t2027-04-20\t\t0.00\t0.00\t0.00",
-            "2027-05\t2027-04-20\t2027-05-21\t\t0.00\t0.00\t0.00",
-            "2027-06\t2027-05-21\t2027-06-20\t\t0.00\t0.00\t0.00",
-            "2027-07\t2027-06-20\t2027-07-21\t\t0.00\t0.00\t0.00",
-            "2027-08\t2027-07-21\t2027-08-21\t\t0.00\t0.00\t0.00",
-            "2027-09\t2027-08-21\t2027-09-20\t\t0.00\t0.00\t0.00",
-            "2027-10\t2027-09-20\t2027-10-21\t\t0.00\t0.00\t0.00",
-            "2027-11\t2027-10-21\t2027-11-20\t\t0.00\t0.00\t0.00",
-            "2027-12\t2027-11-20\t2027-12-21\t\t0.00\t0.00\t0.00",
-        ),
     },
 }
 
@@ -491,17 +425,6 @@ def test_table_cells_match_the_original_calculator(case: str) -> None:
         str(kpis.past_count),
         str(kpis.short_months),
     ) == expected["kpi"]
-
-
-@pytest.mark.parametrize("case", ["example", "separators_ties", "empty"])
-def test_copy_texts_match_the_original_calculator(case: str) -> None:
-    result = compute_qual_deadlines(CASES[case])
-    expected = EXPECTED[case]
-    unit_lines, month_lines = expected["copy_units"], expected["copy_months"]
-    assert isinstance(unit_lines, tuple) and isinstance(month_lines, tuple)
-
-    assert tab_separated_text(unit_result_rows(result)) == "\n".join(unit_lines)
-    assert tab_separated_text(month_check_rows(result)) == "\n".join(month_lines)
 
 
 def test_an_empty_unit_table_is_left_to_the_screen_message() -> None:
@@ -726,9 +649,23 @@ def _with_pasted(months: tuple[QualMonthInput, ...], text: str) -> tuple[QualMon
     return pasted + months[len(pasted) :]
 
 
+def _assigned(result: QualDeadlineResult) -> list[tuple[str, int, str, str, str]]:
+    """쓰인 호기마다 (이름, 쓰이는 달, 그 달 기여, Qual 완료 마감, 기여 시작) — 원본이 낸 값."""
+    return [
+        (
+            unit.name,
+            unit.month,
+            to_fixed(unit.part),
+            format_day(unit.deadline),
+            format_day(unit.contribution_start),
+        )
+        for unit in result.assigned
+    ]
+
+
 def test_pasted_months_compute_like_the_original() -> None:
-    """예시 위에 세 칸 줄 하나를 넣은 것과, 빈 열두 달에 소수 넷째 자리 목표를 넣은 것 — 원본
-    복사 글."""
+    """예시 위에 세 칸 줄 하나를 넣은 것과, 빈 열두 달에 소수 넷째 자리 목표를 넣은 것 — 원본이
+    낸 마감 · 기여 · 월 점검 값."""
     example = example_input(None)
     over_example = compute_qual_deadlines(
         QualDeadlineInput(
@@ -739,21 +676,21 @@ def test_pasted_months_compute_like_the_original() -> None:
             months=_with_pasted(example.months, "19.3456\tU1\tU2"),
         )
     )
-    assert tab_separated_text(unit_result_rows(over_example)).split("\n")[:4] == [
-        "호기\t쓰이는 달\t그 달 기여\tQual 완료 마감\t기여 시작",
-        "U1\t2027-01\t1.00\t2026-12-21\t2026-12-22",
-        "U2\t2027-01\t0.35\t2027-01-10\t2027-01-11",
-        "U21\t2027-04\t0.50\t2027-04-05\t2027-04-06",
+    assert _assigned(over_example)[:3] == [
+        ("U1", 1, "1.00", "2026-12-21", "2026-12-22"),
+        ("U2", 1, "0.35", "2027-01-10", "2027-01-11"),
+        ("U21", 4, "0.50", "2027-04-05", "2027-04-06"),
     ]
-    assert month_check_rows(over_example)[1] == [
-        "2027-01",
-        "2026-12-21",
-        "2027-01-21",
-        "19.35",
-        "18.00",
-        "1.35",
-        "0.00",
-    ]
+    january = over_example.checks[0]
+    assert january.target is not None
+    assert (
+        format_day(january.window.boundary_start),
+        format_day(january.window.boundary_end),
+        to_fixed(january.target),
+        to_fixed(january.carried),
+        to_fixed(january.added),
+        to_fixed(january.shortfall),
+    ) == ("2026-12-21", "2027-01-21", "19.35", "18.00", "1.35", "0.00")
 
     blank = tuple(QualMonthInput() for _ in range(MONTHS_PER_YEAR))
     precise = compute_qual_deadlines(
@@ -766,8 +703,5 @@ def test_pasted_months_compute_like_the_original() -> None:
         )
     )
     # 18.32 로 잘렸다면 마감 2027-01-11 · 기여 0.32 다(Streamlit 편집표 `step=0.01` 의 자름).
-    assert tab_separated_text(unit_result_rows(precise)) == (
-        "호기\t쓰이는 달\t그 달 기여\tQual 완료 마감\t기여 시작\n"
-        "U1\t2027-01\t0.35\t2027-01-10\t2027-01-11"
-    )
+    assert _assigned(precise) == [("U1", 1, "0.35", "2027-01-10", "2027-01-11")]
     assert [unit.name for unit in precise.leftover] == ["U2", "U3"]
