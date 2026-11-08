@@ -3160,10 +3160,16 @@ def settle_grid_undo(undo: Callable[[], None]) -> None:
 
 
 def _undo_lines_up(before: pd.DataFrame, after: pd.DataFrame) -> bool:
-    """표 단계의 역 patch(줄 자리 기준)가 편집을 넣은 표에도 맞는가 — 통째 단계가 아니고 편집이 줄을
-    지우거나 옮기지 않았을 때(칸 고침 · 끝에 더한 줄)만이다."""
+    """표 단계의 역 patch(줄 자리 기준)가 편집을 넣은 표에도 맞는가 — 편집이 표 내용을 바꾸지
+    않았거나(「선택」 칸만 고름 등 — 통째 단계여도 표가 그대로라 맞는다), 통째 단계가 아니고 편집이
+    줄을 지우거나 옮기지 않았을 때(칸 고침 · 끝에 더한 줄)다. 값이 그대로인 편집을 맞지 않는다고
+    보면 편집본이 그대로라 되돌리기를 비우지도 않아 단추가 말없이 듣지 않는다."""
     steps = grid_undo_steps()
-    if not steps or steps[-1].kind == "whole" or len(after) < len(before):
+    if not steps:
+        return False
+    if same_frame_content(before, after):
+        return True
+    if steps[-1].kind == "whole" or len(after) < len(before):
         return False
     return list(after.index[: len(before)]) == list(before.index)
 
@@ -3551,8 +3557,9 @@ def render_small_editor(
     포함)을 그린 **뒤에** 부른다(AGENTS 9장 「`st.rerun()` 은 그 화면의 모든 편집표를 그린
     뒤에만」). 받은 제출이 없으면 None. 비가동 일정은 시나리오 쪽이라 낡은 세션이면 통째로
     잠근다. 저장은 오른쪽 「저장 전 변경」 한 곳이다. `undo` 는 미룬 표 단계
-    되돌리기(`defer_grid_undo`)를 편집을 넣은 뒤 잇는 길이다 — 편집이 줄을 지웠거나 통째 단계면
-    되돌리기를 비우고 편집을 지킨다(그 사실은 알림창이 말한다). `on_deleted` 는 「삭제 확정」 을
+    되돌리기(`defer_grid_undo`)를 편집을 넣은 뒤 잇는 길이다 — 값을 바꾼 편집이 줄을 지웠거나 통째
+    단계면 되돌리기를 비우고 편집을 지킨다(그 사실은 알림창이 말한다). 값이 그대로인 편집(「선택」
+    칸만 고름)은 그대로 되돌린다(`_undo_lines_up`). `on_deleted` 는 「삭제 확정」 을
     받은 제출 뒤에 부른다 — 화면이 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다(c6)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     baseline_table = target == BASELINE_TARGET

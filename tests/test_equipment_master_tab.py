@@ -36,8 +36,11 @@ from capa_simulation.components.equipment_data_workspace import (
     GRID_DETAIL_KEY,
     GRID_LOADED_KEY,
     GRID_OVERLAY_KEY,
+    GRID_UNDO_KEY,
+    GRID_UNDO_REQUEST_KEY,
     PENDING_RENAMES_KEY,
     PREVIEW_BUTTON_KEY,
+    SELECTION_KEY,
     reset_equipment_drafts,
 )
 from capa_simulation.components.equipment_import_dialog import IMPORT_APPLY_BUTTON_KEY
@@ -993,6 +996,48 @@ def test_undo_that_changes_the_downtime_table_keeps_its_unapplied_edits(
     assert sorted(app.session_state[BUFFER_KEY][2]["설비명"]) == ["DA-01", "DA-02"]
     assert _downtime_reason(app, "DA-01") == "점검"
     assert grid_results(app)[-1].startswith("되돌림:")
+
+
+def test_undo_over_an_import_with_only_a_checked_row_in_the_downtime_table_still_undoes(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """맨 위 단계가 통째 단계(엑셀·CSV 넣기)이고 비가동 일정 표의 적용 전 편집이 「선택」 칸
+    체크뿐이면 미룬 「한 단계 되돌리기」 가 아무 일도 하지 않았다 — 체크도 편집으로 세 미뤘는데,
+    통째 단계라 되돌리기를 잇지 않고 편집본도 그대로라 비우지도 알리지도 않았다(몇 번을 눌러도
+    같음). 값이 그대로인 편집은 넣기를 그대로 되돌리고 체크(고른 줄)는 남긴다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02"))
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.run()
+    tables = BrowserTables(app)
+    tables.add(
+        _small_key(app, DOWNTIME_EDITOR_KEY),
+        {"설비명": "DA-01", "비가동유형": "PM", "시작일": "2026-11-03"},
+    )
+    tables.run()
+    app.button(key="equipment_downtime_apply_v1").click()
+    tables.run()
+    app.session_state[TABLE_KEY] = "설비 마스터"
+    app.run()
+    _import(app, _rows("DA-01", "DA-02", "DA-03"))
+    assert len(app.session_state[GRID_UNDO_KEY]) == 1
+
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    tables = BrowserTables(app)
+    tables.edit(_small_key(app, DOWNTIME_EDITOR_KEY), 0, "선택", True)
+    tables.run()
+    app.button(key=UNDO_BUTTON_KEY).click()
+    tables.run()
+
+    assert not app.exception, app.exception
+    assert sorted(app.session_state[BUFFER_KEY][1]["설비명"]) == ["DA-01", "DA-02"]
+    assert app.session_state[BUFFER_KEY][2]["설비명"].tolist() == ["DA-01"]
+    assert GRID_UNDO_KEY not in app.session_state
+    assert GRID_UNDO_REQUEST_KEY not in app.session_state
+    assert grid_results(app)[-1].startswith("되돌림:")
+    assert app.session_state[SELECTION_KEY].get("비가동 일정")
 
 
 def _page_texts(app: AppTest) -> list[str]:
