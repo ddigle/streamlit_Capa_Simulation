@@ -294,6 +294,12 @@ OFFICIAL_HOST = DialogHost("scenario_official_dialog_host", OFFICIAL_DIALOG_KEY)
 # 팝업의 공식버전명 · 메모 칸 — 닫으면 호스트가 값을 지운다(`OFFICIAL_HOST.render(widget_keys=)`).
 OFFICIAL_NAME_KEY = "scenario_official_release_name"
 OFFICIAL_NOTE_KEY = "scenario_official_release_note"
+# 팝업이 이번 열림에서 마지막으로 읽어 그린 대상(`_OfficialView`). 여는 콜백과 닫기가 비운다 — 비어
+# 있으면 이번 열림의 첫 회차다. 다시 읽지 못한 회차(파일 잠금 따위)는 이것으로 팝업과 친 글을
+# 지킨다(`_official_dialog`).
+OFFICIAL_VIEW_KEY = "scenario_official_view"
+# 다시 읽지 못한 회차의 거부를 팝업 안에서 알림창 · Alarm 으로 내는 칸.
+OFFICIAL_UNREAD_KEY = "scenario_official_unread"
 # 공식버전 지정 팝업이 지정 단추를 누르지 않은 회차에 보인 「지금 공식」 번호(없으면 0) — 지정이
 # 저장소에 넘기는 대조 값이다(`write_guard.remember_seen`). 제출 회차에 다시 읽은 번호를 넘기면 첫
 # 지정 뒤의 빠른 둘째 누름이 그 번호로 대조를 지나 공식을 한 번 더 세운다.
@@ -1272,11 +1278,14 @@ def _open_official_dialog(drawn_scenario: str, widget_key: str) -> None:
         return
     if draft.picked is None:
         return
+    st.session_state.pop(OFFICIAL_VIEW_KEY, None)
     OFFICIAL_HOST.open((drawn_scenario, draft.picked), widget_key)
 
 
 def _close_official_dialog() -> None:
-    """열림 칸과 팝업의 입력 위젯 값을 지운다(`DialogHost.close`)."""
+    """열림 칸 · 팝업의 입력 위젯 값(`DialogHost.close`)과 팝업이 읽어 둔 대상을 지운다. 팝업
+    닫기(X · 바깥 · Esc — `on_dismiss`)도 이것이다."""
+    st.session_state.pop(OFFICIAL_VIEW_KEY, None)
     OFFICIAL_HOST.close()
 
 
@@ -1295,60 +1304,115 @@ def _refuse_stale_official_press(
     _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
 
 
-@st.dialog("공식버전 지정", width="medium", on_dismiss=OFFICIAL_HOST.close)
+@dataclass(frozen=True)
+class _OfficialView:
+    """공식 지정 팝업이 그리는 대상 — 시나리오(보관본일 수 있다) · 리비전 · 「지금 공식」 · 그
+    리비전의 가상 제품."""
+
+    summary: ScenarioSummary
+    revision: RevisionSummary
+    latest: OfficialReleaseSummary | None
+    virtual_products: tuple[VirtualProductRecord, ...]
+
+
+def _read_official_view(
+    repository: DuckDBScenarioRepository, scenario_id: str, revision_id: str
+) -> _OfficialView | None:
+    """팝업이 그릴 대상을 지금 저장소에서 읽는다. 시나리오는 보관본까지 본다 — 그 사이 보관된 것은
+    지정 단추에서 저장소가 거부한다. 시나리오 · 리비전이 없으면(영구 삭제) None."""
+    summary = next(
+        (
+            item
+            for item in repository.list_scenarios(include_archived=True)
+            if item.scenario_id == scenario_id
+        ),
+        None,
+    )
+    if summary is None:
+        return None
+    revision = next(
+        (
+            item
+            for item in repository.list_revisions(scenario_id)
+            if item.revision_id == revision_id
+        ),
+        None,
+    )
+    if revision is None:
+        return None
+    return _OfficialView(
+        summary,
+        revision,
+        repository.latest_official_release(),
+        virtual_product_records(repository.list_virtual_products(revision_id)),
+    )
+
+
+def _kept_official_view(scenario_id: str, revision_id: str) -> _OfficialView | None:
+    """이번 열림에서 팝업이 마지막으로 읽어 그린 그 시나리오 · 리비전의 대상(없으면 None — 이번
+    열림의 첫 회차)."""
+    kept = st.session_state.get(OFFICIAL_VIEW_KEY)
+    if (
+        isinstance(kept, _OfficialView)
+        and kept.summary.scenario_id == scenario_id
+        and kept.revision.revision_id == revision_id
+    ):
+        return kept
+    return None
+
+
+@st.dialog("공식버전 지정", width="medium", on_dismiss=_close_official_dialog)
 @keeps_app_run_open
 def _official_dialog(database_path: str, scenario_id: str, revision_id: str) -> None:
     """공식버전 지정 확인 팝업. 호스트(`OFFICIAL_HOST`)가 부르고, 팝업 안 조작은 실행 핀 밖의
     프래그먼트라 DB 핀을 스스로 잡는다.
 
-    시나리오 · 리비전 · 「지금 공식」 은 **본문에서 다시 읽는다** — 호스트만 도는 여는 회차의 인자는
-    이 화면의 마지막 앱 전체 회차의 것이라 그 사이 남이 지정 · 보관한 것이 빠진다. 「지금 공식」 은
-    지정의 대조 값이기도 하다(`OFFICIAL_SEEN_KEY`). 그 사이 시나리오 · 리비전이 목록에서 빠졌으면
-    팝업을 걷고 카드 결과 칸에 알린다(앱 전체 회차가 지금 연 줄로 다시 그린다).
+    시나리오 · 리비전 · 「지금 공식」 · 가상 제품은 **본문에서 다시 읽는다** — 호스트만 도는 여는
+    회차의 인자는 이 화면의 마지막 앱 전체 회차의 것이라 그 사이 남이 지정 · 보관한 것이 빠진다.
+    「지금 공식」 은 지정의 대조 값이기도 하다(`OFFICIAL_SEEN_KEY`).
+
+    - 연 회차(읽어 둔 대상 없음)에 그 시나리오가 보관됐거나 줄이 없으면 팝업을 걷고 카드 결과 칸에
+      알린다(앱 전체 회차가 지금 연 줄로 다시 그린다).
+    - 팝업을 그린 뒤에 보관됐으면 그대로 그리고 지정 단추에서 저장소가 거부한다 — 알림창의 까닭과
+      카드 곁 알림 둘이다(작은 결정 a7 「지금대로」).
+    - 다시 읽지 못하면(파일 잠금 따위) 팝업을 걷지 않는다. 읽어 둔 대상이 있으면 그것으로 친 글과
+      함께 다시 그리고 지정하지 않는다 — 앱 전체를 다시 돌리면 같은 까닭으로 페이지가 서지 못해
+      팝업과 친 글이 사라진다. 연 회차부터 못 읽었으면 그릴 것이 없어 앱 전체로 물러난다.
     """
+    kept = _kept_official_view(scenario_id, revision_id)
     with pinned_connections(Path(database_path)):
         repository = get_scenario_repository(database_path)
         try:
-            summary = next(
-                (item for item in repository.list_scenarios() if item.scenario_id == scenario_id),
-                None,
-            )
-            revision = (
-                None
-                if summary is None
-                else next(
-                    (
-                        item
-                        for item in repository.list_revisions(scenario_id)
-                        if item.revision_id == revision_id
-                    ),
-                    None,
-                )
-            )
-            latest = repository.latest_official_release()
+            view = _read_official_view(repository, scenario_id, revision_id)
         except BOOTSTRAP_ERRORS as exc:
-            _close_official_dialog()
-            _refuse_official(bootstrap_error_message(exc))
-        if summary is None or revision is None:
+            if kept is None:
+                _refuse_official(bootstrap_error_message(exc))
+            _render_official(repository, database_path, kept, unread=bootstrap_error_message(exc))
+            return
+        if view is None or (kept is None and view.summary.status != "ACTIVE"):
             _close_official_dialog()
             _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
             st.rerun()
-        _render_official(repository, database_path, summary, revision, latest)
+        st.session_state[OFFICIAL_VIEW_KEY] = view
+        _render_official(repository, database_path, view)
 
 
 def _render_official(
     repository: DuckDBScenarioRepository,
     database_path: str,
-    summary: ScenarioSummary,
-    revision: RevisionSummary,
-    latest: OfficialReleaseSummary | None,
+    view: _OfficialView,
+    *,
+    unread: str | None = None,
 ) -> None:
     """팝업 본문 — 「지금 공식 → 새 공식」을 나란히 보이고, 확인을 받아 지정한다.
 
     모두의 첫 화면이 바뀌는 작업이라 대상을 사람 눈으로도 확인하게 적는다. 팝업이 보인 「지금
     공식」 번호를 저장소에 넘겨(`expected_latest_release_no`) 그 사이 다른 사람이 먼저 지정했으면
-    쓰지 않는다.
+    쓰지 않는다. `unread` 는 이 회차에 저장소를 다시 읽지 못한 까닭이다 — 읽어 둔 대상과 친 글을
+    그대로 그리고, 지정하지 않고 그 까닭을 알림창 · Alarm 에만 낸다(고칠 입력이 이 자리에 없다 —
+    설계 규칙 UI-NTF-03).
     """
+    summary, revision, latest = view.summary, view.revision, view.latest
     revision_id = revision.revision_id
     current_column, next_column = st.columns(2)
     with current_column:
@@ -1374,7 +1438,7 @@ def _render_official(
     # 가상 제품은 실적과 대조할 수 없는 값이다. 그런 리비전이 모두의 첫 화면이 되기 전에
     # 지정하는 사람이 그 사실을 보고 확인하게 한다(2026-10-06 사용자 결정). 확인 체크는 폼
     # **밖**에 둔다 — 폼 안의 체크는 누를 때 다시 그리지 않아 지정 버튼을 풀 수 없다.
-    virtual_products = virtual_product_records(repository.list_virtual_products(revision_id))
+    virtual_products = view.virtual_products
     confirmed = True
     if virtual_products:
         st.warning(official_virtual_product_warning(virtual_products), icon=":material/warning:")
@@ -1404,6 +1468,16 @@ def _render_official(
     refused = take_refusal(OFFICIAL_SAVE_NAME)
     if refused is not None:
         st.error(refused)
+    if unread is not None:
+        queue_flash(
+            OFFICIAL_UNREAD_KEY,
+            markdown_safe_tildes(unread),
+            kind="error",
+            icon=_NOTICE_ICONS["error"],
+            popup_only=True,
+        )
+        render_flash(OFFICIAL_UNREAD_KEY)
+        return
     if official_submitted and not confirmed:
         # 버튼 잠금은 화면의 약속일 뿐이다. 제출 회차에도 확인을 다시 본다.
         st.error("가상 제품이 포함된 것을 확인해야 공식버전으로 지정할 수 있습니다.")
