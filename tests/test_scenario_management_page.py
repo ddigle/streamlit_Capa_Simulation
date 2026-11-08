@@ -11,6 +11,7 @@ import duckdb
 import pandas as pd
 import pytest
 from alert_marks import flashed, infos, place_errors, successes
+from fragment_browser import FragmentBrowser, install_fragment_browser
 from scenario_list_fake import (
     Calls,
     ListBrowser,
@@ -30,6 +31,7 @@ import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.bigdataquery_registration import CATALOG_START_DATE_KEY
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.scenario_list_grid import (
     CHANGES_KEY,
     LIST_SIDE,
@@ -61,6 +63,10 @@ from capa_simulation.components.scenario_management import (
     MODE_KEY,
     OFFICIAL_CONFIRM_HELP,
     OFFICIAL_DIALOG_KEY,
+    OFFICIAL_HOST,
+    OFFICIAL_NAME_KEY,
+    OFFICIAL_NOTE_KEY,
+    OFFICIAL_SEEN_KEY,
     OPENED_MOVED_MESSAGE,
     SAME_AS_OFFICIAL_HELP,
     SAME_AS_OFFICIAL_LINE,
@@ -586,6 +592,8 @@ def test_clone_that_leaves_demand_out_warns_only_through_the_alert_popup(
     assert warned.value == message
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
+    # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
 
 
 def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
@@ -1096,6 +1104,72 @@ def _official_button(app: AppTest) -> Button:
     return next(button for button in app.button if button.label == OFFICIAL_BUTTON)
 
 
+def _host_only(browser: FragmentBrowser) -> bool:
+    """마지막 `run()` 이 보낸 델타가 모두 프래그먼트 회차의 것인가 — 페이지가 다시 돌지 않았다."""
+    return all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    )
+
+
+def test_opening_and_closing_the_official_popup_runs_only_its_host_and_rereads_the_official(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「공식으로 지정…」 을 여닫아도 페이지를 다시 계산하지 않는다 — 여는 콜백 뒤 호스트
+    (`scenario_official_dialog_host`)만 돌고 닫기도 호스트만 돈다(2026-11-08 사용자 결정 U5, 설계
+    규칙 UI-PRF-01 — u4-01 의 「공식 지정 1·0·158 / 1·0·143」).
+
+    호스트만 도는 여는 회차의 인자는 마지막 앱 전체 회차의 것이라, 「지금 공식」 은 팝업 본문이 다시
+    읽는다 — 그 사이 다른 세션이 지정한 공식이 팝업에 서고 지정의 대조 값도 그 번호다
+    (`components/dialog_host.py` 쓰는 쪽이 지키는 것 1).
+    """
+    database_path = tmp_path / "scenario.duckdb"
+    script = (
+        "from capa_simulation.sidebar_status import begin_app_run\n"
+        "app_run = begin_app_run()\n"
+        + _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+        + "app_run.finish()\n"
+    )
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    repository = DuckDBScenarioRepository(database_path)
+    release = repository.latest_official_release()
+    assert release is not None
+    _check_row(app, release.scenario_id)
+    app.run()
+    app.session_state[DRAFT_KEY] = replace(_draft(app), picked=release.revision_id)
+    app.run()
+    assert not app.exception
+    host = browser.fragment_keyed(OFFICIAL_HOST.key)
+
+    # 다른 세션이 지정했다 — 이 화면의 마지막 앱 전체 회차는 그 전의 공식을 읽었다.
+    repository.publish_official_revision(
+        release.scenario_id, release.revision_id, release_name="다른 세션 지정"
+    )
+    app.button(key=f"{CARD_OFFICIAL_KEY}_{release.scenario_id}").click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]], "여는 회차가 호스트만 돌지 않았다"
+    assert _host_only(browser), "페이지가 다시 돌았다"
+    assert app.session_state[OFFICIAL_DIALOG_KEY] == (release.scenario_id, release.revision_id)
+    shown = " ".join(item.value for item in app.markdown)
+    assert f"**v{release.release_no + 1}** · " in shown and "다른 세션 지정" in shown
+    assert f"**v{release.release_no + 2}** · " in shown
+    assert app.session_state[OFFICIAL_SEEN_KEY] == release.release_no + 1
+
+    # 공식버전명을 고친 뒤 닫는다(X · 바깥 · Esc — `on_dismiss`). 닫기 요청은 브라우저처럼 그려진
+    # 팝업 위젯 값과 닫기 트리거를 함께 싣고 호스트만 돈다. 닫으면 친 글도 지운다(지키는 것 5).
+    dialog_id = browser.dialog_widget_id()
+    app.text_input(key=OFFICIAL_NAME_KEY).set_value("고치다 만 이름")
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert _host_only(browser), "닫는 회차에 페이지가 다시 돌았다"
+    assert OFFICIAL_DIALOG_KEY not in app.session_state
+    assert OFFICIAL_NAME_KEY not in app.session_state
+
+
 def test_official_release_of_a_revision_with_virtual_products_needs_a_confirmation(
     tmp_path: Path,
 ) -> None:
@@ -1313,6 +1387,142 @@ def test_an_official_popup_refused_by_the_repository_says_so_in_the_alert_center
     assert latest is not None and latest.release_no == release.release_no
 
 
+def _official_popup_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[AppTest, FragmentBrowser, DuckDBScenarioRepository, Path]:
+    """브라우저처럼 여닫기 · 팝업 안 제출이 프래그먼트 회차로 도는 시나리오 관리 화면."""
+    database_path = tmp_path / "scenario.duckdb"
+    script = (
+        "from capa_simulation.sidebar_status import begin_app_run\n"
+        "app_run = begin_app_run()\n"
+        + _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+        + "app_run.finish()\n"
+    )
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(script, default_timeout=120).run()
+    assert not app.exception
+    return app, browser, DuckDBScenarioRepository(database_path), database_path
+
+
+def _ready_official(app: AppTest, scenario_id: str, revision_id: str) -> None:
+    """그 시나리오 · 리비전을 연 앱 전체 회차까지 — 다음 「공식으로 지정…」 은 호스트만 돈다."""
+    _check_row(app, scenario_id)
+    app.run()
+    app.session_state[DRAFT_KEY] = replace(_draft(app), picked=revision_id)
+    app.run()
+    assert not app.exception
+
+
+def _submit_in_popup(app: AppTest, browser: FragmentBrowser) -> None:
+    """팝업 안 지정 단추 — 브라우저처럼 팝업 프래그먼트만 도는 회차로 보낸다."""
+    browser.fragment_queue = [browser.fragment_of(OFFICIAL_NAME_KEY)]
+    _official_button(app).click()
+    app.run()
+    browser.fragment_queue = []
+
+
+def test_an_official_popup_whose_scenario_was_archived_meanwhile_gives_both_notices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """팝업을 그린 뒤 남이 그 시나리오를 보관하면 지정 단추에서 저장소가 거부한다 — 알림창의
+    까닭 「보관된 시나리오는 …」 과 카드 곁 「고른 시나리오가 바뀌어 …」 둘이다(작은 결정 a7
+    「지금대로」). 팝업 본문이 다시 읽다가 보관본을 빠진 줄로 보고 먼저 걷으면 까닭 글 없이 카드 곁
+    하나만 남는다."""
+    app, browser, repository, database_path = _official_popup_app(tmp_path, monkeypatch)
+    other = _clone_official(database_path, "보관될 시나리오", "ARCHIVE-OFFICIAL")
+    scenario_id = other.scenario.scenario_id
+    revision_id = other.revision.revision_id
+    before = repository.latest_official_release()
+    assert before is not None
+    app.run()
+    _ready_official(app, scenario_id, revision_id)
+    app.button(key=f"{CARD_OFFICIAL_KEY}_{scenario_id}").click().run()
+    assert not app.exception
+    assert app.session_state[OFFICIAL_DIALOG_KEY] == (scenario_id, revision_id)
+    app.text_input(key=OFFICIAL_NAME_KEY).set_value("A 가 친 이름")
+
+    repository.archive_scenario(scenario_id)
+    _submit_in_popup(app, browser)
+
+    assert not app.exception
+    assert [(item.value, item.code) for item in flashed(app, "error")] == [
+        ("보관된 시나리오는 공식버전으로 지정할 수 없습니다.", "FL-04"),
+        (OPENED_MOVED_MESSAGE, "FL-04"),
+    ]
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == before.release_no
+    assert OFFICIAL_DIALOG_KEY not in app.session_state
+
+
+def test_an_official_popup_opened_on_a_scenario_archived_meanwhile_does_not_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """마지막 앱 전체 회차 뒤 남이 보관한 시나리오의 「공식으로 지정…」 은 팝업을 세우지 않고 카드
+    곁에만 알린다 — 연 회차에는 지정 단추를 누르지 않았으니 저장소 거부가 없다."""
+    app, browser, repository, database_path = _official_popup_app(tmp_path, monkeypatch)
+    other = _clone_official(database_path, "보관될 시나리오", "ARCHIVE-OFFICIAL")
+    scenario_id = other.scenario.scenario_id
+    app.run()
+    _ready_official(app, scenario_id, other.revision.revision_id)
+
+    repository.archive_scenario(scenario_id)
+    app.button(key=f"{CARD_OFFICIAL_KEY}_{scenario_id}").click().run()
+
+    assert not app.exception
+    assert OFFICIAL_DIALOG_KEY not in app.session_state
+    assert [(item.value, item.code) for item in flashed(app, "error")] == [
+        (OPENED_MOVED_MESSAGE, "FL-04")
+    ]
+    assert browser.fragment_queue == []
+
+
+def test_an_official_popup_that_cannot_reread_keeps_itself_and_the_typed_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """팝업 본문이 저장소를 다시 읽지 못하면(파일 잠금) 팝업을 걷지 않고 친 공식버전명 · 메모와 함께
+    다시 그린다 — 지정하지 않고 까닭은 알림창 · Alarm 에만(작은 결정 a7 「지금대로」 — 걷으면 적은
+    글을 잃는다). 앱 전체를 다시 돌리지 않는다 — 같은 잠금에 페이지가 서지 못해 팝업이 사라진다.
+    잠금이 풀린 뒤 다시 누르면 친 이름으로 지정된다."""
+    app, browser, repository, _ = _official_popup_app(tmp_path, monkeypatch)
+    release = repository.latest_official_release()
+    assert release is not None
+    _ready_official(app, release.scenario_id, release.revision_id)
+    app.button(key=f"{CARD_OFFICIAL_KEY}_{release.scenario_id}").click().run()
+    assert not app.exception
+    app.text_input(key=OFFICIAL_NAME_KEY).set_value("잠금 중 친 이름")
+    app.text_area(key=OFFICIAL_NOTE_KEY).set_value("잠금 중 친 메모")
+    dialog = browser.fragment_of(OFFICIAL_NAME_KEY)
+
+    def held_by_another_program(*args: object, **kwargs: object) -> NoReturn:
+        raise duckdb.IOException(
+            'IO Error: Could not set lock on file "scenario.duckdb": '
+            "Conflicting lock is held in python (PID 4242)"
+        )
+
+    with monkeypatch.context() as held:
+        held.setattr(DuckDBScenarioRepository, "list_scenarios", held_by_another_program)
+        _submit_in_popup(app, browser)
+
+    assert not app.exception
+    assert browser.started == [[dialog]], "앱 전체가 다시 돌았다"
+    assert app.session_state[OFFICIAL_DIALOG_KEY] == (release.scenario_id, release.revision_id)
+    assert app.text_input(key=OFFICIAL_NAME_KEY).value == "잠금 중 친 이름"
+    assert app.text_area(key=OFFICIAL_NOTE_KEY).value == "잠금 중 친 메모"
+    refusals = [(item.value, item.code) for item in flashed(app, "error")]
+    assert len(refusals) == 1 and refusals[0][1] == "FL-04", refusals
+    assert "다른 프로그램이 파일을 열어 두었습니다" in refusals[0][0]
+    assert not [item.value for item in app.error]
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == release.release_no
+
+    _submit_in_popup(app, browser)
+    assert not app.exception
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == release.release_no + 1
+    assert latest.release_name == "잠금 중 친 이름"
+    assert OFFICIAL_DIALOG_KEY not in app.session_state
+
+
 def test_official_release_with_demand_left_out_of_the_requirement_warns_after_publishing(
     tmp_path: Path,
 ) -> None:
@@ -1357,6 +1567,8 @@ def test_official_release_with_demand_left_out_of_the_requirement_warns_after_pu
     assert "부하량에서 빠진 계획" in warned.value
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
+    # 「그 화면으로」 는 지정한 화면이 아니라 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
 
 
 def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(

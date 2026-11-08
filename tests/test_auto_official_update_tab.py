@@ -51,6 +51,7 @@ from capa_simulation.components.auto_official_update_tab import (
     EMPTY,
     RUN_NOW_BUTTON_KEY,
     RUN_NOW_HELP,
+    RUN_REASON_HELP,
     RUN_RECEIVED_WIDTH_PX,
     RUN_WARNING_WIDTH_PX,
     RUNNING_MESSAGE,
@@ -58,7 +59,11 @@ from capa_simulation.components.auto_official_update_tab import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_picker import auto_off_mark_line, tile_tooltip_text
-from capa_simulation.components.required_exclusion_notice import UNCOUNTED_DEMAND_LEAD
+from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE
+from capa_simulation.components.required_exclusion_notice import (
+    REQUIRED_TAB_GOTO,
+    UNCOUNTED_DEMAND_LEAD,
+)
 from capa_simulation.persistence.models import AutoOfficialUpdateRun, ScenarioPreset
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.auto_official_update import (
@@ -163,7 +168,7 @@ def _published_alerts(app: AppTest) -> tuple[tuple[str, str, str], ...]:
     index = next(
         index
         for index, (kind, _, text) in enumerate(alerts)
-        if kind == "success" and "지금 실행 회차 — 등록·발행" in text
+        if kind == "success" and "지금 실행 회차 — 등록·지정" in text
     )
     return tuple(alerts[index : index + 2])
 
@@ -186,7 +191,7 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
     assert ENV_VAR in str(switch.proto.help)
     # 「지금 실행」 이 공식버전을 바꿀 수 있다는 것은 누르기 전에 그 단추 풍선이 말한다(UI-NTF-09).
     run_now = next(button for button in app.button if button.key == RUN_NOW_BUTTON_KEY)
-    assert run_now.help == RUN_NOW_HELP and "공식버전을 발행합니다" in RUN_NOW_HELP
+    assert run_now.help == RUN_NOW_HELP and "공식버전으로 지정합니다" in RUN_NOW_HELP
     text = _markdown(app)
     assert "공식 v1 W40" in text
     # 설정 값은 바로 아래 칸이, 꺼진 실행의 「다음 실행」 은 예약 줄이 이미 말한다(UI-TXT-07).
@@ -241,7 +246,7 @@ def test_the_run_result_blocks_the_tildes_of_the_names_in_its_reason(database: P
     assert not app.exception, [element.message for element in app.exception]
 
     alerts = [text for _, _, text in _alerts(app)]
-    assert "지금 실행 회차 — 등록·발행. 「PSM\\~W41\\~X」 을 공식으로 발행했습니다" in alerts
+    assert "지금 실행 회차 — 등록·지정. 「PSM\\~W41\\~X」 을 공식으로 발행했습니다" in alerts
     assert f"{UNCOUNTED_DEMAND_LEAD} — 「공정\\~표시\\~D」." in alerts
 
 
@@ -494,6 +499,12 @@ def test_saving_the_settings_records_what_changed(database: Path) -> None:
     ]
     # 칸이 저장본을 따라온다(키 없는 칸).
     assert _field(app.text_input, "시뮬레이션명 키워드").value == "PSS"  # type: ignore[attr-defined]
+    # 공용 버전 줄은 「설정」 제목 옆 한 줄이다(2026-11-08 그림 메모 g18 — `render_profile_heading`
+    # 만 버전 줄 끝에 글자 밑줄 맞춤 규칙을 싣는다).
+    versions = [
+        str(item.value) for item in app.caption if str(item.value).startswith("공용 버전 v1")
+    ]
+    assert versions and all(text.endswith(HEADING_BASELINE_STYLE) for text in versions)
     assert "**다음 실행**" not in _markdown(app)
 
 
@@ -630,7 +641,7 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
     app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
 
     assert not app.exception and not place_errors(app)
-    assert any("지금 실행 회차 — 등록·발행" in str(element.value) for element in successes(app))
+    assert any("지금 실행 회차 — 등록·지정" in str(element.value) for element in successes(app))
     # 소요대수에 들지 않은 수요가 없으면 성공 알림만 뜬다 — 밑에 빈 경고를 그리지 않는다.
     assert not [text for _, _, text in _alerts(app) if UNCOUNTED_DEMAND_LEAD in text]
     release = repository.latest_official_release()
@@ -649,15 +660,15 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
         "등록 시나리오",
         "자동 off",
         "이어받은 수동 off",
-        "발행",
+        "지정",
         "기준",
         "사유",
     ]
     row = history.iloc[0]
     assert row["시작"] == format(NOW, "%Y-%m-%d %H:%M")
-    assert (row["방식"], row["결과"], row["받은 코드"]) == ("지금 실행", "등록·발행", "W41 SIM-W41")
+    assert (row["방식"], row["결과"], row["받은 코드"]) == ("지금 실행", "등록·지정", "W41 SIM-W41")
     assert row["경고"] == EMPTY
-    assert row["발행"] == "공식 v2"
+    assert row["지정"] == "공식 v2"
     assert row["자동 off"] == f"1공정 · {WAFER} 자동 off(확보율 0%, 26.03)"
     assert row["이어받은 수동 off"] == "0공정"
     offs = app.dataframe[1].value
@@ -687,11 +698,15 @@ def test_run_now_shows_uncounted_demand_as_a_warning_after_the_success(database:
         "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
     )
     (success, warning) = _published_alerts(app)
-    assert success == ("success", ":material/publish:", f"지금 실행 회차 — 등록·발행. {head}")
+    assert success == ("success", ":material/publish:", f"지금 실행 회차 — 등록·지정. {head}")
     kind, icon, text = warning
     assert (kind, icon) == ("warning", ":material/warning:")
     assert text.startswith(f"{UNCOUNTED_DEMAND_LEAD}(시나리오 전체 기간) — ")
     assert [item.code for item in flashed(app, "warning")] == ["FL-03"]
+    # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    (warned,) = flashed(app, "warning")
+    assert warned.note is not None
+    assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
     assert not app.warning
     assert "생산수량이 비어 계획 없음으로 본 계획 1건" in text
     run = repository.list_auto_official_update_runs()[0]
@@ -1027,7 +1042,8 @@ def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]
 
 def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Path) -> None:
     """「⚠ 소요대수 밖 수요」 · 「W44 코드」 처럼 짧은 값까지 칸에서 잘렸다 — 두 칸에 폭을 준다.
-    사유는 긴 칸이라 폭을 주지 않고 잘린 채 둔다."""
+    사유는 긴 칸이라 폭을 주지 않고 잘린 채 두고, 그 칸 머리 풍선이 무엇이 적히는지와 잘린 글을 읽는
+    길을 말한다(작은 결정 d9 — 「풍선에 맡긴다」 의 풍선. 표 칸마다 풍선은 달 수 없다)."""
     _cut_off_published_round(database)
 
     app = _tab(database)
@@ -1036,7 +1052,8 @@ def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Pa
     config = json.loads(table.proto.columns)
     assert config["경고"]["width"] == RUN_WARNING_WIDTH_PX
     assert config["받은 코드"]["width"] == RUN_RECEIVED_WIDTH_PX
-    assert "사유" not in config
+    assert "width" not in config["사유"]
+    assert config["사유"]["help"] == RUN_REASON_HELP
 
 
 def _running_notices(app: AppTest) -> list[str]:

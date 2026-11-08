@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
@@ -35,6 +36,7 @@ import streamlit as st
 from capa_simulation import alerts
 from capa_simulation.components.capacity_gate import official_publish_verdict, revision_save_verdict
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import DialogBody, DialogHost
 from capa_simulation.components.flash import (
     FlashKind,
     queue_flash,
@@ -44,6 +46,7 @@ from capa_simulation.components.flash import (
 from capa_simulation.components.grid_shared import outbox_mount, outbox_value
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.save_section import discard_popover
 from capa_simulation.components.scenario_list_state import (
@@ -99,7 +102,6 @@ from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
     bootstrap_error_message,
-    forget_page_dialogs,
     prune_named_choice,
 )
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -181,6 +183,7 @@ from capa_simulation.services.scenario_virtual_products import (
     virtual_product_records,
 )
 from capa_simulation.services.virtual_product import VirtualProductRecord
+from capa_simulation.sidebar_status import keeps_app_run_open
 
 CLONE_PIPELINE_VERSION = "duckdb-rq-snapshot-v3"
 FLASH_KEY = "scenario_management_flash"
@@ -284,6 +287,19 @@ REVISION_SEED_KEY = "scenario_list_revision_seed"
 # 공식버전 지정 확인 팝업의 열림 칸 — (시나리오 id, 리비전 id). `PAGE_DIALOG_SUFFIX` 로 끝나
 # 페이지를 떠나면 비워지고, 여는 콜백이 다른 팝업 칸부터 비운다(한 실행에 팝업 하나).
 OFFICIAL_DIALOG_KEY = f"scenario_official{PAGE_DIALOG_SUFFIX}"
+# 그 팝업을 여닫는 호스트 프래그먼트(`components/dialog_host.py` — 열기 · 닫기가 페이지를 다시
+# 계산하지 않는다). 「Capa 시나리오」 탭을 그리는 매 앱 전체 회차 끝에 선다
+# (`_render_official_host`).
+OFFICIAL_HOST = DialogHost("scenario_official_dialog_host", OFFICIAL_DIALOG_KEY)
+# 팝업의 공식버전명 · 메모 칸 — 닫으면 호스트가 값을 지운다(`OFFICIAL_HOST.render(widget_keys=)`).
+OFFICIAL_NAME_KEY = "scenario_official_release_name"
+OFFICIAL_NOTE_KEY = "scenario_official_release_note"
+# 팝업이 이번 열림에서 마지막으로 읽어 그린 대상(`_OfficialView`). 여는 콜백과 닫기가 비운다 — 비어
+# 있으면 이번 열림의 첫 회차다. 다시 읽지 못한 회차(파일 잠금 따위)는 이것으로 팝업과 친 글을
+# 지킨다(`_official_dialog`).
+OFFICIAL_VIEW_KEY = "scenario_official_view"
+# 다시 읽지 못한 회차의 거부를 팝업 안에서 알림창 · Alarm 으로 내는 칸.
+OFFICIAL_UNREAD_KEY = "scenario_official_unread"
 # 공식버전 지정 팝업이 지정 단추를 누르지 않은 회차에 보인 「지금 공식」 번호(없으면 0) — 지정이
 # 저장소에 넘기는 대조 값이다(`write_guard.remember_seen`). 제출 회차에 다시 읽은 번호를 넘기면 첫
 # 지정 뒤의 빠른 둘째 누름이 그 번호로 대조를 지나 공식을 한 번 더 세운다.
@@ -337,6 +353,7 @@ def render_scenario_management(
         scenarios = repository.list_scenarios()
     except BOOTSTRAP_ERRORS as exc:
         render_data_error(bootstrap_error_message(exc), code="SC-02", tab=CAPA_SCENARIO_TAB_NAME)
+        _render_official_host(database_path, official_open=False)
         return
     # 작업 이름이 바뀌었으므로 예전 세션에 남은 값은 위젯이 만들어지기 전에 버린다.
     # 옵션에 없는 값이 그대로 오면 Streamlit 이 선택을 잃고 필수 선택에서 막힌다.
@@ -374,14 +391,53 @@ def render_scenario_management(
     # 안내 글은 늘 띄워 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
     # 월 머지·연도 Shift 가 메모한 원본(리비전 하나 크기의 살아 있는 표)은 그 모드에서만 둔다.
     forget_derived_sources(keep=DERIVED_SOURCE_ROLES.get(str(mode), ()))
+    official_open = False
     if mode == "목록 관리":
-        _render_list_management(repository, database_path, scenarios, _list_view(view))
+        official_open = _render_list_management(
+            repository, database_path, scenarios, _list_view(view)
+        )
     elif mode == CLONE_MODE:
         _render_clone(repository)
     elif mode == "월 머지":
         render_scenario_month_merge(repository, database_path)
     elif mode == "연도 Shift":
         render_scenario_year_shift(repository, database_path)
+    _render_official_host(database_path, official_open=official_open)
+
+
+def _render_official_host(database_path: str, *, official_open: bool) -> None:
+    """공식버전 지정 팝업의 호스트 — 이 탭을 그리는 매 앱 전체 회차 끝에 한 번(이벤트 칸 늘 한
+    자리).
+
+    `official_open` 은 이 회차 「상세」 칸이 열림 칸의 시나리오 · 리비전을 그렸는지다 — 아니면(다른
+    작업 · 다른 칸 · 그 사이 빠진 줄) 열림 칸을 비우고 팝업을 걷는다. 호스트만 도는 여닫는 회차는 이
+    함수를 거치지 않는다 — 열림 값은 여는 콜백이 지금 연 줄로 적었고, 팝업 본문이 저장값을 다시
+    읽는다(`_official_dialog`).
+    """
+    if not official_open:
+        st.session_state.pop(OFFICIAL_DIALOG_KEY, None)
+    OFFICIAL_HOST.render(
+        partial(_pick_official_dialog, database_path), widget_keys=_official_widget_keys
+    )
+
+
+def _pick_official_dialog(database_path: str, value: object) -> DialogBody | None:
+    """열림 값 (시나리오 id, 리비전 id) → 그 팝업. 꼴이 다르면 None(빈 자리)."""
+    if not (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and all(isinstance(part, str) for part in value)
+    ):
+        return None
+    return partial(_official_dialog, database_path, value[0], value[1])
+
+
+def _official_widget_keys(value: object) -> tuple[str, ...]:
+    """팝업의 입력 위젯 — 가상 제품 확인 체크(리비전마다) · 공식버전명 · 메모."""
+    keys = (OFFICIAL_NAME_KEY, OFFICIAL_NOTE_KEY)
+    if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], str):
+        return (official_confirm_key(value[1]), *keys)
+    return keys
 
 
 def _report_missing_official(repository: DuckDBScenarioRepository, alert_tab: str | None) -> None:
@@ -604,8 +660,9 @@ def _render_list_management(
     database_path: str,
     scenarios: Sequence[ScenarioSummary],
     view: _ListView,
-) -> None:
+) -> bool:
     """목록 관리 두 칸 — 왼쪽 시나리오 표, 오른쪽 칸(상세 · 저장 전 변경 · 공식 이력 · 보관함).
+    「상세」 칸이 공식 지정 팝업의 시나리오 · 리비전을 그렸으면 `True`(그 팝업이 열려 있어도 된다).
 
     Capa 탭은 다른 탭이 열린 회차에도 그린다(폼 · 보관함 입력을 잃지 않는다) — 표 data 가 그대로면
     브라우저로 다시 보내지 않아 그 회차 비용은 줄 조립뿐이다.
@@ -635,18 +692,17 @@ def _render_list_management(
             st.caption("저장된 시나리오가 없습니다.")
     with right:
         side, body = render_side_head(LIST_SIDE, SIDES, SIDE_DETAIL)
-    dialog_shown = False
+    official_open = False
     with body:
         if side == SIDE_DETAIL:
-            dialog_shown = _render_detail(repository, database_path, scenarios, view)
+            official_open = _render_detail(repository, database_path, scenarios, view)
         elif side == SIDE_CHANGES:
             _render_changes(database_path, view)
         elif side == SIDE_HISTORY:
             _render_official_history(view.releases)
         else:
             _render_archived_scenarios(repository)
-    if not dialog_shown:
-        st.session_state.pop(OFFICIAL_DIALOG_KEY, None)
+    return official_open
 
 
 def _render_changes(database_path: str, view: _ListView) -> None:
@@ -934,7 +990,8 @@ def _render_detail(
     scenarios: Sequence[ScenarioSummary],
     view: _ListView,
 ) -> bool:
-    """「상세」 칸. 공식 지정 확인 팝업을 그렸으면 `True`.
+    """「상세」 칸. 공식 지정 팝업의 열림 칸이 이 칸이 그린 시나리오 · 리비전이면 `True` — 팝업은
+    호스트가 연다(`_render_official_host`).
 
     자리 차례: 리비전 표(표 · 제목 · 원천 코드 · 최근 수정 · 값 줄) · 미저장 확인 칸 · 작업 줄 ·
     결과 칸 · 「보관…」 · 보관 칸. 쓰는 차례로 짠다 — 불러오기를 먼저, 보관은 아래(설계 규칙
@@ -1018,7 +1075,7 @@ def _render_detail(
                 help=REVISION_PICK_HELP if picked is None else None,
                 key=f"{CARD_OFFICIAL_KEY}_{summary.scenario_id}",
                 on_click=_open_official_dialog,
-                args=(summary.scenario_id,),
+                args=(summary.scenario_id, f"{CARD_OFFICIAL_KEY}_{summary.scenario_id}"),
             )
         render_flash(CARD_NOTICE_KEY)
     st.button(
@@ -1033,20 +1090,12 @@ def _render_detail(
         if st.session_state.get(ACTION_KEY) == "archive":
             _render_archive(repository, summary)
     opened = st.session_state.get(OFFICIAL_DIALOG_KEY)
-    if (
+    return (
         isinstance(opened, tuple)
         and len(opened) == 2
         and opened[0] == summary.scenario_id
         and opened[1] in revision_by_id
-    ):
-        _official_dialog(
-            database_path,
-            summary,
-            revision_by_id[opened[1]],
-            view.releases[0] if view.releases else None,
-        )
-        return True
-    return False
+    )
 
 
 def _revision_facts(
@@ -1219,21 +1268,25 @@ def _after_revision_rename(renamed: Sequence[RevisionSummary]) -> None:
         rename_active_revision_label(revision.revision_id, revision.revision_name)
 
 
-def _open_official_dialog(drawn_scenario: str) -> None:
-    """「공식으로 지정…」 콜백. 다른 팝업 칸을 비우고(한 실행에 하나) 출납을 접은 뒤의 고름으로
-    연다."""
+def _open_official_dialog(drawn_scenario: str, widget_key: str) -> None:
+    """「공식으로 지정…」 콜백. 출납을 접은 뒤의 고름으로 연다 — 다른 팝업 칸을 비우고(한 실행에
+    하나) 할 수 있으면 호스트만 다시 돌린다(`DialogHost.open` — 출납도 함께 바뀐 누름은 앱 전체
+    회차다). `widget_key` 는 누른 단추의 key 다."""
     draft = _fold_outboxes()
     if draft.opened != drawn_scenario:
         _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
         return
     if draft.picked is None:
         return
-    forget_page_dialogs()
-    st.session_state[OFFICIAL_DIALOG_KEY] = (drawn_scenario, draft.picked)
+    st.session_state.pop(OFFICIAL_VIEW_KEY, None)
+    OFFICIAL_HOST.open((drawn_scenario, draft.picked), widget_key)
 
 
 def _close_official_dialog() -> None:
-    st.session_state.pop(OFFICIAL_DIALOG_KEY, None)
+    """열림 칸 · 팝업의 입력 위젯 값(`DialogHost.close`)과 팝업이 읽어 둔 대상을 지운다. 팝업
+    닫기(X · 바깥 · Esc — `on_dismiss`)도 이것이다."""
+    st.session_state.pop(OFFICIAL_VIEW_KEY, None)
+    OFFICIAL_HOST.close()
 
 
 def _refuse_stale_official_press(
@@ -1251,33 +1304,115 @@ def _refuse_stale_official_press(
     _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
 
 
+@dataclass(frozen=True)
+class _OfficialView:
+    """공식 지정 팝업이 그리는 대상 — 시나리오(보관본일 수 있다) · 리비전 · 「지금 공식」 · 그
+    리비전의 가상 제품."""
+
+    summary: ScenarioSummary
+    revision: RevisionSummary
+    latest: OfficialReleaseSummary | None
+    virtual_products: tuple[VirtualProductRecord, ...]
+
+
+def _read_official_view(
+    repository: DuckDBScenarioRepository, scenario_id: str, revision_id: str
+) -> _OfficialView | None:
+    """팝업이 그릴 대상을 지금 저장소에서 읽는다. 시나리오는 보관본까지 본다 — 그 사이 보관된 것은
+    지정 단추에서 저장소가 거부한다. 시나리오 · 리비전이 없으면(영구 삭제) None."""
+    summary = next(
+        (
+            item
+            for item in repository.list_scenarios(include_archived=True)
+            if item.scenario_id == scenario_id
+        ),
+        None,
+    )
+    if summary is None:
+        return None
+    revision = next(
+        (
+            item
+            for item in repository.list_revisions(scenario_id)
+            if item.revision_id == revision_id
+        ),
+        None,
+    )
+    if revision is None:
+        return None
+    return _OfficialView(
+        summary,
+        revision,
+        repository.latest_official_release(),
+        virtual_product_records(repository.list_virtual_products(revision_id)),
+    )
+
+
+def _kept_official_view(scenario_id: str, revision_id: str) -> _OfficialView | None:
+    """이번 열림에서 팝업이 마지막으로 읽어 그린 그 시나리오 · 리비전의 대상(없으면 None — 이번
+    열림의 첫 회차)."""
+    kept = st.session_state.get(OFFICIAL_VIEW_KEY)
+    if (
+        isinstance(kept, _OfficialView)
+        and kept.summary.scenario_id == scenario_id
+        and kept.revision.revision_id == revision_id
+    ):
+        return kept
+    return None
+
+
 @st.dialog("공식버전 지정", width="medium", on_dismiss=_close_official_dialog)
-def _official_dialog(
-    database_path: str,
-    summary: ScenarioSummary,
-    revision: RevisionSummary,
-    latest: OfficialReleaseSummary | None,
-) -> None:
-    """공식버전 지정 확인 팝업. 팝업 안 조작은 실행 핀 밖의 프래그먼트라 DB 핀을 스스로 잡는다."""
+@keeps_app_run_open
+def _official_dialog(database_path: str, scenario_id: str, revision_id: str) -> None:
+    """공식버전 지정 확인 팝업. 호스트(`OFFICIAL_HOST`)가 부르고, 팝업 안 조작은 실행 핀 밖의
+    프래그먼트라 DB 핀을 스스로 잡는다.
+
+    시나리오 · 리비전 · 「지금 공식」 · 가상 제품은 **본문에서 다시 읽는다** — 호스트만 도는 여는
+    회차의 인자는 이 화면의 마지막 앱 전체 회차의 것이라 그 사이 남이 지정 · 보관한 것이 빠진다.
+    「지금 공식」 은 지정의 대조 값이기도 하다(`OFFICIAL_SEEN_KEY`).
+
+    - 연 회차(읽어 둔 대상 없음)에 그 시나리오가 보관됐거나 줄이 없으면 팝업을 걷고 카드 결과 칸에
+      알린다(앱 전체 회차가 지금 연 줄로 다시 그린다).
+    - 팝업을 그린 뒤에 보관됐으면 그대로 그리고 지정 단추에서 저장소가 거부한다 — 알림창의 까닭과
+      카드 곁 알림 둘이다(작은 결정 a7 「지금대로」).
+    - 다시 읽지 못하면(파일 잠금 따위) 팝업을 걷지 않는다. 읽어 둔 대상이 있으면 그것으로 친 글과
+      함께 다시 그리고 지정하지 않는다 — 앱 전체를 다시 돌리면 같은 까닭으로 페이지가 서지 못해
+      팝업과 친 글이 사라진다. 연 회차부터 못 읽었으면 그릴 것이 없어 앱 전체로 물러난다.
+    """
+    kept = _kept_official_view(scenario_id, revision_id)
     with pinned_connections(Path(database_path)):
-        _render_official(
-            get_scenario_repository(database_path), database_path, summary, revision, latest
-        )
+        repository = get_scenario_repository(database_path)
+        try:
+            view = _read_official_view(repository, scenario_id, revision_id)
+        except BOOTSTRAP_ERRORS as exc:
+            if kept is None:
+                _refuse_official(bootstrap_error_message(exc))
+            _render_official(repository, database_path, kept, unread=bootstrap_error_message(exc))
+            return
+        if view is None or (kept is None and view.summary.status != "ACTIVE"):
+            _close_official_dialog()
+            _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
+            st.rerun()
+        st.session_state[OFFICIAL_VIEW_KEY] = view
+        _render_official(repository, database_path, view)
 
 
 def _render_official(
     repository: DuckDBScenarioRepository,
     database_path: str,
-    summary: ScenarioSummary,
-    revision: RevisionSummary,
-    latest: OfficialReleaseSummary | None,
+    view: _OfficialView,
+    *,
+    unread: str | None = None,
 ) -> None:
     """팝업 본문 — 「지금 공식 → 새 공식」을 나란히 보이고, 확인을 받아 지정한다.
 
     모두의 첫 화면이 바뀌는 작업이라 대상을 사람 눈으로도 확인하게 적는다. 팝업이 보인 「지금
     공식」 번호를 저장소에 넘겨(`expected_latest_release_no`) 그 사이 다른 사람이 먼저 지정했으면
-    쓰지 않는다.
+    쓰지 않는다. `unread` 는 이 회차에 저장소를 다시 읽지 못한 까닭이다 — 읽어 둔 대상과 친 글을
+    그대로 그리고, 지정하지 않고 그 까닭을 알림창 · Alarm 에만 낸다(고칠 입력이 이 자리에 없다 —
+    설계 규칙 UI-NTF-03).
     """
+    summary, revision, latest = view.summary, view.revision, view.latest
     revision_id = revision.revision_id
     current_column, next_column = st.columns(2)
     with current_column:
@@ -1303,7 +1438,7 @@ def _render_official(
     # 가상 제품은 실적과 대조할 수 없는 값이다. 그런 리비전이 모두의 첫 화면이 되기 전에
     # 지정하는 사람이 그 사실을 보고 확인하게 한다(2026-10-06 사용자 결정). 확인 체크는 폼
     # **밖**에 둔다 — 폼 안의 체크는 누를 때 다시 그리지 않아 지정 버튼을 풀 수 없다.
-    virtual_products = virtual_product_records(repository.list_virtual_products(revision_id))
+    virtual_products = view.virtual_products
     confirmed = True
     if virtual_products:
         st.warning(official_virtual_product_warning(virtual_products), icon=":material/warning:")
@@ -1312,8 +1447,10 @@ def _render_official(
             key=official_confirm_key(revision_id),
         )
     with st.form("scenario_official_form"):
-        release_name = st.text_input("공식버전명", value=f"{summary.scenario_name} 공식안")
-        release_note = st.text_area("공식 지정 메모", height=80)
+        release_name = st.text_input(
+            "공식버전명", value=f"{summary.scenario_name} 공식안", key=OFFICIAL_NAME_KEY
+        )
+        release_note = st.text_area("공식 지정 메모", height=80, key=OFFICIAL_NOTE_KEY)
         official_submitted = st.form_submit_button(
             "선택 리비전을 공식버전으로 지정",
             icon=":material/publish:",
@@ -1331,6 +1468,16 @@ def _render_official(
     refused = take_refusal(OFFICIAL_SAVE_NAME)
     if refused is not None:
         st.error(refused)
+    if unread is not None:
+        queue_flash(
+            OFFICIAL_UNREAD_KEY,
+            markdown_safe_tildes(unread),
+            kind="error",
+            icon=_NOTICE_ICONS["error"],
+            popup_only=True,
+        )
+        render_flash(OFFICIAL_UNREAD_KEY)
+        return
     if official_submitted and not confirmed:
         # 버튼 잠금은 화면의 약속일 뿐이다. 제출 회차에도 확인을 다시 본다.
         st.error("가상 제품이 포함된 것을 확인해야 공식버전으로 지정할 수 있습니다.")
@@ -1374,11 +1521,13 @@ def _render_official(
             _refuse_official(official_moved_message(exc.current))
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 지정했다(write_guard). 첫 누름의 뒷정리가
         # 끊겼을 수 있어 여기서 다시 한다(경고 글은 첫 누름의 회차가 냈다).
-        _official_published(current, revision_id, warning=None)
+        _official_published(current, revision_id, warning=None, exclusion=False)
     except BOOTSTRAP_ERRORS as exc:
         _refuse_official(bootstrap_error_message(exc))
     remember_own_save(OFFICIAL_SAVE_NAME, expected_no, release.release_no, save_marks)
-    _official_published(release, revision_id, warning=verdict.message or None)
+    _official_published(
+        release, revision_id, warning=verdict.message or None, exclusion=verdict.exclusion
+    )
 
 
 def _official_published(
@@ -1386,9 +1535,11 @@ def _official_published(
     revision_id: str,
     *,
     warning: str | None,
+    exclusion: bool,
 ) -> NoReturn:
     """공식 지정 뒤 이 세션의 뒷정리 — 알림을 담고 팝업을 닫고 다음 회차가 새 공식을 싣게 한 뒤 앱을
-    다시 돌린다."""
+    다시 돌린다. `exclusion` 은 `warning` 이 소요대수에 들지 않은 수요 경고라는 표지다
+    (`capacity_gate.GateVerdict.exclusion`)."""
     queue_flash(
         FLASH_KEY,
         f"공식 v{release.release_no} · {literal_markdown(release.release_name)}"
@@ -1398,12 +1549,14 @@ def _official_published(
     # 끝났고 고칠 입력이 이 자리에 없어 버튼 곁 상자 없이 알림창 · Alarm 에만 낸다(사이드바 리비전
     # 저장과 한 꼴 — 2026-11-04 검수 의견 home-18).
     if warning:
+        # 소요대수에 들지 않은 수요의 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
         queue_flash(
             FLASH_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
+            goto=REQUIRED_TAB_GOTO if exclusion else None,
         )
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
@@ -1966,12 +2119,14 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             # 이 자리에 없어 알림창 · Alarm 에만 낸다 — 소요대수에 들지 않은 수요(2026-11-04 검수
             # 의견 home-18)도, 남은 계산 오류(설계 규칙 AMB-05 (나))도 사이드바 리비전 저장과 한
             # 꼴이다.
+            # 소요대수에 들지 않은 수요의 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
             queue_flash(
                 FLASH_WARNING_KEY,
                 markdown_safe_tildes(verdict.message),
                 kind="warning",
                 icon=":material/warning:",
                 popup_only=True,
+                goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
             )
         bump(CLONE_FORM_GENERATION_KEY)
         written.release()

@@ -67,7 +67,8 @@ from capa_simulation.components.literal_markdown import (
     quoted,
 )
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
+from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.scenario_management_tabs import AUTO_UPDATE_TAB_NAME
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
@@ -156,7 +157,8 @@ RUNNING_MESSAGE: Final = ":material/hourglass_top: **지금 실행** · 아직 �
 # 「지금 실행」 단추 풍선 — 누르면 공식버전이 바뀔 수 있다는 것을 누르기 전에 보인다(설계 규칙
 # UI-NTF-09 — 단추 풍선, UI-TXT-01 — 늘 띄워 두지 않는다).
 RUN_NOW_HELP: Final = (
-    "예약과 같은 회차를 지금 한 번 돕니다 — 새 코드가 있으면 등록·판정하고 공식버전을 발행합니다. "
+    "예약과 같은 회차를 지금 한 번 돕니다 — 새 코드가 있으면 등록·판정하고 공식버전으로 "
+    "지정합니다. "
     "켜짐·실행 줄 허락과 상관없이 돌고 결과는 아래 실행 기록에 남습니다. 같은 날 예약 회차와는 "
     "따로 셉니다(이미 받은 코드는 다시 받지 않습니다). DB 조회와 전체 기간 계산이라 몇십 초 "
     "걸릴 수 있습니다."
@@ -187,6 +189,14 @@ UNCOUNTED_DEMAND_MARK: Final = "⚠ 소요대수 밖 수요"
 # 실행 기록 표에서 짧은 값이 칸에 잘리지 않게 주는 폭(px) — 「사유」 처럼 긴 칸은 잘린 채 둔다.
 RUN_WARNING_WIDTH_PX: Final = 120
 RUN_RECEIVED_WIDTH_PX: Final = 124
+# 잘린 채 두는 「사유」 칸의 머리 풍선 — 그 칸에 무엇이 적히는지와 잘린 글을 읽는 길(표 칸은 칸마다
+# 풍선을 달 수 없어 머리에 단다).
+RUN_REASON_HELP: Final = (
+    "회차가 그 결과로 끝난 까닭입니다 — 지정한 공식 번호 · 주차 · 받은 코드, 건너뛰거나 지정하지 "
+    "않은 까닭, 그 뒤에 이어 적힌 경고(소요대수에 들지 않은 수요 · CS 빈 행 · 대당 Capa 계산 "
+    "멈춤과 푸는 길). 잘린 글은 이 칸 머리의 오른쪽 끝을 끌어 넓히거나 표 오른쪽 위 도구로 크게 "
+    "보고 내려받아 읽습니다."
+)
 SETTINGS_SOURCE: Final = "시나리오 관리 · 자동 갱신"
 
 
@@ -437,20 +447,20 @@ def _render_settings_form(
     submitted_base = seen(SETTINGS_BASE_VERSION_KEY)
     config = settings.config
     with st.container(border=True):
-        st.markdown("#### :material/tune: 설정")
-        st.caption(
-            profile_version_caption(
-                settings,
-                empty=f"아직 저장하지 않아 기본값({_config_line(DEFAULT_CONFIG)})을 씁니다",
-            )
+        # 공용 버전 줄은 제목 옆 한 줄이다(2026-11-08 그림 메모 g18).
+        render_profile_heading(
+            "#### :material/tune: 설정",
+            settings,
+            key="auto_official_update_settings",
+            empty=f"아직 저장하지 않아 기본값({_config_line(DEFAULT_CONFIG)})을 씁니다",
         )
         with st.form("auto_official_update_settings_form"):
             enabled = st.toggle(
                 "자동 갱신 켜기",
                 value=config.enabled,
                 help=(
-                    "켜 두면 매일 확인 시각에 새 코드를 받아 등록·판정하고 공식버전을 발행합니다. "
-                    f"실행 줄에 `{ENV_VAR}=1` 이 있는 앱에서만 돕니다."
+                    "켜 두면 매일 확인 시각에 새 코드를 받아 등록·판정하고 공식버전으로 "
+                    f"지정합니다. 실행 줄에 `{ENV_VAR}=1` 이 있는 앱에서만 돕니다."
                 ),
             )
             with st.container(horizontal=True, gap="small"):
@@ -695,12 +705,14 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
         # 허락하면서 하는 경고는 화면 발행(`scenario_management._official_published`)과 같이 성공
         # 알림 뒤 따로 낸다 — 발행은 끝났고 그 자리에 고칠 입력이 없으니 알림창 · Alarm 에만
         # 낸다(설계 규칙 UI-NTF-03 · AMB-05 (나)).
+        # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
         queue_flash(
             RUN_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
+            goto=REQUIRED_TAB_GOTO,
         )
 
 
@@ -785,6 +797,7 @@ def _render_run_history(
             column_config={
                 "경고": st.column_config.TextColumn(width=RUN_WARNING_WIDTH_PX),
                 "받은 코드": st.column_config.TextColumn(width=RUN_RECEIVED_WIDTH_PX),
+                "사유": st.column_config.TextColumn(help=RUN_REASON_HELP),
             },
         )
         offs = off_process_frame(runs, exclusions, labels)
@@ -837,7 +850,7 @@ def run_history_frame(
                     run.inherited_off_count,
                     [labels.label(exclusion.process) for exclusion in inherited],
                 ),
-                "발행": EMPTY
+                "지정": EMPTY
                 if run.official_release_no is None
                 else f"공식 v{run.official_release_no}",
                 "기준": f"「{run.keyword}」 · {percent_text(run.threshold)}",
