@@ -3353,7 +3353,8 @@ def check_sidebar_panel(screen: Screen) -> str:
 
 
 def check_panel_rows_other_pages(screen: Screen) -> str:
-    """시나리오 관리(시나리오·조회기간)·Admin Area(시나리오)·Space 현황(설비 시나리오·공정)의 패널 줄."""
+    """시나리오 관리(시나리오·조회기간)·Admin Area(시나리오)·Space 현황(설비 시나리오·공정)의
+    패널 줄."""
     seen: list[tuple[str, tuple[str, ...] | None, Sequence[object] | None]] = []
     for page, title, expected in OTHER_PAGE_PANELS:
         screen.open_page(page)

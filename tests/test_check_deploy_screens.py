@@ -3837,8 +3837,8 @@ def test_the_constraint_simulation_contract_matches_the_app() -> None:
 
 
 def test_the_shortening_card_contract_matches_the_app() -> None:
-    """진척 비교 · 목표 확보율은 필요 단축 일정 사이드바 조건 카드 맨 위다(2026-11-08 그림 메모 g03) —
-    항목이 펴는 카드 key 가 페이지가 세우는 카드와 같은지 본다."""
+    """진척 비교 · 목표 확보율은 필요 단축 일정 사이드바 조건 카드 맨 위다(2026-11-08 그림 메모
+    g03) — 항목이 펴는 카드 key 가 페이지가 세우는 카드와 같은지 본다."""
     page = _text(PROJECT_ROOT / "app_pages" / f"{screens.SHORTENING_PAGE}.py")
     name = re.search(r'condition_card\("필요 단축 일정 조건", name="([^"]+)"', page)
     assert name is not None
@@ -4044,12 +4044,11 @@ def test_the_constraint_check_reads_the_chosen_month_from_the_band_shape() -> No
     아래 눈금 글이다 — 같은 꼴의 제약 기간 칠은 불투명도가 달라 고른 달로 읽지 않는다. 고른 달
     계산 카드는 걷었다(그림 메모 g12)."""
     keys = screens.CONSTRAINT_KEYS
-    layout = {
+    period = {"type": "rect", "xref": "x", "x0": 0.5, "x1": 2.5, "opacity": 0.08}
+    band = {"type": "rect", "xref": "x", "x0": 1.5, "x1": 2.5, "opacity": 0.10}
+    layout: dict[str, Any] = {
         "xaxis": {"ticktext": ["26.11", "<b>26.12</b>", "<b>27.01</b>", "27.02"]},
-        "shapes": [
-            {"type": "rect", "xref": "x", "x0": 0.5, "x1": 2.5, "opacity": 0.08},
-            {"type": "rect", "xref": "x", "x0": 1.5, "x1": 2.5, "opacity": 0.10},
-        ],
+        "shapes": [period, band],
     }
     chart = {"layout": layout, "one": {".nsewdrag": {}}}
     document: dict[str, dict[str, Any]] = {
@@ -4061,7 +4060,7 @@ def test_the_constraint_check_reads_the_chosen_month_from_the_band_shape() -> No
     assert page["chart"] is True
     assert page["point"] is not None
 
-    layout["shapes"] = layout["shapes"][:1]
+    layout["shapes"] = [period]
     assert _run_constraint_scripts(document)["page"]["month"] is None
 
 
