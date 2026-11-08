@@ -1,6 +1,6 @@
 # Purpose: 필요 단축 일정 본문 프래그먼트의 이벤트 칸 자리 수와 기준선 결과 알림 표지를 검사한다.
 
-"""필요 단축 일정 머리·본문 프래그먼트(`_render_view`)가 이벤트 칸(본문 밖 최상위 칸)에 쓰는 것.
+"""필요 단축 일정 본문 프래그먼트(`_render_view`)가 이벤트 칸(본문 밖 최상위 칸)에 쓰는 것.
 
 프래그먼트만 도는 회차는 이벤트 칸 쓰기 위치를 앱 전체 회차에서 그 프래그먼트를 부른
 자리로 되돌리고, 브라우저는 받은 자리의 요소만 갈아 끼운다(남은 자리는 그대로 둔다).
@@ -30,16 +30,17 @@ from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from test_shortening_progress_tab import _name_input, _save_button, _saved_database
 from test_shortening_view_fragment import (
-    _fragment_of,
+    _choose_level,
     _install,
     _open,
     _run,
     _run_refused,
     _runner,
+    _view_with,
 )
+from test_shortening_view_fragment import _view as _view_fragment
 
 from capa_simulation.alerts import MARKER_ATTRIBUTE, marker_notes
-from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
 from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -75,8 +76,8 @@ def _sent(slots: dict[int, tuple[str, str]]) -> list[dict[str, Any]]:
 
 
 def _view(runner: FragmentBrowser) -> str:
-    view = _fragment_of(runner, SHORTENING_LEVEL_KEY)
-    assert view, "목표 확보율은 프래그먼트 안이다"
+    view = _view_fragment(runner)
+    assert view, "본문 프래그먼트가 등록돼 있다"
     return view
 
 
@@ -93,9 +94,8 @@ def test_the_view_writes_the_same_event_slots_in_every_branch(
     full = _event_slots(runner.messages, view)
     assert full and all(slot == _EMPTY for slot in full.values()), full
 
-    runner.fragment_queue = [view]
-    _run(app, world, lambda app: app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(0.9))
-    assert runner.started == [[view]]
+    # 목표 확보율(조건 카드)의 콜백이 본문 프래그먼트만 다시 돌린다 — 같은 자리만 쓴다.
+    _choose_level(app, runner, world, 0.9)
     assert _event_slots(runner.messages, view) == full
 
     # 저장 성공 — 프래그먼트 회차가 앱 전체 회차로 바뀌고 알림이 표지 자리에 실린다.
@@ -126,13 +126,7 @@ def test_the_view_writes_the_same_event_slots_in_every_branch(
     assert not any("같은 이름" in str(item.value) for item in app.warning)
 
     # 진척 비교(서식이 둘인 갈래)도 같은 자리만 쓴다 — 서식은 본문 `st.html` 에 실린다.
-    runner.fragment_queue = [view]
-    _run(
-        app,
-        world,
-        lambda app: app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id),
-    )
-    assert runner.started == [[view]]
+    _view_with(app, runner, world, SHORTENING_COMPARE_KEY, stored.baseline_id)
     assert set(_event_slots(runner.messages, view)) == set(full)
     assert not _sent(_event_slots(runner.messages, view))
     bodies = [str(element.proto.body) for element in app.get("html")]

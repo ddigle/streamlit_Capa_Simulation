@@ -8,11 +8,13 @@
 모두 세션 값이고, 조치 상태·메모 같은 공용 기록은 없다.
 
 - **공정 진척 보드** — KPI 아래·카드 위. 공정마다 한 줄(`process_board`)이고 진척 비교를 고르면
-  기준선 대비·이행 지연 칸이 붙는다. 줄을 고르면 그 공정 카드가 맨 위로 올라 강조된다(「진척
-  보드에서 고른 공정」) — 카드의 「공정 Capa 상세에서 근거 보기」 로 깊게 본다. 고른 줄은 남기지
-  않는다(표 key 세대를 올린다) — 강조를 끄면 표에 옛 선택이 남지 않게. 카드는 표 아래 화면 밖에
-  서므로 줄을 고른 회차에 한 번 그 카드로 굴리고 도착 칸 강조를 건다(`_CARD_REVEAL` — 설계 규칙
-  UI-NAV-01 · UI-NAV-02, 움직임 줄이기면 바로 옮기고 카드의 강조 테두리만 남는다).
+  기준선 대비·이행 지연 칸이 붙는다. 필요 단축 일정은 접는 상자(`collapsible` — 처음은 접힘, 편
+  상태 기억)로 세운다(2026-11-08 그림 메모 g03 — 「접고 펼 수 있게, 기본은 접힘」). 줄을 고르면
+  그 공정 카드가 맨 위로 올라 강조된다(「진척 보드에서 고른 공정」) — 카드의 「공정 Capa 상세에서
+  근거 보기」 로 깊게 본다. 고른 줄은 남기지 않는다(표 key 세대를 올린다) — 강조를 끄면 표에 옛
+  선택이 남지 않게. 카드는 표 아래 화면 밖에 서므로 줄을 고른 회차에 한 번 그 카드로 굴리고 도착 칸
+  강조를 건다(`_CARD_REVEAL` — 설계 규칙 UI-NAV-01 · UI-NAV-02, 움직임 줄이기면 바로 옮기고 카드의
+  강조 테두리만 남는다). 보드를 접어도 강조 카드 · 굴림은 같다 — 카드는 상자 밖이다.
 - **카드 차례** — 표시순서 / 목표 Qual 이른 순 / 최대 부족 큰 순 / 기준선 대비 악화 먼저(세션 값,
   선택지 넷 고정). 보드와 카드가 같은 차례이고 강조 공정만 그 앞이다.
 - **기한 임박·이행 지연** — 보드 아래 두 상자(편 상태 기억). 이행 지연은 진척 비교의 기준선이 있어야
@@ -66,8 +68,10 @@ from capa_simulation.services.shortening_watch import (
 from capa_simulation.sidebar_status import remembered_expander
 
 __all__ = [
+    "BOARD_BOX_KEY",
     "BOARD_HELP",
     "BOARD_ORDER_KEY",
+    "BOARD_TITLE",
     "DEFAULT_DUE_DAYS",
     "DELAYED_HELP",
     "DUE_DAYS_KEY",
@@ -112,6 +116,9 @@ DUE_DAYS_KEY = "equipment_shortening_due_days_v1"
 DEFAULT_DUE_DAYS = 30
 _DUE_DAYS_MAX = 365
 _BOARD_KEY = "equipment_shortening_board"
+# 접는 보드의 기억 상자 key(`remembered_expander`).
+BOARD_BOX_KEY = "equipment_shortening_board_box"
+BOARD_TITLE = "공정 진척 보드"
 _BOARD_GENERATION_KEY = "equipment_shortening_board_generation"
 _IMMINENT_EXPANDER_KEY = "equipment_shortening_imminent"
 _DELAYED_EXPANDER_KEY = "equipment_shortening_delayed"
@@ -496,12 +503,17 @@ def render_progress_board(
     managers: Mapping[str, str],
     progress_rows: pd.DataFrame | None = None,
     delayed: pd.DataFrame | None = None,
+    collapsible: bool = False,
 ) -> list[str]:
     """공정 진척 보드와 그 아래 기한 임박·이행 지연 — 고른 카드 차례의 공정 목록을 돌려준다.
 
     `processes` 는 카드로 세울 공정(표시순서), `scope` 는 기한 임박을 셀 범위(KPI 범위)다. 진척 비교
     행(`progress_rows`)과 이행 지연 표(`delayed`)는 진척 비교를 고른 회차에만 온다. 세울 공정이
     없으면 아무것도 그리지 않고 빈 목록이다.
+
+    `collapsible` 이면 테 두른 칸 대신 접는 상자(`remembered_expander` — 처음은 접힘, 화면을 오가도
+    편 상태가 남는다)로 세운다. 제목이 상자 머리가 되어 보드 읽는 법(`BOARD_HELP`)은 Guide 가
+    맡는다. 접혀 있어도 카드 차례는 같다 — 상자 안 칸은 매 회차 돈다.
     """
     if not processes:
         return []
@@ -514,8 +526,14 @@ def render_progress_board(
         progress_rows=progress_rows,
         delayed=delayed,
     )
-    with st.container(border=True, gap="small"):
-        st.markdown("**공정 진척 보드**", help=BOARD_HELP)
+    box = (
+        remembered_expander(BOARD_TITLE, key=BOARD_BOX_KEY, icon=":material/view_list:")
+        if collapsible
+        else st.container(border=True, gap="small")
+    )
+    with box:
+        if not collapsible:
+            st.markdown(f"**{BOARD_TITLE}**", help=BOARD_HELP)
         order_name, due_days = _render_controls(compared=compared)
         order = board_order(board, order_name, compared=compared)
         ranked = board.set_index("공정").loc[order].reset_index()

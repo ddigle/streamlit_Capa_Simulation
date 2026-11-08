@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from alert_marks import active_state
 from shortening_script import months_from_today
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import _captions as constraint_captions
@@ -144,12 +145,16 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
     app = shortening_run(database_path)
     assert not app.exception, [element.message for element in app.exception]
     captions = " ".join(str(element.value) for element in app.caption)
-    assert f"{MANUAL_DOWNTIME_BAND}(" in captions
-    # 출처 설명은 그 줄의 풍선이다 — 자리에는 「입력 비가동 반영(n칸 · 합 x대)」 값만.
-    band = next(element for element in app.caption if f"{MANUAL_DOWNTIME_BAND}(" in element.value)
+    # 자리에는 값 줄 끝 표지 「입력 비가동 반영 n칸」 만, 출처 설명은 그 풍선, 합 대수 띠
+    # (「입력 비가동 반영(n칸 · 합 x대)」)는 상태 알림이다(그림 메모 g03).
+    band = next(element for element in app.caption if MANUAL_DOWNTIME_BAND in element.value)
+    assert f"{MANUAL_DOWNTIME_BAND}(" not in captions
+    assert str(band.value).startswith(f":material/event_busy: {MANUAL_DOWNTIME_BAND} ")
     assert "가용설비 현황 › Preference 의 공정 × 달 비가동" in MANUAL_NOTICE_HELP
     assert "가용설비 현황 › Preference 의 공정 × 달 비가동" not in captions
-    assert band.proto.help == MANUAL_NOTICE_HELP
+    assert str(band.proto.help).startswith(MANUAL_NOTICE_HELP)
+    note = active_state(app, "RS-05")
+    assert note is not None and note["short"].startswith(f"{MANUAL_DOWNTIME_BAND}(")
 
     _, entered = _csv(app, "equipment_shortening_months_csv")
 
@@ -187,14 +192,15 @@ def test_constraint_simulation_names_the_entered_downtime_in_its_band(tmp_path: 
     clear_equipment_repository()
 
 
-def _overdrawn_notice() -> None:
+def test_the_overdrawn_places_sit_in_the_band_tooltip_not_on_the_line() -> None:
+    """0 에서 멈춘 칸은 표지 꼬리 「· 가용 넘침 k칸」 하나로 말하고, 그 자리(공정 · 달 — 내역)는
+    표지 풍선과 상태 알림 전문에 둔다 — 줄 끝에 ⚠ 자리 목록을 늘어놓지 않는다(설계 규칙 UI-TXT-04 ·
+    UI-TXT-07). 합 대수 띠는 알림 짧은 글이다(그림 메모 g03)."""
     from types import SimpleNamespace
     from typing import Any, cast
 
-    import pandas as pd
-
     from capa_simulation.components.process_labels import ProcessLabels
-    from capa_simulation.components.required_shortening_panel import _render_manual_notice
+    from capa_simulation.components.required_shortening_panel import _manual_note
     from capa_simulation.services.manual_downtime import apply_manual_downtime
 
     available = pd.DataFrame(
@@ -205,18 +211,12 @@ def _overdrawn_notice() -> None:
         available, (("DEMO-A", 202607, 1.25), ("DEMO-A", 202608, 1.5))
     )
     plan = cast(Any, SimpleNamespace(manual_downtime=effect))
-    _render_manual_notice(plan, scope=["DEMO-A"], labels=ProcessLabels())
+    note = _manual_note(plan, scope=["DEMO-A"], labels=ProcessLabels())
 
-
-def test_the_overdrawn_places_sit_in_the_band_tooltip_not_on_the_line() -> None:
-    """0 에서 멈춘 칸은 띠 꼬리 표지 「· 가용 넘침 k칸」 하나로 말하고, 그 자리(공정 · 달 —
-    내역)는 그 줄 풍선에 둔다 — 줄 끝에 ⚠ 자리 목록을 늘어놓지 않는다(설계 규칙 UI-TXT-04 ·
-    UI-TXT-07)."""
-    app = AppTest.from_function(_overdrawn_notice, default_timeout=60).run()
-    assert not app.exception, [element.message for element in app.exception]
-
-    (band,) = app.caption
-    assert band.value.endswith("· 가용 넘침 1칸)"), band.value
-    assert "⚠" not in band.value and "0 에서 멈춤" not in band.value
-    assert str(band.proto.help).startswith(MANUAL_NOTICE_HELP)
-    assert "가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): DEMO\\-A 26.08." in str(band.proto.help)
+    assert note is not None
+    assert note.mark.text == f"{MANUAL_DOWNTIME_BAND} 2칸 · 가용 넘침 1칸"
+    assert "⚠" not in note.mark.text and "0 에서 멈춤" not in note.mark.text
+    assert note.mark.help.startswith(MANUAL_NOTICE_HELP)
+    places = "가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): DEMO\\-A 26.08."
+    assert places in note.mark.help and places in note.full
+    assert note.text == f"{MANUAL_DOWNTIME_BAND}(2칸 · 합 2.75대 · 가용 넘침 1칸)"

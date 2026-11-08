@@ -3,10 +3,11 @@
 """화면 머리말 걷기(검수 물음 head-desc, 답 「머리말을 모두 걷는다」 · 메모 「꼭 필요한 소개 문구는
 guide에 포함.」).
 
-화면 소개는 그 화면 Guide 가 맡는다(설계 규칙 UI-TXT-01 · UI-TXT-02). 설명 인자가 남은 자리는
-필요 단축 일정(문구 사용자 전달 대기, `docs/TODO.md` 2장) 하나다 — 모듈 공개 창구
-(`module_api.page_header`)는 창구 1.1 부터 그 인자를 받기만 하고 그리지 않는다(답 d1). 문장
-그물(`tests/test_place_sentence_sites.py`)은 `description=` 을 훑지 않아 여기서 호출 자리를 맞댄다.
+화면 소개는 그 화면 Guide 가 맡는다(설계 규칙 UI-TXT-01 · UI-TXT-02). 설명 인자를 넘기는 코어
+화면은 없다 — 마지막 둘 가운데 필요 단축 일정은 머리말을 Guide 로 옮겼고(2026-11-08 그림 메모 g03),
+모듈 공개 창구(`module_api.page_header`)는 창구 1.1 부터 그 인자를 받기만 하고 그리지 않는다(답 d1).
+문장 그물(`tests/test_place_sentence_sites.py`)은 `description=` 을 훑지 않아 여기서 호출 자리를
+맞댄다.
 """
 
 from __future__ import annotations
@@ -23,8 +24,8 @@ from capa_simulation.components.page_header import render_page_header_with_statu
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER_CALLS = {"render_page_header", "_render_page_header", "render_page_header_with_status"}
-# 설명 인자를 넘겨도 되는 자리. 모듈 창구(`module_api.page_header`)는 1.1 부터 받기만 한다.
-DESCRIPTION_SITES = {"app_pages/required_shortening.py"}
+# 설명 인자를 넘겨도 되는 자리 — 없다. 모듈 창구(`module_api.page_header`)는 1.1 부터 받기만 한다.
+DESCRIPTION_SITES: set[str] = set()
 # 머리말에서 옮긴 말 — (화면 파일, Guide 에 남아야 할 글).
 MOVED_WORDS = (
     ("actual_efficiency", "생산이력의 공정·제품별 효율 실적을 Capa 효율 기준정보와 비교"),
@@ -44,6 +45,9 @@ MOVED_WORDS = (
     ("constraint_simulation", "제약 제품에 먼저 떼어 준 뒤 기존 제품 확보율이 언제부터 얼마나"),
     ("execution_management", "유관부서에 이행을 요청"),
     ("execution_management", "Static 기준정보에 반영되도록"),
+    ("required_shortening", "단축이 필요한 공정 전부의 진척 관리 한 페이지"),
+    ("required_shortening", "공정 진척 보드·기한 임박·이행 지연"),
+    ("required_shortening", "공정 하나를 깊이 보려면 카드의 「공정 Capa 상세에서 근거 보기」"),
 )
 
 
@@ -67,7 +71,7 @@ def _guide_text(page: str) -> str:
     return " ".join(load_guide(page).replace("**", "").split())
 
 
-def test_only_the_waiting_screen_passes_a_description() -> None:
+def test_no_core_screen_passes_a_description() -> None:
     sites = {path.relative_to(ROOT).as_posix() for path in _sources() if _passes_description(path)}
     assert sites == DESCRIPTION_SITES
 

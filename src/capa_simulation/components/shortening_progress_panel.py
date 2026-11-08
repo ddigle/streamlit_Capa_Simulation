@@ -29,7 +29,7 @@
 from __future__ import annotations
 
 import html
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -219,12 +219,18 @@ def load_baseline_options(
         return ()
 
 
-def render_compare_select(baselines: Sequence[ShorteningBaselineSummary]) -> str:
+def render_compare_select(
+    baselines: Sequence[ShorteningBaselineSummary],
+    *,
+    on_change: Callable[[str], None] | None = None,
+    args: tuple[str] | None = None,
+) -> str:
     """「진척 비교」 상자. 고른 기준선 id, 고르지 않았으면 `NO_COMPARISON`.
 
     세션에 값이 없거나 고른 기준선이 목록에서 사라졌으면(누가 지웠으면) `비교 안 함` 을 **적는다**
     (pop 하면 브라우저가 옛 선택을 계속 보인다 — AGENTS 9장). 라벨은 「이름 · 저장일」 이라 회차마다
-    바뀌지 않는다(기준선은 고칠 수 없다).
+    바뀌지 않는다(기준선은 고칠 수 없다). 상자는 조건 카드(앱 전체 회차)에 서고, `on_change` 가
+    본문 프래그먼트만 다시 돌린다(`required_shortening_panel._rerun_view`).
     """
     options = [NO_COMPARISON, *(summary.baseline_id for summary in baselines)]
     if st.session_state.get(SHORTENING_COMPARE_KEY) not in options:
@@ -236,6 +242,8 @@ def render_compare_select(baselines: Sequence[ShorteningBaselineSummary]) -> str
         format_func=lambda option: labels.get(option, "비교 안 함"),
         key=SHORTENING_COMPARE_KEY,
         persist_state="session",
+        on_change=on_change,
+        args=args,
         help=(
             "저장해 둔 기준선(과거 시점의 계획 결과)을 고르면 지금 결과와 호기마다 두 줄로 "
             "견줍니다."
@@ -492,15 +500,16 @@ def _delete_baseline(database_path: str, baseline_id: str, name: str) -> None:
     except BOOTSTRAP_ERRORS as exc:
         _notice("warning", f"기준선을 지우지 못했습니다 — {bootstrap_error_message(exc)}")
         return
-    # 이미 지워졌으면(다른 세션이 먼저 지웠다) 이 세션은 쓰지 않았다 — 목록 캐시만 비우고
-    # 비교를 끈다. 목록은 프래그먼트가 회차마다 다시 읽으므로 앱 전체 회차 표지는 쓴 때만 남긴다.
+    # 이미 지워졌으면(다른 세션이 먼저 지웠다) 이 세션은 쓰지 않았다 — 목록 캐시만 비우고 비교를
+    # 끈다. 「진척 비교」 상자는 조건 카드(앱 전체 회차)라 그 목록을 다시 세우도록 어느 갈래든 앱
+    # 전체 회차 표지를 남긴다.
     st.session_state[_BASELINE_DELETE_HANDLED_KEY] = baseline_id
     clear_shortening_baseline_cache()
     st.session_state[SHORTENING_COMPARE_KEY] = NO_COMPARISON
+    st.session_state[_BASELINE_WRITTEN_KEY] = True
     if not deleted:
         _notice("warning", f"이미 지워진 기준선입니다 — {quoted(name)}. 목록을 다시 읽었습니다.")
         return
-    st.session_state[_BASELINE_WRITTEN_KEY] = True
     _notice("success", f"기준선을 지웠습니다 — {quoted(name)}.")
 
 

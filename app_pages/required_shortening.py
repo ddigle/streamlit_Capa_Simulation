@@ -100,12 +100,6 @@ def _baseline_refusal(*, sample: bool, session: EquipmentSession | None = None) 
     return baseline_equipment_refusal(session)
 
 
-# 머리말 한 줄 — 이 화면의 정체성. 필요 단축 일정 문구 전달 대기라 다른 화면과 달리 아직 남아 있다.
-PAGE_DESCRIPTION = (
-    "단축이 필요한 공정 전부의 진척 관리 한 페이지 — 공정 진척 보드 · 기한 임박 · 이행 지연 · "
-    "공정 카드. 공정 하나를 깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다."
-)
-
 # 이 화면의 팝업 칸(페이지에 한 칸 — 값이 팝업을 가른다, AGENTS 9장 「팝업과 콜백」)과 그 호스트.
 DIALOG_KEY = f"required_shortening{PAGE_DIALOG_SUFFIX}"
 DIALOG_HOST = DialogHost("required_shortening_dialog_host", DIALOG_KEY)
@@ -135,7 +129,9 @@ def _render_header_actions() -> None:
     )
 
 
-render_page_header("필요 단축 일정", description=PAGE_DESCRIPTION, trailing=_render_header_actions)
+# 화면 소개(정체성 한 문장)는 Guide 첫 단락이 맡는다 — 머리에 설명 줄을 두지 않는다(그림 메모 g03,
+# 설계 규칙 UI-TXT-01).
+render_page_header("필요 단축 일정", trailing=_render_header_actions)
 render_page_guide("required_shortening", title="필요 단축 일정")
 notices = st.container()
 
@@ -190,7 +186,7 @@ dashboard_baseline, dashboard_equipment, dashboard_downtime = shortening_frames(
     today=today,
 )
 
-# 거르는 조건(기간·공정)은 사이드바 조건 카드다. 목표 확보율·진척 비교는 본문 맨 위다.
+# 무엇을 볼지(목표 확보율·진척 비교)와 거르는 조건(기간·공정)은 모두 사이드바 조건 카드다.
 conditions_card = condition_card("필요 단축 일정 조건", name="shortening")
 if using_dashboard_sample and not show_sample_fleet:
     # 카드에는 값 한 마디와 풍선(하는 법), 본문에는 빈 결과 한 줄만 둔다 — 같은 말을 두 번 그리지
