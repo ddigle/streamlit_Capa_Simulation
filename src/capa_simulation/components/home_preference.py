@@ -45,6 +45,11 @@ from capa_simulation.components.profile_caption import (
 )
 from capa_simulation.components.profile_caption import profile_version_caption
 from capa_simulation.components.revision_label import revision_label
+from capa_simulation.components.saved_note import (
+    mark_note_saved,
+    mark_note_saved_again,
+    ready_note_field,
+)
 from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.components.tab_state import OpenTab
 from capa_simulation.components.table_toolbar import toolbar_clearance
@@ -1056,6 +1061,7 @@ def render_threshold_editor(
                     type="primary",
                     help=SHARED_SAVE_HELP,
                 )
+                ready_note_field(THRESHOLD_NOTE_KEY, submitted=submitted, start=submitted_base)
                 note = st.text_input(
                     "변경 메모",
                     placeholder="예: 27년 이후 확보 기준 120% 적용",
@@ -1242,8 +1248,10 @@ def render_threshold_editor(
             # 캐시를 비운다. 이 회차는 본 version 을 올리지 않는다 — 다음 회차(제출 아님)가 적는다.
             clear_global_securement_threshold_cache()
             if is_own_save(THRESHOLD_SAVE_NAME, exc.expected, exc.stored, save_marks):
-                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 끊긴 첫
+                # 회차가 못 비운 메모 칸도 비운다(saved_note).
                 queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
+                mark_note_saved_again(THRESHOLD_NOTE_KEY, note)
             else:
                 # 버전 충돌의 원문이 무엇을 할지 말한다(물결표만 막아 그대로).
                 message = bootstrap_error_message(exc)
@@ -1259,6 +1267,7 @@ def render_threshold_editor(
             # 없습니다」 갈래).
             note_notice(notices, THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
             queue_flash(THRESHOLD_FLASH_KEY, THRESHOLD_SAVED_MESSAGE)
+            mark_note_saved(THRESHOLD_NOTE_KEY, note)
             st.rerun(scope="app")
 
 
@@ -1673,6 +1682,7 @@ def _render_monthly_amount_editor(
                     type="primary",
                     help=SHARED_SAVE_HELP,
                 )
+                ready_note_field(editor.note_key, submitted=submitted)
                 note = st.text_input(
                     "변경 메모",
                     placeholder=editor.placeholder,
@@ -1711,9 +1721,14 @@ def _render_monthly_amount_editor(
                 merge(values), rows, value_column=editor.value_column
             ):
                 # 방금 저장한 같은 값의 느린 둘째 누름(새로 그린 표에 닿았다)이면 알림 칸이 그
-                # 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
+                # 성공을 이미 다시 그렸다 — 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice). 이
+                # 저장은 버전 대조가 없어 다시 도는 회차가 없으니, 첫 누름이 쓴 메모면 여기서
+                # 돌려 칸을 비운다(saved_note).
                 if held_notice(editor.flash_key) is None:
                     notice.info(editor.unchanged_message, icon=":material/info:")
+                elif note.strip() and note.strip() == profile.source:
+                    mark_note_saved(editor.note_key, note)
+                    st.rerun()
                 return
             save(values, note.strip() or "웹 직접 편집")
         except BOOTSTRAP_ERRORS as exc:
@@ -1723,6 +1738,7 @@ def _render_monthly_amount_editor(
             # 없습니다」 갈래).
             note_notice(notices, editor.flash_key, editor.saved_message)
             queue_flash(editor.flash_key, editor.saved_message)
+            mark_note_saved(editor.note_key, note)
             st.rerun()
 
 
@@ -2620,6 +2636,7 @@ def _render_execution_editor(
                     type="primary",
                     help=SHARED_SAVE_HELP,
                 )
+                ready_note_field(EXECUTION_NOTE_KEY, submitted=submitted, start=submitted_base)
                 note = st.text_input(
                     "변경 메모",
                     placeholder="예: 26.07 Wafer Mount 비가동 3대",
@@ -2719,8 +2736,10 @@ def _render_execution_editor(
             # 최신을 그리며 적는다.
             clear_global_execution_capacity_cache()
             if is_own_save(EXECUTION_SAVE_NAME, exc.expected, exc.stored, save_marks):
-                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard).
+                # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 저장했다(write_guard). 끊긴 첫
+                # 회차가 못 비운 메모 칸도 비운다(saved_note).
                 queue_flash(EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
+                mark_note_saved_again(EXECUTION_NOTE_KEY, note)
             else:
                 message = bootstrap_error_message(exc)
                 note_profile_conflict(conflict_marks, EXECUTION_SAVE_NAME, message)
@@ -2737,6 +2756,7 @@ def _render_execution_editor(
         # 갈래).
         note_notice(notices, EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
         queue_flash(EXECUTION_FLASH_KEY, EXECUTION_SAVED_MESSAGE)
+        mark_note_saved(EXECUTION_NOTE_KEY, note)
         st.rerun(scope="app")
 
 

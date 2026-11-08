@@ -28,6 +28,7 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.paste_form import PasteTemplate, refuse_paste, render_paste_form
 from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.saved_note import mark_note_saved, ready_note_field
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -301,6 +302,7 @@ def _render_save(
                 else "읽어 둔 표가 없습니다. 아래 표의 「Excel 붙여넣기」로 먼저 읽으세요."
             ),
         )
+        ready_note_field(PAST_NOTE_KEY, submitted=save)
         note = st.text_input(
             "변경 메모",
             placeholder="예: 25년 실적 반영",
@@ -320,6 +322,7 @@ def _render_save(
         return
     st.session_state.pop(PAST_DRAFT_KEY, None)
     queue_flash("past_data_save_flash", "과거 구간을 공용 설정으로 저장했습니다.")
+    mark_note_saved(PAST_NOTE_KEY, note)
     st.rerun()
 
 

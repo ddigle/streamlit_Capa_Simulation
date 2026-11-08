@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 from alert_marks import infos, place_errors, successes
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import TextInput
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.home_preference import (
@@ -59,6 +60,11 @@ def _app(database: Path, months: tuple[int, ...] = MONTHS) -> AppTest:
 def _save(app: AppTest) -> AppTest:
     next(button for button in app.button if button.label == SAVE_LABEL).click()
     return app.run()
+
+
+def _memo(app: AppTest) -> TextInput:
+    """변경 메모 칸 — 저장에 성공해도 key 가 그대로다(칸이 갈리면 Enter 저장의 초점을 잃는다)."""
+    return app.text_input(key=THRESHOLD_NOTE_KEY)
 
 
 def _editor_key(app: AppTest) -> str:
@@ -430,6 +436,7 @@ def test_a_save_without_changes_makes_no_new_version(
     app.text_input(key=THRESHOLD_NOTE_KEY).set_value("메모만 적음")
     app = _save(app)
     assert [element.value for element in infos(app)] == [THRESHOLD_UNCHANGED_MESSAGE]
+    assert _memo(app).value == "메모만 적음"
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert (profile.version, profile.source) == (1, "처음 저장")
 
@@ -440,6 +447,94 @@ def test_a_save_without_changes_makes_no_new_version(
     profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
     assert profile.version == 2
     assert profile.rows["생산계획년월"].tolist() == [202602, 202603]
+
+
+def test_a_saved_note_leaves_the_field_so_the_next_save_does_not_repeat_it(database: Path) -> None:
+    """저장에 성공하면 변경 메모 칸이 빈다 — 다시 적지 않은 메모가 값만 고친 다음 저장의 기록에
+    실렸다(2026-11-08 점검 u3-02)."""
+    app = _app(database)
+    app.number_input[0].set_value(111)
+    _memo(app).set_value("첫 메모")
+    app = _save(app)
+    assert not place_errors(app), [element.value for element in app.error]
+    assert _memo(app).value == ""
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "첫 메모")
+
+    app.number_input[0].set_value(112)
+    app = _save(app)
+    assert _memo(app).value == ""
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (2, "웹 직접 편집")
+
+
+def test_a_refused_save_keeps_the_typed_note(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """거절된 저장(범위 밖 값 · 남의 저장)은 적은 메모를 지우지 않는다 — 까닭을 고쳐 다시 누르면 그
+    메모가 실린다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    app = _app(database)
+    app.number_input[0].set_value(20)
+    _memo(app).set_value("거절될 메모")
+    app = _save(app)
+    assert any("저장하지 않았습니다" in element.value for element in app.error)
+    assert _memo(app).value == "거절될 메모"
+
+    app.number_input[0].set_value(111)
+    _other_session_saves(database, 1.3, 1.0)
+    app = _save(app)
+    assert any("다른 사용자가 먼저" in element.value for element in app.error)
+    assert _memo(app).value == "거절될 메모"
+
+    app.number_input[0].set_value(111)
+    app = _save(app)
+    assert _memo(app).value == ""
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert profile.source == "거절될 메모"
+
+
+def test_a_double_press_that_cut_the_first_run_still_empties_the_note(database: Path) -> None:
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸을 비울 표지가 없다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 본
+    version 을 되살려 한 번 더 보낸다."""
+    app = _app(database)
+    app.number_input[0].set_value(111)
+    _memo(app).set_value("첫 메모")
+    next(button for button in app.button if button.label == SAVE_LABEL).click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+    assert DuckDBScenarioRepository(database).load_global_securement_threshold().version == 1
+
+    app.session_state[THRESHOLD_BASE_VERSION_KEY] = 0
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in successes(app)] == [THRESHOLD_SAVED_MESSAGE]
+    assert _memo(app).value == ""
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "첫 메모")
+
+
+def test_a_second_press_with_another_note_keeps_the_note_it_did_not_save(database: Path) -> None:
+    """앞 회차가 끝나기 전에 온 다른 메모의 둘째 누름은 제 저장으로 판정되어 쓰이지 않는다 — 그
+    메모까지 비우면 흔적 없이 사라진다. 첫 누름의 메모일 때만 비운다(2026-11-08 리뷰)."""
+    app = _app(database)
+    app.number_input[0].set_value(111)
+    _memo(app).set_value("첫 메모")
+    app = _save(app)
+    assert _memo(app).value == ""
+
+    app.session_state[THRESHOLD_BASE_VERSION_KEY] = 0
+    app.number_input[0].set_value(112)
+    _memo(app).set_value("둘째 메모")
+    app = _save(app)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [element.value for element in successes(app)] == [THRESHOLD_SAVED_MESSAGE]
+    assert _memo(app).value == "둘째 메모"
+    profile = DuckDBScenarioRepository(database).load_global_securement_threshold()
+    assert (profile.version, profile.source) == (1, "첫 메모")
 
 
 def test_the_first_save_of_an_unsaved_profile_writes_the_values_it_shows(database: Path) -> None:

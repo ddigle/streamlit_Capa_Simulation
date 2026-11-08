@@ -8,11 +8,14 @@ import pandas as pd
 import pytest
 from alert_marks import active_state, flashed, infos, place_errors, states, successes
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import TextInput
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_rename_management import (
+    BASE_VERSION_KEY,
     EDITOR_KEY,
+    NOTE_KEY,
     PROCESS_RENAME_SAVED_MESSAGE,
     PROCESS_RENAME_UNCHANGED_MESSAGE,
 )
@@ -410,6 +413,11 @@ def _edit_display_name(app: AppTest, row: int, name: str) -> None:
     }
 
 
+def _rename_memo(app: AppTest) -> TextInput:
+    """직접 편집 변경 메모 칸 — 저장에 성공해도 key 가 그대로다."""
+    return app.text_input(key=NOTE_KEY)
+
+
 def _press_rename_save(app: AppTest) -> AppTest:
     next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
     app.run(timeout=60)
@@ -445,9 +453,10 @@ def test_a_direct_edit_save_without_changes_makes_no_new_version(
     assert kinds.index("info") < len(kinds) - kinds[::-1].index("dataframe") - 1
     assert [kind for kind in kinds if kind != "info"] == kinds_before
 
-    app.text_input(key="admin_area_process_rename_note").set_value("메모만 적음")
+    app.text_input(key=NOTE_KEY).set_value("메모만 적음")
     app = _press_rename_save(app)
     assert [str(item.value) for item in infos(app)] == [PROCESS_RENAME_UNCHANGED_MESSAGE]
+    assert _rename_memo(app).value == "메모만 적음"
     profile = repository.load_global_process_rename()
     assert (profile.version, profile.source) == (1, "처음 저장")
 
@@ -456,6 +465,129 @@ def test_a_direct_edit_save_without_changes_makes_no_new_version(
     assert not infos(app) and not place_errors(app)
     assert [str(item.value) for item in successes(app)] == [PROCESS_RENAME_SAVED_MESSAGE]
     assert app.text[-1].value == "v2|SAW>자르기"
+    clear_global_process_rename_cache()
+
+
+def test_a_saved_direct_edit_note_is_not_carried_into_the_next_save(tmp_path: Path) -> None:
+    """저장에 성공하면 변경 메모 칸이 빈다 — 다시 적지 않은 메모가 값만 고친 다음 저장의 기록에
+    실렸다(2026-11-08 점검 u3-m2)."""
+    database_path = tmp_path / "rename-note.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="처음 저장"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+
+    _edit_display_name(app, 0, "자르기")
+    _rename_memo(app).set_value("첫 메모")
+    app = _press_rename_save(app)
+    assert _rename_memo(app).value == ""
+    profile = repository.load_global_process_rename()
+    assert (profile.version, profile.source) == (2, "첫 메모")
+
+    _edit_display_name(app, 0, "절삭")
+    app = _press_rename_save(app)
+    assert _rename_memo(app).value == ""
+    profile = repository.load_global_process_rename()
+    assert (profile.version, profile.source) == (3, "웹 직접 편집")
+    clear_global_process_rename_cache()
+
+
+def test_a_refused_direct_edit_save_keeps_the_typed_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """거절된 저장(1:1 위반 · 남의 저장)은 적은 메모를 지우지 않는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / "rename-note-refused.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단"), ("MOLD", "성형")], columns=["공정", "표시명"]),
+        source="처음 저장",
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+
+    _edit_display_name(app, 1, "절단")
+    _rename_memo(app).set_value("거절될 메모")
+    app = _press_rename_save(app)
+    assert list(app.error), "1:1 위반은 저장하지 않고 알린다"
+    assert _rename_memo(app).value == "거절될 메모"
+
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="B 의 저장"
+    )
+    clear_global_process_rename_cache()
+    _edit_display_name(app, 0, "자르기")
+    app = _press_rename_save(app)
+    assert any("다른 사용자가 먼저" in str(error.value) for error in app.error)
+    assert _rename_memo(app).value == "거절될 메모"
+    clear_global_process_rename_cache()
+
+
+def test_a_double_press_that_cut_the_first_run_still_empties_the_direct_edit_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸을 비울 표지가 없다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 본
+    version 을 되살려 한 번 더 보낸다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / "rename-note-double.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="처음 저장"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+    _edit_display_name(app, 0, "자르기")
+    _rename_memo(app).set_value("첫 메모")
+    next(button for button in app.button if button.label == "공용 공정 표시명 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run(timeout=60)
+    assert repository.load_global_process_rename().version == 2
+
+    app.session_state[BASE_VERSION_KEY] = 1
+    app._run(widget_state=pressed)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [str(item.value) for item in successes(app)] == [PROCESS_RENAME_SAVED_MESSAGE]
+    assert _rename_memo(app).value == ""
+    profile = repository.load_global_process_rename()
+    assert (profile.version, profile.source) == (2, "첫 메모")
+    clear_global_process_rename_cache()
+
+
+def test_a_second_press_of_the_direct_edit_save_keeps_the_note_it_did_not_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앞 회차가 끝나기 전에 온 다른 메모의 둘째 누름은 제 저장으로 판정되어 쓰이지 않는다 — 그
+    메모는 칸에 남긴다(판정 기준과 같은 꼴)."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / "rename-note-second.duckdb"
+    repository = DuckDBScenarioRepository(database_path)
+    repository.initialize()
+    repository.replace_global_process_rename(
+        pd.DataFrame([("SAW", "절단")], columns=["공정", "표시명"]), source="처음 저장"
+    )
+    clear_global_process_rename_cache()
+    app = AppTest.from_string(_rename_component_script(database_path)).run(timeout=60)
+    _edit_display_name(app, 0, "자르기")
+    _rename_memo(app).set_value("첫 메모")
+    app = _press_rename_save(app)
+    assert _rename_memo(app).value == ""
+
+    app.session_state[BASE_VERSION_KEY] = 1
+    _edit_display_name(app, 0, "절삭")
+    _rename_memo(app).set_value("둘째 메모")
+    app = _press_rename_save(app)
+
+    assert [str(item.value) for item in successes(app)] == [PROCESS_RENAME_SAVED_MESSAGE]
+    assert _rename_memo(app).value == "둘째 메모"
+    profile = repository.load_global_process_rename()
+    assert (profile.version, profile.source) == (2, "첫 메모")
     clear_global_process_rename_cache()
 
 

@@ -10,7 +10,10 @@ from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.write_guard as write_guard
-from capa_simulation.components.display_order_management import DISPLAY_ORDER_EDITOR_KEY
+from capa_simulation.components.display_order_management import (
+    DISPLAY_ORDER_EDITOR_KEY,
+    DISPLAY_ORDER_NOTE_KEY,
+)
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 
@@ -860,6 +863,91 @@ def test_a_single_press_after_a_held_double_press_saves_the_display_order(
     assert not app.exception, [item.message for item in app.exception]
     assert not place_errors(app), [str(error.value) for error in app.error]
     assert app.text[-1].value == "v3|A=1;B=99"
+    clear_global_display_order_cache()
+
+
+def _memo(app: AppTest) -> Any:
+    """변경 메모 칸 — 저장에 성공해도 key 가 그대로다."""
+    return app.text_input(key=DISPLAY_ORDER_NOTE_KEY)
+
+
+def test_a_refused_direct_edit_save_keeps_the_typed_note(tmp_path: Path) -> None:
+    """남의 저장에 거부된 저장은 적은 메모를 지우지 않는다."""
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+
+    database_path = tmp_path / "display-order-note-refused.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_version_check_script(database_path)).run(timeout=60)
+
+    _delete_row_as_another_session(database_path, "C")
+    _memo(app).set_value("거부될 메모")
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=60)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("다른 사용자가 먼저" in str(error.value) for error in app.error)
+    assert _memo(app).value == "거부될 메모"
+    clear_global_display_order_cache()
+
+
+def test_a_double_press_that_cut_the_first_run_still_empties_the_direct_edit_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """둘째 누름이 첫 저장의 뒷정리를 끊으면 칸을 비울 표지가 없다 — 제 저장임을 알아본 둘째 회차가
+    칸을 비운다. AppTest 는 두 요청을 겹칠 수 없어 누른 화면의 위젯 값과 끊긴 회차가 남긴 본
+    version 을 되살려 한 번 더 보낸다."""
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / "display-order-note-double.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_version_check_script(database_path)).run(timeout=60)
+    _memo(app).set_value("첫 메모")
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    pressed = app._tree.get_widget_states()
+    app.run(timeout=60)
+    assert app.text[-1].value == "v2|A=1;C=3;B=99"
+
+    app.session_state["display_order_base_version"] = 1
+    app._run(widget_state=pressed)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [str(error.value) for error in app.error]
+    assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
+    assert _memo(app).value == ""
+    stored = DuckDBScenarioRepository(database_path).load_global_display_order()
+    assert (stored.version, stored.source) == (2, "첫 메모")
+    clear_global_display_order_cache()
+
+
+def test_a_second_press_of_the_direct_edit_save_keeps_the_note_it_did_not_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앞 회차가 끝나기 전에 온 다른 메모의 둘째 누름은 제 저장으로 판정되어 쓰이지 않는다 — 그
+    메모는 칸에 남긴다(판정 기준과 같은 꼴)."""
+    from capa_simulation.persistence.cache import clear_global_display_order_cache
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    database_path = tmp_path / "display-order-note-second.duckdb"
+    clear_global_display_order_cache()
+    app = AppTest.from_string(_version_check_script(database_path)).run(timeout=60)
+    _memo(app).set_value("첫 메모")
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=60)
+    assert _memo(app).value == ""
+
+    app.session_state["display_order_base_version"] = 1
+    _memo(app).set_value("둘째 메모")
+    next(button for button in app.button if button.label == "공용 표시순서 저장").click()
+    app.run(timeout=60)
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("공용 설정으로 저장했습니다" in element.value for element in successes(app))
+    assert _memo(app).value == "둘째 메모"
+    stored = DuckDBScenarioRepository(database_path).load_global_display_order()
+    assert (stored.version, stored.source) == (2, "첫 메모")
     clear_global_display_order_cache()
 
 
