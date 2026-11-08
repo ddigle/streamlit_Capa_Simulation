@@ -2368,12 +2368,16 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
         common = spec.reads_common_conditions_on(active)
         # 설비 시나리오 줄(`equipment_scenario`·`reads_equipment_scenario_on`)도 선언에서 읽는다 —
         # Space 현황은 설비 시나리오 줄 하나다(세션 시나리오를 고르는 줄 — 설비 시나리오 2단계 S3).
+        # 공용 공정 줄은 선언이 아니라 페이지가 그린다(`process_field` — 2026-11-08 공정 공유 1차).
+        source = _text(PROJECT_ROOT / spec.path)
+        draws_process = "render_process_filter(" in source or "render_process_choice(" in source
         rows = tuple(
             name
             for name, shown in (
                 ("시나리오", common and spec.reads_scenario),
                 ("조회기간", common and spec.reads_period),
                 ("설비 시나리오", spec.reads_equipment_scenario_on(active)),
+                ("공정", draws_process),
             )
             if shown
         )
@@ -3792,21 +3796,25 @@ def test_the_constraint_simulation_contract_matches_the_app() -> None:
     """스크립트는 앱 모듈을 부르지 않고 key 값만 옮긴다 — 앱과 같은지 여기서 본다. 두 그림은 칸
     선택을 켠 그림이라 앱의 터치 스크롤 막이 묶음(`CELL_SELECT_CHART_KEYS`)에 든다."""
     import capa_simulation.constraint_simulation_state as state
+    from capa_simulation.components import constraint_simulation_figures as figures
     from capa_simulation.components import constraint_simulation_view as view
+    from capa_simulation.components import process_field
     from capa_simulation.navigation import CONSTRAINT_SIMULATION
-    from capa_simulation.process_detail_state import PROCESS_DETAIL_PROCESS_KEY
 
     assert CONSTRAINT_SIMULATION.path == f"app_pages/{screens.CONSTRAINT_PAGE}.py"
     assert screens.CONSTRAINT_KEYS == {
         "kpi": view.KPI_ROW_KEY,
         "chart": state.CONSTRAINT_CHART_KEY,
         "sheet": state.CONSTRAINT_SHEET_KEY,
-        "steps": view.STEPS_CARD_KEY,
-        "schedule": view.SCHEDULE_CARD_KEY,
         "absent": state.CONSTRAINT_ABSENT_KEY,
-        "process": state.CONSTRAINT_PROCESS_KEY,
-        "detailProcess": PROCESS_DETAIL_PROCESS_KEY,
+        "process": process_field.FIELD_KEY,
+        "detailProcess": process_field.FIELD_KEY,
     }
+    assert screens.CONSTRAINT_BAND_OPACITY == figures._SELECTED_OPACITY
+    page = _text(PROJECT_ROOT / "app_pages" / f"{screens.CONSTRAINT_PAGE}.py")
+    card_name = re.search(r'^CARD_NAME = "([^"]+)"$', page, re.M)
+    assert card_name is not None
+    assert screens.CONSTRAINT_CARD_KEY == f"{screens.CONDITION_CARD_PREFIX}{card_name.group(1)}"
     detail = _text(PROJECT_ROOT / "app_pages" / "process_capa_detail.py")
     assert f'label="{screens.CONSTRAINT_LINK_LABEL}"' in detail
     tree = ast.parse(_text(PROJECT_ROOT / "app.py"))
@@ -3826,6 +3834,15 @@ def test_the_constraint_simulation_contract_matches_the_app() -> None:
         and {alias.name for alias in node.names} >= {"CONSTRAINT_CHART_KEY", "CONSTRAINT_SHEET_KEY"}
         for node in tree.body
     )
+
+
+def test_the_shortening_card_contract_matches_the_app() -> None:
+    """진척 비교 · 목표 확보율은 필요 단축 일정 사이드바 조건 카드 맨 위다(2026-11-08 그림 메모 g03) —
+    항목이 펴는 카드 key 가 페이지가 세우는 카드와 같은지 본다."""
+    page = _text(PROJECT_ROOT / "app_pages" / f"{screens.SHORTENING_PAGE}.py")
+    name = re.search(r'condition_card\("필요 단축 일정 조건", name="([^"]+)"', page)
+    assert name is not None
+    assert screens.SHORTENING_CARD_KEY == f"{screens.CONDITION_CARD_PREFIX}{name.group(1)}"
 
 
 def test_the_constraint_mode_contract_matches_the_app() -> None:
@@ -3863,14 +3880,16 @@ class _ConstraintScreen(Screen):
 def _recording_mode_choice(
     monkeypatch: pytest.MonkeyPatch, found: str | None
 ) -> list[tuple[str, str]]:
-    """`_choose_segment` 를 바꿔 고른 차례를 적는다 — 처음 고를 때 `found` 가 그때의 모드다."""
+    """`_choose_sidebar_segment` 를 바꿔 고른 차례를 적는다 — 처음 고를 때 `found` 가 그때의 모드다.
+    모드 전환은 사이드바 「제약 시뮬레이션 조건」 카드 안이다(2026-11-08 그림 메모 g12)."""
     calls: list[tuple[str, str]] = []
 
-    def choose(screen: Screen, key: str, option: str) -> str | None:
+    def choose(screen: Screen, card: str, key: str, option: str) -> str | None:
+        assert card == screens.CONSTRAINT_CARD_KEY
         calls.append((key, option))
         return found if len(calls) == 1 else option
 
-    monkeypatch.setattr(screens, "_choose_segment", choose)
+    monkeypatch.setattr(screens, "_choose_sidebar_segment", choose)
     return calls
 
 
@@ -3917,11 +3936,10 @@ def test_the_constraint_check_puts_the_mode_back_even_when_reading_breaks(
     [
         (
             {"found": True, "disabled": False},
-            {"kpis": 4, "chart": True, "sheet": True, "steps": 5, "schedule": 3, "month": "27.05"},
+            {"kpis": 4, "chart": True, "sheet": True, "month": "27.05"},
             {"month": "27.01"},
             True,
-            "링크 켜짐 · 공정 같음 · KPI 4개 · 그림 있음 · 표 있음 · 계산 5단계 · 개조 일정 3줄 · "
-            "칸 누름 뒤 고른 달 바뀜",
+            "링크 켜짐 · 공정 같음 · KPI 4개 · 그림 있음 · 표 있음 · 칸 누름 뒤 고른 달 바뀜",
         ),
         (
             {"found": True, "disabled": True},
@@ -3932,11 +3950,10 @@ def test_the_constraint_check_puts_the_mode_back_even_when_reading_breaks(
         ),
         (
             None,
-            {"kpis": 4, "chart": True, "sheet": False, "steps": 5, "schedule": 0, "month": "27.05"},
+            {"kpis": 4, "chart": True, "sheet": False, "month": "27.05"},
             None,
             None,
-            "링크 없음 · KPI 4개 · 그림 있음 · 표 없음 · 계산 5단계 · 개조 일정 0줄 · "
-            "칸 누름 뒤 고른 달 못 누름",
+            "링크 없음 · KPI 4개 · 그림 있음 · 표 없음 · 칸 누름 뒤 고른 달 못 누름",
         ),
     ],
 )
@@ -3961,6 +3978,7 @@ const element = (spec) => spec && {
   innerText: spec.innerText ?? '',
   textContent: spec.innerText ?? '',
   value: spec.value,
+  layout: spec.layout,
   getAttribute: (name) => (spec.attrs || {})[name] ?? null,
   hasAttribute: (name) => name in (spec.attrs || {}),
   getBoundingClientRect: () => ({left: 0, top: 0, width: 100, height: 100}),
@@ -3983,7 +4001,7 @@ def _run_constraint_scripts(document: dict[str, Any]) -> dict[str, Any]:
         "linkScript": screens._CONSTRAINT_LINK_JS,
         "linkArg": {**screens.CONSTRAINT_KEYS, "label": screens.CONSTRAINT_LINK_LABEL},
         "pageScript": screens._CONSTRAINT_JS,
-        "pageArg": screens.CONSTRAINT_KEYS,
+        "pageArg": screens._constraint_arg(),
     }
     result: dict[str, Any] = run_js_json(
         _FAKE_DOM_RUNNER,
@@ -3993,29 +4011,22 @@ def _run_constraint_scripts(document: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-@pytest.mark.parametrize("box_text", ["", "공정"])
-def test_the_constraint_check_reads_the_chosen_process_from_the_combobox_value(
-    box_text: str,
-) -> None:
-    """Streamlit 1.63 selectbox 는 고른 값을 콤보 상자 `<input>` 의 `value` 에만 둔다 — 상자 글은
-    카드가 접혔으면 빈 글자, 폈으면 라벨 「공정」 뿐이다. 그 글로 견주면 링크가 켜진 정상 화면이
-    늘 「공정 다름」 이었다(2026-10-25 리뷰 — 사본 앱에서 두 상자 모두 `innerText` "" · 값
-    'Wafer Saw'). 두 JS 를 가짜 문서로 돌려 값끼리 견주는지 본다."""
+@pytest.mark.parametrize("icon", ["filter_alt", "filter_alt_off"])
+def test_the_constraint_check_reads_the_process_from_the_sidebar_value_field(icon: str) -> None:
+    """두 화면의 공정은 사이드바 공용 공정 값 칸(하나 고름)이다 — 옛 공정 상자
+    (`process_detail_process`)를 읽던 꼴은 상자가 없어져 거짓 「공정 다름」 을 냈다(2026-11-08
+    공정 공유 1차). 값 칸 단추 글은
+    앞에 아이콘 글자가 붙는다(샘플 관측 「filter_alt Laser Marking」) — 떼고 견주는지 두 JS 를 가짜
+    문서로 돌려 본다."""
     keys = screens.CONSTRAINT_KEYS
-
-    def box(value: str) -> dict[str, Any]:
-        return {"innerText": box_text, "one": {"input": {"value": value}}}
-
+    field = f'[data-testid="stSidebar"] .st-key-{keys["detailProcess"]} button'
     link = {"innerText": screens.CONSTRAINT_LINK_LABEL, "attrs": {}}
     document: dict[str, dict[str, Any]] = {
         "all": {
             '[data-testid="stMain"] a': [link],
             '.st-key-process_detail_kpis [data-testid="stMetric"]': [{}] * 4,
         },
-        "one": {
-            f".st-key-{keys['detailProcess']}": box("Wafer Saw"),
-            f".st-key-{keys['process']}": box("Wafer Saw"),
-        },
+        "one": {field: {"innerText": f"{icon}\nWafer Saw"}},
     }
     result = _run_constraint_scripts(document)
     assert result["link"] == {
@@ -4027,10 +4038,31 @@ def test_the_constraint_check_reads_the_chosen_process_from_the_combobox_value(
     assert result["page"]["process"] == "Wafer Saw"
     assert screens.constraint_process_matches(result["link"], result["page"]) is True
 
-    # 제약 화면이 다른 공정으로 열렸으면 다름이다.
-    document["one"][f".st-key-{keys['process']}"] = box("Mold")
-    other = _run_constraint_scripts(document)
-    assert screens.constraint_process_matches(other["link"], other["page"]) is False
+
+def test_the_constraint_check_reads_the_chosen_month_from_the_band_shape() -> None:
+    """고른 달은 그래프 틀의 고른 달 띠(불투명도가 `CONSTRAINT_BAND_OPACITY` 인 x 자리 도형)
+    아래 눈금 글이다 — 같은 꼴의 제약 기간 칠은 불투명도가 달라 고른 달로 읽지 않는다. 고른 달
+    계산 카드는 걷었다(그림 메모 g12)."""
+    keys = screens.CONSTRAINT_KEYS
+    layout = {
+        "xaxis": {"ticktext": ["26.11", "<b>26.12</b>", "<b>27.01</b>", "27.02"]},
+        "shapes": [
+            {"type": "rect", "xref": "x", "x0": 0.5, "x1": 2.5, "opacity": 0.08},
+            {"type": "rect", "xref": "x", "x0": 1.5, "x1": 2.5, "opacity": 0.10},
+        ],
+    }
+    chart = {"layout": layout, "one": {".nsewdrag": {}}}
+    document: dict[str, dict[str, Any]] = {
+        "all": {},
+        "one": {f".st-key-{keys['chart']} .js-plotly-plot": chart},
+    }
+    page = _run_constraint_scripts(document)["page"]
+    assert page["month"] == "27.01"
+    assert page["chart"] is True
+    assert page["point"] is not None
+
+    layout["shapes"] = layout["shapes"][:1]
+    assert _run_constraint_scripts(document)["page"]["month"] is None
 
 
 def test_the_constraint_process_match_is_none_without_a_followed_link() -> None:

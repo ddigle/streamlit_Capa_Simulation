@@ -232,12 +232,23 @@ def test_a_form_editor_stays_out_of_the_session_mark(
 
 
 def _data_editors(tree: ast.Module) -> list[tuple[ast.Call, bool]]:
-    """모듈의 `data_editor` 호출과 그 호출이 폼 안인가."""
+    """모듈의 `data_editor` 호출과 그 호출이 폼 안인가. 폼을 이름에 받아 두고 `with <이름>:` 으로
+    들어가는 꼴(폼 앞 칸에 폼을 세우는 Cut-off)도 폼 안이다."""
+    form_names = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and ".form(" in ast.unparse(node.value)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+    def opens_form(expr: ast.expr) -> bool:
+        return ".form(" in ast.unparse(expr) or (
+            isinstance(expr, ast.Name) and expr.id in form_names
+        )
 
     def walk(node: ast.AST, in_form: bool) -> list[tuple[ast.Call, bool]]:
-        if isinstance(node, ast.With) and any(
-            ".form(" in ast.unparse(item.context_expr) for item in node.items
-        ):
+        if isinstance(node, ast.With) and any(opens_form(item.context_expr) for item in node.items):
             in_form = True
         found: list[tuple[ast.Call, bool]] = []
         if (

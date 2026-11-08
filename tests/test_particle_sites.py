@@ -111,6 +111,7 @@ _READINGS = {
     "CAPA_ARTIFACTORY_USER": "유저",
     "CAPA_S3_SYNC_MODE": "모드",
     "HBM·EDP": "이디피",
+    "_open_dialog": "다이얼로그",
 }
 
 

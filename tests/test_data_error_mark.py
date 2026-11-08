@@ -135,7 +135,7 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/flash.py", "_draw"): (1, ALERT_PATH),
     ("src/capa_simulation/components/floor_canvas_dialog.py", "_save"): (1, PRESSED),
     ("src/capa_simulation/components/home_preference.py", "_reject_key_process_write"): (
-        2,
+        1,
         PRESSED,
     ),
     ("src/capa_simulation/components/home_preference.py", "_render_execution_editor"): (4, PRESSED),

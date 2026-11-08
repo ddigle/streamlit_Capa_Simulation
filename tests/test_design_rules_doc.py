@@ -8,8 +8,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
 답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 사용자 기록
 5줄 · 이번 배포 전후 보드 7줄과 답 · 통합 검수 보드 줄과 답 · 작업 줄 규칙 둘(v1.9) · 전 화면 점검
-보드 15줄 · 2차 보드 7줄과 답(v1.10) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS ·
-CLAUDE.md · README)의 연결.
+보드 15줄 · 2차 보드 7줄과 답(v1.10) · 아침 검수 보드 줄과 답 · 메모 원문(v1.11) · 문서 안팎의 id
+참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -672,7 +672,6 @@ def test_the_sweep_board_answers_are_recorded_and_written_into_the_rules() -> No
     표로 좁히고 예외 칸은 그대로. csv-dup: UI-LAY-12 예외. names: 이름 바꿈 사전 그물이 섰다.
     table-top: 꼴 그물은 섰고 줄 수 그물은 후보로 남는다. pickers 는 조사 중이다."""
     document = _text()
-    assert "판 v1.10" in document.split("\n## 1. ")[0]
     assert "- **v1.10 — 2026-11-08.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
@@ -696,8 +695,10 @@ def test_the_sweep_board_answers_are_recorded_and_written_into_the_rules() -> No
     rules = {rule.id: rule for rule in _rules()}
     txt01 = rules["UI-TXT-01"]
     assert "화면 머리(제목 줄)" in txt01.text and "Guide 첫 단락" in txt01.text
+    # head-desc 가 남긴 두 자리는 6-11 d1 · g03 으로 걷어 예외에서 빠졌다.
     for phrase in ("module_api.page_header(description=)", "필요 단축 일정 머리말"):
-        assert phrase in txt01.fields["예외"][0], phrase
+        assert phrase not in txt01.fields["예외"][0], phrase
+    assert "6-11 d1 · g03" in txt01.fields["그물"][0]
     assert "tests/test_page_header_description.py" in txt01.fields["그물"][0]
     assert "tests/test_page_header_description.py" in rules["UI-TXT-02"].fields["그물"][0]
     assert "Guide 첫 단락" in rules["UI-LAY-08"].text
@@ -736,7 +737,7 @@ def test_the_second_board_answers_are_recorded_and_close_the_open_check() -> Non
     더한 UI-PRF-03 상자 예외를 확정하므로 그 말이 문서에 남지 않는다."""
     document = _text()
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-10. ") :]
+    board = section[section.index("\n### 6-10. ") : section.index("\n### 6-11. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -753,3 +754,111 @@ def test_the_second_board_answers_are_recorded_and_close_the_open_check() -> Non
     assert "2차 보드 R6 · R7 (가)" in rules["UI-PRF-03"].fields["근거"][0]
     assert "2차 보드 R5 (가)" in rules["UI-CON-02"].fields["근거"][0]
     assert "2차 보드 R4 (가)" in rules["UI-LAY-11"].fields["근거"][0]
+
+
+# 2026-11-08 아침 검수 보드(6-11)의 답 — 보드가 낸 답 파일의 원문을 여기 옮긴다(저장소 밖
+# 파일이라 시험이 읽지 않는다). 정할 칸은 고른 선택지 글, 작은 결정은 46줄 모두 권장, 그림은 고침
+# 요청 여섯의 메모.
+MORNING_DECISIONS = {
+    "D1": (
+        "나눠 한다 — 이번 배포는 화면 고침과 C-DEP 첫 CI/CD(S3 키 넣기)까지, 이관은 다음 배포에서."
+        " 직전 배포 뒤 커밋이 421개라 문제가 나면 어느 쪽 탓인지 가르기 쉽다"
+    ),
+    "D2": "된다 — deploy: 커밋만 먼저 올린다(초안이 이렇게 쓰였다)",
+    "D3": "공지에 이관 소식 한 줄을 저장하고 그대로 둔다 — 동료가 봐도 되는 글",
+    "X1": "넷 다 권장대로 고친다",
+    "P1": "권장안 — 세 번에 나눠 한다(1차부터, 사용자 검수 두 번)",
+    "P2": "다섯 모두 권장대로",
+    "U1": "「Select all」 을 뺀다 — 한 사람씩 고른다",
+    "U2": "화면이 본 기본과 지금 기본이 다르면 거절한다 — 묶음에 하나뿐인 값이라 이 값만 본다",
+    "U3": "등록 점검이 빈 표를 잡아 기존 등록 뒤 「계산 멈춤」 알림으로 낸다",
+    "U4": (
+        "둘 다 고친다 — 거절 글을 「확인하지 못했습니다」 로 가르고 관리자에게 어느 화면에서나"
+        " 알린다"
+    ),
+    "U5": "여덟 팝업 모두 이번에 옮긴다 — 크기가 크다",
+}
+MORNING_SMALL_IDS = (
+    [f"a{n}" for n in range(1, 12)]
+    + [f"b{n}" for n in range(1, 7)]
+    + [f"c{n}" for n in range(1, 12)]
+    + [f"d{n}" for n in range(1, 16)]
+    + [f"e{n}" for n in range(1, 4)]
+)
+MORNING_PICTURE_FIXES = ("g01", "g03", "g05", "g12", "g17", "g18")
+# 메모 원문 가운데 줄마다 하나씩 — 고친 칸 줄에 그대로 있어야 한다.
+MORNING_MEMOS = {
+    "P1": (
+        "공정 Capa 상세, 가용설비 Main, Space는 공용 칸에 넣었을때 간격이 일정하지 않게 더 많이"
+        " 들어간거같아"
+    ),
+    "P2": "계속 모니터링해보고 적절치 않다고 판단되면 다른 구조로 바꾸거나 원복을 검토해야겠음.",
+    "g01": "이거 무슨 규칙에 의해 이렇게 만들게된거지? 요청이 있었나?",
+    "g03": "그리고 공정 진척 보드도 접고 펼수있게하고, 기본적으로 접혀있게 셋팅해",
+    "g05": "뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동",
+    "g12": "제약 영향, 개조 일정 버튼도  사이드바 조건박스로 배치",
+    "g17": "CSV 다운로드 버튼도 cut저장 버튼 옆으로 한줄에 세워",
+    "g18": "공용 버전v3 .... 타임스탬프 줄을 각 타이틀 옆으로 배치",
+}
+
+
+def test_the_morning_board_answers_are_recorded_and_written_into_the_rules() -> None:
+    """v1.11 — 6-11 은 아침 검수 보드 정할 칸 열하나 · 작은 결정 마흔여섯 · 고침 그림 여섯 · 괜찮음
+    그림 한 줄이고, 정할 칸 답은 고른 글 그대로, 고침 칸 · P1 · P2 에는 메모 원문이 있다. 답이 규칙
+    글로 들어갔는지 핵심만 본다 — 공정 공유 다섯 규칙과 두 모듈 경계(UI-LAY-02), 공정 판(UI-INP-03),
+    범위 바뀜(UI-NTF-02), 팝업 호스트(UI-PRF-01), 잠긴 Cut-off 왕복 양식(UI-LAY-12)."""
+    document = _text()
+    assert "판 v1.11" in document.split("\n## 1. ")[0]
+    assert "- **v1.11 — 2026-11-08.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-11. ") :]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-08) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    expected_ids = [
+        *MORNING_DECISIONS,
+        *MORNING_SMALL_IDS,
+        *MORNING_PICTURE_FIXES,
+        "pictures-ok",
+    ]
+    assert list(found) == expected_ids
+    assert len(MORNING_SMALL_IDS) == 46
+    for key, answer in MORNING_DECISIONS.items():
+        assert found[key] == answer, key
+    for key in MORNING_PICTURE_FIXES:
+        assert found[key] == "고친다", key
+    assert found["pictures-ok"] == "괜찮음"
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    for key, memo in MORNING_MEMOS.items():
+        assert memo in by_id[key], key
+    assert "그림 18칸" in by_id["pictures-ok"]
+
+    rules = {rule.id: rule for rule in _rules()}
+    lay02 = rules["UI-LAY-02"]
+    for phrase in (
+        "HOME 은 보내기만",
+        "받기만",
+        "저장값은 건드리지 않는다",
+        "`shared_process`",
+        "`process_field`",
+    ):
+        assert phrase in lay02.text, phrase
+    assert "원복" in lay02.text
+    assert "tests/test_shared_process.py" in lay02.fields["그물"][0]
+    assert "6-11 g12" in lay02.fields["예외"][0]
+    assert "공정 판" in rules["UI-INP-03"].fields["범위"][0]
+    assert "범위 바뀜" in rules["UI-NTF-02"].text
+    assert "tests/test_dialog_host.py" in rules["UI-PRF-01"].fields["그물"][0]
+    assert "6-11 d6" in rules["UI-LAY-12"].fields["예외"][0]
+    assert "6-11 c10" in rules["UI-PRF-02"].fields["예외"][0]
+    assert "6-11 d11" in rules["UI-DAT-03"].fields["예외"][0]
+    values = _chapter(document, 4)
+    for name in ("공정 값 칸 글", "공용 공정 표지", "조건 패널 줄 사이", "팝업 여닫기 회차"):
+        assert any(line.startswith(f"| {name} |") for line in values.splitlines()), name

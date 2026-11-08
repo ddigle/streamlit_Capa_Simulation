@@ -67,6 +67,7 @@ _SPACE_BOX_TEST = (
 _SPACE_OVERLAY_TESTS = "tests/test_space_layout_overlay_page.py"
 _STANDARD_TARGET_PAGE = "app_pages/standard_target_capa.py"
 _LOAD_CONVERSION_PAGE = "app_pages/load_conversion.py"
+_SHORTENING_PANEL = "src/capa_simulation/components/required_shortening_panel.py"
 
 WITHDRAWN: tuple[Withdrawn, ...] = (
     Withdrawn(
@@ -460,6 +461,57 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         route="state",
         test=(
             "tests/test_required_shortening_tab.py::test_the_unmatched_list_keeps_the_original_names"
+        ),
+    ),
+    Withdrawn(
+        what="필요 단축 일정 본문 맨 위 「일정 미정 N대 (…)」 줄",
+        why="그림 메모 g03 · UI-TXT-04 · UI-NTF-02",
+        file=_SHORTENING_PANEL,
+        function="_report_status_marks",
+        code="RS-03",
+        route="state",
+        test=(
+            "tests/test_required_shortening_tab.py"
+            "::test_undated_new_units_are_announced_as_not_being_candidates"
+        ),
+    ),
+    Withdrawn(
+        what="필요 단축 일정 본문 맨 위 「사용기준 HBM·EDP 밖 N대 제외」 줄",
+        why="그림 메모 g03 · UI-TXT-04 · UI-NTF-02",
+        file=_SHORTENING_PANEL,
+        function="_report_status_marks",
+        code="RS-04",
+        route="state",
+        test=(
+            "tests/test_required_shortening_tab.py"
+            "::test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_tooltip"
+        ),
+    ),
+    Withdrawn(
+        what="필요 단축 일정 본문 맨 위 「입력 비가동 반영(n칸 · 합 x대 · 가용 넘침 k칸)」 줄",
+        why="그림 메모 g03 · UI-TXT-04 · UI-NTF-02",
+        file=_SHORTENING_PANEL,
+        function="_report_status_marks",
+        code="RS-05",
+        route="state",
+        test=(
+            "tests/test_manual_downtime_pages.py"
+            "::test_required_shortening_takes_the_input_from_the_available_units"
+        ),
+    ),
+    Withdrawn(
+        what=(
+            "제약 시뮬레이션 「이 조건의 개조 창」 카드의 「이미 지난 날짜(개조를 이미 시작했어야"
+            " 합니다 · 셋업 때 이미 제약용으로 붙였어야 합니다)」 꼬리"
+        ),
+        why="UI-NTF-05 · 그림 메모 g12",
+        file="app_pages/constraint_simulation.py",
+        function="report_late_starts",
+        code="CS-04",
+        route="state",
+        test=(
+            "tests/test_constraint_simulation_page.py"
+            "::test_late_modification_windows_raise_a_state_alert_not_a_place_line"
         ),
     ),
 )

@@ -80,6 +80,7 @@ from capa_simulation.services.edit_grid import (
     merge_into_template,
 )
 from capa_simulation.services.edit_grid_payload import EditGridBase, base_key, labels_digest
+from capa_simulation.services.korean_particle import direction_particle, with_direction_particle
 from capa_simulation.services.simulation_cache import (
     ScenarioCacheKey,
     get_edit_grid_base,
@@ -155,10 +156,11 @@ CAP_BYTES: Final = 400_000
 CAP_ROWS: Final = 1_000
 # 상한에 걸린 표의 표지(작업 줄 아래 한 줄 — 값)와 그 풍선. 숨은 줄이 있다는 것은 표지가, 고르는
 # 법과 적용 범위는 풍선이 말한다(설계 규칙 UI-TXT-01 · 04 — 숨은 데이터 안내는 표지 + 풍선). 표지의
-# `by` 는 줄을 실제로 좁힌 거름 자리(`CAP_BY_*`), 풍선의 `places` 는 그 표에 있는 거름 자리다 — 공용
+# `by` 는 줄을 실제로 좁힌 거름 자리(`CAP_BY_*`), 풍선의 `places` 는 그 표에 있는 거름
+# 자리다(둘 다 조사를 붙여 넣는다) — 공용
 # 공정을 따라가는 표의 공정은 조회 조건 「공정」 칸이고 다른 화면과 같이 쓴다(`CAP_HELP_SHARED`).
 CAP_FILTERED_NOTICE: Final = (
-    ":material/filter_alt: 큰 표 · {by}으로 고른 {shown:,}줄만 실음(전체 {rows:,}줄 · {cells:,}칸)"
+    ":material/filter_alt: 큰 표 · {by} 고른 {shown:,}줄만 실음(전체 {rows:,}줄 · {cells:,}칸)"
 )
 CAP_HEAD_NOTICE: Final = (
     ":material/filter_alt: 큰 표 · 앞 {shown:,}줄만 실음(전체 {rows:,}줄 · {cells:,}칸)"
@@ -166,7 +168,7 @@ CAP_HEAD_NOTICE: Final = (
 CAP_BY_PROCESS: Final = "공정"
 CAP_BY_CARD: Final = "표 조건"
 CAP_HELP: Final = (
-    "칸이 아주 많은 표는 사이드바 {places} 으로 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
+    "칸이 아주 많은 표는 사이드바 {places} 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
     "{shared}「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
 )
 CAP_HELP_SHARED: Final = "「공정」 은 다른 화면과 같이 쓰는 칸입니다. "
@@ -221,7 +223,11 @@ class GridTable:
         places = [f"「{CAP_BY_PROCESS}」"] if shared else []
         if self.card_columns:
             places.append(f"「{CAP_BY_CARD}」")
-        return CAP_HELP.format(places=" · ".join(places), shared=CAP_HELP_SHARED if shared else "")
+        joined = " · ".join(places)
+        return CAP_HELP.format(
+            places=f"{joined} {direction_particle(joined)}",
+            shared=CAP_HELP_SHARED if shared else "",
+        )
 
     @property
     def slot(self) -> edit_grid.TableSlot:
@@ -359,7 +365,10 @@ def build_grid_table(
         _labels=labels,
     )
     notice = (CAP_FILTERED_NOTICE if by else CAP_HEAD_NOTICE).format(
-        by=" · ".join(by), rows=len(template), cells=cells, shown=len(shown)
+        by=with_direction_particle(" · ".join(by)),
+        rows=len(template),
+        cells=cells,
+        shown=len(shown),
     )
     key = base_key(table, content, order_digest, rows_key)
     return GridTable(spec, editor_key, template, base, key, labels, notice, shared_screen)

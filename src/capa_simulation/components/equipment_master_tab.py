@@ -1138,7 +1138,7 @@ def report_stale_lock(basis: EquipmentSaveBasis | None) -> None:
         content=latest if stale else None,
         active=stale,
         text=(
-            f"「{basis.scenario_name}」 최신 r{latest} 있음 — 일정 칸 잠김 · 사이드바 「설비 "
+            f"{quoted(basis.scenario_name)} 최신 r{latest} 있음 — 일정 칸 잠김 · 사이드바 「설비 "
             "시나리오」 에서 최신 불러오기"
             if stale and basis is not None
             else None

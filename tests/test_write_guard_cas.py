@@ -172,6 +172,9 @@ NOT_SEEN_TOKENS = {
     ("constraint_simulation_state.py", "CONSTRAINT_QUERY_SEEN_KEY"),
     # 입장 화면 Summary 를 이 세션이 한 번 본 표지(읽기를 미룰지) — 대조 값이 아니다.
     ("intro_summary.py", "_SEEN_KEY"),
+    # 하나 고름 화면이 공용 공정 값의 판을 본 표지(따라 열지 가름) — 세션에만 사는 값이고 대조
+    # 값이 아니다.
+    ("shared_process.py", "_SEEN_KEY"),
     # Qual 마감 계산기의 「기존 대수」 입력 칸 — 위젯 값이다.
     ("qual_deadline_calculator.py", "BASE_KEY"),
     # 층 배치 대기분이 본 저장값(층마다 첫 대기분의 것) — 비교 후 쓰기 남은 자리로 docs/TODO.md 에

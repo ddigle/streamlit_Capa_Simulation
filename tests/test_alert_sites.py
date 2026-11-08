@@ -90,10 +90,6 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_DETAIL,
     ),
-    ("src/capa_simulation/components/constraint_simulation_view.py", "_render_month_steps"): (
-        1,
-        PLACE_VERDICT,
-    ),
     ("src/capa_simulation/components/cutoff_management.py", "_render_missing_cutoffs"): (
         1,
         PLACE_FORM,
@@ -118,7 +114,7 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_FORM,
     ),
-    ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (2, PLACE_FORM),
+    ("src/capa_simulation/components/equipment_master_tab.py", "_render_notices"): (1, PLACE_FORM),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
         1,
         PLACE_CONFIRM,
@@ -147,7 +143,7 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
         1,
         PLACE_CONFIRM,
     ),
-    ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (3, PLACE_FORM),
+    ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (2, PLACE_FORM),
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),
     ("src/capa_simulation/components/sso_identity.py", "_stop_signed_out"): (1, PLACE_STOP),

@@ -1,13 +1,13 @@
 # 화면 설계 · 검수 규칙
 
-마지막 갱신일: 2026-11-08 · 판 v1.10
+마지막 갱신일: 2026-11-08 · 판 v1.11
 
 ## 1. 이 문서
 
 화면을 만들거나 바꾸거나 검수할 때 대 보는 규칙의 정본이다. 2026-09 ~ 11 의 검수 의견 · 결정 보드 답 · 기존 규칙
 (AGENTS · design_system)에서 되풀이된 꼴을 뽑아(귀납) 규칙으로 올렸고, 근거가 한 사례뿐이거나 서로 맞서던 18 물음은
 2026-11-04 설계 규칙 확인 보드에서 사용자가 답했다(6-1). 규칙을 화면에 입힌 뒤 판정이 애매하거나 앱 세션이 대신 정한 여덟 칸은
-같은 날 반영 검수표로 답했다(6-2). 규칙을 11/02 검수표 나머지 칸에 입힌 뒤 사용자가 그림 칸에 남긴 메모는 2026-11-05 에 고치고 규칙으로 올렸고(6-3), 그때 묻고 남긴 열 칸은 같은 날 남은 결정 보드로 답했고(6-4), 그 답을 고친 전후 그림을 본 답은 전후 보드에 있고(6-5), 같은 날 사용자가 남긴 화면 기록은 6-6 에, 그 뒤 이번 배포 전후 보드의 답은 6-7 에, 목록 관리 안 3 · S3 동기화 통합 검수 보드의 답은 6-8 에, 전 화면 규칙 점검 보드의 답은 6-9 에, 그 2차 보드의 답은 6-10 에 있다. 앞으로 화면 검수는 사람이 칸마다 보는 대신 이 규칙으로 하고, 사람은 규칙 밖 · 애매 ·
+같은 날 반영 검수표로 답했다(6-2). 규칙을 11/02 검수표 나머지 칸에 입힌 뒤 사용자가 그림 칸에 남긴 메모는 2026-11-05 에 고치고 규칙으로 올렸고(6-3), 그때 묻고 남긴 열 칸은 같은 날 남은 결정 보드로 답했고(6-4), 그 답을 고친 전후 그림을 본 답은 전후 보드에 있고(6-5), 같은 날 사용자가 남긴 화면 기록은 6-6 에, 그 뒤 이번 배포 전후 보드의 답은 6-7 에, 목록 관리 안 3 · S3 동기화 통합 검수 보드의 답은 6-8 에, 전 화면 규칙 점검 보드의 답은 6-9 에, 그 2차 보드의 답은 6-10 에, 그 고침을 본 아침 검수 보드의 답은 6-11 에 있다. 앞으로 화면 검수는 사람이 칸마다 보는 대신 이 규칙으로 하고, 사람은 규칙 밖 · 애매 ·
 되돌리기 어려운 화면만 본다(PRC-07).
 
 규칙 80 — MUST 45 · SHOULD 35 · MAY 0, 묶음 열하나(3장). 상태는 모두 확정이다.
@@ -112,11 +112,11 @@
 
 - 수준: MUST · 확정
 - 범위: 모든 화면 · 팝업 · 사이드바 · 떠 있는 판 · 모듈 화면
-- 예외: 입력 곁 오류 · 거부(폼 검증, UI-NTF-03) / 값 · 표지 — 목록 구획의 빈 결과 · 점검 화면의 결론 포함(UI-TXT-04) / 누르기 전에 알아야 하는 되돌릴 수 없는 결과(UI-NTF-09) / 화면을 그리지 못하는 오류(UI-NTF-08) / 사람이 쓰는 자유 글 칸(VOC 글 · 답글)의 짧은 안내 글(placeholder)은 입력 예시로 본다 — 치면 사라지고 같은 말이 Guide 에도 있다(6-9 rule-notes g1-15) / 머리 설명 줄이 남은 두 자리 — 모듈 공개 창구 `module_api.page_header(description=)`(공개 계약이라 다음 창구 판에서 정한다)와 필요 단축 일정 머리말(문구 사용자 전달 대기) / 구현 중 화면의 설명 덩어리(2026-09-29 범위 결정 — Dynamic Capa 「산식 가이드」 탭 · Capa Chatbot)는 화면을 완성할 때 Guide 로 옮긴다 — 개발 메모는 할 일 문서로, 연결 전 설명은 한 줄 표지 + 제목 풍선으로 이미 옮겼다(6-9 desc-blocks).
+- 예외: 입력 곁 오류 · 거부(폼 검증, UI-NTF-03) / 값 · 표지 — 목록 구획의 빈 결과 · 점검 화면의 결론 포함(UI-TXT-04) / 누르기 전에 알아야 하는 되돌릴 수 없는 결과(UI-NTF-09) / 화면을 그리지 못하는 오류(UI-NTF-08) / 사람이 쓰는 자유 글 칸(VOC 글 · 답글)의 짧은 안내 글(placeholder)은 입력 예시로 본다 — 치면 사라지고 같은 말이 Guide 에도 있다(6-9 rule-notes g1-15) / 앱 밖 화면(통합인증 로그아웃 · 로그인 되풀이 · 로그인 오류 · 거절 — `auth/web.py`)의 하는 법 문장과 손으로 옮기는 진단 표는 Guide · 알림창이 없는 화면이라 둔다 — 제목을 거듭하는 첫 문장은 걷고 단추 이름은 「 」 로 감싸며, 모르는 사유 코드는 제목과 사유 코드만이다(6-11 b1) / 구현 중 화면의 설명 덩어리(2026-09-29 범위 결정 — Dynamic Capa 「산식 가이드」 탭 · Capa Chatbot)는 화면을 완성할 때 Guide 로 옮긴다 — 개발 메모는 할 일 문서로, 연결 전 설명은 한 줄 표지 + 제목 풍선으로 이미 옮겼다(6-9 desc-blocks).
 - 판단: 이 글을 지우면 사용자가 무엇을 못 하게 되나? 답이 없으면 지우고, 있으면 UI-TXT-02 의 갈 곳 넷 가운데 어디로 갈지 먼저 본다.
-- 그물: `tests/test_place_sentence_sites.py`(화면 글 문장 그물 — `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 의 서술형 문장 자리를 (파일, 함수)별 까닭 허용 목록과 맞대고 빈 결과 · 값 · 표지 자리의 꼴도 봄, 미정리 수는 늘지 않음) · `tests/test_alert_center_assets.py::test_the_alarm_and_change_panels_carry_no_description_footer`(Alarm · 변경 판만) · `scripts/check_deploy_screens.py` period_popup · process_popup(조건 팝업 둘의 「설명 글 0줄」 — 배포 화면 확인 때) · `tests/test_page_header_description.py`(코어 화면 머리의 설명 인자 자리 — 모듈 창구 · 필요 단축 일정 둘만)
+- 그물: `tests/test_place_sentence_sites.py`(화면 글 문장 그물 — `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 의 서술형 문장 자리를 (파일, 함수)별 까닭 허용 목록과 맞대고 빈 결과 · 값 · 표지 자리의 꼴도 봄, 미정리 수는 늘지 않음) · `tests/test_alert_center_assets.py::test_the_alarm_and_change_panels_carry_no_description_footer`(Alarm · 변경 판만) · `scripts/check_deploy_screens.py` period_popup · process_popup(조건 팝업 둘의 「설명 글 0줄」 — 배포 화면 확인 때) · `tests/test_page_header_description.py`(코어 화면 머리의 설명 인자 자리 — 남은 자리 없음: 모듈 창구는 1.1 부터 받기만 하고 그리지 않으며 필요 단축 일정 머리말은 Guide 첫 단락으로, 6-11 d1 · g03)
 - 그물 후보: 설정 팝업 「설명 글 0줄」
-- 근거: 검수 alarm-02 · alarm-11 · home-19 · home-21 · home-u01(2026-11-03), Space 결정 보드 메모(2026-11-04), 조건 카드 · Guide 결정(2026-09-28), 확인 보드 AMB-01 (가) · AMB-02 (가)(2026-11-04) — 「저런식으로 인터페이스에 설명문구를 다는걸 지양하도록해」, 이번 배포 전후 보드 list-caption(2026-11-06) — 「고친것 이름0 순서0 문구도 제거」, 전 화면 점검 head-desc(2026-11-07) — 「꼭 필요한 소개 문구는 guide에 포함.」, 전 화면 점검 desc-blocks · rule-notes(2026-11-07)
+- 근거: 검수 alarm-02 · alarm-11 · home-19 · home-21 · home-u01(2026-11-03), Space 결정 보드 메모(2026-11-04), 조건 카드 · Guide 결정(2026-09-28), 확인 보드 AMB-01 (가) · AMB-02 (가)(2026-11-04) — 「저런식으로 인터페이스에 설명문구를 다는걸 지양하도록해」, 이번 배포 전후 보드 list-caption(2026-11-06) — 「고친것 이름0 순서0 문구도 제거」, 전 화면 점검 head-desc(2026-11-07) — 「꼭 필요한 소개 문구는 guide에 포함.」, 전 화면 점검 desc-blocks · rule-notes(2026-11-07), 아침 검수 보드 g03 · g12 · d1 · b1 · b3(2026-11-08) — 「필요 단축일정 페이지 상단에 문구들이 너무 많음」
 - 지금 값: 없음
 
 #### UI-TXT-02 · 걷은 말의 갈 곳은 넷
@@ -151,9 +151,9 @@
 
 - 수준: SHOULD · 확정
 - 범위: 사이드바 · 머리 띠 · 탭 줄 · 칩 줄 · 팝업 머리 · 본문 캡션 · 목록 구획 · 점검 화면
-- 예외: 입력 곁 거부 · 오류(UI-NTF-03), 화면을 못 그리는 오류(UI-NTF-08).
+- 예외: 입력 곁 거부 · 오류(UI-NTF-03), 화면을 못 그리는 오류(UI-NTF-08), 앱 밖 화면의 하는 법 문장 · 진단 표(UI-TXT-01 예외 — 6-11 b1).
 - 판단: 이 글은 값 · 표지 · 내역 · 설명 가운데 무엇인가? 값 · 표지가 아니면 자리에서 뺀다 — 서술어가 없어도 건수 · 목록을 늘어놓으면 내역이다.
-- 그물: `tests/test_place_text_lines.py`(빈 결과 · 점검 결론 네 화면 — 성공 상자 없음 · 평문 한 줄, 숨은 공정 칸 머리 풍선) · `tests/test_place_sentence_sites.py`(자리 글 까닭 사전 — 값 · 표지 · 빈 결과 · 입력 곁 거부 · 미정리, `tests/source_sites.py` — 수와 꼴만 맞대고 자리마다 글 지문은 고정하지 않는다) · `tests/test_alert_sites.py`(경고 상자 자리 — 빈 상태 멈춤은 그 까닭 사전에 없다) · 문장으로 끝나지 않는 내역 줄과 값 · 표지 자리 글의 뜻은 판단 질문으로 본다
+- 그물: `tests/test_place_text_lines.py`(빈 결과 · 점검 결론 네 화면 — 성공 상자 없음 · 평문 한 줄, 숨은 공정 칸 머리 풍선) · `tests/test_place_sentence_sites.py`(자리 글 까닭 사전 — 값 · 표지 · 빈 결과 · 입력 곁 거부 · 미정리, `tests/source_sites.py` — 수와 꼴만 맞대고 자리마다 글 지문은 고정하지 않는다) · `tests/test_alert_sites.py`(경고 상자 자리 — 빈 상태 멈춤은 그 까닭 사전에 없다) · `tests/test_reference_grid_page.py::test_a_draft_the_shared_process_hides_is_marked_and_still_applied`(공용 공정 거름에 가린 초안 — 표지 「거름 밖 n개」 + 풍선) · 문장으로 끝나지 않는 내역 줄과 값 · 표지 자리 글의 뜻은 판단 질문으로 본다
 - 그물 후보: 표지 글자 수 상한
 - 근거: 검수 「괜찮음」 home-15 · 16 · 23(2026-11-03), 알림 결정 보드 D5(2026-11-03), Space 결정 보드 메모(2026-11-04), 귀납, 확인 보드 AMB-02 (가)(2026-11-04), 반영 검수표 D1 (나) · D4 (가) · D8 (가)(2026-11-04), 그림 검수표 equip-41(2026-11-05), 전 화면 점검 place-box(2026-11-07) — 실적 · 원천 품질 결론 둘을 상자 없는 한 줄로
 - 지금 값: 없음
@@ -229,7 +229,7 @@
 
 #### UI-NTF-02 · 상태 경고는 자리에 세우지 않는다
 
-상태 경고(조건이 남아 있는 동안의 경고)는 화면 자리에 세우지 않는다 — 그 한 줄 요약도 남기지 않고, 내용(지문)이 바뀔 때만 알림창 한 번 + Alarm 기록, 조건이 사라지면 「해소」 로 닫는다. 저장 · 공식 지정 · 발행 뒤 한 번 내는 경고(남은 Capa 계산 오류 · 소요대수에 들지 않은 수요)는 상태가 아니라 동작 뒤 사건이다 — UI-NTF-03 을 따른다. 고칠 입력이 다른 화면이면 Alarm 줄의 「그 화면으로」 가 그 화면을 열고(`goto`) 자리에 링크를 두지 않는다 — 멈춘 자리(UI-NTF-08)와 같은 원칙이다. 그 줄의 화면 칸은 고칠 화면이므로 어느 화면의 일인지는 전문이 첫머리에 적는다. 고른 대상(층 · 시나리오)만 보던 조건도 전 층 · 전 시나리오를 훑어 알리면 상태 알림이다 — 지문이 고르기에 기대지 않는다(Space 저장된 캔버스 밖 호기 `EQ-18` · 옛 판 흔적 `SC-03`, 6-9 place-box).
+상태 경고(조건이 남아 있는 동안의 경고)는 화면 자리에 세우지 않는다 — 그 한 줄 요약도 남기지 않고, 내용(지문)이 바뀔 때만 알림창 한 번 + Alarm 기록, 조건이 사라지면 「해소」 로 닫는다 — 범위(리비전 · 시나리오 · 조회기간)가 바뀌면 앞 줄은 「범위 바뀜」 으로 닫는다(조건이 사라진 것이 아니다 — 6-11 a3). 저장 · 공식 지정 · 발행 뒤 한 번 내는 경고(남은 Capa 계산 오류 · 소요대수에 들지 않은 수요)는 상태가 아니라 동작 뒤 사건이다 — UI-NTF-03 을 따른다. 고칠 입력이 다른 화면이면 Alarm 줄의 「그 화면으로」 가 그 화면을 열고(`goto`) 자리에 링크를 두지 않는다 — 멈춘 자리(UI-NTF-08)와 같은 원칙이다. 그 줄의 화면 칸은 고칠 화면이므로 어느 화면의 일인지는 전문이 첫머리에 적는다. 고른 대상(층 · 시나리오)만 보던 조건도 전 층 · 전 시나리오를 훑어 알리면 상태 알림이다 — 지문이 고르기에 기대지 않는다(Space 저장된 캔버스 밖 호기 `EQ-18` · 옛 판 흔적 `SC-03`, 6-9 place-box).
 
 - 수준: MUST · 확정
 - 범위: 모든 화면 · 사이드바 · 팝업의 상태 경고
@@ -237,7 +237,7 @@
 - 판단: 이 글은 조건이 사라지면 같이 사라지나? 그렇다면 상태다 — 알림으로. 고칠 입력이 다른 화면이면 그 줄이 그 화면을 열고, 전문만 읽어도 어느 화면의 일인지 아나?
 - 그물: `tests/test_alert_sites.py` · `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py` · `tests/test_place_sentence_sites.py`(상태 문장 자리 — 화면 글 문장 그물) · `tests/test_withdrawn_warning_alerts.py`(걷은 경고 ↔ 알림 코드)
 - 그물 후보: 없음
-- 근거: 검수 home-08(2026-11-02), 검수 home-18(2026-11-03), 알림 결정 보드 D2(2026-11-03), Space 결정 보드 메모(2026-11-04), 확인 보드 AMB-02 (가) · AMB-05 (나)(2026-11-04) — 「이 내용도 사이드바에 띄우지 않고 우하단 알람으로 띄우고 Alarm에 누적시키게끔 통일해」, 전후 그림 보드 q-wip04(2026-11-05), 전 화면 점검 place-box(2026-11-07) — 옛 판 흔적 · 캔버스 밖 호기는 Alarm 으로
+- 근거: 검수 home-08(2026-11-02), 검수 home-18(2026-11-03), 알림 결정 보드 D2(2026-11-03), Space 결정 보드 메모(2026-11-04), 확인 보드 AMB-02 (가) · AMB-05 (나)(2026-11-04) — 「이 내용도 사이드바에 띄우지 않고 우하단 알람으로 띄우고 Alarm에 누적시키게끔 통일해」, 전후 그림 보드 q-wip04(2026-11-05), 전 화면 점검 place-box(2026-11-07) — 옛 판 흔적 · 캔버스 밖 호기는 Alarm 으로, 아침 검수 보드 a3 · c1 · g03(2026-11-08) — 설비 마스터 낡은 세션 상자 → 머리 줄 표지 「일정 잠김」 + 풍선 + `EQ-19`, 필요 단축 일정 상태 표지 셋 → 한 줄 표지 + `RS-03` ~ `RS-05`
 - 지금 값: 없음
 
 #### UI-NTF-03 · 동작 결과는 알림창 하나로
@@ -246,9 +246,9 @@
 
 - 수준: MUST · 확정
 - 범위: 모든 쓰기 단추 · 팝업 · 편집표
-- 예외: 「바뀐 것이 없습니다」 여덟 곳은 저장 단추 곁 그대로(빠른 둘째 누름 안내와 얽힘 — 2026-11-03 답, Admin Proc Rename · 표시순서 직접 편집이 머리 칸에서 저장 줄 바로 아래로 와 여섯에서 여덟 — 6-9 small-fixes g8-16). / 확인 칸을 다시 세우는 거절 — 그 사이 남의 쓰기로 아무것도 하지 않았지만 확인 체크 · 입력 칸을 새로 세워 그 탭에서 다시 해야 하는 거절(시나리오 관리 설비 시나리오 탭의 「그 사이 바뀌어 …」 — `equipment_scenario_management._refused`)은 탭 맨 위 칸에 서고 알림창 · Alarm 에도 뜬다(반영 검수표 D3 (가)). / 붙여넣기 · 양식 창은 그 자리에 고칠 입력이 있어도 거부를 창에 두지 않고 알림창으로 낸다(UI-INP-08 — 그림 검수표 static-37).
+- 예외: 「바뀐 것이 없습니다」 여덟 곳은 저장 단추 곁 그대로(빠른 둘째 누름 안내와 얽힘 — 2026-11-03 답, Admin Proc Rename · 표시순서 직접 편집이 머리 칸에서 저장 줄 바로 아래로 와 여섯에서 여덟 — 6-9 small-fixes g8-16). / 확인 칸을 다시 세우는 거절 — 그 사이 남의 쓰기로 아무것도 하지 않았지만 확인 체크 · 입력 칸을 새로 세워 그 탭에서 다시 해야 하는 거절(시나리오 관리 설비 시나리오 탭의 「그 사이 바뀌어 …」 — `equipment_scenario_management._refused`)은 탭 맨 위 칸에 서고 알림창 · Alarm 에도 뜬다(반영 검수표 D3 (가)). / 붙여넣기 · 양식 창은 그 자리에 고칠 입력이 있어도 거부를 창에 두지 않고 알림창으로 낸다(UI-INP-08 — 그림 검수표 static-37). / 남의 저장에 진 거부(판정 기준 · Summary · 프리셋 · Cut-off 등 — 충돌 표지와 같은 글)는 곁 + 알림창 · Alarm 이고 입력 탓 거부는 곁만이다(6-11 a1 — `write_guard.queue_refusal` 이 `FL-04` 사건으로도 보냄). / 고르면 곧 저장되는 칸(HOME 주요 Case 고르기)은 알림을 내지 않고 그 상자 제목 옆 공용 버전 줄(버전 · 메모 · 저장 시각)이 결과다 — VOC 「답변 완료로 표시」 · 「미답변으로 되돌리기」 는 알림을 낸다(6-11 a2).
 - 판단: 사용자가 그 자리에서 고쳐야 할 것이 있나? 없으면 알림창.
-- 그물: `tests/test_flash_messages.py::test_a_success_is_sent_to_the_alert_popup_and_not_drawn_beside_the_button` 외 · `tests/test_notice_form_sites.py`(초록 결과 상자 · 토스트 직접 부름 허용 목록) · `tests/test_alert_sites.py`(폼 · 팝업 안 검증 `PLACE_FORM` — 알림창 · 기록 없음) · `tests/test_withdrawn_warning_alerts.py`(알림창에만 보낸 동작 뒤 경고) · `tests/test_equipment_scenario_refused_press.py`(확인 칸을 다시 세우는 거절 — 구획 맨 위 칸 + 알림창)
+- 그물: `tests/test_flash_messages.py::test_a_success_is_sent_to_the_alert_popup_and_not_drawn_beside_the_button` 외 · `tests/test_notice_form_sites.py`(초록 결과 상자 · 토스트 직접 부름 허용 목록) · `tests/test_alert_sites.py`(폼 · 팝업 안 검증 `PLACE_FORM` — 알림창 · 기록 없음) · `tests/test_withdrawn_warning_alerts.py`(알림창에만 보낸 동작 뒤 경고) · `tests/test_equipment_scenario_refused_press.py`(확인 칸을 다시 세우는 거절 — 구획 맨 위 칸 + 알림창) · `tests/test_refusal_alerts.py`(남의 저장에 진 거부 — 곁 + 알림창 · Alarm)
 - 그물 후보: 없음
 - 근거: 검수 「괜찮음」 home-u02(2026-11-03), 알림 결정 보드 D3(2026-11-03), 반영 검수표 D2 · D3 · D5 (가)(2026-11-04), 전 화면 점검 undo-strip · rule-notes(2026-11-07)
 - 지금 값: 없음
@@ -324,7 +324,7 @@
 
 - 수준: SHOULD · 확정
 - 범위: 되돌리기 어려운 쓰기 단추(붙여넣어 통째 바꾸기 · 지우기 · 발행)
-- 예외: 설비 저장 입구(설비 마스터 「저장 전 변경」 · 사이드바 팝업 「저장」 · Space 「배치 저장」)는 확인 체크 · 경고 상자 없이 늘 같은 동작으로 저장하고 일어난 일만 결과 알림으로 적는다 — 지운 호기의 일정이 다른 설비 시나리오에서 함께 빠져도 묻지 않는다. 저장 단추 풍선은 어디로 저장되나 한 줄이고, 늘 하는 일의 말은 Guide 다(그림 검수표 equip-13 「일일히 설명을 넣는건 부적절함」). 설비 마스터 「새 호기」 칸도 같다 — 체크 · 경고 없이 늘 다른 설비 시나리오에도 넣고 결과 알림이 대수를 적는다. 시나리오 관리 「이 리비전으로 되돌리기」 는 그 발행 체크만 없다 — 되돌리기 확인 체크는 그대로다. 호기 상세 지우기의 결과는 알림창 값 한 줄이고(저장본 「n대 지울 목록에 넣음」 · 저장 전 새 호기 「새 호기 n대 뺌」, 섞이면 둘을 잇는다 — 되돌리기는 「저장 전 변경」 의 「한 단계 되돌리기」, 6-9 undo-strip) 누르기 전의 말은 지우기 단추 풍선이다. 확인 체크를 남기는 저장 둘 — 시뮬레이션 사이드바 저장 「적용하지 않은 편집을 버리고 저장」(사람이 친 편집을 잃는 길)과 Space 캔버스 편집 「이탈 호기 n대 알고 저장」(호기는 저장소가 막지 않는다).
+- 예외: 설비 저장 입구(설비 마스터 「저장 전 변경」 · 사이드바 팝업 「저장」 · Space 「배치 저장」)는 확인 체크 · 경고 상자 없이 늘 같은 동작으로 저장하고 일어난 일만 결과 알림으로 적는다 — 지운 호기의 일정이 다른 설비 시나리오에서 함께 빠져도 묻지 않는다. 저장 단추 풍선은 어디로 저장되나 한 줄이고, 늘 하는 일의 말은 Guide 다(그림 검수표 equip-13 「일일히 설명을 넣는건 부적절함」). 설비 마스터 「새 호기」 칸도 같다 — 체크 · 경고 없이 늘 다른 설비 시나리오에도 넣고 결과 알림이 대수를 적는다. 시나리오 관리 「이 리비전으로 되돌리기」 는 그 발행 체크만 없다 — 되돌리기 확인 체크는 그대로다. 호기 상세 지우기의 결과는 알림창 값 한 줄이고(저장본 「n대 지울 목록에 넣음」 · 저장 전 새 호기 「새 호기 n대 뺌」, 섞이면 둘을 잇는다 — 되돌리기는 「저장 전 변경」 의 「한 단계 되돌리기」, 6-9 undo-strip) 누르기 전의 말은 지우기 단추 풍선이다. 확인 체크를 남기는 저장 둘 — 시뮬레이션 사이드바 저장 「적용하지 않은 편집을 버리고 저장」(사람이 친 편집을 잃는 길 — 위 안내 상자는 값 줄 「적용 전 편집 · 표, 표」 로 줄이고 말은 체크 풍선 · 거절 한 줄, 6-11 c9)과 Space 캔버스 편집 「이탈 호기 n대 알고 저장」(호기는 저장소가 막지 않는다).
 - 판단: 이 단추를 잘못 눌렀을 때 되돌릴 길이 있나? 없다면 그 결과가 누르기 전에 보이나(풍선 · 확인 창 · 곁 한 줄)? 확인 창 글이 값 줄 · 체크 글의 수를 넘어 문장을 늘어놓지 않나?
 - 그물: `tests/test_equipment_assumption_rawdata.py::test_removing_a_unit_scheduled_in_another_scenario_saves_and_says_so`(설비 저장 예외) · `tests/test_equipment_scenario_section_layout.py::test_the_confirm_popovers_stand_one_value_line_and_keep_words_in_balloons`(설비 시나리오 확인 창 셋) — 그 밖은 판단 질문으로 본다
 - 그물 후보: 쓰기 장부 칸 더하기
@@ -363,16 +363,16 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 #### UI-LAY-02 · 조건은 사이드바 조회 조건 패널 하나
 
-화면이 읽는 거르는 조건은 사이드바 「조회 조건」 패널 한 곳에 늘 펼친 이름 줄 + 값 칸(누르면 팝업)으로 두고, 그 화면이 읽지 않는 조건 줄은 세우지 않는다. 같은 조건은 모든 화면이 같은 양식으로 그리고, 본문은 결과와 행동만 갖는다.
+화면이 읽는 거르는 조건은 사이드바 「조회 조건」 패널 한 곳에 늘 펼친 이름 줄 + 값 칸(누르면 팝업)으로 두고, 그 화면이 읽지 않는 조건 줄은 세우지 않는다. 같은 조건은 모든 화면이 같은 양식으로 그리고, 본문은 결과와 행동만 갖는다. 공정은 화면 사이에 잇는 공용 칸이다(6-11 P1 · P2 — 공정 공유 1차): ① HOME 은 보내기만 한다 — 「적용」 때 다른 화면에 복사하고, 다른 화면에서 고른 값은 HOME 판정 · 리비전 저장값에 들지 않는다. ② 공정 하나만 보는 화면은 받기만 한다 — 공용 값이 하나일 때 그 공정을 열고 여럿이면 보던 공정을 두며, 들어온 길이 이기고, 여기서 고른 공정은 다른 화면을 바꾸지 않는다. ③ 모두의 기본값이 저장되는 화면(필요 단축 일정 · 표준 목표)의 저장값은 건드리지 않는다. ④ Static Capa 는 전체를 보이고 실적 셋 · Dynamic · 재공은 데이터 연결 뒤에 잇는다. ⑤ 다른 화면에서 걸린 공정은 사이드바 값 칸 강조 + 본문 위 작은 칩(「공정 Mold · HOME 에서」, 누르면 지움)으로 알린다. 공용 값과 규칙은 모듈 하나(`shared_process`)와 화면 조각 하나(`process_field`)에 가둔다 — 사용자가 「계속 모니터링하고 적절치 않으면 다른 구조 · 원복을 검토」 한다고 했으므로, 새 화면이 공정을 고를 때는 다섯 규칙 가운데 어디에 서는지 먼저 정하고, 걷을 때는 두 모듈과 그 둘을 부르는 줄을 걷고 화면마다 고르는 칸을 되살리면 되게 둔다.
 
 - 수준: MUST · 확정
-- 범위: 모든 계산 · 조회 화면의 조건(시나리오 · 조회기간 · 공정 필터 · 화면 고유 조건 카드 · 「이 세션만」 가정 칸)
-- 예외: 하위 보기 · 표시 방식 전환은 본문이 기본이다(AGENTS 9장 「하위 보기 전환은 본문이다」) — 표 하나의 표시 방식만 그 표의 조건 카드에 둘 수 있다(산출 결과 대당 Capa 「표시 방식」, 2026-11-02). / 구현 중 화면(효율 · UPEH · 수율 실적 · Dynamic Capa · 표준 대비 재공 현황)의 본문 조회 조건 카드는 화면을 완성할 때 사이드바 패널로 옮긴다(2026-09-29 범위 결정 — 6-9 rule-notes).
-- 판단: 이 조건을 바꾸면 이 화면 결과가 바뀌나? 아니면 줄을 세우지 않는다.
-- 그물: `tests/test_app_navigation.py`(`test_the_conditions_panel_holds_only_the_rows_the_screen_reads` 외) · `scripts/check_deploy_screens.py` sidebar_panel · panel_rows_other_pages · period_popup · process_popup
+- 범위: 모든 계산 · 조회 화면의 조건(시나리오 · 조회기간 · 공정 필터 · 화면 고유 조건 카드 · 「이 세션만」 가정 칸) · 공용 공정 칸(1차 — 산출 결과 대당 Capa · 소요대수 · 확보율 · 기준 정보 편집 표 아홉 · 설비대수 현황 · 가용설비 Main 공정소분류 · Space 공정소분류는 따라가고, 공정 Capa 상세 · 제약 시뮬레이션은 받기만, HOME 은 보내기만)
+- 예외: 하위 보기 · 표시 방식 전환은 본문이 기본이다(AGENTS 9장 「하위 보기 전환은 본문이다」) — 표 하나의 표시 방식만 그 표의 조건 카드에 둘 수 있다(산출 결과 대당 Capa 「표시 방식」, 2026-11-02). / 구현 중 화면(효율 · UPEH · 수율 실적 · Dynamic Capa · 표준 대비 재공 현황)의 본문 조회 조건 카드는 화면을 완성할 때 사이드바 패널로 옮긴다(2026-09-29 범위 결정 — 6-9 rule-notes). / 제약 시뮬레이션 모드 전환 「제약 영향 | 개조 일정」 은 조건 카드 맨 위다 — 카드에 설 칸을 바꾸는 전환이고 그 카드는 처음 펼친 채다(6-11 g12). Space 「필요 단축」 보기의 목표 확보율은 조회 조건 패널 줄이다(6-11 g05). / 공정 공유 2차(필요 단축 일정은 강조로만 · 표준 목표는 표만 좁힘 · Static 대비 일정 · 달 칸 다섯)와 3차(실적 셋 · Dynamic · 재공 — 데이터 연결 뒤)의 공정은 아직 화면마다 카드 칸이다(6-11 P1 — 세 번에 나눠 함).
+- 판단: 이 조건을 바꾸면 이 화면 결과가 바뀌나? 아니면 줄을 세우지 않는다. 공정이면 이 화면은 보내나 · 받나 · 따라가나(다섯 규칙 가운데 어디)? 공용 값을 이 두 모듈 밖에서 만지지 않나?
+- 그물: `tests/test_app_navigation.py`(`test_the_conditions_panel_holds_only_the_rows_the_screen_reads` 외) · `tests/test_process_field.py`(값 칸 글 · 표지 · 출처 · 없는 공정 배지 · 칩 지움 · 판) · `tests/test_shared_process.py`(보내기 · 받기 · 따라가기 규칙, 세션 키는 모듈 밖에서 만지지 않음) · `tests/test_condition_dialog_host.py`(공정 갈래) · `scripts/check_deploy_screens.py` sidebar_panel · panel_rows_other_pages · period_popup · process_popup
 - 그물 후보: PageSpec reads_* ↔ 실제 읽는 키
-- 근거: 검수 「괜찮음」 home-15 · prog-03(2026-11-03 ~ 11-04), 사용자 요청(2026-10-10), 사용자 답(2026-10-10), 조건 카드 · Guide 결정(2026-09-28), 확인 보드 AMB-08 (가) · AMB-09 (가)(2026-11-04) — 「권장대로, 다만 D2 팝업 칸으로」
-- 지금 값: 없음
+- 근거: 검수 「괜찮음」 home-15 · prog-03(2026-11-03 ~ 11-04), 사용자 요청(2026-10-10), 사용자 답(2026-10-10), 조건 카드 · Guide 결정(2026-09-28), 확인 보드 AMB-08 (가) · AMB-09 (가)(2026-11-04) — 「권장대로, 다만 D2 팝업 칸으로」, 전 화면 점검 pickers(2026-11-07), 아침 검수 보드 P1 · P2 · g05 · g12(2026-11-08) — 「공정 선택을 공용화하는게 앞으로 기능 추가할때도 주의깊게 봐야하는 요소일것같은데, 계속 모니터링해보고 적절치 않다고 판단되면 다른 구조로 바꾸거나 원복을 검토해야겠음.」
+- 지금 값: 4장 「공정 값 칸 글」 · 「공용 공정 표지」 · 「조건 패널 줄 사이」
 
 #### UI-LAY-03 · 대상의 조작은 대상 곁에
 
@@ -408,7 +408,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 머리 띠 · 툴바
 - 예외: 숨김과 잠금의 경계는 UI-INP-07 — 이 화면에 아예 없는 기능만 숨긴다.
 - 판단: 이 단추는 모든 화면에서 같은 뜻인가? 아니면 화면 안으로.
-- 그물: `tests/test_theme_toggle.py`(toolbar_buttons_stand_in_one_shared_order…) · `tests/test_alert_center_assets.py`(툴바 차례) · `scripts/check_deploy_screens.py` toolbar · `tests/test_sso_streamlit.py::test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar`(통합인증 멈춤 화면 — ⋮ 메뉴 · Deploy · 죽은 툴바 단추 감춤)
+- 그물: `tests/test_theme_toggle.py`(toolbar_buttons_stand_in_one_shared_order…) · `tests/test_alert_center_assets.py`(툴바 차례) · `scripts/check_deploy_screens.py` toolbar · `tests/test_sso_streamlit.py::test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar`(통합인증 멈춤 화면 — ⋮ 메뉴 · Deploy · 죽은 툴바 단추 · 눌러도 반응 없는 사이드바 앱 이름 라벨 감춤, 다시 로그인 띠가 선 동안 영어 연결 오류 창 감춤 — 6-11 b2 · b6)
 - 그물 후보: 없음
 - 근거: 검수 home-08(2026-11-02), 검수 「괜찮음」 home-12(2026-11-03), 추가 요청 8(2026-10-08) — 「헤더의 가이드 버튼 옆에 Alarm 버튼을 만들고 여기서 누적시키고 조회가능하도록하고」
 - 지금 값: 없음
@@ -486,10 +486,10 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 본문 표 · 편집표 바로 위 단추 줄(찾기 · 불러오기 · 내려받기 · 넣기 · 적용). 옆 칸 · 팝업 안 작업 줄(UI-LAY-03 · UI-INP-08)과 표에 떠 있는 표 도구 막대는 밖이다
 - 예외: 기준 창보다 좁은 창(사내 보고 창은 두 줄까지 — 4장)과, 사람이 옆 칸을 끌어 넓혀 왼쪽 칸이 좁아진 때는 줄이 내려앉는다.
 - 판단: 기준 창(4장)에서 이 작업 줄이 한 줄인가? 아니면 뺄 같은 일 단추 · 메뉴로 묶을 드문 단추 · 줄일 이름이 남았나?
-- 그물: `tests/test_equipment_master_grid_assets.py::test_the_loader_line_holds_short_names_and_only_the_first_screen_keeps_its_buttons`(설비 마스터 작업 줄 구성 — 실제 줄 수는 재지 않는다) · `tests/test_equipment_master_grid_assets.py::test_the_loader_line_picks_its_shape_from_the_left_column_width`(왼쪽 칸 폭에 따른 꼴) · `tests/test_table_top_rows.py`(table-top 세 자리의 꼴 — 큰 월 표 「표시 범위」 는 제목 줄 안 칸, 기준 정보 한 줄 서식이 고르는 칸 · `tests/test_display_order_management.py::test_the_scope_pickers_stand_on_the_heading_line`) — 줄 수 자체는 브라우저 배치라 AppTest 로 잴 수 없고 화면 확인 항목은 전 화면 점검에서 늘리지 않아 그물 후보로 남는다
+- 그물: `tests/test_equipment_master_grid_assets.py::test_the_loader_line_holds_short_names_and_only_the_first_screen_keeps_its_buttons`(설비 마스터 작업 줄 구성 — 실제 줄 수는 재지 않는다) · `tests/test_equipment_master_grid_assets.py::test_the_loader_line_picks_its_shape_from_the_left_column_width`(왼쪽 칸 폭에 따른 꼴) · `tests/test_table_top_rows.py`(table-top 세 자리의 꼴 — 큰 월 표 「표시 범위」 는 제목 줄 안 칸, 기준 정보 한 줄 서식이 고르는 칸 · `tests/test_display_order_management.py::test_the_scope_pickers_stand_on_the_heading_line` · `tests/test_display_order_management.py::test_a_long_change_memo_folds_the_version_line_instead_of_pushing_the_pickers` — 긴 변경 메모에 고르기가 밀리지 않는 서식 꼴) — 줄 수 자체는 브라우저 배치라 AppTest 로 잴 수 없고 화면 확인 항목은 전 화면 점검에서 늘리지 않아 그물 후보로 남는다
 - 그물 후보: 표 위 작업 줄 줄 수
-- 근거: 통합 검수 equip-toolbar(2026-11-07) — 「가용설비 현황 설비마스터에서 내려받기, 공정으로 불러오기, 조건으로 불러오기, 일정확인필요--대, 새호기,엑셀·CSV로 한꺼번에 이 버튼들이 많아서 현재 총 3줄로 보임. 재배치해서 한줄에 둘 수 있는 방안 제시해줘」 → 안 A(한 줄 · 「+ 새 호기」 뺌 · 메뉴 「엑셀·CSV」 · 단추 이름 짧게), 2차 보드 R4 (가)(2026-11-07) — 찾기 칸 220 유지, 전 화면 점검 table-top · undo-strip(2026-11-07) — 기준 정보 두 줄 → 한 줄, 표시 범위 · 고르기 칸은 표 제목 줄 곁, 되돌리기 띠를 걷음
-- 지금 값: 4장 「표 위 작업 줄 기준 창」 · 「설비 마스터 작업 줄」 · 「기준 정보 표 위 한 줄」
+- 근거: 통합 검수 equip-toolbar(2026-11-07) — 「가용설비 현황 설비마스터에서 내려받기, 공정으로 불러오기, 조건으로 불러오기, 일정확인필요--대, 새호기,엑셀·CSV로 한꺼번에 이 버튼들이 많아서 현재 총 3줄로 보임. 재배치해서 한줄에 둘 수 있는 방안 제시해줘」 → 안 A(한 줄 · 「+ 새 호기」 뺌 · 메뉴 「엑셀·CSV」 · 단추 이름 짧게), 2차 보드 R4 (가)(2026-11-07) — 찾기 칸 220 유지, 전 화면 점검 table-top · undo-strip(2026-11-07) — 기준 정보 두 줄 → 한 줄, 표시 범위 · 고르기 칸은 표 제목 줄 곁, 되돌리기 띠를 걷음, 아침 검수 보드 d7 · g17 · g18 · g01 (가)(2026-11-08) — 표시순서 표 위 두 줄, Cut-off CSV 를 저장 줄 끝에, 버전 줄은 제목 옆, 고른 줄 띠는 작업 줄 자리
+- 지금 값: 4장 「표 위 작업 줄 기준 창」 · 「설비 마스터 작업 줄」 · 「기준 정보 표 위 한 줄」 · 「표시순서 제목 줄」
 
 #### UI-LAY-12 · 같은 일을 하는 단추는 한 화면에 하나
 
@@ -497,7 +497,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: SHOULD · 확정
 - 범위: 한 화면의 단추 · 메뉴 항목 · 탭 · 고르기(작업 줄 · 옆 칸 · 표 도구 막대 · 표 아래)
-- 예외: 빈 표 자리의 시작 단추 — 표가 비어 있는 동안만 서서 시작할 일로 데려간다(UI-LAY-10 — 저장된 데이터가 없는 첫 화면의 「+ 새 호기」 · 「엑셀·CSV로 한꺼번에」, 불러오기 전 빈 표의 「일정 확인 n대 불러오기」 · 「전체 n대 불러오기」, 미지정 주요 Case 칩 — UI-LAY-01 예외). / 단축키 · 손짓(두 번 누름 · 끌기)은 단추의 보조 길이다(UI-INP-01 · UI-INP-02). / 화면을 오가는 길(사이드바 · 화면 탭 · Alarm 「그 화면으로」)은 밖이다. / 결과가 다르면 같은 일이 아니다 — 빈 양식과 현재 데이터 내려받기, 「이 호기로 새 호기 만들기」(값을 가져옴)와 「새 호기」 칸, Alarm 표에 다 못 싣는 목록의 전체 CSV(UI-LAY-03 예외), Space 캔버스 크기의 두 자리(사이드바 「캔버스 편집」 은 바로 저장, 편집기 왼쪽 칸 「편집 영역」 은 적용 → 배치 저장 — 저장 시점이 다르다, 6-9 rule-notes g6-23). / 왕복 양식 · 전체 행 — 표 도구 막대가 있어도 고쳐서 되돌려 넣는 왕복 양식(본문 CSV 단추 · 창 안 양식 단추, UI-INP-08)과 표에 다 보이지 않는 전체 행 CSV 는 둔다. 읽기만 하는 표의 곁 CSV 단추는 걷는다(6-9 csv-dup — Qual 마감 계산기 결과 표 · 잠긴 Cut-off 표).
+- 예외: 빈 표 자리의 시작 단추 — 표가 비어 있는 동안만 서서 시작할 일로 데려간다(UI-LAY-10 — 저장된 데이터가 없는 첫 화면의 「+ 새 호기」 · 「엑셀·CSV로 한꺼번에」, 불러오기 전 빈 표의 「일정 확인 n대 불러오기」 · 「전체 n대 불러오기」, 미지정 주요 Case 칩 — UI-LAY-01 예외). / 단축키 · 손짓(두 번 누름 · 끌기)은 단추의 보조 길이다(UI-INP-01 · UI-INP-02). / 화면을 오가는 길(사이드바 · 화면 탭 · Alarm 「그 화면으로」)은 밖이다. / 결과가 다르면 같은 일이 아니다 — 빈 양식과 현재 데이터 내려받기, 「이 호기로 새 호기 만들기」(값을 가져옴)와 「새 호기」 칸, Alarm 표에 다 못 싣는 목록의 전체 CSV(UI-LAY-03 예외), Space 캔버스 크기의 두 자리(사이드바 「캔버스 편집」 은 바로 저장, 편집기 왼쪽 칸 「편집 영역」 은 적용 → 배치 저장 — 저장 시점이 다르다, 6-9 rule-notes g6-23). / 왕복 양식 · 전체 행 — 표 도구 막대가 있어도 고쳐서 되돌려 넣는 왕복 양식(본문 CSV 단추 · 창 안 양식 단추, UI-INP-08)과 표에 다 보이지 않는 전체 행 CSV 는 둔다. 읽기만 하는 표의 곁 CSV 단추는 걷는다(6-9 csv-dup — Qual 마감 계산기 결과 표). 잠긴 Cut-off 표의 곁 CSV 는 감춘 제품구분 칸 · 빈 표 양식을 싣는 왕복 양식이라 둔다(6-11 d6).
 - 판단: 이 단추를 걷어도 같은 화면의 다른 자리에서 같은 대상에 같은 결과를 낼 수 있나? 그렇다면 대상 곁 하나만 남긴다.
 - 그물: `tests/test_static_capa_layout.py`(Static Capa 두 부족 표 아래 CSV 단추 없음) · `tests/test_equipment_master_grid_assets.py::test_the_loader_line_holds_short_names_and_only_the_first_screen_keeps_its_buttons`(「+ 새 호기」 는 첫 화면에만) · `tests/test_qual_deadline_calculator.py`(계산기 결과 표 곁 CSV 단추 없음)
 - 그물 후보: 같은 일 단추
@@ -539,13 +539,13 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 기간 · 범위처럼 두 값을 이어 고르는 입력과 화면마다 자주 바꾸는 고르기 칸은 브라우저 기본 위젯 두 칸에 두지 않고, 한 판(격자 · 빠른 선택)에서 마우스 · 키보드 둘 다로 끝나게 한다. 날짜 입력은 앱 어디서나 사이드바 조회기간과 같은 값 칸 + 기간 판 한 꼴이다 — 브라우저 기본 날짜 칸(`st.date_input`)을 쓰지 않고, 시작 · 끝 두 칸은 범위 칸 하나로 모으며, 범위는 둘 다 차거나 둘 다 빈다.
 
 - 수준: MUST · 확정
-- 범위: 코어 화면의 기간 · 달 · 범위 · 날짜 고르기 등 반복 입력 위젯 — 값이 브라우저에 머무는 컴포넌트 칸(Space 「+ 호기 추가」)도 같은 판이다(폼 안에는 두지 않는다 — 판의 트리거가 제출 때까지 서버에 오지 않는다). 모듈 화면은 공개 창구(`module_api`)에 이 부품이 생길 때까지 밖이다
+- 범위: 코어 화면의 기간 · 달 · 범위 · 날짜 고르기 등 반복 입력 위젯과 공정 판(값 칸 + 타일 판 — 키보드 Tab · 방향키 · Space · Shift+Tab 적용 · Ctrl+Enter, 누른 뒤 초점 유지, Tab 차례는 찾기 → 「전체」 → 「적용」 → 판 — 6-11 P1) — 값이 브라우저에 머무는 컴포넌트 칸(Space 「+ 호기 추가」)도 같은 판이다(폼 안에는 두지 않는다 — 판의 트리거가 제출 때까지 서버에 오지 않는다). 모듈 화면은 공개 창구(`module_api`)에 이 부품이 생길 때까지 밖이다
 - 예외: 표의 칸 — 편집 표 칸 안 날짜(`DateColumn`)와 설비 마스터 호기 상세 · 새 호기 칸의 일정 글 칸(표 칸과 한 몸이라 치거나 붙여넣는다, 브라우저 기본 칸이 아니다 — 글자로 친다, 남은 결정 보드 v7 (가)). / 원천 값을 붙여넣는 시각 칸 — DB 등록 「원천 DB 등록시점」 은 시각까지 받는 글 칸이다(기간 판에 시각이 없고 폼 안이다 — 6-9 rule-notes g2-19). / 구현 중 화면(효율 · UPEH · 수율 실적)의 본문 「분석 기간」 은 화면을 완성할 때 조회 조건과 함께 옮긴다(2026-09-29 범위 결정 — UI-LAY-02 예외와 같다).
 - 판단: 이 값을 고르는 데 몇 번 누르나? 키보드만으로 되나?
-- 그물: `tests/test_date_panel.py`(`st.date_input` 0 · 컴포넌트 조각의 `type="date"` 0 · 폼 안 날짜 칸 0 · 판정 구획 · Space 폼의 같은 판) · `scripts/check_deploy_screens.py` period_popup(달 판만 — 날짜 판은 항목이 없다)
+- 그물: `tests/test_date_panel.py`(`st.date_input` 0 · 컴포넌트 조각의 `type="date"` 0 · 폼 안 날짜 칸 0 · 판정 구획 · Space 폼의 같은 판) · `scripts/check_deploy_screens.py` period_popup(달 판만 — 날짜 판은 항목이 없다) · `tests/test_process_field.py::test_apply_sits_right_before_the_tiles_in_tab_order`(공정 판 Tab 차례 — 방향키 · 찾기도 같은 시험 파일)
 - 그물 후보: 없음
-- 근거: 검수 home-19(2026-11-03), 귀납, 확인 보드 AMB-18 (가)(2026-11-04) — 「년월 선택하는거 지금 화면도 작고 좀 불편한데 개선해」, 그림 검수표 static-35(2026-11-05) — 「날짜 지정 양식을 사이드바 조회기간 칸을 누르면 뜨는 기간판으로 공통 적용」, 남은 결정 보드 v4 · v7 (가)(2026-11-05), 전 화면 점검 rule-notes g2-19(2026-11-07)
-- 지금 값: 4장 「날짜 판 빠른 선택」
+- 근거: 검수 home-19(2026-11-03), 귀납, 확인 보드 AMB-18 (가)(2026-11-04) — 「년월 선택하는거 지금 화면도 작고 좀 불편한데 개선해」, 그림 검수표 static-35(2026-11-05) — 「날짜 지정 양식을 사이드바 조회기간 칸을 누르면 뜨는 기간판으로 공통 적용」, 남은 결정 보드 v4 · v7 (가)(2026-11-05), 전 화면 점검 rule-notes g2-19(2026-11-07), 아침 검수 보드 P1(2026-11-08) — 공정 고르기도 같은 값 칸 + 판(「가 안으로 선택했어」 — 「적용」 을 판 바로 앞, Tab 차례 마지막)
+- 지금 값: 4장 「날짜 판 빠른 선택」 · 「공정 값 칸 글」
 
 #### UI-INP-04 · 적용형 입력은 단추 상태가 말한다
 
@@ -594,7 +594,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 모든 단추 · 칩 · 고르기 칸 · 툴바 단추
 - 예외: 브라우저 컴포넌트 안에서 판정이 끝나는 단추(조회기간 판 「적용」 등)는 잠근다(UI-INP-04).
 - 판단: 이 조작은 지금만 못 하나(→ 잠금 + 까닭), 이 화면에 아예 없나(→ 숨김)? 잠근 단추가 서버가 판정해야 하는 단추인가? 꺼진 단추의 까닭 풍선을 마우스와 키보드로 열 수 있나?
-- 그물: `tests/test_editor_row_order_guard.py`(「적용」 단추 전제 — 잠긴 위젯 한 자리) · `scripts/check_deploy_screens.py` toolbar(가이드 없는 화면의 Guide 숨김) · `tests/test_equipment_scenario_layout_management.py`(발행 막힘 — 표지 + 꺼진 단추 풍선) · `tests/test_equipment_master_grid_assets.py`(「호기 추가」 풍선 — 칸에 판정 줄 없음 · 감싼 칸 · 판정 전 글, 표 안 잠긴 단추의 까닭 · 감싼 칸) · `tests/test_locked_button_help.py`(코어 Streamlit 잠긴 단추의 풍선 유무) · `tests/test_alert_center_assets.py`(꺼진 단추 탭 자리 · 팝오버 들어가기) · `tests/test_paste_form.py`(잠긴 적용 초점 풍선) · `tests/test_sidebar_stylesheet.py`(칸 초점 윤곽) · `tests/test_space_layout_editor_assets.py`(편집기 까닭 풍선 · 감싼 칸 · 잠긴 칸 빨간 글 없음) · `tests/test_reference_grid_page.py::test_the_locked_apply_says_why_and_the_open_one_says_what_it_does`(풍선 글이 까닭인지)
+- 그물: `tests/test_editor_row_order_guard.py`(「적용」 단추 전제 — 잠긴 위젯 한 자리) · `scripts/check_deploy_screens.py` toolbar(가이드 없는 화면의 Guide 숨김) · `tests/test_equipment_scenario_layout_management.py`(발행 막힘 — 표지 + 꺼진 단추 풍선) · `tests/test_equipment_master_grid_assets.py`(「호기 추가」 풍선 — 칸에 판정 줄 없음 · 감싼 칸 · 판정 전 글, 표 안 잠긴 단추의 까닭 · 감싼 칸) · `tests/test_locked_button_help.py`(코어 Streamlit 잠긴 단추의 풍선 유무) · `tests/test_alert_center_assets.py`(꺼진 단추 탭 자리 · 팝오버 들어가기) · `tests/test_paste_form.py`(잠긴 적용 초점 풍선) · `tests/test_sidebar_stylesheet.py`(칸 초점 윤곽) · `tests/test_space_layout_editor_assets.py`(편집기 까닭 풍선 · 감싼 칸 · 잠긴 칸 빨간 글 없음) · `tests/test_reference_grid_page.py::test_the_locked_apply_says_why_and_the_open_one_says_what_it_does`(풍선 글이 까닭인지) · `tests/test_space_shortening_layer_page.py::test_layout_editing_rests_the_layer_and_shows_the_default_colours`(쉬는 회차에도 사이드바 목표 줄이 잠긴 채 서고 까닭은 이름 줄 풍선) · `tests/test_equipment_master_tab_scenarios.py::test_a_stale_warning_that_appears_keeps_the_tab_layout_in_place`(낡은 세션 — 머리 줄 표지 「일정 잠김」 + 풍선)
 - 그물 후보: 잠긴 쓰기 단추 그물
 - 근거: 검수 「괜찮음」 sum-u01(2026-11-03), 검수 「괜찮음」 home-12 · prog-03(2026-11-03 ~ 11-04), 사용자 답(남은 결정 넷)(2026-11-03), AGENTS 9장 「잠긴(disabled) 위젯」, 그림 검수표 equip-44(2026-11-05), 전후 그림 보드 v1(2026-11-05) — 「"아직 추가할 수 없습니다 ..." 알람 문구도 호기 추가버튼에 마우스 올리면 팝업창으로 뜨게하고, 해당 창에서는 안보이게해」
 - 지금 값: 없음
@@ -623,11 +623,11 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 수준: MUST · 확정
 - 범위: 탭 줄 · 사이드바 상자 여닫기 · 팝업 · 끌기
 - 예외: 없음
-- 판단: 이 조작 뒤 서버가 다시 계산해야 할 값이 있나?
-- 그물: `tests/test_sidebar_box_toggle.py` · `tests/test_page_tabs.py`(strip_only_presses_rerun_only_the_empty_fragment · pinning…) · `scripts/check_deploy_screens.py` page_tabs_frame
-- 그물 후보: 앱 전체 회차 0
-- 근거: 검수 「괜찮음」 frame-u04 · u05(2026-11-03), 사용자 UI 요청 ③(2026-11-02) — 「핀 고정 시 로딩이 발생 … 데이터가 갱신될 것이 없어서 부적절한 동작」
-- 지금 값: 없음
+- 판단: 이 조작 뒤 서버가 다시 계산해야 할 값이 있나? 팝업이면 다시 연 창의 서버 판정(여는 알림 · 확인 체크 잠금)이 처음 연 때와 같고, 팝업이 채운 공용 저장값이 남의 저장을 덮지 않나?
+- 그물: `tests/test_sidebar_box_toggle.py` · `tests/test_page_tabs.py`(strip_only_presses_rerun_only_the_empty_fragment · pinning…) · `scripts/check_deploy_screens.py` page_tabs_frame · `tests/test_dialog_host.py`(화면 팝업 호스트 — 열기 · 닫기는 호스트만, `test_dismissing_drops_the_dialog_inputs_so_a_reopened_dialog_starts_fresh`) · `tests/test_standard_target_capa_page.py::test_opening_and_closing_the_paste_dialog_runs_only_its_host` · `tests/test_standard_target_capa_page.py::test_the_paste_template_carries_what_another_session_saved_after_the_page_round` · `tests/test_reference_data_page.py::test_opening_and_closing_the_paste_dialog_runs_only_its_host`
+- 그물 후보: 앱 전체 회차 0 — 공정 팝업 열기 · 닫기 · 타일 누름 0회차 · 적용 1회차(서버 표지로 잼 — 브라우저 `data-stale` 은 회차 판정에 못 쓴다)
+- 근거: 검수 「괜찮음」 frame-u04 · u05(2026-11-03), 사용자 UI 요청 ③(2026-11-02) — 「핀 고정 시 로딩이 발생 … 데이터가 갱신될 것이 없어서 부적절한 동작」, 아침 검수 보드 U5(2026-11-08 — 열기만 해도 앱 전체가 도는 팝업 여덟을 모두 이번에 옮긴다, 권장이 아닌 답) · e2(같은 보드 — 「지금대로」 였으나 U5 로 HOME 두 팝업도 호스트 팝업이 되어 닫기가 HOME 을 다시 돌리지 않는다)
+- 지금 값: 4장 「팝업 여닫기 회차」
 
 #### UI-PRF-02 · 되풀이 입력은 화면이 따르고 서버엔 마지막 한 번
 
@@ -635,10 +635,10 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: MUST · 확정
 - 범위: 앱이 만든 컴포넌트(탭 줄 · 편집기 · 도면 · 사이드바 폭 · 기간 판 · Summary − · +)의 되풀이 입력. 되풀이 조작을 새로 만들 때는 컴포넌트로 만든다(Streamlit 기본 단추 · 슬라이더로 만들지 않는다).
-- 예외: 없음
+- 예외: 고른 대상이 다른 누름은 되풀이가 아니다 — 목록 줄 · 호기를 잇달아 고르거나 Ctrl+Z 를 연달아 치면 누른 수만큼 회차가 돈다(지금대로 — 6-11 c10)
 - 판단: 이 키를 열 번 누르면 서버 회차는 몇 번인가?
 - 그물: `scripts/check_deploy_screens.py` page_tabs_frame(묶어 보냄) · 칸 연속 입력 → 보냄 1회(`tests/test_edit_grid_core_dom.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 기준 정보 편집표, `tests/test_equipment_master_grid_assets.py::test_a_burst_of_cell_edits_goes_out_once_after_the_quiet_time` — 설비 마스터 표)
-- 그물 후보: 연속 N회 → 보냄 1회 — 편집표 · 설비 마스터 표 밖의 되풀이 입력 컴포넌트(Ctrl+Z 연속은 물음 repeat-press 답 뒤)
+- 그물 후보: 연속 N회 → 보냄 1회 — 편집표 · 설비 마스터 표 밖의 되풀이 입력 컴포넌트(Ctrl+Z 연속은 6-11 c10 으로 예외)
 - 근거: 검수 frame-u03(2026-11-03) — 「몇번 연속으로 좌우로 움직이는 경우  불필요한 로딩이 발생하거나 멈추는 경우가 있음」
 - 지금 값: 탭 끌기 묶어 보냄 손 뗀 뒤 0.4초 — 출처 4장
 
@@ -650,10 +650,10 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 앱 껍데기(머리 띠 · 탭 줄 · 사이드바) · 패널 · 칩 줄 · 큰 표
 - 예외: 화면 조작 상자가 바닥 카드에 걸린 채 설 때 — 회차가 끝났을 때 상자 줄 수가 달라졌고 걸렸으면 걸린 만큼만 사이드바를 올린다(`page_box_reveal`). 사람의 보기 조작(휠 · 끌기 · 상자 여닫기 · 폭 끌기)은 그대로 지킨다
 - 판단: 이 조작 뒤 사용자가 보던 줄이 그 자리에 있나?
-- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `tests/test_page_box_reveal.py`(상자 예외의 판정 — 가짜 문서) · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정) · `tests/test_equipment_master_grid_assets.py`(the_selection_bar_floats_above_the_table_head_and_moves_no_row — 고른 줄 띠가 표 줄을 밀지 않는다) · `tests/test_space_layout_editor_page.py::test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_drawing`(저장 상자 줄이 도면을 밀지 않는다)
+- 그물: `tests/test_sidebar_stylesheet.py`(스크롤 칸 높이 상한 — 규칙이 실렸는지만) · `tests/test_flash_messages.py`(`render_flash` 한 칸) · `tests/test_popover_keys.py` · `tests/test_page_box_reveal.py`(상자 예외의 판정 — 가짜 문서) · `scripts/check_deploy_screens.py` page_tabs_frame(스크롤 고정) · `tests/test_equipment_master_grid_assets.py::test_the_selection_bar_takes_the_loader_line_place_while_rows_are_picked`(고른 줄 띠가 고른 동안 작업 줄 자리에 대신 서 표를 밀지 않는다) · `tests/test_equipment_master_grid_assets.py::test_the_table_note_floats_over_the_column_bar_without_pushing_the_table`(표 브라우저 한 줄이 표를 밀지 않는다) · `tests/test_space_shortening_layer_page.py::test_layout_editing_rests_the_layer_and_shows_the_default_colours`(배치 편집을 켜고 꺼도 사이드바 목표 줄 · 「Space 도면」 상자가 움직이지 않는다) · `tests/test_space_layout_editor_page.py::test_the_save_row_stands_while_editing_so_the_first_apply_does_not_push_the_drawing`(저장 상자 줄이 도면을 밀지 않는다)
 - 그물 후보: 보기 조작 전후 스크롤 같음
-- 근거: 검수 home-u04(2026-11-03), 검수 「괜찮음」 frame-u01(2026-11-03), 사용자 UI 요청 ①(2026-11-02) — 「창 틀: 스크롤 아래로 내릴 때 틀이 살짝 움직임. 항상 고정되도록」, 2차 보드 R6 · R7 (가)(2026-11-07) — 상자가 걸리면 사이드바가 스스로 올라가는 것은 둔다, 사람이 그룹을 접었다 편 뒤에는 움직이지 않는다
-- 지금 값: 없음
+- 근거: 검수 home-u04(2026-11-03), 검수 「괜찮음」 frame-u01(2026-11-03), 사용자 UI 요청 ①(2026-11-02) — 「창 틀: 스크롤 아래로 내릴 때 틀이 살짝 움직임. 항상 고정되도록」, 2차 보드 R6 · R7 (가)(2026-11-07) — 상자가 걸리면 사이드바가 스스로 올라가는 것은 둔다, 사람이 그룹을 접었다 편 뒤에는 움직이지 않는다, 아침 검수 보드 g01 (가) · c5 · P1 메모(2026-11-08) — 고른 줄 띠는 작업 줄 자리에 같은 높이 한 줄로, 한 줄 표지는 표를 밀지 않게, 조건 칸 사이 여백은 한 값
+- 지금 값: 4장 「조건 패널 줄 사이」
 
 #### UI-PRF-04 · 브라우저 안 보기 상태는 서버로 보내지 않는다
 
@@ -732,9 +732,9 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 화면 모듈 · components
 - 예외: 없음
 - 판단: 이 꼴을 다른 화면도 그리나? 그렇다면 같은 함수를 부르나?
-- 그물: `tests/test_documentation_inventory.py`(`SHARED_HELPERS` 등재) · `tests/test_profile_caption.py`(화면마다 같은 글) · `tests/test_table_toolbar.py`(`download_button` 한 곳) · `tests/test_formula_text.py` · `tests/test_scenario_list_grid_assets.py`(브라우저 표 공용 조각 `grid_shared_assets/` 가 앞)
+- 그물: `tests/test_documentation_inventory.py`(`SHARED_HELPERS` 등재) · `tests/test_profile_caption.py`(화면마다 같은 글) · `tests/test_table_toolbar.py`(`download_button` 한 곳) · `tests/test_formula_text.py` · `tests/test_scenario_list_grid_assets.py`(브라우저 표 공용 조각 `grid_shared_assets/` 가 앞) · `tests/test_dialog_host.py`(화면 팝업을 여는 꼴 한 부품 `DialogHost`)
 - 그물 후보: 사본 꼴 그물
-- 근거: CLAUDE.md 아키텍처 「components/」, AGENTS 8장, TODO 3장 기록(2026-11-04), 사용자 답 안 3(2026-11-06) — 목록 관리가 설비 마스터의 칸 틀 · 칸 조각 · 「모두 버리기」 를 함께 쓴다
+- 근거: CLAUDE.md 아키텍처 「components/」, AGENTS 8장, TODO 3장 기록(2026-11-04), 사용자 답 안 3(2026-11-06) — 목록 관리가 설비 마스터의 칸 틀 · 칸 조각 · 「모두 버리기」 를 함께 쓴다, 아침 검수 보드 g18 · U5 · P1(2026-11-08) — 제목 옆 버전 줄 한 부품(`profile_caption.render_profile_heading`) · 화면 팝업 호스트 한 부품(`DialogHost`) · 공정 값 칸 한 부품(`process_field`)
 - 지금 값: 없음
 
 #### UI-CON-05 · 구획 제목은 제 시트에 붙고, 구획 사이는 한 값
@@ -786,11 +786,11 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: MUST · 확정
 - 범위: 차트 · 표 · 요약 칸의 확보율 판정
-- 예외: 기준을 직접 넣은 제약 시뮬레이션 계산표는 경고 경계가 없어 두 단계(확보 · 부족)다 — 기준이 HOME 이면 세 단계(6-9 small-fixes g4-14).
+- 예외: 기준을 직접 넣은 제약 시뮬레이션의 계산표 · 그래프 점 · 기존 제품 요약 테두리는 경고 경계가 없어 두 단계(확보 · 부족)다 — 기준이 HOME 이면 셋 모두 세 단계(6-9 small-fixes g4-14 · 6-11 d11).
 - 판단: 이 판정 색은 다른 화면의 같은 판정과 같은 색 · 같은 이름인가?
 - 그물: `tests/test_threshold_label.py`(`test_the_legend_names_three_states_without_numbers` — HOME) · `tests/test_intro_overlay.py`(Summary 범례) · `tests/test_design_tokens.py`
 - 그물 후보: 범례 숫자 · 강조색 쓰임
-- 근거: 검수 「괜찮음」 home-24 · 26 · 27 · 29 ~ 39(2026-11-03), 결정(2026-10-06), 전 화면 점검 small-fixes g4-14(2026-11-07)
+- 근거: 검수 「괜찮음」 home-24 · 26 · 27 · 29 ~ 39(2026-11-03), 결정(2026-10-06), 전 화면 점검 small-fixes g4-14(2026-11-07), 아침 검수 보드 d11 · g12(2026-11-08) — 그래프 · KPI 도 세 단계(경고 주황)
 - 지금 값: 없음
 
 #### UI-DAT-04 · 값 글자는 큰 몫에만, 작은 몫은 풍선
@@ -1222,6 +1222,12 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 | 기준 정보 표 위 한 줄 | 창 폭 1560 이상에서 단추 줄 곁에 표 도구 막대 — 왼쪽 비움 460px · 막대 꼴 높이 2.5rem · 글자 0.875rem · 모서리 8px | 샘플 관측(사이드바 300 · 좌우 여백 35 · 단추 줄 429 · 막대 약 735) · 에이전트 제안 값 · 검수 전(6-9 table-top) | UI-LAY-11 · UI-CON-01 · UI-ACC-02 |
 | 달 표 분류 칸 곁 달 몫 | 달 두 칸(200px) — 본문이 모자라면 분류 칸과 같은 비율로 줄고, 분류 칸 바닥은 가장 넓은 칸이 좌우 여백 36px 을 다 내주는 폭, 달 칸 바닥 80px | 에이전트 제안 값 · 검수 전(6-9 narrow) — 사내 보고 창 1283 에서 달이 한 칸 반 남짓 보인다(샘플 관측) | UI-ACC-02 · UI-LAY-11 |
 | 생산 진도 자리 높이 | max(360px, 100vh − 306px) — 머리말을 걷은 뒤에도 아래 끝을 지킨다 | 에이전트 제안 값 · 검수 전(6-9 head-desc) | UI-LAY-10 |
+| 공정 값 칸 글 | 「전체 N공정」 · 이름 둘까지(「Mold · Underfill」) · 「n / N 공정」 · 하나 고름 STEP별 빈 값 「공정을 선택하세요」 | 에이전트 제안 값 · 검수 전(6-11 P1 — 검수 두 번 가운데 첫째) | UI-LAY-02 · UI-INP-03 |
+| 공용 공정 표지 | 값 칸 테두리 강조색 두 겹 · 이름 줄 출처 「HOME 에서」(실제로 걸렸을 때만) · 없는 공정 주황 배지 「HB 접합 없음」 / 「n개 없음」 + `filter_alt_off` · 본문 칩 35px 「공정 Mold · HOME 에서」(누르면 모든 화면 지움) | 사용자 답 P2-5 · 치수는 에이전트 제안 값 · 검수 전 | UI-LAY-02 · UI-LAY-04 |
+| 조건 패널 줄 사이 | 빈 세로 블록 칸은 높이 · 간격을 먹지 않는다 — 설비 시나리오 → 공정 14.2 → 8.4px(다른 줄 사이와 같음) | 사용자 P1 메모 · 샘플 관측 | UI-LAY-02 · UI-PRF-03 |
+| 팝업 여닫기 회차 | 화면 팝업 호스트 — 열기 · 닫기는 호스트만(표준 목표 붙여넣기 여는 회차 델타 120 → 14 · 닫는 회차 107 → 2), 공정 팝업 열기 · 닫기 · 타일 0회차 · 적용 1회차 | 샘플 관측(사본 앱 · 서버 표지) | UI-PRF-01 |
+| 표시순서 제목 줄 | 제목 칸 끝 = 줄 폭 − 고르기 둘 몫 512px(240 × 2 + 간격 16 × 2), 줄 폭 712px 미만이면 고르기가 내려앉음 · 버전 줄은 제목 곁에서 낱말 사이로 접힘 | 에이전트 제안 값 · 검수 전(창 1600 · 1283 · 1100 에서 한 줄 — 샘플 관측) | UI-LAY-11 · UI-ACC-02 |
+| Cut-off 저장 줄 CSV | 제출 줄 오른쪽 끝 · 안쪽 14px(제출 줄 단추와 같은 윗선) | 사본 앱 측정 · 검수 전(6-11 g17) | UI-LAY-11 · UI-INP-08 |
 
 ## 5. 그물 후보
 
@@ -1386,14 +1392,14 @@ v1.9 규칙으로 페이지 26개를 전수 점검한 뒤(`sweep/rules-1107`) �
 - table-top · 표 위에 줄이 여럿 쌓여 표가 밀림(기준 정보 · 표준 목표 · 표시순서 관리) → **줄을 합친다** — 기준 정보 두 줄을 한 줄로(기준 창에서 단추 줄 곁에 표 도구 막대), 표시 범위 · 범위 고르기 칸은 표 제목 줄 곁으로 (2026-11-07 · UI-LAY-11)
 - place-box · 화면 위 노란 상자 넷(옛 판 흔적 · 캔버스 밖 호기 · 실적 결론 · 원천 품질 결론) → **흔적 · 호기는 Alarm 으로 옮기고, 결론 둘은 상자 없는 한 줄로 바꾼다** — 옛 판 흔적은 `SC-03` 전문, 저장된 캔버스 밖 호기는 전 층을 훑는 `EQ-18`. 제약 시뮬레이션 달마다 보기의 노란 결론은 이 답 밖이라 남았다 (2026-11-07 · UI-NTF-02 · UI-TXT-04)
 - undo-strip · 붙여넣기 · 일괄 삭제 뒤 표 위 되돌리기 띠가 표를 밀어냄 → **띠를 걷고 되돌리기는 오른쪽 칸 「한 단계 되돌리기」 로 모은다** — 결과는 알림창, 일괄 삭제 되살리기는 「한 단계 되돌리기」 의 맨 밑 단계다 (2026-11-07 · UI-NTF-03 · UI-LAY-11)
-- head-desc · 화면 머리말에 소개 뒤 사용법 · 길 안내가 이어짐 → **머리말을 모두 걷는다** 「꼭 필요한 소개 문구는 guide에 포함.」 — 권장(소개 한 문장만 남김)이 아닌 답이다. 소개 말은 그 화면 Guide 로 옮기고 Guide 가 없던 일곱 화면에 새로 달았다. 생산 진도 묶음 넷은 제목 · 자리 글과 같은 말이라 Guide 없이 걷었다. 남은 자리는 모듈 공개 창구(계약)와 필요 단축 일정(문구 전달 대기) 둘이다 (2026-11-07 · UI-TXT-01 · UI-TXT-02 · UI-LAY-08)
+- head-desc · 화면 머리말에 소개 뒤 사용법 · 길 안내가 이어짐 → **머리말을 모두 걷는다** 「꼭 필요한 소개 문구는 guide에 포함.」 — 권장(소개 한 문장만 남김)이 아닌 답이다. 소개 말은 그 화면 Guide 로 옮기고 Guide 가 없던 일곱 화면에 새로 달았다. 생산 진도 묶음 넷은 제목 · 자리 글과 같은 말이라 Guide 없이 걷었다. 남은 자리는 모듈 공개 창구(계약)와 필요 단축 일정(문구 전달 대기) 둘이었고 6-11 d1 · g03 으로 둘 다 걷었다 (2026-11-07 · UI-TXT-01 · UI-TXT-02 · UI-LAY-08)
 - side-pending · 표를 고치는 중이면 사이드바 조건 패널 맨 위 문장과 머리 변경 칩이 같은 말을 함 → **왼쪽 문장을 걷고 칩 · 변경 판에 맡긴다** — 버려지는 순간은 팝업이 묻는다 (2026-11-07 · UI-LAY-04 · UI-TXT-07)
 - filter-empty · 조건 때문에 화면이 비었는데 까닭이 없음(VOC 필터를 건 채 접은 카드 · HOME 공정 0개 적용) → **지금대로** — 권장(접힌 카드 「필터 1」 · HOME 「판정 공정 없음」 표지)이 아닌 답이다. 화면은 그대로이고 규칙 글도 바꾸지 않는다 (2026-11-07 · UI-STA-03)
 - bottom-row · 공정 Capa 상세 맨 아래 「이 공정 단축 일정 CSV」 · 「필요 단축 일정」 단추가 표에서 멂 → **CSV 는 단축 일정 표 곁으로 올리고, 필요 단축 일정 단추는 다른 길이 없는 공정에만 남긴다** — 호기 CSV 는 표 도구 줄 오른쪽 끝, 링크는 도착 ← · KPI 일정 줄이 없는 공정에만 (2026-11-07 · UI-LAY-03 · UI-LAY-12)
 - csv-dup · 같은 표를 내려받는 단추가 두 자리(표 곁 CSV 단추와 표 도구 막대 · 메뉴 양식과 창 안 양식) → **왕복 양식 · 전체 행은 두고, 읽기만 하는 표의 곁 CSV 단추는 걷는다** — Qual 마감 계산기 결과 표 · 잠긴 Cut-off 표 (2026-11-07 · UI-LAY-12 · UI-INP-08)
 - csv-name · 표 도구 막대 내려받기에 화면용 공정 이름이 들어감 → **지금대로** — 화면 이름 파일, 찾기도 그대로. 규칙은 왕복 양식과 Static 두 표로 좁힌다 (2026-11-07 · UI-DAT-10)
 - desc-blocks · 연결 전 · 접힌 칸의 설명 덩어리(일부는 개발 메모) → **개발 메모는 할 일 문서로 옮기고, 연결 전 설명은 한 줄 표지로 줄이고, 산식 설명은 화면을 완성할 때 Guide 로 옮긴다** — 연결 전 화면은 점선 자리 + 「… 연결 대기」 한 줄 + 제목 풍선, Dynamic Capa 「산식 가이드」 탭은 완성 때 (2026-11-07 · UI-TXT-01 · UI-LAY-10 · UI-TXT-08)
-- pickers · 공정 · 달을 고르는 칸의 꼴이 화면마다 다름(칩 칸 · 상자 두 칸 · 팝업 값 칸) → **공정 고르기까지 모두 같은 꼴로 바꾼다(큰 고침)** 「공정 고르기도 사용되는 모든 페이지에 같은 꼴로 적용하고, 예를들어서 HOME에서 공정 A를 골랐다면, 기준정보 페이지로 갔을때도 자동적으로 공정 A에 필터가 동일하게 작동하게끔 하는거 가능한지 확인해」 — 권장(지금대로 · 규칙 예외)이 아닌 답이다. 화면 사이 공정 고름을 잇는 길이 되는지 조사 중이라 규칙 글은 아직 바꾸지 않았다 (2026-11-07 · UI-LAY-02 · UI-INP-03)
+- pickers · 공정 · 달을 고르는 칸의 꼴이 화면마다 다름(칩 칸 · 상자 두 칸 · 팝업 값 칸) → **공정 고르기까지 모두 같은 꼴로 바꾼다(큰 고침)** 「공정 고르기도 사용되는 모든 페이지에 같은 꼴로 적용하고, 예를들어서 HOME에서 공정 A를 골랐다면, 기준정보 페이지로 갔을때도 자동적으로 공정 A에 필터가 동일하게 작동하게끔 하는거 가능한지 확인해」 — 권장(지금대로 · 규칙 예외)이 아닌 답이다. 화면 사이 공정 고름을 잇는 길이 되는지 조사 중이라 그때 규칙 글은 바꾸지 않았다 — 조사 뒤 6-11 P1 · P2 로 답해 1차를 구현하고 규칙 글을 바꿨다 (2026-11-07 · UI-LAY-02 · UI-INP-03)
 - names · 같은 것을 두 이름으로 · 한 이름을 두 뜻으로 부르는 자리 여덟 → **권장 이름표대로 모두 바꾼다** — 「확보 기준」 · 사람이 정하는 동작 「지정」 · 칸 「공식 이력」 · HOME 상자 「공지」 · 「이 서버에서는」 · 「붙여넣기 적용」 / 「붙여넣기 올리기」 · 「이 조건의 개조 창」 · 「화면 고정」 · 「소요기준」. 칸 이름 · DB 이름은 그대로이고, 자동 갱신이 스스로 하는 「발행」 과 필요 단축 일정 글은 남았다 (2026-11-07 · UI-CON-02)
 - small-fixes · 규칙에 안 걸리거나 판단이 갈리는 작은 손질 32건 → **권장대로 모두 고친다** — 그 가운데 규칙 글에 닿은 것은 g1-06(UI-NAV-01) · g4-14(UI-DAT-03 예외) · g4-15(UI-DAT-07) · g4-26(UI-STA-03 예외) · g8-16(UI-NTF-03 예외 여덟 곳)이다 (2026-11-07 · UI-NAV-01 · UI-DAT-03 · UI-DAT-07 · UI-STA-03 · UI-NTF-03)
 - rule-notes · 화면은 그대로 두고 규칙에 「여기는 이렇게 둔다」 로 적을 자리 11건 → **화면 그대로, 규칙에 적는다** — g1-15 UI-TXT-01 · g2-10 UI-LAY-03 · g2-19 UI-INP-03 · g2-20 UI-INP-01 · g2-21 UI-NTF-03 · g2-26 UI-DAT-02 · g3-14 UI-INP-08 · g5-21 UI-LAY-09(4장) · g6-23 UI-LAY-12 · g6-29 UI-STA-06 · 구현 중 화면 유예 UI-LAY-02 · UI-INP-03 의 예외 · 값으로 적었다 (2026-11-07 · UI-TXT-01 · UI-LAY-03 · UI-INP-03 · UI-INP-01 · UI-NTF-03 · UI-DAT-02 · UI-INP-08 · UI-LAY-09 · UI-LAY-12 · UI-STA-06 · UI-LAY-02)
@@ -1409,6 +1415,75 @@ v1.9 규칙으로 페이지 26개를 전수 점검한 뒤(`sweep/rules-1107`) �
 - R5 · 같은 창을 여는 단추 이름 둘(첫 화면 「엑셀·CSV로 한꺼번에」 · 메뉴 안 「한꺼번에 넣기」) → **(가)** 둘 다 「엑셀·CSV로 한꺼번에」 (2026-11-07 · UI-CON-02)
 - R6 · Space 에 들어올 때 사이드바가 스스로 올라가도 될까 → **(가)** 둔다 — 상자가 처음부터 다 보인다. UI-PRF-03 상자 예외(v1.8 에 확인을 남겨 둔 채 더함)가 확정됐다 (2026-11-07 · UI-PRF-03)
 - R7 · 사람이 그룹을 접었다 펴서 상자가 다시 걸리면 → **(가)** 지금대로 — 사람 조작 뒤에는 자리를 움직이지 않는다 (2026-11-07 · UI-PRF-03)
+
+### 6-11. 2026-11-08 아침 검수 보드 답
+
+전 화면 점검 2차 고침과 못 본 상태 점검을 합친 뒤 정할 칸 11 · 작은 결정 46 · 그림 24 를 물은 답이다(PRC-02 — 보드 `https://claude.ai/artifact/QZSPDJZcnWD4K8CLze4mzj`). 정할 칸은 열 개가 권장이고 U5 만 권장이 아니다. 작은 결정 46줄은 「권장대로 모두」 이고, 그림은 열여덟이 「괜찮음」 · 여섯이 고침 요청이다(g01 은 같은 날 비교 페이지에서 (가)를 골랐다). 고침 요청 · P1 · P2 는 메모 원문을 그대로 적는다(여러 줄은 「 / 」 로 이음). 답은 위 규칙 글과 화면 묶음 열둘(`morning/f0` · `morning/f1` · `morning/r0` ~ `morning/r9`)로 입혔다(8장 v1.11). D1 ~ D3 은 화면 밖 답이라 배포 런북 7장 초안에 입혔다.
+
+- D1 · S3 이관을 이번 배포에 함께 할까 → **나눠 한다 — 이번 배포는 화면 고침과 C-DEP 첫 CI/CD(S3 키 넣기)까지, 이관은 다음 배포에서. 직전 배포 뒤 커밋이 421개라 문제가 나면 어느 쪽 탓인지 가르기 쉽다** — 런북 7장 초안의 이관 절은 「다음 배포」 메모로 뗐다 (2026-11-08 · PRC-02 · PRC-04)
+- D2 · 관문이 통과하면 deploy: 커밋만 먼저 푸시해도 될까 → **된다 — deploy: 커밋만 먼저 올린다(초안이 이렇게 쓰였다)** — 사내 4-3 관문 통과 뒤 (2026-11-08 · PRC-02)
+- D3 · 이관 확인용 저장 하나를 무엇으로 할까 → **공지에 이관 소식 한 줄을 저장하고 그대로 둔다 — 동료가 봐도 되는 글** — 다음 배포(이관) 때 (2026-11-08 · PRC-02 · UI-TXT-01)
+- X1 · 값이 틀어지거나 적은 글이 사라지는 남은 길 넷 → **넷 다 권장대로 고친다** — 설비 마스터 칸 옛 값 통째 고름 · Cut-off 보기 설정을 폼 안으로 · 미룬 되돌리기가 비가동 표 편집을 먼저 넣음 · VOC 적어 둔 답변을 탭 점 · 변경 칩 · 새로고침 확인에 (2026-11-08 · UI-NTF-05 · UI-STA-02 · UI-INP-01)
+- P1 · 화면 사이 공정 공유 — 얼마나 할까 → **권장안 — 세 번에 나눠 한다(1차부터, 사용자 검수 두 번)** — 이번은 1차: 공용 칸 · 값 칸 팝업(하나 고름 · 여러 개 고름) · 따라감 7자리 · HOME 복사 · 공정 Capa 상세 · 제약 받기 · 지킴 다섯 · 표지, 조건 칸 사이 여백을 한 값으로 「꼴 — 지금 칩 · 상자 → 값 칸 + 팝업 이미지에서 공정 Capa 상세, 가용설비 Main, Space는 공용 칸에 넣었을때 간격이 일정하지 않게 더 많이 들어간거같아 (그 위 조건과 공정 조건 사이 여백 - 공정 Capa 상세를 예로들면 설비 시나리오와 공정 사이 여백)」 (2026-11-08 · UI-LAY-02 · UI-INP-03 · UI-CON-03)
+- P2 · 공정 공유 — 잇는 규칙 다섯 → **다섯 모두 권장대로** — HOME 은 보내기만 · 한 공정 화면은 받기만 · 저장 기본값은 건드리지 않음 · Static 은 전체 · 실적은 연결 뒤 · 표지는 값 칸 강조 + 본문 칩, 공용 값은 모듈 하나에 가둠 「공정 선택을 공용화하는게 앞으로 기능 추가할때도 주의깊게 봐야하는 요소일것같은데, 계속 모니터링해보고 적절치 않다고 판단되면 다른 구조로 바꾸거나 원복을 검토해야겠음.」 (2026-11-08 · UI-LAY-02 · UI-LAY-04 · UI-STA-03)
+- U1 · 접속 명단 — 「Select all」 로 전원 지우기 → **「Select all」 을 뺀다 — 한 사람씩 고른다** — 접속 명단 지울 사람 칸 (2026-11-08 · UI-NTF-09)
+- U2 · HOME 프리셋 「기본으로」 를 두 사람이 겹쳐 누를 때 → **화면이 본 기본과 지금 기본이 다르면 거절한다 — 묶음에 하나뿐인 값이라 이 값만 본다** — 주요공정 프리셋 대조에 본 기본 이름을 더함 (2026-11-08 · UI-STA-05)
+- U3 · 계획 행만 있는 원천을 등록할 때 → **등록 점검이 빈 표를 잡아 기존 등록 뒤 「계산 멈춤」 알림으로 낸다** — 빈 경로 표를 등록 점검이 잡고 메모 끝 `대당 Capa 계산 멈춤(빈 표 …)` (2026-11-08 · UI-NTF-05 · UI-NTF-06)
+- U4 · S3 명단을 못 읽는 동안 → **둘 다 고친다 — 거절 글을 「확인하지 못했습니다」 로 가르고 관리자에게 어느 화면에서나 알린다** — 사유 코드 `list_unread` · `AD-08` · `AD-09` 를 앱 정보 카드가 냄 (2026-11-08 · UI-NTF-05 · UI-NTF-06)
+- U5 · 팝업을 열기만 해도 앱 전체가 도는 것 → **여덟 팝업 모두 이번에 옮긴다 — 크기가 크다** — 권장이 아닌 답이다(권장 「HOME 세 팝업부터 옮기고 나머지 다섯은 다음 판」). 화면 팝업 호스트 `DialogHost` 로 HOME 셋 · 기준 정보 · 표준 목표 · Qual 마감 계산기 · 공식 지정 · Space 캔버스 (2026-11-08 · UI-PRF-01)
+- a1 · 남의 저장에 진 거절이 열 자리(판정 기준 · Summary · 프리셋 · Cut-off 등)에서는 팝업 곁에만 서서, 닫으면 기록이 없습니다 → **곁 + 알림창 · Alarm 으로 맞춘다 — 입력 탓 거부는 곁만 그대로** (2026-11-08 · UI-NTF-03)
+- a2 · 주요 Case 를 고르거나 VOC 「답변 완료로 표시」 를 누르면 저장되는데 알림이 없습니다 → **VOC 표시만 알림을 낸다 — 고르면 곧 저장은 버전 줄이 결과라고 규칙에 적는다** (2026-11-08 · UI-NTF-03)
+- a3 · 리비전이 오르면 같은 상태 알림이 「해소」 로 찍혀 풀린 것처럼 읽힙니다 → **「해소」 대신 「범위 바뀜」 으로 — 모든 상태 알림** (2026-11-08 · UI-NTF-02)
+- a4 · 「소요대수에 안 든 수요」 알림의 「그 화면으로」 가 저장한 화면으로 갑니다 → **산출 결과 › 소요대수 탭으로 보낸다** (2026-11-08 · UI-NTF-02 · UI-NAV-01)
+- a5 · 설비 마스터 「리비전 저장」 이 DB 쓰기 뒤 끊기면 제 저장이 「다른 사용자가 저장」 으로 보입니다 → **제 저장 표지로 뒷정리 · 성공 알림을 잇는다(저장 대조를 넓힘)** (2026-11-08 · UI-STA-05)
+- a6 · 「리비전 저장」 거부 뒤 곧 다시 누르면 앞 거부의 곁 글이 사라집니다(알림창 · Alarm 에는 남음) → **지금대로** (2026-11-08 · UI-NTF-03)
+- a7 · 공식 지정 팝업이 그 사이 보관 같은 저장소 거부를 받으면 알림이 둘(카드 곁 + 알림창) 뜹니다 → **지금대로 — 팝업을 닫으면 적은 글을 잃는다** (2026-11-08 · UI-NTF-03)
+- a8 · 활성 시나리오가 0건(보관본만)일 때 Alarm 글이 「활성 DuckDB 리비전 버전이 없습니다」 라 보관함을 가리키지 않습니다 → **이 상태만 글을 갈라 보관함에서 되돌리라고 한다** (2026-11-08 · UI-NTF-06)
+- a9 · 옛 판 흔적 알림(SC-03) 전문이 Alarm 에서 두 줄로 잘려 되살리는 길이 바로 안 보입니다 → **머리 글을 줄인다** (2026-11-08 · UI-NTF-06)
+- a10 · 조회기간 밖 모듈수 멈춤에도 서비스 글이 「기준 정보에서 고친 뒤」 라고 말합니다(알림 전문에서는 뺐음) → **그 글도 고친다** (2026-11-08 · UI-NTF-06)
+- a11 · 0 이하 멈춤의 건수가 행 수에서 칸 수로 바뀌어, 같은 글을 싣는 기준 정보 오류 상자 · 등록 점검 안내의 수도 작아졌습니다 → **그대로 — 칸 수가 고칠 곳의 수다** (2026-11-08 · UI-NTF-06)
+- b1 · 로그아웃 · 로그인 오류 화면(앱 밖)에 설명 문장과 손으로 옮기는 진단 표가 있습니다 → **예외로 둔다 — 제목을 거듭하는 첫 문장만 걷고 [ ] 를 「 」 로** (2026-11-08 · UI-TXT-01 · UI-TXT-04)
+- b2 · 다시 로그인 띠 아래에 영어 창 「Connection failed with status 401」 이 가려진 채 남습니다 → **띠가 선 동안 그 창을 감춘다** (2026-11-08 · UI-LAY-05)
+- b3 · 사이드바 카드 끝 「로그인 최대 시간까지 20분 — 저장해 두세요」 는 상태 글 + 하는 법입니다 → **「— 저장해 두세요」 만 걷고 남은 시간은 둔다(말은 Guide)** (2026-11-08 · UI-TXT-01)
+- b4 · 같은 화면에 명단은 「판 0」, 바로 아래 표는 「공용 버전 v1」 입니다 → **명단도 「버전 n」 으로 — 알림 · Guide · 사내 리뷰 꼴까지** (2026-11-08 · UI-CON-02)
+- b5 · 접속 명단에서 20명쯤 고르면 칩 칸이 세로로 굴러 일부가 칸 밖에 숨습니다 → **그대로 — Streamlit 공통 상한** (2026-11-08 · UI-ACC-02)
+- b6 · 계정 바뀜 멈춤 화면에 사이드바 앱 이름 라벨이 남고(눌러도 반응 없음), 변경 판 「그 화면으로」 는 판만 닫습니다 → **라벨도 숨긴다 · 「그 화면으로」 는 지금대로** (2026-11-08 · UI-LAY-05)
+- c1 · 남이 일정을 저장하면 설비 마스터 위에 세 문장 상자가 섭니다(사이드바 「최신 r4 있음」 과 같은 말) → **상자를 걷고 머리 줄 표지 + 풍선 · 상태 알림으로 — Space 잠금과 같은 꼴** (2026-11-08 · UI-NTF-02 · UI-INP-07)
+- c2 · 필터 중에는 같은 표 안에서 Ctrl+C 한 여러 줄 붙여넣기도 막힙니다 → **지금대로 막는다 — Ctrl+D · 채우기 손잡이는 된다** (2026-11-08 · UI-INP-01)
+- c3 · 설비 마스터 표의 여러 줄 붙여넣기(필터가 없는 표) → **지금대로 둔다** (2026-11-08 · UI-INP-01)
+- c4 · 설비 마스터 오른쪽 상세 칸에 친 글이 남의 저장으로 바탕이 바뀌면 말없이 비워집니다 → **표의 연 칸과 같은 길로 보낸다** (2026-11-08 · UI-NTF-05)
+- c5 · 「붙여넣는 중」 · 이름 붙여넣기 거부 · 칸 수 상한 한 줄이 아직 표를 43 ~ 53px 밉니다 → **밀지 않게 한다** (2026-11-08 · UI-PRF-03)
+- c6 · 일괄 삭제 뒤 오른쪽 칸이 접혀 있으면 「한 단계 되돌리기」 가 안 보입니다 → **삭제를 확정할 때 「저장 전 변경」 칸을 연다** (2026-11-08 · UI-NTF-09)
+- c7 · 일괄 삭제를 확정하면 그 앞 표 고침은 되돌릴 수 없습니다(값은 남음) → **이대로 둔다** (2026-11-08 · UI-NTF-09)
+- c8 · 「한 단계 되돌리기」 는 잠그지 않습니다 → **그대로** (2026-11-08 · UI-INP-07)
+- c9 · 적용 전 편집이 있으면 새 리비전 저장 창에 비슷한 안내 상자가 둘 섭니다 → **위 상자를 값 줄로 줄이고 말은 체크 풍선 · 거절 한 줄에** (2026-11-08 · UI-NTF-09)
+- c10 · 목록 줄 · 호기를 잇달아 고르거나 Ctrl+Z 를 연달아 치면 누른 수만큼 앱이 돕니다 → **지금대로 — 「고른 대상이 다른 누름은 되풀이가 아니다」 로 규칙에 적는다** (2026-11-08 · UI-PRF-02)
+- c11 · 확인 체크로 잠기는 설비 시나리오 「되돌리기」 · 「배치 차이 모두 지우기」 · 사이드바 「설비 데이터 저장」 풍선이 왜 잠겼는지 말하지 않습니다 → **까닭을 말하게 한다** (2026-11-08 · UI-INP-07)
+- d1 · 모듈 화면 머리말(창구 page_header 의 description)은 공개 계약이라 남겼습니다 → **다음 창구 판에서 걷는다 — 인자는 받되 그리지 않아 동료 모듈이 깨지지 않는다** (2026-11-08 · UI-TXT-01)
+- d2 · 생산 진도 묶음 넷의 머리말을 Guide 없이 지웠습니다 → **그대로 — 소개가 필요하면 그때 Guide 를 단다** (2026-11-08 · UI-TXT-01 · UI-LAY-08)
+- d3 · 자동 갱신이 스스로 하는 「발행」(결과 칸 · 풍선 · Guide · 런북 4-4)이 아직 「지정」 이 아닙니다 → **「지정」 으로 맞춘다 — 한 개념 한 이름** (2026-11-08 · UI-CON-02)
+- d4 · 샘플을 끈 실적 · Dynamic · 재공 · Chatbot 에서 머리 배지 「… 미연결」 과 자리 표지 「… 연결 대기」 가 같은 말입니다. 재공부족 미활용률도 화면에서 빠졌습니다 → **끈 상태에서는 머리 배지를 뺀다 · 미활용률은 데이터 연결 뒤 공정 상세에 되살린다** (2026-11-08 · UI-TXT-07)
+- d5 · Admin 표시명 경고가 「바뀐 것이 없습니다」 와 다른 자리(머리 칸)에 서서 저장 단추를 밉니다 → **경고도 저장 줄 아래로 옮긴다** (2026-11-08 · UI-PRF-03)
+- d6 · 잠긴 Cut-off 표의 곁 CSV(왕복 양식)를 걷어, 감춘 「제품구분」 칸과 빈 표 양식을 받을 길이 없습니다 → **곁 단추를 되살린다 — 「왕복 양식은 둔다」 는 csv-dup 답 쪽** (2026-11-08 · UI-LAY-12)
+- d7 · 표시순서 표 위는 아직 셋 줄이고, 모듈 상태 표는 창 1283 에서 뒤 칸이 가로 스크롤 뒤입니다 → **표시순서는 저장 · 메모 줄과 CSV 줄을 합친다 · 모듈 상태는 그대로** (2026-11-08 · UI-LAY-11)
+- d8 · 표준 목표 「예외 처리 공정」 펼침의 「현재 조회범위 제외 행」 수를 어디에 둘까 → **공정 칸 풍선** (2026-11-08 · UI-TXT-04)
+- d9 · 자동 갱신 실행 기록 「사유」 칸은 풍선에 맡기기로 했는데 실제로 풍선이 없습니다 → **표 칸 풍선을 만든다 — 앞 결정대로** (2026-11-08 · UI-TXT-04)
+- d10 · 창 1100 에서 오류 칸을 Shift 로 범위까지 고르면 상태 줄의 칸 위치 글이 잘립니다(풍선으로는 읽힘) → **풍선으로 둔다** (2026-11-08 · UI-ACC-02)
+- d11 · 제약 시뮬레이션 — HOME 기준이면 계산표는 세 단계 색인데 그래프 점 · KPI 테두리는 두 단계입니다(그림 g12) → **그래프 · KPI 도 세 단계로(경고 주황) · 확보 칸 회색이 맞다** (2026-11-08 · UI-DAT-03)
+- d12 · Qual 마감 계산기 곁 CSV 를 걷어 내려받는 파일 꼴(달 꼴 · 칸 구성)이 옛 CSV 와 다릅니다. 시험만 쓰는 복사 표 함수가 남았습니다 → **이대로 괜찮음 · 그 함수와 대조 시험은 걷는다** (2026-11-08 · UI-LAY-12)
+- d13 · Space 미배치 수 — 칸 머리 「(모듈 n)」 셈, 접힌 단추 「미배치 4」, 「호기 정보」 머리 「미배치 5」 와 칸 「4대」 의 차이 → **(모듈 n) 은 묶음 칩의 모듈만 센다 · 접힌 단추도 설비 대수로 · 5 와 4 차이는 지금대로(n등분하면 맞음)** (2026-11-08 · UI-DAT-07)
+- d14 · 필요 단축 일정 「미저장 편집 포함」 표지를 줄에 남겼습니다 → **그대로** — 필요 단축 일정 상단 정리(g03) 뒤에도 값 줄에 남는다 (2026-11-08 · UI-TXT-04)
+- d15 · 따라하기 가이드 원고의 공식 지정 거절 안내(「팝업을 닫고 다시 열어…」)가 낡았습니다(그림 g23) → **원고 판을 올려 고치고 예시판을 다시 묶는다 — 바뀐 자리는 다음 보드에서 본다** (2026-11-08 · UI-TXT-02)
+- e1 · 드문 조건(대화상자 안 조작 직후 끊김)에서 다시 붙을 때 HOME 계산이 두 번 돕니다. 입력은 남습니다 → **받아들인다** (2026-11-08 · UI-PRF-01)
+- e2 · 누를 때만 여는 대화상자 셋(HOME 공정 필터 · 주요공정 히트맵 · Guide)은 1초 끊김에도 닫힙니다(새로 잃는 입력은 없음) → **지금대로 — 바꾸면 닫을 때마다 HOME 이 한 번 더 돈다** — 같은 보드 U5 로 HOME 두 팝업이 호스트 팝업이 되어 짧은 끊김 뒤에도 다시 서고, 닫기가 HOME 을 다시 돌리지 않는다 (2026-11-08 · UI-PRF-01)
+- e3 · 폼 안 편집표 7곳은 재시작 뒤에도 고침이 칸에 남아 「입력은 사라졌습니다」 알림이 실제보다 넓은 말이 됩니다 → **지금대로 — 칸에 남고 누르면 보이는 대로 저장된다** (2026-11-08 · UI-NTF-05)
+- g01 · 설비 마스터 — 줄을 고르면 뜨는 띠의 자리 → **고친다** 「이거 무슨 규칙에 의해 이렇게 만들게된거지? 요청이 있었나?」 — 고른 동안 표 위 작업 줄(찾기 · 공정별 · 조건별 · 일정 확인 · 엑셀·CSV) 자리에 같은 높이 한 줄로 「선택 n대 · 값 넣기 ▾ · 일정 밀기 ▾ · 선택 n대 지우기 · 선택 풀기」 가 대신 서고, 두 줄 띠의 조작은 「값 넣기」 · 「일정 밀기」 팝업 안으로, 창 아래 끝 띠는 걷었다(옛 끝 띠는 규칙 본문이 정한 꼴이 아니라 g5-03 때 UI-PRF-03 을 지키려고 에이전트가 고른 꼴이었다 — 사용자 요청 없음) (2026-11-08 · UI-PRF-03 · UI-LAY-11)
+- g03 · 필요 단축 일정 — 진척 보드 줄을 누르면 그 카드로 → **고친다** 「필요 단축일정 페이지 상단에 문구들이 너무 많음 / 단축이 필요한 공정 전부의 진척 관리 한 페이지 — 공정 진척 보드 · 기한 임박 · 이행 지연 · 공정 카드. 공정 하나를 깊게 보려면 카드의 「공정 Capa 상세에서 근거 보기」 입니다. / 설비 일정 기준 가용(환산) · 오늘 2026-11-08 / 진척 비교 / 비교 안 함 / 목표 확보율 / 110% / 일정 미정 2대 (반입 미정 2) / 사용기준 HBM·EDP 밖 2대 제외 / 입력 비가동 반영(4칸 · 합 22대 · 가용 넘침 1칸) / 그리고 공정 진척 보드도 접고 펼수있게하고, 기본적으로 접혀있게 셋팅해」 — 머리말은 Guide 첫 단락으로, 진척 비교 · 목표 확보율은 사이드바 「필요 단축 일정 조건」 카드 맨 위로, 상태 표지 셋은 값 줄 끝 한 줄 표지 + 풍선 · `RS-03` ~ `RS-05`, 공정 진척 보드는 처음 접힌 상자 (2026-11-08 · UI-TXT-01 · UI-LAY-02 · UI-NTF-02)
+- g05 · Space — 배치 적용 뒤 저장 상자가 한 줄로 → **고친다** 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동」 — 목표 확보율 전환 단추를 사이드바 조회 조건 패널 줄로(배치 편집으로 쉬는 회차에도 잠근 채 같은 자리) (2026-11-08 · UI-LAY-02)
+- g12 · 제약 시뮬레이션 계산표 — HOME 기준 세 색 → **고친다** 「[WF 입고검사 · DEMO-H8A · 26.11–28.12 · 제약 120% · 기준 HOME(월별) · 개조 30일] / [ 소요 = 활성 시나리오 「26년 11월 정기 Capa 검토 r3」 WF 입고검사 소요를 제품정보로 나눔(DEMO-H8A / 그 밖) · 가용 = 설비 일정 기준(공식 v3, 단축 전) ] / [머리 옅은 칠 = 제약 기간 · 칸 색 = 확보 · 경고 · 부족(제약 칸은 제약 목표에 못 미치면 부족색) · 파란 글자 = 줄어든 값 · 대수는 환산 대수] 이 문구들도 가이드문서로 이동. / 제약 영향, 개조 일정 버튼도  사이드바 조건박스로 배치 / [26.11 · WF 입고검사 · 제약 기간 ... 계산 풀이 박스] 이 박스도 제거하고 문구들 필요하면 정리해서 가이드문서에 배치 / [이 조건의 개조 창 ... ] 최하단 박스도 제거, 필요한 내용만 정리해서 가이드문서로」 — 대괄호 머리 글 줄 셋 · 계산 풀이 카드 · 「이 조건의 개조 창」 카드를 걷고 말은 Guide 「한 달의 계산」 · 「개조 창」 · 「신규 대기」 와 칸 풍선으로, 「제약 영향 | 개조 일정」 은 조건 카드 맨 위로 (2026-11-08 · UI-TXT-01 · UI-TXT-02 · UI-LAY-02)
+- g17 · Cut-off — 「설비 공정으로 채우기」 단추 자리 → **고친다** 「CSV 다운로드 버튼도 cut저장 버튼 옆으로 한줄에 세워」 — Cut-off CSV 를 「Cut-off 저장」 · 「설비 공정으로 채우기」 와 한 줄 오른쪽 끝에(창 작업 줄은 적용 왼쪽 · 내려받기 오른쪽 — UI-INP-08) (2026-11-08 · UI-LAY-11 · UI-INP-08)
+- g18 · 변경 메모 — 저장하면 칸이 빔 → **고친다** 「공용 버전v3 .... 타임스탬프 줄을 각 타이틀 옆으로 배치」 — 공용 버전 줄을 각 상자 제목 옆 한 줄로(`profile_caption.render_profile_heading` — HOME 설정 상자마다 · 자동 갱신 설정 · 입력 비가동 · 표시순서 · Proc Rename) (2026-11-08 · UI-LAY-11 · UI-CON-04)
+- pictures-ok · 그림 18칸(g02 · g04 · g06 · g07 · g08 · g09 · g10 · g11 · g13 · g14 · g15 · g16 · g19 · g20 · g21 · g22 · g23 · g24) → **괜찮음** 메모 없음 — g03 의 원래 물음(진척 보드 줄을 누르면 그 카드로 — UI-NAV-02 예외)은 이 칸에 답하지 않고 상단 글을 고치라는 메모를 남겨 예외 글은 v1.10 그대로 둔다 (2026-11-08 · PRC-07)
 
 ## 7. 참고
 
@@ -1446,6 +1521,13 @@ v1.9 규칙으로 페이지 26개를 전수 점검한 뒤(`sweep/rules-1107`) �
 - 2026-11-03 「Space 고른 층의 캔버스 밖 호기는 자리 글」(고른 대상의 설명) → 2026-11-07 place-box 로 전 층을 훑는 상태 알림 `EQ-18`(UI-NTF-02).
 - 2026-11-05 v6 「호기 상세 지우기는 칸 머리 값 한 줄 + 되돌리기」 → 2026-11-07 undo-strip 으로 결과는 알림창, 되돌리기는 「한 단계 되돌리기」 하나(UI-NTF-09 · UI-NTF-03).
 - Space 결정 보드 D10 · AMB-09 「사이드바가 길면 사람이 굴린다」 → 2026-11-07 2차 보드 R6 (가)로 상자가 걸릴 때만 사이드바가 스스로 올라간다(UI-PRF-03 예외 — 사람이 접었다 편 뒤에는 R7 (가)로 지금대로).
+
+- 에이전트 규칙 「기준 정보 표마다 필터 따로」 → 2026-11-08 6-11 P1 로 공정에 한해 뒤집음 — 공정은 화면들이 같이 쓰는 공용 칸이고 나머지 칸만 표마다 따로다(UI-LAY-02).
+- 2026-10-24 결정 D6 「Space 필요 단축 보기의 목표 확보율은 도면 위 본문 조작 줄」 → 2026-11-08 그림 메모 g05 로 사이드바 조회 조건 패널 줄(UI-LAY-02 예외 — 「단축 없는 호기 흐리게」 만 본문).
+- 2026-11-05 g5-03 때 에이전트가 고른 「설비 마스터 고른 줄 띠는 창 아래 끝」 → 2026-11-08 g01 (가)로 고른 동안 작업 줄 자리에 같은 높이 한 줄(UI-PRF-03 · UI-LAY-11).
+- 2026-11-07 csv-dup 「잠긴 Cut-off 표 곁 CSV 걷음」 → 2026-11-08 d6 으로 되살림 — 왕복 양식이다(UI-LAY-12).
+- 2026-11-07 head-desc 가 남긴 머리 설명 두 자리(모듈 창구 · 필요 단축 일정) → 2026-11-08 d1 · g03 으로 걷음(UI-TXT-01).
+- 2026-11-08 같은 보드 e2 「누를 때만 여는 대화상자 셋은 지금대로」 → 같은 보드 U5 로 HOME 두 팝업도 호스트 팝업(UI-PRF-01) — e2 가 지금대로를 고른 까닭(닫을 때마다 HOME 이 한 번 더 돈다)이 호스트 닫기로 사라졌다.
 
 뒤집힌 것이 아닌 것: AGENTS 9장 「하위 보기 전환은 본문이다」 는 그대로이고, 산출 결과 대당 Capa 「표시 방식」 은 그 규칙에 더해진
 예외 하나다(UI-LAY-02 · AMB-08 (가)).
@@ -1617,3 +1699,14 @@ AGENTS 8 · 9장의 구현 규칙(글자 표기 · 위젯 상태 · 회차 · �
   - 장부: 화면 글 문장 그물 미정리 8 → 6(Dynamic Capa DB 연결 메모 구획 · 재공 현황 「데이터·계산 경계」 펼침을 걷음 — 둘은 `docs/TODO.md` 개발 메모로), 알림 꼴 · 자리 오류 · 걷은 경고 장부를 묶음 결과에 맞췄다(걷은 경고 `EQ-18` 한 줄 · `SB-19` 의 `goto` · 경고 상자 자리 일곱 줄 뺌 · 한 줄 줄임).
   - 재기(2-2 6): 후보 186(위반 76 · 애매 86 · 규칙 밖 24) 가운데 사용자 몫 15칸 — 권장이 아닌 답이 셋이다. head-desc 는 권장보다 더 걷어 「자리에 남기는 권장안은 사용자 기준보다 느슨하기 쉽다」(7-1)가 다시 맞았고, filter-empty 는 권장(표지 둘)보다 덜, pickers 는 권장(지금대로)보다 더 고치는 답이다. 규칙 밖 의견으로 새 규칙을 세우지는 않았다 — 열한 칸은 예외 · 값으로 적었다(rule-notes).
   - 못 본 상태 점검 고침(같은 날 — 앞 점검이 닿지 못한 쓰기 겹침 · 드문 상태를 다시 재 후보 45 + 검증이 찾은 6 → 고침 묶음 열둘(`sweep/u-d1` ~ `sweep/u-d5` · `sweep/u-grid` · `sweep/u-acl` · `sweep/u-sso` · `sweep/u-eql` · `sweep/u-scn` · `sweep/u-stop` · `sweep/u-misc`)과 물을 칸 16). 판은 올리지 않았다 — 규칙 수 · 수준이 그대로이고 사용자 답이 새로 온 것이 없어 6장 칸도 늘지 않았다. 데이터가 말없이 사라지거나 덮이던 다섯(주요 Case 겹친 고름 · Cut-off 채우기 · 변경 메모 · VOC 적어 둔 답변 · 보관본만 남은 저장소의 데모 발행)을 앞 다섯 묶음이 고쳤다. 글을 고친 규칙: UI-NTF-03(곁 거부는 곁 한 줄이 기본 꼴 — u3-06 은 rule-notes g2-21 이 이미 답이라 글만 시험과 맞춤). 그물만 더한 규칙: UI-PRF-02(칸 연속 입력 → 보냄 1회 — 기준 정보 편집표 · 설비 마스터 표, 5장 후보에서), UI-LAY-05(통합인증 멈춤 화면의 죽은 툴바 단추), UI-ACC-01(다시 로그인 띠 · 바깥 화면 링크 색). 장부: 화면 글 문장 그물(Cut-off 「모두 채워졌습니다」 를 걷어 빈 결과 한 칸과 `EMPTY_ENDING` 의 「채워졌습니다」 를 뺌, 설비 마스터 배치 잠금 캡션 → 표지 「배치 잠김」, 영구 삭제 확인 칸의 보이는 라벨 한 칸 더함), 알림 꼴(Cut-off 곁 상자 2 → 1, 월 머지 경고 상자 둘 뺌), 자리 오류(공식 지정 5 → 3, 사이드바 설비 저장 1 → 0). 규칙 밖 그물 하나를 세웠다 — 등록되는 컴포넌트 JS 와 자산 · static JS 를 모두 `node --check` 로 읽는다(`tests/test_component_js_syntax.py`). 앞 묶음들의 바탕(`7c2e199`)에서 알림 칸 JS 맨 위 `const DIALOG` 가 두 번 남아 알림창 · Alarm 이 앱 전체에서 서지 않았는데 구획 시험이 놓쳤다. 화면 확인 항목(`ITEMS`)은 늘리지 않았다.
+
+- **v1.11 — 2026-11-08.** 아침 검수 보드(6-11 — 정할 칸 11 · 작은 결정 46 · 그림 24)의 답을 화면 묶음 열둘(`morning/f0` · `morning/f1` · `morning/r0` ~ `morning/r9`, 통합 `integ/morning-1108`)로 입히고 규칙 글을 맞췄다.
+  - 수준을 바꾼 규칙은 없고 규칙 수도 그대로다 — 규칙 80 — MUST 45 · SHOULD 35 · MAY 0.
+  - 글을 고친 규칙: UI-LAY-02(공정 공유 다섯 규칙 · 두 모듈 경계 · 모니터링과 원복 길 — P1 · P2), UI-NTF-02(범위 바뀜 — a3), UI-NTF-03(남의 저장에 진 거부 · 고르면 곧 저장 — a1 · a2), UI-INP-03(공정 판 — P1), UI-DAT-03(제약 시뮬레이션 세 자리 — d11).
+  - 예외를 더하거나 바꾼 규칙: UI-TXT-01(머리 설명 두 자리를 걷고 앱 밖 화면을 더함 — d1 · g03 · b1), UI-TXT-04(앱 밖 화면 — b1), UI-LAY-02(제약 모드 전환 · Space 목표 확보율 · 공정 공유 2차 · 3차 — g12 · g05 · P1), UI-LAY-12(잠긴 Cut-off 왕복 양식 — d6), UI-NTF-09(사이드바 저장 확인 칸의 값 줄 — c9), UI-PRF-02(고른 대상이 다른 누름 — c10).
+  - 근거 · 그물만 더한 규칙: UI-PRF-01(화면 팝업 호스트 — U5 · e2, 4장 「팝업 여닫기 회차」), UI-PRF-03(고른 줄 띠 그물을 지금 시험 이름으로 — 옛 이름은 없는 시험이었다, g01 (가) · c5), UI-LAY-05(멈춤 화면 라벨 · 연결 오류 창 — b2 · b6), UI-LAY-11(표시순서 두 줄 — d7 · g17 · g18), UI-INP-07(쉬는 목표 줄 · 낡은 세션 표지 — c1), UI-CON-04(버전 줄 · 팝업 호스트 · 공정 값 칸 부품).
+  - 4장: 「공정 값 칸 글」 · 「공용 공정 표지」 · 「조건 패널 줄 사이」 · 「팝업 여닫기 회차」 · 「표시순서 제목 줄」 · 「Cut-off 저장 줄 CSV」 여섯을 더했다(조건 패널 줄 사이 · 팝업 여닫기 회차는 샘플 관측, 나머지는 검수 전).
+  - 7-1: 뒤집힌 옛 결정 여섯(표마다 필터 · Space 목표 확보율 D6 · 고른 줄 끝 띠 · 잠긴 Cut-off CSV · 머리 설명 두 자리 · e2)을 더했다.
+  - 그물: `tests/test_design_rules_doc.py` 가 6-11 줄(정할 칸 11 · 작은 결정 46 · 그림 칸)과 답 · 메모 원문, 고친 규칙 글의 핵심을 본다. 화면 묶음이 세운 그물 — 공용 공정(`tests/test_process_field.py` · `tests/test_shared_process.py` · `tests/test_condition_dialog_host.py`), 화면 팝업 호스트(`tests/test_dialog_host.py`), 남의 저장에 진 거부(`tests/test_refusal_alerts.py`). 화면 확인 항목(`ITEMS`)은 늘리지 않고 바뀐 화면에 맞춰 고쳤다(제약 시뮬레이션 공정 · 고른 달 · 모드 자리, Space 서랍 셈 · 패널 줄, 필요 단축 일정 진척 비교 자리).
+  - 장부: 화면 글 문장 · 경고 상자 · 자리 오류 장부를 묶음 결과에 맞췄다(제약 시뮬레이션 계산 풀이 · 개조 창 두 자리 뺌, 설비 마스터 낡은 세션 상자 · 저장 창 위 상자 한 자리씩 줄임, 주요공정 프리셋 거부 한 자리 줄임), 걷은 경고 장부에 넷(`RS-03` · `RS-04` · `RS-05` · `CS-04`)을 더했다.
+  - 권장이 아닌 답은 U5 하나다 — 권장(「HOME 세 팝업부터 옮기고 나머지 다섯은 다음 판」)보다 더 옮기는 답이다. P2 메모는 공정 공유를 규칙으로 굳히지 말고 지켜보라는 말이라 규칙 글에 경계와 원복 길을 함께 적었다(UI-LAY-02).

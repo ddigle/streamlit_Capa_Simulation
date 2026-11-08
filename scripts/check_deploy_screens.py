@@ -262,6 +262,9 @@ ADMIN_AREA_PAGE: Final = "admin_area"
 PROCESS_DETAIL_PAGE: Final = "process_capa_detail"
 # 필요 단축 일정 — 가용설비 현황의 탭이던 것을 실행 관리 아래 별도 화면으로 뗐다(2026-10-18).
 SHORTENING_PAGE: Final = "required_shortening"
+# 필요 단축 일정 사이드바 조건 카드(`condition_card(..., name="shortening")`) — 진척 비교 · 목표
+# 확보율이 맨 위다(2026-11-08 그림 메모 g03).
+SHORTENING_CARD_KEY: Final = "condition_card_shortening"
 PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
     "kpi": "process_detail_kpis",
     "canvas": "process_detail_summary_months",
@@ -310,24 +313,28 @@ UPEH_DATASET_LABEL: Final = "UPEH"
 UPEH_HELP_WORDS: Final = ("UPEH", "ST(분)")
 # 제약 시뮬레이션(`app_pages/constraint_simulation.py`)과 그 화면의 컨테이너 key
 # (`constraint_simulation_state`·`constraint_simulation_view`·페이지 멈춘 자리). 값만 옮기고
-# 테스트가 같은지 본다. 공정 Capa 상세 머리의 「이 공정 제약 시뮬레이션」 링크 글도 같다.
+# 테스트가 같은지 본다. 공정 Capa 상세 머리의 「이 공정 제약 시뮬레이션」 링크 글도 같다. 두 화면의
+# 공정은 사이드바 조회 조건의 공용 공정 값 칸(`components/process_field.FIELD_KEY` — 하나 고름)이다.
 CONSTRAINT_PAGE: Final = "constraint_simulation"
 CONSTRAINT_LINK_LABEL: Final = "이 공정 제약 시뮬레이션"
 CONSTRAINT_KEYS: Final[dict[str, str]] = {
     "kpi": "constraint_sim_kpis",
     "chart": "constraint_sim_rate_chart",
     "sheet": "constraint_sim_sheet_chart",
-    "steps": "constraint_sim_steps",
-    "schedule": "constraint_sim_schedule",
     "absent": "constraint_sim_absent",
-    "process": "constraint_sim_process",
-    "detailProcess": "process_detail_process",
+    "process": "sidebar_process_field",
+    "detailProcess": "sidebar_process_field",
 }
-# 화면 맨 위 모드 전환 「제약 영향 | 개조 일정」(`modification_schedule_state.CONSTRAINT_MODE_KEY`·
-# `MODE_LABELS`). 고른 모드는 세션에 남는다(`persist_state`) — 한 브라우저 세션에서 앞 항목이 「개조
-# 일정」 을 고른 채 끝나면 「이 공정 제약 시뮬레이션」 링크로 와도 개조 일정이 열린다. 그래서 제약
-# 항목은 먼저 「제약 영향」 을 고르고 끝에 되돌린다. 개조 일정 항목을 더하면 그 항목도 고른 모드를
-# `finally` 에서 되돌린다(런북 7장 A 표 수도 함께 고친다).
+# 그래프의 고른 달 띠 도형 불투명도(`constraint_simulation_figures._SELECTED_OPACITY` — 같은
+# 꼴의 제약 기간 칠과 가른다). 고른 달은 이 띠의 x 자리 눈금 글이다.
+CONSTRAINT_BAND_OPACITY: Final = 0.10
+# 사이드바 「제약 시뮬레이션 조건」 카드 맨 위 모드 전환 「제약 영향 | 개조 일정」
+# (`modification_schedule_state.CONSTRAINT_MODE_KEY`·`MODE_LABELS`, 카드
+# `condition_card_<CARD_NAME>`). 고른 모드는 세션에 남는다(`persist_state`) — 한 브라우저
+# 세션에서 앞 항목이 「개조 일정」 을 고른 채 끝나면 「이 공정 제약 시뮬레이션」 링크로 와도 개조
+# 일정이 열린다. 그래서 제약 항목은 먼저 「제약 영향」 을 고르고 끝에 되돌린다. 개조 일정 항목을
+# 더하면 그 항목도 고른 모드를 `finally` 에서 되돌린다(런북 7장 A 표 수도 함께 고친다).
+CONSTRAINT_CARD_KEY: Final = "condition_card_constraint_simulation"
 CONSTRAINT_MODE_KEY: Final = "constraint_sim_mode"
 CONSTRAINT_IMPACT_MODE: Final = "제약 영향"
 # HOME 링크를 감싼 사이드바 칸(`app.py`). HOME 은 기본 페이지라 주소 끝이 비어 `open_page` 로는
@@ -396,8 +403,9 @@ OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = 
     (SCENARIO_MANAGEMENT_PAGE, "시나리오 관리", ("시나리오", "조회기간")),
     (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
     # Space 현황은 색 기준이 필요 단축이 아니면 시나리오·조회기간을 읽지 않고 설비 시나리오 줄(고를
-    # 수 있는 줄 — 그 시나리오의 배치를 그린다)만 선다(이 항목은 기본 색 기준에서 돈다).
-    (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME,)),
+    # 수 있는 줄 — 그 시나리오의 배치를 그린다)과 공용 공정 줄(2026-11-08 공정 공유 1차)만 선다(이
+    # 항목은 기본 색 기준에서 돈다).
+    (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME, "공정")),
 )
 # 사이드바 계산 그룹(2026-10-17 사용자 결정 — 약속 · 이행 · 실적, 2026-11-02 「생산 진도」 를 이행과
 # 실적 사이에 더함, 2026-11-04 그 하위에 샘플 페이지 셋 — 검수 의견 prog-01) — (상자 slug, 상자
@@ -2189,7 +2197,7 @@ _SUMMARY_MARK_JS = f"""(id) => {{
     fits: lines.every((line) => whole(line, h)) && clear,
   }};
 }}"""
-_BOX_LEFT_JS = """(el) => el.getBoundingClientRect().x"""
+_BOX_TOP_JS = """(el) => el.getBoundingClientRect().y"""
 # 서랍은 컴포넌트의 shadow root 안이라 `document.querySelector` 로는 닿지 않는다. Playwright
 # 로케이터(`.sle-tray`, shadow 를 뚫는다)로 잡은 서랍 요소를 받아 그 root 에서 찾는다.
 # 칩마다 편집기가 단 `__entry`(대표 호기와 함께 놓일 호기 목록)에서 층 미정 호기(`floorless` — 동이
@@ -2197,7 +2205,9 @@ _BOX_LEFT_JS = """(el) => el.getBoundingClientRect().x"""
 # 센다. 층 목록 표 `미배치대수` 는 그 층 동·층이 적힌 호기만 설비지분으로 센다 — 서랍 N 에서 층
 # 미정을 빼면 표 N 이고, 묶음 모듈은 서랍이 한 대씩 세어 표보다 클 수 있다. 칩 하나가 묶음 하나라
 # (편집기 `trayEntries`) 이 층 몫 모듈이 든 묶음 칩 수 `groups` 도 센다 — 묶음 하나는 표에서 1대다.
-# `__entry` 가 없는 칩이 하나라도 있으면(편집기 판이 다르면) 세 수는 null 이다.
+# 칸 머리 「n대(모듈 m)」 의 m 은 묶음 칩 모듈만 세므로(2026-11-08 작은 결정 d13) 서랍
+# N(호기 행 수)은 칩 목록 길이의 합 `rows` 로 센다. `__entry` 가 없는 칩이 하나라도 있으면(편집기
+# 판이 다르면) 네 수는 null 이다.
 _TRAY_JS = """(tray) => {
   if (tray.hidden) return null;
   const chips = [...tray.querySelectorAll(".sle-tray-list .sle-chip")];
@@ -2211,10 +2221,12 @@ _TRAY_JS = """(tray) => {
   let floorless = 0;
   let modules = 0;
   let groups = 0;
+  let rows = 0;
   let readable = true;
   for (const chip of chips) {
     const list = chip.__entry && Array.isArray(chip.__entry.list) ? chip.__entry.list : null;
     if (!list) { readable = false; continue; }
+    rows += list.length;
     let grouped = 0;
     for (const unit of list) {
       if (unit.floorless) floorless += 1;
@@ -2226,7 +2238,7 @@ _TRAY_JS = """(tray) => {
   return {
     chips: names.length, violations, count, first: names[0] || "",
     floorless: readable ? floorless : null, modules: readable ? modules : null,
-    groups: readable ? groups : null,
+    groups: readable ? groups : null, rows: readable ? rows : null,
   };
 }"""
 _TRAY_STATE_JS = """(tray) => {
@@ -2695,19 +2707,25 @@ def check_scenario_list_grid(screen: Screen) -> str:
 
 
 def check_progress_box(screen: Screen) -> str:
-    """`필요 단축 일정` 화면의 `진척 비교` 상자 — 있음·값·선택지 수·자리. 고르지 않는다."""
+    """`필요 단축 일정` 사이드바 「필요 단축 일정 조건」 카드의 `진척 비교` 상자 — 있음·값·
+    선택지 수·자리(목표 확보율 위아래). 고르지 않는다. 카드가 접혀 있으면 편 채로 읽고 다시
+    접는다. 사이드바 아래 칸은 Playwright 자동 굴림 뒤 누르면 목록이 열리지 않아 먼저 굴려 둔다."""
     screen.open_page(SHORTENING_PAGE)
-    box = screen.selectbox("진척 비교")
-    if screen.poll(box.count, timeout=60, accept=lambda count: count > 0) == 0:
-        return "상자 없음"
-    value = screen.selectbox_value("진척 비교")
-    options = screen.selectbox_option_count("진척 비교")
-    target = screen.selectbox("목표 확보율")
-    if target.count() == 0:
-        place = "목표 확보율 상자 없음"
-    else:
-        left = float(box.first.evaluate(_BOX_LEFT_JS)) < float(target.first.evaluate(_BOX_LEFT_JS))
-        place = f"목표 확보율 {'왼쪽' if left else '오른쪽'}"
+    with opened_card(screen, SHORTENING_CARD_KEY):
+        box = screen.selectbox("진척 비교")
+        if screen.poll(box.count, timeout=60, accept=lambda count: count > 0) == 0:
+            return "상자 없음"
+        value = screen.selectbox_value("진척 비교")
+        box.first.scroll_into_view_if_needed()
+        options = screen.selectbox_option_count("진척 비교")
+        target = screen.selectbox("목표 확보율")
+        if target.count() == 0:
+            place = "목표 확보율 상자 없음"
+        else:
+            below = float(box.first.evaluate(_BOX_TOP_JS)) > float(
+                target.first.evaluate(_BOX_TOP_JS)
+            )
+            place = f"목표 확보율 {'아래' if below else '위'}"
     current = "비교 안 함" if value == "비교 안 함" else "그 밖"
     return f"상자 있음({place}) · {current} · 선택지 {options}개"
 
@@ -2795,9 +2813,13 @@ def _read_drawer(screen: Screen, unplaced: float, floors: int) -> str:
         tab.wait_for(state="visible", timeout=ACTION_TIMEOUT_MS)
         tab.click()
     tray = screen.wait_for(lambda: box.evaluate(_TRAY_JS), timeout=15)
-    # 칸 머리는 「n대」 이고, 묶음이 든 층은 「n대(모듈 m)」 이다 — 셈은 모듈(호기 행) 수로 맞댄다.
+    # 칸 머리는 「n대」 이고, 묶음이 든 층은 「n대(모듈 m)」 이다 — m 은 묶음 칩 모듈만 세므로
+    # 셈은 칩 목록의 호기 행 수(`rows`)로 맞댄다. 칩을 못 읽은 편집기 판이면 머리 n 으로 물러난다.
     total_match = re.fullmatch(r"(\d+)대(?:\(모듈 (\d+)\))?", str(tray["count"]).strip())
-    total = int(total_match.group(2) or total_match.group(1)) if total_match else -1
+    if tray.get("rows") is not None:
+        total = int(tray["rows"])
+    else:
+        total = int(total_match.group(1)) if total_match else -1
     head = (
         summarize_drawer_counts(
             floors, unplaced, total, tray["floorless"], tray["modules"], tray.get("groups")
@@ -3331,7 +3353,7 @@ def check_sidebar_panel(screen: Screen) -> str:
 
 
 def check_panel_rows_other_pages(screen: Screen) -> str:
-    """시나리오 관리(시나리오·조회기간)·Admin Area(시나리오)·Space 현황(설비 시나리오)의 패널 줄."""
+    """시나리오 관리(시나리오·조회기간)·Admin Area(시나리오)·Space 현황(설비 시나리오·공정)의 패널 줄."""
     seen: list[tuple[str, tuple[str, ...] | None, Sequence[object] | None]] = []
     for page, title, expected in OTHER_PAGE_PANELS:
         screen.open_page(page)
@@ -3476,23 +3498,24 @@ def check_process_detail(screen: Screen) -> str:
     return summarize_process_detail(before, after)
 
 
-# 공정 선택 상자가 지금 고른 값(표시명). Streamlit 1.63 selectbox 는 고른 값을 콤보 상자 `<input>`
-# 의 `value` 에만 둔다 — 상자의 `innerText` 는 카드가 접혀 있으면 빈 글자, 펴 있으면 라벨 「공정」
-# 뿐이다.
-_SELECTED_VALUE_JS = """const selectedValue = (box) => {
-    if (!box) return null;
-    const input = box.querySelector('input');
-    return input ? String(input.value || '').trim() : null;
+# 사이드바 공용 공정 값 칸이 지금 보이는 값(표시명). 값 칸 단추 글은 앞에 아이콘 글자(`filter_alt` ·
+# 따라가지 못한 공정이 있으면 `filter_alt_off`)가 붙는다 — 떼고 읽는다(샘플 관측 「filter_alt Laser
+# Marking」).
+_SIDEBAR_VALUE_JS = """const sidebarValue = (key) => {
+    const button = document.querySelector(`[data-testid="stSidebar"] .st-key-${key} button`);
+    if (!button) return null;
+    const text = String(button.innerText || '').replace(/^\\s*filter_alt(?:_off)?\\s*/, '').trim();
+    return text || null;
   };"""
 
 _CONSTRAINT_LINK_JS = (
     """(keys) => {
   """
-    + _SELECTED_VALUE_JS
+    + _SIDEBAR_VALUE_JS
     + """
   const links = Array.from(document.querySelectorAll('[data-testid="stMain"] a'));
   const link = links.find((item) => item.innerText.includes(keys.label));
-  const process = selectedValue(document.querySelector(`.st-key-${keys.detailProcess}`));
+  const process = sidebarValue(keys.detailProcess);
   const kpis = document.querySelectorAll(
     '.st-key-process_detail_kpis [data-testid="stMetric"]'
   ).length;
@@ -3505,26 +3528,33 @@ _CONSTRAINT_LINK_JS = (
 }"""
 )
 
+# 고른 달은 그래프 틀의 고른 달 띠(불투명도 `bandOpacity` 인 x 자리 도형) 아래 눈금 글이다 — 고른 달
+# 계산 카드를 걷어(2026-11-08 그림 메모 g12) 그래프 띠 · 계산표 열 테두리가 그 달을 짚는다.
 _CONSTRAINT_JS = (
     """(keys) => {
   """
-    + _SELECTED_VALUE_JS
+    + _SIDEBAR_VALUE_JS
     + """
   const q = (selector) => document.querySelector(selector);
-  const steps = q(`.st-key-${keys.steps}`);
-  const month = steps ? (steps.innerText.match(/(\\d\\d\\.\\d\\d) · /) || [])[1] : null;
-  const blocks = (root) =>
-    root ? Array.from(root.querySelectorAll('[data-testid="stMarkdownContainer"]')) : [];
-  const stepCount = blocks(steps).filter((item) => /^\\d · /.test(item.innerText.trim())).length;
-  const lines = blocks(q(`.st-key-${keys.schedule}`)).filter(
-    (item) => item.innerText.includes(' 몫 · ')
-  ).length;
+  const strip = (text) => String(text ?? '').replace(/<[^>]+>/g, '').trim();
   const chart = q(`.st-key-${keys.chart} .js-plotly-plot`);
+  const layout = chart && chart.layout ? chart.layout : null;
+  const ticks =
+    layout && layout.xaxis && layout.xaxis.ticktext
+      ? Array.from(layout.xaxis.ticktext).map(strip)
+      : [];
+  const band =
+    layout && Array.isArray(layout.shapes)
+      ? layout.shapes.find(
+          (shape) =>
+            shape.type === 'rect' &&
+            shape.xref === 'x' &&
+            Math.abs(Number(shape.opacity) - keys.bandOpacity) < 1e-6
+        )
+      : null;
+  const month = band ? ticks[Math.round(Number(band.x0) + 0.5)] || null : null;
   let point = null;
   if (chart && month) {
-    const ticks = Array.from(chart.querySelectorAll('.xtick text')).map(
-      (item) => item.textContent
-    );
     const drag =
       chart.querySelector('.nsewdrag[data-subplot="xy"]') || chart.querySelector('.nsewdrag');
     const index = ticks.findIndex((text) => text !== month);
@@ -3540,22 +3570,25 @@ _CONSTRAINT_JS = (
     kpis: document.querySelectorAll(`.st-key-${keys.kpi} [data-testid="stMetric"]`).length,
     chart: !!chart,
     sheet: !!q(`.st-key-${keys.sheet} .js-plotly-plot`),
-    steps: stepCount,
-    schedule: lines,
     month: month || null,
     absent: !!q(`.st-key-${keys.absent}`),
-    process: selectedValue(q(`.st-key-${keys.process}`)),
+    process: sidebarValue(keys.process),
     point,
   };
 }"""
 )
 
 
+def _constraint_arg() -> dict[str, object]:
+    """제약 화면 JS 의 인자 — key 묶음과 고른 달 띠 불투명도."""
+    return {**CONSTRAINT_KEYS, "bandOpacity": CONSTRAINT_BAND_OPACITY}
+
+
 def constraint_process_matches(
     link: Mapping[str, Any] | None, before: Mapping[str, Any]
 ) -> bool | None:
-    """링크로 연 제약 시뮬레이션의 공정이 공정 Capa 상세에서 보던 공정과 같은가 — 두 공정 상자의
-    지금 값(둘 다 같은 표시명 규칙 `unique_format_func`)끼리 견준다. 링크를 누르지
+    """링크로 연 제약 시뮬레이션의 공정이 공정 Capa 상세에서 보던 공정과 같은가 — 두 화면 사이드바
+    공정 값 칸의 지금 글(둘 다 같은 표시명 규칙 `unique_format_func`)끼리 견준다. 링크를 누르지
     않았으면(없음·꺼짐) None. 어느 쪽 값이든 읽지 못했으면 거짓이다(같다고 짐작하지 않는다)."""
     if link is None or not link.get("found") or link.get("disabled"):
         return None
@@ -3571,8 +3604,7 @@ def summarize_constraint_simulation(
     same_process: bool | None,
 ) -> str:
     """제약 시뮬레이션 한 줄 — 공정 Capa 상세 머리 링크(켜짐·꺼짐), 넘어온 공정이 같은가,
-    KPI·그림·표·계산 단계·개조 일정 줄 수, 그래프 칸을 누른 뒤 고른 달이 바뀌었는가. 공정·제품·달
-    글자는 찍지 않는다."""
+    KPI·그림·표, 그래프 칸을 누른 뒤 고른 달이 바뀌었는가. 공정·제품·달 글자는 찍지 않는다."""
     if link is None or not link.get("found"):
         head = "링크 없음"
     elif link.get("disabled"):
@@ -3591,16 +3623,15 @@ def summarize_constraint_simulation(
     sheet = "있음" if before.get("sheet") else "없음"
     return (
         f"{head} · KPI {before.get('kpis', 0)}개 · 그림 {chart} · 표 {sheet} · "
-        f"계산 {before.get('steps', 0)}단계 · 개조 일정 {before.get('schedule', 0)}줄 · "
         f"칸 누름 뒤 고른 달 {clicked}"
     )
 
 
 def check_constraint_simulation(screen: Screen) -> str:
     """`제약 시뮬레이션` — 공정 Capa 상세(기본 공정) 머리 「이 공정 제약 시뮬레이션」 을 눌러 같은
-    공정으로 열리는지 보고(링크가 꺼졌으면 사이드바로 연다), KPI·그래프·계산표·고른 달 계산·개조
-    일정을 센 뒤 그래프의 다른 달 칸을 한 번 눌러 고른 달이 바뀌는지 본다. 모드는 세션에 남으므로
-    읽기 전에 「제약 영향」 을 고르고 끝에(읽다 깨져도) 되돌린다(`CONSTRAINT_MODE_KEY`). 저장하지
+    공정으로 열리는지 보고(링크가 꺼졌으면 사이드바로 연다), KPI·그래프·계산표를 센 뒤 그래프의 다른
+    달 칸을 한 번 눌러 고른 달 띠가 옮겨 가는지 본다. 모드는 세션에 남으므로 읽기 전에 사이드바 조건
+    카드에서 「제약 영향」 을 고르고 끝에(읽다 깨져도) 되돌린다(`CONSTRAINT_MODE_KEY`). 저장하지
     않는 화면이라 DB 에 쓰지 않는다."""
     screen.open_page(PROCESS_DETAIL_PAGE)
     arg = {**CONSTRAINT_KEYS, "label": CONSTRAINT_LINK_LABEL}
@@ -3619,10 +3650,12 @@ def check_constraint_simulation(screen: Screen) -> str:
         screen.wait_idle()
     else:
         screen.open_page(CONSTRAINT_PAGE)
-    mode = _choose_segment(screen, CONSTRAINT_MODE_KEY, CONSTRAINT_IMPACT_MODE)
+    mode = _choose_sidebar_segment(
+        screen, CONSTRAINT_CARD_KEY, CONSTRAINT_MODE_KEY, CONSTRAINT_IMPACT_MODE
+    )
     try:
         before = screen.wait_for(
-            lambda: screen.js(_CONSTRAINT_JS, CONSTRAINT_KEYS),
+            lambda: screen.js(_CONSTRAINT_JS, _constraint_arg()),
             timeout=120,
             accept=lambda value: (
                 bool(value)
@@ -3636,14 +3669,14 @@ def check_constraint_simulation(screen: Screen) -> str:
             screen.page.mouse.click(float(point["x"]), float(point["y"]))
             screen.wait_idle()
             after = screen.poll(
-                lambda: screen.js(_CONSTRAINT_JS, CONSTRAINT_KEYS),
+                lambda: screen.js(_CONSTRAINT_JS, _constraint_arg()),
                 timeout=30,
                 accept=lambda value: bool(value) and value["month"] != before["month"],
             )
         return summarize_constraint_simulation(link, before, after, same_process)
     finally:
         if mode is not None and mode != CONSTRAINT_IMPACT_MODE:
-            _choose_segment(screen, CONSTRAINT_MODE_KEY, mode)
+            _choose_sidebar_segment(screen, CONSTRAINT_CARD_KEY, CONSTRAINT_MODE_KEY, mode)
 
 
 def summarize_page_tabs(
@@ -4388,6 +4421,32 @@ def _choose_segment(screen: Screen, key: str, option: str) -> str | None:
         options.filter(has_text=option).first.click()
         screen.wait_idle()
     return str(current)
+
+
+_SIDEBAR_SEGMENT_JS = """(key) => {
+  const box = document.querySelector(`[data-testid="stSidebar"] .st-key-${key}`);
+  if (!box) return null;
+  const chosen = box.querySelector('[role="radio"][aria-checked="true"]');
+  return chosen ? chosen.innerText.trim() : "";
+}"""
+
+
+def _choose_sidebar_segment(screen: Screen, card: str, key: str, option: str) -> str | None:
+    """사이드바 조건 카드 `card` 안의 전환 `key` 에서 `option` 을 고르고, 고르기 전의 선택지 글을
+    돌려준다 — `_choose_segment` 의 사이드바 꼴. 카드가 접혀 있으면 편 채로 고르고 다시 접는다."""
+    with opened_card(screen, card):
+        current = screen.poll(
+            lambda: screen.js(_SIDEBAR_SEGMENT_JS, key),
+            timeout=60,
+            accept=lambda value: value is not None,
+        )
+        if current is None:
+            return None
+        if current != option:
+            options = screen.page.locator(f'[data-testid="stSidebar"] .st-key-{key} [role="radio"]')
+            options.filter(has_text=option).first.click()
+            screen.wait_idle()
+        return str(current)
 
 
 def _gap_sheet(screen: Screen, *, timeout: float = 30.0) -> Any:

@@ -154,10 +154,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         EMPTY,
     ),
-    ("src/capa_simulation/components/constraint_simulation_view.py", "_render_schedule"): (
-        EMPTY,
-        EMPTY,
-    ),
     ("src/capa_simulation/components/container_start_check.py", "render_container_start_check"): (
         VALUE,
     ),
