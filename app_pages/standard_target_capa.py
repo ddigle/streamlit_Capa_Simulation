@@ -25,6 +25,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.date_panel import date_range_field
+from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.formula_text import EQUALS, consistent_places
 from capa_simulation.components.hierarchical_monthly_table import (
@@ -120,7 +121,7 @@ from capa_simulation.services.weekly_availability_input import (
 )
 from capa_simulation.services.weighted_unit_capacity import WEIGHTED_CAPACITY_HIERARCHY
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
-from capa_simulation.sidebar_status import condition_card
+from capa_simulation.sidebar_status import condition_card, keeps_app_run_open
 
 START_DATE_KEY = STANDARD_TARGET_START_DATE_KEY
 END_DATE_KEY = STANDARD_TARGET_END_DATE_KEY
@@ -134,13 +135,20 @@ PKG_BASIS_KEY = "standard_target_pkg_basis"
 # 조회기간에 맞춘 조회일 곁 칸 — (맞추기 전 두 값, 맞춘 두 값). 조회일을 맞춘 회차의 알림 칸.
 DATES_BEFORE_FIT_KEY = "standard_target_dates_before_fit"
 DATE_FIT_FLASH_KEY = "standard_target_date_fit_flash"
-# 사이드바 조건 카드와 팝업. 팝업은 한 칸이라 한 회차에 하나다.
+# 사이드바 조건 카드와 팝업. 팝업은 한 칸이라 한 회차에 하나다. 「가용설비 붙여넣기」 는 키 붙은
+# 호스트 프래그먼트가 부른다(`components/dialog_host.py` — 열기 · 닫기가 페이지를 다시 계산하지
+# 않는다). 「입력 초기화」 는 같은 칸을 쓰되 페이지가 부른다.
 CARD_NAME = "standard_target"
 DIALOG_KEY = f"standard_target{PAGE_DIALOG_SUFFIX}"
+DIALOG_HOST = DialogHost("standard_target_dialog_host", DIALOG_KEY)
 PASTE_DIALOG = "availability_paste"
+PASTE_BUTTON_KEY = "open_standard_target_availability_paste"
 CLEAR_DIALOG = "availability_clear"
 AVAILABILITY_FLASH_KEY = "standard_target_availability_flash"
 PASTE_FORM_KEY = "standard_target_availability"
+# 붙여넣기 글 칸 — 팝업의 입력 위젯이라 닫을 때 호스트가 값을 지운다
+# (`DIALOG_HOST.render(widget_keys=)`).
+PASTE_TEXT_KEY = "standard_target_availability_clipboard_text"
 CLEAR_FORM_KEY = "standard_target_clear"
 CLEAR_CONFIRM_KEY = "standard_target_clear_confirm"
 # 「붙여넣기 적용」 쓰기의 세대 — 저장에 성공한 회차에 오른다. 같은 세대의 누름은 한 번만 쓴다.
@@ -703,6 +711,12 @@ def report_missing_availability(
     return table
 
 
+def exception_process_help(excluded_row_count: int) -> str:
+    """`예외 처리 공정` 표 공정 칸 머리 풍선 — 지금 조회범위에서 뺀 행 수(조건의 내역이라 칸에 늘
+    두지 않는다 — 설계 규칙 UI-TXT-04)."""
+    return f"현재 조회범위 제외 행: {excluded_row_count:,}"
+
+
 def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessLabels) -> None:
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
@@ -715,13 +729,15 @@ def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessL
                         "적용 내용": (
                             "Dummy 부하량과 STEP 소요대수를 제품 Mix 가중 분자·분모에서 제외"
                         ),
-                        "현재 조회범위 제외 행": excluded_row_count,
                     }
                     for process in STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES
                 ]
             ),
             hide_index=True,
             width="stretch",
+            column_config={
+                "공정": st.column_config.Column(help=exception_process_help(excluded_row_count))
+            },
         )
 
 
@@ -962,23 +978,40 @@ def _open_dialog(name: str) -> None:
     st.session_state[DIALOG_KEY] = name
 
 
-@st.dialog("가용설비 붙여넣기", width="large", on_dismiss=_close_dialog)
+@st.dialog("가용설비 붙여넣기", width="large", on_dismiss=DIALOG_HOST.close)
+@keeps_app_run_open
 def _paste_dialog() -> None:
-    """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다)."""
+    """주차별 가용설비 표를 붙여넣어 설비 DB 최신본으로 저장한다(리비전은 만들지 않는다).
+
+    호스트(`DIALOG_HOST`)가 부르는 팝업이라 이 본문의 공정 필터 · 조회일은 직전 앱 전체 회차의
+    값이다(이 세션만 바꾸는 값). 저장된 가용설비는 다른 세션이 바꾸는 공용 현행값이라 본문에서 다시
+    읽는다. 저장에 성공하면 열림 칸을 지우고 앱 전체를 다시 돌린다(`DIALOG_HOST.finish`).
+    """
     paste_generation = generation(AVAILABILITY_SAVE_GENERATION_KEY)
     # 양식은 저장된 값을 채워 내려 준다. 저장값이 없는 칸은 빈칸이고, 붙여넣기는 빈칸을 「그대로
     # 둠」으로 읽는다 — 0 으로 채워 내려 주면 일부만 고쳐 되붙일 때 다른 공정·주차가 0 대로
     # 덮인다(2026-09-29 버그 보고). 양식 단추는 이 창 한 곳이다(설계 규칙 UI-LAY-12 · UI-INP-08).
+    # 저장값은 페이지가 읽은 `availability` 가 아니라 여기서 다시 읽는다 — 호스트만 도는 여는
+    # 회차의 그 값은 이 화면의 마지막 앱 전체 회차의 것이라, 그 뒤 다른 세션이 저장한 값을 양식에
+    # 싣지 못하고 그 양식을 되붙이면 남의 저장을 옛 값으로 덮는다(리비전 없는 upsert 라 되돌릴
+    # 판도 없다). 읽기 캐시는 DB stamp · 쓰기 세대가 키라 값싸다.
+    try:
+        saved_availability = load_standard_target_availability(equipment_database)
+    except BOOTSTRAP_ERRORS as exc:
+        refuse_paste(
+            PASTE_FORM_KEY, bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        )
+        return
     template_csv = get_weekly_availability_template_csv(
         tuple(target_processes),
         start_date,
         end_date,
-        frame_digest(availability),
-        _saved=availability,
+        frame_digest(saved_availability),
+        _saved=saved_availability,
     )
     submit = render_paste_form(
         PASTE_FORM_KEY,
-        text_key="standard_target_availability_clipboard_text",
+        text_key=PASTE_TEXT_KEY,
         text_label="가용설비 표 붙여넣기",
         apply_label="붙여넣기 적용",
         template=PasteTemplate(
@@ -1022,10 +1055,9 @@ def _paste_dialog() -> None:
         AVAILABILITY_FLASH_KEY,
         "주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다.",
     )
-    _close_dialog()
     bump(AVAILABILITY_SAVE_GENERATION_KEY)
     written.release()
-    st.rerun()
+    DIALOG_HOST.finish()
 
 
 @st.dialog("입력 초기화", width="small", on_dismiss=_close_dialog)
@@ -1065,15 +1097,15 @@ def _clear_dialog() -> None:
 with action_row:
     # 결과 상자 맨 위 작업 줄. 결과를 만드는 입력(주차별 가용설비)이 여기서 들어간다. 붙여넣기와
     # 초기화는 가끔 하는 쓰기라 팝업이고, 여는 버튼은 콜백으로 연다 — 한 회차에 팝업이 둘 뜨지
-    # 않는다.
+    # 않는다. 붙여넣기를 여는 콜백은 할 수 있으면 호스트만 다시 돌린다(`DialogHost.open`).
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.button(
             "가용설비 붙여넣기",
             icon=":material/content_paste:",
-            key="open_standard_target_availability_paste",
+            key=PASTE_BUTTON_KEY,
             type="primary",
-            on_click=_open_dialog,
-            args=(PASTE_DIALOG,),
+            on_click=DIALOG_HOST.open,
+            args=(PASTE_DIALOG, PASTE_BUTTON_KEY),
         )
         st.button(
             "입력 초기화",
@@ -1086,9 +1118,10 @@ with action_row:
             help=CLEAR_LOCKED_HELP if availability.empty else None,
         )
     render_flash(AVAILABILITY_FLASH_KEY)
-if st.session_state.get(DIALOG_KEY) == PASTE_DIALOG:
-    _paste_dialog()
-elif st.session_state.get(DIALOG_KEY) == CLEAR_DIALOG:
+# 붙여넣기 팝업의 호스트 — 매 앱 전체 회차 빠짐없이, 아래 멈춤(`st.stop()`)보다 앞이다. 이벤트 칸에
+# 늘 한 자리를 쓰므로 「입력 초기화」 팝업은 그 뒤 자리에 선다.
+DIALOG_HOST.render({PASTE_DIALOG: _paste_dialog}, widget_keys={PASTE_DIALOG: (PASTE_TEXT_KEY,)})
+if st.session_state.get(DIALOG_KEY) == CLEAR_DIALOG:
     _clear_dialog()
 
 _render_standard_target_exceptions(standard_target_exception_rows, process_labels)

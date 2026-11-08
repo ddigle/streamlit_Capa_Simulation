@@ -1,4 +1,4 @@
-# Purpose: 공용 프로필 버전 캡션이 여덟 저장 화면에서 글자 단위로 같은지 고정한다.
+# Purpose: 공용 프로필 버전 캡션의 글자(여덟 저장 화면)와 제목 옆 한 줄 배치를 고정한다.
 
 """**캡션 한 줄이 여덟 곳에 따로 적혀 있었다.**
 
@@ -19,9 +19,16 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import pytest
+from streamlit.proto.Block_pb2 import Block as BlockProto
+from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Block, Caption, Markdown
 
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import (
+    HEADING_BASELINE_STYLE,
+    HEADING_KEY_PREFIX,
+    profile_version_caption,
+)
 
 STAMP = datetime(2026, 1, 2, 3, 4)
 
@@ -182,3 +189,91 @@ def test_a_memo_source_is_shown_letter_for_letter_in_markdown(memo: str) -> None
     assert shown == literal_markdown(memo)
     assert re.sub(r"\\(.)", r"\1", shown) == memo
     assert not re.search(r"(?<!\\)[~*$`!\[\]()#_]", shown), shown
+
+
+HEADING_SCRIPT = r"""
+from dataclasses import dataclass
+from datetime import datetime
+
+import streamlit as st
+
+from capa_simulation.components.profile_caption import render_profile_heading
+
+
+@dataclass(frozen=True)
+class Profile:
+    version: int
+    source: str
+    updated_at: datetime | None
+
+
+st.caption("앞 본문")
+render_profile_heading(
+    "#### :material/rule: 확보율 판정 기준",
+    Profile(3, "26.07~12 확정 *검토*", datetime(2026, 1, 2, 3, 4)),
+    key="demo_threshold",
+    empty="아직 저장하지 않았습니다",
+    detail="기본 확보 100% · 경고 <90%",
+    help="판정 기준 풍선",
+)
+render_profile_heading(
+    "#### 선행 B/O",
+    Profile(0, "", None),
+    key="demo_advance",
+    empty="아직 넣은 선행 B/O 가 없습니다",
+)
+"""
+
+
+def _rows(app: AppTest) -> list[Block]:
+    return [
+        block
+        for block in app.main.children.values()
+        if isinstance(block, Block)
+        and block.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
+    ]
+
+
+def test_the_heading_puts_the_version_line_beside_the_title() -> None:
+    """제목과 공용 버전 줄은 한 가로 칸의 두 칸이다(2026-11-08 사용자 그림 메모 g18) — 제목 풍선은
+    제목에, 버전 줄은 `profile_version_caption` 글(출처는 막힌 글)이다. 칸이 좁으면 줄을 바꾼다."""
+    app = AppTest.from_string(HEADING_SCRIPT, default_timeout=30).run()
+
+    assert not app.exception
+    first, second = _rows(app)
+    assert first.proto.flex_container.wrap
+    assert f"{HEADING_KEY_PREFIX}demo_threshold" in first.proto.id
+    assert f"{HEADING_KEY_PREFIX}demo_advance" in second.proto.id
+    title, caption = (first.children[index] for index in sorted(first.children))
+    assert isinstance(title, Markdown) and not isinstance(title, Caption)
+    assert title.value == "#### :material/rule: 확보율 판정 기준"
+    assert title.proto.help == "판정 기준 풍선"
+    assert isinstance(caption, Caption)
+    assert caption.value == (
+        "공용 버전 v3 · 기본 확보 100% · 경고 &lt;90% · "
+        + literal_markdown("26.07~12 확정 *검토*")
+        + " · 2026-01-02 03:04"
+        + HEADING_BASELINE_STYLE
+    )
+    second_caption = second.children[max(second.children)]
+    assert isinstance(second_caption, Caption)
+    assert second_caption.value == (
+        "공용 버전 없음 · 아직 넣은 선행 B/O 가 없습니다" + HEADING_BASELINE_STYLE
+    )
+
+
+def test_the_version_line_carries_its_baseline_rule_without_raw_html() -> None:
+    """두 글을 글자 밑줄에 맞추는 규칙은 버전 줄과 한 마크다운에 실린다(이벤트 칸을 쓰지 않는다). 그
+    캡션은 HTML 을 받으므로 사람 글의 `<` 는 `literal_markdown` 이, 앱 글의 맨 `<` 는 글자 참조가
+    막아 태그로 읽히지 않는다."""
+    app = AppTest.from_string(HEADING_SCRIPT, default_timeout=30).run()
+
+    first, _ = _rows(app)
+    caption = first.children[max(first.children)]
+    assert isinstance(caption, Caption)
+    assert caption.proto.allow_html
+    assert HEADING_BASELINE_STYLE == (
+        f'<style>[class*="st-key-{HEADING_KEY_PREFIX}"]{{align-items:baseline}}</style>'
+    )
+    body = caption.value.removesuffix(HEADING_BASELINE_STYLE)
+    assert re.findall(r"(?<!\\)<", body) == []

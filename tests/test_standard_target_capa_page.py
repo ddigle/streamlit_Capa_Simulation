@@ -9,6 +9,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pandas as pd
 import pytest
 import streamlit as st
@@ -24,10 +25,12 @@ from alert_marks import (
     table_frame,
 )
 from fragment_browser import install_fragment_browser
+from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Node
 
 from capa_simulation import alerts
+from capa_simulation.persistence import equipment_cache
 from capa_simulation.scenario_preset_state import (
     STANDARD_TARGET_PROCESS_SELECTION_KEY,
     STANDARD_TARGET_SHOW_DETAIL_KEY,
@@ -728,6 +731,24 @@ def test_exception_process_notice_stays_original_without_a_rename_profile() -> N
     assert _frame_with_value(app, "공정", "Pre B/D") is not None
 
 
+def _exception_table(app: AppTest) -> Any:
+    (table,) = [frame for frame in app.dataframe if "제외 대상" in frame.value.columns]
+    return table
+
+
+def test_the_excluded_row_count_is_the_process_column_tip() -> None:
+    """지금 조회범위에서 뺀 행 수는 `예외 처리 공정` 표의 칸이 아니라 공정 칸 머리
+    풍선이다(2026-11-08
+    사용자 답 d8 — 조건의 내역을 칸에 늘 두지 않는다, 설계 규칙 UI-TXT-04)."""
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    table = _exception_table(app)
+    assert list(table.value.columns) == ["공정", "제외 대상", "적용 내용"]
+    assert set(table.value["공정"]) == {"선다이싱"}
+    assert json.loads(table.proto.columns)["공정"]["help"] == "현재 조회범위 제외 행: 0"
+
+
 def _paste_window_template(app: AppTest) -> pd.DataFrame:
     """붙여넣기 창을 열고 그 창의 양식을 읽는다 — 양식 단추는 창 한 곳이다(설계 규칙 UI-LAY-12)."""
     assert not app.exception
@@ -792,6 +813,259 @@ def test_availability_paste_keeps_blank_cells_and_says_so_before_applying() -> N
     assert not place_errors(app)
     saved = app.session_state["captured_saved_availability"]
     assert saved.to_dict("records") == [{"공정": "Process-B", "Weeknum": "26-W32", "가용대수": 3.0}]
+
+
+# 앱 전체 회차의 실행 표지(`app.py` 처럼) — 여는 콜백이 호스트만 다시 돌릴지 가르는 판정이 이 표지를
+# 본다.
+FRAGMENT_SCRIPT = (
+    "from capa_simulation.sidebar_status import begin_app_run\n"
+    "app_run = begin_app_run()\n" + TEST_SCRIPT + "app_run.finish()\n"
+)
+PASTE_HOST_KEY = "standard_target_dialog_host"
+
+
+def _event_slot_kinds(app_messages: Any) -> dict[int, tuple[str, str]]:
+    """이벤트 칸(본문 밖 최상위 칸) 자리마다 (종류, 프래그먼트 id)."""
+    slots: dict[int, tuple[str, str]] = {}
+    for message in app_messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        path = list(message.metadata.delta_path)
+        if len(path) != 2 or path[0] != RootContainer.EVENT:
+            continue
+        delta = message.delta
+        kind = (
+            str(delta.add_block.WhichOneof("type"))
+            if delta.WhichOneof("type") == "add_block"
+            else str(delta.new_element.WhichOneof("type"))
+        )
+        slots[path[1]] = (kind, delta.fragment_id)
+    return slots
+
+
+def test_opening_and_closing_the_paste_dialog_runs_only_its_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「가용설비 붙여넣기」 를 여닫아도 페이지를 다시 계산하지 않는다 — 여는 콜백 뒤 호스트
+    (`standard_target_dialog_host`)만 돌고 닫기도 호스트만 돈다(2026-11-08 사용자 결정 U5, 설계 규칙
+    UI-PRF-01). 팝업은 호스트가 앱 전체 회차에 잡아 둔 이벤트 칸 한 자리에 서고 그 자리로
+    돌아간다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+    page_slots = _event_slot_kinds(browser.messages)
+    (host_slot,) = [index for index, slot in page_slots.items() if slot[1] == host]
+    assert page_slots[host_slot][0] == "html"
+
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    ), "페이지가 다시 돌았다"
+    assert _event_slot_kinds(browser.messages) == {host_slot: ("dialog", host)}
+    assert app.text_area(key="standard_target_availability_clipboard_text") is not None
+
+    browser.fragment_queue = [host]
+    del app.session_state["standard_target_open_dialog"]
+    app.run()
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert _event_slot_kinds(browser.messages) == {host_slot: ("html", host)}
+
+
+def test_applying_the_paste_reruns_the_whole_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """붙여넣기 적용은 원본(설비 DB)을 바꾼다 — 팝업 회차 뒤 앱 전체 회차가 돌아 결과 상자가 새
+    값으로
+    다시 그려지고 팝업은 닫힌다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    app.button(key="open_standard_target_availability_paste").click().run()
+    dialog = browser.fragment_of("standard_target_availability_clipboard_text")
+
+    app.text_area(key="standard_target_availability_clipboard_text").set_value(
+        "공정\tWeeknum\t가용대수\nProcess-B\t26-W32\t3\n"
+    )
+    apply_button = next(button for button in app.button if button.label == "붙여넣기 적용")
+    apply_button.click()
+    pressed = app._tree.get_widget_states()
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert browser.started[0] == [dialog]
+    assert browser.started[-1] == []
+    assert "standard_target_open_dialog" not in app.session_state
+    assert app.session_state["captured_saved_availability"].to_dict("records") == [
+        {"공정": "Process-B", "Weeknum": "26-W32", "가용대수": 3.0}
+    ]
+    assert "주차별 가용설비 최신본을 저장했습니다. 서버를 재시작해도 유지됩니다." in [
+        item.value for item in successes(app)
+    ]
+
+    # 사람 속도의 둘째 누름 — 닫힌 팝업의 프래그먼트 회차를 청해도 본문이 다시 돌아 걷힌 팝업 자리에
+    # 요소를 보내지 않는다(앱 전체 회차가 끝까지 돌아 닫힌 팝업을 저장소에서 지웠다).
+    app._run(widget_state=pressed)
+    stale = [
+        message
+        for message in browser.emitted
+        if message.WhichOneof("type") == "delta" and message.delta.fragment_id == dialog
+    ]
+    assert not stale, "닫힌 팝업의 본문이 다시 돌아 걷힌 팝업 자리에 요소를 보냈다"
+
+
+def test_the_clear_dialog_still_opens_with_a_page_round(monkeypatch: pytest.MonkeyPatch) -> None:
+    """「입력 초기화」 는 같은 열림 칸을 쓰되 페이지가 부른다 — 여는 회차는 앱 전체이고, 호스트는 그
+    값을 지우지 않고 빈 자리만 쓴다."""
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+
+    app.button(key="open_standard_target_availability_clear").click().run()
+    assert not app.exception
+    assert browser.started == [[]]
+    assert app.session_state["standard_target_open_dialog"] == "availability_clear"
+    slots = _event_slot_kinds(browser.messages)
+    assert [slot for slot in slots.values() if slot[1] == host] == [("html", host)]
+    assert ("dialog", "") in slots.values()
+    assert app.checkbox(key="standard_target_clear_confirm") is not None
+
+
+PASTE_TEXT_KEY = "standard_target_availability_clipboard_text"
+
+
+def _record_downloads(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
+    """`st.download_button` 이 받은 바이트를 key 별로 잡는다 — 대본의 대역은 페이지를 도는 동안만
+    끼워져 호스트 · 팝업 회차의 양식을 잡지 못한다."""
+    downloads: dict[str, bytes] = {}
+    original = st.download_button
+
+    def record(label: str, *args: Any, **kwargs: Any) -> Any:
+        data = kwargs.get("data")
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        downloads[str(kwargs.get("key"))] = bytes(data or b"")
+        return original(label, *args, **kwargs)
+
+    monkeypatch.setattr(st, "download_button", record)
+    return downloads
+
+
+def test_the_paste_template_carries_what_another_session_saved_after_the_page_round(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """호스트만 도는 여는 회차에도 양식은 지금 저장값을 싣는다 — 페이지가 마지막 앱 전체 회차에
+    읽은 값이 아니라 팝업 본문이 다시 읽는다(`components/dialog_host.py` 쓰는 쪽이 지키는 것 1). 옛
+    값을 실으면 「고칠 칸만 고치고 양식을 통째로 되붙인다」 는 이 창의 쓰는 법대로 쓸 때 그 사이
+    남이 저장한 값을 알림 없이 덮는다(리비전 없는 upsert)."""
+    saved_by_other = pd.DataFrame(
+        {
+            "공정": ["Process-A", "Process-B"],
+            "Weeknum": ["26-W32", "26-W32"],
+            "가용대수": [9.0, 4.0],
+        }
+    )
+
+    class OtherSessionRepository:
+        schema_ahead = None
+
+        def load_standard_target_availability(self) -> pd.DataFrame:
+            return saved_by_other.copy()
+
+    browser = install_fragment_browser(monkeypatch)
+    downloads = _record_downloads(monkeypatch)
+    # 페이지 회차 밖(호스트 · 팝업 회차)의 설비 저장소 — 대본은 페이지를 도는 동안만 제
+    # 대역(가용대수 Process-A 2 대)을 끼우고 끝나면 이것으로 되돌린다.
+    monkeypatch.setattr(
+        equipment_cache, "get_equipment_repository", lambda _path: OtherSessionRepository()
+    )
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+
+    # 다른 세션이 저장했다 — 같은 프로세스의 읽기 캐시를 비우고 쓰기 세대를 올린다.
+    equipment_cache.clear_standard_target_availability_cache()
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]], "여는 회차가 호스트만 돌지 않았다"
+
+    template = pd.read_csv(
+        BytesIO(downloads[TEMPLATE_KEY]), encoding="utf-8-sig", dtype="object"
+    ).set_index(["공정", "Weeknum"])["가용대수"]
+    assert template[("Process-A", "26-W32")] == "9.0"
+    assert template[("Process-B", "26-W32")] == "4.0"
+    assert template.loc["Process-A"].drop("26-W32").isna().all()
+
+
+def test_a_saved_availability_the_dialog_cannot_read_refuses_instead_of_an_old_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """팝업 본문이 저장값을 다시 읽지 못하면(설비 DB 잠김 등) 옛 값으로 양식을 만들지 않는다 —
+    알림창으로 거절하고 글 칸 · 양식을 세우지 않는다."""
+
+    class LockedRepository:
+        schema_ahead = None
+
+        def load_standard_target_availability(self) -> pd.DataFrame:
+            raise duckdb.IOException("설비 DB 가 다른 프로세스에 잠겼다")
+
+    browser = install_fragment_browser(monkeypatch)
+    downloads = _record_downloads(monkeypatch)
+    monkeypatch.setattr(
+        equipment_cache, "get_equipment_repository", lambda _path: LockedRepository()
+    )
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+
+    equipment_cache.clear_standard_target_availability_cache()
+    app.button(key="open_standard_target_availability_paste").click().run()
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    (refused,) = flashed(app, "error")
+    assert refused.code == "FL-04"
+    assert not app.text_area
+    assert TEMPLATE_KEY not in downloads
+
+
+def test_dismissing_the_paste_dialog_drops_its_text_so_reopening_announces_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """닫기(X · 바깥 · Esc)는 호스트만 돌아 Streamlit 이 팝업의 글 칸 값을 거두지 않는다 — 호스트가
+    그 값을 지운다(`render(widget_keys=)`). 남기면 앱 전체 회차 없이 다시 연 창에서 여는 알림 PA-01
+    이 뜨지 않는다(`paste_form.announce_on_open` 은 글 칸 값이 없을 때 방금 열린 것으로 본다)."""
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+    open_id = app.button(key="open_standard_target_availability_paste").id
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    dialog_id = browser.dialog_widget_id()
+    dialog = browser.fragment_of(PASTE_TEXT_KEY)
+
+    app.text_area(key=PASTE_TEXT_KEY).set_value("남은글\t26-W46\t1")
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert app.session_state[PASTE_TEXT_KEY] == "남은글\t26-W46\t1"
+
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert "standard_target_open_dialog" not in app.session_state
+    assert PASTE_TEXT_KEY not in app.session_state, "닫은 팝업의 글 칸 값이 세션에 남았다"
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    assert app.text_area(key=PASTE_TEXT_KEY).value == ""
 
 
 def _process_column_helps(app: AppTest) -> list[str]:
@@ -958,8 +1232,10 @@ def test_exception_rows_are_shown_even_when_the_availability_is_empty() -> None:
 
     assert not app.exception
     assert AVAILABILITY_EMPTY in [element.value for element in app.caption]
-    notice = _frame_with_value(app, "공정", "Pre B/D")
-    assert notice["현재 조회범위 제외 행"].tolist() == [0]
+    assert _frame_with_value(app, "공정", "Pre B/D") is not None
+    assert "현재 조회범위 제외 행: 0" in json.dumps(
+        json.loads(_exception_table(app).proto.columns), ensure_ascii=False
+    )
 
 
 def test_an_empty_availability_stops_only_the_views_that_multiply_by_it() -> None:
