@@ -1512,6 +1512,9 @@ def render_equipment_master_tab(
                 delete_locked=context.delete_lock,
                 drafts_replaced=drafts_replaced,
                 undo=partial(_grid_undo, context, layout),
+                # 삭제를 확정하면 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다 — 오른쪽
+                # 칸이 접혀 있으면 펴고(c6).
+                on_deleted=partial(_switch_side, SIDE_CHANGES),
             )
     with right:
         # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그

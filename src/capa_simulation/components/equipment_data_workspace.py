@@ -3058,8 +3058,8 @@ def _render_bulk_delete_status(frames: Frames) -> tuple[bool, bool]:
     return confirm, cancel
 
 
-def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bool) -> None:
-    """선택 · 삭제를 편집본에 반영한다. `_remember_edits` 뒤에 부른다.
+def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bool) -> bool:
+    """선택 · 삭제를 편집본에 반영한다. `_remember_edits` 뒤에 부른다. 삭제를 확정했으면 참이다.
 
     **확인 대기는 어떤 제출이든 한 번 쓰고 버린다.** 삭제 버튼이 다시 세우지 않는 한 남지
     않는다 — 확인 상자가 누른 순간보다 오래 살아 있으면 나중에 다른 뜻으로 눌린다.
@@ -3106,7 +3106,10 @@ def _apply_bulk_actions(editor: EditorResult, *, confirm: bool, view_applied: bo
         st.session_state[LAST_REMOVED_KEY] = plan.removed
         selection[target] = frozenset()
         queue_flash(_NOTICE_KEY, done, kind="info")
+        st.session_state[SELECTION_KEY] = selection
+        return True
     st.session_state[SELECTION_KEY] = selection
+    return False
 
 
 def restore_bulk_deletion() -> bool:
@@ -3532,6 +3535,7 @@ def render_small_editor(
     delete_locked: str | None,
     drafts_replaced: bool,
     undo: Callable[[], None] | None = None,
+    on_deleted: Callable[[], None] | None = None,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
     그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
@@ -3548,7 +3552,8 @@ def render_small_editor(
     뒤에만」). 받은 제출이 없으면 None. 비가동 일정은 시나리오 쪽이라 낡은 세션이면 통째로
     잠근다. 저장은 오른쪽 「저장 전 변경」 한 곳이다. `undo` 는 미룬 표 단계
     되돌리기(`defer_grid_undo`)를 편집을 넣은 뒤 잇는 길이다 — 편집이 줄을 지웠거나 통째 단계면
-    되돌리기를 비우고 편집을 지킨다(그 사실은 알림창이 말한다)."""
+    되돌리기를 비우고 편집을 지킨다(그 사실은 알림창이 말한다). `on_deleted` 는 「삭제 확정」 을
+    받은 제출 뒤에 부른다 — 화면이 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다(c6)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     baseline_table = target == BASELINE_TARGET
     position = 0 if baseline_table else 2
@@ -3684,7 +3689,7 @@ def render_small_editor(
             st.session_state.pop(GRID_UNDO_REQUEST_KEY, None)
         keep_undo = undoing and undo is not None and _undo_lines_up(current[position], edited)
         _remember_edits((updated[0], updated[1], updated[2]), keep_undo=keep_undo)
-        _apply_bulk_actions(
+        deleted = _apply_bulk_actions(
             EditorResult(
                 frames=(updated[0], updated[1], updated[2]),
                 checked={**selection, target: checked},
@@ -3694,6 +3699,8 @@ def render_small_editor(
             confirm=confirm_delete,
             view_applied=view_clicked,
         )
+        if deleted and on_deleted is not None:
+            on_deleted()
         if restoring:
             _restore_removed()
         if keep_undo and undo is not None:
