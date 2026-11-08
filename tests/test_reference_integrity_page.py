@@ -272,6 +272,23 @@ def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:
     assert not any("생산실적 수량" in str(item.value) for item in app.markdown)
 
 
+@pytest.mark.parametrize(("sample", "badge"), [(True, True), (False, False)])
+def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
+    sample: bool, badge: bool
+) -> None:
+    """샘플을 끈 동안 머리 배지 「실적 DB 미연결」 을 뺀다 — 자리 표지 「실적 DB 연결 대기」 가 같은
+    말을 한다(아침 보드 d4)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state[SAMPLE_TOGGLE_KEY] = sample
+    app.run()
+
+    assert not app.exception
+    (header,) = [
+        str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)
+    ]
+    assert (":blue-badge[실적 DB 미연결]" in header) is badge
+
+
 def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
     """산식 가이드는 위젯 없는 정적 설명이라 닫혀 있으면 그리지 않는다. 열면 그 회차에 선다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()

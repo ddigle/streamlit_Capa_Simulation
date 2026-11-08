@@ -425,6 +425,38 @@ def test_a_second_press_of_resolve_or_reply_does_not_repeat_it(tmp_path: Path) -
     assert app.text_area(key=f"voc_reply_body_{post_id}").value == ""
 
 
+def test_marking_a_post_answered_or_open_again_says_so_in_the_popup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「답변 완료로 표시」 · 「미답변으로 되돌리기」 는 저장되는 누름이라 알림창에 결과를 낸다 —
+    배지는 글 상자를 펴야 보인다(아침 보드 a2 「VOC 표시만 알림을 낸다」). 겹쳐 온 둘째 누름은 다시
+    쓰지 않고 같은 알림만 다시 적는다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
+    database_path = tmp_path / "scenario.duckdb"
+    post_id = _post(database_path)
+    app = _app(database_path)
+    app.button(key=f"voc_resolve_{post_id}").click()
+    pressed = app._tree.get_widget_states()
+    app.run()
+
+    assert not app.exception
+    assert _posts(database_path) == [("펼침 확인", True)]
+    assert [message.value for message in successes(app)] == ["답변 완료로 표시했습니다."]
+    assert not app.success, "알림창으로만 낸다 — 단추 곁에 그리지 않는다"
+
+    app._run(widget_state=pressed)
+    assert not app.exception
+    assert _posts(database_path) == [("펼침 확인", True)]
+    assert [message.value for message in successes(app)] == ["답변 완료로 표시했습니다."]
+
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    next(button for button in app.button if button.label == "미답변으로 되돌리기").click().run()
+
+    assert not app.exception
+    assert _posts(database_path) == [("펼침 확인", False)]
+    assert [message.value for message in successes(app)] == ["미답변으로 되돌렸습니다."]
+
+
 @pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
 def test_a_press_on_the_replacing_unresolve_button_right_after_resolving_does_not_undo_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
@@ -677,6 +709,21 @@ def test_a_kept_reply_stays_until_it_is_closed(tmp_path: Path) -> None:
     assert not app.exception
     assert not app.code
     assert KEPT_CLOSE_KEY not in [button.key for button in app.button]
+
+
+def test_a_kept_reply_is_counted_where_the_unsaved_marks_read_it(tmp_path: Path) -> None:
+    """화면 탭 점 · 머리 변경 칩은 페이지 앞에서 `voc_draft_keeper.kept_reply_count` 로 적어 둔
+    답변을 센다 — 화면이 그 칸에 적고 「닫기」 가 걷는다(아침 보드 X1 — 새로고침 · 테마 전환 앞에서
+    묻는다)."""
+    from capa_simulation.components.voc_draft_keeper import KEPT_REPLY_KEY
+
+    app, _ = _refused_reply(tmp_path / "scenario.duckdb")
+    assert app.session_state[KEPT_REPLY_KEY] == ("보지 못한 답변",)
+
+    app.button(key=KEPT_CLOSE_KEY).click().run()
+
+    assert not app.exception
+    assert KEPT_REPLY_KEY not in app.session_state
 
 
 def test_the_close_button_warns_that_the_kept_reply_goes_away(tmp_path: Path) -> None:

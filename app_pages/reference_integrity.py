@@ -32,12 +32,12 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
-    pending_badge,
     render_page_header,
 )
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.sample_data import (
+    pending_source_badge,
     render_pending_source,
     render_sample_switch,
 )
@@ -566,7 +566,7 @@ process_labels = get_process_labels()
 
 render_page_header(
     "Dynamic Capa",
-    badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(_SOURCE)),
+    badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge(_SOURCE)),
 )
 render_page_guide("reference_integrity", title="Dynamic Capa")
 # 부서별 Gap·A/Item 로드맵은 실행 관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그 화면

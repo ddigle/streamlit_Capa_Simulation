@@ -13,11 +13,11 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
-    pending_badge,
     render_page_header,
 )
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.sample_data import (
+    pending_source_badge,
     render_pending_source,
     render_sample_switch,
 )
@@ -118,7 +118,7 @@ def _route_choices(
 
 render_page_header(
     "표준 대비 재공 현황 (구현중)",
-    badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(SOURCE)),
+    badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge(SOURCE)),
 )
 render_page_guide("wip_status", title="표준 대비 재공 현황")
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.

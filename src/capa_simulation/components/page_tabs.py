@@ -101,6 +101,7 @@ from capa_simulation.components.past_data_management import past_data_has_pendin
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import MOUNT_KEYS, list_has_edits
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
+from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -235,6 +236,9 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
       칸)이라 위 「설비 편집본」 점이다(떠나도 사라지지 않는다).
     - 설비 편집본은 가용설비 현황·Space 현황이 함께 쓰는 한 벌이라 두 탭에 함께 찍는다(세대 기준이라
       되돌린 편집에도 남는다 — 테마 표지와 같은 오탐).
+    - VOC 적어 둔 답변(`kept_reply_count` — 남지 못한 답변을 「닫기」 까지 두는 세션 칸)도 탭을
+      옮겨도 남아 **어느 화면에서나** VOC 탭에 찍는다. 새로고침 · 테마 전환에 사라지는 사용자의
+      글이다.
     - 넣지 않는 것: 적용했지만 저장하지 않은 시나리오(머리 띠·사이드바 배지가 말한다. 어느 화면이
       적용했는지 기록도 없다), Cut-off 초안(판정 함수가 없다), Qual 계산기(저장 개념이 없다).
     """
@@ -252,6 +256,9 @@ def page_unsaved_marks(page_file: str | None) -> dict[str, str]:
         mark(HOME.path, "저장하지 않은 Past Data")
     if list_has_edits():
         mark(SCENARIO_MANAGEMENT.path, "저장하지 않은 목록 편집")
+    kept = kept_reply_count()
+    if kept:
+        mark(_page_path(VOC_PAGE_FILE), f"적어 둔 답변 {kept:,}건")
     if page_file == _SPACE_PAGE_FILE and floor_state_draft_pending():
         mark(SPACE_STATUS.path, "저장하지 않은 층 사용 편집")
     small = _equipment_small_editors(page_file)

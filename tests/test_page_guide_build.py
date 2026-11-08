@@ -45,6 +45,8 @@ from capa_simulation.components import app_credits  # noqa: E402
 
 VIEWPORT = (1440, 900)
 SKELETON = core.load_skeleton()
+# 리뷰 한 줄 · 기준 줄의 뼈대 판(`lob@1108` 꼴) — 원고 판을 올려도 시험 글을 고치지 않는다.
+VERSION = core.compact_version(SKELETON.version)
 INTERNAL_FIRST_PASS = 18
 DATE = "2026-10-22"
 
@@ -348,7 +350,7 @@ def test_an_older_skeleton_version_is_reported_not_refused() -> None:
     line = core.review_line(SKELETON, None, None, report)
 
     assert report.applied == 1 and not report.version_matches
-    assert line.startswith("가이드 lob@1023 판 다름(덮어쓰기 lob@1015) ")
+    assert line.startswith(f"가이드 {VERSION} 판 다름(덮어쓰기 lob@1015) ")
 
 
 # ------------------------------------------------------------------ 매개값
@@ -659,7 +661,7 @@ def test_review_line_for_a_clean_internal_first_pass(tmp_path: Path, example_dir
     total = sum(len(SKELETON.target_names(sid)) for sid in SKELETON.read_only_ids())
 
     assert line == (
-        f"가이드 lob@1023 상태 18/18; 표적 {total}/{total} ok; 고아 0; 덮어씀 1; 예시 4; "
+        f"가이드 {VERSION} 상태 18/18; 표적 {total}/{total} ok; 고아 0; 덮어씀 1; 예시 4; "
         "DB 변화 없음"
     )
     assert sorted(d for d in details if d.startswith("예시")) == [
@@ -752,7 +754,7 @@ def test_assemble_only_writes_the_board_outside_and_stops_on_a_db_change(
 
     assert result == code
     assert (dist / "lob.html").stat().st_size > 10_000
-    assert "가이드 lob@1023 상태 18/18;" in out
+    assert f"가이드 {VERSION} 상태 18/18;" in out
     block = output.read_text(encoding="utf-8")
     assert ("끝 — 조립만" in block) == (db == "same")
     assert ("DB 변화 있음" in block) == (db == "changed")
@@ -1115,7 +1117,7 @@ def test_checker_refuses_markup_in_overrides_and_bad_param_types(
     assert "onerror" not in capsys.readouterr().err
     assert checker.main(["--params", str(params)]) == checker.EXIT_NOT_READY
     assert checker.main([]) == checker.EXIT_OK
-    assert capsys.readouterr().out.strip().endswith("가이드 lob@1023 고아 0; 덮어씀 0")
+    assert capsys.readouterr().out.strip().endswith(f"가이드 {VERSION} 고아 0; 덮어씀 0")
 
 
 # ------------------------------------------------------------------ 낱말 · 가림
@@ -1560,7 +1562,7 @@ def test_checker_compares_with_the_accepted_board_and_lists_only_data_places(des
     assert f"바뀜 {_data_count()}/{PLACES_COMPARED};" in result.line
     assert set(result.changed.values()) == {"데이터 자리"}
     assert set(result.changed) == core.data_places(SKELETON)
-    start = lines.index(f"  기준 lob@1023 · {DATE} · {PLACES_COMPARED - _data_count()}자리")
+    start = lines.index(f"  기준 {VERSION} · {DATE} · {PLACES_COMPARED - _data_count()}자리")
     assert lines[start + 1] == f"  흔들림 0:{PLACES_COMPARED - _data_count()} 1-2:0 3-9:0 10+:0"
     # 기준 줄들은 지금 목록(못 찾은 표적 → 고아 → 예시 → 남은 상태) 뒤에 온다
     assert all(not row.startswith("  예시 ") for row in lines[start:])

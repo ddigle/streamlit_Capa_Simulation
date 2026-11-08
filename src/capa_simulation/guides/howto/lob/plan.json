@@ -1,6 +1,6 @@
 {
   "page": "Capa LOB Summary",
-  "version": "lob@2026-10-23",
+  "version": "lob@2026-11-08",
   "viewport": {"width": 1440, "height": 900, "scale": 2},
   "mask": ["named:SIDEBAR_FOOTER"],
   "params": {

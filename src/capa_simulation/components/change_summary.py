@@ -10,7 +10,8 @@
    편집표.
 2. **저장 안 함**(`keep`) — 적용했지만 저장하지 않은 시나리오, 설비 편집본 · FAB 배치 대기,
 기준 정보 표의 적용 전 편집(세션 칸이라 화면을 떠나도 남는다), 붙여넣기 대기, Past Data
-   초안, 시나리오 관리 표 초안. 새로고침 · 시나리오 바꿈에 사라진다.
+   초안, 시나리오 관리 표 초안, VOC 적어 둔 답변(남지 못한 답변). 새로고침 · 시나리오 바꿈에
+   사라진다(적어 둔 답변은 새로고침 · 테마 전환에).
 3. **가정 사용 중**(`assume`) — 공식과 다른 설비 시나리오, UPEH 가정(100% 아님). 내가 바꾼 것이지만
 지우지 않아도 된다 —
    회색 점이다.
@@ -22,7 +23,7 @@
 머리 띠 위 줄의 「최신 rN 있음」 · 「공식 vN」 은 상태라 넣지 않는다.
 
 차례(칩 맨 위 글 · 판 차례): 떠나면 사라짐(지금 화면 것) → 시나리오 미저장 → 설비 미저장 → 표 초안 ·
-붙여넣기 대기 → Past Data · 목록 → 설비 가정 → UPEH 가정.
+붙여넣기 대기 → Past Data · 목록 → VOC 적어 둔 답변 → 설비 가정 → UPEH 가정.
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import list_has_edits
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
+from capa_simulation.components.voc_draft_keeper import VOC_PAGE_FILE, kept_reply_count
 from capa_simulation.equipment_scenario_activation import remembered_equipment_label
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -184,6 +186,10 @@ def session_changes(page_file: str | None, *, hrefs: Mapping[str, str]) -> list[
                 tab=CAPA_SCENARIO_TAB_NAME,
             )
         )
+    kept = kept_reply_count()
+    if kept:
+        voc = _spec_for_file(VOC_PAGE_FILE)
+        keep.append(item("keep", voc, "VOC", f"적어 둔 답변 {kept:,}건", "VOC 적어 둔 답변"))
 
     assume: list[ChangeItem] = []
     equipment = remembered_equipment_label()

@@ -11,18 +11,18 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
-    pending_badge,
     render_page_header,
 )
 from capa_simulation.components.performance_actual_screen import (
     render_performance_actual_screen,
 )
 from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.sample_data import pending_source_badge
 from capa_simulation.services.performance_actuals import UPEH_METRIC
 
 render_page_header(
     "UPEH 실적 (구현중)",
-    badges=page_badges(MATURITY_BADGES["prototype"], pending_badge("생산이력 DB")),
+    badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge("생산이력 DB")),
 )
 render_page_guide("actual_upeh", title="UPEH 실적")
 

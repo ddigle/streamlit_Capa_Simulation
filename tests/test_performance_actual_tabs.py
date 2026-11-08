@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,6 +16,7 @@ from capa_simulation.services.performance_actuals import (
 )
 
 TAB_KEY = "tabs_test_active_tab"
+PAGES = Path(__file__).resolve().parents[1] / "app_pages"
 
 
 def _app() -> None:
@@ -209,3 +211,45 @@ def test_the_pending_screen_keeps_what_it_will_calculate_in_the_title_tooltip() 
         assert name in tooltip
     (slot,) = [item for item in app.get("html") if "연결 대기" in item.proto.body]
     assert f"<strong>{EFFICIENCY_METRIC.source} 연결 대기</strong>" in slot.proto.body
+
+
+@pytest.mark.parametrize(
+    ("page", "source"),
+    [
+        ("actual_efficiency.py", "생산이력 DB"),
+        ("actual_upeh.py", "생산이력 DB"),
+        ("yield_actual.py", "수율 실적 DB"),
+    ],
+)
+def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
+    monkeypatch: pytest.MonkeyPatch, page: str, source: str
+) -> None:
+    """샘플을 끈 동안 머리 배지 「… 미연결」 을 뺀다 — 연결 전 자리 표지 「… 연결 대기」 가 같은
+    말을 한다(아침 보드 d4). 켠 동안은 합성 샘플 화면이라 머리가 원천이 없다고 말한다. 머리는
+    스위치보다 먼저 그리지만 스위치를 누른 그 회차에 바로 따라간다."""
+    import capa_simulation.components.process_labels as process_labels_module
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+
+    monkeypatch.setattr(process_labels_module, "get_process_labels", lambda: ProcessLabels())
+    app = AppTest.from_file(str(PAGES / page), default_timeout=60)
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert _header(app) == f":green-badge[인터랙티브 프로토타입] :blue-badge[{source} 미연결]"
+
+    app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(False).run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert _header(app) == ":green-badge[인터랙티브 프로토타입]"
+    (slot,) = [item for item in app.get("html") if "연결 대기" in item.proto.body]
+    assert f"<strong>{source} 연결 대기</strong>" in slot.proto.body
+
+    app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(True).run()
+    assert _header(app).endswith(f":blue-badge[{source} 미연결]")
+
+
+def _header(app: AppTest) -> str:
+    """머리 배지 줄(구현중 배지를 뺀 나머지)."""
+    (line,) = [
+        str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)
+    ]
+    return line.replace(":orange-badge[구현중] ", "")

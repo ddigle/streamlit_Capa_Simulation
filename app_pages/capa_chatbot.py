@@ -26,11 +26,11 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import (
     MATURITY_BADGES,
     page_badges,
-    pending_badge,
     render_page_header,
 )
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.sample_data import (
+    pending_source_badge,
     render_pending_source,
     render_sample_switch,
 )
@@ -132,7 +132,7 @@ def _render_answer(answer: SampleAnswer) -> None:
 
 render_page_header(
     "Capa Chatbot (구현중)",
-    badges=page_badges(MATURITY_BADGES["prototype"], pending_badge(SOURCE)),
+    badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge(SOURCE)),
 )
 render_page_guide("capa_chatbot", title="Capa Chatbot")
 
