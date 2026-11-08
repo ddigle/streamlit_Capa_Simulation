@@ -39,7 +39,6 @@ DATAFRAME_PENDING: frozenset[str] = frozenset(
         "src/capa_simulation/components/auto_official_update_tab.py",
         "src/capa_simulation/components/bigdataquery_registration.py",
         "src/capa_simulation/components/container_start_check.py",
-        "src/capa_simulation/components/exclusion_table.py",
         "src/capa_simulation/components/home_rendering.py",
         "src/capa_simulation/components/past_data_management.py",
         "src/capa_simulation/components/performance_actual_screen.py",

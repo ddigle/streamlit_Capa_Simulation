@@ -252,16 +252,19 @@ def space_layout_notices(
             )
         )
     if snapshot.layout_regrouped:
+        # 자리를 잃은 모듈이 미배치 칸에 늘 서지는 않는다 — 같은 묶음 모듈이 도면에 서 있으면 배치
+        # 편집기가 그 모듈을 칩으로 내놓지 않고(`trayKeep`) 그 묶음을 골라 다시 놓는다. 글은 두 길을
+        # 다 말한다.
         regrouped = len(snapshot.layout_regrouped)
         lines.append(
             LayoutNotice(
                 LAYOUT_REGROUPED_ALERT,
                 f"공식에서 모듈 구성이 바뀐 묶음 {regrouped:,}개"
                 f"({', '.join(snapshot.layout_regrouped[:3])}"
-                f"{' 외' if regrouped > 3 else ''}) — 가정 배치에서 그 "
-                "모듈은 자리 없이 미배치 칸에 있습니다. 배치 편집에서 다시 놓으세요.",
-                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 — 미배치 칸에 있음 · "
-                "배치 편집에서 다시 놓기",
+                f"{' 외' if regrouped > 3 else ''}) — 가정 배치에서 그 묶음의 모듈이 자리를 "
+                "잃었습니다. 배치 편집에서 묶음이 도면에 서 있으면 골라 「범위에 맞춰 n등분」 을 "
+                "누르고, 없으면 미배치 칸에서 도면에 놓으세요.",
+                f"모듈 구성이 바뀐 묶음 {regrouped:,}개 — 자리 잃은 모듈 · 배치 편집에서 다시 놓기",
                 sorted(snapshot.layout_regrouped),
             )
         )

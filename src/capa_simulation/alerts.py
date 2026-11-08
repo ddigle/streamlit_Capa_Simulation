@@ -232,7 +232,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("AD-05", "action", "state", "표시순서 분류값이 대소문자 · 공백만 달라 겹침"),
     AlertSpec("AD-06", "check", "state", "공정 표시명이 다른 공정의 원본명과 같음"),
     AlertSpec("AD-07", "error", "event", "Admin Area 를 그리지 못함 — 같은 글이면 한 번"),
-    AlertSpec("MO-01", "error", "state", "모듈 폴더를 읽지 못함"),
+    AlertSpec("MO-01", "error", "state", "모듈 전체 폴더를 읽지 못함"),
     AlertSpec("MO-02", "action", "state", "모듈이 접두 없는 세션 키를 건드림"),
     AlertSpec("VO-01", "error", "event", "VOC 를 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec(
@@ -244,7 +244,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
         "EQ-13", "info", "state", "Space — 가정 배치가 공식과 다름(호기 · 도면 요소 · Main 설비명)"
     ),
     AlertSpec(
-        "EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음이 미배치 칸에 있음"
+        "EQ-14", "action", "state", "Space — 공식에서 모듈 구성이 바뀐 묶음의 모듈이 자리를 잃음"
     ),
     AlertSpec("AD-08", "action", "state", "접속 명단을 S3 에서 읽지 못함"),
     # 저장 안 한 배치 상자에 서던 겹침 · 중복 블록 줄을 상태 알림으로(저장은 늘 같은 동작이다 — 설계

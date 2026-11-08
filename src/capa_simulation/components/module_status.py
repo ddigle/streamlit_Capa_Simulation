@@ -158,7 +158,7 @@ def render_module_status() -> None:
         scope=None,
         content=scan.root_error or None,
         active=bool(scan.root_error),
-        text="모듈 폴더를 읽지 못해 모듈 화면이 서지 않습니다 — Admin 「모듈 상태」 확인",
+        text="모듈 전체 폴더를 읽지 못해 모듈 화면이 서지 않습니다 — Admin 「모듈 상태」 확인",
         full=scan.root_error or None,
     )
     if not scan.records and not scan.root_error:

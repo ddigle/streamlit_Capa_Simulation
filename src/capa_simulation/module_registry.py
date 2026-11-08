@@ -505,7 +505,7 @@ def scan_modules(
             records=(),
             disabled_value=disabled_value,
             unknown_disabled=tuple(sorted(disabled_ids)),
-            root_error=f"모듈 뿌리를 읽지 못했습니다 — {type(error).__name__}",
+            root_error=f"모듈 전체 폴더를 읽지 못했습니다 — {type(error).__name__}",
         )
     drafts: list[_Draft] = []
     for folder in folders:

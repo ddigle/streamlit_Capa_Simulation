@@ -4597,6 +4597,8 @@ export default function (component) {
   function pushUndo(ops) {
     if (!ops.length) return
     S.flash = ''
+    // 목록 줄 누르기가 창 아래에 적은 그 호기의 자리(「오른쪽 미배치 칸에 있습니다」 · 「도면에 없음 …」)는 편집 뒤에 틀릴 수 있다.
+    if (sheetNote) setSheetNote('')
     S.undo.push({ kind: 'ops', ops })
     if (S.undo.length > 200) S.undo.shift()
   }
@@ -7406,14 +7408,17 @@ export default function (component) {
     return found
   }
   // 목록 줄 → 그 호기. 도면에 선 호기는 고르고 화면을 그리로(「고른 곳 보기」 와 같은 여백, 배율은 LIST_ROW_ZOOM 까지),
-  // 편집의 미배치 호기는 오른쪽 칸 그 칩으로, 그 밖은 창 아래 한 줄로 알린다.
+  // 편집에서 도면에 선 묶음의 좌표 없는 모듈(서랍에 따로 서지 않는다 — `trayKeep`)은 그 모듈을 고르고 화면은 그 묶음으로, 편집의
+  // 미배치 호기는 오른쪽 칸 그 칩으로, 그 밖은 창 아래 한 줄로 알린다.
   function goToUnit(id) {
-    const item = S.items.get(id)
+    const own = S.items.get(id)
+    const lead = own && isUnit(own) && !VIEW && !onCanvas(own) && !own.moveTo ? placedMembers(own)[0] || null : null
+    const item = lead || own
     const row = S.sheet ? sheetRows().find((one) => one.id === id) : null
     const place = row && S.sheet.placeIdx >= 0 ? sheetText(row.cells[S.sheet.placeIdx]) : ''
     setSheetNote('')
     if (item && isUnit(item) && onCanvas(item)) {
-      const group = S.groups.get(id)
+      const group = S.groups.get(item.id)
       if (VIEW && group && group.__visible === false) {
         setSheetNote(`${id} — 이 기준일에는 도면에 보이지 않습니다(반입 전 겹침·도면 이탈)`)
         return
@@ -7425,6 +7430,7 @@ export default function (component) {
       const rect = group && group.querySelector('.sle-rect').getBoundingClientRect()
       const shift = rect && !S.sheetWin.min ? clearOfSheet(stage.getBoundingClientRect(), sheetBox.getBoundingClientRect(), rect) : null
       if (shift) panBy(shift.dx * unitsPerPx(), shift.dy * unitsPerPx())
+      if (lead) setSheetNote(`${id} — 도면에 없음 · Main 설비 ${own.group}`)
       return
     }
     if (item && isUnit(item) && !VIEW && !item.moveTo) {

@@ -79,6 +79,7 @@ def render_exclusion_table(
         displayed,
         hide_index=True,
         width="stretch",
+        placeholder="",
         column_config={
             column: st.column_config.Column(help=text)
             for column, text in (column_help or {}).items()
