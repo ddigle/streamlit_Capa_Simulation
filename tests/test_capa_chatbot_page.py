@@ -79,6 +79,24 @@ def _shown_conclusions(app: AppTest) -> list[str]:
     return [item.value for item in app.markdown if item.value in expected]
 
 
+def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off() -> None:
+    """샘플을 끈 동안 머리 배지 「… 미연결」 을 뺀다 — 자리 표지 「… 연결 대기」 가 같은 말을
+    한다(아침 보드 d4). 켜면 다시 단다."""
+    from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+
+    app = _start()
+    assert any("미연결]" in line for line in _header_lines(app))
+
+    app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(False).run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not any("미연결]" in line for line in _header_lines(app))
+    assert [item for item in app.get("html") if "연결 대기</strong>" in item.proto.body]
+
+
+def _header_lines(app: AppTest) -> list[str]:
+    return [str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)]
+
+
 def test_a_suggested_question_adds_its_answer_in_one_run(
     runs: list[int], answer_builds: list[int]
 ) -> None:

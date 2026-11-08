@@ -1,4 +1,4 @@
-# Purpose: 원천이 붙지 않은 화면의 샘플 스위치 · 연결 전 자리 · 호기 없음 표지 글을 둔다.
+# Purpose: 원천 없는 화면의 샘플 스위치 · 연결 전 자리 · 머리 미연결 배지 · 호기 없음 표지를 둔다.
 
 """샘플 데이터 스위치.
 
@@ -19,6 +19,10 @@
 페이지에 있어도 충돌하지 않는다. 다만 `persist_state="session"` 이 없으면 위젯이 화면에서
 사라지는 순간 값이 버려지고, 있어도 다른 페이지로 넘어온 첫 회차에는 위젯이 기본값으로
 선다 — 그 회차에는 `carry_shared_widget_value` 가 값을 다시 적는다.
+
+**머리 「… 미연결」 배지는 켠 동안만 단다**(`pending_source_badge` — 2026-11-08 아침 보드 d4). 끈
+동안은 연결 전 자리의 표지 「… 연결 대기」 가 같은 말을 해 거듭 달지 않는다. 켠 동안은 합성 샘플
+화면이라 머리가 원천이 아직 없다고 말한다.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from collections.abc import Sequence
 import streamlit as st
 
 from capa_simulation.components.module_slot import slot_html
+from capa_simulation.components.page_header import pending_badge
 from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.shared_widget_state import carry_shared_widget_value
 
@@ -46,6 +51,20 @@ NO_UNITS_HELP = (
 # 연결 전 점선 자리 — 아래로 도면이 이어지는 Space 현황에서도 쓰므로 표지 한 줄만큼만 낮게 선다.
 PENDING_SLOT_CLASS = "pending-source-slot"
 PENDING_SLOT_MIN_HEIGHT = "72px"
+
+
+def sample_switch_on() -> bool:
+    """이 회차의 「샘플 데이터」 스위치 값 — 스위치를 그리기 전(머리 배지 · 설비 표본)에 읽는다.
+    스위치를 누른 회차에도 세션 값이 이미 새 값이다. 처음 연 세션은 켜짐(`render_sample_switch` 의
+    기본값)이다."""
+    return bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
+
+
+def pending_source_badge(source: str) -> str:
+    """머리 「`source` 미연결」 배지(`page_header.pending_badge`) — 샘플을 켠 동안만. 끈 동안은 빈
+    글자다 — 연결 전 자리 표지(`render_pending_source` 의 「… 연결 대기」)가 같은 말을 한다. 머리는
+    스위치보다 먼저 그리므로 세션 값으로 정한다(`sample_switch_on`)."""
+    return pending_badge(source) if sample_switch_on() else ""
 
 
 def render_sample_switch(*, key: str, source: str) -> bool:

@@ -235,6 +235,27 @@ def test_wip_status_page_renders_filtered_step_product_grid(
     assert not [item.label for item in app.expander if "경계" in item.label]
 
 
+@pytest.mark.parametrize(("sample", "badge"), [(True, True), (False, False)])
+def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
+    sample: bool, badge: bool
+) -> None:
+    """샘플을 끈 동안 머리 배지 「… 미연결」 을 뺀다 — 자리 표지 「… 연결 대기」 가 같은 말을
+    한다(아침 보드 d4)."""
+    from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
+
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state[SAMPLE_TOGGLE_KEY] = sample
+    app.run()
+
+    assert not app.exception
+    (header,) = [
+        str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)
+    ]
+    assert ("미연결]" in header) is badge
+    pending = [item for item in app.get("html") if "연결 대기</strong>" in item.proto.body]
+    assert bool(pending) is not sample
+
+
 def test_wip_status_page_without_a_choice_stops_on_one_plain_line() -> None:
     """공정이나 제품을 다 비우면 그릴 것이 없어 멈춘다 — 파란 안내 상자 · 하는 법 없이 회색 평문
     한 줄이다(설계 규칙 UI-TXT-04)."""
