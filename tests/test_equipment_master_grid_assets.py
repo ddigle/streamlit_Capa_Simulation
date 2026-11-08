@@ -2277,3 +2277,56 @@ def test_ops_held_by_the_batch_when_the_base_changes_are_sent_and_counted() -> N
     assert result["quiet"] == [[1, "b1", "T0"], [2, "b1", "T1"], [3, "b1", "OPEN"]]
     assert result["acked"] == {"box": 0}
     assert result["untouched"] == {"box": 0, "edit": None}
+
+
+_CARET_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const R = {}")]
+    + """
+FakeNode.prototype.select = function () {
+  this.selection = 'all'
+}
+FakeNode.prototype.focus = function () {
+  document.activeElement = this
+  FAKE_ROOT.activeElement = this
+}
+const editor = () => body.querySelector('.emg-ed')
+const R = {}
+;(async () => {
+  startEdit(S, 'a', 1)
+  let input = editor()
+  R.opened = input.selection
+  // 칸에 「MI」 를 쳐 글자 자리가 끝(2)에 있다 — Tab 으로 다음 칸을 연다.
+  input.value = 'MI'
+  input.selectionStart = 2
+  input.selectionEnd = 2
+  fire(input, 'input')
+  fire(input, 'keydown', { key: 'Tab' })
+  input = editor()
+  R.tab = { cell: [S.edit.id, S.edit.col], value: input.value, selection: input.selection }
+  input.selectionStart = 1
+  input.selectionEnd = 1
+  fire(input, 'keydown', { key: 'ArrowDown' })
+  input = editor()
+  R.down = { cell: [S.edit.id, S.edit.col], value: input.value, selection: input.selection }
+  // 같은 칸이 다시 그려지면(굴림 · 회차) 쓰던 글자 자리를 지킨다.
+  input.selection = null
+  input.selectionStart = 1
+  input.selectionEnd = 1
+  paintWindow(S)
+  R.same = editor().selection
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_tab_or_down_into_the_next_cell_selects_its_old_value_to_be_typed_over() -> None:
+    """Tab · ↓ 로 연 다음 칸은 옛 값을 통째로 고른 채 열려 친 글이 옛 값을 덮는다. 나가는 칸의 글자
+    자리를 새 칸에 넘겨 「MI」 칸 뒤 Tab 하고 「D1」 을 치면 「MID1」 이 됐다(바탕부터 — X1). 같은
+    칸이 다시 그려질 때는 쓰던 자리를 지킨다."""
+    result = _node({}, _CARET_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["opened"] == "all"
+    assert result["tab"] == {"cell": ["a", 2], "value": "p", "selection": "all"}
+    assert result["down"] == {"cell": ["b", 2], "value": "q", "selection": "all"}
+    assert result["same"] == [1, 1]

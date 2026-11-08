@@ -1533,7 +1533,7 @@ function paintWindow(S) {
   const end = Math.min(start + Math.ceil(viewport / ROW_H) + BUFFER_ROWS * 2, total)
   const active = activeIn(body)
   const hadFocus = active && body.contains(active)
-  const caret = active && active.classList && active.classList.contains('emg-ed') ? [active.selectionStart, active.selectionEnd] : null
+  const caret = keptCaret(S, active)
   S.painting = true
   body.style.paddingTop = start * ROW_H + 'px'
   body.style.height = total * ROW_H + 'px'
@@ -1548,6 +1548,16 @@ function paintWindow(S) {
     S.wantFocus = false
     focusTarget(S, caret)
   }
+}
+
+// 다시 그려도 이어 쓸 글자 자리 — 초점 든 편집 칸이 다시 그린 뒤에도 같은 칸으로 열려 있을 때만이다. Tab · ↓ 로 다음 칸을
+// 열면 나가는 칸의 자리를 새 칸에 넘기지 않는다 — 넘기면 새 칸의 「값 통째로 고름」 을 이겨 친 글이 옛 값 안에 끼었다
+// (「MI」 칸 뒤 Tab 하고 「D1」 → 「MID1」).
+function keptCaret(S, active) {
+  if (!active || !active.classList || !active.classList.contains('emg-ed') || !S.edit) return null
+  const cell = active.closest('.emg-c')
+  if (!cell || cell.dataset.id !== S.edit.id || Number(cell.dataset.col) !== S.edit.col) return null
+  return [active.selectionStart, active.selectionEnd]
 }
 
 function repaintCell(S, id, col) {
