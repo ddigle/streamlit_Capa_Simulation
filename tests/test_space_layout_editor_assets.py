@@ -704,10 +704,19 @@ def test_the_tray_lists_units_by_name_and_can_be_searched() -> None:
     assert 'class="sle-tray-empty" hidden' in HTML
     apply = JS[JS.index("function applyTrayFilter(") : JS.index("function buildChip(")]
     assert "chip.hidden = !visible" in apply and "trayCount.textContent" in apply
-    # 칸 머리 수는 칩 수(설비 대수)이고 칩이 모듈 여럿을 담으면 모듈 수를 곁에 적는다 — 요약 ·
-    # 층 목록의 「미배치 1대」 와 칩의 「모듈 4」 가 같은 칸에서 만난다(점검 g6-26).
-    assert "modules === total ? `${total}대` : `${total}대(모듈 ${modules})`" in apply
+    # 칸 머리 수는 칩 수(설비 대수)이고 묶음 칩이 모듈 여럿을 담으면 묶음 칩의 모듈만 세어 곁에
+    # 적는다 — 요약 · 층 목록의 「미배치 1대」 와 칩의 「모듈 4」 가 같은 칸에서 만난다(점검 g6-26).
+    # 단독 호기 칩은 모듈로 세지 않는다(2026-11-08 사용자 답 d13 — 칩 「모듈 n」 의 합과 같게).
+    assert "if (chip.__entry.lead.group) {" in apply
+    assert "modules += chip.__entry.list.length" in apply
+    assert "modules === groups ? `${total}대` : `${total}대(모듈 ${modules})`" in apply
     assert "searching ? `${shown}/${count}` : count" in apply
+    # 접힌 단추 「미배치 N」 도 설비 대수(칩 수)다 — 모듈 행 수가 아니다(d13).
+    render = JS[JS.index("function renderItems(") : JS.index("function repaint(")]
+    assert (
+        "drawerCount.textContent = leaving.length ? `${tray.length} · 보냄 ${leaving.length}` "
+        ": String(tray.length)"
+    ) in render
     picked = JS[JS.index("function pickedTrayEntries(") : JS.index("function toggleTrayPick(")]
     assert "trayMatches(entry)" in picked
     assert "traySearch.onkeydown" in JS and "S.trayQuery = ''" in JS
