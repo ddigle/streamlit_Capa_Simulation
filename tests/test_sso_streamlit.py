@@ -26,6 +26,7 @@ from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import SHELL_STYLE
+from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script
 from capa_simulation.components.sso_refresh import refresh_script
 from capa_simulation.components.theme_toggle import (
@@ -382,6 +383,8 @@ def test_every_stop_screen_hides_the_framework_menu_and_the_dead_toolbar(
         if f"#{button_id}" in sso_identity._STOP_TOOLBAR_STYLE
     }
     assert hidden == {GUIDE_BUTTON_ID, PRINT_BUTTON_ID, THEME_BUTTON_ID}
+    # 같은 iframe 이 세운 사이드바 앱 이름 라벨도 죽은 단추다 — 함께 감춘다(사용자 답 b6).
+    assert f"#{SUMMARY_LABEL_ID}" in sso_identity._STOP_TOOLBAR_STYLE
     assert CHANGES_CHIP_ID not in sso_identity._STOP_TOOLBAR_STYLE
     assert ALARM_BUTTON_ID not in sso_identity._STOP_TOOLBAR_STYLE
     assert '[data-testid="stAppDeployButton"]' in SHELL_STYLE

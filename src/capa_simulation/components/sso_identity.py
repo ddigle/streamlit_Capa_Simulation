@@ -57,6 +57,7 @@ from capa_simulation.auth.web import (
     sanitize_next,
 )
 from capa_simulation.components.app_header import render_shell_style
+from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
@@ -107,9 +108,12 @@ _STOP_HIDDEN_TOOLBAR_BUTTONS = tuple(
     for button_id in TOOLBAR_BUTTON_ORDER
     if button_id not in (CHANGES_CHIP_ID, ALARM_BUTTON_ID)
 )
+# 같은 iframe 이 사이드바 머리칸에 세운 앱 이름 라벨(누르면 Summary)도 듣개가 함께 죽어 눌러도
+# 반응이 없다 — 멈춤 화면에서 함께 감춘다(2026-11-08 사용자 답 b6).
+_STOP_HIDDEN_IDS = (*_STOP_HIDDEN_TOOLBAR_BUTTONS, SUMMARY_LABEL_ID)
 _STOP_TOOLBAR_STYLE = (
     "<style>"
-    + ", ".join(f"#{button_id}" for button_id in _STOP_HIDDEN_TOOLBAR_BUTTONS)
+    + ", ".join(f"#{element_id}" for element_id in _STOP_HIDDEN_IDS)
     + " { display: none !important; }</style>"
 )
 
@@ -155,8 +159,8 @@ def login_again_link(cfg: SsoConfig) -> str:
 
 def _render_stop_chrome() -> None:
     """멈춤 화면의 머리 — 정상 회차와 같은 껍데기 스타일(⋮ 메뉴 · Deploy 감춤 · 인쇄 규칙)과 앞
-    회차가 남긴 죽은 툴바 단추 감춤. 멈춤은 `app.py` 가 껍데기 스타일을 보내기 전이라 여기서
-    보낸다(스타일만 든 `st.html` 이라 자리를 먹지 않는다)."""
+    회차가 남긴 죽은 툴바 단추 · 사이드바 앱 이름 라벨 감춤. 멈춤은 `app.py` 가 껍데기 스타일을
+    보내기 전이라 여기서 보낸다(스타일만 든 `st.html` 이라 자리를 먹지 않는다)."""
     render_shell_style()
     st.html(_STOP_TOOLBAR_STYLE)
 
