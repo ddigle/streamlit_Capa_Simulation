@@ -729,6 +729,24 @@ def test_exception_process_notice_stays_original_without_a_rename_profile() -> N
     assert _frame_with_value(app, "공정", "Pre B/D") is not None
 
 
+def _exception_table(app: AppTest) -> Any:
+    (table,) = [frame for frame in app.dataframe if "제외 대상" in frame.value.columns]
+    return table
+
+
+def test_the_excluded_row_count_is_the_process_column_tip() -> None:
+    """지금 조회범위에서 뺀 행 수는 `예외 처리 공정` 표의 칸이 아니라 공정 칸 머리
+    풍선이다(2026-11-08
+    사용자 답 d8 — 조건의 내역을 칸에 늘 두지 않는다, 설계 규칙 UI-TXT-04)."""
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+
+    assert not app.exception
+    table = _exception_table(app)
+    assert list(table.value.columns) == ["공정", "제외 대상", "적용 내용"]
+    assert set(table.value["공정"]) == {"선다이싱"}
+    assert json.loads(table.proto.columns)["공정"]["help"] == "현재 조회범위 제외 행: 0"
+
+
 def _paste_window_template(app: AppTest) -> pd.DataFrame:
     """붙여넣기 창을 열고 그 창의 양식을 읽는다 — 양식 단추는 창 한 곳이다(설계 규칙 UI-LAY-12)."""
     assert not app.exception
@@ -1077,8 +1095,10 @@ def test_exception_rows_are_shown_even_when_the_availability_is_empty() -> None:
 
     assert not app.exception
     assert AVAILABILITY_EMPTY in [element.value for element in app.caption]
-    notice = _frame_with_value(app, "공정", "Pre B/D")
-    assert notice["현재 조회범위 제외 행"].tolist() == [0]
+    assert _frame_with_value(app, "공정", "Pre B/D") is not None
+    assert "현재 조회범위 제외 행: 0" in json.dumps(
+        json.loads(_exception_table(app).proto.columns), ensure_ascii=False
+    )
 
 
 def test_an_empty_availability_stops_only_the_views_that_multiply_by_it() -> None:

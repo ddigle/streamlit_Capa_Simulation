@@ -708,6 +708,12 @@ def report_missing_availability(
     return table
 
 
+def exception_process_help(excluded_row_count: int) -> str:
+    """`예외 처리 공정` 표 공정 칸 머리 풍선 — 지금 조회범위에서 뺀 행 수(조건의 내역이라 칸에 늘
+    두지 않는다 — 설계 규칙 UI-TXT-04)."""
+    return f"현재 조회범위 제외 행: {excluded_row_count:,}"
+
+
 def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessLabels) -> None:
     # 순수 표시 상수를 그리는 안내 표다. CSV 출구가 없어 표시명을 바로 입힌다.
     with st.expander("예외 처리 공정", expanded=False):
@@ -720,13 +726,15 @@ def _render_standard_target_exceptions(excluded_row_count: int, labels: ProcessL
                         "적용 내용": (
                             "Dummy 부하량과 STEP 소요대수를 제품 Mix 가중 분자·분모에서 제외"
                         ),
-                        "현재 조회범위 제외 행": excluded_row_count,
                     }
                     for process in STANDARD_TARGET_DUMMY_EXCLUDED_PROCESSES
                 ]
             ),
             hide_index=True,
             width="stretch",
+            column_config={
+                "공정": st.column_config.Column(help=exception_process_help(excluded_row_count))
+            },
         )
 
 
