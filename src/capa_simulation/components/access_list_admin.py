@@ -232,7 +232,8 @@ def _render_remove_picker(document: ListDocument) -> None:
     이름이다.
 
     칩은 줄을 접는다 — 가로 칸 안의 기본값은 한 줄 가로 스크롤이라 고른 사람이 칸 밖으로 밀려
-    보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다).
+    보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다). 펼친 목록 맨 위의
+    「Select all」 줄은 없다 — 한 번에 전원을 골라 지우면 되돌릴 단추가 없어 한 사람씩 고른다.
     """
     options = [entry.loginid for entry in document.entries]
     # 다시 읽기로 빠진 사람이 고른 칸에 남으면 위젯이 옵션 밖 값을 받는다.
@@ -246,6 +247,7 @@ def _render_remove_picker(document: ListDocument) -> None:
         key=ACCESS_LIST_REMOVE_KEY,
         placeholder=REMOVE_PICKER_LABEL,
         label_visibility="collapsed",
+        select_all=False,
         wrap=True,
     )
     st.button(

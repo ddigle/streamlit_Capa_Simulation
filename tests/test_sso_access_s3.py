@@ -2301,6 +2301,20 @@ def test_the_picked_people_wrap_instead_of_scrolling_out_of_sight(
     assert picker.proto.HasField("wrap") and picker.proto.wrap
 
 
+def test_the_remove_picker_has_no_select_all_row(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지울 사람 칸 맨 위에 「Select all」 줄이 없다 — 한 번에 전원을 고르고 「지우기」 를 누르면
+    되돌릴 길이 없다(2026-11-08 사용자 답 U1 — 한 사람씩 고른다). 전송 값 0 이 「늘 숨김」 이다
+    (기본 임계값이면 명단이 1000명 이하일 때 선다)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app = _admin_app(cfg, monkeypatch)
+
+    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
+    assert picker.proto.select_all == 0
+
+
 def test_the_pick_refusal_stands_right_below_the_row_and_above_the_table(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
