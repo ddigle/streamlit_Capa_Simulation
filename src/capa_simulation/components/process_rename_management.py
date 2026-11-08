@@ -28,7 +28,7 @@ from capa_simulation.components.paste_form import (
     tell_paste,
 )
 from capa_simulation.components.process_labels import process_labels_from_rules
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
@@ -126,12 +126,13 @@ def render_process_rename_management(
         )
         return
 
-    version_caption = profile_version_caption(profile, empty="아직 지정한 표시명이 없습니다")
     # 작업 줄: 지금 표 내려받기와 Excel 붙여넣기(팝업 — 창 안 작업 줄에도 양식이 선다). 붙여넣기는
     # 가끔 하는 전체 교체라 본문을 차지하지 않는다(2026-09-29 사용자 결정). 여는 버튼은 콜백으로
-    # 연다.
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.caption(version_caption)
+    # 연다. 공용 버전 줄은 아래 「직접 편집」 제목 옆이다(2026-11-08 사용자 그림 메모 g18) — 단추는
+    # 그 전처럼 줄 오른쪽 끝이다.
+    with st.container(
+        horizontal=True, horizontal_alignment="right", vertical_alignment="center", gap="small"
+    ):
         render_csv_download(
             data=csv_bytes,
             file_name=f"PROC_RENAME_v{profile.version}.csv",
@@ -285,7 +286,13 @@ def _render_direct_editor(
     떨어진다(UI-LAY-03, 표시순서 관리와 같은 꼴)."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
-    st.markdown("#### 직접 편집")
+    # 제목 바로 옆에 공용 버전 줄이 선다(2026-11-08 사용자 그림 메모 g18).
+    render_profile_heading(
+        "#### 직접 편집",
+        profile,
+        key="process_rename",
+        empty="아직 지정한 표시명이 없습니다",
+    )
     if unmatched:
         st.caption(f"보유 공정 밖 표시명 {len(unmatched):,}건", help=unmatched_help(unmatched))
     if available_processes:
