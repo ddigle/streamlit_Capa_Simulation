@@ -362,6 +362,20 @@ def test_the_picker_sends_a_single_trigger_name() -> None:
         assert part in PROCESS_FIELD_HTML
 
 
+def test_apply_sits_right_before_the_tiles_in_tab_order() -> None:
+    """Tab 차례는 찾기 → 「전체」 → 「적용」 → 판이다. 판에서 Shift+Tab 한 번이 「적용」 이라,
+    공용 값이 있을 때 그 자리 Enter 가 「전체」(모든 화면의 공정 거름 지움)가 되지 않는다."""
+    spots = [
+        PROCESS_FIELD_HTML.index(f'class="{name}"')
+        for name in ("capa-proc-search", "capa-proc-all", "capa-proc-apply", "capa-proc-grid")
+    ]
+    assert spots == sorted(spots)
+    between = PROCESS_FIELD_HTML[spots[2] : spots[3]]
+    assert "<button" not in between.split("</button>", 1)[1]
+    assert "<input" not in between
+    assert "tabindex" not in PROCESS_FIELD_HTML.lower()
+
+
 # ------------------------------------------------------------------ 판 JS 구획
 
 
@@ -384,9 +398,13 @@ const two = toggleDraft(one, 'WF', order)
 const back = toggleDraft(two, 'Underfill', order)
 process.stdout.write(JSON.stringify({
   one, two, back,
-  same: applyState('multi', ['Mold', 'WF'], ['WF', 'Mold']),
-  ready: applyState('multi', ['WF'], ['WF', 'Mold']),
-  single: applyState('single', [], ['WF']),
+  same: applyState('multi', ['Mold', 'WF'], ['WF', 'Mold'], 3),
+  ready: applyState('multi', ['WF'], ['WF', 'Mold'], 3),
+  single: applyState('single', [], ['WF'], 3),
+  allIsNone: applyState('multi', order, [], 3),
+  allClearsOne: applyState('multi', order, ['Mold'], 3),
+  allStaysAll: applyState('multi', order, ['Underfill', 'Mold', 'WF'], 3),
+  noneOfAll: applyState('multi', [], order, 3),
   multiCount: countLabel('multi', 2, 24),
   singleCount: countLabel('single', 0, 24),
 }))
@@ -396,6 +414,9 @@ process.stdout.write(JSON.stringify({
     assert out["two"] == ["WF", "Underfill"]
     assert out["back"] == ["WF"]
     assert (out["same"], out["ready"], out["single"]) == ("same", "ready", "none")
+    # 모두 켠 초안은 고르지 않은 것(이 화면 몫은 전체)과 같다 — 서버 `apply_from_screen` 과 같다.
+    assert (out["allIsNone"], out["allClearsOne"]) == ("same", "ready")
+    assert (out["allStaysAll"], out["noneOfAll"]) == ("same", "same")
     assert (out["multiCount"], out["singleCount"]) == ("선택 2 / 24", "24개 공정")
 
 

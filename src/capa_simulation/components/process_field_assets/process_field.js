@@ -1,12 +1,15 @@
-// 공용 공정 팝업의 고르기 판 — 찾기 · 「적용」 · 「전체」 · 공정 타일.
+// 공용 공정 팝업의 고르기 판 — 찾기 · 「전체」 · 「적용」 · 공정 타일.
 //
 // 여러 개 고름(`multi`)은 타일을 누를 때마다 초안에서 켜고 끈다. 초안은 서버에 가지 않는다(브라우저 안 —
 // 누를 때마다 앱이 돌지 않는다). 「적용」 이 초안을 트리거(`apply`) 하나로 보낸다 — 초안이 지금 값과 같으면
-// 잠긴다(설명 글 대신 단추 상태가 말한다). 「전체」 는 같은 트리거에 `clear` 를 실어 공용 값을 지우고, 지울 값이
-// 없으면 잠긴다. 하나 고름(`single`)은 다른 타일을 누르면 곧바로 그 공정을 보낸다(`apply` — 값 하나). 트리거는
-// `apply` 하나뿐이다 — 결과 객체가 dict 라 `clear` 같은 이름은 메서드와 겹친다.
+// 잠긴다(설명 글 대신 단추 상태가 말한다). 모두 켠 초안은 고르지 않은 것(이 화면 몫은 전체)과 같다 — 서버도
+// 그렇게 적는다(`shared_process.apply_from_screen`). 「전체」 는 같은 트리거에 `clear` 를 실어 공용 값을
+// 지우고, 지울 값이 없으면 잠긴다. 하나 고름(`single`)은 다른 타일을 누르면 곧바로 그 공정을
+// 보낸다(`apply` — 값 하나). 트리거는 `apply` 하나뿐이다 — 결과 객체가 dict 라 `clear` 같은 이름은
+// 메서드와 겹친다.
 //
-// 키보드: Tab 차례는 찾기 → 「적용」 → 「전체」 → 타일 판(판은 한 자리 — 나머지 타일은 -1). 판 안에서
+// 키보드: Tab 차례는 찾기 → 「전체」 → 「적용」 → 타일 판(판은 한 자리 — 나머지 타일은 -1). 「적용」 이 판
+// 바로 앞이라 판에서 Shift+Tab 한 번이 「적용」 이다 — 공용 값을 지우는 「전체」 에 먼저 닿지 않는다. 판 안에서
 // ←→↑↓ · Home/End 로 옮기고 Enter · Space 가 누름이다(단추의 기본 누름). 누른 뒤에도 초점은 그 타일에 남는다
 // — 타일을 다시 만들지 않고 표지만 바꾼다. Ctrl(⌘)+Enter 는 어디서나 「적용」 이다. 찾기 칸의 Enter · ↓ 는
 // 보이는 첫 타일로 간다. 찾기 칸에 글이 있을 때 Esc 는 글만 지운다(팝업은 그대로).
@@ -48,10 +51,12 @@ function countLabel(mode, draftCount, total) {
   return mode === 'multi' ? '선택 ' + draftCount + ' / ' + total : total + '개 공정'
 }
 
-// 「적용」 상태 — 하나 고름에는 「적용」 이 없다(`none`). 초안이 지금 값 그대로면 `same`.
-function applyState(mode, draft, applied) {
+// 「적용」 상태 — 하나 고름에는 「적용」 이 없다(`none`). 초안이 지금 값 그대로면 `same`. `total` 은 이 화면
+// 공정 수다 — 모두 켠 쪽은 고르지 않은 쪽과 같이 본다(이 화면 몫은 전체).
+function applyState(mode, draft, applied, total) {
   if (mode !== 'multi') return 'none'
-  return sameSelection(draft, applied) ? 'same' : 'ready'
+  const whole = (picked) => (total > 0 && picked.length >= total ? [] : picked)
+  return sameSelection(whole(draft), whole(applied)) ? 'same' : 'ready'
 }
 
 // 방향키 한 번의 새 자리(보이는 타일 안 순번). `perRow` 는 화면에서 잰 한 줄 타일 수다. 다루지 않는 키는
@@ -155,7 +160,7 @@ export default function (component) {
     empty.hidden = shown.length > 0
     count.textContent = countLabel(mode, state.draft.length, options.length)
     actions.hidden = mode !== 'multi'
-    const status = applyState(mode, state.draft, applied)
+    const status = applyState(mode, state.draft, applied, order.length)
     apply.disabled = status !== 'ready'
     clearAll.disabled = !hasShared
     root.dataset.state = status
@@ -169,7 +174,7 @@ export default function (component) {
   }
 
   const applyDraft = () => {
-    if (applyState(mode, state.draft, applied) !== 'ready') return
+    if (applyState(mode, state.draft, applied, order.length) !== 'ready') return
     setTriggerValue('apply', { values: state.draft.slice() })
   }
 
@@ -250,7 +255,7 @@ export default function (component) {
   }
 
   render()
-  // 팝업을 연 첫 그림에서 찾기 칸에 초점 — 치면 좁혀지고, Tab 이 「적용」 · 판으로 간다.
+  // 팝업을 연 첫 그림에서 찾기 칸에 초점 — 치면 좁혀지고, Tab 이 「전체」 · 「적용」 · 판으로 간다.
   if (!state.focused) {
     state.focused = true
     requestAnimationFrame(() => search.focus())

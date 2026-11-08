@@ -4,7 +4,7 @@
 
 - 값은 원본 공정명이고, 화면은 그 화면 목록 안 것만 읽는다. 없는 공정은 지우지 않는다.
 - HOME 은 보내기만(`publish_from_home`), 여러 개 따라감 화면의 「적용」 은 이 화면에 없는 값을
-  남긴다.
+  남긴다. 둘 다 모두 켜면 그 화면 몫은 전체다.
 - 하나 고름 화면은 받기만 — 값이 바뀐 뒤 처음이고 하나일 때만 따라 열고, 들어온 길이 이긴다.
 - 사용자 메모(모니터링 · 원복 검토)에 맞춰 세션 키는 이 모듈 밖에서 만지지 않는다.
 
@@ -129,6 +129,28 @@ def test_applying_on_a_screen_keeps_the_values_that_screen_could_not_touch() -> 
     assert out[2] == ("Underfill", "HB 접합")
     assert out[3] == "가용설비"
     assert out[5] == ("HB 접합",)
+
+
+def test_turning_every_process_on_a_screen_is_the_same_as_choosing_none() -> None:
+    """모두 켜고 「적용」 하면 이 화면 몫은 전체다 — HOME 「적용」 처럼 모두 켠 목록을 값으로 남기지
+    않는다(남으면 리비전을 바꿔 새로 들어온 공정이 따라가는 화면마다 걸러진다). 이 화면에 없는 값은
+    그대로 남는다."""
+    app = _app()
+    options = ["WF", "Mold", "Underfill"]
+    out = _call(
+        app,
+        op("publish", ["Mold"], "HOME"),
+        op("apply_from_screen", ["Underfill", "WF", "Mold"], options, "산출 결과"),
+        op("values"),
+        op("origin"),
+        op("publish", ["HB 접합", "Mold"], "HOME"),
+        op("apply_from_screen", options, options, "산출 결과"),
+        op("values"),
+        op("applied", options),
+    )
+    assert out[2:4] == [(), ""]
+    assert out[6] == ("HB 접합",)
+    assert out[7] == []
 
 
 def test_the_origin_is_named_only_on_other_screens() -> None:

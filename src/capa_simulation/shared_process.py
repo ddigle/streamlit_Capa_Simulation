@@ -28,8 +28,9 @@ HOME 에서 좁힌 공정이 기준 정보 · 산출 결과 · 가용설비 Main
    판정과 리비전 저장값(`PROCESS_SELECTION_KEY`)에 들지 않는다 — HOME 은 이 값을 읽지 않는다.
 2. **여러 개 따라감**(표를 거르는 칸 — 기준 정보 편집 표 · 설비대수 현황 · 산출 결과 셋 · 가용설비
    Main · Space) — 그리는 회차마다 `applied(options)` 로 거르고, 그 화면 팝업의 「적용」 은
-   `apply_from_screen(chosen, options, screen)` 이다(이 화면에 없는 값은 남긴다). 값 칸 · 팝업은
-   `process_field.render_process_filter` 가 한 벌로 그린다.
+   `apply_from_screen(chosen, options, screen)` 이다(이 화면에 없는 값은 남긴다). 이 화면 공정을
+   모두 켜고 적용하면 이 화면 몫은 고르지 않은 것(전체)이다 — HOME 「적용」 과 같은 규칙. 값 칸 ·
+   팝업은 `process_field.render_process_filter` 가 한 벌로 그린다.
 3. **하나 따라감 — 받기만**(공정 Capa 상세 · 제약 시뮬레이션) — 공정 · 달을 정하는 자리에서
    `follow_single(screen, options, entered=…)` 를 부른다. 값이 바뀐 뒤 처음 그 화면을 그리는 회차에,
    공용 값이 **하나**이고 그 화면 목록에 있으면 그 공정을 돌려준다(여럿이면 None — 보던 공정을
@@ -132,9 +133,16 @@ def applied(options: Iterable[object]) -> list[str]:
 
 
 def apply_from_screen(chosen: Iterable[object], options: Iterable[object], screen: str) -> None:
-    """여러 개 따라감 화면의 팝업 「적용」. 이 화면에 없어 건드릴 수 없었던 값은 남긴다."""
+    """여러 개 따라감 화면의 팝업 「적용」. 이 화면에 없어 건드릴 수 없었던 값은 남긴다.
+
+    이 화면 공정을 모두 켰으면 이 화면 몫은 고르지 않은 것(전체)이다 — `publish_from_home` 처럼
+    모두 켠 목록을 값으로 남기지 않는다. 명시 목록으로 남으면 리비전을 바꿔 새로 들어온 공정이
+    따라가는 화면마다 걸러져 보이지 않는다. 남길 값도 없으면 공용 값이 지워진다.
+    """
     allowed = {str(option) for option in options}
     picked = [str(value) for value in chosen if str(value) in allowed]
+    if allowed and allowed <= set(picked):
+        picked = []
     publish([*picked, *missing(allowed)], screen)
 
 

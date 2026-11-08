@@ -303,11 +303,12 @@ def show_process_dialog(page_file: str | None) -> None:
 
 @keeps_app_run_open
 def render_process_dialog_body() -> None:
-    """판 하나(찾기 · 「적용」 · 「전체」 · 타일). 트리거가 온 회차에만 값을 바꾸고 앱 전체를 다시
+    """판 하나(찾기 · 「전체」 · 「적용」 · 타일). 트리거가 온 회차에만 값을 바꾸고 앱 전체를 다시
     돌린다.
 
-    여러 개 고름의 「적용」 은 `shared_process.apply_from_screen`(이 화면에 없는 값은 남김),
-    「전체」 는 `shared_process.clear`, 하나 고름은 그 화면의 공정 칸(`key`)만 바꾼다.
+    여러 개 고름의 「적용」 은 `shared_process.apply_from_screen`(이 화면에 없는 값은 남김 · 모두
+    켜면 이 화면 몫은 전체), 「전체」 는 `shared_process.clear`, 하나 고름은 그 화면의 공정
+    칸(`key`)만 바꾼다.
     """
     context = _context()
     if context is None:
