@@ -13,6 +13,8 @@
   않는다).
 - 상자에는 조작(자리 · 도면 · 견주기)만 둔다 — 상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태
   알림이다(2026-11-04 Space 결정 보드 답 — `EQ-13` ~ `EQ-15` · `EQ-04`).
+- 캔버스 팝업의 호스트는 화면 팝업 호스트 프래그먼트다 — 여닫아도 페이지를 다시 돌리지 않는다
+  (2026-11-08 사용자 결정 U5).
 - 공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1).
 """
 
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alert_marks import active_state, states
@@ -322,3 +325,78 @@ def test_the_process_field_follows_the_shared_value_and_marks_a_missing_name(
     assert badge in _texts(app.sidebar, "caption")
     assert not [button for button in app.button if button.key == CHIP_KEY]
 
+
+# ------------------------------------------------------------------ 캔버스 팝업 호스트(U5)
+
+
+CANVAS_HOST_KEY = "space_canvas_dialog_host"
+CANVAS_OPEN_KEY = "space_open_dialog"
+
+
+def _canvas_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[AppTest, Any]:
+    """C1 1F 를 연 Space 페이지 — 앱 전체 회차 표지(`app.py` 처럼)를 두르고 프래그먼트 회차를
+    흉내 내는 브라우저 대역을 단다."""
+    from fragment_browser import install_fragment_browser
+    from test_equipment_pages import _page_script, _wide_floor_with_hidden_units
+
+    database = tmp_path / "space_canvas_host.duckdb"
+    _wide_floor_with_hidden_units(database)
+    page = PROJECT_ROOT / "app_pages" / "space_status.py"
+    script = (
+        "from capa_simulation.sidebar_status import begin_app_run\n"
+        "app_run = begin_app_run()\n" + _page_script(page, database) + "\napp_run.finish()\n"
+    )
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(script, default_timeout=120)
+    app.session_state["space_status_selected_building"] = "C1"
+    app.session_state["space_status_selected_floor"] = "1F"
+    return _ok(app.run()), browser
+
+
+def test_opening_and_closing_the_canvas_dialog_runs_only_its_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「캔버스 편집」 팝업을 여닫아도 페이지를 다시 계산하지 않는다 — 사이드바 단추의 여는 콜백 뒤
+    호스트(`space_canvas_dialog_host`)만 돌고 닫기(X · 바깥 · Esc)도 호스트만 돈다(2026-11-08
+    사용자 결정 U5, 설계 규칙 UI-PRF-01). 닫은 회차는 밖 알림(`EQ-16`)을 해소하고, 폭 · 높이 ·
+    확인 칸 값을 지워 다시 열면 저장값으로 선다. 단추는 사이드바 「Space 도면」 상자에 그대로다."""
+    from capa_simulation.components.dialog_host import WIDGET_KEYS_SUFFIX
+
+    app, browser = _canvas_app(tmp_path, monkeypatch)
+    host = browser.fragment_keyed(CANVAS_HOST_KEY)
+    assert "space_floor_layout_open_C1_1F" in {str(button.key) for button in app.sidebar.button}
+
+    app.button(key="space_floor_layout_open_C1_1F").click().run()
+    _ok(app)
+    assert browser.started == [[], [host]]
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    ), "페이지가 다시 돌았다"
+    assert app.session_state[CANVAS_OPEN_KEY] == "C1|1F"
+    assert app.number_input(key="space_floor_layout_width_C1_1F").value == 200.0
+    dialog_id = browser.dialog_widget_id()
+    dialog = browser.fragment_of("space_floor_layout_width_C1_1F")
+
+    # 줄이면 밖 알림이 선다 — 팝업 프래그먼트 회차.
+    app.number_input(key="space_floor_layout_width_C1_1F").set_value(100.0)
+    browser.fragment_queue = [dialog]
+    app.run()
+    _ok(app)
+    assert browser.started == [[dialog]]
+    note = active_state(app, "EQ-16")
+    assert note is not None and note["short"] == "C1 1F 캔버스 100 × 100 밖 — 호기 2대"
+
+    browser.send_trigger(app, dialog_id, [host])
+    _ok(app)
+    assert browser.started == [[host]]
+    assert CANVAS_OPEN_KEY not in app.session_state
+    for key in (
+        "space_floor_layout_width_C1_1F",
+        "space_floor_layout_height_C1_1F",
+        f"{CANVAS_HOST_KEY}{WIDGET_KEYS_SUFFIX}",
+    ):
+        assert key not in app.session_state, key
+    closed = states(app, "EQ-16")
+    assert closed and not any(item["active"] for item in closed), closed
