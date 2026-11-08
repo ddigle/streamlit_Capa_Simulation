@@ -179,6 +179,11 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "Space 배치 상태 알림(EQ-13 ~ EQ-15)의 짧은 글 · 전문 — 알림 칸 JS 가 textContent 로 "
         "그린다(마크다운 자리가 아니다 — 2026-11-04 Space 결정 보드 답으로 상자 캡션에서 알림으로)"
     ),
+    ("src/capa_simulation/components/scenario_management.py", "_render_delete"): (
+        "영구 삭제 확인 칸의 숨긴 라벨(label_visibility collapsed) — 낭독기 이름(aria-label)으로만 "
+        "나가 평문이다(막으면 막음 글자가 이름에 그대로 들었다). 보이는 같은 글은 바로 위 "
+        "st.markdown 이 literal_markdown 으로 막는다"
+    ),
     ("src/capa_simulation/components/change_summary.py", "session_changes"): (
         "머리 변경 칩 판의 줄 글(설비 가정 「이름」) — 알림 칸 JS 가 textContent 로 그린다"
         "(마크다운 자리가 아니다)"

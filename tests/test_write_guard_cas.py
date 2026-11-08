@@ -37,7 +37,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import shown, successes
+from alert_marks import flashed, shown, successes
 from grid_fake import Calls, install_fake_grid, load, send_ops
 from scenario_list_fake import ListBrowser, install_fake_list_grid
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
@@ -1303,7 +1303,8 @@ def test_an_old_popup_double_press_after_another_release_keeps_the_refusal(
         app, monkeypatch, pressed, cls=DuckDBScenarioRepository, write="publish_official_revision"
     )
 
-    assert any("먼저 지정해 지정하지 않았습니다" in text for text in _texts(app, "error"))
+    # 고칠 입력이 없는 거부라 팝업 안 상자가 아니라 알림창 · Alarm 이다(설계 규칙 UI-NTF-03).
+    assert any("먼저 지정해 지정하지 않았습니다" in item.value for item in flashed(app, "error"))
     newest = repository.latest_official_release()
     assert newest is not None
     assert (newest.release_no, newest.release_name) == (release_no + 1, "남이 먼저 지정")

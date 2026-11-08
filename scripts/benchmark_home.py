@@ -94,8 +94,13 @@ def copy_mode_failure(exc: BaseException) -> str:
     # 문구에서 무엇을 남길지는 전 리비전 계산 집계와 한 규칙이다.
     from inspect_revision_calculations import contract_tables_in
 
+    from capa_simulation.page_bootstrap import calculation_stop_tables
+
     kinds = Counter(kind for kind, _ in exc.failures)
-    named = contract_tables_in("\n".join(message for _, message in exc.failures))
+    text = "\n".join(message for _, message in exc.failures)
+    # 계산 멈춤 알림은 표를 화면 이름(「UPEH」 · 모듈수)으로 싣는다 — 이름 뒤 「 표의」 로 되찾는다.
+    stopped = {table for table, name in calculation_stop_tables().items() if f"{name} 표의" in text}
+    named = tuple(dict.fromkeys([*contract_tables_in(text), *sorted(stopped)]))
     return (
         f"{exc.phase} 실행 실패 — "
         + " · ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))

@@ -39,7 +39,7 @@ from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
-from capa_simulation.services.korean_particle import with_subject_particle
+from capa_simulation.services.korean_particle import with_object_particle, with_subject_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -250,6 +250,15 @@ def bootstrap_error_message(
     )
 
 
+def calculation_stop_tables() -> dict[str, str]:
+    """계산 멈춤 알림이 표를 부르는 화면 이름 {계약 표 이름: 화면 이름} — 알림은 내부 표 이름을 싣지
+    않는다. 사본 진단(`scripts/benchmark_home.py`)이 알림 글에서 계약 표 이름을 되찾을 때도 쓴다."""
+    return {
+        **{table: quoted(DATASETS[table]) for table in EDIT_TABLES},
+        _MODULE_TABLE: "모듈수",
+    }
+
+
 class CalculationStop(NamedTuple):
     """기준정보 한 칸 때문에 멈춘 대당 Capa 계산의 알림 재료(`calculation_stop_notice`)."""
 
@@ -293,7 +302,7 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
     cell = cell.format_map(groups)
     what = f"{cell} {groups['count']}건" if groups.get("count") else cell
     module = table == _MODULE_TABLE
-    name = "모듈수" if module else quoted(DATASETS[table])
+    name = calculation_stop_tables()[table]
     # 건수가 있는 꼴은 머리를 통째로 칸 이름으로, 없는 꼴(UPEH 표)은 표 이름만 바꾼다.
     body = bootstrap_error_message(exc)
     body = (
@@ -314,9 +323,16 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
             ),
         )
     blank = cell == _BLANK_CELL
-    fix = f"{cell}에 0보다 큰 값을 넣고" if blank else f"{cell}을 0보다 큰 값으로 고치고"
+    fix = (
+        f"{cell}에 0보다 큰 값을 넣고"
+        if blank
+        else f"{with_object_particle(cell)} 0보다 큰 값으로 고치고"
+    )
     return CalculationStop(
-        text=f"대당 Capa 계산 멈춤 — 기준 정보 {name} {what}을 {'채움' if blank else '고침'}",
+        text=(
+            f"대당 Capa 계산 멈춤 — 기준 정보 {name} {with_object_particle(what)} "
+            f"{'채움' if blank else '고침'}"
+        ),
         goto=(tab_label(REFERENCE_DATA), REFERENCE_DATA.href, DATASETS[table]),
         message=(
             f"{lead} 기준 정보 {name} 표의 {fix} 「변경사항 적용」 뒤 새 리비전으로 저장하세요.\n\n"

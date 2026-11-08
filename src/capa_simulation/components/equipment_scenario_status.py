@@ -777,10 +777,8 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         # 불러오기」 와 함께 다시 선다(메모 칸은 그대로 남는다).
         queue_flash(
             FLASH_KEY,
-            markdown_safe_tildes(
-                "저장하지 못했습니다: "
-                + bootstrap_error_message(exc, database_paths=(Path(database_path),))
-            ),
+            "저장하지 못했습니다: "
+            + bootstrap_error_message(exc, database_paths=(Path(database_path),)),
             kind="error",
             popup_only=True,
         )
