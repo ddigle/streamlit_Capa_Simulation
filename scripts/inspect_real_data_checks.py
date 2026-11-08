@@ -4134,8 +4134,8 @@ def check_grid_sizes(session: Session) -> list[str]:
             *_table(_GRID_HEADERS, (tally.row() for tally in tallies)),
             "",
             f"- 읽는 법 — 상한은 칸 {GRID_CAP_CELLS:,} · 껍데기 본문 "
-            f"{GRID_CAP_BYTES // 1000:,} KB 다. 넘는 표는 앱이 사이드바 「표 조건」 으로 고른 "
-            f"줄이나 앞 {GRID_CAP_ROWS:,}줄만 싣고 알린다(「변경사항 적용」 은 표 전체). "
+            f"{GRID_CAP_BYTES // 1000:,} KB 다. 넘는 표는 앱이 사이드바 「공정」 · 「표 조건」 "
+            f"으로 고른 줄이나 앞 {GRID_CAP_ROWS:,}줄만 싣고 알린다(「변경사항 적용」 은 표 전체). "
             "`칸 넘음` · `본문 넘음` 은 그 상한에 걸린 리비전 수이고 본문은 칸이 상한 안인 표만 "
             "잰다(앱과 같다). 본문은 공정 표시명 사전 · UPEH 월 머리 도움말을 빼고 잰 바이트라 "
             "앱보다 그만큼 작다. 에이전트는 판정하지 않고 수만 옮긴다.",

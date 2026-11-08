@@ -605,18 +605,22 @@ def test_an_emptied_ratio_table_rides_the_grid_as_an_empty_table(calls: Calls) -
 def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole(
     calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """큰 표 안전 상한(칸 수 · 껍데기 바이트)을 넘으면 사이드바 필터로 고른 줄이나 앞 줄만 싣고
-    작업 줄 아래 표지 한 줄(풍선 — 고르는 법 · 적용 범위)로 알린다(파란 상자 아님). 초안은 업무
-    키라 실은 줄이 바뀌어도 제 줄에 남고, 적용은 언제나 전체 양식에 덮는다. 고칠 칸 알림도 지금
-    싣지 않은 줄의 오류까지 센다."""
+    """큰 표 안전 상한(칸 수 · 껍데기 바이트)을 넘으면 공용 공정 · 표 조건으로 고른 줄이나 앞 줄만
+    싣고 작업 줄 아래 표지 한 줄(풍선 — 고르는 법 · 적용 범위)로 알린다(파란 상자 아님). 일수는 거를
+    칸이 공정뿐이라 「표 조건」 카드가 없다 — 표지 · 풍선도 그 카드를 가리키지 않고 다른 화면과 같이
+    쓰는 공정 칸으로 골랐다고 말한다. 초안은 업무 키라 실은 줄이 바뀌어도 제 줄에 남고, 적용은
+    언제나 전체 양식에 덮는다. 고칠 칸 알림도 지금 싣지 않은 줄의 오류까지 센다."""
     monkeypatch.setattr(reference_grid, "CAP_CELLS", 1)
     monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
+    help_text = (
+        "칸이 아주 많은 표는 사이드바 「공정」 으로 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
+        "「공정」 은 다른 화면과 같이 쓰는 칸입니다. "
+        "「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
+    )
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     assert _visible_keys(calls) == ["Process-A"]
     notices = {str(item.value): item.proto.help for item in app.caption}
-    assert notices[reference_grid.CAP_HEAD_NOTICE.format(rows=2, cells=2, shown=1)] == (
-        reference_grid.CAP_HELP
-    )
+    assert notices[":material/filter_alt: 큰 표 · 앞 1줄만 실음(전체 2줄 · 2칸)"] == help_text
     assert not any("줄만" in str(item.value) for item in infos(app))
     app = _grid_write(app, calls, "Process-A", "202608", "20")
 
@@ -625,9 +629,10 @@ def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole
     assert not app.exception
     assert _visible_keys(calls) == ["Process-B"]
     notices = {str(item.value): item.proto.help for item in app.caption}
-    assert notices[reference_grid.CAP_FILTERED_NOTICE.format(rows=2, cells=2, shown=1)] == (
-        reference_grid.CAP_HELP
+    assert notices[":material/filter_alt: 큰 표 · 공정으로 고른 1줄만 실음(전체 2줄 · 2칸)"] == (
+        help_text
     )
+    assert not app.sidebar.multiselect
     app = _grid_write(app, calls, "Process-B", "202608", "15")
     assert _draft(app) == {
         "cells": {"Process-A": {"202608": 20.0}, "Process-B": {"202608": 15.0}},
@@ -641,6 +646,87 @@ def test_a_big_table_loads_only_the_filtered_or_first_rows_and_applies_the_whole
         "Process-A": 20.0,
         "Process-B": 15.0,
     }
+
+
+def _capped_run_rate_script() -> None:
+    """공정 · 양산구분 두 칸 표(4줄)를 큰 표 상한으로 싣고 표지 · 풍선만 그린다 — 공용 공정을
+    따라가는 기준 정보 효율 표와 같은 인자."""
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components import reference_grid
+
+    template = pd.DataFrame(
+        {
+            "공정": ["DEMO_A", "DEMO_A", "DEMO_B", "DEMO_B"],
+            "양산구분": ["양산", "ER", "양산", "ER"],
+            "202701": [0.5, 0.6, 0.7, 0.8],
+        }
+    )
+    table = reference_grid.build_grid_table(
+        "RQ_RUN_RATE",
+        "효율",
+        "capa_run_rate_editor",
+        template,
+        ("공정", "양산구분"),
+        cache_key=(1, "test-cap-places", 202701, 202701),
+        order_digest="order",
+        value_labels=None,
+        filter_prefix="capa_run_rate_editor_filter",
+        shared_screen="기준 정보",
+    )
+    st.caption(str(table.cap_notice), help=table.cap_help)
+
+
+@pytest.mark.parametrize(
+    ("process", "mass", "by", "shown"),
+    [
+        (None, None, None, 1),
+        (["DEMO_B"], None, "공정", 2),
+        (None, ["ER"], "표 조건", 2),
+        (["DEMO_B"], ["ER"], "공정 · 표 조건", 1),
+    ],
+)
+def test_a_capped_table_names_the_filters_that_chose_its_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    process: list[str] | None,
+    mass: list[str] | None,
+    by: str | None,
+    shown: int,
+) -> None:
+    """큰 표 표지는 줄을 실제로 좁힌 거름 자리(조회 조건의 공용 「공정」 칸 · 「표 조건」 카드)를
+    이름으로 단다. 공정 밖 거를 칸이 있는 표의 풍선은 두 자리를 다 적고, 공정 칸은 다른 화면과 같이
+    쓴다고 말한다."""
+    monkeypatch.setattr(reference_grid, "CAP_CELLS", 2)
+    monkeypatch.setattr(reference_grid, "CAP_ROWS", 1)
+    app = AppTest.from_function(_capped_run_rate_script, default_timeout=60)
+    if process is not None:
+        share(app, process)
+    if mass is not None:
+        app.session_state["capa_run_rate_editor_filter_양산구분"] = mass
+    app.run()
+    assert not app.exception, app.exception
+    [caption] = app.caption
+    if by is None:
+        assert caption.value == f":material/filter_alt: 큰 표 · 앞 {shown}줄만 실음(전체 4줄 · 4칸)"
+    else:
+        assert caption.value == (
+            f":material/filter_alt: 큰 표 · {by}으로 고른 {shown}줄만 실음(전체 4줄 · 4칸)"
+        )
+    assert caption.proto.help == (
+        "칸이 아주 많은 표는 사이드바 「공정」 · 「표 조건」 으로 고른 줄만, "
+        "고르지 않았으면 앞 줄만 싣습니다. 「공정」 은 다른 화면과 같이 쓰는 칸입니다. "
+        "「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
+    )
+
+
+def test_the_table_card_columns_leave_out_the_shared_process() -> None:
+    """「표 조건」 카드 칸은 공용 공정을 따라가는 표의 공정을 뺀 나머지다 — 비면 화면이 카드를
+    세우지 않고 큰 표 풍선도 「표 조건」 을 적지 않는다. 공용 값을 따라가지 않는 표는 공정도
+    카드 칸이다."""
+    assert reference_grid.card_columns(("공정",), "기준 정보") == ()
+    assert reference_grid.card_columns(("공정", "양산구분"), "기준 정보") == ("양산구분",)
+    assert reference_grid.card_columns(("공정",), None) == ("공정",)
 
 
 def test_a_capped_table_counts_the_errors_of_rows_it_does_not_load(

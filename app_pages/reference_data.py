@@ -35,7 +35,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
 from capa_simulation.components import reference_grid
-from capa_simulation.components.column_filter import PROCESS_COLUMN, render_column_filter_controls
+from capa_simulation.components.column_filter import render_column_filter_controls
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogBody, DialogHost, DialogPicker
 from capa_simulation.components.flash import queue_flash, render_flash
@@ -507,10 +507,11 @@ def _filter_prefix(table_name: str) -> str:
     return f"{EDITOR_KEYS[table_name]}_filter"
 
 
-def _table_conditions(dimensions: list[str]) -> nullcontext[None] | DeltaGenerator:
-    """표 필터를 그릴 자리 — 공정 밖 거를 칸이 있으면 「표 조건」 카드, 공정뿐이면 카드 없이(공정은
-    조회 조건 패널의 값 칸이라 빈 카드가 선다)."""
-    if any(column != PROCESS_COLUMN for column in dimensions):
+def _table_conditions(grid: reference_grid.GridTable) -> nullcontext[None] | DeltaGenerator:
+    """표 필터를 그릴 자리 — 공정 밖 거를 칸(`GridTable.card_columns`)이 있으면 「표 조건」 카드,
+    공정뿐이면 카드 없이(공정은 조회 조건 패널의 값 칸이라 빈 카드가 선다). 큰 표 표지 풍선도 같은
+    판정으로 「표 조건」 을 적는다."""
+    if grid.card_columns:
         return table_card(CARD_NAME)
     return nullcontext()
 
@@ -1236,7 +1237,7 @@ if current_grid is not None:
     # 기간)에는 거를 것이 없어 세우지 않는다.
     grid_visible = current_grid.template
     if not current_grid.template.empty:
-        with _table_conditions(list(current_grid.dimensions)):
+        with _table_conditions(current_grid):
             grid_visible = render_column_filter_controls(
                 current_grid.template,
                 list(current_grid.dimensions),

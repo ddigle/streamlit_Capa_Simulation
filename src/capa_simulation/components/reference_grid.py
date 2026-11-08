@@ -24,10 +24,13 @@
   「변경사항 적용」 을 누르면 고칠 칸 알림으로 멈춘다(`error_notice`). 업무 규칙 오류
   (`reference_consistency`)는 적용할 때 문장으로(오늘과 같다 — 화면이 쓴다).
 - **큰 표 안전 상한**(명세 1-2 의 22). 칸 수가 `CAP_CELLS` 를 넘거나 껍데기 본문이 `CAP_BYTES` 를
-  넘으면 사이드바 「표 조건」 필터를 서버에서 걸어 그 줄만 싣고, 필터가 없거나 걸러도 넘치면 앞
-  `CAP_ROWS` 줄만 싣고 작업 줄 아래에 표지 한 줄 + 풍선을 둔다(바이트 상한을 넘는 표의 전체 본문은
-  캐시에 두지 않는다 — `get_edit_grid_base_within`). 초안이 업무 키라 실은 줄이 바뀌어도 편집은
-  제 줄에 남고, 적용은 언제나 **전체 양식**에 덮는다(`merged_template`). 합성 표본 최대는 UPEH
+  넘으면 공용 공정 값(조회 조건 「공정」 칸)과 「표 조건」 카드 선택을 서버에서 걸어 그 줄만 싣고,
+  거름이 없거나 걸러도 넘치면 앞 `CAP_ROWS` 줄만 싣고 작업 줄 아래에 표지 한 줄 + 풍선을 둔다
+  (바이트 상한을 넘는 표의 전체 본문은 캐시에 두지 않는다 — `get_edit_grid_base_within`). 표지와
+  풍선은 그 표에 실제로 있는 거름 자리만 이름으로 단다 — 카드가 없는 표(거를 칸이 공정뿐)에는
+  「표 조건」 을 적지 않는다(`GridTable.card_columns` — 화면이 카드를 세우는 판정과 같다). 초안이
+  업무 키라 실은 줄이 바뀌어도 편집은 제 줄에 남고, 적용은 언제나 **전체 양식**에 덮는다
+  (`merged_template`). 합성 표본 최대는 UPEH
   2,660줄 × 30개월 = 79,800칸(샘플 관측)이라 걸리지 않는다. 사내 실데이터 크기는 런북 8장 8-11
   (`scripts/inspect_real_data_checks.py --only grid`)이 잰다.
 """
@@ -151,18 +154,22 @@ CAP_CELLS: Final = 300_000
 CAP_BYTES: Final = 400_000
 CAP_ROWS: Final = 1_000
 # 상한에 걸린 표의 표지(작업 줄 아래 한 줄 — 값)와 그 풍선. 숨은 줄이 있다는 것은 표지가, 고르는
-# 법과 적용 범위는 풍선이 말한다(설계 규칙 UI-TXT-01 · 04 — 숨은 데이터 안내는 표지 + 풍선).
+# 법과 적용 범위는 풍선이 말한다(설계 규칙 UI-TXT-01 · 04 — 숨은 데이터 안내는 표지 + 풍선). 표지의
+# `by` 는 줄을 실제로 좁힌 거름 자리(`CAP_BY_*`), 풍선의 `places` 는 그 표에 있는 거름 자리다 — 공용
+# 공정을 따라가는 표의 공정은 조회 조건 「공정」 칸이고 다른 화면과 같이 쓴다(`CAP_HELP_SHARED`).
 CAP_FILTERED_NOTICE: Final = (
-    ":material/filter_alt: 큰 표 · 표 조건으로 고른 {shown:,}줄만 실음"
-    "(전체 {rows:,}줄 · {cells:,}칸)"
+    ":material/filter_alt: 큰 표 · {by}으로 고른 {shown:,}줄만 실음(전체 {rows:,}줄 · {cells:,}칸)"
 )
 CAP_HEAD_NOTICE: Final = (
     ":material/filter_alt: 큰 표 · 앞 {shown:,}줄만 실음(전체 {rows:,}줄 · {cells:,}칸)"
 )
+CAP_BY_PROCESS: Final = "공정"
+CAP_BY_CARD: Final = "표 조건"
 CAP_HELP: Final = (
-    "칸이 아주 많은 표는 사이드바 「표 조건」 으로 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
-    "「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
+    "칸이 아주 많은 표는 사이드바 {places} 으로 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
+    "{shared}「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
 )
+CAP_HELP_SHARED: Final = "「공정」 은 다른 화면과 같이 쓰는 칸입니다. "
 # 공용 공정 거름에 가려 이 표에 안 보이는 줄에도 적용하지 않은 편집이 있을 때의 표지(작업 줄 아래
 # 한 줄 — 값)와 그 풍선(설계 규칙 UI-TXT-04 — 숨은 데이터 안내는 표지 + 풍선). 표지가 서면 작업 줄과
 # 표 도구 막대가 한 줄에 서지 않고 단추 → 표지 → 막대 → 표 차례로 쌓인다(큰 표 표지와 같다).
@@ -203,6 +210,20 @@ class GridTable:
         return self.spec.value_columns
 
     @property
+    def card_columns(self) -> tuple[str, ...]:
+        """사이드바 「표 조건」 카드에 서는 거를 칸 — 비면 화면이 카드를 세우지 않는다."""
+        return card_columns(self.dimensions, self.shared_screen)
+
+    @property
+    def cap_help(self) -> str:
+        """큰 표 표지의 풍선 — 이 표에 있는 거름 자리만 적는다."""
+        shared = _follows_shared_process(self.dimensions, self.shared_screen)
+        places = [f"「{CAP_BY_PROCESS}」"] if shared else []
+        if self.card_columns:
+            places.append(f"「{CAP_BY_CARD}」")
+        return CAP_HELP.format(places=" · ".join(places), shared=CAP_HELP_SHARED if shared else "")
+
+    @property
     def slot(self) -> edit_grid.TableSlot:
         return edit_grid.TableSlot(
             self.base.index, self.spec, cells_key(self.table), history_key(self.table)
@@ -228,24 +249,49 @@ def grid_spec(
     return GridSpec(table, title, tuple(dimensions), months, GRID_FORMATS[table], value_help)
 
 
+def _follows_shared_process(dimensions: Sequence[str], shared_screen: str | None) -> bool:
+    return shared_screen is not None and PROCESS_COLUMN in dimensions
+
+
+def card_columns(dimensions: Sequence[str], shared_screen: str | None) -> tuple[str, ...]:
+    """「표 조건」 카드에 서는 거를 칸 — 공용 공정을 따라가는 표의 공정은 조회 조건 「공정」 칸이라
+    빠진다(`column_filter.render_column_filter_controls` 와 같은 갈래)."""
+    shared = _follows_shared_process(dimensions, shared_screen)
+    return tuple(column for column in dimensions if not (shared and column == PROCESS_COLUMN))
+
+
 def _capped_rows(
     template: pd.DataFrame,
     dimensions: Sequence[str],
     filter_prefix: str | None,
     shared_screen: str | None,
-) -> tuple[pd.DataFrame, bool]:
-    """상한에 걸린 표에서 실을 줄 — (줄, 사이드바 필터로 골랐는가). 필터로 골라도 칸 수가 넘치면
-    그 앞 `CAP_ROWS` 줄이다. 공정은 `shared_screen` 이 있으면 공용 공정 값이다."""
+) -> tuple[pd.DataFrame, tuple[str, ...]]:
+    """상한에 걸린 표에서 실을 줄과 그 줄을 좁힌 거름 자리(`CAP_BY_*` — 비면 앞 `CAP_ROWS` 줄이다).
+    거름으로 골라도 칸 수가 넘치면 그 앞 `CAP_ROWS` 줄이다. 공정은 `shared_screen` 이 있으면 공용
+    공정 값이고, 나머지 칸은 「표 조건」 카드 선택(세션 값)이다."""
+    if filter_prefix is None:
+        return template.head(CAP_ROWS), ()
     months = len(template.columns) - len(dimensions)
-    if filter_prefix is not None:
-        chosen = apply_column_filters(
-            template, list(dimensions), key_prefix=filter_prefix, shared_screen=shared_screen
+    chosen = template
+    by: list[str] = []
+    if _follows_shared_process(dimensions, shared_screen):
+        narrowed = apply_column_filters(
+            chosen, [PROCESS_COLUMN], key_prefix=filter_prefix, shared_screen=shared_screen
         )
-        if len(chosen) < len(template):
-            if len(chosen) * months <= CAP_CELLS:
-                return chosen, True
-            return chosen.head(CAP_ROWS), True
-    return template.head(CAP_ROWS), False
+        if len(narrowed) < len(chosen):
+            chosen = narrowed
+            by.append(CAP_BY_PROCESS)
+    narrowed = apply_column_filters(
+        chosen, list(card_columns(dimensions, shared_screen)), key_prefix=filter_prefix
+    )
+    if len(narrowed) < len(chosen):
+        chosen = narrowed
+        by.append(CAP_BY_CARD)
+    if not by:
+        return template.head(CAP_ROWS), ()
+    if len(chosen) * months > CAP_CELLS:
+        chosen = chosen.head(CAP_ROWS)
+    return chosen, tuple(by)
 
 
 def _rows_digest(rows: pd.DataFrame) -> str:
@@ -301,7 +347,7 @@ def build_grid_table(
             return GridTable(
                 spec, editor_key, template, whole, key, labels, shared_screen=shared_screen
             )
-    shown, filtered = _capped_rows(template, spec.key_columns, filter_prefix, shared_screen)
+    shown, by = _capped_rows(template, spec.key_columns, filter_prefix, shared_screen)
     rows_key = f"{digest}:{_rows_digest(shown)}"
     base = get_edit_grid_base(
         cache_key,
@@ -312,8 +358,8 @@ def build_grid_table(
         _spec=spec,
         _labels=labels,
     )
-    notice = (CAP_FILTERED_NOTICE if filtered else CAP_HEAD_NOTICE).format(
-        rows=len(template), cells=cells, shown=len(shown)
+    notice = (CAP_FILTERED_NOTICE if by else CAP_HEAD_NOTICE).format(
+        by=" · ".join(by), rows=len(template), cells=cells, shown=len(shown)
     )
     key = base_key(table, content, order_digest, rows_key)
     return GridTable(spec, editor_key, template, base, key, labels, notice, shared_screen)
@@ -557,7 +603,7 @@ def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actio
     if outside:
         st.caption(OUTSIDE_NOTICE.format(n=outside), help=OUTSIDE_HELP.format(n=outside))
     if table.cap_notice is not None:
-        st.caption(table.cap_notice, help=CAP_HELP)
+        st.caption(table.cap_notice, help=table.cap_help)
     # 적용·붙여넣기 결과는 누른 자리 바로 아래 한 칸이다(`queue_reference_import_flash` 가 담은 것 —
     # 옛 편집표와 같은 칸 이름). 적용 오류·고칠 칸 알림도 같은 칸에 더 쓴다.
     return Actions(submitted, render_flash(f"{table.editor_key}_apply_flash"))
