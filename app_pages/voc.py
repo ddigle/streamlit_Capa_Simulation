@@ -88,6 +88,8 @@ RESOLVE_GENERATION_KEY = "voc_resolve_generation"
 DELETE_HANDLED_KEY = "voc_delete_handled"
 POSTED_MESSAGE = "글을 올렸습니다."
 REPLIED_MESSAGE = "답변을 남겼습니다."
+RESOLVED_MESSAGE = "답변 완료로 표시했습니다."
+UNRESOLVED_MESSAGE = "미답변으로 되돌렸습니다."
 
 
 def _close_kept_replies() -> None:
@@ -313,8 +315,10 @@ def _submit_reply(database_path: str, post_id: str, generation: int) -> None:
 
 
 def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: int) -> None:
-    """「답변 완료로 표시」·「미답변으로 되돌리기」 콜백."""
+    """「답변 완료로 표시」·「미답변으로 되돌리기」 콜백. 바꾸면 알림창에 알린다 — 저장되는 누름이고
+    답변 완료 배지는 글 상자를 펴야 보인다."""
     generation_key = f"{RESOLVE_GENERATION_KEY}_{post_id}"
+    message = RESOLVED_MESSAGE if resolved else UNRESOLVED_MESSAGE
     if pressed_on_replacement(generation_key, generation):
         # 더블클릭의 둘째 누름이 첫 누름 뒤 같은 자리에 선 반대 단추에 닿았다 — 방금 한 표시를
         # 되돌리지 않는다(write_guard, 2026-10-27 E2E).
@@ -333,8 +337,14 @@ def _set_resolved(database_path: str, post_id: str, resolved: bool, generation: 
     except BOOTSTRAP_ERRORS as exc:
         queue_flash(f"{POST_ERROR_KEY}_{post_id}", bootstrap_error_message(exc), kind="error")
         return
-    if written:
-        st.session_state[generation_key] = generation + 1
+    if not written:
+        if just_written(generation_key):
+            # 겹쳐 온 같은 누름의 둘째 — 앞 회차가 꺼내 그린 알림을 이 회차가 지우지 않게
+            # 다시 적는다.
+            queue_flash(FLASH_KEY, message)
+        return
+    queue_flash(FLASH_KEY, message)
+    st.session_state[generation_key] = generation + 1
 
 
 def _delete_post(database_path: str, post_id: str, reply_count: int) -> None:
