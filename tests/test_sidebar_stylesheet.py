@@ -503,6 +503,16 @@ def test_a_shared_value_field_wears_a_thick_accent_border_without_shifting(
     ]
 
 
+def test_an_empty_block_in_the_conditions_panel_takes_no_row_gap() -> None:
+    """빈 블록(설비 시나리오 줄 아래 알림 칸)이 줄 사이를 한 번 더 먹지 않는다 — 설비 시나리오 →
+    공정 사이만 14.2px 이던 것(다른 줄 사이 8.4px, 2026-11-08 사용자 메모)을 한 값으로."""
+    block = _style_block()
+    panel = f".st-key-{CONDITIONS_BOX_KEY}"
+    empty = '[data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"]:empty)'
+    rule = _declarations(block, [f'[data-testid="stSidebarContent"] {panel} {empty}'])
+    assert rule == ["display: none"]
+
+
 def test_alerts_in_the_conditions_panel_sit_on_the_surface() -> None:
     """패널 안 알림(불러오기·저장 알림)도 밑에 `SURFACE` 를 깐다 — 청록 면과 섞이면 글자 대비가
     4.5:1 아래로 떨어진다(조건 카드에서 실측한 까닭과 같다)."""

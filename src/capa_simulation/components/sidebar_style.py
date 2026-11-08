@@ -49,6 +49,10 @@ _CONDITIONS_PANEL = f".st-key-{CONDITIONS_BOX_KEY}"
 _CONDITION_FIELDS = f'[class*="st-key-{FIELD_KEY_PREFIX}"]'
 _CONDITION_NAME_ROWS = f'[class*="st-key-{NAME_ROW_KEY_PREFIX}"]'
 _PANEL_ROW_GAP = "0.6rem"
+# 빈 세로 블록 하나만 담은 칸(높이 0 인데 줄 사이를 먹는다).
+_EMPTY_BLOCK_WRAPPER = (
+    '[data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"]:empty)'
+)
 _FIELD_INNER_GAP = "0.2rem"
 # **상자 오른쪽 끝의 표식.** 누르면 무슨 일이 일어나는지를 오른쪽 끝 기호가 늘 보이게 말한다. 곧바로
 # 다른 화면으로 가는 링크 상자는 `→`(`arrow_forward`), 이 자리에서 펼쳐지는 확장 패널은
@@ -818,6 +822,15 @@ def _conditions_panel_style() -> str:
         }}
         {sidebar} {panel} {_CONDITION_FIELDS} {{
             gap: {_FIELD_INNER_GAP};
+        }}"""
+        # 줄 사이는 한 값이다. 칸 안에 빈 블록(설비 시나리오 줄 아래 알림 칸 — 알림이 없으면
+        # 비어 있다)이 서면 높이는 0 이어도 사이드바 칸 사이(0.42rem)를 한 번 더 먹어 그 줄 밑만
+        # 넓어졌다(공정 Capa 상세 · 가용설비 Main 의 설비 시나리오 → 공정 사이 14.2px, 다른 줄 사이
+        # 8.4px — 2026-11-08 사용자 메모). 빈 블록의 칸은 그리지 않는다 — 안에 무엇이 서면 다시
+        # 선다.
+        f"""
+        {sidebar} {panel} {_EMPTY_BLOCK_WRAPPER} {{
+            display: none;
         }}"""
         # 이름 줄 — 이름은 왼쪽, 상태는 오른쪽 끝. 상태가 길면 한 줄로 말줄임한다(이름은 줄지
         # 않는다). Streamlit 이 캡션 칸에 거는 아래 음수 여백은 걷는다 — 남기면 값 칸이 이름 줄 위로
