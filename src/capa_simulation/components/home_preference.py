@@ -41,7 +41,7 @@ from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.monthly_table_base import text_width_units
-from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import (
     HasProfileVersion as VersionedProfile,
 )
@@ -2088,8 +2088,8 @@ def _queue_selection(key: str, value: str) -> None:
 def render_key_process_field(
     profile: GlobalKeyProcess,
     *,
-    process_labels: ProcessLabels,
     process_options: Sequence[str],
+    database_path: str,
 ) -> DialogBody | None:
     """사이드바 조건 패널의 `주요공정 히트맵` 줄 — 볼 프리셋을 고르는 팝업 칸(2026-10-10).
 
@@ -2102,7 +2102,10 @@ def render_key_process_field(
     돌려주는 것은 팝업을 여는 함수다(프리셋이 없으면 None) — HOME 팝업 호스트가 열림 값
     `key_process` 로 부른다(`home_settings.render_home_dialog_host` 의 `dialogs`). 칸을 누르면
     호스트만 다시 돌아 HOME 을 다시 계산하지 않고 열린다(2026-11-08 사용자 답 U5 — 설계 규칙
-    UI-PRF-01).
+    UI-PRF-01). 그 함수는 이 회차의 프리셋 목록을 싣지 않는다 — 호스트만 도는 여는 회차의 인자는
+    직전 앱 전체 회차의 것이라, 그 사이 남이 이름을 바꾸거나 지운 프리셋이 팝업에 남는다. 팝업
+    본문이 공용 프리셋을 다시 읽는다(`show_key_process_dialog` — `dialog_host` 「쓰는 쪽이 지키는
+    것」 1).
     """
     names = list(profile.preset_names)
     if not names:
@@ -2117,10 +2120,6 @@ def render_key_process_field(
         )
         return None
     applied = resolve_preset_name(names, st.session_state.get(KEY_PROCESS_PRESET_KEY))
-    previews = [
-        key_process_preview(profile.processes_of(name), process_labels, process_options)
-        for name in names
-    ]
     shown_count = sum(
         1 for process in profile.processes_of(applied) if process in set(process_options)
     )
@@ -2135,7 +2134,7 @@ def render_key_process_field(
         on_click=_open_key_process_dialog,
         args=(applied,),
     )
-    return partial(show_key_process_dialog, names, previews)
+    return partial(show_key_process_dialog, database_path, tuple(process_options))
 
 
 def render_stopped_key_process_field() -> None:
@@ -2189,10 +2188,34 @@ def _open_key_process_dialog(applied: str | None) -> None:
     on_dismiss=HOME_DIALOG_HOST.close,
 )
 @keeps_app_run_open
-def show_key_process_dialog(names: list[str], previews: list[str]) -> None:
+def show_key_process_dialog(database_path: str, process_options: Sequence[str]) -> None:
     """HOME 팝업 호스트가 열림 값 `key_process` 로 연다. 닫기(X · 바깥 · Esc)는 호스트만 돈다 — 닫는
-    회차에 HOME 이 할 일이 없다. 본문은 아래 함수다."""
-    render_key_process_dialog_body(names, previews)
+    회차에 HOME 이 할 일이 없다. 본문은 아래 함수다.
+
+    공용 프리셋과 공정 표시명은 **여기서 다시 읽는다** — 여는 회차는 호스트만 돌아 HOME 이 읽은
+    프로필이 그 사이 남의 저장으로 낡았을 수 있다(옛 이름을 고르면 다음 앱 전체 회차가 그 이름을
+    찾지 못해 기본 프리셋으로 말없이 바뀐다). `process_options` 는 이 세션의 계산 결과라 직전 앱
+    전체 회차의 것을 그대로 쓴다. 그 사이 프리셋이 모두 지워졌으면 고를 것이 없으니 팝업을 닫고 앱
+    전체를 다시 돌린다 — 칸이 「프리셋 없음」 으로 잠긴다.
+    """
+    try:
+        profile = load_global_key_process(database_path)
+    except BOOTSTRAP_ERRORS as exc:
+        render_data_error(
+            bootstrap_error_message(exc), code="HM-01", text="주요공정 프리셋을 읽지 못했습니다"
+        )
+        return
+    names = list(profile.preset_names)
+    if not names:
+        HOME_DIALOG_HOST.finish()
+    process_labels = get_process_labels()
+    render_key_process_dialog_body(
+        names,
+        [
+            key_process_preview(profile.processes_of(name), process_labels, process_options)
+            for name in names
+        ],
+    )
 
 
 def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]) -> None:

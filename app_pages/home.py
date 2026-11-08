@@ -1100,7 +1100,9 @@ else:
 # 같은 차례로 그린다.
 with page_condition_slot(1).container():
     key_process_dialog = render_key_process_field(
-        key_process_profile, process_labels=process_labels, process_options=process_options
+        key_process_profile,
+        process_options=process_options,
+        database_path=str(DUCKDB_PATH.resolve()),
     )
 # 붙여넣기로 읽고 아직 저장하지 않은 과거 구간이 남으면 상자 왼쪽에 주황 띠, 팝업 안 `Past Data` 탭
 # 이름 옆에 점을 찍는다 — 다른 화면의 미적용 점과 같은 규칙이다(2026-10-01 브라우저 점검: 대기가

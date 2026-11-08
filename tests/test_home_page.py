@@ -2340,6 +2340,107 @@ def test_picking_a_preset_in_the_dialog_applies_it_once() -> None:
     assert app.session_state["test_body_runs"] == 3
 
 
+def _stale_key_process_dialog_script(database: Path, meanwhile: list[tuple[str, list[str]]]) -> str:
+    """HOME 이 프리셋을 읽어 칸을 그린 뒤, 그 사이 다른 세션이 묶음을 바꾸고, 그다음 팝업이 열린다.
+
+    여는 회차는 HOME 팝업 호스트만 돈다 — 칸이 돌려준 팝업 함수가 받은 인자는 직전 앱 전체 회차의
+    것이다. 그 흐름을 한 회차 안에서 흉내 낸다(다른 세션의 쓰기는 첫 회차에만).
+    """
+    return f"""
+from pathlib import Path
+
+import streamlit as st
+
+import capa_simulation.settings as settings
+from capa_simulation.components.home_preference import render_key_process_field
+from capa_simulation.persistence.cache import (
+    clear_global_key_process_cache,
+    load_global_key_process,
+)
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+database = {str(database)!r}
+# 팝업 본문이 읽는 공정 표시명(`get_process_labels`)도 이 DB 다.
+settings.DUCKDB_PATH = Path(database)
+body = render_key_process_field(
+    load_global_key_process(database),
+    process_options=["DEMO_Chip_Attach", "DEMO_Final_Test", "DEMO_Wafer_Inspect"],
+    database_path=database,
+)
+if not st.session_state.get("test_other_session_saved"):
+    st.session_state["test_other_session_saved"] = True
+    DuckDBScenarioRepository(Path(database)).replace_global_key_process_presets(
+        {meanwhile!r}, source="다른 세션"
+    )
+    clear_global_key_process_cache()
+if body is not None:
+    body()
+"""
+
+
+def _key_process_database(tmp_path: Path) -> Path:
+    from capa_simulation.persistence.cache import (
+        clear_global_key_process_cache,
+        clear_scenario_repository,
+    )
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = tmp_path / "scenario.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    repository.replace_global_key_process_presets(
+        [("A 그룹", ["DEMO_Chip_Attach"]), ("B 그룹", ["DEMO_Final_Test"])], source="시험"
+    )
+    clear_scenario_repository()
+    clear_global_key_process_cache()
+    return database
+
+
+def test_the_preset_dialog_lists_presets_saved_after_home_last_ran(tmp_path: Path) -> None:
+    """주요공정 히트맵 팝업은 열 때 공용 프리셋을 다시 읽는다(`dialog_host` 「쓰는 쪽이 지키는
+    것」 1).
+
+    여는 회차가 호스트만 돌아, 칸을 그린 회차의 목록을 실으면 남이 이름을 바꾼 프리셋이 옛 이름으로
+    남았다 — 그것을 고르면 다음 앱 전체 회차가 그 이름을 찾지 못해 알림 없이 기본 프리셋이
+    됐다(2026-11-08 검토, 슬롯 사본 재현). 남이 새로 만든 프리셋도 앱 전체 회차 전에는 없었다.
+    """
+    from capa_simulation.components.home_preference import KEY_PROCESS_PICK_KEY
+
+    database = _key_process_database(tmp_path)
+    meanwhile = [
+        ("A 그룹", ["DEMO_Chip_Attach"]),
+        ("B 그룹 새 이름", ["DEMO_Final_Test", "DEMO_Wafer_Inspect"]),
+        ("C 그룹", ["DEMO_Wafer_Inspect"]),
+    ]
+    app = AppTest.from_string(
+        _stale_key_process_dialog_script(database, meanwhile), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    # 칸은 HOME 이 읽은 회차의 것이다(다음 앱 전체 회차에 바뀐다).
+    assert app.button(key="home_key_process_field").label == "A 그룹 · 1공정"
+    picker = app.radio(key=KEY_PROCESS_PICK_KEY)
+    assert picker.options == ["A 그룹", "B 그룹 새 이름", "C 그룹"]
+    # 미리보기도 새 묶음의 공정이다(캡션은 마크다운이라 공정명을 막아 적는다).
+    shown = " · ".join(literal_markdown(name) for name in ("DEMO_Final_Test", "DEMO_Wafer_Inspect"))
+    assert list(picker.proto.captions)[1] == f"2공정 · {shown}"
+
+
+def test_the_preset_dialog_closes_when_every_preset_was_deleted_meanwhile(tmp_path: Path) -> None:
+    """팝업을 여는 사이 프리셋이 모두 지워졌으면 고를 것이 없다 — 팝업을 닫고 앱 전체를 다시 돌려
+    칸이 「프리셋 없음」 으로 잠긴다(빈 라디오 팝업을 세우지 않는다)."""
+    database = _key_process_database(tmp_path)
+    app = AppTest.from_string(
+        _stale_key_process_dialog_script(database, []), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not list(app.radio)
+    field = app.button(key="home_key_process_field")
+    assert field.disabled
+    assert field.label == "프리셋 없음"
+
+
 def _save_preset(app: AppTest, name: str, processes: list[str]) -> None:
     next(widget for widget in app.text_input if widget.label == "프리셋 이름").set_value(name)
     next(widget for widget in app.multiselect if widget.label == "공정").set_value(processes)
