@@ -33,6 +33,7 @@ from test_constraint_simulation_page import (
     DYNAMIC_PROCESS,
     OTHER_PROCESS,
     _equipment_database,
+    _process_box,
 )
 
 import capa_simulation.services.simulation_cache as simulation_cache
@@ -67,7 +68,6 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_NEW_SINCE_KEY,
     CONSTRAINT_NEW_UNITS_KEY,
     CONSTRAINT_OWNED_KEY,
-    CONSTRAINT_PROCESS_KEY,
     CONSTRAINT_PRODUCT_KEY,
 )
 from capa_simulation.modification_schedule_state import (
@@ -241,7 +241,7 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     _ok(app.run())
 
     # 카드 — 제약 제품·제약 기간 칸은 서지 않고 개조 일정 칸이 선다(공정 칸은 같은 칸).
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert _process_box(app).value == DYNAMIC_PROCESS
     assert not _has_widget(app, "selectbox", CONSTRAINT_PRODUCT_KEY)
     # 2판 옵션(보유 호기 고르기 · 목록에 없는 보유 · 신규)은 제약 영향 모드 카드에만 선다.
     assert not app.multiselect

@@ -55,7 +55,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from capa_simulation import alerts
+from capa_simulation import alerts, shared_process
 from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
@@ -100,6 +100,7 @@ from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.preset_number_field import render_preset_number_field
+from capa_simulation.components.process_field import render_process_choice
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
     equipment_scope,
@@ -207,6 +208,8 @@ from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, condition_card
 
 CARD_LABEL = "제약 시뮬레이션 조건"
+# 공용 공정 칸의 출처 이름. 이 화면은 공용 값을 받기만 한다(2026-11-08 사용자 답 P2-2).
+SCREEN = "제약 시뮬레이션"
 CARD_NAME = "constraint_simulation"
 CARD_ICON = ":material/call_split:"
 # 제품별 소요를 읽지 못한 회차의 카드 표지 — 까닭은 본문 마크의 알림이다(설계 규칙 UI-NTF-08).
@@ -322,8 +325,18 @@ plan_source = EquipmentPlanSource(
     manual_downtime=manual_downtime,
 )
 
-# 공정 — 넘겨받은 공정이 선택지에 있으면 위젯 칸에 적는다(공정 선택 상자보다 먼저). HOME 칸으로 연
-# 공정 Capa 상세(설비 공식 고정)에서 넘어왔으면 그 방문을 적어 둔다 — 설비 기준이 바뀐 것을 알린다.
+# 공정 — 공정 값 칸보다 먼저 정해 세션 칸에 적는다. 공용 공정(다른 화면에서 고른 공정)은 값이 바뀐
+# 뒤 처음 그리는 회차에 하나이고 이 목록에 있을 때만 연다 — 넘겨받은 공정(주소 `process` — 공정 Capa
+# 상세 머리 링크)이 이긴다(2026-11-08 사용자 답 P2-2). 따라 연 공정은 설비 일정이 서지 않아도 그대로
+# 연다 — 고른 것과 같은 멈춘 자리다. 처음 연 화면의 기본(`first_ready_process`)은 세션 칸이 빈
+# 회차에만 쓴다.
+followed_process = shared_process.follow_single(
+    SCREEN, process_options, entered=requested_process is not None
+)
+if followed_process is not None:
+    st.session_state[CONSTRAINT_PROCESS_KEY] = followed_process
+# 넘겨받은 공정이 선택지에 있으면 세션 칸에 적는다. HOME 칸으로 연 공정 Capa 상세(설비 공식
+# 고정)에서 넘어왔으면 그 방문을 적어 둔다 — 설비 기준이 바뀐 것을 알린다.
 missing_label: str | None = None
 if requested_process is not None:
     if requested_process in process_options:
@@ -361,6 +374,12 @@ if missing_label is not None:
     )
 with notices:
     alerts.flush()
+# 조회 조건 패널의 공정 값 칸(하나 고름 — 두 모드가 나눈다). 값은 원본이고 글자만 표시명이다.
+# 여기서 고른 공정은 공용 값을 바꾸지 않는다 — 한 공정을 들여다본 일로 다른 화면의 거름이 사라지지
+# 않게(P2-2).
+selected_process = render_process_choice(
+    process_options, screen=SCREEN, key=CONSTRAINT_PROCESS_KEY, labels=process_labels
+)
 
 
 def locked_arrival_label(process: str | None) -> str | None:
@@ -437,6 +456,7 @@ if schedule_mode:
             card_name=CARD_NAME,
             card_icon=CARD_ICON,
             render_header=render_header,
+            process=selected_process,
         )
     )
     st.stop()
@@ -481,15 +501,6 @@ product_error = ""
 cutoff_line = "Cut-off 미기재"
 with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
     st.caption("**대상**")
-    selected_process = st.selectbox(
-        "공정",
-        process_options,
-        key=CONSTRAINT_PROCESS_KEY,
-        persist_state="session",
-        disabled=not process_options,
-        # 표시만 바꾼다. 선택값은 원본이다 — 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다.
-        format_func=process_labels.unique_format_func(process_options),
-    )
     if selected_process is not None and months:
         try:
             product_table = get_process_product_demand(

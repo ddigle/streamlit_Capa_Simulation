@@ -109,6 +109,8 @@ __all__ = [
 ]
 
 # ------------------------------------------------------------------ 위젯 칸
+# 공정은 위젯이 아닌 세션 칸이다 — 조회 조건 패널의 공정 값 칸(하나 고름 — 공용 공정 칸,
+# `components/process_field.render_process_choice`)이 읽고 그 팝업이 적는다. 두 모드가 나눈다.
 CONSTRAINT_PROCESS_KEY: Final = "constraint_sim_process"
 CONSTRAINT_PRODUCT_KEY: Final = "constraint_sim_product"
 CONSTRAINT_PERIOD_START_KEY: Final = "constraint_sim_period_start"

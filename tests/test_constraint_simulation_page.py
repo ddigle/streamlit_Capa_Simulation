@@ -45,7 +45,10 @@ from capa_simulation.components.constraint_equipment_plan import (
     SOURCE_BAND_HELP,
 )
 from capa_simulation.components.constraint_simulation_view import MODIFY_OFF_TEXT, STEPS_HELP
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.preset_number_field import CUSTOM_OPTION
+from capa_simulation.components.process_field import CONTEXT_KEY as PROCESS_CONTEXT_KEY
+from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_CHART_KEY,
     CONSTRAINT_GENERAL_INPUT_KEY,
@@ -203,6 +206,30 @@ def _ok(app: AppTest) -> AppTest:
     return app
 
 
+class _ProcessBox:
+    """공정 값 칸(하나 고름 — 공용 공정 칸, 2026-11-08)을 예전 상자처럼 읽는다. 값은 세션 칸,
+    선택지는 팝업이 쓸 이 화면의 선택지이고, 고르기는 팝업 판이 하는 대로 세션 칸에 적는다."""
+
+    def __init__(self, app: AppTest) -> None:
+        self.app = app
+
+    @property
+    def value(self) -> Any:
+        return self.app.session_state[CONSTRAINT_PROCESS_KEY]
+
+    @property
+    def options(self) -> list[str]:
+        return list(self.app.session_state[PROCESS_CONTEXT_KEY].options)
+
+    def set_value(self, value: str) -> _ProcessBox:
+        self.app.session_state[CONSTRAINT_PROCESS_KEY] = value
+        return self
+
+
+def _process_box(app: AppTest) -> _ProcessBox:
+    return _ProcessBox(app)
+
+
 def _opened(databases: tuple[Path, Path], process: str = DYNAMIC_PROCESS) -> AppTest:
     app = _app(databases)
     app.query_params["process"] = process
@@ -281,7 +308,7 @@ def test_an_empty_equipment_database_stands_the_card_and_one_mark(
     databases: tuple[Path, Path],
 ) -> None:
     app = _ok(_app(databases).run())
-    process = app.selectbox(key=CONSTRAINT_PROCESS_KEY).value
+    process = _process_box(app).value
     assert process is not None
     markdown = " ".join(_markdown(app))
     assert "설비 일정 없음: 저장본 없음" in markdown
@@ -305,7 +332,7 @@ def test_a_process_with_equipment_shows_kpis_figures_steps_and_schedule(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     app = _opened(dynamic_databases)
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert _process_box(app).value == DYNAMIC_PROCESS
     assert app.selectbox(key=CONSTRAINT_PRODUCT_KEY).value == FIRST_PRODUCT
     labels = [metric.label for metric in app.metric]
     assert labels == [
@@ -357,7 +384,7 @@ def test_the_process_param_is_taken_once_and_the_theme_stays(
     app.query_params["process"] = DYNAMIC_PROCESS
     app.query_params["theme"] = "dark"
     _ok(app.run())
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert _process_box(app).value == DYNAMIC_PROCESS
     assert "process" not in app.query_params
     assert app.query_params["theme"] in ("dark", ["dark"])
     links = app.session_state["captured_page_links"]
@@ -377,7 +404,7 @@ def test_an_unknown_process_param_warns_and_opens_the_first_ready_process(
     (note,) = events(app, "CS-02")
     warnings = str(note["full"])
     assert "넘겨받은 공정" in warnings and "「없는_공정」" in warnings
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert _process_box(app).value == DYNAMIC_PROCESS
     assert "엽니다" in warnings and f"「{DYNAMIC_PROCESS}」" in warnings
 
 
@@ -392,14 +419,101 @@ def test_the_sidebar_first_open_picks_the_first_process_with_an_equipment_schedu
         _equipment_database(tmp_path / "equipment.duckdb", OTHER_PROCESS),
     )
     app = _ok(_app(databases).run())
-    options = app.selectbox(key=CONSTRAINT_PROCESS_KEY).options
+    options = _process_box(app).options
     assert options[0] != OTHER_PROCESS
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == OTHER_PROCESS
+    assert _process_box(app).value == OTHER_PROCESS
     assert app.metric
     assert _has_chart(app, CONSTRAINT_CHART_KEY)
-    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(options[0])
+    _process_box(app).set_value(options[0])
     _ok(app.run())
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == options[0]
+    assert _process_box(app).value == options[0]
+
+
+def test_the_process_is_the_shared_single_choice_field_in_the_conditions_panel(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """공정은 카드의 상자가 아니라 조회 조건 패널의 공정 값 칸(하나 고름 — 공용 공정 칸)이다. 글자는
+    지금 공정이고 카드에는 공정 상자가 없다(2026-11-08 사용자 답 P1)."""
+    app = _opened(dynamic_databases)
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == literal_markdown(DYNAMIC_PROCESS)
+    assert not [item for item in app.selectbox if item.label == "공정"]
+
+
+def test_a_single_shared_process_opens_here_and_names_its_origin(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """다른 화면에서 공정 하나로 좁히면 이 화면이 그 공정을 열고 값 칸이 「HOME 에서」 를 단다. 이
+    화면에서 다른 공정을 고르면 출처가 걷히고 공용 값은 그대로다(받기만 — P2-2). 따라 연 공정은 설비
+    일정이 서지 않아도 연다 — 고른 것과 같은 멈춘 자리다."""
+    from test_process_field import share, shared_values
+
+    app = _ok(_app(dynamic_databases).run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    share(app, [OTHER_PROCESS])
+    _ok(app.run())
+    assert _process_box(app).value == OTHER_PROCESS
+    assert "HOME 에서" in [str(item.value) for item in app.sidebar.caption]
+    assert "설비 일정 없음" in " ".join(_markdown(app))
+
+    _process_box(app).set_value(DYNAMIC_PROCESS)
+    _ok(app.run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    assert "HOME 에서" not in [str(item.value) for item in app.sidebar.caption]
+    assert shared_values(app) == [OTHER_PROCESS]
+    # 공용 값이 그대로면 다시 따라가지 않는다 — 여기서 고른 공정이 남는다.
+    _ok(app.run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+
+
+def test_several_shared_processes_keep_the_process_in_view(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """공용 값이 여럿이면 보던 공정을 둔다 — 이 목록에 걸리는 것이 하나뿐이어도 열지
+    않는다(P2-2)."""
+    from test_process_field import share
+
+    app = _ok(_app(dynamic_databases).run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    share(app, [OTHER_PROCESS, "없는_공정"])
+    _ok(app.run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    assert "HOME 에서" not in [str(item.value) for item in app.sidebar.caption]
+
+
+def test_the_handed_over_process_wins_over_the_shared_one(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """공정 Capa 상세 머리 링크(주소 `process`)로 들어온 회차는 들어온 길이 이기고 이번 공용 값은 본
+    것으로 친다 — 다음 회차에도 공용 공정으로 바뀌지 않는다(P2-2)."""
+    from test_process_field import share
+
+    app = _app(dynamic_databases)
+    share(app, [OTHER_PROCESS])
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    _ok(app.run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    assert "HOME 에서" not in [str(item.value) for item in app.sidebar.caption]
+
+
+def test_the_schedule_mode_follows_the_same_shared_process(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """두 모드는 공정 칸을 나눈다 — 「개조 일정」 모드도 같은 값 칸이고 공용 공정을 따라 연다."""
+    from test_process_field import share
+
+    app = _ok(_app(dynamic_databases).run())
+    app.button_group(key=CONSTRAINT_MODE_KEY).set_value("schedule")
+    _ok(app.run())
+    assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == literal_markdown(DYNAMIC_PROCESS)
+    share(app, [OTHER_PROCESS])
+    _ok(app.run())
+    assert _process_box(app).value == OTHER_PROCESS
+    assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == literal_markdown(OTHER_PROCESS)
+    app.button_group(key=CONSTRAINT_MODE_KEY).set_value("constraint")
+    _ok(app.run())
 
 
 def _assumed_scenario_databases(tmp_path: Path) -> tuple[tuple[Path, Path], dict[str, str]]:
@@ -453,10 +567,10 @@ def test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_on
     app.button_group(key=CONSTRAINT_MODE_KEY).set_value("constraint")
     _ok(app.run())
     # 다른 공정을 고르면 걷힌다 — 돌아와도 다시 서지 않는다.
-    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(OTHER_PROCESS)
+    _process_box(app).set_value(OTHER_PROCESS)
     _ok(app.run())
     assert note not in _arrival(app)
-    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(DYNAMIC_PROCESS)
+    _process_box(app).set_value(DYNAMIC_PROCESS)
     _ok(app.run())
     assert note not in _arrival(app)
 
@@ -1569,19 +1683,19 @@ def test_a_stale_process_param_does_not_overwrite_a_later_pick(
     실은 회차가 오면 — 그 값은 이미 적용했으므로 다시 적용하지 않는다(공정 Capa 상세의 「적용한
     묶음」 막이와 같다). 인자가 걷힌 회차가 지나면 같은 링크로 다시 들어올 때 다시 적용한다."""
     app = _opened(dynamic_databases)
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert _process_box(app).value == DYNAMIC_PROCESS
 
-    app.selectbox(key=CONSTRAINT_PROCESS_KEY).set_value(OTHER_PROCESS)
+    _process_box(app).set_value(OTHER_PROCESS)
     app.query_params["process"] = DYNAMIC_PROCESS
     _ok(app.run())
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == OTHER_PROCESS
+    assert _process_box(app).value == OTHER_PROCESS
     assert "process" not in app.query_params
 
     # 인자 없는 회차 → 같은 링크로 다시 들어오면 그 공정이다.
     _ok(app.run())
     app.query_params["process"] = DYNAMIC_PROCESS
     _ok(app.run())
-    assert app.selectbox(key=CONSTRAINT_PROCESS_KEY).value == DYNAMIC_PROCESS
+    assert _process_box(app).value == DYNAMIC_PROCESS
 
 
 def test_the_chart_and_steps_row_stacks_below_the_narrow_width(

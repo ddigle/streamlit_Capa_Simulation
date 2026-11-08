@@ -10,9 +10,11 @@
 
 - **모드 전환은 본문이다**(하위 보기 전환 규칙). 다만 카드에 무엇이 설지를 바꾸므로 프래그먼트가
   아닌 앱 전체 회차로 돈다(AGENTS 9장 「본문 프래그먼트」).
-- **조건 카드**(제약 모드와 같은 카드 이름·자리) — 대상(공정 — 제약 모드와 같은 칸) / 이 세션만 /
-  개조(대수 · 기간 버튼 + 직접 · 동시 상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준
-  확보율 — 제약 모드와 **한 정본**, 정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
+- **공정**은 조회 조건 패널의 공정 값 칸(하나 고름 — 공용 공정 칸)이고 제약 모드와 같은 칸이다 —
+  페이지가 정해 넘긴다(`ScheduleModeContext.process`).
+- **조건 카드**(제약 모드와 같은 카드 이름·자리) — 이 세션만 / 개조(대수 · 기간 버튼 + 직접 · 동시
+  상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준 확보율 — 제약 모드와 **한 정본**,
+  정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
 - **설비 일정 확인 · 계획** — 제약 모드와 같은 함수 하나(`constraint_equipment_plan.
   render_equipment_plan` — 멈추는 갈래 · 멈춘 자리 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
   키**로).
@@ -79,7 +81,6 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_GENERAL_INPUT_KEY,
     CONSTRAINT_GENERAL_KEY,
     CONSTRAINT_GENERAL_PILLS_KEY,
-    CONSTRAINT_PROCESS_KEY,
     GENERAL_PRESETS,
     MOD_DAY_PRESETS,
     seed_toggle,
@@ -236,6 +237,9 @@ class ScheduleModeContext(NamedTuple):
     card_name: str
     card_icon: str
     render_header: Callable[[str, str], None]
+    process: str | None
+    """지금 공정(원본) — 페이지가 조회 조건 패널의 공정 값 칸(하나 고름)으로 정했다. 고를 공정이
+    없으면 None."""
 
 
 class ScheduleChoice(NamedTuple):
@@ -577,18 +581,9 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
     source = context.source
     page_inputs = source.page_inputs
     months = list(page_inputs.months)
-    options = page_inputs.process_options
     process_labels = context.process_labels
+    selected = context.process
     with condition_card(context.card_label, name=context.card_name, icon=context.card_icon):
-        st.caption("**대상**")
-        selected = st.selectbox(
-            "공정",
-            options,
-            key=CONSTRAINT_PROCESS_KEY,
-            persist_state="session",
-            disabled=not options,
-            format_func=process_labels.unique_format_func(options),
-        )
         readiness = equipment_readiness(source, None if selected is None else str(selected))
         cutoff_days = readiness.cutoff_days if readiness is not None and readiness.ready else None
         choice = _render_conditions(page_inputs, today=source.today, cutoff_days=cutoff_days)
