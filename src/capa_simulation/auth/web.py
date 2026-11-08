@@ -198,6 +198,7 @@ th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: lef
   vertical-align: top; }
 th { color: var(--muted); font-weight: 600; }
 .muted { color: var(--muted); font-size: .9rem; }
+a { color: var(--accent); }
 a.button { display: inline-block; margin-top: 12px; padding: 8px 16px; border-radius: 8px;
   background: var(--accent); color: var(--accent-text); text-decoration: none; }
 """

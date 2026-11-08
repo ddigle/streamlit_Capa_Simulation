@@ -51,7 +51,13 @@ from capa_simulation.auth.identity import (
     session_end_of,
 )
 from capa_simulation.auth.web import NOT_ON_LIST_TEXT, public_link, sanitize_next
+from capa_simulation.components.app_header import render_shell_style
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.theme_toggle import (
+    ALARM_BUTTON_ID,
+    CHANGES_CHIP_ID,
+    TOOLBAR_BUTTON_ORDER,
+)
 
 # 이 세션이 처음 본 계정(loginid). 매 회차 쿠키에서 다시 검증한 값과 견주어 계정 바뀜을 가른다 —
 # 신원의 근거가 아니다.
@@ -85,6 +91,21 @@ _PROBLEM_NOTICES: Mapping[IdentityProblem, str] = {
     IdentityProblem.INVALID: MISSING_NOTICE,
     IdentityProblem.DENIED: NOT_ON_LIST_TEXT,
 }
+
+# 멈춤 화면이 감추는 툴바 단추 — 툴바 iframe 이 세운 Guide · Print · 테마. 앞 회차의 iframe 이 부모
+# 문서에 세운 단추는 iframe 이 걷힌 뒤에도 남지만 듣개가 함께 죽어 눌러도 아무 일도 하지 않는다
+# (브라우저 실측). 알림 칸이 세운 변경 칩 · Alarm 은 그 칸이 걷혀도 듣개가 살아 판이 열리므로 둔다 —
+# 변경 칩은 새로고침하면 비는 이 세션의 변경 목록을 볼 마지막 자리다.
+_STOP_HIDDEN_TOOLBAR_BUTTONS = tuple(
+    button_id
+    for button_id in TOOLBAR_BUTTON_ORDER
+    if button_id not in (CHANGES_CHIP_ID, ALARM_BUTTON_ID)
+)
+_STOP_TOOLBAR_STYLE = (
+    "<style>"
+    + ", ".join(f"#{button_id}" for button_id in _STOP_HIDDEN_TOOLBAR_BUTTONS)
+    + " { display: none !important; }</style>"
+)
 
 
 def session_cookies() -> Mapping[str, str]:
@@ -126,7 +147,16 @@ def login_again_link(cfg: SsoConfig) -> str:
     return _same_tab_link(public_link(cfg, target), LOGIN_AGAIN_LABEL)
 
 
+def _render_stop_chrome() -> None:
+    """멈춤 화면의 머리 — 정상 회차와 같은 껍데기 스타일(⋮ 메뉴 · Deploy 감춤 · 인쇄 규칙)과 앞
+    회차가 남긴 죽은 툴바 단추 감춤. 멈춤은 `app.py` 가 껍데기 스타일을 보내기 전이라 여기서
+    보낸다(스타일만 든 `st.html` 이라 자리를 먹지 않는다)."""
+    render_shell_style()
+    st.html(_STOP_TOOLBAR_STYLE)
+
+
 def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
+    _render_stop_chrome()
     st.error(NO_GATE_NOTICE, icon=":material/gpp_bad:")
     if cfg.problems:
         lines = [f"`{problem.env}` — {problem.reason}" for problem in cfg.problems]
@@ -136,12 +166,14 @@ def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
 
 
 def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
+    _render_stop_chrome()
     st.warning(_PROBLEM_NOTICES[problem], icon=":material/lock_clock:")
     st.markdown(login_again_link(cfg), unsafe_allow_html=True)
     st.stop()
 
 
 def _stop_account_changed() -> NoReturn:
+    _render_stop_chrome()
     st.warning(ACCOUNT_CHANGED_NOTICE, icon=":material/switch_account:")
     st.stop()
 

@@ -28,9 +28,11 @@ from capa_simulation.components.sso_reconnect import (
     PROBE_GAP_MS,
     PROBE_WAIT_MS,
     RECONNECT_NOTICE,
+    band_styles,
     reconnect_script,
     sso_reconnect_scripts,
 )
+from capa_simulation.design import tokens
 
 
 def _identity() -> Identity:
@@ -100,6 +102,33 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     # 그 창(react-aria 모달)은 바깥을 inert 로 만든다 — 띠는 react-aria 의 제외 표지를 단다.
     assert 'box.setAttribute("data-react-aria-top-layer", "")' in script
     assert 'link.target = "_self"' in script
+
+
+def test_the_band_is_centred_within_side_gutters_not_half_the_window() -> None:
+    """띠는 양옆 12px 안에서 내용 폭으로 가운데 선다 — `left:50%` 로 밀면 내용 맞춤 폭의 상한이
+    창의 절반이 되어 좁은 창에서 글이 여러 줄로 접힌다(창 600px 에서 폭 300px)."""
+    script = reconnect_script(use_config())
+
+    assert "left:12px;right:12px;margin-inline:auto;width:fit-content;" in script
+    assert "left:50%" not in script and "translateX" not in script
+
+
+def test_the_band_carries_both_palettes_and_picks_the_app_theme_when_it_stands() -> None:
+    """띠 색은 두 팔레트를 함께 싣고, 띠를 세우는 순간 테마 버튼과 같은 키 규칙(`capaTheme`)으로
+    고른다 — 지금 실행의 테마를 끼우면 스크립트 내용이 회차마다 달라지고, 한 팔레트에 묶으면 어두운
+    테마에서도 밝은 강조색으로 선다."""
+    script = reconnect_script(use_config())
+
+    for mode in ("light", "dark"):
+        box, link = band_styles(mode)
+        assert json.dumps(box, ensure_ascii=False) in script
+        assert json.dumps(link, ensure_ascii=False) in script
+        assert f"background:{tokens.palette_value(mode, 'ACCENT')};" in box
+        assert f"color:{tokens.palette_value(mode, 'ACCENT_TEXT')};" in link
+    assert band_styles("light") != band_styles("dark")
+    assert 'capaTheme.resolve(parentWindow).choice === "Dark"' in script
+    assert "box.style.cssText = isDark ?" in script
+    assert "link.style.cssText = isDark ?" in script
 
 
 def test_script_text_cannot_break_out_of_its_script_tag() -> None:
