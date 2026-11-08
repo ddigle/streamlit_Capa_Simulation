@@ -1,0 +1,190 @@
+/* 공용 공정 팝업의 고르기 판. 색은 Streamlit 테마 변수(--st-*)와 그 섞음뿐이라 밝게 · 어둡게 테마를 따른다.
+   그림자 DOM 으로 가두지 않으므로(process_field.py) 모든 규칙을 capa-proc-* 클래스 아래에 둔다. */
+.capa-proc-root {
+  --capa-proc-line: color-mix(in srgb, var(--st-text-color) 18%, transparent);
+  --capa-proc-muted: color-mix(in srgb, var(--st-text-color) 62%, transparent);
+  --capa-proc-hover: color-mix(in srgb, var(--st-text-color) 7%, transparent);
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--st-text-color);
+  font-family: var(--st-font);
+}
+
+.capa-proc-root button,
+.capa-proc-root input {
+  font: inherit;
+  color: inherit;
+}
+
+.capa-proc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.capa-proc-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.capa-proc-search {
+  flex: 0 1 240px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--capa-proc-line);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.875rem;
+}
+
+.capa-proc-search:focus-visible {
+  outline: 2px solid var(--st-primary-color);
+  outline-offset: 1px;
+}
+
+.capa-proc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.capa-proc-actions[hidden] {
+  display: none;
+}
+
+.capa-proc-icon,
+.capa-proc-mark {
+  font-family: "Material Symbols Rounded";
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}
+
+.capa-proc-apply,
+.capa-proc-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--capa-proc-line);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.capa-proc-apply .capa-proc-icon,
+.capa-proc-all .capa-proc-icon {
+  font-size: 18px;
+}
+
+/* Streamlit primary 단추와 같은 결 — 면은 강조색, 글은 바탕색. 바꿀 것이 없으면 잠긴 테두리 단추다. */
+.capa-proc-apply {
+  border-color: var(--st-primary-color);
+  background: var(--st-primary-color);
+  color: var(--st-background-color) !important;
+}
+
+.capa-proc-apply:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.capa-proc-all:hover:not(:disabled) {
+  border-color: var(--st-primary-color);
+}
+
+.capa-proc-apply:disabled,
+.capa-proc-all:disabled {
+  border-color: var(--capa-proc-line);
+  background: transparent;
+  color: var(--capa-proc-muted) !important;
+  cursor: default;
+}
+
+.capa-proc-apply:focus-visible,
+.capa-proc-all:focus-visible,
+.capa-proc-tile:focus-visible {
+  outline: 2px solid var(--st-primary-color);
+  outline-offset: 2px;
+}
+
+/* 고정 폭 · 한 줄 말줄임 — 긴 이름 하나가 판 전체의 줄 높이를 바꾸지 않는다(HOME 공정 필터 타일과 같은 폭). */
+.capa-proc-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.capa-proc-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 168px;
+  height: 38px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--capa-proc-line);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.capa-proc-tile[hidden] {
+  display: none;
+}
+
+.capa-proc-tile:hover {
+  border-color: var(--st-primary-color);
+}
+
+.capa-proc-mark {
+  flex: 0 0 auto;
+  font-size: 18px;
+  color: var(--capa-proc-muted);
+}
+
+.capa-proc-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 고른 타일 — 면은 강조색, 글과 표식은 바탕색(HOME 공정 필터의 켠 타일과 같은 결). */
+.capa-proc-tile[aria-selected="true"] {
+  border-color: var(--st-primary-color);
+  background: var(--st-primary-color);
+  color: var(--st-background-color);
+  font-weight: 600;
+}
+
+.capa-proc-tile[aria-selected="true"] .capa-proc-mark {
+  color: var(--st-background-color);
+}
+
+.capa-proc-tile[aria-selected="true"]:hover {
+  filter: brightness(1.08);
+}
+
+.capa-proc-empty {
+  margin: 8px 0 0;
+  color: var(--capa-proc-muted);
+  font-size: 0.875rem;
+}

@@ -25,6 +25,9 @@ from streamlit.delta_generator import DeltaGenerator
 FIELD_KEY_PREFIX = "condition_field_"
 NAME_ROW_KEY_PREFIX = "condition_name_"
 PENDING_SUFFIX = "_pending"
+# 다른 화면과 같이 쓰는 값이 이 화면에 걸린 필드(공용 공정 칸 — `components/process_field.py`)는
+# 끝에 `ACCENT_SUFFIX` 를 단다(값 칸 테두리 강조).
+ACCENT_SUFFIX = "_accent"
 
 
 def condition_name_row(
@@ -64,6 +67,7 @@ def condition_field(
     help: str | None = None,
     disabled: bool = False,
     pending: bool = False,
+    accent: bool = False,
     on_click: Callable[..., None] | None = None,
     args: Sequence[object] | None = None,
     on_row: Callable[[DeltaGenerator], None] | None = None,
@@ -74,9 +78,12 @@ def condition_field(
     풍선으로 보인다(`help` 를 주지 않은 한 줄 버튼의 Streamlit 동작). 팝업을 세션 키로 여는
     조건(시나리오·조회기간)은 `on_click` 으로, 버튼이 눌린 회차에만 여는 조건(공정 필터·히트맵)은
     돌려준 값으로 연다. `help` 는 잠긴 칸의 까닭 풍선이다(이름 줄에 길 안내를 적지 않는다 — 설계
-    규칙 UI-TXT-03).
+    규칙 UI-TXT-03). `accent` 는 다른 화면과 같이 쓰는 값이 이 화면에 걸렸다는 표지다(값 칸 테두리).
     """
-    box_key = f"{FIELD_KEY_PREFIX}{slug}{PENDING_SUFFIX if pending else ''}"
+    box_key = (
+        f"{FIELD_KEY_PREFIX}{slug}{PENDING_SUFFIX if pending else ''}"
+        f"{ACCENT_SUFFIX if accent else ''}"
+    )
     with st.container(key=box_key, gap=None):
         condition_name_row(name, slug=slug, status=status, on_row=on_row)
         return st.button(

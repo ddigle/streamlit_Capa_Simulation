@@ -51,6 +51,12 @@ from capa_simulation.components.period_field import (
 from capa_simulation.components.plotly_touch_scroll import plotly_touch_scroll_script
 from capa_simulation.components.popover_field_commit import popover_field_commit_script
 from capa_simulation.components.print_button import print_toolbar_script
+from capa_simulation.components.process_field import (
+    close_process_dialog,
+    process_dialog_is_open,
+    render_chip_slot,
+    show_process_dialog,
+)
 from capa_simulation.components.scenario_status import (
     close_scenario_dialog,
     render_scenario_field,
@@ -140,7 +146,7 @@ def render_condition_dialogs(
     shows_period: bool,
     shows_equipment: bool = False,
 ) -> None:
-    """조건 패널의 시나리오·조회기간·설비 시나리오 팝업을 여닫는 호스트 프래그먼트.
+    """조건 패널의 시나리오·조회기간·설비 시나리오·공정 팝업을 여닫는 호스트 프래그먼트.
 
     키는 `sidebar_status.CONDITION_DIALOG_FRAGMENT_KEY` 다. 한 실행에 팝업은 하나뿐이고(여는 콜백이
     다른 칸을 비운다), 이 화면에 그 줄이 서지 않으면(탭을 옮겨 공통 조건을 읽지 않게 된 회차) 칸을
@@ -164,10 +170,15 @@ def render_condition_dialogs(
     elif shows_equipment and equipment_scenario_dialog_is_open():
         # 셋째 갈래. 팝업이 설비 DB 를 읽는 것은 연 동안뿐이다 — 이 호스트는 열림 키만 본다.
         show_equipment_scenario_dialog(page_file)
+    elif process_dialog_is_open():
+        # 넷째 갈래 — 공용 공정 칸(`components/process_field.py`). 선택지는 페이지가 값 칸을 그린
+        # 전체 회차에 세션에 적어 두었다(그 페이지가 아니면 팝업 본문이 고를 것이 없다고 말한다).
+        show_process_dialog(page_file)
     else:
         close_scenario_dialog()
         close_period_dialog()
         close_equipment_scenario_dialog()
+        close_process_dialog()
         # 스타일만 든 `st.html` 은 이벤트 칸으로 간다 — 본문 자리를 차지하지 않는다.
         st.html("<style></style>")
 
@@ -534,6 +545,10 @@ with pinned_connections(DUCKDB_PATH):
             page_file, hrefs={spec.path: page.url_path for page, spec in pages.specs}
         )
     )
+    # 공용 공정 칩 칸(「공정 Mold · HOME 에서」 — `components/process_field.py`). 늘 서는 칸이라 탭
+    # 줄 · 알림 칸처럼 페이지 앞 같은 자리에 세우고, 공용 값이 걸린 화면만 그 안에 칩을 그린다(빈
+    # 칸은 그려지지 않는다). 사이드바를 접어도 보인다.
+    render_chip_slot()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,

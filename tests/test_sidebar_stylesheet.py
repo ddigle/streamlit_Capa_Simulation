@@ -20,7 +20,11 @@ import re
 
 import pytest
 
-from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, PENDING_SUFFIX
+from capa_simulation.components.condition_field import (
+    ACCENT_SUFFIX,
+    FIELD_KEY_PREFIX,
+    PENDING_SUFFIX,
+)
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import SIDEBAR_GROUPS
@@ -478,6 +482,25 @@ def test_the_conditions_panel_fields_read_as_one_kind_of_picker(
         block, [f'{panel} {field}[class*="{PENDING_SUFFIX}"] [data-testid="stButton"] button']
     )
     assert pending == [f"box-shadow: inset 3px 0 0 {tokens.PENDING_MARK}"]
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_a_shared_value_field_wears_a_thick_accent_border_without_shifting(
+    mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공용 공정 값이 이 화면에 걸린 칸(`_accent` — 2026-11-08 사용자 답 P2-5)은 테두리를
+    `ACCENT` 두 겹으로 세운다. 테두리 폭은 그대로(1px + 안쪽 1px 그림자)라 글이 밀리지 않고, 올려도
+    그대로다."""
+    monkeypatch.setattr(theme, "current_mode", lambda: mode)
+    block = _style_block()
+    panel = f".st-key-{CONDITIONS_BOX_KEY}"
+    field = f'[class*="st-key-{FIELD_KEY_PREFIX}"]'
+    button = f'{panel} {field}[class*="{ACCENT_SUFFIX}"] [data-testid="stButton"] button'
+    accent = _declarations(block, [button, f"{button}:hover", f"{button}:active"])
+    assert accent == [
+        f"border-color: {tokens.ACCENT}",
+        f"box-shadow: inset 0 0 0 1px {tokens.ACCENT}",
+    ]
 
 
 def test_alerts_in_the_conditions_panel_sit_on_the_surface() -> None:
