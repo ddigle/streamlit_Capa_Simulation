@@ -57,9 +57,11 @@ _CELL_SHAPES: Final = frozenset({JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC, JOIN_NO_MAT
 _CELL_MESSAGE_MARKERS: Final = ("0보다 커야 합니다", "누락값 또는 숫자가 아닌 값")
 _TABLE_NAME = re.compile(r"^(RQ_[A-Z_]+)")
 # 원천의 경로 행(계획기초정보여부 N)에서 나오고 계산 화면이 행을 읽어야 서는 표 → 기준 정보 화면의
-# 표(종류 단추 글). 계획 행만 있는 원천이면 셋 다 빈다 — 대당 Capa 는 멈추지 않고 0행으로 끝나, 그
-# 리비전을 불러온 계산 화면이 조회기간 자리에서 처음 멈춘다(내부 표 이름 글로). 측정률 표는 비어도
-# 계산이 1.0 가정으로 도는 정당한 상태라 넣지 않는다.
+# 표(종류 단추 글). 파생은 셋 다 공정(STEP 구성은 Area_Name)이 든 행만 고르므로 함께 빈다 — 경로
+# 행이 없는 원천이거나, 경로 행이 모두 CS 가 비어 파생에서 빠진 원천이다
+# (`core_data_derivation.BlankCsDrop`). 대당 Capa 는 멈추지 않고 0행으로 끝나, 그 리비전을 불러온
+# 계산 화면이 조회기간 자리에서 처음 멈춘다(내부 표 이름 글로). 측정률 표는 비어도 계산이 1.0
+# 가정으로 도는 정당한 상태라 넣지 않는다.
 _ROUTE_TABLES: Final = {
     "RQ_UPEH": "「UPEH」",
     "RQ_REQB": "「STEP 구성」",
@@ -78,12 +80,15 @@ class RegistrationCapacityCheck:
 
     `error` 는 계산 페이지와 같은 글(키 예시를 싣는다), `problem` 은 기준정보 연결 오류의 꼴·개수(값
     없음)다. 멈추지 않았으면 둘 다 None 이다. `empty` 는 계산 화면이 행을 읽어야 서는데 빈 경로 표
-    (`_ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다.
+    (`_ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다. `blank_cs_routes` 는
+    CS 가 비어 파생에서 뺀 경로 행 수로, 빈 경로 표의 까닭(원천에 경로 행이 없나, 있는데 CS 가
+    비었나)과 고칠 곳을 가른다.
     """
 
     error: str | None = None
     problem: ReferenceJoinProblem | None = None
     empty: tuple[str, ...] = ()
+    blank_cs_routes: int = 0
 
     @property
     def stopped(self) -> bool:
@@ -114,11 +119,8 @@ class RegistrationCapacityCheck:
     def fix_hint(self, revision_no: int) -> str:
         """어떻게 푸는지 — 고칠 표와 다음 리비전 번호."""
         if self.empty:
-            # 계산 멈춤 알림의 모듈수 글(`page_bootstrap.calculation_stop_notice`)과 같은 말이다.
-            return (
-                "앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천에 경로 행을 넣어 다시 "
-                "등록하세요."
-            )
+            # 앞말은 계산 멈춤 알림의 모듈수 글(`page_bootstrap.calculation_stop_notice`)과 같다.
+            return f"앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — {self._empty_fix()}"
         table = self.table
         if table == "RQ_MODULE":
             return (
@@ -136,6 +138,15 @@ class RegistrationCapacityCheck:
             f"{where}에서 그 칸에 0보다 큰 값을 넣고 「변경사항 적용」 뒤 새 리비전으로 저장하면 "
             f"r{revision_no + 1}부터 계산이 섭니다."
         )
+
+    def _empty_fix(self) -> str:
+        """빈 경로 표를 원천에서 푸는 길. 셋이 함께 비지 않은 꼴은 파생에서 나오지 않아 까닭을
+        단정하지 않는다."""
+        if len(self.empty) < len(_ROUTE_TABLES):
+            return "원천을 고쳐 다시 등록하세요."
+        if self.blank_cs_routes:
+            return "원천 경로 행의 CS 를 채워 다시 등록하세요."
+        return "원천에 경로 행을 넣어 다시 등록하세요."
 
     def _cell_fixable(self) -> bool:
         """기준 정보 편집표의 칸을 채우거나 고쳐 풀리는 꼴인가."""
@@ -156,7 +167,9 @@ class RegistrationCapacityCheck:
         )
 
 
-def check_registration_capacity(tables: Mapping[str, pd.DataFrame]) -> RegistrationCapacityCheck:
+def check_registration_capacity(
+    tables: Mapping[str, pd.DataFrame], *, blank_cs_routes: int = 0
+) -> RegistrationCapacityCheck:
     """등록할 기준정보 표로 대당 Capa 를 한 번 계산해 본다 — 계산 페이지가 처음 멈출 자리를 미리
     본다.
 
@@ -166,14 +179,21 @@ def check_registration_capacity(tables: Mapping[str, pd.DataFrame]) -> Registrat
 
     계산 앞에서 빈 경로 표(`_ROUTE_TABLES`)부터 본다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
     멈춤으로 잡히지 않는다(2026-11-08 사용자 결정 U3 — 등록은 그대로 하고 「계산 멈춤」 으로
-    알린다).
+    알린다). 경로 행이 있어도 모두 CS 가 비면 파생이 빼 같은 표가 빈다 — `blank_cs_routes`(CS 가
+    비어 뺀 경로 행 수, `BlankCsDrop.route_rows`)로 글의 까닭과 고칠 곳을 가른다.
     """
     empty = tuple(name for name in _ROUTE_TABLES if tables[name].empty)
     if empty:
-        names = " · ".join(_ROUTE_TABLES[name] for name in empty)
-        return RegistrationCapacityCheck(
-            f"경로 행(계획기초정보여부 N)이 없는 원천이라 {names} 표가 비었습니다.", empty=empty
-        )
+        emptied = f"{' · '.join(_ROUTE_TABLES[name] for name in empty)} 표가 비었습니다."
+        if len(empty) < len(_ROUTE_TABLES):
+            error = emptied
+        elif blank_cs_routes:
+            error = (
+                f"CS 가 빈 경로 행 {blank_cs_routes:,}개를 빼자 공정이 든 행이 남지 않아 {emptied}"
+            )
+        else:
+            error = f"공정이 든 경로 행(계획기초정보여부 N)이 없는 원천이라 {emptied}"
+        return RegistrationCapacityCheck(error, empty=empty, blank_cs_routes=blank_cs_routes)
     try:
         calculate_unit_capacity(
             upeh=tables["RQ_UPEH"],
@@ -224,7 +244,9 @@ def save_bigdataquery_scenario(
     끝에 붙인다 — 저장한 리비전에 남는 기록이다. 이름 중복(보관본 포함)·원천 코드 불변 검사는
     저장소가 쓰기 트랜잭션 안에서 한다.
     """
-    capacity = check_registration_capacity(prepared.reference_tables)
+    capacity = check_registration_capacity(
+        prepared.reference_tables, blank_cs_routes=prepared.blank_cs.route_rows
+    )
     memos = [memo for memo in (prepared.blank_cs.memo(), capacity.memo()) if memo]
     if memos:
         note = " · ".join(part for part in (note.strip(), *memos) if part)

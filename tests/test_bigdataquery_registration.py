@@ -1329,8 +1329,8 @@ def test_a_plan_only_registration_still_saves_and_says_the_calculation_will_stop
     warning = FlashNote(*app.session_state[registration.REGISTRATION_CAPACITY_FLASH_KEY])
     assert warning.kind == "warning" and warning.popup_only
     assert warning.message.startswith(
-        "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 경로 행(계획기초정보여부 N)이 없는 "
-        "원천이라 "
+        "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 공정이 든 경로 행(계획기초정보여부 N)이 "
+        "없는 원천이라 "
     )
     assert warning.message.endswith("원천에 경로 행을 넣어 다시 등록하세요.")
     assert "RQ_" not in warning.message
