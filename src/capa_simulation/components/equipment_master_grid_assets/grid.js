@@ -1177,7 +1177,8 @@ function buildGridSkeleton(host, S) {
   const sel = el('div', 'emg-sel')
   sel.setAttribute('role', 'toolbar')
   sel.setAttribute('aria-label', '고른 호기')
-  const note = el('div', 'emg-note')
+  // 브라우저 한 줄(붙여넣는 중 · 붙여넣기 거부 · 칸 수 상한)도 흐름 밖이다 — 볼 칸 줄 위에 떠서 표를 밀지 않는다(c5).
+  const note = el('div', 'emg-note is-float')
   note.setAttribute('role', 'status')
   const box = el('div', 'emg-box')
   const table = el('div', 'emg-table')

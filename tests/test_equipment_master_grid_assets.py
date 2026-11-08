@@ -2380,3 +2380,15 @@ def test_tab_or_down_into_the_next_cell_selects_its_old_value_to_be_typed_over()
     assert result["tab"] == {"cell": ["a", 2], "value": "p", "selection": "all"}
     assert result["down"] == {"cell": ["b", 2], "value": "q", "selection": "all"}
     assert result["same"] == [1, 1]
+
+
+def test_the_table_note_floats_over_the_column_bar_without_pushing_the_table() -> None:
+    """브라우저 한 줄(「붙여넣는 중」 · 이름 붙여넣기 거부 · 칸 수 상한)이 볼 칸 줄과 표 사이 흐름에
+    끼어 표를 43 ~ 53px 밀었다(c5, 샘플 관측). 표 틀 맨 위 볼 칸 줄 위에 떠서 표는 그 자리다 —
+    오른쪽 칸의 같은 줄은 칸 머리 흐름 그대로다."""
+    assert "el('div', 'emg-note is-float')" in _function("buildGridSkeleton")
+    assert "el('div', 'emg-note')" in _function("drawSide")
+    rule = re.search(r"\n\.emg-note\.is-float \{(?P<body>[^}]*)\}", CSS)
+    assert rule is not None
+    for part in ("position: absolute", "top: 0", "left: 0", "right: 0"):
+        assert part in rule["body"], part
