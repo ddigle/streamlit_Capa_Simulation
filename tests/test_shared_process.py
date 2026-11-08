@@ -145,29 +145,43 @@ def test_the_origin_is_named_only_on_other_screens() -> None:
     assert out[3] is None
 
 
-def test_a_single_screen_follows_once_and_only_when_one_process_matches() -> None:
-    """P2-2 — 값이 바뀐 뒤 처음 그리는 회차에 하나만 걸리면 그 공정을 연다. 여럿이면 보던 공정."""
+def test_a_single_screen_follows_once_and_only_when_the_value_is_one_process() -> None:
+    """P2-2 — 값이 바뀐 뒤 처음 그리는 회차에 공용 값이 하나이고 목록에 있으면 그 공정을 연다.
+    값이 여럿이면(이 화면에 걸리는 것이 하나뿐이어도) 보던 공정을 둔다."""
     app = _app()
     options = ["WF", "Mold", "Underfill"]
     out = _call(
         app,
         op("follow_single", "공정 Capa 상세", options, entered=False),
-        op("publish", ["Mold", "Underfill"], "HOME"),
+        op("publish", ["Mold", "HB 접합"], "HOME"),
         op("follow_single", "공정 Capa 상세", options, entered=False),
-        op("follow_single", "공정 Capa 상세", ["WF", "Mold"], entered=False),
-        op("follow_single", "공정 Capa 상세", ["WF", "Mold"], entered=False),
+        op("publish", ["Mold"], "HOME"),
+        op("follow_single", "공정 Capa 상세", options, entered=False),
+        op("follow_single", "공정 Capa 상세", options, entered=False),
         op("single_applied", "공정 Capa 상세", "Mold"),
         op("single_applied", "공정 Capa 상세", "WF"),
         op("follow_single", "제약 시뮬레이션", ["Mold"], entered=False),
     )
     assert out[0] is None
-    # 둘이 걸린다 — 보던 공정. 본 것으로 치지 않아 목록이 바뀌어 하나가 되면 그때 연다.
     assert out[2] is None
-    assert out[3] == "Mold"
-    assert out[4] is None
-    assert out[5:7] == [True, False]
+    assert out[4] == "Mold"
+    assert out[5] is None
+    assert out[6:8] == [True, False]
     # 화면마다 따로 본다.
-    assert out[7] == "Mold"
+    assert out[8] == "Mold"
+
+
+def test_a_single_value_missing_from_the_list_opens_once_the_list_brings_it_back() -> None:
+    """하나인데 목록에 없으면(리비전을 바꿔 사라진 공정) 본 것으로 치지 않는다 — 돌아오면 그때
+    연다."""
+    app = _app()
+    out = _call(
+        app,
+        op("publish", ["Mold"], "HOME"),
+        op("follow_single", "공정 Capa 상세", ["WF"], entered=False),
+        op("follow_single", "공정 Capa 상세", ["WF", "Mold"], entered=False),
+    )
+    assert out[1:] == [None, "Mold"]
 
 
 def test_an_entered_route_wins_and_the_value_counts_as_seen() -> None:

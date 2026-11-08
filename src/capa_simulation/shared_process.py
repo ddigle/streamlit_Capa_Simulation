@@ -32,10 +32,10 @@ HOME 에서 좁힌 공정이 기준 정보 · 산출 결과 · 가용설비 Main
    `process_field.render_process_filter` 가 한 벌로 그린다.
 3. **하나 따라감 — 받기만**(공정 Capa 상세 · 제약 시뮬레이션) — 공정 · 달을 정하는 자리에서
    `follow_single(screen, options, entered=…)` 를 부른다. 값이 바뀐 뒤 처음 그 화면을 그리는 회차에,
-   그 화면 목록에서 **하나만** 걸리면 그 공정을 돌려준다(여럿이면 None — 보던 공정을 둔다). HOME
-   그림 칸 · 카드 링크 · 주소 `process` 로 들어온 회차(`entered=True`)는 들어온 길이 이기고 이번
-   값은 본 것으로 친다. 이 화면에서 고른 공정은 값을 바꾸지 않는다(한 공정을 들여다본 일로 3공정
-   거름이 사라지지 않게). 값 칸은 `process_field.render_process_choice`.
+   공용 값이 **하나**이고 그 화면 목록에 있으면 그 공정을 돌려준다(여럿이면 None — 보던 공정을
+   둔다). HOME 그림 칸 · 카드 링크 · 주소 `process` 로 들어온 회차(`entered=True`)는 들어온 길이
+   이기고 이번 값은 본 것으로 친다. 이 화면에서 고른 공정은 값을 바꾸지 않는다(한 공정을 들여다본
+   일로 3공정 거름이 사라지지 않게). 값 칸은 `process_field.render_process_choice`.
 4. **저장 기본값은 건드리지 않는다** — 필요 단축 일정 공정 필터(설비 `0019`)와 표준 목표 저장 칸에
    값을 넣지 않는다(AGENTS 5장 9 · 12). 2차에서 잇는 화면도 「강조로만 · 표만 좁힘」 이다.
 5. **Static Capa 는 전체, 실적 셋 · Dynamic · 재공은 데이터 연결 뒤**(3차) — 잇지 않는다.
@@ -154,9 +154,10 @@ def follow_single(screen: str, options: Sequence[object], *, entered: bool) -> s
 
     - `entered` — 이 회차에 HOME 그림 칸 · 카드 링크 · 주소로 공정이 들어왔다. 들어온 길이 이긴다:
       이번 값은 본 것으로 치고 따라 연 표지도 걷는다.
-    - 값이 바뀐 뒤 이 화면을 처음 그리는 회차에, 이 화면 목록에서 **하나만** 걸리면 그 공정이다.
-      여럿이거나 하나도 없으면 None(보던 공정) — 이때는 본 것으로 치지 않아 목록이 바뀌어(리비전
-      전환) 하나가 되면 그때 연다.
+    - 값이 바뀐 뒤 이 화면을 처음 그리는 회차에, 공용 값이 **하나**이고 이 화면 목록에 있으면 그
+      공정이다(P2-2 「공용 값이 하나일 때 그 공정을 열고, 여럿이면 보던 공정을 둡니다」 — 이 화면에
+      걸리는 것이 하나뿐이어도 값이 여럿이면 열지 않는다). 아니면 None(보던 공정). 하나인데 목록에
+      없으면 본 것으로 치지 않아 목록이 바뀌어(리비전 전환) 그 공정이 들어오면 그때 연다.
     """
     seen = _screen_map(_SEEN_KEY)
     followed = _screen_map(_FOLLOWED_KEY)
@@ -169,14 +170,16 @@ def follow_single(screen: str, options: Sequence[object], *, entered: bool) -> s
         return None
     if seen.get(screen) == current:
         return None
-    hits = inside(options)
-    if len(hits) != 1:
+    held = values()
+    if len(held) != 1:
+        return None
+    if held[0] not in {str(option) for option in options}:
         return None
     seen[screen] = current
-    followed[screen] = hits[0]
+    followed[screen] = held[0]
     st.session_state[_SEEN_KEY] = seen
     st.session_state[_FOLLOWED_KEY] = followed
-    return hits[0]
+    return held[0]
 
 
 def single_applied(screen: str, selected: object) -> bool:
