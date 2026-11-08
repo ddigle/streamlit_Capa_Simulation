@@ -511,7 +511,8 @@ def test_home_process_dialog_buttons_keep_original_callback_and_selection_values
     body = ast.unparse(function)
 
     assert "render_process_picker(" in body
-    assert "format_func=process_labels.format_func()" in body
+    # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다(같은 「AVI」 두 단추 — 2026-11-07 조사).
+    assert "format_func=process_labels.unique_format_func(options)" in body
     assert "on_toggle=toggle_process_dialog_selection" in body
     assert "st.data_editor" not in body
     # 적용 목록은 팝업이 원본 공정으로 고른 집합을 원본 선택지 차례로 다시 세운 것이다 — 보이지

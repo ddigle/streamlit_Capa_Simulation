@@ -203,6 +203,7 @@ from capa_simulation.services.simulation_cache import (
     get_home_simulation,
 )
 from capa_simulation.settings import DUCKDB_PATH
+from capa_simulation.shared_process import publish_from_home
 from capa_simulation.sidebar_status import (
     keeps_app_run_open,
     page_condition_slot,
@@ -742,11 +743,12 @@ def show_process_filter_dialog(
 
     # 버튼에 보이는 글자만 표시명이며 콜백과 선택값은 반드시 원본 `공정` 이다.
     # 값을 표시명으로 바꾸면 아래 세션 되쓰기가 옵션에 없는 값을 만들어 대시보드가 오류
-    # 없이 텅 빈다.
+    # 없이 텅 빈다. 표시명이 다른 공정의 글자와 겹치면 「표시명 (원본)」 으로 가른다
+    # (`unique_format_func` — 같은 「AVI」 두 단추가 미달 · 충족에 따로 섰다, 2026-11-07 조사).
     render_process_picker(
         items,
         selected_set,
-        format_func=process_labels.format_func(),
+        format_func=process_labels.unique_format_func(options),
         on_toggle=toggle_process_dialog_selection,
         marks=auto_off_marks,
     )
@@ -756,6 +758,11 @@ def show_process_filter_dialog(
             selected_set, options, st.session_state[PROCESS_SELECTION_KEY]
         )
         st.session_state.pop(PROCESS_DIALOG_DRAFT_KEY, None)
+        # 좁힌 공정을 다른 화면(기준 정보 · 산출 결과 · 가용설비 Main · Space 등)의 공용 공정 칸으로
+        # 복사만 한다(2026-11-08 사용자 답 P1 · P2-1 — HOME 은 보내기만). 다른 화면에서 고른 값은
+        # 이 판정 대상과 리비전 저장값(`PROCESS_SELECTION_KEY`)에 들지 않는다. 모두 켰으면 공용 값을
+        # 지운다(전체).
+        publish_from_home(selected_set, options)
         HOME_DIALOG_HOST.finish()
 
 
