@@ -358,8 +358,8 @@ def test_opening_and_closing_the_canvas_dialog_runs_only_its_host(
 ) -> None:
     """「캔버스 편집」 팝업을 여닫아도 페이지를 다시 계산하지 않는다 — 사이드바 단추의 여는 콜백 뒤
     호스트(`space_canvas_dialog_host`)만 돌고 닫기(X · 바깥 · Esc)도 호스트만 돈다(2026-11-08
-    사용자 결정 U5, 설계 규칙 UI-PRF-01). 닫은 회차는 밖 알림(`EQ-16`)을 해소하고, 폭 · 높이 ·
-    확인 칸 값을 지워 다시 열면 저장값으로 선다. 단추는 사이드바 「Space 도면」 상자에 그대로다."""
+    사용자 결정 U5, 설계 규칙 UI-PRF-01). 닫으면 폭 · 높이 · 확인 칸 값을 지워 다시 열면 저장값으로
+    선다. 단추는 사이드바 「Space 도면」 상자에 그대로다."""
     from capa_simulation.components.dialog_host import WIDGET_KEYS_SUFFIX
 
     app, browser = _canvas_app(tmp_path, monkeypatch)
@@ -376,10 +376,35 @@ def test_opening_and_closing_the_canvas_dialog_runs_only_its_host(
     ), "페이지가 다시 돌았다"
     assert app.session_state[CANVAS_OPEN_KEY] == "C1|1F"
     assert app.number_input(key="space_floor_layout_width_C1_1F").value == 200.0
+
+    browser.send_trigger(app, browser.dialog_widget_id(), [host])
+    _ok(app)
+    assert browser.started == [[host]]
+    assert CANVAS_OPEN_KEY not in app.session_state
+    for key in (
+        "space_floor_layout_width_C1_1F",
+        "space_floor_layout_height_C1_1F",
+        "space_floor_layout_outside_shown",
+        f"{CANVAS_HOST_KEY}{WIDGET_KEYS_SUFFIX}",
+    ):
+        assert key not in app.session_state, key
+    closed = states(app, "EQ-16")
+    assert closed and not any(item["active"] for item in closed), closed
+
+
+def test_closing_the_canvas_dialog_with_units_outside_resolves_the_alert_in_a_page_round(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """줄여서 밖 알림(`EQ-16`)이 선 채 닫으면 그 닫기만 앱 전체 회차다 — 호스트만 도는 짧은 회차는
+    앱 뿌리의 회차 표지를 움직이지 않아 알림 칸이 해소 표지를 다음 회차까지 읽지 못했다(2026-11-08
+    사본 실측). 닫은 회차의 해소는 그대로 그 회차에 선다."""
+    app, browser = _canvas_app(tmp_path, monkeypatch)
+    host = browser.fragment_keyed(CANVAS_HOST_KEY)
+    app.button(key="space_floor_layout_open_C1_1F").click().run()
+    _ok(app)
     dialog_id = browser.dialog_widget_id()
     dialog = browser.fragment_of("space_floor_layout_width_C1_1F")
 
-    # 줄이면 밖 알림이 선다 — 팝업 프래그먼트 회차.
     app.number_input(key="space_floor_layout_width_C1_1F").set_value(100.0)
     browser.fragment_queue = [dialog]
     app.run()
@@ -387,16 +412,12 @@ def test_opening_and_closing_the_canvas_dialog_runs_only_its_host(
     assert browser.started == [[dialog]]
     note = active_state(app, "EQ-16")
     assert note is not None and note["short"] == "C1 1F 캔버스 100 × 100 밖 — 호기 2대"
+    assert app.session_state["space_floor_layout_outside_shown"] is True
 
     browser.send_trigger(app, dialog_id, [host])
     _ok(app)
-    assert browser.started == [[host]]
+    assert browser.started[-1] == []
     assert CANVAS_OPEN_KEY not in app.session_state
-    for key in (
-        "space_floor_layout_width_C1_1F",
-        "space_floor_layout_height_C1_1F",
-        f"{CANVAS_HOST_KEY}{WIDGET_KEYS_SUFFIX}",
-    ):
-        assert key not in app.session_state, key
+    assert "space_floor_layout_outside_shown" not in app.session_state
     closed = states(app, "EQ-16")
     assert closed and not any(item["active"] for item in closed), closed

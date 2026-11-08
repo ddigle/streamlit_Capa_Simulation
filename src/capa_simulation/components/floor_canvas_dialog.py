@@ -88,6 +88,8 @@ CANVAS_DIALOG_HOST: Final = DialogHost("space_canvas_dialog_host", FLOOR_CANVAS_
 FAB_DIALOG_SCOPE: Final = "FAB"
 # 고치는 크기 밖으로 나가는 호기 · 도면 요소(등록부 `alerts.SPECS`).
 CANVAS_OUTSIDE_ALERT = "EQ-16"
+# 팝업 본문이 밖 알림을 조건 있음(`active`)으로 낸 채인가 — 닫는 회차를 가른다(`_dismiss`).
+OUTSIDE_SHOWN_KEY: Final = f"{FLOOR_CANVAS_WIDGET_KEY}_outside_shown"
 SAMPLE_CANVAS_LOCK: Final = "샘플 데이터를 보는 중에는 FAB 캔버스를 고치지 않습니다."
 
 
@@ -185,7 +187,8 @@ def render_floor_canvas_dialog_host(
 
     **매 앱 전체 회차 빠짐없이** 부른다(본문 끝) — 이번 회차에 등록되지 않은 호스트는 단추의 여는
     콜백도 팝업 닫기도 겨눌 수 없다(`DialogHost.render`). 닫기(X · 바깥 · Esc)는 팝업의 입력 위젯
-    (폭 · 높이 · 이탈 호기 확인) 값을 함께 지워 다시 열면 저장값으로 선다.
+    (폭 · 높이 · 이탈 호기 확인) 값을 함께 지워 다시 열면 저장값으로 선다. 밖 알림이 선 채 닫으면
+    그 닫기만 앱 전체 회차다(`_dismiss`).
     """
     target = _CanvasTarget(floor)
     seen = database_stamp(database_path)
@@ -211,10 +214,27 @@ def render_floor_canvas_dialog_host(
 
 
 def _widget_keys(target: _CanvasTarget) -> tuple[str, ...]:
-    """그 범위 팝업의 입력 위젯 key — 닫으면 지운다(`DialogHost` 지키는 것 5)."""
-    return tuple(
-        f"{FLOOR_CANVAS_WIDGET_KEY}_{name}_{target.key}" for name in ("width", "height", "shrink")
+    """그 범위 팝업의 입력 위젯 key 와 밖 알림 표지 칸 — 닫으면 지운다(`DialogHost` 지키는 것 5)."""
+    return (
+        *(
+            f"{FLOOR_CANVAS_WIDGET_KEY}_{name}_{target.key}"
+            for name in ("width", "height", "shrink")
+        ),
+        OUTSIDE_SHOWN_KEY,
     )
+
+
+def _dismiss() -> None:
+    """닫기(X · 바깥 · Esc). 보통은 호스트만 돈다(`DialogHost.close`). 밖 알림이 조건 있음으로 선
+    채 닫으면 앱 전체 회차로 닫는다(`close_to_app`) — 그 회차의 해소 표지(호스트 `idle`)를 알림
+    칸이 그 회차에 읽게. 호스트만 도는 짧은 회차는 앱 뿌리의 회차 표지를 움직이지 않아, 알림 칸이
+    해소를 다음 회차까지 못 읽었다(2026-11-08 사본 실측 — 알림 칸은 회차 표지가 바뀔 때만 문서를
+    훑는다)."""
+    shown = bool(st.session_state.get(OUTSIDE_SHOWN_KEY))
+    if shown:
+        CANVAS_DIALOG_HOST.close_to_app()
+    else:
+        CANVAS_DIALOG_HOST.close()
 
 
 def _load_profile(database_path: str, target: _CanvasTarget) -> _CanvasProfile | None:
@@ -330,6 +350,7 @@ def _report_outside(target: _CanvasTarget, canvas: CanvasSize, outside: _CanvasO
     (없으면 `active=False`). 지문은 밖인 호기 · 요소 범위라 같은 것이 밖인 동안 칸을 더 눌러도 다시
     뜨지 않는다(팝업 안에서는 이벤트 칸을 쓰지 않는다 — `alerts.emit`)."""
     active = bool(outside.unit_count or outside.marks_outside)
+    st.session_state[OUTSIDE_SHOWN_KEY] = active
     alerts.state(
         CANVAS_OUTSIDE_ALERT,
         scope=target.scope,
@@ -367,7 +388,7 @@ def _saved_line(
     return f"**{target.title}** · {width:g} × {height:g} · {profile.updated_at:%Y-%m-%d %H:%M}"
 
 
-@st.dialog("캔버스 편집", on_dismiss=CANVAS_DIALOG_HOST.close)
+@st.dialog("캔버스 편집", on_dismiss=_dismiss)
 @keeps_app_run_open
 def _floor_canvas_dialog(
     *,
