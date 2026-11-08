@@ -212,7 +212,7 @@ def _ok(app: AppTest) -> AppTest:
 
 
 class _ProcessBox:
-    """공정 값 칸(하나 고름 — 공용 공정 칸, 2026-11-08)을 예전 상자처럼 읽는다. 값은 세션 칸,
+    """공정 값 칸(하나 고름 — 공용 공정 칸, 2026-11-08)을 상자 꼴로 읽는다. 값은 세션 칸,
     선택지는 팝업이 쓸 이 화면의 선택지이고, 고르기는 팝업 판이 하는 대로 세션 칸에 적는다."""
 
     def __init__(self, app: AppTest) -> None:
@@ -296,7 +296,7 @@ def _shown(app: AppTest) -> tuple[ConstraintResult, ConstraintLabels]:
 
 
 def _header_line(app: AppTest) -> str:
-    """계산에 걸린 조건을 옛 머리 줄 꼴(「26.01–26.12 · 제약 120% · 기준 HOME · 개조 30일 · 보유
+    """계산에 걸린 조건을 한 줄 글(「26.01–26.12 · 제약 120% · 기준 HOME · 개조 30일 · 보유
     제약 호기 1대 + 2대 · 신규 개조 없이(2025-12-01~)」)로 — 시험 몫의 글이다. 머리 줄은 조건을
     되읊지 않으므로(2026-11-08 사용자 그림 메모 g12 — 조건은 사이드바 칸) 계산 결과에서 읽는다.
     화면 머리 줄에 이 글이 없는 것은 `test_the_header_repeats_no_conditions_and_no_source_band` 가
@@ -375,7 +375,7 @@ def test_a_process_with_equipment_shows_kpis_and_figures(
     ]
     assert _has_chart(app, CONSTRAINT_CHART_KEY)
     assert _has_chart(app, CONSTRAINT_SHEET_KEY)
-    # 고른 달 계산 풀이 · 「이 조건의 개조 창」 카드는 걷었다(2026-11-08 사용자 그림 메모 g12).
+    # 본문에 고른 달 계산 풀이 · 「이 조건의 개조 창」 카드가 없다(2026-11-08 사용자 그림 메모 g12).
     steps = [text for text in _markdown(app) if text[:4] in {f"**{n}*" for n in range(1, 6)}]
     assert steps == []
     assert "**이 조건의 개조 창**" not in _markdown(app)
@@ -576,6 +576,52 @@ def test_the_handed_over_process_wins_over_the_shared_one(
     _ok(app.run())
     assert _process_box(app).value == DYNAMIC_PROCESS
     assert "HOME 에서" not in [str(item.value) for item in app.sidebar.caption]
+
+
+def test_the_same_handed_over_process_wins_again_on_a_new_visit(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """같은 공정을 다른 화면에서 다시 넘겨받아도 넘겨받은 공정이 이긴다 — 첫 도착 뒤 이 화면이 한 번
+    더 돌지 않고 떠나 주소 인자 막이 칸(`CONSTRAINT_QUERY_SEEN_KEY`)이 그 값으로 남았어도, 페이지
+    방문 차례가 다르면 새 방문이라 다시 적용한다(P2-2 — 공정 Capa 상세의 「새 방문」 판정과 같은
+    길)."""
+    from test_process_field import share
+
+    app = _opened(dynamic_databases)
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    # 떠난 사이 공용 값이 다른 공정 하나로 바뀌고, 같은 링크로 다시 들어온다. 하네스는 `app.py` 를
+    # 돌리지 않아 방문 차례가 없다(0) — 페이지가 바뀐 회차처럼 올린다.
+    share(app, [OTHER_PROCESS])
+    app.session_state[PAGE_VISIT_KEY] = 1
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    assert "HOME 에서" not in [str(item.value) for item in app.sidebar.caption]
+    # 이번 공용 값은 본 것으로 친다 — 다음 회차에도 공용 공정으로 바뀌지 않는다.
+    _ok(app.run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+
+
+def test_late_modification_windows_raise_a_state_alert_not_a_place_line(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """개조 창 첫날이 오늘보다 앞이면 그래프 · 계산표가 「제때 시작했다면」 의 값이라는 가정을 상태
+    알림(`CS-04`)으로 남긴다 — 자리에는 그리지 않는다(설계 규칙 UI-NTF-05 · UI-NTF-02). 전문은
+    창마다 날짜 · 대수와 「이미 지난 날짜」 꼬리다. 개조를 끄면 창이 없어 「해소」 다."""
+    from capa_simulation.components.constraint_simulation_figures import WINDOW_LATE_TEXT
+
+    app = _opened(dynamic_databases)
+    note = active_state(app, "CS-04")
+    assert note is not None
+    assert note["level"] == "check"
+    assert str(note["short"]).startswith("첫날이 지난 개조 창 ")
+    assert "「제때 시작했다면」" in str(note["full"]) and WINDOW_LATE_TEXT in str(note["full"])
+    assert " 비가동 · " in str(note["full"])
+    assert WINDOW_LATE_TEXT not in " ".join([_captions(app), *_markdown(app)])
+
+    app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(False)
+    _ok(app.run())
+    assert [item["active"] for item in states(app, "CS-04")] == [False]
 
 
 def test_the_schedule_mode_follows_the_same_shared_process(
@@ -1758,7 +1804,7 @@ def test_a_stale_process_param_does_not_overwrite_a_later_pick(
 def test_the_chart_and_the_sheet_stand_full_width_one_after_another(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
-    """고른 달 계산 카드를 걷어(2026-11-08 사용자 그림 메모 g12) 그래프 카드는 가로 줄에 서지 않고
+    """고른 달 계산 카드가 없어(2026-11-08 사용자 그림 메모 g12) 그래프 카드는 가로 줄에 서지 않고
     온 폭이다 — 본문 차례는 보기 토글 → 그래프 카드 → 계산표 카드."""
     from capa_simulation.components.constraint_simulation_view import CHART_CARD_KEY
 

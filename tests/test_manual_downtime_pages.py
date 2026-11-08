@@ -174,7 +174,7 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
 
 def test_constraint_simulation_names_the_entered_downtime_in_its_header(tmp_path: Path) -> None:
     """입력 비가동을 뺀 계획이면 머리 줄에 「입력 비가동 반영(n칸 · 합 x대)」 표지가 서고 뜻은 그
-    풍선이다 — 출처 띠는 걷었다(2026-11-08 사용자 그림 메모 g12)."""
+    풍선이다 — 본문에 출처 띠는 없다(2026-11-08 사용자 그림 메모 g12)."""
     from capa_simulation.components.constraint_equipment_plan import MANUAL_DOWNTIME_HELP
 
     databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))

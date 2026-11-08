@@ -13,15 +13,16 @@
   폭(`chart_min_width_px`)을 받고 카드가 그보다 좁으면(390px 창) 카드 안에서 가로로 스크롤한다 —
   세운 달 눈금 30개가 포개지지 않게(`chart_style`).
 - **월별 계산표** — 그 아래 온 폭(라벨 Figure + 가로로 스크롤되는 월 Figure `CONSTRAINT_SHEET_KEY`).
-  계산표는 컬럼 안에 넣지 않는다 — 두 컬럼 폭 규칙(`split_scroll_columns_style` 의 `:has()`)이
-  바깥 컬럼에도 걸린다. 칸 색 · 글자색 · 머리 칠의 읽는 법은 Guide 이고(2026-11-08 사용자 그림 메모
-  g12), 표 앞에서 시작하는 개조 · 대기만 칸 머리 표지 + 풍선이다.
+  계산표는 컬럼 안에 넣지 않는다 — 두 컬럼 폭 규칙(`split_scroll_columns_style` 의 `:has()`)이 바깥
+  컬럼에도 걸린다. 칸 색 · 글자색 · 머리 칠의 읽는 법은 Guide 이고(2026-11-08 사용자 그림 메모 g12),
+  표 앞에서 시작하는 개조 · 대기만 칸 머리 표지 + 풍선이다 — 풍선은 그 창 · 대기의 날짜 · 대수를
+  적는다(그래프 띠에서 길이 0 이라 막대 풍선에 닿지 않는 창이 있다 — `before_range_help`).
 - **달 고르기** — 칸을 누르면 `on_select` **콜백**이 고른 달을 적고 그래프의 띠와 계산표의 열
   테두리가 그 달을 짚는다 — 회차마다 두 그림의 선택 상태를 읽으면 브라우저에 남은 다른 그림의 옛
   선택이 마지막 누름을 덮는다. 세대 번호는 두 그림이 한 칸을 나눠 써 누를 때마다 둘 다 새 요소가
-  된다(AGENTS 9장 「칸 선택 Plotly」). 고른 달의 계산 풀이 카드와 「이 조건의 개조 창」 카드는
-  걷었다(2026-11-08 사용자 그림 메모 g12) — 식은 계산표 칸 풍선, 개조 창은 그래프 아래 띠 · 막대
-  풍선 · 계산표 「개조」 구획, 읽는 법은 Guide 다.
+  된다(AGENTS 9장 「칸 선택 Plotly」). 한 달의 식은 계산표 칸 풍선, 개조 창은 그래프 아래 띠 막대
+  풍선 · 계산표 「개조」 구획 · 표 첫 달 앞 표지 풍선, 읽는 법은 Guide 다(2026-11-08 사용자 그림
+  메모 g12). 첫날이 지난 개조 · 대기(「제때 시작했다면」 의 값)는 상태 알림 `CS-04` 다(페이지).
 - **맨 아래** — 가용이 모자란 달. 생겼다 사라지는 알림은 늘 서 있는 `st.container()` 칸 안에
   그린다(AGENTS 9장 「자리는 고정한다」).
 
@@ -41,6 +42,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 from functools import partial
 from typing import Final, NamedTuple
 
@@ -52,6 +54,8 @@ import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation.components.constraint_simulation_figures import (
     ABOVE_MARK,
     CONSTRAINT_FIGURE_SCHEMA_VERSION,
+    WAIT_LATE_TEXT,
+    WINDOW_LATE_TEXT,
     ConstraintLabels,
     SheetCanvas,
     build_sheet_canvas,
@@ -64,12 +68,15 @@ from capa_simulation.components.constraint_simulation_figures import (
     rate_figure,
     rate_text,
     units_text,
+    waiting_line,
+    window_line,
 )
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     NARROW_LABEL_COLUMN_WIDTH_PX,
     NARROW_VIEWPORT_MAX_PX,
 )
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.month_sheet_canvas import canvas_point
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.scroll_shell import (
@@ -98,6 +105,7 @@ from capa_simulation.constraint_simulation_state import (
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.constraint_simulation import ConstraintMonth, ConstraintResult
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.wd_window import wd_window
 from capa_simulation.sidebar_status import rerun_app_unless_alone
 
 __all__ = [
@@ -111,6 +119,7 @@ __all__ = [
     "SHORT_REASON_TEXT",
     "WAIT_BEFORE_RANGE_MARK",
     "ConstraintView",
+    "before_range_help",
     "chart_style",
     "default_month",
     "overdrawn_lines",
@@ -122,6 +131,7 @@ __all__ = [
     "settle_selected_month",
     "short_lines",
     "short_month_lines",
+    "wait_before_range_help",
 ]
 
 KPI_ROW_KEY: Final = "constraint_sim_kpis"
@@ -140,7 +150,8 @@ _EMPTY: Final = "—"
 # 그래프의 띠와 계산표의 열 테두리로 함께 짚는다.
 CHART_HELP: Final = "달 칸을 누르면 계산표에서도 그 달을 짚습니다."
 SHEET_HELP: Final = "칸을 누르면 그래프에서도 그 달을 짚습니다."
-# 표 앞에서 시작하는 개조 · 대기 — 숨은 데이터라 표지 + 풍선이다(설계 규칙 UI-TXT-04).
+# 표 앞에서 시작하는 개조 · 대기 — 숨은 데이터라 표지 + 풍선이다(설계 규칙 UI-TXT-04). 풍선 끝에 그
+# 창 · 대기마다 날짜 · 대수를 붙인다(`before_range_help` · `wait_before_range_help`).
 BEFORE_RANGE_MARK: Final = ":material/info: 첫 개조 비가동 — 표 첫 달 앞에서 시작"
 BEFORE_RANGE_TEXT: Final = (
     "첫 개조 비가동이 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
@@ -162,6 +173,48 @@ class ConstraintView(NamedTuple):
 
     result: ConstraintResult
     labels: ConstraintLabels
+
+
+# ================================================================== 표 첫 달 앞
+
+
+def _table_first_day(result: ConstraintResult) -> date | None:
+    """표 첫 달의 W/D 첫날 — 그보다 앞에서 시작하는 개조 · 대기는 표에 그 앞 달 감소가 없다."""
+    if not result.months:
+        return None
+    return wd_window(result.months[0].month, result.conditions.cutoff_days).first_day
+
+
+def _help_lines(lines: Sequence[str]) -> str:
+    """풍선 끝 목록 — 빈 줄 뒤 한 줄에 하나. 없으면 빈 글자."""
+    return "\n\n" + "\n".join(f"- {line}" for line in lines) if lines else ""
+
+
+def before_range_help(result: ConstraintResult, today: date | None) -> str:
+    """「첫 개조 비가동 — 표 첫 달 앞에서 시작」 표지 풍선 — 뜻 한 줄과, 표 첫 달 W/D 첫날보다
+    앞에서 시작하는 창마다 「그 달 몫 · 비가동 날짜 · 대수」(첫날이 `today` 보다 앞이면 「이미 지난
+    날짜」 꼬리). 표 앞에서 끝나는 창은 그래프 띠에서 길이 0 이라 이 풍선이 그 날짜의 자리다."""
+    first_day = _table_first_day(result)
+    lines = [
+        markdown_safe_tildes(window_line(window))
+        + (f" — {WINDOW_LATE_TEXT}" if today is not None and window.start < today else "")
+        for window in result.windows
+        if first_day is not None and window.start < first_day
+    ]
+    return BEFORE_RANGE_TEXT + _help_lines(lines)
+
+
+def wait_before_range_help(result: ConstraintResult, today: date | None) -> str:
+    """「첫 신규 대기 — 표 첫 달 앞에서 시작」 표지 풍선 — 뜻 한 줄과 표 첫 달 W/D 첫날보다 앞에서
+    시작하는 대기마다 한 줄(설비키가 들어 글 통째로 막는다, 첫날이 `today` 보다 앞이면 꼬리)."""
+    first_day = _table_first_day(result)
+    lines = [
+        literal_markdown(waiting_line(item))
+        + (f" — {WAIT_LATE_TEXT}" if today is not None and item.start < today else "")
+        for item in result.assignments
+        if item.days > 0 and first_day is not None and item.start < first_day
+    ]
+    return WAIT_BEFORE_RANGE_TEXT + _help_lines(lines)
 
 
 # ================================================================== 고른 달
@@ -430,7 +483,8 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
             value4, caption4 = _EMPTY, "개조를 끄면 비가동 없이 배정만 바꿉니다"
         elif splits and kpis.max_dedicated > 0:
             # 값은 실제로 개조하는(비가동을 만드는) 대수, 회색 줄은 전용 최대의 구성이다. 회색 줄은
-            # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창마다 날짜는 그래프 띠 막대 풍선이
+            # 한 줄 알약이라 카드 넷이 한 줄에 서게 짧게 둔다 — 창마다 날짜는 그래프 띠 막대 풍선(표
+            # 첫 달 앞 창은 계산표 머리 표지 풍선), 지난 날짜는 상태 알림 `CS-04` 가
             # 말한다(2026-10-26 사본 앱 1440px: 긴 줄이면 넷째 카드가 아래 줄로 내려갔다).
             modified = kpis.modified_units or 0
             pieces = free_parts(
@@ -522,9 +576,11 @@ def render_constraint_view(view: ConstraintView) -> None:
         # UI-TXT-04). 있을 때만 서는 표지라 늘 서 있는 칸 안에 그린다.
         with st.container():
             if result.starts_before_range:
-                st.caption(BEFORE_RANGE_MARK, help=BEFORE_RANGE_TEXT)
+                st.caption(BEFORE_RANGE_MARK, help=before_range_help(result, view.labels.today))
             if result.waits_before_range:
-                st.caption(WAIT_BEFORE_RANGE_MARK, help=WAIT_BEFORE_RANGE_TEXT)
+                st.caption(
+                    WAIT_BEFORE_RANGE_MARK, help=wait_before_range_help(result, view.labels.today)
+                )
         _render_sheet(sheet, months)
     # 가용이 모자란 달 — 있을 때만 서는 알림이라 늘 서 있는 칸 안에 그린다.
     with st.container():

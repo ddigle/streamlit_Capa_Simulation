@@ -195,8 +195,8 @@ def test_owned_units_replace_the_modification_and_say_so(
     assert _metric(app, "개조 대수") == "0대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 보유 1 · 개조 0"
     assert "보유 제약 1대" in _header_line(app)
-    # 늘어난 전용을 모두 보유로 채워 개조 창이 없다 — 개조 창 카드는 걷었고 요약 회색 줄이 그
-    # 구성을 말한다(2026-11-08 사용자 그림 메모 g12).
+    # 늘어난 전용을 모두 보유로 채워 개조 창이 없다 — 요약 회색 줄이 그 구성을 말하고 본문에 개조 창
+    # 줄은 서지 않는다(2026-11-08 사용자 그림 메모 g12).
     result, _ = _shown(app)
     assert result.windows == () and result.kpis.owned_used == 1
     assert "개조 없이 쓰는 전용" not in _captions(app)
@@ -219,13 +219,13 @@ def test_new_units_follow_the_reference_day_through_one_shared_timeline(
     assert date_panels[panel_key(CONSTRAINT_NEW_SINCE_KEY)]["help"].startswith("기여 시작이")
     captions = _plain(_captions(app))
     assert f"기준일 이후 기여 시작 신규 설비 1대(조회기간에 가용 1대) · {NEW_UNIT}" in captions
-    # 출처 띠(「신규 = 기여 시작 …」)는 걷었다 — 카드 한 줄이 같은 값이다(2026-11-08 사용자 그림
-    # 메모 g12).
+    # 신규 호기 수 · 이름은 카드 한 줄이고 본문에 「신규 = 기여 시작 …」 띠는 없다(2026-11-08 사용자
+    # 그림 메모 g12).
     assert "신규 = 기여 시작" not in captions
     assert "신규 개조 없이(2025-12-01~)" in _header_line(app)
     assert _metric(app, "개조 대수") == "0대"
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 신규 1 · 개조 0"
-    # 신규 대기 줄 · 개조 창 카드는 걷었다 — 붙은 몫은 그래프 띠 · 계산표 풍선이 말한다.
+    # 붙은 몫은 그래프 띠 · 계산표 풍선이 말한다(본문에 신규 대기 줄이 없다).
     result, _ = _shown(app)
     assert result.kpis.new_used == 1
     assert [(item.month, item.label, item.days, item.units) for item in result.assignments] == [

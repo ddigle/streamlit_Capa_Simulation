@@ -619,7 +619,7 @@ def test_the_existing_kpi_borders_follow_the_same_three_steps_on_the_home_basis(
 ) -> None:
     """기존 제품 요약 두 칸의 테두리도 같은 판정이다(d11) — 기준이 HOME 이면 최저 확보율이 경고
     구간이면 주황(`attention`), 부족 구간이면 빨강(`critical`), 기준 미달 달은 그 가운데 가장 나쁜
-    판정이다. 직접 넣은 기준은 옛 두 단계 그대로다."""
+    판정이다. 직접 넣은 기준은 확보 · 부족 두 단계다."""
     tones: dict[str, str] = {}
 
     def capture(label: str, value: str, *, tone: str = "neutral", **_: object) -> None:
@@ -888,8 +888,8 @@ def test_the_schema_version_moved_with_the_new_rows() -> None:
     올렸다). 12 는 기준이 HOME 일 때 계산표 확보율 칸을 세 단계 색으로 칠하고 제약 없을 때 대비
     칸의 어긋난 차이에 「≈」 를 단 판이다(2026-11-07 사용자 답 — 한 번 올렸다). 13 은 고른 달 계산
     카드를 걷어 달 칸 풍선 끝의 「누르면 이 달 계산」 을 빼고(2026-11-08 사용자 그림 메모 g12)
-    기준이 HOME 일 때 기존 제품 점을 세 단계 판정색으로 칠한 판이다(같은 날 답 d11 — 같은 배포라
-    한 번 올렸다)."""
+    기준이 HOME 일 때 기존 제품 점을 세 단계 판정색으로 칠하고 첫날이 지난 개조 · 대기 막대 풍선에
+    「이미 지난 날짜」 꼬리를 단 판이다(같은 날 답 d11 · 검토 — 같은 배포라 한 번 올렸다)."""
     assert CONSTRAINT_FIGURE_SCHEMA_VERSION == 13
 
 
@@ -1012,6 +1012,65 @@ def test_the_waiting_bars_share_the_band_with_the_modification() -> None:
     # 6월 몫 개조(4/25~5/24)와 N01 대기(5/10~5/24)가 겹쳐 대기는 다른 줄이다.
     assert bar["y"][0] != modification["y"][0]
     assert spec["layout"]["yaxis2"]["range"][0] >= 1 - 0.5
+
+
+def test_a_bar_whose_first_day_has_passed_says_so_in_its_hover() -> None:
+    """첫날이 오늘보다 앞인 개조 창 · 신규 대기 막대의 풍선은 「이미 지난 날짜」 꼬리를 단다 — 그
+    달의 감소가 「제때 시작했다면」 의 값이라는 가정이다(설계 규칙 UI-NTF-05). 오늘이 없으면 달지
+    않는다. 꼬리를 단 막대는 상태 알림 `CS-04` 가 세는 것(`late_windows` · `late_waits`)과 같다."""
+    result = _new()
+    today = date(2027, 5, 20)
+    dated = replace(LABELS, today=today)
+    spec = _spec(rate_figure(result, dated, selected_month=None, show_proportional=False))
+    modification = next(trace for trace in spec["data"] if trace.get("name") == "개조 비가동")
+    windows = [window.start < today for window in result.windows]
+    assert [figures.WINDOW_LATE_TEXT in item[1] for item in modification["customdata"]] == windows
+    waits_bar = next(trace for trace in spec["data"] if trace.get("name") == "신규 대기")
+    waiting = [item for item in result.assignments if item.days > 0]
+    waits = [item.start < today for item in waiting]
+    assert [figures.WAIT_LATE_TEXT in item[1] for item in waits_bar["customdata"]] == waits
+    assert any(windows) and any(waits) and not all(windows + waits)
+    assert figures.late_windows(result, today) == tuple(
+        window for window in result.windows if window.start < today
+    )
+    assert figures.late_waits(result, today) == tuple(
+        item for item in waiting if item.start < today
+    )
+    assert figures.late_windows(result, None) == () and figures.late_waits(result, None) == ()
+
+    plain = json.dumps(
+        _spec(rate_figure(result, LABELS, selected_month=None, show_proportional=False)),
+        ensure_ascii=False,
+    )
+    assert "이미 지난 날짜" not in plain
+
+
+def test_the_before_range_mark_names_the_windows_the_band_cannot_show() -> None:
+    """표 첫 달 W/D 첫날보다 앞에서 끝나는 창은 그래프 띠에서 길이 0 이라 막대 풍선에 닿지 않는다 —
+    「표 첫 달 앞에서 시작」 표지 풍선이 그 창의 몫 · 날짜 · 대수를 적고, 첫날이 오늘보다 앞이면
+    「이미 지난 날짜」 꼬리를 단다."""
+    from test_constraint_simulation import _one
+
+    from capa_simulation.services.constraint_simulation import ConstraintConditions
+
+    months = [
+        _one(month, required=10, available=12, demand=2) for month in (202701, 202702, 202703)
+    ]
+    result = simulate_constraint(months, ConstraintConditions(202701, 202703, 1.0, 30, 7))
+    bar = _traces(
+        rate_figure(result, LABELS, selected_month=None, show_proportional=False), "개조 비가동"
+    )[0]
+    assert bar["x"] == [pytest.approx(0.0)]
+
+    before = view_module.before_range_help(result, date(2026, 11, 1))
+    assert before.startswith(view_module.BEFORE_RANGE_TEXT)
+    assert "- 27년 1월 몫 · 2026-11-25 \\~ 2026-12-24 비가동 · 2대" in before
+    assert figures.WINDOW_LATE_TEXT not in before
+    assert before.endswith("2대")
+    late = view_module.before_range_help(result, date(2026, 12, 1))
+    assert late.endswith(f"2대 — {figures.WINDOW_LATE_TEXT}")
+    # 표 앞에서 시작하는 대기가 없으면 뜻 한 줄뿐이다.
+    assert view_module.wait_before_range_help(result, None) == view_module.WAIT_BEFORE_RANGE_TEXT
 
 
 def test_a_later_cover_names_its_month_and_splits_the_reasons() -> None:

@@ -215,8 +215,7 @@ def test_picking_a_unit_holds_it_without_a_modification(
     assert _metric_caption(app, "개조 대수") == "전용 최대 1대 = 보유 1 · 개조 0"
     assert "보유 제약 호기 1대" in _header_line(app)
     captions = _plain(_captions(app))
-    # 고른 호기의 수와 환산 합은 카드 칸 밑 한 줄이다 — 출처 띠 · 개조 창 카드는 걷었다(2026-11-08
-    # 사용자 그림 메모 g12).
+    # 고른 호기의 수와 환산 합은 카드 칸 밑 한 줄이 말한다(2026-11-08 사용자 그림 메모 g12).
     assert "고른 호기 1대 · 환산 합 1대" in captions
     assert "보유 호기 = " not in captions and "개조 없이 쓰는 전용" not in captions
     result, _ = _shown(app)
@@ -259,7 +258,7 @@ def test_holdings_covering_the_period_skip_the_new_unit(
     app = _with_new_units(_opened(early_databases), BEFORE_NEW_UNIT)
     assert [item.label for item in _shown(app)[0].assignments] == [EARLY_UNIT]
     app = _pick(app, "CA-01")
-    # 붙지 않은 까닭은 계산표 「들어오는 신규 설비」 칸 풍선이 적는다(개조 창 카드는 걷었다).
+    # 붙지 않은 까닭은 계산표 「들어오는 신규 설비」 칸 풍선이 적는다.
     result, _ = _shown(app)
     assert result.new_units_skipped and result.assignments == ()
     (ordinary,) = result.ordinary_units

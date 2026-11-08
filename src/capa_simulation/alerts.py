@@ -320,6 +320,11 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("RS-03", "check", "state", "필요 단축 일정 — 일정 미정 호기"),
     AlertSpec("RS-04", "info", "state", "필요 단축 일정 — 사용기준(HBM · EDP) 밖 호기를 셈에서 뺌"),
     AlertSpec("RS-05", "check", "state", "필요 단축 일정 — 입력 비가동 반영 · 가용 넘침"),
+    # 제약 시뮬레이션 개조 창 · 신규 대기의 첫날이 오늘보다 앞 — 그래프 · 계산표가 「제때
+    # 시작했다면」 의 값이라는 가정(설계 규칙 UI-NTF-05). 자리에는 그리지 않는다.
+    AlertSpec(
+        "CS-04", "check", "state", "제약 시뮬레이션 — 첫날이 지난 개조 · 신규 대기(제때 시작한 값)"
+    ),
 )
 
 

@@ -29,8 +29,11 @@
   눈금을 솎지 않는다 — 서버는 칸 폭을 모르고, 넓은 창에서는 모든 달이 읽힌다.
 - 아래 띠(y2): 개조 비가동 가로 막대 trace **하나**(`base` = 시작 위치, `x` = 길이). 날 → x 는 그
   날이 든 보이는 달 j 의 **W/D 구간**에서 `j − 0.5 + (날 − 첫날) ÷ 일수` 다 — 가용대수가 일할된 바로
-  그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다. 겹치는 창은 아래 줄로 내린다. 신규
-  대기가 있으면 같은 띠에 빗금 막대 trace(「신규 대기」)가 하나 더 서고 개조 창 뒤 줄 자리를 잇는다.
+  그 좌표다. 첫 달 앞은 −0.5, 마지막 달 뒤는 n − 0.5 로 자른다 — 표 첫 달 앞에서 끝나는 창은 길이 0
+  이라 보이지 않고, 그 날짜는 계산표 머리 「표 첫 달 앞에서 시작」 표지 풍선이 적는다. 겹치는 창은
+  아래 줄로 내린다. 신규 대기가 있으면 같은 띠에 빗금 막대 trace(「신규 대기」)가 하나 더 서고 개조
+  창 뒤 줄 자리를 잇는다. 첫날이 오늘(`ConstraintLabels.today`)보다 앞인 막대의 풍선은 「이미 지난
+  날짜」 꼬리를 단다.
 - 제약 기간 칠과 고른 달 띠는 도형 둘(`append_layout_items` → `flush_layout_items`) — 새 색 토큰을
   더하지 않고 기존 토큰에 도형 `opacity` 를 준다(14-5).
 - **달 고르기**(D9): 달마다 보이지 않는 표적 막대(`HIT_TARGET`, `customdata = (달, 풍선)`) 하나가
@@ -130,6 +133,8 @@ __all__ = [
     "ROW_IDS",
     "ConstraintLabels",
     "SKIPPED_REASON",
+    "WAIT_LATE_TEXT",
+    "WINDOW_LATE_TEXT",
     "RateAxis",
     "SheetCanvas",
     "axis_bounds",
@@ -141,6 +146,8 @@ __all__ = [
     "end_label_anchors",
     "free_parts",
     "general_label",
+    "late_waits",
+    "late_windows",
     "minimum_rate",
     "minimum_unit",
     "month_name",
@@ -154,7 +161,9 @@ __all__ = [
     "rate_delta_text",
     "signed_points",
     "units_text",
+    "waiting_line",
     "waiting_text",
+    "window_line",
 ]
 
 # 첫 증가부터 보유만으로 제약 기간을 다 덮어 신규를 붙이지 않은(결정 B1) 신규의 까닭(잇는 꼴).
@@ -192,6 +201,11 @@ _ABOVE_MARKER_SIZE: Final = 10
 MINIMUM_UNIT_WORDS: Final = "최소 1대"
 # 「제약 없을 때 대비」 칸이 빈칸인 차이(%).
 _DELTA_HIDDEN_POINTS: Final = 0.05
+# 첫날이 오늘보다 앞인 개조 창 · 신규 대기의 꼬리 — 그 달의 감소는 「지금 시작하면」 이 아니라
+# 「제때 시작했다면」 의 모습이다. 띠 막대 풍선 · 표 첫 달 앞 표지 풍선 · 상태 알림 `CS-04` 가 같은
+# 글을 쓴다.
+WINDOW_LATE_TEXT: Final = "이미 지난 날짜(개조를 이미 시작했어야 합니다)"
+WAIT_LATE_TEXT: Final = "이미 지난 날짜(셋업 때 이미 제약용으로 붙였어야 합니다)"
 
 _FILL_ROW_IDS: Final[Mapping[FillSource, str]] = {
     FILL_OWNED: "owned_increment",
@@ -251,6 +265,10 @@ class ConstraintLabels:
     warning_targets: tuple[tuple[int, float], ...] = ()
     """기준이 HOME 일 때 (달, 경고 기준의 판정 경계) — 계산표 세 단계 색의 재료. 직접 넣은 기준에는
     경고 경계가 없어 비어 있다(두 단계)."""
+
+    today: date | None = None
+    """오늘 — 개조 창 · 신규 대기 첫날이 이보다 앞이면 띠 막대 풍선에 「이미 지난 날짜」 꼬리를 단다
+    (`WINDOW_LATE_TEXT` · `WAIT_LATE_TEXT`). None 이면 달지 않는다."""
 
 
 class SheetCanvas(NamedTuple):
@@ -365,6 +383,39 @@ def waiting_text(item: NewUnitAssignment) -> str:
     return f"{item.start.isoformat()} ~ {item.last_day.isoformat()} 대기 {item.days}일"
 
 
+def window_line(window: ModificationWindow) -> str:
+    """개조 창 한 줄(평문) — 「26년 11월 몫 · 2026-09-25 ~ 2026-10-24 비가동 · 3대」. 마크다운
+    자리에 그리면 물결표를 막는다."""
+    return (
+        f"{month_name(window.month)} 몫 · {window.start.isoformat()} ~ "
+        f"{window.last_day.isoformat()} 비가동 · {window.units}대"
+    )
+
+
+def waiting_line(item: NewUnitAssignment) -> str:
+    """신규 대기 한 줄(평문) — 「27년 7월 몫 · 신규 HB-07 · 2027-06-10 ~ 2027-06-23 대기 14일 ·
+    1대」. 마크다운 자리에 그리면 글 통째로 막는다(설비키가 든다)."""
+    return (
+        f"{month_name(item.month)} 몫 · 신규 {item.label} · {waiting_text(item)} · "
+        f"{units_text(item.units)}대"
+    )
+
+
+def late_windows(result: ConstraintResult, today: date | None) -> tuple[ModificationWindow, ...]:
+    """첫날이 `today` 보다 앞인 개조 창(창 차례). `today` 가 None 이면 빈다."""
+    if today is None:
+        return ()
+    return tuple(window for window in result.windows if window.start < today)
+
+
+def late_waits(result: ConstraintResult, today: date | None) -> tuple[NewUnitAssignment, ...]:
+    """대기가 있고(대기 일수 > 0) 첫날이 `today` 보다 앞인 신규 대기(붙인 차례). `today` 가 None
+    이면 빈다."""
+    if today is None:
+        return ()
+    return tuple(item for item in result.assignments if item.days > 0 and item.start < today)
+
+
 def general_label(labels: ConstraintLabels, result: ConstraintResult) -> str:
     """기준 확보율 한 마디 — 「HOME 110%」·「HOME(월별)」·「105%」."""
     if labels.general_percent is not None:
@@ -423,10 +474,12 @@ def _window_lanes(
     return chosen
 
 
-def _window_hover(window: ModificationWindow) -> str:
+def _window_hover(window: ModificationWindow, today: date | None) -> str:
+    late = today is not None and window.start < today
     return (
         f"<b>{html.escape(month_name(window.month))} 몫 {window.units}대 개조</b>"
         f"<br>{window.start.isoformat()} ~ {window.last_day.isoformat()} 비가동"
+        + (f"<br>{html.escape(WINDOW_LATE_TEXT)}" if late else "")
     )
 
 
@@ -438,11 +491,12 @@ def _first_overlapped_month(window: ModificationWindow, result: ConstraintResult
     return window.month
 
 
-def _waiting_hover(item: NewUnitAssignment) -> str:
+def _waiting_hover(item: NewUnitAssignment, today: date | None) -> str:
+    late = today is not None and item.days > 0 and item.start < today
     return (
         f"<b>{html.escape(month_name(item.month))} 몫 · 신규 {html.escape(item.label)} "
         f"{units_text(item.units)}대 대기</b><br>{html.escape(waiting_text(item))} — 셋업 때부터 "
-        "제약용이라 기존 제품이 못 씀"
+        "제약용이라 기존 제품이 못 씀" + (f"<br>{html.escape(WAIT_LATE_TEXT)}" if late else "")
     )
 
 
@@ -752,8 +806,11 @@ def _rate_lines(
     return lines
 
 
-def _band_traces(result: ConstraintResult, band: _RateBand) -> list[dict[str, Any]]:
-    """아래 띠(y2)의 가로 막대 — 개조 비가동(있으면) · 신규 대기(있으면) trace 하나씩."""
+def _band_traces(
+    result: ConstraintResult, band: _RateBand, today: date | None
+) -> list[dict[str, Any]]:
+    """아래 띠(y2)의 가로 막대 — 개조 비가동(있으면) · 신규 대기(있으면) trace 하나씩. 첫날이
+    `today` 보다 앞인 막대의 풍선은 「이미 지난 날짜」 꼬리를 단다."""
     traces: list[dict[str, Any]] = []
     windows, spans = band.windows, band.spans
     if windows:
@@ -776,7 +833,7 @@ def _band_traces(result: ConstraintResult, band: _RateBand) -> list[dict[str, An
                 "textangle": 0,
                 "textfont": {"color": tokens.TEXT, "size": 11},
                 "customdata": [
-                    [_first_overlapped_month(window, result), _window_hover(window)]
+                    [_first_overlapped_month(window, result), _window_hover(window, today)]
                     for window in windows
                 ],
                 "hovertemplate": "%{customdata[1]}<extra></extra>",
@@ -806,7 +863,8 @@ def _band_traces(result: ConstraintResult, band: _RateBand) -> list[dict[str, An
                 "textangle": 0,
                 "textfont": {"color": tokens.TEXT, "size": 11},
                 "customdata": [
-                    [_first_waiting_month(item, result), _waiting_hover(item)] for item in waits
+                    [_first_waiting_month(item, result), _waiting_hover(item, today)]
+                    for item in waits
                 ],
                 "hovertemplate": "%{customdata[1]}<extra></extra>",
                 "name": "신규 대기",
@@ -1013,7 +1071,7 @@ def rate_figure(
         _hit_trace(result, xs, above, low=low, high=high),
         *_reference_traces(general, target_percent, xs),
         *_rate_lines(result, labels, xs, above, high=high, show_proportional=show_proportional),
-        *_band_traces(result, band),
+        *_band_traces(result, band, labels.today),
     ]
     layout = _rate_layout(
         result, xs, band, low=low, high=high, main_domain=main_domain, generation=generation

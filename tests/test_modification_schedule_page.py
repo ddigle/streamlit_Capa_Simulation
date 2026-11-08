@@ -41,12 +41,12 @@ from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    SOURCE_BAND_HELP,
 )
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.modification_schedule_figures import (
     ScheduleLabels,
     batch_line,
-    general_text,
     schedule_figure,
     shortfall_lines,
 )
@@ -54,6 +54,7 @@ from capa_simulation.components.modification_schedule_view import (
     CHART_HELP,
     DEADLINE_HELP,
     DOUBLE_COUNT_NOTE,
+    FELL_BACK_LABEL,
     LIST_HELP,
     UNITS_HELP,
     deadline_options,
@@ -71,7 +72,6 @@ from capa_simulation.constraint_simulation_state import (
 )
 from capa_simulation.modification_schedule_state import (
     CONSTRAINT_MODE_KEY,
-    OBJECTIVE_LABELS,
     SCHEDULE_CHART_KEY,
     SCHEDULE_CONCURRENT_INPUT_KEY,
     SCHEDULE_CONCURRENT_KEY,
@@ -80,7 +80,6 @@ from capa_simulation.modification_schedule_state import (
     SCHEDULE_DAYS_KEY,
     SCHEDULE_DAYS_PILLS_KEY,
     SCHEDULE_DEADLINE_KEY,
-    SCHEDULE_FIGURE_MEMO_KEY,
     SCHEDULE_MARGIN_INPUT_KEY,
     SCHEDULE_OBJECTIVE_KEY,
     SCHEDULE_START_KEY,
@@ -205,35 +204,11 @@ def _has_widget(app: AppTest, kind: str, key: str) -> bool:
     return any(getattr(element, "key", None) == key for element in app.get(kind))
 
 
-def _shown(app: AppTest) -> tuple[ScheduleResult, ScheduleLabels]:
-    """지금 그린 결과와 화면 글자 — 그림 memo 의 마지막 벌이다(꺼낸 벌을 맨 뒤로 —
-    `remembered_figure`)."""
-    key = app.session_state[SCHEDULE_FIGURE_MEMO_KEY][-1][0]
-    result, labels = key[2], key[3]
-    assert isinstance(result, ScheduleResult) and isinstance(labels, ScheduleLabels)
-    return result, labels
-
-
 def _header(app: AppTest) -> str:
-    """계산에 걸린 조건을 옛 머리 줄 꼴(「개조 4대 × 30일 · 기준 HOME · 가장 빨리 · 동시 상한
-    없음」)로 — 시험 몫의 글이다. 머리 줄은 조건을 되읊지 않으므로(2026-11-08 사용자 그림 메모 g12
-    — 조건은 사이드바 칸) 계산 결과에서 읽는다."""
-    result, labels = _shown(app)
-    conditions = result.conditions
-    parts = [
-        f"개조 {conditions.units}대 × {conditions.days}일",
-        f"기준 {general_text(labels, result)}"
-        + (f" +{conditions.margin * 100:g}%" if conditions.margin > 0 else ""),
-        "가장 고르게 → 가장 빨리로 배치"
-        if result.fell_back
-        else OBJECTIVE_LABELS[conditions.objective],
-        "동시 상한 없음"
-        if conditions.concurrent is None
-        else f"동시 {conditions.concurrent}대까지",
-    ]
-    if conditions.aligned:
-        parts.append("달 맞춤 창")
-    return " · ".join(parts)
+    """머리 한 줄(마크다운 escape 를 걷은 글)."""
+    lines = [re.sub(r"\\(.)", r"\1", text) for text in _markdown(app) if " · 개조 " in text]
+    assert len(lines) == 1, _markdown(app)
+    return lines[0]
 
 
 # ------------------------------------------------------------------ 모드 전환·본문
@@ -300,10 +275,10 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     assert "저장하지 않는 시뮬레이션입니다" not in captions
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
-    # 출처 띠는 두지 않는다 — 출처는 Guide 다(2026-11-08 사용자 그림 메모 g12). 머리 줄도 조건을
-    # 되읊지 않는다. 목록의 읽는 법은 풍선이다(설계 규칙 UI-TXT-01).
-    assert "가용 = 설비 일정 기준" not in captions and "HOME·Static" not in captions
-    assert not [text for text in _markdown(app) if " · 개조 4대 × 30일" in text]
+    assert "공정 소요 · 가용 = 설비 일정 기준" in captions
+    # 환산 대수 단서 · 목록의 읽는 법은 풍선이다(설계 규칙 UI-TXT-01).
+    (band,) = [item for item in app.caption if "가용 = 설비 일정 기준" in str(item.value)]
+    assert band.proto.help == SOURCE_BAND_HELP and "HOME·Static" not in captions
     (listing,) = [item for item in app.markdown if str(item.value) == "**개조 일정**"]
     assert listing.proto.help == LIST_HELP and "같은 날 시작하는 묶음" not in captions
     (cutoff,) = [item for item in app.caption if str(item.value).startswith("Cut-off ")]
@@ -424,7 +399,7 @@ def test_the_even_objective_opens_only_with_a_deadline(databases: tuple[Path, Pa
 def test_an_even_run_that_misses_the_deadline_says_it_placed_the_earliest_way(
     databases: tuple[Path, Path],
 ) -> None:
-    """「가장 고르게」 인데 여유만으로도 기한을 못 맞추면 「가장 빨리」 로 놓았다고 기한 칸이
+    """「가장 고르게」 인데 여유만으로도 기한을 못 맞추면 「가장 빨리」 로 놓았다고 머리·기한 칸이
     적는다."""
     app = _schedule(databases)
     app.selectbox(key=SCHEDULE_DEADLINE_KEY).set_value(202602)
@@ -432,7 +407,7 @@ def test_an_even_run_that_misses_the_deadline_says_it_placed_the_earliest_way(
     app.button_group(key=SCHEDULE_OBJECTIVE_KEY).set_value("even")
     _ok(app.run())
 
-    assert _shown(app)[0].fell_back
+    assert FELL_BACK_LABEL in _header(app)
     value, caption = _metric(app, "기한")
     assert value == "못 맞춤" and "가장 빨리로 배치" in caption
 

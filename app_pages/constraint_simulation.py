@@ -39,8 +39,9 @@
 본문은 머리 줄 → 요약 넷(프래그먼트 밖) → 본문 프래그먼트(`components/constraint_simulation_view`
 — 달 누름·비중 토글만 그 안에서 돈다). 머리 줄 왼쪽은 멈춘 갈래의 공정 · 배지이거나 계산이 건
 표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)이고 오른쪽 끝은 「← 공정 Capa 상세」 다.
-조건을 되읊는 줄과 출처 띠(소요 · 가용의 출처)는 걷었다 — 조건은 사이드바, 출처와 읽는 법은
-Guide 다(2026-11-08 사용자 그림 메모 g12).
+조건은 사이드바 칸이 보이고 소요 · 가용의 출처와 읽는 법은 Guide 다 — 머리 줄은 조건을 되읊지
+않는다(2026-11-08 사용자 그림 메모 g12). 개조 · 신규 대기 첫날이 오늘보다 앞이면(그래프 · 계산표가
+「제때 시작했다면」 의 값) 상태 알림 `CS-04` 다(`report_late_starts` — 자리에는 그리지 않는다).
 
 개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 호기」 고르기
 (그 공정 세션 설비 시나리오의 호기 — 2026-11-01 결정 B3)와 「목록에 없는 보유 제약 설비」 숫자
@@ -71,8 +72,14 @@ from capa_simulation.components.constraint_equipment_plan import (
     render_equipment_plan,
 )
 from capa_simulation.components.constraint_simulation_figures import (
+    WAIT_LATE_TEXT,
+    WINDOW_LATE_TEXT,
     ConstraintLabels,
+    late_waits,
+    late_windows,
     units_text,
+    waiting_line,
+    window_line,
 )
 from capa_simulation.components.constraint_simulation_view import (
     ConstraintView,
@@ -258,8 +265,9 @@ def new_since_help(*, modify: bool, new_units_on: bool) -> str:
 
 
 # 주소 `?process=` 는 **무엇보다 먼저** 꺼내고 그 키 하나만 지운다 — 부트스트랩이 멈춘 회차에도
-# 주소에 남지 않게(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」 이 싣는다).
-requested_process = take_constraint_process_request()
+# 주소에 남지 않게(공정 Capa 상세 머리 「이 공정 제약 시뮬레이션」 이 싣는다). 같은 값은 같은 방문
+# 안에서만 한 번 적용하고, 다른 화면에서 다시 들어온 방문은 다시 적용한다.
+requested_process = take_constraint_process_request(page_visit())
 
 render_page_header("제약 시뮬레이션")
 # 머리 줄(멈춘 갈래의 공정 · 배지 또는 계산이 건 표지)과 「← 공정 Capa 상세」 자리. 공정과 계산이
@@ -937,6 +945,7 @@ labels = ConstraintLabels(
         if general_value is None
         else ()
     ),
+    today=today,
 )
 period_text = (
     month_label(period.start)
@@ -954,6 +963,55 @@ if result.kpis.constrained_months == 0:
         "없습니다."
     )
 
+
+def report_late_starts(process: str, result: ConstraintResult) -> None:
+    """첫날이 오늘보다 앞인 개조 창 · 신규 대기의 상태 알림(`CS-04`) — 그래프 · 계산표의 그 달
+    감소가 「지금 시작하면」 이 아니라 「제때 시작했다면」 의 모습이라는 가정이다(설계 규칙
+    UI-NTF-05 — 자리에는 그리지 않는다). 범위는 세션 설비 기준과 공정, 내용은 그 창 · 대기의
+    (달, 첫날, 끝, 대수)다. 계산이 선 회차마다 부르고, 없으면 「해소」 다. 알림 칸 JS 가 평문으로
+    그린다."""
+    windows = late_windows(result, today)
+    waits = late_waits(result, today)
+    scope = equipment_scope(equipment_session) if equipment_session is not None else None
+    parts = [f"개조 창 {len(windows)}개"] if windows else []
+    if waits:
+        parts.append(f"신규 대기 {len(waits)}개")
+    lines = [f"{window_line(window)} — {WINDOW_LATE_TEXT}" for window in windows] + [
+        f"{waiting_line(item)} — {WAIT_LATE_TEXT}" for item in waits
+    ]
+    alerts.state(
+        "CS-04",
+        scope={**(scope.scope if scope is not None else {}), "process": process},
+        content=[
+            ["window", window.month, window.start.isoformat(), window.end.isoformat(), window.units]
+            for window in windows
+        ]
+        + [
+            ["wait", item.month, item.unit, item.module, item.start.isoformat(), item.units]
+            for item in waits
+        ]
+        or None,
+        active=bool(lines),
+        text=f"첫날이 지난 {' · '.join(parts)} — 제때 시작했다면의 확보율" if lines else None,
+        full=(
+            "\n".join(
+                [
+                    f"{process_label} — 그래프 · 계산표의 그 달 감소는 「지금 시작하면」 이 아니라 "
+                    "「제때 시작했다면」 의 모습입니다.",
+                    *lines,
+                ]
+            )
+            if lines
+            else None
+        ),
+        scope_label=" · ".join(
+            part for part in ((scope.label if scope is not None else ""), process_label) if part
+        ),
+    )
+
+
+with notices:
+    report_late_starts(process, result)
 render_constraint_kpis(result, labels)
 settle_selected_month(result)
 render_constraint_view(ConstraintView(result=result, labels=labels))
