@@ -19,6 +19,7 @@ from capa_simulation.components.equipment_settings_dialog import (
     SETTINGS_BUTTON_KEY,
     SETTINGS_DIALOG_TITLE,
 )
+from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import (
     EQUIPMENT_SUMMARY_TAB,
@@ -113,9 +114,11 @@ def test_available_equipment_page_opens_with_empty_database(tmp_path: Path) -> N
         for widget in app.multiselect
         if widget.label in {"공정구분", "투자구분", "공정대분류", "공정소분류"}
     }
-    assert filter_labels == {"공정구분", "투자구분", "공정대분류", "공정소분류"}
+    assert filter_labels == {"공정구분", "투자구분", "공정대분류"}
     # 거르는 조건은 사이드바 카드, 무엇을 볼지(볼 내용·보기·표현)는 본문이다(2026-09-29 결정).
+    # 공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1).
     assert {widget.label for widget in app.sidebar.multiselect} >= filter_labels
+    assert PROCESS_FIELD_KEY in {button.key for button in app.sidebar.button}
     assert "볼 내용" in {widget.label for widget in app.main.segmented_control}
     assert "보기" in {widget.label for widget in app.main.selectbox}
     assert not app.sidebar.segmented_control

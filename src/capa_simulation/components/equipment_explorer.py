@@ -25,6 +25,7 @@ from capa_simulation.components.equipment_lifecycle_gantt import (
     render_equipment_lifecycle_gantt,
 )
 from capa_simulation.components.literal_markdown import literal_names, markdown_safe_tildes
+from capa_simulation.components.process_field import render_process_filter
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -503,8 +504,14 @@ def render_equipment_explorer(
     process_labels: ProcessLabels | None = None,
     confirmation_equipment: pd.DataFrame | None = None,
     confirmation_basis: str | None = None,
+    shared_screen: str | None = None,
 ) -> None:
     """Main 탭. 거르는 조건(공정·기간·기준일·추가 조건)은 `conditions`(사이드바 조건 카드)다.
+
+    `shared_screen`(출처 이름)을 주면 `공정소분류` 는 카드 안 상자가 아니라 조회 조건 패널의 공용
+    공정 칸이다(2026-11-08 사용자 답 P1 — `components/process_field.py`). 시뮬레이션 공정과 이름이
+    같은 공정만 걸리고, 이름이 다르면 그 칸이 「없는 공정」 표지를 단다. 공정구분 · 공정대분류 ·
+    투자구분은 그대로 카드 칸이다.
 
     `confirmation_equipment` 를 주면 미확인 알림은 그 마스터(가정 설비 시나리오일 때 공식 스냅샷
     그대로)로 고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다(결정). 합치지
@@ -587,19 +594,26 @@ def render_equipment_explorer(
             owned = set(_options(equipment, PROCESS_COLUMN)) | set(_options(baseline, "공정"))
             process_format = labels.unique_format_func(owned)
             process_options = sorted(owned, key=lambda process: (process_format(process), process))
-            # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만 브라우저에
-            # 가므로, 보이는 글자가 바뀌는 회차에도 브라우저가 새 글자를 받는다 — 적지 않으면 옛
-            # 글자를 다음 조작에 되보내 다른 공정으로 바뀌었다(2026-10-10 재검증).
-            prune_list_selection(SMALL_PROCESS_KEY, process_options)
-            selected = st.multiselect(
-                "공정소분류",
-                process_options,
-                format_func=process_format,
-                placeholder="전체 공정 · 검색 가능",
-                key=SMALL_PROCESS_KEY,
-                persist_state="session",
-                width="stretch" if in_card else 300,
-            )
+            if shared_screen is not None:
+                # 공용 공정 칸 — 값은 원본, 글자만 표시명이다(2026-10-10 사용자 결정).
+                selected = render_process_filter(
+                    process_options, screen=shared_screen, labels=labels
+                )
+            else:
+                # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만
+                # 브라우저에 가므로, 보이는 글자가 바뀌는 회차에도 브라우저가 새 글자를 받는다 —
+                # 적지 않으면 옛 글자를 다음 조작에 되보내 다른 공정으로 바뀌었다(2026-10-10
+                # 재검증).
+                prune_list_selection(SMALL_PROCESS_KEY, process_options)
+                selected = st.multiselect(
+                    "공정소분류",
+                    process_options,
+                    format_func=process_format,
+                    placeholder="전체 공정 · 검색 가능",
+                    key=SMALL_PROCESS_KEY,
+                    persist_state="session",
+                    width="stretch" if in_card else 300,
+                )
             uses_period = question in ("가용대수", "단계 전환") or view == "생애주기 일정"
             # 단계 전환은 기간과 기준일이 둘 다 든다 — 기간은 어느 일정을 모을지, 기준일은
             # 완료·예정을 가른다. 기준일 위젯은 다른 질문과 같은 것이다(질문을 옮겨도 그대로).
@@ -670,12 +684,13 @@ def render_equipment_explorer(
                         width="stretch" if in_card else 240,
                     )
                     filters.append((column, values))
-    # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
-    # 공정은 고른 상자와 같은 글자(표시명)로 적는다.
+    # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다. 공정은
+    # 고른 상자와 같은 글자(표시명)로 적는다. 공용 공정 칸이면 공정은 본문 위 칩이 이미 말하므로 이
+    # 줄에 거듭 적지 않는다(설계 규칙 UI-TXT-07).
     active_filters = [
         f"{name}: {literal_names(_shown_values(name, values, process_format))}"
         for name, values in filters
-        if values
+        if values and not (shared_screen is not None and name == PROCESS_COLUMN)
     ]
     if question == "단계 전환":
         active_filters += [
