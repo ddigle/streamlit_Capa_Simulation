@@ -13,8 +13,9 @@
   (브라우저가 feed `filters` 로 거른다).
 - **공정은 화면들이 같이 쓰는 공용 공정 값으로 거른다**(2026-11-08 사용자 답 P1 — 공정 공유 1차 ·
   `GridTable.shared_screen`). 다른 화면에서 공정을 바꾸면 이 표도 따라 좁혀진다. 「표 조건」 카드의
-  나머지 칸(양산 · Area 등)은 표마다 따로다. 좁혀진 표의 여러 줄 붙여넣기 막기는 feed `filters` 를
-  보는 그리드가 맡는다 — 공용 공정도 그 `filters` 에 실린다.
+  나머지 칸(양산 · Area 등)은 표마다 따로다. 거름에 가려 안 보이는 줄의 초안도 「변경사항 적용」 에
+  들어가므로 작업 줄 아래 「거름 밖 n개」 표지를 단다(`outside_count`). 좁혀진 표의 여러 줄 붙여넣기
+  막기는 feed `filters` 를 보는 그리드가 맡는다 — 공용 공정도 그 `filters` 에 실린다.
 - **편집은 출납 콜백이 세션 inbox 에 쌓기만** 하고(`edit_grid.collect_outbox`) 본문이 원본 토큰을 본
   뒤 반영한다(`apply_grid_inbox`) — 원본이 바뀌어 초안·이력을 버린 회차에는 새 `gen` 이 서서 그 전에
   보낸 op 가 버려지고 수가 토스트로 간다. 지금 보이지 않는 표의 op 도 그 표 초안에 쓴다. 반영이 초안
@@ -64,6 +65,8 @@ from capa_simulation.reference_grid_keys import (
     history_key,
 )
 from capa_simulation.services.edit_grid import (
+    DUPLICATE_SEPARATOR,
+    KEY_SEPARATOR,
     GridIndex,
     GridSpec,
     Op,
@@ -159,6 +162,14 @@ CAP_HEAD_NOTICE: Final = (
 CAP_HELP: Final = (
     "칸이 아주 많은 표는 사이드바 「표 조건」 으로 고른 줄만, 고르지 않았으면 앞 줄만 싣습니다. "
     "「변경사항 적용」 은 싣지 않은 줄까지 표 전체에 덮습니다."
+)
+# 공용 공정 거름에 가려 이 표에 안 보이는 줄에도 적용하지 않은 편집이 있을 때의 표지(작업 줄 아래
+# 한 줄 — 값)와 그 풍선(설계 규칙 UI-TXT-04 — 숨은 데이터 안내는 표지 + 풍선). 표지가 서면 작업 줄과
+# 표 도구 막대가 한 줄에 서지 않고 단추 → 표지 → 막대 → 표 차례로 쌓인다(큰 표 표지와 같다).
+OUTSIDE_NOTICE: Final = ":material/filter_alt_off: 거름 밖 {n}개"
+OUTSIDE_HELP: Final = (
+    "공정 거름에 가려 이 표에 보이지 않는 공정 {n}개에도 적용하지 않은 편집이 있습니다. "
+    "「변경사항 적용」 은 그 편집까지 함께 적용합니다."
 )
 Labels = Mapping[str, Mapping[str, str]]
 
@@ -369,6 +380,39 @@ def merged_template(table: GridTable) -> pd.DataFrame:
     )
 
 
+def draft_processes(table: GridTable) -> set[str]:
+    """그 표 초안(고친 칸 · 오류 칸)이 걸린 줄의 공정(원본). 공정 칸이 없는 표는 빈 집합이다.
+
+    초안 키는 업무 키(분류 칸 원값을 `KEY_SEPARATOR` 로 이은 글, 같은 키 둘째부터 꼬리표)라 공정
+    자리만 떼어 읽는다 — 상한에 걸려 일부 줄만 실은 표도 전체 색인을 짓지 않는다."""
+    if PROCESS_COLUMN not in table.dimensions:
+        return set()
+    draft = edit_grid.draft_of(cells_key(table.table))
+    if draft is None:
+        return set()
+    position = table.dimensions.index(PROCESS_COLUMN)
+    keys = {key for key, cells in draft["cells"].items() if cells}
+    keys |= {key for key, cells in draft["bad"].items() if cells}
+    processes: set[str] = set()
+    for key in keys:
+        parts = key.split(DUPLICATE_SEPARATOR, 1)[0].split(KEY_SEPARATOR)
+        if position < len(parts):
+            processes.add(parts[position])
+    return processes
+
+
+def outside_count(table: GridTable) -> int:
+    """공용 공정 거름에 가려 이 표에 안 보이는 공정 가운데 초안이 있는 수(공용 값을 따라가지 않는
+    표 · 걸린 값이 없으면 0)."""
+    if table.shared_screen is None or PROCESS_COLUMN not in table.dimensions:
+        return 0
+    drafted = draft_processes(table)
+    if not drafted:
+        return 0
+    options = table.template[PROCESS_COLUMN].dropna().drop_duplicates().tolist()
+    return shared_process.count_outside(drafted, options)
+
+
 def paste_notice(table: str) -> str | None:
     """「Excel 붙여넣기」 팝업 첫 줄 경고(그 표에 초안이 없으면 None)."""
     cells = draft_counts(table)[0]
@@ -469,9 +513,10 @@ class Actions:
 
 def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actions:
     """표 위 작업 줄 — 「변경사항 적용」 · 「Excel 붙여넣기」 · 「편집 취소」(초안이 있을 때) ·
-    「고칠 칸 n개」(칸 오류가 있을 때)와 그 아래 칸(큰 표 표지 · 알림 자리). 기준 창에서는 표 도구
-    막대가 이 줄 오른쪽에 함께 선다(`ONE_LINE_STYLE`). 고친 수는 표 도구 막대 「적용 전 변경 (n)」
-    하나가 말한다(UI-TXT-07). key·글은 옛 편집표 작업 줄과 같다(`f"{editor_key}_apply"` 등).
+    「고칠 칸 n개」(칸 오류가 있을 때)와 그 아래 칸(거름 밖 표지 · 큰 표 표지 · 알림 자리). 기준
+    창에서는 표 도구 막대가 이 줄 오른쪽에 함께 선다(`ONE_LINE_STYLE`). 고친 수는 표 도구 막대
+    「적용 전 변경 (n)」 하나가 말한다(UI-TXT-07). key·글은 옛 편집표 작업 줄과 같다
+    (`f"{editor_key}_apply"` 등).
 
     「변경사항 적용」 은 초안이 없으면 잠근다(같은 값 적용으로 리비전만 오르는 일을 막는 규칙). 첫
     편집은 그리드가 기다리지 않고 바로 보내므로 고친 뒤 한 회차 안에 켜진다."""
@@ -503,6 +548,9 @@ def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actio
             )
             if errors:
                 st.markdown(f":red[고칠 칸 {errors:,}개]")
+    outside = outside_count(table) if pending else 0
+    if outside:
+        st.caption(OUTSIDE_NOTICE.format(n=outside), help=OUTSIDE_HELP.format(n=outside))
     if table.cap_notice is not None:
         st.caption(table.cap_notice, help=CAP_HELP)
     # 적용·붙여넣기 결과는 누른 자리 바로 아래 한 칸이다(`queue_reference_import_flash` 가 담은 것 —
