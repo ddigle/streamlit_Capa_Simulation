@@ -511,6 +511,11 @@ class Actions:
     notice: DeltaGenerator
 
 
+def paste_button_key(table: GridTable) -> str:
+    """작업 줄 「Excel 붙여넣기」 단추 key — 팝업 호스트의 여는 콜백이 그 단추를 가리킨다."""
+    return f"{table.editor_key}_open_paste"
+
+
 def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actions:
     """표 위 작업 줄 — 「변경사항 적용」 · 「Excel 붙여넣기」 · 「편집 취소」(초안이 있을 때) ·
     「고칠 칸 n개」(칸 오류가 있을 때)와 그 아래 칸(거름 밖 표지 · 큰 표 표지 · 알림 자리). 기준
@@ -534,7 +539,7 @@ def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actio
         st.button(
             "Excel 붙여넣기",
             icon=":material/content_paste:",
-            key=f"{table.editor_key}_open_paste",
+            key=paste_button_key(table),
             on_click=open_paste,
         )
         if pending:

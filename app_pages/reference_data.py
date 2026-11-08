@@ -18,7 +18,9 @@
   설비대수 보유 · 대여 · 가용)는 카드를 세우지 않는다. 그리드 표의 필터는 보기만 좁히고(브라우저가
   거른다) 초안이 업무 키라 잠그지 않는다.
 - 작업 버튼(변경사항 적용·Excel 붙여넣기·편집 취소, STEP 추가·삭제)은 표 **위**다. 붙여넣기와
-  STEP 추가·삭제는 팝업이다.
+  STEP 추가·삭제는 팝업이다. 「Excel 붙여넣기」 는 키 붙은 팝업 호스트(`DIALOG_HOST`)가 불러
+  여닫아도 페이지를 다시 계산하지 않는다(2026-11-08 사용자 답 U5). STEP 추가·삭제는 같은 열림 칸을
+  쓰되 페이지가 부른다.
 - 설명은 Guide(`guides/reference_data.md`)다.
 """
 
@@ -35,10 +37,12 @@ from capa_simulation import alerts
 from capa_simulation.components import reference_grid
 from capa_simulation.components.column_filter import PROCESS_COLUMN, render_column_filter_controls
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import DialogBody, DialogHost, DialogPicker
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.month_editor import (
     classification_styled,
     paste_dialog,
+    paste_widget_keys,
     scope_text,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
@@ -131,7 +135,11 @@ CARD_NAME = "reference_data"
 # 선다.
 SCREEN = "기준 정보"
 # 지금 열린 팝업: 편집 표 key(붙여넣기) 또는 `STEP_DIALOG`. 한 칸이라 한 회차에 팝업은 하나다.
+# 붙여넣기는 키 붙은 호스트 프래그먼트가 부른다(`components/dialog_host.py` — 여는 콜백 뒤 · 닫기
+# 뒤 호스트만 돈다). STEP 추가·삭제는 같은 칸을 쓰되 페이지가 부른다(호스트는 그 값을 지우지 않고
+# 빈 자리만 쓴다).
 DIALOG_KEY = f"reference_data{PAGE_DIALOG_SUFFIX}"
+DIALOG_HOST = DialogHost("reference_data_dialog_host", DIALOG_KEY)
 STEP_DIALOG = "step"
 EDITOR_UPEH = "capa_upeh_editor"
 EDITOR_RUN_RATE = "capa_run_rate_editor"
@@ -1171,8 +1179,49 @@ RATIO_EMPTY_TEXT = "이 기간에 {label} 행이 없습니다."
 RATIO_EMPTY_HELP = "모든 경로를 측정률 1.0 으로 계산합니다. 이 표에서는 행을 더할 수 없습니다."
 
 
-def _open_grid_paste(editor_key: str) -> None:
-    st.session_state[DIALOG_KEY] = editor_key
+def _grid_paste_dialog(table_name: str, grid: reference_grid.GridTable) -> None:
+    """그 표의 「Excel 붙여넣기」 팝업 — 호스트(`DIALOG_HOST`)가 부른다.
+
+    호스트만 도는 여는 회차의 표 · 양식은 직전 앱 전체 회차의 것이다. 양식은 이 세션의 활성
+    시나리오(세션 편집본)에서 만든 것이라 다른 세션의 저장이 바꾸지 않고, 이 세션이 그것을 바꾸는
+    조작(적용 · 리비전 불러오기 · 조회기간)은 모두 앱 전체 회차라 낡지 않는다. 그 표 초안(버려질
+    편집 알림)은 팝업 본문에서 지금 세션 값으로 다시 센다.
+
+    왕복 CSV·붙여넣기는 전체 표 계약이다(걸러진 표를 넘기면 나머지 공정을 그 기간에서 지운다).
+    붙여넣기도 그리드와 같은 하한·상한·정수 규칙을 지난다(그리드만 막으면 붙여넣은 85·1.2·음수·
+    일수 30.5 가 들어온다).
+    """
+    fmt = reference_grid.GRID_FORMATS[table_name]
+    paste_dialog(
+        grid.template,
+        table_name=TABLE_NAMES[table_name],
+        dimensions=list(grid.dimensions),
+        file_name=f"{table_name}_{effective_start_month}_{effective_end_month}.csv",
+        editor_key=grid.editor_key,
+        host=DIALOG_HOST,
+        on_paste=_paste_into(_editor(table_name, grid.template)),
+        rename_notice=bool(grid.labels),
+        min_value=fmt.min_value,
+        max_value=fmt.max_value,
+        integer=fmt.integer,
+        pending_notice=reference_grid.paste_notice(table_name),
+    )
+
+
+def _paste_picker(table_name: str, grid: reference_grid.GridTable | None) -> DialogPicker:
+    """호스트가 열림 값으로 고를 팝업 — 지금 표의 편집 표 key 일 때만 그 표 붙여넣기 팝업이다
+    (`STEP_DIALOG` 등 다른 값은 None — 호스트는 빈 자리만 쓴다)."""
+
+    def pick(value: object) -> DialogBody | None:
+        if grid is None or value != grid.editor_key:
+            return None
+        return partial(_grid_paste_dialog, table_name, grid)
+
+    return pick
+
+
+def _paste_widget_keys(value: object) -> tuple[str, ...]:
+    return paste_widget_keys(str(value))
 
 
 # 편집 표를 고른 회차 — 표 조건(사이드바) → 작업 줄(표 위) → 그리드. 그리드 자리는 종류와 상관없이
@@ -1204,7 +1253,9 @@ if current_grid is not None:
             )
         grid_actions = reference_grid.render_actions(
             current_grid,
-            open_paste=partial(_open_grid_paste, current_grid.editor_key),
+            open_paste=DIALOG_HOST.opener(
+                current_grid.editor_key, reference_grid.paste_button_key(current_grid)
+            ),
         )
     with grid_box:
         reference_grid.render_grid(
@@ -1212,29 +1263,12 @@ if current_grid is not None:
             key_prefix=grid_filter_prefix,
             scope=scope_text(current_grid.template, grid_visible, current_grid.months),
         )
-    if st.session_state.get(DIALOG_KEY) == current_grid.editor_key:
-        grid_editor = _editor(current_dataset, current_grid.template)
-        fmt = reference_grid.GRID_FORMATS[current_dataset]
-        # 왕복 CSV·붙여넣기는 전체 표 계약이다(걸러진 표를 넘기면 나머지 공정을 그 기간에서
-        # 지운다). 붙여넣기도 그리드와 같은 하한·상한·정수 규칙을 지난다(그리드만 막으면 붙여넣은
-        # 85·1.2·음수·일수 30.5 가 들어온다).
-        paste_dialog(
-            current_grid.template,
-            table_name=TABLE_NAMES[current_dataset],
-            dimensions=list(current_grid.dimensions),
-            file_name=f"{current_dataset}_{effective_start_month}_{effective_end_month}.csv",
-            editor_key=current_grid.editor_key,
-            dialog_key=DIALOG_KEY,
-            on_paste=_paste_into(grid_editor),
-            rename_notice=bool(current_grid.labels),
-            min_value=fmt.min_value,
-            max_value=fmt.max_value,
-            integer=fmt.integer,
-            pending_notice=reference_grid.paste_notice(current_dataset),
-        )
 else:
     with grid_box:
         reference_grid.render_grid(None)
+# 「Excel 붙여넣기」 팝업의 호스트 — 매 앱 전체 회차 빠짐없이(읽기 보기를 고른 회차에도), 여는
+# 단추를 그린 뒤 · 아래 「변경사항 적용」 보다 앞이다. 이벤트 칸에 늘 한 자리를 쓴다.
+DIALOG_HOST.render(_paste_picker(current_dataset, current_grid), widget_keys=_paste_widget_keys)
 
 # 「변경사항 적용」 — 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에). 아니면 양식에
 # 초안을 업무 키로 덮어 옛 편집표와 같은 적용 길을 탄다(업무 규칙 오류는 문장으로, 초안은 남긴다).

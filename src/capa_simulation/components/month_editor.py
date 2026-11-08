@@ -8,6 +8,9 @@
 
 - `paste_dialog` — 「Excel 붙여넣기」 표 전체 팝업(CSV 양식 왕복). **왕복 CSV·붙여넣기는 전체 표
   계약이다** — 걸러진 표를 넘기면 그 부분 표가 검증을 통과해 나머지 공정을 조회기간에서 지운다.
+  팝업은 부르는 화면의 팝업 호스트(`components/dialog_host.DialogHost`)가 부른다 — 여닫아도 페이지를
+  다시 계산하지 않는다(2026-11-08 사용자 답 U5 · 설계 규칙 UI-PRF-01). 입력 위젯 key 는
+  `paste_widget_keys` 다.
 - `scope_text` — 표 아래 상태 줄의 「편집 범위」 값 글(월 · 개월 수 · 행 수 · 필터로 보이는 행 수).
 - `classification_styled` — 분류 컬럼 배경색(작은 표만 — `CLASSIFICATION_STYLE_MAX_CELLS`).
 - `float_month_columns` — 정수 dtype 월 칸을 실수로(생산 계획 편집표가 소수를 버리지 않게).
@@ -25,10 +28,12 @@ import pandas as pd
 import streamlit as st
 from pandas.io.formats.style import Styler
 
+from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.paste_form import refuse_paste
 from capa_simulation.components.reference_csv_tools import render_reference_clipboard_form
 from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import bootstrap_error_message
+from capa_simulation.sidebar_status import keeps_app_run_open
 
 # 화면은 표시명이지만 CSV 양식과 붙여넣기 검증은 원본 공정명 계약이다. 표시명이 있는 표의 붙여넣기
 # 창을 연 회차에 알린다 — 창 안에 글을 두지 않는다(2026-11-05 검수 static-37).
@@ -95,6 +100,17 @@ def classification_styled(
     return styler
 
 
+def _form_key(editor_key: str) -> str:
+    return f"{editor_key}_csv"
+
+
+def paste_widget_keys(editor_key: str) -> tuple[str, ...]:
+    """그 표 「Excel 붙여넣기」 팝업의 입력 위젯 key — 호스트가 닫을 때 지운다
+    (`DialogHost.render(widget_keys=)`). 남기면 앱 전체 회차 없이 다시 연 창에서 여는 알림이 뜨지
+    않는다(`paste_form.announce_on_open` 은 글 칸 값이 없을 때 방금 열린 것으로 본다)."""
+    return (f"{_form_key(editor_key)}_clipboard",)
+
+
 def paste_dialog(
     data: pd.DataFrame,
     *,
@@ -102,7 +118,7 @@ def paste_dialog(
     dimensions: list[str],
     file_name: str,
     editor_key: str,
-    dialog_key: str,
+    host: DialogHost,
     on_paste: Callable[[pd.DataFrame], None],
     rename_notice: bool,
     min_value: float | None,
@@ -112,7 +128,10 @@ def paste_dialog(
 ) -> None:
     """「Excel 붙여넣기」 팝업(표 전체 CSV 양식 — 붙여넣어 적용하면 팝업이 닫힌다).
 
-    `table_name` 은 창 제목 · 글 칸 이름 · 거부 글에 쓰는 화면 이름이다(파일 이름은 `file_name`).
+    `host` 의 호스트 프래그먼트 안에서 부른다(`DialogHost.render` 가 고른 팝업 함수) — 닫기(X ·
+    바깥 · Esc)는 `host.close` 라 호스트만 돌고, 적용에 성공하면 `host.finish()` 로 열림 칸 · 입력
+    위젯 값을 지우고 앱 전체를 다시 돌린다(원본이 바뀌었다). `table_name` 은 창 제목 · 글 칸 이름 ·
+    거부 글에 쓰는 화면 이름이다(파일 이름은 `file_name`).
     `pending_notice` 는 그 표에 적용하지 않은 편집이 있을 때 창을 연 회차의 알림 글이다 —
     붙여넣기를 적용하면 원본이 바뀌어 그 편집을 버리므로 버리기 전에 말한다(창 안에 그리지 않는다
     — 공통 부품 `components/paste_form`). 편집이 어디에 사는지(편집표 위젯·그리드 초안)는 부르는
@@ -120,12 +139,10 @@ def paste_dialog(
     `min_value`·`max_value`·`integer` 는 그 표 그리드 칸의 하한·상한·정수 규칙이다.
     """
 
-    def _close() -> None:
-        st.session_state.pop(dialog_key, None)
-
-    @st.dialog(f"Excel 붙여넣기 · {table_name}", width="large", on_dismiss=_close)
+    @st.dialog(f"Excel 붙여넣기 · {table_name}", width="large", on_dismiss=host.close)
+    @keeps_app_run_open
     def _body() -> None:
-        form_key = f"{editor_key}_csv"
+        form_key = _form_key(editor_key)
         opening = " ".join(
             text for text in (pending_notice, RENAME_HELP if rename_notice else None) if text
         )
@@ -147,8 +164,7 @@ def paste_dialog(
         except (KeyError, ValueError) as exc:
             refuse_paste(form_key, bootstrap_error_message(exc))
             return
-        _close()
-        st.rerun()
+        host.finish()
 
     _body()
 

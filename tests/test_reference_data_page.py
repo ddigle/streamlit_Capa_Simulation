@@ -2381,3 +2381,149 @@ def test_a_display_order_swap_reorders_the_cached_edit_table(
     app.run()
     assert not app.exception
     assert processes() == ["Process-A", "Process-B"]
+
+
+# 앱 전체 회차의 시작 · 끝 표지를 단 대본 — 팝업 호스트의 여는 콜백이 호스트만 돌릴 수 있는지 그
+# 표지로 가른다(`sidebar_status.fragment_rerun_is_safe`). 표시명이 있어 창을 연 회차에 알림(PA-01)이
+# 선다.
+FRAGMENT_SCRIPT = (
+    "from capa_simulation.sidebar_status import begin_app_run\n"
+    "app_run = begin_app_run()\n" + RENAMED_TEST_SCRIPT + "app_run.finish()\n"
+)
+PASTE_HOST_KEY = "reference_data_dialog_host"
+UPEH_PASTE_TEXT_KEY = "capa_upeh_editor_csv_clipboard"
+
+
+def _event_slots(app_messages: Any) -> dict[int, tuple[str, str]]:
+    """이벤트 칸(본문 밖 최상위 칸) 자리마다 (종류, 프래그먼트 id)."""
+    from streamlit.proto.RootContainer_pb2 import RootContainer
+
+    slots: dict[int, tuple[str, str]] = {}
+    for message in app_messages:
+        if message.WhichOneof("type") != "delta":
+            continue
+        path = list(message.metadata.delta_path)
+        if len(path) != 2 or path[0] != RootContainer.EVENT:
+            continue
+        delta = message.delta
+        kind = (
+            str(delta.add_block.WhichOneof("type"))
+            if delta.WhichOneof("type") == "add_block"
+            else str(delta.new_element.WhichOneof("type"))
+        )
+        slots[path[1]] = (kind, delta.fragment_id)
+    return slots
+
+
+def test_opening_and_closing_the_paste_dialog_runs_only_its_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """「Excel 붙여넣기」 를 여닫아도 페이지를 다시 계산하지 않는다 — 여는 콜백 뒤 호스트
+    (`reference_data_dialog_host`)만 돌고 닫기(X · 바깥 · Esc)도 호스트만 돈다(2026-11-08 사용자 답
+    U5, 설계 규칙 UI-PRF-01 — 전에는 열기 · 닫기가 앱 전체 회차였다). 팝업은 호스트가 앱 전체 회차에
+    잡아 둔 이벤트 칸 한 자리에 서고 그 자리로 돌아간다. 닫으면 글 칸 값을 지워 다시 연 창이 여는
+    알림을 또 낸다."""
+    from fragment_browser import install_fragment_browser
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["UPEH"]
+    app.run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+    page_slots = _event_slots(browser.messages)
+    (host_slot,) = [index for index, slot in page_slots.items() if slot[1] == host]
+    assert page_slots[host_slot][0] == "html"
+    open_id = app.button(key="capa_upeh_editor_open_paste").id
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert all(
+        message.delta.fragment_id
+        for message in browser.messages
+        if message.WhichOneof("type") == "delta"
+    ), "페이지가 다시 돌았다"
+    assert _event_slots(browser.messages) == {host_slot: ("dialog", host)}
+    assert app.text_area(key=UPEH_PASTE_TEXT_KEY).label == "UPEH 표 붙여넣기"
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    dialog_id = browser.dialog_widget_id()
+    dialog = browser.fragment_of(UPEH_PASTE_TEXT_KEY)
+
+    app.text_area(key=UPEH_PASTE_TEXT_KEY).set_value("남은글")
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert app.session_state[UPEH_PASTE_TEXT_KEY] == "남은글"
+
+    browser.send_trigger(app, dialog_id, [host])
+    assert not app.exception
+    assert browser.started == [[host]]
+    assert _event_slots(browser.messages) == {host_slot: ("html", host)}
+    assert "reference_data_open_dialog" not in app.session_state
+    assert UPEH_PASTE_TEXT_KEY not in app.session_state, "닫은 팝업의 글 칸 값이 세션에 남았다"
+
+    browser.send_trigger(app, open_id, [])
+    assert not app.exception
+    assert browser.started == [[], [host]]
+    assert [note.code for note in flashed(app, "warning")] == ["PA-01"]
+    assert app.text_area(key=UPEH_PASTE_TEXT_KEY).value == ""
+
+
+def test_applying_the_paste_reruns_the_whole_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """붙여넣기 적용은 활성 시나리오를 바꾼다 — 팝업 회차 뒤 앱 전체 회차가 돌아 결과 알림이 작업 줄
+    아래 서고 팝업은 닫힌다. 사람 속도의 둘째 누름이 닫힌 팝업 본문을 다시 돌리지 않는다."""
+    from fragment_browser import install_fragment_browser
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["일수"]
+    app.run()
+    assert not app.exception
+    app.button(key="capa_run_day_editor_open_paste").click().run()
+    assert not app.exception
+    dialog = browser.fragment_of("capa_run_day_editor_csv_clipboard")
+
+    app.text_area(key="capa_run_day_editor_csv_clipboard").set_value(
+        "공정\t202608\nProcess-A\t29\n"
+    )
+    next(button for button in app.button if button.label == "붙여넣기 적용").click()
+    pressed = app._tree.get_widget_states()
+    browser.fragment_queue = [dialog]
+    app.run()
+    assert not app.exception
+    assert browser.started[0] == [dialog]
+    assert browser.started[-1] == []
+    assert "reference_data_open_dialog" not in app.session_state
+    saved = app.session_state["test_month_updates"]["RQ_RUN_DAY"]
+    assert dict(zip(saved["공정"], saved["RUN_DAY"], strict=True)) == {"Process-A": 29.0}
+    assert any("붙여넣기 데이터를" in str(item.value) for item in successes(app))
+
+    app._run(widget_state=pressed)
+    stale = [
+        message
+        for message in browser.emitted
+        if message.WhichOneof("type") == "delta" and message.delta.fragment_id == dialog
+    ]
+    assert not stale, "닫힌 팝업의 본문이 다시 돌아 걷힌 팝업 자리에 요소를 보냈다"
+
+
+def test_the_step_popup_still_opens_with_a_page_round(monkeypatch: pytest.MonkeyPatch) -> None:
+    """「STEP 추가·삭제」 는 여덟 팝업(U5)에 들지 않아 같은 열림 칸으로 페이지가 부른다 — 여는
+    회차는 앱 전체이고, 호스트는 그 값을 지우지 않고 빈 자리만 쓴다."""
+    from fragment_browser import install_fragment_browser
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_string(FRAGMENT_SCRIPT, default_timeout=60)
+    app.session_state[DATASET_KEY] = DATASET["STEP 구성"]
+    app.run()
+    assert not app.exception
+    host = browser.fragment_keyed(PASTE_HOST_KEY)
+
+    app.button(key="open_capacity_step_dialog").click().run()
+    assert not app.exception
+    assert browser.started == [[]]
+    assert app.session_state["reference_data_open_dialog"] == "step"
+    slots = _event_slots(browser.messages)
+    assert [slot for slot in slots.values() if slot[1] == host] == [("html", host)]
+    assert ("dialog", "") in slots.values()
