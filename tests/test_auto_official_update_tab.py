@@ -58,6 +58,7 @@ from capa_simulation.components.auto_official_update_tab import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_picker import auto_off_mark_line, tile_tooltip_text
+from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE
 from capa_simulation.components.required_exclusion_notice import (
     REQUIRED_TAB_GOTO,
     UNCOUNTED_DEMAND_LEAD,
@@ -497,6 +498,12 @@ def test_saving_the_settings_records_what_changed(database: Path) -> None:
     ]
     # 칸이 저장본을 따라온다(키 없는 칸).
     assert _field(app.text_input, "시뮬레이션명 키워드").value == "PSS"  # type: ignore[attr-defined]
+    # 공용 버전 줄은 「설정」 제목 옆 한 줄이다(2026-11-08 그림 메모 g18 — `render_profile_heading`
+    # 만 버전 줄 끝에 글자 밑줄 맞춤 규칙을 싣는다).
+    versions = [
+        str(item.value) for item in app.caption if str(item.value).startswith("공용 버전 v1")
+    ]
+    assert versions and all(text.endswith(HEADING_BASELINE_STYLE) for text in versions)
     assert "**다음 실행**" not in _markdown(app)
 
 

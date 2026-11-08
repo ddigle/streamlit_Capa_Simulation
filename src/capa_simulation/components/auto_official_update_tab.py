@@ -67,7 +67,7 @@ from capa_simulation.components.literal_markdown import (
     quoted,
 )
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.scenario_management_tabs import AUTO_UPDATE_TAB_NAME
 from capa_simulation.components.write_guard import (
@@ -438,12 +438,12 @@ def _render_settings_form(
     submitted_base = seen(SETTINGS_BASE_VERSION_KEY)
     config = settings.config
     with st.container(border=True):
-        st.markdown("#### :material/tune: 설정")
-        st.caption(
-            profile_version_caption(
-                settings,
-                empty=f"아직 저장하지 않아 기본값({_config_line(DEFAULT_CONFIG)})을 씁니다",
-            )
+        # 공용 버전 줄은 제목 옆 한 줄이다(2026-11-08 그림 메모 g18).
+        render_profile_heading(
+            "#### :material/tune: 설정",
+            settings,
+            key="auto_official_update_settings",
+            empty=f"아직 저장하지 않아 기본값({_config_line(DEFAULT_CONFIG)})을 씁니다",
         )
         with st.form("auto_official_update_settings_form"):
             enabled = st.toggle(

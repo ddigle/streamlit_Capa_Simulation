@@ -52,7 +52,7 @@ import streamlit as st
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.components.profile_caption import profile_version_caption
+from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
@@ -262,7 +262,14 @@ def render_manual_downtime_tab(
 
 
 def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
-    st.markdown("#### :material/event_busy: 월별 비가동 대수(입력)", help=MANUAL_INTRO_HELP)
+    # 공용 버전 줄은 제목 옆 한 줄이다(2026-11-08 그림 메모 g18).
+    render_profile_heading(
+        "#### :material/event_busy: 월별 비가동 대수(입력)",
+        profile,
+        key="manual_downtime",
+        empty="아직 넣은 입력 비가동이 없습니다",
+        help=MANUAL_INTRO_HELP,
+    )
     period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"
     outside = sum(1 for _, month, _ in profile.rows if month not in set(months))
     st.caption(
@@ -270,7 +277,6 @@ def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
         + (f" · 조회기간 밖 저장 {outside}칸" if outside else ""),
         help=MANUAL_COLUMNS_HELP,
     )
-    st.caption(profile_version_caption(profile, empty="아직 넣은 입력 비가동이 없습니다"))
 
 
 def _render_editor(

@@ -38,6 +38,7 @@ from capa_simulation.components.manual_downtime_tab import (
     manual_tab_processes,
 )
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE
 from capa_simulation.components.write_guard import TRAILING_PRESS_SECONDS
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -167,7 +168,13 @@ def test_a_save_without_saver_and_memo_shows_a_caption_without_doubled_separator
 
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (stored.version, stored.saved_by, stored.note) == (1, "", "")
-    captions = [item.value for item in app.caption if item.value.startswith("공용 버전 ")]
+    # 버전 줄은 제목 옆 한 줄이다(g18 — `render_profile_heading`, 글자 밑줄 맞춤 규칙이 끝에
+    # 붙는다).
+    captions = [
+        item.value.removesuffix(HEADING_BASELINE_STYLE)
+        for item in app.caption
+        if item.value.startswith("공용 버전 ")
+    ]
     assert stored.updated_at is not None
     assert captions == [f"공용 버전 v1 · {stored.updated_at:%Y-%m-%d %H:%M}"]
 
