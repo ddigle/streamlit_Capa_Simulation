@@ -25,6 +25,25 @@ def test_registry_codes_are_unique_well_formed_and_levelled() -> None:
     assert set(alerts.REGISTRY) == set(codes)
 
 
+@pytest.mark.parametrize(
+    ("code", "level", "title"),
+    [
+        ("EQ-19", "check", "설비 마스터 — 다른 사용자가 일정을 저장해 최신 리비전이 있음"),
+        ("RS-03", "check", "필요 단축 일정 — 일정 미정 호기"),
+        ("RS-04", "info", "필요 단축 일정 — 사용기준(HBM · EDP) 밖 호기를 셈에서 뺌"),
+        ("RS-05", "check", "필요 단축 일정 — 입력 비가동 반영 · 가용 넘침"),
+    ],
+)
+def test_state_codes_for_the_screen_bundles_are_registered(
+    code: str, level: str, title: str
+) -> None:
+    """설비 마스터 남의 저장 표지 · 필요 단축 일정 머리 표지가 낼 상태 알림 코드는 등록부에 먼저
+    선다 —
+    부르는 자리를 짓는 쪽이 이 코드로 낸다."""
+    spec = alerts.spec(code)
+    assert (spec.level, spec.kind, spec.title) == (level, "state", title)
+
+
 def test_the_registry_refuses_a_duplicate_or_malformed_code() -> None:
     first = alerts.AlertSpec("ZZ-01", "info", "event", "시험")
     with pytest.raises(ValueError, match="겹칩니다"):
