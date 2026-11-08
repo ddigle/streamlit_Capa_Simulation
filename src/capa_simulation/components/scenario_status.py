@@ -41,6 +41,7 @@ from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_edit_bar import (
     forget_pending_edits,
@@ -800,12 +801,15 @@ def _render_revision_save(
         # 끝났고 고칠 입력이 이 자리에 없어 시나리오 칸 밑 상자 없이 알림창 · Alarm 에만 낸다 —
         # 소요대수에 들지 않은 수요(2026-11-04 검수 의견 home-18)도, 남은 계산 오류(공식 지정이
         # 막힘 — 설계 규칙 AMB-05 (나))도 같다.
+        # 소요대수에 들지 않은 수요의 「그 화면으로」 는 저장한 화면이 아니라 목록이 서는 산출
+        # 결과 › 소요대수다.
         queue_flash(
             SIDEBAR_FLASH_WARNING_KEY,
             markdown_safe_tildes(verdict.message),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
+            goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
         )
     _settle(
         "신규 리비전을 저장했습니다."

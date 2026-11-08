@@ -58,7 +58,10 @@ from capa_simulation.components.auto_official_update_tab import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_picker import auto_off_mark_line, tile_tooltip_text
-from capa_simulation.components.required_exclusion_notice import UNCOUNTED_DEMAND_LEAD
+from capa_simulation.components.required_exclusion_notice import (
+    REQUIRED_TAB_GOTO,
+    UNCOUNTED_DEMAND_LEAD,
+)
 from capa_simulation.persistence.models import AutoOfficialUpdateRun, ScenarioPreset
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.auto_official_update import (
@@ -692,6 +695,10 @@ def test_run_now_shows_uncounted_demand_as_a_warning_after_the_success(database:
     assert (kind, icon) == ("warning", ":material/warning:")
     assert text.startswith(f"{UNCOUNTED_DEMAND_LEAD}(시나리오 전체 기간) — ")
     assert [item.code for item in flashed(app, "warning")] == ["FL-03"]
+    # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    (warned,) = flashed(app, "warning")
+    assert warned.note is not None
+    assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
     assert not app.warning
     assert "생산수량이 비어 계획 없음으로 본 계획 1건" in text
     run = repository.list_auto_official_update_runs()[0]

@@ -44,6 +44,7 @@ from capa_simulation.components.flash import (
 from capa_simulation.components.grid_shared import outbox_mount, outbox_value
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.save_section import discard_popover
 from capa_simulation.components.scenario_list_state import (
@@ -1374,11 +1375,13 @@ def _render_official(
             _refuse_official(official_moved_message(exc.current))
         # 같은 단추의 빠른 두 번 누름이다 — 첫 누름이 이미 지정했다(write_guard). 첫 누름의 뒷정리가
         # 끊겼을 수 있어 여기서 다시 한다(경고 글은 첫 누름의 회차가 냈다).
-        _official_published(current, revision_id, warning=None)
+        _official_published(current, revision_id, warning=None, exclusion=False)
     except BOOTSTRAP_ERRORS as exc:
         _refuse_official(bootstrap_error_message(exc))
     remember_own_save(OFFICIAL_SAVE_NAME, expected_no, release.release_no, save_marks)
-    _official_published(release, revision_id, warning=verdict.message or None)
+    _official_published(
+        release, revision_id, warning=verdict.message or None, exclusion=verdict.exclusion
+    )
 
 
 def _official_published(
@@ -1386,9 +1389,11 @@ def _official_published(
     revision_id: str,
     *,
     warning: str | None,
+    exclusion: bool,
 ) -> NoReturn:
     """공식 지정 뒤 이 세션의 뒷정리 — 알림을 담고 팝업을 닫고 다음 회차가 새 공식을 싣게 한 뒤 앱을
-    다시 돌린다."""
+    다시 돌린다. `exclusion` 은 `warning` 이 소요대수에 들지 않은 수요 경고라는 표지다
+    (`capacity_gate.GateVerdict.exclusion`)."""
     queue_flash(
         FLASH_KEY,
         f"공식 v{release.release_no} · {literal_markdown(release.release_name)}"
@@ -1398,12 +1403,14 @@ def _official_published(
     # 끝났고 고칠 입력이 이 자리에 없어 버튼 곁 상자 없이 알림창 · Alarm 에만 낸다(사이드바 리비전
     # 저장과 한 꼴 — 2026-11-04 검수 의견 home-18).
     if warning:
+        # 소요대수에 들지 않은 수요의 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
         queue_flash(
             FLASH_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
+            goto=REQUIRED_TAB_GOTO if exclusion else None,
         )
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
@@ -1966,12 +1973,14 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             # 이 자리에 없어 알림창 · Alarm 에만 낸다 — 소요대수에 들지 않은 수요(2026-11-04 검수
             # 의견 home-18)도, 남은 계산 오류(설계 규칙 AMB-05 (나))도 사이드바 리비전 저장과 한
             # 꼴이다.
+            # 소요대수에 들지 않은 수요의 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
             queue_flash(
                 FLASH_WARNING_KEY,
                 markdown_safe_tildes(verdict.message),
                 kind="warning",
                 icon=":material/warning:",
                 popup_only=True,
+                goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
             )
         bump(CLONE_FORM_GENERATION_KEY)
         written.release()

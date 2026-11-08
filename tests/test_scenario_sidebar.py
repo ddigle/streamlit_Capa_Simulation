@@ -21,6 +21,7 @@ from capa_simulation.components.equipment_scenario_management import (
     CAPA_SCENARIO_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
+from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.scenario_management import DISCARD_LOCK_HELP
 from capa_simulation.components.scenario_status import (
     LOAD_MODE,
@@ -633,6 +634,9 @@ def test_a_save_with_an_old_error_is_kept_and_warned(sidebar_app: AppTest) -> No
     assert warned.value == "공식버전으로 지정할 수 없습니다"
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
+    # 남은 계산 오류는 목록 자리가 없다 — 「그 화면으로」 는 저장한 화면 그대로다(u3-04 는 소요대수
+    # 경고만).
+    assert warned.note.get("tab", "") != "소요대수"
     # 다음 회차에는 다시 내지 않는다(한 번뿐인 결과 알림).
     app.run()
     assert not flashed(app, "warning")
@@ -659,6 +663,8 @@ def test_a_save_that_leaves_demand_out_warns_only_through_the_alert_popup(
     assert warned.value == message
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
+    # 「그 화면으로」 는 저장한 화면이 아니라 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
 
 
 @pytest.mark.parametrize("allowed", [False, True])

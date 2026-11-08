@@ -238,6 +238,48 @@ render_flash("demo_flash")
     ]
 
 
+def test_a_flash_can_point_its_goto_at_another_screen_and_tab() -> None:
+    """목록이 다른 화면에 있는 결과 알림은 `goto` 로 그 화면 · 탭을 싣는다 — 줄의 「그 화면으로」 가
+    낸 화면 대신 그 탭을 연다(u3-04 — 소요대수에 들지 않은 수요 → 산출 결과 › 소요대수). 탭 없는
+    두 칸 꼴도 받고, 주지 않으면 낸 화면(`note_page`)이다. 세션 칸은 튜플이라 코드를 다시 읽은
+    서버도 그대로 읽는다."""
+    script = """
+import streamlit as st
+
+from capa_simulation import alerts
+from capa_simulation.components.flash import queue_flash, render_flash
+
+alerts.note_page("시나리오 관리", "scenario_management")
+queue_flash(
+    "with_tab",
+    "빠진 수요 2건",
+    kind="warning",
+    popup_only=True,
+    goto=("산출 결과", "calculation_result", "소요대수"),
+)
+queue_flash("no_tab", "다른 화면 성공", goto=("기준 정보", "reference_data"))
+queue_flash("here", "제자리 경고", kind="warning", popup_only=True)
+st.session_state["shape"] = st.session_state["no_tab"]
+st.session_state["old"] = ("warning", "옛 칸", None, None, True, (), ["깨진", "화면"])
+render_flash("with_tab", "no_tab", "here", "old")
+"""
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    pages = [
+        (item.value, item.note["page"], item.note["href"], item.note.get("tab", ""))
+        for item in flashed(app)
+        if item.note is not None
+    ]
+    assert pages == [
+        ("빠진 수요 2건", "산출 결과", "calculation_result", "소요대수"),
+        ("다른 화면 성공", "기준 정보", "reference_data", ""),
+        ("제자리 경고", "시나리오 관리", "scenario_management", ""),
+        ("옛 칸", "시나리오 관리", "scenario_management", ""),
+    ]
+    # 화면을 실은 성공은 글만 담는 꼴이 아니다 — 화면 칸을 잃지 않는다.
+    assert isinstance(app.session_state["shape"], tuple)
+
+
 def test_render_flash_writes_exactly_one_event_slot_with_or_without_alerts() -> None:
     """표지는 부를 때마다 이벤트 칸에 정확히 한 자리다 — 알림이 없으면 빈 스타일. 프래그먼트 · 팝업
     본문의 이벤트 칸 자리 수가 갈래와 상관없이 같아야 한다(AGENTS 9장)."""

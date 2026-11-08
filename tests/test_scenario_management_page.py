@@ -30,6 +30,7 @@ import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.bigdataquery_registration import CATALOG_START_DATE_KEY
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.scenario_list_grid import (
     CHANGES_KEY,
     LIST_SIDE,
@@ -586,6 +587,8 @@ def test_clone_that_leaves_demand_out_warns_only_through_the_alert_popup(
     assert warned.value == message
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
+    # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
 
 
 def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
@@ -1357,6 +1360,8 @@ def test_official_release_with_demand_left_out_of_the_requirement_warns_after_pu
     assert "부하량에서 빠진 계획" in warned.value
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
+    # 「그 화면으로」 는 지정한 화면이 아니라 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
 
 
 def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(

@@ -43,7 +43,7 @@ PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림�
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Literal, NamedTuple
+from typing import Final, Literal, NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -57,6 +57,8 @@ from capa_simulation.components.state_alerts import (
     alarm_table_place,
     alert_table,
 )
+from capa_simulation.navigation import STATIC_CAPA_SUBPAGES
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_REQUIRED
 from capa_simulation.services.load_calculator import PLAN_QUANTITY_BLANK_REASON
@@ -84,6 +86,12 @@ REQUIRED_LIST_PLACE = "산출 결과 › 소요대수"
 REQUIRED_LIST_NOTE = "목록은 산출 결과 → 소요대수 탭을 열면 서는 Alarm 줄의 표입니다."
 REQUIRED_LIST_NOTE_THIS_ROW = "목록은 Alarm 의 이 줄에 딸린 표입니다."
 REQUIRED_LIST_NOTE_ON_PAGE = "목록은 산출 결과 → 소요대수 탭에 있습니다."
+# 저장 · 지정 · 복제 · 「지금 실행」 뒤의 이 경고(사건 알림)가 「그 화면으로」 로 열 자리 — 목록이
+# 서는 산출 결과 › 소요대수 탭(이름, 주소, 탭). 알림을 낸 화면에는 목록이 없다.
+_CALCULATION_RESULT: Final = next(
+    spec for spec in STATIC_CAPA_SUBPAGES if spec.path == "app_pages/calculation_result.py"
+)
+REQUIRED_TAB_GOTO: Final = (tab_label(_CALCULATION_RESULT), _CALCULATION_RESULT.href, "소요대수")
 # 제외 목록(Alarm 줄의 표) 이름. 2026-11-02 · 11-05 사용자 요청(검수표) 전에는 탭 본문 펼침이었다.
 CAPACITY_EXCLUSION_TITLE = "제외 기준정보"
 REQUIRED_EXCLUSION_TITLE = "소요대수 제외 기준정보"
