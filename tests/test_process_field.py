@@ -233,6 +233,7 @@ def picker(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def fake(**kwargs: Any) -> PickerResult | None:
         box["calls"].append(kwargs)
         result, box["result"] = box["result"], None
+        assert result is None or isinstance(result, PickerResult)
         return result
 
     monkeypatch.setattr(process_field, "render_process_picker_apply", fake)
