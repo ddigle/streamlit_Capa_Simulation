@@ -168,7 +168,7 @@ def _published_alerts(app: AppTest) -> tuple[tuple[str, str, str], ...]:
     index = next(
         index
         for index, (kind, _, text) in enumerate(alerts)
-        if kind == "success" and "지금 실행 회차 — 등록·발행" in text
+        if kind == "success" and "지금 실행 회차 — 등록·지정" in text
     )
     return tuple(alerts[index : index + 2])
 
@@ -191,7 +191,7 @@ def test_the_tab_shows_defaults_the_official_week_and_the_opt_in_notice(database
     assert ENV_VAR in str(switch.proto.help)
     # 「지금 실행」 이 공식버전을 바꿀 수 있다는 것은 누르기 전에 그 단추 풍선이 말한다(UI-NTF-09).
     run_now = next(button for button in app.button if button.key == RUN_NOW_BUTTON_KEY)
-    assert run_now.help == RUN_NOW_HELP and "공식버전을 발행합니다" in RUN_NOW_HELP
+    assert run_now.help == RUN_NOW_HELP and "공식버전으로 지정합니다" in RUN_NOW_HELP
     text = _markdown(app)
     assert "공식 v1 W40" in text
     # 설정 값은 바로 아래 칸이, 꺼진 실행의 「다음 실행」 은 예약 줄이 이미 말한다(UI-TXT-07).
@@ -246,7 +246,7 @@ def test_the_run_result_blocks_the_tildes_of_the_names_in_its_reason(database: P
     assert not app.exception, [element.message for element in app.exception]
 
     alerts = [text for _, _, text in _alerts(app)]
-    assert "지금 실행 회차 — 등록·발행. 「PSM\\~W41\\~X」 을 공식으로 발행했습니다" in alerts
+    assert "지금 실행 회차 — 등록·지정. 「PSM\\~W41\\~X」 을 공식으로 발행했습니다" in alerts
     assert f"{UNCOUNTED_DEMAND_LEAD} — 「공정\\~표시\\~D」." in alerts
 
 
@@ -641,7 +641,7 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
     app = app.button(key=RUN_NOW_BUTTON_KEY).click().run()
 
     assert not app.exception and not place_errors(app)
-    assert any("지금 실행 회차 — 등록·발행" in str(element.value) for element in successes(app))
+    assert any("지금 실행 회차 — 등록·지정" in str(element.value) for element in successes(app))
     # 소요대수에 들지 않은 수요가 없으면 성공 알림만 뜬다 — 밑에 빈 경고를 그리지 않는다.
     assert not [text for _, _, text in _alerts(app) if UNCOUNTED_DEMAND_LEAD in text]
     release = repository.latest_official_release()
@@ -660,15 +660,15 @@ def test_run_now_registers_judges_publishes_and_lists_the_round(database: Path) 
         "등록 시나리오",
         "자동 off",
         "이어받은 수동 off",
-        "발행",
+        "지정",
         "기준",
         "사유",
     ]
     row = history.iloc[0]
     assert row["시작"] == format(NOW, "%Y-%m-%d %H:%M")
-    assert (row["방식"], row["결과"], row["받은 코드"]) == ("지금 실행", "등록·발행", "W41 SIM-W41")
+    assert (row["방식"], row["결과"], row["받은 코드"]) == ("지금 실행", "등록·지정", "W41 SIM-W41")
     assert row["경고"] == EMPTY
-    assert row["발행"] == "공식 v2"
+    assert row["지정"] == "공식 v2"
     assert row["자동 off"] == f"1공정 · {WAFER} 자동 off(확보율 0%, 26.03)"
     assert row["이어받은 수동 off"] == "0공정"
     offs = app.dataframe[1].value
@@ -698,7 +698,7 @@ def test_run_now_shows_uncounted_demand_as_a_warning_after_the_success(database:
         "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
     )
     (success, warning) = _published_alerts(app)
-    assert success == ("success", ":material/publish:", f"지금 실행 회차 — 등록·발행. {head}")
+    assert success == ("success", ":material/publish:", f"지금 실행 회차 — 등록·지정. {head}")
     kind, icon, text = warning
     assert (kind, icon) == ("warning", ":material/warning:")
     assert text.startswith(f"{UNCOUNTED_DEMAND_LEAD}(시나리오 전체 기간) — ")

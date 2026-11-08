@@ -74,11 +74,13 @@ STATUS_SKIPPED: Final = "SKIPPED"
 STATUS_PUBLISHED: Final = "PUBLISHED"
 STATUS_PUBLISH_SKIPPED: Final = "PUBLISH_SKIPPED"
 STATUS_ERROR: Final = "ERROR"
+# 화면 이름 — 사람이 하는 일과 같이 「지정」 이다(한 개념 한 이름, UI-CON-02). 상태 값(`PUBLISHED` ·
+# `PUBLISH_SKIPPED`)은 실행 기록에 저장된 코드 이름이라 그대로 둔다.
 STATUS_LABELS: Final[dict[str, str]] = {
     STATUS_RUNNING: "실행 중",
     STATUS_SKIPPED: "건너뜀",
-    STATUS_PUBLISHED: "등록·발행",
-    STATUS_PUBLISH_SKIPPED: "등록·발행 건너뜀",
+    STATUS_PUBLISHED: "등록·지정",
+    STATUS_PUBLISH_SKIPPED: "등록·지정 건너뜀",
     STATUS_ERROR: "오류",
 }
 
@@ -91,7 +93,7 @@ STAGE_LABELS: Final[dict[str, str]] = {
     "register": "상세 조회·등록",
     "judge": "확보율 판정",
     "revision": "리비전 2 저장",
-    "publish": "공식버전 발행",
+    "publish": "공식버전 지정",
     "done": "끝",
 }
 

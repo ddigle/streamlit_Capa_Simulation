@@ -157,7 +157,8 @@ RUNNING_MESSAGE: Final = ":material/hourglass_top: **지금 실행** · 아직 �
 # 「지금 실행」 단추 풍선 — 누르면 공식버전이 바뀔 수 있다는 것을 누르기 전에 보인다(설계 규칙
 # UI-NTF-09 — 단추 풍선, UI-TXT-01 — 늘 띄워 두지 않는다).
 RUN_NOW_HELP: Final = (
-    "예약과 같은 회차를 지금 한 번 돕니다 — 새 코드가 있으면 등록·판정하고 공식버전을 발행합니다. "
+    "예약과 같은 회차를 지금 한 번 돕니다 — 새 코드가 있으면 등록·판정하고 공식버전으로 "
+    "지정합니다. "
     "켜짐·실행 줄 허락과 상관없이 돌고 결과는 아래 실행 기록에 남습니다. 같은 날 예약 회차와는 "
     "따로 셉니다(이미 받은 코드는 다시 받지 않습니다). DB 조회와 전체 기간 계산이라 몇십 초 "
     "걸릴 수 있습니다."
@@ -458,8 +459,8 @@ def _render_settings_form(
                 "자동 갱신 켜기",
                 value=config.enabled,
                 help=(
-                    "켜 두면 매일 확인 시각에 새 코드를 받아 등록·판정하고 공식버전을 발행합니다. "
-                    f"실행 줄에 `{ENV_VAR}=1` 이 있는 앱에서만 돕니다."
+                    "켜 두면 매일 확인 시각에 새 코드를 받아 등록·판정하고 공식버전으로 "
+                    f"지정합니다. 실행 줄에 `{ENV_VAR}=1` 이 있는 앱에서만 돕니다."
                 ),
             )
             with st.container(horizontal=True, gap="small"):
@@ -849,7 +850,7 @@ def run_history_frame(
                     run.inherited_off_count,
                     [labels.label(exclusion.process) for exclusion in inherited],
                 ),
-                "발행": EMPTY
+                "지정": EMPTY
                 if run.official_release_no is None
                 else f"공식 v{run.official_release_no}",
                 "기준": f"「{run.keyword}」 · {percent_text(run.threshold)}",
