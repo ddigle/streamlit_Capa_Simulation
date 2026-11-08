@@ -309,7 +309,7 @@ def render_main_case_chips(database_path: str, *, settings_ready: bool = True) -
                     type="primary" if chip.painted else "secondary",
                     disabled=chip.disabled,
                     on_click=_open_slot,
-                    args=(database_path, index, chip.target),
+                    args=(database_path, index, chip.target, chip.key),
                     width="stretch",
                 )
         # 칩으로 불러오지 못한 까닭은 알림창 · Alarm 으로만 낸다. 표지를 보내는 칸은 늘 세운다
@@ -335,10 +335,16 @@ def changed_slot_notice(index: int) -> str:
     )
 
 
-def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | None]) -> None:
+def _open_slot(
+    database_path: str,
+    index: int,
+    drawn: tuple[str | None, str | None],
+    widget_key: str | None = None,
+) -> None:
     """칩의 콜백. 그린 짝이 낡았으면 알림, 미지정이면 「HOME 설정」 팝업(`비교 · 주요 Case` 탭 —
     그 Case 칸 강조), 편집이
-    있으면 사이드바 팝업, 아니면 곧바로 올린다.
+    있으면 사이드바 팝업, 아니면 곧바로 올린다. `widget_key` 는 누른 칩의 key 다 — 「HOME 설정」 을
+    여는 갈래가 HOME 팝업 호스트만 다시 돌린다(`open_home_settings` — HOME 을 다시 계산하지 않는다).
 
     짝은 누르는 순간 다시 푼다(모듈 설명 — 콜백 인자는 그린 회차의 값이다). 팝업 열림 칸과 안쪽 탭
     key 를 적는 것은 탭 위젯이 그려지기 전(콜백)이라 그 회차의 팝업이 그 탭으로 선다. 적용 전 편집은
@@ -359,7 +365,7 @@ def _open_slot(database_path: str, index: int, drawn: tuple[str | None, str | No
     if scenario_id is None or revision_id is None:
         # 그 Case 칸을 강조해 어디서 고르는지 짚어 준다(2026-11-04 사용자 검수 home-u03).
         focus_main_case(MAIN_CASE_NUMBERS[index - 1])
-        open_home_settings(HOME_CASES_TAB)
+        open_home_settings(HOME_CASES_TAB, widget_key)
         return
     if has_unsaved_scenario_changes() or pending_edit_labels(HOME_PAGE_FILE):
         open_scenario_dialog_on(scenario_id, revision_id)

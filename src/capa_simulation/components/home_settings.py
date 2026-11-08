@@ -1,4 +1,4 @@
-# Purpose: HOME 사이드바 「HOME 설정」 상자와 그 팝업(쓰는 묶음 다섯 탭)을 둔다.
+# Purpose: HOME 사이드바 「HOME 설정」 상자 · 그 팝업(쓰는 묶음 다섯 탭)과 HOME 팝업 호스트를 둔다.
 
 """HOME 「설정」 팝업(2026-11-02 사용자 요청 — 전에는 HOME 본문의 `Preference`·`Past Data` 탭).
 
@@ -20,11 +20,22 @@
   `app_pages/home.py` 가 넘긴 함수 둘이다 — 앞 넷의 탭을 라벨로 받는 Preference 함수와 `Past Data`
   탭 본문 함수. 이 모듈은 편집기를 들이지 않는다(주요 Case 칩이 이 모듈의 여는 콜백을 쓰고, 편집기
   쪽이 칩을 그리므로 들이면 순환한다).
-- **열림 칸**: HOME 한 칸(`home_state.HOME_DIALOG_KEY` — 값 `settings`). 여는 콜백은
-  `forget_page_dialogs()` 부터 부른다(AGENTS 9장 「팝업과 콜백」 — 한 실행에 팝업 하나). 주요 Case
+- **열림 칸**: HOME 한 칸(`home_state.HOME_DIALOG_KEY` — 값 `settings`). 사이드바 조건 패널의
+  「공정 필터」 · 「주요공정 히트맵」 팝업도 같은 칸을 쓴다(값 `process_filter` · `key_process`).
+  여는 콜백은 다른 열림 칸부터 비운다(AGENTS 9장 「팝업과 콜백」 — 한 실행에 팝업 하나). 주요 Case
   의 미지정 칩도 이 콜백으로 `비교 · 주요 Case` 탭을 연다(그 Case 칸을 잠깐 강조 —
   `home_main_cases`).
-- **호스트**: 이벤트 칸에 늘 한 자리 — 열렸으면 팝업, 아니면 닫힌 팝업이 넘긴 알림 표지(없으면 빈
+- **호스트**(`HOME_DIALOG_HOST` — 화면 팝업 호스트 `components/dialog_host.py`, 2026-11-08 사용자
+  답 U5): 세 팝업은 HOME 의 키 붙은 호스트 프래그먼트 안에서 열린다. 여는 콜백(`open_home_settings`
+  · 공정 필터 · 히트맵 칸의 콜백)은 열림 칸을 적고 호스트만 다시 돌려, **열기만으로 HOME 이 다시
+  계산하지 않고 진행 막대도 뜨지 않는다**(설계 규칙 UI-PRF-01 — 전에는 열 때마다 앱 전체가 돌았다).
+  공정 필터 · 히트맵을 닫는 회차도 호스트만 돈다. 「HOME 설정」 을 닫는 회차는 앱 전체다(아래 「저장
+  뒤에도 팝업을 열어 둔다」 — 닫는 회차에 지금 조건으로 그림을 한 번 만든다, 2026-11-02 결정).
+  호스트만 도는 여는 회차에는 페이지가 돌지 않으므로 **팝업이 읽는 계산 결과**(달 · 공정 목록 ·
+  확보율 보정 대조 표)는 HOME 이 앱 전체 회차마다 세션에 남긴 것(`HomeSettingsInputs` —
+  `remember_settings_inputs`)을 읽고, 공용 저장값(프로필)은 팝업 본문이 다시 읽는다(다른 세션의
+  저장을 놓치지 않게 — `dialog_host` 「쓰는 쪽이 지키는 것」 1).
+- **이벤트 칸**: 호스트는 늘 한 자리 — 열렸으면 팝업, 아니면 닫힌 팝업이 넘긴 알림 표지(없으면 빈
   스타일 자리표시자 — `flash.emit_flash`). 팝업 안 칸이 꺼내기 전에 닫혀도 알림이 그 칸이 다시 설
   때까지 잠자지 않는다. 팝업 본문은 이벤트 칸에 쓰지 않는다(편집기는 스타일만 든 `st.html`·토스트를
   쓰지 않는다 — 주요 Case 칸 강조 서식은 그 칸 머리 줄과 한 `st.html` 에 실려 본문 칸이다).
@@ -36,7 +47,8 @@
   사이드바(GAP 토글이 잠기는지·주요 Case 칩)는 닫는 회차에 바뀐다 — 고를 때마다 앱 전체를 돌리면
   비교 계획까지 그때마다 새로 읽는데, 둘 다 모달 뒤라 열린 동안 쓸 일이 없다(2026-11-02 검토). 그
   회차의 Main 그림은 팝업을 열기 전에 그린 그림을 그대로 쓰고(`app_pages/home.py` 「팝업이 열린
-  회차」), 닫는 회차(`on_dismiss` — 앱 전체)에 지금 조건으로 한 번 만든다.
+  회차」), 닫는 회차(`on_dismiss` — `HOME_DIALOG_HOST.close_to_app`, 앱 전체)에 지금 조건으로 한 번
+  만든다.
 - **팝업 안 표에는 전체 화면 단추가 없다** — Streamlit 이 `st.dialog` 안 표의 도구 막대에서 전체
   화면을 숨긴다(전에는 HOME 본문 Preference 탭의 편집표 넷 — 판정 기준 월별·선행 B/O·선행
   입고·확보율 보정 — 에 있었다). 달이 많은 표는 팝업(`width="large"`) 안에서 가로로 넘긴다. Guide 가
@@ -53,9 +65,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from functools import partial
 
+import pandas as pd
 import streamlit as st
 
+from capa_simulation.components.dialog_host import DialogBody, DialogHost
 from capa_simulation.components.flash import emit_flash
 from capa_simulation.components.past_data_management import forget_past_paste
 from capa_simulation.components.settings_box import (
@@ -68,6 +84,7 @@ from capa_simulation.components.settings_box import (
 from capa_simulation.components.tab_marks import mark_pending_tabs
 from capa_simulation.components.tab_state import OpenTab, remember_open_tab, stateful_tabs
 from capa_simulation.home_state import (
+    HOME_DIALOG_HOST_KEY,
     HOME_DIALOG_KEY,
     HOME_PAST_TAB,
     HOME_PREFERENCE_TABS,
@@ -76,14 +93,20 @@ from capa_simulation.home_state import (
     HOME_SETTINGS_TAB_LABELS,
 )
 from capa_simulation.page_bootstrap import forget_page_dialogs
+from capa_simulation.sidebar_status import keeps_app_run_open
 
 __all__ = [
+    "HOME_DIALOG_HOST",
     "SETTINGS_BOX_KEY",
     "SETTINGS_BUTTON_KEY",
+    "SETTINGS_INPUTS_KEY",
     "SETTINGS_TITLE",
+    "HomeSettingsInputs",
     "close_home_settings",
+    "home_settings_inputs",
     "home_settings_open",
     "open_home_settings",
+    "remember_settings_inputs",
     "render_home_dialog_host",
     "render_home_settings_box",
     "settings_box_key",
@@ -103,6 +126,38 @@ SETTINGS_HELP = (
 )
 PENDING_HELP = "읽어 두고 저장하지 않은 Past Data 가 있습니다 — 팝업의 Past Data 탭에서 저장합니다."
 STOPPED_HELP = "계산이 멈춰 열 수 없습니다 — Alarm 의 오류를 먼저 고칩니다."
+# HOME 팝업 호스트 — 「HOME 설정」 · 공정 필터 · 주요공정 히트맵 셋이 열림 칸 하나를 쓴다.
+HOME_DIALOG_HOST = DialogHost(HOME_DIALOG_HOST_KEY, HOME_DIALOG_KEY)
+# HOME 이 앱 전체 회차마다 남기는 「HOME 설정」 팝업의 계산 재료(`HomeSettingsInputs`).
+SETTINGS_INPUTS_KEY = "home_settings_inputs"
+
+
+@dataclass(frozen=True)
+class HomeSettingsInputs:
+    """「HOME 설정」 팝업이 읽는 HOME 계산 결과 — 호스트만 도는 여는 회차에는 페이지가 돌지 않아 앱
+    전체 회차가 세션에 남긴 이 값을 읽는다.
+
+    `months` 는 선행 B/O · 선행 입고 실적 칸의 달(Capa LOB 현황 월 축 그대로 — 연간 Total 칸은
+    빼고, Past Data 를 켰으면 과거 달도 든다), `process_options` 는 확보율 보정 · 프리셋이 고르는
+    원본 공정명, `unmatched` · `clamped` 는 확보율 보정 표 밑의 대조 표다. 공용 저장값(프로필)은 이
+    묶음에 넣지 않는다 — 팝업 본문이 다시 읽는다.
+    """
+
+    months: tuple[int, ...]
+    process_options: tuple[str, ...]
+    unmatched: pd.DataFrame
+    clamped: pd.DataFrame
+
+
+def remember_settings_inputs(inputs: HomeSettingsInputs) -> None:
+    """HOME 앱 전체 회차가 호스트를 세우기 전에 부른다 — 다음 여는 회차(호스트만)가 읽는다."""
+    st.session_state[SETTINGS_INPUTS_KEY] = inputs
+
+
+def home_settings_inputs() -> HomeSettingsInputs | None:
+    """마지막 앱 전체 회차가 남긴 팝업 재료. 없으면(계산이 멈춘 회차 뒤 등) None."""
+    saved = st.session_state.get(SETTINGS_INPUTS_KEY)
+    return saved if isinstance(saved, HomeSettingsInputs) else None
 
 
 def settings_box_key(*, pending: bool) -> str:
@@ -115,25 +170,41 @@ def home_settings_open() -> bool:
     return st.session_state.get(HOME_DIALOG_KEY) == HOME_SETTINGS_DIALOG
 
 
-def open_home_settings(tab: str | None = None) -> None:
+def open_home_settings(tab: str | None = None, widget_key: str | None = None) -> None:
     """「HOME 설정」 상자·주요 Case 미지정 칩의 콜백 — 다른 팝업 칸부터 비우고 팝업을 연다.
 
     `tab` 을 주면 그 안쪽 탭으로 연다(미지정 칩 → `비교 · 주요 Case`). 탭 위젯은 이 회차에 아직
     그려지지 않았으므로(콜백은 스크립트보다 먼저 돈다) 위젯 칸과 기억 칸을 함께 적는다. 지난번에 편
     Past Data 붙여넣기 칸은 걷는다 — 새로 열면 표 상자만 선다.
+
+    `widget_key` 는 누른 단추의 key 다. 주면 호스트만 다시 돌려(`HOME_DIALOG_HOST.open`) HOME 을
+    다시 계산하지 않고 연다 — 콜백의 **마지막 줄**에서 부른다(재실행 예외로 콜백이 끊긴다). 주지
+    않거나 호스트만 돌릴 수 없는 회차(`rerun_fragment_if_alone` 의 판정)는 앱 전체 회차로 연다.
     """
-    forget_page_dialogs()
     forget_past_paste()
     if tab is not None:
         st.session_state[HOME_SETTINGS_TAB_KEY] = tab
         remember_open_tab(HOME_SETTINGS_TAB_KEY, tab)
-    st.session_state[HOME_DIALOG_KEY] = HOME_SETTINGS_DIALOG
+    if widget_key is None:
+        forget_page_dialogs()
+        st.session_state[HOME_DIALOG_KEY] = HOME_SETTINGS_DIALOG
+        return
+    HOME_DIALOG_HOST.open(HOME_SETTINGS_DIALOG, widget_key)
 
 
 def close_home_settings() -> None:
-    """팝업을 닫는다(`on_dismiss` — 닫는 회차는 앱 전체). 편 붙여넣기 칸도 걷는다."""
+    """열린 HOME 팝업을 닫는다 — 계산이 멈춘 회차가 부른다(콜백이 아니다). 편 붙여넣기 칸도
+    걷는다."""
     st.session_state.pop(HOME_DIALOG_KEY, None)
     forget_past_paste()
+
+
+def _dismiss_home_settings() -> None:
+    """「HOME 설정」 팝업의 닫기(X · 바깥 · Esc — `on_dismiss`). 편 붙여넣기 칸을 걷고 앱 전체를
+    다시 돌린다 — 닫는 회차에 지금 조건으로 그림을 한 번 만든다(모듈 설명 「저장 뒤에도 팝업을 열어
+    둔다」)."""
+    forget_past_paste()
+    HOME_DIALOG_HOST.close_to_app()
 
 
 def render_home_settings_box(*, pending: bool, stopped: bool = False) -> None:
@@ -147,7 +218,7 @@ def render_home_settings_box(*, pending: bool, stopped: bool = False) -> None:
         SETTINGS_TITLE,
         name=SETTINGS_BOX_NAME,
         button_key=SETTINGS_BUTTON_KEY,
-        on_click=open_home_settings,
+        on_click=partial(open_home_settings, widget_key=SETTINGS_BUTTON_KEY),
         tooltip=STOPPED_HELP if stopped else (PENDING_HELP if pending else SETTINGS_HELP),
         disabled=stopped,
         pending=pending,
@@ -157,7 +228,8 @@ def render_home_settings_box(*, pending: bool, stopped: bool = False) -> None:
     )
 
 
-@st.dialog(SETTINGS_TITLE, width="large", icon=SETTINGS_ICON, on_dismiss=close_home_settings)
+@st.dialog(SETTINGS_TITLE, width="large", icon=SETTINGS_ICON, on_dismiss=_dismiss_home_settings)
+@keeps_app_run_open
 def _settings_dialog(
     preference: Callable[[Mapping[str, OpenTab]], None],
     past_data: Callable[[], None],
@@ -178,16 +250,24 @@ def render_home_dialog_host(
     *,
     preference: Callable[[Mapping[str, OpenTab]], None],
     past_data: Callable[[], None],
+    dialogs: Mapping[str, DialogBody] | None = None,
+    widget_keys: Mapping[str, tuple[str, ...]] | None = None,
     closed_notices: tuple[str, ...] = (),
 ) -> None:
-    """열린 팝업을 그린다 — 이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 닫힌 팝업의 알림 표지).
+    """HOME 팝업 호스트를 세운다 — **매 앱 전체 회차 빠짐없이**(`DialogHost.render`). 이벤트 칸에
+    늘 한 자리(열렸으면 팝업, 아니면 닫힌 팝업의 알림 표지).
 
-    `preference` 는 앞 네 탭(`home_state.HOME_PREFERENCE_TABS` — 라벨 → 탭)의 본문을 그린다 — 상자를
-    제 탭 안에 넣고, 숨은 회차에 DB 를 읽지 않으려는 상자(주요 Case)가 제 탭을 본다. `past_data` 는
-    `Past Data` 탭 본문이다. `closed_notices` 는 팝업 안 칸이 꺼내는 알림 칸 이름들이다 — 닫힌
-    회차는 알림창 · Alarm 으로 넘긴다(`flash.emit_flash`, 알릴 것이 없으면 빈 스타일 자리표시자).
+    `preference` 는 「HOME 설정」 앞 네 탭(`home_state.HOME_PREFERENCE_TABS` — 라벨 → 탭)의 본문을
+    그린다 — 상자를 제 탭 안에 넣고, 숨은 회차에 DB 를 읽지 않으려는 상자(주요 Case)가 제 탭을 본다.
+    `past_data` 는 `Past Data` 탭 본문이다. 둘 다 호스트만 도는 회차에도 불리므로 HOME 계산 결과는
+    `home_settings_inputs()` 로, 공용 저장값은 다시 읽어 쓴다. `dialogs` 는 같은 열림 칸의 다른
+    팝업(열림 값 → 팝업을 여는 함수 — 공정 필터 · 주요공정 히트맵)이고 `widget_keys` 는 그 팝업들의
+    입력 위젯 key 다(닫으면 지운다). 「HOME 설정」 은 닫는 회차가 앱 전체라 입력 위젯 값을 Streamlit
+    이 거둔다. `closed_notices` 는 팝업 안 칸이 꺼내는 알림 칸 이름들이다 — 닫힌 회차는 알림창 ·
+    Alarm 으로 넘긴다(`flash.emit_flash`, 알릴 것이 없으면 빈 스타일 자리표시자).
     """
-    if home_settings_open():
-        _settings_dialog(preference, past_data)
-    else:
-        emit_flash(*closed_notices)
+    HOME_DIALOG_HOST.render(
+        {HOME_SETTINGS_DIALOG: partial(_settings_dialog, preference, past_data), **(dialogs or {})},
+        widget_keys=dict(widget_keys or {}),
+        idle=partial(emit_flash, *closed_notices),
+    )

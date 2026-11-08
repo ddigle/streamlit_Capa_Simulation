@@ -23,6 +23,7 @@ import hashlib
 import html
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from math import isclose
 from pathlib import Path
 from typing import NoReturn
@@ -34,6 +35,7 @@ from streamlit.delta_generator import DeltaGenerator
 from capa_simulation import alerts
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import DialogBody, DialogHost
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.home_dimensions import DASHBOARD_TITLE_LINE_PX
 from capa_simulation.components.home_main_cases import render_main_case_picker
@@ -89,7 +91,10 @@ from capa_simulation.home_state import (
 )
 from capa_simulation.home_state import (
     HOME_CASES_TAB,
+    HOME_DIALOG_HOST_KEY,
+    HOME_DIALOG_KEY,
     HOME_DISPLAY_TAB,
+    HOME_KEY_PROCESS_DIALOG,
     HOME_MONTHLY_TAB,
     HOME_THRESHOLD_TAB,
     HOME_TOGGLE_DEFAULTS,
@@ -107,7 +112,6 @@ from capa_simulation.home_state import (
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
-    forget_page_dialogs,
     prune_choice,
 )
 from capa_simulation.persistence._sql_helpers import ProfileVersionConflict, pinned_connections
@@ -325,6 +329,10 @@ KEY_PROCESS_SAVED_MESSAGE = "주요공정 히트맵 프리셋을 저장했습니
 KEY_PROCESS_PRESET_KEY = "home_key_process_preset"
 # 팝업 안 라디오의 초안. 칸을 누를 때 지금 보는 프리셋으로 적는다.
 KEY_PROCESS_PICK_KEY = "home_key_process_preset_pick"
+# HOME 팝업 호스트(`home_settings.HOME_DIALOG_HOST` 와 같은 값 — 그 모듈은 import 할 수 없다,
+# `home_state.HOME_DIALOG_HOST_KEY`). 「주요공정 히트맵」 팝업은 열림 값 `key_process` 로 이
+# 호스트가 연다.
+HOME_DIALOG_HOST = DialogHost(HOME_DIALOG_HOST_KEY, HOME_DIALOG_KEY)
 KEY_PROCESS_FIELD_KEY = "home_key_process_field"
 KEY_PROCESS_FIELD_LABEL = "주요공정 히트맵"
 # `grid_view` 는 사이드바 `Space 현황` 링크 아이콘과 겹쳐 데이터 묶음을 뜻하는 `dataset` 이다.
@@ -2085,7 +2093,7 @@ def render_key_process_field(
     *,
     process_labels: ProcessLabels,
     process_options: Sequence[str],
-) -> None:
+) -> DialogBody | None:
     """사이드바 조건 패널의 `주요공정 히트맵` 줄 — 볼 프리셋을 고르는 팝업 칸(2026-10-10).
 
     B/N 판정 대상(공정 필터)과 **따로** 서는 줄이다. 공정 필터는 판정에 넣을 공정이고, 이것은
@@ -2093,6 +2101,11 @@ def render_key_process_field(
     프리셋 자체만 공용이다. 아직 고르지 않았거나 고른 프리셋이 지워졌으면 첫 프리셋(기본)이다.
     프리셋이 없으면 칸을 잠그고 어디서 만드는지는 까닭 풍선이 말한다. 부르는 쪽이 페이지 칸 안으로
     들어간 뒤에 부른다.
+
+    돌려주는 것은 팝업을 여는 함수다(프리셋이 없으면 None) — HOME 팝업 호스트가 열림 값
+    `key_process` 로 부른다(`home_settings.render_home_dialog_host` 의 `dialogs`). 칸을 누르면
+    호스트만 다시 돌아 HOME 을 다시 계산하지 않고 열린다(2026-11-08 사용자 답 U5 — 설계 규칙
+    UI-PRF-01).
     """
     names = list(profile.preset_names)
     if not names:
@@ -2105,7 +2118,7 @@ def render_key_process_field(
             help=KEY_PROCESS_LOCKED_HELP,
             disabled=True,
         )
-        return
+        return None
     applied = resolve_preset_name(names, st.session_state.get(KEY_PROCESS_PRESET_KEY))
     previews = [
         key_process_preview(profile.processes_of(name), process_labels, process_options)
@@ -2114,7 +2127,7 @@ def render_key_process_field(
     shown_count = sum(
         1 for process in profile.processes_of(applied) if process in set(process_options)
     )
-    if condition_field(
+    condition_field(
         KEY_PROCESS_FIELD_LABEL,
         # 값 칸은 버튼 라벨이라 마크다운으로 그려진다 — 사람이 지은 프리셋 이름은 글자 그대로
         # 싣는다(「P~1~2 *k*」 가 지움선·기울임이 됐다, 2026-10-26 E2E).
@@ -2124,8 +2137,8 @@ def render_key_process_field(
         icon=KEY_PROCESS_ICON,
         on_click=_open_key_process_dialog,
         args=(applied,),
-    ):
-        show_key_process_dialog(names, previews)
+    )
+    return partial(show_key_process_dialog, names, previews)
 
 
 def render_stopped_key_process_field() -> None:
@@ -2166,14 +2179,22 @@ def key_process_preview(
 
 
 def _open_key_process_dialog(applied: str | None) -> None:
-    """칸의 콜백. 다른 팝업 칸을 비우고 라디오 초안을 지금 보는 프리셋으로 적는다."""
-    forget_page_dialogs()
+    """칸의 콜백. 라디오 초안을 지금 보는 프리셋으로 적고 HOME 팝업 호스트로 연다(다른 팝업 칸부터
+    비운다 — `DialogHost.open`). 호스트만 다시 돌 수 있으면 HOME 은 다시 계산하지 않는다."""
     st.session_state[KEY_PROCESS_PICK_KEY] = applied
+    HOME_DIALOG_HOST.open(HOME_KEY_PROCESS_DIALOG, KEY_PROCESS_FIELD_KEY)
 
 
-@st.dialog(KEY_PROCESS_FIELD_LABEL, width="small", icon=KEY_PROCESS_ICON)
+@st.dialog(
+    KEY_PROCESS_FIELD_LABEL,
+    width="small",
+    icon=KEY_PROCESS_ICON,
+    on_dismiss=HOME_DIALOG_HOST.close,
+)
+@keeps_app_run_open
 def show_key_process_dialog(names: list[str], previews: list[str]) -> None:
-    """칸을 누른 회차에만 연다(버튼 반환값). 본문은 아래 함수다."""
+    """HOME 팝업 호스트가 열림 값 `key_process` 로 연다. 닫기(X · 바깥 · Esc)는 호스트만 돈다 — 닫는
+    회차에 HOME 이 할 일이 없다. 본문은 아래 함수다."""
     render_key_process_dialog_body(names, previews)
 
 
@@ -2181,9 +2202,9 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     """프리셋 라디오와 프리셋마다의 공정 미리보기. **고르면 곧바로 적용하고 닫힌다.**
 
     라디오 조작은 팝업(프래그먼트)만 다시 돌린다. 그래서 돌려받은 값을 지금 보는 프리셋과 견주어
-    다르면 세션에 적고 앱 전체를 다시 돌린다 — 그 회차에는 칸이 눌리지 않아 팝업이 다시 불리지
-    않는다(닫힘). 견주는 값은 **세션의 지금 값**이다 — 적은 뒤 다시 도는 회차에 같아져 되풀이되지
-    않는다.
+    다르면 세션에 적고 열림 칸을 지운 뒤 앱 전체를 다시 돌린다(`HOME_DIALOG_HOST.finish`) — 그
+    회차에는 열림 칸이 비어 팝업이 다시 불리지 않는다(닫힘). 견주는 값은 **세션의 지금 값**이다 —
+    적은 뒤 다시 도는 회차에 같아져 되풀이되지 않는다.
 
     머리 설명 글은 두지 않는다(2026-11-04 검수 의견 home-21). 고르면 곧바로 닫히며 바뀌는 것은
     누름이 말하고, 프리셋을 고치는 자리는 Guide 가 말한다.
@@ -2201,7 +2222,7 @@ def render_key_process_dialog_body(names: Sequence[str], previews: Sequence[str]
     applied = resolve_preset_name(list(names), st.session_state.get(KEY_PROCESS_PRESET_KEY))
     if choice is not None and choice != applied:
         st.session_state[KEY_PROCESS_PRESET_KEY] = choice
-        st.rerun(scope="app")
+        HOME_DIALOG_HOST.finish()
 
 
 @st.fragment

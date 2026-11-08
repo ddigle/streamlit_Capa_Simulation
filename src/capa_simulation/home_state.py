@@ -1,4 +1,4 @@
-# Purpose: HOME 토글의 세션 키·기본값과 「설정」 팝업 열림 칸을 UI·계산·시나리오 초기화에 공유한다.
+# Purpose: HOME 토글의 세션 키·기본값과 HOME 팝업 열림 칸을 UI·계산·시나리오 초기화에 공유한다.
 
 """UI 모듈을 import 하지 않아도 읽을 수 있는 HOME 표시 상태 계약."""
 
@@ -61,10 +61,19 @@ def home_toggle(state: Mapping[Any, Any], key: str) -> bool:
 # 편집기(`past_data_management`)가 그린다.
 #
 # 열림 칸은 HOME 한 화면에 하나(`<페이지>_open_dialog` — `page_bootstrap.PAGE_DIALOG_SUFFIX`, AGENTS
-# 9장 「팝업과 콜백」)이고 값이 팝업을 가른다. 안쪽 탭 라벨은 탭의 위젯 값이라 바꾸면 세션에 남은
-# 값과 어긋난다.
+# 9장 「팝업과 콜백」)이고 값이 팝업을 가른다 — 「HOME 설정」 과 사이드바 조건 패널의 「공정
+# 필터」 · 「주요공정 히트맵」 셋이 이 칸 하나를 쓰고, HOME 팝업 호스트
+# (`home_settings.HOME_DIALOG_HOST`)가 값으로 팝업 하나를 고른다. 안쪽 탭 라벨은 탭의 위젯 값이라
+# 바꾸면 세션에 남은 값과 어긋난다.
 HOME_DIALOG_KEY = "home_open_dialog"
+# HOME 팝업 호스트 프래그먼트 key. 호스트(`DialogHost(HOME_DIALOG_HOST_KEY, HOME_DIALOG_KEY)`)는
+# 이 두 값만으로 정해지는 값 객체라, 서로 import 할 수 없는 두 모듈(`home_settings` ·
+# `home_preference` — `home_settings` 가 끌어오는 Past Data 편집기 쪽이 `home_preference` 로
+# 돌아온다)이 같은 값으로 각자 만든다.
+HOME_DIALOG_HOST_KEY = "home_dialog_host"
 HOME_SETTINGS_DIALOG = "settings"
+HOME_PROCESS_FILTER_DIALOG = "process_filter"
+HOME_KEY_PROCESS_DIALOG = "key_process"
 HOME_SETTINGS_TAB_KEY = "home_settings_tab"
 HOME_CASES_TAB = ":material/compare_arrows: 비교 · 주요 Case"
 HOME_THRESHOLD_TAB = ":material/rule: 판정 기준"

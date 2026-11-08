@@ -45,6 +45,7 @@ from capa_simulation.design import tokens
 from capa_simulation.home_state import (
     COMPARISON_TOGGLE_KEY,
     EDP_TOGGLE_KEY,
+    HOME_KEY_PROCESS_DIALOG,
     PRODUCT_SHARE_BASIS_KEY,
 )
 from capa_simulation.navigation import REFERENCE_DATA
@@ -216,6 +217,13 @@ def _close_settings(app: AppTest) -> AppTest:
     return app
 
 
+def _dismiss_home_dialog(app: AppTest) -> None:
+    """공정 필터 · 주요공정 히트맵 팝업의 닫기(`HOME_DIALOG_HOST.close` — 호스트만 도는 회차)를
+    흉내 낸다. AppTest 는 닫기를 못 누르므로 그 콜백이 하는 일 가운데 열림 칸만 지운다(입력 위젯
+    값은 다시 여는 콜백이 다시 적는다) — 닫는 회차에 HOME 은 돌지 않는다."""
+    del app.session_state[HOME_DIALOG_KEY]
+
+
 def test_process_picker_buttons_show_aliases_but_only_apply_original_keys(tmp_path: Path) -> None:
     from capa_simulation.persistence.cache import clear_global_process_rename_cache
     from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -331,25 +339,32 @@ def test_process_picker_bulk_actions_restore_applied_values_and_apply_empty_or_a
     )
 
 
-def test_closing_the_process_filter_dialog_does_not_rerun_home() -> None:
-    """공정 필터 팝업은 닫아도(X·바깥·Esc) HOME 을 다시 돌리지 않는다 — `on_dismiss` 기본값(ignore).
+def test_opening_and_closing_the_process_filter_dialog_does_not_rerun_home() -> None:
+    """공정 필터 팝업은 열어도 닫아도 HOME 을 다시 돌리지 않는다 — HOME 팝업 호스트가
+    연다(2026-11-08 사용자 답 U5 — 설계 규칙 UI-PRF-01, 전에는 칸을 누른 회차가 앱 전체였고 진행
+    막대도 떴다).
 
-    닫는 회차에 서버가 할 일이 없다. 초안은 팝업 안에서만 읽히고 열 때마다
-    `set_process_dialog_selection` 이 다시 적으며, 「선택 공정 적용」은 `st.rerun(scope="app")`
-    이다. 주요공정 히트맵 팝업도 같은 기본값이다. AppTest 는 닫기를 흉내 내지 못해 선언을 읽는다.
+    칸의 콜백(`open_process_filter`)은 초안을 적고 `HOME_DIALOG_HOST.open` 으로 호스트만 다시
+    돌리고,
+    닫기(X·바깥·Esc)는 `HOME_DIALOG_HOST.close` 라 닫는 회차도 호스트만 돈다(`close_to_app` 이
+    아니다 — 닫을 때 HOME 이 한 번 더 돌지 않는다, 2026-11-08 재연결 답 e2). 「선택 공정 적용」은
+    열림 칸을 지우고 앱 전체를 다시 돌린다(`HOME_DIALOG_HOST.finish`). 주요공정 히트맵 팝업도 같다.
+    AppTest 는 프래그먼트만 도는 회차와 닫기를 흉내 내지 못해 선언을 읽는다.
     """
     import ast
 
     tree = ast.parse(HOME_PAGE.read_text(encoding="utf-8"))
-    (dialog,) = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "show_process_filter_dialog"
-    ]
-    (decorator,) = dialog.decorator_list
+    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    dialog = functions["show_process_filter_dialog"]
+    decorator = dialog.decorator_list[0]
     assert isinstance(decorator, ast.Call)
     assert ast.unparse(decorator.func) == "st.dialog"
-    assert "on_dismiss" not in {keyword.arg for keyword in decorator.keywords}
+    dismiss = {keyword.arg: ast.unparse(keyword.value) for keyword in decorator.keywords}
+    assert dismiss["on_dismiss"] == "HOME_DIALOG_HOST.close"
+    assert "HOME_DIALOG_HOST.finish()" in ast.unparse(dialog)
+    assert "HOME_DIALOG_HOST.open(HOME_PROCESS_FILTER_DIALOG, PROCESS_FIELD_KEY)" in ast.unparse(
+        functions["open_process_filter"]
+    )
 
 
 def test_a_closed_process_filter_draft_neither_leaks_nor_survives_reopening(
@@ -369,8 +384,9 @@ def test_a_closed_process_filter_draft_neither_leaks_nor_survives_reopening(
     app.button(key="dashboard_bottleneck_process_dialog_open").click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state["dashboard_bottleneck_process_dialog_draft"] == selection
-    # 타일 몇 개를 끄고 적용하지 않은 채 닫는다(닫기는 서버로 오지 않는다).
+    # 타일 몇 개를 끄고 적용하지 않은 채 닫는다(닫기는 호스트만 돈다 — 초안은 세션에 남는다).
     app.session_state["dashboard_bottleneck_process_dialog_draft"] = selection[1:]
+    _dismiss_home_dialog(app)
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
@@ -2275,7 +2291,8 @@ def test_the_sidebar_picks_a_key_process_preset_and_the_heatmap_follows(tmp_path
     ]
 
     # 팝업이 고른 값을 적는 칸(위젯이 아닌 세션 값)을 바꾸면 히트맵이 따라간다. 팝업 본문의 적용은
-    # 아래 테스트가 본다 — 칸을 누른 회차에만 서는 팝업이라 AppTest 의 다음 회차에는 없다.
+    # 아래 테스트가 본다 — 팝업은 열림 칸으로 서므로 닫은 뒤에 바꾼다.
+    _dismiss_home_dialog(app)
     app.session_state["home_key_process_preset"] = "B 그룹"
     app.run()
     assert not list(app.exception), [element.message for element in app.exception]
@@ -2416,8 +2433,8 @@ def test_a_preset_name_with_markdown_marks_reads_literally_everywhere(tmp_path: 
     picker = app.radio(key="home_key_process_preset_pick")
     assert picker.options == [literal_markdown(name)]
     assert picker.value == name
-    # 히트맵 칸의 팝업을 연 콜백이 「HOME 설정」 팝업 칸을 비웠다 — 한 실행에 팝업 하나.
-    assert HOME_DIALOG_KEY not in app.session_state
+    # 히트맵 칸의 팝업은 「HOME 설정」 과 같은 열림 칸을 쓴다 — 한 실행에 팝업 하나.
+    assert app.session_state[HOME_DIALOG_KEY] == HOME_KEY_PROCESS_DIALOG
 
     app = _open_settings(app)
     app.selectbox(key="home_key_process_preset_edit").set_value("＋ 새 프리셋").run()

@@ -29,6 +29,12 @@ from capa_simulation.settings import format_month
 # 고정 폭과 한 줄 말줄임으로 긴 이름 하나가 전체 바둑판의 행 높이를 바꾸지 않는다.
 PROCESS_TILE_WIDTH = 168
 TILE_WRAPPER_PREFIX = "home_bn_tile_"
+# 풍선 스타일을 싣는 숨은 칸. 팝업 본문 안에 서야 한다 — 스타일만 든 `st.html` 은 이벤트 칸으로
+# 가는데, 팝업 호스트(`dialog_host`)는 이벤트 칸에 갈래마다 정확히 한 자리만 써야 해서 팝업이 열린
+# 회차에 한 자리가 더 생기면 뒤 이벤트 요소를 덮는다. 그래서 보이지 않는 글자 하나를 함께 실어 본문
+# 칸에 세우고, 그 칸은 `display: none` 으로 자리(줄 사이 간격)를 먹지 않게 한다 — 숨은 칸 안의
+# `<style>` 도 문서 전체에 걸린다.
+TOOLTIP_STYLE_BOX_KEY = "home_bn_tile_tips"
 
 
 def tile_tooltip_text(
@@ -182,8 +188,13 @@ def render_process_picker(
                             args=(item.process,),
                         )
                     tooltips.append(tile_tooltip_text(item, label, enabled=enabled, mark=mark))
-    # 스타일만 든 `st.html` 은 이벤트 칸에 들어가 자리를 차지하지 않는다.
-    st.html(tile_tooltip_style(tooltips) or "<style></style>")
+    # 풍선 스타일은 숨은 본문 칸에 싣는다(`TOOLTIP_STYLE_BOX_KEY` — 팝업 본문은 이벤트 칸에 쓰지
+    # 않는다). 칸은 풍선이 없어도 늘 선다.
+    with st.container(key=TOOLTIP_STYLE_BOX_KEY):
+        st.html(
+            f"<style>.st-key-{TOOLTIP_STYLE_BOX_KEY} {{ display: none; }}</style>"
+            f"{tile_tooltip_style(tooltips)}<span hidden></span>"
+        )
 
 
 def _tile_icon(*, enabled: bool, marked: bool) -> str:
