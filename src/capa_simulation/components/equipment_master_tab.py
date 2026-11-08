@@ -86,6 +86,7 @@ from capa_simulation.components.equipment_data_workspace import (
     buffer_has_layout_edits,
     carry_layout_memo,
     carry_until_head_rerun,
+    defer_grid_undo,
     equipment_buffer_generation,
     floor_layout_words,
     grid_loaded_ids,
@@ -110,6 +111,7 @@ from capa_simulation.components.equipment_data_workspace import (
     saved_master_violations,
     settle_bulk_restore,
     settle_grid_toasts,
+    settle_grid_undo,
     stale_delete_lock,
     stale_save_reasons,
     stale_save_refusal,
@@ -933,6 +935,15 @@ def _undo_step(context: GridContext, layout: LayoutMode, press: int) -> None:
     st.session_state[UNDO_PRESS_KEY] = press + 1
     if not grid_undo_steps() and restore_bulk_deletion():
         return
+    if defer_grid_undo():
+        return
+    _grid_undo(context, layout)
+
+
+def _grid_undo(context: GridContext, layout: LayoutMode) -> None:
+    """표의 맨 위 단계 하나를 되돌린다 — 「한 단계 되돌리기」 콜백, 또는 미룬 되돌리기를 잇는 작은
+    편집표 제출(`render_small_editor` 의 `undo`) · 그 표가 그려지지 않은
+    회차(`settle_grid_undo`)."""
     ops = [{"op": "undo", "base": context.base}]
     before = layout_memo_mark()
     result = apply_ops(_grid_state(), ops, context)
@@ -1424,6 +1435,7 @@ def render_equipment_master_tab(
     )
     if st.session_state.pop(OUTBOX_HELD_KEY, False):
         apply_outbox(context, layout)
+    settle_grid_undo(partial(_grid_undo, context, layout))
     view = build_view(
         context,
         floor_canvases=floor_canvases,
@@ -1460,6 +1472,7 @@ def render_equipment_master_tab(
                 stale=stale,
                 delete_locked=context.delete_lock,
                 drafts_replaced=drafts_replaced,
+                undo=partial(_grid_undo, context, layout),
             )
     with right:
         # 칸막이(칸 머리 접기 단추 포함)는 오른쪽 칸 맨 앞에 늘 선다(절대 위치 — 흐름 높이 0). 그

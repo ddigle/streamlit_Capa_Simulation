@@ -946,3 +946,50 @@ def test_a_double_press_landing_on_the_redrawn_undo_is_still_one_step(
     assert not app.exception, app.exception
     assert _memos(app, "DA-01") == memos
     assert grid_results(app) == ["되돌림: 메모3 고침" if window else "되돌림: 메모2 고침"]
+
+
+def _downtime_reason(app: AppTest, name: str) -> str:
+    downtime = app.session_state[BUFFER_KEY][2]
+    rows = downtime.loc[downtime["설비명"] == name, "상세사유"]
+    return "" if rows.empty or pd.isna(rows.iloc[0]) else str(rows.iloc[0])
+
+
+def test_undo_that_changes_the_downtime_table_keeps_its_unapplied_edits(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """「한 단계 되돌리기」 가 비가동 일정 표를 바꾸면(지운 새 호기의 비가동을 되살림) 그 표의 적용
+    전 편집이 말없이 사라졌다(X1 — 바탕부터, 편집표를 새로 세우며 버림). 적용 전 편집을 먼저
+    편집본에 넣고 되돌린다 — 되살린 줄과 고친 칸이 함께 남는다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02"))
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.run()
+    tables = BrowserTables(app)
+    key = _small_key(app, DOWNTIME_EDITOR_KEY)
+    tables.add(key, {"설비명": "DA-01", "비가동유형": "PM", "시작일": "2026-11-03"})
+    tables.add(key, {"설비명": "DA-02", "비가동유형": "PM", "시작일": "2026-11-05"})
+    tables.run()
+    app.button(key="equipment_downtime_apply_v1").click()
+    tables.run()
+    assert sorted(app.session_state[BUFFER_KEY][2]["설비명"]) == ["DA-01", "DA-02"]
+
+    app.session_state[TABLE_KEY] = "설비 마스터"
+    app.run()
+    send_ops(app, grid, {"op": "delete", "ids": ["n:DA-02"]})
+    assert app.session_state[BUFFER_KEY][2]["설비명"].tolist() == ["DA-01"]
+
+    app.session_state[TABLE_KEY] = "비가동 일정"
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    tables = BrowserTables(app)
+    tables.edit(_small_key(app, DOWNTIME_EDITOR_KEY), 0, "상세사유", "점검")
+    tables.run()
+    assert _downtime_reason(app, "DA-01") == ""
+
+    app.button(key=UNDO_BUTTON_KEY).click()
+    tables.run()
+    assert not app.exception, app.exception
+    assert sorted(app.session_state[BUFFER_KEY][1]["설비명"]) == ["DA-01", "DA-02"]
+    assert sorted(app.session_state[BUFFER_KEY][2]["설비명"]) == ["DA-01", "DA-02"]
+    assert _downtime_reason(app, "DA-01") == "점검"
+    assert grid_results(app)[-1].startswith("되돌림:")

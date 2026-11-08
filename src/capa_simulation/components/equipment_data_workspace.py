@@ -128,6 +128,7 @@ from capa_simulation.services.equipment_grid import (
     renamed_saved_ids,
     stale_scenario_edit_spots,
     undo_from_state,
+    undo_step_tables,
     undo_to_state,
 )
 from capa_simulation.services.equipment_samples import untouched_sample_baseline_rows
@@ -270,6 +271,10 @@ LAST_REMOVED_KEY = "equipment_workspace_last_removed_v1"
 # 「한 단계 되돌리기」 가 미룬 일괄 삭제 되살리기(값은 표 이름 — `restore_bulk_deletion`). 그 표에
 # 적용하지 않은 편집이 있을 때만 서고, 그 표 편집표가 선 회차의 제출이 편집을 먼저 넣고 되살린다.
 RESTORE_REQUEST_KEY = "equipment_workspace_restore_request_v1"
+# 「한 단계 되돌리기」 가 미룬 표 단계 되돌리기(값은 표 이름 — `defer_grid_undo`). 그 단계가 바꿀
+# 작은 편집표에 적용하지 않은 편집이 있을 때만 서고, 그 표 편집표가 선 회차의 제출이 편집을 먼저
+# 넣고 되돌린다.
+GRID_UNDO_REQUEST_KEY = "equipment_workspace_grid_undo_request_v1"
 CONFIRM_DELETE_BUTTON_KEY = "equipment_delete_confirm_v1"
 # Space 편집기가 쌓는 미저장 층 캔버스·도면 요소((동, 층) → 값). 호기 편집본(BUFFER_KEY)과
 # **함께 저장되고 함께 버려진다** — 어느 저장 단추를 눌러도 같은 저장 helper 를 탄다.
@@ -441,6 +446,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         PENDING_DELETE_KEY,
         LAST_REMOVED_KEY,
         RESTORE_REQUEST_KEY,
+        GRID_UNDO_REQUEST_KEY,
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
         PENDING_GROUP_LABELS_KEY,
@@ -917,7 +923,10 @@ def same_frame_content(left: pd.DataFrame, right: pd.DataFrame) -> bool:
     return bool(units) and left.astype(units).equals(right.astype(units))
 
 
-def _remember_edits(frames: Frames) -> None:
+def _remember_edits(frames: Frames, *, keep_undo: bool = False) -> None:
+    """작은 편집표의 편집을 편집본에 넣는다. `keep_undo` 면 표의 되돌리기를 비우지 않는다 — 미룬
+    표 단계 되돌리기가 곧바로 그 위에 얹힌다(`defer_grid_undo` — 칸만 고친 편집이라 줄 자리가
+    그대로일 때만)."""
     # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다.
     current = st.session_state.get(BUFFER_KEY)
     unchanged = isinstance(current, tuple) and all(
@@ -929,7 +938,8 @@ def _remember_edits(frames: Frames) -> None:
     # 편집이 있다」로 보여, 남의 저장 때 버린 것도 없는데 버렸다고 알린다.
     if not unchanged:
         _bump_buffer_generation()
-        _forget_grid_undo()
+        if not keep_undo:
+            _forget_grid_undo()
         _note_if_back_to_saved()
 
 
@@ -3054,6 +3064,41 @@ def restore_bulk_deletion() -> bool:
     return _restore_removed()
 
 
+def defer_grid_undo() -> bool:
+    """표의 맨 위 단계가 바꿀 작은 편집표(기존 보유대수·비가동 일정)에 적용하지 않은 편집이 있으면
+    되돌리기를 미루고 참이다. 되돌리면 그 표의 편집표를 새로 세워야 해(줄 번호 delta 가 바뀐 표에
+    얹히지 않게) 적용 전 편집이 말없이 사라졌다(X1). 표지(`GRID_UNDO_REQUEST_KEY`)만 세우고 그 표
+    편집표가 선 회차의 제출(`render_small_editor` 의 `undo`)이 편집을 먼저 넣고 되돌린다 — 일괄 삭제
+    되살리기(`restore_bulk_deletion`)와 같은 차례다."""
+    steps = grid_undo_steps()
+    if not steps:
+        return False
+    touched = undo_step_tables(steps[-1])
+    for name in small_editor_edits():
+        if touched[TARGET_LAYOUT[name][0]]:
+            st.session_state[GRID_UNDO_REQUEST_KEY] = name
+            return True
+    return False
+
+
+def settle_grid_undo(undo: Callable[[], None]) -> None:
+    """미룬 표 단계 되돌리기의 표를 이번 회차에 그리지 않으면 곧바로 되돌린다 — 누른 회차가 끊긴
+    사이 표 고르기를 바꿨다(그 표의 적용 전 편집은 그리지 않아 어차피 걷힌다)."""
+    request = st.session_state.get(GRID_UNDO_REQUEST_KEY)
+    if request is not None and request != st.session_state.get(MASTER_TABLE_KEY):
+        st.session_state.pop(GRID_UNDO_REQUEST_KEY, None)
+        undo()
+
+
+def _undo_lines_up(before: pd.DataFrame, after: pd.DataFrame) -> bool:
+    """표 단계의 역 patch(줄 자리 기준)가 편집을 넣은 표에도 맞는가 — 통째 단계가 아니고 편집이 줄을
+    지우거나 옮기지 않았을 때(칸 고침 · 끝에 더한 줄)만이다."""
+    steps = grid_undo_steps()
+    if not steps or steps[-1].kind == "whole" or len(after) < len(before):
+        return False
+    return list(after.index[: len(before)]) == list(before.index)
+
+
 def settle_bulk_restore() -> None:
     """미룬 되살리기(`RESTORE_REQUEST_KEY`)의 표를 이번 회차에 그리지 않으면 곧바로 되살린다 — 누른
     회차가 끊긴 사이 표 고르기를 바꿨다(그 표의 적용 전 편집은 그리지 않아 어차피 걷힌다). 그대로
@@ -3420,6 +3465,7 @@ def render_small_editor(
     stale: bool,
     delete_locked: str | None,
     drafts_replaced: bool,
+    undo: Callable[[], None] | None = None,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
     그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
@@ -3434,7 +3480,9 @@ def render_small_editor(
     제출을 받았으면 그 처리(편집본 적용 → `st.rerun()`)를 돌려준다 — 화면의 모든 위젯(오른쪽 칸
     포함)을 그린 **뒤에** 부른다(AGENTS 9장 「`st.rerun()` 은 그 화면의 모든 편집표를 그린
     뒤에만」). 받은 제출이 없으면 None. 비가동 일정은 시나리오 쪽이라 낡은 세션이면 통째로
-    잠근다. 저장은 오른쪽 「저장 전 변경」 한 곳이다."""
+    잠근다. 저장은 오른쪽 「저장 전 변경」 한 곳이다. `undo` 는 미룬 표 단계
+    되돌리기(`defer_grid_undo`)를 편집을 넣은 뒤 잇는 길이다 — 편집이 줄을 지웠거나 통째 단계면
+    되돌리기를 비우고 편집을 지킨다(그 사실은 알림창이 말한다)."""
     frames: Frames = st.session_state[BUFFER_KEY]
     baseline_table = target == BASELINE_TARGET
     position = 0 if baseline_table else 2
@@ -3539,6 +3587,8 @@ def render_small_editor(
             )
     # 「한 단계 되돌리기」 가 미룬 이 표의 되살리기(`restore_bulk_deletion`) — 제출로 받는다.
     restoring = st.session_state.get(RESTORE_REQUEST_KEY) == target
+    # 「한 단계 되돌리기」 가 미룬 표 단계 되돌리기(`defer_grid_undo`) — 제출로 받는다.
+    undoing = st.session_state.get(GRID_UNDO_REQUEST_KEY) == target
     if not any(
         (
             apply_clicked,
@@ -3547,6 +3597,7 @@ def render_small_editor(
             confirm_delete,
             cancel_delete,
             restoring,
+            undoing,
         )
     ):
         return None
@@ -3563,7 +3614,10 @@ def render_small_editor(
         current: Frames = st.session_state[BUFFER_KEY]
         updated = list(current)
         updated[position] = edited
-        _remember_edits((updated[0], updated[1], updated[2]))
+        if undoing:
+            st.session_state.pop(GRID_UNDO_REQUEST_KEY, None)
+        keep_undo = undoing and undo is not None and _undo_lines_up(current[position], edited)
+        _remember_edits((updated[0], updated[1], updated[2]), keep_undo=keep_undo)
         _apply_bulk_actions(
             EditorResult(
                 frames=(updated[0], updated[1], updated[2]),
@@ -3576,6 +3630,8 @@ def render_small_editor(
         )
         if restoring:
             _restore_removed()
+        if keep_undo and undo is not None:
+            undo()
         st.rerun()
 
     return submit
