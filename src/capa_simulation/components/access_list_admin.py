@@ -114,7 +114,7 @@ def _remove_selected() -> None:
     if outcome.changed:
         queue_flash(
             ACCESS_LIST_FLASH_KEY,
-            f"접속 명단에서 {outcome.removed}명을 뺐습니다 — 판 {outcome.revision}",
+            f"접속 명단에서 {outcome.removed}명을 뺐습니다 — 버전 {outcome.revision}",
         )
     else:
         queue_flash(ACCESS_LIST_FLASH_KEY, "바뀐 것이 없습니다", kind="info")
@@ -140,7 +140,7 @@ def _reread() -> None:
     document = ListDocument() if source is None else source.document or ListDocument()
     queue_flash(
         ACCESS_LIST_FLASH_KEY,
-        f"접속 명단을 다시 읽었습니다 — 사용자 {len(document.entries)} · 판 {document.revision}",
+        f"접속 명단을 다시 읽었습니다 — 사용자 {len(document.entries)} · 버전 {document.revision}",
     )
 
 
@@ -172,7 +172,7 @@ def _added_message(result: access_store.SaveResult, unreadable: int) -> str:
         parts.append(f"이미 있음 {result.already}")
     if unreadable:
         parts.append(f"꼴이 아니라 뺌 {unreadable}")
-    parts.append(f"판 {result.revision}")
+    parts.append(f"버전 {result.revision}")
     return " · ".join(parts)
 
 
@@ -278,7 +278,7 @@ def render_access_list_admin() -> None:
     source = runtime.access_source()
     document = None if source is None else source.document
     with remembered_expander("접속 명단", icon=":material/group:", key=EXPANDER_KEY):
-        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 판 · 사용자 값).
+        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 버전 · 사용자 값).
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.button(
                 "추가",
@@ -300,7 +300,7 @@ def render_access_list_admin() -> None:
             if document is not None:
                 access = runtime.current_access(cfg)
                 st.caption(
-                    f"판 {document.revision} · 사용자 {len(document.entries)} · "
+                    f"버전 {document.revision} · 사용자 {len(document.entries)} · "
                     f"관리자 {access.admin_count}(환경변수)",
                     width="content",
                 )

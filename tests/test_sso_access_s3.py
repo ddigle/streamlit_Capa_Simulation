@@ -1557,7 +1557,7 @@ def test_a_good_save_clears_the_read_failure(mock_s3: tuple[MockStore, str]) -> 
     assert source is not None and source.problem is None
     line = sso_status.access_s3_line(cfg)
     assert line.startswith("**S3 명단** · 정상 · 마지막 읽기 ")
-    assert "판 2 · 쓰기 정상" in line
+    assert "버전 2 · 쓰기 정상" in line
 
 
 def test_a_failed_save_leaves_the_read_failure_where_it_was(
@@ -1911,7 +1911,7 @@ def test_the_admin_sees_the_list(
     assert sorted(frame["loginid"].tolist()) == [OTHER, USER]
     assert frame["넣은 사람"].tolist() == [ADMIN, ADMIN]
     assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).options
-    assert any("판 1 · 사용자 2 · 관리자 1" in str(item.value) for item in app.caption)
+    assert any("버전 1 · 사용자 2 · 관리자 1" in str(item.value) for item in app.caption)
 
 
 def test_an_empty_list_says_so(
@@ -1947,6 +1947,9 @@ def test_the_paste_window_adds_people(
     assert not any(area.key == access_list_admin.ADD_TEXT_KEY for area in app.text_area)
     text = _flash_text(app)
     assert "2명을 넣었습니다" in text and "이미 있음 1" in text and "꼴이 아니라 뺌 1" in text
+    # 명단의 저장 차례 번호는 「버전 n」 이다 — 같은 화면의 공용 표 「공용 버전 vN」 과 같은 말이다
+    # (2026-11-08 사용자 답 b4).
+    assert text.endswith(f"버전 {saved['revision']}") and "판 " not in text
     assert_absent(text, OTHER, GONE, "bad")
 
 
@@ -2185,6 +2188,7 @@ def test_removing_from_the_screen(
     assert app.dataframe[0].value["loginid"].tolist() == [OTHER]
     assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).value == []
     assert "1명을 뺐습니다" in _flash_text(app)
+    assert "— 버전 " in _flash_text(app) and "판 " not in _flash_text(app)
     assert_absent(_flash_text(app), USER, OTHER)
 
 
@@ -2233,7 +2237,7 @@ def test_reading_again_from_the_screen(
 
     assert sorted(app.dataframe[0].value["loginid"].tolist()) == [OTHER, USER]
     assert problem_of(cfg, OTHER) is None
-    assert "사용자 2 · 판 4" in _flash_text(app)
+    assert "사용자 2 · 버전 4" in _flash_text(app)
 
     store.force["GET"] = (403, "AccessDenied")
     app = _button(app, "admin_area_access_list_reread").click().run()
@@ -2272,7 +2276,7 @@ def _box_layout(app: AppTest) -> list[Any]:
 def test_the_list_actions_stand_in_one_row_above_the_table(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """표 위 작업 줄은 한 줄이다(UI-LAY-11) — 추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 판 값.
+    """표 위 작업 줄은 한 줄이다(UI-LAY-11) — 추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 버전 값.
     고르기 칸 라벨은 접고 자리표시 글이 그 이름이다."""
     store, endpoint = mock_s3
     cfg = started(store, endpoint, USER, OTHER)
@@ -2547,11 +2551,11 @@ def test_the_check_line_when_it_can_read(mock_s3: tuple[MockStore, str]) -> None
     line = sso_status.access_s3_line(cfg)
 
     assert line.startswith("**S3 명단** · 정상 · 마지막 읽기 ")
-    assert "사용자 2 · 판 1 · 쓰기 저장할 때 알게 됨" in line
+    assert "사용자 2 · 버전 1 · 쓰기 저장할 때 알게 됨" in line
     assert_absent(line, USER, OTHER, store.access_key, store.secret_key, endpoint, store.bucket)
 
     access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[GONE])
-    assert "사용자 3 · 판 2 · 쓰기 정상 · " in sso_status.access_s3_line(cfg)
+    assert "사용자 3 · 버전 2 · 쓰기 정상 · " in sso_status.access_s3_line(cfg)
 
     store.force["PUT"] = (403, "AccessDenied")
     with pytest.raises(S3Failure):
@@ -2618,7 +2622,7 @@ def test_the_check_line_keeps_the_last_good_read_after_a_failure(
 
     line = sso_status.access_s3_line(cfg)
     assert line.startswith("**S3 명단** · 실패 · 그 밖의 응답(HTTP 503 · SlowDown) · 시도 ")
-    assert " · 마지막 읽기 " in line and "사용자 1 · 판 1" in line
+    assert " · 마지막 읽기 " in line and "사용자 1 · 버전 1" in line
 
 
 def test_the_check_line_says_it_waits_for_sso(mock_s3: tuple[MockStore, str]) -> None:
@@ -3047,12 +3051,12 @@ def test_the_first_version_shows_in_the_line_and_the_notice_stays_away(
     store, endpoint = mock_s3
     cfg = _seeded(store, endpoint, USER)
 
-    assert "환경변수 첫 판 · 파일 없음" in sso_status.access_s3_line(cfg)
+    assert "환경변수 첫 버전 · 파일 없음" in sso_status.access_s3_line(cfg)
     assert "쓰지 않음" not in sso_status.environment_table(cfg).to_csv()
 
     access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
 
-    assert "환경변수 첫 판" not in sso_status.access_s3_line(cfg)
+    assert "환경변수 첫 버전" not in sso_status.access_s3_line(cfg)
     assert "쓰지 않음" in sso_status.environment_table(cfg).to_csv()
 
 

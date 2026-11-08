@@ -25,7 +25,7 @@ S3 명단 줄(`access_s3_line`)은 「C-DEP 에서 S3 로 닿는가」 의 답�
 주소를 싣지 않아 리뷰 압축본에 그대로 옮길 수 있다. 쓰기 권한은 저장해 보기 전에는 모른다(GET ·
 HEAD 가 되어도).
 
-접속 명단 상태 알림 둘(`AD-08` 못 읽음 · `AD-09` 환경변수 첫 판 — `render_access_alerts`)은 이
+접속 명단 상태 알림 둘(`AD-08` 못 읽음 · `AD-09` 환경변수 첫 버전 — `render_access_alerts`)은 이
 펼침이 아니라 앱 정보 카드(`app_credits.render_app_credits` — 모든 화면 모든 회차)가 부른다. 못 읽은
 동안은 관리자만 들어오므로 관리자가 Admin 을 열기 전 어느 화면에서나 알아야 한다(2026-11-08 사용자
 답 U4).
@@ -172,7 +172,7 @@ def environment_table(cfg: SsoConfig) -> pd.DataFrame:
         issues.setdefault(problem.env, []).append(problem)
     notices: dict[str, list[SsoProblem]] = {}
     for notice in cfg.notices:
-        # 파일이 없는 동안 이 목록은 첫 판이다 — 「쓰지 않음」 이 아니다.
+        # 파일이 없는 동안 이 목록은 첫 버전이다 — 「쓰지 않음」 이 아니다.
         if notice.code == "s3_users_ignored" and not access_store.holds_a_file():
             continue
         notices.setdefault(notice.env, []).append(notice)
@@ -262,10 +262,10 @@ def access_s3_line(cfg: SsoConfig) -> str:
         parts += [
             f"마지막 읽기 {_clock_text(source.read_at)}",
             f"사용자 {len(document.entries)}",
-            f"판 {document.revision}",
+            f"버전 {document.revision}",
         ]
         if source.seeded:
-            parts.append("환경변수 첫 판 · 파일 없음")
+            parts.append("환경변수 첫 버전 · 파일 없음")
         if document.demoted:
             parts.append(f"등급을 사용자로 읽음 {document.demoted}")
     parts.append(_write_text(source.saved_at, source.save_problem))
@@ -478,9 +478,9 @@ def _access_seed_alert(*, admin: bool) -> None:
         scope=None,
         content=None,
         active=seeded,
-        text="접속 명단이 환경변수 첫 판입니다 — S3 파일 없음",
+        text="접속 명단이 환경변수 첫 버전입니다 — S3 파일 없음",
         full=(
-            "S3 명단 파일이 아직 없어 CAPA_ACCESS_USERS 를 첫 판으로 씁니다. Admin 「접속 명단」 "
+            "S3 명단 파일이 아직 없어 CAPA_ACCESS_USERS 를 첫 버전으로 씁니다. Admin 「접속 명단」 "
             "에서 첫 저장을 하면 파일이 생기고, 그 뒤에는 환경변수를 듣지 않습니다."
         ),
         goto=_admin_area_goto(),
