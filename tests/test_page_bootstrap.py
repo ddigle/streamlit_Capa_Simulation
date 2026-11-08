@@ -305,6 +305,160 @@ def test_a_stop_without_a_page_name_starts_from_the_stop_itself(
     assert stop is not None and stop.message.startswith("대당 Capa 계산이 멈췄습니다.")
 
 
+def _service_nonpositive(table: str, column: str) -> str:
+    """0 이하로 멈춘 계산이 실제로 내는 오류 글(`unit_capacity._assert_positive`). 한 칸이 세 계산
+    경로에 붙은 꼴이다 — 글의 건수가 행이 아니라 고칠 칸이어야 「0 이하 칸 1건」 이 맞는다."""
+    joined = pd.DataFrame(
+        {"공정": ["DEMO-P1"] * 3, "제품정보": ["DEMO-A", "DEMO-B", "DEMO-C"], column: [0.0] * 3}
+    )
+    with pytest.raises(ValueError) as error:
+        unit_capacity._assert_positive(joined, column, table, ["공정"])
+    return str(error.value)
+
+
+def _service_upeh_stop(area: str, upeh: float | None, st_minutes: float | None) -> str:
+    """UPEH 표의 Main · MI 행 값으로 멈춘 계산이 실제로 내는 오류 글(`_prepare_performance`)."""
+    row: dict[str, object] = dict.fromkeys(unit_capacity.PERFORMANCE_KEYS, "DEMO")
+    row.update(
+        {
+            "생산계획년월": 202601,
+            "Area_Name": area,
+            "소요기준": "WF",
+            "UPEH": upeh,
+            "ST": st_minutes,
+        }
+    )
+    with pytest.raises(ValueError) as error:
+        unit_capacity._prepare_performance(pd.DataFrame([row]))
+    return str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("error", "cell"),
+    [
+        (_service_nonpositive("RQ_VITAL", "편중률"), "「여유율」 0 이하 칸 1건"),
+        (_service_nonpositive("RQ_RUN_DAY", "RUN_DAY"), "「일수」 0 이하 칸 1건"),
+        (
+            _service_stop(unit_capacity._VALUE_NOT_NUMERIC),
+            "「효율」 숫자 아닌 칸 1건",
+        ),
+        (
+            _service_stop(unit_capacity._VALUE_NOT_NUMERIC, "RQ_LOT_RATIO", "Lot 측정률"),
+            "「Lot측정률」 숫자 아닌 칸 1건",
+        ),
+        (_service_upeh_stop("MI", 1.0, 0.0), "「UPEH」 MI 행 ST 0 이하 칸"),
+        (_service_upeh_stop("MI", 1.0, None), "「UPEH」 MI 행 ST 빈 칸 · 숫자 아닌 칸"),
+        (_service_upeh_stop("Main", None, None), "「UPEH」 Main 행 UPEH 빈 칸 · 숫자 아닌 칸"),
+    ],
+    ids=[
+        "vital-zero",
+        "run-day-zero",
+        "run-rate-text",
+        "lot-text",
+        "st-zero",
+        "st-text",
+        "upeh-text",
+    ],
+)
+def test_a_value_to_correct_points_at_the_reference_table_too(
+    monkeypatch: pytest.MonkeyPatch, error: str, cell: str
+) -> None:
+    """0 이하 · 숫자 아닌 값도 기준 정보 표의 칸을 고쳐 푼다 — 무엇을 · 어디서 고치는지 말하고
+    「그 화면으로」 가 기준 정보를 연다(UI-NTF-06 · UI-NTF-08). 전문에도 내부 표 이름이 없다."""
+    _on_page(monkeypatch)
+    stop = calculation_stop_notice(ValueError(error))
+
+    assert stop is not None
+    assert stop.text == f"대당 Capa 계산 멈춤 — 기준 정보 {cell}을 고침"
+    assert len(stop.text) <= alerts.SHORT_LIMIT
+    name, _, what = cell.partition(" ")
+    assert stop.goto == ("기준 정보", REFERENCE_DATA.href, name.strip("「」"))
+    what = what.removesuffix(" 1건")
+    assert stop.message.startswith(
+        f"HOME — 대당 Capa 계산이 멈췄습니다. 기준 정보 {name} 표의 {what}을 0보다 큰 값으로 "
+        "고치고 「변경사항 적용」 뒤 새 리비전으로 저장하세요.\n\n"
+    )
+    assert f"{name} 표의 " in stop.message.partition("\n\n")[2]
+    assert "RQ_" not in stop.message
+
+
+def test_a_value_to_correct_outside_the_period_keeps_saying_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """조회기간 밖 달의 0 이하도 같은 곳에서 고친다 — 기간 말은 전문에 남는다."""
+    _on_page(monkeypatch)
+    error = outside_period_error(202601, 202612, _service_nonpositive("RQ_VITAL", "편중률"))
+
+    stop = calculation_stop_notice(ValueError(error))
+
+    assert stop is not None
+    assert stop.text == "대당 Capa 계산 멈춤 — 기준 정보 「여유율」 0 이하 칸 1건을 고침"
+    assert "밖의 달에 기준정보 오류가 있어" in stop.message
+    assert "RQ_VITAL" not in stop.message
+
+
+@pytest.mark.parametrize(
+    ("error", "cell"),
+    [
+        (
+            _service_stop(unit_capacity._VALUE_BLANK, "RQ_MODULE", "모듈수"),
+            "빈 칸 1건",
+        ),
+        (
+            _service_stop(unit_capacity._VALUE_NO_MATCH, "RQ_MODULE", "모듈수"),
+            "빈 칸 1건",
+        ),
+        (
+            _service_stop(unit_capacity._VALUE_NOT_NUMERIC, "RQ_MODULE", "모듈수"),
+            "숫자 아닌 칸 1건",
+        ),
+        (_service_nonpositive("RQ_MODULE", "모듈수"), "0 이하 칸 1건"),
+    ],
+    ids=["blank", "no-match", "text", "zero"],
+)
+def test_a_module_count_stop_says_the_app_cannot_fix_it(
+    monkeypatch: pytest.MonkeyPatch, error: str, cell: str
+) -> None:
+    """모듈수는 기준 정보에 표가 없어 앱에서 고칠 수 없다 — 「그 화면으로」 를 달지 않고(멈춘 화면
+    그대로) 원천을 다시 등록하라고 말한다. 건수 · 예시 행은 전문에 남고 표 이름은 쓰지 않는다."""
+    _on_page(monkeypatch)
+    stop = calculation_stop_notice(ValueError(error))
+
+    assert stop is not None
+    assert stop.text == (
+        f"대당 Capa 계산 멈춤 — 모듈수 {cell} · 앱에서 고칠 수 없음 — 원천을 다시 등록"
+    )
+    assert len(stop.text) <= alerts.SHORT_LIMIT
+    assert stop.goto is None
+    assert stop.message.startswith(
+        "HOME — 대당 Capa 계산이 멈췄습니다. 모듈수는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 "
+        "않습니다 — 원천의 모듈수를 고쳐 다시 등록하세요.\n\n"
+    )
+    assert f"모듈수 표의 {cell.removesuffix(' 1건')}: 1건, 예시 " in stop.message
+    assert "'공정': 'DEMO-P1'" in stop.message
+    assert "RQ_MODULE" not in stop.message and "기준 정보" not in stop.message
+
+
+def test_a_module_count_stop_outside_the_period_drops_the_screen_to_fix_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """조회기간 밖 달의 모듈수 멈춤 — 기간 글의 「기준 정보 페이지에서 고친 뒤 새 리비전으로
+    저장」 은 첫머리의 「새 리비전으로는 풀리지 않습니다」 와 맞부딪치므로 빼고, 기간 말과 오류는
+    남긴다."""
+    _on_page(monkeypatch)
+    error = outside_period_error(
+        202601, 202612, _service_stop(unit_capacity._VALUE_BLANK, "RQ_MODULE", "모듈수")
+    )
+
+    stop = calculation_stop_notice(ValueError(error))
+
+    assert stop is not None and stop.goto is None
+    assert "밖의 달에 기준정보 오류가 있어" in stop.message
+    assert "어느 달이든 고쳐야 풀립니다. 오류: 모듈수 표의 빈 칸: 1건, 예시 " in stop.message
+    assert stop.message.count("새 리비전") == 1
+    assert "기준 정보" not in stop.message and "생산 계획" not in stop.message
+
+
 @pytest.mark.parametrize(
     "error",
     [
@@ -315,18 +469,20 @@ def test_a_stop_without_a_page_name_starts_from_the_stop_itself(
         KeyError("RQ_REQB"),
         ValueError("선택 범위에 소요대수 산출 기준이 없습니다. (데이터 범위 26.01–26.12)"),
         ValueError("RQ_YLD의 수율 값이 비었습니다: 1건"),
-        ValueError("RQ_RUN_RATE의 CAPA_RUN_RATE 컬럼에 숫자가 아닌 값이 있습니다: 1건, 예시 []"),
-        ValueError("RQ_RUN_RATE의 CAPA_RUN_RATE 값은 0보다 커야 합니다: 1건, 예시 []"),
-        ValueError("RQ_MODULE의 모듈수 값이 빈 대당 Capa 기준이 있습니다: 1건, 예시 []"),
+        ValueError("RQ_CHIP_EQ.구분_EQ 값은 0보다 커야 합니다."),
+        ValueError("RQ_PKG_PLAN.생산수량에 숫자가 아닌 값이 있습니다: 1행, 예시 []"),
+        ValueError("RQ_VITAL의 연결 키가 중복되었습니다: 1건, 예시 []"),
+        ValueError("RQ_RUN_DAY의 생산계획년월은 YYYYMM 형식이어야 합니다: 1행, 예시 []"),
+        ValueError("보유 설비대수에 숫자가 아닌 값 또는 누락값이 있습니다."),
         duckdb.Error("RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, 예시 []"),
     ],
 )
 def test_other_failures_have_no_screen_to_fill_and_keep_the_plain_message(
     error: BaseException,
 ) -> None:
-    """DB 잠금 · 읽기 실패 · 자료 없는 달은 같은 `except` 로 오지만 채울 화면이 없다. 앱에서 고칠 수
-    없는 모듈수와 빠진 입력이 아닌 값도 기준 정보로 보내지 않는다 — 부르는 쪽이 지금 글을 그대로
-    쓴다."""
+    """DB 잠금 · 읽기 실패 · 자료 없는 달은 같은 `except` 로 오지만 채울 화면이 없다. 표 자체가
+    깨진 꼴(연결 키 · 월 형식)과 기준 정보 편집표 밖의 표도 기준 정보로 보내지 않는다 — 부르는 쪽이
+    지금 글을 그대로 쓴다."""
     assert calculation_stop_notice(error) is None
 
 

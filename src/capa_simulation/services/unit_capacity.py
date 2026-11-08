@@ -690,14 +690,19 @@ def _assert_positive(
     table_name: str,
     keys: list[str],
 ) -> None:
-    """0 이하 값을 막고, 어느 경로가 걸렸는지 건수와 예시 키·값으로 알린다."""
+    """0 이하 값을 막고, 걸린 기준 칸의 건수와 예시 키·값으로 알린다.
+
+    건수는 걸린 계산 행이 아니라 그 행들이 쓴 키 조합(기준정보 표의 칸) 수다 — 빈 값·숫자 아님
+    칸의 건수(`_attached_error`)와 같다. 한 칸이 여러 계산 경로에 붙으므로 행으로 세면 고칠 칸보다
+    크게 나온다.
+    """
     nonpositive = data[column].le(0)
     if not bool(nonpositive.any()):
         return
-    examples = data.loc[nonpositive, [*keys, column]].drop_duplicates().head(5).to_dict("records")
+    distinct = data.loc[nonpositive, [*keys, column]].drop_duplicates(subset=keys)
     raise ValueError(
         f"{table_name}의 {column} 값은 0보다 커야 합니다:"
-        f" {int(nonpositive.sum()):,}건, 예시 {examples}"
+        f" {len(distinct):,}건, 예시 {distinct.head(5).to_dict('records')}"
     )
 
 
