@@ -42,7 +42,7 @@ from urllib.parse import urlencode, urlsplit
 
 import streamlit as st
 
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import (
     Identity,
@@ -50,7 +50,12 @@ from capa_simulation.auth.identity import (
     identity_from_cookies,
     session_end_of,
 )
-from capa_simulation.auth.web import NOT_ON_LIST_TEXT, public_link, sanitize_next
+from capa_simulation.auth.web import (
+    LIST_UNREAD_TEXT,
+    NOT_ON_LIST_TEXT,
+    public_link,
+    sanitize_next,
+)
 from capa_simulation.components.app_header import render_shell_style
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.theme_toggle import (
@@ -165,9 +170,18 @@ def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
     st.stop()
 
 
+def signed_out_notice(cfg: SsoConfig, problem: IdentityProblem) -> str:
+    """멈춤 화면 글. 명단 밖(`DENIED`)이어도 S3 명단을 아직 못 읽은 동안이면 「확인하지 못했습니다」
+    다 — 재시작 뒤 S3 를 못 읽은 서버에서는 명단에 든 사람의 열린 탭도 여기서 멈춘다(거절 화면과
+    같은 글 — `auth/web.LIST_UNREAD_TEXT`)."""
+    if problem is IdentityProblem.DENIED and access_store.is_unread(cfg):
+        return LIST_UNREAD_TEXT
+    return _PROBLEM_NOTICES[problem]
+
+
 def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
     _render_stop_chrome()
-    st.warning(_PROBLEM_NOTICES[problem], icon=":material/lock_clock:")
+    st.warning(signed_out_notice(cfg, problem), icon=":material/lock_clock:")
     st.markdown(login_again_link(cfg), unsafe_allow_html=True)
     st.stop()
 

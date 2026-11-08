@@ -1,4 +1,4 @@
-# Purpose: 앱 이름·버전·적용된 배포 번호와 개발 팀·문의처를 모든 화면 사이드바 바닥 카드로 보인다.
+# Purpose: 앱·배포·개발 정보를 모든 화면 사이드바 바닥 카드로 보이고 그 회차 접속 명단 알림을 낸다.
 
 """App name, build, developer, and contact pinned to the foot of the sidebar.
 
@@ -22,6 +22,12 @@
 이라 어느 화면에서나 사이드바의 같은 순번이다 — 순번이 밀리면 페이지를 옮기는 동안 지난 회차의
 사본이 흐리게 남아 카드가 두 벌로 보인다. 맨 아래 자리와 바닥 고정은 파이썬 차례가 아니라 사이드바
 CSS(`sidebar_style.build_sidebar_stylesheet`)가 이 key 로 잡는다.
+
+**모든 화면 모든 회차에 서는 자리라 접속 명단 상태 알림(`AD-08` · `AD-09`)도 여기서 낸다**
+(`sso_status.render_access_alerts`, 2026-11-08 사용자 답 U4 — S3 명단을 못 읽은 동안 관리자는
+Admin 을 열기 전 어느 화면에서나 알아야 한다). S3 명단을 쓰지 않는 서버에서는 아무것도 부르지 않아
+요소 순번이 그대로이고, 쓰는 서버에서는 회차마다 이벤트 칸 두 자리로 늘 같다. 카드 칸 밖에서
+부른다 — 스타일만 든 표지라 이벤트 칸으로 가고 카드 칸의 자식 수는 그대로다.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.sso_status import render_access_alerts
 from capa_simulation.settings import (
     APP_CONTACT_EMAIL,
     APP_NAME,
@@ -84,10 +91,12 @@ def render_app_credits(sso_line: str | None = None) -> None:
 
     `sso_line` 은 통합인증이 켜졌을 때의 셋째 줄이다(`sso_credit_line` — 이름 · 부서는 이미 막았고
     로그아웃은 같은 탭에서 여는 원문 HTML 링크). 그 줄이 있을 때만 원문 HTML 을 허락한다 — 없으면
-    지금과 같은 호출이다.
+    지금과 같은 호출이다. 카드 뒤에 접속 명단 상태 알림을 낸다(모듈 설명 — S3 명단을 쓰지 않는
+    서버는 아무것도 부르지 않는다).
     """
     with st.sidebar.container(key=APP_CREDITS_KEY):
         if sso_line is None:
             st.caption("  \n".join(credit_lines()))
         else:
             st.caption("  \n".join((*credit_lines(), sso_line)), unsafe_allow_html=True)
+    render_access_alerts()

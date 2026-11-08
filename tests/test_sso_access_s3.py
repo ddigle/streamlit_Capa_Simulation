@@ -55,7 +55,7 @@ from test_sso_access import (
     sign_in,
 )
 
-from capa_simulation.auth import access_store, names, runtime, server
+from capa_simulation.auth import access_store, names, runtime, server, web
 from capa_simulation.auth.access import (
     GRADE_ADMIN,
     GRADE_USER,
@@ -1248,11 +1248,15 @@ def test_the_callback_reads_again_just_before_denying(mock_s3: tuple[MockStore, 
     store.force.clear()
     rewind_attempt(access_store.RETRY_SECONDS)
 
-    response = sign_in(gated_app(), {}, USER)
+    app = gated_app()
+    response = sign_in(app, {}, USER)
 
     assert has_live_session(cfg, response), response.text
     assert not access_store.is_unread(cfg)
     assert reads_of_the_list(store) == 2
+    assert error_code_of(sign_in(app, {}, OTHER)) == web.NOT_ON_LIST, (
+        "읽은 뒤의 명단 밖은 다시 「명단에 없습니다」 다"
+    )
 
 
 def test_the_retry_runs_at_most_once_a_minute(mock_s3: tuple[MockStore, str]) -> None:
@@ -1264,18 +1268,18 @@ def test_the_retry_runs_at_most_once_a_minute(mock_s3: tuple[MockStore, str]) ->
 
     denied_now = sign_in(app, {}, USER)
 
-    assert error_code_of(denied_now) == "not_on_list"
+    assert error_code_of(denied_now) == web.LIST_UNREAD, "못 읽은 동안은 「확인하지 못함」 이다"
     assert requests_named(store, "GET") == 1, "방금 시도했으니 다시 가지 않는다"
 
     rewind_attempt(access_store.RETRY_SECONDS - 1)
-    assert error_code_of(sign_in(app, {}, USER)) == "not_on_list"
+    assert error_code_of(sign_in(app, {}, USER)) == web.LIST_UNREAD
     assert requests_named(store, "GET") == 1
 
     rewind_attempt(1)
-    assert error_code_of(sign_in(app, {}, USER)) == "not_on_list"
+    assert error_code_of(sign_in(app, {}, USER)) == web.LIST_UNREAD
     assert requests_named(store, "GET") == 2, "60초가 지나면 한 번 더"
 
-    assert error_code_of(sign_in(app, {}, OTHER)) == "not_on_list"
+    assert error_code_of(sign_in(app, {}, OTHER)) == web.LIST_UNREAD
     assert requests_named(store, "GET") == 2
 
 
@@ -1292,7 +1296,7 @@ def test_retries_of_someone_denied_do_not_push_out_the_audit_ring(
 
     for _ in range(3):
         rewind_attempt(access_store.RETRY_SECONDS)
-        assert error_code_of(sign_in(app, {}, USER)) == "not_on_list"
+        assert error_code_of(sign_in(app, {}, USER)) == web.LIST_UNREAD
     begun = int(time.time())
     for step in range(runtime.MAX_EVENTS + 10):
         access_store.retry_unread(cfg, now=begun + (step + 1) * access_store.RETRY_SECONDS)
@@ -1786,6 +1790,12 @@ STATUS_SCRIPT = """
 from capa_simulation.components.sso_status import render_sso_status
 
 render_sso_status()
+"""
+# 모든 화면 모든 회차에 서는 앱 정보 카드 — 접속 명단 상태 알림(`AD-08` · `AD-09`)을 여기서 낸다.
+CARD_SCRIPT = """
+from capa_simulation.components.app_credits import render_app_credits
+
+render_app_credits()
 """
 PAGE_SCRIPT = """
 from pathlib import Path
@@ -2389,9 +2399,11 @@ def test_a_list_that_shrinks_on_reading_again_leaves_no_stale_choice(
     assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).value == []
 
 
-def test_unread_locks_adding_and_warns_on_the_admin_area(
+def test_unread_locks_adding_and_warns_the_admin_on_any_screen(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """못 읽은 동안은 관리자만 들어온다 — 관리자는 Admin 을 열기 전 어느 화면에서나 알림을 받는다
+    (앱 정보 카드가 낸다, 2026-11-08 사용자 답 U4). 「그 화면으로」 는 Admin Area 다."""
     store, endpoint = mock_s3
     store.force["GET"] = (403, "AccessDenied")
     cfg = s3_config(store, endpoint)
@@ -2401,19 +2413,77 @@ def test_unread_locks_adding_and_warns_on_the_admin_area(
 
     assert _button(app, "admin_area_access_list_open_add").disabled
     assert any(item.value == "접속 명단 읽지 못함" for item in app.caption)
-    status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
-    note = active_state(status, "AD-08")
+    card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
+    note = active_state(card, "AD-08")
     assert note is not None
     assert "관리자만 들어옵니다" in note["short"]
     assert "인증 거절(HTTP 403 · AccessDenied)" in note["full"]
+    assert (note["page"], note["href"]) == ("Admin Area", "admin_area")
 
     store.force.clear()
     app = _button(app, "admin_area_access_list_reread").click().run()
 
     assert not _button(app, "admin_area_access_list_open_add").disabled
-    status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
-    assert active_state(status, "AD-08") is None
-    assert [item["active"] for item in states(status, "AD-08")] == [False]
+    card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
+    assert active_state(card, "AD-08") is None
+    assert [item["active"] for item in states(card, "AD-08")] == [False]
+
+
+def test_an_open_tab_stopped_while_the_list_is_unread_says_it_could_not_check(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """재시작 뒤 S3 를 못 읽은 서버 — 명단에 든 사람의 열린 탭도 멈춘다. 그 글은 「명단에
+    없습니다」 가 아니라 거절 화면과 같은 「확인하지 못했습니다」 다."""
+    store, endpoint = mock_s3
+    store.force["GET"] = (503, "SlowDown")
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+    runtime.mark_gate_installed()
+    token = session_token(cfg, USER)
+    monkeypatch.setattr(sso_identity, "session_cookies", lambda: {cfg.session_cookie: token})
+    monkeypatch.setattr(sso_identity, "current_page_url", lambda: None)
+
+    app = AppTest.from_string(
+        "from capa_simulation.components import sso_identity\nsso_identity.require_signed_in()\n"
+    ).run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert [warning.value for warning in app.warning] == [web.LIST_UNREAD_TEXT]
+
+
+def test_the_list_alerts_leave_the_status_box_and_hold_two_event_slots(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """두 알림은 앱 정보 카드 한 곳에서만 낸다 — 「통합인증 점검」 이 또 내면 Admin 회차에 같은
+    알림이 둘이다. 카드는 S3 명단을 쓰는 서버의 회차마다 이벤트 칸 두 자리로 늘 같다(관리자든
+    아니든 · 조건이 있든 없든 — 회차마다 자리 수가 달라지면 안 된다)."""
+    store, endpoint = mock_s3
+    store.force["GET"] = (403, "AccessDenied")
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+
+    for who in (ADMIN, USER, None):
+        _as_person(cfg, who, monkeypatch)
+        status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
+        assert states(status, "AD-08") == [] and states(status, "AD-09") == [], who
+        card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
+        assert not list(card.exception), who
+        assert len(card._tree.get("html")) == 2, who
+        assert len(states(card, "AD-08")) == 1 and len(states(card, "AD-09")) == 1, who
+        assert bool(active_state(card, "AD-08")) is (who == ADMIN), who
+
+
+def test_the_card_writes_no_alert_slot_where_the_s3_list_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S3 명단을 쓰지 않는 서버(개발 PC · 사내 WebIDE · 환경변수 명단)는 카드가 알림 자리를 쓰지
+    않아 요소 순번이 그대로다."""
+    for environ in ({}, {names.ENV_ACCESS_ADMINS: ADMIN, names.ENV_ACCESS_USERS: USER}):
+        cfg = use_config(environ)
+        _as_person(cfg, ADMIN, monkeypatch)
+        card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
+        assert not list(card.exception)
+        assert card._tree.get("html") == []
 
 
 def test_the_read_alert_goes_only_to_those_who_can_act(
@@ -2427,19 +2497,20 @@ def test_the_read_alert_goes_only_to_those_who_can_act(
 
     _as_person(cfg, USER, monkeypatch)
     status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
+    card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
 
-    assert not list(status.exception)
-    assert active_state(status, "AD-08") is None
-    assert [item["active"] for item in states(status, "AD-08")] == [False]
+    assert not list(status.exception) and not list(card.exception)
+    assert active_state(card, "AD-08") is None
+    assert [item["active"] for item in states(card, "AD-08")] == [False]
     captions = "\n".join(str(item.value) for item in status.caption)
     assert "**S3 명단** · 실패 · 그 밖의 응답(HTTP 503 · SlowDown)" in captions, (
         "점검 줄은 그대로다"
     )
 
     _as_person(cfg, ADMIN, monkeypatch)
-    status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
+    card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
 
-    note = active_state(status, "AD-08")
+    note = active_state(card, "AD-08")
     assert note is not None and "지난 명단으로 판정합니다" in note["short"]
 
 
@@ -2455,9 +2526,9 @@ def test_the_read_alert_is_gone_after_a_good_save(
     access_store.save_changes(cfg, identity, add=[OTHER])
 
     _as_person(cfg, ADMIN, monkeypatch)
-    status = AppTest.from_string(STATUS_SCRIPT, default_timeout=30).run()
+    card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
 
-    assert active_state(status, "AD-08") is None
+    assert active_state(card, "AD-08") is None
 
 
 # --- 점검 줄 -------------------------------------------------------------------------------------
@@ -3003,8 +3074,9 @@ def test_the_first_version_raises_a_check_alert(
     cfg = _seeded(store, endpoint, USER)
     _as_person(cfg, ADMIN, monkeypatch)
 
-    app = AppTest.from_string(STATUS_SCRIPT).run()
-    assert active_state(app, "AD-09")
+    app = AppTest.from_string(CARD_SCRIPT).run()
+    note = active_state(app, "AD-09")
+    assert note and (note["page"], note["href"]) == ("Admin Area", "admin_area")
 
     access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=("demo.added",))
 
@@ -3020,6 +3092,6 @@ def test_the_first_version_alert_goes_only_to_those_who_can_act(
     cfg = _seeded(store, endpoint, USER)
     _as_person(cfg, USER, monkeypatch)
 
-    app = AppTest.from_string(STATUS_SCRIPT).run()
+    app = AppTest.from_string(CARD_SCRIPT).run()
 
     assert not active_state(app, "AD-09")

@@ -24,6 +24,11 @@ redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩
 S3 명단 줄(`access_s3_line`)은 「C-DEP 에서 S3 로 닿는가」 의 답이다 — 키 · 서명 · 명단 값 ·
 주소를 싣지 않아 리뷰 압축본에 그대로 옮길 수 있다. 쓰기 권한은 저장해 보기 전에는 모른다(GET ·
 HEAD 가 되어도).
+
+접속 명단 상태 알림 둘(`AD-08` 못 읽음 · `AD-09` 환경변수 첫 판 — `render_access_alerts`)은 이
+펼침이 아니라 앱 정보 카드(`app_credits.render_app_credits` — 모든 화면 모든 회차)가 부른다. 못 읽은
+동안은 관리자만 들어오므로 관리자가 Admin 을 열기 전 어느 화면에서나 알아야 한다(2026-11-08 사용자
+답 U4).
 """
 
 from __future__ import annotations
@@ -54,6 +59,8 @@ from capa_simulation.io.container_start_report import (
     STATUS_SKIPPED,
     mask_account,
 )
+from capa_simulation.navigation import ADMIN_AREA
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.sidebar_status import remembered_expander
 
 # 펼침 key. 「서버 시작 점검」 바로 뒤 · 탭 묶음 위에 서므로 자리를 key 로 고정한다.
@@ -428,16 +435,21 @@ def _viewer_is_admin(cfg: SsoConfig) -> bool:
     return identity is not None and access_store.is_admin(cfg, identity.loginid)
 
 
-def _access_read_alert(cfg: SsoConfig) -> None:
+def _admin_area_goto() -> tuple[str, str]:
+    """두 알림의 고칠 자리 — 어느 화면에서 떠도 「그 화면으로」 는 Admin Area 다."""
+    return tab_label(ADMIN_AREA), ADMIN_AREA.href
+
+
+def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
     """상태 알림 `AD-08` — 못 읽은 동안은 관리자만 들어오고, 읽어 둔 뒤의 실패는 지난 명단이다.
 
-    조치 알림이고 그 자리(「다시 읽기」)가 관리자에게만 있어 관리자 회차에만 세운다. 다른 사람의
-    회차는 해소로 부른다 — 사실은 「통합인증 점검」 의 「S3 명단」 줄이 그대로 말한다.
+    조치 알림이고 그 자리(「다시 읽기」)가 관리자에게만 있어 관리자 회차(`admin`)에만 세운다. 다른
+    사람의 회차는 해소로 부른다 — 사실은 「통합인증 점검」 의 「S3 명단」 줄이 그대로 말한다.
     """
     source = runtime.access_source()
     problem = None if source is None else source.problem
     unread = access_store.is_unread(cfg)
-    active = (problem is not None or unread) and _viewer_is_admin(cfg)
+    active = (problem is not None or unread) and admin
     effect = "관리자만 들어옵니다" if unread else "지난 명단으로 판정합니다"
     alerts.state(
         "AD-08",
@@ -450,16 +462,17 @@ def _access_read_alert(cfg: SsoConfig) -> None:
             f"{f'({access_problem_text(problem)})' if problem is not None else ''} — {effect}. "
             "Admin 「접속 명단」 의 「다시 읽기」 로 다시 읽습니다."
         ),
+        goto=_admin_area_goto(),
     )
 
 
-def _access_seed_alert(cfg: SsoConfig) -> None:
+def _access_seed_alert(*, admin: bool) -> None:
     """상태 알림 `AD-09` — 파일이 없어 환경변수 목록으로 판정하는 동안. 첫 저장이 쓰면 풀린다.
 
-    `AD-08` 과 같이 그 자리(「접속 명단」)가 있는 관리자 회차에만 세운다.
+    `AD-08` 과 같이 그 자리(「접속 명단」)가 있는 관리자 회차(`admin`)에만 세운다.
     """
     source = runtime.access_source()
-    seeded = source is not None and source.seeded and _viewer_is_admin(cfg)
+    seeded = source is not None and source.seeded and admin
     alerts.state(
         "AD-09",
         scope=None,
@@ -470,7 +483,24 @@ def _access_seed_alert(cfg: SsoConfig) -> None:
             "S3 명단 파일이 아직 없어 CAPA_ACCESS_USERS 를 첫 판으로 씁니다. Admin 「접속 명단」 "
             "에서 첫 저장을 하면 파일이 생기고, 그 뒤에는 환경변수를 듣지 않습니다."
         ),
+        goto=_admin_area_goto(),
     )
+
+
+def render_access_alerts() -> None:
+    """접속 명단 상태 알림 둘(`AD-08` · `AD-09`) — 관리자의 어느 화면에서나 뜨게 매 회차 부른다.
+
+    S3 명단을 쓰는 서버에서만 부른다 — 설정은 재시작 전에 바뀌지 않으니 해소할 것이 없고, 꺼진
+    서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
+    서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
+    이 회차 쿠키에서 한 번만 다시 검증해 둘에 쓴다.
+    """
+    cfg = runtime.config()
+    if not access_store.is_on(cfg):
+        return
+    admin = _viewer_is_admin(cfg)
+    _access_read_alert(cfg, admin=admin)
+    _access_seed_alert(admin=admin)
 
 
 def _conclusion(cfg: SsoConfig) -> str:
@@ -514,11 +544,10 @@ def render_sso_status() -> None:
     """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다.
 
     알릴 조건 둘(운영인데 꺼짐 `AD-02` · 서명 인증서 만료 임박 `AD-03`)은 상태 알림이다(알림창 ·
-    Alarm — 그리지 않는 회차에도 부른다, 해소). S3 명단을 읽지 못함(`AD-08`)은 그 명단을 쓰는
-    서버에서만 부르고(설정은 재시작 전에 바뀌지 않으니 해소할 것이 없다 — 꺼진 서버의 요소 순번은
-    그대로다) 관리자 회차에만 세운다. 펼침 안의 결론은 값 한 줄이고 하는 법 · 보관 범위는 풍선 ·
-    Guide 가 말한다 — 인증서 만료 임박은 `AD-03` 과 표 까닭 칸이 말하므로 줄을 따로 세우지 않는다
-    (설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
+    Alarm — 그리지 않는 회차에도 부른다, 해소). 접속 명단 알림(`AD-08` · `AD-09`)은 여기서 부르지
+    않는다 — 앱 정보 카드가 모든 화면에서 부른다(`render_access_alerts`). 펼침 안의 결론은 값 한
+    줄이고 하는 법 · 보관 범위는 풍선 · Guide 가 말한다 — 인증서 만료 임박은 `AD-03` 과 표 까닭
+    칸이 말하므로 줄을 따로 세우지 않는다(설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
     cfg = runtime.config()
     now = datetime.now(timezone.utc)
     expiring = _expiring_certs(cfg, now)
@@ -539,9 +568,6 @@ def render_sso_status() -> None:
         text=f"통합인증 서명 인증서 만료가 {CERT_WARNING_DAYS}일 안입니다 — 새 인증서를 더하세요",
         full=alerts.plain_text(_cert_warning()),
     )
-    if access_store.is_on(cfg):
-        _access_read_alert(cfg)
-        _access_seed_alert(cfg)
     if cfg.mode is SsoMode.OFF and not cfg.prod:
         return
     title = f"통합인증 점검 · {sso_verdict(cfg)}"

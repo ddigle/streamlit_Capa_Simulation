@@ -938,11 +938,28 @@ def test_the_logout_link_appears_when_set() -> None:
     assert f'href="{logout}"' in page.text and "통합인증에서도 로그아웃" in page.text
 
 
+def test_the_unread_page_says_it_could_not_check_not_that_the_person_is_missing() -> None:
+    """S3 명단을 아직 못 읽어 관리자만 들어오는 동안의 거절은 「확인하지 못했습니다」 다 — 명단에
+    든 사람에게 「명단에 없습니다」 를 보이지 않는다(2026-11-08 사용자 답 U4). 꼴은 거절 화면
+    그대로다."""
+    listed_config({names.ENV_ACCESS_CONTACT: "CAPA 담당 창구"})
+
+    page = _denied_page(f"{names.ERROR_PATH}?code={web.LIST_UNREAD}")
+
+    assert page.status == 403
+    assert not page.set_cookies
+    assert web.LIST_UNREAD_TITLE in page.text and web.LIST_UNREAD_TEXT in page.text
+    assert web.NOT_ON_LIST_TITLE not in page.text and web.NOT_ON_LIST_TEXT not in page.text
+    assert "요청: CAPA 담당 창구" in page.text
+    assert f"{PUBLIC_URL}{names.LOGIN_PATH}?next=%2F" in page.text and "다시 확인" in page.text
+
+
 def test_the_reason_codes_stay_apart() -> None:
     """포털이 거절한 `access_denied` 는 오류 화면(400) 그대로, 명단은 `not_on_list` 하나다."""
     cfg = listed_config()
 
     assert "not_on_list" in web.allowed_reason_codes(cfg)
+    assert web.LIST_UNREAD in web.allowed_reason_codes(cfg)
     portal = _denied_page(f"{names.ERROR_PATH}?code=idp_error:access_denied")
     assert portal.status == 400 and web.NOT_ON_LIST_TITLE not in portal.text
     made_up = _denied_page(f"{names.ERROR_PATH}?code=not_on_list2")
