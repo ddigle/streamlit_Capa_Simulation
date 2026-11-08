@@ -286,14 +286,16 @@ def _render_direct_editor(
     # 고칠 범위 고르기는 표 제목 줄 곁이다 — 전폭 두 줄이면 표가 그만큼 밀린다(설계 규칙 UI-LAY-11).
     # 제목 바로 옆에 공용 버전 줄이 선다(사용자 그림 메모 g18).
     with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
-        # 이 프로필만 `version == 0` 이 없다. 저장소가 1 부터 올리고 미초기화는 예외라, 공통
-        # 캡션의 「없음」 갈래에는 닿지 않는다.
-        render_profile_heading(
-            "#### 직접 편집",
-            profile,
-            key="display_order",
-            empty="아직 저장한 표시순서가 없습니다",
-        )
+        # 이 프로필만 `version == 0` 이 없다. 저장소가 1 부터 올리고 미초기화는 예외라, 공통 캡션의
+        # 「없음」 갈래에는 닿지 않는다. 제목 · 버전 줄 칸은 제 폭만 차지한다 — 기본(전폭)이면
+        # 고르기 둘이 줄 오른쪽 끝으로 밀린다.
+        with st.container(width="content"):
+            render_profile_heading(
+                "#### 직접 편집",
+                profile,
+                key="display_order",
+                empty="아직 저장한 표시순서가 없습니다",
+            )
         pages = display_order["페이지 구분"].drop_duplicates().tolist()
         selected_page = st.selectbox(
             "페이지 구분",

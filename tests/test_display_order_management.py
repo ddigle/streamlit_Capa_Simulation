@@ -134,12 +134,15 @@ def test_the_scope_pickers_stand_on_the_heading_line(tmp_path: Path) -> None:
     page = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_page")
     tab = _path_of(app, lambda node: getattr(node, "key", "") == "display_order_tab")
 
-    # 제목은 공용 버전 줄과 한 칸(`render_profile_heading`)이고 그 칸이 고르기 둘의 형제다.
-    assert heading[:-2] == page[:-1] == tab[:-1]
-    assert heading[-2] < page[-1] < tab[-1]
+    # 제목은 공용 버전 줄과 한 칸(`render_profile_heading`)이고, 그 칸을 감싼 제 폭 칸이 고르기
+    # 둘의 형제다(전폭이면 고르기가 줄 오른쪽 끝으로 밀린다).
+    assert heading[:-3] == page[:-1] == tab[:-1]
+    assert heading[-3] < page[-1] < tab[-1]
     line: Any = app.main
-    for index in heading[:-2]:
+    for index in heading[:-3]:
         line = line.children[index]
+    holder = line.children[heading[-3]]
+    assert holder.proto.width_config.WhichOneof("width_spec") == "use_content"
     assert line.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
     assert line.proto.flex_container.wrap
 
