@@ -25,13 +25,14 @@ Proc Rename 의 「변경 메모」가 그대로 출처가 되고, 캡션은 늘
 
 **제목 옆 버전 줄**(`render_profile_heading`). 구획 제목 아래 따로 서던 버전 캡션을 제목과 한 줄에
 둔다(2026-11-08 사용자 그림 메모 g18 「공용 버전 … 타임스탬프 줄을 각 타이틀 옆으로」). 줄은 가로 칸
-(`st.container(horizontal=True)` — 기본 줄 바꿈)이라 칸이 좁으면 버전 줄이 제목 아래로 내려간다.
-버전 줄 글은 `profile_version_caption` 그대로라 출처를 막는 규칙도 같다.
+(`st.container(horizontal=True)` — 기본 줄 바꿈)이라 칸이 좁으면 버전 줄이 제목 아래로 내려간다. 두
+글은 글자 밑줄에 맞춘다. 버전 줄 글은 `profile_version_caption` 그대로라 출처를 막는 규칙도 같다.
 
 ```python
 render_profile_heading(
     "#### :material/rule: 확보율 판정 기준",
     threshold_profile,
+    key="home_threshold",  # 화면 안에서 줄마다 다른 이름
     empty="아직 저장하지 않아 …",
     detail=_threshold_detail(threshold_profile),
     help=THRESHOLD_HELP,  # 제목 풍선(있으면)
@@ -41,6 +42,7 @@ render_profile_heading(
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Final, Protocol
 
@@ -52,6 +54,13 @@ VERSION_CAPTION_PREFIX = "공용 버전 "
 CAPTION_SEPARATOR = " · "
 # 제목과 버전 줄 사이 — 같은 줄의 짝이라 본문 칸 사이(medium)보다 좁다.
 HEADING_GAP: Final = "small"
+# 제목 · 버전 줄 한 줄 칸의 key 접두어와, 그 칸들의 두 글을 글자 밑줄에 맞추는 규칙.
+HEADING_KEY_PREFIX: Final = "profile_heading_"
+HEADING_BASELINE_STYLE: Final = (
+    f'<style>[class*="st-key-{HEADING_KEY_PREFIX}"]{{align-items:baseline}}</style>'
+)
+# 앞에 `\` 가 없는 `<` — `literal_markdown` 이 막은 `\<` 는 이미 글자다.
+_RAW_TAG_START: Final = re.compile(r"(?<!\\)<")
 
 
 class HasProfileVersion(Protocol):
@@ -106,20 +115,43 @@ def render_profile_heading(
     title: str,
     profile: HasProfileVersion,
     *,
+    key: str,
     empty: str,
     detail: str | None = None,
     suffix: str | None = None,
     help: str | None = None,
-    key: str | None = None,
 ) -> None:
     """구획 제목과 그 공용 버전 줄(`profile_version_caption`)을 한 줄에 그린다.
 
     `title` 은 앱이 지은 마크다운 제목(「#### :material/…: 이름」)이고 `help` 는 그 제목의 풍선이다.
-    버전 줄은 제목 오른쪽에 붙고(가운데 맞춤), 칸이 좁으면 제목 아래로 내려간다. `empty`·`detail`·
-    `suffix` 는 `profile_version_caption` 과 같다. 본문 칸에만 쓰고 이벤트 칸에는 아무것도 쓰지 않아
-    팝업 본문 · 프래그먼트 어디서나 부를 수 있다.
+    `key` 는 화면 안에서 줄마다 다른 이름이다(줄 칸 key 는 `HEADING_KEY_PREFIX` + `key`). 버전 줄은
+    제목 오른쪽에 붙고, 칸이 좁으면 제목 아래로 내려간다. `empty`·`detail`·`suffix` 는
+    `profile_version_caption` 과 같다.
+
+    **두 글은 글자 밑줄(baseline)에 맞춘다** — 제목(h4)은 위아래 여백이 달라 가운데 맞춤이면 작은
+    버전 줄이 제목 글자보다 3 ~ 8px 떠 보인다(샘플 관측 — 팝업 안 제목 · 본문 제목). 줄 칸에
+    `align-items: baseline` 을 거는 규칙은 버전 줄 글과 한 마크다운에 싣는다 — 스타일만 든 `st.html`
+    은 이벤트 칸으로 가 팝업 본문 · 프래그먼트의 이벤트 칸 자리 수를 바꾸고, 따로 세운 칸은 줄에
+    간격을 하나 더 만든다. 그래서 버전 줄은 HTML 을 받는 캡션이다 — 사람 글(출처)은
+    `literal_markdown` 이 `<` 까지 막았고, 앱 글의 맨 `<` 는 글자 그대로 보이게
+    바꾼다(`_without_raw_html`). 본문 칸에만 쓰고 이벤트 칸에는 아무것도 쓰지 않아 팝업 본문 ·
+    프래그먼트 어디서나 부를 수 있다.
     """
     caption = profile_version_caption(profile, empty=empty, detail=detail, suffix=suffix)
-    with st.container(horizontal=True, vertical_alignment="center", gap=HEADING_GAP, key=key):
+    with st.container(
+        horizontal=True,
+        vertical_alignment="center",
+        gap=HEADING_GAP,
+        key=f"{HEADING_KEY_PREFIX}{key}",
+    ):
         st.markdown(title, help=help, width="content")
-        st.caption(caption, width="content")
+        st.caption(
+            _without_raw_html(caption) + HEADING_BASELINE_STYLE,
+            unsafe_allow_html=True,
+            width="content",
+        )
+
+
+def _without_raw_html(text: str) -> str:
+    """막히지 않은 `<` 를 글자 참조로 — HTML 을 받는 마크다운 자리에서 태그로 읽히지 않게 한다."""
+    return _RAW_TAG_START.sub("&lt;", text)
