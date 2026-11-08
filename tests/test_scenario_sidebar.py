@@ -767,6 +767,15 @@ def test_a_save_pressed_as_unapplied_edits_resurface_is_refused_out_loud(
     assert any("생산 계획 · 수율" in item.value for item in app.caption)
 
 
+def test_the_save_value_line_keeps_table_boundaries_between_names_with_middle_dots() -> None:
+    """표 이름마다 「 · 」 가 들어 있다(「기준 정보 · UPEH」). 저장 구획 값 줄이 표끼리도 「 · 」 로
+    이으면 표 셋이 여섯 토막으로 읽힌다 — 불러오기 쪽 안내와 같이 「, 」 로 잇는다."""
+    labels = ["기준 정보 · UPEH", "기준 정보 · ST", "생산 계획 · 수율"]
+    line = target._pending_edits_line(labels)
+    assert line == ":orange-badge[적용 전 편집] 기준 정보 · UPEH, 기준 정보 · ST, 생산 계획 · 수율"
+    assert ", ".join(labels) in target._pending_edits_notice(labels)
+
+
 def test_without_unapplied_edits_nothing_extra_is_asked(sidebar_app: AppTest) -> None:
     app = _open(sidebar_app.run())
 

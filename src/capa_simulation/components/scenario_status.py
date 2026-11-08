@@ -625,8 +625,10 @@ def _pending_edits_notice(pending_edits: Sequence[str]) -> str:
 
 def _pending_edits_line(pending_edits: Sequence[str]) -> str:
     """저장 구획 맨 위 값 줄 — 「적용 전 편집」 표지와 그 편집이 남은 표 이름들. 그 편집이 어떻게
-    되는지는 확인 체크 풍선(`PENDING_DISCARD_HELP`)이 말한다."""
-    return ":orange-badge[적용 전 편집] " + " · ".join(pending_edits)
+    되는지는 확인 체크 풍선(`PENDING_DISCARD_HELP`)이 말한다. 표 이름마다 「 · 」 가 들어 있어
+    (「기준 정보 · UPEH」) 표끼리는 「, 」 로 잇는다 — 불러오기 쪽(`_pending_edits_notice`)과
+    같다."""
+    return ":orange-badge[적용 전 편집] " + ", ".join(pending_edits)
 
 
 def missing_scenario_notice(name: str | None, status: str | None) -> str:
