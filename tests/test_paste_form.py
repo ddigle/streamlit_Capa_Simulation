@@ -400,6 +400,36 @@ render_paste_window("demo", size_key="import", lock=False)
     }
 
 
+def test_a_window_that_takes_no_table_gives_its_own_empty_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """빈 칸 까닭 풍선은 창이 받는 것을 말한다 — 표가 아닌 목록을 받는 창은 제 글을 내려 준다."""
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(paste_form, "_PASTE_WINDOW", lambda **kwargs: sent.append(kwargs))
+    app = AppTest.from_string(
+        """
+from capa_simulation.components.paste_form import render_paste_form
+
+render_paste_form(
+    "demo",
+    text_key="demo_text",
+    text_label="목록 붙여넣기",
+    apply_label="넣기",
+    empty_why="목록을 넣으면 누를 수 있습니다.",
+)
+render_paste_form("plain", text_key="plain_text", text_label="표 붙여넣기", apply_label="적용")
+""",
+        default_timeout=30,
+    ).run()
+    assert not app.exception
+    reasons = {item["key"]: item["data"]["reasons"] for item in sent}
+    assert reasons["capa_paste_host_demo"] == {
+        "empty": "목록을 넣으면 누를 수 있습니다.",
+        "confirm": paste_form.PASTE_CONFIRM_WHY,
+    }
+    assert reasons["capa_paste_host_plain"]["empty"] == paste_form.PASTE_EMPTY_WHY
+
+
 def _node(runner: str) -> Any:
     match = re.search(
         r"// <paste-window-core>\n(?P<body>.*?)\n// </paste-window-core>", WINDOW_JS, re.S

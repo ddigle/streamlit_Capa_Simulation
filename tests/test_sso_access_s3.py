@@ -37,6 +37,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from sso_support import sso_environ, use_config
+from streamlit.proto.LabelVisibility_pb2 import LabelVisibility
 from streamlit.testing.v1 import AppTest
 from test_sso_access import (
     ECHO_DISCONNECTS,
@@ -65,7 +66,7 @@ from capa_simulation.auth.access import (
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, load_config
 from capa_simulation.auth.identity import Identity, IdentityProblem, session_check
 from capa_simulation.auth.tokens import issue_session
-from capa_simulation.components import access_list_admin, sso_identity, sso_status
+from capa_simulation.components import access_list_admin, paste_form, sso_identity, sso_status
 from capa_simulation.io import s3_small
 from capa_simulation.io.s3_small import S3Failure, S3Target
 
@@ -1939,6 +1940,26 @@ def test_the_paste_window_adds_people(
     assert_absent(text, OTHER, GONE, "bad")
 
 
+def test_the_locked_add_says_it_takes_loginids(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """빈 칸에 잠긴 「명단에 넣기」 풍선은 이 창이 받는 것(loginid)을 말한다 — 공용 글 「표를
+    붙여넣으면」 은 머리 없는 표를 거절하는 이 창과 맞지 않는다."""
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(paste_form, "_PASTE_WINDOW", lambda **kwargs: sent.append(kwargs))
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    app = _admin_app(cfg, monkeypatch)
+
+    app = _button(app, "admin_area_access_list_open_add").click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    (window,) = [item for item in sent if item["key"].endswith(access_list_admin.ADD_FORM_KEY)]
+    assert window["data"]["reasons"]["empty"] == access_list_admin.ADD_EMPTY_WHY
+    assert "loginid" in access_list_admin.ADD_EMPTY_WHY
+    assert "표" not in access_list_admin.ADD_EMPTY_WHY
+
+
 def test_the_paste_window_refuses_nothing_readable(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2210,6 +2231,107 @@ def test_reading_again_from_the_screen(
     assert "인증 거절(HTTP 403 · AccessDenied)" in _flash_text(app)
     assert sorted(app.dataframe[0].value["loginid"].tolist()) == [OTHER, USER]
     assert problem_of(cfg, OTHER) is None
+
+
+def _box_layout(app: AppTest) -> list[Any]:
+    """「접속 명단」 펼침 안 차례 — 가로 칸은 그 안 (꼴, key) 목록, 세로 칸은 「칸:」 뒤에 그 안 꼴,
+    그 밖은 꼴 이름."""
+    (box,) = [item for item in app.status if item.label == "접속 명단"]
+
+    def name(node: Any) -> tuple[str, str]:
+        return (node.type, str(getattr(node, "key", "") or ""))
+
+    def kinds(node: Any) -> list[str]:
+        children = getattr(node, "children", None)
+        if not children:
+            return [node.type]
+        return [kind for child in children.values() for kind in kinds(child)]
+
+    layout: list[Any] = []
+    for child in box.children.values():
+        flex = getattr(getattr(child, "proto", None), "flex_container", None)
+        if flex is not None and flex.direction == 2:
+            layout.append([name(item) for item in child.children.values()])
+        elif getattr(child, "children", None):
+            layout.append("칸:" + ",".join(kinds(child)))
+        else:
+            layout.append(child.type)
+    return layout
+
+
+def test_the_list_actions_stand_in_one_row_above_the_table(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표 위 작업 줄은 한 줄이다(UI-LAY-11) — 추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 판 값.
+    고르기 칸 라벨은 접고 자리표시 글이 그 이름이다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+
+    app = _admin_app(cfg, monkeypatch)
+
+    layout = _box_layout(app)
+    rows = [item for item in layout if isinstance(item, list)]
+    assert len(rows) == 1, layout
+    assert [item for item in rows[0] if item[0] != "caption"] == [
+        ("button", "admin_area_access_list_open_add"),
+        ("button", "admin_area_access_list_reread"),
+        ("multiselect", access_list_admin.ACCESS_LIST_REMOVE_KEY),
+        ("button", "admin_area_access_list_remove_button"),
+    ]
+    assert rows[0][-1][0] == "caption"
+    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
+    assert picker.proto.label_visibility.value == LabelVisibility.LabelVisibilityOptions.COLLAPSED
+    assert picker.label == picker.proto.placeholder == "지울 사람"
+
+
+def test_the_picked_people_wrap_instead_of_scrolling_out_of_sight(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """고른 사람 칩은 줄을 접는다 — 가로 작업 줄 안 기본값은 한 줄 가로 스크롤이라 칸 밖으로 밀린
+    사람이 보이지 않은 채 「지우기」 에 함께 빠진다(결과 알림은 수만 싣는다)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app = _admin_app(cfg, monkeypatch)
+
+    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER, OTHER]).run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
+    assert picker.value == [USER, OTHER]
+    assert picker.proto.HasField("wrap") and picker.proto.wrap
+
+
+def test_the_pick_refusal_stands_right_below_the_row_and_above_the_table(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """고르지 않은 「지우기」 의 곁 거부는 누른 단추 줄 바로 아래 · 표 앞이다(UI-LAY-03)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    app = _admin_app(cfg, monkeypatch)
+
+    app = _button(app, "admin_area_access_list_remove_button").click().run()
+
+    layout = _box_layout(app)
+    assert [item.value for item in app.warning] == ["지울 사람을 고르세요"]
+    assert isinstance(layout[0], list), layout
+    assert "warning" in layout[1], layout
+    assert layout[2:] == ["space", "dataframe"], layout
+
+
+def test_removing_everyone_still_tells_the_result(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """명단이 빈 갈래에서도 그 회차의 결과 알림이 나간다 — 알림 칸이 표 갈래 안에만 있지 않다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    app = _admin_app(cfg, monkeypatch)
+
+    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER, OTHER]).run()
+    app = _button(app, "admin_area_access_list_remove_button").click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert any(item.value == "명단에 사람이 없습니다" for item in app.caption)
+    assert "2명을 뺐습니다" in _flash_text(app)
 
 
 def test_a_failed_action_of_the_list_goes_to_the_alert_popup_only(
