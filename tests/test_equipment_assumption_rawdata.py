@@ -153,11 +153,16 @@ def test_an_assumption_grid_layout_edit_stays_its_own_and_stamps_the_role(
     저장하면 그 시나리오 새 리비전의 배치 차이가 되고 공식은 그대로다."""
     repository, setup = _two_scenarios(tmp_path)
     app = _page(repository, setup)
-    # 가정 배치가 어디에 저장되나는 맨 위 줄 설비 시나리오 알약의 풍선이다 — 자리에 같은 설명 줄을
-    # 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-07).
+    # 가정 배치가 어디에 저장되나는 Guide 가 말한다 — 자리에 설명 줄도, 사이드바 줄 · 머리 띠와 같은
+    # 값을 거듭하는 맨 위 줄 설비 시나리오 알약도 두지 않는다(설계 규칙 UI-TXT-01 · UI-TXT-07,
+    # 2026-11-09 상단 띠 재고).
     assert not any("배치 칸 고침은" in text for text in _texts(app, "caption"))
-    pill_helps = [str(item.proto.help) for item in app.markdown if "설비 시나리오 ·" in item.value]
-    assert any("공식 자리로 되돌릴 수 있습니다" in text for text in pill_helps), pill_helps
+    assert not any("설비 시나리오 ·" in item.value for item in app.markdown)
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/available_equipment_status.md").read_text(
+        encoding="utf-8"
+    )
+    assert "가정 시나리오면 그 시나리오에만(공식과 다른" in guide
+    assert "공식 자리로 되돌림" in guide
     load(app, [], kind="all")
     send_ops(
         app,

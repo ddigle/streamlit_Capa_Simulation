@@ -142,7 +142,6 @@ from capa_simulation.components.equipment_settings_dialog import (
 )
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
-    literal_badge,
     literal_markdown,
     markdown_safe_tildes,
     quoted,
@@ -1060,11 +1059,9 @@ def _seed(key: str, value: str, options: Sequence[str]) -> None:
 def _render_head(
     session: EquipmentSession,
     basis: EquipmentSaveBasis | None,
-    latest_snapshot: EquipmentSnapshot | None,
-    layout: LayoutMode,
     pending: int,
 ) -> str:
-    """맨 위 줄 — 표 고르기 · 설비 시나리오 알약 · 리비전 · 저장 전 변경 수. 고른 표를 돌려준다."""
+    """맨 위 줄 — 표 고르기 · 일정 없이 엶 · 저장 전 변경 수 · 일정 잠김. 고른 표를 돌려준다."""
     _seed(TABLE_KEY, TABLE_MASTER, TABLES)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         table = st.segmented_control(
@@ -1075,34 +1072,12 @@ def _render_head(
             persist_state="session",
             label_visibility="collapsed",
         )
-        name = session.scenario_name or "설비 시나리오 없음"
-        official = basis is None or basis.official_scenario
-        tail = "(공식)" if official else "(가정)"
-        layout_help = (
-            " 배치 칸은 이 시나리오에만(공식과 다른 것만) 저장되고 공식 배치는 바뀌지 않습니다 — "
-            "호기 상세 「위치」 에서 공식 자리로 되돌릴 수 있습니다."
-            if layout == "overlay"
-            else " 배치 칸은 공식 배치(공통 대장)에 저장됩니다."
-            if layout == "official"
-            else " 배치 칸은 지금 잠겨 있습니다."
-        )
-        st.badge(
-            f"설비 시나리오 · {literal_badge(name)}{tail}",
-            icon=":material/layers:",
-            color="primary" if official else "violet",
-            help=(
-                "일정 칸(시나리오)은 이 시나리오에만, 나머지 칸(공통)은 모든 설비 시나리오에 함께 "
-                "저장됩니다." + layout_help
-            ),
-        )
+        # 설비 시나리오 알약(「설비 시나리오 · 운영 일정(공식)」)과 리비전 알약(「공통 rN · 일정
+        # rM」)은 두지 않는다 — 사이드바 「설비 시나리오」 줄과 머리 띠 둘째 줄이 같은 값이다(설계
+        # 규칙 UI-TXT-07, 2026-11-09 상단 띠 재고). 어느 칸이 어디에 저장되는지는 Guide 다. 일정
+        # 없이 연 회차만 그 상태 표지를 남긴다(값이 아니라 조건이 있을 때만 서는 표지).
         if session.unmerged:
             st.badge("일정 없이 엶", icon=":material/event_busy:", color="gray")
-        elif latest_snapshot is not None:
-            schedule = latest_snapshot.schedule
-            revision = f"공통 r{latest_snapshot.revision.revision_no}"
-            if schedule is not None:
-                revision += f" · 일정 r{schedule.revision_no}"
-            st.badge(revision, color="gray")
         # 수가 0 이면 알약이 없다 — 늘 서 있는 칸 안에 둔다(이 줄의 자리는 그대로).
         with st.container():
             if pending:
@@ -1484,7 +1459,7 @@ def render_equipment_master_tab(
     )
     counts = change_counts(view)
     pending = counts.total + (1 if view.source.others else 0)
-    table = _render_head(session, basis, latest_snapshot, layout, pending)
+    table = _render_head(session, basis, pending)
     _render_notices(session, basis, layout_mode, floor_states, latest_snapshot)
     acks = _acks(_applied())
     toasts = grid_toasts()
