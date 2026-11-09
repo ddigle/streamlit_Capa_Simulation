@@ -511,7 +511,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 확보율은 키 전용 캐시로 꺼내고 오류는 `check_scenario_capacity` 로 「계산 멈춤」과 검증 오류를 가른다.
   - 소요대수에 들지 않은 수요(계획 쪽 · 조회기간)는 두 상자 위에 그리지 않고 상태 알림 `ST-01` 로 낸다(산출 결과 소요대수
     탭과 같은 코드 · 범위). 화면을 그리지 못한 오류는 자리 「데이터 Error」 마크 + `ST-20`(`data_error_mark.render_data_error`).
-- `app_pages/execution_management.py` — `실행 관리` 머리. 그룹 정의·로드맵·하위 화면 목차를 데이터를 읽지 않고 그린다.
+- `app_pages/execution_management.py` — `실행 관리` 머리. 세 영역 비교·하위 화면 목차를 데이터를 읽지 않고 그린다(정의·업무 활용
+  목적·부서별 Gap · A/Item·로드맵은 본문 머리가 아니라 Guide 첫 단락 — 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」).
   - `PageSpec` 이 시나리오·조회기간을 읽지 않고 조건 카드·설비 DB 핀이 없다. 하위 화면이 늘면 `SUBPAGE_SUMMARIES` 도
     고친다. 설명은 `guides/execution_management.md`.
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
@@ -532,7 +533,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   실현 Capa·손실을 다시 내는 데모 프로토타입이다(요약·공정 상세·산식 가이드 탭).
   - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다.
   - 데모는 샘플 스위치로 끄고 세션에 한 번만 만든다(실DB 를 붙이면 그 칸 키에 원천 적재 시각을 넣는다).
-  - 부서별 Gap·A/Item 로드맵은 실행 관리 머리에 있고 여기는 그 화면 링크 하나다(가는 까닭은 링크 풍선).
+  - 부서별 Gap·A/Item 로드맵은 실행 관리 Guide 에 있고 여기는 그 화면 링크 하나다(가는 까닭은 링크 풍선).
   - 판정 기준 · 그림 읽는 법 · 손실 차례는 늘 서는 캡션이 아니라 「개선 필요」 칸과 구획 제목의 풍선이다(설계 규칙
     UI-TXT-01 · 02 — 화면 소개는 `guides/reference_integrity.md`). 재공 현황의 격자 읽는 법도 같다(소개는 `guides/wip_status.md`).
   - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않고, 공정 상세의 조건 위젯은 숨어도 그린다.
@@ -2993,8 +2994,6 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `register_pending_edits` 로 화면이 제 편집표·붙여넣기 대기·표 초안을 적고 사이드바가 `pending_edit_labels` 로 앞 회차
     목록을 읽는다. `page` 는 파일 이름 리터럴이다(`tests/test_pending_edit_registry.py`). 화면 탭 줄은 같은 규칙의
     화면별 판(`pending_edit_pages` — 편집표 몫·붙여넣기 대기 몫·표 초안 몫 `drafts`)으로 점과 떠날 때 물을 것을 정한다.
-- `src/capa_simulation/components/roadmap_panel.py` — 업무 활용 목적·부서별 Action Item·로드맵을 기본 닫힌
-  상자로 그린다(지금은 실행 관리 머리).
 - `src/capa_simulation/components/module_slot.py` — 아직 없는 화면 · 칸이 들어올 점선 자리 한 벌(`slot_html` — 제목 ·
   표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 테두리
   `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」가

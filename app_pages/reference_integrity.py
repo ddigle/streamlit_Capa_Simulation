@@ -569,7 +569,7 @@ render_page_header(
     badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge(_SOURCE)),
 )
 render_page_guide("reference_integrity", title="Dynamic Capa")
-# 부서별 Gap·A/Item 로드맵은 실행 관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그 화면
+# 부서별 Gap·A/Item 로드맵은 실행 관리 Guide 에 있다 — 여기서는 그 화면
 # 링크 하나만 두고, 무엇을 하러 가는지는 링크 풍선이 말한다(설계 규칙 UI-TXT-03 · UI-LAY-08).
 render_page_link(
     EXECUTION_MANAGEMENT.path,

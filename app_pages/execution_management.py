@@ -5,14 +5,16 @@
 사이드바 계산 그룹은 셋이다(2026-10-17 사용자 결정) — Static Capa 는 약속, 실행 관리는 그 약속의
 이행, Dynamic Capa 는 실적으로 다시 낸 Capa 다. 이 화면은 실행 관리 그룹의 입구다.
 
-**첫 판은 데이터를 읽지 않는다.** 정의와 세 영역 비교, 하위 화면 목차(링크와 그 화면이 보는 것 한
-줄), 부서별 Gap·A/Item 의 뜻만 그린다. 시나리오·설비 DB 를 열지 않으므로 사이드바 공통 조건 줄도
+**첫 판은 데이터를 읽지 않는다.** 세 영역 비교와 하위 화면 목차(링크와 그 화면이 보는 것 한 줄)만
+그린다. 시나리오·설비 DB 를 열지 않으므로 사이드바 공통 조건 줄도
 조건 카드도 없다(`navigation.EXECUTION_MANAGEMENT`). 이행 현황판 숫자는 다음 판에서 들어온다 —
 약속 기준선을 어느 공식버전으로 볼지 같은 질문을 그 기능 설계 때 정한다. 그 칸은 지금 점선 자리
 하나다(설계 규칙 UI-LAY-10 — `module_slot.slot_html`).
 
 영역의 뜻풀이 · 목차 차례 같은 설명 문장은 자리에 늘 두지 않는다(설계 규칙 UI-TXT-01 · 02) — 영역
-이름 줄과 목차 제목의 풍선(`help=`)이고, 같은 말이 Guide 에 있다.
+이름 줄과 목차 제목의 풍선(`help=`)이고, 같은 말이 Guide 에 있다. 실행 관리의 정의 · 업무 활용
+목적 · 부서별 Gap · A/Item · 로드맵은 본문 머리에 접어 두지 않고 Guide 첫 단락이 말한다(설계 규칙
+UI-LAY-08 · UI-TXT-01 — 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」).
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ from capa_simulation.components.module_slot import slot_html
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
-from capa_simulation.components.roadmap_panel import render_roadmap_panel
 from capa_simulation.navigation import (
     DYNAMIC_CAPA,
     EXECUTION_MANAGEMENT,
@@ -116,29 +117,6 @@ def _render_subpages() -> None:
 # `tests/test_app_navigation.py` 가 AST 로 첫 인자를 읽어 본다.
 render_page_header("실행 관리")
 render_page_guide("execution_management", title="실행 관리")
-render_roadmap_panel(
-    purpose=(
-        "부서별 Gap · A/Item — 약속(Static) 대비 Gap 을 그 Gap 을 메울 부서의 Action Item 으로 "
-        "넘깁니다. 주관은 제조팀입니다."
-    ),
-    owners=(
-        (
-            "기술팀 · 설비 일정",
-            "가용 일정이 약속보다 늦으면 Setup 단축(필요 단축 일정)으로 당길 호기·기간을 정합니다.",
-        ),
-        (
-            "기술팀 · 설비 성능",
-            "효율·UPEH·수율 실적이 기준에 못 미치면 Gap 을 근거로 개선 항목을 우선 관리합니다.",
-        ),
-        (
-            "자원운영팀 · 투자",
-            "단축으로도 메우지 못하는 부족(신규 필요 대수)은 투자 검토로 넘깁니다.",
-        ),
-    ),
-    roadmap=(
-        "약속 대비 Gap 확인 → 부서별 A/Item · 이행 요청 → 진척 관리 → 지킬 수 없으면 Static 반영"
-    ),
-)
 _render_areas()
 _render_subpages()
 st.html(
