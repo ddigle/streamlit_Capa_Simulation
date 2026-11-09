@@ -2705,12 +2705,49 @@ def test_home_styles_sent_every_run_carry_no_css_comments() -> None:
         dashboard_title_row_style,
         summary_notice_style,
     )
-    from capa_simulation.components.process_picker import tile_tooltip_style
+    from capa_simulation.components.process_picker import tile_rate_style, tile_tooltip_style
 
     for css in (
         dashboard_title_row_style(),
         summary_notice_style(),
         tile_tooltip_style(["공정 A", "공정 B"]),
+        tile_rate_style(["97%", None]),
     ):
         assert "<style>" in css
         assert "/*" not in css and "*/" not in css
+
+
+def test_shortfall_tiles_carry_the_period_minimum_rate_beside_the_name() -> None:
+    """공정 필터 팝업 — 확보 기준 미달 공정 버튼만 이름 오른쪽에 기간 최저 확보율을 작게
+    단다(2026-11-09 사용자 검수 U5-1). 값은 요약이 이미 낸 최저 확보율이고 글자는 판정과 같은
+    사사오입 정수 %(108.5 → 109)다. 버튼 라벨은 공정 표시명 그대로이고 값은 버튼 `::after` 다 —
+    라벨 끝에 이으면 긴 이름의 말줄임이 값을 먼저 자른다."""
+
+    def script() -> None:
+        from capa_simulation.components.process_picker import render_process_picker
+        from capa_simulation.services.process_picker import ProcessPickerItem
+
+        render_process_picker(
+            [
+                ProcessPickerItem("A", 0.965, 202601, 3, "shortfall"),
+                ProcessPickerItem("B", 1.2, 202601, 3, "sufficient"),
+                ProcessPickerItem("C", None, None, 0, "unavailable"),
+                ProcessPickerItem("D", 1.085, 202602, 3, "shortfall"),
+            ],
+            {"A"},
+            format_func=str,
+            on_toggle=lambda _process: None,
+        )
+
+    app = AppTest.from_function(script).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    # 구역 차례 — 미달(A · D) → 충족(B) → 확보율 없음(C). 라벨은 이름만이다.
+    assert [button.label for button in app.button] == ["A", "D", "B", "C"]
+    body = " ".join(str(element.proto.body) for element in app.get("html"))
+    assert '.st-key-home_bn_tile_0 button::after { content: "97%"; }' in body
+    assert '.st-key-home_bn_tile_1 button::after { content: "109%"; }' in body
+    assert "home_bn_tile_2 button::after" not in body
+    assert "home_bn_tile_3 button::after" not in body
+    # 값 글자는 줄지 않고 라벨 칸이 먼저 말줄임한다.
+    assert "flex: none;" in body
