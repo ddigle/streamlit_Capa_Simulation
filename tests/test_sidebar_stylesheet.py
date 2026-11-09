@@ -203,16 +203,16 @@ def test_a_dialog_box_wears_the_card_face_with_the_popup_marker() -> None:
 def test_off_switches_on_the_condition_face_keep_a_visible_track() -> None:
     """꺼진 스위치 트랙(밝은 회색)이 청록 면 위에서 1.03:1 로 사라졌다(2026-10-05 E2E).
 
-    조건 카드 안의 꺼진 스위치만 `TEXT_MUTED` 1px 윤곽을 두른다.
+    조건 카드와 조회 조건 패널(같은 면 — 구현 중 화면의 「샘플 데이터」 줄, 2026-11-09 보드 T8) 안의
+    꺼진 스위치만 `TEXT_MUTED` 1px 윤곽을 두른다.
     """
     block = _style_block()
     card = f'[class*="st-key-{CONDITION_CARD_PREFIX}"]'
+    switch_off = 'label:has(> span > input[role="switch"]:not(:checked)) > span + div'
 
     (rule,) = _rules_with(block, f"box-shadow: inset 0 0 0 1px {tokens.TEXT_MUTED};")
-    assert (
-        f'{card} details label:has(> span > input[role="switch"]:not(:checked)) > span + div'
-        in rule
-    )
+    assert f"{card} details {switch_off}" in rule
+    assert f".st-key-{CONDITIONS_BOX_KEY} {switch_off}" in rule
 
 
 def test_the_support_box_sits_last_and_apart() -> None:

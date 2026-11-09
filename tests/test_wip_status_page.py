@@ -5,6 +5,7 @@ from alert_marks import data_error_marks, events
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.process_labels as process_labels_module
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.navigation import STANDARD_TARGET_CAPA
 from capa_simulation.page_tabs_state import tab_label
 
@@ -208,10 +209,36 @@ def test_wip_status_page_renders_filtered_step_product_grid(
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    # 공통 헤더가 `(구현중)` 을 제목에서 떼어 배지로 보여준다.
+    # 큰 제목은 「(구현중)」 을 뗀 이름이고(화면에서는 숨는다) 머리에 배지 줄이 없다 — 구현 중
+    # 표지는 화면 탭 이름 곁이다(2026-11-09 보드 T8).
     assert app.title[0].value == "표준 대비 재공 현황"
-    assert any("구현중" in element.value for element in app.markdown)
+    assert not any("-badge[" in str(element.value) for element in app.main.markdown)
+    # 공정 · 제품과 「조건 적용」 은 사이드바 「재공 현황 조건」 카드의 폼이다(설계 규칙 UI-LAY-02 ·
+    # UI-INP-04) — 본문에는 고르는 칸이 없다.
+    assert not app.main.multiselect
+    assert [widget.label for widget in app.sidebar.multiselect] == ["공정", "제품"]
+    assert any(button.label.endswith("조건 적용") for button in app.sidebar.button)
     assert [widget.label for widget in app.multiselect] == ["공정", "제품"]
+    # 카드의 두 칸은 이름 줄 + 고른 값 한 줄 팝오버이고 다중 선택 칸은 그 안이다 — 300px 카드에서
+    # 칩이 한 줄에 하나씩 쌓여 칸 높이 상한에 잘리고 「조건 적용」 이 첫 화면 밖으로 밀린다(설계
+    # 규칙 UI-LAY-06). 한 줄 글은 「첫 이름 외 n개」, 풍선은 전체 목록이다(UI-CON-04).
+    popovers = app.sidebar.get("popover")
+    # 글자는 마크다운 자리라 막아 둔 그대로다(`literal_markdown`).
+    process_a, process_b, product_a, product_b = (
+        literal_markdown(name) for name in ("P-Process", "T-Process", "Product-B", "Product-A")
+    )
+    assert [popover.proto.popover.label for popover in popovers] == [
+        f"{process_a} 외 1개",
+        f"{product_a} 외 1개",
+    ]
+    assert [popover.proto.popover.help for popover in popovers] == [
+        f"{process_a} · {process_b}",
+        f"{product_a} · {product_b}",
+    ]
+    assert [[widget.key for widget in popover.multiselect] for popover in popovers] == [
+        [PROCESS_FILTER_KEY],
+        ["wip_status_product_filter"],
+    ]
     assert app.multiselect[0].options == ["P-Process", "T-Process"]
     assert app.multiselect[1].options == ["Product-B", "Product-A"]
     assert app.session_state["captured_wip_products"] == ["Product-B", "Product-A"]
@@ -235,12 +262,11 @@ def test_wip_status_page_renders_filtered_step_product_grid(
     assert not [item.label for item in app.expander if "경계" in item.label]
 
 
-@pytest.mark.parametrize(("sample", "badge"), [(True, True), (False, False)])
-def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
-    sample: bool, badge: bool
-) -> None:
-    """샘플을 끈 동안 머리 배지 「… 미연결」 을 뺀다 — 자리 표지 「… 연결 대기」 가 같은 말을
-    한다(아침 보드 d4)."""
+@pytest.mark.parametrize("sample", [True, False])
+def test_the_head_has_no_badge_line_on_either_side_of_the_switch(sample: bool) -> None:
+    """머리에는 배지 줄(「구현중 · 인터랙티브 프로토타입 · … 미연결」)이 없다 — 구현 중 표지는 화면
+    탭 이름 곁, 합성 샘플 표지는 머리 띠다(2026-11-09 보드 T8). 「샘플 데이터」 는 사이드바 줄이고
+    끄면 자리 표지 「… 연결 대기」 가 무엇을 기다리는지 말한다."""
     from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
@@ -248,10 +274,12 @@ def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
     app.run()
 
     assert not app.exception
-    (header,) = [
-        str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)
+    assert not [
+        str(item.value)
+        for item in app.main.markdown
+        if any(mark in str(item.value) for mark in ("인터랙티브 프로토타입", "미연결", "-badge["))
     ]
-    assert ("미연결]" in header) is badge
+    assert app.toggle(key=SAMPLE_TOGGLE_KEY) in list(app.sidebar.toggle)
     pending = [item for item in app.get("html") if "연결 대기</strong>" in item.proto.body]
     assert bool(pending) is not sample
 
@@ -270,6 +298,10 @@ def test_wip_status_page_without_a_choice_stops_on_one_plain_line() -> None:
     assert not app.info
     assert "고른 공정 또는 제품이 없습니다." in [str(caption.value) for caption in app.caption]
     assert not app.metric
+    # 비운 칸의 한 줄 글은 고르라는 자리 글이고 풍선이 없다.
+    process_popover = app.sidebar.get("popover")[0]
+    assert process_popover.proto.popover.label == "표시할 공정 선택"
+    assert not process_popover.proto.popover.help
 
 
 def test_an_empty_equipment_db_stops_with_the_mark_and_the_alarm_opens_the_target() -> None:

@@ -11,7 +11,7 @@ key 를 여기 둔다(`components/availability_sheet_keys.py` 와 같은 까닭)
 접두다(`tests/test_session_key_collisions.py`).
 
 - **위젯 칸**(`persist_state="session"`) — 공정·제약 제품·제약 시작·제약 끝 상자, 「개조
-  필요」·「신규 설비는 개조 없이」·「소요 비중대로 나눴을 때 함께 보기」 토글, 목록에 없는 보유 제약
+  필요」·「신규 설비는 개조 없이」·「비중 배분 비교」 토글, 목록에 없는 보유 제약
   설비 숫자 칸(환산 대수 정수 — 미리 정할 버튼 값이 뜻이 없는 사실 값이라 D10 버튼을 두지 않는다)과
   신규 설비 기준일 날짜 칸(2026-10-26 사용자 결정). 위젯 앞에서 칸이 없거나 틀린 꼴일 때만 심는다
   (`seed_owned_units`·`seed_new_since`·`seed_toggle`).

@@ -36,12 +36,14 @@
 (`components/constraint_equipment_plan.render_equipment_plan`)이고, 제품 갈래는 그 사이
 (`before_plan`)에 선다.
 
-본문은 머리 줄 → 요약 넷(프래그먼트 밖) → 본문 프래그먼트(`components/constraint_simulation_view`
-— 달 누름·비중 토글만 그 안에서 돈다). 머리 줄 왼쪽은 멈춘 갈래의 공정 · 배지이거나 계산이 건
-표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)이고 오른쪽 끝은 「← 공정 Capa 상세」 다.
-조건은 사이드바 칸이 보이고 소요 · 가용의 출처와 읽는 법은 Guide 다 — 머리 줄은 조건을 되읊지
-않는다(2026-11-08 사용자 그림 메모 g12). 개조 · 신규 대기 첫날이 오늘보다 앞이면(그래프 · 계산표가
-「제때 시작했다면」 의 값) 상태 알림 `CS-04` 다(`report_late_starts` — 자리에는 그리지 않는다).
+본문은 머리 줄 → 요약 넷(프래그먼트 밖) → 본문 프래그먼트(`components/constraint_simulation_view` —
+달 누름만 그 안에서 돈다, 「비중 배분 비교」 는 카드 토글이라 앱 전체 회차). 머리 줄은 멈춘 갈래의
+공정 · 배지이거나 계산이 건 표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)이고 둘 다 없으면
+서지 않는다 — 맨 위 「← 공정 Capa 상세」 되돌아가기 링크는 두지 않는다(화면 탭 줄 · 사이드바가 같은
+길, 2026-11-09 보드 T4). 조건은 사이드바 칸이 보이고 소요 · 가용의 출처와 읽는 법은 Guide 다 — 머리
+줄은 조건을 되읊지 않는다(2026-11-08 사용자 그림 메모 g12). 개조 · 신규 대기 첫날이 오늘보다
+앞이면(그래프 · 계산표가 「제때 시작했다면」 의 값) 상태 알림 `CS-04` 다(`report_late_starts` —
+자리에는 그리지 않는다).
 
 개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 호기」 고르기
 (그 공정 세션 설비 시나리오의 호기 — 2026-11-01 결정 B3)와 「목록에 없는 보유 제약 설비」 숫자
@@ -105,7 +107,6 @@ from capa_simulation.components.modification_schedule_view import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.preset_number_field import render_preset_number_field
 from capa_simulation.components.process_field import render_process_choice
 from capa_simulation.components.process_labels import get_process_labels
@@ -132,12 +133,14 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_PROCESS_KEY,
     CONSTRAINT_PRODUCT_KEY,
     CONSTRAINT_PRODUCT_LIMIT,
+    CONSTRAINT_PROPORTIONAL_KEY,
     CONSTRAINT_TARGET_INPUT_KEY,
     CONSTRAINT_TARGET_KEY,
     CONSTRAINT_TARGET_PILLS_KEY,
     DEFAULT_MOD_DAYS,
     DEFAULT_MODIFY,
     DEFAULT_NEW_UNITS,
+    DEFAULT_PROPORTIONAL,
     DEFAULT_TARGET_PERCENT,
     GENERAL_PRESETS,
     MOD_DAY_PRESETS,
@@ -152,13 +155,11 @@ from capa_simulation.constraint_simulation_state import (
     settle_period,
     take_constraint_process_request,
 )
-from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.equipment_scenario_activation import (
     EquipmentSession,
     resolve_equipment_session,
 )
 from capa_simulation.modification_schedule_state import SCHEDULE_MODE
-from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -178,9 +179,6 @@ from capa_simulation.process_detail_state import (
 )
 from capa_simulation.process_detail_state import (
     PROCESS_DETAIL_EQUIPMENT_BASIS_KEY,
-)
-from capa_simulation.process_detail_state import (
-    PROCESS_PARAM as DETAIL_PROCESS_PARAM,
 )
 from capa_simulation.services.constraint_simulation import (
     GENERAL_INPUT_RANGE,
@@ -254,6 +252,10 @@ NEW_UNITS_HELP = (
     "증가가 덮이면 그 증가부터 신규는 붙이지 않습니다(기존 제품 몫)."
 )
 NEW_SINCE_HELP = "기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다."
+# 「비중 배분 비교」 토글(카드 끝 「견주기」 — 2026-11-09 보드 C3). 풍선은 짧게 두고 뜻 · 식은
+# Guide 다.
+PROPORTIONAL_LABEL = "비중 배분 비교"
+PROPORTIONAL_HELP = "개조 없이 가용을 소요 비중대로 나눴을 때의 기존 제품 확보율을 함께 둡니다."
 
 
 def new_since_help(*, modify: bool, new_units_on: bool) -> str:
@@ -271,9 +273,9 @@ def new_since_help(*, modify: bool, new_units_on: bool) -> str:
 requested_process = take_constraint_process_request(page_visit())
 
 render_page_header("제약 시뮬레이션")
-# 머리 줄(멈춘 갈래의 공정 · 배지 또는 계산이 건 표지)과 「← 공정 Capa 상세」 자리. 공정과 계산이
-# 정해진 뒤 채운다 — 블록이라 계산 동안 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로
-# border·height 를 주지 않는다).
+# 머리 줄(멈춘 갈래의 공정 · 배지 또는 계산이 건 표지) 자리. 공정과 계산이 정해진 뒤 채운다 —
+# 블록이라 계산 동안 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로 border·height 를 주지
+# 않는다).
 header_marks = st.container()
 render_page_guide("constraint_simulation", title=PAGE_TITLE)
 # 설비 DB 경고(이 코드보다 새 스키마·옛 배포 흔적)와 알림 표지 자리 — 맨 위에 선다.
@@ -440,24 +442,18 @@ with notices:
 
 
 def render_header(process: str, line: str = "", *, marks: str = "", marks_help: str = "") -> None:
-    """머리 줄 — 왼쪽은 멈춘 갈래의 공정 · 배지(`line`)나 계산이 건 표지(`marks` — 뜻은
-    `marks_help` 풍선), 오른쪽 끝은 「← 공정 Capa 상세」. 둘 다 없으면 링크만 선다."""
+    """머리 줄 — 멈춘 갈래의 공정 · 배지(`line`)나 계산이 건 표지(`marks` — 뜻은 `marks_help`
+    풍선). 둘 다 없으면 줄이 서지 않는다 — 맨 위 되돌아가기 링크는 두지 않는다(화면 탭 줄 ·
+    사이드바가 같은 길, 2026-11-09 보드 T4). `process` 는 두 모드 · 설비 일정 확인이 함께 쓰는 머리
+    그리기 꼴(`HeaderRenderer`)이라 받는다."""
+    del process
+    if not (line or marks):
+        return
     with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
         if line:
             st.markdown(line, width="content")
         if marks:
             st.caption(marks, help=marks_help or None, width="content")
-        st.space("stretch")
-        theme_value = st.query_params.get(THEME_QUERY_PARAM)
-        params = {DETAIL_PROCESS_PARAM: process}
-        if theme_value:
-            params[THEME_QUERY_PARAM] = str(theme_value)
-        render_page_link(
-            PROCESS_CAPA_DETAIL.path,
-            label="공정 Capa 상세",
-            icon=":material/arrow_back:",
-            query_params=params,
-        )
 
 
 # 「개조 일정」 모드는 카드·계획·계산·본문을 컴포넌트 하나가 그리고 여기서 멈춘다 — 아래 제약 영향
@@ -699,6 +695,17 @@ with card:
     new_unit_since = new_since if modify and new_units_on and isinstance(new_since, date) else None
     new_units_slot = st.container()
     cutoff_slot = st.container()
+    # 견주기 — 본문 위에 보기 줄을 두지 않는다(2026-11-09 보드 C3 — 페이지 상단 문구 최소화).
+    # 그래프 · 계산표를 그리는 본문 프래그먼트는 세션 값을 읽는다. 카드 위젯이라 바꾸면 앱 전체
+    # 회차다.
+    st.caption("**견주기**")
+    seed_toggle(CONSTRAINT_PROPORTIONAL_KEY, DEFAULT_PROPORTIONAL)
+    st.toggle(
+        PROPORTIONAL_LABEL,
+        key=CONSTRAINT_PROPORTIONAL_KEY,
+        persist_state="session",
+        help=PROPORTIONAL_HELP,
+    )
 
 
 def render_idle_held_picker() -> None:

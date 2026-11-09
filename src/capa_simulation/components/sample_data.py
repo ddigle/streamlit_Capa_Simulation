@@ -1,4 +1,4 @@
-# Purpose: 원천 없는 화면의 샘플 스위치 · 연결 전 자리 · 머리 미연결 배지 · 호기 없음 표지를 둔다.
+# Purpose: 원천 없는 화면의 샘플 스위치(패널 줄 · 본문 상자) · 연결 전 자리 · 호기 없음 표지를 둔다.
 
 """샘플 데이터 스위치.
 
@@ -20,9 +20,13 @@
 사라지는 순간 값이 버려지고, 있어도 다른 페이지로 넘어온 첫 회차에는 위젯이 기본값으로
 선다 — 그 회차에는 `carry_shared_widget_value` 가 값을 다시 적는다.
 
-**머리 「… 미연결」 배지는 켠 동안만 단다**(`pending_source_badge` — 2026-11-08 아침 보드 d4). 끈
-동안은 연결 전 자리의 표지 「… 연결 대기」 가 같은 말을 해 거듭 달지 않는다. 켠 동안은 합성 샘플
-화면이라 머리가 원천이 아직 없다고 말한다.
+**구현 중 화면(실적 셋 · Dynamic Capa · 재공 · Chatbot)의 스위치는 사이드바 조회 조건 패널의
+줄이다**(`render_sample_row` — 2026-11-09 보드 T8, 페이지 상단 문구 · 여백 최소화). 그 화면들은
+본문 머리에 배지 줄도 「합성 샘플 실적 아님」 상자도 두지 않는다 — 구현 중이라는 것은 화면 탭
+이름 곁 표지가, 합성 샘플을 보는 중이라는 것은 머리 띠 표지가 말하고 둘 다 이 스위치의 세션
+값(`sample_switch_on`)을 읽는다. 끈 동안은 연결 전 자리의 표지 「… 연결 대기」 가 무엇을
+기다리는지 말한다. 설비 화면(가용설비 현황 · 필요 단축 일정 · Space 현황)은 아직 본문
+상자(`render_sample_switch`)다.
 """
 
 from __future__ import annotations
@@ -31,13 +35,18 @@ from collections.abc import Sequence
 
 import streamlit as st
 
+from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
 from capa_simulation.components.module_slot import slot_html
-from capa_simulation.components.page_header import pending_badge
 from capa_simulation.services.korean_particle import with_subject_particle
 from capa_simulation.shared_widget_state import carry_shared_widget_value
+from capa_simulation.sidebar_status import page_condition_slot
 
 SAMPLE_TOGGLE_KEY = "dynamic_capa_sample_data"
 SAMPLE_TOGGLE_LABEL = "샘플 데이터"
+# 사이드바 조회 조건 패널의 「샘플 데이터」 줄(`render_sample_row`) — 필드 컨테이너 · 이름 줄
+# key 의 꼬리.
+SAMPLE_FIELD_SLUG = "sample_data"
+SAMPLE_FIELD_KEY = f"{FIELD_KEY_PREFIX}{SAMPLE_FIELD_SLUG}"
 # 호기가 없고 샘플도 끈 설비 화면(가용설비 현황 · 필요 단축 일정 · Space 현황)의 값 한 마디
 # (`NO_UNITS_MARK` — 조건 카드, 카드에 조회 조건이 있는 Static 대비 일정은 본문 머리)에 다는 풍선 —
 # 하는 법은 자리에 적지 않는다(설계 규칙 UI-TXT-04).
@@ -54,17 +63,47 @@ PENDING_SLOT_MIN_HEIGHT = "72px"
 
 
 def sample_switch_on() -> bool:
-    """이 회차의 「샘플 데이터」 스위치 값 — 스위치를 그리기 전(머리 배지 · 설비 표본)에 읽는다.
+    """이 회차의 「샘플 데이터」 스위치 값 — 스위치를 그리기 전(머리 띠 표지 · 설비 표본)에 읽는다.
     스위치를 누른 회차에도 세션 값이 이미 새 값이다. 처음 연 세션은 켜짐(`render_sample_switch` 의
     기본값)이다."""
     return bool(st.session_state.get(SAMPLE_TOGGLE_KEY, True))
 
 
-def pending_source_badge(source: str) -> str:
-    """머리 「`source` 미연결」 배지(`page_header.pending_badge`) — 샘플을 켠 동안만. 끈 동안은 빈
-    글자다 — 연결 전 자리 표지(`render_pending_source` 의 「… 연결 대기」)가 같은 말을 한다. 머리는
-    스위치보다 먼저 그리므로 세션 값으로 정한다(`sample_switch_on`)."""
-    return pending_badge(source) if sample_switch_on() else ""
+def sample_switch_help(source: str) -> str:
+    """스위치 풍선 — 켬 · 끔이 무엇을 보이는지와 모든 샘플 화면에 함께 걸린다는 것. 켠 동안의 수치가
+    실적이 아니라는 말도 여기다 — 화면의 표지는 머리 띠다."""
+    return (
+        "켜면 연결 후 모습을 합성 데이터로 보여 줍니다 — 화면의 수치는 실적이 아닙니다. 끄면 지금 "
+        f"상태(빈 화면과 {source} 연결 대기)를 그대로 보여 줍니다. 이 스위치는 이 화면 하나가 "
+        "아니라 샘플을 쓰는 모든 화면에 함께 걸립니다 — 가용설비·Space·실적 화면과 "
+        "Dynamic Capa·재공 현황, Capa Chatbot 이 같이 바뀝니다."
+    )
+
+
+def render_sample_row(*, key: str, source: str) -> bool:
+    """사이드바 조회 조건 패널의 「샘플 데이터」 줄 — 이름은 왼쪽, 스위치는 오른쪽 끝(다른 패널 줄의
+    이름 줄과 같은 꼴, 뜻은 이름 풍선). 그 화면의 패널 칸(`page_condition_slot(0)`)에 그리고 켬 ·
+    끔을 돌려준다.
+
+    공통 줄이 없는 화면은 이 줄이 패널을 세우므로(`sidebar_status.defer_page_condition_slots`) 조건
+    카드보다 **먼저** 부른다. `key` 는 화면마다 다른 이름이다 — 다른 화면에서 넘어온 회차에 공유
+    값을 다시 적는 자리로 쓴다(`carry_shared_widget_value`)."""
+    carry_shared_widget_value(SAMPLE_TOGGLE_KEY, default=True, owner=key)
+    with (
+        page_condition_slot(0).container(),
+        st.container(key=SAMPLE_FIELD_KEY, gap=None),
+    ):
+        row = condition_name_row(
+            SAMPLE_TOGGLE_LABEL, slug=SAMPLE_FIELD_SLUG, help=sample_switch_help(source)
+        )
+        enabled = row.toggle(
+            SAMPLE_TOGGLE_LABEL,
+            key=SAMPLE_TOGGLE_KEY,
+            persist_state="session",
+            label_visibility="collapsed",
+            width="content",
+        )
+    return bool(enabled)
 
 
 def render_sample_switch(*, key: str, source: str) -> bool:

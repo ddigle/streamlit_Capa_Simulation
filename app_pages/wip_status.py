@@ -1,7 +1,17 @@
 # Purpose: 일별 재공·유입·Flow를 제품별 표준 가능량과 비교하는 Dynamic Capa 하위 화면을 렌더링한다.
 
+"""표준 대비 재공 현황(구현 중 — 재공 값은 결정론적 샘플).
+
+머리에 배지 줄을 두지 않는다(구현 중 표지는 화면 탭 이름 곁, 합성 샘플 표지는 머리 띠).
+「샘플 데이터」 는 사이드바 조회 조건 패널 줄이고, 공정 · 제품 고르기와 「조건 적용」 은 사이드바
+「재공 현황 조건」 카드의 폼이다(본문 상단 문구 · 여백 최소화 — 2026-11-09 보드 T8, 설계 규칙
+UI-LAY-02 · UI-INP-04). 두 칸은 적용한 값 한 줄이고 누르면 다중 선택 칸이 열린다(UI-LAY-06 ·
+UI-CON-04). 본문은 지표와 격자뿐이다.
+"""
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, timedelta
 
 import pandas as pd
@@ -9,18 +19,12 @@ import streamlit as st
 
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
-from capa_simulation.components.page_header import (
-    MATURITY_BADGES,
-    page_badges,
-    render_page_header,
-)
+from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_field import first_and_rest
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.sample_data import (
-    pending_source_badge,
-    render_pending_source,
-    render_sample_switch,
-)
+from capa_simulation.components.sample_data import render_pending_source, render_sample_row
 from capa_simulation.components.scroll_shell import horizontal_scroll_canvas
 from capa_simulation.components.state_alerts import simulation_scope
 from capa_simulation.components.status_metric import (
@@ -68,13 +72,26 @@ from capa_simulation.services.wip_status import (
     prepare_wip_route_choices,
 )
 from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
+from capa_simulation.sidebar_status import condition_card
 
-# 머리말 배지와 스위치·안내가 같은 이름을 보게 한다.
+# 스위치 풍선과 연결 전 안내가 같은 이름을 보게 한다.
 SOURCE = "재공 실적 DB"
+# 공정 · 제품 고르기 카드(사이드바).
+CARD_LABEL = "재공 현황 조건"
+CARD_NAME = "wip_status"
 PROCESS_FILTER_KEY = "wip_status_process_filter"
 PRODUCT_FILTER_KEY = "wip_status_product_filter"
 DEFAULT_PROCESS_COUNT = 5
 DEFAULT_PRODUCT_COUNT = 4
+# 카드의 공정 · 제품 칸은 이름 줄 + 고른 값 한 줄 팝오버(「WF 입고검사 외 4개」 — 안이 다중 선택
+# 칸)다. 300px 카드에서는 칩이 한 줄에 하나씩 쌓여 다중 선택 칸 높이 상한에 다섯째 칩이 잘리고
+# 「조건 적용」 이 1283 창 첫 화면 밖으로 밀린다(설계 규칙 UI-LAY-06 — 옮긴 자리 크기에 맞춰 다시
+# 짠다). 필요 단축 일정 카드의 공정 칸과 같은 꼴이다(UI-CON-04 — `process_field.first_and_rest`).
+PROCESS_POPOVER_KEY = "wip_status_process_popover"
+PRODUCT_POPOVER_KEY = "wip_status_product_popover"
+PROCESS_EMPTY = "표시할 공정 선택"
+PRODUCT_EMPTY = "표시할 제품 선택"
+_FIELD_NAME_CLASS = "capa-wip-field-name"
 # 시나리오 소요대수에서만 나오는 준비물(경로·선택지) 한 벌과 그 키(세션 칸).
 ROUTE_CHOICES_MEMO_KEY = "wip_status_route_choices_memo"
 # 격자를 읽는 법은 자리에 늘 두지 않고 구획 제목 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 —
@@ -116,14 +133,65 @@ def _route_choices(
     return choices.copy()
 
 
-render_page_header(
-    "표준 대비 재공 현황 (구현중)",
-    badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge(SOURCE)),
-)
+def _field_head(name: str, popover_key: str) -> str:
+    """이름 줄과 한 줄 칸의 꼴 — 이름은 위젯 라벨 글(0.875rem), 값은 왼쪽 · 펼침 표식은 오른쪽
+    끝(팝오버 단추는 기본이 가운데 정렬이라 단추로 읽힌다). 서식과 이름을 한 `st.html` 에 실어
+    카드 안 그 자리에 그린다(스타일만 든 `st.html` 은 이벤트 칸으로 간다 — AGENTS 9장)."""
+    button = f'.st-key-{popover_key} button[data-testid="stPopoverButton"]'
+    return (
+        "<style>"
+        f".{_FIELD_NAME_CLASS}{{margin:0 0 -0.25rem;font-size:0.875rem;line-height:1.6;}}"
+        f"{button} > div{{width:100%;justify-content:space-between;min-width:0;}}"
+        f"{button} > div > div:first-child{{justify-content:flex-start;min-width:0;}}"
+        f"{button} p{{text-align:left;}}"
+        "</style>"
+        f'<p class="{_FIELD_NAME_CLASS}">{name}</p>'
+    )
+
+
+def _picked_field(
+    name: str,
+    *,
+    options: list[str],
+    key: str,
+    popover_key: str,
+    empty: str,
+    format_func: Callable[[object], str] = str,
+) -> list[str]:
+    """폼 안의 이름 줄 + 고른 값 한 줄 팝오버(안이 다중 선택 칸). 한 줄 글은 **적용한** 값이다 —
+    폼이라 세션 값은 「조건 적용」 때 바뀐다. 첫 이름은 가장 먼저 고른 것이고(다중 선택 값은 고른
+    차례대로 쌓인다) 둘 이상이면 한 줄 칸의 풍선이 전체 목록이다."""
+    applied = st.session_state.get(key)
+    names = [
+        literal_markdown(format_func(str(value)))
+        for value in (applied if isinstance(applied, list) else [])
+    ]
+    st.html(_field_head(name, popover_key))
+    with st.popover(
+        first_and_rest(names) or empty,
+        key=popover_key,
+        width="stretch",
+        wrap=False,
+        help=" · ".join(names) if len(names) >= 2 else None,
+    ):
+        picked = st.multiselect(
+            name,
+            options=options,
+            key=key,
+            placeholder=empty,
+            persist_state="session",
+            label_visibility="collapsed",
+            width="stretch",
+            format_func=format_func,
+        )
+    return [str(value) for value in picked]
+
+
+render_page_header("표준 대비 재공 현황 (구현중)", show_status=False)
 render_page_guide("wip_status", title="표준 대비 재공 현황")
 # 공정 표시명은 화면 표기 전용 라벨이다. 계산·저장값·왕복 CSV 는 원본 공정명을 쓴다.
 process_labels = get_process_labels()
-if not render_sample_switch(key="wip_status_sample_switch", source=SOURCE):
+if not render_sample_row(key="wip_status_sample_switch", source=SOURCE):
     render_pending_source(
         subject="표준 대비 재공 현황",
         source=SOURCE,
@@ -197,43 +265,41 @@ prune_list_selection(
     PRODUCT_FILTER_KEY, product_options, default=product_options[:DEFAULT_PRODUCT_COUNT]
 )
 
-with st.container(border=True):
-    st.markdown("#### :material/filter_alt: 조회 조건")
+# 공정 · 제품은 사이드바 카드의 폼이다 — 둘을 함께 바꾼 뒤 「조건 적용」 한 번에 다시
+# 그린다(적용형 — 설계 규칙 UI-INP-04). 조회 구간(오늘 −7일 ~ +3일)은 값 한 줄로 카드 맨 위에
+# 둔다(고르는 칸이 아니다).
+with condition_card(CARD_LABEL, name=CARD_NAME, icon=":material/filter_alt:"):
     st.caption(
-        f"기준일 {today:%Y-%m-%d} · 조회기간 {start_date:%Y-%m-%d} ~ {end_date:%Y-%m-%d} "
-        "(오늘 -7일 ~ +3일)"
+        f"기준일 {today:%Y-%m-%d} · {start_date:%m-%d} ~ {end_date:%m-%d}",
+        help="조회 구간은 오늘 −7일 ~ +3일로 정해져 있습니다.",
     )
     with st.form("wip_status_filters", border=False):
-        filter_row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
-        with filter_row:
-            selected_processes = st.multiselect(
-                "공정",
-                options=process_options,
-                key=PROCESS_FILTER_KEY,
-                placeholder="표시할 공정 선택",
-                help="옵션과 차트 열은 STEP의 P→T, 숫자 구간 오름차순을 따릅니다.",
-                persist_state="session",
-                width=420,
-                # 표시만 바꾼다. 선택값은 아래 `isin` 이 원본 컬럼과 대조한다. 보이는 글자가
-                # 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func`). 잡은 값은 위
-                # `prune_list_selection` 이 매 회차 다시 적어 브라우저가 바뀐 글자를 받는다.
-                format_func=process_labels.unique_format_func(process_options),
-            )
-            selected_products = st.multiselect(
-                "제품",
-                options=product_options,
-                key=PRODUCT_FILTER_KEY,
-                placeholder="표시할 제품 선택",
-                help="표준 목표 페이지의 공용 제품 표시순서를 따릅니다.",
-                persist_state="session",
-                width=420,
-            )
-            st.form_submit_button(
-                "조건 적용",
-                icon=":material/filter_alt:",
-                type="primary",
-                width="content",
-            )
+        # 선택지 차례(공정은 STEP 의 P→T · 숫자 구간 오름차순, 제품은 공용 제품 표시순서)는 Guide
+        # 가 말한다 — 한 줄 칸의 풍선은 고른 전체 목록이다.
+        selected_processes = _picked_field(
+            "공정",
+            options=process_options,
+            key=PROCESS_FILTER_KEY,
+            popover_key=PROCESS_POPOVER_KEY,
+            empty=PROCESS_EMPTY,
+            # 표시만 바꾼다. 선택값은 아래 `isin` 이 원본 컬럼과 대조한다. 보이는 글자가
+            # 겹치면 「표시명 (원본)」 으로 가른다(`unique_format_func`). 잡은 값은 위
+            # `prune_list_selection` 이 매 회차 다시 적어 브라우저가 바뀐 글자를 받는다.
+            format_func=process_labels.unique_format_func(process_options),
+        )
+        selected_products = _picked_field(
+            "제품",
+            options=product_options,
+            key=PRODUCT_FILTER_KEY,
+            popover_key=PRODUCT_POPOVER_KEY,
+            empty=PRODUCT_EMPTY,
+        )
+        st.form_submit_button(
+            "조건 적용",
+            icon=":material/filter_alt:",
+            type="primary",
+            width="stretch",
+        )
 
 if not selected_processes or not selected_products:
     # 고른 것이 없어 그릴 것이 없는 멈춤도 회색 평문 한 줄이다 — 하는 법은 붙이지 않는다(설계 규칙

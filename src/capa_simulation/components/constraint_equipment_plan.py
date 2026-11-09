@@ -411,8 +411,9 @@ def _load_plan(
 
 
 class HeaderRenderer(Protocol):
-    """머리 줄을 그리는 함수(페이지의 `render_header`) — 왼쪽은 멈춘 갈래의 공정 · 배지(`line`)나
-    계산이 건 표지(`marks` · 풍선 `marks_help`), 오른쪽 끝은 「← 공정 Capa 상세」."""
+    """머리 줄을 그리는 함수(페이지의 `render_header`) — 멈춘 갈래의 공정 · 배지(`line`)나 계산이 건
+    표지(`marks` · 풍선 `marks_help`). 둘 다 없으면 줄이 서지 않는다(맨 위 되돌아가기 링크는 두지
+    않는다 — 2026-11-09 보드 T4)."""
 
     def __call__(
         self, process: str, line: str = "", *, marks: str = "", marks_help: str = ""

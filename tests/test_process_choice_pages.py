@@ -226,11 +226,20 @@ INTEGRITY_SCRIPT = _swap(
     "        5,",
 )
 INTEGRITY_FILTER_KEY = "dynamic_capacity_process_filter"
+# 공정 상자는 공정 상세 탭이 열린 회차의 사이드바 카드다(2026-11-09 보드 T8).
+INTEGRITY_TAB_KEY = "dynamic_capa_active_tab"
+
+
+def _integrity_app(script: str = INTEGRITY_SCRIPT) -> AppTest:
+    """공정 상세 탭을 연 Dynamic Capa — 조회 조건 카드가 선다."""
+    app = AppTest.from_string(script, default_timeout=60)
+    app.session_state[INTEGRITY_TAB_KEY] = "공정 상세"
+    return app
 
 
 def test_dynamic_capacity_process_splits_a_colliding_display_name() -> None:
     """둘째 공정의 표시명이 첫째 공정의 원본과 같다 — 「첫째 (둘째)」 로 갈라 고른 공정이 든다."""
-    app = AppTest.from_string(INTEGRITY_SCRIPT, default_timeout=60)
+    app = _integrity_app()
     app.session_state["test_label_target"] = "__FIRST__"
     # 표본 공정명은 리터럴로 고정하지 않는다 — 한 번 돌려 첫째 이름을 읽고 그 글자를 표시명으로
     # 준다.
@@ -252,7 +261,7 @@ def test_dynamic_capacity_process_splits_a_colliding_display_name() -> None:
 
 
 def test_dynamic_capacity_process_keeps_its_value_when_the_display_name_changes() -> None:
-    app = AppTest.from_string(INTEGRITY_SCRIPT, default_timeout=60)
+    app = _integrity_app()
     browser = BrowserChoice(app, "selectbox", INTEGRITY_FILTER_KEY)
     browser.start()
     first = app.session_state["renamed_source"]
@@ -281,6 +290,9 @@ def test_dynamic_capacity_process_defaults_to_the_worst_process() -> None:
     assert not app.exception
     # 표본 공정명은 리터럴로 고정하지 않는다 — 화면의 우선순위 표 첫 줄이 가장 나쁜 공정이다.
     worst = str(_priority_frame(app).iloc[0]["공정"])
+    app.session_state[INTEGRITY_TAB_KEY] = "공정 상세"
+    app.run()
+    assert not app.exception
     picker = app.selectbox(key=INTEGRITY_FILTER_KEY)
     assert picker.options == sorted(picker.options)
     # 가장 나쁜 공정이 첫 선택지면 「첫 선택지가 기본」 과 가를 수 없다 — 표본이 그렇지 않은지 본다.
@@ -289,7 +301,7 @@ def test_dynamic_capacity_process_defaults_to_the_worst_process() -> None:
     assert app.session_state[INTEGRITY_FILTER_KEY] == worst
 
     # 목록 밖의 옛 세션 값(다른 표본·다른 원천에서 남은 것)은 가장 나쁜 공정으로 돌아온다.
-    stale = AppTest.from_string(PLAIN_SCRIPT, default_timeout=60)
+    stale = _integrity_app(PLAIN_SCRIPT)
     stale.session_state[INTEGRITY_FILTER_KEY] = "목록에 없는 공정"
     stale.run()
     assert not stale.exception
@@ -317,6 +329,13 @@ def _performance_app() -> None:
 PERFORMANCE_FILTER_KEY = "label_test_process_filter"
 
 
+def _performance_detail_app() -> AppTest:
+    """상세 분석 탭을 연 실적 화면 — 조회 조건 카드가 선다(2026-11-09 보드 T8)."""
+    app = AppTest.from_function(_performance_app)
+    app.session_state["label_test_active_tab"] = "상세 분석"
+    return app
+
+
 def _demo_processes() -> list[str]:
     from capa_simulation.services.performance_actuals import build_monthly_actual_demo
 
@@ -325,7 +344,7 @@ def _demo_processes() -> list[str]:
 
 def test_performance_filter_splits_a_colliding_display_name() -> None:
     first, second = _demo_processes()[:2]
-    app = AppTest.from_function(_performance_app)
+    app = _performance_detail_app()
     app.session_state["test_labels"] = {second: first}
     browser = BrowserChoice(app, "multiselect", PERFORMANCE_FILTER_KEY)
     browser.start()
@@ -341,7 +360,7 @@ def test_performance_filter_splits_a_colliding_display_name() -> None:
 
 def test_performance_filter_keeps_its_value_when_the_display_name_changes() -> None:
     first, second = _demo_processes()[:2]
-    app = AppTest.from_function(_performance_app)
+    app = _performance_detail_app()
     app.session_state["test_labels"] = {second: "가공"}
     browser = BrowserChoice(app, "multiselect", PERFORMANCE_FILTER_KEY)
     browser.start()
@@ -358,7 +377,7 @@ def test_performance_filter_keeps_its_value_when_the_display_name_changes() -> N
 
 
 def test_performance_filter_without_display_names_keeps_its_texts() -> None:
-    app = AppTest.from_function(_performance_app).run()
+    app = _performance_detail_app().run()
 
     assert not app.exception
     assert app.multiselect(key=PERFORMANCE_FILTER_KEY).options == _demo_processes()

@@ -390,10 +390,10 @@ def test_a_process_with_equipment_shows_kpis_and_figures(
     assert "저장하지 않는 시뮬레이션입니다" not in _captions(app)
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
-    # 머리 「← 공정 Capa 상세」 는 그 공정으로 돌아간다(테마 인자 없음).
+    # 맨 위 「← 공정 Capa 상세」 되돌아가기 링크는 없다 — 화면 탭 줄 · 사이드바가 같은 길이다
+    # (2026-11-09 보드 T4).
     links = app.session_state["captured_page_links"]
-    back = [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
-    assert back and back[0]["query_params"] == {"process": DYNAMIC_PROCESS}
+    assert not [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
 
 
 def test_the_header_has_no_description_line(dynamic_databases: tuple[Path, Path]) -> None:
@@ -411,8 +411,8 @@ def test_the_header_repeats_no_conditions_and_no_source_band(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """머리 줄은 조건을 되읊지 않고 출처 띠 · 계산표 범례도 두지 않는다 — 조건은 사이드바 칸, 출처와
-    읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 계산이 건 표지가 없으면 머리 줄은 「←
-    공정 Capa 상세」 하나다."""
+    읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 계산이 건 표지가 없으면 머리 줄이 서지
+    않는다(맨 위 되돌아가기 링크는 두지 않는다 — 2026-11-09 보드 T4)."""
     app = _opened(dynamic_databases)
     texts = " ".join([*_markdown(app), _captions(app)])
     assert " · 제약 120%" not in texts and "기준 HOME(" not in texts
@@ -484,6 +484,15 @@ def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
     assert len(cards) == 1
     assert cards[0].proto.expanded
     assert cards[0].button_group[0].key == CONSTRAINT_MODE_KEY
+    # 「비중 배분 비교」 토글은 본문 위 보기 줄이 아니라 카드 끝 「견주기」 다(2026-11-09 보드 C3) —
+    # 이름은 짧게, 풍선은 한 줄이고 뜻 · 식은 Guide 다.
+    assert [toggle.key for toggle in cards[0].toggle][-1] == CONSTRAINT_PROPORTIONAL_KEY
+    proportional = app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY)
+    assert proportional.label == "비중 배분 비교"
+    assert proportional.value is True
+    assert len(str(proportional.proto.help)) <= 60
+    assert not [toggle for toggle in app.main.toggle]
+    assert "**견주기**" in [str(caption.value) for caption in cards[0].caption]
 
 
 def test_the_process_param_is_taken_once_and_the_theme_stays(
@@ -498,8 +507,7 @@ def test_the_process_param_is_taken_once_and_the_theme_stays(
     assert "process" not in app.query_params
     assert app.query_params["theme"] in ("dark", ["dark"])
     links = app.session_state["captured_page_links"]
-    back = [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
-    assert back[0]["query_params"] == {"process": DYNAMIC_PROCESS, "theme": "dark"}
+    assert not [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
 
 
 def test_an_unknown_process_param_warns_and_opens_the_first_ready_process(
@@ -1607,15 +1615,16 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
     assert _picked_title_month(app) == 202609
     in_fragment = json.dumps(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["shapes"])
 
-    # 비중 토글도 프래그먼트 회차다.
-    browser.fragment_queue = [view]
-    app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY).set_value(False)
+    # 「비중 배분 비교」 는 사이드바 카드 토글이라 앱 전체 회차다(2026-11-09 보드 C3) — 본문
+    # 프래그먼트는 세션 값을 읽는다.
+    # 앞 회차가 프래그먼트 회차라 시험 트리에 카드가 없어 세션 칸으로 바꾼다.
+    browser.fragment_queue = []
+    app.session_state[CONSTRAINT_PROPORTIONAL_KEY] = False
     _ok(app.run())
-    assert browser.started[-1] in ([view], [])
-    assert app.session_state[CONSTRAINT_PROPORTIONAL_KEY] is False
+    assert browser.started[-1] == []
+    assert app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY).value is False
 
     # 같은 달·같은 토글의 앱 전체 회차 — 고른 달 띠가 같다.
-    browser.fragment_queue = []
     app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY).set_value(True)
     _ok(app.run())
     assert json.dumps(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["shapes"]) == in_fragment

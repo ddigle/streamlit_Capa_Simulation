@@ -226,10 +226,14 @@ def build_sidebar_stylesheet(
             f'{_CONDITIONS_PANEL} [data-testid="stAlert"]',
         )
     )
-    # 꺼진 스위치의 트랙. 숨긴 `input` 을 품은 `span` 바로 뒤의 `div` 다(1.63 DOM 실측).
+    # 꺼진 스위치의 트랙. 숨긴 `input` 을 품은 `span` 바로 뒤의 `div` 다(1.63 DOM 실측). 조건 패널도
+    # 같은 면이라 그 안의 스위치(구현 중 화면의 「샘플 데이터」 줄)도 같은 윤곽을 받는다.
+    switch_off = 'label:has(> span > input[role="switch"]:not(:checked)) > span + div'
     condition_switch_off_selectors = _SELECTOR_JOINER.join(
-        f'{root} details label:has(> span > input[role="switch"]:not(:checked)) > span + div'
-        for root in condition_roots
+        (
+            *(f"{root} details {switch_off}" for root in condition_roots),
+            f"{_CONDITIONS_PANEL} {switch_off}",
+        )
     )
     # 사이드바 안의 페이지 링크 전부. 본문에도 `stPageLink` 가 있을 수 있어 사이드바로 좁힌다.
     NAV_LINK = '[data-testid="stSidebarContent"] [data-testid="stPageLink-NavLink"]'

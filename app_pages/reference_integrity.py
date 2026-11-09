@@ -8,10 +8,14 @@ Dynamic 은 실행 관리가 모은 실적(효율·UPEH·생산실적)으로 Cap
 
 분해된 칸마다 그 칸을 파고드는 화면으로 링크를 건다. 효율·UPEH·수율·설비 가용은 실행 관리 그룹의
 화면이고 재공부족은 Dynamic 의 재공 현황이다 — 링크는 그룹과 상관없이 동작한다. 손실을 부서별
-Gap·A/Item 으로 넘기는 일은 실행 관리 머리가 말하고, 여기서는 그 화면 링크 하나만 둔다.
+Gap·A/Item 으로 넘기는 일은 실행 관리 머리가 말한다 — 그 화면으로 가는 길은 화면 탭 줄 · 사이드바다
+(맨 위 되돌아가기 링크를 두지 않는다 — 2026-11-09 보드 T4).
 
-요약과 상세를 탭으로 가른다. 보고 자리에서 볼 것(결론 한 문장·순위·다음 화면)과
-분석하며 뒤질 것(조회 조건·워터폴·일별 추이)이 다르다.
+요약과 상세를 탭으로 가른다. 보고 자리에서 볼 것(지표·순위·다음 화면)과 분석하며 뒤질 것(조회
+조건·워터폴·일별 추이)이 다르다. 머리에 배지 줄을 두지 않고(구현 중 표지는 화면 탭 이름 곁), 「샘플
+데이터」 는 사이드바 조회 조건 패널 줄, 공정 상세의 조회 조건은 사이드바 「Dynamic Capa 조건」
+카드(공정 상세 탭이 열린 회차에만)다(본문 상단 문구 · 여백 최소화 — 2026-11-09 보드 T8, 설계 규칙
+UI-LAY-02).
 """
 
 from __future__ import annotations
@@ -29,18 +33,10 @@ from capa_simulation.components.dynamic_capacity_dashboard import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
-from capa_simulation.components.page_header import (
-    MATURITY_BADGES,
-    page_badges,
-    render_page_header,
-)
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
-from capa_simulation.components.sample_data import (
-    pending_source_badge,
-    render_pending_source,
-    render_sample_switch,
-)
+from capa_simulation.components.sample_data import render_pending_source, render_sample_row
 from capa_simulation.components.status_metric import (
     metric_row,
     render_status_metric,
@@ -48,7 +44,6 @@ from capa_simulation.components.status_metric import (
 )
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
-from capa_simulation.navigation import EXECUTION_MANAGEMENT
 from capa_simulation.page_bootstrap import prune_choice
 from capa_simulation.services.dynamic_capacity import (
     aggregate_dynamic_capacity,
@@ -56,20 +51,28 @@ from capa_simulation.services.dynamic_capacity import (
     filter_dynamic_capacity,
 )
 from capa_simulation.services.korean_particle import with_direction_particle
+from capa_simulation.sidebar_status import condition_card
 
 _ALL = "전체"
 PROCESS_FILTER_KEY = "dynamic_capacity_process_filter"
 _CAPACITY_UNIT_LABELS = {"WF": "매", "CHIP": "Kea", "PKG": "Kea"}
 _SOURCE = "실적 DB"
+# 공정 상세 탭의 조회 조건 카드(사이드바 — 그 탭이 열린 회차에만 선다).
+DETAIL_CARD_LABEL = "Dynamic Capa 조건"
+DETAIL_CARD_NAME = "dynamic_capa"
 # 샘플 데모 행과 공정 요약(세션 칸). `_demo_frames`.
 DEMO_MEMO_KEY = "dynamic_capacity_demo_memo"
 
 # 설명은 자리에 늘 두지 않고 그 칸 · 구획 제목의 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02 ·
 # UI-TXT-03 — 화면 소개는 `guides/reference_integrity.md`).
-EXECUTION_LINK_HELP = "손실을 부서별 Gap · A/Item 으로 넘기는 일은 실행 관리에서 합니다."
 NEEDS_ACTION_HELP = (
     "Capa 실현률이 80% 미만인 공정 수입니다 — 프로토타입 판정 기준은 90% 이상 정상, 80% 이상 "
     "관찰, 80% 미만 개선 필요입니다."
+)
+# 공정 상세 「표준 Capa」 칸 풍선 — 수량 단위의 뜻.
+STANDARD_CAPA_HELP = (
+    "공정별 소요기준이 다르므로 Capa 수량 단위는 WF=매, CHIP·PKG=Kea 입니다. 서로 다른 단위의 "
+    "공정은 수량을 합산하지 않고 실현률로 비교합니다."
 )
 PROCESS_OVERVIEW_HELP = (
     "`Capa 실현률` 막대의 색이 판정입니다 — 90% 이상 정상, 80% 이상 관찰, 80% 미만 개선 필요"
@@ -149,6 +152,21 @@ def _render_pending_screen() -> None:
     )
 
 
+def needs_action_help(needs_action: pd.DataFrame, labels: ProcessLabels) -> str:
+    """「개선 필요」 칸 풍선 — 판정 기준과, 있으면 실현률이 가장 낮은 공정 한 줄. 공정 표시명은 사람
+    글이라 막아 끼운다(물결표·별표가 지움선·기울임이 되지 않게 — AGENTS 9장)."""
+    if needs_action.empty:
+        return NEEDS_ACTION_HELP
+    worst = needs_action.iloc[0]
+    worst_rate = f"{float(worst['Capa 실현률']):.0%}"
+    return (
+        f"{NEEDS_ACTION_HELP}\n\n가장 낮은 공정 — "
+        f"**{literal_markdown(labels.label(worst['공정']))}** · Capa 실현률 {worst_rate} · "
+        f"설비 성능 실현률 {float(worst['설비 성능 실현률']):.0%} · "
+        f"가용 Capa 활용률 {float(worst['가용 Capa 활용률']):.0%}"
+    )
+
+
 def _render_summary(
     process_summary: pd.DataFrame,
     labels: ProcessLabels,
@@ -156,31 +174,18 @@ def _render_summary(
     owner_tab: OpenTab | None,
 ) -> None:
     needs_action = process_summary.loc[process_summary["상태"].eq("개선 필요")]
-    if needs_action.empty:
-        # 결론이 「없음」 이면 그 값을 평문 한 줄로 둔다 — 초록 성공 상자는 알림창 몫이다(설계 규칙
-        # UI-NTF-01 · AMB-02 (가)).
-        st.caption("Capa 실현률이 판정 기준을 밑도는 공정이 없습니다.")
-    else:
-        worst = needs_action.iloc[0]
-        worst_rate = f"{float(worst['Capa 실현률']):.0%}"
-        # 공정 표시명은 사람 글이라 막아 끼운다(물결표·별표가 지움선·기울임이 되지 않게 —
-        # AGENTS 9장). 결론은 「없음」 일 때와 같은 평문 한 줄이고(설계 규칙 UI-TXT-04), 건수는 바로
-        # 아래 「개선 필요」 칸이 말한다(UI-TXT-07).
-        st.caption(
-            f"**{literal_markdown(labels.label(worst['공정']))}** 의 Capa 실현률이 "
-            f"{with_direction_particle(worst_rate)} 가장 낮습니다. 설비 성능 실현률은 "
-            f"{float(worst['설비 성능 실현률']):.0%}, 가용 Capa 활용률은 "
-            f"{float(worst['가용 Capa 활용률']):.0%} 입니다."
-        )
 
     with metric_row(key="reference_integrity_summary_metrics"):
         st.metric("분석 공정", f"{process_summary['공정'].nunique():,}개", border=True)
+        # 결론(실현률이 가장 낮은 공정)은 칸 위 캡션이 아니라 이 칸의 풍선이다 — 건수는 칸 값이고
+        # 없으면 0개가 그 결론이다(설계 규칙 UI-TXT-04 · UI-TXT-07, 상단 문구 최소화 — 2026-11-09
+        # 보드 T8).
         render_status_metric(
             "개선 필요",
             f"{len(needs_action):,}개",
             key="reference_integrity_needs_action",
             tone=shortage_tone(len(needs_action)),
-            help=NEEDS_ACTION_HELP,
+            help=needs_action_help(needs_action, labels),
         )
         st.metric(
             "중앙 Capa 실현률",
@@ -260,9 +265,14 @@ def _render_detail(
     *,
     owner_tab: OpenTab | None,
 ) -> None:
-    """조회 조건은 숨은 탭에서도 그린다. 건너뛰면 탭을 옮길 때마다 선택이 초기화된다."""
-    with st.container(border=True):
-        st.markdown("#### :material/filter_alt: 상세 조회 조건")
+    """조회 조건(사이드바 「Dynamic Capa 조건」 카드)을 주고 고른 공정의 손실 · 추이 · 원인을 편다.
+
+    카드는 이 탭이 열린 회차에만 선다(AGENTS 9장 — 탭에 딸린 카드는 한 회차에 하나). 닫힌 회차에는
+    위젯을 그리지 않지만 모두 `persist_state="session"`(조회일은 위젯 아닌 칸)이라 탭을 오가도 고른
+    값이 남는다."""
+    if tab_is_hidden(owner_tab):
+        return
+    with condition_card(DETAIL_CARD_LABEL, name=DETAIL_CARD_NAME, icon=":material/filter_alt:"):
         minimum_date = cast(pd.Timestamp, demo["일자"].min()).date()
         maximum_date = cast(pd.Timestamp, demo["일자"].max()).date()
         worst_process = str(process_summary.iloc[0]["공정"])
@@ -273,84 +283,83 @@ def _render_detail(
         # 주지 않는다(함께 주면 Streamlit 이 경고한다).
         prune_choice(PROCESS_FILTER_KEY, process_options, default=worst_process)
 
-        with st.container(horizontal=True, gap="small"):
-            start_date, end_date = date_range_field(
-                "조회일",
-                start_key="dynamic_capacity_start_date",
-                end_key="dynamic_capacity_end_date",
-                default=(minimum_date, maximum_date),
-                min_date=minimum_date,
-                max_date=maximum_date,
-                width=240,
-            )
-            process = cast(
-                str,
-                st.selectbox(
-                    "공정",
-                    process_options,
-                    key=PROCESS_FILTER_KEY,
-                    persist_state="session",
-                    width=210,
-                    # 표시만 바꾼다. 선택값은 원본이라 아래 `eq`·`filter_dynamic_capacity` 가
-                    # 원본 컬럼과 그대로 대조한다. 보이는 글자가 겹치면 「표시명 (원본)」 으로
-                    # 가른다(`unique_format_func` — 같은 글자면 마지막 선택지로 돌아온다).
-                    format_func=labels.unique_format_func(process_options),
-                ),
-            )
+        start_date, end_date = date_range_field(
+            "조회일",
+            start_key="dynamic_capacity_start_date",
+            end_key="dynamic_capacity_end_date",
+            default=(minimum_date, maximum_date),
+            min_date=minimum_date,
+            max_date=maximum_date,
+            width="stretch",
+        )
+        process = cast(
+            str,
+            st.selectbox(
+                "공정",
+                process_options,
+                key=PROCESS_FILTER_KEY,
+                persist_state="session",
+                width="stretch",
+                # 표시만 바꾼다. 선택값은 원본이라 아래 `eq`·`filter_dynamic_capacity` 가
+                # 원본 컬럼과 그대로 대조한다. 보이는 글자가 겹치면 「표시명 (원본)」 으로
+                # 가른다(`unique_format_func` — 같은 글자면 마지막 선택지로 돌아온다).
+                format_func=labels.unique_format_func(process_options),
+            ),
+        )
 
-            process_rows = demo.loc[demo["공정"].eq(process)]
-            product_options = [
-                _ALL,
-                *sorted(process_rows["제품정보"].astype(str).unique().tolist()),
-            ]
-            # 아래 셋도 공정 상자처럼 잡은 값을 매 회차 다시 적는다(선택지 밖이면 「전체」).
-            # 지우기만 하면 서버는 「전체」 로 계산하지만 브라우저는 옛 글자를 계속 보이고 되보낸다.
-            prune_choice("dynamic_capacity_product_filter", product_options, default=_ALL)
-            product = cast(
-                str,
-                st.selectbox(
-                    "제품",
-                    product_options,
-                    key="dynamic_capacity_product_filter",
-                    persist_state="session",
-                    width=190,
-                ),
-            )
-            product_rows = process_rows
-            if product != _ALL:
-                product_rows = product_rows.loc[product_rows["제품정보"].eq(product)]
+        process_rows = demo.loc[demo["공정"].eq(process)]
+        product_options = [
+            _ALL,
+            *sorted(process_rows["제품정보"].astype(str).unique().tolist()),
+        ]
+        # 아래 셋도 공정 상자처럼 잡은 값을 매 회차 다시 적는다(선택지 밖이면 「전체」).
+        # 지우기만 하면 서버는 「전체」 로 계산하지만 브라우저는 옛 글자를 계속 보이고 되보낸다.
+        prune_choice("dynamic_capacity_product_filter", product_options, default=_ALL)
+        product = cast(
+            str,
+            st.selectbox(
+                "제품",
+                product_options,
+                key="dynamic_capacity_product_filter",
+                persist_state="session",
+                width="stretch",
+            ),
+        )
+        product_rows = process_rows
+        if product != _ALL:
+            product_rows = product_rows.loc[product_rows["제품정보"].eq(product)]
 
-            stack_options = [_ALL, *sorted(product_rows["Stack"].astype(str).unique().tolist())]
-            prune_choice("dynamic_capacity_stack_filter", stack_options, default=_ALL)
-            stack = cast(
-                str,
-                st.selectbox(
-                    "Stack",
-                    stack_options,
-                    key="dynamic_capacity_stack_filter",
-                    persist_state="session",
-                    width=140,
-                ),
-            )
-            stack_rows = product_rows
-            if stack != _ALL:
-                stack_rows = stack_rows.loc[stack_rows["Stack"].eq(stack)]
+        stack_options = [_ALL, *sorted(product_rows["Stack"].astype(str).unique().tolist())]
+        prune_choice("dynamic_capacity_stack_filter", stack_options, default=_ALL)
+        stack = cast(
+            str,
+            st.selectbox(
+                "Stack",
+                stack_options,
+                key="dynamic_capacity_stack_filter",
+                persist_state="session",
+                width="stretch",
+            ),
+        )
+        stack_rows = product_rows
+        if stack != _ALL:
+            stack_rows = stack_rows.loc[stack_rows["Stack"].eq(stack)]
 
-            wafer_type_options = [
-                _ALL,
-                *sorted(stack_rows["WF 구분"].astype(str).unique().tolist()),
-            ]
-            prune_choice("dynamic_capacity_wafer_type_filter", wafer_type_options, default=_ALL)
-            wafer_type = cast(
-                str,
-                st.selectbox(
-                    "WF 속성",
-                    wafer_type_options,
-                    key="dynamic_capacity_wafer_type_filter",
-                    persist_state="session",
-                    width=160,
-                ),
-            )
+        wafer_type_options = [
+            _ALL,
+            *sorted(stack_rows["WF 구분"].astype(str).unique().tolist()),
+        ]
+        prune_choice("dynamic_capacity_wafer_type_filter", wafer_type_options, default=_ALL)
+        wafer_type = cast(
+            str,
+            st.selectbox(
+                "WF 속성",
+                wafer_type_options,
+                key="dynamic_capacity_wafer_type_filter",
+                persist_state="session",
+                width="stretch",
+            ),
+        )
 
     if start_date > end_date:
         st.error("조회 시작일은 종료일보다 늦을 수 없습니다.")
@@ -378,6 +387,7 @@ def _render_detail(
             f"표준 Capa ({unit_label})",
             f"{detail_summary['표준 Capa']:,.0f}",
             border=True,
+            help=STANDARD_CAPA_HELP,
         )
         # 증감 문구는 부호로 시작해야 한다. 앞에 말을 붙이면 Streamlit 이 음수로 읽지 못해
         # 미달인데도 초록 상승 화살표가 붙는다. 설명은 `delta_description` 이 맡는다.
@@ -401,9 +411,6 @@ def _render_detail(
             f"{detail_summary['가용 Capa 활용률']:.1%}",
             border=True,
         )
-
-    if tab_is_hidden(owner_tab):
-        return
 
     waterfall_column, trend_column = st.columns(2, gap="medium")
     with waterfall_column.container(border=True):
@@ -496,10 +503,8 @@ def _render_detail(
 
 
 def _render_guide() -> None:
-    st.caption(
-        "공정별 소요기준이 다르므로 Capa 수량 단위는 WF=매, CHIP·PKG=Kea로 표시합니다. "
-        "서로 다른 단위의 공정은 수량을 합산하지 않고 실현률로 비교합니다."
-    )
+    # 수량 단위의 뜻은 공정 상세 「표준 Capa」 칸 풍선이다(`STANDARD_CAPA_HELP` — 상단 문구 최소화,
+    # 2026-11-09 보드 T8).
     capacity_guide, rate_guide = st.columns(2, gap="large")
     with capacity_guide.container(border=True):
         st.markdown("##### Capa 단계")
@@ -564,21 +569,11 @@ def _demo_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
 # 공정 표시명은 화면 표기 전용 라벨이다. 선택값·집계 키·계산 입력은 원본 공정명을 쓴다.
 process_labels = get_process_labels()
 
-render_page_header(
-    "Dynamic Capa",
-    badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge(_SOURCE)),
-)
+render_page_header("Dynamic Capa")
 render_page_guide("reference_integrity", title="Dynamic Capa")
-# 부서별 Gap·A/Item 로드맵은 실행 관리 머리(`render_roadmap_panel`)에 있다 — 여기서는 그 화면
-# 링크 하나만 두고, 무엇을 하러 가는지는 링크 풍선이 말한다(설계 규칙 UI-TXT-03 · UI-LAY-08).
-render_page_link(
-    EXECUTION_MANAGEMENT.path,
-    label=EXECUTION_MANAGEMENT.title,
-    icon=EXECUTION_MANAGEMENT.icon,
-    help=EXECUTION_LINK_HELP,
-)
 
-if not render_sample_switch(key="dynamic_capa_sample_switch", source=_SOURCE):
+# 패널 줄이 조건 카드보다 먼저다 — 공통 줄이 없는 화면은 이 줄이 패널을 세운다.
+if not render_sample_row(key="dynamic_capa_sample_switch", source=_SOURCE):
     _render_pending_screen()
     st.stop()
 

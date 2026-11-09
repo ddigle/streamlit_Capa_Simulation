@@ -1810,14 +1810,25 @@ def _sidebar_keys(app: AppTest) -> list[str]:
     return keys
 
 
-@pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
+@pytest.mark.parametrize(
+    "page_path",
+    [
+        HOME.path,
+        SCENARIO_MANAGEMENT.path,
+        CAPA_CHATBOT.path,
+        "app_pages/actual_efficiency.py",
+        DYNAMIC_CAPA.path,
+    ],
+)
 def test_the_conditions_heading_stands_right_before_the_panel(
     _app: AppTest, page_path: str
 ) -> None:
     """「조회 조건」 제목은 통합 조건 패널 **바로 앞**이다.
 
     제목은 그 아래 패널(시나리오·조회기간과 화면 칸)과 조건 카드가 다른 화면으로 가는 목록이
-    아니라 지금 화면의 계산 조건이라고 말한다. 뒤로 밀리면 패널이 목록 쪽에 붙어 읽힌다.
+    아니라 지금 화면의 계산 조건이라고 말한다. 뒤로 밀리면 패널이 목록 쪽에 붙어 읽힌다. 공통 줄을
+    읽지 않는 구현 중 화면(Chatbot · 실적 · Dynamic)도 「샘플 데이터」 줄이 패널을 세우면 같은
+    자리다(2026-11-09 보드 T8 — `sidebar_status.defer_page_condition_slots`).
     """
     app = _app.run()
     if page_path != HOME.path:
@@ -1831,6 +1842,68 @@ def test_the_conditions_heading_stands_right_before_the_panel(
     heading_block = list(app.sidebar.children.values())[heading]
     captions = [element.value for element in heading_block if isinstance(element, Caption)]
     assert captions == [CONDITIONS_SECTION.title, CONDITIONS_SECTION.hint]
+
+
+@pytest.mark.parametrize(
+    ("page_path", "tab_key", "tab_label", "card_name"),
+    [
+        (
+            "app_pages/actual_efficiency.py",
+            "actual_efficiency_active_tab",
+            "상세 분석",
+            "actual_efficiency",
+        ),
+        (DYNAMIC_CAPA.path, "dynamic_capa_active_tab", "공정 상세", "dynamic_capa"),
+    ],
+)
+def test_a_deferred_panel_screen_stands_heading_panel_then_its_card(
+    _app: AppTest, page_path: str, tab_key: str, tab_label: str, card_name: str
+) -> None:
+    """공통 줄 없이 카드를 세우는 구현 중 화면은 `has_condition_cards` 를 선언하지 않는다 — 제목은
+    「샘플 데이터」 줄이 미룬 패널을 열 때 함께 선다. 그 줄이 카드보다 먼저라는 차례에 기대므로
+    카드가 실제로 서는 탭에서 앱 전체 차례 「제목 → 패널 → 카드」 를 본다(제목은 하나)."""
+    app = _app.run()
+    app.switch_page(page_path)
+    app.session_state[tab_key] = tab_label
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    keys = _sidebar_keys(app)
+    card = f"{CONDITION_CARD_PREFIX}{card_name}"
+    assert keys.count(CONDITIONS_SECTION.key) == 1, keys
+    heading = keys.index(CONDITIONS_SECTION.key)
+    assert keys[heading : heading + 3] == [CONDITIONS_SECTION.key, CONDITIONS_BOX_KEY, card], keys
+
+
+DECLARED_CARD_SCRIPT = r"""
+import streamlit as st
+
+from capa_simulation.navigation import CONDITIONS_SECTION
+from capa_simulation.sidebar_status import (
+    condition_card,
+    defer_page_condition_slots,
+    page_condition_slot,
+    render_sidebar_section,
+)
+
+# `app.py` 가 카드를 선언한 화면에 하는 일 — 제목을 먼저 세우고 패널은 제목 없이 미룬다.
+render_sidebar_section(CONDITIONS_SECTION)
+defer_page_condition_slots(heading=False)
+# 페이지 — 패널 칸을 먼저 쓰고 카드를 세운다.
+with page_condition_slot(0).container():
+    st.toggle("줄", key="test_row")
+with condition_card("시험 조건", name="test_card"):
+    st.selectbox("값", ["a", "b"], key="test_value")
+"""
+
+
+def test_a_declared_card_screen_opens_its_deferred_panel_without_a_second_heading() -> None:
+    """카드를 선언하고 공통 줄이 없는 화면(`defer_page_condition_slots(heading=False)`)이 패널 칸을
+    쓰면 패널만 선다 — 제목은 `app.py` 가 이미 세웠다. 차례는 「제목 → 패널 → 카드」 다."""
+    app = AppTest.from_string(DECLARED_CARD_SCRIPT, default_timeout=60).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    keys = _sidebar_keys(app)
+    assert keys == [CONDITIONS_SECTION.key, CONDITIONS_BOX_KEY, f"{CONDITION_CARD_PREFIX}test_card"]
 
 
 @pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
@@ -2023,9 +2096,34 @@ def _common_boxes(app: AppTest) -> set[str]:
 
 def test_a_screen_that_reads_no_common_condition_shows_none(_app: AppTest) -> None:
     app = _app.run()
-    app.switch_page(CAPA_CHATBOT.path).run()
+    app.switch_page(PRODUCTION_PROGRESS.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == set()
+    assert CONDITIONS_BOX_KEY not in _sidebar_keys(app)
+
+
+@pytest.mark.parametrize(
+    "page_path", [CAPA_CHATBOT.path, "app_pages/actual_efficiency.py", DYNAMIC_CAPA.path]
+)
+def test_an_unfinished_screen_puts_only_its_sample_row_in_the_panel(
+    _app: AppTest, page_path: str
+) -> None:
+    """공통 줄을 읽지 않는 구현 중 화면은 제목 · 패널에 공통 줄 없이 「샘플 데이터」 줄 하나만
+    세운다 — 본문 머리에는 스위치가 없다(2026-11-09 보드 T8). 줄은 이름 + 스위치(값 칸 단추가
+    아니다)이고 처음 연 세션은 켜짐이다. 다른 화면으로 가면 패널이 걷힌다."""
+    app = _app.run()
+    app.switch_page(page_path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading"}
+    keys = _sidebar_keys(app)
+    panel = list(app.sidebar.children.values())[keys.index(CONDITIONS_BOX_KEY)]
+    assert [widget.key for widget in panel.toggle] == [SAMPLE_TOGGLE_KEY]
+    assert panel.toggle[0].value is True
+    assert not list(app.main.toggle)
+
+    app.switch_page(PRODUCTION_PROGRESS.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert CONDITIONS_BOX_KEY not in _sidebar_keys(app)
 
 
 def test_a_screen_with_only_its_own_card_keeps_the_heading(_app: AppTest) -> None:

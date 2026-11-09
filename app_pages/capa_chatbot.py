@@ -23,17 +23,9 @@ import streamlit as st
 
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
-from capa_simulation.components.page_header import (
-    MATURITY_BADGES,
-    page_badges,
-    render_page_header,
-)
+from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
-from capa_simulation.components.sample_data import (
-    pending_source_badge,
-    render_pending_source,
-    render_sample_switch,
-)
+from capa_simulation.components.sample_data import render_pending_source, render_sample_row
 from capa_simulation.services.chatbot_samples import (
     ProcessName,
     SampleAnswer,
@@ -130,13 +122,12 @@ def _render_answer(answer: SampleAnswer) -> None:
             )
 
 
-render_page_header(
-    "Capa Chatbot (구현중)",
-    badges=page_badges(MATURITY_BADGES["prototype"], pending_source_badge(SOURCE)),
-)
+# 머리에 배지 줄을 두지 않는다 — 구현 중 표지는 화면 탭 이름 곁, 합성 샘플 표지는 머리 띠다. 「샘플
+# 데이터」 는 사이드바 조회 조건 패널 줄이다(본문 상단 문구 · 여백 최소화 — 2026-11-09 보드 T8).
+render_page_header("Capa Chatbot (구현중)", show_status=False)
 render_page_guide("capa_chatbot", title="Capa Chatbot")
 
-if not render_sample_switch(key="capa_chatbot_sample_switch", source=SOURCE):
+if not render_sample_row(key="capa_chatbot_sample_switch", source=SOURCE):
     render_pending_source(
         subject="Capa Chatbot",
         source=SOURCE,

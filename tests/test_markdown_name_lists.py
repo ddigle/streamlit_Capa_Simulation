@@ -148,5 +148,8 @@ def test_the_performance_summary_conclusion_blocks_the_display_name() -> None:
         AppTest.from_function(_performance_screen, args=({worst: TILDE},), default_timeout=60).run()
     )
 
-    captions = _texts(app, "caption")
-    assert any(text.startswith(f"**{literal_markdown(TILDE)}** — ") for text in captions), captions
+    # 결론은 「개선 필요 공정」 칸 풍선이다(2026-11-09 보드 T8) — 풍선도 마크다운으로 그려진다.
+    (card,) = [item for item in app.metric if item.label == "개선 필요 공정"]
+    tooltip = str(card.proto.help)
+    assert f"**{literal_markdown(TILDE)}** · " in tooltip, tooltip
+    assert TILDE not in tooltip.replace(literal_markdown(TILDE), ""), tooltip

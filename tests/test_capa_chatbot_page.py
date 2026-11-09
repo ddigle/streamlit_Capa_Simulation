@@ -79,22 +79,31 @@ def _shown_conclusions(app: AppTest) -> list[str]:
     return [item.value for item in app.markdown if item.value in expected]
 
 
-def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off() -> None:
-    """샘플을 끈 동안 머리 배지 「… 미연결」 을 뺀다 — 자리 표지 「… 연결 대기」 가 같은 말을
-    한다(아침 보드 d4). 켜면 다시 단다."""
+def test_the_head_has_no_badge_line_and_the_switch_is_a_sidebar_row() -> None:
+    """머리에는 배지 줄(「구현중 · 인터랙티브 프로토타입 · … 미연결」)이 없고 「샘플 데이터」 는
+    사이드바 조회 조건 패널 줄이다 — 구현 중 표지는 화면 탭 이름 곁, 합성 샘플 표지는 머리 띠다
+    (2026-11-09 보드 T8). 끄면 자리 표지 「… 연결 대기」 가 무엇을 기다리는지 말한다."""
     from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 
     app = _start()
-    assert any("미연결]" in line for line in _header_lines(app))
+    assert not _badge_lines(app)
+    assert not app.main.toggle
+    switch = app.toggle(key=SAMPLE_TOGGLE_KEY)
+    assert switch in list(app.sidebar.toggle)
 
-    app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(False).run()
+    switch.set_value(False).run()
     assert not app.exception, [item.message for item in app.exception]
-    assert not any("미연결]" in line for line in _header_lines(app))
+    assert not _badge_lines(app)
     assert [item for item in app.get("html") if "연결 대기</strong>" in item.proto.body]
 
 
-def _header_lines(app: AppTest) -> list[str]:
-    return [str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)]
+def _badge_lines(app: AppTest) -> list[str]:
+    marks = ("인터랙티브 프로토타입", "미연결", "-badge[")
+    return [
+        str(item.value)
+        for item in app.main.markdown
+        if any(mark in str(item.value) for mark in marks)
+    ]
 
 
 def test_a_suggested_question_adds_its_answer_in_one_run(

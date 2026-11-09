@@ -1,4 +1,4 @@
-# Purpose: 실적 화면이 닫힌 요약·개선과제 탭을 건너뛰고 열린 탭은 같은 값을 그리는지 본다.
+# Purpose: 실적 화면의 탭 건너뛰기 · 같은 값과 사이드바 샘플 줄 · 조건 카드 · 머리 배지 없음을 본다.
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Expander, Status
 
 from capa_simulation.components import performance_actual_screen as screen
 from capa_simulation.services.performance_actuals import (
@@ -77,8 +78,9 @@ def test_closed_summary_and_action_tabs_draw_nothing() -> None:
     assert not _tab(app, "요약").get("metric")
     assert not _tab(app, "요약").get("plotly_chart")
     assert not _tab(app, "개선과제").get("dataframe")
-    # 상세 분석의 조회 조건 위젯은 그대로다.
-    assert _tab(app, "상세 분석").get("multiselect")
+    # 상세 분석의 조회 조건은 본문이 아니라 사이드바 카드다.
+    assert not _tab(app, "상세 분석").get("multiselect")
+    assert app.sidebar.multiselect
 
 
 def test_the_open_summary_shows_the_same_numbers() -> None:
@@ -117,31 +119,35 @@ def test_opening_a_tab_draws_it_in_that_run() -> None:
     assert not _tab(app, "상세 분석").get("plotly_chart")
 
 
-def test_the_summary_verdict_is_one_plain_line_with_no_particle_after_the_process_name() -> None:
-    """요약 결론은 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름이 「이(가)」 가 됐다
-    (「TC Bonding 이(가) 12개월 연속 …」 — E2E r2 #90·r3 #93). 결론은 상자 없는 평문 한 줄이고
-    건수는 바로 아래 「개선 필요 공정」 칸 몫이다(설계 규칙 UI-TXT-04 · UI-TXT-07)."""
+def test_the_summary_verdict_is_the_tooltip_of_the_needs_action_card() -> None:
+    """요약 결론(가장 시급한 공정)은 칸 위 캡션이 아니라 「개선 필요 공정」 칸 풍선이다 — 본문 상단
+    문구 최소화(2026-11-09 보드 T8). 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름이
+    「이(가)」 가 됐다(「TC Bonding 이(가) 12개월 연속 …」 — E2E r2 #90·r3 #93). 건수는 칸 값이라
+    풍선이 되풀이하지 않는다(설계 규칙 UI-TXT-04 · UI-TXT-07)."""
     priority = _expected_priority()
     worst = priority.loc[priority["상태"].eq("개선 필요")].iloc[0]
 
     app = _open("요약")
 
     assert not _tab(app, "요약").get("warning")
-    (verdict,) = [str(item.value) for item in _tab(app, "요약").get("caption")]
-    assert verdict.startswith(f"**{worst['공정']}** — {int(worst['연속 미달'])}개월 연속 ")
-    assert "이(가)" not in verdict
-    assert "개선 필요 공정은" not in verdict
+    assert not _tab(app, "요약").get("caption")
+    (card,) = [item for item in _tab(app, "요약").get("metric") if item.label == "개선 필요 공정"]
+    tooltip = str(card.proto.help)
+    assert "3개월 이상 연속" in tooltip
+    assert f"**{worst['공정']}** · {int(worst['연속 미달'])}개월 연속 미달" in tooltip
+    assert "이(가)" not in tooltip
+    assert "개선 필요 공정은" not in tooltip
 
 
 @pytest.mark.parametrize("label", ["요약", "상세 분석", "개선과제"])
 def test_reading_notes_are_tooltips_not_lines_in_the_open_tab(label: str) -> None:
     """구획을 읽는 법(Gap · 순위 · 점수 셈)은 구획 제목 풍선이다 — 열린 탭 자리에는 설명 캡션이 없다
-    (설계 규칙 UI-TXT-01 · UI-TXT-02, 합성 데모라 빈 결과 줄도 서지 않는다). 요약 탭의 한 줄은 결론
-    값이다(UI-TXT-04)."""
+    (설계 규칙 UI-TXT-01 · UI-TXT-02, 합성 데모라 빈 결과 줄도 서지 않는다). 요약 탭의 결론도 칸
+    풍선이다(2026-11-09 보드 T8)."""
     app = _open(label)
     tab = _tab(app, label)
 
-    assert len(tab.get("caption")) == (1 if label == "요약" else 0)
+    assert not tab.get("caption")
     titled = [item for item in tab.get("markdown") if str(item.value).startswith("#### ")]
     assert titled
     explained = [item for item in titled if item.proto.help]
@@ -160,38 +166,60 @@ def test_the_metric_meaning_is_the_tooltip_of_the_actual_card() -> None:
     assert actual.proto.help == EFFICIENCY_METRIC.description
 
 
-def test_the_detail_conditions_stand_on_one_wrapping_row() -> None:
-    """「제품」 만 가로 줄 밖이면 폭이 남아도 혼자 둘째 줄로 내려간다(후보 g7-19)."""
+def test_the_detail_conditions_stand_in_the_sidebar_card_while_the_tab_is_open() -> None:
+    """상세 분석의 조회 조건(분석 기간 · 공정 · 제품)은 사이드바 「효율 실적 조건」 카드이고 그 탭이
+    열린 회차에만 선다(2026-11-09 보드 T8 — 구현 중 화면도 지금 사이드바로, 설계 규칙 UI-LAY-02).
+    카드가 없는 회차를 지나도 고른 값은 남는다(`persist_state`)."""
     app = _open("상세 분석")
 
-    (row,) = [
-        inner
-        for outer in _tab(app, "상세 분석").children.values()
-        for inner in outer.children.values()
-        if inner.type == "flex_container" and inner.proto.flex_container.direction == 2
+    (card,) = _cards(app, "효율 실적 조건")
+    assert [element.label for element in card.children.values()] == ["분석 기간", "공정", "제품"]
+    assert not _tab(app, "상세 분석").get("select_slider")
+    assert not _tab(app, "상세 분석").get("selectbox")
+    product = app.selectbox(key="tabs_test_product_filter")
+    choice = product.options[1]
+    product.set_value(choice).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    app.session_state[TAB_KEY] = "요약"
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not _cards(app, "효율 실적 조건")
+
+    app.session_state[TAB_KEY] = "상세 분석"
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert app.selectbox(key="tabs_test_product_filter").value == choice
+
+
+def _cards(app: AppTest, label: str) -> list[Any]:
+    """사이드바 조건 카드(아이콘을 단 확장 패널은 AppTest 에서 `Status` 다)."""
+    return [
+        item for item in app.sidebar if isinstance(item, (Status, Expander)) and item.label == label
     ]
-    assert row.proto.flex_container.wrap
-    assert [element.label for element in row.children.values()] == ["분석 기간", "공정", "제품"]
 
 
-def test_the_sample_switch_line_is_a_badge_with_its_meaning_in_a_tooltip() -> None:
-    """켜진 샘플 스위치 곁은 「합성 샘플」 배지와 표지 「실적 아님」 이고 뜻은 그 풍선이다 — 끄면
-    스위치만 서고 「… 미연결」 은 머리 배지 몫이라 거듭 세우지 않으며, 끈 상태의 뜻은 스위치 풍선이
-    말한다(설계 규칙 UI-TXT-04 · UI-TXT-07 · UI-NTF-05)."""
+def test_the_sample_switch_is_a_sidebar_row_with_its_meaning_in_the_name_tooltip() -> None:
+    """「샘플 데이터」 는 사이드바 조회 조건 패널 줄(이름 + 스위치)이고 뜻 · 「실적 아님」 은 이름
+    풍선이다 — 본문에는 스위치 상자도 「합성 샘플 실적 아님」 표지도 없다(2026-11-09 보드 T8 —
+    합성 샘플 표지는 머리 띠 몫). 끄면 연결 전 자리만 서고 본문 캡션은 없다(설계 규칙 UI-TXT-04 ·
+    UI-TXT-07 · UI-LAY-02)."""
+    from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY, SAMPLE_TOGGLE_LABEL
+
     app = _open("요약")
-    (badge,) = [item for item in app.markdown if "합성 샘플" in str(item.value)]
-    assert badge.value == ":orange-badge[:material/science: 합성 샘플] **실적 아님**"
-    assert "실적이 아닙니다" in badge.proto.help
-
-    switch = app.toggle(key="dynamic_capa_sample_data")
-    assert "켜면 연결 후 모습" in switch.proto.help
-    assert f"{EFFICIENCY_METRIC.source} 연결 대기" in switch.proto.help
+    assert not [item for item in app.main.toggle]
+    assert not [item.value for item in app.markdown if "합성 샘플" in str(item.value)]
+    switch = app.toggle(key=SAMPLE_TOGGLE_KEY)
+    assert switch in list(app.sidebar.toggle)
+    (name,) = [item for item in app.sidebar.caption if item.value == SAMPLE_TOGGLE_LABEL]
+    assert "켜면 연결 후 모습" in name.proto.help
+    assert "실적이 아닙니다" in name.proto.help
+    assert f"{EFFICIENCY_METRIC.source} 연결 대기" in name.proto.help
 
     switch.set_value(False).run()
     assert not app.exception, [item.message for item in app.exception]
     assert not [item.value for item in app.markdown if "미연결" in str(item.value)]
-    assert not [item.value for item in app.markdown if "합성 샘플" in str(item.value)]
-    assert not [item.value for item in app.caption]
+    assert not [item.value for item in app.main.caption]
     (title,) = [item for item in app.markdown if ":material/pending:" in str(item.value)]
     assert "이 자리에 들어옵니다" in title.proto.help
 
@@ -214,19 +242,20 @@ def test_the_pending_screen_keeps_what_it_will_calculate_in_the_title_tooltip() 
 
 
 @pytest.mark.parametrize(
-    ("page", "source"),
+    ("page", "title", "source"),
     [
-        ("actual_efficiency.py", "생산이력 DB"),
-        ("actual_upeh.py", "생산이력 DB"),
-        ("yield_actual.py", "수율 실적 DB"),
+        ("actual_efficiency.py", "효율 실적", "생산이력 DB"),
+        ("actual_upeh.py", "UPEH 실적", "생산이력 DB"),
+        ("yield_actual.py", "수율 실적", "수율 실적 DB"),
     ],
 )
-def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
-    monkeypatch: pytest.MonkeyPatch, page: str, source: str
+def test_the_head_has_no_badge_line_on_either_side_of_the_switch(
+    monkeypatch: pytest.MonkeyPatch, page: str, title: str, source: str
 ) -> None:
-    """샘플을 끈 동안 머리 배지 「… 미연결」 을 뺀다 — 연결 전 자리 표지 「… 연결 대기」 가 같은
-    말을 한다(아침 보드 d4). 켠 동안은 합성 샘플 화면이라 머리가 원천이 없다고 말한다. 머리는
-    스위치보다 먼저 그리지만 스위치를 누른 그 회차에 바로 따라간다."""
+    """머리에는 배지 줄(「구현중 · 인터랙티브 프로토타입 · … 미연결」)이 없다 — 구현 중 표지는 화면
+    탭 이름 곁, 합성 샘플 표지는 머리 띠다(2026-11-09 보드 T8, 본문 상단 문구 · 여백 최소화). 큰
+    제목은 사이드바 라벨에서 「(구현중)」 을 뗀 이름이다(화면에서는 숨는다). 끄면 연결 전 자리가
+    무엇을 기다리는지 말한다."""
     import capa_simulation.components.process_labels as process_labels_module
     from capa_simulation.components.process_labels import ProcessLabels
     from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -235,21 +264,21 @@ def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
     app = AppTest.from_file(str(PAGES / page), default_timeout=60)
     app.run()
     assert not app.exception, [item.message for item in app.exception]
-    assert _header(app) == f":green-badge[인터랙티브 프로토타입] :blue-badge[{source} 미연결]"
+    assert [item.value for item in app.title] == [title]
+    assert not _badge_lines(app)
 
     app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(False).run()
     assert not app.exception, [item.message for item in app.exception]
-    assert _header(app) == ":green-badge[인터랙티브 프로토타입]"
+    assert not _badge_lines(app)
     (slot,) = [item for item in app.get("html") if "연결 대기" in item.proto.body]
     assert f"<strong>{source} 연결 대기</strong>" in slot.proto.body
 
-    app.toggle(key=SAMPLE_TOGGLE_KEY).set_value(True).run()
-    assert _header(app).endswith(f":blue-badge[{source} 미연결]")
 
-
-def _header(app: AppTest) -> str:
-    """머리 배지 줄(구현중 배지를 뺀 나머지)."""
-    (line,) = [
-        str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)
+def _badge_lines(app: AppTest) -> list[str]:
+    """머리 배지 글(구현중 · 성숙도 · 미연결)이 든 본문 마크다운."""
+    marks = ("구현중", "인터랙티브 프로토타입", "미연결", "-badge[")
+    return [
+        str(item.value)
+        for item in app.main.markdown
+        if any(mark in str(item.value) for mark in marks)
     ]
-    return line.replace(":orange-badge[구현중] ", "")

@@ -93,9 +93,12 @@ def test_the_actual_summary_conclusion_shows_the_display_name_literally(
     app = AppTest.from_function(_performance_screen, default_timeout=60).run()
 
     assert not app.exception, [item.message for item in app.exception]
-    conclusions = [str(item.value) for item in app.caption if "기준 미달입니다" in str(item.value)]
-    assert conclusions, "개선 필요 공정이 있는 표본이어야 결론 한 줄이 선다"
-    carrying = _assert_literal(_markdown_texts(app), shared_labels["now"])
+    # 결론은 「개선 필요 공정」 칸 풍선이다(2026-11-09 보드 T8) — 풍선도 마크다운으로 그려진다.
+    conclusions = [
+        str(item.proto.help) for item in app.metric if "가장 시급한 공정" in str(item.proto.help)
+    ]
+    assert conclusions, "개선 필요 공정이 있는 표본이어야 결론이 선다"
+    carrying = _assert_literal(_markdown_texts(app) + conclusions, shared_labels["now"])
     assert all(text in carrying for text in conclusions), conclusions
 
 
@@ -111,11 +114,16 @@ def test_the_dynamic_summary_and_detail_caption_show_the_display_name_literally(
 
     app = AppTest.from_file(str(DYNAMIC_PAGE), default_timeout=60).run()
     assert not app.exception, [item.message for item in app.exception]
-    summary = [str(item.value) for item in app.caption if "가장 낮습니다" in str(item.value)]
-    assert summary, "개선 필요 공정이 있는 표본이어야 결론 한 줄이 선다"
-    assert all(text in _assert_literal(_markdown_texts(app), labels) for text in summary)
+    # 결론은 「개선 필요」 칸 풍선이다(2026-11-09 보드 T8) — 풍선도 마크다운으로 그려진다.
+    summary = [
+        str(item.proto.help) for item in app.metric if "가장 낮은 공정" in str(item.proto.help)
+    ]
+    assert summary, "개선 필요 공정이 있는 표본이어야 결론이 선다"
+    assert all(text in _assert_literal(_markdown_texts(app) + summary, labels) for text in summary)
 
+    # 공정 상자는 공정 상세 탭이 열린 회차의 사이드바 카드다.
     app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    app.run()
     app.selectbox(key="dynamic_capacity_process_filter").set_value(processes[0])
     app.run()
 

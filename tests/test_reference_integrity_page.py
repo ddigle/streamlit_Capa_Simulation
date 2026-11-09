@@ -1,4 +1,4 @@
-# Purpose: Dynamic Capa 상위 화면의 공정 표시명·선택값·상세 상자 되돌림·닫힌 탭 건너뛰기를 검증한다.
+# Purpose: Dynamic Capa 상위 화면의 공정 표시명·선택값·조건 카드·닫힌 탭 건너뛰기를 검증한다.
 
 import json
 from collections.abc import Iterator
@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Expander, Status
 from widget_browser import BrowserChoice
 
 import capa_simulation.components.process_labels as process_labels_module
@@ -137,6 +138,10 @@ def test_the_priority_table_keeps_its_last_line_clear_of_the_bar_and_its_ceiling
 
 def test_priority_table_and_process_selector_show_the_display_name() -> None:
     app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    # 공정 상자는 공정 상세 탭이 열린 회차의 사이드바 카드다.
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    app.run()
 
     assert not app.exception
     renamed_source = app.session_state["renamed_source"]
@@ -155,12 +160,12 @@ def test_priority_table_and_process_selector_show_the_display_name() -> None:
 
 def test_selecting_a_renamed_process_keeps_the_original_value() -> None:
     """표기만 표시명이다. 선택값이 표시명이면 아래 `eq` 가 원본 컬럼과 맞지 않는다."""
-    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60).run()
+    app = AppTest.from_string(RENAMED_TEST_SCRIPT, default_timeout=60)
+    # 워터폴과 조회 조건 카드는 「공정 상세」 탭이 열린 회차에만 선다.
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    app.run()
     renamed_source = app.session_state["renamed_source"]
 
-    # 워터폴은 「공정 상세」 탭 안이고 숨은 탭에서는 그리지 않는다. 조회 조건 위젯은
-    # 숨어 있어도 그려지므로 선택은 어느 탭에서든 걸린다.
-    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
     app.selectbox(key="dynamic_capacity_process_filter").set_value(renamed_source)
     app.run()
 
@@ -188,20 +193,18 @@ def test_priority_table_stays_original_without_a_rename_profile(
 
 
 def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
-    """요약 탭의 판정 기준 · 그림 읽는 법 · 손실 차례와 실행 관리로 가는 까닭은 늘 서는 캡션이
-    아니라 칸 · 구획 제목 · 링크의 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02 · UI-TXT-03). 결론은
-    상자 없는 평문 한 줄이고 값만 싣는다 — 건수는 바로 아래 「개선 필요」 칸 몫이다(UI-TXT-04 ·
-    UI-TXT-07)."""
-    from capa_simulation.navigation import EXECUTION_MANAGEMENT
-
+    """요약 탭의 판정 기준 · 그림 읽는 법 · 손실 차례는 늘 서는 캡션이 아니라 칸 · 구획 제목의
+    풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02 · UI-TXT-03). 결론(실현률이 가장 낮은 공정)도 칸 위
+    캡션이 아니라 「개선 필요」 칸 풍선이고 건수는 칸 값이다(UI-TXT-04 · UI-TXT-07 — 본문 상단
+    문구 최소화, 2026-11-09 보드 T8). 맨 위 「실행 관리」 되돌아가기 링크는 없다 — 화면 탭 줄 ·
+    사이드바가 같은 길이다(같은 날 보드 T4)."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
     assert not app.exception
 
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     tab_markdown: list[Any] = list(summary_tab.get("markdown"))
-    tab_captions: list[Any] = list(summary_tab.get("caption"))
-    verdict, *card_captions = [str(caption.value) for caption in tab_captions]
-    assert card_captions, "요약 탭에는 판정 기준 줄이 없어도 링크 · 카드 글이 선다"
+    card_captions = [str(caption.value) for caption in summary_tab.caption]
+    assert card_captions, "요약 탭에는 손실 카드 글이 선다"
     assert not any(text.endswith("니다.") for text in card_captions), card_captions
     helps = {
         str(markdown.value): str(markdown.proto.help)
@@ -216,14 +219,62 @@ def test_the_summary_keeps_its_explanations_in_tooltips() -> None:
     assert "수율 손실은 워터폴에 칸이 따로 없어 기타 Gap 에" in routes_help
     assert "설비 가용은 손실 이전의 전제" in routes_help
     needs_action = next(metric for metric in app.metric if metric.label == "개선 필요")
-    assert "80% 미만" in str(needs_action.proto.help)
+    tooltip = str(needs_action.proto.help)
+    assert "80% 미만" in tooltip
+    ranked = aggregate_dynamic_capacity(build_dynamic_capacity_demo(), ["공정"]).sort_values(
+        ["Capa 실현률", "공정"], kind="stable"
+    )
+    worst = ranked.loc[ranked["상태"].eq("개선 필요")].iloc[0]
+    assert f"가장 낮은 공정 — **{worst['공정']}** · Capa 실현률 " in tooltip
+    assert "가장 낮습니다" not in " ".join(card_captions)
     assert not list(summary_tab.get("warning"))
-    assert "깎아먹는지" not in verdict and verdict.endswith("입니다.")
-    assert "가장 낮습니다" in verdict and "개선 필요 공정은" not in verdict
-    # 실행 관리 링크는 단독 실행에서 글로 물러서고, 늘 서던 길 안내 캡션은 없다.
-    page_captions = [str(caption.value) for caption in app.caption]
-    assert f"사이드바에서 {EXECUTION_MANAGEMENT.title}" in page_captions
+    # 맨 위 되돌아가기 링크도 그 글로 물러선 캡션도 없다.
+    page_captions = [str(caption.value) for caption in app.main.caption]
+    assert not any("실행 관리" in text for text in page_captions)
     assert not any("A/Item" in text for text in page_captions)
+
+
+def _cards(app: AppTest, label: str) -> list[Any]:
+    """사이드바 조건 카드(아이콘을 단 확장 패널은 AppTest 에서 `Status` 다)."""
+    return [
+        item for item in app.sidebar if isinstance(item, (Status, Expander)) and item.label == label
+    ]
+
+
+def test_the_detail_conditions_stand_in_the_sidebar_card_while_the_tab_is_open() -> None:
+    """공정 상세의 조회 조건(조회일 · 공정 · 제품 · Stack · WF 속성)은 사이드바 「Dynamic Capa
+    조건」 카드이고 그 탭이 열린 회차에만 선다(2026-11-09 보드 T8, 설계 규칙 UI-LAY-02). 본문에는
+    고르는 칸이 없다."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+    assert not _cards(app, "Dynamic Capa 조건")
+    assert not app.selectbox
+
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    app.run()
+    assert not app.exception
+    (card,) = _cards(app, "Dynamic Capa 조건")
+    assert [item.label for item in card.get("selectbox")] == ["공정", "제품", "Stack", "WF 속성"]
+    assert not app.main.selectbox
+    # 「상세 조회 조건」 구획 제목도 본문에 없다.
+    assert not any("조회 조건" in str(item.value) for item in app.main.markdown)
+
+
+def test_the_unit_meaning_is_the_tooltip_of_the_standard_capa_card() -> None:
+    """공정별 수량 단위의 뜻은 산식 가이드 탭 머리 캡션이 아니라 공정 상세 「표준 Capa」 칸 풍선이다
+    (본문 상단 문구 최소화 — 2026-11-09 보드 T8)."""
+    app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
+    app.session_state["dynamic_capa_active_tab"] = "공정 상세"
+    app.run()
+    assert not app.exception
+    (standard,) = [item for item in app.metric if str(item.label).startswith("표준 Capa (")]
+    assert "WF=매, CHIP·PKG=Kea" in str(standard.proto.help)
+
+    app.session_state["dynamic_capa_active_tab"] = "산식 가이드"
+    app.run()
+    assert not app.exception
+    guide_tab = next(tab for tab in app.tabs if tab.label == "산식 가이드")
+    assert not guide_tab.get("caption")
 
 
 def _flex_blocks(block: Any) -> Iterator[Any]:
@@ -272,21 +323,21 @@ def test_the_pending_screen_says_what_it_will_do_in_the_title_tooltip() -> None:
     assert not any("생산실적 수량" in str(item.value) for item in app.markdown)
 
 
-@pytest.mark.parametrize(("sample", "badge"), [(True, True), (False, False)])
-def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
-    sample: bool, badge: bool
-) -> None:
-    """샘플을 끈 동안 머리 배지 「실적 DB 미연결」 을 뺀다 — 자리 표지 「실적 DB 연결 대기」 가 같은
-    말을 한다(아침 보드 d4)."""
+@pytest.mark.parametrize("sample", [True, False])
+def test_the_head_has_no_badge_line_on_either_side_of_the_switch(sample: bool) -> None:
+    """머리에는 배지 줄(「인터랙티브 프로토타입 · 실적 DB 미연결」)이 없다 — 구현 중 표지는 화면 탭
+    이름 곁, 합성 샘플 표지는 머리 띠다(2026-11-09 보드 T8). 「샘플 데이터」 는 사이드바 줄이다."""
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
     app.session_state[SAMPLE_TOGGLE_KEY] = sample
     app.run()
 
     assert not app.exception
-    (header,) = [
-        str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)
+    assert not [
+        str(item.value)
+        for item in app.main.markdown
+        if any(mark in str(item.value) for mark in ("인터랙티브 프로토타입", "미연결", "-badge["))
     ]
-    assert (":blue-badge[실적 DB 미연결]" in header) is badge
+    assert app.toggle(key=SAMPLE_TOGGLE_KEY) in list(app.sidebar.toggle)
 
 
 def test_closed_formula_guide_is_not_drawn_until_its_tab_opens() -> None:
