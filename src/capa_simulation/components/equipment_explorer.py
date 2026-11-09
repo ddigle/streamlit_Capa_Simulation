@@ -4,11 +4,12 @@
 
 옛 여섯 질문(주차별 가용대수, 생애주기 상태, 호기별 일정, Qual 일정·상태, 공정별 대수, 비가동
 목록)은 `볼 내용`·`보기` 조합으로 모두 답한다. 대수 요약(총대수·가용대수·비가동대수·가용률)은
-`가용대수` 결과의 마지막 주 한 줄이고 metric 카드를 따로 쌓지 않는다.
+`가용대수` 결과 제목 줄 오른쪽 끝 마지막 주 값 글이고 metric 카드를 따로 쌓지 않는다.
 """
 
 from __future__ import annotations
 
+import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -28,6 +29,7 @@ from capa_simulation.components.equipment_lifecycle_gantt import (
 from capa_simulation.components.literal_markdown import literal_names, markdown_safe_tildes
 from capa_simulation.components.process_field import render_process_filter
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE, HEADING_KEY_PREFIX
 from capa_simulation.components.state_alerts import AlertScope, alert_table, tab_name
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -114,6 +116,17 @@ INACTIVE_MONTH_HELP = (
     "날마다 다시 재어 합칩니다 — 상태 이름으로 고르지 않습니다."
 )
 STATUS_COUNT_HELP = "설비 마스터의 호기만 셉니다 — 집계형 기존 보유대수는 제외됩니다."
+# 머리 줄(볼 내용 · 보기 · 표현)의 뜻 — 세 칸은 라벨 줄이 없고(접근성 이름으로만 남는다) 줄 끝 풍선
+# 하나가 함께 말한다(Streamlit 1.63 은 라벨을 숨기면 위젯 풍선도 숨긴다 — 2026-11-09 사용자 보드
+# T6, 설계 규칙 UI-TXT-01 · UI-TXT-02).
+MAIN_ROW_HELP = (
+    "볼 내용 · 보기 · 표현 — 무엇을(가용대수 · 호기 현황 · 비가동 호기 · Qual 일정 · 단계 전환), "
+    "어떤 꼴로(보기), 차트 · 표 가운데 무엇으로(표현 — 같은 값) 볼지 고릅니다."
+)
+# 결과 구획 제목 줄 key(제목 + 오른쪽 끝 값 글 — `_heading_with_value`).
+WEEKLY_HEADING_KEY = "equipment_weekly"
+PROCESS_HEADING_KEY = "equipment_process_counts"
+STATUS_HEADING_KEY = "equipment_status_counts"
 # 공정 표시명(Proc Rename)을 입히는 칸. 설비 마스터의 `공정소분류` 는 시나리오 `공정` 과 같은
 # 이름으로 맞대는 원본 공정명이다(`공정대분류` 는 다른 축이라 입히지 않는다).
 PROCESS_COLUMN = "공정소분류"
@@ -179,6 +192,30 @@ def _rows_label(frame: pd.DataFrame, *, partial: bool = False) -> str:
         return f"{rows:,}대"
     units = int(frame[UNIT_KEY_COLUMN].nunique())
     return f"호기 행 {rows:,} · 설비 {units:,}대" + ("에 걸침" if partial else "")
+
+
+def _heading_with_value(title: str, value: str, *, key: str, help: str | None = None) -> None:
+    """구획 제목과 그 줄 오른쪽 끝 작은 값 글 — 값 줄을 제목 위 · 아래에 따로 세우지 않는다
+    (2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 · UI-LAY-11). 칸이 좁으면 값 글이 제목 아래로
+    내려간다.
+
+    두 글은 글자 밑줄에 맞춘다 — 공용 버전 줄과 같은 규칙(`profile_caption.HEADING_BASELINE_STYLE`,
+    줄 칸 key 가 `HEADING_KEY_PREFIX` 로 시작)을 값 글과 한 캡션에 싣는다(이벤트 칸을 쓰지 않는다).
+    값 글은 앱이 지은 수 · 날짜라 HTML 로 읽히지 않게만 막는다. `help` 는 값 글의 풍선이다."""
+    with st.container(
+        horizontal=True,
+        vertical_alignment="center",
+        gap="small",
+        key=f"{HEADING_KEY_PREFIX}{key}",
+    ):
+        st.markdown(title, width="content")
+        with st.container(horizontal=True, horizontal_alignment="right"):
+            st.caption(
+                html.escape(value, quote=False) + HEADING_BASELINE_STYLE,
+                unsafe_allow_html=True,
+                help=help,
+                width="content",
+            )
 
 
 def _with_parent(columns: Sequence[str], frame: pd.DataFrame) -> list[str]:
@@ -426,13 +463,15 @@ def _availability(
     available = float(latest["가용대수"].sum())
     total = float(latest["총대수"].sum())
     inactive = float(latest["비가동대수"].sum())
-    st.caption(
+    # 마지막 주 대수 요약은 결과 제목 줄 오른쪽 끝 값 글이다 — 제목 위에 따로 줄을 세우지 않는다
+    # (2026-11-09 사용자 보드 T2).
+    summary = (
         f"마지막 주 {latest['Weeknum'].iloc[0]} · {latest['주차종료일'].max():%Y-%m-%d} 기준"
         f"　총 {_count(total)}대 · 가용 {_count(available)}대 · 비가동 {_count(inactive)}대"
         f" · 가용률 {available / total if total else 0:.1%}"
     )
     if view == "공정별 내역":
-        st.markdown("#### 공정소분류별 현황")
+        _heading_with_value("#### 공정소분류별 현황", summary, key=PROCESS_HEADING_KEY)
         # 차례는 원본 공정명으로 정하고 글자만 표시명이다 — 표시명을 고쳐도 행이 자리를 옮기지
         # 않는다.
         _table(
@@ -451,7 +490,7 @@ def _availability(
             labels=labels,
         )
         return
-    st.markdown("#### 주차별 설비 현황")
+    _heading_with_value("#### 주차별 설비 현황", summary, key=WEEKLY_HEADING_KEY)
     trend = (
         weekly.groupby(["주차시작일", "Weeknum"], as_index=False)[["가용대수", "비가동대수"]]
         .sum()
@@ -616,10 +655,10 @@ def render_equipment_explorer(
     기준」)다.
 
     **무엇을 볼지 고르는 전환(볼 내용·보기·표현)은 본문이다.** 탭 안의 하위 탭과 같은 것이라 카드에
-    넣으면 지금 무엇을 보는지 본문에서 사라진다(2026-09-29 사용자 결정). 볼 내용 · 표현은 라벨 줄을
-    걷는다(단추 글이 곧 뜻 — 접근성 이름으로 남는다, 2026-11-09 상단 띠 재고). `conditions` 를 주지
-    않으면 조건도 본문 상자에 그린다 — 컴포넌트를 홀로 띄우는 테스트가 쓴다. 설명은 가용설비 현황
-    Guide 다.
+    넣으면 지금 무엇을 보는지 본문에서 사라진다(2026-09-29 사용자 결정). 세 칸 모두 라벨 줄을 걷고
+    (접근성 이름으로 남는다 — 2026-11-09 상단 띠 재고 · 사용자 보드 T6) 뜻은 줄 끝 풍선 하나
+    (`MAIN_ROW_HELP`)가 말한다. `conditions` 를 주지 않으면 조건도 본문 상자에 그린다 — 컴포넌트를
+    홀로 띄우는 테스트가 쓴다. 설명은 가용설비 현황 Guide 다.
 
     `process_labels` 는 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정) — `공정소분류` 선택지·
     걸린 조건 줄·조회 표의 `공정소분류` 칸·생애주기 그림의 풍선. 선택값(세션)과 거르는 값은
@@ -638,9 +677,10 @@ def render_equipment_explorer(
     labels = process_labels or ProcessLabels()
     in_card = conditions is not None
     # 머리 줄(볼 내용·보기·표현). `표현` 은 결과 프래그먼트가 이 줄 끝에 쓴다
-    # (`_render_expressed_result`).
+    # (`_render_expressed_result`). 세 칸 모두 라벨 줄이 없고(접근성 이름으로만 남는다) 뜻은 줄 끝
+    # 풍선 하나다(`MAIN_ROW_HELP` — 2026-11-09 사용자 보드 T6).
     st.html(QUESTION_WRAP_STYLE)
-    row = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
+    row = st.container(horizontal=True, vertical_alignment="center", gap="small")
     with row:
         question = st.segmented_control(
             "볼 내용",
@@ -659,6 +699,7 @@ def render_equipment_explorer(
                 key="equipment_explorer_availability_view",
                 persist_state="session",
                 width=200,
+                label_visibility="collapsed",
             )
         elif question == "호기 현황":
             view = st.selectbox(
@@ -667,6 +708,7 @@ def render_equipment_explorer(
                 key="equipment_explorer_unit_view",
                 persist_state="session",
                 width=200,
+                label_visibility="collapsed",
             )
         elif question == "비가동 호기":
             view = st.selectbox(
@@ -675,6 +717,7 @@ def render_equipment_explorer(
                 key=INACTIVE_VIEW_KEY,
                 persist_state="session",
                 width=200,
+                label_visibility="collapsed",
             )
         elif question == "Qual 일정":
             view = st.selectbox(
@@ -683,6 +726,7 @@ def render_equipment_explorer(
                 key="equipment_explorer_qual_view",
                 persist_state="session",
                 width=200,
+                label_visibility="collapsed",
             )
         elif question == "단계 전환":
             view = st.selectbox(
@@ -691,6 +735,7 @@ def render_equipment_explorer(
                 key=TRANSITION_VIEW_KEY,
                 persist_state="session",
                 width=200,
+                label_visibility="collapsed",
             )
     settings = conditions if conditions is not None else st.container(border=True)
     with settings:
@@ -845,6 +890,8 @@ def render_equipment_explorer(
     if view in EXPRESSION_VIEWS:
         _render_expressed_result(row, shown)
     else:
+        with row:
+            st.caption("", help=MAIN_ROW_HELP, width="content")
         _render_result(shown, expression="표")
 
 
@@ -896,6 +943,8 @@ def _render_expressed_result(row: DeltaGenerator, shown: _Shown) -> None:
             )
             or "차트"
         )
+        # 줄 끝 풍선 — `표현` 뒤에 선다(세 칸의 뜻을 함께 말한다).
+        st.caption("", help=MAIN_ROW_HELP, width="content")
     _render_result(shown, expression=str(expression))
 
 
@@ -1016,8 +1065,13 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                         )
                         return
                 else:
-                    st.markdown(f"#### 호기 생애주기 상태 · {as_of:%Y-%m-%d}")
-                    st.caption(f"설비 마스터 {_rows_label(status)}", help=STATUS_COUNT_HELP)
+                    # 센 호기 수는 제목 줄 오른쪽 끝 값 글이다(2026-11-09 사용자 보드 T2).
+                    _heading_with_value(
+                        f"#### 호기 생애주기 상태 · {as_of:%Y-%m-%d}",
+                        f"설비 마스터 {_rows_label(status)}",
+                        key=STATUS_HEADING_KEY,
+                        help=STATUS_COUNT_HELP,
+                    )
                     column, states, colors = (
                         "상태",
                         EQUIPMENT_STATUSES,

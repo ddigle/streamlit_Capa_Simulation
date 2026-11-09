@@ -3,22 +3,29 @@
 import json
 import re
 from datetime import date
+from typing import Any
 
 from alert_marks import active_state, note_table, place_errors, states, table_frame
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Block, Caption, Markdown
 
 from capa_simulation.components.equipment_explorer import (
     AS_OF_KEY,
     INACTIVE_MONTH_HELP,
     INACTIVE_VIEW_KEY,
+    MAIN_ROW_HELP,
     QUESTION_KEY,
     QUESTION_WRAP_STYLE,
     SMALL_PROCESS_KEY,
     START_DATE_KEY,
+    STATUS_COUNT_HELP,
+    STATUS_HEADING_KEY,
     TRANSITION_CONFIRMATION_KEY,
     TRANSITION_SCHEDULE_KEY,
     TRANSITION_VIEW_KEY,
+    WEEKLY_HEADING_KEY,
 )
+from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE, HEADING_KEY_PREFIX
 
 
 def _render_fixture() -> None:
@@ -480,15 +487,76 @@ def test_no_unconfirmed_line_when_every_open_stage_is_still_ahead() -> None:
     assert active_state(app, "EQ-21") is None
 
 
-def test_the_question_and_expression_switches_have_no_label_row() -> None:
-    """볼 내용 · 표현 전환 단추는 라벨 줄을 걷는다 — 단추 글이 곧 뜻이고 라벨은 접근성 이름으로
-    남는다(2026-11-09 상단 띠 재고 — 페이지 상단 여백 최소화)."""
+def _keyed_block(node: Any, key: str) -> Block | None:
+    """`key` 를 단 칸(가로 · 세로)을 트리에서 찾는다."""
+    for child in node.children.values():
+        if isinstance(child, Block):
+            if key in str(getattr(child.proto, "id", "") or ""):
+                return child
+            found = _keyed_block(child, key)
+            if found is not None:
+                return found
+    return None
+
+
+def _nodes(node: Any) -> list[Any]:
+    out: list[Any] = []
+    for child in node.children.values():
+        out.append(child)
+        if isinstance(child, Block):
+            out.extend(_nodes(child))
+    return out
+
+
+def test_the_question_view_and_expression_switches_have_no_label_row() -> None:
+    """볼 내용 · 보기 · 표현은 라벨 줄을 걷는다 — 라벨은 접근성 이름으로 남고(2026-11-09 상단 띠
+    재고 · 사용자 보드 T6) 세 칸의 뜻은 줄 끝 빈 캡션의 풍선 하나가 말한다(1.63 은 라벨을 숨기면
+    위젯 풍선도 숨긴다). 풍선은 `표현` 이 있는 보기(프래그먼트가 줄 끝에 쓴다)에도 없는 보기에도
+    하나다."""
     app = _app()
     question = app.segmented_control(key=QUESTION_KEY)
     expression = app.segmented_control("equipment_explorer_expression_주차별 추이")
-    for switch, label in ((question, "볼 내용"), (expression, "표현")):
+    view = app.selectbox(key="equipment_explorer_availability_view")
+    for switch, label in ((question, "볼 내용"), (view, "보기"), (expression, "표현")):
         assert switch.label == label
         assert switch.proto.label_visibility.value == switch.proto.label_visibility.COLLAPSED
+    assert [item.proto.help for item in app.caption if item.value == ""] == [MAIN_ROW_HELP]
+
+    app.segmented_control(key=QUESTION_KEY).set_value("비가동 호기").run()
+    assert not app.exception
+    inactive = app.selectbox(key=INACTIVE_VIEW_KEY)
+    assert inactive.proto.label_visibility.value == inactive.proto.label_visibility.COLLAPSED
+    assert [item.proto.help for item in app.caption if item.value == ""] == [MAIN_ROW_HELP]
+
+
+def test_the_last_week_summary_sits_at_the_right_end_of_the_chart_heading() -> None:
+    """가용대수의 마지막 주 대수 요약은 「주차별 설비 현황」 제목 줄 오른쪽 끝 값 글이다 — 제목
+    위에 따로 줄을 세우지 않는다(2026-11-09 사용자 보드 T2). 두 글은 공용 버전 줄과 같은 밑줄
+    맞춤이다."""
+    app = _app()
+    row = _keyed_block(app.main, f"{HEADING_KEY_PREFIX}{WEEKLY_HEADING_KEY}")
+    assert row is not None
+    inside = _nodes(row)
+    titles = [node.value for node in inside if isinstance(node, Markdown)]
+    assert "#### 주차별 설비 현황" in titles
+    (summary,) = [node for node in inside if isinstance(node, Caption)]
+    assert summary.value.startswith("마지막 주 ")
+    assert summary.value.endswith(HEADING_BASELINE_STYLE)
+    assert [item.value for item in app.caption if item.value.startswith("마지막 주")] == [
+        summary.value
+    ]
+
+    # 호기 현황의 센 호기 수도 「호기 생애주기 상태」 제목 줄 오른쪽 끝이다(뜻은 그 값 글 풍선).
+    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
+    assert not app.exception
+    status_row = _keyed_block(app.main, f"{HEADING_KEY_PREFIX}{STATUS_HEADING_KEY}")
+    assert status_row is not None
+    (count,) = [node for node in _nodes(status_row) if isinstance(node, Caption)]
+    assert count.value.startswith("설비 마스터 ")
+    assert count.proto.help == STATUS_COUNT_HELP
+    assert [item.value for item in app.caption if item.value.startswith("설비 마스터 ")] == [
+        count.value
+    ]
 
 
 # ------------------------------------------------------- 공정 표시명(Proc Rename)

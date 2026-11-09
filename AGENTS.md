@@ -3582,8 +3582,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
-  그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 표현 전환 단추는 라벨 줄을 걷는다(접근성 이름으로 남음 — 2026-11-09 상단 띠
-  재고). 숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
+  그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
+  재고 · 사용자 보드 T6) 세 칸의 뜻은 줄 끝 빈 캡션 풍선 하나(`MAIN_ROW_HELP` — `표현` 이 있는 보기는 프래그먼트가 `표현` 뒤에
+  쓴다)다. 가용대수의 마지막 주 대수 요약 · 호기 현황의 센 호기 수는 따로 줄을 세우지 않고 결과 제목 줄 오른쪽 끝 값
+  글이다(`_heading_with_value` — 밑줄 맞춤은 공용 버전 줄과 같은 `profile_caption.HEADING_BASELINE_STYLE`, 사용자 보드 T2).
+  숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
   일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 만). 모두 설비 마스터 전체를 세어 지문이 고르기에 기대지
   않고, 목록은 Alarm 줄 표, 「그 화면으로」 는 설비 마스터 탭이다.
   - 판정·구간은 `simulation_cache` 내용 지문 키 래퍼로 받고 표시명·거르기는 캐시 결과의 복사본 위에서 한다.
