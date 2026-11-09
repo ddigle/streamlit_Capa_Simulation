@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from capa_simulation.components.access_list_admin import render_access_list_admin
-from capa_simulation.components.alert_board import render_alert_board
+from capa_simulation.components.alert_board import remembered_alert_count, render_alert_board
 from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.display_order_management import (
@@ -21,7 +21,9 @@ from capa_simulation.components.process_rename_management import (
 from capa_simulation.components.source_quality import render_source_quality
 from capa_simulation.components.sso_status import render_sso_status
 from capa_simulation.components.state_alerts import open_tab_name, tab_name
+from capa_simulation.components.tab_marks import mark_tab_counts
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
+from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
@@ -37,6 +39,7 @@ TAB_NAMES = (
     ":material/fact_check: 원천 품질",
     ":material/notifications: 알림 모음",
 )
+TABS_KEY = "admin_area_active_tab"
 
 render_page_header("Admin Area")
 render_page_guide("admin_area", title="Admin Area")
@@ -82,7 +85,7 @@ except BOOTSTRAP_ERRORS:
     available_processes = []
 
 process_rename_tab, display_order_tab, source_quality_tab, alert_tab = stateful_tabs(
-    TAB_NAMES, key="admin_area_active_tab"
+    TAB_NAMES, key=TABS_KEY
 )
 
 # 탭 안 상태 알림(Proc Rename 표시명 겹침 `AD-06` · 표시순서 분류값 겹침 `AD-05`)은 그 탭이 열린
@@ -124,3 +127,15 @@ with alert_tab:
     # (2026-10-19 사용자 요청). 처음 여는 회차에 전체 기간 계산이 들어 닫혀 있으면 건너뛴다.
     if not tab_is_hidden(alert_tab):
         render_alert_board()
+# 알림 수는 탭 안 머리 줄이 아니라 탭 이름 「알림 모음」 곁 수 표지다 — 0 이면 없다(2026-11-09
+# 사용자 보드 T7). 탭을 연 회차에 센 수를 지금 시나리오 내용이 같을 때만 쓴다(닫힌 탭에서 전체 기간
+# 계산을 돌리지 않는다). 찍을 것이 없어도 매 회차 한 번 그린다(`mark_tab_counts`).
+alert_count = remembered_alert_count()
+mark_tab_counts(
+    TABS_KEY,
+    TAB_NAMES,
+    {TAB_NAMES[3]: alert_count.count if alert_count is not None else 0},
+    color=tokens.ALERT_ERROR
+    if alert_count is not None and alert_count.error
+    else tokens.ALERT_CHECK,
+)

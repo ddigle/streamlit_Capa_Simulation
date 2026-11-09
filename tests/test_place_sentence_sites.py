@@ -115,7 +115,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/static_capa.py", ""): (EMPTY, EMPTY),
     ("app_pages/voc.py", ""): (EMPTY, EMPTY),
     ("app_pages/wip_status.py", ""): (EMPTY, EMPTY, EMPTY),
-    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (EMPTY,),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_history"): (
         EMPTY,
         EMPTY,

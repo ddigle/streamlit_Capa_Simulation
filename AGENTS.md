@@ -893,6 +893,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     읽기다)과 `알림 모음`(`load_page_context()` 와 전체 기간 계산)은 닫혀 있으면 건너뛴다(`tab_is_hidden`,
     `tests/test_admin_area_page.py`). 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
+  - `알림 모음` 의 알림 수(오류 · 경고 칸 수)는 탭 안 머리 줄이 아니라 탭 이름 곁 수 표지다(`tab_marks.mark_tab_counts` —
+    라벨은 그대로 두고 CSS 로 찍는다, 0 이면 없음, 오류가 있으면 오류색 · 아니면 확인 필요색 — 2026-11-09 사용자 보드 T7).
+    수는 그 탭을 연 회차에 계산 키(기준정보 버전 · 내용 토큰)와 함께 적고, 닫힌 회차에는 지금 시나리오가 같은 키일 때만
+    다시 쓴다(`alert_board.remembered_alert_count` — 닫힌 탭에서 전체 기간 계산을 돌리지 않는다).
   - 탭 위에는 C-DEP CD 서버에서만 「서버 시작 점검」 펼침(`components/container_start_check.py`)이 선다 — 결과 파일도
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
     (`components/object_sync_status.py`), 그 뒤에 「통합인증 점검」 펼침(`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
@@ -1508,7 +1512,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일, 딸린 표 = 「소요대수 제외 기준정보」), PKG 의
     Buffer 밖 행 `ST-21`(알림 — 규칙이라 고칠 것이 없다, 딸린 표 = 「PKG Buffer 밖 행」). 두 사유를 한 알림에 섞지 않는다.
 - `src/capa_simulation/components/alert_board.py` — Admin Area `알림 모음` 탭. 활성 시나리오의 계산 알림 셋(계산 멈춤 ·
-  소요대수에 들지 않은 수요 · 측정률 가정)을 시나리오 전체 기간으로 늘 같은 차례에 둔다(없는 것은 「없음」).
+  소요대수에 들지 않은 수요 · 측정률 가정)을 시나리오 전체 기간으로 늘 같은 차례에 둔다(없는 것은 「없음」). 「알림 n건」 ·
+  「알림이 없습니다」 머리 줄은 없다 — 수는 탭 이름 곁 수 표지(`ALERT_COUNT_KEY` · `remembered_alert_count`)다.
   - 저장·발행 검사와 같은 `get_full_capacity_outcome` 캐시와 `capacity_gate.density_error` 를 읽어 문장도 같다. 고르는
     규칙은 순수 함수 `collect_alerts`(`tests/test_alert_board.py`)다.
 - `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래, 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-05`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다). `managed` 가 아니면 Streamlit 호출이 없다.
@@ -2964,7 +2969,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소이고 계산 캐시 키·`content_token` 에는 넣지 않는다.
 - `src/capa_simulation/components/process_rename_management.py` — Admin Area `Proc Rename` 탭. 공용 공정 표시명의
   CSV·Excel 붙여넣기·직접 편집과 저장이다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다. 공용 버전 줄은 「직접 편집」
-  제목 옆이다(`profile_caption.render_profile_heading`, 그림 메모 g18).
+  제목 옆이다(`profile_caption.render_profile_heading`, 그림 메모 g18). 그 제목 줄(`HEADING_ROW_KEY`) 오른쪽 끝에 「보유 공정
+  n개」 팝오버(원본 공정 목록 표 — `AVAILABLE_POPOVER_KEY`) · CSV 다운로드 · Excel 붙여넣기가 선다 — 단추 줄 · 접힘 줄을 따로
+  세우지 않는다(2026-11-09 사용자 보드 T3 · T7).
   - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다. 최신을 보고 고친
     표가 그 저장본과 같으면 쓰지 않고 폼 안 저장 줄 바로 아래 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5 — 9장 「바꾼 것 없는
     저장」, 자리는 2026-11-07 g8-16).

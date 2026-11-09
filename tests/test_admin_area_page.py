@@ -764,13 +764,15 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
         app, lambda node: getattr(node, "key", "") == "admin_area_process_rename_download"
     )
     assert heading[:-1] == version[:-1] and heading[-1] < version[-1]
+    # 내려받기 · 붙여넣기 단추와 「보유 공정 n개」 팝오버는 그 제목 줄 오른쪽 끝 한 칸이다 — 단추
+    # 줄 · 접힘 줄을 따로 세우지 않는다(2026-11-09 사용자 보드 T3 · T7).
+    assert download[:-2] == heading[:-3]
     toolbar: Any = app.main
     for index in download[:-1]:
         toolbar = toolbar.children[index]
-    assert [type(child).__name__ for child in toolbar.children.values()] == [
-        "DownloadButton",
-        "Button",
-    ]
+    kinds = [type(child).__name__ for child in toolbar.children.values()]
+    assert kinds[-2:] == ["DownloadButton", "Button"] and len(kinds) == 3, kinds
+    assert not [item.label for item in app.expander if "보유 공정" in item.label]
 
 
 def _path_of(app: AppTest, matches: Any) -> tuple[int, ...]:

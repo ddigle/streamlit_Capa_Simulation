@@ -15,6 +15,12 @@ HOME 위에 줄줄이 달리던 경고를 HOME 에서 걷고 여기 모은다(20
 
 계산이 멈추면 뒤의 둘은 셀 수 없다고 적는다. 탭이 열린 회차에만 그린다(`app_pages/admin_area.py`) —
 처음 여는 회차는 전체 기간 계산 한 번(캐시가 빗나갈 때)이 든다.
+
+알림 수(오류 · 경고 칸 수)는 탭 안 머리 줄이 아니라 탭 이름 「알림 모음」 곁 수 표지다(2026-11-09
+사용자 보드 T7 — `tab_marks.mark_tab_counts`, 0 이면 없음). 칸마다 「없음」 이 서므로 빈 결과 줄도
+따로 두지 않는다(설계 규칙 UI-TXT-07). 수는 탭을 연 회차에 그 계산 키(기준정보 버전 · 내용 토큰)와
+함께 적어 두고, 닫힌 회차에는 지금 시나리오가 같은 키일 때만 다시 쓴다(`remembered_alert_count` —
+닫힌 탭에서 전체 기간 계산을 돌리지 않는다, 설계 규칙 UI-DAT-11).
 """
 
 from __future__ import annotations
@@ -36,12 +42,22 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     load_page_context,
 )
+from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
 from capa_simulation.services.required_equipment import required_exclusion_counts
 from capa_simulation.services.simulation_cache import CapacityOutcome, get_full_capacity_outcome
 from capa_simulation.services.unit_capacity import capacity_assumptions
 
 AlertLevel = Literal["error", "warning", "ok", "unknown"]
 _STOPPED_NOTE = "계산이 멈춰 셀 수 없음"
+# 탭 이름 곁 수 표지의 재료 — (계산 키, 오류 · 경고 칸 수, 오류가 있는가). 탭을 연 회차에 적는다.
+ALERT_COUNT_KEY = "admin_alert_board_count"
+
+
+class AlertCount(NamedTuple):
+    """알림 수 — 오류 · 경고 칸 수와 그 가운데 오류(계산 멈춤)가 있는가."""
+
+    count: int
+    error: bool
 
 
 class Alert(NamedTuple):
@@ -104,12 +120,13 @@ def render_alert_board() -> None:
         return
     density = density_error(scenario["tables"]) if outcome.error is None else None
     alerts = collect_alerts(outcome, density)
-    open_count = sum(alert.level in ("error", "warning") for alert in alerts)
-    if open_count:
-        st.markdown(f"**알림 {open_count}건**")
-    else:
-        # 빈 결과는 값 — 평문 한 줄(설계 규칙 UI-TXT-04 · AMB-02 (가), 초록 상자 아님).
-        st.caption("알림이 없습니다.")
+    st.session_state[ALERT_COUNT_KEY] = (
+        (context.reference_version, str(scenario["content_token"])),
+        AlertCount(
+            sum(alert.level in ("error", "warning") for alert in alerts),
+            any(alert.level == "error" for alert in alerts),
+        ),
+    )
     for alert in alerts:
         with st.container(border=True):
             st.markdown(f"**{alert.title}**")
@@ -119,3 +136,15 @@ def render_alert_board() -> None:
                 st.warning(alert.message, icon=":material/warning:")
             else:
                 st.caption(alert.message)
+
+
+def remembered_alert_count() -> AlertCount | None:
+    """탭을 연 회차에 적어 둔 알림 수 — 지금 활성 시나리오가 그때와 같은 계산 키(기준정보 버전 ·
+    내용 토큰)일 때만. 모르면 None(표지 없음). 닫힌 탭에서 전체 기간 계산을 돌리지 않는다."""
+    stored = st.session_state.get(ALERT_COUNT_KEY)
+    active = st.session_state.get(ACTIVE_SCENARIO_KEY)
+    if not isinstance(stored, tuple) or not isinstance(active, dict):
+        return None
+    key, count = stored
+    current = (active.get("reference_version"), str(active.get("content_token")))
+    return count if key == current and isinstance(count, AlertCount) else None
