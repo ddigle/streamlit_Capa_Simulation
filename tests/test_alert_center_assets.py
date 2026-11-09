@@ -29,19 +29,42 @@ def _rule(selector: str) -> str:
 
 
 def test_the_panel_opens_in_the_browser_without_a_python_rerun() -> None:
-    """패널 · 칩 판은 브라우저 안에서만 열고 닫는다 — 트리거 · 상태 값을 보내지 않아 파이썬 회차가
-    돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 이 JS 가 파이썬을 부르는 자리는 다시
-    붙은 탭의 회차 하나뿐이다(2차 보드 R1 (가))."""
+    """패널 · 변경 판 · 공정 판은 브라우저 안에서만 열고 닫는다 — 트리거 · 상태 값을 보내지 않아
+    파이썬 회차가 돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다, 설계 규칙 UI-PRF-01). 이
+    JS 가 파이썬을 부르는 자리는 둘이다 — 다시 붙은 탭의 회차(2차 보드 R1 (가))와 공정 판 「모든
+    화면에서 해제」(2026-11-09 보드 C1 (라)). 「공정 고르기」 는 사이드바 공정 칸 단추를 누른다(그
+    칸이 연다)."""
     assert "setStateValue" not in JS
     assert JS.count("setTriggerValue") == 2
     assert "const { data, setTriggerValue } = component" in JS
     assert "C.ask = setTriggerValue" in JS
-    assert JS.count("C.ask(") == 1
+    assert JS.count("C.ask(") == 2
     asker = JS[JS.index("function connectionMoved(") : JS.index("function endReconnectWait(")]
     assert "C.ask('reconnected', Date.now())" in asker
-    assert "on_reconnected_change=_reconnected" in Path(alert_center.__file__).read_text(
-        encoding="utf-8"
-    )
+    panel = JS[JS.index("function buildProcessPanel(") : JS.index("function processField(")]
+    assert "C.ask('process_clear', Date.now())" in panel
+    assert "if (field) field.click()" in panel
+    source = Path(alert_center.__file__).read_text(encoding="utf-8")
+    assert "on_reconnected_change=_reconnected" in source
+    assert "on_process_clear_change=_clear_process" in source
+    toggle = JS[JS.index("function togglePanel(") : JS.index("function closePanel(")]
+    assert "C.ask" not in toggle
+
+
+def test_the_process_chip_keeps_accent_for_this_screen_and_orange_only_for_missing() -> None:
+    """공정 칩 — 걸리면 강조색 테두리 · 옅은 면, 아니면 흐린 테두리. 주황은 없는 공정 글 · 좁은 창의
+    점에만 쓰고, 1400px 미만은 이름 · 없음 글을 숨긴다(변경 칩과 같은 문턱). 합성 샘플 표지는 변경
+    칩(주황 면 알약)과 갈리게 점선 네모 · 주황 글이다."""
+    assert "var(--ac-border)" in _rule(".chip.proc")
+    on = _rule(".chip.proc.on")
+    assert "var(--ac-accent) 45%" in on and "var(--ac-accent) 8%" in on
+    assert "var(--ac-pending)" in _rule(".chip.proc .miss")
+    narrow = CSS[CSS.index("@media (max-width: 1399.98px)") :]
+    narrow = narrow[: narrow.index("\n}\n")]
+    assert ".chip.proc.has-miss .mdot" in narrow and ".chip .top" in narrow
+    sample = _rule(".sample")
+    assert "dashed" in sample and "color: var(--ac-pending);" in sample
+    assert "background" not in sample
 
 
 def test_the_popup_stack_floats_above_dialogs_and_lets_presses_through() -> None:
@@ -1001,3 +1024,67 @@ def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> No
     assert "returnDialogFocus(document, dialog, left), FOCUS_RETURN_MS" in shell
     assert "installFocusShell()" in JS[JS.index("export default function") :]
     assert "MutationObserver" not in shell
+
+
+_PROCESS_RUNNER = """
+const process = {
+  values: ['Mold', 'Underfill', 'PMC'],
+  labels: ['몰드', '', 'PMC'],
+  top: '몰드 외 2개',
+  origin: '산출 결과',
+  version: 3,
+  here: { on: true, follows: true, missing: [] },
+}
+const live = {
+  page: 'space_status',
+  version: 3,
+  here: { on: true, follows: true, missing: ['PMC'] },
+}
+const out = {}
+out.none = processChipOf(null, null, '')
+out.empty = processChipOf({ values: [] }, null, '')
+out.guess = processChipOf(process, null, 'space_status')
+out.live = processChipOf(process, live, 'space_status')
+out.otherPage = processChipOf(process, live, 'calculation_result')
+out.stale = processChipOf({ ...process, version: 4 }, live, 'space_status')
+out.home = processChipOf({ ...process, here: null }, null, '')
+const single = { on: false, follows: false, missing: ['PMC'] }
+out.single = processChipOf({ ...process, here: single }, null, 'x')
+const marks = [
+  { page: 'a', version: 1 },
+  { page: 'space_status', version: 3, here: null, tab: { miss: true } },
+]
+out.mine = processLiveOf(marks, 'space_status', 3, false)
+out.running = processLiveOf([], 'space_status', 3, false)
+out.settled = processLiveOf([{ page: 'a' }], 'space_status', 3, true)
+console.log(JSON.stringify(out))
+"""
+
+
+def test_the_process_chip_reads_the_screens_own_mark_over_the_python_guess() -> None:
+    """공정 칩(`processChipOf`) — 값이 없으면 칩이 없다. 이 화면 · 같은 판의 회차 표지가 파이썬
+    짐작보다 이기고, 다른 화면 · 옛 판의 표지는 쓰지 않는다. 없는 공정은 이 화면이 따르는 꼴일 때만
+    센다. 회차 표지(`processLiveOf`) — 이 화면 주소의 마지막 표지, 회차가 끝났는데 없으면 「그리지
+    않음」, 도는 동안 없으면 앞 값을 둔다(null)."""
+    out = _node(_PROCESS_RUNNER)
+    assert out["none"] is None and out["empty"] is None
+    guess = out["guess"]
+    assert (guess["count"], guess["top"], guess["origin"]) == (3, "몰드 외 2개", "산출 결과")
+    assert [row["label"] for row in guess["rows"]] == ["몰드", "Underfill", "PMC"]
+    assert (guess["on"], guess["follows"], guess["absent"]) == (True, True, 0)
+    live = out["live"]
+    assert live["absent"] == 1 and [row["absent"] for row in live["rows"]] == [False, False, True]
+    assert out["otherPage"]["absent"] == 0
+    assert out["stale"]["absent"] == 0
+    assert (out["home"]["on"], out["home"]["follows"]) == (False, False)
+    # 따르지 않는 꼴이면 없는 공정을 세지 않는다(하나 따라감 화면에 값이 여럿).
+    assert out["single"]["absent"] == 0
+    assert out["mine"]["tab"] == {"miss": True}
+    assert out["running"] is None
+    assert out["settled"] == {
+        "page": "space_status",
+        "version": 3,
+        "here": None,
+        "tab": None,
+        "drawn": False,
+    }

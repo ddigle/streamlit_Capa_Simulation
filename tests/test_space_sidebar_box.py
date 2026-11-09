@@ -36,11 +36,11 @@ from test_equipment_scenario_repository import (
     _with_unit,
 )
 from test_equipment_scenario_screens import _ok, _repository, _select, _shell
-from test_process_field import share
+from test_process_field import process_marks, share
 
 from capa_simulation.components.equipment_scenario_status import unscheduled_notice
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.process_field import CHIP_KEY, CONTEXT_KEY
+from capa_simulation.components.process_field import CONTEXT_KEY
 from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
 from capa_simulation.components.space_layout_editor import space_lock_style
@@ -298,9 +298,10 @@ def test_the_process_field_follows_the_shared_value_and_marks_a_missing_name(
     _shell: AppTest,
 ) -> None:
     """공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1) — 카드 안 칩 칸이
-    없고, 다른 화면(HOME)에서 고른 공정을 따라가 본문 위 칩 「공정 … · HOME 에서」 가 선다. 글자는
-    원본 공정소분류다(2026-10-24 D10 · D11). 이 화면에 없는 공정이면 전체를 보이고 이름 줄에
-    「… 없음」 배지를 단다(값은 지우지 않는다)."""
+    없고, 다른 화면(HOME)에서 고른 공정을 따라가 이름 줄에 「HOME 에서」 가 선다. 글자는 원본
+    공정소분류다(2026-10-24 D10 · D11). 본문 위 칩은 없다(2026-11-09 보드 C1 (라) — 머리 띠 칩 · 탭
+    표지). 이 화면에 없는 공정이면 전체를 보이고 값은 지우지 않는다 — 이름 줄 배지 없이 값 칸 표지가
+    그 공정을 실어 머리 칩이 「1개 이 화면 없음」 으로 말한다(P1-6)."""
     app = _ok(_shell.run())
     _ok(app.switch_page(SPACE_STATUS.path).run())
     assert not _keys_in(_box(app), "multiselect")
@@ -311,22 +312,23 @@ def test_the_process_field_follows_the_shared_value_and_marks_a_missing_name(
     assert options, "Space 공정소분류 선택지가 없다"
     field = app.sidebar.button(key=PROCESS_FIELD_KEY)
     assert field.label == f"전체 {len(options)}공정"
-    assert not [button for button in app.button if button.key == CHIP_KEY]
+    assert not [b for b in app.button if str(b.key).startswith("shared_process_chip")]
 
     share(app, [options[0]])
     _ok(app.run())
     shown = literal_markdown(options[0])
     assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == shown
-    (chip,) = [button for button in app.button if button.key == CHIP_KEY]
-    assert chip.label == f"공정 {shown} · HOME 에서"
+    assert "HOME 에서" in _texts(app.sidebar, "caption")
+    assert not [b for b in app.button if str(b.key).startswith("shared_process_chip")]
     assert app.session_state[CONTEXT_KEY].selected == (options[0],)
 
     share(app, ["DEMO-없는-공정"])
     _ok(app.run())
     assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == f"전체 {len(options)}공정"
-    badge = f":orange-badge[{literal_markdown('DEMO-없는-공정')} 없음]"
-    assert badge in _texts(app.sidebar, "caption")
-    assert not [button for button in app.button if button.key == CHIP_KEY]
+    assert not [text for text in _texts(app.sidebar, "caption") if "orange-badge" in text]
+    (mark,) = process_marks(app)
+    assert mark["here"] == {"on": False, "follows": True, "missing": ["DEMO-없는-공정"]}
+    assert mark["tab"]["miss"] is True
 
 
 # ------------------------------------------------------------------ 캔버스 팝업 호스트(U5)

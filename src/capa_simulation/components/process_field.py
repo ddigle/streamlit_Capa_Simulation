@@ -1,4 +1,4 @@
-# Purpose: 공용 공정 값의 사이드바 값 칸 · 고르는 팝업 · 본문 칩을 한 꼴로 그린다.
+# Purpose: 공용 공정 값 칸 · 고르는 팝업과 머리 칩 · 탭 표지의 글 · data 를 한 꼴로 만든다.
 
 """공용 공정 칸의 화면 조각(2026-11-08 사용자 답 P1 · P2 — 값과 규칙은 `shared_process.py`).
 
@@ -9,36 +9,45 @@
   나머지 수, 넘치면 칸 폭에서 말줄임이고 둘 이상이면 풍선이 전체 목록이다. 첫 공정은 표시순서상 첫
   공정이다 — 판이 고른 값을 선택지 차례로 다시 늘어놓아 고른 차례가 남지 않는다. 공용 값이 이
   화면에 걸리면 값 칸 테두리를 강조하고(`ACCENT_SUFFIX`), 다른 화면에서 온 값이면 이름 줄
-  오른쪽에 「HOME 에서」 꼴 출처를 단다. 이 화면에 없는 공정이면 이름 줄에 주황 배지 「HB 접합
-  없음」(여럿이면 「n개 없음」)과 값 칸 아이콘 `filter_alt_off` 로 알린다 — 사내는 설비 쪽 공정
-  이름이 달라 자주 뜨므로 글자만 흐리게 두지 않는다.
+  오른쪽에 「HOME 에서」 꼴 출처를 단다. 이 화면에 없는 공정은 값 칸 아이콘 `filter_alt_off` 로만
+  알리고 이름은 머리 띠 칩 「n개 이 화면 없음」 · 그 판 · 화면 탭 표지가 말한다(이름 줄 주황 배지는
+  뜻이 읽히지 않아 걷었다 — 2026-11-09 보드 P1-6).
 - **팝업** — 값 칸을 누르면 `app.py` 의 조건 팝업 호스트 프래그먼트만 다시 돈다(열기로 앱 전체가
   돌지 않는다 — 설계 규칙 UI-PRF-01, 시나리오 · 조회기간 칸과 같은 `rerun_fragment_if_alone`). 팝업
   본문은 Components v2 판 하나(`process_field_assets/`)라 타일을 누르는 동안 서버가 돌지 않고, 누른
   뒤에도 초점이 그 타일에 남아 키보드만으로 「적용」 까지 닿는다(UI-INP-03). 팝업이 쓰는 선택지는
   페이지가 값 칸을 그린 전체 회차에 세션에 적어 둔다(호스트만 도는 회차는 페이지를 돌리지 않는다).
-- **본문 칩** — 공용 값이 이 화면에 걸리면 본문 위에 「공정 Mold · HOME 에서」 칩을 세운다(누르면
-  공용 값을 지운다). 자리는 `app.py` 가 페이지 앞에 세운 칸(`render_chip_slot`)이라 사이드바를
-  접어도 보인다.
+  하나 고름 화면의 팝업에서 고른 공정은 공용 값을 그 하나로 바꾼다(`shared_process.pick_single` —
+  2026-11-09 보드 C2 (가)).
+- **머리 띠 칩 · 화면 탭 표지**(2026-11-09 보드 C1 (라) — 본문 위 칩을 걷고 옮겼다). 공용 값이
+  있으면 알림 칸(`components/alert_center.py`)이 머리 툴바 맨 왼쪽에 「공정」 칩을
+  세우고(`header_chip`), 화면 탭 줄(`components/page_tabs.py`)이 따라가는 화면 탭 이름 곁에 깔때기
+  표지를 단다(`tab_mark`). 둘 다 페이지보다 먼저 그리므로 세션의 기록(`shared_process.screen_mark` —
+  그 화면이 마지막으로 그린 선택지)으로 짐작하고, 값 칸을 그린 회차에는 그 회차의
+  표지(`MARKER_ATTRIBUTE` — 스타일만 든 `st.html` 의 JSON)를 남겨 알림 칸 JS 가 회차 끝에
+  바로잡는다. 표지는 값 칸과 같은 칸(간격 없는 블록)에 서서 사이드바에 틈을 만들지 않는다.
 
 한 회차에 값 칸은 하나다 — 같은 전체 회차에 두 번 부르면 둘째부터는 그리지 않고 거를 값만 돌려준다.
 """
 
 from __future__ import annotations
 
+import html
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-from capa_simulation import shared_process
+from capa_simulation import alerts, shared_process
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import PAGE_DIALOG_SUFFIX, forget_page_dialogs
+from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.sidebar_status import (
     APP_RUN_STATE_KEY,
     CONDITION_DIALOG_FRAGMENT_KEY,
@@ -59,17 +68,17 @@ PICKER_KEY = "sidebar_process_picker"
 CONTEXT_KEY = "sidebar_process_context"
 # 이번 전체 회차에 값 칸을 이미 그렸는가 — 실행 표지(`APP_RUN_STATE_KEY` 의 `run`)를 적어 둔다.
 DRAWN_KEY = "sidebar_process_drawn"
-# 본문 칩 자리(`app.py` 가 페이지 앞에 세운 칸)와 칩.
-CHIP_SLOT_KEY = "shared_process_chip_slot"
-CHIP_BOX_KEY = "shared_process_chip_box"
-CHIP_KEY = "shared_process_chip"
-CHIP_ICON = ":material/close:"
-MULTI = "multi"
-SINGLE = "single"
+MULTI = shared_process.MULTI
+SINGLE = shared_process.SINGLE
 # 고를 공정이 없는 값 칸 · 팝업의 값(빈 결과 — 설계 규칙 UI-TXT-04).
 NO_PROCESS_VALUE = "고를 공정 없음"
-# 이 화면에 없는 공정 표지(이름 줄 배지).
-MISSING_BADGE = ":orange-badge[{text}]"
+# 값 칸을 그린 회차의 표지 속성 — 알림 칸 JS 가 회차 끝에 이 속성의 JSON 으로 머리 칩 · 지금 탭
+# 표지를 바로잡는다(`alert_center.js` 의 `readProcessMark`).
+MARKER_ATTRIBUTE = "data-capa-process"
+# 화면 탭 표지 · 머리 칩 풍선의 글.
+FROM_TEXT = "{origin} 에서"
+TAB_TITLE = "공정 {names}"
+ABSENT_LINE = "{names} {particle} 이 화면에 없음"
 
 _ASSETS = Path(__file__).with_name("process_field_assets")
 PROCESS_FIELD_HTML = (_ASSETS / "process_field.html").read_text(encoding="utf-8")
@@ -158,14 +167,9 @@ def filter_help(hits: Sequence[str], text: Callable[[object], str]) -> str | Non
     return _shown_names(hits, text) if len(hits) >= 2 else None
 
 
-def missing_badge(gone: Sequence[str], labels: ProcessLabels | None) -> str | None:
-    """이 화면에 없는 공용 값의 이름 줄 배지. 하나면 그 이름, 여럿이면 수."""
-    if not gone:
-        return None
-    if len(gone) == 1:
-        name = labels.label(gone[0]) if labels else gone[0]
-        return MISSING_BADGE.format(text=f"{literal_markdown(name)} 없음")
-    return MISSING_BADGE.format(text=f"{len(gone)}개 없음")
+def origin_status(origin: str | None) -> str | None:
+    """이름 줄 오른쪽 출처 글 — 다른 화면에서 온 값이 이 화면에 걸렸을 때만(「HOME 에서」)."""
+    return FROM_TEXT.format(origin=origin) if origin else None
 
 
 def _first_draw_this_run() -> bool:
@@ -187,8 +191,7 @@ def render_process_filter(
     labels: ProcessLabels | None = None,
     empty: str | None = None,
 ) -> list[str]:
-    """여러 개 따라감 화면의 값 칸 · 칩을 그리고 이 화면에 거는 공정(원본, 빈 목록 = 전체)을
-    돌려준다.
+    """여러 개 따라감 화면의 값 칸을 그리고 이 화면에 거는 공정(원본, 빈 목록 = 전체)을 돌려준다.
 
     `screen` 은 출처 이름(「산출 결과」 · 「가용설비」 …), `labels` 는 보이는 글자(없으면 원본 —
     Space), `empty` 는 걸린 것이 없을 때 값 칸 글자다(산출 결과 STEP별 「공정을 선택하세요」).
@@ -200,7 +203,6 @@ def render_process_filter(
     gone = shared_process.missing(choices)
     text = _text_func(choices, labels)
     origin = shared_process.origin_for(screen) if hits else None
-    status = missing_badge(gone, labels) or (f"{origin} 에서" if origin else None)
     _remember(
         _PickerContext(
             mode=MULTI,
@@ -212,21 +214,21 @@ def render_process_filter(
             key=None,
         )
     )
-    with page_condition_slot(0).container():
+    shared_process.note_drawn(screen, MULTI, choices)
+    with page_condition_slot(0).container(gap=None):
         condition_field(
             FIELD_LABEL,
             filter_value(hits, choices, text, empty=empty),
             slug=FIELD_SLUG,
             key=FIELD_KEY,
             icon=MISSING_ICON if gone and not hits else FIELD_ICON,
-            status=status,
+            status=origin_status(origin),
             help=filter_help(hits, text),
             accent=bool(hits),
             disabled=not choices,
             on_click=open_process_dialog,
         )
-    if hits:
-        _render_chip(_shown_names(hits, text) if len(hits) <= 2 else f"{len(hits)}개", origin)
+        st.html(process_marker(screen, MULTI))
     return hits
 
 
@@ -237,12 +239,13 @@ def render_process_choice(
     key: str,
     labels: ProcessLabels | None = None,
 ) -> str | None:
-    """하나 고름 화면의 값 칸 · 칩을 그리고 지금 공정(`st.session_state[key]`, 원본)을 돌려준다.
+    """하나 고름 화면의 값 칸을 그리고 지금 공정(`st.session_state[key]`, 원본)을 돌려준다.
 
     공정은 부르는 쪽이 먼저 정해 `key` 에 적어 둔다(공용 값을 따를지는
-    `shared_process.follow_single`). 팝업에서 고른 공정은 `key` 에만 적고 공용 값은 바꾸지
-    않는다(받기만 — P2-2). 표지는 지금 공정이 공용 값을 따라 연 공정일 때만
-    선다(`shared_process.single_applied`).
+    `shared_process.follow_single`). 팝업에서 사용자가 직접 고른 공정은 `key` 에 적고 공용 값도 그
+    하나로 바꾼다(`shared_process.pick_single` — 2026-11-09 보드 C2 (가)). 들어온 길 · 기본 공정 ·
+    따라 연 공정은 보내지 않는다. 강조 · 출처는 지금 공정이 공용 값을 따라 연(또는 여기서 보낸)
+    공정일 때만 선다(`shared_process.single_applied`).
     """
     choices = tuple(dict.fromkeys(str(option) for option in options))
     saved = st.session_state.get(key)
@@ -253,7 +256,6 @@ def render_process_choice(
     followed = shared_process.single_applied(screen, selected)
     origin = shared_process.origin_for(screen) if followed else None
     gone = shared_process.missing(choices) if not shared_process.inside(choices) else []
-    status = missing_badge(gone, labels) or (f"{origin} 에서" if origin else None)
     _remember(
         _PickerContext(
             mode=SINGLE,
@@ -265,20 +267,20 @@ def render_process_choice(
             key=key,
         )
     )
-    with page_condition_slot(0).container():
+    shared_process.note_drawn(screen, SINGLE, choices, selected)
+    with page_condition_slot(0).container(gap=None):
         condition_field(
             FIELD_LABEL,
             literal_markdown(text(selected)) if selected is not None else NO_PROCESS_VALUE,
             slug=FIELD_SLUG,
             key=FIELD_KEY,
             icon=MISSING_ICON if gone else FIELD_ICON,
-            status=status,
+            status=origin_status(origin),
             accent=followed,
             disabled=not choices,
             on_click=open_process_dialog,
         )
-    if followed and selected is not None:
-        _render_chip(literal_markdown(text(selected)), origin)
+        st.html(process_marker(screen, SINGLE))
     return selected
 
 
@@ -328,7 +330,7 @@ def render_process_dialog_body() -> None:
 
     여러 개 고름의 「적용」 은 `shared_process.apply_from_screen`(이 화면에 없는 값은 남김 · 모두
     켜면 이 화면 몫은 전체), 「전체」 는 `shared_process.clear`, 하나 고름은 그 화면의 공정
-    칸(`key`)만 바꾼다.
+    칸(`key`)을 바꾸고 공용 값을 그 하나로 보낸다(`shared_process.pick_single` — C2 (가)).
     """
     context = _context()
     if context is None:
@@ -350,8 +352,11 @@ def render_process_dialog_body() -> None:
         if not result.values or context.key is None:
             return
         st.session_state[context.key] = result.values[0]
+        shared_process.pick_single(context.screen, result.values[0], labels=_shown_labels(context))
     else:
-        shared_process.apply_from_screen(result.values, context.options, context.screen)
+        shared_process.apply_from_screen(
+            result.values, context.options, context.screen, labels=_shown_labels(context)
+        )
     close_process_dialog()
     st.rerun()
 
@@ -400,45 +405,99 @@ def render_process_picker_apply(
     return PickerResult(values=values)
 
 
-# ------------------------------------------------------------------ 본문 칩
+def _shown_labels(context: _PickerContext) -> dict[str, str]:
+    """판 선택지의 보이는 글자 가운데 원본과 다른 것 — 공용 값에 함께 실어 머리 칩이 그 글자로
+    읽는다(원본 그대로인 화면 — Space — 은 다른 화면이 준 표시명을 덮지 않는다)."""
+    return {
+        value: text
+        for value, text in zip(context.options, context.texts, strict=True)
+        if text != value
+    }
 
 
-def render_chip_slot() -> None:
-    """`app.py` 가 페이지 앞, 늘 같은 자리에 칩 칸을 세워 이번 회차 몫으로 적는다.
+# ------------------------------------------------------------------ 머리 띠 칩 · 화면 탭 표지
 
-    빈 칸은 그려지지 않는다(1.63 `st.container()` 는 빈 블록을 그리지 않는다) — 칩이 없는 화면은
-    본문이 내려가지 않는다.
+
+def _label_of() -> Callable[[str], str]:
+    """원본 → 보이는 글자(보낸 화면이 준 표시명, 없으면 원본)."""
+    mapping = dict(zip(shared_process.values(), shared_process.labels(), strict=True))
+    return lambda value: mapping.get(value, value)
+
+
+def tab_title(mark: shared_process.ScreenMark) -> str:
+    """화면 탭 표지 풍선 — 「공정 Mold · Underfill — 산출 결과 에서」 + 없는 공정이 있으면 둘째 줄
+    「PMC 는 이 화면에 없음」. 이 화면에 걸리는 공정이 없으면 첫 줄은 수만 적는다."""
+    label = _label_of()
+    names = " · ".join(label(value) for value in mark.inside) or f"{len(shared_process.values())}개"
+    head = TAB_TITLE.format(names=names)
+    origin = shared_process.origin()
+    if origin:
+        head = f"{head} — {FROM_TEXT.format(origin=origin)}"
+    if not mark.missing:
+        return head
+    absent = [label(value) for value in mark.missing]
+    line = ABSENT_LINE.format(names=" · ".join(absent), particle=topic_particle(absent[-1]))
+    return f"{head}\n{line}"
+
+
+def _mark_for(path: str | None) -> shared_process.ScreenMark | None:
+    entry = shared_process.FOLLOWERS.get(path or "")
+    return None if entry is None else shared_process.screen_mark(*entry)
+
+
+def tab_mark(path: str) -> dict[str, Any] | None:
+    """화면 탭 이름 곁 깔때기 표지 — 따라가는 화면이고 지금 값이 그 화면이 따르는 꼴일 때만.
+    `miss` 는 그 화면이 마지막으로 그린 선택지에 없는 공용 공정이 있나(주황), 아직 그리지 않은
+    화면은 청록이다."""
+    mark = _mark_for(path)
+    if mark is None or not mark.follows:
+        return None
+    return {"miss": bool(mark.missing), "title": tab_title(mark)}
+
+
+def _here(mark: shared_process.ScreenMark) -> dict[str, Any]:
+    return {"on": mark.on, "follows": mark.follows, "missing": list(mark.missing)}
+
+
+def header_chip(path: str | None) -> dict[str, Any] | None:
+    """머리 띠 「공정」 칩 data — 공용 값이 있을 때만. 값이 그대로면 같은 dict 다(시각 · 카운터
+    없음).
+
+    `here` 는 지금 화면(`path`)에 대한 짐작(세션 기록 — 따라가지 않는 화면은 None)이고, 값 칸을 그린
+    회차에는 그 회차의 표지(`process_marker`)가 알림 칸 JS 에서 이긴다. `field` 는 사이드바 값 칸
+    key 다 — 판 「공정 고르기」 가 그 칸을 눌러 팝업을 연다.
     """
-    st.session_state[CHIP_SLOT_KEY] = st.container(key=CHIP_BOX_KEY)
+    held = shared_process.values()
+    if not held:
+        return None
+    shown = list(shared_process.labels())
+    mark = _mark_for(path)
+    return {
+        "values": list(held),
+        "labels": shown,
+        "top": first_and_rest(shown),
+        "origin": shared_process.origin(),
+        "version": shared_process.version(),
+        "here": None if mark is None else _here(mark),
+        "field": FIELD_KEY,
+        "marker": MARKER_ATTRIBUTE,
+    }
 
 
-def _chip_style() -> str:
-    """칩 꼴 — 알약(높이 2.5rem — 35px), 강조색 테두리. 테마 토큰은 그리는 회차에 읽는다."""
-    button = f'.st-key-{CHIP_BOX_KEY} [data-testid="stButton"] button'
-    return (
-        "<style>"
-        f"{button}{{min-height:2.5rem;padding:0.15rem 0.85rem 0.15rem 0.65rem;"
-        f"border:1px solid {tokens.ACCENT};border-radius:999px;"
-        f"background-color:{tokens.NAV_CONTROL_TINT};color:{tokens.TEXT};}}"
-        f"{button}:hover{{border-color:{tokens.ACCENT};color:{tokens.TEXT};}}"
-        f'{button} [data-testid="stMarkdownContainer"] p{{font-size:0.8rem;font-weight:600;}}'
-        f'{button} [data-testid="stIconMaterial"]{{color:{tokens.ACCENT};font-size:1rem;}}'
-        "</style>"
-    )
-
-
-def _render_chip(names: str, origin: str | None) -> None:
-    """칩 하나. 칩 칸이 없는 회차(`app.py` 없이 페이지만 띄운 시험)는 그리지 않는다."""
-    slot = st.session_state.get(CHIP_SLOT_KEY)
-    if slot is None:
-        return
-    with slot:
-        st.button(
-            f"공정 {names}" + (f" · {origin} 에서" if origin else ""),
-            key=CHIP_KEY,
-            icon=CHIP_ICON,
-            type="tertiary",
-            on_click=shared_process.clear,
-            help="누르면 모든 화면의 공정 거름을 지웁니다.",
-        )
-        st.html(_chip_style())
+def process_marker(screen: str, mode: str) -> str:
+    """값 칸을 그린 회차의 표지 — 스타일만 든 `st.html` 한 자리. 이 화면 주소 · 공용 값의 판 · 이
+    화면에 걸리나 · 없는 공정 · 지금 탭 표지를 싣는다. 값 칸과 같은 칸(간격 없는 블록)에 그린다 —
+    `with` 안의 스타일 `st.html` 은 그 칸에 서므로 간격 있는 칸이면 틈이 생긴다."""
+    mark = shared_process.screen_mark(screen, mode)
+    payload = {
+        "page": alerts.current_page()[1],
+        "version": shared_process.version(),
+        "here": None if mark is None else _here(mark),
+        "tab": (
+            None
+            if mark is None or not mark.follows
+            else {"miss": bool(mark.missing), "title": tab_title(mark)}
+        ),
+    }
+    body = html.escape(json.dumps(payload, ensure_ascii=False), quote=True)
+    return f'<style {MARKER_ATTRIBUTE}="{body}"></style>'

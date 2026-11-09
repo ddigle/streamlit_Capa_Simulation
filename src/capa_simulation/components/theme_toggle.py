@@ -113,16 +113,22 @@ SIDEBAR_HEADER_SLOT = '[data-testid="stSidebarHeader"]'
 GUIDE_BUTTON_ID = "capa-guide-button"
 PRINT_BUTTON_ID = "capa-print-button"
 THEME_BUTTON_ID = "capa-theme-toggle"
-# 알림 칸(`components/alert_center.py`)이 세우는 두 호스트 — 바뀐 것이 있을 때만 서는 변경 칩과
-# Alarm 단추.
+# 알림 칸(`components/alert_center.py`)이 세우는 네 호스트 — 공용 공정 값이 있을 때만 서는 공정 칩,
+# 구현 중 화면에서 샘플을 켠 동안만 서는 합성 샘플 표지, 바뀐 것이 있을 때만 서는 변경 칩과 Alarm
+# 단추.
+PROCESS_CHIP_ID = "capa-process-chip"
+SAMPLE_MARK_ID = "capa-sample-mark"
 CHANGES_CHIP_ID = "capa-changes-chip"
 ALARM_BUTTON_ID = "capa-alarm-button"
 # 툴바 단추의 왼쪽 → 오른쪽 차례(2026-10-08 사용자 결정 — Guide · Print · 테마, 2026-11-03 결정 보드
-# 기본값 — Alarm 은 Guide 오른쪽, 변경 칩은 맨 왼쪽). Guide 는 가이드 없는 화면에서 CSS 로 숨을 뿐
-# 자리가 그대로라 Alarm 이 어느 화면에서나 같은 자리다. 단추를 세우는 스크립트가 여럿이고 어느 것이
-# 먼저 슬롯을 찾을지 정해져 있지 않으므로(슬롯이 늦게 그려지면 각자 지켜보다 선다) 모두 이 차례 한
-# 벌로 자리를 고른다(`capaToolbar.place` · 알림 칸 JS 의 `toolbarBefore`).
+# 기본값 — Alarm 은 Guide 오른쪽, 변경 칩은 Guide 왼쪽, 2026-11-09 보드 C1 (라) — 공정 칩은 맨 왼쪽,
+# 합성 샘플 표지는 그다음). Guide 는 가이드 없는 화면에서 CSS 로 숨을 뿐 자리가 그대로라 Alarm 이
+# 어느 화면에서나 같은 자리다. 단추를 세우는 스크립트가 여럿이고 어느 것이 먼저 슬롯을 찾을지 정해져
+# 있지 않으므로(슬롯이 늦게 그려지면 각자 지켜보다 선다) 모두 이 차례 한 벌로 자리를
+# 고른다(`capaToolbar.place` · 알림 칸 JS 의 `toolbarBefore`).
 TOOLBAR_BUTTON_ORDER = (
+    PROCESS_CHIP_ID,
+    SAMPLE_MARK_ID,
     CHANGES_CHIP_ID,
     GUIDE_BUTTON_ID,
     ALARM_BUTTON_ID,

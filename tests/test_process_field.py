@@ -1,12 +1,15 @@
-# Purpose: 공용 공정 값 칸 · 팝업 판 · 본문 칩의 글자 · 표지 · 적용 · 판 트리거 · 판 JS 를 고정한다.
+# Purpose: 공용 공정 값 칸 · 팝업 판 · 머리 칩 · 탭 표지 data · 판 트리거 · 판 JS 를 고정한다.
 
 """공용 공정 칸의 화면 조각(`components/process_field.py` — 2026-11-08 사용자 답 P1 · P2-5).
 
 - 값 칸 글자 — 「전체 N공정」 · 하나면 이름 · 둘부터 한 줄 「Mold 외 n개」(풍선이 전체 목록 —
-  2026-11-09 사용자 검수 g03-2). 다른 화면에서 온 값은 이름 줄에 「HOME 에서」, 이 화면에 없는 값은
-  주황 배지 「HB 접합 없음」.
+  2026-11-09 사용자 검수 g03-2). 다른 화면에서 온 값은 이름 줄에 「HOME 에서」. 이 화면에 없는 값은
+  값 칸 아이콘만 바뀌고 이름 줄 배지는 없다(2026-11-09 보드 P1-6 — 이름은 머리 칩 · 탭 표지가
+  말한다).
+- 본문 위 칩은 없다(2026-11-09 보드 C1 (라)) — 값 칸을 그린 회차에 표지(`MARKER_ATTRIBUTE`)를 남겨
+  머리 띠 칩 · 지금 탭 표지가 바로잡는다. 표지 · 머리 칩 · 탭 표지 data 는 값이 그대로면 같다.
 - 팝업 본문 — 여러 개 고름 「적용」 은 이 화면에 없는 값을 남기고, 「전체」 는 지우고, 하나 고름은
-  그 화면의 공정 칸만 바꾼다(공용 값은 그대로 — 받기만).
+  그 화면의 공정 칸을 바꾸고 공용 값을 그 하나로 보낸다(2026-11-09 보드 C2 (가)).
 - 판의 트리거는 `apply` 하나다 — 결과 객체가 dict 라 `clear` 같은 이름은 `dict.clear` 와 겹쳐 연
   회차에 「전체」 가 눌린 것으로 읽혔다(2026-11-08 사본 앱 — 팝업이 열리자마자 닫혔다).
 - 판 JS 의 판정 구획(`// <process-picker-core>`)은 node 로 돌린다. 브라우저 동작(누름 · 키보드 초점
@@ -18,6 +21,8 @@ Components v2 는 AppTest 에 없다 — 팝업 본문 시험은 판 함수(`ren
 
 from __future__ import annotations
 
+import html
+import json
 import re
 from dataclasses import replace
 from typing import Any
@@ -29,19 +34,18 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.components.process_field as process_field
 from capa_simulation import shared_process
 from capa_simulation.components.process_field import (
-    CHIP_KEY,
     CONTEXT_KEY,
     DIALOG_KEY,
     FIELD_KEY,
+    MARKER_ATTRIBUTE,
     PROCESS_FIELD_HTML,
     PROCESS_FIELD_JS,
     PickerResult,
     filter_help,
     filter_value,
     first_and_rest,
-    missing_badge,
+    origin_status,
 )
-from capa_simulation.components.process_labels import ProcessLabels
 
 OPTIONS = ["WF", "Mold", "Underfill"]
 
@@ -93,12 +97,16 @@ def test_the_field_value_reads_one_line_first_name_and_the_rest() -> None:
     assert filter_value(["A~B", "C"], ["A~B", "C"], text) == "A\\~B 외 1개"
 
 
-def test_the_missing_badge_names_one_process_or_counts_many() -> None:
-    labels = ProcessLabels(labels={"HB": "HB 접합"})
-    assert missing_badge([], labels) is None
-    assert missing_badge(["HB"], labels) == ":orange-badge[HB 접합 없음]"
-    assert missing_badge(["HB"], None) == ":orange-badge[HB 없음]"
-    assert missing_badge(["HB", "X"], labels) == ":orange-badge[2개 없음]"
+def test_the_name_row_carries_only_the_origin_and_no_missing_badge() -> None:
+    """이름 줄 오른쪽은 출처 글 하나다 — 주황 배지 「HB 접합 없음」 은 뜻이 안 읽혀
+    걷었다(2026-11-09 보드 P1-6). 없는 공정은 머리 칩 「n개 이 화면 없음」 · 판 · 탭 표지가 「PMC —
+    이 화면에 없음」 꼴로 풀어 쓴다."""
+    assert origin_status(None) is None
+    assert origin_status("HOME") == "HOME 에서"
+    assert not hasattr(process_field, "missing_badge")
+    assert not hasattr(process_field, "MISSING_BADGE")
+    source = process_field.__file__
+    assert "orange-badge" not in open(source, encoding="utf-8").read()
 
 
 def _filter_script() -> None:
@@ -109,7 +117,6 @@ def _filter_script() -> None:
     from capa_simulation.sidebar_status import begin_app_run
 
     run = begin_app_run()
-    process_field.render_chip_slot()
     labels = ProcessLabels(labels=st.session_state.get("test_labels", {}))
     chosen = process_field.render_process_filter(
         st.session_state.get("test_options", ["WF", "Mold", "Underfill"]),
@@ -130,14 +137,33 @@ def _captions(app: AppTest) -> list[str]:
     return [str(item.value) for item in app.sidebar.caption]
 
 
+def process_marks(app: AppTest) -> list[dict[str, Any]]:
+    """이 회차에 그린 공정 값 칸 표지(문서 차례)."""
+    marks = []
+    for element in app._tree.get("html"):
+        body = getattr(getattr(element, "proto", None), "body", "")
+        for found in re.finditer(rf'{MARKER_ATTRIBUTE}="([^"]*)"', str(body)):
+            marks.append(json.loads(html.unescape(found.group(1))))
+    return marks
+
+
+def _no_body_chip(app: AppTest) -> None:
+    """본문 위 칩(옛 `shared_process_chip`)이 없다."""
+    assert not [
+        button for button in app.button if str(button.key).startswith("shared_process_chip")
+    ]
+
+
 def test_without_a_shared_value_the_field_reads_all_and_nothing_is_marked() -> None:
     app = AppTest.from_function(_filter_script).run()
 
     assert not app.exception
     assert _field(app).label == "전체 3공정"
     assert app.session_state["test_chosen"] == []
-    assert CHIP_KEY not in {button.key for button in app.button}
+    _no_body_chip(app)
     assert _captions(app) == ["공정"]
+    (mark,) = process_marks(app)
+    assert mark["here"] is None and mark["tab"] is None
 
 
 def test_a_shared_value_from_another_screen_narrows_marks_and_names_its_origin() -> None:
@@ -152,8 +178,10 @@ def test_a_shared_value_from_another_screen_narrows_marks_and_names_its_origin()
     assert _field(app).label == "몰드 외 1개"
     assert _field(app).help == "몰드 · Underfill"
     assert _captions(app) == ["공정", "HOME 에서"]
-    (chip,) = [button for button in app.button if button.key == CHIP_KEY]
-    assert chip.label == "공정 몰드 · Underfill · HOME 에서"
+    _no_body_chip(app)
+    (mark,) = process_marks(app)
+    assert mark["here"] == {"on": True, "follows": True, "missing": []}
+    assert mark["tab"]["miss"] is False
 
 
 def test_a_value_chosen_on_this_screen_carries_no_origin() -> None:
@@ -162,33 +190,46 @@ def test_a_value_chosen_on_this_screen_carries_no_origin() -> None:
     app.run()
 
     assert _captions(app) == ["공정"]
-    (chip,) = [button for button in app.button if button.key == CHIP_KEY]
-    assert chip.label == "공정 Mold"
+    _no_body_chip(app)
 
 
-def test_a_process_this_screen_lacks_shows_everything_with_a_badge() -> None:
-    """사내는 설비 쪽 공정 이름이 달라 자주 뜬다 — 값은 지우지 않고 전체를 보이며 배지로 알린다."""
+def test_a_process_this_screen_lacks_shows_everything_and_the_mark_names_it() -> None:
+    """사내는 설비 쪽 공정 이름이 달라 자주 뜬다 — 값은 지우지 않고 전체를 보인다. 이름 줄에는
+    배지를 달지 않고(P1-6) 표지가 없는 공정을 실어 머리 칩 「1개 이 화면 없음」 · 탭 표지 주황이
+    말한다."""
     app = AppTest.from_function(_filter_script).run()
-    share(app, ["HB 접합"])
+    share(app, ["Mold", "HB 접합"])
     app.run()
 
+    assert app.session_state["test_chosen"] == ["Mold"]
+    assert _captions(app) == ["공정", "HOME 에서"]
+    (mark,) = process_marks(app)
+    assert mark["here"] == {"on": True, "follows": True, "missing": ["HB 접합"]}
+    assert mark["tab"] == {
+        "miss": True,
+        "title": "공정 Mold — HOME 에서\nHB 접합 은 이 화면에 없음",
+    }
+
+    share(app, ["HB 접합"])
+    app.run()
     assert app.session_state["test_chosen"] == []
     assert _field(app).label == "전체 3공정"
-    assert _captions(app) == ["공정", ":orange-badge[HB 접합 없음]"]
-    assert CHIP_KEY not in {button.key for button in app.button}
+    assert _captions(app) == ["공정"]
+    (mark,) = process_marks(app)
+    assert mark["here"] == {"on": False, "follows": True, "missing": ["HB 접합"]}
+    assert mark["tab"]["title"] == "공정 1개 — HOME 에서\nHB 접합 은 이 화면에 없음"
     assert shared_values(app) == ["HB 접합"]
 
 
-def test_pressing_the_chip_clears_the_shared_value() -> None:
+def test_the_mark_is_the_same_while_the_value_stays() -> None:
+    """표지 · 머리 칩 data 는 값이 그대로면 회차마다 같다(시각 · 카운터 없음) — JS 가 다시 불리지
+    않는다."""
     app = AppTest.from_function(_filter_script).run()
     share(app, ["Mold"])
     app.run()
-
-    app.button(key=CHIP_KEY).click().run()
-
-    assert not app.exception
-    assert shared_values(app) == []
-    assert _field(app).label == "전체 3공정"
+    first = process_marks(app)
+    app.run()
+    assert process_marks(app) == first
 
 
 def test_the_field_is_drawn_once_per_run() -> None:
@@ -287,8 +328,10 @@ def test_the_all_button_clears_every_value(picker: dict[str, Any]) -> None:
     assert DIALOG_KEY not in app.session_state
 
 
-def test_a_single_screen_changes_only_its_own_process(picker: dict[str, Any]) -> None:
-    """P2-2 — 공정 하나만 보는 화면에서 고른 공정은 공용 값을 바꾸지 않는다."""
+def test_a_single_screen_sends_the_process_picked_in_its_field(picker: dict[str, Any]) -> None:
+    """2026-11-09 보드 C2 (가) — 공정 하나만 보는 화면도 사이드바 공정 칸에서 사용자가 직접 고른
+    공정은 공용 값을 그 하나로 바꾼다(출처 = 그 화면). 그 화면은 같은 공정을 다시 「따라 열지」 않고
+    값 칸이 강조된다(출처 글은 자기 화면이라 없다)."""
     app = AppTest.from_function(_dialog_script)
     app.session_state["test_single"] = True
     app.run()
@@ -303,8 +346,19 @@ def test_a_single_screen_changes_only_its_own_process(picker: dict[str, Any]) ->
 
     assert not app.exception
     assert app.session_state["test_detail_process"] == "Underfill"
-    assert shared_values(app) == ["Mold", "Underfill"]
+    assert shared_values(app) == ["Underfill"]
+    assert app.session_state[shared_process._ORIGIN_KEY] == "공정 Capa 상세"
     assert DIALOG_KEY not in app.session_state
+
+    app.session_state["test_body"] = False
+    app.run()
+    assert app.session_state[shared_process._FOLLOWED_KEY] == {"공정 Capa 상세": "Underfill"}
+    assert app.session_state[shared_process._SEEN_KEY] == {
+        "공정 Capa 상세": app.session_state[shared_process._VERSION_KEY]
+    }
+    assert _captions(app) == ["공정"]
+    (mark,) = process_marks(app)
+    assert mark["here"] == {"on": True, "follows": True, "missing": []}
 
 
 def test_a_dialog_on_another_page_has_nothing_to_pick(picker: dict[str, Any]) -> None:

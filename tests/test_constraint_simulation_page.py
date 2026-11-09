@@ -213,7 +213,8 @@ def _ok(app: AppTest) -> AppTest:
 
 class _ProcessBox:
     """공정 값 칸(하나 고름 — 공용 공정 칸, 2026-11-08)을 상자 꼴로 읽는다. 값은 세션 칸,
-    선택지는 팝업이 쓸 이 화면의 선택지이고, 고르기는 팝업 판이 하는 대로 세션 칸에 적는다."""
+    선택지는 팝업이 쓸 이 화면의 선택지이고, 고르기는 세션 칸에만 적는다(팝업에서 직접 고르면 공용
+    값도 보낸다 — C2 (가), `tests/test_process_field.py`)."""
 
     def __init__(self, app: AppTest) -> None:
         self.app = app
@@ -553,8 +554,9 @@ def test_a_single_shared_process_opens_here_and_names_its_origin(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """다른 화면에서 공정 하나로 좁히면 이 화면이 그 공정을 열고 값 칸이 「HOME 에서」 를 단다. 이
-    화면에서 다른 공정을 고르면 출처가 걷히고 공용 값은 그대로다(받기만 — P2-2). 따라 연 공정은 설비
-    일정이 서지 않아도 연다 — 고른 것과 같은 멈춘 자리다."""
+    화면에서 팝업 밖 길로 다른 공정을 열면 출처가 걷히고 공용 값은 그대로다(P2-2 — 팝업에서 직접
+    고른 공정만 보낸다, C2 (가)). 따라 연 공정은 설비 일정이 서지 않아도 연다 — 고른 것과 같은 멈춘
+    자리다."""
     from test_process_field import share, shared_values
 
     app = _ok(_app(dynamic_databases).run())

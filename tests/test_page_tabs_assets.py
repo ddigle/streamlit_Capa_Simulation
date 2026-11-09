@@ -31,6 +31,35 @@ def test_the_strip_sends_only_one_shot_triggers() -> None:
         assert name in source
 
 
+def test_the_process_and_implementing_marks_sit_beside_the_name_with_their_own_tips() -> None:
+    """탭 이름 곁 표지 둘(2026-11-09 보드 C1 (라) · T8) — 깔때기(공용 공정)와 「구현중」. 이름 다음,
+    점 앞에 서고 제 풍선(`title`)을 단다(탭 이름 풍선보다 안쪽). 깔때기는 강조색이고 그 화면에 없는
+    공정이 있으면 주황이다. 알림 칸이 회차 끝에 보내는 사건(같은 이름)으로 지금 탭 표지를 바로잡고,
+    떠날 때 듣기를 걷는다. 트리거는 늘지 않는다."""
+    build = JS[JS.index("const build = (id) => {") : JS.index("const paint = (item, tab) => {")]
+    assert "tab.append(glyph, label, proc, wip, dot, sr)" in build
+    paint = JS[JS.index("const paint = (item, tab) => {") :]
+    paint = paint[: paint.index("\n  }\n")]
+    assert "paintProcessMark(item, tab.proc)" in paint
+    assert "setAttr(P.wip, 'title', wip || null)" in paint
+    marker = JS[JS.index("function paintProcessMark(") :]
+    marker = marker[: marker.index("\n}\n")]
+    assert "setAttr(mark, 'title', title)" in marker and "is-proc-miss" in marker
+    alert_js = (ASSETS.parent / "alert_center_assets" / "alert_center.js").read_text(
+        encoding="utf-8"
+    )
+    event = "const PROCESS_EVENT = 'capa-process-here'"
+    assert event in JS and event in alert_js
+    assert "window.addEventListener(PROCESS_EVENT, S.onProcess)" in JS
+    assert "window.removeEventListener(PROCESS_EVENT, S.onProcess)" in JS
+    funnel = re.search(r"\.capa-tabs-proc \{([^}]*)\}", CSS)
+    missing = re.search(r"\.capa-tabs-item\.is-proc-miss \.capa-tabs-proc \{([^}]*)\}", CSS)
+    assert funnel is not None and missing is not None
+    assert "color: var(--st-primary-color);" in funnel.group(1)
+    assert "var(--capa-tabs-pending)" in missing.group(1)
+    assert page_tabs.TEXT["wip"] == "구현중"
+
+
 def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     """고정·차례·닫기는 누르자마자 서버 규칙(`<tabs-order>`)으로 그리고 그
     차례(`order`)·고정(`pins`)을 싣는다 — 서버(`page_tabs._settle_drawn`)는 같은 차례면 페이지를

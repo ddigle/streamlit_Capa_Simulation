@@ -77,6 +77,16 @@
   단추가 제 확인 창으로 이미 물은 새로 읽기(`theme_toggle.RELOAD_ASKED_FLAG`)도 묻지 않는다. 창의
   글은 브라우저가 정한다. 칸 편집기에 쓰는 중(Enter 전)인 글은 서버에 오기 전이라 표지가 없다 —
   그때의 새로고침은 묻지 않는다(탭 줄·테마 단추처럼 붙들 수 없다 — 떠나기는 기다려 주지 않는다).
+- **탭 이름 곁 표지 둘**(2026-11-09 보드 C1 (라) · T8). 공용 공정을 따라가는
+  화면(`shared_process.FOLLOWERS`)의 탭에는 지금 공용 값이 그 화면이 따르는 꼴일 때 깔때기 표지가
+  선다 — 그 화면이 마지막으로 그린 선택지에 없는 공용 공정이 있으면 주황, 아직 그리지 않은 화면은
+  청록이고 풍선은 「공정 Mold · Underfill — 산출 결과 에서」 + 「PMC 는 이 화면에 없음」
+  이다(`process_field.tab_mark`). 탭 줄은 페이지보다 먼저 그려져 지금 화면을 그 회차에 처음 그리면
+  모르므로, 알림 칸 JS 가 회차 끝에 그 화면 공정 값 칸의 표지를 읽어 문서
+  사건(`capa-process-here`)으로 지금 탭 표지를 바로잡는다. 구현 중 화면(`PageSpec.implementing` —
+  라벨 `(구현중)` 이나 원천 미연결 선언 `pending_source`)의 탭에는 작은 「구현중」 표지 +
+  풍선(「구현 중 — 생산이력 DB 미연결 · 화면은 합성 샘플로 미리 봄」 — 샘플을 끈 동안은 앞 절만)이
+  선다(`wip_title`). 본문 머리 배지 줄이 하던 말이다.
 - **그림자 DOM**(`isolate_styles` 기본값). 팝업 안이 아니라 포커스 순서 의무가 걸리지 않고, 따라하기
   가이드의 `document.querySelectorAll` 에도 걸리지 않는다. 색은 등록 CSS 의 `--st-*` 변수와 data 의
   팔레트로만 쓴다.
@@ -92,12 +102,14 @@ from typing import Any, Final
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components import process_field
 from capa_simulation.components.equipment_data_workspace import (
     has_unsaved_equipment_edits,
     pending_fab_layout,
     small_editor_edits,
 )
 from capa_simulation.components.past_data_management import past_data_has_pending
+from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_edit_bar import pending_edit_pages
 from capa_simulation.components.scenario_list_state import MOUNT_KEYS, list_has_edits
 from capa_simulation.components.space_floor_list import floor_state_draft_pending
@@ -181,7 +193,16 @@ TEXT = {
     # 끌거나 `Ctrl+Shift+←/→` 로 차례를 바꾼 뒤 읽기 도구에 알리는 글(`{index}` 는 보이는 차례,
     # 1부터). 조사는 고정 명사 「탭」 에 붙인다(AGENTS 8장).
     "moved": "{label} 탭을 {index}번째로 옮겼습니다",
+    # 구현 중 화면 탭 이름 곁 표지(풍선은 `wip_title`).
+    "wip": "구현중",
 }
+# 「구현중」 표지 풍선 — 원천 이름이 선언에 있으면 그 원천이 붙지 않았다고, 샘플을 켠 동안은 합성
+# 샘플로 미리 본다고 덧붙인다(2026-11-09 보드 T8 — 본문 머리 배지 줄 「구현중 · 프로토타입 · …
+# 미연결」 을 옮겼다).
+WIP_TITLE = "구현 중"
+WIP_SOURCE = " — {source} 미연결"
+WIP_SAMPLE = " · 화면은 합성 샘플로 미리 봄"
+
 # 탭 줄 붙들기(`<tabs-hold>`)가 편집표로 보는 Components v2 칸의 key — 가용설비 현황 설비
 # 마스터 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`), 기준 정보 범용 편집
 # 그리드(`reference_grid_keys.GRID_HOST`). 그림자 DOM 이라 JS 가 바깥 key 칸(`.st-key-<key>`)으로
@@ -212,6 +233,16 @@ def tab_icon(spec: PageSpec) -> str:
 
 def _tooltip(spec: PageSpec, note: str) -> str:
     return f"{spec.title} — {note}" if note else spec.title
+
+
+def wip_title(spec: PageSpec) -> str:
+    """구현 중 화면 탭의 「구현중」 표지 풍선. 구현 중이 아닌 화면은 빈 글자다(표지 없음)."""
+    if not spec.implementing:
+        return ""
+    if spec.pending_source is None:
+        return WIP_TITLE
+    tail = WIP_SAMPLE if sample_switch_on() else ""
+    return WIP_TITLE + WIP_SOURCE.format(source=spec.pending_source) + tail
 
 
 def _page_path(page_file: str) -> str:
@@ -302,7 +333,8 @@ def tabs_data(
     notice: tuple[int, str] | None,
     seq: int = 0,
 ) -> dict[str, Any]:
-    """탭 줄 data. 같은 목록·점이면 회차마다 같은 값이다(시각·카운터를 싣지 않는다).
+    """탭 줄 data. 같은 목록·점·공용 공정 값·샘플 스위치면 회차마다 같은 값이다(시각·카운터를 싣지
+    않는다).
 
     `seq` 는 서버가 받은 탭 줄 그림 번호다(`page_tabs_state.order_seq` — 탭 줄이 보낼 때만 오른다).
 
@@ -327,6 +359,10 @@ def tabs_data(
                 "pinned": strip.is_pinned(path),
                 "closable": strip.closable(path),
                 "dirty": bool(note),
+                # 공용 공정 표지({miss, title} — 따라가는 화면 · 값이 있을 때만)와 「구현중」 표지
+                # 풍선.
+                "proc": process_field.tab_mark(path),
+                "wip": wip_title(spec),
             }
         )
     return {

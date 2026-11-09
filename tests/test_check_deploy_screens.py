@@ -1620,11 +1620,16 @@ def test_the_narrow_label_widths_straddle_the_label_css_thresholds() -> None:
 
 
 def test_the_toolbar_labels_cover_the_declared_order() -> None:
-    from capa_simulation.components.theme_toggle import CHANGES_CHIP_ID, TOOLBAR_BUTTON_ORDER
+    from capa_simulation.components.theme_toggle import (
+        CHANGES_CHIP_ID,
+        PROCESS_CHIP_ID,
+        SAMPLE_MARK_ID,
+        TOOLBAR_BUTTON_ORDER,
+    )
 
     assert set(screens.TOOLBAR_LABELS) == set(TOOLBAR_BUTTON_ORDER)
-    # 변경 칩은 바뀐 것이 있을 때만 서서 차례 항목이 세지 않는다.
-    assert screens.TOOLBAR_OPTIONAL == frozenset({CHANGES_CHIP_ID})
+    # 공정 칩 · 합성 샘플 표지 · 변경 칩은 그럴 때만 서서 차례 항목이 세지 않는다.
+    assert screens.TOOLBAR_OPTIONAL == frozenset({PROCESS_CHIP_ID, SAMPLE_MARK_ID, CHANGES_CHIP_ID})
 
 
 def test_the_alert_center_contract_matches_the_app() -> None:

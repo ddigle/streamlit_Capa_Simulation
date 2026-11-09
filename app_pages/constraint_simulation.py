@@ -215,7 +215,8 @@ from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, condition_card
 
 CARD_LABEL = "제약 시뮬레이션 조건"
-# 공용 공정 칸의 출처 이름. 이 화면은 공용 값을 받기만 한다(2026-11-08 사용자 답 P2-2).
+# 공용 공정 칸의 출처 이름. 이 화면은 공용 값을 받고, 사이드바 공정 칸에서 직접 고른 공정만 보낸다
+# (2026-11-08 사용자 답 P2-2 · 2026-11-09 보드 C2 (가)).
 SCREEN = "제약 시뮬레이션"
 CARD_NAME = "constraint_simulation"
 CARD_ICON = ":material/call_split:"
@@ -386,8 +387,8 @@ if missing_label is not None:
 with notices:
     alerts.flush()
 # 조회 조건 패널의 공정 값 칸(하나 고름 — 두 모드가 나눈다). 값은 원본이고 글자만 표시명이다.
-# 여기서 고른 공정은 공용 값을 바꾸지 않는다 — 한 공정을 들여다본 일로 다른 화면의 거름이 사라지지
-# 않게(P2-2).
+# 그 팝업에서 직접 고른 공정만 공용 값으로 보낸다(C2 (가)) — 주소로 넘겨받은 공정 · 기본 공정은
+# 보내지 않는다.
 selected_process = render_process_choice(
     process_options, screen=SCREEN, key=CONSTRAINT_PROCESS_KEY, labels=process_labels
 )

@@ -127,6 +127,8 @@ try:
         CHANGES_CHIP_ID,
         GUIDE_BUTTON_ID,
         PRINT_BUTTON_ID,
+        PROCESS_CHIP_ID,
+        SAMPLE_MARK_ID,
         THEME_BUTTON_ID,
         TOOLBAR_BUTTON_ORDER,
     )
@@ -232,14 +234,17 @@ EQUIPMENT_SIDE_CHANGES: Final = "저장 전 변경"
 EQUIPMENT_SIDE_KEY: Final = "equipment_master_side_v1"
 EQUIPMENT_DISCARD_KEY: Final = "equipment_master_discard_v1"
 TOOLBAR_LABELS: Final[dict[str, str]] = {
+    PROCESS_CHIP_ID: "공정 칩",
+    SAMPLE_MARK_ID: "합성 샘플",
     CHANGES_CHIP_ID: "변경 칩",
     GUIDE_BUTTON_ID: "Guide",
     ALARM_BUTTON_ID: "Alarm",
     PRINT_BUTTON_ID: "Print",
     THEME_BUTTON_ID: "테마",
 }
-# 바뀐 것이 있을 때만 서는 단추 — 툴바 차례 항목은 늘 서는 단추만 센다.
-TOOLBAR_OPTIONAL: Final = frozenset({CHANGES_CHIP_ID})
+# 그럴 때만 서는 단추 — 툴바 차례 항목은 늘 서는 단추만 센다(공정 칩은 공용 공정 값이 있을 때, 합성
+# 샘플 표지는 원천 미연결 화면에서 샘플을 켠 동안, 변경 칩은 바뀐 것이 있을 때).
+TOOLBAR_OPTIONAL: Final = frozenset({PROCESS_CHIP_ID, SAMPLE_MARK_ID, CHANGES_CHIP_ID})
 # 알림 칸이 `document.body` 에 붙이는 호스트(`alert_center.js` 의 `HOST_ID` — 열린 shadow root).
 ALERT_HOST_ID: Final = "capa-alert-host"
 # Streamlit 1.63 대화상자 층(`stDialog` z-index — 2026-11-03 사본 실측). 알림창이 이 위여야 한다.
@@ -2260,8 +2265,8 @@ def _px(size: Sequence[float]) -> str:
 
 
 def check_toolbar_order(screen: Screen) -> str:
-    """툴바 단추 차례 — 왼쪽부터 Guide · Alarm · Print · 테마(`TOOLBAR_BUTTON_ORDER` 에서 바뀐 것이
-    있을 때만 서는 변경 칩을 뺀 것)."""
+    """툴바 단추 차례 — 왼쪽부터 Guide · Alarm · Print · 테마(`TOOLBAR_BUTTON_ORDER` 에서 그럴 때만
+    서는 공정 칩 · 합성 샘플 표지 · 변경 칩을 뺀 것)."""
     ids = [button for button in TOOLBAR_BUTTON_ORDER if button not in TOOLBAR_OPTIONAL]
     positions = screen.poll(
         lambda: screen.js(_TOOLBAR_POSITIONS_JS, ids),

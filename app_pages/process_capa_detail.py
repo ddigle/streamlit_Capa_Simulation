@@ -237,7 +237,8 @@ OFFICIAL_BADGE = ":gray-badge[공식 · Core Data]"
 BACK_TO_SHORTENING_KEY = "process_detail_back_to_shortening"
 # HOME 표시 확보율이 원 확보율과 같다고 보는 차이.
 HOME_RATE_TOLERANCE = 1e-9
-# 공용 공정 칸의 출처 이름. 이 화면은 공용 값을 받기만 한다(2026-11-08 사용자 답 P2-2).
+# 공용 공정 칸의 출처 이름. 이 화면은 공용 값을 받고, 사이드바 공정 칸에서 직접 고른 공정만 보낸다
+# (2026-11-08 사용자 답 P2-2 · 2026-11-09 보드 C2 (가)).
 SCREEN = "공정 Capa 상세"
 # HOME 칸 방문(공식 설비 시나리오로 고정)일 때 필요 단축 일정으로 옮기는 단추의 풍선 — 그 화면은 이
 # 고정을 따르지 않는다.
@@ -434,8 +435,9 @@ equipment_here = (
 
 product_options: list[str] = []
 demand_bases = 0
-# 조회 조건 패널의 공정 값 칸(하나 고름). 값은 원본이고 글자만 표시명이다. 여기서 고른 공정은 공용
-# 값을 바꾸지 않는다 — 한 공정을 들여다본 일로 다른 화면의 거름이 사라지지 않게(P2-2).
+# 조회 조건 패널의 공정 값 칸(하나 고름). 값은 원본이고 글자만 표시명이다. 그 팝업에서 직접 고른
+# 공정만 공용 값으로 보낸다(C2 (가)) — HOME 칸 · 링크로 들어온 공정 · 기본 공정 · ◀▶ 넘김은 보내지
+# 않는다.
 selected_process = render_process_choice(
     process_options, screen=SCREEN, key=PROCESS_DETAIL_PROCESS_KEY, labels=process_labels
 )

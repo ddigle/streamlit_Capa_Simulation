@@ -19,6 +19,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation import page_tabs_state
 from capa_simulation.components import page_tabs
+from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.navigation import (
     ALL_SPECS,
     CAPA_CHATBOT,
@@ -135,11 +136,103 @@ def test_opening_two_pages_lists_both_with_home_pinned_first(
 def test_a_tab_label_drops_only_the_implementing_suffix(
     _app: AppTest, sent: list[dict[str, Any]]
 ) -> None:
+    """탭 이름은 「(구현중)」 을 떼고, 그 말은 이름 곁 「구현중」 표지 + 풍선이 한다(2026-11-09 보드
+    T8 — 본문 머리 배지 줄을 옮겼다). 풍선은 선언의 원천 이름이고, 샘플을 켠 동안만 「합성 샘플로
+    미리 봄」 을 붙인다."""
     app = _ok(_app.run())
     _ok(app.switch_page(WIP_STATUS.path).run())
     wip = _tab(sent, WIP_STATUS.path)
     assert wip["label"] == "표준 대비 재공 현황"
     assert wip["title"] == WIP_STATUS.title
+    assert wip["wip"] == "구현 중 — 재공 실적 DB 미연결 · 화면은 합성 샘플로 미리 봄"
+    assert _tab(sent, H)["wip"] == ""
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    _ok(app.run())
+    assert _tab(sent, WIP_STATUS.path)["wip"] == "구현 중 — 재공 실적 DB 미연결"
+
+
+def test_every_implementing_screen_declares_its_pending_source_as_the_page_says_it() -> None:
+    """「구현중」 표지 · 합성 샘플 표지의 선언(`PageSpec.pending_source`)은 라벨에 「(구현중)」 이
+    붙은 코어 화면 모두와 Dynamic Capa 에 있고, 글자는 그 화면이 스위치 · 머리 배지에 주는 원천
+    이름과 같다."""
+    from capa_simulation.navigation import DYNAMIC_CAPA, IMPLEMENTING_SUFFIX
+
+    suffixed = {spec.path for spec in ALL_SPECS if spec.title.endswith(IMPLEMENTING_SUFFIX)}
+    declared = {spec.path for spec in ALL_SPECS if spec.pending_source is not None}
+    assert declared == suffixed | {DYNAMIC_CAPA.path}
+    assert all(spec.implementing for spec in ALL_SPECS if spec.path in declared)
+    assert not HOME.implementing and not SPACE_STATUS.implementing
+    for spec in ALL_SPECS:
+        if spec.pending_source is None:
+            continue
+        source = (PROJECT_ROOT / spec.path).read_text(encoding="utf-8")
+        assert f'"{spec.pending_source}"' in source, (spec.path, spec.pending_source)
+
+
+def _marks_script() -> None:
+    import streamlit as st
+
+    from capa_simulation import shared_process
+    from capa_simulation.components import page_tabs
+    from capa_simulation.page_tabs_state import TabStrip
+
+    for name, args in st.session_state.pop("ops", []):
+        getattr(shared_process, name)(*args)
+    paths = tuple(st.session_state["test_paths"])
+    data = page_tabs.tabs_data(
+        TabStrip(paths, frozenset({paths[0]})),
+        active=paths[0],
+        hrefs={path: path for path in paths},
+        marks={},
+        leave="",
+        epoch=0,
+        notice=None,
+    )
+    st.session_state["data"] = data
+
+
+def test_screens_that_follow_the_shared_process_carry_a_funnel_mark() -> None:
+    """화면 탭 표지(2026-11-09 보드 C1 (라)) — 공용 공정 값이 있을 때 따라가는 화면(선언 한 곳
+    `shared_process.FOLLOWERS`)의 탭에만 선다. 아직 그리지 않은 화면은 청록(`miss` 거짓), 마지막으로
+    그린 선택지에 없는 공정이 있으면 주황이고 풍선이 그 공정을 풀어 쓴다. 하나 따라감 화면은 값이
+    하나일 때만 따른다."""
+    from capa_simulation.navigation import CONSTRAINT_SIMULATION
+
+    calculation = "app_pages/calculation_result.py"
+    paths = [H, calculation, SPACE_STATUS.path, CONSTRAINT_SIMULATION.path]
+    app = AppTest.from_function(_marks_script)
+    app.session_state["test_paths"] = paths
+    app.run()
+    assert not app.exception
+    assert [tab["proc"] for tab in app.session_state["data"]["tabs"]] == [None] * 4
+
+    app.session_state["ops"] = [
+        ("publish", (["Mold", "Underfill", "PMC"], "산출 결과")),
+        ("note_drawn", ("Space", "multi", ["Mold", "Underfill", "Die Attach"])),
+    ]
+    app.run()
+    tabs = {tab["id"]: tab["proc"] for tab in app.session_state["data"]["tabs"]}
+    assert tabs[H] is None
+    assert tabs[calculation] == {
+        "miss": False,
+        "title": "공정 Mold · Underfill · PMC — 산출 결과 에서",
+    }
+    assert tabs[SPACE_STATUS.path] == {
+        "miss": True,
+        "title": "공정 Mold · Underfill — 산출 결과 에서\nPMC 는 이 화면에 없음",
+    }
+    assert tabs[CONSTRAINT_SIMULATION.path] is None
+    first = app.session_state["data"]
+    app.run()
+    assert app.session_state["data"] == first
+
+    app.session_state["ops"] = [("pick_single", ("제약 시뮬레이션", "Mold"))]
+    app.run()
+    tabs = {tab["id"]: tab["proc"] for tab in app.session_state["data"]["tabs"]}
+    assert tabs[CONSTRAINT_SIMULATION.path] == {
+        "miss": False,
+        "title": "공정 Mold — 제약 시뮬레이션 에서",
+    }
 
 
 def test_a_queued_tab_switches_the_page(_app: AppTest, sent: list[dict[str, Any]]) -> None:

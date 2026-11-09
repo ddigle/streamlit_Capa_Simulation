@@ -1,4 +1,4 @@
-# Purpose: 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩을 맡는 알림 칸 컴포넌트를 페이지 앞에 세운다.
+# Purpose: 알림창 · Alarm · 변경 칩 · 공정 칩 · 합성 샘플 표지를 맡는 알림 칸을 페이지 앞에 세운다.
 
 """알림 칸(2026-11-03 결정 보드 D1 ~ D5 — 검수표 home-06 · home-08 · home-09). 규칙은 `alerts` 모듈
 설명이다.
@@ -8,14 +8,27 @@
 그린다 — 페이지가 `st.stop()` 해도 이 칸은 이미 섰다.
 
 - **그리는 자리는 본문 칸이 아니다.** JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자
-  DOM)를 붙여 알림창 · 패널 · 시선 끌기 테두리를 그리고, 머리 툴바 슬롯에 Alarm 단추 · 변경 칩
-  호스트(`theme_toggle.ALARM_BUTTON_ID` · `CHANGES_CHIP_ID`)를 세운다 — 컴포넌트 칸 안에 그리면
-  머리말 · 사이드바 · 대화상자의 쌓임 맥락 밑에 깔린다. 칸 자체는 `_HIDE_STYLE` 로 접어 본문에 틈을
-  남기지 않는다(입장 화면과 같은 꼴).
+  DOM)를 붙여 알림창 · 패널 · 시선 끌기 테두리를 그리고, 머리 툴바 슬롯에 공정 칩 · 합성 샘플 표지 ·
+  변경 칩 · Alarm 단추 호스트(`theme_toggle.PROCESS_CHIP_ID` · `SAMPLE_MARK_ID` · `CHANGES_CHIP_ID`
+  · `ALARM_BUTTON_ID`)를 세운다 — 컴포넌트 칸 안에 그리면 머리말 · 사이드바 · 대화상자의 쌓임 맥락
+  밑에 깔린다. 칸 자체는 `_HIDE_STYLE` 로 접어 본문에 틈을 남기지 않는다(입장 화면과 같은 꼴).
 - **data 는 세션만 읽는다**(DB · 캐시 없음). 회차마다 드는 것은 이 세션의 변경 몇
   줄(`change_summary.session_changes`)과 콜백이 담은 사건 알림(`alerts.drain_outbox`), 이번 화면
-  주소(`here`)뿐이라, 셋이 그대로면 data 가 같아 JS 가 다시 불리지 않는다. 색은 이 회차 테마의
-  토큰이다(테마 전환은 새로고침이라 다음 data 가 새 색을 싣는다).
+  주소(`here`), 공용 공정 값과 이 화면에 대한 짐작(`process_field.header_chip`), 합성 샘플 표지를
+  세울지 뿐이라, 그대로면 data 가 같아 JS 가 다시 불리지 않는다. 색은 이 회차 테마의 토큰이다(테마
+  전환은 새로고침이라 다음 data 가 새 색을 싣는다).
+- **공용 공정 칩**(2026-11-09 보드 C1 (라) — 본문 위 칩을 옮겼다). 공용 공정 값이 있을 때만 툴바 맨
+  왼쪽에 선다 — 깔때기 · 「공정」 · 수 · 「Mold 외 2개」 · 이 화면이 따라가는데 없는 공정이 있으면
+  주황 「n개 이 화면 없음」(1400px 미만은 수만, 없음은 주황 점). 이 화면에 걸리면 강조색, 따라가지
+  않거나 걸리지 않으면 흐린 테두리다(풍선이 「이 화면엔 안 걸림」). 이 화면에 대한 값은 페이지보다
+  먼저라 세션 기록으로 짐작하고, 공정 값 칸을 그린 회차의 표지(`process_field.MARKER_ATTRIBUTE`)를
+  JS 가 회차 끝에 읽어 바로잡는다 — 지금 화면 탭 표지도 같은 표지로 바로잡게 문서
+  사건(`capa-process-here`)을 보낸다. 누르면 판(변경 판처럼 브라우저 안에서만 열고 닫는다 —
+  UI-PRF-01): 공정마다 ✓ / – 「이 화면에 없음」, 「공정 고르기」(이 화면에 사이드바 공정 칸이 있을
+  때만 — 그 칸을 눌러 팝업을 연다), 「모든 화면에서 해제」(트리거 `process_clear` →
+  `shared_process.clear`).
+- **합성 샘플 표지**(2026-11-09 보드 T8). 「샘플 데이터」 스위치가 켜져 있고 지금 화면이 원천 미연결
+  화면(`PageSpec.pending_source`)일 때만 공정 칩 오른쪽에 선다. 누르는 것이 없고 풍선만 있다.
 - **다시 붙은 탭은 앱 전체 회차를 한 번 돈다**(2026-11-07 2차 보드 R1 (가)). 프런트는 마지막 회차가
   앱 전체였던 탭에 다시 붙어도 회차를 요청하지 않고, 새 세션은 모르는 프래그먼트의 요청을 회차
   없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. JS 가 앱 뿌리의 연결
@@ -23,9 +36,10 @@
   프런트가 스스로 돈 회차가 없으면 트리거(`reconnected`)로 회차를 부른다. 시계로만 기다리면 무거운
   화면에서 겹친다 — 다시 그리느라 바쁜 동안 프런트 회차의 표지가 메시지 큐에 묶여 있다. 기다리는
   동안 사람 손이 닿으면 그 누름의 회차가 돌아오기를 더 기다린다 — 그 사이 부르면 누름의 회차를 끊어
-  누름이 사라진다. 콜백은 하는 일이 없다 — 회차가 도는 것이 목적이다.
-  **이 칸이 파이썬을 부르는 자리는 여기 하나뿐이다.** 세션이 남아 있었는지는 회차를 돌려야 알
-  수 있어 짧은 끊김에도 한 번 돈다(입력 · 고침은 남는다).
+  누름이 사라진다. 콜백은 하는 일이 없다 — 회차가 도는 것이 목적이다. 세션이 남아 있었는지는
+  회차를 돌려야 알 수 있어 짧은 끊김에도 한 번 돈다(입력 · 고침은 남는다).
+  **이 칸이 파이썬을 부르는 자리는 둘이다** — 이 재연결 트리거와 공정 칩 판의 「모든 화면에서 해제」
+  (`process_clear`). 나머지(패널 · 판 여닫기, 거르기, 읽음, 복사, CSV)는 모두 브라우저 안이다.
 - **서버 재시작은 브라우저가 가른다**(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가)). 재시작 뒤
   세션은 새것이라 파이썬만으로는 재시작과 첫 접속을 가르지 못한다. 프로세스마다 한 번 정하는 부트
   표지(`BOOT_MARK`)와 알림 `GL-07`(`alerts.server_restart_note`)을 data 에 미리 싣고, JS 가 이
@@ -39,8 +53,8 @@
   싣고, JS 가 **문서 메모리**의 앞 data 와 견준다 — 새 문서(새로고침 · 테마 전환 · 새 탭 · 복제한
   탭 · 첫 접속)에는 앞 data 가 없어 뜨지 않는다. 앞 data 의 변경 목록이 있었거나 끊길 때 대화상자가
   열려 있던 탭에만 띄워, 잃은 것이 없는 탭이 노트북 덮개를 여닫을 때마다 뜨지 않게 한다.
-- **패널은 브라우저 안에서만 열고 닫는다** — 패널 · 칩 판은 트리거를 보내지 않아 열어도 파이썬
-  회차가 돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 기록은 이 브라우저 탭의
+- **패널은 브라우저 안에서만 열고 닫는다** — 패널 · 변경 판 · 공정 판은 트리거를 보내지 않아 열어도
+  파이썬 회차가 돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다). 기록은 이 브라우저 탭의
   `sessionStorage`(`STORAGE`)다(D1 (가)).
 - **알림에 딸린 표**(`alerts.AlertTable` — 산출 결과의 제외 목록 · 표준 목표 누락 공정·주차 · 생산
   계획 · 필요 단축 일정의 목록, 한 줄에 여럿일 수 있다)는 Alarm 줄의 「… 보기」 단추가 표마다 펼치고
@@ -50,8 +64,8 @@
 - **「로그」 펼침의 「복사」 는 그 줄의 로그 전문을 평문으로 클립보드에 넣는다**(2026-11-04
   검수 의견 alarm-05) — 막히면(보안 연결이 아님 · DRM) 고른 글을 든 읽기 전용 칸을 펼침 안에
   세우고 Ctrl+C 를 청한다. 딸린 표는 행을 싣지 않고 이름 · 행 수만 적는다(표는 「CSV 내려받기」).
-- **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11).
-  보관 · 판정 설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 이 맡는다.
+- **Alarm 패널 · 변경 판 · 공정 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 ·
+  alarm-11). 보관 · 판정 · 공정 칩 설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 이 맡는다.
 - **Alarm 단추는 툴바 글꼴을 물려받는다**(alarm-01) — Guide · Print · 테마 단추(`font:inherit`)와
   같은 글꼴 · 13px · 600 · 높이. 변경 칩은 한글 글이라 앱 글꼴(`tokens.FONT_FAMILY`) 그대로다.
 - **「그 화면으로」 는 그 화면 안 탭까지 연다** — 표지의 `tab` 이 있으면 그 화면에 닿은 회차가 끝난
@@ -76,15 +90,20 @@ from typing import Any, Final
 
 import streamlit as st
 
-from capa_simulation import alerts
+from capa_simulation import alerts, shared_process
+from capa_simulation.components import process_field
 from capa_simulation.components.change_summary import GROUPS, ChangeItem
+from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CHANGES_CHIP_ID,
+    PROCESS_CHIP_ID,
+    SAMPLE_MARK_ID,
     TOOLBAR_BUTTON_ORDER,
     TOOLBAR_SLOT,
 )
 from capa_simulation.design import tokens
+from capa_simulation.navigation import PageSpec
 
 _ASSETS = Path(__file__).with_name("alert_center_assets")
 # 컴포넌트 key — 접는 스타일이 `.st-key-<key>` 로 고른다. Components v2 key 에는 `__` 를 쓰지
@@ -161,6 +180,20 @@ TEXT: Final[dict[str, str]] = {
     "changes_title": "이 세션에서 바꾸고 아직 저장 · 적용하지 않은 것과 가정",
     "changes_aria": "변경 {n}건 — {top}",
     "changes_sum": "{n}건",
+    # 공용 공정 칩 · 판(2026-11-09 보드 C1 (라)).
+    "process_word": "공정",
+    "process_absent": "{n}개 이 화면 없음",
+    "process_names": "공정 {names}",
+    "process_from": "{origin} 에서",
+    "process_off": "이 화면엔 안 걸림",
+    "process_aria": "공정 거름 {n}개",
+    "process_panel": "공정 거름 {n}개",
+    "process_absent_row": "이 화면에 없음",
+    "process_pick": "공정 고르기",
+    "process_clear": "모든 화면에서 해제",
+    # 합성 샘플 표지(2026-11-09 보드 T8).
+    "sample": "합성 샘플",
+    "sample_title": "합성 샘플 — 실적이 아님 · 사이드바 「샘플 데이터」 로 끔",
 }
 
 
@@ -215,10 +248,19 @@ def session_mark() -> str:
     return mark
 
 
+def shows_sample_mark(current: PageSpec | None) -> bool:
+    """합성 샘플 표지를 세우나 — 지금 화면이 원천 미연결 화면이고 「샘플 데이터」 가 켜졌다."""
+    return current is not None and current.pending_source is not None and sample_switch_on()
+
+
 def alert_center_data(
-    *, changes: list[ChangeItem], events: list[alerts.AlertNote]
+    *,
+    changes: list[ChangeItem],
+    events: list[alerts.AlertNote],
+    current: PageSpec | None = None,
 ) -> dict[str, Any]:
-    """알림 칸 data. 같은 변경 · 사건이면 회차마다 같은 값이다(시각 · 카운터를 싣지 않는다)."""
+    """알림 칸 data. 같은 변경 · 사건 · 공용 공정 값이면 회차마다 같은 값이다(시각 · 카운터를 싣지
+    않는다). `current` 는 지금 화면의 선언이다 — 공정 칩의 짐작과 합성 샘플 표지가 읽는다."""
     mark = session_mark()
     return {
         "events": events,
@@ -246,6 +288,8 @@ def alert_center_data(
             "order": list(TOOLBAR_BUTTON_ORDER),
             "alarm": ALARM_BUTTON_ID,
             "chip": CHANGES_CHIP_ID,
+            "process": PROCESS_CHIP_ID,
+            "sample": SAMPLE_MARK_ID,
         },
         "marker": alerts.MARKER_ATTRIBUTE,
         # 이번 화면 주소 — 「그 화면으로」 가 탭을 고를 때 그 화면에 닿았는지 본다.
@@ -256,6 +300,8 @@ def alert_center_data(
         "palette": palette(),
         "font": tokens.FONT_FAMILY,
         "text": dict(TEXT),
+        "process": process_field.header_chip(None if current is None else current.path),
+        "sample": shows_sample_mark(current),
     }
 
 
@@ -263,16 +309,22 @@ def _reconnected() -> None:
     """재연결 트리거의 콜백 — 회차가 도는 것이 목적이라 할 일이 없다."""
 
 
-def render_alert_center(*, changes: list[ChangeItem]) -> None:
+def _clear_process() -> None:
+    """공정 칩 판 「모든 화면에서 해제」 트리거의 콜백 — 공용 공정 값을 지운다(앱 전체가 돈다)."""
+    shared_process.clear()
+
+
+def render_alert_center(*, changes: list[ChangeItem], current: PageSpec | None = None) -> None:
     """알림 칸을 그린다 — `app.py` 가 화면 탭 줄 바로 뒤, 페이지 앞에서 매 앱 전체 회차 부른다.
 
     콜백이 담아 둔 사건 알림(`alerts.event`)을 이 회차 data 로 꺼내 보낸다. 이벤트 칸에는 접는
-    스타일 한 자리를 쓴다.
+    스타일 한 자리를 쓴다. `current` 는 지금 화면의 선언이다(없으면 None).
     """
     st.html(_HIDE_STYLE)
     _ALERT_CENTER(
         key=ALERT_CENTER_KEY,
-        data=alert_center_data(changes=changes, events=alerts.drain_outbox()),
+        data=alert_center_data(changes=changes, events=alerts.drain_outbox(), current=current),
         width="stretch",
         on_reconnected_change=_reconnected,
+        on_process_clear_change=_clear_process,
     )
