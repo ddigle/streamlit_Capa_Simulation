@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -274,6 +275,47 @@ def test_the_csv_button_sits_at_the_end_of_the_cutoff_save_line(tmp_path: Path) 
     assert style.endswith("</style><span></span>")
     bodies = [str(element.proto.body) for element in app.get("html")]
     assert style in bodies
+    clear_equipment_repository()
+
+
+def _block_with_key(node: Any, key: str) -> Any:
+    """AppTest 트리에서 key 가 `key` 인 칸(블록)을 찾는다. 없으면 None."""
+    if getattr(node, "key", None) == key:
+        return node
+    children = getattr(node, "children", None)
+    for child in children.values() if isinstance(children, dict) else ():
+        found = _block_with_key(child, key)
+        if found is not None:
+            return found
+    return None
+
+
+def test_the_view_settings_row_carries_no_empty_gaps(tmp_path: Path) -> None:
+    """「표 보기 설정」 위아래 빈 틈을 줄인다(2026-11-09 사용자 검수 g17 「표 보기 설정 위아래로
+    여백이 뜨는데 공간 최적화해」). 위 — 저장 줄 아래 알림 칸은 칸 하나라 알림이 없으면 비고, 폼 안
+    빈 칸은 줄 사이 간격을 먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR`, 28 → 14px). 칸을 한 겹
+    더 싸면 바깥 칸이 비지 않아 간격이 남는다. 아래 — 표 도구 막대 띄움과 표는 간격 없는 칸 하나다
+    (52 → 38px — 막대 37px 위)."""
+    from streamlit.proto.GapSize_pb2 import GapSize
+
+    app = AppTest.from_function(
+        _cutoff_body, args=(str(tmp_path / "gaps.duckdb"),), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    form = _block_with_key(app.main, "equipment_cutoff_form_v1")
+    assert form is not None
+    rows = list(form.children.values())
+    # 저장 줄 → 알림 칸(빈 칸 하나) → 표 보기 설정 → 띄움 + 표.
+    assert getattr(rows[0], "key", None) == "equipment_cutoff_submit_row_v1"
+    slot = rows[1]
+    assert type(slot).__name__ == "Block" and not slot.children
+    assert getattr(rows[2], "key", None) == "equipment_cutoff_view_v1_view_expander"
+    table_box = rows[3]
+    assert table_box.proto.flex_container.gap_config.gap_size == GapSize.Value("NONE")
+    inner = list(table_box.children.values())
+    assert len(inner) == 2 and inner[0].type == "space"
+    assert type(inner[1]).__name__ == "Dataframe"
     clear_equipment_repository()
 
 

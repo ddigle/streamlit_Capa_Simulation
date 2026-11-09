@@ -59,6 +59,7 @@ from capa_simulation.components.saved_note import (
     ready_note_field,
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
+from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     held_profile_conflict,
@@ -313,10 +314,11 @@ def _render_editor(
                 key=MANUAL_NOTE_KEY,
                 disabled=locked,
             )
-        # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
-        notice = st.container()
+        # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
+        # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않는다(폼 안 빈 칸은 간격을 먹지
+        # 않는다 — `app_header.EMPTY_FORM_SLOT_SELECTOR`).
+        notice = render_flash(MANUAL_FLASH_KEY)
         with notice:
-            render_flash(MANUAL_FLASH_KEY)
             refused = take_refusal(MANUAL_SAVE_NAME)
             if refused is not None:
                 st.error(refused)
@@ -333,32 +335,37 @@ def _render_editor(
             started = submitted_base
         else:
             started = profile.version
-        editor_box = st.container(key=MANUAL_EDITOR_KEY)
-        edited = editor_box.data_editor(
-            frame,
-            key=manual_editor_key(started),
-            hide_index=True,
-            num_rows="fixed",
-            width="stretch",
-            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-            placeholder="",
-            disabled=True if locked else [MANUAL_PROCESS_COLUMN],
-            column_config={
-                MANUAL_PROCESS_COLUMN: st.column_config.TextColumn(
-                    "공정", pinned=True, width="medium"
-                ),
-                **{
-                    str(int(month)): st.column_config.NumberColumn(
-                        month_label(int(month)),
-                        min_value=0.0,
-                        max_value=MANUAL_DOWNTIME_MAX_UNITS,
-                        step=0.01,
-                        format="%.2f",
-                    )
-                    for month in months
+        # 바로 위가 오른쪽 끝까지 늘어나는 변경 메모 줄이다 — 표 도구 막대(표 머리 위 37px)가 그
+        # 끝을 덮지 않게 상자 안 표 앞에 띄운다(AGENTS 9장 「표 도구 막대」). 상자는 간격 없는
+        # 칸이라 줄 사이 14 + 띄움 24 = 38px 다(2026-11-09 사용자 검수 g17 — 폼 안 빈 알림 칸이
+        # 간격을 먹지 않게 되며 메모 줄과 표 사이가 28 → 14px 로 붙었다).
+        with st.container(key=MANUAL_EDITOR_KEY, gap=None):
+            toolbar_clearance()
+            edited = st.data_editor(
+                frame,
+                key=manual_editor_key(started),
+                hide_index=True,
+                num_rows="fixed",
+                width="stretch",
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
+                disabled=True if locked else [MANUAL_PROCESS_COLUMN],
+                column_config={
+                    MANUAL_PROCESS_COLUMN: st.column_config.TextColumn(
+                        "공정", pinned=True, width="medium"
+                    ),
+                    **{
+                        str(int(month)): st.column_config.NumberColumn(
+                            month_label(int(month)),
+                            min_value=0.0,
+                            max_value=MANUAL_DOWNTIME_MAX_UNITS,
+                            step=0.01,
+                            format="%.2f",
+                        )
+                        for month in months
+                    },
                 },
-            },
-        )
+            )
     if not submitted:
         # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지
         # 않는다(write_guard).

@@ -1,4 +1,4 @@
-# Purpose: 상단 띠에 적용 시나리오와 진행 막대 자리를 싣고 메뉴 감춤·인쇄 규칙을 앞서 보낸다.
+# Purpose: 상단 띠에 적용 시나리오 · 진행 막대 자리를 싣고 메뉴 감춤·빈 폼 칸·인쇄 규칙을 보낸다.
 
 """The scenario this session is looking at, pinned to the top bar.
 
@@ -96,6 +96,7 @@ from typing import NamedTuple
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+from capa_simulation.alerts import MARKER_ATTRIBUTE
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY
 from capa_simulation.components.page_header import PAGE_TITLE_KEY, STATUS_SLOT_KEY
@@ -153,6 +154,21 @@ TOOLTIP_TEXT_SELECTOR = '[data-testid="stTooltipContent"]'
 # 화면 탭 줄(`components/page_tabs.py`)의 요소 칸. 컴포넌트는 컨테이너가 아니라 요소라 감싼 칸 없이
 # key 클래스를 단 요소 칸(`stElementContainer`)이 곧 flex 항목이다(1.63 브라우저 확인).
 PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
+# 폼 안의 알림이 없는 칸 — 세로 블록이 비었거나(알림 칸 `flash.render_flash` 의 보통 회차), 팝업
+# 안에서 숨은 알림 표지(`alerts.hidden_marker`) 하나만 든 칸(저장 뒤 회차). 높이는 0 인데 폼 줄
+# 사이 간격을 한 번 더 먹어 저장 줄 아래가 한 칸 넓었다(2026-11-09 사용자 검수 g17 「표 보기 설정
+# 위아래로 여백」 · g18 「중간중간 … 여백」 — Cut-off 저장 줄 → 표 보기 설정 28 → 14px). 칸은 세워
+# 두되(뒤 형제의 순번이 알림 유무로 밀리지 않게) 그리지 않는다 — 안에 무엇이 서면 다시 선다. 숨은
+# 표지 칸도 고르는 것은 저장 뒤 한 회차만 간격이 생겼다 사라져 아래 칸이 위아래로 튀지 않게 하려는
+# 것이다(설계 규칙 UI-PRF-03). 알림 칸 JS 는 표지를 `querySelectorAll` 로 훑어 감춘 칸도 읽는다.
+# `:has()` 는 자식 몇 겹만 본다(다시 그리기가 그 칸에만 닿는다).
+EMPTY_FORM_SLOT_SELECTOR = (
+    '[data-testid="stForm"] [data-testid="stLayoutWrapper"]'
+    ':has(> [data-testid="stVerticalBlock"]:empty),\n'
+    '[data-testid="stForm"] [data-testid="stLayoutWrapper"]'
+    ':has(> [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:only-child'
+    f' > [data-testid="stHtml"] > [{MARKER_ATTRIBUTE}]:only-child)'
+)
 
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
 #
@@ -197,7 +213,7 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 # - 화면 탭 줄(`PAGE_TABS_SELECTOR`)도 뺀다 — 화면을 옮기는 단추라 종이에는 쓸모가 없다. 대신
 #   화면에서 숨긴 큰 제목이 인쇄에는 보인다(아래 화면 덩어리가 `@media screen` 안이다).
 #
-# 화면 덩어리(`@media screen`)는 셋이다(2026-10-24 사용자 결정 — 페이지 탭).
+# 화면 덩어리(`@media screen`)는 다섯이다(2026-10-24 사용자 결정 — 페이지 탭).
 # - 화면 탭 줄은 머리 띠 바로 밑에 붙어 본문과 함께 스크롤되지 않는다(`position: sticky` — 스크롤
 #   칸은 `stMain` 이고 띠는 그 밖이라 띠 높이 `tokens.HEADER_BAND_REM` 아래에 선다). z-index 는 본문
 #   위·머리 띠(999990)·진행 막대(999991) 아래이고, 펼침 목록·팝업(baseweb 층)보다도 아래인 100 이다
@@ -221,6 +237,8 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 #   칸을 덮는다 — HOME 설정 상자 풍선이 위 「주요공정 히트맵」 칸의 까닭 풍선 · 누름을 막았다.
 #   풍선은 `body` 끝에 붙어 어느 칸의 것인지 서식으로 고를 수 없어 앱 전체에 건다. 풍선 안에 누를
 #   링크는 없다.
+# - 폼 안의 알림이 없는 칸은 줄 사이 간격을 먹지 않는다(`EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09
+#   사용자 검수 g17 · g18). 인쇄에는 높이 0 칸이라 걸 까닭이 없다.
 SHELL_STYLE = (
     """<style>
 [data-testid="stMainMenu"],
@@ -256,6 +274,9 @@ SHELL_STYLE = (
   __TOOLTIP_TEXT__ {
     pointer-events: none;
   }
+  __EMPTY_FORM_SLOT__ {
+    display: none;
+  }
 }
 @media print {
   @page { margin: 10mm; } [data-testid="stSidebar"], [data-testid="stHeader"], __STATUS_SLOT__,
@@ -277,6 +298,7 @@ SHELL_STYLE = (
   }
 }
 </style>""".replace("__STATUS_SLOT__", STATUS_SLOT_SELECTOR)
+    .replace("__EMPTY_FORM_SLOT__", EMPTY_FORM_SLOT_SELECTOR)
     .replace("__PRINT_BUTTON__", PRINT_BUTTON_ID)
     .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
     .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)
@@ -971,7 +993,7 @@ def refresh_equipment_header(
 
 
 def render_shell_style() -> None:
-    """⋮ 메뉴·Deploy·제목 링크 감춤과 인쇄 규칙을 보낸다.
+    """⋮ 메뉴·Deploy·제목 링크 감춤, 폼 안 빈 알림 칸, 인쇄 규칙을 보낸다.
 
     `app.py` 가 부트스트랩 앞에서 매 회차 한 번 부른다. 스타일만 든 `st.html` 이라 본문 자리를
     먹지 않는다.

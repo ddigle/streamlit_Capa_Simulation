@@ -11,6 +11,7 @@ from streamlit.string_util import clean_text
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import (
     _MEASURED_STATUS_SLOT_TEMPLATE,
+    EMPTY_FORM_SLOT_SELECTOR,
     PAGE_TABS_SELECTOR,
     PAGE_TITLE_SELECTOR,
     SHELL_STYLE,
@@ -352,10 +353,11 @@ def test_print_always_leaves_out_the_sidebar_header_and_overlay() -> None:
 
 
 def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> None:
-    """화면 덩어리는 넷뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
+    """화면 덩어리는 다섯뿐이다(2026-10-24 사용자 결정 — 페이지 탭). 탭 줄은 머리 띠(3.75rem) 바로
     밑에 붙고 z-index 는 펼침 목록·팝업보다 낮다. 큰 제목은 `display: none` 이 아니라 sr-only 라
     읽기 도구에 남고, 인쇄에는 보인다(규칙이 `@media screen` 안이다). 셋째는 모달 동안 탭
-    줄 흐림, 넷째는 풍선 글이 곁 칸의 마우스를 가로채지 않게 하는 규칙."""
+    줄 흐림, 넷째는 풍선 글이 곁 칸의 마우스를 가로채지 않게 하는 규칙, 다섯째는 폼 안 알림이
+    없는 칸이 줄 사이 간격을 먹지 않게 하는 규칙(2026-11-09 사용자 검수 g17 · g18)."""
     block = _screen_block()
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
     assert {selector.strip() for selector, _ in rules} == {
@@ -363,9 +365,11 @@ def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> 
         PAGE_TITLE_SELECTOR,
         f"#root[inert] {PAGE_TABS_SELECTOR}",
         TOOLTIP_TEXT_SELECTOR,
+        EMPTY_FORM_SLOT_SELECTOR,
     }
     by_selector = {selector.strip(): body for selector, body in rules}
     assert by_selector[TOOLTIP_TEXT_SELECTOR].strip() == "pointer-events: none;"
+    assert by_selector[EMPTY_FORM_SLOT_SELECTOR].strip() == "display: none;"
     strip = by_selector[PAGE_TABS_SELECTOR]
     assert "position: sticky;" in strip and "top: 3.75rem;" in strip
     z_index = re.search(r"z-index: (\d+);", strip)
@@ -811,3 +815,19 @@ def test_app_and_the_equipment_row_pass_the_session_label_mark() -> None:
     wired = "equipment_return=equipment_return_mark(remembered_equipment_label())"
     assert wired in app_source
     assert wired in row_source
+
+
+def test_an_empty_slot_in_a_form_takes_no_row_gap() -> None:
+    """폼 안의 알림이 없는 칸은 줄 사이 간격을 먹지 않는다(2026-11-09 사용자 검수 g17 「표 보기
+    설정 위아래로 여백」 · g18 「중간중간 … 여백」). 고르는 칸은 둘 — 빈 세로 블록 하나만 든 칸(알림
+    칸의 보통 회차)과, 팝업 안에서 숨은 알림 표지 하나만 든 칸(저장 뒤 회차 — 그 회차에만 간격이
+    생겨 아래 칸이 튀지 않게). 폼 밖 칸과 다른 것이 든 칸은 고르지 않는다. 표지 이름은 알림 등록부의
+    것이다."""
+    from capa_simulation.alerts import MARKER_ATTRIBUTE
+
+    selectors = [part.strip() for part in EMPTY_FORM_SLOT_SELECTOR.split(",\n")]
+    assert len(selectors) == 2
+    assert all(part.startswith('[data-testid="stForm"] ') for part in selectors)
+    assert selectors[0].endswith(':has(> [data-testid="stVerticalBlock"]:empty)')
+    assert f"[{MARKER_ATTRIBUTE}]:only-child)" in selectors[1]
+    assert '[data-testid="stElementContainer"]:only-child' in selectors[1]

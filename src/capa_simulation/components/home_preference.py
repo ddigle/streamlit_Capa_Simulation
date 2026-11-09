@@ -1695,29 +1695,35 @@ def _render_monthly_amount_editor(
                     placeholder=editor.placeholder,
                     key=editor.note_key,
                 )
-            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
-            notice = st.container()
-            with notice:
-                render_flash(editor.flash_key)
-            edited = st.data_editor(
-                table,
-                key=editor.editor_key,
-                hide_index=True,
-                num_rows="fixed",
-                width="stretch",
-                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-                placeholder="",
-                disabled=[DIMENSION_COLUMN],
-                column_config={
-                    DIMENSION_COLUMN: st.column_config.TextColumn(
-                        DIMENSION_COLUMN, width=_MONTHLY_AMOUNT_LABEL_WIDTH_PX
-                    ),
-                    **{
-                        label: st.column_config.NumberColumn(label, step=0.01, format="%.2f")
-                        for label in month_labels
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다(`render_flash` 가 돌려준 칸
+            # 하나 — 폼 안 빈 칸은 간격을 먹지 않는다, `app_header.EMPTY_FORM_SLOT_SELECTOR`).
+            notice = render_flash(editor.flash_key)
+            # 바로 위가 오른쪽 끝까지 늘어나는 변경 메모 줄이다 — 표 도구 막대(표 머리 위 37px)가
+            # 그 끝을 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸
+            # 하나다 — 줄 사이 14 + 띄움 24 = 38px(2026-11-09 사용자 검수 g17 — 폼 안 빈 알림 칸이
+            # 간격을 먹지 않게 되며 메모 줄과 표 사이가 28 → 14px 로 붙어 막대가 메모 칸을 더
+            # 덮었다).
+            with st.container(gap=None):
+                toolbar_clearance()
+                edited = st.data_editor(
+                    table,
+                    key=editor.editor_key,
+                    hide_index=True,
+                    num_rows="fixed",
+                    width="stretch",
+                    # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                    placeholder="",
+                    disabled=[DIMENSION_COLUMN],
+                    column_config={
+                        DIMENSION_COLUMN: st.column_config.TextColumn(
+                            DIMENSION_COLUMN, width=_MONTHLY_AMOUNT_LABEL_WIDTH_PX
+                        ),
+                        **{
+                            label: st.column_config.NumberColumn(label, step=0.01, format="%.2f")
+                            for label in month_labels
+                        },
                     },
-                },
-            )
+                )
         if not submitted:
             return
         row = edited.iloc[0]
@@ -2744,49 +2750,57 @@ def _render_execution_editor(
                     placeholder="예: 26.07 Wafer Mount 비가동 3대",
                     key=EXECUTION_NOTE_KEY,
                 )
-            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
-            notice = st.container()
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
+            # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않는다(폼 안 빈 칸은 간격을 먹지
+            # 않는다 — `app_header.EMPTY_FORM_SLOT_SELECTOR`).
+            notice = render_flash(EXECUTION_FLASH_KEY)
             with notice:
-                render_flash(EXECUTION_FLASH_KEY)
                 refused = take_refusal(EXECUTION_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
-            edited = st.data_editor(
-                table,
-                key=EXECUTION_EDITOR_KEY,
-                hide_index=True,
-                num_rows="dynamic",
-                width="stretch",
-                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-                placeholder="",
-                column_config={
-                    "생산계획년월": st.column_config.SelectboxColumn(
-                        "년월",
-                        options=list(months),
-                        # 저장은 YYYYMM 정수다. 표시만 `26.07` 로 바꾼다.
-                        format_func=_month_option_label,
-                        required=True,
-                    ),
-                    "공정": st.column_config.SelectboxColumn(
-                        "공정",
-                        options=list(process_options),
-                        # **값은 원본 공정명이고 보이는 글자만 표시명이다.** 표시명으로
-                        # 저장하면 Proc Rename 을 바꾸는 순간 매칭이 끊긴다. 편집표 칸은 값을
-                        # 글자가 아니라 옵션 `value` 로 주고받아(고르기·붙여넣기·복사 모두) 겹친
-                        # 글자로 다른 공정이 들지는 않는다. 다만 목록에서 둘을 가려 고를 수
-                        # 있도록 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다.
-                        format_func=process_labels.unique_format_func(process_options),
-                        required=True,
-                    ),
-                    "증감 확보율": st.column_config.NumberColumn(
-                        "증감 확보율(%)",
-                        step=0.1,
-                        format="%.1f",
-                        required=True,
-                    ),
-                    "비고": st.column_config.TextColumn("비고", width="medium"),
-                },
-            )
+            # 바로 위가 오른쪽 끝까지 늘어나는 변경 메모 줄이다 — 표 도구 막대(표 머리 위 37px)가
+            # 그 끝을 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸
+            # 하나다 — 줄 사이 14 + 띄움 24 = 38px(2026-11-09 사용자 검수 g17 — 폼 안 빈 알림 칸이
+            # 간격을 먹지 않게 되며 메모 줄과 표 사이가 28 → 14px 로 붙어 막대가 메모 칸을 더
+            # 덮었다).
+            with st.container(gap=None):
+                toolbar_clearance()
+                edited = st.data_editor(
+                    table,
+                    key=EXECUTION_EDITOR_KEY,
+                    hide_index=True,
+                    num_rows="dynamic",
+                    width="stretch",
+                    # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                    placeholder="",
+                    column_config={
+                        "생산계획년월": st.column_config.SelectboxColumn(
+                            "년월",
+                            options=list(months),
+                            # 저장은 YYYYMM 정수다. 표시만 `26.07` 로 바꾼다.
+                            format_func=_month_option_label,
+                            required=True,
+                        ),
+                        "공정": st.column_config.SelectboxColumn(
+                            "공정",
+                            options=list(process_options),
+                            # **값은 원본 공정명이고 보이는 글자만 표시명이다.** 표시명으로
+                            # 저장하면 Proc Rename 을 바꾸는 순간 매칭이 끊긴다. 편집표 칸은 값을
+                            # 글자가 아니라 옵션 `value` 로 주고받아(고르기·붙여넣기·복사 모두) 겹친
+                            # 글자로 다른 공정이 들지는 않는다. 다만 목록에서 둘을 가려 고를 수
+                            # 있도록 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다.
+                            format_func=process_labels.unique_format_func(process_options),
+                            required=True,
+                        ),
+                        "증감 확보율": st.column_config.NumberColumn(
+                            "증감 확보율(%)",
+                            step=0.1,
+                            format="%.1f",
+                            required=True,
+                        ),
+                        "비고": st.column_config.TextColumn("비고", width="medium"),
+                    },
+                )
         if not submitted:
             # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
             # (write_guard).

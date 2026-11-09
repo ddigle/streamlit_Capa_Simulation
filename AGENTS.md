@@ -2857,7 +2857,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/admin_dialog.py` — Admin Area 편집 탭들이 함께 쓰는 팝업 칸
   (`admin_area_open_dialog`) 하나를 여닫는 콜백이다. 탭마다 칸을 두면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
-  싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 인쇄 규칙)을 보낸다.
+  싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 폼 안 알림이 없는 칸의 간격
+  지움(`EMPTY_FORM_SLOT_SELECTOR`), 인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
     `intro_summary.latest_official_revision`·`scenario_activation.newer_active_revision_no`(「최신 rN 있음」) 만 읽는다
     (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
@@ -3905,7 +3906,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 첫 결과로 성공을 다시 알린다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「가용설비 설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
   편집표·저장·CSV 왕복과 빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다(Static 대비 일정은 그 값을 받지 않고 캐시
-  경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문).
+  경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문). 「표 보기 설정」 아래 표 도구 막대 띄움과
+  편집표는 간격 없는 칸 하나다(펼침 → 표 38px — 막대 37px 위, 2026-11-09 사용자 검수 g17).
 - `src/capa_simulation/components/equipment_settings_dialog.py` — 가용설비 현황 사이드바 「가용설비 설정」 상자(2026-11-03 —
   전에는 제목 줄 끝 「설정」 단추, 상자 글 = 팝업 제목, `render_equipment_settings_box` — 설비 DB 를 못 읽은 회차에는 잠김)와 그
   팝업(묶음 머리 「공정별 Cut-off」 하나 — 나중 설정 자리, D14)의 열림 칸(`available_equipment_open_dialog`, 값 `settings`)·여는 콜백
@@ -6129,7 +6131,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     세우지 않고 이벤트 칸에 정확히 한 자리다(알릴 것이 없으면 빈 스타일). 팝업 안 칸이 꺼내기 전에 닫혀도 알림이 그 칸이
     다시 설 때까지 잠자지 않는다(`home_settings.render_home_dialog_host(closed_notices=…)`).
     `render_flash` 는 알림이 없어도 칸 하나를 세워 이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패
-    문구나 같은 동작의 경고 여러 줄(표시순서 저장의 표시명 경고)을 쓴다. VOC 「적어 둔 답변」 은 알림이 아니라 사용자의
+    문구나 같은 동작의 경고 여러 줄(표시순서 저장의 표시명 경고)을 쓴다. 폼 안에서는 알림이 없는 그 칸(빈 칸 · 팝업 안
+    숨은 알림 표지만 든 칸)이 줄 사이 간격을 먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수
+    g17 · g18, 저장 줄 아래 28 → 14px). 그래서 폼 안 거부 글은 돌려받은 칸에 쓰고 바깥 `st.container()` 로 한 겹 더 싸지
+    않는다 — 바깥 칸은 비지 않아 간격이 남는다. VOC 「적어 둔 답변」 은 알림이 아니라 사용자의
     글이라 꺼내 버리지 않고(`get`) 「닫기」 까지 그 칸 아래에 그린다(3장 `voc.py`). 다음 동작까지 남아야 하는 칸(필요 단축
     일정 기준선 shown 칸), 매 회차 비우고 보이는 탭에서만 그리는 칸(기준정보 STEP), 페이지가
     같은 `st.empty` 자리에 오류를 덮어 쓰는 칸(월 편집표), 회차의 상자 유무로 두 자리 가운데 하나에 서는 칸(Space 배치
@@ -6906,8 +6911,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `사용 편집` 토글이 그 자리다(2026-10-26 E2E — 층 상세 표 머리의 「층 전체 보기」 는 2026-11-03 도면 위 「호기 정보」 창으로
   옮기며 걷었다 — 층 목록은 머리 칸 `gap=None` 이라 띄움 24 + 칸 사이 14 = 38px 로 막대 37.1px 바로 위까지다). 날짜 칸의 지우기(✕)도 같다 — Qual
   마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 누를 수 없다). 오른쪽 끝까지
-  늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」)과 바로 위 CSV 단추(제외 목록)도
-  같은 띄움을 둔다. `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
+  늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」, HOME 설정 선행 B/O · 선행 입고 · 확보율 보정과
+  가용설비 입력 비가동의 「변경 메모」 — 2026-11-09 사용자 검수 g17 로 메모 줄과 표 사이의 빈 알림 칸이 간격을 먹지 않게
+  되며 붙었다)과 바로 위 CSV 단추(제외 목록)도 같은 띄움을 둔다. 폼 안에서는 띄움과 표를 간격 없는 칸(`gap=None`)
+  하나에 둔다 — 줄 사이 14 + 띄움 24 = 38px 로 막대 바로 위까지다(Cut-off 「표 보기 설정」 아래도 같다). `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
   대입은 건너뛰고, 표가 `if` 의 첫 문장이면 그 `if` 앞 문장)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고,
   띄움 숫자 정의가 이 모듈 하나인지 본다. 형제가 부르는 도우미 함수(같은 파일·`capa_simulation` 에서 들여온 함수, `@st.dialog`
   는 빼고) 안까지 본다 — 위 줄을 `_render_controls()` 같은 도우미로 그리면 그물이 못 봐 필요 단축 일정 진척 보드 표가 「기한
