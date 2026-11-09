@@ -3285,7 +3285,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/process_field.py` — 공용 공정 칸의 화면 조각(값 칸 + 타일 판 팝업 — `process_field_assets`,
   2026-11-08 답 P1 · P2). 여러 개 따라감은 `render_process_filter(options, screen=, labels=)` 가 걸 공정을 돌려주고(산출 결과 셋 ·
   가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름(받기만)은 `render_process_choice(options,
-  screen=, key=)`(공정 Capa 상세 · 제약 시뮬레이션). 표지는 값 칸 테두리 `ACCENT` 두 겹 · 이름 줄 출처 「X 에서」(실제로 걸렸을
+  screen=, key=)`(공정 Capa 상세 · 제약 시뮬레이션). 값 칸 글은 「전체 N공정」 · 하나면 이름 · 둘부터 한 줄 「Mold 외 2개」
+  (`first_and_rest` — 표시순서상 첫 공정, 풍선 `filter_help` 가 전체 목록 — 2026-11-09 사용자 검수 g03-2, 필요 단축 일정 카드의
+  공정 칸도 같은 함수)다. 표지는 값 칸 테두리 `ACCENT` 두 겹 · 이름 줄 출처 「X 에서」(실제로 걸렸을
   때만) · 없는 공정 주황 배지 · 본문 칩 35px(`app.py` `render_chip_slot` 자리, 누르면 모든 화면 지움)이다. 팝업은 조건 팝업
   호스트의 넷째 갈래이고 선택지는 페이지가 값 칸을 그린 회차에 세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을
   가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과 dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다.
@@ -3933,7 +3935,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시트 머리·교차검증 위에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄. 호기 목록·호기 필터 시트에는 없다.
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드 — 맨 위 위아래 두 칸 `목표 확보율`·
   `진척 비교`(그림 메모 g03, 본문 프래그먼트는 기준선 목록이 카드에 세운 것과 다르면 앱 전체 회차로 올린다 — `_Plan.shown_baselines`
-  · `_view_choices`), 값 줄 끝 상태 표지 셋 + `RS-03` ~ `RS-05`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
+  · `_view_choices`) · 공정 칸은 이름 줄 + 고른 값 한 줄 팝오버(`PROCESS_POPOVER_KEY` — 「Wafer Saw 외 2개」, 처음 고른 공정 ·
+  둘 이상이면 풍선이 전체 목록, 안이 다중 선택 칸 `SHORTENING_PROCESS_KEY` — 2026-11-09 사용자 검수 g03-2), 값 줄 끝 상태 표지
+  셋 + `RS-03` ~ `RS-05`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
   UPEH 가정 칸(머리 아래 알림 · 기준선 저장 거절)은 패널에 남는다. 표는 줄 이름 칸을 붙박고 달 칸을 74px 로 줄여 기준 창에
   14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —

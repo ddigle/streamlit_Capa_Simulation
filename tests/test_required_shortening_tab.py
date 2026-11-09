@@ -35,8 +35,11 @@ from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.required_shortening_panel as required_shortening_panel
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_shortening_panel import (
     MATCH_RULE_HELP,
+    PROCESS_FIELD_EMPTY,
+    PROCESS_POPOVER_KEY,
     SHARED_FILTER_HELP,
     SHORTENING_END_KEY,
     SHORTENING_LEVEL_KEY,
@@ -340,6 +343,55 @@ def test_switching_the_target_level_changes_the_result_without_errors(tmp_path: 
     # 목표를 올리면 모자란 공정이 늘거나 같다 — 미선택이면 그 공정이 모두 카드로 선다.
     assert len(_cards(high)) >= len(low_cards)
     assert len(_cards(high)) > 0
+    clear_equipment_repository()
+
+
+def _process_popover(app: AppTest) -> Any:
+    """조건 카드 공정 칸의 팝오버 블록(고른 값 한 줄 — 안이 다중 선택 칸)."""
+    found: list[Any] = []
+
+    def walk(node: Any) -> None:
+        for child in getattr(node, "children", {}).values():
+            if getattr(child, "type", None) == "popover" and str(child.proto.id).endswith(
+                f"-{PROCESS_POPOVER_KEY}"
+            ):
+                found.append(child)
+            walk(child)
+
+    walk(app.sidebar)
+    (popover,) = found
+    return popover
+
+
+def test_the_card_process_field_reads_the_first_pick_and_the_rest_on_one_line(
+    tmp_path: Path,
+) -> None:
+    """카드의 공정 칸은 고른 칩을 늘어놓지 않고 한 줄 「<처음 고른 공정> 외 n개」 다(2026-11-09
+    사용자 검수 g03-2). 하나면 그 이름, 고르지 않았으면 지금의 전체 글이고, 둘 이상이면 풍선이
+    전체 목록이다. 다중 선택 칸은 그 팝오버 안이고 key 는 그대로다. 첫 이름은 표시순서가 아니라
+    처음 고른 공정이다."""
+    app = _run(_database(tmp_path))
+    assert _process_popover(app).proto.popover.label == PROCESS_FIELD_EMPTY
+    assert not _process_popover(app).proto.popover.help
+    options = list(app.multiselect(key=SHORTENING_PROCESS_KEY).options)
+    assert len(options) >= 3
+    picked = [options[2], options[0], options[1]]
+    shown = [literal_markdown(name) for name in picked]
+
+    one = app.multiselect(key=SHORTENING_PROCESS_KEY).set_value(picked[:1]).run()
+    assert not one.exception
+    assert _process_popover(one).proto.popover.label == shown[0]
+    assert not _process_popover(one).proto.popover.help
+
+    three = one.multiselect(key=SHORTENING_PROCESS_KEY).set_value(picked).run()
+    assert not three.exception
+    popover = _process_popover(three).proto.popover
+    assert popover.label == f"{shown[0]} 외 2개"
+    assert popover.help == " · ".join(shown)
+    assert "선택" not in popover.label
+    # 칩을 늘어놓는 다중 선택 칸은 카드에 바로 서지 않고 그 팝오버 안이다.
+    paths = _sidebar_block_paths(three, (SHORTENING_PROCESS_KEY,))
+    assert "popover" in paths[SHORTENING_PROCESS_KEY], paths
     clear_equipment_repository()
 
 
