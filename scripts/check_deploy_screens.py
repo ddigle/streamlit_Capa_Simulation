@@ -437,7 +437,8 @@ LABEL_NARROW_WIDTHS_PX: Final = (280, 236, SIDEBAR_NARROW_WIDTH_PX)
 # 앱과 같은지 본다.
 GAP_TAB: Final = "Static 대비 일정"
 # 가용설비 현황 두 탭 개편(2026-10-24 사용자 결정) — 바깥 탭 둘(① 설비 마스터 ② Summary), Summary
-# 안쪽 탭 둘(라벨 글자는 개편 전 그대로), 필요 단축 일정 머리 「Qual 마감 계산기」 팝업, 시나리오
+# 안쪽 탭 둘(라벨 글자는 개편 전 그대로), 필요 단축 일정 사이드바 상자 「Qual 마감 계산기」 팝업
+# (2026-11-09 사용자 검수 g03-1 — 머리 끝 단추에서 옮김, 단추 key 그대로), 시나리오
 # 관리 탭 넷과 그 설비 시나리오 탭. 공정별 Cut-off 팝업은 2026-11-03 부터 사이드바
 # 「가용설비 설정」 상자가 연다 — `settings_boxes` 가 본다. 앱 모듈을 부르지 않고 값만
 # 옮긴다(테스트가 앱과 같은지 본다).
@@ -4951,7 +4952,8 @@ def _main_button(widget_key: str) -> str:
 
 def check_equipment_moves(screen: Screen) -> str:
     """가용설비 현황 두 탭 개편의 새 자리 — 바깥 탭 둘·Summary 안쪽 둘·옛 탭 이름 0곳, 필요 단축
-    일정 머리 「Qual 마감 계산기」 팝업의 지표 넷, 시나리오 관리 탭 넷과 「설비 시나리오」 탭의 표.
+    일정 사이드바 상자 「Qual 마감 계산기」 팝업의 지표 넷, 시나리오 관리 탭 넷과 「설비 시나리오」
+    탭의 표.
     팝업은 `Esc` 로 닫고(넣기는 누르지 않는다), 탭은 처음 탭으로 되돌린다(세션 값 — DB 에 쓰지
     않는다). 공정별 Cut-off 팝업(2026-11-03 부터 사이드바 「가용설비 설정」)은
     `settings_boxes` 가 본다."""
@@ -4969,8 +4971,9 @@ def check_equipment_moves(screen: Screen) -> str:
     )
     screen.open_page(SHORTENING_PAGE)
     calculator: tuple[str | None, int, bool] | None = None
-    if screen.page.locator(_main_button(QUAL_CALCULATOR_BUTTON_KEY)).count():
-        screen.open_dialog(_main_button(QUAL_CALCULATOR_BUTTON_KEY))
+    opener = f'[data-testid="stSidebar"] .st-key-{QUAL_CALCULATOR_BUTTON_KEY} button:visible'
+    if screen.page.locator(opener).count():
+        screen.open_dialog(opener)
         try:
             title = screen.dialog_title()
             labels = screen.poll(

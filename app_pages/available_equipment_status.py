@@ -23,8 +23,8 @@
   「설정」 단추) → 공정별 Cut-off 팝업(`equipment_settings_dialog`), 탭 ① 「엑셀·CSV로 한꺼번에」 →
   붙여넣기·CSV 팝업(`equipment_import_dialog` — 「편집본에 넣기」 까지). 두 팝업은 한 열림 칸·한
   호스트다. Static 대비 일정은 Cut-off 를 캐시 경계(`load_process_cutoff`)에서 직접 읽는다.
-- Qual 마감 계산기는 필요 단축 일정 머리의 팝업, 설비 시나리오 목록·발행은 시나리오 관리 › 설비
-  시나리오다.
+- Qual 마감 계산기는 필요 단축 일정 사이드바 상자의 팝업, 설비 시나리오 목록·발행은 시나리오
+  관리 › 설비 시나리오다.
 """
 
 from __future__ import annotations
@@ -275,8 +275,8 @@ SHARED_PROCESS_SCREEN = "가용설비"
 first_action = st.empty()
 sample_notice = st.empty()
 # 탭 둘(2026-10-24 사용자 결정): ① 설비 마스터(처음 여는 탭) ② Summary(안쪽 Main·Static 대비 일정).
-# 필요 단축 일정은 실행 관리 아래 별도 페이지(2026-10-18), Qual 마감 계산기는 그 화면 머리의 팝업,
-# 설비 시나리오는 시나리오 관리 › 설비 시나리오다.
+# 필요 단축 일정은 실행 관리 아래 별도 페이지(2026-10-18), Qual 마감 계산기는 그 화면 사이드바
+# 상자의 팝업, 설비 시나리오는 시나리오 관리 › 설비 시나리오다.
 master_tab, summary_tab, preference_tab = stateful_tabs(EQUIPMENT_TABS, key=EQUIPMENT_TAB_KEY)
 with summary_tab:
     # 안쪽 탭은 바깥이 숨어도 늘 부른다 — 위젯 값이 남아 사이드바(`app.active_condition_tab`)가
