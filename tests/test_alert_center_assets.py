@@ -1026,6 +1026,39 @@ def test_the_focus_shell_is_one_set_of_listeners_that_never_runs_the_app() -> No
     assert "MutationObserver" not in shell
 
 
+def test_tab_past_a_head_panel_edge_closes_it_back_to_its_button() -> None:
+    """머리 띠 판(Alarm · 변경 · 공정)은 body 끝 호스트에 붙어 마지막 칸 다음 Tab 이 문서
+    밖(body)으로 빠졌다(통합 재측정 — 공정 판 「모든 화면에서 해제」 다음). 가두지 않는다(모달이
+    아니다): 마지막 칸 다음 Tab 은 판을 닫고 연 단추에 초점을 돌린 뒤 막지 않아 브라우저가 그 단추
+    다음 차례로 넘기고, 첫 칸 · 판 자체 앞 Shift+Tab 은 판을 닫고 연 단추에 선다. 세 판이 문서
+    처리기 한 벌의 같은 길이다."""
+    out = _node(
+        """
+console.log(JSON.stringify([
+  panelTabExit(3, 2, false),
+  panelTabExit(3, 1, false),
+  panelTabExit(3, -1, false),
+  panelTabExit(0, -1, false),
+  panelTabExit(3, 0, true),
+  panelTabExit(3, -1, true),
+  panelTabExit(3, 2, true),
+]))
+"""
+    )
+    assert out == ["next", None, None, "next", "back", "back", None]
+    leave = JS[JS.index("function leavePanelByTab(") :]
+    leave = leave[: leave.index("\n}\n")]
+    assert "panelOf(C, C.open)" in leave and "PANEL_TABBABLE" in leave
+    # 닫고 연 단추로 초점을 돌린 뒤, 앞으로 가는 Tab 은 막지 않는다(브라우저가 단추 다음 차례로
+    # 넘긴다).
+    closing = leave.index("closePanel(C, true)")
+    assert closing < leave.index("if (exit === 'back') event.preventDefault()")
+    keys = JS[JS.index("// 판 밖 누름 · Esc 로 닫는다") :]
+    keys = keys[: keys.index("window.addEventListener('resize'")]
+    assert "event.key === 'Tab' && C.open" in keys and "leavePanelByTab(C, event)" in keys
+    assert "select:enabled" in JS[JS.index("const PANEL_TABBABLE") :].splitlines()[0]
+
+
 _PROCESS_RUNNER = """
 const process = {
   values: ['Mold', 'Underfill', 'PMC'],

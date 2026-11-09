@@ -321,6 +321,8 @@ const BUTTON_LABEL = '[data-testid="stMarkdownContainer"]'
 const POPOVER_BUTTON = 'stPopoverButton'
 const POPOVER_BODY = '[data-testid="stPopoverBody"]'
 const TABBABLE = 'button:enabled, input:enabled, textarea:enabled, a[href], [tabindex="0"]'
+// 머리 띠 판 안 탭 자리 — Alarm 판의 화면 거르기 칸이 `select` 다.
+const PANEL_TABBABLE = `${TABBABLE}, select:enabled`
 
 function buttonName(button) {
   const label = button.getAttribute('aria-label') || (button.querySelector(BUTTON_LABEL) || button).textContent
@@ -375,6 +377,15 @@ function returnDialogFocus(doc, dialog, left) {
   if (left.isConnected) left.focus({ preventScroll: true })
   if (!doc.activeElement || doc.activeElement === doc.body) dialog.focus({ preventScroll: true })
   return true
+}
+
+// 머리 띠 판(Alarm · 변경 · 공정) 안 Tab 이 판 끝을 넘는가 — `count` 는 판 안 탭 자리 수, `at` 은 초점 칸의 차례(-1 = 판 자체 ·
+// 탭 자리가 아닌 칸). 'next' = 마지막 칸 다음 Tab(판을 닫고 연 단추 다음 차례로), 'back' = 첫 칸 · 판 자체 앞 Shift+Tab(판을 닫고
+// 연 단추로), null = 판 안에서 브라우저가 옮긴다.
+function panelTabExit(count, at, shift) {
+  if (shift) return at <= 0 ? 'back' : null
+  if (count === 0) return 'next'
+  return at === count - 1 ? 'next' : null
 }
 // </alerts-focus>
 
@@ -596,7 +607,8 @@ function createCenter(data) {
   const queued = Array.isArray(window.__capaAlertQueue) ? window.__capaAlertQueue.splice(0) : []
   for (const note of queued) raiseLocal(C, note, false)
 
-  // 판 밖 누름 · Esc 로 닫는다(모달이 아니다). 처리기는 문서에 하나다.
+  // 판 밖 누름 · Esc 로 닫는다(모달이 아니다). 판 끝을 넘는 Tab 도 판을 닫고 연 단추 차례로 돌아간다(`leavePanelByTab`). 처리기는
+  // 문서에 하나다.
   document.addEventListener(
     'pointerdown',
     (event) => {
@@ -614,6 +626,8 @@ function createCenter(data) {
       if (event.key === 'Escape' && C.open) {
         event.stopPropagation()
         closePanel(C, true)
+      } else if (event.key === 'Tab' && C.open && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        leavePanelByTab(C, event)
       }
     },
     true,
@@ -1777,6 +1791,20 @@ function togglePanel(C, which) {
     paintChanges(C)
   }
   panel.focus({ preventScroll: true })
+}
+
+// 판 안 Tab 의 끝 — 판은 body 끝 호스트에 붙어 문서 차례로 맨 뒤라 마지막 칸 다음 Tab 이 문서 밖(body)으로 빠졌다. 가두지
+// 않는다(모달이 아니다 — 판 밖 누름 · Esc 로 닫는 것과 같다): 마지막 칸 다음 Tab 은 판을 닫고 초점을 연 단추에 돌린 뒤 막지 않아
+// 브라우저 기본 Tab 이 그 단추 다음 툴바 차례로 넘기고, 첫 칸 · 판 자체 앞 Shift+Tab 은 판을 닫고 연 단추에 선다(`panelTabExit`).
+function leavePanelByTab(C, event) {
+  const { panel, button } = panelOf(C, C.open)
+  const path = event.composedPath ? event.composedPath() : []
+  if (!button || !path.includes(panel)) return
+  const stops = [...panel.querySelectorAll(PANEL_TABBABLE)].filter((stop) => stop.getClientRects().length > 0)
+  const exit = panelTabExit(stops.length, stops.indexOf(path[0]), event.shiftKey)
+  if (!exit) return
+  closePanel(C, true)
+  if (exit === 'back') event.preventDefault()
 }
 
 function closePanel(C, refocus) {
