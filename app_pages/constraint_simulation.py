@@ -132,12 +132,14 @@ from capa_simulation.constraint_simulation_state import (
     CONSTRAINT_PROCESS_KEY,
     CONSTRAINT_PRODUCT_KEY,
     CONSTRAINT_PRODUCT_LIMIT,
+    CONSTRAINT_PROPORTIONAL_KEY,
     CONSTRAINT_TARGET_INPUT_KEY,
     CONSTRAINT_TARGET_KEY,
     CONSTRAINT_TARGET_PILLS_KEY,
     DEFAULT_MOD_DAYS,
     DEFAULT_MODIFY,
     DEFAULT_NEW_UNITS,
+    DEFAULT_PROPORTIONAL,
     DEFAULT_TARGET_PERCENT,
     GENERAL_PRESETS,
     MOD_DAY_PRESETS,
@@ -248,6 +250,10 @@ NEW_UNITS_HELP = (
     "증가가 덮이면 그 증가부터 신규는 붙이지 않습니다(기존 제품 몫)."
 )
 NEW_SINCE_HELP = "기여 시작이 이날 이후(그날 포함)인 호기를 신규로 봅니다. 처음 값은 오늘입니다."
+# 「비중 배분 비교」 토글(카드 끝 「견주기」 — 2026-11-09 보드 C3). 풍선은 짧게 두고 뜻 · 식은
+# Guide 다.
+PROPORTIONAL_LABEL = "비중 배분 비교"
+PROPORTIONAL_HELP = "개조 없이 가용을 소요 비중대로 나눴을 때의 기존 제품 확보율을 함께 둡니다."
 
 
 def new_since_help(*, modify: bool, new_units_on: bool) -> str:
@@ -687,6 +693,17 @@ with card:
     new_unit_since = new_since if modify and new_units_on and isinstance(new_since, date) else None
     new_units_slot = st.container()
     cutoff_slot = st.container()
+    # 견주기 — 본문 위에 보기 줄을 두지 않는다(2026-11-09 보드 C3 — 페이지 상단 문구 최소화).
+    # 그래프 · 계산표를 그리는 본문 프래그먼트는 세션 값을 읽는다. 카드 위젯이라 바꾸면 앱 전체
+    # 회차다.
+    st.caption("**견주기**")
+    seed_toggle(CONSTRAINT_PROPORTIONAL_KEY, DEFAULT_PROPORTIONAL)
+    st.toggle(
+        PROPORTIONAL_LABEL,
+        key=CONSTRAINT_PROPORTIONAL_KEY,
+        persist_state="session",
+        help=PROPORTIONAL_HELP,
+    )
 
 
 def render_idle_held_picker() -> None:

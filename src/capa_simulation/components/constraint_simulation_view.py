@@ -3,12 +3,13 @@
 """제약 시뮬레이션 — 본문 프래그먼트(`constraint_sim_view`)와 그 둘레(요약 넷).
 
 페이지(`app_pages/constraint_simulation.py`)가 앱 전체 회차에서 조건·계획·계산을 모두 정해
-`ConstraintView` 하나로 넘기면, 여기서는 **고른 달과 비중 토글**에 닿는 것만 그린다 — 달 누름(그래프
-칸· 계산표 칸)과 비중 토글은 카드에 설 위젯을 바꾸지 않는 본문 조작이라 이 프래그먼트만 다시
+`ConstraintView` 하나로 넘기면, 여기서는 **고른 달과 비중 배분 비교**에 닿는 것만 그린다 — 달
+누름(그래프 칸· 계산표 칸)은 카드에 설 위젯을 바꾸지 않는 본문 조작이라 이 프래그먼트만 다시
 돈다(AGENTS 9장 「본문 프래그먼트」). 프래그먼트 회차는 직전 앱 전체 회차의 인자(계산 결과·화면
-글자)를 쓴다.
+글자)를 쓴다. 「비중 배분 비교」 토글은 사이드바 「제약 시뮬레이션 조건」 카드 끝 「견주기」 에
+있고(2026-11-09 보드 C3 — 본문 위에 보기 줄을 두지 않는다), 여기서는 그 세션 값만
+읽는다(`proportional_on`).
 
-- **보기 줄** — 「소요 비중대로 나눴을 때 함께 보기」 토글(`persist_state="session"` — 보기 조건).
 - **월별 확보율 그래프**(`CONSTRAINT_CHART_KEY`) — 온 폭 카드. 그래프는 가장 좁은
   폭(`chart_min_width_px`)을 받고 카드가 그보다 좁으면(390px 창) 카드 안에서 가로로 스크롤한다 —
   세운 달 눈금 30개가 포개지지 않게(`chart_style`). 범례 밖 표지(제약 기간 옅은 칠 · 위 끝 ▲)의
@@ -34,7 +35,8 @@
 상세와 같은 틀)이고 어느 갈래(비중 켬·끔, 개조 켬·끔, 고른 달)에서도 넷 그대로다.
 
 그림은 세션에 몇 벌 기억한다(`remembered_figures`, 공정 Capa 상세 `remembered_canvas` 꼴 — Streamlit
-캐시가 아니다). 키는 그림 모양 버전·테마·계산 결과(값으로 같다)·화면 글자·고른 달·비중 토글·세대다.
+캐시가 아니다). 키는 그림 모양 버전·테마·계산 결과(값으로 같다)·화면 글자·고른 달·비중 배분
+비교·세대다.
 
 요약 넷(`render_constraint_kpis`)은 고른 달·보기와 무관해 프래그먼트 밖에서 페이지가 그린다. 보유
 제약 설비·「신규 설비는 개조 없이」 가 걸리면(`ConstraintConditions.splits_dedicated`) 「개조 대수」
@@ -128,6 +130,7 @@ __all__ = [
     "overdrawn_lines",
     "pick_chart_month",
     "pick_sheet_month",
+    "proportional_on",
     "remembered_figures",
     "render_constraint_kpis",
     "render_constraint_view",
@@ -551,21 +554,19 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
 # ================================================================== 본문 프래그먼트
 
 
+def proportional_on() -> bool:
+    """「비중 배분 비교」(사이드바 카드 토글)의 지금 값 — 카드가 먼저 그려 세션에 심는다. 칸이
+    없으면(카드가 서지 않은 하네스) 기본값이다."""
+    seed_toggle(CONSTRAINT_PROPORTIONAL_KEY, DEFAULT_PROPORTIONAL)
+    return bool(st.session_state.get(CONSTRAINT_PROPORTIONAL_KEY, DEFAULT_PROPORTIONAL))
+
+
 @st.fragment(key=CONSTRAINT_VIEW_FRAGMENT_KEY)
 def render_constraint_view(view: ConstraintView) -> None:
-    """보기 줄 → 월별 확보율 그래프(온 폭) → 월별 계산표(온 폭) → 가용이 모자란 달(있을 때만)."""
+    """월별 확보율 그래프(온 폭) → 월별 계산표(온 폭) → 가용이 모자란 달(있을 때만)."""
     result = view.result
     months = tuple(row.month for row in result.months)
-    seed_toggle(CONSTRAINT_PROPORTIONAL_KEY, DEFAULT_PROPORTIONAL)
-    show_proportional = st.toggle(
-        "소요 비중대로 나눴을 때 함께 보기",
-        key=CONSTRAINT_PROPORTIONAL_KEY,
-        persist_state="session",
-        help=(
-            "개조 비가동 없이 가용을 소요 비중대로 정수(사사오입)로 나눴을 때의 기존 제품 확보율을 "
-            "그래프·계산표에 함께 둡니다."
-        ),
-    )
+    show_proportional = proportional_on()
     month = _viewed_month(result)
     generation_value = st.session_state.get(CONSTRAINT_SELECT_GENERATION_KEY, 0)
     generation = generation_value if isinstance(generation_value, int) else 0

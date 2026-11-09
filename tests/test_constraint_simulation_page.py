@@ -483,6 +483,15 @@ def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
     assert len(cards) == 1
     assert cards[0].proto.expanded
     assert cards[0].button_group[0].key == CONSTRAINT_MODE_KEY
+    # 「비중 배분 비교」 토글은 본문 위 보기 줄이 아니라 카드 끝 「견주기」 다(2026-11-09 보드 C3) —
+    # 이름은 짧게, 풍선은 한 줄이고 뜻 · 식은 Guide 다.
+    assert [toggle.key for toggle in cards[0].toggle][-1] == CONSTRAINT_PROPORTIONAL_KEY
+    proportional = app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY)
+    assert proportional.label == "비중 배분 비교"
+    assert proportional.value is True
+    assert len(str(proportional.proto.help)) <= 60
+    assert not [toggle for toggle in app.main.toggle]
+    assert "**견주기**" in [str(caption.value) for caption in cards[0].caption]
 
 
 def test_the_process_param_is_taken_once_and_the_theme_stays(
@@ -1579,15 +1588,16 @@ def test_a_picked_month_reruns_only_the_view_fragment_with_the_same_event_slots(
     assert _picked_title_month(app) == 202609
     in_fragment = json.dumps(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["shapes"])
 
-    # 비중 토글도 프래그먼트 회차다.
-    browser.fragment_queue = [view]
-    app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY).set_value(False)
+    # 「비중 배분 비교」 는 사이드바 카드 토글이라 앱 전체 회차다(2026-11-09 보드 C3) — 본문
+    # 프래그먼트는 세션 값을 읽는다.
+    # 앞 회차가 프래그먼트 회차라 시험 트리에 카드가 없어 세션 칸으로 바꾼다.
+    browser.fragment_queue = []
+    app.session_state[CONSTRAINT_PROPORTIONAL_KEY] = False
     _ok(app.run())
-    assert browser.started[-1] in ([view], [])
-    assert app.session_state[CONSTRAINT_PROPORTIONAL_KEY] is False
+    assert browser.started[-1] == []
+    assert app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY).value is False
 
     # 같은 달·같은 토글의 앱 전체 회차 — 고른 달 띠가 같다.
-    browser.fragment_queue = []
     app.toggle(key=CONSTRAINT_PROPORTIONAL_KEY).set_value(True)
     _ok(app.run())
     assert json.dumps(_chart_spec(app, CONSTRAINT_CHART_KEY)["layout"]["shapes"]) == in_fragment
