@@ -5,8 +5,8 @@
 다르다(2026-11-04 검수 의견 prog-02 「샘플페이지 1,2,3 화면에 이대로 임시 반영」).
 
 화면마다 단독으로 띄워 DB 연결을 막은 채 머리말 아래에 점선 테두리 「모듈 화면 자리」 하나만 서는지,
-옛 「준비 중」 한 줄과 설명 줄이 없는지, 제목이 사이드바 라벨과 같은지, 넷의 자리 · 배지가 같은지,
-자리 색이 밝게·어둡게 테마 토큰을 따르는지 본다. 사이드바 상자 · 조건 줄은
+옛 「준비 중」 한 줄과 설명 줄 · 배지 줄이 없는지, 제목이 사이드바 라벨과 같은지, 넷의 자리가
+같은지, 자리 색이 밝게·어둡게 테마 토큰을 따르는지 본다. 사이드바 상자 · 조건 줄은
 `tests/test_app_navigation.py` 가 본다.
 """
 
@@ -85,12 +85,12 @@ def test_each_page_draws_one_module_slot_without_opening_any_database(
     assert f"<strong>{SLOT_TITLE}</strong>" in body
     assert f"<span>{SLOT_TEXT}</span>" in body
     assert "border:2px dashed" in body
-    # 머리에는 배지뿐이다 — 이 화면이 무엇인지는 제목과 자리 글이 말한다.
-    assert not app.caption
-    header = _header_text(app)
-    assert "화면 초안" in header
+    # 머리에는 설명 줄도 배지 줄(「화면 초안」)도 없다 — 이 화면이 무엇인지는 자리 글이 말한다(본문
+    # 상단 문구 · 여백 최소화 — 2026-11-09 보드 T8).
+    assert not app.caption and not app.markdown
+    assert "화면 초안" not in body
     # 옛 빈 화면의 한 줄은 걷혔다.
-    assert "준비 중" not in header and "준비 중" not in body
+    assert "준비 중" not in body
 
 
 def test_the_sample_pages_look_exactly_like_the_head_but_for_the_name() -> None:

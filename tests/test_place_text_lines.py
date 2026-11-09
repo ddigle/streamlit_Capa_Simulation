@@ -82,8 +82,9 @@ def _lines(element_list: Any) -> list[str]:
 # ---------------------------------------------------------------------- Dynamic Capa 요약
 
 
-def test_the_dynamic_capa_summary_says_no_process_in_one_plain_line() -> None:
-    """개선 필요 공정이 없으면 요약 결론은 평문 한 줄이다(경고 · 성공 상자 없음)."""
+def test_the_dynamic_capa_summary_says_no_process_with_the_card_value() -> None:
+    """개선 필요 공정이 없으면 요약 결론은 「개선 필요 0개」 칸 값이다 — 경고 · 성공 상자도 칸 위
+    캡션도 없고 풍선은 판정 기준만 말한다(본문 상단 문구 최소화 — 2026-11-09 보드 T8)."""
     demo = build_dynamic_capacity_demo()
     summary = aggregate_dynamic_capacity(demo, ["공정"]).sort_values(
         ["Capa 실현률", "공정"], kind="stable"
@@ -97,7 +98,10 @@ def test_the_dynamic_capa_summary_says_no_process_in_one_plain_line() -> None:
     summary_tab = next(tab for tab in app.tabs if tab.label == "요약")
     assert not summary_tab.get("success") and not summary_tab.get("warning")
     lines = _lines(summary_tab.get("caption"))
-    assert "Capa 실현률이 판정 기준을 밑도는 공정이 없습니다." in lines, lines
+    assert not [line for line in lines if "공정이 없습니다" in line], lines
+    (card,) = [item for item in summary_tab.metric if item.label == "개선 필요"]
+    assert card.value == "0개"
+    assert "가장 낮은 공정" not in str(card.proto.help)
 
 
 # ------------------------------------------------------------------------- 실적 요약 · 과제
@@ -118,14 +122,15 @@ def _performance_app() -> None:
 @pytest.mark.parametrize(
     ("tab", "line"),
     [
-        ("요약", "효율 기준을 석 달 넘게 못 맞춘 공정이 없습니다."),
+        ("요약", None),
         ("개선과제", "지금 기준으로는 개선과제가 필요한 공정이 없습니다."),
     ],
 )
 def test_the_performance_screen_says_no_process_in_one_plain_line(
-    monkeypatch: pytest.MonkeyPatch, tab: str, line: str
+    monkeypatch: pytest.MonkeyPatch, tab: str, line: str | None
 ) -> None:
-    """모든 공정이 정상이면 요약 결론과 개선과제 구획은 평문 한 줄이다."""
+    """모든 공정이 정상이면 개선과제 구획은 평문 한 줄이고, 요약 결론은 「개선 필요 공정 0개」 칸
+    값이라 칸 위 캡션이 없다(본문 상단 문구 최소화 — 2026-11-09 보드 T8)."""
 
     def all_normal(*args: Any, **kwargs: Any) -> pd.DataFrame:
         priority = build_priority_table(*args, **kwargs)
@@ -140,7 +145,13 @@ def test_the_performance_screen_says_no_process_in_one_plain_line(
 
     opened = next(item for item in app.tabs if item.label == tab)
     assert not opened.get("success") and not opened.get("warning")
-    assert line in _lines(opened.get("caption"))
+    if line is None:
+        assert not _lines(opened.get("caption"))
+        (card,) = [item for item in opened.metric if item.label == "개선 필요 공정"]
+        assert card.value == "0개"
+        assert "가장 시급한 공정" not in str(card.proto.help)
+    else:
+        assert line in _lines(opened.get("caption"))
     # 과제가 붙는 규칙(설명)은 구획 제목 풍선이다 — 빈 결과 줄과 같은 회색 평문으로 붙지 않는다.
     assert not [text for text in _lines(opened.get("caption")) if "과제가 붙습니다" in text]
 

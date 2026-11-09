@@ -7,11 +7,14 @@
 `MetricSpec` 을 바꿔 끼운다.
 
 **요약과 상세를 탭으로 가른다.** 보고 자리에서 볼 것과 분석하며 뒤질 것이 다르다.
-요약은 결론 한 문장과 큰 숫자 넷, 추이 하나, 순위 하나로 끝낸다 — 그 자리에서 읽히지
-않는 것은 요약이 아니다. 상세는 조회 조건을 주고 월 × 공정을 다 편다.
+요약은 큰 숫자 다섯, 추이 하나, 순위 하나로 끝낸다 — 그 자리에서 읽히지 않는 것은 요약이
+아니다. 결론(가장 시급한 공정)은 「개선 필요 공정」 칸 풍선이다(본문 상단 문구 최소화 —
+2026-11-09 보드 T8). 상세는 조회 조건을 주고 월 × 공정을 다 편다 — 조건은 사이드바 「<지표> 실적
+조건」 카드이고(설계 규칙 UI-LAY-02) 상세 분석 탭이 열린 회차에만 선다.
 
-샘플 스위치를 끄면 **지금 상태**(원천 미연결)를 그대로 보여 준다. 합성 숫자가 실적처럼
-읽히는 것을 막는 장치이면서, 「무엇이 이 자리를 채우는가」를 같은 화면에서 답하게 한다.
+샘플 스위치(사이드바 조회 조건 패널의 「샘플 데이터」 줄)를 끄면 **지금 상태**(원천 미연결)를 그대로
+보여 준다. 합성 숫자가 실적처럼 읽히는 것을 막는 장치이면서, 「무엇이 이 자리를 채우는가」를 같은
+화면에서 답하게 한다.
 """
 
 from __future__ import annotations
@@ -25,10 +28,7 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.plotly_layout import apply_axis_text_color, chart_canvas_layout
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.components.sample_data import (
-    render_pending_source,
-    render_sample_switch,
-)
+from capa_simulation.components.sample_data import render_pending_source, render_sample_row
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, stateful_tabs, tab_is_hidden
 from capa_simulation.design import tokens
@@ -42,6 +42,7 @@ from capa_simulation.services.performance_actuals import (
     build_monthly_trend,
     build_priority_table,
 )
+from capa_simulation.sidebar_status import condition_card
 
 _ALL = "전체"
 # 이름만 들고 있다가 쓸 때 조회한다. 모듈 로드 시점에 색을 받아 두면 첫 실행의 테마로
@@ -67,14 +68,16 @@ def render_performance_actual_screen(
 ) -> None:
     """한 지표의 실적 Gap 화면 전체."""
     labels = process_labels or ProcessLabels()
-    enabled = render_sample_switch(key=f"{key_prefix}_sample_switch", source=metric.source)
+    # 패널 줄이 조건 카드보다 먼저다 — 공통 줄이 없는 화면은 이 줄이 패널을 세운다.
+    enabled = render_sample_row(key=f"{key_prefix}_sample_switch", source=metric.source)
     if not enabled:
         _render_pending_screen(metric)
         return
 
     monthly = build_monthly_actual_demo()
-    # 숨은 탭에서 Plotly 를 그리면 폭 0 짜리 SVG 가 나와 다시 열었을 때 축이 어긋난다.
-    # 조회 조건 위젯은 숨어 있어도 그려야 탭을 오갈 때 선택이 살아남는다.
+    # 숨은 탭에서 Plotly 를 그리면 폭 0 짜리 SVG 가 나와 다시 열었을 때 축이 어긋난다. 상세 분석의
+    # 조건 카드도 그 탭이 열린 회차에만 선다 — 위젯은 `persist_state` 라 탭을 오가도 고른 값이
+    # 남는다.
     summary_tab, detail_tab, action_tab = stateful_tabs(
         ["요약", "상세 분석", "개선과제"],
         key=f"{key_prefix}_active_tab",
@@ -94,6 +97,29 @@ def render_performance_actual_screen(
     with action_tab:
         if priority is not None and show_actions:
             _render_actions(metric, priority, labels)
+
+
+def detail_card_label(metric: MetricSpec) -> str:
+    """상세 분석 조건 카드 이름 — 「효율 실적 조건」 처럼 화면 이름 + 「조건」(다른 화면 카드와 같은
+    꼴)."""
+    return f"{metric.name} 실적 조건"
+
+
+def needs_action_help(metric: MetricSpec, needs_action: pd.DataFrame, labels: ProcessLabels) -> str:
+    """「개선 필요 공정」 칸 풍선 — 칸의 뜻과, 있으면 가장 시급한 공정 한 줄(우선순위 첫 줄).
+
+    공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름(「TC Bonding」)은 끝소리를 몰라 「이(가)」
+    가 된다. 공정 표시명은 사람 글이라 막아 끼운다(「TC~B~1 *z*」 가 지움선·기울임이 되지 않게 —
+    AGENTS 9장). 건수는 칸 값이라 되풀이하지 않는다(설계 규칙 UI-TXT-07)."""
+    meaning = f"마지막 달까지 3개월 이상 연속으로 {metric.name} 기준에 못 미친 공정 수입니다."
+    if needs_action.empty:
+        return meaning
+    worst = needs_action.iloc[0]
+    return (
+        f"{meaning}\n\n가장 시급한 공정 — **{literal_markdown(labels.label(worst['공정']))}** · "
+        f"{int(worst['연속 미달'])}개월 연속 미달 · 기간 평균 Gap "
+        f"{metric.gap_text(float(worst['Gap']))} · 영향 물량 비중 {float(worst['영향 비중']):.0%}"
+    )
 
 
 def _render_pending_screen(metric: MetricSpec) -> None:
@@ -133,25 +159,6 @@ def _render_summary(
     trend = build_monthly_trend(monthly, metric)
     needs_action = priority.loc[priority["상태"].eq("개선 필요")]
 
-    if needs_action.empty:
-        # 결론이 「없음」 이면 그 값을 평문 한 줄로 둔다 — 초록 성공 상자는 알림창 몫이다(설계 규칙
-        # UI-NTF-01 · AMB-02 (가)).
-        st.caption(f"{metric.name} 기준을 석 달 넘게 못 맞춘 공정이 없습니다.")
-    else:
-        worst = needs_action.iloc[0]
-        # 공정 이름 바로 뒤에 조사를 붙이지 않는다 — 라틴 이름(「TC Bonding」)은 끝소리를 몰라
-        # 「이(가)」 가 된다. 굵게 닫는 `**` 바로 뒤에 한글이 붙으면 이름이 `)` 로 끝날 때 굵게가
-        # 풀리므로 줄표 앞을 한 칸 띄운다. 공정 표시명은 사람 글이라 막아 끼운다(「TC~B~1 *z*」 가
-        # 지움선·기울임이 되지 않게 — AGENTS 9장). 결론은 「없음」 일 때와 같은 평문 한 줄이고(설계
-        # 규칙 UI-TXT-04), 건수는 바로 아래 「개선 필요 공정」 칸이 말한다(UI-TXT-07).
-        worst_name = labels.label(worst["공정"])
-        st.caption(
-            f"**{literal_markdown(worst_name)}** — {int(worst['연속 미달'])}개월 연속 "
-            f"{metric.name} 기준 미달입니다. 기간 평균 Gap "
-            f"{metric.gap_text(float(worst['Gap']))}, 영향 물량 비중 "
-            f"{float(worst['영향 비중']):.0%}."
-        )
-
     with metric_row(key=f"{key_prefix}_summary_metrics"):
         # 지표의 뜻(무엇을 재는가 · 기준이 어디서 오는가)은 화면 머리 캡션이 아니라 이 칸의 풍선이다
         # (설계 규칙 UI-TXT-01 · UI-TXT-02 — 칸 하나의 뜻은 그 칸 곁 풍선).
@@ -168,7 +175,15 @@ def _render_summary(
             metric.value_text(float(overall[metric.standard_column])),
             border=True,
         )
-        st.metric("개선 필요 공정", f"{len(needs_action):,}개", border=True)
+        # 결론(가장 시급한 공정)은 칸 위 캡션이 아니라 이 칸의 풍선이다 — 건수는 칸 값이 말하고,
+        # 없으면 0개가 그 결론이다(설계 규칙 UI-TXT-04 · UI-TXT-07, 상단 문구 최소화 — 2026-11-09
+        # 보드 T8).
+        st.metric(
+            "개선 필요 공정",
+            f"{len(needs_action):,}개",
+            border=True,
+            help=needs_action_help(metric, needs_action, labels),
+        )
         st.metric(
             "관찰 공정",
             f"{int(priority['상태'].eq('관찰').sum()):,}개",
@@ -210,45 +225,48 @@ def _render_detail(
     key_prefix: str,
     owner_tab: OpenTab | None = None,
 ) -> None:
-    """조회 조건을 주고 월 × 공정 × 제품을 편다."""
+    """조회 조건(사이드바 「<지표> 실적 조건」 카드)을 주고 월 × 공정 × 제품을 편다.
+
+    카드는 이 탭이 열린 회차에만 선다(AGENTS 9장 — 탭에 딸린 카드는 한 회차에 하나). 닫힌 회차에는
+    위젯을 그리지 않지만 셋 다 `persist_state="session"` 이라 탭을 오가도 고른 값이 남는다."""
+    if tab_is_hidden(owner_tab):
+        return
     process_options = sorted(monthly["공정"].astype(str).unique().tolist())
     process_key = f"{key_prefix}_process_filter"
     # 잡은 값을 매 회차 세션에 다시 적는다(선택지에 없는 값은 뺀다). 적은 값만 브라우저에 가므로
     # 보이는 글자가 바뀌는 회차(공정 표시명의 「표시명 (원본)」 가르기)에도 브라우저가 새 글자를
     # 받는다 — 적지 않으면 옛 글자를 되보내 다른 공정으로 바뀌었다.
     prune_list_selection(process_key, process_options)
-    with st.container(border=True):
-        st.markdown("#### :material/filter_alt: 조회 조건")
-        with st.container(horizontal=True, gap="small"):
-            months = sorted(int(value) for value in monthly["생산계획년월"].unique())
-            start_month, end_month = st.select_slider(
-                "분석 기간",
-                options=months,
-                value=(months[0], months[-1]),
-                format_func=month_label,
-                key=f"{key_prefix}_month_range",
-                persist_state="session",
-                width=380,
-            )
-            selected_processes = st.multiselect(
-                "공정",
-                options=process_options,
-                placeholder="전체 공정",
-                # 값은 원본이고 글자만 표시명이다. 보이는 글자가 겹치면 「표시명 (원본)」 으로
-                # 가른다(`unique_format_func` — 같은 글자면 다른 공정이 돌아온다).
-                format_func=labels.unique_format_func(process_options),
-                key=process_key,
-                persist_state="session",
-                width=320,
-            )
-            product_options = [_ALL, *sorted(monthly["제품정보"].astype(str).unique().tolist())]
-            product = st.selectbox(
-                "제품",
-                product_options,
-                key=f"{key_prefix}_product_filter",
-                persist_state="session",
-                width=220,
-            )
+    with condition_card(detail_card_label(metric), name=key_prefix, icon=":material/filter_alt:"):
+        months = sorted(int(value) for value in monthly["생산계획년월"].unique())
+        start_month, end_month = st.select_slider(
+            "분석 기간",
+            options=months,
+            value=(months[0], months[-1]),
+            format_func=month_label,
+            key=f"{key_prefix}_month_range",
+            persist_state="session",
+            width="stretch",
+        )
+        selected_processes = st.multiselect(
+            "공정",
+            options=process_options,
+            placeholder="전체 공정",
+            # 값은 원본이고 글자만 표시명이다. 보이는 글자가 겹치면 「표시명 (원본)」 으로
+            # 가른다(`unique_format_func` — 같은 글자면 다른 공정이 돌아온다).
+            format_func=labels.unique_format_func(process_options),
+            key=process_key,
+            persist_state="session",
+            width="stretch",
+        )
+        product_options = [_ALL, *sorted(monthly["제품정보"].astype(str).unique().tolist())]
+        product = st.selectbox(
+            "제품",
+            product_options,
+            key=f"{key_prefix}_product_filter",
+            persist_state="session",
+            width="stretch",
+        )
 
     view = monthly.loc[monthly["생산계획년월"].between(start_month, end_month)]
     if selected_processes:
@@ -257,9 +275,6 @@ def _render_detail(
         view = view.loc[view["제품정보"].astype(str).eq(product)]
     if view.empty:
         st.caption("선택한 조건에 해당하는 실적이 없습니다.")
-        return
-    # 위젯까지 그린 뒤에 나간다. 앞에서 나가면 탭을 오갈 때 조회 조건이 초기화된다.
-    if tab_is_hidden(owner_tab):
         return
 
     with st.container(border=True):

@@ -141,7 +141,6 @@ RULE_NOTES = {
     "UI-LAY-09": ("근거", "rule-notes g5-21"),
     "UI-LAY-12": ("예외", "rule-notes g6-23"),
     "UI-STA-06": ("예외", "rule-notes g6-29"),
-    "UI-LAY-02": ("예외", "2026-09-29 범위 결정"),
 }
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
@@ -730,6 +729,11 @@ def test_the_sweep_board_answers_are_recorded_and_written_into_the_rules() -> No
         written = rules[rule_id].text if place == "text" else rules[rule_id].fields[place][0]
         assert tag in written, (rule_id, tag)
     assert "여덟 곳" in rules["UI-NTF-03"].fields["예외"][0]
+    # rule-notes 의 「구현 중 화면 유예」(UI-LAY-02 예외 — 조회 조건은 구현 완료 때 사이드바로)는
+    # 2026-11-09 상단 정리 보드 T8 (가)로 거뒀다 — 예외에서 빠지고 범위가 구현 중 화면을 품는다.
+    assert "2026-09-29 범위 결정" not in rules["UI-LAY-02"].fields["예외"][0]
+    assert "2026-11-09 보드 T8" in rules["UI-LAY-02"].fields["범위"][0]
+    assert "2026-09-29 범위 결정" in rules["UI-INP-03"].fields["예외"][0]
 
 
 def test_the_second_board_answers_are_recorded_and_close_the_open_check() -> None:

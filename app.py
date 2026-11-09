@@ -105,8 +105,8 @@ from capa_simulation.sidebar_status import (
     PAGE_CONDITION_SLOT_COUNT,
     SIDEBAR_TOGGLE_SINK_KEY,
     begin_app_run,
+    defer_page_condition_slots,
     forget_month_range_placeholder,
-    forget_page_condition_slots,
     on_box_toggle,
     register_equipment_scenario_slot,
     register_page_condition_slots,
@@ -517,7 +517,10 @@ with pinned_connections(DUCKDB_PATH):
                 [st.container(gap=None) for _ in range(PAGE_CONDITION_SLOT_COUNT)]
             )
     else:
-        forget_page_condition_slots()
+        # 공통 줄이 없는 화면도 제 줄(구현 중 화면의 「샘플 데이터」)은 같은 패널에 그린다 — 패널은
+        # 페이지가 칸을 처음 쓸 때 이 자리(사이드바 맨 끝)에 선다. 제목은 카드를 선언한 화면이면
+        # 위에서 이미 세웠다. 쓰지 않으면 패널도 제목도 서지 않는다.
+        defer_page_condition_slots(heading=not has_cards)
         register_equipment_scenario_slot(None)
     if not shows_period:
         # 안 세운 회차에는 적용 기간 자리표시자도 없다. 앞 회차에 등록한 칸을 지워야 이 화면이

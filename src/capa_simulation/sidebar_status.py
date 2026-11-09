@@ -11,7 +11,7 @@ from streamlit.delta_generator import DeltaGenerator
 from streamlit.errors import StreamlitAPIException
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-from capa_simulation.navigation import SidebarSectionSpec
+from capa_simulation.navigation import CONDITIONS_SECTION, SidebarSectionSpec
 from capa_simulation.services.month_columns import month_label
 
 P = ParamSpec("P")
@@ -431,20 +431,49 @@ def register_page_condition_slots(slots: Sequence[DeltaGenerator]) -> None:
     st.session_state[PAGE_SLOT_STATE_KEY] = tuple(slots)
 
 
-def forget_page_condition_slots() -> None:
-    """패널을 세우지 않은 회차에 부른다. 앞 회차의 칸에 페이지가 쓰지 않게 한다."""
-    st.session_state.pop(PAGE_SLOT_STATE_KEY, None)
+@dataclass
+class _DeferredPanel:
+    """공통 줄을 하나도 세우지 않는 화면의 패널 — 페이지가 칸을 처음 쓸 때 선다
+    (`defer_page_condition_slots`). `heading` 은 「조회 조건」 제목도 함께 세우는가(카드를 선언해
+    `app.py` 가 제목을 이미 세운 화면은 거짓)."""
+
+    heading: bool
+    slots: tuple[DeltaGenerator, ...] | None = None
+
+    def open(self) -> tuple[DeltaGenerator, ...]:
+        """패널(과 제목)을 사이드바 맨 끝에 한 번 세우고 그 안 빈 칸들을 돌려준다."""
+        if self.slots is None:
+            if self.heading:
+                render_sidebar_section(CONDITIONS_SECTION)
+            with st.sidebar.container(border=True, key=CONDITIONS_BOX_KEY):
+                self.slots = tuple(st.container(gap=None) for _ in range(PAGE_CONDITION_SLOT_COUNT))
+        return self.slots
+
+
+def defer_page_condition_slots(*, heading: bool) -> None:
+    """공통 줄(시나리오 · 조회기간 · 설비 시나리오)을 하나도 세우지 않는 회차에 `app.py` 가 부른다.
+
+    그런 화면도 제 줄(구현 중 화면의 「샘플 데이터」 — 2026-11-09 보드 T8)이 있으면 같은 패널에
+    그린다. 패널은 비어 있을 때 세우지 않으므로(빈 테두리 상자가 남는다) 페이지가 칸을 처음 쓸 때
+    선다(`page_condition_slot`). `app.py` 는 그 화면의 사이드바 몫을 패널 앞에서 끝내므로 패널은
+    `app.py` 가 세웠을 자리 그대로 사이드바 맨 끝에 선다 — 그래서 그런 화면은 **조건 카드 · 상자보다
+    먼저** 패널 칸을 쓴다. 앞 회차의 칸에 쓰지 않게 매 회차 새로 적는다.
+    """
+    st.session_state[PAGE_SLOT_STATE_KEY] = _DeferredPanel(heading=heading)
 
 
 def page_condition_slot(index: int) -> DeltaGenerator:
     """페이지가 채울 패널 칸 하나. `with page_condition_slot(0).container():` 로 쓴다.
 
-    등록된 칸이 없으면(패널이 서지 않은 회차, `app.py` 없이 페이지만 띄운 테스트 하네스) 사이드바
-    자체를 돌려준다 — 줄은 패널 밖 맨 아래에라도 선다. 한 칸은 한 회차에 **한 번만** 채운다 —
-    칸은 블록이라 두 번 쓰면 두 줄이 쌓인다. 블록이라 다시 도는 동안 앞 회차의 줄이 그 자리에
-    남아 패널이 흔들리지 않는다(`st.empty` 는 회차 시작에 비웠다).
+    등록된 칸이 없으면(`app.py` 없이 페이지만 띄운 테스트 하네스) 사이드바 자체를 돌려준다 — 줄은
+    패널 밖 맨 아래에라도 선다. 공통 줄이 없는 화면은 이때 패널을 세운다
+    (`defer_page_condition_slots`). 한 칸은 한 회차에 **한 번만** 채운다 — 칸은 블록이라 두 번 쓰면
+    두 줄이 쌓인다. 블록이라 다시 도는 동안 앞 회차의 줄이 그 자리에 남아 패널이 흔들리지 않는다
+    (`st.empty` 는 회차 시작에 비웠다).
     """
     registered = st.session_state.get(PAGE_SLOT_STATE_KEY)
+    if isinstance(registered, _DeferredPanel):
+        registered = registered.open()
     if isinstance(registered, tuple) and 0 <= index < len(registered):
         slot = registered[index]
         if isinstance(slot, DeltaGenerator):

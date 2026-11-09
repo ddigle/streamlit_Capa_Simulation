@@ -208,9 +208,15 @@ def test_wip_status_page_renders_filtered_step_product_grid(
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60).run()
 
     assert not app.exception
-    # 공통 헤더가 `(구현중)` 을 제목에서 떼어 배지로 보여준다.
+    # 큰 제목은 「(구현중)」 을 뗀 이름이고(화면에서는 숨는다) 머리에 배지 줄이 없다 — 구현 중
+    # 표지는 화면 탭 이름 곁이다(2026-11-09 보드 T8).
     assert app.title[0].value == "표준 대비 재공 현황"
-    assert any("구현중" in element.value for element in app.markdown)
+    assert not any("-badge[" in str(element.value) for element in app.main.markdown)
+    # 공정 · 제품과 「조건 적용」 은 사이드바 「재공 현황 조건」 카드의 폼이다(설계 규칙 UI-LAY-02 ·
+    # UI-INP-04) — 본문에는 고르는 칸이 없다.
+    assert not app.main.multiselect
+    assert [widget.label for widget in app.sidebar.multiselect] == ["공정", "제품"]
+    assert any(button.label.endswith("조건 적용") for button in app.sidebar.button)
     assert [widget.label for widget in app.multiselect] == ["공정", "제품"]
     assert app.multiselect[0].options == ["P-Process", "T-Process"]
     assert app.multiselect[1].options == ["Product-B", "Product-A"]
@@ -235,12 +241,11 @@ def test_wip_status_page_renders_filtered_step_product_grid(
     assert not [item.label for item in app.expander if "경계" in item.label]
 
 
-@pytest.mark.parametrize(("sample", "badge"), [(True, True), (False, False)])
-def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
-    sample: bool, badge: bool
-) -> None:
-    """샘플을 끈 동안 머리 배지 「… 미연결」 을 뺀다 — 자리 표지 「… 연결 대기」 가 같은 말을
-    한다(아침 보드 d4)."""
+@pytest.mark.parametrize("sample", [True, False])
+def test_the_head_has_no_badge_line_on_either_side_of_the_switch(sample: bool) -> None:
+    """머리에는 배지 줄(「구현중 · 인터랙티브 프로토타입 · … 미연결」)이 없다 — 구현 중 표지는 화면
+    탭 이름 곁, 합성 샘플 표지는 머리 띠다(2026-11-09 보드 T8). 「샘플 데이터」 는 사이드바 줄이고
+    끄면 자리 표지 「… 연결 대기」 가 무엇을 기다리는지 말한다."""
     from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 
     app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
@@ -248,10 +253,12 @@ def test_the_header_drops_the_unconnected_badge_while_the_sample_is_off(
     app.run()
 
     assert not app.exception
-    (header,) = [
-        str(item.value) for item in app.markdown if "인터랙티브 프로토타입" in str(item.value)
+    assert not [
+        str(item.value)
+        for item in app.main.markdown
+        if any(mark in str(item.value) for mark in ("인터랙티브 프로토타입", "미연결", "-badge["))
     ]
-    assert ("미연결]" in header) is badge
+    assert app.toggle(key=SAMPLE_TOGGLE_KEY) in list(app.sidebar.toggle)
     pending = [item for item in app.get("html") if "연결 대기</strong>" in item.proto.body]
     assert bool(pending) is not sample
 

@@ -1810,14 +1810,25 @@ def _sidebar_keys(app: AppTest) -> list[str]:
     return keys
 
 
-@pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
+@pytest.mark.parametrize(
+    "page_path",
+    [
+        HOME.path,
+        SCENARIO_MANAGEMENT.path,
+        CAPA_CHATBOT.path,
+        "app_pages/actual_efficiency.py",
+        DYNAMIC_CAPA.path,
+    ],
+)
 def test_the_conditions_heading_stands_right_before_the_panel(
     _app: AppTest, page_path: str
 ) -> None:
     """「조회 조건」 제목은 통합 조건 패널 **바로 앞**이다.
 
     제목은 그 아래 패널(시나리오·조회기간과 화면 칸)과 조건 카드가 다른 화면으로 가는 목록이
-    아니라 지금 화면의 계산 조건이라고 말한다. 뒤로 밀리면 패널이 목록 쪽에 붙어 읽힌다.
+    아니라 지금 화면의 계산 조건이라고 말한다. 뒤로 밀리면 패널이 목록 쪽에 붙어 읽힌다. 공통 줄을
+    읽지 않는 구현 중 화면(Chatbot · 실적 · Dynamic)도 「샘플 데이터」 줄이 패널을 세우면 같은
+    자리다(2026-11-09 보드 T8 — `sidebar_status.defer_page_condition_slots`).
     """
     app = _app.run()
     if page_path != HOME.path:
@@ -2023,9 +2034,34 @@ def _common_boxes(app: AppTest) -> set[str]:
 
 def test_a_screen_that_reads_no_common_condition_shows_none(_app: AppTest) -> None:
     app = _app.run()
-    app.switch_page(CAPA_CHATBOT.path).run()
+    app.switch_page(PRODUCTION_PROGRESS.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == set()
+    assert CONDITIONS_BOX_KEY not in _sidebar_keys(app)
+
+
+@pytest.mark.parametrize(
+    "page_path", [CAPA_CHATBOT.path, "app_pages/actual_efficiency.py", DYNAMIC_CAPA.path]
+)
+def test_an_unfinished_screen_puts_only_its_sample_row_in_the_panel(
+    _app: AppTest, page_path: str
+) -> None:
+    """공통 줄을 읽지 않는 구현 중 화면은 제목 · 패널에 공통 줄 없이 「샘플 데이터」 줄 하나만
+    세운다 — 본문 머리에는 스위치가 없다(2026-11-09 보드 T8). 줄은 이름 + 스위치(값 칸 단추가
+    아니다)이고 처음 연 세션은 켜짐이다. 다른 화면으로 가면 패널이 걷힌다."""
+    app = _app.run()
+    app.switch_page(page_path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _common_boxes(app) == {"heading"}
+    keys = _sidebar_keys(app)
+    panel = list(app.sidebar.children.values())[keys.index(CONDITIONS_BOX_KEY)]
+    assert [widget.key for widget in panel.toggle] == [SAMPLE_TOGGLE_KEY]
+    assert panel.toggle[0].value is True
+    assert not list(app.main.toggle)
+
+    app.switch_page(PRODUCTION_PROGRESS.path).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert CONDITIONS_BOX_KEY not in _sidebar_keys(app)
 
 
 def test_a_screen_with_only_its_own_card_keeps_the_heading(_app: AppTest) -> None:

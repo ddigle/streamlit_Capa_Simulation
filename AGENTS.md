@@ -496,7 +496,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     HOME 칸 방문(공식 잠금)이고 세션이 공식 발행 쌍이 아니면 링크 판정만 세션 스냅샷으로 한 번 더 낸다(제약
     시뮬레이션은 늘 세션 설비 시나리오다 — 캐시된 스냅샷의 거르기뿐).
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
-  대본으로 보여 준다. 설명은 `guides/capa_chatbot.md`.
+  대본으로 보여 준다. 설명은 `guides/capa_chatbot.md`. 머리에 배지 줄이 없고 「샘플 데이터」 는 조회 조건 패널 줄이다 — 공통
+  줄을 읽지 않는 화면이라 이 줄이 패널을 세운다(9장 「사이드바·조건 카드·본문」, 2026-11-09 보드 T8).
   - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 공정 표시명 프로필 버전마다 세션에
     한 번 만든다 — 결론·질문·조건의 공정 이름은 대본이 페이지가 넘긴 `ProcessLabels.label` 로 적고(조사도 그 글자로
     고른다), 근거 표는 화면 복사본에 표시명을 입힌다(8장 ④). 대화 기록은 답 이름(`SampleAnswer.key`)이다 — 질문
@@ -517,7 +518,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
     설비 DB 단언부터 본다.
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은
-  모듈이 맡아(2026-11-03 사용자) 머리 배지 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 306px) — 아래 끝을 지킨다)(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
+  모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 306px) — 아래 끝을 지킨다)(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
   자리에 표시됩니다」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
   읽지 않아 공통 조건 줄도 조건 카드도 없다). 그리는 것은 `components/module_slot.py` 의 `render_module_slot_page` 한 벌이고 이 파일은
   제 이름 한 줄만 넘긴다. 모듈이 이 자리에 그리는 길(`module_api` · `module.json` 선언 · 모듈 규칙 · 지침서)은 아직 없다 —
@@ -531,11 +532,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/reference_integrity.py` — `Dynamic Capa` 머리(주소 `dynamic_capa`). 실행 관리가 모은 실적으로 표준 Capa 의
   실현 Capa·손실을 다시 내는 데모 프로토타입이다(요약·공정 상세·산식 가이드 탭).
   - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다.
-  - 데모는 샘플 스위치로 끄고 세션에 한 번만 만든다(실DB 를 붙이면 그 칸 키에 원천 적재 시각을 넣는다).
-  - 부서별 Gap·A/Item 로드맵은 실행 관리 머리에 있고 여기는 그 화면 링크 하나다(가는 까닭은 링크 풍선).
-  - 판정 기준 · 그림 읽는 법 · 손실 차례는 늘 서는 캡션이 아니라 「개선 필요」 칸과 구획 제목의 풍선이다(설계 규칙
-    UI-TXT-01 · 02 — 화면 소개는 `guides/reference_integrity.md`). 재공 현황의 격자 읽는 법도 같다(소개는 `guides/wip_status.md`).
-  - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않고, 공정 상세의 조건 위젯은 숨어도 그린다.
+  - 데모는 샘플 스위치(조회 조건 패널 줄 — 공통 줄을 읽지 않아 이 줄이 패널을 세운다)로 끄고 세션에 한 번만 만든다(실DB 를
+    붙이면 그 칸 키에 원천 적재 시각을 넣는다). 머리에 배지 줄이 없다(2026-11-09 보드 T8).
+  - 부서별 Gap·A/Item 로드맵은 실행 관리 머리에 있다 — 맨 위 「실행 관리」 되돌아가기 링크는 두지 않는다(화면 탭 줄 · 사이드바가
+    같은 길, 2026-11-09 보드 T4).
+  - 판정 기준 · 그림 읽는 법 · 손실 차례 · 결론(실현률이 가장 낮은 공정)은 늘 서는 캡션이 아니라 「개선 필요」 칸과 구획 제목의
+    풍선이다(설계 규칙 UI-TXT-01 · 02 · 04 — 화면 소개는 `guides/reference_integrity.md`). 공정별 수량 단위의 뜻은 공정 상세
+    「표준 Capa」 칸 풍선(`STANDARD_CAPA_HELP`)이다. 재공 현황의 격자 읽는 법도 같다(소개는 `guides/wip_status.md`).
+  - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않는다. 공정 상세의 조회 조건(조회일 · 공정 · 제품 ·
+    Stack · WF 속성)은 사이드바 「Dynamic Capa 조건」 카드이고 그 탭이 열린 회차에만 선다(위젯은 `persist_state` — 탭을
+    오가도 값이 남는다, 2026-11-09 보드 T8).
 - `app_pages/required_shortening.py` — `필요 단축 일정`(실행 관리 둘째 화면). 정체성은 **단축이 필요한 공정 전부의 진척
   관리 한 페이지**다(머리말, 2026-10-22). 설비 저장본·Cut-off·소요대수를 모아 `required_shortening_panel.py` 에 넘긴다.
   계산 규칙은 `services/required_shortening.py` 다.
@@ -692,12 +698,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 - `app_pages/actual_efficiency.py`, `app_pages/actual_upeh.py`, `app_pages/yield_actual.py` — 실행 관리의 효율·UPEH·
   수율 실적 비교·개선관리 하위 페이지 셋이다.
-  - 화면은 `components/performance_actual_screen.py` 한 벌이고 이 파일들은 `MetricSpec` 과 머리 배지만 갖는다(소개는 `guides/actual_efficiency.md` ·
-    `guides/actual_upeh.md` · `guides/yield_actual.md`).
-  - 생산이력·수율 실적 DB 와 `RQ_RUN_RATE`·`RQ_UPEH`·`RQ_YLD` 연결은 아직 없다. 샘플 스위치를 끄면 연결 뒤
-    계산할 것을 적은 자리표시자만 남는다.
+  - 화면은 `components/performance_actual_screen.py` 한 벌이고 이 파일들은 `MetricSpec` 과 머리말만 갖는다 — 머리에 배지 줄을
+    두지 않는다(`show_status=False` — 구현 중 표지는 화면 탭 이름 곁, 합성 샘플 표지는 머리 띠, 2026-11-09 보드 T8). 소개는
+    `guides/actual_efficiency.md` · `guides/actual_upeh.md` · `guides/yield_actual.md`.
+  - 생산이력·수율 실적 DB 와 `RQ_RUN_RATE`·`RQ_UPEH`·`RQ_YLD` 연결은 아직 없다. 샘플 스위치(사이드바 조회 조건 패널 줄)를 끄면
+    연결 뒤 계산할 것을 적은 자리표시자만 남는다.
 - `app_pages/wip_status.py` — Dynamic Capa 의 `표준 대비 재공 현황` 하위 페이지로, 오늘 −7~+3일의 공정·제품·
   STEP별 재공·유입·Flow 를 제품별 일 표준 가능량과 견준다(재공 값은 결정론적 데모, 재공 DB 연결은 미구현).
+  - 머리에 배지 줄이 없다(2026-11-09 보드 T8). 「샘플 데이터」 는 조회 조건 패널 줄(시나리오 줄 밑 페이지 칸), 공정 · 제품
+    고르기와 「조건 적용」 은 사이드바 「재공 현황 조건」 카드의 폼(적용형 — 설계 규칙 UI-INP-04)이고 카드 맨 위 값 한 줄이
+    기준일 · 조회 구간(오늘 −7 ~ +3일)이다. 본문은 지표 넷과 격자다.
   - 소요대수에서 나오는 준비물(`services/wip_status.prepare_wip_route_choices`)은 세션에 한 벌 두고 키는
     `scenario_cache_key`·`display_order_digest(RQ_DISPLAY_ORDER)` 다. 가용대수는 다른 세션이 바꾸는 현행값이라
     매 회차 읽는다.
@@ -1445,15 +1455,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
   표준·실효·실적 추이 Figure 를 만든다. 공정 간 단위가 다르면 수량을 합치지 않고 비율만 견준다.
 - `src/capa_simulation/components/sample_data.py` — 원천이 붙지 않은 화면의 샘플 표시 스위치와 끈 상태의 자리표시자
-  (`render_pending_source`)다. 세션 키 `dynamic_capa_sample_data` 하나를 미연결 화면 전체가 공유한다. 켠 쪽만 표지를 달고 끈 쪽은
-  스위치만 선다. 머리 「<source> 미연결」 배지도 켠 동안만 단다(`pending_source_badge` — 머리는 스위치보다 먼저 그리므로 세션 값
-  `sample_switch_on` 으로 정하고, 끈 동안은 「… 연결 대기」 표지가 같은 말을 한다. 실적 셋 · 재공 · Chatbot · 기준정보 정합성
-  여섯 화면 — 2026-11-08 작은 결정 d4). 끈 상태의 자리표시자는 제목 + 점선 자리(`module_slot.slot_html`) + 표지 「<source> 연결 대기」 한 줄이고, `expects`
+  (`render_pending_source`)다. 세션 키 `dynamic_capa_sample_data` 하나를 미연결 화면 전체가 공유한다. 구현 중 화면(실적 셋 ·
+  Dynamic Capa · 재공 · Chatbot)의 스위치는 사이드바 조회 조건 패널 줄 `render_sample_row`(이름 줄 + 오른쪽 끝 스위치, 뜻 ·
+  「실적 아님」 은 이름 풍선 `sample_switch_help` — 필드 key `SAMPLE_FIELD_KEY`)이고 본문 머리에 배지 줄 · 「합성 샘플 실적
+  아님」 상자가 없다(2026-11-09 보드 T8 — 구현 중 표지는 화면 탭 이름 곁, 합성 샘플 표지는 머리 띠가 `sample_switch_on` 으로
+  읽는다). 설비 화면(가용설비 · 필요 단축 일정 · Space)은 아직 본문 상자 `render_sample_switch` 다 — 켠 쪽만 표지를 달고 끈 쪽은
+  스위치만 선다. 끈 상태의 자리표시자는 제목 + 점선 자리(`module_slot.slot_html`) + 표지 「<source> 연결 대기」 한 줄이고, `expects`
   와 `more_help` 는 제목 풍선이다(2026-11-07 답 desc-blocks). 호기 없이 끈 화면은 표지 「조회할 호기 없음」(`NO_UNITS_MARK`)이다.
 - `src/capa_simulation/components/performance_actual_screen.py` — 효율·UPEH·수율 실적 화면 한 벌로 `MetricSpec` 만
   갈아 끼운다.
-  - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭에서도 조건 위젯은 그리며 Plotly 만 건너뛴다. 상세
-    분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②).
+  - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭은 그리지 않는다. 상세 분석의 조회 조건(분석 기간 · 공정 ·
+    제품)은 사이드바 「<지표> 실적 조건」 카드(`detail_card_label`)이고 그 탭이 열린 회차에만 선다(위젯은 `persist_state` —
+    2026-11-09 보드 T8). 상세 분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②). 요약의 결론(가장 시급한
+    공정)은 「개선 필요 공정」 칸 풍선(`needs_action_help`)이다.
 - `src/capa_simulation/components/table_view_controls.py` — 편집표의 볼 컬럼·행 필터를 고르게 하고 거른 편집분을
   원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「가용설비 설정」 팝업 Cut-off 표).
   - 행 필터 중에는 `num_rows="fixed"` 다 — 이 표들은 편집 결과가 곧 다음 리비전 전부다. 거른 편집인지는 호출자가
@@ -2259,7 +2273,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`settings.is_operational_database_place` — 사본 전용 스크립트의 거절과 점검 스크립트의 앱 프로세스 확인이 쓴다)과, 사이드바의
   구역 제목·조건 패널 칸·조회기간 상태 표시·접힘을 기억하는 상자·조건 카드(`sidebar_status`)다.
   - 월 표기 `YYYY-MM` 은 `settings.format_month` 한 벌이다. 조건 패널의 페이지 칸(`page_condition_slot`)은
-    세션에 둔다 — 모듈 전역에 두면 세션끼리 나눠 쓴다.
+    세션에 둔다 — 모듈 전역에 두면 세션끼리 나눠 쓴다. 공통 줄이 없는 화면은 칸 대신 미룬 패널(`defer_page_condition_slots`)을
+    적고, 페이지가 칸을 처음 쓸 때 제목 · 패널이 선다(9장 「사이드바·조건 카드·본문」).
   - `sidebar_expander`·`condition_card` 는 `key` + 상태 추적 `on_change` 로 펼침을 기억한다(`expanded=` 없음).
     조건 카드 key 는 `condition_card_<이름>` 이고 `sidebar_style.py` 가 그 접두어 하나로 서식을 건다.
   - 상자 여닫기는 9장 **여닫을 때 본문을 다시 돌리지 않는다**의 구현이다(`on_box_toggle`·`rerun_fragment_if_alone`·
@@ -2998,7 +3013,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 테두리
   `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」가
   그것을 부른다. 그 자리만 든 화면 한 벌
-  (`render_module_slot_page(title)` — 머리말(제목 · 「화면 초안」 배지) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
+  (`render_module_slot_page(title)` — 머리말(제목뿐 — 배지 줄 없음, 2026-11-09 보드 T8) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
   같은 꼴로 그린다. 데이터를 읽지 않는다. 모듈이 이 자리에 그리는 길이 생기면 그 창구가 여기서 갈린다(`docs/TODO.md` 2장 「생산
   진도 화면 내용」).
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
@@ -6358,6 +6373,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   열기 · 닫기 · 타일 누름은 앱 전체 0회차, 적용은 1회차다(서버 표지로 잰 값 — 브라우저 `data-stale` 은 회차 판정에 못 쓴다).
 - **조건 패널 안의 빈 세로 블록 칸은 그리지 않는다**(줄 사이가 한 값 — 2026-11-08 사용자 P1 메모 「설비 시나리오와 공정 사이
   여백」, 14.2 → 8.4px). 칸을 세워 두되 비면 높이 · 간격을 먹지 않게 한다.
+- **공통 줄이 없는 화면도 제 줄은 같은 패널에 그린다**(2026-11-09 보드 T8 — 구현 중 화면의 「샘플 데이터」 줄). `app.py` 는
+  시나리오 · 조회기간 · 설비 시나리오 줄이 하나도 없으면 패널을 세우지 않고 미뤄 두며(`sidebar_status.defer_page_condition_slots`),
+  페이지가 `page_condition_slot` 을 처음 부를 때 사이드바 맨 끝 — `app.py` 가 세웠을 자리 — 에 「조회 조건」 제목(카드를 선언해
+  제목이 이미 선 화면은 빼고)과 패널이 선다. 그래서 그런 화면은 **조건 카드 · 상자보다 먼저** 패널 칸을 쓴다. 쓰지 않으면 패널도
+  제목도 서지 않는다(빈 테두리 상자를 남기지 않는다). 패널의 테두리 상자 · 필드 서식 · 시험 도우미(`_panel_fields`)는 `app.py`
+  가 세운 패널과 같다(같은 key `CONDITIONS_BOX_KEY` · 같은 사이드바 최상위 자리).
 - **머리 띠 끝 「설비 시나리오 · …」** 은 설비 시나리오를 선언한 화면의 아랫줄 끝에 선다(Space 도 같은 꼬리 — S3). 머리 띠는
   `app.py` 가 페이지보다 먼저 그리므로 라벨 칸만으로는 한 회차 늦다 — 그래서 **설비 화면에서는 페이지가 회차마다 머리 띠를 한
   번 더 보낸다**(`refresh_equipment_header` — 같은 글이어도. 바뀐 회차에만 보내면 이벤트 칸 자리가 회차마다 밀려 그 뒤 알림 칸
@@ -7397,8 +7418,8 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 - Dynamic Capa는 현재 데모 프로토타입이며 실적효율·생산실적 DB 조회, 원천 컬럼 매핑,
   누적 이력 저장소와 표준 Capa 리비전 연결은 미구현이다.
 - 원천이 붙지 않은 화면은 **샘플 스위치**(`components/sample_data.py`)를 갖는다. 기본은
-  켜짐이고 켜져 있는 동안 화면 맨 위에 합성 샘플이라고 적는다. 끄면 머리 「… 미연결」 배지도 빠지고 그 화면이
-  무엇을 기다리는지(「… 연결 대기」)만 남는다. 세션 키 하나(`dynamic_capa_sample_data`)를 그룹 전체가 공유한다.
+  켜짐이고 켜져 있는 동안 합성 샘플이라고 알린다(구현 중 화면은 머리 띠 표지 — 스위치는 사이드바 조회 조건 패널 줄, 설비
+  화면은 본문 스위치 상자의 표지). 끄면 그 화면이 무엇을 기다리는지(「… 연결 대기」)만 남는다. 세션 키 하나(`dynamic_capa_sample_data`)를 그룹 전체가 공유한다.
   **새 미연결 화면을 만들면 이 스위치를 붙인다** — 빈 껍데기는 만들 가치를 설명하지 못하고,
   표식 없는 합성 표본은 실적처럼 읽힌다. 입력이 없는 결정론적 데모(Dynamic Capa 데모 행·Chatbot 대본)는 세션에 한
   번만 만들고 사본을 쓰며(Chatbot 대본은 공정 표시명을 글자에 담아 그 프로필 버전마다), 실DB 를 붙이면 그 세션 칸의
