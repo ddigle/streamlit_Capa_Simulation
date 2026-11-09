@@ -598,7 +598,8 @@ def report_arrival_filter(
     st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
     alerts.event(
         ARRIVAL_FILTER_ALERT,
-        text=f"필터 밖 「{process}」 — 사이드바 「공정」 칸에 없어 단축 호기가 안 보임",
+        # 짧은 글은 무엇 · 어디만(긴 공정 이름도 60자 안 — `SHORT_LIMIT`), 하는 법은 전문이다.
+        text=f"필터 밖 「{process}」 — 사이드바 「공정」 칸에 없음",
         full=(
             f"Space 현황 — 필요 단축 일정 「도면에서 보기」 로 연 「{process}」 공정이 사이드바 "
             "「공정」 칸(다른 화면과 같이 쓰는 공정 거름)에 없어 그 단축 호기가 도면 · 요약에 "

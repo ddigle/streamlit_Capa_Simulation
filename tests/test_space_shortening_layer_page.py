@@ -30,6 +30,7 @@ import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.scenario_state as scenario_state
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.alerts import SHORT_LIMIT
 from capa_simulation.components import space_layout_editor, space_shortening_view
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -957,6 +958,10 @@ def test_the_arrival_filter_is_one_alert_not_a_line_over_the_drawing(
     (note,) = events(app, ARRIVAL_FILTER_ALERT)
     assert note["code"] == "EQ-24" and note["level"] == "info"
     assert "Final Test" in note["short"] and "공정" in note["full"]
+    # 짧은 글은 무엇 · 어디만이라 긴 공정 이름도 알림창 한 줄 상한 안이다 — 하는 법은 전문이다.
+    assert note["short"] == "필터 밖 「Final Test」 — 사이드바 「공정」 칸에 없음"
+    assert len(note["short"].replace("Final Test", "W" * 30)) <= SHORT_LIMIT
+    assert "비우거나 더하면" in note["full"]
     # 같은 층·같은 필터로 한 회차 더(다른 조작) — 다시 뜨지 않는다.
     _level(app).set_value(1.2)
     _ok(app.run())
