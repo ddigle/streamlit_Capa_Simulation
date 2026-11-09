@@ -533,7 +533,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   실현 Capa·손실을 다시 내는 데모 프로토타입이다(요약·공정 상세·산식 가이드 탭).
   - 손실 목차가 효율 → UPEH → 수율 실적 → 재공 현황 → 가용설비 현황을 `page_link.py` 로 잇는다.
   - 데모는 샘플 스위치로 끄고 세션에 한 번만 만든다(실DB 를 붙이면 그 칸 키에 원천 적재 시각을 넣는다).
-  - 부서별 Gap·A/Item 로드맵은 실행 관리 Guide 에 있고 여기는 그 화면 링크 하나다(가는 까닭은 링크 풍선).
+  - 부서별 Gap·A/Item 로드맵은 실행 관리 머리에 있고 여기는 그 화면 링크 하나다(가는 까닭은 링크 풍선).
   - 판정 기준 · 그림 읽는 법 · 손실 차례는 늘 서는 캡션이 아니라 「개선 필요」 칸과 구획 제목의 풍선이다(설계 규칙
     UI-TXT-01 · 02 — 화면 소개는 `guides/reference_integrity.md`). 재공 현황의 격자 읽는 법도 같다(소개는 `guides/wip_status.md`).
   - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않고, 공정 상세의 조건 위젯은 숨어도 그린다.
@@ -555,8 +555,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
     반영은 자리에 표지를 세우지 않고 상태 알림 `RS-03` ~ `RS-05`(`_report_status_alerts`)만이다 — 짧은 글이 건수, 전문이 뜻 ·
     내역이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07). 본문 맨 위는 KPI 이고 기준 값
-    「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`basis_text` — 2026-11-09
-    사용자 보드 T2).
+    「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`_render_basis` — 2026-11-09
+    사용자 보드 T2). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽 끝이고, 자리가 모자라면 글이 통째로 다음
+    줄 오른쪽 끝으로 내려간다(서식은 그 캡션 마크다운 안 — 프래그먼트 이벤트 칸을 쓰지 않는다).
   - KPI 아래·카드 위에 공정 진척 보드·기한 임박·이행 지연(`components/shortening_board.py` — 처음 접힌 기억 상자, 편 상태는
     기억한다, 그림 메모 g03 ④)이 서고 카드마다 「공정 Capa
     상세에서 근거 보기」 와 그 옆 「도면에서 보기」(Space 현황 필요 단축 보기 — 그 공정의 층·같은 목표, 층은 본문이 공정 전부를
@@ -894,9 +895,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_admin_area_page.py`). 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
   - `알림 모음` 의 알림 수(오류 · 경고 칸 수)는 탭 안 머리 줄이 아니라 탭 이름 곁 수 표지다(`tab_marks.mark_tab_counts` —
-    라벨은 그대로 두고 CSS 로 찍는다, 0 이면 없음, 오류가 있으면 오류색 · 아니면 확인 필요색 — 2026-11-09 사용자 보드 T7).
-    수는 그 탭을 연 회차에 계산 키(기준정보 버전 · 내용 토큰)와 함께 적고, 닫힌 회차에는 지금 시나리오가 같은 키일 때만
-    다시 쓴다(`alert_board.remembered_alert_count` — 닫힌 탭에서 전체 기간 계산을 돌리지 않는다).
+    라벨은 그대로 두고 CSS 로 찍는다, 0 이면 없음, 계산 멈춤(오류)이 있으면 오류색에 수 앞 「!」(`ALERT_STOPPED_PREFIX` — 색만으로
+    단계를 가르지 않는다, 설계 규칙 UI-ACC-03) · 아니면 확인 필요색 수 — 2026-11-09 사용자 보드 T7). 탭 이름은 `ALERT_TAB_NAME`
+    상수로 넘긴다. 수는 그 탭을 연 회차에 계산 키(기준정보 버전 · 내용 토큰)와 함께 적고, 닫힌 회차에는 지금 시나리오가 같은
+    키일 때만 다시 쓴다(`alert_board.remembered_alert_count` — 닫힌 탭에서 전체 기간 계산을 돌리지 않는다). 그 탭이 알림 모음을
+    계산하지 못한 회차(`AD-07`)에는 적어 둔 수를 지운다(UI-DAT-11). 배선 시험은 `tests/test_admin_area_page.py`.
   - 탭 위에는 C-DEP CD 서버에서만 「서버 시작 점검」 펼침(`components/container_start_check.py`)이 선다 — 결과 파일도
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
     (`components/object_sync_status.py`), 그 뒤에 「통합인증 점검」 펼침(`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
@@ -2971,7 +2974,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   CSV·Excel 붙여넣기·직접 편집과 저장이다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다. 공용 버전 줄은 「직접 편집」
   제목 옆이다(`profile_caption.render_profile_heading`, 그림 메모 g18). 그 제목 줄(`HEADING_ROW_KEY`) 오른쪽 끝에 「보유 공정
   n개」 팝오버(원본 공정 목록 표 — `AVAILABLE_POPOVER_KEY`) · CSV 다운로드 · Excel 붙여넣기가 선다 — 단추 줄 · 접힘 줄을 따로
-  세우지 않는다(2026-11-09 사용자 보드 T3 · T7).
+  세우지 않는다(2026-11-09 사용자 보드 T3 · T7). 버전 줄은 사람이 적은 변경 메모를 실어 길이가 정해져 있지 않아 서식
+  (`heading_row_css`)이 단추 칸(`HEADING_TOOLS_KEY`)을 줄지 않는 한 덩이로 줄 오른쪽 끝에 두고 제목 칸(`HEADING_BOX_KEY`)이
+  남은 폭에서 버전 줄을 제목 곁에 접는다 — 제목 칸 바닥(`HEADING_MIN_WIDTH`, 보유 공정 밖 표지가 서면 `HEADING_MARK_ROOM` 을
+  더함)과 단추 칸을 한 줄에 못 담으면 단추 칸이 통째로 다음 줄 오른쪽 끝이다(설계 규칙 UI-LAY-11 · UI-ACC-02).
   - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다. 최신을 보고 고친
     표가 그 저장본과 같으면 쓰지 않고 폼 안 저장 줄 바로 아래 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5 — 9장 「바꾼 것 없는
     저장」, 자리는 2026-11-07 g8-16).
@@ -3056,7 +3062,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 세 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY`. 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다. 그리는 중의 focusout(`S.painting` — `paint` · `repaintCell`)은 부품 밖 이탈로 치지 않아 300ms 묶음을 끊지 않는다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)과 종류 단추(`st.segmented_control` — `[data-testid="stButtonGroup"]` 아래
-  `role="radio"` 단추의 n 번째) 옆 같은 점(`mark_pending_segments`)이다. 비공식 선택자라 판올림에서 바뀌면 점만 안 보인다.
+  `role="radio"` 단추의 n 번째) 옆 같은 점(`mark_pending_segments`)이다. 탭 이름 곁 수 표지(`mark_tab_counts` — 0 이면 없음,
+  색이 단계를 가르면 수 앞 글 `prefix` 로 글자로도 가른다, Admin `알림 모음`)도 같은 길이다. 비공식 선택자라 판올림에서
+  바뀌면 점 · 표지만 안 보인다.
 - `src/capa_simulation/components/reference_grid.py` — 기준 정보 편집 표 아홉을 범용 편집 그리드(`edit_grid.py`)에 잇는 어댑터.
   표마다 값 형식(`GRID_FORMATS` — 옛 `EDITOR_FORMATS` 를 옮김: UPEH 유효숫자 6 · 효율·측정률 percent
   상한 1 · 여유율 percent · 일수 정수 · 설비대수 소수 둘째 자리 빈칸 = 0), 양식 → 규격·색인·껍데기(`build_grid_table` — 캐시
@@ -3767,7 +3775,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   화면에서 그 탭으로 옮기는 길(`open_scenario_management_tab`) 한 곳.
 - `src/capa_simulation/components/equipment_scenario_management.py` — 시나리오 관리 「설비 시나리오」 탭(1단계 몫 + E7 —
   2026-10-24 가용설비 현황의 탭에서 옮김). 탭 진입(`render_equipment_scenario_section` — 설비 DB 는 이 안에서만 연다, 세션
-  알림 — 세션이 든 리비전은 탭 머리 줄이 아니라 시나리오 표 「올라와 있음」 칸 「● rN」 `loaded_cell`)을 둔다 — 다른 화면에서 이 탭으로 오는 길은 `SB-19` · `SB-20` 알림 줄의 「그 화면으로」
+  알림 — 세션이 든 리비전은 탭 머리 줄이 아니라 시나리오 표 「올라와 있음」 칸 「● rN」, 낡은 세션이면 「● rN · 최신 아님」 `loaded_cell`)을 둔다 — 다른 화면에서 이 탭으로 오는 길은 `SB-19` · `SB-20` 알림 줄의 「그 화면으로」
   (`LEGACY_TRACE_GOTO` + `tab` — 시나리오 관리 › 설비 시나리오 탭)이고 설비 화면 맨 위 링크 단추는 없다. 시나리오
   표(「공식 vN · rM」/활성 — rM 은 공식 발행 리비전, 발행 확인 글과 같은 `official_release_revision_no` 로 찾고 못 찾으면 「공식 vN」 만·최신 rN·
   리비전 수·저장된 배치 차이·올라와 있음)와 고른 시나리오의 「시나리오 이름 바꾸기」(가정 시나리오 최신에 배치 차이가
