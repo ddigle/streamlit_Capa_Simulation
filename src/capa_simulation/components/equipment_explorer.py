@@ -392,9 +392,10 @@ def report_unconfirmed_units(
     confirmation_basis: str | None = None,
 ) -> None:
     """미확인(`EQ-21`) 상태 알림 — 반입 · Qual 일정이 지났는데 실적이 비고 상태가 계획 · 확정인
-    호기. Main 호기 현황의 상태 분포 · 호기 목록(`UNIT_NAME_VIEWS`)이 열린 회차마다(없어도) 부른다. **오늘 기준**이라 Main 의 기준일과 상관없다
-    (2026-10-16 사용자 결정). `confirmation_equipment` 를 주면 그 마스터(가정 설비 시나리오일 때
-    공식 스냅샷 그대로)로 고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다.
+    호기. Main 호기 현황의 상태 분포 · 호기 목록(`UNIT_NAME_VIEWS`)이 열린 회차마다(없어도)
+    부른다. **오늘 기준**이라 Main 의 기준일과 상관없다(2026-10-16 사용자 결정).
+    `confirmation_equipment` 를 주면 그 마스터(가정 설비 시나리오일 때 공식 스냅샷 그대로)로
+    고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다.
     `confirmation_basis` 는 그때 글 끝 꼬리표(「공식 일정 기준」)다."""
     key, label = (scope.scope, scope.label) if scope is not None else (None, "")
     source = equipment if confirmation_equipment is None else confirmation_equipment
@@ -842,9 +843,9 @@ def render_equipment_explorer(
                         width="stretch" if in_card else 240,
                     )
                     filters.append((column, values))
-    # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다. 공정은
-    # 고른 상자와 같은 글자(표시명)로 적는다. 공용 공정 칸이면 공정은 머리 띠 공정 칩이 이미 말하므로
-    # 이 줄에 거듭 적지 않는다(설계 규칙 UI-TXT-07).
+    # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
+    # 공정은 고른 상자와 같은 글자(표시명)로 적는다. 공용 공정 칸이면 공정은 머리 띠 공정 칩이
+    # 이미 말하므로 이 줄에 거듭 적지 않는다(설계 규칙 UI-TXT-07).
     active_filters = [
         f"{name}: {literal_names(_shown_values(name, values, process_format))}"
         for name, values in filters

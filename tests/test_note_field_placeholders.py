@@ -2,10 +2,11 @@
 
 """변경 메모 · 저장자 칸 그물(설계 규칙 UI-TXT-01 예외 · PRC-01 — 2026-11-09 상단 띠 재고).
 
-저장 줄 · 저장 칸의 「변경 메모」 · 「저장자(선택)」 칸은 이름 줄(24.5px)을 걷고(`label_visibility=
-"collapsed"` — 접근성 이름으로 남는다) 칸 안 흐린 글 「변경 메모 · 예: …」 · 「저장자 · 예: 홍길동」 이
-이름과 예를 함께 말한다 — 꼴은 「<칸 이름> · 예: <예>」 하나이고 한 함수가 짓는다
-(`saved_note.field_placeholder` — `note_placeholder` · `equipment_save_fields.SAVED_BY_PLACEHOLDER`).
+저장 줄 · 저장 칸의 「변경 메모」 · 「저장자(선택)」 칸은 이름 줄(24.5px)을 걷고
+(`label_visibility="collapsed"` — 접근성 이름으로 남는다) 칸 안 흐린 글 「변경 메모 · 예: …」 ·
+「저장자 · 예: 홍길동」 이 이름과 예를 함께 말한다 — 꼴은 「<칸 이름> · 예: <예>」 하나이고 한
+함수가 짓는다(`saved_note.field_placeholder` — `note_placeholder` ·
+`equipment_save_fields.SAVED_BY_PLACEHOLDER`).
 화면 코드에서 라벨이 그 이름인 `text_input` · `text_area` 를 모두 찾아 이름 줄이 걷혔고 안내 글이
 있는지, 안내 글을 글 상수로 손수 짓지 않는지 본다.
 

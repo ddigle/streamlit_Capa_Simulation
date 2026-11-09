@@ -868,8 +868,9 @@ def test_the_morning_board_answers_are_recorded_and_written_into_the_rules() -> 
         assert any(line.startswith(f"| {name} |") for line in values.splitlines()), name
 
 
-# 2026-11-09 검수 보드 · 칩 자리 · 상단 판단 보드(6-12)의 답 — 결정 셋과 남은 물음 표는 권장, C1 은 (라) ·
-# T1 은 (나) 이고 나머지 C · T 는 (가)다. 고침 그림은 메모 원문(앞부분)을 맞댄다.
+# 2026-11-09 검수 보드 · 칩 자리 · 상단 판단 보드(6-12)의 답 — 결정 셋과 남은 물음 표는
+# 권장, C1 은 (라) · T1 은 (나) 이고 나머지 C · T 는 (가)다. 고침 그림은 메모 원문(앞부분)을
+# 맞댄다.
 TOP_DECISIONS = {
     "top-rule": "인터페이스 구성 규칙으로 둔다",
     "K1": "1차를 이번 배포에 싣고, 사내에서 써 본 뒤 2차를 시작한다",
@@ -918,10 +919,10 @@ TOP_RULE_QUOTE = (
 
 
 def test_the_top_boards_are_recorded_and_the_top_rule_stands() -> None:
-    """v1.12 — 6-12 는 사용자 규칙 한 줄 · 결정 셋 · 남은 물음 표 · 고침 그림 열둘 · 괜찮음 그림 한 줄 ·
-    칩 자리 C1 ~ C3 · 상단 판단 T1 ~ T10 이고, 고른 글 그대로 · 메모 원문이 있다. 새 규칙 UI-LAY-13 은
-    사용자 원문을 근거로 싣고 예외(T1 공지 · T9 탭 줄 아래 14px · 안쪽 탭)를 적으며, UI-LAY-02 는 구현
-    중 화면 예외를 거뒀다(T8)."""
+    """v1.12 — 6-12 는 사용자 규칙 한 줄 · 결정 셋 · 남은 물음 표 · 고침 그림 열둘 · 괜찮음
+    그림 한 줄 · 칩 자리 C1 ~ C3 · 상단 판단 T1 ~ T10 이고, 고른 글 그대로 · 메모 원문이 있다.
+    새 규칙 UI-LAY-13 은 사용자 원문을 근거로 싣고 예외(T1 공지 · T9 탭 줄 아래 14px · 안쪽
+    탭)를 적으며, UI-LAY-02 는 구현 중 화면 예외를 거뒀다(T8)."""
     document = _text()
     assert "판 v1.12" in document.split("\n## 1. ")[0]
     assert "- **v1.12 — 2026-11-10.**" in _chapter(document, 8)
