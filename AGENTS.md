@@ -2260,8 +2260,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나다 — 코어 구현 중 화면은 머리 배지 없이 화면 탭 이름 곁
     표지가 말하고(`show_status=False`, 2026-11-09 보드 T8), `page_header.py` 가 배지로 쓰는 것은 모듈 L0 · L1 화면이다. 원천
     미연결 화면은 `PageSpec.pending_source`(그 화면이 스위치 · 머리 띠 표지 · 탭 풍선에 주는 원천 이름)를 선언하고,
-    `PageSpec.implementing`(라벨 `(구현중)` 또는 그 선언 — Dynamic Capa 는 그룹 머리라 라벨에 달지 않는다)이 화면 탭 「구현중」
-    표지 · 머리 띠 「합성 샘플」 표지의 근거다(2026-11-09 보드 T8 — 그물 `tests/test_page_tabs.py`).
+    `PageSpec.implementing`(라벨 `(구현중)` · 그 선언 · 만드는 중 선언 `in_progress` — Dynamic Capa 는 그룹 머리라 라벨에 달지
+    않는다, 생산 진도 · 샘플 페이지 셋은 원천도 접미도 없어 `in_progress`)이 화면 탭 「구현중」 표지의, `pending_source` 가 머리 띠
+    「합성 샘플」 표지의 근거다(2026-11-09 보드 T8 (가) — 그물 `tests/test_page_tabs.py`).
   - `PageSpec` 이 화면이 `app.py` 에 바라는 공통 조건(`reads_*`·`condition_tabs`·`has_condition_cards`)과
     설비 DB 핀(`uses_equipment_db`)·설비 시나리오(`equipment_scenario` — `"session"`/`"official"`, `equipment_scenario_tabs`,
     `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 미룬 패널 화면(실적 셋 ·
@@ -2607,8 +2608,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   값이 그 화면이 따르는 꼴일 때 깔때기 · 그 화면이 마지막으로 그린 선택지에 없는 공정이 있으면 주황 · 풍선 「공정 Mold ·
   Underfill — 산출 결과 에서」 + 「PMC 는 이 화면에 없음」 — `process_field.tab_mark`)와 `wip`(구현 중 화면의 「구현중」 표지
   풍선 — `wip_title`, 원천 이름 · 샘플을 켠 동안 「합성 샘플로 미리 봄」)이다. 깔때기는 알림 칸 공정 칩과 같은 선 꼴 path
-  상수(사이드바 `filter_alt` 꼴)이고, 「구현중」 은 탭이 좁아 이름이 말줄임되면 흐린 고리 점으로 줄어 이름 자리를 먼저 지킨다(JS
-  `fitWip` — 그릴 때 · 목록 폭이 바뀔 때 다시 잼, 글은 읽기 도구 · 풍선에 남음, UI-ACC-02). 지금 탭의 공정 표지는 알림 칸 JS 가 회차 끝에
+  상수(사이드바 `filter_alt` 꼴)이고, 「구현중」 은 보이는 탭 어느 하나라도 이름이 말줄임되면 흐린 고리 점으로 줄어 이름 자리를 먼저 지킨다(JS
+  `fitWip` · `wipShrink` — 제 이름만 보지 않는다: 줄지 않는 지금 탭의 글 표지 폭을 이웃 탭이 떠안는다,
+  그릴 때 · 목록 폭이 바뀔 때 다시 잼, 글은 읽기 도구 · 풍선에 남음, UI-ACC-02). 지금 탭의 공정 표지는 알림 칸 JS 가 회차 끝에
   값 칸 표지를 읽어 보내는 문서 사건(`capa-process-here`)으로 바로잡는다 — 탭 줄은 페이지보다 먼저 그려진다.
   가리킬 수 있는 기기에서 지금 탭이 아닌 고정 안 한 탭의 × 는 가리키거나 초점이 들 때만 보이고 누름을 받으며, 그 자리는 평소
   이름에 내준다(× 가 먼저 줄어든다 — 탭 10칸 · 1283px 에서 이름이 한 음절로 줄던 것, 2026-11-07 답 narrow · UI-ACC-02). 칸 폭은
@@ -2710,7 +2712,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     됐다). 가리킬 수 없는 기기(`hover: none`)에서는 그 핀을 두지 않는다. 640px 이하 창에서는 고정하지 않은 지금 탭의 핀도
     두지 않는다(이름 자리). 지금 탭은 줄지 않는다(`flex-shrink: 0` — 이름이 다 보이는 제 폭, 길어야 15rem) — 탭이 많아 모두
     최소 폭(5.5rem)으로 줄면 지금 탭 이름이 핀·× 에 밀려 「A.」 로 줄었다. 지금 탭 최소 폭을 넓히지는 않는다 — 탭이 적을
-    때도 HOME 처럼 짧은 지금 탭이 넓어져 탭을 옮길 때마다 뒤 탭들이 옆으로 밀렸다.
+    때도 HOME 처럼 짧은 지금 탭이 넓어져 탭을 옮길 때마다 뒤 탭들이 옆으로 밀렸다. 고정 탭도 줄지 않는다(같은
+    `flex-shrink: 0`) — × 가 없고 핀이 늘 서서 내줄 닫기 자리가 없어 1600px · 탭 10개 · 지금 탭이 구현 중일 때 HOME 이
+    「H…」 로 잘렸다(통합 재측정).
   - 목록이 옆으로 넘치면 탭이 더 있는 쪽 가장자리를 흐리고(목록 `mask-image`, 2rem) 누름을 받지 않는 화살표 표지를 단다
     (`page_tabs.js` 의 순수 구획 `<tabs-edges>` 가 `has-more-start`·`has-more-end` 를 정한다 — 굴릴 때·목록 폭이 바뀔 때·data
     가 바뀔 때). 지금 탭을 보이게 굴릴 때는 흐림 폭만큼(`EDGE_PX`) 띄운다(같은 구획의 `revealScroll`). 지금 탭까지
@@ -3064,7 +3068,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   표지 한 줄 · 높이만 받는다, UI-LAY-10). 모듈 화면 자리(`module_slot_html` — `st.html` 하나, 테두리
   `BORDER_STRONG` · 면 `SURFACE_SUBTLE` · 글 `TEXT_MUTED` 토큰이라 밝게 · 어둡게 모두)와 실행 관리 머리의 「이행 현황판 자리」가
   그것을 부른다. 그 자리만 든 화면 한 벌
-  (`render_module_slot_page(title)` — 머리말(제목뿐 — 배지 줄 없음, 2026-11-09 보드 T8) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
+  (`render_module_slot_page(title)` — 머리말(제목뿐 — 배지 줄 없음, 성숙도는 화면 탭 「구현중」 표지 · `PageSpec.in_progress`, 2026-11-09 보드 T8) + 자리). 생산 진도 머리와 샘플 페이지 셋이 이름만 넘겨
   같은 꼴로 그린다. 데이터를 읽지 않는다. 모듈이 이 자리에 그리는 길이 생기면 그 창구가 여기서 갈린다(`docs/TODO.md` 2장 「생산
   진도 화면 내용」).
 - `src/capa_simulation/components/page_link.py` — 다른 화면으로 건너가는 링크다. `st.navigation` 이 없는 단독
@@ -3533,8 +3537,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/alerts.py` — 알림 등록부와 표지 API(2026-11-03 결정 보드 D1 ~ D6, 9장 「알림 칸」). 등록부
   `SPECS`(→ `REGISTRY`)는 `AlertSpec(코드, 단계, 갈래, 이름, 짧은 글, 전문)` 줄이고 코드는 `AB-01` 꼴 고정 id(한 번 쓴 번호는
   다시 쓰지 않는다, 겹치거나 꼴이 어긋나면 읽는 순간 멈춘다). 단계 넷(`LEVELS` — info 알림 · check 확인 필요 · action 조치
-  필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 — 넘치면 단계가
-  가장 낮은 칸부터 걷고 같은 단계면 오래된 칸, 알림 칸 JS `overflowVictim` ·
+  필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 ·
   `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING`)가 여기
   한 곳이다. API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
   `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
@@ -3601,8 +3604,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   브라우저 안 초안과 저장 개념이 없는 조건은 들지 않는다(다음 판 후보 — `docs/TODO.md`).
 - `src/capa_simulation/components/saved_note.py` — 이름 줄 없는 메모 · 저장자 칸의 안내 글 꼴 「<칸 이름> · 예: <예>」 하나
   (`field_placeholder` — 변경 메모는 `note_placeholder` 「변경 메모 · 예: …」, 저장자는 `equipment_save_fields.SAVED_BY_PLACEHOLDER`
-  「저장자 · 예: 홍길동」. 칸은 `label_visibility="collapsed"` 라 이 글이 이름이다 — 2026-11-09 상단 띠 재고 · 사용자 지시,
-  `tests/test_note_field_placeholders.py` 가 화면 코드의 「변경 메모」 · 「저장자(선택)」 칸을 모두 훑고 안내 글을 글 상수로 손수 짓는
+  「저장자 · 예: 홍길동」. 칸은 `label_visibility="collapsed"` 라 이 글이 이름이다 — 2026-11-09 사용자 규칙 「페이지 상단
+  최소화」 · 꼴은 상단 띠 재고 권장으로 앱 세션이 정함(검수 전), `tests/test_note_field_placeholders.py` 가 화면 코드의 「변경 메모」 · 「저장자(선택)」 칸을 모두 훑고 안내 글을 글 상수로 손수 짓는
   자리를 막는다)과, 저장한 변경 메모를 칸을 갈지 않고 칸 글이 저장한 그 글일 때만 비운다(9장
   「폼 안 입력을 성공 뒤 비울 때」). 폼 안에서 저장 단추를 먼저 그리고 `ready_note_field(KEY, submitted=, start=)`(본 version —
   대조 저장만) 뒤 `st.text_input("변경 메모", key=KEY)` 를 그린다 — key 는 고정이다. 쓰기가 끝난 갈래는 `mark_note_saved`, 제
@@ -3668,7 +3671,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   글이다(`_heading_with_value` — 밑줄 맞춤은 공용 버전 줄과 같은 `profile_caption.HEADING_BASELINE_STYLE`, 사용자 보드 T2).
   숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
   일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 호기 현황의 상태 분포 · 호기 목록만 — 호기 이름을 보이는
-  자리, Summary 첫 진입에 일정 미정 · 사용기준 밖과 함께 떠 알림창을 채우지 않게). 모두 설비 마스터 전체를 세어 지문이 고르기에 기대지
+  자리, Summary 첫 진입에 일정 미정 · 사용기준 밖과 함께 떠 알림창을 채우지 않게 — 그 밖의 보기는 같은 자리에서 `alerts.flush()`
+  로 한 자리를 채워 이벤트 칸 자리 수가 보기마다 같다). 모두 설비 마스터 전체를 세어 지문이 고르기에 기대지
   않고, 목록은 Alarm 줄 표, 「그 화면으로」 는 설비 마스터 탭이다.
   - 판정·구간은 `simulation_cache` 내용 지문 키 래퍼로 받고 표시명·거르기는 캐시 결과의 복사본 위에서 한다.
   - `표현`(차트·표)과 결과 상자는 「본문 프래그먼트」다(`tests/test_explorer_expression_fragment.py`).
@@ -6735,7 +6739,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   표지가 짐작보다 이기고, 회차가 끝났는데 표지가 없으면 그 화면은 공정 칸을 그리지 않은 것(흐린 칩)이다. 누르면 판(브라우저
   안에서만 — UI-PRF-01): 「공정 거름 n개」 · 출처 · 공정마다 ✓ / – 「이 화면에 없음」 · 「공정 고르기」(사이드바 공정 칸이 있을 때만 그
   칸 단추를 누른다) · 「모든 화면에서 해제」(트리거 `process_clear` → `shared_process.clear`). Esc · 바깥 누름 · 초점은 변경 판과
-  같다(`panelOf`).
+  같다(`panelOf`). 세 판(Alarm · 변경 · 공정)은 가두지 않는다 — 마지막 칸 다음 Tab 은 판을 닫고 연 단추 다음 차례로, 첫 칸 앞
+  Shift+Tab 은 판을 닫고 연 단추로 간다(`leavePanelByTab` · `panelTabExit` — 판이 body 끝 호스트라 그냥 두면 문서 밖으로 빠진다).
 - **합성 샘플 표지**(보드 T8)는 지금 화면이 원천 미연결 화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만 공정
   칩 오른쪽에 선다(`alert_center.shows_sample_mark` — `sample_data.sample_switch_on` 을 읽기만). 변경 칩(주황 면 알약)과 갈리게
   점선 네모 · 주황 글 · 플라스크이고 누르는 것이 없다(풍선 「합성 샘플 — 실적이 아님 · 사이드바 「샘플 데이터」 로 끔」).
