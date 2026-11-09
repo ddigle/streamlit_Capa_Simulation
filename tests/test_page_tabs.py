@@ -153,9 +153,16 @@ def test_a_tab_label_drops_only_the_implementing_suffix(
 
 def test_every_implementing_screen_declares_its_pending_source_as_the_page_says_it() -> None:
     """「구현중」 표지 · 합성 샘플 표지의 선언(`PageSpec.pending_source`)은 라벨에 「(구현중)」 이
-    붙은 코어 화면 모두와 Dynamic Capa 에 있고, 글자는 그 화면이 스위치 · 머리 배지에 주는 원천
-    이름과 같다."""
+    붙은 코어 화면 모두와 Dynamic Capa 에 있고, 글자는 그 화면이 「샘플 데이터」 줄에 주는 원천
+    이름과 같다 — 실적 셋은 화면 파일이 넘기는 지표 사양(`MetricSpec.source`)이 그 이름을 든다."""
     from capa_simulation.navigation import DYNAMIC_CAPA, IMPLEMENTING_SUFFIX
+    from capa_simulation.services import performance_actuals
+
+    metrics = {
+        name: value
+        for name, value in vars(performance_actuals).items()
+        if isinstance(value, performance_actuals.MetricSpec)
+    }
 
     suffixed = {spec.path for spec in ALL_SPECS if spec.title.endswith(IMPLEMENTING_SUFFIX)}
     declared = {spec.path for spec in ALL_SPECS if spec.pending_source is not None}
@@ -166,7 +173,11 @@ def test_every_implementing_screen_declares_its_pending_source_as_the_page_says_
         if spec.pending_source is None:
             continue
         source = (PROJECT_ROOT / spec.path).read_text(encoding="utf-8")
-        assert f'"{spec.pending_source}"' in source, (spec.path, spec.pending_source)
+        given = {metric.source for name, metric in metrics.items() if name in source}
+        assert f'"{spec.pending_source}"' in source or spec.pending_source in given, (
+            spec.path,
+            spec.pending_source,
+        )
 
 
 def _marks_script() -> None:
