@@ -53,7 +53,7 @@ from capa_simulation import alerts
 from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import equipment_value_label
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.shortening_board import (
     DEFAULT_DUE_DAYS,
     DUE_DAYS_KEY,
@@ -599,9 +599,9 @@ def report_arrival_filter(
     alerts.event(
         ARRIVAL_FILTER_ALERT,
         # 짧은 글은 무엇 · 어디만(긴 공정 이름도 60자 안 — `SHORT_LIMIT`), 하는 법은 전문이다.
-        text=f"필터 밖 「{process}」 — 사이드바 「공정」 칸에 없음",
+        text=f"필터 밖 {quoted(process)} — 사이드바 「공정」 칸에 없음",
         full=(
-            f"Space 현황 — 필요 단축 일정 「도면에서 보기」 로 연 「{process}」 공정이 사이드바 "
+            f"Space 현황 — 필요 단축 일정 「도면에서 보기」 로 연 {quoted(process)} 공정이 사이드바 "
             "「공정」 칸(다른 화면과 같이 쓰는 공정 거름)에 없어 그 단축 호기가 도면 · 요약에 "
             "보이지 않습니다 — 공정을 비우거나 더하면 보입니다."
         ),
