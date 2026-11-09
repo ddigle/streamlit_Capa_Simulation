@@ -49,6 +49,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 import capa_simulation.components.required_shortening_panel as shortening_panel
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
+from capa_simulation import alerts
 from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import equipment_value_label
@@ -133,7 +134,7 @@ __all__ = [
     "render_layer_stop",
     "render_level_field",
     "forget_arrival_note",
-    "render_arrival_filter_note",
+    "report_arrival_filter",
     "report_layer_unmatched",
     "switch_to_queued_shortening",
     "take_unit_pick",
@@ -571,13 +572,19 @@ def forget_arrival_note() -> None:
     st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
 
 
-def render_arrival_filter_note(
+# 「도면에서 보기」 로 온 공정이 공정 필터 밖일 때의 사건 알림(`EQ-24`) — 도면 위 표지 줄 대신
+# 도착한 회차에 한 번 뜬다(2026-11-09 사용자 보드 T10, 설계 규칙 UI-NTF-01 · UI-TXT-04).
+ARRIVAL_FILTER_ALERT: Final = "EQ-24"
+
+
+def report_arrival_filter(
     selected_processes: Sequence[str], floor: FloorKey | None, filter_values: Sequence[str]
 ) -> None:
-    """「도면에서 보기」 로 온 공정이 Space 공정소분류 거름(공용 공정 칸)에 걸러졌으면 한
-    줄(공정 값은 건드리지 않는다). 도착한 층 · 공용 값(`filter_values`)이 그대로인 동안만 — 층을
-    옮기거나 값이 바뀌면 칸을 거두고 다시 서지 않는다. `selected_processes` 는 이 화면에 걸린
-    공정이다."""
+    """「도면에서 보기」 로 온 공정이 Space 공정소분류 거름(공용 공정 칸)에 걸러졌으면 사건 알림
+    한 번(`EQ-24` — 공정 값은 건드리지 않는다). 도면 위에 표지 줄을 세우지 않는다 — **그리지
+    않는다**(`alerts.event` 는 담기만 하고 같은 회차의 늘 부르는 표지 자리가 보낸다). 도착한 층 ·
+    공용 값(`filter_values`)이 그대로인 동안 처음 본 회차에만 — 낸 뒤나 층을 옮기거나 값이 바뀌면
+    칸을 거두고 다시 내지 않는다. `selected_processes` 는 이 화면에 걸린 공정이다."""
     held = st.session_state.get(_ARRIVED_PROCESS_KEY)
     if not (isinstance(held, tuple) and len(held) == 3 and isinstance(held[0], str)):
         st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
@@ -588,14 +595,16 @@ def render_arrival_filter_note(
         return
     if not process or not selected_processes or process in set(selected_processes):
         return
-    # 걸린 조건은 표지로 보이고(설계 규칙 UI-STA-03) 하는 법은 풍선이다(UI-TXT-04).
-    st.caption(
-        f":material/filter_alt_off: 필터 밖 「{literal_markdown(process)}」",
-        width="stretch",
-        help=(
-            "사이드바 「공정」 칸에 이 공정이 없어 그 단축 호기가 보이지 않습니다 — 공정을 "
-            "비우거나 더하면 보입니다."
+    st.session_state.pop(_ARRIVED_PROCESS_KEY, None)
+    alerts.event(
+        ARRIVAL_FILTER_ALERT,
+        text=f"필터 밖 「{process}」 — 사이드바 「공정」 칸에 없어 단축 호기가 안 보임",
+        full=(
+            f"Space 현황 — 필요 단축 일정 「도면에서 보기」 로 연 「{process}」 공정이 사이드바 "
+            "「공정」 칸(다른 화면과 같이 쓰는 공정 거름)에 없어 그 단축 호기가 도면 · 요약에 "
+            "보이지 않습니다 — 공정을 비우거나 더하면 보입니다."
         ),
+        cause="「도면에서 보기」 로 도착",
     )
 
 

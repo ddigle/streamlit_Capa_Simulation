@@ -44,6 +44,7 @@ from capa_simulation.components.shortening_source import (
     SHORTENING_START_KEY,
 )
 from capa_simulation.components.space_shortening_view import (
+    ARRIVAL_FILTER_ALERT,
     PINNED_NOTE,
     SPACE_SHORT_DIM_KEY,
     SPACE_SHORT_LEVEL_KEY,
@@ -933,19 +934,17 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
     assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.3
 
 
-def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
+def test_the_arrival_filter_is_one_alert_not_a_line_over_the_drawing(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
     """T-P9 덧붙임 — 링크 공정이 Space 공정소분류 필터(공용 공정 칸 — 2026-11-08 사용자 답 P1)에
-    걸러졌으면 조작 줄에 알림 한 줄(공정 값은 건드리지 않는다). 알림은 도착한 링크에 대한 것이라 그
-    값·층이 처음 바뀌면 거두고, 나중에 사용자가 고른 상관없는 값에 다시 서지 않는다(리뷰)."""
+    걸러졌으면 도착한 회차에 사건 알림 `EQ-24` 가 한 번 뜬다(공정 값은 건드리지 않는다). 도면 위
+    표지 줄 「필터 밖 「공정」」 은 두지 않는다(2026-11-09 사용자 보드 T10). 알림은 도착한 링크에
+    대한 것이라 같은 회차를 다시 돌거나 값 · 층을 바꿔도 다시 뜨지 않는다(리뷰)."""
     database = _empty_database(tmp_path)
     probe = _app(database)
     _turn_on(_ok(probe.run()))
     building, floor = _busiest_floor(_views(editor_calls, "fab")[-1])
-    # 걸린 조건은 표지 한 마디(「필터 밖 「공정」」)이고 하는 법은 그 풍선이다(설계 규칙 UI-STA-03 ·
-    # UI-TXT-04).
-    note = ":material/filter_alt_off: 필터 밖 「Final Test」"
 
     app = _app(database)
     share(app, ["Mold"])
@@ -954,36 +953,27 @@ def test_the_arrival_filter_note_lives_only_until_the_floor_or_filter_changes(
     app.query_params["proc"] = "Final Test"
     _ok(app.run())
     assert shared_values(app) == ["Mold"]
-    assert any(note in text for text in _texts(app)), _texts(app)
-    # 같은 층·같은 필터로 한 회차 더(다른 조작) — 그대로 선다.
+    assert not any("필터 밖 「" in text for text in _texts(app)), _texts(app)
+    (note,) = events(app, ARRIVAL_FILTER_ALERT)
+    assert note["code"] == "EQ-24" and note["level"] == "info"
+    assert "Final Test" in note["short"] and "공정" in note["full"]
+    # 같은 층·같은 필터로 한 회차 더(다른 조작) — 다시 뜨지 않는다.
     _level(app).set_value(1.2)
     _ok(app.run())
-    assert any(note in text for text in _texts(app))
-    # 공용 값을 바꾸면 거둔다 — 그 뒤 다른 값(여전히 Final Test 없음)에도 다시 서지 않는다.
-    share(app, ["Mold", "Burn-In"])
-    _ok(app.run())
-    assert not any(note in text for text in _texts(app))
+    assert not events(app, ARRIVAL_FILTER_ALERT)
     share(app, ["Underfill"])
     _ok(app.run())
-    assert not any(note in text for text in _texts(app))
+    assert not events(app, ARRIVAL_FILTER_ALERT)
+    assert not any("필터 밖 「" in text for text in _texts(app))
 
-    # 층을 옮겨도 거둔다.
-    moved = _app(database)
-    share(moved, ["Mold"])
-    moved.query_params["layer"] = "short"
-    moved.query_params["floor"] = f"{building}-{floor}"
-    moved.query_params["proc"] = "Final Test"
-    _ok(moved.run())
-    assert any(note in text for text in _texts(moved))
-    other = next(key for key in (("C4", "2F"), ("C1", "2F")) if key != (building, floor))
-    moved.session_state["space_status_selected_building"] = other[0]
-    moved.session_state["space_status_selected_floor"] = other[1]
-    _ok(moved.run())
-    assert not any(note in text for text in _texts(moved))
-    moved.session_state["space_status_selected_building"] = building
-    moved.session_state["space_status_selected_floor"] = floor
-    _ok(moved.run())
-    assert not any(note in text for text in _texts(moved))
+    # 링크 공정이 필터 안이면 알림이 없다.
+    inside = _app(database)
+    share(inside, ["Final Test"])
+    inside.query_params["layer"] = "short"
+    inside.query_params["floor"] = f"{building}-{floor}"
+    inside.query_params["proc"] = "Final Test"
+    _ok(inside.run())
+    assert not events(inside, ARRIVAL_FILTER_ALERT)
 
 
 def test_the_floor_list_leaves_the_max_days_blank_on_floors_without_units(

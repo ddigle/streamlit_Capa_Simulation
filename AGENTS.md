@@ -748,7 +748,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `Space 조건` 카드의 「색 기준」 밑(필요 단축 기준의 그룹 체크 자리 — 2026-11-09 사용자 검수 g05, 쉬는 회차에도 흐리게 칸은 선다),
     맞대지 못한 공정은 필요 단축 일정과 **같은 함수** `required_shortening_panel.report_unmatched_processes`(`RS-02` — 같은 계획 · 범위 ·
     내용이라 화면을 옮겨도 다시 뜨지 않는다, 보기를 그린 회차에만 부르고 그 밖의 회차는 같은 자리에서 `alerts.flush()`), 공정 필터 밖
-    단축 대수는 FAB 요약 · 층 보기 칸 머리 줄 끝 「필터 밖 n대」 다. **본문 자리**(늘 서는 `space_shortening_toolbar` — 못 읽음 마크 · FAB 편집
+    단축 대수는 FAB 요약 · 층 보기 칸 머리 줄 끝 「필터 밖 n대」 다. 「도면에서 보기」 로 온 공정이 공정 필터 밖이면 도면 위 표지 줄
+    대신 도착한 회차에 사건 알림 `EQ-24` 한 번이다(`report_arrival_filter` — 그 앞 `RS-02` 상태 · `flush` 자리가 같은 회차에 보낸다,
+    2026-11-09 사용자 보드 T10). **본문 자리**(늘 서는 `space_shortening_toolbar` — 못 읽음 마크 · FAB 편집
     「필요 단축 보기 쉼」 뿐, 도면 위에 글 줄을 두지 않는다)·FAB 블록 셋째 줄·층 목록 칸 넷·요약·추가 호기 상자(늘 서는
     `space_shortening_fab_slot`)·층 보기 칸(늘 서는 테두리 없는 `space_shortening_slot` 안 — 공정 칩·「이 층에서 단축할 호기」·
     도면에 자리가 없는 호기·누른 호기 상세)을 그린다. 켠 회차의 기준일은 오늘로 고정이다(세션 기준일은 지우지도 쓰지도 않는다 —
@@ -3975,7 +3977,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
   모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다.
 - `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 사이드바 목표 줄 · 카드
-  흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link`)과 상세 단추 이동
+  흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link` ·
+  필터 밖 링크 공정 사건 알림 `report_arrival_filter` → `EQ-24`)과 상세 단추 이동
   (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10).
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
@@ -6528,7 +6531,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   BigDataQuery 설정 띠 · Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」) — 경고 상자 대신 상태 줄(캡션 ·
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 04` · `MO-01`).
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
-  `PD-02/03` · `CS-02`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
+  `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
 - **팝업 안 제출이 고칠 입력 없이 거부되면** `queue_flash(…, popup_only=True)` + `st.rerun()` 으로 앱 전체 회차에서 알린다(공식
