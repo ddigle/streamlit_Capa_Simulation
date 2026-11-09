@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.date_panel import date_field, date_range_field
 from capa_simulation.components.equipment_lifecycle_gantt import (
@@ -27,9 +28,11 @@ from capa_simulation.components.equipment_lifecycle_gantt import (
 from capa_simulation.components.literal_markdown import literal_names, markdown_safe_tildes
 from capa_simulation.components.process_field import render_process_filter
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.state_alerts import AlertScope, alert_table, tab_name
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.design import tokens
+from capa_simulation.navigation import EQUIPMENT_MASTER_TAB
 from capa_simulation.page_bootstrap import prune_list_selection
 from capa_simulation.services.equipment_contract import (
     ARRIVAL_DATE_COLUMN,
@@ -43,6 +46,7 @@ from capa_simulation.services.equipment_contract import (
     RELOCATION_DATE_COLUMN,
     STATUS_COUNT_COLUMNS,
     STOP_DATE_COLUMN,
+    USAGE_BASIS_COLUMN,
 )
 from capa_simulation.services.equipment_units import (
     UNIT_COUNT_DECIMALS,
@@ -53,6 +57,11 @@ from capa_simulation.services.equipment_units import (
     unit_transitions,
 )
 from capa_simulation.services.schedule_confirmation import (
+    CONFIRMATION_KIND_COLUMN,
+    SCHEDULE_COLUMN,
+    STAGE_COLUMN,
+    STATUS_COLUMN,
+    UNCONFIRMED,
     UNCONFIRMED_HELP,
     schedule_confirmation_mark,
 )
@@ -67,7 +76,11 @@ from capa_simulation.services.simulation_cache import (
     get_usage_excluded_equipment,
     get_weekly_equipment_availability,
 )
-from capa_simulation.services.undated_equipment import UNDATED_HELP, undated_equipment_mark
+from capa_simulation.services.undated_equipment import (
+    UNDATED_HELP,
+    UNDATED_KIND_COLUMN,
+    undated_equipment_mark,
+)
 from capa_simulation.services.usage_basis import usage_exclusion_help, usage_exclusion_mark
 
 QUESTION_KEY = "equipment_explorer_question"
@@ -233,73 +246,159 @@ def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> No
     st.altair_chart(chart, width="stretch")
 
 
-def _undated_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
-    """일정(반입·Qual)이 비어 가용대수에 들지 못하는 신규 설비 표지. 0대면 `None`.
+# 숫자 밑에 서던 표지 줄 셋(일정 미정 · 미확인 · 사용기준 밖)은 상태 알림이다 — 자리에는
+# 아무것도 그리지 않는다(2026-11-09 상단 띠 재고 — 페이지 상단 문구 최소화, 설계 규칙 UI-TXT-04 ·
+# UI-NTF-02 · UI-NTF-05). 셋 다 설비 마스터 전체를 센다 — 지문(범위 · 내용)이 Main 의 고르기(볼
+# 내용 · 보기 · 공정 · 조회 조건)에 기대면 고를 때마다 다시 뜬다(AGENTS 9장 「알림 칸」). 범위는
+# 세션의 (공통 대장, 일정) 리비전 쌍, 내용은 호기 이름 목록이고 목록은 그 Alarm 줄의 표다. 고칠
+# 자리가 설비 마스터라 「그 화면으로」 는 그 탭을 연다. Main 과 Static 대비 일정이 같은 코드 · 같은
+# 범위로 낸다(미확인은 Main 만).
+UNDATED_ALERT = "EQ-20"
+UNCONFIRMED_ALERT = "EQ-21"
+USAGE_ALERT = "EQ-22"
+UNDATED_TABLE_TITLE = "일정 미정 호기"
+UNCONFIRMED_TABLE_TITLE = "미확인 호기"
+USAGE_TABLE_TITLE = "사용기준 밖 호기"
 
-    몫은 거르기 전 설비 마스터(`equipment`)로 매기고(캐시 — 같은 편집본이면 다시 검증하지 않는다)
-    이 화면의 조건으로 거른 호기(`filtered`)만 센다. 설비 마스터가 검증을 못 넘으면 알리지 않는다 —
-    그 오류는 결과 자리가 이미 알린다.
-    """
+
+def _unit_ids(equipment: pd.DataFrame) -> set[str]:
+    return set(equipment[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
+
+
+def _names(frame: pd.DataFrame, *columns: str) -> list[tuple[str, ...]]:
+    """지문 내용 — 호기 이름(과 갈래) 목록. 글이 아니라 구조 값이라 문구만 고친 배포가 다시 띄우지
+    않는다."""
+    rows = frame.loc[:, list(columns)].astype("string").fillna("")
+    return sorted({tuple(str(value) for value in row) for row in rows.itertuples(index=False)})
+
+
+def report_unit_notices(equipment: pd.DataFrame, *, scope: AlertScope | None) -> None:
+    """일정 미정(`EQ-20`) · 사용기준 밖(`EQ-22`) 상태 알림 — Main · Static 대비 일정이 열린 회차마다
+    (없어도 — 해소 · 이벤트 칸 한 자리씩) 부른다. `equipment` 는 이 화면이 그리는 설비 마스터(거르기
+    전)다. 설비 마스터가 검증을 못 넘으면 알리지 않는다(해소로 둔다) — 그 오류는 결과 자리가 이미
+    알린다."""
+    key, label = (scope.scope, scope.label) if scope is not None else (None, "")
     try:
         undated = get_undated_equipment(equipment)
     except ValueError:
-        return None
-    unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    return undated_equipment_mark(undated, unit_ids=unit_ids)
-
-
-# 아래 세 표지는 숫자 바로 밑에서 그 숫자에서 빠진 몫을 짚는다 — 자리에는 표지만, 뜻 · 고칠
-# 길은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04 · UI-NTF-05).
-def _undated_caption(notice: str | None) -> None:
-    if notice is not None:
-        st.caption(f":material/event_busy: {notice}", help=UNDATED_HELP)
-
-
-def _confirmation_notice(
-    equipment: pd.DataFrame,
-    filtered: pd.DataFrame,
-    *,
-    today: date,
-    basis: str | None = None,
-) -> str | None:
-    """반입·Qual 일정이 지났는데 실적이 비고 상태가 계획·확정인 설비(미확인) 표지. 없으면 `None`.
-
-    오늘 기준으로 고정이다(Main 의 기준일과 상관없다 — 2026-10-16 사용자 결정). 고르기는 거르기
-    전 설비 마스터로 하고(캐시 — 같은 저장본이면 다시 고르지 않는다) 이 화면의 조건으로 거른
-    호기만 센다. `equipment` 가 화면과 다른 기준(가정 설비 시나리오의 공식 일정)이면 `basis` 를
-    줄 끝 꼬리표로 단다.
-    """
-    issues = get_schedule_confirmation_issues(equipment, today=today)
-    unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    notice = schedule_confirmation_mark(issues, unit_ids=unit_ids)
-    if notice is None or basis is None:
-        return notice
-    return f"{notice} ({basis})"
-
-
-def _confirmation_caption(notice: str | None) -> None:
-    if notice is not None:
-        st.caption(f":material/assignment_late: {notice}", help=UNCONFIRMED_HELP)
-
-
-def _usage_notice(equipment: pd.DataFrame, filtered: pd.DataFrame) -> str | None:
-    """사용기준이 HBM·EDP 가 아니어서 가용대수에서 뺀 설비 표지. 0대면 `None`.
-
-    일정 미정 줄과 같은 범위(이 화면의 조건으로 거른 호기)를 센다. 바로 위 줄이 「총 · 가용 ·
-    비가동」 대수라 풍선이 그 셋 모두에서 뺐다고 적는다(`totals`). 설비 마스터가 검증을 못 넘으면
-    알리지 않는다 — 그 오류는 결과 자리가 이미 알린다.
-    """
+        undated = None
+    mark = None if undated is None else undated_equipment_mark(undated)
+    alerts.state(
+        UNDATED_ALERT,
+        scope=key,
+        scope_label=label,
+        content=None
+        if undated is None or mark is None
+        else _names(undated, EQUIPMENT_ID_COLUMN, UNDATED_KIND_COLUMN),
+        active=mark is not None,
+        text=f"{mark} — 가용대수에 세지 않음 · 설비 마스터 반입 · Qual 일정 칸에 적어 저장",
+        full=(
+            f"{mark} — {UNDATED_HELP} Main 의 가용대수 · 호기 현황과 Static 대비 일정의 설비 일정 "
+            "기준에서 빠집니다. 설비 마스터의 반입 · Qual 일정 칸에 날짜를 적어 저장하면 셉니다."
+        ),
+        tab=tab_name(EQUIPMENT_MASTER_TAB),
+        tables=(
+            [
+                alert_table(
+                    undated.loc[:, [EQUIPMENT_ID_COLUMN, PROCESS_COLUMN, UNDATED_KIND_COLUMN]],
+                    title=UNDATED_TABLE_TITLE,
+                    file_name="undated_units.csv",
+                )
+            ]
+            if undated is not None and mark is not None
+            else []
+        ),
+    )
     try:
         excluded = get_usage_excluded_equipment(equipment)
     except ValueError:
-        return None
-    unit_ids = set(filtered[EQUIPMENT_ID_COLUMN].astype("string").str.strip().dropna())
-    return usage_exclusion_mark(excluded, unit_ids=unit_ids)
+        excluded = None
+    usage = None if excluded is None else usage_exclusion_mark(excluded)
+    alerts.state(
+        USAGE_ALERT,
+        scope=key,
+        scope_label=label,
+        content=None
+        if excluded is None or usage is None
+        else _names(excluded, EQUIPMENT_ID_COLUMN),
+        active=usage is not None,
+        text=f"{usage} — 총 · 가용 · 비가동 대수에서 뺌 · 설비 마스터 사용기준 칸",
+        full=(
+            f"{usage} — {usage_exclusion_help(totals=True)} Static 대비 일정의 설비 일정 "
+            "기준에서도 뺍니다."
+        ),
+        tab=tab_name(EQUIPMENT_MASTER_TAB),
+        tables=(
+            [
+                alert_table(
+                    excluded.loc[:, [EQUIPMENT_ID_COLUMN, PROCESS_COLUMN, USAGE_BASIS_COLUMN]],
+                    title=USAGE_TABLE_TITLE,
+                    file_name="usage_excluded_units.csv",
+                )
+            ]
+            if excluded is not None and usage is not None
+            else []
+        ),
+    )
 
 
-def _usage_caption(notice: str | None) -> None:
-    if notice is not None:
-        st.caption(f":material/filter_alt_off: {notice}", help=usage_exclusion_help(totals=True))
+def report_unconfirmed_units(
+    equipment: pd.DataFrame,
+    *,
+    today: date,
+    scope: AlertScope | None,
+    confirmation_equipment: pd.DataFrame | None = None,
+    confirmation_basis: str | None = None,
+) -> None:
+    """미확인(`EQ-21`) 상태 알림 — 반입 · Qual 일정이 지났는데 실적이 비고 상태가 계획 · 확정인
+    호기. Main 이 열린 회차마다(없어도) 부른다. **오늘 기준**이라 Main 의 기준일과 상관없다
+    (2026-10-16 사용자 결정). `confirmation_equipment` 를 주면 그 마스터(가정 설비 시나리오일 때
+    공식 스냅샷 그대로)로 고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다.
+    `confirmation_basis` 는 그때 글 끝 꼬리표(「공식 일정 기준」)다."""
+    key, label = (scope.scope, scope.label) if scope is not None else (None, "")
+    source = equipment if confirmation_equipment is None else confirmation_equipment
+    issues = get_schedule_confirmation_issues(source, today=today)
+    unit_ids = _unit_ids(equipment)
+    mark = schedule_confirmation_mark(issues, unit_ids=unit_ids)
+    tail = (
+        f" ({confirmation_basis})"
+        if mark is not None and confirmation_equipment is not None and confirmation_basis
+        else ""
+    )
+    rows = issues.loc[
+        issues[CONFIRMATION_KIND_COLUMN].eq(UNCONFIRMED)
+        & issues[EQUIPMENT_ID_COLUMN].astype("string").str.strip().isin(unit_ids).fillna(False)
+    ]
+    alerts.state(
+        UNCONFIRMED_ALERT,
+        scope=key,
+        scope_label=label,
+        content=None if mark is None else _names(rows, EQUIPMENT_ID_COLUMN, STAGE_COLUMN),
+        active=mark is not None,
+        text=f"{mark}{tail} — 일정이 지났는데 실적이 빔 · 설비 마스터에서 실적 · 상태 확인",
+        full=(f"{mark}{tail} — {UNCONFIRMED_HELP} 오늘 기준이라 Main 의 기준일을 옮겨도 같습니다."),
+        tab=tab_name(EQUIPMENT_MASTER_TAB),
+        tables=(
+            [
+                alert_table(
+                    rows.loc[
+                        :,
+                        [
+                            EQUIPMENT_ID_COLUMN,
+                            PROCESS_COLUMN,
+                            STAGE_COLUMN,
+                            SCHEDULE_COLUMN,
+                            STATUS_COLUMN,
+                        ],
+                    ],
+                    title=UNCONFIRMED_TABLE_TITLE,
+                    file_name="unconfirmed_units.csv",
+                )
+            ]
+            if mark is not None
+            else []
+        ),
+    )
 
 
 def _availability(
@@ -311,8 +410,6 @@ def _availability(
     end: date,
     view: str,
     expression: str,
-    undated_notice: str | None = None,
-    usage_notice: str | None = None,
     labels: ProcessLabels | None = None,
 ) -> None:
     weekly = get_weekly_equipment_availability(
@@ -324,7 +421,6 @@ def _availability(
     )
     if weekly.empty:
         st.caption("조건에 맞는 설비가 없습니다.")
-        _usage_caption(usage_notice)
         return
     latest = weekly.loc[weekly["주차시작일"].eq(weekly["주차시작일"].max())]
     available = float(latest["가용대수"].sum())
@@ -335,8 +431,6 @@ def _availability(
         f"　총 {_count(total)}대 · 가용 {_count(available)}대 · 비가동 {_count(inactive)}대"
         f" · 가용률 {available / total if total else 0:.1%}"
     )
-    _undated_caption(undated_notice)
-    _usage_caption(usage_notice)
     if view == "공정별 내역":
         st.markdown("#### 공정소분류별 현황")
         # 차례는 원본 공정명으로 정하고 글자만 표시명이다 — 표시명을 고쳐도 행이 자리를 옮기지
@@ -505,6 +599,7 @@ def render_equipment_explorer(
     confirmation_equipment: pd.DataFrame | None = None,
     confirmation_basis: str | None = None,
     shared_screen: str | None = None,
+    alert_scope: AlertScope | None = None,
 ) -> None:
     """Main 탭. 거르는 조건(공정·기간·기준일·추가 조건)은 `conditions`(사이드바 조건 카드)다.
 
@@ -513,15 +608,18 @@ def render_equipment_explorer(
     같은 공정만 걸리고, 이름이 다르면 그 칸이 「없는 공정」 표지를 단다. 공정구분 · 공정대분류 ·
     투자구분은 그대로 카드 칸이다.
 
-    `confirmation_equipment` 를 주면 미확인 알림은 그 마스터(가정 설비 시나리오일 때 공식 스냅샷
-    그대로)로 고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다(결정). 합치지
-    않는다(공통은 늘 최신이라 공식 스냅샷의 공통이 곧 지금 공통이다). `confirmation_basis` 는 그
-    줄의 꼬리표(「공식 일정 기준」)다.
+    일정 미정 · 미확인 · 사용기준 밖은 자리에 그리지 않고 상태 알림으로 낸다(`report_unit_notices` ·
+    `report_unconfirmed_units` — 범위 `alert_scope`, 설비 마스터 전체). `confirmation_equipment` 를
+    주면 미확인 알림은 그 마스터(가정 설비 시나리오일 때 공식 스냅샷 그대로)로 고르고 이 화면의
+    호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다(결정). 합치지 않는다(공통은 늘 최신이라
+    공식 스냅샷의 공통이 곧 지금 공통이다). `confirmation_basis` 는 그 알림 글의 꼬리표(「공식 일정
+    기준」)다.
 
-    **무엇을 볼지 고르는 전환(볼 내용·보기·표현)은 본문이다.** 탭 안의 하위 탭과 같은 것이라
-    카드에 넣으면 지금 무엇을 보는지 본문에서 사라진다(2026-09-29 사용자 결정). `conditions` 를
-    주지 않으면 조건도 본문 상자에 그린다 — 컴포넌트를 홀로 띄우는 테스트가 쓴다. 설명은 가용설비
-    현황 Guide 다.
+    **무엇을 볼지 고르는 전환(볼 내용·보기·표현)은 본문이다.** 탭 안의 하위 탭과 같은 것이라 카드에
+    넣으면 지금 무엇을 보는지 본문에서 사라진다(2026-09-29 사용자 결정). 볼 내용 · 표현은 라벨 줄을
+    걷는다(단추 글이 곧 뜻 — 접근성 이름으로 남는다, 2026-11-09 상단 띠 재고). `conditions` 를 주지
+    않으면 조건도 본문 상자에 그린다 — 컴포넌트를 홀로 띄우는 테스트가 쓴다. 설명은 가용설비 현황
+    Guide 다.
 
     `process_labels` 는 **보이는 글자에만** 쓴다(2026-10-10 사용자 결정) — `공정소분류` 선택지·
     걸린 조건 줄·조회 표의 `공정소분류` 칸·생애주기 그림의 풍선. 선택값(세션)과 거르는 값은
@@ -529,6 +627,14 @@ def render_equipment_explorer(
     """
     if tab_is_hidden(owner_tab):
         return
+    report_unit_notices(equipment, scope=alert_scope)
+    report_unconfirmed_units(
+        equipment,
+        today=today,
+        scope=alert_scope,
+        confirmation_equipment=confirmation_equipment,
+        confirmation_basis=confirmation_basis,
+    )
     labels = process_labels or ProcessLabels()
     in_card = conditions is not None
     # 머리 줄(볼 내용·보기·표현). `표현` 은 결과 프래그먼트가 이 줄 끝에 쓴다
@@ -543,6 +649,7 @@ def render_equipment_explorer(
             required=True,
             key=QUESTION_KEY,
             persist_state="session",
+            label_visibility="collapsed",
         )
         view = ""
         if question == "가용대수":
@@ -718,24 +825,6 @@ def render_equipment_explorer(
     filtered_baseline = (
         baseline.loc[baseline["공정"].isin(selected)].copy() if selected else baseline
     )
-    shows_status = question == "호기 현황" and view in ("상태 분포", "호기 목록")
-    undated_notice = (
-        _undated_notice(equipment, filtered) if question == "가용대수" or shows_status else None
-    )
-    # 일정 확인(미확인)은 호기 이름을 보이는 호기 현황에서만 알린다 — 대수와 상관없는 확인할 거리다.
-    confirmation_notice = (
-        _confirmation_notice(
-            equipment if confirmation_equipment is None else confirmation_equipment,
-            filtered,
-            today=today,
-            basis=confirmation_basis if confirmation_equipment is not None else None,
-        )
-        if shows_status
-        else None
-    )
-    # 사용기준 제외는 대수를 세는 `가용대수` 에서만 알린다. 호기 현황(상태 분포·호기 목록)은 이름을
-    # 보이는 자리라 HBM·EDP 가 아닌 호기도 그대로 센다.
-    usage_notice = _usage_notice(equipment, filtered) if question == "가용대수" else None
     shown = _Shown(
         question=str(question),
         view=view,
@@ -749,9 +838,6 @@ def render_equipment_explorer(
         transition_stages=tuple(transition_stages),
         transition_schedule=transition_schedule,
         transition_confirmations=tuple(transition_confirmations),
-        undated_notice=undated_notice,
-        usage_notice=usage_notice,
-        confirmation_notice=confirmation_notice,
         labels=labels,
         today=today,
         owner_tab=owner_tab,
@@ -764,7 +850,7 @@ def render_equipment_explorer(
 
 @dataclass(frozen=True, eq=False)
 class _Shown:
-    """조건 카드까지 고른 뒤의 결과 입력 — 거른 세 표, 날짜, 단계 전환 조건, 알림 줄.
+    """조건 카드까지 고른 뒤의 결과 입력 — 거른 세 표, 날짜, 단계 전환 조건.
 
     `_render_expressed_result` 프래그먼트 회차는 직전 앱 전체 회차의 이 값을 그대로 쓴다.
     """
@@ -781,9 +867,6 @@ class _Shown:
     transition_stages: tuple[str, ...]
     transition_schedule: str
     transition_confirmations: tuple[str, ...]
-    undated_notice: str | None
-    usage_notice: str | None
-    confirmation_notice: str | None
     labels: ProcessLabels
     today: date
     owner_tab: OpenTab | None
@@ -809,6 +892,7 @@ def _render_expressed_result(row: DeltaGenerator, shown: _Shown) -> None:
                 required=True,
                 key=f"equipment_explorer_expression_{shown.view}",
                 persist_state="session",
+                label_visibility="collapsed",
             )
             or "차트"
         )
@@ -823,7 +907,6 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
     transition_stages = list(shown.transition_stages)
     transition_schedule = shown.transition_schedule
     transition_confirmations = list(shown.transition_confirmations)
-    undated_notice, usage_notice = shown.undated_notice, shown.usage_notice
     labels, today, owner_tab = shown.labels, shown.today, shown.owner_tab
     with st.container(border=True):
         if uses_period and start > end:
@@ -852,8 +935,6 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                     end=end,
                     view=view,
                     expression=expression,
-                    undated_notice=undated_notice,
-                    usage_notice=usage_notice,
                     labels=labels,
                 )
             elif question == "비가동 호기" and view == "그 달 전체":
@@ -937,8 +1018,6 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                 else:
                     st.markdown(f"#### 호기 생애주기 상태 · {as_of:%Y-%m-%d}")
                     st.caption(f"설비 마스터 {_rows_label(status)}", help=STATUS_COUNT_HELP)
-                    _undated_caption(undated_notice)
-                    _confirmation_caption(shown.confirmation_notice)
                     column, states, colors = (
                         "상태",
                         EQUIPMENT_STATUSES,

@@ -409,6 +409,8 @@ with main_tab:
                 ),
                 # 공정소분류는 조회 조건 패널의 공용 공정 칸이다(2026-11-08 사용자 답 P1).
                 shared_screen=SHARED_PROCESS_SCREEN,
+                # 일정 미정 · 미확인 · 사용기준 밖 상태 알림의 범위(세션의 리비전 쌍).
+                alert_scope=equipment_alert_scope,
             )
 
 with gap_tab:

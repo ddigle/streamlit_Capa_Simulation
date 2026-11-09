@@ -68,6 +68,7 @@ _SPACE_OVERLAY_TESTS = "tests/test_space_layout_overlay_page.py"
 _STANDARD_TARGET_PAGE = "app_pages/standard_target_capa.py"
 _LOAD_CONVERSION_PAGE = "app_pages/load_conversion.py"
 _SHORTENING_PANEL = "src/capa_simulation/components/required_shortening_panel.py"
+_EXPLORER = "src/capa_simulation/components/equipment_explorer.py"
 
 WITHDRAWN: tuple[Withdrawn, ...] = (
     Withdrawn(
@@ -513,6 +514,39 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
             "tests/test_constraint_simulation_page.py"
             "::test_late_modification_windows_raise_a_state_alert_not_a_place_line"
         ),
+    ),
+    Withdrawn(
+        what="가용설비 현황 Main 가용대수 · 호기 현황 숫자 밑 「일정 미정 N대 (…)」 줄",
+        why="2026-11-09 상단 띠 재고 · UI-TXT-04 · UI-NTF-02",
+        file=_EXPLORER,
+        function="report_unit_notices",
+        code="EQ-20",
+        route="state",
+        test=(
+            "tests/test_equipment_explorer.py"
+            "::test_undated_new_unit_is_a_state_alert_not_a_line_under_the_numbers"
+        ),
+    ),
+    Withdrawn(
+        what="가용설비 현황 Main 가용대수 숫자 밑 「사용기준 HBM·EDP 밖 N대 제외」 줄",
+        why="2026-11-09 상단 띠 재고 · UI-TXT-04 · UI-NTF-02",
+        file=_EXPLORER,
+        function="report_unit_notices",
+        code="EQ-22",
+        route="state",
+        test=(
+            "tests/test_equipment_explorer.py"
+            "::test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status"
+        ),
+    ),
+    Withdrawn(
+        what="가용설비 현황 Main 호기 현황 머리 밑 「미확인 N대 (…)」 줄",
+        why="2026-11-09 상단 띠 재고 · UI-TXT-04 · UI-NTF-02",
+        file=_EXPLORER,
+        function="report_unconfirmed_units",
+        code="EQ-21",
+        route="state",
+        test="tests/test_equipment_explorer.py::test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab",
     ),
 )
 

@@ -4,7 +4,7 @@ import json
 import re
 from datetime import date
 
-from alert_marks import place_errors
+from alert_marks import active_state, note_table, place_errors, states, table_frame
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.equipment_explorer import (
@@ -371,20 +371,30 @@ def _undated(app: AppTest) -> list[str]:
     return [caption.value for caption in app.caption if "일정 미정" in caption.value]
 
 
-def test_undated_new_unit_is_named_under_availability_and_status_summary() -> None:
+def test_undated_new_unit_is_a_state_alert_not_a_line_under_the_numbers() -> None:
+    """반입 · Qual 일정이 빈 신규 호기는 숫자 밑 표지 줄이 아니라 상태 알림(`EQ-20`)이다 — 자리에는
+    그리지 않는다(2026-11-09 상단 띠 재고, 설계 규칙 UI-TXT-04 · UI-NTF-02). 설비 마스터 전체를 세어
+    지문이 볼 내용 · 공정 고르기에 기대지 않고, 목록은 Alarm 줄의 표 · 고칠 자리는 설비 마스터
+    탭이다."""
     app = AppTest.from_function(_render_fixture, default_timeout=30)
     app.session_state["undated_unit"] = True
     app.run()
     assert not app.exception
 
-    assert [text.split(" — ")[0] for text in _undated(app)] == [
-        ":material/event_busy: 일정 미정 1대 (반입 미정 1)"
-    ]
-    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
-    assert len(_undated(app)) == 1
-    # 공정 조건 밖이면 세지 않는다.
-    app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()
     assert _undated(app) == []
+    note = active_state(app, "EQ-20")
+    assert note is not None
+    assert note["short"].startswith("일정 미정 1대 (반입 미정 1) — 가용대수에 세지 않음")
+    assert note["tab"] == "설비 마스터"
+    rows = table_frame(note_table(note, "일정 미정 호기"))
+    assert rows["설비명"].tolist() == ["EQ-NODATE"]
+    fingerprint = note["fp"]
+    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
+    assert _undated(app) == []
+    # 공정 조건 · 볼 내용을 바꿔도 같은 지문이다 — 고를 때마다 다시 뜨지 않는다.
+    app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()
+    again = active_state(app, "EQ-20")
+    assert again is not None and again["fp"] == fingerprint
 
 
 def _usage(app: AppTest) -> list[str]:
@@ -392,8 +402,8 @@ def _usage(app: AppTest) -> list[str]:
 
 
 def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status() -> None:
-    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠지고 한 줄로 알린다. 호기 현황은 그대로
-    센다."""
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠지고 상태 알림(`EQ-22`)으로 알린다 — 자리
+    표지 줄은 없다. 호기 현황은 그대로 센다."""
     plain = AppTest.from_function(_render_fixture, default_timeout=30)
     plain.run()
     app = AppTest.from_function(_render_fixture, default_timeout=30)
@@ -401,15 +411,17 @@ def test_non_hbm_units_leave_the_availability_count_but_stay_in_the_unit_status(
     app.run()
     assert not app.exception
 
-    assert _usage(plain) == []
-    # 자리에는 표지만, 뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
-    assert _usage(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 1대 제외"]
-    (line,) = [item for item in app.caption if "사용기준 HBM" in item.value]
-    assert str(line.proto.help) == (
+    assert _usage(plain) == [] and _usage(app) == []
+    assert active_state(plain, "EQ-22") is None and states(plain, "EQ-22")
+    note = active_state(app, "EQ-22")
+    assert note is not None
+    assert note["short"].startswith("사용기준 HBM·EDP 밖 1대 제외")
+    assert (
         "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 총대수·가용대수·비가동대수 모두에서 "
-        "뺐습니다 — 배치·호기 목록에는 그대로 있습니다."
+        "뺐습니다" in note["full"]
     )
-    # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다 — 풍선이 「총대수 … 모두에서」 라고
+    assert table_frame(note_table(note, "사용기준 밖 호기"))["설비명"].tolist() == ["EQ-NONHBM"]
+    # 마지막 주 요약의 총·가용 대수는 그 호기가 없는 표와 같다 — 알림이 「총대수 … 모두에서」 라고
     # 적는 까닭.
     summary = [item.value for item in app.caption if item.value.startswith("마지막 주")]
     assert summary == [item.value for item in plain.caption if item.value.startswith("마지막 주")]
@@ -425,37 +437,38 @@ def test_no_undated_line_when_every_new_unit_has_dates() -> None:
     app = _app()
 
     assert _undated(app) == []
+    assert active_state(app, "EQ-20") is None
+    assert states(app, "EQ-20")
 
 
 def _unconfirmed(app: AppTest) -> list[str]:
     return [caption.value for caption in app.caption if "미확인" in caption.value]
 
 
-def test_an_unconfirmed_unit_is_named_under_the_unit_status() -> None:
-    """일정이 지났는데 실적이 비고 상태가 계획·확정인 설비는 호기 현황 머리 아래 한 줄로
-    알린다(2026-10-16 사용자 결정 — 오늘 기준 고정, 저장본 기준). 대수와 상관없는 확인할 거리라
-    가용대수에는 서지 않는다."""
+def test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab() -> None:
+    """일정이 지났는데 실적이 비고 상태가 계획·확정인 설비는 상태 알림(`EQ-21`)이다(2026-10-16
+    사용자 결정 — 오늘 기준 고정, 저장본 기준). 자리 표지 줄은 없고, 설비 마스터 전체를 세어 Main
+    의 기준일 · 볼 내용 · 공정 고르기와 상관없이 같은 지문이다."""
     app = AppTest.from_function(_render_fixture, default_timeout=30)
     app.session_state["unconfirmed_unit"] = True
     app.run()
     assert not app.exception
     assert _unconfirmed(app) == []
+    note = active_state(app, "EQ-21")
+    assert note is not None
+    assert note["short"].startswith("미확인 1대 (반입 1 · Qual 1) — 일정이 지났는데 실적이 빔")
+    rows = table_frame(note_table(note, "미확인 호기"))
+    assert set(rows["설비명"]) == {"EQ-LATE"} and set(rows["단계"]) == {"반입", "Qual"}
+    fingerprint = note["fp"]
 
     app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
-    assert not app.exception
-    assert [text.split(" — ")[0] for text in _unconfirmed(app)] == [
-        ":material/assignment_late: 미확인 1대 (반입 1 · Qual 1)"
-    ]
-    # 호기 목록도 같은 줄이다.
-    app.selectbox(key="equipment_explorer_unit_view").set_value("호기 목록").run()
-    assert len(_unconfirmed(app)) == 1
+    assert _unconfirmed(app) == []
     # 기준일을 옮겨도 오늘 기준이다 — 미확인은 Main 기준일과 상관없다.
     app.session_state[AS_OF_KEY] = date(2026, 9, 2)
     app.run()
-    assert len(_unconfirmed(app)) == 1
-    # 공정 조건 밖이면 세지 않는다.
     app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()
-    assert _unconfirmed(app) == []
+    again = active_state(app, "EQ-21")
+    assert again is not None and again["fp"] == fingerprint
 
 
 def test_no_unconfirmed_line_when_every_open_stage_is_still_ahead() -> None:
@@ -464,6 +477,18 @@ def test_no_unconfirmed_line_when_every_open_stage_is_still_ahead() -> None:
 
     assert not app.exception
     assert _unconfirmed(app) == []
+    assert active_state(app, "EQ-21") is None
+
+
+def test_the_question_and_expression_switches_have_no_label_row() -> None:
+    """볼 내용 · 표현 전환 단추는 라벨 줄을 걷는다 — 단추 글이 곧 뜻이고 라벨은 접근성 이름으로
+    남는다(2026-11-09 상단 띠 재고 — 페이지 상단 여백 최소화)."""
+    app = _app()
+    question = app.segmented_control(key=QUESTION_KEY)
+    expression = app.segmented_control("equipment_explorer_expression_주차별 추이")
+    for switch, label in ((question, "볼 내용"), (expression, "표현")):
+        assert switch.label == label
+        assert switch.proto.label_visibility.value == switch.proto.label_visibility.COLLAPSED
 
 
 # ------------------------------------------------------- 공정 표시명(Proc Rename)

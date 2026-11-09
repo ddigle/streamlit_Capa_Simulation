@@ -684,7 +684,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`test_equipment_scenario_demand.py`). ① 은 원본 이름(`test_process_label_boundaries.py`).
   - 조건은 탭마다 따로다 — `Static 대비 일정` 은 Main 의 공정소분류·추가 조건 키를 읽지 않고, 비교 범위는 이 탭의
     `공정`·`호기 필터` 만 정한다.
-  - Main 틀은 `equipment_explorer.py`, 알림 줄은 `undated_equipment.py`·`schedule_confirmation.py`·`usage_basis.py`,
+  - Main 틀은 `equipment_explorer.py`, 일정 미정 · 미확인 · 사용기준 밖 판정은 `undated_equipment.py`·`schedule_confirmation.py`·
+    `usage_basis.py`(자리 줄이 아니라 상태 알림 `EQ-20` · `EQ-21` · `EQ-22` — 설비 마스터 전체, 9장 「알림 칸」),
     대수 축은 `equipment_units.py`, 월별 안분은 `wd_window.py`(규칙은 6장). Cut-off 는 리비전 없이 표를 통째 갈아 끼운다.
   - 편집본은 `ensure_equipment_drafts` 한 곳이 씨뿌린다(Space 와 버퍼 공유). 입력 표를 더하면 draft 키 이름을 올리고
     Import·버퍼 교체 때 그 편집표를 `discard_editor` 로 버린다(9장). ① 본문은 `equipment_master_tab.py`, 편집본 경계·작은 편집표·
@@ -3580,7 +3581,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
-  그린다. 산식을 화면에 복제하지 않는다.
+  그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 표현 전환 단추는 라벨 줄을 걷는다(접근성 이름으로 남음 — 2026-11-09 상단 띠
+  재고). 숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
+  일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 만). 모두 설비 마스터 전체를 세어 지문이 고르기에 기대지
+  않고, 목록은 Alarm 줄 표, 「그 화면으로」 는 설비 마스터 탭이다.
   - 판정·구간은 `simulation_cache` 내용 지문 키 래퍼로 받고 표시명·거르기는 캐시 결과의 복사본 위에서 한다.
   - `표현`(차트·표)과 결과 상자는 「본문 프래그먼트」다(`tests/test_explorer_expression_fragment.py`).
     `render_equipment_period` 는 숨은 `owner_tab` 이면 조회를 건너뛴다.
@@ -5321,7 +5325,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   「입고 예정」, 반입만 있고 Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 총대수·
   가용대수에 들지 않는다(반입이 빈 호기는 총대수에도 없다). 일정 순서는 있는 날짜끼리 보고, 반입이
   없는 신규 호기에는 정지·반출/이설일정을 넣을 수 없다. 그런 호기의 대수는 일정 기준 가용을 읽는 자리(Main `가용대수`·`호기 현황`, Static 대비 일정,
-  필요 단축 일정 — 세 자리 모두 표지 「일정 미정 N대 (…)」 만 두고 규칙(`UNDATED_HELP`)은 그 줄 풍선이며, 필요 단축 일정은 Qual 일정이 없는 몫이 단축 후보도 아님을 풍선에 더한다)가 「일정 미정 N대」 한 줄로 알린다(`services/undated_equipment.py` — 표지 `undated_equipment_mark`).
+  필요 단축 일정)가 「일정 미정 N대 (…)」 로 알린다(`services/undated_equipment.py` — 표지 `undated_equipment_mark`). 가용설비 현황
+  Main · Static 대비 일정은 자리에 적지 않고 상태 알림 `EQ-20`(설비 마스터 전체 · 목록은 Alarm 줄 표 — 2026-11-09 상단 띠 재고), 필요
+  단축 일정은 값 줄 끝 표지 + `RS-03` 이고 Qual 일정이 없는 몫이 단축 후보도 아님을 풍선 · 전문에 더한다.
 - 단일 Qual상태(옛 확정상태)는 Qual 일정의 계획·확정·완료·지연을 관리하는 값이며 가용대수 산식에는
   사용하지 않는다. **Qual일정이 있는 신규 호기에만 필수**다 — Qual일정이 없으면(보관·기존설비
   포함) 비워 둘 수 있다. 반입상태는 같은 네 값이고 비워도 된다.
@@ -5329,10 +5335,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   설비 일정 기준 가용·필요 단축 일정·공정 Capa 상세는 일정 기준 그대로다 — Space 는 실물, 집계는 계획이다. 실적은
   저장할 때 오늘보다 늦을 수 없고 반입실적 ≤ Qual실적이어야 한다. 미확인(상태 계획·확정 + 실적 공백 +
   일정 < 오늘)·실적 누락·상태 갱신 필요는 저장을 막지 않는 알림이다(`services/schedule_confirmation.py`) —
-  설비 마스터 탭 편집표 위 한 줄·접힌 목록(편집본 기준)과 Main `호기 현황` 머리 줄 아래 미확인 한 줄(저장본 기준).
+  설비 마스터 탭 편집표 줄 풍선(편집본 기준)과 Main 의 상태 알림 `EQ-21`(저장본 기준 · 설비 마스터 전체 — 2026-11-09 상단 띠
+  재고로 `호기 현황` 머리 줄 아래 한 줄에서 옮김).
   **미확인은 공식 설비 시나리오 일정 기준이다** — 세션이 공식 시나리오면 자기 일정 그대로, 가정 설비 시나리오면 Main 은
   공식 스냅샷의 미확인을 화면 호기로 좁혀 쓰고(합치지 않는다 — 공통은 늘 최신이라 공식 스냅샷의 공통이 곧 지금 공통)
-  꼬리표 「공식 일정 기준」 을 달며, 설비 마스터 탭 확인 목록은 공식 일정 + 편집본 공통 칸으로 센다. 상태 둘(반입상태·Qual상태)은
+  알림 글에 꼬리표 「(공식 일정 기준)」 을 달며, 설비 마스터 탭 확인 목록은 공식 일정 + 편집본 공통 칸으로 센다. 상태 둘(반입상태·Qual상태)은
   공통 칸이고 칸 머리가 「공통 — 공식 일정 기준」 이다.
 - **설비 시나리오에 일정이 없는 호기는 그 시나리오에 없는 호기와 같다**(F4 — 2026-10-24 결정, 질문 2 권장안). 그 시나리오의
   주차·월별 가용·Static 대비 일정·필요 단축 일정·공정 Capa 상세·「일정 미정 N대」 셈에서 빠지고(기존설비 Y·보관 Y 도),
