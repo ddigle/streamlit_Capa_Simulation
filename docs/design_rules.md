@@ -889,10 +889,10 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 상태 표지는 실제로 일어난 것(읽음 · 적용 · 멈춤)만 말하고, 한 화면의 두 표지가 서로 어긋나게 함께 서지 않는다 — 「✓ 적용」 과 「계산을 멈췄습니다」 가 함께 서면 안 된다. 저장할 것이 없으면 미저장 표지도 서지 않는다 — 설비 편집본이 저장본으로 돌아오면 머리 칩 · 배지 · 머리 띠 · 탭 점이 함께 걷힌다(6-7 q-unit-change).
 
 - 수준: MUST · 확정
-- 범위: 조회 조건 줄 표지 · 머리 칩 · 배지 · 탭 점
+- 범위: 조회 조건 줄 표지 · 머리 칩 · 배지 · 탭 점 · 편집표 「표 보기」 단추 표지
 - 예외: 없음
 - 판단: 이 화면의 표지 둘이 서로 다른 말을 하나? 표지가 말하는 일이 실제로 일어났나?
-- 그물: `tests/test_app_navigation.py`(range_says_applied_only_where_the_screen_read_it · a_stopped_calculation_withdraws_applied 외) · `tests/test_equipment_unsaved_mark.py`(저장본으로 돌아온 편집의 표지) · `tests/test_reference_grid_page.py`(a_hand_edited_draft_is_named_as_an_unapplied_edit_in_the_chip · the_head_stops_counting_a_draft_the_page_dropped_on_a_source_change)
+- 그물: `tests/test_app_navigation.py`(range_says_applied_only_where_the_screen_read_it · a_stopped_calculation_withdraws_applied 외) · `tests/test_equipment_unsaved_mark.py`(저장본으로 돌아온 편집의 표지) · `tests/test_reference_grid_page.py`(a_hand_edited_draft_is_named_as_an_unapplied_edit_in_the_chip · the_head_stops_counting_a_draft_the_page_dropped_on_a_source_change) · `tests/test_equipment_pages.py`(the_filter_mark_follows_the_applied_view_not_the_picked_one — 고르기만 한 필터는 「표 보기 · 필터」 표지 없음, 적용 뒤 비우기만 하면 남음)
 - 그물 후보: 없음
 - 근거: AGENTS 8장 「조회기간 줄의 적용 기간 글자는 셋이다」, 이번 배포 전후 보드 q-unit-change(2026-11-06)
 - 지금 값: 없음

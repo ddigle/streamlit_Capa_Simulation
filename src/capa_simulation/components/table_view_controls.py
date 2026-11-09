@@ -92,6 +92,7 @@ def render_table_view_controls(
     locked_columns: Sequence[str] = (),
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
     footer: Callable[[], None] | None = None,
+    applied_filtered: bool | None = None,
 ) -> TableView:
     """컬럼 선택과 행 필터를 그리고 그 결과를 돌려준다.
 
@@ -100,8 +101,12 @@ def render_table_view_controls(
     마스터 기존 보유대수 · 비가동 일정, 가용설비 설정 Cut-off 세 표가 같은 꼴). 안의 칸 · key ·
     「보기 적용」 은 그대로다. 필터가 걸린 동안은 단추 글 끝 표지(「표 보기 · 필터」)와
     풍선(`FILTERED_NOTICE` — 행 추가 · 삭제 잠김)이 말한다 — 표 아래 · 위에 설명 줄을 세우지
-    않는다(설계 규칙 UI-TXT-04 — 숨은 데이터는 칸 머리 표지 + 풍선). 표지는 그리기 전 세션의 고른
-    값으로 정한다(위젯이 돌려줄 값과 같다 — 지금 표에 없는 값은 뺀다).
+    않는다(설계 규칙 UI-TXT-04 — 숨은 데이터는 칸 머리 표지 + 풍선). 표지는 **편집표에 건 보기**를
+    따른다 — 잠금이 그 보기(`row_mode`)를 따르므로 고르기만 하고 「보기 적용」 을 누르지 않은 회차에
+    잠겼다고 말하지 않는다(UI-DAT-11). 고름과 적용이 갈리는 부르는 쪽(폼 밖 작은 편집표)은 건 보기의
+    `filtered` 를 `applied_filtered` 로 넘긴다. 주지 않으면(처음 그리는 회차 · 제출할 때 고름이 곧
+    적용인 폼 안 Cut-off) 그리기 전 세션의 고른 값으로 정한다(위젯이 돌려줄 값과 같다 — 지금 표에
+    없는 값은 뺀다).
 
     `locked_columns` 는 감출 수 없는 컬럼이다 — 키와 필수 입력이 화면에서 사라지면
     사용자가 무엇을 고치고 있는지 알 수 없고, 새 행을 만들 수도 없다.
@@ -127,7 +132,11 @@ def render_table_view_controls(
     hideable = [column for column in columns if column not in locked]
     shown_key = f"{key_prefix}_columns"
 
-    filtered_now = _filtered_in_state(data, key_prefix, filter_columns)
+    filtered_now = (
+        _filtered_in_state(data, key_prefix, filter_columns)
+        if applied_filtered is None
+        else applied_filtered
+    )
     with st.popover(
         f"{VIEW_LABEL} · {VIEW_FILTERED_MARK}" if filtered_now else VIEW_LABEL,
         icon=VIEW_FILTERED_ICON if filtered_now else VIEW_ICON,

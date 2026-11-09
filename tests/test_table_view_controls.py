@@ -160,6 +160,43 @@ def test_the_view_settings_are_a_popover_that_marks_a_filtered_table() -> None:
     assert popover.proto.popover.label == VIEW_LABEL
 
 
+def _applied_view_app() -> None:
+    import pandas as pd
+    import streamlit as st
+
+    from capa_simulation.components.table_view_controls import render_table_view_controls
+
+    fleet = pd.DataFrame({"설비명": ["E1", "E2", "E3"], "공정소분류": ["가", "나", "가"]})
+    render_table_view_controls(
+        fleet,
+        key_prefix="view_test",
+        editor_key="view_test_editor",
+        filter_columns=["공정소분류"],
+        applied_filtered=bool(st.session_state.get("applied_filtered", False)),
+    )
+
+
+def test_the_filter_mark_follows_the_applied_view_when_the_caller_passes_it() -> None:
+    """고름과 적용이 갈리는 부르는 쪽(폼 밖 작은 편집표)은 편집표에 건 보기의 `filtered` 를 넘긴다 —
+    표지 · 잠김 풍선은 그것을 따르고, 고르기만 한 필터로 잠겼다고 말하지 않는다(UI-DAT-11)."""
+    from streamlit.testing.v1 import AppTest
+
+    from capa_simulation.components.table_view_controls import FILTERED_NOTICE, VIEW_LABEL
+
+    app = AppTest.from_function(_applied_view_app).run()
+    app.multiselect(key="view_test_filter_공정소분류").set_value(["가"]).run()
+    assert not app.exception
+    (popover,) = _popovers(app)
+    assert popover.proto.popover.label == VIEW_LABEL
+    assert not popover.proto.popover.help
+
+    app.session_state["applied_filtered"] = True
+    app.multiselect(key="view_test_filter_공정소분류").set_value([]).run()
+    (popover,) = _popovers(app)
+    assert popover.proto.popover.label == f"{VIEW_LABEL} · 필터"
+    assert popover.proto.popover.help == FILTERED_NOTICE
+
+
 def _labelled_filter_app() -> None:
     import pandas as pd
     import streamlit as st

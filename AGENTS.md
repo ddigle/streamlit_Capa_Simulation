@@ -1461,7 +1461,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「가용설비 설정」 팝업 Cut-off 표). 고르는 칸은 표 작업 줄
   끝 「표 보기 ▾」 팝오버(`view_popover_key` — 부르는 쪽이 작업 줄 가로 칸 안에서 부른다, 접힘 줄 없음 — 2026-11-09
   사용자 보드 T5)이고, 필터가 걸린 동안은 단추 글 끝 표지 「필터」 + 풍선(`FILTERED_NOTICE`)이 행 추가 · 삭제 잠김을
-  말한다(표 위 · 아래 설명 줄 없음 — 표지는 그리기 전 세션 값으로 `view_of` 와 같은 판정, `_filtered_in_state`).
+  말한다(표 위 · 아래 설명 줄 없음). 표지는 편집표에 **건** 보기를 따른다 — 폼 밖 작은 편집표는 고르는 즉시 회차가 돌아
+  고름과 적용이 갈리므로 건 보기의 `filtered` 를 `applied_filtered` 로 넘기고(`equipment_data_workspace._editor_view`),
+  넘기지 않으면(첫 회차 · 제출이 곧 적용인 Cut-off 폼) 그리기 전 세션 값으로 `view_of` 와 같은 판정이다(`_filtered_in_state`,
+  설계 규칙 UI-DAT-11).
   - 행 필터 중에는 `num_rows="fixed"` 다 — 이 표들은 편집 결과가 곧 다음 리비전 전부다. 거른 편집인지는 호출자가
     `merge_edited_rows` 의 `filtered` 로 알려 준다(`tests/test_table_view_controls.py`). 모든 행이 남는 거름(「Select
     all」·한 호기뿐인 표의 「표에서 고치기」)은 원본(RangeIndex)을 그대로 돌려준다 — `.loc` 의 일반 정수 Index 를

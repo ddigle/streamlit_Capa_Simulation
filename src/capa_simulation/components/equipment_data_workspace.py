@@ -2872,6 +2872,8 @@ def _editor_view(
         nonlocal pressed
         pressed = st.button("보기 적용", key=apply_key)
 
+    view_key = f"{key}_applied_view"
+    applied = st.session_state.get(view_key)
     requested = render_table_view_controls(
         data,
         key_prefix=prefix,
@@ -2880,9 +2882,10 @@ def _editor_view(
         filter_columns=filters,
         locked_columns=locked,
         footer=apply_button,
+        # 「표 보기 · 필터」 표지는 편집표에 건 보기를 따른다 — 이 표는 폼 밖이라 고르는 즉시 회차가
+        # 돌고, 「보기 적용」 전에는 표가 거르지 않고 행 추가 · 삭제도 열려 있다(UI-DAT-11).
+        applied_filtered=applied.filtered if isinstance(applied, TableView) else None,
     )
-    view_key = f"{key}_applied_view"
-    applied = st.session_state.get(view_key)
     if not isinstance(applied, TableView):
         applied = requested
         st.session_state[view_key] = applied

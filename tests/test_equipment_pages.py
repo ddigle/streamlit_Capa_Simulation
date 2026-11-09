@@ -769,6 +769,53 @@ def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
     clear_equipment_repository()
 
 
+def test_the_filter_mark_follows_the_applied_view_not_the_picked_one(tmp_path: Path) -> None:
+    """「표 보기 · 필터」 표지 · 잠김 풍선은 편집표에 **건** 보기를 따른다(설계 규칙 UI-DAT-11).
+    작은 편집표는 폼 밖이라 필터 값을 고르는 즉시 회차가 돈다 — 고르기만 하고 「보기 적용」 을
+    누르지 않으면 표는 아직 거르지 않고 행 추가 · 삭제도 열려 있으니 표지가 없다. 적용한 뒤 칸을
+    비우기만 하면 표는 아직 걸러져 잠겨 있으니 표지가 남는다."""
+    from capa_simulation.components.table_view_controls import FILTERED_NOTICE
+
+    database_path = tmp_path / "availability.duckdb"
+    _seeded_equipment(database_path)
+    repository = DuckDBEquipmentRepository(database_path)
+    snapshot = repository.load_snapshot(repository.list_revisions()[0].revision_id)
+    baseline = pd.concat(
+        [
+            snapshot.baseline,
+            pd.DataFrame(
+                {"공정": ["DEMO_OTHER"], "분류": ["기존"], "기존보유대수": [2.0], "비고": ["둘째"]}
+            ),
+        ],
+        ignore_index=True,
+    )
+    repository.save_snapshot(baseline, snapshot.equipment, snapshot.downtime, note="둘째 공정")
+    clear_equipment_repository()
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+    app.session_state["equipment_master_table_v1"] = "기존 보유대수"
+    app.run()
+
+    def mark() -> tuple[str, str]:
+        (view,) = _view_popovers(app)
+        return str(view.proto.popover.label), str(view.proto.popover.help)
+
+    picker = "equipment_baseline_view_filter_공정"
+    apply = "equipment_baseline_view_apply_v1"
+    assert mark() == ("표 보기", "")
+    app.multiselect(picker).set_value(["DEMO_PROC"]).run()
+    assert not app.exception
+    assert mark() == ("표 보기", "")
+    app.button(apply).click().run()
+    assert not app.exception
+    assert mark() == ("표 보기 · 필터", FILTERED_NOTICE)
+    app.multiselect(picker).set_value([]).run()
+    assert mark() == ("표 보기 · 필터", FILTERED_NOTICE)
+    app.button(apply).click().run()
+    assert mark() == ("표 보기", "")
+    clear_equipment_repository()
+
+
 def test_hiding_a_column_keeps_its_values_in_the_saved_frame(tmp_path: Path) -> None:
     """감춘 컬럼도 편집본에는 그대로 들어간다.
 
