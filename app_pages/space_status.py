@@ -13,7 +13,6 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import shared_process
-from capa_simulation.components.condition_field import condition_name_row
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
@@ -2077,9 +2076,9 @@ editing = False
 fab_editing = False
 with space_box:
     st.markdown(f":material/map: {SPACE_BOX_TITLE}")
-    condition_name_row("자리", slug="space_box_place")
     # 자리 줄 — `FAB 전체` › `층 바로 가기`(30개 층). FAB 에서는 고르기 칸이 비어 있고 층을 고르면
-    # 그 층이 열린다.
+    # 그 층이 열린다. 줄마다 이름 줄을 달지 않는다 — 단추 · 고르기 칸 글이 하는 일을
+    # 말한다(2026-11-09 사용자 검수 P1-5 「자리, 도면 문구 제거」 · 설계 규칙 UI-TXT-01).
     with st.container(
         horizontal=True, gap="small", vertical_alignment="center", key="space_box_place_row"
     ):
@@ -2111,7 +2110,6 @@ with space_box:
             width="stretch",
             disabled=not floor_labels,
         )
-    condition_name_row("도면", slug="space_box_drawing")
     # 도면 줄 — 「배치 편집」 토글과 「캔버스 편집」 단추가 한 줄에 선다(틈 xsmall · 단추
     # 아이콘 없음 — 245px 상자 안 폭 225px 에 들게. 줄이 감기면 상자가 35px 높아져 아래 견주기가 첫
     # 화면 밖으로 밀린다).

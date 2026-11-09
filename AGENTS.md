@@ -704,11 +704,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **사이드바 「Space 도면」 상자**(2026-11-03 사용자 요청 — 레이아웃 위 요소 넷을 사이드바 조회 조건 상자 꼴로, 9장
     「사이드바·조건 카드·본문」 의 화면 조작 상자): 조회 조건 패널 바로 밑 · `Space 조건` 카드 **위**에 이 화면을 볼 때만 선다
     (`page_box_key("space")` — `render_equipment_scenario_row` 바로 뒤, 첫 `condition_card` 보다 먼저 자리만 세우고 안은 옛 경로 줄
-    자리에서 `with space_box:` 로 채운다 — 호기 없는 화면도 같다). 안은 제목 「Space 도면」 · 이름 줄 「자리」 + `FAB 전체`
-    (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 이름 줄 「도면」 +
+    자리에서 `with space_box:` 로 채운다 — 호기 없는 화면도 같다). 안은 제목 「Space 도면」 · 자리 줄 `FAB 전체`
+    (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 도면 줄
     `배치 편집`(층 `space_layout_edit_mode`·잠기면 `space_layout_edit_mode_locked` / FAB `space_fab_edit_mode`)·`캔버스 편집`
     (단추만 — 팝업은 본문 끝 호스트, `floor_canvas_dialog`) · FAB·가정이면 `공식으로 바꾸기` · 잠금 줄(`_render_edit_lock_line` —
-    표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글이다 — **상자에는 조작만 둔다**.
+    표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글이다 — **상자에는 조작만 둔다**
+    (줄 이름 「자리」 · 「도면」 도 달지 않는다 — 2026-11-09 사용자 검수 P1-5).
     상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태 알림이다(2026-11-04 Space 결정 보드 답 — 「인터페이스에 설명 문구를 다는
     걸 지양」, 9장 「알림 칸」): 배치 차이 `EQ-13`(알림 — `space_layout_notices` 의 `LayoutNotice` — 짧은 글 「가정 배치 · 공식과
     다른 호기 n대 · 도면 요소 m개」 등, 전문 · 지문 재료 `content` 는 실효 수 · 저장된 행 수, 아래 「보기」 문단) · 모듈 구성이

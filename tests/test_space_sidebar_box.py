@@ -105,6 +105,9 @@ def test_the_space_box_stands_under_the_panel_and_above_the_card_on_fab_and_floo
     # 테두리는 조회 조건 패널(`border=True`)과 같은 1px 선이다 — 같은 사이드바 꼴(검수 2026-11-03).
     assert box.proto.flex_container.border
     assert {"space_status_fab_breadcrumb", "space_floor_layout_open_FAB"} <= _keys_in(box, "button")
+    # 줄 이름 「자리」 · 「도면」 은 없다 — 단추 · 고르기 칸 글이 하는 일을 말한다(2026-11-09 사용자
+    # 검수 P1-5 「space 도면 박스에서는 자리, 도면 문구 제거해」).
+    assert not {"자리", "도면"} & set(_texts(box, "caption"))
     assert "space_status_floor_jump_fab" in _keys_in(box, "selectbox")
     toggles = _keys_in(box, "toggle")
     assert "space_fab_edit_mode" in toggles
