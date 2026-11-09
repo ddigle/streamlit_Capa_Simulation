@@ -311,7 +311,8 @@ def _render_save(
             ),
         )
         ready_note_field(PAST_NOTE_KEY, submitted=save)
-        # 이름 줄 없이 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 · 사용자 지시).
+        # 이름 줄 없이 칸 안 안내 글이 이름을 말한다(2026-11-09 사용자 규칙 「페이지 상단 최소화」 —
+        # 꼴은 앱 세션이 정함 · 검수 전).
         note = st.text_input(
             "변경 메모",
             placeholder=note_placeholder("25년 실적 반영"),

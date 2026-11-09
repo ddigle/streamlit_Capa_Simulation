@@ -98,9 +98,9 @@ def test_the_field_value_reads_one_line_first_name_and_the_rest() -> None:
 
 
 def test_the_name_row_carries_only_the_origin_and_no_missing_badge() -> None:
-    """이름 줄 오른쪽은 출처 글 하나다 — 주황 배지 「HB 접합 없음」 은 뜻이 안 읽혀
-    걷었다(2026-11-09 보드 P1-6). 없는 공정은 머리 칩 「n개 이 화면 없음」 · 판 · 탭 표지가 「PMC —
-    이 화면에 없음」 꼴로 풀어 쓴다."""
+    """이름 줄 오른쪽은 출처 글 하나다 — 없는 공정 배지를 두지 않는다(2026-11-09 보드 P1-6 — 「HB
+    접합 없음」 은 뜻이 읽히지 않았다). 없는 공정은 머리 칩 「n개 이 화면 없음」 · 판 「이 화면에
+    없음」 · 탭 풍선 「PMC 는 이 화면에 없음」 이 풀어 쓴다."""
     assert origin_status(None) is None
     assert origin_status("HOME") == "HOME 에서"
     assert not hasattr(process_field, "missing_badge")

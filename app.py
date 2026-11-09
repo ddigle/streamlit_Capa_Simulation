@@ -541,7 +541,7 @@ with pinned_connections(DUCKDB_PATH):
     # `st.stop()` 해도 섰다. 페이지가 이 회차에 내는 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS
     # 가 회차 끝에 훑는다. 표지가 「화면」 · 「그 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경
     # 칩 목록은 탭 점과 같은 세션 판정이다(DB 를 읽지 않는다). 본문 위에는 칸을 두지
-    # 않는다(2026-11-09 보드 C1 (라) — 공용 공정 칩은 머리 띠로 옮겼다).
+    # 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭 표지다(2026-11-09 보드 C1 (라)).
     alerts.note_page("" if current_spec is None else tab_label(current_spec), navigation.url_path)
     render_alert_center(
         changes=session_changes(

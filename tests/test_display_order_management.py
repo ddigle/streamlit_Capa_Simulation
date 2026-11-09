@@ -219,8 +219,8 @@ def test_the_version_line_stands_beside_the_heading(tmp_path: Path) -> None:
 def test_the_scope_pickers_and_the_note_carry_their_names_without_label_rows(
     tmp_path: Path,
 ) -> None:
-    """범위 고르기 둘과 변경 메모 칸은 이름 줄을 숨기고(접근성 이름은 남는다) 뜻을 옮겼다 —
-    고르기 둘은 「직접 편집」 제목 풍선(`SCOPE_HELP`), 메모 칸은 칸 안 안내
+    """범위 고르기 둘과 변경 메모 칸은 이름 줄을 숨기고(접근성 이름은 남는다) 뜻은 다른 자리가
+    말한다 — 고르기 둘은 「직접 편집」 제목 풍선(`SCOPE_HELP`), 메모 칸은 칸 안 안내
     글(`NOTE_PLACEHOLDER`)이 말한다. 옮긴 곳이 빠지면 그 뜻이 화면 어디에도 남지 않는다(설계
     규칙 UI-TXT-02). 범위 풍선은 두 칸의 자리를 「오른쪽」 이라 하지 않는다 — 줄 폭이 좁으면
     고르기가 제목 아래로 내려앉는다."""
