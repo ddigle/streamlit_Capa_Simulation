@@ -151,6 +151,7 @@ from capa_simulation.scenario_activation import (
     active_scenario_label,
     has_unsaved_scenario_changes,
 )
+from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.equipment_units import format_unit_count
@@ -216,6 +217,7 @@ __all__ = [
     "USAGE_NOTICE_HELP",
     "VIEW_FRAGMENT_KEY",
     "render_required_shortening_tab",
+    "report_unmatched_processes",
 ]
 
 # 목표·시작 월·끝 월 칸은 `shortening_source` 에 있다(Space 「필요 단축」 보기가 같은 칸을 읽는다) —
@@ -1190,11 +1192,26 @@ def _report_unmatched(
     if isinstance(prepared, ShorteningStop):
         alerts.state("RS-02", scope=None, content=None, active=False)
         return
-    plan = prepared.plan
-    months = prepared.months
-    sim = simulation_scope(
-        prepared.context.active_scenario, (months[0], months[-1]) if months else None
+    report_unmatched_processes(
+        prepared.plan,
+        active_scenario=prepared.context.active_scenario,
+        months=prepared.months,
+        revision=revision,
     )
+
+
+def report_unmatched_processes(
+    plan: ShorteningPlan,
+    *,
+    active_scenario: ActiveScenario,
+    months: Sequence[int],
+    revision: tuple[str | None, int | None],
+) -> None:
+    """상태 알림 `RS-02` 한 자리 — 필요 단축 일정과 Space 「필요 단축」 보기가 같은 계획 · 같은
+    범위(시뮬레이션 내용 토큰 + 달, 설비 리비전) · 같은 내용(이름 목록)으로 낸다. 한쪽에서 본
+    알림은 다른 쪽에서 다시 뜨지 않는다(AGENTS 9장 「알림 칸」 — 같은 조건을 두 화면이 보면 같은
+    코드 · 같은 범위)."""
+    sim = simulation_scope(active_scenario, (months[0], months[-1]) if months else None)
     equipment_id, equipment_no = revision
     label = sim.label + (f" · 설비 r{equipment_no}" if equipment_no is not None else "")
     uncut = set(plan.missing_cutoff)

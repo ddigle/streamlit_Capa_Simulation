@@ -11,8 +11,9 @@ from typing import Any, NamedTuple
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
-from capa_simulation import shared_process
+from capa_simulation import alerts, shared_process
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     Frames,
@@ -133,12 +134,13 @@ from capa_simulation.components.space_shortening_view import (
     note_unit_pick,
     release_process_chip,
     render_arrival_filter_note,
+    render_dim_field,
     render_fab_layer_summary,
     render_floor_layer_panel,
     render_layer_basis,
-    render_layer_controls,
     render_layer_stop,
     render_level_field,
+    report_layer_unmatched,
     switch_to_queued_shortening,
     take_unit_pick,
     unit_keys_by_name,
@@ -780,6 +782,11 @@ as_of = today if layer_active else clamp_as_of(stored_as_of, today)
 if not layer_active and stored_as_of is not None and stored_as_of != as_of:
     st.session_state[SPACE_AS_OF_KEY] = as_of
 all_status = get_space_equipment_status(equipment, downtime, as_of=as_of)
+# 필요 단축 보기의 「단축 없는 호기 흐리게」 값과 기준 달 한 줄 자리 — 둘 다 `Space 조건` 카드의
+# 「색 기준」 밑이다(2026-11-09 사용자 검수 g05 — 도면 위 본문 줄 셋을 걷는다). 기준 달은 계획을
+# 꺼낸 뒤 아래에서 그 자리에 채운다.
+layer_dim = True
+layer_basis_slot: DeltaGenerator | None = None
 if no_fleet:
     # 고를 호기가 없어 조건 위젯을 세우지 않는다(카드에는 위의 까닭 한 줄).
     selected_processes: list[str] = []
@@ -821,6 +828,11 @@ else:
             else ()
         )
         basis_groups = color_basis_groups(basis, capa)
+        if basis == COLOR_BASIS_SHORTENING:
+            # 필요 단축은 그룹 체크가 없다 — 그 자리에 흐리게 칸과 기준 달 줄이 선다(배치 편집으로
+            # 쉬는 회차에도 칸은 선다 — 고른 값은 편집을 끈 뒤 보기가 쓴다).
+            layer_dim = render_dim_field()
+            layer_basis_slot = st.container()
         enabled: set[str] = set()
         if basis == COLOR_BASIS_CAPA and not basis_groups:
             # 값 한 마디 + 풍선(설계 규칙 UI-TXT-04 — 숨은 데이터 안내는 표지 + 풍선).
@@ -2217,19 +2229,18 @@ with st.container(key="space_edit_lock_slot"):
     if isinstance(save_error, str):
         st.error(markdown_safe_tildes(save_error))
 
-# 필요 단축 보기의 본문 조작 줄(결정 D6 — 목표 확보율·흐리게·못 읽음 알림). 자리는 늘 선다 — 빈 칸은
-# 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지 않는다(AGENTS 5장 9 —
-# 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 사이드바 목표 줄만 잠근 채 세우고(켜고 끌 때
-# 아래 「Space 도면」 상자가 밀리지 않게 — 설계 규칙 UI-PRF-03), FAB 편집이면 까닭 한 줄을 더한다 —
-# 층 상세는 편집기 위 캡션이 같은 글을 적어 여기는 비운다(한 화면에 한 번).
+# 필요 단축 보기의 본문 자리 — 못 읽음 마크 · 쉼 표지만 선다(목표 확보율은 사이드바 조회 조건
+# 패널 줄, 흐리게 · 기준 달은 `Space 조건` 카드 — 2026-11-09 사용자 검수 g05). 자리는 늘 선다 —
+# 빈 칸은 높이가 없다(테두리를 주지 않는다). 끈 회차는 칸만 세우고 아무것도 부르지
+# 않는다(AGENTS 5장 9 — 시뮬레이션 쪽 부름 0). 쉬는 회차(배치 편집 중)는 사이드바 목표 줄만 잠근
+# 채 세우고(켜고 끌 때 아래 「Space 도면」 상자가 밀리지 않게 — 설계 규칙 UI-PRF-03), FAB 편집이면
+# 까닭 한 줄을 더한다 — 층 상세는 편집기 위 캡션이 같은 글을 적어 여기는 비운다(한 화면에 한 번).
 space_layer: SpaceLayer | None = None
-layer_dim = True
 with st.container(
     horizontal=True, vertical_alignment="center", gap="small", key="space_shortening_toolbar"
 ):
     if layer_active:
-        controls = render_layer_controls()
-        layer_dim = controls.dim_others
+        level = render_level_field()
         loaded = load_space_layer(
             saved=shortening_saved,
             sample=using_sample_equipment,
@@ -2237,7 +2248,7 @@ with st.container(
             has_snapshot=latest_snapshot is not None,
             database_path=equipment_database_path,
             today=today,
-            level=controls.level,
+            level=level,
             unmerged=equipment_session.unmerged,
         )
         if isinstance(loaded, ShorteningStop):
@@ -2260,12 +2271,27 @@ layer_summary: FabSummary | None = (
     if space_layer is not None
     else None
 )
-# 기준 캡션과 링크 공정 알림 — 자리는 늘 선다(켜고 끌 때 아래가 밀리지 않게).
+# 기준 달 한 줄은 카드 자리(위)에 채운다.
+if space_layer is not None and layer_basis_slot is not None:
+    with layer_basis_slot:
+        render_layer_basis(equipment_session, space_layer, sample=showing_sample)
+# 맞대지 못한 공정 — 필요 단축 일정과 같은 상태 알림 `RS-02`(같은 계획 · 범위 · 내용). 보기를
+# 그린 회차에만 내고, 그 밖의 회차는 같은 자리에서 `alerts.flush()` 로 한 자리를 채운다(본문 끝
+# 캔버스 팝업 호스트 앞 표지 자리 수가 회차마다 같다 — AGENTS 9장 「알림 칸」).
+if space_layer is not None:
+    report_layer_unmatched(
+        space_layer,
+        revision=(
+            (latest_snapshot.revision.revision_id, latest_snapshot.revision.revision_no)
+            if latest_snapshot is not None and not using_sample_equipment
+            else (None, None)
+        ),
+    )
+else:
+    alerts.flush()
+# 링크 공정 알림 — 자리는 늘 선다(켜고 끌 때 아래가 밀리지 않게).
 with st.container(key="space_shortening_basis_slot"):
     if space_layer is not None:
-        render_layer_basis(
-            equipment_session, space_layer, sample=showing_sample, summary=layer_summary
-        )
         render_arrival_filter_note(selected_processes, selected, shared_process.values())
     elif not layer_active:
         forget_arrival_note()
@@ -2699,6 +2725,7 @@ else:
                 picked_rows=picked_rows,
                 key_of=unit_keys_by_name(floor_status),
                 picked_key=SPACE_PICKED_KEY,
+                filtered_out=layer_summary.filtered_out if layer_summary is not None else 0,
             )
     # 호기 칸과 층 CSV 는 도면 위 「호기 정보」 창 안이다(2026-11-03 사용자 요청 — 「하단이 아니라
     # 편집기 안에서」, 2026-11-04 Space 결정 보드 답 — CSV 단추도 창 안으로). 도면 아래에는 아무것도
