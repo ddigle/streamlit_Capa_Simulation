@@ -165,6 +165,12 @@ OUTPUT_METRICS = {
     "가용대수": 1,
 }
 OUTPUT_OPTIONS = [*OUTPUT_METRICS, "로직 분석"]
+# 「표시 항목」 전환의 뜻 — 이름 줄은 걷고(접근성 이름으로만 남는다) 단추 줄 끝 풍선이 말한다
+# (2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-TXT-01 · UI-TXT-02).
+OUTPUT_METRIC_HELP = (
+    "표시 항목 — 결과 상자에 볼 것입니다. 일 표준 가능량 · 대당 일 Capa · 가용대수는 주차 표, "
+    "로직 분석은 한 건의 산출 근거입니다. 늘 하나가 골라져 있습니다."
+)
 # 로직 분석 근거 표 높이 상한과 그 안에 다 드는 줄 수(머리 빼고). 그 안이면 내용 높이로 그려 표
 # 아래에 값 없는 빈 줄이 서지 않고, 넘으면 상한 높이에서 표 안이 스크롤한다.
 CONTRIBUTION_TABLE_MAX_HEIGHT_PX = 520
@@ -892,15 +898,20 @@ def _restore_public_process_default() -> None:
 weekly_output_container = st.container(border=True)
 with weekly_output_container:
     action_row = st.container()
-    # `required=True` — 고른 항목을 다시 눌러도 선택이 풀리지 않는다(Streamlit 1.63). 위의
-    # 되돌림만으로는 다시 누른 뒤 한 회차 동안 선택이 모두 꺼져 보이고 앱이 한 번 더 돌았다.
-    output_metric = st.segmented_control(
-        "표시 항목",
-        options=OUTPUT_OPTIONS,
-        key=OUTPUT_METRIC_KEY,
-        persist_state="session",
-        required=True,
-    )
+    # 이름 줄 없이 단추 줄 하나다 — 이름 「표시 항목」 은 접근성 이름으로만 남고 뜻은 줄 끝 풍선이다
+    # (`label_visibility="collapsed"` 는 위젯 풍선도 숨기므로 빈 캡션의 풍선을 곁에 둔다).
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        # `required=True` — 고른 항목을 다시 눌러도 선택이 풀리지 않는다(Streamlit 1.63). 위의
+        # 되돌림만으로는 다시 누른 뒤 한 회차 동안 선택이 모두 꺼져 보이고 앱이 한 번 더 돌았다.
+        output_metric = st.segmented_control(
+            "표시 항목",
+            options=OUTPUT_OPTIONS,
+            key=OUTPUT_METRIC_KEY,
+            persist_state="session",
+            required=True,
+            label_visibility="collapsed",
+        )
+        st.caption("", help=OUTPUT_METRIC_HELP, width="content")
     if output_metric is None:
         output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
     st.session_state[OUTPUT_METRIC_SHOWN_KEY] = output_metric
