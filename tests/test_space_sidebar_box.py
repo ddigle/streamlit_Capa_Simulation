@@ -327,7 +327,12 @@ def test_the_process_field_follows_the_shared_value_and_marks_a_missing_name(
     assert app.sidebar.button(key=PROCESS_FIELD_KEY).label == f"전체 {len(options)}공정"
     assert not [text for text in _texts(app.sidebar, "caption") if "orange-badge" in text]
     (mark,) = process_marks(app)
-    assert mark["here"] == {"on": False, "follows": True, "missing": ["DEMO-없는-공정"]}
+    assert mark["here"] == {
+        "on": False,
+        "follows": True,
+        "inside": [],
+        "missing": ["DEMO-없는-공정"],
+    }
     assert mark["tab"]["miss"] is True
 
 

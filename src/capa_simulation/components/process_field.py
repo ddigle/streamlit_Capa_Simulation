@@ -75,6 +75,9 @@ NO_PROCESS_VALUE = "고를 공정 없음"
 # 값 칸을 그린 회차의 표지 속성 — 알림 칸 JS 가 회차 끝에 이 속성의 JSON 으로 머리 칩 · 지금 탭
 # 표지를 바로잡는다(`alert_center.js` 의 `readProcessMark`).
 MARKER_ATTRIBUTE = "data-capa-process"
+# 둘 이상 고른 값의 한 줄 글(`first_and_rest`) — 머리 칩 JS 도 같은 글로 이 화면 차례의 첫 이름을
+# 적는다.
+REST_TEXT = "{first} 외 {n}개"
 # 화면 탭 표지 · 머리 칩 풍선의 글.
 FROM_TEXT = "{origin} 에서"
 TAB_TITLE = "공정 {names}"
@@ -142,7 +145,7 @@ def first_and_rest(names: Sequence[str]) -> str:
         return ""
     if len(names) == 1:
         return names[0]
-    return f"{names[0]} 외 {len(names) - 1}개"
+    return REST_TEXT.format(first=names[0], n=len(names) - 1)
 
 
 def filter_value(
@@ -464,24 +467,44 @@ def tab_mark(path: str) -> dict[str, Any] | None:
 
 
 def _here(mark: shared_process.ScreenMark) -> dict[str, Any]:
-    return {"on": mark.on, "follows": mark.follows, "missing": list(mark.missing)}
+    """이 화면에 대한 값 — 걸리나 · 따르나 · 걸린 공정(`inside` — 이 화면 선택지 차례) · 없는
+    공정."""
+    return {
+        "on": mark.on,
+        "follows": mark.follows,
+        "inside": list(mark.inside),
+        "missing": list(mark.missing),
+    }
+
+
+def screen_order(held: Sequence[str], mark: shared_process.ScreenMark | None) -> list[str]:
+    """머리 칩 · 판의 공정 차례. 따라가는 화면이면 이 화면 선택지 차례로 걸린 공정을 앞에, 없는
+    공정을 뒤에 둔다 — 칩의 첫 이름 · 판 · 탭 풍선 · 사이드바 값 칸(표시순서상 첫 공정)이 같은
+    차례를 따른다. 따라가지 않는 화면은 보낸 차례 그대로다."""
+    if mark is None or not mark.follows:
+        return list(held)
+    first = [value for value in mark.inside if value in held]
+    return [*first, *(value for value in held if value not in first)]
 
 
 def header_chip(path: str | None) -> dict[str, Any] | None:
-    """머리 띠 「공정」 칩 data — 공용 값이 있을 때만. 값이 그대로면 같은 dict 다(시각 · 카운터
-    없음).
+    """머리 띠 「공정」 칩 data — 공용 값이 있을 때만. 값 · 이 화면 기록이 그대로면 같은 dict
+    다(시각 · 카운터 없음).
 
     `here` 는 지금 화면(`path`)에 대한 짐작(세션 기록 — 따라가지 않는 화면은 None)이고, 값 칸을 그린
-    회차에는 그 회차의 표지(`process_marker`)가 알림 칸 JS 에서 이긴다. `field` 는 사이드바 값 칸
-    key 다 — 판 「공정 고르기」 가 그 칸을 눌러 팝업을 연다.
+    회차에는 그 회차의 표지(`process_marker`)가 알림 칸 JS 에서 이긴다 — 차례(`screen_order`)도 그
+    표지의 `inside` 로 JS 가 다시 세운다. `field` 는 사이드바 값 칸 key 다 — 판 「공정 고르기」 가
+    그 칸을 눌러 팝업을 연다.
     """
     held = shared_process.values()
     if not held:
         return None
-    shown = list(shared_process.labels())
     mark = _mark_for(path)
+    ordered = screen_order(held, mark)
+    label = _label_of()
+    shown = [label(value) for value in ordered]
     return {
-        "values": list(held),
+        "values": ordered,
         "labels": shown,
         "top": first_and_rest(shown),
         "origin": shared_process.origin(),

@@ -182,6 +182,7 @@ TEXT: Final[dict[str, str]] = {
     "changes_sum": "{n}건",
     # 공용 공정 칩 · 판(2026-11-09 보드 C1 (라)).
     "process_word": "공정",
+    "process_rest": process_field.REST_TEXT,
     "process_absent": "{n}개 이 화면 없음",
     "process_names": "공정 {names}",
     "process_from": "{origin} 에서",

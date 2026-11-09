@@ -1050,6 +1050,16 @@ out.stale = processChipOf({ ...process, version: 4 }, live, 'space_status')
 out.home = processChipOf({ ...process, here: null }, null, '')
 const single = { on: false, follows: false, missing: ['PMC'] }
 out.single = processChipOf({ ...process, here: single }, null, 'x')
+const rest = '{first} 외 {n}개'
+const ordered = {
+  page: 'space_status',
+  version: 3,
+  here: { on: true, follows: true, inside: ['Underfill', 'Mold'], missing: ['PMC'] },
+}
+out.ordered = processChipOf(process, ordered, 'space_status', rest)
+out.orderedHome = processChipOf({ ...process, here: null }, null, '', rest)
+const one = { ...process, values: ['PMC'], labels: [''], here: null }
+out.orderedOne = processChipOf(one, null, '', rest)
 const marks = [
   { page: 'a', version: 1 },
   { page: 'space_status', version: 3, here: null, tab: { miss: true } },
@@ -1079,6 +1089,14 @@ def test_the_process_chip_reads_the_screens_own_mark_over_the_python_guess() -> 
     assert (out["home"]["on"], out["home"]["follows"]) == (False, False)
     # 따르지 않는 꼴이면 없는 공정을 세지 않는다(하나 따라감 화면에 값이 여럿).
     assert out["single"]["absent"] == 0
+    # 따르는 화면이면 이 화면 선택지 차례(걸린 공정 먼저, 없는 공정 뒤)로 줄과 첫 이름을 세운다 —
+    # 사이드바 값 칸 · 탭 풍선과 첫 이름이 같다. 따르지 않는 화면은 보낸 차례다.
+    ordered = out["ordered"]
+    assert [row["value"] for row in ordered["rows"]] == ["Underfill", "Mold", "PMC"]
+    assert [row["label"] for row in ordered["rows"]] == ["Underfill", "몰드", "PMC"]
+    assert (ordered["top"], ordered["absent"]) == ("Underfill 외 2개", 1)
+    assert out["orderedHome"]["top"] == "몰드 외 2개"
+    assert out["orderedOne"]["top"] == "PMC"
     assert out["mine"]["tab"] == {"miss": True}
     assert out["running"] is None
     assert out["settled"] == {

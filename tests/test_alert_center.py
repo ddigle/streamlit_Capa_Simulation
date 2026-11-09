@@ -244,7 +244,38 @@ def test_the_process_chip_carries_the_shared_value_labels_and_a_guess_for_this_s
     app.session_state["ops"] = [("note_drawn", ("가용설비", "multi", ["Mold", "Underfill"]), {})]
     app.run()
     here = app.session_state["data"]["process"]["here"]
-    assert here == {"on": True, "follows": True, "missing": ["PMC"]}
+    assert here == {
+        "on": True,
+        "follows": True,
+        "inside": ["Mold", "Underfill"],
+        "missing": ["PMC"],
+    }
+
+
+def test_the_process_chip_names_the_first_process_in_this_screens_order() -> None:
+    """머리 칩 · 판의 차례는 따라가는 화면이면 이 화면 선택지 차례다 — 걸린 공정 먼저, 없는 공정
+    뒤. 칩의 첫 이름이 사이드바 값 칸(표시순서상 첫 공정) · 탭 풍선과 같아진다. 따라가지 않는 화면
+    (HOME)은 보낸 차례 그대로다. 이 화면 기록이 그대로면 data 가 같다."""
+    app = AppTest.from_function(_chip_script)
+    app.session_state["ops"] = [
+        ("publish", (["Underfill", "PMC", "Mold"], "산출 결과"), {}),
+        ("note_drawn", ("가용설비", "multi", ["Mold", "WF", "Underfill"]), {}),
+    ]
+    app.session_state["test_path"] = HOME.path
+    app.run()
+    assert not app.exception
+    home = app.session_state["data"]["process"]
+    assert (home["values"], home["top"]) == (["Underfill", "PMC", "Mold"], "Underfill 외 2개")
+
+    app.session_state["test_path"] = AVAILABLE_EQUIPMENT_STATUS.path
+    app.run()
+    chip = app.session_state["data"]["process"]
+    assert chip["values"] == ["Mold", "Underfill", "PMC"]
+    assert chip["labels"] == ["Mold", "Underfill", "PMC"]
+    assert chip["top"] == "Mold 외 2개"
+    assert chip["here"]["inside"] == ["Mold", "Underfill"]
+    app.run()
+    assert app.session_state["data"]["process"] == chip
 
 
 def test_clearing_from_the_chip_panel_empties_the_shared_value_and_the_chip() -> None:

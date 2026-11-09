@@ -160,8 +160,10 @@ function chipOf(items) {
 }
 // 머리 공정 칩 — 공용 값(`process` — 파이썬 `process_field.header_chip`)과 이 화면에 대한 값. 이 화면 주소(`here`) · 같은 판의 회차
 // 표지(`live`)가 있으면 그것이, 아니면 파이썬 짐작(`process.here`)이 이 화면 값이다. 없는 공정은 이 화면이 따르는 꼴일 때만 센다.
-// 값이 없으면 null(칩을 세우지 않는다).
-function processChipOf(process, live, here) {
+// 따르는 화면이면 줄 차례를 이 화면 선택지 차례(`inside` — 걸린 공정 먼저, 없는 공정 뒤 — 파이썬 `screen_order`)로 세우고 첫
+// 이름(`top`)도 그 차례로 적는다(`rest` — 파이썬 `process_field.REST_TEXT`, 없으면 파이썬이 적은 `top`). 사이드바 값 칸 · 탭 풍선과
+// 첫 이름이 같아진다. 값이 없으면 null(칩을 세우지 않는다).
+function processChipOf(process, live, here, rest) {
   if (!process || !Array.isArray(process.values) || !process.values.length) return null
   const values = process.values.map(String)
   const labels = values.map((value, index) => String((Array.isArray(process.labels) && process.labels[index]) || value))
@@ -169,10 +171,20 @@ function processChipOf(process, live, here) {
   const mark = (fresh ? live.here : process.here) || null
   const follows = Boolean(mark && mark.follows)
   const gone = new Set(follows && Array.isArray(mark.missing) ? mark.missing.map(String) : [])
-  const rows = values.map((value, index) => ({ value, label: labels[index], absent: gone.has(value) }))
+  const first = follows && Array.isArray(mark.inside) ? mark.inside.map(String).filter((value) => values.includes(value)) : []
+  const ranked = [...first, ...values.filter((value) => !first.includes(value))]
+  const labelOf = new Map(values.map((value, index) => [value, labels[index]]))
+  const rows = ranked.map((value) => ({ value, label: labelOf.get(value), absent: gone.has(value) }))
+  const many = (_, name) => (name === 'first' ? rows[0].label : String(rows.length - 1))
+  const top =
+    typeof rest === 'string' && rest
+      ? rows.length > 1
+        ? rest.replace(/\{(first|n)\}/g, many)
+        : rows[0].label
+      : String(process.top || labels[0])
   return {
     count: values.length,
-    top: String(process.top || labels[0]),
+    top,
     origin: String(process.origin || ''),
     on: Boolean(mark && mark.on),
     follows,
@@ -1638,7 +1650,7 @@ function paintList(C) {
 function paintProcess(C) {
   if (!C.procHost) return
   const t = text(C)
-  const chip = processChipOf(C.data.process, C.procLive, C.data.here)
+  const chip = processChipOf(C.data.process, C.procLive, C.data.here, t.process_rest)
   C.procHost.toggleAttribute('data-empty', !chip)
   if (!chip) {
     if (C.open === 'process') closePanel(C, false)

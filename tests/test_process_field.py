@@ -180,7 +180,13 @@ def test_a_shared_value_from_another_screen_narrows_marks_and_names_its_origin()
     assert _captions(app) == ["공정", "HOME 에서"]
     _no_body_chip(app)
     (mark,) = process_marks(app)
-    assert mark["here"] == {"on": True, "follows": True, "missing": []}
+    # 걸린 공정은 이 화면 선택지 차례다 — 머리 칩이 이 차례로 첫 이름을 적는다(값 칸과 같다).
+    assert mark["here"] == {
+        "on": True,
+        "follows": True,
+        "inside": ["Mold", "Underfill"],
+        "missing": [],
+    }
     assert mark["tab"]["miss"] is False
 
 
@@ -204,7 +210,12 @@ def test_a_process_this_screen_lacks_shows_everything_and_the_mark_names_it() ->
     assert app.session_state["test_chosen"] == ["Mold"]
     assert _captions(app) == ["공정", "HOME 에서"]
     (mark,) = process_marks(app)
-    assert mark["here"] == {"on": True, "follows": True, "missing": ["HB 접합"]}
+    assert mark["here"] == {
+        "on": True,
+        "follows": True,
+        "inside": ["Mold"],
+        "missing": ["HB 접합"],
+    }
     assert mark["tab"] == {
         "miss": True,
         "title": "공정 Mold — HOME 에서\nHB 접합 은 이 화면에 없음",
@@ -216,7 +227,7 @@ def test_a_process_this_screen_lacks_shows_everything_and_the_mark_names_it() ->
     assert _field(app).label == "전체 3공정"
     assert _captions(app) == ["공정"]
     (mark,) = process_marks(app)
-    assert mark["here"] == {"on": False, "follows": True, "missing": ["HB 접합"]}
+    assert mark["here"] == {"on": False, "follows": True, "inside": [], "missing": ["HB 접합"]}
     assert mark["tab"]["title"] == "공정 1개 — HOME 에서\nHB 접합 은 이 화면에 없음"
     assert shared_values(app) == ["HB 접합"]
 
@@ -358,7 +369,7 @@ def test_a_single_screen_sends_the_process_picked_in_its_field(picker: dict[str,
     }
     assert _captions(app) == ["공정"]
     (mark,) = process_marks(app)
-    assert mark["here"] == {"on": True, "follows": True, "missing": []}
+    assert mark["here"] == {"on": True, "follows": True, "inside": ["Underfill"], "missing": []}
 
 
 def test_a_dialog_on_another_page_has_nothing_to_pick(picker: dict[str, Any]) -> None:
