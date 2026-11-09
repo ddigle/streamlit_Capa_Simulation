@@ -175,14 +175,16 @@ OUTPUT_METRIC_HELP = (
 )
 # 결과 상자 맨 위 「표시 항목」 줄과 그 오른쪽 끝 작업 단추 칸. 단추 칸은 줄지 않는 한 덩이로
 # 줄 오른쪽 끝에 서고, 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려간다 — 좁은 창에서 단추
-# 둘이 전환 단추 위아래로 엇갈려 쌓이지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 서식은
-# 같은 줄 풍선 캡션 마크다운에 싣는다 — 스타일만 든 `st.html` 은 이벤트 칸으로 가 아래 팝업 호스트
-# 자리를 민다.
+# 둘이 전환 단추 위아래로 엇갈려 쌓이지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 단추
+# 둘은 곁 전환 단추(28px)와 같은 높이다 — 기본 단추(35px)면 같은 줄 단추 높이가 어긋나고 줄이 7px
+# 높아진다(설계 규칙 UI-CON-01, Static 대비 일정 「시트 CSV」 와 같은 꼴). 서식은 같은 줄 풍선 캡션
+# 마크다운에 싣는다 — 스타일만 든 `st.html` 은 이벤트 칸으로 가 아래 팝업 호스트 자리를 민다.
 OUTPUT_ROW_KEY = "standard_target_output_row"
 ACTION_ROW_KEY = "standard_target_action_row"
 ACTION_ROW_STYLE = (
     f'<style>.st-key-{OUTPUT_ROW_KEY} > [data-testid="stLayoutWrapper"]'
-    f":has(> .st-key-{ACTION_ROW_KEY}){{flex:0 0 auto;width:auto;margin-left:auto}}</style>"
+    f":has(> .st-key-{ACTION_ROW_KEY}){{flex:0 0 auto;width:auto;margin-left:auto}}"
+    f".st-key-{ACTION_ROW_KEY} button{{min-height:28px;height:28px;padding-block:0}}</style>"
 )
 # 로직 분석 근거 표 높이 상한과 그 안에 다 드는 줄 수(머리 빼고). 그 안이면 내용 높이로 그려 표
 # 아래에 값 없는 빈 줄이 서지 않고, 넘으면 상한 높이에서 표 안이 스크롤한다.

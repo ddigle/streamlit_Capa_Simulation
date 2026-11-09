@@ -1395,6 +1395,8 @@ def _assert_output_row_names_and_tools(app: AppTest) -> None:
     assert ".st-key-standard_target_output_row > " in body
     assert ":has(> .st-key-standard_target_action_row)" in body
     assert "flex:0 0 auto;width:auto;margin-left:auto" in body
+    # 작업 단추 둘은 곁 전환 단추와 같은 28px 이다(같은 줄 단추 높이 — 설계 규칙 UI-CON-01).
+    assert ".st-key-standard_target_action_row button{min-height:28px;height:28px;" in body
     row: Any = app.main
     for index in found["metric"][:-1]:
         row = row.children[index]
