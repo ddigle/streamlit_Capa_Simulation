@@ -14,10 +14,13 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.availability_gap_panel import (
     CROSS_CHECK_FALLBACK_HELP,
+    CROSS_CHECK_MONTHS_HELP,
     DETAIL_CATEGORY_KEY,
+    DETAIL_MODE_HELP,
     DETAIL_MODE_KEY,
     GAP_SIGN_HELP,
     PROCESS_FILTER_KEY,
+    RESULT_VIEW_HELP,
     RESULT_VIEW_KEY,
     UNIT_LIST_HELP,
 )
@@ -645,10 +648,12 @@ def test_period_notices_do_not_direct_users_to_the_old_preference_tab() -> None:
     app = _run(short_span=True)
     assert "Cut-off 때문에" in _alerts(app)
     _select_view(app, "확보율 교차검증")
-    # 「맞대어 본 달」 의 범위 설명은 그 줄의 풍선이다(자리에는 값만).
+    # 「맞대어 본 달」 은 자리에 줄을 세우지 않고 「조회 결과」 줄 끝 풍선이 값과 범위 설명을 함께
+    # 말한다(2026-11-09 사용자 보드 T2 — 표 제목 풍선).
     helps = " ".join(str(item.proto.help) for item in app.caption)
     notices = " ".join(item.value for item in [*app.caption, *app.warning]) + _alerts(app)
     assert "조회기간을 넓히면" in helps
+    assert not any("맞대어 본 달" in item.value for item in app.caption)
     assert "Preference" not in notices
 
 
@@ -945,8 +950,55 @@ def test_the_panel_head_has_no_section_title_or_label_rows() -> None:
     assert result.proto.label_visibility.value == result.proto.label_visibility.COLLAPSED
     heads = " ".join(item.value for item in app.markdown)
     assert "Static · 설비 일정 기준 가용대수 비교" not in heads
+    # 두 전환의 뜻은 줄 끝 빈 캡션의 풍선 하나다(라벨이 숨으면 위젯 풍선도 숨는다 — 1.63).
+    assert _row_helps(app) == [RESULT_VIEW_HELP]
+    _select_view(app, "분류별 내역")
+    assert _row_helps(app) == [f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}"]
     _select_view(app, "확보율 교차검증")
     assert not any("확보율 교차검증" in item.value for item in app.markdown)
+    (cross,) = _row_helps(app)
+    assert cross.startswith(f"{RESULT_VIEW_HELP}\n\n맞대어 본 달: ")
+    assert cross.endswith(CROSS_CHECK_MONTHS_HELP)
+
+
+def _row_helps(app: AppTest) -> list[str]:
+    """전환 줄 끝 빈 캡션의 풍선들."""
+    return [str(item.proto.help) for item in app.caption if item.value == ""]
+
+
+def test_the_sheet_csv_sits_on_the_switch_row_not_on_its_own_line() -> None:
+    """「시트 CSV」 는 「조회 결과 · 표시」 전환 줄 오른쪽 끝이다 — 시트 위에 단추 하나가 따로 한
+    줄을 차지하지 않는다(2026-11-09 사용자 보드 T3). 호기 목록에는 시트 CSV 가 없다(목록 아래 CSV
+    하나)."""
+    from streamlit.testing.v1.element_tree import Block
+
+    app = _run()
+    _select_view(app, "분류별 내역")
+    assert [button.label for button in app.download_button] == ["시트 CSV"]
+    (switch_row,) = [
+        block
+        for block in app.main.children.values()
+        if isinstance(block, Block)
+        and any(getattr(child, "key", None) == RESULT_VIEW_KEY for child in _descendants(block))
+    ]
+    keys = [getattr(child, "key", None) for child in _descendants(switch_row)]
+    assert {RESULT_VIEW_KEY, DETAIL_MODE_KEY} <= set(keys)
+    assert any(getattr(child, "label", None) == "시트 CSV" for child in _descendants(switch_row))
+
+    app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
+    assert not app.exception
+    assert [button.label for button in app.download_button] == [CSV_DOWNLOAD_LABEL]
+
+
+def _descendants(node: Any) -> list[Any]:
+    from streamlit.testing.v1.element_tree import Block
+
+    out: list[Any] = []
+    for child in node.children.values():
+        out.append(child)
+        if isinstance(child, Block):
+            out.extend(_descendants(child))
+    return out
 
 
 # ------------------------------------------------------------------ 공정 표시명(Proc Rename)
