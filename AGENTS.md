@@ -587,9 +587,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸은 읽지도 쓰지도 않는다. UPEH
     가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 출처 띠 끝 한 줄).
   - **공정은 조회 조건 패널의 공용 공정 칸(하나 고름 — `process_field.render_process_choice`)이고 두 모드가 나눠 쓴다**(2026-11-08
-    답 P1 · P2-2). 공용 값은 받기만 한다(`shared_process.follow_single` — 값이 바뀐 뒤 처음 그리는 회차에 공용 값이 하나이고
-    목록에 있으면 그 공정, 여럿이면 보던 공정). 주소 `process`(공정 Capa 상세 머리 링크)가 이기고 여기서 고른 공정은 공용 값을
-    바꾸지 않는다. 머리 줄은 「← 공정 Capa 상세」 와 계산이 건 표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)뿐이고 조건
+    답 P1 · P2-2). 공용 값을 받고(`shared_process.follow_single` — 값이 바뀐 뒤 처음 그리는 회차에 공용 값이 하나이고
+    목록에 있으면 그 공정, 여럿이면 보던 공정) 주소 `process`(공정 Capa 상세 머리 링크)가 이긴다. 사이드바 공정 칸 팝업에서 직접
+    고른 공정만 공용 값으로 보낸다(2026-11-09 보드 C2 (가) — 넘겨받은 공정 · 기본 공정은 보내지 않는다). 머리 줄은 「← 공정 Capa 상세」 와 계산이 건 표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)뿐이고 조건
     줄 · 출처 띠 · 계산표 범례는 Guide 다(그림 메모 g12). 첫날이 지난 개조 창 · 신규 대기는 상태 알림 `CS-04`(`report_late_starts`)다.
   - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 한 번
     적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY`((값, 페이지 방문 차례) — 새 방문이면 같은 값도 다시 적용해 공용 공정을 이긴다)에 남겨 지운 것이 브라우저에 닿기 전 옛 주소를 실은 회차가 사용자가 그 뒤 고른 공정을
@@ -1660,8 +1660,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (토글이 아닌 칸을 이 길로 읽지 않는다). 기본값을 세션에 심는 자리(Preference 카드·시나리오 바꿈)만 `HOME_TOGGLE_DEFAULTS` 를 돈다.
 - `src/capa_simulation/shared_process.py` — 화면 사이 공용 공정 값(2026-11-08 답 P1 · P2 — 공정 공유 1차)의 값과 규칙 한 곳.
   세션 동안만 살고 DB · 리비전 · 공용 프로필에 쓰지 않으며 원본 공정명이다. 화면은 공개 함수만 부르고 세션 칸은 이 모듈 밖에서
-  만지지 않는다(5장 38, 그물 `tests/test_shared_process.py`). HOME 은 보내기만(`publish_from_home`), 하나 고름 화면은 받기만
-  (`follow_single`), 여러 개 따라감 화면은 값 칸이 쓰고(`process_field.render_process_filter`), 거름 밖 초안 수는 `count_outside` 다.
+  만지지 않는다(5장 38, 그물 `tests/test_shared_process.py`). HOME 은 보내기만(`publish_from_home`), 하나 고름 화면은 받고
+  (`follow_single`) 사이드바 공정 칸 팝업에서 직접 고른 공정만 보낸다(`pick_single` — 2026-11-09 보드 C2 (가)), 여러 개 따라감
+  화면은 값 칸이 쓰고(`process_field.render_process_filter`), 거름 밖 초안 수는 `count_outside` 다. 따라가는 화면은 선언 한 곳
+  (`FOLLOWERS` — 페이지 파일 → 출처 이름 · 갈래)이고, 화면마다 마지막으로 그린 선택지(`note_drawn`)로 `screen_mark` 가 탭 표지 ·
+  머리 칩의 근거(걸리나 · 없는 공정)를 낸다. 보내는 화면의 보이는 글자는 값과 함께 싣는다(`labels`).
   사용자 메모(모니터링 · 원복 검토)에 맞춘 원복 길은 이 모듈과 `components/process_field.py`, 그 둘을 부르는 줄을 걷고 화면마다
   고르는 칸을 되살리는 것이다.
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
@@ -2212,7 +2215,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록·그룹 상자·구역 제목을 선언하고 `st.Page` 묶음을
   만드는 단일 선언 지점이다. 페이지 추가·제목 변경·새 그룹은 여기서만 한다.
   - `PageSpec`·`SIDEBAR_GROUPS`·`SIDEBAR_SECTIONS`(`section.key` 가 컨테이너 key·CSS 선택자의 근거)·`ADMIN_AREA`·
-    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나이고 `page_header.py` 가 배지로 쓴다.
+    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나이고 `page_header.py` 가 배지로 쓴다. 원천 미연결 화면은
+    `PageSpec.pending_source`(그 화면이 스위치 · 머리 배지에 주는 원천 이름)를 선언하고, `PageSpec.implementing`(라벨
+    `(구현중)` 또는 그 선언 — Dynamic Capa 는 그룹 머리라 라벨에 달지 않는다)이 화면 탭 「구현중」 표지 · 머리 띠 「합성 샘플」
+    표지의 근거다(2026-11-09 보드 T8 — 그물 `tests/test_page_tabs.py`).
   - `PageSpec` 이 화면이 `app.py` 에 바라는 공통 조건(`reads_*`·`condition_tabs`·`has_condition_cards`)과
     설비 DB 핀(`uses_equipment_db`)·설비 시나리오(`equipment_scenario` — `"session"`/`"official"`, `equipment_scenario_tabs`,
     `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 가용설비 현황 탭
@@ -2548,6 +2554,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   조건 팝업 호스트 칸 바로 뒤·페이지 앞에서 고정 key 로 매 앱 전체 회차 그리고 프래그먼트로 감싸지 않는다(9장 「스크립트와
   컴포넌트」). data 는 세션 목록·`PageSpec` 상수뿐이고 DB 를 읽지 않는다. 트리거 넷(`select`·`close`·`pin`·`move`)의 콜백은
   목록 칸·이동 대기 칸만 적는다. 탭 이름은 사이드바 라벨에서 「(구현중)」만 뗀 글, 아이콘은 사이드바 Material 아이콘이다.
+  이름 곁 표지 둘(2026-11-09 보드 C1 (라) · T8)은 data 의 `proc`(공용 공정을 따라가는 화면 — `shared_process.FOLLOWERS`, 지금
+  값이 그 화면이 따르는 꼴일 때 깔때기 · 그 화면이 마지막으로 그린 선택지에 없는 공정이 있으면 주황 · 풍선 「공정 Mold ·
+  Underfill — 산출 결과 에서」 + 「PMC 는 이 화면에 없음」 — `process_field.tab_mark`)와 `wip`(구현 중 화면의 「구현중」 표지
+  풍선 — `wip_title`, 원천 이름 · 샘플을 켠 동안 「합성 샘플로 미리 봄」)이다. 지금 탭의 공정 표지는 알림 칸 JS 가 회차 끝에
+  값 칸 표지를 읽어 보내는 문서 사건(`capa-process-here`)으로 바로잡는다 — 탭 줄은 페이지보다 먼저 그려진다.
   가리킬 수 있는 기기에서 지금 탭이 아닌 고정 안 한 탭의 × 는 가리키거나 초점이 들 때만 보이고 누름을 받으며, 그 자리는 평소
   이름에 내준다(× 가 먼저 줄어든다 — 탭 10칸 · 1283px 에서 이름이 한 음절로 줄던 것, 2026-11-07 답 narrow · UI-ACC-02). 칸 폭은
   그대로라 가리켜도 이웃 탭이 밀리지 않는다. 터치 기기(`hover: none`)는 × 가 늘 보인다(`page_tabs.css`).
@@ -2716,8 +2727,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     주소에 테마만 붙이면 그 지우기가 먼저 닿은 때 새 세션이 링크 없이 열렸다(E2E 결함 — 사본 CPU 6배 느리게 9번 중 8번).
     같은 출처·경로일 때 빠진 이름만 싣고 지금 주소의 값은 그대로 둔다. 단추를 눌러 바꿀 때(`syncParam`)는 지금 주소
     그대로다. node 로 스크립트 셋을 가짜 부모 창에서 돌리는 시험이 `tests/test_theme_reopen_link.py` 다.
-  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌(변경 칩 · Guide · Alarm · Print · 테마 — 2026-11-03, 변경 칩
-    `CHANGES_CHIP_ID` 와 Alarm `ALARM_BUTTON_ID` 는 알림 칸 JS 가 세운다), 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
+  - 툴바 차례는 `TOOLBAR_BUTTON_ORDER` 한 벌(공정 칩 · 합성 샘플 · 변경 칩 · Guide · Alarm · Print · 테마 — 2026-11-03,
+    2026-11-09 보드 C1 (라) · T8 로 맨 앞 둘을 더함. 공정 칩 `PROCESS_CHIP_ID` · 합성 샘플 `SAMPLE_MARK_ID` · 변경 칩
+    `CHANGES_CHIP_ID` · Alarm `ALARM_BUTTON_ID` 는 알림 칸 JS 가 세운다), 선택자 상수(`TOOLBAR_SLOT`·`THEME_BUTTON_ID`·
     `SIDEBAR_HEADER_SLOT`)는 이 모듈 한 곳이다. iframe 내용은 회차마다 같아야 한다(`tests/test_theme_toggle.py`).
   - 툴바에 단추를 더하거나 바꾸면 `TOOLBAR_BUTTON_ORDER`(와 `check_deploy_screens.TOOLBAR_LABELS` — 바뀐 것이 있을 때만
     서면 `TOOLBAR_OPTIONAL` 에도)에 넣는다. 머리 띠 두 줄 · 진행 막대 자리의 오른쪽 비움은 알림 칸 JS 가 잰 툴바 실제
@@ -3288,14 +3300,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 자리: HOME(설정 · 공정 필터 · 주요공정 히트맵) · 기준 정보 붙여넣기 · 표준 목표 붙여넣기 · Qual 마감 계산기 · 공식 지정 ·
   Space 캔버스 편집. 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
 - `src/capa_simulation/components/process_field.py` — 공용 공정 칸의 화면 조각(값 칸 + 타일 판 팝업 — `process_field_assets`,
-  2026-11-08 답 P1 · P2). 여러 개 따라감은 `render_process_filter(options, screen=, labels=)` 가 걸 공정을 돌려주고(산출 결과 셋 ·
-  가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름(받기만)은 `render_process_choice(options,
-  screen=, key=)`(공정 Capa 상세 · 제약 시뮬레이션). 값 칸 글은 「전체 N공정」 · 하나면 이름 · 둘부터 한 줄 「Mold 외 2개」
-  (`first_and_rest` — 표시순서상 첫 공정, 풍선 `filter_help` 가 전체 목록 — 2026-11-09 사용자 검수 g03-2, 필요 단축 일정 카드의
-  공정 칸도 같은 함수)다. 표지는 값 칸 테두리 `ACCENT` 두 겹 · 이름 줄 출처 「X 에서」(실제로 걸렸을
-  때만) · 없는 공정 주황 배지 · 본문 칩 35px(`app.py` `render_chip_slot` 자리, 누르면 모든 화면 지움)이다. 팝업은 조건 팝업
-  호스트의 넷째 갈래이고 선택지는 페이지가 값 칸을 그린 회차에 세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을
-  가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과 dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다.
+  2026-11-08 답 P1 · P2)과 머리 띠 칩 · 화면 탭 표지의 글 · data. 여러 개 따라감은 `render_process_filter(options, screen=, labels=)`
+  가 걸 공정을 돌려주고(산출 결과 셋 · 가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름은
+  `render_process_choice(options, screen=, key=)`(공정 Capa 상세 · 제약 시뮬레이션 — 팝업에서 직접 고른 공정만
+  `shared_process.pick_single` 로 보낸다, 2026-11-09 보드 C2 (가)). 값 칸 글은 「전체 N공정」 · 하나면 이름 · 둘부터 한 줄
+  「Mold 외 2개」(`first_and_rest` — 표시순서상 첫 공정, 풍선 `filter_help` 가 전체 목록 — 2026-11-09 사용자 검수 g03-2, 필요 단축
+  일정 카드의 공정 칸 · 머리 띠 칩도 같은 함수)다. 표지는 값 칸 테두리 `ACCENT` 두 겹 · 이름 줄 출처 「X 에서」(실제로 걸렸을
+  때만) · 없는 공정은 값 칸 아이콘 `filter_alt_off` 뿐이다 — 이름 줄 주황 배지는 걷었다(보드 P1-6). 본문 위 칩은 없다(보드
+  C1 (라)) — 머리 띠 「공정」 칩(`header_chip` → 알림 칸)과 화면 탭 표지(`tab_mark` → 탭 줄)가 대신하고, 값 칸을 그린 회차에
+  표지(`MARKER_ATTRIBUTE` — 스타일만 든 `st.html` 의 JSON, 값 칸과 같은 간격 없는 칸에 그려 사이드바에 틈이 없다)를 남겨 알림
+  칸 JS 가 회차 끝에 지금 화면 몫을 바로잡는다. 팝업은 조건 팝업 호스트의 넷째 갈래이고 선택지는 페이지가 값 칸을 그린 회차에
+  세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
+  dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다.
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
   - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
     달만 미적용으로 알린다.
@@ -3472,7 +3488,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
-  테두리)와 머리 툴바 슬롯에 두 호스트(변경 칩 · Alarm 단추)를 세우고 칸 자체는 접는다(`_HIDE_STYLE`). data 는 세션만 읽는다
+  테두리 · 공정 판)와 머리 툴바 슬롯에 네 호스트(공정 칩 · 합성 샘플 표지 · 변경 칩 · Alarm 단추)를 세우고 칸 자체는
+  접는다(`_HIDE_STYLE`). 공정 칩은 공용 공정 값(`process_field.header_chip`)이 있을 때만, 합성 샘플 표지는 지금 화면이 원천 미연결
+  화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만 선다(2026-11-09 보드 C1 (라) · T8 — 9장 「알림 칸」). data 는 세션만 읽는다
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
   `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」). 패널은
   브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id · 앞 부트 표지는
@@ -3492,8 +3510,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칩은 한글 글이라 앱 글꼴). 초점 껍데기(`installFocusShell`)는 앱 전체 꼴이라 이 칸이 문서에 처리기를 둔다 — 꺼진 단추를 감싼 풍선 칸이 탭 자리를
   맡고(Tab 누른 순간 맞춤) 열린 팝오버 단추의 Tab 을 본문으로 들여보내며, 마우스로 누른 단추 · 대화상자를 닫은 뒤의 풍선을 닫고, 회차 중 빠진 초점을 열린
   대화상자 안으로 되돌린다(Streamlit 1.63 DOM 에 기댄다). 시험:
-  `tests/test_alert_center.py`(data · 자리 · 변경 목록) · `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node
-  순수 구획 `<alerts-rows>` · `<alerts-focus>` · `<alerts-storage>`) · 파일 전체 문법은 `tests/test_component_js_syntax.py`.
+  `tests/test_alert_center.py`(data · 자리 · 변경 목록 · 공정 칩 · 합성 샘플 표지 · 해제 트리거) · `tests/test_alert_center_assets.py`(층 · 누름 · 저장 · 색 계약과 node
+  순수 구획 `<alerts-rows>` · `<alerts-focus>` · `<alerts-storage>` — 공정 칩 판정 `processChipOf` · `processLiveOf` 포함) · 파일 전체 문법은 `tests/test_component_js_syntax.py`.
 - `src/capa_simulation/components/state_alerts.py` — 화면이 상태 알림 · 화면 오류 알림을 낼 때 쓰는 공용 조각(알림 체계 2단계).
   `simulation_scope(active, period | dates=)`(활성 리비전 `content_token` + 조회기간 · 조회일 — 지문 재료, 로그의 범위 줄
   「시나리오 · rN · 26.01–26.12」, 미저장 편집이면 그 말을 붙인다 — 세션만 읽는다) · `equipment_scope`(세션의 (공통 대장, 일정)
@@ -4922,10 +4940,11 @@ RQ_MODULE
     repr 에 나오지 않는다 — 점검에는 개수만(예외는 관리자에게만 서는 Admin 「접속 명단」 표).
     **S3 명단(`auth/access_store.py` · `io/s3_small.py`, 2026-11-05 사용자 결정 — 키는 `loginid`, 그룹 클레임 안 씀).** 판정 자리는 그대로이고(`session_check` + 콜백 + 갱신) 이들이 `cfg.access` 대신 `runtime.current_access(cfg)` — 메모리의 불변 한 벌(`AccessSource.access`) — 를 본다. 판정은 S3 에 가지 않는다. 합성: `CAPA_ACCESS_ADMINS` 는 늘 관리자로 들고(관리자 판별 · S3 장애 비상구), 키가 없으면 `CAPA_ACCESS_USERS` 를 그대로 쓰고, 키가 있으면 명단 파일이 없는 동안만 그 목록을 첫 버전으로 쓰고(`AD-09`) 파일이 생긴 뒤로는 듣지 않고 알린다. **파일의 등급 칸으로 관리자를 만들 수 없다**(`compose_access` — 명단 편집 권한이 S3 쓰기 권한과 같아지지 않게). 기동 때 진입 파일이 한 번 읽는다(`server.start_sso` → `read_at_start` — uvicorn 이 파일을 import 하는 때라 연결을 받기 전이고 이벤트 루프 스레드다). 못 읽으면 앱은 뜨고 관리자만 통과(열림으로 떨어지지 않음) · 관리자 어느 화면에서나 `AD-08`. 그 뒤 네트워크는 이벤트 루프에서 부르지 않는다 — 자가 회복은 콜백이 거절하기 직전에 `run_in_threadpool(retry_unread)`(60초에 한 번 — `runtime.claim_access_retry`), 다시 읽기와 저장은 스크립트 스레드다. 잘 읽어 둔 뒤의 실패는 까닭만 적고 메모리 명단으로 판정이 이어진다. 자가 회복 실패는 들어오지 못하는 사람이 되풀이해 남길 수 있어 최근 사건 고리에 넣지 않고 누계만 센다(`runtime.ACCESS_RETRY_FAILED_EVENT` — 「S3 명단」 줄). 저장은 프로세스 잠금으로 줄 세우고, 받을 때의 ETag(없으면 판 번호)와 다르면 덮지 않고 다시 읽게 하며(`If-Match` 는 확인되지 않은 능력이라 보내지 않는다), PUT 이 성공한 뒤에만 메모리를 바꾸고 앞선 읽기 실패 표시를 걷는다. PUT 의 답을 받지 못하면 저장소에 들어갔는지 모른다 — `SaveUnconfirmedError`, 화면 글은 「그대로」 라고 단언하지 않고 다시 읽기로 보내고 점검 줄은 `쓰기 결과 모름` 이다. 쓰기 함수는 화면과 별개로 신원 · 관리자를 다시 본다(`_require_admin`) — 화면의 실수를 막는 벽이고 같은 프로세스의 모듈 코드를 막지 못한다(`check_module` M06 은 쉬운 꼴만 잡고 통과가 보증이 아니다 — 방어선은 런북 4-6, `docs/sso_setup.md` 4장). 파일은 작은 JSON 하나(형식 판 · 판 번호 · 사용자 · 고친 기록 마지막 200건)이다. **첫 판(환경변수 목록, 비었으면 빈 명단)으로 읽는 것은 받아 둔 파일도 표지 객체(`names.ACCESS_SEEDED_OBJECT`)도 없을 때 404 `NoSuchKey` 를 받은 경우뿐이다** — 파일이 있으면 표지도 있게 맞춘다(파일을 처음 만든 저장 · 파일을 받은 읽기가 쓴다, 못 써도 실패가 아니다). 받아 둔 파일이 있었거나 표지가 있으면 `KIND_FILE_GONE` 실패로 메모리를 그대로 두고(관리자만 — 지워진 뒤 옛 환경변수 명단이 되살아나 닫힘이 열림으로 바뀌지 않게), 코드 없는 404(저장소 앞단)는 언제나 실패(못 읽음 · 자가 회복)다. 표지는 GET 으로 본다 — HEAD 는 본문이 없어 그 404 를 없음으로 읽는다. `io/s3_small` 의 요청 하나는 전체 8초 마감이고(연결 · 머리 · 본문 · 100 Continue — 스레드 없이 소켓 겉으로), 이름 풀기만 끊지 못한다. 키 둘은 `names.SECRET_ENVIRONMENT` 이다. 운영 · 잠금 · 루프백이 아닌 공개 주소이거나 목록에 값이 있으면 켜지고(`APP_ENV` 만 보면 그 값을 빠뜨린 실제 서버가 조용히 전부를 받는다), 켜졌는데 읽은 관리자가 없으면 막힘이다. 글자 · 숫자가 없는 항목은 자리표로 보고 읽지 못함으로 센다. `login_denied` 는 최근 사건 고리에 넣지 않고 계정별 표(`runtime.denied_accounts`)에만 둔다 — 들어오지 못하는 사람이 유일한 감사 창을 밀어내지 못하게. 등급 맵은 다음 단계(화면별 권한)가 쓴다 — 그때 판정을 화면마다 흩지 말고 이 맵에서 읽는다.
 38. **공용 공정 값은 `src/capa_simulation/shared_process.py` 한 곳이다**(2026-11-08 답 P1 · P2 — 공정 공유 1차). 세션 동안만 살고
-    DB · 리비전 · 공용 프로필에 쓰지 않으며 원본 공정명이다. 화면은 그 화면 목록 안의 것만 읽고, 없는 값은 지우지 않는다(이름
-    줄 주황 배지 「… 없음」). HOME 은 보내기만 한다(`publish_from_home` — 다른 화면 값은 HOME B/N 판정과 리비전 저장값
-    `PROCESS_SELECTION_KEY` 에 들지 않는다). 하나 고름 화면은 받기만 한다(`follow_single` — 공용 값이 하나 · 바뀐 뒤 첫 회차 · 들어온
-    길이 이김, 고른 공정은 공용 값을 바꾸지 않음). 필요 단축 일정 `0019` 공정 필터 · 표준 목표 저장 칸에 넣지 않는다(5장 9 · 12 —
+    DB · 리비전 · 공용 프로필에 쓰지 않으며 원본 공정명이다. 화면은 그 화면 목록 안의 것만 읽고, 없는 값은 지우지 않는다(머리
+    띠 칩 「n개 이 화면 없음」 · 화면 탭 주황 표지 — 2026-11-09 보드 C1 (라) · P1-6). HOME 은 보내기만 한다(`publish_from_home` —
+    다른 화면 값은 HOME B/N 판정과 리비전 저장값 `PROCESS_SELECTION_KEY` 에 들지 않는다). 하나 고름 화면은 받고(`follow_single` —
+    공용 값이 하나 · 바뀐 뒤 첫 회차 · 들어온 길이 이김) 사이드바 공정 칸 팝업에서 직접 고른 공정만 보낸다(`pick_single` — 보드
+    C2 (가); 들어온 길 · 기본 공정 · 따라 연 공정 · ◀▶ 넘김은 보내지 않음). 필요 단축 일정 `0019` 공정 필터 · 표준 목표 저장 칸에 넣지 않는다(5장 9 · 12 —
     P2-3, 2차에서 강조 · 표 좁힘으로만). Static 은 전체를 보이고 실적 셋 · Dynamic · 재공은 데이터 연결 뒤다(P2-4). 위젯 key 에
     값을 넣어 주지 않는다. 세션 키는 모듈 밖에서 만지지 않는다(그물 `tests/test_shared_process.py`). 사용자는 「계속 모니터링하고
     적절치 않으면 다른 구조 · 원복을 검토」 한다고 했다 — 경계를 이 모듈과 `components/process_field.py` 둘에 가두어 걷기 쉽게 둔다.
@@ -6570,7 +6589,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다시 그리느라 본 스레드가 0.8 ~ 1초 묶이고(샘플 관측) 그 사이 프런트 회차의 표지는 메시지 큐에 묶여 있다. 그래서 제때 깬 틱만 조용한 시간으로 세고(`quietAfter`), 가려진 탭처럼 타이머가 늘 늦으면 5초 상한(`RECONNECT_LIMIT_MS`)에서 부른다. data 가 닿아도 회차로 센다 — 묶인 사이 끝난 회차는 메시지가 한꺼번에 처리돼(`handleMessage`) 표지가 움직이지 않는데, 새 세션은 세션 표지로 data 가 달라 알 수 있다.
   **기다리는 동안 사람 손이 닿으면 부르지 않는다**: 누름의 회차 표지도 왕복해야 움직여, 그 사이 부르면 누름의 회차를 끊어 그 누름이 사라진다(2026-11-08 사본 실측 — 왕복 200ms 에서 다시 붙은 뒤 160 ~ 280ms 에 누른 `on_click` 없는 적용 단추. 고친 뒤 화면 이동도 같은 조건에서 8번 모두 살았다). 기다리는 동안만 `pointerdown` · `click` · `keydown` 을 듣고(`TOUCH_EVENTS`, 듣기는 틱이 끝나면 걷는다) 손이 닿은 뒤 대기 시간 + 700ms(`RECONNECT_TOUCH_MS`) 안에는 부르지 않는다 — 그 사이 표지가 움직이면 그 회차가 재연결 회차를 대신하고, 끝내 움직이지 않으면(회차가 없는 누름) 그때 부른다. 부른 뒤의 누름은 차례가 맞아(서버가 부름 → 누름 순서로 받는다) 사라지지 않는다.
   **남은 겹침**: 세션이 남아 있고 서버 회차가 본 스레드가 묶인 시간보다 짧으면(합성 표본 HOME — 마지막이 프래그먼트 회차인 탭) 표지도 data 도 움직이지 않아 회차가 두 번 돈다. 입력은 그대로이고 값은 앱 전체 회차 한 번이다 — 드문 일을 가르려고 모든 회차에 표지를 더하지 않았다.
-  **이 칸이 파이썬을 부르는 자리는 이 하나뿐이다** — 패널 · 칩 판은 지금도 브라우저 안에서만 연다. 연결 표지 · 회차 표지는 관찰자 하나(`watchRoot`)가 보고 칸이 다시 그려져도 늘지 않는다.
+  **이 칸이 파이썬을 부르는 자리는 이것과 공정 판 「모든 화면에서 해제」(`process_clear`) 둘이다** — 패널 · 변경 판 · 공정 판은 지금도 브라우저 안에서만 연다. 연결 표지 · 회차 표지는 관찰자 하나(`watchRoot`)가 보고 칸이 다시 그려져도 늘지 않는다.
   세션이 남아 있었는지는 회차를 돌려야 알 수 있어 **짧은 끊김에도 회차가 한 번 돈다**(샘플 관측 0.27 ~ 0.45초, 입력 · 고침은 남는다). 대가: 재시작 · 세션 만료 뒤에는 열린
   대화상자 입력이 사라지고 시나리오 · 조회기간 · 화면 탭이 처음으로 돌아간다(사용자가 받아들임). **남은 틈**: 새 세션의 회차가 그 프래그먼트까지 닿기 전에 누른 저장은 여전히 버려진다(샘플 관측 — 다시 붙은 뒤 약 2.6초까지, 그 뒤는 저장됨).
   조용히 버려지지는 않는다 — `GL-07` 이 곧 뜨고, 폼이 남아 있으면 다시 누르면 저장된다(폼이 닫히는 때도 있다). 누른 회차에만 여는 대화상자는 Guide 하나로 줄었고 짧은 끊김에도 닫힌다(입력이 없다). HOME 공정 필터 · 주요공정 히트맵은 2026-11-08 답 U5 로 열림 칸(`home_open_dialog` — 값 `process_filter` · `key_process`)으로 서는 호스트 팝업이 되어 짧은 끊김 뒤 다시 서고 공정 필터 초안도 남는다(검토 재연결 실측: 앞 판 dialogs 0 → 1, 「선택 21 / 24」 유지 — 샘플 관측). 닫기는 `HOME_DIALOG_HOST.close` 로 호스트만 돌아 HOME 회차가 늘지 않는다.
@@ -6584,6 +6603,18 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **머리 변경 칩**(D5 (가))은 바뀐 것이 있을 때만 Guide 왼쪽에 선다 — 판정은 탭 줄 주황 점과 같은 등록부에 시나리오 미저장 ·
   설비 가정 · UPEH 가정을 더한 것(`change_summary.session_changes` — 세션만 읽음). 600px 미만에서는 칩을 Alarm 점으로 합치고
   툴바 `Print` 를 숨긴다(`app_header.SHELL_STYLE`).
+- **머리 공정 칩**(2026-11-09 보드 C1 (라) — 본문 위 칩을 옮겼다)은 공용 공정 값이 있을 때만 툴바 맨 왼쪽에 선다. 글은 깔때기 ·
+  「공정」 · 수 · 「Mold 외 2개」 · 이 화면이 따라가는데 없는 공정이 있으면 주황 「n개 이 화면 없음」 이고 1400px 미만은 수만(없음은
+  주황 점) 남긴다. 이 화면에 걸리면 강조색 테두리 · 옅은 면, 따라가지 않거나 걸리지 않으면 흐린 테두리(풍선 「이 화면엔 안
+  걸림」)이고 주황은 없는 공정 글에만 쓴다. 이 화면 몫은 페이지보다 먼저라 세션 기록의 짐작(`process_field.header_chip` 의
+  `here`)으로 그리고, 공정 값 칸이 남긴 회차 표지(`data-capa-process`)를 JS 가 회차 끝에 읽어 바로잡는다 — 같은 화면 · 같은 판의
+  표지가 짐작보다 이기고, 회차가 끝났는데 표지가 없으면 그 화면은 공정 칸을 그리지 않은 것(흐린 칩)이다. 누르면 판(브라우저
+  안에서만 — UI-PRF-01): 「공정 거름 n개」 · 출처 · 공정마다 ✓ / – 「이 화면에 없음」 · 「공정 고르기」(사이드바 공정 칸이 있을 때만 그
+  칸 단추를 누른다) · 「모든 화면에서 해제」(트리거 `process_clear` → `shared_process.clear`). Esc · 바깥 누름 · 초점은 변경 판과
+  같다(`panelOf`).
+- **합성 샘플 표지**(보드 T8)는 지금 화면이 원천 미연결 화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만 공정
+  칩 오른쪽에 선다(`alert_center.shows_sample_mark` — `sample_data.sample_switch_on` 을 읽기만). 변경 칩(주황 면 알약)과 갈리게
+  점선 네모 · 주황 글 · 플라스크이고 누르는 것이 없다(풍선 「합성 샘플 — 실적이 아님 · 사이드바 「샘플 데이터」 로 끔」).
 
 ### 팝업과 콜백
 
