@@ -306,7 +306,12 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     ]
     assert not app.sidebar.segmented_control
     assert "예외 처리 공정" in [expandable.label for expandable in app.expander]
-    # 가용설비 입력은 결과 상자 위 작업 줄의 팝업이다. 닫혀 있는 동안 본문에 붙여넣기 칸이 없다.
+    # 가용설비 입력은 결과 상자 맨 위 「표시 항목」 줄 오른쪽 끝 작업 단추의 팝업이다(2026-11-09
+    # 사용자 보드 T3 — 단추가 따로 한 줄을 차지하지 않는다). 닫혀 있는 동안 본문에 붙여넣기 칸이
+    # 없다.
+    assert _same_row(
+        app, "standard_target_output_metric", "open_standard_target_availability_paste"
+    )
     assert not app.text_area
     app.button(key="open_standard_target_availability_paste").click().run()
     assert not app.exception
@@ -1325,3 +1330,19 @@ def test_a_second_press_of_the_closed_clear_dialog_does_not_rerun_its_body(
     ]
     assert not stale, "닫힌 팝업의 본문이 다시 돌아 걷힌 팝업 자리에 요소를 보냈다"
     assert app.session_state["clear_calls"] == 1
+
+
+def _same_row(app: AppTest, first: str, second: str) -> bool:
+    """key `first` · `second` 두 위젯이 같은 가로 줄(그 줄 안 칸)에 서는가."""
+    found: dict[str, tuple[int, ...]] = {}
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "key", None) in (first, second):
+                found[str(child.key)] = here
+            walk(child, here)
+
+    walk(app.main, ())
+    row = found[first][:-1]
+    return found[second][: len(row)] == row

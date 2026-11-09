@@ -2,9 +2,11 @@
 
 """표준 목표 — 조건 카드·Guide·작업 줄 양식(2026-09-29 사용자 결정, 생산 계획이 샘플).
 
-- 표시 항목·기간·공정 필터·상세·PKG 기준(로직 분석이면 고르는 일곱 칸)은 사이드바 조건 카드
-  `표준 목표 조건` 이다. 카드는 계산이 멈추는 회차에도 먼저 선다.
-- 주차별 가용설비 입력은 결과 상자 위 작업 줄이다 — 붙여넣기·입력 초기화는 팝업, 양식은 붙여넣기 창.
+- 기간·공정 필터·상세·PKG 기준(로직 분석이면 고르는 일곱 칸)은 사이드바 조건 카드
+  `표준 목표 조건` 이다. 카드는 계산이 멈추는 회차에도 먼저 선다. 표시 항목은 본문 결과 상자 맨 위
+  전환 단추 줄이다(하위 보기 전환).
+- 주차별 가용설비 입력은 그 「표시 항목」 줄 오른쪽 끝 작업 단추다 — 붙여넣기·입력 초기화는 팝업,
+  양식은 붙여넣기 창.
 - 설명(산식·세션 적용 범위·예외 처리 규칙)은 Guide(`guides/standard_target_capa.md`)다.
 """
 
@@ -892,12 +894,13 @@ def _restore_public_process_default() -> None:
     st.session_state[PROCESS_FILTER_KEY] = public_default.copy()
 
 
-# 결과 상자. 맨 위가 작업 줄(아래에서 채운다)이고 그 아래가 **무엇을 볼지**(`표시 항목`)다 —
-# 로직 분석까지 결과를 통째로 바꾸는 전환이라 하위 탭과 같은 것이고, 카드가 아니라 본문이다
-# (2026-09-29 사용자 결정). 카드의 상세·PKG 기준이 이 값을 보므로 카드보다 먼저 그린다.
+# 결과 상자. 맨 위 한 줄이 **무엇을 볼지**(`표시 항목`)와 그 줄 오른쪽 끝 작업 단추(아래에서
+# 채운다)다 — 표시 항목은 로직 분석까지 결과를 통째로 바꾸는 전환이라 하위 탭과 같은 것이고, 카드가
+# 아니라 본문이다(2026-09-29 사용자 결정). 카드의 상세·PKG 기준이 이 값을 보므로 카드보다 먼저
+# 그린다. 작업 단추가 따로 한 줄을 차지하지 않는다(2026-11-09 사용자 보드 T3 — 혼자 한 줄 단추를
+# 옆 줄로, 설계 규칙 UI-LAY-11 · UI-LAY-03).
 weekly_output_container = st.container(border=True)
 with weekly_output_container:
-    action_row = st.container()
     # 이름 줄 없이 단추 줄 하나다 — 이름 「표시 항목」 은 접근성 이름으로만 남고 뜻은 줄 끝 풍선이다
     # (`label_visibility="collapsed"` 는 위젯 풍선도 숨기므로 빈 캡션의 풍선을 곁에 둔다).
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -912,6 +915,13 @@ with weekly_output_container:
             label_visibility="collapsed",
         )
         st.caption("", help=OUTPUT_METRIC_HELP, width="content")
+        # 주차별 가용설비 입력 단추 — 줄 오른쪽 끝(아래에서 채운다).
+        action_row = st.container(
+            horizontal=True,
+            horizontal_alignment="right",
+            vertical_alignment="center",
+            gap="small",
+        )
     if output_metric is None:
         output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
     st.session_state[OUTPUT_METRIC_SHOWN_KEY] = output_metric
@@ -1106,28 +1116,28 @@ def _clear_dialog() -> None:
 
 
 with action_row:
-    # 결과 상자 맨 위 작업 줄. 결과를 만드는 입력(주차별 가용설비)이 여기서 들어간다. 붙여넣기와
-    # 초기화는 가끔 하는 쓰기라 팝업이고, 여는 버튼은 콜백으로 연다 — 한 회차에 팝업이 둘 뜨지
-    # 않는다. 붙여넣기를 여는 콜백은 할 수 있으면 호스트만 다시 돌린다(`DialogHost.open`).
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.button(
-            "가용설비 붙여넣기",
-            icon=":material/content_paste:",
-            key=PASTE_BUTTON_KEY,
-            type="primary",
-            on_click=DIALOG_HOST.open,
-            args=(PASTE_DIALOG, PASTE_BUTTON_KEY),
-        )
-        st.button(
-            "입력 초기화",
-            icon=":material/delete:",
-            key="open_standard_target_availability_clear",
-            on_click=_open_dialog,
-            args=(CLEAR_DIALOG,),
-            disabled=availability.empty,
-            # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
-            help=CLEAR_LOCKED_HELP if availability.empty else None,
-        )
+    # 결과 상자 맨 위 「표시 항목」 줄 오른쪽 끝 작업 단추. 결과를 만드는 입력(주차별 가용설비)이
+    # 여기서 들어간다. 붙여넣기와 초기화는 가끔 하는 쓰기라 팝업이고, 여는 버튼은 콜백으로 연다 — 한
+    # 회차에 팝업이 둘 뜨지 않는다. 붙여넣기를 여는 콜백은 할 수 있으면 호스트만 다시 돌린다
+    # (`DialogHost.open`). 결과 알림은 성공뿐이라 알림창으로만 뜬다(칸은 비어 줄을 밀지 않는다).
+    st.button(
+        "가용설비 붙여넣기",
+        icon=":material/content_paste:",
+        key=PASTE_BUTTON_KEY,
+        type="primary",
+        on_click=DIALOG_HOST.open,
+        args=(PASTE_DIALOG, PASTE_BUTTON_KEY),
+    )
+    st.button(
+        "입력 초기화",
+        icon=":material/delete:",
+        key="open_standard_target_availability_clear",
+        on_click=_open_dialog,
+        args=(CLEAR_DIALOG,),
+        disabled=availability.empty,
+        # 잠근 단추에만 까닭 풍선(설계 규칙 UI-INP-07).
+        help=CLEAR_LOCKED_HELP if availability.empty else None,
+    )
     render_flash(AVAILABILITY_FLASH_KEY)
 # 붙여넣기 팝업의 호스트 — 매 앱 전체 회차 빠짐없이, 아래 멈춤(`st.stop()`)보다 앞이다. 이벤트 칸에
 # 늘 한 자리를 쓰므로 「입력 초기화」 팝업은 그 뒤 자리에 선다.
