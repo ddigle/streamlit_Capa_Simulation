@@ -3914,9 +3914,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     글자라 잠긴 칸처럼 보인다). 호기별 표 `메모` 칸에는 메모 한 가지가 다 보이는 폭을 준다.
 - `src/capa_simulation/components/manual_downtime_tab.py` — 가용설비 현황 탭 ③ 「Preference」 본문 — 공정 × 생산월 입력 비가동
   대수 편집표(`st.form` 안 `st.data_editor` — 첫 칸 공정 표시명 잠금, 달마다 `NumberColumn` 0 이상 `%.2f`, 빈칸 = 0)·저장자·변경
-  메모·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
+  메모(두 칸은 라벨 줄을 걷고 placeholder 가 이름 — 2026-11-09 상단 띠 재고)·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
   저장 이력 펼침. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
-  `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다.
+  `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다. 제목 아래 열 · 빈칸 · 공용 줄은 두지 않는다 — 제목 풍선
+  (`MANUAL_INTRO_HELP` + 지금 열 + `MANUAL_COLUMNS_HELP`)이고, 조회기간 밖 저장 칸은 있을 때만 공용 버전 줄 표지다.
   - 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key` — 제출 회차는 본 version, 그 밖은 그린 저장본 version, 9장
     「본 값과 보이는 칸」). 남의 저장에 거부된 누름의 둘째 누름(`held_profile_conflict`) 회차는 제출 회차여도 그린 저장본 version
     이다 — 그 회차가 본 version 을 그 저장본으로 적는다. 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인

@@ -95,6 +95,7 @@ from capa_simulation.settings import EQUIPMENT_DUCKDB_PATH
 
 __all__ = [
     "MANUAL_BASE_VERSION_KEY",
+    "MANUAL_COLUMNS_HELP",
     "MANUAL_EDITOR_KEY",
     "MANUAL_FLASH_KEY",
     "MANUAL_FORM_KEY",
@@ -140,7 +141,7 @@ MANUAL_INTRO_HELP: Final = (
 )
 MANUAL_COLUMNS_HELP: Final = (
     "열은 사이드바 조회기간의 생산월 — 공정별 Cut-off 의 W/D 월(공정 Capa 상세와 같은 달)입니다. "
-    "빈칸은 0 이고, 조회기간 밖에 저장된 칸은 그대로 둡니다."
+    "빈칸은 0 이고, 조회기간 밖에 저장된 칸은 그대로 둡니다. 모든 설비 시나리오가 함께 씁니다."
 )
 MANUAL_SAVE_HELP: Final = (
     "적은 칸은 이 단추를 눌러야 남습니다 — 저장 전에 다른 화면으로 옮기거나 그 사이 다른 사람이 "
@@ -263,20 +264,19 @@ def render_manual_downtime_tab(
 
 
 def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
-    # 공용 버전 줄은 제목 옆 한 줄이다(2026-11-08 그림 메모 g18).
+    """제목 줄 하나 — 제목 · 공용 버전 줄(2026-11-08 그림 메모 g18). 제목 아래 서던 열 · 빈칸 · 공용
+    한 줄은 제목 풍선으로 옮겼다(2026-11-09 상단 띠 재고 — 페이지 상단 문구 최소화, 설계 규칙
+    UI-TXT-01 · UI-TXT-02). 조회기간 밖에 저장된 칸은 표에 보이지 않는 저장분이라 있을 때만 버전
+    줄에 표지 한 마디로 둔다(UI-TXT-04 · UI-TXT-08)."""
+    period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"
+    outside = sum(1 for _, month, _ in profile.rows if month not in set(months))
     render_profile_heading(
         "#### :material/event_busy: 월별 비가동 대수(입력)",
         profile,
         key="manual_downtime",
         empty="아직 넣은 입력 비가동이 없습니다",
-        help=MANUAL_INTRO_HELP,
-    )
-    period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"
-    outside = sum(1 for _, month, _ in profile.rows if month not in set(months))
-    st.caption(
-        f"열 · 생산월 {period} · 빈칸 = 0 · 모든 설비 시나리오 공용"
-        + (f" · 조회기간 밖 저장 {outside}칸" if outside else ""),
-        help=MANUAL_COLUMNS_HELP,
+        detail=f"조회기간 밖 저장 {outside}칸" if outside else None,
+        help=f"{MANUAL_INTRO_HELP}\n\n지금 열: 생산월 {period}. {MANUAL_COLUMNS_HELP}",
     )
 
 
@@ -306,13 +306,23 @@ def _render_editor(
             )
             # 저장자 칸은 저장에 비우지 않는다 — 같은 화면의 다음 저장에 이어 쓰고, 화면을 옮기면
             # 칸과 함께 사라진다. 메모만 저장에 비운다(saved_note).
-            saved_by = st.text_input("저장자(선택)", key=MANUAL_SAVED_BY_KEY, disabled=locked)
+            # 두 칸은 라벨 줄을 걷고 칸 안 안내 글(placeholder)이 이름을 말한다 — 라벨은 접근성
+            # 이름으로 남는다(2026-11-09 상단 띠 재고 — 페이지 상단 여백 최소화, UI-TXT-01 예외
+            # 「사람이 쓰는 자유 글 칸의 안내 글」).
+            saved_by = st.text_input(
+                "저장자(선택)",
+                placeholder="저장자(선택)",
+                key=MANUAL_SAVED_BY_KEY,
+                disabled=locked,
+                label_visibility="collapsed",
+            )
             ready_note_field(MANUAL_NOTE_KEY, submitted=submitted, start=submitted_base)
             note = st.text_input(
                 "변경 메모",
-                placeholder="예: 26.07 Wafer Mount PM 1.5대",
+                placeholder="변경 메모 — 예: 26.07 Wafer Mount PM 1.5대",
                 key=MANUAL_NOTE_KEY,
                 disabled=locked,
+                label_visibility="collapsed",
             )
         # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
         # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않는다(폼 안 빈 칸은 간격을 먹지

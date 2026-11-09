@@ -28,6 +28,7 @@ from streamlit.testing.v1.element_tree import TextInput
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.manual_downtime_tab import (
     MANUAL_BASE_VERSION_KEY,
+    MANUAL_COLUMNS_HELP,
     MANUAL_EDITOR_KEY,
     MANUAL_NOTE_KEY,
     MANUAL_SAVE_BUTTON,
@@ -494,3 +495,35 @@ def test_the_month_columns_are_numbers_with_two_decimals(tmp_path: Path) -> None
     assert columns["202607"]["label"] == "26.07"
     assert columns["202607"]["type_config"]["min_value"] == 0
     assert columns["202607"]["type_config"]["format"] == "%.2f"
+
+
+def test_the_heading_row_carries_the_column_note_and_the_form_has_no_label_row(
+    tmp_path: Path,
+) -> None:
+    """제목 아래 서던 「열 · 생산월 … · 빈칸 = 0 · 모든 설비 시나리오 공용」 줄은 제목 풍선으로
+    옮겼고, 조회기간 밖에 저장된 칸은 있을 때만 버전 줄 표지다. 저장자 · 변경 메모 칸은 라벨 줄을
+    걷고 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 — 페이지 상단 문구 · 여백 최소화)."""
+    path = tmp_path / "equipment.duckdb"
+    app = _app(path)
+    assert not any("열 · 생산월" in item.value for item in app.caption)
+    (heading,) = [item for item in app.markdown if "월별 비가동 대수(입력)" in item.value]
+    assert "지금 열: 생산월 26.07–26.08." in str(heading.proto.help)
+    assert MANUAL_COLUMNS_HELP in str(heading.proto.help)
+    for key, placeholder in (
+        (MANUAL_SAVED_BY_KEY, "저장자(선택)"),
+        (MANUAL_NOTE_KEY, "변경 메모 — 예: 26.07 Wafer Mount PM 1.5대"),
+    ):
+        field = app.text_input(key=key)
+        assert field.placeholder == placeholder
+        assert field.proto.label_visibility.value == field.proto.label_visibility.COLLAPSED
+
+    DuckDBEquipmentRepository(path).save_manual_downtime(
+        {(A, 202612): 1.0},
+        processes=[A],
+        months=[202612],
+        expected_version=0,
+    )
+    clear_equipment_repository()
+    app = _app(path)
+    versions = [item.value for item in app.caption if item.value.startswith("공용 버전 ")]
+    assert len(versions) == 1 and " · 조회기간 밖 저장 1칸 · " in versions[0], versions
