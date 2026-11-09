@@ -8,8 +8,8 @@
 여기 그대로 적어 둔다 — 실패하면 화면에 보이는 문구가 바뀐 것이다.
 
 `version == 0`(미저장)·`updated_at is None`(옛 저장분)·둘 다 있는 경우의 세 갈래를 모두
-본다. 변형 둘도 함께 본다: 주요공정은 `{n}개 공정` 을 **출처 앞**에, 공지는
-`공지 중`/`내림` 을 **맨 뒤**에 끼운다.
+본다. 변형도 함께 본다: 주요공정은 `{n}개 공정` 을 **출처 앞**에 끼운다. 공지는 꼬리 없이 다른 줄과
+같다 — 「공지 중 · 내림」 꼬리는 바로 아래 글 칸과 같은 말이라 걷었다(2026-11-09 사용자 검수 g18).
 """
 
 from __future__ import annotations
@@ -82,18 +82,13 @@ class _Profile:
         ),
         (
             _Profile(0, "직접 입력", None),
-            {"empty": "아직 공지를 올린 적이 없습니다", "suffix": "공지 중"},
+            {"empty": "아직 공지를 올린 적이 없습니다"},
             "공용 버전 없음 · 아직 공지를 올린 적이 없습니다",
         ),
         (
-            _Profile(1, "직접 입력", None),
-            {"empty": "아직 공지를 올린 적이 없습니다", "suffix": "공지 중"},
-            "공용 버전 v1 · 직접 입력 · 공지 중",
-        ),
-        (
             _Profile(2, "직접 입력", STAMP),
-            {"empty": "아직 공지를 올린 적이 없습니다", "suffix": "내림"},
-            "공용 버전 v2 · 직접 입력 · 2026-01-02 03:04 · 내림",
+            {"empty": "아직 공지를 올린 적이 없습니다"},
+            "공용 버전 v2 · 직접 입력 · 2026-01-02 03:04",
         ),
         (
             _Profile(3, "기준정보", STAMP),
@@ -110,31 +105,29 @@ def test_profile_version_caption_matches_the_screen_text(
     assert profile_version_caption(profile, **kwargs) == expected
 
 
-def test_empty_branch_ignores_detail_and_suffix() -> None:
+def test_empty_branch_ignores_detail() -> None:
     """미저장일 때는 `공용 버전 없음 · <빈 문구>` 두 토막만 나온다.
 
-    옛 여덟 자리가 모두 그랬다 — `{n}개 공정`·`공지 중` 은 저장된 뒤에만 뜻이 있다.
+    옛 여덟 자리가 모두 그랬다 — `{n}개 공정` 은 저장된 뒤에만 뜻이 있다.
     """
     caption = profile_version_caption(
         _Profile(0, "직접 입력", STAMP),
         empty="아직 고른 주요공정이 없습니다",
         detail="0개 공정",
-        suffix="내림",
     )
 
     assert caption == "공용 버전 없음 · 아직 고른 주요공정이 없습니다"
 
 
 def test_caption_reads_updated_at_even_without_a_source_change() -> None:
-    """저장시각은 출처 **뒤**, 꼬리말 **앞**이다. 순서가 바뀌면 화면이 달라진다."""
+    """저장시각은 출처 **뒤** 맨 끝이다. 순서가 바뀌면 화면이 달라진다."""
     caption = profile_version_caption(
         _Profile(7, "붙여넣기", STAMP),
         empty="비었습니다",
         detail="상세",
-        suffix="꼬리",
     )
 
-    assert caption == "공용 버전 v7 · 상세 · 붙여넣기 · 2026-01-02 03:04 · 꼬리"
+    assert caption == "공용 버전 v7 · 상세 · 붙여넣기 · 2026-01-02 03:04"
 
 
 @pytest.mark.parametrize(
@@ -144,8 +137,8 @@ def test_caption_reads_updated_at_even_without_a_source_change() -> None:
         ("   ", {}, "공용 버전 v14 · 2026-01-02 03:04"),
         (
             "",
-            {"detail": "3개 공정", "suffix": "공지 중"},
-            "공용 버전 v14 · 3개 공정 · 2026-01-02 03:04 · 공지 중",
+            {"detail": "3개 공정"},
+            "공용 버전 v14 · 3개 공정 · 2026-01-02 03:04",
         ),
     ],
 )
@@ -179,11 +172,11 @@ def test_a_memo_source_is_shown_letter_for_letter_in_markdown(memo: str) -> None
     걷어 내면 적은 메모가 그대로 나와야 하고, 막히지 않은 마크다운 구두점이 남지 않아야 한다.
     """
     caption = profile_version_caption(
-        _Profile(4, memo, STAMP), empty="비었습니다", detail="기본 확보 100%", suffix="꼬리"
+        _Profile(4, memo, STAMP), empty="비었습니다", detail="기본 확보 100%"
     )
 
     head = "공용 버전 v4 · 기본 확보 100% · "
-    tail = " · 2026-01-02 03:04 · 꼬리"
+    tail = " · 2026-01-02 03:04"
     assert caption.startswith(head) and caption.endswith(tail)
     shown = caption[len(head) : -len(tail)]
     assert shown == literal_markdown(memo)

@@ -1075,10 +1075,11 @@ def render_threshold_editor(
                     placeholder="예: 27년 이후 확보 기준 120% 적용",
                     key=THRESHOLD_NOTE_KEY,
                 )
-            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
-            notice = st.container()
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
+            # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 폼 줄 사이를 한 번 더
+            # 먹는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수 g18).
+            notice = render_flash(THRESHOLD_FLASH_KEY)
             with notice:
-                render_flash(THRESHOLD_FLASH_KEY)
                 refused = take_refusal(THRESHOLD_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
@@ -1797,12 +1798,13 @@ def _render_summary_note_editor(
     """
     submitted_base = seen(SUMMARY_BASE_VERSION_KEY)
     with st.container(border=True):
+        # 버전 줄에 「공지 중 · 내림」 꼬리를 달지 않는다 — 바로 아래 글 칸이 지금 공지를 그대로
+        # 보인다(2026-11-09 사용자 검수 g18 「중복되는 문구(공지)」, 설계 규칙 UI-TXT-07).
         render_profile_heading(
             "#### :material/campaign: 공지",
             summary_profile,
             key="home_summary",
             empty="아직 공지를 올린 적이 없습니다",
-            suffix="공지 중" if summary_profile.is_visible else "내림",
         )
         with st.form("home_summary_note_form"):
             submitted = st.form_submit_button(
@@ -1811,10 +1813,11 @@ def _render_summary_note_editor(
                 type="primary",
                 help=SHARED_SAVE_HELP,
             )
-            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
-            notice = st.container()
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
+            # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 폼 줄 사이를 한 번 더
+            # 먹는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수 g18).
+            notice = render_flash(SUMMARY_FLASH_KEY)
             with notice:
-                render_flash(SUMMARY_FLASH_KEY)
                 refused = take_refusal(SUMMARY_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
@@ -1822,11 +1825,14 @@ def _render_summary_note_editor(
             # 세션 값을 쓴다. Preference 는 팝업이 열린 동안 회차마다 위젯을 그리므로 처음 연
             # 회차의 공지(대개 빈 문구)가 세션에 박히고, 그 뒤 다른 사람이 올린 공지를 이 화면은
             # 영영 못 본 채 저장 버튼 한 번으로 덮어쓴다. 값은 폼 반환값으로 받으면 된다.
+            # 칸 이름 「공지」 는 숨긴다 — 상자 제목과 같은 말이다(2026-11-09 사용자 검수 g18). 읽기
+            # 도구에는 남는다.
             note = st.text_area(
                 "공지",
                 value=summary_profile.note,
                 height=180,
                 placeholder="예: 9월 물량 확정 전 잠정 계획입니다. B/N 은 SAM 기준.",
+                label_visibility="collapsed",
             )
         if not submitted:
             # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
@@ -1919,30 +1925,24 @@ def _render_top5_band_editor(
             ),
         )
         with st.form("home_top5_band_form"):
-            submitted = st.form_submit_button(
-                "확보율 구간 저장",
-                icon=":material/save:",
-                type="primary",
-                help=SHARED_SAVE_HELP,
-            )
-            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
-            notice = st.container()
-            with notice:
-                render_flash(TOP5_FLASH_KEY)
-                refused = take_refusal(TOP5_SAVE_NAME)
-                if refused is not None:
-                    st.error(refused)
-            # **key 끝에 저장본 version 을 붙인다.** 고정 key 는 한 번 그려진 뒤 `value` 를 무시하고
-            # 세션 값을 쓴다 — Preference 는 팝업이 열린 동안 회차마다 그려지므로 처음 연 회차의
-            # 구간이 세션에 박히고, 다른 사람이 바꾼 구간을 못 본 채 저장 한 번으로 되돌린다 (위의
-            # `공용 버전 v…` 캡션만 새 번호로 바뀌어 화면이 스스로 모순이 된다). key 가 없으면 위젯
-            # id 가 `value` 를 따라 **값이 바뀐 칸만** 새로 서서, 남의 저장에 거부된 뒤 남이 바꾼
-            # 칸은 저장본·안 바꾼 칸은 이 화면이 친 값으로 섞였다(2026-10-27 표적 E2E — 다시 누르면
-            # 아무도 정하지 않은 구간이 저장됐다). version 이 바뀌면 두 칸이 함께 저장본으로 다시
-            # 서고, 같은 version 안에서는 친 값이 남는다. 이 칸은 세션에 적지 않으므로 `value=` 를
-            # 함께 줘도 경고가 없다.
-            min_column, max_column = st.columns(2)
-            with min_column:
+            # 작업 줄(저장 · 하한 · 상한)은 한 줄이다 — 주요공정 프리셋 줄(저장 · 이름)과 같은 꼴로
+            # 단추가 왼쪽이다(2026-11-09 사용자 검수 g18 「여백 … 최적화」 — 전에는 단추만 한 줄을
+            # 썼다). **두 칸 key 끝에 저장본 version 을 붙인다.** 고정 key 는 한 번 그려진 뒤
+            # `value` 를 무시하고 세션 값을 쓴다 — Preference 는 팝업이 열린 동안 회차마다
+            # 그려지므로 처음 연 회차의 구간이 세션에 박히고, 다른 사람이 바꾼 구간을 못 본 채 저장
+            # 한 번으로 되돌린다(위의 `공용 버전 v…` 캡션만 새 번호로 바뀌어 화면이 스스로 모순이
+            # 된다). key 가 없으면 위젯 id 가 `value` 를 따라 **값이 바뀐 칸만** 새로 서서, 남의
+            # 저장에 거부된 뒤 남이 바꾼 칸은 저장본·안 바꾼 칸은 이 화면이 친 값으로 섞였다
+            # (2026-10-27 표적 E2E — 다시 누르면 아무도 정하지 않은 구간이 저장됐다). version 이
+            # 바뀌면 두 칸이 함께 저장본으로 다시 서고, 같은 version 안에서는 친 값이 남는다. 이
+            # 칸은 세션에 적지 않으므로 `value=` 를 함께 줘도 경고가 없다.
+            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+                submitted = st.form_submit_button(
+                    "확보율 구간 저장",
+                    icon=":material/save:",
+                    type="primary",
+                    help=SHARED_SAVE_HELP,
+                )
                 minimum = st.number_input(
                     "하한(%)",
                     value=top5_band_profile.min_rate * 100,
@@ -1950,7 +1950,6 @@ def _render_top5_band_editor(
                     format="%.0f",
                     key=f"{TOP5_MIN_KEY_PREFIX}{top5_band_profile.version}",
                 )
-            with max_column:
                 maximum = st.number_input(
                     "상한(%)",
                     value=top5_band_profile.max_rate * 100,
@@ -1958,6 +1957,14 @@ def _render_top5_band_editor(
                     format="%.0f",
                     key=f"{TOP5_MAX_KEY_PREFIX}{top5_band_profile.version}",
                 )
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
+            # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 폼 줄 사이를 한 번 더
+            # 먹는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수 g18).
+            notice = render_flash(TOP5_FLASH_KEY)
+            with notice:
+                refused = take_refusal(TOP5_SAVE_NAME)
+                if refused is not None:
+                    st.error(refused)
         if not submitted:
             remember_seen(TOP5_BASE_VERSION_KEY, top5_band_profile.version)
             return
@@ -2384,13 +2391,13 @@ def _render_key_process_editor(
                     placeholder="예: A 그룹",
                     key=_key_process_widget_key(KEY_PROCESS_NAME_KEY_PREFIX, stored_target),
                 )
-            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다.
-            notice = st.container()
-            with notice:
-                # 이 회차가 꺼내 그리는 담아 둔 알림 — 거부의 둘째 누름이 같은 글을 두 번 세우지
-                # 않게 견준다.
-                shown = pending_flash(KEY_PROCESS_FLASH_KEY)
-                _render_key_process_flash()
+            # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
+            # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 폼 줄 사이를 한 번 더
+            # 먹는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수 g18).
+            # 이 회차가 꺼내 그리는 담아 둔 알림 — 거부의 둘째 누름이 같은 글을 두 번 세우지 않게
+            # 견준다.
+            shown = pending_flash(KEY_PROCESS_FLASH_KEY)
+            notice = _render_key_process_flash()
             # 이 화면에 없는 공정은 칩의 「· 이 화면에 없음」 이 표지이고, 그것이 남는 까닭은
             # 칸 머리 풍선이다 — 칸 밑에 늘 서던 안내 문장을 걷었다(설계 규칙 UI-TXT-01 ·
             # AMB-02). 풍선은 그런 공정이 있을 때만 단다(key 가 있는 multiselect 는 `help` 가
@@ -2521,16 +2528,16 @@ def _key_process_error_message(exc: BaseException) -> str:
     return bootstrap_error_message(exc)
 
 
-def _render_key_process_flash() -> None:
-    """프리셋 카드의 저장 결과 알림. 담아 둔 알림이 없어도 `기본으로`·`삭제` 를 방금 했으면 다시
-    그린다.
+def _render_key_process_flash() -> DeltaGenerator:
+    """프리셋 카드의 저장 결과 알림 칸을 세워 돌려준다. 담아 둔 알림이 없어도 `기본으로`·`삭제` 를
+    방금 했으면 다시 그린다.
 
     두 단추를 빠르게 두 번 누르면(0.15초) 둘째 누름은 옛 화면의 단추에 닿는데, 그 회차에는 고칠
     프리셋이 바뀌어 단추가 잠겨 있다 — Streamlit 이 잠긴 단추의 누름을 버려 그 회차는 아무것도 하지
     않고, 앞 회차가 꺼내 그린 알림만 지웠다(2026-10-26 E2E). 두 동작이 쓰기 직후 적은 알림
     (`write_guard.note_notice`)을 `flash.render_flash` 가 그 꼬리 회차에도 다시 그린다.
     """
-    render_flash(KEY_PROCESS_FLASH_KEY)
+    return render_flash(KEY_PROCESS_FLASH_KEY)
 
 
 def _render_key_process_preset_actions(

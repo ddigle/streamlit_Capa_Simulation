@@ -13,7 +13,7 @@ Proc Rename 의 「변경 메모」가 그대로 출처가 되고, 캡션은 늘
 「26.07~12 확정 / 27.01~06 잠정」 의 물결표가 지움선이 되고 `*검토*`·`$1$`·백틱 글이
 기울임·수식·코드로 그려졌다(2026-10-27 E2E). 돌려준 글은 이미 막은 글이라 부르는 쪽이
 `literal_markdown` 으로 다시 감싸지 않는다 — 다시 막으면 `\\` 가 글자로 보인다
-(`tests/test_markdown_sink_guard.py` 의 `ESCAPED_BUILDERS`). `empty`·`detail`·`suffix` 는
+(`tests/test_markdown_sink_guard.py` 의 `ESCAPED_BUILDERS`). `empty`·`detail` 은
 앱이 지은 글이라 그대로 잇는다.
 
 `empty` 문구만 프로필마다 다르다. 「아직 넣은 선행 B/O 가 없습니다」처럼 무엇이 비었는지
@@ -86,13 +86,13 @@ def profile_version_caption(
     *,
     empty: str,
     detail: str | None = None,
-    suffix: str | None = None,
 ) -> str:
     """공용 프로필 한 줄 캡션.
 
     `version == 0` 은 **한 번도 저장하지 않은 상태**라 버전 대신 `empty` 문구를 적는다.
-    저장된 뒤에는 `v{version} · [detail ·] [source ·] [저장시각] [· suffix]` 순으로 잇는다.
-    `detail` 은 출처 앞(「3개 공정」), `suffix` 는 맨 뒤(「공지 중」)에 붙는다. 출처는 사람이 적은
+    저장된 뒤에는 `v{version} · [detail ·] [source ·] [저장시각]` 순으로 잇는다. `detail` 은
+    출처 앞(「3개 공정」)에 붙는다. 맨 뒤 꼬리(공지의 「공지 중 · 내림」)는 두지 않는다 — 바로 아래
+    칸이 지금 값을 보인다(2026-11-09 사용자 검수 g18 「중복되는 문구(공지)」). 출처는 사람이 적은
     메모일 수 있어 `literal_markdown` 으로 막는다(마크다운 자리에서 적은 글자 그대로 보인다).
     출처가 비면(저장자·변경 메모를 모두 비운 저장) 그 자리를 건너뛴다 — 빈 토막을 이으면 구분자가
     `v14 · · 2026-…` 처럼 겹친다.
@@ -106,8 +106,6 @@ def profile_version_caption(
         parts.append(literal_markdown(profile.source))
     if profile.updated_at is not None:
         parts.append(format(profile.updated_at, "%Y-%m-%d %H:%M"))
-    if suffix is not None:
-        parts.append(suffix)
     return VERSION_CAPTION_PREFIX + CAPTION_SEPARATOR.join(parts)
 
 
@@ -118,14 +116,13 @@ def render_profile_heading(
     key: str,
     empty: str,
     detail: str | None = None,
-    suffix: str | None = None,
     help: str | None = None,
 ) -> None:
     """구획 제목과 그 공용 버전 줄(`profile_version_caption`)을 한 줄에 그린다.
 
     `title` 은 앱이 지은 마크다운 제목(「#### :material/…: 이름」)이고 `help` 는 그 제목의 풍선이다.
     `key` 는 화면 안에서 줄마다 다른 이름이다(줄 칸 key 는 `HEADING_KEY_PREFIX` + `key`). 버전 줄은
-    제목 오른쪽에 붙고, 칸이 좁으면 제목 아래로 내려간다. `empty`·`detail`·`suffix` 는
+    제목 오른쪽에 붙고, 칸이 좁으면 제목 아래로 내려간다. `empty`·`detail` 은
     `profile_version_caption` 과 같다.
 
     **두 글은 글자 밑줄(baseline)에 맞춘다** — 제목(h4)은 위아래 여백이 달라 가운데 맞춤이면 작은
@@ -137,7 +134,7 @@ def render_profile_heading(
     바꾼다(`_without_raw_html`). 본문 칸에만 쓰고 이벤트 칸에는 아무것도 쓰지 않아 팝업 본문 ·
     프래그먼트 어디서나 부를 수 있다.
     """
-    caption = profile_version_caption(profile, empty=empty, detail=detail, suffix=suffix)
+    caption = profile_version_caption(profile, empty=empty, detail=detail)
     with st.container(
         horizontal=True,
         vertical_alignment="center",
