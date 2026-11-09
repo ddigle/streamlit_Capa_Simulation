@@ -577,6 +577,31 @@ def test_a_single_shared_process_opens_here_and_names_its_origin(
     assert _process_box(app).value == DYNAMIC_PROCESS
 
 
+def test_a_first_open_or_a_handed_over_process_sends_no_shared_process(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """공용 값은 사이드바 공정 칸 팝업에서 직접 고른 공정만 보낸다(2026-11-09 보드 C2 (가)). 처음 열
+    때의 기본 공정은 공용 값을 만들지 않고, 주소 `process`(공정 Capa 상세 머리 링크)로 들어온 회차도
+    다른 화면의 거름을 그대로 둔다 — 한 공정을 들여다본 일로 3공정 거름이 사라지지 않게."""
+    from test_process_field import share, shared_values
+
+    app = _ok(_app(dynamic_databases).run())
+    assert _process_box(app).value == DYNAMIC_PROCESS
+    assert shared_values(app) == []
+    _ok(app.run())
+    assert shared_values(app) == []
+
+    held = [OTHER_PROCESS, DYNAMIC_PROCESS, "없는_공정"]
+    entered = _app(dynamic_databases)
+    share(entered, held)
+    entered.query_params["process"] = DYNAMIC_PROCESS
+    _ok(entered.run())
+    assert _process_box(entered).value == DYNAMIC_PROCESS
+    assert shared_values(entered) == held
+    _ok(entered.run())
+    assert shared_values(entered) == held
+
+
 def test_several_shared_processes_keep_the_process_in_view(
     dynamic_databases: tuple[Path, Path],
 ) -> None:

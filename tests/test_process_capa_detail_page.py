@@ -584,6 +584,38 @@ def test_a_single_shared_process_opens_on_the_detail_page_and_names_its_origin(
     assert shared_values(app) == [target]
 
 
+def test_a_first_open_or_a_home_cell_sends_no_shared_process(
+    databases: tuple[Path, Path],
+) -> None:
+    """공용 값은 사이드바 공정 칸 팝업에서 직접 고른 공정만 보낸다(2026-11-09 보드 C2 (가)). 처음 열
+    때의 기본 공정(기간 최저 확보율 공정)은 공용 값을 만들지 않고, HOME 그림 칸(전달 칸)으로 들어온
+    회차도 다른 화면의 거름을 그대로 둔다 — 한 공정을 들여다본 일로 3공정 거름이 사라지지 않게."""
+    from test_process_field import share, shared_values
+
+    app = _ok(_app(databases).run())
+    assert _process_box(app).value is not None
+    assert shared_values(app) == []
+    _ok(app.run())
+    assert shared_values(app) == []
+
+    options = list(_process_box(app).options)
+    assert len(options) >= 2
+    held = [*options[1:3], "없는_공정"]
+    share(app, held)
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process=options[0],
+        month=app.session_state[PROCESS_DETAIL_MONTH_KEY],
+        section=HOME_BOTTLENECK_SECTION,
+        displayed_rate=1.0,
+    )
+    _ok(app.run())
+    assert _process_box(app).value == options[0]
+    assert shared_values(app) == held
+    _ok(app.run())
+    assert _process_box(app).value == options[0]
+    assert shared_values(app) == held
+
+
 def test_a_stopped_visit_consumes_the_transfer_slot(databases: tuple[Path, Path]) -> None:
     """공통 진입이 오류로 멈춘 회차도 전달 칸을 꺼낸다 — 남기면 나중에 사이드바로 들어온 방문이
     그 칸을 「HOME 에서 온 것」으로 읽어 거짓 출처 띠를 단다."""
