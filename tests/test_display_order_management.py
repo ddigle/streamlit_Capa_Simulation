@@ -336,6 +336,11 @@ def _editor_path(app: AppTest) -> tuple[int, ...]:
     )
 
 
+def _holder(editor: tuple[int, ...]) -> tuple[int, ...]:
+    """편집표가 도구 막대 띄움과 함께 든 간격 없는 칸의 경로 — 폼 안 저장 줄 · 알림 칸의 형제다."""
+    return editor[:-1]
+
+
 def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -375,7 +380,8 @@ def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
     info_path = _alert_path(app, "info", _UNCHANGED_PREFIX)
     warning_path = _alert_path(app, "warning", "화면 표시명을 적었습니다")
     assert warning_path[:-1] == info_path[:-1] and info_path[-1] < warning_path[-1]
-    assert info_path[: len(editor_path) - 1] == editor_path[: len(editor_path) - 1]
+    holder = _holder(editor_path)
+    assert info_path[: len(holder) - 1] == holder[: len(holder) - 1]
     assert _editor_path(app) == editor_path
     assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
 
@@ -457,7 +463,7 @@ def test_the_label_warning_stands_under_the_save_row_and_moves_no_editor(tmp_pat
     assert any("화면 표시명을 적었습니다" in element.value for element in app.warning)
     assert places() == before
     warning = _alert_path(app, "warning", "화면 표시명을 적었습니다")
-    save, editor = before
+    save, editor = before[0], _holder(before[1])
     depth = len(editor) - 1
     assert warning[:depth] == editor[:depth], "저장 폼 안이다"
     assert save[depth] < warning[depth] < editor[depth], "저장 줄과 표 사이다"
@@ -495,9 +501,10 @@ def test_the_unchanged_note_stands_right_under_the_save_row(
     assert not app.exception
     note = _alert_path(app, "info", _UNCHANGED_PREFIX)
     assert (save_path(), _editor_path(app)) == before
-    depth = len(before[1]) - 1
-    assert note[:depth] == before[1][:depth], "저장 폼 안이다"
-    assert before[0][depth] < note[depth] < before[1][depth], "저장 줄과 표 사이다"
+    holder = _holder(before[1])
+    depth = len(holder) - 1
+    assert note[:depth] == holder[:depth], "저장 폼 안이다"
+    assert before[0][depth] < note[depth] < holder[depth], "저장 줄과 표 사이다"
 
     app.run(timeout=30)
     assert not app.exception

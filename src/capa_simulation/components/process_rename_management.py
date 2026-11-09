@@ -90,6 +90,8 @@ PROCESS_RENAME_UNCHANGED_MESSAGE = (
 )
 # 직접 편집 저장의 결과 알림 칸(`flash`·`write_guard.held_notice`).
 PROCESS_RENAME_FLASH_KEY = "process_rename_flash"
+# 저장 줄 변경 메모 칸의 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다(설계 규칙 UI-TXT-01).
+NOTE_PLACEHOLDER = "변경 메모 · 예: LOB 차트 공정명 축약"
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
@@ -281,20 +283,26 @@ def _render_direct_editor(
     단추는 제자리다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
 
     보유 공정에 없는 공정에 지정된 표시명(`unmatched`)은 표에 있지만 이 시나리오의 계산 화면에는
-    그리지 않는 항목이라 표 머리 표지 + 풍선으로 둔다(설계 규칙 UI-TXT-04 — 숨은 데이터 안내).
+    그리지 않는 항목이라 표 머리 표지 + 풍선으로 둔다(설계 규칙 UI-TXT-04 — 숨은 데이터 안내) —
+    따로 줄을 세우지 않고 「직접 편집 · 공용 버전」 제목 줄 끝이다(2026-11-09 사용자 규칙 「상단
+    여백 · 문구 최소화」). 저장 줄의 변경 메모는 이름 줄 없이 안내 글(placeholder)이 이름을 말한다.
     거부 · 오류는 저장 단추 바로 위 칸(`save_status`)에 선다 — 표 밑에 두면 단추에서 표 높이만큼
     떨어진다(UI-LAY-03, 표시순서 관리와 같은 꼴)."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
-    # 제목 바로 옆에 공용 버전 줄이 선다(2026-11-08 사용자 그림 메모 g18).
+    # 제목 바로 옆에 공용 버전 줄이 서고(2026-11-08 사용자 그림 메모 g18), 보유 공정 밖 표시명
+    # 표지가 그 줄 끝에 선다.
     render_profile_heading(
         "#### 직접 편집",
         profile,
         key="process_rename",
         empty="아직 지정한 표시명이 없습니다",
+        mark=(
+            (f"보유 공정 밖 표시명 {len(unmatched):,}건", unmatched_help(unmatched))
+            if unmatched
+            else None
+        ),
     )
-    if unmatched:
-        st.caption(f"보유 공정 밖 표시명 {len(unmatched):,}건", help=unmatched_help(unmatched))
     if available_processes:
         with st.expander(
             f"보유 공정 {len(available_processes):,}개",
@@ -323,27 +331,30 @@ def _render_direct_editor(
             ready_note_field(NOTE_KEY, submitted=submitted, start=submitted_base)
             note = st.text_input(
                 "변경 메모",
-                placeholder="예: LOB 차트 공정명 축약",
+                placeholder=NOTE_PLACEHOLDER,
                 key=NOTE_KEY,
+                label_visibility="collapsed",
             )
         unchanged_note = st.container()
         # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
-        # 9장 「표 도구 막대」).
-        toolbar_clearance()
-        edited = st.data_editor(
-            editable,
-            hide_index=True,
-            num_rows="dynamic",
-            width="stretch",
-            height=420,
-            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-            placeholder="",
-            column_config={
-                "공정": st.column_config.TextColumn("공정 (원본)"),
-                "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
-            },
-            key=EDITOR_KEY,
-        )
+        # 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸 하나다 — 줄 사이 14 + 띄움 24 = 38px 로
+        # 막대 바로 위까지다(폼 안 표의 한 값 — 설계 규칙 4장 「폼 안 알림 칸」).
+        with st.container(gap=None):
+            toolbar_clearance()
+            edited = st.data_editor(
+                editable,
+                hide_index=True,
+                num_rows="dynamic",
+                width="stretch",
+                height=420,
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
+                column_config={
+                    "공정": st.column_config.TextColumn("공정 (원본)"),
+                    "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
+                },
+                key=EDITOR_KEY,
+            )
     refused = take_refusal(PROCESS_RENAME_SAVE_NAME)
     if refused is not None:
         save_status.error(refused)
