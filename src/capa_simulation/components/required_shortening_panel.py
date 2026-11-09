@@ -1275,7 +1275,7 @@ def _render_downloads(
     units, all_levels, process_months = simulation_cache.shortening_csvs(
         keyed, float(level), tuple(scope), tuple(int(month) for month in months)
     )
-    with st.container(horizontal=True, gap="small"):
+    with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         render_csv_download(
             data=units,
             file_name=f"required_shortening_units_{percent}pct_{span}.csv",
@@ -1297,7 +1297,9 @@ def _render_downloads(
         if extra is not None:
             extra()
         if basis is not None:
-            with st.container(horizontal=True, horizontal_alignment="right"):
+            with st.container(
+                horizontal=True, horizontal_alignment="right", vertical_alignment="center"
+            ):
                 st.caption(basis, width="content")
 
 
