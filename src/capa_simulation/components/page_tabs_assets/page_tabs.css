@@ -209,6 +209,61 @@
   white-space: nowrap;
 }
 
+/* 공용 공정 표지 — 그 화면이 공용 공정을 따라간다(강조색), 그 화면이 마지막으로 그린 선택지에 없는 공용 공정이 있으면 주황
+   (2026-11-09 보드 C1 (라)). 「구현중」 표지 — 원천 미연결 화면(T8). 둘 다 이름 곁 작은 표지이고 제 풍선이 있다. */
+.capa-tabs-proc {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--st-primary-color);
+}
+
+.capa-tabs-proc[hidden] {
+  display: none;
+}
+
+/* 머리 공정 칩의 깔때기(13px)와 같은 크기 · 같은 선 꼴 — 0.75rem 의 칠한 세모는 탭 펼침 꺾쇠(▾)로 읽혔다. */
+.capa-tabs-proc svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  fill: currentColor;
+}
+
+.capa-tabs-item.is-proc-miss .capa-tabs-proc {
+  color: var(--capa-tabs-pending);
+}
+
+.capa-tabs-wip {
+  display: none;
+  flex: none;
+  padding: 0.0625rem 0.3125rem;
+  border: 1px solid color-mix(in srgb, var(--st-text-color) 25%, transparent);
+  border-radius: 0.25rem;
+  color: color-mix(in srgb, var(--st-text-color) 65%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.capa-tabs-item.is-wip .capa-tabs-wip {
+  display: inline-block;
+}
+
+/* 탭이 좁아 이름이 말줄임되면 「구현중」 을 흐린 고리 점으로 줄인다(JS `fitWip`) — 이름 자리를 먼저 지킨다. 글은 크기 0 으로 남아
+   읽기 도구가 읽고 풍선(`title`)도 그대로다. 주황 채운 점(적용 전 편집)과 갈린다. */
+.capa-tabs-item.is-wip-tight .capa-tabs-wip {
+  box-sizing: border-box;
+  width: 0.5rem;
+  height: 0.5rem;
+  padding: 0;
+  overflow: hidden;
+  border: 1.5px solid color-mix(in srgb, var(--st-text-color) 45%, transparent);
+  border-radius: 50%;
+  color: transparent;
+  font-size: 0;
+}
+
 .capa-tabs-dot {
   display: none;
   flex: none;

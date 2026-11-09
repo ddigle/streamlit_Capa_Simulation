@@ -714,9 +714,10 @@ def test_the_question_buttons_wrap_instead_of_running_off_a_narrow_window() -> N
 
 def test_the_shared_process_field_filters_main_and_marks_a_missing_name() -> None:
     """`shared_screen` 을 주면 `공정소분류` 는 조회 조건의 공용 공정 칸이다(2026-11-08 사용자 답
-    P1). 시뮬레이션 공정과 이름이 같을 때만 걸리고, 이름이 다르면 전체를 보이며 「없음」 배지를
-    단다. 공정은 본문 위 칩이 말하므로 걸린 조건 줄에 거듭 적지 않는다(UI-TXT-07)."""
-    from test_process_field import share
+    P1). 시뮬레이션 공정과 이름이 같을 때만 걸리고, 이름이 다르면 전체를 보인다 — 이름 줄 배지 없이
+    값 칸 표지가 그 공정을 실어 머리 띠 칩이 「1개 이 화면 없음」 으로 말한다(2026-11-09 보드 P1-6).
+    공정은 머리 띠 칩이 말하므로 걸린 조건 줄에 거듭 적지 않는다(UI-TXT-07)."""
+    from test_process_field import process_marks, share
 
     from capa_simulation.components.process_field import FIELD_KEY
 
@@ -742,4 +743,6 @@ def test_the_shared_process_field_filters_main_and_marks_a_missing_name() -> Non
     (table,) = [frame.value for frame in app.dataframe if "설비명" in frame.value.columns]
     assert len(table) == 4
     assert app.button(key=FIELD_KEY).label == "전체 2공정"
-    assert ":orange-badge[HB 접합 없음]" in [str(item.value) for item in app.caption]
+    assert not [item for item in app.caption if "orange-badge" in str(item.value)]
+    (mark,) = process_marks(app)
+    assert mark["here"]["missing"] == ["HB 접합"]

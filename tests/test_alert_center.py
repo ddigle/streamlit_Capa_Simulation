@@ -17,15 +17,25 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts
 from capa_simulation.components import alert_center, change_summary
+from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CHANGES_CHIP_ID,
     GUIDE_BUTTON_ID,
     PRINT_BUTTON_ID,
+    PROCESS_CHIP_ID,
+    SAMPLE_MARK_ID,
     THEME_BUTTON_ID,
     TOOLBAR_BUTTON_ORDER,
 )
-from capa_simulation.navigation import HOME, PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    CAPA_CHATBOT,
+    DYNAMIC_CAPA,
+    EXECUTION_MANAGEMENT_SUBPAGES,
+    HOME,
+    PROCESS_CAPA_DETAIL,
+)
 from capa_simulation.upeh_assumption_state import UPEH_ASSUMPTION_PERCENT_KEY
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -70,8 +80,9 @@ def _ok(app: AppTest) -> AppTest:
 
 
 def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None:
-    """단계 넷의 이름 · 알림창 시간, 쌓기 · 반복 창 · 보관, 시선 끌기, 툴바 차례(변경 칩 · Guide ·
-    Alarm · Print · 테마 — Alarm 은 Guide 오른쪽), 표지 이름 · 저장 칸이 등록부 · 상수 그대로다."""
+    """단계 넷의 이름 · 알림창 시간, 쌓기 · 반복 창 · 보관, 시선 끌기, 툴바 차례(공정 칩 · 합성 샘플
+    · 변경 칩 · Guide · Alarm · Print · 테마 — 공정 칩이 맨 왼쪽, Alarm 은 Guide 오른쪽), 표지 이름
+    · 저장 칸이 등록부 · 상수 그대로다."""
     data = alert_center.alert_center_data(changes=[], events=[])
     assert [(level["id"], level["label"], level["ms"]) for level in data["levels"]] == [
         ("info", "알림", 8000),
@@ -91,6 +102,8 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
         data["toolbar"]["order"]
         == list(TOOLBAR_BUTTON_ORDER)
         == [
+            PROCESS_CHIP_ID,
+            SAMPLE_MARK_ID,
             CHANGES_CHIP_ID,
             GUIDE_BUTTON_ID,
             ALARM_BUTTON_ID,
@@ -99,6 +112,13 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
         ]
     )
     assert (data["toolbar"]["alarm"], data["toolbar"]["chip"]) == (ALARM_BUTTON_ID, CHANGES_CHIP_ID)
+    assert (data["toolbar"]["process"], data["toolbar"]["sample"]) == (
+        PROCESS_CHIP_ID,
+        SAMPLE_MARK_ID,
+    )
+    # 공용 공정 값이 없으면 칩이 서지 않고, 화면 선언이 없으면 합성 샘플 표지도 서지 않는다.
+    assert data["process"] is None
+    assert data["sample"] is False
     assert data["marker"] == alerts.MARKER_ATTRIBUTE
     assert data["here"] == ""
     assert set(data["storage"]) == {"log", "states", "seen", "boot"}
@@ -175,6 +195,120 @@ def test_the_component_declares_the_reconnect_trigger_with_a_callback_that_does_
     callback = sent[0]["on_reconnected_change"]
     assert callback is alert_center._reconnected
     assert callback() is None
+    # 둘째 트리거 — 공정 칩 판 「모든 화면에서 해제」.
+    assert sent[0]["on_process_clear_change"] is alert_center._clear_process
+
+
+def _chip_script() -> None:
+    import streamlit as st
+
+    from capa_simulation import alerts, shared_process
+    from capa_simulation.components import alert_center
+    from capa_simulation.navigation import ALL_SPECS
+
+    for name, args, kwargs in st.session_state.pop("ops", []):
+        getattr(shared_process, name)(*args, **kwargs)
+    path = st.session_state.get("test_path")
+    alerts.note_page("", st.session_state.get("test_href", ""))
+    current = next((spec for spec in ALL_SPECS if spec.path == path), None)
+    if st.session_state.pop("test_clear", False):
+        alert_center._clear_process()
+    st.session_state["data"] = alert_center.alert_center_data(
+        changes=[], events=[], current=current
+    )
+
+
+def test_the_process_chip_carries_the_shared_value_labels_and_a_guess_for_this_screen() -> None:
+    """머리 띠 공정 칩(2026-11-09 보드 C1 (라)) — 공용 값 · 보이는 글자 · 「Mold 외 2개」 · 출처 ·
+    판을 싣고, 지금 화면이 따라가는 화면이면 세션 기록의 짐작(`here`)을 단다. 따라가지 않는
+    화면(HOME)은 짐작이 없다(흐린 칩). 값이 그대로면 data 가 같다."""
+    app = AppTest.from_function(_chip_script)
+    app.session_state["ops"] = [
+        ("publish", (["Mold", "Underfill", "PMC"], "산출 결과"), {"labels": {"Mold": "몰드"}}),
+    ]
+    app.session_state["test_path"] = HOME.path
+    app.run()
+    assert not app.exception
+    chip = app.session_state["data"]["process"]
+    assert chip["values"] == ["Mold", "Underfill", "PMC"]
+    assert chip["labels"] == ["몰드", "Underfill", "PMC"]
+    assert chip["top"] == "몰드 외 2개"
+    assert chip["origin"] == "산출 결과"
+    assert chip["here"] is None
+    assert chip["field"] == "sidebar_process_field"
+    assert chip["marker"] == "data-capa-process"
+    app.run()
+    assert app.session_state["data"]["process"] == chip
+
+    app.session_state["test_path"] = AVAILABLE_EQUIPMENT_STATUS.path
+    app.session_state["ops"] = [("note_drawn", ("가용설비", "multi", ["Mold", "Underfill"]), {})]
+    app.run()
+    here = app.session_state["data"]["process"]["here"]
+    assert here == {
+        "on": True,
+        "follows": True,
+        "inside": ["Mold", "Underfill"],
+        "missing": ["PMC"],
+    }
+
+
+def test_the_process_chip_names_the_first_process_in_this_screens_order() -> None:
+    """머리 칩 · 판의 차례는 따라가는 화면이면 이 화면 선택지 차례다 — 걸린 공정 먼저, 없는 공정
+    뒤. 칩의 첫 이름이 사이드바 값 칸(표시순서상 첫 공정) · 탭 풍선과 같아진다. 따라가지 않는 화면
+    (HOME)은 보낸 차례 그대로다. 이 화면 기록이 그대로면 data 가 같다."""
+    app = AppTest.from_function(_chip_script)
+    app.session_state["ops"] = [
+        ("publish", (["Underfill", "PMC", "Mold"], "산출 결과"), {}),
+        ("note_drawn", ("가용설비", "multi", ["Mold", "WF", "Underfill"]), {}),
+    ]
+    app.session_state["test_path"] = HOME.path
+    app.run()
+    assert not app.exception
+    home = app.session_state["data"]["process"]
+    assert (home["values"], home["top"]) == (["Underfill", "PMC", "Mold"], "Underfill 외 2개")
+
+    app.session_state["test_path"] = AVAILABLE_EQUIPMENT_STATUS.path
+    app.run()
+    chip = app.session_state["data"]["process"]
+    assert chip["values"] == ["Mold", "Underfill", "PMC"]
+    assert chip["labels"] == ["Mold", "Underfill", "PMC"]
+    assert chip["top"] == "Mold 외 2개"
+    assert chip["here"]["inside"] == ["Mold", "Underfill"]
+    app.run()
+    assert app.session_state["data"]["process"] == chip
+
+
+def test_clearing_from_the_chip_panel_empties_the_shared_value_and_the_chip() -> None:
+    """판 「모든 화면에서 해제」 트리거의 콜백은 공용 값을 지운다 — 다음 data 에 칩이 없다."""
+    app = AppTest.from_function(_chip_script)
+    app.session_state["ops"] = [("publish", (["Mold"], "HOME"), {})]
+    app.run()
+    assert app.session_state["data"]["process"] is not None
+    app.session_state["test_clear"] = True
+    app.run()
+    assert not app.exception
+    assert app.session_state["data"]["process"] is None
+
+
+def test_the_sample_mark_stands_only_on_pending_source_screens_with_samples_on() -> None:
+    """합성 샘플 표지(2026-11-09 보드 T8) — 원천 미연결 화면(`pending_source`)이고 「샘플 데이터」
+    가 켜졌을 때만. 스위치는 처음 연 세션에 켜짐이다."""
+    actual = next(spec for spec in EXECUTION_MANAGEMENT_SUBPAGES if spec.pending_source)
+    app = AppTest.from_function(_chip_script)
+    for spec, expected in (
+        (HOME, False),
+        (CAPA_CHATBOT, True),
+        (actual, True),
+        (DYNAMIC_CAPA, True),
+    ):
+        app.session_state["test_path"] = spec.path
+        app.run()
+        assert not app.exception
+        assert app.session_state["data"]["sample"] is expected, spec.title
+    app.session_state[SAMPLE_TOGGLE_KEY] = False
+    app.session_state["test_path"] = CAPA_CHATBOT.path
+    app.run()
+    assert app.session_state["data"]["sample"] is False
 
 
 def test_the_boot_mark_is_the_same_in_every_run_and_session_of_this_process(

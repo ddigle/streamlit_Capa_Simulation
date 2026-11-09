@@ -54,7 +54,6 @@ from capa_simulation.components.print_button import print_toolbar_script
 from capa_simulation.components.process_field import (
     close_process_dialog,
     process_dialog_is_open,
-    render_chip_slot,
     show_process_dialog,
 )
 from capa_simulation.components.scenario_status import (
@@ -534,21 +533,19 @@ with pinned_connections(DUCKDB_PATH):
     # 칸이다** — 순번이 회차마다 같아야 컴포넌트가 다시 마운트되지 않는다. 생겼다 사라지는 것
     # (스키마 경고)은 뒤에 둔다.
     render_page_tabs(current_spec, pages=pages, marks=unsaved_marks, leave=leave_notice(page_file))
-    # 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩).
-    # 탭 줄처럼 늘 서는 칸이고 페이지보다 앞이다 — 페이지가 `st.stop()` 해도 섰다. 페이지가 이
-    # 회차에 내는 알림은 표지(`alerts`)로 오고 알림 칸 JS 가 회차 끝에 훑는다. 표지가 「화면」 ·
-    # 「그 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경 칩 목록은 탭 점과 같은 세션 판정이다(DB
-    # 를 읽지 않는다).
+    # 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩 ·
+    # 공용 공정 칩 · 합성 샘플 표지). 탭 줄처럼 늘 서는 칸이고 페이지보다 앞이다 — 페이지가
+    # `st.stop()` 해도 섰다. 페이지가 이 회차에 내는 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS
+    # 가 회차 끝에 훑는다. 표지가 「화면」 · 「그 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경
+    # 칩 목록은 탭 점과 같은 세션 판정이다(DB 를 읽지 않는다). 본문 위에는 칸을 두지
+    # 않는다(2026-11-09 보드 C1 (라) — 공용 공정 칩은 머리 띠로 옮겼다).
     alerts.note_page("" if current_spec is None else tab_label(current_spec), navigation.url_path)
     render_alert_center(
         changes=session_changes(
             page_file, hrefs={spec.path: page.url_path for page, spec in pages.specs}
-        )
+        ),
+        current=current_spec,
     )
-    # 공용 공정 칩 칸(「공정 Mold · HOME 에서」 — `components/process_field.py`). 늘 서는 칸이라 탭
-    # 줄 · 알림 칸처럼 페이지 앞 같은 자리에 세우고, 공용 값이 걸린 화면만 그 안에 칩을 그린다(빈
-    # 칸은 그려지지 않는다). 사이드바를 접어도 보인다.
-    render_chip_slot()
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
     # 동안 설비 DB 에도 핀을 건다. 위 시나리오 DB 핀과 수명·게으름이 같다 — 첫 연결 때 잡히고,

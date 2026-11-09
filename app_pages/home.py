@@ -761,8 +761,11 @@ def show_process_filter_dialog(
         # 좁힌 공정을 다른 화면(기준 정보 · 산출 결과 · 가용설비 Main · Space 등)의 공용 공정 칸으로
         # 복사만 한다(2026-11-08 사용자 답 P1 · P2-1 — HOME 은 보내기만). 다른 화면에서 고른 값은
         # 이 판정 대상과 리비전 저장값(`PROCESS_SELECTION_KEY`)에 들지 않는다. 모두 켰으면 공용 값을
-        # 지운다(전체).
-        publish_from_home(selected_set, options)
+        # 지운다(전체). 팝업 단추 글자(표시명)를 함께 실어 머리 띠 공정 칩이 같은 글자로 읽는다.
+        shown = process_labels.unique_format_func(options)
+        publish_from_home(
+            selected_set, options, labels={option: shown(option) for option in options}
+        )
         HOME_DIALOG_HOST.finish()
 
 

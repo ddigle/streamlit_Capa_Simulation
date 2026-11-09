@@ -42,6 +42,12 @@ const PAGE_LINK = 'a[data-testid="stPageLink-NavLink"]'
 const BUSY_MS = 10000
 // 알림 칸 「그 화면으로」 사건(`alert_center.js` 의 `OPEN_PAGE_EVENT`).
 const OPEN_PAGE_EVENT = 'capa-open-page'
+// 알림 칸이 회차 끝에 공정 값 칸 표지를 읽어 지금 탭의 공정 표지를 바로잡는 사건(`alert_center.js` 의 `PROCESS_EVENT`) —
+// {href, tab: {miss, title} | null}. 탭 줄은 페이지보다 먼저 그려져 그 회차에 처음 그린 화면 · 바뀐 선택지를 모른다.
+const PROCESS_EVENT = 'capa-process-here'
+// 공정 표지 깔때기 — 사이드바 공정 값 칸 아이콘(Material `filter_alt`)과 같은 선 꼴(속이 빈 깔때기 + 대)이다. 칠한 세모는 12px 에서
+// 탭 펼침 꺾쇠(▾)로 읽혔다. 알림 칸 공정 칩 · 판과 같은 상수다(`alert_center.js` — 그물 `tests/test_page_tabs_assets.py`).
+const FUNNEL_PATH = 'M11 20q-.425 0-.713-.288T10 19v-6L4.2 5.6q-.375-.5-.113-1.05T5 4h14q.65 0 .913.55t-.113 1.05L14 13v6q0 .425-.288.713T13 20zm1-7.7L16.95 6H7.05z'
 // 알림창 짧은 글의 글자 수(파이썬 `alerts.SHORT_LIMIT` — data `alerts.short_limit`).
 const SHORT_LIMIT = 60
 // 보낸 이동이 끝났는지 다시 보는 간격 — 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다.
@@ -422,6 +428,13 @@ function revealScroll(left, right, scrollLeft, clientWidth, edge) {
 }
 // </tabs-edges>
 
+// <tabs-wip>
+// 탭 이름이 말줄임됐는가(`scrollWidth` > `clientWidth`). 소수 px 반올림은 넘침으로 보지 않는다 — 「구현중」 표지를 점으로 줄일지 가른다.
+function wipTight(scrollWidth, clientWidth) {
+  return scrollWidth - clientWidth > 0.5
+}
+// </tabs-wip>
+
 // <tabs-focus>
 // 초점이 있던 탭을 닫을 때 초점을 옮길 탭 — 서버가 지금 탭을 닫고 옮겨 가는 이웃과 같은 규칙(오른쪽 이웃, 없으면 왼쪽
 // 이웃 — `page_tabs_state.closed`)이다. `ids` 는 닫기 전 보이는 탭 차례다. 닫는 탭이 없거나 남는 탭이 없으면 null.
@@ -555,6 +568,49 @@ function linkPath(href) {
   return path.replace(/^\/+/, '').split('/').pop() || ''
 }
 
+// 공용 공정 표지 — 풍선(`title`)을 다는 칸 안에 24 단위 깔때기를 칠한다(탭 줄의 다른 아이콘은 16 단위 선이다). 읽기
+// 도구에는 숨은 글(`capa-tabs-sr`)로 풍선 글을 읽힌다 — 탭 단추 이름에 붙는다.
+function funnelMark() {
+  const mark = document.createElement('span')
+  mark.className = 'capa-tabs-proc'
+  mark.hidden = true
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+  const shape = document.createElementNS(SVG_NS, 'path')
+  shape.setAttribute('d', FUNNEL_PATH)
+  svg.append(shape)
+  const said = document.createElement('span')
+  said.className = 'capa-tabs-sr'
+  mark.append(svg, said)
+  return mark
+}
+
+// 탭 이름 곁 공용 공정 표지 — `proc`({miss, title})가 없으면 숨기고, 그 화면에 없는 공용 공정이 있으면 주황이다.
+function paintProcessMark(item, proc) {
+  const mark = item.__parts.proc
+  const shown = Boolean(proc) && typeof proc === 'object'
+  mark.hidden = !shown
+  item.classList.toggle('is-proc-miss', shown && Boolean(proc.miss))
+  const title = shown ? String(proc.title || '') : null
+  setAttr(mark, 'title', title)
+  setText(mark.lastChild, title ? ` ${title}` : '')
+}
+
+// 「구현중」 표지 맞추기 — 탭이 좁아 이름이 말줄임되면 글 표지를 점으로 줄인다(`is-wip-tight` — 풍선 · 읽기 도구 글은 남는다,
+// UI-ACC-02). 늘 글 표지로 되돌린 뒤 한 번에 재고 정한다 — 점으로 줄여 넓어진 자리로 다시 재면 넓히고 줄이기를 오락가락한다. 재기를
+// 모두 마친 뒤 쓰므로 그리기 계산은 한 번이다.
+function fitWip(items) {
+  const marked = []
+  for (const item of items) {
+    item.classList.remove('is-wip-tight')
+    if (!item.hidden && item.classList.contains('is-wip')) marked.push(item)
+  }
+  const tight = marked.filter((item) => wipTight(item.__parts.label.scrollWidth, item.__parts.label.clientWidth))
+  for (const item of tight) item.classList.add('is-wip-tight')
+}
+
 function setAttr(element, name, value) {
   if (value === null || value === undefined) {
     if (element.hasAttribute(name)) element.removeAttribute(name)
@@ -616,6 +672,7 @@ export default function (component) {
   if (!S.onFonts && document.fonts && document.fonts.addEventListener) {
     S.onFonts = () => {
       nav.classList.toggle('has-icons', iconFontLoaded())
+      fitWip(S.items.values())
       if (S.onScroll) S.onScroll()
     }
     document.fonts.addEventListener('loadingdone', S.onFonts)
@@ -633,12 +690,17 @@ export default function (component) {
     glyph.setAttribute('aria-hidden', 'true')
     const label = document.createElement('span')
     label.className = 'capa-tabs-label'
+    // 공용 공정 표지(깔때기 — 그 화면이 공용 공정을 따라간다, 없는 공정이 있으면 주황)와 「구현중」 표지(2026-11-09 보드 C1 (라)
+    // · T8). 둘 다 제 풍선(`title`)이 있다 — 탭 이름 풍선보다 안쪽이라 표지를 가리키면 표지 풍선이 뜬다.
+    const proc = funnelMark()
+    const wip = document.createElement('span')
+    wip.className = 'capa-tabs-wip'
     const dot = document.createElement('span')
     dot.className = 'capa-tabs-dot'
     dot.setAttribute('aria-hidden', 'true')
     const sr = document.createElement('span')
     sr.className = 'capa-tabs-sr'
-    tab.append(glyph, label, dot, sr)
+    tab.append(glyph, label, proc, wip, dot, sr)
     const pin = document.createElement('button')
     pin.type = 'button'
     pin.className = 'capa-tabs-pin'
@@ -648,7 +710,7 @@ export default function (component) {
     close.className = 'capa-tabs-x'
     close.append(icon(CLOSE_PATH, ''))
     item.append(tab, pin, close)
-    item.__parts = { tab, glyph, label, dot, sr, pin, close }
+    item.__parts = { tab, glyph, label, proc, wip, dot, sr, pin, close }
     S.items.set(id, item)
     return item
   }
@@ -666,6 +728,11 @@ export default function (component) {
     item.classList.toggle('is-active', active)
     item.classList.toggle('is-dirty', Boolean(tab.dirty))
     setText(P.sr, tab.dirty ? ' ' + String(text.dirty || '') : '')
+    paintProcessMark(item, tab.proc)
+    const wip = typeof tab.wip === 'string' ? tab.wip : ''
+    item.classList.toggle('is-wip', wip !== '')
+    setText(P.wip, wip ? String(text.wip || '') : '')
+    setAttr(P.wip, 'title', wip || null)
     const pinned = Boolean(tab.pinned)
     item.classList.toggle('is-pinned', pinned)
     // 이름은 하나(「… 고정」)이고 고정 여부는 `aria-pressed` 만 말한다 — 이름까지 바꾸면 읽기 도구가 상태를 두 번 읽는다.
@@ -707,6 +774,7 @@ export default function (component) {
     const at = list.children[index]
     if (at !== item) list.insertBefore(item, at || null)
   })
+  fitWip(S.items.values())
   // 새 data 가 왔으면 누른 뒤 기다리던 표지를 걷는다 — 아직 보내지 않고 기다리는 누름(`<tabs-queue>`·`<tabs-hold>`)의
   // 표지는 둔다.
   for (const [id, item] of S.items) {
@@ -738,6 +806,7 @@ export default function (component) {
     list.addEventListener('scroll', S.onScroll, { passive: true })
     if (typeof ResizeObserver === 'function') {
       S.resizer = new ResizeObserver(() => {
+        fitWip(S.items.values())
         if (S.reveal) S.reveal()
         if (S.onScroll) S.onScroll()
       })
@@ -1349,6 +1418,18 @@ export default function (component) {
     }
     document.addEventListener('click', S.onLink, true)
   }
+  if (!S.onProcess) {
+    // 알림 칸이 읽은 지금 화면의 공정 표지(`capa-process-here`) — 그 주소의 탭 표지만 고친다. 다음 data 는 같은 기록으로 같은 표지를 싣는다.
+    S.onProcess = (event) => {
+      const detail = event && event.detail
+      if (!detail || typeof detail.href !== 'string') return
+      for (const item of S.items.values()) {
+        if (!item.hidden && item.__href === detail.href) paintProcessMark(item, detail.tab)
+      }
+      fitWip(S.items.values())
+    }
+    window.addEventListener(PROCESS_EVENT, S.onProcess)
+  }
   if (!S.onOpenPage) {
     // 알림 칸 「그 화면으로」(`capa-open-page` — {href}). 열린 탭이면 탭 고르기와 같은 길(떠나기 확인 · 한 번에 하나), 아니면
     // 그 화면 링크를 누른다 — 상한 거름(`S.onLink`)이 같은 누름으로 받는다. 지금 화면이면 아무것도 하지 않는다.
@@ -1409,6 +1490,8 @@ export default function (component) {
     S.onLink = null
     if (S.onOpenPage) window.removeEventListener(OPEN_PAGE_EVENT, S.onOpenPage)
     S.onOpenPage = null
+    if (S.onProcess) window.removeEventListener(PROCESS_EVENT, S.onProcess)
+    S.onProcess = null
     if (S.onInput) {
       for (const type of ['keydown', 'pointerdown']) document.removeEventListener(type, S.onInput, true)
     }

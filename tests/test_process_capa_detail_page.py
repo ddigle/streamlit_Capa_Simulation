@@ -237,7 +237,9 @@ def _app(databases: tuple[Path, Path], *, fail_bootstrap: bool = False) -> AppTe
 
 class _ProcessBox:
     """공정 값 칸(하나 고름 — 공용 공정 칸, 2026-11-08)을 예전 상자처럼 읽는다. 값은 세션 칸,
-    선택지는 팝업이 쓸 이 화면의 선택지이고, 고르기는 팝업 판이 하는 대로 세션 칸에 적는다."""
+    선택지는 팝업이 쓸 이 화면의 선택지이고, 고르기는 세션 칸에만 적는다(◀▶ 넘김과 같은 길 —
+    팝업에서 직접 고른 공정은 공용 값도 보낸다, 2026-11-09 보드 C2 (가) ·
+    `tests/test_process_field.py`)."""
 
     def __init__(self, app: AppTest) -> None:
         self.app = app
@@ -562,8 +564,8 @@ def test_a_single_shared_process_opens_on_the_detail_page_and_names_its_origin(
     databases: tuple[Path, Path],
 ) -> None:
     """HOME 에서 공정 하나로 좁히면 이 화면이 그 공정을 열고 값 칸이 「HOME 에서」 를 단다. 이
-    화면에서 다른 공정을 고르면 출처가 걷히고 공용 값은 그대로다(받기만 — 2026-11-08 사용자 답
-    P2-2)."""
+    화면에서 팝업 밖 길(◀▶)로 다른 공정으로 넘기면 출처가 걷히고 공용 값은 그대로다(2026-11-08
+    사용자 답 P2-2 — 팝업에서 직접 고른 공정만 보낸다, 2026-11-09 보드 C2 (가))."""
     from test_process_field import share, shared_values
 
     app = _ok(_app(databases).run())
@@ -580,6 +582,38 @@ def test_a_single_shared_process_opens_on_the_detail_page_and_names_its_origin(
     assert _process_box(app).value == first
     assert "HOME 에서" not in [str(item.value) for item in app.sidebar.caption]
     assert shared_values(app) == [target]
+
+
+def test_a_first_open_or_a_home_cell_sends_no_shared_process(
+    databases: tuple[Path, Path],
+) -> None:
+    """공용 값은 사이드바 공정 칸 팝업에서 직접 고른 공정만 보낸다(2026-11-09 보드 C2 (가)). 처음 열
+    때의 기본 공정(기간 최저 확보율 공정)은 공용 값을 만들지 않고, HOME 그림 칸(전달 칸)으로 들어온
+    회차도 다른 화면의 거름을 그대로 둔다 — 한 공정을 들여다본 일로 3공정 거름이 사라지지 않게."""
+    from test_process_field import share, shared_values
+
+    app = _ok(_app(databases).run())
+    assert _process_box(app).value is not None
+    assert shared_values(app) == []
+    _ok(app.run())
+    assert shared_values(app) == []
+
+    options = list(_process_box(app).options)
+    assert len(options) >= 2
+    held = [*options[1:3], "없는_공정"]
+    share(app, held)
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process=options[0],
+        month=app.session_state[PROCESS_DETAIL_MONTH_KEY],
+        section=HOME_BOTTLENECK_SECTION,
+        displayed_rate=1.0,
+    )
+    _ok(app.run())
+    assert _process_box(app).value == options[0]
+    assert shared_values(app) == held
+    _ok(app.run())
+    assert _process_box(app).value == options[0]
+    assert shared_values(app) == held
 
 
 def test_a_stopped_visit_consumes_the_transfer_slot(databases: tuple[Path, Path]) -> None:

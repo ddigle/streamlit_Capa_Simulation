@@ -59,6 +59,8 @@ textarea {
 
 .tb:focus-visible,
 .chip:focus-visible,
+.sample:focus-visible,
+.pbtn:focus-visible,
 .link:focus-visible,
 .x:focus-visible,
 .seg button:focus-visible,
@@ -141,15 +143,97 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* 공용 공정 칩(2026-11-09 보드 C1 (라)) — 변경 칩과 같은 알약 · 글자 · 높이. 이 화면에 걸리면 강조색 테두리 45% · 옅은 면 8%, 아니면
+   흐린 테두리(따라가지 않는 화면 · 걸리는 공정이 없음). 주황은 없는 공정 글(「n개 이 화면 없음」)에만 쓴다. */
+.chip.proc {
+  border-color: var(--ac-border);
+  background: var(--ac-surface);
+}
+
+.chip.proc.on {
+  border-color: color-mix(in srgb, var(--ac-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--ac-accent) 8%, var(--ac-surface));
+}
+
+.chip.proc .funnel {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: var(--ac-muted);
+}
+
+.chip.proc.on .funnel {
+  fill: var(--ac-accent);
+}
+
+.chip.proc .msep,
+.chip.proc .miss,
+.chip.proc .mdot {
+  display: none;
+}
+
+.chip.proc.has-miss .msep,
+.chip.proc.has-miss .miss {
+  display: inline;
+}
+
+.chip.proc .miss {
+  color: var(--ac-pending);
+  font-weight: 600;
+}
+
+.chip.proc .mdot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ac-pending);
+}
+
+/* 합성 샘플 표지(2026-11-09 보드 T8) — 주의 톤이되 변경 칩(주황 면 알약 · 점)과 갈리게 점선 네모 · 주황 글 · 플라스크. 누르는 것이
+   없고 풍선만 있다. */
+.sample {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 8px 0 0;
+  padding: 4px 8px;
+  border: 1px dashed color-mix(in srgb, var(--ac-pending) 70%, transparent);
+  border-radius: 6px;
+  color: var(--ac-pending);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.sample .flask {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
 @media (max-width: 1399.98px) {
   .chip .top,
   .chip .sep {
     display: none;
   }
+
+  .chip.proc.has-miss .msep,
+  .chip.proc.has-miss .miss {
+    display: none;
+  }
+
+  .chip.proc.has-miss .mdot {
+    display: inline-block;
+  }
 }
 
 @media (max-width: 899.98px) {
-  .chip .word {
+  .chip .word,
+  .sample .word {
     display: none;
   }
 }
@@ -247,6 +331,75 @@ textarea {
 
 .panel.changes {
   width: min(27rem, calc(100vw - 1.5rem));
+}
+
+/* 공정 판 — 칩 바로 아래 칩 왼쪽 끝에 선다(JS 가 `left` 를 단다). */
+.panel.process {
+  width: min(21rem, calc(100vw - 1.5rem));
+}
+
+.plist {
+  max-height: min(40vh, 18rem);
+  margin: 0;
+  padding: 0.4rem 0.85rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.prow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: 0.8125rem;
+}
+
+.prow .pm {
+  flex: none;
+  width: 0.8rem;
+  color: var(--ac-accent);
+  font-weight: 700;
+}
+
+.prow.absent .pm,
+.prow .pa {
+  color: var(--ac-pending);
+}
+
+.prow .pn {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prow .pa {
+  flex: none;
+  font-size: 0.75rem;
+}
+
+.pacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem 0.75rem;
+  border-top: 1px solid var(--ac-border);
+}
+
+.pbtn {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--ac-border);
+  border-radius: 8px;
+  background: var(--ac-surface);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.pbtn:hover {
+  border-color: var(--ac-accent);
+  color: var(--ac-accent);
 }
 
 .panel:focus {

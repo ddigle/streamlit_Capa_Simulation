@@ -139,6 +139,17 @@ class PageSpec:
     # 모듈 화면이면 그 모듈 id(`modules/<id>/` — 실행 때 `module_page_specs` 가 만든다). 코어
     # 화면은 None 이다.
     module: str | None = None
+    # 원천(실적 DB 등)이 아직 붙지 않아 「샘플 데이터」 스위치로 합성 샘플을 미리 보는 화면이면 그
+    # 원천 이름(2026-11-09 보드 T8). 화면 탭 「구현중」 표지의 풍선과 머리 띠 「합성 샘플」 표지가
+    # 이 선언을 읽는다 — 라벨의 `(구현중)` 은 그대로다. 글자는 그 화면이 스위치 · 머리 배지에 주는
+    # 원천 이름과 같다(그물 `tests/test_page_tabs.py`).
+    pending_source: str | None = None
+
+    @property
+    def implementing(self) -> bool:
+        """구현 중 화면인가 — 라벨에 `(구현중)` 이 붙었거나 원천이 아직 붙지 않은 화면(Dynamic Capa
+        는 그룹 머리라 라벨에 달지 않는다 — 2026-09-29 사용자 결정)."""
+        return self.pending_source is not None or self.title.endswith(f" {IMPLEMENTING_SUFFIX}")
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
         """지금 열린 탭(`None` 은 탭을 가르지 않는 화면)에서 이 화면이 공통 조건을 읽는가."""
@@ -195,6 +206,7 @@ CAPA_CHATBOT = PageSpec(
     ":material/chat:",
     reads_scenario=False,
     reads_period=False,
+    pending_source="LLM API · Capa 데이터",
 )
 # 시나리오 관리는 활성 시나리오를 불러오고 저장하며, 복제·리비전 저장이 지금 조회기간을 프리셋으로
 # 함께 담는다 — 저장되는 값이 보여야 하므로 두 줄을 다 세운다. 「설비 시나리오」 탭(가용설비
@@ -393,11 +405,18 @@ EXECUTION_MANAGEMENT_SUBPAGES = (
     AVAILABLE_EQUIPMENT_STATUS,
     SPACE_STATUS,
     *(
-        PageSpec(path, _implementing(title), icon, reads_scenario=False, reads_period=False)
-        for path, title, icon in (
-            ("app_pages/actual_efficiency.py", "효율 실적", ":material/speed:"),
-            ("app_pages/actual_upeh.py", "UPEH 실적", ":material/timer:"),
-            ("app_pages/yield_actual.py", "수율 실적", ":material/percent:"),
+        PageSpec(
+            path,
+            _implementing(title),
+            icon,
+            reads_scenario=False,
+            reads_period=False,
+            pending_source=source,
+        )
+        for path, title, icon, source in (
+            ("app_pages/actual_efficiency.py", "효율 실적", ":material/speed:", "생산이력 DB"),
+            ("app_pages/actual_upeh.py", "UPEH 실적", ":material/timer:", "생산이력 DB"),
+            ("app_pages/yield_actual.py", "수율 실적", ":material/percent:", "수율 실적 DB"),
         )
     ),
 )
@@ -434,7 +453,7 @@ PRODUCTION_PROGRESS_SUBPAGES: tuple[PageSpec, ...] = tuple(
 
 # 실현 Capa 손실 분해(표준 → 실적)다. 실행 관리가 모은 실적으로 Capa 를 다시 내는 자리라 Dynamic
 # 머리로 둔다. 주소는 `dynamic_capa` 그대로다(북마크·사이드바 CSS 가 기댄다). 라벨에 `(구현중)` 을
-# 달지 않는 대신 이 화면 자신의 성숙도는 본문 헤더의 배지(프로토타입·연결 대기)가 말한다.
+# 달지 않는 대신 이 화면 자신의 성숙도는 화면 탭 「구현중」 표지(`pending_source`)가 말한다.
 DYNAMIC_CAPA = PageSpec(
     "app_pages/reference_integrity.py",
     "Dynamic Capa",
@@ -442,6 +461,7 @@ DYNAMIC_CAPA = PageSpec(
     url_path="dynamic_capa",
     reads_scenario=False,
     reads_period=False,
+    pending_source="실적 DB",
 )
 # 활성 시나리오는 읽지만 기간은 오늘 기준 앞뒤 몇 달로 스스로 정한다.
 WIP_STATUS = PageSpec(
@@ -449,6 +469,7 @@ WIP_STATUS = PageSpec(
     _implementing("표준 대비 재공 현황"),
     ":material/inventory_2:",
     reads_period=False,
+    pending_source="재공 실적 DB",
 )
 DYNAMIC_CAPA_SUBPAGES = (WIP_STATUS,)
 

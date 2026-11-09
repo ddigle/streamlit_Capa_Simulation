@@ -20,16 +20,21 @@
 //   프래그먼트의 요청을 회차 없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. 앱 뿌리의 연결 표지(`data-test-connection-state`)가
 //   붙음으로 돌아오면 본 스레드가 `RECONNECT_WAIT_MS` + 왕복 시간(`reconnectWait`) 조용해지기를 기다리고, 그 사이 프런트가 스스로 돈 회차가 없으면 트리거로 앱 전체 회차를
 //   한 번 부른다. 기다리는 동안 사람 손이 닿으면 그 누름의 회차가 돌아오기를 더 기다린다 — 표지는 왕복해야 움직이므로 그 사이 부르면 누름의 회차를 끊어 누름이 사라진다.
-//   이 JS 가 파이썬을 부르는 자리는 여기 하나뿐이다. 연결 표지와 회차 표지는 관찰자 하나가 본다(`watchRoot` — 칸이 다시 그려져도 늘지 않는다).
+//   이 JS 가 파이썬을 부르는 자리는 이것과 공정 판 「모든 화면에서 해제」(`process_clear`) 둘이다. 연결 표지와 회차 표지는 관찰자 하나가
+//   본다(`watchRoot` — 칸이 다시 그려져도 늘지 않는다).
 // - 서버 재시작(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가)): 재시작 뒤 세션은 새것이라 파이썬은 첫 접속과 가르지 못한다. data 의 부트
 //   표지(`boot.mark`)를 이 탭에 적어 둔 앞 표지와 견주어 앞 표지가 있고 다를 때만 함께 실린 알림(`boot.notice` — `GL-07`)을 띄우고
 //   어느 경우든 지금 표지로 고쳐 적는다.
 // - 세션만 사라진 탭(2차 보드 R2 (가)): 서버는 그대로이고 세션만 끊긴 지 오래돼 사라진 탭이다. data 의 세션 표지(`session.mark`)를 이 문서
 //   메모리의 앞 data 와 견주고, 앞 data 의 변경 목록이 있었거나 끊길 때 대화상자가 열려 있었으면 함께 실린 알림(`session.notice` — `GL-08`)을
 //   띄운다. 새 문서(새로고침 · 테마 전환 · 새 탭 · 복제한 탭 · 첫 접속)에는 앞 data 가 없어 뜨지 않고, 잃은 것이 없는 탭은 덮개를 여닫아도 뜨지 않는다.
-// - 머리 툴바: Guide 오른쪽에 `Alarm`(안 읽음 수 배지 · 패널), Guide 왼쪽에 바뀐 것이 있을 때만 서는 변경 칩(D5 (가) · 판). 차례는
-//   파이썬 `theme_toggle.TOOLBAR_BUTTON_ORDER` 한 벌이다(다른 툴바 단추와 같은 규칙 — `capaToolbar.place`). 패널은 브라우저
-//   안에서만 열고 닫아 파이썬 회차가 돌지 않는다.
+// - 머리 툴바: Guide 오른쪽에 `Alarm`(안 읽음 수 배지 · 패널), Guide 왼쪽에 바뀐 것이 있을 때만 서는 변경 칩(D5 (가) · 판), 맨 왼쪽에
+//   공용 공정 값이 있을 때만 서는 공정 칩(2026-11-09 보드 C1 (라) · 판)과 그 오른쪽 합성 샘플 표지(T8 — 구현 중 화면에서 샘플을 켠
+//   동안). 차례는 파이썬 `theme_toggle.TOOLBAR_BUTTON_ORDER` 한 벌이다(다른 툴바 단추와 같은 규칙 — `capaToolbar.place`). 패널 ·
+//   판은 브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다.
+// - 공정 칩: 이 화면에 대한 값은 파이썬 짐작(`process.here` — 세션 기록)으로 그리고, 회차 표지를 훑을 때 공정 값 칸이 남긴 표지
+//   (`process.marker` 속성의 JSON — 이 화면 주소 · 공용 값 판 · 걸리나 · 없는 공정 · 지금 탭 표지)로 바로잡는다. 회차가 끝났는데 이 화면
+//   표지가 없으면 이 화면은 공정 칸을 그리지 않은 것이라 흐린 칩이다. 지금 탭 표지는 문서 사건(`PROCESS_EVENT`)으로 탭 줄에 알린다.
 // - 툴바 실제 폭을 재어 `--capa-toolbar-width`(px)와 `data-capa-toolbar` 를 문서 뿌리에 단다 — 머리 띠 두 줄 · 진행 막대
 //   자리 규칙이 그 값으로 오른쪽을 비운다(`app_header`). 단추가 늘거나 줄어도 다시 잴 필요가 없다.
 // - 화면 탭 줄 JS(`page_tabs.js`)는 같은 문서의 `window.__capaAlerts.raise(...)` 로 알린다(알림 칸이 아직 서지 않았으면
@@ -56,6 +61,14 @@ const RUN_STATE = 'data-test-script-state'
 const CONNECTION_STATE = 'data-test-connection-state'
 const DIALOG = '[data-testid="stDialog"]'
 const OPEN_PAGE_EVENT = 'capa-open-page'
+// 지금 화면 탭의 공정 표지를 바로잡는 사건(`page_tabs.js` 가 듣는다) — {href, tab: {miss, title} | null}.
+const PROCESS_EVENT = 'capa-process-here'
+const SVG_NS = 'http://www.w3.org/2000/svg'
+// 깔때기(공정 거름)와 플라스크(합성 샘플) 아이콘 — 24 단위 path 하나. 깔때기는 사이드바 공정 값 칸 아이콘(Material `filter_alt`)과
+// 같은 선 꼴이고 화면 탭 표지와 같은 상수다(`page_tabs.js`).
+const FUNNEL_PATH = 'M11 20q-.425 0-.713-.288T10 19v-6L4.2 5.6q-.375-.5-.113-1.05T5 4h14q.65 0 .913.55t-.113 1.05L14 13v6q0 .425-.288.713T13 20zm1-7.7L16.95 6H7.05z'
+const FLASK_PATH =
+  'M19.8 18.4 14 10.67V6.5l1.35-1.69c.26-.33.03-.81-.39-.81H9.04c-.42 0-.65.48-.39.81L10 6.5v4.17L4.2 18.4c-.49.66-.02 1.6.8 1.6h14c.82 0 1.29-.94.8-1.6z'
 const TOOLBAR_ATTRIBUTE = 'data-capa-toolbar'
 const TOOLBAR_VARIABLE = '--capa-toolbar-width'
 // 본 사건 id 를 이만큼까지 적는다(다시 보낸 표지를 또 띄우지 않는다).
@@ -145,6 +158,47 @@ function chipOf(items) {
     top: list.length ? String(list[0].top || '') : '',
     onlyAssume: list.length > 0 && list.every((item) => item.group === 'assume'),
   }
+}
+// 머리 공정 칩 — 공용 값(`process` — 파이썬 `process_field.header_chip`)과 이 화면에 대한 값. 이 화면 주소(`here`) · 같은 판의 회차
+// 표지(`live`)가 있으면 그것이, 아니면 파이썬 짐작(`process.here`)이 이 화면 값이다. 없는 공정은 이 화면이 따르는 꼴일 때만 센다.
+// 따르는 화면이면 줄 차례를 이 화면 선택지 차례(`inside` — 걸린 공정 먼저, 없는 공정 뒤 — 파이썬 `screen_order`)로 세우고 첫
+// 이름(`top`)도 그 차례로 적는다(`rest` — 파이썬 `process_field.REST_TEXT`, 없으면 파이썬이 적은 `top`). 사이드바 값 칸 · 탭 풍선과
+// 첫 이름이 같아진다. 값이 없으면 null(칩을 세우지 않는다).
+function processChipOf(process, live, here, rest) {
+  if (!process || !Array.isArray(process.values) || !process.values.length) return null
+  const values = process.values.map(String)
+  const labels = values.map((value, index) => String((Array.isArray(process.labels) && process.labels[index]) || value))
+  const fresh = Boolean(live) && live.page === here && live.version === process.version
+  const mark = (fresh ? live.here : process.here) || null
+  const follows = Boolean(mark && mark.follows)
+  const gone = new Set(follows && Array.isArray(mark.missing) ? mark.missing.map(String) : [])
+  const first = follows && Array.isArray(mark.inside) ? mark.inside.map(String).filter((value) => values.includes(value)) : []
+  const ranked = [...first, ...values.filter((value) => !first.includes(value))]
+  const labelOf = new Map(values.map((value, index) => [value, labels[index]]))
+  const rows = ranked.map((value) => ({ value, label: labelOf.get(value), absent: gone.has(value) }))
+  const many = (_, name) => (name === 'first' ? rows[0].label : String(rows.length - 1))
+  const top =
+    typeof rest === 'string' && rest
+      ? rows.length > 1
+        ? rest.replace(/\{(first|n)\}/g, many)
+        : rows[0].label
+      : String(process.top || labels[0])
+  return {
+    count: values.length,
+    top,
+    origin: String(process.origin || ''),
+    on: Boolean(mark && mark.on),
+    follows,
+    absent: rows.filter((row) => row.absent).length,
+    rows,
+  }
+}
+// 문서에서 읽은 공정 표지들(`marks`)로 이 화면의 회차 표지를 정한다 — 이 화면 주소의 마지막 표지. 회차가 끝났는데(`settled`) 표지가
+// 없으면 이 화면은 공정 칸을 그리지 않은 것이다(`here: null` — 흐린 칩). 도는 동안 표지가 없으면 null(앞 값을 둔다).
+function processLiveOf(marks, here, version, settled) {
+  const mine = (Array.isArray(marks) ? marks : []).filter((mark) => mark && typeof mark === 'object' && mark.page === here)
+  if (mine.length) return mine[mine.length - 1]
+  return settled ? { page: here, version, here: null, tab: null, drawn: false } : null
 }
 // 패널에 보일 줄 — 단계 · 화면 거르기와 「해소된 것 숨김」, 최신순(마지막 시각).
 function visibleRows(rows, filter) {
@@ -504,6 +558,8 @@ function createCenter(data) {
     placeTimer: 0,
     resizer: null,
     resizedSlot: null,
+    // 이 화면의 공정 회차 표지(`processLiveOf`) — 같은 화면 · 같은 판이면 다음 회차의 짐작보다 이긴다.
+    procLive: null,
   }
   const now = Date.now()
   C.rows = pruneRows(storageGet(storage.log, []), now, limits.rows || 200, (limits.hours || 12) * 3600000)
@@ -528,7 +584,8 @@ function createCenter(data) {
   shadow.append(C.stack)
   C.panel = buildAlarmPanel(C)
   C.changesPanel = buildChangesPanel(C)
-  shadow.append(C.panel, C.changesPanel)
+  C.processPanel = buildProcessPanel(C)
+  shadow.append(C.panel, C.changesPanel, C.processPanel)
   document.body.appendChild(host)
 
   // 탭 줄 JS 의 알림 길. 칸이 서기 전에 담긴 알림을 꺼낸다.
@@ -545,9 +602,8 @@ function createCenter(data) {
     (event) => {
       if (!C.open) return
       const path = event.composedPath ? event.composedPath() : []
-      const panel = C.open === 'alarms' ? C.panel : C.changesPanel
-      const button = C.open === 'alarms' ? C.alarmHost : C.chipHost
-      if (path.includes(panel) || (button && path.includes(button))) return
+      const { panel, host } = panelOf(C, C.open)
+      if (path.includes(panel) || (host && path.includes(host))) return
       closePanel(C, false)
     },
     true,
@@ -767,6 +823,7 @@ function scan(C) {
     for (const note of notes) if (handle(C, note)) changed = true
   }
   if (changed) persist(C)
+  readProcessMark(C)
   ensureToolbar(C)
   paintAll(C)
   measureToolbar(C)
@@ -1018,11 +1075,71 @@ function ensureToolbar(C) {
     C.chipHost = host
     C.chip = chip
   }
+  if (!C.procHost || !C.procHost.isConnected) {
+    const host = toolbarHost(C, toolbar.process, 'capa-alert-proc')
+    const shadow = host.shadowRoot
+    let chip = shadow.querySelector('.proc')
+    if (!chip) {
+      chip = el('button', 'chip proc')
+      chip.type = 'button'
+      chip.setAttribute('aria-haspopup', 'dialog')
+      chip.setAttribute('aria-expanded', 'false')
+      const dot = el('span', 'mdot')
+      dot.setAttribute('aria-hidden', 'true')
+      chip.append(
+        icon(FUNNEL_PATH, 'funnel'),
+        el('span', 'word', t.process_word || ''),
+        el('b', 'count'),
+        el('span', 'sep', '·'),
+        el('span', 'top'),
+        el('span', 'msep', '·'),
+        el('span', 'miss'),
+        dot,
+      )
+      chip.addEventListener('click', () => togglePanel(C, 'process'))
+      shadow.append(chip)
+    }
+    host.toggleAttribute('data-empty', true)
+    C.procHost = host
+    C.procChip = chip
+  }
+  if (!C.sampleHost || !C.sampleHost.isConnected) {
+    const host = toolbarHost(C, toolbar.sample, 'capa-alert-sample')
+    const shadow = host.shadowRoot
+    let mark = shadow.querySelector('.sample')
+    if (!mark) {
+      mark = el('span', 'sample')
+      mark.tabIndex = 0
+      mark.setAttribute('role', 'note')
+      mark.title = t.sample_title || ''
+      mark.setAttribute('aria-label', t.sample_title || '')
+      mark.append(icon(FLASK_PATH, 'flask'), el('span', 'word', t.sample || ''))
+      shadow.append(mark)
+    }
+    host.toggleAttribute('data-empty', true)
+    C.sampleHost = host
+  }
   palette(C, C.alarmHost)
   palette(C, C.chipHost)
+  palette(C, C.procHost)
+  palette(C, C.sampleHost)
+  placeHost(C, slot, C.procHost)
+  placeHost(C, slot, C.sampleHost)
   placeHost(C, slot, C.chipHost)
   placeHost(C, slot, C.alarmHost)
   watchSlot(C, slot)
+}
+
+// 툴바 · 판 아이콘 하나(24 단위 path, 글자 색).
+function icon(path, className) {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('class', className)
+  const shape = document.createElementNS(SVG_NS, 'path')
+  shape.setAttribute('d', path)
+  svg.append(shape)
+  return svg
 }
 
 function watchSlot(C, slot) {
@@ -1134,6 +1251,49 @@ function buildChangesPanel(C) {
   panel.append(head, body)
   C.changesParts = { sum, body }
   return panel
+}
+
+function buildProcessPanel(C) {
+  const t = text(C)
+  const panel = el('section', 'panel process')
+  panel.hidden = true
+  panel.tabIndex = -1
+  panel.setAttribute('role', 'dialog')
+  const head = el('div', 'head')
+  const title = el('h2')
+  const sum = el('span', 'sum')
+  const close = el('button', 'x', '×')
+  close.type = 'button'
+  close.setAttribute('aria-label', t.close || '')
+  close.addEventListener('click', () => closePanel(C, true))
+  head.append(title, el('span', 'grow'), sum, close)
+  const list = el('ul', 'plist')
+  const acts = el('div', 'pacts')
+  const pick = el('button', 'pbtn', t.process_pick || '')
+  pick.type = 'button'
+  pick.addEventListener('click', () => {
+    const field = processField(C)
+    closePanel(C, false)
+    if (field) field.click()
+  })
+  const clear = el('button', 'pbtn', t.process_clear || '')
+  clear.type = 'button'
+  clear.addEventListener('click', () => {
+    closePanel(C, false)
+    if (C.ask) C.ask('process_clear', Date.now())
+  })
+  acts.append(pick, clear)
+  panel.append(head, list, acts)
+  C.processParts = { title, sum, list, pick }
+  return panel
+}
+
+// 이 화면 사이드바 「공정」 값 칸 단추 — 판 「공정 고르기」 가 눌러 그 칸의 팝업을 연다. 칸이 없거나 잠겼으면 null.
+function processField(C) {
+  const key = C.data.process && C.data.process.field
+  if (!key) return null
+  const button = document.querySelector(`[data-testid="stSidebar"] .st-key-${key} button`)
+  return button && !button.disabled ? button : null
 }
 
 function goTo(C, href, tab) {
@@ -1487,7 +1647,75 @@ function paintList(C) {
   return shown
 }
 
+// 공정 칩 · 판 — 값이 없으면 칩을 숨기고 열린 판을 닫는다. 이 화면에 걸리면 강조색, 아니면 흐린 테두리(풍선에 「이 화면엔 안 걸림」).
+function paintProcess(C) {
+  if (!C.procHost) return
+  const t = text(C)
+  const chip = processChipOf(C.data.process, C.procLive, C.data.here, t.process_rest)
+  C.procHost.toggleAttribute('data-empty', !chip)
+  if (!chip) {
+    if (C.open === 'process') closePanel(C, false)
+    return
+  }
+  const button = C.procChip
+  button.classList.toggle('on', chip.on)
+  button.classList.toggle('has-miss', chip.absent > 0)
+  button.querySelector('.count').textContent = String(chip.count)
+  button.querySelector('.top').textContent = chip.top
+  button.querySelector('.miss').textContent = chip.absent ? fill(t.process_absent, { n: chip.absent }) : ''
+  const names = fill(t.process_names, { names: chip.rows.map((row) => row.label).join(' · ') })
+  const parts = [chip.origin ? `${names} — ${fill(t.process_from, { origin: chip.origin })}` : names]
+  if (chip.absent) parts.push(fill(t.process_absent, { n: chip.absent }))
+  if (!chip.on) parts.push(t.process_off || '')
+  const title = parts.join(' · ')
+  if (button.title !== title) button.title = title
+  button.setAttribute('aria-label', `${fill(t.process_aria, { n: chip.count })} — ${title}`)
+  const P = C.processParts
+  P.title.textContent = fill(t.process_panel, { n: chip.count })
+  C.processPanel.setAttribute('aria-label', P.title.textContent)
+  P.sum.textContent = chip.origin ? fill(t.process_from, { origin: chip.origin }) : ''
+  P.list.replaceChildren()
+  for (const row of chip.rows) {
+    const line = el('li', `prow${row.absent ? ' absent' : ''}`)
+    const mark = el('span', 'pm', chip.follows ? (row.absent ? '–' : '✓') : '·')
+    mark.setAttribute('aria-hidden', 'true')
+    line.append(mark, el('span', 'pn', row.label))
+    if (row.absent) line.append(el('span', 'pa', t.process_absent_row || ''))
+    P.list.append(line)
+  }
+  P.pick.hidden = !processField(C)
+}
+
+function paintSample(C) {
+  if (C.sampleHost) C.sampleHost.toggleAttribute('data-empty', !C.data.sample)
+}
+
+// 회차 표지를 훑을 때 이 화면의 공정 표지를 읽는다. 지금 탭 표지가 실렸으면 탭 줄에 알린다(그 회차의 탭 줄은 페이지보다 먼저 그려져
+// 처음 그린 화면 · 바뀐 선택지를 모른다).
+function readProcessMark(C) {
+  const process = C.data.process
+  if (!process || !process.marker) return
+  const marks = []
+  for (const node of document.querySelectorAll(`[${process.marker}]`)) {
+    try {
+      marks.push(JSON.parse(node.getAttribute(process.marker) || 'null'))
+    } catch (error) {
+      /* 깨진 표지는 건너뛴다 */
+    }
+  }
+  const root = document.querySelector(APP_ROOT)
+  const settled = Boolean(root) && root.getAttribute(RUN_STATE) === 'notRunning'
+  const live = processLiveOf(marks, C.data.here, process.version, settled)
+  if (!live) return
+  C.procLive = live
+  if (live.drawn !== false) {
+    window.dispatchEvent(new CustomEvent(PROCESS_EVENT, { detail: { href: live.page, tab: live.tab || null } }))
+  }
+}
+
 function paintAll(C) {
+  paintProcess(C)
+  paintSample(C)
   paintChanges(C)
   paintBadge(C)
   if (C.open === 'alarms') {
@@ -1512,6 +1740,23 @@ function markRead(C) {
   }
 }
 
+// 떠 있는 판 셋(Alarm 패널 · 변경 판 · 공정 판)과 그 여는 단추 · 툴바 호스트.
+function panelOf(C, which) {
+  if (which === 'alarms') return { panel: C.panel, button: C.alarmButton, host: C.alarmHost }
+  if (which === 'process') return { panel: C.processPanel, button: C.procChip, host: C.procHost }
+  return { panel: C.changesPanel, button: C.chip, host: C.chipHost }
+}
+
+// 공정 판은 칩 바로 아래, 칩 왼쪽 끝에 맞춘다(창 오른쪽을 넘지 않게).
+function placeProcessPanel(C) {
+  if (!C.procHost) return
+  const box = C.procHost.getBoundingClientRect()
+  const width = C.processPanel.offsetWidth || 336
+  const left = Math.max(12, Math.min(box.left, window.innerWidth - width - 12))
+  C.processPanel.style.left = `${Math.round(left)}px`
+  C.processPanel.style.right = 'auto'
+}
+
 function togglePanel(C, which) {
   if (C.open === which) {
     closePanel(C, true)
@@ -1519,13 +1764,15 @@ function togglePanel(C, which) {
   }
   if (C.open) closePanel(C, false)
   C.open = which
-  const panel = which === 'alarms' ? C.panel : C.changesPanel
-  const button = which === 'alarms' ? C.alarmButton : C.chip
+  const { panel, button } = panelOf(C, which)
   panel.hidden = false
   if (button) button.setAttribute('aria-expanded', 'true')
   if (which === 'alarms') {
     paintList(C)
     markRead(C)
+  } else if (which === 'process') {
+    paintProcess(C)
+    placeProcessPanel(C)
   } else {
     paintChanges(C)
   }
@@ -1534,8 +1781,7 @@ function togglePanel(C, which) {
 
 function closePanel(C, refocus) {
   if (!C.open) return
-  const panel = C.open === 'alarms' ? C.panel : C.changesPanel
-  const button = C.open === 'alarms' ? C.alarmButton : C.chip
+  const { panel, button } = panelOf(C, C.open)
   panel.hidden = true
   if (button) button.setAttribute('aria-expanded', 'false')
   C.open = null
