@@ -2294,7 +2294,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸만 오른쪽 끝에 선다. 제목이 보이는 인쇄에서는 한 줄에 안 들면 끝 칸이 통째로 제목 밑 오른쪽으로 내려가고 제목은 접히지
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
 - `src/capa_simulation/components/equipment_master_tab.py` — 가용설비 현황 탭 ① 「설비 마스터」 본문(개편 B1-c·d — 옛 RawData
-  폼을 대신한다). 맨 위 줄(표 고르기 `equipment_master_table_v1` · 「일정 없이 엶」 · 「저장 전 변경 n건」 · 「일정 잠김」 — 설비 시나리오 · 리비전 알약은
+  폼을 대신한다). 맨 위 줄(표 고르기 `equipment_master_table_v1` — 라벨 줄 없이 곁 빈 캡션 풍선 `head_help` 가 표의 뜻과 공통 ·
+  시나리오 · 배치 칸의 저장 자리를 말한다 · 「일정 없이 엶」 · 「저장 전 변경 n건」 · 「일정 잠김」 — 설비 시나리오 · 리비전 알약은
   사이드바 줄 · 머리 띠와 같은 값이라 두지 않는다, 2026-11-09 상단 띠 재고) → 알림 칸 →
   테두리 하나의 편집기 영역 `equipment_master_frame` 안 두 칸(key 가로 칸 `equipment_master_split` › 왼쪽 `equipment_master_left` 표 구획(따로 테두리 없음) 또는 작은 편집표 · 오른쪽
   `equipment_master_right` 칸막이 마운트 → 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장

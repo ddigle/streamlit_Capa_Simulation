@@ -1056,12 +1056,37 @@ def _seed(key: str, value: str, options: Sequence[str]) -> None:
         st.session_state[key] = value
 
 
+# 맨 위 줄 표 고르기의 뜻과 칸의 저장 자리 — 표 고르기는 라벨 줄이 없고(접근성 이름 「표」 로만
+# 남는다) 1.63 은 그때 위젯 풍선도 숨기므로 그 곁 빈 캡션의 풍선이 말한다. 옛 설비 시나리오 알약의
+# 풍선(공통 · 시나리오 · 배치 칸이 어디에 저장되나)을 여기로 되살린다(2026-11-09 상단 띠 재고 ·
+# 사용자 지시, 설계 규칙 UI-TXT-01 · UI-TXT-02).
+HEAD_HELP: Final = (
+    "표 — 설비 마스터 · 기존 보유대수 · 비가동 일정 가운데 고칠 표를 고릅니다. 일정 칸(시나리오)은 "
+    "이 설비 시나리오에만, 나머지 칸(공통)은 모든 설비 시나리오에 함께 저장됩니다."
+)
+HEAD_LAYOUT_HELP: Final[dict[str, str]] = {
+    "overlay": (
+        "배치 칸은 이 시나리오에만(공식과 다른 것만) 저장되고 공식 배치는 바뀌지 않습니다 — 호기 "
+        "상세 「위치」 에서 공식 자리로 되돌릴 수 있습니다."
+    ),
+    "official": "배치 칸은 공식 배치(공통 대장)에 저장됩니다.",
+}
+HEAD_LOCKED_LAYOUT_HELP: Final = "배치 칸은 지금 잠겨 있습니다."
+
+
+def head_help(layout: LayoutMode) -> str:
+    """맨 위 줄 표 고르기 곁 풍선 — 표의 뜻 + 칸의 저장 자리(배치 칸은 이 회차의 배치 갈래)."""
+    return f"{HEAD_HELP} {HEAD_LAYOUT_HELP.get(str(layout), HEAD_LOCKED_LAYOUT_HELP)}"
+
+
 def _render_head(
     session: EquipmentSession,
     basis: EquipmentSaveBasis | None,
+    layout: LayoutMode,
     pending: int,
 ) -> str:
-    """맨 위 줄 — 표 고르기 · 일정 없이 엶 · 저장 전 변경 수 · 일정 잠김. 고른 표를 돌려준다."""
+    """맨 위 줄 — 표 고르기 · 그 뜻 풍선 · 일정 없이 엶 · 저장 전 변경 수 · 일정 잠김. 고른 표를
+    돌려준다."""
     _seed(TABLE_KEY, TABLE_MASTER, TABLES)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         table = st.segmented_control(
@@ -1072,10 +1097,12 @@ def _render_head(
             persist_state="session",
             label_visibility="collapsed",
         )
+        st.caption("", help=head_help(layout), width="content")
         # 설비 시나리오 알약(「설비 시나리오 · 운영 일정(공식)」)과 리비전 알약(「공통 rN · 일정
         # rM」)은 두지 않는다 — 사이드바 「설비 시나리오」 줄과 머리 띠 둘째 줄이 같은 값이다(설계
-        # 규칙 UI-TXT-07, 2026-11-09 상단 띠 재고). 어느 칸이 어디에 저장되는지는 Guide 다. 일정
-        # 없이 연 회차만 그 상태 표지를 남긴다(값이 아니라 조건이 있을 때만 서는 표지).
+        # 규칙 UI-TXT-07, 2026-11-09 상단 띠 재고). 어느 칸이 어디에 저장되는지는 바로 앞 풍선
+        # (`head_help`)이다. 일정 없이 연 회차만 그 상태 표지를 남긴다(값이 아니라 조건이 있을 때만
+        # 서는 표지).
         if session.unmerged:
             st.badge("일정 없이 엶", icon=":material/event_busy:", color="gray")
         # 수가 0 이면 알약이 없다 — 늘 서 있는 칸 안에 둔다(이 줄의 자리는 그대로).
@@ -1459,7 +1486,7 @@ def render_equipment_master_tab(
     )
     counts = change_counts(view)
     pending = counts.total + (1 if view.source.others else 0)
-    table = _render_head(session, basis, pending)
+    table = _render_head(session, basis, layout, pending)
     _render_notices(session, basis, layout_mode, floor_states, latest_snapshot)
     acks = _acks(_applied())
     toasts = grid_toasts()
