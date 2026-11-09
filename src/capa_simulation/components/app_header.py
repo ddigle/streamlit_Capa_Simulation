@@ -1,4 +1,4 @@
-# Purpose: 상단 띠에 적용 시나리오 · 진행 막대 자리를 싣고 메뉴 감춤·빈 폼 칸·인쇄 규칙을 보낸다.
+# Purpose: 상단 띠에 적용 시나리오 · 진행 막대 자리를 싣고 메뉴 감춤·빈 칸·인쇄 규칙을 보낸다.
 
 """The scenario this session is looking at, pinned to the top bar.
 
@@ -179,9 +179,17 @@ EMPTY_FORM_SLOT_SELECTOR = (
 # 않아 다시 선다. 폼 안 칸(`EMPTY_FORM_SLOT_SELECTOR`)과 같은 첫 꼴을 본문 전체에 건다. 스타일만 든
 # `st.html` 은 칸 안에서 불러도 이벤트 칸에 서므로(1.63 확인) 칸을 비지 않게 하지 않는다. `:has()`
 # 는 자식 한 겹만 본다.
+#
+# **일부러 비워 높이를 준 띄움 칸은 고르지 않는다** — key 가 `SPACER_KEY_SUFFIX` 로 끝나는 칸이다.
+# `st.container(height=…)` 는 자식이 없어도 그려지지만(1.63 `allow_empty`) DOM 의 세로 블록은
+# 똑같이 비어(`:empty`) 이 규칙에 걸린다. HOME 월 칸의 제목 띠 짝(`home_rendering` 의
+# `…_title_spacer` 셋)이 숨으면 그 아래 월 칸 그림이 라벨 칸 행보다 띠 하나씩 위로 올라붙는다.
+# 1.63 은 key 클래스(`st-key-<key>`)를 그 세로 블록에 단다. 높이를 준 빈 칸을 새로 두면 key 를 이
+# 꼬리로 끝낸다(`tests/test_app_header.py` 가 화면 코드를 훑어 본다).
+SPACER_KEY_SUFFIX = "_spacer"
 EMPTY_SLOT_SELECTOR = (
     '[data-testid="stMain"] [data-testid="stLayoutWrapper"]'
-    ':has(> [data-testid="stVerticalBlock"]:empty)'
+    f':has(> [data-testid="stVerticalBlock"]:empty:not([class*="{SPACER_KEY_SUFFIX}"]))'
 )
 
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.

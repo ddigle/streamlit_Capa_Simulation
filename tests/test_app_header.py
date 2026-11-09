@@ -1,5 +1,6 @@
 # Purpose: 상단 띠의 시나리오 두 줄·진행 막대 자리·껍데기 스타일과 사이드바 앱 정보 규칙을 고정한다.
 
+import ast
 import re
 from dataclasses import replace
 from datetime import datetime
@@ -16,6 +17,7 @@ from capa_simulation.components.app_header import (
     PAGE_TABS_SELECTOR,
     PAGE_TITLE_SELECTOR,
     SHELL_STYLE,
+    SPACER_KEY_SUFFIX,
     STATUS_SLOT_SELECTOR,
     TOOLTIP_TEXT_SELECTOR,
     _header_css,
@@ -826,12 +828,60 @@ def test_an_empty_slot_in_the_page_body_takes_no_row_gap() -> None:
     상단 띠 재고 1-1 「빈 틈」). 늘 서 있는 알림 칸 안에 빈 칸만 든 회차가 그렇다(1.63 은 자식
     블록이 하나라도 있으면 그 블록을 그리고, 빈 자식 블록은 아무것도 그리지 않는다). 고르는 것은
     본문(`stMain`) 안의 그 한 꼴뿐이다 — 사이드바 · 팝업은 제 규칙이고, 무엇이 든 칸(알림이 선
-    회차)은 고르지 않는다."""
+    회차)은 고르지 않는다. 일부러 비워 높이를 준 띄움 칸(key 꼬리 `SPACER_KEY_SUFFIX`)도 고르지
+    않는다 — HOME 월 칸의 제목 띠 짝이 숨으면 월 칸 그림이 라벨 칸 행보다 띠 하나씩 위로 붙는다."""
     assert EMPTY_SLOT_SELECTOR.startswith('[data-testid="stMain"] ')
     assert EMPTY_SLOT_SELECTOR.endswith(
-        '[data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"]:empty)'
+        '[data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"]:empty'
+        f':not([class*="{SPACER_KEY_SUFFIX}"]))'
     )
     assert "," not in EMPTY_SLOT_SELECTOR
+
+
+def _container_calls(tree: ast.AST) -> list[tuple[ast.Call, bool]]:
+    """`st.container(...)` 부름과 그것이 문장 하나로 선 부름(안에 아무것도 넣지 않는 빈 칸)인지."""
+    standalone = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+    }
+    return [
+        (node, id(node) in standalone)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "container"
+    ]
+
+
+def test_a_spacer_with_a_height_is_named_so_the_empty_slot_rule_keeps_it() -> None:
+    """높이를 준 빈 칸(문장 하나로 선 `st.container(height=…)` — 안에 아무것도 넣지 않는다)은 key 를
+    `SPACER_KEY_SUFFIX` 로 끝낸다. 본문 빈 칸 규칙(`EMPTY_SLOT_SELECTOR`)은 그 꼬리를 단 세로 블록을
+    고르지 않는다 — 꼬리가 없으면 띄움이 숨어 그 아래 행이 어긋난다(HOME 월 칸 제목 띠 짝 셋)."""
+    root = Path(__file__).resolve().parents[1]
+    files = [root / "app.py", *sorted((root / "app_pages").rglob("*.py"))]
+    files += sorted((root / "src" / "capa_simulation").rglob("*.py"))
+    spacers: list[str] = []
+    wrong: list[str] = []
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for call, standalone in _container_calls(tree):
+            keywords = {item.arg: item.value for item in call.keywords}
+            if not standalone or "height" not in keywords:
+                continue
+            key = keywords.get("key")
+            name = key.value if isinstance(key, ast.Constant) else None
+            where = f"{path.relative_to(root)}:{call.lineno}"
+            if isinstance(name, str) and name.endswith(SPACER_KEY_SUFFIX):
+                spacers.append(name)
+            else:
+                wrong.append(where)
+    assert not wrong, wrong
+    assert {
+        "plan_detail_title_spacer",
+        "key_process_title_spacer",
+        "bottleneck_title_spacer",
+    } <= set(spacers)
 
 
 def test_an_empty_slot_in_a_form_takes_no_row_gap() -> None:
