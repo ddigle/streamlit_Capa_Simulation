@@ -455,11 +455,19 @@ def _unconfirmed(app: AppTest) -> list[str]:
 def test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab() -> None:
     """일정이 지났는데 실적이 비고 상태가 계획·확정인 설비는 상태 알림(`EQ-21`)이다(2026-10-16
     사용자 결정 — 오늘 기준 고정, 저장본 기준). 자리 표지 줄은 없고, 설비 마스터 전체를 세어 Main
-    의 기준일 · 볼 내용 · 공정 고르기와 상관없이 같은 지문이다."""
+    의 기준일 · 공정 고르기와 상관없이 같은 지문이다.
+
+    호기 이름을 보이는 호기 현황(상태 분포 · 호기 목록)에서만 낸다 — Summary 첫 진입(가용대수)에
+    일정 미정 · 사용기준 밖과 함께 떠 알림창 세 칸을 채우고 「조치 필요」 알림을 밀어내지 않게
+    (2026-11-09 상단 정리 통합 — 알림 소음)."""
     app = AppTest.from_function(_render_fixture, default_timeout=30)
     app.session_state["unconfirmed_unit"] = True
     app.run()
     assert not app.exception
+    assert _unconfirmed(app) == []
+    assert states(app, "EQ-21") == []
+
+    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
     assert _unconfirmed(app) == []
     note = active_state(app, "EQ-21")
     assert note is not None
@@ -468,14 +476,21 @@ def test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab() -> None:
     assert set(rows["설비명"]) == {"EQ-LATE"} and set(rows["단계"]) == {"반입", "Qual"}
     fingerprint = note["fp"]
 
-    app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
-    assert _unconfirmed(app) == []
+    app.selectbox("equipment_explorer_unit_view").set_value("호기 목록").run()
+    listed = active_state(app, "EQ-21")
+    assert listed is not None and listed["fp"] == fingerprint
     # 기준일을 옮겨도 오늘 기준이다 — 미확인은 Main 기준일과 상관없다.
     app.session_state[AS_OF_KEY] = date(2026, 9, 2)
     app.run()
     app.multiselect(key=SMALL_PROCESS_KEY).set_value(["Other"]).run()
     again = active_state(app, "EQ-21")
     assert again is not None and again["fp"] == fingerprint
+
+    # 생애주기 일정 · 다른 볼 내용에서는 내지 않는다(닫지도 않는다 — 알림은 Alarm 에 그대로 남는다).
+    app.selectbox("equipment_explorer_unit_view").set_value("생애주기 일정").run()
+    assert states(app, "EQ-21") == []
+    app.segmented_control(key=QUESTION_KEY).set_value("가용대수").run()
+    assert states(app, "EQ-21") == []
 
 
 def test_no_unconfirmed_line_when_every_open_stage_is_still_ahead() -> None:

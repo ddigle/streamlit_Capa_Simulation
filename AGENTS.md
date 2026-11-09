@@ -3530,7 +3530,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/alerts.py` — 알림 등록부와 표지 API(2026-11-03 결정 보드 D1 ~ D6, 9장 「알림 칸」). 등록부
   `SPECS`(→ `REGISTRY`)는 `AlertSpec(코드, 단계, 갈래, 이름, 짧은 글, 전문)` 줄이고 코드는 `AB-01` 꼴 고정 id(한 번 쓴 번호는
   다시 쓰지 않는다, 겹치거나 꼴이 어긋나면 읽는 순간 멈춘다). 단계 넷(`LEVELS` — info 알림 · check 확인 필요 · action 조치
-  필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 ·
+  필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 — 넘치면 단계가
+  가장 낮은 칸부터 걷고 같은 단계면 오래된 칸, 알림 칸 JS `overflowVictim` ·
   `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING`)가 여기
   한 곳이다. API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
   `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
@@ -3663,7 +3664,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓴다)다. 가용대수의 마지막 주 대수 요약 · 호기 현황의 센 호기 수는 따로 줄을 세우지 않고 결과 제목 줄 오른쪽 끝 값
   글이다(`_heading_with_value` — 밑줄 맞춤은 공용 버전 줄과 같은 `profile_caption.HEADING_BASELINE_STYLE`, 사용자 보드 T2).
   숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
-  일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 만). 모두 설비 마스터 전체를 세어 지문이 고르기에 기대지
+  일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 호기 현황의 상태 분포 · 호기 목록만 — 호기 이름을 보이는
+  자리, Summary 첫 진입에 일정 미정 · 사용기준 밖과 함께 떠 알림창을 채우지 않게). 모두 설비 마스터 전체를 세어 지문이 고르기에 기대지
   않고, 목록은 Alarm 줄 표, 「그 화면으로」 는 설비 마스터 탭이다.
   - 판정·구간은 `simulation_cache` 내용 지문 키 래퍼로 받고 표시명·거르기는 캐시 결과의 복사본 위에서 한다.
   - `표현`(차트·표)과 결과 상자는 「본문 프래그먼트」다(`tests/test_explorer_expression_fragment.py`).

@@ -109,6 +109,8 @@ QUESTIONS = ("가용대수", "호기 현황", "비가동 호기", "Qual 일정",
 # (`_render_expressed_result`).
 QUAL_STATUS_VIEW = f"{QUAL_STATUS_COLUMN} 분포"
 EXPRESSION_VIEWS = ("주차별 추이", "상태 분포", QUAL_STATUS_VIEW, "단계별 건수")
+# 호기 이름을 보이는 호기 현황 보기 — 미확인(`EQ-21`)은 이 보기에서만 알린다.
+UNIT_NAME_VIEWS = ("상태 분포", "호기 목록")
 TRANSITION_STAGES = tuple(label for _, label in MILESTONES)
 # 구획 제목 · 값 줄의 풍선 — 판정 범위 · 동작 원리는 자리에 늘 두지 않는다.
 INACTIVE_MONTH_HELP = (
@@ -289,7 +291,9 @@ def _count_chart(frame: pd.DataFrame, column: str, colors: dict[str, str]) -> No
 # 내용 · 보기 · 공정 · 조회 조건)에 기대면 고를 때마다 다시 뜬다(AGENTS 9장 「알림 칸」). 범위는
 # 세션의 (공통 대장, 일정) 리비전 쌍, 내용은 호기 이름 목록이고 목록은 그 Alarm 줄의 표다. 고칠
 # 자리가 설비 마스터라 「그 화면으로」 는 그 탭을 연다. Main 과 Static 대비 일정이 같은 코드 · 같은
-# 범위로 낸다(미확인은 Main 만).
+# 범위로 낸다(미확인은 Main 호기 현황의 상태 분포 · 호기 목록만 — 대수와 상관없는 확인할 거리라
+# 호기 이름을 보이는 자리에서만 알린다. Summary 첫 진입(가용대수)에 일정 미정 · 사용기준 밖과 함께
+# 떠 알림창 세 칸을 채우지 않는다 — 2026-11-09 상단 정리 통합, 설계 규칙 UI-NTF-06).
 UNDATED_ALERT = "EQ-20"
 UNCONFIRMED_ALERT = "EQ-21"
 USAGE_ALERT = "EQ-22"
@@ -388,7 +392,7 @@ def report_unconfirmed_units(
     confirmation_basis: str | None = None,
 ) -> None:
     """미확인(`EQ-21`) 상태 알림 — 반입 · Qual 일정이 지났는데 실적이 비고 상태가 계획 · 확정인
-    호기. Main 이 열린 회차마다(없어도) 부른다. **오늘 기준**이라 Main 의 기준일과 상관없다
+    호기. Main 호기 현황의 상태 분포 · 호기 목록(`UNIT_NAME_VIEWS`)이 열린 회차마다(없어도) 부른다. **오늘 기준**이라 Main 의 기준일과 상관없다
     (2026-10-16 사용자 결정). `confirmation_equipment` 를 주면 그 마스터(가정 설비 시나리오일 때
     공식 스냅샷 그대로)로 고르고 이 화면의 호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다.
     `confirmation_basis` 는 그때 글 끝 꼬리표(「공식 일정 기준」)다."""
@@ -648,7 +652,8 @@ def render_equipment_explorer(
     투자구분은 그대로 카드 칸이다.
 
     일정 미정 · 미확인 · 사용기준 밖은 자리에 그리지 않고 상태 알림으로 낸다(`report_unit_notices` ·
-    `report_unconfirmed_units` — 범위 `alert_scope`, 설비 마스터 전체). `confirmation_equipment` 를
+    `report_unconfirmed_units` — 범위 `alert_scope`, 설비 마스터 전체). 미확인은 호기 이름을 보이는
+    호기 현황(상태 분포 · 호기 목록)에서만 낸다. `confirmation_equipment` 를
     주면 미확인 알림은 그 마스터(가정 설비 시나리오일 때 공식 스냅샷 그대로)로 고르고 이 화면의
     호기로 좁힌다 — 미확인은 공식 시나리오 일정 기준이다(결정). 합치지 않는다(공통은 늘 최신이라
     공식 스냅샷의 공통이 곧 지금 공통이다). `confirmation_basis` 는 그 알림 글의 꼬리표(「공식 일정
@@ -667,13 +672,6 @@ def render_equipment_explorer(
     if tab_is_hidden(owner_tab):
         return
     report_unit_notices(equipment, scope=alert_scope)
-    report_unconfirmed_units(
-        equipment,
-        today=today,
-        scope=alert_scope,
-        confirmation_equipment=confirmation_equipment,
-        confirmation_basis=confirmation_basis,
-    )
     labels = process_labels or ProcessLabels()
     in_card = conditions is not None
     # 머리 줄(볼 내용·보기·표현). `표현` 은 결과 프래그먼트가 이 줄 끝에 쓴다
@@ -737,6 +735,14 @@ def render_equipment_explorer(
                 width=200,
                 label_visibility="collapsed",
             )
+    if question == "호기 현황" and view in UNIT_NAME_VIEWS:
+        report_unconfirmed_units(
+            equipment,
+            today=today,
+            scope=alert_scope,
+            confirmation_equipment=confirmation_equipment,
+            confirmation_basis=confirmation_basis,
+        )
     settings = conditions if conditions is not None else st.container(border=True)
     with settings:
         with st.container(horizontal=not in_card, gap="small"):
