@@ -54,9 +54,9 @@ ALERT_COUNT_KEY = "admin_alert_board_count"
 
 
 class AlertCount(NamedTuple):
-    """알림 수 — 오류 · 경고 칸 수와 그 가운데 오류(계산 멈춤)가 있는가."""
+    """알림 수 — 오류 · 경고 칸 수(`total`)와 그 가운데 오류(계산 멈춤)가 있는가."""
 
-    count: int
+    total: int
     error: bool
 
 

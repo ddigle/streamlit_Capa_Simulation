@@ -134,7 +134,7 @@ alert_count = remembered_alert_count()
 mark_tab_counts(
     TABS_KEY,
     TAB_NAMES,
-    {TAB_NAMES[3]: alert_count.count if alert_count is not None else 0},
+    {TAB_NAMES[3]: alert_count.total if alert_count is not None else 0},
     color=tokens.ALERT_ERROR
     if alert_count is not None and alert_count.error
     else tokens.ALERT_CHECK,
