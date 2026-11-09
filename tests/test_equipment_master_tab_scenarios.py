@@ -988,7 +988,7 @@ def test_a_tilde_scenario_name_keeps_its_tildes_in_every_markdown_spot_of_the_ta
 ) -> None:
     """설비 시나리오 이름 「E2E~가정~A」 — 낡은 세션 경고·비가동 「선택 행 삭제」 풍선·저장 이력
     머리가 물결표를 `\\~` 로 막아 취소선(「E2E<del>가정</del>A」)이 되지 않는다. 탭 맨 위 설비
-    시나리오 알약은 사이드바 줄 · 머리 띠와 같은 값이라 걷었다(2026-11-09 상단 띠 재고)."""
+    시나리오 알약은 사이드바 줄 · 머리 띠와 같은 값이라 두지 않는다(2026-11-09 상단 띠 재고)."""
     repository = _seeded(tmp_path)
     setup = _clone(repository, "E2E~가정~A").equipment_scenario_id
     pinned = _scenario(repository, setup).latest_schedule_revision_id

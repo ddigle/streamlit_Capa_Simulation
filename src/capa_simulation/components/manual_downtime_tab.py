@@ -269,8 +269,8 @@ def render_manual_downtime_tab(
 
 
 def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
-    """제목 줄 하나 — 제목 · 공용 버전 줄(2026-11-08 그림 메모 g18). 제목 아래 서던 열 · 빈칸 · 공용
-    한 줄은 제목 풍선으로 옮겼다(2026-11-09 상단 띠 재고 — 페이지 상단 문구 최소화, 설계 규칙
+    """제목 줄 하나 — 제목 · 공용 버전 줄(2026-11-08 그림 메모 g18). 열 · 빈칸 · 공용의 뜻은 제목
+    아래 줄이 아니라 제목 풍선이다(2026-11-09 상단 띠 재고 — 페이지 상단 문구 최소화, 설계 규칙
     UI-TXT-01 · UI-TXT-02). 조회기간 밖에 저장된 칸은 표에 보이지 않는 저장분이라 있을 때만 버전
     줄에 표지 한 마디로 둔다(UI-TXT-04 · UI-TXT-08)."""
     period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"

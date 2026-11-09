@@ -500,9 +500,9 @@ def test_the_month_columns_are_numbers_with_two_decimals(tmp_path: Path) -> None
 def test_the_heading_row_carries_the_column_note_and_the_form_has_no_label_row(
     tmp_path: Path,
 ) -> None:
-    """제목 아래 서던 「열 · 생산월 … · 빈칸 = 0 · 모든 설비 시나리오 공용」 줄은 제목 풍선으로
-    옮겼고, 조회기간 밖에 저장된 칸은 있을 때만 버전 줄 표지다. 저장자 · 변경 메모 칸은 라벨 줄을
-    걷고 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 — 페이지 상단 문구 · 여백 최소화)."""
+    """「열 · 생산월 … · 빈칸 = 0 · 모든 설비 시나리오 공용」 은 제목 아래 줄이 아니라 제목
+    풍선이고, 조회기간 밖에 저장된 칸은 있을 때만 버전 줄 표지다. 저장자 · 변경 메모 칸은 라벨 줄이
+    없고 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 — 페이지 상단 문구 · 여백 최소화)."""
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
     assert not any("열 · 생산월" in item.value for item in app.caption)

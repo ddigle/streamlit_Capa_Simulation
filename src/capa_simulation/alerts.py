@@ -326,9 +326,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "CS-04", "check", "state", "제약 시뮬레이션 — 첫날이 지난 개조 · 신규 대기(제때 시작한 값)"
     ),
-    # 가용설비 현황 Summary 숫자 밑에 서던 표지 줄을 상태 알림으로(페이지 상단 문구 최소화 —
-    # 2026-11-09 상단 띠 재고, 설계 규칙 UI-TXT-04 · UI-NTF-02). Main · Static 대비 일정이 같은
-    # 코드 · 범위다.
+    # 가용설비 현황 Summary 숫자 곁 조건 — 자리에 표지 줄을 세우지 않는 상태 알림(페이지 상단
+    # 문구 최소화 — 2026-11-09 상단 띠 재고, 설계 규칙 UI-TXT-04 · UI-NTF-02). Main · Static 대비
+    # 일정이 같은 코드 · 범위다.
     AlertSpec(
         "EQ-20", "check", "state", "가용설비 Summary — 반입 · Qual 일정이 빈 호기(일정 미정)"
     ),

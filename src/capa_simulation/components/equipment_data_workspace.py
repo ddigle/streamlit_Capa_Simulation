@@ -301,7 +301,7 @@ PENDING_RENAMES_KEY = "equipment_pending_unit_renames_v1"
 # 그려지기 **전**에만 고칠 수 있어(위젯 key) 여기 모았다가 `render_small_editor` 가 필터를 그리기
 # 전에 얹는다.
 FOLLOWED_FILTERS_KEY = "equipment_workspace_followed_filters_v1"
-# 비가동 일정 작은 편집표 보기 설정의 key 접두어(`render_table_view_controls`).
+# 비가동 일정 작은 편집표 「표 보기」 팝오버의 key 접두어(`render_table_view_controls`).
 DOWNTIME_VIEW_PREFIX = "equipment_downtime_view"
 # 「이름 바꿈」 목록 펼침(설비 마스터 탭 알림 칸).
 NAME_CHANGES_EXPANDER_KEY = "equipment_workspace_name_changes_v1"

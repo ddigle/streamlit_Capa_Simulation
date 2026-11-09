@@ -1,6 +1,6 @@
 # Purpose: 변경 메모 · 저장자 칸이 이름 줄 없이 칸 안 안내 글로 이름을 말하는지 본다.
 
-"""변경 메모 · 저장자 칸 그물(설계 규칙 UI-CON-03 · PRC-01 — 2026-11-09 상단 띠 재고 · 사용자 지시).
+"""변경 메모 · 저장자 칸 그물(설계 규칙 UI-TXT-01 예외 · PRC-01 — 2026-11-09 상단 띠 재고).
 
 저장 줄 · 저장 칸의 「변경 메모」 · 「저장자(선택)」 칸은 이름 줄(24.5px)을 걷고(`label_visibility=
 "collapsed"` — 접근성 이름으로 남는다) 칸 안 흐린 글 「변경 메모 · 예: …」 · 「저장자(선택) · 예:
@@ -11,7 +11,10 @@ SAVED_BY_PLACEHOLDER`). 화면 코드에서 라벨이 그 이름인 `text_input`
 남긴 자리(`KEPT` — 까닭과 함께, 목록에 있어도 걷혀 있으면 통과한다):
 
 - 사이드바 시나리오 팝업 「신규 리비전 저장」 폼의 변경 메모 — 이름 칸 「새 리비전명」 과 세로로
-  짝을 이룬 팝업 폼이라 한 칸만 걷으면 꼴이 갈린다(페이지 상단 띠가 아니다).
+  짝을 이룬 팝업 폼이라 한 칸만 걷으면 꼴이 갈린다(페이지 상단 띠가 아니다). 따라하기 가이드 원고
+  `guides/howto/lob/plan.json` 이 이 칸을 보이는 라벨 「변경 메모」 로 찾아 채운다(`fill label` ·
+  `named:WIDGET(변경 메모)` — `scripts/page_guide_helpers.js` 는 보이는 `stWidgetLabel` 글로
+  찾는다) — 걷으려면 원고의 찾기를 aria-label · key 로 바꾸는 일을 같은 변경에 둔다.
 - 시나리오 관리 설비 시나리오 탭 확인 창 둘(되돌리기 · 배치 차이 지우기)의 저장자 — 리비전명 ·
   「변경 메모(선택)」 칸과 세로 짝인 확인 창이다(그 화면 묶음 몫).
 - Admin 표시순서 · Proc Rename 의 변경 메모 — 그 화면 묶음이 같은 꼴(「변경 메모 · 예: …」)로
@@ -32,7 +35,8 @@ from capa_simulation.components.saved_note import NOTE_LABEL, note_placeholder
 
 KEPT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (
-        "팝업 폼 — 「새 리비전명」 과 세로 짝"
+        "팝업 폼 — 「새 리비전명」 과 세로 짝 · 따라하기 가이드 lob 원고가 보이는 라벨로 채움"
+        "(걷으려면 plan.json · page_guide_helpers.js 를 함께)"
     ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_restore"): (
         "설비 시나리오 확인 창 — 리비전명 · 메모 칸과 세로 짝"
@@ -110,3 +114,20 @@ def test_the_kept_sites_still_exist() -> None:
     """남긴 자리가 옮겨지면 목록도 고친다(목록에 있어도 걷혀 있으면 통과)."""
     seen = {(path, outer) for path, outer, _, _ in _sites()}
     assert set(KEPT) <= seen, set(KEPT) - seen
+
+
+def test_the_memo_the_guide_fills_by_its_label_keeps_the_label_row() -> None:
+    """따라하기 가이드 lob 원고가 보이는 라벨 「변경 메모」 로 찾아 채우는 칸(사이드바 「신규 리비전
+    저장」 팝업)은 이름 줄을 남긴다 — 걷으면 가이드 생성이 그 칸을 찾지 못한다. 원고가 그 찾기를
+    다른 것(aria-label · key)으로 바꾸면 이 시험도 함께 고친다."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    plan = (root / "src/capa_simulation/guides/howto/lob/plan.json").read_text(encoding="utf-8")
+    assert f'"label": "{NOTE_LABEL}"' in plan
+    site = ("src/capa_simulation/components/scenario_status.py", "_render_revision_save")
+    calls = [call for path, outer, call, _ in _sites() if (path, outer) == site]
+    assert calls
+    for call in calls:
+        hidden = _keyword(call, "label_visibility")
+        assert not (isinstance(hidden, ast.Constant) and hidden.value == "collapsed")
