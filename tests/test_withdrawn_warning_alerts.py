@@ -516,7 +516,10 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
-        what="가용설비 현황 Main 가용대수 · 호기 현황 숫자 밑 「일정 미정 N대 (…)」 줄",
+        what=(
+            "가용설비 현황 Main 가용대수 · 호기 현황 숫자 밑과 Static 대비 일정 세 결과 위의"
+            " 「일정 미정 N대 (…)」 줄"
+        ),
         why="2026-11-09 상단 띠 재고 · UI-TXT-04 · UI-NTF-02",
         file=_EXPLORER,
         function="report_unit_notices",
@@ -528,7 +531,10 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
-        what="가용설비 현황 Main 가용대수 숫자 밑 「사용기준 HBM·EDP 밖 N대 제외」 줄",
+        what=(
+            "가용설비 현황 Main 가용대수 숫자 밑과 Static 대비 일정 세 결과 위의"
+            " 「사용기준 HBM·EDP 밖 N대 제외」 줄"
+        ),
         why="2026-11-09 상단 띠 재고 · UI-TXT-04 · UI-NTF-02",
         file=_EXPLORER,
         function="report_unit_notices",
@@ -547,6 +553,21 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         code="EQ-21",
         route="state",
         test="tests/test_equipment_explorer.py::test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab",
+    ),
+    Withdrawn(
+        what=(
+            "가용설비 현황 Static 대비 일정 확보율 교차검증 위"
+            " 「일정기준가용대수는 입력 비가동 반영(…)」 줄"
+        ),
+        why="2026-11-09 상단 띠 재고 · UI-TXT-04 · UI-NTF-02",
+        file="src/capa_simulation/components/availability_gap_panel.py",
+        function="_report_manual_cells",
+        code="EQ-23",
+        route="state",
+        test=(
+            "tests/test_manual_downtime_static_gap.py"
+            "::test_the_cross_check_numerator_takes_the_input_out"
+        ),
     ),
 )
 

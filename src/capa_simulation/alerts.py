@@ -334,6 +334,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     ),
     AlertSpec("EQ-21", "check", "state", "가용설비 Main — 일정이 지났는데 실적이 빈 호기(미확인)"),
     AlertSpec("EQ-22", "info", "state", "가용설비 Summary — 사용기준이 HBM · EDP 밖이라 뺀 호기"),
+    AlertSpec("EQ-23", "info", "state", "Static 대비 일정 — 입력 비가동을 일정기준 가용에서 뺌"),
 )
 
 

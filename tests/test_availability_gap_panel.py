@@ -8,14 +8,13 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, data_error_texts, states
+from alert_marks import active_state, data_error_texts, note_table, states, table_frame
 from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.availability_gap_panel import (
     CROSS_CHECK_FALLBACK_HELP,
     DETAIL_CATEGORY_KEY,
-    DETAIL_MODE_HELP,
     DETAIL_MODE_KEY,
     GAP_SIGN_HELP,
     PROCESS_FILTER_KEY,
@@ -554,8 +553,13 @@ def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
 
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
-    captions = [item for item in app.caption if "Static 값으로 채운 공정 1개" in item.value]
-    assert len(captions) == 1 and captions[0].proto.help == CROSS_CHECK_FALLBACK_HELP
+    # Static 값으로 채운 공정은 자리 줄이 아니라 한쪽 공정 알림(`EQ-06`)의 전문이 말한다(2026-11-09
+    # 상단 띠 재고 — 같은 알림이 있어 자리만 걷음).
+    assert not any("Static 값으로 채운" in item.value for item in app.caption)
+    unmatched = active_state(app, "EQ-06")
+    assert unmatched is not None
+    assert "Static 값으로 채워 비교 표에서 뺍니다" in str(unmatched["full"])
+    assert CROSS_CHECK_FALLBACK_HELP in str(unmatched["full"])
     # 기준정보에 없는 공정 수는 위 알림이 말한다 — 「위 경고를 봅니다」 길 안내 캡션은 없다.
     assert not any("위 경고" in item.value for item in app.caption)
     assert "Probe" in _alerts(app)
@@ -672,8 +676,9 @@ def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
     assert app.segmented_control(key=DETAIL_MODE_KEY).value == "시트"
     available = _value(app, ROW_SCHEDULE_AVAILABLE)
     # 사용법 글(「상태별 대수는 호기 목록으로」 · 「칸을 누르면 …」)은 자리에 늘 두지 않는다 —
-    # `표시` 풍선과 칸 풍선 · Guide 가 말한다.
-    assert app.segmented_control(key=DETAIL_MODE_KEY).help == DETAIL_MODE_HELP
+    # 칸 풍선 · Guide 가 말한다. `표시` 는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고).
+    detail = app.segmented_control(key=DETAIL_MODE_KEY)
+    assert detail.proto.label_visibility.value == detail.proto.label_visibility.COLLAPSED
     sheet_captions = " ".join(item.value for item in app.caption)
     assert "상태별 대수" not in sheet_captions and "칸을 누르면 그 달" not in sheet_captions
 
@@ -858,7 +863,7 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
     captions = " ".join(item.value for item in app.caption)
-    assert "실제로 비교한 공정 2개" in captions
+    assert "실제로 비교한 공정" not in captions
     # 기준정보에 없는 공정의 수 · 이름은 상태 알림(`EQ-06`)만 말한다 — 자리 캡션은 없다.
     assert "기준정보에 없는 공정 1개" in _alerts(app)
     assert "기준정보(Static)에 없는 공정" not in captions
@@ -881,52 +886,67 @@ def _undated_captions(app: AppTest) -> list[str]:
     return [caption.value for caption in app.caption if "일정 미정" in caption.value]
 
 
-def test_undated_units_are_named_in_the_scope_the_counts_use() -> None:
-    """날짜가 빈 신규 호기는 Dynamic 에 들지 않는다 — 둘러싼 대수와 같은 범위로 한 줄 알린다."""
+def test_undated_units_are_a_state_alert_in_every_view() -> None:
+    """날짜가 빈 신규 호기는 Dynamic 에 들지 않는다 — 자리 줄이 아니라 Main 과 같은 상태 알림
+    (`EQ-20`)이다(2026-11-09 상단 띠 재고). 설비 마스터 전체를 세어 공정 · 조회 결과 고르기에 지문이
+    기대지 않는다."""
     app = _run(undated_units=True)
 
-    # 자리에는 표지만, 뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
-    assert _undated_captions(app) == [
-        ":material/event_busy: 일정 미정 2대 (반입 미정 1 · Qual 미정 1)"
-    ]
-    (line,) = [item for item in app.caption if "일정 미정" in item.value]
-    assert line.proto.help == UNDATED_HELP
+    assert _undated_captions(app) == []
+    note = active_state(app, "EQ-20")
+    assert note is not None
+    assert str(note["short"]).startswith("일정 미정 2대 (반입 미정 1 · Qual 미정 1)")
+    assert UNDATED_HELP in str(note["full"])
+    fingerprint = note["fp"]
 
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
-    assert [text.split(" — ")[0] for text in _undated_captions(app)] == [
-        ":material/event_busy: 일정 미정 1대 (반입 미정 1)"
-    ]
-
     for view in ("분류별 내역", "확보율 교차검증"):
         _select_view(app, view)
-        assert len(_undated_captions(app)) == 1, view
+        assert _undated_captions(app) == [], view
+        again = active_state(app, "EQ-20")
+        assert again is not None and again["fp"] == fingerprint, view
 
 
 def _usage_captions(app: AppTest) -> list[str]:
     return [caption.value for caption in app.caption if "사용기준 HBM" in caption.value]
 
 
-def test_non_hbm_units_are_named_in_every_view_in_the_scope_the_counts_use() -> None:
-    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠진다 — 세 결과 모두 같은 범위로 한 줄
-    알린다."""
-    assert _usage_captions(_run(undated_units=True)) == []
+def test_non_hbm_units_are_a_state_alert_in_every_view() -> None:
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠진다 — 자리 줄이 아니라 Main 과 같은 상태
+    알림(`EQ-22`)이다(2026-11-09 상단 띠 재고)."""
+    plain = _run(undated_units=True)
+    assert active_state(plain, "EQ-22") is None and states(plain, "EQ-22")
     app = _run(undated_units=True, non_hbm_units=True)
 
-    assert _usage_captions(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 2대 제외"]
-    (line,) = [item for item in app.caption if "사용기준 HBM" in item.value]
-    assert line.proto.help == (
-        "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 가용대수에서 뺐습니다 — 배치·호기 "
-        "목록에는 그대로 있습니다."
-    )
+    assert _usage_captions(app) == []
+    note = active_state(app, "EQ-22")
+    assert note is not None
+    assert str(note["short"]).startswith("사용기준 HBM·EDP 밖 2대 제외")
+    assert len(table_frame(note_table(note, "사용기준 밖 호기"))) == 2
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
-    assert _usage_captions(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 1대 제외"]
     for view in ("분류별 내역", "확보율 교차검증"):
         _select_view(app, view)
-        assert len(_usage_captions(app)) == 1, view
+        assert _usage_captions(app) == [], view
+        assert active_state(app, "EQ-22") is not None, view
 
 
 def test_no_undated_line_without_undated_units() -> None:
-    assert _undated_captions(_run()) == []
+    app = _run()
+    assert _undated_captions(app) == []
+    assert active_state(app, "EQ-20") is None
+
+
+def test_the_panel_head_has_no_section_title_or_label_rows() -> None:
+    """탭 머리의 구획 제목(「Static · 설비 일정 기준 가용대수 비교」 — 안쪽 탭 이름과 같은 말)과
+    「확보율 교차검증」 제목(고른 전환 값과 같은 말)은 두지 않고, 「조회 결과」 · 「표시」 전환
+    단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고 — 설계 규칙 UI-TXT-07)."""
+    app = _run()
+    result = app.segmented_control(key=RESULT_VIEW_KEY)
+    assert result.proto.label_visibility.value == result.proto.label_visibility.COLLAPSED
+    heads = " ".join(item.value for item in app.markdown)
+    assert "Static · 설비 일정 기준 가용대수 비교" not in heads
+    _select_view(app, "확보율 교차검증")
+    assert not any("확보율 교차검증" in item.value for item in app.markdown)
 
 
 # ------------------------------------------------------------------ 공정 표시명(Proc Rename)
