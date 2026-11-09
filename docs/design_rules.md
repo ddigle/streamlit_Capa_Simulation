@@ -177,7 +177,7 @@
 
 - 수준: MUST · 확정
 - 범위: 머리 띠 · 툴바 · 변경 판 · 알림 짧은 글
-- 예외: 없음
+- 예외: 공용 공정 칩 · 합성 샘플 표지(2026-11-09 보드 C1 (라) · T8) — 한 화면의 새 상태가 아니라 여러 화면에 걸친 공정 거름 · 원천 미연결 표지라 변경 칩 밖에 제 칩 · 표지로 선다. 글은 같은 짧은 글 표(`alert_center.TEXT`)에서 꺼내고, 쓸 것이 없으면 숨는다(UI-LAY-05).
 - 판단: 이 글은 짧은 글 표에 있나? 이 상태 때문에 머리에 새 칩 · 새 줄이 생기나?
 - 그물: `tests/test_alerts.py::test_short_text_folds_lines_and_ellipsizes_past_the_limit` · `tests/test_alert_center_assets.py`(JS 한도 = 등록부 상수)
 - 그물 후보: 변경 판 짧은 글 표의 글자 수 상한 시험
@@ -389,13 +389,13 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 #### UI-LAY-04 · 여러 화면에 걸친 상태는 머리 한 곳
 
-여러 화면에 걸친 상태(적용 · 저장하지 않은 편집, 가정 사용 중)는 화면마다 흩지 않고 머리 한 곳(변경 칩 + 판)에 모으고, 있을 때만 세운다. 사이드바 조건 패널에도 같은 말을 따로 세우지 않는다 — 버려지는 순간은 그때 뜨는 팝업이 묻는다(6-9 side-pending).
+여러 화면에 걸친 상태(적용 · 저장하지 않은 편집, 가정 사용 중, 공용 공정 거름)는 화면마다 흩지 않고 머리 한 곳에 모으고(변경은 변경 칩 + 판, 공용 공정 거름은 공정 칩 + 판 — 2026-11-09 보드 C1 (라)), 있을 때만 세운다. 사이드바 조건 패널에도 같은 말을 따로 세우지 않는다 — 버려지는 순간은 그때 뜨는 팝업이 묻는다(6-9 side-pending).
 
 - 수준: MUST · 확정
-- 범위: 머리 띠 · 툴바 · 모든 화면의 편집 · 미저장 · 가정 상태
+- 범위: 머리 띠 · 툴바 · 모든 화면의 편집 · 미저장 · 가정 상태 · 공용 공정 거름
 - 예외: 없음
 - 판단: 이 상태를 다른 화면에 가서도 알아야 하나? 그렇다면 머리.
-- 그물: `tests/test_pending_edit_registry.py` · `tests/test_page_tabs.py` · `scripts/check_deploy_screens.py` toolbar · alarm_button
+- 그물: `tests/test_pending_edit_registry.py` · `tests/test_page_tabs.py` · `tests/test_alert_center.py`(머리 공정 칩 data) · `scripts/check_deploy_screens.py` toolbar · alarm_button
 - 그물 후보: 미저장 · 가정 상태 ↔ pending_edit_registry
 - 근거: 검수 home-06(2026-11-02), 알림 결정 보드 D5(2026-11-03) — 「변경사항들을 헤더에서 한눈에 볼수있게 하는게 좋을 것 같음」, 이번 배포 전후 보드 q-unit-change(2026-11-06), 전 화면 점검 side-pending(2026-11-07)
 - 지금 값: 없음

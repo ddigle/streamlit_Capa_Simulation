@@ -13,8 +13,8 @@
 **`공정` 칸은 부르는 쪽이 `shared_screen` 을 줄 때만 공용 공정 칸이 된다**(2026-11-08 사용자 답 P1 —
 공정 공유 1차). 그때 `공정` 은 카드 안 상자가 아니라 사이드바 조회 조건 패널의 값 칸 + 팝업
 (`process_field.render_process_filter`)이고, 거르는 값은 화면들이 같이 쓰는 공용 값이다
-(`shared_process.applied`). 「필터 초기화」 는 카드 안 칸만 지운다 — 공정은 값 칸 · 본문 칩으로
-지운다.
+(`shared_process.applied`). 「필터 초기화」 는 카드 안 칸만 지운다 — 공정은 값 칸 팝업 · 머리 띠
+공정 칩 판으로 지운다.
 """
 
 from __future__ import annotations
