@@ -837,8 +837,8 @@ def render_equipment_explorer(
                     )
                     filters.append((column, values))
     # 무엇으로 걸렀는지는 본문에도 한 줄 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다. 공정은
-    # 고른 상자와 같은 글자(표시명)로 적는다. 공용 공정 칸이면 공정은 본문 위 칩이 이미 말하므로 이
-    # 줄에 거듭 적지 않는다(설계 규칙 UI-TXT-07).
+    # 고른 상자와 같은 글자(표시명)로 적는다. 공용 공정 칸이면 공정은 머리 띠 공정 칩이 이미 말하므로
+    # 이 줄에 거듭 적지 않는다(설계 규칙 UI-TXT-07).
     active_filters = [
         f"{name}: {literal_names(_shown_values(name, values, process_format))}"
         for name, values in filters
