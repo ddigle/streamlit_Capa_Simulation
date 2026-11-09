@@ -433,6 +433,12 @@ function revealScroll(left, right, scrollLeft, clientWidth, edge) {
 function wipTight(scrollWidth, clientWidth) {
   return scrollWidth - clientWidth > 0.5
 }
+// 「구현중」 표지를 점으로 줄일까 — 보이는 탭 가운데 하나라도 이름이 말줄임되면(`labels` — 탭마다 [scrollWidth, clientWidth])
+// 줄인다. 표지를 단 탭의 이름만 보면 안 된다 — 지금 탭은 줄지 않아(CSS `.is-active`) 제 표지 폭을 이웃 탭(닫기 여유가 없는 고정
+// 탭 HOME 등)에 떠넘긴다(1600px · 탭 10개 · 지금 탭이 구현 중이면 「H…」).
+function wipShrink(labels) {
+  return labels.some(([scrollWidth, clientWidth]) => wipTight(scrollWidth, clientWidth))
+}
 // </tabs-wip>
 
 // <tabs-focus>
@@ -598,17 +604,20 @@ function paintProcessMark(item, proc) {
   setText(mark.lastChild, title ? ` ${title}` : '')
 }
 
-// 「구현중」 표지 맞추기 — 탭이 좁아 이름이 말줄임되면 글 표지를 점으로 줄인다(`is-wip-tight` — 풍선 · 읽기 도구 글은 남는다,
-// UI-ACC-02). 늘 글 표지로 되돌린 뒤 한 번에 재고 정한다 — 점으로 줄여 넓어진 자리로 다시 재면 넓히고 줄이기를 오락가락한다. 재기를
-// 모두 마친 뒤 쓰므로 그리기 계산은 한 번이다.
+// 「구현중」 표지 맞추기 — 보이는 탭 어느 하나라도 이름이 말줄임되면 모든 글 표지를 점으로 줄인다(`is-wip-tight` — 풍선 · 읽기
+// 도구 글은 남는다, UI-ACC-02, `wipShrink`). 늘 글 표지로 되돌린 뒤 한 번에 재고 정한다 — 점으로 줄여 넓어진 자리로 다시 재면
+// 넓히고 줄이기를 오락가락한다. 재기를 모두 마친 뒤 쓰므로 그리기 계산은 한 번이다.
 function fitWip(items) {
-  const marked = []
+  const shown = []
   for (const item of items) {
     item.classList.remove('is-wip-tight')
-    if (!item.hidden && item.classList.contains('is-wip')) marked.push(item)
+    if (!item.hidden) shown.push(item)
   }
-  const tight = marked.filter((item) => wipTight(item.__parts.label.scrollWidth, item.__parts.label.clientWidth))
-  for (const item of tight) item.classList.add('is-wip-tight')
+  const marked = shown.filter((item) => item.classList.contains('is-wip'))
+  if (!marked.length) return
+  const labels = shown.map((item) => [item.__parts.label.scrollWidth, item.__parts.label.clientWidth])
+  if (!wipShrink(labels)) return
+  for (const item of marked) item.classList.add('is-wip-tight')
 }
 
 function setAttr(element, name, value) {

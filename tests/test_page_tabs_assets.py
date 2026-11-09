@@ -104,6 +104,29 @@ def test_the_implementing_mark_shrinks_to_a_ring_when_the_name_is_cut() -> None:
     assert out == [True, False, False]
 
 
+def test_a_cut_pinned_tab_name_shrinks_every_implementing_mark() -> None:
+    """고정 탭 이름이 잘리면 「구현중」 표지(지금 탭 포함)를 점으로 줄인다 — 표지를 단 탭 제 이름만
+    보면, 줄지 않는 지금 탭(`.is-active`)의 글 표지 폭을 닫기 여유가 없는 고정 탭 HOME 이 떠안아
+    1600px · 탭 10개 · 지금 탭이 구현 중일 때 「H…」 로 잘렸다(통합 재측정). 보이는 탭 어느 하나라도
+    말줄임이면 줄이고, 표지가 없으면 아무것도 하지 않는다."""
+    fit = JS[JS.index("function fitWip(") :]
+    fit = fit[: fit.index("\n}\n")]
+    assert "wipShrink(labels)" in fit
+    assert "item.__parts.label.scrollWidth" in fit and "if (!item.hidden) shown.push(item)" in fit
+    assert fit.index("const labels = shown.map(") < fit.index("for (const item of marked)")
+    out = _node(
+        """
+console.log(JSON.stringify([
+  wipShrink([[31, 22], [80, 80], [128, 128]]),
+  wipShrink([[31, 31], [80, 80]]),
+  wipShrink([[31, 30.6], [80, 80]]),
+  wipShrink([]),
+]))
+"""
+    )
+    assert out == [True, False, False, False]
+
+
 def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     """고정·차례·닫기는 누르자마자 서버 규칙(`<tabs-order>`)으로 그리고 그
     차례(`order`)·고정(`pins`)을 싣는다 — 서버(`page_tabs._settle_drawn`)는 같은 차례면 페이지를

@@ -250,8 +250,8 @@
   display: inline-block;
 }
 
-/* 탭이 좁아 이름이 말줄임되면 「구현중」 을 흐린 고리 점으로 줄인다(JS `fitWip`) — 이름 자리를 먼저 지킨다. 글은 크기 0 으로 남아
-   읽기 도구가 읽고 풍선(`title`)도 그대로다. 주황 채운 점(적용 전 편집)과 갈린다. */
+/* 탭 줄이 좁아 어느 탭이든 이름이 말줄임되면 「구현중」 을 흐린 고리 점으로 줄인다(JS `fitWip`) — 이름 자리를 먼저 지킨다. 글은
+   크기 0 으로 남아 읽기 도구가 읽고 풍선(`title`)도 그대로다. 주황 채운 점(적용 전 편집)과 갈린다. */
 .capa-tabs-item.is-wip-tight .capa-tabs-wip {
   box-sizing: border-box;
   width: 0.5rem;
