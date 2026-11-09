@@ -368,9 +368,11 @@ def test_clone_names_every_missing_required_field_at_once(tmp_path: Path) -> Non
     }
     assert helps["원천 시뮬레이션 코드"] == CLONE_SOURCE_NOTE
     assert helps["원천 시뮬레이션명"] == CLONE_SOURCE_NOTE
-    # 폼 위 한 줄은 값(복제 대상)과 표지만이다.
+    # 복제 대상은 값(복제 대상)과 표지만이고, 폼 위에 따로 선 줄이 아니라 「시나리오 작업」 전환
+    # 단추 줄 오른쪽 끝이다(2026-11-09 사용자 보드 T2).
     (target,) = [str(item.value) for item in app.caption if str(item.value).startswith("복제 대상")]
     assert "복제합니다" not in target, target
+    assert _same_row_as_the_mode_switch(app, target)
     assert _clone_inputs(app)["원천 시뮬레이션 코드"] == ""
     assert _clone_inputs(app)["원천 시뮬레이션명"] == ""
     for widget in app.text_input:
@@ -2731,3 +2733,21 @@ def test_the_panels_draw_one_mount_at_a_time_and_the_save_button_stays_open(
     # 표 안 단추가 된 이동 단추는 위젯으로 서지 않는다.
     keys = {button.key for button in app.button}
     assert not keys & {"scenario_list_up", "scenario_list_down", "scenario_list_top"}
+
+
+def _same_row_as_the_mode_switch(app: AppTest, caption: str) -> bool:
+    """`caption` 이 「시나리오 작업」 전환 단추(`MODE_KEY`)와 같은 가로 줄(그 줄 안 칸)에 서는가."""
+    found: dict[str, tuple[int, ...]] = {}
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "type", "") == "caption" and str(child.value) == caption:
+                found["caption"] = here
+            if getattr(child, "key", None) == MODE_KEY:
+                found["switch"] = here
+            walk(child, here)
+
+    walk(app.main, ())
+    row = found["switch"][:-1]
+    return found["caption"][: len(row)] == row

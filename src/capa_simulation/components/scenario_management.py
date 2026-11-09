@@ -387,6 +387,12 @@ def render_scenario_management(
                 st.badge(
                     f"저장 전 변경 {view.pending:,}건", icon=":material/edit_note:", color="orange"
                 )
+        # 복제할 때 무엇을 복제하는지는 이 줄 오른쪽 끝 작은 값 글이다 — 폼 위에 따로 줄을 세우지
+        # 않는다(2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 · UI-LAY-11). 다른 작업에서는 칸이
+        # 비어 그려지지 않는다.
+        with st.container(horizontal=True, horizontal_alignment="right"):
+            if mode == CLONE_MODE:
+                st.caption(clone_target_caption(), width="content")
     # 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다(2026-10-22 사용자 결정 S8). 그리로 가는 길
     # 안내 글은 늘 띄워 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
     # 월 머지·연도 Shift 가 메모한 원본(리비전 하나 크기의 살아 있는 표)은 그 모드에서만 둔다.
@@ -2000,10 +2006,10 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             text="신규 시나리오의 기준 표시순서를 준비하지 못했습니다",
         )
         return
-    # 무엇을 복제하는지 폼 위에 값 줄로 적는다. 원천 코드·이름 칸의 기본값은 비워 둔다 — 원천
-    # 시뮬레이션명은 공식버전 자동 갱신이 주차(W##)를 읽는 두 번째 근거라, 복제본이 원본의 이름을
-    # 물려받으면 그 복제를 공식으로 지정했을 때 기준 주차가 달라진다. 그 까닭은 두 칸 풍선이다.
-    st.caption(clone_target_caption())
+    # 무엇을 복제하는지는 「시나리오 작업」 줄 오른쪽 끝 값 글이다(`clone_target_caption`). 원천
+    # 코드·이름 칸의 기본값은 비워 둔다 — 원천 시뮬레이션명은 공식버전 자동 갱신이 주차(W##)를 읽는
+    # 두 번째 근거라, 복제본이 원본의 이름을 물려받으면 그 복제를 공식으로 지정했을 때 기준 주차가
+    # 달라진다. 그 까닭은 두 칸 풍선이다.
     # 칸 key 의 세대가 저장 쓰기의 세대이기도 하다(`write_once_value`).
     create_generation = generation(CLONE_FORM_GENERATION_KEY)
     with st.form("scenario_create_form"):
@@ -2134,8 +2140,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
 
 
 def clone_target_caption() -> str:
-    """복제 폼 위 값 줄 — 「복제 대상 · 「이름」 rN」, 저장하지 않은 편집이 함께 들어가면 그 표지
-    배지(「미저장 편집 포함」)를 붙인다(설계 규칙 UI-TXT-04 — 값 · 표지만)."""
+    """복제 작업의 값 글 — 「복제 대상 · 「이름」 rN」, 저장하지 않은 편집이 함께 들어가면 그 표지
+    배지(「미저장 편집 포함」)를 붙인다(설계 규칙 UI-TXT-04 — 값 · 표지만). 「시나리오 작업」 전환
+    단추 줄 오른쪽 끝에 선다."""
     label = active_scenario_label()
     target = (
         "올라와 있는 편집본"
