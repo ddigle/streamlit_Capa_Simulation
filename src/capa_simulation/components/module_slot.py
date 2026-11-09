@@ -31,7 +31,7 @@ from capa_simulation.design import tokens
 MODULE_SLOT_TITLE = "모듈 화면 자리"
 MODULE_SLOT_TEXT = "모듈에 스크립트를 넣으면 이 자리에 표시됩니다."
 # 머리말 아래를 거의 채우는 높이 — 창이 낮아도 360px 은 선다.
-MODULE_SLOT_MIN_HEIGHT = "max(360px, calc(100vh - 306px))"
+MODULE_SLOT_MIN_HEIGHT = "max(360px, calc(100vh - 270px))"
 
 
 def slot_html(

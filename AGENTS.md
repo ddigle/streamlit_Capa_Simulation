@@ -518,7 +518,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 이행 현황판 숫자는 다음 판이다. 넣을 때는 `PageSpec` 의 `reads_*`·`uses_equipment_db` 와 `test_app_navigation.py` 의
     설비 DB 단언부터 본다.
 - `app_pages/production_progress.py` — `생산 진도` 머리(실행 관리와 Dynamic Capa 사이 그룹, 2026-11-02 사용자 요청). 보일 내용은
-  모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 306px) — 아래 끝을 지킨다)(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
+  모듈이 맡아(2026-11-03 사용자) 머리말(배지 줄 없음 — 2026-11-09 보드 T8) 아래에 모듈 화면이 들어올 넓은 점선 자리(높이 max(360px, 100vh − 270px) — 아래 끝을 지킨다)(「모듈 화면 자리 — 모듈에 스크립트를 넣으면 이
   자리에 표시됩니다」 — `st.html` 하나, 색은 그 회차 테마 토큰) 하나만 그린다(데이터를 읽지 않음 — `PageSpec` 이 시나리오·조회기간을
   읽지 않아 공통 조건 줄도 조건 카드도 없다). 그리는 것은 `components/module_slot.py` 의 `render_module_slot_page` 한 벌이고 이 파일은
   제 이름 한 줄만 넘긴다. 모듈이 이 자리에 그리는 길(`module_api` · `module.json` 선언 · 모듈 규칙 · 지침서)은 아직 없다 —
