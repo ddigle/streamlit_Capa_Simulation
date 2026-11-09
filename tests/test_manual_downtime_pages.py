@@ -147,14 +147,11 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
     app = shortening_run(database_path)
     assert not app.exception, [element.message for element in app.exception]
     captions = " ".join(str(element.value) for element in app.caption)
-    # 자리에는 값 줄 끝 표지 「입력 비가동 반영 n칸」 만, 출처 설명은 그 풍선, 합 대수 띠
-    # (「입력 비가동 반영(n칸 · 합 x대)」)는 상태 알림이다(그림 메모 g03).
-    band = next(element for element in app.caption if MANUAL_DOWNTIME_BAND in element.value)
-    assert f"{MANUAL_DOWNTIME_BAND}(" not in captions
-    assert str(band.value).startswith(f":material/event_busy: {MANUAL_DOWNTIME_BAND} ")
+    # 자리에는 그리지 않는다 — 합 대수 띠(「입력 비가동 반영(n칸 · 합 x대)」)는 상태 알림 짧은 글,
+    # 출처 설명은 그 전문이다(설계 규칙 UI-NTF-02 · UI-TXT-07).
+    assert MANUAL_DOWNTIME_BAND not in captions
     assert "가용설비 현황 › Preference 의 공정 × 달 비가동" in MANUAL_NOTICE_HELP
     assert "가용설비 현황 › Preference 의 공정 × 달 비가동" not in captions
-    assert str(band.proto.help).startswith(MANUAL_NOTICE_HELP)
     note = active_state(app, "RS-05")
     assert note is not None and note["short"].startswith(f"{MANUAL_DOWNTIME_BAND}(")
     # 고칠 입력은 가용설비 현황 › Preference 에 있다 — 짧은 글이 그 자리를 말하고 줄의 「그
@@ -209,10 +206,10 @@ def test_constraint_simulation_names_the_entered_downtime_in_its_header(tmp_path
     clear_equipment_repository()
 
 
-def test_the_overdrawn_places_sit_in_the_band_tooltip_not_on_the_line() -> None:
-    """0 에서 멈춘 칸은 표지 꼬리 「· 가용 넘침 k칸」 하나로 말하고, 그 자리(공정 · 달 — 내역)는
-    표지 풍선과 상태 알림 전문에 둔다 — 줄 끝에 ⚠ 자리 목록을 늘어놓지 않는다(설계 규칙 UI-TXT-04 ·
-    UI-TXT-07). 합 대수 띠는 알림 짧은 글이다(그림 메모 g03)."""
+def test_the_overdrawn_places_sit_in_the_alert_full_text_not_on_the_short_line() -> None:
+    """0 에서 멈춘 칸은 짧은 글 꼬리 「· 가용 넘침 k칸」 하나로 말하고, 그 자리(공정 · 달 — 내역)는
+    상태 알림 전문에 둔다 — 짧은 글에 ⚠ 자리 목록을 늘어놓지 않는다(설계 규칙 UI-TXT-04 ·
+    UI-NTF-06). 합 대수 띠는 알림 짧은 글이다."""
     from types import SimpleNamespace
     from typing import Any, cast
 
@@ -231,11 +228,10 @@ def test_the_overdrawn_places_sit_in_the_band_tooltip_not_on_the_line() -> None:
     note = _manual_note(plan, scope=["DEMO-A"], labels=ProcessLabels())
 
     assert note is not None
-    assert note.mark.text == f"{MANUAL_DOWNTIME_BAND} 2칸 · 가용 넘침 1칸"
-    assert "⚠" not in note.mark.text and "0 에서 멈춤" not in note.mark.text
-    assert note.mark.help.startswith(MANUAL_NOTICE_HELP)
+    assert "⚠" not in note.text and "0 에서 멈춤" not in note.text
+    assert MANUAL_NOTICE_HELP in note.full
     places = "가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): DEMO\\-A 26.08."
-    assert places in note.mark.help and places in note.full
+    assert places in note.full and places not in note.text
     # 짧은 글은 합 대수 띠와 고칠 자리다(설계 규칙 UI-NTF-06).
     assert note.text == (
         f"{MANUAL_DOWNTIME_BAND}(2칸 · 합 2.75대 · 가용 넘침 1칸) — 가용설비 현황 › Preference"

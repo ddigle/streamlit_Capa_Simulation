@@ -37,9 +37,8 @@ def test_registry_codes_are_unique_well_formed_and_levelled() -> None:
 def test_state_codes_for_the_screen_bundles_are_registered(
     code: str, level: str, title: str
 ) -> None:
-    """설비 마스터 남의 저장 표지 · 필요 단축 일정 머리 표지가 낼 상태 알림 코드는 등록부에 먼저
-    선다 —
-    부르는 자리를 짓는 쪽이 이 코드로 낸다."""
+    """설비 마스터 남의 저장 표지 · 필요 단축 일정 상태(일정 미정 · 사용기준 밖 · 입력 비가동)가 낼
+    상태 알림 코드는 등록부에 먼저 선다 — 부르는 자리를 짓는 쪽이 이 코드로 낸다."""
     spec = alerts.spec(code)
     assert (spec.level, spec.kind, spec.title) == (level, "state", title)
 

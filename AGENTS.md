@@ -551,8 +551,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율 · 진척 비교는
     사이드바 「필요 단축 일정 조건」 카드 맨 위 위아래 두 칸이고(카드는 처음 펼친 채 — 한 번 접으면 기억 칸), 두 칸을 바꾸면
     본문 프래그먼트(`VIEW_FRAGMENT_KEY` · `_rerun_view`)만 다시 그린다. 본문 프래그먼트는 기준선 목록이 카드가 세운 id 들
-    (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 상태 표지 셋(일정 미정 · 사용기준 밖 ·
-    입력 비가동 반영)은 본문 맨 위 값 줄 끝 한 줄 표지 + 풍선이고 내역은 상태 알림 `RS-03` ~ `RS-05`(`_report_status_marks`)다.
+    (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
+    반영은 자리에 표지를 세우지 않고 상태 알림 `RS-03` ~ `RS-05`(`_report_status_alerts`)만이다 — 짧은 글이 건수, 전문이 뜻 ·
+    내역이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07).
   - KPI 아래·카드 위에 공정 진척 보드·기한 임박·이행 지연(`components/shortening_board.py` — 처음 접힌 기억 상자, 편 상태는
     기억한다, 그림 메모 g03 ④)이 서고 카드마다 「공정 Capa
     상세에서 근거 보기」 와 그 옆 「도면에서 보기」(Space 현황 필요 단축 보기 — 그 공정의 층·같은 목표, 층은 본문이 공정 전부를
@@ -3942,8 +3943,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드 — 맨 위 위아래 두 칸 `목표 확보율`·
   `진척 비교`(그림 메모 g03, 본문 프래그먼트는 기준선 목록이 카드에 세운 것과 다르면 앱 전체 회차로 올린다 — `_Plan.shown_baselines`
   · `_view_choices`) · 공정 칸은 이름 줄 + 고른 값 한 줄 팝오버(`PROCESS_POPOVER_KEY` — 「Wafer Saw 외 2개」, 처음 고른 공정 ·
-  둘 이상이면 풍선이 전체 목록, 안이 다중 선택 칸 `SHORTENING_PROCESS_KEY` — 2026-11-09 사용자 검수 g03-2), 값 줄 끝 상태 표지
-  셋 + `RS-03` ~ `RS-05`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
+  둘 이상이면 풍선이 전체 목록, 안이 다중 선택 칸 `SHORTENING_PROCESS_KEY` — 2026-11-09 사용자 검수 g03-2), 상태 알림
+  `RS-03` ~ `RS-05`(자리 표지 없음), KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
   UPEH 가정 칸(머리 아래 알림 · 기준선 저장 거절)은 패널에 남는다. 표는 줄 이름 칸을 붙박고 달 칸을 74px 로 줄여 기준 창에
   14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —
