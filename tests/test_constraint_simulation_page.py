@@ -436,6 +436,35 @@ def test_the_header_repeats_no_conditions_and_no_source_band(
         assert moved in guide, moved
 
 
+def test_the_chart_and_sheet_marks_live_in_the_card_title_tips(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """월별 확보율 카드의 「옅은 칠 = 제약 기간」 캡션과 계산표 위 「… 표 첫 달 앞에서 시작」 표지
+    줄은 본문에 두지 않는다 — 뜻은 카드 제목 풍선과 Guide 다(2026-11-09 사용자 검수 g12-2). 표 앞
+    창 · 대기의 날짜 · 대수는 계산표 제목 풍선 끝이다(`sheet_help`)."""
+    from capa_simulation.components.constraint_simulation_view import (
+        CHART_SHADE_TEXT,
+        SHEET_HELP,
+        sheet_help,
+    )
+
+    app = _opened(dynamic_databases)
+    captions = _captions(app)
+    assert "옅은 칠" not in captions and "표 첫 달 앞에서 시작" not in captions
+    (chart,) = [item for item in app.markdown if str(item.value) == "**월별 확보율**"]
+    assert CHART_SHADE_TEXT in str(chart.proto.help)
+    (sheet,) = [item for item in app.markdown if str(item.value) == "**월별 계산표**"]
+    result, labels = _shown(app)
+    assert str(sheet.proto.help) == sheet_help(result, labels.today)
+    assert str(sheet.proto.help).startswith(SHEET_HELP)
+    guide = " ".join(
+        (PROJECT_ROOT / "src/capa_simulation/guides/constraint_simulation.md")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    assert "계산표 제목 풍선 끝에 그 뜻과 창 · 대기마다 날짜 · 대수가 붙습니다" in guide
+
+
 def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
