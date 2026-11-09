@@ -1277,7 +1277,7 @@ def _report_manual_cells(
         ),
         content=[list(cell) for cell in cells] or None,
         active=bool(cells),
-        text=f"{band} — 설비 일정 기준 가용 · 일정기준가용대수에서 뺌",
+        text=f"{band} — 설비 일정 기준 가용에서 뺌",
         full=f"Static 대비 일정 — 일정기준가용대수는 {band} — {CROSS_CHECK_MANUAL_HELP}",
         tab=tab_name(EQUIPMENT_PREFERENCE_TAB),
         tables=(

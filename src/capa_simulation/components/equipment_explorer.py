@@ -291,7 +291,7 @@ def report_unit_notices(equipment: pd.DataFrame, *, scope: AlertScope | None) ->
         if undated is None or mark is None
         else _names(undated, EQUIPMENT_ID_COLUMN, UNDATED_KIND_COLUMN),
         active=mark is not None,
-        text=f"{mark} — 가용대수에 세지 않음 · 설비 마스터 반입 · Qual 일정 칸에 적어 저장",
+        text=f"{mark} — 가용대수에 세지 않음 · 설비 마스터 일정 칸",
         full=(
             f"{mark} — {UNDATED_HELP} Main 의 가용대수 · 호기 현황과 Static 대비 일정의 설비 일정 "
             "기준에서 빠집니다. 설비 마스터의 반입 · Qual 일정 칸에 날짜를 적어 저장하면 셉니다."
@@ -322,7 +322,7 @@ def report_unit_notices(equipment: pd.DataFrame, *, scope: AlertScope | None) ->
         if excluded is None or usage is None
         else _names(excluded, EQUIPMENT_ID_COLUMN),
         active=usage is not None,
-        text=f"{usage} — 총 · 가용 · 비가동 대수에서 뺌 · 설비 마스터 사용기준 칸",
+        text=f"{usage} — 총 · 가용 · 비가동 대수에서 뺌",
         full=(
             f"{usage} — {usage_exclusion_help(totals=True)} Static 대비 일정의 설비 일정 "
             "기준에서도 뺍니다."
@@ -375,7 +375,7 @@ def report_unconfirmed_units(
         scope_label=label,
         content=None if mark is None else _names(rows, EQUIPMENT_ID_COLUMN, STAGE_COLUMN),
         active=mark is not None,
-        text=f"{mark}{tail} — 일정이 지났는데 실적이 빔 · 설비 마스터에서 실적 · 상태 확인",
+        text=f"{mark}{tail} — 일정이 지났는데 실적이 빔 · 설비 마스터",
         full=(f"{mark}{tail} — {UNCONFIRMED_HELP} 오늘 기준이라 Main 의 기준일을 옮겨도 같습니다."),
         tab=tab_name(EQUIPMENT_MASTER_TAB),
         tables=(
