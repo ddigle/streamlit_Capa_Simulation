@@ -389,10 +389,10 @@ def test_a_process_with_equipment_shows_kpis_and_figures(
     assert "저장하지 않는 시뮬레이션입니다" not in _captions(app)
     (session,) = [item for item in app.caption if str(item.value) == SESSION_ONLY_CAPTION]
     assert session.proto.help == SESSION_ONLY_HELP
-    # 머리 「← 공정 Capa 상세」 는 그 공정으로 돌아간다(테마 인자 없음).
+    # 맨 위 「← 공정 Capa 상세」 되돌아가기 링크는 없다 — 화면 탭 줄 · 사이드바가 같은 길이다
+    # (2026-11-09 보드 T4).
     links = app.session_state["captured_page_links"]
-    back = [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
-    assert back and back[0]["query_params"] == {"process": DYNAMIC_PROCESS}
+    assert not [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
 
 
 def test_the_header_has_no_description_line(dynamic_databases: tuple[Path, Path]) -> None:
@@ -410,8 +410,8 @@ def test_the_header_repeats_no_conditions_and_no_source_band(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """머리 줄은 조건을 되읊지 않고 출처 띠 · 계산표 범례도 두지 않는다 — 조건은 사이드바 칸, 출처와
-    읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 계산이 건 표지가 없으면 머리 줄은 「←
-    공정 Capa 상세」 하나다."""
+    읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 계산이 건 표지가 없으면 머리 줄이 서지
+    않는다(맨 위 되돌아가기 링크는 두지 않는다 — 2026-11-09 보드 T4)."""
     app = _opened(dynamic_databases)
     texts = " ".join([*_markdown(app), _captions(app)])
     assert " · 제약 120%" not in texts and "기준 HOME(" not in texts
@@ -497,8 +497,7 @@ def test_the_process_param_is_taken_once_and_the_theme_stays(
     assert "process" not in app.query_params
     assert app.query_params["theme"] in ("dark", ["dark"])
     links = app.session_state["captured_page_links"]
-    back = [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
-    assert back[0]["query_params"] == {"process": DYNAMIC_PROCESS, "theme": "dark"}
+    assert not [link for link in links if link["page"] == PROCESS_CAPA_DETAIL.path]
 
 
 def test_an_unknown_process_param_warns_and_opens_the_first_ready_process(
