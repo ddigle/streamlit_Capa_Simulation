@@ -572,9 +572,9 @@ def test_a_missing_cutoff_stops_with_the_mark_and_the_alarm_opens_the_equipment_
 def test_units_outside_the_usage_basis_are_an_alert_with_the_rule_in_its_full_text(
     tmp_path: Path,
 ) -> None:
-    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 그리지 않고, 「사용기준
-    HBM·EDP 밖 N대 제외」(가용설비 현황과 같은 글)는 상태 알림 짧은 글, 뺀 곳 · 후보 아님은 그
-    전문이다(설계 규칙 UI-TXT-01 · UI-NTF-02 · UI-TXT-07)."""
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 그리지 않고,
+    「사용기준 HBM·EDP 밖 N대 제외」(가용설비 현황과 같은 글)는 상태 알림 짧은 글, 뺀 곳 · 후보
+    아님은 그 전문이다(설계 규칙 UI-TXT-01 · UI-NTF-02 · UI-TXT-07)."""
     from capa_simulation.components.required_shortening_panel import USAGE_NOTICE_HELP
 
     database_path = _database(tmp_path)
