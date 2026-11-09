@@ -103,8 +103,7 @@ LEVEL_LABELS: Final[Mapping[Level, str]] = {
 }
 # 알림창이 떠 있는 시간(초). 알림은 짧게, 나머지는 읽고 손댈 시간을 둔다(기본값 — 설계 7장 끝).
 POPUP_SECONDS: Final[Mapping[Level, int]] = {"info": 8, "check": 15, "action": 15, "error": 15}
-# 알림창은 이만큼까지 쌓는다 — 넘치면 단계가 가장 낮은 칸을 걷는다(같은 단계면 가장 오래된 칸 —
-# 알림 칸 JS `overflowVictim`). 낮은 단계 알림 여럿이 더 높은 단계 칸을 밀어내지 않는다.
+# 알림창은 이만큼까지 쌓는다 — 넘치면 가장 오래된 칸을 걷는다.
 POPUP_LIMIT: Final = 3
 # 같은 사건 알림(코드 + 짧은 글)이 앞 알림창이 떠 있거나 사라진 뒤 이 안에 다시 나면 시선을
 # 끈다(D4).

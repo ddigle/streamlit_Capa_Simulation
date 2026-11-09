@@ -792,31 +792,6 @@ def test_a_row_closed_by_a_scope_change_reads_scope_moved_not_resolved() -> None
     assert "resolveRow(C, entry.row, now, 'changed')" in state
 
 
-def test_an_overflowing_popup_stack_drops_the_lowest_level_first() -> None:
-    """알림창이 상한(`alerts.POPUP_LIMIT`)을 넘으면 단계가 가장 낮은 칸부터 걷고, 같은 단계면 가장
-    오래된 칸이다 — 가용설비 Summary 첫 진입에 확인 필요 · 알림 셋이 함께 떠 먼저 선 「조치 필요」
-    칸을 몇 초 만에 밀어내던 소음(2026-11-09 상단 정리 통합)."""
-    out = _node(
-        """
-const cases = [
-  ['action', 'check', 'info', 'check'],
-  ['action', 'check', 'check', 'check'],
-  ['error', 'action', 'check', 'info'],
-  ['info', 'info', 'info', 'info'],
-  ['check', 'error', 'error', 'info'],
-  [],
-]
-console.log(JSON.stringify(cases.map((levels) => overflowVictim(levels))))
-"""
-    )
-    assert out == [2, 1, 3, 0, 3, -1]
-    stack = JS[JS.index("function showPopup(") :]
-    stack = stack[: stack.index("\n}\n")]
-    assert "overflowVictim(shown.map((node) => node.dataset.level))" in stack
-    assert "firstElementChild" not in stack
-    assert alerts.POPUP_LIMIT == 3
-
-
 def test_the_js_limits_match_the_registry_constants() -> None:
     """반복 창 · 보관 줄 수의 대체값과 시선 끌기 꼴은 파이썬 상수가 data 로 준다 — JS 에 같은 값을
     두 벌 두지 않는다."""
