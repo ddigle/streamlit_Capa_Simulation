@@ -78,8 +78,9 @@ def module_slot_html() -> str:
 
 def render_module_slot_page(title: str) -> None:
     """머리말(제목 — 화면에서는 숨는다)과 그 아래 모듈 화면 자리 하나를 그린다. 머리에 배지 줄을
-    두지 않는다 — 이 화면이 무엇인지는 자리 글이 말한다(본문 상단 문구 · 여백 최소화 — 2026-11-09
-    보드 T8).
+    두지 않는다 — 이 화면이 무엇인지는 자리 글이, 만드는 중이라는 것은 화면 탭 「구현중」
+    표지(`navigation.PageSpec.in_progress`)가 말한다(본문 상단 문구 · 여백 최소화 — 2026-11-09 보드
+    T8 (가)).
 
     `title` 은 사이드바 라벨과 같은 화면 이름이다(`navigation` 선언 — 시험이 맞댄다)."""
     render_page_header(title)

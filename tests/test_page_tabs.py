@@ -137,8 +137,8 @@ def test_a_tab_label_drops_only_the_implementing_suffix(
     _app: AppTest, sent: list[dict[str, Any]]
 ) -> None:
     """탭 이름은 「(구현중)」 을 떼고, 그 말은 이름 곁 「구현중」 표지 + 풍선이 한다(2026-11-09 보드
-    T8 — 본문 머리 배지 줄을 옮겼다). 풍선은 선언의 원천 이름이고, 샘플을 켠 동안만 「합성 샘플로
-    미리 봄」 을 붙인다."""
+    T8 (가) — 본문 머리에는 배지 줄을 두지 않는다). 풍선은 선언의 원천 이름이고, 샘플을 켠 동안만
+    「합성 샘플로 미리 봄」 을 붙인다."""
     app = _ok(_app.run())
     _ok(app.switch_page(WIP_STATUS.path).run())
     wip = _tab(sent, WIP_STATUS.path)
@@ -178,6 +178,24 @@ def test_every_implementing_screen_declares_its_pending_source_as_the_page_says_
             spec.path,
             spec.pending_source,
         )
+
+
+def test_the_production_progress_slots_carry_the_implementing_mark_only() -> None:
+    """생산 진도 · 그 샘플 페이지 셋은 원천도 라벨 「(구현중)」 도 없지만 만드는 중인 화면이라 탭
+    「구현중」 표지(풍선 「구현 중」)가 성숙도를 말한다 — 머리에는 배지 줄을 두지 않는다(2026-11-09
+    보드 T8 (가)). 사이드바 라벨은 그대로이고 원천 선언이 없어 머리 띠 「합성 샘플」 표지도 서지
+    않는다."""
+    from capa_simulation.navigation import (
+        IMPLEMENTING_SUFFIX,
+        PRODUCTION_PROGRESS,
+        PRODUCTION_PROGRESS_SUBPAGES,
+    )
+
+    for spec in (PRODUCTION_PROGRESS, *PRODUCTION_PROGRESS_SUBPAGES):
+        assert spec.implementing and spec.in_progress, spec.path
+        assert spec.pending_source is None and not spec.title.endswith(IMPLEMENTING_SUFFIX)
+        assert page_tabs.wip_title(spec) == page_tabs.WIP_TITLE == "구현 중"
+    assert not any(spec.in_progress for spec in ALL_SPECS if spec.pending_source is not None)
 
 
 def _marks_script() -> None:

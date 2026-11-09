@@ -144,12 +144,21 @@ class PageSpec:
     # 이 선언을 읽는다 — 라벨의 `(구현중)` 은 그대로다. 글자는 그 화면이 스위치 · 머리 배지에 주는
     # 원천 이름과 같다(그물 `tests/test_page_tabs.py`).
     pending_source: str | None = None
+    # 원천도 라벨 `(구현중)` 도 없지만 아직 만드는 중인 화면 — 화면 탭 「구현중」 표지(풍선 「구현
+    # 중」)만 켠다(2026-11-09 보드 T8 (가) — 생산 진도 · 그 샘플 페이지 셋, 모듈이 내용을 맡을
+    # 자리). 사이드바 라벨 · 머리 띠 「합성 샘플」 표지는 바꾸지 않는다.
+    in_progress: bool = False
 
     @property
     def implementing(self) -> bool:
-        """구현 중 화면인가 — 라벨에 `(구현중)` 이 붙었거나 원천이 아직 붙지 않은 화면(Dynamic Capa
-        는 그룹 머리라 라벨에 달지 않는다 — 2026-09-29 사용자 결정)."""
-        return self.pending_source is not None or self.title.endswith(f" {IMPLEMENTING_SUFFIX}")
+        """구현 중 화면인가 — 라벨에 `(구현중)` 이 붙었거나 원천이 아직 붙지 않았거나 만드는
+        중이라고 선언한 화면(Dynamic Capa 는 그룹 머리라 라벨에 달지 않는다 — 2026-09-29 사용자
+        결정)."""
+        return (
+            self.in_progress
+            or self.pending_source is not None
+            or self.title.endswith(f" {IMPLEMENTING_SUFFIX}")
+        )
 
     def reads_common_conditions_on(self, active_tab: str | None) -> bool:
         """지금 열린 탭(`None` 은 탭을 가르지 않는 화면)에서 이 화면이 공통 조건을 읽는가."""
@@ -423,13 +432,15 @@ EXECUTION_MANAGEMENT_SUBPAGES = (
 
 # 생산 진도(2026-11-02 사용자 요청)는 실행 관리와 Dynamic Capa 사이의 그룹이다.
 # 보일 내용은 모듈이 맡아(2026-11-03 사용자) 머리 화면은 모듈 화면이 들어올 점선
-# 자리 하나만 그리고 데이터를 읽지 않는다 — 공통 조건 줄도 조건 카드도 없다.
+# 자리 하나만 그리고 데이터를 읽지 않는다 — 공통 조건 줄도 조건 카드도 없다. 성숙도는 화면 탭
+# 「구현중」 표지가 말한다(`in_progress` — 하위 샘플 페이지 셋도 같다).
 PRODUCTION_PROGRESS = PageSpec(
     "app_pages/production_progress.py",
     "생산 진도",
     ":material/trending_up:",
     reads_scenario=False,
     reads_period=False,
+    in_progress=True,
 )
 # 하위는 샘플 페이지 셋이다(2026-11-04 검수 의견 prog-01 · prog-02 — 「생산진도 상자 내에 샘플
 # 페이지 1,2,3 넣고 펼치는 상자로 반영」 · 「샘플페이지 1,2,3 화면에 이대로 임시 반영」). 하위가
@@ -443,6 +454,7 @@ PRODUCTION_PROGRESS_SUBPAGES: tuple[PageSpec, ...] = tuple(
         icon,
         reads_scenario=False,
         reads_period=False,
+        in_progress=True,
     )
     for number, icon in (
         (1, ":material/looks_one:"),
