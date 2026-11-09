@@ -902,8 +902,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 계산에 닿지 않는다 — 시나리오·조회기간을 읽지 않고 `load_page_context()` 를 부르지 않는다.
   - 본문·답글은 `st.text` 로 그리고 게시판 읽기는 캐시하지 않는다. 폼은 `clear_on_submit` 없이 콜백이 성공한
     때만 비우고 작성자 이름은 폼 밖이다. 필터는 조건 카드 `VOC 필터`, 설명은 `guides/voc.md`.
-  - 새 글 폼의 제목·내용은 올리기 전에는 서버가 몰라 화면 이동·테마 전환(새로고침)에 사라졌다 — 폼 알림 칸 안의
-    `components/voc_draft_keeper.py`(Components v2, 그림자 DOM 없음)가 두 칸(`st-key-voc_post_title`·`_body`)의 글을
+  - 새 글 폼의 제목·내용은 올리기 전에는 서버가 몰라 화면 이동·테마 전환(새로고침)에 사라졌다 — 폼 바로 뒤(폼과 간격
+    없는 한 칸 — 높이 0 컴포넌트가 따로 서면 세로 간격을 한 칸 더 먹는다)의 `components/voc_draft_keeper.py`(Components v2, 그림자 DOM 없음)가 두 칸(`st-key-voc_post_title`·`_body`)의 글을
     브라우저 탭(`sessionStorage` — 서버·다른 사람에게 가지 않음)에 적고, 두 칸이 모두 빈 회차에 되살려(원래 setter +
     `input` 사건 — 폼 안이라 올릴 때 간다) 알림 칸에 사건 알림 `VO-02` 를 낸다(`window.__capaAlerts.raise` — 화면
     탭 줄 JS 와 같은 길, 폼 아래 제 꼴의 줄 없음 — 설계 규칙 UI-NTF-01). 같은 세션 표지(세션마다 새로 뽑음)에서 폼 세대가 오르면(글을
@@ -2865,8 +2865,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/admin_dialog.py` — Admin Area 편집 탭들이 함께 쓰는 팝업 칸
   (`admin_area_open_dialog`) 하나를 여닫는 콜백이다. 탭마다 칸을 두면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
-  싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 폼 안 알림이 없는 칸의 간격
-  지움(`EMPTY_FORM_SLOT_SELECTOR`), 인쇄 규칙)을 보낸다.
+  싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 폼 안 알림이 없는 칸과 본문 빈 칸의 간격
+  지움(`EMPTY_FORM_SLOT_SELECTOR` · `EMPTY_SLOT_SELECTOR`), 인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
     `intro_summary.latest_official_revision`·`scenario_activation.newer_active_revision_no`(「최신 rN 있음」) 만 읽는다
     (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
@@ -6149,8 +6149,13 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `render_flash` 는 알림이 없어도 칸 하나를 세워 이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패
     문구나 같은 동작의 경고 여러 줄(표시순서 저장의 표시명 경고)을 쓴다. 폼 안에서는 알림이 없는 그 칸(빈 칸 · 팝업 안
     숨은 알림 표지만 든 칸)이 줄 사이 간격을 먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수
-    g17 · g18, 저장 줄 아래 28 → 14px). 그래서 폼 안 거부 글은 돌려받은 칸에 쓰고 바깥 `st.container()` 로 한 겹 더 싸지
-    않는다 — 바깥 칸은 비지 않아 간격이 남는다. VOC 「적어 둔 답변」 은 알림이 아니라 사용자의
+    g17 · g18, 저장 줄 아래 28 → 14px). 본문도 같다 — 늘 서 있는 칸 안에 빈 칸만 든 회차(1.63 은 자식 블록이 하나라도
+    있으면 그 블록을 그리고 빈 자식 블록은 아무것도 그리지 않아, 세로 블록이 빈 감싼 칸이 높이 0 인 채 간격을 먹었다 —
+    가용설비 · Space · 필요 단축 일정 머리 알림 칸 등)는 그리지 않는다(`app_header.EMPTY_SLOT_SELECTOR` — 2026-11-09 상단 띠
+    재고 1-1). 스타일만 든 `st.html`(알림 표지 · 화면 서식)은 칸 안에서 불러도 이벤트 칸에 서 칸을 비지 않게 하지 않는다.
+    높이 0 컴포넌트(VOC 초안 보관)는 칸을 비지 않게 하므로 이웃과 간격 없는 한 칸(`gap=None`)에 둔다. 그래서 폼 안 거부
+    글은 돌려받은 칸에 쓰고 바깥 `st.container()` 로 한 겹 더 싸지 않는다 — 두 겹이면 바깥 칸의 세로 블록이 비지 않아(안
+    칸이 서 있다) 간격이 남는다. VOC 「적어 둔 답변」 은 알림이 아니라 사용자의
     글이라 꺼내 버리지 않고(`get`) 「닫기」 까지 그 칸 아래에 그린다(3장 `voc.py`). 다음 동작까지 남아야 하는 칸(필요 단축
     일정 기준선 shown 칸), 매 회차 비우고 보이는 탭에서만 그리는 칸(기준정보 STEP), 페이지가
     같은 `st.empty` 자리에 오류를 덮어 쓰는 칸(월 편집표), 회차의 상자 유무로 두 자리 가운데 하나에 서는 칸(Space 배치

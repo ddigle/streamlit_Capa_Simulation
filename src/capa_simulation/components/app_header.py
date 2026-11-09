@@ -169,6 +169,20 @@ EMPTY_FORM_SLOT_SELECTOR = (
     ':has(> [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:only-child'
     f' > [data-testid="stHtml"] > [{MARKER_ATTRIBUTE}]:only-child)'
 )
+# 본문의 빈 칸 — 세로 블록이 빈 감싼 칸. 늘 서 있는 알림 칸(`flash.render_flash`) · 자리 칸 안에 빈
+# 칸만 든 회차가 그렇다: Streamlit 1.63 은 자식 블록이 하나라도 있으면 그 블록을 「비지 않음」 으로
+# 그리고(비었는지를 자식 수로만 본다), 빈 자식 블록은 아무것도 그리지 않아 세로 블록이 DOM 에서 빈
+# 채 감싼 칸만 높이 0 으로 남아 본문 세로 간격(14px)을 한 번 더 먹었다 — 가용설비 · Space · 필요
+# 단축 일정 머리 알림 칸, Space 잠금 줄 칸, 시나리오 관리 설비 시나리오 · 자동 갱신 알림 칸, Space
+# 층 목록 알림 칸(2026-11-09 상단 띠 재고 1-1 「빈 틈」 — 페이지 상단 여백 최소화). 칸은 세워
+# 두되(뒤 형제의 순번이 알림 유무로 밀리지 않게) 그리지 않는다 — 안에 무엇이 서면 세로 블록이 비지
+# 않아 다시 선다. 폼 안 칸(`EMPTY_FORM_SLOT_SELECTOR`)과 같은 첫 꼴을 본문 전체에 건다. 스타일만 든
+# `st.html` 은 칸 안에서 불러도 이벤트 칸에 서므로(1.63 확인) 칸을 비지 않게 하지 않는다. `:has()`
+# 는 자식 한 겹만 본다.
+EMPTY_SLOT_SELECTOR = (
+    '[data-testid="stMain"] [data-testid="stLayoutWrapper"]'
+    ':has(> [data-testid="stVerticalBlock"]:empty)'
+)
 
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
 #
@@ -238,7 +252,8 @@ EMPTY_FORM_SLOT_SELECTOR = (
 #   풍선은 `body` 끝에 붙어 어느 칸의 것인지 서식으로 고를 수 없어 앱 전체에 건다. 풍선 안에 누를
 #   링크는 없다.
 # - 폼 안의 알림이 없는 칸은 줄 사이 간격을 먹지 않는다(`EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09
-#   사용자 검수 g17 · g18). 인쇄에는 높이 0 칸이라 걸 까닭이 없다.
+#   사용자 검수 g17 · g18). 본문의 빈 칸도 같다(`EMPTY_SLOT_SELECTOR` — 같은 날 상단 띠 재고 1-1).
+#   인쇄에는 높이 0 칸이라 걸 까닭이 없다.
 SHELL_STYLE = (
     """<style>
 [data-testid="stMainMenu"],
@@ -277,6 +292,9 @@ SHELL_STYLE = (
   __EMPTY_FORM_SLOT__ {
     display: none;
   }
+  __EMPTY_SLOT__ {
+    display: none;
+  }
 }
 @media print {
   @page { margin: 10mm; } [data-testid="stSidebar"], [data-testid="stHeader"], __STATUS_SLOT__,
@@ -299,6 +317,7 @@ SHELL_STYLE = (
 }
 </style>""".replace("__STATUS_SLOT__", STATUS_SLOT_SELECTOR)
     .replace("__EMPTY_FORM_SLOT__", EMPTY_FORM_SLOT_SELECTOR)
+    .replace("__EMPTY_SLOT__", EMPTY_SLOT_SELECTOR)
     .replace("__PRINT_BUTTON__", PRINT_BUTTON_ID)
     .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
     .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)
