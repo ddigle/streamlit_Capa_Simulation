@@ -11,8 +11,13 @@
 - **목표 확보율**(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)은 사이드바 조회 조건 패널의 한
   줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건 상자로). 위젯 key 는 그대로다.
   배치 편집으로 보기가 쉬는 회차에도 잠근 채 선다(`render_level_field`).
-- **본문 조작 줄**(결정 D6) — 「단축 없는 호기 흐리게」, 기준 캡션, 못 읽음 알림. FAB·층 상세가 같은
-  줄을 쓴다.
+- **「단축 없는 호기 흐리게」 · 기준 달**은 사이드바 `Space 조건` 카드의 「색 기준」
+  밑이다(2026-11-09 사용자 검수 g05 — 페이지 상단 문구 · 여백 최소화). 「필요 단축」 은 그룹 체크가
+  없는 기준이라 흐리게 칸이 그 자리를 잇고(`render_dim_field`), 기준 달 값 한
+  줄(`render_layer_basis`)이 그 밑에 선다 — 어느 설비 · 시뮬레이션 · 오늘인지는 그 풍선이다.
+  맞대지 못한 공정은 필요 단축 일정과 같은 상태 알림 `RS-02`(`report_layer_unmatched`), 공정 필터
+  밖 단축 대수는 FAB 요약 · 층 칸 머리 줄의 값이다. 본문 도면 위에는 못 읽음 마크 · 쉼 표지만
+  남는다.
 - **달** — 필요 단축 일정 시작·끝 월 칸 → 공용 프로필(0019) 심기를 **읽기만** 한다(결정 D3). 임박
   날수는 필요 단축 일정 「기한 임박」 칸(결정 D9). 어느 칸에도 쓰지 않는다.
 - **층 보기 칸** — 이 층 요약 · 공정 칩(원본 공정소분류 — 결정 D10, 공정 표시명을 읽지 않는다) ·
@@ -41,6 +46,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
 
+import capa_simulation.components.required_shortening_panel as shortening_panel
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
 from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
@@ -70,6 +76,7 @@ from capa_simulation.scenario_activation import (
     active_scenario_label,
     has_unsaved_scenario_changes,
 )
+from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.fab_layout import (
     FLOOR_KEYS,
     floor_from_param,
@@ -112,7 +119,6 @@ __all__ = [
     "SPACE_SHORT_SWITCH_KEY",
     "SPACE_SHORT_TABLE_PREFIX",
     "TARGET_PARAM",
-    "LayerControls",
     "SpaceLayer",
     "consume_layer_link",
     "load_space_layer",
@@ -122,12 +128,13 @@ __all__ = [
     "release_process_chip",
     "render_fab_layer_summary",
     "render_floor_layer_panel",
+    "render_dim_field",
     "render_layer_basis",
-    "render_layer_controls",
     "render_layer_stop",
     "render_level_field",
     "forget_arrival_note",
     "render_arrival_filter_note",
+    "report_layer_unmatched",
     "switch_to_queued_shortening",
     "take_unit_pick",
     "unit_keys_by_name",
@@ -182,6 +189,12 @@ PINNED_NOTE: Final = "필요 단축은 오늘 기준 — 색 기준을 바꾸면
 _VIRTUAL_HELP: Final = (
     "추가N 은 기존 호기를 다 당겨도 모자라 새로 들여야 하는 대수입니다. 배치 편집기에서 자리를 "
     "잡으면 도면에 나타납니다."
+)
+# 「필터 밖 n대」 의 뜻 — FAB 요약 줄 · 층 칸 머리 줄의 풍선(숨은 데이터는 값 + 풍선 — 설계 규칙
+# UI-TXT-04 · UI-NTF-05).
+_FILTERED_HELP: Final = (
+    "필터 밖 n대는 사이드바 「공정」 칸에 걸리지 않아 도면 · 요약에 세지 않은 FAB 전체의 단축 "
+    "호기입니다."
 )
 UNMERGED_MESSAGE: Final = (
     "설비 시나리오 일정과 합쳐지지 않아 일정 없이 연 상태라 필요 단축을 낼 수 없습니다 — 런북 4-2"
@@ -314,13 +327,7 @@ def switch_to_queued_shortening() -> None:
         return
 
 
-# ------------------------------------------------------------------ 조작 줄
-
-
-@dataclass(frozen=True)
-class LayerControls:
-    level: float
-    dim_others: bool
+# ------------------------------------------------------------------ 조작 칸
 
 
 def render_level_field(*, resting: bool = False) -> float:
@@ -361,21 +368,20 @@ def render_level_field(*, resting: bool = False) -> float:
     return _target_level(level) or DEFAULT_TARGET_LEVEL
 
 
-def render_layer_controls() -> LayerControls:
-    """목표 확보율 · 「단축 없는 호기 흐리게」 — 본문 조작 줄 안에서 부른다(결정 D6).
-
-    목표 확보율은 사이드바 조회 조건 패널의 줄이다(`render_level_field`). 흐리게 칸은 부른
-    자리(본문 조작 줄)에 선다. 흐리게 칸이 없으면 켬으로 심는다.
-    """
-    level = render_level_field()
+def render_dim_field() -> bool:
+    """「단축 없는 호기 흐리게」 — 사이드바 `Space 조건` 카드의 「색 기준」 밑, 「필요 단축」 을
+    고른 회차에만 부른다(2026-11-09 사용자 검수 g05 — 도면 위 본문 조작 줄에서 옮김). 다른 기준의
+    그룹 체크와 같은 자리다(필요 단축은 그룹이 없다). 배치 편집으로 보기가 쉬는 회차에도 선다 —
+    고른 값은 편집을 끈 뒤 보기가 쓴다. 칸이 없으면 켬으로 심는다."""
     if not isinstance(st.session_state.get(SPACE_SHORT_DIM_KEY), bool):
         st.session_state[SPACE_SHORT_DIM_KEY] = True
-    dim = st.checkbox(
-        "단축 없는 호기 흐리게",
-        key=SPACE_SHORT_DIM_KEY,
-        persist_state="session",
+    return bool(
+        st.checkbox(
+            "단축 없는 호기 흐리게",
+            key=SPACE_SHORT_DIM_KEY,
+            persist_state="session",
+        )
     )
-    return LayerControls(level=level, dim_others=bool(dim))
 
 
 @dataclass(frozen=True)
@@ -386,6 +392,8 @@ class SpaceLayer:
     plan_key: RequiredShorteningCacheKey
     plan: ShorteningPlan
     months: tuple[int, ...]
+    # 계획을 낸 활성 시나리오 — 맞대지 못한 공정 알림(`RS-02`)의 범위가 필요 단축 일정과 같게.
+    scenario: ActiveScenario
 
 
 def _due_days() -> int:
@@ -464,7 +472,13 @@ def load_space_layer(
     layer = build_shortening_layer(
         keyed.plan, level, today=keyed.plan.today, imminent_days=_due_days()
     )
-    return SpaceLayer(layer=layer, plan_key=keyed.key, plan=keyed.plan, months=tuple(months))
+    return SpaceLayer(
+        layer=layer,
+        plan_key=keyed.key,
+        plan=keyed.plan,
+        months=tuple(months),
+        scenario=demand.context.active_scenario,
+    )
 
 
 def _equipment_basis_text(session: EquipmentSession) -> str:
@@ -480,17 +494,11 @@ def _equipment_basis_text(session: EquipmentSession) -> str:
     return text
 
 
-def render_layer_basis(
-    session: EquipmentSession,
-    space_layer: SpaceLayer,
-    *,
-    sample: bool,
-    summary: FabSummary | None,
-) -> None:
-    """기준 캡션(조작 줄 안 — FAB·층 공통)과 맞대지 못한 공정·필터 밖 대수 한 줄.
-
-    줄에는 다른 자리에 없는 값(달 범위 · 미저장 편집 포함)만 둔다 — 설비 시나리오 · 시뮬레이션 ·
-    오늘은 사이드바 · 고정 줄과 거듭되어 풍선이다(설계 규칙 UI-TXT-07)."""
+def render_layer_basis(session: EquipmentSession, space_layer: SpaceLayer, *, sample: bool) -> None:
+    """기준 달 값 한 줄 — 사이드바 `Space 조건` 카드의 흐리게 칸 밑(FAB·층 공통, 2026-11-09 사용자
+    검수 g05 — 도면 위에서 옮김). 줄에는 다른 자리에 없는 값(달 범위)만 둔다 — 설비 시나리오 ·
+    시뮬레이션(미저장 편집 포함 여부) · 오늘은 사이드바 줄 · 머리 변경 칩 · 고정 줄과 거듭되어
+    풍선이다(설계 규칙 UI-TXT-04 · UI-TXT-07 · UI-LAY-04)."""
     label = active_scenario_label()
     scenario = (
         f"「{literal_markdown(label.scenario_name)} · r{label.revision_no}」"
@@ -502,29 +510,31 @@ def render_layer_basis(
     equipment = (
         "설비 샘플(데모)" if sample else f"설비 시나리오 「{_equipment_basis_text(session)}」"
     )
+    unsaved = " (미저장 편집 포함)" if has_unsaved_scenario_changes() else ""
     st.caption(
-        f":material/grid_view: {span}"
-        + (" · 미저장 편집 포함" if has_unsaved_scenario_changes() else ""),
+        f":material/grid_view: {span}",
         width="stretch",
         help=(
-            f"필요 단축 · {equipment} 기준 · 시뮬레이션 {scenario} · "
+            f"필요 단축 · {equipment} 기준 · 시뮬레이션 {scenario}{unsaved} · "
             f"오늘 {space_layer.plan.today.isoformat()} — 필요 단축 일정과 같은 계산"
         ),
     )
-    # 빠진 것의 수는 표지로 남기고(설계 규칙 UI-NTF-05 — 숨기지 않는다) 뜻과 확인할 곳은 풍선이다
-    # (UI-TXT-03 · UI-TXT-04).
-    notes: list[str] = []
-    tips: list[str] = []
-    if space_layer.layer.unmatched:
-        notes.append(f"맞대지 못한 공정 {space_layer.layer.unmatched}개")
-        tips.append(
-            "맞대지 못한 공정은 이 보기에 없습니다 — 필요 단축 일정을 열면 Alarm 줄의 표로 섭니다."
-        )
-    if summary is not None and summary.filtered_out:
-        notes.append(f"공정소분류 필터 밖 단축 {summary.filtered_out}대")
-        tips.append("공정소분류 필터 밖 단축 호기는 세지 않습니다.")
-    if notes:
-        st.caption(":material/info: " + " · ".join(notes), width="stretch", help=" ".join(tips))
+
+
+def report_layer_unmatched(
+    space_layer: SpaceLayer, *, revision: tuple[str | None, int | None]
+) -> None:
+    """맞대지 못한 공정 — 필요 단축 일정과 같은 상태 알림 `RS-02`(같은 계획 · 범위 · 내용 — 화면을
+    옮겨도 다시 뜨지 않는다). 도면 위 표지 한 줄이던 것이다(2026-11-09 사용자 검수 g05 — 화면에 상태
+    문장을 달지 않는다, 설계 규칙 UI-NTF-02). 보기를 그린 회차에만 부른다 — 끈 · 쉬는 · 못 읽은
+    회차는 이 조건을 보지 않으므로 해소로 부르지 않는다(부르는 쪽이 같은 자리에서 `alerts.flush()`).
+    `revision` 은 계산 세 표를 낸 설비 저장 리비전(id, 번호)이고 샘플이면 (None, None) 이다."""
+    shortening_panel.report_unmatched_processes(
+        space_layer.plan,
+        active_scenario=space_layer.scenario,
+        months=space_layer.months,
+        revision=revision,
+    )
 
 
 def render_layer_stop(stop: ShorteningStop) -> None:
@@ -615,8 +625,12 @@ def render_fab_layer_summary(
     if summary.expired_months:
         parts.append(f"기한 지남 달 {summary.expired_months}")
     parts.append(f"추가 호기 {summary.virtual}대")
+    tips = [_VIRTUAL_HELP]
+    if summary.filtered_out:
+        parts.append(f"필터 밖 {summary.filtered_out}대")
+        tips.append(_FILTERED_HELP)
     st.caption(
-        ":material/event_upcoming: " + " · ".join(parts), width="stretch", help=_VIRTUAL_HELP
+        ":material/event_upcoming: " + " · ".join(parts), width="stretch", help=" ".join(tips)
     )
     if not virtuals:
         return
@@ -829,10 +843,11 @@ def render_floor_layer_panel(
     picked_rows: pd.DataFrame | None,
     key_of: Mapping[str, str],
     picked_key: str,
+    filtered_out: int = 0,
 ) -> None:
     """층 보기 칸 — 이 층 요약 · 공정 칩 · 누른 호기 상세 · 「이 층에서 단축할 호기」 · 자리 없는
     호기. 늘 서는 바깥 칸(테두리 없음) 안에서 켠 동안만 부른다 — 이 함수가 테두리 칸 하나를
-    세운다."""
+    세운다. `filtered_out` 은 공정 필터 밖 FAB 전체 단축 대수다(머리 줄 끝 값 + 풍선)."""
     level = space_layer.layer.level
     with st.container(border=True, key=f"space_shortening_panel_{floor[0]}_{floor[1]}"):
         rows, loose, virtuals = floor_layer.rows, floor_layer.unplaced, floor_layer.virtuals
@@ -847,7 +862,12 @@ def render_floor_layer_panel(
             parts.append(f"추가 {len(virtuals)}")
         if floor_layer.elsewhere:
             parts.append(f"다른 층 {floor_layer.elsewhere}대")
-        st.markdown("**:material/event_upcoming: " + " · ".join(parts) + "**")
+        if filtered_out:
+            parts.append(f"필터 밖 {filtered_out}대")
+        st.markdown(
+            "**:material/event_upcoming: " + " · ".join(parts) + "**",
+            help=_FILTERED_HELP if filtered_out else None,
+        )
         if floor_layer.chips:
             st.pills(
                 "이 층 공정",

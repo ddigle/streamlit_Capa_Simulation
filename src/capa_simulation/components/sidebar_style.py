@@ -1048,10 +1048,11 @@ def _page_box_style() -> str:
     sidebar = '[data-testid="stSidebarContent"]'
     box = f"{sidebar} {_PAGE_BOXES}"
     name_row = f"{_PAGE_BOXES} {_CONDITION_NAME_ROWS}"
-    title = (
+    title_box = (
         f'{_PAGE_BOXES} > [data-testid="stElementContainer"]:first-child'
-        ' [data-testid="stMarkdownContainer"] p'
+        ' [data-testid="stMarkdownContainer"]'
     )
+    title = f"{title_box} p"
     return (
         # 상자 면과 줄 사이 — 패널과 같은 값. 사이드바 세로 블록의 촘촘한 간격보다 뒤라야 이긴다.
         f"""
@@ -1066,6 +1067,13 @@ def _page_box_style() -> str:
             font-weight: 700;
             line-height: 1.4;
             margin: 0 0 0.2rem;
+        }}"""
+        # 제목 칸의 마크다운 기본 아래 여백(−1rem — 문단 아래 여백을 지우는 값)을 걷는다. 그대로면
+        # 제목 칸이 글보다 낮아져 바로 아래 자리 줄 단추가 제목 글을 덮는다(줄 이름 「자리」 를 걷은
+        # 뒤 — 2026-11-09 사용자 검수 P1-5, 사본 실측 칸 높이 8.4px · 글 22.4px).
+        f"""
+        {title_box} {{
+            margin-bottom: 0;
         }}"""
         # 이름 줄 — 패널 이름 줄과 같은 꼴(이름은 왼쪽, 상태는 오른쪽 끝 말줄임, 캡션 흐림 걷음).
         f"""

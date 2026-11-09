@@ -73,6 +73,7 @@ import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
+from capa_simulation.components.process_field import first_and_rest
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.shortening_board import (
     ShorteningHighlight,
@@ -151,6 +152,7 @@ from capa_simulation.scenario_activation import (
     active_scenario_label,
     has_unsaved_scenario_changes,
 )
+from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
 from capa_simulation.services.equipment_units import format_unit_count
@@ -211,16 +213,38 @@ __all__ = [
     "SHARED_FILTER_HELP",
     "SHORTENING_END_KEY",
     "SHORTENING_LEVEL_KEY",
+    "PROCESS_FIELD_EMPTY",
+    "PROCESS_FIELD_NAME",
+    "PROCESS_POPOVER_KEY",
     "SHORTENING_PROCESS_KEY",
     "SHORTENING_START_KEY",
     "USAGE_NOTICE_HELP",
     "VIEW_FRAGMENT_KEY",
     "render_required_shortening_tab",
+    "report_unmatched_processes",
 ]
 
 # 목표·시작 월·끝 월 칸은 `shortening_source` 에 있다(Space 「필요 단축」 보기가 같은 칸을 읽는다) —
 # 여기서 다시 내보낸다.
 SHORTENING_PROCESS_KEY = "equipment_shortening_process_filter_v1"
+# 조건 카드의 공정 칸 — 이름 줄, 고른 값 한 줄 팝오버(안이 다중 선택 칸), 고르지 않았을 때의 글.
+PROCESS_FIELD_NAME = "공정 (표시순서)"
+PROCESS_FIELD_EMPTY = "미선택 시 목표 미달 공정 전체"
+PROCESS_POPOVER_KEY = "equipment_shortening_process_popover"
+# 이름 줄과 한 줄 칸의 꼴 — 이웃 고르기 칸(목표 확보율 · 시작 월)처럼 이름은 위젯 라벨
+# 글(0.875rem)이고 값은 왼쪽 · 펼침 표식은 오른쪽 끝이다(팝오버 단추는 기본이 가운데 정렬이라 단추로
+# 읽혔다). 서식과 이름을 한 `st.html` 에 실어 카드 안 그 자리에 그린다(스타일만 든 `st.html` 은
+# 이벤트 칸으로 간다 — AGENTS 9장).
+_PROCESS_BUTTON = f'.st-key-{PROCESS_POPOVER_KEY} button[data-testid="stPopoverButton"]'
+PROCESS_FIELD_HEAD = (
+    "<style>"
+    ".capa-shortening-process-name{margin:0 0 -0.25rem;font-size:0.875rem;line-height:1.6;}"
+    f"{_PROCESS_BUTTON} > div{{width:100%;justify-content:space-between;min-width:0;}}"
+    f"{_PROCESS_BUTTON} > div > div:first-child{{justify-content:flex-start;min-width:0;}}"
+    f"{_PROCESS_BUTTON} p{{text-align:left;}}"
+    "</style>"
+    f'<p class="capa-shortening-process-name">{PROCESS_FIELD_NAME}</p>'
+)
 # 본문 프래그먼트 key — 조건 카드의 목표 확보율 · 진척 비교 콜백이 이것만 다시 돌린다.
 VIEW_FRAGMENT_KEY = "required_shortening_view"
 # 본문 맨 위 값 줄(값 · 상태 표지 한 줄).
@@ -926,23 +950,40 @@ def _render_process_filter(
 ) -> list[str]:
     """공정 다중 선택(표시순서). 선택지는 맞댄 공정이고 라벨은 공정 표시명, 값은 원본이다.
 
+    카드에는 고른 값 한 줄(「Wafer Saw 외 2개」 — `process_field.first_and_rest`, 하나면 이름,
+    고르지 않았으면 「미선택 시 목표 미달 공정 전체」)만 서고, 누르면 뜨는 팝오버 안이 다중 선택
+    칸이다(2026-11-09 사용자 검수 g03-2 — 고른 칩이 카드를 몇 줄씩 늘렸다). 첫 공정은 **가장 먼저
+    고른 공정**이다 — 다중 선택 값은 고른 차례대로 쌓인다. 둘 이상이면 한 줄 칸의 풍선이 전체
+    목록이다. 팝오버는 key 가 있어 고르는 회차에도 열린 채 남는다.
+
     **세션에 값이 없으면** 공용 프로필의 공정으로 심는다 — 지금 맞댄 공정에 없는 것만 빼고
     (`prune_list_selection` 의 `default`). 프로필에서는 지우지 않는다. 사용자가 바꾸면
     `on_change` 가 저장한다(그때도 화면에 없던 저장 공정은 남긴다 — `merge_filter_processes`).
     """
-    prune_list_selection(SHORTENING_PROCESS_KEY, ordered, default=profile.processes)
-    selected = st.multiselect(
-        "공정 (표시순서)",
-        options=ordered,
-        # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이
-        # 세션·공용 프로필에 들어간다(`unique_format_func`).
-        format_func=labels.unique_format_func(ordered),
-        placeholder="미선택 시 목표 미달 공정 전체",
-        key=SHORTENING_PROCESS_KEY,
-        persist_state="session",
-        on_change=_save_processes if database_path is not None else None,
-        args=(database_path, tuple(ordered)) if database_path is not None else None,
-    )
+    chosen = prune_list_selection(SHORTENING_PROCESS_KEY, ordered, default=profile.processes)
+    # 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이
+    # 세션·공용 프로필에 들어간다(`unique_format_func`).
+    shown_text = labels.unique_format_func(ordered)
+    names = [literal_markdown(shown_text(process)) for process in chosen]
+    st.html(PROCESS_FIELD_HEAD)
+    with st.popover(
+        first_and_rest(names) or PROCESS_FIELD_EMPTY,
+        key=PROCESS_POPOVER_KEY,
+        width="stretch",
+        wrap=False,
+        help=" · ".join(names) if len(names) >= 2 else None,
+    ):
+        selected = st.multiselect(
+            PROCESS_FIELD_NAME,
+            options=ordered,
+            format_func=shown_text,
+            placeholder=PROCESS_FIELD_EMPTY,
+            key=SHORTENING_PROCESS_KEY,
+            persist_state="session",
+            label_visibility="collapsed",
+            on_change=_save_processes if database_path is not None else None,
+            args=(database_path, tuple(ordered)) if database_path is not None else None,
+        )
     absent = absent_filter_processes(profile.processes, set(ordered))
     if absent:
         # 공용 설정이라 다른 시나리오·설비 마스터에는 그 공정이 있다. 말없이 빠지면 왜 덜 골라졌는지
@@ -1190,11 +1231,26 @@ def _report_unmatched(
     if isinstance(prepared, ShorteningStop):
         alerts.state("RS-02", scope=None, content=None, active=False)
         return
-    plan = prepared.plan
-    months = prepared.months
-    sim = simulation_scope(
-        prepared.context.active_scenario, (months[0], months[-1]) if months else None
+    report_unmatched_processes(
+        prepared.plan,
+        active_scenario=prepared.context.active_scenario,
+        months=prepared.months,
+        revision=revision,
     )
+
+
+def report_unmatched_processes(
+    plan: ShorteningPlan,
+    *,
+    active_scenario: ActiveScenario,
+    months: Sequence[int],
+    revision: tuple[str | None, int | None],
+) -> None:
+    """상태 알림 `RS-02` 한 자리 — 필요 단축 일정과 Space 「필요 단축」 보기가 같은 계획 · 같은
+    범위(시뮬레이션 내용 토큰 + 달, 설비 리비전) · 같은 내용(이름 목록)으로 낸다. 한쪽에서 본
+    알림은 다른 쪽에서 다시 뜨지 않는다(AGENTS 9장 「알림 칸」 — 같은 조건을 두 화면이 보면 같은
+    코드 · 같은 범위)."""
+    sim = simulation_scope(active_scenario, (months[0], months[-1]) if months else None)
     equipment_id, equipment_no = revision
     label = sim.label + (f" · 설비 r{equipment_no}" if equipment_no is not None else "")
     uncut = set(plan.missing_cutoff)

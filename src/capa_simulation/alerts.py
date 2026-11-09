@@ -215,7 +215,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("PD-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
     AlertSpec("PD-03", "info", "event", "넘겨받은 달이 화면 기간 밖"),
     AlertSpec("RS-01", "error", "event", "필요 단축 일정을 그리지 못함 — 같은 글이면 한 번"),
-    AlertSpec("RS-02", "check", "state", "필요 단축 일정 — 맞대지 못해 비교에서 뺀 공정"),
+    AlertSpec("RS-02", "check", "state", "필요 단축 일정 · Space 필요 단축 — 맞대지 못해 뺀 공정"),
     AlertSpec("CS-01", "error", "event", "제약 시뮬레이션을 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("CS-02", "check", "event", "넘겨받은 공정이 시나리오 · 조회기간에 없음"),
     AlertSpec("WIP-01", "error", "event", "재공 현황을 그리지 못함 — 같은 글이면 한 번"),

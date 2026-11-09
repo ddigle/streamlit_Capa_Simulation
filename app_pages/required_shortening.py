@@ -12,9 +12,13 @@
 「가용설비 설정」 팝업에서 고친다), 활성 시나리오의 소요대수 로더. 그림·조건·진척 비교는 그대로
 `required_shortening_panel` 이다.
 
-머리 끝의 「Qual 마감 계산기」 단추는 큰 팝업을 연다(2026-10-24 사용자 결정 — 가용설비 현황의
-탭이던 것). 팝업은 키 붙은 호스트 프래그먼트가 부른다(`components/dialog_host.py` — 열기 · 닫기가
-페이지를 다시 계산하지 않는다, 설계 규칙 UI-PRF-01). 계산기는 설비 데이터와 잇지 않아 호기가 없어도
+사이드바 팝업 상자 「Qual 마감 계산기」(조회 조건 패널 바로 밑 · 조건 카드 위 — 2026-11-09 사용자
+검수 g03-1 「Qual 마감 계산기도 사이드바 조건박스 상자로 이동」, 그 전에는 머리 끝 단추)가 큰 팝업을
+연다(2026-10-24 사용자 결정 — 가용설비 현황의 탭이던 것). 상자는 설정 상자와 같은 꼴(상자 = 단추
+→ 같은 제목 팝업 — `settings_box.render_settings_box`)이고 설정이 아니라 도구다. 데이터를 읽기
+전에 세워 호기가 없거나 설비 DB 를 못 읽은 회차에도 같은 자리에 선다. 팝업은 키 붙은 호스트
+프래그먼트가 부른다(`components/dialog_host.py` — 열기 · 닫기가 페이지를 다시 계산하지 않는다,
+설계 규칙 UI-PRF-01). 계산기는 설비 데이터와 잇지 않아 호기가 없어도
 열리므로 호스트는 머리 바로 뒤, 데이터를 읽기 전 · 멈춤(`st.stop()`) 앞에서 매 앱 전체 회차 선다.
 호스트는 이벤트 칸에 늘 한 자리를 쓴다 — 열렸으면 팝업, 아니면 빈 스타일 자리표시자다. 그 뒤의
 기준선 결과 알림 표지 자리(`shortening_progress_panel` — 본문 프래그먼트 안)가 팝업을 여닫을 때
@@ -59,6 +63,7 @@ from capa_simulation.components.sample_data import (
     SAMPLE_TOGGLE_KEY,
     render_sample_switch,
 )
+from capa_simulation.components.settings_box import render_settings_box
 from capa_simulation.components.shortening_source import (
     load_shortening_demand,
     shortening_frames,
@@ -115,25 +120,30 @@ def _qual_calculator_dialog(today: date) -> None:
     render_qual_deadline_calculator(today=today)
 
 
-def _render_header_actions() -> None:
-    st.button(
-        "Qual 마감 계산기",
-        icon=":material/calculate:",
-        key=QUAL_CALCULATOR_BUTTON_KEY,
-        on_click=DIALOG_HOST.open,
-        args=(QUAL_CALCULATOR_DIALOG, QUAL_CALCULATOR_BUTTON_KEY),
-        help=(
-            "Cut-off · 월별 목표 가용대수 · 신규 호기로 호기마다 Qual 완료 마감을 내는 "
-            "계산기입니다. 설비 데이터와 잇지 않습니다."
-        ),
-    )
+def _open_qual_calculator() -> None:
+    """사이드바 「Qual 마감 계산기」 상자의 콜백 — 화면 팝업 호스트만 다시 돌려 연다."""
+    DIALOG_HOST.open(QUAL_CALCULATOR_DIALOG, QUAL_CALCULATOR_BUTTON_KEY)
 
 
 # 화면 소개(정체성 한 문장)는 Guide 첫 단락이 맡는다 — 머리에 설명 줄을 두지 않는다(그림 메모 g03,
-# 설계 규칙 UI-TXT-01).
-render_page_header("필요 단축 일정", trailing=_render_header_actions)
+# 설계 규칙 UI-TXT-01). 머리 끝 칸도 비운다 — 계산기 단추는 사이드바 상자다(2026-11-09 사용자 검수
+# g03-1, 페이지 상단 문구 · 여백 최소화).
+render_page_header("필요 단축 일정")
 render_page_guide("required_shortening", title="필요 단축 일정")
 notices = st.container()
+# 사이드바 「Qual 마감 계산기」 상자 — 조회 조건 패널 바로 밑 · 조건 카드 위(카드보다 먼저 부른다).
+# 단추 key 는 옮기기 전 그대로다(시험 · 화면 확인이 산다).
+render_settings_box(
+    "Qual 마감 계산기",
+    name="qual_calculator",
+    button_key=QUAL_CALCULATOR_BUTTON_KEY,
+    on_click=_open_qual_calculator,
+    tooltip=(
+        "Cut-off · 월별 목표 가용대수 · 신규 호기로 호기마다 Qual 완료 마감을 내는 "
+        "계산기입니다. 설비 데이터와 잇지 않습니다."
+    ),
+    icon=":material/calculate:",
+)
 
 today = date.today()
 # 팝업 호스트 — 매 앱 전체 회차 빠짐없이, 이벤트 칸에 늘 한 자리(모듈 설명). 데이터를 읽기 전이라

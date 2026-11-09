@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import data_error_marks, data_error_texts, events
+from alert_marks import data_error_marks, data_error_texts, events, states
 from shortening_script import months_from_today, shortening_script
 from streamlit.testing.v1 import AppTest
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -319,9 +319,9 @@ def test_turning_the_layer_on_paints_buckets_pins_today_and_keeps_the_epoch(
     _turn_on(app)
     assert app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).value == COLOR_BASIS_SHORTENING
     assert not [box for box in app.sidebar.checkbox if str(box.key).startswith("space_color_")]
-    # 목표는 필요 단축 일정 목표(세션 1.2)로 심기고, 흐리게는 켬이다 — 본문 조작 줄.
+    # 목표는 필요 단축 일정 목표(세션 1.2)로 심기고, 흐리게는 켬이다 — 사이드바 `Space 조건` 카드.
     assert _level(app).value == 1.2
-    assert app.checkbox(key=SPACE_SHORT_DIM_KEY).value is True
+    assert app.sidebar.checkbox(key=SPACE_SHORT_DIM_KEY).value is True
     fab = _views(editor_calls, "fab")[-1]
     assert fab["epoch"] == fab_off["epoch"]
     assert fab["asOf"] == date.today().isoformat()
@@ -393,6 +393,13 @@ def test_both_screens_build_the_same_plan_key_for_the_official_session(
     assert len(plan_keys["bodies"]) == 1
     # 설비 쪽 지문(마스터·비가동·기존보유)과 Cut-off 가 같다 — 두 화면이 같은 세 표를 넘긴다.
     assert plan_keys["keys"][-1][1:5] == board_key[1:5]
+    # 맞대지 못한 공정은 두 화면이 같은 상태 알림 `RS-02` 를 같은 범위 · 같은 지문으로 낸다 —
+    # 한쪽에서 본 알림은 다른 쪽에서 다시 뜨지 않는다(2026-11-09 사용자 검수 g05 — Space 도면 위
+    # 표지 줄을 걷음).
+    (board_note,) = states(shortening, "RS-02")
+    (space_note,) = states(space, "RS-02")
+    assert (space_note["scope"], space_note["fp"]) == (board_note["scope"], board_note["fp"])
+    assert space_note["active"] == board_note["active"]
 
     later = _app(database)
     later.session_state[SHORTENING_START_KEY] = board_key[5][1]
@@ -863,14 +870,16 @@ def test_the_floor_view_counts_only_units_drawn_today_like_the_fab_counts(
     assert {"TC Bonding", "Mold"} <= heads, options
 
 
-def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_stays_on_the_toolbar(
+def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_space_card(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
     """보기 상태의 목표 확보율 고르기는 사이드바 조회 조건 패널의 한 줄이다(2026-11-08 그림 메모
     g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동」). 줄 꼴은 패널의
     다른 줄과 같은 이름 줄 + 값(전환 단추 — 라벨은 이름 줄이 말한다)이고 위젯 key 는 그대로다.
-    「단축 없는 호기 흐리게」 는 본문 조작 줄에 남는다. 끈 회차에는 줄이 서지 않는다(그 회차는
-    목표를 읽지 않는다). 배치 편집으로 쉬는 회차는 `_rest_level` 시험이 본다."""
+    「단축 없는 호기 흐리게」 와 기준 달 한 줄은 사이드바 `Space 조건` 카드의 「색 기준」 밑이고
+    도면 위 본문에는 글 줄이 없다(2026-11-09 사용자 검수 g05 — 「단축없는호기 흐리게, 날짜, 맞대지
+    못한 공정 등 3줄도 다른 위치로」). 끈 회차에는 줄 · 칸이 서지 않는다(그 회차는 목표를 읽지
+    않는다). 배치 편집으로 쉬는 회차는 `_rest_level` 시험이 본다."""
     from capa_simulation.components.condition_field import FIELD_KEY_PREFIX
 
     def levels(node: Any) -> list[Any]:
@@ -905,7 +914,20 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_stays_on
 
     assert any(key.endswith(f"{FIELD_KEY_PREFIX}space_target") for key in block_ids(app.sidebar))
     assert "목표 확보율" in [str(item.value) for item in app.sidebar.caption]
-    assert app.main.checkbox(key=SPACE_SHORT_DIM_KEY).value is True
+    assert app.sidebar.checkbox(key=SPACE_SHORT_DIM_KEY).value is True
+    assert not [box for box in app.main.checkbox if box.key == SPACE_SHORT_DIM_KEY]
+    # 기준 달 줄(풍선이 설비 · 시뮬레이션 · 오늘)도 카드다 — 본문에는 기준 · 맞대지 못한 공정 줄이
+    # 없다(맞대지 못한 공정은 상태 알림 `RS-02`).
+    basis = [
+        item for item in app.sidebar.caption if "필요 단축 일정과 같은 계산" in str(item.proto.help)
+    ]
+    assert len(basis) == 1 and str(basis[0].value).startswith(":material/grid_view: ")
+    main_captions = [str(item.value) for item in app.main.caption] + [
+        str(item.proto.help) for item in app.main.caption
+    ]
+    assert not any("필요 단축 일정과 같은 계산" in text for text in main_captions)
+    assert not any("맞대지 못한 공정" in text for text in main_captions)
+    assert len(states(app, "RS-02")) == 1
     level.set_value(1.3)
     _ok(app.run())
     assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.3
@@ -1151,8 +1173,9 @@ def test_the_off_payload_carries_no_residue_of_a_layer_round(
         (space_shortening_layer, "fab_floor_counts"),
         (space_shortening_layer, "fab_layer_summary"),
         (space_shortening_view, "load_space_layer"),
-        (space_shortening_view, "render_layer_controls"),
+        (space_shortening_view, "render_dim_field"),
         (space_shortening_view, "render_level_field"),
+        (space_shortening_view, "report_layer_unmatched"),
         (space_shortening_view, "render_floor_layer_panel"),
         (space_shortening_view, "render_fab_layer_summary"),
         (space_shortening_view, "layer_table_columns"),
@@ -1249,8 +1272,8 @@ from capa_simulation.components.space_shortening_view import render_fab_layer_su
 from capa_simulation.services.space_shortening_layer import FabSummary
 
 summary = FabSummary(
-    total=5, drawn=5, unplaced=0, max_days=197, expired=0, virtual=0, filtered_out=0,
-    expired_months=0, inactive={inactive},
+    total=5, drawn=5, unplaced=0, max_days=197, expired=0, virtual=0,
+    filtered_out={filtered_out}, expired_months=0, inactive={inactive},
 )
 render_fab_layer_summary(SimpleNamespace(layer=SimpleNamespace(level=1.1)), summary, ())
 """
@@ -1269,13 +1292,27 @@ def test_the_fab_summary_splits_units_on_inactive_floors_out_of_the_drawn_count(
     """비활성 층 호기는 도면에 그려지지 않는데 「도면 5」 에 들고 끝에 「비활성 층 4대」 가 따로
     붙어 셈이 맞아 보이지 않았다(E2E r1). 합(모든 층)은 그대로 두고 괄호 안을 도면 · 비활성 층 ·
     자리 없음으로 나눈다."""
-    app = AppTest.from_string(FAB_SUMMARY_SCRIPT.format(inactive=inactive)).run(timeout=60)
+    app = AppTest.from_string(FAB_SUMMARY_SCRIPT.format(inactive=inactive, filtered_out=0)).run(
+        timeout=60
+    )
 
     assert not app.exception, [item.message for item in app.exception]
     [line] = [str(item.value) for item in app.caption if "단축 5대" in str(item.value)]
     assert expected in line
     assert not line.endswith("대 · 비활성 층 4대")
     assert line.count("비활성 층") == (1 if inactive else 0)
+    assert "필터 밖" not in line
+
+
+def test_units_outside_the_process_filter_ride_on_the_fab_summary_line() -> None:
+    """공정 필터 밖 단축 대수는 도면 위 표지 줄이 아니라 도면 아래 FAB 요약 줄 끝 값이고 뜻은 그
+    풍선이다(2026-11-09 사용자 검수 g05 — 페이지 상단 문구 최소화, 설계 규칙 UI-TXT-04)."""
+    app = AppTest.from_string(FAB_SUMMARY_SCRIPT.format(inactive=0, filtered_out=3)).run(timeout=60)
+
+    assert not app.exception, [item.message for item in app.exception]
+    [line] = [item for item in app.caption if "단축 5대" in str(item.value)]
+    assert str(line.value).endswith(" · 필터 밖 3대")
+    assert "도면 · 요약에 세지 않은" in line.proto.help
 
 
 def _chip_round() -> None:

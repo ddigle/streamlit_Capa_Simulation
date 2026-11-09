@@ -480,12 +480,21 @@ def _open(app: AppTest) -> AppTest:
     return app
 
 
-def test_the_header_button_opens_the_calculator_in_a_dialog(tmp_path: Path) -> None:
-    """필요 단축 일정 머리 끝의 단추가 팝업을 연다. 닫혀 있으면 계산기를 그리지 않는다. 팝업 안에는
-    본문 제목을 다시 적지 않는다(팝업 머리가 제목이다)."""
+def test_the_sidebar_box_opens_the_calculator_in_a_dialog(tmp_path: Path) -> None:
+    """필요 단축 일정 사이드바의 「Qual 마감 계산기」 상자가 팝업을 연다(2026-11-09 사용자 검수
+    g03-1 — 머리 끝 단추에서 옮김). 상자는 설정 상자와 같은 꼴(상자 key 접두어 · 같은 제목
+    팝업)이고 본문에는 그 단추가 없다. 닫혀 있으면 계산기를 그리지 않는다. 팝업 안에는 본문 제목을
+    다시 적지 않는다(팝업 머리가 제목이다)."""
+    from capa_simulation.components.settings_box import settings_box_key
+
     app = _page(tmp_path)
     assert not _has_key(app, CUTOFF_KEY)
     assert DIALOG_KEY not in app.session_state
+    assert [button.label for button in app.sidebar.button if button.key == OPEN_BUTTON_KEY] == [
+        "Qual 마감 계산기"
+    ]
+    assert not [button for button in app.main.button if button.key == OPEN_BUTTON_KEY]
+    assert _has_key(app, settings_box_key("qual_calculator"))
 
     _open(app)
 

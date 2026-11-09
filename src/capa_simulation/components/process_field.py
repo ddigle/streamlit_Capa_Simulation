@@ -4,11 +4,14 @@
 
 - **값 칸** — 사이드바 조회 조건 패널의 페이지 칸(`page_condition_slot(0)`)에 이름 줄 「공정」 + 값
   칸 한 벌(`condition_field`)로 선다. 칸 높이는 고른 수와 상관없이 같다(칩 칸은 고른 수에 따라 60 →
-  160px 로 흔들려 사이드바를 밀었다 — 2026-11-07 조사). 공용 값이 이 화면에 걸리면 값 칸 테두리를
-  강조하고(`ACCENT_SUFFIX`), 다른 화면에서 온 값이면 이름 줄 오른쪽에 「HOME 에서」 꼴 출처를 단다.
-  이 화면에 없는 공정이면 이름 줄에 주황 배지 「HB 접합 없음」(여럿이면 「n개 없음」)과 값 칸 아이콘
-  `filter_alt_off` 로 알린다 — 사내는 설비 쪽 공정 이름이 달라 자주 뜨므로 글자만 흐리게 두지
-  않는다.
+  160px 로 흔들려 사이드바를 밀었다 — 2026-11-07 조사). 고른 값 글은 한 줄 「Wafer Saw 외 2개」
+  꼴이다(`first_and_rest` — 2026-11-09 사용자 검수 g03-2): 하나면 그 이름, 둘부터 첫 공정 +
+  나머지 수, 넘치면 칸 폭에서 말줄임이고 둘 이상이면 풍선이 전체 목록이다. 첫 공정은 표시순서상 첫
+  공정이다 — 판이 고른 값을 선택지 차례로 다시 늘어놓아 고른 차례가 남지 않는다. 공용 값이 이
+  화면에 걸리면 값 칸 테두리를 강조하고(`ACCENT_SUFFIX`), 다른 화면에서 온 값이면 이름 줄
+  오른쪽에 「HOME 에서」 꼴 출처를 단다. 이 화면에 없는 공정이면 이름 줄에 주황 배지 「HB 접합
+  없음」(여럿이면 「n개 없음」)과 값 칸 아이콘 `filter_alt_off` 로 알린다 — 사내는 설비 쪽 공정
+  이름이 달라 자주 뜨므로 글자만 흐리게 두지 않는다.
 - **팝업** — 값 칸을 누르면 `app.py` 의 조건 팝업 호스트 프래그먼트만 다시 돈다(열기로 앱 전체가
   돌지 않는다 — 설계 규칙 UI-PRF-01, 시나리오 · 조회기간 칸과 같은 `rerun_fragment_if_alone`). 팝업
   본문은 Components v2 판 하나(`process_field_assets/`)라 타일을 누르는 동안 서버가 돌지 않고, 누른
@@ -120,6 +123,19 @@ def _shown_names(values: Sequence[str], text: Callable[[object], str]) -> str:
     return " · ".join(literal_markdown(text(value)) for value in values)
 
 
+def first_and_rest(names: Sequence[str]) -> str:
+    """고른 공정 한 줄 글 — 하나면 그 이름, 둘부터 「<첫 이름> 외 n개」(2026-11-09 사용자 검수 g03-2
+    「가장 먼저 선택된 공정 1개만 이름 보여주는식으로 (Wafer Saw 외 n개 선택)」 — 칸 이름이 「공정」
+    이라 「선택」 은 붙이지 않는다). `names` 는 보이는 글자 그대로(마크다운 막음은 부르는 쪽)이고 그
+    차례의 첫 이름이 앞에 선다. 공용 값 칸과 필요 단축 일정 카드의 공정 칸이 같이 쓴다(설계 규칙
+    UI-CON-04). 빈 목록은 빈 글자다."""
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return f"{names[0]} 외 {len(names) - 1}개"
+
+
 def filter_value(
     hits: Sequence[str],
     options: Sequence[str],
@@ -127,16 +143,19 @@ def filter_value(
     *,
     empty: str | None = None,
 ) -> str:
-    """여러 개 고름 값 칸 글자 — 걸린 것이 없으면 「전체 N공정」(또는 `empty`), 둘까지는 이름,
-    셋부터는
-    「n / N 공정」(HOME 공정 필터 칸과 같은 꼴)."""
+    """여러 개 고름 값 칸 글자 — 걸린 것이 없으면 「전체 N공정」(또는 `empty`), 걸렸으면 한 줄
+    「Mold 외 2개」(`first_and_rest` — 첫 공정은 표시순서상 첫 공정)."""
     if not options:
         return NO_PROCESS_VALUE
     if not hits:
         return empty if empty is not None else f"전체 {len(options)}공정"
-    if len(hits) <= 2:
-        return _shown_names(hits, text)
-    return f"{len(hits)} / {len(options)} 공정"
+    return first_and_rest([literal_markdown(text(value)) for value in hits])
+
+
+def filter_help(hits: Sequence[str], text: Callable[[object], str]) -> str | None:
+    """값 칸 풍선 — 둘 이상 걸렸으면 전체 목록(한 줄 글에는 첫 공정만 보인다). 하나 · 전체는
+    None 이다(말줄임된 한 줄 단추는 Streamlit 이 풍선으로 글을 다 보인다)."""
+    return _shown_names(hits, text) if len(hits) >= 2 else None
 
 
 def missing_badge(gone: Sequence[str], labels: ProcessLabels | None) -> str | None:
@@ -201,6 +220,7 @@ def render_process_filter(
             key=FIELD_KEY,
             icon=MISSING_ICON if gone and not hits else FIELD_ICON,
             status=status,
+            help=filter_help(hits, text),
             accent=bool(hits),
             disabled=not choices,
             on_click=open_process_dialog,

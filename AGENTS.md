@@ -539,8 +539,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/required_shortening.py` — `필요 단축 일정`(실행 관리 둘째 화면). 정체성은 **단축이 필요한 공정 전부의 진척
   관리 한 페이지**다(머리말, 2026-10-22). 설비 저장본·Cut-off·소요대수를 모아 `required_shortening_panel.py` 에 넘긴다.
   계산 규칙은 `services/required_shortening.py` 다.
-  - 머리 끝 「Qual 마감 계산기」 단추(`render_page_header(trailing=)`)가 큰 팝업을 연다(2026-10-24 — 가용설비 현황의 탭이던
-    것). 팝업은 화면 팝업 호스트(`DialogHost("required_shortening_dialog_host", required_shortening_open_dialog)` — 값
+  - 사이드바 팝업 상자 「Qual 마감 계산기」(`render_settings_box` 꼴 — 상자 = 단추 → 같은 제목 팝업, 상자 key
+    `sidebar_dialog_box_qual_calculator`, 단추 key 는 옮기기 전 그대로 `required_shortening_qual_calculator_v1`)가 큰 팝업을
+    연다(2026-10-24 — 가용설비 현황의 탭이던 것, 2026-11-09 사용자 검수 g03-1 로 머리 끝 단추에서 조회 조건 패널 밑 · 조건 카드
+    위로 — 설정이 아니라 도구지만 팝업을 여는 사이드바 상자 꼴은 하나다). 상자는 데이터를 읽기 전에 서 멈춘 회차에도 같은 자리다. 팝업은 화면 팝업 호스트(`DialogHost("required_shortening_dialog_host", required_shortening_open_dialog)` — 값
     `qual_calculator`, 답 U5)가 열고 닫는다 — 여닫아도 페이지를 다시 계산하지 않고, 닫기는 붙여넣기 글 칸 초안만 지운다(계산기
     입력은 남는다). 호스트는 머리 바로 뒤·데이터를 읽기 전이라 호기가 없어 화면이 `st.stop()` 해도 열리고,
     이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 빈 스타일)를 쓴다 — 계산기 본문은 이벤트 칸에 쓰지 않는다
@@ -704,11 +706,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **사이드바 「Space 도면」 상자**(2026-11-03 사용자 요청 — 레이아웃 위 요소 넷을 사이드바 조회 조건 상자 꼴로, 9장
     「사이드바·조건 카드·본문」 의 화면 조작 상자): 조회 조건 패널 바로 밑 · `Space 조건` 카드 **위**에 이 화면을 볼 때만 선다
     (`page_box_key("space")` — `render_equipment_scenario_row` 바로 뒤, 첫 `condition_card` 보다 먼저 자리만 세우고 안은 옛 경로 줄
-    자리에서 `with space_box:` 로 채운다 — 호기 없는 화면도 같다). 안은 제목 「Space 도면」 · 이름 줄 「자리」 + `FAB 전체`
-    (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 이름 줄 「도면」 +
+    자리에서 `with space_box:` 로 채운다 — 호기 없는 화면도 같다). 안은 제목 「Space 도면」 · 자리 줄 `FAB 전체`
+    (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 도면 줄
     `배치 편집`(층 `space_layout_edit_mode`·잠기면 `space_layout_edit_mode_locked` / FAB `space_fab_edit_mode`)·`캔버스 편집`
     (단추만 — 팝업은 본문 끝 호스트, `floor_canvas_dialog`) · FAB·가정이면 `공식으로 바꾸기` · 잠금 줄(`_render_edit_lock_line` —
-    표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글이다 — **상자에는 조작만 둔다**.
+    표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글이다 — **상자에는 조작만 둔다**
+    (줄 이름 「자리」 · 「도면」 도 달지 않는다 — 2026-11-09 사용자 검수 P1-5).
     상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태 알림이다(2026-11-04 Space 결정 보드 답 — 「인터페이스에 설명 문구를 다는
     걸 지양」, 9장 「알림 칸」): 배치 차이 `EQ-13`(알림 — `space_layout_notices` 의 `LayoutNotice` — 짧은 글 「가정 배치 · 공식과
     다른 호기 n대 · 도면 요소 m개」 등, 전문 · 지문 재료 `content` 는 실효 수 · 저장된 행 수, 아래 「보기」 문단) · 모듈 구성이
@@ -739,13 +742,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
     꺼내고(5장 9), 목표 확보율은 사이드바 조회 조건 패널 페이지 칸(`space_shortening_view.LEVEL_SLOT` 1 — 첫 칸은 공용 공정 칸,
     칸 key `condition_field_space_target`, 이름 줄 + 전환 단추 줄 `render_level_field`, 한 줄 서식 `LEVEL_FIELD_STYLE` 을 Space 가
-    회차마다 그림 — 2026-11-08 그림 메모 g05)이고 배치 편집으로 쉬는 회차에도 잠근 채 서며 까닭은 이름 줄 풍선이다. **본문 조작
-    줄**(늘 서는 `space_shortening_toolbar` — 「단축 없는 호기 흐리게」·기준 캡션·못 읽음 알림 · FAB 편집 「필요 단축 보기 쉼」)·FAB 블록 셋째 줄·층 목록 칸 넷·요약·추가 호기 상자(늘 서는
+    회차마다 그림 — 2026-11-08 그림 메모 g05)이고 배치 편집으로 쉬는 회차에도 잠근 채 서며 까닭은 이름 줄 풍선이다. 「단축 없는
+    호기 흐리게」(`render_dim_field`)와 기준 달 한 줄(`render_layer_basis` — 풍선이 설비 · 시뮬레이션(미저장 편집 포함) · 오늘)은
+    `Space 조건` 카드의 「색 기준」 밑(필요 단축 기준의 그룹 체크 자리 — 2026-11-09 사용자 검수 g05, 쉬는 회차에도 흐리게 칸은 선다),
+    맞대지 못한 공정은 필요 단축 일정과 **같은 함수** `required_shortening_panel.report_unmatched_processes`(`RS-02` — 같은 계획 · 범위 ·
+    내용이라 화면을 옮겨도 다시 뜨지 않는다, 보기를 그린 회차에만 부르고 그 밖의 회차는 같은 자리에서 `alerts.flush()`), 공정 필터 밖
+    단축 대수는 FAB 요약 · 층 보기 칸 머리 줄 끝 「필터 밖 n대」 다. **본문 자리**(늘 서는 `space_shortening_toolbar` — 못 읽음 마크 · FAB 편집
+    「필요 단축 보기 쉼」 뿐, 도면 위에 글 줄을 두지 않는다)·FAB 블록 셋째 줄·층 목록 칸 넷·요약·추가 호기 상자(늘 서는
     `space_shortening_fab_slot`)·층 보기 칸(늘 서는 테두리 없는 `space_shortening_slot` 안 — 공정 칩·「이 층에서 단축할 호기」·
     도면에 자리가 없는 호기·누른 호기 상세)을 그린다. 켠 회차의 기준일은 오늘로 고정이다(세션 기준일은 지우지도 쓰지도 않는다 —
     뷰어 `asOfPinned` 고정 줄). 배치 편집 중은 쉰다(라디오 값 그대로, 그리는 색은 공정구분 기본 —
     `effective_choice` 를 편집기·범례가 같이 쓴다). 쉬는 까닭 한 줄(`_render_layer_rest_caption`)은 한 화면에 한 번이다 — 층
-    상세는 편집기 위 캡션, FAB 편집은 편집기 캡션이 없어 본문 조작 줄이 적는다. 비활성 층 상세에서는 쉬지 않고 배너 아래
+    상세는 편집기 위 캡션, FAB 편집은 편집기 캡션이 없어 본문 자리가 적는다. 비활성 층 상세에서는 쉬지 않고 배너 아래
     그대로 서되 추가N 을 붙이지 않는다(층 사용 명세 8-2). 층 보기 칸이 세는 행은 그 층에 **오늘 그려지는** 행이다(뷰어 roster 의 페이더 범위 합집합이 아니다 — FAB 층
     대수와 같은 축). 계획을 못 읽은 켠 회차의 범례는 채우기 칸 없이 테·덧표시만이다(뷰어가 지연·보관 면을 끈다 — D12). 상세 단추 「필요 단축 일정에서 이 공정 보기」 는 대기 칸만 적고 다음 회차
     본문 맨 앞(`switch_to_queued_shortening`)이 옮긴다. epoch 는 바뀌지 않는다(레이어·목표·칩·흐림은 epoch 밖). 사이드바
@@ -2275,9 +2283,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/test_page_header_description.py` 가 호출 자리를 맞댄다(2026-11-07 답 head-desc). `render_page_header_with_status` 는 진행
   표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
   돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. 두 함수 모두 `trailing` 을 주면 제목 줄 끝 칸에
-  그것을 그린다(지금은 필요 단축 일정 「Qual 마감 계산기」 단추 하나 — 도구다. 설정 단추는 이 칸에 두지 않고 사이드바 설정
-  상자다(`settings_box.py`, 9장). HOME 주요 Case 칩은 2026-11-02, 가용설비 현황 「설정」 은 2026-11-03 에 사이드바로 옮겼다 —
-  `_render_title_row` 한 벌) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
+  그것을 그린다(지금은 쓰는 화면이 없다 — 설정 단추 · 도구 단추는 이 칸에 두지 않고 사이드바 팝업 상자다(`settings_box.py`,
+  9장). HOME 주요 Case 칩은 2026-11-02, 가용설비 현황 「설정」 은 2026-11-03, 필요 단축 일정 「Qual 마감 계산기」 는 2026-11-09 에
+  사이드바로 옮겼다 — `_render_title_row` 한 벌) — 제목과 끝 칸은 `st.columns` 다(가로 컨테이너는 `h1` 여백을 지운다 — 9장). 두 칸의 폭은
   비율이 아니라 글자 폭이다(`TITLE_ROW_KEY` 컨테이너 바로 밑 칸만 고르는 CSS). 화면에서는 제목이 숨어(흐름에서 빠진다) 끝
   칸만 오른쪽 끝에 선다. 제목이 보이는 인쇄에서는 한 줄에 안 들면 끝 칸이 통째로 제목 밑 오른쪽으로 내려가고 제목은 접히지
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
@@ -3277,7 +3285,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/process_field.py` — 공용 공정 칸의 화면 조각(값 칸 + 타일 판 팝업 — `process_field_assets`,
   2026-11-08 답 P1 · P2). 여러 개 따라감은 `render_process_filter(options, screen=, labels=)` 가 걸 공정을 돌려주고(산출 결과 셋 ·
   가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름(받기만)은 `render_process_choice(options,
-  screen=, key=)`(공정 Capa 상세 · 제약 시뮬레이션). 표지는 값 칸 테두리 `ACCENT` 두 겹 · 이름 줄 출처 「X 에서」(실제로 걸렸을
+  screen=, key=)`(공정 Capa 상세 · 제약 시뮬레이션). 값 칸 글은 「전체 N공정」 · 하나면 이름 · 둘부터 한 줄 「Mold 외 2개」
+  (`first_and_rest` — 표시순서상 첫 공정, 풍선 `filter_help` 가 전체 목록 — 2026-11-09 사용자 검수 g03-2, 필요 단축 일정 카드의
+  공정 칸도 같은 함수)다. 표지는 값 칸 테두리 `ACCENT` 두 겹 · 이름 줄 출처 「X 에서」(실제로 걸렸을
   때만) · 없는 공정 주황 배지 · 본문 칩 35px(`app.py` `render_chip_slot` 자리, 누르면 모든 화면 지움)이다. 팝업은 조건 팝업
   호스트의 넷째 갈래이고 선택지는 페이지가 값 칸을 그린 회차에 세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을
   가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과 dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다.
@@ -3925,7 +3935,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시트 머리·교차검증 위에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄. 호기 목록·호기 필터 시트에는 없다.
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드 — 맨 위 위아래 두 칸 `목표 확보율`·
   `진척 비교`(그림 메모 g03, 본문 프래그먼트는 기준선 목록이 카드에 세운 것과 다르면 앱 전체 회차로 올린다 — `_Plan.shown_baselines`
-  · `_view_choices`), 값 줄 끝 상태 표지 셋 + `RS-03` ~ `RS-05`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
+  · `_view_choices`) · 공정 칸은 이름 줄 + 고른 값 한 줄 팝오버(`PROCESS_POPOVER_KEY` — 「Wafer Saw 외 2개」, 처음 고른 공정 ·
+  둘 이상이면 풍선이 전체 목록, 안이 다중 선택 칸 `SHORTENING_PROCESS_KEY` — 2026-11-09 사용자 검수 g03-2), 값 줄 끝 상태 표지
+  셋 + `RS-03` ~ `RS-05`, KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
   UPEH 가정 칸(머리 아래 알림 · 기준선 저장 거절)은 패널에 남는다. 표는 줄 이름 칸을 붙박고 달 칸을 74px 로 줄여 기준 창에
   14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —
@@ -3935,8 +3947,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
   모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다.
-- `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 본문 조작 줄(목표·흐리게)·
-  기준 캡션·못 읽음 알림·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link`)과 상세 단추 이동
+- `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 사이드바 목표 줄 · 카드
+  흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link`)과 상세 단추 이동
   (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10).
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
@@ -6260,19 +6272,23 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   가르고, 탭에 매인 설정도 상자를 탭마다 세웠다 걷지 않고 팝업 안에서 탭 이름을 단 묶음 머리로 가른다. 묶음이 많아 한 판이
   길면 팝업 안 탭으로 쓰는 묶음마다 가르고(HOME 「HOME 설정」 다섯 탭 — 2026-11-04 사용자 검수 home-u01) 팝업 머리에 안내
   문단을 두지 않는다 — 공용 설정 · 저장하지 않고 닫으면 사라짐 같은 말은 저장 단추 풍선이 한다. 설정이 아닌 것은 본문에
-  남는다 — 편집 동작(저장·버리기·내려받기·붙여넣기·기준선 저장·Space 저장자 칸)·도구(필요 단축 일정 「Qual 마감 계산기」)·편집표에
+  남는다 — 편집 동작(저장·버리기·내려받기·붙여넣기·기준선 저장·Space 저장자 칸)·편집표에
   딸린 보기 거름(설비 마스터 작은 편집표의 「… 표 보기 설정」 — 펼침 안 「보기 적용」 과 한 몸)·탭 자체(가용설비 현황
   `Preference` 탭). Space 의 자리 이동·`배치 편집`·`캔버스 편집`·`공식과 견주기` 는 설정이 아니라 그 화면의 조작이라 설정
-  상자가 아니라 바로 위 화면 조작 상자(「Space 도면」 — 같은 날 사용자 Space 요청)에 선다. 화면 확인 `settings_boxes` 가 상자의
-  자리와 본문 옛 단추 0 을 본다.
+  상자가 아니라 바로 위 화면 조작 상자(「Space 도면」 — 같은 날 사용자 Space 요청)에 선다. 데이터와 잇지 않는 도구 팝업(필요
+  단축 일정 「Qual 마감 계산기」)은 설정이 아니지만 2026-11-09 사용자 검수 g03-1(「Qual 마감 계산기도 사이드바 조건박스 상자로
+  이동」)로 같은 꼴의 사이드바 팝업 상자(`render_settings_box(icon=":material/calculate:")` — 상자 = 단추 → 같은 제목 팝업)에
+  선다 — 팝업을 여는 사이드바 상자 꼴은 하나다. 화면 확인 `settings_boxes` 가 설정 상자의 자리와 본문 옛 단추 0 을,
+  `equipment_moves` 가 계산기 상자 → 팝업을 본다.
 - **하위 보기 전환은 본문이다.** 탭 안에서 무엇을 볼지 고르는 전환(보기·표현·표시 방식·표시 항목)은 하위 탭과 같은 것이라
   본문에 두고, 카드에는 공정 밖의 거르는 조건(기간·기준일·분류·호기 필터)만 둔다. 공정은 조회 조건 패널의 공용 공정 칸(값 칸 +
   팝업 — `components/process_field.py`)이다 — 1차 화면(산출 결과 · 기준 정보 · 가용설비 Main · Space · 공정 Capa 상세 · 제약),
   2차 화면(필요 단축 일정 · 표준 목표 · Static 대비 일정)은 아직 카드 칸(2026-11-08 답 P1). 행을 펼치는 「상세」 토글은 카드 자리이고,
   공정 Capa 상세의 「제품별 소요대수」·「분류」·「구획」(①~④ 접기, 2026-10-22 「소요대수처럼」)만 사용자 요청에 따른
-  예외로 본문 표 도구 줄이다. Space 「필요 단축」 보기의 「단축 없는 호기 흐리게」 도 이 규칙대로 도면 위 본문 조작
-  줄이다(2026-10-24 결정 D6 — 「색 기준」 라디오만 사이드바 카드). 목표 확보율은 2026-11-08 그림 메모 g05 로 사이드바 조회 조건
-  패널 줄이다(사용자 요청이 D6 를 그 칸만 뒤집음 — 예외). 제약 시뮬레이션 모드 전환 「제약 영향 | 개조 일정」 도 예외로 조건 카드
+  예외로 본문 표 도구 줄이다. Space 「필요 단축」 보기의 조작은 2026-10-24 결정 D6 의 도면 위 본문 조작 줄을 두 번에 걸쳐
+  사이드바로 옮겼다(예외) — 목표 확보율은 2026-11-08 그림 메모 g05 로 조회 조건 패널 줄, 「단축 없는 호기 흐리게」 와 기준 달 줄은
+  2026-11-09 사용자 검수 g05(「페이지 상단 … 3줄도 다른 위치로」)로 `Space 조건` 카드의 「색 기준」 밑(필요 단축 기준의 그룹 체크
+  자리)이다. 제약 시뮬레이션 모드 전환 「제약 영향 | 개조 일정」 도 예외로 조건 카드
   맨 위다(카드에 설 칸을 바꾸는 전환 — 그림 메모 g12). 산출 결과 대당 Capa 의 「표시 방식」(공정별·STEP별)은
   거꾸로 사용자 요청에 따른 예외로 `표 조건` 카드 첫 칸이다(2026-11-02 사용자 요청(검수표) — 같은 카드의 「집계 수준」 잠금·
   「공정 필터」 안내가 이 값을 따른다).
@@ -6416,7 +6432,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   사용자 요청(검수표), `docs/design_rules.md` UI-TXT-04) — 고칠 곳은 그 표의 까닭 칸 머리 풍선(`AlertTable.help` — `title`, 점선 밑줄)과
   Guide 가 말한다(UI-TXT-01 · 02). 작업 대상(기한 임박 · 이행 지연 · 저장 전 바뀐 호기), 기록(이력 · off 공정), 입력을 바꿀 때마다
   바뀌는 결과(제약 시뮬레이션 「달마다 보기」)는 자리에 둔다. 같은 조건을 두 화면이 보면 **같은 코드 · 같은
-  범위**로 낸다(`ST-01` Static Capa · 산출 결과 소요대수 탭, `HM-02` HOME · 산출 결과 대당 Capa) — 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다. 범위 · 딸린 표 · 화면 오류 표지는 `components/state_alerts.py`
+  범위**로 낸다(`ST-01` Static Capa · 산출 결과 소요대수 탭, `HM-02` HOME · 산출 결과 대당 Capa, `RS-02` 필요 단축 일정 · Space 「필요 단축」 보기) — 한쪽에서 본 것은 다른 쪽에서 다시 뜨지 않는다. 범위 · 딸린 표 · 화면 오류 표지는 `components/state_alerts.py`
   가 짓는다. 본문에서 뺀 목록은 알림에 딸린 표로 싣는다(`tables=` — 한 줄에 여럿, 커서 None 인 칸은 빠진다. 대당 Capa 제외 `ST-14` ·
   소요대수 `ST-15` · `ST-21` · 계획 쪽 `ST-01` · `ST-04` · 환산 `ST-05` · 수율 `ST-06` · 표준 목표 `ST-17` · 필요 단축 일정 `RS-02` · 사건은 `queue_flash(tables=)` — DB 등록 충돌 `SC-04`). 같은 코드 + 같은 짧은 글의 사건이 한 줄에 합쳐지면 표도 새 표지의 것이다(`freshenEventRow`). 같은 페이지의 팝업 호스트가 알림 자리 뒤에 오면 조건 · 탭에 따라 표지 수가 달라지지 않게 그 자리에서
   `alerts.flush()` 로 한 자리를 채운다(생산 계획 `ST-04` · `ST-06`).

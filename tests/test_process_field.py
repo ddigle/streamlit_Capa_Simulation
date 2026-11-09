@@ -2,8 +2,9 @@
 
 """공용 공정 칸의 화면 조각(`components/process_field.py` — 2026-11-08 사용자 답 P1 · P2-5).
 
-- 값 칸 글자 — 「전체 N공정」 · 이름 둘까지 · 「n / N 공정」. 다른 화면에서 온 값은 이름 줄에 「HOME
-  에서」, 이 화면에 없는 값은 주황 배지 「HB 접합 없음」.
+- 값 칸 글자 — 「전체 N공정」 · 하나면 이름 · 둘부터 한 줄 「Mold 외 n개」(풍선이 전체 목록 —
+  2026-11-09 사용자 검수 g03-2). 다른 화면에서 온 값은 이름 줄에 「HOME 에서」, 이 화면에 없는 값은
+  주황 배지 「HB 접합 없음」.
 - 팝업 본문 — 여러 개 고름 「적용」 은 이 화면에 없는 값을 남기고, 「전체」 는 지우고, 하나 고름은
   그 화면의 공정 칸만 바꾼다(공용 값은 그대로 — 받기만).
 - 판의 트리거는 `apply` 하나다 — 결과 객체가 dict 라 `clear` 같은 이름은 `dict.clear` 와 겹쳐 연
@@ -35,7 +36,9 @@ from capa_simulation.components.process_field import (
     PROCESS_FIELD_HTML,
     PROCESS_FIELD_JS,
     PickerResult,
+    filter_help,
     filter_value,
+    first_and_rest,
     missing_badge,
 )
 from capa_simulation.components.process_labels import ProcessLabels
@@ -69,16 +72,25 @@ def shared_values(app: AppTest) -> list[str]:
 # ------------------------------------------------------------------ 글자 · 표지
 
 
-def test_the_field_value_reads_all_names_or_a_count() -> None:
+def test_the_field_value_reads_one_line_first_name_and_the_rest() -> None:
+    """고른 값은 한 줄 「<첫 공정> 외 n개」 다(2026-11-09 사용자 검수 g03-2 — 「선택」 은 붙이지
+    않는다, 칸 이름이 「공정」). 첫 공정은 걸린 차례(선택지 차례 — 표시순서)의 첫 이름이고, 둘
+    이상이면 풍선이 전체 목록이다."""
     text = str
     assert filter_value([], OPTIONS, text) == "전체 3공정"
     assert filter_value([], OPTIONS, text, empty="공정을 선택하세요") == "공정을 선택하세요"
     assert filter_value(["Mold"], OPTIONS, text) == "Mold"
-    assert filter_value(["WF", "Mold"], OPTIONS, text) == "WF · Mold"
-    assert filter_value(OPTIONS, [*OPTIONS, "AVI"], text) == "3 / 4 공정"
+    assert filter_value(["WF", "Mold"], OPTIONS, text) == "WF 외 1개"
+    assert filter_value(OPTIONS, [*OPTIONS, "AVI"], text) == "WF 외 2개"
     assert filter_value([], [], text) == "고를 공정 없음"
+    assert filter_help(["Mold"], text) is None
+    assert filter_help([], text) is None
+    assert filter_help(["WF", "Mold", "Underfill"], text) == "WF · Mold · Underfill"
+    assert first_and_rest([]) == ""
+    assert first_and_rest(["Wafer Saw", "Pre B/D", "DAF Attach"]) == "Wafer Saw 외 2개"
     # 값 칸은 마크다운이다 — 물결표 이름이 지움선이 되지 않는다.
     assert filter_value(["A~B~C"], ["A~B~C"], text) == "A\\~B\\~C"
+    assert filter_value(["A~B", "C"], ["A~B", "C"], text) == "A\\~B 외 1개"
 
 
 def test_the_missing_badge_names_one_process_or_counts_many() -> None:
@@ -137,7 +149,8 @@ def test_a_shared_value_from_another_screen_narrows_marks_and_names_its_origin()
 
     assert not app.exception
     assert app.session_state["test_chosen"] == ["Mold", "Underfill"]
-    assert _field(app).label == "몰드 · Underfill"
+    assert _field(app).label == "몰드 외 1개"
+    assert _field(app).help == "몰드 · Underfill"
     assert _captions(app) == ["공정", "HOME 에서"]
     (chip,) = [button for button in app.button if button.key == CHIP_KEY]
     assert chip.label == "공정 몰드 · Underfill · HOME 에서"
