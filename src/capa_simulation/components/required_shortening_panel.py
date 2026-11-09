@@ -15,11 +15,13 @@ rerun 은 계산을 다시 돌리지 않는다. 본문은 키 붙은 프래그�
 목표에서 한 달이라도 모자란 공정 전체**를 카드로 보인다 — 공정 필터의 「미선택 시 전체」 관례를
 「미선택 시 목표 미달 전체」로 읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
 
-본문 맨 위는 값 한 줄 「설비 일정 기준 가용(환산) · 오늘」 이다. 일정 미정 · 사용기준 밖 · 입력
-비가동 반영은 자리에 그리지 않고 상태 알림 `RS-03` ~ `RS-05` 만이다 — 짧은 글이 표지 몫(건수)을,
-전문이 뜻 · 내역(미정구분 · 합 대수 · 가용 넘침 자리)을 싣는다(설계 규칙 UI-NTF-02 · UI-TXT-07 —
-같은 말을 자리와 알림에 거듭 두지 않는다). 고칠 입력이 가용설비 현황에 있는 일정 미정(설비 마스터
-일정 칸) · 입력 비가동(Preference)은 그 줄의 「그 화면으로」 가 그 탭을 연다(`goto`).
+본문 맨 위는 KPI 카드다 — 따로 선 값 줄은 없고 기준 값 「설비 일정 기준 가용(환산) · 오늘」 은 KPI
+아래 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로).
+일정 미정 · 사용기준 밖 · 입력 비가동 반영은 자리에 그리지 않고 상태 알림 `RS-03` ~ `RS-05` 만이다
+— 짧은 글이 표지 몫(건수)을, 전문이 뜻 · 내역(미정구분 · 합 대수 · 가용 넘침 자리)을 싣는다(설계
+규칙 UI-NTF-02 · UI-TXT-07 — 같은 말을 자리와 알림에 거듭 두지 않는다). 고칠 입력이 가용설비
+현황에 있는 일정 미정(설비 마스터 일정 칸) · 입력 비가동(Preference)은 그 줄의 「그 화면으로」 가 그
+탭을 연다(`goto`).
 
 **거르는 조건 셋은 공용 프로필이다**(2026-10-08 사용자 요청, 설비 DB 0019). 세션에 값이 없을 때만
 프로필로 심고(HOME 비교 대상과 같은 관례), 사용자가 바꾸면 그 위젯의 `on_change` 가 그 자리에서
@@ -244,8 +246,6 @@ PROCESS_FIELD_HEAD = (
 )
 # 본문 프래그먼트 key — 조건 카드의 목표 확보율 · 진척 비교 콜백이 이것만 다시 돌린다.
 VIEW_FRAGMENT_KEY = "required_shortening_view"
-# 본문 맨 위 값 줄.
-_VALUE_LINE_KEY = "equipment_shortening_value_line"
 _SHORTENING_OWNER = "required_shortening"
 _UNITS_CSV_KEY = "equipment_shortening_units_csv"
 _UNITS_ALL_LEVELS_CSV_KEY = "equipment_shortening_units_all_levels_csv"
@@ -571,7 +571,7 @@ def _render_view(
     equipment_basis: ShorteningEquipmentBasis | None = None,
     inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
-    """본문(값 줄 · KPI · 보드 · LOB · 공정 카드 · CSV · 기준선) — 키 붙은 프래그먼트다.
+    """본문(KPI · CSV · 보드 · LOB · 공정 카드 · 기준선) — 키 붙은 프래그먼트다.
 
     CSV, 기준선 저장·지우기 팝오버의 조작과 조건 카드의 목표 확보율 · 진척 비교
     콜백(`_rerun_view`)은 이것만 다시 돌린다. 인자(계획·고른 달·공정·표시명·오늘·설비 마스터)는
@@ -585,12 +585,10 @@ def _render_view(
     if consume_baseline_write():
         st.rerun(scope="app")
     if isinstance(prepared, ShorteningStop):
-        _render_value_line(today)
         render_baseline_notice()
         _render_stop(prepared)
         return
     level, compare_id = _view_choices(database_path, prepared.shown_baselines)
-    _render_value_line(today)
     render_baseline_notice()
     _render_body(
         prepared,
@@ -709,6 +707,7 @@ def _render_body(
         level,
         months,
         extra=lambda: render_baseline_controls(save, None),
+        basis=basis_text(today),
     )
     managers = unit_managers(plan.unit_master)
     # 「도면에서 보기」 가 열 층 — 공정 전부를 한 번에 고른다(카드마다 다시 세지 않는다). 본문은
@@ -859,14 +858,11 @@ def _view_choices(database_path: str | None, shown: tuple[str, ...] | None) -> t
     return float(level), str(compare)
 
 
-def _render_value_line(today: date) -> None:
-    """본문 맨 위 값 한 줄 — 가용 기준 · 오늘. 일정 미정 · 사용기준 밖 · 입력 비가동 반영은 이 줄에
-    표지로 세우지 않고 상태 알림(`RS-03` ~ `RS-05`)만이다(설계 규칙 UI-NTF-02 · UI-TXT-07). 제목은
-    따로 달지 않는다 — 페이지 제목 「필요 단축 일정」 과 겹친다."""
-    with st.container(
-        horizontal=True, gap="small", vertical_alignment="center", key=_VALUE_LINE_KEY
-    ):
-        st.caption(f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}", width="content")
+def basis_text(today: date) -> str:
+    """기준 값 — 「설비 일정 기준 가용(환산) · 오늘 2026-11-09」. 따로 줄을 세우지 않고 CSV 작업 줄
+    오른쪽 끝 작은 글이다(`_render_downloads` — 2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 ·
+    UI-LAY-11)."""
+    return f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"
 
 
 def _render_month_range(
@@ -1262,10 +1258,12 @@ def _render_downloads(
     months: Sequence[int],
     *,
     extra: Callable[[], None] | None = None,
+    basis: str | None = None,
 ) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 고른 목표의 공정 x 월.
 
-    `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다.
+    `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다. `basis` 는 그 줄
+    오른쪽 끝 작은 글로 두는 기준 값(`basis_text`)이다 — 본문 맨 위에 따로 줄을 세우지 않는다.
 
     범위는 셋 다 화면과 같다(조건 카드의 공정, 비우면 맞댄 공정 전체 · 고른 달). 표는 캐시된 결과를
     고르기만 해 만든다 — 다섯 목표가 이미 계산돼 있고 마스터 속성도 결과에 실려 있다. 바이트는
@@ -1298,6 +1296,9 @@ def _render_downloads(
         )
         if extra is not None:
             extra()
+        if basis is not None:
+            with st.container(horizontal=True, horizontal_alignment="right"):
+                st.caption(basis, width="content")
 
 
 def _save_context(
@@ -1401,7 +1402,7 @@ def _render_progress(
         render_progress_csv(key, baseline, view, level, plan.today)
         render_baseline_controls(save, baseline.summary)
 
-    _render_downloads(keyed, scope, level, months, extra=controls)
+    _render_downloads(keyed, scope, level, months, extra=controls, basis=basis_text(plan.today))
     note = scope_note(
         baseline, plan, months, labels, lapsed=view.summary.lapsed, renamed=view.renamed
     )

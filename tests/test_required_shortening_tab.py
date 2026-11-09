@@ -94,7 +94,8 @@ from capa_simulation.upeh_assumption_state import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
-# 본문 맨 위 값 줄의 값 글 — 상태 표지는 그 줄에 서지 않고 상태 알림만이다.
+# 기준 값 글 — 본문 맨 위에 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(상태 표지는
+# 서지 않고 상태 알림만이다).
 VALUE_LINE_TEXT = "설비 일정 기준 가용(환산) · 오늘"
 
 
@@ -190,7 +191,7 @@ def _caption_paths(app: AppTest) -> dict[str, tuple[int, ...]]:
 
 
 def _value_row(app: AppTest) -> list[str]:
-    """「설비 일정 기준 가용(환산) · 오늘」 값 줄(같은 부모)에 선 캡션 글들."""
+    """「설비 일정 기준 가용(환산) · 오늘」 기준 값 칸(같은 부모)에 선 캡션 글들."""
     paths = _caption_paths(app)
     (value,) = [path for caption, path in paths.items() if caption.startswith(VALUE_LINE_TEXT)]
     return [caption for caption, path in paths.items() if path[:-1] == value[:-1]]
@@ -256,7 +257,29 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
         "equipment_shortening_units_all_levels_csv",
         "equipment_shortening_months_csv",
     } <= downloads
+    # 기준 값은 본문 맨 위에 따로 선 줄이 아니라 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자
+    # 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로). KPI 가 본문 첫 칸이다.
+    (basis,) = [
+        path for caption, path in _caption_paths(app).items() if caption.startswith(VALUE_LINE_TEXT)
+    ]
+    row = basis[:-2]
+    assert any(path[: len(row)] == row for path in _paths_of(app, "download_button"))
     clear_equipment_repository()
+
+
+def _paths_of(app: AppTest, kind: str) -> list[tuple[int, ...]]:
+    """본문에서 `kind` 요소마다 트리 안 자리(자식 차례의 길)."""
+    found: list[tuple[int, ...]] = []
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "type", "") == kind:
+                found.append(here)
+            walk(child, here)
+
+    walk(app.main, ())
+    return found
 
 
 def _csv(app: AppTest, key: str) -> tuple[dict[str, object], pd.DataFrame]:
