@@ -16,7 +16,9 @@ rerun 은 계산을 다시 돌리지 않는다. 본문은 키 붙은 프래그�
 「미선택 시 목표 미달 전체」로 읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
 
 본문 맨 위는 KPI 카드다 — 따로 선 값 줄은 없고 기준 값 「설비 일정 기준 가용(환산) · 오늘」 은 KPI
-아래 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로).
+아래 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로,
+지우지 않는다). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽
+끝이다(`_render_basis`).
 일정 미정 · 사용기준 밖 · 입력 비가동 반영은 자리에 그리지 않고 상태 알림 `RS-03` ~ `RS-05` 만이다
 — 짧은 글이 표지 몫(건수)을, 전문이 뜻 · 내역(미정구분 · 합 대수 · 가용 넘침 자리)을 싣는다(설계
 규칙 UI-NTF-02 · UI-TXT-07 — 같은 말을 자리와 알림에 거듭 두지 않는다). 고칠 입력이 가용설비
@@ -247,6 +249,11 @@ PROCESS_FIELD_HEAD = (
 # 본문 프래그먼트 key — 조건 카드의 목표 확보율 · 진척 비교 콜백이 이것만 다시 돌린다.
 VIEW_FRAGMENT_KEY = "required_shortening_view"
 _SHORTENING_OWNER = "required_shortening"
+# 기준 값 작은 글(`_render_basis`)의 표지 클래스와 그 서식 — 캡션 칸을 줄 오른쪽 끝으로 민다.
+BASIS_CLASS = "shk-basis"
+BASIS_STYLE = (
+    f'<style>[data-testid="stElementContainer"]:has(.{BASIS_CLASS}){{margin-left:auto}}</style>'
+)
 _UNITS_CSV_KEY = "equipment_shortening_units_csv"
 _UNITS_ALL_LEVELS_CSV_KEY = "equipment_shortening_units_all_levels_csv"
 _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
@@ -586,7 +593,7 @@ def _render_view(
         st.rerun(scope="app")
     if isinstance(prepared, ShorteningStop):
         render_baseline_notice()
-        _render_stop(prepared)
+        _render_stop(prepared, today)
         return
     level, compare_id = _view_choices(database_path, prepared.shown_baselines)
     render_baseline_notice()
@@ -605,20 +612,23 @@ def _render_view(
     )
 
 
-def _render_stop(stop: ShorteningStop) -> None:
+def _render_stop(stop: ShorteningStop, today: date) -> None:
     """멈춘 까닭 한 자리 — 소요를 못 읽음 · 계산 오류 · 다른 화면에서 채울 입력이 빠짐(`input` —
     Cut-off, 「그 화면으로」 가 그 화면을 연다)은 데이터 Error 마크(글은 알림)이고, 그릴 것이 없는
     빈 상태(`info`)는 회색 평문 한 줄이다(설계 규칙 UI-TXT-04 · 반영 검수표 D4). 마크와 표지가 한
-    칸이라 이벤트 칸을 쓰지 않는다."""
-    if stop.kind == "info":
-        st.caption(stop.message or "")
-        return
-    render_data_error(
-        _stop_text(stop),
-        code="RS-01",
-        text=stop.brief("필요 단축 일정을 계산하지 못했습니다"),
-        goto=stop.goto,
-    )
+    칸이라 이벤트 칸을 쓰지 않는다. 그 줄 오른쪽 끝에 기준 값 작은 글이 선다(`_render_basis` — CSV
+    줄이 서지 않는 회차에도 기준 값을 지우지 않는다, 2026-11-09 사용자 보드 T2)."""
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        if stop.kind == "info":
+            st.caption(stop.message or "")
+        else:
+            render_data_error(
+                _stop_text(stop),
+                code="RS-01",
+                text=stop.brief("필요 단축 일정을 계산하지 못했습니다"),
+                goto=stop.goto,
+            )
+        _render_basis(today)
 
 
 def _stop_text(stop: ShorteningStop) -> str:
@@ -656,11 +666,14 @@ def _render_body(
 
     if not plan.processes:
         # 그릴 것이 없는 빈 상태 — 회색 평문 한 줄, 맞대는 규칙은 풍선(설계 규칙 UI-TXT-04 · D4).
-        st.caption(
-            "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
-            "없습니다.",
-            help=MATCH_RULE_HELP,
-        )
+        # 그 줄 오른쪽 끝이 기준 값이다(`_render_basis`).
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.caption(
+                "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
+                "없습니다.",
+                help=MATCH_RULE_HELP,
+            )
+            _render_basis(today)
         return
 
     save = _save_context(
@@ -707,7 +720,7 @@ def _render_body(
         level,
         months,
         extra=lambda: render_baseline_controls(save, None),
-        basis=basis_text(today),
+        today=today,
     )
     managers = unit_managers(plan.unit_master)
     # 「도면에서 보기」 가 열 층 — 공정 전부를 한 번에 고른다(카드마다 다시 세지 않는다). 본문은
@@ -859,10 +872,24 @@ def _view_choices(database_path: str | None, shown: tuple[str, ...] | None) -> t
 
 
 def basis_text(today: date) -> str:
-    """기준 값 — 「설비 일정 기준 가용(환산) · 오늘 2026-11-09」. 따로 줄을 세우지 않고 CSV 작업 줄
-    오른쪽 끝 작은 글이다(`_render_downloads` — 2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 ·
+    """기준 값 — 「설비 일정 기준 가용(환산) · 오늘 2026-11-09」. 따로 줄을 세우지 않고 이웃 줄
+    오른쪽 끝 작은 글이다(`_render_basis` — 2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 ·
     UI-LAY-11)."""
     return f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"
+
+
+def _render_basis(today: date) -> None:
+    """기준 값 작은 글(`basis_text`) — 가로 줄 안에서 부른다. 글은 늘지도 줄지도 않는 한 덩이로 줄
+    오른쪽 끝에 서고, 앞 칸들 곁에 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려간다 — 좁은
+    자리에서 두 줄로 접히지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 오른쪽 끝으로 미는
+    서식은 같은 캡션 마크다운에 싣는다(`BASIS_STYLE`) — 스타일만 든 `st.html` 은 이벤트 칸으로 가 이
+    프래그먼트 갈래마다 그 칸 자리 수를 바꾼다(`profile_caption` 의 버전 줄과 같은 꼴). 글은 앱이
+    지은 것이다(날짜)."""
+    st.caption(
+        f'<span class="{BASIS_CLASS}">{html.escape(basis_text(today))}</span>{BASIS_STYLE}',
+        unsafe_allow_html=True,
+        width="content",
+    )
 
 
 def _render_month_range(
@@ -1258,12 +1285,13 @@ def _render_downloads(
     months: Sequence[int],
     *,
     extra: Callable[[], None] | None = None,
-    basis: str | None = None,
+    today: date | None = None,
 ) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 고른 목표의 공정 x 월.
 
-    `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다. `basis` 는 그 줄
-    오른쪽 끝 작은 글로 두는 기준 값(`basis_text`)이다 — 본문 맨 위에 따로 줄을 세우지 않는다.
+    `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다. `today` 가
+    있으면 그 줄 오른쪽 끝에 기준 값 작은 글을 둔다(`_render_basis`) — 본문 맨 위에 따로 줄을
+    세우지 않는다.
 
     범위는 셋 다 화면과 같다(조건 카드의 공정, 비우면 맞댄 공정 전체 · 고른 달). 표는 캐시된 결과를
     고르기만 해 만든다 — 다섯 목표가 이미 계산돼 있고 마스터 속성도 결과에 실려 있다. 바이트는
@@ -1296,11 +1324,8 @@ def _render_downloads(
         )
         if extra is not None:
             extra()
-        if basis is not None:
-            with st.container(
-                horizontal=True, horizontal_alignment="right", vertical_alignment="center"
-            ):
-                st.caption(basis, width="content")
+        if today is not None:
+            _render_basis(today)
 
 
 def _save_context(
@@ -1404,7 +1429,7 @@ def _render_progress(
         render_progress_csv(key, baseline, view, level, plan.today)
         render_baseline_controls(save, baseline.summary)
 
-    _render_downloads(keyed, scope, level, months, extra=controls, basis=basis_text(plan.today))
+    _render_downloads(keyed, scope, level, months, extra=controls, today=plan.today)
     note = scope_note(
         baseline, plan, months, labels, lapsed=view.summary.lapsed, renamed=view.renamed
     )

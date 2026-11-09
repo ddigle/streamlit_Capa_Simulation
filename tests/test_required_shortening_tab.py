@@ -193,8 +193,46 @@ def _caption_paths(app: AppTest) -> dict[str, tuple[int, ...]]:
 def _value_row(app: AppTest) -> list[str]:
     """「설비 일정 기준 가용(환산) · 오늘」 기준 값 칸(같은 부모)에 선 캡션 글들."""
     paths = _caption_paths(app)
-    (value,) = [path for caption, path in paths.items() if caption.startswith(VALUE_LINE_TEXT)]
+    (value,) = [path for caption, path in paths.items() if VALUE_LINE_TEXT in caption]
     return [caption for caption, path in paths.items() if path[:-1] == value[:-1]]
+
+
+def _basis_path(app: AppTest) -> tuple[int, ...]:
+    """기준 값 작은 글(`_render_basis`) 캡션의 자리. 글은 캡션 마크다운 안 표지 칸이고, 같은
+    마크다운이 그 칸을 줄 오른쪽 끝으로 미는 서식을 싣는다 — 좁은 자리에서 두 줄로 접히지 않고
+    통째로 다음 줄 오른쪽 끝으로 내려간다(이 본문은 프래그먼트라 스타일만 든 `st.html` 을 두지
+    않는다)."""
+    from capa_simulation.components.required_shortening_panel import BASIS_CLASS, BASIS_STYLE
+
+    (found,) = [
+        (caption, path)
+        for caption, path in _caption_paths(app).items()
+        if VALUE_LINE_TEXT in caption
+    ]
+    caption, path = found
+    assert caption.startswith(f'<span class="{BASIS_CLASS}">{VALUE_LINE_TEXT} ')
+    assert caption.endswith(BASIS_STYLE) and "margin-left:auto" in BASIS_STYLE
+    return path
+
+
+def _assert_basis_beside_the_mark(app: AppTest) -> None:
+    """멈춘 회차에도 기준 값을 지우지 않는다 — 「데이터 Error」 마크 줄 오른쪽 끝이다(2026-11-09
+    사용자 보드 T2 「지우지 않음」)."""
+    from capa_simulation.components.data_error_mark import MARK_CLASS
+
+    marks: list[tuple[int, ...]] = []
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "type", "") == "html" and MARK_CLASS in str(child.proto.body):
+                marks.append(here)
+            walk(child, here)
+
+    walk(app.main, ())
+    (mark,) = marks
+    basis = _basis_path(app)
+    assert basis[:-1] == mark[:-1] and mark[-1] < basis[-1]
 
 
 def _sidebar_block_paths(app: AppTest, keys: tuple[str, ...]) -> dict[str, list[str]]:
@@ -259,11 +297,9 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     } <= downloads
     # 기준 값은 본문 맨 위에 따로 선 줄이 아니라 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자
     # 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로). KPI 가 본문 첫 칸이다.
-    (basis,) = [
-        path for caption, path in _caption_paths(app).items() if caption.startswith(VALUE_LINE_TEXT)
-    ]
-    row = basis[:-2]
-    assert any(path[: len(row)] == row for path in _paths_of(app, "download_button"))
+    basis = _basis_path(app)
+    row = basis[:-1]
+    assert any(path[:-1] == row for path in _paths_of(app, "download_button"))
     clear_equipment_repository()
 
 
@@ -441,6 +477,7 @@ def test_a_missing_scenario_stops_with_a_notice(tmp_path: Path) -> None:
     assert "다른 탭" not in note["full"]
     assert not _cards(app)
     assert _card_marks(app) == [NO_PROCESS_MARK]
+    _assert_basis_beside_the_mark(app)
     clear_equipment_repository()
 
 
@@ -586,6 +623,7 @@ def test_a_missing_cutoff_stops_with_the_mark_and_the_alarm_opens_the_equipment_
     )
     assert not _cards(app)
     assert _card_marks(app) == [NO_PROCESS_MARK]
+    _assert_basis_beside_the_mark(app)
     # 멈춘 회차에는 상태 표지가 없고 그 알림은 해소다(갈래마다 같은 자리 수로 낸다).
     for code in ("RS-03", "RS-04", "RS-05"):
         assert active_state(app, code) is None and states(app, code), code
