@@ -175,8 +175,9 @@ __all__ = [
 # 옛 배포 흔적 · 일정 없이 연 세션 알림(`SB-19` · `SB-20`)의 「그 화면으로」 — 이 탭이다(그 알림을
 # 내는 설비 화면 어디서나 같은 줄이다).
 LEGACY_TRACE_GOTO = (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href)
-# 시나리오 표 「올라와 있음」 칸의 표지(`loaded_cell`).
+# 시나리오 표 「올라와 있음」 칸의 표지와 낡은 세션 꼬리(`loaded_cell`).
 LOADED_MARK = "●"
+STALE_WORD = "최신 아님"
 
 SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
@@ -725,14 +726,18 @@ def loaded_cell(session: EquipmentSession) -> str:
 
     이 화면에는 사이드바 설비 시나리오 줄이 서지 않아(D4) 세션이 든 쌍을 이 칸이 말한다 — 시나리오
     이름 · 공식 여부 · 최신 rN 은 같은 줄의 칸이 이미 보이므로 리비전만 더한다(탭 머리에 거듭 줄을
-    세우지 않는다 — 설계 규칙 UI-TXT-07, 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」). 일정
-    없이 연 세션(`unmerged`)이면 「● 일정 없이 엶」 이고 까닭은 세션 알림(`SB-20`)이 말한다.
+    세우지 않는다 — 설계 규칙 UI-TXT-07, 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」). 세션
+    리비전이 그 시나리오 최신이 아니면 「● r12 · 최신 아님」 — 같은 줄 「최신」 칸과 견주지 않아도
+    읽힌다(설정 확인 글의 「최신 아님(rM)」 과 같은 말). 일정 없이 연 세션(`unmerged`)이면 「● 일정
+    없이 엶」 이고 까닭은 세션 알림(`SB-20`)이 말한다. 설비 시나리오가 하나도 없으면 표 대신 「설비
+    시나리오가 없습니다.」 한 줄이라 이 칸이 없다.
     """
     if session.unmerged:
         return f"{LOADED_MARK} 일정 없이 엶"
-    if session.revision_no is not None:
-        return f"{LOADED_MARK} r{session.revision_no}"
-    return LOADED_MARK
+    if session.revision_no is None:
+        return LOADED_MARK
+    cell = f"{LOADED_MARK} r{session.revision_no}"
+    return f"{cell} · {STALE_WORD}" if session.stale else cell
 
 
 def render_equipment_scenario_section() -> None:

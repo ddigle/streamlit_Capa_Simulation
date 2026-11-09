@@ -23,7 +23,8 @@ import re
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -118,6 +119,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioCatalog,
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionSummary,
+    EquipmentSnapshot,
     ScheduleRestoreResult,
 )
 from capa_simulation.process_detail_state import (
@@ -736,6 +738,15 @@ def test_the_loaded_cell_names_the_sessions_revision() -> None:
     assert loaded_cell(latest) == "● r4"
     rows = scenario_rows(latest)
     assert rows["올라와 있음"].tolist() == ["", "● r4"]
+    # 세션 리비전이 그 시나리오 최신이 아니면 같은 칸이 그 말을 한다 — 「최신」 칸과 견주지 않아도
+    # 읽힌다(옛 탭 머리 줄의 「최신 rN 있음」 몫).
+    stale = EquipmentSession(
+        catalog=catalog,
+        scenario=catalog.scenarios[0],
+        schedule_revision_id="s12",
+        snapshot=cast(EquipmentSnapshot, SimpleNamespace(schedule=SimpleNamespace(revision_no=12))),
+    )
+    assert stale.stale and loaded_cell(stale) == "● r12 · 최신 아님"
 
 
 def test_settings_cutoff_is_read_only_on_an_assumption_and_open_on_the_official(
