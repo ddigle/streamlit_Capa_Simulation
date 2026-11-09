@@ -1,11 +1,12 @@
-# Purpose: 변경 메모 칸의 안내 글 꼴을 한 곳에 두고, 저장한 메모를 칸 글이 그 글일 때만 비운다.
+# Purpose: 이름 줄 없는 메모 · 저장자 칸의 안내 글 꼴을 한 곳에 두고, 저장한 메모를 칸 글이 그 글일 때만 비운다.
 
 """변경 메모 칸 — 칸 안 안내 글(`note_placeholder`)과 저장 뒤 비우기.
 
 **안내 글이 칸 이름이다.** 저장 줄 · 저장 칸의 「변경 메모」 는 이름 줄을 걷고(`label_visibility=
 "collapsed"` — 접근성 이름으로 남는다) 칸 안 흐린 글 「변경 메모 · 예: …」 가 이름과 예를 함께
 말한다(2026-11-09 상단 띠 재고 · 사용자 지시 — 설계 규칙 UI-CON-03 · UI-TXT-01 예외 「사람이 쓰는
-자유 글 칸의 안내 글」). 저장자 칸은 `equipment_save_fields.SAVED_BY_PLACEHOLDER` 다.
+자유 글 칸의 안내 글」). 꼴은 「<칸 이름> · 예: <예>」 하나다(`field_placeholder`) — 저장자 칸
+`equipment_save_fields.SAVED_BY_PLACEHOLDER` 「저장자 · 예: 홍길동」 도 같은 함수로 짓는다.
 
 저장 뒤 비우기 — key 를 그대로 두고 다음 회차 칸 앞에서 빈 값을 적는다.
 
@@ -50,6 +51,7 @@ from capa_simulation.components.write_guard import SeenToken
 
 __all__ = [
     "NOTE_LABEL",
+    "field_placeholder",
     "mark_note_saved",
     "mark_note_saved_again",
     "note_placeholder",
@@ -59,9 +61,14 @@ __all__ = [
 NOTE_LABEL = "변경 메모"
 
 
+def field_placeholder(name: str, example: str) -> str:
+    """이름 줄이 없는 칸 안 안내 글 — 「<칸 이름> · 예: <예>」(이름 + 예, 메모 · 저장자 칸 한 꼴)."""
+    return f"{name} · 예: {example}"
+
+
 def note_placeholder(example: str) -> str:
-    """변경 메모 칸 안 안내 글 — 「변경 메모 · 예: <예>」(이름 줄이 없는 칸의 이름 + 예)."""
-    return f"{NOTE_LABEL} · 예: {example}"
+    """변경 메모 칸 안 안내 글 — 「변경 메모 · 예: <예>」."""
+    return field_placeholder(NOTE_LABEL, example)
 
 
 def _saved_key(key: str) -> str:

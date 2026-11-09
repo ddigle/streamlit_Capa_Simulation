@@ -19,10 +19,13 @@ from dataclasses import dataclass
 
 import streamlit as st
 
+from capa_simulation.components.saved_note import field_placeholder
+
 SAVED_BY_LABEL = "저장자(선택)"
-# 저장자 칸 안 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다(변경 메모 칸과 같은 꼴 —
-# `saved_note.note_placeholder`, 2026-11-09 상단 띠 재고 · 사용자 지시, 설계 규칙 UI-CON-03).
-SAVED_BY_PLACEHOLDER = f"{SAVED_BY_LABEL} · 예: 홍길동"
+# 저장자 칸 안 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다(변경 메모 칸과 한 꼴 「<이름> ·
+# 예: <예>」 — `saved_note.field_placeholder`, 2026-11-09 상단 띠 재고 · 사용자 지시, 설계 규칙
+# UI-TXT-01 예외). 라벨 「저장자(선택)」 은 접근성 이름으로 남는다.
+SAVED_BY_PLACEHOLDER = field_placeholder("저장자", "홍길동")
 
 
 @dataclass(frozen=True)

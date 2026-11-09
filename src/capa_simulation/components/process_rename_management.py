@@ -32,6 +32,7 @@ from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX, rende
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
+    note_placeholder,
     ready_note_field,
 )
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -91,7 +92,7 @@ PROCESS_RENAME_UNCHANGED_MESSAGE = (
 # 직접 편집 저장의 결과 알림 칸(`flash`·`write_guard.held_notice`).
 PROCESS_RENAME_FLASH_KEY = "process_rename_flash"
 # 저장 줄 변경 메모 칸의 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다(설계 규칙 UI-TXT-01).
-NOTE_PLACEHOLDER = "변경 메모 · 예: LOB 차트 공정명 축약"
+NOTE_PLACEHOLDER = note_placeholder("LOB 차트 공정명 축약")
 # 직접 편집 제목 줄 칸과 그 오른쪽 끝 「보유 공정 n개」 팝오버(라벨의 수가 바뀌어도 같은 블록이게
 # key 를 단다 — `tests/test_popover_keys.py`).
 HEADING_ROW_KEY = "admin_area_process_rename_heading_row"

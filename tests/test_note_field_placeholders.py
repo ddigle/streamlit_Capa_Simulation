@@ -3,10 +3,11 @@
 """변경 메모 · 저장자 칸 그물(설계 규칙 UI-TXT-01 예외 · PRC-01 — 2026-11-09 상단 띠 재고).
 
 저장 줄 · 저장 칸의 「변경 메모」 · 「저장자(선택)」 칸은 이름 줄(24.5px)을 걷고(`label_visibility=
-"collapsed"` — 접근성 이름으로 남는다) 칸 안 흐린 글 「변경 메모 · 예: …」 · 「저장자(선택) · 예:
-홍길동」 이 이름과 예를 함께 말한다(`saved_note.note_placeholder` · `equipment_save_fields.
-SAVED_BY_PLACEHOLDER`). 화면 코드에서 라벨이 그 이름인 `text_input` · `text_area` 를 모두 찾아 이름
-줄이 걷혔고 안내 글이 있는지 본다.
+"collapsed"` — 접근성 이름으로 남는다) 칸 안 흐린 글 「변경 메모 · 예: …」 · 「저장자 · 예: 홍길동」 이
+이름과 예를 함께 말한다 — 꼴은 「<칸 이름> · 예: <예>」 하나이고 한 함수가 짓는다
+(`saved_note.field_placeholder` — `note_placeholder` · `equipment_save_fields.SAVED_BY_PLACEHOLDER`).
+화면 코드에서 라벨이 그 이름인 `text_input` · `text_area` 를 모두 찾아 이름 줄이 걷혔고 안내 글이
+있는지, 안내 글을 글 상수로 손수 짓지 않는지 본다.
 
 남긴 자리(`KEPT` — 까닭과 함께, 목록에 있어도 걷혀 있으면 통과한다):
 
@@ -16,9 +17,7 @@ SAVED_BY_PLACEHOLDER`). 화면 코드에서 라벨이 그 이름인 `text_input`
   `named:WIDGET(변경 메모)` — `scripts/page_guide_helpers.js` 는 보이는 `stWidgetLabel` 글로
   찾는다) — 걷으려면 원고의 찾기를 aria-label · key 로 바꾸는 일을 같은 변경에 둔다.
 - 시나리오 관리 설비 시나리오 탭 확인 창 둘(되돌리기 · 배치 차이 지우기)의 저장자 — 리비전명 ·
-  「변경 메모(선택)」 칸과 세로 짝인 확인 창이다(그 화면 묶음 몫).
-- Admin 표시순서 · Proc Rename 의 변경 메모 — 그 화면 묶음이 같은 꼴(「변경 메모 · 예: …」)로
-  맞춘다.
+  「변경 메모(선택)」 칸과 세로 짝인 확인 창이다.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ from capa_simulation.components.equipment_save_fields import (
     SAVED_BY_LABEL,
     SAVED_BY_PLACEHOLDER,
 )
-from capa_simulation.components.saved_note import NOTE_LABEL, note_placeholder
+from capa_simulation.components.saved_note import NOTE_LABEL, field_placeholder, note_placeholder
 
 KEPT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (
@@ -43,12 +42,6 @@ KEPT: dict[tuple[str, str], str] = {
     ),
     ("src/capa_simulation/components/equipment_scenario_management.py", "_render_clear_layout"): (
         "설비 시나리오 확인 창 — 메모 칸과 세로 짝"
-    ),
-    ("src/capa_simulation/components/display_order_management.py", "_render_direct_editor"): (
-        "Admin 표시순서 — 그 화면 묶음이 같은 꼴로 맞춘다"
-    ),
-    ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
-        "Admin Proc Rename — 그 화면 묶음이 같은 꼴로 맞춘다"
     ),
 }
 
@@ -85,7 +78,7 @@ def _sites() -> list[tuple[str, str, ast.Call, str]]:
 
 def test_the_placeholders_name_the_field_and_give_an_example() -> None:
     assert note_placeholder("26.07 PM 반영") == "변경 메모 · 예: 26.07 PM 반영"
-    assert SAVED_BY_PLACEHOLDER == "저장자(선택) · 예: 홍길동"
+    assert SAVED_BY_PLACEHOLDER == "저장자 · 예: 홍길동" == field_placeholder("저장자", "홍길동")
 
 
 def test_every_memo_and_saver_field_has_no_label_row_and_names_itself_inside() -> None:
@@ -103,10 +96,8 @@ def test_every_memo_and_saver_field_has_no_label_row_and_names_itself_inside() -
             wrong.append(f"{path}::{outer} {label} — 이름 줄")
         if placeholder is None:
             wrong.append(f"{path}::{outer} {label} — 안내 글 없음")
-        elif isinstance(placeholder, ast.Constant) and not str(placeholder.value).startswith(
-            f"{label} · 예: "
-        ):
-            wrong.append(f"{path}::{outer} {label} — 안내 글 꼴 {placeholder.value!r}")
+        elif isinstance(placeholder, ast.Constant):
+            wrong.append(f"{path}::{outer} {label} — 안내 글을 손수 지음 {placeholder.value!r}")
     assert not wrong, wrong
 
 

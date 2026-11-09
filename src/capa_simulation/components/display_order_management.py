@@ -51,6 +51,7 @@ from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX, rende
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
+    note_placeholder,
     ready_note_field,
 )
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
@@ -125,7 +126,7 @@ SCOPE_HELP = (
     "규칙이고 저장하면 그 범위만 바뀝니다."
 )
 # 저장 줄 변경 메모 칸의 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다.
-NOTE_PLACEHOLDER = "변경 메모 · 예: 환산 탭 제품 표시순서 변경"
+NOTE_PLACEHOLDER = note_placeholder("환산 탭 제품 표시순서 변경")
 # 제목 줄(모듈 설명)의 칸 key 와 서식. 제목 칸(제목 + 공용 버전 줄)은 줄 폭에서 고르기 둘 몫
 # (`SCOPE_PICKERS_ROOM` — 고르기 둘과 그 앞 간격 둘, 간격은 `gap="small"` 14px 를 넉넉히 16px 로
 # 센다)을 뺀 폭까지만 넓어지고, 그 안에서 버전 줄이 제목 곁에 줄바꿈 없이 서서 제 글을 여러 줄로
