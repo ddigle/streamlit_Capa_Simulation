@@ -736,6 +736,9 @@ def render_equipment_explorer(
                 width=200,
                 label_visibility="collapsed",
             )
+    # 미확인 표지는 호기 이름을 보이는 보기에서만 내고, 그 밖의 보기는 같은 자리에서
+    # `alerts.flush()` 로 한 자리를 채운다 — 볼 내용 · 보기를 바꿔도 이벤트 칸 자리 수가 같다(AGENTS
+    # 9장 「알림 칸」).
     if question == "호기 현황" and view in UNIT_NAME_VIEWS:
         report_unconfirmed_units(
             equipment,
@@ -744,6 +747,8 @@ def render_equipment_explorer(
             confirmation_equipment=confirmation_equipment,
             confirmation_basis=confirmation_basis,
         )
+    else:
+        alerts.flush()
     settings = conditions if conditions is not None else st.container(border=True)
     with settings:
         with st.container(horizontal=not in_card, gap="small"):

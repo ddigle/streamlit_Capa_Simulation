@@ -452,6 +452,13 @@ def _unconfirmed(app: AppTest) -> list[str]:
     return [caption.value for caption in app.caption if "미확인" in caption.value]
 
 
+def _event_slots(app: AppTest) -> int:
+    """이벤트 칸(본문 밖 최상위 칸 — 루트 차례 2)에 이 회차가 쓴 자리 수."""
+    event = app._tree.children[2]
+    assert isinstance(event, Block)
+    return len(event.children)
+
+
 def test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab() -> None:
     """일정이 지났는데 실적이 비고 상태가 계획·확정인 설비는 상태 알림(`EQ-21`)이다(2026-10-16
     사용자 결정 — 오늘 기준 고정, 저장본 기준). 자리 표지 줄은 없고, 설비 마스터 전체를 세어 Main
@@ -466,8 +473,12 @@ def test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab() -> None:
     assert not app.exception
     assert _unconfirmed(app) == []
     assert states(app, "EQ-21") == []
+    # 미확인을 내지 않는 보기도 같은 자리에서 한 자리를 쓴다 — 보기를 바꿔도 이벤트 칸 자리 수가
+    # 같다(AGENTS 9장 「알림 칸」 — 뒤에 오는 표지 자리가 회차마다 밀리지 않는다).
+    slots = [_event_slots(app)]
 
     app.segmented_control(key=QUESTION_KEY).set_value("호기 현황").run()
+    slots.append(_event_slots(app))
     assert _unconfirmed(app) == []
     note = active_state(app, "EQ-21")
     assert note is not None
@@ -488,9 +499,12 @@ def test_an_unconfirmed_unit_is_a_state_alert_on_the_main_tab() -> None:
 
     # 생애주기 일정 · 다른 볼 내용에서는 내지 않는다(닫지도 않는다 — 알림은 Alarm 에 그대로 남는다).
     app.selectbox("equipment_explorer_unit_view").set_value("생애주기 일정").run()
+    slots.append(_event_slots(app))
     assert states(app, "EQ-21") == []
     app.segmented_control(key=QUESTION_KEY).set_value("가용대수").run()
+    slots.append(_event_slots(app))
     assert states(app, "EQ-21") == []
+    assert len(set(slots)) == 1, slots
 
 
 def test_no_unconfirmed_line_when_every_open_stage_is_still_ahead() -> None:
