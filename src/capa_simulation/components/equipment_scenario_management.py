@@ -2,14 +2,16 @@
 
 """시나리오 관리 「설비 시나리오」 탭(E8 — 1단계 몫, 설계 6-2, E7 리비전 도구).
 
-자리는 시나리오 관리 화면의 둘째 탭이다. 그 화면에는 사이드바 설비 시나리오 줄이 서지 않아 탭
-머리에 「이 세션: …」 한 줄을 그리고 세션 알림을 낸다(`render_equipment_scenario_section`). 다른
+자리는 시나리오 관리 화면의 둘째 탭이다. 그 화면에는 사이드바 설비 시나리오 줄이 서지 않아 세션이
+든 쌍은 시나리오 표 「올라와 있음」 칸(「● r12」)이 말하고 세션 알림을 낸다
+(`render_equipment_scenario_section`) — 탭 머리에 따로 줄을 세우지 않는다. 다른
 설비 화면의 옛 배포 흔적 · 일정 없이 연 세션 알림(`SB-19` · `SB-20`)의 「그 화면으로」 가 이 탭을
 연다.
 
 - **시나리오 표**: 이름·상태(공식 vN · rM / 활성)·최신 rN·리비전 수·저장된 배치 차이(최신의 원시
   행 — 설비 0031 — 와 괄호 안 실효 표지 「공식과 같음」·「실효 호기 n대」·「지운 호기 n행」)·올라와
-  있음. 고른 시나리오에 「시나리오 이름 바꾸기」 와, 가정 시나리오 최신에 배치 차이가 있으면 「배치
+  있음(이 세션이 든 줄에만 「● rN」 — 일정 없이 열었으면 「● 일정 없이 엶」, `loaded_cell`).
+  고른 시나리오에 「시나리오 이름 바꾸기」 와, 가정 시나리오 최신에 배치 차이가 있으면 「배치
   차이 모두 지우기」(차이만 비운 새 리비전 — 설계 6-6). 옛 판(0031 을 모르는
   배포)이 저장해 가정 배치가 빠진 리비전은 상태 알림(`SC-03`)이 시나리오 전부를 적는다(설계 14장).
 - **리비전 표**: 고른 시나리오의 일정 리비전(r·리비전명·저장시각·저장자·출처·공통 rN·호기 행·비가동
@@ -53,7 +55,6 @@ import streamlit as st
 import capa_simulation.settings as settings
 from capa_simulation import alerts
 from capa_simulation.components import write_guard
-from capa_simulation.components.app_header import STATUS_NEWER
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_data_workspace import (
     ORIGIN_WORDS,
@@ -174,6 +175,8 @@ __all__ = [
 # 옛 배포 흔적 · 일정 없이 연 세션 알림(`SB-19` · `SB-20`)의 「그 화면으로」 — 이 탭이다(그 알림을
 # 내는 설비 화면 어디서나 같은 줄이다).
 LEGACY_TRACE_GOTO = (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href)
+# 시나리오 표 「올라와 있음」 칸의 표지(`loaded_cell`).
+LOADED_MARK = "●"
 
 SCENARIO_KEY = "equipment_scenario_manage_scenario_v1"
 REVISION_KEY = "equipment_scenario_manage_revision_v1"
@@ -557,7 +560,11 @@ def scenario_rows(
                     stored_layout_words(*item.latest_layout_rows),
                     previews.get(item.equipment_scenario_id),
                 ),
-                "올라와 있음": "●" if item.equipment_scenario_id == session.scenario_id else "",
+                "올라와 있음": (
+                    loaded_cell(session)
+                    if item.equipment_scenario_id == session.scenario_id
+                    else ""
+                ),
             }
             for item in session.catalog.scenarios
         ]
@@ -713,25 +720,19 @@ def layout_trace_words(
     return f"{name} r{latest}(r{traces[latest]} 배치 빠짐{more})"
 
 
-def session_heading(session: EquipmentSession) -> str:
-    """탭 머리 한 줄 — 「이 세션: 운영 일정 · r12 · 공식 v3」.
+def loaded_cell(session: EquipmentSession) -> str:
+    """시나리오 표 「올라와 있음」 칸 — 이 세션이 든 줄의 「● r12」(리비전을 모르면 「●」).
 
-    이 화면에는 사이드바 설비 시나리오 줄이 서지 않아(D4) 세션이 든 쌍을 여기 적는다. 일정 없이 연
-    세션(`unmerged`)이면 그 말을 적는다.
+    이 화면에는 사이드바 설비 시나리오 줄이 서지 않아(D4) 세션이 든 쌍을 이 칸이 말한다 — 시나리오
+    이름 · 공식 여부 · 최신 rN 은 같은 줄의 칸이 이미 보이므로 리비전만 더한다(탭 머리에 거듭 줄을
+    세우지 않는다 — 설계 규칙 UI-TXT-07, 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」). 일정
+    없이 연 세션(`unmerged`)이면 「● 일정 없이 엶」 이고 까닭은 세션 알림(`SB-20`)이 말한다.
     """
-    if session.scenario_name is None:
-        return "이 세션: 설비 시나리오 없음"
-    name = literal_markdown(session.scenario_name)
     if session.unmerged:
-        return f"이 세션: {name} · 일정 없이 엶(옛 배포 흔적이 일정과 합쳐지지 않음)"
-    parts = [name]
+        return f"{LOADED_MARK} 일정 없이 엶"
     if session.revision_no is not None:
-        parts.append(f"r{session.revision_no}")
-    if session.is_official_pair and session.release_no is not None:
-        parts.append(f"공식 v{session.release_no}")
-    elif session.stale and session.latest_revision_no is not None:
-        parts.append(STATUS_NEWER.format(revision_no=session.latest_revision_no))
-    return "이 세션: " + " · ".join(parts)
+        return f"{LOADED_MARK} r{session.revision_no}"
+    return LOADED_MARK
 
 
 def render_equipment_scenario_section() -> None:
@@ -756,11 +757,9 @@ def render_equipment_scenario_section() -> None:
         )
         return
     render_schema_ahead_warning(repository.schema_ahead)
-    # 머리 줄은 값(이 세션이 든 쌍)만 둔다 — 설비 화면 사이드바 줄에서도 불러오기 · 저장한다는 길
-    # 안내는 Guide 몫이다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
-    st.markdown(f"**{session_heading(session)}**")
-    # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은 알림
-    # 칸으로 낸다.
+    # 세션이 든 쌍은 탭 머리 줄이 아니라 시나리오 표 「올라와 있음」 칸이다(`loaded_cell`).
+    # 세션 이동 알림(한 회차뿐 — 미저장 설비 편집을 버렸다는 말이 든다)과 일정 없이 연 세션은
+    # 알림 칸으로 낸다.
     report_session_notices(session, tab=EQUIPMENT_SCENARIO_TAB_NAME)
     report_layout_traces(database_path, session)
     render_equipment_scenario_management(database_path, session)

@@ -309,8 +309,8 @@ def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
     끝났고 고칠 입력이 없어 단추 밑에 그리지 않는다, 설계 규칙 UI-NTF-03 · AMB-05 (나)), 한 번만
     보낸다.
 
-    알림 칸 밑의 설정 띠는 값 줄이다 — 사내 패키지가 깔렸으면 「확인됨」, 없으면 「패키지 없음」
-    표지와 그 내역을 든 상태 알림(`AD-04`)이다(설계 규칙 UI-NTF-02 — 자리에 상태 문장을 두지
+    BigDataQuery 설정은 자리에 그리지 않는다 — 사내 패키지가 깔렸으면 아무것도 없고, 없으면 그
+    내역을 든 상태 알림(`AD-04`)만이다(설계 규칙 UI-TXT-08 · UI-NTF-02 — 자리에 상태 줄을 두지
     않는다). 이 PC 에 깔렸는지에 기대지 않고 두 경우를 다 본다(사내 PC 에는 깔려 있다)."""
     from capa_simulation.components.flash import FlashNote
 
@@ -330,22 +330,19 @@ def test_the_dropped_row_warning_follows_the_saved_notice_in_the_alert_popup(
         }
     )
 
-    # 설정 띠의 점검 결론은 초록 상자가 아니라 값 줄(평문)이다 — 성공은 저장 알림 하나뿐.
+    # 설정은 자리에 그리지 않는다 — 성공은 저장 알림 하나뿐.
     assert [item.value for item in successes(app)] == [saved]
-    banner_lines = [
-        item.value for item in app.caption if item.value == registration.BANNER_READY_LINE
-    ]
-    assert banner_lines == ([registration.BANNER_READY_LINE] if package_ready else [])
+    assert not any("BigDataQuery 설정" in str(item.value) for item in app.caption)
     assert not app.warning
     assert [(item.value, item.code) for item in flashed(app, "warning")] == [(notice, "FL-03")]
     assert not _page_scripts(app)
     banner_note = active_state(app, "AD-04")
     if not package_ready:
         assert banner_note is not None and "bigdataquery 패키지가 없어" in banner_note["full"]
-        assert any("패키지 없음" in caption.value for caption in app.caption)
-        assert not any("bigdataquery 패키지가 없어" in caption.value for caption in app.caption)
+        assert not any("패키지 없음" in caption.value for caption in app.caption)
     else:
         assert banner_note is None
+        assert not any("bigdataquery 패키지가 없어" in caption.value for caption in app.caption)
     assert registration.REGISTRATION_DROP_FLASH_KEY not in app.session_state
 
 
@@ -478,14 +475,15 @@ def test_only_a_blank_period_says_the_short_period_refusal(
     ]
 
 
-def test_the_tab_opens_on_its_settings_line_and_the_search_has_no_sentence(
+def test_the_tab_opens_on_its_search_row_and_the_search_has_no_sentence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """탭 이름을 거듭하는 소제목이 없다(뜻은 Guide 첫머리). 검색 칸의 말은 풍선 한 곳이다."""
+    """탭 이름을 거듭하는 소제목도, 다 준비된 설정을 적는 줄도 없다(뜻은 Guide 첫머리 — 설계 규칙
+    UI-TXT-08). 검색 칸의 말은 풍선 한 곳이다."""
     _configured(monkeypatch)
     app = _run()
     assert not app.subheader
-    assert any(str(item.value).startswith(registration.BANNER_LABEL) for item in app.caption)
+    assert not any("BigDataQuery 설정" in str(item.value) for item in app.caption)
     picked = _run(__pick_row__=0)
     search = picked.text_input(key=registration.CATALOG_KEYWORD_KEY)
     assert search.placeholder == ""
@@ -1500,12 +1498,12 @@ def test_a_missing_package_in_the_cd_container_says_which_variable_to_set(
     assert not app.exception
     [error] = app.error
     assert error.value.startswith("현재 환경에 bigdataquery 패키지가 없습니다.")
-    # 머리 설정 띠는 값 줄(「패키지 없음」 표지)이고 내역 · 설치 단계 결과는 상태 알림 `AD-04` 의
-    # 전문이 든다(설계 규칙 UI-NTF-02).
+    # 머리에 설정 줄을 세우지 않고 내역 · 설치 단계 결과는 상태 알림 `AD-04` 의 전문이 든다(설계
+    # 규칙 UI-NTF-02 · UI-TXT-08).
     assert not app.warning
     note = active_state(app, "AD-04")
     assert note is not None and "bigdataquery 패키지가 없어" in note["full"]
-    assert any(caption.value.endswith(":orange[패키지 없음]") for caption in app.caption), [
+    assert not any("패키지 없음" in caption.value for caption in app.caption), [
         caption.value for caption in app.caption
     ]
     banner = str(note["full"])
@@ -1545,29 +1543,32 @@ def test_no_missing_query_notice_once_both_queries_are_set() -> None:
 
 
 @pytest.mark.parametrize(
-    ("catalog_ready", "detail_ready", "package_ready", "marks"),
+    ("catalog_ready", "detail_ready", "package_ready", "short"),
     [
-        (False, False, True, ("목록 조회 SQL 미설정", "상세 조회 SQL 미설정")),
-        (False, True, False, ("목록 조회 SQL 미설정",)),
-        (True, False, True, ("상세 조회 SQL 미설정",)),
-        (True, True, False, ("패키지 없음",)),
+        (False, False, True, "BigDataQuery 조회 SQL 이 설정되지 않았습니다"),
+        (False, True, False, "BigDataQuery 조회 SQL 이 설정되지 않았습니다"),
+        (True, False, True, "BigDataQuery 조회 SQL 이 설정되지 않았습니다"),
+        (True, True, False, "bigdataquery 패키지가 없어"),
     ],
 )
-def test_the_configuration_line_is_a_value_line_with_markers(
-    catalog_ready: bool, detail_ready: bool, package_ready: bool, marks: tuple[str, ...]
+def test_the_configuration_is_only_a_state_alert_when_something_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    catalog_ready: bool,
+    detail_ready: bool,
+    package_ready: bool,
+    short: str,
 ) -> None:
-    """설정 띠는 「**BigDataQuery 설정** · …」 값 줄이고 준비 안 된 칸은 주황 표지 한 마디다 —
-    무엇을 어디에 채우는지는 상태 알림 `AD-04` 전문이 든다(설계 규칙 UI-TXT-04 · UI-NTF-02).
-    문장으로 끝나지 않는다."""
-    line = registration.banner_line(
-        catalog_ready=catalog_ready, detail_ready=detail_ready, package_ready=package_ready
-    )
+    """설정이 덜 됐으면 자리에 값 줄을 세우지 않고 상태 알림 `AD-04` 만 낸다 — 무엇이 빠졌고 어디를
+    채우는지는 그 전문이 든다(설계 규칙 UI-NTF-02 · UI-TXT-08)."""
+    monkeypatch.setattr(registration, "is_bigdataquery_catalog_configured", lambda: catalog_ready)
+    monkeypatch.setattr(registration, "is_bigdataquery_adapter_configured", lambda: detail_ready)
+    monkeypatch.setattr(registration, "is_bigdataquery_package_available", lambda: package_ready)
+    app = _run()
 
-    assert line.startswith(registration.BANNER_LABEL + " · ")
-    assert all(f":orange[{mark}]" in line for mark in marks)
-    assert not line.endswith(("다.", "다", "요."))
-    ready = registration.banner_line(catalog_ready=True, detail_ready=True, package_ready=True)
-    assert ready == registration.BANNER_READY_LINE
+    assert not any("BigDataQuery 설정" in str(item.value) for item in app.caption)
+    assert not any("미설정" in str(item.value) for item in app.caption)
+    note = active_state(app, "AD-04")
+    assert note is not None and note["short"].startswith(short), note
 
 
 def test_the_notice_reveal_is_the_only_script_run_through_st_html() -> None:
