@@ -510,8 +510,8 @@ def test_the_heading_row_carries_the_column_note_and_the_form_has_no_label_row(
     assert "지금 열: 생산월 26.07–26.08." in str(heading.proto.help)
     assert MANUAL_COLUMNS_HELP in str(heading.proto.help)
     for key, placeholder in (
-        (MANUAL_SAVED_BY_KEY, "저장자(선택)"),
-        (MANUAL_NOTE_KEY, "변경 메모 — 예: 26.07 Wafer Mount PM 1.5대"),
+        (MANUAL_SAVED_BY_KEY, "저장자(선택) · 예: 홍길동"),
+        (MANUAL_NOTE_KEY, "변경 메모 · 예: 26.07 Wafer Mount PM 1.5대"),
     ):
         field = app.text_input(key=key)
         assert field.placeholder == placeholder

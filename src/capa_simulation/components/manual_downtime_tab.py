@@ -50,12 +50,17 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.equipment_save_fields import (
+    SAVED_BY_LABEL,
+    SAVED_BY_PLACEHOLDER,
+)
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
+    note_placeholder,
     ready_note_field,
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -310,8 +315,8 @@ def _render_editor(
             # 이름으로 남는다(2026-11-09 상단 띠 재고 — 페이지 상단 여백 최소화, UI-TXT-01 예외
             # 「사람이 쓰는 자유 글 칸의 안내 글」).
             saved_by = st.text_input(
-                "저장자(선택)",
-                placeholder="저장자(선택)",
+                SAVED_BY_LABEL,
+                placeholder=SAVED_BY_PLACEHOLDER,
                 key=MANUAL_SAVED_BY_KEY,
                 disabled=locked,
                 label_visibility="collapsed",
@@ -319,7 +324,7 @@ def _render_editor(
             ready_note_field(MANUAL_NOTE_KEY, submitted=submitted, start=submitted_base)
             note = st.text_input(
                 "변경 메모",
-                placeholder="변경 메모 — 예: 26.07 Wafer Mount PM 1.5대",
+                placeholder=note_placeholder("26.07 Wafer Mount PM 1.5대"),
                 key=MANUAL_NOTE_KEY,
                 disabled=locked,
                 label_visibility="collapsed",

@@ -79,6 +79,7 @@ from capa_simulation.components.sample_data import (
     render_pending_source,
     render_sample_switch,
 )
+from capa_simulation.components.saved_note import note_placeholder
 from capa_simulation.components.shortening_source import ShorteningStop
 from capa_simulation.components.space_floor_layout import (
     compare_payload,
@@ -1446,11 +1447,14 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
                 with st.container(width=DETAILS_WIDTH, key=DETAILS_FIELDS_KEY):
                     if not fab_only:
                         with st.container(horizontal=True, gap="small"):
+                            # 두 칸은 이름 줄 없이 칸 안 안내 글이 이름이다(2026-11-09 상단
+                            # 띠 재고 · 사용자 지시 — 설계 규칙 UI-CON-03).
                             st.text_input(
                                 "변경 메모",
                                 key=note_key,
-                                placeholder="예: C1 1F 반입구 앞 정리",
+                                placeholder=note_placeholder("C1 1F 반입구 앞 정리"),
                                 width=420,
+                                label_visibility="collapsed",
                             )
                             # 설비 마스터 저장과 같은 부품 — 저장 칸 체크는
                             # 없고(`equipment_save_fields`) 실제로 퍼진 목록은 저장 결과 알림이

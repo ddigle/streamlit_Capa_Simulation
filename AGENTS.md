@@ -3529,7 +3529,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
   가정(100% 아님)을 더해 묶음 셋(떠나면 사라짐 · 저장 안 함 · 가정 사용 중) 차례로 낸다. DB · 캐시를 읽지 않는다. 폼 안 ·
   브라우저 안 초안과 저장 개념이 없는 조건은 들지 않는다(다음 판 후보 — `docs/TODO.md`).
-- `src/capa_simulation/components/saved_note.py` — 저장한 변경 메모를 칸을 갈지 않고 칸 글이 저장한 그 글일 때만 비운다(9장
+- `src/capa_simulation/components/saved_note.py` — 변경 메모 칸의 안내 글 꼴(`note_placeholder` — 「변경 메모 · 예: …」, 칸은
+  `label_visibility="collapsed"` 라 이 글이 이름이다 — 2026-11-09 상단 띠 재고 · 사용자 지시, `tests/test_note_field_placeholders.py`
+  가 화면 코드의 「변경 메모」 · 「저장자(선택)」 칸을 모두 훑는다)과, 저장한 변경 메모를 칸을 갈지 않고 칸 글이 저장한 그 글일 때만 비운다(9장
   「폼 안 입력을 성공 뒤 비울 때」). 폼 안에서 저장 단추를 먼저 그리고 `ready_note_field(KEY, submitted=, start=)`(본 version —
   대조 저장만) 뒤 `st.text_input("변경 메모", key=KEY)` 를 그린다 — key 는 고정이다. 쓰기가 끝난 갈래는 `mark_note_saved`, 제
   저장으로 판정한 갈래(`is_own_save`)는 `mark_note_saved_again` 이다. 제출 회차는 칸을 비우지 않는다(둘째 누름의 입력이 바뀌면
@@ -3758,7 +3760,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면 확인 스크립트
     (`equipment_scenario_line`·`space_scenario_row`)가 그 줄의 전체 수를 「리비전 50개(전체 N개)」 로 옮긴다
     (`REVISION_TOTAL_PATTERN` — 글 꼴을 바꾸면 함께 고친다).
-- `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장의 저장자 칸(`render_saved_by_field` · 콜백이 읽는
+- `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장의 저장자 칸(`render_saved_by_field` — 이름 줄 없이 칸 안
+  안내 글 `SAVED_BY_PLACEHOLDER` 「저장자(선택) · 예: 홍길동」 이 이름, 입력 비가동 저장자 칸도 같은 글 · 콜백이 읽는
   `saved_by_from_state`)·저장 출발점 값(`EquipmentSaveBasis`) — 세 저장 단추 풍선은 어디로 저장되나 한 줄이고 늘 하는 일은 Guide · 결과 알림이다. 설비 마스터 탭 「저장 전 변경」 의
   「리비전 저장」(콜백, 저장자 칸은 `persist` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(콜백)
   세 자리가 같은 부품을 쓴다.

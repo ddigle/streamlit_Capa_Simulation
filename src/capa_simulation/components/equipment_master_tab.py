@@ -147,6 +147,7 @@ from capa_simulation.components.literal_markdown import (
     quoted,
 )
 from capa_simulation.components.save_section import discard_popover
+from capa_simulation.components.saved_note import note_placeholder
 from capa_simulation.components.side_panel import render_side_head, split_frame, switch_side
 from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -302,7 +303,7 @@ UNDO_HELP: Final = (
     "표 · 상세의 마지막 고침부터 한 단계씩 되돌립니다. 표 고침을 다 되돌리면 기존 보유대수 · "
     "비가동 일정의 일괄 삭제를 되살립니다 — 그 표의 적용하지 않은 편집은 먼저 편집본에 넣습니다."
 )
-NOTE_PLACEHOLDER: Final = "예: 10월 신규 호기 반입일정 갱신"
+NOTE_PLACEHOLDER: Final = note_placeholder("10월 신규 호기 반입일정 갱신")
 DOWNLOAD_NOTE: Final = (
     "표에서 고친 값은 곧바로 편집본에 들어가 이 파일에 함께 실립니다(못 읽은 칸 초안은 빼고)."
 )
@@ -1334,7 +1335,11 @@ def _render_save_section(
     frames: Frames = st.session_state[BUFFER_KEY]
     if st.session_state.pop(_NOTE_CLEAR_KEY, False):
         st.session_state[_NOTE_KEY] = ""
-    st.text_input("변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER)
+    # 변경 메모 · 저장자는 이름 줄 없이 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 ·
+    # 사용자 지시 — 설계 규칙 UI-CON-03).
+    st.text_input(
+        "변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER, label_visibility="collapsed"
+    )
     render_saved_by_field(SAVE_FIELDS_PREFIX, persist=True)
     # 수 칸 · 「저장하기 전에 고칠 것」 줄이 고친 것 없음 · 오류 수를 이미 말하고 저장 뒤의 거부는
     # 단추 아래에 선다 — 이 칸은 다른 자리에 없는 옛 배포 흔적만(늘 서 있는 칸이라 아래 단추 줄의

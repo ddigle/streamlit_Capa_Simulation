@@ -20,6 +20,9 @@ from dataclasses import dataclass
 import streamlit as st
 
 SAVED_BY_LABEL = "저장자(선택)"
+# 저장자 칸 안 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다(변경 메모 칸과 같은 꼴 —
+# `saved_note.note_placeholder`, 2026-11-09 상단 띠 재고 · 사용자 지시, 설계 규칙 UI-CON-03).
+SAVED_BY_PLACEHOLDER = f"{SAVED_BY_LABEL} · 예: 홍길동"
 
 
 @dataclass(frozen=True)
@@ -44,7 +47,8 @@ class EquipmentSaveBasis:
 def render_saved_by_field(
     prefix: str, *, persist: bool = False, width: int | None = None
 ) -> str | None:
-    """저장자 칸을 그리고 지금 값(비면 None)을 돌려준다(변경 메모 칸은 자리마다 따로 둔다).
+    """저장자 칸을 그리고 지금 값(비면 None)을 돌려준다(변경 메모 칸은 자리마다 따로 둔다). 이름
+    줄은 없고(접근성 이름으로 남는다) 칸 안 안내 글 `SAVED_BY_PLACEHOLDER` 가 이름이다.
 
     `prefix` 로 칸 key 를 가른다 — 세 저장 자리가 서로의 값을 덮지 않게. 저장자는 세션에 남아 다음
     저장에 그대로 선다(같은 사람이 이어 저장한다). `persist` 면 칸에 `persist_state="session"` 을
@@ -56,18 +60,20 @@ def render_saved_by_field(
         st.text_input(
             SAVED_BY_LABEL,
             key=f"{prefix}_saved_by",
-            placeholder="예: 홍길동",
+            placeholder=SAVED_BY_PLACEHOLDER,
             max_chars=40,
             persist_state="session",
             width="stretch" if width is None else width,
+            label_visibility="collapsed",
         )
         if persist
         else st.text_input(
             SAVED_BY_LABEL,
             key=f"{prefix}_saved_by",
-            placeholder="예: 홍길동",
+            placeholder=SAVED_BY_PLACEHOLDER,
             max_chars=40,
             width="stretch" if width is None else width,
+            label_visibility="collapsed",
         )
     )
     return _cleaned(saved_by)

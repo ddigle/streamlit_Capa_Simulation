@@ -112,7 +112,7 @@
 
 - 수준: MUST · 확정
 - 범위: 모든 화면 · 팝업 · 사이드바 · 떠 있는 판 · 모듈 화면
-- 예외: 입력 곁 오류 · 거부(폼 검증, UI-NTF-03) / 값 · 표지 — 목록 구획의 빈 결과 · 점검 화면의 결론 포함(UI-TXT-04) / 누르기 전에 알아야 하는 되돌릴 수 없는 결과(UI-NTF-09) / 화면을 그리지 못하는 오류(UI-NTF-08) / 사람이 쓰는 자유 글 칸(VOC 글 · 답글)의 짧은 안내 글(placeholder)은 입력 예시로 본다 — 치면 사라지고 같은 말이 Guide 에도 있다(6-9 rule-notes g1-15) / 앱 밖 화면(통합인증 로그아웃 · 로그인 되풀이 · 로그인 오류 · 거절 — `auth/web.py`)의 하는 법 문장과 손으로 옮기는 진단 표는 Guide · 알림창이 없는 화면이라 둔다 — 제목을 거듭하는 첫 문장은 걷고 단추 이름은 「 」 로 감싸며, 모르는 사유 코드는 제목과 사유 코드만이다(6-11 b1) / 구현 중 화면의 설명 덩어리(2026-09-29 범위 결정 — Dynamic Capa 「산식 가이드」 탭 · Capa Chatbot)는 화면을 완성할 때 Guide 로 옮긴다 — 개발 메모는 할 일 문서로, 연결 전 설명은 한 줄 표지 + 제목 풍선으로 이미 옮겼다(6-9 desc-blocks).
+- 예외: 입력 곁 오류 · 거부(폼 검증, UI-NTF-03) / 값 · 표지 — 목록 구획의 빈 결과 · 점검 화면의 결론 포함(UI-TXT-04) / 누르기 전에 알아야 하는 되돌릴 수 없는 결과(UI-NTF-09) / 화면을 그리지 못하는 오류(UI-NTF-08) / 사람이 쓰는 자유 글 칸(VOC 글 · 답글 · 저장 줄의 변경 메모 · 저장자)의 짧은 안내 글(placeholder)은 입력 예시로 본다 — 치면 사라지고 같은 말이 Guide 에도 있다(6-9 rule-notes g1-15). 변경 메모 · 저장자 칸은 이름 줄을 걷고 안내 글이 이름과 예를 함께 말한다(「변경 메모 · 예: …」 · 「저장자(선택) · 예: 홍길동」 — 2026-11-09 상단 띠 재고, UI-CON-03) / 앱 밖 화면(통합인증 로그아웃 · 로그인 되풀이 · 로그인 오류 · 거절 — `auth/web.py`)의 하는 법 문장과 손으로 옮기는 진단 표는 Guide · 알림창이 없는 화면이라 둔다 — 제목을 거듭하는 첫 문장은 걷고 단추 이름은 「 」 로 감싸며, 모르는 사유 코드는 제목과 사유 코드만이다(6-11 b1) / 구현 중 화면의 설명 덩어리(2026-09-29 범위 결정 — Dynamic Capa 「산식 가이드」 탭 · Capa Chatbot)는 화면을 완성할 때 Guide 로 옮긴다 — 개발 메모는 할 일 문서로, 연결 전 설명은 한 줄 표지 + 제목 풍선으로 이미 옮겼다(6-9 desc-blocks).
 - 판단: 이 글을 지우면 사용자가 무엇을 못 하게 되나? 답이 없으면 지우고, 있으면 UI-TXT-02 의 갈 곳 넷 가운데 어디로 갈지 먼저 본다.
 - 그물: `tests/test_place_sentence_sites.py`(화면 글 문장 그물 — `st.caption` · `st.info` · `st.markdown` · `st.write` · `st.text` · `st.html` 의 서술형 문장 자리를 (파일, 함수)별 까닭 허용 목록과 맞대고 빈 결과 · 값 · 표지 자리의 꼴도 봄, 미정리 수는 늘지 않음) · `tests/test_alert_center_assets.py::test_the_alarm_and_change_panels_carry_no_description_footer`(Alarm · 변경 판만) · `scripts/check_deploy_screens.py` period_popup · process_popup(조건 팝업 둘의 「설명 글 0줄」 — 배포 화면 확인 때) · `tests/test_page_header_description.py`(코어 화면 머리의 설명 인자 자리 — 남은 자리 없음: 모듈 창구는 1.1 부터 받기만 하고 그리지 않으며 필요 단축 일정 머리말은 Guide 첫 단락으로, 6-11 d1 · g03)
 - 그물 후보: 설정 팝업 「설명 글 0줄」
@@ -719,7 +719,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 사이드바 탐색 · 새 그룹 · 모듈 상자 · 설정 상자
 - 예외: 없음
 - 판단: 이 상자는 옆 상자와 모양 · 차례가 같은가? 다르면 그 까닭이 선언에 있나 — 한 화면의 공간 때문이라면 다르게 두지 않는다.
-- 그물: `tests/test_sidebar_stylesheet.py`(box markers · condition card face) · `scripts/check_deploy_screens.py` sidebar_groups · progress_box · settings_boxes
+- 그물: `tests/test_sidebar_stylesheet.py`(box markers · condition card face) · `scripts/check_deploy_screens.py` sidebar_groups · progress_box · settings_boxes · `tests/test_note_field_placeholders.py`(저장 줄 · 저장 칸의 변경 메모 · 저장자 칸 — 이름 줄 없음 · 칸 안 안내 글 「… · 예: …」, 남긴 자리는 까닭 목록)
 - 그물 후보: 없음
 - 근거: 검수 prog-01(2026-11-03), 검수 「괜찮음」 home-13(2026-11-03), AGENTS 8장, 확인 보드 AMB-09 (가)(2026-11-04) — 「생산진도 상자 내에 샘플 페이지 1,2,3 넣고 펼치는 상자로 반영」
 - 지금 값: 없음
