@@ -1,4 +1,4 @@
-# Purpose: 확보율 구역별 공정 버튼을 그리되 표시명과 원본 선택값을 분리한다.
+# Purpose: 확보율 구역별 공정 버튼(미달은 최저 확보율 곁 글)을 그리되 표시명과 원본값을 가른다.
 
 """HOME 공정 필터(B/N 판정 대상) 팝업의 공정 버튼.
 
@@ -15,6 +15,13 @@
 **공식버전 자동 갱신이 뺀 공정**에는 표지를 단다(`marks` — 공정 → `자동 off(확보율 72%,
 26.11)`). 꺼진 버튼은 아이콘이 `auto_mode` 로 바뀌고, 풍선 끝 줄과 목록 위 한 줄이 그 표지를
 적는다. 버튼 글자는 그대로 공정 표시명이다 — 고정 폭이라 표지를 붙이면 공정명이 잘린다.
+
+**확보 기준 미달 공정은 이름 오른쪽에 기간 최저 확보율을 작게 붙인다**(2026-11-09 사용자 검수 U5-1).
+값은 요약(`ProcessPickerItem.minimum_rate` — HOME 이 B/N 판정에 쓰는 기간 · 기준으로 이미 낸 값)
+그대로이고 글자는 판정과 같은 사사오입 정수 %(`threshold_percent_label`)다. 버튼 라벨에 넣지 않고
+버튼의 `::after` 로 붙인다 — 라벨 칸(말줄임 칸)은 긴 이름에서 끝을 자르므로 라벨 끝에 이으면 값이
+먼저 잘린다. `::after` 는 라벨 칸 밖 흐름 칸이라 이름이 먼저 줄고 값은 남는다. 풍선과 같은 숨은
+스타일 칸에 싣는다(`tile_rate_style`).
 """
 
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -24,6 +31,7 @@ import streamlit as st
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.design import tokens
 from capa_simulation.services.process_picker import ProcessPickerItem
+from capa_simulation.services.threshold_label import threshold_percent_label
 from capa_simulation.settings import format_month
 
 # 고정 폭과 한 줄 말줄임으로 긴 이름 하나가 전체 바둑판의 행 높이를 바꾸지 않는다.
@@ -116,6 +124,50 @@ def tile_tooltip_style(tooltips: Sequence[str]) -> str:
     )
 
 
+def tile_rate_text(item: ProcessPickerItem) -> str | None:
+    """확보 기준 미달 공정 버튼에 붙일 기간 최저 확보율 글자(「97%」). 다른 구역 · 값 없음은 None.
+
+    판정이 확보율을 사사오입한 정수 % 로 견주므로(`securement_threshold.meets_threshold`) 글자도
+    같은 어림이다 — 기준과 같은 글자가 미달 구역에 서지 않는다(월별 예외 달은 그 달 기준으로
+    판정한다)."""
+    if item.group != "shortfall" or item.minimum_rate is None:
+        return None
+    return threshold_percent_label(item.minimum_rate)
+
+
+def tile_rate_style(rates: Sequence[str | None]) -> str:
+    """순번대로 감싼 버튼 칸마다 최저 확보율 글자를 버튼 `::after` 로 거는 CSS. `rates[i]` 가 `i`
+    번째 칸의 글이고 None 이면 그 칸은 붙이지 않는다. 붙일 칸이 없으면 빈 글자다.
+
+    `::after` 는 버튼 흐름 칸(라벨 칸 다음)이라 줄지 않고(`flex: none`) 라벨 칸이 먼저 말줄임한다.
+    라벨 칸은 글 폭만 쓴다(`width: auto` — Streamlit 은 칸을 단추 폭까지 늘리고 이름을 그 가운데에
+    둬 값이 단추 오른쪽 끝에 떨어졌다) — 이름과 값이 한 덩이로 단추 가운데에 선다. 글자색은 버튼
+    글자색을 이어받는다(칠한 단추는 흰 글자)."""
+    rules = [
+        f".st-key-{TILE_WRAPPER_PREFIX}{index} button::after {{ content: {_css_string(text)}; }}"
+        for index, text in enumerate(rates)
+        if text
+    ]
+    if not rules:
+        return ""
+    contents = "\n".join(rules)
+    return f"""
+<style>
+[class*="st-key-{TILE_WRAPPER_PREFIX}"] button > div {{
+    width: auto;
+}}
+[class*="st-key-{TILE_WRAPPER_PREFIX}"] button::after {{
+    flex: none;
+    margin-left: 0.35em;
+    font-size: 0.75rem;
+    font-weight: 400;
+    white-space: nowrap;
+}}
+{contents}
+</style>
+"""
+
+
 def auto_off_mark_line(
     items: Sequence[ProcessPickerItem],
     marks: Mapping[str, str],
@@ -163,6 +215,7 @@ def render_process_picker(
     if not any(item.group == "shortfall" for item in items):
         st.caption("조회기간에 확보 기준 미달인 공정이 없습니다.")
     tooltips: list[str] = []
+    rates: list[str | None] = []
     for group, title in groups:
         members = [item for item in items if item.group == group]
         if not members:
@@ -188,12 +241,13 @@ def render_process_picker(
                             args=(item.process,),
                         )
                     tooltips.append(tile_tooltip_text(item, label, enabled=enabled, mark=mark))
-    # 풍선 스타일은 숨은 본문 칸에 싣는다(`TOOLTIP_STYLE_BOX_KEY` — 팝업 본문은 이벤트 칸에 쓰지
-    # 않는다). 칸은 풍선이 없어도 늘 선다.
+                    rates.append(tile_rate_text(item))
+    # 풍선 · 최저 확보율 스타일은 숨은 본문 칸에 싣는다(`TOOLTIP_STYLE_BOX_KEY` — 팝업 본문은 이벤트
+    # 칸에 쓰지 않는다). 칸은 풍선이 없어도 늘 선다.
     with st.container(key=TOOLTIP_STYLE_BOX_KEY):
         st.html(
             f"<style>.st-key-{TOOLTIP_STYLE_BOX_KEY} {{ display: none; }}</style>"
-            f"{tile_tooltip_style(tooltips)}<span hidden></span>"
+            f"{tile_tooltip_style(tooltips)}{tile_rate_style(rates)}<span hidden></span>"
         )
 
 

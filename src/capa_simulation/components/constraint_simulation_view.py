@@ -11,18 +11,21 @@
 - **보기 줄** — 「소요 비중대로 나눴을 때 함께 보기」 토글(`persist_state="session"` — 보기 조건).
 - **월별 확보율 그래프**(`CONSTRAINT_CHART_KEY`) — 온 폭 카드. 그래프는 가장 좁은
   폭(`chart_min_width_px`)을 받고 카드가 그보다 좁으면(390px 창) 카드 안에서 가로로 스크롤한다 —
-  세운 달 눈금 30개가 포개지지 않게(`chart_style`).
+  세운 달 눈금 30개가 포개지지 않게(`chart_style`). 범례 밖 표지(제약 기간 옅은 칠 · 위 끝 ▲)의
+  뜻은 카드 제목 풍선이다(`chart_help` — 2026-11-09 사용자 검수 g12-2, 본문 캡션을 걷었다).
 - **월별 계산표** — 그 아래 온 폭(라벨 Figure + 가로로 스크롤되는 월 Figure `CONSTRAINT_SHEET_KEY`).
   계산표는 컬럼 안에 넣지 않는다 — 두 컬럼 폭 규칙(`split_scroll_columns_style` 의 `:has()`)이 바깥
-  컬럼에도 걸린다. 칸 색 · 글자색 · 머리 칠의 읽는 법은 Guide 이고(2026-11-08 사용자 그림 메모 g12),
-  표 앞에서 시작하는 개조 · 대기만 칸 머리 표지 + 풍선이다 — 풍선은 그 창 · 대기의 날짜 · 대수를
-  적는다(그래프 띠에서 길이 0 이라 막대 풍선에 닿지 않는 창이 있다 — `before_range_help`).
+  컬럼에도 걸린다. 칸 색 · 글자색 · 머리 칠의 읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12).
+  표 앞에서 시작하는 개조 · 대기도 본문 표지를 두지 않고 카드 제목 풍선 끝에 붙는다(`sheet_help` —
+  2026-11-09 사용자 검수 g12-2) — 그 창 · 대기의 날짜 · 대수를 적는다(그래프 띠에서 길이 0 이라 막대
+  풍선에 닿지 않는 창이 있다 — `before_range_help`).
 - **달 고르기** — 칸을 누르면 `on_select` **콜백**이 고른 달을 적고 그래프의 띠와 계산표의 열
   테두리가 그 달을 짚는다 — 회차마다 두 그림의 선택 상태를 읽으면 브라우저에 남은 다른 그림의 옛
   선택이 마지막 누름을 덮는다. 세대 번호는 두 그림이 한 칸을 나눠 써 누를 때마다 둘 다 새 요소가
   된다(AGENTS 9장 「칸 선택 Plotly」). 한 달의 식은 계산표 칸 풍선, 개조 창은 그래프 아래 띠 막대
-  풍선 · 계산표 「개조」 구획 · 표 첫 달 앞 표지 풍선, 읽는 법은 Guide 다(2026-11-08 사용자 그림
-  메모 g12). 첫날이 지난 개조 · 대기(「제때 시작했다면」 의 값)는 상태 알림 `CS-04` 다(페이지).
+  풍선 · 계산표 「개조」 구획 · 계산표 제목 풍선(표 첫 달 앞 창), 읽는 법은 Guide 다(2026-11-08
+  사용자 그림 메모 g12). 첫날이 지난 개조 · 대기(「제때 시작했다면」 의 값)는 상태 알림 `CS-04`
+  다(페이지).
 - **맨 아래** — 가용이 모자란 달. 생겼다 사라지는 알림은 늘 서 있는 `st.container()` 칸 안에
   그린다(AGENTS 9장 「자리는 고정한다」).
 
@@ -109,17 +112,17 @@ from capa_simulation.services.wd_window import wd_window
 from capa_simulation.sidebar_status import rerun_app_unless_alone
 
 __all__ = [
-    "BEFORE_RANGE_MARK",
     "CHART_CARD_KEY",
     "CHART_HELP",
+    "CHART_SHADE_TEXT",
     "KPI_ROW_KEY",
     "SHEET_HELP",
     "SHORT_INLINE_LIMIT",
     "SHORT_MONTHS_EXPANDER_KEY",
     "SHORT_REASON_TEXT",
-    "WAIT_BEFORE_RANGE_MARK",
     "ConstraintView",
     "before_range_help",
+    "chart_help",
     "chart_style",
     "default_month",
     "overdrawn_lines",
@@ -129,6 +132,7 @@ __all__ = [
     "render_constraint_kpis",
     "render_constraint_view",
     "settle_selected_month",
+    "sheet_help",
     "short_lines",
     "short_month_lines",
     "wait_before_range_help",
@@ -150,13 +154,16 @@ _EMPTY: Final = "—"
 # 그래프의 띠와 계산표의 열 테두리로 함께 짚는다.
 CHART_HELP: Final = "달 칸을 누르면 계산표에서도 그 달을 짚습니다."
 SHEET_HELP: Final = "칸을 누르면 그래프에서도 그 달을 짚습니다."
-# 표 앞에서 시작하는 개조 · 대기 — 숨은 데이터라 표지 + 풍선이다(설계 규칙 UI-TXT-04). 풍선 끝에 그
-# 창 · 대기마다 날짜 · 대수를 붙인다(`before_range_help` · `wait_before_range_help`).
-BEFORE_RANGE_MARK: Final = ":material/info: 첫 개조 비가동 — 표 첫 달 앞에서 시작"
+# 범례 밖 그래프 표지의 뜻 — 카드 머리 캡션이었다가 제목 풍선으로 옮겼다(2026-11-09 사용자 검수
+# g12-2 「옅은 칠 문구 가이드배치 or 제거」, 설계 규칙 UI-TXT-02). ▲ 는 넘친 달이 있을 때만 붙인다.
+CHART_SHADE_TEXT: Final = "옅은 칠 = 제약 기간"
+CHART_ABOVE_TEXT: Final = f"{ABOVE_MARK} = 그래프 위 끝을 넘은 제약 제품 확보율(값은 점 풍선)"
+# 표 앞에서 시작하는 개조 · 대기 — 표에 보이지 않는 감소라 계산표 제목 풍선 끝에 붙인다(2026-11-09
+# 사용자 검수 g12-2 — 본문 표지 줄을 걷었다, 설계 규칙 UI-TXT-02 · UI-TXT-04). 그 창 · 대기마다
+# 날짜 · 대수를 붙인다(`before_range_help` · `wait_before_range_help`).
 BEFORE_RANGE_TEXT: Final = (
     "첫 개조 비가동이 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
 )
-WAIT_BEFORE_RANGE_MARK: Final = ":material/info: 첫 신규 대기 — 표 첫 달 앞에서 시작"
 WAIT_BEFORE_RANGE_TEXT: Final = (
     "첫 신규 대기가 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
 )
@@ -191,9 +198,9 @@ def _help_lines(lines: Sequence[str]) -> str:
 
 
 def before_range_help(result: ConstraintResult, today: date | None) -> str:
-    """「첫 개조 비가동 — 표 첫 달 앞에서 시작」 표지 풍선 — 뜻 한 줄과, 표 첫 달 W/D 첫날보다
-    앞에서 시작하는 창마다 「그 달 몫 · 비가동 날짜 · 대수」(첫날이 `today` 보다 앞이면 「이미 지난
-    날짜」 꼬리). 표 앞에서 끝나는 창은 그래프 띠에서 길이 0 이라 이 풍선이 그 날짜의 자리다."""
+    """계산표 제목 풍선의 「표 첫 달 앞 개조」 몫 — 뜻 한 줄과, 표 첫 달 W/D 첫날보다 앞에서
+    시작하는 창마다 「그 달 몫 · 비가동 날짜 · 대수」(첫날이 `today` 보다 앞이면 「이미 지난 날짜」
+    꼬리). 표 앞에서 끝나는 창은 그래프 띠에서 길이 0 이라 이 풍선이 그 날짜의 자리다."""
     first_day = _table_first_day(result)
     lines = [
         markdown_safe_tildes(window_line(window))
@@ -205,7 +212,7 @@ def before_range_help(result: ConstraintResult, today: date | None) -> str:
 
 
 def wait_before_range_help(result: ConstraintResult, today: date | None) -> str:
-    """「첫 신규 대기 — 표 첫 달 앞에서 시작」 표지 풍선 — 뜻 한 줄과 표 첫 달 W/D 첫날보다 앞에서
+    """계산표 제목 풍선의 「표 첫 달 앞 신규 대기」 몫 — 뜻 한 줄과 표 첫 달 W/D 첫날보다 앞에서
     시작하는 대기마다 한 줄(설비키가 들어 글 통째로 막는다, 첫날이 `today` 보다 앞이면 꼬리)."""
     first_day = _table_first_day(result)
     lines = [
@@ -215,6 +222,23 @@ def wait_before_range_help(result: ConstraintResult, today: date | None) -> str:
         if item.days > 0 and first_day is not None and item.start < first_day
     ]
     return WAIT_BEFORE_RANGE_TEXT + _help_lines(lines)
+
+
+def chart_help(*, above: bool) -> str:
+    """월별 확보율 카드 제목 풍선 — 누르는 법과 범례 밖 표지의 뜻(▲ 는 넘친 달이 있을 때만)."""
+    marks = CHART_SHADE_TEXT + (f" · {CHART_ABOVE_TEXT}" if above else "")
+    return f"{CHART_HELP}\n\n{marks}"
+
+
+def sheet_help(result: ConstraintResult, today: date | None) -> str:
+    """월별 계산표 카드 제목 풍선 — 누르는 법, 그리고 표 첫 달 앞에서 시작하는 개조 · 신규 대기가
+    있을 때만 그 뜻과 창 · 대기마다 날짜 · 대수."""
+    parts = [SHEET_HELP]
+    if result.starts_before_range:
+        parts.append(before_range_help(result, today))
+    if result.waits_before_range:
+        parts.append(wait_before_range_help(result, today))
+    return "\n\n".join(parts)
 
 
 # ================================================================== 고른 달
@@ -550,14 +574,10 @@ def render_constraint_view(view: ConstraintView) -> None:
     )
     st.html(chart_style(len(months)))
     with st.container(border=True, key=CHART_CARD_KEY):
-        st.markdown("**월별 확보율**", help=CHART_HELP)
         above = rate_axis(
             result, view.labels, show_proportional=bool(show_proportional)
         ).above_months
-        st.caption(
-            "옅은 칠 = 제약 기간"
-            + (f" · {ABOVE_MARK} = 그래프 위로 넘친 제약 제품 확보율(값은 풍선)" if above else "")
-        )
+        st.markdown("**월별 확보율**", help=chart_help(above=bool(above)))
         # 좁은 카드에서는 이 상자 안에서 가로로 스크롤한다(`chart_style`). 그림 위 터치 스와이프는
         # `app.py` 의 터치 스크롤 막이가 브라우저 스크롤로 넘긴다.
         with min_width_scroll_canvas(key=CHART_SCROLL_PREFIX):
@@ -570,17 +590,9 @@ def render_constraint_view(view: ConstraintView) -> None:
                 selection_mode="points",
             )
     with st.container(border=True):
-        # 칸 색 · 글자색 · 머리 칠의 읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12).
-        st.markdown("**월별 계산표**", help=SHEET_HELP)
-        # 표 앞에서 시작하는 개조 · 대기 — 표에 보이지 않는 감소라 칸 머리 표지 + 풍선이다(설계 규칙
-        # UI-TXT-04). 있을 때만 서는 표지라 늘 서 있는 칸 안에 그린다.
-        with st.container():
-            if result.starts_before_range:
-                st.caption(BEFORE_RANGE_MARK, help=before_range_help(result, view.labels.today))
-            if result.waits_before_range:
-                st.caption(
-                    WAIT_BEFORE_RANGE_MARK, help=wait_before_range_help(result, view.labels.today)
-                )
+        # 칸 색 · 글자색 · 머리 칠의 읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 표 앞에서
+        # 시작하는 개조 · 대기는 제목 풍선 끝이다(`sheet_help`).
+        st.markdown("**월별 계산표**", help=sheet_help(result, view.labels.today))
         _render_sheet(sheet, months)
     # 가용이 모자란 달 — 있을 때만 서는 알림이라 늘 서 있는 칸 안에 그린다.
     with st.container():

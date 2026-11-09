@@ -1047,8 +1047,8 @@ def test_a_bar_whose_first_day_has_passed_says_so_in_its_hover() -> None:
 
 def test_the_before_range_mark_names_the_windows_the_band_cannot_show() -> None:
     """표 첫 달 W/D 첫날보다 앞에서 끝나는 창은 그래프 띠에서 길이 0 이라 막대 풍선에 닿지 않는다 —
-    「표 첫 달 앞에서 시작」 표지 풍선이 그 창의 몫 · 날짜 · 대수를 적고, 첫날이 오늘보다 앞이면
-    「이미 지난 날짜」 꼬리를 단다."""
+    계산표 제목 풍선(`sheet_help` — 2026-11-09 사용자 검수 g12-2 로 본문 표지 줄을 걷었다) 끝이 그
+    창의 몫 · 날짜 · 대수를 적고, 첫날이 오늘보다 앞이면 「이미 지난 날짜」 꼬리를 단다."""
     from test_constraint_simulation import _one
 
     from capa_simulation.services.constraint_simulation import ConstraintConditions
@@ -1071,6 +1071,10 @@ def test_the_before_range_mark_names_the_windows_the_band_cannot_show() -> None:
     assert late.endswith(f"2대 — {figures.WINDOW_LATE_TEXT}")
     # 표 앞에서 시작하는 대기가 없으면 뜻 한 줄뿐이다.
     assert view_module.wait_before_range_help(result, None) == view_module.WAIT_BEFORE_RANGE_TEXT
+    # 제목 풍선 — 누르는 법 뒤에 표 앞 창의 몫만 붙는다(대기가 없으면 그 몫은 없다).
+    tip = view_module.sheet_help(result, date(2026, 11, 1))
+    assert tip == f"{view_module.SHEET_HELP}\n\n{before}"
+    assert view_module.WAIT_BEFORE_RANGE_TEXT not in tip
 
 
 def test_a_later_cover_names_its_month_and_splits_the_reasons() -> None:

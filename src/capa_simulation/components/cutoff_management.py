@@ -242,9 +242,10 @@ def render_cutoff_management(
         # 저장 결과는 누른 버튼 바로 아래 한 자리다. 저장 뒤 rerun 을 건너 살아남게 flash 로 남긴다
         # — `st.success` 뒤에 곧바로 `st.rerun()` 을 부르면 한 번도 보이지 않는다. 거부 ·
         # 「바뀐 것이 없습니다」 도 제출 회차가 담아 둔 글을 여기서 꺼낸다
-        # (`write_guard.queue_refusal` — dict 칸이라 끊기지 않는다).
-        with st.container():
-            render_flash(_FLASH_KEY, _FILL_FLASH_KEY)
+        # (`write_guard.queue_refusal` — dict 칸이라 끊기지 않는다). 거부 글도 알림 칸 안에 쓴다 —
+        # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 줄 사이 간격을
+        # 먹는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수 g17).
+        with render_flash(_FLASH_KEY, _FILL_FLASH_KEY):
             refused = take_refusal(CUTOFF_SAVE_NAME)
             if refused is not None:
                 st.warning(refused, icon=":material/sync_problem:")
@@ -272,30 +273,34 @@ def render_cutoff_management(
             footer=view_button,
         )
         view = _applied_view(draft, requested)
-        # 바로 위가 누를 것이 든 펼침이다 — 표 도구 막대가 그 오른쪽 끝을 덮지 않게 띄운다.
-        toolbar_clearance()
-        edited = st.data_editor(
-            view.frame,
-            key=editor_widget_key(_EDITOR_KEY, in_form=True),
-            num_rows=view.row_mode,
-            width="stretch",
-            hide_index=True,
-            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-            placeholder="",
-            column_config={
-                **dict(view.column_config),
-                "Cutoff일수": st.column_config.NumberColumn(
-                    "Cutoff일수",
-                    min_value=0.0,
-                    step=0.5,
-                    format="%.1f",
-                    help=(
-                        "0 은 「달력 월 그대로」입니다. 비워 두는 것과 뜻이 다릅니다. 소수점은 "
-                        "내림해 일 단위로 셉니다(35.8 → 35일) — 다른 화면은 그 일수로 적습니다."
+        # 바로 위가 누를 것이 든 펼침이다 — 표 도구 막대(표 머리 위 37px)가 그 오른쪽 끝을 덮지
+        # 않게 띄운다. 띄움과 표는 간격 없는 칸 하나에 둔다 — 폼 줄 사이(14px)를 띄움 앞뒤로 두 번
+        # 먹어 펼침과 표 사이가 52px 였다(2026-11-09 사용자 검수 g17). 띄움 24 + 줄 사이 14 = 38px
+        # 로 막대 바로 위까지다.
+        with st.container(gap=None):
+            toolbar_clearance()
+            edited = st.data_editor(
+                view.frame,
+                key=editor_widget_key(_EDITOR_KEY, in_form=True),
+                num_rows=view.row_mode,
+                width="stretch",
+                hide_index=True,
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
+                column_config={
+                    **dict(view.column_config),
+                    "Cutoff일수": st.column_config.NumberColumn(
+                        "Cutoff일수",
+                        min_value=0.0,
+                        step=0.5,
+                        format="%.1f",
+                        help=(
+                            "0 은 「달력 월 그대로」입니다. 비워 두는 것과 뜻이 다릅니다. 소수점은 "
+                            "내림해 일 단위로 셉니다(35.8 → 35일) — 다른 화면은 그 일수로 적습니다."
+                        ),
                     ),
-                ),
-            },
-        )
+                },
+            )
 
     # 행을 더하거나 지운 제출의 편집표는 RangeIndex 가 아니다. 그 꼴이 초안이 되면 다음 표가
     # `hide_index=True` 를 무시하고 인덱스를 머리 없는 필수 칸으로 세우고(`table_view_controls`), 그

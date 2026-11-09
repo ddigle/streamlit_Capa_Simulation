@@ -2705,12 +2705,137 @@ def test_home_styles_sent_every_run_carry_no_css_comments() -> None:
         dashboard_title_row_style,
         summary_notice_style,
     )
-    from capa_simulation.components.process_picker import tile_tooltip_style
+    from capa_simulation.components.process_picker import tile_rate_style, tile_tooltip_style
 
     for css in (
         dashboard_title_row_style(),
         summary_notice_style(),
         tile_tooltip_style(["공정 A", "공정 B"]),
+        tile_rate_style(["97%", None]),
     ):
         assert "<style>" in css
         assert "/*" not in css and "*/" not in css
+
+
+def test_shortfall_tiles_carry_the_period_minimum_rate_beside_the_name() -> None:
+    """공정 필터 팝업 — 확보 기준 미달 공정 버튼만 이름 오른쪽에 기간 최저 확보율을 작게
+    단다(2026-11-09 사용자 검수 U5-1). 값은 요약이 이미 낸 최저 확보율이고 글자는 판정과 같은
+    사사오입 정수 %(108.5 → 109)다. 버튼 라벨은 공정 표시명 그대로이고 값은 버튼 `::after` 다 —
+    라벨 끝에 이으면 긴 이름의 말줄임이 값을 먼저 자른다."""
+
+    def script() -> None:
+        from capa_simulation.components.process_picker import render_process_picker
+        from capa_simulation.services.process_picker import ProcessPickerItem
+
+        render_process_picker(
+            [
+                ProcessPickerItem("A", 0.965, 202601, 3, "shortfall"),
+                ProcessPickerItem("B", 1.2, 202601, 3, "sufficient"),
+                ProcessPickerItem("C", None, None, 0, "unavailable"),
+                ProcessPickerItem("D", 1.085, 202602, 3, "shortfall"),
+            ],
+            {"A"},
+            format_func=str,
+            on_toggle=lambda _process: None,
+        )
+
+    app = AppTest.from_function(script).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    # 구역 차례 — 미달(A · D) → 충족(B) → 확보율 없음(C). 라벨은 이름만이다.
+    assert [button.label for button in app.button] == ["A", "D", "B", "C"]
+    body = " ".join(str(element.proto.body) for element in app.get("html"))
+    assert '.st-key-home_bn_tile_0 button::after { content: "97%"; }' in body
+    assert '.st-key-home_bn_tile_1 button::after { content: "109%"; }' in body
+    assert "home_bn_tile_2 button::after" not in body
+    assert "home_bn_tile_3 button::after" not in body
+    # 값 글자는 줄지 않고 라벨 칸이 먼저 말줄임한다.
+    assert "flex: none;" in body
+
+
+def _display_tab_editors(database: str) -> None:
+    """HOME 설정 「공지 · 표시」 탭의 세 상자만(공지 · B/N Top5 구간 · 주요공정 프리셋)."""
+    from capa_simulation.components.home_preference import (
+        _render_key_process_editor,
+        _render_summary_note_editor,
+        _render_top5_band_editor,
+    )
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.persistence.cache import load_global_summary_note, load_global_top5_band
+
+    _render_summary_note_editor(
+        summary_profile=load_global_summary_note(database), database_path=database
+    )
+    _render_top5_band_editor(
+        top5_band_profile=load_global_top5_band(database), database_path=database
+    )
+    _render_key_process_editor(
+        process_options=["DEMO_A", "DEMO_B"],
+        process_labels=ProcessLabels(),
+        database_path=database,
+    )
+
+
+def _app_block(node: Any, key: str) -> Any:
+    """AppTest 트리에서 key 가 `key` 인 칸(블록)을 찾는다. 없으면 None."""
+    if getattr(node, "key", None) == key:
+        return node
+    children = getattr(node, "children", None)
+    for child in children.values() if isinstance(children, dict) else ():
+        found = _app_block(child, key)
+        if found is not None:
+            return found
+    return None
+
+
+def test_the_notice_display_tab_repeats_no_words_and_keeps_no_empty_gaps(tmp_path: Path) -> None:
+    """HOME 설정 「공지 · 표시」(2026-11-09 사용자 검수 g18 「중간중간 중복되는 문구(공지)나
+    여백이 있는데 최적화해」). 공지 버전 줄에 「공지 중 · 내림」 꼬리가 없고 글 칸 이름 「공지」 는
+    숨는다 — 상자 제목과 바로 아래 글 칸이 같은 말을 한다. Top5 저장 단추와 하한 · 상한은 한
+    줄이다(주요공정 프리셋 줄과 같은 꼴). 세 폼의 알림 칸은 칸 하나라 알림이 없으면 빈 칸이고, 폼 안
+    빈 칸은 줄 사이 간격을 먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR`)."""
+    from streamlit.proto.LabelVisibility_pb2 import LabelVisibility
+
+    from capa_simulation.persistence.cache import (
+        clear_global_key_process_cache,
+        clear_global_summary_note_cache,
+        clear_global_top5_band_cache,
+        clear_scenario_repository,
+    )
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = tmp_path / "display.duckdb"
+    repository = DuckDBScenarioRepository(database)
+    repository.initialize()
+    repository.replace_global_summary_note("11월 정기 공지", source="시험", expected_version=0)
+    for clear in (
+        clear_scenario_repository,
+        clear_global_summary_note_cache,
+        clear_global_top5_band_cache,
+        clear_global_key_process_cache,
+    ):
+        clear()
+
+    app = AppTest.from_function(
+        _display_tab_editors, args=(str(database),), default_timeout=60
+    ).run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    captions = [str(item.value) for item in app.caption]
+    notice_line = next(text for text in captions if text.startswith("공용 버전 v1 · 시험"))
+    assert "공지 중" not in notice_line and "내림" not in notice_line
+    (area,) = app.text_area
+    assert area.value == "11월 정기 공지"
+    assert area.proto.label_visibility.value == LabelVisibility.COLLAPSED
+
+    summary = list(_app_block(app.main, "home_summary_note_form").children.values())
+    assert [type(item).__name__ for item in summary] == ["Button", "Block", "TextArea"]
+    assert not summary[1].children
+    top5 = list(_app_block(app.main, "home_top5_band_form").children.values())
+    assert [type(item).__name__ for item in top5] == ["Block", "Block"]
+    row = list(top5[0].children.values())
+    assert [type(item).__name__ for item in row] == ["Button", "NumberInput", "NumberInput"]
+    assert row[0].label == "확보율 구간 저장" and not top5[1].children
+    preset = list(_app_block(app.main, "home_key_process_form").children.values())
+    assert [type(item).__name__ for item in preset] == ["Block", "Block", "Multiselect"]
+    assert not preset[1].children
