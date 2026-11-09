@@ -45,8 +45,9 @@ const OPEN_PAGE_EVENT = 'capa-open-page'
 // 알림 칸이 회차 끝에 공정 값 칸 표지를 읽어 지금 탭의 공정 표지를 바로잡는 사건(`alert_center.js` 의 `PROCESS_EVENT`) —
 // {href, tab: {miss, title} | null}. 탭 줄은 페이지보다 먼저 그려져 그 회차에 처음 그린 화면 · 바뀐 선택지를 모른다.
 const PROCESS_EVENT = 'capa-process-here'
-// 공정 표지 깔때기(알림 칸 공정 칩과 같은 꼴).
-const FUNNEL_PATH = 'M4 5h16l-6.2 7.4V19l-3.6-1.8v-4.8z'
+// 공정 표지 깔때기 — 사이드바 공정 값 칸 아이콘(Material `filter_alt`)과 같은 선 꼴(속이 빈 깔때기 + 대)이다. 칠한 세모는 12px 에서
+// 탭 펼침 꺾쇠(▾)로 읽혔다. 알림 칸 공정 칩 · 판과 같은 상수다(`alert_center.js` — 그물 `tests/test_page_tabs_assets.py`).
+const FUNNEL_PATH = 'M11 20q-.425 0-.713-.288T10 19v-6L4.2 5.6q-.375-.5-.113-1.05T5 4h14q.65 0 .913.55t-.113 1.05L14 13v6q0 .425-.288.713T13 20zm1-7.7L16.95 6H7.05z'
 // 알림창 짧은 글의 글자 수(파이썬 `alerts.SHORT_LIMIT` — data `alerts.short_limit`).
 const SHORT_LIMIT = 60
 // 보낸 이동이 끝났는지 다시 보는 간격 — 옮긴 화면 회차가 다 돌았는지는 Streamlit 뿌리의 회차 표지로 본다.
@@ -427,6 +428,13 @@ function revealScroll(left, right, scrollLeft, clientWidth, edge) {
 }
 // </tabs-edges>
 
+// <tabs-wip>
+// 탭 이름이 말줄임됐는가(`scrollWidth` > `clientWidth`). 소수 px 반올림은 넘침으로 보지 않는다 — 「구현중」 표지를 점으로 줄일지 가른다.
+function wipTight(scrollWidth, clientWidth) {
+  return scrollWidth - clientWidth > 0.5
+}
+// </tabs-wip>
+
 // <tabs-focus>
 // 초점이 있던 탭을 닫을 때 초점을 옮길 탭 — 서버가 지금 탭을 닫고 옮겨 가는 이웃과 같은 규칙(오른쪽 이웃, 없으면 왼쪽
 // 이웃 — `page_tabs_state.closed`)이다. `ids` 는 닫기 전 보이는 탭 차례다. 닫는 탭이 없거나 남는 탭이 없으면 null.
@@ -590,6 +598,19 @@ function paintProcessMark(item, proc) {
   setText(mark.lastChild, title ? ` ${title}` : '')
 }
 
+// 「구현중」 표지 맞추기 — 탭이 좁아 이름이 말줄임되면 글 표지를 점으로 줄인다(`is-wip-tight` — 풍선 · 읽기 도구 글은 남는다,
+// UI-ACC-02). 늘 글 표지로 되돌린 뒤 한 번에 재고 정한다 — 점으로 줄여 넓어진 자리로 다시 재면 넓히고 줄이기를 오락가락한다. 재기를
+// 모두 마친 뒤 쓰므로 그리기 계산은 한 번이다.
+function fitWip(items) {
+  const marked = []
+  for (const item of items) {
+    item.classList.remove('is-wip-tight')
+    if (!item.hidden && item.classList.contains('is-wip')) marked.push(item)
+  }
+  const tight = marked.filter((item) => wipTight(item.__parts.label.scrollWidth, item.__parts.label.clientWidth))
+  for (const item of tight) item.classList.add('is-wip-tight')
+}
+
 function setAttr(element, name, value) {
   if (value === null || value === undefined) {
     if (element.hasAttribute(name)) element.removeAttribute(name)
@@ -651,6 +672,7 @@ export default function (component) {
   if (!S.onFonts && document.fonts && document.fonts.addEventListener) {
     S.onFonts = () => {
       nav.classList.toggle('has-icons', iconFontLoaded())
+      fitWip(S.items.values())
       if (S.onScroll) S.onScroll()
     }
     document.fonts.addEventListener('loadingdone', S.onFonts)
@@ -752,6 +774,7 @@ export default function (component) {
     const at = list.children[index]
     if (at !== item) list.insertBefore(item, at || null)
   })
+  fitWip(S.items.values())
   // 새 data 가 왔으면 누른 뒤 기다리던 표지를 걷는다 — 아직 보내지 않고 기다리는 누름(`<tabs-queue>`·`<tabs-hold>`)의
   // 표지는 둔다.
   for (const [id, item] of S.items) {
@@ -783,6 +806,7 @@ export default function (component) {
     list.addEventListener('scroll', S.onScroll, { passive: true })
     if (typeof ResizeObserver === 'function') {
       S.resizer = new ResizeObserver(() => {
+        fitWip(S.items.values())
         if (S.reveal) S.reveal()
         if (S.onScroll) S.onScroll()
       })
@@ -1402,6 +1426,7 @@ export default function (component) {
       for (const item of S.items.values()) {
         if (!item.hidden && item.__href === detail.href) paintProcessMark(item, detail.tab)
       }
+      fitWip(S.items.values())
     }
     window.addEventListener(PROCESS_EVENT, S.onProcess)
   }

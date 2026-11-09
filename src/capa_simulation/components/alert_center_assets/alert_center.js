@@ -64,8 +64,9 @@ const OPEN_PAGE_EVENT = 'capa-open-page'
 // 지금 화면 탭의 공정 표지를 바로잡는 사건(`page_tabs.js` 가 듣는다) — {href, tab: {miss, title} | null}.
 const PROCESS_EVENT = 'capa-process-here'
 const SVG_NS = 'http://www.w3.org/2000/svg'
-// 깔때기(공정 거름)와 플라스크(합성 샘플) 아이콘 — 24 단위 path 하나.
-const FUNNEL_PATH = 'M4 5h16l-6.2 7.4V19l-3.6-1.8v-4.8z'
+// 깔때기(공정 거름)와 플라스크(합성 샘플) 아이콘 — 24 단위 path 하나. 깔때기는 사이드바 공정 값 칸 아이콘(Material `filter_alt`)과
+// 같은 선 꼴이고 화면 탭 표지와 같은 상수다(`page_tabs.js`).
+const FUNNEL_PATH = 'M11 20q-.425 0-.713-.288T10 19v-6L4.2 5.6q-.375-.5-.113-1.05T5 4h14q.65 0 .913.55t-.113 1.05L14 13v6q0 .425-.288.713T13 20zm1-7.7L16.95 6H7.05z'
 const FLASK_PATH =
   'M19.8 18.4 14 10.67V6.5l1.35-1.69c.26-.33.03-.81-.39-.81H9.04c-.42 0-.65.48-.39.81L10 6.5v4.17L4.2 18.4c-.49.66-.02 1.6.8 1.6h14c.82 0 1.29-.94.8-1.6z'
 const TOOLBAR_ATTRIBUTE = 'data-capa-toolbar'

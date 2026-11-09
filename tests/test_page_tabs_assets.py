@@ -60,6 +60,50 @@ def test_the_process_and_implementing_marks_sit_beside_the_name_with_their_own_t
     assert page_tabs.TEXT["wip"] == "구현중"
 
 
+def test_the_tab_funnel_is_the_chips_outline_funnel_at_the_chips_size() -> None:
+    """탭 깔때기는 머리 공정 칩 · 판과 같은 path 상수 하나(UI-CON-04)이고 사이드바 값 칸 아이콘
+    (`filter_alt`)처럼 속이 빈 선 꼴이다 — 칠한 세모 0.75rem 은 탭 펼침 꺾쇠(▾)로 읽혔다. 크기는 칩
+    깔때기(13px)와 같은 0.8125rem 이다."""
+    alert_js = (ASSETS.parent / "alert_center_assets" / "alert_center.js").read_text(
+        encoding="utf-8"
+    )
+    alert_css = (ASSETS.parent / "alert_center_assets" / "alert_center.css").read_text(
+        encoding="utf-8"
+    )
+    pattern = r"const FUNNEL_PATH = '([^']+)'"
+    tab = re.search(pattern, JS)
+    chip = re.search(pattern, alert_js)
+    assert tab is not None and chip is not None
+    assert tab.group(1) == chip.group(1)
+    # 바깥 깔때기와 그 안을 파낸 세모 — 두 겹의 닫힌 path 다.
+    assert tab.group(1).lower().count("z") == 2
+    size = re.search(r"\.capa-tabs-proc svg \{([^}]*)\}", CSS)
+    chip_size = re.search(r"\.chip\.proc \.funnel \{([^}]*)\}", alert_css)
+    assert size is not None and chip_size is not None
+    assert "width: 0.8125rem;" in size.group(1) and "width: 13px;" in chip_size.group(1)
+
+
+def test_the_implementing_mark_shrinks_to_a_ring_when_the_name_is_cut() -> None:
+    """좁은 창에서 탭 이름이 말줄임되면 「구현중」 글 표지를 흐린 고리 점으로 줄여 이름 자리를 먼저
+    지킨다(UI-ACC-02 — 1283px · 탭 8개에서 「Dynamic… [구현중]」). 글은 크기 0 으로 남아 읽기 도구가
+    읽고 풍선도 그대로다. 그릴 때 · 목록 폭이 바뀔 때 · 글꼴이 들 때 · 지금 탭 공정 표지가 바뀔 때
+    다시 잰다 — 늘 글 표지로 되돌린 뒤 재어 오락가락하지 않는다."""
+    tight = re.search(r"\.capa-tabs-item\.is-wip-tight \.capa-tabs-wip \{([^}]*)\}", CSS)
+    assert tight is not None
+    assert "font-size: 0;" in tight.group(1) and "border-radius: 50%;" in tight.group(1)
+    assert "display: none" not in tight.group(1)
+    fit = JS[JS.index("function fitWip(") :]
+    fit = fit[: fit.index("\n}\n")]
+    assert fit.index("classList.remove('is-wip-tight')") < fit.index("scrollWidth")
+    assert JS.count("fitWip(S.items.values())") == 4
+    resize = JS[JS.index("S.resizer = new ResizeObserver(") :]
+    assert "fitWip(S.items.values())" in resize[: resize.index("})")]
+    out = _node(
+        "console.log(JSON.stringify([wipTight(120, 80), wipTight(80, 80), wipTight(80.4, 80)]))"
+    )
+    assert out == [True, False, False]
+
+
 def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     """고정·차례·닫기는 누르자마자 서버 규칙(`<tabs-order>`)으로 그리고 그
     차례(`order`)·고정(`pins`)을 싣는다 — 서버(`page_tabs._settle_drawn`)는 같은 차례면 페이지를
@@ -313,6 +357,7 @@ _SECTIONS = (
     "tabs-drag",
     "tabs-links",
     "tabs-edges",
+    "tabs-wip",
     "tabs-focus",
     "tabs-return",
 )
