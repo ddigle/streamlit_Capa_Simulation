@@ -28,7 +28,7 @@ from capa_simulation.components.paste_form import (
     tell_paste,
 )
 from capa_simulation.components.process_labels import process_labels_from_rules
-from capa_simulation.components.profile_caption import render_profile_heading
+from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX, render_profile_heading
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
@@ -90,6 +90,27 @@ PROCESS_RENAME_UNCHANGED_MESSAGE = (
 )
 # 직접 편집 저장의 결과 알림 칸(`flash`·`write_guard.held_notice`).
 PROCESS_RENAME_FLASH_KEY = "process_rename_flash"
+# 저장 줄 변경 메모 칸의 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다(설계 규칙 UI-TXT-01).
+NOTE_PLACEHOLDER = "변경 메모 · 예: LOB 차트 공정명 축약"
+# 직접 편집 제목 줄 칸과 그 오른쪽 끝 「보유 공정 n개」 팝오버(라벨의 수가 바뀌어도 같은 블록이게
+# key 를 단다 — `tests/test_popover_keys.py`).
+HEADING_ROW_KEY = "admin_area_process_rename_heading_row"
+AVAILABLE_POPOVER_KEY = "admin_area_process_rename_available_popover"
+# 제목 줄 안 두 칸 — 제목 칸(제목 · 공용 버전 줄 · 보유 공정 밖 표지)과 오른쪽 끝 단추 칸 — 과 그
+# 서식(`heading_row_css`). 버전 줄은 사람이 적은 변경 메모를 실어 길이가 정해져 있지 않다.
+# 서식이 없으면 긴 메모가 제목 칸을 줄 폭만큼 넓혀 단추 칸이 눌리고 단추 셋이 세로로 쌓이며
+# 이름이 잘렸다(2026-11-09 독립 검토). 그래서 단추 칸은 줄지 않는 한 덩이로 줄 오른쪽 끝에 서고,
+# 제목 칸이 남은 폭을 받아 그 안에서 버전 줄을 제목 곁에 둔 채 낱말 사이로 접는다. 줄 폭이 제목
+# 칸 바닥(`HEADING_MIN_WIDTH` — 제목 곁에 버전 줄이 너덧 낱말 드는 폭, 보유 공정 밖 표지가 서면
+# `HEADING_MARK_ROOM` 을 더한다)과 단추 칸을 다 담지 못하면 단추 칸이 통째로 다음 줄 오른쪽
+# 끝으로 내려간다. 줄 폭이 제목 칸 바닥보다도 좁으면 버전 줄이 제목 아래로 내려가 줄 폭으로
+# 접힌다. 제 폭이 정해진 고르기 둘을 둔 표시순서 관리(`display_order_management.HEADING_ROW_CSS`
+# — 고르기 몫을 빼는 꼴)와 달리 단추 폭이 글꼴 · 공정 수에 따라 달라 몫을 수로 빼지 않는다.
+HEADING_BOX_KEY = "admin_area_process_rename_heading_box"
+HEADING_TOOLS_KEY = "admin_area_process_rename_heading_tools"
+HEADING_PROFILE_KEY = "process_rename"
+HEADING_MIN_WIDTH = 240
+HEADING_MARK_ROOM = 160
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
@@ -126,25 +147,8 @@ def render_process_rename_management(
         )
         return
 
-    # 작업 줄: 지금 표 내려받기와 Excel 붙여넣기(팝업 — 창 안 작업 줄에도 양식이 선다). 붙여넣기는
-    # 가끔 하는 전체 교체라 본문을 차지하지 않는다(2026-09-29 사용자 결정). 여는 버튼은 콜백으로
-    # 연다. 공용 버전 줄은 아래 「직접 편집」 제목 옆이다(2026-11-08 사용자 그림 메모 g18) — 단추는
-    # 그 전처럼 줄 오른쪽 끝이다.
-    with st.container(
-        horizontal=True, horizontal_alignment="right", vertical_alignment="center", gap="small"
-    ):
-        render_csv_download(
-            data=csv_bytes,
-            file_name=f"PROC_RENAME_v{profile.version}.csv",
-            key="admin_area_process_rename_download",
-        )
-        st.button(
-            "Excel 붙여넣기",
-            icon=":material/content_paste:",
-            key="admin_area_process_rename_open_paste",
-            on_click=open_admin_dialog,
-            args=(PASTE_DIALOG,),
-        )
+    # 지금 표 내려받기 · Excel 붙여넣기 단추는 아래 「직접 편집 · 공용 버전」 제목 줄 오른쪽 끝이다
+    # (`_render_direct_editor`). 결과 알림 칸은 탭 맨 위에 늘 선다(성공 · 거부는 알림창).
     render_flash(PROCESS_RENAME_FLASH_KEY)
 
     labels = process_labels_from_rules(profile.rules, profile.version)
@@ -178,7 +182,7 @@ def render_process_rename_management(
 
     if admin_dialog_is_open(PASTE_DIALOG):
         _clipboard_dialog(repository, profile.rules, csv_bytes, profile.version)
-    _render_direct_editor(repository, profile, available_processes, unmatched)
+    _render_direct_editor(repository, profile, available_processes, unmatched, csv_bytes)
 
 
 def _listed(names: list[str], limit: int = 10) -> str:
@@ -265,11 +269,40 @@ def _clipboard_dialog(
         st.rerun()
 
 
+def heading_row_css(*, marked: bool) -> str:
+    """직접 편집 제목 줄의 서식(모듈 머리 `HEADING_BOX_KEY` 설명) — 보유 공정 밖 표지가
+    서면(`marked`) 제목 칸 바닥이 그 표지 몫만큼 넓다. 버전 줄은 제목 줄의 둘째
+    칸이다(`render_profile_heading`)."""
+    floor = HEADING_MIN_WIDTH + (HEADING_MARK_ROOM if marked else 0)
+    row = f".st-key-{HEADING_ROW_KEY}"
+    line = f".st-key-{HEADING_KEY_PREFIX}{HEADING_PROFILE_KEY}"
+    version = f'{line} > [data-testid="stElementContainer"]:nth-child(2)'
+    return f"""<style>
+{row} {{ container-type: inline-size; }}
+{row} > [data-testid="stLayoutWrapper"]:has(> .st-key-{HEADING_BOX_KEY}) {{
+  flex: 1 1 0%;
+  min-width: min({floor}px, 100%);
+}}
+{row} > [data-testid="stLayoutWrapper"]:has(> .st-key-{HEADING_TOOLS_KEY}) {{
+  flex: 0 0 auto;
+  width: auto;
+  margin-left: auto;
+}}
+{line} {{ flex-wrap: nowrap; }}
+{version} {{ flex-shrink: 1; min-width: 0; }}
+{version} * {{ word-break: keep-all; overflow-wrap: anywhere; }}
+@container (max-width: {floor}px) {{
+  {line} {{ flex-wrap: wrap; }}
+}}
+</style>"""
+
+
 def _render_direct_editor(
     repository: DuckDBScenarioRepository,
     profile: GlobalProcessRename,
     available_processes: list[str],
     unmatched: list[str],
+    csv_bytes: bytes,
 ) -> None:
     """직접 편집 표. 저장은 **버전 대조**다 — 판정 기준과 같은 결로 편집을 시작한 회차의 version 을
     세션(`BASE_VERSION_KEY`)에 두고 저장 회차에 넘긴다. 그 사이 다른 사람이 저장했으면 저장소가
@@ -281,32 +314,68 @@ def _render_direct_editor(
     단추는 제자리다). 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
 
     보유 공정에 없는 공정에 지정된 표시명(`unmatched`)은 표에 있지만 이 시나리오의 계산 화면에는
-    그리지 않는 항목이라 표 머리 표지 + 풍선으로 둔다(설계 규칙 UI-TXT-04 — 숨은 데이터 안내).
+    그리지 않는 항목이라 표 머리 표지 + 풍선으로 둔다(설계 규칙 UI-TXT-04 — 숨은 데이터 안내) —
+    따로 줄을 세우지 않고 「직접 편집 · 공용 버전」 제목 줄 끝이다(2026-11-09 사용자 규칙 「상단
+    여백 · 문구 최소화」). 저장 줄의 변경 메모는 이름 줄 없이 안내 글(placeholder)이 이름을 말한다.
     거부 · 오류는 저장 단추 바로 위 칸(`save_status`)에 선다 — 표 밑에 두면 단추에서 표 높이만큼
-    떨어진다(UI-LAY-03, 표시순서 관리와 같은 꼴)."""
+    떨어진다(UI-LAY-03, 표시순서 관리와 같은 꼴).
+
+    제목 줄 하나에 제목 · 공용 버전 · 보유 공정 밖 표지와, 오른쪽 끝 「보유 공정 n개」 팝오버(원본
+    공정 목록 표) · CSV 다운로드 · Excel 붙여넣기(팝업 — 가끔 하는 전체 교체라 본문을 차지하지
+    않는다, 2026-09-29 사용자 결정)가 선다 — 단추 줄 · 접힘 줄을 따로 세우지 않는다(2026-11-09
+    사용자 보드 T3 · T7, 설계 규칙 UI-LAY-11 · UI-LAY-03 · UI-TXT-04)."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
-    # 제목 바로 옆에 공용 버전 줄이 선다(2026-11-08 사용자 그림 메모 g18).
-    render_profile_heading(
-        "#### 직접 편집",
-        profile,
-        key="process_rename",
-        empty="아직 지정한 표시명이 없습니다",
-    )
-    if unmatched:
-        st.caption(f"보유 공정 밖 표시명 {len(unmatched):,}건", help=unmatched_help(unmatched))
-    if available_processes:
-        with st.expander(
-            f"보유 공정 {len(available_processes):,}개",
-            icon=":material/list:",
-            key="admin_area_process_rename_available_expander",
+    st.html(heading_row_css(marked=bool(unmatched)))
+    with st.container(
+        horizontal=True, vertical_alignment="center", gap="small", key=HEADING_ROW_KEY
+    ):
+        # 제목 바로 옆에 공용 버전 줄이 서고(2026-11-08 사용자 그림 메모 g18), 보유 공정 밖 표시명
+        # 표지가 그 줄 끝에 선다. 제목 칸이 남은 폭을 받고 단추 칸은 줄 오른쪽 끝 한 덩이다
+        # (`heading_row_css`).
+        with st.container(width="content", key=HEADING_BOX_KEY):
+            render_profile_heading(
+                "#### 직접 편집",
+                profile,
+                key=HEADING_PROFILE_KEY,
+                empty="아직 지정한 표시명이 없습니다",
+                mark=(
+                    (f"보유 공정 밖 표시명 {len(unmatched):,}건", unmatched_help(unmatched))
+                    if unmatched
+                    else None
+                ),
+            )
+        with st.container(
+            horizontal=True,
+            horizontal_alignment="right",
+            vertical_alignment="center",
+            gap="small",
+            key=HEADING_TOOLS_KEY,
         ):
-            # 원본 공정명이다. 여기에 표시명을 입히면 붙여넣을 원본을 확인할 수 없다.
-            st.dataframe(
-                pd.DataFrame({"공정": available_processes}),
-                hide_index=True,
-                width="stretch",
-                height=240,
+            if available_processes:
+                with st.popover(
+                    f"보유 공정 {len(available_processes):,}개",
+                    icon=":material/list:",
+                    key=AVAILABLE_POPOVER_KEY,
+                ):
+                    # 원본 공정명이다. 여기에 표시명을 입히면 붙여넣을 원본을 확인할 수 없다.
+                    st.dataframe(
+                        pd.DataFrame({"공정": available_processes}),
+                        hide_index=True,
+                        width="stretch",
+                        height=240,
+                    )
+            render_csv_download(
+                data=csv_bytes,
+                file_name=f"PROC_RENAME_v{profile.version}.csv",
+                key="admin_area_process_rename_download",
+            )
+            st.button(
+                "Excel 붙여넣기",
+                icon=":material/content_paste:",
+                key="admin_area_process_rename_open_paste",
+                on_click=open_admin_dialog,
+                args=(PASTE_DIALOG,),
             )
     editable = (
         empty_process_rename_rules() if current.empty else prepare_process_rename_rules(current)
@@ -323,27 +392,30 @@ def _render_direct_editor(
             ready_note_field(NOTE_KEY, submitted=submitted, start=submitted_base)
             note = st.text_input(
                 "변경 메모",
-                placeholder="예: LOB 차트 공정명 축약",
+                placeholder=NOTE_PLACEHOLDER,
                 key=NOTE_KEY,
+                label_visibility="collapsed",
             )
         unchanged_note = st.container()
         # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
-        # 9장 「표 도구 막대」).
-        toolbar_clearance()
-        edited = st.data_editor(
-            editable,
-            hide_index=True,
-            num_rows="dynamic",
-            width="stretch",
-            height=420,
-            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-            placeholder="",
-            column_config={
-                "공정": st.column_config.TextColumn("공정 (원본)"),
-                "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
-            },
-            key=EDITOR_KEY,
-        )
+        # 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸 하나다 — 줄 사이 14 + 띄움 24 = 38px 로
+        # 막대 바로 위까지다(폼 안 표의 한 값 — 설계 규칙 4장 「폼 안 알림 칸」).
+        with st.container(gap=None):
+            toolbar_clearance()
+            edited = st.data_editor(
+                editable,
+                hide_index=True,
+                num_rows="dynamic",
+                width="stretch",
+                height=420,
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
+                column_config={
+                    "공정": st.column_config.TextColumn("공정 (원본)"),
+                    "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
+                },
+                key=EDITOR_KEY,
+            )
     refused = take_refusal(PROCESS_RENAME_SAVE_NAME)
     if refused is not None:
         save_status.error(refused)

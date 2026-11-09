@@ -764,13 +764,96 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
         app, lambda node: getattr(node, "key", "") == "admin_area_process_rename_download"
     )
     assert heading[:-1] == version[:-1] and heading[-1] < version[-1]
+    # 내려받기 · 붙여넣기 단추와 「보유 공정 n개」 팝오버는 그 제목 줄 오른쪽 끝 한 칸이다 — 단추
+    # 줄 · 접힘 줄을 따로 세우지 않는다(2026-11-09 사용자 보드 T3 · T7).
+    assert download[:-2] == heading[:-3]
     toolbar: Any = app.main
     for index in download[:-1]:
         toolbar = toolbar.children[index]
-    assert [type(child).__name__ for child in toolbar.children.values()] == [
-        "DownloadButton",
-        "Button",
-    ]
+    kinds = [type(child).__name__ for child in toolbar.children.values()]
+    assert kinds[-2:] == ["DownloadButton", "Button"] and len(kinds) == 3, kinds
+    assert not [item.label for item in app.expander if "보유 공정" in item.label]
+
+
+def test_a_long_change_memo_folds_beside_the_heading_and_keeps_the_buttons_whole(
+    tmp_path: Path,
+) -> None:
+    """버전 줄은 사람이 적은 변경 메모를 싣는다. 메모가 길어도 오른쪽 끝 단추 칸(보유 공정 · CSV ·
+    Excel)이 눌려 단추가 세로로 쌓이거나 이름이 잘리지 않게, 서식이 단추 칸을 줄지 않는 한 덩이로
+    두고 제목 칸이 남은 폭에서 버전 줄을 제목 곁에 접는다. 줄이 제목 칸 바닥과 단추 칸을 못 담으면
+    단추 칸이 통째로 다음 줄로 내려간다(2026-11-09 독립 검토, 설계 규칙 UI-LAY-11 · UI-ACC-02). 실제
+    줄 수는 브라우저 배치라 서식의 꼴과 칸 차례만 본다. 저장 줄 변경 메모 칸은 이름 줄 없이 안내
+    글이 이름을 말한다(접근성 이름은 남는다)."""
+    from capa_simulation.components import process_rename_management as prm
+    from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX
+
+    memo = "검토용 긴 변경 메모 — 제목 줄이 긴 버전 글을 접는지 보려고 일부러 길게 적었습니다 " * 2
+    database_path = tmp_path / "rename-fold.duckdb"
+    script = f'''
+from pathlib import Path
+
+from capa_simulation.components.process_rename_management import (
+    render_process_rename_management,
+)
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+repository = DuckDBScenarioRepository(Path(r"{database_path}"))
+repository.initialize()
+repository.replace_global_process_rename(
+    __import__("pandas").DataFrame(
+        [("SAW", "절단"), ("없는공정", "유령")], columns=["공정", "표시명"]
+    ),
+    source={memo!r},
+)
+render_process_rename_management(repository, ["SAW", "MOLD"])
+'''
+
+    app = AppTest.from_string(script).run(timeout=60)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    def key_is(key: str) -> Any:
+        return lambda node: getattr(node, "key", "") == key
+
+    row = _path_of(app, key_is(prm.HEADING_ROW_KEY))
+    box = _path_of(app, key_is(prm.HEADING_BOX_KEY))
+    tools = _path_of(app, key_is(prm.HEADING_TOOLS_KEY))
+    line = _path_of(app, key_is(f"{HEADING_KEY_PREFIX}{prm.HEADING_PROFILE_KEY}"))
+    download = _path_of(app, key_is("admin_area_process_rename_download"))
+    assert box[:-1] == row == tools[:-1] and box[-1] < tools[-1]
+    assert line[: len(box)] == box and download[:-1] == tools
+    # 버전 줄은 제목 줄의 둘째 칸이다 — 서식이 그 칸만 접는다(셋째 칸은 보유 공정 밖 표지).
+    heading_line: Any = app.main
+    for index in line:
+        heading_line = heading_line.children[index]
+    cells = [heading_line.children[index] for index in sorted(heading_line.children)]
+    assert len(cells) == 3
+    assert cells[1].type == "caption" and "공용 버전 v1" in str(cells[1].value)
+    assert cells[2].type == "caption" and cells[2].value == "보유 공정 밖 표시명 1건"
+
+    marked = prm.heading_row_css(marked=True)
+    assert marked in [str(element.proto.body) for element in app.get("html")]
+    floor = prm.HEADING_MIN_WIDTH + prm.HEADING_MARK_ROOM
+    assert f"min-width: min({floor}px, 100%);" in marked
+    assert f"min-width: min({prm.HEADING_MIN_WIDTH}px, 100%);" in prm.heading_row_css(marked=False)
+    assert f".st-key-{prm.HEADING_ROW_KEY} {{ container-type: inline-size; }}" in marked
+    assert f":has(> .st-key-{prm.HEADING_BOX_KEY}) {{\n  flex: 1 1 0%;" in marked
+    assert (
+        f":has(> .st-key-{prm.HEADING_TOOLS_KEY}) {{\n  flex: 0 0 auto;\n  width: auto;\n"
+        "  margin-left: auto;" in marked
+    )
+    assert (
+        f".st-key-{HEADING_KEY_PREFIX}{prm.HEADING_PROFILE_KEY} {{ flex-wrap: nowrap; }}" in marked
+    )
+    assert '[data-testid="stElementContainer"]:nth-child(2) { flex-shrink: 1; min-width: 0; }' in (
+        marked
+    )
+    assert f"@container (max-width: {floor}px)" in marked
+
+    note = _rename_memo(app)
+    assert note.label == "변경 메모"
+    assert note.proto.label_visibility.value == note.proto.label_visibility.COLLAPSED
+    assert note.placeholder == prm.NOTE_PLACEHOLDER
+    assert prm.NOTE_PLACEHOLDER.startswith("변경 메모 · 예: ")
 
 
 def _path_of(app: AppTest, matches: Any) -> tuple[int, ...]:
@@ -1168,3 +1251,126 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     monkeypatch.setenv(module_registry.ROOT_ENV_VAR, "off")
     app = AppTest.from_string(script).run(timeout=120)
     assert _module_status_labels(app) == []
+
+
+def _alert_tab_script(database_path: Path) -> str:
+    """활성 시나리오(내장 합성 시드의 공식)를 세운 뒤 Admin Area 를 돌리는 스크립트. 전체 기간
+    계산은 세션 칸 `alert_mode` 대로 갈아 끼운다 — `stopped` 는 계산 멈춤 한 칸(오류),
+    `warned` 는 경고 두 칸, `broken` 은 알림 모음을 읽지 못함(`AD-07`)이다. 회차 끝에 원래
+    함수로 되돌린다 — AppTest 는 같은 프로세스에서 돌아 그대로 두면 다른 시험에 샌다."""
+    return f"""
+from pathlib import Path
+
+import streamlit as st
+
+import capa_simulation.settings as settings
+
+settings.DUCKDB_PATH = Path({str(database_path)!r})
+
+from capa_simulation.components import alert_board
+from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
+from capa_simulation.services.simulation_cache import CapacityOutcome
+
+bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
+mode = st.session_state.get("alert_mode", "stopped")
+
+
+def _outcome(*_args, **_kwargs):
+    if mode == "broken":
+        raise ValueError("시험 — 알림 모음을 읽지 못함")
+    if mode == "warned":
+        return CapacityOutcome(unit_capacity=None, required_equipment=None, error="")
+    return CapacityOutcome(unit_capacity=None, required_equipment=None, error="시험 — UPEH 없음")
+
+
+def _alerts(outcome, density):
+    if mode != "warned":
+        return original_collect(outcome, density)
+    return [
+        alert_board.Alert("계산 멈춤", "ok", "없음"),
+        alert_board.Alert("소요대수에 들지 않은 수요", "warning", "시험 경고"),
+        alert_board.Alert("측정률 가정", "warning", "시험 경고"),
+    ]
+
+
+original_outcome = alert_board.get_full_capacity_outcome
+original_collect = alert_board.collect_alerts
+alert_board.get_full_capacity_outcome = _outcome
+alert_board.collect_alerts = _alerts
+try:
+    source = Path({str(PAGE)!r})
+    exec(
+        compile(source.read_text(encoding="utf-8"), str(source), "exec"),
+        {{"__name__": "__main__"}},
+    )
+finally:
+    alert_board.get_full_capacity_outcome = original_outcome
+    alert_board.collect_alerts = original_collect
+"""
+
+
+ALERT_TAB_LABEL = ":material/notifications: 알림 모음"
+ALERT_TAB_MARK = (
+    '.st-key-admin_area_active_tab [data-testid="stTab"]:nth-child(4)'
+    ':not(.st-key-admin_area_active_tab [data-testid="stTabPanel"] *)::after'
+)
+
+
+def _count_mark(app: AppTest) -> str:
+    """탭 이름 곁 수 표지의 서식 — 매 회차 한 자리(찍을 것이 없으면 빈 규칙)."""
+    bodies = [str(element.proto.body) for element in app.get("html")]
+    marks = [body for body in bodies if "stTab" in body and "content:" in body]
+    empty = [body for body in bodies if body == "<style></style>"]
+    assert len(marks) + len(empty) >= 1, bodies
+    assert len(marks) <= 1, marks
+    return marks[0] if marks else ""
+
+
+def test_the_alert_count_rides_the_fourth_tab_and_follows_the_scenario(tmp_path: Path) -> None:
+    """「알림 모음」 수 표지의 배선 — 탭을 연 회차에 그 계산 키로 센 수가 넷째 탭(이름 상수
+    `ALERT_TAB_NAME`) 이름 곁에 선다. 계산 멈춤이면 오류색에 「!」 를 붙여 글자로도 가르고(설계 규칙
+    UI-ACC-03), 경고만이면 확인 필요색 수다. 다른 탭으로 옮겨도 남고, 시나리오 내용이 바뀌면(내용
+    토큰) 사라지며, 알림 모음을 계산하지 못한 회차에도 사라진다(설계 규칙 UI-DAT-11)."""
+    from capa_simulation.design import tokens
+    from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
+
+    app = AppTest.from_string(_alert_tab_script(tmp_path / "scenario.duckdb"))
+    app.run(timeout=180)
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [tab.label for tab in app.main.tabs][3] == ALERT_TAB_LABEL
+    # 닫힌 탭에서는 전체 기간 계산을 돌리지 않아 아직 셀 수 없다 — 표지가 없다.
+    assert _count_mark(app) == ""
+
+    app.session_state["admin_area_active_tab"] = ALERT_TAB_LABEL
+    app.run(timeout=180)
+    assert not list(app.exception), [element.message for element in app.exception]
+    mark = _count_mark(app)
+    assert ALERT_TAB_MARK in mark
+    assert f'{ALERT_TAB_MARK} {{ content: "! 1"; }}' in mark
+    assert f"color: {tokens.ALERT_ERROR};" in mark
+    assert not any("알림 1건" in str(item.value) for item in app.markdown)
+
+    app.session_state["admin_area_active_tab"] = ":material/label: Proc Rename"
+    app.run(timeout=180)
+    assert f'{ALERT_TAB_MARK} {{ content: "! 1"; }}' in _count_mark(app)
+
+    app.session_state["alert_mode"] = "warned"
+    app.session_state["admin_area_active_tab"] = ALERT_TAB_LABEL
+    app.run(timeout=180)
+    mark = _count_mark(app)
+    assert f'{ALERT_TAB_MARK} {{ content: "2"; }}' in mark
+    assert f"color: {tokens.ALERT_CHECK};" in mark
+
+    app.session_state["alert_mode"] = "broken"
+    app.run(timeout=180)
+    assert _count_mark(app) == ""
+
+    app.session_state["alert_mode"] = "warned"
+    app.run(timeout=180)
+    assert f'{ALERT_TAB_MARK} {{ content: "2"; }}' in _count_mark(app)
+    app.session_state["admin_area_active_tab"] = ":material/label: Proc Rename"
+    active = dict(app.session_state[ACTIVE_SCENARIO_KEY])
+    active["content_token"] = "edited-content"
+    app.session_state[ACTIVE_SCENARIO_KEY] = active
+    app.run(timeout=180)
+    assert _count_mark(app) == ""

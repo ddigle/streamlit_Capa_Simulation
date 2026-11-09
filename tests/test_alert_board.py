@@ -109,3 +109,53 @@ def test_a_stopped_calculation_blocks_the_tilde_of_the_name_it_carries() -> None
     assert collect_alerts(_outcome(), "「공정~표시~D」 구분_EQ 0 이하")[0].message.startswith(
         "「공정\\~표시\\~D」"
     )
+
+
+def test_the_count_rides_the_tab_name_and_zero_draws_nothing() -> None:
+    """알림 수는 탭 안 머리 줄이 아니라 탭 이름 곁 수 표지다 — 0 이면 표지가 없다(2026-11-09
+    사용자 보드 T7). 탭 라벨은 그대로다(라벨이 바뀌면 위젯이 새로 선다 — CSS 로 찍는다)."""
+    from capa_simulation.components.tab_marks import tab_counts_style
+
+    labels = ("가", "나", "알림 모음")
+    style = tab_counts_style("admin_area_active_tab", labels, {"알림 모음": 2}, color="red")
+    assert '[data-testid="stTab"]:nth-child(3)' in style
+    assert 'content: "2";' in style
+    assert "nth-child(1)" not in style and "nth-child(2)" not in style
+    assert tab_counts_style("admin_area_active_tab", labels, {"알림 모음": 0}, color="red") == ""
+    # 색이 단계를 가르면 글자로도 가른다 — 계산 멈춤이면 수 앞 「!」(설계 규칙 UI-ACC-03).
+    stopped = tab_counts_style(
+        "admin_area_active_tab",
+        labels,
+        {"알림 모음": 1},
+        color="red",
+        prefix=alert_board.ALERT_STOPPED_PREFIX,
+    )
+    assert 'content: "! 1";' in stopped
+
+
+def _remembered(content_token: str) -> None:
+    import streamlit as st
+
+    from capa_simulation.components.alert_board import (
+        ALERT_COUNT_KEY,
+        AlertCount,
+        remembered_alert_count,
+    )
+    from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
+
+    st.session_state[ALERT_COUNT_KEY] = ((7, "token-a"), AlertCount(1, False))
+    st.session_state[ACTIVE_SCENARIO_KEY] = {"reference_version": 7, "content_token": content_token}
+    st.session_state["seen"] = remembered_alert_count()
+
+
+def test_a_remembered_count_is_used_only_for_the_same_scenario_content() -> None:
+    """닫힌 탭에서는 전체 기간 계산을 돌리지 않는다 — 탭을 연 회차에 센 수를 지금 시나리오 내용이
+    같은 키(기준정보 버전 · 내용 토큰)일 때만 다시 쓴다(설계 규칙 UI-DAT-11)."""
+    from streamlit.testing.v1 import AppTest
+
+    from capa_simulation.components.alert_board import AlertCount
+
+    same = AppTest.from_function(_remembered, args=("token-a",)).run()
+    assert same.session_state["seen"] == AlertCount(1, False)
+    edited = AppTest.from_function(_remembered, args=("token-b",)).run()
+    assert edited.session_state["seen"] is None

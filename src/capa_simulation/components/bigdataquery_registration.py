@@ -125,9 +125,6 @@ REVEAL_NOTICE_SCRIPT: Final = """<script>/* {nonce} */
 }})();
 </script>"""
 
-# 설정 띠 — 값 줄의 라벨과, 목록 · 상세 조회 SQL 과 패키지가 모두 준비됐을 때의 값 줄.
-BANNER_LABEL: Final = "**BigDataQuery 설정**"
-BANNER_READY_LINE: Final = f"{BANNER_LABEL} · 목록 · 상세 조회 SQL · 패키지 확인됨"
 # 목록 검색 칸 풍선 — 행이 많을 때 좁히는 법(자리에는 행 수 표지만 선다).
 CATALOG_KEYWORD_HELP: Final = (
     "시뮬레이션명 · 코드 · PLAN 의 부분 일치로 목록을 좁힙니다(공백은 AND). 행이 많으면 표 조작이 "
@@ -262,7 +259,7 @@ def render_bigdataquery_registration(
     # 두 단계(① 기간으로 코드 찾기 ② 등록 정보 확인·저장)와 저장이 하는 일은 Guide 가 말한다.
     catalog_ready = is_bigdataquery_catalog_configured()
     detail_ready = is_bigdataquery_adapter_configured()
-    _render_configuration_banner(
+    _report_configuration(
         catalog_ready=catalog_ready,
         detail_ready=detail_ready,
         package_ready=is_bigdataquery_package_available(),
@@ -332,33 +329,19 @@ def missing_query_notice(*, catalog_ready: bool, detail_ready: bool) -> str | No
     return "조회 SQL이 아직 설정되지 않았습니다 — " + "·".join(missing) + "."
 
 
-def banner_line(*, catalog_ready: bool, detail_ready: bool, package_ready: bool) -> str:
-    """설정 띠 값 줄 — 「**BigDataQuery 설정** · …」. 준비 안 된 칸은 주황 표지 한 마디다(설계 규칙
-    UI-TXT-04 — 값 · 표지만). 무엇이 빠졌고 어디를 채우는지(SQL 자리 · 패키지 · CD 서버 시작 점검)는
-    상태 알림 `AD-04` 의 전문이 말한다(UI-NTF-02 — 상태 경고는 자리에 세우지 않는다)."""
-    if catalog_ready and detail_ready:
-        if package_ready:
-            return BANNER_READY_LINE
-        return f"{BANNER_LABEL} · 목록 · 상세 조회 SQL 확인됨 · :orange[패키지 없음]"
-    missing = [
-        f":orange[{name} 미설정]"
-        for name, ready in (("목록 조회 SQL", catalog_ready), ("상세 조회 SQL", detail_ready))
-        if not ready
-    ]
-    return f"{BANNER_LABEL} · " + " · ".join(missing)
-
-
-def _render_configuration_banner(
+def _report_configuration(
     *,
     catalog_ready: bool,
     detail_ready: bool,
     package_ready: bool,
     alert_tab: str | None = "",
 ) -> None:
-    """설정 값 줄(`banner_line`) — 준비가 안 됐으면 그 내역을 상태 알림(`AD-04` — 알림창 ·
-    Alarm)으로 낸다. 자리에는 값 줄만 둔다(점검 결론 — 「**라벨** · 값」 평문, 경고 · 초록 상자
-    아님). 회차마다 한 번 부른다(해소 · 이벤트 칸 한 자리) — 닫힌 탭(`alert_tab` None)이면 알리지
-    않는다."""
+    """BigDataQuery 설정(목록 · 상세 조회 SQL · 패키지) — 준비가 안 됐으면 무엇이 빠졌고 어디를
+    채우는지를 상태 알림(`AD-04` — 알림창 · Alarm)으로 낸다. 자리에는 아무것도 그리지 않는다 — 다
+    준비됐으면 알릴 것이 없고(설계 규칙 UI-TXT-08), 빠졌으면 그 상태는 알림 한 길이다(UI-NTF-02 —
+    상태 경고는 자리에 세우지 않는다, 2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」). 조회
+    SQL 이 없어 잠긴 단추는 그 풍선이 까닭을 말한다(UI-INP-07). 회차마다 한 번 부른다(해소 ·
+    이벤트 칸 한 자리) — 닫힌 탭(`alert_tab` None)이면 알리지 않는다."""
     notice = missing_query_notice(catalog_ready=catalog_ready, detail_ready=detail_ready)
     if notice is None and not package_ready:
         notice = (
@@ -383,10 +366,6 @@ def _render_configuration_banner(
             full=alerts.plain_text(notice) if notice else None,
             tab=alert_tab,
         )
-    line = banner_line(
-        catalog_ready=catalog_ready, detail_ready=detail_ready, package_ready=package_ready
-    )
-    st.caption(line if notice is None else f":material/settings_alert: {line}")
 
 
 def _registered_scenarios(

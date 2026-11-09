@@ -71,8 +71,10 @@ def test_the_table_of_contents_follows_the_sidebar_declaration(
         assert summary.strip(), spec.path
         # 목차 글은 화면 이름으로 말한다 — 내부 표 이름이 보이지 않는다.
         assert "RQ_" not in summary, spec.path
-    # 「부서별 Gap·A/Item」(Dynamic 머리에서 옮겨 온 뜻).
-    assert any(caption.startswith("부서별 Gap · A/Item") for caption in captions)
+    # 「부서별 Gap · A/Item」 · 로드맵은 본문 머리 접힘이 아니라 Guide 첫 단락이다(2026-11-09 사용자
+    # 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-LAY-08 · UI-TXT-01).
+    assert not any("부서별 Gap · A/Item —" in caption for caption in captions)
+    assert not app.expander and not app.status
 
 
 def test_explanations_ride_tooltips_and_the_next_release_is_a_dashed_slot(
@@ -83,11 +85,9 @@ def test_explanations_ride_tooltips_and_the_next_release_is_a_dashed_slot(
     app, _ = _run_without_databases(monkeypatch)
     captions = [str(caption.value) for caption in app.caption]
 
-    # 닫힌 로드맵 상자(눌러야 보인다) 밖의 캡션은 링크 물러섬 · 목차 「보는 것」 한 줄 · 「지금
-    # 여기」 다 — 머리 설명 줄과 영역 뜻풀이(「…입니다.」), 차례 · 다음 판 문장은 자리에 없다.
+    # 캡션은 링크 물러섬 · 목차 「보는 것」 한 줄 · 「지금 여기」 다 — 머리 설명 줄과 영역
+    # 뜻풀이(「…입니다.」), 차례 · 다음 판 문장은 자리에 없다.
     for caption in captions:
-        if caption.startswith("부서별 Gap"):
-            continue
         assert "합니다." not in caption and "입니다." not in caption, caption
     assert not any("다음 판에서" in caption for caption in captions)
     helps = {str(item.value): item.help for item in app.markdown}
@@ -113,6 +113,16 @@ def test_the_guide_defines_the_three_areas() -> None:
     guide = load_guide("execution_management")
 
     assert guide.startswith("**실행 관리**")
+    # 업무 활용 목적 · 부서별 Action Item · 로드맵은 첫 단락이다 — 첫 소제목(「세 영역」) 앞.
+    opening = guide.split("#### ", 1)[0]
+    for text in (
+        "부서별 Gap · A/Item",
+        "기술팀 · 설비 일정",
+        "기술팀 · 설비 성능",
+        "자원운영팀 · 투자",
+        "로드맵 — 약속 대비 Gap 확인 → 부서별 A/Item · 이행 요청 → 진척 관리",
+    ):
+        assert text in opening, text
     for text in (
         "Static Capa",
         "Dynamic Capa",

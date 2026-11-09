@@ -128,7 +128,6 @@ EXPANDER_CLEARANCE_PENDING: dict[tuple[str, str], str] = {
         ("app_pages/standard_target_capa.py", "_render_standard_target_exceptions"),
         ("src/capa_simulation/components/equipment_data_workspace.py", "_render_history"),
         ("src/capa_simulation/components/scenario_year_shift.py", "_render_shift"),
-        ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"),
         ("src/capa_simulation/components/scenario_transform.py", "render_derived_save"),
         ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_history"),
         ("src/capa_simulation/components/past_data_management.py", "_render_table_editor"),

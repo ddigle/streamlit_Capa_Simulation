@@ -216,6 +216,35 @@ def test_the_version_line_stands_beside_the_heading(tmp_path: Path) -> None:
     )
 
 
+def test_the_scope_pickers_and_the_note_carry_their_names_without_label_rows(
+    tmp_path: Path,
+) -> None:
+    """범위 고르기 둘과 변경 메모 칸은 이름 줄을 숨기고(접근성 이름은 남는다) 뜻을 옮겼다 —
+    고르기 둘은 「직접 편집」 제목 풍선(`SCOPE_HELP`), 메모 칸은 칸 안 안내
+    글(`NOTE_PLACEHOLDER`)이 말한다. 옮긴 곳이 빠지면 그 뜻이 화면 어디에도 남지 않는다(설계
+    규칙 UI-TXT-02). 범위 풍선은 두 칸의 자리를 「오른쪽」 이라 하지 않는다 — 줄 폭이 좁으면
+    고르기가 제목 아래로 내려앉는다."""
+    from capa_simulation.components import display_order_management as dom
+
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-names.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    for key, label in (("display_order_page", "페이지 구분"), ("display_order_tab", "탭 구분")):
+        picker = app.selectbox(key=key)
+        assert picker.label == label
+        assert picker.proto.label_visibility.value == picker.proto.label_visibility.COLLAPSED
+    note = app.text_input(key=DISPLAY_ORDER_NOTE_KEY)
+    assert note.label == "변경 메모"
+    assert note.proto.label_visibility.value == note.proto.label_visibility.COLLAPSED
+    assert note.placeholder == dom.NOTE_PLACEHOLDER
+    assert dom.NOTE_PLACEHOLDER.startswith("변경 메모 · 예: ")
+    [heading] = [item for item in app.markdown if "직접 편집" in str(item.value)]
+    assert heading.proto.help == dom.SCOPE_HELP
+    assert "페이지 구분" in dom.SCOPE_HELP and "탭 구분" in dom.SCOPE_HELP
+    assert "오른쪽" not in dom.SCOPE_HELP and "왼쪽" not in dom.SCOPE_HELP
+
+
 def test_the_csv_and_paste_buttons_share_the_save_row(tmp_path: Path) -> None:
     """표 위는 두 줄이다 — CSV 다운로드 · Excel 붙여넣기는 따로 줄을 세우지 않고 저장 · 메모 줄
     오른쪽 끝에 선다(2026-11-08 사용자 답 d7). 둘은 폼에 둘 수 없는 위젯이라 폼 바로 앞 칸이고(폼
@@ -336,6 +365,11 @@ def _editor_path(app: AppTest) -> tuple[int, ...]:
     )
 
 
+def _holder(editor: tuple[int, ...]) -> tuple[int, ...]:
+    """편집표가 도구 막대 띄움과 함께 든 간격 없는 칸의 경로 — 폼 안 저장 줄 · 알림 칸의 형제다."""
+    return editor[:-1]
+
+
 def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -375,7 +409,8 @@ def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(
     info_path = _alert_path(app, "info", _UNCHANGED_PREFIX)
     warning_path = _alert_path(app, "warning", "화면 표시명을 적었습니다")
     assert warning_path[:-1] == info_path[:-1] and info_path[-1] < warning_path[-1]
-    assert info_path[: len(editor_path) - 1] == editor_path[: len(editor_path) - 1]
+    holder = _holder(editor_path)
+    assert info_path[: len(holder) - 1] == holder[: len(holder) - 1]
     assert _editor_path(app) == editor_path
     assert DuckDBScenarioRepository(database_path).load_global_display_order().version == 2
 
@@ -457,7 +492,7 @@ def test_the_label_warning_stands_under_the_save_row_and_moves_no_editor(tmp_pat
     assert any("화면 표시명을 적었습니다" in element.value for element in app.warning)
     assert places() == before
     warning = _alert_path(app, "warning", "화면 표시명을 적었습니다")
-    save, editor = before
+    save, editor = before[0], _holder(before[1])
     depth = len(editor) - 1
     assert warning[:depth] == editor[:depth], "저장 폼 안이다"
     assert save[depth] < warning[depth] < editor[depth], "저장 줄과 표 사이다"
@@ -495,9 +530,10 @@ def test_the_unchanged_note_stands_right_under_the_save_row(
     assert not app.exception
     note = _alert_path(app, "info", _UNCHANGED_PREFIX)
     assert (save_path(), _editor_path(app)) == before
-    depth = len(before[1]) - 1
-    assert note[:depth] == before[1][:depth], "저장 폼 안이다"
-    assert before[0][depth] < note[depth] < before[1][depth], "저장 줄과 표 사이다"
+    holder = _holder(before[1])
+    depth = len(holder) - 1
+    assert note[:depth] == holder[:depth], "저장 폼 안이다"
+    assert before[0][depth] < note[depth] < holder[depth], "저장 줄과 표 사이다"
 
     app.run(timeout=30)
     assert not app.exception

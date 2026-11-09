@@ -31,7 +31,6 @@ from alert_marks import (
     table_frame,
 )
 from shortening_script import shortening_script
-from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 
 import capa_simulation.components.required_shortening_panel as required_shortening_panel
@@ -95,7 +94,8 @@ from capa_simulation.upeh_assumption_state import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages" / "required_shortening.py"
-# 본문 맨 위 값 줄의 값 글 — 상태 표지가 그 끝에 한 줄로 선다(그림 메모 g03).
+# 기준 값 글 — 본문 맨 위에 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(상태 표지는
+# 서지 않고 상태 알림만이다).
 VALUE_LINE_TEXT = "설비 일정 기준 가용(환산) · 오늘"
 
 
@@ -190,16 +190,49 @@ def _caption_paths(app: AppTest) -> dict[str, tuple[int, ...]]:
     return found
 
 
-def _same_row_as_the_value(app: AppTest, text: str) -> bool:
-    """`text` 캡션이 「설비 일정 기준 가용(환산) · 오늘」 값과 한 가로 줄(같은 부모)에 서는가."""
+def _value_row(app: AppTest) -> list[str]:
+    """「설비 일정 기준 가용(환산) · 오늘」 기준 값 칸(같은 부모)에 선 캡션 글들."""
     paths = _caption_paths(app)
-    (value,) = [path for caption, path in paths.items() if caption.startswith(VALUE_LINE_TEXT)]
-    row: Any = app.main
-    for index in value[:-1]:
-        row = row.children[index]
-    flex = row.proto.flex_container
-    horizontal = flex.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
-    return bool(horizontal and flex.wrap and paths[text][:-1] == value[:-1])
+    (value,) = [path for caption, path in paths.items() if VALUE_LINE_TEXT in caption]
+    return [caption for caption, path in paths.items() if path[:-1] == value[:-1]]
+
+
+def _basis_path(app: AppTest) -> tuple[int, ...]:
+    """기준 값 작은 글(`_render_basis`) 캡션의 자리. 글은 캡션 마크다운 안 표지 칸이고, 같은
+    마크다운이 그 칸을 줄 오른쪽 끝으로 미는 서식을 싣는다 — 좁은 자리에서 두 줄로 접히지 않고
+    통째로 다음 줄 오른쪽 끝으로 내려간다(이 본문은 프래그먼트라 스타일만 든 `st.html` 을 두지
+    않는다)."""
+    from capa_simulation.components.required_shortening_panel import BASIS_CLASS, BASIS_STYLE
+
+    (found,) = [
+        (caption, path)
+        for caption, path in _caption_paths(app).items()
+        if VALUE_LINE_TEXT in caption
+    ]
+    caption, path = found
+    assert caption.startswith(f'<span class="{BASIS_CLASS}">{VALUE_LINE_TEXT} ')
+    assert caption.endswith(BASIS_STYLE) and "margin-left:auto" in BASIS_STYLE
+    return path
+
+
+def _assert_basis_beside_the_mark(app: AppTest) -> None:
+    """멈춘 회차에도 기준 값을 지우지 않는다 — 「데이터 Error」 마크 줄 오른쪽 끝이다(2026-11-09
+    사용자 보드 T2 「지우지 않음」)."""
+    from capa_simulation.components.data_error_mark import MARK_CLASS
+
+    marks: list[tuple[int, ...]] = []
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "type", "") == "html" and MARK_CLASS in str(child.proto.body):
+                marks.append(here)
+            walk(child, here)
+
+    walk(app.main, ())
+    (mark,) = marks
+    basis = _basis_path(app)
+    assert basis[:-1] == mark[:-1] and mark[-1] < basis[-1]
 
 
 def _sidebar_block_paths(app: AppTest, keys: tuple[str, ...]) -> dict[str, list[str]]:
@@ -262,7 +295,27 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
         "equipment_shortening_units_all_levels_csv",
         "equipment_shortening_months_csv",
     } <= downloads
+    # 기준 값은 본문 맨 위에 따로 선 줄이 아니라 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자
+    # 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로). KPI 가 본문 첫 칸이다.
+    basis = _basis_path(app)
+    row = basis[:-1]
+    assert any(path[:-1] == row for path in _paths_of(app, "download_button"))
     clear_equipment_repository()
+
+
+def _paths_of(app: AppTest, kind: str) -> list[tuple[int, ...]]:
+    """본문에서 `kind` 요소마다 트리 안 자리(자식 차례의 길)."""
+    found: list[tuple[int, ...]] = []
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "type", "") == kind:
+                found.append(here)
+            walk(child, here)
+
+    walk(app.main, ())
+    return found
 
 
 def _csv(app: AppTest, key: str) -> tuple[dict[str, object], pd.DataFrame]:
@@ -424,6 +477,7 @@ def test_a_missing_scenario_stops_with_a_notice(tmp_path: Path) -> None:
     assert "다른 탭" not in note["full"]
     assert not _cards(app)
     assert _card_marks(app) == [NO_PROCESS_MARK]
+    _assert_basis_beside_the_mark(app)
     clear_equipment_repository()
 
 
@@ -512,25 +566,19 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     app = _run(database_path)
 
     assert not app.exception, [element.message for element in app.exception]
-    # 자리에는 값 줄 끝 표지만, 규칙 · 후보 아님은 그 풍선, 미정구분은 상태 알림이다(그림 메모 g03,
-    # 설계 규칙 UI-TXT-04 · UI-NTF-02).
-    (line,) = [
-        item
-        for item in app.main.caption
-        if str(item.value).startswith(":material/event_busy: 일정")
-    ]
-    assert str(line.value) == ":material/event_busy: 일정 미정 1대"
-    assert line.proto.help == (
-        "날짜가 들어올 때까지 가용대수에 세지 않습니다. 단축 후보에도 들지 않습니다."
-    )
-    # 늘 서던 줄이 아니라 값 줄 끝 표지다 — 값과 한 가로 줄(좁으면 접힘)이다.
-    assert _same_row_as_the_value(app, str(line.value))
+    # 자리에는 그리지 않는다 — 건수 · 미정구분은 짧은 글, 규칙 · 후보 아님은 전문이다(설계 규칙
+    # UI-NTF-02 · UI-TXT-07 — 같은 말을 자리와 알림에 거듭 두지 않는다).
+    assert not any("일정 미정" in str(item.value) for item in app.main.caption)
+    assert len(_value_row(app)) == 1
     note = active_state(app, "RS-03")
     assert note is not None
     assert note["short"] == (
         "일정 미정 1대 (반입 미정 1) — 가용대수에 세지 않음 · 설비 마스터 일정 칸"
     )
-    assert "단축 후보에도 들지 않습니다" in note["full"]
+    assert (
+        "날짜가 들어올 때까지 가용대수에 세지 않습니다. 단축 후보에도 들지 않습니다."
+        in note["full"]
+    )
     # 고칠 입력(일정 칸)은 가용설비 현황 › 설비 마스터에 있다 — 줄의 「그 화면으로」 가 그 탭을
     # 열고, 전문 첫머리가 이 화면의 일임을 말한다(설계 규칙 UI-NTF-02 · UI-NTF-06).
     assert (note["page"], note["href"], note.get("tab")) == (
@@ -540,7 +588,7 @@ def test_undated_new_units_are_announced_as_not_being_candidates(tmp_path: Path)
     )
     assert note["full"].startswith("필요 단축 일정 — 일정 미정 1대")
     assert "가용설비 현황 › 설비 마스터의 일정 칸" in note["full"]
-    # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 표지가 사라지고 알림은 해소된다.
+    # 공정을 고르면 그 공정만 센다 — 다른 공정만 고르면 알림은 해소된다.
     others = [
         name for name in app.multiselect(key=SHORTENING_PROCESS_KEY).options if name != process
     ]
@@ -575,18 +623,19 @@ def test_a_missing_cutoff_stops_with_the_mark_and_the_alarm_opens_the_equipment_
     )
     assert not _cards(app)
     assert _card_marks(app) == [NO_PROCESS_MARK]
+    _assert_basis_beside_the_mark(app)
     # 멈춘 회차에는 상태 표지가 없고 그 알림은 해소다(갈래마다 같은 자리 수로 낸다).
     for code in ("RS-03", "RS-04", "RS-05"):
         assert active_state(app, code) is None and states(app, code), code
     clear_equipment_repository()
 
 
-def test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_tooltip(
+def test_units_outside_the_usage_basis_are_an_alert_with_the_rule_in_its_full_text(
     tmp_path: Path,
 ) -> None:
-    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 값 줄 끝 표지
-    「사용기준 밖 N대」, 뺀 곳 · 후보 아님은 풍선, 「사용기준 HBM·EDP 밖 N대 제외」(가용설비 현황과
-    같은 글)는 상태 알림이다(그림 메모 g03, 설계 규칙 UI-TXT-01 · UI-TXT-04 · UI-NTF-02)."""
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용 · 단축 후보에서 빠진다 — 자리에는 그리지 않고,
+    「사용기준 HBM·EDP 밖 N대 제외」(가용설비 현황과 같은 글)는 상태 알림 짧은 글, 뺀 곳 · 후보
+    아님은 그 전문이다(설계 규칙 UI-TXT-01 · UI-NTF-02 · UI-TXT-07)."""
     from capa_simulation.components.required_shortening_panel import USAGE_NOTICE_HELP
 
     database_path = _database(tmp_path)
@@ -599,11 +648,8 @@ def test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_to
     app = _run(database_path)
 
     assert not app.exception, [element.message for element in app.exception]
-    (line,) = [item for item in app.main.caption if "사용기준" in str(item.value)]
-    assert str(line.value).startswith(":material/filter_alt_off: 사용기준 밖 ")
-    assert str(line.value).endswith("대")
-    assert _same_row_as_the_value(app, str(line.value))
-    assert line.proto.help == USAGE_NOTICE_HELP
+    assert not any("사용기준" in str(item.value) for item in app.main.caption)
+    assert len(_value_row(app)) == 1
     assert "HBM·EDP" in USAGE_NOTICE_HELP
     note = active_state(app, "RS-04")
     assert note is not None

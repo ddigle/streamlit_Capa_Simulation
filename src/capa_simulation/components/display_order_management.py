@@ -4,7 +4,10 @@
 
 표 위는 두 줄이다(설계 규칙 UI-LAY-11 — 2026-11-08 사용자 답 d7 · g18). 첫 줄은 「직접 편집」 제목과
 그 옆 공용 버전 줄(`profile_caption.render_profile_heading`) · 범위 고르기 둘, 둘째 줄은 폼 안
-저장 · 변경 메모 줄이고 그 오른쪽 끝에 CSV 다운로드 · Excel 붙여넣기가 함께 선다.
+저장 · 변경 메모 줄이고 그 오른쪽 끝에 CSV 다운로드 · Excel 붙여넣기가 함께 선다. 범위 고르기 둘과
+변경 메모는 이름 줄이 없다 — 이름은 접근성 이름으로만 남고, 고르기 둘의 뜻은 「직접 편집」 제목
+풍선(`SCOPE_HELP`), 메모 칸은 안내 글이 말한다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」,
+설계 규칙 UI-TXT-01 · UI-TXT-02).
 
 버전 줄은 사람이 적은 변경 메모(출처)를 실어 길이가 정해져 있지 않다. 서식(`HEADING_ROW_CSS`)이
 제목 칸을 줄 폭에서 고르기 둘 몫을 뺀 만큼까지만 넓히고 버전 줄을 제목 곁에서 여러 줄로 접어, 메모가
@@ -116,6 +119,13 @@ DISPLAY_ORDER_UNCHANGED_MESSAGE = (
 DISPLAY_ORDER_FLASH_KEY = "display_order_flash"
 # 직접 편집 제목 줄의 범위 고르기 칸 폭(px) — 범위 이름이 한 칸에 든다.
 SCOPE_PICKER_WIDTH = 240
+# 범위 고르기 둘의 뜻 — 이름 줄을 걷어 「직접 편집」 제목 풍선이 말한다.
+SCOPE_HELP = (
+    "제목 곁 두 칸이 고칠 범위입니다 — 앞이 페이지 구분, 뒤가 탭 구분. 아래 표는 그 범위의 정렬 "
+    "규칙이고 저장하면 그 범위만 바뀝니다."
+)
+# 저장 줄 변경 메모 칸의 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다.
+NOTE_PLACEHOLDER = "변경 메모 · 예: 환산 탭 제품 표시순서 변경"
 # 제목 줄(모듈 설명)의 칸 key 와 서식. 제목 칸(제목 + 공용 버전 줄)은 줄 폭에서 고르기 둘 몫
 # (`SCOPE_PICKERS_ROOM` — 고르기 둘과 그 앞 간격 둘, 간격은 `gap="small"` 14px 를 넉넉히 16px 로
 # 센다)을 뺀 폭까지만 넓어지고, 그 안에서 버전 줄이 제목 곁에 줄바꿈 없이 서서 제 글을 여러 줄로
@@ -146,8 +156,8 @@ HEADING_ROW_CSS = f"""
 }}
 """
 # 저장 줄에 얹는 CSV · Excel 칸(모듈 설명). 칸 셋의 key 와 서식이다 — 바깥 칸이 기준 자리, 도구 칸은
-# 폼 테두리 안 저장 단추 높이(폼 테두리 · 안쪽 여백 1rem + 변경 메모 라벨 1.5rem + 라벨 아래
-# 0.25rem)의 오른쪽 끝, 저장 줄은 도구 칸 폭(`ACTION_ROW_RESERVE_REM` — CSV 다운로드 · Excel
+# 폼 테두리 안 저장 단추 높이(폼 테두리 · 안쪽 여백 1rem — 변경 메모 칸에 이름 줄이 없어 저장 줄이
+# 폼 맨 위다)의 오른쪽 끝, 저장 줄은 도구 칸 폭(`ACTION_ROW_RESERVE_REM` — CSV 다운로드 · Excel
 # 붙여넣기 둘과 사이, 사내 글꼴이 조금 넓어도 남게)만큼 오른쪽을 비운다.
 EDIT_BOX_KEY = "display_order_edit_box"
 EDIT_TOOLS_KEY = "display_order_edit_tools"
@@ -157,7 +167,7 @@ ACTION_ROW_CSS = f"""
 .st-key-{EDIT_BOX_KEY} {{ position: relative; }}
 .st-key-{EDIT_BOX_KEY} > [data-testid="stLayoutWrapper"]:has(> .st-key-{EDIT_TOOLS_KEY}) {{
   position: absolute;
-  top: 2.75rem;
+  top: 1rem;
   right: 1rem;
   width: auto;
   z-index: 1;
@@ -336,6 +346,7 @@ def _render_direct_editor(
                 profile,
                 key=HEADING_PROFILE_KEY,
                 empty="아직 저장한 표시순서가 없습니다",
+                help=SCOPE_HELP,
             )
         pages = display_order["페이지 구분"].drop_duplicates().tolist()
         selected_page = st.selectbox(
@@ -344,6 +355,7 @@ def _render_direct_editor(
             key="display_order_page",
             persist_state="session",
             width=SCOPE_PICKER_WIDTH,
+            label_visibility="collapsed",
         )
         tabs = (
             display_order.loc[display_order["페이지 구분"].eq(selected_page), "탭 구분"]
@@ -356,6 +368,7 @@ def _render_direct_editor(
             key="display_order_tab",
             persist_state="session",
             width=SCOPE_PICKER_WIDTH,
+            label_visibility="collapsed",
         )
     scope_mask = display_order["페이지 구분"].eq(selected_page) & display_order["탭 구분"].eq(
         selected_tab
@@ -384,37 +397,40 @@ def _render_direct_editor(
             ready_note_field(DISPLAY_ORDER_NOTE_KEY, submitted=submitted, start=submitted_base)
             note = st.text_input(
                 "변경 메모",
-                placeholder="예: 환산 탭 제품 표시순서 변경",
+                placeholder=NOTE_PLACEHOLDER,
                 key=DISPLAY_ORDER_NOTE_KEY,
+                label_visibility="collapsed",
             )
         unchanged_note = st.container()
         # 저장한 회차의 표시명 경고는 다음 회차에 이 칸에 한 번 선다(저장은 곧 `st.rerun()` 한다).
         _render_label_warnings(unchanged_note)
         # 「변경 메모」 칸 · 오른쪽 끝 CSV · Excel 에 표 도구 막대가 닿지 않게 띄운다(AGENTS 9장
-        # 「표 도구 막대」).
-        toolbar_clearance()
-        edited = st.data_editor(
-            scope_rules,
-            hide_index=True,
-            num_rows="dynamic",
-            width="stretch",
-            height=460,
-            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-            placeholder="",
-            column_config={
-                "정렬우선순위": st.column_config.NumberColumn(min_value=1, step=1),
-                "정렬방식": st.column_config.SelectboxColumn(
-                    options=["사용자지정", "오름차순", "내림차순"],
-                    required=True,
-                ),
-                "값표시순서": st.column_config.NumberColumn(min_value=1, step=1),
-                "활성여부": st.column_config.SelectboxColumn(
-                    options=["Y", "N"],
-                    required=True,
-                ),
-            },
-            key=f"{DISPLAY_ORDER_EDITOR_KEY}::{selected_page}::{selected_tab}",
-        )
+        # 「표 도구 막대」). 띄움과 표는 간격 없는 칸 하나다 — 줄 사이 14 + 띄움 24 = 38px 로 막대
+        # 바로 위까지다(폼 안 표의 한 값 — 설계 규칙 4장 「폼 안 알림 칸」).
+        with st.container(gap=None):
+            toolbar_clearance()
+            edited = st.data_editor(
+                scope_rules,
+                hide_index=True,
+                num_rows="dynamic",
+                width="stretch",
+                height=460,
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
+                column_config={
+                    "정렬우선순위": st.column_config.NumberColumn(min_value=1, step=1),
+                    "정렬방식": st.column_config.SelectboxColumn(
+                        options=["사용자지정", "오름차순", "내림차순"],
+                        required=True,
+                    ),
+                    "값표시순서": st.column_config.NumberColumn(min_value=1, step=1),
+                    "활성여부": st.column_config.SelectboxColumn(
+                        options=["Y", "N"],
+                        required=True,
+                    ),
+                },
+                key=f"{DISPLAY_ORDER_EDITOR_KEY}::{selected_page}::{selected_tab}",
+            )
     refused = take_refusal(DISPLAY_ORDER_SAVE_NAME)
     if refused is not None:
         save_status.error(refused)

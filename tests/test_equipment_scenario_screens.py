@@ -23,7 +23,8 @@ import re
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -73,6 +74,7 @@ from capa_simulation.components.equipment_scenario_management import (
     SCENARIO_KEY,
     SCENARIO_MANAGEMENT_TABS_KEY,
     branch_value_line,
+    loaded_cell,
     publish_preview,
     restore_button_help,
     restore_confirm_label,
@@ -80,7 +82,7 @@ from capa_simulation.components.equipment_scenario_management import (
     restore_layout_sentence,
     restore_result_message,
     restore_value_line,
-    session_heading,
+    scenario_rows,
 )
 from capa_simulation.components.equipment_scenario_status import (
     EQUIPMENT_SCENARIO_FIELD_ICON,
@@ -117,6 +119,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScenarioCatalog,
     EquipmentScenarioSummary,
     EquipmentScheduleRevisionSummary,
+    EquipmentSnapshot,
     ScheduleRestoreResult,
 )
 from capa_simulation.process_detail_state import (
@@ -453,14 +456,13 @@ def _texts(app: AppTest) -> list[str]:
     return drawn + alerted
 
 
-def _heading(app: AppTest) -> str:
-    """시나리오 관리 「설비 시나리오」 탭 머리 한 줄(「이 세션: …」) — 이 화면에는 사이드바 줄이
-    없다."""
-    return next(
-        str(item.value).strip("*")
-        for item in app.markdown
-        if str(item.value).startswith("**이 세션:")
-    )
+def _loaded(app: AppTest) -> tuple[str, str, str]:
+    """시나리오 관리 「설비 시나리오」 탭 시나리오 표에서 이 세션이 든 줄 — (설비 시나리오, 상태,
+    올라와 있음). 이 화면에는 사이드바 줄도 탭 머리 줄도 없고 그 칸이 세션의 리비전을 말한다."""
+    frame = next(item.value for item in app.dataframe if "올라와 있음" in item.value.columns)
+    rows = frame.loc[frame["올라와 있음"].astype(str).str.len() > 0].to_dict("records")
+    assert len(rows) == 1, rows
+    return (str(rows[0]["설비 시나리오"]), str(rows[0]["상태"]), str(rows[0]["올라와 있음"]))
 
 
 def _equipment_section(app: AppTest) -> AppTest:
@@ -531,7 +533,9 @@ def test_the_scenario_section_clones_publishes_and_the_session_stays_pinned(
     _shell: AppTest, tmp_path: Path
 ) -> None:
     app = _equipment_section(_ok(_shell.run()))
-    assert _heading(app) == "이 세션: 운영 일정 · r1 · 공식 v1"
+    assert _loaded(app) == ("운영 일정", "공식 v1 · r1", "● r1")
+    # 탭 머리에 「이 세션: …」 줄을 거듭 세우지 않는다 — 시나리오 표 칸이 같은 값을 보인다.
+    assert not any(str(item.value).startswith("**이 세션:") for item in app.markdown)
     assert any(
         "설비 시나리오" in frame.value.columns
         and frame.value["설비 시나리오"].tolist() == ["운영 일정"]
@@ -557,7 +561,7 @@ def test_the_scenario_section_clones_publishes_and_the_session_stays_pinned(
     release = repository.latest_equipment_release()
     assert release is not None and release.release_no == 2
     assert release.equipment_scenario_id == setup.equipment_scenario_id
-    assert _heading(app) == "이 세션: 운영 일정 · r1"
+    assert _loaded(app) == ("운영 일정", "활성", "● r1")
     # 이 화면에는 사이드바 설비 시나리오 줄이 서지 않는다(D4).
     assert _field(app) is None
 
@@ -582,7 +586,7 @@ def test_scenario_management_opens_on_capa_and_the_equipment_tab_draws_only_when
 
     _equipment_section(app)
     assert any("설비 시나리오" in frame.value.columns for frame in app.dataframe)
-    assert _heading(app) == "이 세션: 운영 일정 · r1 · 공식 v1"
+    assert _loaded(app) == ("운영 일정", "공식 v1 · r1", "● r1")
     # Capa 시나리오 탭은 숨은 채 그대로 그린다 — 폼 입력이 탭을 오가도 남는다.
     assert app.segmented_control(key=MODE_KEY).value == "목록 관리"
 
@@ -720,17 +724,29 @@ def test_moving_between_the_tabs_keeps_unsaved_list_edits(_shell: AppTest) -> No
     assert "표에서 고치고 저장하지 않은 이름·순서는 남아" in guide
 
 
-def test_the_section_heading_names_the_sessions_pair() -> None:
+def test_the_loaded_cell_names_the_sessions_revision() -> None:
+    """시나리오 표 「올라와 있음」 칸 — 이 세션이 든 줄에 「● rN」. 이름 · 공식 · 최신은 같은 줄의
+    다른 칸이 보이므로 거듭 적지 않는다(설계 규칙 UI-TXT-07). 리비전 번호를 모르면 표지만이다."""
     catalog = _catalog()
     official = EquipmentSession(
         catalog=catalog, scenario=catalog.scenarios[0], schedule_revision_id="s12"
     )
-    assert session_heading(official) == "이 세션: 운영 일정 · 공식 v3"
+    assert loaded_cell(official) == "●"
     latest = EquipmentSession(
         catalog=catalog, scenario=catalog.scenarios[1], schedule_revision_id="b4"
     )
-    assert session_heading(latest) == "이 세션: 셋업 실무 · r4"
-    assert session_heading(EquipmentSession(catalog=catalog)) == "이 세션: 설비 시나리오 없음"
+    assert loaded_cell(latest) == "● r4"
+    rows = scenario_rows(latest)
+    assert rows["올라와 있음"].tolist() == ["", "● r4"]
+    # 세션 리비전이 그 시나리오 최신이 아니면 같은 칸이 그 말을 한다 — 「최신」 칸과 견주지 않아도
+    # 읽힌다(옛 탭 머리 줄의 「최신 rN 있음」 몫).
+    stale = EquipmentSession(
+        catalog=catalog,
+        scenario=catalog.scenarios[0],
+        schedule_revision_id="s12",
+        snapshot=cast(EquipmentSnapshot, SimpleNamespace(schedule=SimpleNamespace(revision_no=12))),
+    )
+    assert stale.stale and loaded_cell(stale) == "● r12 · 최신 아님"
 
 
 def test_settings_cutoff_is_read_only_on_an_assumption_and_open_on_the_official(
@@ -1432,7 +1448,7 @@ def test_the_tab_restores_an_old_revision_after_a_confirm_that_says_what_changes
     assert official.schedule.origin == "restore"
     assert _value_of(official, "EQ-02", "Qual일정") == pd.Timestamp("2026-08-21")
     assert official.unscheduled_units == frozenset({"EQ-NEW"})
-    assert _heading(app) == "이 세션: 운영 일정 · r3 · 공식 v3"
+    assert _loaded(app) == ("운영 일정", "공식 v3 · r3", "● r3")
 
 
 def test_restoring_the_official_scenario_to_a_layout_only_revision_offers_nothing(
@@ -1703,7 +1719,8 @@ def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(
     assert "r1의 일정으로 되돌려 r3을 저장했습니다" in message
     assert "저장하지 않은 설비 편집이 있어 보던 리비전을 그대로 둡니다" in message
     assert "이 세션을" not in message
-    assert _heading(app).startswith("이 세션: 운영 일정 · r2")
+    # 세션은 r2 그대로이고 그 시나리오 최신은 이제 r3 이라 같은 칸이 「최신 아님」 을 붙인다.
+    assert _loaded(app)[0::2] == ("운영 일정", "● r2 · 최신 아님")
     assert app.selectbox(key=REVISION_KEY).value == _revision_id(repository, 3)
     # 편집은 버리지 않았다(`has_unsaved_equipment_edits` 와 같은 판정).
     assert int(app.session_state[BUFFER_GENERATION_KEY]) > int(
@@ -2091,7 +2108,7 @@ def test_the_capa_route_from_the_popup_lands_on_the_capa_tab(_shell: AppTest) ->
     assert app.session_state[remembered_tab_key(SCENARIO_MANAGEMENT_TABS_KEY)] == (
         CAPA_SCENARIO_TAB
     )
-    assert not any(str(item.value).startswith("**이 세션:") for item in app.markdown)
+    assert not any("올라와 있음" in item.value.columns for item in app.dataframe)
     assert "목록 관리" in app.segmented_control(key="scenario_page_mode").options
     assert SCENARIO_DIALOG_KEY not in app.session_state  # 옮기면 팝업은 닫힌다
 
@@ -2143,10 +2160,11 @@ def test_an_unmergeable_legacy_trace_opens_the_screens_without_schedules_and_say
     assert field is not None and field.label == "운영 일정"
     assert any("일정 없이 엶" in str(item.value) for item in app.sidebar.caption)
 
-    # 시나리오 관리 「설비 시나리오」 탭 — 사이드바 줄이 없어 머리 한 줄과 세션 알림이 대신한다.
+    # 시나리오 관리 「설비 시나리오」 탭 — 사이드바 줄이 없어 시나리오 표 「올라와 있음」 칸과 세션
+    # 알림이 대신한다.
     _equipment_section(app)
     texts = _texts(app)
-    assert _heading(app).startswith("이 세션: 운영 일정 · 일정 없이 엶")
+    assert _loaded(app)[0::2] == ("운영 일정", "● 일정 없이 엶")
     assert any("일정 없이 열었습니다" in text for text in texts)
     assert (active_state(app, "SB-20") or {}).get("tab") == "설비 시나리오"
     # 자리에는 표지 한 마디, 까닭은 꺼진 단추 풍선이다(검수표 11/02 equip-44 와 같은 꼴).

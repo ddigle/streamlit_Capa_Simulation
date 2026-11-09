@@ -468,7 +468,7 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         what="필요 단축 일정 본문 맨 위 「일정 미정 N대 (…)」 줄",
         why="그림 메모 g03 · UI-TXT-04 · UI-NTF-02",
         file=_SHORTENING_PANEL,
-        function="_report_status_marks",
+        function="_report_status_alerts",
         code="RS-03",
         route="state",
         test=(
@@ -480,19 +480,19 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         what="필요 단축 일정 본문 맨 위 「사용기준 HBM·EDP 밖 N대 제외」 줄",
         why="그림 메모 g03 · UI-TXT-04 · UI-NTF-02",
         file=_SHORTENING_PANEL,
-        function="_report_status_marks",
+        function="_report_status_alerts",
         code="RS-04",
         route="state",
         test=(
             "tests/test_required_shortening_tab.py"
-            "::test_units_outside_the_usage_basis_are_a_marker_line_with_the_rule_in_its_tooltip"
+            "::test_units_outside_the_usage_basis_are_an_alert_with_the_rule_in_its_full_text"
         ),
     ),
     Withdrawn(
         what="필요 단축 일정 본문 맨 위 「입력 비가동 반영(n칸 · 합 x대 · 가용 넘침 k칸)」 줄",
         why="그림 메모 g03 · UI-TXT-04 · UI-NTF-02",
         file=_SHORTENING_PANEL,
-        function="_report_status_marks",
+        function="_report_status_alerts",
         code="RS-05",
         route="state",
         test=(

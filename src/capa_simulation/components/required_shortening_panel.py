@@ -15,11 +15,15 @@ rerun 은 계산을 다시 돌리지 않는다. 본문은 키 붙은 프래그�
 목표에서 한 달이라도 모자란 공정 전체**를 카드로 보인다 — 공정 필터의 「미선택 시 전체」 관례를
 「미선택 시 목표 미달 전체」로 읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
 
-본문 맨 위는 값 한 줄이다 — 「설비 일정 기준 가용(환산) · 오늘」 과 그 끝에 조건이 있을 때만
-서는 상태 표지(일정 미정 · 사용기준 밖 · 입력 비가동 반영)를 한 줄로 두고, 뜻은 표지 풍선,
-내역(미정구분 · 합 대수 · 가용 넘침 자리)은 상태 알림 `RS-03` ~ `RS-05` 다(g03, 설계 규칙
-UI-TXT-04 · UI-NTF-02). 고칠 입력이 가용설비 현황에 있는 일정 미정(설비 마스터 일정 칸) · 입력
-비가동(Preference)은 그 줄의 「그 화면으로」 가 그 탭을 연다(`goto`).
+본문 맨 위는 KPI 카드다 — 따로 선 값 줄은 없고 기준 값 「설비 일정 기준 가용(환산) · 오늘」 은 KPI
+아래 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로,
+지우지 않는다). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽
+끝이다(`_render_basis`).
+일정 미정 · 사용기준 밖 · 입력 비가동 반영은 자리에 그리지 않고 상태 알림 `RS-03` ~ `RS-05` 만이다
+— 짧은 글이 표지 몫(건수)을, 전문이 뜻 · 내역(미정구분 · 합 대수 · 가용 넘침 자리)을 싣는다(설계
+규칙 UI-NTF-02 · UI-TXT-07 — 같은 말을 자리와 알림에 거듭 두지 않는다). 고칠 입력이 가용설비
+현황에 있는 일정 미정(설비 마스터 일정 칸) · 입력 비가동(Preference)은 그 줄의 「그 화면으로」 가 그
+탭을 연다(`goto`).
 
 **거르는 조건 셋은 공용 프로필이다**(2026-10-08 사용자 요청, 설비 DB 0019). 세션에 값이 없을 때만
 프로필로 심고(HOME 비교 대상과 같은 관례), 사용자가 바꾸면 그 위젯의 `on_change` 가 그 자리에서
@@ -60,7 +64,7 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 import pandas as pd
@@ -155,10 +159,8 @@ from capa_simulation.scenario_activation import (
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import apply_display_order
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
-from capa_simulation.services.equipment_units import format_unit_count
 from capa_simulation.services.floor_layout_profile import FloorKey
 from capa_simulation.services.manual_downtime import (
-    MANUAL_DOWNTIME_BAND,
     manual_effect_band,
     overdrawn_rows,
 )
@@ -199,11 +201,10 @@ from capa_simulation.services.space_shortening_layer import shortening_space_flo
 from capa_simulation.services.undated_equipment import (
     UNDATED_HELP,
     undated_candidate_note,
-    undated_counts,
     undated_equipment_mark,
 )
 from capa_simulation.services.upeh_assumption import UpehAssumption
-from capa_simulation.services.usage_basis import usage_excluded_count, usage_exclusion_mark
+from capa_simulation.services.usage_basis import usage_exclusion_mark
 from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, rerun_fragment_if_alone
 
@@ -247,9 +248,12 @@ PROCESS_FIELD_HEAD = (
 )
 # 본문 프래그먼트 key — 조건 카드의 목표 확보율 · 진척 비교 콜백이 이것만 다시 돌린다.
 VIEW_FRAGMENT_KEY = "required_shortening_view"
-# 본문 맨 위 값 줄(값 · 상태 표지 한 줄).
-_VALUE_LINE_KEY = "equipment_shortening_value_line"
 _SHORTENING_OWNER = "required_shortening"
+# 기준 값 작은 글(`_render_basis`)의 표지 클래스와 그 서식 — 캡션 칸을 줄 오른쪽 끝으로 민다.
+BASIS_CLASS = "shk-basis"
+BASIS_STYLE = (
+    f'<style>[data-testid="stElementContainer"]:has(.{BASIS_CLASS}){{margin-left:auto}}</style>'
+)
 _UNITS_CSV_KEY = "equipment_shortening_units_csv"
 _UNITS_ALL_LEVELS_CSV_KEY = "equipment_shortening_units_all_levels_csv"
 _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
@@ -280,10 +284,6 @@ USAGE_NOTICE_HELP = (
     "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 가용대수에서 뺐고 단축 후보에도 들지 "
     "않습니다. 배치·호기 목록에는 그대로 있습니다."
 )
-# 상태 표지(본문 맨 위 값 줄 끝)의 아이콘.
-_UNDATED_ICON = ":material/event_busy:"
-_USAGE_ICON = ":material/filter_alt_off:"
-_MANUAL_ICON = ":material/event_busy:"
 # 상태 알림 `RS-03` · `RS-05` 의 고칠 자리 — 일정 칸은 설비 마스터, 입력 비가동은 Preference 다
 # (둘 다 가용설비 현황). 줄의 「그 화면으로」 가 그 탭을 열고(`goto` · `tab`), 전문 첫머리는 이 화면
 # 이름이다(설계 규칙 UI-NTF-02 · UI-NTF-06).
@@ -326,20 +326,11 @@ class _LobRows:
 
 
 @dataclass(frozen=True)
-class _StatusMark:
-    """본문 맨 위 값 줄 끝의 상태 표지 하나 — 아이콘 · 짧은 글(값 · 표지) · 풍선(뜻)."""
-
-    icon: str
-    text: str
-    help: str
-
-
-@dataclass(frozen=True)
 class _StatusNote:
-    """상태 표지 하나와 그 상태 알림 — 자리에는 표지, 내역은 알림이다(설계 규칙 UI-TXT-04 ·
-    UI-NTF-02). `content` 는 알림 지문 재료다(바뀔 때만 알림창이 다시 뜬다)."""
+    """상태 알림 하나의 글 — 짧은 글(`text` — 건수 · 고칠 자리)과 전문(`full` — 뜻 · 내역). 자리에는
+    그리지 않는다(설계 규칙 UI-NTF-02 · UI-TXT-07). `content` 는 알림 지문 재료다(바뀔 때만
+    알림창이 다시 뜬다)."""
 
-    mark: _StatusMark
     text: str
     full: str
     content: object
@@ -366,9 +357,6 @@ class _Plan:
     assumption: UpehAssumption | None = None
     """조건 카드의 UPEH 가정(100% 여도 구간이 있으면 든다 — `active` 가 거짓). 계획에는 걸지 않고
     기준선 저장 거절에만 쓴다(가정이 켜졌음은 머리 변경 칩이 알린다 — 자리에 적지 않는다)."""
-    marks: tuple[_StatusMark, ...] = ()
-    """본문 맨 위 값 줄 끝의 상태 표지(일정 미정 · 사용기준 밖 · 입력 비가동 반영) — 앱 전체 회차가
-    상태 알림과 함께 세운다(`_report_status_marks`)."""
     shown_baselines: tuple[str, ...] | None = None
     """카드 `진척 비교` 상자에 세운 기준선 id 들(상자가 없으면 None) — 본문 프래그먼트 회차가 지금
     목록과 견준다(`_view_choices`)."""
@@ -455,10 +443,10 @@ def render_required_shortening_tab(
         controls=controls,
         database_path=equipment_database_path,
     )
-    # 맞대지 못한 공정 · 상태 표지는 프래그먼트 밖에서 낸다 — 계획 · 설비 · 공정 선택은 앱 전체
+    # 맞대지 못한 공정 · 상태 알림은 프래그먼트 밖에서 낸다 — 계획 · 설비 · 공정 선택은 앱 전체
     # 회차에서만 바뀐다.
     _report_unmatched(prepared, revision=(equipment_revision_id, equipment_revision_no))
-    prepared = _report_status_marks(
+    _report_status_alerts(
         prepared, equipment, revision=(equipment_revision_id, equipment_revision_no)
     )
     with view:
@@ -590,11 +578,11 @@ def _render_view(
     equipment_basis: ShorteningEquipmentBasis | None = None,
     inactive_floors: frozenset[FloorKey] = frozenset(),
 ) -> None:
-    """본문(값 줄 · KPI · 보드 · LOB · 공정 카드 · CSV · 기준선) — 키 붙은 프래그먼트다.
+    """본문(KPI · CSV · 보드 · LOB · 공정 카드 · 기준선) — 키 붙은 프래그먼트다.
 
     CSV, 기준선 저장·지우기 팝오버의 조작과 조건 카드의 목표 확보율 · 진척 비교
-    콜백(`_rerun_view`)은 이것만 다시 돌린다. 인자(계획·고른 달·공정·표시명·오늘·설비 마스터·상태
-    표지)는 직전 앱 전체 회차의 것이다 — 조건 카드의 거르는 조건·탭·저장처럼 계산 입력을 바꾸는
+    콜백(`_rerun_view`)은 이것만 다시 돌린다. 인자(계획·고른 달·공정·표시명·오늘·설비 마스터)는
+    직전 앱 전체 회차의 것이다 — 조건 카드의 거르는 조건·탭·저장처럼 계산 입력을 바꾸는
     조작은 앱 전체 회차라 새 인자로 다시 부른다. **회차마다 다시 읽는 것**: 목표 확보율 · 진척 비교
     세션 값, 기준선 목록·고른 기준선(목록이 카드 상자에 세운 것과 다르면 — 다른 세션이 지웠거나
     새로 저장했다 — 앱 전체를 다시 돌려 카드 칸과 맞춘다, `_view_choices`), 공용 판정
@@ -604,12 +592,10 @@ def _render_view(
     if consume_baseline_write():
         st.rerun(scope="app")
     if isinstance(prepared, ShorteningStop):
-        _render_value_line(today, ())
         render_baseline_notice()
-        _render_stop(prepared)
+        _render_stop(prepared, today)
         return
     level, compare_id = _view_choices(database_path, prepared.shown_baselines)
-    _render_value_line(today, prepared.marks)
     render_baseline_notice()
     _render_body(
         prepared,
@@ -626,20 +612,23 @@ def _render_view(
     )
 
 
-def _render_stop(stop: ShorteningStop) -> None:
+def _render_stop(stop: ShorteningStop, today: date) -> None:
     """멈춘 까닭 한 자리 — 소요를 못 읽음 · 계산 오류 · 다른 화면에서 채울 입력이 빠짐(`input` —
     Cut-off, 「그 화면으로」 가 그 화면을 연다)은 데이터 Error 마크(글은 알림)이고, 그릴 것이 없는
     빈 상태(`info`)는 회색 평문 한 줄이다(설계 규칙 UI-TXT-04 · 반영 검수표 D4). 마크와 표지가 한
-    칸이라 이벤트 칸을 쓰지 않는다."""
-    if stop.kind == "info":
-        st.caption(stop.message or "")
-        return
-    render_data_error(
-        _stop_text(stop),
-        code="RS-01",
-        text=stop.brief("필요 단축 일정을 계산하지 못했습니다"),
-        goto=stop.goto,
-    )
+    칸이라 이벤트 칸을 쓰지 않는다. 그 줄 오른쪽 끝에 기준 값 작은 글이 선다(`_render_basis` — CSV
+    줄이 서지 않는 회차에도 기준 값을 지우지 않는다, 2026-11-09 사용자 보드 T2)."""
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        if stop.kind == "info":
+            st.caption(stop.message or "")
+        else:
+            render_data_error(
+                _stop_text(stop),
+                code="RS-01",
+                text=stop.brief("필요 단축 일정을 계산하지 못했습니다"),
+                goto=stop.goto,
+            )
+        _render_basis(today)
 
 
 def _stop_text(stop: ShorteningStop) -> str:
@@ -677,11 +666,14 @@ def _render_body(
 
     if not plan.processes:
         # 그릴 것이 없는 빈 상태 — 회색 평문 한 줄, 맞대는 규칙은 풍선(설계 규칙 UI-TXT-04 · D4).
-        st.caption(
-            "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
-            "없습니다.",
-            help=MATCH_RULE_HELP,
-        )
+        # 그 줄 오른쪽 끝이 기준 값이다(`_render_basis`).
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.caption(
+                "시나리오 소요대수와 설비 일정 기준 가용대수에 같은 이름으로 함께 있는 공정이 "
+                "없습니다.",
+                help=MATCH_RULE_HELP,
+            )
+            _render_basis(today)
         return
 
     save = _save_context(
@@ -728,6 +720,7 @@ def _render_body(
         level,
         months,
         extra=lambda: render_baseline_controls(save, None),
+        today=today,
     )
     managers = unit_managers(plan.unit_master)
     # 「도면에서 보기」 가 열 층 — 공정 전부를 한 번에 고른다(카드마다 다시 세지 않는다). 본문은
@@ -878,16 +871,25 @@ def _view_choices(database_path: str | None, shown: tuple[str, ...] | None) -> t
     return float(level), str(compare)
 
 
-def _render_value_line(today: date, marks: Sequence[_StatusMark]) -> None:
-    """본문 맨 위 값 한 줄 — 가용 기준 · 오늘, 그 끝에 조건이 있을 때만 서는 상태 표지. 뜻은 표지
-    풍선, 내역은 상태 알림이다(설계 규칙 UI-TXT-04 · UI-NTF-02). 제목은 따로 달지 않는다 — 페이지
-    제목 「필요 단축 일정」 과 겹친다. 좁은 창에서는 표지가 다음 줄로 접힌다."""
-    with st.container(
-        horizontal=True, gap="small", vertical_alignment="center", key=_VALUE_LINE_KEY
-    ):
-        st.caption(f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}", width="content")
-        for mark in marks:
-            st.caption(f"{mark.icon} {mark.text}", help=mark.help, width="content")
+def basis_text(today: date) -> str:
+    """기준 값 — 「설비 일정 기준 가용(환산) · 오늘 2026-11-09」. 따로 줄을 세우지 않고 이웃 줄
+    오른쪽 끝 작은 글이다(`_render_basis` — 2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 ·
+    UI-LAY-11)."""
+    return f"설비 일정 기준 가용(환산) · 오늘 {today:%Y-%m-%d}"
+
+
+def _render_basis(today: date) -> None:
+    """기준 값 작은 글(`basis_text`) — 가로 줄 안에서 부른다. 글은 늘지도 줄지도 않는 한 덩이로 줄
+    오른쪽 끝에 서고, 앞 칸들 곁에 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려간다 — 좁은
+    자리에서 두 줄로 접히지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 오른쪽 끝으로 미는
+    서식은 같은 캡션 마크다운에 싣는다(`BASIS_STYLE`) — 스타일만 든 `st.html` 은 이벤트 칸으로 가 이
+    프래그먼트 갈래마다 그 칸 자리 수를 바꾼다(`profile_caption` 의 버전 줄과 같은 꼴). 글은 앱이
+    지은 것이다(날짜)."""
+    st.caption(
+        f'<span class="{BASIS_CLASS}">{html.escape(basis_text(today))}</span>{BASIS_STYLE}',
+        unsafe_allow_html=True,
+        width="content",
+    )
 
 
 def _render_month_range(
@@ -1051,9 +1053,9 @@ def _here() -> str:
 def _undated_note(equipment: pd.DataFrame, chosen: Sequence[str] | None) -> _StatusNote | None:
     """반입·Qual 일정이 비어 가용대수에 들지 못하는 신규 설비. 0대면 None.
 
-    표지는 「일정 미정 N대」, 미정구분(Main·Static 대비 일정과 같은 표지 —
-    `undated_equipment_mark`)은 알림 글이다. **Qual 일정이 없는 몫은 단축 후보도 아니라는
-    말**(`undated_candidate_note`)은 표지 풍선과 알림 전문에 둔다 — 이 화면은 Qual 일정이 있는
+    짧은 글은 「일정 미정 N대 (미정구분)」(Main·Static 대비 일정과 같은 표지 —
+    `undated_equipment_mark`)과 고칠 자리다. **Qual 일정이 없는 몫은 단축 후보도 아니라는
+    말**(`undated_candidate_note`)은 알림 전문에 둔다 — 이 화면은 Qual 일정이 있는
     호기만 당기므로, 알리지 않으면 「그 호기를 당기면 될 텐데 왜 추가N 이 필요한가」로 읽힌다.
     반입만 빈 호기는 Qual 일정이 있어 후보이므로 그 말을 하지 않는다. 범위는 사용기준 밖과 같다:
     공정을 고르면 그 공정, 고르지 않으면 설비 마스터 전체 — 호기가 모두 일정 미정인 공정은 일정 기준
@@ -1066,11 +1068,9 @@ def _undated_note(equipment: pd.DataFrame, chosen: Sequence[str] | None) -> _Sta
     detail = undated_equipment_mark(undated, processes=chosen)
     if detail is None:
         return None
-    total = round(sum(undated_counts(undated, processes=chosen).values()), 6)
     note = undated_candidate_note(undated, processes=chosen)
     meaning = UNDATED_HELP + (f" {note}" if note else "")
     return _StatusNote(
-        mark=_StatusMark(_UNDATED_ICON, f"일정 미정 {format_unit_count(total)}대", meaning),
         text=f"{detail} — 가용대수에 세지 않음 · {_UNDATED_FIX}",
         full=f"{_here()} — {detail} — {meaning} {_UNDATED_FIX_FULL}",
         content=[detail, note],
@@ -1091,11 +1091,7 @@ def _usage_note(equipment: pd.DataFrame, chosen: Sequence[str] | None) -> _Statu
     detail = usage_exclusion_mark(excluded, processes=chosen)
     if detail is None:
         return None
-    count = usage_excluded_count(excluded, processes=chosen)
     return _StatusNote(
-        mark=_StatusMark(
-            _USAGE_ICON, f"사용기준 밖 {format_unit_count(count)}대", USAGE_NOTICE_HELP
-        ),
         text=detail,
         full=f"{detail} — {USAGE_NOTICE_HELP}",
         content=[detail],
@@ -1108,19 +1104,13 @@ def _manual_note(
     """입력 비가동(가용설비 현황 › Preference)을 뺀 계획이면 그 출처. 보이는 범위(`scope`) 공정에
     칸이 없으면 None.
 
-    표지는 「입력 비가동 반영 n칸」 이고 그 달 가용보다 커 0 에서 멈춘 칸이 있으면 「· 가용 넘침
-    k칸」 을 붙인다. 합 대수(띠 — `manual_effect_band`)와 넘친 자리(공정 표시명 · 달)는 알림 글 ·
-    전문이고, 넘친 자리는 표지 풍선에도 둔다(설계 규칙 UI-TXT-04 · UI-TXT-07)."""
+    짧은 글은 합 대수 띠(`manual_effect_band` — 「입력 비가동 반영(n칸 · 합 x대 · 가용 넘침
+    k칸)」)와 고칠 자리, 전문은 출처의 뜻과 넘친 자리(공정 표시명 · 달 — 그 달 가용보다 커 0 에서
+    멈춘 칸)다(설계 규칙 UI-TXT-04 · UI-NTF-02)."""
     band = manual_effect_band(plan.manual_downtime, scope)
     if not band:
         return None
-    effect = plan.manual_downtime
-    wanted = {str(process).strip() for process in scope}
-    rows = effect.loc[
-        effect["공정"].astype("string").str.strip().isin(wanted).fillna(False).to_numpy()
-    ]
-    rows = rows.loc[pd.to_numeric(rows["입력대수"], errors="coerce").fillna(0.0).gt(0).to_numpy()]
-    over = overdrawn_rows(effect)
+    over = overdrawn_rows(plan.manual_downtime)
     over = over.loc[over["공정"].astype("string").isin(list(scope)).fillna(False).to_numpy()]
     meaning = MANUAL_NOTICE_HELP
     places = ""
@@ -1134,38 +1124,36 @@ def _manual_note(
             )
         )
         more = f" 외 {len(over) - _MANUAL_OVER_LIMIT}칸" if len(over) > _MANUAL_OVER_LIMIT else ""
-        # 풍선 · 알림은 마크다운으로 그려진다 — 공정 표시명은 글자 그대로 싣는다
+        # 알림 전문은 마크다운으로 그려진다 — 공정 표시명은 글자 그대로 싣는다
         # (`literal_markdown`).
         meaning = (
             f"{MANUAL_NOTICE_HELP} 가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): {places}{more}."
         )
-    tail = f" · 가용 넘침 {len(over)}칸" if not over.empty else ""
     return _StatusNote(
-        mark=_StatusMark(_MANUAL_ICON, f"{MANUAL_DOWNTIME_BAND} {len(rows)}칸{tail}", meaning),
         text=f"{band} — {_MANUAL_FIX}",
         full=f"{_here()} — {band} — {meaning}",
         content=[band, places],
     )
 
 
-def _report_status_marks(
+def _report_status_alerts(
     prepared: _Plan | ShorteningStop,
     equipment: pd.DataFrame,
     *,
     revision: tuple[str | None, int | None],
-) -> _Plan | ShorteningStop:
-    """본문 맨 위 상태 표지 셋을 세우고 그 상태 알림을 낸다 — 일정 미정(`RS-03`) · 사용기준 밖
-    (`RS-04`) · 입력 비가동 반영 · 가용 넘침(`RS-05`).
+) -> None:
+    """상태 알림 셋을 낸다 — 일정 미정(`RS-03`) · 사용기준 밖(`RS-04`) · 입력 비가동 반영 · 가용
+    넘침(`RS-05`).
 
-    늘 서던 세 줄을 값 줄 끝 한 줄 표지로 줄이고 내역은 알림창 · Alarm 으로 옮겼다(2026-11-08 그림
-    메모 g03, 설계 규칙 UI-TXT-04 · UI-NTF-02 · UI-NTF-05 — 문제는 숨기지 않고 자리를 옮긴다). 앱
-    전체 회차마다 셋을 모두 부른다(조건이 없거나 멈춘 회차는 `active=False` — 이벤트 칸 자리 수가
-    갈래마다 같다). 표지는 돌려준 계획(`_Plan.marks`)에 실려 본문 프래그먼트가 그린다.
+    자리에는 그리지 않는다 — 건수는 짧은 글, 뜻 · 내역은 전문이 싣는다(2026-11-09 사용자 규칙
+    「페이지 상단의 여백이나 문구를 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07 · UI-NTF-05 — 문제는
+    숨기지 않고 자리를 옮긴다). 앱 전체 회차마다 셋을 모두 부른다(조건이 없거나 멈춘 회차는
+    `active=False` — 이벤트 칸 자리 수가 갈래마다 같다).
     """
     if isinstance(prepared, ShorteningStop):
         for code in ("RS-03", "RS-04", "RS-05"):
             alerts.state(code, scope=None, content=None, active=False)
-        return prepared
+        return
     selected = set(prepared.selected)
     ordered = list(prepared.ordered)
     scope = [process for process in ordered if process in selected] if selected else ordered
@@ -1213,8 +1201,6 @@ def _report_status_marks(
         tab=tab_name(EQUIPMENT_PREFERENCE_TAB),
         goto=_FIX_SCREEN,
     )
-    marks = tuple(note.mark for note in (undated, usage, manual) if note is not None)
-    return replace(prepared, marks=marks)
 
 
 def _report_unmatched(
@@ -1299,10 +1285,13 @@ def _render_downloads(
     months: Sequence[int],
     *,
     extra: Callable[[], None] | None = None,
+    today: date | None = None,
 ) -> None:
     """CSV 세 벌 — 고른 목표의 호기별 단축 일정, 다섯 목표를 한 파일로, 고른 목표의 공정 x 월.
 
-    `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다.
+    `extra` 는 같은 줄 뒤에 세울 것(진척 비교 CSV·기준선 저장·지우기 팝오버)이다. `today` 가
+    있으면 그 줄 오른쪽 끝에 기준 값 작은 글을 둔다(`_render_basis`) — 본문 맨 위에 따로 줄을
+    세우지 않는다.
 
     범위는 셋 다 화면과 같다(조건 카드의 공정, 비우면 맞댄 공정 전체 · 고른 달). 표는 캐시된 결과를
     고르기만 해 만든다 — 다섯 목표가 이미 계산돼 있고 마스터 속성도 결과에 실려 있다. 바이트는
@@ -1314,7 +1303,7 @@ def _render_downloads(
     units, all_levels, process_months = simulation_cache.shortening_csvs(
         keyed, float(level), tuple(scope), tuple(int(month) for month in months)
     )
-    with st.container(horizontal=True, gap="small"):
+    with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         render_csv_download(
             data=units,
             file_name=f"required_shortening_units_{percent}pct_{span}.csv",
@@ -1335,6 +1324,8 @@ def _render_downloads(
         )
         if extra is not None:
             extra()
+        if today is not None:
+            _render_basis(today)
 
 
 def _save_context(
@@ -1438,7 +1429,7 @@ def _render_progress(
         render_progress_csv(key, baseline, view, level, plan.today)
         render_baseline_controls(save, baseline.summary)
 
-    _render_downloads(keyed, scope, level, months, extra=controls)
+    _render_downloads(keyed, scope, level, months, extra=controls, today=plan.today)
     note = scope_note(
         baseline, plan, months, labels, lapsed=view.summary.lapsed, renamed=view.renamed
     )

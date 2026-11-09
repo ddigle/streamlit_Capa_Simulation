@@ -117,13 +117,16 @@ def render_profile_heading(
     empty: str,
     detail: str | None = None,
     help: str | None = None,
+    mark: tuple[str, str] | None = None,
 ) -> None:
     """구획 제목과 그 공용 버전 줄(`profile_version_caption`)을 한 줄에 그린다.
 
     `title` 은 앱이 지은 마크다운 제목(「#### :material/…: 이름」)이고 `help` 는 그 제목의 풍선이다.
     `key` 는 화면 안에서 줄마다 다른 이름이다(줄 칸 key 는 `HEADING_KEY_PREFIX` + `key`). 버전 줄은
     제목 오른쪽에 붙고, 칸이 좁으면 제목 아래로 내려간다. `empty`·`detail` 은
-    `profile_version_caption` 과 같다.
+    `profile_version_caption` 과 같다. `mark` 는 (표지 글, 풍선) — 그 구획 표의 숨은 데이터 안내
+    표지(설계 규칙 UI-TXT-04 — 칸 머리 표지 + 풍선)를 버전 줄 뒤 같은 줄에 둔다. 따로 줄을 세우지
+    않는다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」). 앱이 지은 글이라 그대로 싣는다.
 
     **두 글은 글자 밑줄(baseline)에 맞춘다** — 제목(h4)은 위아래 여백이 달라 가운데 맞춤이면 작은
     버전 줄이 제목 글자보다 3 ~ 8px 떠 보인다(샘플 관측 — 팝업 안 제목 · 본문 제목). 줄 칸에
@@ -147,6 +150,8 @@ def render_profile_heading(
             unsafe_allow_html=True,
             width="content",
         )
+        if mark is not None:
+            st.caption(mark[0], help=mark[1], width="content")
 
 
 def _without_raw_html(text: str) -> str:
