@@ -2235,7 +2235,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나이고 `page_header.py` 가 배지로 쓴다.
   - `PageSpec` 이 화면이 `app.py` 에 바라는 공통 조건(`reads_*`·`condition_tabs`·`has_condition_cards`)과
     설비 DB 핀(`uses_equipment_db`)·설비 시나리오(`equipment_scenario` — `"session"`/`"official"`, `equipment_scenario_tabs`,
-    `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 가용설비 현황 탭
+    `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 미룬 패널 화면(실적 셋 ·
+    Dynamic · 재공)은 카드를 세워도 `has_condition_cards` 를 선언하지 않는다 — 선언 대신 패널 줄이 제목을 세운다(9장
+    「공통 줄이 없는 화면도 제 줄은 같은 패널에 그린다」). 가용설비 현황 탭
     라벨(바깥 `EQUIPMENT_TABS`·Summary 안쪽 `EQUIPMENT_SUMMARY_TABS`)도 사이드바가 열린 탭을 보므로 여기 둔다. 안쪽 탭을
     품은 바깥 탭은 `ConditionTabs.sub`(`SubTabs`)로 적고, 사이드바는 `ConditionTabs.active_label`(위젯 값 → 기억 칸 → 첫
     탭, 라벨 목록 밖의 옛 값은 첫 탭)로 **가장 안쪽 라벨**을 본다 — `labels`·`card_labels` 도 안쪽 라벨로 적는다.
@@ -6386,7 +6388,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   페이지가 `page_condition_slot` 을 처음 부를 때 사이드바 맨 끝 — `app.py` 가 세웠을 자리 — 에 「조회 조건」 제목(카드를 선언해
   제목이 이미 선 화면은 빼고)과 패널이 선다. 그래서 그런 화면은 **조건 카드 · 상자보다 먼저** 패널 칸을 쓴다. 쓰지 않으면 패널도
   제목도 서지 않는다(빈 테두리 상자를 남기지 않는다). 패널의 테두리 상자 · 필드 서식 · 시험 도우미(`_panel_fields`)는 `app.py`
-  가 세운 패널과 같다(같은 key `CONDITIONS_BOX_KEY` · 같은 사이드바 최상위 자리).
+  가 세운 패널과 같다(같은 key `CONDITIONS_BOX_KEY` · 같은 사이드바 최상위 자리). 카드를 세우는 그런 화면(실적 셋 「상세
+  분석」 · Dynamic 「공정 상세」 · 재공)은 `PageSpec.has_condition_cards` 를 선언하지 않는다 — 선언하면 `app.py` 가 제목을 먼저
+  세우는데, 지금은 패널 줄(`render_sample_row`)이 늘 카드보다 먼저라 그 줄이 연 패널이 제목을 함께 세운다. 이 차례(제목 →
+  패널 → 카드)는 `tests/test_app_navigation.py` 가 카드가 서는 탭에서 본다. 원천이 붙어 「샘플 데이터」 줄이 빠지면 그때
+  `has_condition_cards` 와 카드 탭(`condition_tabs.card_labels` — 상세 분석 · 공정 상세)을 선언한다 — 줄 없이 카드만 서면
+  제목 없는 카드가 남는다.
 - **머리 띠 끝 「설비 시나리오 · …」** 은 설비 시나리오를 선언한 화면의 아랫줄 끝에 선다(Space 도 같은 꼬리 — S3). 머리 띠는
   `app.py` 가 페이지보다 먼저 그리므로 라벨 칸만으로는 한 회차 늦다 — 그래서 **설비 화면에서는 페이지가 회차마다 머리 띠를 한
   번 더 보낸다**(`refresh_equipment_header` — 같은 글이어도. 바뀐 회차에만 보내면 이벤트 칸 자리가 회차마다 밀려 그 뒤 알림 칸

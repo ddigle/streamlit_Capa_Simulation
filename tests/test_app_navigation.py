@@ -1844,6 +1844,68 @@ def test_the_conditions_heading_stands_right_before_the_panel(
     assert captions == [CONDITIONS_SECTION.title, CONDITIONS_SECTION.hint]
 
 
+@pytest.mark.parametrize(
+    ("page_path", "tab_key", "tab_label", "card_name"),
+    [
+        (
+            "app_pages/actual_efficiency.py",
+            "actual_efficiency_active_tab",
+            "상세 분석",
+            "actual_efficiency",
+        ),
+        (DYNAMIC_CAPA.path, "dynamic_capa_active_tab", "공정 상세", "dynamic_capa"),
+    ],
+)
+def test_a_deferred_panel_screen_stands_heading_panel_then_its_card(
+    _app: AppTest, page_path: str, tab_key: str, tab_label: str, card_name: str
+) -> None:
+    """공통 줄 없이 카드를 세우는 구현 중 화면은 `has_condition_cards` 를 선언하지 않는다 — 제목은
+    「샘플 데이터」 줄이 미룬 패널을 열 때 함께 선다. 그 줄이 카드보다 먼저라는 차례에 기대므로
+    카드가 실제로 서는 탭에서 앱 전체 차례 「제목 → 패널 → 카드」 를 본다(제목은 하나)."""
+    app = _app.run()
+    app.switch_page(page_path)
+    app.session_state[tab_key] = tab_label
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    keys = _sidebar_keys(app)
+    card = f"{CONDITION_CARD_PREFIX}{card_name}"
+    assert keys.count(CONDITIONS_SECTION.key) == 1, keys
+    heading = keys.index(CONDITIONS_SECTION.key)
+    assert keys[heading : heading + 3] == [CONDITIONS_SECTION.key, CONDITIONS_BOX_KEY, card], keys
+
+
+DECLARED_CARD_SCRIPT = r"""
+import streamlit as st
+
+from capa_simulation.navigation import CONDITIONS_SECTION
+from capa_simulation.sidebar_status import (
+    condition_card,
+    defer_page_condition_slots,
+    page_condition_slot,
+    render_sidebar_section,
+)
+
+# `app.py` 가 카드를 선언한 화면에 하는 일 — 제목을 먼저 세우고 패널은 제목 없이 미룬다.
+render_sidebar_section(CONDITIONS_SECTION)
+defer_page_condition_slots(heading=False)
+# 페이지 — 패널 칸을 먼저 쓰고 카드를 세운다.
+with page_condition_slot(0).container():
+    st.toggle("줄", key="test_row")
+with condition_card("시험 조건", name="test_card"):
+    st.selectbox("값", ["a", "b"], key="test_value")
+"""
+
+
+def test_a_declared_card_screen_opens_its_deferred_panel_without_a_second_heading() -> None:
+    """카드를 선언하고 공통 줄이 없는 화면(`defer_page_condition_slots(heading=False)`)이 패널 칸을
+    쓰면 패널만 선다 — 제목은 `app.py` 가 이미 세웠다. 차례는 「제목 → 패널 → 카드」 다."""
+    app = AppTest.from_string(DECLARED_CARD_SCRIPT, default_timeout=60).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    keys = _sidebar_keys(app)
+    assert keys == [CONDITIONS_SECTION.key, CONDITIONS_BOX_KEY, f"{CONDITION_CARD_PREFIX}test_card"]
+
+
 @pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path])
 def test_the_applied_range_stands_in_the_period_name_row(_app: AppTest, page_path: str) -> None:
     """적용 기간은 조회기간 줄의 **이름 줄 오른쪽**이다 — 패널의 일반 흐름 안이다.
