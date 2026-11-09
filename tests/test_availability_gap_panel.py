@@ -22,8 +22,10 @@ from capa_simulation.components.availability_gap_panel import (
     PROCESS_FILTER_KEY,
     RESULT_VIEW_HELP,
     RESULT_VIEW_KEY,
+    SHEET_CSV_STYLE,
     UNIT_LIST_HELP,
 )
+from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CSV_KEY
 from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, render_csv_download
 from capa_simulation.services.availability_sheet import (
     BREAKDOWN_LENT_COLUMN,
@@ -956,14 +958,56 @@ def test_the_panel_head_has_no_section_title_or_label_rows() -> None:
     assert _row_helps(app) == [f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}"]
     _select_view(app, "확보율 교차검증")
     assert not any("확보율 교차검증" in item.value for item in app.markdown)
+    # 확보율 교차검증에는 표 제목이 없어 「맞대어 본 달」 이 줄 끝 풍선의 첫 단락이다(사용자 보드
+    # T2 — 표 제목 풍선, 값이 설명에 묻히지 않게 맨 앞).
     (cross,) = _row_helps(app)
-    assert cross.startswith(f"{RESULT_VIEW_HELP}\n\n맞대어 본 달: ")
-    assert cross.endswith(CROSS_CHECK_MONTHS_HELP)
+    assert cross.startswith("맞대어 본 달: ")
+    assert cross.endswith(f"{CROSS_CHECK_MONTHS_HELP}\n\n{RESULT_VIEW_HELP}")
 
 
 def _row_helps(app: AppTest) -> list[str]:
     """전환 줄 끝 빈 캡션의 풍선들."""
     return [str(item.proto.help) for item in app.caption if item.value == ""]
+
+
+def _help_group(app: AppTest) -> Any:
+    """줄 끝 풍선(빈 캡션)이 든 칸."""
+    from streamlit.testing.v1.element_tree import Block
+
+    found = []
+
+    def walk(node: Any) -> None:
+        for child in node.children.values():
+            if isinstance(child, Block):
+                if any(
+                    type(item).__name__ == "Caption" and getattr(item, "value", None) == ""
+                    for item in child.children.values()
+                ):
+                    found.append(child)
+                walk(child)
+
+    walk(app.main)
+    (group,) = found
+    return group
+
+
+def test_the_row_help_shares_a_small_gap_cell_with_the_last_switch() -> None:
+    """줄 끝 풍선은 마지막 전환과 작은 간격의 한 칸이다 — 전환끼리는 넓게 띄워도 풍선이 따로 떠
+    보이지 않게 Main 머리 줄의 줄 끝 풍선과 같은 간격이다(설계 규칙 UI-CON-03)."""
+    from streamlit.proto.GapSize_pb2 import GapSize
+
+    app = _run()
+    for view, last in (
+        ("가용대수 비교", RESULT_VIEW_KEY),
+        ("분류별 내역", DETAIL_MODE_KEY),
+        ("확보율 교차검증", RESULT_VIEW_KEY),
+    ):
+        _select_view(app, view)
+        group = _help_group(app)
+        keys = [getattr(child, "key", None) for child in group.children.values()]
+        assert keys[0] == last, view
+        assert group.proto.flex_container.gap_config.gap_size == GapSize.SMALL, view
+        assert group.proto.width_config.use_content, view
 
 
 def test_the_sheet_csv_sits_on_the_switch_row_not_on_its_own_line() -> None:
@@ -984,6 +1028,11 @@ def test_the_sheet_csv_sits_on_the_switch_row_not_on_its_own_line() -> None:
     keys = [getattr(child, "key", None) for child in _descendants(switch_row)]
     assert {RESULT_VIEW_KEY, DETAIL_MODE_KEY} <= set(keys)
     assert any(getattr(child, "label", None) == "시트 CSV" for child in _descendants(switch_row))
+    # 높이는 곁 전환 단추(28px)와 같다 — 시트를 보는 회차에만 줄이 높아져 아래 본문이 오르내리지
+    # 않게(설계 규칙 UI-CON-01 · UI-PRF-03).
+    assert SHEET_CSV_STYLE in [str(item.proto.body) for item in app.get("html")]
+    assert f".st-key-{GAP_SHEET_CSV_KEY} button" in SHEET_CSV_STYLE
+    assert "height: 28px;" in SHEET_CSV_STYLE
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception

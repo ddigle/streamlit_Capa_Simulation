@@ -248,6 +248,14 @@ CROSS_CHECK_MONTHS_HELP = (
     "설비 조회기간이 덮는 달로 좁혔습니다 — 시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 "
     "만들지 않았으면 맞댈 수 없습니다. 조회기간을 넓히면 늘어납니다."
 )
+# 「시트 CSV」 는 「조회 결과 · 표시」 전환 단추(28px)와 같은 높이다 — 기본 단추(35px)면 시트를 보는
+# 회차에만 줄이 7px 높아져 시트 ↔ 호기 목록 · 가용대수 비교를 오갈 때 아래 본문이 오르내린다(설계
+# 규칙 UI-CON-01 · UI-PRF-03, 공정 Capa 상세 표 도구 줄 CSV 와 같은 꼴). 앱 전체 회차에만 그리므로
+# 스타일만 든 `st.html` 이 이벤트 칸으로 가도 된다.
+SHEET_CSV_STYLE = (
+    f"<style>.st-key-{GAP_SHEET_CSV_KEY} button "
+    "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
+)
 CROSS_CHECK_MANUAL_HELP = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동을 그 달 가용에서 뺀 값입니다(필요 단축 일정과 "
     "같은 가용)."
@@ -522,16 +530,22 @@ def render_availability_gap_panel(
 
     # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
     # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다. 줄 끝은 두 전환의 뜻을 함께 말하는
-    # 풍선 하나(`_row_help` — 확보율 교차검증이면 맞대어 본 달도 그 풍선)이고, 시트를 보는 회차에는
-    # 그 오른쪽 끝에 「시트 CSV」 가 선다 — 단추 하나가 따로 한 줄을 차지하지 않는다(2026-11-09
-    # 사용자 보드 T2 · T3, 설계 규칙 UI-LAY-11 · UI-LAY-03).
+    # 풍선 하나(`row_help` — 확보율 교차검증이면 맞대어 본 달이 그 풍선 첫 단락)이고, 시트를 보는
+    # 회차에는 그 오른쪽 끝에 「시트 CSV」 가 선다 — 단추 하나가 따로 한 줄을 차지하지 않는다
+    # (2026-11-09 사용자 보드 T2 · T3, 설계 규칙 UI-LAY-11 · UI-LAY-03). 전환끼리는 넓게 띄우고,
+    # 풍선은 마지막 전환과 한 칸(작은 간격)이다 — Main 머리 줄의 줄 끝 풍선과 같은
+    # 간격(UI-CON-03).
     switches = st.container(horizontal=True, vertical_alignment="center", gap="large")
+    with switches:
+        result_group = _switch_group()
+    # 줄 끝 풍선이 설 칸 — 지금 줄의 마지막 전환이 든 칸.
+    last_group = [result_group]
 
     def row_help(text: str) -> None:
-        with switches:
+        with last_group[-1]:
             st.caption("", help=text, width="content")
 
-    with switches:
+    with result_group:
         result_view = st.segmented_control(
             "조회 결과",
             options=_RESULT_VIEWS,
@@ -663,6 +677,9 @@ def render_availability_gap_panel(
         return
 
     with switches:
+        detail_group = _switch_group()
+    last_group.append(detail_group)
+    with detail_group:
         # 라벨 줄을 걷는다 — 두 전환의 뜻은 줄 끝 풍선 하나다(라벨이 숨으면 위젯 풍선도 함께
         # 숨는다 — 1.63).
         detail_mode = st.segmented_control(
@@ -771,6 +788,11 @@ def _counterfactual(
     return source() if callable(source) else source
 
 
+def _switch_group() -> DeltaGenerator:
+    """전환 줄 안의 칸 하나 — 전환과 그 뒤 줄 끝 풍선이 작은 간격으로 붙는다."""
+    return st.container(horizontal=True, vertical_alignment="center", gap="small", width="content")
+
+
 def _key_digest(key: object) -> str:
     return hashlib.sha1(repr(key).encode("utf-8")).hexdigest()[:16]
 
@@ -796,7 +818,9 @@ def _has_manual(view: SheetView) -> bool:
 
 def render_sheet_csv(bundle: GapSheetBundle) -> None:
     """「시트 CSV」 단추 — 패널이 「조회 결과 · 표시」 줄 오른쪽 끝에 세운다(2026-11-09 사용자 보드
-    T3). 칸 누름과 상관없는 값이라 시트 프래그먼트 밖 앱 전체 회차에 그린다."""
+    T3). 칸 누름과 상관없는 값이라 시트 프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와
+    같다(`SHEET_CSV_STYLE`)."""
+    st.html(SHEET_CSV_STYLE)
     render_csv_download(
         data=_sheet_csv(bundle).encode("utf-8-sig"),
         file_name=f"Static_대비_일정_시트_{bundle.view.months[0]}_{bundle.view.months[-1]}.csv",
@@ -1700,15 +1724,17 @@ def _render_securement_cross_check(
 
 
 def _cross_check_help(months: Sequence[int]) -> str:
-    """확보율 교차검증의 「조회 결과」 줄 끝 풍선 — 두 전환의 뜻 + 맞대어 본 달(값)과 그 범위의 뜻
-    (2026-11-09 사용자 보드 T2 — 자리 줄 「맞대어 본 달: …」 을 표 제목 풍선으로)."""
+    """확보율 교차검증의 「조회 결과」 줄 끝 풍선 — 맞대어 본 달(값)과 그 범위의 뜻이 첫 단락, 두
+    전환의 뜻이 그다음이다. 사용자 보드 T2 는 「맞대어 본 달」 을 표 제목 풍선으로 옮기라 했으나 이
+    보기에는 표 제목이 없어(구획 제목은 안쪽 탭 이름과 같은 말이라 두지 않는다 — UI-TXT-07) 그 표
+    바로 위 줄 끝 풍선이 받는다 — 값이 설명에 묻히지 않게 맨 앞이다."""
     if not months:
         return RESULT_VIEW_HELP
     span = (
         f"맞대어 본 달: {month_label(months[0])} ~ {month_label(months[-1])} "
         f"({len(months)}개월) — {CROSS_CHECK_MONTHS_HELP}"
     )
-    return f"{RESULT_VIEW_HELP}\n\n{span}"
+    return f"{span}\n\n{RESULT_VIEW_HELP}"
 
 
 def _frame_loader(frame: pd.DataFrame) -> Callable[[], pd.DataFrame]:

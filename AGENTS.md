@@ -3961,8 +3961,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다.
   - 탭 머리에는 구획 제목 · 「확보율 교차검증」 제목을 두지 않고(안쪽 탭 이름 · 고른 전환 값과 같은 말 — UI-TXT-07) `조회 결과` ·
     `표시` 전환 단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고). 두 전환의 뜻은 그 줄 끝 빈 캡션 풍선 하나(`RESULT_VIEW_HELP` ·
-    `DETAIL_MODE_HELP`)이고, 확보율 교차검증이면 그 풍선이 「맞대어 본 달」 값 · 범위 설명(`_cross_check_help` — 자리 캡션 없음)도
-    싣는다(사용자 보드 T2). 「시트 CSV」 는 시트 프래그먼트 밖 그 줄 오른쪽 끝 칸(`render_sheet_csv`)이다(T3). 일정 미정 · 사용기준
+    `DETAIL_MODE_HELP`)이고 마지막 전환과 작은 간격의 한 칸이다(`_switch_group` — 전환끼리만 넓게, Main 머리 줄 풍선과 같은 간격).
+    확보율 교차검증이면 그 풍선 첫 단락이 「맞대어 본 달」 값 · 범위 설명이다(`_cross_check_help` — 자리 캡션 없음, 사용자 보드 T2 의
+    「표 제목 풍선」 — 이 보기에는 표 제목이 없어 바로 위 줄 끝 풍선이 받는다). 「시트 CSV」 는 시트 프래그먼트 밖 그 줄 오른쪽 끝
+    칸(`render_sheet_csv`)이고 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이 높아지지 않게)(T3). 일정 미정 · 사용기준
     밖은 Main 과 같은 상태 알림(`EQ-20` · `EQ-22` — `equipment_explorer.report_unit_notices`)이고, Static 값으로 채운 공정은 한쪽
     공정 알림 `EQ-06` 의 전문이 말한다(`CROSS_CHECK_FALLBACK_HELP`).
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드 — 맨 위 위아래 두 칸 `목표 확보율`·
