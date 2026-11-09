@@ -312,6 +312,7 @@ def test_standard_target_page_renders_weeknum_plotly_table() -> None:
     assert _same_row(
         app, "standard_target_output_metric", "open_standard_target_availability_paste"
     )
+    _assert_output_row_names_and_tools(app)
     assert not app.text_area
     app.button(key="open_standard_target_availability_paste").click().run()
     assert not app.exception
@@ -1346,3 +1347,56 @@ def _same_row(app: AppTest, first: str, second: str) -> bool:
     walk(app.main, ())
     row = found[first][:-1]
     return found[second][: len(row)] == row
+
+
+def _page_constant(name: str) -> str:
+    """표준 목표 페이지(가져올 수 없는 페이지 스크립트) 소스의 글자 상수 하나."""
+    import ast
+
+    page = Path(__file__).resolve().parents[1] / "app_pages" / "standard_target_capa.py"
+    tree = ast.parse(page.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and [
+            target.id for target in node.targets if isinstance(target, ast.Name)
+        ] == [name]:
+            value = ast.literal_eval(node.value)
+            assert isinstance(value, str)
+            return value
+    raise AssertionError(name)
+
+
+def _assert_output_row_names_and_tools(app: AppTest) -> None:
+    """「표시 항목」 줄 — 이름 줄은 숨겼고 접근성 이름은 남는다. 뜻은 같은 줄 글 없는 캡션의
+    풍선이고(그 캡션을 지우면 뜻이 화면 어디에도 남지 않는다 — 설계 규칙 UI-TXT-02), 그 캡션이
+    오른쪽 끝 작업 단추 칸을 줄지 않는 한 덩이로 미는 서식을 싣는다(좁은 창에서 단추 둘이 엇갈려
+    쌓이지 않게)."""
+    metric = app.segmented_control(key="standard_target_output_metric")
+    assert metric.label == "표시 항목"
+    assert metric.proto.label_visibility.value == metric.proto.label_visibility.COLLAPSED
+    found: dict[str, tuple[int, ...]] = {}
+
+    def walk(node: Any, path: tuple[int, ...]) -> None:
+        for index, child in getattr(node, "children", {}).items():
+            here = (*path, index)
+            if getattr(child, "key", None) == "standard_target_output_metric":
+                found["metric"] = here
+            if getattr(child, "type", "") == "caption" and child.proto.help:
+                found.setdefault(f"caption:{child.proto.help}", here)
+            walk(child, here)
+
+    walk(app.main, ())
+    help_text = _page_constant("OUTPUT_METRIC_HELP")
+    caption_path = found[f"caption:{help_text}"]
+    assert caption_path[:-1] == found["metric"][:-1], "풍선 캡션은 표시 항목과 같은 줄이다"
+    node: Any = app.main
+    for index in caption_path:
+        node = node.children[index]
+    body = str(node.proto.body)
+    assert ".st-key-standard_target_output_row > " in body
+    assert ":has(> .st-key-standard_target_action_row)" in body
+    assert "flex:0 0 auto;width:auto;margin-left:auto" in body
+    row: Any = app.main
+    for index in found["metric"][:-1]:
+        row = row.children[index]
+    keys = {getattr(child, "key", None) for child in row.children.values()}
+    assert "standard_target_action_row" in keys

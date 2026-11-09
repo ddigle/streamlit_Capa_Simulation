@@ -173,6 +173,17 @@ OUTPUT_METRIC_HELP = (
     "표시 항목 — 결과 상자에 볼 것입니다. 일 표준 가능량 · 대당 일 Capa · 가용대수는 주차 표, "
     "로직 분석은 한 건의 산출 근거입니다. 늘 하나가 골라져 있습니다."
 )
+# 결과 상자 맨 위 「표시 항목」 줄과 그 오른쪽 끝 작업 단추 칸. 단추 칸은 줄지 않는 한 덩이로
+# 줄 오른쪽 끝에 서고, 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려간다 — 좁은 창에서 단추
+# 둘이 전환 단추 위아래로 엇갈려 쌓이지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 서식은
+# 같은 줄 풍선 캡션 마크다운에 싣는다 — 스타일만 든 `st.html` 은 이벤트 칸으로 가 아래 팝업 호스트
+# 자리를 민다.
+OUTPUT_ROW_KEY = "standard_target_output_row"
+ACTION_ROW_KEY = "standard_target_action_row"
+ACTION_ROW_STYLE = (
+    f'<style>.st-key-{OUTPUT_ROW_KEY} > [data-testid="stLayoutWrapper"]'
+    f":has(> .st-key-{ACTION_ROW_KEY}){{flex:0 0 auto;width:auto;margin-left:auto}}</style>"
+)
 # 로직 분석 근거 표 높이 상한과 그 안에 다 드는 줄 수(머리 빼고). 그 안이면 내용 높이로 그려 표
 # 아래에 값 없는 빈 줄이 서지 않고, 넘으면 상한 높이에서 표 안이 스크롤한다.
 CONTRIBUTION_TABLE_MAX_HEIGHT_PX = 520
@@ -902,8 +913,11 @@ def _restore_public_process_default() -> None:
 weekly_output_container = st.container(border=True)
 with weekly_output_container:
     # 이름 줄 없이 단추 줄 하나다 — 이름 「표시 항목」 은 접근성 이름으로만 남고 뜻은 줄 끝 풍선이다
-    # (`label_visibility="collapsed"` 는 위젯 풍선도 숨기므로 빈 캡션의 풍선을 곁에 둔다).
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    # (`label_visibility="collapsed"` 는 위젯 풍선도 숨기므로 글 없는 캡션의 풍선을 곁에 둔다 — 그
+    # 캡션이 작업 단추 칸 서식 `ACTION_ROW_STYLE` 을 싣는다).
+    with st.container(
+        horizontal=True, vertical_alignment="center", gap="small", key=OUTPUT_ROW_KEY
+    ):
         # `required=True` — 고른 항목을 다시 눌러도 선택이 풀리지 않는다(Streamlit 1.63). 위의
         # 되돌림만으로는 다시 누른 뒤 한 회차 동안 선택이 모두 꺼져 보이고 앱이 한 번 더 돌았다.
         output_metric = st.segmented_control(
@@ -914,13 +928,16 @@ with weekly_output_container:
             required=True,
             label_visibility="collapsed",
         )
-        st.caption("", help=OUTPUT_METRIC_HELP, width="content")
+        st.caption(
+            ACTION_ROW_STYLE, help=OUTPUT_METRIC_HELP, width="content", unsafe_allow_html=True
+        )
         # 주차별 가용설비 입력 단추 — 줄 오른쪽 끝(아래에서 채운다).
         action_row = st.container(
             horizontal=True,
             horizontal_alignment="right",
             vertical_alignment="center",
             gap="small",
+            key=ACTION_ROW_KEY,
         )
     if output_metric is None:
         output_metric = DEFAULT_STANDARD_TARGET_OUTPUT_METRIC
