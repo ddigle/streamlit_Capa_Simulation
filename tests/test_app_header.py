@@ -1,5 +1,6 @@
 # Purpose: 상단 띠의 시나리오 두 줄·진행 막대 자리·껍데기 스타일과 사이드바 앱 정보 규칙을 고정한다.
 
+import ast
 import re
 from dataclasses import replace
 from datetime import datetime
@@ -12,9 +13,11 @@ from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import (
     _MEASURED_STATUS_SLOT_TEMPLATE,
     EMPTY_FORM_SLOT_SELECTOR,
+    EMPTY_SLOT_SELECTOR,
     PAGE_TABS_SELECTOR,
     PAGE_TITLE_SELECTOR,
     SHELL_STYLE,
+    SPACER_KEY_SUFFIX,
     STATUS_SLOT_SELECTOR,
     TOOLTIP_TEXT_SELECTOR,
     _header_css,
@@ -357,7 +360,8 @@ def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> 
     밑에 붙고 z-index 는 펼침 목록·팝업보다 낮다. 큰 제목은 `display: none` 이 아니라 sr-only 라
     읽기 도구에 남고, 인쇄에는 보인다(규칙이 `@media screen` 안이다). 셋째는 모달 동안 탭
     줄 흐림, 넷째는 풍선 글이 곁 칸의 마우스를 가로채지 않게 하는 규칙, 다섯째는 폼 안 알림이
-    없는 칸이 줄 사이 간격을 먹지 않게 하는 규칙(2026-11-09 사용자 검수 g17 · g18)."""
+    없는 칸과 본문의 빈 칸이 줄 사이 간격을 먹지 않게 하는 규칙(2026-11-09 사용자 검수 g17 · g18,
+    같은 날 상단 띠 재고 1-1)."""
     block = _screen_block()
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", block.split("{", 1)[1])
     assert {selector.strip() for selector, _ in rules} == {
@@ -366,10 +370,12 @@ def test_the_screen_block_hides_only_the_page_title_and_pins_the_tab_strip() -> 
         f"#root[inert] {PAGE_TABS_SELECTOR}",
         TOOLTIP_TEXT_SELECTOR,
         EMPTY_FORM_SLOT_SELECTOR,
+        EMPTY_SLOT_SELECTOR,
     }
     by_selector = {selector.strip(): body for selector, body in rules}
     assert by_selector[TOOLTIP_TEXT_SELECTOR].strip() == "pointer-events: none;"
     assert by_selector[EMPTY_FORM_SLOT_SELECTOR].strip() == "display: none;"
+    assert by_selector[EMPTY_SLOT_SELECTOR].strip() == "display: none;"
     strip = by_selector[PAGE_TABS_SELECTOR]
     assert "position: sticky;" in strip and "top: 3.75rem;" in strip
     z_index = re.search(r"z-index: (\d+);", strip)
@@ -815,6 +821,67 @@ def test_app_and_the_equipment_row_pass_the_session_label_mark() -> None:
     wired = "equipment_return=equipment_return_mark(remembered_equipment_label())"
     assert wired in app_source
     assert wired in row_source
+
+
+def test_an_empty_slot_in_the_page_body_takes_no_row_gap() -> None:
+    """본문의 빈 칸 — 세로 블록이 DOM 에서 빈 감싼 칸 — 은 본문 세로 간격을 먹지 않는다(2026-11-09
+    상단 띠 재고 1-1 「빈 틈」). 늘 서 있는 알림 칸 안에 빈 칸만 든 회차가 그렇다(1.63 은 자식
+    블록이 하나라도 있으면 그 블록을 그리고, 빈 자식 블록은 아무것도 그리지 않는다). 고르는 것은
+    본문(`stMain`) 안의 그 한 꼴뿐이다 — 사이드바 · 팝업은 제 규칙이고, 무엇이 든 칸(알림이 선
+    회차)은 고르지 않는다. 일부러 비워 높이를 준 띄움 칸(key 꼬리 `SPACER_KEY_SUFFIX`)도 고르지
+    않는다 — HOME 월 칸의 제목 띠 짝이 숨으면 월 칸 그림이 라벨 칸 행보다 띠 하나씩 위로 붙는다."""
+    assert EMPTY_SLOT_SELECTOR.startswith('[data-testid="stMain"] ')
+    assert EMPTY_SLOT_SELECTOR.endswith(
+        '[data-testid="stLayoutWrapper"]:has(> [data-testid="stVerticalBlock"]:empty'
+        f':not([class*="{SPACER_KEY_SUFFIX}"]))'
+    )
+    assert "," not in EMPTY_SLOT_SELECTOR
+
+
+def _container_calls(tree: ast.AST) -> list[tuple[ast.Call, bool]]:
+    """`st.container(...)` 부름과 그것이 문장 하나로 선 부름(안에 아무것도 넣지 않는 빈 칸)인지."""
+    standalone = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+    }
+    return [
+        (node, id(node) in standalone)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "container"
+    ]
+
+
+def test_a_spacer_with_a_height_is_named_so_the_empty_slot_rule_keeps_it() -> None:
+    """높이를 준 빈 칸(문장 하나로 선 `st.container(height=…)` — 안에 아무것도 넣지 않는다)은 key 를
+    `SPACER_KEY_SUFFIX` 로 끝낸다. 본문 빈 칸 규칙(`EMPTY_SLOT_SELECTOR`)은 그 꼬리를 단 세로 블록을
+    고르지 않는다 — 꼬리가 없으면 띄움이 숨어 그 아래 행이 어긋난다(HOME 월 칸 제목 띠 짝 셋)."""
+    root = Path(__file__).resolve().parents[1]
+    files = [root / "app.py", *sorted((root / "app_pages").rglob("*.py"))]
+    files += sorted((root / "src" / "capa_simulation").rglob("*.py"))
+    spacers: list[str] = []
+    wrong: list[str] = []
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for call, standalone in _container_calls(tree):
+            keywords = {item.arg: item.value for item in call.keywords}
+            if not standalone or "height" not in keywords:
+                continue
+            key = keywords.get("key")
+            name = key.value if isinstance(key, ast.Constant) else None
+            where = f"{path.relative_to(root)}:{call.lineno}"
+            if isinstance(name, str) and name.endswith(SPACER_KEY_SUFFIX):
+                spacers.append(name)
+            else:
+                wrong.append(where)
+    assert not wrong, wrong
+    assert {
+        "plan_detail_title_spacer",
+        "key_process_title_spacer",
+        "bottleneck_title_spacer",
+    } <= set(spacers)
 
 
 def test_an_empty_slot_in_a_form_takes_no_row_gap() -> None:

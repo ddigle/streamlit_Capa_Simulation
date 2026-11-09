@@ -8,20 +8,24 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, data_error_texts, states
+from alert_marks import active_state, data_error_texts, note_table, states, table_frame
 from sheet_reader import has_sheet, open_cell, sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.availability_gap_panel import (
     CROSS_CHECK_FALLBACK_HELP,
+    CROSS_CHECK_MONTHS_HELP,
     DETAIL_CATEGORY_KEY,
     DETAIL_MODE_HELP,
     DETAIL_MODE_KEY,
     GAP_SIGN_HELP,
     PROCESS_FILTER_KEY,
+    RESULT_VIEW_HELP,
     RESULT_VIEW_KEY,
+    SHEET_CSV_STYLE,
     UNIT_LIST_HELP,
 )
+from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CSV_KEY
 from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, render_csv_download
 from capa_simulation.services.availability_sheet import (
     BREAKDOWN_LENT_COLUMN,
@@ -554,8 +558,13 @@ def test_unmatched_processes_stay_out_of_totals_and_fallback_rows() -> None:
 
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
-    captions = [item for item in app.caption if "Static 값으로 채운 공정 1개" in item.value]
-    assert len(captions) == 1 and captions[0].proto.help == CROSS_CHECK_FALLBACK_HELP
+    # Static 값으로 채운 공정은 자리 줄이 아니라 한쪽 공정 알림(`EQ-06`)의 전문이 말한다(2026-11-09
+    # 상단 띠 재고 — 같은 알림이 있어 자리만 걷음).
+    assert not any("Static 값으로 채운" in item.value for item in app.caption)
+    unmatched = active_state(app, "EQ-06")
+    assert unmatched is not None
+    assert "Static 값으로 채워 비교 표에서 뺍니다" in str(unmatched["full"])
+    assert CROSS_CHECK_FALLBACK_HELP in str(unmatched["full"])
     # 기준정보에 없는 공정 수는 위 알림이 말한다 — 「위 경고를 봅니다」 길 안내 캡션은 없다.
     assert not any("위 경고" in item.value for item in app.caption)
     assert "Probe" in _alerts(app)
@@ -641,10 +650,12 @@ def test_period_notices_do_not_direct_users_to_the_old_preference_tab() -> None:
     app = _run(short_span=True)
     assert "Cut-off 때문에" in _alerts(app)
     _select_view(app, "확보율 교차검증")
-    # 「맞대어 본 달」 의 범위 설명은 그 줄의 풍선이다(자리에는 값만).
+    # 「맞대어 본 달」 은 자리에 줄을 세우지 않고 「조회 결과」 줄 끝 풍선이 값과 범위 설명을 함께
+    # 말한다(2026-11-09 사용자 보드 T2 — 표 제목 풍선).
     helps = " ".join(str(item.proto.help) for item in app.caption)
     notices = " ".join(item.value for item in [*app.caption, *app.warning]) + _alerts(app)
     assert "조회기간을 넓히면" in helps
+    assert not any("맞대어 본 달" in item.value for item in app.caption)
     assert "Preference" not in notices
 
 
@@ -672,8 +683,9 @@ def test_the_unit_list_shows_every_contribution_behind_the_counts() -> None:
     assert app.segmented_control(key=DETAIL_MODE_KEY).value == "시트"
     available = _value(app, ROW_SCHEDULE_AVAILABLE)
     # 사용법 글(「상태별 대수는 호기 목록으로」 · 「칸을 누르면 …」)은 자리에 늘 두지 않는다 —
-    # `표시` 풍선과 칸 풍선 · Guide 가 말한다.
-    assert app.segmented_control(key=DETAIL_MODE_KEY).help == DETAIL_MODE_HELP
+    # 칸 풍선 · Guide 가 말한다. `표시` 는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고).
+    detail = app.segmented_control(key=DETAIL_MODE_KEY)
+    assert detail.proto.label_visibility.value == detail.proto.label_visibility.COLLAPSED
     sheet_captions = " ".join(item.value for item in app.caption)
     assert "상태별 대수" not in sheet_captions and "칸을 누르면 그 달" not in sheet_captions
 
@@ -858,7 +870,7 @@ def test_the_cross_check_leaves_out_a_process_missing_from_the_reference() -> No
     _select_view(app, "확보율 교차검증")
     assert set(app.dataframe[0].value["공정"]) == {"Die Attach", "Etch"}
     captions = " ".join(item.value for item in app.caption)
-    assert "실제로 비교한 공정 2개" in captions
+    assert "실제로 비교한 공정" not in captions
     # 기준정보에 없는 공정의 수 · 이름은 상태 알림(`EQ-06`)만 말한다 — 자리 캡션은 없다.
     assert "기준정보에 없는 공정 1개" in _alerts(app)
     assert "기준정보(Static)에 없는 공정" not in captions
@@ -881,52 +893,161 @@ def _undated_captions(app: AppTest) -> list[str]:
     return [caption.value for caption in app.caption if "일정 미정" in caption.value]
 
 
-def test_undated_units_are_named_in_the_scope_the_counts_use() -> None:
-    """날짜가 빈 신규 호기는 Dynamic 에 들지 않는다 — 둘러싼 대수와 같은 범위로 한 줄 알린다."""
+def test_undated_units_are_a_state_alert_in_every_view() -> None:
+    """날짜가 빈 신규 호기는 Dynamic 에 들지 않는다 — 자리 줄이 아니라 Main 과 같은 상태 알림
+    (`EQ-20`)이다(2026-11-09 상단 띠 재고). 설비 마스터 전체를 세어 공정 · 조회 결과 고르기에 지문이
+    기대지 않는다."""
     app = _run(undated_units=True)
 
-    # 자리에는 표지만, 뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04).
-    assert _undated_captions(app) == [
-        ":material/event_busy: 일정 미정 2대 (반입 미정 1 · Qual 미정 1)"
-    ]
-    (line,) = [item for item in app.caption if "일정 미정" in item.value]
-    assert line.proto.help == UNDATED_HELP
+    assert _undated_captions(app) == []
+    note = active_state(app, "EQ-20")
+    assert note is not None
+    assert str(note["short"]).startswith("일정 미정 2대 (반입 미정 1 · Qual 미정 1)")
+    assert UNDATED_HELP in str(note["full"])
+    fingerprint = note["fp"]
 
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
-    assert [text.split(" — ")[0] for text in _undated_captions(app)] == [
-        ":material/event_busy: 일정 미정 1대 (반입 미정 1)"
-    ]
-
     for view in ("분류별 내역", "확보율 교차검증"):
         _select_view(app, view)
-        assert len(_undated_captions(app)) == 1, view
+        assert _undated_captions(app) == [], view
+        again = active_state(app, "EQ-20")
+        assert again is not None and again["fp"] == fingerprint, view
 
 
 def _usage_captions(app: AppTest) -> list[str]:
     return [caption.value for caption in app.caption if "사용기준 HBM" in caption.value]
 
 
-def test_non_hbm_units_are_named_in_every_view_in_the_scope_the_counts_use() -> None:
-    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠진다 — 세 결과 모두 같은 범위로 한 줄
-    알린다."""
-    assert _usage_captions(_run(undated_units=True)) == []
+def test_non_hbm_units_are_a_state_alert_in_every_view() -> None:
+    """사용기준이 HBM·EDP 가 아닌 호기는 가용대수에서 빠진다 — 자리 줄이 아니라 Main 과 같은 상태
+    알림(`EQ-22`)이다(2026-11-09 상단 띠 재고)."""
+    plain = _run(undated_units=True)
+    assert active_state(plain, "EQ-22") is None and states(plain, "EQ-22")
     app = _run(undated_units=True, non_hbm_units=True)
 
-    assert _usage_captions(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 2대 제외"]
-    (line,) = [item for item in app.caption if "사용기준 HBM" in item.value]
-    assert line.proto.help == (
-        "사용기준이 HBM·EDP 가 아닌 호기(설비 마스터 기준)는 가용대수에서 뺐습니다 — 배치·호기 "
-        "목록에는 그대로 있습니다."
-    )
+    assert _usage_captions(app) == []
+    note = active_state(app, "EQ-22")
+    assert note is not None
+    assert str(note["short"]).startswith("사용기준 HBM·EDP 밖 2대 제외")
+    assert len(table_frame(note_table(note, "사용기준 밖 호기"))) == 2
     app.selectbox(key=PROCESS_FILTER_KEY).set_value("Die Attach").run()
-    assert _usage_captions(app) == [":material/filter_alt_off: 사용기준 HBM·EDP 밖 1대 제외"]
     for view in ("분류별 내역", "확보율 교차검증"):
         _select_view(app, view)
-        assert len(_usage_captions(app)) == 1, view
+        assert _usage_captions(app) == [], view
+        assert active_state(app, "EQ-22") is not None, view
 
 
 def test_no_undated_line_without_undated_units() -> None:
-    assert _undated_captions(_run()) == []
+    app = _run()
+    assert _undated_captions(app) == []
+    assert active_state(app, "EQ-20") is None
+
+
+def test_the_panel_head_has_no_section_title_or_label_rows() -> None:
+    """탭 머리의 구획 제목(「Static · 설비 일정 기준 가용대수 비교」 — 안쪽 탭 이름과 같은 말)과
+    「확보율 교차검증」 제목(고른 전환 값과 같은 말)은 두지 않고, 「조회 결과」 · 「표시」 전환
+    단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고 — 설계 규칙 UI-TXT-07)."""
+    app = _run()
+    result = app.segmented_control(key=RESULT_VIEW_KEY)
+    assert result.proto.label_visibility.value == result.proto.label_visibility.COLLAPSED
+    heads = " ".join(item.value for item in app.markdown)
+    assert "Static · 설비 일정 기준 가용대수 비교" not in heads
+    # 두 전환의 뜻은 줄 끝 빈 캡션의 풍선 하나다(라벨이 숨으면 위젯 풍선도 숨는다 — 1.63).
+    assert _row_helps(app) == [RESULT_VIEW_HELP]
+    _select_view(app, "분류별 내역")
+    assert _row_helps(app) == [f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}"]
+    _select_view(app, "확보율 교차검증")
+    assert not any("확보율 교차검증" in item.value for item in app.markdown)
+    # 확보율 교차검증에는 표 제목이 없어 「맞대어 본 달」 이 줄 끝 풍선의 첫 단락이다(사용자 보드
+    # T2 — 표 제목 풍선, 값이 설명에 묻히지 않게 맨 앞).
+    (cross,) = _row_helps(app)
+    assert cross.startswith("맞대어 본 달: ")
+    assert cross.endswith(f"{CROSS_CHECK_MONTHS_HELP}\n\n{RESULT_VIEW_HELP}")
+
+
+def _row_helps(app: AppTest) -> list[str]:
+    """전환 줄 끝 빈 캡션의 풍선들."""
+    return [str(item.proto.help) for item in app.caption if item.value == ""]
+
+
+def _help_group(app: AppTest) -> Any:
+    """줄 끝 풍선(빈 캡션)이 든 칸."""
+    from streamlit.testing.v1.element_tree import Block
+
+    found = []
+
+    def walk(node: Any) -> None:
+        for child in node.children.values():
+            if isinstance(child, Block):
+                if any(
+                    type(item).__name__ == "Caption" and getattr(item, "value", None) == ""
+                    for item in child.children.values()
+                ):
+                    found.append(child)
+                walk(child)
+
+    walk(app.main)
+    (group,) = found
+    return group
+
+
+def test_the_row_help_shares_a_small_gap_cell_with_the_last_switch() -> None:
+    """줄 끝 풍선은 마지막 전환과 작은 간격의 한 칸이다 — 전환끼리는 넓게 띄워도 풍선이 따로 떠
+    보이지 않게 Main 머리 줄의 줄 끝 풍선과 같은 간격이다(설계 규칙 UI-CON-03)."""
+    from streamlit.proto.GapSize_pb2 import GapSize
+
+    app = _run()
+    for view, last in (
+        ("가용대수 비교", RESULT_VIEW_KEY),
+        ("분류별 내역", DETAIL_MODE_KEY),
+        ("확보율 교차검증", RESULT_VIEW_KEY),
+    ):
+        _select_view(app, view)
+        group = _help_group(app)
+        keys = [getattr(child, "key", None) for child in group.children.values()]
+        assert keys[0] == last, view
+        assert group.proto.flex_container.gap_config.gap_size == GapSize.SMALL, view
+        assert group.proto.width_config.use_content, view
+
+
+def test_the_sheet_csv_sits_on_the_switch_row_not_on_its_own_line() -> None:
+    """「시트 CSV」 는 「조회 결과 · 표시」 전환 줄 오른쪽 끝이다 — 시트 위에 단추 하나가 따로 한
+    줄을 차지하지 않는다(2026-11-09 사용자 보드 T3). 호기 목록에는 시트 CSV 가 없다(목록 아래 CSV
+    하나)."""
+    from streamlit.testing.v1.element_tree import Block
+
+    app = _run()
+    _select_view(app, "분류별 내역")
+    assert [button.label for button in app.download_button] == ["시트 CSV"]
+    (switch_row,) = [
+        block
+        for block in app.main.children.values()
+        if isinstance(block, Block)
+        and any(getattr(child, "key", None) == RESULT_VIEW_KEY for child in _descendants(block))
+    ]
+    keys = [getattr(child, "key", None) for child in _descendants(switch_row)]
+    assert {RESULT_VIEW_KEY, DETAIL_MODE_KEY} <= set(keys)
+    assert any(getattr(child, "label", None) == "시트 CSV" for child in _descendants(switch_row))
+    # 높이는 곁 전환 단추(28px)와 같다 — 시트를 보는 회차에만 줄이 높아져 아래 본문이 오르내리지
+    # 않게(설계 규칙 UI-CON-01 · UI-PRF-03).
+    assert SHEET_CSV_STYLE in [str(item.proto.body) for item in app.get("html")]
+    assert f".st-key-{GAP_SHEET_CSV_KEY} button" in SHEET_CSV_STYLE
+    assert "height: 28px;" in SHEET_CSV_STYLE
+
+    app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
+    assert not app.exception
+    assert [button.label for button in app.download_button] == [CSV_DOWNLOAD_LABEL]
+
+
+def _descendants(node: Any) -> list[Any]:
+    from streamlit.testing.v1.element_tree import Block
+
+    out: list[Any] = []
+    for child in node.children.values():
+        out.append(child)
+        if isinstance(child, Block):
+            out.extend(_descendants(child))
+    return out
 
 
 # ------------------------------------------------------------------ 공정 표시명(Proc Rename)

@@ -50,6 +50,7 @@ from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
+    note_placeholder,
     ready_note_field,
 )
 from capa_simulation.components.state_alerts import AlertScope
@@ -1070,10 +1071,13 @@ def render_threshold_editor(
                     help=SHARED_SAVE_HELP,
                 )
                 ready_note_field(THRESHOLD_NOTE_KEY, submitted=submitted, start=submitted_base)
+                # 이름 줄 없이 칸 안 안내 글이 이름을 말한다(`note_placeholder` — 2026-11-09 상단 띠
+                # 재고 · 사용자 지시, 설계 규칙 UI-CON-03 · UI-TXT-01 예외).
                 note = st.text_input(
                     "변경 메모",
-                    placeholder="예: 27년 이후 확보 기준 120% 적용",
+                    placeholder=note_placeholder("27년 이후 확보 기준 120% 적용"),
                     key=THRESHOLD_NOTE_KEY,
+                    label_visibility="collapsed",
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
             # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않아 폼 줄 사이를 한 번 더
@@ -1509,7 +1513,7 @@ _ADVANCE_LOAD_EDITOR = _MonthlyAmountEditor(
     form_key="home_advance_load_form",
     save_label="선행 B/O 저장",
     note_key=ADVANCE_NOTE_KEY,
-    placeholder="예: 26.07 선행 B/O 재공 반영",
+    placeholder=note_placeholder("26.07 선행 B/O 재공 반영"),
     flash_key="home_advance_flash",
     editor_key=ADVANCE_EDITOR_KEY,
     row_label=ADVANCE_LOAD_ROW_LABEL,
@@ -1525,7 +1529,7 @@ _ADVANCE_SHIPMENT_EDITOR = _MonthlyAmountEditor(
     form_key="home_advance_shipment_form",
     save_label="선행 입고 저장",
     note_key=ADVANCE_SHIPMENT_NOTE_KEY,
-    placeholder="예: 26.03 선행 입고 실적 반영",
+    placeholder=note_placeholder("26.03 선행 입고 실적 반영"),
     flash_key=ADVANCE_SHIPMENT_FLASH_KEY,
     editor_key=ADVANCE_SHIPMENT_EDITOR_KEY,
     row_label=ADVANCE_SHIPMENT_ROW_LABEL,
@@ -1695,6 +1699,7 @@ def _render_monthly_amount_editor(
                     "변경 메모",
                     placeholder=editor.placeholder,
                     key=editor.note_key,
+                    label_visibility="collapsed",
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다(`render_flash` 가 돌려준 칸
             # 하나 — 폼 안 빈 칸은 간격을 먹지 않는다, `app_header.EMPTY_FORM_SLOT_SELECTOR`).
@@ -2754,8 +2759,9 @@ def _render_execution_editor(
                 ready_note_field(EXECUTION_NOTE_KEY, submitted=submitted, start=submitted_base)
                 note = st.text_input(
                     "변경 메모",
-                    placeholder="예: 26.07 Wafer Mount 비가동 3대",
+                    placeholder=note_placeholder("26.07 Wafer Mount 비가동 3대"),
                     key=EXECUTION_NOTE_KEY,
+                    label_visibility="collapsed",
                 )
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다. 거부 글도 그 알림 칸 안에 쓴다 —
             # 칸을 한 겹 더 싸면 알림이 없는 회차에 바깥 칸이 비지 않는다(폼 안 빈 칸은 간격을 먹지

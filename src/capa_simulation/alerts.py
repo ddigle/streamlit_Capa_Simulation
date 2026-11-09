@@ -326,6 +326,18 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "CS-04", "check", "state", "제약 시뮬레이션 — 첫날이 지난 개조 · 신규 대기(제때 시작한 값)"
     ),
+    # 가용설비 현황 Summary 숫자 곁 조건 — 자리에 표지 줄을 세우지 않는 상태 알림(페이지 상단
+    # 문구 최소화 — 2026-11-09 상단 띠 재고, 설계 규칙 UI-TXT-04 · UI-NTF-02). Main · Static 대비
+    # 일정이 같은 코드 · 범위다.
+    AlertSpec(
+        "EQ-20", "check", "state", "가용설비 Summary — 반입 · Qual 일정이 빈 호기(일정 미정)"
+    ),
+    AlertSpec("EQ-21", "check", "state", "가용설비 Main — 일정이 지났는데 실적이 빈 호기(미확인)"),
+    AlertSpec("EQ-22", "info", "state", "가용설비 Summary — 사용기준이 HBM · EDP 밖이라 뺀 호기"),
+    AlertSpec("EQ-23", "info", "state", "Static 대비 일정 — 입력 비가동을 일정기준 가용에서 뺌"),
+    # Space 「필요 단축」 보기 — 「도면에서 보기」 로 온 공정이 공용 공정 거름에 걸려 그 단축 호기가
+    # 도면에 서지 않음. 도면 위 표지 줄 대신 도착한 회차에 한 번 뜬다(2026-11-09 사용자 보드 T10).
+    AlertSpec("EQ-24", "info", "event", "Space — 「도면에서 보기」 로 온 공정이 공정 필터 밖"),
 )
 
 

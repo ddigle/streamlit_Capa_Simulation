@@ -291,11 +291,11 @@ def _block_with_key(node: Any, key: str) -> Any:
 
 
 def test_the_view_settings_row_carries_no_empty_gaps(tmp_path: Path) -> None:
-    """「표 보기 설정」 위아래 빈 틈을 줄인다(2026-11-09 사용자 검수 g17 「표 보기 설정 위아래로
-    여백이 뜨는데 공간 최적화해」). 위 — 저장 줄 아래 알림 칸은 칸 하나라 알림이 없으면 비고, 폼 안
-    빈 칸은 줄 사이 간격을 먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR`, 28 → 14px). 칸을 한 겹
-    더 싸면 바깥 칸이 비지 않아 간격이 남는다. 아래 — 표 도구 막대 띄움과 표는 간격 없는 칸 하나다
-    (52 → 38px — 막대 37px 위)."""
+    """보기 설정은 접힘 줄이 아니라 제출 줄 끝 「표 보기 ▾」 팝오버다(2026-11-09 사용자 보드 T5 —
+    설비 마스터 작은 편집표와 같은 꼴, 앞서 g17 「표 보기 설정 위아래로 여백이 뜨는데 공간
+    최적화해」). 저장 줄 아래 알림 칸은 칸 하나라 알림이 없으면 비고, 폼 안 빈 칸은 줄 사이 간격을
+    먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR`). 표 도구 막대 띄움과 표는 간격 없는 칸
+    하나다(저장 줄 → 표 38px — 막대 37px 위)."""
     from streamlit.proto.GapSize_pb2 import GapSize
 
     app = AppTest.from_function(
@@ -306,12 +306,18 @@ def test_the_view_settings_row_carries_no_empty_gaps(tmp_path: Path) -> None:
     form = _block_with_key(app.main, "equipment_cutoff_form_v1")
     assert form is not None
     rows = list(form.children.values())
-    # 저장 줄 → 알림 칸(빈 칸 하나) → 표 보기 설정 → 띄움 + 표.
+    # 저장 줄(끝에 「표 보기」 팝오버 — 안에 「보기 적용」) → 알림 칸(빈 칸 하나) → 띄움 + 표.
     assert getattr(rows[0], "key", None) == "equipment_cutoff_submit_row_v1"
+    (popover,) = [
+        child for child in rows[0].children.values() if getattr(child, "type", None) == "popover"
+    ]
+    assert str(popover.proto.id).endswith("-equipment_cutoff_view_v1_view_popover")
+    assert popover.proto.popover.label == "표 보기"
+    assert [button.label for button in popover.button] == ["보기 적용"]
     slot = rows[1]
     assert type(slot).__name__ == "Block" and not slot.children
-    assert getattr(rows[2], "key", None) == "equipment_cutoff_view_v1_view_expander"
-    table_box = rows[3]
+    assert len(rows) == 3
+    table_box = rows[2]
     assert table_box.proto.flex_container.gap_config.gap_size == GapSize.Value("NONE")
     inner = list(table_box.children.values())
     assert len(inner) == 2 and inner[0].type == "space"
@@ -914,7 +920,7 @@ render_cutoff_management(
 def test_changing_the_view_keeps_a_typed_cell_and_the_view_apply_brings_both(
     tmp_path: Path,
 ) -> None:
-    """칸을 친 채 「표 보기 설정」 의 공정 필터 · 볼 컬럼을 바꾸면 회차가 돌며 표를 새로 세워 친
+    """칸을 친 채 「표 보기」 의 공정 필터 · 볼 컬럼을 바꾸면 회차가 돌며 표를 새로 세워 친
     칸이 말없이 사라졌다(AVI 44.5 → 20.8, 저장 「바뀐 것이 없습니다」 — X1). 보기 설정은 폼 안이라
     바꾸기만 해서는 회차가 돌지 않고, 「보기 적용」 이 친 칸과 새 보기를 함께 가져간다 — 친 칸은
     앞 보기의 행 자리로 읽힌다."""

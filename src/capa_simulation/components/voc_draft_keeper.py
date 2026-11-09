@@ -215,8 +215,9 @@ def restored_alert() -> dict[str, str]:
 
 
 def render_voc_draft_keeper(*, title_key: str, body_key: str, generation: int) -> None:
-    """새 글 폼의 초안 보관 — 폼 **뒤**(폼 알림 칸 안)에서 부른다. `title_key`·`body_key` 는 두 칸의
-    위젯 key, `generation` 은 지금 폼 세대(`voc.POST_FORM_GENERATION_KEY`)다."""
+    """새 글 폼의 초안 보관 — 폼 **바로 뒤**(폼과 간격 없는 한 칸)에서 부른다. `title_key`·
+    `body_key` 는 두 칸의 위젯 key, `generation` 은 지금 폼
+    세대(`voc.POST_FORM_GENERATION_KEY`)다."""
     _DRAFT_KEEPER(
         key="voc_draft_keeper",
         data={

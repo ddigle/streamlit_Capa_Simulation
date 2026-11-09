@@ -1,4 +1,4 @@
-# Purpose: 상단 띠에 적용 시나리오 · 진행 막대 자리를 싣고 메뉴 감춤·빈 폼 칸·인쇄 규칙을 보낸다.
+# Purpose: 상단 띠에 적용 시나리오 · 진행 막대 자리를 싣고 메뉴 감춤·빈 칸·인쇄 규칙을 보낸다.
 
 """The scenario this session is looking at, pinned to the top bar.
 
@@ -157,7 +157,7 @@ PAGE_TABS_SELECTOR = f".st-key-{PAGE_TABS_COMPONENT_KEY}"
 # 폼 안의 알림이 없는 칸 — 세로 블록이 비었거나(알림 칸 `flash.render_flash` 의 보통 회차), 팝업
 # 안에서 숨은 알림 표지(`alerts.hidden_marker`) 하나만 든 칸(저장 뒤 회차). 높이는 0 인데 폼 줄
 # 사이 간격을 한 번 더 먹어 저장 줄 아래가 한 칸 넓었다(2026-11-09 사용자 검수 g17 「표 보기 설정
-# 위아래로 여백」 · g18 「중간중간 … 여백」 — Cut-off 저장 줄 → 표 보기 설정 28 → 14px). 칸은 세워
+# 위아래로 여백」 · g18 「중간중간 … 여백」 — HOME 설정 저장 단추 → 입력 칸 28 → 14px). 칸은 세워
 # 두되(뒤 형제의 순번이 알림 유무로 밀리지 않게) 그리지 않는다 — 안에 무엇이 서면 다시 선다. 숨은
 # 표지 칸도 고르는 것은 저장 뒤 한 회차만 간격이 생겼다 사라져 아래 칸이 위아래로 튀지 않게 하려는
 # 것이다(설계 규칙 UI-PRF-03). 알림 칸 JS 는 표지를 `querySelectorAll` 로 훑어 감춘 칸도 읽는다.
@@ -168,6 +168,28 @@ EMPTY_FORM_SLOT_SELECTOR = (
     '[data-testid="stForm"] [data-testid="stLayoutWrapper"]'
     ':has(> [data-testid="stVerticalBlock"] > [data-testid="stElementContainer"]:only-child'
     f' > [data-testid="stHtml"] > [{MARKER_ATTRIBUTE}]:only-child)'
+)
+# 본문의 빈 칸 — 세로 블록이 빈 감싼 칸. 늘 서 있는 알림 칸(`flash.render_flash`) · 자리 칸 안에 빈
+# 칸만 든 회차가 그렇다: Streamlit 1.63 은 자식 블록이 하나라도 있으면 그 블록을 「비지 않음」 으로
+# 그리고(비었는지를 자식 수로만 본다), 빈 자식 블록은 아무것도 그리지 않아 세로 블록이 DOM 에서 빈
+# 채 감싼 칸만 높이 0 으로 남아 본문 세로 간격(14px)을 한 번 더 먹었다 — 가용설비 · Space · 필요
+# 단축 일정 머리 알림 칸, Space 잠금 줄 칸, 시나리오 관리 설비 시나리오 · 자동 갱신 알림 칸, Space
+# 층 목록 알림 칸(2026-11-09 상단 띠 재고 1-1 「빈 틈」 — 페이지 상단 여백 최소화). 칸은 세워
+# 두되(뒤 형제의 순번이 알림 유무로 밀리지 않게) 그리지 않는다 — 안에 무엇이 서면 세로 블록이 비지
+# 않아 다시 선다. 폼 안 칸(`EMPTY_FORM_SLOT_SELECTOR`)과 같은 첫 꼴을 본문 전체에 건다. 스타일만 든
+# `st.html` 은 칸 안에서 불러도 이벤트 칸에 서므로(1.63 확인) 칸을 비지 않게 하지 않는다. `:has()`
+# 는 자식 한 겹만 본다.
+#
+# **일부러 비워 높이를 준 띄움 칸은 고르지 않는다** — key 가 `SPACER_KEY_SUFFIX` 로 끝나는 칸이다.
+# `st.container(height=…)` 는 자식이 없어도 그려지지만(1.63 `allow_empty`) DOM 의 세로 블록은
+# 똑같이 비어(`:empty`) 이 규칙에 걸린다. HOME 월 칸의 제목 띠 짝(`home_rendering` 의
+# `…_title_spacer` 셋)이 숨으면 그 아래 월 칸 그림이 라벨 칸 행보다 띠 하나씩 위로 올라붙는다.
+# 1.63 은 key 클래스(`st-key-<key>`)를 그 세로 블록에 단다. 높이를 준 빈 칸을 새로 두면 key 를 이
+# 꼬리로 끝낸다(`tests/test_app_header.py` 가 화면 코드를 훑어 본다).
+SPACER_KEY_SUFFIX = "_spacer"
+EMPTY_SLOT_SELECTOR = (
+    '[data-testid="stMain"] [data-testid="stLayoutWrapper"]'
+    f':has(> [data-testid="stVerticalBlock"]:empty:not([class*="{SPACER_KEY_SUFFIX}"]))'
 )
 
 # 부트스트랩 앞에서 보내는 껍데기 스타일. 색을 쓰지 않아 테마와 무관한 고정 문자열이다.
@@ -238,7 +260,8 @@ EMPTY_FORM_SLOT_SELECTOR = (
 #   풍선은 `body` 끝에 붙어 어느 칸의 것인지 서식으로 고를 수 없어 앱 전체에 건다. 풍선 안에 누를
 #   링크는 없다.
 # - 폼 안의 알림이 없는 칸은 줄 사이 간격을 먹지 않는다(`EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09
-#   사용자 검수 g17 · g18). 인쇄에는 높이 0 칸이라 걸 까닭이 없다.
+#   사용자 검수 g17 · g18). 본문의 빈 칸도 같다(`EMPTY_SLOT_SELECTOR` — 같은 날 상단 띠 재고 1-1).
+#   인쇄에는 높이 0 칸이라 걸 까닭이 없다.
 SHELL_STYLE = (
     """<style>
 [data-testid="stMainMenu"],
@@ -277,6 +300,9 @@ SHELL_STYLE = (
   __EMPTY_FORM_SLOT__ {
     display: none;
   }
+  __EMPTY_SLOT__ {
+    display: none;
+  }
 }
 @media print {
   @page { margin: 10mm; } [data-testid="stSidebar"], [data-testid="stHeader"], __STATUS_SLOT__,
@@ -299,6 +325,7 @@ SHELL_STYLE = (
 }
 </style>""".replace("__STATUS_SLOT__", STATUS_SLOT_SELECTOR)
     .replace("__EMPTY_FORM_SLOT__", EMPTY_FORM_SLOT_SELECTOR)
+    .replace("__EMPTY_SLOT__", EMPTY_SLOT_SELECTOR)
     .replace("__PRINT_BUTTON__", PRINT_BUTTON_ID)
     .replace("__PAGE_TABS__", PAGE_TABS_SELECTOR)
     .replace("__PAGE_TITLE__", PAGE_TITLE_SELECTOR)

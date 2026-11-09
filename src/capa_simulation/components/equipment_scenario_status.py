@@ -61,6 +61,7 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
+from capa_simulation.components.saved_note import note_placeholder
 from capa_simulation.components.scenario_management_tabs import EQUIPMENT_SCENARIO_TAB_NAME
 from capa_simulation.components.space_floor_list import (
     discard_floor_state_draft,
@@ -750,7 +751,12 @@ def _render_save(database_path: str, session: EquipmentSession) -> None:
         render_load_latest_button(
             database_path, session, key=LOAD_LATEST_BUTTON_KEY, in_dialog=True
         )
-    note = st.text_input("변경 메모", key=save_note_key(), placeholder="예: 셋업 실무 일정 반영")
+    note = st.text_input(
+        "변경 메모",
+        key=save_note_key(),
+        placeholder=note_placeholder("셋업 실무 일정 반영"),
+        label_visibility="collapsed",
+    )
     saved_by = render_saved_by_field(SAVE_FIELDS_PREFIX)
     clicked = st.button(
         "설비 데이터 저장",

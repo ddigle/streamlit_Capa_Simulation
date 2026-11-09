@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import active_state, data_error_texts, events, place_errors, states
+from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Expander, Multiselect, Status
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -705,6 +706,25 @@ def test_the_preference_tab_lists_the_saved_processes_by_the_period_months(
     clear_equipment_repository()
 
 
+def _blocks(node: Any) -> list[Any]:
+    from streamlit.testing.v1.element_tree import Block
+
+    out: list[Any] = []
+    for child in getattr(node, "children", {}).values():
+        if isinstance(child, Block):
+            out.append(child)
+            out.extend(_blocks(child))
+    return out
+
+
+def _view_popovers(app: AppTest) -> list[Any]:
+    return [
+        block
+        for block in _blocks(app.main)
+        if getattr(block, "type", None) == "popover" and "_view_popover" in str(block.proto.id)
+    ]
+
+
 def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
     """작은 편집표 둘(기존 보유대수·비가동 일정)에 각각 컬럼 선택과 행 필터가 붙는다 — 설비
     마스터는 표 컴포넌트(칸 묶음·정렬·불러오기)라 보기 설정이 없다(개편 B1).
@@ -717,21 +737,82 @@ def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
     app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
 
     assert not app.exception
-    labels = [expandable.label for expandable in app.status]
-    assert not any(label.endswith("· 표 보기 설정") for label in labels)
-    for table, label, prefix in (
-        ("기존 보유대수", "기존 보유대수 · 표 보기 설정", "equipment_baseline_view"),
-        ("비가동 일정", "비가동 일정 · 표 보기 설정", "equipment_downtime_view"),
+    assert not _view_popovers(app)
+    for table, slug, prefix in (
+        ("기존 보유대수", "baseline", "equipment_baseline_view"),
+        ("비가동 일정", "downtime", "equipment_downtime_view"),
     ):
         app.session_state["equipment_master_table_v1"] = table
         app.run()
         assert not app.exception
-        assert label in [expandable.label for expandable in app.status], table
+        # 보기 설정은 접힘 줄이 아니라 표 작업 줄 끝 「표 보기 ▾」 팝오버다(2026-11-09 사용자 보드
+        # T5) — 「편집본에 적용」 과 한 가로 칸이다.
+        assert not [item for item in app.status if "표 보기" in item.label], table
+        (row,) = [
+            block
+            for block in _blocks(app.main)
+            if any(
+                getattr(child, "key", None) == f"equipment_{slug}_apply_v1"
+                for child in block.children.values()
+            )
+        ]
+        assert row.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
+        (view,) = [
+            child for child in row.children.values() if getattr(child, "type", None) == "popover"
+        ]
+        assert str(view.proto.id).endswith(f"-{prefix}_view_popover")
+        assert view.proto.popover.label == "표 보기"
         assert app.multiselect(f"{prefix}_columns").value
-        # 「보기 적용」 은 고르는 칸이 든 펼침 안이다(설계 규칙 UI-LAY-03).
-        view = next(item for item in app.status if item.label == label)
+        # 「보기 적용」 은 고르는 칸이 든 팝오버 안이다(설계 규칙 UI-LAY-03).
         assert [button.label for button in view.button] == ["보기 적용"]
     assert len(DuckDBEquipmentRepository(database_path).list_revisions()) == 1
+    clear_equipment_repository()
+
+
+def test_the_filter_mark_follows_the_applied_view_not_the_picked_one(tmp_path: Path) -> None:
+    """「표 보기 · 필터」 표지 · 잠김 풍선은 편집표에 **건** 보기를 따른다(설계 규칙 UI-DAT-11).
+    작은 편집표는 폼 밖이라 필터 값을 고르는 즉시 회차가 돈다 — 고르기만 하고 「보기 적용」 을
+    누르지 않으면 표는 아직 거르지 않고 행 추가 · 삭제도 열려 있으니 표지가 없다. 적용한 뒤 칸을
+    비우기만 하면 표는 아직 걸러져 잠겨 있으니 표지가 남는다."""
+    from capa_simulation.components.table_view_controls import FILTERED_NOTICE
+
+    database_path = tmp_path / "availability.duckdb"
+    _seeded_equipment(database_path)
+    repository = DuckDBEquipmentRepository(database_path)
+    snapshot = repository.load_snapshot(repository.list_revisions()[0].revision_id)
+    baseline = pd.concat(
+        [
+            snapshot.baseline,
+            pd.DataFrame(
+                {"공정": ["DEMO_OTHER"], "분류": ["기존"], "기존보유대수": [2.0], "비고": ["둘째"]}
+            ),
+        ],
+        ignore_index=True,
+    )
+    repository.save_snapshot(baseline, snapshot.equipment, snapshot.downtime, note="둘째 공정")
+    clear_equipment_repository()
+    page_path = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
+    app = AppTest.from_string(_page_script(page_path, database_path), default_timeout=60).run()
+    app.session_state["equipment_master_table_v1"] = "기존 보유대수"
+    app.run()
+
+    def mark() -> tuple[str, str]:
+        (view,) = _view_popovers(app)
+        return str(view.proto.popover.label), str(view.proto.popover.help)
+
+    picker = "equipment_baseline_view_filter_공정"
+    apply = "equipment_baseline_view_apply_v1"
+    assert mark() == ("표 보기", "")
+    app.multiselect(picker).set_value(["DEMO_PROC"]).run()
+    assert not app.exception
+    assert mark() == ("표 보기", "")
+    app.button(apply).click().run()
+    assert not app.exception
+    assert mark() == ("표 보기 · 필터", FILTERED_NOTICE)
+    app.multiselect(picker).set_value([]).run()
+    assert mark() == ("표 보기 · 필터", FILTERED_NOTICE)
+    app.button(apply).click().run()
+    assert mark() == ("표 보기", "")
     clear_equipment_repository()
 
 

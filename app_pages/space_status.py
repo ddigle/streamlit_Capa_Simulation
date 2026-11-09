@@ -79,6 +79,7 @@ from capa_simulation.components.sample_data import (
     render_pending_source,
     render_sample_switch,
 )
+from capa_simulation.components.saved_note import note_placeholder
 from capa_simulation.components.shortening_source import ShorteningStop
 from capa_simulation.components.space_floor_layout import (
     compare_payload,
@@ -133,13 +134,13 @@ from capa_simulation.components.space_shortening_view import (
     load_space_layer,
     note_unit_pick,
     release_process_chip,
-    render_arrival_filter_note,
     render_dim_field,
     render_fab_layer_summary,
     render_floor_layer_panel,
     render_layer_basis,
     render_layer_stop,
     render_level_field,
+    report_arrival_filter,
     report_layer_unmatched,
     switch_to_queued_shortening,
     take_unit_pick,
@@ -1446,11 +1447,14 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
                 with st.container(width=DETAILS_WIDTH, key=DETAILS_FIELDS_KEY):
                     if not fab_only:
                         with st.container(horizontal=True, gap="small"):
+                            # 두 칸은 이름 줄 없이 칸 안 안내 글이 이름이다(2026-11-09 상단
+                            # 띠 재고 · 사용자 지시 — 설계 규칙 UI-CON-03).
                             st.text_input(
                                 "변경 메모",
                                 key=note_key,
-                                placeholder="예: C1 1F 반입구 앞 정리",
+                                placeholder=note_placeholder("C1 1F 반입구 앞 정리"),
                                 width=420,
+                                label_visibility="collapsed",
                             )
                             # 설비 마스터 저장과 같은 부품 — 저장 칸 체크는
                             # 없고(`equipment_save_fields`) 실제로 퍼진 목록은 저장 결과 알림이
@@ -2275,6 +2279,13 @@ layer_summary: FabSummary | None = (
 if space_layer is not None and layer_basis_slot is not None:
     with layer_basis_slot:
         render_layer_basis(equipment_session, space_layer, sample=showing_sample)
+# 링크 공정 알림 — 「도면에서 보기」 로 온 공정이 공정 필터 밖이면 사건 알림 `EQ-24` 를 담는다(도면
+# 위 표지 줄은 없다 — 2026-11-09 사용자 보드 T10). 그리지 않고 바로 아래 늘 부르는 표지 자리
+# (`RS-02` 상태 · `alerts.flush()`)가 같은 회차에 보낸다.
+if space_layer is not None:
+    report_arrival_filter(selected_processes, selected, shared_process.values())
+elif not layer_active:
+    forget_arrival_note()
 # 맞대지 못한 공정 — 필요 단축 일정과 같은 상태 알림 `RS-02`(같은 계획 · 범위 · 내용). 보기를
 # 그린 회차에만 내고, 그 밖의 회차는 같은 자리에서 `alerts.flush()` 로 한 자리를 채운다(본문 끝
 # 캔버스 팝업 호스트 앞 표지 자리 수가 회차마다 같다 — AGENTS 9장 「알림 칸」).
@@ -2289,12 +2300,6 @@ if space_layer is not None:
     )
 else:
     alerts.flush()
-# 링크 공정 알림 — 자리는 늘 선다(켜고 끌 때 아래가 밀리지 않게).
-with st.container(key="space_shortening_basis_slot"):
-    if space_layer is not None:
-        render_arrival_filter_note(selected_processes, selected, shared_process.values())
-    elif not layer_active:
-        forget_arrival_note()
 
 if selected is None:
     # FAB 로 돌아오면 층 상세에서 누른 호기는 풀린다(층을 바꾼 것과 같다).

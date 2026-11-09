@@ -28,7 +28,11 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.paste_form import PasteTemplate, refuse_paste, render_paste_form
 from capa_simulation.components.profile_caption import render_profile_heading
-from capa_simulation.components.saved_note import mark_note_saved, ready_note_field
+from capa_simulation.components.saved_note import (
+    mark_note_saved,
+    note_placeholder,
+    ready_note_field,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -307,10 +311,12 @@ def _render_save(
             ),
         )
         ready_note_field(PAST_NOTE_KEY, submitted=save)
+        # 이름 줄 없이 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 · 사용자 지시).
         note = st.text_input(
             "변경 메모",
-            placeholder="예: 25년 실적 반영",
+            placeholder=note_placeholder("25년 실적 반영"),
             key=PAST_NOTE_KEY,
+            label_visibility="collapsed",
             # 이 값은 옆 저장 버튼을 누를 때만 읽는다. Enter·포커스 이탈로 HOME 을 통째로
             # 다시 그릴 이유가 없고, 버튼을 누른 실행에 값이 함께 올라온다.
             on_change="ignore",

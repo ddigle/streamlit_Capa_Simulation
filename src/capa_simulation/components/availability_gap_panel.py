@@ -79,6 +79,7 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLLBAR_KEY,
 )
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.equipment_explorer import report_unit_notices
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     NARROW_LABEL_COLUMN_WIDTH_PX,
@@ -92,12 +93,12 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
-from capa_simulation.components.state_alerts import AlertScope
+from capa_simulation.components.state_alerts import AlertScope, alert_table, tab_name
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.design import theme, tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
-from capa_simulation.navigation import PROCESS_CAPA_DETAIL
+from capa_simulation.navigation import EQUIPMENT_PREFERENCE_TAB, PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     NO_DEMAND_MESSAGE,
@@ -167,13 +168,9 @@ from capa_simulation.services.simulation_cache import (
     get_availability_sheet,
     get_monthly_equipment_contributions,
     get_securement_cross_check,
-    get_undated_equipment,
-    get_usage_excluded_equipment,
     securement_cross_check_cache_key,
     securement_cross_check_result,
 )
-from capa_simulation.services.undated_equipment import UNDATED_HELP, undated_equipment_mark
-from capa_simulation.services.usage_basis import usage_exclusion_help, usage_exclusion_mark
 from capa_simulation.sidebar_status import rerun_app_unless_alone
 
 __all__ = [
@@ -185,6 +182,7 @@ __all__ = [
     "DETAIL_MODE_KEY",
     "MANUAL_LIST_HELP",
     "PROCESS_FILTER_KEY",
+    "RESULT_VIEW_HELP",
     "RESULT_VIEW_KEY",
     "UNIT_FILTER_COLUMNS",
     "UNIT_FILTER_COLUMNS_KEY",
@@ -195,6 +193,7 @@ __all__ = [
     "pick_gap_sheet_cell",
     "render_availability_gap_panel",
     "render_availability_sheet",
+    "render_sheet_csv",
     "unit_filter_key",
 ]
 
@@ -229,9 +228,17 @@ _ALL_PROCESSES = "전체 합계"
 _RESULT_VIEWS = ("가용대수 비교", "분류별 내역", "확보율 교차검증")
 _DETAIL_MODES = ("시트", "호기 목록")
 # 자리에 늘 두던 설명 글을 옮긴 풍선(사용법 · 범위는 칸 곁 풍선과 Guide — 자리에는 값 · 표지만).
+# 「조회 결과」 · 「표시」 두 전환은 라벨 줄이 없고(접근성 이름으로만 남는다) 뜻은 그 줄 끝 빈
+# 캡션의 풍선 하나가 함께 말한다 — Streamlit 1.63 은 라벨을 숨기면 위젯 풍선도 숨긴다(2026-11-09
+# 상단 띠 재고 · 사용자 보드, 설계 규칙 UI-TXT-01 · UI-TXT-02).
+RESULT_VIEW_HELP = (
+    "조회 결과 — 가용대수 비교는 Static 과 설비 일정 기준 가용대수를 달마다 나란히, 분류별 "
+    "내역은 그 값이 나온 보유 · 대여 · 가용 줄을, 확보율 교차검증은 같은 소요대수에 두 "
+    "가용대수를 나눈 확보율을 봅니다."
+)
 DETAIL_MODE_HELP = (
-    "시트는 Static · 설비 일정 기준 · GAP 9행을 달마다, 호기 목록은 호기별 기여를 상태 분류(셋업 "
-    "진행중 · 입고 예정 · 보관 …)로 봅니다."
+    "표시 — 시트는 Static · 설비 일정 기준 · GAP 9행을 달마다, 호기 목록은 호기별 기여를 상태 "
+    "분류(셋업 진행중 · 입고 예정 · 보관 …)로 봅니다."
 )
 UNIT_FILTER_HELP = (
     "기존보유 · 입력 비가동은 호기 속성이 없어 빠지고, Static · GAP 은 공정 단위 기준정보라 맞대지 "
@@ -240,6 +247,14 @@ UNIT_FILTER_HELP = (
 CROSS_CHECK_MONTHS_HELP = (
     "설비 조회기간이 덮는 달로 좁혔습니다 — 시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 "
     "만들지 않았으면 맞댈 수 없습니다. 조회기간을 넓히면 늘어납니다."
+)
+# 「시트 CSV」 는 「조회 결과 · 표시」 전환 단추(28px)와 같은 높이다 — 기본 단추(35px)면 시트를 보는
+# 회차에만 줄이 7px 높아져 시트 ↔ 호기 목록 · 가용대수 비교를 오갈 때 아래 본문이 오르내린다(설계
+# 규칙 UI-CON-01 · UI-PRF-03, 공정 Capa 상세 표 도구 줄 CSV 와 같은 꼴). 앱 전체 회차에만 그리므로
+# 스타일만 든 `st.html` 이 이벤트 칸으로 가도 된다.
+SHEET_CSV_STYLE = (
+    f"<style>.st-key-{GAP_SHEET_CSV_KEY} button "
+    "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
 )
 CROSS_CHECK_MANUAL_HELP = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동을 그 달 가용에서 뺀 값입니다(필요 단축 일정과 "
@@ -425,8 +440,8 @@ def render_availability_gap_panel(
     labels = process_labels or ProcessLabels()
     controls = conditions if conditions is not None else nullcontext()
 
-    st.markdown("#### :material/compare_arrows: Static · 설비 일정 기준 가용대수 비교")
-
+    # 구획 제목(「Static · 설비 일정 기준 가용대수 비교」)은 두지 않는다 — 안쪽 탭 「Static 대비
+    # 일정」 이 같은 말이다(설계 규칙 UI-TXT-07, 2026-11-09 상단 띠 재고 — 페이지 상단 여백 최소화).
     if cutoff.empty:
         # 그릴 것이 없어 멈추는 빈 상태 — 회색 평문 한 줄(설계 규칙 UI-TXT-04 · UI-NTF-08), 고칠
         # 길은 풍선과 「Cut-off 를 적지 않은 공정」 알림(`EQ-12`)이 말한다.
@@ -507,11 +522,30 @@ def render_availability_gap_panel(
     _report_unmatched(
         comparison.dynamic_only, comparison.static_only, labels, alert_scope, tab=alert_tab
     )
+    # 일정 미정 · 사용기준 밖은 Main 과 같은 코드 · 범위의 상태 알림이다(자리에 그리지 않는다 —
+    # `equipment_explorer.report_unit_notices`). 표가 없으면(홀로 띄우는 시험) 부르지 않는다.
+    if units is not None:
+        report_unit_notices(units, scope=alert_scope)
+    _report_manual_cells(manual_cells, months, labels)
 
     # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
-    # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다.
-    switches = st.container(horizontal=True, vertical_alignment="bottom", gap="large")
+    # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다. 줄 끝은 두 전환의 뜻을 함께 말하는
+    # 풍선 하나(`row_help` — 확보율 교차검증이면 맞대어 본 달이 그 풍선 첫 단락)이고, 시트를 보는
+    # 회차에는 그 오른쪽 끝에 「시트 CSV」 가 선다 — 단추 하나가 따로 한 줄을 차지하지 않는다
+    # (2026-11-09 사용자 보드 T2 · T3, 설계 규칙 UI-LAY-11 · UI-LAY-03). 전환끼리는 넓게 띄우고,
+    # 풍선은 마지막 전환과 한 칸(작은 간격)이다 — Main 머리 줄의 줄 끝 풍선과 같은
+    # 간격(UI-CON-03).
+    switches = st.container(horizontal=True, vertical_alignment="center", gap="large")
     with switches:
+        result_group = _switch_group()
+    # 줄 끝 풍선이 설 칸 — 지금 줄의 마지막 전환이 든 칸.
+    last_group = [result_group]
+
+    def row_help(text: str) -> None:
+        with last_group[-1]:
+            st.caption("", help=text, width="content")
+
+    with result_group:
         result_view = st.segmented_control(
             "조회 결과",
             options=_RESULT_VIEWS,
@@ -519,6 +553,7 @@ def render_availability_gap_panel(
             required=True,
             key=RESULT_VIEW_KEY,
             persist_state="session",
+            label_visibility="collapsed",
         )
     # 값은 원본 공정명이고 글자만 표시명이다. 보이는 글자가 다른 공정이나 `전체 합계` 와 겹치면
     # 「표시명 (원본)」 으로 가른다 — 겹친 글자로는 고른 것과 다른 공정이 돌아오고, `전체 합계` 와
@@ -549,16 +584,9 @@ def render_availability_gap_panel(
             persist_state="session",
         )
     process = None if selected == _ALL_PROCESSES else selected
-    undated = _undated_rows(units)
-    usage_excluded = _usage_excluded_rows(units)
 
     if result_view == "확보율 교차검증":
-        _render_undated_notice(
-            undated,
-            usage_excluded,
-            {process} if process is not None else set(monthly["공정"].astype(str)),
-        )
-        _render_securement_cross_check(
+        checked_months = _render_securement_cross_check(
             monthly=monthly,
             static_availability=static,
             required_equipment=required_equipment,
@@ -574,6 +602,7 @@ def render_availability_gap_panel(
             no_demand_message=no_demand_message,
             manual_cells=manual_cells,
         )
+        row_help(_cross_check_help(checked_months))
         return
 
     if process is None:
@@ -585,6 +614,7 @@ def render_availability_gap_panel(
     else:
         scope = {process}
     if not scope:
+        row_help(RESULT_VIEW_HELP)
         st.caption("표시할 값이 없습니다.")
         return
 
@@ -629,7 +659,7 @@ def render_availability_gap_panel(
         return sheet, _key_digest(key)
 
     if result_view == "가용대수 비교":
-        _render_undated_notice(undated, usage_excluded, scope)
+        row_help(RESULT_VIEW_HELP)
         if one_sided is not None:
             # 그림은 Static 과 설비 일정 기준을 나란히 세우고 그 차이를 막대 위에 적는다. 한쪽이
             # 없으면 맞댈 것이 없다.
@@ -647,6 +677,11 @@ def render_availability_gap_panel(
         return
 
     with switches:
+        detail_group = _switch_group()
+    last_group.append(detail_group)
+    with detail_group:
+        # 라벨 줄을 걷는다 — 두 전환의 뜻은 줄 끝 풍선 하나다(라벨이 숨으면 위젯 풍선도 함께
+        # 숨는다 — 1.63).
         detail_mode = st.segmented_control(
             "표시",
             options=_DETAIL_MODES,
@@ -654,7 +689,13 @@ def render_availability_gap_panel(
             required=True,
             key=DETAIL_MODE_KEY,
             persist_state="session",
-            help=DETAIL_MODE_HELP,
+            label_visibility="collapsed",
+        )
+    row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
+    with switches:
+        # 「시트 CSV」 자리 — 줄 오른쪽 끝(시트를 그리는 회차에만 채운다, 비면 그리지 않는다).
+        csv_slot = st.container(
+            horizontal=True, horizontal_alignment="right", vertical_alignment="center"
         )
     if one_sided is not None:
         st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.")
@@ -671,7 +712,6 @@ def render_availability_gap_panel(
                 + f" — 호기 {len(chosen_units):,}개만 더합니다.",
                 help=UNIT_FILTER_HELP,
             )
-    _render_undated_notice(undated, usage_excluded, scope, chosen_units)
     if detail_mode == "호기 목록":
         if any(process_name in scope for process_name, _, _ in manual_cells):
             st.caption(MANUAL_LIST_MARK, help=MANUAL_LIST_HELP)
@@ -718,25 +758,26 @@ def render_availability_gap_panel(
         )
 
     fingerprint = _key_digest((process, tuple(months), sheet_digest))
-    render_availability_sheet(
-        GapSheetBundle(
-            view=view,
-            sheet=sheet,
-            process=process,
-            process_label=process_label,
-            scope=frozenset(scope),
-            fingerprint=fingerprint,
-            schedule_detail=_schedule_detail(
-                process, cutoff, manual=chosen_units is None and _has_manual(view)
-            ),
-            contributions=contributions,
-            labels=labels,
-            conversion_ratios=conversion_ratios,
-            downtime=downtime,
-            cutoff=cutoff,
-            unit_filtered=chosen_units is not None,
-        )
+    bundle = GapSheetBundle(
+        view=view,
+        sheet=sheet,
+        process=process,
+        process_label=process_label,
+        scope=frozenset(scope),
+        fingerprint=fingerprint,
+        schedule_detail=_schedule_detail(
+            process, cutoff, manual=chosen_units is None and _has_manual(view)
+        ),
+        contributions=contributions,
+        labels=labels,
+        conversion_ratios=conversion_ratios,
+        downtime=downtime,
+        cutoff=cutoff,
+        unit_filtered=chosen_units is not None,
     )
+    with csv_slot:
+        render_sheet_csv(bundle)
+    render_availability_sheet(bundle)
 
 
 def _counterfactual(
@@ -745,6 +786,11 @@ def _counterfactual(
     if source is None:
         return spans
     return source() if callable(source) else source
+
+
+def _switch_group() -> DeltaGenerator:
+    """전환 줄 안의 칸 하나 — 전환과 그 뒤 줄 끝 풍선이 작은 간격으로 붙는다."""
+    return st.container(horizontal=True, vertical_alignment="center", gap="small", width="content")
 
 
 def _key_digest(key: object) -> str:
@@ -770,9 +816,23 @@ def _has_manual(view: SheetView) -> bool:
 # ================================================================== 시트 프래그먼트
 
 
+def render_sheet_csv(bundle: GapSheetBundle) -> None:
+    """「시트 CSV」 단추 — 패널이 「조회 결과 · 표시」 줄 오른쪽 끝에 세운다(2026-11-09 사용자 보드
+    T3). 칸 누름과 상관없는 값이라 시트 프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와
+    같다(`SHEET_CSV_STYLE`)."""
+    st.html(SHEET_CSV_STYLE)
+    render_csv_download(
+        data=_sheet_csv(bundle).encode("utf-8-sig"),
+        file_name=f"Static_대비_일정_시트_{bundle.view.months[0]}_{bundle.view.months[-1]}.csv",
+        key=GAP_SHEET_CSV_KEY,
+        label="시트 CSV",
+    )
+
+
 @st.fragment(key=GAP_SHEET_FRAGMENT_KEY)
 def render_availability_sheet(bundle: GapSheetBundle) -> None:
-    """도구 줄(시트 CSV) → 9행 캔버스 → 범례 → 근거 카드. 키 붙은 프래그먼트다.
+    """9행 캔버스 → 범례 → 근거 카드. 키 붙은 프래그먼트다. 「시트 CSV」 는 패널의 전환 줄 끝이다
+    (`render_sheet_csv`).
 
     칸을 누르는 조작은 이것만 다시 돌린다 — 조건 카드에 설 위젯을 바꾸지 않는 본문 조작이다. 시트·
     호기별 기여(`bundle.contributions`, 누른 칸이 설비 일정 기준·GAP 일 때만 부른다)는 직전 앱 전체
@@ -784,15 +844,6 @@ def render_availability_sheet(bundle: GapSheetBundle) -> None:
     """
     cell = open_sheet_cell(bundle)
     generation = int(st.session_state.get(GAP_SHEET_GENERATION_KEY, 0) or 0)
-    with st.container(
-        horizontal=True, horizontal_alignment="right", vertical_alignment="center", gap="medium"
-    ):
-        render_csv_download(
-            data=_sheet_csv(bundle).encode("utf-8-sig"),
-            file_name=f"Static_대비_일정_시트_{bundle.view.months[0]}_{bundle.view.months[-1]}.csv",
-            key=GAP_SHEET_CSV_KEY,
-            label="시트 CSV",
-        )
     canvas = remembered_sheet_canvas(bundle, cell, generation)
     _render_canvas(bundle, canvas)
     st.html(sheet_legend_html())
@@ -1255,46 +1306,53 @@ def _render_detail_link(process: str, month: int) -> None:
 # ================================================================== 둘레
 
 
-def _undated_rows(units: pd.DataFrame | None) -> pd.DataFrame | None:
-    """일정(반입·Qual)이 비어 설비 일정 기준에 들지 못하는 신규 호기. 표가 없거나 못 읽으면
-    `None`."""
-    if units is None:
-        return None
-    try:
-        return get_undated_equipment(units)
-    except ValueError:
-        return None
-
-
-def _usage_excluded_rows(units: pd.DataFrame | None) -> pd.DataFrame | None:
-    """사용기준이 HBM·EDP 가 아니어서 세지 않는 호기. 표가 없거나 못 읽으면 `None`."""
-    if units is None:
-        return None
-    try:
-        return get_usage_excluded_equipment(units)
-    except ValueError:
-        return None
-
-
-def _render_undated_notice(
-    undated: pd.DataFrame | None,
-    excluded: pd.DataFrame | None,
-    scope: Collection[str],
-    chosen_units: Collection[str] | None = None,
+def _report_manual_cells(
+    manual_cells: tuple[tuple[str, int, float], ...], months: Sequence[int], labels: ProcessLabels
 ) -> None:
-    """둘러싼 대수와 같은 범위(공정, 호기 필터)의 일정 미정·사용기준 제외 설비 표지 한 줄씩 —
-    뜻은 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-04, Main 과 같은 꼴).
-
-    0대인 줄은 그리지 않는다.
+    """조회 달에 든 입력 비가동 칸의 상태 알림(`EQ-23` — 설비 일정 기준 가용 · 확보율 교차검증의
+    일정기준가용대수에서 뺀다). 확보율 교차검증 위 자리에는 「입력 비가동 반영」 줄을 세우지
+    않는다(2026-11-09 상단 띠 재고, 설계 규칙 UI-TXT-04 · UI-NTF-02). 탭이 보이는
+    회차마다(없어도 — 해소 · 이벤트 칸 한 자리) 부른다. 입력 비가동은 모든 설비 시나리오 공용이라
+    범위는 조회 달뿐이고 내용은 칸 목록이다 — 공정 고르기 · 조회 결과 고르기에 기대지 않는다. 고칠
+    자리는 Preference 탭이다.
     """
-    if undated is not None:
-        notice = undated_equipment_mark(undated, processes=scope, unit_ids=chosen_units)
-        if notice is not None:
-            st.caption(f":material/event_busy: {notice}", help=UNDATED_HELP)
-    if excluded is not None:
-        usage = usage_exclusion_mark(excluded, processes=scope, unit_ids=chosen_units)
-        if usage is not None:
-            st.caption(f":material/filter_alt_off: {usage}", help=usage_exclusion_help())
+    cells = [(process, month, units) for process, month, units in manual_cells if units > 0]
+    total = sum(units for _, _, units in cells)
+    band = f"{MANUAL_DOWNTIME_BAND}({len(cells)}칸 · 합 {manual_units_text(total)}대)"
+    first, last = (months[0], months[-1]) if months else (None, None)
+    table = pd.DataFrame(
+        {
+            "공정": [process for process, _, _ in cells],
+            "생산월": [month_label(month) for _, month, _ in cells],
+            "입력대수": [units for _, _, units in cells],
+        }
+    )
+    alerts.state(
+        "EQ-23",
+        scope={"months": [first, last]},
+        scope_label=(
+            f"{month_label(first)}–{month_label(last)}"
+            if first is not None and last is not None
+            else ""
+        ),
+        content=[list(cell) for cell in cells] or None,
+        active=bool(cells),
+        text=f"{band} — 설비 일정 기준 가용에서 뺌",
+        full=f"Static 대비 일정 — 일정기준가용대수는 {band} — {CROSS_CHECK_MANUAL_HELP}",
+        tab=tab_name(EQUIPMENT_PREFERENCE_TAB),
+        tables=(
+            [
+                alert_table(
+                    table,
+                    title="입력 비가동 칸",
+                    file_name="manual_downtime_cells.csv",
+                    labels=labels,
+                )
+            ]
+            if cells
+            else []
+        ),
+    )
 
 
 def _scoped_contributions(
@@ -1554,8 +1612,9 @@ def _render_securement_cross_check(
     labels: ProcessLabels,
     no_demand_message: Callable[[], str] | None = None,
     manual_cells: tuple[tuple[str, int, float], ...] = (),
-) -> None:
-    """같은 소요대수에 두 가용대수를 각각 나눈 확보율.
+) -> tuple[int, ...]:
+    """같은 소요대수에 두 가용대수를 각각 나눈 확보율. 맞대어 본 달을 돌려준다(맞대지 못했으면
+    빈 튜플) — 패널이 「조회 결과」 줄 끝 풍선에 싣는다(`_cross_check_help`).
 
     **HOME·B/N 은 그대로 Static 을 본다.** 여기는 기준정보 값을 교차검증하는 자리이고,
     값이 믿을 만해지고 Cut-off 가 채워진 뒤에 전역 전환을 정한다. 전환하려면 먼저 HOME 계산 캐시
@@ -1571,10 +1630,11 @@ def _render_securement_cross_check(
     `manual_cells` 는 조회 달로 좁힌 입력 비가동 칸이다 — 일정기준 가용에서 뺀다(키가 없는 길도
     같은 칸으로 맞댄다).
     """
-    st.markdown("##### :material/fact_check: 확보율 교차검증")
+    # 머리 제목(「확보율 교차검증」)은 두지 않는다 — 바로 위 「조회 결과」 전환 단추의 고른 값이
+    # 같은 말이다(설계 규칙 UI-TXT-07, 2026-11-09 상단 띠 재고).
     if required_equipment is None:
         render_data_error("소요대수를 읽지 못해 확보율을 맞댈 수 없습니다.", code="EQ-09")
-        return
+        return ()
     load = required_equipment if callable(required_equipment) else _frame_loader(required_equipment)
 
     try:
@@ -1598,52 +1658,38 @@ def _render_securement_cross_check(
             code="EQ-09",
             text="확보율을 맞대지 못했습니다",
         )
-        return
+        return ()
     if not result.has_demand:
         # 읽었지만 조회기간에 소요대수가 없다 — 읽기 실패(위 `None` 갈래)처럼 알리면 DB·시나리오가
         # 깨진 것으로 읽힌다. 다른 계산 화면처럼 옮겨 갈 데이터 범위를 알린다.
         st.caption(NO_DEMAND_MESSAGE if no_demand_message is None else no_demand_message())
-        return
+        return ()
     check = result.check
     if check is None:
         st.caption("Static 가용대수가 없어 맞댈 대상이 없습니다.")
-        return
+        return ()
 
-    if check.months:
-        st.caption(
-            f"맞대어 본 달: {month_label(check.months[0])} ~ {month_label(check.months[-1])} "
-            f"({len(check.months)}개월)",
-            help=CROSS_CHECK_MONTHS_HELP,
-        )
-    shown_manual = [units for name, _, units in manual_cells if process is None or name == process]
-    if shown_manual:
-        st.caption(
-            f":material/event_busy: 일정기준가용대수는 {MANUAL_DOWNTIME_BAND}"
-            f"({len(shown_manual)}칸 · 합 {manual_units_text(sum(shown_manual))}대)",
-            help=CROSS_CHECK_MANUAL_HELP,
-        )
-    if check.fallback_processes:
-        st.caption(
-            f"Static 값으로 채운 공정 {len(check.fallback_processes)}개 · 실제로 비교한 공정 "
-            f"{len(check.compared_processes)}개",
-            help=CROSS_CHECK_FALLBACK_HELP,
-        )
+    # 맞대어 본 달은 자리에 줄을 세우지 않고 「조회 결과」 줄 끝 풍선이 말한다(2026-11-09 사용자
+    # 보드 T2 — 표 제목 풍선, `_cross_check_help`).
+    # 입력 비가동 반영(`EQ-23`) · Static 값으로 채운 공정(한쪽에만 있는 공정 `EQ-06` 의 전문)은 탭
+    # 머리가 상태 알림으로 낸다 — 자리에 적지 않는다(설계 규칙 UI-TXT-04 · UI-NTF-02, 2026-11-09
+    # 상단 띠 재고).
     # 기준정보에 없는 공정은 소요대수·Static 이 없어 행이 없다(서비스가 뺀다, 2026-10-01). 그 수 ·
     # 이름은 탭 머리의 상태 알림 `EQ-06` 이 말한다 — 자리에 다시 적지 않는다.
     if process is not None and process in check.dynamic_only_processes:
         st.caption(f"{quoted(process)} 공정은 기준정보(Static)에 없어 확보율을 맞대지 않습니다.")
-        return
+        return tuple(check.months)
 
     rows = check.rows
     if process is not None:
         rows = rows.loc[rows["공정"] == process]
-    # 채운 자리는 비교가 아니므로 기본으로 감춘다. 위 캡션이 개수를 이미 알린다.
+    # 채운 자리는 비교가 아니므로 기본으로 감춘다. 그 공정은 상태 알림 `EQ-06` 이 이름으로 알린다.
     compared = rows.loc[~rows["Static대체"]]
     if compared.empty:
         # Cut-off 를 다 적어도 공정명이 기준정보와 다르면 비어 있다 — 그때는 이름이 까닭이다(상태
         # 알림 `EQ-06`). 무엇을 채우면 나타나는지는 Guide 가 말한다.
         st.caption("아직 맞대어 볼 수 있는 공정이 없습니다.")
-        return
+        return tuple(check.months)
 
     # **확보율 두 값을 같이 보인다.** 차이만 보이면 「29.5 차이」가 무슨 뜻인지 알 수 없다 —
     # 확보율은 비율이라 소요대수가 작은 공정에서 차이가 크게 나온다.
@@ -1674,6 +1720,21 @@ def _render_securement_cross_check(
         column_config=_CROSS_CHECK_FORMAT,
         placeholder="",
     )
+    return tuple(check.months)
+
+
+def _cross_check_help(months: Sequence[int]) -> str:
+    """확보율 교차검증의 「조회 결과」 줄 끝 풍선 — 맞대어 본 달(값)과 그 범위의 뜻이 첫 단락, 두
+    전환의 뜻이 그다음이다. 사용자 보드 T2 는 「맞대어 본 달」 을 표 제목 풍선으로 옮기라 했으나 이
+    보기에는 표 제목이 없어(구획 제목은 안쪽 탭 이름과 같은 말이라 두지 않는다 — UI-TXT-07) 그 표
+    바로 위 줄 끝 풍선이 받는다 — 값이 설명에 묻히지 않게 맨 앞이다."""
+    if not months:
+        return RESULT_VIEW_HELP
+    span = (
+        f"맞대어 본 달: {month_label(months[0])} ~ {month_label(months[-1])} "
+        f"({len(months)}개월) — {CROSS_CHECK_MONTHS_HELP}"
+    )
+    return f"{span}\n\n{RESULT_VIEW_HELP}"
 
 
 def _frame_loader(frame: pd.DataFrame) -> Callable[[], pd.DataFrame]:
@@ -1711,7 +1772,9 @@ def _report_unmatched(
     if static_only:
         lines.append(
             f"기준정보에는 있는데 설비 일정 기준이 안 나온 공정 {len(static_only)}개: "
-            f"{', '.join(static_only[:8])}{' …' if len(static_only) > 8 else ''}"
+            f"{', '.join(static_only[:8])}{' …' if len(static_only) > 8 else ''} — 확보율 "
+            "교차검증은 그 공정을 Static 값으로 채워 비교 표에서 뺍니다. "
+            + CROSS_CHECK_FALLBACK_HELP
         )
     count = len(dynamic_only) + len(static_only)
     alerts.state(

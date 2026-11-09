@@ -32,6 +32,10 @@ def test_registry_codes_are_unique_well_formed_and_levelled() -> None:
         ("RS-03", "check", "필요 단축 일정 — 일정 미정 호기"),
         ("RS-04", "info", "필요 단축 일정 — 사용기준(HBM · EDP) 밖 호기를 셈에서 뺌"),
         ("RS-05", "check", "필요 단축 일정 — 입력 비가동 반영 · 가용 넘침"),
+        ("EQ-20", "check", "가용설비 Summary — 반입 · Qual 일정이 빈 호기(일정 미정)"),
+        ("EQ-21", "check", "가용설비 Main — 일정이 지났는데 실적이 빈 호기(미확인)"),
+        ("EQ-22", "info", "가용설비 Summary — 사용기준이 HBM · EDP 밖이라 뺀 호기"),
+        ("EQ-23", "info", "Static 대비 일정 — 입력 비가동을 일정기준 가용에서 뺌"),
     ],
 )
 def test_state_codes_for_the_screen_bundles_are_registered(

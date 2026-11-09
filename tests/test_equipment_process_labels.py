@@ -111,7 +111,7 @@ def test_the_page_labels_every_viewing_tab_and_follows_a_changed_profile(tmp_pat
     assert shared_values(app) == [second]
 
     # 「설정」 팝업 — 편집표의 `공정` 칸과 「Cut-off 를 적지 않은 공정」 경고는 원본(새 행에 그
-    # 이름을 적어야 맞댄다), `표 보기 설정` 의 공정 필터 선택지만 표시명이다.
+    # 이름을 적어야 맞댄다), 「표 보기」 팝오버의 공정 필터 선택지만 표시명이다.
     app = _open_settings(app)
     assert not app.exception
     warnings = " ".join(str(item.value) for item in app.warning)

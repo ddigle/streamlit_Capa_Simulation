@@ -400,35 +400,42 @@ with st.container(border=True):
     # 때만 비운다.
     post_generation = current_generation(POST_FORM_GENERATION_KEY)
     # 세대 0 은 원래 key 그대로다 — 처음 그린 화면의 key 는 바뀌지 않는다.
-    with st.form(widget_key(POST_FORM_KEY, POST_FORM_GENERATION_KEY)):
-        category_column, title_column = st.columns([1, 3])
-        with category_column:
-            st.selectbox("분류", options=VOC_CATEGORIES, key=POST_CATEGORY_KEY)
-        with title_column:
-            st.text_input(
-                "제목", placeholder="한 줄로 요약해 주세요", max_chars=120, key=POST_TITLE_KEY
+    # 폼과 초안 보관은 간격 없는 한 칸이다 — 초안 보관은 높이 0 컴포넌트라 따로 서면 상자 맨 아래에
+    # 세로 간격 한 칸(14px)을 더 먹는다(2026-11-09 상단 띠 재고 1-1 「빈 틈」). 폼 안 글은 올리기
+    # 전에는 서버가 몰라 화면 이동·테마 전환에 사라진다 — 브라우저 탭에 두었다가 빈 폼에 되살리고,
+    # 되살렸으면 알림창 · Alarm 으로 알린다(`VO-02`). 폼 **뒤**에 둔다 — 마운트될 때 두 칸이 문서에
+    # 있어야 한다.
+    with st.container(gap=None):
+        with st.form(widget_key(POST_FORM_KEY, POST_FORM_GENERATION_KEY)):
+            category_column, title_column = st.columns([1, 3])
+            with category_column:
+                st.selectbox("분류", options=VOC_CATEGORIES, key=POST_CATEGORY_KEY)
+            with title_column:
+                st.text_input(
+                    "제목", placeholder="한 줄로 요약해 주세요", max_chars=120, key=POST_TITLE_KEY
+                )
+            st.text_area(
+                "내용",
+                height=140,
+                placeholder=(
+                    "어떤 화면에서 무엇을 하려다 무엇이 막혔는지 적어 주시면 답이 빨라집니다."
+                ),
+                max_chars=4000,
+                key=POST_BODY_KEY,
             )
-        st.text_area(
-            "내용",
-            height=140,
-            placeholder="어떤 화면에서 무엇을 하려다 무엇이 막혔는지 적어 주시면 답이 빨라집니다.",
-            max_chars=4000,
-            key=POST_BODY_KEY,
-        )
-        st.form_submit_button(
-            "글 올리기",
-            icon=":material/send:",
-            type="primary",
-            width="stretch",
-            on_click=_submit_post,
-            args=(database_path, post_generation),
-        )
-    # 폼 알림 칸 안에 초안 보관을 둔다 — 폼 안 글은 올리기 전에는 서버가 몰라 화면 이동·테마 전환에
-    # 사라졌다. 브라우저 탭에 두었다가 빈 폼에 되살리고, 되살렸으면 이 칸에 한 줄 알린다.
-    with render_flash(POST_FORM_ERROR_KEY):
+            st.form_submit_button(
+                "글 올리기",
+                icon=":material/send:",
+                type="primary",
+                width="stretch",
+                on_click=_submit_post,
+                args=(database_path, post_generation),
+            )
         render_voc_draft_keeper(
             title_key=POST_TITLE_KEY, body_key=POST_BODY_KEY, generation=post_generation
         )
+    # 폼 거부 · 실패 알림 칸(늘 선다 — 알림이 없으면 그리지 않는다).
+    render_flash(POST_FORM_ERROR_KEY)
 
 st.divider()
 

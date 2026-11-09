@@ -684,7 +684,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`test_equipment_scenario_demand.py`). ① 은 원본 이름(`test_process_label_boundaries.py`).
   - 조건은 탭마다 따로다 — `Static 대비 일정` 은 Main 의 공정소분류·추가 조건 키를 읽지 않고, 비교 범위는 이 탭의
     `공정`·`호기 필터` 만 정한다.
-  - Main 틀은 `equipment_explorer.py`, 알림 줄은 `undated_equipment.py`·`schedule_confirmation.py`·`usage_basis.py`,
+  - Main 틀은 `equipment_explorer.py`, 일정 미정 · 미확인 · 사용기준 밖 판정은 `undated_equipment.py`·`schedule_confirmation.py`·
+    `usage_basis.py`(자리 줄이 아니라 상태 알림 `EQ-20` · `EQ-21` · `EQ-22` — 설비 마스터 전체, 9장 「알림 칸」),
     대수 축은 `equipment_units.py`, 월별 안분은 `wd_window.py`(규칙은 6장). Cut-off 는 리비전 없이 표를 통째 갈아 끼운다.
   - 편집본은 `ensure_equipment_drafts` 한 곳이 씨뿌린다(Space 와 버퍼 공유). 입력 표를 더하면 draft 키 이름을 올리고
     Import·버퍼 교체 때 그 편집표를 `discard_editor` 로 버린다(9장). ① 본문은 `equipment_master_tab.py`, 편집본 경계·작은 편집표·
@@ -747,7 +748,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `Space 조건` 카드의 「색 기준」 밑(필요 단축 기준의 그룹 체크 자리 — 2026-11-09 사용자 검수 g05, 쉬는 회차에도 흐리게 칸은 선다),
     맞대지 못한 공정은 필요 단축 일정과 **같은 함수** `required_shortening_panel.report_unmatched_processes`(`RS-02` — 같은 계획 · 범위 ·
     내용이라 화면을 옮겨도 다시 뜨지 않는다, 보기를 그린 회차에만 부르고 그 밖의 회차는 같은 자리에서 `alerts.flush()`), 공정 필터 밖
-    단축 대수는 FAB 요약 · 층 보기 칸 머리 줄 끝 「필터 밖 n대」 다. **본문 자리**(늘 서는 `space_shortening_toolbar` — 못 읽음 마크 · FAB 편집
+    단축 대수는 FAB 요약 · 층 보기 칸 머리 줄 끝 「필터 밖 n대」 다. 「도면에서 보기」 로 온 공정이 공정 필터 밖이면 도면 위 표지 줄
+    대신 도착한 회차에 사건 알림 `EQ-24` 한 번이다(`report_arrival_filter` — 그 앞 `RS-02` 상태 · `flush` 자리가 같은 회차에 보낸다,
+    2026-11-09 사용자 보드 T10). **본문 자리**(늘 서는 `space_shortening_toolbar` — 못 읽음 마크 · FAB 편집
     「필요 단축 보기 쉼」 뿐, 도면 위에 글 줄을 두지 않는다)·FAB 블록 셋째 줄·층 목록 칸 넷·요약·추가 호기 상자(늘 서는
     `space_shortening_fab_slot`)·층 보기 칸(늘 서는 테두리 없는 `space_shortening_slot` 안 — 공정 칩·「이 층에서 단축할 호기」·
     도면에 자리가 없는 호기·누른 호기 상세)을 그린다. 켠 회차의 기준일은 오늘로 고정이다(세션 기준일은 지우지도 쓰지도 않는다 —
@@ -902,8 +905,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 계산에 닿지 않는다 — 시나리오·조회기간을 읽지 않고 `load_page_context()` 를 부르지 않는다.
   - 본문·답글은 `st.text` 로 그리고 게시판 읽기는 캐시하지 않는다. 폼은 `clear_on_submit` 없이 콜백이 성공한
     때만 비우고 작성자 이름은 폼 밖이다. 필터는 조건 카드 `VOC 필터`, 설명은 `guides/voc.md`.
-  - 새 글 폼의 제목·내용은 올리기 전에는 서버가 몰라 화면 이동·테마 전환(새로고침)에 사라졌다 — 폼 알림 칸 안의
-    `components/voc_draft_keeper.py`(Components v2, 그림자 DOM 없음)가 두 칸(`st-key-voc_post_title`·`_body`)의 글을
+  - 새 글 폼의 제목·내용은 올리기 전에는 서버가 몰라 화면 이동·테마 전환(새로고침)에 사라졌다 — 폼 바로 뒤(폼과 간격
+    없는 한 칸 — 높이 0 컴포넌트가 따로 서면 세로 간격을 한 칸 더 먹는다)의 `components/voc_draft_keeper.py`(Components v2, 그림자 DOM 없음)가 두 칸(`st-key-voc_post_title`·`_body`)의 글을
     브라우저 탭(`sessionStorage` — 서버·다른 사람에게 가지 않음)에 적고, 두 칸이 모두 빈 회차에 되살려(원래 setter +
     `input` 사건 — 폼 안이라 올릴 때 간다) 알림 칸에 사건 알림 `VO-02` 를 낸다(`window.__capaAlerts.raise` — 화면
     탭 줄 JS 와 같은 길, 폼 아래 제 꼴의 줄 없음 — 설계 규칙 UI-NTF-01). 같은 세션 표지(세션마다 새로 뽑음)에서 폼 세대가 오르면(글을
@@ -1455,7 +1458,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭에서도 조건 위젯은 그리며 Plotly 만 건너뛴다. 상세
     분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②).
 - `src/capa_simulation/components/table_view_controls.py` — 편집표의 볼 컬럼·행 필터를 고르게 하고 거른 편집분을
-  원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「가용설비 설정」 팝업 Cut-off 표).
+  원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「가용설비 설정」 팝업 Cut-off 표). 고르는 칸은 표 작업 줄
+  끝 「표 보기 ▾」 팝오버(`view_popover_key` — 부르는 쪽이 작업 줄 가로 칸 안에서 부른다, 접힘 줄 없음 — 2026-11-09
+  사용자 보드 T5)이고, 필터가 걸린 동안은 단추 글 끝 표지 「필터」 + 풍선(`FILTERED_NOTICE`)이 행 추가 · 삭제 잠김을
+  말한다(표 위 · 아래 설명 줄 없음). 표지는 편집표에 **건** 보기를 따른다 — 폼 밖 작은 편집표는 고르는 즉시 회차가 돌아
+  고름과 적용이 갈리므로 건 보기의 `filtered` 를 `applied_filtered` 로 넘기고(`equipment_data_workspace._editor_view`),
+  넘기지 않으면(첫 회차 · 제출이 곧 적용인 Cut-off 폼) 그리기 전 세션 값으로 `view_of` 와 같은 판정이다(`_filtered_in_state`,
+  설계 규칙 UI-DAT-11).
   - 행 필터 중에는 `num_rows="fixed"` 다 — 이 표들은 편집 결과가 곧 다음 리비전 전부다. 거른 편집인지는 호출자가
     `merge_edited_rows` 의 `filtered` 로 알려 준다(`tests/test_table_view_controls.py`). 모든 행이 남는 거름(「Select
     all」·한 호기뿐인 표의 「표에서 고치기」)은 원본(RangeIndex)을 그대로 돌려준다 — `.loc` 의 일반 정수 Index 를
@@ -2290,7 +2299,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸만 오른쪽 끝에 선다. 제목이 보이는 인쇄에서는 한 줄에 안 들면 끝 칸이 통째로 제목 밑 오른쪽으로 내려가고 제목은 접히지
   않는다(비율로 나누면 사이드바를 편 800~900px 에서 제목이 접히고 칩 줄이 넘쳤다).
 - `src/capa_simulation/components/equipment_master_tab.py` — 가용설비 현황 탭 ① 「설비 마스터」 본문(개편 B1-c·d — 옛 RawData
-  폼을 대신한다). 맨 위 줄(표 고르기 `equipment_master_table_v1` · 설비 시나리오 알약 · 리비전 · 「저장 전 변경 n건」) → 알림 칸 →
+  폼을 대신한다). 맨 위 줄(표 고르기 `equipment_master_table_v1` — 라벨 줄 없이 곁 빈 캡션 풍선 `head_help` 가 표의 뜻과 공통 ·
+  시나리오 · 배치 칸의 저장 자리를 말한다 · 「일정 없이 엶」 · 「저장 전 변경 n건」 · 「일정 잠김」 — 설비 시나리오 · 리비전 알약은
+  사이드바 줄 · 머리 띠와 같은 값이라 두지 않는다, 2026-11-09 상단 띠 재고) → 알림 칸 →
   테두리 하나의 편집기 영역 `equipment_master_frame` 안 두 칸(key 가로 칸 `equipment_master_split` › 왼쪽 `equipment_master_left` 표 구획(따로 테두리 없음) 또는 작은 편집표 · 오른쪽
   `equipment_master_right` 칸막이 마운트 → 오른쪽 칸 고르기 `equipment_master_side_v1` 「호기 상세 · 새 호기 · 저장 전 변경 · 저장
   이력」 → 본문 칸 `equipment_master_side_body`(고른 칸 — 패널·저장 구획·저장 이력 전부)). 두 고르기는 `persist_state="session"`
@@ -2865,8 +2876,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/admin_dialog.py` — Admin Area 편집 탭들이 함께 쓰는 팝업 칸
   (`admin_area_open_dialog`) 하나를 여닫는 콜백이다. 탭마다 칸을 두면 한 회차에 팝업이 둘 뜰 수 있다.
 - `src/capa_simulation/components/app_header.py` — 맨 위 띠에 이 세션의 적용 시나리오 두 줄과 진행 막대 자리를
-  싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 폼 안 알림이 없는 칸의 간격
-  지움(`EMPTY_FORM_SLOT_SELECTOR`), 인쇄 규칙)을 보낸다.
+  싣고, 껍데기 스타일(⋮ 메뉴·Deploy·제목 링크 감춤, 사이드바 접기 버튼, 폼 안 알림이 없는 칸과 본문 빈 칸의 간격
+  지움(`EMPTY_FORM_SLOT_SELECTOR` · `EMPTY_SLOT_SELECTOR`), 인쇄 규칙)을 보낸다.
   - 두 줄은 `stHeader` 가상요소의 글자다. 회차마다 DB 를 보지 않고 세션에 떠 둔 `active_scenario_label`·
     `intro_summary.latest_official_revision`·`scenario_activation.newer_active_revision_no`(「최신 rN 있음」) 만 읽는다
     (`tests/test_app_navigation.py`). 사용자 글은 `css_string` 으로
@@ -3521,7 +3532,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
   가정(100% 아님)을 더해 묶음 셋(떠나면 사라짐 · 저장 안 함 · 가정 사용 중) 차례로 낸다. DB · 캐시를 읽지 않는다. 폼 안 ·
   브라우저 안 초안과 저장 개념이 없는 조건은 들지 않는다(다음 판 후보 — `docs/TODO.md`).
-- `src/capa_simulation/components/saved_note.py` — 저장한 변경 메모를 칸을 갈지 않고 칸 글이 저장한 그 글일 때만 비운다(9장
+- `src/capa_simulation/components/saved_note.py` — 변경 메모 칸의 안내 글 꼴(`note_placeholder` — 「변경 메모 · 예: …」, 칸은
+  `label_visibility="collapsed"` 라 이 글이 이름이다 — 2026-11-09 상단 띠 재고 · 사용자 지시, `tests/test_note_field_placeholders.py`
+  가 화면 코드의 「변경 메모」 · 「저장자(선택)」 칸을 모두 훑는다)과, 저장한 변경 메모를 칸을 갈지 않고 칸 글이 저장한 그 글일 때만 비운다(9장
   「폼 안 입력을 성공 뒤 비울 때」). 폼 안에서 저장 단추를 먼저 그리고 `ready_note_field(KEY, submitted=, start=)`(본 version —
   대조 저장만) 뒤 `st.text_input("변경 메모", key=KEY)` 를 그린다 — key 는 고정이다. 쓰기가 끝난 갈래는 `mark_note_saved`, 제
   저장으로 판정한 갈래(`is_own_save`)는 `mark_note_saved_again` 이다. 제출 회차는 칸을 비우지 않는다(둘째 누름의 입력이 바뀌면
@@ -3580,7 +3593,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/loading_progress.py` — 오래 걸리는 페이지의 진행 막대(`st.progress`, 자리는 머리 띠).
   단계(`LoadingStage`)를 선언하고 호출부는 `advance()` 만 부르며, 퍼센트는 잰 소요 시간 비율이다.
 - `src/capa_simulation/components/equipment_explorer.py` — 가용설비 현황 Main 의 질문·표현·공정·날짜 선택과 결과 하나를
-  그린다. 산식을 화면에 복제하지 않는다.
+  그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
+  재고 · 사용자 보드 T6) 세 칸의 뜻은 줄 끝 빈 캡션 풍선 하나(`MAIN_ROW_HELP` — `표현` 이 있는 보기는 프래그먼트가 `표현` 뒤에
+  쓴다)다. 가용대수의 마지막 주 대수 요약 · 호기 현황의 센 호기 수는 따로 줄을 세우지 않고 결과 제목 줄 오른쪽 끝 값
+  글이다(`_heading_with_value` — 밑줄 맞춤은 공용 버전 줄과 같은 `profile_caption.HEADING_BASELINE_STYLE`, 사용자 보드 T2).
+  숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
+  일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 만). 모두 설비 마스터 전체를 세어 지문이 고르기에 기대지
+  않고, 목록은 Alarm 줄 표, 「그 화면으로」 는 설비 마스터 탭이다.
   - 판정·구간은 `simulation_cache` 내용 지문 키 래퍼로 받고 표시명·거르기는 캐시 결과의 복사본 위에서 한다.
   - `표현`(차트·표)과 결과 상자는 「본문 프래그먼트」다(`tests/test_explorer_expression_fragment.py`).
     `render_equipment_period` 는 숨은 `owner_tab` 이면 조회를 건너뛴다.
@@ -3744,7 +3763,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면 확인 스크립트
     (`equipment_scenario_line`·`space_scenario_row`)가 그 줄의 전체 수를 「리비전 50개(전체 N개)」 로 옮긴다
     (`REVISION_TOTAL_PATTERN` — 글 꼴을 바꾸면 함께 고친다).
-- `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장의 저장자 칸(`render_saved_by_field` · 콜백이 읽는
+- `src/capa_simulation/components/equipment_save_fields.py` — 설비 마스터 저장의 저장자 칸(`render_saved_by_field` — 이름 줄 없이 칸 안
+  안내 글 `SAVED_BY_PLACEHOLDER` 「저장자(선택) · 예: 홍길동」 이 이름, 입력 비가동 저장자 칸도 같은 글 · 콜백이 읽는
   `saved_by_from_state`)·저장 출발점 값(`EquipmentSaveBasis`) — 세 저장 단추 풍선은 어디로 저장되나 한 줄이고 늘 하는 일은 Guide · 결과 알림이다. 설비 마스터 탭 「저장 전 변경」 의
   「리비전 저장」(콜백, 저장자 칸은 `persist` — 탭 ① 은 숨은 회차에 그리지 않는다)·사이드바 팝업 「저장」·Space 「배치 저장」(콜백)
   세 자리가 같은 부품을 쓴다.
@@ -3909,9 +3929,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     글자라 잠긴 칸처럼 보인다). 호기별 표 `메모` 칸에는 메모 한 가지가 다 보이는 폭을 준다.
 - `src/capa_simulation/components/manual_downtime_tab.py` — 가용설비 현황 탭 ③ 「Preference」 본문 — 공정 × 생산월 입력 비가동
   대수 편집표(`st.form` 안 `st.data_editor` — 첫 칸 공정 표시명 잠금, 달마다 `NumberColumn` 0 이상 `%.2f`, 빈칸 = 0)·저장자·변경
-  메모·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
+  메모(두 칸은 라벨 줄을 걷고 placeholder 가 이름 — 2026-11-09 상단 띠 재고)·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
   저장 이력 펼침. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
-  `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다.
+  `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다. 제목 아래 열 · 빈칸 · 공용 줄은 두지 않는다 — 제목 풍선
+  (`MANUAL_INTRO_HELP` + 지금 열 + `MANUAL_COLUMNS_HELP`)이고, 조회기간 밖 저장 칸은 있을 때만 공용 버전 줄 표지다.
   - 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key` — 제출 회차는 본 version, 그 밖은 그린 저장본 version, 9장
     「본 값과 보이는 칸」). 남의 저장에 거부된 누름의 둘째 누름(`held_profile_conflict`) 회차는 제출 회차여도 그린 저장본 version
     이다 — 그 회차가 본 version 을 그 저장본으로 적는다. 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인
@@ -3920,8 +3941,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 첫 결과로 성공을 다시 알린다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「가용설비 설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
   편집표·저장·CSV 왕복과 빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다(Static 대비 일정은 그 값을 받지 않고 캐시
-  경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문). 「표 보기 설정」 아래 표 도구 막대 띄움과
-  편집표는 간격 없는 칸 하나다(펼침 → 표 38px — 막대 37px 위, 2026-11-09 사용자 검수 g17).
+  경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문). 보기 설정은 제출 줄(「Cut-off 저장」 ·
+  「설비 공정으로 채우기」) 끝 「표 보기 ▾」 팝오버이고(안에 폼 제출 「보기 적용」 — 2026-11-09 사용자 보드 T5) 그 줄 아래 표 도구
+  막대 띄움과 편집표는 간격 없는 칸 하나다(저장 줄 → 표 38px — 막대 37px 위, 사용자 검수 g17).
 - `src/capa_simulation/components/equipment_settings_dialog.py` — 가용설비 현황 사이드바 「가용설비 설정」 상자(2026-11-03 —
   전에는 제목 줄 끝 「설정」 단추, 상자 글 = 팝업 제목, `render_equipment_settings_box` — 설비 DB 를 못 읽은 회차에는 잠김)와 그
   팝업(묶음 머리 「공정별 Cut-off」 하나 — 나중 설정 자리, D14)의 열림 칸(`available_equipment_open_dialog`, 값 `settings`)·여는 콜백
@@ -3938,7 +3960,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 호기 필터가 걸리면 Static·GAP 행은 「—」 다. 시트·호기 목록 CSV 와 공정명 불일치 문구는 원본이다.
   - 입력 비가동(`manual_downtime` — **필수 인자**, 페이지가 `load_manual_downtime` 으로 읽어 넘긴다)을 시트·그림·확보율
     교차검증의 설비 일정 기준 가용에서 뺀다(키 `availability_sheet_cache_key`·`securement_cross_check_cache_key` 의 끝 칸).
-    시트 머리·교차검증 위에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄. 호기 목록·호기 필터 시트에는 없다.
+    시트 머리에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄, 조회 달에 든 칸은 상태 알림 `EQ-23`(목록은 Alarm 줄
+    표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다.
+  - 탭 머리에는 구획 제목 · 「확보율 교차검증」 제목을 두지 않고(안쪽 탭 이름 · 고른 전환 값과 같은 말 — UI-TXT-07) `조회 결과` ·
+    `표시` 전환 단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고). 두 전환의 뜻은 그 줄 끝 빈 캡션 풍선 하나(`RESULT_VIEW_HELP` ·
+    `DETAIL_MODE_HELP`)이고 마지막 전환과 작은 간격의 한 칸이다(`_switch_group` — 전환끼리만 넓게, Main 머리 줄 풍선과 같은 간격).
+    확보율 교차검증이면 그 풍선 첫 단락이 「맞대어 본 달」 값 · 범위 설명이다(`_cross_check_help` — 자리 캡션 없음, 사용자 보드 T2 의
+    「표 제목 풍선」 — 이 보기에는 표 제목이 없어 바로 위 줄 끝 풍선이 받는다). 「시트 CSV」 는 시트 프래그먼트 밖 그 줄 오른쪽 끝
+    칸(`render_sheet_csv`)이고 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이 높아지지 않게)(T3). 일정 미정 · 사용기준
+    밖은 Main 과 같은 상태 알림(`EQ-20` · `EQ-22` — `equipment_explorer.report_unit_notices`)이고, Static 값으로 채운 공정은 한쪽
+    공정 알림 `EQ-06` 의 전문이 말한다(`CROSS_CHECK_FALLBACK_HELP`).
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드 — 맨 위 위아래 두 칸 `목표 확보율`·
   `진척 비교`(그림 메모 g03, 본문 프래그먼트는 기준선 목록이 카드에 세운 것과 다르면 앱 전체 회차로 올린다 — `_Plan.shown_baselines`
   · `_view_choices`) · 공정 칸은 이름 줄 + 고른 값 한 줄 팝오버(`PROCESS_POPOVER_KEY` — 「Wafer Saw 외 2개」, 처음 고른 공정 ·
@@ -3954,7 +3985,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
   모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다.
 - `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 사이드바 목표 줄 · 카드
-  흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link`)과 상세 단추 이동
+  흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link` ·
+  필터 밖 링크 공정 사건 알림 `report_arrival_filter` → `EQ-24`)과 상세 단추 이동
   (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10).
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
@@ -5321,7 +5353,9 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   「입고 예정」, 반입만 있고 Qual 이 비면 「셋업 진행중」에 머물러 날짜가 들어올 때까지 총대수·
   가용대수에 들지 않는다(반입이 빈 호기는 총대수에도 없다). 일정 순서는 있는 날짜끼리 보고, 반입이
   없는 신규 호기에는 정지·반출/이설일정을 넣을 수 없다. 그런 호기의 대수는 일정 기준 가용을 읽는 자리(Main `가용대수`·`호기 현황`, Static 대비 일정,
-  필요 단축 일정 — 세 자리 모두 표지 「일정 미정 N대 (…)」 만 두고 규칙(`UNDATED_HELP`)은 그 줄 풍선이며, 필요 단축 일정은 Qual 일정이 없는 몫이 단축 후보도 아님을 풍선에 더한다)가 「일정 미정 N대」 한 줄로 알린다(`services/undated_equipment.py` — 표지 `undated_equipment_mark`).
+  필요 단축 일정)가 「일정 미정 N대 (…)」 로 알린다(`services/undated_equipment.py` — 표지 `undated_equipment_mark`). 가용설비 현황
+  Main · Static 대비 일정은 자리에 적지 않고 상태 알림 `EQ-20`(설비 마스터 전체 · 목록은 Alarm 줄 표 — 2026-11-09 상단 띠 재고), 필요
+  단축 일정은 `RS-03` 이고 Qual 일정이 없는 몫이 단축 후보도 아님을 함께 말한다.
 - 단일 Qual상태(옛 확정상태)는 Qual 일정의 계획·확정·완료·지연을 관리하는 값이며 가용대수 산식에는
   사용하지 않는다. **Qual일정이 있는 신규 호기에만 필수**다 — Qual일정이 없으면(보관·기존설비
   포함) 비워 둘 수 있다. 반입상태는 같은 네 값이고 비워도 된다.
@@ -5329,10 +5363,11 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   설비 일정 기준 가용·필요 단축 일정·공정 Capa 상세는 일정 기준 그대로다 — Space 는 실물, 집계는 계획이다. 실적은
   저장할 때 오늘보다 늦을 수 없고 반입실적 ≤ Qual실적이어야 한다. 미확인(상태 계획·확정 + 실적 공백 +
   일정 < 오늘)·실적 누락·상태 갱신 필요는 저장을 막지 않는 알림이다(`services/schedule_confirmation.py`) —
-  설비 마스터 탭 편집표 위 한 줄·접힌 목록(편집본 기준)과 Main `호기 현황` 머리 줄 아래 미확인 한 줄(저장본 기준).
+  설비 마스터 탭 편집표 줄 풍선(편집본 기준)과 Main 의 상태 알림 `EQ-21`(저장본 기준 · 설비 마스터 전체 — 2026-11-09 상단 띠
+  재고로 `호기 현황` 머리 줄 아래 한 줄에서 옮김).
   **미확인은 공식 설비 시나리오 일정 기준이다** — 세션이 공식 시나리오면 자기 일정 그대로, 가정 설비 시나리오면 Main 은
   공식 스냅샷의 미확인을 화면 호기로 좁혀 쓰고(합치지 않는다 — 공통은 늘 최신이라 공식 스냅샷의 공통이 곧 지금 공통)
-  꼬리표 「공식 일정 기준」 을 달며, 설비 마스터 탭 확인 목록은 공식 일정 + 편집본 공통 칸으로 센다. 상태 둘(반입상태·Qual상태)은
+  알림 글에 꼬리표 「(공식 일정 기준)」 을 달며, 설비 마스터 탭 확인 목록은 공식 일정 + 편집본 공통 칸으로 센다. 상태 둘(반입상태·Qual상태)은
   공통 칸이고 칸 머리가 「공통 — 공식 일정 기준」 이다.
 - **설비 시나리오에 일정이 없는 호기는 그 시나리오에 없는 호기와 같다**(F4 — 2026-10-24 결정, 질문 2 권장안). 그 시나리오의
   주차·월별 가용·Static 대비 일정·필요 단축 일정·공정 Capa 상세·「일정 미정 N대」 셈에서 빠지고(기존설비 Y·보관 Y 도),
@@ -5748,7 +5783,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   선택 상자는 모두(Space 현황·가용설비 현황 설비 마스터 탭은 원본 이름이라 해당 없음) `ProcessLabels.
   unique_format_func` 로 보이는 글자가 겹치지 않게 하고 위젯 앞에서 매 회차 잡은 값을 다시 적는다 — 같은
   글자면 다른 값이 돌아오고, 글자가 바뀌면 브라우저가 옛 글자로 다른 값을 되살린다(9장).
-  자리: 가용설비 현황 Main `공정소분류`·Static 대비 일정 `공정`·필요 단축 일정 `공정`·「가용설비 설정」 팝업 `표 보기 설정`
+  자리: 가용설비 현황 Main `공정소분류`·Static 대비 일정 `공정`·필요 단축 일정 `공정`·「가용설비 설정」 팝업 `표 보기`
   공정 필터, 산출 결과 대당 Capa 공정 필터, `column_filter` 의 공정 칸(산출 결과 소요대수·확보율, 기준
   정보 설비대수, 월별 편집기 필터), 표준 목표 공정 필터·로직 분석 `공정`, 표준 대비 재공 `공정`, Dynamic
   Capa 상위 `공정`, 실적 세 화면(효율·UPEH·수율) `공정`, HOME Preference 주요공정 프리셋 `공정`(저장본
@@ -6149,8 +6184,15 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `render_flash` 는 알림이 없어도 칸 하나를 세워 이 절의 「늘 서 있는 한 칸」 을 저절로 지키고, 돌려받은 칸에 실패
     문구나 같은 동작의 경고 여러 줄(표시순서 저장의 표시명 경고)을 쓴다. 폼 안에서는 알림이 없는 그 칸(빈 칸 · 팝업 안
     숨은 알림 표지만 든 칸)이 줄 사이 간격을 먹지 않는다(`app_header.EMPTY_FORM_SLOT_SELECTOR` — 2026-11-09 사용자 검수
-    g17 · g18, 저장 줄 아래 28 → 14px). 그래서 폼 안 거부 글은 돌려받은 칸에 쓰고 바깥 `st.container()` 로 한 겹 더 싸지
-    않는다 — 바깥 칸은 비지 않아 간격이 남는다. VOC 「적어 둔 답변」 은 알림이 아니라 사용자의
+    g17 · g18, 저장 줄 아래 28 → 14px). 본문도 같다 — 늘 서 있는 칸 안에 빈 칸만 든 회차(1.63 은 자식 블록이 하나라도
+    있으면 그 블록을 그리고 빈 자식 블록은 아무것도 그리지 않아, 세로 블록이 빈 감싼 칸이 높이 0 인 채 간격을 먹었다 —
+    가용설비 · Space · 필요 단축 일정 머리 알림 칸 등)는 그리지 않는다(`app_header.EMPTY_SLOT_SELECTOR` — 2026-11-09 상단 띠
+    재고 1-1). 일부러 비워 높이를 준 띄움 칸(`st.container(height=…)` — HOME 월 칸의 제목 띠 짝 셋)은 DOM 이 같은 빈 세로
+    블록이라 key 를 `…_spacer` 로 끝내 그 규칙에서 뺀다(`app_header.SPACER_KEY_SUFFIX` — 숨으면 월 칸 그림이 라벨 칸 행보다
+    띠 하나씩 위로 붙는다, `tests/test_app_header.py` 가 높이를 준 빈 칸의 key 를 본다). 스타일만 든 `st.html`(알림 표지 · 화면 서식)은 칸 안에서 불러도 이벤트 칸에 서 칸을 비지 않게 하지 않는다.
+    높이 0 컴포넌트(VOC 초안 보관)는 칸을 비지 않게 하므로 이웃과 간격 없는 한 칸(`gap=None`)에 둔다. 그래서 폼 안 거부
+    글은 돌려받은 칸에 쓰고 바깥 `st.container()` 로 한 겹 더 싸지 않는다 — 두 겹이면 바깥 칸의 세로 블록이 비지 않아(안
+    칸이 서 있다) 간격이 남는다. VOC 「적어 둔 답변」 은 알림이 아니라 사용자의
     글이라 꺼내 버리지 않고(`get`) 「닫기」 까지 그 칸 아래에 그린다(3장 `voc.py`). 다음 동작까지 남아야 하는 칸(필요 단축
     일정 기준선 shown 칸), 매 회차 비우고 보이는 탭에서만 그리는 칸(기준정보 STEP), 페이지가
     같은 `st.empty` 자리에 오류를 덮어 쓰는 칸(월 편집표), 회차의 상자 유무로 두 자리 가운데 하나에 서는 칸(Space 배치
@@ -6285,7 +6327,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   길면 팝업 안 탭으로 쓰는 묶음마다 가르고(HOME 「HOME 설정」 다섯 탭 — 2026-11-04 사용자 검수 home-u01) 팝업 머리에 안내
   문단을 두지 않는다 — 공용 설정 · 저장하지 않고 닫으면 사라짐 같은 말은 저장 단추 풍선이 한다. 설정이 아닌 것은 본문에
   남는다 — 편집 동작(저장·버리기·내려받기·붙여넣기·기준선 저장·Space 저장자 칸)·편집표에
-  딸린 보기 거름(설비 마스터 작은 편집표의 「… 표 보기 설정」 — 펼침 안 「보기 적용」 과 한 몸)·탭 자체(가용설비 현황
+  딸린 보기 거름(설비 마스터 작은 편집표 · Cut-off 표의 작업 줄 끝 「표 보기 ▾」 팝오버 — 안의 「보기 적용」 과 한 몸)·탭 자체(가용설비 현황
   `Preference` 탭). Space 의 자리 이동·`배치 편집`·`캔버스 편집`·`공식과 견주기` 는 설정이 아니라 그 화면의 조작이라 설정
   상자가 아니라 바로 위 화면 조작 상자(「Space 도면」 — 같은 날 사용자 Space 요청)에 선다. 데이터와 잇지 않는 도구 팝업(필요
   단축 일정 「Qual 마감 계산기」)은 설정이 아니지만 2026-11-09 사용자 검수 g03-1(「Qual 마감 계산기도 사이드바 조건박스 상자로
@@ -6499,7 +6541,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   BigDataQuery 설정 띠 · Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」) — 경고 상자 대신 상태 줄(캡션 ·
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 04` · `MO-01`).
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
-  `PD-02/03` · `CS-02`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
+  `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
 - **팝업 안 제출이 고칠 입력 없이 거부되면** `queue_flash(…, popup_only=True)` + `st.rerun()` 으로 앱 전체 회차에서 알린다(공식
@@ -6630,7 +6672,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   받은 회차는 어느 갈래로 끝나든 `st.rerun()` 으로 표를 초안으로 다시 그린다 — 행 추가가 열린 표의 위젯 id 는 데이터로
   지어져 초안만 바꾸고 끝나면 다음 제출의 칸 편집이 버려진다. 곁 답(거부 · 「바뀐 것이 없습니다」)은 `queue_refusal` 로 다음
   회차에 넘긴다. 초안은 늘 RangeIndex 다 — 아니면 `num_rows="dynamic"` 표가 `hide_index=True` 를 무시하고 번호 칸을 필수
-  칸으로 세워 그 칸이 빈 새 행이 저장에서 빠진다. 표 보기 설정은 폼 안이고 「보기 적용」(폼 제출)이 친 칸과 새 보기를 함께 가져간다 — 편집표는 앞 제출의 보기(`_APPLIED_VIEW_KEY` ·
+  칸으로 세워 그 칸이 빈 새 행이 저장에서 빠진다. 보기 설정(제출 줄 끝 「표 보기」 팝오버)은 폼 안이고 「보기 적용」(폼 제출)이 친 칸과 새 보기를 함께 가져간다 — 편집표는 앞 제출의 보기(`_APPLIED_VIEW_KEY` ·
   `table_view_controls.view_of`)로 그린다(답 X1). 왕복 양식 CSV 는 폼 앞에 두고 `_actions_style` 이 제출 줄 오른쪽 끝에 얹으며
   (`CSV_INSET_PX` 14 — 사본 앱 측정), 잠긴 표에도 같은 단추(`_render_roundtrip_csv`)를 둔다(그림 메모 g17 · 작은 결정 d6). 남은 틈:
   Enter 뒤 약 50 ~ 180ms 안의 채우기는 프런트 디바운스 탓에 친 값을 잃는다(서버로 막을 수 없다 — 샘플 관측).
@@ -6934,7 +6976,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」, HOME 설정 선행 B/O · 선행 입고 · 확보율 보정과
   가용설비 입력 비가동의 「변경 메모」 — 2026-11-09 사용자 검수 g17 로 메모 줄과 표 사이의 빈 알림 칸이 간격을 먹지 않게
   되며 붙었다)과 바로 위 CSV 단추(제외 목록)도 같은 띄움을 둔다. 폼 안에서는 띄움과 표를 간격 없는 칸(`gap=None`)
-  하나에 둔다 — 줄 사이 14 + 띄움 24 = 38px 로 막대 바로 위까지다(Cut-off 「표 보기 설정」 아래도 같다). `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
+  하나에 둔다 — 줄 사이 14 + 띄움 24 = 38px 로 막대 바로 위까지다(Cut-off 제출 줄 — 끝에 「표 보기」 팝오버 — 아래도 같다). `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
   대입은 건너뛰고, 표가 `if` 의 첫 문장이면 그 `if` 앞 문장)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고,
   띄움 숫자 정의가 이 모듈 하나인지 본다. 형제가 부르는 도우미 함수(같은 파일·`capa_simulation` 에서 들여온 함수, `@st.dialog`
   는 빼고) 안까지 본다 — 위 줄을 `_render_controls()` 같은 도우미로 그리면 그물이 못 봐 필요 단축 일정 진척 보드 표가 「기한

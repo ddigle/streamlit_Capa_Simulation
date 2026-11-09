@@ -24,6 +24,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
+from alert_marks import active_state, note_table, table_frame
 from sheet_reader import chart_spec, open_cell, sheet_cells, sheet_value
 from streamlit.testing.v1 import AppTest
 from test_availability_gap_panel import _panel_app
@@ -319,8 +320,15 @@ def test_the_cross_check_numerator_takes_the_input_out(keyed: bool) -> None:
     table = app.dataframe[0].value.set_index("공정")
     assert table.at["Die Attach", "일정기준가용대수"] == pytest.approx(3.5)
     assert table.at["Etch", "일정기준가용대수"] == pytest.approx(6.0)
+    # 「입력 비가동 반영(…)」 은 자리 줄이 아니라 상태 알림(`EQ-23`)이다(2026-11-09 상단 띠 재고).
     captions = " ".join(item.value for item in app.caption)
-    assert "입력 비가동 반영(1칸 · 합 1대)" in captions
+    assert "입력 비가동 반영" not in captions
+    note = active_state(app, "EQ-23")
+    assert note is not None
+    assert str(note["short"]).startswith("입력 비가동 반영(1칸 · 합 1대)")
+    assert note["tab"] == "Preference"
+    cells = table_frame(note_table(note, "입력 비가동 칸"))
+    assert cells["공정"].tolist() == ["Die Attach"] and cells["입력대수"].tolist() == [1.0]
 
 
 def test_the_unit_filter_sheet_leaves_the_input_out() -> None:

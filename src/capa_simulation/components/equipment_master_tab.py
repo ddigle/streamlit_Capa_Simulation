@@ -142,12 +142,12 @@ from capa_simulation.components.equipment_settings_dialog import (
 )
 from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import (
-    literal_badge,
     literal_markdown,
     markdown_safe_tildes,
     quoted,
 )
 from capa_simulation.components.save_section import discard_popover
+from capa_simulation.components.saved_note import note_placeholder
 from capa_simulation.components.side_panel import render_side_head, split_frame, switch_side
 from capa_simulation.components.state_alerts import tab_name
 from capa_simulation.components.table_toolbar import render_csv_download
@@ -303,7 +303,7 @@ UNDO_HELP: Final = (
     "표 · 상세의 마지막 고침부터 한 단계씩 되돌립니다. 표 고침을 다 되돌리면 기존 보유대수 · "
     "비가동 일정의 일괄 삭제를 되살립니다 — 그 표의 적용하지 않은 편집은 먼저 편집본에 넣습니다."
 )
-NOTE_PLACEHOLDER: Final = "예: 10월 신규 호기 반입일정 갱신"
+NOTE_PLACEHOLDER: Final = note_placeholder("10월 신규 호기 반입일정 갱신")
 DOWNLOAD_NOTE: Final = (
     "표에서 고친 값은 곧바로 편집본에 들어가 이 파일에 함께 실립니다(못 읽은 칸 초안은 빼고)."
 )
@@ -1057,14 +1057,37 @@ def _seed(key: str, value: str, options: Sequence[str]) -> None:
         st.session_state[key] = value
 
 
+# 맨 위 줄 표 고르기의 뜻과 칸의 저장 자리 — 표 고르기는 라벨 줄이 없고(접근성 이름 「표」 로만
+# 남는다) 1.63 은 그때 위젯 풍선도 숨기므로 그 곁 빈 캡션의 풍선이 말한다. 공통 · 시나리오 · 배치
+# 칸이 어디에 저장되나도 이 풍선이 말한다(2026-11-09 상단 띠 재고 · 사용자 지시, 설계 규칙
+# UI-TXT-01 · UI-TXT-02).
+HEAD_HELP: Final = (
+    "표 — 설비 마스터 · 기존 보유대수 · 비가동 일정 가운데 고칠 표를 고릅니다. 일정 칸(시나리오)은 "
+    "이 설비 시나리오에만, 나머지 칸(공통)은 모든 설비 시나리오에 함께 저장됩니다."
+)
+HEAD_LAYOUT_HELP: Final[dict[str, str]] = {
+    "overlay": (
+        "배치 칸은 이 시나리오에만(공식과 다른 것만) 저장되고 공식 배치는 바뀌지 않습니다 — 호기 "
+        "상세 「위치」 에서 공식 자리로 되돌릴 수 있습니다."
+    ),
+    "official": "배치 칸은 공식 배치(공통 대장)에 저장됩니다.",
+}
+HEAD_LOCKED_LAYOUT_HELP: Final = "배치 칸은 지금 잠겨 있습니다."
+
+
+def head_help(layout: LayoutMode) -> str:
+    """맨 위 줄 표 고르기 곁 풍선 — 표의 뜻 + 칸의 저장 자리(배치 칸은 이 회차의 배치 갈래)."""
+    return f"{HEAD_HELP} {HEAD_LAYOUT_HELP.get(str(layout), HEAD_LOCKED_LAYOUT_HELP)}"
+
+
 def _render_head(
     session: EquipmentSession,
     basis: EquipmentSaveBasis | None,
-    latest_snapshot: EquipmentSnapshot | None,
     layout: LayoutMode,
     pending: int,
 ) -> str:
-    """맨 위 줄 — 표 고르기 · 설비 시나리오 알약 · 리비전 · 저장 전 변경 수. 고른 표를 돌려준다."""
+    """맨 위 줄 — 표 고르기 · 그 뜻 풍선 · 일정 없이 엶 · 저장 전 변경 수 · 일정 잠김. 고른 표를
+    돌려준다."""
     _seed(TABLE_KEY, TABLE_MASTER, TABLES)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         table = st.segmented_control(
@@ -1075,34 +1098,14 @@ def _render_head(
             persist_state="session",
             label_visibility="collapsed",
         )
-        name = session.scenario_name or "설비 시나리오 없음"
-        official = basis is None or basis.official_scenario
-        tail = "(공식)" if official else "(가정)"
-        layout_help = (
-            " 배치 칸은 이 시나리오에만(공식과 다른 것만) 저장되고 공식 배치는 바뀌지 않습니다 — "
-            "호기 상세 「위치」 에서 공식 자리로 되돌릴 수 있습니다."
-            if layout == "overlay"
-            else " 배치 칸은 공식 배치(공통 대장)에 저장됩니다."
-            if layout == "official"
-            else " 배치 칸은 지금 잠겨 있습니다."
-        )
-        st.badge(
-            f"설비 시나리오 · {literal_badge(name)}{tail}",
-            icon=":material/layers:",
-            color="primary" if official else "violet",
-            help=(
-                "일정 칸(시나리오)은 이 시나리오에만, 나머지 칸(공통)은 모든 설비 시나리오에 함께 "
-                "저장됩니다." + layout_help
-            ),
-        )
+        st.caption("", help=head_help(layout), width="content")
+        # 설비 시나리오 알약(「설비 시나리오 · 운영 일정(공식)」)과 리비전 알약(「공통 rN · 일정
+        # rM」)은 두지 않는다 — 사이드바 「설비 시나리오」 줄과 머리 띠 둘째 줄이 같은 값이다(설계
+        # 규칙 UI-TXT-07, 2026-11-09 상단 띠 재고). 어느 칸이 어디에 저장되는지는 바로 앞 풍선
+        # (`head_help`)이다. 일정 없이 연 회차만 그 상태 표지를 남긴다(값이 아니라 조건이 있을 때만
+        # 서는 표지).
         if session.unmerged:
             st.badge("일정 없이 엶", icon=":material/event_busy:", color="gray")
-        elif latest_snapshot is not None:
-            schedule = latest_snapshot.schedule
-            revision = f"공통 r{latest_snapshot.revision.revision_no}"
-            if schedule is not None:
-                revision += f" · 일정 r{schedule.revision_no}"
-            st.badge(revision, color="gray")
         # 수가 0 이면 알약이 없다 — 늘 서 있는 칸 안에 둔다(이 줄의 자리는 그대로).
         with st.container():
             if pending:
@@ -1332,7 +1335,11 @@ def _render_save_section(
     frames: Frames = st.session_state[BUFFER_KEY]
     if st.session_state.pop(_NOTE_CLEAR_KEY, False):
         st.session_state[_NOTE_KEY] = ""
-    st.text_input("변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER)
+    # 변경 메모 · 저장자는 이름 줄 없이 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 ·
+    # 사용자 지시 — 설계 규칙 UI-CON-03).
+    st.text_input(
+        "변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER, label_visibility="collapsed"
+    )
     render_saved_by_field(SAVE_FIELDS_PREFIX, persist=True)
     # 수 칸 · 「저장하기 전에 고칠 것」 줄이 고친 것 없음 · 오류 수를 이미 말하고 저장 뒤의 거부는
     # 단추 아래에 선다 — 이 칸은 다른 자리에 없는 옛 배포 흔적만(늘 서 있는 칸이라 아래 단추 줄의
@@ -1484,7 +1491,7 @@ def render_equipment_master_tab(
     )
     counts = change_counts(view)
     pending = counts.total + (1 if view.source.others else 0)
-    table = _render_head(session, basis, latest_snapshot, layout, pending)
+    table = _render_head(session, basis, layout, pending)
     _render_notices(session, basis, layout_mode, floor_states, latest_snapshot)
     acks = _acks(_applied())
     toasts = grid_toasts()
