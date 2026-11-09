@@ -219,6 +219,12 @@ def render_cutoff_management(
     with form:
         # 표에 친 칸은 폼을 제출해야 서버에 온다. 「설비 공정으로 채우기」 도 그 칸 위에 얹으므로 폼
         # 밖 단추로 두지 않는다 — 친 값을 모른 채 표를 다시 세우면 그 값이 말없이 사라진다.
+        view_applied = False
+
+        def view_button() -> None:
+            nonlocal view_applied
+            view_applied = st.form_submit_button("보기 적용", key=_VIEW_APPLY_KEY)
+
         with st.container(key=_SUBMIT_ROW_KEY, horizontal=True, gap="small"):
             submitted = st.form_submit_button(
                 "Cut-off 저장",
@@ -235,6 +241,20 @@ def render_cutoff_management(
                 ),
                 icon=":material/playlist_add:",
                 width="content",
+            )
+            # 보기 설정은 이 제출 줄 끝 「표 보기 ▾」 팝오버다 — 접힘 줄을 따로 세우지 않는다
+            # (2026-11-09 사용자 보드 T5 — 설비 마스터 작은 편집표와 같은 꼴). 폼 안이라 칸을 친 채
+            # 공정 필터 · 볼 컬럼을 바꿔도 회차가 돌지 않아 친 칸이 남고, 「보기 적용」 이 친 칸과
+            # 새 보기를 함께 가져간다(2026-11-08 사용자 답 X1).
+            requested = render_table_view_controls(
+                draft,
+                key_prefix=_VIEW_PREFIX,
+                # 고른 보기의 행이 바뀌어도 편집표는 버리지 않는다 — 적용한 보기로 그린다.
+                editor_key=f"{_EDITOR_KEY}_requested_view",
+                filter_columns=["공정"],
+                locked_columns=["공정", "Cutoff일수"],
+                value_labels=process_labels.value_labels() if process_labels else None,
+                footer=view_button,
             )
             # 서식만 든 글은 이벤트 칸으로 가 팝업 본문이 그 칸을 쓰게 된다 — 빈 칸 하나를 함께 둬
             # 제출 줄 안 제자리에 둔다(폭 0).
@@ -254,29 +274,11 @@ def render_cutoff_management(
                 st.error(rejected)
             if take_refusal(_UNCHANGED_NAME) is not None:
                 st.info(CUTOFF_UNCHANGED_MESSAGE, icon=":material/info:")
-        # 보기 설정도 폼 안이다 — 칸을 친 채 공정 필터 · 볼 컬럼을 바꿔도 회차가 돌지 않아 친 칸이
-        # 남고, 「보기 적용」 이 친 칸과 새 보기를 함께 가져간다(2026-11-08 사용자 답 X1).
-        view_applied = False
-
-        def view_button() -> None:
-            nonlocal view_applied
-            view_applied = st.form_submit_button("보기 적용", key=_VIEW_APPLY_KEY)
-
-        requested = render_table_view_controls(
-            draft,
-            key_prefix=_VIEW_PREFIX,
-            # 고른 보기의 행이 바뀌어도 편집표는 버리지 않는다 — 적용한 보기로 그린다.
-            editor_key=f"{_EDITOR_KEY}_requested_view",
-            filter_columns=["공정"],
-            locked_columns=["공정", "Cutoff일수"],
-            value_labels=process_labels.value_labels() if process_labels else None,
-            footer=view_button,
-        )
         view = _applied_view(draft, requested)
-        # 바로 위가 누를 것이 든 펼침이다 — 표 도구 막대(표 머리 위 37px)가 그 오른쪽 끝을 덮지
-        # 않게 띄운다. 띄움과 표는 간격 없는 칸 하나에 둔다 — 폼 줄 사이(14px)를 띄움 앞뒤로 두 번
-        # 먹어 펼침과 표 사이가 52px 였다(2026-11-09 사용자 검수 g17). 띄움 24 + 줄 사이 14 = 38px
-        # 로 막대 바로 위까지다.
+        # 바로 위가 누를 것이 든 제출 줄(단추 · 팝오버 · 오른쪽 끝 CSV)이다 — 표 도구 막대(표 머리
+        # 위 37px)가 그 줄을 덮지 않게 띄운다. 띄움과 표는 간격 없는 칸 하나에 둔다 — 폼 줄
+        # 사이(14px)를 띄움 앞뒤로 두 번 먹지 않게(2026-11-09 사용자 검수 g17). 띄움 24 + 줄 사이
+        # 14 = 38px 로 막대 바로 위까지다.
         with st.container(gap=None):
             toolbar_clearance()
             edited = st.data_editor(

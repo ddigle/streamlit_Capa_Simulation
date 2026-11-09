@@ -301,9 +301,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("src/capa_simulation/components/access_list_admin.py", "_render_people"): (EMPTY,),
     # 점검 결론 값 줄 둘 — 켜짐 · 꺼짐(운영). 나머지 설명은 풍선 · Guide 로 옮겼다(UI-TXT-04).
     ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (VALUE, VALUE),
-    ("src/capa_simulation/components/table_view_controls.py", "render_table_view_controls"): (
-        BESIDE_INPUT,
-    ),
     (
         "src/capa_simulation/components/upeh_assumption_controls.py",
         "render_upeh_assumption_controls",

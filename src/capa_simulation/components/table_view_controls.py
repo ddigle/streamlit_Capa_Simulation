@@ -36,6 +36,12 @@ FILTERED_NOTICE = (
     "들어갑니다. 행을 더하거나 지우려면 필터를 비우세요."
 )
 MAX_FILTER_OPTIONS = 200
+# 보기 설정 팝오버의 단추 글 · 필터가 걸린 동안의 표지 · 아이콘. 단추는 표 작업 줄 끝에 선다 — 접힘
+# 줄을 따로 세우지 않는다(2026-11-09 사용자 보드 T5, 설계 규칙 UI-LAY-11 · UI-LAY-01 예외).
+VIEW_LABEL = "표 보기"
+VIEW_FILTERED_MARK = "필터"
+VIEW_ICON = ":material/view_column:"
+VIEW_FILTERED_ICON = ":material/filter_alt:"
 
 
 @dataclass(frozen=True)
@@ -84,11 +90,18 @@ def render_table_view_controls(
     editor_key: str,
     filter_columns: Sequence[str],
     locked_columns: Sequence[str] = (),
-    label: str = "표 보기 설정",
     value_labels: Mapping[str, Mapping[str, str]] | None = None,
     footer: Callable[[], None] | None = None,
 ) -> TableView:
     """컬럼 선택과 행 필터를 그리고 그 결과를 돌려준다.
+
+    **표 작업 줄 끝 「표 보기 ▾」 팝오버**다(`key_prefix` + `_view_popover`) — 부르는 쪽이 표 위
+    작업 줄(가로 칸) 안에서 부른다. 접힘 줄을 따로 세우지 않는다(2026-11-09 사용자 보드 T5 — 설비
+    마스터 기존 보유대수 · 비가동 일정, 가용설비 설정 Cut-off 세 표가 같은 꼴). 안의 칸 · key ·
+    「보기 적용」 은 그대로다. 필터가 걸린 동안은 단추 글 끝 표지(「표 보기 · 필터」)와
+    풍선(`FILTERED_NOTICE` — 행 추가 · 삭제 잠김)이 말한다 — 표 아래 · 위에 설명 줄을 세우지
+    않는다(설계 규칙 UI-TXT-04 — 숨은 데이터는 칸 머리 표지 + 풍선). 표지는 그리기 전 세션의 고른
+    값으로 정한다(위젯이 돌려줄 값과 같다 — 지금 표에 없는 값은 뺀다).
 
     `locked_columns` 는 감출 수 없는 컬럼이다 — 키와 필수 입력이 화면에서 사라지면
     사용자가 무엇을 고치고 있는지 알 수 없고, 새 행을 만들 수도 없다.
@@ -97,7 +110,7 @@ def render_table_view_controls(
     같은 모양 — 겹치는 글자는 `ProcessLabels.unique_format_func` 로 가른다). 옵션 값·세션
     저장값·거르는 값은 원본이고 편집표의 칸은 건드리지 않는다.
 
-    `footer` 는 펼침 맨 끝에 그릴 것이다(그 보기를 표에 거는 단추 — 고르는 칸과 한 자리).
+    `footer` 는 팝오버 맨 끝에 그릴 것이다(그 보기를 표에 거는 단추 — 고르는 칸과 한 자리).
 
     **폼 안에 그려도 된다**(Cut-off — 2026-11-08 사용자 답 X1). 폼 안이면 고른 값이 그 폼을 제출할
     때에만 서버에 온다 — 칸을 친 채 보기를 바꿔도 회차가 돌지 않아 친 칸이 사라지지 않고, 「보기
@@ -114,8 +127,12 @@ def render_table_view_controls(
     hideable = [column for column in columns if column not in locked]
     shown_key = f"{key_prefix}_columns"
 
-    with st.expander(
-        label, icon=":material/view_column:", expanded=False, key=f"{key_prefix}_view_expander"
+    filtered_now = _filtered_in_state(data, key_prefix, filter_columns)
+    with st.popover(
+        f"{VIEW_LABEL} · {VIEW_FILTERED_MARK}" if filtered_now else VIEW_LABEL,
+        icon=VIEW_FILTERED_ICON if filtered_now else VIEW_ICON,
+        help=FILTERED_NOTICE if filtered_now else None,
+        key=view_popover_key(key_prefix),
     ):
         shown = st.multiselect(
             "볼 컬럼",
@@ -180,9 +197,29 @@ def render_table_view_controls(
         if previous is not None:
             discard_editor(editor_key)
         st.session_state[signature_key] = signature
-    if view.filtered:
-        st.caption(FILTERED_NOTICE)
     return view
+
+
+def view_popover_key(key_prefix: str) -> str:
+    """보기 설정 팝오버의 key."""
+    return f"{key_prefix}_view_popover"
+
+
+def _filtered_in_state(data: pd.DataFrame, key_prefix: str, filter_columns: Sequence[str]) -> bool:
+    """세션의 고른 필터 값(지금 표에 있는 값만)으로 행이 걸러지는가 — 팝오버 단추 표지를 칸보다 먼저
+    정한다. 칸이 돌려줄 보기(`view_of`)와 같은 판정이다."""
+    filters: dict[str, list[str]] = {}
+    for column in filter_columns:
+        if column not in data.columns:
+            continue
+        chosen = st.session_state.get(filter_widget_key(key_prefix, column))
+        if not isinstance(chosen, (list, tuple)) or not chosen:
+            continue
+        present = set(_options(data, column))
+        kept = [str(value) for value in chosen if str(value) in present]
+        if kept:
+            filters[column] = kept
+    return bool(filters) and view_of(data, filters=filters).filtered
 
 
 def view_of(

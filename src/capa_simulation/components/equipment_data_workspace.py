@@ -2860,12 +2860,12 @@ def _editor_view(
     prefix: str,
     filters: tuple[str, ...],
     locked: tuple[str, ...],
-    label: str,
     apply_key: str,
 ) -> tuple[TableView, TableView, bool]:
     """(화면에 적용된 보기, 방금 고른 보기, 「보기 적용」 누름). 두 보기는 「보기 적용」 전까지
-    다를 수 있다. 단추는 고르는 칸이 든 펼침 맨 끝에 선다(설계 규칙 UI-LAY-03) — 빈 표는 펼침이
-    없어 누를 것도 없다."""
+    다를 수 있다. 부르는 쪽이 표 위 작업 줄 안에서 부른다 — 「표 보기 ▾」 팝오버가 그 줄 끝에 서고
+    (2026-11-09 사용자 보드 T5) 단추는 고르는 칸이 든 팝오버 맨 끝에 선다(설계 규칙 UI-LAY-03) —
+    빈 표는 팝오버가 없어 누를 것도 없다."""
     pressed = False
 
     def apply_button() -> None:
@@ -2879,7 +2879,6 @@ def _editor_view(
         editor_key=f"{key}_requested_view",
         filter_columns=filters,
         locked_columns=locked,
-        label=label,
         footer=apply_button,
     )
     view_key = f"{key}_applied_view"
@@ -2978,7 +2977,7 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
         "모두 선택",
         key=f"equipment_{slug}_select_matching_v1",
         icon=":material/checklist:",
-        help="표 보기 설정의 필터에 맞는 행을 모두 고릅니다.",
+        help="「표 보기」 의 필터에 맞는 행을 모두 고릅니다.",
     )
     clear = st.button(
         "선택 해제",
@@ -3590,8 +3589,11 @@ def render_small_editor(
     selection = _current_selection()
     # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
     with st.container(key=f"equipment_small_{slug}_editor_v1"):
-        # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 「보기 적용」 은 고르는 칸이 든 펼침 안에
-        # 선다(`_editor_view`).
+        # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 그 끝에 「표 보기 ▾」 팝오버(보기 설정 ·
+        # 「보기 적용」 — `_editor_view`)가 선다. 접힘 줄을 따로 세우지 않는다(2026-11-09 사용자
+        # 보드 T5 — Cut-off 표와 같은 꼴).
+        view_apply_key = f"equipment_{slug}_view_apply_v1"
+        downtime = frames[2]
         with st.container(horizontal=True, gap="small"):
             # 적용하지 않은 편집 · 필수 칸을 비운 새 줄이 버려지는 것은 누르기 전에 알아야 해 이
             # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
@@ -3605,18 +3607,26 @@ def render_small_editor(
             action = _selection_buttons(
                 slug, delete_locked=None if baseline_table else delete_locked
             )
+            if baseline_table:
+                view, requested, view_clicked = _editor_view(
+                    frames[0],
+                    key=BASELINE_EDITOR_KEY,
+                    prefix="equipment_baseline_view",
+                    filters=("공정", "분류"),
+                    locked=("공정", "분류", "기존보유대수"),
+                    apply_key=view_apply_key,
+                )
+            else:
+                view, requested, view_clicked = _editor_view(
+                    downtime,
+                    key=DOWNTIME_EDITOR_KEY,
+                    prefix=DOWNTIME_VIEW_PREFIX,
+                    filters=(EQUIPMENT_ID_COLUMN, "비가동유형"),
+                    locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
+                    apply_key=view_apply_key,
+                )
         confirm_delete, cancel_delete = _render_bulk_delete_status(frames)
-        view_apply_key = f"equipment_{slug}_view_apply_v1"
         if baseline_table:
-            view, requested, view_clicked = _editor_view(
-                frames[0],
-                key=BASELINE_EDITOR_KEY,
-                prefix="equipment_baseline_view",
-                filters=("공정", "분류"),
-                locked=("공정", "분류", "기존보유대수"),
-                label="기존 보유대수 · 표 보기 설정",
-                apply_key=view_apply_key,
-            )
             edited, checked = _selectable_editor(
                 frames[0],
                 view,
@@ -3636,16 +3646,6 @@ def render_small_editor(
                 selection=selection.get(BASELINE_TARGET, frozenset()),
             )
         else:
-            downtime = frames[2]
-            view, requested, view_clicked = _editor_view(
-                downtime,
-                key=DOWNTIME_EDITOR_KEY,
-                prefix=DOWNTIME_VIEW_PREFIX,
-                filters=(EQUIPMENT_ID_COLUMN, "비가동유형"),
-                locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
-                label="비가동 일정 · 표 보기 설정",
-                apply_key=view_apply_key,
-            )
             types = sorted(set(DOWNTIME_TYPES) | set(downtime["비가동유형"].dropna().astype(str)))
             edited, checked = _selectable_editor(
                 downtime,

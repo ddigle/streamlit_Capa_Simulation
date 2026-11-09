@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import pytest
 
@@ -109,6 +111,53 @@ def test_changing_the_visible_rows_rebuilds_the_editor_but_the_first_render_does
     app.multiselect(key="view_test_filter_공정소분류").set_value(["가"]).run()
     assert not app.exception
     assert app.session_state["seen_editor_key"] == "view_test_editor__g1"
+
+
+def _popovers(app: Any) -> list[Any]:
+    """트리의 팝오버 블록들."""
+    found: list[Any] = []
+
+    def walk(node: Any) -> None:
+        for child in getattr(node, "children", {}).values():
+            if getattr(child, "type", None) == "popover":
+                found.append(child)
+            walk(child)
+
+    walk(app.main)
+    return found
+
+
+def test_the_view_settings_are_a_popover_that_marks_a_filtered_table() -> None:
+    """보기 설정은 접힘 줄이 아니라 「표 보기 ▾」 팝오버다(2026-11-09 사용자 보드 T5 — 부르는 쪽이
+    표 작업 줄 끝에 세운다). 필터가 걸린 동안은 단추 글 끝 표지 「필터」 와 풍선이 행 추가 · 삭제
+    잠김을 말하고, 표 위 · 아래에 설명 줄을 세우지 않는다(설계 규칙 UI-TXT-04)."""
+    from streamlit.testing.v1 import AppTest
+
+    from capa_simulation.components.table_view_controls import (
+        FILTERED_NOTICE,
+        VIEW_LABEL,
+        view_popover_key,
+    )
+
+    app = AppTest.from_function(_view_app).run()
+    assert not app.exception
+    assert not app.expander
+    (popover,) = _popovers(app)
+    assert str(popover.proto.id).endswith(f"-{view_popover_key('view_test')}")
+    assert popover.proto.popover.label == VIEW_LABEL
+    assert not popover.proto.popover.help
+
+    app.multiselect(key="view_test_filter_공정소분류").set_value(["가"]).run()
+    assert not app.exception
+    (popover,) = _popovers(app)
+    assert popover.proto.popover.label == f"{VIEW_LABEL} · 필터"
+    assert popover.proto.popover.help == FILTERED_NOTICE
+    assert not [item for item in app.caption if FILTERED_NOTICE in item.value]
+
+    # 모든 값을 고른 거름은 행을 줄이지 않는다 — 표지가 없다(`view_of` 와 같은 판정).
+    app.multiselect(key="view_test_filter_공정소분류").set_value(["가", "나"]).run()
+    (popover,) = _popovers(app)
+    assert popover.proto.popover.label == VIEW_LABEL
 
 
 def _labelled_filter_app() -> None:
