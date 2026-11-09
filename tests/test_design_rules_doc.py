@@ -8,8 +8,9 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 자리 · 칸 · 수준 · 판단 질문 · 상태 · 머리의 수 · 결정 기록 18줄과 답 · 반영 검수표 8줄과
 답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 사용자 기록
 5줄 · 이번 배포 전후 보드 7줄과 답 · 통합 검수 보드 줄과 답 · 작업 줄 규칙 둘(v1.9) · 전 화면 점검
-보드 15줄 · 2차 보드 7줄과 답(v1.10) · 아침 검수 보드 줄과 답 · 메모 원문(v1.11) · 문서 안팎의 id
-참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+보드 15줄 · 2차 보드 7줄과 답(v1.10) · 아침 검수 보드 줄과 답 · 메모 원문(v1.11) · 2026-11-09 검수
+보드 · 칩 자리 · 상단 판단 줄과 답 · 메모 원문 · 새 규칙(v1.12) · 문서 안팎의 id 참조 · 그물 경로 ·
+진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -812,11 +813,10 @@ def test_the_morning_board_answers_are_recorded_and_written_into_the_rules() -> 
     글로 들어갔는지 핵심만 본다 — 공정 공유 다섯 규칙과 두 모듈 경계(UI-LAY-02), 공정 판(UI-INP-03),
     범위 바뀜(UI-NTF-02), 팝업 호스트(UI-PRF-01), 잠긴 Cut-off 왕복 양식(UI-LAY-12)."""
     document = _text()
-    assert "판 v1.11" in document.split("\n## 1. ")[0]
     assert "- **v1.11 — 2026-11-08.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-11. ") :]
+    board = section[section.index("\n### 6-11. ") : section.index("\n### 6-12. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -865,4 +865,104 @@ def test_the_morning_board_answers_are_recorded_and_written_into_the_rules() -> 
     assert "6-11 d11" in rules["UI-DAT-03"].fields["예외"][0]
     values = _chapter(document, 4)
     for name in ("공정 값 칸 글", "공용 공정 표지", "조건 패널 줄 사이", "팝업 여닫기 회차"):
+        assert any(line.startswith(f"| {name} |") for line in values.splitlines()), name
+
+
+# 2026-11-09 검수 보드 · 칩 자리 · 상단 판단 보드(6-12)의 답 — 결정 셋과 남은 물음 표는 권장, C1 은 (라) ·
+# T1 은 (나) 이고 나머지 C · T 는 (가)다. 고침 그림은 메모 원문(앞부분)을 맞댄다.
+TOP_DECISIONS = {
+    "top-rule": "인터페이스 구성 규칙으로 둔다",
+    "K1": "1차를 이번 배포에 싣고, 사내에서 써 본 뒤 2차를 시작한다",
+    "K2": "지금대로 — 사이드바를 굴려 본다",
+    "K3": "받는다 — 지금처럼 내려가 빛난다",
+    "Q": "권장대로 모두",
+}
+TOP_PICTURE_MEMOS = {
+    "P1-3": "굳이 그렇게 안해도될것같음.",
+    "P1-5": "space 도면 박스에서는 자리, 도면 문구 제거해",
+    "P1-6": "HB 접합 없음이 무슨뜻?",
+    "P1-11": "여기서 공정을 바꾸면 다른페이지에서도 그 공정 필터가 적용되게끔.",
+    "U5-1": "공정명 옆에 최저 확보율도 작게 같이 표기해줘",
+    "g03-1": "Qual 마감 계산기도 사이드바 조건박스 상자로 이동",
+    "g03-2": "(Wafer Saw 외 n개 선택) 이렇게 보여지게 한줄로 정리해줘",
+    "g05": "단축없는호기 흐리게, 날짜, 맞대지 못한 공정 등 3줄도 다른 위치로 옮겨",
+    "g12-1": "추가설명필요한건 가이드로",
+    "g12-2": "월별 확보율에도 옅은 칠 문구 가이드배치 or 제거",
+    "g17": "표 보기 설정 위아래로 여백이 뜨는데 공간 최적화해",
+    "g18": "중간중간 중복되는 문구(공지)나 여백이 있는데 최적화해",
+}
+TOP_CHOICES = {
+    "C1": "(라) (가) + (다) 함께",
+    "C2": "(가) 둘 다 주고받기 — 사이드바 칸에서 직접 고른 공정만 보냄",
+    "C3": (
+        "(가) 사이드바 「제약 시뮬레이션 조건」 카드로 옮기고 이름을 「비중 배분 비교」 로 줄임"
+        " — 설명은 Guide"
+    ),
+    "T1": "(나) 그대로",
+    "T2": "(가) 합침",
+    "T3": "(가) 옆 줄 오른쪽 끝으로 합침",
+    "T4": "(가) 걷음",
+    "T5": "(가) 표 작업 줄 끝 「표 보기 ▾」 팝오버로",
+    "T6": "(가) 라벨만 걷고 칸은 그 자리",
+    "T7": "(가) 보유 공정 → 표 머리 풍선 · 팝오버, 알림 수 → 탭 이름 곁 수 표지",
+    "T8": (
+        "(가) 지금 정리 — 배지 → 화면 탭 이름 곁 「구현중」 표지 + 풍선, 샘플 토글 → 사이드바"
+        " 조회 조건, 「합성 샘플」 → 머리 띠 표지, 조회 조건 → 사이드바"
+    ),
+    "T9": "(가) 그대로 — 탭은 탐색이라 남김",
+    "T10": "(가) 한 번 뜨는 알림창 알림으로",
+}
+TOP_RULE_QUOTE = (
+    "페이지 상단의 여백이나 문구를 최소화해서 본문, 핵심내용이 상단에 꽉 차게 배치하는게"
+)
+
+
+def test_the_top_boards_are_recorded_and_the_top_rule_stands() -> None:
+    """v1.12 — 6-12 는 사용자 규칙 한 줄 · 결정 셋 · 남은 물음 표 · 고침 그림 열둘 · 괜찮음 그림 한 줄 ·
+    칩 자리 C1 ~ C3 · 상단 판단 T1 ~ T10 이고, 고른 글 그대로 · 메모 원문이 있다. 새 규칙 UI-LAY-13 은
+    사용자 원문을 근거로 싣고 예외(T1 공지 · T9 탭 줄 아래 14px · 안쪽 탭)를 적으며, UI-LAY-02 는 구현
+    중 화면 예외를 거뒀다(T8)."""
+    document = _text()
+    assert "판 v1.12" in document.split("\n## 1. ")[0]
+    assert "- **v1.12 — 2026-11-10.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-12. ") :]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-09) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert list(found) == [*TOP_DECISIONS, *TOP_PICTURE_MEMOS, "pictures-ok", *TOP_CHOICES]
+    for key, answer in {**TOP_DECISIONS, **TOP_CHOICES}.items():
+        assert found[key] == answer, key
+    for key in TOP_PICTURE_MEMOS:
+        assert found[key] == "고친다", key
+    assert found["pictures-ok"] == "괜찮음"
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    for key, memo in TOP_PICTURE_MEMOS.items():
+        assert memo in by_id[key], key
+    assert "그림 14칸" in by_id["pictures-ok"]
+    assert TOP_RULE_QUOTE in by_id["top-rule"]
+
+    rules = {rule.id: rule for rule in _rules()}
+    top = rules["UI-LAY-13"]
+    assert _level_and_state(top) == ("MUST", "확정")
+    assert TOP_RULE_QUOTE in top.fields["근거"][0]
+    for phrase in ("T1 (나)", "T9 (가)", "안쪽 탭"):
+        assert phrase in top.fields["예외"][0], phrase
+    assert "탭 줄 아래선" in top.fields["범위"][0]
+    assert "bandlib" in top.fields["그물 후보"][0]
+    for neighbour in ("UI-TXT-04", "UI-TXT-06", "UI-LAY-04"):
+        rule = rules[neighbour]
+        assert "UI-LAY-13" in " ".join([rule.text, *rule.fields["예외"]]), neighbour
+    lay02 = rules["UI-LAY-02"]
+    assert "구현 중 화면도 같다" in lay02.fields["범위"][0]
+    assert "구현 중" not in lay02.fields["예외"][0]
+    values = _chapter(document, 4)
+    for name in ("상단 띠", "Proc Rename 제목 줄", "본문 빈 칸"):
         assert any(line.startswith(f"| {name} |") for line in values.splitlines()), name
