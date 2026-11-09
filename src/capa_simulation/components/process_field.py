@@ -445,14 +445,22 @@ def _mark_for(path: str | None) -> shared_process.ScreenMark | None:
     return None if entry is None else shared_process.screen_mark(*entry)
 
 
-def tab_mark(path: str) -> dict[str, Any] | None:
-    """화면 탭 이름 곁 깔때기 표지 — 따라가는 화면이고 지금 값이 그 화면이 따르는 꼴일 때만.
-    `miss` 는 그 화면이 마지막으로 그린 선택지에 없는 공용 공정이 있나(주황), 아직 그리지 않은
-    화면은 청록이다."""
-    mark = _mark_for(path)
+def _tab_of(mark: shared_process.ScreenMark | None) -> dict[str, Any] | None:
+    """탭 표지 한 벌 — 지금 값이 그 화면이 따르는 꼴이고, 그린 화면이면 실제로 걸리거나 없는
+    공정이 있을 때만. 하나 고름 화면이 들어온 길 · ◀▶ 로 다른 공정을 보고 있으면 걸린 것이
+    아니라 표지가 없다."""
     if mark is None or not mark.follows:
         return None
+    if mark.drawn and not mark.on and not mark.missing:
+        return None
     return {"miss": bool(mark.missing), "title": tab_title(mark)}
+
+
+def tab_mark(path: str) -> dict[str, Any] | None:
+    """화면 탭 이름 곁 깔때기 표지 — 따라가는 화면이고 지금 값이 그 화면에 걸릴 때만(`_tab_of`).
+    `miss` 는 그 화면이 마지막으로 그린 선택지에 없는 공용 공정이 있나(주황), 아직 그리지 않은
+    화면은 청록이다."""
+    return _tab_of(_mark_for(path))
 
 
 def _here(mark: shared_process.ScreenMark) -> dict[str, Any]:
@@ -493,11 +501,7 @@ def process_marker(screen: str, mode: str) -> str:
         "page": alerts.current_page()[1],
         "version": shared_process.version(),
         "here": None if mark is None else _here(mark),
-        "tab": (
-            None
-            if mark is None or not mark.follows
-            else {"miss": bool(mark.missing), "title": tab_title(mark)}
-        ),
+        "tab": _tab_of(mark),
     }
     body = html.escape(json.dumps(payload, ensure_ascii=False), quote=True)
     return f'<style {MARKER_ATTRIBUTE}="{body}"></style>'

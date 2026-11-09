@@ -176,8 +176,11 @@ def _marks_script() -> None:
     from capa_simulation.components import page_tabs
     from capa_simulation.page_tabs_state import TabStrip
 
-    for name, args in st.session_state.pop("ops", []):
-        getattr(shared_process, name)(*args)
+    for name, args, *entered in st.session_state.pop("ops", []):
+        if entered:
+            getattr(shared_process, name)(*args, entered=entered[0])
+        else:
+            getattr(shared_process, name)(*args)
     paths = tuple(st.session_state["test_paths"])
     data = page_tabs.tabs_data(
         TabStrip(paths, frozenset({paths[0]})),
@@ -233,6 +236,15 @@ def test_screens_that_follow_the_shared_process_carry_a_funnel_mark() -> None:
         "miss": False,
         "title": "공정 Mold — 제약 시뮬레이션 에서",
     }
+
+    # 하나 고름 화면이 들어온 길로 다른 공정을 보고 있으면 걸린 것이 아니다 — 표지가 없다.
+    app.session_state["ops"] = [
+        ("follow_single", ("제약 시뮬레이션", ["WF", "Mold"]), True),
+        ("note_drawn", ("제약 시뮬레이션", "single", ["WF", "Mold"], "WF")),
+    ]
+    app.run()
+    tabs = {tab["id"]: tab["proc"] for tab in app.session_state["data"]["tabs"]}
+    assert tabs[CONSTRAINT_SIMULATION.path] is None
 
 
 def test_a_queued_tab_switches_the_page(_app: AppTest, sent: list[dict[str, Any]]) -> None:
