@@ -108,7 +108,10 @@ def test_a_cut_pinned_tab_name_shrinks_every_implementing_mark() -> None:
     """고정 탭 이름이 잘리면 「구현중」 표지(지금 탭 포함)를 점으로 줄인다 — 표지를 단 탭 제 이름만
     보면, 줄지 않는 지금 탭(`.is-active`)의 글 표지 폭을 닫기 여유가 없는 고정 탭 HOME 이 떠안아
     1600px · 탭 10개 · 지금 탭이 구현 중일 때 「H…」 로 잘렸다(통합 재측정). 보이는 탭 어느 하나라도
-    말줄임이면 줄이고, 표지가 없으면 아무것도 하지 않는다."""
+    말줄임이면 줄이고, 표지가 없으면 아무것도 하지 않는다. 점으로 줄여도 깔때기 표지 몫이 남아
+    HOME 이 여전히 7px 모자랐다 — 고정 탭도 지금 탭처럼 줄지 않는다(제 폭, 길어야 15rem)."""
+    pinned = _rule(".capa-tabs-item.is-pinned")
+    assert "flex-shrink: 0;" in pinned and "min-width" not in pinned
     fit = JS[JS.index("function fitWip(") :]
     fit = fit[: fit.index("\n}\n")]
     assert "wipShrink(labels)" in fit

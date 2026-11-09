@@ -154,6 +154,12 @@
   color: var(--st-text-color);
 }
 
+/* 고정 탭도 줄지 않는다(제 폭, 길어야 15rem) — × 가 없고 핀이 늘 서서 내줄 닫기 자리가 없어, 줄면 이름부터 잘렸다(1600px · 탭
+   10개 · 지금 탭이 구현 중일 때 HOME 이 「H…」). 탭이 넘치면 줄이 옆으로 밀린다(가장자리 흐림 — 좁은 창은 전부터 그렇다). */
+.capa-tabs-item.is-pinned {
+  flex-shrink: 0;
+}
+
 .capa-tabs-tab {
   display: flex;
   flex: 1 1 auto;
