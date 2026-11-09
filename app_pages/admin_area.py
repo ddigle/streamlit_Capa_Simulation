@@ -5,7 +5,11 @@ from __future__ import annotations
 import streamlit as st
 
 from capa_simulation.components.access_list_admin import render_access_list_admin
-from capa_simulation.components.alert_board import remembered_alert_count, render_alert_board
+from capa_simulation.components.alert_board import (
+    ALERT_STOPPED_PREFIX,
+    remembered_alert_count,
+    render_alert_board,
+)
 from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.display_order_management import (
@@ -33,11 +37,12 @@ from capa_simulation.settings import DUCKDB_PATH
 # 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 탭은 `stateful_tabs`
 # 라 열린 탭을 서버가 안다 — 위젯이 없는 「원천 품질」·「알림 모음」 은 닫혀 있으면 건너뛴다. 입력
 # 위젯이 든 탭은 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다.
+ALERT_TAB_NAME = ":material/notifications: 알림 모음"
 TAB_NAMES = (
     ":material/label: Proc Rename",
     ":material/sort: 표시순서 관리",
     ":material/fact_check: 원천 품질",
-    ":material/notifications: 알림 모음",
+    ALERT_TAB_NAME,
 )
 TABS_KEY = "admin_area_active_tab"
 
@@ -129,13 +134,14 @@ with alert_tab:
         render_alert_board()
 # 알림 수는 탭 안 머리 줄이 아니라 탭 이름 「알림 모음」 곁 수 표지다 — 0 이면 없다(2026-11-09
 # 사용자 보드 T7). 탭을 연 회차에 센 수를 지금 시나리오 내용이 같을 때만 쓴다(닫힌 탭에서 전체 기간
-# 계산을 돌리지 않는다). 찍을 것이 없어도 매 회차 한 번 그린다(`mark_tab_counts`).
+# 계산을 돌리지 않는다). 계산 멈춤(오류)이 있으면 오류색에 수 앞 「!」 — 색만으로 단계를 가르지
+# 않는다(설계 규칙 UI-ACC-03). 찍을 것이 없어도 매 회차 한 번 그린다(`mark_tab_counts`).
 alert_count = remembered_alert_count()
+alert_stopped = alert_count is not None and alert_count.error
 mark_tab_counts(
     TABS_KEY,
     TAB_NAMES,
-    {TAB_NAMES[3]: alert_count.total if alert_count is not None else 0},
-    color=tokens.ALERT_ERROR
-    if alert_count is not None and alert_count.error
-    else tokens.ALERT_CHECK,
+    {ALERT_TAB_NAME: alert_count.total if alert_count is not None else 0},
+    color=tokens.ALERT_ERROR if alert_stopped else tokens.ALERT_CHECK,
+    prefix=ALERT_STOPPED_PREFIX if alert_stopped else "",
 )

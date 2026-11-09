@@ -28,7 +28,7 @@ from capa_simulation.components.paste_form import (
     tell_paste,
 )
 from capa_simulation.components.process_labels import process_labels_from_rules
-from capa_simulation.components.profile_caption import render_profile_heading
+from capa_simulation.components.profile_caption import HEADING_KEY_PREFIX, render_profile_heading
 from capa_simulation.components.saved_note import (
     mark_note_saved,
     mark_note_saved_again,
@@ -96,6 +96,21 @@ NOTE_PLACEHOLDER = "변경 메모 · 예: LOB 차트 공정명 축약"
 # key 를 단다 — `tests/test_popover_keys.py`).
 HEADING_ROW_KEY = "admin_area_process_rename_heading_row"
 AVAILABLE_POPOVER_KEY = "admin_area_process_rename_available_popover"
+# 제목 줄 안 두 칸 — 제목 칸(제목 · 공용 버전 줄 · 보유 공정 밖 표지)과 오른쪽 끝 단추 칸 — 과 그
+# 서식(`heading_row_css`). 버전 줄은 사람이 적은 변경 메모를 실어 길이가 정해져 있지 않다.
+# 서식이 없으면 긴 메모가 제목 칸을 줄 폭만큼 넓혀 단추 칸이 눌리고 단추 셋이 세로로 쌓이며
+# 이름이 잘렸다(2026-11-09 독립 검토). 그래서 단추 칸은 줄지 않는 한 덩이로 줄 오른쪽 끝에 서고,
+# 제목 칸이 남은 폭을 받아 그 안에서 버전 줄을 제목 곁에 둔 채 낱말 사이로 접는다. 줄 폭이 제목
+# 칸 바닥(`HEADING_MIN_WIDTH` — 제목 곁에 버전 줄이 너덧 낱말 드는 폭, 보유 공정 밖 표지가 서면
+# `HEADING_MARK_ROOM` 을 더한다)과 단추 칸을 다 담지 못하면 단추 칸이 통째로 다음 줄 오른쪽
+# 끝으로 내려간다. 줄 폭이 제목 칸 바닥보다도 좁으면 버전 줄이 제목 아래로 내려가 줄 폭으로
+# 접힌다. 제 폭이 정해진 고르기 둘을 둔 표시순서 관리(`display_order_management.HEADING_ROW_CSS`
+# — 고르기 몫을 빼는 꼴)와 달리 단추 폭이 글꼴 · 공정 수에 따라 달라 몫을 수로 빼지 않는다.
+HEADING_BOX_KEY = "admin_area_process_rename_heading_box"
+HEADING_TOOLS_KEY = "admin_area_process_rename_heading_tools"
+HEADING_PROFILE_KEY = "process_rename"
+HEADING_MIN_WIDTH = 240
+HEADING_MARK_ROOM = 160
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
@@ -254,6 +269,34 @@ def _clipboard_dialog(
         st.rerun()
 
 
+def heading_row_css(*, marked: bool) -> str:
+    """직접 편집 제목 줄의 서식(모듈 머리 `HEADING_BOX_KEY` 설명) — 보유 공정 밖 표지가
+    서면(`marked`) 제목 칸 바닥이 그 표지 몫만큼 넓다. 버전 줄은 제목 줄의 둘째
+    칸이다(`render_profile_heading`)."""
+    floor = HEADING_MIN_WIDTH + (HEADING_MARK_ROOM if marked else 0)
+    row = f".st-key-{HEADING_ROW_KEY}"
+    line = f".st-key-{HEADING_KEY_PREFIX}{HEADING_PROFILE_KEY}"
+    version = f'{line} > [data-testid="stElementContainer"]:nth-child(2)'
+    return f"""<style>
+{row} {{ container-type: inline-size; }}
+{row} > [data-testid="stLayoutWrapper"]:has(> .st-key-{HEADING_BOX_KEY}) {{
+  flex: 1 1 0%;
+  min-width: min({floor}px, 100%);
+}}
+{row} > [data-testid="stLayoutWrapper"]:has(> .st-key-{HEADING_TOOLS_KEY}) {{
+  flex: 0 0 auto;
+  width: auto;
+  margin-left: auto;
+}}
+{line} {{ flex-wrap: nowrap; }}
+{version} {{ flex-shrink: 1; min-width: 0; }}
+{version} * {{ word-break: keep-all; overflow-wrap: anywhere; }}
+@container (max-width: {floor}px) {{
+  {line} {{ flex-wrap: wrap; }}
+}}
+</style>"""
+
+
 def _render_direct_editor(
     repository: DuckDBScenarioRepository,
     profile: GlobalProcessRename,
@@ -283,16 +326,18 @@ def _render_direct_editor(
     사용자 보드 T3 · T7, 설계 규칙 UI-LAY-11 · UI-LAY-03 · UI-TXT-04)."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
+    st.html(heading_row_css(marked=bool(unmatched)))
     with st.container(
         horizontal=True, vertical_alignment="center", gap="small", key=HEADING_ROW_KEY
     ):
         # 제목 바로 옆에 공용 버전 줄이 서고(2026-11-08 사용자 그림 메모 g18), 보유 공정 밖 표시명
-        # 표지가 그 줄 끝에 선다. 제목 칸은 제 폭만 차지해 단추가 줄 오른쪽 끝에 선다.
-        with st.container(width="content"):
+        # 표지가 그 줄 끝에 선다. 제목 칸이 남은 폭을 받고 단추 칸은 줄 오른쪽 끝 한 덩이다
+        # (`heading_row_css`).
+        with st.container(width="content", key=HEADING_BOX_KEY):
             render_profile_heading(
                 "#### 직접 편집",
                 profile,
-                key="process_rename",
+                key=HEADING_PROFILE_KEY,
                 empty="아직 지정한 표시명이 없습니다",
                 mark=(
                     (f"보유 공정 밖 표시명 {len(unmatched):,}건", unmatched_help(unmatched))
@@ -305,6 +350,7 @@ def _render_direct_editor(
             horizontal_alignment="right",
             vertical_alignment="center",
             gap="small",
+            key=HEADING_TOOLS_KEY,
         ):
             if available_processes:
                 with st.popover(

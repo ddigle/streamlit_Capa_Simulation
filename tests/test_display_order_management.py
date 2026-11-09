@@ -216,6 +216,35 @@ def test_the_version_line_stands_beside_the_heading(tmp_path: Path) -> None:
     )
 
 
+def test_the_scope_pickers_and_the_note_carry_their_names_without_label_rows(
+    tmp_path: Path,
+) -> None:
+    """범위 고르기 둘과 변경 메모 칸은 이름 줄을 숨기고(접근성 이름은 남는다) 뜻을 옮겼다 —
+    고르기 둘은 「직접 편집」 제목 풍선(`SCOPE_HELP`), 메모 칸은 칸 안 안내
+    글(`NOTE_PLACEHOLDER`)이 말한다. 옮긴 곳이 빠지면 그 뜻이 화면 어디에도 남지 않는다(설계
+    규칙 UI-TXT-02). 범위 풍선은 두 칸의 자리를 「오른쪽」 이라 하지 않는다 — 줄 폭이 좁으면
+    고르기가 제목 아래로 내려앉는다."""
+    from capa_simulation.components import display_order_management as dom
+
+    app = AppTest.from_string(_label_script(tmp_path / "display-order-names.duckdb"))
+    app.run(timeout=30)
+    assert not app.exception
+
+    for key, label in (("display_order_page", "페이지 구분"), ("display_order_tab", "탭 구분")):
+        picker = app.selectbox(key=key)
+        assert picker.label == label
+        assert picker.proto.label_visibility.value == picker.proto.label_visibility.COLLAPSED
+    note = app.text_input(key=DISPLAY_ORDER_NOTE_KEY)
+    assert note.label == "변경 메모"
+    assert note.proto.label_visibility.value == note.proto.label_visibility.COLLAPSED
+    assert note.placeholder == dom.NOTE_PLACEHOLDER
+    assert dom.NOTE_PLACEHOLDER.startswith("변경 메모 · 예: ")
+    [heading] = [item for item in app.markdown if "직접 편집" in str(item.value)]
+    assert heading.proto.help == dom.SCOPE_HELP
+    assert "페이지 구분" in dom.SCOPE_HELP and "탭 구분" in dom.SCOPE_HELP
+    assert "오른쪽" not in dom.SCOPE_HELP and "왼쪽" not in dom.SCOPE_HELP
+
+
 def test_the_csv_and_paste_buttons_share_the_save_row(tmp_path: Path) -> None:
     """표 위는 두 줄이다 — CSV 다운로드 · Excel 붙여넣기는 따로 줄을 세우지 않고 저장 · 메모 줄
     오른쪽 끝에 선다(2026-11-08 사용자 답 d7). 둘은 폼에 둘 수 없는 위젯이라 폼 바로 앞 칸이고(폼

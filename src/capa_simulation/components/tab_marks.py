@@ -1,4 +1,4 @@
-# Purpose: 적용하지 않은 편집이 남은 탭·종류 단추의 이름 옆에 점을 찍는다.
+# Purpose: 탭·종류 단추 이름 곁에 미적용 점과 수 표지를 CSS 로 찍는다.
 
 """탭 이름 옆의 **미적용 점**(2026-09-29 사용자 결정 — 탭 목록 개선안 C).
 
@@ -16,8 +16,9 @@
 뿐** 화면과 동작은 그대로다.
 
 **탭 이름 곁 수 표지도 같은 길이다**(`mark_tab_counts` — Admin 「알림 모음」 의 알림 수, 2026-11-09
-사용자 보드 T7 — 탭 안 「알림 n건」 줄 대신). 0 이면 표지를 찍지 않는다. 수는 글자라 색만으로 뜻을
-나르지 않는다(설계 규칙 UI-ACC-03).
+사용자 보드 T7). 0 이면 표지를 찍지 않는다. 표지 색이 단계(오류 · 확인 필요)를 가르면 글자로도
+가른다 — 부르는 쪽이 수 앞 글(`prefix` — 오류면 「!」)을 함께 넘긴다(설계 규칙 UI-ACC-03 — 색만으로
+뜻을 나르지 않는다). `::after` 표지에는 풍선을 달 수 없어 그 뜻은 화면 Guide 가 말한다.
 
 **종류 단추(`st.segmented_control`)에도 같은 점을 찍는다**(`mark_pending_segments` — 기준 정보 종류
 단추, 2026-11-02 편집 표 횡전개). 단추 글도 위젯 값이라 점은 CSS 로 얹는다. 1.63 의 segmented
@@ -82,9 +83,11 @@ def pending_segments_style(key: str, options: Sequence[str], pending: Collection
 
 
 def tab_counts_style(
-    key: str, labels: Sequence[str], counts: Mapping[str, int], *, color: str
+    key: str, labels: Sequence[str], counts: Mapping[str, int], *, color: str, prefix: str = ""
 ) -> str:
-    """탭 이름 곁 수 표지의 CSS — `counts` 의 수가 1 이상인 탭만. 찍을 탭이 없으면 빈 글자."""
+    """탭 이름 곁 수 표지의 CSS — `counts` 의 수가 1 이상인 탭만. 찍을 탭이 없으면 빈 글자. `prefix`
+    는 수 앞에 붙는 글(색이 가르는 단계를 글자로도 가른다 — 앱이 지은 짧은 글, 따옴표 · 역사선
+    없음)이다."""
     root = f".st-key-{key}"
     shown = [
         (index + 1, counts[label]) for index, label in enumerate(labels) if counts.get(label, 0) > 0
@@ -99,7 +102,9 @@ def tab_counts_style(
         )
 
     selectors = ",\n".join(tab(position) for position, _ in shown)
-    numbers = "\n".join(f'{tab(position)} {{ content: "{count:d}"; }}' for position, count in shown)
+    numbers = "\n".join(
+        f'{tab(position)} {{ content: "{prefix}{count:d}"; }}' for position, count in shown
+    )
     return f"""
 <style>
 {selectors} {{
@@ -122,12 +127,12 @@ def tab_counts_style(
 
 
 def mark_tab_counts(
-    key: str, labels: Sequence[str], counts: Mapping[str, int], *, color: str
+    key: str, labels: Sequence[str], counts: Mapping[str, int], *, color: str, prefix: str = ""
 ) -> None:
     """`stateful_tabs(labels, key=key)` 의 탭 이름 곁에 수 표지를 찍는다(0 이면 없음).
 
     점과 같은 까닭으로 찍을 것이 없어도 빈 규칙을 매 회차 그린다(`mark_pending_tabs`)."""
-    st.html(tab_counts_style(key, labels, counts, color=color) or "<style></style>")
+    st.html(tab_counts_style(key, labels, counts, color=color, prefix=prefix) or "<style></style>")
 
 
 def mark_pending_segments(key: str, options: Sequence[str], pending: Collection[str]) -> None:

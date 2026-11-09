@@ -122,6 +122,15 @@ def test_the_count_rides_the_tab_name_and_zero_draws_nothing() -> None:
     assert 'content: "2";' in style
     assert "nth-child(1)" not in style and "nth-child(2)" not in style
     assert tab_counts_style("admin_area_active_tab", labels, {"알림 모음": 0}, color="red") == ""
+    # 색이 단계를 가르면 글자로도 가른다 — 계산 멈춤이면 수 앞 「!」(설계 규칙 UI-ACC-03).
+    stopped = tab_counts_style(
+        "admin_area_active_tab",
+        labels,
+        {"알림 모음": 1},
+        color="red",
+        prefix=alert_board.ALERT_STOPPED_PREFIX,
+    )
+    assert 'content: "! 1";' in stopped
 
 
 def _remembered(content_token: str) -> None:
