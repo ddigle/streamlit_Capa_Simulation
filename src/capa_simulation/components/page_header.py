@@ -9,13 +9,15 @@ UI-TXT-01 · UI-TXT-02). 설명 인자 `description` 이 남은 것은 모듈 �
 정한다.
 
 `(구현중)` 은 제목 문자열에 섞어 두지 않고 배지로 뽑는다. 사이드바 라벨은 여전히
-`navigation.py` 가 소유하며 그쪽 표기와 어긋나면 테스트가 잡는다.
+`navigation.py` 가 소유하며 그쪽 표기와 어긋나면 테스트가 잡는다. 코어의 구현 중 화면은 배지를
+그리지 않는다(`show_status=False` — 표지는 화면 탭 이름 곁, 2026-11-09 보드 T8). 배지를 그리는 것은
+모듈 L0 · L1 화면(`module_api.page_header`)이다.
 
 **큰 제목은 화면에서 숨고 인쇄·읽기 도구에 남는다**(2026-10-24 사용자 결정). 머리 띠 아래 화면 탭
 줄(`components/page_tabs.py`)이 지금 화면의 이름을 말한다. 제목은 그대로 `st.title` 로 내보내되 키
 컨테이너(`PAGE_TITLE_KEY`)에 담고, 껍데기 스타일(`app_header.SHELL_STYLE`)이 화면에서만 그 칸을
 시각적으로 숨긴다(sr-only — `display: none` 이 아니라 h1 이 읽기 도구에 남는다). 인쇄에는 보인다.
-배지 줄은 화면에 그대로 둔다.
+배지 줄(모듈 L0 · L1 화면의 「구현중」)은 화면에 그대로 둔다.
 """
 
 from __future__ import annotations
@@ -36,30 +38,6 @@ PAGE_TITLE_KEY = "page_header_title"
 # 제목 칸과 그 끝 칸(`trailing` — HOME 의 주요 Case 칩 셋)을 든 컨테이너의 키. 두 칸의 폭은 비율이
 # 아니라 글자에서 나온다(`_title_row_style`).
 TITLE_ROW_KEY = "page_header_title_row"
-
-# 화면이 어느 단계인지 알려주는 배지. 본문이 이미 쓰던 어휘를 그대로 쓴다.
-# 사이드바 접미는 `(구현중)` 하나이고 본문 성숙도는 여기서 더 잘게 나눈다
-# (docs/TODO.md 결정 기록, 옛 3-1).
-MATURITY_BADGES = {
-    "draft": ":gray-badge[화면 초안]",
-    "prototype": ":green-badge[인터랙티브 프로토타입]",
-    "connected": "",
-}
-
-
-def pending_badge(subject: str) -> str:
-    """아직 붙지 않은 원천을 알리는 배지.
-
-    같은 뜻인데 화면마다 색이 갈렸다. 세 화면은 파랑, 한 화면은 주황이었다. 미연결은
-    고장이 아니라 예정된 상태이므로 알림용 파랑으로 통일한다. 주황은 확보 상태색에서
-    "경고" 를 뜻하므로 여기에 쓰면 다른 화면의 주황과 뜻이 어긋난다.
-    """
-    return f":blue-badge[{subject} 미연결]"
-
-
-def page_badges(*marks: str) -> str:
-    """배지 몇 개를 헤더의 한 줄로 합친다. 빈 배지는 버린다."""
-    return " ".join(mark for mark in marks if mark)
 
 
 def render_page_header(

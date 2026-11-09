@@ -2232,7 +2232,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록·그룹 상자·구역 제목을 선언하고 `st.Page` 묶음을
   만드는 단일 선언 지점이다. 페이지 추가·제목 변경·새 그룹은 여기서만 한다.
   - `PageSpec`·`SIDEBAR_GROUPS`·`SIDEBAR_SECTIONS`(`section.key` 가 컨테이너 key·CSS 선택자의 근거)·`ADMIN_AREA`·
-    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나이고 `page_header.py` 가 배지로 쓴다.
+    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나다 — 코어 구현 중 화면은 머리 배지 없이 화면 탭 이름 곁
+    표지가 말하고(`show_status=False`, 2026-11-09 보드 T8), `page_header.py` 가 배지로 쓰는 것은 모듈 L0 · L1 화면이다.
   - `PageSpec` 이 화면이 `app.py` 에 바라는 공통 조건(`reads_*`·`condition_tabs`·`has_condition_cards`)과
     설비 DB 핀(`uses_equipment_db`)·설비 시나리오(`equipment_scenario` — `"session"`/`"official"`, `equipment_scenario_tabs`,
     `reads_equipment_scenario_on`)를 선언한다. `app.py` 는 선언만 따르고 화면 이름으로 가르지 않는다. 미룬 패널 화면(실적 셋 ·
@@ -2301,7 +2302,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `begin_run()` 을 부르지 않는다(`tests/test_shortening_view_fragment.py`).
 - `src/capa_simulation/components/page_header.py` — 모든 페이지의 제목·상태 배지다(상태 접미는 사이드바
   라벨과 같은 문자열). **큰 제목은 키 칸(`PAGE_TITLE_KEY`)에 담아 화면에서만 sr-only 로 숨기고**(화면 탭 줄이 이름을
-  말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지 줄은 그대로다. 코어 화면 머리에 설명 줄을 두지 않고 소개는 그 화면 Guide 가 맡는다 —
+  말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지 줄은 모듈 L0 · L1 화면의 「구현중」 뿐이다(`badges` 인자를 넘기는 화면은
+  지금 없다) — 코어 구현 중 화면은 배지 없이 화면 탭이 표지를 단다(`show_status=False`, 2026-11-09 보드 T8). 코어 화면 머리에 설명 줄을 두지 않고 소개는 그 화면 Guide 가 맡는다 —
   `description` 인자를 넘기는 자리는 모듈 창구(`module_api.page_header`, 계약)와 필요 단축 일정(문구 전달 대기) 둘이고
   `tests/test_page_header_description.py` 가 호출 자리를 맞댄다(2026-11-07 답 head-desc). `render_page_header_with_status` 는 진행
   표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
