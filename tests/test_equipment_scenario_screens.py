@@ -1719,7 +1719,8 @@ def test_restoring_with_unsaved_equipment_edits_leaves_the_session_where_it_was(
     assert "r1의 일정으로 되돌려 r3을 저장했습니다" in message
     assert "저장하지 않은 설비 편집이 있어 보던 리비전을 그대로 둡니다" in message
     assert "이 세션을" not in message
-    assert _loaded(app)[0::2] == ("운영 일정", "● r2")
+    # 세션은 r2 그대로이고 그 시나리오 최신은 이제 r3 이라 같은 칸이 「최신 아님」 을 붙인다.
+    assert _loaded(app)[0::2] == ("운영 일정", "● r2 · 최신 아님")
     assert app.selectbox(key=REVISION_KEY).value == _revision_id(repository, 3)
     # 편집은 버리지 않았다(`has_unsaved_equipment_edits` 와 같은 판정).
     assert int(app.session_state[BUFFER_GENERATION_KEY]) > int(
