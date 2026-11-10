@@ -468,22 +468,28 @@ def _label_of(path: str | None = None) -> Callable[[str], str]:
     적는다 — 보낸 화면이 실은 글자보다 먼저라 같은 세션에서 표시명이 바뀌어도(Admin `Proc
     Rename`) 옛 이름이 남지 않는다. 따라가는 화면을 그린 적이 있으면 그 화면이 마지막으로 그린
     선택지(`shared_process.drawn_options`)로 겹친 표시명을 「표시명 (원본)」 으로 가른다 — 값 칸
-    글자(`_text_func`)와 같다. 그 선택지 밖 값 · 아직 그리지 않은 화면 · 따라가지 않는 화면은
-    프로필의 표시명이다(프로필에서 지운 표시명도 남지 않는다). 프로필이 비었을 때(DB 파일이 아직
-    없음 · 읽지 못함)만 보낸 글자(`shared_process.labels`)다."""
+    글자(`_text_func`)와 같다. 그 선택지 밖 값 · 아직 그리지 않은 화면 · 따라가지 않는 화면(HOME)은
+    공용 값과 이 세션에 그린 모든 따라가는 화면의 선택지를 합친 목록으로 가른 표시명이다 — 맨
+    표시명이 다른 공정 이름으로 읽히지 않게. 프로필에서 지운 표시명은 남지 않고, 프로필이 비었을
+    때(DB 파일이 아직 없음 · 읽지 못함)만 보낸 글자(`shared_process.labels`)다."""
     if path in shared_process.ORIGINAL_NAME_SCREENS:
         return str
     profile = _shared_display_names()
-    sent = dict(zip(shared_process.values(), shared_process.labels(), strict=True))
+    held = shared_process.values()
+    sent = dict(zip(held, shared_process.labels(), strict=True))
     entry = shared_process.FOLLOWERS.get(path or "")
     drawn = shared_process.drawn_options(entry[0]) if entry is not None else ()
     on_screen = set(drawn)
     shown = profile.unique_format_func(drawn)
+    known = list(held)
+    for name, _ in shared_process.FOLLOWERS.values():
+        known.extend(shared_process.drawn_options(name))
+    wide = profile.unique_format_func(known)
 
     def label(value: str) -> str:
         if value in on_screen:
             return shown(value)
-        return profile.label(value) if profile else sent.get(value, value)
+        return wide(value) if profile else sent.get(value, value)
 
     return label
 

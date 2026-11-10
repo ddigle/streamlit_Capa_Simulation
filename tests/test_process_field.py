@@ -374,6 +374,7 @@ def _drawn_chip_script() -> None:
 
     run = begin_app_run()
     st.session_state["chip"] = process_field.header_chip("app_pages/calculation_result.py")
+    st.session_state["home_chip"] = process_field.header_chip(None)
     process_field.render_process_filter(
         st.session_state.get("test_options", ["WF", "Mold", "Underfill"]),
         screen="산출 결과",
@@ -420,7 +421,8 @@ def test_a_display_name_clashing_with_another_process_reads_like_the_field(
     공정) 칩 · 판 · 탭 풍선도 값 칸처럼 「AVI (Shipping Inspection)」 으로 가른다 — 맨 「AVI」 는
     다른 공정으로 읽힌다(검토 지적). Space 에서 고른 값(보낸 글자 없음)도 같다. 그 화면을 처음 그린
     회차는 페이지보다 먼저 만든 칩이 선택지를 모르므로 회차 표지의 `labels` 가 그 글자를 실어
-    알림 칸 JS 가 바로잡고, 다음 회차부터는 칩도 그 글자다."""
+    알림 칸 JS 가 바로잡고, 다음 회차부터는 칩도 그 글자다. 따라가지 않는 화면(HOME)은 공용 값과
+    그린 화면 선택지를 합친 목록으로 가른다 — 산출 결과를 그린 뒤라 같은 글자다."""
     app = AppTest.from_function(_drawn_chip_script)
     app.session_state["test_options"] = ["AVI", "Shipping Inspection", "Mold"]
     _profile(monkeypatch, app, {"Shipping Inspection": "AVI"})
@@ -439,6 +441,7 @@ def test_a_display_name_clashing_with_another_process_reads_like_the_field(
         ["AVI (Shipping Inspection)"],
         "AVI (Shipping Inspection)",
     )
+    assert app.session_state["home_chip"]["labels"] == ["AVI (Shipping Inspection)"]
 
 
 def test_a_value_this_screen_lacks_reads_the_display_name_without_a_hidden_mark(
