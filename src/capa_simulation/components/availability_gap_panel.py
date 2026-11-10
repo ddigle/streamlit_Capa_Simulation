@@ -55,6 +55,10 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation import alerts
+from capa_simulation.components.app_header import (
+    EQUIPMENT_HEADER_HEAD,
+    remembered_equipment_suffix,
+)
 from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
 from capa_simulation.components.availability_sheet_canvas import (
     GROUP_TITLES,
@@ -74,9 +78,21 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_LABEL_CANVAS_KEY,
     GAP_SHEET_LABEL_CHART_KEY,
     GAP_SHEET_MEMO_KEY,
+    GAP_SHEET_MENU_KEY,
     GAP_SHEET_MONTH_REGION_KEY,
     GAP_SHEET_SCROLL_KEY,
     GAP_SHEET_SCROLLBAR_KEY,
+    GAP_SHEET_XLSX_KEY,
+    GAP_SHEET_XLSX_MEMO_KEY,
+    GAP_UNIT_LIST_CSV_KEY,
+    GAP_UNIT_LIST_MENU_KEY,
+    GAP_UNIT_LIST_XLSX_KEY,
+)
+from capa_simulation.components.availability_sheet_workbook import (
+    GapWorkbookRequest,
+    UnitListWorkbookRequest,
+    availability_sheet_workbook,
+    unit_list_workbook,
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_explorer import report_unit_notices
@@ -93,9 +109,14 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
+from capa_simulation.components.sheet_download import remembered_bytes, scenario_line
 from capa_simulation.components.state_alerts import AlertScope, alert_table, tab_name
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import (
+    CsvFile,
+    SheetFile,
+    render_download_pair,
+)
 from capa_simulation.design import theme, tokens
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.navigation import EQUIPMENT_PREFERENCE_TAB, PROCESS_CAPA_DETAIL
@@ -193,7 +214,7 @@ __all__ = [
     "pick_gap_sheet_cell",
     "render_availability_gap_panel",
     "render_availability_sheet",
-    "render_sheet_csv",
+    "render_sheet_downloads",
     "unit_filter_key",
 ]
 
@@ -248,14 +269,18 @@ CROSS_CHECK_MONTHS_HELP = (
     "설비 조회기간이 덮는 달로 좁혔습니다 — 시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 "
     "만들지 않았으면 맞댈 수 없습니다. 조회기간을 넓히면 늘어납니다."
 )
-# 「시트 CSV」 는 「조회 결과 · 표시」 전환 단추(28px)와 같은 높이다 — 기본 단추(35px)면 시트를 보는
-# 회차에만 줄이 7px 높아져 시트 ↔ 호기 목록 · 가용대수 비교를 오갈 때 아래 본문이 오르내린다(설계
-# 규칙 UI-CON-01 · UI-PRF-03, 공정 Capa 상세 표 도구 줄 CSV 와 같은 꼴). 앱 전체 회차에만 그리므로
-# 스타일만 든 `st.html` 이 이벤트 칸으로 가도 된다.
+# 「시트 CSV」 · 「시트 엑셀」 을 묶은 「내려받기 ▾」 메뉴(2026-11-10 답 Q2-7 꼴 — 공정 Capa 상세 ·
+# 산출 결과와 같은 도우미)는 「조회 결과 · 표시」 전환 단추(28px)와 같은 높이다 — 기본 단추(35px)면
+# 시트를 보는 회차에만 줄이 7px 높아져 시트 ↔ 호기 목록 · 가용대수 비교를 오갈 때 아래 본문이
+# 오르내린다(설계 규칙 UI-CON-01 · UI-PRF-03, 공정 Capa 상세 표 도구 줄과 같은 꼴). 메뉴 안
+# 단추는 줄 밖(떠 있는 층)이라 기본 높이다. 앱 전체 회차에만 그리므로 스타일만 든 `st.html` 이
+# 이벤트 칸으로 가도 된다.
 SHEET_CSV_STYLE = (
-    f"<style>.st-key-{GAP_SHEET_CSV_KEY} button "
+    f"<style>.st-key-{GAP_SHEET_MENU_KEY} button "
     "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
 )
+# 시트 엑셀 통의 꼴 판 — 같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 올린다.
+GAP_SHEET_SCHEMA_VERSION = 1
 CROSS_CHECK_MANUAL_HELP = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동을 그 달 가용에서 뺀 값입니다(필요 단축 일정과 "
     "같은 가용)."
@@ -313,11 +338,16 @@ IDLE_DOWNTIME_HELP = (
 _CATEGORY_NAMES = tuple(category.name for category in CATEGORIES)
 # 목록의 대수 표시 자릿수. **값은 반올림하지 않는다** — 1/3 지분 셋을 0.333 으로 잘라 더하면
 # 0.999 가 되어 「같은 칸을 더하면 표의 값」이 깨진다. CSV 도 반올림 없이 나간다.
-_UNIT_NUMBER_FORMAT = {
-    column: st.column_config.NumberColumn(format="%.3f")
-    for column in ("대수", "환산대수", "보유", BREAKDOWN_LENT_COLUMN, "가용")
+# 호기 표 숫자 열의 소수 자릿수 — 화면 꼴(`NumberColumn` 「%.nf」)과 호기 목록 시트 엑셀 숫자 꼴이
+# 이 한 표에서 나온다.
+_UNIT_DIGITS = {
+    **{column: 3 for column in ("대수", "환산대수", "보유", BREAKDOWN_LENT_COLUMN, "가용")},
+    "환산비": 2,
 }
-_UNIT_NUMBER_FORMAT["환산비"] = st.column_config.NumberColumn(format="%.2f")
+_UNIT_NUMBER_FORMAT = {
+    column: st.column_config.NumberColumn(format=f"%.{digits}f")
+    for column, digits in _UNIT_DIGITS.items()
+}
 # 확보율 교차검증 표의 화면 머리. 내부 컬럼은 그대로다.
 _CROSS_CHECK_HEADERS = {
     "Dynamic가용대수": "일정기준가용대수",
@@ -531,7 +561,8 @@ def render_availability_gap_panel(
     # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
     # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다. 줄 끝은 두 전환의 뜻을 함께 말하는
     # 풍선 하나(`row_help` — 확보율 교차검증이면 맞대어 본 달이 그 풍선 첫 단락)이고, 시트를 보는
-    # 회차에는 그 오른쪽 끝에 「시트 CSV」 가 선다 — 단추 하나가 따로 한 줄을 차지하지 않는다
+    # 회차에는 그 오른쪽 끝에 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀)가 선다 — 단추 하나가 따로
+    # 한 줄을 차지하지 않는다
     # (2026-11-09 사용자 보드 T2 · T3, 설계 규칙 UI-LAY-11 · UI-LAY-03). 전환끼리는 넓게 띄우고,
     # 풍선은 마지막 전환과 한 칸(작은 간격)이다 — Main 머리 줄의 줄 끝 풍선과 같은
     # 간격(UI-CON-03).
@@ -693,7 +724,8 @@ def render_availability_gap_panel(
         )
     row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
     with switches:
-        # 「시트 CSV」 자리 — 줄 오른쪽 끝(시트를 그리는 회차에만 채운다, 비면 그리지 않는다).
+        # 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀) 자리 — 줄 오른쪽 끝(시트를 그리는 회차에만
+        # 채운다, 비면 그리지 않는다).
         csv_slot = st.container(
             horizontal=True, horizontal_alignment="right", vertical_alignment="center"
         )
@@ -721,6 +753,12 @@ def render_availability_gap_panel(
             ),
             controls=controls,
             labels=labels,
+            heading=_sheet_heading(
+                process_label,
+                months,
+                alert_label=alert_label,
+                unit_filter=chosen_units is not None,
+            ),
         )
         return
 
@@ -776,7 +814,15 @@ def render_availability_gap_panel(
         unit_filtered=chosen_units is not None,
     )
     with csv_slot:
-        render_sheet_csv(bundle)
+        render_sheet_downloads(
+            bundle,
+            heading=_sheet_heading(
+                bundle.process_label,
+                bundle.view.months,
+                alert_label=alert_label,
+                unit_filter=chosen_units is not None,
+            ),
+        )
     render_availability_sheet(bundle)
 
 
@@ -816,23 +862,82 @@ def _has_manual(view: SheetView) -> bool:
 # ================================================================== 시트 프래그먼트
 
 
-def render_sheet_csv(bundle: GapSheetBundle) -> None:
-    """「시트 CSV」 단추 — 패널이 「조회 결과 · 표시」 줄 오른쪽 끝에 세운다(2026-11-09 사용자 보드
-    T3). 칸 누름과 상관없는 값이라 시트 프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와
-    같다(`SHEET_CSV_STYLE`)."""
+def render_sheet_downloads(bundle: GapSheetBundle, *, heading: Sequence[tuple[str, str]]) -> None:
+    """「내려받기 ▾」 메뉴 — 「시트 CSV」 와 「시트 엑셀」(지금 화면 시트를 화면 서식째 —
+    `availability_sheet_workbook`). 패널이 「조회 결과 · 표시」 줄 오른쪽 끝에 세운다(2026-11-09
+    사용자 보드 T3 — 단추 하나가 따로 한 줄을 차지하지 않는다). 칸 누름과 상관없는 값이라 시트
+    프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와 같다(`SHEET_CSV_STYLE`).
+
+    통은 조건 키(시트 꼴 판 · 범위 지문 — 공정 · 달 · 호기 필터 · 시트 키 — · 머리 글자 · 제목
+    세부 글 · 머리 값 줄)로 세션에 몇 벌 기억한다 — 같은 조건 회차 · 칸 누름은 다시 짓지 않는다
+    (공정 Capa 상세 · 산출 결과와 같은 길, 새 `st.cache_*` 없음)."""
     st.html(SHEET_CSV_STYLE)
-    render_csv_download(
-        data=_sheet_csv(bundle).encode("utf-8-sig"),
-        file_name=f"Static_대비_일정_시트_{bundle.view.months[0]}_{bundle.view.months[-1]}.csv",
-        key=GAP_SHEET_CSV_KEY,
-        label="시트 CSV",
+    stamp = f"{bundle.view.months[0]}_{bundle.view.months[-1]}"
+    request = GapWorkbookRequest(
+        view=bundle.view,
+        process_label=bundle.process_label,
+        schedule_detail=bundle.schedule_detail,
+        heading=tuple(heading),
     )
+    render_download_pair(
+        csv=CsvFile(
+            data=_sheet_csv(bundle).encode("utf-8-sig"),
+            file_name=f"Static_대비_일정_시트_{stamp}.csv",
+            key=GAP_SHEET_CSV_KEY,
+            label="시트 CSV",
+        ),
+        sheet=SheetFile(
+            data=remembered_bytes(
+                GAP_SHEET_XLSX_MEMO_KEY,
+                (
+                    GAP_SHEET_SCHEMA_VERSION,
+                    bundle.fingerprint,
+                    bundle.process_label,
+                    bundle.schedule_detail,
+                    tuple(heading),
+                ),
+                partial(availability_sheet_workbook, request),
+            ),
+            file_name=f"Static_대비_일정_시트_{stamp}.xlsx",
+            key=GAP_SHEET_XLSX_KEY,
+        ),
+        menu_key=GAP_SHEET_MENU_KEY,
+    )
+
+
+def _sheet_heading(
+    process_label: str, months: Sequence[int], *, alert_label: str, unit_filter: bool
+) -> tuple[tuple[str, str], ...]:
+    """시트 엑셀(시트 · 호기 목록) 맨 위 값 줄 — 화면에 보이는 조건 글자 그대로(마크다운 막음
+    없이): 공정(표시명 또는 「전체 합계」) · 시나리오(Static 세 행이 온 활성 시나리오 — 머리 띠 위
+    줄, 공정 Capa 상세 · 산출 결과 시트와 같은 글. 올라온 리비전이 없으면 뺀다) · 조회기간(이 탭의
+    설비 기간) · 설비 시나리오(머리 띠 꼬리 글 — 공정 Capa 상세 시트와 같은 꼴, 없으면 알림 범위
+    이름, 둘 다 없으면 뺀다) · 호기 필터(걸렸을 때 — 고른 컬럼과 값, 세션 칸을 그대로 읽는다)."""
+    rows = [("공정", process_label)]
+    scenario = scenario_line()
+    if scenario is not None:
+        rows.append(("시나리오", scenario))
+    rows.append(("조회기간", f"{month_label(months[0])}–{month_label(months[-1])}"))
+    suffix = remembered_equipment_suffix()
+    if suffix:
+        rows.append(("설비 시나리오", suffix.removeprefix(f"{EQUIPMENT_HEADER_HEAD} · ")))
+    elif alert_label:
+        rows.append(("설비 시나리오", alert_label.removeprefix("설비 ")))
+    if unit_filter:
+        chosen = st.session_state.get(UNIT_FILTER_COLUMNS_KEY)
+        parts = [
+            f"{column}: {' · '.join(str(value) for value in values)}"
+            for column in (chosen if isinstance(chosen, list) else [])
+            if isinstance(values := st.session_state.get(unit_filter_key(column)), list) and values
+        ]
+        rows.append(("호기 필터", " / ".join(parts)))
+    return tuple(rows)
 
 
 @st.fragment(key=GAP_SHEET_FRAGMENT_KEY)
 def render_availability_sheet(bundle: GapSheetBundle) -> None:
-    """9행 캔버스 → 범례 → 근거 카드. 키 붙은 프래그먼트다. 「시트 CSV」 는 패널의 전환 줄 끝이다
-    (`render_sheet_csv`).
+    """9행 캔버스 → 범례 → 근거 카드. 키 붙은 프래그먼트다. 「내려받기 ▾」(시트 CSV · 시트 엑셀)는
+    패널의 전환 줄 끝이다(`render_sheet_downloads`).
 
     칸을 누르는 조작은 이것만 다시 돌린다 — 조건 카드에 설 위젯을 바꾸지 않는 본문 조작이다. 시트·
     호기별 기여(`bundle.contributions`, 누른 칸이 설비 일정 기준·GAP 일 때만 부른다)는 직전 앱 전체
@@ -1565,10 +1670,14 @@ def _render_unit_list(
     *,
     controls: AbstractContextManager[object],
     labels: ProcessLabels,
+    heading: Sequence[tuple[str, str]] = (),
 ) -> None:
-    """같은 조건의 호기별 기여(호기 상태 분류)를 긴 표 하나로. 분류로 좁히고 CSV 로 내려받는다.
+    """같은 조건의 호기별 기여(호기 상태 분류)를 긴 표 하나로. 분류로 좁히고 목록 아래
+    「내려받기 ▾」 메뉴(CSV · 시트 엑셀 — 시트 엑셀 넓히기 2)로 내려받는다.
 
     화면 표의 `공정` 은 표시명이고 CSV 는 원본이다 — 화면 프레임과 CSV 프레임을 나눈다(AGENTS 8장).
+    시트 엑셀은 화면 표 그대로(표시명 · 화면 숫자 꼴)이고 맨 위 값 줄은 `heading` 에 분류 거름을
+    더한다. 통은 CSV 바이트 지문 · 표시명 판 · 머리 값으로 세션 칸에 몇 벌 기억한다.
     """
     if contributions.empty:
         st.caption("표시할 호기가 없습니다.")
@@ -1595,10 +1704,35 @@ def _render_unit_list(
     )
     months = sorted(int(month) for month in rows["생산계획년월"].unique())
     stamp = f"{months[0]}_{months[-1]}" if months else "empty"
-    render_csv_download(
-        data=table.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"일정기준_가용대수_호기목록_{stamp}.csv",
-        key="download_equipment_gap_unit_list_csv",
+    csv = table.to_csv(index=False).encode("utf-8-sig")
+    shown_heading = (*heading, ("분류", " · ".join(str(name) for name in chosen) or "전체"))
+    request = UnitListWorkbookRequest(
+        table=labels.frame(table),
+        digits={column: _UNIT_DIGITS[column] for column in table.columns if column in _UNIT_DIGITS},
+        heading=shown_heading,
+    )
+    render_download_pair(
+        csv=CsvFile(
+            data=csv,
+            file_name=f"일정기준_가용대수_호기목록_{stamp}.csv",
+            key=GAP_UNIT_LIST_CSV_KEY,
+        ),
+        sheet=SheetFile(
+            data=remembered_bytes(
+                GAP_SHEET_XLSX_MEMO_KEY,
+                (
+                    GAP_SHEET_SCHEMA_VERSION,
+                    "unit-list",
+                    hashlib.sha1(csv).hexdigest(),
+                    labels.version,
+                    shown_heading,
+                ),
+                partial(unit_list_workbook, request),
+            ),
+            file_name=f"일정기준_가용대수_호기목록_{stamp}.xlsx",
+            key=GAP_UNIT_LIST_XLSX_KEY,
+        ),
+        menu_key=GAP_UNIT_LIST_MENU_KEY,
     )
 
 

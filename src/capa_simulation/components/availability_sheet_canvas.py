@@ -1,4 +1,4 @@
-# Purpose: 비교 시트 9행(Static·설비 일정 기준·GAP)을 월 시트 엔진의 Figure 한 쌍으로 그린다.
+# Purpose: 비교 시트 9행(Static·설비 일정 기준·GAP)의 행 모델과 월 시트 엔진 Figure 한 쌍을 짓는다.
 
 """「Static 대비 일정」 비교 시트 — 월 캔버스.
 
@@ -84,6 +84,7 @@ __all__ = [
     "VALUE_LABEL_INDENT_PX",
     "AvailabilitySheetCanvas",
     "build_availability_sheet_canvas",
+    "build_availability_sheet_rows",
     "gap_text_color",
     "reason_text",
     "sheet_value_text",
@@ -171,24 +172,9 @@ def build_availability_sheet_canvas(
       싣는다(그리는 것은 바꾸지 않는다).
     """
     axis = [int(month) for month in view.months]
-    if not axis:
-        raise ValueError("비교 시트의 월 축이 비었습니다.")
-    rows: list[Row] = [_header_row(process_label)]
-    rows.append(
-        title_row(
-            "static",
-            GROUP_TITLES["static"],
-            STATIC_TITLE_DETAIL,
-            label_fill=tokens.SUMMARY_SUPPLY_CLASSIFICATION,
-            month_fill=tokens.SUMMARY_SUPPLY_SURFACE,
-        )
+    rows = build_availability_sheet_rows(
+        view=view, process_label=process_label, schedule_detail=schedule_detail, selected=selected
     )
-    rows += [_value_row(view, axis, row, selected, supply=True) for row in STATIC_ROWS]
-    rows.append(title_row("sched", GROUP_TITLES["sched"], schedule_detail))
-    rows += [_value_row(view, axis, row, selected, supply=False) for row in SCHEDULE_ROWS]
-    rows.append(title_row("gap", GROUP_TITLES["gap"], GAP_TITLE_DETAIL))
-    rows += [_value_row(view, axis, row, selected, supply=False) for row in GAP_ROWS]
-
     height = stack_rows(rows)
     position = {month: index for index, month in enumerate(axis)}
     cell = (
@@ -212,6 +198,38 @@ def build_availability_sheet_canvas(
         height=height,
         row_ids=tuple(row.row_id for row in rows),
     )
+
+
+def build_availability_sheet_rows(
+    *,
+    view: SheetView,
+    process_label: str,
+    schedule_detail: str,
+    selected: tuple[int, str] | None = None,
+) -> list[Row]:
+    """9행 시트의 행 모델 — 머리 하나 + 구획 제목 셋 + 값 아홉. 그림
+    (`build_availability_sheet_canvas`)과 시트 엑셀(`availability_sheet_workbook`)이 같은 것을
+    읽는다(칸 글 · 글자색 · 면을 다시 셈하지 않는다). 색은 지금 테마의 토큰이다. `selected` 칸은
+    글자를 굵게 한다(테두리는 그림이 그린다)."""
+    axis = [int(month) for month in view.months]
+    if not axis:
+        raise ValueError("비교 시트의 월 축이 비었습니다.")
+    rows: list[Row] = [_header_row(process_label)]
+    rows.append(
+        title_row(
+            "static",
+            GROUP_TITLES["static"],
+            STATIC_TITLE_DETAIL,
+            label_fill=tokens.SUMMARY_SUPPLY_CLASSIFICATION,
+            month_fill=tokens.SUMMARY_SUPPLY_SURFACE,
+        )
+    )
+    rows += [_value_row(view, axis, row, selected, supply=True) for row in STATIC_ROWS]
+    rows.append(title_row("sched", GROUP_TITLES["sched"], schedule_detail))
+    rows += [_value_row(view, axis, row, selected, supply=False) for row in SCHEDULE_ROWS]
+    rows.append(title_row("gap", GROUP_TITLES["gap"], GAP_TITLE_DETAIL))
+    rows += [_value_row(view, axis, row, selected, supply=False) for row in GAP_ROWS]
+    return rows
 
 
 def _header_row(process_label: str) -> Row:

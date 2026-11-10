@@ -5,9 +5,9 @@
 정체성(2026-10-22 사용자 요청): **어느 화면에서든 공정 하나를 눌러 바로 깊게 보는 목적지**다. 공정
 전부의 진척 관리는 필요 단축 일정이 맡는다.
 
-차례(2026-10-15 사용자 결정 4 — 목업 그대로, CSV 는 표 곁 · 필요 단축 일정 링크는 다른 길이 없는
-공정만 — 2026-11-07 사용자 답, KPI 아래 다음 화면 줄은 걷고 표 도구 줄에 「시트 엑셀」 — 2026-11-10
-보드 c2-picked):
+차례(2026-10-15 사용자 결정 4 — 목업 그대로, CSV 는 표 곁 · 맨 아래 필요 단축 일정 링크는 그 화면
+카드에서 온 방문만 뺌 — 2026-11-10 답 Q2-8, KPI 아래 다음 화면 줄은 걷고 표 도구 줄에 「시트
+엑셀」 — 2026-11-10 보드 c2-picked):
 
 0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보 기준
    미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
@@ -23,9 +23,9 @@
    만든다),
    결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준 가용 · ③ 신규 설비와 단축 · ④ 호기별 비가동),
    범례, 산출 근거 패널(그 달 부족 원인의 다음 화면). 칸을 누르면 그 구획만 다시 돈다.
-8. **정리 줄**(설비 일정이 설 때만) — 값 표지, 필요 단축 일정 화면 링크(이 공정 화면에 그리로 가는
-   다른 길 — 도착 「← 필요 단축 일정」 · 근거 패널의 일정 부족 달 단추 — 이 없을 때만, 곧 일정
-   부족 달이 하나도 없을 때 — `shortening_link_needed`).
+8. **정리 줄**(설비 일정이 설 때만) — 값 표지, 필요 단축 일정 화면 링크(그 화면 카드에서 온 방문 —
+   도착 「← 필요 단축 일정」 이 같은 길 — 만 빼고 늘, 일정 부족 달이 있는 공정에도 — 2026-11-10 답
+   Q2-8 · `shortening_link_needed`).
 9. **Guide**(`guides/process_capa_detail.md`) — 헤더의 Guide 단추.
 
 입력은 이 화면이 직접 모은다.
@@ -305,6 +305,18 @@ def _stop_with_error(message: str) -> NoReturn:
     st.stop()
 
 
+def _render_stopped_equipment_row() -> None:
+    """계산이 멈춘 회차의 「설비 시나리오」 줄 — 정상 회차처럼 세션 설비 시나리오를 잠그지 않고
+    세운다(2026-11-10 답 Q2-29 — 다른 설비 시나리오로 옮기는 길이고, 아래 공정 줄 · 카드가 한 줄
+    올라오지 않는다). HOME 칸 방문의 공식 고정은 공정 · 달을 정한 뒤의 일이라 걸지 않는다. 설비 DB
+    를 못 읽으면 줄 없이 둔다 — 그 까닭은 계산이 서는 회차의 설비 일정 구획이 말한다."""
+    try:
+        session = resolve_equipment_session(str(EQUIPMENT_DUCKDB_PATH.resolve()))
+    except BOOTSTRAP_ERRORS:
+        return
+    render_equipment_scenario_row(session)
+
+
 try:
     # 판정 기준(HOME 설정 → 판정 기준 탭의 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
     # 키·확보율·공정 선택지를 제약 시뮬레이션과 **같은 차례**로
@@ -312,6 +324,7 @@ try:
     # 공정·기본 달을 정할 때도 HOME·Static Capa 와 같은 판정 (`thresholds.status`)을 쓴다.
     page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
+    _render_stopped_equipment_row()
     # 패널의 공정 줄도 잠긴 채 자리를 지킨다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
     render_stopped_process_field()
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
@@ -1135,8 +1148,6 @@ if dynamic is not None:
     render_closing_row(
         process=process,
         marks=closing_marks,
-        show_link=shortening_link_needed(
-            dynamic, arrived_from_card=entry.shortening_origin is not None
-        ),
+        show_link=shortening_link_needed(arrived_from_card=entry.shortening_origin is not None),
         link_help=shortening_link_help,
     )

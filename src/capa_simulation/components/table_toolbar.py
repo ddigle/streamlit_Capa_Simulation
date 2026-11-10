@@ -14,8 +14,10 @@
 `with` 블록 안에서 이어 붙인다.
 
 표 곁 CSV 와 「시트 엑셀」(화면 서식째 xlsx) 한 쌍은 `render_download_pair` 하나가 그린다 — 공정
-Capa 상세 표 도구 줄 · 산출 결과 대당 Capa · 소요대수 제목 줄. 두 단추를 곁에 둘지 「내려받기 ▾」
-메뉴 하나로 묶을지(2차 보드 물음)는 이 함수 한 곳에서 바꾼다.
+Capa 상세 표 도구 줄 · 산출 결과 대당 Capa · 소요대수 제목 줄 · 가용설비 Static 대비 일정
+시트(전환 줄 끝) · 호기 목록(목록 아래). 둘은 「내려받기 ▾」 메뉴 하나에 묶인다(2026-11-10 답
+Q2-7 — 설계 규칙 UI-LAY-11 「드물게 쓰는 같은 갈래 단추를 메뉴 하나로」).
+파일이 하나뿐이면(CSV 가 없는 자리) 메뉴 없이 그 단추 하나다.
 """
 
 from __future__ import annotations
@@ -41,6 +43,11 @@ CSV_TEMPLATE_LABEL = "CSV 양식 다운로드"
 
 # 화면 표 하나를 지금 화면 상태 · 서식 그대로 내려받는 xlsx 단추 글(공정 Capa 상세 · 산출 결과).
 SHEET_XLSX_LABEL = "시트 엑셀"
+
+# 표 곁 내려받기 둘(CSV · 시트 엑셀)을 묶는 메뉴(팝오버) 글 — 「내려받기 ▾」(2026-11-10 답 Q2-7,
+# 설비 마스터 「선택 ▾」 과 같은 꼴). 안의 단추는 `on_click="ignore"` 라 눌러도 회차가 돌지 않아
+# 메뉴가 열린 채 초점이 그 단추에 남고 Esc 로 닫힌다.
+DOWNLOAD_MENU_LABEL = "내려받기"
 
 # 표 앞 띄움(px, `st.space`) — 표에 마우스를 올리면 오른쪽 위 도구 막대(열 보기·내려받기·찾기·
 # 전체 화면)가 표 머리 위 37px 까지 솟는다. 표 바로 위 줄에 누를 것(입력·단추·팝오버·토글·날짜
@@ -118,16 +125,29 @@ class SheetFile:
     label: str = SHEET_XLSX_LABEL
 
 
-def render_download_pair(*, csv: CsvFile | None, sheet: SheetFile | None = None) -> DeltaGenerator:
-    """표 곁 내려받기 한 쌍 — CSV 단추와 그 곁 「시트 엑셀」 단추를 이 차례로 부르는 쪽 줄에 둔다.
+def download_menu_key(key: str) -> str:
+    """CSV 단추 key 로 짓는 「내려받기 ▾」 메뉴 key(`table_heading_row`)."""
+    return f"{key}_menu"
 
-    엑셀은 늘 내용 폭 칸 하나 안에 선다. 시트 바이트를 아직 짓지 못한 회차(공정 Capa 상세 — 제품 행
-    표를 받은 뒤에야 짓는다)는 `sheet=None` 으로 부르고, 돌려받은 그 칸에 나중에
-    `render_sheet_download` 를 부른다. CSV 가 없는 표(`csv=None`)는 엑셀 칸만 선다.
+
+def render_download_pair(
+    *, csv: CsvFile | None, sheet: SheetFile | None = None, menu_key: str
+) -> DeltaGenerator:
+    """표 곁 내려받기 한 쌍 — 부르는 쪽 줄에 「내려받기 ▾」 메뉴 하나(`menu_key`)를 세우고 그 안에
+    CSV 단추, 그 아래 「시트 엑셀」 칸을 이 차례로 둔다(2026-11-10 답 Q2-7).
+
+    시트 바이트를 아직 짓지 못한 회차(공정 Capa 상세 — 제품 행 표를 받은 뒤에야 짓는다)는
+    `sheet=None` 으로 부르고, 돌려받은 그 칸에 나중에 `render_sheet_download` 를 부른다. CSV 가 없는
+    표(`csv=None`)는 묶을 것이 없어 메뉴 없이 내용 폭 엑셀 칸만 줄에 선다.
     """
-    if csv is not None:
-        render_csv_download(data=csv.data, file_name=csv.file_name, key=csv.key, label=csv.label)
-    slot = st.container(width="content")
+    if csv is None:
+        slot = st.container(width="content")
+    else:
+        with st.popover(DOWNLOAD_MENU_LABEL, icon=DOWNLOAD_ICON, key=menu_key):
+            render_csv_download(
+                data=csv.data, file_name=csv.file_name, key=csv.key, label=csv.label
+            )
+            slot = st.container(width="content")
     if sheet is not None:
         render_sheet_download(slot, sheet)
     return slot
@@ -174,8 +194,9 @@ def table_heading_row(
 
     `with` 블록 안에서 같은 줄에 위젯을 더 놓을 수 있다. 표시 기준을 바꾸는 토글처럼
     표와 붙어 있어야 뜻이 통하는 컨트롤이 그렇다. 더 놓을 것이 없으면
-    `render_table_heading` 을 쓴다. `sheet` 를 주면 CSV 곁에 「시트 엑셀」 이 선다
-    (`render_download_pair`) — 주지 않으면 CSV 하나다(오늘 그대로).
+    `render_table_heading` 을 쓴다. `sheet` 를 주면 CSV 와 「시트 엑셀」 이 「내려받기 ▾」 메뉴
+    하나에 묶인다(`render_download_pair`, 메뉴 key 는 `download_menu_key(key)`) — 주지 않으면 CSV
+    단추 하나다.
     """
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.subheader(title, width="content")
@@ -184,7 +205,11 @@ def table_heading_row(
         if sheet is None:
             render_csv_download(data=csv, file_name=file_name, key=key)
         else:
-            render_download_pair(csv=CsvFile(data=csv, file_name=file_name, key=key), sheet=sheet)
+            render_download_pair(
+                csv=CsvFile(data=csv, file_name=file_name, key=key),
+                sheet=sheet,
+                menu_key=download_menu_key(key),
+            )
         yield
 
 

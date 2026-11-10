@@ -8,8 +8,9 @@
 - **표 도구 줄** — 「구획」 칩(`st.pills`, ①~④ 가운데 고른 것 = 펼침 — 라벨을 숨긴 칸이라 뜻은
   칩 바로 뒤 ⓘ 하나, 2026-11-10 보드 Q-8), 「제품별 소요대수」 펼침(`st.toggle`)과 펼쳤을 때의
   「분류」(`st.segmented_control`), 단축 목표 표시(고르는 위젯 없음 — 2026-10-15 사용자 결정 2),
-  그리고 오른쪽 끝 내려받기 둘 — 「이 공정 단축 일정 CSV」(설비 일정이 설 때만 — ③ 구획의 호기 표
-  곁, 설계 규칙 UI-LAY-03)와 「시트 엑셀」(늘 — 지금 화면 상태 그대로의 상세 시트를 화면 서식째,
+  그리고 오른쪽 끝 「내려받기 ▾」 메뉴 하나(2026-11-10 답 Q2-7) — 「이 공정 단축 일정 CSV」(설비
+  일정이 설 때만 — ③ 구획의 호기 표 곁, 설계 규칙 UI-LAY-03. 없으면 메뉴 없이 시트 엑셀 단추
+  하나)와 「시트 엑셀」(늘 — 지금 화면 상태 그대로의 상세 시트를 화면 서식째,
   2026-11-10 보드 c2-picked — `components/process_capa_workbook.py`. 통은 회차마다 만들지 않고
   조건이 바뀐 뒤 처음 그리는 회차에 한 번 만들어 세션에 몇 벌 기억한다 — `remembered_sheet`, 그림
   기억과 같은 꼴). 앞의 셋은 조건 카드가 아니라 본문이다 — 2026-09-29
@@ -42,9 +43,9 @@
 **프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓴다** — 오늘·판정 기준·설비 일정·표시명이
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
-정리 줄(값 표지, 다른 길이 없는 공정의 필요 단축 일정 화면 링크 — `shortening_link_needed`), KPI
-넷, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서 페이지가
-그린다 — 그 그리기 함수도 여기 있다.
+정리 줄(값 표지, 그 화면 카드에서 오지 않은 방문의 필요 단축 일정 화면 링크 —
+`shortening_link_needed`), KPI 넷, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지 않아
+프래그먼트 밖에서 페이지가 그린다 — 그 그리기 함수도 여기 있다.
 
 **UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
 페이지가 가정 요약(`ProcessDetailView.assumed_summary`)과 가정 계획(`DynamicView`)을 넘긴다.
@@ -223,17 +224,19 @@ PREVIOUS_MONTH_KEY: Final = "process_detail_previous_month"
 NEXT_MONTH_KEY: Final = "process_detail_next_month"
 # 닫힌 「경로별 인자」 상자(편 상태를 기억한다).
 ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
-# 표 도구 줄의 내려받기 단추 둘(호기 CSV · 시트 엑셀). 곁의 「구획」 칩과 같은 높이로 둔다(설계 규칙
-# UI-CON-01 — 칩 28px). 서식은 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가
-# 갈리지 않게).
+# 표 도구 줄의 내려받기 둘(호기 CSV · 시트 엑셀)은 「내려받기 ▾」 메뉴 하나다(2026-11-10 답 Q2-7 —
+# 호기 CSV 가 없는 공정은 시트 엑셀 단추 하나). 줄에 선 단추(메뉴 또는 시트 엑셀)는 곁의 「구획」
+# 칩과 같은 높이로 둔다(설계 규칙 UI-CON-01 — 칩 28px). 메뉴 안 단추는 줄 밖(떠 있는 층)이라 기본
+# 높이다. 서식은 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
 SHEET_XLSX_KEY: Final = "process_detail_sheet_xlsx"
-# 내려받기 둘을 담는 칸 — 줄이 모자라면 둘이 위아래로 쌓이지 않고 칸째 다음 줄 오른쪽 끝으로 간다.
+DOWNLOAD_MENU_KEY: Final = "process_detail_download_menu"
+# 내려받기 자리를 담는 칸 — 줄이 모자라면 칸째 다음 줄 오른쪽 끝으로 간다.
 DOWNLOADS_KEY: Final = "process_detail_downloads"
 # 「구획」 칩과 그 뜻 ⓘ 를 담는 칸 — ⓘ 가 칩과 작은 간격으로 붙는다(옆 토글의 풍선으로 읽히지 않게).
 SECTIONS_ROW_KEY: Final = "process_detail_sections_row"
 DOWNLOAD_STYLE: Final = (
-    f"<style>.st-key-{UNITS_CSV_KEY} button, .st-key-{SHEET_XLSX_KEY} button "
+    f"<style>.st-key-{DOWNLOADS_KEY} button "
     "{ min-height: 28px; height: 28px; padding-block: 0; }"
     f".st-key-{DOWNLOADS_KEY} {{ flex-wrap: nowrap; }}"
     f'[data-testid="stLayoutWrapper"]:has(> .st-key-{DOWNLOADS_KEY}) '
@@ -543,7 +546,8 @@ def _render_tool_row(
     view: ProcessDetailView,
 ) -> tuple[bool, str, frozenset[str], DeltaGenerator]:
     """「구획」 칩 · 그 뜻 ⓘ · 「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시 ·
-    오른쪽 끝 내려받기(호기 CSV — 설비 일정이 설 때만, 시트 엑셀 — 늘).
+    오른쪽 끝 「내려받기 ▾」 메뉴(호기 CSV — 설비 일정이 설 때만, 시트 엑셀 — 늘. 호기 CSV 가 없으면
+    메뉴 없이 시트 엑셀 단추 하나).
 
     돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획, 시트 엑셀 자리) 다. ① 이 접혔으면 제품 행을
     그리지 않는다. 시트 엑셀 단추는 제품 행 표를 받은 뒤 그 자리에 채운다
@@ -606,7 +610,8 @@ def _render_tool_row(
                 help=TARGET_HELP,
             )
         with st.container(horizontal=True, horizontal_alignment="right", key=DOWNLOADS_KEY):
-            # 호기 CSV(설비 일정이 설 때만)와 시트 엑셀 자리 — 엑셀은 제품 행 표를 받은 뒤 채운다.
+            # 「내려받기 ▾」 — 호기 CSV(설비 일정이 설 때만)와 시트 엑셀 자리. 엑셀은 제품 행 표를
+            # 받은 뒤 채운다.
             sheet_slot = render_download_pair(
                 csv=(
                     CsvFile(
@@ -618,6 +623,7 @@ def _render_tool_row(
                     if view.units_csv is not None
                     else None
                 ),
+                menu_key=DOWNLOAD_MENU_KEY,
             )
     return bool(expanded) and summary_open, split, collapsed, sheet_slot
 
@@ -1782,17 +1788,16 @@ def prescription_text(plan: Prescription | None) -> str:
     return f"단축 {plan.shortened}대 · 신규 {plan.new}대"
 
 
-def shortening_link_needed(dynamic: DynamicView, *, arrived_from_card: bool) -> bool:
-    """맨 아래 필요 단축 일정 링크가 서는가 — 이 공정 화면에 그리로 가는 다른 길이 없을 때만이다.
+def shortening_link_needed(*, arrived_from_card: bool) -> bool:
+    """맨 아래 필요 단축 일정 링크가 서는가 — 그 화면 카드에서 온 방문(출처 띠 곁 「← 필요 단축
+    일정」 이 같은 길)만 뺀다.
 
-    다른 길은 도착 「← 필요 단축 일정」(`arrived_from_card`)과 근거 패널 「이 달 일정 부족 — 필요
-    단축 일정」(그 달을 골랐을 때)이다. 근거 카드 단추가 서는 달(`schedule_short_month`)은
-    `Prescription.dynamic_short_months` 가 세는 달과 같다 — 그 수가 0 이면 어느 달을 골라도 그
-    단추가 없어 맨 아래 링크가 선다(설계 규칙 UI-LAY-12). 일정 부족 달이 있는 공정은 그 달을
-    골라야 근거 패널의 단추가 선다 — KPI 아래에는 그리 가는 줄을 두지 않는다(2026-11-10 보드
-    c2-picked).
+    일정 부족 달이 있는 공정에도 선다 — 근거 패널 「이 달 일정 부족 — 필요 단축 일정」 은 그 달을
+    골랐을 때만 서서, 처음 연 달이 일정 부족 달이 아니면 이 화면에 그리 가는 단추가
+    없었다(2026-11-10 답 Q2-8 — 설계 규칙 UI-LAY-12 예외). KPI 아래에는 그리 가는 줄을 두지
+    않는다(2026-11-10 보드 c2-picked).
     """
-    return not arrived_from_card and prescription(dynamic).dynamic_short_months == 0
+    return not arrived_from_card
 
 
 def render_closing_row(
@@ -1802,7 +1807,7 @@ def render_closing_row(
     show_link: bool,
     link_help: str | None,
 ) -> None:
-    """정리 줄 — 값 표지(있을 때만), 다른 길이 없는 공정의 필요 단축 일정 화면 링크.
+    """정리 줄 — 값 표지(있을 때만), 필요 단축 일정 화면 링크(그 화면 카드에서 온 방문은 없음).
 
     `marks` 는 (값 한 마디, 그 풍선) 이다 — 지금은 입력 비가동 반영(n칸 · 합 x대) 하나. 늘 서던
     설명 · 내역 글은 걷었다(설계 규칙 UI-TXT-01 · 04 · 07 — 같은 말이 캔버스 · Guide · 풍선 · 상태

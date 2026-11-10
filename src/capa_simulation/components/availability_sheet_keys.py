@@ -23,10 +23,18 @@ GAP_SHEET_CELL_KEY: Final = "equipment_gap_sheet_cell"
 GAP_SHEET_GENERATION_KEY: Final = "equipment_gap_sheet_generation"
 # 직전에 만든 시트 그림 몇 벌(세션 칸).
 GAP_SHEET_MEMO_KEY: Final = "equipment_gap_sheet_memo"
-# 라벨 칸·월 칸·스크롤 상자·스크롤바·근거 카드·CSV 단추.
+# 라벨 칸·월 칸·스크롤 상자·스크롤바·근거 카드·시트 CSV 단추.
 GAP_SHEET_LABEL_CANVAS_KEY: Final = "equipment_gap_sheet_label_canvas"
 GAP_SHEET_MONTH_REGION_KEY: Final = "equipment_gap_sheet_month_region"
 GAP_SHEET_SCROLL_KEY: Final = "equipment_gap_sheet_canvas"
 GAP_SHEET_SCROLLBAR_KEY: Final = "equipment_gap_sheet_scrollbar"
 GAP_SHEET_EVIDENCE_KEY: Final = "equipment_gap_sheet_evidence"
 GAP_SHEET_CSV_KEY: Final = "download_equipment_gap_sheet_csv"
+# 「시트 엑셀」 단추 · 「시트 CSV」 와 묶은 「내려받기 ▾」 메뉴 · 엑셀 통 몇 벌(세션 칸).
+GAP_SHEET_XLSX_KEY: Final = "download_equipment_gap_sheet_xlsx"
+GAP_SHEET_MENU_KEY: Final = "download_equipment_gap_sheet_menu"
+GAP_SHEET_XLSX_MEMO_KEY: Final = "equipment_gap_sheet_xlsx_memo"
+# 「표시 · 호기 목록」 목록 아래 「내려받기 ▾」 메뉴(CSV · 시트 엑셀) — 통은 위 세션 칸에 함께 둔다.
+GAP_UNIT_LIST_CSV_KEY: Final = "download_equipment_gap_unit_list_csv"
+GAP_UNIT_LIST_XLSX_KEY: Final = "download_equipment_gap_unit_list_xlsx"
+GAP_UNIT_LIST_MENU_KEY: Final = "download_equipment_gap_unit_list_menu"

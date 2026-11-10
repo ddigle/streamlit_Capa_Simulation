@@ -25,12 +25,31 @@ from capa_simulation.components.availability_gap_panel import (
     SHEET_CSV_STYLE,
     UNIT_LIST_HELP,
 )
-from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CSV_KEY
-from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, render_csv_download
+from capa_simulation.components.availability_sheet_canvas import GROUP_TITLES
+from capa_simulation.components.availability_sheet_keys import (
+    GAP_SHEET_CSV_KEY,
+    GAP_SHEET_MENU_KEY,
+    GAP_SHEET_XLSX_KEY,
+    GAP_UNIT_LIST_CSV_KEY,
+    GAP_UNIT_LIST_MENU_KEY,
+    GAP_UNIT_LIST_XLSX_KEY,
+)
+from capa_simulation.components.availability_sheet_workbook import (
+    GAP_SHEET_NAME,
+    UNIT_LIST_SHEET,
+)
+from capa_simulation.components.table_toolbar import (
+    CSV_DOWNLOAD_LABEL,
+    DOWNLOAD_MENU_LABEL,
+    SHEET_XLSX_LABEL,
+    render_csv_download,
+    render_xlsx_download,
+)
 from capa_simulation.services.availability_sheet import (
     BREAKDOWN_LENT_COLUMN,
     GAP_ROWS,
     ROW_GAP_AVAILABLE,
+    ROW_ITEMS,
     ROW_SCHEDULE_AVAILABLE,
     ROW_SCHEDULE_LENT,
     ROW_SCHEDULE_OWNED,
@@ -1010,15 +1029,22 @@ def test_the_row_help_shares_a_small_gap_cell_with_the_last_switch() -> None:
         assert group.proto.width_config.use_content, view
 
 
-def test_the_sheet_csv_sits_on_the_switch_row_not_on_its_own_line() -> None:
-    """「시트 CSV」 는 「조회 결과 · 표시」 전환 줄 오른쪽 끝이다 — 시트 위에 단추 하나가 따로 한
-    줄을 차지하지 않는다(2026-11-09 사용자 보드 T3). 호기 목록에는 시트 CSV 가 없다(목록 아래 CSV
-    하나)."""
+def test_the_sheet_downloads_are_one_menu_on_the_switch_row() -> None:
+    """「시트 CSV」 · 「시트 엑셀」 은 「조회 결과 · 표시」 전환 줄 오른쪽 끝의 「내려받기 ▾」 메뉴
+    하나다 — 시트 위에 단추가 따로 한 줄을 차지하지 않는다(2026-11-09 사용자 보드 T3 · 2026-11-10
+    답 Q2-7 꼴, 시트 엑셀 넓히기 2). 호기 목록에는 시트 내려받기가 없고 목록 아래 제 메뉴(CSV ·
+    시트 엑셀)다."""
     from streamlit.testing.v1.element_tree import Block
 
     app = _run()
     _select_view(app, "분류별 내역")
-    assert [button.label for button in app.download_button] == ["시트 CSV"]
+    assert [button.label for button in app.download_button] == ["시트 CSV", SHEET_XLSX_LABEL]
+    (menu,) = [block for block in app.get("popover") if block.key == GAP_SHEET_MENU_KEY]
+    assert menu.proto.popover.label == DOWNLOAD_MENU_LABEL
+    assert [str(button.key) for button in menu.download_button] == [
+        GAP_SHEET_CSV_KEY,
+        GAP_SHEET_XLSX_KEY,
+    ]
     (switch_row,) = [
         block
         for block in app.main.children.values()
@@ -1026,17 +1052,111 @@ def test_the_sheet_csv_sits_on_the_switch_row_not_on_its_own_line() -> None:
         and any(getattr(child, "key", None) == RESULT_VIEW_KEY for child in _descendants(block))
     ]
     keys = [getattr(child, "key", None) for child in _descendants(switch_row)]
-    assert {RESULT_VIEW_KEY, DETAIL_MODE_KEY} <= set(keys)
-    assert any(getattr(child, "label", None) == "시트 CSV" for child in _descendants(switch_row))
-    # 높이는 곁 전환 단추(28px)와 같다 — 시트를 보는 회차에만 줄이 높아져 아래 본문이 오르내리지
-    # 않게(설계 규칙 UI-CON-01 · UI-PRF-03).
+    assert {RESULT_VIEW_KEY, DETAIL_MODE_KEY, GAP_SHEET_MENU_KEY} <= set(keys)
+    # 메뉴 단추 높이는 곁 전환 단추(28px)와 같다 — 시트를 보는 회차에만 줄이 높아져 아래 본문이
+    # 오르내리지 않게(설계 규칙 UI-CON-01 · UI-PRF-03).
     assert SHEET_CSV_STYLE in [str(item.proto.body) for item in app.get("html")]
-    assert f".st-key-{GAP_SHEET_CSV_KEY} button" in SHEET_CSV_STYLE
+    assert f".st-key-{GAP_SHEET_MENU_KEY} button" in SHEET_CSV_STYLE
     assert "height: 28px;" in SHEET_CSV_STYLE
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception
-    assert [button.label for button in app.download_button] == [CSV_DOWNLOAD_LABEL]
+    assert [button.label for button in app.download_button] == [
+        CSV_DOWNLOAD_LABEL,
+        SHEET_XLSX_LABEL,
+    ]
+    (unit_menu,) = [block for block in app.get("popover") if block.key == GAP_UNIT_LIST_MENU_KEY]
+    assert [str(button.key) for button in unit_menu.download_button] == [
+        GAP_UNIT_LIST_CSV_KEY,
+        GAP_UNIT_LIST_XLSX_KEY,
+    ]
+
+
+def test_the_unit_list_excel_is_the_screen_table_with_the_screen_digits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """호기 목록 시트 엑셀은 화면 표 그대로 — 같은 열 · 행, 공정 표시명, 화면 숫자 꼴(대수 ·
+    환산대수 「%.3f」 → `0.000`)의 숫자 칸, 맨 위 값 줄에 분류 거름. CSV 는 원본 공정명 그대로다."""
+    from xlsx_read import read_workbook
+
+    sheets = _record_sheet(monkeypatch)
+    app = _run(labels=True)
+    _select_view(app, "분류별 내역")
+    app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
+    assert not app.exception
+    shown = app.dataframe[0].value
+    book = read_workbook(sheets[GAP_UNIT_LIST_XLSX_KEY]["data"])
+    assert list(book) == [UNIT_LIST_SHEET]
+    sheet = book[UNIT_LIST_SHEET]
+    labels = sheet.column(0)
+    header = labels.index("월")
+    heading = {str(sheet.row(index)[0]): str(sheet.row(index)[1]) for index in range(1, header - 1)}
+    assert heading["공정"] == "전체 합계" and heading["분류"] == "전체"
+    assert sheet.row(header) == list(shown.columns)
+    body = [sheet.row(index) for index in range(header + 1, header + 1 + len(shown))]
+    assert [row[list(shown.columns).index("공정")] for row in body] == list(shown["공정"])
+    assert "표시-DA" in set(shown["공정"])
+    count = list(shown.columns).index("대수")
+    assert sheet.cells[(header + 1, count)].number_format == "0.000"
+    assert sheet.cells[(header + 1, count)].numeric
+    assert sheets[GAP_UNIT_LIST_XLSX_KEY]["file_name"].endswith(".xlsx")
+
+
+def _record_sheet(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, Any]]:
+    """패널이 「내려받기 ▾」 메뉴에 넘긴 시트 엑셀(key → 바이트 · 파일 이름)을 적어 둔다."""
+    sheets: dict[str, dict[str, Any]] = {}
+
+    def record(*, data: bytes, file_name: str, key: str, label: str) -> None:
+        sheets[key] = {"data": data, "file_name": file_name}
+        render_xlsx_download(data=data, file_name=file_name, key=key, label=label)
+
+    monkeypatch.setattr("capa_simulation.components.table_toolbar.render_xlsx_download", record)
+    return sheets
+
+
+def test_the_sheet_excel_is_the_screen_sheet_built_once_per_condition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """시트 엑셀은 지금 화면 시트 그대로(같은 칸 값 · 「—」) — 파일 이름은 시트 CSV 와 같고 확장자만
+    `.xlsx`. 통은 조건이 바뀐 뒤 처음 그리는 회차에 한 번 짓는다 — 칸 누름 · 같은 조건 회차는 다시
+    짓지 않고, 공정을 바꾸면 새로 짓는다(새 `st.cache_*` 없음 — 세션 몇 벌)."""
+    from xlsx_read import read_workbook
+
+    from capa_simulation.components.availability_sheet_workbook import (
+        availability_sheet_workbook,
+    )
+
+    sheets = _record_sheet(monkeypatch)
+    builds: list[str] = []
+
+    def counted(request: Any) -> bytes:
+        builds.append(request.process_label)
+        return availability_sheet_workbook(request)
+
+    monkeypatch.setattr(
+        "capa_simulation.components.availability_gap_panel.availability_sheet_workbook", counted
+    )
+    app = _run()
+    _select_view(app, "분류별 내역")
+    assert builds == ["전체 합계"]
+    book = read_workbook(sheets[GAP_SHEET_XLSX_KEY]["data"])
+    sheet = book[GAP_SHEET_NAME]
+    heading = {str(sheet.row(index)[0]): str(sheet.row(index)[1]) for index in (1, 2)}
+    assert heading == {"공정": "전체 합계", "조회기간": "26.10–26.10"}
+    assert sheets[GAP_SHEET_XLSX_KEY]["file_name"] == "Static_대비_일정_시트_202610_202610.xlsx"
+    # 같은 이름(「가용」)이 Static 묶음에도 있다 — 설비 일정 기준 묶음 제목 뒤의 것이다.
+    labels = sheet.column(0)
+    title = labels.index(GROUP_TITLES["sched"])
+    available = labels.index(ROW_ITEMS[ROW_SCHEDULE_AVAILABLE], title)
+    assert sheet.cells[(available, 2)].value == _value(app, ROW_SCHEDULE_AVAILABLE)
+
+    open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
+    app.run()
+    assert not app.exception
+    assert builds == ["전체 합계"]
+    app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
+    assert not app.exception
+    assert builds == ["전체 합계", "Die Attach"]
 
 
 def _descendants(node: Any) -> list[Any]:
@@ -1071,9 +1191,9 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
         exported[key] = data
         render_csv_download(data=data, file_name=file_name, key=key, label=label)
 
-    monkeypatch.setattr(
-        "capa_simulation.components.availability_gap_panel.render_csv_download", record_csv
-    )
+    # 시트 · 호기 목록 CSV 는 「내려받기 ▾」 메뉴(표 곁 한 쌍 도우미) 안이다.
+    monkeypatch.setattr("capa_simulation.components.table_toolbar.render_csv_download", record_csv)
+    sheets = _record_sheet(monkeypatch)
     plain = _run()
     assert plain.selectbox(key=PROCESS_FILTER_KEY).options == [
         "전체 합계",
@@ -1095,6 +1215,12 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
     _select_view(app, "분류별 내역")
     sheet_csv = exported["download_equipment_gap_sheet_csv"].decode("utf-8-sig")
     assert "Die Attach" in sheet_csv and "표시-" not in sheet_csv
+    # 시트 엑셀은 화면처럼 표시명이다(머리 글자 · 머리 값 줄 — 공정 Capa 상세 시트 엑셀과 같다).
+    from xlsx_read import read_workbook
+
+    excel = read_workbook(sheets[GAP_SHEET_XLSX_KEY]["data"])[GAP_SHEET_NAME]
+    assert "구분 · 표시-DA" in excel.column(0)
+    assert excel.row(1)[:2] == ["공정", "표시-DA"]
     open_cell(app, MONTH, ROW_SCHEDULE_AVAILABLE)
     app.run()
     assert not app.exception
@@ -1371,3 +1497,77 @@ def _alerts(app: AppTest) -> str:
     """머리 상태 알림(`EQ-06` 두 쪽 공정명 · `EQ-07` 조회 시작 · `EQ-08` Static 못 읽음)의 전문 —
     자리에는 경고 상자를 그리지 않는다(2026-11-03 D2)."""
     return " ".join(str(note["full"]) for note in states(app) if note.get("active"))
+
+
+def test_the_sheet_heading_names_the_equipment_scenario_like_the_header_band(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """시트 엑셀 맨 위 「설비 시나리오」 값은 머리 띠 꼬리 글(공정 Capa 상세 시트와 같은 꼴)이고,
+    띠가 아직 없으면 알림 범위 이름, 둘 다 없으면 줄을 뺀다. 「시나리오」(Static 세 행이 온 활성
+    시나리오)는 공정 다음 — 공정 Capa 상세 · 산출 결과 시트와 같은 머리 띠 위 줄이고, 올라온
+    리비전이 없으면 뺀다."""
+    import capa_simulation.components.availability_gap_panel as panel
+
+    monkeypatch.setattr(
+        panel, "remembered_equipment_suffix", lambda: "설비 시나리오 · 운영 일정 · r3 · 공식 v3"
+    )
+    monkeypatch.setattr(panel, "scenario_line", lambda: "정기 검토 · r2 기준 · 공식 v4")
+    heading = panel._sheet_heading(
+        "전체 합계", (202611, 202702), alert_label="설비 「운영 일정」 r3", unit_filter=False
+    )
+    assert heading == (
+        ("공정", "전체 합계"),
+        ("시나리오", "정기 검토 · r2 기준 · 공식 v4"),
+        ("조회기간", "26.11–27.02"),
+        ("설비 시나리오", "운영 일정 · r3 · 공식 v3"),
+    )
+    monkeypatch.setattr(panel, "scenario_line", lambda: None)
+    monkeypatch.setattr(panel, "remembered_equipment_suffix", lambda: None)
+    assert panel._sheet_heading(
+        "Etch", (202611,), alert_label="설비 「운영 일정」 r3", unit_filter=False
+    )[-1] == ("설비 시나리오", "「운영 일정」 r3")
+    assert [
+        name
+        for name, _ in panel._sheet_heading("Etch", (202611,), alert_label="", unit_filter=False)
+    ] == [
+        "공정",
+        "조회기간",
+    ]
+
+
+def test_the_sheet_scenario_line_is_the_calculation_sheets_scenario_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Static 대비 일정 시트의 「시나리오」 값은 공정 Capa 상세 · 산출 결과
+    시트(`scenario_period_rows`)의 그 값과 같은 글이다. 올라온 리비전이 없으면 None — 머리 띠가
+    그때 적는 앱 이름을 시나리오로 싣지 않는다."""
+    from datetime import datetime
+
+    import capa_simulation.components.sheet_download as sheet_download
+    from capa_simulation.scenario_activation import ActiveScenarioLabel
+
+    monkeypatch.setattr(sheet_download, "latest_official_revision", lambda: ("rev-2", 4))
+    monkeypatch.setattr(sheet_download, "has_unsaved_scenario_changes", lambda: False)
+    monkeypatch.setattr(sheet_download, "newer_active_revision_no", lambda: None)
+    monkeypatch.setattr(sheet_download, "active_scenario_label", lambda: None)
+    assert sheet_download.scenario_line() is None
+
+    label = ActiveScenarioLabel(
+        scenario_id="scn-1",
+        revision_id="rev-2",
+        scenario_name="DEMO 정기 검토",
+        simulation_code="DEMO-SIM",
+        source_type="builtin",
+        registered_at=datetime(2026, 11, 1, 9, 0),
+        revision_no=2,
+        revision_name="기준",
+        saved_at=datetime(2026, 11, 2, 9, 0),
+        first_month=202611,
+        last_month=202702,
+    )
+    monkeypatch.setattr(sheet_download, "active_scenario_label", lambda: label)
+    expected = dict(
+        sheet_download.scenario_period_rows(selected=(202611, 202702), applied=(202611, 202702))
+    )
+    assert sheet_download.scenario_line() == expected["시나리오"]
+    assert sheet_download.scenario_line() == "DEMO 정기 검토 · r2 기준 · 공식 v4"

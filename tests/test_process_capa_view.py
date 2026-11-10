@@ -929,24 +929,17 @@ def test_the_next_screen_button_keeps_the_balloon_of_the_closing_link() -> None:
     assert app.button(key="to_shortening").help == "두 화면의 설비 기준이 다릅니다"
 
 
-def test_the_closing_link_is_needed_only_without_another_way() -> None:
-    """맨 아래 필요 단축 일정 링크 — 그 카드에서 왔으면 「← 필요 단축 일정」 이, 일정 부족 달이
-    있으면 근거 패널의 그 달 단추가 같은 길이다(설계 규칙 UI-LAY-12). 그 단추가 서는 달은 KPI
-    「부족 원인 · 일정」 이 세는 달과 같다 — 달 수 하나로 본다. KPI 아래에는 「일정 n개월 — 필요
-    단축 일정」 줄이 없다(2026-11-10 보드 c2-picked)."""
+def test_the_closing_link_steps_aside_only_for_a_visit_from_the_card() -> None:
+    """맨 아래 필요 단축 일정 링크 — 그 카드에서 왔으면(「← 필요 단축 일정」 이 같은 길) 서지 않고,
+    일정 부족 달이 있는 공정에도 선다(2026-11-10 답 Q2-8 — 근거 패널의 그 달 단추는 그 달을 골라야
+    서서 처음 연 달이 일정 부족 달이 아니면 길이 없었다). KPI 아래에는 「일정 n개월 — 필요 단축
+    일정」 줄이 없다(2026-11-10 보드 c2-picked)."""
     short = _dynamic_view()
-    plan = prescription(short)
     months = [int(month) for month in short.canvas.process_months["생산계획년월"]]
     shown = [m for m in months if month_next_screens(_view(dynamic=short), m).schedule]
-    assert shown and len(shown) == plan.dynamic_short_months
-    assert not shortening_link_needed(short, arrived_from_card=False)
-
-    filled = short.canvas.process_months.assign(과부족=0.0)
-    calm = replace(short, canvas=replace(short.canvas, process_months=filled))
-    assert prescription(calm).dynamic_short_months == 0
-    assert not any(month_next_screens(_view(dynamic=calm), m).schedule for m in months)
-    assert shortening_link_needed(calm, arrived_from_card=False)
-    assert not shortening_link_needed(calm, arrived_from_card=True)
+    assert shown and len(shown) == prescription(short).dynamic_short_months
+    assert shortening_link_needed(arrived_from_card=False)
+    assert not shortening_link_needed(arrived_from_card=True)
 
 
 @pytest.mark.parametrize(

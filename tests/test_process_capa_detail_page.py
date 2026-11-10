@@ -34,6 +34,7 @@ from xlsx_read import read_workbook
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENARIO_FIELD_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import load_guide
 from capa_simulation.components.process_capa_canvas import (
@@ -44,6 +45,7 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_UNITS,
 )
 from capa_simulation.components.process_capa_view import (
+    DOWNLOAD_MENU_KEY,
     DOWNLOAD_STYLE,
     DYNAMIC_DB_ERROR_TITLE,
     DYNAMIC_ERROR_TITLE,
@@ -65,6 +67,7 @@ from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_DETAIL,
     SHORTENING_HIGHLIGHT_KEY,
 )
+from capa_simulation.components.table_toolbar import DOWNLOAD_MENU_LABEL, SHEET_XLSX_LABEL
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -265,6 +268,12 @@ def _process_box(app: AppTest) -> _ProcessBox:
     return _ProcessBox(app)
 
 
+def _download_menu(app: AppTest) -> Any:
+    """표 도구 줄 「내려받기 ▾」 메뉴(팝오버) — 없으면 None."""
+    found = [block for block in app.get("popover") if block.key == DOWNLOAD_MENU_KEY]
+    return found[0] if found else None
+
+
 def _ok(app: AppTest) -> AppTest:
     assert not app.exception, [element.message for element in app.exception]
     return app
@@ -369,8 +378,10 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert "설비 마스터가 없습니다" in note["full"]
     assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
     # 호기 CSV 와 정리 줄의 탭 링크는 설비 일정이 설 때만이다. 시트 엑셀은 ① 이 있어 늘 서고 둘째
-    # 시트(단축 일정)가 없다.
+    # 시트(단축 일정)가 없다. 묶을 것이 없어 「내려받기 ▾」 메뉴 없이 시트 엑셀 단추 하나다.
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
+    assert _download_menu(app) is None
+    assert SHEET_XLSX_KEY in {str(button.key) for button in app.get("download_button")}
     assert SHORTENING_TAB_LINK_KEY not in {str(button.key) for button in app.button}
     _, book = _sheet(app)
     assert list(book) == [DETAIL_SHEET]
@@ -640,6 +651,38 @@ def test_a_stopped_visit_consumes_the_transfer_slot(databases: tuple[Path, Path]
     # HOME 과 같은 꼴).
     field = app.button(key=PROCESS_FIELD_KEY)
     assert (field.label, field.disabled) == ("계산 멈춤", True)
+
+
+def _equipment_field(app: AppTest) -> Any:
+    """사이드바 「설비 시나리오」 값 칸(단독 실행이라 칸 등록이 없어 사이드바에 바로 선다)."""
+    found = [button for button in app.sidebar.button if button.key == EQUIPMENT_SCENARIO_FIELD_KEY]
+    return found[0] if found else None
+
+
+def test_a_stopped_visit_keeps_the_equipment_scenario_row_unlocked(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """계산이 멈춘 회차에도 「설비 시나리오」 줄이 정상 회차처럼 잠그지 않은 채 선다(2026-11-10 답
+    Q2-29) — 다른 설비 시나리오로 옮기는 길이고, 빠지면 아래 공정 줄 · 카드가 한 줄 올라온다. HOME
+    칸 방문이어도 공식 고정(「(고정)」)은 걸지 않는다(공정 · 달을 정하기 전이다)."""
+    normal = _dynamic_app(dynamic_databases)
+    expected = _equipment_field(normal)
+    assert expected is not None and not expected.disabled
+
+    app = _app(dynamic_databases, fail_bootstrap=True)
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process=DYNAMIC_PROCESS, month=202603, section=HOME_BOTTLENECK_SECTION, displayed_rate=1.0
+    )
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    field = _equipment_field(app)
+    assert field is not None
+    assert (field.label, field.disabled) == (expected.label, False)
+    assert app.button(key=PROCESS_FIELD_KEY).disabled
+    # 줄 차례도 정상 회차와 같다 — 설비 시나리오 줄이 공정 줄보다 앞이다.
+    keys = [str(button.key) for button in app.sidebar.button]
+    assert keys.index(EQUIPMENT_SCENARIO_FIELD_KEY) < keys.index(PROCESS_FIELD_KEY)
 
 
 def test_a_month_outside_the_page_axis_opens_the_default_month_with_a_notice(
@@ -1060,6 +1103,14 @@ def test_the_unit_csv_stands_on_the_tool_row_above_the_canvas(
 
     order = [element.type for element in _main_order(app.main)]
     assert order.index("download_button") < order.index("plotly_chart")
+    # 내려받기 둘은 「내려받기 ▾」 메뉴 하나 안에 호기 CSV → 시트 엑셀 차례다(2026-11-10 답 Q2-7).
+    menu = _download_menu(app)
+    assert menu is not None and menu.proto.popover.label == DOWNLOAD_MENU_LABEL
+    assert [str(button.key) for button in menu.download_button] == [UNITS_CSV_KEY, SHEET_XLSX_KEY]
+    assert [str(button.label) for button in menu.download_button] == [
+        "이 공정 단축 일정 CSV",
+        SHEET_XLSX_LABEL,
+    ]
     # 곁의 칩과 같은 높이 서식은 보이는 글(범례)과 한 `st.html` 이라 이벤트 칸을 쓰지 않는다.
     assert any("pcd-legend" in body and DOWNLOAD_STYLE in body for body in _html(app))
 
@@ -1082,25 +1133,26 @@ def _open_schedule_short_month(app: AppTest) -> int:
     raise AssertionError("일정 부족 달이 없다")
 
 
-def test_the_kpi_has_no_next_screen_row_and_the_closing_link_still_steps_aside(
+def test_the_kpi_has_no_next_screen_row_and_the_closing_link_stands_on_a_short_process(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """KPI 아래에 「다음 화면 · 일정 n개월 — 필요 단축 일정」 줄이 없다(2026-11-10 보드 c2-picked).
-    일정 부족 달이 있는 공정은 근거 패널의 그 달 단추가 같은 길이라 맨 아래 링크는 서지 않고(설계
-    규칙 UI-LAY-12), 내려받기 둘은 그대로다."""
+    일정 부족 달이 있는 공정에도 맨 아래 링크가 선다 — 근거 패널의 그 달 단추가 서지 않는 달을
+    보고 있어도 길이 남는다(2026-11-10 답 Q2-8 — 설계 규칙 UI-LAY-12 예외). 내려받기 둘은
+    그대로다."""
     app = _dynamic_app(dynamic_databases)
 
     assert not any("개월 — " in str(button.label) for button in app.button), [
         str(button.label) for button in app.button
     ]
-    assert not _closing_link(app)
+    assert _closing_link(app)
     downloads = {str(button.key) for button in app.get("download_button")}
     assert {UNITS_CSV_KEY, SHEET_XLSX_KEY} <= downloads
     _open_schedule_short_month(app)
     assert (
         app.button(key=EVIDENCE_SHORTENING_BUTTON_KEY).label == "이 달 일정 부족 — 필요 단축 일정"
     )
-    assert not _closing_link(app)
+    assert _closing_link(app)
 
 
 @pytest.fixture(scope="module")
@@ -1124,8 +1176,8 @@ def calm_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path
 def test_the_closing_link_stands_when_nothing_else_leads_to_the_shortening_page(
     calm_databases: tuple[Path, Path],
 ) -> None:
-    """다른 길이 없는 공정에만 맨 아래 링크가 서고, 그 카드에서 왔으면(「← 필요 단축 일정」) 서지
-    않는다."""
+    """일정 부족 달이 없는 공정에도 맨 아래 링크가 서고, 그 카드에서 왔으면(「← 필요 단축 일정」)
+    서지 않는다."""
     app = _dynamic_app(calm_databases)
 
     assert EVIDENCE_SHORTENING_BUTTON_KEY not in _buttons(app)
