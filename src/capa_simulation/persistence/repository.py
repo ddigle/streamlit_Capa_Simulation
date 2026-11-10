@@ -391,7 +391,8 @@ class OfficialReleaseMoved(ValueError):
 
     def __init__(self, expected: int, current: int) -> None:
         super().__init__(
-            f"회차 도중 공식버전이 바뀌어(공식 v{expected} → v{current}) 공식으로 지정하지 않았습니다."
+            f"회차 도중 공식버전이 바뀌어(공식 v{expected} → v{current}) 공식으로 지정하지 "
+            "않았습니다."
         )
         self.expected = expected
         self.current = current
