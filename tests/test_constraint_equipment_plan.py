@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인 · 계획 블록(`render_equipment_plan`)의
-# 멈추는 갈래 차례와 멈춘 자리 알림, 머리 줄 표지 · 입력 비가동 알림 글 조각을 화면 없이 본다.
+# 멈추는 갈래 차례와 멈춘 자리 알림, UPEH 가정 미적용 · 입력 비가동 알림 글 조각을 화면 없이 본다.
 
 """`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출)와 같은 글 조각.
 
@@ -8,8 +8,8 @@
 하나가 두 모드에 같은 갈래 차례를 주는지 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어
 `subject`) · 그 모드의 앞 갈래(`before_plan`) · 계획 계산 오류 — 를 머리 그리기와 마크 알림을 적는
 가짜로 본다. 계획 받기가 불리면 실패하는 가짜 `simulation_cache` 함수로 「앞 갈래가 멈추면 계획을
-받지 않는다」 를 잡는다. 두 모드 머리 줄의 표지(UPEH 가정 미적용)와 입력 비가동 상태 알림
-`CS-05` 의 글(합 대수 띠 · 고칠 자리 · 넘친 달)도 여기서 못 박는다.
+받지 않는다」 를 잡는다. UPEH 가정 미적용 상태 알림 `CS-06` 의 글(가정 % · 고칠 화면)과 입력 비가동
+상태 알림 `CS-05` 의 글(합 대수 띠 · 고칠 자리 · 넘친 달)도 여기서 못 박는다.
 """
 
 from __future__ import annotations
@@ -29,16 +29,16 @@ from capa_simulation.components.constraint_equipment_plan import (
     EQUIPMENT_SCREEN,
     MANUAL_DOWNTIME_FIX,
     MANUAL_DOWNTIME_HELP,
-    UPEH_NOT_APPLIED_HELP,
-    UPEH_NOT_APPLIED_MARK,
+    UPEH_SCREEN,
     EquipmentPlanSource,
     absent_note,
-    applied_marks,
     equipment_readiness,
     manual_downtime_note,
     render_equipment_plan,
+    upeh_not_applied_note,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.navigation import PROCESS_CAPA_DETAIL
 from capa_simulation.page_bootstrap import ProcessPageInputs
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
 from capa_simulation.services.manual_downtime import MANUAL_DOWNTIME_BAND, ManualDowntime
@@ -306,27 +306,28 @@ def test_a_failure_while_building_the_plan_key_is_the_plan_error(recorder: _Reco
 # ------------------------------------------------------------------ 같은 글 조각
 
 
-def test_the_header_marks_keep_their_words(monkeypatch: pytest.MonkeyPatch) -> None:
-    """두 모드 머리 줄의 표지 — UPEH 가정 미적용은 세션 칸이 기본값이 아닌 정수일 때만(소수 · 글자
-    칸은 켬으로 보지 않는다). 뜻은 표지 풍선이고 없으면 빈 글자다. 계획이 건 입력 비가동은 표지가
-    아니라 상태 알림 `CS-05` 다(2026-11-10 보드 Q-4). 출처는 Guide 다(2026-11-08 사용자 그림 메모
-    g12)."""
+def test_the_upeh_note_is_the_percent_and_the_screen_to_fix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UPEH 가정 미적용 상태 알림 `CS-06` 의 글(2차 보드 Q2-13 — 입력 비가동 `CS-05` 와 같은 꼴) —
+    세션 칸이 기본값이 아닌 정수일 때만 선다(소수 · 글자 칸은 켬으로 보지 않는다, 없으면 None —
+    「해소」). 짧은 글은 가정 % 와 고칠 화면(공정 Capa 상세 — 줄의 「그 화면으로」), 전문은 이 화면
+    이름으로 시작해 뜻을 적는다(줄의 화면 칸이 고칠 화면이라 — 설계 규칙 UI-NTF-02)."""
     state: dict[str, object] = {}
     monkeypatch.setattr(st, "session_state", state)
-    assert applied_marks() == ("", "")
-    for value, on in (
-        (UPEH_ASSUMPTION_DEFAULT_PERCENT, False),
-        (110, True),
-        (90, True),
-        (110.0, False),
-        ("110", False),
-        (None, False),
-    ):
+    assert upeh_not_applied_note() is None
+    for value in (UPEH_ASSUMPTION_DEFAULT_PERCENT, 110.0, "110", None):
         state[UPEH_ASSUMPTION_PERCENT_KEY] = value
-        expected = (UPEH_NOT_APPLIED_MARK, UPEH_NOT_APPLIED_HELP) if on else ("", "")
-        assert applied_marks() == expected, value
-    # 표지는 한두 낱말이고 문장은 풍선에만 있다(설계 규칙 UI-TXT-04).
-    assert not UPEH_NOT_APPLIED_MARK.endswith("다")
+        assert upeh_not_applied_note() is None, value
+    for value in (110, 90):
+        state[UPEH_ASSUMPTION_PERCENT_KEY] = value
+        note = upeh_not_applied_note()
+        assert note is not None, value
+        assert note.text == f"UPEH 가정 {value}% 미적용(공식 소요) — 공정 Capa 상세"
+        assert note.full.startswith(f"제약 시뮬레이션 — UPEH 가정 {value}% 미적용(공식 소요) — ")
+        assert "이 화면에 걸리지 않습니다" in note.full
+        assert note.content == [value]
+    assert UPEH_SCREEN[1] == PROCESS_CAPA_DETAIL.href
 
 
 def _effect(rows: list[tuple[str, int, float, float, bool]]) -> pd.DataFrame:

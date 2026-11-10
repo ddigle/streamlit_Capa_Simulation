@@ -25,11 +25,12 @@
 - **계산** — 순수 서비스 `services/modification_schedule.py`. 「가장 고르게」 는 이분 탐색이라 수백
   ms 까지 가므로 결과를 조건 값으로 세션에 몇 벌 기억한다(`remembered_result` — Streamlit 캐시가
   아니다, CLAUDE.md 캐시 경계). 그림도 같다(`remembered_figure` — 테마가 키에 든다).
-- **본문** — 머리 줄(계산이 건 표지 — UPEH 가정 미적용, 뜻은 풍선) → 요약 넷 → (못 맞추면) 대안
-  셋 → 월별 확보율 그래프(개조 전·뒤 · 기준선 · 차수 막대) → 개조 일정(차수 목록). 조건을 되읊는
-  줄과 출처 띠는 두지 않는다 — 조건은 사이드바, 출처는 Guide 다(제약 영향 모드와 같은 머리 칸 · 같은
-  표지, 2026-11-09 보드 c-schedule-head). 계획이 건 입력 비가동은 상태 알림 `CS-05` 다(제약 영향
-  모드와 같은 함수 `report_manual_downtime` — 2026-11-10 보드 Q-4).
+- **본문** — 요약 넷 → (못 맞추면) 대안 셋 → 월별 확보율 그래프(개조 전·뒤 · 기준선 · 차수 막대) →
+  개조 일정(차수 목록). 머리 줄은 멈춘 갈래의 공정 · 배지뿐이다 — 조건을 되읊는 줄과 출처 띠는 두지
+  않는다(조건은 사이드바, 출처는 Guide — 제약 영향 모드와 같은 머리 칸, 2026-11-09 보드
+  c-schedule-head). 계획이 건 입력 비가동은 상태 알림 `CS-05` 다(제약 영향 모드와 같은 함수
+  `report_manual_downtime` — 2026-11-10 보드 Q-4). UPEH 가정 미적용은 페이지가 모드 분기 앞에서 내는
+  상태 알림 `CS-06` 이다(2차 보드 Q2-13).
 
 저장하지 않는다 — 조건은 세션 칸뿐이고 어느 DB 에도 쓰지 않는다.
 """
@@ -50,7 +51,6 @@ from capa_simulation.components.constraint_equipment_plan import (
     SESSION_ONLY_HELP,
     EquipmentPlanSource,
     HeaderRenderer,
-    applied_marks,
     equipment_readiness,
     render_equipment_plan,
     report_manual_downtime,
@@ -194,11 +194,8 @@ DOUBLE_COUNT_NOTE: Final = (
     "**아직 일정에 넣지 않은 개조만** 넣습니다 — 설비 시나리오 비가동에 이미 든 개조는 가용에서 "
     "이미 빠져 있어 두 번 빠집니다."
 )
-# 그래프 범례(값)는 자리에, 막대 좌표의 읽는 법은 제목 풍선이다.
-CHART_NOTE: Final = (
-    "아래 띠 = 차수별 개조 비가동 · 옅은 빨강 칠 = 개조 없이도 기준(+ 안전 여유) 미달이라 넣지 "
-    "않은 달 · 옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · 기한 뒤)"
-)
+# 막대 좌표의 읽는 법은 제목 풍선이고, 띠 · 칠의 뜻(범례)은 Guide 다 — 제약 영향 모드 그래프 ·
+# 계산표와 같은 꼴(2차 보드 Q2-14, 설계 규칙 UI-TXT-01).
 CHART_HELP: Final = (
     "막대 글은 대수입니다 — 글이 들지 않는 막대는 풍선에 있습니다. 막대는 W/D 구간 좌표라 달력 앞 "
     "달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 있습니다."
@@ -697,11 +694,10 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
         return
 
     labels = ScheduleLabels(process_label=process_label, general_percent=choice.general_percent)
-    # 머리 줄 — 조건을 되읊지 않고(사이드바가 조건이다) 계산이 건 표지만 둔다(제약 영향 모드와 같은
-    # 표지 — 2026-11-09 보드 c-schedule-head). 넣는 법(아직 일정에 넣지 않은 개조만)은 「개조 대수」
-    # 칸 풍선, 저장하지 않음은 카드 「이 세션만」 표지 풍선, 입력 비가동은 위 상태 알림 `CS-05` 다.
-    marks, marks_help = applied_marks()
-    context.render_header(process, marks=marks, marks_help=marks_help)
+    # 머리 줄은 서지 않는다 — 조건을 되읊지 않는다(사이드바가 조건이다, 제약 영향 모드와 같다 —
+    # 2026-11-09 보드 c-schedule-head). 넣는 법(아직 일정에 넣지 않은 개조만)은 「개조 대수」 칸
+    # 풍선, 저장하지 않음은 카드 「이 세션만」 표지 풍선, 입력 비가동은 위 상태 알림 `CS-05`, UPEH
+    # 가정 미적용은 페이지가 모드 분기 앞에서 내는 상태 알림 `CS-06` 이다.
     render_schedule_kpis(result, labels)
     _render_body(result, labels)
 
@@ -838,7 +834,6 @@ def _render_body(result: ScheduleResult, labels: ScheduleLabels) -> None:
     )
     with st.container(border=True, key=CHART_CARD_KEY):
         st.markdown("**월별 확보율 — 개조 전 · 뒤**", help=CHART_HELP)
-        st.caption(CHART_NOTE)
         with min_width_scroll_canvas(key=CHART_SCROLL_PREFIX):
             st.plotly_chart(
                 remembered_figure(result, labels),

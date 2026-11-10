@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인(판정 · 멈춘 자리) · 계획 칸 받기와
-# 조건 카드 · 머리 줄 표지의 같은 글 조각 · 입력 비가동 상태 알림을 한 곳에 둔다.
+# 조건 카드의 같은 글 조각 · 입력 비가동 · UPEH 가정 미적용 상태 알림을 한 곳에 둔다.
 
 """제약 시뮬레이션 — 두 모드가 함께 쓰는 「설비 일정 확인 → 계획」 블록.
 
@@ -30,10 +30,15 @@
   그 계산이 터져도 「설비 일정을 계산하지 못했습니다」 갈래다. 기준일 거르기 · 고른 호기 빼기는
   페이지가 고른 뒤에 한다(호기 고르기는 이 블록 뒤에 서므로).
 - **같은 글 조각** — 두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리
-  (`SESSION_ONLY_CAPTION`). 머리 줄을 그리는 함수의 꼴은 `HeaderRenderer` 다. 두 모드의 머리 줄은
-  조건을 되읊지 않고 계산이 건 표지만 둔다(`applied_marks` — UPEH 가정을 켠 세션의 「미적용」, 뜻은
-  풍선. 조건은 사이드바 칸, 출처와 읽는 법은 Guide — 2026-11-08 사용자 그림 메모 g12 · 2026-11-09
-  보드 c-schedule-head).
+  (`SESSION_ONLY_CAPTION`). 머리 줄을 그리는 함수의 꼴은 `HeaderRenderer` 다 — 멈춘 갈래의
+  공정 · 배지만 적는다. 계산이 선 회차의 머리 줄은 조건을 되읊지 않아 서지 않는다(조건은 사이드바
+  칸, 출처와 읽는 법은 Guide — 2026-11-08 사용자 그림 메모 g12 · 2026-11-09 보드 c-schedule-head).
+- **UPEH 가정 미적용** — 공정 Capa 상세 · 필요 단축 일정의 UPEH 가정을 켠 세션이어도 두 모드는 공식
+  소요로 센다. 그 사실은 자리에 그리지 않고 상태 알림 `CS-06` 이다(`report_upeh_not_applied` —
+  입력 비가동 `CS-05` 와 같은 꼴, 2차 보드 Q2-13). 페이지가 모드 분기 앞 한 자리에서 늘 부른다.
+  범위는 활성 리비전뿐이다 — 조건이 공정 · 설비 · 조회기간 · 모드에 기대지 않아 그것을 바꿔도 다시
+  뜨지 않는다. 「그 화면으로」 는 UPEH 가정 칸이 있는 공정 Capa 상세를 연다(머리 변경 칩의 「UPEH
+  가정」 줄과 같은 화면).
 - **입력 비가동 반영** — 계획이 건 입력 비가동(가용설비 현황 › Preference)은 자리에 그리지 않고 상태
   알림 `CS-05` 다(`report_manual_downtime` — 필요 단축 일정 `RS-05` 와 같은 꼴, 2026-11-10 보드
   Q-4). 두 모드가 `render_equipment_plan` 바로 뒤 한 자리에서 부르고(계획이 없으면 `active=False`),
@@ -61,7 +66,11 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.state_alerts import equipment_scope, simulation_scope, tab_name
 from capa_simulation.constraint_simulation_state import CONSTRAINT_ABSENT_KEY
 from capa_simulation.equipment_scenario_activation import EquipmentSession
-from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, EQUIPMENT_PREFERENCE_TAB
+from capa_simulation.navigation import (
+    AVAILABLE_EQUIPMENT_STATUS,
+    EQUIPMENT_PREFERENCE_TAB,
+    PROCESS_CAPA_DETAIL,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     ProcessPageInputs,
@@ -102,20 +111,20 @@ __all__ = [
     "MANUAL_DOWNTIME_HELP",
     "SESSION_ONLY_CAPTION",
     "SESSION_ONLY_HELP",
-    "UPEH_NOT_APPLIED_HELP",
-    "UPEH_NOT_APPLIED_MARK",
+    "UPEH_SCREEN",
     "EquipmentPlan",
     "AbsentNote",
     "EquipmentPlanSource",
     "HeaderRenderer",
     "ManualNote",
     "absent_note",
-    "applied_marks",
     "equipment_readiness",
     "first_ready_process",
     "manual_downtime_note",
     "render_equipment_plan",
     "report_manual_downtime",
+    "report_upeh_not_applied",
+    "upeh_not_applied_note",
 ]
 
 SESSION_ONLY_CAPTION: Final = ":material/person: **이 세션만** — 저장하지 않습니다"
@@ -136,13 +145,11 @@ CUTOFF_SOURCE_HELP: Final = (
 _NO_SCHEDULE_BADGE: Final = "설비 일정 없음"
 """빈 상태의 머리 배지 — 까닭은 바로 아래 평문 한 줄이 적는다(설계 규칙 UI-TXT-07)."""
 
-UPEH_NOT_APPLIED_MARK: Final = "UPEH 가정 미적용"
-"""UPEH 가정을 켠 세션의 머리 줄 표지(`applied_marks`)."""
-
-UPEH_NOT_APPLIED_HELP: Final = (
-    "공정 Capa 상세 · 필요 단축 일정의 UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)."
+_UPEH_MEANING: Final = (
+    "공정 Capa 상세 · 필요 단축 일정의 UPEH 가정은 이 화면에 걸리지 않습니다(두 모드 모두 공식 "
+    "소요)."
 )
-"""「UPEH 가정 미적용」 표지의 풍선."""
+"""상태 알림 `CS-06` 전문의 뜻."""
 
 MANUAL_DOWNTIME_HELP: Final = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 가용에서 뺐습니다(공정 Capa 상세 ② 와 "
@@ -154,15 +161,18 @@ MANUAL_DOWNTIME_FIX: Final = "가용설비 현황 › Preference"
 """상태 알림 `CS-05` 짧은 글 끝 — 고칠 입력 자리(필요 단축 일정 `RS-05` 와 같은 말). 줄의 「그
 화면으로」 가 그 탭을 연다(`EQUIPMENT_SCREEN` · `tab`)."""
 
-_MANUAL_SCREEN: Final = "제약 시뮬레이션"
-"""상태 알림 `CS-05` 전문 첫머리 — 줄의 화면 칸이 고칠 화면(`goto`)이라 어느 화면의 일인지 전문이
-말한다(설계 규칙 UI-NTF-02). 두 모드가 같은 글이다(모드를 바꿔도 같은 알림)."""
+_SCREEN: Final = "제약 시뮬레이션"
+"""상태 알림 `CS-05` · `CS-06` 전문 첫머리 — 줄의 화면 칸이 고칠 화면(`goto`)이라 어느 화면의 일인지
+전문이 말한다(설계 규칙 UI-NTF-02). 두 모드가 같은 글이다(모드를 바꿔도 같은 알림)."""
 
 _MANUAL_OVER_LIMIT: Final = 5
 """전문에 이름을 적는 가용 넘침 달 수."""
 
 EQUIPMENT_SCREEN: Final = (tab_label(AVAILABLE_EQUIPMENT_STATUS), AVAILABLE_EQUIPMENT_STATUS.href)
 """채울 입력이 있는 화면(이름, 주소) — 멈춘 자리 알림 줄의 「그 화면으로」 가 연다."""
+
+UPEH_SCREEN: Final = (tab_label(PROCESS_CAPA_DETAIL), PROCESS_CAPA_DETAIL.href)
+"""UPEH 가정 칸이 있는 화면(이름, 주소) — 상태 알림 `CS-06` 줄의 「그 화면으로」 가 연다."""
 
 
 class EquipmentPlanSource(NamedTuple):
@@ -422,30 +432,54 @@ def _load_plan(
 
 
 class HeaderRenderer(Protocol):
-    """머리 줄을 그리는 함수(페이지의 `render_header`) — 멈춘 갈래의 공정 · 배지(`line`)나 계산이 건
-    표지(`marks` · 풍선 `marks_help`). 둘 다 없으면 줄이 서지 않는다(맨 위 되돌아가기 링크는 두지
-    않는다 — 2026-11-09 보드 T4)."""
+    """머리 줄을 그리는 함수(페이지의 `render_header`) — 멈춘 갈래의 공정 · 배지(`line`). 빈 글이면
+    줄이 서지 않는다(맨 위 되돌아가기 링크는 두지 않는다 — 2026-11-09 보드 T4)."""
 
-    def __call__(
-        self, process: str, line: str = "", *, marks: str = "", marks_help: str = ""
-    ) -> None: ...
+    def __call__(self, process: str, line: str = "") -> None: ...
 
 
-def _upeh_assumption_on() -> bool:
-    """세션 UPEH 가정 %(정수)가 기본값이 아닌가. 정수가 아닌 칸 값은 켬으로 보지 않는다."""
-    upeh_percent = st.session_state.get(
-        UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT
+class UpehNote(NamedTuple):
+    """상태 알림 `CS-06` 의 글 — 짧은 글(`text` — 가정 % · 고칠 화면), 전문(`full` — 화면 · 뜻),
+    지문 재료(`content` — 가정 %)."""
+
+    text: str
+    full: str
+    content: list[object]
+
+
+def upeh_not_applied_note() -> UpehNote | None:
+    """세션 UPEH 가정 %(정수)가 기본값이 아니면 그 글, 아니면 None. 정수가 아닌 칸 값은 켬으로 보지
+    않는다. 짧은 글은 무엇(가정 %)과 고칠 화면, 전문은 어느 화면의 일인지와 뜻이다(설계 규칙
+    UI-NTF-02 · UI-NTF-06 — 입력 비가동 `CS-05` 와 같은 꼴)."""
+    percent = st.session_state.get(UPEH_ASSUMPTION_PERCENT_KEY, UPEH_ASSUMPTION_DEFAULT_PERCENT)
+    if not isinstance(percent, int) or percent == UPEH_ASSUMPTION_DEFAULT_PERCENT:
+        return None
+    band = f"UPEH 가정 {percent}% 미적용(공식 소요)"
+    return UpehNote(
+        text=f"{band} — {UPEH_SCREEN[0]}",
+        full=f"{_SCREEN} — {band} — {_UPEH_MEANING}",
+        content=[percent],
     )
-    return isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT
 
 
-def applied_marks() -> tuple[str, str]:
-    """두 모드 머리 줄 표지와 그 풍선 — UPEH 가정을 켠 세션의 「UPEH 가정 미적용」(두 모드 모두 UPEH
-    가정을 걸지 않는다 — 공식 소요). 없으면 ("", ""). 계획이 건 입력 비가동은 표지가 아니라 상태
-    알림 `CS-05` 다(`report_manual_downtime`)."""
-    if _upeh_assumption_on():
-        return UPEH_NOT_APPLIED_MARK, UPEH_NOT_APPLIED_HELP
-    return "", ""
+def report_upeh_not_applied(page_inputs: ProcessPageInputs) -> None:
+    """UPEH 가정을 켠 세션의 상태 알림(`CS-06`) — 머리 줄에 그리지 않는다(2차 보드 Q2-13, 설계
+    규칙 UI-NTF-02). 페이지가 모드 분기 앞 한 자리에서 늘 부른다(가정이 꺼지면 「해소」). 범위는
+    활성 리비전뿐이다 — 공정 · 설비 · 조회기간 · 모드를 바꿔도 다시 뜨지 않는다. 줄의 「그
+    화면으로」 는 UPEH 가정 칸이 있는 공정 Capa 상세를 연다. 이벤트 칸에 늘 한 자리를
+    쓴다(`alerts.state`)."""
+    sim = simulation_scope(page_inputs.context.active_scenario)
+    note = upeh_not_applied_note()
+    alerts.state(
+        "CS-06",
+        scope=sim.scope,
+        content=None if note is None else note.content,
+        active=note is not None,
+        text=None if note is None else note.text,
+        full=None if note is None else note.full,
+        scope_label=sim.label,
+        goto=UPEH_SCREEN,
+    )
 
 
 class ManualNote(NamedTuple):
@@ -486,7 +520,7 @@ def manual_downtime_note(
         )
     return ManualNote(
         text=f"{band} — {MANUAL_DOWNTIME_FIX}",
-        full=f"{_MANUAL_SCREEN} · {process_label} — {band} — {meaning}",
+        full=f"{_SCREEN} · {process_label} — {band} — {meaning}",
         content=[band, over_months],
     )
 
