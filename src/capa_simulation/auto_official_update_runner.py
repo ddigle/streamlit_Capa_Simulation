@@ -456,7 +456,7 @@ def _execute(
     outcome = full_capacity_outcome(base.tables, base.tables)
     if outcome.error is not None or outcome.required_equipment is None:
         reason = (
-            "Capa 계산이 실패해 확보율을 판정하지 못했습니다 — 발행하지 않았습니다. "
+            "Capa 계산이 실패해 확보율을 판정하지 못했습니다 — 공식으로 지정하지 않았습니다. "
             f"{outcome.error}"
         )
         if registration.capacity.stopped:
@@ -474,7 +474,7 @@ def _execute(
     except ValueError as exc:
         log.finish(
             STATUS_PUBLISH_SKIPPED,
-            f"확보율 계산이 실패해 판정하지 못했습니다 — 발행하지 않았습니다. {exc}",
+            f"확보율 계산이 실패해 판정하지 못했습니다 — 공식으로 지정하지 않았습니다. {exc}",
         )
         return
     processes = reqb_process_names(base.tables["RQ_REQB"])
@@ -511,7 +511,7 @@ def _execute(
         )
         log.finish(
             STATUS_PUBLISH_SKIPPED,
-            f"{cause} 리비전 2 를 저장하지 않고 발행하지 않았습니다 — {memo}",
+            f"{cause} 리비전 2 를 저장하지 않고 공식으로 지정하지 않았습니다 — {memo}",
         )
         return
 
@@ -545,7 +545,7 @@ def _execute(
     if isinstance(published, str):
         log.finish(
             STATUS_PUBLISH_SKIPPED,
-            f"발행 검사에서 Capa 계산이 실패해 발행하지 않았습니다. {published}",
+            f"지정 전 검사에서 Capa 계산이 실패해 공식으로 지정하지 않았습니다. {published}",
         )
         return
     if after_publish is not None:
@@ -555,7 +555,7 @@ def _execute(
             _LOGGER.exception("자동 갱신 발행 뒤 캐시 정리가 실패했습니다.")
     release = published.release
     reason = (
-        f"공식 v{release.release_no} 발행 · {week_label(candidate.week)} "
+        f"공식 v{release.release_no} 지정 · {week_label(candidate.week)} "
         f"{candidate.simulation_code} · {memo}"
     )
     if published.warning:

@@ -694,7 +694,7 @@ def test_run_now_shows_uncounted_demand_as_a_warning_after_the_success(database:
 
     assert not app.exception and not place_errors(app)
     head = (
-        "공식 v2 발행 · W41 SIM-W41 · "
+        "공식 v2 지정 · W41 SIM-W41 · "
         "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
     )
     (success, warning) = _published_alerts(app)

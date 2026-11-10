@@ -189,7 +189,7 @@ def test_a_new_week_is_registered_judged_and_published(
     assert (run.auto_off_count, run.inherited_off_count) == (1, 0)
     # 소요대수에 들지 않은 수요가 없으면 사유에 경고가 붙지 않는다.
     assert run.reason == (
-        "공식 v2 발행 · W41 SIM-W41 · "
+        "공식 v2 지정 · W41 SIM-W41 · "
         "자동 갱신 · 기준 확보율 80% · off 1공정 · 이어받은 수동 off 0공정"
     )
     assert runner.split_published_reason(run.reason) == (run.reason, "")
@@ -356,6 +356,7 @@ def test_a_broken_capacity_calculation_registers_but_does_not_publish(
 
     assert (run.status, run.stage) == (STATUS_PUBLISH_SKIPPED, "judge")
     assert run.reason is not None and "Capa 계산이 실패" in run.reason
+    assert "공식으로 지정하지 않았습니다" in run.reason and "발행" not in run.reason
     assert run.base_revision_id is not None and run.filtered_revision_id is None
     assert len(repository.list_revisions(str(run.created_scenario_id))) == 1
     release = repository.latest_official_release()
@@ -467,7 +468,7 @@ def test_uncounted_demand_is_published_with_its_count_in_the_run_log(
     assert run.reason is not None
     memo, warning = run.reason.split(". ", 1)
     assert memo == (
-        "공식 v2 발행 · W41 SIM-W41 · "
+        "공식 v2 지정 · W41 SIM-W41 · "
         "자동 갱신 · 기준 확보율 80% · off 0공정 · 이어받은 수동 off 0공정"
     )
     assert warning.startswith("소요대수에 들지 않은 수요가 있습니다(시나리오 전체 기간) — ")
@@ -507,7 +508,7 @@ def test_blank_cs_rows_are_dropped_and_named_in_the_run_log_apart_from_the_warni
     assert (run.status, run.stage) == (STATUS_PUBLISHED, "done")
     assert run.reason is not None
     head, warning = runner.split_published_reason(run.reason)
-    assert head.startswith("공식 v2 발행 · W41 SIM-W41 · 자동 갱신 · ")
+    assert head.startswith("공식 v2 지정 · W41 SIM-W41 · 자동 갱신 · ")
     memo = "CS 빈 행 2개(계획 1행 · 경로 1행) 뺌"
     assert head.endswith(f" · {memo}")
     assert head.count(memo) == 1
@@ -880,6 +881,8 @@ def test_a_newer_official_version_set_during_the_round_is_not_overwritten(
     assert run is not None
     assert (run.status, run.stage) == (STATUS_PUBLISH_SKIPPED, "publish")
     assert run.reason is not None and "회차 도중 공식버전이 바뀌어(공식 v1 → v2)" in run.reason
+    # 새 회차의 사유는 화면 낱말 「지정」 으로 적는다(검수 보드 sc-runner-word — 옛 기록은 그대로).
+    assert "발행" not in run.reason
     assert run.filtered_revision_id is not None and run.official_release_no is None
     latest = repository.latest_official_release()
     assert latest is not None and latest.release_no == 2
