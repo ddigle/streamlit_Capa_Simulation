@@ -484,6 +484,7 @@ def test_the_toolbar_room_covers_the_widest_toolbar() -> None:
 # 표 곁 CSV · 「시트 엑셀」 한 쌍을 그리는 자리(파일 → `SheetFile(` 수) — 한 쌍은 늘
 # `render_download_pair` 로 선다. 새 자리는 여기 한 줄을 더한다.
 SHEET_SITES = {
+    "app_pages/calculation_result.py": 2,
     "src/capa_simulation/components/process_capa_view.py": 1,
 }
 
