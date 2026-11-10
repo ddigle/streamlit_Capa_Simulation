@@ -23,6 +23,7 @@ import streamlit as st
 from capa_simulation.components.app_header import header_lines
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.scenario_activation import (
+    ActiveScenarioLabel,
     active_scenario_label,
     has_unsaved_scenario_changes,
     newer_active_revision_no,
@@ -33,6 +34,7 @@ __all__ = [
     "SHEET_MEMO_LIMIT",
     "process_filter_text",
     "remembered_bytes",
+    "scenario_line",
     "scenario_period_rows",
 ]
 
@@ -74,16 +76,28 @@ def scenario_period_rows(
 ) -> tuple[tuple[str, str], ...]:
     """시트 맨 위 (이름, 값) 두 줄 — 시나리오(머리 띠 위 줄과 같은 함수 `header_lines`)와 조회기간
     (사이드바 값, 적용 범위가 다르면 「· 적용 …」). 세션만 읽는다."""
-    scenario_line, _ = header_lines(
-        active_scenario_label(),
+    chosen = f"{month_label(selected[0])}–{month_label(selected[1])}"
+    effective = f"{month_label(applied[0])}–{month_label(applied[1])}"
+    period = chosen if chosen == effective else f"{chosen} · 적용 {effective}"
+    return (("시나리오", _header_top(active_scenario_label())), ("조회기간", period))
+
+
+def scenario_line() -> str | None:
+    """시트 맨 위 「시나리오」 값 — 머리 띠 위 줄과 같은 글(`scenario_period_rows` 의 그 값). 이
+    세션에 올라온 리비전이 없으면 None 이다(머리 띠는 그때 앱 이름을 적는다 — 시나리오가 아니다).
+    세션만 읽는다."""
+    label = active_scenario_label()
+    return None if label is None else _header_top(label)
+
+
+def _header_top(label: ActiveScenarioLabel | None) -> str:
+    top, _ = header_lines(
+        label,
         official=latest_official_revision(),
         unsaved=has_unsaved_scenario_changes(),
         newer_revision_no=newer_active_revision_no(),
     )
-    chosen = f"{month_label(selected[0])}–{month_label(selected[1])}"
-    effective = f"{month_label(applied[0])}–{month_label(applied[1])}"
-    period = chosen if chosen == effective else f"{chosen} · 적용 {effective}"
-    return (("시나리오", scenario_line), ("조회기간", period))
+    return top
 
 
 def process_filter_text(applied: Sequence[str], label: Callable[[str], str] = str) -> str:

@@ -4116,7 +4116,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     끝 칸의 「내려받기 ▾」 메뉴 하나(`render_sheet_downloads` — 「시트 CSV」 · 「시트 엑셀」, `table_toolbar.render_download_pair` —
     시트 엑셀 넓히기 2, 2026-11-10 답 Q2-7 꼴)이고 그 메뉴 단추는 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이
     높아지지 않게)(T3). 「시트 엑셀」 은 지금 화면 시트(공정 · 달 · 호기 필터 · 입력 비가동 반영)를 화면 서식째
-    (`components/availability_sheet_workbook.py`) 내고, 맨 위 값 줄은 공정 · 조회기간 · 설비 시나리오(머리 띠 꼬리 글 `remembered_equipment_suffix` — 없으면 알림 범위 이름) · 호기 필터(걸렸을
+    (`components/availability_sheet_workbook.py`) 내고, 맨 위 값 줄은 공정 · 시나리오(Static 세 행이 온 활성 시나리오 — 공정 Capa 상세 · 산출 결과 시트와 같은 머리 띠 위 줄
+    `sheet_download.scenario_line`, 올라온 리비전이 없으면 뺀다) · 조회기간 · 설비 시나리오(머리 띠 꼬리 글 `remembered_equipment_suffix` — 없으면 알림 범위 이름) · 호기 필터(걸렸을
     때 — 세션 칸 글 그대로, `_sheet_heading`)다. 통은 조건 키(`GAP_SHEET_SCHEMA_VERSION` · 범위 지문 · 머리 글자 · 제목 세부 글 · 머리
     값)로 세션 칸 `GAP_SHEET_XLSX_MEMO_KEY` 에 기억한다 — 칸 누름 · 같은 조건 회차는 짓지 않는다(새 `st.cache_*` 없음). 일정 미정 · 사용기준
     밖은 Main 과 같은 상태 알림(`EQ-20` · `EQ-22` — `equipment_explorer.report_unit_notices`)이고, Static 값으로 채운 공정은 한쪽
@@ -4394,7 +4395,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   넓히기 2 — 「표시」 의 시트 · 호기 목록 둘). 화면 시트와 같은 행 모델(`build_availability_sheet_rows`)을 공정 Capa 상세 시트 엑셀과 같은 길
   (`process_capa_workbook.month_rows_sheet`)로 옮긴다 — 칸 글 · GAP 증감 글자색 · Static 묶음 면 · 「—」 · ⚠ 를 다시 셈하지 않고,
   고른 칸 표지는 옮기지 않는다. 호기 목록(`unit_list_workbook`)은 화면 표 그대로(표시명 · 화면 숫자 꼴 · 빈 값은 빈 칸 · 회색 머리
-  줄 고정)에 맨 위 값 줄(공정 · 조회기간 · 설비 시나리오 · 호기 필터 · 분류)이다. 밝은 테마 토큰 · 새 의존성 없음. Streamlit 을 import 하지 않는다
+  줄 고정)에 맨 위 값 줄(공정 · 시나리오 · 조회기간 · 설비 시나리오 · 호기 필터 · 분류)이다. 밝은 테마 토큰 · 새 의존성 없음. Streamlit 을 import 하지 않는다
   (`tests/test_availability_sheet_workbook.py`).
 - `src/capa_simulation/components/process_capa_canvas.py` — `공정 Capa 상세` 결합 월 캔버스(① 공식 요약 ② 설비 일정 기준
   가용 ③ 신규 호기 ④ 비가동)의 순수 그림 함수 `build_process_capa_canvas`. 세션·캐시·DB 를 보지 않는다. 행 모델은

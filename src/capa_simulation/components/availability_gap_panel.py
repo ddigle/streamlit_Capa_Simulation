@@ -109,7 +109,7 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
-from capa_simulation.components.sheet_download import remembered_bytes
+from capa_simulation.components.sheet_download import remembered_bytes, scenario_line
 from capa_simulation.components.state_alerts import AlertScope, alert_table, tab_name
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import (
@@ -907,13 +907,15 @@ def _sheet_heading(
     process_label: str, months: Sequence[int], *, alert_label: str, unit_filter: bool
 ) -> tuple[tuple[str, str], ...]:
     """시트 엑셀(시트 · 호기 목록) 맨 위 값 줄 — 화면에 보이는 조건 글자 그대로(마크다운 막음
-    없이): 공정(표시명 또는 「전체 합계」) · 조회기간 · 설비 시나리오(머리 띠 꼬리 글 — 공정 Capa
-    상세 시트와 같은 꼴, 없으면 알림 범위 이름, 둘 다 없으면 뺀다) · 호기 필터(걸렸을 때 — 고른
-    컬럼과 값, 세션 칸을 그대로 읽는다)."""
-    rows = [
-        ("공정", process_label),
-        ("조회기간", f"{month_label(months[0])}–{month_label(months[-1])}"),
-    ]
+    없이): 공정(표시명 또는 「전체 합계」) · 시나리오(Static 세 행이 온 활성 시나리오 — 머리 띠 위
+    줄, 공정 Capa 상세 · 산출 결과 시트와 같은 글. 올라온 리비전이 없으면 뺀다) · 조회기간(이 탭의
+    설비 기간) · 설비 시나리오(머리 띠 꼬리 글 — 공정 Capa 상세 시트와 같은 꼴, 없으면 알림 범위
+    이름, 둘 다 없으면 뺀다) · 호기 필터(걸렸을 때 — 고른 컬럼과 값, 세션 칸을 그대로 읽는다)."""
+    rows = [("공정", process_label)]
+    scenario = scenario_line()
+    if scenario is not None:
+        rows.append(("시나리오", scenario))
+    rows.append(("조회기간", f"{month_label(months[0])}–{month_label(months[-1])}"))
     suffix = remembered_equipment_suffix()
     if suffix:
         rows.append(("설비 시나리오", suffix.removeprefix(f"{EQUIPMENT_HEADER_HEAD} · ")))

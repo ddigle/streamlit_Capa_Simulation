@@ -66,7 +66,8 @@ MAX_WIDTH: Final = 40.0
 @dataclass(frozen=True, eq=False)
 class GapWorkbookRequest:
     """엑셀 한 벌의 재료 — 화면 회차가 값으로 잡아 넘긴다. 시트 인자는 화면 시트와 같고(고른 칸만
-    없음), `heading` 은 맨 위 (이름, 값) 줄이다(공정 · 조회기간 · 설비 시나리오 · 호기 필터)."""
+    없음), `heading` 은 맨 위 (이름, 값) 줄이다(공정 · 시나리오 · 조회기간 · 설비 시나리오 · 호기
+    필터)."""
 
     view: SheetView
     process_label: str

@@ -1503,20 +1503,25 @@ def test_the_sheet_heading_names_the_equipment_scenario_like_the_header_band(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """시트 엑셀 맨 위 「설비 시나리오」 값은 머리 띠 꼬리 글(공정 Capa 상세 시트와 같은 꼴)이고,
-    띠가 아직 없으면 알림 범위 이름, 둘 다 없으면 줄을 뺀다."""
+    띠가 아직 없으면 알림 범위 이름, 둘 다 없으면 줄을 뺀다. 「시나리오」(Static 세 행이 온 활성
+    시나리오)는 공정 다음 — 공정 Capa 상세 · 산출 결과 시트와 같은 머리 띠 위 줄이고, 올라온
+    리비전이 없으면 뺀다."""
     import capa_simulation.components.availability_gap_panel as panel
 
     monkeypatch.setattr(
         panel, "remembered_equipment_suffix", lambda: "설비 시나리오 · 운영 일정 · r3 · 공식 v3"
     )
+    monkeypatch.setattr(panel, "scenario_line", lambda: "정기 검토 · r2 기준 · 공식 v4")
     heading = panel._sheet_heading(
         "전체 합계", (202611, 202702), alert_label="설비 「운영 일정」 r3", unit_filter=False
     )
     assert heading == (
         ("공정", "전체 합계"),
+        ("시나리오", "정기 검토 · r2 기준 · 공식 v4"),
         ("조회기간", "26.11–27.02"),
         ("설비 시나리오", "운영 일정 · r3 · 공식 v3"),
     )
+    monkeypatch.setattr(panel, "scenario_line", lambda: None)
     monkeypatch.setattr(panel, "remembered_equipment_suffix", lambda: None)
     assert panel._sheet_heading(
         "Etch", (202611,), alert_label="설비 「운영 일정」 r3", unit_filter=False
@@ -1528,3 +1533,41 @@ def test_the_sheet_heading_names_the_equipment_scenario_like_the_header_band(
         "공정",
         "조회기간",
     ]
+
+
+def test_the_sheet_scenario_line_is_the_calculation_sheets_scenario_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Static 대비 일정 시트의 「시나리오」 값은 공정 Capa 상세 · 산출 결과
+    시트(`scenario_period_rows`)의 그 값과 같은 글이다. 올라온 리비전이 없으면 None — 머리 띠가
+    그때 적는 앱 이름을 시나리오로 싣지 않는다."""
+    from datetime import datetime
+
+    import capa_simulation.components.sheet_download as sheet_download
+    from capa_simulation.scenario_activation import ActiveScenarioLabel
+
+    monkeypatch.setattr(sheet_download, "latest_official_revision", lambda: ("rev-2", 4))
+    monkeypatch.setattr(sheet_download, "has_unsaved_scenario_changes", lambda: False)
+    monkeypatch.setattr(sheet_download, "newer_active_revision_no", lambda: None)
+    monkeypatch.setattr(sheet_download, "active_scenario_label", lambda: None)
+    assert sheet_download.scenario_line() is None
+
+    label = ActiveScenarioLabel(
+        scenario_id="scn-1",
+        revision_id="rev-2",
+        scenario_name="DEMO 정기 검토",
+        simulation_code="DEMO-SIM",
+        source_type="builtin",
+        registered_at=datetime(2026, 11, 1, 9, 0),
+        revision_no=2,
+        revision_name="기준",
+        saved_at=datetime(2026, 11, 2, 9, 0),
+        first_month=202611,
+        last_month=202702,
+    )
+    monkeypatch.setattr(sheet_download, "active_scenario_label", lambda: label)
+    expected = dict(
+        sheet_download.scenario_period_rows(selected=(202611, 202702), applied=(202611, 202702))
+    )
+    assert sheet_download.scenario_line() == expected["시나리오"]
+    assert sheet_download.scenario_line() == "DEMO 정기 검토 · r2 기준 · 공식 v4"
