@@ -608,12 +608,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     HOME 칸에서 열어 설비가 공식 고정이었습니다」 — 자리에 그리지 않는다, 설계 규칙 UI-NTF-02)이 선다 — 모드 분기 앞이라
     「개조 일정」 모드에도 서고, 판정은 상세의 방문 기준 칸 `PROCESS_DETAIL_EQUIPMENT_BASIS_KEY` 를 읽기만)이고, 필요 단축 일정의 공용 조회 조건(`0019`)·기준선(`0021`)·세션
     칸은 읽지도 쓰지도 않는다. UPEH
-    가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 머리 줄 표지 「UPEH 가정 미적용」 — 두 모드 같음).
+    가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 상태 알림 `CS-06` — 두 모드 같음, 아래).
   - **공정은 조회 조건 패널의 공용 공정 칸(하나 고름 — `process_field.render_process_choice`)이고 두 모드가 나눠 쓴다**(2026-11-08
     답 P1 · P2-2). 공용 값을 받고(`shared_process.follow_single` — 값이 바뀐 뒤 처음 그리는 회차에 공용 값이 하나이고
     목록에 있으면 그 공정, 여럿이면 보던 공정) 주소 `process`(공정 Capa 상세 머리 링크)가 이긴다. 사이드바 공정 칸 팝업에서 직접
-    고른 공정만 공용 값으로 보낸다(2026-11-09 보드 C2 (가) — 넘겨받은 공정 · 기본 공정은 보내지 않는다). 머리 줄은 계산이 건
-    표지(UPEH 가정 미적용 — 뜻은 풍선)뿐이고(없으면 서지 않는다 — 맨 위 「← 공정 Capa 상세」 되돌아가기
+    고른 공정만 공용 값으로 보낸다(2026-11-09 보드 C2 (가) — 넘겨받은 공정 · 기본 공정은 보내지 않는다). 머리 줄은 멈춘 갈래의
+    공정 · 배지뿐이고(계산이 선 회차에는 서지 않는다 — 맨 위 「← 공정 Capa 상세」 되돌아가기
     링크는 두지 않는다, 화면 탭 줄 · 사이드바가 같은 길 — 2026-11-09 보드 T4) 조건
     줄 · 출처 띠 · 계산표 범례는 Guide 다(그림 메모 g12). 첫날이 지난 개조 창 · 신규 대기는 상태 알림 `CS-04`(`report_late_starts`)다.
     계획이 건 입력 비가동(가용설비 현황 › Preference)은 머리 줄 표지가 아니라 상태 알림 `CS-05`(확인 필요 —
@@ -621,7 +621,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     대수 띠 · 고칠 자리, 전문 = 화면 · 공정 · 뜻 · 넘친 달, 「그 화면으로」 = 가용설비 현황 › Preference 탭)이고, 두 모드가
     `render_equipment_plan` 바로 뒤 한 자리에서 부른다(계획이 없으면 「해소」 — 조회기간에 확보율을 낼 공정 · 달이 없어 그 앞에서
     멈추는 갈래도 `active=False` 로 불러 앞 줄은 「범위 바뀜」 으로 닫힌다). 범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이고
-    모드는 들지 않는다(모드를 바꿔도 다시 뜨지 않는다).
+    모드는 들지 않는다(모드를 바꿔도 다시 뜨지 않는다). UPEH 가정을 켠 세션(공정 Capa 상세 · 필요 단축 일정의 % 칸이 100 이 아닌
+    정수)이면 상태 알림 `CS-06`(확인 필요 — `constraint_equipment_plan.report_upeh_not_applied`, 2차 보드 Q2-13)이다 — 같은 꼴(짧은
+    글 = 가정 % 미적용 · 고칠 화면, 전문 = 화면 · 뜻, 「그 화면으로」 = 공정 Capa 상세)이고 머리 줄에는 아무것도 서지 않는다.
+    페이지가 모드 분기 앞 한 자리에서 늘 부르고(가정이 꺼지면 「해소」), 범위는 활성 리비전뿐이다 — 조건이 공정 · 설비 · 조회기간
+    · 모드에 기대지 않아 그것을 바꿔도 다시 뜨지 않는다.
   - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 한 번
     적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY`((값, 페이지 방문 차례) — 새 방문이면 같은 값도 다시 적용해 공용 공정을 이긴다)에 남겨 지운 것이 브라우저에 닿기 전 옛 주소를 실은 회차가 사용자가 그 뒤 고른 공정을
     덮지 않게 하고, 인자가 걷힌 회차에 비운다(공정 Capa 상세 `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이). 공정
@@ -4274,9 +4278,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/test_modification_schedule_page.py` 가, 멈추는 갈래 차례와 까닭 글(키 만들기 예외도 계산 오류 갈래)은
   `tests/test_constraint_equipment_plan.py` 가 본다. 제약 영향 모드의 공정 칸이 빈 회차의 기본 공정(`first_ready_process` —
   설비 일정이 서는 첫 공정, 설비 프레임은 한 번만 거른다)도 여기서 판정해 페이지가 `dynamic_readiness` 를 직접 부르지 않는다.
-  두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리(`SESSION_ONLY_CAPTION`)와 머리 줄 표지(`applied_marks` — UPEH 가정
-  미적용 · `HeaderRenderer`, 두 모드 모두 조건 줄 · 출처 띠를 두지 않는다 — 그림 메모 g12 · 2026-11-09 보드 c-schedule-head),
-  입력 비가동 상태 알림 `CS-05`(`report_manual_downtime` · 글 `manual_downtime_note` — 2026-11-10 보드 Q-4)도 여기 한 벌이다.
+  두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리(`SESSION_ONLY_CAPTION`)와 머리 줄 꼴(`HeaderRenderer` — 멈춘 갈래의
+  공정 · 배지뿐, 두 모드 모두 조건 줄 · 출처 띠를 두지 않는다 — 그림 메모 g12 · 2026-11-09 보드 c-schedule-head),
+  입력 비가동 상태 알림 `CS-05`(`report_manual_downtime` · 글 `manual_downtime_note` — 2026-11-10 보드 Q-4), UPEH 가정 미적용
+  상태 알림 `CS-06`(`report_upeh_not_applied` · 글 `upeh_not_applied_note` — 2차 보드 Q2-13)도 여기 한 벌이다.
   그 글도 `tests/test_constraint_equipment_plan.py` 가 못 박는다.
 - `src/capa_simulation/components/modification_schedule_figures.py` — 「개조 일정」 모드의 월별 확보율 그래프(개조 전·뒤 · 기준선 ·
   올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
@@ -4300,8 +4305,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`render_mode_switch` — 2026-11-08 그림 메모 g12, 숨긴 라벨의 뜻은 같은 줄 끝 ⓘ `MODE_SWITCH_HELP` — 2026-11-10 보드 Q-8,
   `ScheduleModeContext.card` · `process`), 조건 카드(대상 / 이 세션만 / 개조 · 일정 · 기준 묶음, 버튼 + 직접 입력은 `preset_number_field`), 설비
   일정 확인 · 멈춘 자리 · 계획(제약 모드와 같은 함수 `constraint_equipment_plan.render_equipment_plan` — 입력은 페이지가 넘긴
-  `ScheduleModeContext.source`), 계산, 본문(머리 줄 표지 · 요약 넷 · 대안 셋 · 그래프 · 차수 목록 — 조건 줄 · 출처 띠는 두지
-  않는다, 2026-11-09 보드 c-schedule-head. 입력 비가동은 제약 영향 모드와 같은 상태 알림 `CS-05`, 「아직 일정에 넣지
+  `ScheduleModeContext.source`), 계산, 본문(요약 넷 · 대안 셋 · 그래프 · 차수 목록 — 머리 줄은 멈춘 갈래뿐이고 조건 줄 · 출처
+  띠는 두지 않는다, 2026-11-09 보드 c-schedule-head. 입력 비가동은 제약 영향 모드와 같은 상태 알림 `CS-05`, UPEH 가정 미적용은
+  페이지가 모드 분기 앞에서 내는 `CS-06`, 「아직 일정에 넣지
   않은 개조만」 은 「개조 대수」 칸 풍선, 「저장하지 않음」 은 조건 카드 「이 세션만」 표지 풍선). 기한 상자는 고른 시작 이후인 달만 내고(바뀌어 빠지면 「없음」), 동시 상한 「없음」 이면 숫자 칸이
   빈다. 요약 셋째 칸은 「개조 달 최저 여유」(값 = 기준 대비 %, 반올림으로 든 달은 0.0% — 캡션 = 그 달 · 확보율 — 6장). 결과·그림은 세션 칸 LRU(4칸 — 조건
   값·테마 키)다(Streamlit 캐시가 아니다 — 결과 모양을 바꾸면 `_RESULT_SCHEMA_VERSION` 을 올린다). 프래그먼트가 없다 — 본문에

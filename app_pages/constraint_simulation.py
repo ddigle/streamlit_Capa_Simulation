@@ -38,13 +38,15 @@
 
 본문은 머리 줄 → 요약 넷(프래그먼트 밖) → 본문 프래그먼트(`components/constraint_simulation_view` —
 달 누름만 그 안에서 돈다, 「비중 배분 비교」 는 카드 토글이라 앱 전체 회차). 머리 줄은 멈춘 갈래의
-공정 · 배지이거나 계산이 건 표지(UPEH 가정 미적용 — 뜻은 풍선)이고 둘 다 없으면 서지 않는다 — 맨 위
-「← 공정 Capa 상세」 되돌아가기 링크는 두지 않는다(화면 탭 줄 · 사이드바가 같은 길, 2026-11-09 보드
-T4). 조건은 사이드바 칸이 보이고 소요 · 가용의 출처와 읽는 법은 Guide 다 — 머리 줄은 조건을 되읊지
-않는다(2026-11-08 사용자 그림 메모 g12). 계획이 건 입력 비가동은 상태 알림 `CS-05` 다
+공정 · 배지뿐이고 계산이 선 회차에는 서지 않는다 — 맨 위 「← 공정 Capa 상세」 되돌아가기 링크는 두지
+않는다(화면 탭 줄 · 사이드바가 같은 길, 2026-11-09 보드 T4). 조건은 사이드바 칸이 보이고 소요 ·
+가용의 출처와 읽는 법은 Guide 다 — 머리 줄은 조건을 되읊지 않는다(2026-11-08 사용자 그림 메모
+g12). 계획이 건 입력 비가동은 상태 알림 `CS-05` 다
 (`constraint_equipment_plan.report_manual_downtime` — 2026-11-10 보드 Q-4, 자리에는 그리지 않는다).
 개조 · 신규 대기 첫날이 오늘보다 앞이면(그래프 · 계산표가 「제때 시작했다면」 의 값) 상태 알림
-`CS-04` 다(`report_late_starts` — 자리에는 그리지 않는다).
+`CS-04` 다(`report_late_starts` — 자리에는 그리지 않는다). UPEH 가정을 켠 세션이면(두 모드 모두
+공식 소요로 센다) 상태 알림 `CS-06` 이다(`constraint_equipment_plan.report_upeh_not_applied` — 모드
+분기 앞 한 자리, 2차 보드 Q2-13).
 
 개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 호기」 고르기
 (그 공정 세션 설비 시나리오의 호기 — 2026-11-01 결정 B3)와 「목록에 없는 보유 제약 설비」 숫자
@@ -69,11 +71,11 @@ from capa_simulation.components.constraint_equipment_plan import (
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
     EquipmentPlanSource,
-    applied_marks,
     equipment_readiness,
     first_ready_process,
     render_equipment_plan,
     report_manual_downtime,
+    report_upeh_not_applied,
 )
 from capa_simulation.components.constraint_simulation_figures import (
     WAIT_LATE_TEXT,
@@ -275,7 +277,7 @@ def new_since_help(*, modify: bool, new_units_on: bool) -> str:
 requested_process = take_constraint_process_request(page_visit())
 
 render_page_header("제약 시뮬레이션")
-# 머리 줄(멈춘 갈래의 공정 · 배지 또는 계산이 건 표지) 자리. 공정과 계산이 정해진 뒤 채운다 —
+# 머리 줄(멈춘 갈래의 공정 · 배지) 자리. 공정과 계산이 정해진 뒤 채운다 —
 # 블록이라 계산 동안 앞 회차 줄이 남는다(빈 블록은 그려지지 않으므로 border·height 를 주지
 # 않는다).
 header_marks = st.container()
@@ -438,24 +440,22 @@ def report_locked_arrival(process: str | None) -> None:
     )
 
 
-# 모드 분기 앞 — 「개조 일정」 모드도 같은 세션 설비로 계산한다.
+# 모드 분기 앞 — 「개조 일정」 모드도 같은 세션 설비로 계산하고, 두 모드 모두 UPEH 가정을 걸지
+# 않는다(상태 알림 `CS-06` — 늘 부른다).
 with notices:
     report_locked_arrival(opened_process)
+    report_upeh_not_applied(page_inputs)
 
 
-def render_header(process: str, line: str = "", *, marks: str = "", marks_help: str = "") -> None:
-    """머리 줄 — 멈춘 갈래의 공정 · 배지(`line`)나 계산이 건 표지(`marks` — 뜻은 `marks_help`
-    풍선). 둘 다 없으면 줄이 서지 않는다 — 맨 위 되돌아가기 링크는 두지 않는다(화면 탭 줄 ·
-    사이드바가 같은 길, 2026-11-09 보드 T4). `process` 는 두 모드 · 설비 일정 확인이 함께 쓰는 머리
-    그리기 꼴(`HeaderRenderer`)이라 받는다."""
+def render_header(process: str, line: str = "") -> None:
+    """머리 줄 — 멈춘 갈래의 공정 · 배지(`line`). 빈 글이면 줄이 서지 않는다 — 맨 위 되돌아가기
+    링크는 두지 않는다(화면 탭 줄 · 사이드바가 같은 길, 2026-11-09 보드 T4). `process` 는 두 모드 ·
+    설비 일정 확인이 함께 쓰는 머리 그리기 꼴(`HeaderRenderer`)이라 받는다."""
     del process
-    if not (line or marks):
+    if not line:
         return
     with header_marks.container(horizontal=True, vertical_alignment="center", gap="small"):
-        if line:
-            st.markdown(line, width="content")
-        if marks:
-            st.caption(marks, help=marks_help or None, width="content")
+        st.markdown(line, width="content")
 
 
 # 「개조 일정」 모드는 카드·계획·계산·본문을 컴포넌트 하나가 그리고 여기서 멈춘다 — 아래 제약 영향
@@ -982,10 +982,9 @@ period_text = (
     if period.start == period.end
     else f"{month_label(period.start)}–{month_label(period.end)}"
 )
-# 머리 줄 — 조건을 되읊지 않고(사이드바가 조건이다) 계산이 건 표지만 둔다. 소요 · 가용의 출처와 읽는
-# 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 입력 비가동은 위 상태 알림 `CS-05` 다.
-marks, marks_help = applied_marks()
-render_header(process, marks=marks, marks_help=marks_help)
+# 머리 줄은 서지 않는다 — 조건을 되읊지 않고(사이드바가 조건이다) 소요 · 가용의 출처와 읽는 법은
+# Guide 다(2026-11-08 사용자 그림 메모 g12). 입력 비가동은 위 상태 알림 `CS-05`, UPEH 가정 미적용은
+# 상태 알림 `CS-06` 이다.
 if result.kpis.constrained_months == 0:
     st.caption(
         f"제약 기간({period_text})에 {literal_markdown(product)} 소요가 없어 떼어 줄 대수가 "

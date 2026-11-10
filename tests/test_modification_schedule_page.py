@@ -27,7 +27,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import data_error_marks, data_error_texts, events
+from alert_marks import active_state, data_error_marks, data_error_texts, events, states
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import (
     DYNAMIC_PROCESS,
@@ -41,8 +41,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
-    UPEH_NOT_APPLIED_HELP,
-    UPEH_NOT_APPLIED_MARK,
+    UPEH_SCREEN,
 )
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.modification_schedule_figures import (
@@ -323,39 +322,54 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     assert "**다 넣지 못했습니다 — 대안**" not in _markdown(app)
 
 
-def test_both_modes_mark_the_upeh_assumption_they_do_not_apply(
+def test_both_modes_raise_the_upeh_assumption_they_do_not_apply_as_a_state_alert(
     databases: tuple[Path, Path],
 ) -> None:
-    """UPEH 가정을 켠 세션이면 두 모드 머리 줄에 「UPEH 가정 미적용」 표지 하나가 서고 뜻은 그 표지
-    풍선이다 — 두 모드 모두 공식 소요로 센다(`applied_marks`). 기본값(100%)이면 표지가 없다. 세션
-    칸은 첫 회차 뒤에 넣는다 — 첫 회차의 시나리오 활성화가 기본값으로 되돌린다."""
+    """UPEH 가정을 켠 세션이면 두 모드가 같은 상태 알림 `CS-06` 하나를 낸다 — 두 모드 모두 공식
+    소요로 센다. 머리 줄에는 아무것도 서지 않는다(2차 보드 Q2-13 — 입력 비가동 `CS-05` 와 같은 꼴,
+    설계 규칙 UI-NTF-02). 범위에 모드가 들지 않아 모드를 바꿔도 같은 줄이고, 줄의 「그 화면으로」 는
+    UPEH 가정 칸이 있는 공정 Capa 상세다. 기본값(100%)으로 돌리면 「해소」 다. 세션 칸은 첫 회차
+    뒤에 넣는다 — 첫 회차의 시나리오 활성화가 기본값으로 되돌린다."""
 
     def marks(app: AppTest) -> list[Any]:
-        return [item for item in app.caption if str(item.value) == UPEH_NOT_APPLIED_MARK]
+        return [
+            item
+            for item in [*app.caption, *app.markdown]
+            if "UPEH 가정" in str(item.value) or "미적용" in str(item.value)
+        ]
 
     app = _app(databases)
     app.query_params["process"] = DYNAMIC_PROCESS
     _ok(app.run())
     assert app.metric and not marks(app)
+    assert [note["active"] for note in states(app, "CS-06")] == [False]
 
     app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = 110
     _ok(app.run())
     assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "constraint"
     assert app.metric and not _has_widget(app, "number_input", SCHEDULE_UNITS_KEY)
-    (mark,) = marks(app)
-    assert mark.proto.help == UPEH_NOT_APPLIED_HELP
+    assert not marks(app)
+    impact = active_state(app, "CS-06")
+    assert impact is not None
+    assert impact["level"] == "check"
+    assert impact["short"] == "UPEH 가정 110% 미적용(공식 소요) — 공정 Capa 상세"
+    assert str(impact["full"]).startswith("제약 시뮬레이션 — UPEH 가정 110% 미적용")
+    assert (impact["page"], impact["href"]) == UPEH_SCREEN
 
     app.button_group(key=CONSTRAINT_MODE_KEY).set_value("schedule")
     _ok(app.run())
     assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "schedule"
     assert [metric.label for metric in app.metric] == SCHEDULE_KPIS
-    (mark,) = marks(app)
-    assert mark.proto.help == UPEH_NOT_APPLIED_HELP
+    assert not marks(app)
+    schedule = active_state(app, "CS-06")
+    assert schedule is not None
+    assert (schedule["scope"], schedule["fp"]) == (impact["scope"], impact["fp"])
 
     app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = UPEH_ASSUMPTION_DEFAULT_PERCENT
     _ok(app.run())
     assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "schedule"
     assert [metric.label for metric in app.metric] == SCHEDULE_KPIS and not marks(app)
+    assert [note["active"] for note in states(app, "CS-06")] == [False]
 
 
 def test_the_figure_draws_one_bar_per_batch_on_the_wd_coordinate(

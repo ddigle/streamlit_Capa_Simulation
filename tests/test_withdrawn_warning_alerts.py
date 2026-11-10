@@ -531,6 +531,18 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
+        what="제약 시뮬레이션 두 모드 머리 줄 「UPEH 가정 미적용 ⓘ」 표지(뜻은 풍선)",
+        why="2차 보드 Q2-13 · UI-NTF-02",
+        file="src/capa_simulation/components/constraint_equipment_plan.py",
+        function="report_upeh_not_applied",
+        code="CS-06",
+        route="state",
+        test=(
+            "tests/test_modification_schedule_page.py"
+            "::test_both_modes_raise_the_upeh_assumption_they_do_not_apply_as_a_state_alert"
+        ),
+    ),
+    Withdrawn(
         what=(
             "가용설비 현황 Main 가용대수 · 호기 현황 숫자 밑과 Static 대비 일정 세 결과 위의"
             " 「일정 미정 N대 (…)」 줄"

@@ -33,6 +33,7 @@ def test_registry_codes_are_unique_well_formed_and_levelled() -> None:
         ("RS-04", "info", "필요 단축 일정 — 사용기준(HBM · EDP) 밖 호기를 셈에서 뺌"),
         ("RS-05", "check", "필요 단축 일정 — 입력 비가동 반영 · 가용 넘침"),
         ("CS-05", "check", "제약 시뮬레이션 — 입력 비가동 반영 · 가용 넘침"),
+        ("CS-06", "check", "제약 시뮬레이션 — UPEH 가정을 켠 세션인데 공식 소요로 셈"),
         ("EQ-20", "check", "가용설비 Summary — 반입 · Qual 일정이 빈 호기(일정 미정)"),
         ("EQ-21", "check", "가용설비 Main — 일정이 지났는데 실적이 빈 호기(미확인)"),
         ("EQ-22", "info", "가용설비 Summary — 사용기준이 HBM · EDP 밖이라 뺀 호기"),
@@ -43,8 +44,8 @@ def test_state_codes_for_the_screen_bundles_are_registered(
     code: str, level: str, title: str
 ) -> None:
     """설비 마스터 남의 저장 표지 · 필요 단축 일정 상태(일정 미정 · 사용기준 밖 · 입력 비가동) ·
-    제약 시뮬레이션 입력 비가동이 낼 상태 알림 코드는 등록부에 먼저 선다 — 부르는 자리를 짓는 쪽이
-    이 코드로 낸다."""
+    제약 시뮬레이션 입력 비가동 · UPEH 가정 미적용이 낼 상태 알림 코드는 등록부에 먼저 선다 — 부르는
+    자리를 짓는 쪽이 이 코드로 낸다."""
     spec = alerts.spec(code)
     assert (spec.level, spec.kind, spec.title) == (level, "state", title)
 
