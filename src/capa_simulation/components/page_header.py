@@ -3,10 +3,10 @@
 """One page header for every screen.
 
 코어 화면 머리에는 설명 줄을 두지 않는다 — 화면 소개는 그 화면 Guide 가 맡는다(설계 규칙
-UI-TXT-01 · UI-TXT-02). 설명 인자 `description` 이 남은 것은 모듈 공개 창구
-(`module_api.page_header`)가 계약으로 쓰고, 필요 단축 일정 문구가 사용자 전달 대기라서다 — 다른
-호출은 `tests/test_page_header_description.py` 가 막는다. 여기로 모아 간격과 배지 표기를 한 번에
-정한다.
+UI-TXT-01 · UI-TXT-02). 설명 인자 `description` 은 남아 있으나 넘기는 자리는 없다(모듈 공개 창구
+`module_api.page_header` 는 창구 1.1 부터 그 인자를 받기만 하고 여기로 넘기지 않는다 —
+`tests/test_page_header_description.py` 가 호출 자리를 맞댄다). 여기로 모아 간격과 배지 표기를 한
+번에 정한다.
 
 `(구현중)` 은 제목 문자열에 섞어 두지 않고 배지로 뽑는다. 사이드바 라벨은 여전히
 `navigation.py` 가 소유하며 그쪽 표기와 어긋나면 테스트가 잡는다. 구현 중 화면은 배지를 그리지
