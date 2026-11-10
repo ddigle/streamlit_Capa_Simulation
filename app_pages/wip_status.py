@@ -267,8 +267,9 @@ prune_list_selection(
 
 # 공정 · 제품은 사이드바 카드의 폼이다 — 둘을 함께 바꾼 뒤 「조건 적용」 한 번에 다시
 # 그린다(적용형 — 설계 규칙 UI-INP-04). 조회 구간(오늘 −7일 ~ +3일)은 값 한 줄로 카드 맨 위에
-# 둔다(고르는 칸이 아니다).
-with condition_card(CARD_LABEL, name=CARD_NAME, icon=":material/filter_alt:"):
+# 둔다(고르는 칸이 아니다). 카드는 처음 펼친 채 선다 — 본문에 있을 때처럼 조건이 첫 화면에
+# 보이게(2026-11-10 보드 Q-7, 설계 규칙 UI-LAY-06). 한 번 접으면 기억 칸을 따른다.
+with condition_card(CARD_LABEL, name=CARD_NAME, icon=":material/filter_alt:", default=True):
     st.caption(
         f"기준일 {today:%Y-%m-%d} · {start_date:%m-%d} ~ {end_date:%m-%d}",
         help="조회 구간은 오늘 −7일 ~ +3일로 정해져 있습니다.",

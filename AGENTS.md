@@ -542,7 +542,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「표준 Capa」 칸 풍선(`STANDARD_CAPA_HELP`)이다. 재공 현황의 격자 읽는 법도 같다(소개는 `guides/wip_status.md`).
   - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않는다. 공정 상세의 조회 조건(조회일 · 공정 · 제품 ·
     Stack · WF 속성)은 사이드바 「Dynamic Capa 조건」 카드이고 그 탭이 열린 회차에만 선다(위젯은 `persist_state` — 탭을
-    오가도 값이 남는다, 2026-11-09 보드 T8).
+    오가도 값이 남는다, 2026-11-09 보드 T8). 카드는 처음 펼친 채다(2026-11-10 보드 Q-7).
 - `app_pages/required_shortening.py` — `필요 단축 일정`(실행 관리 둘째 화면). 정체성은 **단축이 필요한 공정 전부의 진척
   관리 한 페이지**다(머리말, 2026-10-22). 설비 저장본·Cut-off·소요대수를 모아 `required_shortening_panel.py` 에 넘긴다.
   계산 규칙은 `services/required_shortening.py` 다.
@@ -716,7 +716,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/wip_status.py` — Dynamic Capa 의 `표준 대비 재공 현황` 하위 페이지로, 오늘 −7~+3일의 공정·제품·
   STEP별 재공·유입·Flow 를 제품별 일 표준 가능량과 견준다(재공 값은 결정론적 데모, 재공 DB 연결은 미구현).
   - 머리에 배지 줄이 없다(2026-11-09 보드 T8). 「샘플 데이터」 는 조회 조건 패널 줄(시나리오 줄 밑 페이지 칸), 공정 · 제품
-    고르기와 「조건 적용」 은 사이드바 「재공 현황 조건」 카드의 폼(적용형 — 설계 규칙 UI-INP-04)이고 카드 맨 위 값 한 줄이
+    고르기와 「조건 적용」 은 사이드바 「재공 현황 조건」 카드(처음 펼친 채 — 2026-11-10 보드 Q-7)의 폼(적용형 — 설계 규칙
+    UI-INP-04)이고 카드 맨 위 값 한 줄이
     기준일 · 조회 구간(오늘 −7 ~ +3일)이다. 공정 · 제품 칸은 이름 줄 + 적용한 값 한 줄 팝오버(「WF 입고검사 외 4개」 —
     `process_field.first_and_rest`, 풍선은 전체 목록)이고 다중 선택 칸은 그 안이다 — 300px 카드에서 칩이 한 줄에 하나씩 쌓여
     칸 높이 상한에 잘리고 「조건 적용」 이 1283 창 첫 화면 밖으로 밀렸다(UI-LAY-06, 필요 단축 일정 카드 공정 칸과 같은 꼴 —
@@ -1486,8 +1487,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/performance_actual_screen.py` — 효율·UPEH·수율 실적 화면 한 벌로 `MetricSpec` 만
   갈아 끼운다.
   - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭은 그리지 않는다. 상세 분석의 조회 조건(분석 기간 · 공정 ·
-    제품)은 사이드바 「<지표> 실적 조건」 카드(`detail_card_label`)이고 그 탭이 열린 회차에만 선다(위젯은 `persist_state` —
-    2026-11-09 보드 T8). 상세 분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②). 요약의 결론(가장 시급한
+    제품)은 사이드바 「<지표> 실적 조건」 카드(`detail_card_label` — 처음 펼친 채, 2026-11-10 보드 Q-7)이고 그 탭이 열린
+    회차에만 선다(위젯은 `persist_state` — 2026-11-09 보드 T8). 상세 분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②). 요약의 결론(가장 시급한
     공정)은 「개선 필요 공정」 칸 풍선(`needs_action_help`)이다.
 - `src/capa_simulation/components/table_view_controls.py` — 편집표의 볼 컬럼·행 필터를 고르게 하고 거른 편집분을
   원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「가용설비 설정」 팝업 Cut-off 표). 고르는 칸은 표 작업 줄
@@ -6382,8 +6383,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
   카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
   계산이 멈춘 회차에도 선다, 3장 `home.py`. 제약 시뮬레이션 「제약 시뮬레이션 조건」(맨 위가 모드 전환 — 2026-11-08 그림 메모 g12)과
-  필요 단축 일정 「필요 단축 일정 조건」(맨 위가 본문에서 옮겨 온 목표 확보율 · 진척 비교 — g03)도 처음 펼친 채 서고 한 번 접으면
-  기억 칸을 따른다 — `condition_card(default=True)`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 조회
+  필요 단축 일정 「필요 단축 일정 조건」(맨 위가 본문에서 옮겨 온 목표 확보율 · 진척 비교 — g03), 구현 중 화면에서 옮긴
+  「Dynamic Capa 조건」 · 「재공 현황 조건」 · 「<지표> 실적 조건」(본문에 있을 때처럼 조건이 첫 화면에 — 2026-11-10 보드 Q-7)도
+  처음 펼친 채 서고 한 번 접으면 기억 칸을 따른다 — `condition_card(default=True)`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 조회
   조건 패널 바로 밑, 카드 **위**에 따로 선다 — 펼친 카드(약 370px) 밑이면 1280×800 · 1500×950 사이드바 첫 화면 밖이다(3장
   `home_settings.py`). **화면 조작 상자**(`PAGE_BOX_PREFIX` — `sidebar_status.page_box_key`, 서식 `sidebar_style._page_box_style`
   — 조건 패널과 같은 면·모서리·이름 줄)는 그 화면의 자리 이동·편집 켜기 위젯 여럿을 담는 상자로, 사용자 요청(2026-11-03)에 따른

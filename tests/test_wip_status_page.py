@@ -3,6 +3,7 @@
 import pytest
 from alert_marks import data_error_marks, events
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1.element_tree import Expander, Status
 
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -217,6 +218,13 @@ def test_wip_status_page_renders_filtered_step_product_grid(
     # UI-INP-04) — 본문에는 고르는 칸이 없다.
     assert not app.main.multiselect
     assert [widget.label for widget in app.sidebar.multiselect] == ["공정", "제품"]
+    # 카드는 처음 펼친 채다 — 본문에 있을 때처럼 조건이 첫 화면에 보인다(2026-11-10 보드 Q-7).
+    (card,) = [
+        item
+        for item in app.sidebar
+        if isinstance(item, (Status, Expander)) and item.label == "재공 현황 조건"
+    ]
+    assert card.proto.expanded
     assert any(button.label.endswith("조건 적용") for button in app.sidebar.button)
     assert [widget.label for widget in app.multiselect] == ["공정", "제품"]
     # 카드의 두 칸은 이름 줄 + 고른 값 한 줄 팝오버이고 다중 선택 칸은 그 안이다 — 300px 카드에서
