@@ -444,10 +444,12 @@ def test_the_chart_and_sheet_marks_live_in_the_card_title_tips(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """월별 확보율 카드의 「옅은 칠 = 제약 기간」 캡션과 계산표 위 「… 표 첫 달 앞에서 시작」 표지
-    줄은 본문에 두지 않는다 — 뜻은 카드 제목 풍선과 Guide 다(2026-11-09 사용자 검수 g12-2). 표 앞
-    창 · 대기의 날짜 · 대수는 계산표 제목 풍선 끝이다(`sheet_help`)."""
+    줄은 본문에 두지 않는다 — 뜻은 카드 제목 풍선과 Guide 다(2026-11-09 사용자 검수 g12-2). 옅은
+    칠의 뜻은 계산표 머리 칠처럼 Guide 에만 있다 — 그래프 제목 풍선에도 두지 않는다(2026-11-09
+    보드 c-legend — 표와 같게). 표 앞 창 · 대기의 날짜 · 대수는 계산표 제목 풍선 끝이다
+    (`sheet_help`)."""
     from capa_simulation.components.constraint_simulation_view import (
-        CHART_SHADE_TEXT,
+        CHART_HELP,
         SHEET_HELP,
         sheet_help,
     )
@@ -456,7 +458,8 @@ def test_the_chart_and_sheet_marks_live_in_the_card_title_tips(
     captions = _captions(app)
     assert "옅은 칠" not in captions and "표 첫 달 앞에서 시작" not in captions
     (chart,) = [item for item in app.markdown if str(item.value) == "**월별 확보율**"]
-    assert CHART_SHADE_TEXT in str(chart.proto.help)
+    assert str(chart.proto.help).startswith(CHART_HELP)
+    assert "옅은 칠" not in str(chart.proto.help)
     (sheet,) = [item for item in app.markdown if str(item.value) == "**월별 계산표**"]
     result, labels = _shown(app)
     assert str(sheet.proto.help) == sheet_help(result, labels.today)
@@ -467,6 +470,7 @@ def test_the_chart_and_sheet_marks_live_in_the_card_title_tips(
         .split()
     )
     assert "계산표 제목 풍선 끝에 그 뜻과 창 · 대기마다 날짜 · 대수가 붙습니다" in guide
+    assert "읽는 법: **옅은 칠 = 제약 기간**(계산표 머리 칠과 같은 뜻입니다)" in guide
 
 
 def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
@@ -695,6 +699,10 @@ def test_late_modification_windows_raise_a_state_alert_not_a_place_line(
     assert "「제때 시작했다면」" in str(note["full"]) and WINDOW_LATE_TEXT in str(note["full"])
     assert " 비가동 · " in str(note["full"])
     assert WINDOW_LATE_TEXT not in " ".join([_captions(app), *_markdown(app)])
+    # 같은 판정으로 요약 「개조 대수」 회색 줄의 첫 비가동 날 뒤에 「(지남)」 이 붙는다(2026-11-09
+    # 보드 c-late-word).
+    assert " · 첫 비가동 " in _metric_caption(app, "개조 대수")
+    assert _metric_caption(app, "개조 대수").endswith("(지남)")
 
     app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(False)
     _ok(app.run())

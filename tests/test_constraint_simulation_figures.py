@@ -21,7 +21,7 @@ import json
 import random
 from contextlib import nullcontext
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import plotly.io as pio
@@ -814,7 +814,9 @@ def test_the_short_line_names_the_dedicated_units_and_folds_many_months() -> Non
 
 
 def _kpi_cards(
-    monkeypatch: pytest.MonkeyPatch, result: ConstraintResult
+    monkeypatch: pytest.MonkeyPatch,
+    result: ConstraintResult,
+    labels: ConstraintLabels = LABELS,
 ) -> dict[str, tuple[str, str | None]]:
     """요약 넷을 그려 카드마다 (값, 회색 줄) 을 받는다 — Streamlit 없이(카드 그리기를 바꿔 낀다)."""
     cards: dict[str, tuple[str, str | None]] = {}
@@ -824,7 +826,7 @@ def _kpi_cards(
 
     monkeypatch.setattr(view_module, "metric_row", lambda **_: nullcontext())
     monkeypatch.setattr(view_module, "render_status_metric", capture)
-    render_constraint_kpis(result, LABELS)
+    render_constraint_kpis(result, labels)
     return cards
 
 
@@ -847,6 +849,35 @@ def test_the_modification_kpi_says_there_is_nothing_to_modify_without_demand(
     off = _run(replace(CONDITIONS, modification_days=None))
     cards = _kpi_cards(monkeypatch, off)
     assert cards["개조 대수"] == ("—", "개조를 끄면 비가동 없이 배정만 바꿉니다")
+
+
+def test_a_first_downtime_before_today_is_marked_past_in_the_modification_kpi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """요약 「개조 대수」 회색 줄의 첫 비가동 날은 오늘보다 앞이면 날짜 뒤에 「(지남)」 이 붙는다
+    (2026-11-09 보드 c-late-word). 판정은 상태 알림 `CS-04` 와 같은 「첫날 < 오늘」 이라 오늘과 같은
+    날 · 뒤 날과 오늘을 모를 때(`today` None)는 붙지 않는다."""
+    from capa_simulation.components.constraint_simulation_view import (
+        LATE_MARK,
+        first_downtime_text,
+    )
+
+    day = date(2026, 9, 25)
+    assert LATE_MARK == "(지남)"
+    assert first_downtime_text(day, date(2026, 11, 10)) == "2026-09-25(지남)"
+    assert first_downtime_text(day, day) == "2026-09-25"
+    assert first_downtime_text(day, date(2026, 9, 1)) == "2026-09-25"
+    assert first_downtime_text(day, None) == "2026-09-25"
+
+    result = _run()
+    first = result.kpis.first_downtime_day
+    assert first is not None
+    later = replace(LABELS, today=first + timedelta(days=1))
+    _, caption = _kpi_cards(monkeypatch, result, later)["개조 대수"]
+    assert caption is not None and caption.endswith(f"첫 비가동 {first.isoformat()}(지남)")
+    same = replace(LABELS, today=first)
+    _, caption = _kpi_cards(monkeypatch, result, same)["개조 대수"]
+    assert caption is not None and caption.endswith(f"첫 비가동 {first.isoformat()}")
 
 
 # ------------------------------------------------------------------ 2판 옵션 — 보유 · 신규 · 개조로
