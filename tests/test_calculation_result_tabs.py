@@ -36,6 +36,7 @@ from test_reference_data_page import (
 
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
+from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 
 UNIT_CAPACITY_TAB = ":material/insights: 대당 Capa"
 EXCLUSIONS_EXPANDER_KEY = "unit_capacity_exclusions_expander"
@@ -207,6 +208,9 @@ def test_a_blank_stop_sends_the_alarm_to_the_reference_screen(
     assert data_error_marks(app) == 3
     (note,) = [item for item in alert_notes(app) if item.get("keep")]
     assert note["code"] == "ST-20"
+    # 패널의 공정 줄은 잠긴 채 자리를 지킨다(검수 보드 p-stop-row — HOME 과 같은 꼴).
+    field = app.button(key=PROCESS_FIELD_KEY)
+    assert (field.label, field.disabled) == ("계산 멈춤", True)
     if short is None:
         assert note["full"] == error
         assert note["page"] != "기준 정보"

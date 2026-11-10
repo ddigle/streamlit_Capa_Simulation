@@ -90,7 +90,10 @@ from capa_simulation.components.process_capa_view import (
     reopen_entry_section,
     shortening_link_needed,
 )
-from capa_simulation.components.process_field import render_process_choice
+from capa_simulation.components.process_field import (
+    render_process_choice,
+    render_stopped_process_field,
+)
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
     equipment_scope,
@@ -292,6 +295,8 @@ try:
     # 공정·기본 달을 정할 때도 HOME·Static Capa 와 같은 판정 (`thresholds.status`)을 쓴다.
     page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
+    # 패널의 공정 줄도 잠긴 채 자리를 지킨다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
+    render_stopped_process_field()
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         st.caption(NO_PROCESS_MARK)

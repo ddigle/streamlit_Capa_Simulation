@@ -628,6 +628,10 @@ def test_a_stopped_visit_consumes_the_transfer_slot(databases: tuple[Path, Path]
     assert not app.exception, [element.message for element in app.exception]
     assert any("시험용 진입 오류" in text for text in data_error_texts(app))
     assert PROCESS_DETAIL_REQUEST_KEY not in app.session_state
+    # 패널의 공정 줄은 잠긴 채 자리를 지킨다 — 빠지면 아래 칸이 올라온다(검수 보드 p-stop-row,
+    # HOME 과 같은 꼴).
+    field = app.button(key=PROCESS_FIELD_KEY)
+    assert (field.label, field.disabled) == ("계산 멈춤", True)
 
 
 def test_a_month_outside_the_page_axis_opens_the_default_month_with_a_notice(
