@@ -709,9 +709,14 @@ def _unwritten_slots(modules: Mapping[str, ast.Module]) -> dict[tuple[str, str],
 
     같은 이름(`FLASH_KEY` 등)이 모듈마다 있어 이름은 정의한 모듈까지 푼다 — `from … import` 로
     들인 이름은 그 모듈로(함수 · 갈래 안에서 늦게 들인 것도 — 그 모듈 어디서 쓰든 같은 이름으로
-    본다), `import … as` 별칭의 속성은 그 모듈로, 나머지는 쓴 모듈로. 담기(`queue_flash`)·
-    넘기기(도우미 인자 · `*튜플`)·비교 모두 「쓰임」 이다 — 읽기 밖의 쓰임이 하나라도 있으면 담는
-    쪽이 있다고 본다(놓치는 쪽으로 너그럽다).
+    본다), 모듈 속성은 그 모듈로(`import … as` 별칭이든 `from 패키지 import 모듈`(as …)이든 — 들인
+    것이 훑는 모듈일 때만, 클래스 따위의 속성은 쓴 글자 그대로), 나머지는 쓴 모듈로.
+    담기(`queue_flash`)·넘기기(도우미 인자 · `*튜플`)·비교 모두 「쓰임」 이다 — 읽기 밖의 쓰임이
+    하나라도 있으면 담는 쪽이 있다고 본다(놓치는 쪽으로 너그럽다).
+
+    보는 칸은 이름(대문자 상수 · 그 모듈 속성)으로 넘긴 것뿐이다 — 글자 그대로(`render_flash("…")`)
+    나 f-string 으로 넘긴 칸은 보지 않는다(담는 쪽이 f-string 으로 같은 글자를 지으면 글자끼리 맞대
+    풀 수 없다).
     """
     reads: dict[tuple[str, str], list[str]] = {}
     used: set[tuple[str, str]] = set()
@@ -735,7 +740,10 @@ def _unwritten_slots(modules: Mapping[str, ast.Module]) -> dict[tuple[str, str],
             if isinstance(expr, ast.Name):
                 return names.get(expr.id, (module, expr.id))
             if isinstance(expr, ast.Attribute) and isinstance(expr.value, ast.Name):
-                return (aliases.get(expr.value.id, expr.value.id), expr.attr)
+                base = expr.value.id
+                if base in names and ".".join(names[base]) in modules:
+                    return (".".join(names[base]), expr.attr)
+                return (aliases.get(base, base), expr.attr)
             return None
 
         read_nodes: set[int] = set()
@@ -798,6 +806,43 @@ def test_the_unwritten_slot_net_resolves_the_defining_module() -> None:
     assert _unwritten_slots(modules) == {
         ("pkg.workspace", "FLASH_KEY"): ["pkg.page:3", "pkg.page:4"]
     }
+
+
+@pytest.mark.parametrize(
+    ("importing", "name"), [("from pkg import ws", "ws"), ("from pkg import ws as w", "w")]
+)
+def test_the_unwritten_slot_net_resolves_a_module_imported_from_its_package(
+    importing: str, name: str
+) -> None:
+    """`from 패키지 import 모듈`(as …)로 들인 모듈의 속성도 그 모듈의 칸이다 — 그 모듈이 담으면
+    지나고(담는 쪽이 같은 꼴로 들여 담아도), 아무도 담지 않으면 그 모듈의 칸으로 잡는다."""
+    page = ast.parse(f"{importing}\nrender_flash({name}.FLASH_KEY)")
+    unfilled = ast.parse('FLASH_KEY = "w"')
+
+    assert not _unwritten_slots(
+        {"pkg.ws": ast.parse('FLASH_KEY = "w"\nqueue_flash(FLASH_KEY, "x")'), "pkg.page": page}
+    )
+    assert not _unwritten_slots(
+        {
+            "pkg.ws": unfilled,
+            "pkg.page": page,
+            "pkg.writer": ast.parse(f'{importing}\nqueue_flash({name}.FLASH_KEY, "x")'),
+        }
+    )
+    assert _unwritten_slots({"pkg.ws": unfilled, "pkg.page": page}) == {
+        ("pkg.ws", "FLASH_KEY"): ["pkg.page:2"]
+    }
+
+
+def test_the_unwritten_slot_net_keeps_class_attributes_as_written() -> None:
+    """들인 것이 모듈이 아니면(클래스 따위) 속성은 쓴 글자 그대로 본다 — 정의한 모듈 안의
+    `Holder.KEY` 와 같은 이름이라 담는 쪽이 있는 칸을 죽은 칸으로 잡지 않는다."""
+    modules = {
+        "pkg.ws": ast.parse('class Holder:\n    KEY = "k"\nqueue_flash(Holder.KEY, "x")'),
+        "pkg.page": ast.parse("from pkg.ws import Holder\nrender_flash(Holder.KEY)"),
+    }
+
+    assert not _unwritten_slots(modules)
 
 
 NET_CAUGHT = {
