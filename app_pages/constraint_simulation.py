@@ -38,12 +38,13 @@
 
 본문은 머리 줄 → 요약 넷(프래그먼트 밖) → 본문 프래그먼트(`components/constraint_simulation_view` —
 달 누름만 그 안에서 돈다, 「비중 배분 비교」 는 카드 토글이라 앱 전체 회차). 머리 줄은 멈춘 갈래의
-공정 · 배지이거나 계산이 건 표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)이고 둘 다 없으면
-서지 않는다 — 맨 위 「← 공정 Capa 상세」 되돌아가기 링크는 두지 않는다(화면 탭 줄 · 사이드바가 같은
-길, 2026-11-09 보드 T4). 조건은 사이드바 칸이 보이고 소요 · 가용의 출처와 읽는 법은 Guide 다 — 머리
-줄은 조건을 되읊지 않는다(2026-11-08 사용자 그림 메모 g12). 개조 · 신규 대기 첫날이 오늘보다
-앞이면(그래프 · 계산표가 「제때 시작했다면」 의 값) 상태 알림 `CS-04` 다(`report_late_starts` —
-자리에는 그리지 않는다).
+공정 · 배지이거나 계산이 건 표지(UPEH 가정 미적용 — 뜻은 풍선)이고 둘 다 없으면 서지 않는다 — 맨 위
+「← 공정 Capa 상세」 되돌아가기 링크는 두지 않는다(화면 탭 줄 · 사이드바가 같은 길, 2026-11-09 보드
+T4). 조건은 사이드바 칸이 보이고 소요 · 가용의 출처와 읽는 법은 Guide 다 — 머리 줄은 조건을 되읊지
+않는다(2026-11-08 사용자 그림 메모 g12). 계획이 건 입력 비가동은 상태 알림 `CS-05` 다
+(`constraint_equipment_plan.report_manual_downtime` — 2026-11-10 보드 Q-4, 자리에는 그리지 않는다).
+개조 · 신규 대기 첫날이 오늘보다 앞이면(그래프 · 계산표가 「제때 시작했다면」 의 값) 상태 알림
+`CS-04` 다(`report_late_starts` — 자리에는 그리지 않는다).
 
 개조 묶음의 2판 옵션(2026-10-26 사용자 결정, 개조 끔이면 잠긴다) — 「보유 제약 호기」 고르기
 (그 공정 세션 설비 시나리오의 호기 — 2026-11-01 결정 B3)와 「목록에 없는 보유 제약 설비」 숫자
@@ -72,6 +73,7 @@ from capa_simulation.components.constraint_equipment_plan import (
     equipment_readiness,
     first_ready_process,
     render_equipment_plan,
+    report_manual_downtime,
 )
 from capa_simulation.components.constraint_simulation_figures import (
     WAIT_LATE_TEXT,
@@ -193,7 +195,7 @@ from capa_simulation.services.constraint_simulation import (
     constraint_month_inputs,
     simulate_constraint,
 )
-from capa_simulation.services.manual_downtime import ManualDowntime, manual_effect_band
+from capa_simulation.services.manual_downtime import ManualDowntime
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import OTHER_ROW_COLUMN, month_column
 from capa_simulation.services.process_cutoff import cutoff_days_words, cutoff_setting
@@ -837,6 +839,16 @@ equipment_plan = render_equipment_plan(
     with_timeline=new_unit_since is not None,
     with_held_units=True,
 )
+# 계획이 건 입력 비가동 — 상태 알림 `CS-05`(개조 일정 모드와 같은 함수 · 같은 범위). 멈춘 갈래는
+# 「해소」 다.
+with notices:
+    report_manual_downtime(
+        plan_source,
+        None if equipment_plan is None else equipment_plan.plan,
+        process=process,
+        process_label=process_label,
+        equipment_session=equipment_session,
+    )
 if equipment_plan is None or selected_product is None:
     render_idle_held_picker()
     st.stop()
@@ -961,9 +973,8 @@ period_text = (
     else f"{month_label(period.start)}–{month_label(period.end)}"
 )
 # 머리 줄 — 조건을 되읊지 않고(사이드바가 조건이다) 계산이 건 표지만 둔다. 소요 · 가용의 출처와 읽는
-# 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 입력 비가동은 계획이 실제로 건 칸으로 적는다 — 이
-# 공정에 0 아닌 칸이 있을 때만.
-marks, marks_help = applied_marks(manual_effect_band(plan.manual_downtime, (process,)))
+# 법은 Guide 다(2026-11-08 사용자 그림 메모 g12). 입력 비가동은 위 상태 알림 `CS-05` 다.
+marks, marks_help = applied_marks()
 render_header(process, marks=marks, marks_help=marks_help)
 if result.kpis.constrained_months == 0:
     st.caption(

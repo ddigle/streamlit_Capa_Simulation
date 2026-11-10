@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인 · 계획 블록(`render_equipment_plan`)의
-# 멈추는 갈래 차례와 멈춘 자리 알림, 머리 줄 표지 · 출처 띠 글 조각을 화면 없이 본다.
+# 멈추는 갈래 차례와 멈춘 자리 알림, 머리 줄 표지 · 입력 비가동 알림 글 조각을 화면 없이 본다.
 
 """`components/constraint_equipment_plan` — 멈추는 갈래(순수 호출)와 같은 글 조각.
 
@@ -8,9 +8,8 @@
 하나가 두 모드에 같은 갈래 차례를 주는지 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어
 `subject`) · 그 모드의 앞 갈래(`before_plan`) · 계획 계산 오류 — 를 머리 그리기와 마크 알림을 적는
 가짜로 본다. 계획 받기가 불리면 실패하는 가짜 `simulation_cache` 함수로 「앞 갈래가 멈추면 계획을
-받지 않는다」 를 잡는다. 제약 영향 모드 머리 줄의 표지(입력 비가동 반영 · UPEH 가정 미적용)와 개조
-일정 모드 출처 띠 조각(소요 시나리오 이름표 · 설비 기준 괄호 · UPEH 가정 단서)의 글도 여기서 못
-박는다.
+받지 않는다」 를 잡는다. 두 모드 머리 줄의 표지(UPEH 가정 미적용)와 입력 비가동 상태 알림
+`CS-05` 의 글(합 대수 띠 · 고칠 자리 · 넘친 달)도 여기서 못 박는다.
 """
 
 from __future__ import annotations
@@ -28,23 +27,21 @@ import capa_simulation.components.constraint_equipment_plan as constraint_equipm
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation.components.constraint_equipment_plan import (
     EQUIPMENT_SCREEN,
+    MANUAL_DOWNTIME_FIX,
     MANUAL_DOWNTIME_HELP,
     UPEH_NOT_APPLIED_HELP,
     UPEH_NOT_APPLIED_MARK,
-    UPEH_NOT_APPLIED_NOTE,
     EquipmentPlanSource,
     absent_note,
     applied_marks,
     equipment_readiness,
+    manual_downtime_note,
     render_equipment_plan,
-    source_equipment_text,
-    source_scenario_text,
-    upeh_assumption_note,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.page_bootstrap import ProcessPageInputs
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
-from capa_simulation.services.manual_downtime import ManualDowntime
+from capa_simulation.services.manual_downtime import MANUAL_DOWNTIME_BAND, ManualDowntime
 from capa_simulation.services.process_equipment_timeline import (
     MISSING_CUTOFF,
     NO_COUNTED_UNITS,
@@ -310,15 +307,13 @@ def test_a_failure_while_building_the_plan_key_is_the_plan_error(recorder: _Reco
 
 
 def test_the_header_marks_keep_their_words(monkeypatch: pytest.MonkeyPatch) -> None:
-    """제약 영향 모드 머리 줄의 표지 — 계획이 건 입력 비가동 글은 그대로, UPEH 가정 미적용은 세션
-    칸이 기본값이 아닌 정수일 때만(소수 · 글자 칸은 켬으로 보지 않는다 — 개조 일정 모드 출처 띠
-    단서와 같은 판정). 뜻은 표지 풍선이고 둘 다 없으면 빈 글자다. 출처는 Guide 다(2026-11-08 사용자
-    그림 메모 g12)."""
+    """두 모드 머리 줄의 표지 — UPEH 가정 미적용은 세션 칸이 기본값이 아닌 정수일 때만(소수 · 글자
+    칸은 켬으로 보지 않는다). 뜻은 표지 풍선이고 없으면 빈 글자다. 계획이 건 입력 비가동은 표지가
+    아니라 상태 알림 `CS-05` 다(2026-11-10 보드 Q-4). 출처는 Guide 다(2026-11-08 사용자 그림 메모
+    g12)."""
     state: dict[str, object] = {}
     monkeypatch.setattr(st, "session_state", state)
-    assert applied_marks("") == ("", "")
-    manual = "입력 비가동 반영(2칸 · 합 2.5대)"
-    assert applied_marks(manual) == (manual, MANUAL_DOWNTIME_HELP)
+    assert applied_marks() == ("", "")
     for value, on in (
         (UPEH_ASSUMPTION_DEFAULT_PERCENT, False),
         (110, True),
@@ -328,45 +323,51 @@ def test_the_header_marks_keep_their_words(monkeypatch: pytest.MonkeyPatch) -> N
         (None, False),
     ):
         state[UPEH_ASSUMPTION_PERCENT_KEY] = value
-        marks = applied_marks(manual)
-        if on:
-            assert marks == (
-                f"{manual} · {UPEH_NOT_APPLIED_MARK}",
-                f"{MANUAL_DOWNTIME_HELP} {UPEH_NOT_APPLIED_HELP}",
-            ), value
-            assert applied_marks("") == (UPEH_NOT_APPLIED_MARK, UPEH_NOT_APPLIED_HELP)
-        else:
-            assert marks == (manual, MANUAL_DOWNTIME_HELP), value
+        expected = (UPEH_NOT_APPLIED_MARK, UPEH_NOT_APPLIED_HELP) if on else ("", "")
+        assert applied_marks() == expected, value
     # 표지는 한두 낱말이고 문장은 풍선에만 있다(설계 규칙 UI-TXT-04).
     assert not UPEH_NOT_APPLIED_MARK.endswith("다")
 
 
-def test_the_schedule_source_band_pieces_keep_their_words(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """개조 일정 모드 출처 띠 조각 — 소요 시나리오 이름표는 이름을 막고 없으면 「활성 시나리오」,
-    설비 기준 글이 없거나 비면 「(단축 전)」, UPEH 가정 단서는 세션 칸이 기본값이 아닌 정수일 때만
-    (머리 줄 표지와 같은 판정)."""
-    label = SimpleNamespace(scenario_name="DEMO_*~가정", revision_no=3)
-    monkeypatch.setattr(constraint_equipment_plan, "active_scenario_label", lambda: label)
-    assert source_scenario_text() == "「DEMO\\_\\*\\~가정 r3」"
-    monkeypatch.setattr(constraint_equipment_plan, "active_scenario_label", lambda: None)
-    assert source_scenario_text() == "활성 시나리오"
+def _effect(rows: list[tuple[str, int, float, float, bool]]) -> pd.DataFrame:
+    """계획이 건 입력 비가동 표(`ShorteningPlan.manual_downtime` 꼴)."""
+    return pd.DataFrame(rows, columns=["공정", "생산계획년월", "입력대수", "반영대수", "초과"])
 
-    assert source_equipment_text("DEMO_설비 r2") == "(DEMO\\_설비 r2, 단축 전)"
-    assert source_equipment_text(None) == "(단축 전)"
-    assert source_equipment_text("") == "(단축 전)"
 
-    state: dict[str, object] = {}
-    monkeypatch.setattr(st, "session_state", state)
-    assert upeh_assumption_note() == ""
-    for value, note in (
-        (UPEH_ASSUMPTION_DEFAULT_PERCENT, ""),
-        (110, UPEH_NOT_APPLIED_NOTE),
-        (90, UPEH_NOT_APPLIED_NOTE),
-        (110.0, ""),
-        ("110", ""),
-        (None, ""),
-    ):
-        state[UPEH_ASSUMPTION_PERCENT_KEY] = value
-        assert upeh_assumption_note() == note, value
+def test_the_manual_downtime_note_is_the_band_and_the_place_to_fix() -> None:
+    """입력 비가동 상태 알림 `CS-05` 의 글 — 짧은 글은 그 공정 칸의 합 대수 띠 · 고칠 자리(필요 단축
+    일정 `RS-05` 와 같은 말), 전문은 이 화면 · 공정 · 뜻이다. 다른 공정 칸 · 0 칸은 세지 않고, 그
+    공정에 칸이 없으면 알림이 없다(None — 「해소」). 알림 칸은 평문이라 이름을 막지 않는다."""
+    effect = _effect(
+        [
+            ("DEMO_*Mold", 202601, 2.0, 2.0, False),
+            ("DEMO_*Mold", 202602, 0.0, 0.0, False),
+            ("DEMO_Other", 202601, 5.0, 5.0, False),
+        ]
+    )
+    note = manual_downtime_note(effect, process="DEMO_*Mold", process_label="몰드*~")
+    assert note is not None
+    assert note.text == f"{MANUAL_DOWNTIME_BAND}(1칸 · 합 2대) — {MANUAL_DOWNTIME_FIX}"
+    assert note.full == (
+        f"제약 시뮬레이션 · 몰드*~ — {MANUAL_DOWNTIME_BAND}(1칸 · 합 2대) — {MANUAL_DOWNTIME_HELP}"
+    )
+    assert note.content == [f"{MANUAL_DOWNTIME_BAND}(1칸 · 합 2대)", []]
+    assert manual_downtime_note(effect, process="DEMO_None", process_label="없음") is None
+    assert manual_downtime_note(_effect([]), process="DEMO_*Mold", process_label="몰드") is None
+
+
+def test_the_manual_downtime_note_names_the_overdrawn_months_in_its_full_text() -> None:
+    """그 달 가용보다 커 0 에서 멈춘 칸은 짧은 글 꼬리 「· 가용 넘침 k칸」 하나로 말하고, 그 달(앞
+    다섯 — 넘으면 「외 n칸」)은 전문 끝에 둔다(설계 규칙 UI-TXT-04 · UI-NTF-06). 지문 재료에 넘친
+    달이 들어 넘친 달이 바뀌면 다시 뜬다."""
+    months = [202601, 202602, 202603, 202604, 202605, 202606, 202607]
+    effect = _effect([("Mold", month, 9.0, 3.0, True) for month in months])
+    note = manual_downtime_note(effect, process="Mold", process_label="Mold")
+    assert note is not None
+    band = f"{MANUAL_DOWNTIME_BAND}(7칸 · 합 63대 · 가용 넘침 7칸)"
+    assert note.text == f"{band} — {MANUAL_DOWNTIME_FIX}"
+    assert note.full.endswith(
+        "가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): 26.01, 26.02, 26.03, 26.04, 26.05 외 2칸."
+    )
+    assert "26.06" not in note.full
+    assert note.content == [band, months]
