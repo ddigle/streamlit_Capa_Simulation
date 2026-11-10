@@ -55,7 +55,7 @@ from capa_simulation.components.saved_note import (
 )
 from capa_simulation.components.state_alerts import AlertScope
 from capa_simulation.components.tab_state import OpenTab
-from capa_simulation.components.table_toolbar import toolbar_clearance
+from capa_simulation.components.table_toolbar import toolbar_clearance, toolbar_room_css
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -207,6 +207,11 @@ ADVANCE_NOTE_KEY = "home_preference_advance_note"
 ADVANCE_SHIPMENT_EDITOR_KEY = "home_preference_advance_shipment_editor"
 ADVANCE_SHIPMENT_NOTE_KEY = "home_preference_advance_shipment_note"
 ADVANCE_SHIPMENT_FLASH_KEY = "home_advance_shipment_flash"
+# 선행 B/O · 선행 입고 · 확보율 보정 저장 줄(저장 단추 · 변경 메모) 칸 key — 오른쪽 끝을 표 도구
+# 막대 자리로 비우는 서식(`table_toolbar.toolbar_room_css`)이 이 key 로 줄을 찾는다.
+ADVANCE_SAVE_ROW_KEY = "home_preference_advance_save_row"
+ADVANCE_SHIPMENT_SAVE_ROW_KEY = "home_preference_advance_shipment_save_row"
+EXECUTION_SAVE_ROW_KEY = "home_preference_execution_save_row"
 # 월별 판정 기준 편집표와 기본 확보·경고 두 칸의 key 머리 — 끝에 그 회차가 그린 저장본을 붙인다
 # (`threshold_widget_key`).
 THRESHOLD_EDITOR_KEY = "home_preference_threshold_editor"
@@ -1498,6 +1503,7 @@ class _MonthlyAmountEditor:
     form_key: str
     save_label: str
     note_key: str
+    save_row_key: str
     placeholder: str
     flash_key: str
     editor_key: str
@@ -1513,6 +1519,7 @@ _ADVANCE_LOAD_EDITOR = _MonthlyAmountEditor(
     form_key="home_advance_load_form",
     save_label="선행 B/O 저장",
     note_key=ADVANCE_NOTE_KEY,
+    save_row_key=ADVANCE_SAVE_ROW_KEY,
     placeholder=note_placeholder("26.07 선행 B/O 재공 반영"),
     flash_key="home_advance_flash",
     editor_key=ADVANCE_EDITOR_KEY,
@@ -1529,6 +1536,7 @@ _ADVANCE_SHIPMENT_EDITOR = _MonthlyAmountEditor(
     form_key="home_advance_shipment_form",
     save_label="선행 입고 저장",
     note_key=ADVANCE_SHIPMENT_NOTE_KEY,
+    save_row_key=ADVANCE_SHIPMENT_SAVE_ROW_KEY,
     placeholder=note_placeholder("26.03 선행 입고 실적 반영"),
     flash_key=ADVANCE_SHIPMENT_FLASH_KEY,
     editor_key=ADVANCE_SHIPMENT_EDITOR_KEY,
@@ -1675,7 +1683,13 @@ def _render_monthly_amount_editor(
     견줄 저장본은 제출 회차가 읽은 최신이다. 아직 저장본이 없으면(v0) 첫 저장은 쓴다.
     """
     with st.container(border=True):
-        render_profile_heading(editor.title, profile, key=editor.form_key, empty=editor.empty)
+        render_profile_heading(
+            editor.title,
+            profile,
+            key=editor.form_key,
+            empty=editor.empty,
+            style=toolbar_room_css(editor.save_row_key),
+        )
         if not months:
             st.caption("조회기간에 계획이 있는 달이 없어 입력할 칸이 없습니다.")
             return
@@ -1686,8 +1700,14 @@ def _render_monthly_amount_editor(
         )
         with st.form(editor.form_key):
             # 작업 줄(저장·메모)은 표 **위**다 — 표를 고친 뒤 버튼을 찾지 않게 한다. 버튼이
-            # 왼쪽이다 — 오른쪽 끝에 두면 표 위에 떠오르는 도구 막대(보기·내려받기·검색)에 가린다.
-            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+            # 왼쪽이고 오른쪽 끝은 표 도구 막대 자리로 비운다(`save_row_key` — 서식은 제목 줄 캡션에
+            # 실었다).
+            with st.container(
+                horizontal=True,
+                vertical_alignment="bottom",
+                gap="small",
+                key=editor.save_row_key,
+            ):
                 submitted = st.form_submit_button(
                     editor.save_label,
                     icon=":material/save:",
@@ -1704,32 +1724,28 @@ def _render_monthly_amount_editor(
             # 저장 결과(성공·오류)는 누른 버튼 바로 아래 한 자리다(`render_flash` 가 돌려준 칸
             # 하나 — 폼 안 빈 칸은 간격을 먹지 않는다, `app_header.EMPTY_FORM_SLOT_SELECTOR`).
             notice = render_flash(editor.flash_key)
-            # 바로 위가 오른쪽 끝까지 늘어나는 변경 메모 줄이다 — 표 도구 막대(표 머리 위 37px)가
-            # 그 끝을 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸
-            # 하나다 — 줄 사이 14 + 띄움 24 = 38px(2026-11-09 사용자 검수 g17 — 폼 안 빈 알림 칸이
-            # 간격을 먹지 않게 되며 메모 줄과 표 사이가 28 → 14px 로 붙어 막대가 메모 칸을 더
-            # 덮었다).
-            with st.container(gap=None):
-                toolbar_clearance()
-                edited = st.data_editor(
-                    table,
-                    key=editor.editor_key,
-                    hide_index=True,
-                    num_rows="fixed",
-                    width="stretch",
-                    # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-                    placeholder="",
-                    disabled=[DIMENSION_COLUMN],
-                    column_config={
-                        DIMENSION_COLUMN: st.column_config.TextColumn(
-                            DIMENSION_COLUMN, width=_MONTHLY_AMOUNT_LABEL_WIDTH_PX
-                        ),
-                        **{
-                            label: st.column_config.NumberColumn(label, step=0.01, format="%.2f")
-                            for label in month_labels
-                        },
+            # 표 앞 띄움을 두지 않는다 — 표 도구 막대(표 머리 위 37px)는 저장 줄 오른쪽 끝 빈 자리
+            # 위에 선다(AGENTS 9장 「표 도구 막대」 — 저장 줄 → 표 14px, 폼 안 빈 알림 칸은 간격을
+            # 먹지 않는다).
+            edited = st.data_editor(
+                table,
+                key=editor.editor_key,
+                hide_index=True,
+                num_rows="fixed",
+                width="stretch",
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
+                disabled=[DIMENSION_COLUMN],
+                column_config={
+                    DIMENSION_COLUMN: st.column_config.TextColumn(
+                        DIMENSION_COLUMN, width=_MONTHLY_AMOUNT_LABEL_WIDTH_PX
+                    ),
+                    **{
+                        label: st.column_config.NumberColumn(label, step=0.01, format="%.2f")
+                        for label in month_labels
                     },
-                )
+                },
+            )
         if not submitted:
             return
         row = edited.iloc[0]
@@ -2742,14 +2758,21 @@ def _render_execution_editor(
             execution_profile,
             key="home_execution",
             empty="아직 넣은 확보율 보정이 없습니다",
+            style=toolbar_room_css(EXECUTION_SAVE_ROW_KEY),
         )
         if not months or not process_options:
             st.caption("조회기간에 계산된 공정이 없어 입력할 칸이 없습니다.")
             return
         table = _execution_editor_frame(execution_profile)
         with st.form("home_execution_capacity_form"):
-            # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
-            with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+            # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대 자리로
+            # 비운다(`EXECUTION_SAVE_ROW_KEY` — 서식은 제목 줄 캡션에 실었다).
+            with st.container(
+                horizontal=True,
+                vertical_alignment="bottom",
+                gap="small",
+                key=EXECUTION_SAVE_ROW_KEY,
+            ):
                 submitted = st.form_submit_button(
                     "확보율 보정 저장",
                     icon=":material/save:",
@@ -2771,49 +2794,45 @@ def _render_execution_editor(
                 refused = take_refusal(EXECUTION_SAVE_NAME)
                 if refused is not None:
                     st.error(refused)
-            # 바로 위가 오른쪽 끝까지 늘어나는 변경 메모 줄이다 — 표 도구 막대(표 머리 위 37px)가
-            # 그 끝을 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸
-            # 하나다 — 줄 사이 14 + 띄움 24 = 38px(2026-11-09 사용자 검수 g17 — 폼 안 빈 알림 칸이
-            # 간격을 먹지 않게 되며 메모 줄과 표 사이가 28 → 14px 로 붙어 막대가 메모 칸을 더
-            # 덮었다).
-            with st.container(gap=None):
-                toolbar_clearance()
-                edited = st.data_editor(
-                    table,
-                    key=EXECUTION_EDITOR_KEY,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    width="stretch",
-                    # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-                    placeholder="",
-                    column_config={
-                        "생산계획년월": st.column_config.SelectboxColumn(
-                            "년월",
-                            options=list(months),
-                            # 저장은 YYYYMM 정수다. 표시만 `26.07` 로 바꾼다.
-                            format_func=_month_option_label,
-                            required=True,
-                        ),
-                        "공정": st.column_config.SelectboxColumn(
-                            "공정",
-                            options=list(process_options),
-                            # **값은 원본 공정명이고 보이는 글자만 표시명이다.** 표시명으로
-                            # 저장하면 Proc Rename 을 바꾸는 순간 매칭이 끊긴다. 편집표 칸은 값을
-                            # 글자가 아니라 옵션 `value` 로 주고받아(고르기·붙여넣기·복사 모두) 겹친
-                            # 글자로 다른 공정이 들지는 않는다. 다만 목록에서 둘을 가려 고를 수
-                            # 있도록 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다.
-                            format_func=process_labels.unique_format_func(process_options),
-                            required=True,
-                        ),
-                        "증감 확보율": st.column_config.NumberColumn(
-                            "증감 확보율(%)",
-                            step=0.1,
-                            format="%.1f",
-                            required=True,
-                        ),
-                        "비고": st.column_config.TextColumn("비고", width="medium"),
-                    },
-                )
+            # 표 앞 띄움을 두지 않는다 — 표 도구 막대(표 머리 위 37px)는 저장 줄 오른쪽 끝 빈 자리
+            # 위에 선다(AGENTS 9장 「표 도구 막대」 — 저장 줄 → 표 14px, 폼 안 빈 알림 칸은 간격을
+            # 먹지 않는다).
+            edited = st.data_editor(
+                table,
+                key=EXECUTION_EDITOR_KEY,
+                hide_index=True,
+                num_rows="dynamic",
+                width="stretch",
+                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+                placeholder="",
+                column_config={
+                    "생산계획년월": st.column_config.SelectboxColumn(
+                        "년월",
+                        options=list(months),
+                        # 저장은 YYYYMM 정수다. 표시만 `26.07` 로 바꾼다.
+                        format_func=_month_option_label,
+                        required=True,
+                    ),
+                    "공정": st.column_config.SelectboxColumn(
+                        "공정",
+                        options=list(process_options),
+                        # **값은 원본 공정명이고 보이는 글자만 표시명이다.** 표시명으로
+                        # 저장하면 Proc Rename 을 바꾸는 순간 매칭이 끊긴다. 편집표 칸은 값을
+                        # 글자가 아니라 옵션 `value` 로 주고받아(고르기·붙여넣기·복사 모두) 겹친
+                        # 글자로 다른 공정이 들지는 않는다. 다만 목록에서 둘을 가려 고를 수
+                        # 있도록 보이는 글자가 겹치면 「표시명 (원본)」 으로 가른다.
+                        format_func=process_labels.unique_format_func(process_options),
+                        required=True,
+                    ),
+                    "증감 확보율": st.column_config.NumberColumn(
+                        "증감 확보율(%)",
+                        step=0.1,
+                        format="%.1f",
+                        required=True,
+                    ),
+                    "비고": st.column_config.TextColumn("비고", width="medium"),
+                },
+            )
         if not submitted:
             # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지 않는다
             # (write_guard).

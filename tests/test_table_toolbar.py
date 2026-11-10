@@ -13,6 +13,7 @@ import functools
 import re
 from pathlib import Path
 
+from capa_simulation.components import home_preference
 from capa_simulation.components.table_toolbar import (
     CSV_MIME,
     DOWNLOAD_ICON,
@@ -433,19 +434,23 @@ def _owner_line() -> str:
 
 # 저장 줄 오른쪽 끝을 표 도구 막대 자리로 비우고 표 앞 띄움을 걷은 폼(2026-11-10 사용자 그림
 # 메모 「저장 버튼과 시트 사이 여백 조정」 — Admin Proc Rename · 표시순서, 가용설비 Preference) →
-# 그 저장 줄 key 이름. 같은 꼴의 HOME 설정 메모 폼은 물음 Q-13 답 「그대로」 라 띄움을 둔다
-# (`HOME_CLEARED_FORMS`).
+# 그 저장 줄 key 이름. 같은 꼴의 HOME 설정 메모 폼은 함수 단위로 따로 본다(`HOME_ROOM_FORMS`).
 ROOM_ROWS: dict[str, str] = {
     "src/capa_simulation/components/process_rename_management.py": "SAVE_ROW_KEY",
     "src/capa_simulation/components/display_order_management.py": "SAVE_ROW_KEY",
     "src/capa_simulation/components/manual_downtime_tab.py": "MANUAL_SAVE_ROW_KEY",
 }
 HOME_PREFERENCE = PROJECT_ROOT / "src/capa_simulation/components/home_preference.py"
-# HOME 설정의 메모 폼 셋(판정 기준 · 선행 B/O 와 선행 입고 공용 편집표 · 확보율 보정) — 띄움 그대로.
-HOME_CLEARED_FORMS = (
-    "render_threshold_editor",
-    "_render_monthly_amount_editor",
-    "_render_execution_editor",
+# HOME 설정의 저장 줄 ↔ 표 폼 — 선행 B/O 와 선행 입고(공용 편집기 하나) · 확보율 보정은 막대 자리 꼴
+# (2차 보드 Q2-2 「셋과 같게 줄인다」), 판정 기준은 표 바로 위가 기본 두 숫자 칸 줄이라 띄움이다.
+HOME_ROOM_FORMS = ("_render_monthly_amount_editor", "_render_execution_editor")
+HOME_CLEARED_FORMS = ("render_threshold_editor",)
+# 막대 자리 꼴 HOME 저장 줄 key 이름 — 선행 B/O · 선행 입고 · 확보율 보정(한 팝업에 함께 서므로 셋이
+# 다르다).
+HOME_ROOM_ROW_KEYS = (
+    "ADVANCE_SAVE_ROW_KEY",
+    "ADVANCE_SHIPMENT_SAVE_ROW_KEY",
+    "EXECUTION_SAVE_ROW_KEY",
 )
 
 
@@ -463,17 +468,46 @@ def test_the_memo_rows_that_hold_the_toolbar_room_drop_the_clearance() -> None:
             assert f"toolbar_room_css({row_key})" in text, relative
 
 
-def test_the_home_memo_forms_keep_the_toolbar_clearance() -> None:
-    """HOME 설정의 메모 폼 셋은 그대로 표 앞 띄움을 둔다(물음 Q-13 답 「그대로」) — 막대 자리 서식은
-    그 화면에 걸리지 않는다."""
-    tree = _tree(HOME_PREFERENCE)
-    found = {
-        node.name: ast.unparse(node).count("toolbar_clearance()")
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name in HOME_CLEARED_FORMS
+def _home_functions() -> dict[str, str]:
+    return {
+        node.name: ast.unparse(node)
+        for node in ast.walk(_tree(HOME_PREFERENCE))
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {*HOME_ROOM_FORMS, *HOME_CLEARED_FORMS}
     }
-    assert found == dict.fromkeys(HOME_CLEARED_FORMS, 1)
-    assert "toolbar_room_css" not in HOME_PREFERENCE.read_text(encoding="utf-8")
+
+
+def test_the_home_memo_forms_hold_the_toolbar_room() -> None:
+    """HOME 설정의 선행 B/O · 선행 입고 · 확보율 보정은 Proc Rename · 표시순서 · Preference 와
+    같은 꼴이다(2차 보드 Q2-2) — 표 앞 띄움 없이 저장 줄(key 있는 칸)의 오른쪽 끝을 막대 자리로
+    비운다. 서식은 팝업 본문이라 제목 줄 캡션에 싣는다(`render_profile_heading(style=)` — 스타일만
+    든 `st.html` 은 이벤트 칸으로 간다). 띄움을 되살리면 저장 줄 → 표가 다시 38px 이고, 막대 자리를
+    빼면 막대가 메모 칸 끝을 덮는다."""
+    found = _home_functions()
+    for name in HOME_ROOM_FORMS:
+        body = found[name]
+        assert "toolbar_clearance()" not in body, name
+        assert "style=toolbar_room_css(" in body, name
+        assert "horizontal=True" in body, name
+    assert "key=editor.save_row_key" in found["_render_monthly_amount_editor"]
+    assert "style=toolbar_room_css(editor.save_row_key)" in found["_render_monthly_amount_editor"]
+    assert "key=EXECUTION_SAVE_ROW_KEY" in found["_render_execution_editor"]
+    assert "style=toolbar_room_css(EXECUTION_SAVE_ROW_KEY)" in found["_render_execution_editor"]
+    keys = [getattr(home_preference, name) for name in HOME_ROOM_ROW_KEYS]
+    assert len(set(keys)) == len(keys)
+    assert {
+        home_preference._ADVANCE_LOAD_EDITOR.save_row_key,
+        home_preference._ADVANCE_SHIPMENT_EDITOR.save_row_key,
+    } == {home_preference.ADVANCE_SAVE_ROW_KEY, home_preference.ADVANCE_SHIPMENT_SAVE_ROW_KEY}
+
+
+def test_the_home_threshold_form_keeps_the_toolbar_clearance() -> None:
+    """판정 기준은 표 바로 위가 기본 확보 · 경고 두 숫자 칸 줄이라 막대 자리 꼴이 아니다 — 표 앞
+    띄움을 그대로 둔다(2차 보드 Q2-2 「판정 기준은 이 꼴이 아님」)."""
+    found = _home_functions()
+    for name in HOME_CLEARED_FORMS:
+        assert found[name].count("toolbar_clearance()") == 1, name
+        assert "toolbar_room_css" not in found[name], name
     assert TABLE_TOOLBAR_CLEARANCE == 24
 
 

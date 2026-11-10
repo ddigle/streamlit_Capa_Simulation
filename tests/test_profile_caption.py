@@ -270,3 +270,44 @@ def test_the_version_line_carries_its_baseline_rule_without_raw_html() -> None:
     )
     body = caption.value.removesuffix(HEADING_BASELINE_STYLE)
     assert re.findall(r"(?<!\\)<", body) == []
+
+
+STYLE_SCRIPT = r"""
+import streamlit as st
+
+from capa_simulation.components.profile_caption import render_profile_heading
+
+
+class Profile:
+    version = 0
+    source = ""
+    updated_at = None
+
+
+render_profile_heading(
+    "#### 확보율 보정",
+    Profile(),
+    key="demo_execution",
+    empty="아직 넣은 확보율 보정이 없습니다",
+    style=".st-key-demo_save_row { padding-right: 120px; }",
+)
+"""
+
+
+def test_the_version_line_carries_the_section_style_too() -> None:
+    """`style=` 은 그 구획의 다른 칸에 거는 서식이다 — 팝업 본문(HOME 설정)은 스타일만 든 `st.html`
+    을 쓸 수 없어(이벤트 칸) 버전 줄 캡션 끝에 `<style>` 로 함께 싣는다. 본문 칸이 하나 더 서지
+    않는다."""
+    app = AppTest.from_string(STYLE_SCRIPT, default_timeout=30).run()
+
+    assert not app.exception
+    (row,) = _rows(app)
+    assert len(row.children) == 2
+    caption = row.children[max(row.children)]
+    assert isinstance(caption, Caption)
+    assert caption.value == (
+        "공용 버전 없음 · 아직 넣은 확보율 보정이 없습니다"
+        + HEADING_BASELINE_STYLE
+        + "<style>.st-key-demo_save_row { padding-right: 120px; }</style>"
+    )
+    assert len(app.main.children) == 1
