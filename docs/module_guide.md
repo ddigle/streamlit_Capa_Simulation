@@ -192,24 +192,26 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
 
 ### 3-4. 성숙도
 
-| 단계 | 뜻 | 사이드바 · 머리말 | 올라가는 조건 |
+| 단계 | 뜻 | 사이드바 · 화면 탭 | 올라가는 조건 |
 |---|---|---|---|
 | `L0` Lab | 자기 데이터 · 합성 표본으로 돈다 | `(구현중)` | `check_module.py` 통과 + 진입 스모크 시험 |
 | `L1` 연결 | 코어 공개 창구의 데이터를 읽는다(v2 부터 — v1 에는 데이터 창구가 없다) | `(구현중)` | 출력 계약 문서 + 배포 뒤 화면 확인 |
 | `L2` 검증 | 실데이터 정합성을 확인했다 | 표기 없음 | 실데이터 읽기 전용 점검(집계만)으로 기준값 대조 통과 |
 | (`L3` 통합) | 코어 계산이 모듈 출력을 쓴다 — 사외가 코어에 다시 구현하므로 그때부터 모듈이 아니다 | — | 사외 리뷰 |
 
-- 표기는 `(구현중)` 하나다. `module.json` 의 `maturity` 칸은 `L0` · `L1` · `L2` 만 받는다.
-- **`L2` 로 올리는 커밋은 앱 관리자의 승인을 받은 뒤에만 한다**(배지가 떨어져 「검증된 화면」 으로 읽힌다). 코드는 막지 않는다.
+- 표기는 `(구현중)` 하나다 — 사이드바 라벨 끝 「(구현중)」 과 화면 탭 이름 곁 「구현중」 표지(풍선 「구현 중」)로 선다. 본문 머리에는
+  배지 줄을 세우지 않는다(창구 1.2 — 코어의 구현 중 화면과 같은 꼴). `module.json` 의 `maturity` 칸은 `L0` · `L1` · `L2` 만 받는다.
+- **`L2` 로 올리는 커밋은 앱 관리자의 승인을 받은 뒤에만 한다**(표기가 떨어져 「검증된 화면」 으로 읽힌다). 코드는 막지 않는다.
 
 ### 3-5. 화면 계약
 
 - 화면 파일은 보통 Streamlit 스크립트다. 앱은 그 화면에 들어갈 때마다, 그리고 위젯을 만질 때마다 파일 전체를 처음부터 다시 돈다.
 - 맨 위 차례는 늘 같다.
   1. `ctx = api.context(__file__)` — 모듈 문맥(id · 이름 · 데이터 자리 · 키 접두)을 받는다.
-  2. `api.page_header(ctx, "<화면 이름>")` — 머리말을 **한 번**, 맨 위에 그린다. 화면 머리에 소개 줄을 두지 않는다 —
-     `description=` 은 창구 1.1 부터 받기만 하고 그리지 않는다(넘기던 모듈이 깨지지 않게 남긴 인자다. 새로 적지 않고, 뼈대(3-7)가
-     적는 그 줄은 지워도 된다). 모듈 소개는 `module.json` 의 `description` 이 모듈 색인에서 맡는다.
+  2. `api.page_header(ctx, "<화면 이름>")` — 머리말을 **한 번**, 맨 위에 그린다(제목은 화면에서 숨고 탭 줄이 화면 이름을
+     말한다). 화면 머리에 소개 줄을 두지 않는다 — `description=` 은 창구 1.1 부터 받기만 하고 그리지 않는다(넘기던 모듈이 깨지지
+     않게 남긴 인자다. 새로 적지 않는다 — 옛 뼈대가 적은 그 줄은 지워도 된다). 모듈 소개는 `module.json` 의 `description` 이
+     모듈 색인에서 맡는다. 성숙도 `L0` · `L1` 의 「구현중」 도 본문 머리에 배지 줄로 서지 않는다(창구 1.2 — 3-4).
   3. 본문.
 - 코어에서는 `from capa_simulation import module_api as api` 하나만 import 한다(부록 A).
 - 화면 파일은 `__main__` 으로 돈다. 상대 import(`from . import x`)를 쓰지 않는다.
@@ -251,11 +253,7 @@ JSON 이다. UTF-8 로 쓴다(BOM 이 붙어도 받는다). 64 KB 까지. 주석
    from capa_simulation import module_api as api
 
    ctx = api.context(__file__)
-   api.page_header(
-       ctx,
-       "데모 인사",
-       description="이 화면이 무엇을 하는지 한 줄로 적습니다.",
-   )
+   api.page_header(ctx, "데모 인사")
 
 
    def _greet() -> None:
@@ -1002,11 +1000,13 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 
 ### 9-4. API 판과 호환
 
-- 모듈은 `module.json` 의 `api` 로 큰 판 하나를 요구한다. 지금 코어는 `1.1` 이다(`api.API_VERSION`).
+- 모듈은 `module.json` 의 `api` 로 큰 판 하나를 요구한다. 지금 코어는 `1.2` 이다(`api.API_VERSION`).
 - 판이 맞지 않으면 그 모듈만 「실패」 로 등록되지 않는다. 까닭에 두 판이 적힌다.
 - 코어는 같은 큰 판 안에서 **더하기만** 한다(새 함수 · 새 선택 인자 · 새 `PALETTE_KEYS` 항목 · `module.json` 의 새 선택 칸). 더하면 작은 판을 올리고
   부록 C 에 한 줄을 적는다. 새 이름을 쓰는 모듈은 `api_minor` 를 그 판으로 적는다 — 예전 코어로 되돌아갔을 때 import 오류 대신 까닭이 보인다.
 - 지우기 · 이름 바꾸기 · 서명이나 뜻 바꾸기는 큰 판을 올린다. 옛 큰 판은 그 판을 쓰는 모듈이 0 이 될 때까지 지원한다.
+- 이름 · 서명을 그대로 두고 인자를 폐기 예정으로 받기만 하거나 화면에 그리는 것만 줄이는 변경은 작은 판이다 — 넘기던 모듈이 고치지
+  않아도 돈다(1.1 `description` · 1.2 「구현중」 배지 줄). 부록 C 에 한 줄을 적고, 모듈은 `api_minor` 를 올리지 않아도 된다.
 - 창구 밖의 변경(패키지 제거 · pandas · Streamlit 판 올림 · 폐기 예정 인자 제거)도 모듈을 깨뜨릴 수 있다. 사외는 그런 변경을 배포 안내의
   「모듈 담당자에게 알릴 것」 에 적는다 — 앱 관리자가 담당자에게 전한다.
 
@@ -1027,14 +1027,14 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 
 | 이름 | 꼴 | 뜻 |
 |---|---|---|
-| `API_VERSION` | `tuple[int, int]` — `(1, 1)` | 이 코어의 창구 판(큰 판, 작은 판) |
+| `API_VERSION` | `tuple[int, int]` — `(1, 2)` | 이 코어의 창구 판(큰 판, 작은 판) |
 | `FONT_FAMILY` | `str` | 앱 서체 이름 |
-| `IMPLEMENTING_SUFFIX` | `str` — `"(구현중)"` | 성숙도 `L0` · `L1` 화면에 붙는 표기 |
+| `IMPLEMENTING_SUFFIX` | `str` — `"(구현중)"` | 성숙도 `L0` · `L1` 화면의 사이드바 라벨에 붙는 표기 |
 | `PALETTE_KEYS` | `tuple[str, ...]` — `("surface", "surface_subtle", "border", "text", "text_muted", "accent", "secure", "warning", "shortage")` | `palette()` 의 키 |
 | `ModuleContext` | 바꿀 수 없는 dataclass | 모듈 문맥(아래) |
 | `ModuleContextError` | `RuntimeError` 의 하위 | 문맥을 못 찾거나 선언이 틀렸을 때 |
 | `context` | `context(file: str \| os.PathLike[str]) -> ModuleContext` | 보통 `api.context(__file__)`. 파일 위치에서 가장 가까운 `module.json` 을 찾는다 |
-| `page_header` | `page_header(ctx: ModuleContext, title: str, *, description: str \| None = None) -> None` | 머리말. 성숙도 `L0` · `L1` 이면 `(구현중)` 배지를 붙인다. 한 회차에 한 번, 화면 맨 위. 세션 키를 만들지 않는다. `description` 은 받기만 하고 그리지 않는다(1.1) |
+| `page_header` | `page_header(ctx: ModuleContext, title: str, *, description: str \| None = None) -> None` | 머리말(제목은 화면에서 숨는다). 한 회차에 한 번, 화면 맨 위. 세션 키를 만들지 않는다. 성숙도 `L0` · `L1` 이어도 본문에 「구현중」 배지 줄을 그리지 않는다 — 사이드바 라벨 · 화면 탭 표지가 말한다(1.2). `description` 은 받기만 하고 그리지 않는다(1.1) |
 | `palette` | `palette() -> Mapping[str, str]` | 이번 회차 테마의 역할 색. 키는 `PALETTE_KEYS`. 캐시 함수 안에서 부르지 않고 값을 인자로 넘긴다 |
 
 `ModuleContext` 의 칸과 메서드:
@@ -1106,7 +1106,7 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 판 분포: api1 2
 제3자 패키지: pandas
 자세히
-  m1 demo_draft 오류 M19 page.py:23 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다
+  m1 demo_draft 오류 M19 page.py:19 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다
 전송용 요약: 모듈 2 = 통과 1 + 꺼짐 0 + 실패 1; api1 2; 패키지 pandas; ng m1 오류1
 ```
 
@@ -1125,3 +1125,4 @@ Admin Area 탭 위의 펼침이다. 앱 관리자가 본다. `modules/` 아래�
 |---|---|---|
 | v1.0 | 2026-11-01 | 첫 판 — `API_VERSION` · `FONT_FAMILY` · `IMPLEMENTING_SUFFIX` · `PALETTE_KEYS` · `ModuleContext`(`key` · `data_dir` · `callback` · `guard`) · `ModuleContextError` · `context` · `page_header` · `palette` |
 | v1.1 | 2026-11-08 | `page_header` 의 `description` 을 받기만 하고 그리지 않는다 — 이름 · 서명은 그대로라 넘기던 모듈도 그대로 돈다(화면 머리에 소개 줄을 두지 않는다) |
+| v1.2 | 2026-11-10 | `page_header` 가 성숙도 `L0` · `L1` 의 「구현중」 배지 줄을 본문에 그리지 않는다 — 사이드바 라벨 「(구현중)」 · 화면 탭 「구현중」 표지가 말한다. 이름 · 서명은 그대로라 넘기던 모듈도 그대로 돈다 |

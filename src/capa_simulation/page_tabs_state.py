@@ -127,7 +127,8 @@ def spec_for_path(path: str) -> PageSpec | None:
 
 
 def tab_label(spec: PageSpec) -> str:
-    """탭 이름 — 사이드바 라벨에서 「(구현중)」만 뗀 글. 배지는 본문 머리말에 남는다."""
+    """탭 이름 — 사이드바 라벨에서 「(구현중)」만 뗀 글. 구현 중이라는 것은 탭 이름 곁 「구현중」
+    표지가 말한다(본문 배지 줄은 없다 — 코어 2026-11-09 보드 T8, 모듈 2026-11-10 보드 Q-5)."""
     return spec.title.removesuffix(_IMPLEMENTING)
 
 

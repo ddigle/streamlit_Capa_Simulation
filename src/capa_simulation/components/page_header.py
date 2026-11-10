@@ -9,15 +9,14 @@ UI-TXT-01 · UI-TXT-02). 설명 인자 `description` 이 남은 것은 모듈 �
 정한다.
 
 `(구현중)` 은 제목 문자열에 섞어 두지 않고 배지로 뽑는다. 사이드바 라벨은 여전히
-`navigation.py` 가 소유하며 그쪽 표기와 어긋나면 테스트가 잡는다. 코어의 구현 중 화면은 배지를
-그리지 않는다(`show_status=False` — 표지는 화면 탭 이름 곁, 2026-11-09 보드 T8). 배지를 그리는 것은
-모듈 L0 · L1 화면(`module_api.page_header`)이다.
+`navigation.py` 가 소유하며 그쪽 표기와 어긋나면 테스트가 잡는다. 구현 중 화면은 배지를 그리지
+않는다(`show_status=False` — 표지는 화면 탭 이름 곁): 코어 화면은 2026-11-09 보드 T8, 모듈 L0 · L1
+화면(`module_api.page_header`)은 2026-11-10 보드 Q-5 부터다. 지금 배지 줄을 그리는 화면은 없다.
 
 **큰 제목은 화면에서 숨고 인쇄·읽기 도구에 남는다**(2026-10-24 사용자 결정). 머리 띠 아래 화면 탭
 줄(`components/page_tabs.py`)이 지금 화면의 이름을 말한다. 제목은 그대로 `st.title` 로 내보내되 키
 컨테이너(`PAGE_TITLE_KEY`)에 담고, 껍데기 스타일(`app_header.SHELL_STYLE`)이 화면에서만 그 칸을
 시각적으로 숨긴다(sr-only — `display: none` 이 아니라 h1 이 읽기 도구에 남는다). 인쇄에는 보인다.
-배지 줄(모듈 L0 · L1 화면의 「구현중」)은 화면에 그대로 둔다.
 """
 
 from __future__ import annotations

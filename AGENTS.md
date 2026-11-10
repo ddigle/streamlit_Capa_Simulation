@@ -2258,8 +2258,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록·그룹 상자·구역 제목을 선언하고 `st.Page` 묶음을
   만드는 단일 선언 지점이다. 페이지 추가·제목 변경·새 그룹은 여기서만 한다.
   - `PageSpec`·`SIDEBAR_GROUPS`·`SIDEBAR_SECTIONS`(`section.key` 가 컨테이너 key·CSS 선택자의 근거)·`ADMIN_AREA`·
-    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나다 — 코어 구현 중 화면은 머리 배지 없이 화면 탭 이름 곁
-    표지가 말하고(`show_status=False`, 2026-11-09 보드 T8), `page_header.py` 가 배지로 쓰는 것은 모듈 L0 · L1 화면이다. 원천
+    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나다 — 구현 중 화면은 머리 배지 없이 화면 탭 이름 곁 표지가
+    말한다(`show_status=False` — 코어 2026-11-09 보드 T8, 모듈 L0 · L1 화면 2026-11-10 보드 Q-5 · 창구 1.2). 원천
     미연결 화면은 `PageSpec.pending_source`(그 화면이 스위치 · 머리 띠 표지 · 탭 풍선에 주는 원천 이름)를 선언하고,
     `PageSpec.implementing`(라벨 `(구현중)` · 그 선언 · 만드는 중 선언 `in_progress` — Dynamic Capa 는 그룹 머리라 라벨에 달지
     않는다, 생산 진도 · 샘플 페이지 셋은 원천도 접미도 없어 `in_progress`)이 화면 탭 「구현중」 표지의, `pending_source` 가 머리 띠
@@ -2274,7 +2274,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭, 라벨 목록 밖의 옛 값은 첫 탭)로 **가장 안쪽 라벨**을 본다 — `labels`·`card_labels` 도 안쪽 라벨로 적는다.
 - `src/capa_simulation/module_registry.py` — 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). `scripts/check_module.py` 가 같은 검증을 쓴다. 모듈끼리 화면 이름이 겹치면 차례(order → id)가 뒤인 모듈 전체가 실패하고 까닭에 상대(코어 · 앞 모듈 id)를 적는다(`ModuleRecord.clash` — 점검은 앞 모듈에 M01 경고를 단다).
 - `src/capa_simulation/module_api.py` — 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 데이터 없음 — 창구
-  1.1 부터 `page_header(description=)` 은 받기만 하고 그리지 않는다, 작은 결정 d1). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
+  1.1 부터 `page_header(description=)` 은 받기만 하고 그리지 않는다, 작은 결정 d1. 1.2 부터 `page_header` 는 L0 · L1 의 「구현중」
+  배지 줄도 그리지 않는다 — 화면 탭 표지가 말한다, 2026-11-10 보드 Q-5). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
@@ -2332,10 +2333,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `begin_run()` 을 부르지 않는다(`tests/test_shortening_view_fragment.py`).
 - `src/capa_simulation/components/page_header.py` — 모든 페이지의 제목·상태 배지다(상태 접미는 사이드바
   라벨과 같은 문자열). **큰 제목은 키 칸(`PAGE_TITLE_KEY`)에 담아 화면에서만 sr-only 로 숨기고**(화면 탭 줄이 이름을
-  말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지 줄은 모듈 L0 · L1 화면의 「구현중」 뿐이다(`badges` 인자를 넘기는 화면은
-  지금 없다) — 코어 구현 중 화면은 배지 없이 화면 탭이 표지를 단다(`show_status=False`, 2026-11-09 보드 T8). 코어 화면 머리에 설명 줄을 두지 않고 소개는 그 화면 Guide 가 맡는다 —
-  `description` 인자를 넘기는 자리는 모듈 창구(`module_api.page_header`, 계약)와 필요 단축 일정(문구 전달 대기) 둘이고
-  `tests/test_page_header_description.py` 가 호출 자리를 맞댄다(2026-11-07 답 head-desc). `render_page_header_with_status` 는 진행
+  말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지 줄을 그리는 화면은 지금 없다(`badges` 인자를 넘기는 화면도 없다) —
+  구현 중 화면은 배지 없이 화면 탭이 표지를 단다(`show_status=False` — 코어 2026-11-09 보드 T8, 모듈 L0 · L1 화면 2026-11-10
+  보드 Q-5). 화면 머리에 설명 줄을 두지 않고 소개는 그 화면 Guide 가 맡는다 — `description` 인자를 넘기는 자리는 없다(모듈
+  창구는 1.1 부터 받기만 하고, 필요 단축 일정 머리말은 Guide 첫 단락으로 — 6-11 d1 · g03), `tests/test_page_header_description.py`
+  가 호출 자리를 맞댄다(2026-11-07 답 head-desc). `render_page_header_with_status` 는 진행
   표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
   돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. 두 함수 모두 `trailing` 을 주면 제목 줄 끝 칸에
   그것을 그린다(지금은 쓰는 화면이 없다 — 설정 단추 · 도구 단추는 이 칸에 두지 않고 사이드바 팝업 상자다(`settings_box.py`,
@@ -7686,8 +7688,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 1. 같은 큰 판 안에서는 **더하기만** 한다(새 함수 · 새 선택 인자 · 새 `PALETTE_KEYS` 항목 · `module.json` 의 새 선택 칸). 더하면 작은 판
    (`API_MINOR`)을 올리고 `docs/module_guide.md` 부록 C 「창구 변경 기록」 에 한 줄을 적는다. 새 이름을 쓰는 모듈은 `api_minor` 를 그 판으로 적는다.
 2. 지우기 · 이름 바꾸기 · 서명 바꾸기 · 뜻 바꾸기는 큰 판을 올린다(`module.json` 칸의 뜻 · 필수 바꿈도 같다). 이름 · 서명을 그대로
-   두고 인자를 폐기 예정으로 받기만 하는 것은 작은 판으로 본다(창구 1.1 `page_header(description=)` — 작은 결정 d1, 큰 판으로
-   볼지는 `docs/TODO.md` 결정 대기). 옛 큰 판은
+   두고 인자를 폐기 예정으로 받기만 하거나 화면에 그리는 것만 줄이는 변경은 작은 판이다 — 넘기던 모듈이 고치지 않아도 돈다(창구
+   1.1 `page_header(description=)` — 작은 결정 d1, 2026-11-09 보드 Q 의 s-api-minor 「작은 판 그대로」 · 1.2 「구현중」 배지 줄 —
+   2026-11-10 보드 Q-5). 옛 큰 판은
    `SUPPORTED_API_MAJORS` 에 남겨 옛 겉면을 그대로 지원하고, **압축본 `모듈` 줄의 판 분포(`api<n> <수>`)에서 그 판이 0 이 된 다음 배포에
    뺀다** — 사외가 모듈을 보는 유일한 근거다. 날짜로 빼면 옮기지 못한 모듈이 CD 에서 한꺼번에 실패한다.
 3. **창구 밖에서 모듈을 깨는 변경도 같은 무게로 본다** — 코어 의존성에서 패키지 빼기, pandas · Streamlit 등 큰 판 올림(Streamlit 마이너

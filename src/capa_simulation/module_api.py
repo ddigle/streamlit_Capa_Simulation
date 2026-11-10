@@ -5,7 +5,9 @@
 모듈(`modules/<id>/`)은 코어에서 **이 모듈 하나만** import 한다. 겉면은 `__all__` 이 전부이고
 `tests/test_module_api_surface.py` 가 이름·서명·칸을 고정한다. 바꾸는 법(AGENTS 12장 「코어 공개
 창구 변경」): 같은 큰 판 안에서는 더하기만 하고 작은 판(`API_MINOR`)을 올린다. 지우기·이름
-바꾸기·서명 바꾸기는 큰 판을 올린다.
+바꾸기·서명 바꾸기·뜻 바꾸기는 큰 판을 올린다. 이름·서명을 그대로 두고 인자를 폐기 예정으로
+받기만 하거나 화면에 그리는 것만 줄이는 변경은 작은 판이다 — 넘기던 모듈이 고치지 않아도 돈다
+(창구 1.1 `description` · 1.2 「구현중」 배지 줄).
 
 - 데이터(시나리오·기준정보·조회기간·DB)는 내지 않는다 — v2(데이터 연계)의 몫이다.
 - 위젯 콜백은 `ctx.callback(fn)` 으로 감싼다. 콜백은 회차 맨 앞(`app.py` 가 돌기 전)에 불려, 감싸지
@@ -215,15 +217,17 @@ def context(file: str | os.PathLike[str]) -> ModuleContext:
 
 
 def page_header(ctx: ModuleContext, title: str, *, description: str | None = None) -> None:
-    """화면 맨 위 머리말 한 번. L0·L1 은 「(구현중)」 배지를 단다. 세션 키를 만들지 않는다.
+    """화면 맨 위 머리말 한 번(제목 — 화면에서는 숨고 인쇄 · 읽기 도구에 남는다). 세션 키를 만들지
+    않는다.
 
-    `description` 은 받기만 하고 그리지 않는다(창구 1.1 — 화면 머리에 소개 줄을 두지 않는다, 설계
-    규칙 UI-TXT-01). 넘기던 모듈이 깨지지 않게 인자는 남긴다. 모듈 소개는 `module.json` 의
+    성숙도 `L0` · `L1` 의 「구현중」 은 본문 배지 줄로 그리지 않는다(창구 1.2 — 2026-11-10 보드 Q-5,
+    코어 구현 중 화면과 같은 꼴). 사이드바 라벨 「(구현중)」 과 화면 탭 이름 곁 「구현중」 표지가
+    말한다. `description` 은 받기만 하고 그리지 않는다(창구 1.1 — 화면 머리에 소개 줄을 두지 않는다,
+    설계 규칙 UI-TXT-01). 넘기던 모듈이 깨지지 않게 서명은 그대로다. 모듈 소개는 `module.json` 의
     `description` 이 모듈 색인에서 맡는다.
     """
-    del description
-    implementing = ctx.maturity in _module_registry.IMPLEMENTING_LEVELS
-    _render_page_header(f"{title} {IMPLEMENTING_SUFFIX}" if implementing else title)
+    del ctx, description
+    _render_page_header(title, show_status=False)
 
 
 def palette() -> Mapping[str, str]:
