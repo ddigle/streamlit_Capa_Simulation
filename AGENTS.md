@@ -1706,7 +1706,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - 설정은 `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다.
 - `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일)를 앱 프로세스가 직접 GET · PUT · HEAD 하는 경계. 콜백 자리에서 `aws` 프로세스를 띄우지 않고 프로필 없이 환경변수 키로 붙고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
-- `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 같은 입력은 같은 바이트다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py`).
+- `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 같은 입력은 같은 바이트다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py` — 되읽기는 표준 라이브러리 시험 도우미 `tests/xlsx_read.py`).
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
 - `src/capa_simulation/io/reference_cache.py` — 세션 활성 리비전의 표·공용 표시순서 경계다(5장 1, XLSB 대체 없음). 활성
   리비전이 없는 읽기는 `NoActiveRevision`(`RuntimeError`)이고, `page_bootstrap.bootstrap_error_message` 가 저장소가 보관본만
@@ -7566,7 +7566,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   되돌린다(`_choose_segment` — `constraint_sim` 은 「제약 영향」, 개조 일정 항목을 더하면 그 항목도). 앱 콘솔 경고를 세는 항목(`entry_sections`)은
   확인용 앱의 stdout · stderr 를 파이프 하나로 받아 `CONSOLE_NEEDLES` 의 글이 든 줄 수만 본다(`ConsoleCounter` — 줄은 세고
   버리며 파일에도 쓰지 않는다. 경고 · 예외 문구에 이름이 실릴 수 있고, 사내 백그라운드가 스크립트를 죽여도 남는 것이 없어야
-  한다). 7장 B 대행이 헤드리스로 못 센 칸은 항목으로 옮기고 사람만 볼 수 있는 칸만 사용자 몫으로 둔다. 길 여럿을 재는 항목은
+  한다). 알림창을 보는 항목(`alert_popup`)은 앞 화면이 남긴 알림창이 걷힐 때까지(가장 긴 머무는 시간 + 3초 — `ALERT_CLEAR_SECONDS`)
+  기다린 뒤 시험 알림을 띄우고, 끝까지 남으면 머리에 「앞 알림 n칸 안 걷힘」 을 붙여 「다름」 으로 낸다 — 넘침은 단계가 낮은 칸부터
+  걷어(2026-11-10 보드 Q-1) 앞 화면의 「조치 필요」 칸이 남으면 시험 「확인 필요」 가 밀려난다. 7장 B 대행이 헤드리스로 못 센 칸은 항목으로 옮기고 사람만 볼 수 있는 칸만 사용자 몫으로 둔다. 길 여럿을 재는 항목은
   길마다 따로 돌려(앞 길이 깨져도 다음 길의 시작 화면을 다시 연다) 한 길이 예외로 멈추면 그 칸만 `멈춤(종류)` 로 적는다. 편집표
   (glide) 칸을 누를 때는 포인터를 칸 위로 옮긴 뒤 누른다 — `page.mouse.click` 은 포인터를 순간 이동해 같은 틈에 누르므로, 탭을 옮기거나
   저장해 다시 그린 편집표의 첫 누름이 칸을 고르지 않고 이어 친 글자가 어디에도 들지 않는다(사람 손 경로 · 터치는 첫 누름에 고른다 —
