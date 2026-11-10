@@ -71,6 +71,11 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts, shared_process
+from capa_simulation.components.app_header import (
+    EQUIPMENT_HEADER_HEAD,
+    equipment_header_suffix,
+    header_lines,
+)
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import (
     HOME_VISIT_LOCK_REASON,
@@ -78,6 +83,7 @@ from capa_simulation.components.equipment_scenario_status import (
     render_equipment_scenario_row,
     render_legacy_trace_warning,
 )
+from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -156,7 +162,11 @@ from capa_simulation.process_detail_state import (
     shortening_band_text,
     take_process_detail_request,
 )
-from capa_simulation.scenario_activation import active_scenario_label
+from capa_simulation.scenario_activation import (
+    active_scenario_label,
+    has_unsaved_scenario_changes,
+    newer_active_revision_no,
+)
 from capa_simulation.services.advance_load import build_advance_load_ratio
 from capa_simulation.services.display_order_scopes import (
     PAGE_CALCULATION,
@@ -1002,22 +1012,32 @@ units_csv_file_name = f"process_capa_detail_units_{months[0]}_{months[-1]}{upeh_
 
 def sheet_heading() -> tuple[tuple[str, str], ...]:
     """시트 엑셀 맨 위 값 줄 — 머리 띠 · 공정 머리 · 사이드바 조건에 보이는 값(글자 그대로, 마크다운
-    막음 없이). 구획 · 펼침 · 단축 목표는 본문 프래그먼트가 덧붙인다."""
-    scenario = active_scenario_label()
+    막음 없이). 시나리오는 머리 띠 위 줄과 같은 함수(`header_lines`), 설비 시나리오는 머리 띠 꼬리와
+    같은 함수로 이 화면이 실제로 본 설비 기준(HOME 칸 방문이면 공식)을 적는다. 조회기간은 사이드바
+    값과 적용(유효 기간 ∩ 조회기간). 구획 · 펼침 · 단축 목표는 본문 프래그먼트가 덧붙인다."""
+    scenario_line, _ = header_lines(
+        active_scenario_label(),
+        official=latest_official_revision(),
+        unsaved=has_unsaved_scenario_changes(),
+        newer_revision_no=newer_active_revision_no(),
+    )
+    chosen = (
+        f"{month_label(context.selected_start_month)}–{month_label(context.selected_end_month)}"
+    )
+    applied = f"{month_label(effective_start)}–{month_label(effective_end)}"
+    equipment_line = (
+        equipment_header_suffix(shown_session.label())
+        if shown_session is not None and shown_session.snapshot is not None
+        else None
+    )
     rows = [
         ("공정", process_label),
+        ("시나리오", scenario_line),
+        ("조회기간", chosen if chosen == applied else f"{chosen} · 적용 {applied}"),
         (
-            "시나리오",
-            f"{scenario.scenario_name} r{scenario.revision_no}"
-            if scenario is not None
-            else "활성 시나리오",
+            "설비 시나리오",
+            equipment_line.removeprefix(f"{EQUIPMENT_HEADER_HEAD} · ") if equipment_line else "—",
         ),
-        (
-            "조회기간",
-            f"{month_label(context.selected_start_month)}–"
-            f"{month_label(context.selected_end_month)}",
-        ),
-        ("설비 시나리오", equipment_here or "—"),
         ("설비 일정", badge_text(dynamic_badge)),
     ]
     if upeh_token and assumption is not None:

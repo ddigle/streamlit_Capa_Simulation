@@ -2269,7 +2269,8 @@ def track_texts(
             pieces.append((marks.start, "● 기여 시작"))
         pieces += [(index + 0.5, "해소") for index in marks.resolved]
     cells: dict[int, list[str]] = {}
-    for x, text in sorted(pieces, key=lambda piece: piece[0]):
+    # 해소 눈금은 칸 아래 가장자리 표지라 같은 칸의 다른 표지 뒤에 적는다.
+    for x, text in sorted(pieces, key=lambda piece: (piece[1] == "해소", piece[0])):
         cells.setdefault(column(x), []).append(text)
     return {
         index: TrackText(text=" · ".join(texts), warning=index in warned)

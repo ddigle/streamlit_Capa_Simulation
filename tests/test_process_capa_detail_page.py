@@ -986,6 +986,8 @@ def test_the_sheet_xlsx_follows_the_screen_state(
     detail = book[DETAIL_SHEET]
     heading = _heading(detail)
     assert heading["공정"] == DYNAMIC_PROCESS
+    # 시나리오 · 설비 시나리오는 머리 띠와 같은 함수의 글이다(위 줄 · 아래 줄 꼬리).
+    assert " · r" in heading["시나리오"] and heading["설비 시나리오"] != "—"
     assert heading["설비 일정"].startswith("설비 일정 참고 · Cut-off 10일")
     assert heading["구획"] == "① 공식 · ② 일정 가용 · ③ 단축 · ④ 비가동"
     assert heading["단축 목표"].startswith("확보 기준(월별)")
