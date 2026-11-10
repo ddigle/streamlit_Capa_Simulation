@@ -156,6 +156,18 @@ def test_the_guide_screens_put_no_introduction_in_the_header() -> None:
     assert "`description` 은 받기만 하고 그리지 않는다" in _section("부록 A")
 
 
+def test_the_guide_says_the_implementing_mark_is_not_a_badge_line() -> None:
+    """창구 1.2 부터 `page_header` 는 성숙도 L0 · L1 의 「구현중」 배지 줄을 본문에 그리지 않는다
+    (2026-11-10 보드 Q-5) — 성숙도 표(3-4) · 부록 A 가 그렇다고 적고, 부록 C 에 그 판 줄이 있다.
+    작은 판으로 보는 까닭(이름 · 서명 그대로, 그리는 것만 줄임)은 9-4 가 적는다(s-api-minor)."""
+    assert "사이드바 · 화면 탭" in _section("3-4.")
+    assert "배지 줄을 세우지 않는다" in _section("3-4.")
+    assert "「구현중」 배지 줄을 그리지 않는다" in _section("부록 A")
+    assert "| v1.2 |" in _section("부록 C")
+    assert "화면에 그리는 것만 줄이는 변경은 작은 판이다" in _section("9-4.")
+    assert "description=" not in _python_block("데모 인사 모듈의 첫 화면")
+
+
 def test_rule_numbers_in_the_guide_are_the_checkers_rules() -> None:
     appendix_rules = set(_RULE_ROW.findall(_section("부록 B")))
     conflict_rules = set(re.findall(r"M\d{2}", _section("4. 부딪치지 않게")))
