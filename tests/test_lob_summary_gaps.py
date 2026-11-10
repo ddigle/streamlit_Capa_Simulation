@@ -8,6 +8,7 @@
 """
 
 import pandas as pd
+import plotly.graph_objects as go
 
 from capa_simulation.components.home_figures import build_lob_summary_figures
 from capa_simulation.components.home_lob_figures import _bottleneck_rate_labels
@@ -68,11 +69,11 @@ def _capacity() -> pd.DataFrame:
     )
 
 
-def _gap_texts(figure: object) -> list[str]:
+def _gap_texts(figure: go.Figure) -> list[str]:
     """증감 주석 문구. 부호로 시작하는 것만 증감이고 나머지는 값·라벨이다."""
     return [
         str(annotation.text)
-        for annotation in figure.layout.annotations  # type: ignore[attr-defined]
+        for annotation in figure.layout.annotations
         if annotation.text and str(annotation.text)[:1] in {"+", "-"}
     ]
 

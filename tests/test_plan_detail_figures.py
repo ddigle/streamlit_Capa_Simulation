@@ -13,6 +13,7 @@
 from typing import Any
 
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 
 from capa_simulation.components.home_dimensions import (
@@ -95,8 +96,8 @@ def _past_comparison() -> pd.DataFrame:
     )
 
 
-def _gap_notes(figure: object) -> list[str]:
-    annotations = figure.layout.annotations  # type: ignore[attr-defined]
+def _gap_notes(figure: go.Figure) -> list[str]:
+    annotations = figure.layout.annotations
     return [annotation.text for annotation in annotations if annotation.text]
 
 

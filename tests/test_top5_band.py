@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -88,15 +89,11 @@ def _frames() -> dict[str, pd.DataFrame]:
     }
 
 
-def _top5_trace(figure: object) -> object:
-    return next(
-        trace
-        for trace in figure.data  # type: ignore[attr-defined]
-        if getattr(trace, "name", "") == "B/N Capa Top 5"
-    )
+def _top5_trace(figure: go.Figure) -> go.Bar:
+    return next(trace for trace in figure.data if getattr(trace, "name", "") == "B/N Capa Top 5")
 
 
-def _build(band: tuple[float, float]) -> object:
+def _build(band: tuple[float, float]) -> go.Figure:
     frames = _frames()
     _, month_figure = build_lob_summary_figures(
         lob_summary=frames["lob_summary"],
@@ -119,14 +116,14 @@ def test_bar_heights_are_cut_at_the_band() -> None:
     trace = _top5_trace(_build((0.5, 2.0)))
 
     # 30% → 50% 로 올리고, 100% 는 그대로, 2860% → 200% 로 자른다.
-    assert list(trace.y) == pytest.approx([0.5, 1.0, 2.0])  # type: ignore[attr-defined]
+    assert list(trace.y) == pytest.approx([0.5, 1.0, 2.0])
 
 
 def test_a_wider_band_lets_the_tall_bar_grow() -> None:
     """구간을 넓히면 잘리던 막대가 그만큼 자란다."""
     trace = _top5_trace(_build((0.5, 5.0)))
 
-    assert list(trace.y) == pytest.approx([0.5, 1.0, 5.0])  # type: ignore[attr-defined]
+    assert list(trace.y) == pytest.approx([0.5, 1.0, 5.0])
 
 
 def _two_month_frames() -> dict[str, pd.DataFrame]:
@@ -190,7 +187,7 @@ def test_equal_rates_draw_equal_bars_even_when_loads_differ() -> None:
         top5_rate_band=(0.5, 2.0),
     )
 
-    heights = list(_top5_trace(month_figure).y)  # type: ignore[attr-defined]
+    heights = list(_top5_trace(month_figure).y)
     assert heights[0] == pytest.approx(heights[1])
     assert heights == pytest.approx([1.8, 1.8])
 
@@ -198,9 +195,9 @@ def test_equal_rates_draw_equal_bars_even_when_loads_differ() -> None:
 def test_the_axis_top_is_the_band_ceiling_not_the_data_peak() -> None:
     """축 위끝이 데이터 최대면 다시 그릴 때마다 같은 확보율이 다른 높이에 선다."""
     tall = _top5_trace(_build((0.5, 2.0)))
-    assert max(tall.y) == pytest.approx(2.0)  # type: ignore[attr-defined]
+    assert max(tall.y) == pytest.approx(2.0)
 
-    axis_range = _build((0.5, 2.0)).layout.yaxis2.range  # type: ignore[attr-defined]
+    axis_range = _build((0.5, 2.0)).layout.yaxis2.range
     # 라벨 자리만큼 위가 비므로 상한보다 크되, 상한에 묶여 있어야 한다.
     assert axis_range[0] == pytest.approx(0.0)
     assert 2.0 < axis_range[1] < 2.0 / (1 - 0.5)
@@ -210,10 +207,10 @@ def test_hover_keeps_the_real_capa_not_the_cut_bar() -> None:
     """자르는 것은 막대 길이뿐이다. hover 숫자는 실제 Capa 여야 한다."""
     trace = _top5_trace(_build((0.5, 2.0)))
 
-    template = trace.hovertemplate  # type: ignore[attr-defined]
+    template = trace.hovertemplate
     assert "customdata[4]" in template, template
     assert "%{y" not in template, "잘린 막대 값이 hover 에 뜬다"
-    assert list(trace.customdata[2])[4] == pytest.approx(286.0)  # type: ignore[attr-defined]
+    assert list(trace.customdata[2])[4] == pytest.approx(286.0)
 
 
 def test_the_home_guide_explains_the_bar_as_the_rate_itself() -> None:
