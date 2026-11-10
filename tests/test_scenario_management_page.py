@@ -10,7 +10,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 import pytest
-from alert_marks import flashed, infos, place_errors, successes
+from alert_marks import alert_notes, flashed, infos, place_errors, successes
 from fragment_browser import FragmentBrowser, install_fragment_browser
 from scenario_list_fake import (
     Calls,
@@ -386,6 +386,48 @@ def test_clone_names_every_missing_required_field_at_once(tmp_path: Path) -> Non
         "필수 칸이 비어 있습니다: 원천 시뮬레이션 코드, 원천 시뮬레이션명"
     ]
     assert _clone_inputs(app)["시나리오명"] == "이름만 적은 복제"
+
+
+@pytest.mark.parametrize(("window", "trailing"), [(3600.0, True), (0.0, False)])
+def test_a_slow_second_press_on_the_cleared_clone_form_keeps_the_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, window: float, trailing: bool
+) -> None:
+    """「신규 시나리오 저장」 을 느리게 두 번 누르면 둘째 누름이 저장 뒤 새로 선 빈 폼에 닿는다 —
+    한 건만 저장됐는데 방금 성공 자리에 「필수 칸이 비어 있습니다」 가 섰다(위젯 세대 한 길 후속 ③,
+    VOC 의 `just_written` 꼴). 쓰기 직후(`TRAILING_PRESS_SECONDS`)의 손대지 않은 빈 폼 제출은 그
+    꼬리로 보고 거절을 세우지 않는다 — 첫 저장의 성공 표지는 맨 위 칸이 같은 id 로 다시 보낸다.
+    창이 지난 빈 제출과 저장한 적 없는 빈 제출은 그대로 거절한다. AppTest 회차 사이 시간이
+    들쭉날쭉해 창은 시험이 정한다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    database_path = tmp_path / "scenario.duckdb"
+    script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
+    app = AppTest.from_string(script, default_timeout=120).run()
+    app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
+    missing = "필수 칸이 비어 있습니다: 시나리오명, 원천 시뮬레이션 코드, 원천 시뮬레이션명"
+    save = "신규 시나리오 저장"
+
+    # 아직 쓴 적이 없는 빈 제출은 창과 관계없이 거절한다.
+    next(button for button in app.button if button.label == save).click().run()
+    assert [item.value for item in app.error] == [missing]
+
+    _fill_clone(app, "복제 A", "CLONE-A")
+    assert any("복제 A를 저장했습니다" in item.value for item in successes(app))
+    next(button for button in app.button if button.label == save).click().run()
+
+    assert not app.exception
+    names = [
+        scenario.scenario_name
+        for scenario in DuckDBScenarioRepository(database_path).list_scenarios(
+            include_archived=True
+        )
+    ]
+    assert names.count("복제 A") == 1
+    if trailing:
+        assert not place_errors(app), place_errors(app)
+        resent = [note for note in alert_notes(app, again=True) if note.get("flash") == "success"]
+        assert any("복제 A를 저장했습니다" in str(note.get("full")) for note in resent), resent
+    else:
+        assert [item.value for item in app.error] == [missing]
 
 
 def test_clone_keeps_the_session_virtual_products(tmp_path: Path) -> None:
