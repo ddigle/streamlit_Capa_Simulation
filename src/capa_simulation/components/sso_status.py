@@ -110,7 +110,7 @@ ACCESS_PROBLEM_LABELS: dict[str, str] = {
     s3_small.KIND_TOO_LARGE: "파일이 너무 큼",
     s3_small.KIND_OTHER: "그 밖의 응답",
     access_store.KIND_CORRUPT: "파일 깨짐",
-    access_store.KIND_UNKNOWN_FORMAT: "모르는 파일 판",
+    access_store.KIND_UNKNOWN_FORMAT: "모르는 파일 형식",
     access_store.KIND_CONFIG: "설정 값 빠짐 · 틀림",
     access_store.KIND_FILE_GONE: "파일 없음",
 }
