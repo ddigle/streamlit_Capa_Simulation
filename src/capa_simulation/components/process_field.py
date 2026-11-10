@@ -294,8 +294,8 @@ def render_process_choice(
 def render_stopped_process_field() -> None:
     """공통 진입(계산)이 멈춘 회차의 값 칸 — 선택지는 계산 뒤에야 나온다. 잠긴 채 정상 회차와 같은
     페이지 칸(`page_condition_slot(0)`)에 서서 공정 줄이 빠지지 않게 한다(HOME 공정 필터 줄과 같은
-    꼴 — 검수 보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이에 선다. 공정 Capa 상세는 멈춘
-    회차에 그 앞 「설비 시나리오」 줄이 서지 않아 공정 줄과 아래 카드가 한 줄만큼 위에 선다. 까닭은
+    꼴 — 검수 보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이에 선다. 공정 Capa 상세도 그 앞
+    「설비 시나리오」 줄이 정상 회차처럼 서서 같은 높이다(2026-11-10 답 Q2-29). 까닭은
     Alarm 의 오류가 말한다.
 
     선택지 기록(`_remember` · `shared_process.note_drawn`)과 표지는 남기지 않는다 — 머리 칩 · 화면

@@ -34,6 +34,7 @@ from xlsx_read import read_workbook
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENARIO_FIELD_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import load_guide
 from capa_simulation.components.process_capa_canvas import (
@@ -640,6 +641,38 @@ def test_a_stopped_visit_consumes_the_transfer_slot(databases: tuple[Path, Path]
     # HOME 과 같은 꼴).
     field = app.button(key=PROCESS_FIELD_KEY)
     assert (field.label, field.disabled) == ("계산 멈춤", True)
+
+
+def _equipment_field(app: AppTest) -> Any:
+    """사이드바 「설비 시나리오」 값 칸(단독 실행이라 칸 등록이 없어 사이드바에 바로 선다)."""
+    found = [button for button in app.sidebar.button if button.key == EQUIPMENT_SCENARIO_FIELD_KEY]
+    return found[0] if found else None
+
+
+def test_a_stopped_visit_keeps_the_equipment_scenario_row_unlocked(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """계산이 멈춘 회차에도 「설비 시나리오」 줄이 정상 회차처럼 잠그지 않은 채 선다(2026-11-10 답
+    Q2-29) — 다른 설비 시나리오로 옮기는 길이고, 빠지면 아래 공정 줄 · 카드가 한 줄 올라온다. HOME
+    칸 방문이어도 공식 고정(「(고정)」)은 걸지 않는다(공정 · 달을 정하기 전이다)."""
+    normal = _dynamic_app(dynamic_databases)
+    expected = _equipment_field(normal)
+    assert expected is not None and not expected.disabled
+
+    app = _app(dynamic_databases, fail_bootstrap=True)
+    app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
+        process=DYNAMIC_PROCESS, month=202603, section=HOME_BOTTLENECK_SECTION, displayed_rate=1.0
+    )
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    field = _equipment_field(app)
+    assert field is not None
+    assert (field.label, field.disabled) == (expected.label, False)
+    assert app.button(key=PROCESS_FIELD_KEY).disabled
+    # 줄 차례도 정상 회차와 같다 — 설비 시나리오 줄이 공정 줄보다 앞이다.
+    keys = [str(button.key) for button in app.sidebar.button]
+    assert keys.index(EQUIPMENT_SCENARIO_FIELD_KEY) < keys.index(PROCESS_FIELD_KEY)
 
 
 def test_a_month_outside_the_page_axis_opens_the_default_month_with_a_notice(
