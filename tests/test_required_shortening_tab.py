@@ -199,11 +199,11 @@ def _value_row(app: AppTest) -> list[str]:
 
 
 def _basis_path(app: AppTest) -> tuple[int, ...]:
-    """기준 값 작은 글(`_render_basis`) 캡션의 자리. 글은 캡션 마크다운 안 표지 칸이고, 같은
-    마크다운이 그 칸을 줄 오른쪽 끝으로 미는 서식을 싣는다 — 좁은 자리에서 두 줄로 접히지 않고
-    통째로 다음 줄 오른쪽 끝으로 내려간다(이 본문은 프래그먼트라 스타일만 든 `st.html` 을 두지
-    않는다)."""
-    from capa_simulation.components.required_shortening_panel import BASIS_CLASS, BASIS_STYLE
+    """기준 값 작은 글(`_render_basis` — 값 글 `profile_caption.render_row_value` 의 `"push"`)
+    캡션의 자리. 글은 캡션 마크다운 안 표지 칸이고, 같은 마크다운이 그 칸을 줄 오른쪽 끝으로 미는
+    서식을 싣는다 — 좁은 자리에서 두 줄로 접히지 않고 통째로 다음 줄 오른쪽 끝으로 내려간다(이
+    본문은 프래그먼트라 스타일만 든 `st.html` 을 두지 않는다)."""
+    from capa_simulation.components.profile_caption import VALUE_END_CLASS, VALUE_END_STYLE
 
     (found,) = [
         (caption, path)
@@ -211,8 +211,8 @@ def _basis_path(app: AppTest) -> tuple[int, ...]:
         if VALUE_LINE_TEXT in caption
     ]
     caption, path = found
-    assert caption.startswith(f'<span class="{BASIS_CLASS}">{VALUE_LINE_TEXT} ')
-    assert caption.endswith(BASIS_STYLE) and "margin-left:auto" in BASIS_STYLE
+    assert caption.startswith(f'<span class="{VALUE_END_CLASS}">{VALUE_LINE_TEXT} ')
+    assert caption.endswith(VALUE_END_STYLE) and "margin-left:auto" in VALUE_END_STYLE
     return path
 
 

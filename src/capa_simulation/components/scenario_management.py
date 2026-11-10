@@ -46,6 +46,7 @@ from capa_simulation.components.flash import (
 from capa_simulation.components.grid_shared import outbox_mount, outbox_value
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.profile_caption import render_row_value
 from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.save_section import discard_popover
@@ -399,9 +400,7 @@ def render_scenario_management(
         # 복제할 때 무엇을 복제하는지는 이 줄 오른쪽 끝 작은 값 글이다 — 폼 위에 따로 줄을 세우지
         # 않는다(2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 · UI-LAY-11). 다른 작업에서는 칸이
         # 비어 그려지지 않는다.
-        with st.container(horizontal=True, horizontal_alignment="right"):
-            if mode == CLONE_MODE:
-                st.caption(clone_target_caption(), width="content")
+        render_row_value(clone_target_caption() if mode == CLONE_MODE else None, place="right")
     # 새 리비전 저장은 사이드바 시나리오 팝업 한 곳이다(2026-10-22 사용자 결정 S8). 그리로 가는 길
     # 안내 글은 늘 띄워 두지 않는다(설계 규칙 UI-TXT-03 · AMB-06 (나)).
     # 월 머지·연도 Shift 가 메모한 원본(리비전 하나 크기의 살아 있는 표)은 그 모드에서만 둔다.

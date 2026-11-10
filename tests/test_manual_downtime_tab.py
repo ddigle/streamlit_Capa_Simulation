@@ -9,7 +9,7 @@
 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key`) — 남이 저장한 뒤의 회차·거부 뒤
 회차는 새 key 로 최신을 그린다(보내지 않은 편집이 남의 칸을 가린 채 본 version 만 오르던 결함 —
 2026-10-27 리뷰). 남의 저장에 거부된 누름의 둘째 누름 회차도 최신 key 로 그려 그 뒤 친 칸이 다음
-누름에 닿는다. 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 성공으로 다시 알린다.
+누름에 닿는다. 같은 입력의 꼬리 누름은 「바뀐 것이 없습니다」 가 아니라 성공으로 다시 알린다.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from capa_simulation.components.manual_downtime_tab import (
     MANUAL_NOTE_KEY,
     MANUAL_SAVE_BUTTON,
     MANUAL_SAVED_BY_KEY,
+    MANUAL_UNCHANGED_MESSAGE,
     edited_cells,
     manual_editor_frame,
     manual_editor_key,
@@ -213,7 +214,7 @@ def test_a_refused_or_unchanged_save_keeps_the_typed_note(
     row_a = _editor_values(first)["공정"].index("WM")
 
     second = _save(second, note="그대로")
-    assert any("바뀐 칸이 없어" in item.value for item in infos(second))
+    assert any(item.value == MANUAL_UNCHANGED_MESSAGE for item in infos(second))
     assert _memo(second).value == "그대로"
 
     _edit(first, {(row_a, "202607"): 1.0})
@@ -319,8 +320,8 @@ def test_a_value_typed_after_a_held_second_press_reaches_the_next_press(
 
     둘째 누름이 거부 뒤 회차를 본 version 을 적기 전에 끊으면 본 값이 옛 version 이다. 그 회차가 옛
     key 로 표를 그리면 거부된 제 값이 남의 값 자리에 보이고, 본 version 은 최신으로 적혀 다음 누름의
-    표가 다른 위젯이 되므로 그 사이 친 값이 버려져 「바뀐 칸이 없어」 가 섰다(2026-11-02 사본 앱 두
-    세션 — 0.15초 더블클릭). 끊긴 회차는 본 version 을 옛 값으로 되살려 흉내 낸다.
+    표가 다른 위젯이 되므로 그 사이 친 값이 버려져 「바뀐 것이 없습니다」 가 섰다(2026-11-02 사본 앱
+    두 세션 — 0.15초 더블클릭). 끊긴 회차는 본 version 을 옛 값으로 되살려 흉내 낸다.
     """
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     path = tmp_path / "equipment.duckdb"
@@ -348,7 +349,7 @@ def test_a_value_typed_after_a_held_second_press_reaches_the_next_press(
     _edit(second, {(1 - row_a, "202608"): 0.5}, version=_drawn_version(second))
     second = _save(second)
 
-    assert not any("바뀐 칸이 없어" in item.value for item in second.info)
+    assert not any(item.value == MANUAL_UNCHANGED_MESSAGE for item in second.info)
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (stored.rows, stored.version) == (((B, 202608, 0.5), (A, 202607, 1.0)), 2)
 
@@ -383,7 +384,7 @@ def test_the_second_press_of_a_refused_press_redraws_the_latest_so_the_next_pres
 ) -> None:
     """남의 저장에 거부된 누름의 둘째 누름(held)이 거부 뒤 회차를 끊었을 때 — 그 회차는 본
     version 을 최신으로 적으므로 칸도 최신 key 로 그린다. 옛 key(본 값 v0)로 그리면 거부된 옛 편집이
-    선 채 남고, 그 위에 친 칸은 다음 누름의 최신 key 위젯에 닿지 않아 「바뀐 칸이 없어」 로
+    선 채 남고, 그 위에 친 칸은 다음 누름의 최신 key 위젯에 닿지 않아 「바뀐 것이 없습니다」 로
     버려졌다(2026-11-02 E2E — 둘째 누름 간격 0.13 ~ 0.23초)."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     path = tmp_path / "equipment.duckdb"
@@ -414,7 +415,7 @@ def test_the_second_press_of_a_refused_press_redraws_the_latest_so_the_next_pres
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     _edit(app, {(row_a, "202608"): 1.25}, version=_drawn_version(app))
     app = _save(app)
-    assert not any("바뀐 칸이 없어" in item.value for item in infos(app))
+    assert not any(item.value == MANUAL_UNCHANGED_MESSAGE for item in infos(app))
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (stored.rows, stored.version) == (((B, 202608, 0.5), (A, 202608, 1.25)), 2)
 
@@ -422,8 +423,9 @@ def test_the_second_press_of_a_refused_press_redraws_the_latest_so_the_next_pres
 def test_a_trailing_press_of_the_same_input_repeats_the_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """저장 뒤 새로 그린 표에서 온 같은 입력의 둘째 누름은 「바뀐 칸이 없어」 가 아니라 성공을 다시
-    알린다(2026-10-27 리뷰 dblclick). 창이 지난 같은 입력은 전처럼 「바뀐 칸이 없어」 다."""
+    """저장 뒤 새로 그린 표에서 온 같은 입력의 둘째 누름은 「바뀐 것이 없습니다」 가 아니라 성공을
+    다시 알린다(2026-10-27 리뷰 dblclick). 창이 지난 같은 입력은 전처럼 「바뀐 것이
+    없습니다」 다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 60.0)
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
@@ -435,19 +437,19 @@ def test_a_trailing_press_of_the_same_input_repeats_the_success(
     app = _save(app)
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
     assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
-    assert not any("바뀐 칸이 없어" in item.value for item in infos(app))
+    assert not any(item.value == MANUAL_UNCHANGED_MESSAGE for item in infos(app))
 
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
     app = _save(app)
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
-    assert any("바뀐 칸이 없어" in item.value for item in infos(app))
+    assert any(item.value == MANUAL_UNCHANGED_MESSAGE for item in infos(app))
 
 
 def test_an_unchanged_save_writes_nothing(tmp_path: Path) -> None:
     path = tmp_path / "equipment.duckdb"
     app = _save(_app(path))
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 0
-    assert any("바뀐 칸이 없어" in item.value for item in infos(app))
+    assert any(item.value == MANUAL_UNCHANGED_MESSAGE for item in infos(app))
 
 
 def test_a_locked_tab_shows_the_reason_and_cannot_save(tmp_path: Path) -> None:

@@ -55,6 +55,7 @@ from capa_simulation.components.auto_official_update_tab import (
     RUN_RECEIVED_WIDTH_PX,
     RUN_WARNING_WIDTH_PX,
     RUNNING_MESSAGE,
+    SETTINGS_UNCHANGED_MESSAGE,
     UNCOUNTED_DEMAND_MARK,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -508,6 +509,31 @@ def test_saving_the_settings_records_what_changed(database: Path) -> None:
     assert "**다음 실행**" not in _markdown(app)
 
 
+def test_an_unchanged_save_says_nothing_changed_and_keeps_the_version(
+    database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """바꾼 것 없이 「설정 저장」 을 누르면 새 버전 · 기록 줄을 만들지 않고 다른 공용 프로필 저장과
+    같은 꼴 「바뀐 것이 없습니다 — …」 를 알린다(설계 규칙 UI-STA-01). 저장본이 없는 v0 도, 한 번
+    저장한 뒤도 같다."""
+    monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
+    repository = _with_w40(database)
+    app = _submit_settings(_tab(database))
+
+    assert not app.exception and not place_errors(app)
+    assert [str(item.value) for item in infos(app)] == [SETTINGS_UNCHANGED_MESSAGE]
+    assert SETTINGS_UNCHANGED_MESSAGE.startswith("바뀐 것이 없습니다 — ")
+    assert repository.load_auto_official_update_settings().version == 0
+
+    _field(app.text_input, "시뮬레이션명 키워드").set_value("PSS")  # type: ignore[attr-defined]
+    app = _submit_settings(app)
+    assert repository.load_auto_official_update_settings().version == 1
+    app = _submit_settings(app)
+
+    assert [str(item.value) for item in infos(app)] == [SETTINGS_UNCHANGED_MESSAGE]
+    assert repository.load_auto_official_update_settings().version == 1
+    assert len(repository.list_auto_official_update_setting_changes()) == 1
+
+
 def test_turning_on_without_an_official_week_is_refused(database: Path) -> None:
     repository = _without_week(database)
     app = _tab(database)
@@ -568,7 +594,7 @@ def test_a_double_press_after_a_change_saved_elsewhere_keeps_the_refusal(
         errors = [str(element.value) for element in app.error]
         assert len(errors) == 1 and "다른 사용자가 먼저" in errors[0], errors
         assert not successes(app)
-        assert "바뀐 값이 없습니다." not in [str(element.value) for element in infos(app)]
+        assert SETTINGS_UNCHANGED_MESSAGE not in [str(element.value) for element in infos(app)]
         assert (stored.version, stored.config.keyword) == (1, "PSM")
     else:
         assert not place_errors(app), [str(element.value) for element in app.error]
@@ -852,7 +878,7 @@ def test_the_tab_frames_have_the_documented_columns() -> None:
         "그 달",
         "리비전 2 저장",
     ]
-    assert list(setting_history_frame([]).columns) == ["시각", "바꾼 사람", "바꾼 내용", "판"]
+    assert list(setting_history_frame([]).columns) == ["시각", "바꾼 사람", "바꾼 내용", "버전"]
 
 
 def test_only_a_published_round_with_the_trailing_warning_gets_the_mark() -> None:

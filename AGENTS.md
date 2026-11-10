@@ -580,8 +580,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
     반영은 자리에 표지를 세우지 않고 상태 알림 `RS-03` ~ `RS-05`(`_report_status_alerts`)만이다 — 짧은 글이 건수, 전문이 뜻 ·
     내역이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07). 본문 맨 위는 KPI 이고 기준 값
-    「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`_render_basis` — 2026-11-09
-    사용자 보드 T2). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽 끝이고, 자리가 모자라면 글이 통째로 다음
+    「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`_render_basis` — 값 글
+    `profile_caption.render_row_value` 의 `"push"`, 2026-11-09 사용자 보드 T2). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽 끝이고, 자리가 모자라면 글이 통째로 다음
     줄 오른쪽 끝으로 내려간다(서식은 그 캡션 마크다운 안 — 프래그먼트 이벤트 칸을 쓰지 않는다).
   - KPI 아래·카드 위에 공정 진척 보드·기한 임박·이행 지연(`components/shortening_board.py` — 처음 접힌 기억 상자, 편 상태는
     기억한다, 그림 메모 g03 ④)이 서고 카드마다 「공정 Capa
@@ -3420,7 +3420,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
 - `src/capa_simulation/components/profile_caption.py` — 공용 프로필 버전 캡션 한 줄을 저장 화면 여덟에 한 규칙으로
-  만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
+  만들고, 제목 · 단추 줄의 값 글 한 칸(`render_row_value` · `render_heading_value`)을 그린다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
   「변경 메모」일 수 있어 `literal_markdown` 으로 막아 잇는다 — 돌려준 글은 이미 막은 글이다(`ESCAPED_BUILDERS`).
   빈 출처(저장자·메모를 모두 비운 저장 — 가용설비 현황 Preference 등)는 그 자리를 건너뛴다(구분자가 `· ·` 로 겹치지 않게).
   맨 뒤 꼬리는 두지 않는다(공지의 「공지 중 · 내림」 을 걷었다 — 바로 아래 글 칸과 같은 말, 2026-11-09 사용자 검수 g18).
@@ -3429,6 +3429,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   바꾸며 이벤트 칸은 쓰지 않는다. `style=` 은 그 구획의 다른 칸에 거는 앱 서식 규칙을 같은 캡션에 싣는다 — 팝업 본문이
   스타일만 든 `st.html`(이벤트 칸)을 쓰지 않고 서식을 걸 길이다(HOME 설정 저장 줄의 표 도구 막대 자리, 9장 「표 도구 막대」).
   쓰는 자리: HOME 설정 상자마다 · 자동 갱신 설정 · 입력 비가동 · 표시순서 · Proc Rename.
+  **값 글**(2026-11-09 사용자 보드 T2 — 본문 위에 혼자 서던 값 한 줄을 바로 위 제목 · 단추 줄의 작은 글로)은 화면이 줄만
+  세우고 `render_row_value(value, place=…)` 로 그린다 — 가용설비 · 시나리오 복제 · 필요 단축 일정 · Proc Rename 이 따로 짓던 칸을
+  한 벌로 모았다(설계 규칙 UI-CON-04). 자리 셋: `"after"`(앞 칸 바로 뒤 — 공용 버전 줄 · Proc Rename 보유 공정 밖 표지),
+  `"right"`(줄의 남은 폭을 차지하는 오른쪽 맞춤 칸 안 — 가용설비 결과 제목 줄 · 「시나리오 작업」 줄, 값이 없는 회차에도 칸은
+  서고 글만 빠진다, 좁으면 그 칸 안에서 글이 줄을 바꾼다), `"push"`(표지 칸 `VALUE_END_CLASS` + 미는 서식 `VALUE_END_STYLE`
+  을 한 캡션에 — 한 덩이로 줄 오른쪽 끝, 좁으면 통째로 다음 줄 오른쪽 끝, 필요 단축 일정 기준 값). 글은 마크다운 자리 글이고(사람
+  글은 부르는 쪽이 `literal_markdown`), 서식(`style=` · `"push"`)이 실릴 때만 HTML 캡션이라 맨 `<` 를 `&lt;` 로 바꾼다 — 서식이
+  없으면 `:orange-badge[…]` 같은 지시문도 그대로다. 제목 + 오른쪽 끝 값 글 한 줄은 `render_heading_value`(줄 칸 key ·
+  밑줄 맞춤이 `render_profile_heading` 과 같다).
 - `src/capa_simulation/components/dialog_host.py` — 본문 · 사이드바 단추로 여는 화면 팝업의 키 붙은 호스트 프래그먼트
   (`DialogHost`, 2026-11-08 답 U5 — 여덟 팝업). 열기 · 닫기는 호스트만 돌고, 원본을 바꾸면 `finish`(앱 전체), 판정을 못 넘거나 같은
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
@@ -3733,7 +3742,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   발행한다 — 설비 시나리오 탭은 `_refused_noted`·`_repeat_held_refusal`, 2026-10-27 E2E). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
   글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·Capa 시나리오 목록 「변경 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
-  설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
+  설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 것이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
   쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장). 본문이 받는 컴포넌트 제출(Space 층·FAB 배치
   편집기 「적용」)은 받아들인 입력 지문을 적고(`note_submission`), 브라우저가 새 epoch 를 받기 전에 같은 단추를 한 번 더 눌러
   옛 epoch 로 온 **같은 입력**은 창 안이면 「반영하지 않았습니다」 경고 없이 넘긴다(`just_submitted` — 첫 적용의 성공 알림은
@@ -3749,7 +3758,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
   재고 · 사용자 보드 T6) 세 칸의 뜻은 줄 끝 빈 캡션 풍선 하나(`MAIN_ROW_HELP` — `표현` 이 있는 보기는 프래그먼트가 `표현` 뒤에
   쓴다)다. 가용대수의 마지막 주 대수 요약 · 호기 현황의 센 호기 수는 따로 줄을 세우지 않고 결과 제목 줄 오른쪽 끝 값
-  글이다(`_heading_with_value` — 밑줄 맞춤은 공용 버전 줄과 같은 `profile_caption.HEADING_BASELINE_STYLE`, 사용자 보드 T2).
+  글이다(`profile_caption.render_heading_value` — 밑줄 맞춤은 공용 버전 줄과 같다, 사용자 보드 T2).
   숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
   일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 호기 현황의 상태 분포 · 호기 목록만 — 호기 이름을 보이는
   자리, Summary 첫 진입에 일정 미정 · 사용기준 밖과 함께 떠 알림창을 채우지 않게 — 그 밖의 보기는 같은 자리에서 `alerts.flush()`
@@ -4102,7 +4111,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이다 — 그 회차가 본 version 을 그 저장본으로 적는다. 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인
     `equipment_preference` 가 그 칸으로 찾는다.
   - 저장은 `write_guard.save_once`(출발점 = 보이는 공정·달 + 0 아닌 칸 지문 `manual_downtime_digest`)로 하고 제 저장 짝을 그
-    잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 첫 결과로 성공을 다시 알린다.
+    잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 것이 없습니다」 가 아니라 첫 결과로 성공을 다시 알린다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「가용설비 설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
   편집표·저장·CSV 왕복과 빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다(Static 대비 일정은 그 값을 받지 않고 캐시
   경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문). 보기 설정은 제출 줄(「Cut-off 저장」 ·
@@ -6579,7 +6588,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **페이지 상단은 비운다**(2026-11-09 사용자 규칙 — 설계 규칙 UI-LAY-13). 화면 탭 줄 바로 아래에 그 화면의 핵심 내용이 선다 —
   본문 위에 칩 · 안내 줄 · 값 줄 · 혼자 한 줄 단추 · 위젯 라벨 줄 · 빈 칸 틈을 두지 않는다. 늘 보여야 하는 상태 표지는 머리 띠
   칩(`alert_center` — 변경 칩 · 공정 칩 · 합성 샘플 표지)이나 화면 탭 표지(`page_tabs` · `tab_marks`)로, 값 한 줄은 바로 위 제목 ·
-  단추 줄 오른쪽 끝 작은 글로(공용 버전 줄과 같은 밑줄 맞춤 `profile_caption.HEADING_BASELINE_STYLE`), 혼자 한 줄 단추는 옆 작업 줄 ·
+  단추 줄 오른쪽 끝 작은 글로(값 글 한 벌 `profile_caption.render_row_value` — 제목 줄이면 공용 버전 줄과 같은 밑줄 맞춤), 혼자 한 줄 단추는 옆 작업 줄 ·
   제목 줄 오른쪽 끝(줄지 않는 한 덩이 — 좁으면 통째로 다음 줄)으로 옮긴다. 늘 서 있는 알림 · 자리 칸이 빈 회차는 간격을 먹지
   않는다(`app_header.EMPTY_SLOT_SELECTOR` — 일부러 높이를 준 빈 칸은 key 꼬리 `_spacer`). 예외는 HOME 「공지」 접힘(T1 (나)) ·
   탭 줄 아래 14px · 안쪽 탭(T9 (가)).
@@ -7044,7 +7053,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     출발한 version** 을 넣는다 — 제출 회차는 본 값, 그 밖은 그 회차가 그린 저장본 version(`manual_downtime_tab.manual_editor_key`).
     거부된 누름의 둘째 누름(held) 회차는 제출 회차여도 그린 저장본 version 이다 — 그 회차가 본 값을 최신으로 적으므로, 본 값(옛
     version — 둘째 누름이 거부 뒤 회차를 적기 전에 끊었다)으로 그리면 옛 편집이 다시 서고 그 위에 친 칸이 다음 누름의 최신 key
-    위젯에 닿지 않아 「바뀐 칸이 없어」 로 버려졌다(2026-11-02 E2E — 둘째 누름 0.13 ~ 0.23초).
+    위젯에 닿지 않아 「바뀐 것이 없습니다」 로 버려졌다(2026-11-02 E2E — 둘째 누름 0.13 ~ 0.23초).
     남이 저장하면 보내지 않은 편집은 버려지고 최신이 서며(화면 안내·Guide 에 적는다), 제출 회차에 옛 key 의 편집이 오면 저장소가
     거부한다. AppTest 는 회차 사이 편집표의 브라우저 편집을 잇지 않아 이 결함을 못 재현한다 — 시험은 key 가 version 을 따라가는지와
     거부 뒤 최신이 서는지를 보고, 행동은 브라우저로 잰다. 같은 꼴(키 고정 편집표 + 폼 + `remember_seen`)인 HOME 판정 기준 월별
@@ -7111,7 +7120,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     전처럼 알리지 않는다(`tests/test_voc_page.py`·`tests/test_key_process_preset_messages.py`·
     `tests/test_flash_messages.py` 의 끊긴 회차 시험). 자동 갱신 설정 폼도 저장 성공 알림을 `note_notice` 로 적는다 — 새
     화면에 닿은 느린 둘째 누름은 같은 값이라 「바뀐 값 없음」 제출인데, 창 안이면 알림 칸이 다시 그린 그 성공 알림 밑에
-    「바뀐 값이 없습니다」 를 쓰지 않고, 제 저장 갈래도 첫 알림을 다시 낸다(`tests/test_write_guard_cas.py`).
+    「바뀐 것이 없습니다」 를 쓰지 않고, 제 저장 갈래도 첫 알림을 다시 낸다(`tests/test_write_guard_cas.py`).
   - 콜백에서 저장하고 뒷정리로 출발점을 옮기는 **출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치
     저장」·사이드바 팝업 저장, FAB 전체 배치)은 둘째 누름의 회차가 첫 콜백을 DB 쓰기 뒤·`reset_equipment_drafts` 전에 끊으면
     출발점(`buffer_base`)이 그대로라, 둘째 콜백이 옛 출발점으로 다시 저장하다 저장소에 거부되고 「다른 사용자가 먼저 저장해
@@ -7161,7 +7170,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     고정한다. 사이드바 「신규 리비전 저장」 은 저장소가 쓰기 잠금 안에서 견준다(`save_revision(..., skip_unchanged=True)` →
     `RevisionUnchanged`, 5장 8 · 3장 `repository.py`). 설비 시나리오 「이름 바꾸기」·「리비전명 저장」 은 저장소가 이미 같은
     이름이면 쓰지 않았는데 화면이 성공을 띄웠다 — 이제 단추 아래 「바뀐 것이 없습니다」 를 적고 제 저장 짝도 적지 않는다
-    (`save_remembered` 의 `stored` 가 None). 사이드바 저장을 뺀 열한 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
+    (`save_remembered` 의 `stored` 가 None). 자동 갱신 설정(켜기·확인 시각·키워드·기준 확보율이 그대로 —
+    `SETTINGS_UNCHANGED_MESSAGE`)·가용설비 Preference 입력 비가동(저장소가 보이는 칸을 견줘 쓰지 않음 —
+    `MANUAL_UNCHANGED_MESSAGE`)도 같은 글 꼴 「바뀐 것이 없습니다 — …」 다(설계 규칙 UI-STA-01, 2026-11-11 E2E e1-3 —
+    「바뀐 값이 없습니다.」 · 「바뀐 칸이 없어 저장하지 않았습니다.」 로 갈렸다). 사이드바 저장을 뺀 열한 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
     닿은 느린 둘째 누름(같은 값 — 바뀐 것이 없다)이 창 안이면 「바뀐 것이 없습니다」 대신 방금 성공이 남는다(자동 갱신 설정과
     같은 꼴 — 프로필 저장은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 그래서 저장
     직후 창(`TRAILING_PRESS_SECONDS`) 안의 다른 회차에도 성공 알림이 한 번 더 선다. 표시순서의 느린 둘째 누름은 그 저장의
