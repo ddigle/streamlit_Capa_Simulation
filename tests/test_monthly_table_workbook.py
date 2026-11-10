@@ -217,3 +217,11 @@ def test_an_empty_table_still_writes_the_heading_and_header() -> None:
 
 def test_the_same_request_gives_the_same_bytes() -> None:
     assert monthly_table_workbook(_request(2)) == monthly_table_workbook(_request(2))
+
+
+def test_the_sheet_is_light_whatever_the_screen_theme() -> None:
+    """엑셀은 흰 바탕이라 늘 밝은 토큰이다 — 어두운 테마 회차에 지어도 같은 바이트(기억 키에 테마가
+    없어도 된다)."""
+    light = monthly_table_workbook(_request(2))
+    theme._LOCAL.mode = "dark"
+    assert monthly_table_workbook(_request(2)) == light

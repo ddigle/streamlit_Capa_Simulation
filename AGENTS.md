@@ -4402,7 +4402,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   분류 칸 글은 공개 내보내기(`build_hierarchical_monthly_export` — 반복 접두 생략)에 표시명을 입힌 표를 넘겨 얻고, 월 칸은
   화면 글(`,.nf` · `.n%`)이 적는 값의 숫자 셀 + 같은 글로 보이는 숫자 꼴(0 · 빈 값은 빈 칸), 서식은 밝은 테마 토큰(머리 띠 ·
   최상위 묶음 줄무늬 · 묶음 경계선은 바뀐 열부터 · 분기 · 분류와 달 사이 · 바깥은 굵은 선, 판정 칠 없음 — 화면에도 없다),
-  열 너비는 화면 px, 머리 줄 · 분류 열 고정. 칸 서식은 시트마다 한 번 지어 돌려쓴다(2,660행 × 21칸 합성 표 약 0.25초 — 샘플
+  열 너비는 화면 px, 머리 줄 · 분류 열 고정. 칸 서식은 시트마다 한 번 지어 돌려쓴다(2,660행 × 21칸 합성 표 약 0.3초 — 샘플
   관측). Streamlit 을 import 하지 않는다(`tests/test_monthly_table_workbook.py` 가 화면 표의 Figure 인자와 견준다).
 - `src/capa_simulation/components/sheet_download.py` — 「시트 엑셀」 의 화면 쪽 공용 몫: 통을 조건 키로 세션 칸에 몇 벌
   기억하고(`remembered_bytes` — 공정 Capa 상세 `remembered_sheet` · 산출 결과가 같이 쓴다, 화면마다 칸 이름이 따로), 시트 맨
