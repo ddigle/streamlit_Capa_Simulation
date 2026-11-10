@@ -1,4 +1,4 @@
-# Purpose: 표 위 제목·부가 설명 줄, CSV·엑셀 내보내기 단추, 표 도구 막대 앞 띄움·자리를 짓는다.
+# Purpose: 표 위 제목·부가 설명 줄, CSV·엑셀 내보내기 단추 쌍, 표 도구 막대 앞 띄움·자리를 짓는다.
 
 """One heading row and one CSV download button for every table.
 
@@ -12,14 +12,20 @@
 표 제목 · 단위 설명 · 내보내기 버튼을 한 줄에 놓는 구성도 다섯 화면이 같은 코드를
 복제하고 있었다. `table_heading_row` 로 합치고, 그 줄에 위젯을 더 놓아야 하는 화면은
 `with` 블록 안에서 이어 붙인다.
+
+표 곁 CSV 와 「시트 엑셀」(화면 서식째 xlsx) 한 쌍은 `render_download_pair` 하나가 그린다 — 공정
+Capa 상세 표 도구 줄 · 산출 결과 대당 Capa · 소요대수 제목 줄. 두 단추를 곁에 둘지 「내려받기 ▾」
+메뉴 하나로 묶을지(2차 보드 물음)는 이 함수 한 곳에서 바꾼다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 # 내보내는 바이트는 전부 BOM 이 붙은 UTF-8 이다. Excel 이 한글을 깨뜨리지 않게 하려는
 # 것이고, 그렇다면 charset 도 함께 밝혀야 브라우저가 같은 판단을 한다.
@@ -32,6 +38,9 @@ DOWNLOAD_ICON = ":material/download:"
 CSV_DOWNLOAD_LABEL = "CSV 다운로드"
 
 CSV_TEMPLATE_LABEL = "CSV 양식 다운로드"
+
+# 화면 표 하나를 지금 화면 상태 · 서식 그대로 내려받는 xlsx 단추 글(공정 Capa 상세 · 산출 결과).
+SHEET_XLSX_LABEL = "시트 엑셀"
 
 # 표 앞 띄움(px, `st.space`) — 표에 마우스를 올리면 오른쪽 위 도구 막대(열 보기·내려받기·찾기·
 # 전체 화면)가 표 머리 위 37px 까지 솟는다. 표 바로 위 줄에 누를 것(입력·단추·팝오버·토글·날짜
@@ -88,6 +97,50 @@ def render_xlsx_download(*, data: bytes, file_name: str, key: str, label: str) -
     )
 
 
+@dataclass(frozen=True, eq=False)
+class CsvFile:
+    """표 곁 CSV 단추 하나의 재료 — 바이트 · 파일 이름 · 위젯 key · 단추 글."""
+
+    data: bytes
+    file_name: str
+    key: str
+    label: str = CSV_DOWNLOAD_LABEL
+
+
+@dataclass(frozen=True, eq=False)
+class SheetFile:
+    """「시트 엑셀」 단추 하나의 재료. 바이트는 부르는 쪽이 조건 키로 기억해 둔 것이다
+    (`sheet_download.remembered_bytes`)."""
+
+    data: bytes
+    file_name: str
+    key: str
+    label: str = SHEET_XLSX_LABEL
+
+
+def render_download_pair(*, csv: CsvFile | None, sheet: SheetFile | None = None) -> DeltaGenerator:
+    """표 곁 내려받기 한 쌍 — CSV 단추와 그 곁 「시트 엑셀」 단추를 이 차례로 부르는 쪽 줄에 둔다.
+
+    엑셀은 늘 내용 폭 칸 하나 안에 선다. 시트 바이트를 아직 짓지 못한 회차(공정 Capa 상세 — 제품 행
+    표를 받은 뒤에야 짓는다)는 `sheet=None` 으로 부르고, 돌려받은 그 칸에 나중에
+    `render_sheet_download` 를 부른다. CSV 가 없는 표(`csv=None`)는 엑셀 칸만 선다.
+    """
+    if csv is not None:
+        render_csv_download(data=csv.data, file_name=csv.file_name, key=csv.key, label=csv.label)
+    slot = st.container(width="content")
+    if sheet is not None:
+        render_sheet_download(slot, sheet)
+    return slot
+
+
+def render_sheet_download(slot: DeltaGenerator, sheet: SheetFile) -> None:
+    """`render_download_pair` 가 돌려준 칸에 「시트 엑셀」 단추를 채운다."""
+    with slot:
+        render_xlsx_download(
+            data=sheet.data, file_name=sheet.file_name, key=sheet.key, label=sheet.label
+        )
+
+
 def toolbar_clearance() -> None:
     """표 바로 앞에 도구 막대 띄움(`TABLE_TOOLBAR_CLEARANCE`)을 둔다.
 
@@ -115,18 +168,23 @@ def table_heading_row(
     csv: bytes,
     file_name: str,
     key: str,
+    sheet: SheetFile | None = None,
 ) -> Iterator[None]:
     """표 제목 · 부가 설명 · CSV 내보내기를 한 줄로 그리고 그 줄을 열어 둔다.
 
     `with` 블록 안에서 같은 줄에 위젯을 더 놓을 수 있다. 표시 기준을 바꾸는 토글처럼
     표와 붙어 있어야 뜻이 통하는 컨트롤이 그렇다. 더 놓을 것이 없으면
-    `render_table_heading` 을 쓴다.
+    `render_table_heading` 을 쓴다. `sheet` 를 주면 CSV 곁에 「시트 엑셀」 이 선다
+    (`render_download_pair`) — 주지 않으면 CSV 하나다(오늘 그대로).
     """
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.subheader(title, width="content")
         if caption:
             st.caption(caption, width="content")
-        render_csv_download(data=csv, file_name=file_name, key=key)
+        if sheet is None:
+            render_csv_download(data=csv, file_name=file_name, key=key)
+        else:
+            render_download_pair(csv=CsvFile(data=csv, file_name=file_name, key=key), sheet=sheet)
         yield
 
 
@@ -137,7 +195,10 @@ def render_table_heading(
     csv: bytes,
     file_name: str,
     key: str,
+    sheet: SheetFile | None = None,
 ) -> None:
     """표 제목 · 부가 설명 · CSV 내보내기 한 줄. 대부분의 표가 이 형태다."""
-    with table_heading_row(title, caption=caption, csv=csv, file_name=file_name, key=key):
+    with table_heading_row(
+        title, caption=caption, csv=csv, file_name=file_name, key=key, sheet=sheet
+    ):
         pass

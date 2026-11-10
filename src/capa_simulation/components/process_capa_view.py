@@ -110,6 +110,7 @@ from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
 )
+from capa_simulation.components.sheet_download import remembered_bytes
 from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_DETAIL,
     highlight_shortening_process,
@@ -121,7 +122,13 @@ from capa_simulation.components.status_metric import (
     render_status_metric,
 )
 from capa_simulation.components.tab_state import remember_open_tab
-from capa_simulation.components.table_toolbar import render_csv_download, render_xlsx_download
+from capa_simulation.components.table_toolbar import (
+    SHEET_XLSX_LABEL,
+    CsvFile,
+    SheetFile,
+    render_download_pair,
+    render_sheet_download,
+)
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -221,7 +228,6 @@ ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
 # 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
 SHEET_XLSX_KEY: Final = "process_detail_sheet_xlsx"
-SHEET_XLSX_LABEL: Final = "시트 엑셀"
 # 내려받기 둘을 담는 칸 — 줄이 모자라면 둘이 위아래로 쌓이지 않고 칸째 다음 줄 오른쪽 끝으로 간다.
 DOWNLOADS_KEY: Final = "process_detail_downloads"
 # 「구획」 칩과 그 뜻 ⓘ 를 담는 칸 — ⓘ 가 칩과 작은 간격으로 붙는다(옆 토글의 풍선으로 읽히지 않게).
@@ -464,8 +470,9 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
     )
     show_all_units = bool(st.session_state.get(SHOW_ALL_UNITS_KEY, False))
     show_all_arrows = bool(st.session_state.get(SHOW_ALL_ARROWS_KEY, False))
-    with sheet_slot:
-        render_xlsx_download(
+    render_sheet_download(
+        sheet_slot,
+        SheetFile(
             data=remembered_sheet(
                 sheet_memo_key(
                     view,
@@ -491,7 +498,8 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
             file_name=view.sheet_file_name,
             key=SHEET_XLSX_KEY,
             label=SHEET_XLSX_LABEL,
-        )
+        ),
+    )
     canvas = remembered_canvas(
         view,
         month=month,
@@ -598,14 +606,19 @@ def _render_tool_row(
                 help=TARGET_HELP,
             )
         with st.container(horizontal=True, horizontal_alignment="right", key=DOWNLOADS_KEY):
-            if view.units_csv is not None:
-                render_csv_download(
-                    data=view.units_csv,
-                    file_name=view.units_csv_file_name,
-                    key=UNITS_CSV_KEY,
-                    label="이 공정 단축 일정 CSV",
-                )
-            sheet_slot = st.container(width="content")
+            # 호기 CSV(설비 일정이 설 때만)와 시트 엑셀 자리 — 엑셀은 제품 행 표를 받은 뒤 채운다.
+            sheet_slot = render_download_pair(
+                csv=(
+                    CsvFile(
+                        data=view.units_csv,
+                        file_name=view.units_csv_file_name,
+                        key=UNITS_CSV_KEY,
+                        label="이 공정 단축 일정 CSV",
+                    )
+                    if view.units_csv is not None
+                    else None
+                ),
+            )
     return bool(expanded) and summary_open, split, collapsed, sheet_slot
 
 
@@ -864,20 +877,8 @@ def sheet_memo_key(
 def remembered_sheet(key: tuple[object, ...], build: Callable[[], bytes]) -> bytes:
     """시트 엑셀 바이트를 세션에 몇 벌 기억한다(`SHEET_MEMO_LIMIT`) — 같은 조건이면 다시 만들지
     않는다. 빗나간 회차는 이 자리에서 바로 만들어 오류가 화면에 드러난다(만들다 실패하면 기억하지
-    않는다)."""
-    memo = st.session_state.get(SHEET_MEMO_KEY)
-    entries: list[tuple[tuple[object, ...], bytes]] = (
-        [entry for entry in memo if isinstance(entry, tuple) and len(entry) == 2]
-        if isinstance(memo, list)
-        else []
-    )
-    for stored_key, stored in entries:
-        if stored_key == key and isinstance(stored, bytes):
-            return stored
-    data = build()
-    entries = [entry for entry in entries if entry[0] != key][-(SHEET_MEMO_LIMIT - 1) :]
-    st.session_state[SHEET_MEMO_KEY] = [*entries, (key, data)]
-    return data
+    않는다). 기억하는 길은 산출 결과 시트 엑셀과 같은 `sheet_download.remembered_bytes` 다."""
+    return remembered_bytes(SHEET_MEMO_KEY, key, build, limit=SHEET_MEMO_LIMIT)
 
 
 def pick_canvas_month(months: Sequence[int]) -> None:
