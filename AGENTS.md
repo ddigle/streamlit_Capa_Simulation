@@ -464,6 +464,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     UI-TXT-01 · 02 · 03). 표가 `alerts.TABLE_ROW_LIMIT` 를 넘으면 그 목록만 표 위 같은 이름 펼침에 남는다
     (`render_oversized_lists`). 알림은 그 탭이 열린 회차에만 낸다. 다른 화면 · 저장 검사의 안내(`REQUIRED_LIST_NOTE`)는 「산출 결과
     → 소요대수 탭을 열면 서는 Alarm 줄의 표」 라고 말한다.
+  - 대당 Capa · 소요대수 표 제목 줄의 CSV 곁에 「시트 엑셀」(TODO 2장 「계산 결과 Excel 다운로드」 첫 넓히기 — 공정 Capa
+    상세 선례)이 선다(`table_toolbar.render_download_pair`). 지금 화면 상태(보기 · 집계 수준 · 공용 공정 거름 · 상세 ·
+    `표 조건` 거름 · 조회기간 달 · 공정 표시명 — CSV 는 원본 이름)의 표를 화면 서식째
+    (`components/monthly_table_workbook.py`) 낸다. 파일 이름은 곁 CSV 와 같고 확장자만 `.xlsx`, 맨 위 머리 값 줄은 시나리오 ·
+    조회기간(`sheet_download.scenario_period_rows`) · 보기 · 거름이다. 통은 조건 키(대당 Capa — 시나리오 캐시 키 · 표시순서
+    지문 · 보기 · 수준 · 공정, 소요대수 — CSV 키의 표 지문, 둘 다 표시명 판 · 머리 값 · 시트 꼴 판)로 세션 칸
+    `calculation_result_sheet_memo` 에 몇 벌 기억한다(`sheet_download.remembered_bytes` — 새 `st.cache_*` 없음). 소요대수
+    상세 「표시 범위」 는 화면만 나누고 시트는 CSV 처럼 거른 행 전부다(`tests/test_calculation_result_sheet.py`).
 - `app_pages/process_capa_detail.py` — `공정 Capa 상세`(실행 관리 첫 화면). 정체성은 **어느 화면에서든 공정 하나를 눌러
   바로 깊게 보는 목적지**다(Guide 첫 단락, 2026-10-22). 공정 하나의 산출 근거 → 부족한 달 → 그 달을 메우는 설비 일정을 잇는다.
   본문 프래그먼트는 `process_capa_view.py`, 설명은 `guides/process_capa_detail.md`.
@@ -3194,7 +3202,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
   `emit_style=False` 로 부르고 `metric_row_style`·`status_metric_style` 을 보이는 HTML 과 한 `st.html` 에 싣는다.
 - `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄(엑셀 단추 `render_xlsx_download` —
-  같은 꼴)과 표 도구 막대 앞 띄움
+  같은 꼴), 표 곁 CSV · 「시트 엑셀」 한 쌍(`render_download_pair` — CSV 단추 곁 내용 폭 칸 안에 엑셀, 시트를 나중에 짓는
+  화면은 돌려받은 칸에 `render_sheet_download`. 공정 Capa 상세 표 도구 줄 · 산출 결과 대당 Capa · 소요대수 제목 줄
+  (`table_heading_row(sheet=)`)이 쓴다 — 곁에 둘지 「내려받기 ▾」 메뉴 하나로 묶을지(2차 보드 물음)는 이 한 곳에서 바꾸고,
+  `tests/test_table_toolbar.py` 가 엑셀 단추를 다른 자리에서 부르지 않는지 · 쌍의 꼴을 본다)과 표 도구 막대 앞 띄움
   (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭), 띄움 대신 표 바로 위 줄 오른쪽 끝을
   막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. `st.download_button` 은
   여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
@@ -4393,6 +4404,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     과부족 「가용 − 목표대수」·비가동 영향 「X% → Y%」·「호기 −a + 입력 −b」)은 칸 자릿수 인수로 다시 셈해 어긋나면 「≈」
     다(`formula_text.equals_mark`). 두 과부족 식 줄과 비가동 영향 두 식은 결과가 앞 줄이고 등호가 없어 어긋날 때만 식 앞에
     둔다(검산 그물 `tests/test_formula_text.py`).
+- `src/capa_simulation/components/monthly_table_workbook.py` — `산출 결과` 대당 Capa · 소요대수 「시트 엑셀」. 화면 월 표
+  (`render_hierarchical_monthly_table`)에 넘긴 것과 같은 인자(거른 표 · 분류 열 · 열 이름 · 소수 자리 · 표시명)로 칸을 옮긴다 —
+  분류 칸 글은 공개 내보내기(`build_hierarchical_monthly_export` — 반복 접두 생략)에 표시명을 입힌 표를 넘겨 얻고, 월 칸은
+  화면 글(`,.nf` · `.n%`)이 적는 값의 숫자 셀 + 같은 글로 보이는 숫자 꼴(0 · 빈 값은 빈 칸), 서식은 밝은 테마 토큰(머리 띠 ·
+  최상위 묶음 줄무늬 · 묶음 경계선은 바뀐 열부터 · 분기 · 분류와 달 사이 · 바깥은 굵은 선, 판정 칠 없음 — 화면에도 없다),
+  열 너비는 화면 px, 머리 줄 · 분류 열 고정. 칸 서식은 시트마다 한 번 지어 돌려쓴다(2,660행 × 21칸 합성 표 약 0.3초 — 샘플
+  관측). Streamlit 을 import 하지 않는다(`tests/test_monthly_table_workbook.py` 가 화면 표의 Figure 인자와 견준다).
+- `src/capa_simulation/components/sheet_download.py` — 「시트 엑셀」 의 화면 쪽 공용 몫: 통을 조건 키로 세션 칸에 몇 벌
+  기억하고(`remembered_bytes` — 공정 Capa 상세 `remembered_sheet` · 산출 결과가 같이 쓴다, 화면마다 칸 이름이 따로), 시트 맨
+  위 시나리오(머리 띠 위 줄 `header_lines`) · 조회기간 · 공정 거름 글을 짓는다(세션만 읽는다).
 - `src/capa_simulation/components/process_capa_workbook.py` — `공정 Capa 상세` 「시트 엑셀」. 결합 캔버스의 행 모델을 칸
   하나하나 엑셀 칸으로 옮긴다(판정 · 칠 · 띠를 다시 셈하지 않는다). 색은 밝은 테마 토큰(`theme.pinned_mode`), 부족 달 띠는
   `tokens.opaque_over` 로 그 줄 면 위에 섞은 불투명 색, 숫자는 칸 글을 같은 꼴의 숫자 꼴로 되읽은 숫자 셀(`screen_number` —
@@ -7273,8 +7294,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다).
 - **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
   바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
-  쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다. 엑셀(공정 Capa 상세 「시트 엑셀」)도 같다 —
-  조건 키로 세션에 기억한 바이트를 넘긴다(`process_capa_view.remembered_sheet`).
+  쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다. 엑셀(공정 Capa 상세 · 산출 결과 대당 Capa ·
+  소요대수 「시트 엑셀」)도 같다 — 조건 키로 세션에 기억한 바이트를 넘긴다(`sheet_download.remembered_bytes`, 화면마다 세션
+  칸이 따로). CSV 와 엑셀 한 쌍은 `table_toolbar.render_download_pair` 하나가 그린다(엑셀 단추를 다른 자리에서 부르지
+  않는다).
 - 사람이 적은 자유 글(게시판 본문·답글·메모)은 `st.markdown` 으로 그리지 않는다 — `#`·`-`·`*` 가 제목·목록으로 바뀌고
   빈 줄에서 HTML 블록이 끊겨 적은 사람이 보던 글과 달라진다. 글만이면 `st.text`, HTML 로 감싸야 하면 `html.escape` 한
   뒤 `st.html` 로 넘긴다. 제목·이름처럼 마크다운으로 그려지는 자리(`st.expander` 라벨·`st.caption`·`st.markdown`·

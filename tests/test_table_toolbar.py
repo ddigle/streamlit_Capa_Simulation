@@ -1,4 +1,4 @@
-# Purpose: CSV 내보내기·표 제목 줄·표 도구 막대 앞 띄움 · 막대 자리를 한 곳에서만 짓는지 지킨다.
+# Purpose: CSV·시트 엑셀 단추·표 제목 줄·표 도구 막대 앞 띄움 · 자리를 한 곳에서만 짓는지 지킨다.
 
 """내보내기 버튼 표기가 갈라지지 않게 막는다.
 
@@ -104,6 +104,9 @@ PRESSABLE = frozenset(
         "popover",
         "radio",
         "render_csv_download",
+        "render_download_pair",
+        "render_sheet_download",
+        "render_xlsx_download",
         "segmented_control",
         "selectbox",
         "text_area",
@@ -479,3 +482,90 @@ def test_the_toolbar_room_covers_the_widest_toolbar() -> None:
     서식은 그 수 하나로 줄 오른쪽을 비운다."""
     assert TABLE_TOOLBAR_ROOM >= 112 + 8
     assert toolbar_room_css("row") == f".st-key-row {{ padding-right: {TABLE_TOOLBAR_ROOM}px; }}"
+
+
+# 표 곁 CSV · 「시트 엑셀」 한 쌍을 그리는 자리(파일 → `SheetFile(` 수) — 한 쌍은 늘
+# `render_download_pair` 로 선다. 새 자리는 여기 한 줄을 더한다.
+SHEET_SITES = {
+    "app_pages/calculation_result.py": 2,
+    "src/capa_simulation/components/process_capa_view.py": 1,
+}
+
+
+def test_the_sheet_button_is_drawn_by_the_pair_helper_only() -> None:
+    """「시트 엑셀」 단추는 `render_download_pair` · `render_sheet_download` 가 그린다 — CSV 곁에
+    둘지 「내려받기 ▾」 메뉴 하나로 묶을지(2차 보드 물음)는 그 한 곳에서 바꾼다."""
+    sources = {path.relative_to(PROJECT_ROOT).as_posix(): path for path in _sources()}
+    direct = [
+        relative
+        for relative, path in sources.items()
+        if "render_xlsx_download(" in path.read_text(encoding="utf-8")
+    ]
+    assert not direct, f"render_download_pair · render_sheet_download 를 쓰세요: {direct}"
+    sites = {
+        relative: count
+        for relative, path in sources.items()
+        if (count := path.read_text(encoding="utf-8").count("SheetFile("))
+    }
+    assert sites == SHEET_SITES
+
+
+def _pair_page(with_csv: bool, deferred: bool) -> None:
+    import streamlit as st
+
+    from capa_simulation.components.table_toolbar import (
+        CsvFile,
+        SheetFile,
+        render_download_pair,
+        render_sheet_download,
+    )
+
+    sheet = SheetFile(data=b"xlsx", file_name="t.xlsx", key="pair_sheet")
+    with st.container(horizontal=True, key="pair_row"):
+        slot = render_download_pair(
+            csv=CsvFile(data=b"csv", file_name="t.csv", key="pair_csv") if with_csv else None,
+            sheet=None if deferred else sheet,
+        )
+        st.caption("곁 칸")
+    st.caption("줄 아래")
+    if deferred:
+        render_sheet_download(slot, sheet)
+
+
+def _layout(block: object) -> list[object]:
+    """요소 트리를 (종류, key) 와 묶음(list)으로 — 화면 차례 그대로."""
+    out: list[object] = []
+    for child in getattr(block, "children", {}).values():
+        if hasattr(child, "children") and child.type != "download_button":
+            out.append(_layout(child))
+        else:
+            out.append((child.type, getattr(child, "key", None)))
+    return out
+
+
+def test_the_pair_puts_the_csv_then_the_sheet_slot_on_the_callers_row() -> None:
+    """한 쌍의 꼴 — 부르는 쪽 줄에 CSV 단추, 그 곁 내용 폭 칸 안에 「시트 엑셀」. 시트를 나중에
+    채워도(공정 Capa 상세 — 제품 행 표를 받은 뒤) 같은 자리 · 꼴이고, CSV 가 없으면 그 칸만 선다."""
+    from streamlit.testing.v1 import AppTest
+
+    from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, SHEET_XLSX_LABEL
+
+    shapes = {}
+    for with_csv in (True, False):
+        for deferred in (False, True):
+            app = AppTest.from_function(
+                _pair_page, kwargs={"with_csv": with_csv, "deferred": deferred}
+            ).run()
+            assert not app.exception
+            shapes[(with_csv, deferred)] = _layout(app.main)
+            labels = {str(button.key): str(button.label) for button in app.download_button}
+            assert labels.get("pair_sheet") == SHEET_XLSX_LABEL
+            assert labels.get("pair_csv") == (CSV_DOWNLOAD_LABEL if with_csv else None)
+    sheet_slot = [("download_button", "pair_sheet")]
+    assert shapes[(True, False)] == [
+        [("download_button", "pair_csv"), sheet_slot, ("caption", None)],
+        ("caption", None),
+    ]
+    assert shapes[(True, True)] == shapes[(True, False)]
+    assert shapes[(False, False)] == [[sheet_slot, ("caption", None)], ("caption", None)]
+    assert shapes[(False, True)] == shapes[(False, False)]

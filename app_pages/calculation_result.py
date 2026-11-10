@@ -18,6 +18,14 @@
 있게」, 2026-11-05 같은 검수표 — 「Alarm 안 표로 이동」). 표가 알림에 싣기에 크면
 (`alerts.TABLE_ROW_LIMIT`) 그 목록만 본문 펼침으로 남긴다.
 
+대당 Capa · 소요대수 표 제목 줄의 CSV 곁에 「시트 엑셀」 이 선다(TODO 2장 「계산 결과 Excel
+다운로드」 첫 넓히기 — 공정 Capa 상세 선례 그대로). 지금 화면 상태(보기 · 집계 수준 · 공정 거름 ·
+표 조건 거름 · 조회기간의 달 · 공정 표시명)의 표를 화면 서식째 xlsx 로 낸다
+(`components/monthly_table_workbook.py`). 통은 조건 키로 세션에 몇 벌 기억한다
+(`sheet_download.remembered_bytes` — 새 `st.cache_*` 없음). 파일 이름은 곁 CSV 와 같고 확장자만
+`.xlsx` 다. 소요대수 상세의 「표시 범위」(60줄씩)는 화면 보기만 나누고 시트에는 CSV 처럼 거른 줄
+전부가 든다.
+
 확보율 탭의 `히트맵` 은 **표와 같은 행**을 그린다 — 조회 조건의 공정이 히트맵에도 걸린다
 (2026-10-06 사용자 결정). HOME 주요공정 프리셋과는 무관하다.
 """
@@ -27,10 +35,12 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
+from capa_simulation import shared_process
 from capa_simulation.components.capacity_assumption_notice import (
     render_capacity_assumption_notice,
 )
 from capa_simulation.components.column_filter import (
+    column_filter_key,
     render_column_filter_controls,
     render_shared_process_filter,
 )
@@ -41,13 +51,17 @@ from capa_simulation.components.hierarchical_monthly_table import (
     render_hierarchical_monthly_table,
 )
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.monthly_table_workbook import (
+    MonthlySheetRequest,
+    monthly_table_workbook,
+)
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_field import (
     render_process_filter,
     render_stopped_process_field,
 )
-from capa_simulation.components.process_labels import get_process_labels
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.required_exclusion_notice import (
     CAPACITY_EXCLUSION_TITLE,
     PERIOD_SCOPE,
@@ -59,9 +73,18 @@ from capa_simulation.components.required_exclusion_notice import (
     render_oversized_lists,
 )
 from capa_simulation.components.securement_heatmap import render_securement_heatmap
+from capa_simulation.components.sheet_download import (
+    process_filter_text,
+    remembered_bytes,
+    scenario_period_rows,
+)
 from capa_simulation.components.state_alerts import alert_page_error, alert_table, simulation_scope
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.components.table_toolbar import render_table_heading, table_heading_row
+from capa_simulation.components.table_toolbar import (
+    SheetFile,
+    render_table_heading,
+    table_heading_row,
+)
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -144,6 +167,17 @@ TAB_NAMES = (
 UNIT_CAPACITY_TAB = "대당 Capa"
 REQUIRED_TAB = "소요대수"
 AVAILABILITY_TAB = "확보율"
+# 「시트 엑셀」 — 대당 Capa · 소요대수 표를 지금 화면 상태 · 서식 그대로. 통은 이 세션 칸에 조건
+# 키로 몇 벌 기억한다(두 탭이 같이 쓴다). 시트 꼴이 바뀌면 판을 올린다 — 같은 조건의 옛 통이 세션에
+# 남아 있어도 다시 짓는다.
+SHEET_MEMO_KEY = "calculation_result_sheet_memo"
+SHEET_SCHEMA_VERSION = 1
+UNIT_CAPACITY_XLSX_KEY = "download_unit_capacity_xlsx"
+REQUIRED_DETAIL_XLSX_KEY = "download_required_equipment_detail_xlsx"
+REQUIRED_SUMMARY_XLSX_KEY = "download_required_equipment_summary_xlsx"
+# 소요대수 탭 `표 조건` 카드 거름의 key 앞부분(`column_filter_key`) — 카드를 그리는 쪽과 시트 머리
+# 값을 짓는 쪽이 이 한 값을 같이 쓴다.
+REQUIRED_FILTER_PREFIX = "required_equipment_filter"
 
 
 def _required_export_csv(table: pd.DataFrame, classification_columns: list[str]) -> bytes:
@@ -155,6 +189,24 @@ def _required_export_csv(table: pd.DataFrame, classification_columns: list[str])
         decimal_places=2,
     )
     return export.to_csv(index=False, float_format="%.2f").encode("utf-8-sig")
+
+
+def _required_filter_rows(
+    view_table: pd.DataFrame, dimensions: list[str], labels: ProcessLabels
+) -> tuple[tuple[str, str], ...]:
+    """소요대수 시트 머리 값의 거름 줄 — 공용 공정 칸(늘 한 줄, 걸리지 않으면 「전체」)과 `표 조건`
+    카드에서 값을 고른 칸마다 한 줄(사이드바에 보이는 글자 그대로)."""
+    rows: list[tuple[str, str]] = []
+    if "공정" in view_table.columns:
+        applied = shared_process.applied(view_table["공정"].dropna().drop_duplicates())
+        rows.append(("공정", process_filter_text(applied, labels.label)))
+    for column in dimensions:
+        if column == "공정":
+            continue
+        chosen = st.session_state.get(column_filter_key(REQUIRED_FILTER_PREFIX, column))
+        if isinstance(chosen, list) and chosen:
+            rows.append((COLUMN_LABELS.get(column, column), " · ".join(str(v) for v in chosen)))
+    return tuple(rows)
 
 
 render_page_header("산출 결과")
@@ -392,13 +444,56 @@ else:
                 capacity_csv = capacity_export.to_csv(index=False, float_format="%.0f").encode(
                     "utf-8-sig"
                 )
+                capacity_file = f"{file_prefix}_{selected_level}_{effective_start}_{effective_end}"
+                # 시트 머리 값 — 머리 띠 시나리오 · 조회기간, 카드의 보기 · 수준, 공용 공정 거름.
+                capacity_heading = (
+                    *scenario_period_rows(
+                        selected=(context.selected_start_month, context.selected_end_month),
+                        applied=(effective_start, effective_end),
+                    ),
+                    ("표시 방식", "STEP별" if step_view else "공정별"),
+                    *(() if step_view else (("집계 수준", selected_level_label),)),
+                    ("공정", process_filter_text(selected_processes, process_labels.label)),
+                )
+                # 표는 (내용 토큰 · 기간 키, 표시순서 지문, 보기, 수준, 공정)이 정한다 — 큰 표는
+                # 키에 넣지 않는다. 표시명 판 · 머리 값도 시트 글자를 바꾼다.
+                capacity_sheet = SheetFile(
+                    data=remembered_bytes(
+                        SHEET_MEMO_KEY,
+                        (
+                            SHEET_SCHEMA_VERSION,
+                            UNIT_CAPACITY_TAB,
+                            capacity_cache_key,
+                            display_order_key,
+                            step_view,
+                            selected_level,
+                            tuple(selected_processes),
+                            process_labels.version,
+                            capacity_heading,
+                        ),
+                        partial(
+                            monthly_table_workbook,
+                            MonthlySheetRequest(
+                                sheet_name=UNIT_CAPACITY_TAB,
+                                title=output_title,
+                                data=unit_capacity_table,
+                                classification_columns=tuple(classification_columns),
+                                column_labels=COLUMN_LABELS,
+                                decimal_places=0,
+                                heading=capacity_heading,
+                                value_labels=process_labels.value_labels(),
+                            ),
+                        ),
+                    ),
+                    file_name=f"{capacity_file}.xlsx",
+                    key=UNIT_CAPACITY_XLSX_KEY,
+                )
                 render_table_heading(
                     output_title,
                     csv=capacity_csv,
-                    file_name=(
-                        f"{file_prefix}_{selected_level}_{effective_start}_{effective_end}.csv"
-                    ),
+                    file_name=f"{capacity_file}.csv",
                     key="download_unit_capacity_csv",
+                    sheet=capacity_sheet,
                 )
                 render_hierarchical_monthly_table(
                     unit_capacity_table,
@@ -447,7 +542,7 @@ else:
             filtered_required_table = render_column_filter_controls(
                 view_table,
                 table_dimensions,
-                key_prefix="required_equipment_filter",
+                key_prefix=REQUIRED_FILTER_PREFIX,
                 column_labels=COLUMN_LABELS,
                 value_labels=process_labels.value_labels(),
                 shared_screen=SCREEN,
@@ -493,25 +588,63 @@ else:
             # 내보내기 표 조립·직렬화(합성 표본 상세 2,660행에서 약 70ms, 샘플 관측)는 표 내용
             # 지문 키 캐시다 — 내려받기를 누르지 않은 회차마다 다시 만들지 않는다. 필터·상세가
             # 바뀌면 키가 바뀐다.
+            required_csv_key = csv_export_key(
+                "required_equipment", filtered_required_table, table_dimensions, "2"
+            )
             required_csv = get_export_csv(
-                csv_export_key(
-                    "required_equipment", filtered_required_table, table_dimensions, "2"
-                ),
+                required_csv_key,
                 _build=partial(_required_export_csv, filtered_required_table, table_dimensions),
             )
             required_view_name = "Detail" if show_detail else "Summary"
+            required_file = (
+                f"Capa_Required_Equipment_{required_view_name}_{effective_start}_{effective_end}"
+            )
+            required_heading = (
+                *scenario_period_rows(
+                    selected=(context.selected_start_month, context.selected_end_month),
+                    applied=(effective_start, effective_end),
+                ),
+                ("상세", "켬" if show_detail else "끔"),
+                *_required_filter_rows(view_table, table_dimensions, process_labels),
+            )
+            # 표는 CSV 키의 내용 지문(거름 · 상세 · 표시순서가 다 든다)이 정한다.
+            required_sheet = SheetFile(
+                data=remembered_bytes(
+                    SHEET_MEMO_KEY,
+                    (
+                        SHEET_SCHEMA_VERSION,
+                        REQUIRED_TAB,
+                        required_csv_key,
+                        process_labels.version,
+                        required_heading,
+                    ),
+                    partial(
+                        monthly_table_workbook,
+                        MonthlySheetRequest(
+                            sheet_name=REQUIRED_TAB,
+                            title="소요대수",
+                            data=filtered_required_table,
+                            classification_columns=tuple(table_dimensions),
+                            column_labels=COLUMN_LABELS,
+                            decimal_places=2,
+                            heading=required_heading,
+                            value_labels=process_labels.value_labels(),
+                        ),
+                    ),
+                ),
+                file_name=f"{required_file}.xlsx",
+                key=REQUIRED_DETAIL_XLSX_KEY if show_detail else REQUIRED_SUMMARY_XLSX_KEY,
+            )
             with table_heading_row(
                 "소요대수",
                 csv=required_csv,
-                file_name=(
-                    "Capa_Required_Equipment_"
-                    f"{required_view_name}_{effective_start}_{effective_end}.csv"
-                ),
+                file_name=f"{required_file}.csv",
                 key=(
                     "download_required_equipment_detail_csv"
                     if show_detail
                     else "download_required_equipment_summary_csv"
                 ),
+                sheet=required_sheet,
             ):
                 page_slot = st.container(width="content")
             render_hierarchical_monthly_table(
