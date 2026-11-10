@@ -287,8 +287,9 @@ def _chip_script() -> None:
 
 def test_the_header_chip_reads_original_names_on_space_and_sent_labels_elsewhere() -> None:
     """머리 칩 · 판의 글자는 그 화면 글자다 — Space(원본 이름으로 그리는 화면)에서는 원본,
-    표시명으로 그리는 화면과 따라가지 않는 화면(HOME)은 보낸 화면의 표시명(2026-11-10 보드
-    Q-3 — 한 화면 한 이름). 값(원본)과 차례는 같다."""
+    표시명으로 그리는 화면과 따라가지 않는 화면(HOME)은 표시명(2026-11-10 보드 Q-3 — 한 화면 한
+    이름). 공용 표시명 프로필이 비었으면(이 시험 — DB 파일이 아직 없음 · 읽지 못함) 보낸 화면이
+    실은 글자다. 값(원본)과 차례는 같다."""
     app = AppTest.from_function(_chip_script)
     app.session_state[shared_process._VALUES_KEY] = ["WF", "Mold"]
     app.session_state[shared_process._ORIGIN_KEY] = "산출 결과"
@@ -308,22 +309,23 @@ def test_the_header_chip_reads_original_names_on_space_and_sent_labels_elsewhere
     assert chips["space"]["origin"] == chips["result"]["origin"] == "산출 결과"
 
 
-def test_values_sent_without_labels_read_the_display_names_on_display_screens(
+def test_the_header_chip_reads_the_shared_display_names_before_the_sent_letters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Space(원본 이름으로 그리는 화면)에서 고른 값은 표시명을 싣지 않는다 — 그래도 표시명
-    화면(산출 결과)과 따라가지 않는 화면(HOME)의 칩 · 판은 그 화면 표시명이다(2차 보드 Q2-18 —
-    칩 · 판 · 풍선은 늘 그 화면 글자). 보낸 글자가 있으면 그것이 이기고, 없으면 공용 표시명
-    프로필로 적는다. Space 는 원본 그대로다(Q-3)."""
+    """표시명 화면(산출 결과 — 아직 그리지 않음)과 따라가지 않는 화면(HOME)의 칩 · 판은 지금 공용
+    표시명 프로필로 적는다(2차 보드 Q2-18 — 칩 · 판 · 풍선은 늘 그 화면 글자). Space(원본 이름으로
+    그리는 화면)에서 고른 값처럼 보낸 글자가 없어도, 보낸 글자가 옛 표시명이어도(같은 세션에 Admin
+    Proc Rename 으로 바뀜) 그 화면 표시명이고, 프로필에서 지운 표시명(보낸 글자에만 남음)은
+    원본이다. Space 는 원본 그대로다(Q-3)."""
     monkeypatch.setattr(
         process_field,
         "_shared_display_names",
-        lambda: ProcessLabels(labels={"WF": "WF 입고검사", "Mold": "프로필 몰드"}),
+        lambda: ProcessLabels(labels={"WF": "WF 입고검사", "Mold": "새 몰드"}),
     )
     app = AppTest.from_function(_chip_script)
     app.session_state[shared_process._VALUES_KEY] = ["WF", "Mold", "PMC"]
     app.session_state[shared_process._ORIGIN_KEY] = "Space"
-    app.session_state[shared_process._LABELS_KEY] = {"Mold": "몰드"}
+    app.session_state[shared_process._LABELS_KEY] = {"Mold": "옛 몰드", "PMC": "피엠씨"}
     app.session_state[shared_process._VERSION_KEY] = 1
     app.run()
 
@@ -334,10 +336,10 @@ def test_values_sent_without_labels_read_the_display_names_on_display_screens(
         "WF 외 2개",
     )
     assert (chips["result"]["labels"], chips["result"]["top"]) == (
-        ["WF 입고검사", "몰드", "PMC"],
+        ["WF 입고검사", "새 몰드", "PMC"],
         "WF 입고검사 외 2개",
     )
-    assert chips["home"]["labels"] == ["WF 입고검사", "몰드", "PMC"]
+    assert chips["home"]["labels"] == ["WF 입고검사", "새 몰드", "PMC"]
 
 
 def test_the_marks_tab_title_on_a_display_screen_reads_its_display_names(
@@ -360,6 +362,103 @@ def test_the_marks_tab_title_on_a_display_screen_reads_its_display_names(
     assert _field(app).label == "WF 입고검사 외 1개"
     (mark,) = process_marks(app)
     assert mark["tab"]["title"] == "공정 WF 입고검사 · Mold — Space 에서"
+
+
+def _drawn_chip_script() -> None:
+    """앱 차례 — 머리 칩(알림 칸)을 페이지보다 먼저 만들고, 그 뒤 페이지가 값 칸을 그린다."""
+    import streamlit as st
+
+    from capa_simulation.components import process_field
+    from capa_simulation.components.process_labels import ProcessLabels
+    from capa_simulation.sidebar_status import begin_app_run
+
+    run = begin_app_run()
+    st.session_state["chip"] = process_field.header_chip("app_pages/calculation_result.py")
+    process_field.render_process_filter(
+        st.session_state.get("test_options", ["WF", "Mold", "Underfill"]),
+        screen="산출 결과",
+        labels=ProcessLabels(labels=st.session_state.get("test_labels", {})),
+    )
+    run.finish()
+
+
+def _profile(monkeypatch: pytest.MonkeyPatch, app: AppTest, labels: dict[str, str]) -> None:
+    """공용 표시명 프로필과 그 화면이 값 칸에 넘기는 표시명을 같이 둔다(앱에서는 둘 다
+    `get_process_labels`)."""
+    monkeypatch.setattr(
+        process_field, "_shared_display_names", lambda: ProcessLabels(labels=dict(labels))
+    )
+    app.session_state["test_labels"] = dict(labels)
+
+
+def test_a_drawn_display_screen_reads_the_renamed_display_name_not_the_old_sent_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표시명 화면에서 고른 뒤 같은 세션에 표시명이 바뀌면(Admin Proc Rename) 그 화면의 머리 칩 · 판
+    · 탭 풍선도 값 칸처럼 새 이름이다 — 보낸 글자(옛 표시명)가 남아 한 화면에 두 이름이 서지
+    않는다(2차 보드 Q2-18 · 검토 지적)."""
+    app = AppTest.from_function(_drawn_chip_script)
+    _profile(monkeypatch, app, {"WF": "새 WF 이름"})
+    app.run()
+    share(app, ["WF", "Mold"], origin="산출 결과")
+    app.session_state[shared_process._LABELS_KEY] = {"WF": "옛 WF 이름"}
+    app.run()
+
+    assert not app.exception
+    assert _field(app).label == "새 WF 이름 외 1개"
+    chip = app.session_state["chip"]
+    assert (chip["labels"], chip["top"]) == (["새 WF 이름", "Mold"], "새 WF 이름 외 1개")
+    (mark,) = process_marks(app)
+    assert mark["labels"] == {"WF": "새 WF 이름", "Mold": "Mold"}
+    assert mark["tab"]["title"] == "공정 새 WF 이름 · Mold — 산출 결과 에서"
+
+
+def test_a_display_name_clashing_with_another_process_reads_like_the_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표시명이 그 화면 다른 공정의 원본과 같으면(Shipping Inspection → 「AVI」, AVI 는 따로 있는
+    공정) 칩 · 판 · 탭 풍선도 값 칸처럼 「AVI (Shipping Inspection)」 으로 가른다 — 맨 「AVI」 는
+    다른 공정으로 읽힌다(검토 지적). Space 에서 고른 값(보낸 글자 없음)도 같다. 그 화면을 처음 그린
+    회차는 페이지보다 먼저 만든 칩이 선택지를 모르므로 회차 표지의 `labels` 가 그 글자를 실어
+    알림 칸 JS 가 바로잡고, 다음 회차부터는 칩도 그 글자다."""
+    app = AppTest.from_function(_drawn_chip_script)
+    app.session_state["test_options"] = ["AVI", "Shipping Inspection", "Mold"]
+    _profile(monkeypatch, app, {"Shipping Inspection": "AVI"})
+    share(app, ["Shipping Inspection"], origin="Space")
+    app.run()
+
+    assert not app.exception
+    assert _field(app).label == "AVI \\(Shipping Inspection\\)"
+    (mark,) = process_marks(app)
+    assert mark["labels"] == {"Shipping Inspection": "AVI (Shipping Inspection)"}
+    assert mark["tab"]["title"] == "공정 AVI (Shipping Inspection) — Space 에서"
+
+    app.run()
+    chip = app.session_state["chip"]
+    assert (chip["labels"], chip["top"]) == (
+        ["AVI (Shipping Inspection)"],
+        "AVI (Shipping Inspection)",
+    )
+
+
+def test_a_value_this_screen_lacks_reads_the_display_name_without_a_hidden_mark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """그 화면 선택지에 없는 값(「n개 이 화면 없음」)은 프로필의 표시명이다 — 선택지로 가른 글자
+    함수는 선택지 밖 값에 보이지 않는 U+2060 을 붙이므로 그 함수로 적지 않는다."""
+    app = AppTest.from_function(_drawn_chip_script)
+    _profile(monkeypatch, app, {"WF": "WF 입고검사", "PMC": "피엠씨"})
+    app.run()
+    share(app, ["WF", "PMC"])
+    app.run()
+
+    assert not app.exception
+    chip = app.session_state["chip"]
+    (mark,) = process_marks(app)
+    assert chip["labels"] == ["WF 입고검사", "피엠씨"]
+    assert mark["labels"] == {"WF": "WF 입고검사", "PMC": "피엠씨"}
+    assert mark["tab"]["title"] == "공정 WF 입고검사 — HOME 에서\n피엠씨 는 이 화면에 없음"
+    assert "\u2060" not in json.dumps([chip, mark], ensure_ascii=False)
 
 
 def test_the_shared_profile_is_read_only_when_the_database_file_exists(

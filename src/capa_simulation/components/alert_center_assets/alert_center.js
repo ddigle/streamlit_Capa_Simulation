@@ -177,12 +177,16 @@ function chipOf(items) {
 // 표지(`live`)가 있으면 그것이, 아니면 파이썬 짐작(`process.here`)이 이 화면 값이다. 없는 공정은 이 화면이 따르는 꼴일 때만 센다.
 // 따르는 화면이면 줄 차례를 이 화면 선택지 차례(`inside` — 걸린 공정 먼저, 없는 공정 뒤 — 파이썬 `screen_order`)로 세우고 첫
 // 이름(`top`)도 그 차례로 적는다(`rest` — 파이썬 `process_field.REST_TEXT`, 없으면 파이썬이 적은 `top`). 사이드바 값 칸 · 탭 풍선과
-// 첫 이름이 같아진다. 값이 없으면 null(칩을 세우지 않는다).
+// 첫 이름이 같아진다. 글자도 같은 회차 표지의 것(`live.labels` — 이 회차 선택지로 가른 값 칸 글자)이 파이썬 짐작보다 이긴다 — 그 화면을
+// 처음 그린 회차는 짐작이 그 화면 선택지를 몰라 겹친 표시명을 가르지 못한다. 값이 없으면 null(칩을 세우지 않는다).
 function processChipOf(process, live, here, rest) {
   if (!process || !Array.isArray(process.values) || !process.values.length) return null
   const values = process.values.map(String)
-  const labels = values.map((value, index) => String((Array.isArray(process.labels) && process.labels[index]) || value))
   const fresh = Boolean(live) && live.page === here && live.version === process.version
+  const drawn = fresh && live.labels && typeof live.labels === 'object' ? live.labels : null
+  const labels = values.map((value, index) =>
+    String((drawn && Object.prototype.hasOwnProperty.call(drawn, value) && drawn[value]) || (Array.isArray(process.labels) && process.labels[index]) || value),
+  )
   const mark = (fresh ? live.here : process.here) || null
   const follows = Boolean(mark && mark.follows)
   const gone = new Set(follows && Array.isArray(mark.missing) ? mark.missing.map(String) : [])

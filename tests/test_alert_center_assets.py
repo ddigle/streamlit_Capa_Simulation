@@ -1278,6 +1278,10 @@ out.ordered = processChipOf(process, ordered, 'space_status', rest)
 out.orderedHome = processChipOf({ ...process, here: null }, null, '', rest)
 const one = { ...process, values: ['PMC'], labels: [''], here: null }
 out.orderedOne = processChipOf(one, null, '', rest)
+const lettered = { ...ordered, labels: { Underfill: 'UF (Underfill)' } }
+out.lettered = processChipOf(process, lettered, 'space_status', rest)
+out.letteredOther = processChipOf(process, lettered, 'calculation_result', rest)
+out.letteredStale = processChipOf({ ...process, version: 4 }, lettered, 'space_status', rest)
 const marks = [
   { page: 'a', version: 1 },
   { page: 'space_status', version: 3, here: null, tab: { miss: true } },
@@ -1315,6 +1319,14 @@ def test_the_process_chip_reads_the_screens_own_mark_over_the_python_guess() -> 
     assert (ordered["top"], ordered["absent"]) == ("Underfill 외 2개", 1)
     assert out["orderedHome"]["top"] == "몰드 외 2개"
     assert out["orderedOne"]["top"] == "PMC"
+    # 같은 화면 · 같은 판의 회차 표지가 실은 글자(`labels` — 그 회차 선택지로 가른 값 칸 글자)가
+    # 파이썬 짐작 글자보다 이긴다. 표지에 없는 값은 짐작 글자이고, 다른 화면 · 옛 판의 표지는
+    # 쓰지 않는다.
+    lettered = out["lettered"]
+    assert [row["label"] for row in lettered["rows"]] == ["UF (Underfill)", "몰드", "PMC"]
+    assert lettered["top"] == "UF (Underfill) 외 2개"
+    assert [row["label"] for row in out["letteredOther"]["rows"]] == ["몰드", "Underfill", "PMC"]
+    assert [row["label"] for row in out["letteredStale"]["rows"]] == ["몰드", "Underfill", "PMC"]
     assert out["mine"]["tab"] == {"miss": True}
     assert out["running"] is None
     assert out["settled"] == {
