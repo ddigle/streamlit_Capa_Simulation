@@ -124,6 +124,10 @@ INTERRUPTED_REASON: Final = "앱이 이 회차를 끝내기 전에 꺼져 중단
 REGISTERED_NOT_PUBLISHED_NOTE: Final = (
     "등록한 시나리오 {name} 남겼습니다 — 같은 코드는 다시 받지 않으니 확인한 뒤 손으로 지정하세요."
 )
+# 등록 점검의 푸는 길이 원천 다시 등록인 회차의 끝 — 그 리비전은 계산이 서지 않아 손으로 지정할 것이
+# 아니므로 「…은 남겼습니다」 까지만 쓴다(검수 보드 sc-runner-word,
+# `RegistrationCapacityCheck.fixed_at_source`).
+REGISTERED_KEPT_NOTE: Final = "등록한 시나리오 {name} 남겼습니다."
 # 「복제」가 만든 시나리오의 출처 종류. 부모 리비전이 없다.
 CLONE_SOURCE_TYPE: Final = "DUCKDB_SCENARIO_CLONE"
 # 발행한 회차의 사유 한 칸에 발행 줄과 소요대수에 들지 않은 수요 경고를 잇는 자리.
@@ -312,10 +316,13 @@ class _RunLog:
         # 발행 줄 쪽 끝에 붙인다 — 소요대수 밖 수요 경고(`split_published_reason`)와 섞지 않는다.
         self.blank_cs_memo = ""
         # 등록 때 돌려 본 대당 Capa 가 멈췄으면 푸는 길(`RegistrationCapacityCheck.fix_hint` — 화면
-        # 등록의 경고 띠와 같은 글). 지정까지 가지 못하고 끝나면 어느 갈래든 사유 끝(「…손으로
-        # 지정하세요」 앞)에 한 번 붙인다 — 계획 행만 있는 원천은 계산이 0행으로 끝나 「남는 공정이
-        # 없어」 갈래로 온다.
+        # 등록의 경고 띠와 같은 글). 지정까지 가지 못하고 끝나면 어느 갈래든 사유 끝(등록한
+        # 시나리오를 남겼다는 글 앞)에 한 번 붙인다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
+        # 「남는 공정이 없어」 갈래로 온다.
         self.fix_hint = ""
+        # 그 푸는 길이 원천 다시 등록인가(`RegistrationCapacityCheck.fixed_at_source`) — 그러면 끝
+        # 글은 「…은 남겼습니다」 까지만이다(`REGISTERED_KEPT_NOTE`).
+        self.fixed_at_source = False
 
     def advance(self, stage: str, **values: object) -> None:
         self.stage = stage
@@ -332,9 +339,8 @@ class _RunLog:
         if status != STATUS_PUBLISHED and self.fix_hint and self.fix_hint not in reason:
             reason = f"{reason.rstrip().rstrip('.')}. {self.fix_hint}"
         if status != STATUS_PUBLISHED and self.registered_name is not None:
-            note = REGISTERED_NOT_PUBLISHED_NOTE.format(
-                name=with_topic_particle(f"「{self.registered_name}」")
-            )
+            kept = REGISTERED_KEPT_NOTE if self.fixed_at_source else REGISTERED_NOT_PUBLISHED_NOTE
+            note = kept.format(name=with_topic_particle(f"「{self.registered_name}」"))
             reason = f"{reason.rstrip().rstrip('.')}. {note}"
         payload: dict[str, object] = {
             "status": status,
@@ -460,6 +466,7 @@ def _execute(
     log.blank_cs_memo = prepared.blank_cs.memo()
     if registration.capacity.stopped:
         log.fix_hint = registration.capacity.fix_hint(base.revision.revision_no)
+        log.fixed_at_source = registration.capacity.fixed_at_source
 
     log.advance("judge")
     outcome = full_capacity_outcome(base.tables, base.tables)

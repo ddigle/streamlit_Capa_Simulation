@@ -1637,7 +1637,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
     부르는 쪽 몫이다.
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
-    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(「…손으로 지정하세요」 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`)에 무엇이
+    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(등록한 시나리오를 남겼다는 끝 글 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`. 푸는 길이 원천 다시 등록이면(`fixed_at_source`) 끝 글은 「…은 남겼습니다」 까지이고 「…손으로 지정하세요」 꼬리를 달지 않는다 — 검수 보드 sc-runner-word)에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록 · 빈 경로 표(`RQ_UPEH`·
     `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
     2026-11-08 결정 U3)는 원천 다시 등록. 등록이 CS 가 비어 뺀 경로 행 수(`blank_cs_routes` = `BlankCsDrop.route_rows`)를 넘겨, 그

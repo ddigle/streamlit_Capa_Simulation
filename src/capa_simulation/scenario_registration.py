@@ -136,6 +136,18 @@ class RegistrationCapacityCheck:
             return f"{self.stop_scope} 멈춤(빈 표 {' · '.join(self.empty_plan)})"
         return f"대당 Capa 계산 멈춤({self.table or '기준정보'})"
 
+    @property
+    def fixed_at_source(self) -> bool:
+        """푸는 길이 원천 다시 등록인가 — 빈 경로 표 · 빈 계획 표 · 모듈수 · 표 자체가 깨진
+        꼴(`fix_hint` 가 「…다시 등록하세요」 로 끝나는 갈래). 그 리비전은 앱에서 고쳐 지정할 길이
+        없어 자동 갱신 사유 끝을 「…은 남겼습니다」 까지만 쓴다(검수 보드 sc-runner-word). 멈추지
+        않았으면 거짓이다."""
+        if not self.stopped:
+            return False
+        if self.empty or self.empty_plan or self.table == "RQ_MODULE":
+            return True
+        return not self._cell_fixable()
+
     def fix_hint(self, revision_no: int) -> str:
         """어떻게 푸는지 — 고칠 표와 다음 리비전 번호."""
         if self.empty:
