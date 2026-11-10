@@ -6763,7 +6763,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   열림 키를 버린다. 시나리오 관리 공식 지정 확인 팝업은 호스트 `scenario_official_dialog_host`(`DialogHost` — 열림 칸
   `scenario_official_open_dialog`)가 열고 여닫기가 호스트만 돈다. 본문이 시나리오 · 리비전 · 「지금 공식」 을 다시 읽어 그 번호를
   저장소에 넘기고(`expected_latest_release_no`) 팝업이 열린 사이 남이 먼저 지정했으면 쓰지 않는다. 이번 열림에서 읽어 그린
-  대상은 `OFFICIAL_VIEW_KEY` 에 쥐고 여는 콜백과 닫기가 비운다. 공식버전명 · 메모 칸 key 는 `scenario_official_release_name` ·
+  대상은 `OFFICIAL_VIEW_KEY` 에 쥐고 여는 콜백과 닫기가 비운다. 그린 뒤 보관되면 지정 단추에서 저장소가 거부하고(알림창의 까닭 +
+  카드 곁 둘 — 작은 결정 a7), 영구 삭제까지 되면 다시 읽기가 빈 대상을 받아 팝업을 걷으며 같은 둘(`OFFICIAL_PURGED_MESSAGE` 를
+  `popup_only` FL-04 로 + 카드 곁)을 낸다(검수 보드 sc-purged — a1 답과 같은 꼴). 연 회차에 이미 빠졌으면 카드 곁 하나다. 공식버전명 · 메모 칸 key 는 `scenario_official_release_name` ·
   `_note` 이고 닫으면 지운다. 「Capa 시나리오」 탭 끝 `_render_official_host` 가 이벤트 칸 한 자리를 쓴다.
 - **본문 · 사이드바 단추로 여는 화면 팝업은 `components/dialog_host.DialogHost` 로 연다**(2026-11-08 답 U5 — 열기 · 닫기가 호스트
   회차). `on_dismiss` 는 `host.close`, 닫는 회차에 페이지가 할 일이 있으면 `host.close_to_app`(HOME 설정 · 밖 알림이 선 Space

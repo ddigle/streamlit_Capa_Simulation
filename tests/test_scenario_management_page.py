@@ -66,6 +66,7 @@ from capa_simulation.components.scenario_management import (
     OFFICIAL_HOST,
     OFFICIAL_NAME_KEY,
     OFFICIAL_NOTE_KEY,
+    OFFICIAL_PURGED_MESSAGE,
     OFFICIAL_SEEN_KEY,
     OPENED_MOVED_MESSAGE,
     SAME_AS_OFFICIAL_HELP,
@@ -1449,6 +1450,40 @@ def test_an_official_popup_whose_scenario_was_archived_meanwhile_gives_both_noti
     assert not app.exception
     assert [(item.value, item.code) for item in flashed(app, "error")] == [
         ("보관된 시나리오는 공식버전으로 지정할 수 없습니다.", "FL-04"),
+        (OPENED_MOVED_MESSAGE, "FL-04"),
+    ]
+    latest = repository.latest_official_release()
+    assert latest is not None and latest.release_no == before.release_no
+    assert OFFICIAL_DIALOG_KEY not in app.session_state
+
+
+def test_an_official_popup_whose_scenario_was_deleted_meanwhile_gives_both_notices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """팝업을 그린 뒤 남이 그 시나리오를 보관하고 영구 삭제까지 하면 다시 읽기가 빈 대상을 받아
+    팝업을 걷는다 — 그 사이 보관만 된 것(저장소 거부)과 같이 알림창의 까닭과 카드 곁 「고른
+    시나리오가 바뀌어 …」 둘이다(검수 보드 sc-purged — a1 답과 같은 꼴). 전에는 카드 곁 하나만
+    섰다."""
+    app, browser, repository, database_path = _official_popup_app(tmp_path, monkeypatch)
+    other = _clone_official(database_path, "지워질 시나리오", "DELETE-OFFICIAL")
+    scenario_id = other.scenario.scenario_id
+    revision_id = other.revision.revision_id
+    before = repository.latest_official_release()
+    assert before is not None
+    app.run()
+    _ready_official(app, scenario_id, revision_id)
+    app.button(key=f"{CARD_OFFICIAL_KEY}_{scenario_id}").click().run()
+    assert not app.exception
+    assert app.session_state[OFFICIAL_DIALOG_KEY] == (scenario_id, revision_id)
+    app.text_input(key=OFFICIAL_NAME_KEY).set_value("A 가 친 이름")
+
+    repository.archive_scenario(scenario_id)
+    repository.delete_scenario(scenario_id)
+    _submit_in_popup(app, browser)
+
+    assert not app.exception
+    assert [(item.value, item.code) for item in flashed(app, "error")] == [
+        (OFFICIAL_PURGED_MESSAGE, "FL-04"),
         (OPENED_MOVED_MESSAGE, "FL-04"),
     ]
     latest = repository.latest_official_release()

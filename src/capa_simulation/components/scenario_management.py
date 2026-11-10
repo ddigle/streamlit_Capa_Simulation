@@ -334,6 +334,11 @@ LIST_RULES = ListRules(
 )
 # 왼쪽 줄을 누르고 바로 옛 카드 단추를 누른 꼴 — 아무것도 하지 않는다.
 OPENED_MOVED_MESSAGE = "고른 시나리오가 바뀌어 하지 않았습니다 — 지금 연 시나리오를 확인하세요."
+# 공식 지정 팝업을 그린 뒤 그 시나리오가 영구 삭제돼 지정하지 않은 까닭 — 그 사이 보관된 것의 저장소
+# 거부(「보관된 시나리오는 …」)와 같이 알림창 · Alarm 에 낸다(검수 보드 sc-purged).
+OFFICIAL_PURGED_MESSAGE = (
+    "팝업을 연 사이 그 시나리오가 영구 삭제돼 공식버전으로 지정하지 않았습니다."
+)
 # 저장 · 모두 버리기 사이에 고친 것(옛 세대) · 다른 곳에서 차례가 바뀐 뒤의 옮기기.
 OUTBOX_LIMIT = 2000
 ORDER_MOVED_NOTICE = "목록 차례가 바뀌어 그 옮기기는 반영하지 않았습니다."
@@ -1402,7 +1407,9 @@ def _official_dialog(database_path: str, scenario_id: str, revision_id: str) -> 
     - 연 회차(읽어 둔 대상 없음)에 그 시나리오가 보관됐거나 줄이 없으면 팝업을 걷고 카드 결과 칸에
       알린다(앱 전체 회차가 지금 연 줄로 다시 그린다).
     - 팝업을 그린 뒤에 보관됐으면 그대로 그리고 지정 단추에서 저장소가 거부한다 — 알림창의 까닭과
-      카드 곁 알림 둘이다(작은 결정 a7 「지금대로」).
+      카드 곁 알림 둘이다(작은 결정 a7 「지금대로」). 그 뒤 영구 삭제까지 됐으면 다시 읽기가 빈
+      대상을 받아 팝업을 걷는다 — 같은 둘(까닭 `OFFICIAL_PURGED_MESSAGE` + 카드 곁)이다(검수 보드
+      sc-purged — a1 답과 같은 꼴).
     - 다시 읽지 못하면(파일 잠금 따위) 팝업을 걷지 않는다. 읽어 둔 대상이 있으면 그것으로 친 글과
       함께 다시 그리고 지정하지 않는다 — 앱 전체를 다시 돌리면 같은 까닭으로 페이지가 서지 못해
       팝업과 친 글이 사라진다. 연 회차부터 못 읽었으면 그릴 것이 없어 앱 전체로 물러난다.
@@ -1419,6 +1426,16 @@ def _official_dialog(database_path: str, scenario_id: str, revision_id: str) -> 
             return
         if view is None or (kept is None and view.summary.status != "ACTIVE"):
             _close_official_dialog()
+            if view is None and kept is not None:
+                # 그린 뒤 영구 삭제 — 고칠 입력이 이 자리에 없는 거부라 까닭은 알림창 · Alarm 에만
+                # 낸다(`_refuse_official` 과 같은 칸 · 꼴, 맨 위 칸이라 카드 곁 알림보다 먼저 선다).
+                queue_flash(
+                    FLASH_WARNING_KEY,
+                    OFFICIAL_PURGED_MESSAGE,
+                    kind="error",
+                    icon=_NOTICE_ICONS["error"],
+                    popup_only=True,
+                )
             _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
             st.rerun()
         st.session_state[OFFICIAL_VIEW_KEY] = view
