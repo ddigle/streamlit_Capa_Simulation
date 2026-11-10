@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 화면의 「개조 일정」 모드 — 모드 전환·조건 카드·본문·대안 셋·왕복·계획
-# 공유· 쓰기 없음과 그 모드 그림·글 조각을 본다.
+# 공유·두 모드 머리 표지·쓰기 없음과 그 모드 그림·글 조각을 본다.
 
 """「개조 일정」 모드(AppTest).
 
@@ -41,6 +41,8 @@ from capa_simulation.components.constraint_equipment_plan import (
     CUTOFF_SOURCE_HELP,
     SESSION_ONLY_CAPTION,
     SESSION_ONLY_HELP,
+    UPEH_NOT_APPLIED_HELP,
+    UPEH_NOT_APPLIED_MARK,
 )
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.modification_schedule_figures import (
@@ -98,6 +100,10 @@ from capa_simulation.services.modification_schedule import (
     plan_modification_schedule,
 )
 from capa_simulation.services.required_shortening import plan_required_shortening
+from capa_simulation.upeh_assumption_state import (
+    UPEH_ASSUMPTION_DEFAULT_PERCENT,
+    UPEH_ASSUMPTION_PERCENT_KEY,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / CONSTRAINT_SIMULATION.path
@@ -315,6 +321,41 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     # 범례는 색 · 띠의 뜻만 — 글이 들지 않는 막대를 읽는 법도 그 풍선이다.
     assert "글이 들지 않는 막대" in CHART_HELP and "글이 들지 않는 막대" not in captions
     assert "**다 넣지 못했습니다 — 대안**" not in _markdown(app)
+
+
+def test_both_modes_mark_the_upeh_assumption_they_do_not_apply(
+    databases: tuple[Path, Path],
+) -> None:
+    """UPEH 가정을 켠 세션이면 두 모드 머리 줄에 「UPEH 가정 미적용」 표지 하나가 서고 뜻은 그 표지
+    풍선이다 — 두 모드 모두 공식 소요로 센다(`applied_marks`). 기본값(100%)이면 표지가 없다. 세션
+    칸은 첫 회차 뒤에 넣는다 — 첫 회차의 시나리오 활성화가 기본값으로 되돌린다."""
+
+    def marks(app: AppTest) -> list[Any]:
+        return [item for item in app.caption if str(item.value) == UPEH_NOT_APPLIED_MARK]
+
+    app = _app(databases)
+    app.query_params["process"] = DYNAMIC_PROCESS
+    _ok(app.run())
+    assert app.metric and not marks(app)
+
+    app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = 110
+    _ok(app.run())
+    assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "constraint"
+    assert app.metric and not _has_widget(app, "number_input", SCHEDULE_UNITS_KEY)
+    (mark,) = marks(app)
+    assert mark.proto.help == UPEH_NOT_APPLIED_HELP
+
+    app.button_group(key=CONSTRAINT_MODE_KEY).set_value("schedule")
+    _ok(app.run())
+    assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "schedule"
+    assert [metric.label for metric in app.metric] == SCHEDULE_KPIS
+    (mark,) = marks(app)
+    assert mark.proto.help == UPEH_NOT_APPLIED_HELP
+
+    app.session_state[UPEH_ASSUMPTION_PERCENT_KEY] = UPEH_ASSUMPTION_DEFAULT_PERCENT
+    _ok(app.run())
+    assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "schedule"
+    assert [metric.label for metric in app.metric] == SCHEDULE_KPIS and not marks(app)
 
 
 def test_the_figure_draws_one_bar_per_batch_on_the_wd_coordinate(
