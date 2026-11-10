@@ -135,7 +135,9 @@ TEXT: Final[dict[str, str]] = {
     "all_pages": "모든 화면",
     "level_filter": "단계 거르기",
     "page_filter": "화면 거르기",
-    "hide_resolved": "해소된 것 숨김",
+    # 닫힌 상태 알림 줄(해소 · 내용 바뀜 · 범위 바뀜)을 감춘다 — 「해소」 만이 아니다(지난 보드
+    # a-hide-closed).
+    "hide_resolved": "닫힌 것 숨김",
     "empty": "고른 조건의 알림이 없습니다.",
     "none": "아직 알림이 없습니다.",
     "go": "그 화면으로",
@@ -149,6 +151,9 @@ TEXT: Final[dict[str, str]] = {
     # 범위(리비전 · 시나리오 · 조회기간)가 바뀌어 닫힌 상태 알림 줄 — 조건이 사라진 것이
     # 아니다(2026-11-08 사용자 답 a3 — 모든 상태 알림).
     "scope_moved": "범위 바뀜 {time}",
+    # 같은 범위에서 내용(건수 · 목록)만 바뀌어 새 줄로 넘어가며 닫힌 앞 줄 — 이것도 조건이 사라진
+    # 것이 아니다(지난 보드 a-content-changed — a3 의 「범위 바뀜」 과 같은 뜻).
+    "content_moved": "내용 바뀜 {time}",
     "kind_event": "사건 알림",
     "kind_state": "상태 알림(바뀔 때만)",
     "log_code": "코드",
@@ -160,6 +165,7 @@ TEXT: Final[dict[str, str]] = {
     "log_scope": "범위",
     "log_resolved": "해소",
     "log_scope_moved": "범위 바뀜",
+    "log_content_moved": "내용 바뀜",
     "log_detail": "원본 오류",
     "log_full": "전문",
     "log_table": "딸린 표",
@@ -170,7 +176,6 @@ TEXT: Final[dict[str, str]] = {
     "log_copied": "복사했습니다",
     "log_copy_manual": "Ctrl+C 로 복사하세요",
     "resolved_gone": "조건이 사라짐",
-    "resolved_changed": "내용이 바뀜",
     "not_yet": "아직",
     "cause_new": "조건이 처음 보임",
     "cause_change": "내용이 바뀜",

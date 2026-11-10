@@ -1,15 +1,18 @@
 // 알림 칸(`components/alert_center.py`, 2026-11-03 결정 보드 D1 ~ D5). 파이썬이 페이지 앞에서 매 앱 전체 회차 data 로
 // 등록 글 · 팔레트 · 이 세션의 변경(`changes`) · 콜백이 담은 사건 알림(`events`)을 주고, 이 JS 가 문서에 하나 있는 알림 칸을
 // 세우거나 고친다(`window.__capaAlertCenter` — 다시 마운트돼도 하나다).
-// - 알림창 한 꼴: 오른쪽 아래, 최대 3칸, 새 칸이 구석, 단계 이름 글자 + 단계 색 테두리. 누름을 받지 않는다(`pointer-events:
-//   none`). 층은 Streamlit 대화상자 위다. 알림 8초 · 나머지 15초 뒤 걷는다.
+// - 알림창 한 꼴: 오른쪽 아래, 최대 3칸(넘치면 단계가 가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다 — `overflowVictim`),
+//   새 칸이 구석, 단계 이름 글자 + 단계 색 테두리. 누름을 받지 않는다(`pointer-events: none`). 층은 Streamlit 대화상자 위다.
+//   알림 8초 · 나머지 15초 뒤 걷는다. 방금 세운 칸이 넘침으로 곧바로 걷히면 보인 적이 없어 반복 창을 열지 않는다(`hidePopup`
+//   의 `seen`).
 // - 표지 훑기: 알림을 내는 자리(`alerts.state` · `alerts.flush` · `flash.render_flash`)가 스타일만 든 `st.html` 표지
 //   (`style[data-capa-alerts]` — JSON, 팝업 본문 안에서는 칸 안의 숨은 `span`)를 그린다. 앱 뿌리의 회차 표지
 //   (`data-test-script-state`)가 바뀔 때마다 문서를 **한 번** 훑는다 — 상시 MutationObserver 는 쓰지 않는다(큰 표 화면의 DOM 변화가 많다). 회차 시작에도 훑어 끊긴 회차의 표지를 놓치지
 //   않는다. 같은 표지를 또 봐도 사건은 id, 상태는 지문으로 한 번만 띄운다.
 // - 상태 알림(`kind: "state"`)은 「코드 + 범위 → 마지막 지문」 표로 바뀔 때만 띄운다. 같은 코드의 다른 범위가 오면 앞 범위는
 //   「범위가 바뀜」 으로 닫고, `active: false` 가 오면 「조건이 사라짐」 으로 해소한다. 범위 교체로 닫힌 줄은 Alarm 에 「해소」
-//   대신 「범위 바뀜」 이라 적는다(2026-11-08 사용자 답 a3 — 리비전이 오르면 조건이 그대로여도 앞 줄이 풀린 것처럼 읽혔다).
+//   대신 「범위 바뀜」 이라 적는다(2026-11-08 사용자 답 a3 — 리비전이 오르면 조건이 그대로여도 앞 줄이 풀린 것처럼 읽혔다). 같은
+//   범위에서 내용(건수 · 목록)만 바뀌어 새 줄로 넘어간 앞 줄도 「해소」 가 아니라 「내용 바뀜」 이다(지난 보드 a-content-changed).
 // - 같은 사건 알림(코드 + 짧은 글)이 앞 알림창이 떠 있거나 사라진 지 반복 창(60초) 안에 다시 나면 새 칸을 쌓지 않고 앞 칸을
 //   구석으로 옮겨 「×n」 을 붙이고 창 가장자리 테두리가 그 칸으로 모인다(D4 A — 한 겹 · 450ms · easeOutQuad · 한 번만). 움직임
 //   줄이기에서는 움직이지 않는 윤곽만 1.6초 선다.
@@ -44,7 +47,7 @@
 // - 알림에 딸린 표(`tables` — 본문에서 뺀 목록, 한 줄에 여럿일 수 있다)는 줄의 「… 보기」 단추가 표마다 펼치고 CSV 는 브라우저
 //   안에서 만든다(서버를 부르지 않는다). 칸 머리 풍선(`help`)은 `title` 이다. 표는 코드마다 가장 새 줄에만 남기고, 탭 저장소가
 //   넘치면 저장본에서 오래된 줄의 표부터 뺀다 — 줄은 남고, 그 화면이 다시 보내면 표가 다시 붙는다.
-// - 「로그」 펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 처음 · 마지막 · 화면 · 계기 · 범위 · 해소 · 원본 오류 · 전문)을
+// - 「로그」 펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 처음 · 마지막 · 화면 · 계기 · 범위 · 해소(내용 바뀜 · 범위 바뀜) · 원본 오류 · 전문)을
 //   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
 //   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
 //   복사에 넣지 않고 표 이름 · 행 수만 적는다(최대 2000행 — 표는 「CSV 내려받기」 가 맡는다).
@@ -126,11 +129,13 @@ function stateVerdict(entry, note) {
   return entry && entry.active ? 'resolved' : 'none'
 }
 // 상태 알림 줄의 표지 — 'open'(지금도 있음) · 'scope'(범위가 바뀌어 닫힘 — 조건은 새 범위 줄에 그대로일 수 있다) ·
-// 'resolved'(조건이 사라짐 · 내용이 바뀜). 사건 알림 줄은 null.
+// 'changed'(같은 범위에서 내용이 바뀌어 닫힘 — 조건은 새 줄에 이어진다) · 'resolved'(조건이 사라짐). 사건 알림 줄은 null.
+// 닫힌 셋은 줄 상태(`row.state`)가 모두 'resolved' 라 「닫힌 것 숨김」 이 함께 감춘다.
 function stateMark(row) {
   if (!row || row.kind !== 'state') return null
   if (row.state === 'open') return 'open'
-  return row.resolvedWhy === 'scope' ? 'scope' : 'resolved'
+  if (row.resolvedWhy === 'scope') return 'scope'
+  return row.resolvedWhy === 'changed' ? 'changed' : 'resolved'
 }
 // 같은 사건 알림이 반복 창 안인가 — 앞 알림창이 떠 있거나 사라진 지 `windowMs` 안.
 function isRepeat(live, now, windowMs) {
@@ -139,6 +144,15 @@ function isRepeat(live, now, windowMs) {
   return typeof live.goneAt === 'number' && now - live.goneAt <= windowMs
 }
 const LEVEL_RANK = { info: 0, check: 1, action: 2, error: 3 }
+// 알림창이 넘칠 때 걷을 칸 — 단계가 가장 낮은 칸, 같은 단계면 가장 오래된(먼저 선) 칸. `levels` 는 쌓인 차례(오래된 것
+// 먼저)의 단계다. 낮은 단계 알림 여럿이 함께 떠도 더 높은 단계(조치 필요 · 오류) 칸을 밀어내지 않는다.
+function overflowVictim(levels) {
+  let pick = -1
+  for (let index = 0; index < levels.length; index += 1) {
+    if (pick < 0 || (LEVEL_RANK[levels[index]] || 0) < (LEVEL_RANK[levels[pick]] || 0)) pick = index
+  }
+  return pick
+}
 // 안 읽은 줄 수와 그 가운데 가장 무거운 단계(배지 색). 99 를 넘으면 「99+」.
 function badgeOf(rows) {
   let count = 0
@@ -200,7 +214,7 @@ function processLiveOf(marks, here, version, settled) {
   if (mine.length) return mine[mine.length - 1]
   return settled ? { page: here, version, here: null, tab: null, drawn: false } : null
 }
-// 패널에 보일 줄 — 단계 · 화면 거르기와 「해소된 것 숨김」, 최신순(마지막 시각).
+// 패널에 보일 줄 — 단계 · 화면 거르기와 「닫힌 것 숨김」(해소 · 내용 바뀜 · 범위 바뀜 줄), 최신순(마지막 시각).
 function visibleRows(rows, filter) {
   return rows
     .filter(
@@ -946,10 +960,11 @@ function showPopup(C, key, note, repeat) {
   clearTimeout(live.timer)
   live.timer = setTimeout(() => hidePopup(C, key), levelMs(C, note.level))
   while (C.stack.children.length > (limits.popups || 3)) {
-    const oldest = C.stack.firstElementChild
-    const owner = [...C.live.entries()].find(([, item]) => item.el === oldest)
-    if (owner) hidePopup(C, owner[0])
-    else oldest.remove()
+    const shown = [...C.stack.children]
+    const victim = shown[overflowVictim(shown.map((node) => node.dataset.level))]
+    const owner = [...C.live.entries()].find(([, item]) => item.el === victim)
+    if (owner) hidePopup(C, owner[0], owner[0] !== key)
+    else victim.remove()
   }
   if (repeat) {
     const node = live.el
@@ -957,13 +972,15 @@ function showPopup(C, key, note, repeat) {
   }
 }
 
-function hidePopup(C, key) {
+// `seen` 이 거짓이면 방금 세운 칸이 넘침으로 곧바로 걷힌 것이다 — 보인 적이 없으니 반복 창(`goneAt`)을 이 회로 열지 않는다.
+// 처음 난 알림은 다음에 나도 「×n」 · 시선 끌기 없이 새 칸으로 서고, 앞에 보였던 알림은 그때 연 창이 그대로다.
+function hidePopup(C, key, seen = true) {
   const live = C.live.get(key)
   if (!live) return
   clearTimeout(live.timer)
   if (live.el && live.el.isConnected) live.el.remove()
   live.visible = false
-  live.goneAt = Date.now()
+  if (seen) live.goneAt = Date.now()
 }
 
 // 같은 알림 시선 끌기(D4 A) — 창 가장자리(4px 안쪽, 둥글기 14px) 테두리가 알림창 둘레(5px 밖, 둥글기 9px)로 모인다. 앞
@@ -1467,7 +1484,7 @@ function pageLabel(row) {
 // 로그 칸 짝. 복사(`forCopy`)는 시각에 날짜를 붙이고 끝에 전문 · 딸린 표(이름 · 행 수만)를 더한다.
 function logPairs(C, row, forCopy) {
   const t = text(C)
-  const why = { gone: t.resolved_gone, changed: t.resolved_changed }
+  const why = { gone: t.resolved_gone }
   const time = forCopy ? stamp : hms
   const pairs = [
     [t.log_code, `${row.code} · ${levelLabel(C, row.level)} · ${row.kind === 'state' ? t.kind_state : t.kind_event}`],
@@ -1480,6 +1497,8 @@ function logPairs(C, row, forCopy) {
   const mark = stateMark(row)
   if (mark === 'scope') {
     pairs.push([t.log_scope_moved, (forCopy ? stamp : hm)(row.resolvedAt)])
+  } else if (mark === 'changed') {
+    pairs.push([t.log_content_moved, (forCopy ? stamp : hm)(row.resolvedAt)])
   } else if (mark) {
     pairs.push([
       t.log_resolved,
@@ -1603,7 +1622,8 @@ function paintList(C) {
     meta.append(el('span', '', hm(row.last) + (row.n > 1 ? ` · ×${row.n}` : '')))
     const mark = stateMark(row)
     if (mark) {
-      const label = mark === 'open' ? t.open : fill(mark === 'scope' ? t.scope_moved : t.resolved, { time: hm(row.resolvedAt) })
+      const closed = mark === 'scope' ? t.scope_moved : mark === 'changed' ? t.content_moved : t.resolved
+      const label = mark === 'open' ? t.open : fill(closed, { time: hm(row.resolvedAt) })
       meta.append(el('span', `state${mark === 'open' ? ' open' : ''}`, label))
     }
     const acts = el('span', 'acts')

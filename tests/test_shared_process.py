@@ -381,3 +381,18 @@ def test_the_followers_declaration_names_each_page_and_its_screen() -> None:
         assert f'= "{screen}"' in source, (path, screen)
         assert mode in (MULTI, SINGLE)
     assert {mode for _, mode in FOLLOWERS.values()} == {MULTI, SINGLE}
+
+
+def test_the_original_name_screens_draw_their_field_without_display_names() -> None:
+    """원본 이름으로 그리는 화면(Space)은 따라가는 화면이고, 그 페이지가 공용 공정 칸을 `labels`
+    없이(원본 그대로) 그린다 — 머리 칩 · 판이 그 화면에서 원본으로 서는 근거(2026-11-10 보드 Q-3).
+    표시명으로 그리는 화면을 이 선언에 넣으면 칩 · 판이 그 화면 값 칸과 다른 이름이 된다."""
+    from capa_simulation.shared_process import FOLLOWERS, ORIGINAL_NAME_SCREENS
+
+    assert ORIGINAL_NAME_SCREENS == {"app_pages/space_status.py"}
+    assert ORIGINAL_NAME_SCREENS <= set(FOLLOWERS)
+    for path in ORIGINAL_NAME_SCREENS:
+        source = (PROJECT_ROOT / path).read_text(encoding="utf-8")
+        calls = re.findall(r"render_process_filter\((.*?)\n    \)", source, re.S)
+        assert calls, path
+        assert all("labels" not in call for call in calls), path

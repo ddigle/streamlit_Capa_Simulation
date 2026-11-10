@@ -422,6 +422,14 @@ st.session_state["items"] = session_changes(None, hrefs={{"{HOME.path}": ""}})
     assert change_summary.GROUPS[0][0] == "lose"
 
 
+def test_the_unsaved_group_head_names_only_the_reload() -> None:
+    """변경 판 「저장 안 함」 묶음 머리는 「새로고침에 사라짐」 이다 — 시나리오를 바꿀 때는
+    그 팝업이 따로 묻고(「변경을 버리고 불러오기」), VOC 적어 둔 답변은 시나리오를 바꿔도
+    남는다(지난 보드 m-chip-head)."""
+    assert dict(change_summary.GROUPS)["keep"] == "저장 안 함 — 새로고침에 사라짐"
+    assert all("시나리오 바꿈" not in head for _, head in change_summary.GROUPS)
+
+
 def test_a_drawn_marker_and_the_center_share_the_page_label(sent: list[dict[str, Any]]) -> None:
     """표지의 「화면」 은 `app.py` 가 적은 이번 화면이다 — 알림 칸이 같은 회차에 그 값을 안다."""
     script = """

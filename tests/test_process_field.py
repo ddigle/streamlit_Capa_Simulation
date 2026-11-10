@@ -243,6 +243,44 @@ def test_the_mark_is_the_same_while_the_value_stays() -> None:
     assert process_marks(app) == first
 
 
+def _chip_script() -> None:
+    import streamlit as st
+
+    from capa_simulation.components import process_field
+
+    st.session_state["chips"] = {
+        name: process_field.header_chip(path)
+        for name, path in (
+            ("space", "app_pages/space_status.py"),
+            ("result", "app_pages/calculation_result.py"),
+            ("home", None),
+        )
+    }
+
+
+def test_the_header_chip_reads_original_names_on_space_and_sent_labels_elsewhere() -> None:
+    """머리 칩 · 판의 글자는 그 화면 글자다 — Space(원본 이름으로 그리는 화면)에서는 원본,
+    표시명으로 그리는 화면과 따라가지 않는 화면(HOME)은 보낸 화면의 표시명(2026-11-10 보드
+    Q-3 — 한 화면 한 이름). 값(원본)과 차례는 같다."""
+    app = AppTest.from_function(_chip_script)
+    app.session_state[shared_process._VALUES_KEY] = ["WF", "Mold"]
+    app.session_state[shared_process._ORIGIN_KEY] = "산출 결과"
+    app.session_state[shared_process._LABELS_KEY] = {"WF": "WF 입고검사", "Mold": "몰드"}
+    app.session_state[shared_process._VERSION_KEY] = 1
+    app.run()
+
+    assert not app.exception
+    chips = app.session_state["chips"]
+    assert [chips[name]["values"] for name in ("space", "result", "home")] == [["WF", "Mold"]] * 3
+    assert (chips["space"]["labels"], chips["space"]["top"]) == (["WF", "Mold"], "WF 외 1개")
+    assert (chips["result"]["labels"], chips["result"]["top"]) == (
+        ["WF 입고검사", "몰드"],
+        "WF 입고검사 외 1개",
+    )
+    assert chips["home"]["labels"] == ["WF 입고검사", "몰드"]
+    assert chips["space"]["origin"] == chips["result"]["origin"] == "산출 결과"
+
+
 def test_the_field_is_drawn_once_per_run() -> None:
     """같은 전체 회차에 두 번 불러도 값 칸은 하나다(같은 key 의 위젯이 둘이면 멈춘다)."""
     app = AppTest.from_function(_filter_script)

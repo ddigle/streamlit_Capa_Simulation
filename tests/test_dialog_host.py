@@ -284,6 +284,21 @@ def test_close_to_app_turns_the_closing_round_into_a_whole_app_round(
     assert app.session_state["page_runs"] == 2
 
 
+def test_popups_that_raise_alerts_on_close_close_to_the_whole_app() -> None:
+    """닫는 회차에 알림 표지를 쓰는 팝업은 앱 전체로 닫는다(설계 규칙 UI-NTF-01 — 지난 보드
+    a-fragment-mark). 알림 칸은 앱 회차 표지가 바뀔 때만 문서를 훑어 호스트만 도는 짧은 회차의
+    표지를 다음 회차까지 못 읽는다 — HOME 「HOME 설정」(닫힌 자리가 팝업 안 알림을 넘긴다)은 늘,
+    Space 캔버스 편집은 밖 알림이 선 채 닫을 때만 `close_to_app` 이다."""
+    import inspect
+
+    from capa_simulation.components import floor_canvas_dialog, home_settings
+
+    home = inspect.getsource(home_settings._dismiss_home_settings)
+    assert "HOME_DIALOG_HOST.close_to_app()" in home
+    canvas = inspect.getsource(floor_canvas_dialog._dismiss)
+    assert "if shown:\n        CANVAS_DIALOG_HOST.close_to_app()" in canvas
+
+
 def test_without_a_finished_app_run_the_opener_falls_back_to_the_whole_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

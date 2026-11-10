@@ -15,7 +15,8 @@ HOME 에서 좁힌 공정이 기준 정보 · 산출 결과 · 가용설비 Main
 값과 읽는 법:
 
 - 값은 **원본 공정명**의 차례 있는 목록이다. 빈 목록이면 「고르지 않음」 — 화면은 전체를 보인다.
-  보내는 화면이 보이는 글자(표시명)를 함께 주면 머리 띠 칩이 그 글자로 읽는다(`labels`).
+  보내는 화면이 보이는 글자(표시명)를 함께 주면 머리 띠 칩이 그 글자로 읽는다(`labels`). 원본
+  이름으로 그리는 화면(`ORIGINAL_NAME_SCREENS` — Space)에서는 칩 · 판도 원본이다(한 화면 한 이름).
 - 화면은 「그 화면에 있는 공정」 만 읽는다(`applied`). 글자(표시명 · Space 원본)는 그 화면 규칙을
   따른다. 그 화면에 없는 공정은 **지우지 않는다** — 그 화면은 전체를 보이고 「없는 공정」 표지를
   단다(`missing`). 리비전을 바꿔 사라진 공정이 돌아오면 다시 걸린다.
@@ -94,6 +95,11 @@ FOLLOWERS: Final[Mapping[str, tuple[str, str]]] = MappingProxyType(
         "app_pages/constraint_simulation.py": ("제약 시뮬레이션", SINGLE),
     }
 )
+# 따라가는 화면 가운데 공정을 원본 이름으로 그리는 화면(페이지 파일 — 값 칸을 `labels` 없이
+# 그린다). 그 화면에서는 머리 띠 칩 · 칩 판도 보낸 화면의 표시명이 아니라 원본 이름으로
+# 적는다(2026-11-10 보드 Q-3 — 한 화면 한 이름, 설계 규칙 UI-CON-02). 그물
+# `tests/test_shared_process.py`.
+ORIGINAL_NAME_SCREENS: Final[frozenset[str]] = frozenset({"app_pages/space_status.py"})
 
 
 @dataclass(frozen=True)

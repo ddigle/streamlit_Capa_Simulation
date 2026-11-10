@@ -22,6 +22,7 @@ import duckdb
 import pytest
 from js_runner import run_js_json
 
+from capa_simulation.alerts import POPUP_SECONDS
 from capa_simulation.reference_grid_keys import DATASET_KEY, DATASETS, GRID_HOST
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
 
@@ -1685,6 +1686,83 @@ def test_the_alert_popup_item_reads_three_slots_level_names_layer_and_repeat() -
         "같은 알림 표지 없음 — 정한 꼴과 다름"
     )
     assert screens.summarize_alert_popup(None, None) == "알림창 없음"
+    # 앞 화면의 조치 필요 칸이 걷히지 않은 채 띄우면 넘침이 그 칸을 두고 시험 「확인 필요」 를
+    # 걷는다.
+    lingering = {**first, "labels": ["조치 필요", "조치 필요", "오류"]}
+    assert screens.summarize_alert_popup(lingering, again, 1) == (
+        "앞 알림 1칸 안 걷힘 · 알림창 3칸(최대 3) · 단계 글 조치 필요·조치 필요·오류 · 누름 통과"
+        " · 대화상자 위 · 같은 알림 ×2 — 정한 꼴과 다름"
+    )
+    assert screens.summarize_alert_popup(first, again, 1).endswith("정한 꼴과 다름")
+
+
+_ALERT_RANK = {"알림": 0, "확인 필요": 1, "조치 필요": 2, "오류": 3}
+_ALERT_LABEL = {"info": "알림", "check": "확인 필요", "action": "조치 필요", "error": "오류"}
+
+
+class _AlertScreen(_FakeScreen):
+    """알림창만 흉내 낸다 — 앞 화면 「조치 필요」 한 칸이 `lingering` 번 읽힌 뒤 걷히고, 띄운
+    칸은 셋을 넘으면 단계가 가장 낮은(같으면 먼저 선) 칸부터 걷는다(알림 칸 JS
+    `overflowVictim`)."""
+
+    def __init__(self, lingering: int) -> None:
+        super().__init__()
+        self.lingering = lingering
+        self.stack: list[list[str]] = [["조치 필요", ""]]
+        self.calls: list[str] = []
+
+    def open_home(self) -> None:
+        self.calls.append("home")
+
+    def js(self, script: str, arg: object = None) -> Any:
+        if script == screens._ALERT_RAISE_JS:
+            self.calls.append(f"raise@{len(self.stack)}")
+            for level in cast(list[str], arg):
+                label = _ALERT_LABEL[level]
+                same = [card for card in self.stack if card[0] == label and card[1]]
+                if level == "error" and len(cast(list[str], arg)) == 1 and same:
+                    same[0][1] = "×2"
+                    continue
+                self.stack.append([label, "test"])
+                while len(self.stack) > 3:
+                    ranks = [_ALERT_RANK[card[0]] for card in self.stack]
+                    self.stack.pop(ranks.index(min(ranks)))
+            return True
+        assert script == screens._ALERT_STACK_JS
+        if self.lingering:
+            self.lingering -= 1
+            if not self.lingering:
+                self.stack = [card for card in self.stack if card[1]]
+        return {
+            "count": len(self.stack),
+            "labels": [card[0] for card in self.stack],
+            "times": [card[1] if card[1] == "×2" else "" for card in self.stack],
+            "pointer": "none",
+            "z": 1000200,
+        }
+
+
+def test_the_alert_popup_item_waits_for_the_stack_to_clear_before_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """앞 화면 알림창(예: 가용설비 현황의 조치 필요)이 남은 채 시험 알림 넷을 띄우면 넘침이 그
+    칸을 두고 시험 「확인 필요」 를 걷어 결과가 앞 화면에 따라 바뀐다 — 다 걷히길 기다린 뒤
+    띄운다. 끝까지 안 걷히면 그 수를 적고 「다름」 이다."""
+    assert screens.ALERT_CLEAR_SECONDS > max(POPUP_SECONDS.values())
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    waited = _AlertScreen(lingering=3)
+    assert screens.check_alert_popup(waited) == (
+        "알림창 3칸(최대 3) · 단계 글 확인 필요·조치 필요·오류 · 누름 통과 · 대화상자 위"
+        " · 같은 알림 ×2 — 정한 꼴과 같음"
+    )
+    assert waited.calls == ["home", "raise@0", "raise@3"]
+    monkeypatch.setattr(screens, "ALERT_CLEAR_SECONDS", 0)
+    stuck = _AlertScreen(lingering=99)
+    assert screens.check_alert_popup(stuck) == (
+        "앞 알림 1칸 안 걷힘 · 알림창 3칸(최대 3) · 단계 글 조치 필요·조치 필요·오류 · 누름 통과"
+        " · 대화상자 위 · 같은 알림 ×2 — 정한 꼴과 다름"
+    )
+    assert stuck.calls == ["home", "raise@1", "raise@3"]
 
 
 def test_the_app_error_screen_is_an_error_box_without_the_sidebar_menu() -> None:

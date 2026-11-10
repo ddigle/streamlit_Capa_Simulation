@@ -759,9 +759,9 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     # 지금 화면을 가리키는 줄은 열 탭이 있을 때만 「그 화면으로」 를 세운다. HOME 주소는 빈 글이다.
     assert out["go"] == [True, False, True, False, True, False]
     # 상태 알림 줄 표지 — 범위(리비전 · 시나리오 · 조회기간)가 바뀌어 닫힌 줄은 「해소」 가
-    # 아니라 「범위 바뀜」 이다(2026-11-08 사용자 답 a3). 조건이 사라진 줄 · 내용이 바뀐 줄은
-    # 「해소」 그대로.
-    assert out["marks"] == ["open", "scope", "resolved", "resolved", None, None]
+    # 아니라 「범위 바뀜」 이다(2026-11-08 사용자 답 a3). 같은 범위에서 내용만 바뀌어 닫힌 줄은
+    # 「내용 바뀜」(지난 보드 a-content-changed), 조건이 사라진 줄만 「해소」 다.
+    assert out["marks"] == ["open", "scope", "resolved", "changed", None, None]
     # 로그 복사 글 — 빈 값 · 이름 없는 짝은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
     assert out["copy"] == (
         "코드: ST-15 · 확인 필요 · 상태 알림(바뀔 때만)\n"
@@ -773,23 +773,208 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
 def test_a_row_closed_by_a_scope_change_reads_scope_moved_not_resolved() -> None:
     """리비전이 오르면 같은 상태 알림이 새 범위 줄로 다시 서고 앞 줄은 닫힌다 — 조건은 그대로라
     「해소」 로 읽히면 풀린 것처럼 보였다(2026-11-08 사용자 답 a3 · 재현 u3-09 Space 가정 배치
-    `EQ-13`). 줄 표지와 로그 짝이 같은 판정(`stateMark`)을 쓰고, 모든 상태 알림에 걸린다."""
+    `EQ-13`). 같은 범위에서 내용(수 · 목록)만 바뀌어 새 줄로 넘어간 앞 줄도 「해소」 가 아니라
+    「내용 바뀜」 이다(지난 보드 a-content-changed — a3 과 같은 뜻). 줄 표지와 로그 짝이 같은
+    판정(`stateMark`)을 쓰고, 모든 상태 알림에 걸린다."""
     assert alert_center.TEXT["scope_moved"] == "범위 바뀜 {time}"
     assert alert_center.TEXT["log_scope_moved"] == "범위 바뀜"
+    assert alert_center.TEXT["content_moved"] == "내용 바뀜 {time}"
+    assert alert_center.TEXT["log_content_moved"] == "내용 바뀜"
     assert alert_center.TEXT["resolved"] == "해소 {time}"
     assert "resolved_scope" not in alert_center.TEXT
+    assert "resolved_changed" not in alert_center.TEXT
     panel = JS[JS.index("const mark = stateMark(row)\n    if (mark) {") :]
     panel = panel[: panel.index("const acts = ")]
-    assert "mark === 'scope' ? t.scope_moved : t.resolved" in panel
+    assert (
+        "mark === 'scope' ? t.scope_moved : mark === 'changed' ? t.content_moved : t.resolved"
+        in panel
+    )
     pairs = JS[JS.index("function logPairs(") :]
     pairs = pairs[: pairs.index("\n}\n")]
     assert "pairs.push([t.log_scope_moved, (forCopy ? stamp : hm)(row.resolvedAt)])" in pairs
+    assert "pairs.push([t.log_content_moved, (forCopy ? stamp : hm)(row.resolvedAt)])" in pairs
     # 줄을 닫는 까닭은 그대로 셋이다 — 범위 교체만 `scope` 다.
     state = JS[JS.index("function handleState(") :]
     state = state[: state.index("\n}\n")]
     assert "resolveRow(C, entry.row, now, 'scope')" in state
     assert "resolveRow(C, entry.row, now, 'gone')" in state
     assert "resolveRow(C, entry.row, now, 'changed')" in state
+
+
+def test_the_hide_box_reads_closed_and_hides_every_closed_row() -> None:
+    """Alarm 거르기 체크는 「닫힌 것 숨김」 이다 — 해소만이 아니라 내용 바뀜 · 범위 바뀜 줄도
+    감춘다(지난 보드 a-hide-closed — 이름만 바꾸고 동작은 그대로). 닫힌 셋은 줄 상태가 모두
+    `resolved` 다."""
+    assert alert_center.TEXT["hide_resolved"] == "닫힌 것 숨김"
+    out = _node(
+        """
+const base = { kind: 'state', level: 'check', page: 'HOME' }
+const row = (state, resolvedWhy, last) => ({ ...base, state, resolvedWhy, last })
+const rows = [
+  row('open', '', 5),
+  row('resolved', 'gone', 4),
+  row('resolved', 'changed', 3),
+  row('resolved', 'scope', 2),
+  { kind: 'event', level: 'info', page: 'HOME', state: null, last: 1 },
+]
+console.log(JSON.stringify({
+  marks: rows.map((row) => stateMark(row)),
+  shown: visibleRows(rows, { level: 'all', page: '', hideResolved: true }).map((row) => row.last),
+}))
+"""
+    )
+    assert out["marks"] == ["open", "resolved", "changed", "scope", None]
+    assert out["shown"] == [5, 1]
+
+
+def test_an_overflowing_popup_stack_drops_the_lowest_level_first() -> None:
+    """알림창이 상한(`alerts.POPUP_LIMIT`)을 넘으면 단계가 가장 낮은 칸부터 걷고, 같은 단계면 가장
+    오래된 칸이다(2026-11-10 보드 Q-1) — 가용설비 현황에서 Summary 를 처음 열고 곧 Static 대비
+    일정을 열면 확인 필요 · 알림이 잇따라 떠 먼저 선 「조치 필요」(Cut-off 누락) 칸을 15초 전에
+    밀어내던 소음(사본 앱 관측)."""
+    out = _node(
+        """
+const cases = [
+  ['action', 'check', 'info', 'check'],
+  ['action', 'check', 'check', 'check'],
+  ['error', 'action', 'check', 'info'],
+  ['info', 'info', 'info', 'info'],
+  ['check', 'error', 'error', 'info'],
+  [],
+]
+console.log(JSON.stringify(cases.map((levels) => overflowVictim(levels))))
+"""
+    )
+    assert out == [2, 1, 3, 0, 3, -1]
+    stack = JS[JS.index("function showPopup(") :]
+    stack = stack[: stack.index("\n}\n")]
+    assert "overflowVictim(shown.map((node) => node.dataset.level))" in stack
+    assert "firstElementChild" not in stack
+    assert alerts.POPUP_LIMIT == 3
+
+
+def _js_function(name: str) -> str:
+    start = JS.index(f"function {name}(")
+    return JS[start : JS.index("\n}\n", start) + 3]
+
+
+# 알림창 쌓기(`showPopup` · `hidePopup` — 구획 밖)를 가짜 칸 · 시계로 돌린다. 타이머는 돌리지
+# 않고 걷힘은 `expire`(타이머가 부르는 것과 같은 `hidePopup(C, key)`)로 낸다. 칸 글은 짧은 글 +
+# 「×n」.
+_POPUP_FAKES = """
+let clock = 1000000
+Date.now = () => clock
+const setTimeout = () => 0
+const clearTimeout = () => {}
+const requestAnimationFrame = (fn) => fn()
+let attracted = []
+function attract(C, node) { if (node.isConnected) attracted.push(node.text) }
+function levelMs() { return 15000 }
+function fakeStack() {
+  const stack = { children: [] }
+  stack.append = (node) => {
+    const at = stack.children.indexOf(node)
+    if (at >= 0) stack.children.splice(at, 1)
+    stack.children.push(node)
+    node.isConnected = true
+  }
+  return stack
+}
+function popupNode(C, note, burst) {
+  const text = note.short + (burst > 1 ? ` ×${burst}` : '')
+  const node = { dataset: { level: note.level }, text, isConnected: false }
+  node.remove = () => {
+    const at = C.stack.children.indexOf(node)
+    if (at >= 0) C.stack.children.splice(at, 1)
+    node.isConnected = false
+  }
+  node.replaceWith = (other) => {
+    const at = C.stack.children.indexOf(node)
+    if (at >= 0) C.stack.children[at] = other
+    other.isConnected = at >= 0
+    node.isConnected = false
+  }
+  return node
+}
+const fresh = () => ({ data: { limits: { popups: 3 } }, live: new Map(), stack: fakeStack() })
+const raise = (C, key, level) => {
+  const repeat = isRepeat(C.live.get(key), Date.now(), 60000)
+  showPopup(C, key, { level, short: key }, repeat)
+}
+const expire = (C, ...keys) => keys.forEach((key) => hidePopup(C, key))
+const shown = (C) => C.stack.children.map((node) => node.text)
+const high = (C) => {
+  raise(C, 'action', 'action')
+  raise(C, 'error', 'error')
+  raise(C, 'check', 'check')
+}
+"""
+
+
+def test_a_popup_dropped_the_moment_it_stands_was_never_seen_and_opens_no_repeat_window() -> None:
+    """높은 단계 세 칸이 선 동안 난 「알림」 은 서자마자 넘침으로 걷힌다(2026-11-10 보드 Q-1).
+    그 칸은 보인 적이 없어 반복 창을 열지 않는다 — 셋이 걷힌 뒤 같은 알림이 처음 보일 때 「×3」 ·
+    시선 끌기가 붙던 길(통합 검토 사본 앱 관측). 보였던 칸(제 시간에 걷힘 · 뒤 칸에 밀려 걷힘)은
+    그대로 60초 반복 창을 연다(D4)."""
+    out = _node(
+        _js_function("showPopup")
+        + _js_function("hidePopup")
+        + _POPUP_FAKES
+        + """
+const out = {}
+let C = fresh()
+high(C)
+raise(C, 'info', 'info')
+out.unseenFirst = shown(C)
+clock += 600
+raise(C, 'info', 'info')
+out.unseenAgain = shown(C)
+clock += 15000
+expire(C, 'action', 'error', 'check')
+raise(C, 'info', 'info')
+out.firstSeen = shown(C)
+out.firstSeenAttract = attracted
+C = fresh()
+attracted = []
+raise(C, 'info', 'info')
+clock += 8000
+expire(C, 'info')
+clock += 5000
+high(C)
+raise(C, 'info', 'info')
+clock += 15000
+expire(C, 'action', 'error', 'check')
+raise(C, 'info', 'info')
+out.seenBefore = shown(C)
+out.seenBeforeAttract = attracted
+C = fresh()
+attracted = []
+raise(C, 'info', 'info')
+clock += 2000
+high(C)
+out.pushedOut = shown(C)
+clock += 15000
+expire(C, 'action', 'error', 'check')
+raise(C, 'info', 'info')
+out.pushedOutAgain = shown(C)
+out.pushedOutAttract = attracted
+console.log(JSON.stringify(out))
+"""
+    )
+    assert out["unseenFirst"] == ["action", "error", "check"]
+    assert out["unseenAgain"] == ["action", "error", "check"]
+    assert out["firstSeen"] == ["info"]
+    assert out["firstSeenAttract"] == []
+    # 앞에 보였던 알림은 보이지 않은 회도 세어 「×n」 이고 시선을 끈다.
+    assert out["seenBefore"] == ["info ×3"]
+    assert out["seenBeforeAttract"] == ["info ×3"]
+    assert out["pushedOut"] == ["action", "error", "check"]
+    assert out["pushedOutAgain"] == ["info ×2"]
+    assert out["pushedOutAttract"] == ["info ×2"]
+    event = _js_function("handleEvent")
+    assert "isRepeat(C.live.get(key), now," in event and "showPopup(C, key, note, repeat)" in event
+    timer = "setTimeout(() => hidePopup(C, key), levelMs(C, note.level))"
+    assert timer in _js_function("showPopup")
 
 
 def test_the_js_limits_match_the_registry_constants() -> None:
