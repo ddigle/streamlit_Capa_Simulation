@@ -411,6 +411,33 @@ def test_a_plan_only_source_says_how_to_fix_it_in_the_run_record(
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 
 
+def test_a_route_only_source_is_not_designated_and_says_how_to_fix_it(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """경로 행만 있는 원천은 소요가 없어 판정할 공정이 남지 않는다 — 지정하지 않고, 등록 점검이 잡은
+    빈 계획 표의 푸는 길(원천에 계획 행을 넣어 다시 등록)을 사유 끝에 붙인다(검수 보드
+    st-route-only)."""
+    _official_w40(repository)
+    frame = _source()
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": frame.loc[frame["계획기초정보여부"].eq("N")].reset_index(drop=True)},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage, run.official_release_no) == (
+        STATUS_PUBLISH_SKIPPED,
+        "judge",
+        None,
+    )
+    assert run.reason is not None
+    assert run.reason.count("원천에 계획 행을 넣어 다시 등록하세요.") == 1
+    base = repository.load_revision(str(run.base_revision_id))
+    assert (base.revision.note or "").endswith("HOME · 부하 환산 계산 멈춤(빈 표 RQ_PKG_PLAN)")
+    assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
+
+
 def test_a_securement_failure_registers_but_does_not_publish(
     repository: DuckDBScenarioRepository,
 ) -> None:

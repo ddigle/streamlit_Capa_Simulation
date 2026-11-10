@@ -67,6 +67,14 @@ _ROUTE_TABLES: Final = {
     "RQ_REQB": "「STEP 구성」",
     "RQ_EQP_AVBL": "「설비대수 가용」",
 }
+# 원천의 계획 행(계획기초정보여부 Y)에서만 나오는 표 → 화면 이름(부하 환산 탭 이름). 경로 행만 있는
+# 원천이면 빈다 — 대당 Capa · 소요대수는 서지만(소요 0) 이 표의 달로 조회기간을 정하는 HOME · 부하
+# 환산이 내부 표 이름 글로 처음 멈춘다. 경로 표와 따로 둔다 — 빈 경로 표의 까닭
+# 가르기(`_empty_fix`)는 경로 표 셋의 수로 가른다.
+_PLAN_TABLES: Final = {"RQ_PKG_PLAN": "「PKG PLAN」"}
+# 빈 계획 표가 멈추는 화면 — 알림 · 메모의 머리. 경로 표 · 기준정보 꼴은 대당 Capa 계산이 멈춘다.
+_PLAN_STOP_SCOPE: Final = "HOME · 부하 환산 계산"
+_CAPACITY_STOP_SCOPE: Final = "대당 Capa 계산"
 
 
 @dataclass(frozen=True)
@@ -82,17 +90,24 @@ class RegistrationCapacityCheck:
     없음)다. 멈추지 않았으면 둘 다 None 이다. `empty` 는 계산 화면이 행을 읽어야 서는데 빈 경로 표
     (`_ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다. `blank_cs_routes` 는
     CS 가 비어 파생에서 뺀 경로 행 수로, 빈 경로 표의 까닭(원천에 경로 행이 없나, 있는데 CS 가
-    비었나)과 고칠 곳을 가른다.
+    비었나)과 고칠 곳을 가른다. `empty_plan` 은 빈 계획 표(`_PLAN_TABLES` — 경로 행만 있는 원천)다 —
+    그때 멈추는 것은 대당 Capa 가 아니라 HOME · 부하 환산이다(`stop_scope`).
     """
 
     error: str | None = None
     problem: ReferenceJoinProblem | None = None
     empty: tuple[str, ...] = ()
     blank_cs_routes: int = 0
+    empty_plan: tuple[str, ...] = ()
 
     @property
     def stopped(self) -> bool:
         return self.error is not None
+
+    @property
+    def stop_scope(self) -> str:
+        """멈추는 계산 — 알림 · 메모의 머리(「대당 Capa 계산」 · 「HOME · 부하 환산 계산」)."""
+        return _PLAN_STOP_SCOPE if self.empty_plan else _CAPACITY_STOP_SCOPE
 
     @property
     def table(self) -> str | None:
@@ -101,6 +116,8 @@ class RegistrationCapacityCheck:
             return self.problem.table
         if self.empty:
             return self.empty[0]
+        if self.empty_plan:
+            return self.empty_plan[0]
         if self.error is None:
             return None
         match = _TABLE_NAME.match(self.error)
@@ -114,6 +131,8 @@ class RegistrationCapacityCheck:
             return f"대당 Capa 계산 멈춤({self.problem.table} {self.problem.summary()})"
         if self.empty:
             return f"대당 Capa 계산 멈춤(빈 표 {' · '.join(self.empty)})"
+        if self.empty_plan:
+            return f"{self.stop_scope} 멈춤(빈 표 {' · '.join(self.empty_plan)})"
         return f"대당 Capa 계산 멈춤({self.table or '기준정보'})"
 
     def fix_hint(self, revision_no: int) -> str:
@@ -121,6 +140,11 @@ class RegistrationCapacityCheck:
         if self.empty:
             # 앞말은 계산 멈춤 알림의 모듈수 글(`page_bootstrap.calculation_stop_notice`)과 같다.
             return f"앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — {self._empty_fix()}"
+        if self.empty_plan:
+            return (
+                "앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천에 계획 행을 넣어 다시 "
+                "등록하세요."
+            )
         table = self.table
         if table == "RQ_MODULE":
             return (
@@ -162,7 +186,7 @@ class RegistrationCapacityCheck:
         # 「…합니다.」 로 끝나는 글도 있다 — 마침표를 겹치지 않는다.
         error = self.error.rstrip().rstrip(".")
         return (
-            f"저장은 했지만 {revision} 대당 Capa 계산이 멈춥니다 — {error}. "
+            f"저장은 했지만 {revision} {self.stop_scope}이 멈춥니다 — {error}. "
             f"{self.fix_hint(revision_no)}"
         )
 
@@ -180,7 +204,9 @@ def check_registration_capacity(
     계산 앞에서 빈 경로 표(`_ROUTE_TABLES`)부터 본다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
     멈춤으로 잡히지 않는다(2026-11-08 사용자 결정 U3 — 등록은 그대로 하고 「계산 멈춤」 으로
     알린다). 경로 행이 있어도 모두 CS 가 비면 파생이 빼 같은 표가 빈다 — `blank_cs_routes`(CS 가
-    비어 뺀 경로 행 수, `BlankCsDrop.route_rows`)로 글의 까닭과 고칠 곳을 가른다.
+    비어 뺀 경로 행 수, `BlankCsDrop.route_rows`)로 글의 까닭과 고칠 곳을 가른다. 경로 행만 있는
+    원천(빈 계획 표 `_PLAN_TABLES`)도 계산 앞에서 같은 꼴로 잡는다 — 그때 멈추는 것은 HOME · 부하
+    환산이다(`RegistrationCapacityCheck.stop_scope`).
     """
     empty = tuple(name for name in _ROUTE_TABLES if tables[name].empty)
     if empty:
@@ -194,6 +220,15 @@ def check_registration_capacity(
         else:
             error = f"공정이 든 경로 행(계획기초정보여부 N)이 없는 원천이라 {emptied}"
         return RegistrationCapacityCheck(error, empty=empty, blank_cs_routes=blank_cs_routes)
+    # 반대로 경로 행만 있는 원천(계획 0행)은 계획 표가 빈다(검수 보드 st-route-only — U3 와 같은
+    # 꼴). 계획 행의 CS 가 모두 비어 빈 꼴은 파생이 이미 막았다(`_drop_blank_cs_rows`).
+    empty_plan = tuple(name for name in _PLAN_TABLES if tables[name].empty)
+    if empty_plan:
+        return RegistrationCapacityCheck(
+            f"계획 행(계획기초정보여부 Y)이 없는 원천이라 "
+            f"{' · '.join(_PLAN_TABLES[name] for name in empty_plan)} 표가 비었습니다.",
+            empty_plan=empty_plan,
+        )
     try:
         calculate_unit_capacity(
             upeh=tables["RQ_UPEH"],
