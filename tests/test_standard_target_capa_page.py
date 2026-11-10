@@ -1159,6 +1159,9 @@ def test_missing_availability_is_a_state_alert_not_a_box() -> None:
         note["short"].startswith("가용대수가 없는 공정·주차 1건")
         and "가용설비 붙여넣기" in note["full"]
     )
+    # 단추는 결과 상자 「표시 항목」 줄 오른쪽 끝이다 — 따로 선 작업 줄은 없다(2026-11-09 보드 T3).
+    assert "「표시 항목」 줄 오른쪽 끝 「가용설비 붙여넣기」" in note["full"]
+    assert "작업 줄" not in note["full"]
 
     app = app.segmented_control(key="standard_target_output_metric").set_value("대당 일 Capa").run()
     (quiet,) = [note for note in alert_notes(app) if note.get("code") == "ST-17"]
@@ -1217,6 +1220,10 @@ def test_standard_target_guide_carries_what_left_the_body() -> None:
         assert text in guide, text
     # 예전 권고 — 따라 하면 필터·기간 밖 저장값이 되돌릴 수 없게 사라졌다.
     assert "입력 초기화** 뒤 다시 붙여넣" not in guide
+    # 「가용설비 붙여넣기」 는 「표시 항목」 줄 오른쪽 끝이다 — 따로 선 작업 줄은 없다
+    # (2026-11-09 보드 T3).
+    assert "위 「표시 항목」 줄 오른쪽 끝 **가용설비 붙여넣기** 로 넣습니다" in guide
+    assert "위 작업 줄의" not in guide
 
 
 # 저장된 주차별 가용설비가 없을 때 표 자리의 빈 결과 한 줄.
