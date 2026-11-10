@@ -1618,8 +1618,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
     2026-11-08 결정 U3)는 원천 다시 등록. 등록이 CS 가 비어 뺀 경로 행 수(`blank_cs_routes` = `BlankCsDrop.route_rows`)를 넘겨, 그
     수가 있으면 그 CS 를 채우라고, 없으면 경로 행을 넣으라고 가른다. 반대로 경로 행만 있는 원천의 빈 계획 표(`RQ_PKG_PLAN` —
-    `_PLAN_TABLES`, 필드 `empty_plan`)도 같은 꼴로 잡는다 — 대당 Capa 는 서고 HOME · 부하 환산이 멈추므로 글 · 메모 머리는
-    `stop_scope` 「HOME · 부하 환산 계산」(메모 `HOME · 부하 환산 계산 멈춤(빈 표 RQ_PKG_PLAN)`), 푸는 길은 원천에 계획 행을 넣어
+    `_PLAN_TABLES`, 필드 `empty_plan`)도 같은 꼴로 잡는다 — 대당 Capa 는 서고 HOME · 생산 계획 · 표준 목표가 멈추므로 글 · 메모 머리는
+    `stop_scope` 「HOME · 생산 계획 · 표준 목표 계산」(메모 `HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표 RQ_PKG_PLAN)`), 푸는 길은 원천에 계획 행을 넣어
     다시 등록, 검수 보드 st-route-only)를 적는다.
   - 화면의 저장 결과 칸은 폼 맨 아래 `DB 조회 후 시나리오 저장` 단추 **바로 아래** 늘 서 있는 한 칸이다(탭 맨 위 칸은 스크롤한
     화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` · CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
@@ -3384,7 +3384,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
   dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다. 공통 진입이 멈춘 회차(산출 결과 · 공정 Capa 상세 — 산출 결과는 소요대수 · 확보율 탭의 표가 멈춘 회차도)는
   `render_stopped_process_field()` 가 같은 key 의 잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다(HOME 공정 필터 줄과 같은 꼴 — 검수
-  보드 p-stop-row). 선택지 기록 · 표지는 남기지 않는다(머리 칩 · 탭 표지의 짐작을 빈 목록으로 덮지 않게).
+  보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세는 멈춘 회차에 그 앞 「설비 시나리오」 줄이 서지 않아 공정 줄과
+  아래 카드가 한 줄만큼 위에 선다. 선택지 기록 · 표지는 남기지 않는다(머리 칩 · 탭 표지의 짐작을 빈 목록으로 덮지 않게).
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
   - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
     달만 미적용으로 알린다.
@@ -5798,7 +5799,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **원천 등록은 저장 전에 대당 Capa 를 한 번 돌려 보고, 멈춰도 저장한 뒤 알린다**(2026-11-01 사용자 결정 — 사내 S27 은
   등록은 됐고 계산할 때 처음 멈췄다). `scenario_registration.check_registration_capacity` 가 화면 등록·자동 갱신의 같은 길에서
   돌고, 리비전 1 메모 끝에 `대당 Capa 계산 멈춤(<표> <꼴> 키 n · 경로 m)`(값·이름 없음 — 빈 경로 표는 `대당 Capa 계산 멈춤(빈 표
-  RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)`, 2026-11-08 결정 U3 — 경로 행만 있는 원천의 빈 계획 표는 `HOME · 부하 환산 계산 멈춤(빈 표
+  RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)`, 2026-11-08 결정 U3 — 경로 행만 있는 원천의 빈 계획 표는 `HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표
   RQ_PKG_PLAN)`, 검수 보드 st-route-only), 화면은 저장 알림 밑 경고 띠(계산 글 +
   기준 정보 화면 그 표 → 다음 리비전), 자동 갱신은 지정까지 가지 못한 회차 사유 끝에 같은 푸는 길을 적는다(계획 행만 있는 원천은 계산이
   0행으로 끝나 「남는 공정이 없어」 갈래로 오는데 그 갈래에도 — 검수 보드 st-runner-hint). 막지 않는다 — 막으면 원천을 다시

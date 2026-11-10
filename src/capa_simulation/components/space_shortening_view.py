@@ -151,8 +151,7 @@ __all__ = [
 SPACE_SHORT_LEVEL_KEY: Final = "space_shortening_level_v1"
 SPACE_SHORT_DIM_KEY: Final = "space_shortening_dim_v1"
 # 목표 확보율 줄 — 조회 조건 패널의 둘째 페이지 칸(첫째는 공용 공정 칸). 다른 조건 줄과 같은 이름
-# 줄 + 값 칸(`condition_field`)이고 값 칸을 누르면 고르는 팝업이 열린다(검수 보드 p-target-form —
-# 예전 전환 단추 다섯은 패널 폭에서 접혀 줄 서식이 따로 필요했다).
+# 줄 + 값 칸(`condition_field`)이고 값 칸을 누르면 고르는 팝업이 열린다(검수 보드 p-target-form).
 LEVEL_SLOT: Final = 1
 LEVEL_LABEL: Final = "목표 확보율"
 LEVEL_FIELD_SLUG: Final = "space_target"

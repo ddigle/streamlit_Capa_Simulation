@@ -895,7 +895,7 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
     """보기 상태의 목표 확보율 고르기는 사이드바 조회 조건 패널의 한 줄이다(2026-11-08 그림 메모
     g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동」). 줄 꼴은 패널의
     다른 줄과 같은 이름 줄 + 값 칸이고 값 칸을 누르면 고르는 팝업이 열린다(검수 보드
-    p-target-form — 예전 전환 단추 다섯을 걷었다). 고르면 곧바로 닫히며 그 목표로 그린다.
+    p-target-form). 고르면 곧바로 닫히며 그 목표로 그린다.
     「단축 없는 호기 흐리게」 와 기준 달 한 줄은 사이드바 `Space 조건` 카드의 「색 기준」 밑이고
     도면 위 본문에는 글 줄이 없다(2026-11-09 사용자 검수 g05 — 「단축없는호기 흐리게, 날짜, 맞대지
     못한 공정 등 3줄도 다른 위치로」). 끈 회차에는 줄 · 칸이 서지 않는다(그 회차는 목표를 읽지
@@ -906,7 +906,7 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
     app = _app(_empty_database(tmp_path))
     _ok(app.run())
     assert not [item for item in app.button if item.key == LEVEL_FIELD_KEY]
-    # 전환 단추 줄은 걷혔다 — 사이드바 · 본문 어디에도 목표 전환 단추가 없다.
+    # 사이드바 · 본문 어디에도 목표 전환 단추 줄이 없다.
     assert not [
         item for item in app.get("button_group") if getattr(item, "label", None) == "목표 확보율"
     ]
