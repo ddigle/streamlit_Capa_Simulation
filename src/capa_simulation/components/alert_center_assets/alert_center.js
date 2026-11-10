@@ -3,7 +3,8 @@
 // 세우거나 고친다(`window.__capaAlertCenter` — 다시 마운트돼도 하나다).
 // - 알림창 한 꼴: 오른쪽 아래, 최대 3칸(넘치면 단계가 가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다 — `overflowVictim`),
 //   새 칸이 구석, 단계 이름 글자 + 단계 색 테두리. 누름을 받지 않는다(`pointer-events: none`). 층은 Streamlit 대화상자 위다.
-//   알림 8초 · 나머지 15초 뒤 걷는다.
+//   알림 8초 · 나머지 15초 뒤 걷는다. 방금 세운 칸이 넘침으로 곧바로 걷히면 보인 적이 없어 반복 창을 열지 않는다(`hidePopup`
+//   의 `seen`).
 // - 표지 훑기: 알림을 내는 자리(`alerts.state` · `alerts.flush` · `flash.render_flash`)가 스타일만 든 `st.html` 표지
 //   (`style[data-capa-alerts]` — JSON, 팝업 본문 안에서는 칸 안의 숨은 `span`)를 그린다. 앱 뿌리의 회차 표지
 //   (`data-test-script-state`)가 바뀔 때마다 문서를 **한 번** 훑는다 — 상시 MutationObserver 는 쓰지 않는다(큰 표 화면의 DOM 변화가 많다). 회차 시작에도 훑어 끊긴 회차의 표지를 놓치지
@@ -46,7 +47,7 @@
 // - 알림에 딸린 표(`tables` — 본문에서 뺀 목록, 한 줄에 여럿일 수 있다)는 줄의 「… 보기」 단추가 표마다 펼치고 CSV 는 브라우저
 //   안에서 만든다(서버를 부르지 않는다). 칸 머리 풍선(`help`)은 `title` 이다. 표는 코드마다 가장 새 줄에만 남기고, 탭 저장소가
 //   넘치면 저장본에서 오래된 줄의 표부터 뺀다 — 줄은 남고, 그 화면이 다시 보내면 표가 다시 붙는다.
-// - 「로그」 펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 처음 · 마지막 · 화면 · 계기 · 범위 · 해소 · 원본 오류 · 전문)을
+// - 「로그」 펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 처음 · 마지막 · 화면 · 계기 · 범위 · 해소(내용 바뀜 · 범위 바뀜) · 원본 오류 · 전문)을
 //   평문으로 클립보드에 넣는다(`navigator.clipboard`). 막히면(보안 연결이 아님 · DRM) 글을 고른 채 펼침 안에 두고 Ctrl+C 를
 //   청한다 — `execCommand('copy')` 는 쓰지 않는다(막힌 클립보드에서도 참을 돌려 「복사했습니다」 가 거짓이 된다). 딸린 표는
 //   복사에 넣지 않고 표 이름 · 행 수만 적는다(최대 2000행 — 표는 「CSV 내려받기」 가 맡는다).
@@ -962,7 +963,7 @@ function showPopup(C, key, note, repeat) {
     const shown = [...C.stack.children]
     const victim = shown[overflowVictim(shown.map((node) => node.dataset.level))]
     const owner = [...C.live.entries()].find(([, item]) => item.el === victim)
-    if (owner) hidePopup(C, owner[0])
+    if (owner) hidePopup(C, owner[0], owner[0] !== key)
     else victim.remove()
   }
   if (repeat) {
@@ -971,13 +972,15 @@ function showPopup(C, key, note, repeat) {
   }
 }
 
-function hidePopup(C, key) {
+// `seen` 이 거짓이면 방금 세운 칸이 넘침으로 곧바로 걷힌 것이다 — 보인 적이 없으니 반복 창(`goneAt`)을 이 회로 열지 않는다.
+// 처음 난 알림은 다음에 나도 「×n」 · 시선 끌기 없이 새 칸으로 서고, 앞에 보였던 알림은 그때 연 창이 그대로다.
+function hidePopup(C, key, seen = true) {
   const live = C.live.get(key)
   if (!live) return
   clearTimeout(live.timer)
   if (live.el && live.el.isConnected) live.el.remove()
   live.visible = false
-  live.goneAt = Date.now()
+  if (seen) live.goneAt = Date.now()
 }
 
 // 같은 알림 시선 끌기(D4 A) — 창 가장자리(4px 안쪽, 둥글기 14px) 테두리가 알림창 둘레(5px 밖, 둥글기 9px)로 모인다. 앞
