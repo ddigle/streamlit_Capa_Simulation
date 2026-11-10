@@ -6183,7 +6183,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   도우미가 읽지 못하는 끝(영문 낱말)에서 같은 꼴을 낸다. 영문 끝이 한 글자(「셋업 B」·「DEL-A」·「2H」)이거나 대문자 두세
   글자(「HBM」·「EDP」)면 알파벳 이름으로 읽는다(엘·엠·엔·알만 받침 — `_spelled_final`). 넷 이상의 대문자(「USER」)와 소문자가
   섞인 낱말(「Bonding」)은 낱말인지 약어인지 갈리지 않아 읽지 않는다. 앱이 늘 끼우는 고정 어휘의 영문 끝(층 이름의 `F`·
-  「DuckDB」의 `DB`·`size`·`Capa`·단위 `Kea`)는 도우미의 읽기 표 `_LATIN_TAIL_FINAL` 이 먼저 읽는다 — 새 고정 어휘가 갈래 꼴로
+  「DuckDB」의 `DB`·`size`·`Capa`·단위 `Kea`·연도 Shift 새 이름 꼬리의 `Shift`)는 도우미의 읽기 표 `_LATIN_TAIL_FINAL` 이 먼저 읽는다 — 새 고정 어휘가 갈래 꼴로
   떨어지면 거기에 더하고(JS `withJosa` 표도), 사람이 붙인 이름의 영문 끝은 더하지 않는다(이름 뒤에 고정 명사를 둔다 — 「「…」
   공정은」). `tests/test_particle_sites.py` 가 `app.py`·`app_pages`·`src`·`scripts/` 를 AST 로
   훑어 붙은 꼴·띄운 꼴·갈래 꼴과 `{…}`·`%s` 틀 뒤 고정 조사(값을 감싼 따옴표·낫표 뒤, 괄호를 사이에 둔 꼴 포함)를

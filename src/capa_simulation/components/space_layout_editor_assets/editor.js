@@ -489,13 +489,13 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 값 뒤 조사(순수 함수)
   // 파이썬 `services/korean_particle.py` 와 같은 표다 — 한글 음절은 종성, 숫자는 한국어로 읽은 끝 글자, `%` 는
-  // 받침 없음, 고정 어휘의 영문 끝(층 이름의 F·DB·size·Capa·Kea)은 읽기 표, 그 밖의 영문 끝이 한 글자이거나 대문자
+  // 받침 없음, 고정 어휘의 영문 끝(층 이름의 F·DB·size·Capa·Kea·Shift)은 읽기 표, 그 밖의 영문 끝이 한 글자이거나 대문자
   // 두세 글자면 알파벳 이름(엘·엠·엔·알만 받침), 감싼 따옴표·괄호·굵게·백슬래시는 건너뛰고, 읽지 못하는 끝(그 밖의
   // 영문 낱말)은 `을(를)` 꼴이다.
   // `tests/test_particle_sites.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌려 파이썬과 대조한다. 한쪽을 고치면 다른 쪽도 고친다.
   // <josa>
   const JOSA_KNOWN_FINAL = { 0: 21, 1: 8, 2: 0, 3: 16, 4: 0, 5: 0, 6: 1, 7: 8, 8: 8, 9: 0, '%': 0 }
-  const JOSA_LATIN_TAIL_FINAL = [['F', 0], ['DB', 0], ['size', 0], ['Capa', 0], ['Kea', 0]]
+  const JOSA_LATIN_TAIL_FINAL = [['F', 0], ['DB', 0], ['size', 0], ['Capa', 0], ['Kea', 0], ['Shift', 0]]
   // 알파벳 이름의 종성(엘·엠·엔·알만 받침이 있다)과 대문자 끝을 글자로 읽는 가장 긴 길이.
   const JOSA_LETTER_NAME_FINAL = { L: 8, M: 16, N: 4, R: 8 }
   const JOSA_SPELLED_CAPITALS = 3

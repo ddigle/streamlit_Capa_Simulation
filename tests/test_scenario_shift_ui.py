@@ -228,6 +228,11 @@ def test_default_name_follows_changed_years_and_keeps_a_typed_name(source: Sourc
     assert _name_field(app).key != first_key
     _save_button(app).click().run()
     assert not app.exception, [item.message for item in app.exception]
+    # 기본 이름 꼬리 「Shift」 는 앱이 짓는 고정 어휘라 끝소리(시프트)로 조사를 고른다 — 알림과
+    # 꺼 둔 저장 단추 풍선 모두 겸용 꼴 「을(를)」 이 아니다.
+    saved = f"새 시나리오 ‘{literal_markdown('이동할 2027 · +2년 Shift')}’를 저장했습니다"
+    assert [item.value for item in successes(app)] == [f"{saved}."]
+    assert str(_save_button(app).help).startswith(f"이 결과는 {saved} —")
 
     app.number_input(key="scenario_shift_years").set_value(3).run()
     assert _name_field(app).value == "이동할 2027 · +3년 Shift"
