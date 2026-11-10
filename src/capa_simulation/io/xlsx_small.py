@@ -283,6 +283,16 @@ def _cell_xml(cell: XlsxCell, ref: str, styles: _StyleBook, strings: _StringTabl
     style_id = styles.index(cell.style)
     style = f' s="{style_id}"' if style_id else ""
     value = cell.value
+    # 흔한 꼴(파이썬 실수 · 글자)은 추상 기반 검사 없이 먼저 — 큰 표(5만 칸)에서 칸마다 든다.
+    if type(value) is float:
+        if not math.isfinite(value):
+            return f'<c r="{ref}"{style}/>' if style_id else ""
+        return f'<c r="{ref}"{style}><v>{_number_text(value)}</v></c>'
+    if type(value) is str and value:
+        text = _clean(value)
+        if text:
+            return f'<c r="{ref}"{style} t="s"><v>{strings.index(text)}</v></c>'
+        return f'<c r="{ref}"{style}/>' if style_id else ""
     if isinstance(value, bool):
         value = "TRUE" if value else "FALSE"
     if isinstance(value, numbers.Integral):
@@ -392,8 +402,20 @@ class _StyleBook:
         default = _Xf(0, 0, 0, 0, None, None, 0, False)
         self._xfs: dict[_Xf, int] = {default: 0}
         self._cache: dict[Style, int] = {}
+        # 같은 서식 객체를 여러 칸이 나눠 쓰는 표(부르는 쪽이 서식을 한 번 지어 돌려씀)는 객체 값
+        # 해시 없이 찾는다. 객체를 함께 쥐어 두므로 그 id 가 이 통을 짓는 동안 다른 객체로 바뀌지
+        # 않는다.
+        self._by_identity: dict[int, tuple[Style, int]] = {}
 
     def index(self, style: Style) -> int:
+        known = self._by_identity.get(id(style))
+        if known is not None and known[0] is style:
+            return known[1]
+        found = self._value_index(style)
+        self._by_identity[id(style)] = (style, found)
+        return found
+
+    def _value_index(self, style: Style) -> int:
         cached = self._cache.get(style)
         if cached is not None:
             return cached

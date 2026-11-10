@@ -3,7 +3,7 @@
 """xlsx 읽기 도우미(`capa_simulation.io.xlsx_small` 이 쓴 통).
 
 저장소 의존성에 openpyxl 이 없다 — 시험도 표준 라이브러리로 읽는다. 칸마다 값(글자 · 숫자 · 빈 칸),
-글자 셀인지 숫자 셀인지, 서식 번호가 가리키는 숫자 꼴 · 칠 · 굵기를 돌려준다.
+글자 셀인지 숫자 셀인지, 서식 번호가 가리키는 숫자 꼴 · 칠 · 굵기 · 테두리(「꼴:색」)를 돌려준다.
 """
 
 from __future__ import annotations
@@ -26,6 +26,10 @@ class ReadCell:
     fill: str | None
     bold: bool
     color: str | None
+    left: str | None = None
+    right: str | None = None
+    top: str | None = None
+    bottom: str | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +85,7 @@ def read_workbook(data: bytes) -> dict[str, ReadSheet]:
     }
     fonts = styles.findall("m:fonts/m:font", NS)
     fills = styles.findall("m:fills/m:fill", NS)
+    borders = styles.findall("m:borders/m:border", NS)
     xfs = styles.findall("m:cellXfs/m:xf", NS)
     workbook = _xml(archive, "xl/workbook.xml")
     names = [item.get("name", "") for item in workbook.findall("m:sheets/m:sheet", NS)]
@@ -96,6 +101,7 @@ def read_workbook(data: bytes) -> dict[str, ReadSheet]:
             font = fonts[int(xf.get("fontId", "0"))]
             fill = fills[int(xf.get("fillId", "0"))].find("m:patternFill/m:fgColor", NS)
             color = font.find("m:color", NS)
+            edges = _edges(borders[int(xf.get("borderId", "0"))])
             raw = cell.find("m:v", NS)
             kind = cell.get("t")
             value: str | float | None
@@ -112,6 +118,7 @@ def read_workbook(data: bytes) -> dict[str, ReadSheet]:
                 fill=fill.get("rgb") if fill is not None else None,
                 bold=font.find("m:b", NS) is not None,
                 color=color.get("rgb") if color is not None else None,
+                **edges,
             )
         pane = root.find("m:sheetViews/m:sheetView/m:pane", NS)
         freeze = (
@@ -125,6 +132,17 @@ def read_workbook(data: bytes) -> dict[str, ReadSheet]:
         }
         sheets[name] = ReadSheet(name=name, cells=cells, freeze=freeze, widths=widths)
     return sheets
+
+
+def _edges(border: ElementTree.Element) -> dict[str, str | None]:
+    """테두리 한 벌 → 변마다 「꼴:색」(없으면 None)."""
+    edges: dict[str, str | None] = {}
+    for side in ("left", "right", "top", "bottom"):
+        element = border.find(f"m:{side}", NS)
+        style = element.get("style") if element is not None else None
+        color = element.find("m:color", NS) if element is not None else None
+        edges[side] = f"{style}:{color.get('rgb') if color is not None else ''}" if style else None
+    return edges
 
 
 def _xml(archive: zipfile.ZipFile, name: str) -> ElementTree.Element:
