@@ -4116,7 +4116,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     끝 칸의 「내려받기 ▾」 메뉴 하나(`render_sheet_downloads` — 「시트 CSV」 · 「시트 엑셀」, `table_toolbar.render_download_pair` —
     시트 엑셀 넓히기 2, 2026-11-10 답 Q2-7 꼴)이고 그 메뉴 단추는 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이
     높아지지 않게)(T3). 「시트 엑셀」 은 지금 화면 시트(공정 · 달 · 호기 필터 · 입력 비가동 반영)를 화면 서식째
-    (`components/availability_sheet_workbook.py`) 내고, 맨 위 값 줄은 공정 · 조회기간 · 설비 시나리오(알림 범위 이름) · 호기 필터(걸렸을
+    (`components/availability_sheet_workbook.py`) 내고, 맨 위 값 줄은 공정 · 조회기간 · 설비 시나리오(머리 띠 꼬리 글 `remembered_equipment_suffix` — 없으면 알림 범위 이름) · 호기 필터(걸렸을
     때 — 세션 칸 글 그대로, `_sheet_heading`)다. 통은 조건 키(`GAP_SHEET_SCHEMA_VERSION` · 범위 지문 · 머리 글자 · 제목 세부 글 · 머리
     값)로 세션 칸 `GAP_SHEET_XLSX_MEMO_KEY` 에 기억한다 — 칸 누름 · 같은 조건 회차는 짓지 않는다(새 `st.cache_*` 없음). 일정 미정 · 사용기준
     밖은 Main 과 같은 상태 알림(`EQ-20` · `EQ-22` — `equipment_explorer.report_unit_notices`)이고, Static 값으로 채운 공정은 한쪽

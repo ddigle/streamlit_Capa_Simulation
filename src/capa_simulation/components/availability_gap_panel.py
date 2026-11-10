@@ -55,6 +55,10 @@ from streamlit.errors import StreamlitPageNotFoundError
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 from capa_simulation import alerts
+from capa_simulation.components.app_header import (
+    EQUIPMENT_HEADER_HEAD,
+    remembered_equipment_suffix,
+)
 from capa_simulation.components.availability_gap_figure import build_availability_gap_figure
 from capa_simulation.components.availability_sheet_canvas import (
     GROUP_TITLES,
@@ -903,13 +907,17 @@ def _sheet_heading(
     process_label: str, months: Sequence[int], *, alert_label: str, unit_filter: bool
 ) -> tuple[tuple[str, str], ...]:
     """시트 엑셀(시트 · 호기 목록) 맨 위 값 줄 — 화면에 보이는 조건 글자 그대로(마크다운 막음
-    없이): 공정(표시명 또는 「전체 합계」) · 조회기간 · 설비 시나리오(알림 범위와 같은 이름 — 없으면
-    뺀다) · 호기 필터(걸렸을 때 — 고른 컬럼과 값, 세션 칸을 그대로 읽는다)."""
+    없이): 공정(표시명 또는 「전체 합계」) · 조회기간 · 설비 시나리오(머리 띠 꼬리 글 — 공정 Capa
+    상세 시트와 같은 꼴, 없으면 알림 범위 이름, 둘 다 없으면 뺀다) · 호기 필터(걸렸을 때 — 고른
+    컬럼과 값, 세션 칸을 그대로 읽는다)."""
     rows = [
         ("공정", process_label),
         ("조회기간", f"{month_label(months[0])}–{month_label(months[-1])}"),
     ]
-    if alert_label:
+    suffix = remembered_equipment_suffix()
+    if suffix:
+        rows.append(("설비 시나리오", suffix.removeprefix(f"{EQUIPMENT_HEADER_HEAD} · ")))
+    elif alert_label:
         rows.append(("설비 시나리오", alert_label.removeprefix("설비 ")))
     if unit_filter:
         chosen = st.session_state.get(UNIT_FILTER_COLUMNS_KEY)

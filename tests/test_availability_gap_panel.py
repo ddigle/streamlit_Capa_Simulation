@@ -1497,3 +1497,34 @@ def _alerts(app: AppTest) -> str:
     """머리 상태 알림(`EQ-06` 두 쪽 공정명 · `EQ-07` 조회 시작 · `EQ-08` Static 못 읽음)의 전문 —
     자리에는 경고 상자를 그리지 않는다(2026-11-03 D2)."""
     return " ".join(str(note["full"]) for note in states(app) if note.get("active"))
+
+
+def test_the_sheet_heading_names_the_equipment_scenario_like_the_header_band(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """시트 엑셀 맨 위 「설비 시나리오」 값은 머리 띠 꼬리 글(공정 Capa 상세 시트와 같은 꼴)이고,
+    띠가 아직 없으면 알림 범위 이름, 둘 다 없으면 줄을 뺀다."""
+    import capa_simulation.components.availability_gap_panel as panel
+
+    monkeypatch.setattr(
+        panel, "remembered_equipment_suffix", lambda: "설비 시나리오 · 운영 일정 · r3 · 공식 v3"
+    )
+    heading = panel._sheet_heading(
+        "전체 합계", (202611, 202702), alert_label="설비 「운영 일정」 r3", unit_filter=False
+    )
+    assert heading == (
+        ("공정", "전체 합계"),
+        ("조회기간", "26.11–27.02"),
+        ("설비 시나리오", "운영 일정 · r3 · 공식 v3"),
+    )
+    monkeypatch.setattr(panel, "remembered_equipment_suffix", lambda: None)
+    assert panel._sheet_heading(
+        "Etch", (202611,), alert_label="설비 「운영 일정」 r3", unit_filter=False
+    )[-1] == ("설비 시나리오", "「운영 일정」 r3")
+    assert [
+        name
+        for name, _ in panel._sheet_heading("Etch", (202611,), alert_label="", unit_filter=False)
+    ] == [
+        "공정",
+        "조회기간",
+    ]
