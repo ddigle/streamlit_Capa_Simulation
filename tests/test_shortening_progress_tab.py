@@ -21,11 +21,10 @@ import streamlit.elements.lib.policies as policies
 from alert_marks import flashed
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Button, TextInput
-from test_required_shortening_tab import _csv, _database, _html, _run
+from test_required_shortening_tab import _choose_level, _csv, _database, _html, _run
 
 from capa_simulation.components.equipment_data_workspace import BUFFER_GENERATION_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
 from capa_simulation.components.shortening_progress_panel import (
     BASELINE_SAVE_HELP,
     NO_COMPARISON,
@@ -207,7 +206,7 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     assert "확보 −5일" in body and "확보 +7일" in body
 
     # 목표를 바꾸면 그 목표의 기준선 결과와 견준다 — 다시 저장하지 않는다.
-    high = app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
+    high = _choose_level(app, 1.3)
     assert not high.exception
     assert set(_progress_csv(high)["목표 확보율(%)"]) == {"130"}
     assert len(DuckDBEquipmentRepository(database_path).list_shortening_baselines()) == 1

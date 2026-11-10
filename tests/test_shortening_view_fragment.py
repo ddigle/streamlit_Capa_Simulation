@@ -2,15 +2,17 @@
 
 """필요 단축 일정 본문은 키 붙은 프래그먼트다(`_render_view` · `VIEW_FRAGMENT_KEY`).
 
-조건 카드(목표 확보율·진척 비교·시작 월·끝 월·공정)와 계획은 앱 전체 회차가 먼저 끝내고 인자로
-넘긴다. 목표 확보율 · 진척 비교는 카드에 서지만(그림 메모 g03) 계획을 바꾸지 않아, 그 칸의 콜백이
-본문 프래그먼트만 다시 돌린다(`_rerun_view` — 콜백만 도는 회차 뒤 프래그먼트 회차). 시험은 AppTest
-의 러너가 프래그먼트 저장소를 회차 사이에 쥐고 브라우저처럼 `fragment_id_queue` 로 프래그먼트만
-돌리는 대역(`tests/fragment_browser.py`)으로 **진짜 프래그먼트 회차**를 돌린다. 페이지는 `app.py`
-처럼 실행 표지(`begin_app_run` · `finish`)를 단다 — 콜백이 프래그먼트만 돌릴지 가르는 판정이 이
-표지를 본다.
+조건 카드(진척 비교·시작 월·끝 월·공정) · 목표 확보율 패널 줄과 계획은 앱 전체 회차가 먼저
+끝내고 인자로 넘긴다. 진척 비교는 카드에 서지만(그림 메모 g03) 계획을 바꾸지 않아, 그 칸의 콜백이
+본문 프래그먼트만 다시 돌린다(`_rerun_view` — 콜백만 도는 회차 뒤 프래그먼트 회차). 목표 확보율은
+패널 줄 값 칸 + 팝업이다(2차 보드 Q2-26 — Space 와 같은 부품) — 값 칸을 누르면 화면 팝업 호스트만
+돌고, 고르면 팝업이 닫히며 앱 전체가 한 번 돈다(값 칸 글이 프래그먼트 밖). 본문 프래그먼트는
+회차마다 목표 세션 칸을 읽는다. 시험은 AppTest 의 러너가 프래그먼트 저장소를 회차 사이에 쥐고
+브라우저처럼 `fragment_id_queue` 로 프래그먼트만 돌리는 대역(`tests/fragment_browser.py`)으로 **진짜
+프래그먼트 회차**를 돌린다. 페이지는 `app.py` 처럼 실행 표지(`begin_app_run` · `finish`)를 단다 —
+콜백이 프래그먼트만 돌릴지 가르는 판정이 이 표지를 본다.
 
-- 같은 숫자: 목표를 바꾼 프래그먼트 회차의 KPI·LOB·공정 카드·CSV 세 벌이, 같은 목표의 앱 전체
+- 같은 숫자: 목표를 고른 앱 전체 회차의 KPI·LOB·공정 카드·CSV 세 벌이, 같은 목표의 본문 프래그먼트
   회차와 바이트까지 같다.
 - 무효화: 거르는 조건(공정)을 바꾸면 앱 전체 회차로 다시 계산하고, 프래그먼트 회차는 그 회차의
   공정 선택을 쓴다. 기준선 저장은 앱 전체 회차로 바뀌고, 다른 세션이 지우거나 저장한 기준선은
@@ -47,6 +49,8 @@ import capa_simulation.services.simulation_cache as simulation_cache
 import capa_simulation.settings as settings
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.required_shortening_panel import (
+    LEVEL_FIELD,
+    SHORTENING_DIALOG_HOST,
     SHORTENING_END_KEY,
     SHORTENING_LEVEL_KEY,
     SHORTENING_PROCESS_KEY,
@@ -252,12 +256,18 @@ def _view(runner: FragmentBrowser) -> str:
 
 
 def _choose_level(app: AppTest, runner: FragmentBrowser, world: _World, level: float) -> None:
-    """조건 카드의 `목표 확보율` 을 바꾼다 — 브라우저는 앱 전체 요청을 보내고, 칸의 콜백이 본문
-    프래그먼트만 다시 돌린다(콜백만 도는 회차 뒤 프래그먼트 회차). 카드 칸이 든 앱 전체 회차
+    """사이드바 조회 조건 패널의 `목표 확보율` 값 칸 → 팝업 라디오(2차 보드 Q2-26). 값 칸을 누르면
+    화면 팝업 호스트만 돌고(콜백만 도는 회차 뒤 호스트 회차 — 페이지를 다시 계산하지 않는다),
+    라디오를 고르면 팝업 회차가 세션에 적고 닫으며 앱 전체를 한 번 돌린다. 값 칸이 든 앱 전체 회차
     트리에서 부른다."""
+    host = runner.fragment_keyed(SHORTENING_DIALOG_HOST.key)
     runner.fragment_queue = []
-    _run(app, world, lambda app: app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(level))
-    assert runner.started == [[], [_view(runner)]], level
+    _run(app, world, lambda app: app.button(key=LEVEL_FIELD.field_key).click())
+    assert runner.started == [[], [host]], level
+    dialog = runner.fragment_of(LEVEL_FIELD.pick_key)
+    runner.fragment_queue = [dialog]
+    _run(app, world, lambda app: app.radio(key=LEVEL_FIELD.pick_key).set_value(level))
+    assert runner.started == [[dialog], []], level
 
 
 def _view_with(app: AppTest, runner: FragmentBrowser, world: _World, key: str, value: Any) -> None:
@@ -270,16 +280,18 @@ def _view_with(app: AppTest, runner: FragmentBrowser, world: _World, key: str, v
     assert runner.started == [[_view(runner)]], key
 
 
-def test_switching_the_target_reruns_only_the_view_with_the_full_run_numbers(
+def test_choosing_the_target_opens_on_the_host_and_draws_the_view_run_numbers(
     tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """목표 확보율 값 칸은 팝업을 호스트만 돌려 열고, 고른 목표로 앱 전체 회차 한 번이 그린다 —
+    그 숫자는 같은 목표의 본문 프래그먼트 회차와 바이트까지 같다(2차 보드 Q2-26)."""
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
     app = _open(runner)
     assert _view(runner)
-    # 조건 카드는 모두 프래그먼트 밖이다 — 목표 확보율 · 진척 비교도 카드에 선다(그림 메모 g03).
+    # 조건 카드 칸과 목표 확보율 값 칸은 모두 프래그먼트 밖이다(그림 메모 g03 · 2차 보드 Q2-26).
     for key in (
-        SHORTENING_LEVEL_KEY,
+        LEVEL_FIELD.field_key,
         SHORTENING_COMPARE_KEY,
         SHORTENING_START_KEY,
         SHORTENING_END_KEY,
@@ -291,19 +303,54 @@ def test_switching_the_target_reruns_only_the_view_with_the_full_run_numbers(
 
     for level in (0.9, 1.3, 1.1):
         _choose_level(app, runner, world, level)
-        assert app.session_state[FULL_RUNS_KEY] == full_runs
-        in_fragment = _screen(app, world)
-        assert f"목표 {round(level * 100)}% 기준" in " ".join(in_fragment[0])
-
-        # 같은 목표를 앱 전체 회차로 — 숫자가 바이트까지 같다.
-        runner.fragment_queue = []
-        _run(app, world)
-        assert runner.started == [[]]
         full_runs += 1
         assert app.session_state[FULL_RUNS_KEY] == full_runs
-        assert _screen(app, world) == in_fragment, level
+        assert app.button(key=LEVEL_FIELD.field_key).label == f"{round(level * 100)}%"
+        in_full = _screen(app, world)
+        assert f"목표 {round(level * 100)}% 기준" in " ".join(in_full[0])
+
+        # 같은 목표의 본문 프래그먼트 회차 — 숫자가 바이트까지 같다.
+        view = _view(runner)
+        runner.fragment_queue = [view]
+        _run(app, world)
+        assert runner.started == [[view]]
+        assert app.session_state[FULL_RUNS_KEY] == full_runs
+        assert _screen(app, world) == in_full, level
+
+        # 다음 값 칸 누름은 값 칸이 든 앱 전체 회차 트리에서 한다.
+        runner.fragment_queue = []
+        _run(app, world)
+        full_runs += 1
     # 처음 목표로 돌아오면 처음 화면 그대로다.
     assert _screen(app, world) == default
+    clear_equipment_repository()
+
+
+def test_opening_and_dismissing_the_target_picker_runs_only_the_host(
+    tmp_path: Path, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """목표 확보율 팝업을 열고 고르지 않고 닫으면(X · 바깥 · Esc) 페이지를 다시 계산하지 않는다 —
+    여는 회차도 닫는 회차도 화면 팝업 호스트만 돈다(설계 규칙 UI-PRF-01, 2차 보드 Q2-26). 닫으면
+    열림 칸과 라디오 값을 지워 다시 연 팝업이 지금 목표로 선다. 목표는 그대로다."""
+    runner = _runner(request)
+    world = _install(monkeypatch, _database(tmp_path))
+    app = _open(runner)
+    full_runs = app.session_state[FULL_RUNS_KEY]
+    host = runner.fragment_keyed(SHORTENING_DIALOG_HOST.key)
+
+    runner.fragment_queue = []
+    _run(app, world, lambda app: app.button(key=LEVEL_FIELD.field_key).click())
+    assert runner.started == [[], [host]]
+    assert app.session_state[SHORTENING_DIALOG_HOST.open_key] == LEVEL_FIELD.dialog
+    assert app.radio(key=LEVEL_FIELD.pick_key).value == 1.1
+
+    runner.send_trigger(app, runner.dialog_widget_id(), [host])
+    _assert_clean(app)
+    assert runner.started == [[host]]
+    assert SHORTENING_DIALOG_HOST.open_key not in app.session_state
+    assert LEVEL_FIELD.pick_key not in app.session_state
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.1
+    assert app.session_state[FULL_RUNS_KEY] == full_runs
     clear_equipment_repository()
 
 
@@ -328,7 +375,7 @@ def test_a_dark_session_draws_the_view_run_in_dark_colors_like_the_full_run(
     dark_card = f"background:{tokens.palette_value('dark', 'SURFACE')}"
     assert dark_card in " ".join(_screen(app, world)[0])
 
-    _choose_level(app, runner, world, 1.3)
+    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 1.3)
     in_fragment = _screen(app, world)
     assert dark_card in " ".join(in_fragment[0])
 
@@ -361,7 +408,7 @@ def test_the_card_filter_is_a_full_run_and_the_next_view_run_keeps_it(
     assert _screen(app, world) != unfiltered
 
     # 목표만 바꾼 프래그먼트 회차는 직전 앱 전체 회차의 공정 선택을 쓴다.
-    _choose_level(app, runner, world, 0.9)
+    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 0.9)
     assert _cards(app) == [chosen]
     clear_equipment_repository()
 
@@ -429,8 +476,8 @@ def test_a_baseline_another_session_saved_joins_the_card_on_the_next_view_run(
     assert list(app.selectbox(key=SHORTENING_COMPARE_KEY).options) == ["비교 안 함"]
     full_runs = app.session_state[FULL_RUNS_KEY]
 
-    # 목록이 그대로면 목표를 바꾼 회차는 본문 프래그먼트만 돈다.
-    _choose_level(app, runner, world, 0.9)
+    # 목록이 그대로면 목표가 바뀐 본문 프래그먼트 회차는 그대로 프래그먼트 회차다.
+    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 0.9)
     assert app.session_state[FULL_RUNS_KEY] == full_runs
 
     # 다른 세션이 기준선을 저장했다 — 다음 프래그먼트 회차가 앱 전체로 올라 카드에 선다.
@@ -509,7 +556,7 @@ def test_the_view_reads_the_shared_thresholds_on_every_run(
     runner = _runner(request)
     world = _install(monkeypatch, _database(tmp_path))
     app = _open(runner)
-    _choose_level(app, runner, world, 0.9)
+    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 0.9)
     strict = _screen(app, world)
 
     # 다른 세션이 기준을 낮췄다(확보 0% · 경고 0%) — 모든 칩이 확보 색이 된다.

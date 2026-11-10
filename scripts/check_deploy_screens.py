@@ -276,9 +276,12 @@ ADMIN_AREA_PAGE: Final = "admin_area"
 PROCESS_DETAIL_PAGE: Final = "process_capa_detail"
 # 필요 단축 일정 — 가용설비 현황의 탭이던 것을 실행 관리 아래 별도 화면으로 뗐다(2026-10-18).
 SHORTENING_PAGE: Final = "required_shortening"
-# 필요 단축 일정 사이드바 조건 카드(`condition_card(..., name="shortening")`) — 진척 비교 · 목표
-# 확보율이 맨 위다(2026-11-08 그림 메모 g03).
+# 필요 단축 일정 사이드바 조건 카드(`condition_card(..., name="shortening")`) — 진척 비교가 맨
+# 위다(2026-11-08 그림 메모 g03).
 SHORTENING_CARD_KEY: Final = "condition_card_shortening"
+# 필요 단축 일정 목표 확보율 값 칸(조회 조건 패널 줄 — `required_shortening_panel.LEVEL_FIELD`,
+# Space 와 같은 부품, 2차 보드 Q2-26). 누르지 않는다 — 진척 비교 상자와 위아래만 견준다.
+SHORTENING_LEVEL_FIELD_KEY: Final = "equipment_shortening_level_field"
 PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
     "kpi": "process_detail_kpis",
     "canvas": "process_detail_summary_months",
@@ -2723,8 +2726,9 @@ def check_scenario_list_grid(screen: Screen) -> str:
 
 def check_progress_box(screen: Screen) -> str:
     """`필요 단축 일정` 사이드바 「필요 단축 일정 조건」 카드의 `진척 비교` 상자 — 있음·값·
-    선택지 수·자리(목표 확보율 위아래). 고르지 않는다. 카드가 접혀 있으면 편 채로 읽고 다시
-    접는다. 사이드바 아래 칸은 Playwright 자동 굴림 뒤 누르면 목록이 열리지 않아 먼저 굴려 둔다."""
+    선택지 수·자리(목표 확보율 위아래 — 목표는 카드 위 조회 조건 패널 줄의 값 칸이다, 2차 보드
+    Q2-26). 고르지 않는다. 카드가 접혀 있으면 편 채로 읽고 다시 접는다. 사이드바 아래 칸은
+    Playwright 자동 굴림 뒤 누르면 목록이 열리지 않아 먼저 굴려 둔다."""
     screen.open_page(SHORTENING_PAGE)
     with opened_card(screen, SHORTENING_CARD_KEY):
         box = screen.selectbox("진척 비교")
@@ -2733,9 +2737,11 @@ def check_progress_box(screen: Screen) -> str:
         value = screen.selectbox_value("진척 비교")
         box.first.scroll_into_view_if_needed()
         options = screen.selectbox_option_count("진척 비교")
-        target = screen.selectbox("목표 확보율")
+        target = screen.page.locator(
+            f'[data-testid="stSidebar"] .st-key-{SHORTENING_LEVEL_FIELD_KEY} button'
+        )
         if target.count() == 0:
-            place = "목표 확보율 상자 없음"
+            place = "목표 확보율 줄 없음"
         else:
             below = float(box.first.evaluate(_BOX_TOP_JS)) > float(
                 target.first.evaluate(_BOX_TOP_JS)

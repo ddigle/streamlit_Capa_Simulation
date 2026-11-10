@@ -24,6 +24,10 @@
 기준선 결과 알림 표지 자리(`shortening_progress_panel` — 본문 프래그먼트 안)가 팝업을 여닫을 때
 밀리지 않게 한다. 계산기 입력은 닫아도 남는다(`persist_state` · 원본 표 칸) — 닫기가 지우는 것은
 붙여넣기 글 칸 초안 하나다.
+
+사이드바 조회 조건 패널의 **목표 확보율** 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품,
+2차 보드 Q2-26)도 같은 호스트가 연다(`required_shortening_panel.LEVEL_FIELD`). 줄은 호스트 바로
+뒤 — 데이터를 읽기 전에 세워 호기가 없거나 설비 DB 를 못 읽은 회차에도 같은 자리에 선다.
 """
 
 from __future__ import annotations
@@ -36,7 +40,6 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.equipment_data_workspace import (
     EQUIPMENT_DRAFT_KEY,
     calculation_drafts,
@@ -56,7 +59,11 @@ from capa_simulation.components.qual_deadline_calculator import (
     PASTE_TEXT_KEY,
     render_qual_deadline_calculator,
 )
-from capa_simulation.components.required_shortening_panel import render_required_shortening_tab
+from capa_simulation.components.required_shortening_panel import (
+    LEVEL_FIELD,
+    SHORTENING_DIALOG_HOST,
+    render_required_shortening_tab,
+)
 from capa_simulation.components.sample_data import (
     NO_UNITS_HELP,
     NO_UNITS_MARK,
@@ -74,7 +81,6 @@ from capa_simulation.equipment_scenario_activation import (
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
-    PAGE_DIALOG_SUFFIX,
     PageContext,
     bootstrap_error_message,
     render_schema_ahead_warning,
@@ -105,9 +111,9 @@ def _baseline_refusal(*, sample: bool, session: EquipmentSession | None = None) 
     return baseline_equipment_refusal(session)
 
 
-# 이 화면의 팝업 칸(페이지에 한 칸 — 값이 팝업을 가른다, AGENTS 9장 「팝업과 콜백」)과 그 호스트.
-DIALOG_KEY = f"required_shortening{PAGE_DIALOG_SUFFIX}"
-DIALOG_HOST = DialogHost("required_shortening_dialog_host", DIALOG_KEY)
+# 이 화면의 팝업 호스트(페이지에 한 칸 — 값이 팝업을 가른다, AGENTS 9장 「팝업과 콜백」). 목표
+# 확보율 줄이 같은 호스트로 열어 컴포넌트 쪽에 둔다.
+DIALOG_HOST = SHORTENING_DIALOG_HOST
 QUAL_CALCULATOR_DIALOG = "qual_calculator"
 QUAL_CALCULATOR_BUTTON_KEY = "required_shortening_qual_calculator_v1"
 
@@ -150,9 +156,17 @@ today = date.today()
 # 호기가 없거나 설비 DB 를 못 읽어도 계산기는 열린다. 닫기는 붙여넣기 글 칸 초안만 지운다 — 숫자 ·
 # 날짜 칸과 편집표는 닫아도 남는 입력이다(`qual_deadline_calculator` 모듈 설명).
 DIALOG_HOST.render(
-    {QUAL_CALCULATOR_DIALOG: partial(_qual_calculator_dialog, today)},
-    widget_keys={QUAL_CALCULATOR_DIALOG: (PASTE_TEXT_KEY,)},
+    {
+        QUAL_CALCULATOR_DIALOG: partial(_qual_calculator_dialog, today),
+        **{value: body for value, (body, _) in LEVEL_FIELD.dialogs.items()},
+    },
+    widget_keys={
+        QUAL_CALCULATOR_DIALOG: (PASTE_TEXT_KEY,),
+        **{value: keys for value, (_, keys) in LEVEL_FIELD.dialogs.items()},
+    },
 )
+# 사이드바 조회 조건 패널의 목표 확보율 줄 — 데이터를 읽기 전이라 멈춘 회차에도 같은 자리에 선다.
+LEVEL_FIELD.render()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
     repository = get_equipment_repository(equipment_database_path)
@@ -196,8 +210,8 @@ dashboard_baseline, dashboard_equipment, dashboard_downtime = shortening_frames(
     today=today,
 )
 
-# 무엇을 볼지(목표 확보율·진척 비교)와 거르는 조건(기간·공정)은 모두 사이드바 조건 카드다. 맨 위
-# 두 칸이 본문 머리 줄에서 옮겨 온 가장 자주 쓰는 칸이라 카드는 처음 펼친 채 선다(설계 규칙
+# 진척 비교와 거르는 조건(기간·공정)은 사이드바 조건 카드다(목표 확보율은 위의 조회 조건 패널 줄).
+# 맨 위 진척 비교가 본문 머리 줄에서 옮겨 온 자주 쓰는 칸이라 카드는 처음 펼친 채 선다(설계 규칙
 # UI-LAY-06 — HOME 「LOB 표시 조건」 과 같은 까닭, 한 번 접으면 기억 칸을 따른다).
 conditions_card = condition_card("필요 단축 일정 조건", name="shortening", default=True)
 if using_dashboard_sample and not show_sample_fleet:

@@ -3,17 +3,25 @@
 """필요 단축 일정 화면 — 시안 B 「공정 카드형」(2026-10-07 사용자 승인).
 
 계산은 `services/required_shortening.py` 가 하고 결과는 `simulation_cache.get_required_shortening`
-이 다섯 목표를 한 번에 캐시한다. 이 화면은 **고르기만** 한다 — 목표 확보율·공정(조건 카드)을 바꾸는
-rerun 은 계산을 다시 돌리지 않는다. 본문은 키 붙은 프래그먼트라(`_render_view` ·
-`VIEW_FRAGMENT_KEY`) 기준선 팝오버 조작은 그것만 다시 돌고, 조건 카드의 목표 확보율 · 진척 비교를
-바꾸면 그 칸의 콜백이 본문 프래그먼트만 다시 돌린다(`_rerun_view` — 설계 규칙 UI-PRF-01).
+이 다섯 목표를 한 번에 캐시한다. 이 화면은 **고르기만** 한다 — 목표 확보율·공정을 바꾸는 rerun 은
+계산을 다시 돌리지 않는다. 본문은 키 붙은 프래그먼트라(`_render_view` · `VIEW_FRAGMENT_KEY`) 기준선
+팝오버 조작은 그것만 다시 돌고, 조건 카드의 진척 비교를 바꾸면 그 칸의 콜백이 본문 프래그먼트만
+다시 돌린다(`_rerun_view` — 설계 규칙 UI-PRF-01).
 
-무엇을 볼지(목표 확보율 · 진척 비교)와 거르는 조건(시작 월·끝 월·공정)은 모두 사이드바 `필요 단축
-일정 조건` 카드다 — 볼 것이 맨 위(카드 폭을 다 쓰는 위아래 두 칸), 그 밑이 「공용 설정」 묶음
-(2026-11-08 사용자 그림 메모 g03 — 본문 맨 위 머리 줄에서 옮김, 설계 규칙 UI-LAY-02). 카드는 처음
-펼친 채 선다(설계 규칙 UI-LAY-06 — 옮겨 온 칸이 첫 화면에 보이게). 공정을 고르지 않으면 **고른
-목표에서 한 달이라도 모자란 공정 전체**를 카드로 보인다 — 공정 필터의 「미선택 시 전체」 관례를
-「미선택 시 목표 미달 전체」로 읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
+**목표 확보율**은 사이드바 조회 조건 패널 줄이다 — Space 「필요 단축」 보기와 같은 부품
+(`target_level_field.TargetLevelField` — 값 칸 + 팝업, 같은 세션 저장 · 같은 다섯 값, 2차 보드
+Q2-26). 값 칸을 누르면 이 화면 팝업 호스트(`SHORTENING_DIALOG_HOST` — Qual 마감 계산기와 같은
+호스트)만 돌아 팝업이 열리고, 고르면 닫히며 앱 전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트
+밖이라 본문만 다시 돌리면 값 칸과 본문이 어긋난다). 줄은 페이지가 데이터를 읽기 전에 세워 멈춘
+회차에도 자리를 지킨다(`LEVEL_FIELD.render` — 설계 규칙 UI-PRF-03). 값은 세션
+칸(`SHORTENING_LEVEL_KEY`)이고 본문은 프래그먼트 회차마다 그 칸을 읽는다(`_view_choices`).
+
+진척 비교와 거르는 조건(시작 월·끝 월·공정)은 사이드바 `필요 단축 일정 조건` 카드다 — 진척
+비교가 맨 위(카드 폭을 다 쓰는 칸), 그 밑이 「공용 설정」 묶음(2026-11-08 사용자 그림 메모 g03 —
+본문 맨 위 머리 줄에서 옮김, 설계 규칙 UI-LAY-02). 카드는 처음 펼친 채 선다(설계 규칙 UI-LAY-06 —
+옮겨 온 칸이 첫 화면에 보이게). 공정을 고르지 않으면 **고른 목표에서 한 달이라도 모자란 공정
+전체**를 카드로 보인다 — 공정 필터의 「미선택 시 전체」 관례를 「미선택 시 목표 미달 전체」로
+읽는다. 목표를 바꾸면 카드 목록도 따라 바뀐다.
 
 본문 맨 위는 KPI 카드다 — 따로 선 값 줄은 없고 기준 값 「설비 일정 기준 가용(환산) · 오늘」 은 KPI
 아래 CSV 작업 줄 오른쪽 끝 작은 글이다(2026-11-09 사용자 보드 T2 — 값 한 줄을 이웃 줄 오른쪽으로,
@@ -76,6 +84,7 @@ import capa_simulation.persistence.cache as persistence_cache
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_field import first_and_rest
 from capa_simulation.components.process_labels import ProcessLabels
@@ -131,6 +140,7 @@ from capa_simulation.components.state_alerts import (
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.target_level_field import TargetLevelField
 from capa_simulation.components.typography import FIGURE_CLASS
 from capa_simulation.components.upeh_assumption_controls import render_upeh_assumption_controls
 from capa_simulation.design import tokens
@@ -143,6 +153,7 @@ from capa_simulation.navigation import (
 )
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
     PageContext,
     bootstrap_error_message,
     prune_list_selection,
@@ -168,11 +179,9 @@ from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.month_filter import available_month_range
 from capa_simulation.services.past_data import display_month_range
 from capa_simulation.services.required_shortening import (
-    DEFAULT_TARGET_LEVEL,
     KIND_NEW,
     STATUS_EXPIRED,
     STATUS_NEW_LIMIT,
-    TARGET_LEVELS,
     LevelPlan,
     ShorteningPlan,
     level_percent,
@@ -209,8 +218,10 @@ from capa_simulation.settings import DUCKDB_PATH
 from capa_simulation.sidebar_status import NO_PROCESS_MARK, rerun_fragment_if_alone
 
 __all__ = [
+    "LEVEL_FIELD",
     "MANUAL_NOTICE_HELP",
     "MATCH_RULE_HELP",
+    "SHORTENING_DIALOG_HOST",
     "SHARED_FILTER_HELP",
     "SHORTENING_END_KEY",
     "SHORTENING_LEVEL_KEY",
@@ -246,8 +257,25 @@ PROCESS_FIELD_HEAD = (
     "</style>"
     f'<p class="capa-shortening-process-name">{PROCESS_FIELD_NAME}</p>'
 )
-# 본문 프래그먼트 key — 조건 카드의 목표 확보율 · 진척 비교 콜백이 이것만 다시 돌린다.
+# 본문 프래그먼트 key — 조건 카드의 진척 비교 콜백이 이것만 다시 돌린다.
 VIEW_FRAGMENT_KEY = "required_shortening_view"
+# 이 화면의 팝업 호스트(화면당 하나 — 열림 칸은 페이지에 한 칸, AGENTS 9장 「팝업과 콜백」).
+# 페이지가 매 앱 전체 회차 세우고(Qual 마감 계산기 · 목표 확보율 팝업) 목표 확보율 줄이 그것으로
+# 연다.
+SHORTENING_DIALOG_HOST = DialogHost(
+    "required_shortening_dialog_host", f"required_shortening{PAGE_DIALOG_SUFFIX}"
+)
+# 목표 확보율 줄 — Space 「필요 단축」 보기와 같은 부품(값 칸 + 팝업, 2차 보드 Q2-26). 값은 세션
+# 칸 `SHORTENING_LEVEL_KEY`(Space 가 처음 목표로 읽고 「필요 단축 일정에서 이 공정 보기」 가
+# 적는다).
+LEVEL_FIELD = TargetLevelField(
+    state_key=SHORTENING_LEVEL_KEY,
+    field_key="equipment_shortening_level_field",
+    slug="shortening_target",
+    pick_key="equipment_shortening_level_pick",
+    dialog="shortening_target_level",
+    host=SHORTENING_DIALOG_HOST,
+)
 _SHORTENING_OWNER = "required_shortening"
 # 기준 값 작은 글(`_render_basis`)의 표지 클래스와 그 서식 — 캡션 칸을 줄 오른쪽 끝으로 민다.
 BASIS_CLASS = "shk-basis"
@@ -812,15 +840,14 @@ def _scenario_error_text(reason: str | None) -> str:
 
 
 def _render_view_choices(database_path: str | None) -> tuple[str, ...] | None:
-    """조건 카드 맨 위 — `목표 확보율` 과 `진척 비교`(2026-11-08 그림 메모 g03 — 본문 머리 줄에서
-    옮김). 둘 다 무엇을 볼지라 계획을 다시 세우지 않는다 — 바꾸면 콜백이 본문 프래그먼트만 다시
-    돌린다(`_rerun_view`). 값은 세션 칸이고 key 는 그대로다(Space 「필요 단축」 보기가 같은 목표
-    칸을 읽는다). `database_path` 가 없으면(설비 DB 없음) 진척 비교 상자를 세우지 않는다.
+    """조건 카드 맨 위 — `진척 비교`(2026-11-08 그림 메모 g03 — 본문 머리 줄에서 옮김). 무엇을
+    볼지라 계획을 다시 세우지 않는다 — 바꾸면 콜백이 본문 프래그먼트만 다시 돌린다(`_rerun_view`).
+    목표 확보율은 조회 조건 패널 줄이다(`LEVEL_FIELD` — 페이지가 세운다, 2차 보드 Q2-26).
+    `database_path` 가 없으면(설비 DB 없음) 진척 비교 상자를 세우지 않는다.
 
-    둘은 카드 폭을 다 쓰는 위아래 두 칸이다 — 기준선 라벨(「저장일 · 이름」)이 나란한 반 칸에서는
-    닫힌 칸 · 펼친 목록 모두 끝이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가
-    없으면 None)이다 — 본문 프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
-    _render_level_select()
+    상자는 카드 폭을 다 쓰는 칸이다 — 기준선 라벨(「저장일 · 이름」)이 반 칸에서는 닫힌 칸 · 펼친
+    목록 모두 끝이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가 없으면 None)이다 — 본문
+    프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
     baselines = load_baseline_options(database_path)
     if baselines is None:
         return None
@@ -828,29 +855,15 @@ def _render_view_choices(database_path: str | None) -> tuple[str, ...] | None:
     return tuple(summary.baseline_id for summary in baselines)
 
 
-def _render_level_select() -> None:
-    """`목표 확보율` 상자 — 다섯 목표는 미리 계산돼 있어 고르기만 한다(처음은 110%)."""
-    if SHORTENING_LEVEL_KEY not in st.session_state:
-        st.session_state[SHORTENING_LEVEL_KEY] = DEFAULT_TARGET_LEVEL
-    st.selectbox(
-        "목표 확보율",
-        options=list(TARGET_LEVELS),
-        format_func=_percent,
-        key=SHORTENING_LEVEL_KEY,
-        persist_state="session",
-        on_change=_rerun_view,
-        args=(SHORTENING_LEVEL_KEY,),
-    )
-
-
 def _rerun_view(widget_key: str) -> None:
-    """목표 확보율 · 진척 비교 칸의 콜백 — 계획은 그대로라 본문 프래그먼트만 다시 돌린다(설계 규칙
-    UI-PRF-01). 함께 바뀐 위젯이 있거나 직전 앱 전체 회차가 끝나지 않았으면 앱 전체 회차다."""
+    """진척 비교 칸의 콜백 — 계획은 그대로라 본문 프래그먼트만 다시 돌린다(설계 규칙 UI-PRF-01).
+    함께 바뀐 위젯이 있거나 직전 앱 전체 회차가 끝나지 않았으면 앱 전체 회차다."""
     rerun_fragment_if_alone(VIEW_FRAGMENT_KEY, widget_key)
 
 
 def _view_choices(database_path: str | None, shown: tuple[str, ...] | None) -> tuple[float, str]:
-    """본문이 볼 목표 확보율 · 진척 비교 — 프래그먼트 회차마다 세션 칸에서 읽는다.
+    """본문이 볼 목표 확보율 · 진척 비교 — 프래그먼트 회차마다 세션 칸에서 읽는다(목표는 패널 줄
+    `LEVEL_FIELD` 의 세션 칸).
 
     `shown` 은 직전 앱 전체 회차가 카드 `진척 비교` 상자에 세운 기준선 id 들이다. 지금 목록이 그와
     다르면(다른 세션이 지웠거나 새로 저장했다) 앱 전체를 다시 돌린다 — 카드 칸은 프래그먼트 밖이라
@@ -858,9 +871,7 @@ def _view_choices(database_path: str | None, shown: tuple[str, ...] | None) -> t
     지워진 기준선이면 「비교 안 함」 으로 되적는다. 그래야 카드 칸과 본문이 같은 비교를 말한다
     (설계 규칙 UI-DAT-11). 그 밖의 회차(카드가 상자를 세우지 않았거나 목록이 같다)는 세션 값을
     그대로 쓴다."""
-    level = st.session_state.get(SHORTENING_LEVEL_KEY, DEFAULT_TARGET_LEVEL)
-    if level not in TARGET_LEVELS:
-        level = DEFAULT_TARGET_LEVEL
+    level = LEVEL_FIELD.current()
     compare = st.session_state.get(SHORTENING_COMPARE_KEY, NO_COMPARISON)
     baselines = load_baseline_options(database_path)
     current = None if baselines is None else tuple(summary.baseline_id for summary in baselines)
