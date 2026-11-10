@@ -467,7 +467,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 대당 Capa · 소요대수 표 제목 줄에 CSV 와 「시트 엑셀」(TODO 2장 「계산 결과 Excel 다운로드」 첫 넓히기 — 공정 Capa
     상세 선례)을 묶은 「내려받기 ▾」 메뉴 하나가 선다(`table_toolbar.render_download_pair` — 2026-11-10 답 Q2-7). 지금 화면 상태(보기 · 집계 수준 · 공용 공정 거름 · 상세 ·
     `표 조건` 거름 · 조회기간 달 · 공정 표시명 — CSV 는 원본 이름)의 표를 화면 서식째
-    (`components/monthly_table_workbook.py`) 낸다. 파일 이름은 곁 CSV 와 같고 확장자만 `.xlsx`, 맨 위 머리 값 줄은 시나리오 ·
+    (`components/monthly_table_workbook.py`) 낸다. 파일 이름은 같은 메뉴의 CSV 와 같고 확장자만 `.xlsx`, 맨 위 머리 값 줄은 시나리오 ·
     조회기간(`sheet_download.scenario_period_rows`) · 보기 · 거름이다. 통은 조건 키(대당 Capa — 시나리오 캐시 키 · 표시순서
     지문 · 보기 · 수준 · 공정, 소요대수 — CSV 키의 표 지문, 둘 다 표시명 판 · 머리 값 · 시트 꼴 판)로 세션 칸
     `calculation_result_sheet_memo` 에 몇 벌 기억한다(`sheet_download.remembered_bytes` — 새 `st.cache_*` 없음). 소요대수
@@ -1617,7 +1617,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   만든다. 계산 원본은 바꾸지 않는다.
 - `src/capa_simulation/components/hierarchical_monthly_table.py` — 대당 Capa·확보율·소요대수처럼 합계행 없는 월별
   결과를 같은 고정 분류 + 스크롤 월 Plotly 표로 그린다(반복값 생략·계층 경계, 숫자/퍼센트 모드, 큰 표는 페이지 단위).
-  표시 모드는 원본 값을 바꾸지 않고, 화면과 같은 꼴의 CSV 프레임을 만든다. 큰 표의 「표시 범위」 칸은 표 제목 줄 「내려받기 ▾」 메뉴 곁이고
+  표시 모드는 원본 값을 바꾸지 않고, 화면과 같은 꼴의 CSV 프레임을 만든다. 큰 표의 「표시 범위」 칸은 표 제목 줄 내려받기(CSV 단추 또는 「내려받기 ▾」 메뉴) 곁이고
   (`page_slot` — 부르는 쪽이 `table_toolbar.table_heading_row` 안에 만들어 넘긴다, 2026-11-07 답 table-top), 값 글에 전체 행 수가
   든다(「1–80행 / 153행」). 행 수가 바뀐 회차에는 고른 차례를 새 쪽 수 안으로 잘라 다시 적고, 마지막으로 그린 (행 수, 차례)를
   `<key>_page_shown` 에 둔다 — 늦게 떠난 회차가 싣고 온 옛 글(새 보기에 없는 값 글)은 그 차례로 되돌린다
