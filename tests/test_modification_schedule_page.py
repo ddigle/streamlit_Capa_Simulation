@@ -322,6 +322,12 @@ def test_the_schedule_mode_draws_its_card_kpis_figure_and_list(
     # Guide 다(2차 보드 Q2-14 — 제약 영향 모드 그래프 · 계산표와 같은 꼴).
     assert "글이 들지 않는 막대" in CHART_HELP and "글이 들지 않는 막대" not in captions
     assert "아래 띠 =" not in captions and "옅은 빨강 칠" not in captions
+    guide = " ".join(GUIDE.read_text(encoding="utf-8").split())
+    assert (
+        "읽는 법: **아래 띠 = 차수별 개조 비가동** · "
+        "**옅은 빨강 칠 = 개조 없이도 기준(+ 안전 여유) 미달이라 넣지 않은 달** · "
+        "**옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · 기한 뒤)**"
+    ) in guide
     assert "**다 넣지 못했습니다 — 대안**" not in _markdown(app)
 
 
