@@ -180,7 +180,6 @@ from capa_simulation.services.space_layout_edit import (
     saved_layout_drift,
 )
 
-FLASH_KEY = "equipment_status_flash"
 # 빠른 두 번 누름 거름(`write_guard.save_once`)의 저장 이름 — 설비 편집본 저장과 FAB 전체 배치 쓰기.
 # 설비 편집본 저장은 같은 이름으로 제 저장 표지(`write_guard.own_save_marks` — `<이름>:<설비
 # 시나리오 id>`)도 단다. 그 짝은 (편집본이 나온 공통·일정 리비전 id, 저장 뒤 공통·일정 최신 id) 다.
