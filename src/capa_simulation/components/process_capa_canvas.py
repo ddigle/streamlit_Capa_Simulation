@@ -1,4 +1,4 @@
-# Purpose: 공정 Capa 상세의 결합 월 캔버스(요약 표·설비 일정)를 라벨·월 Figure 한 쌍으로 그린다.
+# Purpose: 공정 Capa 상세 결합 월 캔버스의 행 모델을 세워 라벨·월 Figure 한 쌍으로 그린다.
 
 """공정 Capa 상세 — 결합 월 캔버스.
 
@@ -244,7 +244,11 @@ __all__ = [
     "AssumptionCanvasInput",
     "DynamicCanvasInput",
     "ProcessCapaCanvas",
+    "ProcessCapaRows",
+    "TrackText",
     "build_process_capa_canvas",
+    "build_process_capa_rows",
+    "track_texts",
     "canvas_point",
     "title_detail_lines",
     "title_row_height",
@@ -404,35 +408,41 @@ class ProcessCapaCanvas(NamedTuple):
 # ================================================================== 공개 함수
 
 
-def build_process_capa_canvas(
+class ProcessCapaRows(NamedTuple):
+    """결합 캔버스의 행 모델 — 그림(`build_process_capa_canvas`)과 엑셀
+    (`process_capa_workbook`)이 같은 행 · 칸 · 칠을 읽는다(판정 · 미달 칠을 따로 다시 셈하지
+    않는다)."""
+
+    rows: list[_Row]
+    """위에서 아래로 — 첫 행이 머리(달 글자)다."""
+
+    axis: tuple[int, ...]
+    shortage_indices: tuple[int, ...]
+    """부족 달 세로 띠가 서는 열(판정 기준 요약의 경고 · 부족 달)."""
+
+    hidden_units: int
+    hidden_arrow_units: int
+    dynamic_first: int | None
+    """②~④ 첫 행의 자리. 설비 일정이 없으면 None."""
+
+    today_x: float | None
+    """오늘 점선 자리(달 단위 x). 축 밖이면 None."""
+
+
+def build_process_capa_rows(
     *,
     process_label: str,
     months: Sequence[int],
     summary: pd.DataFrame,
     thresholds: SecurementThresholds,
-    selected_month: int | None,
     product_demand: pd.DataFrame | None = None,
     home_rates: Mapping[int, float | None] | None = None,
     dynamic: DynamicCanvasInput | None = None,
     collapsed: Collection[str] = frozenset(),
     assumption: AssumptionCanvasInput | None = None,
-) -> ProcessCapaCanvas:
-    """공정 하나의 결합 월 캔버스(라벨 Figure · 월 Figure)를 만든다.
-
-    - `months` 는 월 축(`YYYYMM`, 차례대로)이다 — 조회기간 ∩ 소요 달. 비면 `ValueError` 다.
-    - `summary` 는 `build_process_capa_summary` 결과(같은 `thresholds`)다. 판정(`판정`)이 확보율 칸·
-      과부족 칸·부족 띠의 색을 **한 길**로 정한다.
-    - `product_demand` 는 「제품별 소요대수」를 펼쳤을 때의 `build_process_product_demand` 결과다.
-      None 이면 접힌 것이다(소요대수 ▸).
-    - `home_rates` 를 넘기면 맨 아래에 「확보율 (HOME 표시)」 줄이 선다(확보율 보정·선행 반영 값,
-      회색).
-    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 그 자리는 화면이 둔다).
-    - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
-    - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
-      id 는 무시한다.
-    - `assumption` 을 넘기면 ① 끝에 「UPEH 가정」 세 줄이 서고, 부족 띠·② 판정 대조는 그 요약의
-      판정을 쓴다. `dynamic` 도 그때는 가정 계획이어야 한다(페이지가 맞춘다).
-    """
+) -> ProcessCapaRows:
+    """결합 캔버스의 행 모델. 인자는 `build_process_capa_canvas` 와 같다(고른 달만 없다 — 행에
+    닿지 않는다). 색은 지금 테마의 토큰이다."""
     axis = [int(month) for month in months]
     if not axis:
         raise ValueError("결합 캔버스의 월 축이 비었습니다.")
@@ -464,11 +474,66 @@ def build_process_capa_canvas(
         today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
         if not today_position.before and not today_position.after:
             today_x = today_position.x
-
-    height = stack_rows(rows)
-    shortage_indices = [
+    shortage_indices = tuple(
         index_of[month] for month, status in statuses.items() if status in _SHORT_STATUSES
-    ]
+    )
+    return ProcessCapaRows(
+        rows=rows,
+        axis=tuple(axis),
+        shortage_indices=shortage_indices,
+        hidden_units=hidden_units,
+        hidden_arrow_units=hidden_arrow_units,
+        dynamic_first=dynamic_first,
+        today_x=today_x,
+    )
+
+
+def build_process_capa_canvas(
+    *,
+    process_label: str,
+    months: Sequence[int],
+    summary: pd.DataFrame,
+    thresholds: SecurementThresholds,
+    selected_month: int | None,
+    product_demand: pd.DataFrame | None = None,
+    home_rates: Mapping[int, float | None] | None = None,
+    dynamic: DynamicCanvasInput | None = None,
+    collapsed: Collection[str] = frozenset(),
+    assumption: AssumptionCanvasInput | None = None,
+) -> ProcessCapaCanvas:
+    """공정 하나의 결합 월 캔버스(라벨 Figure · 월 Figure)를 만든다.
+
+    - `months` 는 월 축(`YYYYMM`, 차례대로)이다 — 조회기간 ∩ 소요 달. 비면 `ValueError` 다.
+    - `summary` 는 `build_process_capa_summary` 결과(같은 `thresholds`)다. 판정(`판정`)이 확보율 칸·
+      과부족 칸·부족 띠의 색을 **한 길**로 정한다.
+    - `product_demand` 는 「제품별 소요대수」를 펼쳤을 때의 `build_process_product_demand` 결과다.
+      None 이면 접힌 것이다(소요대수 ▸).
+    - `home_rates` 를 넘기면 맨 아래에 「확보율 (HOME 표시)」 줄이 선다(확보율 보정·선행 반영 값,
+      회색).
+    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 그 자리는 화면이 둔다).
+    - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
+    - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
+      id 는 무시한다.
+    - `assumption` 을 넘기면 ① 끝에 「UPEH 가정」 세 줄이 서고, 부족 띠·② 판정 대조는 그 요약의
+      판정을 쓴다. `dynamic` 도 그때는 가정 계획이어야 한다(페이지가 맞춘다).
+
+    행 모델은 `build_process_capa_rows` 가 낸다 — 엑셀 내려받기도 같은 행을 읽는다.
+    """
+    model = build_process_capa_rows(
+        process_label=process_label,
+        months=months,
+        summary=summary,
+        thresholds=thresholds,
+        product_demand=product_demand,
+        home_rates=home_rates,
+        dynamic=dynamic,
+        collapsed=collapsed,
+        assumption=assumption,
+    )
+    rows = model.rows
+    axis = list(model.axis)
+    index_of = {month: position for position, month in enumerate(axis)}
+    height = stack_rows(rows)
     selected_index = index_of.get(int(selected_month)) if selected_month is not None else None
 
     label_figure = _label_figure(rows, height)
@@ -476,10 +541,10 @@ def build_process_capa_canvas(
         rows,
         axis,
         height,
-        shortage_indices=shortage_indices,
+        shortage_indices=model.shortage_indices,
         selected_index=selected_index,
-        today_x=today_x,
-        dynamic_rows=rows[dynamic_first:] if dynamic_first is not None else [],
+        today_x=model.today_x,
+        dynamic_rows=rows[model.dynamic_first :] if model.dynamic_first is not None else [],
         dynamic=dynamic,
     )
     flush_layout_items(label_figure, month_figure)
@@ -488,8 +553,8 @@ def build_process_capa_canvas(
         labels=label_figure,
         months=month_figure,
         height=height,
-        hidden_units=hidden_units,
-        hidden_arrow_units=hidden_arrow_units,
+        hidden_units=model.hidden_units,
+        hidden_arrow_units=model.hidden_arrow_units,
         row_ids=tuple(row.row_id for row in rows),
     )
 
@@ -2139,6 +2204,113 @@ def _draw_arrows(track: _Track, row: _Row, center: float, count: int) -> None:
         if bool(arrow.get("열린 구간")):
             label += " · 계속 ▸"
         track.arrow_text.add(x=tail + 0.02, y=center + 6, text=label)
+
+
+# ------------------------------------------------------------------ ③·④ 글(엑셀)
+
+
+class TrackText(NamedTuple):
+    """③·④ 줄 달 칸 하나의 글 — 그림 대신 엑셀에 적는다(`process_capa_workbook`). 표지 · 글은
+    그림과 같은 자리(`_unit_marks` · 화살표 꼬리 · 촉)에서 낸다."""
+
+    text: str
+    warning: bool = False
+    """「반입 전」 배지가 선 칸 — 그림의 배지처럼 경고색으로 칠한다."""
+
+    loss: bool = False
+    """가용을 깎은 비가동 화살표가 지나는 칸 — 그 화살표 색 글자."""
+
+    muted: bool = False
+    """영향 없는 비가동 화살표만 지나는 칸 — 흐린 글자."""
+
+
+def track_texts(
+    row: _Row, axis: Sequence[int], dynamic: DynamicCanvasInput
+) -> dict[int, TrackText]:
+    """③ 호기 줄 · ④ 화살표 줄을 달 칸(열 index)마다 글로 — 그림 대신 엑셀 칸에 적는다.
+
+    ③ 은 ◆ 반입 · ● 기여 시작 · ◀ −N일(「반입 전」 이면 그 앞에) · 그 사이 ━ · ◌ 신규 필요 ·
+    ▼ 정지·반출/이설 · 해소(해소 기여 월 눈금)를, ④ 는 화살표 꼬리 칸에 그림 글(비가동유형 ·
+    ◂ 이전부터 · 계속 ▸)과 지나는 칸에 ━ ▶(가용을 깎음) · ┄(영향 없음)을 적는다. 같은 칸의
+    표지는 왼쪽부터 「 · 」 로 잇는다. 그 밖의 줄은 빈 dict 다.
+    """
+    count = len(axis)
+    if count == 0:
+        return {}
+    if row.kind == _ARROW:
+        return _arrow_texts(row.payload, count)
+    if row.kind != _UNIT or not isinstance(row.payload, tuple):
+        return {}
+    kind, record = row.payload
+    marks = _unit_marks(kind, record, axis, dynamic)
+    pieces: list[tuple[float, str]] = []
+    warned: set[int] = set()
+
+    def column(x: float) -> int:
+        return min(count - 1, max(0, math.floor(x)))
+
+    exit_kind = "" if _blank(record.get("반출이설구분")) else str(record.get("반출이설구분"))
+    if marks.exit is not None:
+        pieces.append((marks.exit, f"▼ {exit_kind or '정지·반출/이설'}"))
+    if kind != "exit":
+        if marks.virtual is not None:
+            pieces.append((marks.virtual, f"◌ {_VIRTUAL_TEXT}"))
+        if marks.arrival is not None:
+            pieces.append((marks.arrival, "◆ 반입"))
+        if marks.pull is not None:
+            start_x, target_x = marks.pull
+            label = f"◀ {_MINUS}{marks.pull_days}일"
+            if marks.before_arrival:
+                label = f"{_BEFORE_ARRIVAL_TEXT} · {label}"
+                warned.add(column(target_x))
+            pieces.append((target_x, label))
+            pieces += [(index + 0.5, "━") for index in range(column(target_x) + 1, column(start_x))]
+        if marks.start is not None:
+            pieces.append((marks.start, "● 기여 시작"))
+        pieces += [(index + 0.5, "해소") for index in marks.resolved]
+    cells: dict[int, list[str]] = {}
+    # 해소 눈금은 칸 아래 가장자리 표지라 같은 칸의 다른 표지 뒤에 적는다.
+    for x, text in sorted(pieces, key=lambda piece: (piece[1] == "해소", piece[0])):
+        cells.setdefault(column(x), []).append(text)
+    return {
+        index: TrackText(text=" · ".join(texts), warning=index in warned)
+        for index, texts in cells.items()
+    }
+
+
+def _arrow_texts(arrows: object, count: int) -> dict[int, TrackText]:
+    """④ 한 줄의 화살표들 — 꼬리 칸에 그림 글, 지나는 칸에 선 글자(`_draw_arrows` 와 같은 자리)."""
+    if not isinstance(arrows, list):
+        return {}
+    cells: dict[int, list[tuple[str, bool]]] = {}
+    for arrow in arrows:
+        tail = max(0.0, _number(arrow.get("꼬리 위치")) or 0.0)
+        head = min(float(count), _number(arrow.get("촉 위치")) or tail)
+        first = min(count - 1, math.floor(tail))
+        last = max(first, min(count - 1, math.ceil(head) - 1))
+        loss = bool(arrow.get("가용 감소"))
+        kind = str(arrow.get("비가동유형") or "비가동").strip()
+        if len(kind) > ARROW_TYPE_MAX_CHARS:
+            kind = kind[:ARROW_TYPE_MAX_CHARS] + "…"
+        label = kind
+        if bool(arrow.get("이전부터")):
+            label += " · ◂ 이전부터"
+        if bool(arrow.get("열린 구간")):
+            label += " · 계속 ▸"
+        line = "━" if loss else "┄"
+        for index in range(first, last + 1):
+            text = label if index == first else line
+            if index == last and loss:
+                text += " ▶" if index == first else "▶"
+            cells.setdefault(index, []).append((text, loss))
+    return {
+        index: TrackText(
+            text=" · ".join(text for text, _ in items),
+            loss=any(loss for _, loss in items),
+            muted=not any(loss for _, loss in items),
+        )
+        for index, items in cells.items()
+    }
 
 
 # ================================================================== 값 다루기

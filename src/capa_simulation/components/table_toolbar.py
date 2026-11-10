@@ -1,4 +1,4 @@
-# Purpose: 표 위 제목 줄, CSV 내보내기 버튼, 표 도구 막대 앞 띄움 · 막대 자리를 한 곳에서 짓는다.
+# Purpose: 표 위 제목·부가 설명 줄, CSV·엑셀 내보내기 단추, 표 도구 막대 앞 띄움 · 막대 자리를 한 곳에서 짓는다.
 
 """One heading row and one CSV download button for every table.
 
@@ -24,6 +24,8 @@ import streamlit as st
 # 내보내는 바이트는 전부 BOM 이 붙은 UTF-8 이다. Excel 이 한글을 깨뜨리지 않게 하려는
 # 것이고, 그렇다면 charset 도 함께 밝혀야 브라우저가 같은 판단을 한다.
 CSV_MIME = "text/csv;charset=utf-8"
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 DOWNLOAD_ICON = ":material/download:"
 
@@ -60,6 +62,25 @@ def render_csv_download(
         data=data,
         file_name=file_name,
         mime=CSV_MIME,
+        icon=DOWNLOAD_ICON,
+        key=key,
+        on_click="ignore",
+        width="content",
+    )
+
+
+def render_xlsx_download(*, data: bytes, file_name: str, key: str, label: str) -> None:
+    """엑셀(xlsx) 내려받기 단추 하나 — CSV 단추와 같은 꼴(아이콘 · `on_click="ignore"` · 내용 폭).
+
+    바이트는 부르는 쪽이 회차마다 다시 만들지 않게 기억해 둔 것을 넘긴다. 콜러블 지연 생성은 쓰지
+    않는다 — 실패가 「Failed to generate file for download」 한 줄로 삼켜진다(9장 · TODO 결정 기록
+    2026-09-18).
+    """
+    st.download_button(
+        label,
+        data=data,
+        file_name=file_name,
+        mime=XLSX_MIME,
         icon=DOWNLOAD_ICON,
         key=key,
         on_click="ignore",

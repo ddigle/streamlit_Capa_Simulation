@@ -30,6 +30,7 @@ from fragment_browser import install_fragment_browser
 from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from test_required_shortening import _cutoff, _downtime, _master, _unit
+from xlsx_read import read_workbook
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.services.simulation_cache as simulation_cache
@@ -43,17 +44,20 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_UNITS,
 )
 from capa_simulation.components.process_capa_view import (
-    CAUSE_SHORTENING_BUTTON_KEY,
+    DOWNLOAD_STYLE,
     DYNAMIC_DB_ERROR_TITLE,
     DYNAMIC_ERROR_TITLE,
+    EVIDENCE_SHORTENING_BUTTON_KEY,
     INVESTMENT_BADGE,
     NEXT_MONTH_KEY,
+    SECTIONS_HELP,
+    SHEET_XLSX_KEY,
     SHORTENING_TAB_LINK_KEY,
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
-    UNITS_CSV_STYLE,
     step_button_label,
 )
+from capa_simulation.components.process_capa_workbook import DETAIL_SHEET, UNITS_SHEET
 from capa_simulation.components.process_field import CONTEXT_KEY as PROCESS_CONTEXT_KEY
 from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.components.required_shortening_panel import SHORTENING_PROCESS_KEY
@@ -364,9 +368,13 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert note["full"].startswith("공정 Capa 상세 — ") and process_box.value not in note["full"]
     assert "설비 마스터가 없습니다" in note["full"]
     assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
-    # 호기 CSV 와 정리 줄의 탭 링크는 설비 일정이 설 때만이다.
+    # 호기 CSV 와 정리 줄의 탭 링크는 설비 일정이 설 때만이다. 시트 엑셀은 ① 이 있어 늘 서고 둘째
+    # 시트(단축 일정)가 없다.
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
     assert SHORTENING_TAB_LINK_KEY not in {str(button.key) for button in app.button}
+    _, book = _sheet(app)
+    assert list(book) == [DETAIL_SHEET]
+    assert _heading(book[DETAIL_SHEET])["설비 일정"] == "설비 일정 없음: 저장본 없음"
     # HOME 에서 오지 않았으므로 출처 띠가 없다.
     assert _origin_bands(app) == []
     # 머리 오른쪽 「← HOME」 링크(단독 실행은 갈 페이지가 없어 글자로 물러선다).
@@ -864,20 +872,26 @@ def test_the_step_label_keeps_a_renamed_process_as_written() -> None:
     assert step_button_label("◀", None, str) == "이전 미달 공정 없음"
 
 
-def test_the_cause_row_marks_owned_shortfalls_for_investment(
+def test_the_investment_mark_stands_in_the_evidence_panel_of_an_owned_shortfall_month(
     strict_databases: tuple[Path, Path],
 ) -> None:
-    """KPI 「부족 원인」 에 보유가 있으면 그 아래 줄에 「투자 검토 대상」 표지와 산출 결과 링크가
-    선다(단독 실행은 갈 페이지가 없어 글자로 물러선다). 대여만이면 줄이 없다."""
+    """KPI 아래 부족 원인 줄은 걷었다(2026-11-10 보드 c2-picked) — 「투자 검토 대상」 표지와 산출
+    결과 링크는 근거 패널이 그 달 원인이 보유로도 부족일 때 단다(단독 실행은 갈 페이지가 없어 글자로
+    물러선다). 기간 전체의 원인별 달 수는 KPI 「부족 원인」 이다."""
     app = _ok(_app(strict_databases).run())
     cause = next(metric for metric in app.metric if metric.label == "부족 원인")
-    badges = [item for item in app.markdown if str(item.value) == INVESTMENT_BADGE]
-    links = [str(item.value) for item in app.caption if "— 산출 결과" in str(item.value)]
-    if "보유" in str(cause.value):
-        assert badges and links
-        assert any(text.startswith("사이드바에서 보유로도 부족 ") for text in links)
-    else:
-        assert not links
+    assert not any("개월 — 산출 결과" in str(item.value) for item in app.caption)
+    if "보유" not in str(cause.value):
+        return
+    for month in _months(app):
+        app.session_state[PROCESS_DETAIL_MONTH_KEY] = month
+        _ok(app.run())
+        links = [str(item.value) for item in app.caption if "— 산출 결과" in str(item.value)]
+        if links:
+            assert any(str(item.value) == INVESTMENT_BADGE for item in app.markdown)
+            assert links == ["사이드바에서 이 달 보유로도 부족 — 산출 결과"], links
+            return
+    raise AssertionError("보유로도 부족 달의 근거 패널에 산출 결과 링크가 없다")
 
 
 # ------------------------------------------------------------------ 설비 일정(참고)
@@ -942,6 +956,92 @@ def test_the_unit_csv_is_this_process_only_with_the_tab_columns(
     assert captured["data"].startswith("﻿".encode())
 
 
+def _sheet(app: AppTest) -> tuple[dict[str, Any], Any]:
+    """「시트 엑셀」 단추가 받은 것 — (기록, 그 통을 읽은 시트들)."""
+    captured = app.session_state["captured_downloads"][SHEET_XLSX_KEY]
+    assert isinstance(captured["data"], bytes)
+    return captured, read_workbook(captured["data"])
+
+
+def _heading(sheet: Any) -> dict[str, str]:
+    """시트 맨 위 (이름, 값) 줄 — 제목 다음부터 빈 줄 앞까지."""
+    rows: dict[str, str] = {}
+    index = 1
+    while sheet.row(index):
+        name, value = sheet.row(index)[:2]
+        rows[str(name)] = str(value)
+        index += 1
+    return rows
+
+
+def test_the_sheet_xlsx_follows_the_screen_state(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """「시트 엑셀」 은 표 도구 줄 오른쪽 끝(CSV 곁)에 늘 선다. 내용은 지금
+    화면 상태 그대로다 — 켠 구획만 행이 서고 접은 구획은 제목 줄(▸)뿐, 「제품별 소요대수」 를 켜면
+    펼친 제품 줄, 달 열은 화면 달 그대로, 둘째 시트는 호기 CSV 와 같은 표다(2026-11-10 보드
+    c2-picked)."""
+    app = _dynamic_app(dynamic_databases)
+    months = _months(app)
+    captured, book = _sheet(app)
+
+    assert captured["file_name"] == f"process_capa_detail_{months[0]}_{months[-1]}.xlsx"
+    assert list(book) == [DETAIL_SHEET, UNITS_SHEET]
+    detail = book[DETAIL_SHEET]
+    heading = _heading(detail)
+    assert heading["공정"] == DYNAMIC_PROCESS
+    # 시나리오 · 설비 시나리오는 머리 띠와 같은 함수의 글이다(위 줄 · 아래 줄 꼬리).
+    assert " · r" in heading["시나리오"] and heading["설비 시나리오"] != "—"
+    assert heading["설비 일정"].startswith("설비 일정 참고 · Cut-off 10일")
+    assert heading["구획"] == "① 공식 · ② 일정 가용 · ③ 단축 · ④ 비가동"
+    assert heading["단축 목표"].startswith("확보 기준(월별)")
+    header = detail.find_row(f"구분 · {DYNAMIC_PROCESS}")
+    assert detail.row(header)[2:] == [month_label(month) for month in months]
+    assert detail.freeze == (header + 1, 2)
+    labels = [str(value) for value in detail.column(0) if value is not None]
+    for title in ("① 공식 기준 ▾", "② 설비 일정 기준 가용 ▾", "③ 신규 설비 일정과 단축 ▾"):
+        assert title in labels
+    assert "DA-01" in labels and "소요대수 ▸" in labels
+    rate = detail.find_row("확보율")
+    assert all(
+        detail.cells[(rate, column)].numeric
+        and detail.cells[(rate, column)].number_format.endswith("%")
+        for column in range(2, 2 + len(months))
+    )
+    units = book[UNITS_SHEET]
+    assert units.row(0) == list(UNIT_EXPORT_COLUMNS)
+    csv = pd.read_csv(
+        io.BytesIO(app.session_state["captured_downloads"][UNITS_CSV_KEY]["data"]),
+        encoding="utf-8-sig",
+    )
+    assert len([row for row, column in units.cells if column == 0]) == len(csv) + 1
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([SECTION_SUMMARY, SECTION_DYNAMIC])
+    app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).set_value(True)
+    _ok(app.run())
+    _, book = _sheet(app)
+    detail = book[DETAIL_SHEET]
+    heading = _heading(detail)
+    assert heading["구획"] == "① 공식 · ② 일정 가용"
+    assert heading["제품별 소요대수"].startswith("펼침 · 분류 ")
+    labels = [str(value) for value in detail.column(0) if value is not None]
+    assert "③ 신규 설비 일정과 단축 ▸" in labels and "④ 호기별 비가동 ▸" in labels
+    assert "DA-01" not in labels
+    assert "소요대수 ▾" in labels and any(label.startswith("└ ") for label in labels)
+
+
+def test_the_sections_meaning_sits_in_one_info_mark_after_the_chips(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """「구획」 칩은 라벨을 숨긴 칸이라 위젯 풍선이 서지 않는다 — 뜻은 칩 바로 뒤 빈 캡션 풍선
+    하나다(2026-11-10 보드 Q-8 · 설계 규칙 UI-TXT-02)."""
+    app = _dynamic_app(dynamic_databases)
+
+    assert not app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).proto.help
+    marks = [item for item in app.caption if item.proto.help == SECTIONS_HELP]
+    assert len(marks) == 1 and str(marks[0].value) == ""
+
+
 def _main_order(block: Any) -> Iterator[Any]:
     """본문 요소를 화면 차례로."""
     for child in block.children.values():
@@ -961,23 +1061,46 @@ def test_the_unit_csv_stands_on_the_tool_row_above_the_canvas(
     order = [element.type for element in _main_order(app.main)]
     assert order.index("download_button") < order.index("plotly_chart")
     # 곁의 칩과 같은 높이 서식은 보이는 글(범례)과 한 `st.html` 이라 이벤트 칸을 쓰지 않는다.
-    assert any("pcd-legend" in body and UNITS_CSV_STYLE in body for body in _html(app))
+    assert any("pcd-legend" in body and DOWNLOAD_STYLE in body for body in _html(app))
 
 
 def _closing_link(app: AppTest) -> bool:
     return SHORTENING_TAB_LINK_KEY in {str(button.key) for button in app.button}
 
 
-def test_the_closing_link_steps_aside_for_the_other_ways_to_the_shortening_page(
+def _buttons(app: AppTest) -> set[str]:
+    return {str(button.key) for button in app.button}
+
+
+def _open_schedule_short_month(app: AppTest) -> int:
+    """근거 패널에 「이 달 일정 부족 — 필요 단축 일정」 이 서는 달을 골라 연다(그 달을 돌려준다)."""
+    for month in _months(app):
+        app.session_state[PROCESS_DETAIL_MONTH_KEY] = month
+        _ok(app.run())
+        if EVIDENCE_SHORTENING_BUTTON_KEY in _buttons(app):
+            return month
+    raise AssertionError("일정 부족 달이 없다")
+
+
+def test_the_kpi_next_screen_row_is_gone_and_the_closing_link_still_steps_aside(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
-    """일정 부족 달이 있는 공정은 KPI 아래 「일정 n개월 — 필요 단축 일정」 이 같은 길이다(설계 규칙
-    UI-LAY-12) — 맨 아래 링크는 서지 않고 CSV 는 그대로다."""
+    """KPI 아래 「다음 화면 · 일정 n개월 — 필요 단축 일정」 줄은 걷었다(2026-11-10 보드 c2-picked).
+    일정 부족 달이 있는 공정은 근거 패널의 그 달 단추가 같은 길이라 맨 아래 링크는 서지 않고(설계
+    규칙 UI-LAY-12), 내려받기 둘은 그대로다."""
     app = _dynamic_app(dynamic_databases)
 
-    assert app.button(key=CAUSE_SHORTENING_BUTTON_KEY).label.endswith("필요 단축 일정")
+    assert not any("개월 — " in str(button.label) for button in app.button), [
+        str(button.label) for button in app.button
+    ]
     assert not _closing_link(app)
-    assert UNITS_CSV_KEY in {str(button.key) for button in app.get("download_button")}
+    downloads = {str(button.key) for button in app.get("download_button")}
+    assert {UNITS_CSV_KEY, SHEET_XLSX_KEY} <= downloads
+    _open_schedule_short_month(app)
+    assert (
+        app.button(key=EVIDENCE_SHORTENING_BUTTON_KEY).label == "이 달 일정 부족 — 필요 단축 일정"
+    )
+    assert not _closing_link(app)
 
 
 @pytest.fixture(scope="module")
@@ -1005,7 +1128,7 @@ def test_the_closing_link_stands_when_nothing_else_leads_to_the_shortening_page(
     않는다."""
     app = _dynamic_app(calm_databases)
 
-    assert CAUSE_SHORTENING_BUTTON_KEY not in {str(button.key) for button in app.button}
+    assert EVIDENCE_SHORTENING_BUTTON_KEY not in _buttons(app)
     assert _closing_link(app)
 
     app.query_params.update(
@@ -1091,7 +1214,8 @@ def test_the_shortening_link_highlights_the_card_without_planting_the_filter(
     app = _dynamic_app(dynamic_databases)
     repository = DuckDBEquipmentRepository(dynamic_databases[1])
     before = repository.load_shortening_filter_profile()
-    app.button(key=CAUSE_SHORTENING_BUTTON_KEY).click()
+    _open_schedule_short_month(app)
+    app.button(key=EVIDENCE_SHORTENING_BUTTON_KEY).click()
     _ok(app.run())
 
     assert "equipment_active_tab" not in app.session_state
@@ -1275,6 +1399,14 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     frame = pd.read_csv(io.BytesIO(captured["data"]), encoding="utf-8-sig")
     assert list(frame.columns) == ["UPEH 가정", *UNIT_EXPORT_COLUMNS]
     assert set(frame["UPEH 가정"].astype(str)) <= {"UPEH 가정 110% · 26.01–26.12"}
+    # 시트 엑셀도 가정 표지 — 파일 이름 꼬리 · 머리 값 줄 · ① 끝 가정 세 줄 · 둘째 시트 첫 열.
+    sheet, book = _sheet(app)
+    assert sheet["file_name"].endswith("_upeh110_202601_202612.xlsx")
+    detail = book[DETAIL_SHEET]
+    assert _heading(detail)["UPEH 가정"] == "UPEH 가정 110% · 26.01–26.12"
+    upeh_labels = [str(value) for value in detail.column(0) if value is not None]
+    assert "UPEH 110% · 확보율" in upeh_labels and "판정 대조 · UPEH 가정" in upeh_labels
+    assert book[UNITS_SHEET].row(0)[0] == "UPEH 가정"
 
 
 def test_at_100_percent_the_page_shows_only_the_official_basis(
@@ -1324,6 +1456,10 @@ def test_a_broken_equipment_database_keeps_the_official_section(
     assert [metric.label for metric in app.metric][0] == "최저 확보율"
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
+    # 시트 엑셀도 선다 — 머리 값 「구획」 은 칩 넷이 켜져 있어도 시트에 선 ① 뿐이다.
+    _, book = _sheet(app)
+    assert list(book) == [DETAIL_SHEET]
+    assert _heading(book[DETAIL_SHEET])["구획"] == "① 공식"
 
 
 def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_section(

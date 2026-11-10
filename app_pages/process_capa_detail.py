@@ -6,7 +6,8 @@
 전부의 진척 관리는 필요 단축 일정이 맡는다.
 
 차례(2026-10-15 사용자 결정 4 — 목업 그대로, CSV 는 표 곁 · 필요 단축 일정 링크는 다른 길이 없는
-공정만 — 2026-11-07 사용자 답):
+공정만 — 2026-11-07 사용자 답, KPI 아래 다음 화면 줄은 걷고 표 도구 줄에 「시트 엑셀」 — 2026-11-10
+보드 c2-picked):
 
 0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보 기준
    미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
@@ -14,14 +15,17 @@
    필요 단축 일정」. 사이드바 조회 조건 패널의 「공정」 값 칸(하나 고름 — 공용 공정 칸)과
    `공정 상세 조건` 카드 — 제품 거르기(펼친 제품 행에만 걸린다)와 UPEH 가정.
 1. **KPI 넷** — 최저 확보율, 확보 기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준). 그
-   아래 부족 원인마다 다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 →
-   필요 단축 일정).
+   아래에 서던 부족 원인별 다음 화면 줄은 걷었다(2026-11-10 보드 c2-picked) — 원인마다 갈 곳은
+   근거 패널이 고른 달의 원인으로 단다.
 2. ~ 7. **본문 프래그먼트**(`components/process_capa_view.render_process_detail_view`, key
    `process_detail_view`) — 표 도구 줄(오른쪽 끝 「이 공정 단축 일정 CSV」 는 설비 일정이 설
-   때만), 결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준 가용 · ③ 신규 설비와 단축 · ④ 호기별
-   비가동), 범례, 산출 근거 패널. 칸을 누르면 그 구획만 다시 돈다.
+   때만, 「시트 엑셀」 은 늘 — 지금 화면 상태 그대로의 상세 시트를 화면 서식째, 조건이 바뀐 회차에만
+   만든다),
+   결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준 가용 · ③ 신규 설비와 단축 · ④ 호기별 비가동),
+   범례, 산출 근거 패널(그 달 부족 원인의 다음 화면). 칸을 누르면 그 구획만 다시 돈다.
 8. **정리 줄**(설비 일정이 설 때만) — 값 표지, 필요 단축 일정 화면 링크(이 공정 화면에 그리로 가는
-   다른 길이 없을 때만 — `shortening_link_needed`).
+   다른 길 — 도착 「← 필요 단축 일정」 · 근거 패널의 일정 부족 달 단추 — 이 없을 때만, 곧 일정
+   부족 달이 하나도 없을 때 — `shortening_link_needed`).
 9. **Guide**(`guides/process_capa_detail.md`) — 헤더의 Guide 단추.
 
 입력은 이 화면이 직접 모은다.
@@ -58,6 +62,7 @@
 들어온 회차에는 그 길(`from`)이 가리키는 구획을 다시 편다(`reopen_entry_section`).
 """
 
+import re
 from datetime import date
 from functools import partial
 from typing import NoReturn
@@ -66,6 +71,11 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts, shared_process
+from capa_simulation.components.app_header import (
+    EQUIPMENT_HEADER_HEAD,
+    equipment_header_suffix,
+    header_lines,
+)
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_scenario_status import (
     HOME_VISIT_LOCK_REASON,
@@ -73,6 +83,7 @@ from capa_simulation.components.equipment_scenario_status import (
     render_equipment_scenario_row,
     render_legacy_trace_warning,
 )
+from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -82,7 +93,6 @@ from capa_simulation.components.process_capa_view import (
     DynamicView,
     ProcessDetailView,
     open_shortening_page,
-    render_cause_links,
     render_closing_row,
     render_process_detail_view,
     render_process_kpis,
@@ -154,6 +164,11 @@ from capa_simulation.process_detail_state import (
     resolve_process_and_month,
     shortening_band_text,
     take_process_detail_request,
+)
+from capa_simulation.scenario_activation import (
+    active_scenario_label,
+    has_unsaved_scenario_changes,
+    newer_active_revision_no,
 )
 from capa_simulation.services.advance_load import build_advance_load_ratio
 from capa_simulation.services.display_order_scopes import (
@@ -237,6 +252,8 @@ CARD_NAME = "process_capa_detail"
 CARD_ICON = ":material/troubleshoot:"
 # 머리 배지. 공식 숫자는 늘, 설비 일정은 판정에 따라 「참고」·「없음: 까닭」.
 OFFICIAL_BADGE = ":gray-badge[공식 · Core Data]"
+# 배지 마크다운에서 글만 — 시트 엑셀 머리 값 줄에 싣는다.
+BADGE_PATTERN = re.compile(r":[a-z]+-badge\[(.*)\]")
 # 필요 단축 일정 카드 출처 띠 옆 「← 필요 단축 일정」 단추(그 카드를 강조해 돌아간다).
 BACK_TO_SHORTENING_KEY = "process_detail_back_to_shortening"
 # HOME 표시 확보율이 원 확보율과 같다고 보는 차이.
@@ -678,6 +695,12 @@ def csv_bytes(frame: pd.DataFrame) -> bytes:
     return frame.to_csv(index=False).encode("utf-8-sig")
 
 
+def badge_text(badge: str) -> str:
+    """머리 배지 마크다운(`:gray-badge[글]`) → 글. 배지 꼴이 아니면 그대로."""
+    matched = BADGE_PATTERN.fullmatch(badge.strip())
+    return matched.group(1) if matched else badge
+
+
 readiness: DynamicReadiness | None = None
 dynamic: DynamicView | None = None
 dynamic_error = ""
@@ -691,6 +714,8 @@ closing_marks: list[tuple[str, str]] = []
 usage_excluded_names: list[str] = []
 usage_excluded_full = ""
 units_csv: bytes | None = None
+# 시트 엑셀 둘째 시트 — 호기 CSV 와 같은 표(설비 일정이 설 때만).
+units_export: pd.DataFrame | None = None
 if equipment_error:
     dynamic_error = equipment_error
 else:
@@ -859,6 +884,7 @@ if (
             csv_export_key("process_detail_units", export, (), "utf-8-sig"),
             partial(csv_bytes, export),
         )
+        units_export = export
 
 if readiness is None:
     dynamic_badge = ":blue-badge[설비 일정 없음: 설비 DB 오류]"
@@ -987,7 +1013,42 @@ render_process_kpis(
 )
 upeh_suffix = f"_upeh{upeh_token[0]}_{upeh_token[1][0]}_{upeh_token[1][-1]}" if upeh_token else ""
 units_csv_file_name = f"process_capa_detail_units_{months[0]}_{months[-1]}{upeh_suffix}.csv"
-render_cause_links(kpis, dynamic=dynamic, process=process, shortening_help=shortening_link_help)
+
+
+def sheet_heading() -> tuple[tuple[str, str], ...]:
+    """시트 엑셀 맨 위 값 줄 — 머리 띠 · 공정 머리 · 사이드바 조건에 보이는 값(글자 그대로, 마크다운
+    막음 없이). 시나리오는 머리 띠 위 줄과 같은 함수(`header_lines`), 설비 시나리오는 머리 띠 꼬리와
+    같은 함수로 이 화면이 실제로 본 설비 기준(HOME 칸 방문이면 공식)을 적는다. 조회기간은 사이드바
+    값과 적용(유효 기간 ∩ 조회기간). 구획 · 펼침 · 단축 목표는 본문 프래그먼트가 덧붙인다."""
+    scenario_line, _ = header_lines(
+        active_scenario_label(),
+        official=latest_official_revision(),
+        unsaved=has_unsaved_scenario_changes(),
+        newer_revision_no=newer_active_revision_no(),
+    )
+    chosen = (
+        f"{month_label(context.selected_start_month)}–{month_label(context.selected_end_month)}"
+    )
+    applied = f"{month_label(effective_start)}–{month_label(effective_end)}"
+    equipment_line = (
+        equipment_header_suffix(shown_session.label())
+        if shown_session is not None and shown_session.snapshot is not None
+        else None
+    )
+    rows = [
+        ("공정", process_label),
+        ("시나리오", scenario_line),
+        ("조회기간", chosen if chosen == applied else f"{chosen} · 적용 {applied}"),
+        (
+            "설비 시나리오",
+            equipment_line.removeprefix(f"{EQUIPMENT_HEADER_HEAD} · ") if equipment_line else "—",
+        ),
+        ("설비 일정", badge_text(dynamic_badge)),
+    ]
+    if upeh_token and assumption is not None:
+        rows.append(("UPEH 가정", assumption_label(assumption)))
+    return tuple(rows)
+
 
 render_process_detail_view(
     ProcessDetailView(
@@ -1015,6 +1076,9 @@ render_process_detail_view(
         units_csv=units_csv,
         units_csv_file_name=units_csv_file_name,
         shortening_link_help=shortening_link_help,
+        units_export=units_export,
+        sheet_heading=sheet_heading(),
+        sheet_file_name=f"process_capa_detail_{months[0]}_{months[-1]}{upeh_suffix}.xlsx",
     )
 )
 

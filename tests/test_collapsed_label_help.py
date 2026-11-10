@@ -8,8 +8,7 @@
 그 줄 제목 풍선 하나가 말하고, 라벨 글은 접근성 이름으로만 남긴다. 화면 코드 전체에서
 `collapsed` 와 `help=` 를 함께 준 부름을 찾는다.
 
-남긴 자리(`KEPT` — 까닭과 함께)는 이 꼴을 정하기 전부터 있던 자리이고, 옮길 곳(줄 끝 ⓘ · Guide)을
-정하는 것은 물음으로 남겼다(`docs/TODO.md` 4장). 목록 밖에서 새로 생기면 실패한다.
+남길 자리는 `KEPT` 에 까닭과 함께 적는다 — 지금은 없다. 목록 밖에서 새로 생기면 실패한다.
 """
 
 from __future__ import annotations
@@ -18,11 +17,7 @@ import ast
 
 from source_sites import screen_calls, screen_files
 
-KEPT: dict[tuple[str, str], str] = {
-    ("src/capa_simulation/components/process_capa_view.py", "_render_tool_row"): (
-        "공정 Capa 상세 구획 고르기 — 바탕부터 숨은 풍선, 옮길 곳은 물음"
-    ),
-}
+KEPT: dict[tuple[str, str], str] = {}
 
 
 def _keyword(call: ast.Call, name: str) -> ast.expr | None:

@@ -42,9 +42,9 @@ from capa_simulation.components.process_capa_view import (
     DYNAMIC_OFFICIAL_KEPT,
     ENTRY_SECTIONS,
     NO_COUNTED_UNITS_HELP,
+    SHEET_MEMO_LIMIT,
     TARGET_HELP,
     DynamicView,
-    NextScreens,
     Prescription,
     ProcessDetailView,
     availability_card,
@@ -57,12 +57,13 @@ from capa_simulation.components.process_capa_view import (
     evidence_cards_html,
     initial_scroll_px,
     judgement_card,
-    kpi_next_screens,
     month_next_screens,
     prescription,
     prescription_text,
     production_month_example,
     schedule_short_month,
+    sheet_memo_key,
+    sheet_request,
     shortening_card,
     shortening_link_needed,
     target_text,
@@ -676,6 +677,104 @@ def test_the_canvas_is_remembered_a_few_times_in_the_session() -> None:
     assert app.session_state["kept"] == CANVAS_MEMO_LIMIT
 
 
+def _sheet_memo_script() -> None:
+    import streamlit as st
+    from test_process_capa_view import _view
+
+    from capa_simulation.components.process_capa_view import (
+        SHEET_MEMO_KEY,
+        remembered_sheet,
+        sheet_memo_key,
+    )
+
+    built: list[int] = []
+
+    def build() -> bytes:
+        built.append(1)
+        return b"xlsx"
+
+    view = _view()
+    conditions = {
+        "expanded": False,
+        "split": "제품정보",
+        "show_all_units": False,
+        "show_all_arrows": False,
+    }
+    key = sheet_memo_key(view, **conditions)  # type: ignore[arg-type]
+    remembered_sheet(key, build)
+    remembered_sheet(sheet_memo_key(view, **conditions), build)  # type: ignore[arg-type]
+    st.session_state["built_once"] = len(built)
+    for sections in ([], ["summary"], ["dynamic"], ["units"], ["downtime"]):
+        remembered_sheet(
+            sheet_memo_key(view, collapsed=sections, **conditions),  # type: ignore[arg-type]
+            build,
+        )
+    st.session_state["built"] = len(built)
+    st.session_state["kept"] = len(st.session_state[SHEET_MEMO_KEY])
+
+
+def test_the_sheet_is_built_once_per_condition_and_remembered_a_few_times() -> None:
+    """시트 엑셀은 회차마다 만들지 않는다 — 조건이 같으면 세션에 기억한 바이트를 쓰고(달 칸 누름 ·
+    다른 위젯), 조건이 바뀐 회차에만 만든다. 기억은 몇 벌뿐이다."""
+    app = AppTest.from_function(_sheet_memo_script, default_timeout=60).run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state["built_once"] == 1
+    assert app.session_state["built"] == 5
+    assert app.session_state["kept"] == SHEET_MEMO_LIMIT
+
+
+def test_the_sheet_key_follows_the_heading_and_the_drawn_conditions() -> None:
+    """시트 키는 고른 달을 받지 않는다(달 칸을 눌러도 시트는 그대로) — 머리 값 줄(시나리오 이름 ·
+    설비 기준) · 펼침 · UPEH 가정이 바뀌면 바뀐다."""
+    view = _view(dynamic=_dynamic_view())
+    base = sheet_memo_key(
+        view, expanded=False, split="제품정보", show_all_units=False, show_all_arrows=False
+    )
+    renamed = replace(view, sheet_heading=(("시나리오", "다른 이름 r2"),))
+    assert base != sheet_memo_key(
+        renamed, expanded=False, split="제품정보", show_all_units=False, show_all_arrows=False
+    )
+    assert base != sheet_memo_key(
+        view, expanded=True, split="제품정보", show_all_units=False, show_all_arrows=False
+    )
+    assert base != sheet_memo_key(
+        replace(view, upeh_token=(120, (202611,))),
+        expanded=False,
+        split="제품정보",
+        show_all_units=False,
+        show_all_arrows=False,
+    )
+
+
+def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
+    heading = sheet_request(
+        view,
+        expanded=False,
+        split="제품정보",
+        collapsed=collapsed,
+        product_demand=None,
+        show_all_units=False,
+        show_all_arrows=False,
+    ).heading
+    return dict(heading)["구획"]
+
+
+def test_the_sheet_sections_line_names_only_the_sections_the_sheet_draws() -> None:
+    """시트 머리 값 「구획」 은 시트에 실제로 선 구획만 적는다 — 설비 일정이 서지 않으면 ② ~ ④ 칩이
+    켜져 있어도 ① 뿐이고, 그 ① 마저 접었으면 「모두 접힘」 이다."""
+    nothing: frozenset[str] = frozenset()
+    assert _sheet_sections(_view(dynamic=None), nothing) == "① 공식"
+    assert _sheet_sections(_view(dynamic=None), frozenset({SECTION_SUMMARY})) == "모두 접힘"
+    assert (
+        _sheet_sections(_view(dynamic=_dynamic_view()), nothing)
+        == "① 공식 · ② 일정 가용 · ③ 단축 · ④ 비가동"
+    )
+    assert (
+        _sheet_sections(_view(dynamic=_dynamic_view()), frozenset({SECTION_UNITS}))
+        == "① 공식 · ② 일정 가용 · ④ 비가동"
+    )
+
+
 def _callback_script() -> None:
     import streamlit as st
 
@@ -785,19 +884,6 @@ def test_an_entry_without_a_known_path_leaves_the_sections() -> None:
 # ------------------------------------------------------------------ 부족 원인의 다음 화면
 
 
-def test_the_kpi_next_screens_follow_the_cause_counts() -> None:
-    plan = Prescription(shortened=1, new=0, unresolved_months=0, dynamic_short_months=2)
-    screens = kpi_next_screens(_kpis(owned_short_months=1, mismatch_months=3), plan)
-    assert screens == NextScreens(
-        owned="보유로도 부족 1개월 — 산출 결과",
-        mismatch="가용 불일치 3개월 — 가용설비 현황",
-        schedule="일정 2개월 — 필요 단축 일정",
-    )
-    # 대여 영향만 있으면(공식 기준 안의 차이) 옮겨 갈 화면이 없다.
-    none = kpi_next_screens(_kpis(owned_short_months=0, rental_months=4), None)
-    assert none == NextScreens() and not none.present()
-
-
 def test_the_month_next_screens_read_that_month_cause_and_schedule() -> None:
     summary = _summary()
     month = 202703
@@ -827,7 +913,7 @@ def _next_screens_app() -> None:
     from capa_simulation.components.process_capa_view import NextScreens, _render_next_screens
 
     _render_next_screens(
-        NextScreens(schedule="일정 1개월 — 필요 단축 일정"),
+        NextScreens(schedule="이 달 일정 부족 — 필요 단축 일정"),
         process="DEMO",
         gap_key="gap",
         shortening_key="to_shortening",
@@ -844,19 +930,20 @@ def test_the_next_screen_button_keeps_the_balloon_of_the_closing_link() -> None:
 
 
 def test_the_closing_link_is_needed_only_without_another_way() -> None:
-    """맨 아래 필요 단축 일정 링크 — 일정 부족 달이 있으면 KPI 줄이, 그 카드에서 왔으면 「← 필요
-    단축 일정」 이 같은 길이다(설계 규칙 UI-LAY-12). 근거 카드 단추가 서는 달이 있는데 KPI 줄이 없는
-    갈래는 없다 — 달 수 하나로 둘을 함께 본다."""
+    """맨 아래 필요 단축 일정 링크 — 그 카드에서 왔으면 「← 필요 단축 일정」 이, 일정 부족 달이
+    있으면 근거 패널의 그 달 단추가 같은 길이다(설계 규칙 UI-LAY-12). 그 단추가 서는 달은 KPI
+    「부족 원인 · 일정」 이 세는 달과 같다 — 달 수 하나로 본다. KPI 아래 「일정 n개월 — 필요 단축
+    일정」 줄은 걷었다(2026-11-10 보드 c2-picked)."""
     short = _dynamic_view()
     plan = prescription(short)
     months = [int(month) for month in short.canvas.process_months["생산계획년월"]]
-    assert kpi_next_screens(_kpis(), plan).schedule is not None
-    assert any(month_next_screens(_view(dynamic=short), m).schedule for m in months)
+    shown = [m for m in months if month_next_screens(_view(dynamic=short), m).schedule]
+    assert shown and len(shown) == plan.dynamic_short_months
     assert not shortening_link_needed(short, arrived_from_card=False)
 
     filled = short.canvas.process_months.assign(과부족=0.0)
     calm = replace(short, canvas=replace(short.canvas, process_months=filled))
-    assert kpi_next_screens(_kpis(), prescription(calm)).schedule is None
+    assert prescription(calm).dynamic_short_months == 0
     assert not any(month_next_screens(_view(dynamic=calm), m).schedule for m in months)
     assert shortening_link_needed(calm, arrived_from_card=False)
     assert not shortening_link_needed(calm, arrived_from_card=True)
