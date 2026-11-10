@@ -14,6 +14,7 @@
 """
 
 import ast
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -642,15 +643,19 @@ def _notice_sites(tree: ast.Module) -> dict[tuple[str, str], int]:
     return found
 
 
-def _flash_pops() -> dict[tuple[str, str, str], int]:
-    """flash.py 밖에서 알림 칸을 꺼내는 자리 (파일, 함수, 칸의 식) → 줄."""
-    sources = [
+def _app_sources() -> list[Path]:
+    """앱 코드 — 진입점 · 페이지 · 패키지."""
+    return [
         PROJECT_ROOT / "app.py",
         *sorted((PROJECT_ROOT / "app_pages").glob("*.py")),
         *sorted((PROJECT_ROOT / "src").rglob("*.py")),
     ]
+
+
+def _flash_pops() -> dict[tuple[str, str, str], int]:
+    """flash.py 밖에서 알림 칸을 꺼내는 자리 (파일, 함수, 칸의 식) → 줄."""
     found: dict[tuple[str, str, str], int] = {}
-    for path in sources:
+    for path in _app_sources():
         if path == FLASH_OWNER:
             continue
         relative = path.relative_to(PROJECT_ROOT).as_posix()
@@ -685,6 +690,110 @@ def test_every_allowed_pop_is_still_there() -> None:
     stale = sorted(set(FLASH_POP_ALLOWED) - set(_flash_pops()))
 
     assert not stale, f"사라진 자리입니다 — FLASH_POP_ALLOWED 에서 지우세요: {stale}"
+
+
+# 알림 칸을 읽기만 하는 함수. 칸 이름이 이 함수들의 인자로만 쓰이면 그 칸은 아무도 담지 않는다.
+_SLOT_READERS = frozenset(
+    {"render_flash", "emit_flash", "pending_flash", "send_to_popup", "held_flash", "held_notice"}
+)
+
+
+def _module_name(path: Path) -> str:
+    parts = path.relative_to(PROJECT_ROOT).with_suffix("").parts
+    return ".".join(parts[1:] if parts[0] == "src" else parts)
+
+
+def _unwritten_slots(modules: Mapping[str, ast.Module]) -> dict[tuple[str, str], list[str]]:
+    """읽는 함수(`_SLOT_READERS`)에만 넘기고 다른 데서는 한 번도 쓰지 않는 대문자 칸 이름
+    (정의한 모듈, 이름) → 읽는 자리(모듈:줄).
+
+    같은 이름(`FLASH_KEY` 등)이 모듈마다 있어 이름은 정의한 모듈까지 푼다 — 모듈 본문의
+    `from … import` 로 들인 이름은 그 모듈로, `import … as` 별칭의 속성은 그 모듈로, 나머지는 쓴
+    모듈로. 담기(`queue_flash`)·넘기기(도우미 인자 · `*튜플`)·비교 모두 「쓰임」 이다 — 읽기 밖의
+    쓰임이 하나라도 있으면 담는 쪽이 있다고 본다(놓치는 쪽으로 너그럽다).
+    """
+    reads: dict[tuple[str, str], list[str]] = {}
+    used: set[tuple[str, str]] = set()
+    for module, tree in modules.items():
+        names: dict[str, tuple[str, str]] = {}
+        aliases: dict[str, str] = {}
+        for statement in tree.body:
+            if isinstance(statement, ast.ImportFrom) and statement.module:
+                for alias in statement.names:
+                    names[alias.asname or alias.name] = (statement.module, alias.name)
+            elif isinstance(statement, ast.Import):
+                for alias in statement.names:
+                    aliases[alias.asname or alias.name] = alias.name
+
+        def resolve(
+            expr: ast.expr,
+            module: str = module,
+            names: dict[str, tuple[str, str]] = names,
+            aliases: dict[str, str] = aliases,
+        ) -> tuple[str, str] | None:
+            if isinstance(expr, ast.Name):
+                return names.get(expr.id, (module, expr.id))
+            if isinstance(expr, ast.Attribute) and isinstance(expr.value, ast.Name):
+                return (aliases.get(expr.value.id, expr.value.id), expr.attr)
+            return None
+
+        read_nodes: set[int] = set()
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and ast.unparse(node.func).split(".")[-1] in _SLOT_READERS
+            ):
+                continue
+            for argument in node.args:
+                slot = resolve(argument)
+                if slot is not None and slot[1].isupper():
+                    reads.setdefault(slot, []).append(f"{module}:{node.lineno}")
+                    read_nodes.add(id(argument))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Name | ast.Attribute)
+                and isinstance(node.ctx, ast.Load)
+                and id(node) not in read_nodes
+            ):
+                slot = resolve(node)
+                if slot is not None:
+                    used.add(slot)
+    return {slot: sites for slot, sites in sorted(reads.items()) if slot not in used}
+
+
+def test_every_notice_slot_that_is_read_is_also_filled() -> None:
+    """읽기만 하는 알림 칸은 죽은 칸이다 — 담는 쪽이 걷히고 읽는 쪽만 남으면(옛
+    `equipment_data_workspace.FLASH_KEY` 「equipment_status_flash」) 그 칸은 늘 비어 있는데 읽는
+    자리는 무언가를 알리는 것처럼 읽힌다. 칸을 지우고 읽는 자리는 늘 서 있는 칸만 남긴다."""
+    modules = {
+        _module_name(path): ast.parse(path.read_text(encoding="utf-8")) for path in _app_sources()
+    }
+    dead = _unwritten_slots(modules)
+
+    assert not dead, f"담는 곳이 없는 알림 칸입니다 — 칸과 읽는 자리를 걷으세요: {dead}"
+
+
+def test_the_unwritten_slot_net_resolves_the_defining_module() -> None:
+    """같은 이름의 칸이 다른 모듈에서 담겨도 그 모듈의 칸을 읽는 자리는 죽은 칸으로 잡는다 —
+    별칭 속성 · 도우미 인자 · `*튜플` 은 쓰임으로 본다."""
+    modules = {
+        "pkg.voc": ast.parse(
+            'FLASH_KEY = "v"\nqueue_flash(FLASH_KEY, "x")\nrender_flash(FLASH_KEY)'
+        ),
+        "pkg.workspace": ast.parse('FLASH_KEY = "w"\nKEYS = ("a",)\nHELPER_KEY = "h"'),
+        "pkg.page": ast.parse(
+            "from pkg.workspace import FLASH_KEY, HELPER_KEY, KEYS\n"
+            "import pkg.workspace as ws\n"
+            "slot = render_flash(FLASH_KEY)\n"
+            "render_flash(ws.FLASH_KEY, *KEYS)\n"
+            "pending_flash(HELPER_KEY)\n"
+            "carry(HELPER_KEY)"
+        ),
+    }
+
+    assert _unwritten_slots(modules) == {
+        ("pkg.workspace", "FLASH_KEY"): ["pkg.page:3", "pkg.page:4"]
+    }
 
 
 NET_CAUGHT = {
