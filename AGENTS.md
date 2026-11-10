@@ -4131,7 +4131,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     교차검증의 설비 일정 기준 가용에서 뺀다(키 `availability_sheet_cache_key`·`securement_cross_check_cache_key` 의 끝 칸).
     시트 머리에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄, 조회 달에 든 칸은 상태 알림 `EQ-23`(목록은 Alarm 줄
     표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다 — 호기 목록이
-    입력 비가동이 든 범위를 보면 표지 「입력 비가동 · 이 목록에 없음」 + 풍선(`MANUAL_LIST_MARK` · `MANUAL_LIST_HELP`)을
+    조회 달에 입력 비가동이 든 범위를 보면 표지 「입력 비가동 · 이 목록에 없음」 + 풍선(`MANUAL_LIST_MARK` · `MANUAL_LIST_HELP`)을
     혼자 한 줄로 세우지 않고 아래 전환 줄 오른쪽 끝 칸(시트의 「내려받기 ▾」 자리 `row_end` — 호기 목록에서는 빈 칸)에 내용 폭
     작은 글로 둔다(E2E e4-1, 설계 규칙 UI-LAY-13 · UI-TXT-04).
   - 탭 머리에는 구획 제목 · 「확보율 교차검증」 제목을 두지 않고(안쪽 탭 이름 · 고른 전환 값과 같은 말 — UI-TXT-07) `조회 결과` ·
@@ -4399,7 +4399,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/formula_text.py` — 화면 식 글(「a ÷ b = c」)이 **적힌 수로 다시 셈해도 결과와 맞게** 인수
   글자와 등호를 고르는 순수 도우미(8장 「화면 숫자는 검산되어야 한다」). 길이 둘이고 화면마다 지금 쓰는 길을 지킨다 —
   「≈」 길(`equals_mark` — 인수는 화면 자릿수, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 「=」 대신 「≈」, 적힌 글자에서
-  수를 읽는 `written_value`)은 공정 Capa 상세 근거 카드·결합 캔버스 풍선, 가용설비 현황 비교 시트 풍선·근거 카드 식 셋,
+  수를 읽는 `written_value`, 두 항의 합·차를 다시 셈하는 `written_total`)은 공정 Capa 상세 근거 카드·결합 캔버스 풍선, 가용설비 현황 비교 시트 풍선·근거 카드 식 셋,
   제약 시뮬레이션 계산표 풍선이고, 자릿수 늘리기 길(`consistent_digits`·`operand_text` — 어긋날 때만 그 식의 인수를 모두 한 자리씩, 여섯째
   자리까지, 끝내 못 맞추면 화면 자릿수와 「≈」. 한 카드의 식들은 `shared_digits` 의 한 자릿수로 — `digits_within`)은 제약 시뮬레이션 고른 달 계산이고, 인수마다 따로 늘리는 꼴
   (`consistent_places` — 더 적는 자리 수의 합이 가장 작게, 같으면 뒤 인수 먼저)은 표준 목표 로직 분석이다. 인수 글자 꼴은

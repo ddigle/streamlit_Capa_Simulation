@@ -96,7 +96,7 @@ from capa_simulation.components.availability_sheet_workbook import (
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_explorer import report_unit_notices
-from capa_simulation.components.formula_text import equals_mark, written_value
+from capa_simulation.components.formula_text import equals_mark, written_total
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     NARROW_LABEL_COLUMN_WIDTH_PX,
@@ -1160,15 +1160,6 @@ def _text(row: str, value: float | None) -> str:
     return sheet_value_text(row, value, SHEET_DIGITS)
 
 
-def _written_total(first: str, second: str, *, subtract: bool = False) -> float | None:
-    """적힌 두 인수 글자의 합(또는 차) — 근거 카드 식을 읽는 사람이 다시 셈해 얻는 값. 하나라도
-    「—」 면 다시 셀 수 없어 없다(그 식의 등호는 「≈」 — 비교 시트 풍선과 같은 길)."""
-    left, right = written_value(first), written_value(second)
-    if left is None or right is None:
-        return None
-    return left - right if subtract else left + right
-
-
 def _static_sum_line(view: SheetView, month: int) -> str:
     """Static 근거 카드 식 줄 「보유 a + 대여 b = 합 · 기준정보 가용 c」. 합은 반올림 전 두 값의
     합이고, 적힌 두 인수로 다시 셈한 글이 합 글과 다르면 등호가 「≈」 다(`formula_text.equals_mark`
@@ -1179,7 +1170,7 @@ def _static_sum_line(view: SheetView, month: int) -> str:
     owned_text = _text(ROW_STATIC_OWNED, owned)
     lent_text = _text(ROW_STATIC_LENT, lent)
     total_text = _text(ROW_STATIC_OWNED, (owned or 0.0) + (lent or 0.0))
-    mark = equals_mark(total_text, _text(ROW_STATIC_OWNED, _written_total(owned_text, lent_text)))
+    mark = equals_mark(total_text, _text(ROW_STATIC_OWNED, written_total(owned_text, lent_text)))
     return (
         f"보유 {owned_text} + 대여 {lent_text} {mark} {total_text} · 기준정보 가용 "
         f"{_text(ROW_STATIC_AVAILABLE, view.value(ROW_STATIC_AVAILABLE, month))}"
@@ -1195,7 +1186,7 @@ def _gap_line(view: SheetView, month: int, row: str) -> str:
     static_text = _text(static, view.value(static, month))
     gap_text = _text(row, view.value(row, month))
     mark = equals_mark(
-        gap_text, _text(row, _written_total(schedule_text, static_text, subtract=True))
+        gap_text, _text(row, written_total(schedule_text, static_text, subtract=True))
     )
     return (
         f"GAP {ROW_ITEMS[row]} = 설비 일정 {schedule_text} − Static {static_text} {mark} {gap_text}"
@@ -1213,7 +1204,7 @@ def _schedule_available_line(
         _text(row_id, view.value(row_id, month))
         for row_id in (ROW_SCHEDULE_AVAILABLE, ROW_SCHEDULE_OWNED, ROW_SCHEDULE_LENT)
     )
-    mark = equals_mark(available, _text(ROW_SCHEDULE_AVAILABLE, _written_total(owned, lent)))
+    mark = equals_mark(available, _text(ROW_SCHEDULE_AVAILABLE, written_total(owned, lent)))
     manual_text = (
         f"(그 가운데 입력 비가동 {_text(ROW_SCHEDULE_LENT, -removed)})"
         if round(removed, 9) > 0

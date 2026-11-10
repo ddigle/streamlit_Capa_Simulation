@@ -1192,10 +1192,6 @@
   「`{path.name}` 을」)·`inspect_revision_calculations.py`(「`{path.name}` 을」)·`sync_object_storage.py`(「{key} 를」)·
   `apply_deploy_package.py`(「송장 형식 {version} 을」 — 패키지를 import 하지 않으므로 고정 명사로). 정할 것: 그물에 `scripts/` 를
   더하고 고치기(권장 — 사내 런북이 찍힌 글을 견주는 줄이 없는지 먼저 본다) / 리뷰 몫으로 두기(지금).
-- [ ] **가용설비 현황 `Static 대비 일정` 근거 글의 식 셋도 `formula_text` 로**(2026-10-26 formula-operands-consistent 후속) —
-  `availability_gap_panel` 의 「보유 + 대여 = 합」·「GAP = 설비 일정 − Static = 값」·「설비 일정 기준 가용 = 보유 + 대여」 가 아직
-  깎은 인수에 「=」 다. 같은 파일을 markdown-literal-sinks 주제가 고치는 중이라 이번에 두었다 — 그 병합 뒤 비교 시트 풍선과 같은
-  「≈」 길(`equals_mark` + `written_value`)로 고치고 `tests/test_formula_text.py` 의 `PENDING` 에서 뺀다.
 
 - [~] **B6 grouped/hierarchical 남은 복제 통합** — 실행 시간·화면 결함 없는 순수 유지보수 비용이라 다른 일 뒤로 둔다.
   분류 컬럼 폭 계산과 `go.Table` 두 벌 조립은 `monthly_table_base` 로 올렸다. **남은 것**: 격자 머리 여섯 호출과 반복 접두

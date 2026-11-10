@@ -3,7 +3,8 @@
 """화면 식 글 도우미(`components/formula_text.py`)와 그것을 쓰는 자리.
 
 - **단위** — `equals_mark`·`consistent_digits`·`operand_text`(2회차 기대값 「5 × 120% = 6.00」·
-  「42.19 ÷ 42 = 100.5%」·「2 ÷ 1.9389 = 103.2%」 그대로)·`written_value`·`parse_formula`.
+  「42.19 ÷ 42 = 100.5%」·「2 ÷ 1.9389 = 103.2%」 그대로)·`written_value`·`written_total`·
+  `parse_formula`.
 - **검산 그물** — 식을 내는 함수마다 값 격자(반올림 경계 x.xx5·x.xx49, 큰 수 54,698.63, 0 근처,
   음수 과부족)로 글을 만들고 `parse_formula` 로 읽어, 적힌 수로 다시 셈한 값이 적힌 결과의
   자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 일곱(① 가용·
@@ -68,6 +69,7 @@ from capa_simulation.components.formula_text import (
     equals_mark,
     operand_text,
     parse_formula,
+    written_total,
     written_value,
 )
 from capa_simulation.components.process_capa_canvas import (
@@ -221,6 +223,14 @@ def test_written_value_reads_screen_numbers() -> None:
     assert written_value("+1.13") == 1.13
     assert written_value("109%") == pytest.approx(1.09)
     assert written_value("—") is None
+
+
+def test_written_total_recomputes_two_written_terms() -> None:
+    assert written_total("3.35", "0.97") == pytest.approx(4.32)
+    assert written_total("3.35", "0.97", subtract=True) == pytest.approx(2.38)
+    assert written_total(f"{MINUS}1.50", "+0.25") == pytest.approx(-1.25)
+    assert written_total("—", "0.97") is None
+    assert written_total("3.35", "—", subtract=True) is None
 
 
 @pytest.mark.parametrize(
