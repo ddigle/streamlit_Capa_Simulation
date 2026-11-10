@@ -4099,9 +4099,9 @@ def summarize_alert_popup(first: Mapping[str, Any] | None, again: Mapping[str, A
 
 
 def check_alert_popup(screen: Screen) -> str:
-    """오른쪽 아래 알림창 한 꼴 — 단계 넷을 띄우면 최대 3칸(가장 오래된 「알림」 이 걷힘)에 단계
-    이름 글자, 누름을 받지 않고 Streamlit 대화상자 위 층인가, 같은 알림을 또 내면 「×2」 인가. 시험
-    알림은 이 브라우저 탭의 기록에만 남는다(DB 에 쓰지 않는다)."""
+    """오른쪽 아래 알림창 한 꼴 — 단계 넷을 띄우면 최대 3칸(단계가 가장 낮은 「알림」 이
+    걷힘)에 단계 이름 글자, 누름을 받지 않고 Streamlit 대화상자 위 층인가, 같은 알림을 또 내면
+    「×2」 인가. 시험 알림은 이 브라우저 탭의 기록에만 남는다(DB 에 쓰지 않는다)."""
     screen.open_home()
     raised = screen.poll(
         lambda: screen.js(_ALERT_RAISE_JS, ["info", "check", "action", "error"]),

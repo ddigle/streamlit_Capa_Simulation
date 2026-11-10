@@ -759,9 +759,9 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
     # 지금 화면을 가리키는 줄은 열 탭이 있을 때만 「그 화면으로」 를 세운다. HOME 주소는 빈 글이다.
     assert out["go"] == [True, False, True, False, True, False]
     # 상태 알림 줄 표지 — 범위(리비전 · 시나리오 · 조회기간)가 바뀌어 닫힌 줄은 「해소」 가
-    # 아니라 「범위 바뀜」 이다(2026-11-08 사용자 답 a3). 조건이 사라진 줄 · 내용이 바뀐 줄은
-    # 「해소」 그대로.
-    assert out["marks"] == ["open", "scope", "resolved", "resolved", None, None]
+    # 아니라 「범위 바뀜」 이다(2026-11-08 사용자 답 a3). 같은 범위에서 내용만 바뀌어 닫힌 줄은
+    # 「내용 바뀜」(지난 보드 a-content-changed), 조건이 사라진 줄만 「해소」 다.
+    assert out["marks"] == ["open", "scope", "resolved", "changed", None, None]
     # 로그 복사 글 — 빈 값 · 이름 없는 짝은 빼고, 여러 줄 값은 다음 줄부터 두 칸 들여 잇는다.
     assert out["copy"] == (
         "코드: ST-15 · 확인 필요 · 상태 알림(바뀔 때만)\n"
@@ -773,23 +773,58 @@ def test_the_pure_sections_keep_history_states_badges_chip_and_toolbar_order() -
 def test_a_row_closed_by_a_scope_change_reads_scope_moved_not_resolved() -> None:
     """리비전이 오르면 같은 상태 알림이 새 범위 줄로 다시 서고 앞 줄은 닫힌다 — 조건은 그대로라
     「해소」 로 읽히면 풀린 것처럼 보였다(2026-11-08 사용자 답 a3 · 재현 u3-09 Space 가정 배치
-    `EQ-13`). 줄 표지와 로그 짝이 같은 판정(`stateMark`)을 쓰고, 모든 상태 알림에 걸린다."""
+    `EQ-13`). 같은 범위에서 내용(수 · 목록)만 바뀌어 새 줄로 넘어간 앞 줄도 「해소」 가 아니라
+    「내용 바뀜」 이다(지난 보드 a-content-changed — a3 과 같은 뜻). 줄 표지와 로그 짝이 같은
+    판정(`stateMark`)을 쓰고, 모든 상태 알림에 걸린다."""
     assert alert_center.TEXT["scope_moved"] == "범위 바뀜 {time}"
     assert alert_center.TEXT["log_scope_moved"] == "범위 바뀜"
+    assert alert_center.TEXT["content_moved"] == "내용 바뀜 {time}"
+    assert alert_center.TEXT["log_content_moved"] == "내용 바뀜"
     assert alert_center.TEXT["resolved"] == "해소 {time}"
     assert "resolved_scope" not in alert_center.TEXT
+    assert "resolved_changed" not in alert_center.TEXT
     panel = JS[JS.index("const mark = stateMark(row)\n    if (mark) {") :]
     panel = panel[: panel.index("const acts = ")]
-    assert "mark === 'scope' ? t.scope_moved : t.resolved" in panel
+    assert (
+        "mark === 'scope' ? t.scope_moved : mark === 'changed' ? t.content_moved : t.resolved"
+        in panel
+    )
     pairs = JS[JS.index("function logPairs(") :]
     pairs = pairs[: pairs.index("\n}\n")]
     assert "pairs.push([t.log_scope_moved, (forCopy ? stamp : hm)(row.resolvedAt)])" in pairs
+    assert "pairs.push([t.log_content_moved, (forCopy ? stamp : hm)(row.resolvedAt)])" in pairs
     # 줄을 닫는 까닭은 그대로 셋이다 — 범위 교체만 `scope` 다.
     state = JS[JS.index("function handleState(") :]
     state = state[: state.index("\n}\n")]
     assert "resolveRow(C, entry.row, now, 'scope')" in state
     assert "resolveRow(C, entry.row, now, 'gone')" in state
     assert "resolveRow(C, entry.row, now, 'changed')" in state
+
+
+def test_the_hide_box_reads_closed_and_hides_every_closed_row() -> None:
+    """Alarm 거르기 체크는 「닫힌 것 숨김」 이다 — 해소만이 아니라 내용 바뀜 · 범위 바뀜 줄도
+    감춘다(지난 보드 a-hide-closed — 이름만 바꾸고 동작은 그대로). 닫힌 셋은 줄 상태가 모두
+    `resolved` 다."""
+    assert alert_center.TEXT["hide_resolved"] == "닫힌 것 숨김"
+    out = _node(
+        """
+const base = { kind: 'state', level: 'check', page: 'HOME' }
+const row = (state, resolvedWhy, last) => ({ ...base, state, resolvedWhy, last })
+const rows = [
+  row('open', '', 5),
+  row('resolved', 'gone', 4),
+  row('resolved', 'changed', 3),
+  row('resolved', 'scope', 2),
+  { kind: 'event', level: 'info', page: 'HOME', state: null, last: 1 },
+]
+console.log(JSON.stringify({
+  marks: rows.map((row) => stateMark(row)),
+  shown: visibleRows(rows, { level: 'all', page: '', hideResolved: true }).map((row) => row.last),
+}))
+"""
+    )
+    assert out["marks"] == ["open", "resolved", "changed", "scope", None]
+    assert out["shown"] == [5, 1]
 
 
 def test_an_overflowing_popup_stack_drops_the_lowest_level_first() -> None:
