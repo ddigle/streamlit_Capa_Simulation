@@ -27,7 +27,8 @@
 
 사이드바 조회 조건 패널의 **목표 확보율** 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품,
 2차 보드 Q2-26)도 같은 호스트가 연다(`required_shortening_panel.LEVEL_FIELD`). 줄은 호스트 바로
-뒤 — 데이터를 읽기 전에 세워 호기가 없거나 설비 DB 를 못 읽은 회차에도 같은 자리에 선다.
+뒤 — 데이터를 읽기 전에 세워 멈춘 회차에도 서고 고를 수 있다. 호기가 없는 회차에는 같은 자리이고,
+설비 DB 를 못 읽은 회차에는 그 앞 「설비 시나리오」 줄이 서지 않아 한 줄만큼 위에 선다.
 """
 
 from __future__ import annotations
@@ -165,7 +166,8 @@ DIALOG_HOST.render(
         **{value: keys for value, (_, keys) in LEVEL_FIELD.dialogs.items()},
     },
 )
-# 사이드바 조회 조건 패널의 목표 확보율 줄 — 데이터를 읽기 전이라 멈춘 회차에도 같은 자리에 선다.
+# 사이드바 조회 조건 패널의 목표 확보율 줄 — 데이터를 읽기 전이라 멈춘 회차에도 선다(설비 DB 를
+# 못 읽은 회차에는 설비 시나리오 줄이 서지 않아 한 줄 위 — 모듈 설명).
 LEVEL_FIELD.render()
 try:
     equipment_database_path = str(EQUIPMENT_DUCKDB_PATH.resolve())
