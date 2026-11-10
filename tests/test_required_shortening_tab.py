@@ -281,7 +281,7 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     sidebar_selects = [widget.label for widget in app.sidebar.selectbox]
     assert sidebar_selects[:4] == ["목표 확보율", "진척 비교", "시작 월", "끝 월"]
     # 카드는 처음 펼친 채 서고(설계 규칙 UI-LAY-06 — 옮겨 온 칸이 첫 화면에 보이게), 두 칸은 카드
-    # 폭을 다 쓰는 위아래 칸이다 — 나란한 반 칸이면 기준선 라벨 「이름 · 저장일」 의 저장일이
+    # 폭을 다 쓰는 위아래 칸이다 — 나란한 반 칸이면 기준선 라벨(「저장일 · 이름」)의 끝이
     # 잘렸다.
     assert app.session_state[f"{CONDITION_CARD_PREFIX}shortening"] is True
     paths = _sidebar_block_paths(app, (SHORTENING_LEVEL_KEY, SHORTENING_COMPARE_KEY))

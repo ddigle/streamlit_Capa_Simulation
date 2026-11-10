@@ -223,8 +223,9 @@ def normalize_saved_by(value: object) -> str | None:
 
 
 def baseline_label(summary: ShorteningBaselineSummary) -> str:
-    """선택 상자 라벨 「이름 · 저장일」. 기준선은 고칠 수 없어 라벨도 바뀌지 않는다."""
-    return f"{summary.name} · {summary.saved_at:%Y-%m-%d}"
+    """선택 상자 라벨 「저장일 · 이름」. 기준선은 고칠 수 없어 라벨도 바뀌지 않는다. 저장일이 앞이라
+    긴 이름은 끝에서 말줄임되고 저장일은 남는다."""
+    return f"{summary.saved_at:%Y-%m-%d} · {summary.name}"
 
 
 def freeze_plan(

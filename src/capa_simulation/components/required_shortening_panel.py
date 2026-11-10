@@ -817,8 +817,8 @@ def _render_view_choices(database_path: str | None) -> tuple[str, ...] | None:
     돌린다(`_rerun_view`). 값은 세션 칸이고 key 는 그대로다(Space 「필요 단축」 보기가 같은 목표
     칸을 읽는다). `database_path` 가 없으면(설비 DB 없음) 진척 비교 상자를 세우지 않는다.
 
-    둘은 카드 폭을 다 쓰는 위아래 두 칸이다 — 기준선 라벨 「이름 · 저장일」 이 나란한 반 칸에서는
-    닫힌 칸 · 펼친 목록 모두 저장일 몫이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가
+    둘은 카드 폭을 다 쓰는 위아래 두 칸이다 — 기준선 라벨(「저장일 · 이름」)이 나란한 반 칸에서는
+    닫힌 칸 · 펼친 목록 모두 끝이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가
     없으면 None)이다 — 본문 프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
     _render_level_select()
     baselines = load_baseline_options(database_path)
