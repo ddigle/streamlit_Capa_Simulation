@@ -11,7 +11,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 보드 15줄 · 2차 보드 7줄과 답(v1.10) · 아침 검수 보드 줄과 답 · 메모 원문(v1.11) · 2026-11-09 검수
 보드 · 칩 자리 · 상단 판단 줄과 답 · 메모 원문 · 새 규칙(v1.12) · 상단 정리 검수 보드 줄과 고른
 글 · 메모 원문 · 해석 셋(v1.13) · 2차 검수 보드 · 밤샘 다 물음 줄과 고른 글 · 갈래 수 · 답 밖
-줄(v1.14) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+줄(v1.14) · 「권장대로 반영 결과」 보드 줄과 고른 글 · 고칠 것 메모 원문 · 닫힌 따라온 물음(v1.15) ·
+문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -1130,11 +1131,10 @@ def test_the_second_check_board_and_the_night_answers_are_recorded() -> None:
     목록 줄과 Q2-23 의 예외 글(UI-LAY-13), 뒤집힌 옛 결정 둘(다-3 ④ · bottom-row → Q2-8)이
     문서에 있다."""
     document = _text()
-    assert "판 v1.14" in document.split("\n## 1. ")[0]
     assert "- **v1.14 — 2026-11-11.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-14. ") :]
+    board = section[section.index("\n### 6-14. ") : section.index("\n### 6-15. ")]
     assert "https://claude.ai/artifact/GABcdxkXpoLAxUqGALsr26" in board
     assert "「전부 권장대로」" in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
@@ -1166,3 +1166,59 @@ def test_the_second_check_board_and_the_night_answers_are_recorded() -> None:
     reversed_ = _chapter(document, 7)
     for phrase in ("다-3 ④", "Q2-8", "bottom-row"):
         assert phrase in reversed_, phrase
+
+
+# 2026-11-11 「권장대로 반영 결과」 보드(6-15)의 답 — 줄 44 가운데 43 「좋음」 · Q2-26 「고칠 것」.
+# 「좋음」 은 카드에 보인 지금 꼴을 받은 것으로 읽어 답 밖 표지와 권장이 「그대로」 인 따라온 물음이
+# 닫혔다. 권장이 지금 꼴을 바꾸는 물음은 열린 채라 여기 줄이 없다(docs/TODO.md 4장).
+RESULT_BOARD_MEMO = "목표 확보율 5개 프리셋 외에 직접 입력도 가능하도록 수정"
+RESULT_BOARD_ANSWERS = {
+    "rows-ok": "좋음",
+    "Q2-26": "고칠 것",
+    "Q2-1": "좋음 — 지금 꼴 14px",
+    "Q2-6": "「복구」 창 없음 — 견본 11개",
+    "bdq-guard": "(가) 지금은 둔다",
+    "home-bar": "(가) 받는다",
+    "one-button": "(가) 그대로",
+    "units-xlsx": "(가) 그대로",
+    "beyond-wide": "그대로",
+    "cs06-scope": "(가) 리비전만",
+    "cs06-when": "(가) 늘",
+    "clash": "(가) 이대로",
+    "master-tab": "(가) 페이지 단위 그대로",
+    "q224-list": "(가) 그대로",
+    "q230-tail": "(가) 지금대로",
+}
+
+
+def test_the_result_board_answers_are_recorded_and_the_fix_is_in_the_rules() -> None:
+    """v1.15 — 6-15 는 「좋음」 한 줄(43) · 「고칠 것」 Q2-26(메모 원문 · 커밋) · Q2-1 · Q2-6 실기 ·
+    닫힌 줄 열하나가 차례대로 한 줄씩이다. 고칠 것은 UI-LAY-02 예외 · UI-INP-05 근거 · 6-14 Q2-26
+    밑 들여쓴 줄에 들고, 6-14 의 다른 줄은 그때 기록 그대로다(앞 시험이 본다)."""
+    document = _text()
+    assert "판 v1.15" in document.split("\n## 1. ")[0]
+    assert "- **v1.15 — 2026-11-11.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-15. ") :]
+    assert "https://claude.ai/artifact/QNkbQ4RA3brfurDztUevCN" in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-11) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert list(found.items()) == list(RESULT_BOARD_ANSWERS.items())
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    assert "줄 43" in by_id["rows-ok"]
+    assert RESULT_BOARD_MEMO in by_id["Q2-26"]
+    assert re.search(r"커밋 `[0-9a-f]{7}`", by_id["Q2-26"])
+    rules = {rule.id: rule for rule in _rules()}
+    assert "직접 입력" in rules["UI-LAY-02"].fields["예외"][0]
+    assert RESULT_BOARD_MEMO in rules["UI-INP-05"].fields["근거"][0]
+    earlier = section[section.index("\n### 6-14. ") : section.index("\n### 6-15. ")]
+    assert "\n  - 2026-11-11 사용자 고칠 것 — 직접 입력" in earlier
