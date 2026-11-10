@@ -109,6 +109,24 @@ def test_the_four_parts_of_an_answer_are_told_by_the_guide_not_the_chat_card() -
     assert "연결 뒤에도 이 네 칸은 그대로입니다" in guide
 
 
+def test_the_connection_card_keeps_a_title_and_a_list_and_the_guide_tells_why() -> None:
+    """오른쪽 「연결 방식」 카드에는 제목과 목록만 서고 회색 설명 세 문장은 Guide 가 말한다(2차
+    보드 Q2-24 — 화면에 설명 글을 달지 않는다, 설계 규칙 UI-TXT-01). 그 문장은 화면 글 문장 그물이
+    「미정리」 로 세던 이 화면의 마지막 자리였다."""
+    from capa_simulation.components.page_guide import load_guide
+
+    app = _start()
+    captions = [str(item.value) for item in app.main.caption]
+    assert not [text for text in captions if "재학습" in text or "별도 정책" in text]
+    connection = [str(item.value) for item in app.main.markdown if "재학습 없음" in str(item.value)]
+    assert len(connection) == 1
+    assert all(line.startswith("- ") for line in connection[0].splitlines())
+    guide = " ".join(load_guide("capa_chatbot").replace("**", "").split())
+    assert "연결 방식 — Capa 데이터를 매번 모델에 재학습시키지 않습니다." in guide
+    assert "승인된 조회 도구로 전달해 근거가 있는 답변을 만듭니다." in guide
+    assert "감사 이력은 연결 전에 별도 정책으로 확정합니다." in guide
+
+
 def _badge_lines(app: AppTest) -> list[str]:
     marks = ("인터랙티브 프로토타입", "미연결", "-badge[")
     return [
