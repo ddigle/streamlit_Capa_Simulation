@@ -852,7 +852,7 @@ def test_the_tab_frames_have_the_documented_columns() -> None:
         "그 달",
         "리비전 2 저장",
     ]
-    assert list(setting_history_frame([]).columns) == ["시각", "바꾼 사람", "바꾼 내용", "판"]
+    assert list(setting_history_frame([]).columns) == ["시각", "바꾼 사람", "바꾼 내용", "버전"]
 
 
 def test_only_a_published_round_with_the_trailing_warning_gets_the_mark() -> None:

@@ -938,11 +938,11 @@ def setting_history_frame(changes: Sequence[AutoOfficialUpdateSettingChange]) ->
             "시각": format(change.changed_at, DATETIME_FORMAT),
             "바꾼 사람": change.changed_by or EMPTY,
             "바꾼 내용": change.change_text,
-            "판": f"v{change.version}",
+            "버전": f"v{change.version}",
         }
         for change in changes
     ]
-    return pd.DataFrame(rows, columns=["시각", "바꾼 사람", "바꾼 내용", "판"])
+    return pd.DataFrame(rows, columns=["시각", "바꾼 사람", "바꾼 내용", "버전"])
 
 
 # ---------------------------------------------------------------------------
