@@ -122,6 +122,7 @@ def _use_utf8_stdout() -> None:
 try:
     import duckdb
 
+    from capa_simulation.alerts import POPUP_SECONDS  # noqa: E402
     from capa_simulation.components.theme_toggle import (  # noqa: E402
         ALARM_BUTTON_ID,
         CHANGES_CHIP_ID,
@@ -249,6 +250,10 @@ TOOLBAR_OPTIONAL: Final = frozenset({PROCESS_CHIP_ID, SAMPLE_MARK_ID, CHANGES_CH
 ALERT_HOST_ID: Final = "capa-alert-host"
 # Streamlit 1.63 대화상자 층(`stDialog` z-index — 2026-11-03 사본 실측). 알림창이 이 위여야 한다.
 DIALOG_Z_INDEX: Final = 1000059
+# 시험 알림을 띄우기 전에 앞 화면의 알림창이 다 걷히길 기다리는 끝(초) — 가장 긴 알림창
+# 시간 + 여유. 넘치면 단계가 낮은 칸부터 걷히므로(`alerts.POPUP_LIMIT`) 앞 칸이 남은 채 띄우면
+# 남는 칸이 앞 화면에 따라 달라진다.
+ALERT_CLEAR_SECONDS: Final = max(POPUP_SECONDS.values()) + 3
 SCENARIO_MANAGEMENT_PAGE: Final = "scenario_management"
 # 목록 관리 새 표(`scenario_list_state` · `scenario_list_grid.LIST_SIDE` · `scenario_management`).
 LIST_TABLE_KEY: Final = "scenario_list_table"
@@ -4074,13 +4079,17 @@ def check_alarm_button(screen: Screen) -> str:
     return summarize_alarm_button(state, panel, closed)
 
 
-def summarize_alert_popup(first: Mapping[str, Any] | None, again: Mapping[str, Any] | None) -> str:
+def summarize_alert_popup(
+    first: Mapping[str, Any] | None, again: Mapping[str, Any] | None, left: int = 0
+) -> str:
     """알림창 한 줄 — 칸 수(최대 3) · 단계 이름 글자 · 누름 통과 · 층(대화상자 위) · 같은 알림
-    ×2."""
+    ×2. `left` 는 기다린 뒤에도 걷히지 않아 시험 알림과 함께 선 앞 화면 칸 수다(0 이 아니면
+    다름)."""
     if not first:
         return "알림창 없음"
     labels = [str(label) for label in first.get("labels") or []]
-    parts = [
+    parts = [f"앞 알림 {left}칸 안 걷힘"] if left else []
+    parts += [
         f"알림창 {first.get('count')}칸(최대 3)",
         "단계 글 " + "·".join(labels),
         "누름 통과" if first.get("pointer") == "none" else "누름 막음",
@@ -4089,7 +4098,8 @@ def summarize_alert_popup(first: Mapping[str, Any] | None, again: Mapping[str, A
     repeated = bool(again) and any("×2" in str(text) for text in (again or {}).get("times") or [])
     parts.append("같은 알림 ×2" if repeated else "같은 알림 표지 없음")
     same = (
-        first.get("count") == 3
+        not left
+        and first.get("count") == 3
         and labels == ["확인 필요", "조치 필요", "오류"]
         and first.get("pointer") == "none"
         and int(first.get("z") or 0) > DIALOG_Z_INDEX
@@ -4101,8 +4111,16 @@ def summarize_alert_popup(first: Mapping[str, Any] | None, again: Mapping[str, A
 def check_alert_popup(screen: Screen) -> str:
     """오른쪽 아래 알림창 한 꼴 — 단계 넷을 띄우면 최대 3칸(단계가 가장 낮은 「알림」 이
     걷힘)에 단계 이름 글자, 누름을 받지 않고 Streamlit 대화상자 위 층인가, 같은 알림을 또 내면
-    「×2」 인가. 시험 알림은 이 브라우저 탭의 기록에만 남는다(DB 에 쓰지 않는다)."""
+    「×2」 인가. 앞 화면 알림창이 남아 있으면 넘침이 그 칸을 두고 시험 칸을 걷어 결과가 앞 화면에
+    따라 달라지므로, 다 걷히길(`ALERT_CLEAR_SECONDS` 까지) 기다린 뒤 띄운다. 시험 알림은 이 브라우저
+    탭의 기록에만 남는다(DB 에 쓰지 않는다)."""
     screen.open_home()
+    before = screen.poll(
+        lambda: screen.js(_ALERT_STACK_JS, ALERT_HOST_ID),
+        timeout=ALERT_CLEAR_SECONDS,
+        accept=lambda value: bool(value) and value.get("count") == 0,
+    )
+    left = int(before.get("count") or 0) if before else 0
     raised = screen.poll(
         lambda: screen.js(_ALERT_RAISE_JS, ["info", "check", "action", "error"]),
         timeout=15,
@@ -4115,7 +4133,7 @@ def check_alert_popup(screen: Screen) -> str:
     screen.js(_ALERT_RAISE_JS, ["error"])
     time.sleep(0.3)
     again = screen.js(_ALERT_STACK_JS, ALERT_HOST_ID)
-    return summarize_alert_popup(first, again)
+    return summarize_alert_popup(first, again, left)
 
 
 def summarize_sidebar_groups(found: Sequence[Mapping[str, Any]] | None) -> str:
