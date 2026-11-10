@@ -194,11 +194,8 @@ DOUBLE_COUNT_NOTE: Final = (
     "**아직 일정에 넣지 않은 개조만** 넣습니다 — 설비 시나리오 비가동에 이미 든 개조는 가용에서 "
     "이미 빠져 있어 두 번 빠집니다."
 )
-# 그래프 범례(값)는 자리에, 막대 좌표의 읽는 법은 제목 풍선이다.
-CHART_NOTE: Final = (
-    "아래 띠 = 차수별 개조 비가동 · 옅은 빨강 칠 = 개조 없이도 기준(+ 안전 여유) 미달이라 넣지 "
-    "않은 달 · 옅은 회색 칠 = 넣을 수 없는 달(시작 앞 · 기한 뒤)"
-)
+# 막대 좌표의 읽는 법은 제목 풍선이고, 띠 · 칠의 뜻(범례)은 Guide 다 — 제약 영향 모드 그래프 ·
+# 계산표와 같은 꼴(2차 보드 Q2-14, 설계 규칙 UI-TXT-01).
 CHART_HELP: Final = (
     "막대 글은 대수입니다 — 글이 들지 않는 막대는 풍선에 있습니다. 막대는 W/D 구간 좌표라 달력 앞 "
     "달의 비가동이 Cut-off 만큼 앞선 다음 달 칸에 들 수 있습니다."
@@ -837,7 +834,6 @@ def _render_body(result: ScheduleResult, labels: ScheduleLabels) -> None:
     )
     with st.container(border=True, key=CHART_CARD_KEY):
         st.markdown("**월별 확보율 — 개조 전 · 뒤**", help=CHART_HELP)
-        st.caption(CHART_NOTE)
         with min_width_scroll_canvas(key=CHART_SCROLL_PREFIX):
             st.plotly_chart(
                 remembered_figure(result, labels),
