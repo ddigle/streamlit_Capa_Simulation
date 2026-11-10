@@ -757,10 +757,23 @@ def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
             )
         ]
         assert row.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
-        (view,) = [
+        menu, view = [
             child for child in row.children.values() if getattr(child, "type", None) == "popover"
         ]
         assert str(view.proto.id).endswith(f"-{prefix}_view_popover")
+        # 「선택 해제」 · 「선택 행 삭제」 는 「모두 선택」 곁 「선택 ▾」 메뉴 하나다(2026-11-10
+        # 사용자 답 Q-14 「한 줄로」) — 단추 key 는 그대로다.
+        assert menu.proto.popover.label == "선택"
+        assert str(menu.proto.id).endswith(f"-equipment_{slug}_selection_menu_v1__g0")
+        assert [(button.label, button.key) for button in menu.button] == [
+            ("선택 해제", f"equipment_{slug}_select_clear_v1"),
+            ("선택 행 삭제", f"equipment_{slug}_delete_selected_v1"),
+        ]
+        assert [
+            child.label
+            for child in row.children.values()
+            if getattr(child, "type", None) == "button"
+        ] == ["편집본에 적용", "모두 선택"]
         assert view.proto.popover.label == "표 보기"
         assert app.multiselect(f"{prefix}_columns").value
         # 「보기 적용」 은 고르는 칸이 든 팝오버 안이다(설계 규칙 UI-LAY-03).
