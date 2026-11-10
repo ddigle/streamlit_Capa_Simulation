@@ -15,8 +15,12 @@ HOME 에서 좁힌 공정이 기준 정보 · 산출 결과 · 가용설비 Main
 값과 읽는 법:
 
 - 값은 **원본 공정명**의 차례 있는 목록이다. 빈 목록이면 「고르지 않음」 — 화면은 전체를 보인다.
-  보내는 화면이 보이는 글자(표시명)를 함께 주면 머리 띠 칩이 그 글자로 읽는다(`labels`). 원본
-  이름으로 그리는 화면(`ORIGINAL_NAME_SCREENS` — Space)에서는 칩 · 판도 원본이다(한 화면 한 이름).
+  표시명 화면의 머리 띠 칩 · 판 · 탭 풍선은 지금 공용 표시명 프로필로 적고, 그 화면이 마지막으로
+  그린 선택지(`drawn_options` — 그리지 않은 화면 · HOME 은 그린 화면 선택지 전부)로 겹친 표시명을
+  값 칸처럼 가른다. 보내는 화면이 함께 준 보이는
+  글자(`labels`)는 프로필이 비었을 때만 쓴다(`process_field._label_of`). 원본 이름으로
+  그리는 화면(`ORIGINAL_NAME_SCREENS` — Space)에서는 칩 · 판 · 그 탭 풍선도 원본이다(한 화면 한
+  이름).
 - 화면은 「그 화면에 있는 공정」 만 읽는다(`applied`). 글자(표시명 · Space 원본)는 그 화면 규칙을
   따른다. 그 화면에 없는 공정은 **지우지 않는다** — 그 화면은 전체를 보이고 「없는 공정」 표지를
   단다(`missing`). 리비전을 바꿔 사라진 공정이 돌아오면 다시 걸린다.
@@ -96,9 +100,9 @@ FOLLOWERS: Final[Mapping[str, tuple[str, str]]] = MappingProxyType(
     }
 )
 # 따라가는 화면 가운데 공정을 원본 이름으로 그리는 화면(페이지 파일 — 값 칸을 `labels` 없이
-# 그린다). 그 화면에서는 머리 띠 칩 · 칩 판도 보낸 화면의 표시명이 아니라 원본 이름으로
-# 적는다(2026-11-10 보드 Q-3 — 한 화면 한 이름, 설계 규칙 UI-CON-02). 그물
-# `tests/test_shared_process.py`.
+# 그린다). 그 화면에서는 머리 띠 칩 · 칩 판 · 그 탭 깔때기 풍선도 보낸 화면의 표시명이 아니라
+# 원본 이름으로 적는다(2026-11-10 보드 Q-3 · 2차 보드 Q2-17 — 한 화면 한 이름, 설계 규칙
+# UI-CON-02). 그물 `tests/test_shared_process.py`.
 ORIGINAL_NAME_SCREENS: Final[frozenset[str]] = frozenset({"app_pages/space_status.py"})
 
 
@@ -324,6 +328,13 @@ def note_drawn(
         return
     record[screen] = drawn
     st.session_state[_DRAWN_KEY] = record
+
+
+def drawn_options(screen: str) -> tuple[str, ...]:
+    """그 화면이 마지막으로 그린 선택지(원본, 그린 차례) — 머리 칩 · 탭 풍선이 값 칸과 같은 글자로
+    겹친 표시명을 가를 때 읽는다. 아직 그리지 않았으면 빈 튜플이다."""
+    saved = _screen_map(_DRAWN_KEY).get(screen)
+    return saved.options if isinstance(saved, Drawn) else ()
 
 
 def screen_mark(screen: str, mode: str) -> ScreenMark | None:

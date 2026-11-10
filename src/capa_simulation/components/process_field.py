@@ -22,12 +22,13 @@
 - **머리 띠 칩 · 화면 탭 표지**(2026-11-09 보드 C1 (라) — 본문 위에는 칩을 두지 않는다). 공용 값이
   있으면 알림 칸(`components/alert_center.py`)이 머리 툴바 맨 왼쪽에 「공정」 칩을
   세우고(`header_chip`), 화면 탭 줄(`components/page_tabs.py`)이 따라가는 화면 탭 이름 곁에 깔때기
-  표지를 단다(`tab_mark`). 칩 · 판의 글자는 보낸 화면의 표시명이고, 원본 이름으로 그리는
-  화면(Space — `shared_process.ORIGINAL_NAME_SCREENS`)에서는 원본이다. 둘 다 페이지보다 먼저
-  그리므로 세션의 기록(`shared_process.screen_mark` — 그 화면이 마지막으로 그린 선택지)으로
-  짐작하고, 값 칸을 그린 회차에는 그 회차의
+  표지를 단다(`tab_mark`). 칩 · 판 · 탭 풍선의 글자는 그 화면 표시명(값 칸과 같은 글자 —
+  `_label_of`)이고, 원본 이름으로 그리는 화면(Space — `shared_process.ORIGINAL_NAME_SCREENS`)에서는
+  원본이다. 둘 다 페이지보다 먼저 그리므로 세션의 기록(`shared_process.screen_mark` — 그 화면이
+  마지막으로 그린 선택지)으로 짐작하고, 값 칸을 그린 회차에는 그 회차의
   표지(`MARKER_ATTRIBUTE` — 스타일만 든 `st.html` 의 JSON)를 남겨 알림 칸 JS 가 회차 끝에
-  바로잡는다. 표지는 값 칸과 같은 칸(간격 없는 블록)에 서서 사이드바에 틈을 만들지 않는다.
+  바로잡는다(걸리나 · 없는 공정 · 지금 탭 표지 · 칩 글자). 표지는 값 칸과 같은 칸(간격 없는
+  블록)에 서서 사이드바에 틈을 만들지 않는다.
 
 한 회차에 값 칸은 하나다 — 같은 전체 회차에 두 번 부르면 둘째부터는 그리지 않고 거를 값만 돌려준다.
 """
@@ -44,10 +45,11 @@ from typing import Any
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+import capa_simulation.settings as settings
 from capa_simulation import alerts, shared_process
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.page_bootstrap import PAGE_DIALOG_SUFFIX, forget_page_dialogs
 from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.sidebar_status import (
@@ -448,19 +450,63 @@ def _shown_labels(context: _PickerContext) -> dict[str, str]:
 # ------------------------------------------------------------------ 머리 띠 칩 · 화면 탭 표지
 
 
+def _shared_display_names() -> ProcessLabels:
+    """공용 표시명 프로필(Admin `Proc Rename`) — 머리 칩 · 판 · 탭 풍선을 원본 이름 화면(Space)
+    밖에서 적을 때(`_label_of`) 읽는다. 머리 칩 · 탭 줄은 DB 를 새로 만들지 않는다 — 파일이 아직
+    없으면(부트스트랩 전) 프로필도 없는 것이라 원본이다."""
+    if not settings.DUCKDB_PATH.exists():
+        return ProcessLabels()
+    return get_process_labels()
+
+
 def _label_of(path: str | None = None) -> Callable[[str], str]:
-    """원본 → 보이는 글자(보낸 화면이 준 표시명, 없으면 원본). `path` 가 원본 이름으로 그리는
-    화면(`shared_process.ORIGINAL_NAME_SCREENS` — Space)이면 원본 그대로다."""
+    """원본 → 그 화면의 보이는 글자(칩 · 판 · 탭 풍선은 늘 그 화면 글자 — 2026-11-10 보드 Q-3 ·
+    2차 보드 Q2-17 · Q2-18). `path` 가 원본 이름으로 그리는 화면(Space —
+    `shared_process.ORIGINAL_NAME_SCREENS`)이면 원본 그대로다.
+
+    그 밖(표시명 화면 · 따라가지 않는 화면)은 지금 공용 표시명 프로필(`_shared_display_names`)로
+    적는다 — 보낸 화면이 실은 글자보다 먼저라 같은 세션에서 표시명이 바뀌어도(Admin `Proc
+    Rename`) 옛 이름이 남지 않는다. 따라가는 화면을 그린 적이 있으면 그 화면이 마지막으로 그린
+    선택지(`shared_process.drawn_options`)로 겹친 표시명을 「표시명 (원본)」 으로 가른다 — 값 칸
+    글자(`_text_func`)와 같다. 그 선택지 밖 값 · 아직 그리지 않은 화면 · 따라가지 않는 화면(HOME)은
+    공용 값과 이 세션에 그린 모든 따라가는 화면의 선택지를 합친 목록으로 가른 표시명이다 — 맨
+    표시명이 다른 공정 이름으로 읽히지 않게. 프로필에서 지운 표시명은 남지 않고, 프로필이 비었을
+    때(DB 파일이 아직 없음 · 읽지 못함)만 보낸 글자(`shared_process.labels`)다."""
     if path in shared_process.ORIGINAL_NAME_SCREENS:
         return str
-    mapping = dict(zip(shared_process.values(), shared_process.labels(), strict=True))
-    return lambda value: mapping.get(value, value)
+    profile = _shared_display_names()
+    held = shared_process.values()
+    sent = dict(zip(held, shared_process.labels(), strict=True))
+    entry = shared_process.FOLLOWERS.get(path or "")
+    drawn = shared_process.drawn_options(entry[0]) if entry is not None else ()
+    on_screen = set(drawn)
+    shown = profile.unique_format_func(drawn)
+    known = list(held)
+    for name, _ in shared_process.FOLLOWERS.values():
+        known.extend(shared_process.drawn_options(name))
+    wide = profile.unique_format_func(known)
+
+    def label(value: str) -> str:
+        if value in on_screen:
+            return shown(value)
+        return wide(value) if profile else sent.get(value, value)
+
+    return label
+
+
+def _path_of(screen: str) -> str | None:
+    """출처 이름 → 따라가는 화면의 페이지 파일(`shared_process.FOLLOWERS`). 없으면 None."""
+    return next(
+        (path for path, (name, _) in shared_process.FOLLOWERS.items() if name == screen), None
+    )
 
 
 def tab_title(mark: shared_process.ScreenMark) -> str:
     """화면 탭 표지 풍선 — 「공정 Mold · Underfill — 산출 결과 에서」 + 없는 공정이 있으면 둘째 줄
-    「PMC 는 이 화면에 없음」. 이 화면에 걸리는 공정이 없으면 첫 줄은 수만 적는다."""
-    label = _label_of()
+    「PMC 는 이 화면에 없음」. 이 화면에 걸리는 공정이 없으면 첫 줄은 수만 적는다. 글자는 그 탭
+    화면의 글자다 — Space 탭은 원본, 그 밖은 그 화면 표시명(2차 보드 Q2-17 · Q2-18, 머리 칩 · 판과
+    같은 `_label_of`)."""
+    label = _label_of(_path_of(mark.screen))
     names = " · ".join(label(value) for value in mark.inside) or f"{len(shared_process.values())}개"
     head = TAB_TITLE.format(names=names)
     origin = shared_process.origin()
@@ -522,10 +568,12 @@ def header_chip(path: str | None) -> dict[str, Any] | None:
     다(시각 · 카운터 없음).
 
     글자(`labels` · `top`)는 그 화면 글자다 — 원본 이름으로 그리는 화면(Space)이면 원본, 아니면
-    보낸 화면의 표시명(2026-11-10 보드 Q-3). `here` 는 지금 화면(`path`)에 대한 짐작(세션 기록 —
-    따라가지 않는 화면은 None)이고, 값 칸을 그린 회차에는 그 회차의 표지(`process_marker`)가 알림
-    칸 JS 에서 이긴다 — 차례(`screen_order`)도 그 표지의 `inside` 로 JS 가 다시 세운다. `field` 는
-    사이드바 값 칸 key 다 — 판 「공정 고르기」 가 그 칸을 눌러 팝업을 연다.
+    표시명(2026-11-10 보드 Q-3 · 2차 보드 Q2-18 — `_label_of`). `here` 는 지금 화면(`path`)에 대한
+    짐작(세션 기록 — 따라가지 않는 화면은 None)이고, 값 칸을 그린 회차에는 그 회차의
+    표지(`process_marker`)가 알림 칸 JS 에서 이긴다 — 차례(`screen_order`)도 그 표지의 `inside` 로,
+    글자도 그 표지의 `labels` 로 JS 가 다시 세운다(그 화면을 처음 그린 회차는 짐작이 그 화면
+    선택지를 몰라 겹친 표시명을 가르지 못한다). `field` 는 사이드바 값 칸 key 다 — 판 「공정
+    고르기」 가 그 칸을 눌러 팝업을 연다.
     """
     held = shared_process.values()
     if not held:
@@ -548,14 +596,18 @@ def header_chip(path: str | None) -> dict[str, Any] | None:
 
 def process_marker(screen: str, mode: str) -> str:
     """값 칸을 그린 회차의 표지 — 스타일만 든 `st.html` 한 자리. 이 화면 주소 · 공용 값의 판 · 이
-    화면에 걸리나 · 없는 공정 · 지금 탭 표지를 싣는다. 값 칸과 같은 칸(간격 없는 블록)에 그린다 —
+    화면에 걸리나 · 없는 공정 · 지금 탭 표지 · 이 화면 글자(`labels` — 원본 → 머리 칩 · 판 글자,
+    이 회차 선택지로 가른 값 칸과 같은 글자)를 싣는다. 값 칸과 같은 칸(간격 없는 블록)에 그린다 —
     `with` 안의 스타일 `st.html` 은 그 칸에 서므로 간격 있는 칸이면 틈이 생긴다."""
     mark = shared_process.screen_mark(screen, mode)
+    held = shared_process.values()
+    label = _label_of(_path_of(screen)) if held else str
     payload = {
         "page": alerts.current_page()[1],
         "version": shared_process.version(),
         "here": None if mark is None else _here(mark),
         "tab": _tab_of(mark),
+        "labels": {value: label(value) for value in held},
     }
     body = html.escape(json.dumps(payload, ensure_ascii=False), quote=True)
     return f'<style {MARKER_ATTRIBUTE}="{body}"></style>'
