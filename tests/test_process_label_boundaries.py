@@ -1,6 +1,7 @@
 # Purpose: 공정 표시명이 화면 표기에만 닿고 왕복 양식·계산 캐시에는 새지 않음을 검증한다.
 
 import ast
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TypedDict
 
@@ -316,13 +317,13 @@ def test_lob_top5_process_annotation_stays_original_without_labels() -> None:
     assert "절단" not in texts
 
 
-def _hover_cells(row: object) -> list[str]:
+def _hover_cells(row: Iterable[object]) -> list[str]:
     """hover 가 읽는 칸. 끝의 공정 Capa 상세 이동 꼬리(`HOME_CELL_LINK_FIELDS`)는 원본 공정을
     싣는다.
 
     이동 꼬리는 화면에 나오지 않고 상세 화면을 그 공정으로 여는 값이라 원본 이름이어야 한다.
     """
-    cells = list(row)  # type: ignore[call-overload]
+    cells = list(row)
     return [str(value) for value in cells[: -len(HOME_CELL_LINK_FIELDS)]]
 
 

@@ -38,6 +38,7 @@ import streamlit as st
 
 # 테스트가 공정 표시명 조회를 모듈 속성으로 갈아 끼운다 — 이름을 직접 들이면 그 교체를 못 본다.
 import capa_simulation.components.process_labels as process_labels_module
+from capa_simulation import alerts
 from capa_simulation.components.availability_gap_panel import render_availability_gap_panel
 from capa_simulation.components.cutoff_management import report_missing_cutoffs
 from capa_simulation.components.data_error_mark import render_data_error
@@ -45,7 +46,6 @@ from capa_simulation.components.equipment_data_workspace import (
     BASELINE_DRAFT_KEY,
     DOWNTIME_DRAFT_KEY,
     EQUIPMENT_DRAFT_KEY,
-    FLASH_KEY,
     _official_places_by_name,
     calculation_drafts,
     draft_unscheduled_units,
@@ -81,7 +81,6 @@ from capa_simulation.components.equipment_settings_dialog import (
     render_equipment_dialog_host,
     render_equipment_settings_box,
 )
-from capa_simulation.components.flash import render_flash
 from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.manual_downtime_tab import render_manual_downtime_tab
 from capa_simulation.components.page_guide import render_page_guide
@@ -202,8 +201,10 @@ render_page_guide("available_equipment_status", title="가용설비 현황")
 # 저장 알림·버림 알림은 **늘 서 있는 한 칸** 안에 그린다. 알림이 생기거나 사라질 때 아래 탭
 # 묶음의 자리가 한 칸 밀리면, `st.rerun()` 으로 끊긴 저장 회차와 그다음 회차 사이에서 key 가
 # 있는 탭 묶음이 옛 자리에 회색 사본으로 남아 다른 페이지까지 따라왔다(2026-10-05 E2E — 두
-# 번째 설비 마스터 저장마다). 자리를 고정하면 탭 묶음은 늘 같은 자리다.
-notices = render_flash(FLASH_KEY)
+# 번째 설비 마스터 저장마다). 자리를 고정하면 탭 묶음은 늘 같은 자리다. 칸 바로 뒤 표지 한
+# 자리(`alerts.flush` — 그때까지 담아 둔 사건 알림을 보낸다)도 늘 같은 자리다.
+notices = st.container()
+alerts.flush()
 
 today = date.today()
 try:
