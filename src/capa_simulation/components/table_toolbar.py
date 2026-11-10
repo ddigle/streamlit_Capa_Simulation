@@ -1,4 +1,4 @@
-# Purpose: 표 위 제목·부가 설명 줄, CSV·엑셀 내보내기 단추, 표 도구 막대 앞 띄움 · 막대 자리를 한 곳에서 짓는다.
+# Purpose: 표 위 제목·부가 설명 줄, CSV·엑셀 내보내기 단추, 표 도구 막대 앞 띄움·자리를 짓는다.
 
 """One heading row and one CSV download button for every table.
 
