@@ -488,7 +488,7 @@ def test_the_toolbar_room_covers_the_widest_toolbar() -> None:
 # `render_download_pair` 로 선다. 새 자리는 여기 한 줄을 더한다.
 SHEET_SITES = {
     "app_pages/calculation_result.py": 2,
-    "src/capa_simulation/components/availability_gap_panel.py": 1,
+    "src/capa_simulation/components/availability_gap_panel.py": 2,
     "src/capa_simulation/components/process_capa_view.py": 1,
 }
 

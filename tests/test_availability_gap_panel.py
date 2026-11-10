@@ -30,8 +30,14 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_CSV_KEY,
     GAP_SHEET_MENU_KEY,
     GAP_SHEET_XLSX_KEY,
+    GAP_UNIT_LIST_CSV_KEY,
+    GAP_UNIT_LIST_MENU_KEY,
+    GAP_UNIT_LIST_XLSX_KEY,
 )
-from capa_simulation.components.availability_sheet_workbook import GAP_SHEET_NAME
+from capa_simulation.components.availability_sheet_workbook import (
+    GAP_SHEET_NAME,
+    UNIT_LIST_SHEET,
+)
 from capa_simulation.components.table_toolbar import (
     CSV_DOWNLOAD_LABEL,
     DOWNLOAD_MENU_LABEL,
@@ -1026,7 +1032,8 @@ def test_the_row_help_shares_a_small_gap_cell_with_the_last_switch() -> None:
 def test_the_sheet_downloads_are_one_menu_on_the_switch_row() -> None:
     """「시트 CSV」 · 「시트 엑셀」 은 「조회 결과 · 표시」 전환 줄 오른쪽 끝의 「내려받기 ▾」 메뉴
     하나다 — 시트 위에 단추가 따로 한 줄을 차지하지 않는다(2026-11-09 사용자 보드 T3 · 2026-11-10
-    답 Q2-7 꼴, 시트 엑셀 넓히기 2). 호기 목록에는 시트 내려받기가 없다(목록 아래 CSV 하나)."""
+    답 Q2-7 꼴, 시트 엑셀 넓히기 2). 호기 목록에는 시트 내려받기가 없고 목록 아래 제 메뉴(CSV ·
+    시트 엑셀)다."""
     from streamlit.testing.v1.element_tree import Block
 
     app = _run()
@@ -1054,7 +1061,45 @@ def test_the_sheet_downloads_are_one_menu_on_the_switch_row() -> None:
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception
-    assert [button.label for button in app.download_button] == [CSV_DOWNLOAD_LABEL]
+    assert [button.label for button in app.download_button] == [
+        CSV_DOWNLOAD_LABEL,
+        SHEET_XLSX_LABEL,
+    ]
+    (unit_menu,) = [block for block in app.get("popover") if block.key == GAP_UNIT_LIST_MENU_KEY]
+    assert [str(button.key) for button in unit_menu.download_button] == [
+        GAP_UNIT_LIST_CSV_KEY,
+        GAP_UNIT_LIST_XLSX_KEY,
+    ]
+
+
+def test_the_unit_list_excel_is_the_screen_table_with_the_screen_digits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """호기 목록 시트 엑셀은 화면 표 그대로 — 같은 열 · 행, 공정 표시명, 화면 숫자 꼴(대수 ·
+    환산대수 「%.3f」 → `0.000`)의 숫자 칸, 맨 위 값 줄에 분류 거름. CSV 는 원본 공정명 그대로다."""
+    from xlsx_read import read_workbook
+
+    sheets = _record_sheet(monkeypatch)
+    app = _run(labels=True)
+    _select_view(app, "분류별 내역")
+    app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
+    assert not app.exception
+    shown = app.dataframe[0].value
+    book = read_workbook(sheets[GAP_UNIT_LIST_XLSX_KEY]["data"])
+    assert list(book) == [UNIT_LIST_SHEET]
+    sheet = book[UNIT_LIST_SHEET]
+    labels = sheet.column(0)
+    header = labels.index("월")
+    heading = {str(sheet.row(index)[0]): str(sheet.row(index)[1]) for index in range(1, header - 1)}
+    assert heading["공정"] == "전체 합계" and heading["분류"] == "전체"
+    assert sheet.row(header) == list(shown.columns)
+    body = [sheet.row(index) for index in range(header + 1, header + 1 + len(shown))]
+    assert [row[list(shown.columns).index("공정")] for row in body] == list(shown["공정"])
+    assert "표시-DA" in set(shown["공정"])
+    count = list(shown.columns).index("대수")
+    assert sheet.cells[(header + 1, count)].number_format == "0.000"
+    assert sheet.cells[(header + 1, count)].numeric
+    assert sheets[GAP_UNIT_LIST_XLSX_KEY]["file_name"].endswith(".xlsx")
 
 
 def _record_sheet(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, Any]]:
@@ -1146,10 +1191,7 @@ def test_process_display_names_label_the_screen_but_values_stay_original(
         exported[key] = data
         render_csv_download(data=data, file_name=file_name, key=key, label=label)
 
-    monkeypatch.setattr(
-        "capa_simulation.components.availability_gap_panel.render_csv_download", record_csv
-    )
-    # 시트 CSV 는 「내려받기 ▾」 메뉴(표 곁 한 쌍 도우미) 안이다.
+    # 시트 · 호기 목록 CSV 는 「내려받기 ▾」 메뉴(표 곁 한 쌍 도우미) 안이다.
     monkeypatch.setattr("capa_simulation.components.table_toolbar.render_csv_download", record_csv)
     sheets = _record_sheet(monkeypatch)
     plain = _run()

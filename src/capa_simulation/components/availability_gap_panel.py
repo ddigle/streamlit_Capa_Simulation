@@ -80,10 +80,15 @@ from capa_simulation.components.availability_sheet_keys import (
     GAP_SHEET_SCROLLBAR_KEY,
     GAP_SHEET_XLSX_KEY,
     GAP_SHEET_XLSX_MEMO_KEY,
+    GAP_UNIT_LIST_CSV_KEY,
+    GAP_UNIT_LIST_MENU_KEY,
+    GAP_UNIT_LIST_XLSX_KEY,
 )
 from capa_simulation.components.availability_sheet_workbook import (
     GapWorkbookRequest,
+    UnitListWorkbookRequest,
     availability_sheet_workbook,
+    unit_list_workbook,
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_explorer import report_unit_notices
@@ -106,7 +111,6 @@ from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
 from capa_simulation.components.table_toolbar import (
     CsvFile,
     SheetFile,
-    render_csv_download,
     render_download_pair,
 )
 from capa_simulation.design import theme, tokens
@@ -330,11 +334,16 @@ IDLE_DOWNTIME_HELP = (
 _CATEGORY_NAMES = tuple(category.name for category in CATEGORIES)
 # 목록의 대수 표시 자릿수. **값은 반올림하지 않는다** — 1/3 지분 셋을 0.333 으로 잘라 더하면
 # 0.999 가 되어 「같은 칸을 더하면 표의 값」이 깨진다. CSV 도 반올림 없이 나간다.
-_UNIT_NUMBER_FORMAT = {
-    column: st.column_config.NumberColumn(format="%.3f")
-    for column in ("대수", "환산대수", "보유", BREAKDOWN_LENT_COLUMN, "가용")
+# 호기 표 숫자 열의 소수 자릿수 — 화면 꼴(`NumberColumn` 「%.nf」)과 호기 목록 시트 엑셀 숫자 꼴이
+# 이 한 표에서 나온다.
+_UNIT_DIGITS = {
+    **{column: 3 for column in ("대수", "환산대수", "보유", BREAKDOWN_LENT_COLUMN, "가용")},
+    "환산비": 2,
 }
-_UNIT_NUMBER_FORMAT["환산비"] = st.column_config.NumberColumn(format="%.2f")
+_UNIT_NUMBER_FORMAT = {
+    column: st.column_config.NumberColumn(format=f"%.{digits}f")
+    for column, digits in _UNIT_DIGITS.items()
+}
 # 확보율 교차검증 표의 화면 머리. 내부 컬럼은 그대로다.
 _CROSS_CHECK_HEADERS = {
     "Dynamic가용대수": "일정기준가용대수",
@@ -738,6 +747,12 @@ def render_availability_gap_panel(
             ),
             controls=controls,
             labels=labels,
+            heading=_sheet_heading(
+                process_label,
+                months,
+                alert_label=alert_label,
+                unit_filter=chosen_units is not None,
+            ),
         )
         return
 
@@ -796,7 +811,10 @@ def render_availability_gap_panel(
         render_sheet_downloads(
             bundle,
             heading=_sheet_heading(
-                bundle, alert_label=alert_label, unit_filter=chosen_units is not None
+                bundle.process_label,
+                bundle.view.months,
+                alert_label=alert_label,
+                unit_filter=chosen_units is not None,
             ),
         )
     render_availability_sheet(bundle)
@@ -882,14 +900,13 @@ def render_sheet_downloads(bundle: GapSheetBundle, *, heading: Sequence[tuple[st
 
 
 def _sheet_heading(
-    bundle: GapSheetBundle, *, alert_label: str, unit_filter: bool
+    process_label: str, months: Sequence[int], *, alert_label: str, unit_filter: bool
 ) -> tuple[tuple[str, str], ...]:
-    """시트 엑셀 맨 위 값 줄 — 화면에 보이는 조건 글자 그대로(마크다운 막음 없이): 공정(표시명
-    또는 「전체 합계」) · 조회기간 · 설비 시나리오(알림 범위와 같은 이름 — 없으면 뺀다) · 호기
-    필터(걸렸을 때 — 고른 컬럼과 값, 세션 칸을 그대로 읽는다)."""
-    months = bundle.view.months
+    """시트 엑셀(시트 · 호기 목록) 맨 위 값 줄 — 화면에 보이는 조건 글자 그대로(마크다운 막음
+    없이): 공정(표시명 또는 「전체 합계」) · 조회기간 · 설비 시나리오(알림 범위와 같은 이름 — 없으면
+    뺀다) · 호기 필터(걸렸을 때 — 고른 컬럼과 값, 세션 칸을 그대로 읽는다)."""
     rows = [
-        ("공정", bundle.process_label),
+        ("공정", process_label),
         ("조회기간", f"{month_label(months[0])}–{month_label(months[-1])}"),
     ]
     if alert_label:
@@ -1641,10 +1658,14 @@ def _render_unit_list(
     *,
     controls: AbstractContextManager[object],
     labels: ProcessLabels,
+    heading: Sequence[tuple[str, str]] = (),
 ) -> None:
-    """같은 조건의 호기별 기여(호기 상태 분류)를 긴 표 하나로. 분류로 좁히고 CSV 로 내려받는다.
+    """같은 조건의 호기별 기여(호기 상태 분류)를 긴 표 하나로. 분류로 좁히고 목록 아래
+    「내려받기 ▾」 메뉴(CSV · 시트 엑셀 — 시트 엑셀 넓히기 2)로 내려받는다.
 
     화면 표의 `공정` 은 표시명이고 CSV 는 원본이다 — 화면 프레임과 CSV 프레임을 나눈다(AGENTS 8장).
+    시트 엑셀은 화면 표 그대로(표시명 · 화면 숫자 꼴)이고 맨 위 값 줄은 `heading` 에 분류 거름을
+    더한다. 통은 CSV 바이트 지문 · 표시명 판 · 머리 값으로 세션 칸에 몇 벌 기억한다.
     """
     if contributions.empty:
         st.caption("표시할 호기가 없습니다.")
@@ -1671,10 +1692,35 @@ def _render_unit_list(
     )
     months = sorted(int(month) for month in rows["생산계획년월"].unique())
     stamp = f"{months[0]}_{months[-1]}" if months else "empty"
-    render_csv_download(
-        data=table.to_csv(index=False).encode("utf-8-sig"),
-        file_name=f"일정기준_가용대수_호기목록_{stamp}.csv",
-        key="download_equipment_gap_unit_list_csv",
+    csv = table.to_csv(index=False).encode("utf-8-sig")
+    shown_heading = (*heading, ("분류", " · ".join(str(name) for name in chosen) or "전체"))
+    request = UnitListWorkbookRequest(
+        table=labels.frame(table),
+        digits={column: _UNIT_DIGITS[column] for column in table.columns if column in _UNIT_DIGITS},
+        heading=shown_heading,
+    )
+    render_download_pair(
+        csv=CsvFile(
+            data=csv,
+            file_name=f"일정기준_가용대수_호기목록_{stamp}.csv",
+            key=GAP_UNIT_LIST_CSV_KEY,
+        ),
+        sheet=SheetFile(
+            data=remembered_bytes(
+                GAP_SHEET_XLSX_MEMO_KEY,
+                (
+                    GAP_SHEET_SCHEMA_VERSION,
+                    "unit-list",
+                    hashlib.sha1(csv).hexdigest(),
+                    labels.version,
+                    shown_heading,
+                ),
+                partial(unit_list_workbook, request),
+            ),
+            file_name=f"일정기준_가용대수_호기목록_{stamp}.xlsx",
+            key=GAP_UNIT_LIST_XLSX_KEY,
+        ),
+        menu_key=GAP_UNIT_LIST_MENU_KEY,
     )
 
 

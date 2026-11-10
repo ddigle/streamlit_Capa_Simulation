@@ -4101,7 +4101,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`get_availability_sheet` 등)로 받아 고르기만 한다.
   - 칸 누름 → 근거 카드(`pick_gap_sheet_cell`)는 같은 칸 다시 누름이 유일한 닫기이고 세대(`GAP_SHEET_GENERATION_KEY`)를
     `layout.meta` 에 싣는다. 시트·근거 카드는 키 붙은 프래그먼트다(`tests/test_availability_sheet_panel.py`).
-  - 호기 필터가 걸리면 Static·GAP 행은 「—」 다. 시트·호기 목록 CSV 와 공정명 불일치 문구는 원본이다.
+  - 호기 필터가 걸리면 Static·GAP 행은 「—」 다. 시트·호기 목록 CSV 와 공정명 불일치 문구는 원본이다. 시트 · 호기 목록
+    「시트 엑셀」(시트 엑셀 넓히기 2 — 각 CSV 와 「내려받기 ▾」 메뉴 하나, 호기 목록은 목록 아래 제 메뉴)은 화면처럼 표시명이고
+    호기 목록 숫자 꼴은 화면 `NumberColumn` 과 같은 자릿수 표(`_UNIT_DIGITS`)에서 나온다(`unit_list_workbook`).
   - 입력 비가동(`manual_downtime` — **필수 인자**, 페이지가 `load_manual_downtime` 으로 읽어 넘긴다)을 시트·그림·확보율
     교차검증의 설비 일정 기준 가용에서 뺀다(키 `availability_sheet_cache_key`·`securement_cross_check_cache_key` 의 끝 칸).
     시트 머리에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄, 조회 달에 든 칸은 상태 알림 `EQ-23`(목록은 Alarm 줄
@@ -4389,9 +4391,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/availability_sheet_keys.py` — 비교 시트 key(`GAP_SHEET_CHART_KEY` 등)를 가벼운 모듈에
   둔다 — `app.py` 가 패널·서비스를 import 하지 않고 터치 스크롤 막이(`components/plotly_touch_scroll.py`)에 넣게.
 - `src/capa_simulation/components/availability_sheet_workbook.py` — 가용설비 현황 `Static 대비 일정` 「시트 엑셀」(시트 엑셀
-  넓히기 2). 화면 시트와 같은 행 모델(`build_availability_sheet_rows`)을 공정 Capa 상세 시트 엑셀과 같은 길
+  넓히기 2 — 「표시」 의 시트 · 호기 목록 둘). 화면 시트와 같은 행 모델(`build_availability_sheet_rows`)을 공정 Capa 상세 시트 엑셀과 같은 길
   (`process_capa_workbook.month_rows_sheet`)로 옮긴다 — 칸 글 · GAP 증감 글자색 · Static 묶음 면 · 「—」 · ⚠ 를 다시 셈하지 않고,
-  고른 칸 표지는 옮기지 않는다. 밝은 테마 토큰 · 새 의존성 없음. Streamlit 을 import 하지 않는다
+  고른 칸 표지는 옮기지 않는다. 호기 목록(`unit_list_workbook`)은 화면 표 그대로(표시명 · 화면 숫자 꼴 · 빈 값은 빈 칸 · 회색 머리
+  줄 고정)에 맨 위 값 줄(공정 · 조회기간 · 설비 시나리오 · 호기 필터 · 분류)이다. 밝은 테마 토큰 · 새 의존성 없음. Streamlit 을 import 하지 않는다
   (`tests/test_availability_sheet_workbook.py`).
 - `src/capa_simulation/components/process_capa_canvas.py` — `공정 Capa 상세` 결합 월 캔버스(① 공식 요약 ② 설비 일정 기준
   가용 ③ 신규 호기 ④ 비가동)의 순수 그림 함수 `build_process_capa_canvas`. 세션·캐시·DB 를 보지 않는다. 행 모델은
