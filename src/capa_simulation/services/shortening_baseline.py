@@ -12,7 +12,8 @@
   이름으로 고르기 때문이다). 기본 이름은 `YYYY-MM-DD 기준선` 이다.
 - **얼리는 표**(`BASELINE_UNIT_COLUMNS`)는 목표마다 `LevelPlan.units` 의 칸에 설비 마스터의 설비명·
   환산비(`ShorteningPlan.unit_master`)를 붙인 것이다. 기여 시작은 목표 Qual 다음 날이라 싣지 않는다.
-  가상 호기 「추가N」은 마스터에 없어 설비명·환산비가 빈칸이다.
+  가상 호기 「추가N」은 마스터에 없어 설비명·환산비가 빈칸이다. 화면에 직접 넣은 다섯 밖 목표는
+  얼리지 않는다(`baseline_units_frame`) — 그 목표로는 기준선과 견주지 않는다(`has_level`).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from capa_simulation.services.required_shortening import (
     LEVEL_COLUMN,
     ShorteningPlan,
     level_percent,
+    target_preset,
 )
 
 __all__ = [
@@ -169,6 +171,12 @@ class ShorteningBaseline:
     cutoff_days: Mapping[str, int]
     units: pd.DataFrame
 
+    @staticmethod
+    def has_level(level: float) -> bool:
+        """이 목표의 결과를 얼려 두었는가 — 기준선은 다섯 값(`TARGET_LEVELS`)만 얼린다. 직접 넣은
+        다섯 밖 목표면 `units_at` 이 빈 표라 견주면 지금 호기가 모두 「신규 필요」 로 읽힌다."""
+        return target_preset(level) is not None
+
     def units_at(self, level: float) -> pd.DataFrame:
         """고른 목표의 호기 표(목표 칸 없이). 그 목표에 단축할 호기가 없었으면 빈 표다."""
         chosen = self.units.loc[self.units[LEVEL_COLUMN].eq(level_percent(level))]
@@ -254,10 +262,16 @@ def freeze_plan(
 
 
 def baseline_units_frame(plan: ShorteningPlan) -> pd.DataFrame:
-    """다섯 목표의 호기 결과를 한 표로(`BASELINE_UNIT_COLUMNS`). 목표 차례, 그 안은 계산 차례다."""
+    """다섯 목표의 호기 결과를 한 표로(`BASELINE_UNIT_COLUMNS`). 목표 차례, 그 안은 계산 차례다.
+
+    다섯 값(`TARGET_LEVELS`)만 얼린다 — 화면이 직접 넣은 목표를 더한 계획(`plan_with_level`)을
+    받아도 그 목표는 싣지 않는다(기준선은 늘 같은 다섯 목표다).
+    """
     master = plan.unit_master.drop_duplicates("호기").set_index("호기")
     blocks: list[pd.DataFrame] = []
     for level_plan in plan.levels:
+        if level_plan.monthly_target is not None or target_preset(level_plan.level) is None:
+            continue
         units = level_plan.units
         if units.empty:
             continue

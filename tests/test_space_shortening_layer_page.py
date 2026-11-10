@@ -46,6 +46,7 @@ from capa_simulation.components.shortening_source import (
 )
 from capa_simulation.components.space_shortening_view import (
     ARRIVAL_FILTER_ALERT,
+    LEVEL_ENTRY_KEY,
     LEVEL_FIELD_KEY,
     LEVEL_PICK_KEY,
     PINNED_NOTE,
@@ -223,8 +224,12 @@ class _Level:
 
     @property
     def value(self) -> float:
+        """값 칸 글(「110%」 — 다섯 밖의 직접 넣은 값도 같은 꼴)의 목표."""
         label = str(self.app.button(key=LEVEL_FIELD_KEY).label)
-        return next(level for level in TARGET_LEVELS if label == f"{level_percent(level)}%")
+        preset = next(
+            (level for level in TARGET_LEVELS if label == f"{level_percent(level)}%"), None
+        )
+        return preset if preset is not None else int(label.removesuffix("%")) / 100
 
     def set_value(self, level: float) -> _Level:
         self.app.button(key=LEVEL_FIELD_KEY).click()
@@ -955,6 +960,58 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
     assert FLOOR_CANVAS_DIALOG_KEY not in app.session_state
     assert LEVEL_PICK_KEY not in app.session_state
     assert app.button(key=LEVEL_FIELD_KEY).label == "130%"
+
+
+def test_a_target_typed_in_the_space_picker_paints_that_target_with_the_same_part(
+    tmp_path: Path, editor_calls: list[dict[str, Any]], plan_keys: dict[str, list[Any]]
+) -> None:
+    """Space 「필요 단축」 보기의 목표 팝업도 필요 단축 일정과 **같은 부품**이라 직접 입력 칸이
+    선다(2026-11-11 사용자 고칠 것 Q2-26 — 부품을 가르지 않아 넓게 입힘). 다섯 밖 값(175%)을 넣으면
+    곧바로 닫히며 그 목표로 도면 · 요약을 그리고(계획은 필요 단축 일정과 같은 키 · 같은 길로 그 값
+    하나를 더한다), 범위 밖은 칸 밑 거부 한 줄이다. 「도면에서 보기」 주소의 `target` 도 같은 범위로
+    받는다."""
+    from capa_simulation.components.floor_canvas_dialog import FLOOR_CANVAS_DIALOG_KEY
+    from capa_simulation.components.space_shortening_view import LEVEL_FIELD as SPACE_FIELD
+    from capa_simulation.components.target_level_field import TargetLevelField, entry_out_of_range
+
+    assert isinstance(SPACE_FIELD, TargetLevelField)
+    assert LEVEL_ENTRY_KEY == SPACE_FIELD.entry_key
+    database = _empty_database(tmp_path)
+    app = _app(database)
+    _turn_on(_ok(app.run()))
+    app.button(key=LEVEL_FIELD_KEY).click()
+    _ok(app.run())
+    assert app.radio(key=LEVEL_PICK_KEY).value == 1.1
+    assert app.number_input(key=LEVEL_ENTRY_KEY).value == 110.0
+
+    app.number_input(key=LEVEL_ENTRY_KEY).set_value(40.0)
+    _ok(app.run())
+    assert [str(item.value) for item in app.error] == [entry_out_of_range(40)]
+    assert app.session_state[FLOOR_CANVAS_DIALOG_KEY] == "space_target_level"
+    assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.1
+
+    app.number_input(key=LEVEL_ENTRY_KEY).set_value(175.0)
+    _ok(app.run())
+    assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.75
+    assert FLOOR_CANVAS_DIALOG_KEY not in app.session_state
+    assert LEVEL_ENTRY_KEY not in app.session_state
+    assert _level(app).value == 1.75
+    assert any("목표 175%" in text for text in _texts(app)), _texts(app)
+    assert not app.error
+    # 같은 계획 키 — 다섯은 미리 계산한 칸 그대로이고 그 값 하나만 더 계산했다.
+    assert len(set(plan_keys["keys"])) == 1
+
+    linked = _app(database)
+    linked.query_params["layer"] = "short"
+    linked.query_params["target"] = "1.75"
+    _ok(linked.run())
+    assert linked.session_state[SPACE_SHORT_LEVEL_KEY] == 1.75
+    assert linked.button(key=LEVEL_FIELD_KEY).label == "175%"
+    stale = _app(database)
+    stale.query_params["layer"] = "short"
+    stale.query_params["target"] = "4"
+    _ok(stale.run())
+    assert stale.session_state[SPACE_SHORT_LEVEL_KEY] == 1.1
 
 
 def test_the_arrival_filter_is_one_alert_not_a_line_over_the_drawing(

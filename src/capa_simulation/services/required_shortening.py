@@ -72,11 +72,13 @@
 
 ## 목표 — 다섯 값과 달마다 다른 목표
 
-필요 단축 일정 화면은 다섯 값(`TARGET_LEVELS`, 모든 달이 같은 스칼라)을 한 번에 계산해 고른다. 공정
-Capa 상세는 HOME 설정 → 판정 기준 탭의 공용 판정 기준을 그대로 목표로 쓴다 — 확보기준 기본값에
-**월별 예외**가 있으면 달마다 목표가 다르다(`MonthlyTarget`, `target_from_thresholds`, 2026-10-15
-사용자 결정). 계산은 한 길이다: 달마다 `소요 x 그 달의 목표` 와 가용을 맞댄다. 스칼라 목표는 모든
-달에 같은 값을 넣은 것과 같아서, 모든 달이 같은 값인 `MonthlyTarget` 계획과 결과가 같다.
+필요 단축 일정 화면은 다섯 값(`TARGET_LEVELS`, 모든 달이 같은 스칼라)을 한 번에 계산해 고른다. 다섯
+밖의 값을 직접 넣으면(2026-11-11 사용자 고칠 것 Q2-26) 그 값 하나만 모든 달이 같은 `MonthlyTarget`
+으로 따로 계산해 스칼라 목표로 더한다(`plan_with_level` — 다섯은 다시 계산하지 않는다). 공정 Capa
+상세는 HOME 설정 → 판정 기준 탭의 공용 판정 기준을 그대로 목표로 쓴다 — 확보기준 기본값에 **월별
+예외**가 있으면 달마다 목표가 다르다(`MonthlyTarget`, `target_from_thresholds`, 2026-10-15 사용자
+결정). 계산은 한 길이다: 달마다 `소요 x 그 달의 목표` 와 가용을 맞댄다. 스칼라 목표는 모든 달에 같은
+값을 넣은 것과 같아서, 모든 달이 같은 값인 `MonthlyTarget` 계획과 결과가 같다.
 
 ## 내보내기
 
@@ -95,7 +97,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from typing import TypeAlias
 
@@ -165,11 +167,13 @@ __all__ = [
     "level_percent",
     "plan_from_availability",
     "plan_required_shortening",
+    "plan_with_level",
     "process_month_export_frame",
     "shortening_candidates",
     "single_target",
     "target_for_month",
     "target_from_thresholds",
+    "target_preset",
     "unit_export_frame",
     "unit_number",
     "unit_order",
@@ -177,7 +181,8 @@ __all__ = [
 ]
 
 TARGET_LEVELS: tuple[float, ...] = (0.9, 1.0, 1.1, 1.2, 1.3)
-"""미리 계산하는 목표 확보율 다섯. 화면은 이 가운데 하나를 고른다(다시 계산하지 않는다)."""
+"""미리 계산하는 목표 확보율 다섯. 화면은 이 가운데 하나를 고르거나(다시 계산하지 않는다) 다섯 밖의
+값을 직접 넣는다(그 값 하나만 따로 계산해 더한다 — `plan_with_level`)."""
 
 DEFAULT_TARGET_LEVEL = 1.1
 """처음 여는 화면의 목표. 업무 확보 기준 110% 다(시안과 같다)."""
@@ -368,6 +373,11 @@ TargetLevel: TypeAlias = float | MonthlyTarget
 """목표 하나 — 모든 달에 같은 스칼라(다섯 값) 또는 달마다 다른 목표."""
 
 
+def target_preset(level: float) -> float | None:
+    """다섯 값(`TARGET_LEVELS`) 가운데 `level` 과 같은 값(선택지와 같은 float), 없으면 None."""
+    return next((preset for preset in TARGET_LEVELS if math.isclose(preset, float(level))), None)
+
+
 def target_for_month(level: TargetLevel, month: int) -> float:
     """그 달의 목표 — 스칼라는 모든 달에 같은 값이다."""
     return level.for_month(month) if isinstance(level, MonthlyTarget) else float(level)
@@ -480,6 +490,36 @@ class ShorteningPlan:
             elif plan.monthly_target is None and math.isclose(plan.level, level):
                 return plan
         raise KeyError(f"계산하지 않은 목표 확보율입니다: {level}")
+
+    def covers(self, level: TargetLevel) -> bool:
+        """`at(level)` 이 결과를 내는가 — 그 목표를 계산해 두었는가."""
+        try:
+            self.at(level)
+        except KeyError:
+            return False
+        return True
+
+
+def plan_with_level(plan: ShorteningPlan, extra: ShorteningPlan) -> ShorteningPlan:
+    """`plan`(다섯 값)에 같은 입력으로 세운 목표 하나의 계획(`extra`)을 **스칼라 목표**로 더한다.
+
+    `extra` 는 모든 달이 같은 목표(`MonthlyTarget` 의 기본값만 — 직접 넣은 값) 하나로 세운 계획이다.
+    모든 달이 같은 목표는 그 스칼라와 결과가 같으므로(모듈 머리말 「목표」) 그 결과를 스칼라
+    계획으로 옮겨 `plan.at(값)` · 내보내기가 다섯 값과 같은 길로 꺼내게 한다. `plan` 이 이미 그
+    목표를 들었으면 그대로 돌려준다. 달 · 오늘 · 맞댄 공정이 다르면(같은 입력이 아니다) `ValueError`
+    다.
+    """
+    if len(extra.levels) != 1:
+        raise ValueError(f"더할 목표는 하나여야 합니다: {len(extra.levels)}개")
+    (single,) = extra.levels
+    if single.monthly_target is not None and single.monthly_target.monthly:
+        raise ValueError("달마다 다른 목표는 스칼라 목표로 더하지 않습니다.")
+    if (extra.months, extra.today, extra.processes) != (plan.months, plan.today, plan.processes):
+        raise ValueError("같은 입력으로 세운 계획이 아니라 목표를 더하지 않습니다.")
+    if plan.covers(single.level):
+        return plan
+    scalar = LevelPlan(float(single.level), single.process_months, single.units)
+    return replace(plan, levels=(*plan.levels, scalar))
 
 
 def unit_number(name: str) -> int | None:

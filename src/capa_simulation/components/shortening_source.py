@@ -14,7 +14,7 @@
   `ShorteningStop`(두 화면이 같은 글로 멈춘다).
 - 공용 조회 조건(0019)을 못 읽으면 빈 프로필(= 코드 기본 달)로 계속한다 — 두 화면이 같이 물러선다.
 - 샘플 fleet 세 표(`shortening_frames`)와 계획(`load_official_shortening` — 공식 칸, UPEH 가정 토큰
-  `()`).
+  `()`, 직접 넣은 다섯 밖 목표는 그 값 하나를 더함).
 - 입력 비가동 대수(`manual_downtime_for` — 가용설비 현황 › Preference, 설비 0032)는 두 화면이 같은
   값을 계획 키에 싣는다. 못 읽으면 예외를 그대로 올린다 — 빈 값으로 물러서면 가용이 말없이 커진다.
 
@@ -228,9 +228,13 @@ def load_official_shortening(
     today: date,
     *,
     manual_downtime: ManualDowntime,
+    level: float | None = None,
 ) -> simulation_cache.KeyedShorteningPlan:
     """다섯 목표의 공식 계획(UPEH 가정 토큰 `()`)과 그 키. **두 화면의 키를 내는 함수가 이것
     하나다.** `manual_downtime` 은 `manual_downtime_for` 로 읽은 입력 비가동이다(키에 실린다).
+
+    `level` 은 화면의 지금 목표다 — 다섯 밖의 직접 넣은 값이면 그 목표 하나를 따로 받아 계획에
+    더한다(`simulation_cache.load_required_shortening(level=)`). 두 화면이 같은 길로 더한다.
 
     설비 마스터가 계약을 어기면 `ValueError` 가 그대로 올라간다.
     """
@@ -246,5 +250,5 @@ def load_official_shortening(
         manual_downtime=manual_downtime,
     )
     return simulation_cache.load_required_shortening(
-        key, equipment, downtime, baseline, cutoff, required_equipment=demand.loader
+        key, equipment, downtime, baseline, cutoff, required_equipment=demand.loader, level=level
     )

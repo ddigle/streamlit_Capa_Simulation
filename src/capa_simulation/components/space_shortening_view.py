@@ -8,12 +8,14 @@
 한 길이고, 설비 쪽은 **Space 가 그리는 세션 설비 시나리오**의 계산 세 표다(설비 시나리오 2단계 LY6 —
 필요 단축 일정 화면과 늘 같은 키·같은 칸).
 
-- **목표 확보율**(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)은 사이드바 조회 조건 패널의 한
-  줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건 상자로). 다른 조건 줄과 같은
-  값 칸 + 팝업이고(검수 보드 p-target-form — 필요 단축 일정과 같은 부품 `target_level_field`) 팝업은
-  Space 화면 팝업 호스트가 연다 — 고르면 곧바로 닫히며 그 목표로 다시 그린다. 고른 값은 세션
-  칸(`SPACE_SHORT_LEVEL_KEY`)이다. 배치 편집으로 보기가 쉬는 회차에도 값 칸은 잠근 채
-  선다(`render_level_field`).
+- **목표 확보율**(`TARGET_LEVELS` 다섯 + 직접 입력 50 ~ 300%, 처음엔 필요 단축 일정 목표 → 110%)은
+  사이드바 조회 조건 패널의 한 줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건
+  상자로). 다른 조건 줄과 같은 값 칸 + 팝업이고(검수 보드 p-target-form — 필요 단축 일정과 같은 부품
+  `target_level_field`, 직접 입력은 2026-11-11 사용자 고칠 것 Q2-26 — 부품이 하나라 이 보기에도
+  선다) 팝업은 Space 화면 팝업 호스트가 연다 — 고르거나 넣으면 곧바로 닫히며 그 목표로 다시 그린다.
+  다섯 밖 값은 필요 단축 일정과 같은 길로 그 값 하나를 더
+  계산한다(`load_official_shortening(level=)`). 고른 값은 세션 칸(`SPACE_SHORT_LEVEL_KEY`)이다. 배치
+  편집으로 보기가 쉬는 회차에도 값 칸은 잠근 채 선다(`render_level_field`).
 - **「단축 없는 호기 흐리게」 · 기준 달**은 사이드바 `Space 조건` 카드의 「색 기준」
   밑이다(2026-11-09 사용자 검수 g05 — 페이지 상단 문구 · 여백 최소화). 「필요 단축」 은 그룹 체크가
   없는 기준이라 흐리게 칸이 그 자리를 잇고(`render_dim_field`), 기준 달 값 한
@@ -115,6 +117,7 @@ __all__ = [
     "LAYER_PARAM",
     "LAYER_SHORT",
     "LEVEL_DIALOGS",
+    "LEVEL_ENTRY_KEY",
     "LEVEL_FIELD_KEY",
     "LEVEL_PICK_KEY",
     "PINNED_NOTE",
@@ -153,7 +156,7 @@ SPACE_SHORT_DIM_KEY: Final = "space_shortening_dim_v1"
 # 공정 칸)에 다른 조건 줄과 같은 이름 줄 + 값 칸이고 값 칸을 누르면 고르는 팝업이 열린다(검수 보드
 # p-target-form — 필요 단축 일정과 같은 부품 `TargetLevelField`). 팝업은 Space 화면 팝업
 # 호스트(`floor_canvas_dialog.CANVAS_DIALOG_HOST` — 화면당 호스트 하나)가 연다. 칸이 없으면 필요
-# 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심는다.
+# 단축 일정 목표(받을 수 있는 값일 때 — 다섯 또는 직접 넣은 값) → 110% 로 심는다.
 LEVEL_FIELD: Final = TargetLevelField(
     state_key=SPACE_SHORT_LEVEL_KEY,
     field_key="space_shortening_level_field",
@@ -166,6 +169,7 @@ LEVEL_FIELD: Final = TargetLevelField(
 LEVEL_FIELD_KEY: Final = LEVEL_FIELD.field_key
 LEVEL_DIALOG: Final = LEVEL_FIELD.dialog
 LEVEL_PICK_KEY: Final = LEVEL_FIELD.pick_key
+LEVEL_ENTRY_KEY: Final = LEVEL_FIELD.entry_key
 # 배치 편집으로 보기가 쉬는 회차의 목표 줄 — 값 칸은 잠근 채 서고 까닭은 그 칸 풍선이다(설계 규칙
 # UI-INP-07 — `condition_field` 의 잠긴 칸 풍선).
 LEVEL_REST_HELP: Final = (
@@ -242,7 +246,8 @@ def consume_layer_link(
     """필요 단축 일정 「도면에서 보기」 주소(`?layer=short&floor=C1-2F&proc=W/B&target=1.1`)를 한 번
     받는다.
 
-    색 기준 칸 = 필요 단축, 목표 칸 = `target`(다섯 가운데 하나일 때만), 그 층의 공정 칩 칸 =
+    색 기준 칸 = 필요 단축, 목표 칸 = `target`(받을 수 있는 목표일 때만 — 다섯 또는 50 ~ 300% 의
+    직접 넣은 값, `target_level_field.target_level`), 그 층의 공정 칩 칸 =
     `proc`(선택지 확인은 칩을 그릴 때), `clear_keys`(누른 호기) 비움, `edit_keys`(층·FAB 배치 편집
     토글) 끔 — 링크로 보러 왔다. `filter_values` 는 지금 공용 공정 값(`shared_process.values()` —
     Space 공정소분류가 따라가는 값)이다 — 도착 때 값을 알림 칸에 함께 적어 그 값이 바뀌면 알림을
@@ -435,7 +440,7 @@ def load_space_layer(
         )
     try:
         keyed = shortening_source.load_official_shortening(
-            demand, frames, cutoff, tuple(months), today, manual_downtime=manual
+            demand, frames, cutoff, tuple(months), today, manual_downtime=manual, level=level
         )
     except ValueError as exc:
         return ShorteningStop(

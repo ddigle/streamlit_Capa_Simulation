@@ -247,6 +247,10 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         EMPTY,
     ),
+    (
+        "src/capa_simulation/components/required_shortening_panel.py",
+        "_render_missing_baseline_level",
+    ): (EMPTY,),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_month_range"): (
         BESIDE_INPUT,
     ),

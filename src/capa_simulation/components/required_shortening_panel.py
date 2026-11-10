@@ -4,14 +4,16 @@
 
 계산은 `services/required_shortening.py` 가 하고 결과는 `simulation_cache.get_required_shortening`
 이 다섯 목표를 한 번에 캐시한다. 이 화면은 **고르기만** 한다 — 목표 확보율·공정을 바꾸는 rerun 은
-계산을 다시 돌리지 않는다. 본문은 키 붙은 프래그먼트라(`_render_view` · `VIEW_FRAGMENT_KEY`) 기준선
-팝오버 조작은 그것만 다시 돌고, 조건 카드의 진척 비교를 바꾸면 그 칸의 콜백이 본문 프래그먼트만
-다시 돌린다(`_rerun_view` — 설계 규칙 UI-PRF-01).
+계산을 다시 돌리지 않는다. 다섯 밖의 목표를 직접 넣으면 그 값 하나만 목표 하나 칸에서 더 계산한다
+(`shortening_source.load_official_shortening(level=)` — 2026-11-11 사용자 고칠 것 Q2-26). 본문은 키
+붙은 프래그먼트라(`_render_view` · `VIEW_FRAGMENT_KEY`) 기준선 팝오버 조작은 그것만 다시 돌고, 조건
+카드의 진척 비교를 바꾸면 그 칸의 콜백이 본문 프래그먼트만 다시 돌린다(`_rerun_view` — 설계 규칙
+UI-PRF-01).
 
 **목표 확보율**은 사이드바 조회 조건 패널 줄이다 — Space 「필요 단축」 보기와 같은 부품
-(`target_level_field.TargetLevelField` — 값 칸 + 팝업, 같은 세션 저장 · 같은 다섯 값, 2차 보드
-Q2-26). 값 칸을 누르면 이 화면 팝업 호스트(`SHORTENING_DIALOG_HOST` — Qual 마감 계산기와 같은
-호스트)만 돌아 팝업이 열리고, 고르면 닫히며 앱 전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트
+(`target_level_field.TargetLevelField` — 값 칸 + 팝업, 같은 세션 저장 · 같은 다섯 값 + 직접 입력,
+2차 보드 Q2-26). 값 칸을 누르면 이 화면 팝업 호스트(`SHORTENING_DIALOG_HOST` — Qual 마감 계산기와
+같은 호스트)만 돌아 팝업이 열리고, 고르면 닫히며 앱 전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트
 밖이라 본문만 다시 돌리면 값 칸과 본문이 어긋난다). 줄은 페이지가 데이터를 읽기 전에 세워 멈춘
 회차에도 서고 고를 수 있다(`LEVEL_FIELD.render` — 설계 규칙 UI-PRF-03). 호기가 없는 회차에는 같은
 자리이고, 설비 DB 를 못 읽은 회차에는 그 앞 「설비 시나리오」 줄이 서지 않아 한 줄만큼 위에 선다.
@@ -47,7 +49,8 @@ Q2-26). 값 칸을 누르면 이 화면 팝업 호스트(`SHORTENING_DIALOG_HOST
 **진척 비교**(2026-10-08 사용자 요청, 시안 B)는 조건 카드의 `진척 비교` 상자에서 저장해 둔 기준선을
 고르면 KPI·LOB·공정 카드 자리를 요약과 호기마다 과거·현재 두 줄 카드로 바꾼다
 (`shortening_progress_panel`). `비교 안 함`(기본)이면 이 화면은 그대로이고 기준선 목록 캐시만
-읽는다. 기준선 저장·지우기 팝오버는 CSV 단추 줄에 선다.
+읽는다. 기준선 저장·지우기 팝오버는 CSV 단추 줄에 선다. 기준선은 다섯 목표만 얼리므로 목표가
+직접 넣은 다섯 밖 값이면 견주지 않고 빈 결과 한 줄이다(`_render_missing_baseline_level`).
 
 **UPEH 가정**(조건 카드 끝 「이 세션만」 — 공정 Capa 상세와 같은 세션 칸,
 `upeh_assumption_controls`)은 **이 화면에 걸지 않는다** — KPI·LOB·공정 카드·CSV 세 벌·기준선·
@@ -443,8 +446,9 @@ def render_required_shortening_tab(
     본문(값 줄·KPI·LOB·공정 카드·CSV·기준선 저장/지우기)은 그 결과를 인자로 받는 키 붙은
     프래그먼트(`_render_view`)다 — 진척 비교 칸의 콜백은 페이지 전체(설비 DB·시나리오·다른 탭
     준비)를 다시 돌리지 않고 본문만 다시 그린다(`_rerun_view`). 계획은 다섯 목표를 한 번에
-    세우므로 목표는 계산 입력이 아니다 — 목표 확보율 패널 줄(`LEVEL_FIELD`)은 페이지가 세우고 본문은
-    그 세션 칸을 읽는다.
+    세우므로 다섯 안의 목표는 계산 입력이 아니다 — 목표 확보율 패널 줄(`LEVEL_FIELD`)은 페이지가
+    세우고 본문은 그 세션 칸을 읽는다. 다섯 밖의 직접 넣은 목표는 `_prepare` 가 그 값 하나를 더해
+    세운다(목표를 바꾸는 팝업은 앱 전체 회차로 닫힌다).
     """
     if tab_is_hidden(owner_tab):
         return
@@ -538,6 +542,8 @@ def _prepare(
             "error", f"입력 비가동 대수를 읽지 못했습니다 — {bootstrap_error_message(exc)}"
         )
     try:
+        # 지금 목표가 다섯 밖의 직접 넣은 값이면 그 값 하나를 더 계산해 계획에 더한다(Space 와 같은
+        # 길 — 2026-11-11 사용자 고칠 것 Q2-26). 본문은 같은 세션 칸을 읽는다(`_view_choices`).
         official = load_official_shortening(
             demand,
             (baseline, equipment, downtime),
@@ -545,6 +551,7 @@ def _prepare(
             tuple(months),
             today,
             manual_downtime=manual,
+            level=LEVEL_FIELD.current(),
         )
     except ValueError as exc:
         return ShorteningStop(
@@ -622,6 +629,11 @@ def _render_view(
         _render_stop(prepared, today)
         return
     level, compare_id = _view_choices(database_path, prepared.shown_baselines)
+    if not prepared.plan.covers(level):
+        # 직전 앱 전체 회차가 세운 계획에 없는 목표(다섯 밖 직접 입력)다 — 그 회차가 지금 목표를
+        # 더해 세우도록 앱 전체를 한 번 돌린다(목표를 바꾸는 조작은 모두 앱 전체 회차라 보통은 오지
+        # 않는다).
+        st.rerun(scope="app")
     render_baseline_notice()
     _render_body(
         prepared,
@@ -718,6 +730,9 @@ def _render_body(
     if compared is not None:
         if equipment_basis is not None and equipment_basis.compare_note is not None:
             st.caption(f":material/account_tree: {equipment_basis.compare_note}")
+        if not compared.has_level(level):
+            _render_missing_baseline_level(level, today)
+            return
         _render_progress(
             prepared.official,
             compared,
@@ -804,6 +819,25 @@ def _render_body(
                         level_plan, process, level=level, months=months, equipment=link_label
                     )
                     render_space_link(process, floors=space_floors, level=level)
+
+
+# 기준선에 없는 목표(다섯 밖 직접 입력)로 진척 비교를 고른 회차 — 빈 결과 줄의 풍선.
+MISSING_BASELINE_LEVEL_HELP = (
+    "기준선은 저장할 때 목표 다섯(90 · 100 · 110 · 120 · 130%)의 결과만 얼립니다 — 그 가운데 "
+    "하나를 고르면 견줍니다."
+)
+
+
+def _render_missing_baseline_level(level: float, today: date) -> None:
+    """진척 비교를 고른 채 목표가 다섯 밖(직접 입력)인 회차 — 고른 기준선에 그 목표의 결과가 없다.
+    빈 기준선과 견주면 지금 호기가 모두 「신규 필요」 로 읽히므로 견주지 않고 빈 결과 한 줄과 그 줄
+    오른쪽 끝 기준 값만 둔다(설계 규칙 UI-TXT-04 — 빈 결과는 평문 한 줄, 까닭은 풍선)."""
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.caption(
+            f"기준선에 목표 {_percent(level)} 결과가 없습니다.",
+            help=MISSING_BASELINE_LEVEL_HELP,
+        )
+        _render_basis(today)
 
 
 def _card_order(

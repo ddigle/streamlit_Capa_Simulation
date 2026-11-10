@@ -219,6 +219,46 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     clear_equipment_repository()
 
 
+def test_a_typed_target_outside_the_five_is_not_compared_with_a_baseline(tmp_path: Path) -> None:
+    """기준선은 다섯 목표만 얼린다 — 직접 넣은 다섯 밖 목표(115%)로 저장해도 얼린 표는 다섯이고,
+    그 목표로 진척 비교를 고르면 견주지 않고 빈 결과 한 줄(까닭은 풍선)이다. 빈 기준선과 견주면 지금
+    호기가 모두 「신규 필요」 로 읽힌다(2026-11-11 사용자 고칠 것 Q2-26 — 답 밖, 지금 꼴과 가까운
+    쪽). 다섯 가운데 하나로 돌아가면 다시 견준다."""
+    from test_required_shortening_tab import _type_level
+
+    from capa_simulation.components.required_shortening_panel import (
+        MISSING_BASELINE_LEVEL_HELP,
+    )
+
+    database_path, _ = _saved_database(tmp_path)
+    app = _run(database_path)
+    typed = _type_level(app, 115.0)
+    assert not typed.exception
+    app = _name_input(typed).set_value("115 저장").run()
+    app = _save_button(app).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    (stored,) = DuckDBEquipmentRepository(database_path).list_shortening_baselines()
+    frozen = DuckDBEquipmentRepository(database_path).load_shortening_baseline(stored.baseline_id)
+    assert set(frozen.units["목표 확보율(%)"].astype(int)) <= {90, 100, 110, 120, 130}
+
+    _follow_official(app, database_path)
+    app = app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(stored.baseline_id).run()
+    assert not app.exception, [element.message for element in app.exception]
+    body = _html(app)
+    assert "진척 비교 요약" not in body and "shk-prog" not in body
+    assert "계획 · LOB 요약" not in body
+    (line,) = [item for item in app.caption if "결과가 없습니다" in str(item.value)]
+    assert str(line.value) == "기준선에 목표 115% 결과가 없습니다."
+    assert str(line.proto.help) == MISSING_BASELINE_LEVEL_HELP
+    assert PROGRESS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
+
+    back = _choose_level(app, 1.1)
+    assert not back.exception
+    assert "진척 비교 요약" in _html(back)
+    assert not [item for item in back.caption if "결과가 없습니다" in str(item.value)]
+    clear_equipment_repository()
+
+
 def test_a_duplicate_name_is_refused_and_a_baseline_is_deleted_only_when_confirmed(
     tmp_path: Path,
 ) -> None:

@@ -97,7 +97,9 @@ from capa_simulation.services.required_shortening import (
     MonthlyTarget,
     ShorteningPlan,
     plan_required_shortening,
+    plan_with_level,
     process_month_export_frame,
+    target_preset,
     unit_export_frame,
 )
 from capa_simulation.services.route_step_editor import route_step_tables
@@ -2018,11 +2020,29 @@ def load_required_shortening(
     cutoff: pd.DataFrame,
     *,
     required_equipment: Callable[[], pd.DataFrame],
+    level: float | None = None,
 ) -> KeyedShorteningPlan:
-    """공식 계획을 받아 키와 한 묶음으로 돌려준다. UPEH 가정 토큰이 든 키는 공식 칸이 멈춘다."""
+    """공식 계획을 받아 키와 한 묶음으로 돌려준다. UPEH 가정 토큰이 든 키는 공식 칸이 멈춘다.
+
+    `level` 이 다섯 값(`TARGET_LEVELS`) 밖이면(화면에 직접 넣은 목표 — 2026-11-11 사용자 고칠 것
+    Q2-26) 그 값 하나만 목표 하나 칸(`get_required_shortening_for_target` — 키에 그 값이 든다)에서
+    받아 다섯 값 계획에 스칼라 목표로 더한다(`plan_with_level`). 다섯 안의 값이거나 None 이면 다섯
+    값 계획 그대로다. 묶음의 키는 다섯 값 계획의 키다 — 키 전용 캐시(CSV · 진척)는 목표를 키에 따로
+    싣는다.
+    """
     plan = get_required_shortening(
         key, equipment, downtime, baseline, cutoff, _required_equipment=required_equipment
     )
+    if level is not None and target_preset(level) is None:
+        single = get_required_shortening_for_target(
+            required_shortening_target_cache_key(key, MonthlyTarget(default=float(level))),
+            equipment,
+            downtime,
+            baseline,
+            cutoff,
+            _required_equipment=required_equipment,
+        )
+        plan = plan_with_level(plan, single)
     return KeyedShorteningPlan(key, plan)
 
 
@@ -2035,7 +2055,8 @@ def get_required_shortening_csvs(
     _keyed: KeyedShorteningPlan,
 ) -> tuple[bytes, bytes, bytes]:
     """필요 단축 일정 CSV 세 벌의 바이트 — 고른 목표의 호기별, 다섯 목표의 호기별, 고른 목표의
-    공정·월.
+    공정·월. 고른 목표가 직접 넣은 다섯 밖 값이면 묶음의 계획이 그 목표를 든다
+    (`load_required_shortening(level=)`) — 「목표 전체」 는 그때도 다섯 값(`TARGET_LEVELS`)이다.
 
     탭이 열린 rerun 마다(목표만 바꿔도) 세 표를 다시 만들고 직렬화했다(2026-10-08 점검 A10). 계획은
     이미 `get_required_shortening` 이 캐시하므로, 그 키에 화면이 고르는 것(목표·공정 차례·달)만 더한
@@ -2658,7 +2679,10 @@ def get_process_month_trace(
 
 # 공정 Capa 상세의 설비 일정(참고). 필요 단축 일정 화면과 같은 계산을 공용 판정 기준(달마다 다른
 # 목표)으로 한 벌 더 두고, 공정 하나의 설비 일정(신규 호기·비가동 손실·전월 대비)을 따로 둔다.
-# 탭의 칸(`get_required_shortening`)은 그대로다.
+# 탭의 칸(`get_required_shortening`)은 그대로다. 목표 하나 칸은 필요 단축 일정 · Space 가 직접 넣은
+# 다섯 밖 목표(모든 달이 같은 목표)도 받는다(`load_required_shortening(level=)`) — 같은 8칸이라 직접
+# 넣은 값을 여럿 바꿔 보면 공정 Capa 상세 · 제약 시뮬레이션의 칸이 밀려 다시 계산할 수 있다(틀리지
+# 않는다).
 
 # (필요 단축 일정 키, 목표 기본값, 기본값과 다른 달의 (월, 목표))
 RequiredShorteningTargetCacheKey = tuple[
@@ -2687,7 +2711,8 @@ def get_required_shortening_for_target(
     _required_equipment: Callable[[], pd.DataFrame],
 ) -> ShorteningPlan:
     """달마다 다른 목표 하나(공용 판정 기준의 확보기준)의 필요 단축 일정(**공식 계획**).
-    `plan.at(목표)` 로 꺼낸다.
+    `plan.at(목표)` 로 꺼낸다. 필요 단축 일정 · Space 가 직접 넣은 다섯 밖 목표도 모든 달이 같은
+    목표로 이 칸에서 받는다(`load_required_shortening(level=)`).
 
     탭(`get_required_shortening`)과 같은 규칙이다 — 프레임은 해시하지 않고 키가 내용 지문·시나리오
     키·달·오늘·목표를 모두 싣는다. 소요대수는 빗나갈 때만 로더로 꺼내고, 호기 구간은 같은 구간

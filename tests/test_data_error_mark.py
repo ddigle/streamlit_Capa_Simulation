@@ -188,6 +188,8 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/capa_simulation/components/sso_identity.py", "_stop_without_gate"): (1, NO_ALARM),
     ("src/capa_simulation/components/sso_status.py", "render_sso_status"): (1, CHECK_BOARD),
+    # 목표 확보율 팝업 직접 입력 칸 바로 밑 — 범위 밖 · 숫자 아님(2026-11-11 사용자 고칠 것 Q2-26).
+    ("src/capa_simulation/components/target_level_field.py", "_pick"): (1, BESIDE),
 }
 
 PAGE = """

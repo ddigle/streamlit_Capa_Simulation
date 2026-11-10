@@ -23,6 +23,7 @@ import pytest
 import streamlit.elements.lib.policies as policies
 from alert_marks import (
     active_state,
+    alert_notes,
     data_error_marks,
     events,
     note_table,
@@ -720,6 +721,8 @@ def test_the_target_is_a_panel_value_field_that_opens_a_picker_like_space(tmp_pa
     picker = app.radio(key=LEVEL_FIELD.pick_key)
     assert picker.value == 1.1
     assert list(picker.options) == ["90%", "100%", "110%", "120%", "130%"]
+    # 라디오 밑은 직접 입력 칸이다(2026-11-11 사용자 고칠 것 Q2-26).
+    assert app.number_input(key=LEVEL_FIELD.entry_key).value == 110.0
 
     picker.set_value(1.3).run()
     assert not app.exception
@@ -734,8 +737,9 @@ def test_the_target_is_a_panel_value_field_that_opens_a_picker_like_space(tmp_pa
 def test_a_target_from_space_or_a_stale_session_value_is_shown_in_the_field(
     tmp_path: Path,
 ) -> None:
-    """Space 「필요 단축 일정에서 이 공정 보기」 가 적은 목표(세션 칸)를 값 칸이 그대로 보이고, 다섯
-    가운데 하나가 아닌 값은 110% 로 되적는다."""
+    """Space 「필요 단축 일정에서 이 공정 보기」 가 적은 목표(세션 칸)를 값 칸이 그대로 보이고 —
+    다섯 밖이라도 받는 범위(50 ~ 300%) 안의 직접 넣은 값이면 그대로다(2026-11-11 사용자 고칠 것
+    Q2-26) — 받을 수 없는 값(범위 밖 · 숫자 아님)은 110% 로 되적는다."""
     database_path = _database(tmp_path)
     app = AppTest.from_string(_script(database_path), default_timeout=120)
     app.session_state[SHORTENING_LEVEL_KEY] = 0.9
@@ -747,8 +751,117 @@ def test_a_target_from_space_or_a_stale_session_value_is_shown_in_the_field(
     app.session_state[SHORTENING_LEVEL_KEY] = 0.75
     app.run()
     assert not app.exception
-    assert _level_field(app) == ("110%", False)
-    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.1
+    assert _level_field(app) == ("75%", False)
+    assert "목표 75% 기준" in _html(app)
+
+    for stale in (0.3, 3.5, "목표"):
+        app.session_state[SHORTENING_LEVEL_KEY] = stale
+        app.run()
+        assert not app.exception
+        assert _level_field(app) == ("110%", False), stale
+        assert app.session_state[SHORTENING_LEVEL_KEY] == 1.1
+    clear_equipment_repository()
+
+
+def _type_level(app: AppTest, percent: float | None) -> AppTest:
+    """목표 확보율 팝업을 열어 직접 입력 칸에 `percent` 를 넣는다(Enter — 2026-11-11 사용자 고칠 것
+    Q2-26). 받으면 팝업이 닫히고 그 목표로 다시 그린다 — 못 받으면 열린 채 칸 밑에 거부 한 줄."""
+    app.button(key=LEVEL_FIELD.field_key).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    app.number_input(key=LEVEL_FIELD.entry_key).set_value(percent).run()
+    assert not app.exception, [element.message for element in app.exception]
+    return app
+
+
+def test_a_target_typed_outside_the_five_plans_that_value_and_keeps_the_five_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다섯 밖의 목표를 직접 넣으면(115%) 값 칸 · KPI · 공정 카드 · 고른 목표 CSV 가 그 목표다.
+    「목표 전체」 CSV 는 다섯 목표 그대로다. 다시 열면 라디오는 모두 꺼지고 숫자 칸이 지금 목표를
+    보인다 — 어느 쪽이 지금 값인지 한 꼴(2026-11-11 사용자 고칠 것 Q2-26)."""
+    from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
+
+    warnings: list[object] = []
+    monkeypatch.setattr(policies, "_shown_default_value_warning", False)
+    monkeypatch.setattr(policies._LOGGER, "warning", lambda *args, **_kwargs: warnings.append(args))
+    app = _run(_database(tmp_path))
+    assert not app.exception
+    _, five = _csv(app, "equipment_shortening_units_all_levels_csv")
+
+    app.button(key=LEVEL_FIELD.field_key).click().run()
+    assert not app.exception
+    # 처음 연 팝업 — 라디오는 지금 목표(110%)가 켜지고 숫자 칸도 지금 목표다.
+    assert app.radio(key=LEVEL_FIELD.pick_key).value == 1.1
+    entry = app.number_input(key=LEVEL_FIELD.entry_key)
+    assert entry.value == 110.0
+    assert "% 직접 입력" in [str(item.value) for item in app.caption]
+
+    entry.set_value(115.0).run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.15
+    assert SHORTENING_DIALOG_HOST.open_key not in app.session_state
+    assert LEVEL_FIELD.pick_key not in app.session_state
+    assert LEVEL_FIELD.entry_key not in app.session_state
+    assert _level_field(app) == ("115%", False)
+    body = _html(app)
+    assert "목표 115% 기준" in body and "과부족 (목표 115%)" in body
+    captured, units = _csv(app, "equipment_shortening_units_csv")
+    assert str(captured["file_name"]).startswith("required_shortening_units_115pct_")
+    assert set(units[LEVEL_COLUMN]) == {"115"}
+    _, months = _csv(app, "equipment_shortening_months_csv")
+    assert set(months[LEVEL_COLUMN]) == {"115"}
+    _, all_levels = _csv(app, "equipment_shortening_units_all_levels_csv")
+    pd.testing.assert_frame_equal(all_levels, five)
+
+    # 다시 열면 직접 넣은 값이 지금 값이다 — 라디오는 모두 꺼짐, 숫자 칸 115.
+    app.button(key=LEVEL_FIELD.field_key).click().run()
+    assert not app.exception
+    assert app.radio(key=LEVEL_FIELD.pick_key).value is None
+    assert app.number_input(key=LEVEL_FIELD.entry_key).value == 115.0
+    # 라디오로 다섯 가운데 하나로 돌아간다.
+    app.radio(key=LEVEL_FIELD.pick_key).set_value(1.2).run()
+    assert not app.exception
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.2
+    assert _level_field(app) == ("120%", False)
+    assert warnings == []
+    clear_equipment_repository()
+
+
+def test_a_typed_target_out_of_range_or_not_a_number_is_refused_beside_the_entry(
+    tmp_path: Path,
+) -> None:
+    """받는 범위(50 ~ 300% — 판정 기준 칸과 한 값) 밖이거나 숫자가 아니면(빈 칸) 그 칸 바로 밑에
+    거부 한 줄만 서고 팝업은 열린 채, 목표 · 값 칸은 그대로다. 소수는 사사오입한 정수 % 다(109.5 →
+    110 — 판정 기준 칸과 한 규칙)."""
+    from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
+    from capa_simulation.components.target_level_field import (
+        ENTRY_NOT_A_NUMBER,
+        entry_out_of_range,
+    )
+
+    app = _run(_database(tmp_path))
+    assert not app.exception
+    for typed, refusal in (
+        (400.0, entry_out_of_range(400)),
+        (49.4, entry_out_of_range(49)),
+        (None, ENTRY_NOT_A_NUMBER),
+    ):
+        _type_level(app, typed)
+        assert app.session_state[SHORTENING_DIALOG_HOST.open_key] == LEVEL_FIELD.dialog, typed
+        assert [str(item.value) for item in app.error] == [refusal], typed
+        assert app.session_state[SHORTENING_LEVEL_KEY] == 1.1
+        assert _level_field(app) == ("110%", False)
+        # 거부 글은 알림창 · 기록에 가지 않는다(설계 규칙 UI-NTF-03 — 팝업 안 검증 거부는 곁만).
+        assert not [note for note in alert_notes(app) if refusal in str(note)], typed
+    # 열린 팝업에서 라디오를 고르면 그 목표다.
+    app.radio(key=LEVEL_FIELD.pick_key).set_value(1.3).run()
+    assert not app.exception
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.3
+    assert not app.error
+
+    _type_level(app, 108.5)
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.09
+    assert _level_field(app) == ("109%", False)
     clear_equipment_repository()
 
 
