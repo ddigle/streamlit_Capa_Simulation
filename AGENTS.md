@@ -3036,6 +3036,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 직접 편집 저장은 버전 대조(`BASE_VERSION_KEY` → `expected_version`, 어긋나면 `ProfileVersionConflict`)다. 최신을 보고 고친
     표가 그 저장본과 같으면 쓰지 않고 폼 안 저장 줄 바로 아래 칸에 「바뀐 것이 없습니다」 를 적는다(개선 I5 — 9장 「바꾼 것 없는
     저장」, 자리는 2026-11-07 g8-16).
+  - 저장 줄(`SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대 자리로 비우고(`toolbar_room_css`) 표 앞 띄움이 없다 — 저장 줄 → 표
+    14px(2026-11-10 사용자 그림 메모 admin-rename, 9장 「표 도구 막대」).
 - `src/capa_simulation/components/display_order_management.py` — Admin Area `표시순서 관리` 탭. 공용 표시순서
   규칙의 검증·CSV·붙여넣기·범위별 직접 편집과 원자 교체다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다.
   저장 성공과 그 저장의 표시명 경고(성공 칸 안), 저장된 겹침 경고는 각각 늘 서 있는 칸에 서서 저장(`st.rerun()`)
@@ -3050,8 +3052,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`display_label_mistakes`)의 표시명 경고도 그린다 — 막지 않고 알리기만 한다(2026-11-02 결정 A3 — 창이 지난 뒤의 누름에 「바뀐 것이 없습니다」 만 서서 표의 표시명이
     정렬에 걸리지 않는 것을 알 길이 없었다).
   - 표 위는 두 줄이다(작은 결정 d7 · 그림 메모 g18): 「직접 편집」 제목 + 공용 버전 줄(제목 곁에서 낱말 사이로 접힘 — 제목 칸은
-    줄 폭에서 범위 고르기 둘 몫 512px 를 뺀 폭까지) + 범위 고르기 둘이 한 줄, 저장 · 변경 메모 줄 오른쪽 끝에 CSV 다운로드 ·
-    Excel 붙여넣기(폼 앞 칸에 그려 서식 `ACTION_ROW_STYLE` 로 얹음 — 폼에 넣을 수 없는 위젯)가 한 줄이다. 키보드 Tab 은 범위
+    줄 폭에서 범위 고르기 둘 몫 512px 를 뺀 폭까지) + 범위 고르기 둘이 한 줄, 저장 · 변경 메모 줄 오른쪽에 CSV 다운로드 ·
+    Excel 붙여넣기(폼 앞 칸에 그려 서식 `ACTION_ROW_CSS` 로 얹음 — 폼에 넣을 수 없는 위젯)가 한 줄이다. 줄 맨 끝은 표 도구 막대
+    자리(`TABLE_TOOLBAR_ROOM`)로 비워 두 단추도 그 앞에 서고 표 앞 띄움이 없다 — 저장 줄 → 표 14px(2026-11-10 사용자 그림 메모
+    admin-order). 키보드 Tab 은 범위
     고르기 → CSV → Excel → 저장 → 변경 메모 → 표 차례다(보이는 차례와 맞출지는 결정 대기 — `docs/TODO.md`).
 - `src/capa_simulation/components/scenario_edit_bar.py` — 편집 화면 원본의 토큰(`source_token` — 기준정보 버전·
   리비전·조회기간·줄 차례 지문)과 원본이 바뀌면 편집기를 비우는 `reset_editors_on_source_change` 다. 생산 계획·기준 정보가 쓴다.
@@ -3158,7 +3162,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
   `emit_style=False` 로 부르고 `metric_row_style`·`status_metric_style` 을 보이는 HTML 과 한 `st.html` 에 싣는다.
 - `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄과 표 도구 막대 앞 띄움
-  (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭)이다. `st.download_button` 은
+  (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭), 띄움 대신 표 바로 위 줄 오른쪽 끝을
+  막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. `st.download_button` 은
   여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
   (`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`)이다. 행 모델·면색만 표마다 다르다.
@@ -3715,7 +3720,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`REOPENED_NOTICE_KEY`)을 낸다. 새 일정 리비전이면 `_REVISION_KEY` 를 남기지 않고 HEAD_STALE 로 한 번 더 돈다(작은 결정 a5).
   - 작은 편집표(`render_small_editor` — 기존 보유대수·비가동 일정, 개편 명세 4-7)는 **폼 밖**이고(명세의 「작은 폼」 에서 바꿈 —
     폼 안 편집은 제출 전까지 서버에 오지 않아 탭 점·떠나기 확인이 볼 수 없었다, 리뷰 rs-b1y) 보기 설정·고르기 칸·일괄 삭제·
-    「편집본에 적용」(`_remember_edits`)이고 단추는 보통 단추다(`_selection_buttons`·`_render_bulk_delete_status`). 일괄 삭제
+    「편집본에 적용」(`_remember_edits`)이고 단추는 보통 단추다(`_selection_buttons`·`_render_bulk_delete_status`). 작업 줄은
+    「편집본에 적용」 · 「모두 선택」 · 「선택 ▾」 메뉴(「선택 해제」 · 「선택 행 삭제」 — 안 단추를 누르면 세대
+    `selection_menu_generation_key` 를 올려 메뉴를 닫는다, 2026-11-10 사용자 답 Q-14) · 「표 보기 ▾」 이고 오른쪽 끝은 표 도구 막대
+    자리로 비운다(`toolbar_room_css` — 1600 · 1283 창에서 한 줄, 1283 창에서 필터가 걸리면 「표 보기 · 필터」 가 다음 줄). 일괄 삭제
     확인 글(`_deletion_message`)은 기존 보유대수·비가동 일정 둘만이다 — 호기 지우기는 표 출납(`delete`)이다. 칸을 고칠 때마다
     회차가 돌지만 편집표는 「보기
     적용」 으로 확정한 보기를 그려 편집이 남는다. 제출 처리는 돌려준 함수로 화면이 모든 위젯을 그린 뒤 부른다(`st.rerun()` 으로
@@ -4006,7 +4014,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대수 편집표(`st.form` 안 `st.data_editor` — 첫 칸 공정 표시명 잠금, 달마다 `NumberColumn` 0 이상 `%.2f`, 빈칸 = 0)·저장자·변경
   메모(두 칸은 라벨 줄을 걷고 placeholder 가 이름 — 2026-11-09 상단 띠 재고)·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
   저장 이력 펼침. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
-  `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다. 제목 아래 열 · 빈칸 · 공용 줄은 두지 않는다 — 제목 풍선
+  `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다. 저장 줄(`MANUAL_SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대
+  자리로 비우고 표 앞 띄움이 없다 — 저장 줄 → 표 14px(2026-11-10 사용자 그림 메모 eq-pref). 제목 아래 열 · 빈칸 · 공용 줄은 두지 않는다 — 제목 풍선
   (`MANUAL_INTRO_HELP` + 지금 열 + `MANUAL_COLUMNS_HELP`)이고, 조회기간 밖 저장 칸은 있을 때만 공용 버전 줄 표지다.
   - 편집표 key 는 표가 출발한 version 을 든다(`manual_editor_key` — 제출 회차는 본 version, 그 밖은 그린 저장본 version, 9장
     「본 값과 보이는 칸」). 남의 저장에 거부된 누름의 둘째 누름(`held_profile_conflict`) 회차는 제출 회차여도 그린 저장본 version
@@ -7091,10 +7100,17 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `사용 편집` 토글이 그 자리다(2026-10-26 E2E — 층 상세 표 머리의 「층 전체 보기」 는 2026-11-03 도면 위 「호기 정보」 창으로
   옮기며 걷었다 — 층 목록은 머리 칸 `gap=None` 이라 띄움 24 + 칸 사이 14 = 38px 로 막대 37.1px 바로 위까지다). 날짜 칸의 지우기(✕)도 같다 — Qual
   마감 계산기 월 편집표 앞 띄움(터치 창은 막대가 늘 떠 있어 띄움이 없으면 「오늘」 칸을 누를 수 없다). 오른쪽 끝까지
-  늘어나는 입력 칸(Admin 공용 표시순서·Proc Rename 의 「변경 메모」, HOME 설정 선행 B/O · 선행 입고 · 확보율 보정과
-  가용설비 입력 비가동의 「변경 메모」 — 이름 줄 없이 안내 글이 이름을 말한다, 2026-11-09 사용자 검수 g17 로 메모 줄과 표 사이의
-  빈 알림 칸이 간격을 먹지 않게 되며 붙었다)과 바로 위 CSV 단추(제외 목록)도 같은 띄움을 둔다. 폼 안에서는 띄움과 표를 간격 없는 칸(`gap=None`)
-  하나에 둔다 — 줄 사이 14 + 띄움 24 = 38px 로 막대 바로 위까지다(Cut-off 제출 줄 — 끝에 「표 보기」 팝오버 — 아래도 같다). `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
+  늘어나는 입력 칸(HOME 설정 판정 기준 · 선행 B/O · 선행 입고 · 확보율 보정의 「변경 메모」 — 이름 줄 없이 안내 글이 이름을
+  말한다, 2026-11-09 사용자 검수 g17 로 메모 줄과 표 사이의 빈 알림 칸이 간격을 먹지 않게 되며 붙었다)과 바로 위 CSV
+  단추(제외 목록)도 같은 띄움을 둔다. 폼 안에서는 띄움과 표를 간격 없는 칸(`gap=None`) 하나에 둔다 — 줄 사이 14 + 띄움 24 =
+  38px 로 막대 바로 위까지다(Cut-off 제출 줄 — 끝에 「표 보기」 팝오버 — 아래도 같다). **띄움 대신 막대 자리**: 표 바로 위
+  줄의 오른쪽 끝을 막대 자리(`table_toolbar.toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px, 가장 넓은 막대 112px +
+  8px)로 비우면 입력 칸은 그 앞까지만 늘고 다 들지 못하는 단추는 다음 줄로 내려가, 막대가 그 빈 위에 서므로 표가 줄 바로
+  아래(줄 사이 14px)에 붙는다 — Admin Proc Rename · 표시순서 관리의 저장 줄(표시순서는 CSV · Excel 칸도 막대 자리 앞),
+  가용설비 Preference 입력 비가동 저장 줄(2026-11-10 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」), 설비 마스터 작은
+  편집표 작업 줄(같은 날 답 Q-14). HOME 설정 메모 폼 셋은 같은 날 답 Q-13 「그대로」 라 띄움이다 — 두 갈래를
+  `tests/test_table_toolbar.py` 가 지킨다. 저장 줄과 표 사이에 알림(「바뀐 것이 없습니다」 · 거부)이 서는 회차에는 막대가 그 알림
+  칸 오른쪽 끝 아래쪽에 겹친다(알림 칸에는 누를 것이 없다). `tests/test_table_toolbar.py` 가 `st.dataframe`·`st.data_editor` 문장의 바로 앞 형제(그리지 않는
   대입은 건너뛰고, 표가 `if` 의 첫 문장이면 그 `if` 앞 문장)가 입력·단추·팝오버·토글·날짜 칸을 품으면 띄움을 요구하고,
   띄움 숫자 정의가 이 모듈 하나인지 본다. 형제가 부르는 도우미 함수(같은 파일·`capa_simulation` 에서 들여온 함수, `@st.dialog`
   는 빼고) 안까지 본다 — 위 줄을 `_render_controls()` 같은 도우미로 그리면 그물이 못 봐 필요 단축 일정 진척 보드 표가 「기한
