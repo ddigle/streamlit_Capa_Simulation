@@ -1,4 +1,4 @@
-# Purpose: CSV 내보내기 버튼·표 제목 줄·표 도구 막대 앞 띄움이 한 곳에서만 만들어지는지 지킨다.
+# Purpose: CSV 내보내기·표 제목 줄·표 도구 막대 앞 띄움 · 막대 자리를 한 곳에서만 짓는지 지킨다.
 
 """내보내기 버튼 표기가 갈라지지 않게 막는다.
 
@@ -17,6 +17,8 @@ from capa_simulation.components.table_toolbar import (
     CSV_MIME,
     DOWNLOAD_ICON,
     TABLE_TOOLBAR_CLEARANCE,
+    TABLE_TOOLBAR_ROOM,
+    toolbar_room_css,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -424,3 +426,56 @@ def _owner_line() -> str:
         if line.startswith("TABLE_TOOLBAR_CLEARANCE ="):
             return str(line_no)
     raise AssertionError("table_toolbar.py 에 TABLE_TOOLBAR_CLEARANCE 정의가 없다")
+
+
+# 저장 줄 오른쪽 끝을 표 도구 막대 자리로 비우고 표 앞 띄움을 걷은 폼(2026-11-10 사용자 그림
+# 메모 「저장 버튼과 시트 사이 여백 조정」 — Admin Proc Rename · 표시순서, 가용설비 Preference) →
+# 그 저장 줄 key 이름. 같은 꼴의 HOME 설정 메모 폼은 물음 Q-13 답 「그대로」 라 띄움을 둔다
+# (`HOME_CLEARED_FORMS`).
+ROOM_ROWS: dict[str, str] = {
+    "src/capa_simulation/components/process_rename_management.py": "SAVE_ROW_KEY",
+    "src/capa_simulation/components/display_order_management.py": "SAVE_ROW_KEY",
+    "src/capa_simulation/components/manual_downtime_tab.py": "MANUAL_SAVE_ROW_KEY",
+}
+HOME_PREFERENCE = PROJECT_ROOT / "src/capa_simulation/components/home_preference.py"
+# HOME 설정의 메모 폼 셋(판정 기준 · 선행 B/O 와 선행 입고 공용 편집표 · 확보율 보정) — 띄움 그대로.
+HOME_CLEARED_FORMS = (
+    "render_threshold_editor",
+    "_render_monthly_amount_editor",
+    "_render_execution_editor",
+)
+
+
+def test_the_memo_rows_that_hold_the_toolbar_room_drop_the_clearance() -> None:
+    """세 폼은 표 앞 띄움 없이 저장 줄 오른쪽 끝을 막대 자리로 비운다 — 띄움을 되살리면 저장 줄 →
+    표가 다시 38px 이고, 막대 자리를 빼면 막대가 메모 칸 끝 · CSV · Excel 을 덮는다."""
+    for relative, row_key in ROOM_ROWS.items():
+        text = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+        assert "toolbar_clearance" not in text, relative
+        assert f"key={row_key}" in text, relative
+        if relative.endswith("display_order_management.py"):
+            # CSV · Excel 이 저장 줄 높이에 얹힌 화면 — 도구 칸과 저장 줄이 함께 막대 자리를 비운다.
+            assert text.count("{TABLE_TOOLBAR_ROOM}px") == 2, relative
+        else:
+            assert f"toolbar_room_css({row_key})" in text, relative
+
+
+def test_the_home_memo_forms_keep_the_toolbar_clearance() -> None:
+    """HOME 설정의 메모 폼 셋은 그대로 표 앞 띄움을 둔다(물음 Q-13 답 「그대로」) — 막대 자리 서식은
+    그 화면에 걸리지 않는다."""
+    tree = _tree(HOME_PREFERENCE)
+    found = {
+        node.name: ast.unparse(node).count("toolbar_clearance()")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name in HOME_CLEARED_FORMS
+    }
+    assert found == dict.fromkeys(HOME_CLEARED_FORMS, 1)
+    assert "toolbar_room_css" not in HOME_PREFERENCE.read_text(encoding="utf-8")
+    assert TABLE_TOOLBAR_CLEARANCE == 24
+
+
+def test_the_toolbar_room_covers_the_widest_toolbar() -> None:
+    """막대 자리는 가장 넓은 막대(행을 더하고 지우는 표 — 1600 · 1283 창 112px, 샘플 관측)보다 넓고,
+    서식은 그 수 하나로 줄 오른쪽을 비운다."""
+    assert TABLE_TOOLBAR_ROOM >= 112 + 8
+    assert toolbar_room_css("row") == f".st-key-row {{ padding-right: {TABLE_TOOLBAR_ROOM}px; }}"

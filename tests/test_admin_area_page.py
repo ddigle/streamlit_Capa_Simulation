@@ -19,6 +19,7 @@ from capa_simulation.components.process_rename_management import (
     PROCESS_RENAME_SAVED_MESSAGE,
     PROCESS_RENAME_UNCHANGED_MESSAGE,
 )
+from capa_simulation.components.table_toolbar import toolbar_room_css
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
@@ -831,7 +832,15 @@ render_process_rename_management(repository, ["SAW", "MOLD"])
     assert cells[2].type == "caption" and cells[2].value == "보유 공정 밖 표시명 1건"
 
     marked = prm.heading_row_css(marked=True)
-    assert marked in [str(element.proto.body) for element in app.get("html")]
+    # 제목 줄 서식과 저장 줄 표 도구 막대 자리 서식은 `st.html` 하나로 간다 — 서식만 든 `st.html` 은
+    # 이벤트 칸으로 가므로 한 덩이로 묶는다(표시순서 관리 `DIRECT_EDITOR_STYLE` 과 같은 결).
+    styles = [str(element.proto.body) for element in app.get("html")]
+    assert prm.direct_editor_style(marked=True) in styles
+    assert [body for body in styles if prm.SAVE_ROW_KEY in body] == [
+        prm.direct_editor_style(marked=True)
+    ]
+    assert marked in prm.direct_editor_style(marked=True)
+    assert toolbar_room_css(prm.SAVE_ROW_KEY) in prm.direct_editor_style(marked=True)
     floor = prm.HEADING_MIN_WIDTH + prm.HEADING_MARK_ROOM
     assert f"min-width: min({floor}px, 100%);" in marked
     assert f"min-width: min({prm.HEADING_MIN_WIDTH}px, 100%);" in prm.heading_row_css(marked=False)

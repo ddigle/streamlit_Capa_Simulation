@@ -34,6 +34,7 @@ from capa_simulation.components.equipment_data_workspace import (
     LAST_REMOVED_KEY,
     RESTORE_REQUEST_KEY,
     SELECTION_KEY,
+    selection_menu_generation_key,
 )
 from capa_simulation.components.equipment_master_tab import (
     SAVE_BUTTON_KEY,
@@ -59,6 +60,7 @@ EQUIPMENT_PAGE = PROJECT_ROOT / "app_pages" / "available_equipment_status.py"
 DOWNTIME_FILTER_KEY = "equipment_downtime_view_filter_설비명"
 DOWNTIME_SELECT_MATCHING_KEY = "equipment_downtime_select_matching_v1"
 DOWNTIME_DELETE_SELECTED_KEY = "equipment_downtime_delete_selected_v1"
+DOWNTIME_SELECT_CLEAR_KEY = "equipment_downtime_select_clear_v1"
 DOWNTIME_VIEW_APPLY_KEY = "equipment_downtime_view_apply_v1"
 
 
@@ -341,9 +343,23 @@ def test_the_downtime_small_editor_keeps_the_old_bulk_delete(tmp_path: Path, gri
     app.button(key=DOWNTIME_SELECT_MATCHING_KEY).click().run()
     assert not app.exception, [item.message for item in app.exception]
     assert {key[0] for key in app.session_state[SELECTION_KEY][DOWNTIME_TARGET]} == {machine}
+    menu = selection_menu_generation_key("downtime")
+    assert menu not in app.session_state
+    # 「선택 해제」 는 고른 것을 풀고 메뉴를 열어 둔다 — 세대를 올리지 않는다(올리면 메뉴가 새로
+    # 서며 키보드 초점이 문서 몸통으로 떨어진다).
+    app.button(key=DOWNTIME_SELECT_CLEAR_KEY).click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not app.session_state[SELECTION_KEY].get(DOWNTIME_TARGET)
+    assert menu not in app.session_state
+    app.button(key=DOWNTIME_SELECT_MATCHING_KEY).click().run()
+    assert {key[0] for key in app.session_state[SELECTION_KEY][DOWNTIME_TARGET]} == {machine}
     app.button(key=DOWNTIME_DELETE_SELECTED_KEY).click().run()
     assert f"비가동 일정 {count:,}건 지움" in [item.value for item in app.caption]
     assert not [item for item in app.warning if "지움" in str(item.value)]
+    # 「선택 행 삭제」 는 「선택 ▾」 메뉴 안이다(2026-11-10 사용자 답 Q-14) — 누르면 메뉴 세대가
+    # 올라 브라우저의 열린 메뉴가 닫힌다(그 아래 선 「삭제 확정」 줄을 덮지 않게). 「선택 해제」 와
+    # 달리 닫는다.
+    assert app.session_state[menu] == 1
     # 풍선 끝은 지금 저장 단추를 가리킨다 — 옛 「설비 데이터 저장」(옛 폼 단추)이 아니라 「저장
     # 전 변경」 의 「리비전 저장」 이다(개편 D — Guide 의 글과 같다).
     tail = DELETE_CONFIRM_HELP

@@ -35,7 +35,7 @@ from capa_simulation.components.saved_note import (
     note_placeholder,
     ready_note_field,
 )
-from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_room_css
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -112,6 +112,10 @@ HEADING_TOOLS_KEY = "admin_area_process_rename_heading_tools"
 HEADING_PROFILE_KEY = "process_rename"
 HEADING_MIN_WIDTH = 240
 HEADING_MARK_ROOM = 160
+# 직접 편집 폼의 저장 줄(저장 단추 · 변경 메모). 오른쪽 끝을 표 도구 막대 자리로 비운다 — 메모 칸은
+# 그 앞까지 늘고 막대가 그 빈 위에 서서 표가 저장 줄 바로 아래(줄 사이 14px)에 붙는다(2026-11-10
+# 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」, 설계 규칙 UI-LAY-13).
+SAVE_ROW_KEY = "admin_area_process_rename_save_row"
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
@@ -271,14 +275,15 @@ def _clipboard_dialog(
 
 
 def heading_row_css(*, marked: bool) -> str:
-    """직접 편집 제목 줄의 서식(모듈 머리 `HEADING_BOX_KEY` 설명) — 보유 공정 밖 표지가
+    """직접 편집 제목 줄의 서식 규칙(모듈 머리 `HEADING_BOX_KEY` 설명) — 보유 공정 밖 표지가
     서면(`marked`) 제목 칸 바닥이 그 표지 몫만큼 넓다. 버전 줄은 제목 줄의 둘째
-    칸이다(`render_profile_heading`)."""
+    칸이다(`render_profile_heading`). `<style>` 로 감싸지 않는다 — 부르는 쪽이 저장 줄 서식과 한
+    덩이로 보낸다(`direct_editor_style`)."""
     floor = HEADING_MIN_WIDTH + (HEADING_MARK_ROOM if marked else 0)
     row = f".st-key-{HEADING_ROW_KEY}"
     line = f".st-key-{HEADING_KEY_PREFIX}{HEADING_PROFILE_KEY}"
     version = f'{line} > [data-testid="stElementContainer"]:nth-child(2)'
-    return f"""<style>
+    return f"""
 {row} {{ container-type: inline-size; }}
 {row} > [data-testid="stLayoutWrapper"]:has(> .st-key-{HEADING_BOX_KEY}) {{
   flex: 1 1 0%;
@@ -295,7 +300,14 @@ def heading_row_css(*, marked: bool) -> str:
 @container (max-width: {floor}px) {{
   {line} {{ flex-wrap: wrap; }}
 }}
-</style>"""
+"""
+
+
+def direct_editor_style(*, marked: bool) -> str:
+    """직접 편집 서식 한 벌 — 제목 줄(`heading_row_css`)과 저장 줄 오른쪽 끝 표 도구 막대
+    자리(`SAVE_ROW_KEY`). 서식만 든 `st.html` 은 이벤트 칸으로 가므로 하나로 묶어 한 번 보낸다
+    (표시순서 관리 `DIRECT_EDITOR_STYLE` 과 같은 결)."""
+    return f"<style>{heading_row_css(marked=marked)}{toolbar_room_css(SAVE_ROW_KEY)}\n</style>"
 
 
 def _render_direct_editor(
@@ -327,7 +339,7 @@ def _render_direct_editor(
     사용자 보드 T3 · T7, 설계 규칙 UI-LAY-11 · UI-LAY-03 · UI-TXT-04)."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
-    st.html(heading_row_css(marked=bool(unmatched)))
+    st.html(direct_editor_style(marked=bool(unmatched)))
     with st.container(
         horizontal=True, vertical_alignment="center", gap="small", key=HEADING_ROW_KEY
     ):
@@ -383,8 +395,11 @@ def _render_direct_editor(
     )
     save_status = st.container()
     with st.form("admin_area_process_rename_edit_form"):
-        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
-        with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대 자리로 비운다
+        # (`SAVE_ROW_KEY`).
+        with st.container(
+            horizontal=True, vertical_alignment="bottom", gap="small", key=SAVE_ROW_KEY
+        ):
             submitted = st.form_submit_button(
                 "공용 공정 표시명 저장",
                 icon=":material/save:",
@@ -398,25 +413,22 @@ def _render_direct_editor(
                 label_visibility="collapsed",
             )
         unchanged_note = st.container()
-        # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
-        # 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸 하나다 — 줄 사이 14 + 띄움 24 = 38px 로
-        # 막대 바로 위까지다(폼 안 표의 한 값 — 설계 규칙 4장 「폼 안 알림 칸」).
-        with st.container(gap=None):
-            toolbar_clearance()
-            edited = st.data_editor(
-                editable,
-                hide_index=True,
-                num_rows="dynamic",
-                width="stretch",
-                height=420,
-                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-                placeholder="",
-                column_config={
-                    "공정": st.column_config.TextColumn("공정 (원본)"),
-                    "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
-                },
-                key=EDITOR_KEY,
-            )
+        # 표 앞 띄움을 두지 않는다 — 표 도구 막대는 저장 줄 오른쪽 끝 빈 자리 위에 선다(AGENTS 9장
+        # 「표 도구 막대」, 설계 규칙 4장 「폼 안 알림 칸」 — 저장 줄 → 표 14px).
+        edited = st.data_editor(
+            editable,
+            hide_index=True,
+            num_rows="dynamic",
+            width="stretch",
+            height=420,
+            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+            placeholder="",
+            column_config={
+                "공정": st.column_config.TextColumn("공정 (원본)"),
+                "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
+            },
+            key=EDITOR_KEY,
+        )
     refused = take_refusal(PROCESS_RENAME_SAVE_NAME)
     if refused is not None:
         save_status.error(refused)

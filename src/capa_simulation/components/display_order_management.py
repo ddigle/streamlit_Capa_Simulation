@@ -4,10 +4,12 @@
 
 표 위는 두 줄이다(설계 규칙 UI-LAY-11 — 2026-11-08 사용자 답 d7 · g18). 첫 줄은 「직접 편집」 제목과
 그 옆 공용 버전 줄(`profile_caption.render_profile_heading`) · 범위 고르기 둘, 둘째 줄은 폼 안
-저장 · 변경 메모 줄이고 그 오른쪽 끝에 CSV 다운로드 · Excel 붙여넣기가 함께 선다. 범위 고르기 둘과
-변경 메모는 이름 줄이 없다 — 이름은 접근성 이름으로만 남고, 고르기 둘의 뜻은 「직접 편집」 제목
-풍선(`SCOPE_HELP`), 메모 칸은 안내 글이 말한다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」,
-설계 규칙 UI-TXT-01 · UI-TXT-02).
+저장 · 변경 메모 줄이고 그 오른쪽에 CSV 다운로드 · Excel 붙여넣기가 함께 선다 — 줄 맨 끝은 표 도구
+막대 자리로 비워 두어 표 앞 띄움 없이 표가 그 줄 바로 아래 붙는다
+(`table_toolbar.TABLE_TOOLBAR_ROOM`).
+범위 고르기 둘과 변경 메모는 이름 줄이 없다 — 이름은 접근성 이름으로만 남고, 고르기 둘의 뜻은
+「직접 편집」 제목 풍선(`SCOPE_HELP`), 메모 칸은 안내 글이 말한다(2026-11-09 사용자 규칙 「상단
+여백 · 문구 최소화」, 설계 규칙 UI-TXT-01 · UI-TXT-02).
 
 버전 줄은 사람이 적은 변경 메모(출처)를 실어 길이가 정해져 있지 않다. 서식(`HEADING_ROW_CSS`)이
 제목 칸을 줄 폭에서 고르기 둘 몫을 뺀 만큼까지만 넓히고 버전 줄을 제목 곁에서 여러 줄로 접어, 메모가
@@ -15,12 +17,12 @@
 바닥을 한 줄에 다 담지 못하면 고르기가 다음 줄로 내려앉는다(UI-ACC-02).
 
 CSV · Excel 둘은 파이썬 위젯이라 폼 안에 둘 수 없어(`st.download_button` · `st.button` 은 폼에서
-막힌다) 폼 바로 앞 칸에 그리고, 서식(`ACTION_ROW_CSS`)이 그 칸을 저장 줄 높이의 오른쪽 끝에 얹는다
-— 저장 줄은 그 폭만큼 오른쪽을 비워 두어 창이 좁아 줄이 접혀도 겹치지 않는다. 문서 차례가 폼 앞이라
-키보드 Tab 은 범위 고르기 → CSV → Excel → 저장 → 변경 메모 → 표이고, 보이는 차례(저장 · 메모가
-왼쪽)와 어긋난다. 폼 뒤에 두면 표 안에서 Tab 이 칸마다 옮겨 가 CSV · Excel 이 표의 모든 칸 뒤로
-밀린다(샘플 관측). 결과 알림(「바뀐 것이 없습니다」 · 표시명 경고)은 저장 줄 바로 아래 늘 서 있는
-칸이다(사용자 답 d5).
+막힌다) 폼 바로 앞 칸에 그리고, 서식(`ACTION_ROW_CSS`)이 그 칸을 저장 줄 높이의 막대 자리 앞에
+얹는다 — 저장 줄은 그 폭과 막대 자리만큼 오른쪽을 비워 두어 창이 좁아 줄이 접혀도 겹치지 않는다.
+문서 차례가 폼 앞이라 키보드 Tab 은 범위 고르기 → CSV → Excel → 저장 → 변경 메모 → 표이고, 보이는
+차례(저장 · 메모가 왼쪽)와 어긋난다. 폼 뒤에 두면 표 안에서 Tab 이 칸마다 옮겨 가 CSV · Excel 이
+표의 모든 칸 뒤로 밀린다(샘플 관측). 결과 알림(「바뀐 것이 없습니다」 · 표시명 경고)은 저장 줄
+바로 아래 늘 서 있는 칸이다(사용자 답 d5).
 """
 
 from __future__ import annotations
@@ -54,7 +56,7 @@ from capa_simulation.components.saved_note import (
     note_placeholder,
     ready_note_field,
 )
-from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_ROOM, render_csv_download
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -158,8 +160,11 @@ HEADING_ROW_CSS = f"""
 """
 # 저장 줄에 얹는 CSV · Excel 칸(모듈 설명). 칸 셋의 key 와 서식이다 — 바깥 칸이 기준 자리, 도구 칸은
 # 폼 테두리 안 저장 단추 높이(폼 테두리 · 안쪽 여백 1rem — 변경 메모 칸에 이름 줄이 없어 저장 줄이
-# 폼 맨 위다)의 오른쪽 끝, 저장 줄은 도구 칸 폭(`ACTION_ROW_RESERVE_REM` — CSV 다운로드 · Excel
-# 붙여넣기 둘과 사이, 사내 글꼴이 조금 넓어도 남게)만큼 오른쪽을 비운다.
+# 폼 맨 위다)에서 오른쪽 끝의 표 도구 막대 자리(`TABLE_TOOLBAR_ROOM`) 바로 앞, 저장 줄은 도구 칸
+# 폭(`ACTION_ROW_RESERVE_REM` — CSV 다운로드 · Excel 붙여넣기 둘과 사이, 사내 글꼴이 조금 넓어도
+# 남게)과 막대 자리만큼 오른쪽을 비운다. 막대는 그 빈 위에 서서 표가 저장 줄 바로 아래(줄 사이
+# 14px)에 붙는다(2026-11-10 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」, 설계 규칙
+# UI-LAY-13).
 EDIT_BOX_KEY = "display_order_edit_box"
 EDIT_TOOLS_KEY = "display_order_edit_tools"
 SAVE_ROW_KEY = "display_order_save_row"
@@ -169,11 +174,13 @@ ACTION_ROW_CSS = f"""
 .st-key-{EDIT_BOX_KEY} > [data-testid="stLayoutWrapper"]:has(> .st-key-{EDIT_TOOLS_KEY}) {{
   position: absolute;
   top: 1rem;
-  right: 1rem;
+  right: calc(1rem + {TABLE_TOOLBAR_ROOM}px);
   width: auto;
   z-index: 1;
 }}
-.st-key-{SAVE_ROW_KEY} {{ padding-right: {ACTION_ROW_RESERVE_REM}rem; }}
+.st-key-{SAVE_ROW_KEY} {{
+  padding-right: calc({ACTION_ROW_RESERVE_REM}rem + {TABLE_TOOLBAR_ROOM}px);
+}}
 """
 # 직접 편집 서식 한 벌 — 서식만 든 `st.html` 은 이벤트 칸으로 가므로 하나로 묶어 한 번 보낸다.
 DIRECT_EDITOR_STYLE = f"<style>{HEADING_ROW_CSS}{ACTION_ROW_CSS}</style>"
@@ -289,7 +296,8 @@ def _clipboard_dialog(
 
 
 def _render_edit_tools(profile: GlobalDisplayOrder, csv_bytes: bytes) -> None:
-    """저장 줄 오른쪽 끝에 얹는 CSV 다운로드 · Excel 붙여넣기(모듈 설명 — 폼 바로 앞 칸)."""
+    """저장 줄 오른쪽(막대 자리 앞)에 얹는 CSV 다운로드 · Excel 붙여넣기(모듈 설명 — 폼 바로 앞
+    칸)."""
     with st.container(
         horizontal=True, vertical_alignment="center", gap="small", key=EDIT_TOOLS_KEY
     ):
@@ -386,7 +394,7 @@ def _render_direct_editor(
         _render_edit_tools(profile, csv_bytes)
     with edit_box, st.form("display_order_edit_form"):
         # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다. 정렬 규칙을 쓰는 법은 Admin Area Guide 가
-        # 말한다. 오른쪽 끝의 CSV · Excel 은 폼 바로 앞 칸이다(모듈 설명).
+        # 말한다. 오른쪽의 CSV · Excel 은 폼 바로 앞 칸이다(모듈 설명).
         with st.container(
             horizontal=True, vertical_alignment="bottom", gap="small", key=SAVE_ROW_KEY
         ):
@@ -405,33 +413,30 @@ def _render_direct_editor(
         unchanged_note = st.container()
         # 저장한 회차의 표시명 경고는 다음 회차에 이 칸에 한 번 선다(저장은 곧 `st.rerun()` 한다).
         _render_label_warnings(unchanged_note)
-        # 「변경 메모」 칸 · 오른쪽 끝 CSV · Excel 에 표 도구 막대가 닿지 않게 띄운다(AGENTS 9장
-        # 「표 도구 막대」). 띄움과 표는 간격 없는 칸 하나다 — 줄 사이 14 + 띄움 24 = 38px 로 막대
-        # 바로 위까지다(폼 안 표의 한 값 — 설계 규칙 4장 「폼 안 알림 칸」).
-        with st.container(gap=None):
-            toolbar_clearance()
-            edited = st.data_editor(
-                scope_rules,
-                hide_index=True,
-                num_rows="dynamic",
-                width="stretch",
-                height=460,
-                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-                placeholder="",
-                column_config={
-                    "정렬우선순위": st.column_config.NumberColumn(min_value=1, step=1),
-                    "정렬방식": st.column_config.SelectboxColumn(
-                        options=["사용자지정", "오름차순", "내림차순"],
-                        required=True,
-                    ),
-                    "값표시순서": st.column_config.NumberColumn(min_value=1, step=1),
-                    "활성여부": st.column_config.SelectboxColumn(
-                        options=["Y", "N"],
-                        required=True,
-                    ),
-                },
-                key=f"{DISPLAY_ORDER_EDITOR_KEY}::{selected_page}::{selected_tab}",
-            )
+        # 표 앞 띄움을 두지 않는다 — 표 도구 막대는 저장 줄 오른쪽 끝 빈 자리(CSV · Excel 뒤) 위에
+        # 선다(`ACTION_ROW_CSS`, AGENTS 9장 「표 도구 막대」 — 저장 줄 → 표 14px).
+        edited = st.data_editor(
+            scope_rules,
+            hide_index=True,
+            num_rows="dynamic",
+            width="stretch",
+            height=460,
+            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+            placeholder="",
+            column_config={
+                "정렬우선순위": st.column_config.NumberColumn(min_value=1, step=1),
+                "정렬방식": st.column_config.SelectboxColumn(
+                    options=["사용자지정", "오름차순", "내림차순"],
+                    required=True,
+                ),
+                "값표시순서": st.column_config.NumberColumn(min_value=1, step=1),
+                "활성여부": st.column_config.SelectboxColumn(
+                    options=["Y", "N"],
+                    required=True,
+                ),
+            },
+            key=f"{DISPLAY_ORDER_EDITOR_KEY}::{selected_page}::{selected_tab}",
+        )
     refused = take_refusal(DISPLAY_ORDER_SAVE_NAME)
     if refused is not None:
         save_status.error(refused)

@@ -23,6 +23,7 @@ from capa_simulation.components.equipment_settings_dialog import (
 )
 from capa_simulation.components.process_field import FIELD_KEY as PROCESS_FIELD_KEY
 from capa_simulation.components.sample_data import NO_UNITS_MARK, SAMPLE_TOGGLE_KEY
+from capa_simulation.components.table_toolbar import toolbar_room_css
 from capa_simulation.navigation import (
     EQUIPMENT_SUMMARY_TAB,
     EQUIPMENT_SUMMARY_TAB_KEY,
@@ -757,11 +758,31 @@ def test_the_view_controls_render_for_each_small_editor(tmp_path: Path) -> None:
             )
         ]
         assert row.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
-        (view,) = [
+        menu, view = [
             child for child in row.children.values() if getattr(child, "type", None) == "popover"
         ]
         assert str(view.proto.id).endswith(f"-{prefix}_view_popover")
+        # 「선택 해제」 · 「선택 행 삭제」 는 「모두 선택」 곁 「선택 ▾」 메뉴 하나다(2026-11-10
+        # 사용자 답 Q-14 「한 줄로」) — 단추 key 는 그대로다.
+        assert menu.proto.popover.label == "선택"
+        assert str(menu.proto.id).endswith(f"-equipment_{slug}_selection_menu_v1__g0")
+        assert [(button.label, button.key) for button in menu.button] == [
+            ("선택 해제", f"equipment_{slug}_select_clear_v1"),
+            ("선택 행 삭제", f"equipment_{slug}_delete_selected_v1"),
+        ]
+        assert [
+            child.label
+            for child in row.children.values()
+            if getattr(child, "type", None) == "button"
+        ] == ["편집본에 적용", "모두 선택"]
         assert view.proto.popover.label == "표 보기"
+        # 작업 줄 오른쪽 끝은 표 도구 막대 자리로 비운다 — 표가 줄 바로 아래 붙어 단추가 그 자리에
+        # 닿으면 막대가 덮는다(AGENTS 9장 「표 도구 막대」).
+        action_row = f"equipment_small_{slug}_action_row_v1"
+        assert getattr(row, "key", None) == action_row
+        assert f"<style>{toolbar_room_css(action_row)}</style>" in [
+            str(element.proto.body) for element in app.get("html")
+        ]
         assert app.multiselect(f"{prefix}_columns").value
         # 「보기 적용」 은 고르는 칸이 든 팝오버 안이다(설계 규칙 UI-LAY-03).
         assert [button.label for button in view.button] == ["보기 적용"]

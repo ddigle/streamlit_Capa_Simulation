@@ -26,13 +26,18 @@ from capa_simulation.components.literal_markdown import (
     markdown_safe_tildes,
     quoted,
 )
-from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.table_toolbar import (
+    render_csv_download,
+    toolbar_clearance,
+    toolbar_room_css,
+)
 from capa_simulation.components.table_view_controls import (
     TableView,
     filter_widget_key,
     merge_edited_rows,
     render_table_view_controls,
 )
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.components.write_guard import (
     held_notice,
     is_own_save,
@@ -366,6 +371,14 @@ CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
 SELECT_MATCHING = "select_matching"
 SELECT_CLEAR = "select_clear"
 DELETE_SELECTED = "delete_selected"
+# 작은 편집표 작업 줄의 「선택 ▾」 메뉴(「선택 해제」 · 「선택 행 삭제」 — 2026-11-10 사용자 답
+# Q-14 「한 줄로」). 「선택 행 삭제」 는 누르면 세대를 올려 메뉴를 닫는다 — 열린 채 두면 그 아래
+# 서는 「삭제 확정」 줄을 덮는다. 「선택 해제」 는 메뉴를 열어 둔다 — 세대를 올리면 메뉴가 새로
+# 서며 키보드 초점이 문서 몸통으로 떨어진다(열어 두면 초점이 그 단추에 남고 Esc 로 닫힌다).
+# 라벨이 짧은 것은 1283 창에서도 작업 줄이 표 도구 막대 자리 앞 한 줄에 들게 하려는 것이다
+# (`render_small_editor`).
+SELECTION_MENU_LABEL = "선택"
+SELECTION_MENU_ICON = ":material/check_box:"
 # 저장 이력 「조회 조건」 펼침의 key — 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다.
 HISTORY_FILTER_EXPANDER_KEY = "equipment_history_filters_v1"
 HISTORY_EVENT_START_KEY = "equipment_history_event_start_v3"
@@ -2969,12 +2982,25 @@ def _selectable_editor(
     return edited, checked
 
 
+def selection_menu_generation_key(slug: str) -> str:
+    """작은 편집표 「선택 ▾」 메뉴의 세대 칸(`SELECTION_MENU_LABEL`)."""
+    return f"equipment_{slug}_selection_menu_generation_v1"
+
+
+def _close_selection_menu(slug: str) -> None:
+    """「선택 ▾」 메뉴 「선택 행 삭제」 의 콜백 — 세대를 올려 메뉴를 닫는다(다음 그림이 새
+    메뉴다)."""
+    bump(selection_menu_generation_key(slug))
+
+
 def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | None:
-    """작은 편집표 **위** 작업 줄의 세 단추(2026-09-29 — 작업 단추는 표 위) — 부르는 쪽의 가로 칸
-    안에 선다(「편집본에 적용」 과 한 줄, 설계 규칙 UI-LAY-11). 누른 것의 이름을 돌려준다. 단추
-    값은 표보다 먼저 만들어도 같은 회차의 편집·선택이 함께 들어온다. 필터·삭제·저장의 관계는
-    가용설비 현황 Guide 가 말한다. `delete_locked` 를 주면 「선택 행 삭제」 를 끄고 그 까닭을
-    풍선으로 보인다(낡은 세션의 비가동 일정).
+    """작은 편집표 **위** 작업 줄의 「모두 선택」 단추와 「선택 ▾」 메뉴(「선택 해제」 · 「선택 행
+    삭제」 — 2026-11-10 사용자 답 Q-14) — 부르는 쪽의 가로 칸 안에 선다(「편집본에 적용」 과 한 줄,
+    설계 규칙 UI-LAY-11). 누른 것의 이름을 돌려준다. 단추 값은 표보다 먼저 만들어도 같은 회차의
+    편집·선택이 함께 들어온다. 필터·삭제·저장의 관계는 가용설비 현황 Guide 가 말한다.
+    `delete_locked` 를 주면 「선택 행 삭제」 를 끄고 그 까닭을 풍선으로 보인다(낡은 세션의 비가동
+    일정). 「선택 행 삭제」 는 누르면 메뉴를 닫고 「선택 해제」 는 열어 둔다
+    (`SELECTION_MENU_LABEL`) — 단추 key 는 그대로다.
     """
     matching = st.button(
         "모두 선택",
@@ -2982,18 +3008,26 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
         icon=":material/checklist:",
         help="「표 보기」 의 필터에 맞는 행을 모두 고릅니다.",
     )
-    clear = st.button(
-        "선택 해제",
-        key=f"equipment_{slug}_select_clear_v1",
-        icon=":material/deselect:",
-    )
-    delete = st.button(
-        "선택 행 삭제",
-        key=f"equipment_{slug}_delete_selected_v1",
-        icon=":material/delete:",
-        disabled=delete_locked is not None,
-        help=literal_markdown(delete_locked) if delete_locked is not None else None,
-    )
+    generation = selection_menu_generation_key(slug)
+    with st.popover(
+        SELECTION_MENU_LABEL,
+        icon=SELECTION_MENU_ICON,
+        key=widget_key(f"equipment_{slug}_selection_menu_v1", generation, bare_zero=False),
+    ):
+        clear = st.button(
+            "선택 해제",
+            key=f"equipment_{slug}_select_clear_v1",
+            icon=":material/deselect:",
+        )
+        delete = st.button(
+            "선택 행 삭제",
+            key=f"equipment_{slug}_delete_selected_v1",
+            icon=":material/delete:",
+            disabled=delete_locked is not None,
+            help=literal_markdown(delete_locked) if delete_locked is not None else None,
+            on_click=_close_selection_menu,
+            args=(slug,),
+        )
     if matching:
         return SELECT_MATCHING
     if clear:
@@ -3590,14 +3624,19 @@ def render_small_editor(
                     on_click=_drop_example_rows,
                 )
     selection = _current_selection()
+    action_row = f"equipment_small_{slug}_action_row_v1"
+    st.html(f"<style>{toolbar_room_css(action_row)}</style>")
     # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
     with st.container(key=f"equipment_small_{slug}_editor_v1"):
         # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 그 끝에 「표 보기 ▾」 팝오버(보기 설정 ·
         # 「보기 적용」 — `_editor_view`)가 선다. 접힘 줄을 따로 세우지 않는다(2026-11-09 사용자
-        # 보드 T5 — Cut-off 표와 같은 꼴).
+        # 보드 T5 — Cut-off 표와 같은 꼴). 줄 오른쪽 끝은 표 도구 막대 자리로 비운다 — 표가 줄 바로
+        # 아래 붙어 있어 단추가 그 자리에 닿으면 막대가 덮는다. 다 들지 못하면 「표 보기 ▾」 가
+        # 다음 줄로 내려간다(1600 · 1283 창은 한 줄, 1283 창에서 필터가 걸려 「표 보기 · 필터」 면
+        # 두 줄 — 샘플 관측).
         view_apply_key = f"equipment_{slug}_view_apply_v1"
         downtime = frames[2]
-        with st.container(horizontal=True, gap="small"):
+        with st.container(horizontal=True, gap="small", key=action_row):
             # 적용하지 않은 편집 · 필수 칸을 비운 새 줄이 버려지는 것은 누르기 전에 알아야 해 이
             # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
             apply_clicked = st.button(

@@ -64,7 +64,7 @@ from capa_simulation.components.saved_note import (
     ready_note_field,
 )
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
-from capa_simulation.components.table_toolbar import toolbar_clearance
+from capa_simulation.components.table_toolbar import toolbar_room_css
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     held_profile_conflict,
@@ -125,6 +125,10 @@ MANUAL_SAVED_BY_KEY: Final = "equipment_manual_downtime_saved_by"
 MANUAL_BASE_VERSION_KEY: Final = "equipment_manual_downtime_base_version"
 MANUAL_SAVE_NAME: Final = "equipment_manual_downtime"
 MANUAL_FLASH_KEY: Final = "equipment_manual_downtime_flash"
+# 폼의 저장 줄(저장 단추 · 저장자 · 변경 메모). 오른쪽 끝을 표 도구 막대 자리로 비운다 — 메모
+# 칸은 그 앞까지 늘고 막대가 그 빈 위에 서서 표가 저장 줄 바로 아래(줄 사이 14px)에 붙는다
+# (2026-11-10 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」, 설계 규칙 UI-LAY-13).
+MANUAL_SAVE_ROW_KEY: Final = "equipment_manual_downtime_save_row"
 MANUAL_SAVE_BUTTON: Final = "입력 비가동 저장"
 MANUAL_PROCESS_COLUMN: Final = "공정"
 MANUAL_SAVED_MESSAGE: Final = (
@@ -299,9 +303,13 @@ def _render_editor(
     locked = locked_reason is not None
     submitted_base = seen(MANUAL_BASE_VERSION_KEY)
     frame = manual_editor_frame(profile, processes, months, process_labels, absent=absent)
+    st.html(f"<style>{toolbar_room_css(MANUAL_SAVE_ROW_KEY)}</style>")
     with st.form(MANUAL_FORM_KEY):
-        # 작업 줄(저장·저장자·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
-        with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        # 작업 줄(저장·저장자·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대 자리로
+        # 비운다(`MANUAL_SAVE_ROW_KEY`).
+        with st.container(
+            horizontal=True, vertical_alignment="bottom", gap="small", key=MANUAL_SAVE_ROW_KEY
+        ):
             submitted = st.form_submit_button(
                 MANUAL_SAVE_BUTTON,
                 icon=":material/save:",
@@ -350,12 +358,10 @@ def _render_editor(
             started = submitted_base
         else:
             started = profile.version
-        # 바로 위가 오른쪽 끝까지 늘어나는 변경 메모 줄이다 — 표 도구 막대(표 머리 위 37px)가 그
-        # 끝을 덮지 않게 상자 안 표 앞에 띄운다(AGENTS 9장 「표 도구 막대」). 상자는 간격 없는
-        # 칸이라 줄 사이 14 + 띄움 24 = 38px 다(2026-11-09 사용자 검수 g17 — 폼 안 빈 알림 칸이
-        # 간격을 먹지 않게 되며 메모 줄과 표 사이가 28 → 14px 로 붙었다).
-        with st.container(key=MANUAL_EDITOR_KEY, gap=None):
-            toolbar_clearance()
+        # 표 앞 띄움을 두지 않는다 — 표 도구 막대(표 머리 위 37px)는 저장 줄 오른쪽 끝 빈 자리
+        # 위에 선다(AGENTS 9장 「표 도구 막대」 — 저장 줄 → 표 14px, 폼 안 빈 알림 칸은 간격을
+        # 먹지 않는다).
+        with st.container(key=MANUAL_EDITOR_KEY):
             edited = st.data_editor(
                 frame,
                 key=manual_editor_key(started),
