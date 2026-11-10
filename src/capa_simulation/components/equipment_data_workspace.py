@@ -371,10 +371,12 @@ CANCEL_DELETE_BUTTON_KEY = "equipment_delete_cancel_v1"
 SELECT_MATCHING = "select_matching"
 SELECT_CLEAR = "select_clear"
 DELETE_SELECTED = "delete_selected"
-# 작은 편집표 작업 줄의 「선택 ▾」 메뉴(「선택 해제」 · 「선택 행 삭제」 — 2026-11-10 사용자 답 Q-14
-# 「한 줄로」). 안 단추를 누르면 세대를 올려 메뉴를 닫는다 — 열린 채 두면 그 아래 서는 「삭제 확정」
-# 줄을 덮는다. 라벨이 짧은 것은 1283 창에서도 작업 줄이 표 도구 막대 자리 앞 한 줄에 들게 하려는
-# 것이다(`render_small_editor`).
+# 작은 편집표 작업 줄의 「선택 ▾」 메뉴(「선택 해제」 · 「선택 행 삭제」 — 2026-11-10 사용자 답
+# Q-14 「한 줄로」). 「선택 행 삭제」 는 누르면 세대를 올려 메뉴를 닫는다 — 열린 채 두면 그 아래
+# 서는 「삭제 확정」 줄을 덮는다. 「선택 해제」 는 메뉴를 열어 둔다 — 세대를 올리면 메뉴가 새로
+# 서며 키보드 초점이 문서 몸통으로 떨어진다(열어 두면 초점이 그 단추에 남고 Esc 로 닫힌다).
+# 라벨이 짧은 것은 1283 창에서도 작업 줄이 표 도구 막대 자리 앞 한 줄에 들게 하려는 것이다
+# (`render_small_editor`).
 SELECTION_MENU_LABEL = "선택"
 SELECTION_MENU_ICON = ":material/check_box:"
 # 저장 이력 「조회 조건」 펼침의 key — 위젯이 아니라 브라우저가 펼침을 기억하는 이름이다.
@@ -2986,7 +2988,8 @@ def selection_menu_generation_key(slug: str) -> str:
 
 
 def _close_selection_menu(slug: str) -> None:
-    """「선택 ▾」 메뉴 안 단추의 콜백 — 세대를 올려 메뉴를 닫는다(다음 그림이 새 메뉴다)."""
+    """「선택 ▾」 메뉴 「선택 행 삭제」 의 콜백 — 세대를 올려 메뉴를 닫는다(다음 그림이 새
+    메뉴다)."""
     bump(selection_menu_generation_key(slug))
 
 
@@ -2996,7 +2999,8 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
     설계 규칙 UI-LAY-11). 누른 것의 이름을 돌려준다. 단추 값은 표보다 먼저 만들어도 같은 회차의
     편집·선택이 함께 들어온다. 필터·삭제·저장의 관계는 가용설비 현황 Guide 가 말한다.
     `delete_locked` 를 주면 「선택 행 삭제」 를 끄고 그 까닭을 풍선으로 보인다(낡은 세션의 비가동
-    일정). 메뉴 안 단추는 누르면 메뉴를 닫는다(`SELECTION_MENU_LABEL`) — 단추 key 는 그대로다.
+    일정). 「선택 행 삭제」 는 누르면 메뉴를 닫고 「선택 해제」 는 열어 둔다
+    (`SELECTION_MENU_LABEL`) — 단추 key 는 그대로다.
     """
     matching = st.button(
         "모두 선택",
@@ -3014,8 +3018,6 @@ def _selection_buttons(slug: str, *, delete_locked: str | None = None) -> str | 
             "선택 해제",
             key=f"equipment_{slug}_select_clear_v1",
             icon=":material/deselect:",
-            on_click=_close_selection_menu,
-            args=(slug,),
         )
         delete = st.button(
             "선택 행 삭제",
