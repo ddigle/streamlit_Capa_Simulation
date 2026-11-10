@@ -515,8 +515,8 @@ E2E). 값은 팔레트의 오류 선·면(`GRID_ERROR_LINE`·`GRID_ERROR_FILL`)�
     결정, `components/app_header.py`). 메뉴로 고른 Light·Dark 를 다음 로드에 앱 키로 받아들이는
     규칙은 판올림으로 감춤이 풀릴 때를 위한 안전망으로 남긴다(메뉴의 `System` 은 고른 값으로 치지
     않는다). 규칙 전문은 그 모듈 설명의 「키 규칙」이다.
-- **월별 표 두 컴포넌트에 아직 남은 복제**: 테두리·머리선·경계선은 `monthly_table_base`로
+- **월별 표 두 컴포넌트의 공통분**: 테두리·머리선·경계선은 `monthly_table_base`로
   합쳤고 행 경계 주입도 같은 방식(일괄 주입)이다. 분류 컬럼 폭 계산(`classification_widths`)과
-  `go.Table` 두 벌 조립(`build_split_table_figures`)도 그쪽으로 옮겼다. 남은 것은 두 표가
-  각자 적는 반복 접두 생략 루프와 격자·머리선 도우미 호출 여섯 번(테두리 둘·머리선 둘·
-  경계선 둘) 정도이며 실행 시간·화면 결함은 없다(순수 유지보수 비용).
+  `go.Table` 두 벌 조립(`build_split_table_figures`), 격자 머리 여섯 호출(`add_table_frame`)과
+  반복 접두 생략(`blank_repeated_prefixes`)도 그쪽이다. 표마다 남은 것은 행 모델 · 면색 · 행 그룹
+  가로선(부분합 3단 / 계층 깊이)뿐이다 — 표 구조가 달라서 둔다.
