@@ -1,4 +1,4 @@
-# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭과 위의 서버·통합인증 점검·접속 명단·모듈 상태.
+# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭(끝 모듈 상태)과 위의 서버·통합인증 점검·접속 명단.
 
 from __future__ import annotations
 
@@ -45,6 +45,9 @@ TAB_NAMES = (
     ALERT_TAB_NAME,
 )
 TABS_KEY = "admin_area_active_tab"
+# 안쪽 탭 묶음을 담는 칸 — 그 안 맨 앞에 「모듈 상태」 팝오버 단추를 두면 탭 줄 오른쪽 끝에 선다
+# (`module_status.tools_style`).
+TABS_BOX_KEY = "admin_area_tabs_box"
 
 render_page_header("Admin Area")
 render_page_guide("admin_area", title="Admin Area")
@@ -59,9 +62,14 @@ render_sso_status()
 # S3 접속 명단 편집. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 선다 — 그 밖에는 아무것도
 # 그리지 않는다(개발·사내 PC 화면 그대로). DB 를 열지 않는다.
 render_access_list_admin()
-# 모듈(`modules/<id>/`)이 있을 때만 켜짐·꺼짐·실패와 까닭·마지막 오류를 펼침으로 보인다. 사외와
-# `CAPA_MODULES_ROOT=off` 에서는 아무것도 그리지 않는다(DB 를 열지 않는다).
-render_module_status()
+# 모듈(`modules/<id>/`)이 있을 때만 켜짐·꺼짐·실패 수를 단추 글로 단 팝오버가 안쪽 탭 줄 오른쪽 끝에
+# 서고, 까닭·마지막 오류 표는 그 안이다 — 탭 위에 줄을 세우지 않는다(2026-11-10 보드 Q-6, 설계 규칙
+# UI-LAY-13). 사외와 `CAPA_MODULES_ROOT=off` 에서는 아무것도 그리지 않는다(DB 를 열지 않는다). 탭을
+# 담을 칸을 DB 를 열기 전에 세워 그 안에 먼저 그린다 — DB 를 못 열어 멈추는 회차에도 선다(탭이
+# 없으면 흐름 안 한 줄).
+tabs_box = st.container(key=TABS_BOX_KEY)
+with tabs_box:
+    render_module_status(box_key=TABS_BOX_KEY)
 
 try:
     database_path = str(DUCKDB_PATH.resolve())
@@ -89,9 +97,10 @@ try:
 except BOOTSTRAP_ERRORS:
     available_processes = []
 
-process_rename_tab, display_order_tab, source_quality_tab, alert_tab = stateful_tabs(
-    TAB_NAMES, key=TABS_KEY
-)
+with tabs_box:
+    process_rename_tab, display_order_tab, source_quality_tab, alert_tab = stateful_tabs(
+        TAB_NAMES, key=TABS_KEY
+    )
 
 # 탭 안 상태 알림(Proc Rename 표시명 겹침 `AD-06` · 표시순서 분류값 겹침 `AD-05`)은 그 탭이 열린
 # 회차에만 낸다(닫힌 탭이면 None — `open_tab_name`). 「그 화면으로」 가 그 탭을 연다.

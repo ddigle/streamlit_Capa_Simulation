@@ -795,7 +795,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
   (`$env:CAPA_MODULES_DISABLED="<id>"; uv run --no-sync python -m streamlit run app.py --server.port <포트>` 뒤 `Remove-Item Env:CAPA_MODULES_DISABLED`
   — 지우지 않으면 같은 창에서 나중에 띄운 앱의 모듈이 말없이 꺼진다), WebIDE 는 그 명령에만 거는 bash 줄
   (`CAPA_MODULES_DISABLED=<id> uv run --no-sync python -m streamlit run app.py --server.port <포트>`), CD 는 환경변수 표. 지금 값은 Admin
-  「모듈 상태」 캡션과 이 블록 머리에 보인다.
+  「모듈 상태」 팝오버(안쪽 탭 줄 오른쪽 끝) 안 환경변수 줄과 이 블록 머리에 보인다.
 - 블록은 전문 「적용 · 관문」 에, `전송용 요약` 줄은 압축본 `모듈` 칸(5장 차례 1 · 2)에 옮긴다 — 요약 줄에는 id 가 없다(`m<n>`). 모듈이
   없으면 `모듈 없음`.
 - 새 id 가 보이면(지난 리뷰에 없던 것) 사용자가 등록을 승인했는지 묻는다(1-7 의 3 과 같다).
@@ -945,7 +945,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
    알린다 — 에이전트는 실화면을 열지 않는다(0장).
 
    - 사이드바 「모듈」 상자에 합친 모듈의 화면이 서는가(`"enabled": false` PR 이면 그 모듈 화면이 사라졌는가).
-   - Admin Area 「모듈 상태」 펼침 제목의 켜짐 · 꺼짐 · 실패 수가 3 의 결과와 같은가(5 의 스위치로 끈 모듈은 꺼짐으로 센다).
+   - Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 단추 글의 켜짐 · 꺼짐 · 실패 수가 3 의 결과와 같은가(5 의 스위치로 끈 모듈은 꺼짐으로 센다).
    - 합친 모듈의 화면을 하나씩 열어 오류 카드 없이 서는가.
 
 6. (배포 서버에도 올릴 때) 사용자가 CI/CD 단추를 누른다 — 3 이 「통과」 이거나 실패 모듈을 CD 환경변수 표로 끈 뒤에만(4-5). 누르기

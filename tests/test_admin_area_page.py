@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from alert_marks import active_state, flashed, infos, place_errors, states, successes
 from streamlit.testing.v1 import AppTest
-from streamlit.testing.v1.element_tree import TextInput
+from streamlit.testing.v1.element_tree import Dataframe, TextInput
 
 import capa_simulation.components.write_guard as write_guard
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -1164,7 +1164,8 @@ if st.session_state.get("on_admin", True):
 
 def _module_status_labels(app: AppTest) -> list[str]:
     labels = [item.label for item in app.expander] + [item.label for item in app.status]
-    return [label for label in labels if "모듈 상태" in label]
+    popovers = [str(item.proto.popover.label) for item in app.get("popover")]
+    return [label for label in labels + popovers if "모듈 상태" in label]
 
 
 def test_the_module_run_time_is_whole_milliseconds_with_the_unit_in_the_column(
@@ -1195,11 +1196,13 @@ def test_the_module_run_time_is_whole_milliseconds_with_the_unit_in_the_column(
     assert module_status.run_time_ms(0.0006) == 1
 
 
-def test_the_module_status_stands_above_the_tabs_only_with_modules(
+def test_the_module_status_is_a_popover_at_the_tab_row_only_with_modules(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """모듈 폴더가 있으면(사내) 탭 위 펼침에 상태·까닭·회차 시간이 선다. 없으면(사외) 없다."""
+    """모듈 폴더가 있으면(사내) 안쪽 탭 줄 오른쪽 끝 팝오버에 상태·까닭·회차 시간이 선다 — 수는
+    닫힌 단추 글, 표는 팝오버 안(2026-11-10 보드 Q-6). 탭 위에 펼침 줄이 없다. 없으면(사외) 없다."""
     from capa_simulation import module_failures, module_registry
+    from capa_simulation.components import module_status
 
     script = _page_script(tmp_path / "scenario.duckdb")
     app = AppTest.from_string(script).run(timeout=120)
@@ -1215,7 +1218,15 @@ def test_the_module_status_stands_above_the_tabs_only_with_modules(
     assert not list(app.exception), [element.message for element in app.exception]
 
     assert _module_status_labels(app) == ["모듈 상태 · 켜짐 3 · 꺼짐 1 · 실패 2"]
-    table = app.dataframe[0].value
+    # 탭 위 펼침 줄은 없다 — 팝오버는 탭 묶음과 같은 칸 안 맨 앞이고 서식이 그 칸 오른쪽 위에
+    # 얹는다.
+    expanders = [item.label for item in app.expander] + [item.label for item in app.status]
+    assert not [label for label in expanders if "모듈 상태" in label]
+    (popover,) = [item for item in app.get("popover") if "모듈 상태" in item.proto.popover.label]
+    assert popover.proto.id.endswith(module_status.POPOVER_KEY)
+    (frame,) = popover.get("dataframe")
+    assert isinstance(frame, Dataframe)
+    table = frame.value
     rows = {row["모듈"]: row for row in table.to_dict("records")}
     # 회차 시간은 단위를 칸 이름에 적고 ms 정수로 싣는다(초 소수 둘째 자리면 가벼운 모듈이 0.00).
     assert rows["demo_ok"]["상태"] == "켜짐" and rows["demo_ok"]["마지막 회차 시간(ms)"] == 123
