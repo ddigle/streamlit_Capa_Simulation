@@ -1,5 +1,5 @@
 # Purpose: 제약 시뮬레이션 화면의 「개조 일정」 모드 — 모드 전환·조건 카드·본문·대안 셋·왕복·계획
-# 공유·두 모드 머리 표지·쓰기 없음과 그 모드 그림·글 조각을 본다.
+# 공유·두 모드 UPEH 가정 알림·쓰기 없음과 그 모드 그림·글 조각을 본다.
 
 """「개조 일정」 모드(AppTest).
 
@@ -91,6 +91,7 @@ from capa_simulation.navigation import CONSTRAINT_SIMULATION
 from capa_simulation.persistence.cache import clear_global_securement_threshold_cache
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.services.modification_schedule import (
     ScheduleBatch,
     ScheduleConditions,
@@ -329,9 +330,9 @@ def test_both_modes_raise_the_upeh_assumption_they_do_not_apply_as_a_state_alert
 ) -> None:
     """UPEH 가정을 켠 세션이면 두 모드가 같은 상태 알림 `CS-06` 하나를 낸다 — 두 모드 모두 공식
     소요로 센다. 머리 줄에는 아무것도 서지 않는다(2차 보드 Q2-13 — 입력 비가동 `CS-05` 와 같은 꼴,
-    설계 규칙 UI-NTF-02). 범위에 모드가 들지 않아 모드를 바꿔도 같은 줄이고, 줄의 「그 화면으로」 는
-    UPEH 가정 칸이 있는 공정 Capa 상세다. 기본값(100%)으로 돌리면 「해소」 다. 세션 칸은 첫 회차
-    뒤에 넣는다 — 첫 회차의 시나리오 활성화가 기본값으로 되돌린다."""
+    설계 규칙 UI-NTF-02). 범위는 활성 리비전뿐이라 조회기간 · 모드를 바꿔도 같은 줄이고, 줄의 「그
+    화면으로」 는 UPEH 가정 칸이 있는 공정 Capa 상세다. 기본값(100%)으로 돌리면 「해소」 다. 세션
+    칸은 첫 회차 뒤에 넣는다 — 첫 회차의 시나리오 활성화가 기본값으로 되돌린다."""
 
     def marks(app: AppTest) -> list[Any]:
         return [
@@ -358,6 +359,16 @@ def test_both_modes_raise_the_upeh_assumption_they_do_not_apply_as_a_state_alert
     assert str(impact["full"]).startswith("제약 시뮬레이션 — UPEH 가정 110% 미적용")
     assert (impact["page"], impact["href"]) == UPEH_SCREEN
 
+    # 범위는 활성 리비전뿐이다 — 조회기간을 바꿔도 범위 · 지문이 같아 앞 줄이 「범위 바뀜」 으로
+    # 닫히지 않고 알림창도 다시 뜨지 않는다(입력 비가동 `CS-05` 의 범위를 베끼면 여기서 갈린다).
+    app.session_state[MONTH_RANGE_KEY] = ("2026-03", "2026-06")
+    _ok(app.run())
+    assert app.metric and not marks(app)
+    narrowed = active_state(app, "CS-06")
+    assert narrowed is not None
+    assert (narrowed["scope"], narrowed["fp"]) == (impact["scope"], impact["fp"])
+
+    app.session_state[MONTH_RANGE_KEY] = ("2026-01", "2026-12")
     app.button_group(key=CONSTRAINT_MODE_KEY).set_value("schedule")
     _ok(app.run())
     assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "schedule"
@@ -372,6 +383,10 @@ def test_both_modes_raise_the_upeh_assumption_they_do_not_apply_as_a_state_alert
     assert app.button_group(key=CONSTRAINT_MODE_KEY).value == "schedule"
     assert [metric.label for metric in app.metric] == SCHEDULE_KPIS and not marks(app)
     assert [note["active"] for note in states(app, "CS-06")] == [False]
+    # Guide 의 개조 일정 모드 글도 머리 줄 표지가 아니라 두 모드 같은 알림이라고 적는다.
+    guide = " ".join(GUIDE.read_text(encoding="utf-8").split())
+    assert "UPEH 가정 미적용 · 입력 비가동 알림도 제약 영향 모드와 같습니다" in guide
+    assert "머리 줄 표지" not in guide
 
 
 def test_the_figure_draws_one_bar_per_batch_on_the_wd_coordinate(
