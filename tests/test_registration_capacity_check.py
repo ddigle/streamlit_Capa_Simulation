@@ -353,6 +353,32 @@ def test_the_fix_hint_points_to_where_the_shape_can_be_fixed(
 ) -> None:
     assert expected in check.fix_hint(1)
     assert expected in check.notice(1)
+    # 원천 다시 등록으로만 푸는 꼴인지(자동 갱신 사유 끝 — 검수 보드 sc-runner-word)는 푸는 길
+    # 글과 같은 갈래다.
+    assert check.fixed_at_source == check.fix_hint(1).endswith("다시 등록하세요.")
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        RegistrationCapacityCheck("「STEP 구성」 표가 비었습니다.", empty=("RQ_REQB",)),
+        RegistrationCapacityCheck(
+            "계획 행(계획기초정보여부 Y)이 없는 원천이라 「PKG PLAN」 표가 비었습니다.",
+            empty_plan=("RQ_PKG_PLAN",),
+        ),
+    ],
+)
+def test_empty_route_and_plan_tables_are_fixed_only_at_the_source(
+    check: RegistrationCapacityCheck,
+) -> None:
+    """빈 경로 표 · 빈 계획 표는 원천을 다시 등록해야 풀린다 — 자동 갱신 사유 끝을 「…은
+    남겼습니다」 까지만 쓰는 갈래다(검수 보드 sc-runner-word)."""
+    assert check.fixed_at_source
+    assert check.fix_hint(1).endswith("다시 등록하세요.")
+
+
+def test_a_check_that_did_not_stop_is_not_fixed_at_the_source() -> None:
+    assert not RegistrationCapacityCheck().fixed_at_source
 
 
 def test_a_plain_stop_names_its_table_in_the_memo() -> None:

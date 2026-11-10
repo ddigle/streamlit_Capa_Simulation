@@ -369,7 +369,8 @@ def test_a_registration_whose_capacity_stops_says_how_to_fix_it_in_the_run_recor
     """자동 갱신도 화면 등록과 같은 길로 저장 전에 대당 Capa 를 돌려 본다(2026-11-01 결정 A1).
 
     리비전 1 메모에 꼴·개수가 남고, 실행 기록 사유 끝에 푸는 길(기준 정보 화면 그 표 → 다음
-    리비전)이 붙는다.
+    리비전)이 붙는다. 칸을 고쳐 다음 리비전으로 푸는 꼴이라 끝 꼬리 「…손으로 지정하세요」 는
+    그대로다(원천 다시 등록만 「…은 남겼습니다」 까지 — 검수 보드 sc-runner-word).
     """
     _official_w40(repository)
     fake = FakeBigDataQuery(
@@ -392,7 +393,8 @@ def test_a_plan_only_source_says_how_to_fix_it_in_the_run_record(
 ) -> None:
     """계획 행만 있는 원천은 계산이 0행으로 끝나 「남는 공정이 없어」 갈래로 지정을 건너뛴다 — 그
     갈래에도 등록 점검의 푸는 길(원천에 경로 행을 넣어 다시 등록)을 사유 끝에 한 번 붙인다(검수
-    보드 st-runner-hint)."""
+    보드 st-runner-hint). 푸는 길이 원천 다시 등록이라 끝은 「…은 남겼습니다」 까지다 — 계산이 서지
+    않는 시나리오를 손으로 지정하라고 하지 않는다(검수 보드 sc-runner-word)."""
     _official_w40(repository)
     frame = _source()
     fake = FakeBigDataQuery(
@@ -405,9 +407,11 @@ def test_a_plan_only_source_says_how_to_fix_it_in_the_run_record(
     assert (run.status, run.stage) == (STATUS_PUBLISH_SKIPPED, "judge")
     assert run.reason is not None and "남는 공정이 없어" in run.reason
     hint = "원천에 경로 행을 넣어 다시 등록하세요."
+    kept = "등록한 시나리오 「PSM W41 (SIM-W41)」은 남겼습니다."
     assert run.reason.count(hint) == 1
-    assert run.reason.index(hint) < run.reason.index("손으로 지정하세요.")
-    assert run.reason.endswith("손으로 지정하세요.")
+    assert run.reason.index(hint) < run.reason.index(kept)
+    assert run.reason.endswith(kept)
+    assert "손으로 지정" not in run.reason and "다시 받지 않으니" not in run.reason
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 
 
@@ -416,7 +420,7 @@ def test_a_route_only_source_is_not_designated_and_says_how_to_fix_it(
 ) -> None:
     """경로 행만 있는 원천은 소요가 없어 판정할 공정이 남지 않는다 — 지정하지 않고, 등록 점검이 잡은
     빈 계획 표의 푸는 길(원천에 계획 행을 넣어 다시 등록)을 사유 끝에 붙인다(검수 보드
-    st-route-only)."""
+    st-route-only). 끝은 「…은 남겼습니다」 까지다(검수 보드 sc-runner-word)."""
     _official_w40(repository)
     frame = _source()
     fake = FakeBigDataQuery(
@@ -433,6 +437,8 @@ def test_a_route_only_source_is_not_designated_and_says_how_to_fix_it(
     )
     assert run.reason is not None
     assert run.reason.count("원천에 계획 행을 넣어 다시 등록하세요.") == 1
+    assert run.reason.endswith("등록한 시나리오 「PSM W41 (SIM-W41)」은 남겼습니다.")
+    assert "손으로 지정" not in run.reason
     base = repository.load_revision(str(run.base_revision_id))
     assert (base.revision.note or "").endswith(
         "HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표 RQ_PKG_PLAN)"

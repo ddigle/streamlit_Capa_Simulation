@@ -509,7 +509,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     HOME 칸 방문(공식 잠금)이고 세션이 공식 발행 쌍이 아니면 링크 판정만 세션 스냅샷으로 한 번 더 낸다(제약
     시뮬레이션은 늘 세션 설비 시나리오다 — 캐시된 스냅샷의 거르기뿐).
 - `app_pages/capa_chatbot.py` — 활성 시나리오 Capa 를 근거로 답하는 대화 화면의 답 모양(결론·근거 표·조건과 산식·한계)을
-  대본으로 보여 준다. 설명은 `guides/capa_chatbot.md`. 머리에 배지 줄이 없고 「샘플 데이터」 는 조회 조건 패널 줄이다 — 공통
+  대본으로 보여 준다. 설명은 `guides/capa_chatbot.md` 다 — 답의 네 칸(2026-11-10 보드 Q-9)과 「연결 방식」(오른쪽 카드는 제목과
+  목록만 — 2차 보드 Q2-24)도 거기서 말한다. 머리에 배지 줄이 없고 「샘플 데이터」 는 조회 조건 패널 줄이다 — 공통
   줄을 읽지 않는 화면이라 이 줄이 패널을 세운다(9장 「사이드바·조건 카드·본문」, 2026-11-09 보드 T8).
   - 대본은 `chatbot_samples.py` 한 곳이고 LLM 을 붙일 때 바꾸는 자리도 거기 하나다. 공정 표시명 프로필 버전마다 세션에
     한 번 만든다 — 결론·질문·조건의 공정 이름은 대본이 페이지가 넘긴 `ProcessLabels.label` 로 적고(조사도 그 글자로
@@ -568,9 +569,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이벤트 칸에 늘 한 자리(열렸으면 팝업, 아니면 빈 스타일)를 쓴다 — 계산기 본문은 이벤트 칸에 쓰지 않는다
     (`qual_deadline_calculator.calculator_style_markup`). 그 뒤 기준선 결과 알림 표지 자리(머리 · 본문 프래그먼트 안)가 팝업을
     여닫을 때 밀리지 않는다(`test_qual_deadline_calculator.py` 가 연 회차·닫은 회차의 이벤트 칸 자리 수를 견준다).
-  - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율 · 진척 비교는
-    사이드바 「필요 단축 일정 조건」 카드 맨 위 위아래 두 칸이고(카드는 처음 펼친 채 — 한 번 접으면 기억 칸), 두 칸을 바꾸면
-    본문 프래그먼트(`VIEW_FRAGMENT_KEY` · `_rerun_view`)만 다시 그린다. 본문 프래그먼트는 기준선 목록이 카드가 세운 id 들
+  - **머리 · 조건 카드**(2026-11-08 그림 메모 g03): 머리 소개 줄은 없고 정체성은 Guide 첫 단락이다. 목표 확보율은 사이드바 조회
+    조건 패널 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품 `components/target_level_field.py`, 2차 보드 Q2-26)이고 페이지가
+    팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
+    없는 회차는 같은 자리, 설비 DB 를 못 읽은 회차는 그 앞 「설비 시나리오」 줄이 서지 않아 한 줄만큼 위) — 값 칸을
+    누르면 같은 화면 팝업 호스트(`SHORTENING_DIALOG_HOST`)만 돌아 다섯 목표 라디오가 열리고, 고르면 세션 칸(`SHORTENING_LEVEL_KEY` —
+    위젯 key 가 아니다)에 적고 닫히며 앱 전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트 밖이라 본문만 다시 돌리지 않는다). 진척 비교는
+    사이드바 「필요 단축 일정 조건」 카드 맨 위 칸이고(카드는 처음 펼친 채 — 한 번 접으면 기억 칸), 바꾸면
+    본문 프래그먼트(`VIEW_FRAGMENT_KEY` · `_rerun_view`)만 다시 그린다. 본문 프래그먼트는 회차마다 목표 세션 칸을 읽고, 기준선 목록이 카드가 세운 id 들
     (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
     반영은 자리에 표지를 세우지 않고 상태 알림 `RS-03` ~ `RS-05`(`_report_status_alerts`)만이다 — 짧은 글이 건수, 전문이 뜻 ·
     내역이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07). 본문 맨 위는 KPI 이고 기준 값
@@ -790,9 +796,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `<theme-reopen>`).
   - **색 기준 「필요 단축」**(2026-10-24 결정 — 라디오 셋째 값, `services/space_shortening_layer.py`·
     `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
-    꺼내고(5장 9), 목표 확보율은 사이드바 조회 조건 패널 페이지 칸(`space_shortening_view.LEVEL_SLOT` 1 — 첫 칸은 공용 공정 칸,
+    꺼내고(5장 9), 목표 확보율은 사이드바 조회 조건 패널 페이지 칸(`target_level_field.LEVEL_SLOT` 1 — 첫 칸은 공용 공정 칸,
     2026-11-08 그림 메모 g05)의 이름 줄 + 값 칸(`condition_field` — 칸 key `condition_field_space_target`, 값 칸 key
-    `space_shortening_level_field`, `render_level_field`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
+    `space_shortening_level_field`, `render_level_field` — 필요 단축 일정과 같은 부품 `TargetLevelField`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
     하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 팝업을 열고, 고르면
     세션 칸(`SPACE_SHORT_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 곧바로 닫혀 다시 그린다(HOME 주요공정 히트맵 팝업과 같은 꼴 — 검수
     보드 p-target-form, 옛 전환 단추 다섯 · 한 줄 서식은 걷었다). 배치 편집으로 쉬는 회차에도 값 칸은 잠근 채 서며 까닭은 그 칸 풍선이다. 「단축 없는
@@ -1644,12 +1650,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
     부르는 쪽 몫이다.
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
-    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(「…손으로 지정하세요」 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`)에 무엇이
+    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(등록한 시나리오를 남겼다는 끝 글 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`. 푸는 길이 원천 다시 등록이면(`fixed_at_source`) 끝 글은 「…은 남겼습니다」 까지이고 「…손으로 지정하세요」 꼬리를 달지 않는다 — 검수 보드 sc-runner-word)에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록 · 빈 경로 표(`RQ_UPEH`·
     `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
     2026-11-08 결정 U3)는 원천 다시 등록. 등록이 CS 가 비어 뺀 경로 행 수(`blank_cs_routes` = `BlankCsDrop.route_rows`)를 넘겨, 그
     수가 있으면 그 CS 를 채우라고, 없으면 경로 행을 넣으라고 가른다. 반대로 경로 행만 있는 원천의 빈 계획 표(`RQ_PKG_PLAN` —
-    `_PLAN_TABLES`, 필드 `empty_plan`)도 같은 꼴로 잡는다 — 대당 Capa 는 서고 HOME · 생산 계획 · 표준 목표가 멈추므로 글 · 메모 머리는
+    `PLAN_TABLES`, 필드 `empty_plan`)도 같은 꼴로 잡는다 — 대당 Capa 는 서고 HOME · 생산 계획 · 표준 목표가 멈추므로 글 · 메모 머리는
     `stop_scope` 「HOME · 생산 계획 · 표준 목표 계산」(메모 `HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표 RQ_PKG_PLAN)`), 푸는 길은 원천에 계획 행을 넣어
     다시 등록, 검수 보드 st-route-only)를 적는다.
   - 화면의 저장 결과 칸은 폼 맨 아래 `DB 조회 후 시나리오 저장` 단추 **바로 아래** 늘 서 있는 한 칸이다(탭 맨 위 칸은 스크롤한
@@ -3428,7 +3434,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
   한다 — 닫기(호스트만 도는 회차)는 팝업 프래그먼트의 위젯을 거두지 않아 호스트가 지운다(key 가 열림 값에 달린 팝업은 함수 꼴).
   쓰는 자리: HOME(설정 · 공정 필터 · 주요공정 히트맵) · 기준 정보 붙여넣기 · 표준 목표 붙여넣기 · Qual 마감 계산기 · 공식 지정 ·
-  Space(캔버스 편집 · 필요 단축 보기 목표 확보율). 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
+  Space(캔버스 편집 · 필요 단축 보기 목표 확보율) · 필요 단축 일정 목표 확보율(Qual 마감 계산기와 한 호스트). 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
 - `src/capa_simulation/components/process_field.py` — 공용 공정 칸의 화면 조각(값 칸 + 타일 판 팝업 — `process_field_assets`,
   2026-11-08 답 P1 · P2)과 머리 띠 칩 · 화면 탭 표지의 글 · data. 여러 개 따라감은 `render_process_filter(options, screen=, labels=)`
   가 걸 공정을 돌려주고(산출 결과 셋 · 가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름은
@@ -4134,8 +4140,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     값)로 세션 칸 `GAP_SHEET_XLSX_MEMO_KEY` 에 기억한다 — 칸 누름 · 같은 조건 회차는 짓지 않는다(새 `st.cache_*` 없음). 일정 미정 · 사용기준
     밖은 Main 과 같은 상태 알림(`EQ-20` · `EQ-22` — `equipment_explorer.report_unit_notices`)이고, Static 값으로 채운 공정은 한쪽
     공정 알림 `EQ-06` 의 전문이 말한다(`CROSS_CHECK_FALLBACK_HELP`).
-- `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드 — 맨 위 위아래 두 칸 `목표 확보율`·
-  `진척 비교`(그림 메모 g03, 본문 프래그먼트는 기준선 목록이 카드에 세운 것과 다르면 앱 전체 회차로 올린다 — `_Plan.shown_baselines`
+- `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조회 조건 패널 줄 `목표 확보율` — 화면 팝업
+  호스트 `SHORTENING_DIALOG_HOST` 와 줄 `LEVEL_FIELD` 를 여기 두고 페이지가 세운다, 2차 보드 Q2-26 · 조건 카드 — 맨 위 `진척 비교`(그림
+  메모 g03, 본문 프래그먼트는 기준선 목록이 카드에 세운 것과 다르면 앱 전체 회차로 올린다 — `_Plan.shown_baselines`
   · `_view_choices`) · 공정 칸은 이름 줄 + 고른 값 한 줄 팝오버(`PROCESS_POPOVER_KEY` — 「Wafer Saw 외 2개」, 처음 고른 공정 ·
   둘 이상이면 풍선이 전체 목록, 안이 다중 선택 칸 `SHORTENING_PROCESS_KEY` — 2026-11-09 사용자 검수 g03-2), 상태 알림
   `RS-03` ~ `RS-05`(자리 표지 없음), KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
@@ -4144,6 +4151,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —
   묶음 폭이 이름 칸 + 결과 칸 + 여백(진척 447px · 호기 341px)보다 좁으면 붙박지 않고 줄 전체가 같이 구른다(창 폭이 아니라 묶음
   폭이라 사이드바를 펴도 따라간다). 멈춘 회차 조건 카드는 표지 「공정 · 고를 수 없음」 한 줄이다(g4-22).
+- `src/capa_simulation/components/target_level_field.py` — 필요 단축 목표 확보율의 조회 조건 패널 줄(이름 줄 + 값 칸, 패널 둘째 페이지
+  칸 `LEVEL_SLOT`)과 다섯 목표 라디오 팝업 한 벌(`TargetLevelField`). Space 「필요 단축」 보기와 필요 단축 일정이 같은 부품 · 같은 다섯
+  값 · 같은 세션 저장(화면마다 세션 칸 하나 — 공용 프로필에 쓰지 않는다)으로 쓰고(검수 보드 p-target-form · 2차 보드 Q2-26), 팝업은
+  그 화면 팝업 호스트가 연다(여는 콜백은 호스트만, 고르면 `finish` 로 앱 전체 한 번).
 - `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
@@ -6518,7 +6529,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
   카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
   계산이 멈춘 회차에도 선다, 3장 `home.py`. 제약 시뮬레이션 「제약 시뮬레이션 조건」(맨 위가 모드 전환 — 2026-11-08 그림 메모 g12)과
-  필요 단축 일정 「필요 단축 일정 조건」(맨 위가 본문에서 옮겨 온 목표 확보율 · 진척 비교 — g03), 구현 중 화면에서 옮긴
+  필요 단축 일정 「필요 단축 일정 조건」(맨 위가 본문에서 옮겨 온 진척 비교 — g03, 목표 확보율은 조회 조건 패널 줄 — 2차 보드 Q2-26), 구현 중 화면에서 옮긴
   「Dynamic Capa 조건」 · 「재공 현황 조건」 · 「<지표> 실적 조건」(본문에 있을 때처럼 조건이 첫 화면에 — 2026-11-10 보드 Q-7)도
   처음 펼친 채 서고 한 번 접으면 기억 칸을 따른다 — `condition_card(default=True)`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 조회
   조건 패널 바로 밑, 카드 **위**에 따로 선다 — 펼친 카드(약 370px) 밑이면 1280×800 · 1500×950 사이드바 첫 화면 밖이다(3장
@@ -6555,7 +6566,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   2차 화면(필요 단축 일정 · 표준 목표 · Static 대비 일정)은 아직 카드 칸(2026-11-08 답 P1). 행을 펼치는 「상세」 토글은 카드 자리이고,
   공정 Capa 상세의 「제품별 소요대수」·「분류」·「구획」(①~④ 접기, 2026-10-22 「소요대수처럼」)만 사용자 요청에 따른
   예외로 본문 표 도구 줄이다. Space 「필요 단축」 보기의 조작은 2026-10-24 결정 D6 의 도면 위 본문 조작 줄을 두 번에 걸쳐
-  사이드바로 옮겼다(예외) — 목표 확보율은 2026-11-08 그림 메모 g05 로 조회 조건 패널 줄, 「단축 없는 호기 흐리게」 와 기준 달 줄은
+  사이드바로 옮겼다(예외) — 목표 확보율은 2026-11-08 그림 메모 g05 로 조회 조건 패널 줄(필요 단축 일정의 목표 확보율도 같은 부품 · 같은
+  자리 — 2차 보드 Q2-26), 「단축 없는 호기 흐리게」 와 기준 달 줄은
   2026-11-09 사용자 검수 g05(「페이지 상단 … 3줄도 다른 위치로」)로 `Space 조건` 카드의 「색 기준」 밑(필요 단축 기준의 그룹 체크
   자리)이다. 제약 시뮬레이션 모드 전환 「제약 영향 | 개조 일정」 도 예외로 조건 카드
   맨 위다(카드에 설 칸을 바꾸는 전환 — 그림 메모 g12). 제약 시뮬레이션 「비중 배분 비교」 도 예외로 조건 카드 끝
@@ -6771,8 +6783,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `calculation_stop_tables` 이고 사본 진단 `scripts/benchmark_home.py` 가 그 이름으로 계약 표 이름을 되찾는다), DB 잠금 · 읽기 실패 · 표 자체가
   깨진 꼴(컬럼 · 월 형식 · 연결 키)과 편집표 밖의 표는 None 이라 예전 꼴이다. 경로 표가 빈 리비전(계획 행만 있는 원천)이 조회기간을
   정하다 멈춘 글(「RQ_REQB에 선택할 생산계획년월 데이터가 없습니다」 꼴)은 모든 화면이 지나는 `bootstrap_error_message` 가
-  「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.」 로 바꾼다(`empty_route_table_stop` — 경로 표 셋, 이름은 등록 점검과 한
-  사전 `scenario_registration.ROUTE_TABLES`, 사본 진단은 그 글 꼴로 표를 되찾는다 — 검수 보드 st-month-text). 계획 표 · 측정률 표의 빈 표 글은 그대로다. 화면을 그리는 자리의 상태 알림도 고칠 입력이 다른 화면이면 같은 원칙이다(2026-11-05 전후 그림 보드 답 — 재공 현황
+  「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.」 로 바꾼다(`empty_source_table_stop` — 경로 표 셋, 이름은 등록 점검과 한
+  사전 `scenario_registration.ROUTE_TABLES`, 사본 진단은 그 글 꼴로 표를 되찾는다 — 검수 보드 st-month-text). 계획 표가 빈 리비전(경로 행만 있는 원천 —
+  HOME · 생산 계획 · 표준 목표가 멈춘다)도 같은 꼴 「「PKG PLAN」 표가 비어 계산이 멈춥니다 — …」 다(`scenario_registration.PLAN_TABLES`, 두 사전을
+  합친 `EMPTY_SOURCE_TABLES` — 2차 보드 Q2-27). 측정률 표의 빈 표 글은 그대로다(비어도 계산이 선다). 화면을 그리는 자리의 상태 알림도 고칠 입력이 다른 화면이면 같은 원칙이다(2026-11-05 전후 그림 보드 답 — 재공 현황
   일부 주차만 빈 `WIP-04` → 표준 목표, `alerts.state(goto=)`). 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
   알림창이 뜨고(해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다), 그 Alarm 줄이 없으면(보관 끝) 알림창 없이 다시 세운다(`keep`). 짧은 글(`text`)은
   무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·
@@ -6928,7 +6942,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   settings · process_filter · key_process 셋을 열고(HOME 설정만 `close_to_app`, 설정 팝업은 `HomeSettingsInputs`(세션) + 프로필
   다시 읽기, 호스트 key 는 `home_state.HOME_DIALOG_HOST_KEY` — 두 모듈이 같은 값으로 각자 만든다), 기준 정보
   (`reference_data_dialog_host` — `month_editor.paste_dialog(host=)` · `paste_widget_keys`, 그리드 자리 뒤 · 「변경사항 적용」 앞에서
-  매 앱 전체 회차), 표준 목표 · Qual 마감 계산기 · 공식 지정 · Space(캔버스 편집 + 필요 단축 보기 목표 확보율 — 한 호스트가
+  매 앱 전체 회차), 표준 목표 · 필요 단축 일정(Qual 마감 계산기 + 목표 확보율 — `required_shortening_panel.SHORTENING_DIALOG_HOST`
+  한 호스트, 2차 보드 Q2-26) · 공식 지정 · Space(캔버스 편집 + 필요 단축 보기 목표 확보율 — 한 호스트가
   `others=` 로 함께 연다). 지킬 것 둘: ① 공용 저장값(DB 현행값 · 공용 프로필)은
   팝업 본문에서 다시 읽는다 — 호스트만 도는 여는 회차의 값은 그 화면의 마지막 앱 전체 회차의 것이라 그 값으로 만든 양식을
   되붙이면 남의 저장을 덮는다. ② `render(widget_keys=)` 에 팝업마다 입력 위젯 key 를 빠짐없이 준다 — 닫기는 팝업 프래그먼트의

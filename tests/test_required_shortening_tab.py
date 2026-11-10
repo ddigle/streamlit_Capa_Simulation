@@ -36,6 +36,7 @@ from streamlit.testing.v1 import AppTest
 import capa_simulation.components.required_shortening_panel as required_shortening_panel
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_shortening_panel import (
+    LEVEL_FIELD,
     MATCH_RULE_HELP,
     PROCESS_FIELD_EMPTY,
     PROCESS_POPOVER_KEY,
@@ -235,6 +236,22 @@ def _assert_basis_beside_the_mark(app: AppTest) -> None:
     assert basis[:-1] == mark[:-1] and mark[-1] < basis[-1]
 
 
+def _choose_level(app: AppTest, level: float) -> AppTest:
+    """사이드바 조회 조건 패널의 목표 확보율 값 칸 → 팝업 라디오(2차 보드 Q2-26 — Space 「필요
+    단축」 보기와 같은 부품). 고르면 팝업이 닫히고 그 목표로 다시 그린다."""
+    app.button(key=LEVEL_FIELD.field_key).click().run()
+    assert not app.exception, [element.message for element in app.exception]
+    app.radio(key=LEVEL_FIELD.pick_key).set_value(level).run()
+    assert not app.exception, [element.message for element in app.exception]
+    return app
+
+
+def _level_field(app: AppTest) -> tuple[str, bool]:
+    """사이드바 목표 확보율 값 칸의 (글, 잠김) — 패널 줄은 하나다."""
+    (field,) = [item for item in app.sidebar.button if item.key == LEVEL_FIELD.field_key]
+    return str(field.label), bool(field.disabled)
+
+
 def _sidebar_block_paths(app: AppTest, keys: tuple[str, ...]) -> dict[str, list[str]]:
     """사이드바에서 그 key 위젯까지 지나는 블록 종류(바깥 → 안 — `expander` · `column` …)."""
     found: dict[str, list[str]] = {}
@@ -276,19 +293,25 @@ def test_the_page_draws_kpis_the_plan_summary_and_process_cards(tmp_path: Path) 
     # 호기 줄은 한 줄이다 — 늘어난 환산대수 줄과 「(기여 …)」 는 줄에 없고 풍선에만 있다.
     assert 'class="shk-unit"' in body
     assert "shk-gain" not in body and "(기여 " not in body
-    # 조건 카드에 볼 것(목표 확보율 · 진척 비교)과 거르는 조건(기간 · 공정)이 모두 선다 — 본문 머리
-    # 줄에 고르는 칸이 없다(그림 메모 g03).
+    # 목표 확보율은 사이드바 조회 조건 패널 줄(값 칸 + 팝업 — Space 와 같은 부품, 2차 보드 Q2-26),
+    # 진척 비교와 거르는 조건(기간 · 공정)은 조건 카드다 — 본문 머리 줄에 고르는 칸이 없다(그림
+    # 메모 g03).
+    assert _level_field(app) == ("110%", False)
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.1
     sidebar_selects = [widget.label for widget in app.sidebar.selectbox]
-    assert sidebar_selects[:4] == ["목표 확보율", "진척 비교", "시작 월", "끝 월"]
-    # 카드는 처음 펼친 채 서고(설계 규칙 UI-LAY-06 — 옮겨 온 칸이 첫 화면에 보이게), 두 칸은 카드
-    # 폭을 다 쓰는 위아래 칸이다 — 나란한 반 칸이면 기준선 라벨(「저장일 · 이름」)의 끝이
-    # 잘렸다.
+    assert "목표 확보율" not in sidebar_selects
+    assert sidebar_selects[:3] == ["진척 비교", "시작 월", "끝 월"]
+    # 카드는 처음 펼친 채 서고(설계 규칙 UI-LAY-06 — 옮겨 온 칸이 첫 화면에 보이게), 진척 비교는
+    # 카드 폭을 다 쓰는 칸이다 — 반 칸이면 기준선 라벨(「저장일 · 이름」)의 끝이 잘렸다. 목표 값
+    # 칸은 카드 밖(패널)이다.
     assert app.session_state[f"{CONDITION_CARD_PREFIX}shortening"] is True
-    paths = _sidebar_block_paths(app, (SHORTENING_LEVEL_KEY, SHORTENING_COMPARE_KEY))
-    assert paths[SHORTENING_LEVEL_KEY] == paths[SHORTENING_COMPARE_KEY], paths
-    assert "column" not in paths[SHORTENING_LEVEL_KEY], paths
+    paths = _sidebar_block_paths(app, (LEVEL_FIELD.field_key, SHORTENING_COMPARE_KEY))
+    assert "column" not in paths[SHORTENING_COMPARE_KEY], paths
+    card = paths[SHORTENING_COMPARE_KEY][0]
+    assert card not in paths[LEVEL_FIELD.field_key], paths
     assert "공정 (표시순서)" in {widget.label for widget in app.sidebar.multiselect}
     assert not {"목표 확보율", "진척 비교"} & {widget.label for widget in app.main.selectbox}
+    assert not [item for item in app.main.button if item.key == LEVEL_FIELD.field_key]
     downloads = {str(button.key) for button in app.get("download_button")}
     assert {
         "equipment_shortening_units_csv",
@@ -372,7 +395,7 @@ def test_the_page_offers_three_csvs_with_the_unit_schedule(tmp_path: Path) -> No
     assert set(months[LEVEL_COLUMN]) == {"110"}
 
     # 목표를 바꾸면 고른 목표 파일이 따라 바뀌고, 목표 전체 파일은 그대로다.
-    high = app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
+    high = _choose_level(app, 1.3)
     assert not high.exception
     _, high_units = _csv(high, "equipment_shortening_units_csv")
     assert set(high_units[LEVEL_COLUMN]) == {"130"}
@@ -383,12 +406,12 @@ def test_the_page_offers_three_csvs_with_the_unit_schedule(tmp_path: Path) -> No
 
 def test_switching_the_target_level_changes_the_result_without_errors(tmp_path: Path) -> None:
     app = _run(_database(tmp_path))
-    low = app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(0.9).run()
+    low = _choose_level(app, 0.9)
     assert not low.exception
     low_body = _html(low)
     low_cards = _cards(low)
 
-    high = low.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
+    high = _choose_level(low, 1.3)
     assert not high.exception
     high_body = _html(high)
     assert "과부족 (목표 130%)" in high_body
@@ -459,7 +482,7 @@ def test_the_process_filter_narrows_the_cards(tmp_path: Path) -> None:
     assert not filtered.exception
     assert _cards(filtered) == [chosen]
     # 고른 공정은 목표를 채워도 카드가 선다(「목표 충족」 배지).
-    satisfied = filtered.selectbox(key=SHORTENING_LEVEL_KEY).set_value(0.9).run()
+    satisfied = _choose_level(filtered, 0.9)
     assert _cards(satisfied) == [chosen]
     clear_equipment_repository()
 
@@ -674,6 +697,58 @@ def test_an_empty_fleet_explains_the_empty_card(tmp_path: Path) -> None:
     assert not app.info
     assert "등록된 호기가 없습니다." in [str(item.value) for item in app.main.caption]
     assert not _cards(app)
+    # 목표 확보율 패널 줄은 멈춘 회차에도 같은 자리에 선다(데이터를 읽기 전에 세운다 — 설계 규칙
+    # UI-PRF-03, 2차 보드 Q2-26).
+    assert _level_field(app) == ("110%", False)
+    clear_equipment_repository()
+
+
+def test_the_target_is_a_panel_value_field_that_opens_a_picker_like_space(tmp_path: Path) -> None:
+    """목표 확보율은 Space 「필요 단축」 보기와 같은 부품이다(2차 보드 Q2-26) — 패널 줄 「목표
+    확보율」 + 값 칸, 누르면 이 화면 팝업 호스트가 다섯 목표 라디오를 열고, 고르면 곧바로
+    닫히며(열림 칸 · 라디오 값을 지운다) 그 목표로 다시 그린다. 값은 세션 칸이다(공용 프로필에 쓰지
+    않는다)."""
+    from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
+
+    app = _run(_database(tmp_path))
+    assert not app.exception
+    assert "목표 확보율" in [str(item.value) for item in app.sidebar.caption]
+
+    app.button(key=LEVEL_FIELD.field_key).click().run()
+    assert not app.exception
+    assert app.session_state[SHORTENING_DIALOG_HOST.open_key] == LEVEL_FIELD.dialog
+    picker = app.radio(key=LEVEL_FIELD.pick_key)
+    assert picker.value == 1.1
+    assert list(picker.options) == ["90%", "100%", "110%", "120%", "130%"]
+
+    picker.set_value(1.3).run()
+    assert not app.exception
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.3
+    assert SHORTENING_DIALOG_HOST.open_key not in app.session_state
+    assert LEVEL_FIELD.pick_key not in app.session_state
+    assert _level_field(app) == ("130%", False)
+    assert "목표 130% 기준" in _html(app)
+    clear_equipment_repository()
+
+
+def test_a_target_from_space_or_a_stale_session_value_is_shown_in_the_field(
+    tmp_path: Path,
+) -> None:
+    """Space 「필요 단축 일정에서 이 공정 보기」 가 적은 목표(세션 칸)를 값 칸이 그대로 보이고, 다섯
+    가운데 하나가 아닌 값은 110% 로 되적는다."""
+    database_path = _database(tmp_path)
+    app = AppTest.from_string(_script(database_path), default_timeout=120)
+    app.session_state[SHORTENING_LEVEL_KEY] = 0.9
+    app.run()
+    assert not app.exception
+    assert _level_field(app) == ("90%", False)
+    assert "목표 90% 기준" in _html(app)
+
+    app.session_state[SHORTENING_LEVEL_KEY] = 0.75
+    app.run()
+    assert not app.exception
+    assert _level_field(app) == ("110%", False)
+    assert app.session_state[SHORTENING_LEVEL_KEY] == 1.1
     clear_equipment_repository()
 
 
@@ -945,7 +1020,7 @@ def test_changing_the_filter_saves_it_for_every_new_session(tmp_path: Path) -> N
     assert stored.version == 2
 
     # 목표 확보율은 공용 설정이 아니다 — 바꿔도 쓰지 않는다.
-    app = app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(0.9).run()
+    app = _choose_level(app, 0.9)
     assert _profile(database_path).version == 2
 
     other = _run(database_path)
@@ -1387,7 +1462,7 @@ def test_a_worsened_first_order_without_a_baseline_says_the_order_it_used(tmp_pa
 
 def test_the_card_order_follows_the_board_order(tmp_path: Path) -> None:
     app = _run(_database(tmp_path))
-    app = app.selectbox(key=SHORTENING_LEVEL_KEY).set_value(1.3).run()
+    app = _choose_level(app, 1.3)
     app = app.selectbox(key=BOARD_ORDER_KEY).set_value(ORDER_LARGEST_GAP).run()
 
     assert not app.exception, [element.message for element in app.exception]

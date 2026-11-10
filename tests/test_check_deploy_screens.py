@@ -1857,7 +1857,6 @@ def test_the_drawer_head_explains_a_difference_only_by_the_bundle_surplus() -> N
         ("src/capa_simulation/components/equipment_data_workspace.py", '_TARGETS = ("설비 마스터"'),
         ("src/capa_simulation/components/shortening_progress_panel.py", '"진척 비교",'),
         ("src/capa_simulation/components/shortening_progress_panel.py", '"비교 안 함"'),
-        ("src/capa_simulation/components/required_shortening_panel.py", '"목표 확보율",'),
         # 가용설비 현황 탭 라벨은 사이드바(설비 시나리오 줄을 세우는 탭)와 함께 `navigation` 에
         # 있다(2026-10-24 두 탭 개편 — RawData 는 설비 마스터 탭).
         (
@@ -3920,12 +3919,16 @@ def test_the_constraint_simulation_contract_matches_the_app() -> None:
 
 
 def test_the_shortening_card_contract_matches_the_app() -> None:
-    """진척 비교 · 목표 확보율은 필요 단축 일정 사이드바 조건 카드 맨 위다(2026-11-08 그림 메모
-    g03) — 항목이 펴는 카드 key 가 페이지가 세우는 카드와 같은지 본다."""
+    """진척 비교는 필요 단축 일정 사이드바 조건 카드 맨 위이고(2026-11-08 그림 메모 g03) 목표
+    확보율은 그 위 조회 조건 패널 줄의 값 칸이다(2차 보드 Q2-26) — 항목이 펴는 카드 key 와 견주는
+    값 칸 key 가 앱과 같은지 본다."""
+    from capa_simulation.components.required_shortening_panel import LEVEL_FIELD
+
     page = _text(PROJECT_ROOT / "app_pages" / f"{screens.SHORTENING_PAGE}.py")
     name = re.search(r'condition_card\("필요 단축 일정 조건", name="([^"]+)"', page)
     assert name is not None
     assert screens.SHORTENING_CARD_KEY == f"{screens.CONDITION_CARD_PREFIX}{name.group(1)}"
+    assert screens.SHORTENING_LEVEL_FIELD_KEY == LEVEL_FIELD.field_key
 
 
 def test_the_constraint_mode_contract_matches_the_app() -> None:

@@ -69,9 +69,10 @@ ROUTE_TABLES: Final = {
 }
 # 원천의 계획 행(계획기초정보여부 Y)에서만 나오는 표 → 화면 이름(생산 계획 화면의 탭 이름). 경로
 # 행만 있는 원천이면 빈다 — 대당 Capa · 소요대수는 서지만(소요 0) 이 표의 달로 조회기간을 정하는
-# HOME · 생산 계획 · 표준 목표가 내부 표 이름 글로 처음 멈춘다. 경로 표와 따로 둔다 — 빈 경로 표의
-# 까닭 가르기(`_empty_fix`)는 경로 표 셋의 수로 가른다.
-_PLAN_TABLES: Final = {"RQ_PKG_PLAN": "「PKG PLAN」"}
+# HOME · 생산 계획 · 표준 목표가 조회기간 자리에서 처음 멈춘다(화면 글은 경로 표와 같은 꼴 —
+# `page_bootstrap.empty_source_table_stop`). 경로 표와 따로 둔다 — 빈 경로 표의 까닭
+# 가르기(`_empty_fix`)는 경로 표 셋의 수로 가른다.
+PLAN_TABLES: Final = {"RQ_PKG_PLAN": "「PKG PLAN」"}
 # 빈 계획 표가 멈추는 화면 — 알림 · 메모의 머리. 경로 표 · 기준정보 꼴은 대당 Capa 계산이 멈춘다.
 _PLAN_STOP_SCOPE: Final = "HOME · 생산 계획 · 표준 목표 계산"
 _CAPACITY_STOP_SCOPE: Final = "대당 Capa 계산"
@@ -90,7 +91,7 @@ class RegistrationCapacityCheck:
     없음)다. 멈추지 않았으면 둘 다 None 이다. `empty` 는 계산 화면이 행을 읽어야 서는데 빈 경로 표
     (`ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다. `blank_cs_routes` 는
     CS 가 비어 파생에서 뺀 경로 행 수로, 빈 경로 표의 까닭(원천에 경로 행이 없나, 있는데 CS 가
-    비었나)과 고칠 곳을 가른다. `empty_plan` 은 빈 계획 표(`_PLAN_TABLES` — 경로 행만 있는 원천)다 —
+    비었나)과 고칠 곳을 가른다. `empty_plan` 은 빈 계획 표(`PLAN_TABLES` — 경로 행만 있는 원천)다 —
     그때 멈추는 것은 대당 Capa 가 아니라 HOME · 생산 계획 · 표준 목표다(`stop_scope`).
     """
 
@@ -135,6 +136,18 @@ class RegistrationCapacityCheck:
         if self.empty_plan:
             return f"{self.stop_scope} 멈춤(빈 표 {' · '.join(self.empty_plan)})"
         return f"대당 Capa 계산 멈춤({self.table or '기준정보'})"
+
+    @property
+    def fixed_at_source(self) -> bool:
+        """푸는 길이 원천 다시 등록인가 — 빈 경로 표 · 빈 계획 표 · 모듈수 · 표 자체가 깨진
+        꼴(`fix_hint` 가 「…다시 등록하세요」 로 끝나는 갈래). 그 리비전은 앱에서 고쳐 지정할 길이
+        없어 자동 갱신 사유 끝을 「…은 남겼습니다」 까지만 쓴다(검수 보드 sc-runner-word). 멈추지
+        않았으면 거짓이다."""
+        if not self.stopped:
+            return False
+        if self.empty or self.empty_plan or self.table == "RQ_MODULE":
+            return True
+        return not self._cell_fixable()
 
     def fix_hint(self, revision_no: int) -> str:
         """어떻게 푸는지 — 고칠 표와 다음 리비전 번호."""
@@ -204,7 +217,7 @@ def check_registration_capacity(
     멈춤으로 잡히지 않는다(2026-11-08 사용자 결정 U3 — 등록은 그대로 하고 「계산 멈춤」 으로
     알린다). 경로 행이 있어도 모두 CS 가 비면 파생이 빼 같은 표가 빈다 — `blank_cs_routes`(CS 가
     비어 뺀 경로 행 수, `BlankCsDrop.route_rows`)로 글의 까닭과 고칠 곳을 가른다. 경로 행만 있는
-    원천(빈 계획 표 `_PLAN_TABLES`)도 계산 앞에서 같은 꼴로 잡는다 — 그때 멈추는 것은 HOME · 생산
+    원천(빈 계획 표 `PLAN_TABLES`)도 계산 앞에서 같은 꼴로 잡는다 — 그때 멈추는 것은 HOME · 생산
     계획 · 표준 목표 계산이다(`RegistrationCapacityCheck.stop_scope`).
     """
     empty = tuple(name for name in ROUTE_TABLES if tables[name].empty)
@@ -221,11 +234,11 @@ def check_registration_capacity(
         return RegistrationCapacityCheck(error, empty=empty, blank_cs_routes=blank_cs_routes)
     # 반대로 경로 행만 있는 원천(계획 0행)은 계획 표가 빈다(검수 보드 st-route-only — U3 와 같은
     # 꼴). 계획 행의 CS 가 모두 비어 빈 꼴은 파생이 이미 막았다(`_drop_blank_cs_rows`).
-    empty_plan = tuple(name for name in _PLAN_TABLES if tables[name].empty)
+    empty_plan = tuple(name for name in PLAN_TABLES if tables[name].empty)
     if empty_plan:
         return RegistrationCapacityCheck(
             f"계획 행(계획기초정보여부 Y)이 없는 원천이라 "
-            f"{' · '.join(_PLAN_TABLES[name] for name in empty_plan)} 표가 비었습니다.",
+            f"{' · '.join(PLAN_TABLES[name] for name in empty_plan)} 표가 비었습니다.",
             empty_plan=empty_plan,
         )
     try:

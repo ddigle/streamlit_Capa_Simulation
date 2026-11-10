@@ -30,7 +30,6 @@ from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.testing.v1 import AppTest
 from test_shortening_progress_tab import _name_input, _save_button, _saved_database
 from test_shortening_view_fragment import (
-    _choose_level,
     _install,
     _open,
     _run,
@@ -41,6 +40,7 @@ from test_shortening_view_fragment import (
 from test_shortening_view_fragment import _view as _view_fragment
 
 from capa_simulation.alerts import MARKER_ATTRIBUTE, marker_notes
+from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
 from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -94,8 +94,8 @@ def test_the_view_writes_the_same_event_slots_in_every_branch(
     full = _event_slots(runner.messages, view)
     assert full and all(slot == _EMPTY for slot in full.values()), full
 
-    # 목표 확보율(조건 카드)의 콜백이 본문 프래그먼트만 다시 돌린다 — 같은 자리만 쓴다.
-    _choose_level(app, runner, world, 0.9)
+    # 다른 목표의 본문 프래그먼트 회차(목표는 패널 줄 세션 칸 — 2차 보드 Q2-26)도 같은 자리만 쓴다.
+    _view_with(app, runner, world, SHORTENING_LEVEL_KEY, 0.9)
     assert _event_slots(runner.messages, view) == full
 
     # 저장 성공 — 프래그먼트 회차가 앱 전체 회차로 바뀌고 알림이 표지 자리에 실린다.
