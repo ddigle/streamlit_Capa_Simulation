@@ -434,7 +434,9 @@ def test_a_route_only_source_is_not_designated_and_says_how_to_fix_it(
     assert run.reason is not None
     assert run.reason.count("원천에 계획 행을 넣어 다시 등록하세요.") == 1
     base = repository.load_revision(str(run.base_revision_id))
-    assert (base.revision.note or "").endswith("HOME · 부하 환산 계산 멈춤(빈 표 RQ_PKG_PLAN)")
+    assert (base.revision.note or "").endswith(
+        "HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표 RQ_PKG_PLAN)"
+    )
     assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 
 

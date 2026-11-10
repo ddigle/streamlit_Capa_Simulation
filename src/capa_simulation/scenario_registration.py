@@ -67,13 +67,13 @@ ROUTE_TABLES: Final = {
     "RQ_REQB": "「STEP 구성」",
     "RQ_EQP_AVBL": "「설비대수 가용」",
 }
-# 원천의 계획 행(계획기초정보여부 Y)에서만 나오는 표 → 화면 이름(부하 환산 탭 이름). 경로 행만 있는
-# 원천이면 빈다 — 대당 Capa · 소요대수는 서지만(소요 0) 이 표의 달로 조회기간을 정하는 HOME · 부하
-# 환산이 내부 표 이름 글로 처음 멈춘다. 경로 표와 따로 둔다 — 빈 경로 표의 까닭
-# 가르기(`_empty_fix`)는 경로 표 셋의 수로 가른다.
+# 원천의 계획 행(계획기초정보여부 Y)에서만 나오는 표 → 화면 이름(생산 계획 화면의 탭 이름). 경로
+# 행만 있는 원천이면 빈다 — 대당 Capa · 소요대수는 서지만(소요 0) 이 표의 달로 조회기간을 정하는
+# HOME · 생산 계획 · 표준 목표가 내부 표 이름 글로 처음 멈춘다. 경로 표와 따로 둔다 — 빈 경로 표의
+# 까닭 가르기(`_empty_fix`)는 경로 표 셋의 수로 가른다.
 _PLAN_TABLES: Final = {"RQ_PKG_PLAN": "「PKG PLAN」"}
 # 빈 계획 표가 멈추는 화면 — 알림 · 메모의 머리. 경로 표 · 기준정보 꼴은 대당 Capa 계산이 멈춘다.
-_PLAN_STOP_SCOPE: Final = "HOME · 부하 환산 계산"
+_PLAN_STOP_SCOPE: Final = "HOME · 생산 계획 · 표준 목표 계산"
 _CAPACITY_STOP_SCOPE: Final = "대당 Capa 계산"
 
 
@@ -91,7 +91,7 @@ class RegistrationCapacityCheck:
     (`ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다. `blank_cs_routes` 는
     CS 가 비어 파생에서 뺀 경로 행 수로, 빈 경로 표의 까닭(원천에 경로 행이 없나, 있는데 CS 가
     비었나)과 고칠 곳을 가른다. `empty_plan` 은 빈 계획 표(`_PLAN_TABLES` — 경로 행만 있는 원천)다 —
-    그때 멈추는 것은 대당 Capa 가 아니라 HOME · 부하 환산이다(`stop_scope`).
+    그때 멈추는 것은 대당 Capa 가 아니라 HOME · 생산 계획 · 표준 목표다(`stop_scope`).
     """
 
     error: str | None = None
@@ -106,7 +106,8 @@ class RegistrationCapacityCheck:
 
     @property
     def stop_scope(self) -> str:
-        """멈추는 계산 — 알림 · 메모의 머리(「대당 Capa 계산」 · 「HOME · 부하 환산 계산」)."""
+        """멈추는 계산 — 알림 · 메모의 머리(「대당 Capa 계산」 · 「HOME · 생산 계획 · 표준 목표
+        계산」)."""
         return _PLAN_STOP_SCOPE if self.empty_plan else _CAPACITY_STOP_SCOPE
 
     @property

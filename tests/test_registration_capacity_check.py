@@ -215,9 +215,10 @@ def _route_only_source() -> pd.DataFrame:
 
 
 def test_a_route_only_source_is_caught_by_its_empty_plan_table() -> None:
-    """반대로 경로 행만 있으면 대당 Capa 는 서지만 HOME · 부하 환산이 「RQ_PKG_PLAN에 선택할
-    생산계획년월 데이터가 없습니다」 로 처음 멈췄다(검수 보드 st-route-only — U3 와 같은 꼴). 글은
-    멈추는 화면과 표의 화면 이름을 쓰고, 원천에 계획 행을 넣어 다시 등록하라고 한다."""
+    """반대로 경로 행만 있으면 대당 Capa 는 서지만 HOME · 생산 계획 · 표준 목표가
+    「RQ_PKG_PLAN에 선택할 생산계획년월 데이터가 없습니다」 로 처음 멈췄다(검수 보드
+    st-route-only — U3 와 같은 꼴). 글은 멈추는 화면과 표의 화면 이름을 쓰고, 원천에 계획 행을
+    넣어 다시 등록하라고 한다."""
     tables = _prepared(_route_only_source()).reference_tables
     assert tables["RQ_PKG_PLAN"].empty and not tables["RQ_REQB"].empty
 
@@ -225,12 +226,12 @@ def test_a_route_only_source_is_caught_by_its_empty_plan_table() -> None:
 
     assert check.stopped
     assert (check.empty, check.empty_plan, check.table) == ((), ("RQ_PKG_PLAN",), "RQ_PKG_PLAN")
-    assert check.memo() == "HOME · 부하 환산 계산 멈춤(빈 표 RQ_PKG_PLAN)"
+    assert check.memo() == "HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표 RQ_PKG_PLAN)"
     notice = check.notice(1)
     assert notice == (
-        "저장은 했지만 r1은 HOME · 부하 환산 계산이 멈춥니다 — 계획 행(계획기초정보여부 Y)이 "
-        "없는 원천이라 「PKG PLAN」 표가 비었습니다. 앱에서 고칠 수 없어 새 리비전으로는 풀리지 "
-        "않습니다 — 원천에 계획 행을 넣어 다시 등록하세요."
+        "저장은 했지만 r1은 HOME · 생산 계획 · 표준 목표 계산이 멈춥니다 — 계획 행"
+        "(계획기초정보여부 Y)이 없는 원천이라 「PKG PLAN」 표가 비었습니다. 앱에서 고칠 수 없어 "
+        "새 리비전으로는 풀리지 않습니다 — 원천에 계획 행을 넣어 다시 등록하세요."
     )
     assert "RQ_" not in notice and "대당 Capa" not in notice
 
