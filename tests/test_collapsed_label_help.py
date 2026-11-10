@@ -22,9 +22,6 @@ KEPT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/modification_schedule_view.py", "render_mode_switch"): (
         "제약 시뮬레이션 조건 카드 맨 위 모드 전환 — 바탕부터 숨은 풍선, 옮길 곳은 물음"
     ),
-    ("src/capa_simulation/components/process_capa_view.py", "_render_tool_row"): (
-        "공정 Capa 상세 구획 고르기 — 바탕부터 숨은 풍선, 옮길 곳은 물음"
-    ),
 }
 
 

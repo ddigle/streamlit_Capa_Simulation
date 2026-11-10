@@ -484,8 +484,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「분류」는 「상세는 카드」의 예외로 본문 표 도구 줄이다. 출처 띠는 캡션 한 줄이다(`docs/design_system.md` 2-3).
   - 밖에서 들어온 회차는 그 길(`from`)의 구획을 다시 편다(HOME → ①, `gap` → ④, `shortening` → ③). 머리 ◀▶ 는 미달
     공정을 최저 확보율 차례로 넘기고(세션 값, 공정별 요약은 세션 칸에 한 벌 — 단추 라벨은 접근 이름 「다음 미달 공정: …」
-    이고 화면에서는 그 글을 sr-only 로 숨긴 채 기호를 `::before` 생성 글로 그린다), KPI 아래·근거 패널은 부족 원인마다
-    다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 → 필요 단축 일정)을 단다.
+    이고 화면에서는 그 글을 sr-only 로 숨긴 채 기호를 `::before` 생성 글로 그린다), 근거 패널은 고른 달의 부족 원인마다
+    다음 화면(보유 → 투자 검토 대상·산출 결과, 불일치 → 가용설비 현황, 일정 → 필요 단축 일정)을 단다 — KPI 아래 같은 줄은
+    2026-11-10 보드 c2-picked 로 걷었다(원인별 달 수는 KPI 「부족 원인」).
+  - 표 도구 줄 오른쪽 끝 「시트 엑셀」(늘 — 2026-11-10 보드 c2-picked)은 지금 화면 상태 그대로의 결합 캔버스를 화면 서식째
+    xlsx 로 낸다(`components/process_capa_workbook.py` · `io/xlsx_small.py` — 새 의존성 없음). 페이지는 머리 값 줄(공정 ·
+    시나리오 · 조회기간 · 설비 시나리오 · 설비 일정 · UPEH 가정 — `sheet_heading`)과 호기 CSV 표(`units_export`)를 넘긴다.
   - UPEH 가정(조건 카드 끝 「이 세션만」)이 켜지면 가정 요약(이미 받은 확보율 행에 ÷f — 캐시 밖)과 가정 계획(계획 키 끝
     칸 토큰 → 가정 칸)을 더 세운다. **판정은 한 기준**이다 — 부족 띠·② 판정 대조·KPI·원인은 가정, 공식 값은 ① 공식
     줄과 KPI 회색 줄 「공식 n」 에만. 머리 배지·효과 한 줄(그 화면의 목표·기간)·카드의 역산 둘(「이 값으로」)·호기 CSV
@@ -1682,6 +1686,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - 설정은 `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다.
 - `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일)를 앱 프로세스가 직접 GET · PUT · HEAD 하는 경계. 콜백 자리에서 `aws` 프로세스를 띄우지 않고 프로필 없이 환경변수 키로 붙고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
+- `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 같은 입력은 같은 바이트다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py`).
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
 - `src/capa_simulation/io/reference_cache.py` — 세션 활성 리비전의 표·공용 표시순서 경계다(5장 1, XLSB 대체 없음). 활성
   리비전이 없는 읽기는 `NoActiveRevision`(`RuntimeError`)이고, `page_bootstrap.bootstrap_error_message` 가 저장소가 보관본만
@@ -2324,11 +2329,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   돌려준다(규칙 `docs/design_system.md`). Figure 공통 유틸은 `components/plotly_layout.py` 다.
   - 두 팔레트(`_LIGHT`·`_DARK`)를 `__getattr__`(PEP 562)로 골라 쓰는 쪽은 `tokens.SURFACE` 그대로다. 두 팔레트의
     이름은 정확히 같아야 한다(`tests/test_design_tokens.py`). 별칭·계산값은 `_complete()` 가 팔레트에서 만든다.
+    알파가 없는 자리(엑셀 칠)로 반투명 토큰을 옮길 때는 `opaque_over(색, 바탕)` 다(rgba 글자를 화면 코드에 두지 않는다).
   - 타입은 `if TYPE_CHECKING:` 블록이 알린다(`.pyi` 스텁은 mypy 가 무시한다). 테마를 타지 않는 치수는 팔레트 밖이다.
 - `src/capa_simulation/design/theme.py` — 세션이 보는 테마를 실행 한 번에 한 번만 정해 스레드 칸에 담는다(모듈
   전역 아님). `app.py` 가 토큰을 하나라도 읽기 전에 `begin_run()` 을 부른다.
   - 프래그먼트만 도는 회차는 세션(`_capa_theme_mode`)의 직전 전체 회차 테마를 잇는다 — 프래그먼트 본문에서
     `begin_run()` 을 부르지 않는다(`tests/test_shortening_view_fragment.py`).
+  - 보는 사람의 테마와 상관없이 늘 같은 색이어야 하는 산출물(공정 Capa 상세 시트 엑셀 — 밝게)은 `pinned_mode(mode)` 안에서
+    만든다 — 스레드 칸을 잠시 바꾸고 나오면 되돌린다.
 - `src/capa_simulation/components/page_header.py` — 모든 페이지의 제목·상태 배지다(상태 접미는 사이드바
   라벨과 같은 문자열). **큰 제목은 키 칸(`PAGE_TITLE_KEY`)에 담아 화면에서만 sr-only 로 숨기고**(화면 탭 줄이 이름을
   말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지 줄은 모듈 L0 · L1 화면의 「구현중」 뿐이다(`badges` 인자를 넘기는 화면은
@@ -3157,7 +3165,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   카드다(`tone="neutral"` 이면 기존 카드). `metric_row` 는 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는다. 둘 다
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
   `emit_style=False` 로 부르고 `metric_row_style`·`status_metric_style` 을 보이는 HTML 과 한 `st.html` 에 싣는다.
-- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄과 표 도구 막대 앞 띄움
+- `src/capa_simulation/components/table_toolbar.py` — 표 제목·부가 설명·CSV 내보내기 한 줄(엑셀 단추 `render_xlsx_download` —
+  같은 꼴)과 표 도구 막대 앞 띄움
   (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭)이다. `st.download_button` 은
   여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
@@ -4312,7 +4321,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/availability_sheet_keys.py` — 비교 시트 key(`GAP_SHEET_CHART_KEY` 등)를 가벼운 모듈에
   둔다 — `app.py` 가 패널·서비스를 import 하지 않고 터치 스크롤 막이(`components/plotly_touch_scroll.py`)에 넣게.
 - `src/capa_simulation/components/process_capa_canvas.py` — `공정 Capa 상세` 결합 월 캔버스(① 공식 요약 ② 설비 일정 기준
-  가용 ③ 신규 호기 ④ 비가동)의 순수 그림 함수 `build_process_capa_canvas`. 세션·캐시·DB 를 보지 않는다.
+  가용 ③ 신규 호기 ④ 비가동)의 순수 그림 함수 `build_process_capa_canvas`. 세션·캐시·DB 를 보지 않는다. 행 모델은
+  `build_process_capa_rows`(행 · 칸 글 · 칠 · 부족 띠 열)이고 그림과 시트 엑셀이 같은 것을 읽는다. ③ · ④ 를 글로 옮기는
+  `track_texts` 는 그림과 같은 자리(`_unit_marks` · 화살표 꼬리 · 촉)에서 낸다.
   - 라벨·월 Figure 한 쌍이라 부족 띠·보는 달 열이 구획을 넘고 칸 선택이 그림 하나에서 온다. 판정색은 요약 프레임 `판정`
     한 길이다. 칸은 `base` 막대 + 표적 막대(`HIT_TARGET`)이고 엔진 상수·`canvas_point` 를 이 모듈 이름으로도 내보낸다.
   - 접힌 구획(`collapsed`, id `SECTION_IDS`)은 제목 줄(▸)만 남는다 — 판정·원인은 요약에서 내 ① 을 접어도 부족 띠·판정
@@ -4334,13 +4345,24 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     과부족 「가용 − 목표대수」·비가동 영향 「X% → Y%」·「호기 −a + 입력 −b」)은 칸 자릿수 인수로 다시 셈해 어긋나면 「≈」
     다(`formula_text.equals_mark`). 두 과부족 식 줄과 비가동 영향 두 식은 결과가 앞 줄이고 등호가 없어 어긋날 때만 식 앞에
     둔다(검산 그물 `tests/test_formula_text.py`).
+- `src/capa_simulation/components/process_capa_workbook.py` — `공정 Capa 상세` 「시트 엑셀」. 결합 캔버스의 행 모델을 칸
+  하나하나 엑셀 칸으로 옮긴다(판정 · 칠 · 띠를 다시 셈하지 않는다). 색은 밝은 테마 토큰(`theme.pinned_mode`), 부족 달 띠는
+  `tokens.opaque_over` 로 그 줄 면 위에 섞은 불투명 색, 숫자는 칸 글을 같은 꼴의 숫자 꼴로 되읽은 숫자 셀(`screen_number` —
+  보이는 글이 화면과 같다), 두 줄 칸은 딸린 줄(「└ 단축 후」 등), ③ · ④ 는 글(`track_texts`), 둘째 시트는 호기 CSV 표다.
+  Streamlit 을 import 하지 않는다(`tests/test_process_capa_workbook.py` 가 그림 칸 글 · 색과 견준다).
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
   (`render_process_detail_view`)와 KPI·정리 줄. `ProcessDetailView` 하나를 받아 지금 보는 달에 닿는 것만 그린다. 표 도구 줄
-  오른쪽 끝에 호기 CSV(`ProcessDetailView.units_csv`, 설비 일정이 설 때만)가 서고, 정리 줄은 값 표지와, 다른 길(도착 ← · KPI 일정 줄)이
-  없을 때만 필요 단축 일정 링크다(`shortening_link_needed` — 2026-11-07 답 bottom-row). 근거 카드 단추는 KPI 달 수에 든다. 단축 목표 글은 표 도구 줄 한 자리이고
+  오른쪽 끝에 호기 CSV(`ProcessDetailView.units_csv`, 설비 일정이 설 때만)와 「시트 엑셀」(늘)이 서고, 정리 줄은 값 표지와, 다른 길(도착 ← ·
+  근거 패널의 일정 부족 달 단추)이 없을 때만 필요 단축 일정 링크다(`shortening_link_needed` — 2026-11-07 답 bottom-row). 근거 카드 단추가
+  서는 달은 KPI 「부족 원인 · 일정」 달 수에 든다 — 그 수가 0 일 때만 링크가 선다(KPI 아래 다음 화면 줄은 2026-11-10 보드 c2-picked 로
+  걷었다 — 일정 부족 달이 있는 공정은 그 달을 골라야 근거 패널 단추가 선다). 「구획」 칩은 라벨을 숨긴 칸이라 뜻은 칩 바로 뒤 빈 캡션
+  풍선 하나다(`SECTIONS_HELP`, 2026-11-10 보드 Q-8). 단축 목표 글은 표 도구 줄 한 자리이고
   KPI 칩에 거듭 적지 않으며, 공정 카드의 기간 규칙은 「공정」 칸 풍선이다. 일정이 서지 않는 자리는 `constraint_equipment_plan.absent_note` 를 함께 쓴다.
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).
+  - 시트 엑셀 바이트도 세션 칸(`SHEET_MEMO_KEY`, 몇 벌)에 기억한다 — 키(`sheet_memo_key`)는 그림 기억 키에서 고른 달 · 테마를
+    빼고 머리 값 줄을 더한 것이라 달 칸 누름 · 다른 위젯 회차는 통을 다시 만들지 않는다(콜러블 지연 생성은 쓰지 않는다 — 9장).
+    재료(`sheet_request`)는 그림과 같은 인자(구획 · 펼침과 분류 · 제품 행 표 · 「더 보기」 · UPEH 가정)다.
   - 그림은 세션 칸(`CANVAS_MEMO_KEY`)에 기억한다(새 `st.cache_data` 없음). 근거 카드 식(①~④ 와 원인 줄)은 검산되어야
     하고(어긋나면 `≈` — `formula_text.equals_mark`, 등호 없는 ① 원수요 부하량 ÷ 실효 대당 Capa 줄은 카드의 소요와 어긋날
     때만 줄 앞에)
@@ -7161,7 +7183,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   표시명은 줄이기 **전**에 입힌다(category 값이 곧 보이는 글자다).
 - **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
   바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
-  쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다.
+  쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다. 엑셀(공정 Capa 상세 「시트 엑셀」)도 같다 —
+  조건 키로 세션에 기억한 바이트를 넘긴다(`process_capa_view.remembered_sheet`).
 - 사람이 적은 자유 글(게시판 본문·답글·메모)은 `st.markdown` 으로 그리지 않는다 — `#`·`-`·`*` 가 제목·목록으로 바뀌고
   빈 줄에서 HTML 블록이 끊겨 적은 사람이 보던 글과 달라진다. 글만이면 `st.text`, HTML 로 감싸야 하면 `html.escape` 한
   뒤 `st.html` 로 넘긴다. 제목·이름처럼 마크다운으로 그려지는 자리(`st.expander` 라벨·`st.caption`·`st.markdown`·

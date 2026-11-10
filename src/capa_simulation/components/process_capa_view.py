@@ -5,10 +5,14 @@
 페이지(`app_pages/process_capa_detail.py`)가 앱 전체 회차에서 공정·축·요약·설비 일정을 모두
 정해 `ProcessDetailView` 하나로 넘기면, 여기서는 **지금 보는 달**에 닿는 것만 그린다.
 
-- **표 도구 줄** — 「구획」 칩(`st.pills`, ①~④ 가운데 고른 것 = 펼침), 「제품별 소요대수」
-  펼침(`st.toggle`)과 펼쳤을 때의 「분류」(`st.segmented_control`), 단축 목표 표시(고르는 위젯 없음
-  — 2026-10-15 사용자 결정 2), 그리고 오른쪽 끝 「이 공정 단축 일정 CSV」(설비 일정이 설 때만 —
-  ③ 구획의 호기 표 곁, 설계 규칙 UI-LAY-03). 앞의 셋은 조건 카드가 아니라 본문이다 — 2026-09-29
+- **표 도구 줄** — 「구획」 칩(`st.pills`, ①~④ 가운데 고른 것 = 펼침 — 라벨을 숨긴 칸이라 뜻은
+  칩 바로 뒤 ⓘ 하나, 2026-11-10 보드 Q-8), 「제품별 소요대수」 펼침(`st.toggle`)과 펼쳤을 때의
+  「분류」(`st.segmented_control`), 단축 목표 표시(고르는 위젯 없음 — 2026-10-15 사용자 결정 2),
+  그리고 오른쪽 끝 내려받기 둘 — 「이 공정 단축 일정 CSV」(설비 일정이 설 때만 — ③ 구획의 호기 표
+  곁, 설계 규칙 UI-LAY-03)와 「시트 엑셀」(늘 — 지금 화면 상태 그대로의 상세 시트를 화면 서식째,
+  2026-11-10 보드 c2-picked — `components/process_capa_workbook.py`. 통은 회차마다 만들지 않고
+  조건이 바뀐 뒤 처음 그리는 회차에 한 번 만들어 세션에 몇 벌 기억한다 — `remembered_sheet`, 그림
+  기억과 같은 꼴). 앞의 셋은 조건 카드가 아니라 본문이다 — 2026-09-29
   「상세는 카드」 규칙의 예외다(펼침·분류는 2026-10-15 사용자 결정 4 — 목업 그대로, 구획은
   2026-10-22 사용자 요청 「소요대수처럼 접기」). 구획 칩은 선택지 넷을 늘 고정한다 — 설비 일정이
   없는 공정에서 ②~④ 를 빼면 세션 값이 선택지 밖으로 나가 지워진다. 밖에서 들어온 회차에는 그 길이
@@ -25,8 +29,9 @@
 - **범례**(HTML 한 줄)·**「더 보기」 토글 둘**(③·④ 30줄 상한, 그 구획이 접히면 숨는다)·**설비
   일정 없음 자리**(데이터 Error 마크 또는 빈 상태 평문 — 제약 시뮬레이션과 같은 꼴).
 - **산출 근거 패널** — ① 소요 ② 가용 ③ 판정·원인 ④ 단축 근거(설비 일정 공정·그 달이 충족이
-  아닐 때)와 ◀▶ 달 이동, 그 달 부족 원인의 다음 화면 링크, 닫힌 「경로별 인자」(`st.dataframe` 만
-  — Plotly 를 넣지 않는다).
+  아닐 때)와 ◀▶ 달 이동, 그 달 부족 원인의 다음 화면 링크(이 화면에 남은 하나 — KPI 아래 줄은
+  2026-11-10 보드 c2-picked 로 걷었다), 닫힌 「경로별 인자」(`st.dataframe` 만 — Plotly 를 넣지
+  않는다).
 
 **이벤트 칸 수는 갈래마다 같다**(AGENTS 「본문 프래그먼트」). 이 프래그먼트가 이벤트 칸에 쓰는
 것은 스타일만 든 `st.html` 셋 — 두 컬럼 폭(`split_scroll_columns_style`)·라벨 칸 위 여백·스크롤
@@ -38,20 +43,21 @@
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
 정리 줄(값 표지, 다른 길이 없는 공정의 필요 단축 일정 화면 링크 — `shortening_link_needed`), KPI
-넷과 그 아래 부족 원인별 다음 화면 줄, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지
-않아 프래그먼트 밖에서 페이지가 그린다 — 그 그리기 함수도 여기 있다.
+넷, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서 페이지가
+그린다 — 그 그리기 함수도 여기 있다.
 
 **UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
 페이지가 가정 요약(`ProcessDetailView.assumed_summary`)과 가정 계획(`DynamicView`)을 넘긴다.
 **판정은 한 기준이다** — 캔버스 부족 띠·② 판정 대조·KPI 미달·부족 원인·근거 패널의 ③ 판정
 카드(머리 식·판정·원인)와 다음 화면은 가정 요약으로, 공식 값은 ① 공식 줄과 KPI 회색 줄
-(「공식 n」), ③ 카드의 회색 「공식: …」 한 줄에만 둔다. 그림 캐시 키에 가정 토큰이 든다.
+(「공식 n」), ③ 카드의 회색 「공식: …」 한 줄에만 둔다. 그림 캐시 키에 가정 토큰이 든다. 시트
+엑셀도 같은 행 모델이라 가정 세 줄 · 가정 판정 칠이 그대로 서고 파일 이름에 가정 꼬리가 붙는다.
 
-**부족 원인의 다음 화면** — 보유로도 부족 → 「투자 검토 대상」 표지와 산출 결과, 가용 불일치 →
-가용설비 현황 `Summary` › `Static 대비 일정`, 일정 → 필요 단축 일정 이 공정 카드
-강조(`open_shortening_page` — 공정 필터를 심지 않고 강조 칸만 적는다). 화면을 옮기는 단추는 콜백이
-아니라 본문에서 옮긴다(`if st.button(...)`) — 근거 패널은 프래그먼트라 콜백 안의 `st.switch_page` 가
-서버 로그 경고를 남긴다(`process_detail_state.open_process_detail`).
+**부족 원인의 다음 화면**(근거 패널 — 고른 달의 원인) — 보유로도 부족 → 「투자 검토 대상」 표지와
+산출 결과, 가용 불일치 → 가용설비 현황 `Summary` › `Static 대비 일정`, 일정 → 필요 단축 일정 이
+공정 카드 강조(`open_shortening_page` — 공정 필터를 심지 않고 강조 칸만 적는다). 화면을 옮기는
+단추는 콜백이 아니라 본문에서 옮긴다(`if st.button(...)`) — 근거 패널은 프래그먼트라 콜백 안의
+`st.switch_page` 가 서버 로그 경고를 남긴다(`process_detail_state.open_process_detail`).
 """
 
 from __future__ import annotations
@@ -66,6 +72,7 @@ from typing import Final, NamedTuple
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 from streamlit.errors import StreamlitPageNotFoundError
 
 # 이름이 아니라 모듈을 잡는다. 이름을 직접 import 하면 테스트의 교체가 무시된다.
@@ -95,6 +102,10 @@ from capa_simulation.components.process_capa_canvas import (
     build_process_capa_canvas,
     canvas_point,
 )
+from capa_simulation.components.process_capa_workbook import (
+    WorkbookRequest,
+    process_capa_workbook,
+)
 from capa_simulation.components.scroll_shell import (
     horizontal_scroll_canvas,
     split_scroll_columns_style,
@@ -110,7 +121,7 @@ from capa_simulation.components.status_metric import (
     render_status_metric,
 )
 from capa_simulation.components.tab_state import remember_open_tab
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, render_xlsx_download
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -205,19 +216,25 @@ PREVIOUS_MONTH_KEY: Final = "process_detail_previous_month"
 NEXT_MONTH_KEY: Final = "process_detail_next_month"
 # 닫힌 「경로별 인자」 상자(편 상태를 기억한다).
 ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
-# 표 도구 줄의 CSV 단추. 곁의 「구획」 칩과 같은 높이로 둔다(설계 규칙 UI-CON-01 — 칩 28px). 서식은
-# 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가 갈리지 않게).
+# 표 도구 줄의 내려받기 단추 둘(호기 CSV · 시트 엑셀). 곁의 「구획」 칩과 같은 높이로 둔다(설계 규칙
+# UI-CON-01 — 칩 28px). 서식은 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가
+# 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
-UNITS_CSV_STYLE: Final = (
-    f"<style>.st-key-{UNITS_CSV_KEY} button "
+SHEET_XLSX_KEY: Final = "process_detail_sheet_xlsx"
+SHEET_XLSX_LABEL: Final = "시트 엑셀"
+DOWNLOAD_STYLE: Final = (
+    f"<style>.st-key-{UNITS_CSV_KEY} button, .st-key-{SHEET_XLSX_KEY} button "
     "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
+)
+# 「구획」 칩의 뜻 — 라벨을 숨긴 칸이라 위젯 풍선이 서지 않는다(Streamlit 1.63 은 풍선을 라벨 줄에
+# 그린다). 칩 바로 뒤 빈 캡션 풍선 하나가 말한다(설계 규칙 UI-TXT-02, 2026-11-10 보드 Q-8).
+SECTIONS_HELP: Final = (
+    "고른 구획만 펼칩니다 — 접힌 구획은 제목 줄(▸)만 남습니다. ②~④ 는 설비 일정이 서는 공정에만 "
+    "있습니다."
 )
 # 정리 줄의 필요 단축 일정 화면 링크.
 SHORTENING_TAB_LINK_KEY: Final = "process_detail_open_shortening_tab"
-# 부족 원인별 다음 화면 단추 — KPI 아래 줄과 근거 패널(그 달)이 따로 그린다.
-CAUSE_LINKS_KEY: Final = "process_detail_cause_links"
-CAUSE_GAP_BUTTON_KEY: Final = "process_detail_cause_open_gap"
-CAUSE_SHORTENING_BUTTON_KEY: Final = "process_detail_cause_open_shortening"
+# 부족 원인별 다음 화면 단추 — 근거 패널(그 달)이 그린다.
 EVIDENCE_GAP_BUTTON_KEY: Final = "process_detail_evidence_open_gap"
 EVIDENCE_SHORTENING_BUTTON_KEY: Final = "process_detail_evidence_open_shortening"
 # 라벨 칸·월 칸·스크롤 상자 컨테이너 key — CSS 가 이 이름으로 폭과 여백을 못박는다.
@@ -251,6 +268,11 @@ CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
 CANVAS_SCHEMA_VERSION: Final = 8
+# 직전에 만든 시트 엑셀 몇 벌(세션 칸) — 조건이 같은 회차(달 칸 누름 · 다른 위젯)는 통을 다시 만들지
+# 않는다. 시트 꼴이 바뀌면 버전을 올린다.
+SHEET_MEMO_KEY: Final = "process_detail_sheet_memo"
+SHEET_MEMO_LIMIT: Final = 4
+SHEET_SCHEMA_VERSION: Final = 1
 
 # ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
 ROUNDED_IN_NOTE: Final = (
@@ -393,6 +415,17 @@ class ProcessDetailView:
     shortening_link_help: str | None = None
     """필요 단축 일정으로 옮기는 단추의 풍선(`render_closing_row` 의 `link_help` 와 같은 글)."""
 
+    units_export: pd.DataFrame | None = None
+    """「이 공정 단축 일정 CSV」 와 같은 표 — 시트 엑셀의 둘째 시트. 설비 일정이 서지 않으면
+    None."""
+
+    sheet_heading: tuple[tuple[str, str], ...] = ()
+    """시트 엑셀 맨 위 (이름, 값) 줄 — 공정 · 시나리오 · 조회기간 · 설비 시나리오처럼 페이지가 아는
+    머리 값. 구획 · 펼침 · 단축 목표는 프래그먼트가 덧붙인다."""
+
+    sheet_file_name: str = "process_capa_detail.xlsx"
+    """시트 엑셀 파일 이름(가정 계획이면 끝에 UPEH 가정 꼬리)."""
+
     @property
     def judgement_summary(self) -> pd.DataFrame:
         """판정·부족 원인을 읽는 요약 — UPEH 가정이 켜졌으면 가정 요약, 아니면 공식 요약."""
@@ -406,7 +439,7 @@ class ProcessDetailView:
 def render_process_detail_view(view: ProcessDetailView) -> None:
     """표 도구 줄 → 결합 캔버스 → 범례·더 보기 → (설비 일정 없음 카드) → 산출 근거 패널."""
     month = viewed_month(view.months)
-    expanded, split, collapsed = _render_tool_row(view)
+    expanded, split, collapsed, sheet_slot = _render_tool_row(view)
     product_demand = (
         simulation_cache.get_process_product_demand(
             view.scenario_key,
@@ -424,6 +457,34 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
     )
     show_all_units = bool(st.session_state.get(SHOW_ALL_UNITS_KEY, False))
     show_all_arrows = bool(st.session_state.get(SHOW_ALL_ARROWS_KEY, False))
+    with sheet_slot:
+        render_xlsx_download(
+            data=remembered_sheet(
+                sheet_memo_key(
+                    view,
+                    expanded=expanded,
+                    split=split,
+                    show_all_units=show_all_units,
+                    show_all_arrows=show_all_arrows,
+                    collapsed=collapsed,
+                ),
+                partial(
+                    process_capa_workbook,
+                    sheet_request(
+                        view,
+                        expanded=expanded,
+                        split=split,
+                        collapsed=collapsed,
+                        product_demand=product_demand,
+                        show_all_units=show_all_units,
+                        show_all_arrows=show_all_arrows,
+                    ),
+                ),
+            ),
+            file_name=view.sheet_file_name,
+            key=SHEET_XLSX_KEY,
+            label=SHEET_XLSX_LABEL,
+        )
     canvas = remembered_canvas(
         view,
         month=month,
@@ -447,7 +508,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
             view.months,
             assumed=bool(view.upeh_token),
         )
-        + UNITS_CSV_STYLE
+        + DOWNLOAD_STYLE
     )
     if view.dynamic is None:
         _render_dynamic_absent(view)
@@ -463,13 +524,16 @@ def viewed_month(months: Sequence[int]) -> int:
     return int(months[0])
 
 
-def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str, frozenset[str]]:
-    """「구획」 칩 · 「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시 · 오른쪽 끝
-    호기 CSV(설비 일정이 설 때만).
+def _render_tool_row(
+    view: ProcessDetailView,
+) -> tuple[bool, str, frozenset[str], DeltaGenerator]:
+    """「구획」 칩 · 그 뜻 ⓘ · 「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시 ·
+    오른쪽 끝 내려받기(호기 CSV — 설비 일정이 설 때만, 시트 엑셀 — 늘).
 
-    돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획) 이다. ① 이 접혔으면 제품 행을 그리지 않는다.
-    CSV 를 안쪽 칸에 두는 것은 `st.space("stretch")` 를 쓰면 틈이 한 번 더 들어 기준 창에서 줄이
-    넘어가기 때문이다.
+    돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획, 시트 엑셀 자리) 다. ① 이 접혔으면 제품 행을
+    그리지 않는다. 시트 엑셀 단추는 제품 행 표를 받은 뒤 그 자리에 채운다
+    (`render_process_detail_view`). 내려받기를 안쪽 칸에 두는 것은 `st.space("stretch")` 를 쓰면
+    틈이 한 번 더 들어 기준 창에서 줄이 넘어가기 때문이다.
     """
     options = list(view.splits) or [DEFAULT_PRODUCT_SPLIT]
     seed_sections()
@@ -483,11 +547,8 @@ def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str, frozenset[str]
             key=PROCESS_DETAIL_SECTIONS_KEY,
             persist_state="session",
             label_visibility="collapsed",
-            help=(
-                "고른 구획만 펼칩니다 — 접힌 구획은 제목 줄(▸)만 남습니다. ②~④ 는 설비 일정이 "
-                "서는 공정에만 있습니다."
-            ),
         )
+        st.caption("", help=SECTIONS_HELP, width="content")
         collapsed = frozenset(SECTION_IDS) - {str(section) for section in opened or ()}
         summary_open = SECTION_SUMMARY not in collapsed
         expanded = st.toggle(
@@ -522,15 +583,69 @@ def _render_tool_row(view: ProcessDetailView) -> tuple[bool, str, frozenset[str]
                 width="content",
                 help=TARGET_HELP,
             )
-        if view.units_csv is not None:
-            with st.container(horizontal=True, horizontal_alignment="right"):
+        with st.container(horizontal=True, horizontal_alignment="right"):
+            if view.units_csv is not None:
                 render_csv_download(
                     data=view.units_csv,
                     file_name=view.units_csv_file_name,
                     key=UNITS_CSV_KEY,
                     label="이 공정 단축 일정 CSV",
                 )
-    return bool(expanded) and summary_open, split, collapsed
+            sheet_slot = st.container(width="content")
+    return bool(expanded) and summary_open, split, collapsed, sheet_slot
+
+
+def sheet_request(
+    view: ProcessDetailView,
+    *,
+    expanded: bool,
+    split: str,
+    collapsed: frozenset[str],
+    product_demand: pd.DataFrame | None,
+    show_all_units: bool,
+    show_all_arrows: bool,
+) -> WorkbookRequest:
+    """시트 엑셀 재료 — 이 회차의 화면 상태 그대로(켜진 구획 · 펼친 제품 행과 분류 · 조회기간의 달 ·
+    UPEH 가정 · HOME 표시 확보율 · 「더 보기」). 머리 값은 페이지 값 뒤에 구획 · 펼침 · 단축 목표를
+    덧붙인다. 그림 캔버스와 같은 인자로 같은 행 모델을 세운다(`remembered_canvas`)."""
+    heading = list(view.sheet_heading)
+    opened = [SECTION_LABELS[section] for section in SECTION_IDS if section not in collapsed]
+    heading.append(("구획", " · ".join(opened) if opened else "모두 접힘"))
+    if expanded:
+        filtered = f" · 제품 거르기 {len(view.products)}개" if view.products else ""
+        heading.append(("제품별 소요대수", f"펼침 · 분류 {split}{filtered}"))
+    if view.dynamic is not None:
+        heading.append(("단축 목표", target_text(view.dynamic.canvas.target, view.months)))
+    dynamic = (
+        replace(
+            view.dynamic.canvas,
+            show_all_units=show_all_units,
+            show_all_arrows=show_all_arrows,
+        )
+        if view.dynamic is not None
+        else None
+    )
+    return WorkbookRequest(
+        heading=tuple(heading),
+        process_label=view.process_label,
+        months=view.months,
+        summary=view.summary,
+        thresholds=view.thresholds,
+        product_demand=product_demand if expanded else None,
+        home_rates=view.home_rates,
+        dynamic=dynamic,
+        collapsed=frozenset(collapsed),
+        assumption=(
+            AssumptionCanvasInput(
+                percent=token_percent(view.upeh_token),
+                months=token_months(view.upeh_token),
+                summary=view.assumed_summary,
+            )
+            if view.upeh_token and view.assumed_summary is not None
+            else None
+        ),
+        units_export=view.units_export if view.dynamic is not None else None,
+    )
 
 
 def seed_sections() -> None:
@@ -694,6 +809,59 @@ def remembered_canvas(
     entries = [entry for entry in entries if entry[0] != key][-(CANVAS_MEMO_LIMIT - 1) :]
     st.session_state[CANVAS_MEMO_KEY] = [*entries, (key, canvas)]
     return canvas
+
+
+def sheet_memo_key(
+    view: ProcessDetailView,
+    *,
+    expanded: bool,
+    split: str,
+    show_all_units: bool,
+    show_all_arrows: bool,
+    collapsed: Collection[str] = (),
+) -> tuple[object, ...]:
+    """시트 엑셀을 바꾸는 조건 전부 — 그림 기억 키(`canvas_memo_key`)에서 지금 보는 달 · 테마를 뺀
+    것(시트는 고른 달 표지가 없고 늘 밝은 색이다)에 머리 값 줄 · 시트 꼴 버전을 더한다. 둘째
+    시트(호기 표)는 설비 일정 키(계획 키 — 오늘 · 목표 · UPEH 가정 토큰)가 정한다."""
+    home = tuple(sorted(view.home_rates.items())) if view.home_rates is not None else None
+    return (
+        SHEET_SCHEMA_VERSION,
+        view.scenario_key,
+        view.display_order_key,
+        view.months,
+        view.process,
+        view.process_label,
+        view.thresholds.digest,
+        bool(expanded),
+        split if expanded else "",
+        view.products if expanded else (),
+        home,
+        view.dynamic.memo_key if view.dynamic is not None else None,
+        bool(show_all_units),
+        bool(show_all_arrows),
+        tuple(sorted(str(section) for section in collapsed)),
+        view.upeh_token,
+        view.sheet_heading,
+    )
+
+
+def remembered_sheet(key: tuple[object, ...], build: Callable[[], bytes]) -> bytes:
+    """시트 엑셀 바이트를 세션에 몇 벌 기억한다(`SHEET_MEMO_LIMIT`) — 같은 조건이면 다시 만들지
+    않는다. 빗나간 회차는 이 자리에서 바로 만들어 오류가 화면에 드러난다(만들다 실패하면 기억하지
+    않는다)."""
+    memo = st.session_state.get(SHEET_MEMO_KEY)
+    entries: list[tuple[tuple[object, ...], bytes]] = (
+        [entry for entry in memo if isinstance(entry, tuple) and len(entry) == 2]
+        if isinstance(memo, list)
+        else []
+    )
+    for stored_key, stored in entries:
+        if stored_key == key and isinstance(stored, bytes):
+            return stored
+    data = build()
+    entries = [entry for entry in entries if entry[0] != key][-(SHEET_MEMO_LIMIT - 1) :]
+    st.session_state[SHEET_MEMO_KEY] = [*entries, (key, data)]
+    return data
 
 
 def pick_canvas_month(months: Sequence[int]) -> None:
@@ -1600,10 +1768,12 @@ def prescription_text(plan: Prescription | None) -> str:
 def shortening_link_needed(dynamic: DynamicView, *, arrived_from_card: bool) -> bool:
     """맨 아래 필요 단축 일정 링크가 서는가 — 이 공정 화면에 그리로 가는 다른 길이 없을 때만이다.
 
-    다른 길은 도착 「← 필요 단축 일정」(`arrived_from_card`), KPI 아래 「일정 n개월 — 필요 단축
-    일정」, 근거 카드 「이 달 일정 부족 — 필요 단축 일정」 이다. 뒤의 둘은 같은 달을 센다
-    (`schedule_short_month` · `Prescription.dynamic_short_months`) — 근거 카드 단추가 서는 달이
-    있으면 KPI 달 수가 이미 1 이상이라 달 수 하나로 둘을 함께 본다(설계 규칙 UI-LAY-12).
+    다른 길은 도착 「← 필요 단축 일정」(`arrived_from_card`)과 근거 패널 「이 달 일정 부족 — 필요
+    단축 일정」(그 달을 골랐을 때)이다. 근거 카드 단추가 서는 달(`schedule_short_month`)은
+    `Prescription.dynamic_short_months` 가 세는 달과 같다 — 그 수가 0 이면 어느 달을 골라도 그
+    단추가 없어 맨 아래 링크가 선다(설계 규칙 UI-LAY-12). KPI 아래 「일정 n개월 — 필요 단축 일정」
+    줄은 2026-11-10 보드 c2-picked 로 걷었다 — 일정 부족 달이 있는 공정은 그 달을 골라야 근거
+    패널의 단추가 선다.
     """
     return not arrived_from_card and prescription(dynamic).dynamic_short_months == 0
 
@@ -1691,25 +1861,6 @@ class NextScreens(NamedTuple):
         return any(text is not None for text in self)
 
 
-def kpi_next_screens(kpis: ProcessCapaKpis, plan: Prescription | None) -> NextScreens:
-    """KPI 「부족 원인」 의 달 수로 낸 다음 화면 글. 0 인 원인은 뺀다(대여 영향은 공식 기준 안의
-    차이라 옮겨 갈 화면이 없다)."""
-    schedule = plan.dynamic_short_months if plan is not None else 0
-    return NextScreens(
-        owned=(
-            f"보유로도 부족 {kpis.owned_short_months}개월 — 산출 결과"
-            if kpis.owned_short_months
-            else None
-        ),
-        mismatch=(
-            f"가용 불일치 {kpis.mismatch_months}개월 — 가용설비 현황"
-            if kpis.mismatch_months
-            else None
-        ),
-        schedule=f"일정 {schedule}개월 — 필요 단축 일정" if schedule else None,
-    )
-
-
 def month_next_screens(view: ProcessDetailView, month: int) -> NextScreens:
     """고른 달의 원인으로 낸 다음 화면 글 — ③ 판정 카드의 원인과, 그 달이 설비 일정 기준 단축 대상
     (오늘이 든 생산월부터 목표 미달)이면 일정."""
@@ -1743,27 +1894,6 @@ def schedule_short_month(dynamic: DynamicView, month: int) -> bool:
         dynamic.canvas.today, dynamic.canvas.cutoff_days, [int(month)]
     ).month
     return int(month) >= today_month
-
-
-def render_cause_links(
-    kpis: ProcessCapaKpis,
-    *,
-    dynamic: DynamicView | None,
-    process: str,
-    shortening_help: str | None = None,
-) -> None:
-    """KPI 아래 한 줄 — 부족 원인마다 다음 화면. 원인이 없으면 그리지 않는다(앱 전체 회차)."""
-    screens = kpi_next_screens(kpis, prescription(dynamic) if dynamic is not None else None)
-    if not screens.present():
-        return
-    with st.container(key=CAUSE_LINKS_KEY):
-        _render_next_screens(
-            screens,
-            process=process,
-            gap_key=CAUSE_GAP_BUTTON_KEY,
-            shortening_key=CAUSE_SHORTENING_BUTTON_KEY,
-            shortening_help=shortening_help,
-        )
 
 
 def _render_month_next_screens(view: ProcessDetailView, month: int) -> None:
