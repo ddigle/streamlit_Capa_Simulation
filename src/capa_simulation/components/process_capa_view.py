@@ -222,9 +222,16 @@ ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
 SHEET_XLSX_KEY: Final = "process_detail_sheet_xlsx"
 SHEET_XLSX_LABEL: Final = "시트 엑셀"
+# 내려받기 둘을 담는 칸 — 줄이 모자라면 둘이 위아래로 쌓이지 않고 칸째 다음 줄 오른쪽 끝으로 간다.
+DOWNLOADS_KEY: Final = "process_detail_downloads"
+# 「구획」 칩과 그 뜻 ⓘ 를 담는 칸 — ⓘ 가 칩과 작은 간격으로 붙는다(옆 토글의 풍선으로 읽히지 않게).
+SECTIONS_ROW_KEY: Final = "process_detail_sections_row"
 DOWNLOAD_STYLE: Final = (
     f"<style>.st-key-{UNITS_CSV_KEY} button, .st-key-{SHEET_XLSX_KEY} button "
-    "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
+    "{ min-height: 28px; height: 28px; padding-block: 0; }"
+    f".st-key-{DOWNLOADS_KEY} {{ flex-wrap: nowrap; }}"
+    f'[data-testid="stLayoutWrapper"]:has(> .st-key-{DOWNLOADS_KEY}) '
+    "{ flex-shrink: 0; min-width: max-content; }</style>"
 )
 # 「구획」 칩의 뜻 — 라벨을 숨긴 칸이라 위젯 풍선이 서지 않는다(Streamlit 1.63 은 풍선을 라벨 줄에
 # 그린다). 칩 바로 뒤 빈 캡션 풍선 하나가 말한다(설계 규칙 UI-TXT-02, 2026-11-10 보드 Q-8).
@@ -539,16 +546,23 @@ def _render_tool_row(
     seed_sections()
     with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
         st.caption("구획", width="content")
-        opened = st.pills(
-            "구획",
-            list(SECTION_IDS),
-            selection_mode="multi",
-            format_func=lambda section: SECTION_LABELS.get(str(section), str(section)),
-            key=PROCESS_DETAIL_SECTIONS_KEY,
-            persist_state="session",
-            label_visibility="collapsed",
-        )
-        st.caption("", help=SECTIONS_HELP, width="content")
+        with st.container(
+            horizontal=True,
+            vertical_alignment="center",
+            gap="small",
+            width="content",
+            key=SECTIONS_ROW_KEY,
+        ):
+            opened = st.pills(
+                "구획",
+                list(SECTION_IDS),
+                selection_mode="multi",
+                format_func=lambda section: SECTION_LABELS.get(str(section), str(section)),
+                key=PROCESS_DETAIL_SECTIONS_KEY,
+                persist_state="session",
+                label_visibility="collapsed",
+            )
+            st.caption("", help=SECTIONS_HELP, width="content")
         collapsed = frozenset(SECTION_IDS) - {str(section) for section in opened or ()}
         summary_open = SECTION_SUMMARY not in collapsed
         expanded = st.toggle(
@@ -583,7 +597,7 @@ def _render_tool_row(
                 width="content",
                 help=TARGET_HELP,
             )
-        with st.container(horizontal=True, horizontal_alignment="right"):
+        with st.container(horizontal=True, horizontal_alignment="right", key=DOWNLOADS_KEY):
             if view.units_csv is not None:
                 render_csv_download(
                     data=view.units_csv,
