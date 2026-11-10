@@ -10,8 +10,9 @@
 
 - **등호를 「≈」 로**(`equals_mark`) — 인수는 늘 화면 자릿수로 적고, 적힌 인수로 다시 셈한 글이
   결과 글과 다르면 「=」 대신 「≈」. 다시 셈할 인수는 적힌 글자에서 읽을 수 있다
-  (`written_value`). 공정 Capa 상세(근거 카드·결합 캔버스 풍선), 가용설비 현황 비교 시트 풍선,
-  제약 시뮬레이션 계산표 풍선.
+  (`written_value` — 두 항의 합·차는 `written_total`). 공정 Capa 상세(근거 카드·결합 캔버스
+  풍선), 가용설비 현황 Static 대비 일정(비교 시트 풍선·근거 카드 식 셋), 제약 시뮬레이션 계산표
+  풍선.
 - **인수 자릿수를 늘려**(`consistent_digits` + `operand_text`) — 어긋날 때만 그 식의 인수를 모두
   같은 자릿수로 한 자리씩(여섯째 자리까지) 더 적고, 그래도 못 맞추면 화면 자릿수와 「≈」. 제약
   시뮬레이션 고른 달 계산 다섯 단계. 인수마다 따로 늘리는 꼴(`consistent_places` — 더 적는 자리
@@ -65,6 +66,15 @@ def written_value(text: str) -> float | None:
     if match["sign"] in (MINUS, "-"):
         value = -value
     return value / 100 if match["percent"] else value
+
+
+def written_total(first: str, second: str, *, subtract: bool = False) -> float | None:
+    """적힌 두 항 글자의 합(`subtract` 면 차) — 식을 읽는 사람이 적힌 수로 다시 셈해 얻는 값.
+    하나라도 수가 아니면(「—」) 다시 셀 수 없어 `None` 이다(그 식의 등호는 「≈」 가 된다)."""
+    left, right = written_value(first), written_value(second)
+    if left is None or right is None:
+        return None
+    return left - right if subtract else left + right
 
 
 def consistent_digits(compute: Callable[[int], str], shown: str) -> tuple[int, str]:

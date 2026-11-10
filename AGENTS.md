@@ -4129,14 +4129,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `분류별 내역`·`확보율 교차검증`)를 그린다. DB 는 페이지가 읽어 넘기고 계산은 `simulation_cache` 래퍼
   (`get_availability_sheet` 등)로 받아 고르기만 한다.
   - 칸 누름 → 근거 카드(`pick_gap_sheet_cell`)는 같은 칸 다시 누름이 유일한 닫기이고 세대(`GAP_SHEET_GENERATION_KEY`)를
-    `layout.meta` 에 싣는다. 시트·근거 카드는 키 붙은 프래그먼트다(`tests/test_availability_sheet_panel.py`).
+    `layout.meta` 에 싣는다. 시트·근거 카드는 키 붙은 프래그먼트다(`tests/test_availability_sheet_panel.py`). 근거 카드 식 셋
+    (Static 보유 + 대여 = 합 · GAP = 설비 일정 − Static · 설비 일정 기준 가용 = 보유 + 대여 — `_static_sum_line` · `_gap_line` ·
+    `_schedule_available_line`)은 인수가 시트 칸 자릿수이고, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 결과 앞 등호가
+    「≈」 다(`formula_text.equals_mark` — 비교 시트 풍선과 같은 길, 인수가 「—」 여도 「≈」, 8장).
   - 호기 필터가 걸리면 Static·GAP 행은 「—」 다. 시트·호기 목록 CSV 와 공정명 불일치 문구는 원본이다. 시트 · 호기 목록
     「시트 엑셀」(시트 엑셀 넓히기 2 — 각 CSV 와 「내려받기 ▾」 메뉴 하나, 호기 목록은 목록 아래 제 메뉴)은 화면처럼 표시명이고
     호기 목록 숫자 꼴은 화면 `NumberColumn` 과 같은 자릿수 표(`_UNIT_DIGITS`)에서 나온다(`unit_list_workbook`).
   - 입력 비가동(`manual_downtime` — **필수 인자**, 페이지가 `load_manual_downtime` 으로 읽어 넘긴다)을 시트·그림·확보율
     교차검증의 설비 일정 기준 가용에서 뺀다(키 `availability_sheet_cache_key`·`securement_cross_check_cache_key` 의 끝 칸).
     시트 머리에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄, 조회 달에 든 칸은 상태 알림 `EQ-23`(목록은 Alarm 줄
-    표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다.
+    표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다 — 호기 목록이
+    조회 달에 입력 비가동이 든 범위를 보면 표지 「입력 비가동 · 이 목록에 없음」 + 풍선(`MANUAL_LIST_MARK` · `MANUAL_LIST_HELP`)을
+    혼자 한 줄로 세우지 않고 아래 전환 줄 오른쪽 끝 칸(시트의 「내려받기 ▾」 자리 `row_end` — 호기 목록에서는 빈 칸)에 내용 폭
+    작은 글로 둔다(E2E e4-1, 설계 규칙 UI-LAY-13 · UI-TXT-04).
   - 탭 머리에는 구획 제목 · 「확보율 교차검증」 제목을 두지 않고(안쪽 탭 이름 · 고른 전환 값과 같은 말 — UI-TXT-07) `조회 결과` ·
     `표시` 전환 단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고). 두 전환의 뜻은 그 줄 끝 빈 캡션 풍선 하나(`RESULT_VIEW_HELP` ·
     `DETAIL_MODE_HELP`)이고 마지막 전환과 작은 간격의 한 칸이다(`_switch_group` — 전환끼리만 넓게, Main 머리 줄 풍선과 같은 간격).
@@ -4402,8 +4408,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/formula_text.py` — 화면 식 글(「a ÷ b = c」)이 **적힌 수로 다시 셈해도 결과와 맞게** 인수
   글자와 등호를 고르는 순수 도우미(8장 「화면 숫자는 검산되어야 한다」). 길이 둘이고 화면마다 지금 쓰는 길을 지킨다 —
   「≈」 길(`equals_mark` — 인수는 화면 자릿수, 적힌 인수로 다시 셈한 글이 결과 글과 다르면 「=」 대신 「≈」, 적힌 글자에서
-  수를 읽는 `written_value`)은 공정 Capa 상세 근거 카드·결합 캔버스 풍선, 가용설비 현황 비교 시트 풍선, 제약 시뮬레이션
-  계산표 풍선이고, 자릿수 늘리기 길(`consistent_digits`·`operand_text` — 어긋날 때만 그 식의 인수를 모두 한 자리씩, 여섯째
+  수를 읽는 `written_value`, 두 항의 합·차를 다시 셈하는 `written_total`)은 공정 Capa 상세 근거 카드·결합 캔버스 풍선, 가용설비 현황 비교 시트 풍선·근거 카드 식 셋,
+  제약 시뮬레이션 계산표 풍선이고, 자릿수 늘리기 길(`consistent_digits`·`operand_text` — 어긋날 때만 그 식의 인수를 모두 한 자리씩, 여섯째
   자리까지, 끝내 못 맞추면 화면 자릿수와 「≈」. 한 카드의 식들은 `shared_digits` 의 한 자릿수로 — `digits_within`)은 제약 시뮬레이션 고른 달 계산이고, 인수마다 따로 늘리는 꼴
   (`consistent_places` — 더 적는 자리 수의 합이 가장 작게, 같으면 뒤 인수 먼저)은 표준 목표 로직 분석이다. 인수 글자 꼴은
   화면마다 다르므로 쓰는 쪽이 넘긴다(`operand_text` 의 `plain`). 결과 값·판정·올림 규칙은 바꾸지 않는다.

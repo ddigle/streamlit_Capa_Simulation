@@ -3,15 +3,17 @@
 """화면 식 글 도우미(`components/formula_text.py`)와 그것을 쓰는 자리.
 
 - **단위** — `equals_mark`·`consistent_digits`·`operand_text`(2회차 기대값 「5 × 120% = 6.00」·
-  「42.19 ÷ 42 = 100.5%」·「2 ÷ 1.9389 = 103.2%」 그대로)·`written_value`·`parse_formula`.
+  「42.19 ÷ 42 = 100.5%」·「2 ÷ 1.9389 = 103.2%」 그대로)·`written_value`·`written_total`·
+  `parse_formula`.
 - **검산 그물** — 식을 내는 함수마다 값 격자(반올림 경계 x.xx5·x.xx49, 큰 수 54,698.63, 0 근처,
   음수 과부족)로 글을 만들고 `parse_formula` 로 읽어, 적힌 수로 다시 셈한 값이 적힌 결과의
   자릿수에서 같거나 등호가 「≈」 인지 본다. 대상: 공정 Capa 상세 결합 캔버스 풍선 일곱(① 가용·
   가정 소요·확보율·과부족, ② 목표 과부족·비가동 영향의 갈림 합과 확보율 짝)·근거 카드
   (① 원수요 부하량 ÷ 실효 대당 Capa·가정 소요, ② 가용, ③ 판정·가정 소요·원인), 제약
-  시뮬레이션 계산표 풍선 셋, 가용설비 현황 비교 시트 풍선 넷(Static
-  가용·보유·가용·GAP), 표준 목표 로직 분석 식 세 줄(화면 대본 — 페이지 파일은 import 하지
-  않는다). 결과가 앞 줄이나 다른 줄에 있고 식 줄에 등호가 없는 풍선은 결과를 붙여 읽는다.
+  시뮬레이션 계산표 풍선 셋, 가용설비 현황 비교 시트 풍선 넷(Static 가용·보유·가용·GAP)과
+  근거 카드 식 셋(Static 보유 + 대여·GAP·설비 일정 기준 가용), 표준 목표 로직 분석 식 세
+  줄(화면 대본 — 페이지 파일은 import 하지 않는다). 결과가 앞 줄이나 다른 줄에 있고 식 줄에
+  등호가 없는 풍선은 결과를 붙여 읽는다.
 - **AST 가드** — UI 모듈(`app_pages/`·`components/`)의 식 꼴 f-string 마다 `formula_text` 를
   거치는지 본다. 식 꼴은 두 끼운 값 사이에 연산(` ÷ `·` × `·` − `·` + `)이 있고 등호(또는 등호
   자리의 끼운 값)가 값에 붙었거나, 결과가 앞 줄이고 식 줄에 등호가 없는 꼴(「과부족 {}<br>가용 {} −
@@ -42,6 +44,11 @@ from test_constraint_simulation import _run
 from test_standard_target_capa_page import LOGIC_SELECTIONS, TEST_SCRIPT
 
 from capa_simulation.components import formula_text
+from capa_simulation.components.availability_gap_panel import (
+    _gap_line,
+    _schedule_available_line,
+    _static_sum_line,
+)
 from capa_simulation.components.availability_sheet_canvas import _hover as sheet_hover
 from capa_simulation.components.constraint_simulation_figures import (
     _delta_cell,
@@ -62,6 +69,7 @@ from capa_simulation.components.formula_text import (
     equals_mark,
     operand_text,
     parse_formula,
+    written_total,
     written_value,
 )
 from capa_simulation.components.process_capa_canvas import (
@@ -87,6 +95,7 @@ from capa_simulation.services.availability_sheet import (
     ROW_SCHEDULE_AVAILABLE,
     ROW_SCHEDULE_OWNED,
     ROW_STATIC_AVAILABLE,
+    ROW_STATIC_LENT,
     SHEET_ROWS,
     SheetView,
 )
@@ -214,6 +223,14 @@ def test_written_value_reads_screen_numbers() -> None:
     assert written_value("+1.13") == 1.13
     assert written_value("109%") == pytest.approx(1.09)
     assert written_value("—") is None
+
+
+def test_written_total_recomputes_two_written_terms() -> None:
+    assert written_total("3.35", "0.97") == pytest.approx(4.32)
+    assert written_total("3.35", "0.97", subtract=True) == pytest.approx(2.38)
+    assert written_total(f"{MINUS}1.50", "+0.25") == pytest.approx(-1.25)
+    assert written_total("—", "0.97") is None
+    assert written_total("3.35", "—", subtract=True) is None
 
 
 @pytest.mark.parametrize(
@@ -722,6 +739,46 @@ def test_the_static_available_balloon_leaves_the_mismatch_to_its_warning() -> No
     assert "⚠ 가용대수가 보유 + 대여와 다릅니다" in warned
 
 
+@pytest.mark.parametrize(("value", "other"), PAIRS)
+def test_the_sheet_evidence_lines_recompute(value: float, other: float) -> None:
+    """Static 대비 일정 근거 카드 식 셋(Static 보유 + 대여 · GAP 셋 · 설비 일정 기준 가용 — 입력
+    비가동 몫이 있고 없을 때)도 적힌 수로 검산되거나 등호가 「≈」 다(비교 시트 풍선과 같은 길 —
+    인수는 시트 칸 자릿수)."""
+    view = _sheet(value + 0.0004, other, other / 3)
+    _assert_checked(_static_sum_line(view, 202611), 1)
+    for gap in GAP_ROWS:
+        _assert_checked(_gap_line(view, 202611, gap), 1)
+    for removed in (0.0, other / 7):
+        line = _schedule_available_line(view, 202611, removed=removed, units=1234, baseline_lines=2)
+        _assert_checked(line, 1)
+        assert ("그 가운데 입력 비가동" in line) == (round(removed, 9) > 0)
+
+
+def test_the_sheet_evidence_lines_mark_a_written_mismatch() -> None:
+    """끝자리만 어긋나는 근거 카드 식은 결과 앞이 「≈」 이고, GAP 식의 앞 「=」(이름의 뜻)는
+    그대로다. 인수가 「—」 면 다시 셀 수 없어 「≈」 다(비교 시트 풍선과 같다)."""
+    # 보유 1.004 「1.00」 + 대여 −0.006 「−0.01」 = 0.998 「1.00」 인데 적힌 수로는 0.99.
+    rounding = _sheet(10.0, 1.004, 0.006)
+    assert _static_sum_line(rounding, 202611).startswith(
+        f"보유 1.00 + 대여 {MINUS}0.01 {APPROX} 1.00"
+    )
+    # 설비 일정 대여 −0.006 「−0.01」 − Static 대여 −0.006 「−0.01」 = 0 「0.00」 — 맞는다.
+    assert _gap_line(rounding, 202611, GAP_ROWS[1]).endswith(f"{EQUALS} 0.00")
+    # 설비 일정 보유 10.004 「10.00」 − Static 보유 1.004 「1.00」 = 9.00 — 맞는다.
+    shifted = _sheet(10.004, 1.0, 0.0)
+    assert _gap_line(shifted, 202611, GAP_ROWS[0]).startswith("GAP ")
+    assert f" {EQUALS} 설비 일정 " in _gap_line(shifted, 202611, GAP_ROWS[0])
+    # 가용 9.998 「10.00」 = 보유 10.004 「10.00」 + 대여 −0.006 「−0.01」 — 적힌 수로는 9.99.
+    schedule = _sheet(10.004, 1.0, 0.006)
+    assert _schedule_available_line(
+        schedule, 202611, removed=0.0, units=1, baseline_lines=1
+    ).startswith(f"설비 일정 기준 가용 10.00 {APPROX} 보유 10.00 + 대여(비가동) {MINUS}0.01")
+    values = rounding.values.copy()
+    values.loc[ROW_STATIC_LENT, 202611] = float("nan")
+    blank = replace(rounding, values=values)
+    assert f"대여 — {APPROX} 1.00" in _static_sum_line(blank, 202611)
+
+
 # ================================================================== 검산 그물 — 표준 목표 로직 분석
 
 
@@ -769,17 +826,7 @@ ALLOWED: dict[tuple[str, str], str] = {
     ),
 }
 # 다른 주제가 같은 파일을 고치는 중이라 이번에 손대지 않은 자리 — 그 병합 뒤 고친다(docs/TODO.md).
-PENDING: dict[tuple[str, str], str] = {
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_static_evidence"): (
-        "보유 + 대여 = 합 · 기준정보 가용"
-    ),
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_gap_evidence"): (
-        "GAP = 설비 일정 − Static = 값"
-    ),
-    ("src/capa_simulation/components/availability_gap_panel.py", "_render_schedule_evidence"): (
-        "설비 일정 기준 가용 = 보유 + 대여(비가동)"
-    ),
-}
+PENDING: dict[tuple[str, str], str] = {}
 
 
 def _operator_join(node: ast.expr) -> str | None:

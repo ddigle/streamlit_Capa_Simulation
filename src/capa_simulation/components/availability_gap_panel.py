@@ -96,6 +96,7 @@ from capa_simulation.components.availability_sheet_workbook import (
 )
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_explorer import report_unit_notices
+from capa_simulation.components.formula_text import equals_mark, written_total
 from capa_simulation.components.home_dimensions import (
     DASHBOARD_LABEL_COLUMN_WIDTH_PX,
     NARROW_LABEL_COLUMN_WIDTH_PX,
@@ -724,9 +725,9 @@ def render_availability_gap_panel(
         )
     row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
     with switches:
-        # 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀) 자리 — 줄 오른쪽 끝(시트를 그리는 회차에만
-        # 채운다, 비면 그리지 않는다).
-        csv_slot = st.container(
+        # 줄 오른쪽 끝 칸 — 시트를 그리는 회차에는 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀),
+        # 호기 목록이 입력 비가동이 든 범위를 보면 그 표지(비면 그리지 않는다).
+        row_end = st.container(
             horizontal=True, horizontal_alignment="right", vertical_alignment="center"
         )
     if one_sided is not None:
@@ -746,7 +747,11 @@ def render_availability_gap_panel(
             )
     if detail_mode == "호기 목록":
         if any(process_name in scope for process_name, _, _ in manual_cells):
-            st.caption(MANUAL_LIST_MARK, help=MANUAL_LIST_HELP)
+            # 숨은 데이터 표지는 혼자 한 줄을 세우지 않고 전환 줄 오른쪽 끝 작은 글이다 — 시트를
+            # 볼 때 「내려받기 ▾」 가 서는 칸이고 호기 목록에서는 비어 있다(호기 목록 내려받기는
+            # 목록 아래). 설계 규칙 UI-LAY-13 · UI-TXT-04.
+            with row_end:
+                st.caption(MANUAL_LIST_MARK, help=MANUAL_LIST_HELP, width="content")
         _render_unit_list(
             _scoped_contributions(
                 monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
@@ -813,7 +818,7 @@ def render_availability_gap_panel(
         cutoff=cutoff,
         unit_filtered=chosen_units is not None,
     )
-    with csv_slot:
+    with row_end:
         render_sheet_downloads(
             bundle,
             heading=_sheet_heading(
@@ -1155,16 +1160,65 @@ def _text(row: str, value: float | None) -> str:
     return sheet_value_text(row, value, SHEET_DIGITS)
 
 
-def _render_static_evidence(bundle: GapSheetBundle, month: int, row: str) -> None:
-    view = bundle.view
+def _static_sum_line(view: SheetView, month: int) -> str:
+    """Static 근거 카드 식 줄 「보유 a + 대여 b = 합 · 기준정보 가용 c」. 합은 반올림 전 두 값의
+    합이고, 적힌 두 인수로 다시 셈한 글이 합 글과 다르면 등호가 「≈」 다(`formula_text.equals_mark`
+    — 비교 시트 풍선과 같은 길, 인수는 시트 칸 자릿수 그대로). 합과 기준정보 가용이 다른 달은 식이
+    아니라 아래 ⚠ 줄이 말한다."""
     owned = view.value(ROW_STATIC_OWNED, month)
     lent = view.value(ROW_STATIC_LENT, month)
-    available = view.value(ROW_STATIC_AVAILABLE, month)
-    st.markdown(
-        f"보유 {_text(ROW_STATIC_OWNED, owned)} + 대여 {_text(ROW_STATIC_LENT, lent)} = "
-        f"{_text(ROW_STATIC_OWNED, (owned or 0.0) + (lent or 0.0))} · 기준정보 가용 "
-        f"{_text(ROW_STATIC_AVAILABLE, available)}"
+    owned_text = _text(ROW_STATIC_OWNED, owned)
+    lent_text = _text(ROW_STATIC_LENT, lent)
+    total_text = _text(ROW_STATIC_OWNED, (owned or 0.0) + (lent or 0.0))
+    mark = equals_mark(total_text, _text(ROW_STATIC_OWNED, written_total(owned_text, lent_text)))
+    return (
+        f"보유 {owned_text} + 대여 {lent_text} {mark} {total_text} · 기준정보 가용 "
+        f"{_text(ROW_STATIC_AVAILABLE, view.value(ROW_STATIC_AVAILABLE, month))}"
     )
+
+
+def _gap_line(view: SheetView, month: int, row: str) -> str:
+    """GAP 근거 카드 식 줄 「GAP 가용 = 설비 일정 a − Static b = 차」 — 앞 「=」 는 이름의 뜻이고,
+    결과 앞 등호는 적힌 두 인수로 다시 셈한 글이 GAP 글과 다르면 「≈」 다(비교 시트 GAP 풍선과
+    같은 길)."""
+    schedule, static = GAP_PAIRS[row]
+    schedule_text = _text(schedule, view.value(schedule, month))
+    static_text = _text(static, view.value(static, month))
+    gap_text = _text(row, view.value(row, month))
+    mark = equals_mark(
+        gap_text, _text(row, written_total(schedule_text, static_text, subtract=True))
+    )
+    return (
+        f"GAP {ROW_ITEMS[row]} = 설비 일정 {schedule_text} − Static {static_text} {mark} {gap_text}"
+    )
+
+
+def _schedule_available_line(
+    view: SheetView, month: int, *, removed: float, units: int, baseline_lines: int
+) -> str:
+    """설비 일정 기준 근거 카드 식 줄 「설비 일정 기준 가용 c = 보유 a + 대여(비가동) b(그 가운데
+    입력 비가동 d) · 호기 n · 기존보유 m줄」 — 결과가 앞이고, 적힌 두 인수로 다시 셈한 글이 가용
+    글과 다르면 등호가 「≈」 다(비교 시트 가용 풍선과 같은 길). 입력 비가동 몫(`removed`)은 대여에
+    든 몫이라 식의 인수가 아니다."""
+    available, owned, lent = (
+        _text(row_id, view.value(row_id, month))
+        for row_id in (ROW_SCHEDULE_AVAILABLE, ROW_SCHEDULE_OWNED, ROW_SCHEDULE_LENT)
+    )
+    mark = equals_mark(available, _text(ROW_SCHEDULE_AVAILABLE, written_total(owned, lent)))
+    manual_text = (
+        f"(그 가운데 입력 비가동 {_text(ROW_SCHEDULE_LENT, -removed)})"
+        if round(removed, 9) > 0
+        else ""
+    )
+    return (
+        f"설비 일정 기준 가용 {available} {mark} 보유 {owned} + 대여(비가동) {lent}{manual_text} · "
+        f"호기 {units:,} · 기존보유 {baseline_lines}줄"
+    )
+
+
+def _render_static_evidence(bundle: GapSheetBundle, month: int, row: str) -> None:
+    view = bundle.view
+    st.markdown(_static_sum_line(view, month))
     if month in view.mismatch:
         st.warning(
             "⚠ 기준정보 가용이 보유 + 대여와 다릅니다 — 기준 정보 화면에서 세 표를 따로 고친 "
@@ -1183,11 +1237,7 @@ def _render_static_evidence(bundle: GapSheetBundle, month: int, row: str) -> Non
 def _render_gap_evidence(bundle: GapSheetBundle, month: int, row: str) -> None:
     view = bundle.view
     schedule, static = GAP_PAIRS[row]
-    st.markdown(
-        f"GAP {ROW_ITEMS[row]} = 설비 일정 {_text(schedule, view.value(schedule, month))} − "
-        f"Static {_text(static, view.value(static, month))} = {_text(row, view.value(row, month))}",
-        help=GAP_SIGN_HELP,
-    )
+    st.markdown(_gap_line(view, month, row), help=GAP_SIGN_HELP)
     if bundle.process is None:
         _card_table(bundle, _per_process(bundle, month, [schedule, static], sort_by=row, gap=row))
     st.caption(f"아래는 짝 칸 「{GROUP_TITLES['sched']} {ROW_ITEMS[schedule]}」의 호기입니다.")
@@ -1261,18 +1311,10 @@ def _render_schedule_evidence(
         reading.append("호기 필터 중이라 기존보유·입력 비가동은 들지 않습니다.")
     reading_help = "  \n".join(reading)
     if with_formula:
-        available, owned, lent = (
-            _text(row_id, view.value(row_id, month))
-            for row_id in (ROW_SCHEDULE_AVAILABLE, ROW_SCHEDULE_OWNED, ROW_SCHEDULE_LENT)
-        )
-        manual_text = (
-            f"(그 가운데 입력 비가동 {_text(ROW_SCHEDULE_LENT, -removed)})"
-            if round(removed, 9) > 0
-            else ""
-        )
         st.markdown(
-            f"설비 일정 기준 가용 {available} = 보유 {owned} + 대여(비가동) {lent}{manual_text} · "
-            f"호기 {units:,} · 기존보유 {baseline_lines}줄",
+            _schedule_available_line(
+                view, month, removed=removed, units=units, baseline_lines=baseline_lines
+            ),
             help=reading_help,
         )
     shown = _schedule_lines(

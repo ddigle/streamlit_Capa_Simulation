@@ -33,7 +33,7 @@ from typing import Final, NamedTuple
 
 import plotly.graph_objects as go
 
-from capa_simulation.components.formula_text import APPROX, EQUALS, equals_mark, written_value
+from capa_simulation.components.formula_text import APPROX, EQUALS, equals_mark, written_total
 from capa_simulation.components.home_figure_common import keep_unselected_opaque
 from capa_simulation.components.month_sheet_canvas import (
     EMPTY,
@@ -294,14 +294,6 @@ def _three(value: float | None, *, signed: bool = False) -> str:
     return signed_one(value, HOVER_DIGITS) if signed else fine_one(value, HOVER_DIGITS)
 
 
-def _written_total(first: str, second: str, *, subtract: bool = False) -> float | None:
-    """적힌 두 항 글자의 합(또는 차) — 다시 셈하는 사람이 얻는 값. 하나라도 「—」 면 없다."""
-    left, right = written_value(first), written_value(second)
-    if left is None or right is None:
-        return None
-    return left - right if subtract else left + right
-
-
 def _hover(view: SheetView, row: str, month: int, head: str) -> str:
     value = view.value(row, month)
     if row == ROW_STATIC_OWNED:
@@ -319,7 +311,7 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
         mark = (
             EQUALS
             if month in view.mismatch
-            else equals_mark(_three(value), _three(_written_total(owned_text, lent_text)))
+            else equals_mark(_three(value), _three(written_total(owned_text, lent_text)))
         )
         text = (
             f"{head} · Static 가용 {_three(value)}대 · RQ_EQP_AVBL 가용대수"
@@ -333,7 +325,7 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
         base = float(baseline) if baseline is not None and baseline == baseline else 0.0
         units = (value or 0.0) - base
         base_text, units_text = _three(base), _three(units)
-        mark = equals_mark(_three(value), _three(_written_total(base_text, units_text)))
+        mark = equals_mark(_three(value), _three(written_total(base_text, units_text)))
         return (
             f"{head} · 설비 일정 기준 보유 {_three(value)} (환산대수)"
             f"<br>{mark} 기존보유 {base_text} + 비가동이 없었다면 가용인 호기 {units_text}"
@@ -348,7 +340,7 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
     if row == ROW_SCHEDULE_AVAILABLE:
         owned_text = _three(view.value(ROW_SCHEDULE_OWNED, month))
         lent_text = _three(view.value(ROW_SCHEDULE_LENT, month), signed=True)
-        mark = equals_mark(_three(value), _three(_written_total(owned_text, lent_text)))
+        mark = equals_mark(_three(value), _three(written_total(owned_text, lent_text)))
         return (
             f"{head} · 설비 일정 기준 가용 {_three(value)} {mark} 보유 {owned_text} + 대여(비가동) "
             f"{lent_text}"
@@ -360,7 +352,7 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
     static_text = _three(view.value(static, month), signed=signed)
     gap_text = _three(value, signed=True)
     mark = equals_mark(
-        gap_text, _three(_written_total(schedule_text, static_text, subtract=True), signed=True)
+        gap_text, _three(written_total(schedule_text, static_text, subtract=True), signed=True)
     )
     return (
         f"{head} · GAP {ROW_ITEMS[row]} {gap_text} {mark} 설비 일정 {schedule_text} − Static "
