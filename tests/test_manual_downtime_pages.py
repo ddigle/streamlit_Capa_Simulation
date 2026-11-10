@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, states
+from alert_marks import active_state, data_error_marks, states
 from shortening_script import months_from_today
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import _captions as constraint_captions
@@ -221,6 +221,21 @@ def test_constraint_simulation_raises_the_entered_downtime_as_a_state_alert(
         "Preference",
     )
     assert "가용 = 설비 일정 기준" not in constraint_captions(app)
+    clear_equipment_repository()
+
+
+def test_a_stopped_constraint_screen_closes_the_entered_downtime_alert(tmp_path: Path) -> None:
+    """설비 일정이 서지 않아 계획 앞에서 멈춘 회차는 입력 비가동 알림 `CS-05` 를 「해소」(`active`
+    거짓 하나)로 낸다 — 두 모드가 `render_equipment_plan` 바로 뒤 한 자리에서 부르고 계획이 없으면
+    조건도 없다(필요 단축 일정 `RS-05` 의 멈춘 회차 꼴)."""
+    from test_constraint_simulation_page import OTHER_PROCESS
+
+    databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
+    _seed(databases[1], OTHER_PROCESS, WIDE_MONTHS, 0.5)
+    app = constraint_opened(databases, OTHER_PROCESS)
+    assert data_error_marks(app) == 1 and not app.metric
+    assert [note["active"] for note in states(app, "CS-05")] == [False]
     clear_equipment_repository()
 
 
