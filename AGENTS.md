@@ -4127,7 +4127,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 입력 비가동(`manual_downtime` — **필수 인자**, 페이지가 `load_manual_downtime` 으로 읽어 넘긴다)을 시트·그림·확보율
     교차검증의 설비 일정 기준 가용에서 뺀다(키 `availability_sheet_cache_key`·`securement_cross_check_cache_key` 의 끝 칸).
     시트 머리에 「입력 비가동 반영」, 근거 카드에 「입력 비가동 · Preference」 줄, 조회 달에 든 칸은 상태 알림 `EQ-23`(목록은 Alarm 줄
-    표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다.
+    표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다 — 호기 목록이
+    입력 비가동이 든 범위를 보면 표지 「입력 비가동 · 이 목록에 없음」 + 풍선(`MANUAL_LIST_MARK` · `MANUAL_LIST_HELP`)을
+    혼자 한 줄로 세우지 않고 아래 전환 줄 오른쪽 끝 칸(시트의 「내려받기 ▾」 자리 `row_end` — 호기 목록에서는 빈 칸)에 내용 폭
+    작은 글로 둔다(E2E e4-1, 설계 규칙 UI-LAY-13 · UI-TXT-04).
   - 탭 머리에는 구획 제목 · 「확보율 교차검증」 제목을 두지 않고(안쪽 탭 이름 · 고른 전환 값과 같은 말 — UI-TXT-07) `조회 결과` ·
     `표시` 전환 단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고). 두 전환의 뜻은 그 줄 끝 빈 캡션 풍선 하나(`RESULT_VIEW_HELP` ·
     `DETAIL_MODE_HELP`)이고 마지막 전환과 작은 간격의 한 칸이다(`_switch_group` — 전환끼리만 넓게, Main 머리 줄 풍선과 같은 간격).

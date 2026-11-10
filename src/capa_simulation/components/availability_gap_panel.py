@@ -724,9 +724,9 @@ def render_availability_gap_panel(
         )
     row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
     with switches:
-        # 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀) 자리 — 줄 오른쪽 끝(시트를 그리는 회차에만
-        # 채운다, 비면 그리지 않는다).
-        csv_slot = st.container(
+        # 줄 오른쪽 끝 칸 — 시트를 그리는 회차에는 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀),
+        # 호기 목록이 입력 비가동이 든 범위를 보면 그 표지(비면 그리지 않는다).
+        row_end = st.container(
             horizontal=True, horizontal_alignment="right", vertical_alignment="center"
         )
     if one_sided is not None:
@@ -746,7 +746,11 @@ def render_availability_gap_panel(
             )
     if detail_mode == "호기 목록":
         if any(process_name in scope for process_name, _, _ in manual_cells):
-            st.caption(MANUAL_LIST_MARK, help=MANUAL_LIST_HELP)
+            # 숨은 데이터 표지는 혼자 한 줄을 세우지 않고 전환 줄 오른쪽 끝 작은 글이다 — 시트를
+            # 볼 때 「내려받기 ▾」 가 서는 칸이고 호기 목록에서는 비어 있다(호기 목록 내려받기는
+            # 목록 아래). 설계 규칙 UI-LAY-13 · UI-TXT-04.
+            with row_end:
+                st.caption(MANUAL_LIST_MARK, help=MANUAL_LIST_HELP, width="content")
         _render_unit_list(
             _scoped_contributions(
                 monthly_key, spans, baseline, cutoff, conversion_ratios, scope, chosen_units
@@ -813,7 +817,7 @@ def render_availability_gap_panel(
         cutoff=cutoff,
         unit_filtered=chosen_units is not None,
     )
-    with csv_slot:
+    with row_end:
         render_sheet_downloads(
             bundle,
             heading=_sheet_heading(

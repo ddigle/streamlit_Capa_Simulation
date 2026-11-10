@@ -354,7 +354,11 @@ def test_the_unit_filter_sheet_leaves_the_input_out() -> None:
 def test_the_unit_list_says_the_input_is_not_in_the_list_with_a_one_way_marker() -> None:
     """호기 목록 보기의 입력 비가동 표지는 「이 목록에 없음」 한 뜻이다 — 「입력 비가동
     반영」(이 값에 들었다는 꼬리)을 쓰지 않아 표지와 풍선이 거꾸로 읽히지 않는다(설계 규칙
-    UI-CON-02)."""
+    UI-CON-02). 표지는 혼자 한 줄을 세우지 않고 「조회 결과 · 표시」 전환 줄 오른쪽 끝 칸(시트의
+    「내려받기 ▾」 자리)의 작은 글이다(설계 규칙 UI-LAY-13 · UI-TXT-04)."""
+    from streamlit.testing.v1.element_tree import Block
+    from test_availability_gap_panel import _descendants
+
     app = AppTest.from_function(_filter_app, default_timeout=30)
     app.session_state["manual_rows"] = [("Die Attach", MONTH, 1.0)]
     app.run()
@@ -366,6 +370,21 @@ def test_the_unit_list_says_the_input_is_not_in_the_list_with_a_one_way_marker()
     assert marker.proto.help == MANUAL_LIST_HELP
     assert "반영" not in MANUAL_LIST_MARK and "이 목록에 없음" in MANUAL_LIST_MARK
     assert "이 목록에 없습니다" in MANUAL_LIST_HELP
+
+    # 본문 맨 바깥 칸으로 혼자 서지 않고, 두 전환이 든 줄 안 — 마지막 칸(오른쪽 끝)의 글이다(내용
+    # 폭 · 오른쪽 붙임은 AppTest 가 싣지 않는 배치 값이라 브라우저로 잰다).
+    assert all(child is not marker for child in app.main.children.values())
+    (switch_row,) = [
+        block
+        for block in app.main.children.values()
+        if isinstance(block, Block)
+        and any(getattr(child, "key", None) == RESULT_VIEW_KEY for child in _descendants(block))
+    ]
+    inside = _descendants(switch_row)
+    assert marker in inside
+    assert {RESULT_VIEW_KEY, DETAIL_MODE_KEY} <= {getattr(child, "key", None) for child in inside}
+    row_end = list(switch_row.children.values())[-1]
+    assert isinstance(row_end, Block) and marker in _descendants(row_end)
 
 
 def test_the_real_page_takes_the_saved_input_out_of_the_static_comparison(tmp_path: Path) -> None:
