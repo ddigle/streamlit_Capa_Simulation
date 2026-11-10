@@ -368,7 +368,7 @@ def render_scenario_management(
     # 상자가 옛 자리에 흐린 사본으로 남아 모드를 바꿔도 새로고침 전까지 따라왔다(2026-10-22 사본
     # 앱 이분 탐색 — 알림을 빼거나 상자 key 를 빼거나 되돌리기를 콜백으로 바꾸면 각각 사라졌다).
     render_flash(FLASH_KEY, FLASH_WARNING_KEY, *_notices_without_a_place(list_mode))
-    _report_missing_official(repository, alert_tab)
+    _report_missing_official(repository, alert_tab, active_count=len(scenarios))
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         mode = st.segmented_control(
             "시나리오 작업",
@@ -446,23 +446,45 @@ def _official_widget_keys(value: object) -> tuple[str, ...]:
     return keys
 
 
-def _report_missing_official(repository: DuckDBScenarioRepository, alert_tab: str | None) -> None:
+def _report_missing_official(
+    repository: DuckDBScenarioRepository, alert_tab: str | None, *, active_count: int
+) -> None:
     """공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 있어도 부른다(해소) — 닫힌
-    탭이면 알리지 않고 읽지도 않는다."""
+    탭이면 알리지 않고 읽지도 않는다.
+
+    시나리오가 보관본만 남았으면 목록에 고를 것이 없다 — 그 상태만 글을 갈라 보관함의 「되돌리기」
+    를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 그 판정의 보관본 읽기는 공식버전이
+    없고 활성 시나리오가 0건(`active_count`)일 때만 한다. 내용 값이 갈라 바뀌면 그 줄도 새로
+    뜬다(지문)."""
     if alert_tab is None:
         return
     official = repository.latest_official_release()
-    alerts.state(
-        "SC-01",
-        scope=None,
-        content=official is None or None,
-        active=official is None,
-        text="공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 목록 관리 「공식으로 지정…」",
-        full=(
+    archived_only = (
+        official is None
+        and active_count == 0
+        and bool(repository.list_scenarios(include_archived=True))
+    )
+    if archived_only:
+        text = "공식버전이 없습니다 — 보관본만 있음 · 목록 관리 「보관함」 › 「되돌리기」"
+        full = (
+            "공식버전이 없고 보관본만 있어 지정할 시나리오가 없습니다 — 시나리오 관리 › Capa "
+            "시나리오 › 목록 관리의 「보관함」 에서 「되돌리기」 한 뒤 「공식으로 지정…」 으로 "
+            "리비전 하나를 공식으로 정하세요."
+        )
+    else:
+        text = "공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 목록 관리 「공식으로 지정…」"
+        full = (
             "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다 — 시나리오 관리 › "
             "Capa 시나리오 › 목록 관리에서 시나리오를 고르고 「공식으로 지정…」 으로 리비전 하나를 "
             "공식으로 정하세요."
-        ),
+        )
+    alerts.state(
+        "SC-01",
+        scope=None,
+        content=("archived_only" if archived_only else True) if official is None else None,
+        active=official is None,
+        text=text,
+        full=full,
         tab=alert_tab,
     )
 
