@@ -89,6 +89,7 @@ from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.literal_markdown import literal_markdown, literal_names
 from capa_simulation.components.process_field import first_and_rest
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.profile_caption import render_row_value
 from capa_simulation.components.shortening_board import (
     ShorteningHighlight,
     current_highlight,
@@ -278,11 +279,6 @@ LEVEL_FIELD = TargetLevelField(
     host=SHORTENING_DIALOG_HOST,
 )
 _SHORTENING_OWNER = "required_shortening"
-# 기준 값 작은 글(`_render_basis`)의 표지 클래스와 그 서식 — 캡션 칸을 줄 오른쪽 끝으로 민다.
-BASIS_CLASS = "shk-basis"
-BASIS_STYLE = (
-    f'<style>[data-testid="stElementContainer"]:has(.{BASIS_CLASS}){{margin-left:auto}}</style>'
-)
 _UNITS_CSV_KEY = "equipment_shortening_units_csv"
 _UNITS_ALL_LEVELS_CSV_KEY = "equipment_shortening_units_all_levels_csv"
 _MONTHS_CSV_KEY = "equipment_shortening_months_csv"
@@ -892,17 +888,12 @@ def basis_text(today: date) -> str:
 
 
 def _render_basis(today: date) -> None:
-    """기준 값 작은 글(`basis_text`) — 가로 줄 안에서 부른다. 글은 늘지도 줄지도 않는 한 덩이로 줄
-    오른쪽 끝에 서고, 앞 칸들 곁에 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려간다 — 좁은
-    자리에서 두 줄로 접히지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 오른쪽 끝으로 미는
-    서식은 같은 캡션 마크다운에 싣는다(`BASIS_STYLE`) — 스타일만 든 `st.html` 은 이벤트 칸으로 가 이
-    프래그먼트 갈래마다 그 칸 자리 수를 바꾼다(`profile_caption` 의 버전 줄과 같은 꼴). 글은 앱이
-    지은 것이다(날짜)."""
-    st.caption(
-        f'<span class="{BASIS_CLASS}">{html.escape(basis_text(today))}</span>{BASIS_STYLE}',
-        unsafe_allow_html=True,
-        width="content",
-    )
+    """기준 값 작은 글(`basis_text`) — 가로 줄 안에서 부르는 값
+    글(`profile_caption.render_row_value` 의 `"push"`). 글은 늘지도 줄지도 않는 한 덩이로 줄 오른쪽
+    끝에 서고, 앞 칸들 곁에 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려간다 — 좁은 자리에서 두
+    줄로 접히지 않는다(2026-11-09 독립 검토, 설계 규칙 UI-ACC-02). 미는 서식은 같은 캡션 마크다운에
+    실려 이 프래그먼트 갈래마다 이벤트 칸 자리 수가 바뀌지 않는다. 글은 앱이 지은 것이다(날짜)."""
+    render_row_value(basis_text(today), place="push")
 
 
 def _render_month_range(

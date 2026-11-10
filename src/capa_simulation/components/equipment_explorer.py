@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -29,7 +28,7 @@ from capa_simulation.components.equipment_lifecycle_gantt import (
 from capa_simulation.components.literal_markdown import literal_names, markdown_safe_tildes
 from capa_simulation.components.process_field import render_process_filter
 from capa_simulation.components.process_labels import ProcessLabels
-from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE, HEADING_KEY_PREFIX
+from capa_simulation.components.profile_caption import render_heading_value
 from capa_simulation.components.state_alerts import AlertScope, alert_table, tab_name
 from capa_simulation.components.status_metric import metric_row
 from capa_simulation.components.tab_state import OpenTab, tab_is_hidden
@@ -125,7 +124,7 @@ MAIN_ROW_HELP = (
     "볼 내용 · 보기 · 표현 — 무엇을(가용대수 · 호기 현황 · 비가동 호기 · Qual 일정 · 단계 전환), "
     "어떤 꼴로(보기), 차트 · 표 가운데 무엇으로(표현 — 같은 값) 볼지 고릅니다."
 )
-# 결과 구획 제목 줄 key(제목 + 오른쪽 끝 값 글 — `_heading_with_value`).
+# 결과 구획 제목 줄 key(제목 + 오른쪽 끝 값 글 — `profile_caption.render_heading_value`).
 WEEKLY_HEADING_KEY = "equipment_weekly"
 PROCESS_HEADING_KEY = "equipment_process_counts"
 STATUS_HEADING_KEY = "equipment_status_counts"
@@ -194,30 +193,6 @@ def _rows_label(frame: pd.DataFrame, *, partial: bool = False) -> str:
         return f"{rows:,}대"
     units = int(frame[UNIT_KEY_COLUMN].nunique())
     return f"호기 행 {rows:,} · 설비 {units:,}대" + ("에 걸침" if partial else "")
-
-
-def _heading_with_value(title: str, value: str, *, key: str, help: str | None = None) -> None:
-    """구획 제목과 그 줄 오른쪽 끝 작은 값 글 — 값 줄을 제목 위 · 아래에 따로 세우지 않는다
-    (2026-11-09 사용자 보드 T2, 설계 규칙 UI-TXT-04 · UI-LAY-11). 칸이 좁으면 값 글이 제목 아래로
-    내려간다.
-
-    두 글은 글자 밑줄에 맞춘다 — 공용 버전 줄과 같은 규칙(`profile_caption.HEADING_BASELINE_STYLE`,
-    줄 칸 key 가 `HEADING_KEY_PREFIX` 로 시작)을 값 글과 한 캡션에 싣는다(이벤트 칸을 쓰지 않는다).
-    값 글은 앱이 지은 수 · 날짜라 HTML 로 읽히지 않게만 막는다. `help` 는 값 글의 풍선이다."""
-    with st.container(
-        horizontal=True,
-        vertical_alignment="center",
-        gap="small",
-        key=f"{HEADING_KEY_PREFIX}{key}",
-    ):
-        st.markdown(title, width="content")
-        with st.container(horizontal=True, horizontal_alignment="right"):
-            st.caption(
-                html.escape(value, quote=False) + HEADING_BASELINE_STYLE,
-                unsafe_allow_html=True,
-                help=help,
-                width="content",
-            )
 
 
 def _with_parent(columns: Sequence[str], frame: pd.DataFrame) -> list[str]:
@@ -476,7 +451,7 @@ def _availability(
         f" · 가용률 {available / total if total else 0:.1%}"
     )
     if view == "공정별 내역":
-        _heading_with_value("#### 공정소분류별 현황", summary, key=PROCESS_HEADING_KEY)
+        render_heading_value("#### 공정소분류별 현황", summary, key=PROCESS_HEADING_KEY)
         # 차례는 원본 공정명으로 정하고 글자만 표시명이다 — 표시명을 고쳐도 행이 자리를 옮기지
         # 않는다.
         _table(
@@ -495,7 +470,7 @@ def _availability(
             labels=labels,
         )
         return
-    _heading_with_value("#### 주차별 설비 현황", summary, key=WEEKLY_HEADING_KEY)
+    render_heading_value("#### 주차별 설비 현황", summary, key=WEEKLY_HEADING_KEY)
     trend = (
         weekly.groupby(["주차시작일", "Weeknum"], as_index=False)[["가용대수", "비가동대수"]]
         .sum()
@@ -1078,7 +1053,7 @@ def _render_result(shown: _Shown, *, expression: str) -> None:
                         return
                 else:
                     # 센 호기 수는 제목 줄 오른쪽 끝 값 글이다(2026-11-09 사용자 보드 T2).
-                    _heading_with_value(
+                    render_heading_value(
                         f"#### 호기 생애주기 상태 · {as_of:%Y-%m-%d}",
                         f"설비 마스터 {_rows_label(status)}",
                         key=STATUS_HEADING_KEY,

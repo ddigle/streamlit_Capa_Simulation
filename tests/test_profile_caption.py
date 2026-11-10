@@ -1,4 +1,4 @@
-# Purpose: 공용 프로필 버전 캡션의 글자(여덟 저장 화면)와 제목 옆 한 줄 배치를 고정한다.
+# Purpose: 공용 프로필 버전 캡션의 글자(여덟 저장 화면)와 제목 옆 한 줄 · 값 글 자리를 고정한다.
 
 """**캡션 한 줄이 여덟 곳에 따로 적혀 있었다.**
 
@@ -27,6 +27,8 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.profile_caption import (
     HEADING_BASELINE_STYLE,
     HEADING_KEY_PREFIX,
+    VALUE_END_CLASS,
+    VALUE_END_STYLE,
     profile_version_caption,
 )
 
@@ -311,3 +313,98 @@ def test_the_version_line_carries_the_section_style_too() -> None:
         + "<style>.st-key-demo_save_row { padding-right: 120px; }</style>"
     )
     assert len(app.main.children) == 1
+
+
+VALUE_SCRIPT = r"""
+import streamlit as st
+
+from capa_simulation.components.profile_caption import render_heading_value, render_row_value
+
+render_heading_value(
+    "#### 주차별 설비 현황", "마지막 주 W45 · 총 3대", key="demo_weekly", help="값 풍선"
+)
+with st.container(horizontal=True, key="demo_right"):
+    st.caption("앞 칸")
+    render_row_value(
+        "복제 대상 · 「A\\~B」 r3 · :orange-badge[미저장 편집 포함]"
+        if st.session_state.get("shown", True)
+        else None,
+        place="right",
+    )
+with st.container(horizontal=True, key="demo_push"):
+    st.caption("앞 칸")
+    render_row_value("설비 일정 기준 가용(환산) · 오늘 2026-11-09 <x>", place="push")
+with st.container(horizontal=True, key="demo_after"):
+    st.caption("앞 칸")
+    render_row_value("보유 공정 밖 표시명 1건", place="after", help="표지 풍선")
+    render_row_value(None, place="after")
+    render_row_value(None, place="push")
+"""
+
+
+def _keyed_row(app: AppTest, key: str) -> Block:
+    (row,) = [block for block in _rows(app) if key in block.proto.id]
+    return row
+
+
+def _cells(block: Block) -> list[object]:
+    return [block.children[index] for index in sorted(block.children)]
+
+
+def test_the_heading_value_sits_at_the_right_end_of_the_title_row() -> None:
+    """제목 줄 값 글(2026-11-09 사용자 보드 T2 — 가용설비 결과 제목 줄)은 제목과 한 가로 칸이고 값
+    글은 남은 폭의 오른쪽 맞춤 칸 안이다. 줄 칸 key · 글자 밑줄 맞춤은 공용 버전 줄과 같고 풍선은 값
+    글에 있다."""
+    app = AppTest.from_string(VALUE_SCRIPT, default_timeout=30).run()
+
+    assert not app.exception
+    row = _keyed_row(app, f"{HEADING_KEY_PREFIX}demo_weekly")
+    title, box = _cells(row)
+    assert isinstance(title, Markdown) and not isinstance(title, Caption)
+    assert title.value == "#### 주차별 설비 현황" and not title.proto.help
+    assert isinstance(box, Block)
+    assert box.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
+    assert box.proto.flex_container.justify == BlockProto.FlexContainer.Justify.JUSTIFY_END
+    (value,) = _cells(box)
+    assert isinstance(value, Caption)
+    assert value.value == "마지막 주 W45 · 총 3대" + HEADING_BASELINE_STYLE
+    assert value.proto.allow_html and value.proto.help == "값 풍선"
+
+
+def test_row_values_keep_their_three_places() -> None:
+    """값 글 자리 셋 — `"right"` 는 오른쪽 맞춤 칸이 값이 없는 회차에도 서고(글만 빠진다) 서식이
+    없으면 글을 마크다운 그대로 싣는다(시나리오 복제의 배지 지시문). `"push"` 는 표지 칸 + 미는
+    서식을 한 캡션에 싣고(필요 단축 일정 — 이벤트 칸을 쓰지 않는다) 맨 `<` 를 글자로 바꾼다.
+    `"after"` 는 앞 칸 바로 뒤 맨 캡션이다(Proc Rename 표지). 값이 없으면 그 둘은 아무것도 그리지
+    않는다."""
+    app = AppTest.from_string(VALUE_SCRIPT, default_timeout=30).run()
+
+    assert not app.exception
+    _, box = _cells(_keyed_row(app, "demo_right"))
+    assert isinstance(box, Block)
+    assert box.proto.flex_container.justify == BlockProto.FlexContainer.Justify.JUSTIFY_END
+    (clone,) = _cells(box)
+    assert isinstance(clone, Caption) and not clone.proto.allow_html
+    assert clone.value == "복제 대상 · 「A\\~B」 r3 · :orange-badge[미저장 편집 포함]"
+
+    _, pushed = _cells(_keyed_row(app, "demo_push"))
+    assert isinstance(pushed, Caption) and pushed.proto.allow_html
+    assert pushed.value == (
+        f'<span class="{VALUE_END_CLASS}">설비 일정 기준 가용(환산) · 오늘 2026-11-09 &lt;x></span>'
+        + VALUE_END_STYLE
+    )
+    assert VALUE_END_STYLE == (
+        f'<style>[data-testid="stElementContainer"]:has(.{VALUE_END_CLASS}){{margin-left:auto}}'
+        "</style>"
+    )
+
+    cells = _cells(_keyed_row(app, "demo_after"))
+    assert len(cells) == 2
+    mark = cells[1]
+    assert isinstance(mark, Caption) and not mark.proto.allow_html
+    assert (mark.value, mark.proto.help) == ("보유 공정 밖 표시명 1건", "표지 풍선")
+
+    app.session_state["shown"] = False
+    app.run()
+    _, box = _cells(_keyed_row(app, "demo_right"))
+    assert isinstance(box, Block) and not box.children

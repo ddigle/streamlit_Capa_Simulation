@@ -580,8 +580,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
     반영은 자리에 표지를 세우지 않고 상태 알림 `RS-03` ~ `RS-05`(`_report_status_alerts`)만이다 — 짧은 글이 건수, 전문이 뜻 ·
     내역이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07). 본문 맨 위는 KPI 이고 기준 값
-    「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`_render_basis` — 2026-11-09
-    사용자 보드 T2). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽 끝이고, 자리가 모자라면 글이 통째로 다음
+    「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`_render_basis` — 값 글
+    `profile_caption.render_row_value` 의 `"push"`, 2026-11-09 사용자 보드 T2). CSV 줄이 서지 않는 회차(멈춤 마크 · 빈 상태 글)에는 그 줄 오른쪽 끝이고, 자리가 모자라면 글이 통째로 다음
     줄 오른쪽 끝으로 내려간다(서식은 그 캡션 마크다운 안 — 프래그먼트 이벤트 칸을 쓰지 않는다).
   - KPI 아래·카드 위에 공정 진척 보드·기한 임박·이행 지연(`components/shortening_board.py` — 처음 접힌 기억 상자, 편 상태는
     기억한다, 그림 메모 g03 ④)이 서고 카드마다 「공정 Capa
@@ -3420,7 +3420,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   상태 `ok`·`unset`(미지정)·`missing`(사라짐))으로 내는 `main_case_slots` 와 겹침 안내 줄. Streamlit·DB·모델을 모르고
   읽기 전용 Protocol 로 필드만 받는다. 리비전은 `scenario_id` 로 그 시나리오 것인지 견준다.
 - `src/capa_simulation/components/profile_caption.py` — 공용 프로필 버전 캡션 한 줄을 저장 화면 여덟에 한 규칙으로
-  만든다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
+  만들고, 제목 · 단추 줄의 값 글 한 칸(`render_row_value` · `render_heading_value`)을 그린다. 모델을 import 하지 않고 읽기 전용 `@property` Protocol 로 세 필드만 요구한다. 출처(`source`)는 사람이 적은
   「변경 메모」일 수 있어 `literal_markdown` 으로 막아 잇는다 — 돌려준 글은 이미 막은 글이다(`ESCAPED_BUILDERS`).
   빈 출처(저장자·메모를 모두 비운 저장 — 가용설비 현황 Preference 등)는 그 자리를 건너뛴다(구분자가 `· ·` 로 겹치지 않게).
   맨 뒤 꼬리는 두지 않는다(공지의 「공지 중 · 내림」 을 걷었다 — 바로 아래 글 칸과 같은 말, 2026-11-09 사용자 검수 g18).
@@ -3429,6 +3429,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   바꾸며 이벤트 칸은 쓰지 않는다. `style=` 은 그 구획의 다른 칸에 거는 앱 서식 규칙을 같은 캡션에 싣는다 — 팝업 본문이
   스타일만 든 `st.html`(이벤트 칸)을 쓰지 않고 서식을 걸 길이다(HOME 설정 저장 줄의 표 도구 막대 자리, 9장 「표 도구 막대」).
   쓰는 자리: HOME 설정 상자마다 · 자동 갱신 설정 · 입력 비가동 · 표시순서 · Proc Rename.
+  **값 글**(2026-11-09 사용자 보드 T2 — 본문 위에 혼자 서던 값 한 줄을 바로 위 제목 · 단추 줄의 작은 글로)은 화면이 줄만
+  세우고 `render_row_value(value, place=…)` 로 그린다 — 가용설비 · 시나리오 복제 · 필요 단축 일정 · Proc Rename 이 따로 짓던 칸을
+  한 벌로 모았다(설계 규칙 UI-CON-04). 자리 셋: `"after"`(앞 칸 바로 뒤 — 공용 버전 줄 · Proc Rename 보유 공정 밖 표지),
+  `"right"`(줄의 남은 폭을 차지하는 오른쪽 맞춤 칸 안 — 가용설비 결과 제목 줄 · 「시나리오 작업」 줄, 값이 없는 회차에도 칸은
+  서고 글만 빠진다, 좁으면 그 칸 안에서 글이 줄을 바꾼다), `"push"`(표지 칸 `VALUE_END_CLASS` + 미는 서식 `VALUE_END_STYLE`
+  을 한 캡션에 — 한 덩이로 줄 오른쪽 끝, 좁으면 통째로 다음 줄 오른쪽 끝, 필요 단축 일정 기준 값). 글은 마크다운 자리 글이고(사람
+  글은 부르는 쪽이 `literal_markdown`), 서식(`style=` · `"push"`)이 실릴 때만 HTML 캡션이라 맨 `<` 를 `&lt;` 로 바꾼다 — 서식이
+  없으면 `:orange-badge[…]` 같은 지시문도 그대로다. 제목 + 오른쪽 끝 값 글 한 줄은 `render_heading_value`(줄 칸 key ·
+  밑줄 맞춤이 `render_profile_heading` 과 같다).
 - `src/capa_simulation/components/dialog_host.py` — 본문 · 사이드바 단추로 여는 화면 팝업의 키 붙은 호스트 프래그먼트
   (`DialogHost`, 2026-11-08 답 U5 — 여덟 팝업). 열기 · 닫기는 호스트만 돌고, 원본을 바꾸면 `finish`(앱 전체), 판정을 못 넘거나 같은
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
@@ -3749,7 +3758,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그린다. 산식을 화면에 복제하지 않는다. 볼 내용 · 보기 · 표현은 라벨 줄을 걷고(접근성 이름으로 남음 — 2026-11-09 상단 띠
   재고 · 사용자 보드 T6) 세 칸의 뜻은 줄 끝 빈 캡션 풍선 하나(`MAIN_ROW_HELP` — `표현` 이 있는 보기는 프래그먼트가 `표현` 뒤에
   쓴다)다. 가용대수의 마지막 주 대수 요약 · 호기 현황의 센 호기 수는 따로 줄을 세우지 않고 결과 제목 줄 오른쪽 끝 값
-  글이다(`_heading_with_value` — 밑줄 맞춤은 공용 버전 줄과 같은 `profile_caption.HEADING_BASELINE_STYLE`, 사용자 보드 T2).
+  글이다(`profile_caption.render_heading_value` — 밑줄 맞춤은 공용 버전 줄과 같다, 사용자 보드 T2).
   숫자 밑 표지 줄은 두지 않고 상태 알림을 낸다 — 일정 미정 `EQ-20` · 사용기준 밖 `EQ-22`(`report_unit_notices` — Static 대비
   일정도 같은 함수) · 미확인 `EQ-21`(`report_unconfirmed_units` — Main 호기 현황의 상태 분포 · 호기 목록만 — 호기 이름을 보이는
   자리, Summary 첫 진입에 일정 미정 · 사용기준 밖과 함께 떠 알림창을 채우지 않게 — 그 밖의 보기는 같은 자리에서 `alerts.flush()`
@@ -6579,7 +6588,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **페이지 상단은 비운다**(2026-11-09 사용자 규칙 — 설계 규칙 UI-LAY-13). 화면 탭 줄 바로 아래에 그 화면의 핵심 내용이 선다 —
   본문 위에 칩 · 안내 줄 · 값 줄 · 혼자 한 줄 단추 · 위젯 라벨 줄 · 빈 칸 틈을 두지 않는다. 늘 보여야 하는 상태 표지는 머리 띠
   칩(`alert_center` — 변경 칩 · 공정 칩 · 합성 샘플 표지)이나 화면 탭 표지(`page_tabs` · `tab_marks`)로, 값 한 줄은 바로 위 제목 ·
-  단추 줄 오른쪽 끝 작은 글로(공용 버전 줄과 같은 밑줄 맞춤 `profile_caption.HEADING_BASELINE_STYLE`), 혼자 한 줄 단추는 옆 작업 줄 ·
+  단추 줄 오른쪽 끝 작은 글로(값 글 한 벌 `profile_caption.render_row_value` — 제목 줄이면 공용 버전 줄과 같은 밑줄 맞춤), 혼자 한 줄 단추는 옆 작업 줄 ·
   제목 줄 오른쪽 끝(줄지 않는 한 덩이 — 좁으면 통째로 다음 줄)으로 옮긴다. 늘 서 있는 알림 · 자리 칸이 빈 회차는 간격을 먹지
   않는다(`app_header.EMPTY_SLOT_SELECTOR` — 일부러 높이를 준 빈 칸은 key 꼬리 `_spacer`). 예외는 HOME 「공지」 접힘(T1 (나)) ·
   탭 줄 아래 14px · 안쪽 탭(T9 (가)).
