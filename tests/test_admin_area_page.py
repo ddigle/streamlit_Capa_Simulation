@@ -6,7 +6,15 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, flashed, infos, place_errors, states, successes
+from alert_marks import (
+    active_state,
+    data_error_marks,
+    flashed,
+    infos,
+    place_errors,
+    states,
+    successes,
+)
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Dataframe, TextInput
 
@@ -1162,6 +1170,11 @@ if st.session_state.get("on_admin", True):
 # ------------------------------------------------------------------ 모듈 상태
 
 
+# Admin 안쪽 탭 묶음을 담는 칸(`app_pages/admin_area.TABS_BOX_KEY` — 페이지 파일은 들여올 수 없어
+# 글자로 맞댄다).
+TABS_BOX_KEY = "admin_area_tabs_box"
+
+
 def _module_status_labels(app: AppTest) -> list[str]:
     labels = [item.label for item in app.expander] + [item.label for item in app.status]
     popovers = [str(item.proto.popover.label) for item in app.get("popover")]
@@ -1258,10 +1271,75 @@ def test_the_module_status_is_a_popover_at_the_tab_row_only_with_modules(
     assert "앱을 다시 띄운 뒤" in environment.proto.help
     # 탭은 그대로 넷이다.
     assert len(app.main.tabs) == 4
+    # 팝오버 단추 칸과 네 탭은 같은 칸(`TABS_BOX_KEY`) 안이고 단추 칸이 앞이다 — 서식이 그 칸 오른쪽
+    # 위(탭 줄 높이)에 단추 칸을 얹으므로, 둘이 갈라지면 단추가 탭 위 한 줄로 되돌아간다.
+    (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
+    tools, tabs = list(box.children.values())
+    assert str(tools.proto.id).endswith(f"-{module_status.TOOLS_KEY}")
+    assert tabs.type == "tab_container" and len(tabs.children) == 4
 
     monkeypatch.setenv(module_registry.ROOT_ENV_VAR, "off")
     app = AppTest.from_string(script).run(timeout=120)
     assert _module_status_labels(app) == []
+    # 모듈이 없으면 그 칸에는 탭만 있다(사외 화면 그대로).
+    (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
+    assert [child.type for child in box.children.values()] == ["tab_container"]
+
+
+def _keyed_blocks(node: Any, key: str) -> list[Any]:
+    """key 를 단 칸(`st.container(key=…)`) — AppTest 블록 id 는 `…-<key>` 로 끝난다."""
+    found = []
+    for child in getattr(node, "children", {}).values():
+        if child.type == "flex_container" and str(child.proto.id).endswith(f"-{key}"):
+            found.append(child)
+        found.extend(_keyed_blocks(child, key))
+    return found
+
+
+def test_the_module_status_places_its_button_on_the_tab_row_only_inside_the_box() -> None:
+    """단추 칸 서식 — 탭 묶음 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 절대 위치로 얹고 탭
+    줄의 오른쪽을 비운다. 탭 묶음은 칸 바로 밑 자식으로 고른다(`:has(> …)` — 칸 자신을 `:has()`
+    안에 다시 적는 꼴은 브라우저가 맞추지 않았다, 2026-11-10 사본 앱 측정). key 가 없으면 흐름 안
+    한 줄이다."""
+    from capa_simulation.components import module_status
+
+    loose = module_status.tools_style(None)
+    assert "position: absolute" not in loose and "tablist" not in loose
+    placed = module_status.tools_style(TABS_BOX_KEY)
+    box = f'.st-key-{TABS_BOX_KEY}:has(> [data-testid="stTabs"])'
+    assert f"{box} {{ position: relative; }}" in placed
+    assert (
+        f'{box} > [data-testid="stLayoutWrapper"]:has(> .st-key-{module_status.TOOLS_KEY}) '
+        "{ position: absolute; top: 0; right: 0;"
+    ) in placed
+    assert (
+        f'{box} > [data-testid="stTabs"] > div > [role="tablist"] '
+        f"{{ padding-right: {module_status.TAB_ROW_RESERVE_REM}rem; }}"
+    ) in placed
+    assert f":has(.st-key-{TABS_BOX_KEY}" not in placed
+
+
+def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DB 를 못 열어 멈추는 회차(`AD-07`)에도 모듈 상태 팝오버와 `MO-01` 은 선다 — 탭 묶음 칸을
+    DB 를 열기 전에 세워 그 안에 먼저 그린다. 그 칸에 탭이 없어 단추는 흐름 안 한 줄이다(서식의
+    `:has(> stTabs)` 가 맞지 않는다)."""
+    from capa_simulation import module_registry
+
+    monkeypatch.setenv(
+        module_registry.ROOT_ENV_VAR, str(PROJECT_ROOT / "tests" / "fixtures" / "modules")
+    )
+    # DB 자리가 폴더라 열리지 않는다.
+    app = AppTest.from_string(_page_script(tmp_path)).run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+
+    assert not app.main.tabs
+    assert _module_status_labels(app) == ["모듈 상태 · 켜짐 3 · 꺼짐 1 · 실패 2"]
+    (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
+    assert [child.type for child in box.children.values()] == ["flex_container"]
+    assert data_error_marks(app) == 1
+    assert [item["active"] for item in states(app, "MO-01")] == [False]
 
 
 def _alert_tab_script(database_path: Path) -> str:
