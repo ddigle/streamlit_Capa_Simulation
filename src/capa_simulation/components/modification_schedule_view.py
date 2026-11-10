@@ -12,7 +12,8 @@
 - **모드 전환은 조건 카드 맨 위다**(2026-11-08 사용자 그림 메모 g12). 카드에 무엇이 설지를
   바꾸므로 프래그먼트가 아닌 앱 전체 회차로 돈다(AGENTS 9장 「본문 프래그먼트」).
   페이지가 카드 하나를 세워 그 안 맨 위에 전환을 그리고 나머지를 이 모드가 채운다
-  (`ScheduleModeContext.card`).
+  (`ScheduleModeContext.card`). 라벨을 숨긴 칸이라 뜻은 같은 줄 끝 ⓘ(`MODE_SWITCH_HELP`)다
+  (2026-11-10 보드 Q-8).
 - **공정**은 조회 조건 패널의 공정 값 칸(하나 고름 — 공용 공정 칸)이고 제약 모드와 같은 칸이다 —
   페이지가 정해 넘긴다(`ScheduleModeContext.process`).
 - **조건 카드**(제약 모드와 같은 카드 이름·자리) — 이 세션만 / 개조(대수 · 기간 버튼 + 직접 · 동시
@@ -159,6 +160,7 @@ __all__ = [
     "DOUBLE_COUNT_NOTE",
     "KPI_ROW_KEY",
     "LIST_CARD_KEY",
+    "MODE_SWITCH_HELP",
     "SHORTFALL_CARD_KEY",
     "UNITS_HELP",
     "ScheduleChoice",
@@ -210,6 +212,11 @@ UNITS_HELP: Final = (
     "개조할 설비 대수(환산 대수) — 지금 있는 설비 가운데 **아직 개조하지 않은** 대수입니다. 이미 "
     "개조를 마쳤거나 제약 제품 전용으로 들고 있는 설비, 개조된 채 들어오는 신규 설비는 빼고 "
     "넣으세요. 어느 호기인지는 고르지 않습니다. " + DOUBLE_COUNT_NOTE
+)
+# 모드 전환(라벨을 숨긴 칸)의 뜻 — 같은 줄 끝 ⓘ 풍선이다(2026-11-10 보드 Q-8, 설계 규칙 UI-TXT-02).
+MODE_SWITCH_HELP: Final = (
+    "제약 영향 — 제약 제품 전용 설비가 생기면 기존 제품 확보율이 얼마나 주나. 개조 일정 — "
+    "N대 × D일 개조를 모든 달 기준 확보율을 지키며 언제 할까."
 )
 # 요약 넷째 칸 「기한」 풍선 — 칸이 실제로 적는 것만 말한다. 「못 맞춤」 은 기한을 골랐을 때만
 # 서고(안 골랐으면 「없음」), 낮출 폭은 기준을 낮춰 다 들어갈 때만 캡션에 붙는다(0% 까지 낮춰도 못
@@ -266,21 +273,23 @@ class ScheduleChoice(NamedTuple):
 
 def render_mode_switch() -> str:
     """「제약 영향 | 개조 일정」 — 페이지가 사이드바 조건 카드 맨 위(지금 컨테이너)에서 부른다. 고른
-    모드를 돌려준다(`persist_state="session"`)."""
+    모드를 돌려준다(`persist_state="session"`).
+
+    라벨을 숨긴 칸이라 뜻은 같은 줄 끝 ⓘ 하나다(`MODE_SWITCH_HELP` — 2026-11-10 보드 Q-8, 설계
+    규칙 UI-TXT-02). 위젯 풍선은 라벨 줄과 함께 숨으므로 두지 않고 라벨 글은 접근성 이름으로만
+    남는다."""
     settle_mode()
-    mode = st.segmented_control(
-        "시뮬레이션 모드",
-        MODES,
-        format_func=lambda value: MODE_LABELS.get(str(value), str(value)),
-        key=CONSTRAINT_MODE_KEY,
-        persist_state="session",
-        required=True,
-        label_visibility="collapsed",
-        help=(
-            "제약 영향 — 제약 제품 전용 설비가 생기면 기존 제품 확보율이 얼마나 주나. 개조 일정 — "
-            "N대 × D일 개조를 모든 달 기준 확보율을 지키며 언제 할까."
-        ),
-    )
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        mode = st.segmented_control(
+            "시뮬레이션 모드",
+            MODES,
+            format_func=lambda value: MODE_LABELS.get(str(value), str(value)),
+            key=CONSTRAINT_MODE_KEY,
+            persist_state="session",
+            required=True,
+            label_visibility="collapsed",
+        )
+        st.caption("", help=MODE_SWITCH_HELP, width="content")
     return str(mode) if mode in MODES else CONSTRAINT_MODE
 
 

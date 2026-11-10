@@ -397,14 +397,17 @@ def test_a_process_with_equipment_shows_kpis_and_figures(
 
 
 def test_the_header_has_no_description_line(dynamic_databases: tuple[Path, Path]) -> None:
-    """소개 · 사용법 · 저장 규칙은 머리에 늘 두지 않는다 — Guide 와 모드 전환 풍선, 「이 세션만」
+    """소개 · 사용법 · 저장 규칙은 머리에 늘 두지 않는다 — Guide 와 모드 전환 줄 끝 ⓘ, 「이 세션만」
     표지 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    from capa_simulation.components.modification_schedule_view import MODE_SWITCH_HELP
+
     app = _opened(dynamic_databases)
     captions = _captions(app)
 
     assert "기존 제품 확보율이 언제부터" not in captions
     assert "언제 할지 찾습니다" not in captions and "그때그때 보기" not in captions
-    assert "N대 × D일 개조" in str(app.get("button_group")[0].proto.help)
+    assert "N대 × D일 개조" in MODE_SWITCH_HELP
+    assert [item for item in app.caption if item.proto.help == MODE_SWITCH_HELP]
 
 
 def test_the_header_repeats_no_conditions_and_no_source_band(
@@ -470,7 +473,7 @@ def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """모드 전환 「제약 영향 | 개조 일정」 은 본문이 아니라 사이드바 조건 카드 맨 위다(2026-11-08
-    사용자 그림 메모 g12). 카드는 처음 펼친 채 선다 — 전환이 그 안이다."""
+    사용자 그림 메모 g12). 카드는 처음 펼친 채 선다 — 전환이 그 안이고 뜻은 그 줄 끝 ⓘ 다."""
     app = _opened(dynamic_databases)
     (switch,) = [group for group in app.sidebar.button_group if group.key == CONSTRAINT_MODE_KEY]
     assert switch.value == "constraint"
@@ -484,6 +487,16 @@ def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
     assert len(cards) == 1
     assert cards[0].proto.expanded
     assert cards[0].button_group[0].key == CONSTRAINT_MODE_KEY
+    # 라벨을 숨긴 전환이라 뜻은 같은 줄 끝 ⓘ 하나다 — 전환과 한 가로 칸에 빈 캡션 풍선이 서고 전환
+    # 위젯은 풍선을 들지 않는다(2026-11-10 보드 Q-8, 설계 규칙 UI-TXT-02 —
+    # `tests/test_collapsed_label_help.py`).
+    from capa_simulation.components.modification_schedule_view import MODE_SWITCH_HELP
+
+    row = next(iter(cards[0].children.values()))
+    assert [group.key for group in row.button_group] == [CONSTRAINT_MODE_KEY]
+    (tip,) = list(row.caption)
+    assert str(tip.value) == "" and tip.proto.help == MODE_SWITCH_HELP
+    assert not switch.proto.help
     # 「비중 배분 비교」 토글은 본문 위 보기 줄이 아니라 카드 끝 「견주기」 다(2026-11-09 보드 C3) —
     # 이름은 짧게, 풍선은 한 줄이고 뜻 · 식은 Guide 다.
     assert [toggle.key for toggle in cards[0].toggle][-1] == CONSTRAINT_PROPORTIONAL_KEY
