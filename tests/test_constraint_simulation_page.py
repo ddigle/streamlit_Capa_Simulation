@@ -102,9 +102,10 @@ OTHER_PROCESS = "DEMO_Final_Test"
 FIRST_PRODUCT = "DEMO PRODUCT A"
 
 
-def _page_script(database_path: Path, equipment_path: Path) -> str:
+def _page_script(database_path: Path, equipment_path: Path, *, fail_bootstrap: bool = False) -> str:
     """세션 `_test_page` 가 「detail」 이면 공정 Capa 상세, 「away」 면 다른 화면(빈 글), 아니면 이
-    화면."""
+    화면. `fail_bootstrap` 이면 공통 진입(`load_page_context`)이 오류를 내는 회차를 흉내
+    낸다(`tests/test_process_capa_detail_page.py` 와 같은 꼴)."""
     return f"""
 from pathlib import Path
 
@@ -112,6 +113,7 @@ import streamlit as st
 
 import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
 import capa_simulation.components.month_range_picker as month_range_picker
+import capa_simulation.page_bootstrap as page_bootstrap
 import capa_simulation.settings as settings
 
 original_database_path = settings.DUCKDB_PATH
@@ -119,6 +121,7 @@ original_equipment_path = settings.EQUIPMENT_DUCKDB_PATH
 original_scrollbar = horizontal_scrollbar.render_horizontal_scrollbar
 original_month_picker = month_range_picker.render_month_range_apply
 original_page_link = st.page_link
+original_load_page_context = page_bootstrap.load_page_context
 
 settings.DUCKDB_PATH = Path({str(database_path)!r})
 settings.EQUIPMENT_DUCKDB_PATH = Path({str(equipment_path)!r})
@@ -133,6 +136,12 @@ def _recording_page_link(page, *args, **kwargs):
     return original_page_link(page, *args, **kwargs)
 
 
+def _failing_page_context():
+    raise ValueError("시험용 진입 오류")
+
+
+if {fail_bootstrap!r}:
+    page_bootstrap.load_page_context = _failing_page_context
 st.page_link = _recording_page_link
 try:
     from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
@@ -156,6 +165,7 @@ finally:
     horizontal_scrollbar.render_horizontal_scrollbar = original_scrollbar
     month_range_picker.render_month_range_apply = original_month_picker
     st.page_link = original_page_link
+    page_bootstrap.load_page_context = original_load_page_context
 """
 
 
@@ -202,8 +212,10 @@ def own_databases(tmp_path: Path) -> tuple[Path, Path]:
     return tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb")
 
 
-def _app(databases: tuple[Path, Path]) -> AppTest:
-    return AppTest.from_string(_page_script(*databases), default_timeout=300)
+def _app(databases: tuple[Path, Path], *, fail_bootstrap: bool = False) -> AppTest:
+    return AppTest.from_string(
+        _page_script(*databases, fail_bootstrap=fail_bootstrap), default_timeout=300
+    )
 
 
 def _ok(app: AppTest) -> AppTest:
@@ -801,6 +813,21 @@ def test_arriving_from_a_home_locked_detail_says_the_equipment_is_the_session_on
     _ok(plain.run())
     assert "공정 Capa 상세는 HOME 칸에서" not in _arrival(plain)
     assert [note["active"] for note in states(plain, "CS-03")] == [False]
+
+
+def test_a_stopped_entry_keeps_the_locked_process_row(databases: tuple[Path, Path]) -> None:
+    """공통 진입이 오류로 멈춘 회차 — 본문은 데이터 Error 마크 한 칸(글은 `CS-01` 알림)이고, 조회
+    조건 패널의 공정 줄은 잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다 — 빠지면 아래 칸이
+    올라온다(2차 보드 Q2-28 — 산출 결과 · 공정 Capa 상세 p-stop-row 와 같은 꼴)."""
+    app = _app(databases, fail_bootstrap=True)
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert any("시험용 진입 오류" in text for text in data_error_texts(app))
+    field = app.button(key=PROCESS_FIELD_KEY)
+    assert (field.label, field.disabled) == ("계산 멈춤", True)
+    # 조건 카드는 멈춘 회차에도 서고(빈 구역을 만들지 않는다) 계산은 돌지 않는다.
+    assert not app.metric
 
 
 def test_a_process_without_equipment_stops_with_its_reason(

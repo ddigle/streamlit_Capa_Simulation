@@ -27,8 +27,9 @@
   조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH 가정·HOME 얹기는 걸지 않는다(D5).
 
 계산은 순수 서비스(`services/constraint_simulation.py`)다. 오류 갈래는 넷으로 가른다 — 공통
-진입(카드 표지 `NO_PROCESS_MARK`), 제품별 소요 받기(카드 표지 `NO_PRODUCT_MARK` + 본문 마크 ·
-알림 「제품별 소요를 읽지 못했습니다 — {글}」 — 「소요가 있는 제품이 없다」 안내와 가른다), 계획
+진입(카드 표지 `NO_PROCESS_MARK` · 패널 공정 줄은 잠긴 「계산 멈춤」 — 2차 보드 Q2-28), 제품별
+소요 받기(카드 표지 `NO_PRODUCT_MARK` + 본문 마크 · 알림 「제품별 소요를 읽지 못했습니다 — {글}」 —
+「소요가 있는 제품이 없다」 안내와 가른다), 계획
 받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로), 어댑터·서비스의
 `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」, DB 경로 없음).
 `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError` 가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로
@@ -112,7 +113,10 @@ from capa_simulation.components.modification_schedule_view import (
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.preset_number_field import render_preset_number_field
-from capa_simulation.components.process_field import render_process_choice
+from capa_simulation.components.process_field import (
+    render_process_choice,
+    render_stopped_process_field,
+)
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.state_alerts import (
     equipment_scope,
@@ -290,6 +294,8 @@ today = date.today()
 try:
     page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
+    # 패널의 공정 줄도 잠긴 채 자리를 지킨다(산출 결과 · 공정 Capa 상세와 같은 꼴 — 2차 보드 Q2-28).
+    render_stopped_process_field()
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON, default=True):
         st.caption(NO_PROCESS_MARK)
