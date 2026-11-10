@@ -1,4 +1,4 @@
-# Purpose: 공정 Capa 상세 결합 캔버스의 행 모델을 화면 서식 그대로 엑셀 시트로 옮긴다.
+# Purpose: 월 시트 행 모델(공정 Capa 상세 · Static 대비 일정 시트)을 화면 서식째 엑셀로 옮긴다.
 
 """공정 Capa 상세 「시트 엑셀」.
 
@@ -21,6 +21,10 @@
 - **③ · ④** 는 그림 대신 글이다(`process_capa_canvas.track_texts` — 그림과 같은 자리) — 호기 줄
   이름 칸 옆 「세부」 열에 화면 둘째 줄(기존 → 단축 날짜 등)을 둔다.
 - **둘째 시트**는 「이 공정 단축 일정 CSV」 와 같은 표(설비 일정이 설 때만)다.
+
+행 모델 → 시트 한 장(`month_rows_sheet`)은 같은 월 시트 엔진(`month_sheet_canvas` 의 `Row` ·
+`Cell`)을 쓰는 가용설비 현황 「Static 대비 일정」 시트 엑셀(`availability_sheet_workbook`)도 그대로
+쓴다.
 
 순수 함수다 — Streamlit 을 import 하지 않고 세션 · 캐시를 읽지 않는다. 회차가 값으로 잡아 넘긴
 것(`WorkbookRequest`)만 쓰고, 화면은 그 바이트를 세션에 기억한다
@@ -62,6 +66,7 @@ from capa_simulation.components.process_capa_canvas import (
 )
 from capa_simulation.design import theme, tokens
 from capa_simulation.io.xlsx_small import Edge, Sheet, Style, XlsxCell, workbook_bytes
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 __all__ = [
@@ -69,6 +74,7 @@ __all__ = [
     "UNITS_SHEET",
     "WorkbookRequest",
     "detail_sheet",
+    "month_rows_sheet",
     "process_capa_workbook",
     "screen_number",
     "units_sheet",
@@ -162,30 +168,55 @@ def detail_sheet(
 
     색은 지금 테마의 토큰이다 — `process_capa_workbook` 이 밝게로 못박고 부른다.
     """
-    count = len(model.axis)
+    return month_rows_sheet(
+        name=DETAIL_SHEET,
+        title=TITLE,
+        rows=model.rows,
+        axis=model.axis,
+        shortage=frozenset(model.shortage_indices),
+        heading=heading,
+        dynamic=dynamic,
+    )
+
+
+def month_rows_sheet(
+    *,
+    name: str,
+    title: str,
+    rows: Sequence[Row],
+    axis: Sequence[int],
+    heading: Sequence[tuple[str, str]],
+    shortage: frozenset[int] = frozenset(),
+    dynamic: DynamicCanvasInput | None = None,
+) -> Sheet:
+    """월 시트 행 모델(첫 행이 머리) → 시트 한 장 — 맨 위에 제목과 머리 값 줄, 한 줄 띄고 머리(달) ·
+    행이다. 열은 구분 · 세부 · 달, 머리 줄 · 두 열은 고정이다. `shortage` 는 부족 달 띠를 칠할 달
+    자리, `dynamic` 은 ③ · ④ 호기 줄을 글로 옮길 재료(공정 Capa 상세만)다.
+
+    색은 지금 테마의 토큰이다 — 부르는 쪽이 밝게로 못박고 부른다(`theme.pinned_mode`).
+    """
+    count = len(axis)
     last_column = FIRST_MONTH_COLUMN + count - 1
-    shortage = frozenset(model.shortage_indices)
     sheet_rows: list[list[XlsxCell | None]] = [
-        [XlsxCell(TITLE, Style(bold=True, size=TITLE_SIZE, color=_hex(tokens.TEXT)))]
+        [XlsxCell(title, Style(bold=True, size=TITLE_SIZE, color=_hex(tokens.TEXT)))]
     ]
-    for name, value in heading:
+    for item, value in heading:
         sheet_rows.append(
             [
-                XlsxCell(name, Style(color=_hex(tokens.TEXT_MUTED), size=SMALL_SIZE)),
+                XlsxCell(item, Style(color=_hex(tokens.TEXT_MUTED), size=SMALL_SIZE)),
                 XlsxCell(value, Style(color=_hex(tokens.TEXT), size=SMALL_SIZE)),
             ]
         )
     sheet_rows.append([])
     header_index = len(sheet_rows)
-    rows = model.rows
-    sheet_rows.append(_header_cells(rows[0], model.axis, shortage))
+    sheet_rows.append(_header_cells(rows[0], axis, shortage))
     for position, row in enumerate(rows[1:], start=1):
         strong_top = row.group_start or rows[position - 1].kind == KIND_HEADER
-        sheet_rows += _body_rows(row, model.axis, shortage, dynamic, strong_top=strong_top)
+        sheet_rows += _body_rows(row, axis, shortage, dynamic, strong_top=strong_top)
     widths = {LABEL_COLUMN: LABEL_WIDTH, DETAIL_COLUMN: DETAIL_WIDTH}
     widths.update({column: MONTH_WIDTH for column in range(FIRST_MONTH_COLUMN, last_column + 1)})
     return Sheet(
-        name=DETAIL_SHEET,
+        name=name,
         rows=sheet_rows,
         widths=widths,
         freeze=(header_index + 1, FIRST_MONTH_COLUMN),
@@ -193,7 +224,8 @@ def detail_sheet(
 
 
 def _header_cells(row: Row, axis: Sequence[int], shortage: frozenset[int]) -> list[XlsxCell | None]:
-    """머리 줄 — 회색 면 · 굵게, 달 칸 아래 테두리는 부족 달이면 부족색 띠(화면 4px 띠)다."""
+    """머리 줄 — 회색 면 · 굵게, 달 칸 아래 테두리는 부족 달이면 부족색 띠(화면 4px 띠)다. 달 글은
+    머리 칸 글이고, 칸이 비면 엔진이 그 자리에 그리는 달 이름(`month_label`)이다."""
     fill = _solid(row.month_fill) or _solid(tokens.HEADER_BACKGROUND)
     strong = Edge("medium", _hex(tokens.BORDER_STRONG))
     cells: list[XlsxCell | None] = [
@@ -213,7 +245,7 @@ def _header_cells(row: Row, axis: Sequence[int], shortage: frozenset[int]) -> li
         bottom = Edge("thick", _hex(tokens.STATUS_SHORTAGE)) if index in shortage else strong
         cells.append(
             XlsxCell(
-                cell.text if cell is not None else "",
+                cell.text if cell is not None and cell.text else month_label(axis[index]),
                 Style(
                     bold=True,
                     color=_hex(tokens.TEXT),
@@ -244,7 +276,9 @@ def _body_rows(
         color=_hex(tokens.TEXT_MUTED if row.label_muted else tokens.TEXT),
         size=SMALL_SIZE if row.indent else VALUE_SIZE,
         fill=label_fill,
-        indent=1 if row.indent else 0,
+        # 제품 줄(`indent` — 글자도 작게)과 들인 값 줄(`label_indent` px — 글자 그대로)은 한 칸
+        # 들인다.
+        indent=1 if row.indent or row.label_indent > 0 else 0,
         top=top,
         bottom=_grid(),
     )

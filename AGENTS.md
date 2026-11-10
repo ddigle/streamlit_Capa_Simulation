@@ -4110,8 +4110,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `표시` 전환 단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고). 두 전환의 뜻은 그 줄 끝 빈 캡션 풍선 하나(`RESULT_VIEW_HELP` ·
     `DETAIL_MODE_HELP`)이고 마지막 전환과 작은 간격의 한 칸이다(`_switch_group` — 전환끼리만 넓게, Main 머리 줄 풍선과 같은 간격).
     확보율 교차검증이면 그 풍선 첫 단락이 「맞대어 본 달」 값 · 범위 설명이다(`_cross_check_help` — 자리 캡션 없음, 사용자 보드 T2 의
-    「표 제목 풍선」 — 이 보기에는 표 제목이 없어 바로 위 줄 끝 풍선이 받는다). 「시트 CSV」 는 시트 프래그먼트 밖 그 줄 오른쪽 끝
-    칸(`render_sheet_csv`)이고 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이 높아지지 않게)(T3). 일정 미정 · 사용기준
+    「표 제목 풍선」 — 이 보기에는 표 제목이 없어 바로 위 줄 끝 풍선이 받는다). 시트 내려받기는 시트 프래그먼트 밖 그 줄 오른쪽
+    끝 칸의 「내려받기 ▾」 메뉴 하나(`render_sheet_downloads` — 「시트 CSV」 · 「시트 엑셀」, `table_toolbar.render_download_pair` —
+    시트 엑셀 넓히기 2, 2026-11-10 답 Q2-7 꼴)이고 그 메뉴 단추는 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이
+    높아지지 않게)(T3). 「시트 엑셀」 은 지금 화면 시트(공정 · 달 · 호기 필터 · 입력 비가동 반영)를 화면 서식째
+    (`components/availability_sheet_workbook.py`) 내고, 맨 위 값 줄은 공정 · 조회기간 · 설비 시나리오(알림 범위 이름) · 호기 필터(걸렸을
+    때 — 세션 칸 글 그대로, `_sheet_heading`)다. 통은 조건 키(`GAP_SHEET_SCHEMA_VERSION` · 범위 지문 · 머리 글자 · 제목 세부 글 · 머리
+    값)로 세션 칸 `GAP_SHEET_XLSX_MEMO_KEY` 에 기억한다 — 칸 누름 · 같은 조건 회차는 짓지 않는다(새 `st.cache_*` 없음). 일정 미정 · 사용기준
     밖은 Main 과 같은 상태 알림(`EQ-20` · `EQ-22` — `equipment_explorer.report_unit_notices`)이고, Static 값으로 채운 공정은 한쪽
     공정 알림 `EQ-06` 의 전문이 말한다(`CROSS_CHECK_FALLBACK_HELP`).
 - `src/capa_simulation/components/required_shortening_panel.py` — `필요 단축 일정` 화면(조건 카드 — 맨 위 위아래 두 칸 `목표 확보율`·
@@ -4378,11 +4383,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`process_capa_view.label_overflow_style`). 라벨이 여러 분류 칸인 HOME·월별 표는 줄이지 않는다
     (`tests/test_split_column_width.py`).
 - `src/capa_simulation/components/availability_sheet_canvas.py` — 비교 시트 9행(`SheetView`)을 엔진으로 그리는 순수
-  함수. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다. 풍선 식(Static 가용 = 보유 +
+  함수. 행 모델(`build_availability_sheet_rows` — 머리 · 구획 제목 셋 · 값 아홉)을 그림과 시트 엑셀이 같이 읽는다. GAP 은 면 없이 글자색만 쓰고(상태 3색 아님) 「—」 칸은 풍선 까닭(`REASON_TEXTS`)을 단다. 풍선 식(Static 가용 = 보유 +
   대여 · 보유 = 기존보유 + 호기 · 가용 = 보유 + 대여 · GAP = 설비 일정 − Static)은 적힌 글자에서 다시 셈해 어긋나면 「≈」 다
   (`formula_text`). Static 가용 식 줄은 결과가 앞 줄이라 어긋날 때만 줄 앞에 두고, 원값부터 다른 ⚠ 달은 두지 않는다.
 - `src/capa_simulation/components/availability_sheet_keys.py` — 비교 시트 key(`GAP_SHEET_CHART_KEY` 등)를 가벼운 모듈에
   둔다 — `app.py` 가 패널·서비스를 import 하지 않고 터치 스크롤 막이(`components/plotly_touch_scroll.py`)에 넣게.
+- `src/capa_simulation/components/availability_sheet_workbook.py` — 가용설비 현황 `Static 대비 일정` 「시트 엑셀」(시트 엑셀
+  넓히기 2). 화면 시트와 같은 행 모델(`build_availability_sheet_rows`)을 공정 Capa 상세 시트 엑셀과 같은 길
+  (`process_capa_workbook.month_rows_sheet`)로 옮긴다 — 칸 글 · GAP 증감 글자색 · Static 묶음 면 · 「—」 · ⚠ 를 다시 셈하지 않고,
+  고른 칸 표지는 옮기지 않는다. 밝은 테마 토큰 · 새 의존성 없음. Streamlit 을 import 하지 않는다
+  (`tests/test_availability_sheet_workbook.py`).
 - `src/capa_simulation/components/process_capa_canvas.py` — `공정 Capa 상세` 결합 월 캔버스(① 공식 요약 ② 설비 일정 기준
   가용 ③ 신규 호기 ④ 비가동)의 순수 그림 함수 `build_process_capa_canvas`. 세션·캐시·DB 를 보지 않는다. 행 모델은
   `build_process_capa_rows`(행 · 칸 글 · 칠 · 부족 띠 열)이고 그림과 시트 엑셀이 같은 것을 읽는다. ③ · ④ 를 글로 옮기는
@@ -4419,7 +4429,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   기억하고(`remembered_bytes` — 공정 Capa 상세 `remembered_sheet` · 산출 결과가 같이 쓴다, 화면마다 칸 이름이 따로), 시트 맨
   위 시나리오(머리 띠 위 줄 `header_lines`) · 조회기간 · 공정 거름 글을 짓는다(세션만 읽는다).
 - `src/capa_simulation/components/process_capa_workbook.py` — `공정 Capa 상세` 「시트 엑셀」. 결합 캔버스의 행 모델을 칸
-  하나하나 엑셀 칸으로 옮긴다(판정 · 칠 · 띠를 다시 셈하지 않는다). 색은 밝은 테마 토큰(`theme.pinned_mode`), 부족 달 띠는
+  하나하나 엑셀 칸으로 옮긴다(행 모델 → 시트 한 장 `month_rows_sheet` 는 같은 월 시트 엔진을 쓰는 Static 대비 일정 시트 엑셀도 쓴다 —
+  머리 칸이 비면 엔진처럼 달 이름)(판정 · 칠 · 띠를 다시 셈하지 않는다). 색은 밝은 테마 토큰(`theme.pinned_mode`), 부족 달 띠는
   `tokens.opaque_over` 로 그 줄 면 위에 섞은 불투명 색, 숫자는 칸 글을 같은 꼴의 숫자 꼴로 되읽은 숫자 셀(`screen_number` —
   보이는 글이 화면과 같다), 두 줄 칸은 딸린 줄(「└ 단축 후」 등), ③ · ④ 는 글(`track_texts`), 둘째 시트는 호기 CSV 표다.
   Streamlit 을 import 하지 않는다(`tests/test_process_capa_workbook.py` 가 그림 칸 글 · 색과 견준다).
@@ -7299,7 +7310,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
   바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
   쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다. 엑셀(공정 Capa 상세 · 산출 결과 대당 Capa ·
-  소요대수 「시트 엑셀」)도 같다 — 조건 키로 세션에 기억한 바이트를 넘긴다(`sheet_download.remembered_bytes`, 화면마다 세션
+  소요대수 · 가용설비 현황 Static 대비 일정 「시트 엑셀」)도 같다 — 조건 키로 세션에 기억한 바이트를 넘긴다(`sheet_download.remembered_bytes`, 화면마다 세션
   칸이 따로). CSV 와 엑셀 한 쌍은 `table_toolbar.render_download_pair` 하나가 「내려받기 ▾」 메뉴로 그린다(엑셀 단추를 다른
   자리에서 부르지 않는다).
 - 사람이 적은 자유 글(게시판 본문·답글·메모)은 `st.markdown` 으로 그리지 않는다 — `#`·`-`·`*` 가 제목·목록으로 바뀌고
