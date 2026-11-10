@@ -1,5 +1,5 @@
-# Purpose: 제약 시뮬레이션 두 모드(제약 영향 · 개조 일정)가 함께 쓰는 설비 일정 확인(판정 · 멈춘
-# 자리) · 계획 칸 받기와 조건 카드 · 머리 줄 표지 · 출처 띠의 같은 글 조각을 한 곳에 둔다.
+# Purpose: 제약 시뮬레이션 두 모드가 함께 쓰는 설비 일정 확인(판정 · 멈춘 자리) · 계획 칸 받기와
+# 조건 카드 · 머리 줄 표지의 같은 글 조각 · 입력 비가동 상태 알림을 한 곳에 둔다.
 
 """제약 시뮬레이션 — 두 모드가 함께 쓰는 「설비 일정 확인 → 계획」 블록.
 
@@ -30,13 +30,16 @@
   그 계산이 터져도 「설비 일정을 계산하지 못했습니다」 갈래다. 기준일 거르기 · 고른 호기 빼기는
   페이지가 고른 뒤에 한다(호기 고르기는 이 블록 뒤에 서므로).
 - **같은 글 조각** — 두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리
-  (`SESSION_ONLY_CAPTION`). 머리 줄을 그리는 함수의 꼴은 `HeaderRenderer` 다. 제약 영향 모드의 머리
-  줄은 조건을 되읊지 않고 계산이 건 표지만 둔다(`applied_marks` — 계획이 건 입력 비가동 · UPEH
-  가정을 켠 세션의 「미적용」, 뜻은 풍선. 출처와 읽는 법은 Guide — 2026-11-08 사용자 그림 메모 g12).
-  개조 일정 모드는 머리 한 줄(공정 · 조건)과 출처 띠를 둔다 — 띠 조각은 소요 시나리오
-  이름표(`source_scenario_text`) · 설비 기준 괄호(`source_equipment_text`) · 띠 끝 풍선
-  (`SOURCE_BAND_HELP` — 환산 대수) · UPEH 가정을 켠 세션의 단서(`upeh_assumption_note`)다. 두 길의
-  UPEH 판정은 하나다(`_upeh_assumption_on`).
+  (`SESSION_ONLY_CAPTION`). 머리 줄을 그리는 함수의 꼴은 `HeaderRenderer` 다. 두 모드의 머리 줄은
+  조건을 되읊지 않고 계산이 건 표지만 둔다(`applied_marks` — UPEH 가정을 켠 세션의 「미적용」, 뜻은
+  풍선. 조건은 사이드바 칸, 출처와 읽는 법은 Guide — 2026-11-08 사용자 그림 메모 g12 · 2026-11-09
+  보드 c-schedule-head).
+- **입력 비가동 반영** — 계획이 건 입력 비가동(가용설비 현황 › Preference)은 자리에 그리지 않고 상태
+  알림 `CS-05` 다(`report_manual_downtime` — 필요 단축 일정 `RS-05` 와 같은 꼴, 2026-11-10 보드
+  Q-4). 두 모드가 `render_equipment_plan` 바로 뒤 한 자리에서 부르고(계획이 없으면 `active=False`),
+  조회기간에 확보율을 낼 공정 · 달이 없어 그 앞에서 멈추는 갈래도 부른다(`active=False` — 범위가
+  달라 앞 줄은 「범위 바뀜」 으로 닫힌다). 범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이다 —
+  모드는 범위에 들지 않아 모드를 바꿔도 다시 뜨지 않는다.
 
 저장하지 않는다 — 어느 DB 에도 쓰지 않는다.
 """
@@ -52,10 +55,13 @@ import streamlit as st
 
 # 이름이 아니라 모듈을 잡는다 — 페이지 시험이 계획 함수를 바꿔 끼운다.
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.state_alerts import equipment_scope, simulation_scope, tab_name
 from capa_simulation.constraint_simulation_state import CONSTRAINT_ABSENT_KEY
-from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
+from capa_simulation.equipment_scenario_activation import EquipmentSession
+from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS, EQUIPMENT_PREFERENCE_TAB
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     ProcessPageInputs,
@@ -63,9 +69,13 @@ from capa_simulation.page_bootstrap import (
 )
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_repository import EquipmentSnapshot
-from capa_simulation.scenario_activation import active_scenario_label
 from capa_simulation.services.korean_particle import topic_particle
-from capa_simulation.services.manual_downtime import ManualDowntime
+from capa_simulation.services.manual_downtime import (
+    ManualDowntime,
+    manual_effect_band,
+    overdrawn_rows,
+)
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_equipment_timeline import (
     NO_COUNTED_UNITS,
     NO_SNAPSHOT,
@@ -88,24 +98,24 @@ from capa_simulation.upeh_assumption_state import (
 __all__ = [
     "CUTOFF_SOURCE_HELP",
     "EQUIPMENT_SCREEN",
+    "MANUAL_DOWNTIME_FIX",
+    "MANUAL_DOWNTIME_HELP",
     "SESSION_ONLY_CAPTION",
     "SESSION_ONLY_HELP",
-    "SOURCE_BAND_HELP",
     "UPEH_NOT_APPLIED_HELP",
     "UPEH_NOT_APPLIED_MARK",
-    "UPEH_NOT_APPLIED_NOTE",
     "EquipmentPlan",
     "AbsentNote",
     "EquipmentPlanSource",
     "HeaderRenderer",
+    "ManualNote",
     "absent_note",
     "applied_marks",
     "equipment_readiness",
     "first_ready_process",
+    "manual_downtime_note",
     "render_equipment_plan",
-    "source_equipment_text",
-    "source_scenario_text",
-    "upeh_assumption_note",
+    "report_manual_downtime",
 ]
 
 SESSION_ONLY_CAPTION: Final = ":material/person: **이 세션만** — 저장하지 않습니다"
@@ -123,12 +133,6 @@ CUTOFF_SOURCE_HELP: Final = (
 """조건 카드 Cut-off 값 줄의 풍선 — 값이 어디서 오는지(고치는 곳)는 자리에 적지
 않는다(UI-TXT-03)."""
 
-SOURCE_BAND_HELP: Final = (
-    "대수는 환산 대수입니다 — HOME·Static 확보율(기준정보 가용)과 다를 수 있습니다."
-)
-"""개조 일정 모드 출처 띠 끝 풍선 — 띠에는 값만 두고 읽는 법은 늘 두지 않는다(설계 규칙
-UI-TXT-01)."""
-
 _NO_SCHEDULE_BADGE: Final = "설비 일정 없음"
 """빈 상태의 머리 배지 — 까닭은 바로 아래 평문 한 줄이 적는다(설계 규칙 UI-TXT-07)."""
 
@@ -140,15 +144,22 @@ UPEH_NOT_APPLIED_HELP: Final = (
 )
 """「UPEH 가정 미적용」 표지의 풍선."""
 
-UPEH_NOT_APPLIED_NOTE: Final = " · UPEH 가정은 이 화면에 걸리지 않습니다(공식 소요)"
-"""UPEH 가정을 켠 세션의 개조 일정 모드 출처 띠 단서(`upeh_assumption_note`, 앞 「 · 」 까지
-든다)."""
-
 MANUAL_DOWNTIME_HELP: Final = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 가용에서 뺐습니다(공정 Capa 상세 ② 와 "
     "같은 가용)."
 )
-"""「입력 비가동 반영(…)」 표지의 풍선."""
+"""상태 알림 `CS-05` 전문의 뜻 — 「입력 비가동 반영(…)」 이 무엇을 뺐는지."""
+
+MANUAL_DOWNTIME_FIX: Final = "가용설비 현황 › Preference"
+"""상태 알림 `CS-05` 짧은 글 끝 — 고칠 입력 자리(필요 단축 일정 `RS-05` 와 같은 말). 줄의 「그
+화면으로」 가 그 탭을 연다(`EQUIPMENT_SCREEN` · `tab`)."""
+
+_MANUAL_SCREEN: Final = "제약 시뮬레이션"
+"""상태 알림 `CS-05` 전문 첫머리 — 줄의 화면 칸이 고칠 화면(`goto`)이라 어느 화면의 일인지 전문이
+말한다(설계 규칙 UI-NTF-02). 두 모드가 같은 글이다(모드를 바꿔도 같은 알림)."""
+
+_MANUAL_OVER_LIMIT: Final = 5
+"""전문에 이름을 적는 가용 넘침 달 수."""
 
 EQUIPMENT_SCREEN: Final = (tab_label(AVAILABLE_EQUIPMENT_STATUS), AVAILABLE_EQUIPMENT_STATUS.href)
 """채울 입력이 있는 화면(이름, 주소) — 멈춘 자리 알림 줄의 「그 화면으로」 가 연다."""
@@ -428,39 +439,104 @@ def _upeh_assumption_on() -> bool:
     return isinstance(upeh_percent, int) and upeh_percent != UPEH_ASSUMPTION_DEFAULT_PERCENT
 
 
-def applied_marks(manual_note: str) -> tuple[str, str]:
-    """제약 영향 모드 머리 줄 표지와 그 풍선 — 계획이 건 입력 비가동(`manual_effect_band` 글, 없으면
-    빈 글자)과 UPEH 가정을 켠 세션의 「UPEH 가정 미적용」(두 모드 모두 UPEH 가정을 걸지 않는다 —
-    공식 소요). 둘 다 없으면 ("", "")."""
-    marks: list[str] = []
-    helps: list[str] = []
-    if manual_note:
-        marks.append(manual_note)
-        helps.append(MANUAL_DOWNTIME_HELP)
+def applied_marks() -> tuple[str, str]:
+    """두 모드 머리 줄 표지와 그 풍선 — UPEH 가정을 켠 세션의 「UPEH 가정 미적용」(두 모드 모두 UPEH
+    가정을 걸지 않는다 — 공식 소요). 없으면 ("", ""). 계획이 건 입력 비가동은 표지가 아니라 상태
+    알림 `CS-05` 다(`report_manual_downtime`)."""
     if _upeh_assumption_on():
-        marks.append(UPEH_NOT_APPLIED_MARK)
-        helps.append(UPEH_NOT_APPLIED_HELP)
-    return " · ".join(marks), " ".join(helps)
+        return UPEH_NOT_APPLIED_MARK, UPEH_NOT_APPLIED_HELP
+    return "", ""
 
 
-def source_scenario_text() -> str:
-    """개조 일정 모드 출처 띠의 소요 시나리오 — 이 세션 활성 리비전 이름표 「이름 rN」(이름은
-    막는다). 이름표가 없으면(`active_scenario_label` 이 None) 「활성 시나리오」."""
-    scenario_label = active_scenario_label()
-    return (
-        f"「{literal_markdown(scenario_label.scenario_name)} r{scenario_label.revision_no}」"
-        if scenario_label is not None
-        else "활성 시나리오"
+class ManualNote(NamedTuple):
+    """상태 알림 `CS-05` 의 글 — 짧은 글(`text` — 합 대수 띠 · 고칠 자리), 전문(`full` — 화면 ·
+    공정 · 뜻 · 넘친 달), 지문 재료(`content` — 띠와 넘친 달)."""
+
+    text: str
+    full: str
+    content: list[object]
+
+
+def manual_downtime_note(
+    effect: pd.DataFrame, *, process: str, process_label: str
+) -> ManualNote | None:
+    """계획이 건 입력 비가동(`ShorteningPlan.manual_downtime`)의 그 공정 칸 — 칸이 없으면 None.
+
+    짧은 글은 합 대수 띠(`manual_effect_band` — 「입력 비가동 반영(n칸 · 합 x대 · 가용 넘침
+    k칸)」)와 고칠 자리, 전문은 어느 화면 · 공정의 일인지와 뜻, 그 달 가용보다 커 0 에서 멈춘 달이다
+    (설계 규칙 UI-TXT-04 · UI-NTF-02 — 필요 단축 일정 `RS-05` 와 같은 꼴). 알림 칸은 평문이라 공정
+    이름을 막지 않는다."""
+    band = manual_effect_band(effect, (process,))
+    if not band:
+        return None
+    over = overdrawn_rows(effect)
+    if not over.empty:
+        over = over.loc[over["공정"].astype("string").str.strip().eq(process.strip()).fillna(False)]
+    over_months = [int(month) for month in over["생산계획년월"].tolist()] if not over.empty else []
+    meaning = MANUAL_DOWNTIME_HELP
+    if over_months:
+        shown = ", ".join(month_label(month) for month in over_months[:_MANUAL_OVER_LIMIT])
+        more = (
+            f" 외 {len(over_months) - _MANUAL_OVER_LIMIT}칸"
+            if len(over_months) > _MANUAL_OVER_LIMIT
+            else ""
+        )
+        meaning = (
+            f"{MANUAL_DOWNTIME_HELP} 가용 넘침(그 달 가용보다 커 0 에서 멈춘 칸): {shown}{more}."
+        )
+    return ManualNote(
+        text=f"{band} — {MANUAL_DOWNTIME_FIX}",
+        full=f"{_MANUAL_SCREEN} · {process_label} — {band} — {meaning}",
+        content=[band, over_months],
     )
 
 
-def source_equipment_text(equipment_text: str | None) -> str:
-    """개조 일정 모드 출처 띠 「가용 = 설비 일정 기준」 뒤 괄호 — 「(설비 기준 글, 단축 전)」(글은
-    막는다). 설비 기준 글이 없거나 비면 「(단축 전)」."""
-    return f"({literal_markdown(equipment_text)}, 단축 전)" if equipment_text else "(단축 전)"
+def report_manual_downtime(
+    source: EquipmentPlanSource,
+    plan: ShorteningPlan | None,
+    *,
+    process: str | None,
+    process_label: str,
+    equipment_session: EquipmentSession | None,
+) -> None:
+    """입력 비가동 반영 · 가용 넘침의 상태 알림(`CS-05`) — 머리 줄 · 출처 띠에 그리지 않는다
+    (2026-11-10 보드 Q-4 — 필요 단축 일정 · 가용설비 Static 대비 일정의 같은 표지와 같은 꼴, 설계
+    규칙 UI-NTF-02 · UI-NTF-05).
 
-
-def upeh_assumption_note() -> str:
-    """세션 UPEH 가정 %(정수)가 기본값이 아니면 개조 일정 모드 출처 띠 끝 단서
-    (`UPEH_NOT_APPLIED_NOTE`), 아니면 빈 글자. 판정은 머리 줄 표지와 같다(`_upeh_assumption_on`)."""
-    return UPEH_NOT_APPLIED_NOTE if _upeh_assumption_on() else ""
+    두 모드가 `render_equipment_plan` 바로 뒤 한 자리에서 부른다 — 계획이 없으면(멈춘 갈래)
+    `active=False` 로 「해소」 를 낸다. 조회기간에 확보율을 낼 공정 · 달이 없어 그 앞에서 멈추는
+    갈래도 부른다(공정이 없으면 `process` 가 None — 범위가 달라 앞 줄은 「범위 바뀜」 으로
+    닫힌다). 범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이고 모드는 들지 않는다(모드를 바꿔도
+    같은 알림이다). 줄의 「그 화면으로」 는 가용설비 현황 › Preference 를 연다. 이벤트 칸에 늘 한
+    자리를 쓴다(`alerts.state`)."""
+    months = list(source.page_inputs.months)
+    sim = simulation_scope(
+        source.page_inputs.context.active_scenario, (months[0], months[-1]) if months else None
+    )
+    fleet = equipment_scope(equipment_session) if equipment_session is not None else None
+    note = (
+        None
+        if plan is None or process is None
+        else manual_downtime_note(
+            plan.manual_downtime, process=process, process_label=process_label
+        )
+    )
+    alerts.state(
+        "CS-05",
+        scope={
+            **sim.scope,
+            **(fleet.scope if fleet is not None else {"equipment": None}),
+            "process": process,
+        },
+        content=None if note is None else note.content,
+        active=note is not None,
+        text=None if note is None else note.text,
+        full=None if note is None else note.full,
+        scope_label=" · ".join(
+            part
+            for part in (sim.label, fleet.label if fleet is not None else "", process_label)
+            if part
+        ),
+        tab=tab_name(EQUIPMENT_PREFERENCE_TAB),
+        goto=EQUIPMENT_SCREEN,
+    )

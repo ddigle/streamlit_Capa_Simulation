@@ -397,14 +397,17 @@ def test_a_process_with_equipment_shows_kpis_and_figures(
 
 
 def test_the_header_has_no_description_line(dynamic_databases: tuple[Path, Path]) -> None:
-    """소개 · 사용법 · 저장 규칙은 머리에 늘 두지 않는다 — Guide 와 모드 전환 풍선, 「이 세션만」
+    """소개 · 사용법 · 저장 규칙은 머리에 늘 두지 않는다 — Guide 와 모드 전환 줄 끝 ⓘ, 「이 세션만」
     표지 풍선이 말한다(설계 규칙 UI-TXT-01 · UI-TXT-02)."""
+    from capa_simulation.components.modification_schedule_view import MODE_SWITCH_HELP
+
     app = _opened(dynamic_databases)
     captions = _captions(app)
 
     assert "기존 제품 확보율이 언제부터" not in captions
     assert "언제 할지 찾습니다" not in captions and "그때그때 보기" not in captions
-    assert "N대 × D일 개조" in str(app.get("button_group")[0].proto.help)
+    assert "N대 × D일 개조" in MODE_SWITCH_HELP
+    assert [item for item in app.caption if item.proto.help == MODE_SWITCH_HELP]
 
 
 def test_the_header_repeats_no_conditions_and_no_source_band(
@@ -441,10 +444,12 @@ def test_the_chart_and_sheet_marks_live_in_the_card_title_tips(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """월별 확보율 카드의 「옅은 칠 = 제약 기간」 캡션과 계산표 위 「… 표 첫 달 앞에서 시작」 표지
-    줄은 본문에 두지 않는다 — 뜻은 카드 제목 풍선과 Guide 다(2026-11-09 사용자 검수 g12-2). 표 앞
-    창 · 대기의 날짜 · 대수는 계산표 제목 풍선 끝이다(`sheet_help`)."""
+    줄은 본문에 두지 않는다 — 뜻은 카드 제목 풍선과 Guide 다(2026-11-09 사용자 검수 g12-2). 옅은
+    칠의 뜻은 계산표 머리 칠처럼 Guide 에만 있다 — 그래프 제목 풍선에도 두지 않는다(2026-11-09
+    보드 c-legend — 표와 같게). 표 앞 창 · 대기의 날짜 · 대수는 계산표 제목 풍선 끝이다
+    (`sheet_help`)."""
     from capa_simulation.components.constraint_simulation_view import (
-        CHART_SHADE_TEXT,
+        CHART_HELP,
         SHEET_HELP,
         sheet_help,
     )
@@ -453,7 +458,8 @@ def test_the_chart_and_sheet_marks_live_in_the_card_title_tips(
     captions = _captions(app)
     assert "옅은 칠" not in captions and "표 첫 달 앞에서 시작" not in captions
     (chart,) = [item for item in app.markdown if str(item.value) == "**월별 확보율**"]
-    assert CHART_SHADE_TEXT in str(chart.proto.help)
+    assert str(chart.proto.help).startswith(CHART_HELP)
+    assert "옅은 칠" not in str(chart.proto.help)
     (sheet,) = [item for item in app.markdown if str(item.value) == "**월별 계산표**"]
     result, labels = _shown(app)
     assert str(sheet.proto.help) == sheet_help(result, labels.today)
@@ -464,13 +470,14 @@ def test_the_chart_and_sheet_marks_live_in_the_card_title_tips(
         .split()
     )
     assert "계산표 제목 풍선 끝에 그 뜻과 창 · 대기마다 날짜 · 대수가 붙습니다" in guide
+    assert "읽는 법: **옅은 칠 = 제약 기간**(계산표 머리 칠과 같은 뜻입니다)" in guide
 
 
 def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """모드 전환 「제약 영향 | 개조 일정」 은 본문이 아니라 사이드바 조건 카드 맨 위다(2026-11-08
-    사용자 그림 메모 g12). 카드는 처음 펼친 채 선다 — 전환이 그 안이다."""
+    사용자 그림 메모 g12). 카드는 처음 펼친 채 선다 — 전환이 그 안이고 뜻은 그 줄 끝 ⓘ 다."""
     app = _opened(dynamic_databases)
     (switch,) = [group for group in app.sidebar.button_group if group.key == CONSTRAINT_MODE_KEY]
     assert switch.value == "constraint"
@@ -484,6 +491,16 @@ def test_the_mode_switch_stands_at_the_top_of_the_condition_card(
     assert len(cards) == 1
     assert cards[0].proto.expanded
     assert cards[0].button_group[0].key == CONSTRAINT_MODE_KEY
+    # 라벨을 숨긴 전환이라 뜻은 같은 줄 끝 ⓘ 하나다 — 전환과 한 가로 칸에 빈 캡션 풍선이 서고 전환
+    # 위젯은 풍선을 들지 않는다(2026-11-10 보드 Q-8, 설계 규칙 UI-TXT-02 —
+    # `tests/test_collapsed_label_help.py`).
+    from capa_simulation.components.modification_schedule_view import MODE_SWITCH_HELP
+
+    row = next(iter(cards[0].children.values()))
+    assert [group.key for group in row.button_group] == [CONSTRAINT_MODE_KEY]
+    (tip,) = list(row.caption)
+    assert str(tip.value) == "" and tip.proto.help == MODE_SWITCH_HELP
+    assert not switch.proto.help
     # 「비중 배분 비교」 토글은 본문 위 보기 줄이 아니라 카드 끝 「견주기」 다(2026-11-09 보드 C3) —
     # 이름은 짧게, 풍선은 한 줄이고 뜻 · 식은 Guide 다.
     assert [toggle.key for toggle in cards[0].toggle][-1] == CONSTRAINT_PROPORTIONAL_KEY
@@ -682,6 +699,10 @@ def test_late_modification_windows_raise_a_state_alert_not_a_place_line(
     assert "「제때 시작했다면」" in str(note["full"]) and WINDOW_LATE_TEXT in str(note["full"])
     assert " 비가동 · " in str(note["full"])
     assert WINDOW_LATE_TEXT not in " ".join([_captions(app), *_markdown(app)])
+    # 같은 판정으로 요약 「개조 대수」 회색 줄의 첫 비가동 날 뒤에 「(지남)」 이 붙는다(2026-11-09
+    # 보드 c-late-word).
+    assert " · 첫 비가동 " in _metric_caption(app, "개조 대수")
+    assert _metric_caption(app, "개조 대수").endswith("(지남)")
 
     app.toggle(key=CONSTRAINT_MODIFY_KEY).set_value(False)
     _ok(app.run())

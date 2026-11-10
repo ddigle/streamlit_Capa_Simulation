@@ -6,28 +6,32 @@
 `load_manual_downtime(equipment_path)` 대신 빈 `ManualDowntime()` 을 넘기거나 출처 띠를 빠뜨리는
 회귀는 그 시험이 잡지 못한다(2026-10-27 리뷰). 여기서는 설비 DB 에 칸을 심고 화면을 띄워 그 칸이
 닿은 흔적 — 공정 Capa 상세 ④ 줄·② 제목 꼬리·닫는 알림, 필요 단축 일정 출처 줄과 줄어든 가용(공정·월
-CSV), 제약 시뮬레이션 출처 띠 — 을 본다. 하네스는 각 화면 시험의 것을 그대로 쓴다.
+CSV), 제약 시뮬레이션 상태 알림 `CS-05`(두 모드) — 을 본다. 하네스는 각 화면 시험의 것을 그대로
+쓴다.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 import pytest
-from alert_marks import active_state
+from alert_marks import active_state, data_error_marks, states
 from shortening_script import months_from_today
 from streamlit.testing.v1 import AppTest
 from test_constraint_simulation_page import _captions as constraint_captions
 from test_constraint_simulation_page import _equipment_database
 from test_constraint_simulation_page import _opened as constraint_opened
+from test_modification_schedule_page import _schedule as schedule_opened
 from test_process_capa_detail_page import DYNAMIC_PROCESS, _dynamic_app, _label_texts
 from test_required_shortening import _cutoff, _downtime, _master, _unit
 from test_required_shortening_tab import _csv
 from test_required_shortening_tab import _database as shortening_database
 from test_required_shortening_tab import _run as shortening_run
 
+import capa_simulation.page_bootstrap as page_bootstrap
 from capa_simulation.components.required_shortening_panel import MANUAL_NOTICE_HELP
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_tabs_state import tab_label
@@ -187,22 +191,100 @@ def test_required_shortening_takes_the_input_from_the_available_units(tmp_path: 
     clear_equipment_repository()
 
 
-def test_constraint_simulation_names_the_entered_downtime_in_its_header(tmp_path: Path) -> None:
-    """입력 비가동을 뺀 계획이면 머리 줄에 「입력 비가동 반영(n칸 · 합 x대)」 표지가 서고 뜻은 그
-    풍선이다 — 본문에 출처 띠는 없다(2026-11-08 사용자 그림 메모 g12)."""
+def test_constraint_simulation_raises_the_entered_downtime_as_a_state_alert(
+    tmp_path: Path,
+) -> None:
+    """입력 비가동을 뺀 계획이면 상태 알림 `CS-05` 가 선다 — 짧은 글은 합 대수 띠(「입력 비가동
+    반영(n칸 · 합 x대)」)와 고칠 자리, 전문 첫머리는 이 화면 · 공정이고 줄의 「그 화면으로」 는
+    가용설비 현황 › Preference 다. 머리 줄 · 본문에는 서지 않는다(2026-11-10 보드 Q-4 — 필요 단축
+    일정 `RS-05` 와 같은 꼴, 설계 규칙 UI-NTF-02). 칸이 없으면 「해소」(`active` 거짓)다."""
     from capa_simulation.components.constraint_equipment_plan import MANUAL_DOWNTIME_HELP
 
     databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
     before = constraint_opened(databases)
     assert MANUAL_DOWNTIME_BAND not in constraint_captions(before)
+    assert active_state(before, "CS-05") is None
+    assert [note["active"] for note in states(before, "CS-05")] == [False]
 
     _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
     app = constraint_opened(databases)
-    (mark,) = [item for item in app.caption if f"{MANUAL_DOWNTIME_BAND}(" in str(item.value)]
-    assert mark.proto.help == MANUAL_DOWNTIME_HELP
-    assert "가용 = 설비 일정 기준" not in constraint_captions(app)
+    assert MANUAL_DOWNTIME_BAND not in _texts(app)
+    note = active_state(app, "CS-05")
+    assert note is not None
+    assert note["short"].startswith(f"{MANUAL_DOWNTIME_BAND}(")
+    assert note["short"].endswith("— 가용설비 현황 › Preference")
     # 모든 달 가용 12 라 넘친 칸은 없다.
-    assert "가용 넘침" not in str(mark.value)
+    assert "가용 넘침" not in note["short"]
+    assert note["full"].startswith(f"제약 시뮬레이션 · {DYNAMIC_PROCESS} — {MANUAL_DOWNTIME_BAND}(")
+    assert MANUAL_DOWNTIME_HELP in note["full"]
+    assert (note["page"], note["href"], note.get("tab")) == (
+        tab_label(AVAILABLE_EQUIPMENT_STATUS),
+        AVAILABLE_EQUIPMENT_STATUS.href,
+        "Preference",
+    )
+    assert "가용 = 설비 일정 기준" not in constraint_captions(app)
+    clear_equipment_repository()
+
+
+def test_a_stopped_constraint_screen_closes_the_entered_downtime_alert(tmp_path: Path) -> None:
+    """설비 일정이 서지 않아 계획 앞에서 멈춘 회차는 입력 비가동 알림 `CS-05` 를 「해소」(`active`
+    거짓 하나)로 낸다 — 두 모드가 `render_equipment_plan` 바로 뒤 한 자리에서 부르고 계획이 없으면
+    조건도 없다(필요 단축 일정 `RS-05` 의 멈춘 회차 꼴)."""
+    from test_constraint_simulation_page import OTHER_PROCESS
+
+    databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
+    _seed(databases[1], OTHER_PROCESS, WIDE_MONTHS, 0.5)
+    app = constraint_opened(databases, OTHER_PROCESS)
+    assert data_error_marks(app) == 1 and not app.metric
+    assert [note["active"] for note in states(app, "CS-05")] == [False]
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize("mode", ["constraint", "schedule"])
+def test_a_screen_without_a_process_closes_the_entered_downtime_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """조회기간에 확보율을 낼 공정이 없어 계획 앞에서 멈춘 회차도 두 모드가 `CS-05` 를 낸다(`active`
+    거짓 — 공정이 빈 범위라 앞 회차 줄은 알림 칸이 「범위 바뀜」 으로 닫는다). 그 회차에 표지가
+    오지 않으면 앞 줄이 「지금도 있음」 으로 남는다."""
+    databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
+    app = constraint_opened(databases) if mode == "constraint" else schedule_opened(databases)
+    opened = active_state(app, "CS-05")
+    assert opened is not None
+
+    real = page_bootstrap.process_page_inputs
+    monkeypatch.setattr(
+        page_bootstrap,
+        "process_page_inputs",
+        lambda path: replace(real(path), process_options=[]),
+    )
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert "조회기간에 확보율을 낼 공정이 없습니다." in constraint_captions(app)
+    (note,) = states(app, "CS-05")
+    assert note["active"] is False and note["scope"] != opened["scope"]
+    clear_equipment_repository()
+
+
+def test_the_schedule_mode_raises_the_same_entered_downtime_alert(tmp_path: Path) -> None:
+    """「개조 일정」 모드도 같은 함수 · 같은 범위 · 같은 내용으로 `CS-05` 를 낸다 — 모드를 바꿔도
+    같은 알림이라 다시 뜨지 않는다. 출처 띠 끝에 서던 「입력 비가동 반영(…)」 은 없다(2026-11-09
+    보드 c-schedule-head · 2026-11-10 보드 Q-4)."""
+    databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
+    impact = constraint_opened(databases)
+    schedule = schedule_opened(databases)
+    assert MANUAL_DOWNTIME_BAND not in _texts(schedule)
+    first, second = active_state(impact, "CS-05"), active_state(schedule, "CS-05")
+    assert first is not None and second is not None
+    assert (second["scope"], second["fp"], second["short"], second["full"]) == (
+        first["scope"],
+        first["fp"],
+        first["short"],
+        first["full"],
+    )
     clear_equipment_repository()
 
 

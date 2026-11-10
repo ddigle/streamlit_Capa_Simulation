@@ -517,6 +517,21 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
     ),
     Withdrawn(
         what=(
+            "제약 시뮬레이션 머리 줄 「입력 비가동 반영(n칸 · 합 x대 · 가용 넘침 k칸)」 표지와"
+            " 개조 일정 모드 출처 띠 끝 같은 말"
+        ),
+        why="2026-11-10 보드 Q-4 · c-schedule-head · UI-NTF-02",
+        file="src/capa_simulation/components/constraint_equipment_plan.py",
+        function="report_manual_downtime",
+        code="CS-05",
+        route="state",
+        test=(
+            "tests/test_manual_downtime_pages.py"
+            "::test_constraint_simulation_raises_the_entered_downtime_as_a_state_alert"
+        ),
+    ),
+    Withdrawn(
+        what=(
             "가용설비 현황 Main 가용대수 · 호기 현황 숫자 밑과 Static 대비 일정 세 결과 위의"
             " 「일정 미정 N대 (…)」 줄"
         ),

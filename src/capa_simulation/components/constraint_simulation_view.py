@@ -12,8 +12,9 @@
 
 - **월별 확보율 그래프**(`CONSTRAINT_CHART_KEY`) — 온 폭 카드. 그래프는 가장 좁은
   폭(`chart_min_width_px`)을 받고 카드가 그보다 좁으면(390px 창) 카드 안에서 가로로 스크롤한다 —
-  세운 달 눈금 30개가 포개지지 않게(`chart_style`). 범례 밖 표지(제약 기간 옅은 칠 · 위 끝 ▲)의
-  뜻은 카드 제목 풍선이다(`chart_help` — 2026-11-09 사용자 검수 g12-2, 본문 캡션을 걷었다).
+  세운 달 눈금 30개가 포개지지 않게(`chart_style`). 위 끝 ▲ 의 뜻은 카드 제목 풍선이고(`chart_help`
+  — 2026-11-09 사용자 검수 g12-2), 제약 기간 옅은 칠의 뜻은 계산표 머리 칠처럼 Guide 에만 있다
+  (2026-11-09 보드 c-legend — 표와 같게).
 - **월별 계산표** — 그 아래 온 폭(라벨 Figure + 가로로 스크롤되는 월 Figure `CONSTRAINT_SHEET_KEY`).
   계산표는 컬럼 안에 넣지 않는다 — 두 컬럼 폭 규칙(`split_scroll_columns_style` 의 `:has()`)이 바깥
   컬럼에도 걸린다. 칸 색 · 글자색 · 머리 칠의 읽는 법은 Guide 다(2026-11-08 사용자 그림 메모 g12).
@@ -116,8 +117,8 @@ from capa_simulation.sidebar_status import rerun_app_unless_alone
 __all__ = [
     "CHART_CARD_KEY",
     "CHART_HELP",
-    "CHART_SHADE_TEXT",
     "KPI_ROW_KEY",
+    "LATE_MARK",
     "SHEET_HELP",
     "SHORT_INLINE_LIMIT",
     "SHORT_MONTHS_EXPANDER_KEY",
@@ -127,6 +128,7 @@ __all__ = [
     "chart_help",
     "chart_style",
     "default_month",
+    "first_downtime_text",
     "overdrawn_lines",
     "pick_chart_month",
     "pick_sheet_month",
@@ -157,9 +159,9 @@ _EMPTY: Final = "—"
 # 그래프의 띠와 계산표의 열 테두리로 함께 짚는다.
 CHART_HELP: Final = "달 칸을 누르면 계산표에서도 그 달을 짚습니다."
 SHEET_HELP: Final = "칸을 누르면 그래프에서도 그 달을 짚습니다."
-# 범례 밖 그래프 표지의 뜻 — 카드 머리 캡션이었다가 제목 풍선으로 옮겼다(2026-11-09 사용자 검수
-# g12-2 「옅은 칠 문구 가이드배치 or 제거」, 설계 규칙 UI-TXT-02). ▲ 는 넘친 달이 있을 때만 붙인다.
-CHART_SHADE_TEXT: Final = "옅은 칠 = 제약 기간"
+# 범례 밖 그래프 표지 ▲ 의 뜻 — 카드 제목 풍선이고 넘친 달이 있을 때만 붙인다(2026-11-09 사용자 검수
+# g12-2, 설계 규칙 UI-TXT-02). 제약 기간 옅은 칠의 뜻은 계산표 머리 칠과 같이 Guide 다(2026-11-09
+# 보드 c-legend).
 CHART_ABOVE_TEXT: Final = f"{ABOVE_MARK} = 그래프 위 끝을 넘은 제약 제품 확보율(값은 점 풍선)"
 # 표 앞에서 시작하는 개조 · 대기 — 표에 보이지 않는 감소라 계산표 제목 풍선 끝에 붙인다(2026-11-09
 # 사용자 검수 g12-2 — 본문 표지 줄을 걷었다, 설계 규칙 UI-TXT-02 · UI-TXT-04). 그 창 · 대기마다
@@ -170,6 +172,9 @@ BEFORE_RANGE_TEXT: Final = (
 WAIT_BEFORE_RANGE_TEXT: Final = (
     "첫 신규 대기가 표의 첫 달보다 앞에서 시작합니다 — 그 앞 달의 감소는 표에 없습니다."
 )
+# 첫날이 오늘보다 앞인 첫 비가동 날의 꼬리(요약 「개조 대수」 회색 줄 — 2026-11-09 보드
+# c-late-word).
+LATE_MARK: Final = "(지남)"
 # 가용이 모자란 달을 한 줄에 달마다 적는 상한 — 넘으면 달 수만 적고 달마다 값은 접는다(30개월이 캡션
 # 한 줄로 늘어졌다, 2026-10-25 E2E).
 SHORT_INLINE_LIMIT: Final = 3
@@ -228,9 +233,9 @@ def wait_before_range_help(result: ConstraintResult, today: date | None) -> str:
 
 
 def chart_help(*, above: bool) -> str:
-    """월별 확보율 카드 제목 풍선 — 누르는 법과 범례 밖 표지의 뜻(▲ 는 넘친 달이 있을 때만)."""
-    marks = CHART_SHADE_TEXT + (f" · {CHART_ABOVE_TEXT}" if above else "")
-    return f"{CHART_HELP}\n\n{marks}"
+    """월별 확보율 카드 제목 풍선 — 누르는 법과, 넘친 달이 있으면 ▲ 의 뜻. 제약 기간 옅은 칠의 뜻은
+    Guide 다(계산표와 같게 — 2026-11-09 보드 c-legend)."""
+    return f"{CHART_HELP}\n\n{CHART_ABOVE_TEXT}" if above else CHART_HELP
 
 
 def sheet_help(result: ConstraintResult, today: date | None) -> str:
@@ -424,6 +429,14 @@ def _status_tone(status: str | None) -> MetricTone:
     return "neutral"
 
 
+def first_downtime_text(day: date, today: date | None) -> str:
+    """요약 「개조 대수」 회색 줄의 첫 비가동 날 — 오늘보다 앞이면 날짜 뒤에 「(지남)」 을 붙인다
+    (2026-11-09 보드 c-late-word — 개조를 이미 시작했어야 하는지가 날짜로만 보이지 않게). 판정은
+    상태 알림 `CS-04` 와 같은 「첫날 < 오늘」 이고, `today` 가 None 이면 붙이지 않는다."""
+    late = today is not None and day < today
+    return f"{day.isoformat()}{LATE_MARK if late else ''}"
+
+
 def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -> None:
     """요약 넷 — 제약 확보율 충족 · 기존 최저 확보율 · 기준 미달 달 · 개조 대수.
 
@@ -528,7 +541,7 @@ def render_constraint_kpis(result: ConstraintResult, labels: ConstraintLabels) -
         else:
             value4 = f"{kpis.max_dedicated}대"
             caption4 = f"{kpis.window_count}번에 나눠 개조" + (
-                f" · 첫 비가동 {kpis.first_downtime_day.isoformat()}"
+                f" · 첫 비가동 {first_downtime_text(kpis.first_downtime_day, labels.today)}"
                 if kpis.first_downtime_day is not None
                 else ""
             )
