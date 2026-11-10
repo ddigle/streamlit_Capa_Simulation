@@ -279,7 +279,7 @@ CANVAS_SCHEMA_VERSION: Final = 8
 # 않는다. 시트 꼴이 바뀌면 버전을 올린다.
 SHEET_MEMO_KEY: Final = "process_detail_sheet_memo"
 SHEET_MEMO_LIMIT: Final = 4
-SHEET_SCHEMA_VERSION: Final = 1
+SHEET_SCHEMA_VERSION: Final = 2
 
 # ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
 ROUNDED_IN_NOTE: Final = (
@@ -621,9 +621,11 @@ def sheet_request(
 ) -> WorkbookRequest:
     """시트 엑셀 재료 — 이 회차의 화면 상태 그대로(켜진 구획 · 펼친 제품 행과 분류 · 조회기간의 달 ·
     UPEH 가정 · HOME 표시 확보율 · 「더 보기」). 머리 값은 페이지 값 뒤에 구획 · 펼침 · 단축 목표를
-    덧붙인다. 그림 캔버스와 같은 인자로 같은 행 모델을 세운다(`remembered_canvas`)."""
+    덧붙인다 — 「구획」 은 시트에 실제로 선 구획만이다(설비 일정이 서지 않으면 ② ~ ④ 칩이 켜져
+    있어도 ① 뿐). 그림 캔버스와 같은 인자로 같은 행 모델을 세운다(`remembered_canvas`)."""
     heading = list(view.sheet_heading)
-    opened = [SECTION_LABELS[section] for section in SECTION_IDS if section not in collapsed]
+    drawn = SECTION_IDS if view.dynamic is not None else (SECTION_SUMMARY,)
+    opened = [SECTION_LABELS[section] for section in drawn if section not in collapsed]
     heading.append(("구획", " · ".join(opened) if opened else "모두 접힘"))
     if expanded:
         filtered = f" · 제품 거르기 {len(view.products)}개" if view.products else ""

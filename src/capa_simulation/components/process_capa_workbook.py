@@ -365,18 +365,21 @@ def screen_number(text: str) -> tuple[float, str] | None:
 
     「126%」 → (1.26, `#,##0%`), 「−2」 → (−2, `+#,##0;"−"#,##0;#,##0`), 「→ 25.7」 → (25.7,
     `"→ "#,##0.0`), 「−1.8대」 → (−1.8, …`"대"`…), 「1.25⚠」 → (1.25, `#,##0.00"⚠"`). 부호 글자는
-    화면처럼 U+2212 다.
+    화면처럼 U+2212 다. 천 단위 쉼표도 글을 따른다 — 네 자리 이상인데 쉼표가 없으면(화면 % 글
+    「1234%」) `0` 꼴이다.
     """
     match = _SCREEN_NUMBER.match(text.strip())
     if match is None:
         return None
-    whole = match.group("whole").replace(",", "")
+    written = match.group("whole")
+    whole = written.replace(",", "")
     fraction = match.group("fraction") or ""
     value = float(f"{whole}.{fraction}" if fraction else whole)
     sign = match.group("sign") or ""
     if sign in ("−", "-"):
         value = -value
-    body = "#,##0" + (f".{'0' * len(fraction)}" if fraction else "")
+    grouped = "," in written or len(whole) < 4
+    body = ("#,##0" if grouped else "0") + (f".{'0' * len(fraction)}" if fraction else "")
     if match.group("percent"):
         value = round(value / 100, len(fraction) + 2)
         body += "%"

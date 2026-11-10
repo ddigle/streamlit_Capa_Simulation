@@ -1452,6 +1452,10 @@ def test_a_broken_equipment_database_keeps_the_official_section(
     assert [metric.label for metric in app.metric][0] == "최저 확보율"
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
+    # 시트 엑셀도 선다 — 머리 값 「구획」 은 칩 넷이 켜져 있어도 시트에 선 ① 뿐이다.
+    _, book = _sheet(app)
+    assert list(book) == [DETAIL_SHEET]
+    assert _heading(book[DETAIL_SHEET])["구획"] == "① 공식"
 
 
 def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_section(

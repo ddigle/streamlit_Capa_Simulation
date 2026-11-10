@@ -4362,6 +4362,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).
   - 시트 엑셀 바이트도 세션 칸(`SHEET_MEMO_KEY`, 몇 벌)에 기억한다 — 키(`sheet_memo_key`)는 그림 기억 키에서 고른 달 · 테마를
     빼고 머리 값 줄을 더한 것이라 달 칸 누름 · 다른 위젯 회차는 통을 다시 만들지 않는다(콜러블 지연 생성은 쓰지 않는다 — 9장).
+    같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 `SHEET_SCHEMA_VERSION` 을 올린다.
     재료(`sheet_request`)는 그림과 같은 인자(구획 · 펼침과 분류 · 제품 행 표 · 「더 보기」 · UPEH 가정)다.
   - 그림은 세션 칸(`CANVAS_MEMO_KEY`)에 기억한다(새 `st.cache_data` 없음). 근거 카드 식(①~④ 와 원인 줄)은 검산되어야
     하고(어긋나면 `≈` — `formula_text.equals_mark`, 등호 없는 ① 원수요 부하량 ÷ 실효 대당 Capa 줄은 카드의 소요와 어긋날

@@ -91,12 +91,13 @@ def _excel_text(value: float, code: str) -> str:
     else:
         section = sections[2] if len(sections) > 2 else sections[0]
     shown = abs(value) if len(sections) > 1 and value < 0 else value
-    match = re.fullmatch(r'(".*?")?(\+)?(".*?")?#,##0(\.0+)?(%)?(".*?")?', section)
+    match = re.fullmatch(r'(".*?")?(\+)?(".*?")?(#,##0|0)(\.0+)?(%)?(".*?")?', section)
     assert match is not None, section
-    head, plus, middle, decimals, percent, tail = match.groups()
+    head, plus, middle, whole, decimals, percent, tail = match.groups()
     number = shown * 100 if percent else shown
     digits = len(decimals) - 1 if decimals else 0
-    body = f"{number:,.{digits}f}" + ("%" if percent else "")
+    grouping = "," if whole == "#,##0" else ""
+    body = f"{number:{grouping}.{digits}f}" + ("%" if percent else "")
     return "".join(
         [
             (head or "").strip('"'),
@@ -116,6 +117,8 @@ def _excel_text(value: float, code: str) -> str:
         ("126%", 1.26, "126%"),
         ("98%", 0.98, "98%"),
         ("110%", 1.1, "110%"),
+        ("1234%", 12.34, "1234%"),
+        ("1234", 1234.0, "1234"),
         ("+3", 3.0, "+3"),
         (f"{MINUS}2", -2.0, f"{MINUS}2"),
         ("0", 0.0, "0"),

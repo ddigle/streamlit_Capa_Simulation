@@ -63,6 +63,7 @@ from capa_simulation.components.process_capa_view import (
     production_month_example,
     schedule_short_month,
     sheet_memo_key,
+    sheet_request,
     shortening_card,
     shortening_link_needed,
     target_text,
@@ -742,6 +743,35 @@ def test_the_sheet_key_follows_the_heading_and_the_drawn_conditions() -> None:
         split="제품정보",
         show_all_units=False,
         show_all_arrows=False,
+    )
+
+
+def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
+    heading = sheet_request(
+        view,
+        expanded=False,
+        split="제품정보",
+        collapsed=collapsed,
+        product_demand=None,
+        show_all_units=False,
+        show_all_arrows=False,
+    ).heading
+    return dict(heading)["구획"]
+
+
+def test_the_sheet_sections_line_names_only_the_sections_the_sheet_draws() -> None:
+    """시트 머리 값 「구획」 은 시트에 실제로 선 구획만 적는다 — 설비 일정이 서지 않으면 ② ~ ④ 칩이
+    켜져 있어도 ① 뿐이고, 그 ① 마저 접었으면 「모두 접힘」 이다."""
+    nothing: frozenset[str] = frozenset()
+    assert _sheet_sections(_view(dynamic=None), nothing) == "① 공식"
+    assert _sheet_sections(_view(dynamic=None), frozenset({SECTION_SUMMARY})) == "모두 접힘"
+    assert (
+        _sheet_sections(_view(dynamic=_dynamic_view()), nothing)
+        == "① 공식 · ② 일정 가용 · ③ 단축 · ④ 비가동"
+    )
+    assert (
+        _sheet_sections(_view(dynamic=_dynamic_view()), frozenset({SECTION_UNITS}))
+        == "① 공식 · ② 일정 가용 · ④ 비가동"
     )
 
 
