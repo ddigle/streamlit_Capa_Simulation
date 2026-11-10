@@ -464,8 +464,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     UI-TXT-01 · 02 · 03). 표가 `alerts.TABLE_ROW_LIMIT` 를 넘으면 그 목록만 표 위 같은 이름 펼침에 남는다
     (`render_oversized_lists`). 알림은 그 탭이 열린 회차에만 낸다. 다른 화면 · 저장 검사의 안내(`REQUIRED_LIST_NOTE`)는 「산출 결과
     → 소요대수 탭을 열면 서는 Alarm 줄의 표」 라고 말한다.
-  - 대당 Capa · 소요대수 표 제목 줄에 CSV 와 「시트 엑셀」(TODO 2장 「계산 결과 Excel 다운로드」 첫 넓히기 — 공정 Capa
-    상세 선례)을 묶은 「내려받기 ▾」 메뉴 하나가 선다(`table_toolbar.render_download_pair` — 2026-11-10 답 Q2-7). 지금 화면 상태(보기 · 집계 수준 · 공용 공정 거름 · 상세 ·
+  - 대당 Capa · 소요대수 표 제목 줄에 CSV 와 「시트 엑셀」(시트 엑셀 넓히기 1 — 공정 Capa
+    상세 선례, TODO 3장 「계산 결과 Excel 다운로드 — 닫음」)을 묶은 「내려받기 ▾」 메뉴 하나가 선다(`table_toolbar.render_download_pair` — 2026-11-10 답 Q2-7). 지금 화면 상태(보기 · 집계 수준 · 공용 공정 거름 · 상세 ·
     `표 조건` 거름 · 조회기간 달 · 공정 표시명 — CSV 는 원본 이름)의 표를 화면 서식째
     (`components/monthly_table_workbook.py`) 낸다. 파일 이름은 같은 메뉴의 CSV 와 같고 확장자만 `.xlsx`, 맨 위 머리 값 줄은 시나리오 ·
     조회기간(`sheet_download.scenario_period_rows`) · 보기 · 거름이다. 통은 조건 키(대당 Capa — 시나리오 캐시 키 · 표시순서
@@ -7370,7 +7370,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **`st.download_button` 은 `components/table_toolbar.py` 에서만 부른다**(라벨에 아이콘을 섞지 않는다). 내려받기 CSV
   바이트는 매 회차 다시 만들지 않고 내용 지문 키 캐시(`simulation_cache.get_export_csv` 등)로 받으며 콜러블 지연 생성은
   쓰지 않는다 — 빗나간 회차에는 바로 만들어 오류가 그 자리에 드러나게 한다. 엑셀(공정 Capa 상세 · 산출 결과 대당 Capa ·
-  소요대수 · 가용설비 현황 Static 대비 일정 「시트 엑셀」)도 같다 — 조건 키로 세션에 기억한 바이트를 넘긴다(`sheet_download.remembered_bytes`, 화면마다 세션
+  소요대수 · 가용설비 현황 Static 대비 일정 시트 · 호기 목록 「시트 엑셀」)도 같다 — 조건 키로 세션에 기억한 바이트를 넘긴다(`sheet_download.remembered_bytes`, 화면마다 세션
   칸이 따로). CSV 와 엑셀 한 쌍은 `table_toolbar.render_download_pair` 하나가 「내려받기 ▾」 메뉴로 그린다(엑셀 단추를 다른
   자리에서 부르지 않는다).
 - 사람이 적은 자유 글(게시판 본문·답글·메모)은 `st.markdown` 으로 그리지 않는다 — `#`·`-`·`*` 가 제목·목록으로 바뀌고

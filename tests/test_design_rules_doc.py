@@ -10,8 +10,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 5줄 · 이번 배포 전후 보드 7줄과 답 · 통합 검수 보드 줄과 답 · 작업 줄 규칙 둘(v1.9) · 전 화면 점검
 보드 15줄 · 2차 보드 7줄과 답(v1.10) · 아침 검수 보드 줄과 답 · 메모 원문(v1.11) · 2026-11-09 검수
 보드 · 칩 자리 · 상단 판단 줄과 답 · 메모 원문 · 새 규칙(v1.12) · 상단 정리 검수 보드 줄과 고른
-글 · 메모 원문 · 해석 셋(v1.13) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md ·
-README)의 연결.
+글 · 메모 원문 · 해석 셋(v1.13) · 2차 검수 보드 · 밤샘 다 물음 줄과 고른 글 · 갈래 수 · 답 밖
+줄(v1.14) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -1020,11 +1020,10 @@ def test_the_top_check_board_is_recorded_with_its_three_readings() -> None:
     있다. 답이 규칙 글로 들어갔는지 핵심만 본다 — 넘침 차례(UI-NTF-01), 「내용 바뀜」 · 「닫힌 것
     숨김」(UI-NTF-02), 모드 전환 ⓘ(UI-LAY-02), 메모 안내 글 근거 꼬리표(UI-TXT-01)."""
     document = _text()
-    assert "판 v1.13" in document.split("\n## 1. ")[0]
     assert "- **v1.13 — 2026-11-10.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-13. ") :]
+    board = section[section.index("\n### 6-13. ") : section.index("\n### 6-14. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -1063,3 +1062,107 @@ def test_the_top_check_board_is_recorded_with_its_three_readings() -> None:
     values = _chapter(document, 4)
     for name in ("표 도구 막대 자리", "공정 Capa 상세 표 도구 줄", "폼 안 알림 칸", "상단 띠"):
         assert any(line.startswith(f"| {name} |") for line in values.splitlines()), name
+
+
+# 2026-11-10 밤 2차 검수 보드 · 밤샘 다 물음(6-14)의 답 — 「전부 권장대로」. 보드 물음은 답할 때
+# 있던 27 이 권장 원문 그대로이고, 답 뒤에 더해진 셋(Q2-1 · Q2-4 · Q2-9)은 열린 물음, 권장이 없는
+# Q2-6 은 사용자 실기 확인이다. 반영 13 · 그대로 12 · 규칙집 예외 1 로 가른다.
+SECOND_CHECK_REFLECTED = {
+    "Q2-2": "셋과 같게 줄인다 — 같은 꼴 같은 간격",
+    "Q2-7": (
+        "내려받기 둘을 「내려받기 ▾」 메뉴 하나(이 공정 단축 일정 CSV · 시트 엑셀)로 묶어 한 줄"
+    ),
+    "Q2-8": (
+        "맨 아래 정리 줄 「필요 단축 일정에서 전체 공정·진척 비교 보기」 를 일정 부족 달이 있는"
+        " 공정에도 세운다 — 그 카드에서 온 방문만 뺌, 위 띠는 그대로"
+    ),
+    "Q2-13": "상태 알림으로 보낸다 — 입력 비가동 CS-05 와 같은 꼴, 새 알림 코드",
+    "Q2-14": "Guide 로 옮긴다 — 제약 영향 그래프 · 계산표와 같은 꼴",
+    "Q2-17": "탭 풍선도 그 화면 글자로 — Space 탭은 원본",
+    "Q2-18": "칩 · 판 · 풍선은 늘 그 화면 글자로 — 표시명 화면은 그 화면 표시명",
+    "Q2-24": "Guide 로 옮기고 카드에는 제목과 목록만 남긴다 — 설명 글 규칙(UI-TXT-01)대로",
+    "Q2-26": "필요 단축 일정도 조회 조건 패널 줄(값 칸 + 팝업)로 — 진척 비교는 카드에 그대로",
+    "Q2-27": (
+        "경로 표처럼 「「PKG PLAN」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.」"
+        " 로 맞춘다"
+    ),
+    "Q2-28": "같은 잠긴 줄 「계산 멈춤」 으로 자리를 지킨다",
+    "Q2-29": "설비 시나리오 줄도 정상 회차처럼 세운다 — 잠그지 않음, 다른 시나리오로 옮기는 길",
+    "Q2-30": "푸는 길이 원천 다시 등록이면 끝 꼬리를 「…은 남겼습니다」 까지만 쓴다",
+}
+SECOND_CHECK_KEPT = {
+    "Q2-3": "그대로 — 모든 저장 폼이 같은 테두리 꼴",
+    "Q2-5": "받는다",
+    "Q2-10": "화면 그대로 — 30대까지(더 보기를 켜면 모두)",
+    "Q2-11": "그대로 — 결정 기록을 따름",
+    "Q2-12": "지금대로 — 칩 · 전환 바로 뒤",
+    "Q2-15": (
+        "「확인 필요」 그대로 — 같은 띠 글 · 같은 「가용 넘침」 꼬리를 쓰는 RS-05 와 같은 단계"
+    ),
+    "Q2-16": "그대로 — 지난 보드 Q-1 답대로",
+    "Q2-19": "「선택」 그대로 받는다",
+    "Q2-20": "받는다 — 막대가 단추를 덮지 않는 쪽",
+    "Q2-21": "받는다 — 지금대로",
+    "Q2-22": "지금대로 — 닫힌 채 세 수가 보이고, 사내 런북 4-7 화면 확인이 이 글을 그대로 읽음",
+    "Q2-25": "그대로 — 단추 차례를 읽는 값 줄로 본다",
+}
+SECOND_CHECK_EXCEPTION = {"Q2-23": "지금대로 — 규칙집에 예외로 적는다"}
+SECOND_CHECK_OPEN = ("Q2-1", "Q2-4", "Q2-9")
+NIGHT_DA_ANSWERS = {
+    "다-0": "(가) 다음 배포는 1차만, 2차는 사내 사용 뒤",
+    "다-1": "권장대로",
+    "다-2": (
+        "① 일정 리비전에 실음 ② 복제 · 발행 때 따라감 ③ 모든 시나리오에 복사 ④ 주차별에서는 안 뺌"
+        " ⑤ 다음 배포 뒤 착수"
+    ),
+    "다-3": (
+        "① 느린 둘째 누름 조용히 거름 ② BDQ 지금대로 ③ scripts 조사 그물 넓히고 고침 ④ 선행 B/O ·"
+        " Past Data · 선행 입고 공용 프로필 유지 · 방침 거둠 ⑤ 이름 꾸밈 지금대로"
+    ),
+    "다-4": "① 시안 그림 보드 먼저 ② 리비전 저장 · 등록 때 원천 파일 이름 · 수정 시각 · 해시만",
+}
+
+
+def test_the_second_check_board_and_the_night_answers_are_recorded() -> None:
+    """v1.14 — 6-14 는 보드 물음 Q2-1 ~ Q2-30 이 차례대로 한 줄씩이고 다 물음 다섯이 그 뒤다.
+    고른 글은 보드 권장 원문 그대로(반영 13 · 그대로 12 · 규칙집 예외 1), 답 뒤에 생긴 셋은
+    「열린 물음」, Q2-6 은 「사용자 실기 확인 대기」 다. 반영 줄은 커밋을 든다. Q2-24 의 답 밖
+    목록 줄과 Q2-23 의 예외 글(UI-LAY-13), 뒤집힌 옛 결정 둘(다-3 ④ · bottom-row → Q2-8)이
+    문서에 있다."""
+    document = _text()
+    assert "판 v1.14" in document.split("\n## 1. ")[0]
+    assert "- **v1.14 — 2026-11-11.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-14. ") :]
+    assert "https://claude.ai/artifact/GABcdxkXpoLAxUqGALsr26" in board
+    assert "「전부 권장대로」" in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-10) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert list(found) == [*(f"Q2-{n}" for n in range(1, 31)), *NIGHT_DA_ANSWERS]
+    chosen = {**SECOND_CHECK_REFLECTED, **SECOND_CHECK_KEPT, **SECOND_CHECK_EXCEPTION}
+    assert len(SECOND_CHECK_REFLECTED) == 13 and len(SECOND_CHECK_KEPT) == 12
+    for key, answer in {**chosen, **NIGHT_DA_ANSWERS}.items():
+        assert found[key] == answer, key
+    for key in SECOND_CHECK_OPEN:
+        assert found[key] == "열린 물음", key
+    assert found["Q2-6"] == "사용자 실기 확인 대기"
+    assert len(chosen) + len(SECOND_CHECK_OPEN) + 1 == 30
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    for key in SECOND_CHECK_REFLECTED:
+        assert re.search(r"커밋 `[0-9a-f]{7}`", by_id[key]), key
+    assert "a1ee769" in by_id["Q2-24"] and "답 밖" in by_id["Q2-24"]
+    rules = {rule.id: rule for rule in _rules()}
+    assert "Q2-23" in rules["UI-LAY-13"].fields["예외"][0]
+    assert SECOND_CHECK_EXCEPTION["Q2-23"] in rules["UI-LAY-13"].fields["예외"][0]
+    reversed_ = _chapter(document, 7)
+    for phrase in ("다-3 ④", "Q2-8", "bottom-row"):
+        assert phrase in reversed_, phrase
