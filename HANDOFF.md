@@ -41,7 +41,7 @@
 
 1. **2차 검수 보드** — 전후 그림은 저장소 밖 `~/projects/Deploy/worklog/morning-1108/integ3/<묶음>/`(갈래 결과 · `shots`), 물음은 `docs/TODO.md` 4장 「답 대기 — 2차 보드」
    (공정 Capa 상세 필요 단축 일정 가는 길 · 표 도구 줄 두 줄 · 같은 꼴 다른 자리 38px · 제약 UPEH 표지 · 넘침 귀결 · Space 탭 풍선 · 필요 단축 일정 목표 확보율 꼴 등).
-2. **시트 엑셀 견본을 실제 Excel 로 열어 보기** — `~/projects/Deploy/worklog/morning-1108/integ3/detail/samples/*.xlsx`. 「복구」 창 없이 열리는지(이 환경에는 Excel 이 없다).
+2. **시트 엑셀 견본을 실제 Excel 로 열어 보기** — `~/projects/Deploy/worklog/morning-1108/integ3/fix/samples/process_capa_detail-*.xlsx`(③ 「−N일」 · 「반입 전」 칸을 화면에 맞춘 판). 「복구」 창 없이 열리는지(이 환경에는 Excel 이 없다).
 3. **푸시 확인** — 검수 뒤 main 빨리 감기(8501 끈 뒤) · 관문 · 푸시. 앞선 「푸시해」 는 `513d87d` 까지만이다.
 4. **배포 지시** — 하면 stamp 를 정하고 7장 초안을 머리에 맞춰 런북에 넣는다(D1 · D2 반영본). ⑥(S3 명단 첫 저장)을 이관과 떼어 이번에 할지도 그때 묻는다.
    모듈 담당자에게는 「창구 1.2 — 모듈 화면 맨 위 「구현중」 배지 줄이 없어진다, 코드 수정은 필요 없다」 를 알린다(7장 초안).
