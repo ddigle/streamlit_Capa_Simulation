@@ -12,14 +12,10 @@ from capa_simulation.components.monthly_table_base import (
     HEADER_HEIGHT_PX,
     OUTER_BORDER_WIDTH_PX,
     ROW_HEIGHT_PX,
-    add_classification_boundaries,
-    add_header_rule,
-    add_month_boundaries,
-    add_outer_border,
+    add_table_frame,
     build_split_table_figures,
     classification_cell_text,
     classification_widths,
-    header_boundary_ratio,
     header_label,
     month_label,
     render_split_scroll_table,
@@ -213,17 +209,17 @@ def _add_table_grid(
     row_count: int,
 ) -> None:
     table_height = table_height_px(row_count)
-    add_outer_border(label_figure, include_left=True)
-    add_outer_border(month_figure, include_left=False)
-    for target_figure in (label_figure, month_figure):
-        add_header_rule(target_figure, boundary_y=header_boundary_ratio(row_count))
+    add_table_frame(
+        label_figure,
+        month_figure,
+        classification_widths=classification_widths,
+        month_columns=month_columns,
+        row_count=row_count,
+    )
 
     total_classification_width = sum(classification_widths)
-    # 생산 소계 가로선이 시작하는 지점이기도 하다. 아래에서 다시 쓴다.
+    # 제품 소계 가로선은 첫 분류 칸(생산) 오른쪽 끝에서 시작한다.
     production_boundary_x = classification_widths[0] / total_classification_width
-    add_classification_boundaries(label_figure, classification_widths)
-
-    add_month_boundaries(month_figure, month_columns)
 
     # `add_shape` 는 부를 때마다 지금까지 쌓인 shape 전부를 다시 검증한다. 행마다 부르면
     # 행 수 제곱으로 늘어 STEP 별 대당 Capa(1,140행)는 300초 안에 끝나지 않는다. 그래서 위의

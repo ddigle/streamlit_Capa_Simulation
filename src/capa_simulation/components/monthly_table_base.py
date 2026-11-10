@@ -7,9 +7,9 @@
 폭 계산은 같다. 그 공통분만 여기 둔다.
 
 격자 그리기 중 바깥 테두리·헤더 밑줄·월 경계선·분류 컬럼 세로선은 두 표가 같은 도형을
-그리므로 여기로 합쳤다. 행 그룹 가로선만 표 구조가 달라 각 모듈에 남긴다. `grouped` 는
-부분합 3단(제품·생산·총계)을 고정 폭으로, `hierarchical` 은 계층 깊이에 따라 폭을
-줄여 가며 긋는다.
+같은 차례로 그리므로 여기 한 벌(`add_table_frame`)로 합쳤다. 행 그룹 가로선만 표 구조가 달라
+각 모듈에 남긴다. `grouped` 는 부분합 3단(제품·생산·총계)을 고정 폭으로, `hierarchical` 은
+계층 깊이에 따라 폭을 줄여 가며 긋는다.
 
 분류 컬럼 폭(`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`)도
 같은 이유로 여기 있다. 행 모델과 면색 규칙만 표마다 다르고, 그 결과를 받아 Figure 를
@@ -260,11 +260,11 @@ def _grid_line(
     }
 
 
-# 아래 네 도우미는 선을 Figure 에 바로 넣지 않고 `append_layout_items` 누적함에 모으기만
-# 한다. `add_shape` 는 부를 때마다 지금까지 쌓인 shape 전부를 다시 검증하므로, 열이 많은
-# 월 영역(표준 목표의 Weeknum 축)에서는 선 수의 제곱으로 불어난다. 반영은 표 모듈의
-# `_add_table_grid` 끝에서 부르는 `flush_layout_items` 가 한 번에 한다 — 이 도우미를 새로
-# 부르는 곳도 반드시 flush 해야 한다. 잊으면 격자선이 통째로 빠진다.
+# 아래 다섯 도우미(네 격자 도우미와 그것을 묶은 `add_table_frame`)는 선을 Figure 에 바로 넣지
+# 않고 `append_layout_items` 누적함에 모으기만 한다. `add_shape` 는 부를 때마다 지금까지 쌓인
+# shape 전부를 다시 검증하므로, 열이 많은 월 영역(표준 목표의 Weeknum 축)에서는 선 수의 제곱으로
+# 불어난다. 반영은 표 모듈의 `_add_table_grid` 끝에서 부르는 `flush_layout_items` 가 한 번에
+# 한다 — 이 도우미를 새로 부르는 곳도 반드시 flush 해야 한다. 잊으면 격자선이 통째로 빠진다.
 def add_outer_border(figure: go.Figure, *, include_left: bool) -> None:
     """표 바깥 테두리를 그린다. 좌변은 분류 영역 Figure 에만 넣는다.
 
@@ -351,6 +351,27 @@ def add_month_boundaries(figure: go.Figure, month_columns: Sequence[str]) -> Non
             )
         )
     append_layout_items(figure, shapes=shapes)
+
+
+def add_table_frame(
+    label_figure: go.Figure,
+    month_figure: go.Figure,
+    *,
+    classification_widths: Sequence[float],
+    month_columns: Sequence[str],
+    row_count: int,
+) -> None:
+    """두 월별 표가 같은 격자 머리를 모은다 — 바깥 테두리 · 머리 밑줄 · 분류 칸 세로선 · 월 경계선.
+
+    Figure 마다 쌓이는 차례는 테두리 → 머리 밑줄 → 분류 칸(분류 Figure) 또는 월(월 Figure)
+    세로선이다. 행 그룹 가로선은 표 모듈이 이 뒤에 더하고 끝에서 함께 반영한다.
+    """
+    add_outer_border(label_figure, include_left=True)
+    add_outer_border(month_figure, include_left=False)
+    for figure in (label_figure, month_figure):
+        add_header_rule(figure, boundary_y=header_boundary_ratio(row_count))
+    add_classification_boundaries(label_figure, classification_widths)
+    add_month_boundaries(month_figure, month_columns)
 
 
 def build_split_table_figures(
