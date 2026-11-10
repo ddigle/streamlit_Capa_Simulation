@@ -707,17 +707,18 @@ def _unwritten_slots(modules: Mapping[str, ast.Module]) -> dict[tuple[str, str],
     """읽는 함수(`_SLOT_READERS`)에만 넘기고 다른 데서는 한 번도 쓰지 않는 대문자 칸 이름
     (정의한 모듈, 이름) → 읽는 자리(모듈:줄).
 
-    같은 이름(`FLASH_KEY` 등)이 모듈마다 있어 이름은 정의한 모듈까지 푼다 — 모듈 본문의
-    `from … import` 로 들인 이름은 그 모듈로, `import … as` 별칭의 속성은 그 모듈로, 나머지는 쓴
-    모듈로. 담기(`queue_flash`)·넘기기(도우미 인자 · `*튜플`)·비교 모두 「쓰임」 이다 — 읽기 밖의
-    쓰임이 하나라도 있으면 담는 쪽이 있다고 본다(놓치는 쪽으로 너그럽다).
+    같은 이름(`FLASH_KEY` 등)이 모듈마다 있어 이름은 정의한 모듈까지 푼다 — `from … import` 로
+    들인 이름은 그 모듈로(함수 · 갈래 안에서 늦게 들인 것도 — 그 모듈 어디서 쓰든 같은 이름으로
+    본다), `import … as` 별칭의 속성은 그 모듈로, 나머지는 쓴 모듈로. 담기(`queue_flash`)·
+    넘기기(도우미 인자 · `*튜플`)·비교 모두 「쓰임」 이다 — 읽기 밖의 쓰임이 하나라도 있으면 담는
+    쪽이 있다고 본다(놓치는 쪽으로 너그럽다).
     """
     reads: dict[tuple[str, str], list[str]] = {}
     used: set[tuple[str, str]] = set()
     for module, tree in modules.items():
         names: dict[str, tuple[str, str]] = {}
         aliases: dict[str, str] = {}
-        for statement in tree.body:
+        for statement in ast.walk(tree):
             if isinstance(statement, ast.ImportFrom) and statement.module:
                 for alias in statement.names:
                     names[alias.asname or alias.name] = (statement.module, alias.name)
@@ -788,6 +789,9 @@ def test_the_unwritten_slot_net_resolves_the_defining_module() -> None:
             "render_flash(ws.FLASH_KEY, *KEYS)\n"
             "pending_flash(HELPER_KEY)\n"
             "carry(HELPER_KEY)"
+        ),
+        "pkg.late": ast.parse(
+            "def draw():\n    from pkg.voc import FLASH_KEY\n    render_flash(FLASH_KEY)"
         ),
     }
 
