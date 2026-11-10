@@ -1706,8 +1706,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`follow_single`) 사이드바 공정 칸 팝업에서 직접 고른 공정만 보낸다(`pick_single` — 2026-11-09 보드 C2 (가)), 여러 개 따라감
   화면은 값 칸이 쓰고(`process_field.render_process_filter`), 거름 밖 초안 수는 `count_outside` 다. 따라가는 화면은 선언 한 곳
   (`FOLLOWERS` — 페이지 파일 → 출처 이름 · 갈래)이고, 화면마다 마지막으로 그린 선택지(`note_drawn`)로 `screen_mark` 가 탭 표지 ·
-  머리 칩의 근거(걸리나 · 없는 공정)를 낸다. 보내는 화면의 보이는 글자는 값과 함께 싣는다(`labels`).
-  사용자 메모(모니터링 · 원복 검토)에 맞춘 원복 길은 이 모듈과 `components/process_field.py`, 그 둘을 부르는 줄을 걷고 화면마다
+  머리 칩의 근거(걸리나 · 없는 공정)를 낸다. 보내는 화면의 보이는 글자는 값과 함께 싣는다(`labels`). 원본 이름으로 그리는
+  화면은 `ORIGINAL_NAME_SCREENS`(Space 하나 — 값 칸을 `labels` 없이 그린다)이고 그 화면에서는 머리 칩 · 판도 원본이다(2026-11-10
+  보드 Q-3 — 한 화면 한 이름). 사용자 메모(모니터링 · 원복 검토)에 맞춘 원복 길은 이 모듈과 `components/process_field.py`, 그 둘을 부르는 줄을 걷고 화면마다
   고르는 칸을 되살리는 것이다.
 - `src/capa_simulation/process_detail_state.py` — 공정 Capa 상세의 세션 키·주소 인자 계약과 HOME 칸 클릭 전달을 맡는다.
   - 칸 클릭 콜백은 이동 대기 칸만 적고(`queue_home_cell`), HOME 프래그먼트 본문 첫 줄이 전달 칸을 적어 옮기며
@@ -3370,7 +3371,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「Mold 외 2개」(`first_and_rest` — 표시순서상 첫 공정, 풍선 `filter_help` 가 전체 목록 — 2026-11-09 사용자 검수 g03-2, 필요 단축
   일정 카드의 공정 칸 · 머리 띠 칩도 같은 함수)다. 표지는 값 칸 테두리 `ACCENT` 두 겹 · 이름 줄 출처 「X 에서」(실제로 걸렸을
   때만) · 없는 공정은 값 칸 아이콘 `filter_alt_off` 뿐이다 — 이름 줄 주황 배지는 걷었다(보드 P1-6). 본문 위 칩은 없다(보드
-  C1 (라)) — 머리 띠 「공정」 칩(`header_chip` → 알림 칸)과 화면 탭 표지(`tab_mark` → 탭 줄)가 대신하고, 값 칸을 그린 회차에
+  C1 (라)) — 머리 띠 「공정」 칩(`header_chip` → 알림 칸 — 글자는 그 화면 글자라 Space 에서는 원본, 그 밖은 보낸 화면의 표시명,
+  2026-11-10 보드 Q-3)과 화면 탭 표지(`tab_mark` → 탭 줄)가 대신하고, 값 칸을 그린 회차에
   표지(`MARKER_ATTRIBUTE` — 스타일만 든 `st.html` 의 JSON, 값 칸과 같은 간격 없는 칸에 그려 사이드바에 틈이 없다)를 남겨 알림
   칸 JS 가 회차 끝에 지금 화면 몫을 바로잡는다. 팝업은 조건 팝업 호스트의 넷째 갈래이고 선택지는 페이지가 값 칸을 그린 회차에
   세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
@@ -3537,7 +3539,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/alerts.py` — 알림 등록부와 표지 API(2026-11-03 결정 보드 D1 ~ D6, 9장 「알림 칸」). 등록부
   `SPECS`(→ `REGISTRY`)는 `AlertSpec(코드, 단계, 갈래, 이름, 짧은 글, 전문)` 줄이고 코드는 `AB-01` 꼴 고정 id(한 번 쓴 번호는
   다시 쓰지 않는다, 겹치거나 꼴이 어긋나면 읽는 순간 멈춘다). 단계 넷(`LEVELS` — info 알림 · check 확인 필요 · action 조치
-  필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 ·
+  필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 — 넘치면 단계가
+  가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다(알림 칸 JS `overflowVictim` — 2026-11-10 보드 Q-1) ·
   `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING`)가 여기
   한 곳이다. API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
   `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
@@ -6595,7 +6598,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **상태 알림의 범위 · 내용 고르기**(2단계 b — 설비 · Space · 실행 관리 · Dynamic · 시나리오 관리 · Admin · 모듈 · 껍데기,
   2026-11-03). 알림 칸 JS 는 같은 코드의 다른 범위가 오면 앞 범위 줄을 「범위 바뀜」 으로 닫고(Alarm 표지 「범위 바뀜 hh:mm」, 로그 칸
   「범위 바뀜」 — 조건이 사라진 것이 아니다, 작은 결정 a3 · `stateMark`), 그 범위가 다시 오면 새
-  알림으로 띄운다 — 그래서
+  알림으로 띄운다. 같은 범위에서 내용(건수 · 목록)만 바뀌어 새 줄이 서면 앞 줄은 「내용 바뀜 hh:mm」(로그 칸 「내용 바뀜」)으로
+  닫는다 — 이것도 해소가 아니다(지난 보드 a-content-changed, `stateMark` 의 `changed`). 「해소」 는 조건이 사라진 줄(`active=False`)
+  뿐이고, Alarm 거르기 「닫힌 것 숨김」(옛 「해소된 것 숨김」 — 지난 보드 a-hide-closed, 동작 그대로)은 닫힌 줄 셋을 함께 감춘다 — 그래서
   - **한 회차에 한 코드는 한 범위로만** 낸다. 두 DB 처럼 범위가 다른 것을 한 회차에 함께 알리면 코드를 나눈다(DB 새 판 —
     시뮬레이션 `GL-02` · 설비 `GL-06`). 같은 코드를 고리 안에서 대상마다 부르지 않는다. 두 화면이 같은 조건을 알리면 같은
     코드 · 같은 범위로 낸다(설비 세션 알림 `SB-14` · `SB-20` — 사이드바 설비 시나리오 줄과 시나리오 관리 「설비 시나리오」
@@ -6693,6 +6698,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   세우므로 구획 맨 위 칸 · 알림창, `docs/design_rules.md` UI-NTF-03 의 예외 — 반영 검수표 D3 (가)).
 - **Alarm 패널 · 변경 판에는 설명 글을 두지 않는다**(2026-11-04 검수 의견 alarm-02 · alarm-11) — 보관 기한 · 판정 범위 같은
   설명은 HOME Guide 「알림창 · Alarm · 변경 칩」 에 둔다. 「로그」 펼침마다 「복사」(평문 클립보드 — alarm-05)가 선다.
+- **알림창은 세 칸까지 쌓고 넘치면 단계가 가장 낮은 칸부터 걷는다**(같은 단계면 먼저 선 칸 — `alerts.POPUP_LIMIT` · 알림 칸 JS
+  `overflowVictim`, 2026-11-10 보드 Q-1). 낮은 단계 알림 여럿이 함께 떠도 먼저 선 「조치 필요」 · 「오류」 칸을 밀어내지 않는다 —
+  가용설비 Summary 첫 진입의 `EQ-12`(조치 필요)가 뒤에 선 `EQ-20` · `EQ-22` · `EQ-23` 에 밀리던 소음. 그 대가로 높은 단계 세 칸이 선
+  동안 온 「알림」 은 서자마자 걷힌다(Alarm 줄 · 안 읽음 수에는 남는다).
+- **닫는 회차에 알림 표지를 쓰는 팝업은 앱 전체로 닫는다**(지난 보드 a-fragment-mark — 2026-11-10 Q-11 권장대로). 알림 칸은 앱 뿌리의
+  회차 표지가 바뀔 때만 문서를 훑는다 — 호스트만 도는 짧은 회차(팝업 호스트 닫기)는 그 표지를 움직이지 않아 그 회차가 남긴 알림 ·
+  해소 표지를 다음 회차까지 읽지 못한다. 그래서 닫힌 자리(`DialogHost(idle=)` · 닫힌 팝업이 넘긴 알림)가 알림을 내는 팝업 —
+  HOME 「HOME 설정」(`_dismiss_home_settings`, 늘) · Space 캔버스 편집(`floor_canvas_dialog._dismiss`, 밖 알림 `EQ-16` 이 선 채
+  닫을 때만) — 은 `close_to_app` 으로 닫는다. 새 팝업이 닫는 회차에 알림을 쓰면 같은 꼴로 닫는다. 알림 칸이 화면 전체를 늘
+  지켜보게(상시 관찰자) 바꾸지 않는다 — 큰 표 화면의 DOM 변화가 많다(그물 `tests/test_dialog_host.py`).
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
   쌓지 않고 앞 칸을 구석으로 옮겨 「×n」 을 붙이고, 창 가장자리 한 겹 테두리가 450ms easeOutQuad 로 그 칸에 모인다(한 번만 ·
   누름을 막지 않음 · 「움직임 줄이기」 에서는 움직이지 않는 윤곽 1.6초).
@@ -6731,7 +6746,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   툴바 `Print` 를 숨긴다(`app_header.SHELL_STYLE`).
 - **머리 공정 칩**(2026-11-09 보드 C1 (라) — 본문 위 칩을 옮겼다)은 공용 공정 값이 있을 때만 툴바 맨 왼쪽에 선다. 글은 깔때기 ·
   「공정」 · 수 · 「Mold 외 2개」 · 이 화면이 따라가는데 없는 공정이 있으면 주황 「n개 이 화면 없음」 이고 1400px 미만은 수만(없음은
-  주황 점) 남긴다. 따라가는 화면에서 칩 · 판 · 풍선의 차례는 그 화면 선택지 차례(걸린 공정 먼저, 없는 공정 뒤 —
+  주황 점) 남긴다. 칩 · 판의 글자는 그 화면 글자다 — 원본 이름으로 그리는 화면(Space — `shared_process.ORIGINAL_NAME_SCREENS`)에서는
+  원본, 그 밖은 보낸 화면의 표시명(2026-11-10 보드 Q-3 — 한 화면 한 이름, `header_chip(path)`). 화면 탭 깔때기 풍선은 보낸 화면의
+  표시명 그대로다. 따라가는 화면에서 칩 · 판 · 풍선의 차례는 그 화면 선택지 차례(걸린 공정 먼저, 없는 공정 뒤 —
   `process_field.screen_order`, 회차 표지의 `inside` 로 JS 가 다시 세움)라 첫 이름이 사이드바 값 칸(표시순서상 첫 공정) · 탭
   풍선과 같고, 따라가지 않는 화면은 보낸 차례다. 이 화면에 걸리면 강조색 테두리 · 옅은 면, 따라가지 않거나 걸리지 않으면 흐린 테두리(풍선 「이 화면엔 안
   걸림」)이고 주황은 없는 공정 글에만 쓴다. 이 화면 몫은 페이지보다 먼저라 세션 기록의 짐작(`process_field.header_chip` 의
