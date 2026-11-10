@@ -34,6 +34,10 @@ Capa 계산만 보면 그 리비전이 통과한다. Density 도 시나리오 �
 BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 — 들어온 원천을 앱 안에서 고칠
 길을 막지 않기 위해서다. 등록한 원천의 오류는 계산 페이지와 발행 검사가 드러낸다.
 
+**입력 점검**(`input_check_verdict` — 시나리오 관리 › 목록 관리 「점검」)도 같은 멈춤
+판정(`_stop_error`)을 쓴다. 고른 리비전마다 부르므로 아래 「같은 캐시 칸」 이 아니라 따로 둔
+요약 칸을 쓴다.
+
 검사는 계산 페이지와 **같은 캐시 칸**을 쓴다. 발행이 통과하면 그 리비전의 HOME 계산이 이미
 데워져 있다.
 """
@@ -51,17 +55,26 @@ from capa_simulation.components.required_exclusion_notice import (
     required_exclusion_message,
 )
 from capa_simulation.io.reference_cache import reference_version_for_revision
-from capa_simulation.persistence.cache import load_scenario_snapshot
+from capa_simulation.persistence.cache import load_scenario_snapshot, load_source_blank_cs_rows
 from capa_simulation.persistence.models import ScenarioSnapshot
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
 from capa_simulation.services.load_calculator import calculate_density_load
 from capa_simulation.services.required_equipment import required_exclusion_counts
+from capa_simulation.services.revision_compatibility import revision_block_reason
+from capa_simulation.services.revision_input_check import (
+    RevisionInputCheck,
+    blocked_input_check,
+    build_input_check,
+    plan_period,
+)
 from capa_simulation.services.simulation_cache import (
     CAPACITY_INPUT_TABLES,
     DEMAND_INPUT_TABLES,
     CapacityOutcome,
+    full_capacity_outcome,
     get_capacity_and_demand,
     get_full_capacity_outcome,
+    get_revision_input_check,
 )
 
 
@@ -107,9 +120,15 @@ def _gate_check(
         _scenario_tables=scenario_tables,
         _reference_tables=reference_tables,
     )
+    return outcome, _stop_error(outcome, scenario_tables)
+
+
+def _stop_error(outcome: CapacityOutcome, tables: Mapping[str, pd.DataFrame]) -> str | None:
+    """멈춤 판정 — Capa 계산 오류가 먼저고, 통과하면 Density 환산 오류다. 저장 · 발행 검사와
+    입력 점검이 같은 차례로 본다."""
     if outcome.error is not None:
-        return outcome, outcome.error
-    return outcome, density_error(scenario_tables)
+        return outcome.error
+    return density_error(tables)
 
 
 def density_error(tables: Mapping[str, pd.DataFrame]) -> str | None:
@@ -212,6 +231,40 @@ def official_publish_verdict(database_path: str, revision_id: str) -> GateVerdic
         "사용자가 처음 여는 화면이라, 지정하면 모두의 HOME 이 멈춥니다. 기준 정보 페이지에서 "
         "고친 뒤 새 리비전으로 저장하고 그 리비전을 지정하세요. "
         f"오류: {markdown_safe_tildes(error)}" + module_fix_hint(error),
+    )
+
+
+def input_check_verdict(
+    database_path: str, scenario_id: str, revision_id: str
+) -> RevisionInputCheck:
+    """저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리 「점검」) — 멈춤 판정은 공식
+    발행 검사와 같고(Density 포함), 계산에서 빠진 행을 묶음으로 센다.
+
+    고른 리비전마다 부르므로 **공유 칸을 밀지 않는다** — 스냅샷은 공용 표시순서를 얹지 않은
+    읽기(`apply_global_display_order=False`), 계산은 캐시 없는 `full_capacity_outcome` 이고,
+    묶음만 입력 점검 요약 칸(`get_revision_input_check`)에 둔다. 적중하면 스냅샷도 읽지 않는다.
+    경로 키가 없는 옛 리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`).
+    미저장 편집은 보지 않는다 — 저장된 리비전 그대로다.
+    """
+    reference_version = reference_version_for_revision(revision_id)
+
+    def compute() -> RevisionInputCheck:
+        tables = load_scenario_snapshot(
+            database_path, revision_id, apply_global_display_order=False
+        ).tables
+        blank_cs = load_source_blank_cs_rows(database_path, scenario_id)
+        period = plan_period(tables["RQ_PKG_PLAN"])
+        blocked = revision_block_reason(tables)
+        if blocked is not None:
+            return blocked_input_check(blocked, blank_cs, period=period)
+        outcome = full_capacity_outcome(tables, tables)
+        stop = _stop_error(outcome, tables)
+        return build_input_check(
+            outcome, stop if outcome.error is None else None, blank_cs, period=period
+        )
+
+    return get_revision_input_check(
+        (reference_version, pristine_content_token(reference_version)), _compute=compute
     )
 
 

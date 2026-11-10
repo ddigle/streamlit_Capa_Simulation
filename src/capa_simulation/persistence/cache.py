@@ -6,6 +6,7 @@
 (표시순서·공정 표시명·비교 시나리오·주요 Case·선행 B/O·선행 입고 실적·공지·Top5 대역·
 주요공정·확보율 보정·과거 구간·확보율 판정 기준)을 여기서만 캐시한다. 비교 시나리오 후보
 목록(HOME 이 회차마다 세션의 비교 시나리오를 대 보는 것)은 비교 대상 프로필과 한 세대를 쓴다.
+등록 때 CS 가 비어 뺀 원천 행(입력 점검)은 스냅샷과 한 세대를 쓴다.
 
 DB 를 읽는 캐시는 모두 키에 쓰기 세대(`WriteGeneration`)를 둔다 — `clear_*` 가 비우기 전에 그 종류의
 세대를 올린다(`_bump_write_generation`).
@@ -63,7 +64,8 @@ def _payload(model: object, cls: type[Any]) -> dict[str, Any]:
 
 
 # 이 프로세스의 쓰기 세대 — (모듈을 읽은 회차, 그 종류를 비운 횟수). 비울 때마다 그 종류만 오른다.
-# 종류는 공용 프로필마다 하나와, 리비전 스냅샷 두 칸이 함께 쓰는 "snapshot", 비교 계획 "plan" 이다.
+# 종류는 공용 프로필마다 하나와, 리비전 스냅샷 두 칸과 등록 때 뺀 원천 행 칸이 함께 쓰는 "snapshot",
+# 비교 계획 "plan" 이다.
 # 설비 캐시 경계(`equipment_cache.py`)와 같은 장치를 따로 두는 것은 두 DB 모듈이 서로 import 하지
 # 않기 위해서다.
 WriteGeneration = tuple[str, int]
@@ -269,6 +271,24 @@ def load_scenario_plan(database_path: str, revision_id: str) -> pd.DataFrame:
     return _load_scenario_plan(database_path, revision_id, _write_generation("plan"))
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
+def _load_source_blank_cs_rows(
+    database_path: str, scenario_id: str, generation: WriteGeneration
+) -> pd.DataFrame | None:
+    del generation
+    return get_scenario_repository(database_path).load_source_blank_cs_rows(scenario_id)
+
+
+def load_source_blank_cs_rows(database_path: str, scenario_id: str) -> pd.DataFrame | None:
+    """등록 때 CS 가 비어 뺀 원천 행(원천 칸 그대로) — 원천이 없는 시나리오는 None.
+
+    한 시나리오의 원천은 바뀌지 않아 시나리오 id 로 둔다. 지우기는 스냅샷과 같은
+    세대(`snapshot`)를 올려 지운 시나리오의 행이 캐시에서 되살아나지 않는다. 입력
+    점검(`capacity_gate.input_check_verdict`)이 부른다.
+    """
+    return _load_source_blank_cs_rows(database_path, scenario_id, _write_generation("snapshot"))
+
+
 @st.cache_data(show_spinner=False, max_entries=4)
 def _load_global_display_order_payload(
     database_path: str, generation: WriteGeneration
@@ -295,6 +315,7 @@ def _clear_snapshot_payloads() -> None:
     _bump_write_generation("snapshot")
     _load_scenario_snapshot_resource.clear()
     _load_stored_order_snapshot_payload.clear()
+    _load_source_blank_cs_rows.clear()
 
 
 def clear_scenario_snapshot_cache() -> None:

@@ -100,6 +100,7 @@ from capa_simulation.services.required_shortening import (
     process_month_export_frame,
     unit_export_frame,
 )
+from capa_simulation.services.revision_input_check import RevisionInputCheck
 from capa_simulation.services.route_step_editor import route_step_tables
 from capa_simulation.services.schedule_confirmation import schedule_confirmation_issues
 from capa_simulation.services.securement_cross_check import (
@@ -122,6 +123,8 @@ from capa_simulation.services.unit_capacity import (
     CAPACITY_EXCLUSIONS_ATTR,
     UNIT_CAPACITY_DIMENSIONS,
     CapacityAssumptions,
+    ReferenceJoinError,
+    ReferenceJoinProblem,
     calculate_unit_capacity,
     capacity_assumptions,
     unit_capacity_to_month_table,
@@ -1707,12 +1710,15 @@ class CapacityOutcome(NamedTuple):
     """전체 기간 계산의 결과 또는 실패.
 
     **실패도 캐시한다.** 예외는 캐시되지 않아, 오류가 난 시나리오를 여는 실행마다 몇 초짜리
-    계산을 처음부터 다시 돌게 된다.
+    계산을 처음부터 다시 돌게 된다. 기준정보 연결 오류(`ReferenceJoinError`)면 그 꼴과 수(`problem`
+    — 값 없는 frozen dataclass 라 피클로 캐시에 실린다)도 남긴다 — 입력 점검이 멈춘 리비전의
+    「경로 n」 을 글을 다시 읽지 않고 센다(`revision_input_check`).
     """
 
     unit_capacity: pd.DataFrame | None
     required_equipment: pd.DataFrame | None
     error: str | None
+    problem: ReferenceJoinProblem | None = None
 
 
 def _capacity_tables(
@@ -1752,7 +1758,8 @@ def _capacity_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
         unit_capacity, required_equipment = get_capacity_and_demand(tables)
     except ValueError as exc:
         # 기준정보 계약 위반만 결과로 담는다. 다른 예외는 코드 결함이라 그대로 올린다.
-        return CapacityOutcome(None, None, str(exc))
+        problem = exc.problem if isinstance(exc, ReferenceJoinError) else None
+        return CapacityOutcome(None, None, str(exc), problem)
     return CapacityOutcome(unit_capacity, required_equipment, None)
 
 
@@ -1789,6 +1796,31 @@ def full_capacity_outcome(
     캐시된 `get_full_capacity_outcome` 을 쓴다.
     """
     return _capacity_outcome(_capacity_tables(scenario_tables, reference_tables, None))
+
+
+# 입력 점검 요약 칸 수. 한 칸은 묶음 행(빠진 행 · 규칙대로 뺀 행 · 등록 때 뺀 원천 행)과 수뿐이라
+# 전체 기간 결과 한 칸(`FULL_CAPACITY_MAX_ENTRIES`, 약 11MB)보다 훨씬 작다 — 목록에서 리비전을 바꿔
+# 가며 고르는 수만큼 둔다.
+INPUT_CHECK_MAX_ENTRIES = 16
+
+
+@st.cache_data(show_spinner=False, max_entries=INPUT_CHECK_MAX_ENTRIES)
+def get_revision_input_check(
+    cache_key: FullScenarioCacheKey,
+    _compute: Callable[[], RevisionInputCheck],
+) -> RevisionInputCheck:
+    """저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리 「점검」). 계산은 `_compute` 가 한다.
+
+    `cache_key` 는 (reference_version, pristine content_token) 이다 — 저장 리비전은 append-only 라
+    리비전 하나에 내용 하나다. `_compute` 는 그 키를 만든 리비전을 **공유 칸을 밀지 않는 길**로
+    계산한다 — 스냅샷은 공용 표시순서를 얹지 않은 읽기, 계산은 캐시 없는 `full_capacity_outcome`
+    (`capacity_gate.input_check_verdict`). 계산 페이지 · 저장 검사가 쓰는 전체 기간 칸
+    (`get_full_capacity_outcome`, 4칸)과 공유 스냅샷 칸(4칸)에 고른 리비전마다 한 칸씩 들이면 활성
+    리비전 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시 계산한다. 몸통은 묶음 행 · 수 · 오류만
+    남기고 결과 프레임은 버린다. 적중하면 스냅샷도 읽지 않는다.
+    """
+    del cache_key
+    return _compute()
 
 
 @st.cache_data(show_spinner=False, max_entries=16)

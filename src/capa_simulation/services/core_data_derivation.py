@@ -203,6 +203,18 @@ def reject_unmapped_cs_codes(core: pd.DataFrame) -> None:
     )
 
 
+def blank_cs_mask(source: pd.DataFrame) -> pd.Series:
+    """CS 가 빈(NULL·빈 글자·공백뿐) 행 — 파생이 빼는 행(`_drop_blank_cs_rows`)과 원천에서 그
+    행을 다시 읽는 입력 점검(`repository.load_source_blank_cs_rows`)이 같은 식으로 가른다."""
+    return source["CS"].astype("string").str.strip().fillna("").eq("").astype(bool)
+
+
+def plan_row_mask(source: pd.DataFrame) -> pd.Series:
+    """계획 행(`계획기초정보여부 = Y` — 앞뒤 공백·대소문자 무시). PKG PLAN 에 실리는 행이다."""
+    flags = source["계획기초정보여부"].astype("string").str.strip().str.upper()
+    return flags.eq("Y").fillna(False).astype(bool)
+
+
 def _drop_blank_cs_rows(core: pd.DataFrame) -> tuple[pd.DataFrame, BlankCsDrop]:
     """CS 가 빈(NULL·빈 글자·공백뿐) 행을 빼고 그 수를 센다. 행 번호(index)는 그대로 둔다.
 
@@ -212,10 +224,10 @@ def _drop_blank_cs_rows(core: pd.DataFrame) -> tuple[pd.DataFrame, BlankCsDrop]:
     모든 행이 비었거나, 계획 행이 있었는데 그 계획 행이 모두 비면 막는다 — 빼고 나면 저장할 행이나
     생산계획이 남지 않아 빈 시나리오가 된다.
     """
-    blank = core["CS"].fillna("").eq("")
+    blank = blank_cs_mask(core)
     if not bool(blank.any()):
         return core, BlankCsDrop()
-    plan = core["계획기초정보여부"].eq("Y").fillna(False)
+    plan = plan_row_mask(core)
     dropped = BlankCsDrop(
         rows=int(blank.sum()),
         plan_rows=int((blank & plan).sum()),

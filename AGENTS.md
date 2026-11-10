@@ -1893,6 +1893,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/process_rename.py` — 공용 공정 표시명의 정규화·검증·직렬화다(치환은
   `components/process_labels.py` 에만, 8장).
 - `src/capa_simulation/services/required_equipment.py` — `RQ_REQB` 경로 연결·소요대수와 제외 셈을 낸다(6장).
+- `src/capa_simulation/services/revision_input_check.py` — 저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리
+  「점검」)을 짓는 순수 셈. 전체 기간 결과에서 빠진 행을 묶음 · 단계 · 원본 까닭별 수로 모으고 저장 · 지정 검사
+  (`required_exclusion_counts`)와 같은 행을 센다. 판정 · 캐시 길은 `capacity_gate.input_check_verdict` →
+  `simulation_cache.get_revision_input_check`(`tests/test_revision_input_check.py`).
 - `src/capa_simulation/services/securement_rate.py` — 확보율·추가 필요대수·부호 있는 과부족(`securement_balance`)을 낸다.
 - `src/capa_simulation/services/process_capa_detail.py` — 공정 하나의 월별 요약·제품별 소요·경로 추적을 계산 결과에서 꺼낸다.
   - 새 계산이 없다. 대당 Capa 식을 바꾸면 `route_factor_product` 도 고친다(`tests/test_process_capa_detail.py`).
