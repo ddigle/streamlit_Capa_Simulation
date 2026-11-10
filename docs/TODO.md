@@ -641,7 +641,7 @@
   사이드바 조건 카드 · 조회 조건 패널 줄로 옮겼다(2026-09-29 「화면을 완성할 때」 유예를 거둠 — 머리 배지 줄도 걷고 화면 탭 「구현중」 · 머리 띠 「합성 샘플」 표지).
   실적 DB 를 붙일 때 실적 셋 「분석 기간」 달 슬라이더를 기간 판으로 바꾼다(UI-INP-03 예외). Guide 는 2026-11-07 head-desc 답으로 머리말을 걷으며 달았다.
   Dynamic Capa 「산식 가이드」 탭의 머리 캡션과 산식 세 구획(Capa 단계 · 실현률과 활용률 · Gap 해석)은 화면을 완성할 때
-  `guides/reference_integrity.md` 로 옮기고 탭을 걷는다(2026-11-07 사용자 답 desc-blocks). 그때 `_render_guide` 미정리 넷이 빠진다.
+  `guides/reference_integrity.md` 로 옮기고 탭을 걷는다(2026-11-07 사용자 답 desc-blocks). 그때 `_render_guide` 미정리 셋이 빠진다.
 - [ ] Capa 데이터를 모델에 직접 재학습시키는 대신 활성 시나리오·조회기간의 승인된 계산 결과를 조회 도구 또는 검색 증강
   방식으로 제공하고, 답변마다 사용한 지표·단위·필터·근거 행을 반환하는 구조를 구현한다(Capa Chatbot 보류에 묶임 —
   답변 꼴은 결론·근거 표·조건과 산식·한계 넷, 연결 때 바꾸는 것은 `services/chatbot_samples.py` 하나).
@@ -786,11 +786,11 @@
 ### 문서 및 테스트
 
 - [ ] **설계 규칙 그물의 미정리 줄이기(2026-11-04 — 그물 넷을 세울 때 센 기존 자리)** — 화면 글 문장 그물
-  (`tests/test_place_sentence_sites.py`)은 서술형 문장 자리 가운데 **4곳**을 「미정리」(설명 · 내역 · 길 안내 · 하는 법)로 센다(`UNSETTLED_SITES`
-  — 그림 검수표 2026-11-05 까지 14, 2026-11-07 전 화면 점검 고침으로 8, 같은 날 보드 답 묶음으로 6, 2026-11-09 Dynamic 산식 가이드 단위 줄을 「표준 Capa」 칸 풍선으로 옮겨 5, 2026-11-10 Chatbot 답 네 칸 캡션을 Guide 로(보드 Q-9) 4). 미정리 가운데 내역 자리는 SHOULD(UI-TXT-04 — 반영 검수표 D1 (나))이고, 설명 · 하는 법(UI-TXT-01) ·
+  (`tests/test_place_sentence_sites.py`)은 서술형 문장 자리 가운데 **3곳**을 「미정리」(설명 · 내역 · 길 안내 · 하는 법)로 센다(`UNSETTLED_SITES`
+  — 그림 검수표 2026-11-05 까지 14, 2026-11-07 전 화면 점검 고침으로 8, 같은 날 보드 답 묶음으로 6, 2026-11-09 Dynamic 산식 가이드 단위 줄을 「표준 Capa」 칸 풍선으로 옮겨 5, 2026-11-10 Chatbot 답 네 칸 캡션을 Guide 로(보드 Q-9) 4, 2026-11-10 밤 Capa Chatbot 「연결 방식」 캡션을 Guide 로(2차 보드 Q2-24 — `a1ee769`) 3). 미정리 가운데 내역 자리는 SHOULD(UI-TXT-04 — 반영 검수표 D1 (나))이고, 설명 · 하는 법(UI-TXT-01) ·
   길 안내(UI-TXT-03) 문장은 MUST 그대로다. 그물의 꼴 검사는 상자 · 빈 결과 비결론 꼴 · 하는 법 꼬리만 잡는다 — 값 · 표지 자리 글을 다른 설명 문장으로 바꾸는 것은 판단 질문이
   본다. 다음에 줄일 곳: 기준 정보 화면 `reference_integrity` `_render_guide` 셋(Dynamic Capa 「산식 가이드」 — 화면을 완성할 때 Guide 로, 위
-  「구현 중」 화면 항목), Capa Chatbot 하나(추천 질문 캡션 — 화면을 완성할 때 Guide 로). 알림 꼴 그물(`tests/test_notice_form_sites.py`)의 초록 결과 상자는
+  「구현 중」 화면 항목)뿐이다 — Capa Chatbot 은 더 미정리 자리가 아니고, 「추천 질문」 머리 밑 줄은 2차 보드 Q2-25 답 「그대로 — 단추 차례를 읽는 값 줄로 본다」 다. 알림 꼴 그물(`tests/test_notice_form_sites.py`)의 초록 결과 상자는
   **0곳**이다. 문장으로 끝나지 않는 내역 줄 · 매개변수로 받은 글은 그물 밖이다(판단 질문이 본다). `.error(` 는 `tests/test_data_error_mark.py`(`PLACE_ERROR_SITES`)가 전부 맞댄다.
   JS 편집기 글(`editor.js`)도 그물 밖이다 — 배치 편집 상태 줄의 하는 법 글 · 왼쪽 칸 도움말 · 미배치 칸 「i」 글은 걷었고(그림 검수표 equip-61 — 키는 도구 줄 「단축키」 판),
   상태 줄의 값 · 표지는 `tests/test_space_editor_shortcuts_js.py` 가 본다.
@@ -1178,11 +1178,13 @@
   `night/b6-1110` 이 `monthly_table_base.add_table_frame` · `blank_repeated_prefixes` 로 올렸다, 3장 「운영·배포」 2026-11-10) —
   `grouped_monthly_table.production_group_indices` 와 `hierarchical_monthly_table.top_group_indices` 가 같은 꼴 두 벌이다. 행 그룹
   가로선 루프 · 행 모델 · 면색은 표 구조가 달라 두 모듈에 둔다. 순수 유지보수 비용이라 다른 일 뒤로 둔다.
-- [ ] **밤샘 갈래가 넘긴 작은 정리 셋(2026-11-11 — 동작 바꿈 없음)** — ① `app_pages/space_status.py` 314줄 주석이 가용설비 현황의
+- [ ] **밤샘 갈래가 넘긴 작은 정리 넷(2026-11-11 — 동작 바꿈 없음)** — ① `app_pages/space_status.py` 314줄 주석이 가용설비 현황의
   `FLASH_KEY` 를 가리킨다 — 그 칸은 `night/tidy-1110` 이 걷었으니 `_NOTE_KEY` 만 남긴다. ② `app_pages/process_capa_detail.py`
   `sheet_heading()` 의 시나리오 · 조회기간 두 줄을 `sheet_download.scenario_period_rows` 로 바꾼다(같은 글을 두 곳이 짓는다 —
   `night/xlsx-1110`). ③ `hierarchical_monthly_table` 이 줄무늬 · 묶음 경계를 공개 행 모델로 내 주면 `monthly_table_workbook` 의
   `_top_groups` · `_changed_columns`(같은 정의를 짧게 다시 셈)를 걷는다 — `tests/test_monthly_table_workbook.py` 가 부르는 인자를 잡는다.
+  ④ `app_pages/calculation_result.py` 21 ~ 22줄 독스트링과 `tests/test_calculation_result_sheet.py` 3줄 독스트링이 지운 2장 「계산 결과 Excel
+  다운로드」 를 가리킨다 — 「시트 엑셀 넓히기 1 — 공정 Capa 상세 선례, TODO 3장 「계산 결과 Excel 다운로드 — 닫음」」 꼴로(AGENTS 는 문서 갈래가 고쳤다).
 - [ ] **HOME 계산 조립 분리와 `frame_checks.py`·`frame_contracts.py` 통합**(2026-09-21 Codex 후속이 다음 주기로 남김).
   HOME 계산 조립은 과거 병합과 실행→선행 두 경계부터 순수 서비스로 옮기되, 옮기기 전에 Figure JSON·과거·연간 Total·GAP
   조합의 동등성 근거를 먼저 확보한다.
@@ -4372,7 +4374,7 @@
   `equipment_status_flash` 를 걷고 「읽기만 하는 칸」 그물을 세웠다(`tests/test_flash_messages.py`) — 옛 2장 「알림 칸 flash 한 길 — 남은 칸」 의 설비
   시나리오 칸들은 11-03 · 11-04 에 이미 옮겨져 있었다. 수명 · 자리가 달라 그대로 두는 것: VOC 지운 글 칸 · 기준선 shown 칸 · STEP 탭 알림 · 월 편집표
   `st.empty` 자리 · Space 배치 저장 실패 · 표시순서 표시명 경고 · 화면 탭 상한 알림(컴포넌트 data). Figure 를 `object` 로 받던 시험 도우미 넷에
-  `go.Figure` · `go.Bar` 를 주어 `type: ignore` 열하나를 걷었다(그림 코드는 그대로). 월 표 두 종류의 격자 머리 여섯 호출 · 반복 접두 생략 루프를
+  `go.Figure` · `go.Bar` 를 주어 `type: ignore` 열하나를 걷었다(그림 코드는 그대로 — Figure JSON 전후 같음 시험은 같은 것을 같다고만 확인해 더하지 않음, 갈래 권장). 월 표 두 종류의 격자 머리 여섯 호출 · 반복 접두 생략 루프를
   `monthly_table_base.add_table_frame` · `blank_repeated_prefixes` 하나로 모았다(바탕과 Figure JSON · CSV 표 320/320 바이트 같음 —
   `tests/test_monthly_table_shared_steps.py`, 옛 2장 「B6 grouped/hierarchical 남은 복제 통합」 — 남은 것은 2장 「B6 … 무리 번호 루프 두 벌」).
 - (2026-11-10) **상단 정리 검수 보드 답 — 그림 44칸 · 물음 23**(보드 `https://claude.ai/artifact/BKM24BgGrpmz1JsJdh5GmU`, 규칙집 6-13 — 칸마다 고른 글 · 메모 원문은 거기,
@@ -4882,6 +4884,8 @@
       권장 (가).
     - **호기 목록 시트 엑셀 · 도구 막대 CSV** — Static 대비 일정 호기 목록 아래 메뉴의 시트 엑셀과 표 오른쪽 위 도구 막대 CSV 가 비슷하다(엑셀은 서식 · 숫자 칸 ·
       맨 위 조건 줄). (가) 그대로 · (나) 호기 목록 엑셀을 걷음(`d637c7c` 하나). 권장 (가).
+    - **「내려받기 ▾」 메뉴 단추 높이 둘**(Q2-7 뒤 — 넓히기 1 검토 물음) — 그 줄 CSV 꼴을 따라 산출 결과 · 호기 목록은 35px, 공정 Capa 상세 · Static 대비
+      일정 시트는 28px 이다(샘플 관측). (가) 그대로 — 그 줄 꼴을 따름 · (나) `render_download_pair` 한 곳에서 같은 높이. 메뉴 답이 났으니 권장 (나).
     - **산출 결과 시트 엑셀(넓히기 1)이 넘긴 셋** — 시트 공정 이름은 화면 그대로 표시명이고 곁 CSV 는 원본이다(합성 표본에서 다른 원본 둘이 「AVI」 로 같다):
       (가) 그대로 · (나) 원본 · (다) 원본 열을 하나 더 — 권장 (가), 겹침이 잦으면 (다). 소요대수 상세는 화면이 60행씩 나눠도 시트는 거른 행 전부(권장 그대로).
       분류 열 아홉을 모두 고정(권장 그대로).
@@ -4890,7 +4894,13 @@
     않음) · 필요 단축 일정 공용 값 여럿일 때 강조(지금 — 하나일 때만, 여럿이 되면 강조 · 배지를 걷음, 확인만) · 필요 단축 일정 보내기(가 — 받기만) · Static 대비 일정
     보내기(가 — 받기만, 판 「전체」 는 모든 화면 거름을 지움) · 표준 목표 「적용」 보냄(가 — 지금대로) · 개조 일정 시작 · 기한(가 — 상자 둘) · 멈춘 회차의 새 공정
     줄(가 — 잠긴 「계산 멈춤」 줄, Q2-28 은 제약 시뮬레이션만 답했다) · 월 머지 이름 줄(나 — 소제목을 걷음) · 빈 달 잠금(가 — 지금대로) · 월 머지 달 글자 꼴(가 —
-    달 칸은 조회기간과 같은 꼴). 합칠 때 볼 것: `README.md` 166행 충돌(공정 이름 줄 다음 — 두 쪽 다 남김), Q2-26 으로 목표 확보율이 패널 값 칸이 되어 그 가지의
+    달 칸은 조회기간과 같은 꼴). 합칠 때 볼 것: 충돌 — M2(`5e24191`) 기준 · 옛 merge-tree 로 잰 예상은 겹치는 파일 23 · 충돌 12파일(README — 공정 이름 줄 다음, 두 쪽 다 남김 ·
+    AGENTS · 규칙집 · `required_shortening_panel` · `availability_gap_panel` · 필요 단축 일정 화면 · Guide 둘(가용설비 현황 · 필요 단축 일정) · 시험 넷(`test_availability_gap_panel` ·
+    `test_process_capa_detail_page` · `test_required_shortening_tab` · `test_shortening_view_fragment`))이고 합칠 때 그 머리에서 다시 잰다.
+    `availability_gap_panel.py` 에서 넓히기 2(`night/ans-detail-1110`)가 바꾼 덩어리 — import 줄(`app_header` · `availability_sheet_keys` ·
+    `availability_sheet_workbook` · `sheet_download` · `table_toolbar`) · `SHEET_CSV_STYLE` · `GAP_SHEET_SCHEMA_VERSION` · `_UNIT_DIGITS` · `_UNIT_NUMBER_FORMAT` ·
+    「호기 목록」 갈래 `_render_unit_list` 부름 · `csv_slot` 안 `render_sheet_downloads` · `render_sheet_csv` → `render_sheet_downloads` · 새 `_sheet_heading` ·
+    `_render_unit_list` 끝 CSV → 메뉴. Q2-26 으로 목표 확보율이 패널 값 칸이 되어 그 가지의
     시험 넷 · `check_deploy_screens` 가 옛 고르기 상자 꼴, 칩 글자 함수(`_label_of`)와 그 가지의 `format_func` · `whole` · `FOLLOWERS` 가 함께일 때 칩 글자,
     `check_deploy_screens` `GAP_PROCESS_KEY` 정리 · 런북 1868 줄(배포 몫).
   - **입력 점검 시안 보드**(다-4 ① — `https://claude.ai/artifact/27hDnALn8KGm3zR4opa4PE`, 「계산에서 빠진 행」 을 모아 보는 자리) — q1 자리(가 — 시나리오 관리 ›
