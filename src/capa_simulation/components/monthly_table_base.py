@@ -13,7 +13,8 @@
 
 분류 컬럼 폭(`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`)도
 같은 이유로 여기 있다. 행 모델과 면색 규칙만 표마다 다르고, 그 결과를 받아 Figure 를
-만드는 절차는 한 벌이면 된다.
+만드는 절차는 한 벌이면 된다. 분류 칸의 반복 접두 생략(`blank_repeated_prefixes`)도 두 표가
+같은 규칙이라 여기 둔다 — 소계 줄을 끼우는 것은 그 뒤 `grouped` 의 몫이다.
 """
 
 from __future__ import annotations
@@ -154,6 +155,25 @@ def restore_cell_text(text: str) -> str:
     for source, target in CELL_TEXT_SUBSTITUTIONS:
         text = text.replace(target, source)
     return text
+
+
+def blank_repeated_prefixes(values: Sequence[Sequence[str]]) -> list[list[str]]:
+    """분류 칸 값을 화면 꼴로 — 그 칸까지의 앞 칸 값이 모두 바로 위 줄과 같으면 비운다.
+
+    `values` 는 분류 칸마다 줄 값 목록이다(모두 같은 길이). 앞 칸이 바뀐 줄은 뒤 칸 값이 위 줄과
+    같아도 남긴다 — 다른 묶음의 첫 줄이다. 판정은 받은 원래 값으로 하고 받은 목록은 고치지 않는다.
+    """
+    displayed = [list(column) for column in values]
+    row_count = len(values[0]) if values else 0
+    same_prefix = [row_index > 0 for row_index in range(row_count)]
+    for column, shown in zip(values, displayed, strict=True):
+        for row_index in range(1, row_count):
+            same_prefix[row_index] = (
+                same_prefix[row_index] and column[row_index] == column[row_index - 1]
+            )
+            if same_prefix[row_index]:
+                shown[row_index] = ""
+    return displayed
 
 
 def text_width_units(value: str) -> float:

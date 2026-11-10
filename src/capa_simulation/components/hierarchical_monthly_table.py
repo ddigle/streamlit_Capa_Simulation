@@ -17,6 +17,7 @@ from capa_simulation.components.monthly_table_base import (
     OUTER_BORDER_WIDTH_PX,
     ROW_HEIGHT_PX,
     add_table_frame,
+    blank_repeated_prefixes,
     build_split_table_figures,
     classification_cell_text,
     classification_widths,
@@ -50,16 +51,7 @@ def _build_hierarchical_display(
         [classification_cell_text(value, labels.get(column)) for value in data[column]]
         for column in classification_columns
     ]
-    displayed_values = [values.copy() for values in raw_values]
-    for column_index, values in enumerate(displayed_values):
-        previous_prefix: tuple[str, ...] | None = None
-        for row_index in range(len(data)):
-            current_prefix = tuple(
-                raw_values[prefix_index][row_index] for prefix_index in range(column_index + 1)
-            )
-            if row_index > 0 and current_prefix == previous_prefix:
-                values[row_index] = ""
-            previous_prefix = current_prefix
+    displayed_values = blank_repeated_prefixes(raw_values)
 
     top_group_indices: list[int] = []
     top_group_index = -1

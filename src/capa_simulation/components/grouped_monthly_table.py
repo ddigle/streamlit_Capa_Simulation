@@ -13,6 +13,7 @@ from capa_simulation.components.monthly_table_base import (
     OUTER_BORDER_WIDTH_PX,
     ROW_HEIGHT_PX,
     add_table_frame,
+    blank_repeated_prefixes,
     build_split_table_figures,
     classification_cell_text,
     classification_widths,
@@ -53,17 +54,7 @@ def _grouped_values(
         [classification_cell_text(value, column_value_labels.get(column)) for value in data[column]]
         for column in columns
     ]
-    displayed_values = [values.copy() for values in dimension_values]
-    for dimension_index, values in enumerate(displayed_values):
-        previous_prefix: tuple[str, ...] | None = None
-        for row_index in range(len(data)):
-            current_prefix = tuple(
-                dimension_values[prefix_index][row_index]
-                for prefix_index in range(dimension_index + 1)
-            )
-            if row_index > 0 and current_prefix == previous_prefix:
-                values[row_index] = ""
-            previous_prefix = current_prefix
+    displayed_values = blank_repeated_prefixes(dimension_values)
 
     group_depth = columns.index("제품정보") if "제품정보" in columns else 0
     product_group_indices: list[int] = []
