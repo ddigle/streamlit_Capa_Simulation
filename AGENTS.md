@@ -3647,7 +3647,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/saved_note.py` — 이름 줄 없는 메모 · 저장자 칸의 안내 글 꼴 「<칸 이름> · 예: <예>」 하나
   (`field_placeholder` — 변경 메모는 `note_placeholder` 「변경 메모 · 예: …」, 저장자는 `equipment_save_fields.SAVED_BY_PLACEHOLDER`
   「저장자 · 예: 홍길동」. 칸은 `label_visibility="collapsed"` 라 이 글이 이름이다 — 2026-11-09 사용자 규칙 「페이지 상단
-  최소화」 · 꼴은 상단 띠 재고 권장으로 앱 세션이 정함(검수 전), `tests/test_note_field_placeholders.py` 가 화면 코드의 「변경 메모」 · 「저장자(선택)」 칸을 모두 훑고 안내 글을 글 상수로 손수 짓는
+  최소화」 · 꼴은 상단 띠 재고 권장, 사용자 수락 11-10 Q-12, `tests/test_note_field_placeholders.py` 가 화면 코드의 「변경 메모」 · 「저장자(선택)」 칸을 모두 훑고 안내 글을 글 상수로 손수 짓는
   자리를 막는다)과, 저장한 변경 메모를 칸을 갈지 않고 칸 글이 저장한 그 글일 때만 비운다(9장
   「폼 안 입력을 성공 뒤 비울 때」). 폼 안에서 저장 단추를 먼저 그리고 `ready_note_field(KEY, submitted=, start=)`(본 version —
   대조 저장만) 뒤 `st.text_input("변경 메모", key=KEY)` 를 그린다 — key 는 고정이다. 쓰기가 끝난 갈래는 `mark_note_saved`, 제

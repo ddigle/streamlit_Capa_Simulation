@@ -1445,7 +1445,7 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
                     if not fab_only:
                         with st.container(horizontal=True, gap="small"):
                             # 두 칸은 이름 줄 없이 칸 안 안내 글이 이름이다(2026-11-09 상단
-                            # 띠 재고 · 사용자 지시 — 설계 규칙 UI-CON-03).
+                            # 띠 재고 · 꼴은 사용자 수락 11-10 Q-12 — 설계 규칙 UI-CON-03).
                             st.text_input(
                                 "변경 메모",
                                 key=note_key,

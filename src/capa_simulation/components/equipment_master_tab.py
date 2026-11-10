@@ -1336,7 +1336,7 @@ def _render_save_section(
     if st.session_state.pop(_NOTE_CLEAR_KEY, False):
         st.session_state[_NOTE_KEY] = ""
     # 변경 메모 · 저장자는 이름 줄 없이 칸 안 안내 글이 이름을 말한다(2026-11-09 상단 띠 재고 ·
-    # 사용자 지시 — 설계 규칙 UI-CON-03).
+    # 꼴은 사용자 수락 11-10 Q-12 — 설계 규칙 UI-CON-03).
     st.text_input(
         "변경 메모", key=_NOTE_KEY, placeholder=NOTE_PLACEHOLDER, label_visibility="collapsed"
     )

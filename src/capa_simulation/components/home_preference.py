@@ -1072,7 +1072,7 @@ def render_threshold_editor(
                 )
                 ready_note_field(THRESHOLD_NOTE_KEY, submitted=submitted, start=submitted_base)
                 # 이름 줄 없이 칸 안 안내 글이 이름을 말한다(`note_placeholder` — 2026-11-09 상단 띠
-                # 재고 · 사용자 지시, 설계 규칙 UI-CON-03 · UI-TXT-01 예외).
+                # 재고 · 꼴은 사용자 수락 11-10 Q-12, 설계 규칙 UI-CON-03 · UI-TXT-01 예외).
                 note = st.text_input(
                     "변경 메모",
                     placeholder=note_placeholder("27년 이후 확보 기준 120% 적용"),
