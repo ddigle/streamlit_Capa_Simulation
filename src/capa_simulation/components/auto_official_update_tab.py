@@ -140,6 +140,12 @@ SETTINGS_BASE_VERSION_KEY = "auto_official_update_settings_base_version"
 # 설정 저장의 제 저장·충돌·거부 표지 이름(`write_guard`).
 SETTINGS_SAVE_NAME = "auto_official_update_settings"
 SETTINGS_SAVED_PREFIX: Final = "자동 갱신 설정을 저장했습니다"
+# 바꾼 것 없는 설정 저장의 알림 — 새 버전을 만들지 않는다(설계 규칙 UI-STA-01 — 다른 공용 프로필
+# 저장과 같은 꼴).
+SETTINGS_UNCHANGED_MESSAGE: Final = (
+    "바뀐 것이 없습니다 — 켜기·확인 시각·키워드·기준 확보율이 지금 설정 그대로라 새 버전을 만들지 "
+    "않았습니다."
+)
 # 「지금 실행」 결과 알림과, 발행한 회차의 소요대수에 들지 않은 수요 경고(성공 알림 뒤 따로 —
 # 알림창 · Alarm 에만).
 # rerun 을 건너 그 자리에 한 번 그린다(`flash`).
@@ -521,7 +527,7 @@ def _render_settings_form(
     held = held_profile_conflict(conflict_marks, SETTINGS_SAVE_NAME)
     if held is not None:
         # 남의 저장에 거부된 누름의 둘째 누름이다 — 옛 화면의 입력이라 저장하지 않고 그 거부를 다시
-        # 알린다(write_guard). 「바뀐 값이 없습니다」로도 바꾸지 않는다. 이 회차가 거부 회차의 글을
+        # 알린다(write_guard). 「바뀐 것이 없습니다」로도 바꾸지 않는다. 이 회차가 거부 회차의 글을
         # 이미 꺼내 그렸으면 한 번만(Proc Rename·표시순서와 같은 꼴). 본 version 은 이 회차가 그린
         # 최신 저장본으로 적는다 — 둘째 누름이 끊은 거부 뒤 회차 몫(2026-10-27 E2E).
         remember_seen(SETTINGS_BASE_VERSION_KEY, settings.version)
@@ -546,10 +552,10 @@ def _render_settings_form(
         return
     if updated == config and expected_version == settings.version:
         # 방금 저장한 같은 값의 둘째 누름(새 화면이 서고 나서 닿은 느린 더블클릭)이면 알림 칸
-        # (`render_flash`)이 방금 성공을 이미 다시 그렸다 — 「바뀐 값이 없습니다」 로 그 알림을
+        # (`render_flash`)이 방금 성공을 이미 다시 그렸다 — 「바뀐 것이 없습니다」 로 그 알림을
         # 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
         if held_notice(SETTINGS_FLASH_KEY) is None:
-            notice.info("바뀐 값이 없습니다.")
+            notice.info(SETTINGS_UNCHANGED_MESSAGE)
         return
     if updated.enabled and not config.enabled:
         # 켜기 전에 막는다 — 주차 없는 공식버전과는 「더 새 코드」를 견줄 수 없다.

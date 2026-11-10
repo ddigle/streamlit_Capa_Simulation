@@ -65,7 +65,10 @@ from test_threshold_editor import SAVE_LABEL as THRESHOLD_SAVE_LABEL
 from test_threshold_editor import _app as _threshold_app
 
 import capa_simulation.components.write_guard as write_guard
-from capa_simulation.components.auto_official_update_tab import SETTINGS_SAVE_NAME
+from capa_simulation.components.auto_official_update_tab import (
+    SETTINGS_SAVE_NAME,
+    SETTINGS_UNCHANGED_MESSAGE,
+)
 from capa_simulation.components.cutoff_management import (
     CUTOFF_BASE_KEY,
     CUTOFF_DRAFT_KEY,
@@ -713,7 +716,7 @@ def test_a_slow_double_press_of_the_auto_update_settings_repeats_the_success(
     tmp_path: Path,
 ) -> None:
     """느린 더블클릭(0.4초 — 둘째 누름이 첫 저장 뒤 새로 그린 화면에 닿는다)은 같은 값이라
-    「바뀐 값이 없습니다」 가 방금 성공 알림을 덮었다(브라우저 확인 2026-10-26). 창 안이면 방금
+    「바뀐 것이 없습니다」 가 방금 성공 알림을 덮었다(브라우저 확인 2026-10-26). 창 안이면 방금
     성공을 다시 알린다."""
     database = tmp_path / "auto.duckdb"
     repository = _with_w40(database)
@@ -725,7 +728,7 @@ def test_a_slow_double_press_of_the_auto_update_settings_repeats_the_success(
     app._run(widget_state=pressed)
 
     assert not app.exception, [item.message for item in app.exception]
-    assert "바뀐 값이 없습니다." not in _texts(app, "info")
+    assert SETTINGS_UNCHANGED_MESSAGE not in _texts(app, "info")
     assert [text for text in _texts(app, "success") if "자동 갱신 설정을" in text] == [
         "자동 갱신 설정을 저장했습니다 — 키워드 PSM → PSS"
     ]

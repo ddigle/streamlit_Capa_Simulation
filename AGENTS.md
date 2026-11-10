@@ -3733,7 +3733,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   발행한다 — 설비 시나리오 탭은 `_refused_noted`·`_repeat_held_refusal`, 2026-10-27 E2E). 쓰지 않고 끝나는 아주 빠른
   둘째 누름이 앞 회차의 성공 알림을 지우지 않게 하는 알림 표지(`notice_marks`·`note_notice`·`held_notice`·`held_flash`)는 VOC
   글 삭제·HOME 주요공정 프리셋 「기본으로」·「삭제」·Capa 시나리오 목록 「변경 저장」 이 적고, 설비 리비전 저장의 제 저장이 첫 누름의 알림을 다시 내는 데와 자동 갱신
-  설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 값이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
+  설정의 느린 두 번 누름(창 안의 「바뀐 값 없음」 제출이 「바뀐 것이 없습니다」 를 쓰지 않아 다시 그린 방금 성공이 남는다)에도
   쓴다. 알림 칸의 다시 그리기는 `flash.render_flash` 가 모든 칸에 한다(9장). 본문이 받는 컴포넌트 제출(Space 층·FAB 배치
   편집기 「적용」)은 받아들인 입력 지문을 적고(`note_submission`), 브라우저가 새 epoch 를 받기 전에 같은 단추를 한 번 더 눌러
   옛 epoch 로 온 **같은 입력**은 창 안이면 「반영하지 않았습니다」 경고 없이 넘긴다(`just_submitted` — 첫 적용의 성공 알림은
@@ -4102,7 +4102,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이다 — 그 회차가 본 version 을 그 저장본으로 적는다. 바깥 상자 key `MANUAL_EDITOR_KEY` 는 그대로라 화면 확인
     `equipment_preference` 가 그 칸으로 찾는다.
   - 저장은 `write_guard.save_once`(출발점 = 보이는 공정·달 + 0 아닌 칸 지문 `manual_downtime_digest`)로 하고 제 저장 짝을 그
-    잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 칸이 없어」 가 아니라 첫 결과로 성공을 다시 알린다.
+    잠금 안에서 적는다 — 같은 입력의 꼬리 누름은 「바뀐 것이 없습니다」 가 아니라 첫 결과로 성공을 다시 알린다.
 - `src/capa_simulation/components/cutoff_management.py` — 가용설비 현황 「가용설비 설정」 팝업(개편 전 `Preference` 탭)의 Cut-off
   편집표·저장·CSV 왕복과 빠진 공정 안내. 초안이 아니라 저장된 값을 돌려준다(Static 대비 일정은 그 값을 받지 않고 캐시
   경계에서 직접 읽는다). 스타일만 든 `st.html`·토스트를 쓰지 않는다(팝업 본문). 보기 설정은 제출 줄(「Cut-off 저장」 ·
@@ -7044,7 +7044,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     출발한 version** 을 넣는다 — 제출 회차는 본 값, 그 밖은 그 회차가 그린 저장본 version(`manual_downtime_tab.manual_editor_key`).
     거부된 누름의 둘째 누름(held) 회차는 제출 회차여도 그린 저장본 version 이다 — 그 회차가 본 값을 최신으로 적으므로, 본 값(옛
     version — 둘째 누름이 거부 뒤 회차를 적기 전에 끊었다)으로 그리면 옛 편집이 다시 서고 그 위에 친 칸이 다음 누름의 최신 key
-    위젯에 닿지 않아 「바뀐 칸이 없어」 로 버려졌다(2026-11-02 E2E — 둘째 누름 0.13 ~ 0.23초).
+    위젯에 닿지 않아 「바뀐 것이 없습니다」 로 버려졌다(2026-11-02 E2E — 둘째 누름 0.13 ~ 0.23초).
     남이 저장하면 보내지 않은 편집은 버려지고 최신이 서며(화면 안내·Guide 에 적는다), 제출 회차에 옛 key 의 편집이 오면 저장소가
     거부한다. AppTest 는 회차 사이 편집표의 브라우저 편집을 잇지 않아 이 결함을 못 재현한다 — 시험은 key 가 version 을 따라가는지와
     거부 뒤 최신이 서는지를 보고, 행동은 브라우저로 잰다. 같은 꼴(키 고정 편집표 + 폼 + `remember_seen`)인 HOME 판정 기준 월별
@@ -7111,7 +7111,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     전처럼 알리지 않는다(`tests/test_voc_page.py`·`tests/test_key_process_preset_messages.py`·
     `tests/test_flash_messages.py` 의 끊긴 회차 시험). 자동 갱신 설정 폼도 저장 성공 알림을 `note_notice` 로 적는다 — 새
     화면에 닿은 느린 둘째 누름은 같은 값이라 「바뀐 값 없음」 제출인데, 창 안이면 알림 칸이 다시 그린 그 성공 알림 밑에
-    「바뀐 값이 없습니다」 를 쓰지 않고, 제 저장 갈래도 첫 알림을 다시 낸다(`tests/test_write_guard_cas.py`).
+    「바뀐 것이 없습니다」 를 쓰지 않고, 제 저장 갈래도 첫 알림을 다시 낸다(`tests/test_write_guard_cas.py`).
   - 콜백에서 저장하고 뒷정리로 출발점을 옮기는 **출발점 대조 저장**(설비 편집본 — 설비 마스터 「리비전 저장」·Space 「배치
     저장」·사이드바 팝업 저장, FAB 전체 배치)은 둘째 누름의 회차가 첫 콜백을 DB 쓰기 뒤·`reset_equipment_drafts` 전에 끊으면
     출발점(`buffer_base`)이 그대로라, 둘째 콜백이 옛 출발점으로 다시 저장하다 저장소에 거부되고 「다른 사용자가 먼저 저장해
@@ -7161,7 +7161,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     고정한다. 사이드바 「신규 리비전 저장」 은 저장소가 쓰기 잠금 안에서 견준다(`save_revision(..., skip_unchanged=True)` →
     `RevisionUnchanged`, 5장 8 · 3장 `repository.py`). 설비 시나리오 「이름 바꾸기」·「리비전명 저장」 은 저장소가 이미 같은
     이름이면 쓰지 않았는데 화면이 성공을 띄웠다 — 이제 단추 아래 「바뀐 것이 없습니다」 를 적고 제 저장 짝도 적지 않는다
-    (`save_remembered` 의 `stored` 가 None). 사이드바 저장을 뺀 열한 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
+    (`save_remembered` 의 `stored` 가 None). 자동 갱신 설정(켜기·확인 시각·키워드·기준 확보율이 그대로 —
+    `SETTINGS_UNCHANGED_MESSAGE`)·가용설비 Preference 입력 비가동(저장소가 보이는 칸을 견줘 쓰지 않음 —
+    `MANUAL_UNCHANGED_MESSAGE`)도 같은 글 꼴 「바뀐 것이 없습니다 — …」 다(설계 규칙 UI-STA-01, 2026-11-11 E2E e1-3 —
+    「바뀐 값이 없습니다.」 · 「바뀐 칸이 없어 저장하지 않았습니다.」 로 갈렸다). 사이드바 저장을 뺀 열한 자리는 성공 알림을 `note_notice` 로 적어, 새로 그린 화면에
     닿은 느린 둘째 누름(같은 값 — 바뀐 것이 없다)이 창 안이면 「바뀐 것이 없습니다」 대신 방금 성공이 남는다(자동 갱신 설정과
     같은 꼴 — 프로필 저장은 `render_flash` 가 다시 그리고, 설비 둘은 `_unchanged` 가 `_written` 으로 다시 낸다). 그래서 저장
     직후 창(`TRAILING_PRESS_SECONDS`) 안의 다른 회차에도 성공 알림이 한 번 더 선다. 표시순서의 느린 둘째 누름은 그 저장의
