@@ -405,8 +405,8 @@ def clash_warnings(
                 "warning",
                 module_registry.MANIFEST_NAME,
                 0,
-                f"화면 이름 「{clash.title}」 을 차례가 뒤인 모듈 {record.folder_name} 도 써서 "
-                "그 모듈 전체가 실패합니다 — 둘 가운데 하나의 화면 이름을 바꿉니다",
+                f"화면 이름 「{clash.title}」 — 차례가 뒤인 모듈 {record.folder_name} 도 같은 "
+                "이름을 써서 그 모듈 전체가 실패합니다 — 둘 가운데 하나의 화면 이름을 바꿉니다",
             )
         )
     return found

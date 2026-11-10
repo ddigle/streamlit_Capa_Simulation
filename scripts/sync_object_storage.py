@@ -303,7 +303,7 @@ def command_probe(args: argparse.Namespace) -> int:
         try:
             client.delete(key)
         except ObjectStorageError:
-            print(f"[건너뜀] 정리 실패 — {key} 를 손으로 지워야 할 수 있습니다.")
+            print(f"[건너뜀] 정리 실패 — {key} 객체를 손으로 지워야 할 수 있습니다.")
         sample.unlink(missing_ok=True)
 
     print(json.dumps(results, ensure_ascii=False, indent=1))

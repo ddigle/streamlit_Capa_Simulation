@@ -423,7 +423,7 @@ def test_a_missing_upstream_is_a_source_problem(pushed_repo: Path) -> None:
     problems = source_problems(pushed_repo)
 
     assert len(problems) == 1
-    assert "origin/main 을 찾지 못했습니다" in problems[0]
+    assert "origin/main 가지를 찾지 못했습니다" in problems[0]
 
 
 def test_untracked_files_are_reported_but_are_not_source_problems(pushed_repo: Path) -> None:
@@ -564,7 +564,7 @@ def test_a_second_tagged_build_with_the_same_stamp_stops_before_overwriting(
     capsys.readouterr()
 
     assert build_deploy_package.main(["--out", str(out), "--stamp", "202610131200"]) == 1
-    assert "태그 deploy/202610131200 가 이미 있습니다" in capsys.readouterr().err
+    assert "deploy/202610131200 태그가 이미 있습니다" in capsys.readouterr().err
     assert zip_path.read_bytes() == first_bytes
     assert _git(pushed_repo, "rev-parse", "deploy/202610131200^{commit}") == first_commit
 

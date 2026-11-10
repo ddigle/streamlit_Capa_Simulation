@@ -138,6 +138,10 @@ try:
         load_equipment_migrations,
     )
     from capa_simulation.persistence.migration_runner import load_migrations  # noqa: E402
+    from capa_simulation.services.korean_particle import (  # noqa: E402
+        with_object_particle,
+        with_subject_particle,
+    )
     from capa_simulation.settings import (  # noqa: E402
         DEPLOY_STATE_PATH,
         DUCKDB_PATH,
@@ -6213,8 +6217,9 @@ def preflight(args: argparse.Namespace) -> tuple[int, str] | None:
         print(DEFERRED_MESSAGE)
         return EXIT_DEFERRED, "미룸 — 사용자 앱이 떠 있습니다"
     if port_in_use(args.port):
-        print(f"포트 {args.port} 를 이미 누가 쓰고 있습니다 — --port 로 빈 포트를 줍니다")
-        return EXIT_NOT_READY, f"멈춤 — 포트 {args.port} 를 이미 누가 쓰고 있습니다"
+        taken = with_object_particle(str(args.port))
+        print(f"포트 {taken} 이미 누가 쓰고 있습니다 — --port 로 빈 포트를 줍니다")
+        return EXIT_NOT_READY, f"멈춤 — 포트 {taken} 이미 누가 쓰고 있습니다"
     return None
 
 
@@ -6358,7 +6363,8 @@ def _check(args: argparse.Namespace, items: list[Item], began: float, output: Ou
         return EXIT_NOT_READY
     if not app.port_released:
         _progress(
-            f"확인용 앱 프로세스가 남았을 수 있습니다 — 포트 {args.port} 가 아직 열려 있습니다"
+            f"확인용 앱 프로세스가 남았을 수 있습니다 — 포트 "
+            f"{with_subject_particle(str(args.port))} 아직 열려 있습니다"
         )
     if over_budget_count(outcomes):
         code = EXIT_NOT_READY

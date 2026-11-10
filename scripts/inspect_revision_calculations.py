@@ -734,7 +734,7 @@ def _open_read_only(path: Path) -> tuple[duckdb.DuckDBPyConnection | None, str |
     except duckdb.IOException:
         return None, _LOCK_MESSAGE, 1
     except duckdb.Error as exc:
-        return None, f"`{path.name}` 을 열지 못했다 — {type(exc).__name__}", 2
+        return None, f"`{path.name}` 파일을 열지 못했다 — {type(exc).__name__}", 2
 
 
 def main(argv: Sequence[str] | None = None) -> int:
