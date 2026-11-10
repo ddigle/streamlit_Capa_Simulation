@@ -175,7 +175,8 @@ SHEET_SCHEMA_VERSION = 1
 UNIT_CAPACITY_XLSX_KEY = "download_unit_capacity_xlsx"
 REQUIRED_DETAIL_XLSX_KEY = "download_required_equipment_detail_xlsx"
 REQUIRED_SUMMARY_XLSX_KEY = "download_required_equipment_summary_xlsx"
-# 소요대수 탭 `표 조건` 카드 거름의 key 앞부분(`column_filter_key`).
+# 소요대수 탭 `표 조건` 카드 거름의 key 앞부분(`column_filter_key`) — 카드를 그리는 쪽과 시트 머리
+# 값을 짓는 쪽이 이 한 값을 같이 쓴다.
 REQUIRED_FILTER_PREFIX = "required_equipment_filter"
 
 
@@ -541,7 +542,7 @@ else:
             filtered_required_table = render_column_filter_controls(
                 view_table,
                 table_dimensions,
-                key_prefix="required_equipment_filter",
+                key_prefix=REQUIRED_FILTER_PREFIX,
                 column_labels=COLUMN_LABELS,
                 value_labels=process_labels.value_labels(),
                 shared_screen=SCREEN,

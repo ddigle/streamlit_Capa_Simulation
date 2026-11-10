@@ -42,6 +42,22 @@ DETAIL_XLSX = "download_required_equipment_detail_xlsx"
 MEMO_KEY = "calculation_result_sheet_memo"
 # 표시명을 입힌 픽스처는 캐시 키 토큰을 따로 둔다(계산 결과는 같아도 다른 회차 몫).
 RENAMED_SCRIPT = _renamed(TWO_PROCESS_RESULT_SCRIPT)
+# 둘째 공정의 MCP 를 「2A」 로 — 소요대수 상세 `표 조건` 카드의 MCP 칸에 값이 둘이라 하나를 고르면
+# 본문이 실제로 준다. 계산 캐시는 프로세스 전역이라 토큰도 따로 둔다.
+_SECOND_PROCESS_ROW = '        second_row["공정"] = "Process-B"\n'
+TWO_MCP_SCRIPT = TWO_PROCESS_RESULT_SCRIPT.replace(
+    _SECOND_PROCESS_ROW,
+    _SECOND_PROCESS_ROW + '        if "MCP_SEQ" in second_row:\n'
+    '            second_row["MCP_SEQ"] = "2A"\n',
+).replace('"test-capacity-two-process-page"', '"test-capacity-two-mcp-page"')
+assert '"MCP_SEQ"] = "2A"' in TWO_MCP_SCRIPT and '"test-capacity-two-mcp-page"' in TWO_MCP_SCRIPT
+# 상세에만 있는 카드 칸 · 요약에도 있는 카드 칸 — key 는 `column_filter_key` 꼴
+# (`required_equipment_filter_<열>`).
+DETAIL_ONLY_FILTER = "required_equipment_filter_MCP_SEQ"
+SUMMARY_FILTER = "required_equipment_filter_Area_Name"
+FILTER_RESET = "required_equipment_filter_reset"
+# 카드 거름이 없을 때 소요대수 시트의 머리 값 줄(공용 공정 칸은 늘 한 줄).
+REQUIRED_HEADING = ["시나리오", "조회기간", "상세", "공정"]
 
 
 def _app(script: str = TWO_PROCESS_RESULT_SCRIPT) -> AppTest:
@@ -195,6 +211,55 @@ def test_the_required_sheet_follows_the_detail_toggle_and_the_filter() -> None:
     sheet = _sheet(app, DETAIL_XLSX, "소요대수")
     assert _heading(sheet)["상세"] == "켬"
     _same_values(_body(sheet), _csv(app, DETAIL_CSV))
+
+
+def test_the_required_sheet_heading_lists_each_card_filter_on_screen() -> None:
+    """소요대수 `표 조건` 카드에서 값을 고른 칸마다 시트 머리 값에 (카드에 보이는 칸 글자,
+    고른 값) 한 줄이 선다 — 본문은 그 거름의 CSV 와 같다. 상세를 끄면 상세에만 있는 칸의 줄은
+    빠지고(선택은 세션에 남아도 요약 표에는 걸리지 않는다), 「필터 초기화」 뒤에는 카드 줄이
+    없다."""
+    app = _open_calc_tab(_app(TWO_MCP_SCRIPT), REQUIRED_TAB)
+    app.session_state["required_equipment_detail"] = True
+    app.run()
+    assert not app.exception
+    mcp = app.multiselect(key=DETAIL_ONLY_FILTER)
+    assert mcp.options == ["1A", "2A"]
+    mcp_label = str(mcp.label)
+    assert list(_heading(_sheet(app, DETAIL_XLSX, "소요대수"))) == REQUIRED_HEADING
+
+    mcp.set_value(["1A"]).run()
+    assert not app.exception
+    sheet = _sheet(app, DETAIL_XLSX, "소요대수")
+    heading = _heading(sheet)
+    assert list(heading) == [*REQUIRED_HEADING, mcp_label]
+    assert (heading["상세"], heading["공정"], heading[mcp_label]) == ("켬", "전체", "1A")
+    body = _body(sheet)
+    assert set(body["공정"].dropna()) == {"Process-A"}
+    _same_values(body, _csv(app, DETAIL_CSV))
+
+    app.multiselect(key=DETAIL_ONLY_FILTER).set_value(["1A", "2A"]).run()
+    assert not app.exception
+    assert _heading(_sheet(app, DETAIL_XLSX, "소요대수"))[mcp_label] == "1A · 2A"
+
+    app.session_state["required_equipment_detail"] = False
+    app.run()
+    assert not app.exception
+    assert DETAIL_ONLY_FILTER not in [str(box.key) for box in app.multiselect]
+    sheet = _sheet(app, SUMMARY_XLSX, "소요대수")
+    assert list(_heading(sheet)) == REQUIRED_HEADING
+    _same_values(_body(sheet), _csv(app, SUMMARY_CSV))
+
+    area = app.multiselect(key=SUMMARY_FILTER)
+    area_label = str(area.label)
+    area.set_value(["Main"]).run()
+    assert not app.exception
+    heading = _heading(_sheet(app, SUMMARY_XLSX, "소요대수"))
+    assert list(heading) == [*REQUIRED_HEADING, area_label]
+    assert heading[area_label] == "Main"
+
+    app.button(key=FILTER_RESET).click().run()
+    assert not app.exception
+    assert list(_heading(_sheet(app, SUMMARY_XLSX, "소요대수"))) == REQUIRED_HEADING
 
 
 def _count_builds(monkeypatch: pytest.MonkeyPatch) -> list[str]:
