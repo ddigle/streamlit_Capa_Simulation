@@ -28,6 +28,7 @@ from streamlit.testing.v1.errors import AppTestError
 from test_all_pages_render import _page_script
 
 import capa_simulation.components.write_guard as write_guard
+from capa_simulation import alerts
 from capa_simulation.components.bigdataquery_registration import CATALOG_START_DATE_KEY
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -397,8 +398,9 @@ def test_a_slow_second_press_on_the_cleared_clone_form_keeps_the_success(
     VOC 의 `just_written` 꼴). 쓰기 직후(`TRAILING_PRESS_SECONDS`)의 손대지 않은 빈 폼 제출은 그
     꼬리로 보고 거절을 세우지 않는다 — 첫 저장의 성공 표지는 맨 위 칸이 같은 id 로 다시 보낸다.
     창이 지난 빈 제출과 저장한 적 없는 빈 제출은 그대로 거절한다. AppTest 회차 사이 시간이
-    들쭉날쭉해 창은 시험이 정한다."""
+    들쭉날쭉해 창은 시험이 정한다 — 성공 표지를 다시 보내는 창(`alerts.RESEND_SECONDS`)도 같다."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", window)
+    monkeypatch.setattr(alerts, "RESEND_SECONDS", 3600.0)
     database_path = tmp_path / "scenario.duckdb"
     script = _page_script(PAGE_PATH, database_path, tmp_path / "equipment.duckdb")
     app = AppTest.from_string(script, default_timeout=120).run()

@@ -86,6 +86,7 @@ from capa_simulation.components.write_guard import (
     is_own_save,
     just_written,
     note_notice,
+    note_written,
     notice_marks,
     own_save_marks,
     queue_refusal,
@@ -2195,6 +2196,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 popup_only=True,
                 goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
             )
+        # 꼬리 누름의 창(`just_written`)은 뒷정리를 마친 이 시각부터 센다 — 쓰기 시각부터 세면 큰
+        # 편집본의 활성화가 그 창을 먹어 새 빈 폼이 선 뒤에는 남지 않는다.
+        note_written(CLONE_FORM_GENERATION_KEY)
         bump(CLONE_FORM_GENERATION_KEY)
         written.release()
         st.rerun()
