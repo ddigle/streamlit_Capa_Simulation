@@ -88,13 +88,15 @@ def test_init_uploads_both_snapshots_and_publishes_one_pointer(harness: SimpleNa
     assert harness.store.head_pointer()["origin"] == "init"
 
 
-def test_init_is_idempotent(harness: SimpleNamespace) -> None:
+def test_init_is_idempotent(harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]) -> None:
     _init(harness)
     before = dict(harness.store.objects)
+    capsys.readouterr()
 
     assert _run(harness, "init") == 0
 
     assert harness.store.objects == before
+    assert "[건너뜀] 원격에 이미 seq 1이 있습니다." in capsys.readouterr().out
 
 
 def test_init_hands_the_pc_over_unless_told_to_keep_writing(harness: SimpleNamespace) -> None:

@@ -164,7 +164,7 @@ def catalog_problems(entries: Sequence[CatalogEntry], site_dir: Path) -> list[st
     """목록과 폴더의 어긋남 — 겹친 줄 · 페이지가 없는 줄 · 목록에 없는 폴더."""
     listed = [entry.path for entry in entries]
     problems = [
-        f"{name} 이 목록에 두 번 있습니다."
+        f"{name} 폴더가 목록에 두 번 있습니다."
         for name in sorted(set(listed))
         if listed.count(name) > 1
     ]
@@ -175,7 +175,7 @@ def catalog_problems(entries: Sequence[CatalogEntry], site_dir: Path) -> list[st
     )
     folders = sorted(child.name for child in site_dir.iterdir() if child.is_dir())
     problems.extend(
-        f"{SITE_DIR_NAME}/{name}/ 이 {CATALOG_NAME} 에 없습니다."
+        f"{SITE_DIR_NAME}/{name}/ 폴더가 {CATALOG_NAME} 에 없습니다."
         for name in folders
         if name not in listed
     )
