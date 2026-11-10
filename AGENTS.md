@@ -596,14 +596,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     HOME 칸에서 열어 설비가 공식 고정이었습니다」 — 자리에 그리지 않는다, 설계 규칙 UI-NTF-02)이 선다 — 모드 분기 앞이라
     「개조 일정」 모드에도 서고, 판정은 상세의 방문 기준 칸 `PROCESS_DETAIL_EQUIPMENT_BASIS_KEY` 를 읽기만)이고, 필요 단축 일정의 공용 조회 조건(`0019`)·기준선(`0021`)·세션
     칸은 읽지도 쓰지도 않는다. UPEH
-    가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 출처 띠 끝 한 줄).
+    가정·HOME 얹기는 걸지 않는다(UPEH 가정이 켜진 세션이면 머리 줄 표지 「UPEH 가정 미적용」 — 두 모드 같음).
   - **공정은 조회 조건 패널의 공용 공정 칸(하나 고름 — `process_field.render_process_choice`)이고 두 모드가 나눠 쓴다**(2026-11-08
     답 P1 · P2-2). 공용 값을 받고(`shared_process.follow_single` — 값이 바뀐 뒤 처음 그리는 회차에 공용 값이 하나이고
     목록에 있으면 그 공정, 여럿이면 보던 공정) 주소 `process`(공정 Capa 상세 머리 링크)가 이긴다. 사이드바 공정 칸 팝업에서 직접
     고른 공정만 공용 값으로 보낸다(2026-11-09 보드 C2 (가) — 넘겨받은 공정 · 기본 공정은 보내지 않는다). 머리 줄은 계산이 건
-    표지(입력 비가동 반영 · UPEH 가정 미적용 — 뜻은 풍선)뿐이고(없으면 서지 않는다 — 맨 위 「← 공정 Capa 상세」 되돌아가기
+    표지(UPEH 가정 미적용 — 뜻은 풍선)뿐이고(없으면 서지 않는다 — 맨 위 「← 공정 Capa 상세」 되돌아가기
     링크는 두지 않는다, 화면 탭 줄 · 사이드바가 같은 길 — 2026-11-09 보드 T4) 조건
     줄 · 출처 띠 · 계산표 범례는 Guide 다(그림 메모 g12). 첫날이 지난 개조 창 · 신규 대기는 상태 알림 `CS-04`(`report_late_starts`)다.
+    계획이 건 입력 비가동(가용설비 현황 › Preference)은 머리 줄 표지가 아니라 상태 알림 `CS-05`(확인 필요 —
+    `constraint_equipment_plan.report_manual_downtime`, 2026-11-10 보드 Q-4)다 — 필요 단축 일정 `RS-05` 와 같은 꼴(짧은 글 = 합
+    대수 띠 · 고칠 자리, 전문 = 화면 · 공정 · 뜻 · 넘친 달, 「그 화면으로」 = 가용설비 현황 › Preference 탭)이고, 두 모드가
+    `render_equipment_plan` 바로 뒤 한 자리에서 부른다(계획이 없으면 「해소」). 범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이고
+    모드는 들지 않는다(모드를 바꿔도 다시 뜨지 않는다).
   - 주소 `?process=` 는 무엇보다 먼저 꺼내고 그 키 하나만 지운다(`take_constraint_process_request` — 테마 인자는 남는다). 한 번
     적용한 값은 `CONSTRAINT_QUERY_SEEN_KEY`((값, 페이지 방문 차례) — 새 방문이면 같은 값도 다시 적용해 공용 공정을 이긴다)에 남겨 지운 것이 브라우저에 닿기 전 옛 주소를 실은 회차가 사용자가 그 뒤 고른 공정을
     덮지 않게 하고, 인자가 걷힌 회차에 비운다(공정 Capa 상세 `PROCESS_DETAIL_QUERY_SEEN_KEY` 와 같은 막이). 공정
@@ -616,7 +621,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「소요가 있는 제품이 없다」 안내와 가른다), 계획 받기(「설비 일정을 계산하지 못했습니다」 + 두 DB 경로), 어댑터·서비스의
     `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」). `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError`
     가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로 둔갑한다.
-  - 조건 카드 「제약 시뮬레이션 조건」 은 맨 위 모드 전환 「제약 영향 | 개조 일정」(처음 펼친 채 — 그림 메모 g12, 페이지가 한 번
+  - 조건 카드 「제약 시뮬레이션 조건」 은 맨 위 모드 전환 「제약 영향 | 개조 일정」(라벨을 숨긴 칸이라 뜻은 같은 줄 끝 ⓘ
+    `MODE_SWITCH_HELP` — 2026-11-10 보드 Q-8, 처음 펼친 채 — 그림 메모 g12, 페이지가 한 번
     세워 두 모드가 채운다) 뒤에 대상(제약 제품·제약 시작·제약 끝 상자 둘 — 공정은 조회 조건 패널)과 「이 세션만」 의 확보율(제약 확보율·
     기준 확보율)·개조(토글·개조 기간·보유 제약 호기 고르기·목록에 없는 보유 제약 설비·「신규 설비는 개조 없이」 토글과 신규
     기준일·Cut-off 읽기만) 세 묶음이다
@@ -643,9 +649,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「비중 배분 비교」 토글(`CONSTRAINT_PROPORTIONAL_KEY` · `persist_state="session"`, 풍선은 짧게 — 뜻 · 식은 Guide)은 본문 위 보기
     줄이 아니라 카드다(2026-11-09 보드 C3 — 페이지 상단 문구 최소화) — 바꾸면 앱 전체 회차이고 본문 프래그먼트는 세션 값을 읽는다
     (`constraint_simulation_view.proportional_on`).
-  - **모드 둘**(2026-10-26 결정 3) — 본문 맨 위 「제약 영향 | 개조 일정」(`components/modification_schedule_view.
-    render_mode_switch`, `segmented_control` · `persist_state` — 하위 보기 전환은 본문, 카드에 무엇이 설지 정하므로 앱 전체
-    회차). 「개조 일정」 이면 공통 진입·설비 세션·공정 칸 정리 뒤 `render_schedule_mode` 하나가 카드·설비 일정 확인·계획·계산·
+  - **모드 둘**(2026-10-26 결정 3) — 사이드바 조건 카드 맨 위 「제약 영향 | 개조 일정」(`components/modification_schedule_view.
+    render_mode_switch`, `segmented_control` · `persist_state` — 카드에 무엇이 설지 정하는 전환이라 조건 카드에 두는 예외(9장),
+    앱 전체 회차. 뜻은 같은 줄 끝 ⓘ). 「개조 일정」 이면 공통 진입·설비 세션·공정 칸 정리 뒤 `render_schedule_mode` 하나가 카드·설비 일정 확인·계획·계산·
     본문을 그리고 페이지는 멈춘다(제약 영향 모드의 카드·본문은 서지 않는다 — 1판은 두 모드를 함께 쓰지 않는다). 머리 한 줄·까닭
     머리 그리기(`render_header`)는 분기 앞에 두고 컴포넌트에 넘긴다. 설비 일정 확인(판정 · 멈춘 자리)과
     계획 칸 받기는 두 모드가 같은 함수(`components/constraint_equipment_plan.render_equipment_plan` — 입력 묶음
@@ -4150,8 +4156,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「이 조건의 개조 창」 카드는 걷었다(2026-11-08 그림 메모 g12) — 식은 계산표 칸 풍선, 창 날짜는 그래프 띠 막대 풍선, 신규 호기
   까닭은 계산표 「들어오는 신규 설비」 칸 풍선, 읽는 법은 Guide, 달 칸 누름은 그래프 띠와 계산표 열 테두리로 그 달을 짚는다.
   그래프 카드 머리 캡션(옅은 칠 = 제약 기간 · ▲)과 계산표 위 「첫 개조 비가동 · 첫 신규 대기 — 표 첫 달 앞에서 시작」 표지 줄도
-  걷었다(2026-11-09 검수 g12-2) — 뜻은 두 카드 제목 풍선(`chart_help` · `sheet_help` — 표 앞 창 · 대기의 날짜 · 대수는 계산표
-  제목 풍선 끝)과 Guide 다.
+  걷었다(2026-11-09 검수 g12-2) — 뜻은 두 카드 제목 풍선(`chart_help` — ▲ 만 · `sheet_help` — 표 앞 창 · 대기의 날짜 · 대수는
+  계산표 제목 풍선 끝)과 Guide 다. 옅은 칠의 뜻은 계산표 머리 칠처럼 Guide 에만 있다(2026-11-09 보드 c-legend — 표와 같게).
+  요약 「개조 대수」 회색 줄의 첫 비가동 날은 오늘보다 앞이면 뒤에 「(지남)」 이 붙는다(`first_downtime_text` — `CS-04` 와 같은
+  「첫날 < 오늘」, 2026-11-09 보드 c-late-word).
   판정색은 기준이 HOME 이면 계산표 칸 · 그래프 기존 제품 점 · 기존 제품 요약 테두리가 같은 세 단계(`figures.general_status` —
   작은 결정 d11), 직접 넣은 기준은 두 단계. 아래는 걷기 전 꼴의 기록이다 — 비중 토글·그래프·계산표·고른 달 계산 다섯 단계·개조
   창·가용이 모자란 달 — 그 값은 필요가 아니라 전용 대수이고 넉 달
@@ -4207,11 +4215,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/test_modification_schedule_page.py` 가, 멈추는 갈래 차례와 까닭 글(키 만들기 예외도 계산 오류 갈래)은
   `tests/test_constraint_equipment_plan.py` 가 본다. 제약 영향 모드의 공정 칸이 빈 회차의 기본 공정(`first_ready_process` —
   설비 일정이 서는 첫 공정, 설비 프레임은 한 번만 거른다)도 여기서 판정해 페이지가 `dynamic_readiness` 를 직접 부르지 않는다.
-  두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리(`SESSION_ONLY_CAPTION`)와 개조 일정 모드 출처 띠 조각(제약 영향 모드는
-  머리 줄 표지 `applied_marks` · `HeaderRenderer` 만 — 그림 메모 g12) — 소요 시나리오
-  이름표(`source_scenario_text`) · 설비 기준 괄호(`source_equipment_text`) · 띠 끝 풍선(`SOURCE_BAND_HELP` — 환산 대수) · UPEH 가정
-  단서(`upeh_assumption_note`) — 도 여기 한 벌이다(띠의 나머지는 모드마다 다르다). 그 글도
-  `tests/test_constraint_equipment_plan.py` 가 못 박는다.
+  두 모드가 글자까지 같게 적는 조건 카드 「이 세션만」 머리(`SESSION_ONLY_CAPTION`)와 머리 줄 표지(`applied_marks` — UPEH 가정
+  미적용 · `HeaderRenderer`, 두 모드 모두 조건 줄 · 출처 띠를 두지 않는다 — 그림 메모 g12 · 2026-11-09 보드 c-schedule-head),
+  입력 비가동 상태 알림 `CS-05`(`report_manual_downtime` · 글 `manual_downtime_note` — 2026-11-10 보드 Q-4)도 여기 한 벌이다.
+  그 글도 `tests/test_constraint_equipment_plan.py` 가 못 박는다.
 - `src/capa_simulation/components/modification_schedule_figures.py` — 「개조 일정」 모드의 월별 확보율 그래프(개조 전·뒤 · 기준선 ·
   올린 배치 기준선 · 차수 막대 — 제약 모드 그래프와 같은 수 축·W/D 날짜 비례 `day_position`)와 차수 줄·대안 셋 글을 계산 결과에서
   만드는 순수 함수. 확보율 % 값과 y 축 범위는 제약 모드 그래프의 `percent_or_none` · `axis_bounds` 를 가져다 쓴다(사본을 두지
@@ -4231,9 +4238,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`_BAR_TEXT_MIN_PX`) 아래로 줄이지 않고 숨긴다(대수는 막대 풍선 · 차수 목록에 늘 있다). 그림 모양을 바꾸면
   `SCHEDULE_FIGURE_SCHEMA_VERSION` 을 올린다.
 - `src/capa_simulation/components/modification_schedule_view.py` — 「개조 일정」 모드 한 회차 — 조건 카드 맨 위 모드 전환
-  (`render_mode_switch` — 2026-11-08 그림 메모 g12, `ScheduleModeContext.card` · `process`), 조건 카드(대상 / 이 세션만 / 개조 · 일정 · 기준 묶음, 버튼 + 직접 입력은 `preset_number_field`), 설비
+  (`render_mode_switch` — 2026-11-08 그림 메모 g12, 숨긴 라벨의 뜻은 같은 줄 끝 ⓘ `MODE_SWITCH_HELP` — 2026-11-10 보드 Q-8,
+  `ScheduleModeContext.card` · `process`), 조건 카드(대상 / 이 세션만 / 개조 · 일정 · 기준 묶음, 버튼 + 직접 입력은 `preset_number_field`), 설비
   일정 확인 · 멈춘 자리 · 계획(제약 모드와 같은 함수 `constraint_equipment_plan.render_equipment_plan` — 입력은 페이지가 넘긴
-  `ScheduleModeContext.source`), 계산, 본문(머리 한 줄 · 출처 띠 · 요약 넷 · 대안 셋 · 그래프 · 차수 목록 — 「아직 일정에 넣지
+  `ScheduleModeContext.source`), 계산, 본문(머리 줄 표지 · 요약 넷 · 대안 셋 · 그래프 · 차수 목록 — 조건 줄 · 출처 띠는 두지
+  않는다, 2026-11-09 보드 c-schedule-head. 입력 비가동은 제약 영향 모드와 같은 상태 알림 `CS-05`, 「아직 일정에 넣지
   않은 개조만」 은 「개조 대수」 칸 풍선, 「저장하지 않음」 은 조건 카드 「이 세션만」 표지 풍선). 기한 상자는 고른 시작 이후인 달만 내고(바뀌어 빠지면 「없음」), 동시 상한 「없음」 이면 숫자 칸이
   빈다. 요약 셋째 칸은 「개조 달 최저 여유」(값 = 기준 대비 %, 반올림으로 든 달은 0.0% — 캡션 = 그 달 · 확보율 — 6장). 결과·그림은 세션 칸 LRU(4칸 — 조건
   값·테마 키)다(Streamlit 캐시가 아니다 — 결과 모양을 바꾸면 `_RESULT_SCHEMA_VERSION` 을 올린다). 프래그먼트가 없다 — 본문에
@@ -5528,7 +5537,8 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   넣은 대수 글과 같은 소수 둘째 자리, 0 이 아닌 몫은 0 이 아니게 적힐 때까지 한 자리씩 더 — 카드 식은 그 적힌 수로 다시
   셈한다). ② 「비가동 영향」 은 그 달 뺀 몫
   (`입력 비가동 반영` — 넣은 대수가 아니다)을 호기 비가동 손실과 더해 대수·% 로 보인다(`downtime_impact`). 필요 단축
-  일정·제약 시뮬레이션 출처 띠는 계획이 건 칸이 있을 때 「입력 비가동 반영(n칸 · 합 x대[ · 가용 넘침 k칸])」 을 붙인다.
+  일정(`RS-05`)·제약 시뮬레이션(`CS-05` — 두 모드)은 계획이 건 칸이 있을 때 상태 알림 짧은 글 「입력 비가동 반영(n칸 · 합
+  x대[ · 가용 넘침 k칸]) — 가용설비 현황 › Preference」 을 낸다(자리에는 그리지 않는다).
 
 ### 제약 시뮬레이션
 
@@ -6614,7 +6624,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   넘기고(닫힌 탭이면 None → 그 회차에는 `alerts.state` 를 부르지 않는다 — 탭 칸은 프래그먼트 밖이라 이벤트 칸 자리 수 규칙에
   걸리지 않는다), 열렸으면 그 이름이 표지의 `tab` 이 돼 「그 화면으로」 가 그 탭까지 연다(시나리오 관리 `SC-01` · `AD-04` ·
   `AU-01/02`, Admin `AD-05` · `AD-06`). 고칠 자리가 다른 탭이면 그 탭 이름을 싣고(일정 없는 호기 `EQ-04` → 「설비 마스터」, 필요 단축 일정 `RS-03` → 가용설비 현황 ›
-  설비 마스터 · `RS-05` → 가용설비 현황 › Preference),
+  설비 마스터 · `RS-05` · 제약 시뮬레이션 `CS-05` → 가용설비 현황 › Preference),
   탭 안 탭은 `tab_name(바깥, 안)` 으로 잇는다(`EQ-06/07/08` → 「Summary › Static 대비 일정」). 세션 이동처럼 탭과 상관없이
   알아야 하는 사건은 탭을 가리지 않는다.
 - **팝업 안 조건은 팝업이 자리 글로, 화면이 상태 알림으로** — 「가용설비 설정」 팝업 「Cut-off 를 적지 않은 공정」 은 고칠 표 곁의 경고
@@ -7216,7 +7226,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
     `tests/test_equipment_master_tab_scenarios.py`). **알림 칸 글은 막지 않는다** — `alerts.state` · `alerts.event` 의 `text` ·
     `full` 은 알림창 · 패널이 `textContent` 로 넣는 평문이라 날 이름을 글자 그대로 싣는다(Cut-off 를 적지 않은 공정 `EQ-12` ·
     한쪽에만 있는 공정 `EQ-06` · Proc Rename 겹침 `AD-06` · 세션 이동 `SB-14` · 넘겨받은 공정 `PD-02` · `CS-02` · 설비 기준이
-    바뀐 도착 `CS-03` · 첫날이 지난 개조 · 신규 대기 `CS-04` —
+    바뀐 도착 `CS-03` · 첫날이 지난 개조 · 신규 대기 `CS-04` · 입력 비가동 반영 `CS-05` —
     `tests/test_markdown_name_lists.py`). 마크다운 글을 실을 때는 `alerts.plain_text` 로 꾸밈을 걷는다. 붙여넣기 거절 글은 잠금
     까닭을 `literal_markdown` 으로 막아 담는다(예외 글로 가 `bootstrap_error_message` 를 지난다). 이미 막힌 조각(`quoted` 한
     이름·`bootstrap_error_message` 글)을 담는 글은 물결표만 막는다(`markdown_safe_tildes` — 막은 `\~` 는 다시 막지 않는다):
