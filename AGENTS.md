@@ -1063,7 +1063,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   일 표준 가능량을 표·로직 분석·CSV 로 낸다(조건 카드 `표준 목표 조건`, 설명 `guides/standard_target_capa.md`). 「가용설비
   붙여넣기」 는 화면 팝업 호스트 `standard_target_dialog_host`(`DialogHost`)가 부르고(답 U5 — 여닫아도 다시 계산하지 않는다),
   「입력 초기화」 는 같은 열림 칸으로 페이지가 부른다. 「예외 처리 공정」 의 현재 조회범위 제외 행 수는 공정 칸 머리 풍선
-  (`exception_process_help` — 작은 결정 d8)이다. 작업 줄에 양식 단추가
+  (`exception_process_help` — 작은 결정 d8)이다. 「표시 항목」 줄 오른쪽 끝 작업 단추 칸(`ACTION_ROW_KEY`)에 양식 단추가
   없다 — 양식은 붙여넣기 창 한 곳이고 `template_csv` 는 창을 연 회차에만 짓는다.
   - 주차 계산은 `simulation_cache.get_weekly_standard_target_capacity`(PKG `get_pkg_equivalent_standard_target`)가
     키만 해시한다 — 소요대수를 해시 인자로 넘기지 않는다(`tests/test_standard_target_weekly_cache.py`). 재공 현황도
