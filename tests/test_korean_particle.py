@@ -116,12 +116,14 @@ def test_escaped_markdown_reads_the_same_final_as_the_plain_name() -> None:
         ("「투자Capa」", "는", "로"),
         ("DuckDB", "는", "로"),
         ("Kea", "는", "로"),
+        ("이동할 2027 · +1년 Shift", "는", "로"),
         ("Staff", "은(는)", "(으)로"),
     ],
 )
 def test_fixed_vocabulary_latin_tails_are_read(word: str, topic: str, direction: str) -> None:
-    """층 이름의 `F`·`DB`·`size`·`Capa`·`Kea` 는 읽는다(「C2 2F는」·「Xsize를」). 대소문자도 그대로
-    견준다(「Staff」 의 `ff` 는 `F` 가 아니다)."""
+    """층 이름의 `F`·`DB`·`size`·`Capa`·`Kea`·연도 Shift 새 이름 꼬리의 `Shift` 는
+    읽는다(「C2 2F는」·「Xsize를」·「… · +1년 Shift를」). 대소문자도 그대로 견준다(「Staff」 의
+    `ff` 는 `F` 가 아니다)."""
     assert topic_particle(word) == topic
     assert direction_particle(word) == direction
 

@@ -482,6 +482,7 @@ _JS_WORDS = [
     "「투자Capa」",
     "설비 DB",
     "Kea",
+    "이동할 2027 · +1년 Shift",
     "Staff",
     "셋업 B",
     "DEL-A",
