@@ -9,8 +9,10 @@
 필요 단축 일정 화면과 늘 같은 키·같은 칸).
 
 - **목표 확보율**(`TARGET_LEVELS`, 처음엔 필요 단축 일정 목표 → 110%)은 사이드바 조회 조건 패널의 한
-  줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건 상자로). 위젯 key 는 그대로다.
-  배치 편집으로 보기가 쉬는 회차에도 잠근 채 선다(`render_level_field`).
+  줄이다(2026-11-08 그림 메모 g05 — 보기 상태의 고르기를 조회 조건 상자로). 다른 조건 줄과 같은
+  값 칸 + 팝업이고(검수 보드 p-target-form) 팝업은 Space 화면 팝업 호스트가 연다 — 고르면 곧바로
+  닫히며 그 목표로 다시 그린다. 고른 값은 세션 칸(`SPACE_SHORT_LEVEL_KEY`)이다. 배치 편집으로 보기가
+  쉬는 회차에도 값 칸은 잠근 채 선다(`render_level_field`).
 - **「단축 없는 호기 흐리게」 · 기준 달**은 사이드바 `Space 조건` 카드의 「색 기준」
   밑이다(2026-11-09 사용자 검수 g05 — 페이지 상단 문구 · 여백 최소화). 「필요 단축」 은 그룹 체크가
   없는 기준이라 흐리게 칸이 그 자리를 잇고(`render_dim_field`), 기준 달 값 한
@@ -50,9 +52,11 @@ import capa_simulation.components.required_shortening_panel as shortening_panel
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
 from capa_simulation import alerts
-from capa_simulation.components.condition_field import FIELD_KEY_PREFIX, condition_name_row
+from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.data_error_mark import render_data_error
+from capa_simulation.components.dialog_host import DialogBody
 from capa_simulation.components.equipment_scenario_status import equipment_value_label
+from capa_simulation.components.floor_canvas_dialog import CANVAS_DIALOG_HOST
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.shortening_board import (
     DEFAULT_DUE_DAYS,
@@ -106,12 +110,14 @@ from capa_simulation.services.space_shortening_layer import (
     day_text,
 )
 from capa_simulation.settings import DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH
-from capa_simulation.sidebar_status import page_condition_slot
+from capa_simulation.sidebar_status import keeps_app_run_open, page_condition_slot
 
 __all__ = [
     "LAYER_PARAM",
     "LAYER_SHORT",
-    "LEVEL_FIELD_STYLE",
+    "LEVEL_DIALOGS",
+    "LEVEL_FIELD_KEY",
+    "LEVEL_PICK_KEY",
     "PINNED_NOTE",
     "PROCESS_PARAM",
     "SPACE_SHORT_DIM_KEY",
@@ -144,25 +150,20 @@ __all__ = [
 
 SPACE_SHORT_LEVEL_KEY: Final = "space_shortening_level_v1"
 SPACE_SHORT_DIM_KEY: Final = "space_shortening_dim_v1"
-# 목표 확보율 줄 — 조회 조건 패널의 둘째 페이지 칸(첫째는 공용 공정 칸). 줄 꼴(이름 줄 + 값)은
-# 패널의 다른 줄과 같은 칸 key 접두어로 맞춘다(`condition_field.FIELD_KEY_PREFIX` — 줄 안 간격).
+# 목표 확보율 줄 — 조회 조건 패널의 둘째 페이지 칸(첫째는 공용 공정 칸). 다른 조건 줄과 같은 이름
+# 줄 + 값 칸(`condition_field`)이고 값 칸을 누르면 고르는 팝업이 열린다(검수 보드 p-target-form —
+# 예전 전환 단추 다섯은 패널 폭에서 접혀 줄 서식이 따로 필요했다).
 LEVEL_SLOT: Final = 1
 LEVEL_LABEL: Final = "목표 확보율"
 LEVEL_FIELD_SLUG: Final = "space_target"
-# 그 줄의 전환 단추 다섯을 패널 폭(245px 상자 — 안쪽 223px)에 한 줄로 — 기본 안쪽 여백이면 넷째
-# 뒤에서 접혀 줄이 두 줄(높이 60px)이 됐다(2026-11-08 사본 실측). 단추를 같은 폭으로 나누고 좌우
-# 여백만 줄인다. 글자 크기는 그대로다(설계 규칙 UI-CON-01). 페이지가 회차마다 늘
-# 그린다(`render_level_field` 는 보기를 고른 회차에만 돈다 — 스타일 표지 자리 수가 회차마다 같게).
-LEVEL_FIELD_STYLE: Final = (
-    "<style>"
-    f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"]'
-    "{flex-wrap:nowrap;}"
-    f'.st-key-{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG} [data-testid="stButtonGroup"] button'
-    "{flex:1 1 0;min-width:0;padding-left:0.25rem;padding-right:0.25rem;}"
-    "</style>"
-)
-# 배치 편집으로 보기가 쉬는 회차의 목표 줄 — 줄은 잠근 채 서고 까닭은 이름 줄 풍선이다(설계 규칙
-# UI-INP-07). 값 칸이 전환 단추라 단추 풍선을 달 자리가 없다(라벨을 접은 위젯은 풍선도 숨는다).
+LEVEL_FIELD_KEY: Final = "space_shortening_level_field"
+LEVEL_ICON: Final = ":material/flag:"
+# 팝업 — Space 화면 팝업 호스트(`floor_canvas_dialog.CANVAS_DIALOG_HOST` — 화면당 호스트 하나)의
+# 열림 값과 라디오 key(닫으면 지운다 — `DialogHost` 지키는 것 5).
+LEVEL_DIALOG: Final = "space_target_level"
+LEVEL_PICK_KEY: Final = "space_shortening_level_pick"
+# 배치 편집으로 보기가 쉬는 회차의 목표 줄 — 값 칸은 잠근 채 서고 까닭은 그 칸 풍선이다(설계 규칙
+# UI-INP-07 — `condition_field` 의 잠긴 칸 풍선).
 LEVEL_REST_HELP: Final = (
     "배치 편집 중에는 필요 단축 보기를 쉬어 고를 수 없습니다 — 편집을 끄면 다시 고릅니다."
 )
@@ -332,41 +333,74 @@ def switch_to_queued_shortening() -> None:
 
 
 def render_level_field(*, resting: bool = False) -> float:
-    """목표 확보율 줄 — 사이드바 조회 조건 패널의 페이지 칸(`LEVEL_SLOT`)에 이름 줄 + 전환 단추로
-    선다(2026-11-08 그림 메모 g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로
-    이동」). 처음 값이 무엇인지는 Guide 가 말한다(이름 줄에 길 안내를 적지 않는다 — 설계 규칙
-    UI-TXT-03). 고른 목표를 돌려준다.
+    """목표 확보율 줄 — 사이드바 조회 조건 패널의 페이지 칸(`LEVEL_SLOT`)에 이름 줄 + 값 칸으로
+    선다(2026-11-08 그림 메모 g05 — 사이드바 조회 조건 상자로, 검수 보드 p-target-form — 다른 조건
+    줄처럼 값 칸 + 팝업). 값 칸을 누르면 Space 화면 팝업 호스트만 돌아 고르는 팝업이 열린다(설계
+    규칙 UI-PRF-01). 처음 값이 무엇인지는 Guide 가 말한다(이름 줄에 길 안내를 적지 않는다 — 설계
+    규칙 UI-TXT-03). 고른 목표를 돌려준다.
 
-    `resting` 은 보기를 골랐지만 배치 편집으로 쉬는 회차다 — 줄은 잠근 채 같은 자리에 서고 까닭은
-    이름 줄 풍선이다. 줄이 빠지면 켜고 끌 때마다 아래 「Space 도면」 상자와 방금 누른 「배치 편집」
-    토글이 줄 높이만큼 오르내렸다(설계 규칙 UI-PRF-03 · UI-INP-07).
+    `resting` 은 보기를 골랐지만 배치 편집으로 쉬는 회차다 — 값 칸은 잠근 채 같은 자리에 서고
+    까닭은 그 칸 풍선이다. 줄이 빠지면 켜고 끌 때마다 아래 「Space 도면」 상자와 방금 누른 「배치
+    편집」 토글이 줄 높이만큼 오르내렸다(설계 규칙 UI-PRF-03 · UI-INP-07).
 
-    목표 칸이 없으면 필요 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심는다. 위젯에는 기본값을
-    주지 않는다(세션 API 와 함께 쓰면 경고 — AGENTS 9장).
+    목표 칸이 없으면 필요 단축 일정 목표(다섯 가운데 하나일 때) → 110% 로 심는다.
     """
-    if _target_level(st.session_state.get(SPACE_SHORT_LEVEL_KEY)) is None:
-        st.session_state[SPACE_SHORT_LEVEL_KEY] = (
-            _target_level(st.session_state.get(SHORTENING_LEVEL_KEY)) or DEFAULT_TARGET_LEVEL
-        )
-    with (
-        page_condition_slot(LEVEL_SLOT).container(),
-        st.container(key=f"{FIELD_KEY_PREFIX}{LEVEL_FIELD_SLUG}", gap=None),
-    ):
-        condition_name_row(
-            LEVEL_LABEL, slug=LEVEL_FIELD_SLUG, help=LEVEL_REST_HELP if resting else None
-        )
-        level = st.segmented_control(
+    level = _target_level(st.session_state.get(SPACE_SHORT_LEVEL_KEY))
+    if level is None:
+        level = _target_level(st.session_state.get(SHORTENING_LEVEL_KEY)) or DEFAULT_TARGET_LEVEL
+        st.session_state[SPACE_SHORT_LEVEL_KEY] = level
+    with page_condition_slot(LEVEL_SLOT).container():
+        condition_field(
             LEVEL_LABEL,
-            options=list(TARGET_LEVELS),
-            format_func=_percent,
-            required=True,
-            key=SPACE_SHORT_LEVEL_KEY,
-            persist_state="session",
+            _percent(level),
+            slug=LEVEL_FIELD_SLUG,
+            key=LEVEL_FIELD_KEY,
+            icon=LEVEL_ICON,
+            help=LEVEL_REST_HELP if resting else None,
             disabled=resting,
-            label_visibility="collapsed",
-            width="stretch",
+            on_click=_open_level_dialog,
         )
-    return _target_level(level) or DEFAULT_TARGET_LEVEL
+    return level
+
+
+def _open_level_dialog() -> None:
+    """값 칸의 콜백 — 라디오 초안을 지금 목표로 적고 Space 화면 팝업 호스트로 연다(다른 팝업 칸부터
+    비운다 — `DialogHost.open`)."""
+    st.session_state[LEVEL_PICK_KEY] = (
+        _target_level(st.session_state.get(SPACE_SHORT_LEVEL_KEY)) or DEFAULT_TARGET_LEVEL
+    )
+    CANVAS_DIALOG_HOST.open(LEVEL_DIALOG, LEVEL_FIELD_KEY)
+
+
+@st.dialog(LEVEL_LABEL, width="small", icon=LEVEL_ICON, on_dismiss=CANVAS_DIALOG_HOST.close)
+@keeps_app_run_open
+def _level_dialog() -> None:
+    """목표 다섯 라디오 — **고르면 곧바로 적용하고 닫힌다**(HOME 주요공정 히트맵 팝업과 같은 꼴).
+
+    라디오 조작은 팝업(프래그먼트)만 다시 돌린다. 돌려받은 값이 지금 목표와 다르면 세션에 적고 열림
+    칸을 지운 뒤 앱 전체를 다시 돌린다(`CANVAS_DIALOG_HOST.finish`) — 그 회차가 새 목표로 도면을
+    다시 그린다. 견주는 값은 세션의 지금 값이라 다시 도는 회차에 같아져 되풀이되지 않는다. 다섯
+    목표는 미리 계산돼 있어 공용 저장값을 다시 읽을 것이 없다.
+    """
+    choice = st.radio(
+        LEVEL_LABEL,
+        options=list(TARGET_LEVELS),
+        format_func=_percent,
+        key=LEVEL_PICK_KEY,
+        label_visibility="collapsed",
+    )
+    picked = _target_level(choice)
+    current = _target_level(st.session_state.get(SPACE_SHORT_LEVEL_KEY)) or DEFAULT_TARGET_LEVEL
+    if picked is not None and picked != current:
+        st.session_state[SPACE_SHORT_LEVEL_KEY] = picked
+        CANVAS_DIALOG_HOST.finish()
+
+
+# Space 화면 팝업 호스트가 함께 여는 팝업(열림 값 → (팝업, 입력 위젯 key)) — 보기를 그리는 회차에만
+# 넘긴다(`render_floor_canvas_dialog_host(others=)`).
+LEVEL_DIALOGS: Final[dict[str, tuple[DialogBody, tuple[str, ...]]]] = {
+    LEVEL_DIALOG: (_level_dialog, (LEVEL_PICK_KEY,))
+}
 
 
 def render_dim_field() -> bool:

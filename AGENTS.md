@@ -764,8 +764,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **색 기준 「필요 단축」**(2026-10-24 결정 — 라디오 셋째 값, `services/space_shortening_layer.py`·
     `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
     꺼내고(5장 9), 목표 확보율은 사이드바 조회 조건 패널 페이지 칸(`space_shortening_view.LEVEL_SLOT` 1 — 첫 칸은 공용 공정 칸,
-    칸 key `condition_field_space_target`, 이름 줄 + 전환 단추 줄 `render_level_field`, 한 줄 서식 `LEVEL_FIELD_STYLE` 을 Space 가
-    회차마다 그림 — 2026-11-08 그림 메모 g05)이고 배치 편집으로 쉬는 회차에도 잠근 채 서며 까닭은 이름 줄 풍선이다. 「단축 없는
+    2026-11-08 그림 메모 g05)의 이름 줄 + 값 칸(`condition_field` — 칸 key `condition_field_space_target`, 값 칸 key
+    `space_shortening_level_field`, `render_level_field`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
+    하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 팝업을 열고, 고르면
+    세션 칸(`SPACE_SHORT_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 곧바로 닫혀 다시 그린다(HOME 주요공정 히트맵 팝업과 같은 꼴 — 검수
+    보드 p-target-form, 옛 전환 단추 다섯 · 한 줄 서식은 걷었다). 배치 편집으로 쉬는 회차에도 값 칸은 잠근 채 서며 까닭은 그 칸 풍선이다. 「단축 없는
     호기 흐리게」(`render_dim_field`)와 기준 달 한 줄(`render_layer_basis` — 풍선이 설비 · 시뮬레이션(미저장 편집 포함) · 오늘)은
     `Space 조건` 카드의 「색 기준」 밑(필요 단축 기준의 그룹 체크 자리 — 2026-11-09 사용자 검수 g05, 쉬는 회차에도 흐리게 칸은 선다),
     맞대지 못한 공정은 필요 단축 일정과 **같은 함수** `required_shortening_panel.report_unmatched_processes`(`RS-02` — 같은 계획 · 범위 ·
@@ -1192,7 +1195,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/floor_canvas_dialog.py` — Space 층·FAB 전체의 캔버스 폭·높이를 고치는 「캔버스 편집」
   팝업(`FLOOR_CANVAS_DIALOG_KEY`)이다(2026-11-05 검수 equip-60 — 도면 그림 올리기·지우기·종횡비 자동 계산을 걷었다. 옛 판이 올린
   그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다 — 마이그레이션 없음). 팝업은 화면 팝업 호스트(`DialogHost`
-  `space_canvas_dialog_host`, 답 U5)가 연다 — 열기 · 보통 닫기는 호스트만 돌고, 밖 알림(`EQ-16`)이 선 채 닫을 때만 앱 전체
+  `space_canvas_dialog_host`, 답 U5 — Space 화면의 호스트는 이것 하나라 필요 단축 보기의 목표 확보율 팝업도 `others=` 로 받아
+  연다, 검수 보드 p-target-form)가 연다 — 열기 · 보통 닫기는 호스트만 돌고, 밖 알림(`EQ-16`)이 선 채 닫을 때만 앱 전체
   (`_dismiss` → `close_to_app` — 알림 칸이 짧은 프래그먼트 회차의 표지를 다음 회차까지 못 읽는다), 설비 DB 가 바뀌었으면
   (`database_stamp`) 본문이 앱 전체로 물러나고, 닫기가 입력 칸 값을 지운다. 성공하면 `finish` 로 앱 전체를 다시 돌린다.
   - 팝업 머리의 지금 상태는 값 줄 하나(`_saved_line` — 「**C1 1F** · 폭 × 높이 · 저장 시각」, 없으면 「기본값 …」, 설계 규칙
@@ -3365,7 +3369,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
   한다 — 닫기(호스트만 도는 회차)는 팝업 프래그먼트의 위젯을 거두지 않아 호스트가 지운다(key 가 열림 값에 달린 팝업은 함수 꼴).
   쓰는 자리: HOME(설정 · 공정 필터 · 주요공정 히트맵) · 기준 정보 붙여넣기 · 표준 목표 붙여넣기 · Qual 마감 계산기 · 공식 지정 ·
-  Space 캔버스 편집. 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
+  Space(캔버스 편집 · 필요 단축 보기 목표 확보율). 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
 - `src/capa_simulation/components/process_field.py` — 공용 공정 칸의 화면 조각(값 칸 + 타일 판 팝업 — `process_field_assets`,
   2026-11-08 답 P1 · P2)과 머리 띠 칩 · 화면 탭 표지의 글 · data. 여러 개 따라감은 `render_process_filter(options, screen=, labels=)`
   가 걸 공정을 돌려주고(산출 결과 셋 · 가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름은
@@ -6776,7 +6780,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   settings · process_filter · key_process 셋을 열고(HOME 설정만 `close_to_app`, 설정 팝업은 `HomeSettingsInputs`(세션) + 프로필
   다시 읽기, 호스트 key 는 `home_state.HOME_DIALOG_HOST_KEY` — 두 모듈이 같은 값으로 각자 만든다), 기준 정보
   (`reference_data_dialog_host` — `month_editor.paste_dialog(host=)` · `paste_widget_keys`, 그리드 자리 뒤 · 「변경사항 적용」 앞에서
-  매 앱 전체 회차), 표준 목표 · Qual 마감 계산기 · 공식 지정 · Space 캔버스. 지킬 것 둘: ① 공용 저장값(DB 현행값 · 공용 프로필)은
+  매 앱 전체 회차), 표준 목표 · Qual 마감 계산기 · 공식 지정 · Space(캔버스 편집 + 필요 단축 보기 목표 확보율 — 한 호스트가
+  `others=` 로 함께 연다). 지킬 것 둘: ① 공용 저장값(DB 현행값 · 공용 프로필)은
   팝업 본문에서 다시 읽는다 — 호스트만 도는 여는 회차의 값은 그 화면의 마지막 앱 전체 회차의 것이라 그 값으로 만든 양식을
   되붙이면 남의 저장을 덮는다. ② `render(widget_keys=)` 에 팝업마다 입력 위젯 key 를 빠짐없이 준다 — 닫기는 팝업 프래그먼트의
   위젯을 거두지 않아 호스트가 지운다(key 가 열림 값에 달리면 함수 꼴 · 폼 안 key 없는 글 칸에는 key 를 단다). `render` 는 팝업이

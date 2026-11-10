@@ -46,6 +46,8 @@ from capa_simulation.components.shortening_source import (
 )
 from capa_simulation.components.space_shortening_view import (
     ARRIVAL_FILTER_ALERT,
+    LEVEL_FIELD_KEY,
+    LEVEL_PICK_KEY,
     PINNED_NOTE,
     SPACE_SHORT_DIM_KEY,
     SPACE_SHORT_LEVEL_KEY,
@@ -68,6 +70,7 @@ from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
 )
+from capa_simulation.services.required_shortening import TARGET_LEVELS, level_percent
 from capa_simulation.services.space_color_basis import (
     COLOR_BASIS_LINE_TYPE,
     COLOR_BASIS_SHORTENING,
@@ -195,29 +198,43 @@ def _rest_notes(app: AppTest) -> int:
 
 
 def _rest_level(app: AppTest) -> tuple[bool, str] | None:
-    """사이드바 목표 확보율 줄의 (잠김, 이름 줄 풍선). 줄이 없으면 None — 배치 편집으로 쉬는 회차도
-    줄은 잠근 채 서야 켜고 끌 때 아래 「Space 도면」 상자가 밀리지 않는다(설계 규칙 UI-PRF-03)."""
-    levels = [
-        item
-        for item in app.sidebar.get("button_group")
-        if getattr(item, "label", None) == "목표 확보율"
-    ]
-    assert len(levels) <= 1
-    if not levels:
+    """사이드바 목표 확보율 값 칸의 (잠김, 풍선). 줄이 없으면 None — 배치 편집으로 쉬는 회차도 줄은
+    잠근 채 서야 켜고 끌 때 아래 「Space 도면」 상자가 밀리지 않는다(설계 규칙 UI-PRF-03)."""
+    fields = [item for item in app.sidebar.button if item.key == LEVEL_FIELD_KEY]
+    assert len(fields) <= 1
+    if not fields:
         return None
     names = [item for item in app.sidebar.caption if str(item.value) == "목표 확보율"]
     assert len(names) == 1
-    return bool(levels[0].proto.disabled), str(names[0].proto.help)
+    return bool(fields[0].disabled), str(fields[0].help or "")
 
 
 def _views(calls: list[dict[str, Any]], scope: str) -> list[dict[str, Any]]:
     return [call for call in calls if call.get("mode") == "view" and call.get("scope") == scope]
 
 
-def _level(app: AppTest) -> Any:
-    return next(
-        item for item in app.get("button_group") if getattr(item, "label", None) == "목표 확보율"
-    )
+class _Level:
+    """사이드바 목표 확보율 줄 — 값은 값 칸 글이고, 바꾸기는 값 칸 → 팝업 라디오다(검수 보드
+    p-target-form). `set_value` 는 팝업을 열어 라디오에 고른 값을 넣는다 — 부르는 쪽의 다음
+    `app.run()` 이 고르는 회차다(고르면 곧바로 닫히고 다시 그린다)."""
+
+    def __init__(self, app: AppTest) -> None:
+        self.app = app
+
+    @property
+    def value(self) -> float:
+        label = str(self.app.button(key=LEVEL_FIELD_KEY).label)
+        return next(level for level in TARGET_LEVELS if label == f"{level_percent(level)}%")
+
+    def set_value(self, level: float) -> _Level:
+        self.app.button(key=LEVEL_FIELD_KEY).click()
+        _ok(self.app.run())
+        self.app.radio(key=LEVEL_PICK_KEY).set_value(level)
+        return self
+
+
+def _level(app: AppTest) -> _Level:
+    return _Level(app)
 
 
 def _turn_on(app: AppTest) -> AppTest:
@@ -614,7 +631,7 @@ def test_layout_editing_rests_the_layer_and_shows_the_default_colours(
     assert all("layer" not in item for item in editor["items"])
     # 쉬는 까닭은 편집기 위 한 줄뿐이다 — 본문 조작 줄이 같은 글을 거듭 적지 않는다(E2E).
     assert _rest_notes(app) == 1, _texts(app)
-    # 사이드바 목표 줄은 잠근 채 같은 자리에 선다 — 까닭은 이름 줄 풍선, 고른 값은 그대로다.
+    # 사이드바 목표 값 칸은 잠근 채 같은 자리에 선다 — 까닭은 그 칸 풍선, 고른 값은 그대로다.
     assert _rest_level(app) == (True, space_shortening_view.LEVEL_REST_HELP)
     assert _level(app).value == 1.2
     # 라디오 값은 그대로다(결정 D7) — 끄면 다시 보인다.
@@ -877,36 +894,31 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
 ) -> None:
     """보기 상태의 목표 확보율 고르기는 사이드바 조회 조건 패널의 한 줄이다(2026-11-08 그림 메모
     g05 — 「뷰어 상태에서 목표 확보율 선택 버튼 사이드바 조회조건 박스로 이동」). 줄 꼴은 패널의
-    다른 줄과 같은 이름 줄 + 값(전환 단추 — 라벨은 이름 줄이 말한다)이고 위젯 key 는 그대로다.
+    다른 줄과 같은 이름 줄 + 값 칸이고 값 칸을 누르면 고르는 팝업이 열린다(검수 보드
+    p-target-form — 예전 전환 단추 다섯을 걷었다). 고르면 곧바로 닫히며 그 목표로 그린다.
     「단축 없는 호기 흐리게」 와 기준 달 한 줄은 사이드바 `Space 조건` 카드의 「색 기준」 밑이고
     도면 위 본문에는 글 줄이 없다(2026-11-09 사용자 검수 g05 — 「단축없는호기 흐리게, 날짜, 맞대지
     못한 공정 등 3줄도 다른 위치로」). 끈 회차에는 줄 · 칸이 서지 않는다(그 회차는 목표를 읽지
     않는다). 배치 편집으로 쉬는 회차는 `_rest_level` 시험이 본다."""
     from capa_simulation.components.condition_field import FIELD_KEY_PREFIX
-
-    def levels(node: Any) -> list[Any]:
-        return [
-            item
-            for item in node.get("button_group")
-            if getattr(item, "label", None) == "목표 확보율"
-        ]
-
-    def styles(node: Any) -> list[str]:
-        return [str(item.proto.body) for item in node.get("html")]
+    from capa_simulation.components.floor_canvas_dialog import FLOOR_CANVAS_DIALOG_KEY
 
     app = _app(_empty_database(tmp_path))
     _ok(app.run())
-    assert not levels(app)
-    # 다섯 단추를 패널 폭에 한 줄로 두는 서식은 켜지 않은 회차에도 그린다(표지 자리 수가 같게).
-    assert styles(app).count(space_shortening_view.LEVEL_FIELD_STYLE) == 1
+    assert not [item for item in app.button if item.key == LEVEL_FIELD_KEY]
+    # 전환 단추 줄은 걷혔다 — 사이드바 · 본문 어디에도 목표 전환 단추가 없다.
+    assert not [
+        item for item in app.get("button_group") if getattr(item, "label", None) == "목표 확보율"
+    ]
     _turn_on(app)
-    assert styles(app).count(space_shortening_view.LEVEL_FIELD_STYLE) == 1
-    sidebar = levels(app.sidebar)
-    assert len(sidebar) == 1
-    assert not levels(app.main)
-    level = sidebar[0]
-    assert level.key == SPACE_SHORT_LEVEL_KEY
-    assert level.proto.label_visibility.value == level.proto.label_visibility.COLLAPSED
+    fields = [item for item in app.sidebar.button if item.key == LEVEL_FIELD_KEY]
+    assert len(fields) == 1
+    assert not [item for item in app.main.button if item.key == LEVEL_FIELD_KEY]
+    field = fields[0]
+    assert (field.label, field.disabled) == ("110%", False)
+    assert not [
+        item for item in app.get("button_group") if getattr(item, "label", None) == "목표 확보율"
+    ]
 
     def block_ids(node: Any) -> list[str]:
         found = [str(getattr(getattr(node, "proto", None), "id", "") or "")]
@@ -930,9 +942,19 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
     assert not any("필요 단축 일정과 같은 계산" in text for text in main_captions)
     assert not any("맞대지 못한 공정" in text for text in main_captions)
     assert len(states(app, "RS-02")) == 1
-    level.set_value(1.3)
+    # 값 칸을 누르면 Space 화면 팝업 호스트가 고르는 팝업을 연다 — 라디오는 지금 목표다.
+    app.button(key=LEVEL_FIELD_KEY).click()
     _ok(app.run())
+    assert app.session_state[FLOOR_CANVAS_DIALOG_KEY] == "space_target_level"
+    picker = app.radio(key=LEVEL_PICK_KEY)
+    assert picker.value == 1.1 and list(picker.options) == ["90%", "100%", "110%", "120%", "130%"]
+    picker.set_value(1.3)
+    _ok(app.run())
+    # 고르면 곧바로 닫히고(열림 칸 · 라디오 값을 지운다) 그 목표로 다시 그린다.
     assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.3
+    assert FLOOR_CANVAS_DIALOG_KEY not in app.session_state
+    assert LEVEL_PICK_KEY not in app.session_state
+    assert app.button(key=LEVEL_FIELD_KEY).label == "130%"
 
 
 def test_the_arrival_filter_is_one_alert_not_a_line_over_the_drawing(
