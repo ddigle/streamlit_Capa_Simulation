@@ -573,8 +573,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조건 패널 줄(값 칸 + 팝업 — Space 「필요 단축」 보기와 같은 부품 `components/target_level_field.py`, 2차 보드 Q2-26)이고 페이지가
     팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
     없는 회차는 같은 자리, 설비 DB 를 못 읽은 회차는 그 앞 「설비 시나리오」 줄이 서지 않아 한 줄만큼 위) — 값 칸을
-    누르면 같은 화면 팝업 호스트(`SHORTENING_DIALOG_HOST`)만 돌아 다섯 목표 라디오가 열리고, 고르면 세션 칸(`SHORTENING_LEVEL_KEY` —
-    위젯 key 가 아니다)에 적고 닫히며 앱 전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트 밖이라 본문만 다시 돌리지 않는다). 진척 비교는
+    누르면 같은 화면 팝업 호스트(`SHORTENING_DIALOG_HOST`)만 돌아 다섯 목표 라디오와 그 밑 직접 입력 칸(2026-11-11 사용자 고칠 것
+    Q2-26 — 50 ~ 300% 정수 %)이 열리고, 고르거나 넣으면 세션 칸(`SHORTENING_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 닫히며 앱
+    전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트 밖이라 본문만 다시 돌리지 않는다). 다섯 밖 값은 `_prepare` 가 그 값 하나를 더
+    계산해 계획에 더하고(`load_official_shortening(level=)`), 그 목표로 진척 비교를 고르면 견주지 않고 빈 결과 한 줄이다(기준선은
+    다섯만 얼린다 — `_render_missing_baseline_level`). 진척 비교는
     사이드바 「필요 단축 일정 조건」 카드 맨 위 칸이고(카드는 처음 펼친 채 — 한 번 접으면 기억 칸), 바꾸면
     본문 프래그먼트(`VIEW_FRAGMENT_KEY` · `_rerun_view`)만 다시 그린다. 본문 프래그먼트는 회차마다 목표 세션 칸을 읽고, 기준선 목록이 카드가 세운 id 들
     (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
@@ -799,7 +802,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꺼내고(5장 9), 목표 확보율은 사이드바 조회 조건 패널 페이지 칸(`target_level_field.LEVEL_SLOT` 1 — 첫 칸은 공용 공정 칸,
     2026-11-08 그림 메모 g05)의 이름 줄 + 값 칸(`condition_field` — 칸 key `condition_field_space_target`, 값 칸 key
     `space_shortening_level_field`, `render_level_field` — 필요 단축 일정과 같은 부품 `TargetLevelField`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
-    하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 팝업을 열고, 고르면
+    하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 + 직접 입력 칸 팝업을 열고(부품이
+    하나라 필요 단축 일정의 직접 입력 — 2026-11-11 Q2-26 — 이 여기에도 선다, 다섯 밖 값은 `load_space_layer` 가 같은 길로 더한다), 고르거나 넣으면
     세션 칸(`SPACE_SHORT_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 곧바로 닫혀 다시 그린다(HOME 주요공정 히트맵 팝업과 같은 꼴 — 검수
     보드 p-target-form, 옛 전환 단추 다섯 · 한 줄 서식은 걷었다). 배치 편집으로 쉬는 회차에도 값 칸은 잠근 채 서며 까닭은 그 칸 풍선이다. 「단축 없는
     호기 흐리게」(`render_dim_field`)와 기준 달 한 줄(`render_layer_basis` — 풍선이 설비 · 시뮬레이션(미저장 편집 포함) · 오늘)은
@@ -3557,7 +3561,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     같은 계산이다.
   - 늘어나는 몫은 엔진을 다시 돌리지 않고 기여일로 센다. 후보를 바닥 `max(구간 앞, 오늘)` 뒤에서 모자란 만큼만 당기고,
     한 달 상한을 넘은 가상 호기는 모두 걷는다(남기면 뒤 달 부족을 가린다).
-  - 목표는 스칼라 또는 `MonthlyTarget` 이고 한 길로 계산한다(`tests/test_required_shortening_monthly_target.py`).
+  - 목표는 스칼라 또는 `MonthlyTarget` 이고 한 길로 계산한다(`tests/test_required_shortening_monthly_target.py`). 화면이 직접 넣은
+    다섯 밖 목표는 모든 달이 같은 `MonthlyTarget` 으로 목표 하나 칸(`get_required_shortening_for_target` — 공정 Capa 상세 · 제약
+    시뮬레이션과 같은 8칸)에서 계산해 다섯 값 계획에 스칼라로 더한다(`plan_with_level` — `tests/test_target_level_entry.py`). 기준선 ·
+    「목표 전체」 CSV 는 다섯 그대로다(`shortening_baseline.baseline_units_frame`).
 - `src/capa_simulation/services/upeh_assumption.py` — UPEH 가정(`UpehAssumption`·캐시 키 토큰 `UpehToken`)과 소요대수 ÷f
   사후 배수(`scale_required_equipment`·`scale_securement_rate` — 같은 확보율 함수로 다시 낸다), 닫힌 식 역산 둘
   (구간 안 단축 0·확보 기준 미달 0, 80~150 밖은 갈래), 효과 한 줄(`effect_text` — 정수가 그대로면 「덜 당김」)을 낸다.
@@ -4169,13 +4176,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   묶음 폭이 이름 칸 + 결과 칸 + 여백(진척 447px · 호기 341px)보다 좁으면 붙박지 않고 줄 전체가 같이 구른다(창 폭이 아니라 묶음
   폭이라 사이드바를 펴도 따라간다). 멈춘 회차 조건 카드는 표지 「공정 · 고를 수 없음」 한 줄이다(g4-22).
 - `src/capa_simulation/components/target_level_field.py` — 필요 단축 목표 확보율의 조회 조건 패널 줄(이름 줄 + 값 칸, 패널 둘째 페이지
-  칸 `LEVEL_SLOT`)과 다섯 목표 라디오 팝업 한 벌(`TargetLevelField`). Space 「필요 단축」 보기와 필요 단축 일정이 같은 부품 · 같은 다섯
-  값 · 같은 세션 저장(화면마다 세션 칸 하나 — 공용 프로필에 쓰지 않는다)으로 쓰고(검수 보드 p-target-form · 2차 보드 Q2-26), 팝업은
-  그 화면 팝업 호스트가 연다(여는 콜백은 호스트만, 고르면 `finish` 로 앱 전체 한 번).
+  칸 `LEVEL_SLOT`)과 다섯 목표 라디오 + 직접 입력 칸 팝업 한 벌(`TargetLevelField`). Space 「필요 단축」 보기와 필요 단축 일정이 같은 부품 ·
+  같은 다섯 값 · 같은 세션 저장(화면마다 세션 칸 하나 — 공용 프로필에 쓰지 않는다)으로 쓰고(검수 보드 p-target-form · 2차 보드 Q2-26), 팝업은
+  그 화면 팝업 호스트가 연다(여는 콜백은 호스트만, 고르거나 넣으면 `finish` 로 앱 전체 한 번). 직접 입력(2026-11-11 사용자 고칠 것 Q2-26)은
+  판정 기준 기본 칸과 같은 걸음 · 꼴(1 · `%.0f`, 소수는 사사오입 정수 %)과 같은 받는 범위(`THRESHOLD_RANGE` 50 ~ 300%)이고, 범위 밖 ·
+  숫자 아님은 칸 바로 밑 거부 한 줄(`st.error` — 알림창 · 기록 없음)이다. 숫자 칸은 늘 지금 목표, 라디오는 지금 목표가 다섯 가운데
+  하나일 때만 켜진다. 세션 칸 · 주소 인자 · 대기 칸도 같은 범위로 읽는다(`target_level`).
 - `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
-  모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다.
+  모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다. `load_official_shortening(level=)` 은 화면의 지금 목표가 다섯 밖(직접
+  입력)이면 그 값 하나를 목표 하나 칸에서 받아 더한다(`simulation_cache.load_required_shortening(level=)` — 두 화면이 같은 길).
 - `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 사이드바 목표 줄 · 카드
   흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link` ·
   필터 밖 링크 공정 사건 알림 `report_arrival_filter` → `EQ-24`)과 상세 단추 이동
