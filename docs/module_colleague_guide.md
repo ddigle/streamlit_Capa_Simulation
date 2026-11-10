@@ -406,10 +406,10 @@ uv sync --inexact
 점검 결과의 `자세히` 아래 줄이 고칠 곳입니다.
 
 ```text
-m1 demo_draft 오류 M19 page.py:23 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다
+m1 demo_draft 오류 M19 page.py:19 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다
 ```
 
-읽는 법 — 차례 번호(`m1`) · 모듈 id · 오류/경고 · 규칙 번호(`M19`) · 파일과 줄(`page.py` 23번째 줄) · 고칠 말.
+읽는 법 — 차례 번호(`m1`) · 모듈 id · 오류/경고 · 규칙 번호(`M19`) · 파일과 줄(`page.py` 19번째 줄) · 고칠 말.
 에이전트가 이 줄을 보고 고칩니다. 「시험 안 돎 — 정적 오류 먼저」 가 보이면 다른 오류를 먼저 고쳐야 시험이 돕니다.
 규칙 번호의 뜻은 지침서 부록 B 에 있습니다.
 
