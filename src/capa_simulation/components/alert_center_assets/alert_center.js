@@ -139,6 +139,15 @@ function isRepeat(live, now, windowMs) {
   return typeof live.goneAt === 'number' && now - live.goneAt <= windowMs
 }
 const LEVEL_RANK = { info: 0, check: 1, action: 2, error: 3 }
+// 알림창이 넘칠 때 걷을 칸 — 단계가 가장 낮은 칸, 같은 단계면 가장 오래된(먼저 선) 칸. `levels` 는 쌓인 차례(오래된 것
+// 먼저)의 단계다. 낮은 단계 알림 여럿이 함께 떠도 더 높은 단계(조치 필요 · 오류) 칸을 밀어내지 않는다.
+function overflowVictim(levels) {
+  let pick = -1
+  for (let index = 0; index < levels.length; index += 1) {
+    if (pick < 0 || (LEVEL_RANK[levels[index]] || 0) < (LEVEL_RANK[levels[pick]] || 0)) pick = index
+  }
+  return pick
+}
 // 안 읽은 줄 수와 그 가운데 가장 무거운 단계(배지 색). 99 를 넘으면 「99+」.
 function badgeOf(rows) {
   let count = 0
@@ -946,10 +955,11 @@ function showPopup(C, key, note, repeat) {
   clearTimeout(live.timer)
   live.timer = setTimeout(() => hidePopup(C, key), levelMs(C, note.level))
   while (C.stack.children.length > (limits.popups || 3)) {
-    const oldest = C.stack.firstElementChild
-    const owner = [...C.live.entries()].find(([, item]) => item.el === oldest)
+    const shown = [...C.stack.children]
+    const victim = shown[overflowVictim(shown.map((node) => node.dataset.level))]
+    const owner = [...C.live.entries()].find(([, item]) => item.el === victim)
     if (owner) hidePopup(C, owner[0])
-    else oldest.remove()
+    else victim.remove()
   }
   if (repeat) {
     const node = live.el
