@@ -232,6 +232,22 @@ def test_a_process_this_screen_lacks_shows_everything_and_the_mark_names_it() ->
     assert shared_values(app) == ["HB 접합"]
 
 
+def test_the_marks_tab_title_reads_this_screens_letters() -> None:
+    """값 칸을 그린 회차의 탭 표지(`tab` — 회차 끝에 지금 탭 풍선을 바로잡는다)도 그 화면 글자다
+    (2차 보드 Q2-17) — 다른 화면이 보낸 표시명이 있어도 Space 는 원본으로 적는다."""
+    app = AppTest.from_function(_filter_script)
+    app.session_state["test_screen"] = "Space"
+    app.run()
+    app.session_state[shared_process._LABELS_KEY] = {"Mold": "몰드"}
+    share(app, ["Mold", "HB 접합"], origin="산출 결과")
+    app.run()
+
+    assert not app.exception
+    assert _field(app).label == "Mold"
+    (mark,) = process_marks(app)
+    assert mark["tab"]["title"] == "공정 Mold — 산출 결과 에서\nHB 접합 은 이 화면에 없음"
+
+
 def test_the_mark_is_the_same_while_the_value_stays() -> None:
     """표지 · 머리 칩 data 는 값이 그대로면 회차마다 같다(시각 · 카운터 없음) — JS 가 다시 불리지
     않는다."""

@@ -276,6 +276,27 @@ def test_screens_that_follow_the_shared_process_carry_a_funnel_mark() -> None:
     assert tabs[CONSTRAINT_SIMULATION.path] is None
 
 
+def test_each_tab_funnel_title_reads_that_screens_letters() -> None:
+    """탭 깔때기 풍선의 글자는 그 탭 화면의 글자다(2차 보드 Q2-17) — 산출 결과가 보낸 표시명이어도
+    Space 탭(원본 이름으로 그리는 화면)은 원본, 산출 결과 탭은 표시명. 값과 차례는 같다."""
+    from capa_simulation import shared_process
+
+    calculation = "app_pages/calculation_result.py"
+    paths = [H, calculation, SPACE_STATUS.path]
+    app = AppTest.from_function(_marks_script)
+    app.session_state["test_paths"] = paths
+    app.session_state[shared_process._LABELS_KEY] = {"WF": "WF 입고검사", "Mold": "몰드"}
+    app.session_state["ops"] = [
+        ("publish", (["WF", "Mold"], "산출 결과")),
+        ("note_drawn", ("Space", "multi", ["WF", "Mold", "Underfill"])),
+    ]
+    app.run()
+    assert not app.exception
+    tabs = {tab["id"]: tab["proc"] for tab in app.session_state["data"]["tabs"]}
+    assert tabs[calculation]["title"] == "공정 WF 입고검사 · 몰드 — 산출 결과 에서"
+    assert tabs[SPACE_STATUS.path]["title"] == "공정 WF · Mold — 산출 결과 에서"
+
+
 def test_a_queued_tab_switches_the_page(_app: AppTest, sent: list[dict[str, Any]]) -> None:
     app = _ok(_app.run())
     _ok(app.switch_page(A).run())

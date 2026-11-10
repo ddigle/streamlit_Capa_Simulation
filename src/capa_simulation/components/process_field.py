@@ -22,7 +22,7 @@
 - **머리 띠 칩 · 화면 탭 표지**(2026-11-09 보드 C1 (라) — 본문 위에는 칩을 두지 않는다). 공용 값이
   있으면 알림 칸(`components/alert_center.py`)이 머리 툴바 맨 왼쪽에 「공정」 칩을
   세우고(`header_chip`), 화면 탭 줄(`components/page_tabs.py`)이 따라가는 화면 탭 이름 곁에 깔때기
-  표지를 단다(`tab_mark`). 칩 · 판의 글자는 보낸 화면의 표시명이고, 원본 이름으로 그리는
+  표지를 단다(`tab_mark`). 칩 · 판 · 탭 풍선의 글자는 보낸 화면의 표시명이고, 원본 이름으로 그리는
   화면(Space — `shared_process.ORIGINAL_NAME_SCREENS`)에서는 원본이다. 둘 다 페이지보다 먼저
   그리므로 세션의 기록(`shared_process.screen_mark` — 그 화면이 마지막으로 그린 선택지)으로
   짐작하고, 값 칸을 그린 회차에는 그 회차의
@@ -457,10 +457,18 @@ def _label_of(path: str | None = None) -> Callable[[str], str]:
     return lambda value: mapping.get(value, value)
 
 
+def _path_of(screen: str) -> str | None:
+    """출처 이름 → 따라가는 화면의 페이지 파일(`shared_process.FOLLOWERS`). 없으면 None."""
+    return next(
+        (path for path, (name, _) in shared_process.FOLLOWERS.items() if name == screen), None
+    )
+
+
 def tab_title(mark: shared_process.ScreenMark) -> str:
     """화면 탭 표지 풍선 — 「공정 Mold · Underfill — 산출 결과 에서」 + 없는 공정이 있으면 둘째 줄
-    「PMC 는 이 화면에 없음」. 이 화면에 걸리는 공정이 없으면 첫 줄은 수만 적는다."""
-    label = _label_of()
+    「PMC 는 이 화면에 없음」. 이 화면에 걸리는 공정이 없으면 첫 줄은 수만 적는다. 글자는 그 탭
+    화면의 글자다 — Space 탭은 원본(2차 보드 Q2-17, 머리 칩 · 판과 같은 `_label_of`)."""
+    label = _label_of(_path_of(mark.screen))
     names = " · ".join(label(value) for value in mark.inside) or f"{len(shared_process.values())}개"
     head = TAB_TITLE.format(names=names)
     origin = shared_process.origin()
