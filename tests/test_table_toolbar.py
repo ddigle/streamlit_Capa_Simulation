@@ -493,8 +493,8 @@ SHEET_SITES = {
 
 
 def test_the_sheet_button_is_drawn_by_the_pair_helper_only() -> None:
-    """「시트 엑셀」 단추는 `render_download_pair` · `render_sheet_download` 가 그린다 — CSV 곁에
-    둘지 「내려받기 ▾」 메뉴 하나로 묶을지(2차 보드 물음)는 그 한 곳에서 바꾼다."""
+    """「시트 엑셀」 단추는 `render_download_pair` · `render_sheet_download` 가 그린다 — CSV 와
+    「내려받기 ▾」 메뉴 하나로 묶는 꼴(2026-11-10 답 Q2-7)은 그 한 곳에서 정한다."""
     sources = {path.relative_to(PROJECT_ROOT).as_posix(): path for path in _sources()}
     direct = [
         relative
@@ -525,6 +525,7 @@ def _pair_page(with_csv: bool, deferred: bool) -> None:
         slot = render_download_pair(
             csv=CsvFile(data=b"csv", file_name="t.csv", key="pair_csv") if with_csv else None,
             sheet=None if deferred else sheet,
+            menu_key="pair_menu",
         )
         st.caption("곁 칸")
     st.caption("줄 아래")
@@ -533,22 +534,30 @@ def _pair_page(with_csv: bool, deferred: bool) -> None:
 
 
 def _layout(block: object) -> list[object]:
-    """요소 트리를 (종류, key) 와 묶음(list)으로 — 화면 차례 그대로."""
+    """요소 트리를 (종류, key) 와 묶음(list)으로 — 화면 차례 그대로. 메뉴(팝오버)는 (「popover」,
+    글, 안의 묶음) 이다."""
     out: list[object] = []
     for child in getattr(block, "children", {}).values():
-        if hasattr(child, "children") and child.type != "download_button":
+        if getattr(child, "type", None) == "popover":
+            out.append(("popover", str(child.proto.popover.label), _layout(child)))
+        elif hasattr(child, "children") and child.type != "download_button":
             out.append(_layout(child))
         else:
             out.append((child.type, getattr(child, "key", None)))
     return out
 
 
-def test_the_pair_puts_the_csv_then_the_sheet_slot_on_the_callers_row() -> None:
-    """한 쌍의 꼴 — 부르는 쪽 줄에 CSV 단추, 그 곁 내용 폭 칸 안에 「시트 엑셀」. 시트를 나중에
-    채워도(공정 Capa 상세 — 제품 행 표를 받은 뒤) 같은 자리 · 꼴이고, CSV 가 없으면 그 칸만 선다."""
+def test_the_pair_is_one_download_menu_on_the_callers_row() -> None:
+    """한 쌍의 꼴 — 부르는 쪽 줄에 「내려받기 ▾」 메뉴 하나, 그 안에 CSV 단추 → 「시트 엑셀」 칸
+    (2026-11-10 답 Q2-7). 시트를 나중에 채워도(공정 Capa 상세 — 제품 행 표를 받은 뒤) 같은 자리 ·
+    꼴이고, CSV 가 없으면 묶을 것이 없어 메뉴 없이 엑셀 칸만 줄에 선다."""
     from streamlit.testing.v1 import AppTest
 
-    from capa_simulation.components.table_toolbar import CSV_DOWNLOAD_LABEL, SHEET_XLSX_LABEL
+    from capa_simulation.components.table_toolbar import (
+        CSV_DOWNLOAD_LABEL,
+        DOWNLOAD_MENU_LABEL,
+        SHEET_XLSX_LABEL,
+    )
 
     shapes = {}
     for with_csv in (True, False):
@@ -562,10 +571,8 @@ def test_the_pair_puts_the_csv_then_the_sheet_slot_on_the_callers_row() -> None:
             assert labels.get("pair_sheet") == SHEET_XLSX_LABEL
             assert labels.get("pair_csv") == (CSV_DOWNLOAD_LABEL if with_csv else None)
     sheet_slot = [("download_button", "pair_sheet")]
-    assert shapes[(True, False)] == [
-        [("download_button", "pair_csv"), sheet_slot, ("caption", None)],
-        ("caption", None),
-    ]
+    menu = ("popover", DOWNLOAD_MENU_LABEL, [("download_button", "pair_csv"), sheet_slot])
+    assert shapes[(True, False)] == [[menu, ("caption", None)], ("caption", None)]
     assert shapes[(True, True)] == shapes[(True, False)]
     assert shapes[(False, False)] == [[sheet_slot, ("caption", None)], ("caption", None)]
     assert shapes[(False, True)] == shapes[(False, False)]

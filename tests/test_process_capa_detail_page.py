@@ -45,6 +45,7 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_UNITS,
 )
 from capa_simulation.components.process_capa_view import (
+    DOWNLOAD_MENU_KEY,
     DOWNLOAD_STYLE,
     DYNAMIC_DB_ERROR_TITLE,
     DYNAMIC_ERROR_TITLE,
@@ -66,6 +67,7 @@ from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_DETAIL,
     SHORTENING_HIGHLIGHT_KEY,
 )
+from capa_simulation.components.table_toolbar import DOWNLOAD_MENU_LABEL, SHEET_XLSX_LABEL
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -266,6 +268,12 @@ def _process_box(app: AppTest) -> _ProcessBox:
     return _ProcessBox(app)
 
 
+def _download_menu(app: AppTest) -> Any:
+    """표 도구 줄 「내려받기 ▾」 메뉴(팝오버) — 없으면 None."""
+    found = [block for block in app.get("popover") if block.key == DOWNLOAD_MENU_KEY]
+    return found[0] if found else None
+
+
 def _ok(app: AppTest) -> AppTest:
     assert not app.exception, [element.message for element in app.exception]
     return app
@@ -370,8 +378,10 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
     assert "설비 마스터가 없습니다" in note["full"]
     assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
     # 호기 CSV 와 정리 줄의 탭 링크는 설비 일정이 설 때만이다. 시트 엑셀은 ① 이 있어 늘 서고 둘째
-    # 시트(단축 일정)가 없다.
+    # 시트(단축 일정)가 없다. 묶을 것이 없어 「내려받기 ▾」 메뉴 없이 시트 엑셀 단추 하나다.
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
+    assert _download_menu(app) is None
+    assert SHEET_XLSX_KEY in {str(button.key) for button in app.get("download_button")}
     assert SHORTENING_TAB_LINK_KEY not in {str(button.key) for button in app.button}
     _, book = _sheet(app)
     assert list(book) == [DETAIL_SHEET]
@@ -1093,6 +1103,14 @@ def test_the_unit_csv_stands_on_the_tool_row_above_the_canvas(
 
     order = [element.type for element in _main_order(app.main)]
     assert order.index("download_button") < order.index("plotly_chart")
+    # 내려받기 둘은 「내려받기 ▾」 메뉴 하나 안에 호기 CSV → 시트 엑셀 차례다(2026-11-10 답 Q2-7).
+    menu = _download_menu(app)
+    assert menu is not None and menu.proto.popover.label == DOWNLOAD_MENU_LABEL
+    assert [str(button.key) for button in menu.download_button] == [UNITS_CSV_KEY, SHEET_XLSX_KEY]
+    assert [str(button.label) for button in menu.download_button] == [
+        "이 공정 단축 일정 CSV",
+        SHEET_XLSX_LABEL,
+    ]
     # 곁의 칩과 같은 높이 서식은 보이는 글(범례)과 한 `st.html` 이라 이벤트 칸을 쓰지 않는다.
     assert any("pcd-legend" in body and DOWNLOAD_STYLE in body for body in _html(app))
 

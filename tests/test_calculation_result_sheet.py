@@ -2,7 +2,8 @@
 
 """산출 결과 「시트 엑셀」(TODO 2장 「계산 결과 Excel 다운로드」 첫 넓히기 — 공정 Capa 상세 선례).
 
-- 대당 Capa · 소요대수 표 제목 줄에 CSV 곁으로 선다. 파일 이름은 CSV 와 같고 확장자만 `.xlsx`.
+- 대당 Capa · 소요대수 표 제목 줄에 CSV 와 「내려받기 ▾」 메뉴 하나로 선다(2026-11-10 답 Q2-7 —
+  공정 Capa 상세와 같은 도우미). 파일 이름은 CSV 와 같고 확장자만 `.xlsx`.
 - 내용은 지금 화면 상태 — 보기 · 집계 수준 · 공용 공정 거름 · 상세 · 조회기간 달 · 공정 표시명(CSV
   는 원본 이름 그대로). 맨 위에 시나리오 · 조회기간 · 보기 · 거름 머리 값 줄.
 - 통은 조건이 바뀐 뒤 처음 그리는 회차에 한 번 짓고 세션에 몇 벌 기억한다 — 같은 조건 회차 · 닫힌
@@ -31,7 +32,11 @@ from xlsx_read import ReadSheet, read_workbook
 
 import capa_simulation.components.monthly_table_workbook as monthly_table_workbook
 from capa_simulation.components.sheet_download import SHEET_MEMO_LIMIT
-from capa_simulation.components.table_toolbar import SHEET_XLSX_LABEL
+from capa_simulation.components.table_toolbar import (
+    DOWNLOAD_MENU_LABEL,
+    SHEET_XLSX_LABEL,
+    download_menu_key,
+)
 
 UNIT_CSV = "download_unit_capacity_csv"
 UNIT_XLSX = "download_unit_capacity_xlsx"
@@ -74,6 +79,13 @@ def _captured(app: AppTest, key: str) -> dict[str, Any]:
 
 def _keys(app: AppTest) -> list[str]:
     return [str(button.key) for button in app.download_button]
+
+
+def _menu_keys(app: AppTest, csv_key: str) -> list[str]:
+    """그 CSV 의 「내려받기 ▾」 메뉴 안 단추 key 차례(2026-11-10 답 Q2-7)."""
+    (menu,) = [block for block in app.get("popover") if block.key == download_menu_key(csv_key)]
+    assert menu.proto.popover.label == DOWNLOAD_MENU_LABEL
+    return [str(button.key) for button in menu.download_button]
 
 
 def _sheet(app: AppTest, key: str, name: str) -> ReadSheet:
@@ -123,6 +135,7 @@ def test_the_unit_capacity_sheet_stands_beside_the_csv_with_the_same_table() -> 
 
     keys = _keys(app)
     assert keys.index(UNIT_XLSX) == keys.index(UNIT_CSV) + 1
+    assert _menu_keys(app, UNIT_CSV) == [UNIT_CSV, UNIT_XLSX]
     xlsx = next(button for button in app.download_button if button.key == UNIT_XLSX)
     assert xlsx.label == SHEET_XLSX_LABEL
     csv = _captured(app, UNIT_CSV)
@@ -188,6 +201,7 @@ def test_the_required_sheet_follows_the_detail_toggle_and_the_filter() -> None:
 
     keys = _keys(app)
     assert keys.index(SUMMARY_XLSX) == keys.index(SUMMARY_CSV) + 1
+    assert _menu_keys(app, SUMMARY_CSV) == [SUMMARY_CSV, SUMMARY_XLSX]
     assert _captured(app, SUMMARY_XLSX)["file_name"] == _captured(app, SUMMARY_CSV)[
         "file_name"
     ].replace(".csv", ".xlsx")
@@ -208,6 +222,7 @@ def test_the_required_sheet_follows_the_detail_toggle_and_the_filter() -> None:
     app.run()
     assert not app.exception
     assert DETAIL_XLSX in _keys(app) and SUMMARY_XLSX not in _keys(app)
+    assert _menu_keys(app, DETAIL_CSV) == [DETAIL_CSV, DETAIL_XLSX]
     sheet = _sheet(app, DETAIL_XLSX, "소요대수")
     assert _heading(sheet)["상세"] == "켬"
     _same_values(_body(sheet), _csv(app, DETAIL_CSV))
