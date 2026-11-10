@@ -829,8 +829,9 @@ console.log(JSON.stringify({
 
 def test_an_overflowing_popup_stack_drops_the_lowest_level_first() -> None:
     """알림창이 상한(`alerts.POPUP_LIMIT`)을 넘으면 단계가 가장 낮은 칸부터 걷고, 같은 단계면 가장
-    오래된 칸이다 — 가용설비 Summary 첫 진입에 확인 필요 · 알림 셋이 함께 떠 먼저 선 「조치 필요」
-    칸을 몇 초 만에 밀어내던 소음(2026-11-09 상단 정리 통합)."""
+    오래된 칸이다(2026-11-10 보드 Q-1) — 가용설비 현황에서 Summary 를 처음 열고 곧 Static 대비
+    일정을 열면 확인 필요 · 알림이 잇따라 떠 먼저 선 「조치 필요」(Cut-off 누락) 칸을 15초 전에
+    밀어내던 소음(사본 앱 관측)."""
     out = _node(
         """
 const cases = [
