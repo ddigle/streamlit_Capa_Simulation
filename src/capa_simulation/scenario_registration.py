@@ -26,7 +26,7 @@ from capa_simulation.io.company_bigdataquery_adapter import QueryWindow
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.core_data_pipeline import PreparedCoreDataset
-from capa_simulation.services.korean_particle import with_topic_particle
+from capa_simulation.services.korean_particle import with_subject_particle, with_topic_particle
 from capa_simulation.services.unit_capacity import (
     JOIN_BLANK_VALUE,
     JOIN_NO_MATCH,
@@ -185,10 +185,8 @@ class RegistrationCapacityCheck:
         revision = with_topic_particle(f"r{revision_no}")
         # 「…합니다.」 로 끝나는 글도 있다 — 마침표를 겹치지 않는다.
         error = self.error.rstrip().rstrip(".")
-        return (
-            f"저장은 했지만 {revision} {self.stop_scope}이 멈춥니다 — {error}. "
-            f"{self.fix_hint(revision_no)}"
-        )
+        scope = with_subject_particle(self.stop_scope)
+        return f"저장은 했지만 {revision} {scope} 멈춥니다 — {error}. {self.fix_hint(revision_no)}"
 
 
 def check_registration_capacity(
