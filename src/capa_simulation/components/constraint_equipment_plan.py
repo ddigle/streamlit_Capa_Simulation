@@ -37,8 +37,9 @@
 - **입력 비가동 반영** — 계획이 건 입력 비가동(가용설비 현황 › Preference)은 자리에 그리지 않고 상태
   알림 `CS-05` 다(`report_manual_downtime` — 필요 단축 일정 `RS-05` 와 같은 꼴, 2026-11-10 보드
   Q-4). 두 모드가 `render_equipment_plan` 바로 뒤 한 자리에서 부르고(계획이 없으면 `active=False`),
-  범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이다 — 모드는 범위에 들지 않아 모드를 바꿔도 다시
-  뜨지 않는다.
+  조회기간에 확보율을 낼 공정 · 달이 없어 그 앞에서 멈추는 갈래도 부른다(`active=False` — 범위가
+  달라 앞 줄은 「범위 바뀜」 으로 닫힌다). 범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이다 —
+  모드는 범위에 들지 않아 모드를 바꿔도 다시 뜨지 않는다.
 
 저장하지 않는다 — 어느 DB 에도 쓰지 않는다.
 """
@@ -494,7 +495,7 @@ def report_manual_downtime(
     source: EquipmentPlanSource,
     plan: ShorteningPlan | None,
     *,
-    process: str,
+    process: str | None,
     process_label: str,
     equipment_session: EquipmentSession | None,
 ) -> None:
@@ -503,9 +504,11 @@ def report_manual_downtime(
     규칙 UI-NTF-02 · UI-NTF-05).
 
     두 모드가 `render_equipment_plan` 바로 뒤 한 자리에서 부른다 — 계획이 없으면(멈춘 갈래)
-    `active=False` 로 「해소」 를 낸다. 범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이고 모드는
-    들지 않는다(모드를 바꿔도 같은 알림이다). 줄의 「그 화면으로」 는 가용설비 현황 › Preference 를
-    연다. 이벤트 칸에 늘 한 자리를 쓴다(`alerts.state`)."""
+    `active=False` 로 「해소」 를 낸다. 조회기간에 확보율을 낼 공정 · 달이 없어 그 앞에서 멈추는
+    갈래도 부른다(공정이 없으면 `process` 가 None — 범위가 달라 앞 줄은 「범위 바뀜」 으로
+    닫힌다). 범위는 활성 리비전 · 조회기간 · 세션 설비 · 공정이고 모드는 들지 않는다(모드를 바꿔도
+    같은 알림이다). 줄의 「그 화면으로」 는 가용설비 현황 › Preference 를 연다. 이벤트 칸에 늘 한
+    자리를 쓴다(`alerts.state`)."""
     months = list(source.page_inputs.months)
     sim = simulation_scope(
         source.page_inputs.context.active_scenario, (months[0], months[-1]) if months else None
@@ -513,7 +516,7 @@ def report_manual_downtime(
     fleet = equipment_scope(equipment_session) if equipment_session is not None else None
     note = (
         None
-        if plan is None
+        if plan is None or process is None
         else manual_downtime_note(
             plan.manual_downtime, process=process, process_label=process_label
         )

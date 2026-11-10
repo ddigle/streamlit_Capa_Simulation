@@ -12,6 +12,7 @@ CSV), 제약 시뮬레이션 상태 알림 `CS-05`(두 모드) — 을 본다. �
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from test_required_shortening_tab import _csv
 from test_required_shortening_tab import _database as shortening_database
 from test_required_shortening_tab import _run as shortening_run
 
+import capa_simulation.page_bootstrap as page_bootstrap
 from capa_simulation.components.required_shortening_panel import MANUAL_NOTICE_HELP
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_tabs_state import tab_label
@@ -236,6 +238,33 @@ def test_a_stopped_constraint_screen_closes_the_entered_downtime_alert(tmp_path:
     app = constraint_opened(databases, OTHER_PROCESS)
     assert data_error_marks(app) == 1 and not app.metric
     assert [note["active"] for note in states(app, "CS-05")] == [False]
+    clear_equipment_repository()
+
+
+@pytest.mark.parametrize("mode", ["constraint", "schedule"])
+def test_a_screen_without_a_process_closes_the_entered_downtime_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """조회기간에 확보율을 낼 공정이 없어 계획 앞에서 멈춘 회차도 두 모드가 `CS-05` 를 낸다(`active`
+    거짓 — 공정이 빈 범위라 앞 회차 줄은 알림 칸이 「범위 바뀜」 으로 닫는다). 그 회차에 표지가
+    오지 않으면 앞 줄이 「지금도 있음」 으로 남는다."""
+    databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
+    _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
+    app = constraint_opened(databases) if mode == "constraint" else schedule_opened(databases)
+    opened = active_state(app, "CS-05")
+    assert opened is not None
+
+    real = page_bootstrap.process_page_inputs
+    monkeypatch.setattr(
+        page_bootstrap,
+        "process_page_inputs",
+        lambda path: replace(real(path), process_options=[]),
+    )
+    app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert "조회기간에 확보율을 낼 공정이 없습니다." in constraint_captions(app)
+    (note,) = states(app, "CS-05")
+    assert note["active"] is False and note["scope"] != opened["scope"]
     clear_equipment_repository()
 
 

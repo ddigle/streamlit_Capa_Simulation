@@ -617,6 +617,15 @@ def render_schedule_mode(context: ScheduleModeContext) -> None:
 
     if selected is None or not months:
         st.caption("조회기간에 확보율을 낼 공정이 없습니다.")
+        # 계획 앞에서 멈춘 회차도 입력 비가동 알림 `CS-05` 를 낸다(`active=False` — 제약 영향 모드의
+        # 같은 갈래와 같다).
+        report_manual_downtime(
+            source,
+            None,
+            process=None if selected is None else str(selected),
+            process_label="",
+            equipment_session=context.equipment_session,
+        )
         return
     process = str(selected)
     process_label = process_labels.label(process)

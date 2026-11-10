@@ -790,6 +790,16 @@ def _unit_modules(modules: tuple[ModuleStart, ...]) -> tuple[UnitModule, ...]:
 if selected_process is None or not months or period is None:
     render_idle_held_picker()
     st.caption("조회기간에 확보율을 낼 공정이 없습니다.")
+    # 계획 앞에서 멈춘 회차도 입력 비가동 알림 `CS-05` 를 낸다(`active=False` — 앞 회차 줄이 남지
+    # 않게, 필요 단축 일정 `RS-05` 의 멈춘 회차 꼴).
+    with notices:
+        report_manual_downtime(
+            plan_source,
+            None,
+            process=None if selected_process is None else str(selected_process),
+            process_label="",
+            equipment_session=equipment_session,
+        )
     st.stop()
 
 process = str(selected_process)
