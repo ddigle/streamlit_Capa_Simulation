@@ -1610,7 +1610,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
     알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(「…손으로 지정하세요」 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`)에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록 · 빈 경로 표(`RQ_UPEH`·
-    `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `_ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
+    `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
     2026-11-08 결정 U3)는 원천 다시 등록. 등록이 CS 가 비어 뺀 경로 행 수(`blank_cs_routes` = `BlankCsDrop.route_rows`)를 넘겨, 그
     수가 있으면 그 CS 를 채우라고, 없으면 경로 행을 넣으라고 가른다. 반대로 경로 행만 있는 원천의 빈 계획 표(`RQ_PKG_PLAN` —
     `_PLAN_TABLES`, 필드 `empty_plan`)도 같은 꼴로 잡는다 — 대당 Capa 는 서고 HOME · 부하 환산이 멈추므로 글 · 메모 머리는
@@ -6634,7 +6634,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   「앱에서 고칠 수 없음 — 원천을 다시 등록」(조회기간 밖 글 `simulation_cache.outside_period_error` 가 모듈수 오류면 `OUTSIDE_PERIOD_MODULE_FIX`(원천 재등록)를 싣고, 계산 멈춤
   전문은 첫머리와 같은 그 대목을 뺀다 — 작은 결정 a10. 표 이름은 화면 이름
   `calculation_stop_tables` 이고 사본 진단 `scripts/benchmark_home.py` 가 그 이름으로 계약 표 이름을 되찾는다), DB 잠금 · 읽기 실패 · 표 자체가
-  깨진 꼴(컬럼 · 월 형식 · 연결 키)과 편집표 밖의 표는 None 이라 예전 꼴이다. 화면을 그리는 자리의 상태 알림도 고칠 입력이 다른 화면이면 같은 원칙이다(2026-11-05 전후 그림 보드 답 — 재공 현황
+  깨진 꼴(컬럼 · 월 형식 · 연결 키)과 편집표 밖의 표는 None 이라 예전 꼴이다. 경로 표가 빈 리비전(계획 행만 있는 원천)이 조회기간을
+  정하다 멈춘 글(「RQ_REQB에 선택할 생산계획년월 데이터가 없습니다」 꼴)은 모든 화면이 지나는 `bootstrap_error_message` 가
+  「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.」 로 바꾼다(`empty_route_table_stop` — 경로 표 셋, 이름은 등록 점검과 한
+  사전 `scenario_registration.ROUTE_TABLES`, 사본 진단은 그 글 꼴로 표를 되찾는다 — 검수 보드 st-month-text). 계획 표 · 측정률 표의 빈 표 글은 그대로다. 화면을 그리는 자리의 상태 알림도 고칠 입력이 다른 화면이면 같은 원칙이다(2026-11-05 전후 그림 보드 답 — 재공 현황
   일부 주차만 빈 `WIP-04` → 표준 목표, `alerts.state(goto=)`). 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
   알림창이 뜨고(해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다), 그 Alarm 줄이 없으면(보관 끝) 알림창 없이 다시 세운다(`keep`). 짧은 글(`text`)은
   무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·

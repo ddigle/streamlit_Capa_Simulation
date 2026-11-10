@@ -62,7 +62,7 @@ _TABLE_NAME = re.compile(r"^(RQ_[A-Z_]+)")
 # (`core_data_derivation.BlankCsDrop`). 대당 Capa 는 멈추지 않고 0행으로 끝나, 그 리비전을 불러온
 # 계산 화면이 조회기간 자리에서 처음 멈춘다(내부 표 이름 글로). 측정률 표는 비어도 계산이 1.0
 # 가정으로 도는 정당한 상태라 넣지 않는다.
-_ROUTE_TABLES: Final = {
+ROUTE_TABLES: Final = {
     "RQ_UPEH": "「UPEH」",
     "RQ_REQB": "「STEP 구성」",
     "RQ_EQP_AVBL": "「설비대수 가용」",
@@ -88,7 +88,7 @@ class RegistrationCapacityCheck:
 
     `error` 는 계산 페이지와 같은 글(키 예시를 싣는다), `problem` 은 기준정보 연결 오류의 꼴·개수(값
     없음)다. 멈추지 않았으면 둘 다 None 이다. `empty` 는 계산 화면이 행을 읽어야 서는데 빈 경로 표
-    (`_ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다. `blank_cs_routes` 는
+    (`ROUTE_TABLES` 차례)다 — 그때 `error` 는 그 표를 화면 이름으로 든 글이다. `blank_cs_routes` 는
     CS 가 비어 파생에서 뺀 경로 행 수로, 빈 경로 표의 까닭(원천에 경로 행이 없나, 있는데 CS 가
     비었나)과 고칠 곳을 가른다. `empty_plan` 은 빈 계획 표(`_PLAN_TABLES` — 경로 행만 있는 원천)다 —
     그때 멈추는 것은 대당 Capa 가 아니라 HOME · 부하 환산이다(`stop_scope`).
@@ -166,7 +166,7 @@ class RegistrationCapacityCheck:
     def _empty_fix(self) -> str:
         """빈 경로 표를 원천에서 푸는 길. 셋이 함께 비지 않은 꼴은 파생에서 나오지 않아 까닭을
         단정하지 않는다."""
-        if len(self.empty) < len(_ROUTE_TABLES):
+        if len(self.empty) < len(ROUTE_TABLES):
             return "원천을 고쳐 다시 등록하세요."
         if self.blank_cs_routes:
             return "원천 경로 행의 CS 를 채워 다시 등록하세요."
@@ -201,17 +201,17 @@ def check_registration_capacity(
     번에 합성 표본 약 0.2초다(샘플 관측). 기준정보 계약 위반(`ValueError`)만 결과로 담고, 다른
     예외는 코드 결함이라 그대로 올린다(`simulation_cache._capacity_outcome` 과 같은 갈래).
 
-    계산 앞에서 빈 경로 표(`_ROUTE_TABLES`)부터 본다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
+    계산 앞에서 빈 경로 표(`ROUTE_TABLES`)부터 본다 — 계획 행만 있는 원천은 계산이 0행으로 끝나
     멈춤으로 잡히지 않는다(2026-11-08 사용자 결정 U3 — 등록은 그대로 하고 「계산 멈춤」 으로
     알린다). 경로 행이 있어도 모두 CS 가 비면 파생이 빼 같은 표가 빈다 — `blank_cs_routes`(CS 가
     비어 뺀 경로 행 수, `BlankCsDrop.route_rows`)로 글의 까닭과 고칠 곳을 가른다. 경로 행만 있는
     원천(빈 계획 표 `_PLAN_TABLES`)도 계산 앞에서 같은 꼴로 잡는다 — 그때 멈추는 것은 HOME · 부하
     환산이다(`RegistrationCapacityCheck.stop_scope`).
     """
-    empty = tuple(name for name in _ROUTE_TABLES if tables[name].empty)
+    empty = tuple(name for name in ROUTE_TABLES if tables[name].empty)
     if empty:
-        emptied = f"{' · '.join(_ROUTE_TABLES[name] for name in empty)} 표가 비었습니다."
-        if len(empty) < len(_ROUTE_TABLES):
+        emptied = f"{' · '.join(ROUTE_TABLES[name] for name in empty)} 표가 비었습니다."
+        if len(empty) < len(ROUTE_TABLES):
             error = emptied
         elif blank_cs_routes:
             error = (
