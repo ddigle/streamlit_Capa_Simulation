@@ -88,6 +88,7 @@ import check_deploy_screens as screens  # noqa: E402 — 자식 앱 · 경로 �
 import page_guide_capture as capture  # noqa: E402
 import page_guide_core as core  # noqa: E402
 
+from capa_simulation.services.korean_particle import with_topic_particle  # noqa: E402
 from capa_simulation.settings import (  # noqa: E402
     APP_CONTACT_EMAIL,
     APP_OWNER_TEAM,
@@ -191,7 +192,10 @@ def mode_problems(args: argparse.Namespace) -> list[str]:
     if not args.assemble_only and args.playwright_dir is None:
         problems.append("촬영에는 --playwright-dir 가 있어야 합니다")
     if args.port is not None and args.port in REFUSED_PORTS:
-        problems.append(f"포트 {args.port} 는 쓰지 않습니다(8501 사용자 앱 · 8551 화면 확인)")
+        problems.append(
+            f"포트 {with_topic_particle(str(args.port))} 쓰지 않습니다"
+            "(8501 사용자 앱 · 8551 화면 확인)"
+        )
     if args.budget_minutes <= 0:
         problems.append("--budget-minutes 는 0 보다 커야 합니다")
     return problems

@@ -46,7 +46,10 @@ from capa_simulation.page_bootstrap import (  # noqa: E402
 )
 from capa_simulation.persistence import snapshot_export, sync_state  # noqa: E402
 from capa_simulation.services import object_storage_manifest as manifest  # noqa: E402
-from capa_simulation.services.korean_particle import with_direction_particle  # noqa: E402
+from capa_simulation.services.korean_particle import (  # noqa: E402
+    with_direction_particle,
+    with_subject_particle,
+)
 from capa_simulation.services.object_storage_manifest import (  # noqa: E402
     DATASET_LABELS,
     FAILURE_CONFIG,
@@ -303,7 +306,7 @@ def command_probe(args: argparse.Namespace) -> int:
         try:
             client.delete(key)
         except ObjectStorageError:
-            print(f"[건너뜀] 정리 실패 — {key} 를 손으로 지워야 할 수 있습니다.")
+            print(f"[건너뜀] 정리 실패 — {key} 객체를 손으로 지워야 할 수 있습니다.")
         sample.unlink(missing_ok=True)
 
     print(json.dumps(results, ensure_ascii=False, indent=1))
@@ -379,7 +382,7 @@ def command_init(args: argparse.Namespace) -> int:
         report=_report_progress,
     )
     if outcome.decision is PushDecision.UP_TO_DATE:
-        print(f"[건너뜀] 원격에 이미 seq {outcome.head_seq} 이 있습니다.")
+        print(f"[건너뜀] 원격에 이미 {with_subject_particle(f'seq {outcome.head_seq}')} 있습니다.")
         return 0
     return _report_outcome(outcome)
 

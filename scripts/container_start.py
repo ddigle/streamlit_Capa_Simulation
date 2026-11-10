@@ -467,7 +467,9 @@ def run_pip(
 ) -> PipRun:
     heading = f"── {title}"
     if timeout <= 0:
-        return PipRun(f"설치 제한시간 {INSTALL_TIMEOUT_SECONDS}초를 다 써 {title} 를 하지 못함", [])
+        return PipRun(
+            f"설치 제한시간 {INSTALL_TIMEOUT_SECONDS}초를 다 써 {title} 설치를 하지 못함", []
+        )
     try:
         completed = runner(command, timeout=timeout, env=env)
     except subprocess.TimeoutExpired as error:
@@ -597,7 +599,7 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
         return StepResult(STATUS_FAILED, f"{BDQ_TOKEN_ENV} 의 base64: 값을 풀지 못함")
     if not content.strip():
         # `base64:` 만 넣었거나 빈 출력을 붙여 넣은 값 — 빈 파일은 「정상」 이 아니다.
-        return StepResult(STATUS_FAILED, f"{BDQ_TOKEN_ENV} 를 푼 내용이 비었음 — 파일을 쓰지 않음")
+        return StepResult(STATUS_FAILED, f"{BDQ_TOKEN_ENV} 을 푼 내용이 비었음 — 파일을 쓰지 않음")
     try:
         same = target.is_file() and target.read_bytes() == content
     except OSError:

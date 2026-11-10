@@ -204,8 +204,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     title: str = args.title if args.title is not None else name
     if not module_registry.is_valid_module_id(module_id):
         return _refuse(
-            f"id `{module_id}` 가 규칙(소문자·숫자·밑줄 하나, 2 ~ 24자, 파이썬 예약어 아님)에 "
-            "맞지 않습니다"
+            "id 가 규칙(소문자·숫자·밑줄 하나, 2 ~ 24자, 파이썬 예약어 아님)에 맞지 않습니다: "
+            f"`{module_id}`"
         )
     root = Path(args.root).resolve() if args.root else PROJECT_ROOT / MODULES_FOLDER_NAME
     if root.name != MODULES_FOLDER_NAME:
@@ -218,7 +218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _refuse(f"폴더가 이미 있습니다: {MODULES_FOLDER_NAME}/{module_id}")
     reserved = {*navigation.core_page_titles(), module_registry.GROUP_MAIN_TITLE}
     if title in reserved:
-        return _refuse(f"화면 이름 「{title}」 은 코어가 쓰는 이름입니다 — 다른 이름을 고릅니다")
+        return _refuse(f"화면 이름 「{title}」 — 코어가 쓰는 이름이라 다른 이름을 고릅니다")
     manifest = manifest_text(module_id, name=name, owner=owner, title=title)
     try:
         module_registry.parse_manifest(manifest.encode("utf-8"), folder_name=module_id)

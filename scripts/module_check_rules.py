@@ -845,7 +845,7 @@ def _check_one_import(
                 "M06",
                 "error",
                 node,
-                f"`{member}` 은 창구 겉면(`module_api.__all__`) 밖의 코어 이름입니다 — "
+                f"`{member}` 이름은 창구 겉면(`module_api.__all__`) 밖의 코어 것입니다 — "
                 "겉면 이름만 씁니다",
             )
             return
@@ -855,7 +855,7 @@ def _check_one_import(
             "M06",
             "error",
             node,
-            f"코어 내부 `{full}` 을 import 합니다 — 코어는 `capa_simulation.module_api` 하나만 "
+            f"코어 내부 `{full}` 모듈을 import 합니다 — 코어는 `capa_simulation.module_api` 하나만 "
             "씁니다",
         )
         return
@@ -867,14 +867,15 @@ def _check_one_import(
         ):
             return
         what = "맨 `modules`" if module == "modules" else f"다른 모듈 `{module}`"
-        context.add("M06", "error", node, f"{what} 을 import 합니다 — 자기 `{own}` 만 부릅니다")
+        context.add("M06", "error", node, f"{what} 코드를 import 합니다 — 자기 `{own}` 만 부릅니다")
         return
     if top in _CORE_TOP_NAMES:
         context.add(
             "M06",
             "error",
             node,
-            f"코어 `{top}` 을 import 합니다 — 코어는 `capa_simulation.module_api` 하나만 씁니다",
+            f"코어 `{top}` 모듈을 import 합니다 — 코어는 `capa_simulation.module_api` 하나만 "
+            "씁니다",
         )
         return
     if top in context.local_names:
@@ -882,8 +883,8 @@ def _check_one_import(
             "M06",
             "error",
             node,
-            f"같은 폴더 맨이름 `import {top}` 은 앱에서 깨집니다 — `from {own} import {top}` "
-            "으로 부릅니다",
+            f"같은 폴더 맨이름 `import {top}` 꼴은 앱에서 깨집니다 — `from {own} import {top}` "
+            "꼴로 부릅니다",
         )
         return
     if top in sys.stdlib_module_names:
@@ -919,8 +920,8 @@ def _check_background_import(
             "M10",
             "error",
             node,
-            f"`{top if top != 'concurrent' else 'concurrent.futures'}` 을 씁니다 — 모듈은 스레드·"
-            "프로세스를 세우지 않습니다(모든 사용자와 한 프로세스)",
+            f"`{top if top != 'concurrent' else 'concurrent.futures'}` 모듈을 씁니다 — 모듈은 "
+            "스레드·프로세스를 세우지 않습니다(모든 사용자와 한 프로세스)",
         )
     elif top in _BACKGROUND_WARN_IMPORTS:
         reason = (
@@ -1001,7 +1002,7 @@ def _check_strings(tree: ast.Module, context: _FileContext) -> None:
                 "M03",
                 "error",
                 node,
-                f"글자에 `{marker}` 가 있습니다 — 전역 CSS·스크립트를 넣지 않습니다",
+                f"글자에 `{marker}` 꼴이 있습니다 — 전역 CSS·스크립트를 넣지 않습니다",
             )
         data_marker = _core_data_marker(text)
         if data_marker is not None:
@@ -1009,7 +1010,7 @@ def _check_strings(tree: ast.Module, context: _FileContext) -> None:
                 "M07",
                 "error",
                 node,
-                f"코어 데이터 자리 `{data_marker}` 를 가리킵니다 — 모듈은 `ctx.data_dir` 만 씁니다",
+                f"코어 데이터 자리(`{data_marker}`)를 가리킵니다 — 모듈은 `ctx.data_dir` 만 씁니다",
             )
         elif text.replace("\\", "/").startswith("data/"):
             context.add(
@@ -1028,7 +1029,7 @@ def _reference_rules(node: ast.AST, resolved: str, context: _FileContext) -> Non
             "M03",
             "error",
             node,
-            f"`{resolved.replace('streamlit.', 'st.')}` 은 쓰지 않습니다(앱과 같은 출처로 끼워 "
+            f"`{resolved.replace('streamlit.', 'st.')}` 호출은 쓰지 않습니다(앱과 같은 출처로 끼워 "
             "넣습니다)",
         )
     elif resolved == "streamlit.components":
@@ -1038,7 +1039,7 @@ def _reference_rules(node: ast.AST, resolved: str, context: _FileContext) -> Non
             "M04",
             "error",
             node,
-            f"`{resolved.replace('streamlit.', 'st.')}` 는 앱이 씁니다 — 본문 위 `st.columns`·"
+            f"`{resolved.replace('streamlit.', 'st.')}` 자리는 앱이 씁니다 — 본문 위 `st.columns`·"
             '`st.expander("조건")` 로 옮깁니다',
         )
     elif resolved in _NAVIGATION_NAMES:
@@ -1046,8 +1047,8 @@ def _reference_rules(node: ast.AST, resolved: str, context: _FileContext) -> Non
             "M05",
             "error",
             node,
-            f"`{resolved.replace('streamlit.', 'st.')}` 는 앱이 맡습니다 — 화면은 module.json 의 "
-            "pages 로, 이동은 사이드바·탭 줄로",
+            f"`{resolved.replace('streamlit.', 'st.')}` 호출은 앱이 맡습니다 — 화면은 "
+            "module.json 의 pages 로, 이동은 사이드바·탭 줄로",
         )
     elif resolved == "streamlit.page_link":
         context.add(
@@ -1061,7 +1062,7 @@ def _reference_rules(node: ast.AST, resolved: str, context: _FileContext) -> Non
             "M12",
             "error",
             node,
-            f"맨 `{resolved.replace('streamlit.', 'st.')}()` 는 코어 캐시까지 비웁니다 — "
+            f"맨 `{resolved.replace('streamlit.', 'st.')}()` 호출은 코어 캐시까지 비웁니다 — "
             "자기 함수의 `.clear()` 를 씁니다",
         )
 
@@ -1080,7 +1081,7 @@ def _check_references(tree: ast.Module, names: _Names, context: _FileContext) ->
                 "M07",
                 "error",
                 node,
-                f"`data_dir.{node.attr}` 는 모듈 데이터 자리 밖(코어 `data/`)입니다 — "
+                f"`data_dir.{node.attr}` 경로는 모듈 데이터 자리 밖(코어 `data/`)입니다 — "
                 "`ctx.data_dir` 안만 씁니다",
             )
         resolved = names.resolve(node)
@@ -1101,8 +1102,8 @@ def _check_references(tree: ast.Module, names: _Names, context: _FileContext) ->
                 "M06",
                 "error",
                 node,
-                f"`{_short(outside.replace(_MODULE_API, 'api'), 50)}` 은 창구 겉면"
-                "(`module_api.__all__`) 밖의 코어 이름입니다 — 겉면 이름만 씁니다",
+                f"`{_short(outside.replace(_MODULE_API, 'api'), 50)}` 이름은 창구 겉면"
+                "(`module_api.__all__`) 밖의 코어 것입니다 — 겉면 이름만 씁니다",
             )
         if context.is_test:
             continue
@@ -1118,14 +1119,14 @@ def _check_references(tree: ast.Module, names: _Names, context: _FileContext) ->
                 "M11",
                 "error",
                 node,
-                f"`{resolved}` 은 프로세스 전체(모든 사용자·코어)를 바꿉니다 — 지웁니다",
+                f"`{resolved}` 호출은 프로세스 전체(모든 사용자·코어)를 바꿉니다 — 지웁니다",
             )
         elif resolved in _WARNING_FILTERS:
             context.add(
                 "M11",
                 "warning",
                 node,
-                f"`{resolved}` 은 프로세스 전체의 경고 거름을 바꿉니다 — "
+                f"`{resolved}` 호출은 프로세스 전체의 경고 거름을 바꿉니다 — "
                 "`warnings.catch_warnings()` 안에서만 씁니다",
             )
 
@@ -1171,7 +1172,8 @@ def _check_calls(tree: ast.Module, names: _Names, context: _FileContext) -> None
                     "M05",
                     "error",
                     node,
-                    f"`{resolved.replace('streamlit.', 'st.')}` 는 주소의 theme 인자까지 지웁니다",
+                    f"`{resolved.replace('streamlit.', 'st.')}` 호출은 주소의 theme 인자까지 "
+                    "지웁니다",
                 )
         if not context.is_test:
             _check_root_logger(node, names, context)
@@ -1222,7 +1224,7 @@ def _check_dynamic_import(
             "M06",
             "error",
             node,
-            f"`{target}` 을 동적 import 로 부릅니다 — "
+            f"`{target}` 모듈을 동적 import 로 부릅니다 — "
             "`from capa_simulation import module_api as api` 로 씁니다",
         )
         return
@@ -1234,7 +1236,7 @@ def _add_escape(node: ast.AST, shown: str, context: _FileContext) -> None:
         "M06",
         "error",
         node,
-        f"`{shown}` 은 창구(`module_api`)를 돌아 코어에 닿는 길입니다 — 창구 이름만 씁니다",
+        f"`{shown}` 꼴은 창구(`module_api`)를 돌아 코어에 닿는 길입니다 — 창구 이름만 씁니다",
     )
 
 
@@ -1370,7 +1372,7 @@ def _check_joined_paths(tree: ast.Module, names: _Names, context: _FileContext) 
                 "M07",
                 "error",
                 node,
-                f"이은 경로가 코어 데이터 자리 `{marker.rstrip('/')}` 를 가리킵니다 — 모듈은 "
+                f"이은 경로가 코어 데이터 자리(`{marker.rstrip('/')}`)를 가리킵니다 — 모듈은 "
                 "`ctx.data_dir` 만 씁니다",
             )
         elif ".." in known and any(
@@ -1473,7 +1475,7 @@ def _check_widget_keywords(node: ast.Call, names: _Names, context: _FileContext)
                     "M08",
                     "error",
                     value,
-                    f'key="{_short(shown)}" — 접두 {context.prefix} 가 없습니다(ctx.key("…"))',
+                    f'key="{_short(shown)}" — {context.prefix} 접두가 없습니다(ctx.key("…"))',
                 )
         elif argument in _CALLBACK_KEYWORDS:
             if isinstance(value, ast.Constant) and (
@@ -1503,7 +1505,8 @@ def _check_session_call(
             "M08",
             "error",
             node,
-            f"`st.session_state.{method}()` 는 코어 칸까지 건드립니다 — 자기 키만 하나씩 다룹니다",
+            f"`st.session_state.{method}()` 호출은 코어 칸까지 건드립니다 — 자기 키만 하나씩 "
+            "다룹니다",
         )
     elif method in ("get", "pop", "setdefault") and node.args:
         verdict, shown = _key_verdict(names, node.args[0], context.prefix)
@@ -1512,7 +1515,7 @@ def _check_session_call(
                 "M08",
                 "error",
                 node,
-                f'st.session_state.{method}("{_short(shown)}") — 접두 {context.prefix} 가 없습니다',
+                f'st.session_state.{method}("{_short(shown)}") — {context.prefix} 접두가 없습니다',
             )
         elif verdict == "unknown" and method == "pop":
             context.add(
@@ -1531,7 +1534,7 @@ def _check_global_call(node: ast.Call, resolved: str, context: _FileContext) -> 
                 "M11",
                 "error",
                 node,
-                f"`{resolved}()` 은 프로세스 전체(모든 사용자·코어)를 바꿉니다 — 지웁니다",
+                f"`{resolved}()` 호출은 프로세스 전체(모든 사용자·코어)를 바꿉니다 — 지웁니다",
             )
 
 
@@ -1551,7 +1554,7 @@ def _check_root_logger(node: ast.Call, names: _Names, context: _FileContext) -> 
             "M11",
             "error",
             node,
-            f"뿌리 로거의 `{func.attr}` 는 코어 로그까지 바꿉니다 — "
+            f"뿌리 로거의 `{func.attr}` 호출은 코어 로그까지 바꿉니다 — "
             '`logging.getLogger("modules.<id>")` 를 씁니다',
         )
 
@@ -1694,7 +1697,7 @@ def _check_subscripts_and_targets(tree: ast.Module, names: _Names, context: _Fil
                             "M08",
                             "error",
                             node,
-                            f'st.query_params["{_short(shown)}"] — 접두 {context.prefix} 가 '
+                            f'st.query_params["{_short(shown)}"] — {context.prefix} 접두가 '
                             "없습니다",
                         )
             elif (
@@ -1716,7 +1719,7 @@ def _check_subscripts_and_targets(tree: ast.Module, names: _Names, context: _Fil
                         "M08",
                         "error",
                         node,
-                        f"st.session_state.{_short(node.attr)} — 접두 {context.prefix} 가 없습니다",
+                        f"st.session_state.{_short(node.attr)} — {context.prefix} 접두가 없습니다",
                     )
             elif not context.is_test and isinstance(node.ctx, (ast.Store, ast.Del)):
                 resolved = names.resolve(node)
@@ -1741,8 +1744,7 @@ def _check_subscripts_and_targets(tree: ast.Module, names: _Names, context: _Fil
                         "M08",
                         "error",
                         node,
-                        f'"{_short(shown)}" in st.session_state — 접두 {context.prefix} 가 '
-                        "없습니다",
+                        f'"{_short(shown)}" in st.session_state — {context.prefix} 접두가 없습니다',
                     )
         elif isinstance(node, (ast.Assign, ast.AugAssign)) and not context.is_test:
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
@@ -1759,7 +1761,7 @@ def _check_session_subscript(node: ast.Subscript, names: _Names, context: _FileC
             "M08",
             "error",
             node,
-            f'{action}st.session_state["{_short(shown)}"] — 접두 {context.prefix} 가 없습니다',
+            f'{action}st.session_state["{_short(shown)}"] — {context.prefix} 접두가 없습니다',
         )
     elif verdict == "unknown" and isinstance(node.ctx, ast.Del):
         context.add(
@@ -1862,7 +1864,7 @@ def _check_cache_body(
                 "M12",
                 "error",
                 inner,
-                f"캐시 함수 `{function.name}` 이 전역 `{inner.id}` 를 읽습니다 — 키에 들지 않아 "
+                f"`{function.name}` 캐시 함수가 전역 `{inner.id}` 이름을 읽습니다 — 키에 들지 않아 "
                 "다른 모듈·"
                 "세션 값이 섞입니다. `ctx.data_dir` 를 인자로 받습니다",
             )
@@ -1935,7 +1937,7 @@ def _check_helper_globals(tree: ast.Module, context: _FileContext) -> None:
                     "M11",
                     "warning",
                     inner,
-                    f"함수 `{node.name}` 이 모듈 수준 `{name}` 을 바꿉니다 — 모든 세션·사용자가 "
+                    f"`{node.name}` 함수가 모듈 수준 `{name}` 이름을 바꿉니다 — 모든 세션·사용자가 "
                     "함께 씁니다",
                 )
 
@@ -2274,8 +2276,8 @@ def _git_findings(
             "error",
             disk,
             0,
-            f"git 에는 `{tracked}` 로 들어 있습니다(대소문자만 다름) — `git mv` 로 철자를 맞춥니다"
-            "(Linux CD 에서 파일 없음)",
+            f"git 에는 `{tracked}` 철자로 들어 있습니다(대소문자만 다름) — `git mv` 로 철자를 "
+            "맞춥니다(Linux CD 에서 파일 없음)",
         )
         for tracked, disk in git.case_mismatches
     ]
@@ -2303,7 +2305,7 @@ def _git_findings(
                             "error",
                             source,
                             line,
-                            f"git 이 무시하는 파일 `{_short(base)}` 을 가리킵니다 — 운영·CD 에 "
+                            f"git 이 무시하는 `{_short(base)}` 파일을 가리킵니다 — 운영·CD 에 "
                             "없습니다",
                         )
                     )
@@ -2314,7 +2316,7 @@ def _git_findings(
                     "error",
                     "module.json",
                     0,
-                    f"git 이 무시하는 파일 `{_short(base)}` 을 가리킵니다 — 운영·CD 에 없습니다",
+                    f"git 이 무시하는 `{_short(base)}` 파일을 가리킵니다 — 운영·CD 에 없습니다",
                 )
             )
     return findings

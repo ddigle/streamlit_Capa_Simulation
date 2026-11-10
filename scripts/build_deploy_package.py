@@ -192,12 +192,14 @@ def source_problems(root: Path, *, upstream: str = UPSTREAM_REF) -> list[str]:
     head = git_output(root, "rev-parse", "--verify", "--quiet", "HEAD")
     remote = git_output(root, "rev-parse", "--verify", "--quiet", f"{upstream}^{{commit}}")
     if not remote:
-        problems.append(f"{upstream} 을 찾지 못했습니다 — 원격에 올린 커밋인지 가릴 수 없습니다.")
+        problems.append(
+            f"{upstream} 가지를 찾지 못했습니다 — 원격에 올린 커밋인지 가릴 수 없습니다."
+        )
     elif head != remote:
         counts = git_output(root, "rev-list", "--left-right", "--count", f"{upstream}...HEAD")
         behind, _, ahead = counts.partition("\t")
         problems.append(
-            f"HEAD({head[:7]})가 {upstream}({remote[:7]})과 다릅니다 — "
+            f"HEAD({head[:7]})가 {upstream} 가지({remote[:7]})와 다릅니다 — "
             f"앞선 커밋 {ahead or '?'} · 뒤진 커밋 {behind or '?'}. "
             "main 을 푸시한 뒤 다시 만듭니다."
         )
@@ -537,7 +539,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.no_tag and git_output(
         PROJECT_ROOT, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"
     ):
-        print(f"빌드를 멈춥니다 — 태그 {tag} 가 이미 있습니다.", file=sys.stderr)
+        print(f"빌드를 멈춥니다 — {tag} 태그가 이미 있습니다.", file=sys.stderr)
         print(
             "  그 ZIP 을 다시 보낼 때는 다시 만들지 않고, 고쳐 다시 만들 때는 "
             f"`git tag -d {tag}` 뒤에 만듭니다.",
@@ -584,7 +586,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"확인을 마치면 `git push origin {tag}`."
             )
         else:
-            print(f"태그 {tag} 를 남기지 못했습니다: {tagged.stderr.strip()}", file=sys.stderr)
+            print(f"{tag} 태그를 남기지 못했습니다: {tagged.stderr.strip()}", file=sys.stderr)
 
     hygiene = manifest["hygiene"]
     if isinstance(hygiene, dict):

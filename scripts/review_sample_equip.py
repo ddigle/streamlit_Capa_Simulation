@@ -73,6 +73,7 @@ from capa_simulation.services.equipment_contract import (  # noqa: E402
     EQUIPMENT_COLUMNS,
 )
 from capa_simulation.services.iso_week_calendar import owning_month, weeknum_label  # noqa: E402
+from capa_simulation.services.korean_particle import with_direction_particle  # noqa: E402
 from capa_simulation.services.manual_downtime import manual_downtime_key  # noqa: E402
 from capa_simulation.services.process_capa_detail import build_process_product_demand  # noqa: E402
 from capa_simulation.services.process_equipment_timeline import (  # noqa: E402
@@ -896,7 +897,9 @@ def ensure_carried_story(fleet: Fleet, facts: SimFacts) -> None:
             unit.qual_by_rev.setdefault("r2", unit.qual)
             unit.qual = target
             unit.memo2 = "11월 1주 — 셋업 지연으로 Qual 늦춤"
-            unit.history_by_rev["r3"] = f"Qual {target:%m/%d} 로 지연(셋업 부품)"
+            unit.history_by_rev["r3"] = (
+                f"Qual {with_direction_particle(f'{target:%m/%d}')} 지연(셋업 부품)"
+            )
         check = design_plan(fleet, facts).at(1.1).process_months
         hit = check.loc[
             check["공정"].eq(process) & check["상태"].eq(STATUS_CARRIED), "생산계획년월"
@@ -906,7 +909,8 @@ def ensure_carried_story(fleet: Fleet, facts: SimFacts) -> None:
             fleet.notes.append(
                 f"「앞달 단축으로 해소」 사례: {process} {'·'.join(month_text(m) for m in block)} "
                 f"신규 {count}대 Qual 을 "
-                f"{target:%m/%d} 로 늦춤 → " + ", ".join(month_text(int(m)) for m in hit)
+                f"{with_direction_particle(f'{target:%m/%d}')} 늦춤 → "
+                + ", ".join(month_text(int(m)) for m in hit)
             )
             return
         for unit, qual, by_rev, memo, history in saved:
@@ -1382,7 +1386,9 @@ def layout_fleet(fleet: Fleet, facts: SimFacts) -> None:
         need_width = 2 * MARGIN_X + columns_needed * PITCH_X
         if need_width > width:
             width = float(math.ceil(need_width / 10) * 10)
-            fleet.notes.append(f"{key[0]} {key[1]} 캔버스 폭을 {width:g} 로 넓혔다")
+            fleet.notes.append(
+                f"{key[0]} {key[1]} 캔버스 폭을 {with_direction_particle(f'{width:g}')} 넓혔다"
+            )
         fleet.canvases[key] = (width, height)
         # 폭을 고루 쓴다 — 남는 열(예비 열·통로를 뺀)을 공정 호기 수에 비례해 나눈다(최소는 행
         # 한도로 정한 열).

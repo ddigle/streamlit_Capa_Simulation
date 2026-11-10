@@ -112,7 +112,7 @@ def _entry_problems(number: int, item: object) -> list[str]:
     if not isinstance(item, dict):
         return [f"{number}번째 줄이 객체가 아닙니다."]
     problems = [
-        f"{number}번째 줄의 {field} 가 비었거나 글자가 아닙니다."
+        f"{number}번째 줄의 {field} 칸이 비었거나 글자가 아닙니다."
         for field in CATALOG_FIELDS
         if not isinstance(item.get(field), str) or not item[field].strip()
     ]
@@ -129,7 +129,7 @@ def _entry_problems(number: int, item: object) -> list[str]:
     if not _is_real_date(item["updated"]):
         problems.append(f"{number}번째 줄의 updated 는 YYYY-MM-DD 여야 합니다: {item['updated']!r}")
     problems.extend(
-        f"{number}번째 줄의 {field} 는 한 줄이어야 합니다."
+        f"{number}번째 줄의 {field} 칸은 한 줄이어야 합니다."
         for field in CATALOG_FIELDS
         if "\n" in item[field] or "\r" in item[field]
     )
@@ -156,7 +156,7 @@ def load_catalog(path: Path) -> tuple[list[CatalogEntry], list[str]]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        return [], [f"{path.name} 을 읽지 못했습니다: {error}"]
+        return [], [f"{path.name} 파일을 읽지 못했습니다: {error}"]
     return parse_catalog(raw)
 
 
@@ -164,7 +164,7 @@ def catalog_problems(entries: Sequence[CatalogEntry], site_dir: Path) -> list[st
     """목록과 폴더의 어긋남 — 겹친 줄 · 페이지가 없는 줄 · 목록에 없는 폴더."""
     listed = [entry.path for entry in entries]
     problems = [
-        f"{name} 이 목록에 두 번 있습니다."
+        f"{name} 폴더가 목록에 두 번 있습니다."
         for name in sorted(set(listed))
         if listed.count(name) > 1
     ]
@@ -175,7 +175,7 @@ def catalog_problems(entries: Sequence[CatalogEntry], site_dir: Path) -> list[st
     )
     folders = sorted(child.name for child in site_dir.iterdir() if child.is_dir())
     problems.extend(
-        f"{SITE_DIR_NAME}/{name}/ 이 {CATALOG_NAME} 에 없습니다."
+        f"{SITE_DIR_NAME}/{name}/ 폴더가 {CATALOG_NAME} 에 없습니다."
         for name in folders
         if name not in listed
     )

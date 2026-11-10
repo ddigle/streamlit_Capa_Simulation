@@ -136,7 +136,7 @@ class Guard:
             return
         self.blocked.append((action, self._relative(path, kind)))
         what = _BLOCKED_WHAT[kind]
-        raise PermissionError(f"모듈 시험 감시 — {what}를 막았습니다: {self._relative(path, kind)}")
+        raise PermissionError(f"모듈 시험 감시가 막음 — {what}: {self._relative(path, kind)}")
 
     def _relative(self, path: str, kind: str) -> str:
         place = _normalized(path)
@@ -332,7 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not install_app_like_sys_path(args.modules_root):
         print(
             "Streamlit 내부 이름이 바뀜 — streamlit.runtime.scriptrunner.script_runner."
-            f"{STREAMLIT_SYS_PATH_NAME} 을 찾지 못해 앱과 같은 import 길을 맞추지 못했습니다"
+            f"{STREAMLIT_SYS_PATH_NAME} 를 찾지 못해 앱과 같은 import 길을 맞추지 못했습니다"
         )
         print(f"{SUMMARY_PREFIX} 0 0 0")
         return 3

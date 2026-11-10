@@ -2790,7 +2790,7 @@ def test_bigdataquery_without_an_account_says_what_to_set(
     code, output = _run(capsys, "--only", "bdq")
 
     assert code == 0
-    assert "요청자 계정 필요 — `CAPA_BDQ_USER_NAME` 를 넣고" in output
+    assert "요청자 계정 필요 — `CAPA_BDQ_USER_NAME` 을 넣고" in output
     assert "목록 조회가 모두 실패해 나머지는 건너뛴다" in output
 
 
@@ -3031,12 +3031,12 @@ def test_the_census_counts_every_revision_only_when_asked(
     assert "- 본 리비전 2 — 저장된 모든 리비전(`--census-all-revisions`)" in every
     assert _census_row(every, "run_day") == "1 / 2 리비전 | 칸 2 |"
     # 설비 DB 가 없으면 그 줄만 이 스크립트의 문구로 멈춘다.
-    assert _census_row(every, "names") == "- | 설비 DB 를 열지 못함 |"
+    assert _census_row(every, "names") == "- | 설비 DB를 열지 못함 |"
     # 요약 머리는 범위(전부 · 본 리비전 수)를 밝히고, 멈춘 줄은 수 줄과 따로 센다.
     assert _uncoded(_summary(every)) == [
         "- 8-10 전부 2 · 0 아님 1/12 · 실패 1 · 합 2",
         "- 8-10 C3 2",
-        "- 8-10 C12 설비 DB 를 열지 못함",
+        "- 8-10 C12 설비 DB를 열지 못함",
     ]
     assert checks.check_transcript(_summary(every)) == []
 

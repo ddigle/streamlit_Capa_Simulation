@@ -125,7 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for module_id in EXPECTED:
         source = fixtures / module_id
         if not source.is_dir():
-            return fail(f"견본에 {module_id} 가 없습니다: {source}")
+            return fail(f"견본에 {module_id} 모듈이 없습니다: {source}")
         count = copy_module(source, modules_root / module_id)
         if not same_tree(source, modules_root / module_id):
             return fail(f"복사본이 견본과 다릅니다: {module_id}")

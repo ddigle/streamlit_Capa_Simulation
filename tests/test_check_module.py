@@ -221,8 +221,8 @@ def test_a_title_clash_names_the_other_module_on_both_sides(
     assert code == 0, out
     assert "- m1 demo_table 통과 · L0 · API 1.0 · 화면 1 · 오류 0 · 경고 1" in out
     assert (
-        "  m1 demo_table 경고 M01 module.json 화면 이름 「개요」 을 차례가 뒤인 모듈 demo_port 도 "
-        "써서 그 모듈 전체가 실패합니다" in out
+        "  m1 demo_table 경고 M01 module.json 화면 이름 「개요」 — 차례가 뒤인 모듈 demo_port 도 "
+        "같은 이름을 써서 그 모듈 전체가 실패합니다" in out
     ), out
 
     code, out = _run(["demo_port", "--root", str(root), "--no-ruff", "--no-tests"], capsys)

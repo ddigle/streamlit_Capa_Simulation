@@ -4,8 +4,10 @@
 
 조사 도우미가 생긴 뒤에도(2026-10-05 E2E) 쓰는 것이 자리마다 고르는 일이라 회차마다 고친 자리만
 고쳐지고 같은 꼴이 다른 파일에서 다시 나왔다(2026-10-25 E2E 1·2회차 — 「공식 v4 으로」·「4 을」·
-「27-06 가」). 이 시험이 그 꼴을 앱 코드(`app.py`·`app_pages`·`src`) 전체에서 막는다. 허용 목록은
-없다. `scripts/` 출력은 훑지 않는다 — 리뷰 몫이다(AGENTS 8장).
+「27-06 가」). 이 시험이 그 꼴을 앱 코드(`app.py`·`app_pages`·`src`)와 `scripts/` 출력 전체에서
+막는다(스크립트 출력은 2026-10-26 리뷰가 찾은 열네 곳 뒤 그물을 넓혔다 — AGENTS 8장). 허용 목록은
+없다. 패키지를 import 하지 않는 스크립트(`apply_deploy_package.py` 등)와 끝을 읽지 못하는 값(파일
+이름 · 모듈 id · 코드 이름)은 도우미 대신 고정 명사를 사이에 두거나 값을 끝에 둔다.
 
 - **f-string** — 앱 코드를 AST 로 훑어 끼운 값(`FormattedValue`) 바로 뒤 글이(닫는 따옴표·낫표·
   굵게·백틱·백슬래시·「]」 뒤 — 도우미가 끝소리를 볼 때 건너뛰는 기호에서 「)」 를 뺀 것) 고정
@@ -18,15 +20,16 @@
   않는다 — 진짜 조사였던 넷(bigdataquery 모듈 이름·스냅샷 마이그레이션 버전·제약 시뮬레이션 공정·
   모듈 행 칸)은 고쳤고, 그 꼴의 재발은 리뷰 몫이다.
 - **상수 뒤 조사** — 값이 ALL_CAPS 상수(이름·모듈 속성)이면 고정 조사를 두어도 된다. 대신 그 모듈을
-  불러 실제 값(서식 지정까지 입힌 글)으로 `korean_particle` 이 같은 조사를 고르는지 단언한다 — 상수
-  글이 바뀌면 이 시험이 잡는다. 도우미가 읽지 못하는 끝(영문)은 `_READINGS` 의 읽기로 견준다.
+  불러(스크립트는 `scripts/` 를 길에 넣고 파일 이름으로) 실제 값(서식 지정까지 입힌 글)으로
+  `korean_particle` 이 같은 조사를 고르는지 단언한다 — 상수 글이 바뀌면 이 시험이 잡는다. 도우미가
+  읽지 못하는 끝(영문)은 `_READINGS` 의 읽기로 견준다.
 - **`str.format`·`%s` 틀** — f-string 이 아닌 글(문장으로 선 글·docstring 빼고)의 `{…}`·`%s` 바로
   뒤(괄호를 사이에 둔 꼴 포함) 고정 조사와 갈래 꼴.
-- **JS** — `src/**/*.js` 의 `${…}` 바로 뒤(괄호를 사이에 둔 꼴·괄호 앞을 띄운 꼴 포함) 고정
-  조사와 갈래 꼴. 괄호 앞 낱말이 고정 글인 꼴(「최신(r${n})이」)은 `${…}` 가 괄호 안이라 걸리지
-  않는다. 배치 편집기는 `editor.js` 의 `withJosa`(괄호 뒤 조사는 `josaOf`)를 쓰고, 그 표가
-  파이썬과 같은 답을 내는지 node 로 대조한다(node·bun 이 없으면 건너뛰고 CI 에서는 실패 —
-  `test_space_module_group._node`).
+- **JS** — `src/**/*.js`·`scripts/*.js` 의 `${…}` 바로 뒤(괄호를 사이에 둔 꼴·괄호 앞을
+  띄운 꼴 포함) 고정 조사와 갈래 꼴. 괄호 앞 낱말이 고정 글인 꼴(「최신(r${n})이」)은
+  `${…}` 가 괄호 안이라 걸리지 않는다. 배치 편집기는 `editor.js` 의 `withJosa`(괄호 뒤
+  조사는 `josaOf`)를 쓰고, 그 표가 파이썬과 같은 답을 내는지 node 로 대조한다(node·bun 이
+  없으면 건너뛰고 CI 에서는 실패 — `test_space_module_group._node`).
 """
 
 from __future__ import annotations
@@ -35,6 +38,8 @@ import ast
 import importlib
 import math
 import re
+import sys
+import warnings
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -75,6 +80,7 @@ from capa_simulation.services.object_storage_manifest import pointer_from_json
 from capa_simulation.services.simulation_cache import _require_assumed, _require_official
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 _PARTICLES = "을|를|은|는|이|가|으로|로|과|와"
 _SPACED_PARTICLES = "을|를|은|는|가|으로|로|과|와"
 _HEDGED = r"\(으\)로|을\(를\)|은\(는\)|이\(가\)"
@@ -107,11 +113,18 @@ _JOSA_BLOCK = re.compile(r"// <josa>\n(?P<body>.*?)\n\s*// </josa>", re.S)
 # 도우미가 읽지 못하는 끝(영문)으로 끝나는 상수의 끝 낱말 읽기. 상수 글이 바뀌면 이 표에서 빠져
 # 시험이 실패한다 — 새 글의 읽기를 적거나 조사를 도우미로 고른다.
 _READINGS = {
+    ".deploy/applied.json": "제이슨",
     "Area Code": "코드",
     "CAPA_ARTIFACTORY_USER": "유저",
+    "CAPA_BDQ_TOKEN": "토큰",
+    "CAPA_BDQ_USER_NAME": "네임",
     "CAPA_S3_SYNC_MODE": "모드",
+    "DEPLOY_MANIFEST.json": "제이슨",
     "HBM·EDP": "이디피",
     "_open_dialog": "다이얼로그",
+    "catalog.json": "제이슨",
+    "index.html": "에이치티엠엘",
+    "modified_sys_path": "패스",
 }
 
 
@@ -139,6 +152,7 @@ def _source_files() -> list[Path]:
         PROJECT_ROOT / "app.py",
         *sorted((PROJECT_ROOT / "app_pages").glob("*.py")),
         *sorted((PROJECT_ROOT / "src").rglob("*.py")),
+        *sorted(SCRIPTS_DIR.glob("*.py")),
     ]
 
 
@@ -243,7 +257,11 @@ def _site(path: Path, value: ast.FormattedValue, text: str, line: int) -> str:
 
 def _trees() -> Iterator[tuple[Path, ast.Module]]:
     for path in _source_files():
-        yield path, ast.parse(path.read_text(encoding="utf-8"))
+        with warnings.catch_warnings():
+            # 옛 독스트링의 역슬래시 경고(스크립트의 Windows 경로)는 이 그물의 일이 아니다.
+            warnings.simplefilter("ignore")
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        yield path, tree
 
 
 def _fixed_particle_sites(tree: ast.AST) -> Iterator[_ValueSite]:
@@ -272,6 +290,16 @@ def test_no_fixed_particle_follows_an_interpolated_value() -> None:
 
 def _module_name(path: Path) -> str:
     return ".".join(path.relative_to(PROJECT_ROOT / "src").with_suffix("").parts)
+
+
+def _namespace(path: Path) -> dict[str, Any]:
+    """상수 자리 파일의 모듈 이름공간 — 패키지는 모듈 이름으로, 스크립트는 `scripts/` 를 길에 넣고
+    파일 이름으로 부른다(스크립트 시험들과 같은 길)."""
+    if path.is_relative_to(SCRIPTS_DIR):
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        return vars(importlib.import_module(path.stem))
+    return vars(importlib.import_module(_module_name(path)))
 
 
 def _rendered(value: ast.FormattedValue, namespace: dict[str, Any]) -> tuple[object, str]:
@@ -304,8 +332,10 @@ def test_constants_before_a_fixed_particle_end_in_the_matching_sound() -> None:
     wrong: list[str] = []
     for path, value, text, line, particle in sites:
         site = _site(path, value, text, line)
-        assert path.is_relative_to(PROJECT_ROOT / "src"), f"{site}: 페이지 상수는 도우미로 고른다"
-        namespace = vars(importlib.import_module(_module_name(path)))
+        assert path.is_relative_to(PROJECT_ROOT / "src") or path.is_relative_to(SCRIPTS_DIR), (
+            f"{site}: 페이지 상수는 도우미로 고른다"
+        )
+        namespace = _namespace(path)
         raw, rendered = _rendered(value, namespace)
         choose = _CHOOSER[particle]
         chosen = choose(rendered)
@@ -352,7 +382,10 @@ def test_no_fixed_particle_follows_a_js_template_value() -> None:
     """`${…}` 뒤 조사는 `withJosa` 로 고른다."""
     offenders = [
         f"{_relative(path)}:{number}: {line.strip()[:80]}"
-        for path in sorted((PROJECT_ROOT / "src").rglob("*.js"))
+        for path in [
+            *sorted((PROJECT_ROOT / "src").rglob("*.js")),
+            *sorted(SCRIPTS_DIR.glob("*.js")),
+        ]
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if _JS_SITE.search(line)
     ]

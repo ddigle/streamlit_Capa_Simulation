@@ -176,6 +176,7 @@ from capa_simulation.services.frame_contracts import (  # noqa: E402
     match_key,
     normalize_demand_basis,
 )
+from capa_simulation.services.korean_particle import with_object_particle  # noqa: E402
 from capa_simulation.services.legacy_comparison import (  # noqa: E402
     AGREE_GROUP,
     COMPARISONS,
@@ -615,7 +616,7 @@ def _open_read_only(path: Path) -> tuple[duckdb.DuckDBPyConnection | None, str |
     except duckdb.IOException:
         return None, _LOCK_MESSAGE, True
     except duckdb.Error as exc:
-        return None, f"`{path.name}` 을 열지 못했다 — {_failure(exc)}", False
+        return None, f"`{path.name}` 파일을 열지 못했다 — {_failure(exc)}", False
 
 
 def _scalar(connection: duckdb.DuckDBPyConnection, sql: str, params: Sequence[object] = ()) -> int:
@@ -3596,7 +3597,7 @@ class _NotOpened(Exception):
 
 def _opened(connection: duckdb.DuckDBPyConnection | None, label: str) -> duckdb.DuckDBPyConnection:
     if connection is None:
-        raise _NotOpened(f"{label} 를 열지 못함")
+        raise _NotOpened(f"{with_object_particle(label)} 열지 못함")
     return connection
 
 
@@ -4750,7 +4751,7 @@ def _bdq_failure(exc: BaseException) -> str:
     """우리 어댑터가 낸 안내만 뜻으로 옮긴다. 원문은 찍지 않는다."""
     text = str(exc)
     if isinstance(exc, RuntimeError) and BDQ_USER_NAME_ENV in text:
-        return f"요청자 계정 필요 — `{BDQ_USER_NAME_ENV}` 를 넣고 새 셸에서 다시(런북 8-0)"
+        return f"요청자 계정 필요 — `{BDQ_USER_NAME_ENV}` 을 넣고 새 셸에서 다시(런북 8-0)"
     if isinstance(exc, RuntimeError) and "패키지가 없습니다" in text:
         return "`bigdataquery` 패키지 없음"
     if isinstance(exc, RuntimeError) and "설정되지 않았습니다" in text:

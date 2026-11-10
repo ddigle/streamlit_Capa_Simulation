@@ -131,8 +131,8 @@ def test_the_generator_writes_then_check_passes_and_a_later_edit_fails(tmp_path:
     [
         (("demo-a",), (), "site/demo-a/index.html 이 없습니다."),
         ((), ("demo-a",), "catalog.json 은 한 줄 이상의 배열이어야 합니다."),
-        (("demo-a",), ("demo-a", "demo-b"), "site/demo-b/ 이 catalog.json 에 없습니다."),
-        (("demo-a", "demo-a"), ("demo-a",), "demo-a 이 목록에 두 번 있습니다."),
+        (("demo-a",), ("demo-a", "demo-b"), "site/demo-b/ 폴더가 catalog.json 에 없습니다."),
+        (("demo-a", "demo-a"), ("demo-a",), "demo-a 폴더가 목록에 두 번 있습니다."),
     ],
 )
 def test_the_generator_refuses_a_catalog_that_does_not_match_the_folders(

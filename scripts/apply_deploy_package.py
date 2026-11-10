@@ -185,7 +185,7 @@ def read_manifest(archive: zipfile.ZipFile) -> dict[str, object]:
     version = manifest.get("manifest_version")
     if version not in SUPPORTED_MANIFEST_VERSIONS:
         raise ApplyError(
-            f"송장 형식 {version} 을 이 적용기가 모릅니다"
+            f"이 적용기가 모르는 송장 형식입니다: {version}"
             f"(아는 것: {SUPPORTED_MANIFEST_VERSIONS}). 적용기를 먼저 갱신하세요."
         )
     return manifest
@@ -559,7 +559,7 @@ def undo_commit_step(root: Path, previous_state: bytes | None, cause: Exception)
         )
     manual = ["git reset -q", "git checkout -- ."]
     if previous_state is None and state_file.exists():
-        manual.append(f"{STATE_PATH} 를 지운다 — 이번이 첫 적용이었다")
+        manual.append(f"{STATE_PATH} 을 지운다 — 이번이 첫 적용이었다")
     return ApplyError(
         head
         + "아래를 차례로 하고 같은 명령을 다시 치세요:\n  "

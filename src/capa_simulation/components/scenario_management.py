@@ -84,7 +84,9 @@ from capa_simulation.components.write_guard import (
     held_flash,
     held_notice,
     is_own_save,
+    just_written,
     note_notice,
+    note_written,
     notice_marks,
     own_save_marks,
     queue_refusal,
@@ -268,6 +270,8 @@ HISTORY_TIME_WIDTH_PX = 112
 HISTORY_TIME_FORMAT = "YY.MM.DD HH:mm"
 # 복제 폼 입력칸의 세대. 저장에 성공하면 올라 다음 회차에 빈 폼으로 선다(`clone_field_key`).
 CLONE_FORM_GENERATION_KEY = "scenario_create_form_generation"
+# 복제 폼 「초기 리비전명」 칸이 새로 설 때 든 값.
+CLONE_REVISION_NAME_DEFAULT = "초기 리비전"
 # 「상세」 칸 작업 줄 아래 결과 · 오류 칸(종류, 글).
 CARD_NOTICE_KEY = "scenario_card_notice"
 # 카드 단추 key 앞머리. 뒤에 그린 회차의 시나리오 id 를 싣는다 — 다른 줄을 연 회차가 서버에서 끝난
@@ -2034,6 +2038,16 @@ def clone_field_key(field: str) -> str:
     )
 
 
+def _untouched_clone_form(
+    scenario_name: str, source_code: str, source_name: str, note: str, revision_name: str
+) -> bool:
+    """복제 폼이 새로 선 그대로인가 — 적은 칸이 하나도 없고 초기 리비전명이 든 값 그대로다."""
+    typed = (scenario_name, source_code, source_name, note)
+    return not any(value.strip() for value in typed) and (
+        revision_name.strip() == CLONE_REVISION_NAME_DEFAULT
+    )
+
+
 def _render_clone(repository: DuckDBScenarioRepository) -> None:
     try:
         reference_tables, active_scenario = _current_reference_context()
@@ -2061,7 +2075,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             "원천 시뮬레이션명", key=clone_field_key("source_name"), help=CLONE_SOURCE_NOTE
         )
         revision_name = st.text_input(
-            "초기 리비전명", value="초기 리비전", key=clone_field_key("revision_name")
+            "초기 리비전명",
+            value=CLONE_REVISION_NAME_DEFAULT,
+            key=clone_field_key("revision_name"),
         )
         note = st.text_area("메모", height=100, key=clone_field_key("note"))
         create_submitted = st.form_submit_button(
@@ -2071,6 +2087,13 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             width="stretch",
         )
     if not create_submitted:
+        return
+    untouched = _untouched_clone_form(scenario_name, source_code, source_name, note, revision_name)
+    if untouched and just_written(CLONE_FORM_GENERATION_KEY):
+        # 느린 두 번 누름의 꼬리 — 둘째 누름이 저장 뒤 새로 선 빈 폼에 닿았다
+        # (`write_guard.just_written`). 첫 저장의 성공 알림은 맨 위 칸이 이 회차에도 같은 id 로
+        # 다시 보내므로 「필수 칸이 비어 있습니다」 를 그 자리에 세우지 않는다. 창이 지난 빈 제출은
+        # 그대로 거절한다.
         return
     # 빈 필수 칸을 **한 번에** 모두 알린다. 저장소 검사에 맡기면 한 번에 한 칸씩만 말해 세 번
     # 눌러야 했다(2026-10-05 E2E). 저장소 검사는 그대로 마지막 방어선이다.
@@ -2173,6 +2196,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 popup_only=True,
                 goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
             )
+        # 꼬리 누름의 창(`just_written`)은 뒷정리를 마친 이 시각부터 센다 — 쓰기 시각부터 세면 큰
+        # 편집본의 활성화가 그 창을 먹어 새 빈 폼이 선 뒤에는 남지 않는다.
+        note_written(CLONE_FORM_GENERATION_KEY)
         bump(CLONE_FORM_GENERATION_KEY)
         written.release()
         st.rerun()
