@@ -176,9 +176,31 @@ def test_a_month_table_error_stays_in_its_own_tab(monkeypatch: pytest.MonkeyPatc
     _open_calc_tab(app, REQUIRED_TAB)
     assert data_error_marks(app) == 1 and not app.error
     assert data_error_texts(app) == ["RQ_DISPLAY_ORDER의 컬럼 정렬 규칙이 충돌합니다: ['공정']"]
+    # 그 탭의 공정 칸은 표 뒤에 서지만 멈춘 회차에도 잠긴 채 자리를 지킨다(검수 보드 p-stop-row).
+    field = app.button(key=PROCESS_FIELD_KEY)
+    assert (field.label, field.disabled) == ("계산 멈춤", True)
 
     _open_calc_tab(app, SECUREMENT_TAB)
     assert data_error_marks(app) == 0
+
+
+def test_a_securement_tab_error_keeps_the_process_row_locked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """확보율 탭의 표가 멈춘 회차 — 그 탭의 공정 칸(표 뒤에 선다)이 빠지지 않고 잠긴 줄로 자리를
+    지킨다(검수 보드 p-stop-row — HOME 과 같은 꼴)."""
+
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise ValueError("RQ_EQP_AVBL의 생산계획년월은 YYYYMM 형식이어야 합니다: ['x']")
+
+    monkeypatch.setattr(simulation_cache, "get_scenario_securement_rate", broken)
+    app = AppTest.from_string(TWO_PROCESS_RESULT_SCRIPT, default_timeout=60).run()
+    assert not app.exception
+
+    _open_calc_tab(app, SECUREMENT_TAB)
+    assert data_error_marks(app) == 1
+    field = app.button(key=PROCESS_FIELD_KEY)
+    assert (field.label, field.disabled) == ("계산 멈춤", True)
 
 
 @pytest.mark.parametrize(

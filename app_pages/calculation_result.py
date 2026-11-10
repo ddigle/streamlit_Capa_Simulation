@@ -422,6 +422,8 @@ else:
                 _display_order=display_order,
             )
         except BOOTSTRAP_ERRORS as exc:
+            # 이 탭의 공정 칸은 표 뒤에 서므로 멈춘 회차에는 잠긴 줄로 자리를 지킨다(p-stop-row).
+            render_stopped_process_field()
             with required_tab:
                 render_data_error(bootstrap_error_message(exc), code="ST-20", tab=REQUIRED_TAB)
             st.stop()
@@ -543,6 +545,7 @@ else:
                 TAB_SECUREMENT,
             )
         except BOOTSTRAP_ERRORS as exc:
+            render_stopped_process_field()
             with availability_tab:
                 render_data_error(bootstrap_error_message(exc), code="ST-20", tab=AVAILABILITY_TAB)
             st.stop()
