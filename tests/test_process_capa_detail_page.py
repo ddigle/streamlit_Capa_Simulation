@@ -1082,25 +1082,26 @@ def _open_schedule_short_month(app: AppTest) -> int:
     raise AssertionError("일정 부족 달이 없다")
 
 
-def test_the_kpi_has_no_next_screen_row_and_the_closing_link_still_steps_aside(
+def test_the_kpi_has_no_next_screen_row_and_the_closing_link_stands_on_a_short_process(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """KPI 아래에 「다음 화면 · 일정 n개월 — 필요 단축 일정」 줄이 없다(2026-11-10 보드 c2-picked).
-    일정 부족 달이 있는 공정은 근거 패널의 그 달 단추가 같은 길이라 맨 아래 링크는 서지 않고(설계
-    규칙 UI-LAY-12), 내려받기 둘은 그대로다."""
+    일정 부족 달이 있는 공정에도 맨 아래 링크가 선다 — 근거 패널의 그 달 단추가 서지 않는 달을
+    보고 있어도 길이 남는다(2026-11-10 답 Q2-8 — 설계 규칙 UI-LAY-12 예외). 내려받기 둘은
+    그대로다."""
     app = _dynamic_app(dynamic_databases)
 
     assert not any("개월 — " in str(button.label) for button in app.button), [
         str(button.label) for button in app.button
     ]
-    assert not _closing_link(app)
+    assert _closing_link(app)
     downloads = {str(button.key) for button in app.get("download_button")}
     assert {UNITS_CSV_KEY, SHEET_XLSX_KEY} <= downloads
     _open_schedule_short_month(app)
     assert (
         app.button(key=EVIDENCE_SHORTENING_BUTTON_KEY).label == "이 달 일정 부족 — 필요 단축 일정"
     )
-    assert not _closing_link(app)
+    assert _closing_link(app)
 
 
 @pytest.fixture(scope="module")
@@ -1124,8 +1125,8 @@ def calm_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path
 def test_the_closing_link_stands_when_nothing_else_leads_to_the_shortening_page(
     calm_databases: tuple[Path, Path],
 ) -> None:
-    """다른 길이 없는 공정에만 맨 아래 링크가 서고, 그 카드에서 왔으면(「← 필요 단축 일정」) 서지
-    않는다."""
+    """일정 부족 달이 없는 공정에도 맨 아래 링크가 서고, 그 카드에서 왔으면(「← 필요 단축 일정」)
+    서지 않는다."""
     app = _dynamic_app(calm_databases)
 
     assert EVIDENCE_SHORTENING_BUTTON_KEY not in _buttons(app)

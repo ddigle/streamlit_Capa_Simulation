@@ -4421,10 +4421,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Streamlit 을 import 하지 않는다(`tests/test_process_capa_workbook.py` 가 그림 칸 글 · 색과 견준다).
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
   (`render_process_detail_view`)와 KPI·정리 줄. `ProcessDetailView` 하나를 받아 지금 보는 달에 닿는 것만 그린다. 표 도구 줄
-  오른쪽 끝에 호기 CSV(`ProcessDetailView.units_csv`, 설비 일정이 설 때만)와 「시트 엑셀」(늘)이 서고, 정리 줄은 값 표지와, 다른 길(도착 ← ·
-  근거 패널의 일정 부족 달 단추)이 없을 때만 필요 단축 일정 링크다(`shortening_link_needed` — 2026-11-07 답 bottom-row). 근거 카드 단추가
-  서는 달은 KPI 「부족 원인 · 일정」 달 수에 든다 — 그 수가 0 일 때만 링크가 선다(KPI 아래 다음 화면 줄은 2026-11-10 보드 c2-picked 로
-  걷었다 — 일정 부족 달이 있는 공정은 그 달을 골라야 근거 패널 단추가 선다). 「구획」 칩은 라벨을 숨긴 칸이라 뜻은 칩 바로 뒤 빈 캡션
+  오른쪽 끝에 호기 CSV(`ProcessDetailView.units_csv`, 설비 일정이 설 때만)와 「시트 엑셀」(늘)이 서고, 정리 줄은 값 표지와 필요 단축 일정
+  링크다 — 링크는 그 화면 카드에서 온 방문(도착 「← 필요 단축 일정」 이 같은 길)만 빼고 일정 부족 달이 있는 공정에도 선다
+  (`shortening_link_needed` — 2026-11-10 답 Q2-8, 설계 규칙 UI-LAY-12 예외 — 근거 패널의 일정 부족 달 단추는 그 달을 골라야 서서 처음 연 달이
+  일정 부족 달이 아니면 길이 없었다. KPI 아래 다음 화면 줄은 2026-11-10 보드 c2-picked 로 걷었다). 「구획」 칩은 라벨을 숨긴 칸이라 뜻은 칩 바로 뒤 빈 캡션
   풍선 하나다(`SECTIONS_HELP`, 2026-11-10 보드 Q-8). 단축 목표 글은 표 도구 줄 한 자리이고
   KPI 칩에 거듭 적지 않으며, 공정 카드의 기간 규칙은 「공정」 칸 풍선이다. 일정이 서지 않는 자리는 `constraint_equipment_plan.absent_note` 를 함께 쓴다.
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다

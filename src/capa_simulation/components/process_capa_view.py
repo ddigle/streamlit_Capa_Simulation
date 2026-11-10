@@ -42,9 +42,9 @@
 **프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓴다** — 오늘·판정 기준·설비 일정·표시명이
 그렇다. 공정·조회기간·제품 거르기(조건 카드)는 앱 전체 회차다.
 
-정리 줄(값 표지, 다른 길이 없는 공정의 필요 단축 일정 화면 링크 — `shortening_link_needed`), KPI
-넷, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지 않아 프래그먼트 밖에서 페이지가
-그린다 — 그 그리기 함수도 여기 있다.
+정리 줄(값 표지, 그 화면 카드에서 오지 않은 방문의 필요 단축 일정 화면 링크 —
+`shortening_link_needed`), KPI 넷, 머리 공정명 옆 ◀▶(확보 기준 미달 공정 넘기기)는 달에 닿지 않아
+프래그먼트 밖에서 페이지가 그린다 — 그 그리기 함수도 여기 있다.
 
 **UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
 페이지가 가정 요약(`ProcessDetailView.assumed_summary`)과 가정 계획(`DynamicView`)을 넘긴다.
@@ -1782,17 +1782,16 @@ def prescription_text(plan: Prescription | None) -> str:
     return f"단축 {plan.shortened}대 · 신규 {plan.new}대"
 
 
-def shortening_link_needed(dynamic: DynamicView, *, arrived_from_card: bool) -> bool:
-    """맨 아래 필요 단축 일정 링크가 서는가 — 이 공정 화면에 그리로 가는 다른 길이 없을 때만이다.
+def shortening_link_needed(*, arrived_from_card: bool) -> bool:
+    """맨 아래 필요 단축 일정 링크가 서는가 — 그 화면 카드에서 온 방문(출처 띠 곁 「← 필요 단축
+    일정」 이 같은 길)만 뺀다.
 
-    다른 길은 도착 「← 필요 단축 일정」(`arrived_from_card`)과 근거 패널 「이 달 일정 부족 — 필요
-    단축 일정」(그 달을 골랐을 때)이다. 근거 카드 단추가 서는 달(`schedule_short_month`)은
-    `Prescription.dynamic_short_months` 가 세는 달과 같다 — 그 수가 0 이면 어느 달을 골라도 그
-    단추가 없어 맨 아래 링크가 선다(설계 규칙 UI-LAY-12). 일정 부족 달이 있는 공정은 그 달을
-    골라야 근거 패널의 단추가 선다 — KPI 아래에는 그리 가는 줄을 두지 않는다(2026-11-10 보드
-    c2-picked).
+    일정 부족 달이 있는 공정에도 선다 — 근거 패널 「이 달 일정 부족 — 필요 단축 일정」 은 그 달을
+    골랐을 때만 서서, 처음 연 달이 일정 부족 달이 아니면 이 화면에 그리 가는 단추가
+    없었다(2026-11-10 답 Q2-8 — 설계 규칙 UI-LAY-12 예외). KPI 아래에는 그리 가는 줄을 두지
+    않는다(2026-11-10 보드 c2-picked).
     """
-    return not arrived_from_card and prescription(dynamic).dynamic_short_months == 0
+    return not arrived_from_card
 
 
 def render_closing_row(
@@ -1802,7 +1801,7 @@ def render_closing_row(
     show_link: bool,
     link_help: str | None,
 ) -> None:
-    """정리 줄 — 값 표지(있을 때만), 다른 길이 없는 공정의 필요 단축 일정 화면 링크.
+    """정리 줄 — 값 표지(있을 때만), 필요 단축 일정 화면 링크(그 화면 카드에서 온 방문은 없음).
 
     `marks` 는 (값 한 마디, 그 풍선) 이다 — 지금은 입력 비가동 반영(n칸 · 합 x대) 하나. 늘 서던
     설명 · 내역 글은 걷었다(설계 규칙 UI-TXT-01 · 04 · 07 — 같은 말이 캔버스 · Guide · 풍선 · 상태
