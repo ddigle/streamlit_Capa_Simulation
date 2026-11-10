@@ -24,6 +24,8 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Literal
 
 import streamlit as st
@@ -55,6 +57,19 @@ def current_mode() -> Mode:
     """지금 실행이 쓰는 테마. 이 스레드에서 `begin_run()` 이 안 불렸으면 세션이 적어 둔 값."""
     mode: Mode | None = getattr(_LOCAL, "mode", None)
     return mode or _resume_session_mode()
+
+
+@contextmanager
+def pinned_mode(mode: Mode) -> Iterator[None]:
+    """이 스레드의 테마를 잠시 `mode` 로 못박는다 — 보는 사람의 테마와 상관없이 늘 같은 색이어야
+    하는 산출물(공정 Capa 상세 「시트 엑셀」 — 엑셀은 흰 바탕이라 밝게)을 만들 때. 나오면 들어오기
+    전 값으로 되돌린다(스레드 칸이라 다른 세션에 새지 않는다)."""
+    previous: Mode | None = getattr(_LOCAL, "mode", None)
+    _LOCAL.mode = mode
+    try:
+        yield
+    finally:
+        _LOCAL.mode = previous
 
 
 def _resume_session_mode() -> Mode:

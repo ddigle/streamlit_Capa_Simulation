@@ -30,6 +30,7 @@ rerun 당 3.83ms 이고 한 번만 읽으면 0.05ms 다.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
@@ -55,6 +56,30 @@ def opaque_mix(color: str, base: str, alpha: float) -> str:
         round(alpha * one + (1 - alpha) * other) for one, other in zip(top, bottom, strict=True)
     ]
     return "#" + "".join(f"{channel:02X}" for channel in mixed)
+
+
+_RGBA_TOKEN: Final = re.compile(
+    r"^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)$", re.IGNORECASE
+)
+_HEX_TOKEN: Final = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def opaque_over(color: str, base: str) -> str | None:
+    """토큰 색(`#RRGGBB` 또는 `_with_alpha` 의 rgba)을 불투명 `base`(`#RRGGBB`) 위에 얹은 불투명
+    `#RRGGBB`(대문자). 알파가 없는 자리 — 엑셀 칠(`components/process_capa_workbook.py`) — 가 화면의
+    반투명 면(부족 달 띠 등)을 같은 색으로 옮길 때 쓴다. 모르는 꼴(이름 · 투명 · 빈 값)이면 None."""
+    if not color:
+        return None
+    if _HEX_TOKEN.match(color):
+        return color.upper()
+    matched = _RGBA_TOKEN.match(color)
+    if matched is None or not _HEX_TOKEN.match(base):
+        return None
+    red, green, blue = (int(matched.group(index)) for index in (1, 2, 3))
+    alpha = min(max(float(matched.group(4)), 0.0), 1.0)
+    if alpha == 0:
+        return base.upper()
+    return opaque_mix(f"#{red:02X}{green:02X}{blue:02X}", base, alpha)
 
 
 # 라이트 팔레트. 아래 주석이 값마다의 근거다.
