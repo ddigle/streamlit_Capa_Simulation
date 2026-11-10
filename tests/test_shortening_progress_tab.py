@@ -179,7 +179,7 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     assert stored.name == "9월 정기" and stored.equipment_revision_no == 1
     assert stored.scenario_content_token == "shortening-test"
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
-    assert list(picker.options) == ["비교 안 함", f"9월 정기 · {stored.saved_at:%Y-%m-%d}"]
+    assert list(picker.options) == ["비교 안 함", f"{stored.saved_at:%Y-%m-%d} · 9월 정기"]
     # 저장한 뒤 이름 칸은 새 세대로 서서 오늘의 기본 이름으로 돌아온다.
     assert _name_input(app).value == f"{date.today():%Y-%m-%d} 기준선"
     assert picker.value == NO_COMPARISON
