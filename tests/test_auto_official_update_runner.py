@@ -381,10 +381,34 @@ def test_a_registration_whose_capacity_stops_says_how_to_fix_it_in_the_run_recor
 
     assert run.reason is not None
     assert "기준 정보 화면 「효율」 표에서 그 칸에 0보다 큰 값을 넣고" in run.reason
-    assert "r2부터 계산이 섭니다" in run.reason
+    assert run.reason.count("r2부터 계산이 섭니다") == 1
     assert run.reason.endswith("손으로 지정하세요.")
     base = repository.load_revision(str(run.base_revision_id))
     assert "대당 Capa 계산 멈춤(RQ_RUN_RATE 빈 값 키 " in (base.revision.note or "")
+
+
+def test_a_plan_only_source_says_how_to_fix_it_in_the_run_record(
+    repository: DuckDBScenarioRepository,
+) -> None:
+    """계획 행만 있는 원천은 계산이 0행으로 끝나 「남는 공정이 없어」 갈래로 지정을 건너뛴다 — 그
+    갈래에도 등록 점검의 푸는 길(원천에 경로 행을 넣어 다시 등록)을 사유 끝에 한 번 붙인다(검수
+    보드 st-runner-hint)."""
+    _official_w40(repository)
+    frame = _source()
+    fake = FakeBigDataQuery(
+        _catalog(("PSM W41", "SIM-W41", "2026-10-12 09:00:00")),
+        frames={"SIM-W41": frame.loc[frame["계획기초정보여부"].eq("Y")].reset_index(drop=True)},
+    )
+
+    run = _run(repository, fake)
+
+    assert (run.status, run.stage) == (STATUS_PUBLISH_SKIPPED, "judge")
+    assert run.reason is not None and "남는 공정이 없어" in run.reason
+    hint = "원천에 경로 행을 넣어 다시 등록하세요."
+    assert run.reason.count(hint) == 1
+    assert run.reason.index(hint) < run.reason.index("손으로 지정하세요.")
+    assert run.reason.endswith("손으로 지정하세요.")
+    assert repository.latest_official_release().release_no == 1  # type: ignore[union-attr]
 
 
 def test_a_securement_failure_registers_but_does_not_publish(

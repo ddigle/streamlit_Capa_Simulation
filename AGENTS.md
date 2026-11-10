@@ -1608,7 +1608,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
     부르는 쪽 몫이다.
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
-    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 판정 실패 사유 끝에 무엇이
+    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(「…손으로 지정하세요」 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`)에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록 · 빈 경로 표(`RQ_UPEH`·
     `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `_ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
     2026-11-08 결정 U3)는 원천 다시 등록. 등록이 CS 가 비어 뺀 경로 행 수(`blank_cs_routes` = `BlankCsDrop.route_rows`)를 넘겨, 그
@@ -5789,7 +5789,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   등록은 됐고 계산할 때 처음 멈췄다). `scenario_registration.check_registration_capacity` 가 화면 등록·자동 갱신의 같은 길에서
   돌고, 리비전 1 메모 끝에 `대당 Capa 계산 멈춤(<표> <꼴> 키 n · 경로 m)`(값·이름 없음 — 빈 경로 표는 `대당 Capa 계산 멈춤(빈 표
   RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)`, 2026-11-08 결정 U3), 화면은 저장 알림 밑 경고 띠(계산 글 +
-  기준 정보 화면 그 표 → 다음 리비전), 자동 갱신은 판정 실패 사유 끝에 같은 푸는 길을 적는다. 막지 않는다 — 막으면 원천을 다시
+  기준 정보 화면 그 표 → 다음 리비전), 자동 갱신은 지정까지 가지 못한 회차 사유 끝에 같은 푸는 길을 적는다(계획 행만 있는 원천은 계산이
+  0행으로 끝나 「남는 공정이 없어」 갈래로 오는데 그 갈래에도 — 검수 보드 st-runner-hint). 막지 않는다 — 막으면 원천을 다시
   받아야만 풀린다.
 - **CS 가 빈 행(NULL·빈 글자·공백뿐)은 막지 않고 RQ 파생에서 뺀다**(2026-10-27 사용자 결정 — 그 행 때문에 시나리오 전체가
   저장되지 않았다). 빼는 곳은 파생 경계 `derive_q_core_data` 한 곳이고, 프레임 전체를 보는 정규화(`WF 구분` 표기 고르기

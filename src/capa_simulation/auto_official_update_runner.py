@@ -311,6 +311,11 @@ class _RunLog:
         # 등록이 CS 가 빈 행을 빼고 저장했으면 그 수(`BlankCsDrop.memo`). 어느 결과로 끝나든 사유의
         # 발행 줄 쪽 끝에 붙인다 — 소요대수 밖 수요 경고(`split_published_reason`)와 섞지 않는다.
         self.blank_cs_memo = ""
+        # 등록 때 돌려 본 대당 Capa 가 멈췄으면 푸는 길(`RegistrationCapacityCheck.fix_hint` — 화면
+        # 등록의 경고 띠와 같은 글). 지정까지 가지 못하고 끝나면 어느 갈래든 사유 끝(「…손으로
+        # 지정하세요」 앞)에 한 번 붙인다 — 계획 행만 있는 원천은 계산이 0행으로 끝나 「남는 공정이
+        # 없어」 갈래로 온다.
+        self.fix_hint = ""
 
     def advance(self, stage: str, **values: object) -> None:
         self.stage = stage
@@ -324,6 +329,8 @@ class _RunLog:
             head, warning = split_published_reason(reason)
             head = f"{head.rstrip().rstrip('.')} · {self.blank_cs_memo}"
             reason = f"{head}{_WARNING_SEPARATOR}{warning}" if warning else head
+        if status != STATUS_PUBLISHED and self.fix_hint and self.fix_hint not in reason:
+            reason = f"{reason.rstrip().rstrip('.')}. {self.fix_hint}"
         if status != STATUS_PUBLISHED and self.registered_name is not None:
             note = REGISTERED_NOT_PUBLISHED_NOTE.format(
                 name=with_topic_particle(f"「{self.registered_name}」")
@@ -451,21 +458,17 @@ def _execute(
     )
     log.registered_name = base.scenario.scenario_name
     log.blank_cs_memo = prepared.blank_cs.memo()
+    if registration.capacity.stopped:
+        log.fix_hint = registration.capacity.fix_hint(base.revision.revision_no)
 
     log.advance("judge")
     outcome = full_capacity_outcome(base.tables, base.tables)
     if outcome.error is not None or outcome.required_equipment is None:
-        reason = (
+        log.finish(
+            STATUS_PUBLISH_SKIPPED,
             "Capa 계산이 실패해 확보율을 판정하지 못했습니다 — 공식으로 지정하지 않았습니다. "
-            f"{outcome.error}"
+            f"{outcome.error}",
         )
-        if registration.capacity.stopped:
-            # 등록 때 돌려 본 대당 Capa 가 멈췄다 — 화면 등록의 경고 띠와 같은 푸는 길을 잇는다.
-            reason = (
-                f"{reason.rstrip().rstrip('.')}. "
-                f"{registration.capacity.fix_hint(base.revision.revision_no)}"
-            )
-        log.finish(STATUS_PUBLISH_SKIPPED, reason)
         return
     try:
         securement = calculate_securement_rate(
