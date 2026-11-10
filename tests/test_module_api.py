@@ -107,17 +107,21 @@ def _header_script(page: str) -> None:
     api.page_header(api.context(page), "시험 화면", description="설명 한 줄")
 
 
-@pytest.mark.parametrize(("maturity", "badge"), [("L0", True), ("L1", True), ("L2", False)])
-def test_the_header_marks_unfinished_maturity_and_makes_no_session_key(
-    tmp_path: Path, maturity: str, badge: bool
+@pytest.mark.parametrize("maturity", ["L0", "L1", "L2"])
+def test_the_header_draws_no_badge_line_and_makes_no_session_key(
+    tmp_path: Path, maturity: str
 ) -> None:
+    """머리말은 제목 하나다. 성숙도 L0 · L1 의 「구현중」 은 본문 배지 줄로 그리지 않는다 — 사이드바
+    라벨 「(구현중)」 · 화면 탭 표지가 말한다(창구 1.2 — 2026-11-10 보드 Q-5). 넘기던 모듈의 호출은
+    그대로 돈다."""
     page = _tmp_module(tmp_path, "demo_a", "", maturity=maturity)
 
     app = AppTest.from_function(_header_script, args=(str(page),)).run()
 
     assert not app.exception
     assert [title.value for title in app.title] == ["시험 화면"]
-    assert any("구현중" in str(markdown.value) for markdown in app.markdown) is badge
+    assert not any("구현중" in str(markdown.value) for markdown in app.markdown)
+    assert not any("-badge[" in str(markdown.value) for markdown in app.markdown)
     # 설명 인자는 받기만 하고 그리지 않는다(창구 1.1 — 화면 머리에 소개 줄을 두지 않는다).
     assert [caption.value for caption in app.caption] == []
     assert list(app.session_state.filtered_state) == []

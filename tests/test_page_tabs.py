@@ -1311,6 +1311,9 @@ def test_a_module_page_becomes_a_tab_without_server_paths(
         "extension",
         "mod-demo_ok-main",
     )
+    # 성숙도 L0 · L1 모듈 화면은 탭 이름 곁 「구현중」 표지가 그 말을 한다 — 본문 배지 줄은
+    # 없다(창구 1.2 — 2026-11-10 보드 Q-5).
+    assert tab["wip"] == page_tabs.WIP_TITLE
     data = _data(sent)
     assert data["active"] == page
     assert data["pages"]["mod-demo_ok-main"] == "데모 화면"

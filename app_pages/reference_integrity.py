@@ -272,7 +272,11 @@ def _render_detail(
     값이 남는다."""
     if tab_is_hidden(owner_tab):
         return
-    with condition_card(DETAIL_CARD_LABEL, name=DETAIL_CARD_NAME, icon=":material/filter_alt:"):
+    # 카드는 처음 펼친 채 선다 — 본문에 있을 때처럼 조건이 첫 화면에 보이게(2026-11-10 보드 Q-7,
+    # 설계 규칙 UI-LAY-06). 한 번 접으면 기억 칸을 따른다.
+    with condition_card(
+        DETAIL_CARD_LABEL, name=DETAIL_CARD_NAME, icon=":material/filter_alt:", default=True
+    ):
         minimum_date = cast(pd.Timestamp, demo["일자"].min()).date()
         maximum_date = cast(pd.Timestamp, demo["일자"].max()).date()
         worst_process = str(process_summary.iloc[0]["공정"])

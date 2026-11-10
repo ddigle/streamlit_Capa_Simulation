@@ -7,7 +7,8 @@
 가운데 코드로 따질 수 있는 것은 여기서 코드에 댄다 — 창구 이름(부록 A), 규칙 번호(부록 B ·
 4장 · 7장), 뼈대 화면(3-7), 예시 모듈(3-8 · 3-9 — 정적 규칙을 통과해야 한다), 점검 출력 꼴(부록 B),
 환경변수(9-2), 담당자 클론 설정(8-4)과 배포 적용 템플릿. 담당자(사람)가 읽는 안내서
-(`docs/module_colleague_guide.md`)는 첫 지시 블록이 지침서 0장과 같은지만 본다.
+(`docs/module_colleague_guide.md`)는 첫 지시 블록이 지침서 0장과, 점검 출력 예시 줄(8-2)이 부록 B 와
+같은지만 본다.
 """
 
 from __future__ import annotations
@@ -154,6 +155,18 @@ def test_the_guide_screens_put_no_introduction_in_the_header() -> None:
     for purpose in ("데모 메모 모듈의 첫 화면", "데모 표 모듈의 첫 화면"):
         assert "description=" not in _python_block(purpose), purpose
     assert "`description` 은 받기만 하고 그리지 않는다" in _section("부록 A")
+
+
+def test_the_guide_says_the_implementing_mark_is_not_a_badge_line() -> None:
+    """창구 1.2 부터 `page_header` 는 성숙도 L0 · L1 의 「구현중」 배지 줄을 본문에 그리지 않는다
+    (2026-11-10 보드 Q-5) — 성숙도 표(3-4) · 부록 A 가 그렇다고 적고, 부록 C 에 그 판 줄이 있다.
+    작은 판으로 보는 까닭(이름 · 서명 그대로, 그리는 것만 줄임)은 9-4 가 적는다(s-api-minor)."""
+    assert "사이드바 · 화면 탭" in _section("3-4.")
+    assert "배지 줄을 세우지 않는다" in _section("3-4.")
+    assert "「구현중」 배지 줄을 그리지 않는다" in _section("부록 A")
+    assert "| v1.2 |" in _section("부록 C")
+    assert "화면에 그리는 것만 줄이는 변경은 작은 판이다" in _section("9-4.")
+    assert "description=" not in _python_block("데모 인사 모듈의 첫 화면")
 
 
 def test_rule_numbers_in_the_guide_are_the_checkers_rules() -> None:
@@ -449,6 +462,20 @@ def test_the_colleague_guide_hands_over_the_first_instruction_unchanged() -> Non
     assert "사내" not in colleague and "사내" not in GUIDE
     assert "앱의 모듈 <id> 를 맡은 에이전트다" in first_order
     assert "첫 지시가 「모듈 `<id>` 를 맡은 에이전트」" in routing
+
+
+def test_the_colleague_guides_check_line_is_the_guides_appendix_b_line() -> None:
+    """안내서 8-2 는 부록 B 점검 출력의 「자세히」 줄을 옮겨 적고 그 파일 · 줄을 풀어
+    읽는다 — 뼈대가 바뀌어 부록 B 의 줄 번호가 바뀌면(부록 B 는 실제 점검 출력과 맞댄다)
+    안내서의 예시 줄과 「n번째 줄」 도 같이 고친다."""
+    colleague = COLLEAGUE_GUIDE_PATH.read_text(encoding="utf-8")
+    appendix = _blocks(_section("부록 B"), "text")[0]
+    wanted = next(line.strip() for line in appendix.splitlines() if line.startswith("  m1 "))
+    location = re.search(r" (\w+\.py):(\d+) ", wanted)
+    assert location is not None
+
+    assert [block.strip() for block in _blocks(colleague, "text")].count(wanted) == 1
+    assert f"파일과 줄(`{location[1]}` {location[2]}번째 줄)" in colleague
 
 
 def test_the_runbook_module_checks_always_guard_the_operational_data() -> None:

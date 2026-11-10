@@ -406,10 +406,10 @@ uv sync --inexact
 점검 결과의 `자세히` 아래 줄이 고칠 곳입니다.
 
 ```text
-m1 demo_draft 오류 M19 page.py:23 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다
+m1 demo_draft 오류 M19 page.py:19 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다
 ```
 
-읽는 법 — 차례 번호(`m1`) · 모듈 id · 오류/경고 · 규칙 번호(`M19`) · 파일과 줄(`page.py` 23번째 줄) · 고칠 말.
+읽는 법 — 차례 번호(`m1`) · 모듈 id · 오류/경고 · 규칙 번호(`M19`) · 파일과 줄(`page.py` 19번째 줄) · 고칠 말.
 에이전트가 이 줄을 보고 고칩니다. 「시험 안 돎 — 정적 오류 먼저」 가 보이면 다른 오류를 먼저 고쳐야 시험이 돕니다.
 규칙 번호의 뜻은 지침서 부록 B 에 있습니다.
 
@@ -435,7 +435,7 @@ m1 demo_draft 오류 M19 page.py:23 `use_container_width=` 는 Streamlit 이 곧
 
 ### 8-5. Admin 「모듈 상태」 — 앱 관리자에게 물어볼 것
 
-앱 관리자는 Admin Area 의 「모듈 상태」 펼침에서 모든 모듈을 봅니다(지침서 9-3). 운영 앱에서 무슨 일이 났는지 모를 때
+앱 관리자는 Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버에서 모든 모듈을 봅니다(지침서 9-3). 운영 앱에서 무슨 일이 났는지 모를 때
 「제 모듈 상태 칸을 알려 주세요」 라고 부탁합니다.
 
 - 상태(켜짐 · 꺼짐 · 실패)와 그 까닭 — 「실패 · 화면 이름 겹침」 같은 글이 여기 있습니다.

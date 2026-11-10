@@ -237,7 +237,11 @@ def _render_detail(
     # 보이는 글자가 바뀌는 회차(공정 표시명의 「표시명 (원본)」 가르기)에도 브라우저가 새 글자를
     # 받는다 — 적지 않으면 옛 글자를 되보내 다른 공정으로 바뀌었다.
     prune_list_selection(process_key, process_options)
-    with condition_card(detail_card_label(metric), name=key_prefix, icon=":material/filter_alt:"):
+    # 카드는 처음 펼친 채 선다 — 본문에 있을 때처럼 조건이 첫 화면에 보이게(2026-11-10 보드 Q-7,
+    # 설계 규칙 UI-LAY-06). 한 번 접으면 기억 칸을 따른다.
+    with condition_card(
+        detail_card_label(metric), name=key_prefix, icon=":material/filter_alt:", default=True
+    ):
         months = sorted(int(value) for value in monthly["생산계획년월"].unique())
         start_month, end_month = st.select_slider(
             "분석 기간",

@@ -1,4 +1,4 @@
-# Purpose: Admin Area 탭 위에 모듈 찾기 결과와 마지막 오류를 펼침으로 보인다(모듈 없으면 없음).
+# Purpose: Admin Area 탭 줄 끝 팝오버에 모듈 찾기 결과와 마지막 오류를 보인다(모듈 없으면 없음).
 
 """Admin Area 「모듈 상태」.
 
@@ -6,6 +6,15 @@
 화면이 사외와 같다. DB 를 열지 않는다 — 회차마다 캐시된 찾기 결과(`navigation.module_scan`)와 실행
 기록(`module_failures`)만 읽는다. 표는 평문 칸이라 사람이 지은 이름을 그대로 싣고, 캡션의 값은
 `literal_markdown` 으로 싣는다.
+
+**자리는 안쪽 탭 줄 오른쪽 끝 팝오버다**(2026-11-10 보드 Q-6 — T7 의 「보유 공정」 팝오버 ·
+「알림 모음」 수 표지와 같은 꼴). 탭 위에 펼침 한 줄을 세우면 모듈을 켠 Admin 의 상단 띠가 한
+줄(약 49px) 늘었다(설계 규칙 UI-LAY-13). 수(켜짐 · 꺼짐 · 실패)는 닫힌 채로 보이는 팝오버 단추
+글이고(`status_title` — 사내 런북의 화면 확인이 이 수를 읽는다), 표 · 복사 · 환경변수 줄은 팝오버
+안이다.
+부르는 쪽이 탭 묶음을 담은 칸의 key(`box_key`)를 주면 단추 칸을 그 칸의 오른쪽 위(탭 줄 높이)에
+절대 위치로 얹고 탭 줄은 그 폭만큼 오른쪽을 비운다 — 새 줄을 세우지 않는다. 그 칸에 탭이 없는
+회차(DB 를 못 열어 멈춤)에는 단추가 흐름 안 한 줄로 선다.
 """
 
 from __future__ import annotations
@@ -32,12 +41,23 @@ from capa_simulation.module_registry import (
     ModuleScan,
 )
 from capa_simulation.navigation import module_scan
-from capa_simulation.sidebar_status import remembered_expander
 
-# 펼침 key — 탭 묶음 위에 서므로 자리를 key 로 고정하고, 편 상태는 기억 칸에 둔다(「서버 시작 점검」
-# 과 같은 꼴).
-EXPANDER_KEY = "admin_area_module_status"
+# 팝오버(라벨의 수가 바뀌어도 같은 블록이게 key 를 단다 — `tests/test_popover_keys.py`), 그 단추를
+# 담는 칸(탭 줄 오른쪽 끝에 얹는 자리), 팝오버 안 칸(표가 읽히는 폭을 준다)의 key.
+POPOVER_KEY = "admin_area_module_status_popover"
+TOOLS_KEY = "admin_area_module_status_tools"
+CONTENT_KEY = "admin_area_module_status_content"
 COPY_KEY = "module_status"
+# 탭 줄 오른쪽에 비워 두는 폭 — 단추 글 「모듈 상태 · 켜짐 n · 꺼짐 n · 실패 n」(수 두 자리)과
+# 아이콘 · 꺾쇠 · 안쪽 여백이 드는 폭에 사내 글꼴이 조금 넓어도 남게 더한 값
+# (`display_order_management.ACTION_ROW_RESERVE_REM` 과 같은 꼴). 탭이 이 폭을 넘으면 탭 줄이 제
+# 안에서 옆으로 민다.
+TAB_ROW_RESERVE_REM = 19
+# 팝오버 안 표 폭 — 12칸 표의 까닭 칸이 넓게 서도록 넓게 주되, 펼친 사이드바(300px)를 덮지 않게
+# 창 폭에서 뺀다. 팝오버 몸은 단추 오른쪽 끝(창 − 본문 오른쪽 여백 약 17px)에 맞춰 왼쪽으로 펴지고
+# 몸의 테 · 안쪽 여백이 양쪽 합 약 42px 이라, 빼는 몫 27rem(rem 14px — 378px)이면 몸 왼쪽이 창 폭과
+# 상관없이 약 319px(사이드바 오른쪽 + 19px)이다. 창 1283 · 1600 에서는 64rem 쪽이 작아 그대로다.
+CONTENT_WIDTH = "min(64rem, calc(100vw - 27rem))"
 # 환경변수 줄의 풍선 — 바꾼 것이 언제 보이는지는 칸 하나의 뜻이라 늘 띄우지 않는다(설계 규칙
 # UI-TXT-01 · 02).
 RESTART_NOTICE = "`module.json`·환경변수를 바꾼 것은 앱을 다시 띄운 뒤 보입니다."
@@ -149,9 +169,40 @@ def status_text(title: str, scan: ModuleScan, table: pd.DataFrame | None) -> str
     )
 
 
-def render_module_status() -> None:
-    """모듈 기록이 있거나 뿌리를 못 읽었을 때만 펼침을 그린다. 뿌리를 못 읽은 것은 상태
-    알림(`MO-01` — 알림창 · Alarm)으로도 낸다(그리지 않는 회차에도 부른다 — 해소)."""
+def tools_style(box_key: str | None) -> str:
+    """단추 칸 · 팝오버 안 칸 서식. `box_key` 를 주면 단추 칸을 그 칸 오른쪽 위에 얹고(절대 위치
+    — 흐름에서 빠져 줄 · 간격을 먹지 않는다) 그 칸의 탭 묶음(탭 안 탭은 빼고) 탭 줄은 단추 폭만큼
+    오른쪽을 비운다. 그 칸에 탭 묶음이 없는 회차(DB 를 못 열어 멈춤)에는 단추 칸이 흐름 안에
+    남는다."""
+    rules = [
+        f".st-key-{TOOLS_KEY} button {{ min-height: 2rem; padding-top: 0.125rem; "
+        "padding-bottom: 0.125rem; }",
+        f".st-key-{CONTENT_KEY} {{ width: {CONTENT_WIDTH}; max-width: 100%; }}",
+        # 팝오버 몸은 Streamlit 이 최대 폭(창 1600 에서 708px)을 요소 서식으로 박아 안 칸 폭만으로는
+        # 넓어지지 않는다 — 그 칸을 든 몸만 풀어 준다(창 폭 안).
+        f'[data-testid="stPopoverBody"]:has(.st-key-{CONTENT_KEY}) '
+        "{ max-width: calc(100vw - 2rem) !important; }",
+    ]
+    if box_key is not None:
+        # 탭 묶음은 그 칸의 바로 밑 자식이다(`stateful_tabs` 를 그 칸 안에서 부른다). `:has()` 안에
+        # 칸 자신을 다시 적는 꼴(`:has(.칸 …)`)은 브라우저가 맞추지 않아 자식 결합자로 고른다.
+        box = f'.st-key-{box_key}:has(> [data-testid="stTabs"])'
+        holder = f'{box} > [data-testid="stLayoutWrapper"]:has(> .st-key-{TOOLS_KEY})'
+        tablist = f'{box} > [data-testid="stTabs"] > div > [role="tablist"]'
+        rules += [
+            f"{box} {{ position: relative; }}",
+            f"{holder} {{ position: absolute; top: 0; right: 0; width: auto; z-index: 1; }}",
+            f"{tablist} {{ padding-right: {TAB_ROW_RESERVE_REM}rem; }}",
+        ]
+    return "<style>" + "\n".join(rules) + "</style>"
+
+
+def render_module_status(*, box_key: str | None = None) -> None:
+    """모듈 기록이 있거나 뿌리를 못 읽었을 때만 팝오버를 그린다. 뿌리를 못 읽은 것은 상태
+    알림(`MO-01` — 알림창 · Alarm)으로도 낸다(그리지 않는 회차에도 부른다 — 해소).
+
+    `box_key` 는 탭 묶음을 담은 칸의 key 다 — 이 함수를 그 칸 안 맨 앞에서 부르면 단추가 탭 줄
+    오른쪽 끝에 선다(`tools_style`). 주지 않으면 지금 자리 흐름 안 한 줄이다."""
     scan = module_scan()
     alerts.state(
         "MO-01",
@@ -165,16 +216,21 @@ def render_module_status() -> None:
         return
     title = status_title(scan)
     table = build_status_table(scan) if scan.records else None
-    with remembered_expander(title, icon=":material/extension:", key=EXPANDER_KEY):
-        render_diagnostic_copy(status_text(title, scan, table), key=COPY_KEY)
-        if scan.root_error:
-            st.caption(f":material/folder_off: {literal_markdown(scan.root_error)}")
-        if table is not None:
-            st.dataframe(
-                table,
-                column_config=status_column_config(),
-                hide_index=True,
-                width="stretch",
-                placeholder="",
-            )
-        st.caption(environment_caption(scan), help=RESTART_NOTICE)
+    with st.container(key=TOOLS_KEY):
+        st.html(tools_style(box_key))
+        with (
+            st.popover(title, icon=":material/extension:", key=POPOVER_KEY),
+            st.container(key=CONTENT_KEY),
+        ):
+            render_diagnostic_copy(status_text(title, scan, table), key=COPY_KEY)
+            if scan.root_error:
+                st.caption(f":material/folder_off: {literal_markdown(scan.root_error)}")
+            if table is not None:
+                st.dataframe(
+                    table,
+                    column_config=status_column_config(),
+                    hide_index=True,
+                    width="stretch",
+                    placeholder="",
+                )
+            st.caption(environment_caption(scan), help=RESTART_NOTICE)

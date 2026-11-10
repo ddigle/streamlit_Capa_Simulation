@@ -97,11 +97,7 @@ import streamlit as st
 from capa_simulation import module_api as api
 
 ctx = api.context(__file__)
-api.page_header(
-    ctx,
-    {_literal(title)},
-    description="이 화면이 무엇을 하는지 한 줄로 적습니다.",
-)
+api.page_header(ctx, {_literal(title)})
 
 
 def _greet() -> None:

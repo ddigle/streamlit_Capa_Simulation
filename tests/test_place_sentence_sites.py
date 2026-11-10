@@ -78,14 +78,14 @@ EMPTY_ENDING = re.compile(r"(?:없습니다|않습니다|같습니다|마쳤습�
 # (가)).
 GUIDANCE_ENDING = re.compile(r"(?:세요|십시오|(?:정합|고칩|바꿉|입력합|켭|엽|누릅|봅)니다)[.!…]*$")
 # 미정리 자리 수. 늘지 않는다 — 줄면 이 수도 줄인다.
-UNSETTLED_SITES = 5
+UNSETTLED_SITES = 4
 
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/admin_area.py", ""): (EMPTY,),
     ("app_pages/available_equipment_status.py", ""): (EMPTY,),
     ("app_pages/calculation_result.py", ""): (EMPTY,),
-    ("app_pages/capa_chatbot.py", ""): (UNSETTLED, UNSETTLED),
+    ("app_pages/capa_chatbot.py", ""): (UNSETTLED,),
     ("app_pages/constraint_simulation.py", ""): (
         BESIDE_INPUT,
         MARKER,

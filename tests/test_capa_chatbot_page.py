@@ -97,6 +97,18 @@ def test_the_head_has_no_badge_line_and_the_switch_is_a_sidebar_row() -> None:
     assert [item for item in app.get("html") if "연결 대기</strong>" in item.proto.body]
 
 
+def test_the_four_parts_of_an_answer_are_told_by_the_guide_not_the_chat_card() -> None:
+    """첫 카드 「Capa 분석 대화」 에는 답의 네 칸을 말하는 설명 글이 없고 그 말은 Guide 가 한다
+    (2026-11-10 보드 Q-9 — 화면에 설명 글을 달지 않는다, 설계 규칙 UI-TXT-01)."""
+    from capa_simulation.components.page_guide import load_guide
+
+    app = _start()
+    assert not [item for item in app.main.caption if "네 칸" in str(item.value)]
+    guide = " ".join(load_guide("capa_chatbot").replace("**", "").split())
+    assert "답은 네 칸으로 옵니다 — 결론 · 근거 표 · 사용한 조건과 산식 · 한계" in guide
+    assert "연결 뒤에도 이 네 칸은 그대로입니다" in guide
+
+
 def _badge_lines(app: AppTest) -> list[str]:
     marks = ("인터랙티브 프로토타입", "미연결", "-badge[")
     return [

@@ -173,6 +173,8 @@ def test_the_detail_conditions_stand_in_the_sidebar_card_while_the_tab_is_open()
     app = _open("상세 분석")
 
     (card,) = _cards(app, "효율 실적 조건")
+    # 카드는 처음 펼친 채다 — 본문에 있을 때처럼 조건이 첫 화면에 보인다(2026-11-10 보드 Q-7).
+    assert card.proto.expanded
     assert [element.label for element in card.children.values()] == ["분석 기간", "공정", "제품"]
     assert not _tab(app, "상세 분석").get("select_slider")
     assert not _tab(app, "상세 분석").get("selectbox")

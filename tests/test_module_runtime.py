@@ -111,6 +111,11 @@ def _expander_labels(app: AppTest) -> list[str]:
     return [item.label for item in app.expander] + [item.label for item in app.status]
 
 
+def _popover_labels(app: AppTest) -> list[str]:
+    """팝오버 단추 글(Admin 「모듈 상태」 는 탭 줄 끝 팝오버다 — 2026-11-10 보드 Q-6)."""
+    return [str(item.proto.popover.label) for item in app.get("popover")]
+
+
 def _texts(app: AppTest, kind: str) -> list[str]:
     return [str(element.value) for element in getattr(app, kind)]
 
@@ -157,7 +162,7 @@ def test_without_modules_the_sidebar_is_unchanged(
     assert all(link.proto.label != "모듈" for link in app.sidebar.get("page_link"))
     app.switch_page("app_pages/admin_area.py").run()
     _ok(app)
-    labels = _expander_labels(app)
+    labels = _expander_labels(app) + _popover_labels(app)
     assert not any("모듈 상태" in label for label in labels)
 
 
@@ -170,8 +175,7 @@ def test_every_module_switched_off_hides_the_box_but_admin_still_tells(
     assert MODULE_BOX not in _sidebar_keys(app)
     app.switch_page("app_pages/admin_area.py").run()
     _ok(app)
-    labels = _expander_labels(app)
-    assert "모듈 상태 · 켜짐 0 · 꺼짐 4 · 실패 2" in labels
+    assert "모듈 상태 · 켜짐 0 · 꺼짐 4 · 실패 2" in _popover_labels(app)
 
 
 # ------------------------------------------------------------------ 화면 실행

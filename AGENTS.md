@@ -546,7 +546,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「표준 Capa」 칸 풍선(`STANDARD_CAPA_HELP`)이다. 재공 현황의 격자 읽는 법도 같다(소개는 `guides/wip_status.md`).
   - 세 탭은 `stateful_tabs` 다. 닫힌 탭의 그림과 정적 산식 가이드는 그리지 않는다. 공정 상세의 조회 조건(조회일 · 공정 · 제품 ·
     Stack · WF 속성)은 사이드바 「Dynamic Capa 조건」 카드이고 그 탭이 열린 회차에만 선다(위젯은 `persist_state` — 탭을
-    오가도 값이 남는다, 2026-11-09 보드 T8).
+    오가도 값이 남는다, 2026-11-09 보드 T8). 카드는 처음 펼친 채다(2026-11-10 보드 Q-7).
 - `app_pages/required_shortening.py` — `필요 단축 일정`(실행 관리 둘째 화면). 정체성은 **단축이 필요한 공정 전부의 진척
   관리 한 페이지**다(머리말, 2026-10-22). 설비 저장본·Cut-off·소요대수를 모아 `required_shortening_panel.py` 에 넘긴다.
   계산 규칙은 `services/required_shortening.py` 다.
@@ -727,7 +727,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/wip_status.py` — Dynamic Capa 의 `표준 대비 재공 현황` 하위 페이지로, 오늘 −7~+3일의 공정·제품·
   STEP별 재공·유입·Flow 를 제품별 일 표준 가능량과 견준다(재공 값은 결정론적 데모, 재공 DB 연결은 미구현).
   - 머리에 배지 줄이 없다(2026-11-09 보드 T8). 「샘플 데이터」 는 조회 조건 패널 줄(시나리오 줄 밑 페이지 칸), 공정 · 제품
-    고르기와 「조건 적용」 은 사이드바 「재공 현황 조건」 카드의 폼(적용형 — 설계 규칙 UI-INP-04)이고 카드 맨 위 값 한 줄이
+    고르기와 「조건 적용」 은 사이드바 「재공 현황 조건」 카드(처음 펼친 채 — 2026-11-10 보드 Q-7)의 폼(적용형 — 설계 규칙
+    UI-INP-04)이고 카드 맨 위 값 한 줄이
     기준일 · 조회 구간(오늘 −7 ~ +3일)이다. 공정 · 제품 칸은 이름 줄 + 적용한 값 한 줄 팝오버(「WF 입고검사 외 4개」 —
     `process_field.first_and_rest`, 풍선은 전체 목록)이고 다중 선택 칸은 그 안이다 — 300px 카드에서 칩이 한 줄에 하나씩 쌓여
     칸 높이 상한에 잘리고 「조건 적용」 이 1283 창 첫 화면 밖으로 밀렸다(UI-LAY-06, 필요 단축 일정 카드 공정 칸과 같은 꼴 —
@@ -941,6 +942,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` — 둘 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area, 2026-11-08 답 U4)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
     점검 펼침). 편 상태는 기억 칸(`remembered_expander`)이라
     다른 화면에 다녀와도 접히지 않는다. 그 바로 뒤에 「접속 명단」 펼침(`components/access_list_admin.py`)이 관리자 회차에만 선다.
+  - 「모듈 상태」(`components/module_status.py`)는 탭 위 펼침이 아니라 안쪽 탭 줄 오른쪽 끝 팝오버다(2026-11-10 보드 Q-6 — T7 과
+    같은 꼴, 설계 규칙 UI-LAY-13). 네 탭은 칸 `TABS_BOX_KEY` 안이고, 그 칸을 DB 를 열기 전에 세워 맨 앞에 `render_module_status(
+    box_key=TABS_BOX_KEY)` 를 부른다 — 서식이 단추 칸을 그 칸 오른쪽 위에 절대 위치로 얹고 탭 줄은 그 폭만큼 오른쪽을 비운다(새 줄
+    없음). DB 를 못 열어 멈추는 회차(`AD-07`)에는 그 칸에 탭이 없어 단추가 흐름 안 한 줄로 선다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
 - `app_pages/internal_modules.py` — 사이드바 「모듈」 상자의 머리(현황 요약) — 켜진 모듈과 화면 링크, 꺼짐·실패 수. 켜진 모듈이 없으면 상자가 없다(주소로는 열린다). 설명은 `guides/internal_modules.md`.
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
@@ -1502,8 +1507,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/performance_actual_screen.py` — 효율·UPEH·수율 실적 화면 한 벌로 `MetricSpec` 만
   갈아 끼운다.
   - 요약·상세 분석·개선과제 탭은 `stateful_tabs` 이고 숨은 탭은 그리지 않는다. 상세 분석의 조회 조건(분석 기간 · 공정 ·
-    제품)은 사이드바 「<지표> 실적 조건」 카드(`detail_card_label`)이고 그 탭이 열린 회차에만 선다(위젯은 `persist_state` —
-    2026-11-09 보드 T8). 상세 분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②). 요약의 결론(가장 시급한
+    제품)은 사이드바 「<지표> 실적 조건」 카드(`detail_card_label` — 처음 펼친 채, 2026-11-10 보드 Q-7)이고 그 탭이 열린
+    회차에만 선다(위젯은 `persist_state` — 2026-11-09 보드 T8). 상세 분석 `공정` 상자는 겹친 표시명을 가르고 매 회차 값을 다시 적는다(8장 ②). 요약의 결론(가장 시급한
     공정)은 「개선 필요 공정」 칸 풍선(`needs_action_help`)이다.
 - `src/capa_simulation/components/table_view_controls.py` — 편집표의 볼 컬럼·행 필터를 고르게 하고 거른 편집분을
   원본 전체에 되머지한다(가용설비 현황 설비 마스터 탭 세 표, 「가용설비 설정」 팝업 Cut-off 표). 고르는 칸은 표 작업 줄
@@ -1575,7 +1580,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
   알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
-- `src/capa_simulation/components/module_status.py` — Admin Area 탭 위 「모듈 상태」 펼침(켜짐·꺼짐·실패와 까닭, 마지막 오류·회차 시간 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized`). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
+- `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 목록 가운데 표가 커서 알림에 싣지 못한 것(대당
   Capa `제외 기준정보 확인` · 소요대수 탭 목록)을 본문에 그리는 단일 렌더러다(`column_help` — 칸 머리 풍선). 화면은
@@ -2278,8 +2283,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록·그룹 상자·구역 제목을 선언하고 `st.Page` 묶음을
   만드는 단일 선언 지점이다. 페이지 추가·제목 변경·새 그룹은 여기서만 한다.
   - `PageSpec`·`SIDEBAR_GROUPS`·`SIDEBAR_SECTIONS`(`section.key` 가 컨테이너 key·CSS 선택자의 근거)·`ADMIN_AREA`·
-    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나다 — 코어 구현 중 화면은 머리 배지 없이 화면 탭 이름 곁
-    표지가 말하고(`show_status=False`, 2026-11-09 보드 T8), `page_header.py` 가 배지로 쓰는 것은 모듈 L0 · L1 화면이다. 원천
+    `ADMIN_BOX_PAGES`. 상태 접미는 `IMPLEMENTING_SUFFIX` 하나다 — 구현 중 화면은 머리 배지 없이 화면 탭 이름 곁 표지가
+    말한다(`show_status=False` — 코어 2026-11-09 보드 T8, 모듈 L0 · L1 화면 2026-11-10 보드 Q-5 · 창구 1.2). 원천
     미연결 화면은 `PageSpec.pending_source`(그 화면이 스위치 · 머리 띠 표지 · 탭 풍선에 주는 원천 이름)를 선언하고,
     `PageSpec.implementing`(라벨 `(구현중)` · 그 선언 · 만드는 중 선언 `in_progress` — Dynamic Capa 는 그룹 머리라 라벨에 달지
     않는다, 생산 진도 · 샘플 페이지 셋은 원천도 접미도 없어 `in_progress`)이 화면 탭 「구현중」 표지의, `pending_source` 가 머리 띠
@@ -2294,7 +2299,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탭, 라벨 목록 밖의 옛 값은 첫 탭)로 **가장 안쪽 라벨**을 본다 — `labels`·`card_labels` 도 안쪽 라벨로 적는다.
 - `src/capa_simulation/module_registry.py` — 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). `scripts/check_module.py` 가 같은 검증을 쓴다. 모듈끼리 화면 이름이 겹치면 차례(order → id)가 뒤인 모듈 전체가 실패하고 까닭에 상대(코어 · 앞 모듈 id)를 적는다(`ModuleRecord.clash` — 점검은 앞 모듈에 M01 경고를 단다).
 - `src/capa_simulation/module_api.py` — 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 데이터 없음 — 창구
-  1.1 부터 `page_header(description=)` 은 받기만 하고 그리지 않는다, 작은 결정 d1). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
+  1.1 부터 `page_header(description=)` 은 받기만 하고 그리지 않는다, 작은 결정 d1. 1.2 부터 `page_header` 는 L0 · L1 의 「구현중」
+  배지 줄도 그리지 않는다 — 화면 탭 표지가 말한다, 2026-11-10 보드 Q-5). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
@@ -2355,10 +2361,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     만든다 — 스레드 칸을 잠시 바꾸고 나오면 되돌린다.
 - `src/capa_simulation/components/page_header.py` — 모든 페이지의 제목·상태 배지다(상태 접미는 사이드바
   라벨과 같은 문자열). **큰 제목은 키 칸(`PAGE_TITLE_KEY`)에 담아 화면에서만 sr-only 로 숨기고**(화면 탭 줄이 이름을
-  말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지 줄은 모듈 L0 · L1 화면의 「구현중」 뿐이다(`badges` 인자를 넘기는 화면은
-  지금 없다) — 코어 구현 중 화면은 배지 없이 화면 탭이 표지를 단다(`show_status=False`, 2026-11-09 보드 T8). 코어 화면 머리에 설명 줄을 두지 않고 소개는 그 화면 Guide 가 맡는다 —
-  `description` 인자를 넘기는 자리는 모듈 창구(`module_api.page_header`, 계약)와 필요 단축 일정(문구 전달 대기) 둘이고
-  `tests/test_page_header_description.py` 가 호출 자리를 맞댄다(2026-11-07 답 head-desc). `render_page_header_with_status` 는 진행
+  말한다 — 2026-10-24) 인쇄·읽기 도구에 남긴다. 배지 줄을 그리는 화면은 지금 없다(`badges` 인자를 넘기는 화면도 없다) —
+  구현 중 화면은 배지 없이 화면 탭이 표지를 단다(`show_status=False` — 코어 2026-11-09 보드 T8, 모듈 L0 · L1 화면 2026-11-10
+  보드 Q-5). 화면 머리에 설명 줄을 두지 않고 소개는 그 화면 Guide 가 맡는다 — `description` 인자를 넘기는 자리는 없다(모듈
+  창구는 1.1 부터 받기만 하고, 필요 단축 일정 머리말은 Guide 첫 단락으로 — 6-11 d1 · g03), `tests/test_page_header_description.py`
+  가 호출 자리를 맞댄다(2026-11-07 답 head-desc). `render_page_header_with_status` 는 진행
   표시 자리(`STATUS_SLOT_KEY` 안 `st.empty()`)를
   돌려주고, 그 자리를 머리 띠에 고정하는 것은 `app_header` 의 CSS 다. 두 함수 모두 `trailing` 을 주면 제목 줄 끝 칸에
   그것을 그린다(지금은 쓰는 화면이 없다 — 설정 단추 · 도구 단추는 이 칸에 두지 않고 사이드바 팝업 상자다(`settings_box.py`,
@@ -3621,7 +3628,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰고, 나머지는 `data_error_mark.render_data_error`) ·
   `tab_name` / `open_tab_name`(표지의 `tab` — 아이콘 없는 탭 이름, 닫힌 탭이면 None 이라 그 회차에는 그 탭의 상태 알림을 내지
   않는다). 시험: `tests/test_state_alerts.py` · `tests/test_area_b_alerts.py`.
-- `src/capa_simulation/components/diagnostic_copy.py` — Admin 진단 펼침(서버 시작 점검 · 통합인증 점검 · 모듈 상태 · DB 동기화)의 글 전체를 한 번에 복사하는 단추와 그 글을
+- `src/capa_simulation/components/diagnostic_copy.py` — Admin 진단 펼침(서버 시작 점검 · 통합인증 점검 · DB 동기화)과 모듈 상태 팝오버의 글 전체를 한 번에 복사하는 단추와 그 글을
   짓는 도우미다(UI-NTF-10). 브라우저 안에서 끝나 회차가 돌지 않고, 막히면 고른 글을 읽기 전용 칸으로 편다(`execCommand` 는 쓰지 않는다). 복사 글은 밖으로 나가는 글이라
   부르는 쪽이 리뷰에 옮기지 말아야 할 값을 싣지 않는다(`sso_status.status_text`, `container_start_check.report_text`). 접속 명단은 loginid 가 사람이라 복사 단추를 두지 않는다.
 - `src/capa_simulation/components/data_error_mark.py` — 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리의 공통 「데이터 Error」 마크(2026-11-05
@@ -6442,8 +6449,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   조건은 조건 카드(`sidebar_status.condition_card`·`table_card`)에 두고, 탭에 딸린 카드는 그 탭이 열렸을 때만(한 회차에
   카드 하나) 기본 접힘으로 선다(예외 — HOME `LOB 표시 조건` 은 맨 위가 주요 Case 칩이라 처음 펼친 채 서고(2026-11-02)
   계산이 멈춘 회차에도 선다, 3장 `home.py`. 제약 시뮬레이션 「제약 시뮬레이션 조건」(맨 위가 모드 전환 — 2026-11-08 그림 메모 g12)과
-  필요 단축 일정 「필요 단축 일정 조건」(맨 위가 본문에서 옮겨 온 목표 확보율 · 진척 비교 — g03)도 처음 펼친 채 서고 한 번 접으면
-  기억 칸을 따른다 — `condition_card(default=True)`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 조회
+  필요 단축 일정 「필요 단축 일정 조건」(맨 위가 본문에서 옮겨 온 목표 확보율 · 진척 비교 — g03), 구현 중 화면에서 옮긴
+  「Dynamic Capa 조건」 · 「재공 현황 조건」 · 「<지표> 실적 조건」(본문에 있을 때처럼 조건이 첫 화면에 — 2026-11-10 보드 Q-7)도
+  처음 펼친 채 서고 한 번 접으면 기억 칸을 따른다 — `condition_card(default=True)`). 공용 설정을 여는 팝업 상자(`DIALOG_BOX_PREFIX` — HOME 「HOME 설정」)는 조회
   조건 패널 바로 밑, 카드 **위**에 따로 선다 — 펼친 카드(약 370px) 밑이면 1280×800 · 1500×950 사이드바 첫 화면 밖이다(3장
   `home_settings.py`). **화면 조작 상자**(`PAGE_BOX_PREFIX` — `sidebar_status.page_box_key`, 서식 `sidebar_style._page_box_style`
   — 조건 패널과 같은 면·모서리·이름 줄)는 그 화면의 자리 이동·편집 켜기 위젯 여럿을 담는 상자로, 사용자 요청(2026-11-03)에 따른
@@ -6706,7 +6714,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `render_data_error_mark` 는 산출 결과 한 자리뿐이다.
   `tests/test_data_error_mark.py` 가 `st.error` + `st.stop()` 자리와 코드를 본다.
 - **상태 줄 · 점검 펼침**은 칸의 일이 상태를 보이는 것이다(자동 갱신 「지금 상태」 ·
-  Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」) — 경고 상자 대신 상태 줄(캡션 ·
+  Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」(탭 줄 끝 팝오버)) — 경고 상자 대신 상태 줄(캡션 ·
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 03` · `MO-01`). DB 등록의
   BigDataQuery 설정은 상태 줄 없이 상태 알림 `AD-04` 만이다(다 준비됐으면 아무것도 그리지 않는다).
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
@@ -7775,8 +7783,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 1. 같은 큰 판 안에서는 **더하기만** 한다(새 함수 · 새 선택 인자 · 새 `PALETTE_KEYS` 항목 · `module.json` 의 새 선택 칸). 더하면 작은 판
    (`API_MINOR`)을 올리고 `docs/module_guide.md` 부록 C 「창구 변경 기록」 에 한 줄을 적는다. 새 이름을 쓰는 모듈은 `api_minor` 를 그 판으로 적는다.
 2. 지우기 · 이름 바꾸기 · 서명 바꾸기 · 뜻 바꾸기는 큰 판을 올린다(`module.json` 칸의 뜻 · 필수 바꿈도 같다). 이름 · 서명을 그대로
-   두고 인자를 폐기 예정으로 받기만 하는 것은 작은 판으로 본다(창구 1.1 `page_header(description=)` — 작은 결정 d1, 큰 판으로
-   볼지는 `docs/TODO.md` 결정 대기). 옛 큰 판은
+   두고 인자를 폐기 예정으로 받기만 하거나 화면에 그리는 것만 줄이는 변경은 작은 판이다 — 넘기던 모듈이 고치지 않아도 돈다(창구
+   1.1 `page_header(description=)` — 작은 결정 d1, 2026-11-09 보드 Q 의 s-api-minor 「작은 판 그대로」 · 1.2 「구현중」 배지 줄 —
+   2026-11-10 보드 Q-5). 옛 큰 판은
    `SUPPORTED_API_MAJORS` 에 남겨 옛 겉면을 그대로 지원하고, **압축본 `모듈` 줄의 판 분포(`api<n> <수>`)에서 그 판이 0 이 된 다음 배포에
    뺀다** — 사외가 모듈을 보는 유일한 근거다. 날짜로 빼면 옮기지 못한 모듈이 CD 에서 한꺼번에 실패한다.
 3. **창구 밖에서 모듈을 깨는 변경도 같은 무게로 본다** — 코어 의존성에서 패키지 빼기, pandas · Streamlit 등 큰 판 올림(Streamlit 마이너
@@ -7786,7 +7795,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 5. 1 · 2 · 3 의 변경은 다음 배포 7장에 「모듈 담당자에게 알릴 것」 한 줄로 적는다.
 6. 창구 · 점검 규칙(`scripts/module_check_rules.py` 의 `RULES`) · 뼈대(`scripts/new_module.py`) · 점검 출력(`scripts/check_module.py`)을
    바꾸면 같은 변경에서 `docs/module_guide.md` 를 고친다 — 부록 A · B(출력 예시 포함) · 3-7 뼈대 화면 · 3-8 · 3-9 예시(정적 규칙을
-   통과해야 한다) · 9-2 환경변수는 `tests/test_module_guide_sync.py` 가 코드와 맞댄다.
+   통과해야 한다) · 9-2 환경변수는 `tests/test_module_guide_sync.py` 가 코드와 맞댄다. 부록 B 의 「자세히」 예시 줄은 안내서
+   (`docs/module_colleague_guide.md` 8-2)와 그 HTML 판(`site/module-guide/index.html`)에도 옮겨 적혀 있어 같이 고친다(같은 시험 ·
+   `tests/test_site_index.py`).
 
 ### 통합인증 변경
 
