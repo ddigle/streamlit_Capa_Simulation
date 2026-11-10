@@ -35,7 +35,7 @@ from capa_simulation.components.saved_note import (
     note_placeholder,
     ready_note_field,
 )
-from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_room_css
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -112,6 +112,10 @@ HEADING_TOOLS_KEY = "admin_area_process_rename_heading_tools"
 HEADING_PROFILE_KEY = "process_rename"
 HEADING_MIN_WIDTH = 240
 HEADING_MARK_ROOM = 160
+# 직접 편집 폼의 저장 줄(저장 단추 · 변경 메모). 오른쪽 끝을 표 도구 막대 자리로 비운다 — 메모 칸은
+# 그 앞까지 늘고 막대가 그 빈 위에 서서 표가 저장 줄 바로 아래(줄 사이 14px)에 붙는다(2026-11-10
+# 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」, 설계 규칙 UI-LAY-13).
+SAVE_ROW_KEY = "admin_area_process_rename_save_row"
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
 PROCESS_RENAME_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시명 그대로라 새 버전을 만들지 않았습니다."
@@ -328,6 +332,7 @@ def _render_direct_editor(
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
     st.html(heading_row_css(marked=bool(unmatched)))
+    st.html(f"<style>{toolbar_room_css(SAVE_ROW_KEY)}</style>")
     with st.container(
         horizontal=True, vertical_alignment="center", gap="small", key=HEADING_ROW_KEY
     ):
@@ -383,8 +388,11 @@ def _render_direct_editor(
     )
     save_status = st.container()
     with st.form("admin_area_process_rename_edit_form"):
-        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다(오른쪽 끝은 표 도구 막대에 가린다).
-        with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        # 작업 줄(저장·메모)은 표 **위**, 버튼이 왼쪽이다 — 오른쪽 끝은 표 도구 막대 자리로 비운다
+        # (`SAVE_ROW_KEY`).
+        with st.container(
+            horizontal=True, vertical_alignment="bottom", gap="small", key=SAVE_ROW_KEY
+        ):
             submitted = st.form_submit_button(
                 "공용 공정 표시명 저장",
                 icon=":material/save:",
@@ -398,25 +406,22 @@ def _render_direct_editor(
                 label_visibility="collapsed",
             )
         unchanged_note = st.container()
-        # 「변경 메모」 칸은 오른쪽 끝까지 늘어난다 — 표 도구 막대가 그 칸에 닿지 않게 띄운다(AGENTS
-        # 9장 「표 도구 막대」). 띄움과 표는 간격 없는 칸 하나다 — 줄 사이 14 + 띄움 24 = 38px 로
-        # 막대 바로 위까지다(폼 안 표의 한 값 — 설계 규칙 4장 「폼 안 알림 칸」).
-        with st.container(gap=None):
-            toolbar_clearance()
-            edited = st.data_editor(
-                editable,
-                hide_index=True,
-                num_rows="dynamic",
-                width="stretch",
-                height=420,
-                # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
-                placeholder="",
-                column_config={
-                    "공정": st.column_config.TextColumn("공정 (원본)"),
-                    "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
-                },
-                key=EDITOR_KEY,
-            )
+        # 표 앞 띄움을 두지 않는다 — 표 도구 막대는 저장 줄 오른쪽 끝 빈 자리 위에 선다(AGENTS 9장
+        # 「표 도구 막대」, 설계 규칙 4장 「폼 안 알림 칸」 — 저장 줄 → 표 14px).
+        edited = st.data_editor(
+            editable,
+            hide_index=True,
+            num_rows="dynamic",
+            width="stretch",
+            height=420,
+            # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
+            placeholder="",
+            column_config={
+                "공정": st.column_config.TextColumn("공정 (원본)"),
+                "표시명": st.column_config.TextColumn("표시명 (화면 표기)"),
+            },
+            key=EDITOR_KEY,
+        )
     refused = take_refusal(PROCESS_RENAME_SAVE_NAME)
     if refused is not None:
         save_status.error(refused)

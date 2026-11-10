@@ -14,6 +14,7 @@ from capa_simulation.components.display_order_management import (
     DISPLAY_ORDER_EDITOR_KEY,
     DISPLAY_ORDER_NOTE_KEY,
 )
+from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_ROOM
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 
 
@@ -249,7 +250,8 @@ def test_the_csv_and_paste_buttons_share_the_save_row(tmp_path: Path) -> None:
     """표 위는 두 줄이다 — CSV 다운로드 · Excel 붙여넣기는 따로 줄을 세우지 않고 저장 · 메모 줄
     오른쪽 끝에 선다(2026-11-08 사용자 답 d7). 둘은 폼에 둘 수 없는 위젯이라 폼 바로 앞 칸이고(폼
     뒤면 표 안 Tab 이 칸마다 옮겨 가 둘이 표의 모든 칸 뒤로 밀린다), 서식이 그 칸을 저장 줄 높이에
-    얹고 저장 줄은 그 폭만큼 비운다."""
+    얹고 저장 줄은 그 폭만큼 비운다. 줄 맨 끝은 표 도구 막대 자리라 도구 칸도 그만큼 왼쪽에
+    선다(2026-11-10 사용자 그림 메모 admin-order)."""
     from capa_simulation.components import display_order_management as dom
 
     app = AppTest.from_string(_label_script(tmp_path / "display-order-row.duckdb"))
@@ -274,7 +276,10 @@ def test_the_csv_and_paste_buttons_share_the_save_row(tmp_path: Path) -> None:
     styles = [str(element.proto.body) for element in app.get("html")]
     assert dom.DIRECT_EDITOR_STYLE in styles
     assert dom.ACTION_ROW_CSS in dom.DIRECT_EDITOR_STYLE
-    assert f".st-key-{dom.SAVE_ROW_KEY} {{ padding-right: " in dom.ACTION_ROW_CSS
+    room = f"{TABLE_TOOLBAR_ROOM}px"
+    reserve = f"padding-right: calc({dom.ACTION_ROW_RESERVE_REM}rem + {room});"
+    assert f".st-key-{dom.SAVE_ROW_KEY} {{\n  {reserve}" in dom.ACTION_ROW_CSS
+    assert f"right: calc(1rem + {room});" in dom.ACTION_ROW_CSS
     assert "position: absolute;" in dom.ACTION_ROW_CSS
     # CSV · Excel 만 선 따로 줄이 없다 — 내려받기 단추는 이 문서에 하나이고 도구 칸 안이다.
     assert len(app.get("download_button")) == 1
@@ -366,8 +371,9 @@ def _editor_path(app: AppTest) -> tuple[int, ...]:
 
 
 def _holder(editor: tuple[int, ...]) -> tuple[int, ...]:
-    """편집표가 도구 막대 띄움과 함께 든 간격 없는 칸의 경로 — 폼 안 저장 줄 · 알림 칸의 형제다."""
-    return editor[:-1]
+    """편집표의 폼 안 자리 — 저장 줄 · 알림 칸의 형제다(표 앞 띄움 칸이 없다 — 표 도구 막대는 저장
+    줄 오른쪽 끝 막대 자리 위에 선다)."""
+    return editor
 
 
 def test_an_unchanged_press_after_the_window_shows_the_label_warning_again(

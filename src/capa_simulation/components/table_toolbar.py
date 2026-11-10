@@ -1,4 +1,4 @@
-# Purpose: 표 위 제목·부가 설명 줄, CSV 내보내기 버튼과 표 도구 막대 앞 띄움을 한 곳에서 그린다.
+# Purpose: 표 위 제목 줄, CSV 내보내기 버튼, 표 도구 막대 앞 띄움 · 막대 자리를 한 곳에서 짓는다.
 
 """One heading row and one CSV download button for every table.
 
@@ -37,6 +37,10 @@ CSV_TEMPLATE_LABEL = "CSV 양식 다운로드"
 # 띄움의 숫자는 여기 하나다 — 다른 모듈의 이름은 이 값을 가리키는 별칭이다
 # (`tests/test_table_toolbar.py`).
 TABLE_TOOLBAR_CLEARANCE = 24
+# 표 도구 막대 자리(px) — 표 바로 위 줄의 오른쪽 끝을 이만큼 비우면 막대(1600 · 1283 창에서 행을
+# 더하고 지우는 표 112px · 행이 고정된 표 92.4px — 샘플 관측)가 그 빈 위에 서므로 표 앞 띄움 없이
+# 표가 줄 바로 아래(줄 사이 14px)에 붙는다. 넓은 막대보다 8px 남긴다(AGENTS 9장 「표 도구 막대」).
+TABLE_TOOLBAR_ROOM = 120
 
 
 def render_csv_download(
@@ -70,6 +74,16 @@ def toolbar_clearance() -> None:
     단추·입력 칸 지우기(✕)를 덮어 표에서 그리로 옮긴 누름을 가로채지 않게 한다.
     """
     st.space(TABLE_TOOLBAR_CLEARANCE)
+
+
+def toolbar_room_css(row_key: str) -> str:
+    """key 있는 가로 줄의 오른쪽 끝을 표 도구 막대 자리(`TABLE_TOOLBAR_ROOM`)만큼 비우는 서식 한 줄.
+
+    표 바로 위 줄을 표 앞 띄움(`toolbar_clearance`) 대신 이것으로 비운다 — 입력 칸은 그 앞까지만
+    늘어나고, 줄에 다 들지 못하는 단추는 막대 자리로 들어가지 않고 다음 줄로 내려간다. 부르는 쪽이
+    화면 서식(`<style>`) 안에 넣는다.
+    """
+    return f".st-key-{row_key} {{ padding-right: {TABLE_TOOLBAR_ROOM}px; }}"
 
 
 @contextmanager
