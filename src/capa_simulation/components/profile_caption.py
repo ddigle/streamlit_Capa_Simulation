@@ -118,6 +118,7 @@ def render_profile_heading(
     detail: str | None = None,
     help: str | None = None,
     mark: tuple[str, str] | None = None,
+    style: str | None = None,
 ) -> None:
     """구획 제목과 그 공용 버전 줄(`profile_version_caption`)을 한 줄에 그린다.
 
@@ -136,8 +137,13 @@ def render_profile_heading(
     `literal_markdown` 이 `<` 까지 막았고, 앱 글의 맨 `<` 는 글자 그대로 보이게
     바꾼다(`_without_raw_html`). 본문 칸에만 쓰고 이벤트 칸에는 아무것도 쓰지 않아 팝업 본문 ·
     프래그먼트 어디서나 부를 수 있다.
+
+    `style` 은 그 구획의 다른 칸에 거는 앱이 지은 서식 규칙(`<style>` 없이 — 예: 저장 줄 오른쪽 끝을
+    표 도구 막대 자리로 비우는 `table_toolbar.toolbar_room_css`)이다. 같은 까닭으로 버전 줄 캡션에
+    함께 싣는다 — 팝업 본문(HOME 설정)은 스타일만 든 `st.html` 을 쓸 수 없다.
     """
     caption = profile_version_caption(profile, empty=empty, detail=detail)
+    extra = f"<style>{style}</style>" if style else ""
     with st.container(
         horizontal=True,
         vertical_alignment="center",
@@ -146,7 +152,7 @@ def render_profile_heading(
     ):
         st.markdown(title, help=help, width="content")
         st.caption(
-            _without_raw_html(caption) + HEADING_BASELINE_STYLE,
+            _without_raw_html(caption) + HEADING_BASELINE_STYLE + extra,
             unsafe_allow_html=True,
             width="content",
         )
