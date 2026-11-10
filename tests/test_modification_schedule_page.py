@@ -221,7 +221,7 @@ def _shown(app: AppTest) -> tuple[ScheduleResult, ScheduleLabels]:
 
 
 def _header(app: AppTest) -> str:
-    """계산에 걸린 조건을 옛 머리 줄 꼴(「개조 4대 × 30일 · 기준 HOME · 가장 빨리 · 동시 상한
+    """계산에 걸린 조건을 한 줄 글(「개조 4대 × 30일 · 기준 HOME · 가장 빨리 · 동시 상한
     없음」)로 — 시험 몫의 글이다. 머리 줄은 조건을 되읊지 않으므로(2026-11-08 사용자 그림 메모 g12
     — 조건은 사이드바 칸) 계산 결과에서 읽는다."""
     result, labels = _shown(app)

@@ -183,7 +183,7 @@ def test_the_missing_official_alert_points_at_the_archive_when_only_archives_are
 ) -> None:
     """공식버전이 없고 시나리오가 보관본만 남았으면 `SC-01` 이 고를 것 없는 목록 대신 보관함의
     「되돌리기」 를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 활성 시나리오가 있으면
-    예전 글 그대로다."""
+    보관함을 가리키지 않는 다른 글이다."""
     from test_page_bootstrap import _store_with_scenarios
 
     database = tmp_path / "scenario.duckdb"

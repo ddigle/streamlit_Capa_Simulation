@@ -875,9 +875,9 @@ def test_the_step_label_keeps_a_renamed_process_as_written() -> None:
 def test_the_investment_mark_stands_in_the_evidence_panel_of_an_owned_shortfall_month(
     strict_databases: tuple[Path, Path],
 ) -> None:
-    """KPI 아래 부족 원인 줄은 걷었다(2026-11-10 보드 c2-picked) — 「투자 검토 대상」 표지와 산출
-    결과 링크는 근거 패널이 그 달 원인이 보유로도 부족일 때 단다(단독 실행은 갈 페이지가 없어 글자로
-    물러선다). 기간 전체의 원인별 달 수는 KPI 「부족 원인」 이다."""
+    """「투자 검토 대상」 표지와 산출 결과 링크는 근거 패널이 그 달 원인이 보유로도 부족일 때 단다
+    (단독 실행은 갈 페이지가 없어 글자로 물러선다) — KPI 아래에는 원인별 줄이 없다(2026-11-10 보드
+    c2-picked). 기간 전체의 원인별 달 수는 KPI 「부족 원인」 이다."""
     app = _ok(_app(strict_databases).run())
     cause = next(metric for metric in app.metric if metric.label == "부족 원인")
     assert not any("개월 — 산출 결과" in str(item.value) for item in app.caption)
@@ -1082,10 +1082,10 @@ def _open_schedule_short_month(app: AppTest) -> int:
     raise AssertionError("일정 부족 달이 없다")
 
 
-def test_the_kpi_next_screen_row_is_gone_and_the_closing_link_still_steps_aside(
+def test_the_kpi_has_no_next_screen_row_and_the_closing_link_still_steps_aside(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
-    """KPI 아래 「다음 화면 · 일정 n개월 — 필요 단축 일정」 줄은 걷었다(2026-11-10 보드 c2-picked).
+    """KPI 아래에 「다음 화면 · 일정 n개월 — 필요 단축 일정」 줄이 없다(2026-11-10 보드 c2-picked).
     일정 부족 달이 있는 공정은 근거 패널의 그 달 단추가 같은 길이라 맨 아래 링크는 서지 않고(설계
     규칙 UI-LAY-12), 내려받기 둘은 그대로다."""
     app = _dynamic_app(dynamic_databases)

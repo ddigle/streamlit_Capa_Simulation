@@ -2233,6 +2233,10 @@ def track_texts(
     ▼ 정지·반출/이설 · 해소(해소 기여 월 눈금)를, ④ 는 화살표 꼬리 칸에 그림 글(비가동유형 ·
     ◂ 이전부터 · 계속 ▸)과 지나는 칸에 ━ ▶(가용을 깎음) · ┄(영향 없음)을 적는다. 같은 칸의
     표지는 왼쪽부터 「 · 」 로 잇는다. 그 밖의 줄은 빈 dict 다.
+
+    ◀ 는 촉이 선 칸(목표 기여 시작의 생산월)에 둔다. 「−N일」 · 「반입 전」 은 그림에서 촉 왼쪽에
+    펴지는 글이라 그 글 가운데가 든 칸에 적는다 — 촉이 달 경계에 서면 글은 앞 달 칸이고, 그때
+    「−N일」 은 ◀ 와 갈려 따로 선다. 경고색 칠은 「반입 전」 이 든 칸이다.
     """
     count = len(axis)
     if count == 0:
@@ -2259,11 +2263,25 @@ def track_texts(
             pieces.append((marks.arrival, "◆ 반입"))
         if marks.pull is not None:
             start_x, target_x = marks.pull
-            label = f"◀ {_MINUS}{marks.pull_days}일"
+            column_px = tokens.MONTH_COLUMN_WIDTH_PX
+            days = f"{_MINUS}{marks.pull_days}일"
+            # 글 가운데 — 앵커(`_draw_unit`)에서 어림 폭(`_unit_span` 과 같은 몫)의 반만큼 왼쪽.
+            label_x = (
+                target_x
+                - _PULL_TEXT_GAP
+                - _pull_label_px(marks.pull_days) * _SPAN_TEXT_SHARE / 2 / column_px
+            )
+            if column(label_x) == column(target_x):
+                pieces.append((target_x, f"◀ {days}"))
+            else:
+                pieces += [(label_x, days), (target_x, "◀")]
             if marks.before_arrival:
-                label = f"{_BEFORE_ARRIVAL_TEXT} · {label}"
-                warned.add(column(target_x))
-            pieces.append((target_x, label))
+                badge_x = (
+                    _badge_right(target_x, marks.pull_days)
+                    - _badge_px(_SPAN_TEXT_SHARE) / 2 / column_px
+                )
+                pieces.append((badge_x, _BEFORE_ARRIVAL_TEXT))
+                warned.add(column(badge_x))
             pieces += [(index + 0.5, "━") for index in range(column(target_x) + 1, column(start_x))]
         if marks.start is not None:
             pieces.append((marks.start, "● 기여 시작"))

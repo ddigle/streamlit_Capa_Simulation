@@ -204,8 +204,8 @@ def check_registration_capacity(
     멈춤으로 잡히지 않는다(2026-11-08 사용자 결정 U3 — 등록은 그대로 하고 「계산 멈춤」 으로
     알린다). 경로 행이 있어도 모두 CS 가 비면 파생이 빼 같은 표가 빈다 — `blank_cs_routes`(CS 가
     비어 뺀 경로 행 수, `BlankCsDrop.route_rows`)로 글의 까닭과 고칠 곳을 가른다. 경로 행만 있는
-    원천(빈 계획 표 `_PLAN_TABLES`)도 계산 앞에서 같은 꼴로 잡는다 — 그때 멈추는 것은 HOME · 부하
-    환산이다(`RegistrationCapacityCheck.stop_scope`).
+    원천(빈 계획 표 `_PLAN_TABLES`)도 계산 앞에서 같은 꼴로 잡는다 — 그때 멈추는 것은 HOME · 생산
+    계획 · 표준 목표 계산이다(`RegistrationCapacityCheck.stop_scope`).
     """
     empty = tuple(name for name in ROUTE_TABLES if tables[name].empty)
     if empty:

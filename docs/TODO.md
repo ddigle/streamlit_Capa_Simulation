@@ -785,11 +785,11 @@
 ### 문서 및 테스트
 
 - [ ] **설계 규칙 그물의 미정리 줄이기(2026-11-04 — 그물 넷을 세울 때 센 기존 자리)** — 화면 글 문장 그물
-  (`tests/test_place_sentence_sites.py`)은 서술형 문장 자리 가운데 **5곳**을 「미정리」(설명 · 내역 · 길 안내 · 하는 법)로 센다(`UNSETTLED_SITES`
-  — 그림 검수표 2026-11-05 까지 14, 2026-11-07 전 화면 점검 고침으로 8, 같은 날 보드 답 묶음으로 6, 2026-11-09 Dynamic 산식 가이드 단위 줄을 「표준 Capa」 칸 풍선으로 옮겨 5). 미정리 가운데 내역 자리는 SHOULD(UI-TXT-04 — 반영 검수표 D1 (나))이고, 설명 · 하는 법(UI-TXT-01) ·
+  (`tests/test_place_sentence_sites.py`)은 서술형 문장 자리 가운데 **4곳**을 「미정리」(설명 · 내역 · 길 안내 · 하는 법)로 센다(`UNSETTLED_SITES`
+  — 그림 검수표 2026-11-05 까지 14, 2026-11-07 전 화면 점검 고침으로 8, 같은 날 보드 답 묶음으로 6, 2026-11-09 Dynamic 산식 가이드 단위 줄을 「표준 Capa」 칸 풍선으로 옮겨 5, 2026-11-10 Chatbot 답 네 칸 캡션을 Guide 로(보드 Q-9) 4). 미정리 가운데 내역 자리는 SHOULD(UI-TXT-04 — 반영 검수표 D1 (나))이고, 설명 · 하는 법(UI-TXT-01) ·
   길 안내(UI-TXT-03) 문장은 MUST 그대로다. 그물의 꼴 검사는 상자 · 빈 결과 비결론 꼴 · 하는 법 꼬리만 잡는다 — 값 · 표지 자리 글을 다른 설명 문장으로 바꾸는 것은 판단 질문이
   본다. 다음에 줄일 곳: 기준 정보 화면 `reference_integrity` `_render_guide` 셋(Dynamic Capa 「산식 가이드」 — 화면을 완성할 때 Guide 로, 위
-  「구현 중」 화면 항목), Capa Chatbot 둘(산식 · 대본 — 화면을 완성할 때 Guide 로). 알림 꼴 그물(`tests/test_notice_form_sites.py`)의 초록 결과 상자는
+  「구현 중」 화면 항목), Capa Chatbot 하나(추천 질문 캡션 — 화면을 완성할 때 Guide 로). 알림 꼴 그물(`tests/test_notice_form_sites.py`)의 초록 결과 상자는
   **0곳**이다. 문장으로 끝나지 않는 내역 줄 · 매개변수로 받은 글은 그물 밖이다(판단 질문이 본다). `.error(` 는 `tests/test_data_error_mark.py`(`PLACE_ERROR_SITES`)가 전부 맞댄다.
   JS 편집기 글(`editor.js`)도 그물 밖이다 — 배치 편집 상태 줄의 하는 법 글 · 왼쪽 칸 도움말 · 미배치 칸 「i」 글은 걷었고(그림 검수표 equip-61 — 키는 도구 줄 「단축키」 판),
   상태 줄의 값 · 표지는 `tests/test_space_editor_shortcuts_js.py` 가 본다.

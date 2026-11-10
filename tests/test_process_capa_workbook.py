@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -46,6 +47,7 @@ from capa_simulation.components.process_capa_workbook import (
 )
 from capa_simulation.design import theme, tokens
 from capa_simulation.services.month_columns import month_label
+from capa_simulation.services.process_equipment_timeline import ROW_SHORTENED, UNIT_EVENT_COLUMNS
 
 MINUS = "−"
 LABEL = "Die Attach"
@@ -231,7 +233,7 @@ def test_the_units_and_downtime_rows_are_words_where_the_marks_are() -> None:
     before_arrival = [
         cell
         for (row, column), cell in sheet.cells.items()
-        if column >= 2 and isinstance(cell.value, str) and cell.value.startswith("반입 전 · ◀ ")
+        if column >= 2 and isinstance(cell.value, str) and cell.value.startswith("반입 전 · ")
     ]
     assert before_arrival
     assert all(cell.fill == "FF" + tokens.STATUS_WARNING.lstrip("#") for cell in before_arrival)
@@ -246,6 +248,56 @@ def test_the_units_and_downtime_rows_are_words_where_the_marks_are() -> None:
     )
     detail = sheet.cells[(sheet.find_row("EQ-22"), 1)].value
     assert isinstance(detail, str) and detail.startswith("기존 ") and " → 단축 " in detail
+
+
+def _pull_event(unit: str, target_x: float, days: int, start_x: float) -> dict[str, Any]:
+    """「반입 전」 단축 줄 하나 — 촉(목표 기여 위치) · 당긴 날 · 기여 시작 위치만 고른다."""
+    event: dict[str, Any] = dict.fromkeys(UNIT_EVENT_COLUMNS)
+    event.update(
+        {
+            "줄": ROW_SHORTENED,
+            "호기": unit,
+            "모듈 수": 1,
+            "Qual상태": "계획",
+            "모듈별 Qual": (),
+            "단축일수": days,
+            "늘어난 환산대수": 0.5,
+            "반입 전": True,
+            "해소 기여 월": (),
+            "기여 시작 위치": start_x,
+            "기여 시작 축 밖": False,
+            "목표 기여 위치": target_x,
+        }
+    )
+    return event
+
+
+def test_the_pull_words_sit_in_the_month_the_screen_draws_them() -> None:
+    """◀ 는 촉이 선 칸(목표 기여 시작의 생산월)에, 「−N일」 · 「반입 전」 은 그림처럼 촉 왼쪽 글이
+    든 칸에 적는다 — 촉이 달 경계에 서면 그 글과 경고색은 앞 달 칸이다. 촉이 칸 가운데쯤이면 글이
+    같은 칸이라 「반입 전 · ◀ −N일」 한 칸이다."""
+    events = pd.DataFrame(
+        [_pull_event("EQ-80", 3.0, 20, 3.5), _pull_event("EQ-81", 3.7934, 188, 6.5)],
+        columns=list(UNIT_EVENT_COLUMNS),
+    )
+    sheet = _detail(_request(dynamic=_dynamic(unit_events=events, exits=pd.DataFrame())))
+    warning = "FF" + tokens.STATUS_WARNING.lstrip("#")
+
+    edge = sheet.find_row("EQ-80")
+    assert sheet.cells[(edge, 2 + 2)].value == f"반입 전 · {MINUS}20일"
+    assert sheet.cells[(edge, 2 + 2)].fill == warning
+    assert sheet.cells[(edge, 2 + 3)].value == "◀ · ● 기여 시작"
+    assert sheet.cells[(edge, 2 + 3)].fill != warning
+
+    middle = sheet.find_row("EQ-81")
+    assert sheet.cells[(middle, 2 + 3)].value == f"반입 전 · ◀ {MINUS}188일"
+    assert sheet.cells[(middle, 2 + 3)].fill == warning
+    assert sheet.cells[(middle, 2 + 2)].value is None
+    assert [sheet.cells[(middle, 2 + index)].value for index in (4, 5, 6)] == [
+        "━",
+        "━",
+        "● 기여 시작",
+    ]
 
 
 def test_the_assumption_rows_and_heading_stand_as_on_screen() -> None:

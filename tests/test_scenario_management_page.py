@@ -1462,8 +1462,7 @@ def test_an_official_popup_whose_scenario_was_deleted_meanwhile_gives_both_notic
 ) -> None:
     """팝업을 그린 뒤 남이 그 시나리오를 보관하고 영구 삭제까지 하면 다시 읽기가 빈 대상을 받아
     팝업을 걷는다 — 그 사이 보관만 된 것(저장소 거부)과 같이 알림창의 까닭과 카드 곁 「고른
-    시나리오가 바뀌어 …」 둘이다(검수 보드 sc-purged — a1 답과 같은 꼴). 전에는 카드 곁 하나만
-    섰다."""
+    시나리오가 바뀌어 …」 둘이다(검수 보드 sc-purged — a1 답과 같은 꼴)."""
     app, browser, repository, database_path = _official_popup_app(tmp_path, monkeypatch)
     other = _clone_official(database_path, "지워질 시나리오", "DELETE-OFFICIAL")
     scenario_id = other.scenario.scenario_id

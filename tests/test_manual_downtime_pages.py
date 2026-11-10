@@ -270,7 +270,7 @@ def test_a_screen_without_a_process_closes_the_entered_downtime_alert(
 
 def test_the_schedule_mode_raises_the_same_entered_downtime_alert(tmp_path: Path) -> None:
     """「개조 일정」 모드도 같은 함수 · 같은 범위 · 같은 내용으로 `CS-05` 를 낸다 — 모드를 바꿔도
-    같은 알림이라 다시 뜨지 않는다. 출처 띠 끝에 서던 「입력 비가동 반영(…)」 은 없다(2026-11-09
+    같은 알림이라 다시 뜨지 않는다. 출처 띠 끝에는 「입력 비가동 반영(…)」 이 없다(2026-11-09
     보드 c-schedule-head · 2026-11-10 보드 Q-4)."""
     databases = (tmp_path / "scenario.duckdb", _equipment_database(tmp_path / "equipment.duckdb"))
     _seed(databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)

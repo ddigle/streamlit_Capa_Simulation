@@ -26,7 +26,7 @@ from sso_support import (
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.components import sso_status
 
 SCRIPT = """
@@ -349,3 +349,9 @@ def test_the_status_shows_audit_events_and_anonymous_failures_apart() -> None:
     anonymous = app.dataframe[2].value
     assert len(anonymous) == sso_status.ANONYMOUS_EVENT_LIMIT
     assert set(anonymous["계정"].tolist()) == {"-"}
+
+
+def test_an_unknown_list_file_reads_as_an_unknown_format() -> None:
+    """S3 명단을 모르는 꼴로 받았을 때의 까닭 이름은 「모르는 파일 형식」 이다(검수 보드
+    ad-format-word — `docs/sso_setup.md` 의 까닭 목록과 같은 낱말)."""
+    assert sso_status.ACCESS_PROBLEM_LABELS[access_store.KIND_UNKNOWN_FORMAT] == "모르는 파일 형식"

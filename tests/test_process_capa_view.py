@@ -932,8 +932,8 @@ def test_the_next_screen_button_keeps_the_balloon_of_the_closing_link() -> None:
 def test_the_closing_link_is_needed_only_without_another_way() -> None:
     """맨 아래 필요 단축 일정 링크 — 그 카드에서 왔으면 「← 필요 단축 일정」 이, 일정 부족 달이
     있으면 근거 패널의 그 달 단추가 같은 길이다(설계 규칙 UI-LAY-12). 그 단추가 서는 달은 KPI
-    「부족 원인 · 일정」 이 세는 달과 같다 — 달 수 하나로 본다. KPI 아래 「일정 n개월 — 필요 단축
-    일정」 줄은 걷었다(2026-11-10 보드 c2-picked)."""
+    「부족 원인 · 일정」 이 세는 달과 같다 — 달 수 하나로 본다. KPI 아래에는 「일정 n개월 — 필요
+    단축 일정」 줄이 없다(2026-11-10 보드 c2-picked)."""
     short = _dynamic_view()
     plan = prescription(short)
     months = [int(month) for month in short.canvas.process_months["생산계획년월"]]
