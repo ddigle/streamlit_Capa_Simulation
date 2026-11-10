@@ -1617,7 +1617,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   만든다. 계산 원본은 바꾸지 않는다.
 - `src/capa_simulation/components/hierarchical_monthly_table.py` — 대당 Capa·확보율·소요대수처럼 합계행 없는 월별
   결과를 같은 고정 분류 + 스크롤 월 Plotly 표로 그린다(반복값 생략·계층 경계, 숫자/퍼센트 모드, 큰 표는 페이지 단위).
-  표시 모드는 원본 값을 바꾸지 않고, 화면과 같은 꼴의 CSV 프레임을 만든다. 큰 표의 「표시 범위」 칸은 표 제목 줄 CSV 곁이고
+  표시 모드는 원본 값을 바꾸지 않고, 화면과 같은 꼴의 CSV 프레임을 만든다. 큰 표의 「표시 범위」 칸은 표 제목 줄 「내려받기 ▾」 메뉴 곁이고
   (`page_slot` — 부르는 쪽이 `table_toolbar.table_heading_row` 안에 만들어 넘긴다, 2026-11-07 답 table-top), 값 글에 전체 행 수가
   든다(「1–80행 / 153행」). 행 수가 바뀐 회차에는 고른 차례를 새 쪽 수 안으로 잘라 다시 적고, 마지막으로 그린 (행 수, 차례)를
   `<key>_page_shown` 에 둔다 — 늦게 떠난 회차가 싣고 온 옛 글(새 보기에 없는 값 글)은 그 차례로 되돌린다
@@ -3207,7 +3207,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `table_heading_row` 는 `download_menu_key(CSV key)`) 안에 CSV 단추 → 내용 폭 엑셀 칸, CSV 가 없으면 메뉴 없이 엑셀 칸만 —
   2026-11-10 답 Q2-7, 설비 마스터 「선택 ▾」 과 같은 꼴. 안의 단추는 `on_click="ignore"` 라 눌러도 메뉴가 열린 채 초점이 남고
   Esc 로 닫힌다. 시트를 나중에 짓는 화면은 돌려받은 칸에 `render_sheet_download`. 공정 Capa 상세 표 도구 줄 · 산출 결과
-  대당 Capa · 소요대수 제목 줄(`table_heading_row(sheet=)`)이 쓰고, `tests/test_table_toolbar.py` 가 엑셀 단추를 다른 자리에서
+  대당 Capa · 소요대수 제목 줄(`table_heading_row(sheet=)`) · 가용설비 Static 대비 일정 시트(전환 줄 끝) · 호기 목록(목록 아래)이 쓰고, `tests/test_table_toolbar.py` 가 엑셀 단추를 다른 자리에서
   부르지 않는지 · 쌍의 꼴을 본다)과 표 도구 막대 앞 띄움
   (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭), 띄움 대신 표 바로 위 줄 오른쪽 끝을
   막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. `st.download_button` 은

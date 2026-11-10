@@ -561,7 +561,8 @@ def render_availability_gap_panel(
     # 두 전환(조회 결과 · 표시)은 한 줄에 나란히 선다. `표시` 는 분류별 내역에서만, 범위를 정한
     # 뒤에 이 줄로 들어온다 — 그 사이의 안내는 줄 아래에 남는다. 줄 끝은 두 전환의 뜻을 함께 말하는
     # 풍선 하나(`row_help` — 확보율 교차검증이면 맞대어 본 달이 그 풍선 첫 단락)이고, 시트를 보는
-    # 회차에는 그 오른쪽 끝에 「시트 CSV」 가 선다 — 단추 하나가 따로 한 줄을 차지하지 않는다
+    # 회차에는 그 오른쪽 끝에 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀)가 선다 — 단추 하나가 따로
+    # 한 줄을 차지하지 않는다
     # (2026-11-09 사용자 보드 T2 · T3, 설계 규칙 UI-LAY-11 · UI-LAY-03). 전환끼리는 넓게 띄우고,
     # 풍선은 마지막 전환과 한 칸(작은 간격)이다 — Main 머리 줄의 줄 끝 풍선과 같은
     # 간격(UI-CON-03).
@@ -723,7 +724,8 @@ def render_availability_gap_panel(
         )
     row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
     with switches:
-        # 「시트 CSV」 자리 — 줄 오른쪽 끝(시트를 그리는 회차에만 채운다, 비면 그리지 않는다).
+        # 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀) 자리 — 줄 오른쪽 끝(시트를 그리는 회차에만
+        # 채운다, 비면 그리지 않는다).
         csv_slot = st.container(
             horizontal=True, horizontal_alignment="right", vertical_alignment="center"
         )
