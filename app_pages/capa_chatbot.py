@@ -155,11 +155,9 @@ chat_column, guide_column = st.columns([3, 1], gap="medium")
 
 with chat_column:
     with st.container(border=True):
+        # 답의 네 칸(결론 · 근거 표 · 사용한 조건과 산식 · 한계)은 Guide 가 말한다 — 화면에
+        # 설명 글을 달지 않는다(2026-11-10 보드 Q-9, 설계 규칙 UI-TXT-01).
         st.markdown("#### :material/chat: Capa 분석 대화")
-        st.caption(
-            "답은 네 칸으로 옵니다 — 결론 · 근거 표 · 사용한 조건과 산식 · 한계. "
-            "연결 뒤에도 이 네 칸은 그대로입니다."
-        )
         for key in transcript:
             _render_answer(answers_by_key[key])
         st.chat_input(
