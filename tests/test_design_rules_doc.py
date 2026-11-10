@@ -9,8 +9,9 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 답 · 그림 검수표 메모 10줄 · 남은 결정 보드 10줄과 답 · 전후 그림 보드 4줄과 답 · 사용자 기록
 5줄 · 이번 배포 전후 보드 7줄과 답 · 통합 검수 보드 줄과 답 · 작업 줄 규칙 둘(v1.9) · 전 화면 점검
 보드 15줄 · 2차 보드 7줄과 답(v1.10) · 아침 검수 보드 줄과 답 · 메모 원문(v1.11) · 2026-11-09 검수
-보드 · 칩 자리 · 상단 판단 줄과 답 · 메모 원문 · 새 규칙(v1.12) · 문서 안팎의 id 참조 · 그물 경로 ·
-진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+보드 · 칩 자리 · 상단 판단 줄과 답 · 메모 원문 · 새 규칙(v1.12) · 상단 정리 검수 보드 줄과 고른
+글 · 메모 원문 · 해석 셋(v1.13) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md ·
+README)의 연결.
 """
 
 from __future__ import annotations
@@ -924,11 +925,10 @@ def test_the_top_boards_are_recorded_and_the_top_rule_stands() -> None:
     새 규칙 UI-LAY-13 은 사용자 원문을 근거로 싣고 예외(T1 공지 · T9 탭 줄 아래 14px · 안쪽
     탭)를 적으며, UI-LAY-02 는 구현 중 화면 예외를 거뒀다(T8)."""
     document = _text()
-    assert "판 v1.12" in document.split("\n## 1. ")[0]
     assert "- **v1.12 — 2026-11-10.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-12. ") :]
+    board = section[section.index("\n### 6-12. ") : section.index("\n### 6-13. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: dict[str, str] = {}
@@ -966,4 +966,100 @@ def test_the_top_boards_are_recorded_and_the_top_rule_stands() -> None:
     assert "구현 중" not in lay02.fields["예외"][0]
     values = _chapter(document, 4)
     for name in ("상단 띠", "Proc Rename 제목 줄", "본문 빈 칸"):
+        assert any(line.startswith(f"| {name} |") for line in values.splitlines()), name
+
+
+# 2026-11-10 상단 정리 검수 보드(6-13)의 답 — 그림은 넷이 「고칠 것」(메모 원문) · 마흔이
+# 「좋음」, 물음은 Q-14 만 둘째 선택지이고 나머지 스물둘은 권장(첫 선택지)이다. 고른 글은 선택지
+# 원문 그대로다.
+TOP_CHECK_PICTURE_MEMOS = {
+    "admin-rename": "저장 버튼과 시트 사이 여백 조정",
+    "admin-order": "저장 버튼과 시트 사이 여백 조정",
+    "eq-pref": "저장 버튼과 시트 사이 여백 조정",
+    "c2-picked": "현재 화면에 적용된 서식이 반영되게끔해",
+}
+TOP_CHECK_CHOICES = {
+    "Q-1": (
+        "(가) 단계가 낮은 칸부터 걷는다 — 같은 단계면 오래된 칸부터."
+        " 앱 전체 알림창 동작이 바뀝니다(UI-NTF-01)"
+    ),
+    "Q-2": "(가) 켬 그대로 — 지금 동작 · Guide 와 같음",
+    "Q-3": "(가) 칩 · 판도 그 화면 글자로 — Space 에서는 원본명(한 화면 한 이름, UI-CON-02)",
+    "Q-4": "(가) 상태 알림으로 — 필요 단축 일정 · 가용설비 Static 대비 일정의 같은 표지와 같은 꼴",
+    "Q-5": (
+        "(가) 배지 줄을 걷고 탭 표지 · 사이드바만 남긴다 — 동료 모듈 코드는 그대로 돌고,"
+        " 모듈 지침서 · 창구 설명이 바뀜"
+    ),
+    "Q-6": "(가) T7 처럼 탭 표지 · 팝오버로 옮긴다 — 표는 팝오버 안, 수는 표지로",
+    "Q-7": "(가) 처음 펼친 채 — 필요 단축 일정 조건 카드와 같은 꼴",
+    "Q-8": "(가) 같은 줄 끝 ⓘ — 카드 맨 위 · 표 도구 줄이라 칸이 하나 늘어남",
+    "Q-9": "(가) Guide 로 옮긴다 — 화면에 설명 글을 달지 않는 규칙대로",
+    "Q-10": "(가) 그대로 — 알림의 「그 화면으로」 가 화면마다 다름",
+    "Q-11": "(가) 이 보드 답과 함께 다음 묶음에서 입혀 같은 배포에 싣는다",
+    "Q-12": "(가) 받는다 — 팝업 · 확인 창 셋은 이름 줄 그대로",
+    "Q-13": "(가) 그대로 — 규칙집 4장 기대값을 199 · 192.6 으로 확정",
+    "Q-14": (
+        "(나) 한 줄로 — 「선택 해제 · 선택 행 삭제」 를 메뉴 하나로 묶거나 단추를 아이콘만으로"
+    ),
+    "Q-15": "(가) 받는다",
+    "Q-16": "(가) 받는다",
+    "Q-17": "(가) 받는다",
+    "Q-18": "(가) 받는다",
+    "Q-19": "(가) 받는다",
+    "Q-20": "(가) 지금대로",
+    "Q-21": "(가) 그대로",
+    "Q-22": "(가) 그대로",
+    "Q-23": "(가) 맞다 — 그대로",
+}
+
+
+def test_the_top_check_board_is_recorded_with_its_three_readings() -> None:
+    """v1.13 — 6-13 은 고침 그림 넷 · 괜찮음 그림 한 줄(마흔) · 물음 스물셋이고, 고른 글은 선택지
+    원문 그대로 · 고침 칸에는 메모 원문이 있다. 답끼리 엇갈려 앱 세션이 밝힌 해석 셋((가) 그림
+    메모 셋은 세 화면에만 · (나) 엑셀은 표준 라이브러리 · (다) Q-14 는 메뉴 하나)은 그 답 원문 곁에
+    있다. 답이 규칙 글로 들어갔는지 핵심만 본다 — 넘침 차례(UI-NTF-01), 「내용 바뀜」 · 「닫힌 것
+    숨김」(UI-NTF-02), 모드 전환 ⓘ(UI-LAY-02), 메모 안내 글 근거 꼬리표(UI-TXT-01)."""
+    document = _text()
+    assert "판 v1.13" in document.split("\n## 1. ")[0]
+    assert "- **v1.13 — 2026-11-10.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-13. ") :]
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-10) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert list(found) == [*TOP_CHECK_PICTURE_MEMOS, "pictures-ok", *TOP_CHECK_CHOICES]
+    for key in TOP_CHECK_PICTURE_MEMOS:
+        assert found[key] == "고친다", key
+    assert found["pictures-ok"] == "괜찮음"
+    for key, answer in TOP_CHECK_CHOICES.items():
+        assert found[key] == answer, key
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    for key, memo in TOP_CHECK_PICTURE_MEMOS.items():
+        assert memo in by_id[key], key
+    assert "그림 40칸" in by_id["pictures-ok"]
+    for key in ("admin-rename", "admin-order", "eq-pref", "Q-13"):
+        assert "해석 (가)" in by_id[key], key
+    assert "해석 (나)" in by_id["c2-picked"]
+    assert "해석 (다)" in by_id["Q-14"]
+    assert "2026-10-15 사용자 결정 4" in by_id["c2-picked"]
+    assert "정정" in by_id["Q-2"]
+    assert "사용자 수락 11-10 Q-12" in by_id["Q-12"]
+
+    rules = {rule.id: rule for rule in _rules()}
+    assert "단계가 가장 낮은 칸부터" in rules["UI-NTF-01"].text
+    assert "앱 전체 회차로 닫는다" in rules["UI-NTF-01"].text
+    assert "내용 바뀜" in rules["UI-NTF-02"].text
+    assert "닫힌 것 숨김" in rules["UI-NTF-02"].text
+    assert "Q-8" in rules["UI-LAY-02"].fields["예외"][0]
+    assert "사용자 수락 11-10 Q-12" in rules["UI-TXT-01"].fields["예외"][0]
+    assert "2026-10-15 사용자 결정 4" in _chapter(document, 7)
+    values = _chapter(document, 4)
+    for name in ("표 도구 막대 자리", "공정 Capa 상세 표 도구 줄", "폼 안 알림 칸", "상단 띠"):
         assert any(line.startswith(f"| {name} |") for line in values.splitlines()), name
