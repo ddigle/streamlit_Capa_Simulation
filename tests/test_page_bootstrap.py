@@ -219,9 +219,21 @@ def test_an_empty_route_table_names_its_screen_table_and_the_source_fix(
     assert "RQ_" not in message
 
 
-@pytest.mark.parametrize("table", ["RQ_PKG_PLAN", "RQ_LOT_RATIO", "RQ_TEST"])
+def test_an_empty_plan_table_says_the_same_as_an_empty_route_table() -> None:
+    """경로 행만 있는 원천으로 만든 리비전은 HOME · 생산 계획 · 표준 목표가 조회기간을 정하다
+    「RQ_PKG_PLAN에 선택할 생산계획년월 데이터가 없습니다」 로만 멈췄다 — 빈 경로 표와 같은 꼴로
+    생산 계획 화면의 표 이름과 원천을 고쳐 다시 등록하라는 말로 바꾼다(2차 보드 Q2-27)."""
+    message = bootstrap_error_message(
+        ValueError("RQ_PKG_PLAN에 선택할 생산계획년월 데이터가 없습니다.")
+    )
+
+    assert message == "「PKG PLAN」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요."
+    assert "RQ_" not in message
+
+
+@pytest.mark.parametrize("table", ["RQ_LOT_RATIO", "RQ_TEST"])
 def test_other_empty_tables_keep_their_month_message(table: str) -> None:
-    """계획 표(경로 행만 있는 원천)와 측정률 표(비어도 계산이 선다)의 빈 표 글은 그대로다."""
+    """측정률 표(비어도 계산이 선다)와 모르는 표의 빈 표 글은 그대로다."""
     raw = f"{table}에 선택할 생산계획년월 데이터가 없습니다."
 
     assert bootstrap_error_message(ValueError(raw)) == raw

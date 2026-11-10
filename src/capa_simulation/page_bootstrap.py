@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple, ParamSpec, TypeVar, overload
+from typing import Final, NamedTuple, ParamSpec, TypeVar, overload
 
 import duckdb
 import pandas as pd
@@ -39,7 +39,7 @@ from capa_simulation.persistence.cache import (
 from capa_simulation.persistence.migration_runner import SchemaAheadOfCode
 from capa_simulation.reference_grid_keys import DATASETS, EDIT_TABLES
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
-from capa_simulation.scenario_registration import ROUTE_TABLES
+from capa_simulation.scenario_registration import PLAN_TABLES, ROUTE_TABLES
 from capa_simulation.scenario_state import ActiveScenario
 from capa_simulation.services.display_order import PreparedDisplayOrder
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_SECUREMENT
@@ -150,25 +150,26 @@ _CELL_STOPS = (
 _MODULE_TABLE = "RQ_MODULE"
 
 
-# 경로 표가 빈 리비전(계획 행만 있는 원천)을 연 계산 화면이 조회기간을 정하다 멈춘 글
-# (`month_filter` — 그 화면이 처음 읽는 경로 표의 이름이 글 머리다). 경로 표는 원천의 경로 행에서만
-# 나와 앱에서 채울 수 없다 — 내부 표 이름 대신 기준 정보 화면의 표 이름과 원천을 고쳐 다시
-# 등록하라는 말로 바꾼다(검수 보드 st-month-text). 표 → 화면 이름은 등록 점검과 한
-# 사전(`ROUTE_TABLES`)이다.
+# 원천에서만 채워지는 표가 빈 리비전을 연 계산 화면이 조회기간을 정하다 멈춘 글(`month_filter` —
+# 그 화면이 처음 읽는 표의 이름이 글 머리다). 경로 표(계획 행만 있는 원천)와 계획 표(경로 행만
+# 있는 원천 — HOME · 생산 계획 · 표준 목표가 멈춘다)는 앱에서 채울 수 없다 — 내부 표 이름 대신
+# 기준 정보 · 생산 계획 화면의 표 이름과 원천을 고쳐 다시 등록하라는 말로 바꾼다(검수 보드
+# st-month-text, 2차 보드 Q2-27). 표 → 화면 이름은 등록 점검과 한 사전(`ROUTE_TABLES` ·
+# `PLAN_TABLES`)이다.
 _EMPTY_MONTH_TABLE = re.compile(r"(?P<table>RQ_[A-Z_]+)에 선택할 생산계획년월 데이터가 없습니다")
-EMPTY_ROUTE_STOP = "{name} 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요."
+EMPTY_SOURCE_TABLES: Final[Mapping[str, str]] = {**ROUTE_TABLES, **PLAN_TABLES}
+EMPTY_TABLE_STOP = "{name} 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요."
 
 
-def empty_route_table_stop(exc: BaseException) -> str | None:
-    """경로 표가 비어 조회기간을 정하지 못한 오류면 화면 글, 아니면 None. 측정률 표 · 계획 표의 빈
-    표는 여기서 바꾸지 않는다(측정률은 비어도 계산이 서고, 계획 표는 경로 행만 있는 원천의
-    꼴이다)."""
+def empty_source_table_stop(exc: BaseException) -> str | None:
+    """경로 표 · 계획 표가 비어 조회기간을 정하지 못한 오류면 화면 글, 아니면 None. 측정률 표의 빈
+    표는 여기서 바꾸지 않는다(비어도 계산이 선다)."""
     if not isinstance(exc, ValueError):
         return None
     found = _EMPTY_MONTH_TABLE.search(str(exc))
-    if found is None or found["table"] not in ROUTE_TABLES:
+    if found is None or found["table"] not in EMPTY_SOURCE_TABLES:
         return None
-    return EMPTY_ROUTE_STOP.format(name=ROUTE_TABLES[found["table"]])
+    return EMPTY_TABLE_STOP.format(name=EMPTY_SOURCE_TABLES[found["table"]])
 
 
 # 이 세션에 불러온 리비전이 없고(`reference_cache.NoActiveRevision`) 저장소의 시나리오가 모두
@@ -251,15 +252,16 @@ def bootstrap_error_message(
     보관본일 때만 글을 갈라(`ARCHIVED_ONLY_MESSAGE`) 보관함에서 되돌리라고 한다 — 그때는 목록에도
     고를 것이 없다. 그 판정만 이 갈래에서 저장소를 읽는다(드문 상태라 회차 비용이 없다).
 
-    **경로 표가 빈 리비전**이 조회기간을 정하다 멈춘 글(「RQ_REQB에 선택할 생산계획년월 데이터가
-    없습니다」)은 「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.」 로
-    바꾼다(`empty_route_table_stop`) — 모든 계산 화면의 오류 알림이 이 함수를 지난다.
+    **경로 표 · 계획 표가 빈 리비전**이 조회기간을 정하다 멈춘 글(「RQ_REQB에 선택할
+    생산계획년월 데이터가 없습니다」)은 「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐
+    다시 등록하세요.」 꼴로 바꾼다(`empty_source_table_stop` — 계획 표는 「「PKG PLAN」 표가 비어
+    …」) — 모든 계산 화면의 오류 알림이 이 함수를 지난다.
     """
     if isinstance(exc, reference_cache.NoActiveRevision) and _only_archived_scenarios():
         return ARCHIVED_ONLY_MESSAGE
-    empty_route = empty_route_table_stop(exc)
-    if empty_route is not None:
-        return empty_route
+    empty_table = empty_source_table_stop(exc)
+    if empty_table is not None:
+        return empty_table
     if not isinstance(exc, duckdb.Error):
         return markdown_safe_tildes(exc) if markdown else str(exc)
     files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
