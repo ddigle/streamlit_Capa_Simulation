@@ -49,6 +49,16 @@ H, A, B = HOME.path, LOAD_CONVERSION.path, SCENARIO_MANAGEMENT.path
 PROBE = "page-tabs-probe"
 
 
+@pytest.fixture(autouse=True)
+def _no_shared_display_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """머리 칩 · 탭 풍선이 읽는 공용 표시명 프로필(`process_field._shared_display_names`)은 빈
+    프로필이다 — 그 읽기가 저장소 DB 를 열지 않게(프로필을 보는 시험은 따로 갈아 끼운다)."""
+    from capa_simulation.components import process_field
+    from capa_simulation.components.process_labels import ProcessLabels
+
+    monkeypatch.setattr(process_field, "_shared_display_names", ProcessLabels)
+
+
 @pytest.fixture
 def sent(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """탭 줄 기록 대역. 받은 인자를 쌓고 자리 표지 한 줄을 그린다(자리 시험용)."""
@@ -295,6 +305,31 @@ def test_each_tab_funnel_title_reads_that_screens_letters() -> None:
     tabs = {tab["id"]: tab["proc"] for tab in app.session_state["data"]["tabs"]}
     assert tabs[calculation]["title"] == "공정 WF 입고검사 · 몰드 — 산출 결과 에서"
     assert tabs[SPACE_STATUS.path]["title"] == "공정 WF · Mold — 산출 결과 에서"
+
+
+def test_values_picked_on_space_read_display_names_on_display_screen_tabs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Space 에서 고른 값은 표시명을 싣지 않는다 — 그래도 표시명 화면 탭 풍선은 그 화면
+    표시명(공용 표시명 프로필)이고 Space 탭은 원본이다(2차 보드 Q2-18)."""
+    from capa_simulation.components import process_field
+    from capa_simulation.components.process_labels import ProcessLabels
+
+    monkeypatch.setattr(
+        process_field,
+        "_shared_display_names",
+        lambda: ProcessLabels(labels={"WF": "WF 입고검사"}),
+    )
+    calculation = "app_pages/calculation_result.py"
+    paths = [H, calculation, SPACE_STATUS.path]
+    app = AppTest.from_function(_marks_script)
+    app.session_state["test_paths"] = paths
+    app.session_state["ops"] = [("publish", (["WF", "Mold"], "Space"))]
+    app.run()
+    assert not app.exception
+    tabs = {tab["id"]: tab["proc"] for tab in app.session_state["data"]["tabs"]}
+    assert tabs[calculation]["title"] == "공정 WF 입고검사 · Mold — Space 에서"
+    assert tabs[SPACE_STATUS.path]["title"] == "공정 WF · Mold — Space 에서"
 
 
 def test_a_queued_tab_switches_the_page(_app: AppTest, sent: list[dict[str, Any]]) -> None:

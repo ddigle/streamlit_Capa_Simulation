@@ -42,6 +42,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
 
 
+@pytest.fixture(autouse=True)
+def _no_shared_display_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """머리 칩 · 탭 풍선이 읽는 공용 표시명 프로필(`process_field._shared_display_names`)은 빈
+    프로필이다 — 그 읽기가 저장소 DB 를 열지 않게(프로필을 보는 시험은 따로 갈아 끼운다)."""
+    from capa_simulation.components import process_field
+    from capa_simulation.components.process_labels import ProcessLabels
+
+    monkeypatch.setattr(process_field, "_shared_display_names", ProcessLabels)
+
+
 @pytest.fixture
 def sent(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """알림 칸 기록 대역 — 받은 인자를 쌓는다."""

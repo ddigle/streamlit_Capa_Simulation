@@ -22,7 +22,7 @@
 - **머리 띠 칩 · 화면 탭 표지**(2026-11-09 보드 C1 (라) — 본문 위에는 칩을 두지 않는다). 공용 값이
   있으면 알림 칸(`components/alert_center.py`)이 머리 툴바 맨 왼쪽에 「공정」 칩을
   세우고(`header_chip`), 화면 탭 줄(`components/page_tabs.py`)이 따라가는 화면 탭 이름 곁에 깔때기
-  표지를 단다(`tab_mark`). 칩 · 판 · 탭 풍선의 글자는 보낸 화면의 표시명이고, 원본 이름으로 그리는
+  표지를 단다(`tab_mark`). 칩 · 판 · 탭 풍선의 글자는 그 화면 표시명이고, 원본 이름으로 그리는
   화면(Space — `shared_process.ORIGINAL_NAME_SCREENS`)에서는 원본이다. 둘 다 페이지보다 먼저
   그리므로 세션의 기록(`shared_process.screen_mark` — 그 화면이 마지막으로 그린 선택지)으로
   짐작하고, 값 칸을 그린 회차에는 그 회차의
@@ -44,10 +44,11 @@ from typing import Any
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
+import capa_simulation.settings as settings
 from capa_simulation import alerts, shared_process
 from capa_simulation.components.condition_field import condition_field
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.page_bootstrap import PAGE_DIALOG_SUFFIX, forget_page_dialogs
 from capa_simulation.services.korean_particle import topic_particle
 from capa_simulation.sidebar_status import (
@@ -448,13 +449,35 @@ def _shown_labels(context: _PickerContext) -> dict[str, str]:
 # ------------------------------------------------------------------ 머리 띠 칩 · 화면 탭 표지
 
 
+def _shared_display_names() -> ProcessLabels:
+    """공용 표시명 프로필(Admin `Proc Rename`) — 보낸 화면이 표시명을 싣지 않은 공정(Space 에서
+    고른 공정 등)을 표시명 화면의 글자로 적을 때 읽는다. 머리 칩 · 탭 줄은 DB 를 새로 만들지
+    않는다 — 파일이 아직 없으면(부트스트랩 전) 프로필도 없는 것이라 원본이다."""
+    if not settings.DUCKDB_PATH.exists():
+        return ProcessLabels()
+    return get_process_labels()
+
+
 def _label_of(path: str | None = None) -> Callable[[str], str]:
-    """원본 → 보이는 글자(보낸 화면이 준 표시명, 없으면 원본). `path` 가 원본 이름으로 그리는
-    화면(`shared_process.ORIGINAL_NAME_SCREENS` — Space)이면 원본 그대로다."""
+    """원본 → 그 화면의 보이는 글자(칩 · 판 · 탭 풍선은 늘 그 화면 글자 — 2026-11-10 보드 Q-3 ·
+    2차 보드 Q2-17 · Q2-18). `path` 가 원본 이름으로 그리는 화면(Space —
+    `shared_process.ORIGINAL_NAME_SCREENS`)이면 원본 그대로다. 그 밖(표시명 화면 · 따라가지 않는
+    화면)은 표시명이다 — 보낸 화면이 실은 글자가 있으면 그것, 없으면 공용 표시명
+    프로필(`_shared_display_names` — 그때 한 번만 읽는다)."""
     if path in shared_process.ORIGINAL_NAME_SCREENS:
         return str
-    mapping = dict(zip(shared_process.values(), shared_process.labels(), strict=True))
-    return lambda value: mapping.get(value, value)
+    sent = dict(zip(shared_process.values(), shared_process.labels(), strict=True))
+    profile: list[ProcessLabels] = []
+
+    def label(value: str) -> str:
+        text = sent.get(value, value)
+        if text != value:
+            return text
+        if not profile:
+            profile.append(_shared_display_names())
+        return profile[0].label(value)
+
+    return label
 
 
 def _path_of(screen: str) -> str | None:
@@ -530,10 +553,11 @@ def header_chip(path: str | None) -> dict[str, Any] | None:
     다(시각 · 카운터 없음).
 
     글자(`labels` · `top`)는 그 화면 글자다 — 원본 이름으로 그리는 화면(Space)이면 원본, 아니면
-    보낸 화면의 표시명(2026-11-10 보드 Q-3). `here` 는 지금 화면(`path`)에 대한 짐작(세션 기록 —
-    따라가지 않는 화면은 None)이고, 값 칸을 그린 회차에는 그 회차의 표지(`process_marker`)가 알림
-    칸 JS 에서 이긴다 — 차례(`screen_order`)도 그 표지의 `inside` 로 JS 가 다시 세운다. `field` 는
-    사이드바 값 칸 key 다 — 판 「공정 고르기」 가 그 칸을 눌러 팝업을 연다.
+    표시명(2026-11-10 보드 Q-3 · 2차 보드 Q2-18 — `_label_of`). `here` 는 지금 화면(`path`)에 대한
+    짐작(세션 기록 — 따라가지 않는 화면은 None)이고, 값 칸을 그린 회차에는 그 회차의
+    표지(`process_marker`)가 알림 칸 JS 에서 이긴다 — 차례(`screen_order`)도 그 표지의 `inside` 로
+    JS 가 다시 세운다. `field` 는 사이드바 값 칸 key 다 — 판 「공정 고르기」 가 그 칸을 눌러 팝업을
+    연다.
     """
     held = shared_process.values()
     if not held:

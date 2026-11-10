@@ -25,6 +25,7 @@ import html
 import json
 import re
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -46,8 +47,18 @@ from capa_simulation.components.process_field import (
     first_and_rest,
     origin_status,
 )
+from capa_simulation.components.process_labels import ProcessLabels
 
 OPTIONS = ["WF", "Mold", "Underfill"]
+# 시험마다 빈 프로필로 갈아 끼우기 전의 진짜 읽기(DB 파일 판정 시험 몫).
+REAL_SHARED_DISPLAY_NAMES = process_field._shared_display_names
+
+
+@pytest.fixture(autouse=True)
+def _no_shared_display_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """머리 칩 · 탭 풍선이 읽는 공용 표시명 프로필(`process_field._shared_display_names`)은 빈
+    프로필이다 — 그 읽기가 저장소 DB 를 열지 않게(프로필을 보는 시험은 따로 갈아 끼운다)."""
+    monkeypatch.setattr(process_field, "_shared_display_names", ProcessLabels)
 
 
 def share(app: AppTest, values: list[str], origin: str = shared_process.HOME) -> None:
@@ -295,6 +306,80 @@ def test_the_header_chip_reads_original_names_on_space_and_sent_labels_elsewhere
     )
     assert chips["home"]["labels"] == ["WF 입고검사", "몰드"]
     assert chips["space"]["origin"] == chips["result"]["origin"] == "산출 결과"
+
+
+def test_values_sent_without_labels_read_the_display_names_on_display_screens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Space(원본 이름으로 그리는 화면)에서 고른 값은 표시명을 싣지 않는다 — 그래도 표시명
+    화면(산출 결과)과 따라가지 않는 화면(HOME)의 칩 · 판은 그 화면 표시명이다(2차 보드 Q2-18 —
+    칩 · 판 · 풍선은 늘 그 화면 글자). 보낸 글자가 있으면 그것이 이기고, 없으면 공용 표시명
+    프로필로 적는다. Space 는 원본 그대로다(Q-3)."""
+    monkeypatch.setattr(
+        process_field,
+        "_shared_display_names",
+        lambda: ProcessLabels(labels={"WF": "WF 입고검사", "Mold": "프로필 몰드"}),
+    )
+    app = AppTest.from_function(_chip_script)
+    app.session_state[shared_process._VALUES_KEY] = ["WF", "Mold", "PMC"]
+    app.session_state[shared_process._ORIGIN_KEY] = "Space"
+    app.session_state[shared_process._LABELS_KEY] = {"Mold": "몰드"}
+    app.session_state[shared_process._VERSION_KEY] = 1
+    app.run()
+
+    assert not app.exception
+    chips = app.session_state["chips"]
+    assert (chips["space"]["labels"], chips["space"]["top"]) == (
+        ["WF", "Mold", "PMC"],
+        "WF 외 2개",
+    )
+    assert (chips["result"]["labels"], chips["result"]["top"]) == (
+        ["WF 입고검사", "몰드", "PMC"],
+        "WF 입고검사 외 2개",
+    )
+    assert chips["home"]["labels"] == ["WF 입고검사", "몰드", "PMC"]
+
+
+def test_the_marks_tab_title_on_a_display_screen_reads_its_display_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Space 에서 고른 값(표시명 없음)이 걸린 표시명 화면의 회차 표지 탭 풍선도 그 화면 표시명이다
+    — 값 칸 글자와 같다(2차 보드 Q2-18)."""
+    monkeypatch.setattr(
+        process_field,
+        "_shared_display_names",
+        lambda: ProcessLabels(labels={"WF": "WF 입고검사"}),
+    )
+    app = AppTest.from_function(_filter_script)
+    app.session_state["test_labels"] = {"WF": "WF 입고검사"}
+    app.run()
+    share(app, ["WF", "Mold"], origin="Space")
+    app.run()
+
+    assert not app.exception
+    assert _field(app).label == "WF 입고검사 외 1개"
+    (mark,) = process_marks(app)
+    assert mark["tab"]["title"] == "공정 WF 입고검사 · Mold — Space 에서"
+
+
+def test_the_shared_profile_is_read_only_when_the_database_file_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """머리 칩 · 탭 줄은 DB 를 새로 만들지 않는다 — 파일이 없으면 프로필도 없는 것(원본)이고, 있으면
+    공용 표시명 프로필(`get_process_labels`)을 읽는다."""
+    from capa_simulation import settings
+
+    profile = ProcessLabels(version=3, labels={"WF": "WF 입고검사"})
+    monkeypatch.setattr(process_field, "get_process_labels", lambda: profile)
+    absent = tmp_path / "absent.duckdb"
+    monkeypatch.setattr(settings, "DUCKDB_PATH", absent)
+    assert REAL_SHARED_DISPLAY_NAMES() == ProcessLabels()
+    assert not absent.exists()
+
+    present = tmp_path / "present.duckdb"
+    present.write_bytes(b"")
+    monkeypatch.setattr(settings, "DUCKDB_PATH", present)
+    assert REAL_SHARED_DISPLAY_NAMES() is profile
 
 
 def test_the_field_is_drawn_once_per_run() -> None:

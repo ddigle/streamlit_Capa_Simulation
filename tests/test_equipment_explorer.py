@@ -5,6 +5,7 @@ import re
 from datetime import date
 from typing import Any
 
+import pytest
 from alert_marks import active_state, note_table, place_errors, states, table_frame
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block, Caption, Markdown
@@ -26,6 +27,16 @@ from capa_simulation.components.equipment_explorer import (
     WEEKLY_HEADING_KEY,
 )
 from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE, HEADING_KEY_PREFIX
+
+
+@pytest.fixture(autouse=True)
+def _no_shared_display_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """머리 칩 · 탭 풍선이 읽는 공용 표시명 프로필(`process_field._shared_display_names`)은 빈
+    프로필이다 — 그 읽기가 저장소 DB 를 열지 않게(프로필을 보는 시험은 따로 갈아 끼운다)."""
+    from capa_simulation.components import process_field
+    from capa_simulation.components.process_labels import ProcessLabels
+
+    monkeypatch.setattr(process_field, "_shared_display_names", ProcessLabels)
 
 
 def _render_fixture() -> None:
