@@ -451,9 +451,9 @@ def _shown_labels(context: _PickerContext) -> dict[str, str]:
 
 
 def _shared_display_names() -> ProcessLabels:
-    """공용 표시명 프로필(Admin `Proc Rename`) — 보낸 화면이 표시명을 싣지 않은 공정(Space 에서
-    고른 공정 등)을 표시명 화면의 글자로 적을 때 읽는다. 머리 칩 · 탭 줄은 DB 를 새로 만들지
-    않는다 — 파일이 아직 없으면(부트스트랩 전) 프로필도 없는 것이라 원본이다."""
+    """공용 표시명 프로필(Admin `Proc Rename`) — 머리 칩 · 판 · 탭 풍선을 원본 이름 화면(Space)
+    밖에서 적을 때(`_label_of`) 읽는다. 머리 칩 · 탭 줄은 DB 를 새로 만들지 않는다 — 파일이 아직
+    없으면(부트스트랩 전) 프로필도 없는 것이라 원본이다."""
     if not settings.DUCKDB_PATH.exists():
         return ProcessLabels()
     return get_process_labels()
