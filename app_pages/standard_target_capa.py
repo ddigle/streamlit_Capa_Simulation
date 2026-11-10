@@ -196,7 +196,7 @@ AVAILABILITY_BASED_METRICS = frozenset({"일 표준 가능량", "가용대수"})
 # 로직 분석에서 일곱 칸을 다 고르지 않은 회차의 빈 결과 한 줄.
 LOGIC_EMPTY = "산출 근거를 그릴 한 건이 아직 없습니다."
 # 주차별 가용설비가 한 건도 저장되지 않아 가용대수를 곱하는 표를 그릴 수 없을 때의 빈 결과 한 줄 —
-# 넣는 곳(작업 줄 「가용설비 붙여넣기」)은 Guide 가 말한다(UI-TXT-01 · 02 · 04).
+# 넣는 곳(「표시 항목」 줄 오른쪽 끝 「가용설비 붙여넣기」)은 Guide 가 말한다(UI-TXT-01 · 02 · 04).
 AVAILABILITY_EMPTY = "저장된 주차별 가용대수가 없습니다."
 # 가용대수가 없어 빈칸인 공정·주차 목록의 이름 — 그 알림(`ST-17`)의 Alarm 줄 표다(조건의 내역이라
 # 본문 접힘에 두지 않는다 — 2026-11-05 사용자 요청(검수표), UI-TXT-04). 알림에 싣기에 큰 목록만
@@ -725,7 +725,8 @@ def report_missing_availability(
             f"선택 범위의 공정·주차 중 {len(missing):,}건에 가용대수가 없어 결과를 빈칸으로 "
             "표시합니다. 목록은 "
             + (alarm_table_place(MISSING_LIST_TITLE) if table is not None else page_place)
-            + " 이고, 작업 줄 「가용설비 붙여넣기」로 그 공정·주차의 가용설비를 넣으면 채워집니다."
+            + " 이고, 「표시 항목」 줄 오른쪽 끝 「가용설비 붙여넣기」로"
+            " 그 공정·주차의 가용설비를 넣으면 채워집니다."
         ),
         scope_label=scope.label,
         tables=[table],
