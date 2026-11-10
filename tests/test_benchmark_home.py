@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -220,6 +221,31 @@ def test_a_failing_copy_names_only_the_phase_kind_and_contract_tables(tmp_path: 
     assert line.startswith("cold_summary 실행 실패 — "), line
     assert "RQ_MODULE" in line
     assert target.read_text(encoding="utf-8").strip() == line
+
+
+def test_an_empty_route_table_stop_still_names_its_contract_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """빈 경로 표 글은 내부 표 이름 대신 화면 이름을 싣는다(「「STEP 구성」 표가 비어 …」) — 사본
+    모드 한 줄은 그 글 꼴로 계약 표 이름을 되찾는다."""
+    import importlib.util
+
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    spec = importlib.util.spec_from_file_location("benchmark_home_under_test", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    from capa_simulation.page_bootstrap import bootstrap_error_message
+
+    message = bootstrap_error_message(
+        ValueError("RQ_EQP_AVBL에 선택할 생산계획년월 데이터가 없습니다.")
+    )
+
+    line = module.copy_mode_failure(module.HomeFailure("cold_summary", [("데이터 Error", message)]))
+
+    assert line.startswith(
+        "cold_summary 실행 실패 — 데이터 Error 1 · 문구가 가리키는 표 RQ_EQP_AVBL "
+    )
 
 
 def test_an_uncaught_home_exception_does_not_reach_stderr_through_the_streamlit_log(

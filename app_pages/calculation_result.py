@@ -43,7 +43,10 @@ from capa_simulation.components.hierarchical_monthly_table import (
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
-from capa_simulation.components.process_field import render_process_filter
+from capa_simulation.components.process_field import (
+    render_process_filter,
+    render_stopped_process_field,
+)
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.required_exclusion_notice import (
     CAPACITY_EXCLUSION_TITLE,
@@ -207,6 +210,9 @@ try:
     # HOME·Static Capa 와 같은 기준을 읽는다 — 같은 확보율이 화면마다 다른 색으로 보이면 안 된다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
+    # 패널의 공정 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
+    # 회차마다 흔들리지 않게 한다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
+    render_stopped_process_field()
     # 원인 하나의 마크를 세 탭에 같이 세우고, 글은 탭 밖에서 알림으로 한 번 보낸다.
     for error_tab in (unit_capacity_tab, required_tab, availability_tab):
         with error_tab:
@@ -416,6 +422,8 @@ else:
                 _display_order=display_order,
             )
         except BOOTSTRAP_ERRORS as exc:
+            # 이 탭의 공정 칸은 표 뒤에 서므로 멈춘 회차에는 잠긴 줄로 자리를 지킨다(p-stop-row).
+            render_stopped_process_field()
             with required_tab:
                 render_data_error(bootstrap_error_message(exc), code="ST-20", tab=REQUIRED_TAB)
             st.stop()
@@ -537,6 +545,7 @@ else:
                 TAB_SECUREMENT,
             )
         except BOOTSTRAP_ERRORS as exc:
+            render_stopped_process_field()
             with availability_tab:
                 render_data_error(bootstrap_error_message(exc), code="ST-20", tab=AVAILABILITY_TAB)
             st.stop()

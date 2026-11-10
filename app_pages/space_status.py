@@ -125,7 +125,7 @@ from capa_simulation.components.space_layout_editor import (
     space_lock_style,
 )
 from capa_simulation.components.space_shortening_view import (
-    LEVEL_FIELD_STYLE,
+    LEVEL_DIALOGS,
     PINNED_NOTE,
     SpaceLayer,
     consume_layer_link,
@@ -657,9 +657,6 @@ with notices:
     # 풀린다(AGENTS 9장).
     st.html(space_lock_style())
     st.html(UNSAVED_PANEL_STYLE)
-    # 필요 단축 보기의 목표 확보율 줄(사이드바 조회 조건 패널)을 한 줄로 — 켜지 않은 회차에도
-    # 그린다.
-    st.html(LEVEL_FIELD_STYLE)
 # 편집본은 실제 저장본이 있을 때만 세운다 — 합성 데모 fleet 을 편집본에 섞으면 첫 실제 저장이
 # 막힌다. 가용설비 설비 마스터와 **같은 편집본**이고 세션 토큰 하나라 어느 화면을 먼저 열어도 같다.
 buffer_frames: Frames | None = None
@@ -2748,6 +2745,9 @@ render_floor_canvas_dialog_host(
         else empty_equipment_master()
     ),
     disabled=drawing_locked,
+    # 필요 단축 보기의 목표 확보율 팝업도 이 호스트가 연다(값 칸은 사이드바 조회 조건 패널 줄 —
+    # 검수 보드 p-target-form). 값 칸이 서는(보기를 그리는) 회차에만 넘긴다.
+    others=LEVEL_DIALOGS if layer_active else None,
 )
 # 남의 저장으로 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버린 회차 — 머리를 새로 그리려 한 번 더
 # 돈다.

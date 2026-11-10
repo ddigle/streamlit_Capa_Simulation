@@ -334,6 +334,11 @@ LIST_RULES = ListRules(
 )
 # 왼쪽 줄을 누르고 바로 옛 카드 단추를 누른 꼴 — 아무것도 하지 않는다.
 OPENED_MOVED_MESSAGE = "고른 시나리오가 바뀌어 하지 않았습니다 — 지금 연 시나리오를 확인하세요."
+# 공식 지정 팝업을 그린 뒤 그 시나리오가 영구 삭제돼 지정하지 않은 까닭 — 그 사이 보관된 것의 저장소
+# 거부(「보관된 시나리오는 …」)와 같이 알림창 · Alarm 에 낸다(검수 보드 sc-purged).
+OFFICIAL_PURGED_MESSAGE = (
+    "팝업을 연 사이 그 시나리오가 영구 삭제돼 공식버전으로 지정하지 않았습니다."
+)
 # 저장 · 모두 버리기 사이에 고친 것(옛 세대) · 다른 곳에서 차례가 바뀐 뒤의 옮기기.
 OUTBOX_LIMIT = 2000
 ORDER_MOVED_NOTICE = "목록 차례가 바뀌어 그 옮기기는 반영하지 않았습니다."
@@ -368,7 +373,7 @@ def render_scenario_management(
     # 상자가 옛 자리에 흐린 사본으로 남아 모드를 바꿔도 새로고침 전까지 따라왔다(2026-10-22 사본
     # 앱 이분 탐색 — 알림을 빼거나 상자 key 를 빼거나 되돌리기를 콜백으로 바꾸면 각각 사라졌다).
     render_flash(FLASH_KEY, FLASH_WARNING_KEY, *_notices_without_a_place(list_mode))
-    _report_missing_official(repository, alert_tab)
+    _report_missing_official(repository, alert_tab, active_count=len(scenarios))
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         mode = st.segmented_control(
             "시나리오 작업",
@@ -446,23 +451,45 @@ def _official_widget_keys(value: object) -> tuple[str, ...]:
     return keys
 
 
-def _report_missing_official(repository: DuckDBScenarioRepository, alert_tab: str | None) -> None:
+def _report_missing_official(
+    repository: DuckDBScenarioRepository, alert_tab: str | None, *, active_count: int
+) -> None:
     """공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 있어도 부른다(해소) — 닫힌
-    탭이면 알리지 않고 읽지도 않는다."""
+    탭이면 알리지 않고 읽지도 않는다.
+
+    시나리오가 보관본만 남았으면 목록에 고를 것이 없다 — 그 상태만 글을 갈라 보관함의 「되돌리기」
+    를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 그 판정의 보관본 읽기는 공식버전이
+    없고 활성 시나리오가 0건(`active_count`)일 때만 한다. 내용 값이 갈라 바뀌면 그 줄도 새로
+    뜬다(지문)."""
     if alert_tab is None:
         return
     official = repository.latest_official_release()
-    alerts.state(
-        "SC-01",
-        scope=None,
-        content=official is None or None,
-        active=official is None,
-        text="공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 목록 관리 「공식으로 지정…」",
-        full=(
+    archived_only = (
+        official is None
+        and active_count == 0
+        and bool(repository.list_scenarios(include_archived=True))
+    )
+    if archived_only:
+        text = "공식버전이 없습니다 — 보관본만 있음 · 목록 관리 「보관함」 › 「되돌리기」"
+        full = (
+            "공식버전이 없고 보관본만 있어 지정할 시나리오가 없습니다 — 시나리오 관리 › Capa "
+            "시나리오 › 목록 관리의 「보관함」 에서 「되돌리기」 한 뒤 「공식으로 지정…」 으로 "
+            "리비전 하나를 공식으로 정하세요."
+        )
+    else:
+        text = "공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 목록 관리 「공식으로 지정…」"
+        full = (
             "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다 — 시나리오 관리 › "
             "Capa 시나리오 › 목록 관리에서 시나리오를 고르고 「공식으로 지정…」 으로 리비전 하나를 "
             "공식으로 정하세요."
-        ),
+        )
+    alerts.state(
+        "SC-01",
+        scope=None,
+        content=("archived_only" if archived_only else True) if official is None else None,
+        active=official is None,
+        text=text,
+        full=full,
         tab=alert_tab,
     )
 
@@ -1380,7 +1407,9 @@ def _official_dialog(database_path: str, scenario_id: str, revision_id: str) -> 
     - 연 회차(읽어 둔 대상 없음)에 그 시나리오가 보관됐거나 줄이 없으면 팝업을 걷고 카드 결과 칸에
       알린다(앱 전체 회차가 지금 연 줄로 다시 그린다).
     - 팝업을 그린 뒤에 보관됐으면 그대로 그리고 지정 단추에서 저장소가 거부한다 — 알림창의 까닭과
-      카드 곁 알림 둘이다(작은 결정 a7 「지금대로」).
+      카드 곁 알림 둘이다(작은 결정 a7 「지금대로」). 그 뒤 영구 삭제까지 됐으면 다시 읽기가 빈
+      대상을 받아 팝업을 걷는다 — 같은 둘(까닭 `OFFICIAL_PURGED_MESSAGE` + 카드 곁)이다(검수 보드
+      sc-purged — a1 답과 같은 꼴).
     - 다시 읽지 못하면(파일 잠금 따위) 팝업을 걷지 않는다. 읽어 둔 대상이 있으면 그것으로 친 글과
       함께 다시 그리고 지정하지 않는다 — 앱 전체를 다시 돌리면 같은 까닭으로 페이지가 서지 못해
       팝업과 친 글이 사라진다. 연 회차부터 못 읽었으면 그릴 것이 없어 앱 전체로 물러난다.
@@ -1397,6 +1426,16 @@ def _official_dialog(database_path: str, scenario_id: str, revision_id: str) -> 
             return
         if view is None or (kept is None and view.summary.status != "ACTIVE"):
             _close_official_dialog()
+            if view is None and kept is not None:
+                # 그린 뒤 영구 삭제 — 고칠 입력이 이 자리에 없는 거부라 까닭은 알림창 · Alarm 에만
+                # 낸다(`_refuse_official` 과 같은 칸 · 꼴, 맨 위 칸이라 카드 곁 알림보다 먼저 선다).
+                queue_flash(
+                    FLASH_WARNING_KEY,
+                    OFFICIAL_PURGED_MESSAGE,
+                    kind="error",
+                    icon=_NOTICE_ICONS["error"],
+                    popup_only=True,
+                )
             _notify(CARD_NOTICE_KEY, "error", OPENED_MOVED_MESSAGE)
             st.rerun()
         st.session_state[OFFICIAL_VIEW_KEY] = view

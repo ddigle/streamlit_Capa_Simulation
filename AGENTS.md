@@ -764,8 +764,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - **색 기준 「필요 단축」**(2026-10-24 결정 — 라디오 셋째 값, `services/space_shortening_layer.py`·
     `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
     꺼내고(5장 9), 목표 확보율은 사이드바 조회 조건 패널 페이지 칸(`space_shortening_view.LEVEL_SLOT` 1 — 첫 칸은 공용 공정 칸,
-    칸 key `condition_field_space_target`, 이름 줄 + 전환 단추 줄 `render_level_field`, 한 줄 서식 `LEVEL_FIELD_STYLE` 을 Space 가
-    회차마다 그림 — 2026-11-08 그림 메모 g05)이고 배치 편집으로 쉬는 회차에도 잠근 채 서며 까닭은 이름 줄 풍선이다. 「단축 없는
+    2026-11-08 그림 메모 g05)의 이름 줄 + 값 칸(`condition_field` — 칸 key `condition_field_space_target`, 값 칸 key
+    `space_shortening_level_field`, `render_level_field`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
+    하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 팝업을 열고, 고르면
+    세션 칸(`SPACE_SHORT_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 곧바로 닫혀 다시 그린다(HOME 주요공정 히트맵 팝업과 같은 꼴 — 검수
+    보드 p-target-form, 옛 전환 단추 다섯 · 한 줄 서식은 걷었다). 배치 편집으로 쉬는 회차에도 값 칸은 잠근 채 서며 까닭은 그 칸 풍선이다. 「단축 없는
     호기 흐리게」(`render_dim_field`)와 기준 달 한 줄(`render_layer_basis` — 풍선이 설비 · 시뮬레이션(미저장 편집 포함) · 오늘)은
     `Space 조건` 카드의 「색 기준」 밑(필요 단축 기준의 그룹 체크 자리 — 2026-11-09 사용자 검수 g05, 쉬는 회차에도 흐리게 칸은 선다),
     맞대지 못한 공정은 필요 단축 일정과 **같은 함수** `required_shortening_panel.report_unmatched_processes`(`RS-02` — 같은 계획 · 범위 ·
@@ -981,7 +984,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그 탭을 여는 회차에 뜬다. 설비 DB 핀을 선언하지만(`uses_equipment_db`) 게으른 핀이라 다른 탭을 보는 회차에는 열지 않는다.
   - Capa 시나리오 탭 맨 위에 작업 전환(목록 관리 · 복제 · 월 머지 · 연도 Shift — 보이는 글 없음, 접근성 라벨 「시나리오 작업」)이
     바로 선다. 옛 세션의 작업 이름은 위젯 앞에서 버린다. 지금 올라와 있는 리비전과 공식 표지는 사이드바 시나리오 칸 · 머리 띠, 최신
-    공식은 목록 표 `공식버전` 칸 · 오른쪽 「공식 이력」 이 말한다. 공식버전 없음은 상태 알림 `SC-01`.
+    공식은 목록 표 `공식버전` 칸 · 오른쪽 「공식 이력」 이 말한다. 공식버전 없음은 상태 알림 `SC-01` — 활성 시나리오가 0건이고
+    보관본만 있으면 글을 갈라 보관함 › 「되돌리기」 를 가리킨다(내용 값 `archived_only` — 검수 보드 st-sc01, 작은 결정 a8 과 같은 꼴).
   - 목록 관리는 안 3(2026-11-06 사용자 결정 — 옛 C안의 편집표 둘 · 카드를 대신한다)이다 — 설비 마스터와 같은 두 칸 틀(`components/side_panel.py`) 안 왼쪽 시나리오
     표(브라우저 표 `components/scenario_list_grid.py` — 손잡이 · 순서 · 시나리오명 · 최신 · 공식버전 · 최근 수정), 오른쪽 칸 「상세 · 저장 전 변경 · 공식 이력 · 보관함」.
     상세는 리비전 표(r · 리비전명 · 상태)가 맨 위에 서서 머리가 왼쪽 표 머리와 윗선이 같고(사용자 요청 2026-11-07), 그 아래 연 시나리오의 제목 · 원천 코드 · 최근 수정과 고른 리비전의 값 줄(메모 · 저장일 · 부모 — 같은 마운트가 그려 줄을 누르면 회차 전에 바뀐다), 「선택한 리비전 불러오기」 ·
@@ -1191,7 +1195,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/floor_canvas_dialog.py` — Space 층·FAB 전체의 캔버스 폭·높이를 고치는 「캔버스 편집」
   팝업(`FLOOR_CANVAS_DIALOG_KEY`)이다(2026-11-05 검수 equip-60 — 도면 그림 올리기·지우기·종횡비 자동 계산을 걷었다. 옛 판이 올린
   그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다 — 마이그레이션 없음). 팝업은 화면 팝업 호스트(`DialogHost`
-  `space_canvas_dialog_host`, 답 U5)가 연다 — 열기 · 보통 닫기는 호스트만 돌고, 밖 알림(`EQ-16`)이 선 채 닫을 때만 앱 전체
+  `space_canvas_dialog_host`, 답 U5 — Space 화면의 호스트는 이것 하나라 필요 단축 보기의 목표 확보율 팝업도 `others=` 로 받아
+  연다, 검수 보드 p-target-form)가 연다 — 열기 · 보통 닫기는 호스트만 돌고, 밖 알림(`EQ-16`)이 선 채 닫을 때만 앱 전체
   (`_dismiss` → `close_to_app` — 알림 칸이 짧은 프래그먼트 회차의 표지를 다음 회차까지 못 읽는다), 설비 DB 가 바뀌었으면
   (`database_stamp`) 본문이 앱 전체로 물러나고, 닫기가 입력 칸 값을 지운다. 성공하면 `finish` 로 앱 전체를 다시 돌린다.
   - 팝업 머리의 지금 상태는 값 줄 하나(`_saved_line` — 「**C1 1F** · 폭 × 높이 · 저장 시각」, 없으면 「기본값 …」, 설계 규칙
@@ -1608,11 +1613,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
     부르는 쪽 몫이다.
   - 저장 **전에** 대당 Capa 를 한 번 돌려 보고(`check_registration_capacity`) 멈춰도 저장한다(2026-11-01 사용자 결정 —
-    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 판정 실패 사유 끝에 무엇이
+    알리기만). 결과(`BigDataQueryRegistration.capacity`)로 화면은 저장 알림 뒤 경고(알림창 · Alarm 에만 — `popup_only`), 자동 갱신은 지정까지 가지 못한 회차 사유 끝(「…손으로 지정하세요」 앞 — 어느 갈래든 한 번, `_RunLog.fix_hint`)에 무엇이
     멈췄고 어디서 푸는지(기준 정보 화면 그 표 → 다음 리비전, `RQ_MODULE`·표가 깨진 꼴은 원천 다시 등록 · 빈 경로 표(`RQ_UPEH`·
-    `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `_ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
+    `RQ_REQB`·`RQ_EQP_AVBL` — 계산 앞에서 `ROUTE_TABLES` 로 먼저 잡는다, 메모 꼴 `대당 Capa 계산 멈춤(빈 표 RQ_UPEH · …)`,
     2026-11-08 결정 U3)는 원천 다시 등록. 등록이 CS 가 비어 뺀 경로 행 수(`blank_cs_routes` = `BlankCsDrop.route_rows`)를 넘겨, 그
-    수가 있으면 그 CS 를 채우라고, 없으면 경로 행을 넣으라고 가른다)를 적는다.
+    수가 있으면 그 CS 를 채우라고, 없으면 경로 행을 넣으라고 가른다. 반대로 경로 행만 있는 원천의 빈 계획 표(`RQ_PKG_PLAN` —
+    `_PLAN_TABLES`, 필드 `empty_plan`)도 같은 꼴로 잡는다 — 대당 Capa 는 서고 HOME · 생산 계획 · 표준 목표가 멈추므로 글 · 메모 머리는
+    `stop_scope` 「HOME · 생산 계획 · 표준 목표 계산」(메모 `HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표 RQ_PKG_PLAN)`), 푸는 길은 원천에 계획 행을 넣어
+    다시 등록, 검수 보드 st-route-only)를 적는다.
   - 화면의 저장 결과 칸은 폼 맨 아래 `DB 조회 후 시나리오 저장` 단추 **바로 아래** 늘 서 있는 한 칸이다(탭 맨 위 칸은 스크롤한
     화면에서 보이지 않았다 — 2026-11-01 E2E). 저장 알림과 저장 뒤 경고(업무 키 충돌 `SC-04` · CS 빈 행 · 대당 Capa 멈춤)는 알림창 · Alarm 으로만 가고
     (`popup_only` — 설계 규칙 UI-NTF-03 · AMB-05 (나)) 칸에는 저장하지 못한 까닭(거부 · 실패)이 선다. 칸에 글을 그린
@@ -3361,7 +3369,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
   한다 — 닫기(호스트만 도는 회차)는 팝업 프래그먼트의 위젯을 거두지 않아 호스트가 지운다(key 가 열림 값에 달린 팝업은 함수 꼴).
   쓰는 자리: HOME(설정 · 공정 필터 · 주요공정 히트맵) · 기준 정보 붙여넣기 · 표준 목표 붙여넣기 · Qual 마감 계산기 · 공식 지정 ·
-  Space 캔버스 편집. 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
+  Space(캔버스 편집 · 필요 단축 보기 목표 확보율). 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
 - `src/capa_simulation/components/process_field.py` — 공용 공정 칸의 화면 조각(값 칸 + 타일 판 팝업 — `process_field_assets`,
   2026-11-08 답 P1 · P2)과 머리 띠 칩 · 화면 탭 표지의 글 · data. 여러 개 따라감은 `render_process_filter(options, screen=, labels=)`
   가 걸 공정을 돌려주고(산출 결과 셋 · 가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름은
@@ -3374,7 +3382,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   표지(`MARKER_ATTRIBUTE` — 스타일만 든 `st.html` 의 JSON, 값 칸과 같은 간격 없는 칸에 그려 사이드바에 틈이 없다)를 남겨 알림
   칸 JS 가 회차 끝에 지금 화면 몫을 바로잡는다. 팝업은 조건 팝업 호스트의 넷째 갈래이고 선택지는 페이지가 값 칸을 그린 회차에
   세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
-  dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다.
+  dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다. 공통 진입이 멈춘 회차(산출 결과 · 공정 Capa 상세 — 산출 결과는 소요대수 · 확보율 탭의 표가 멈춘 회차도)는
+  `render_stopped_process_field()` 가 같은 key 의 잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다(HOME 공정 필터 줄과 같은 꼴 — 검수
+  보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세는 멈춘 회차에 그 앞 「설비 시나리오」 줄이 서지 않아 공정 줄과
+  아래 카드가 한 줄만큼 위에 선다. 선택지 기록 · 표지는 남기지 않는다(머리 칩 · 탭 표지의 짐작을 빈 목록으로 덮지 않게).
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
   - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
     달만 미적용으로 알린다.
@@ -5788,8 +5799,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **원천 등록은 저장 전에 대당 Capa 를 한 번 돌려 보고, 멈춰도 저장한 뒤 알린다**(2026-11-01 사용자 결정 — 사내 S27 은
   등록은 됐고 계산할 때 처음 멈췄다). `scenario_registration.check_registration_capacity` 가 화면 등록·자동 갱신의 같은 길에서
   돌고, 리비전 1 메모 끝에 `대당 Capa 계산 멈춤(<표> <꼴> 키 n · 경로 m)`(값·이름 없음 — 빈 경로 표는 `대당 Capa 계산 멈춤(빈 표
-  RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)`, 2026-11-08 결정 U3), 화면은 저장 알림 밑 경고 띠(계산 글 +
-  기준 정보 화면 그 표 → 다음 리비전), 자동 갱신은 판정 실패 사유 끝에 같은 푸는 길을 적는다. 막지 않는다 — 막으면 원천을 다시
+  RQ_UPEH · RQ_REQB · RQ_EQP_AVBL)`, 2026-11-08 결정 U3 — 경로 행만 있는 원천의 빈 계획 표는 `HOME · 생산 계획 · 표준 목표 계산 멈춤(빈 표
+  RQ_PKG_PLAN)`, 검수 보드 st-route-only), 화면은 저장 알림 밑 경고 띠(계산 글 +
+  기준 정보 화면 그 표 → 다음 리비전), 자동 갱신은 지정까지 가지 못한 회차 사유 끝에 같은 푸는 길을 적는다(계획 행만 있는 원천은 계산이
+  0행으로 끝나 「남는 공정이 없어」 갈래로 오는데 그 갈래에도 — 검수 보드 st-runner-hint). 막지 않는다 — 막으면 원천을 다시
   받아야만 풀린다.
 - **CS 가 빈 행(NULL·빈 글자·공백뿐)은 막지 않고 RQ 파생에서 뺀다**(2026-10-27 사용자 결정 — 그 행 때문에 시나리오 전체가
   저장되지 않았다). 빼는 곳은 파생 경계 `derive_q_core_data` 한 곳이고, 프레임 전체를 보는 정규화(`WF 구분` 표기 고르기
@@ -6629,7 +6642,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   「앱에서 고칠 수 없음 — 원천을 다시 등록」(조회기간 밖 글 `simulation_cache.outside_period_error` 가 모듈수 오류면 `OUTSIDE_PERIOD_MODULE_FIX`(원천 재등록)를 싣고, 계산 멈춤
   전문은 첫머리와 같은 그 대목을 뺀다 — 작은 결정 a10. 표 이름은 화면 이름
   `calculation_stop_tables` 이고 사본 진단 `scripts/benchmark_home.py` 가 그 이름으로 계약 표 이름을 되찾는다), DB 잠금 · 읽기 실패 · 표 자체가
-  깨진 꼴(컬럼 · 월 형식 · 연결 키)과 편집표 밖의 표는 None 이라 예전 꼴이다. 화면을 그리는 자리의 상태 알림도 고칠 입력이 다른 화면이면 같은 원칙이다(2026-11-05 전후 그림 보드 답 — 재공 현황
+  깨진 꼴(컬럼 · 월 형식 · 연결 키)과 편집표 밖의 표는 None 이라 예전 꼴이다. 경로 표가 빈 리비전(계획 행만 있는 원천)이 조회기간을
+  정하다 멈춘 글(「RQ_REQB에 선택할 생산계획년월 데이터가 없습니다」 꼴)은 모든 화면이 지나는 `bootstrap_error_message` 가
+  「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.」 로 바꾼다(`empty_route_table_stop` — 경로 표 셋, 이름은 등록 점검과 한
+  사전 `scenario_registration.ROUTE_TABLES`, 사본 진단은 그 글 꼴로 표를 되찾는다 — 검수 보드 st-month-text). 계획 표 · 측정률 표의 빈 표 글은 그대로다. 화면을 그리는 자리의 상태 알림도 고칠 입력이 다른 화면이면 같은 원칙이다(2026-11-05 전후 그림 보드 답 — 재공 현황
   일부 주차만 빈 `WIP-04` → 표준 목표, `alerts.state(goto=)`). 같은 코드 + 같은 글이면 같은 id 라 이 브라우저 탭에 한 번만
   알림창이 뜨고(해소 줄은 없다 — 화면이 다시 서면 마크가 사라진다), 그 Alarm 줄이 없으면(보관 끝) 알림창 없이 다시 세운다(`keep`). 짧은 글(`text`)은
   무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·
@@ -6754,7 +6770,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   열림 키를 버린다. 시나리오 관리 공식 지정 확인 팝업은 호스트 `scenario_official_dialog_host`(`DialogHost` — 열림 칸
   `scenario_official_open_dialog`)가 열고 여닫기가 호스트만 돈다. 본문이 시나리오 · 리비전 · 「지금 공식」 을 다시 읽어 그 번호를
   저장소에 넘기고(`expected_latest_release_no`) 팝업이 열린 사이 남이 먼저 지정했으면 쓰지 않는다. 이번 열림에서 읽어 그린
-  대상은 `OFFICIAL_VIEW_KEY` 에 쥐고 여는 콜백과 닫기가 비운다. 공식버전명 · 메모 칸 key 는 `scenario_official_release_name` ·
+  대상은 `OFFICIAL_VIEW_KEY` 에 쥐고 여는 콜백과 닫기가 비운다. 그린 뒤 보관되면 지정 단추에서 저장소가 거부하고(알림창의 까닭 +
+  카드 곁 둘 — 작은 결정 a7), 영구 삭제까지 되면 다시 읽기가 빈 대상을 받아 팝업을 걷으며 같은 둘(`OFFICIAL_PURGED_MESSAGE` 를
+  `popup_only` FL-04 로 + 카드 곁)을 낸다(검수 보드 sc-purged — a1 답과 같은 꼴). 연 회차에 이미 빠졌으면 카드 곁 하나다. 공식버전명 · 메모 칸 key 는 `scenario_official_release_name` ·
   `_note` 이고 닫으면 지운다. 「Capa 시나리오」 탭 끝 `_render_official_host` 가 이벤트 칸 한 자리를 쓴다.
 - **본문 · 사이드바 단추로 여는 화면 팝업은 `components/dialog_host.DialogHost` 로 연다**(2026-11-08 답 U5 — 열기 · 닫기가 호스트
   회차). `on_dismiss` 는 `host.close`, 닫는 회차에 페이지가 할 일이 있으면 `host.close_to_app`(HOME 설정 · 밖 알림이 선 Space
@@ -6763,7 +6781,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   settings · process_filter · key_process 셋을 열고(HOME 설정만 `close_to_app`, 설정 팝업은 `HomeSettingsInputs`(세션) + 프로필
   다시 읽기, 호스트 key 는 `home_state.HOME_DIALOG_HOST_KEY` — 두 모듈이 같은 값으로 각자 만든다), 기준 정보
   (`reference_data_dialog_host` — `month_editor.paste_dialog(host=)` · `paste_widget_keys`, 그리드 자리 뒤 · 「변경사항 적용」 앞에서
-  매 앱 전체 회차), 표준 목표 · Qual 마감 계산기 · 공식 지정 · Space 캔버스. 지킬 것 둘: ① 공용 저장값(DB 현행값 · 공용 프로필)은
+  매 앱 전체 회차), 표준 목표 · Qual 마감 계산기 · 공식 지정 · Space(캔버스 편집 + 필요 단축 보기 목표 확보율 — 한 호스트가
+  `others=` 로 함께 연다). 지킬 것 둘: ① 공용 저장값(DB 현행값 · 공용 프로필)은
   팝업 본문에서 다시 읽는다 — 호스트만 도는 여는 회차의 값은 그 화면의 마지막 앱 전체 회차의 것이라 그 값으로 만든 양식을
   되붙이면 남의 저장을 덮는다. ② `render(widget_keys=)` 에 팝업마다 입력 위젯 key 를 빠짐없이 준다 — 닫기는 팝업 프래그먼트의
   위젯을 거두지 않아 호스트가 지운다(key 가 열림 값에 달리면 함수 꼴 · 폼 안 key 없는 글 칸에는 key 를 단다). `render` 는 팝업이

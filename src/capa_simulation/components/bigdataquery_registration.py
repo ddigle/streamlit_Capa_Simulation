@@ -847,7 +847,9 @@ def _save_scenario(
     if registration.capacity.stopped:
         # 저장은 됐다 — 막지 않고 무엇이 멈췄는지와 푸는 길을 알린다(2026-11-01 사용자 결정 —
         # 알림창 짧은 글이 무엇이 멈췄는지, Alarm 전문이 푸는 길). 꼴·개수는 리비전 메모에도 남는다.
-        # 계획 행만 있어 경로 표가 빈 원천도 여기서 「계산 멈춤」 으로 알린다(2026-11-08 결정 U3).
+        # 계획 행만 있어 경로 표가 빈 원천도 여기서 「계산 멈춤」 으로 알린다(2026-11-08 결정 U3) —
+        # 경로 행만 있어 계획 표가 빈 원천도 같다(HOME · 생산 계획 · 표준 목표가 멈춘다 — 검수
+        # 보드 st-route-only).
         queue_flash(
             REGISTRATION_CAPACITY_FLASH_KEY,
             markdown_safe_tildes(registration.capacity.notice(snapshot.revision.revision_no)),

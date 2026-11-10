@@ -30,6 +30,7 @@ FAB 표), 기본 캔버스(100 × 60 / `FAB_CANVAS`), 캔버스 밖 검사의 �
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -174,8 +175,13 @@ def render_floor_canvas_dialog_host(
     floor: FloorKey | None,
     saved_equipment: pd.DataFrame,
     disabled: bool = False,
+    others: Mapping[str, tuple[DialogBody, tuple[str, ...]]] | None = None,
 ) -> None:
     """캔버스 팝업의 본문 호스트. 그 범위의 열림 칸이 서 있고 잠기지 않았으면 팝업을 연다.
+
+    Space 화면의 팝업 호스트는 이것 하나다(`DialogHost` 쓰는 법 — 화면당 호스트 하나). 같은 화면의
+    다른 팝업(필요 단축 보기의 목표 확보율 — `space_shortening_view.LEVEL_DIALOGS`)은 `others`
+    (열림 값 → (팝업, 입력 위젯 key))로 받아 함께 연다 — 캔버스 잠금(`disabled`)과 상관없다.
 
     `saved_equipment` 는 층이면 **저장된 설비 마스터 전체**다(필터 전, 레이아웃표시 무관) — 캔버스를
     줄일 때 그 층 호기가 밖으로 나가는지 저장 검증과 같은 행으로 잰다. 설비 저장본이 없으면(샘플
@@ -193,7 +199,11 @@ def render_floor_canvas_dialog_host(
     target = _CanvasTarget(floor)
     seen = database_stamp(database_path)
 
+    extra = dict(others or {})
+
     def pick(value: object) -> DialogBody | None:
+        if isinstance(value, str) and value in extra:
+            return extra[value][0]
         if disabled or value != target.scope:
             return None
         return partial(
@@ -204,9 +214,14 @@ def render_floor_canvas_dialog_host(
             seen_stamp=seen,
         )
 
+    def widget_keys(value: object) -> tuple[str, ...]:
+        if isinstance(value, str) and value in extra:
+            return extra[value][1]
+        return _widget_keys(target)
+
     CANVAS_DIALOG_HOST.render(
         pick,
-        widget_keys=lambda _value: _widget_keys(target),
+        widget_keys=widget_keys,
         idle=partial(
             alerts.state, CANVAS_OUTSIDE_ALERT, scope=target.scope, content=None, active=False
         ),

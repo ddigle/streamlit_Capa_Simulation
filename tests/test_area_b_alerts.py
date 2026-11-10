@@ -178,6 +178,40 @@ def test_scenario_management_alerts_only_from_the_open_tab(
     assert "AD-04" not in tabs and "SC-01" not in tabs
 
 
+def test_the_missing_official_alert_points_at_the_archive_when_only_archives_are_left(
+    tmp_path: Path,
+) -> None:
+    """공식버전이 없고 시나리오가 보관본만 남았으면 `SC-01` 이 고를 것 없는 목록 대신 보관함의
+    「되돌리기」 를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 활성 시나리오가 있으면
+    예전 글 그대로다."""
+    from test_page_bootstrap import _store_with_scenarios
+
+    database = tmp_path / "scenario.duckdb"
+    _store_with_scenarios(database, archived=2, active=0)
+    app = AppTest.from_string(
+        _page_script("app_pages/scenario_management.py", database, tmp_path / "equipment.duckdb"),
+        default_timeout=120,
+    ).run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    official = active_state(app, "SC-01")
+    assert official is not None and official["tab"] == "Capa 시나리오"
+    assert "보관본만 있음 · 목록 관리 「보관함」 › 「되돌리기」" in str(official["short"])
+    assert "「보관함」 에서 「되돌리기」 한 뒤 「공식으로 지정…」" in str(official["full"])
+
+    listed = tmp_path / "listed.duckdb"
+    _store_with_scenarios(listed, archived=1, active=1)
+    app = AppTest.from_string(
+        _page_script("app_pages/scenario_management.py", listed, tmp_path / "equipment.duckdb"),
+        default_timeout=120,
+    ).run()
+    assert not app.exception, [item.message for item in app.exception]
+    official_listed = active_state(app, "SC-01")
+    assert official_listed is not None
+    assert "보관함" not in str(official_listed["short"])
+    assert official_listed["fp"] != official["fp"]
+
+
 # ---------------------------------------------------------------- Admin 탭 · 점검 펼침
 
 

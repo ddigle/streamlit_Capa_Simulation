@@ -154,7 +154,7 @@ def test_a_saved_baseline_round_trips_and_is_listed_newest_first(tmp_path: Path)
     )
 
     assert first.saved_at == datetime(2026, 9, 30, 9, 15, 30)
-    assert baseline_label(first) == "9월 정기 · 2026-09-30"
+    assert baseline_label(first) == "2026-09-30 · 9월 정기"
     listed = repository.list_shortening_baselines()
     assert [summary.name for summary in listed] == ["10월 정기", "9월 정기"]
     assert listed[1] == first

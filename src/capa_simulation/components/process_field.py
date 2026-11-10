@@ -72,6 +72,8 @@ MULTI = shared_process.MULTI
 SINGLE = shared_process.SINGLE
 # 고를 공정이 없는 값 칸 · 팝업의 값(빈 결과 — 설계 규칙 UI-TXT-04).
 NO_PROCESS_VALUE = "고를 공정 없음"
+# 공통 진입(계산)이 멈춘 회차의 잠긴 값 칸 글 — HOME 공정 필터 · 주요공정 히트맵 줄과 같은 글.
+STOPPED_VALUE = "계산 멈춤"
 # 값 칸을 그린 회차의 표지 속성 — 알림 칸 JS 가 회차 끝에 이 속성의 JSON 으로 머리 칩 · 지금 탭
 # 표지를 바로잡는다(`alert_center.js` 의 `readProcessMark`).
 MARKER_ATTRIBUTE = "data-capa-process"
@@ -285,6 +287,29 @@ def render_process_choice(
         )
         st.html(process_marker(screen, SINGLE))
     return selected
+
+
+def render_stopped_process_field() -> None:
+    """공통 진입(계산)이 멈춘 회차의 값 칸 — 선택지는 계산 뒤에야 나온다. 잠긴 채 정상 회차와 같은
+    페이지 칸(`page_condition_slot(0)`)에 서서 공정 줄이 빠지지 않게 한다(HOME 공정 필터 줄과 같은
+    꼴 — 검수 보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이에 선다. 공정 Capa 상세는 멈춘
+    회차에 그 앞 「설비 시나리오」 줄이 서지 않아 공정 줄과 아래 카드가 한 줄만큼 위에 선다. 까닭은
+    Alarm 의 오류가 말한다.
+
+    선택지 기록(`_remember` · `shared_process.note_drawn`)과 표지는 남기지 않는다 — 머리 칩 · 화면
+    탭 표지가 이 화면이 마지막으로 그린 선택지로 짐작하는 값을 빈 목록으로 덮지 않게.
+    """
+    if not _first_draw_this_run():
+        return
+    with page_condition_slot(0).container(gap=None):
+        condition_field(
+            FIELD_LABEL,
+            STOPPED_VALUE,
+            slug=FIELD_SLUG,
+            key=FIELD_KEY,
+            icon=FIELD_ICON,
+            disabled=True,
+        )
 
 
 # ------------------------------------------------------------------ 팝업

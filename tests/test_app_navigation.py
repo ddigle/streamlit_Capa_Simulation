@@ -2412,8 +2412,10 @@ def test_space_shows_the_common_boxes_only_while_the_shortening_basis_is_chosen(
 ) -> None:
     """D4 B — Space 현황은 사이드바 색 기준이 `필요 단축` 인 동안만 활성 시나리오·조회기간을 읽어 그
     두 줄을 세운다(`ConditionTabs` 를 보기 값으로). 실제 `app.py` 가 라디오 값을 읽고, 페이지는 켠
-    회차에 예외 없이 계획까지 돈다(목표 확보율이 선다 — 사이드바 조회 조건 패널의 줄, 2026-11-08
-    그림 메모 g05)."""
+    회차에 예외 없이 계획까지 돈다(목표 확보율 값 칸이 선다 — 사이드바 조회 조건 패널의 이름 줄 +
+    값 칸, 2026-11-08 그림 메모 g05 · 검수 보드 p-target-form)."""
+    from capa_simulation.components.space_shortening_view import LEVEL_FIELD_KEY
+
     app = _fleet_app.run()
     app.switch_page(SPACE_STATUS.path).run()
     assert not list(app.exception), [element.message for element in app.exception]
@@ -2422,15 +2424,11 @@ def test_space_shows_the_common_boxes_only_while_the_shortening_basis_is_chosen(
     app.sidebar.radio(key=SPACE_COLOR_BASIS_KEY).set_value(SPACE_SHORTENING_BASIS).run()
     assert not list(app.exception), [element.message for element in app.exception]
     assert _common_boxes(app) == {"heading", "scenario", "period", "equipment"}
-    assert [
-        item
-        for item in app.sidebar.get("button_group")
-        if getattr(item, "label", None) == "목표 확보율"
-    ]
+    fields = [item for item in app.sidebar.button if item.key == LEVEL_FIELD_KEY]
+    assert [(item.label, item.disabled) for item in fields] == [("110%", False)]
+    assert not [item for item in app.main.button if item.key == LEVEL_FIELD_KEY]
     assert not [
-        item
-        for item in app.main.get("button_group")
-        if getattr(item, "label", None) == "목표 확보율"
+        item for item in app.get("button_group") if getattr(item, "label", None) == "목표 확보율"
     ]
     assert not [text for text in data_error_texts(app) if "필요 단축을 칠하지 못했습니다" in text]
 
