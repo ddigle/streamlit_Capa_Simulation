@@ -275,14 +275,15 @@ def _clipboard_dialog(
 
 
 def heading_row_css(*, marked: bool) -> str:
-    """직접 편집 제목 줄의 서식(모듈 머리 `HEADING_BOX_KEY` 설명) — 보유 공정 밖 표지가
+    """직접 편집 제목 줄의 서식 규칙(모듈 머리 `HEADING_BOX_KEY` 설명) — 보유 공정 밖 표지가
     서면(`marked`) 제목 칸 바닥이 그 표지 몫만큼 넓다. 버전 줄은 제목 줄의 둘째
-    칸이다(`render_profile_heading`)."""
+    칸이다(`render_profile_heading`). `<style>` 로 감싸지 않는다 — 부르는 쪽이 저장 줄 서식과 한
+    덩이로 보낸다(`direct_editor_style`)."""
     floor = HEADING_MIN_WIDTH + (HEADING_MARK_ROOM if marked else 0)
     row = f".st-key-{HEADING_ROW_KEY}"
     line = f".st-key-{HEADING_KEY_PREFIX}{HEADING_PROFILE_KEY}"
     version = f'{line} > [data-testid="stElementContainer"]:nth-child(2)'
-    return f"""<style>
+    return f"""
 {row} {{ container-type: inline-size; }}
 {row} > [data-testid="stLayoutWrapper"]:has(> .st-key-{HEADING_BOX_KEY}) {{
   flex: 1 1 0%;
@@ -299,7 +300,14 @@ def heading_row_css(*, marked: bool) -> str:
 @container (max-width: {floor}px) {{
   {line} {{ flex-wrap: wrap; }}
 }}
-</style>"""
+"""
+
+
+def direct_editor_style(*, marked: bool) -> str:
+    """직접 편집 서식 한 벌 — 제목 줄(`heading_row_css`)과 저장 줄 오른쪽 끝 표 도구 막대
+    자리(`SAVE_ROW_KEY`). 서식만 든 `st.html` 은 이벤트 칸으로 가므로 하나로 묶어 한 번 보낸다
+    (표시순서 관리 `DIRECT_EDITOR_STYLE` 과 같은 결)."""
+    return f"<style>{heading_row_css(marked=marked)}{toolbar_room_css(SAVE_ROW_KEY)}\n</style>"
 
 
 def _render_direct_editor(
@@ -331,8 +339,7 @@ def _render_direct_editor(
     사용자 보드 T3 · T7, 설계 규칙 UI-LAY-11 · UI-LAY-03 · UI-TXT-04)."""
     current = profile.rules
     submitted_base = seen(BASE_VERSION_KEY)
-    st.html(heading_row_css(marked=bool(unmatched)))
-    st.html(f"<style>{toolbar_room_css(SAVE_ROW_KEY)}</style>")
+    st.html(direct_editor_style(marked=bool(unmatched)))
     with st.container(
         horizontal=True, vertical_alignment="center", gap="small", key=HEADING_ROW_KEY
     ):
