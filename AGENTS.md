@@ -3200,7 +3200,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
   (`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`), 격자 머리(`add_table_frame` — 바깥 테두리 ·
   머리 밑줄 · 분류 칸 세로선 · 월 경계선)와 분류 칸 반복 접두 생략(`blank_repeated_prefixes`)이다. 행 모델 · 면색 · 행 그룹
-  가로선만 표마다 다르다(`tests/test_monthly_table_shared_steps.py` 가 예전 두 벌과 Figure JSON 글자로 견준다).
+  가로선만 표마다 다르다(`tests/test_monthly_table_shared_steps.py` 가 공용 단계 둘을 그 정의 — 도우미 여섯 호출 · 접두
+  튜플 판정 — 와 Figure JSON 글자로 견준다).
   - 머리글 글자는 `go.Table` 밖 글자 trace(data[1], `plotly_layout.table_text_layer`)이고 띠는 `table_header_band`
     도형이다 — `go.Table` 머리글은 값 `""`·면 투명이다. 표 칸에 마크업(`<`·`&`·`>`)을 두지 않는다: 마크업 칸은 Plotly 가
     칸마다 그린 뒤 재서 옮겨 열 수만큼 브라우저 스타일 계산이 돈다(합성 표본 표준 목표 131주 표 long task 1.6s 의 대부분,

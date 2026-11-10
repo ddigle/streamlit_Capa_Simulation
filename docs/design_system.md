@@ -518,5 +518,6 @@ E2E). 값은 팔레트의 오류 선·면(`GRID_ERROR_LINE`·`GRID_ERROR_FILL`)�
 - **월별 표 두 컴포넌트의 공통분**: 테두리·머리선·경계선은 `monthly_table_base`로
   합쳤고 행 경계 주입도 같은 방식(일괄 주입)이다. 분류 컬럼 폭 계산(`classification_widths`)과
   `go.Table` 두 벌 조립(`build_split_table_figures`), 격자 머리 여섯 호출(`add_table_frame`)과
-  반복 접두 생략(`blank_repeated_prefixes`)도 그쪽이다. 표마다 남은 것은 행 모델 · 면색 · 행 그룹
-  가로선(부분합 3단 / 계층 깊이)뿐이다 — 표 구조가 달라서 둔다.
+  반복 접두 생략(`blank_repeated_prefixes`)도 그쪽이다. 행 모델 · 면색 · 행 그룹 가로선(부분합
+  3단 / 계층 깊이)은 표 구조가 달라서 표마다 둔다. 첫 칸 무리 번호 루프(`grouped` 의
+  `production_group_indices` · `hierarchical` 의 `top_group_indices`)는 같은 꼴인데 아직 두 벌이다.
