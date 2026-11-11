@@ -115,6 +115,7 @@ from capa_simulation.components.shortening_progress_panel import (
     progress_style,
     progress_summary_markup,
     progress_view,
+    read_baseline_options,
     render_baseline_controls,
     render_baseline_notice,
     render_compare_select,
@@ -883,10 +884,13 @@ def _render_view_choices(database_path: str | None) -> tuple[str, ...] | None:
     상자는 카드 폭을 다 쓰는 칸이다 — 기준선 라벨(「저장일 · 이름」)이 반 칸에서는 닫힌 칸 · 펼친
     목록 모두 끝이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가 없으면 None)이다 — 본문
     프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
-    baselines = load_baseline_options(database_path)
-    if baselines is None:
+    read = read_baseline_options(database_path)
+    if read is None:
         return None
-    render_compare_select(baselines, on_change=_rerun_view, args=(SHORTENING_COMPARE_KEY,))
+    baselines, listed = read
+    render_compare_select(
+        baselines, listed=listed, on_change=_rerun_view, args=(SHORTENING_COMPARE_KEY,)
+    )
     return tuple(summary.baseline_id for summary in baselines)
 
 

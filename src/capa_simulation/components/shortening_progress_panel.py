@@ -7,7 +7,9 @@
 0021 이다.
 
 - **진척 비교**(본문 머리, 목표 확보율 옆)는 세션 값이다. `비교 안 함` 이 기본이고 그때는 이 모듈의
-  요약·카드를 하나도 그리지 않는다 — 기존 화면 그대로다. 기준선 목록만 캐시에서 읽는다.
+  요약·카드를 하나도 그리지 않는다 — 기존 화면 그대로다. 기준선 목록만 캐시에서 읽는다. 보던
+  기준선이 다른 곳(다른 사용자 · 다른 탭)에서 지워지면 그 회차에 `비교 안 함` 으로 돌리고 사건 알림
+  `RS-06` 을 한 번 낸다 — 화면 자리에는 글을 달지 않는다(남은 물음 보드 D4 (나)).
 - **기준선 저장**은 CSV 단추 줄의 팝오버다. 지금 화면이 보던 계획(목표 다섯)을 그대로 얼려 공용
   목록에 남긴다. 샘플 fleet·미저장 시나리오 편집에서는 저장하지 않는다 — 고칠 수 없는 공용 기록이
   합성값이나 남이 볼 수 없는 편집본에서 나오면 안 된다. 미저장 설비 편집은 막지 않는다(계산은 설비
@@ -37,6 +39,7 @@ import pandas as pd
 import streamlit as st
 
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import FlashKind, pending_flash, queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
@@ -63,6 +66,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_shortening_baseline,
     load_shortening_baselines,
 )
+from capa_simulation.services.korean_particle import subject_particle
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_shortening import (
     KIND_NEW,
@@ -100,6 +104,7 @@ from capa_simulation.services.shortening_progress import (
 )
 
 __all__ = [
+    "BASELINE_GONE_ALERT",
     "BASELINE_SAVE_HELP",
     "NO_COMPARISON",
     "SHORTENING_COMPARE_KEY",
@@ -107,12 +112,14 @@ __all__ = [
     "BaselineSaveContext",
     "ProgressView",
     "consume_baseline_write",
+    "gone_baseline_text",
     "load_baseline_options",
     "load_selected_baseline",
     "progress_card_markup",
     "progress_style",
     "progress_summary_markup",
     "progress_view",
+    "read_baseline_options",
     "render_baseline_controls",
     "render_baseline_notice",
     "render_compare_select",
@@ -123,6 +130,11 @@ __all__ = [
 SHORTENING_COMPARE_KEY = "equipment_shortening_compare_v1"
 NO_COMPARISON = "-"
 """「비교 안 함」. 기준선 id 는 uuid hex 라 이 글자와 겹치지 않는다."""
+BASELINE_GONE_ALERT = "RS-06"
+"""보던 기준선이 지워져 진척 비교를 끈 회차의 사건 알림(`render_compare_select`)."""
+# 「진척 비교」 상자에 세운 기준선의 (이름, 라벨) — id 로 찾는다. 고른 기준선이 목록에서 사라진
+# 회차에는 목록에 그 이름이 없으므로 앞 앱 전체 회차가 적어 둔 이것으로 알림 글을 짓는다.
+_COMPARE_NAMES_KEY = "equipment_shortening_compare_names_v1"
 
 _BASELINE_FORM_KEY = "equipment_shortening_baseline_form"
 _BASELINE_POPOVER_KEY = "equipment_shortening_baseline_popover"
@@ -206,35 +218,55 @@ class ProgressView:
 # ------------------------------------------------------------------ 고르기·저장·지우기
 
 
-def load_baseline_options(
+def read_baseline_options(
     database_path: str | None,
-) -> tuple[ShorteningBaselineSummary, ...] | None:
-    """「진척 비교」 선택지. 설비 DB 경로가 없는 자리(컴포넌트만 띄운 곳)면 None — 상자를 세우지
-    않는다. 못 읽으면 빈 목록이다(화면은 떠야 한다)."""
+) -> tuple[tuple[ShorteningBaselineSummary, ...], bool] | None:
+    """「진척 비교」 선택지와 그 목록을 읽었는지. 설비 DB 경로가 없는 자리(컴포넌트만 띄운 곳)면
+    None — 상자를 세우지 않는다. 못 읽으면 (빈 목록, False) 다 — 화면은 떠야 하고, 고른 기준선이
+    지워졌다고 알리지 않는다(`render_compare_select` 의 `listed`)."""
     if database_path is None:
         return None
     try:
-        return load_shortening_baselines(database_path)
+        return load_shortening_baselines(database_path), True
     except BOOTSTRAP_ERRORS:
-        return ()
+        return (), False
+
+
+def load_baseline_options(
+    database_path: str | None,
+) -> tuple[ShorteningBaselineSummary, ...] | None:
+    """「진척 비교」 선택지(`read_baseline_options` 의 목록). 못 읽으면 빈 목록이다."""
+    read = read_baseline_options(database_path)
+    return None if read is None else read[0]
 
 
 def render_compare_select(
     baselines: Sequence[ShorteningBaselineSummary],
     *,
+    listed: bool = True,
     on_change: Callable[[str], None] | None = None,
     args: tuple[str] | None = None,
 ) -> str:
     """「진척 비교」 상자. 고른 기준선 id, 고르지 않았으면 `NO_COMPARISON`.
 
     세션에 값이 없거나 고른 기준선이 목록에서 사라졌으면(누가 지웠으면) `비교 안 함` 을 **적는다**
-    (pop 하면 브라우저가 옛 선택을 계속 보인다 — AGENTS 9장). 라벨은 「저장일 · 이름」 이라 회차마다
-    바뀌지 않는다(기준선은 고칠 수 없다). 상자는 조건 카드(앱 전체 회차)에 서고, `on_change` 가
-    본문 프래그먼트만 다시 돌린다(`required_shortening_panel._rerun_view`).
+    (pop 하면 브라우저가 옛 선택을 계속 보인다 — AGENTS 9장). 보던 기준선이 사라진 것이면 그
+    회차에 사건 알림 `RS-06` 을 한 번 낸다(`_report_gone_baseline` — 남은 물음 보드 D4 (나),
+    그리지 않고 담기만 한다). `listed` 가 거짓(목록을 읽지 못한 회차)이면 비교는 끄되 지워졌다고
+    알리지 않는다(지워졌는지 모른다). 라벨은 「저장일 · 이름」 이라 회차마다 바뀌지
+    않는다(기준선은 고칠 수 없다). 상자는 조건 카드(앱 전체 회차)에 서고, `on_change` 가 본문
+    프래그먼트만 다시 돌린다(`required_shortening_panel._rerun_view`).
     """
     options = [NO_COMPARISON, *(summary.baseline_id for summary in baselines)]
-    if st.session_state.get(SHORTENING_COMPARE_KEY) not in options:
+    previous = st.session_state.get(SHORTENING_COMPARE_KEY)
+    if previous not in options:
         st.session_state[SHORTENING_COMPARE_KEY] = NO_COMPARISON
+        if listed:
+            _report_gone_baseline(previous)
+    if listed:
+        st.session_state[_COMPARE_NAMES_KEY] = {
+            summary.baseline_id: (summary.name, baseline_label(summary)) for summary in baselines
+        }
     labels = {summary.baseline_id: baseline_label(summary) for summary in baselines}
     value = st.selectbox(
         "진척 비교",
@@ -250,6 +282,49 @@ def render_compare_select(
         ),
     )
     return str(value)
+
+
+def gone_baseline_text(name: str) -> str:
+    """`RS-06` 알림창 짧은 글 — 「보던 기준선 「이름」이 지워져 진척 비교를 껐습니다」. 긴 이름은
+    이름만 줄여 짧은 글 상한(`alerts.SHORT_LIMIT`) 안에 들인다 — 끝의 「껐습니다」 가 잘리지 않게.
+    알림창은 글을 그대로 그린다(마크다운이 아니다)."""
+    head = "보던 기준선 「"
+    tail = f"」{subject_particle(f'「{name}」')} 지워져 진척 비교를 껐습니다"
+    room = alerts.SHORT_LIMIT - len(head) - len(tail)
+    shown = name if len(name) <= room else name[: room - 1].rstrip() + "…"
+    return f"{head}{shown}{tail}"
+
+
+def _report_gone_baseline(previous: object) -> None:
+    """비교 칸의 앞 값 `previous` 가 목록에서 사라졌을 때 — 보던 기준선이 지워진 것이면 사건 알림
+    `RS-06`(알림 단계 — Alarm 에 남는다)을 담는다. 같은 회차의 다음 표지
+    자리(`render_baseline_notice` · 상태 알림)가 보낸다.
+
+    앞 앱 전체 회차가 이 상자에 세운 기준선(`_COMPARE_NAMES_KEY` — 이름 · 라벨도 여기서 찾는다)일
+    때만이다. 처음 연 회차(값 없음) · 「비교 안 함」 은 그 목록에 없다. 이 세션이 지운 기준선은
+    지우기 콜백이 먼저 「비교 안 함」 으로 적고, 옛 화면의 두 번째 누름(빠른 두 번 누름 —
+    `_delete_baseline`)이 비교 칸 값을 되돌려 보내도 거른다 — 그 값은 지운 뒤 회차가 다시 적은
+    목록에 없고(옛 화면은 라벨 글로 보내 id 와도 다르다), id 로 오면 지우기를 끝낸
+    표지(`_BASELINE_DELETE_HANDLED_KEY`)와 같다."""
+    names = st.session_state.get(_COMPARE_NAMES_KEY)
+    if not isinstance(previous, str) or not isinstance(names, dict):
+        return
+    known = names.get(previous)
+    if not (isinstance(known, tuple | list) and len(known) == 2):
+        return
+    if previous == st.session_state.get(_BASELINE_DELETE_HANDLED_KEY):
+        return
+    name, label = str(known[0]), f"「{known[1]}」"
+    alerts.event(
+        BASELINE_GONE_ALERT,
+        text=gone_baseline_text(name),
+        full=(
+            f"「진척 비교」 에서 보던 기준선 {label}{subject_particle(label)} 목록에서 사라져(다른 "
+            "사용자나 다른 탭에서 지움) 진척 비교를 「비교 안 함」 으로 돌렸습니다. 다른 기준선을 "
+            "고르면 다시 견줍니다."
+        ),
+        cause="보던 기준선이 목록에서 사라짐",
+    )
 
 
 def load_selected_baseline(

@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from alert_marks import flashed
+from alert_marks import events, flashed
 from streamlit.testing.v1 import AppTest
 from test_required_shortening_tab import _run as _run_page
 from test_shortening_progress_tab import _name_input, _notices, _save_button, _saved_database
@@ -33,6 +33,7 @@ from test_shortening_view_fragment import (
 )
 
 from capa_simulation.components.shortening_progress_panel import (
+    BASELINE_GONE_ALERT,
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
 )
@@ -112,6 +113,9 @@ def test_a_second_press_of_a_finished_delete_neither_writes_nor_notifies(tmp_pat
     assert not app.exception
     assert _names(database_path) == []
     assert not flashed(app), _notices(app)
+    # 옛 화면의 비교 칸 값(이 세션이 지운 기준선)이 되돌아와도 「보던 기준선이 지워져 …」 사건
+    # 알림이 아니다 — 이 세션이 지운 것이다(남은 물음 보드 D4 (나)).
+    assert not events(app, BASELINE_GONE_ALERT)
     clear_equipment_repository()
 
 

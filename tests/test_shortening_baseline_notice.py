@@ -1,4 +1,4 @@
-# Purpose: 필요 단축 일정 본문 프래그먼트의 이벤트 칸 자리 수와 기준선 결과 알림 표지를 검사한다.
+# Purpose: 필요 단축 일정 본문 프래그먼트의 이벤트 칸 자리 수와 기준선 결과 · 사라짐 알림을 본다.
 
 """필요 단축 일정 본문 프래그먼트(`_render_view`)가 이벤트 칸(본문 밖 최상위 칸)에 쓰는 것.
 
@@ -14,16 +14,20 @@
 콜백이 먼저 거르고, 이것은 그 밖의 조합을 위한 예비다).
 
 진짜 프래그먼트 회차는 `tests/fragment_browser.py` 대역으로 돌린다.
+
+보던 기준선이 다른 곳에서 지워져 「진척 비교」 를 「비교 안 함」 으로 돌린 회차의 사건 알림
+`RS-06`(남은 물음 보드 D4 (나) — 알림 단계, 화면 자리에는 글이 없다)도 여기서 본다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import flashed
+from alert_marks import events, flashed
 from fragment_browser import FragmentBrowser
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 from streamlit.proto.RootContainer_pb2 import RootContainer
@@ -39,11 +43,18 @@ from test_shortening_view_fragment import (
 )
 from test_shortening_view_fragment import _view as _view_fragment
 
-from capa_simulation.alerts import MARKER_ATTRIBUTE, marker_notes
+from capa_simulation import alerts
+from capa_simulation.alerts import MARKER_ATTRIBUTE, SHORT_LIMIT, marker_notes
 from capa_simulation.components.required_shortening_panel import SHORTENING_LEVEL_KEY
-from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
+from capa_simulation.components.shortening_progress_panel import (
+    BASELINE_GONE_ALERT,
+    NO_COMPARISON,
+    SHORTENING_COMPARE_KEY,
+    gone_baseline_text,
+)
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.services.shortening_baseline import ShorteningBaselineSummary
 
 _EMPTY = ("html", "<style></style>")
 
@@ -168,3 +179,105 @@ def test_a_fourth_notice_before_a_draw_replaces_only_the_last_one() -> None:
     assert not list(app.exception), [element.message for element in app.exception]
     assert [note.value[-4:] for note in flashed(app)] == ["「A」.", "「B」.", "「D」."]
     assert len(app._tree.children[RootContainer.EVENT].children) == 1
+
+
+def _compare_script() -> None:
+    """「진척 비교」 상자 하나 — 목록 · 읽었는지는 세션 칸 `test_baselines` · `test_listed`
+    로 준다."""
+    import streamlit as st
+
+    from capa_simulation import alerts
+    from capa_simulation.components import shortening_progress_panel as progress
+
+    progress.render_compare_select(
+        st.session_state.get("test_baselines", ()),
+        listed=st.session_state.get("test_listed", True),
+    )
+    alerts.flush()
+
+
+def _summary(baseline_id: str, name: str) -> ShorteningBaselineSummary:
+    return ShorteningBaselineSummary(
+        baseline_id=baseline_id,
+        name=name,
+        saved_at=datetime(2026, 11, 10, 9, 0),
+        plan_today=date(2026, 11, 10),
+        start_month=202611,
+        end_month=202704,
+    )
+
+
+def test_a_compared_baseline_that_vanished_is_announced_once_with_its_name() -> None:
+    """보던 기준선이 목록에서 사라지면(다른 사용자 · 다른 탭이 지움) 그 회차에 「비교 안 함」 으로
+    돌리고 사건 알림 `RS-06` 을 한 번 낸다(알림 단계 — 남은 물음 보드 D4 (나)). 이름은 앞 회차가
+    상자에 세운 목록에서 찾고, 화면 자리에는 글을 달지 않는다. 처음 연 회차(세션 값 없음) ·
+    「비교 안 함」 은 알리지 않는다."""
+    kept, gone = _summary("a" * 32, "남는 기준선"), _summary("b" * 32, "V 하나")
+    app = AppTest.from_function(_compare_script)
+    app.session_state["test_baselines"] = (kept, gone)
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_COMPARE_KEY] == NO_COMPARISON
+    assert not events(app, BASELINE_GONE_ALERT)
+
+    app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(gone.baseline_id).run()
+    assert not events(app, BASELINE_GONE_ALERT)
+
+    app.session_state["test_baselines"] = (kept,)
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_COMPARE_KEY] == NO_COMPARISON
+    (note,) = events(app, BASELINE_GONE_ALERT)
+    assert (note["level"], note["short"]) == (
+        "info",
+        "보던 기준선 「V 하나」가 지워져 진척 비교를 껐습니다",
+    )
+    assert note["full"].startswith(
+        "「진척 비교」 에서 보던 기준선 「2026-11-10 · V 하나」가 목록에서"
+    )
+    assert not app.caption and not app.markdown and not app.warning and not app.info
+
+    app.run()
+    assert not events(app, BASELINE_GONE_ALERT)
+
+
+def test_a_list_that_could_not_be_read_or_a_value_never_shown_raises_no_alert() -> None:
+    """목록을 읽지 못한 회차(`listed` 거짓 — 빈 목록)는 비교를 끄되 지워졌다고 알리지 않는다 —
+    지워졌는지 모른다. 이 세션의 상자에 선 적 없는 값(옛 화면이 라벨 글로 되돌려 보낸 값 · 새 세션에
+    남은 값)은 「보던 기준선」 이 아니라 알리지 않는다."""
+    kept, gone = _summary("a" * 32, "남는 기준선"), _summary("b" * 32, "V 하나")
+    app = AppTest.from_function(_compare_script)
+    app.session_state["test_baselines"] = (kept, gone)
+    app.run()
+    app.selectbox(key=SHORTENING_COMPARE_KEY).set_value(gone.baseline_id).run()
+
+    app.session_state["test_baselines"] = ()
+    app.session_state["test_listed"] = False
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert app.session_state[SHORTENING_COMPARE_KEY] == NO_COMPARISON
+    assert not events(app, BASELINE_GONE_ALERT)
+
+    fresh = AppTest.from_function(_compare_script)
+    fresh.session_state[SHORTENING_COMPARE_KEY] = "2026-11-10 · V 하나"
+    fresh.run()
+    assert not list(fresh.exception), [element.message for element in fresh.exception]
+    assert fresh.session_state[SHORTENING_COMPARE_KEY] == NO_COMPARISON
+    assert not events(fresh, BASELINE_GONE_ALERT)
+
+
+def test_the_gone_baseline_text_shortens_only_the_name() -> None:
+    """짧은 글 상한(60자) 안에 들도록 이름만 줄인다 — 끝 「껐습니다」 는 남는다. 조사는 이름
+    끝소리로 고른다."""
+    assert (
+        gone_baseline_text("9월 정기") == "보던 기준선 「9월 정기」가 지워져 진척 비교를 껐습니다"
+    )
+    assert gone_baseline_text("2026-11-10 기준선") == (
+        "보던 기준선 「2026-11-10 기준선」이 지워져 진척 비교를 껐습니다"
+    )
+    long = gone_baseline_text("아주 긴 이름" * 10)
+    assert len(long) <= SHORT_LIMIT and long.endswith("」이 지워져 진척 비교를 껐습니다")
+    assert "…」" in long
+    assert alerts.spec(BASELINE_GONE_ALERT) == alerts.AlertSpec(
+        "RS-06", "info", "event", "필요 단축 일정 — 보던 기준선이 지워져 진척 비교를 끔"
+    )

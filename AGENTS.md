@@ -581,7 +581,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     다섯만 얼린다 — `_render_missing_baseline_level`). 진척 비교는
     사이드바 「필요 단축 일정 조건」 카드 맨 위 칸이고(카드는 처음 펼친 채 — 한 번 접으면 기억 칸), 바꾸면
     본문 프래그먼트(`VIEW_FRAGMENT_KEY` · `_rerun_view`)만 다시 그린다. 본문 프래그먼트는 회차마다 목표 세션 칸을 읽고, 기준선 목록이 카드가 세운 id 들
-    (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
+    (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 보던 기준선이 다른 곳(다른 사용자 · 다른
+    탭)에서 지워져 「비교 안 함」 으로 돌아가는 회차에는 사건 알림 `RS-06`(알림 단계 — 짧은 글 「보던 기준선 「…」이 지워져 진척
+    비교를 껐습니다」)을 한 번 내고 화면 자리에는 글을 달지 않는다(남은 물음 보드 D4 (나) — `shortening_progress_panel.render_compare_select`). 일정 미정 · 사용기준 밖 · 입력 비가동
     반영은 자리에 표지를 세우지 않고 상태 알림 `RS-03` ~ `RS-05`(`_report_status_alerts`)만이다 — 짧은 글이 건수, 전문이 뜻 ·
     내역이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07). 본문 맨 위는 KPI 이고 기준 값
     「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`_render_basis` — 값 글
@@ -4383,7 +4385,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Q2-14 — 제약 영향 그래프 · 계산표와 같은 꼴, 막대 좌표의 읽는 법은 제목 풍선 `CHART_HELP`).
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
-  - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
+  - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 보던 기준선이 목록에서 사라진 회차에 「비교 안 함」 으로 되적으며 사건 알림
+    `RS-06` 을 담는다(`_report_gone_baseline` — 앞 앱 전체 회차가 상자에 세운 id → (이름, 라벨) 칸 `_COMPARE_NAMES_KEY` 에 있던 것만이고,
+    이 세션이 지운 기준선은 지우기 콜백이 먼저 되적거나 옛 화면 두 번째 누름이면 그 칸 · 지우기를 끝낸 표지로 거른다. 목록을 못 읽은
+    회차(`read_baseline_options` 의 읽음 거짓)는 알리지 않는다 — 남은 물음 보드 D4 (나)). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
     콜백은 그린 회차의 세대가 다르면 쓰지 않는다(빠른 두 번 누름). 샘플·미저장 시나리오 편집은 저장을 거절한다.
   - 쓰기에 성공한 콜백은 표지를 남기고 `consume_baseline_write` 가 거둔다. 카드는 달 축 하나를 같이 쓴다.
 - `src/capa_simulation/components/shortening_timeline.py` — 필요 단축 일정 타임라인의 달 축·위치·격자선·날짜 글자
@@ -6838,7 +6843,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 03` · `MO-01`). DB 등록의
   BigDataQuery 설정은 상태 줄 없이 상태 알림 `AD-04` 만이다(다 준비됐으면 아무것도 그리지 않는다).
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
-  `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
+  `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24` · 필요 단축 일정 보던 기준선이 지워져 진척
+  비교를 끔 `RS-06`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
 - **팝업 안 제출이 고칠 입력 없이 거부되면** `queue_flash(…, popup_only=True)` + `st.rerun()` 으로 앱 전체 회차에서 알린다(공식
