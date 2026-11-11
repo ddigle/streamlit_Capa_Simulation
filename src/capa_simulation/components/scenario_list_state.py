@@ -27,15 +27,27 @@ if TYPE_CHECKING:
 DRAFT_KEY: Final = "scenario_list_draft"
 # 지난 회차에 그린 저장 차례 — `move` 의 `token` 을 대조하고 처음 옮길 때의 `order_base` 가 된다.
 SHOWN_ORDER_KEY: Final = "scenario_list_shown_order"
-# 세 마운트 key — 화면 탭 줄의 떠나기 붙들기(`page_tabs.EDIT_HOST_KEYS`)도 읽는다.
+# 네 마운트 key — 화면 탭 줄의 떠나기 붙들기(`page_tabs.EDIT_HOST_KEYS`)도 읽는다. 「점검」 칸의
+# 리비전 표(`CHECKS_KEY`)는 이름을 고치지 않고 고름만 보낸다 — 「상세」 칸 리비전 표와 같은
+# 고름이다.
 TABLE_KEY: Final = "scenario_list_table"
 REVISIONS_KEY: Final = "scenario_list_revisions"
 CHANGES_KEY: Final = "scenario_list_changes"
-MOUNT_KEYS: Final = (TABLE_KEY, REVISIONS_KEY, CHANGES_KEY)
+CHECKS_KEY: Final = "scenario_list_checks"
+MOUNT_KEYS: Final = (TABLE_KEY, REVISIONS_KEY, CHANGES_KEY, CHECKS_KEY)
 # 오른쪽 칸 고르기 · 받기 콜백이 고른 칸 — 맨 위 알림 칸이 표 모듈을 읽지 않고 본다(이름은
 # `scenario_list_grid.LIST_SIDE` 와 같다 — 시험이 맞댄다).
 SIDE_CHOICE_KEY: Final = "scenario_list_side_v1"
 SIDE_NEXT_KEY: Final = "scenario_list_side_next_v1"
+# 시나리오 관리 「시나리오 작업」 첫째 칸과 오른쪽 칸 「점검」 의 글 — 화면 위젯과 그리로 데려가는
+# 다른 화면의 알림 탭 길(`required_exclusion_notice.REQUIRED_TAB_GOTO`)이 함께 쓴다(화면 모듈을
+# 읽으면 순환이라 여기 둔다).
+LIST_MODE: Final = "목록 관리"
+SIDE_CHECK: Final = "점검"
+# 저장 · 지정 · 복제 · 자동 갱신 뒤 「소요대수에 들지 않은 수요」 경고가 가리키는 리비전 — (시나리오
+# id, 리비전 id). 「점검」 칸이 서는 목록 관리 회차에 한 번 그 리비전을 고르고 비운다
+# (`queue_check_target` · `take_check_target`).
+CHECK_TARGET_KEY: Final = "scenario_list_check_target"
 
 
 def peek_draft() -> ListDraft | None:
@@ -89,3 +101,21 @@ def shown_order() -> tuple[str, ...]:
 
 def remember_shown_order(order: tuple[str, ...]) -> None:
     st.session_state[SHOWN_ORDER_KEY] = order
+
+
+def queue_check_target(scenario_id: str, revision_id: str) -> None:
+    """경고가 가리키는 리비전을 적는다 — 다음에 「점검」 칸이 서는 목록 관리 회차가 그 시나리오를
+    열고 그 리비전을 고른다(2026-11-11 입력 점검 검토 보드 F4 (나)). 새 경고가 앞 것을 덮는다."""
+    st.session_state[CHECK_TARGET_KEY] = (scenario_id, revision_id)
+
+
+def take_check_target() -> tuple[str, str] | None:
+    """적어 둔 리비전을 꺼내고 비운다. 없거나 꼴이 맞지 않으면 None."""
+    held = st.session_state.pop(CHECK_TARGET_KEY, None)
+    if (
+        isinstance(held, tuple)
+        and len(held) == 2
+        and all(isinstance(part, str) and part for part in held)
+    ):
+        return held[0], held[1]
+    return None

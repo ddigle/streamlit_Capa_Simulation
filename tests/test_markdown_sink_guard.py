@@ -116,8 +116,8 @@ REESCAPING_GUARDS = frozenset({"literal_markdown", "quoted"})
 # 예외 글을 마크다운이 아닌 곳으로만 보내는 함수 — 이 함수 안의 except 는 예외 글 그물을 비킨다.
 PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/capacity_gate.py", "density_error"): (
-        "판정 글 — 자동 갱신 기록 표 칸(평문)에도 남는다. 알림 상자는 그리는 자리(capacity_gate·"
-        "alert_board.collect_alerts)에서 markdown_safe_tildes"
+        "판정 글 — 자동 갱신 기록 표 칸(평문)에도 남는다. 알림 상자 · 점검 칸은 그리는 자리"
+        "(capacity_gate · scenario_input_check)에서 markdown_safe_tildes"
     ),
     ("src/capa_simulation/components/capacity_gate.py", "_capacity_error"): (
         "판정 글 — density_error 와 같은 길(그리는 자리에서 markdown_safe_tildes)"

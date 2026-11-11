@@ -153,13 +153,13 @@ def test_the_summary_says_how_much_demand_the_required_count_left_out() -> None:
     assert quiet["scope"] != note["scope"]
 
 
-def test_the_summary_leaves_the_route_side_count_to_the_alert_board(
+def test_the_summary_leaves_the_route_side_count_to_the_input_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """현황 요약의 알림은 계획 쪽 건수만 싣는다 — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 계획을
-    고치지 않아도 늘 있을 수 있어(사내 실데이터에서 0 이 아니었다) 열 때마다 서는 경고가 된다. 경로
-    쪽만 있으면 알림이 없고, 함께 있으면 계획 쪽만 적는다(페이지는 exec 때 이름을 집으므로 모듈
-    속성을 바꾸면 그 셈이 들어간다)."""
+    고치지 않아도 늘 있을 수 있어(사내 실데이터에서 0 이 아니었다) 열 때마다 서는 경고가 된다 — 경로
+    쪽은 시나리오 관리 › 목록 관리 「점검」 칸이 센다. 경로 쪽만 있으면 알림이 없고, 함께 있으면
+    계획 쪽만 적는다(페이지는 exec 때 이름을 집으므로 모듈 속성을 바꾸면 그 셈이 들어간다)."""
     import capa_simulation.services.required_equipment as required_equipment
 
     counts = [required_equipment.RequiredExclusionCounts(excluded_routes=7)]

@@ -52,7 +52,7 @@ SEPARATE_ALERTS: dict[tuple[str, str], int] = {
 BESIDE = "그 자리 입력의 거부 — 곁 입력을 고치면 풀린다(UI-NTF-03)"
 PRESSED = "누른 동작의 실패 — 저장 · 적용 · 불러오기 단추 곁(UI-NTF-03)"
 NO_ALARM = "앱이 서지 못해 알림 칸이 없는 멈춤(UI-NTF-08 예외)"
-CHECK_BOARD = "판 자체 — 알림 모음 · 점검 화면의 결론 상자"
+CHECK_BOARD = "판 자체 — 점검 화면의 결론 상자"
 MODULE_CARD = "모듈 오류 카드(UI-NTF-08 예외)"
 ALERT_PATH = "알림 길 — 눌린 회차의 곁 칸(`flash`, 곁 오류의 공통 그리기)"
 ERROR_REASONS = frozenset({BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, ALERT_PATH})
@@ -70,7 +70,6 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PRESSED),
     ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (2, PRESSED),
     ("app_pages/standard_target_capa.py", ""): (1, BESIDE),
-    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, CHECK_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (3, PRESSED),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_settings_form"): (
         6,

@@ -1,15 +1,10 @@
-# Purpose: 표시명·표시순서·원천 품질·알림 모음 탭(끝 모듈 상태)과 위의 서버·통합인증 점검·접속 명단.
+# Purpose: 표시명·표시순서·원천 품질 탭(끝 모듈 상태)과 위의 서버·통합인증 점검·접속 명단.
 
 from __future__ import annotations
 
 import streamlit as st
 
 from capa_simulation.components.access_list_admin import render_access_list_admin
-from capa_simulation.components.alert_board import (
-    ALERT_STOPPED_PREFIX,
-    remembered_alert_count,
-    render_alert_board,
-)
 from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.display_order_management import (
@@ -25,9 +20,7 @@ from capa_simulation.components.process_rename_management import (
 from capa_simulation.components.source_quality import render_source_quality
 from capa_simulation.components.sso_status import render_sso_status
 from capa_simulation.components.state_alerts import open_tab_name, tab_name
-from capa_simulation.components.tab_marks import mark_tab_counts
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
-from capa_simulation.design import tokens
 from capa_simulation.io.reference_cache import get_effective_reference_tables
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
@@ -35,14 +28,14 @@ from capa_simulation.scenario_activation import active_persisted_scenario_id
 from capa_simulation.settings import DUCKDB_PATH
 
 # 탭을 더할 자리다. 이름을 여기에 모아 두고 아래에서 같은 순서로 그린다. 탭은 `stateful_tabs`
-# 라 열린 탭을 서버가 안다 — 위젯이 없는 「원천 품질」·「알림 모음」 은 닫혀 있으면 건너뛴다. 입력
-# 위젯이 든 탭은 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다.
-ALERT_TAB_NAME = ":material/notifications: 알림 모음"
+# 라 열린 탭을 서버가 안다 — 위젯이 없는 「원천 품질」 은 닫혀 있으면 건너뛴다. 입력 위젯이 든 탭은
+# 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다. 계산 알림은 이 화면에 두지
+# 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
+# (2026-11-11 입력 점검 보드 q7).
 TAB_NAMES = (
     ":material/label: Proc Rename",
     ":material/sort: 표시순서 관리",
     ":material/fact_check: 원천 품질",
-    ALERT_TAB_NAME,
 )
 TABS_KEY = "admin_area_active_tab"
 # 안쪽 탭 묶음을 담는 칸 — 그 안 맨 앞에 「모듈 상태」 팝오버 단추를 두면 탭 줄 오른쪽 끝에 선다
@@ -98,7 +91,7 @@ except BOOTSTRAP_ERRORS:
     available_processes = []
 
 with tabs_box:
-    process_rename_tab, display_order_tab, source_quality_tab, alert_tab = stateful_tabs(
+    process_rename_tab, display_order_tab, source_quality_tab = stateful_tabs(
         TAB_NAMES, key=TABS_KEY
     )
 
@@ -136,21 +129,3 @@ with source_quality_tab:
                 )
             else:
                 render_source_quality(source_profile, source_rows)
-with alert_tab:
-    # HOME 에서 걷은 계산 알림(소요대수에 들지 않은 수요 등)을 시나리오 전체 기간으로 모은다
-    # (2026-10-19 사용자 요청). 처음 여는 회차에 전체 기간 계산이 들어 닫혀 있으면 건너뛴다.
-    if not tab_is_hidden(alert_tab):
-        render_alert_board()
-# 알림 수는 탭 안 머리 줄이 아니라 탭 이름 「알림 모음」 곁 수 표지다 — 0 이면 없다(2026-11-09
-# 사용자 보드 T7). 탭을 연 회차에 센 수를 지금 시나리오 내용이 같을 때만 쓴다(닫힌 탭에서 전체 기간
-# 계산을 돌리지 않는다). 계산 멈춤(오류)이 있으면 오류색에 수 앞 「!」 — 색만으로 단계를 가르지
-# 않는다(설계 규칙 UI-ACC-03). 찍을 것이 없어도 매 회차 한 번 그린다(`mark_tab_counts`).
-alert_count = remembered_alert_count()
-alert_stopped = alert_count is not None and alert_count.error
-mark_tab_counts(
-    TABS_KEY,
-    TAB_NAMES,
-    {ALERT_TAB_NAME: alert_count.total if alert_count is not None else 0},
-    color=tokens.ALERT_ERROR if alert_stopped else tokens.ALERT_CHECK,
-    prefix=ALERT_STOPPED_PREFIX if alert_stopped else "",
-)

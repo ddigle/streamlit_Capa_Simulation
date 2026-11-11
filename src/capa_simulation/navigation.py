@@ -263,6 +263,11 @@ STANDARD_TARGET_CAPA = PageSpec(
     ":material/track_changes:",
     has_condition_cards=True,
 )
+# 생산 계획 · 산출 결과의 안쪽 탭 key — 그 화면과 시나리오 관리 › 목록 관리 「점검」 의
+# 「그 화면으로」(도착 탭을 적는다)가 함께 쓴다. 화면 모듈은 불러올 수 없어 여기 한 곳에 둔다(세션
+# 키 한 주인 — `tests/test_session_key_collisions.py`).
+LOAD_CONVERSION_TAB_KEY = "load_conversion_active_tab"
+CALCULATION_RESULT_TAB_KEY = "calculation_result_active_tab"
 STATIC_CAPA_SUBPAGES = (
     LOAD_CONVERSION,
     REFERENCE_DATA,

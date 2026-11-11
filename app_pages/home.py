@@ -1132,8 +1132,8 @@ render_capacity_assumption_notice(
     assumed_capacity_defaults, scope=simulation_scope(active_scenario)
 )
 # 소요대수에 들지 않은 수요와 결론 두 줄(최저 확보율 공정·기준 미달 수)은 HOME 에 두지 않는다 —
-# 경고가 HOME 에 줄줄이 달려 읽히지 않았다(2026-10-19 사용자 요청). 그런 알림은 Admin Area
-# 「알림 모음」 탭이 시나리오 전체 기간으로 한곳에 모은다.
+# 경고가 HOME 에 줄줄이 달려 읽히지 않았다(2026-10-19 사용자 요청). 계산에서 빠진 행은 시나리오
+# 관리 › 목록 관리 「점검」 칸이 리비전 전체 기간으로 센다(2026-11-11 입력 점검 보드 q7).
 # 제목 줄과 여덟 Figure 는 한 상자 안이다. 제목 줄(제목·범례)은 fragment 인
 # `render_home_figures` 밖에서 그리므로 상자만 여기서 연다.
 with home_dashboard_panel():

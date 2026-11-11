@@ -1,10 +1,11 @@
-# Purpose: 시나리오 목록 관리 브라우저 표 Components v2 를 세 자리에 그리고 오른쪽 칸 스펙을 둔다.
+# Purpose: 시나리오 목록 관리 브라우저 표 Components v2 를 네 자리에 그리고 오른쪽 칸 스펙을 둔다.
 
 """시나리오 관리 › Capa 시나리오 › 목록 관리의 표(설계 규칙 UI-CON-04 — 칸 조각은 설비 마스터 표와
 공용).
 
-**한 번 등록하고 세 자리에 다른 key 로 마운트한다** — 시나리오 표(`TABLE_KEY`) · 리비전 표
-(`REVISIONS_KEY`) · 저장 전 변경(`CHANGES_KEY`). 브라우저 → 서버는 **상태 값 `outbox` 하나**이고
+**한 번 등록하고 네 자리에 다른 key 로 마운트한다** — 시나리오 표(`TABLE_KEY`) · 리비전 표
+(`REVISIONS_KEY`) · 저장 전 변경(`CHANGES_KEY`) · 「점검」 칸 리비전 표(`CHECKS_KEY` — 이름 고치기
+없이 「계산」 칸). 브라우저 → 서버는 **상태 값 `outbox` 하나**이고
 트리거는 없다(`STATE_NAMES` · `TRIGGER_NAMES`) — 트리거는 다음 트리거에 덮여 잃을 수 있어, 줄을
 눌러 고르는 것도 출납으로 보낸다. 받은 값을 판정하는 것은 `services/scenario_list_edits.py` 다.
 
@@ -29,19 +30,23 @@ _ASSETS = Path(__file__).with_name("scenario_list_grid_assets")
 TABLE_KEY: Final = scenario_list_state.TABLE_KEY
 REVISIONS_KEY: Final = scenario_list_state.REVISIONS_KEY
 CHANGES_KEY: Final = scenario_list_state.CHANGES_KEY
+CHECKS_KEY: Final = scenario_list_state.CHECKS_KEY
 
 # 브라우저가 보내는 상태 값·트리거 이름(자산 시험이 JS 글자와 대조한다).
 STATE_NAMES: Final = frozenset({"outbox"})
 TRIGGER_NAMES: Final = frozenset[str]()
 
 # 처음 폭은 줄의 40%(옛 시제품 측정 — 리비전 표 세 칸이 346px 에서 밀리고 416px 이면 든다). 한계는
-# 설비 마스터와 같다.
+# 설비 마스터와 같다. 칸 고르기 다섯은 단추 좌우 안쪽 여백을 12px 로 좁혀 창 1283 의 처음 폭에서 한
+# 줄이다(2026-11-11 입력 점검 검토 보드 F2 (라) — 다른 화면 고르기는 그대로).
+LIST_CHOICE_PAD_PX: Final = 12
 LIST_SIDE: Final = side_panel.named_side_panel(
     "scenario_list",
     store="capa-scenario-list-side-v1",
     css_name="sls",
     default_share=0.4,
     default_offset_px=0,
+    choice_pad_px=LIST_CHOICE_PAD_PX,
 )
 
 
@@ -64,7 +69,7 @@ _GRID = st.components.v2.component(
 
 
 def render_list_mount(key: str, data: Mapping[str, Any], *, on_outbox: Callable[[], None]) -> None:
-    """세 자리 가운데 하나를 그린다. 색은 등록 CSS 에 적지 않고 회차마다 팔레트로 넘긴다."""
+    """네 자리 가운데 하나를 그린다. 색은 등록 CSS 에 적지 않고 회차마다 팔레트로 넘긴다."""
     _GRID(
         key=key,
         data={**data, "palette": grid_shared.grid_palette()},

@@ -61,14 +61,16 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     assert not any("구현중" in markdown.value for markdown in app.markdown)
     # 탭 이름 밑에 같은 글의 제목을 다시 그리지 않는다(설계 규칙 UI-TXT-07).
     assert not [subheader.value for subheader in app.subheader]
-    # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 왔고, 원천 품질과 HOME 에서 걷은 계산
-    # 알림을 모은 「알림 모음」 이 뒤에 붙어 네 탭이다.
+    # 표시순서 관리가 시나리오 관리 페이지에서 여기로 옮겨 왔고 원천 품질이 뒤에 붙어 세 탭이다.
+    # 계산 알림을 모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리
+    # 「점검」 칸이 센다(2026-11-11 입력 점검 보드 q7). 탭 이름 곁 수 표지도 없다.
     assert [tab.label for tab in app.main.tabs] == [
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
-        ":material/notifications: 알림 모음",
     ]
+    bodies = [str(element.proto.body) for element in app.get("html")]
+    assert not [body for body in bodies if "stTab" in body and "content:" in body]
     # 원천 품질 탭은 닫혀 있으면 그리지 않는다(위젯이 없는 읽기 전용 탭).
     assert not any("활성 시나리오가 없습니다" in info.value for info in infos(app))
     # 내려받기는 표시명 양식과 표시순서 양식 둘이다.
@@ -999,7 +1001,6 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
         ":material/fact_check: 원천 품질",
-        ":material/notifications: 알림 모음",
     ]
 
 
@@ -1278,14 +1279,14 @@ def test_the_module_status_is_a_popover_at_the_tab_row_only_with_modules(
         caption for caption in app.caption if module_registry.DISABLED_ENV_VAR in caption.value
     ]
     assert "앱을 다시 띄운 뒤" in environment.proto.help
-    # 탭은 그대로 넷이다.
-    assert len(app.main.tabs) == 4
-    # 팝오버 단추 칸과 네 탭은 같은 칸(`TABS_BOX_KEY`) 안이고 단추 칸이 앞이다 — 서식이 그 칸 오른쪽
+    # 탭은 그대로 셋이다.
+    assert len(app.main.tabs) == 3
+    # 팝오버 단추 칸과 세 탭은 같은 칸(`TABS_BOX_KEY`) 안이고 단추 칸이 앞이다 — 서식이 그 칸 오른쪽
     # 위(탭 줄 높이)에 단추 칸을 얹으므로, 둘이 갈라지면 단추가 탭 위 한 줄로 되돌아간다.
     (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
     tools, tabs = list(box.children.values())
     assert str(tools.proto.id).endswith(f"-{module_status.TOOLS_KEY}")
-    assert tabs.type == "tab_container" and len(tabs.children) == 4
+    assert tabs.type == "tab_container" and len(tabs.children) == 3
 
     monkeypatch.setenv(module_registry.ROOT_ENV_VAR, "off")
     app = AppTest.from_string(script).run(timeout=120)
@@ -1349,126 +1350,3 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
     assert [child.type for child in box.children.values()] == ["flex_container"]
     assert data_error_marks(app) == 1
     assert [item["active"] for item in states(app, "MO-01")] == [False]
-
-
-def _alert_tab_script(database_path: Path) -> str:
-    """활성 시나리오(내장 합성 시드의 공식)를 세운 뒤 Admin Area 를 돌리는 스크립트. 전체 기간
-    계산은 세션 칸 `alert_mode` 대로 갈아 끼운다 — `stopped` 는 계산 멈춤 한 칸(오류),
-    `warned` 는 경고 두 칸, `broken` 은 알림 모음을 읽지 못함(`AD-07`)이다. 회차 끝에 원래
-    함수로 되돌린다 — AppTest 는 같은 프로세스에서 돌아 그대로 두면 다른 시험에 샌다."""
-    return f"""
-from pathlib import Path
-
-import streamlit as st
-
-import capa_simulation.settings as settings
-
-settings.DUCKDB_PATH = Path({str(database_path)!r})
-
-from capa_simulation.components import alert_board
-from capa_simulation.scenario_activation import bootstrap_latest_official_scenario
-from capa_simulation.services.simulation_cache import CapacityOutcome
-
-bootstrap_latest_official_scenario(str(settings.DUCKDB_PATH))
-mode = st.session_state.get("alert_mode", "stopped")
-
-
-def _outcome(*_args, **_kwargs):
-    if mode == "broken":
-        raise ValueError("시험 — 알림 모음을 읽지 못함")
-    if mode == "warned":
-        return CapacityOutcome(unit_capacity=None, required_equipment=None, error="")
-    return CapacityOutcome(unit_capacity=None, required_equipment=None, error="시험 — UPEH 없음")
-
-
-def _alerts(outcome, density):
-    if mode != "warned":
-        return original_collect(outcome, density)
-    return [
-        alert_board.Alert("계산 멈춤", "ok", "없음"),
-        alert_board.Alert("소요대수에 들지 않은 수요", "warning", "시험 경고"),
-        alert_board.Alert("측정률 가정", "warning", "시험 경고"),
-    ]
-
-
-original_outcome = alert_board.get_full_capacity_outcome
-original_collect = alert_board.collect_alerts
-alert_board.get_full_capacity_outcome = _outcome
-alert_board.collect_alerts = _alerts
-try:
-    source = Path({str(PAGE)!r})
-    exec(
-        compile(source.read_text(encoding="utf-8"), str(source), "exec"),
-        {{"__name__": "__main__"}},
-    )
-finally:
-    alert_board.get_full_capacity_outcome = original_outcome
-    alert_board.collect_alerts = original_collect
-"""
-
-
-ALERT_TAB_LABEL = ":material/notifications: 알림 모음"
-ALERT_TAB_MARK = (
-    '.st-key-admin_area_active_tab [data-testid="stTab"]:nth-child(4)'
-    ':not(.st-key-admin_area_active_tab [data-testid="stTabPanel"] *)::after'
-)
-
-
-def _count_mark(app: AppTest) -> str:
-    """탭 이름 곁 수 표지의 서식 — 매 회차 한 자리(찍을 것이 없으면 빈 규칙)."""
-    bodies = [str(element.proto.body) for element in app.get("html")]
-    marks = [body for body in bodies if "stTab" in body and "content:" in body]
-    empty = [body for body in bodies if body == "<style></style>"]
-    assert len(marks) + len(empty) >= 1, bodies
-    assert len(marks) <= 1, marks
-    return marks[0] if marks else ""
-
-
-def test_the_alert_count_rides_the_fourth_tab_and_follows_the_scenario(tmp_path: Path) -> None:
-    """「알림 모음」 수 표지의 배선 — 탭을 연 회차에 그 계산 키로 센 수가 넷째 탭(이름 상수
-    `ALERT_TAB_NAME`) 이름 곁에 선다. 계산 멈춤이면 오류색에 「!」 를 붙여 글자로도 가르고(설계 규칙
-    UI-ACC-03), 경고만이면 확인 필요색 수다. 다른 탭으로 옮겨도 남고, 시나리오 내용이 바뀌면(내용
-    토큰) 사라지며, 알림 모음을 계산하지 못한 회차에도 사라진다(설계 규칙 UI-DAT-11)."""
-    from capa_simulation.design import tokens
-    from capa_simulation.scenario_state import ACTIVE_SCENARIO_KEY
-
-    app = AppTest.from_string(_alert_tab_script(tmp_path / "scenario.duckdb"))
-    app.run(timeout=180)
-    assert not list(app.exception), [element.message for element in app.exception]
-    assert [tab.label for tab in app.main.tabs][3] == ALERT_TAB_LABEL
-    # 닫힌 탭에서는 전체 기간 계산을 돌리지 않아 아직 셀 수 없다 — 표지가 없다.
-    assert _count_mark(app) == ""
-
-    app.session_state["admin_area_active_tab"] = ALERT_TAB_LABEL
-    app.run(timeout=180)
-    assert not list(app.exception), [element.message for element in app.exception]
-    mark = _count_mark(app)
-    assert ALERT_TAB_MARK in mark
-    assert f'{ALERT_TAB_MARK} {{ content: "! 1"; }}' in mark
-    assert f"color: {tokens.ALERT_ERROR};" in mark
-    assert not any("알림 1건" in str(item.value) for item in app.markdown)
-
-    app.session_state["admin_area_active_tab"] = ":material/label: Proc Rename"
-    app.run(timeout=180)
-    assert f'{ALERT_TAB_MARK} {{ content: "! 1"; }}' in _count_mark(app)
-
-    app.session_state["alert_mode"] = "warned"
-    app.session_state["admin_area_active_tab"] = ALERT_TAB_LABEL
-    app.run(timeout=180)
-    mark = _count_mark(app)
-    assert f'{ALERT_TAB_MARK} {{ content: "2"; }}' in mark
-    assert f"color: {tokens.ALERT_CHECK};" in mark
-
-    app.session_state["alert_mode"] = "broken"
-    app.run(timeout=180)
-    assert _count_mark(app) == ""
-
-    app.session_state["alert_mode"] = "warned"
-    app.run(timeout=180)
-    assert f'{ALERT_TAB_MARK} {{ content: "2"; }}' in _count_mark(app)
-    app.session_state["admin_area_active_tab"] = ":material/label: Proc Rename"
-    active = dict(app.session_state[ACTIVE_SCENARIO_KEY])
-    active["content_token"] = "edited-content"
-    app.session_state[ACTIVE_SCENARIO_KEY] = active
-    app.run(timeout=180)
-    assert _count_mark(app) == ""

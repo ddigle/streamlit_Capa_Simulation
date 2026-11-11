@@ -9,11 +9,15 @@
 아예 없어 닿지 않은 부하(EDP-TSV 의 PKG 처럼 규칙상 쓰지 않는 조합)는 세지도 그리지도 않는다 — 세면
 모두에게 늘 뜨는 경고가 되고, 확보율이 높게 나온다는 말도 그 경우 사실이 아니다.
 
-그래서 같은 문장을 여러 자리에서 쓴다. Admin Area 「알림 모음」 탭이 한 줄로 모으고(HOME 에는
-띄우지 않는다 — 2026-10-19 사용자 요청), 리비전 저장·공식 발행 검사는 허락하면서 경고, 공식버전 자동
-갱신의 발행은 막지 않고 실행 기록 사유 끝에 붙인다(`auto_official_update_runner` — 「지금 실행」
-결과는 화면 발행과 같이 성공 알림 밑의 경고로 따로 띄운다). 모두 시나리오 전체 기간이다. 목록은
-산출 결과 → 소요대수 탭을 열면 서는 Alarm 줄의 표다(`REQUIRED_LIST_NOTE`).
+그래서 같은 문장을 여러 자리에서 쓴다(HOME 에는 띄우지 않는다 — 2026-10-19 사용자 요청). 리비전
+저장·공식 발행 검사는 허락하면서 경고, 공식버전 자동 갱신의 발행은 막지 않고 실행 기록 사유 끝에
+붙인다(`auto_official_update_runner` — 「지금 실행」 결과는 화면 발행과 같이 성공 알림 밑의 경고로
+따로 띄운다). 모두 시나리오 전체 기간이다. 그 저장 리비전 하나의 같은 셈
+(`required_exclusion_counts`)을 같은 범위로 묶음 수와 행으로 보이는 자리가 시나리오 관리 › 목록
+관리 「점검」 칸이라 그 경고의 목록 자리 · 「그 화면으로」 도 그 칸이다(`REQUIRED_LIST_NOTE` ·
+`REQUIRED_TAB_GOTO` — 2026-11-11 입력 점검 검토 보드 F4 (나)). 산출 결과 소요대수 탭의 목록은
+조회기간이라 수가 다를 수 있다. 경고를 내는 자리는 `required_check_goto` 로 그 리비전을 적어 칸이
+그 리비전을 고른 채 서게 한다(`services/revision_input_check.py` 는 이 문장을 쓰지 않는다).
 
 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지 않게 두 자리에도 같은 문장을 띄운다 —
 PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림이 서는 회차)와 Static Capa 현황 요약
@@ -21,7 +25,7 @@ PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림�
 건수만** 싣는다(`plan_side_counts`) — 경로 쪽(대당 Capa 가 없어 뺀 부하 경로)은 대당 Capa 기준정보
 몫이라 계획을 고치지 않아도 늘 있을 수 있고(사내 리뷰 `202610271800` 보충 8-2X 에서 0 이 아니었다),
 그대로 실으면 적용할 때마다·현황 요약을 열 때마다 서는 경고가 된다(HOME 에서 이 줄을 뺀 2026-10-19
-결정과 같은 까닭). 경로 쪽은 위 자리들(알림 모음·저장·발행 검사)이 그대로 말한다.
+결정과 같은 까닭). 경로 쪽은 위 자리들(저장·발행 검사 · 목록 관리 「점검」)이 그대로 말한다.
 
 **화면 자리는 상태 알림이다**(2026-11-03 결정 보드 D2 (나)). Static Capa · 산출 결과 · 생산 계획은
 이 경고를 자리에 그리지 않고 `alerts.state` 로 낸다 — 내용(건수)이 바뀔 때만 오른쪽 아래 알림창에
@@ -51,13 +55,19 @@ import streamlit as st
 from capa_simulation import alerts
 from capa_simulation.components.exclusion_table import exclusion_export, render_exclusion_table
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.scenario_list_state import (
+    LIST_MODE,
+    SIDE_CHECK,
+    queue_check_target,
+)
+from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.state_alerts import (
     ALARM_ROW_PLACE,
     AlertScope,
     alarm_table_place,
     alert_table,
 )
-from capa_simulation.navigation import STATIC_CAPA_SUBPAGES
+from capa_simulation.navigation import SCENARIO_MANAGEMENT
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.services.display_order import DisplayOrderInput
 from capa_simulation.services.display_order_scopes import PAGE_CALCULATION, TAB_REQUIRED
@@ -72,7 +82,7 @@ from capa_simulation.services.required_equipment import (
     counted_unrouted_loads,
 )
 
-# 문장의 범위 말. 저장·발행 검사와 Admin Area 「알림 모음」·PKG PLAN 적용 알림은 시나리오 전체 기간,
+# 문장의 범위 말. 저장·발행 검사와 PKG PLAN 적용 알림은 시나리오 전체 기간,
 # Static Capa 현황 요약은 그 화면이 보는 조회기간으로 본다.
 FULL_SCOPE = "시나리오 전체 기간"
 PERIOD_SCOPE = "조회기간"
@@ -81,17 +91,20 @@ PERIOD_SCOPE = "조회기간"
 UNCOUNTED_DEMAND_LEAD = "소요대수에 들지 않은 수요가 있습니다"
 # 표가 커서 본문에 남은 계획 쪽 목록이 서는 자리 — 알림 짧은 글이 「어디서 보는지」 로 적는다.
 REQUIRED_LIST_PLACE = "산출 결과 › 소요대수"
-# 문장의 끝 — 목록을 어디서 보는지. 알림 칸 밖의 글(Admin 「알림 모음」 · 저장 · 발행 검사 · 자동
-# 갱신 기록)은 그 탭을 열어야 줄이 선다는 것까지 말한다.
-REQUIRED_LIST_NOTE = "목록은 산출 결과 → 소요대수 탭을 열면 서는 Alarm 줄의 표입니다."
+# 문장의 끝 — 목록을 어디서 보는지. 저장 · 지정 검사와 자동 갱신 기록의 경고는 같은 리비전 · 같은
+# 범위(시나리오 전체 기간)로 묶음을 보이는 목록 관리 「점검」 칸을 가리킨다(2026-11-11 입력 점검
+# 검토 보드 F4 (나)). 상태 알림(`ST-01` · `ST-04`)은 그 줄의 표나 산출 결과 소요대수 탭이다.
+REQUIRED_LIST_NOTE = "목록은 시나리오 관리 → 목록 관리 「점검」 칸(같은 리비전 · 전체 기간)입니다."
 REQUIRED_LIST_NOTE_THIS_ROW = "목록은 Alarm 의 이 줄에 딸린 표입니다."
 REQUIRED_LIST_NOTE_ON_PAGE = "목록은 산출 결과 → 소요대수 탭에 있습니다."
-# 저장 · 지정 · 복제 · 「지금 실행」 뒤의 이 경고(사건 알림)가 「그 화면으로」 로 열 자리 — 목록이
-# 서는 산출 결과 › 소요대수 탭(이름, 주소, 탭). 알림을 낸 화면에는 목록이 없다.
-_CALCULATION_RESULT: Final = next(
-    spec for spec in STATIC_CAPA_SUBPAGES if spec.path == "app_pages/calculation_result.py"
+# 저장 · 지정 · 복제 · 「지금 실행」 뒤의 이 경고(사건 알림)가 「그 화면으로」 로 열 자리 — 시나리오
+# 관리 › Capa 시나리오 › 목록 관리 › 「점검」(이름, 주소, 탭 길 — 알림 칸이 탭 · 전환 단추를 차례로
+# 누른다). 리비전은 경고를 낼 때 `required_check_goto` 가 적는다.
+REQUIRED_TAB_GOTO: Final = (
+    tab_label(SCENARIO_MANAGEMENT),
+    SCENARIO_MANAGEMENT.href,
+    f"{CAPA_SCENARIO_TAB_NAME} › {LIST_MODE} › {SIDE_CHECK}",
 )
-REQUIRED_TAB_GOTO: Final = (tab_label(_CALCULATION_RESULT), _CALCULATION_RESULT.href, "소요대수")
 # 제외 목록(Alarm 줄의 표) 이름. 2026-11-02 · 11-05 사용자 요청(검수표) 전에는 탭 본문 펼침이었다.
 CAPACITY_EXCLUSION_TITLE = "제외 기준정보"
 REQUIRED_EXCLUSION_TITLE = "소요대수 제외 기준정보"
@@ -138,6 +151,16 @@ class ExclusionList(NamedTuple):
     table: alerts.AlertTable | None
 
 
+def required_check_goto(scenario_id: str | None, revision_id: str | None) -> tuple[str, str, str]:
+    """「소요대수에 들지 않은 수요」 경고(저장 · 지정 · 복제 · 「지금 실행」)의 갈 곳. 경고가 말하는
+    리비전을 적어 다음에 「점검」 칸이 서는 목록 관리 회차가 그 리비전을 고르게 하고
+    (`scenario_list_state.queue_check_target`), 알림 칸의 갈 곳(`REQUIRED_TAB_GOTO`)을 돌려준다.
+    쓴 리비전을 모르면(빠른 둘째 누름이 첫 쓰기를 이어받은 회차 따위) 적지 않고 갈 곳만 준다."""
+    if scenario_id and revision_id:
+        queue_check_target(scenario_id, revision_id)
+    return REQUIRED_TAB_GOTO
+
+
 def plan_side_counts(counts: RequiredExclusionCounts) -> RequiredExclusionCounts:
     """계획 쪽 건수만 남긴다(경로 쪽 `excluded_routes` 는 0) — PKG PLAN 적용 알림·Static Capa 현황
     요약처럼 「계획을 고쳤는데 수가 안 바뀐다」 를 말하는 자리가 쓴다(모듈 설명)."""
@@ -148,8 +171,7 @@ def required_exclusion_message(
     counts: RequiredExclusionCounts, *, scope: str, list_note: str = REQUIRED_LIST_NOTE
 ) -> str:
     """건수가 하나라도 있으면 한 문장, 없으면 빈 문자열이라 호출부가 분기를 줄인다. `list_note` 는
-    끝 문장(목록 자리)이다 — 그 줄에 표가 딸린 알림은 「이 줄」 을 가리키고, 칸 글이 값인 자리
-    (Admin 「알림 모음」)는 빈 글을 줘 뺀다."""
+    끝 문장(목록 자리)이다 — 그 줄에 표가 딸린 알림은 「이 줄」 을 가리킨다."""
     parts = []
     if counts.excluded_plans:
         parts.append(f"기준정보가 없어 부하량에서 빠진 계획 {counts.excluded_plans:,}건")
@@ -165,7 +187,7 @@ def required_exclusion_message(
         f"{UNCOUNTED_DEMAND_LEAD}({scope}) — {' · '.join(parts)}. "
         "그만큼 소요대수가 작게, **확보율이 실제보다 높게** 나올 수 있습니다."
     )
-    return f"{message} {list_note}" if list_note else message
+    return f"{message} {list_note}"
 
 
 def _exclusion_list(

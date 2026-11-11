@@ -39,10 +39,6 @@ OWNERS = ("src/capa_simulation/components/flash.py", "src/capa_simulation/alerts
 _LOGGERS = frozenset({"logger", "logging", "log", "LOGGER", "_LOG", "_LOGGER", "warnings"})
 
 PLACE_FORM = "자리 글 — 팝업 · 폼 안 검증. 고칠 입력이 그 자리에 있다(알림창 · 기록 없음, 설계 2-2)"
-PLACE_BOARD = (
-    "자리 글 — Admin 「알림 모음」 판. 알림을 한곳에 모아 보이는 것이 그 화면 자체다(시나리오 전체"
-    " 기간으로 다시 계산한 목록 — 쌓이는 기록이 아니다)"
-)
 PLACE_STOP = (
     "멈춤 화면 — 앱이 서지 못해 알림 칸이 없다(통합인증 두 번째 벽, 설계 2-2 GL-01 과 같은 꼴)"
 )
@@ -67,7 +63,6 @@ PLACE_KEPT = (
 REASONS = frozenset(
     {
         PLACE_FORM,
-        PLACE_BOARD,
         PLACE_STOP,
         PLACE_RESULT,
         PLACE_CONFIRM,
@@ -81,7 +76,6 @@ REASONS = frozenset(
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/space_status.py", "_render_fab_editor"): (1, PLACE_RESULT),
     ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
-    ("src/capa_simulation/components/alert_board.py", "render_alert_board"): (1, PLACE_BOARD),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (
         1,
         PLACE_RESULT,

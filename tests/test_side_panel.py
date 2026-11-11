@@ -34,9 +34,11 @@ def test_the_two_screens_do_not_share_a_mark_a_key_or_a_store() -> None:
 
 
 def _renamed(style: str) -> str:
-    """목록 관리 서식의 이름을 설비 마스터 이름으로 — 다른 것은 처음 폭뿐이어야 한다."""
+    """목록 관리 서식의 이름을 설비 마스터 이름으로 — 다른 것은 처음 폭과 고르기 여백뿐이어야
+    한다."""
     return (
-        style.replace("scenario_list_", "equipment_master_")
+        style.replace(sp.choice_padding_rule(LIST_SIDE), "")
+        .replace("scenario_list_", "equipment_master_")
         .replace("--sls-", "--emd-")
         .replace("data-sls-side", "data-emd-side")
         .replace("calc(40% - 0px)", "calc(30% - 28px)")
@@ -51,3 +53,18 @@ def test_the_two_layouts_differ_only_by_names_and_the_first_width() -> None:
     for name in ("minPx", "minShare", "maxPx", "maxShare"):
         assert sp.side_bounds(LIST_SIDE)[name] == sp.side_bounds(MASTER_SIDE)[name]
     assert "var(--sls-side-w, calc(40% - 0px))" in sp.side_width_rule(LIST_SIDE)
+
+
+def test_only_the_scenario_list_narrows_its_choice_buttons() -> None:
+    """칸 고르기 단추 좌우 안쪽 여백은 시나리오 목록 관리 칸 고르기에만 12px 로 좁힌다(2026-11-11
+    입력 점검 검토 보드 F2 (라) — 고르기 다섯이 창 1283 의 처음 폭에서 한 줄). 설비 마스터 서식에는
+    여백 규칙이 없다(Streamlit 기본 14px 그대로)."""
+    rule = sp.choice_padding_rule(LIST_SIDE)
+    assert rule == (
+        f'.st-key-{SIDE_CHOICE_KEY} [data-testid="stButtonGroup"] button '
+        "{ padding-left: 12px; padding-right: 12px; }"
+    )
+    assert rule in sp.side_layout_style(LIST_SIDE)
+    assert sp.choice_padding_rule(MASTER_SIDE) == ""
+    assert "padding-left: 12px" not in sp.side_layout_style(MASTER_SIDE)
+    assert "stButtonGroup" not in sp.side_layout_style(MASTER_SIDE)

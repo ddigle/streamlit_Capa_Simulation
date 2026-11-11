@@ -695,12 +695,13 @@ def test_home_has_no_tab_bar_and_starts_with_the_dashboard(seeded_database: Path
 REQUIRED_EXCLUSION_PHRASE = "소요대수에 들지 않은 수요가 있습니다"
 
 
-def test_home_keeps_left_out_demand_warnings_for_the_admin_alert_board(tmp_path: Path) -> None:
+def test_home_keeps_left_out_demand_warnings_off_the_page(tmp_path: Path) -> None:
     """부하량에서 빠진 계획이 있어도 HOME 에는 경고 줄을 띄우지 않는다(2026-10-19 사용자 요청).
 
     한 제품의 Chip 구성을 빼면 그 제품 계획은 부하량에서 빠진다. 그런 알림은 HOME 에 줄줄이 달려
-    읽히지 않았다 — Admin Area 「알림 모음」 이 시나리오 전체 기간으로 모은다
-    (`tests/test_alert_board.py`). 결론 두 줄(최저 확보율 공정·기준 미달 수)도 HOME 에 없다.
+    읽히지 않았다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
+    (`tests/test_scenario_input_check.py`). 결론 두 줄(최저 확보율 공정·기준 미달 수)도 HOME 에
+    없다.
     """
     app = AppTest.from_string(_home_script(tmp_path / "scenario.duckdb"), default_timeout=300)
     app.run()

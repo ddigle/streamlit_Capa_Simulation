@@ -65,6 +65,7 @@ from capa_simulation.components.required_exclusion_notice import (
     REQUIRED_TAB_GOTO,
     UNCOUNTED_DEMAND_LEAD,
 )
+from capa_simulation.components.scenario_list_state import CHECK_TARGET_KEY
 from capa_simulation.persistence.models import AutoOfficialUpdateRun, ScenarioPreset
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.services.auto_official_update import (
@@ -731,10 +732,17 @@ def test_run_now_shows_uncounted_demand_as_a_warning_after_the_success(database:
     assert (kind, icon) == ("warning", ":material/warning:")
     assert text.startswith(f"{UNCOUNTED_DEMAND_LEAD}(시나리오 전체 기간) — ")
     assert [item.code for item in flashed(app, "warning")] == ["FL-03"]
-    # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    # 「그 화면으로」 는 지정한 리비전 2 를 고른 목록 관리 「점검」 칸이다(2026-11-11 검토 보드
+    # F4 (나) — u3-04 의 산출 결과 › 소요대수를 바꿈).
     (warned,) = flashed(app, "warning")
     assert warned.note is not None
     assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
+    published = repository.list_auto_official_update_runs()[0]
+    assert published.created_scenario_id and published.filtered_revision_id
+    assert app.session_state[CHECK_TARGET_KEY] == (
+        published.created_scenario_id,
+        published.filtered_revision_id,
+    )
     assert not app.warning
     assert "생산수량이 비어 계획 없음으로 본 계획 1건" in text
     run = repository.list_auto_official_update_runs()[0]

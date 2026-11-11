@@ -113,6 +113,7 @@ from capa_simulation.services.auto_official_update import (
     TriggerKind,
     describe_config_change,
 )
+from capa_simulation.services.core_data_derivation import blank_cs_mask
 from capa_simulation.services.display_order_editor import ClashKey, DisplayOrderValueClashError
 from capa_simulation.services.execution_capacity import prepare_execution_capacity
 from capa_simulation.services.key_process import normalize_key_process_presets
@@ -185,6 +186,10 @@ _GLOBAL_PROFILE_TABLES = frozenset({"global_comparison_scenario"})
 # 한 표가 두 소유 컬럼을 함께 가지면 넓은 쪽으로 지운다. `app_meta.scenario_revision` 은
 # `scenario_id` 로 한 번에 지우는 편이 리비전 목록을 미리 붙잡아 둘 필요를 없앤다.
 _OWNER_COLUMNS = ("scenario_id", "dataset_id", "revision_id")
+# 공백 글자뿐인 글 — 파이썬 `str.strip` 이 지우는 공백(`str.isspace`)과 같은 집합이다. RE2 의
+# `\s` 는 ASCII 다섯뿐이라 수직 탭 · 정보 구분 문자(0x1C ~ 0x1F) · NEL · 유니코드 공백(`\p{Z}`)을
+# 더한다(`tests/test_revision_input_check.py` 가 모든 공백 글자로 맞댄다).
+SOURCE_BLANK_TEXT_PATTERN = r"[\s\x{0B}\x{1C}-\x{1F}\x{85}\p{Z}]*"
 
 
 def _load_reference_frame(
@@ -1417,6 +1422,34 @@ class DuckDBScenarioRepository:
                 "WHERE dataset_id = ? ORDER BY source_row_no",
                 [str(dataset[0])],
             ).fetchdf()
+
+    def load_source_blank_cs_rows(self, scenario_id: str) -> pd.DataFrame | None:
+        """등록 때 CS 가 비어 RQ 파생에서 뺀 원천 행 — 원천 78칸 그대로, 원천 행 차례. 원천이 없는
+        시나리오(복제 · 월 머지 · 연도 Shift — `source_row_count` 0)는 None 이다.
+
+        원천 스냅샷(`raw_data.core_data`)에는 받은 행이 그대로 남는다(`BlankCsDrop`). SQL 은 CS 가
+        NULL 이거나 공백 글자뿐인 행을 고르고(`SOURCE_BLANK_TEXT_PATTERN` — 파이썬 `str.strip` 이
+        지우는 공백과 같은 집합), 파생과 같은 식(`blank_cs_mask`)으로 한 번 더 가른다 — 수가
+        `derive_q_core_data(...).blank_cs.rows` 와 같다.
+        """
+        with self._connect() as connection:
+            dataset = connection.execute(
+                "SELECT dataset_id, source_row_count FROM app_meta.dataset WHERE scenario_id = ?",
+                [scenario_id],
+            ).fetchone()
+            if dataset is None:
+                raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
+            if int(dataset[1]) <= 0:
+                return None
+            columns = [column.name for column in load_core_data_contract().columns]
+            projection = ", ".join(quote(column) for column in columns)
+            rows = connection.execute(
+                f"SELECT {projection} FROM raw_data.core_data "
+                'WHERE dataset_id = ? AND ("CS" IS NULL OR regexp_full_match("CS", ?)) '
+                "ORDER BY source_row_no",
+                [str(dataset[0]), SOURCE_BLANK_TEXT_PATTERN],
+            ).fetchdf()
+        return rows.loc[blank_cs_mask(rows)].reset_index(drop=True)
 
     def load_source_profile(self, scenario_id: str) -> pd.DataFrame:
         with self._connect() as connection:

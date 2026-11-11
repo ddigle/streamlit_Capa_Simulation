@@ -85,6 +85,7 @@ from capa_simulation.components.table_toolbar import (
     render_table_heading,
     table_heading_row,
 )
+from capa_simulation.navigation import CALCULATION_RESULT_TAB_KEY
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     bootstrap_error_message,
@@ -217,7 +218,7 @@ process_labels = get_process_labels()
 # 나지 않고 표가 다른 탭에 조용히 그려진다.
 unit_capacity_tab, required_tab, availability_tab = stateful_tabs(
     TAB_NAMES,
-    key="calculation_result_active_tab",
+    key=CALCULATION_RESULT_TAB_KEY,
 )
 
 try:
