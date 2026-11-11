@@ -64,6 +64,7 @@ from capa_simulation.components.shortening_board import (
     SHORTENING_HIGHLIGHT_KEY,
 )
 from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
+from capa_simulation.components.target_level_field import ENTRY_UNIT_LABEL, entry_style
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -794,7 +795,11 @@ def test_a_target_typed_outside_the_five_plans_that_value_and_keeps_the_five_dow
     assert app.radio(key=LEVEL_FIELD.pick_key).value == 1.1
     entry = app.number_input(key=LEVEL_FIELD.entry_key)
     assert entry.value == 110.0
-    assert "% 직접 입력" in [str(item.value) for item in app.caption]
+    # 단위 글 캡션이 이 칸의 − · + · ⊗ 를 숨기는 서식을 함께 싣는다(남은 물음 보드
+    # Q226-stepper (나)).
+    assert ENTRY_UNIT_LABEL + entry_style(LEVEL_FIELD.entry_key) in [
+        str(item.value) for item in app.caption
+    ]
 
     entry.set_value(115.0).run()
     assert not app.exception, [element.message for element in app.exception]

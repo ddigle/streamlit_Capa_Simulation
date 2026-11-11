@@ -574,7 +574,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
     없는 회차는 같은 자리, 설비 DB 를 못 읽은 회차는 그 앞 「설비 시나리오」 줄이 서지 않아 한 줄만큼 위) — 값 칸을
     누르면 같은 화면 팝업 호스트(`SHORTENING_DIALOG_HOST`)만 돌아 다섯 목표 라디오와 그 밑 직접 입력 칸(2026-11-11 사용자 고칠 것
-    Q2-26 — 50 ~ 300% 정수 %)이 열리고, 고르거나 넣으면 세션 칸(`SHORTENING_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 닫히며 앱
+    Q2-26 — 50 ~ 300% 정수 %, − · + 단추와 지우기 ⊗ 는 숨기고 Enter · 칸 떠남으로만 적용 — 남은 물음 보드 Q226-stepper (나))이
+    열리고, 고르거나 넣으면 세션 칸(`SHORTENING_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 닫히며 앱
     전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트 밖이라 본문만 다시 돌리지 않는다). 다섯 밖 값은 `_prepare` 가 그 값 하나를 더
     계산해 계획에 더하고(`load_official_shortening(level=)`), 그 목표로 진척 비교를 고르면 견주지 않고 빈 결과 한 줄이다(기준선은
     다섯만 얼린다 — `_render_missing_baseline_level`). 진척 비교는
@@ -803,7 +804,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     2026-11-08 그림 메모 g05)의 이름 줄 + 값 칸(`condition_field` — 칸 key `condition_field_space_target`, 값 칸 key
     `space_shortening_level_field`, `render_level_field` — 필요 단축 일정과 같은 부품 `TargetLevelField`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
     하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 + 직접 입력 칸 팝업을 열고(부품이
-    하나라 필요 단축 일정의 직접 입력 — 2026-11-11 Q2-26 — 이 여기에도 선다, 다섯 밖 값은 `load_space_layer` 가 같은 길로 더한다), 고르거나 넣으면
+    하나라 필요 단축 일정의 직접 입력 — 2026-11-11 Q2-26 · − · + · ⊗ 숨김 Q226-stepper (나) — 이 여기에도 선다, 다섯 밖 값은 `load_space_layer` 가 같은 길로 더한다), 고르거나 넣으면
     세션 칸(`SPACE_SHORT_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 곧바로 닫혀 다시 그린다(HOME 주요공정 히트맵 팝업과 같은 꼴 — 검수
     보드 p-target-form, 옛 전환 단추 다섯 · 한 줄 서식은 걷었다). 배치 편집으로 쉬는 회차에도 값 칸은 잠근 채 서며 까닭은 그 칸 풍선이다. 「단축 없는
     호기 흐리게」(`render_dim_field`)와 기준 달 한 줄(`render_layer_basis` — 풍선이 설비 · 시뮬레이션(미저장 편집 포함) · 오늘)은
@@ -4184,6 +4185,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   숫자 칸은 늘 지금 목표, 라디오는 지금 목표가 다섯 가운데 하나일 때만 켜진다. 세션 칸 · 주소 인자 · 대기 칸도 같은 범위로
   읽는다(`target_level`).
 - `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
+  숫자 칸의 − · + 단추와 지우기 ⊗(`ENTRY_HIDDEN_PARTS` — Streamlit `stNumberInput` 의 `data-testid` 셋)는 숨기고 Enter · 칸 떠남으로만
+  적용한다(남은 물음 보드 Q226-stepper (나) — 단추가 있으면 한 걸음이 곧 확정이라 걸음마다 앱 전체가 돈다). ↑/↓ 키는 그대로 한 걸음 적용이고,
+  ⊗ 없이도 글을 지우고 Enter 면 빈 칸 거부 한 줄이다. 숨김 서식(`entry_style`)은 그 칸 key 의 칸(`st-key-<key>`)으로만 좁혀 다른 숫자
+  칸(판정 기준 · UPEH 가정 % 등)은 그대로이고, 팝업 본문이라 스타일만 든 `st.html` 대신 단위 글 캡션(`% 직접 입력`)에 싣는다
+  (`tests/test_target_level_entry.py` 가 부품 이름이 깔린 Streamlit 에 있는지 · 그 이름을 거는 파일이 이 부품 하나인지 본다).
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
   모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다. `load_official_shortening(level=)` 은 화면의 지금 목표가 다섯 밖(직접

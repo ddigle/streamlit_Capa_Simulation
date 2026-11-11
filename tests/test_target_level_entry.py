@@ -10,17 +10,22 @@
   값 하나만 계산해 다섯 값 계획에 스칼라로 더한다(`load_required_shortening(level=)`). 다섯 가운데
   하나를 그 길로 계산해도 미리 계산한 것과 같다.
 - **기준선** — 직접 넣은 목표는 얼리지 않는다(다섯 그대로).
+- **칸 꼴** — 숫자 칸의 − · + 단추와 지우기 ⊗ 는 숨기고 Enter · 칸 떠남으로만 적용한다(남은 물음
+  보드 Q226-stepper (나)). 숨김은 그 칸 key 로만 좁히고, 숨기는 부품 이름은 깔린 Streamlit 에 있다.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
+import streamlit
 from pandas.testing import assert_frame_equal
 from test_equipment_view_cache import (
     ANCHOR,
@@ -36,9 +41,11 @@ from capa_simulation.components import home_preference
 from capa_simulation.components.target_level_field import (
     ENTRY_EMPTY,
     ENTRY_FORMAT,
+    ENTRY_HIDDEN_PARTS,
     ENTRY_NOT_A_NUMBER,
     ENTRY_STEP,
     entry_out_of_range,
+    entry_style,
     level_text,
     read_level_entry,
     target_level,
@@ -73,6 +80,38 @@ def test_the_entry_follows_the_threshold_fields_step_format_and_range() -> None:
     assert read_level_entry(301) == entry_out_of_range(301)
     assert entry_out_of_range(400) == "50% ~ 300% 밖이라 받지 않았습니다 — 400%."
     assert entry_out_of_range(1e30) == "50% ~ 300% 밖이라 받지 않았습니다 — 1e+30%."
+
+
+def test_the_entry_hides_its_steppers_and_clear_button_only_in_its_own_cell() -> None:
+    """− · + 단추와 지우기 ⊗ 를 숨긴다 — 한 걸음 누름이 곧 확정이라 Enter · 칸 떠남으로만 적용한다
+    (남은 물음 보드 Q226-stepper (나)). 규칙마다 그 칸 key 의 칸(`st-key-<key>`) 안으로 좁혀 다른
+    화면의 숫자 칸(판정 기준 · UPEH 가정 % 등)은 그대로다. 숨기는 부품 이름은 깔린 Streamlit
+    화면 묶음에 있다 — 판이 바뀌어 이름이 달라지면 숨김이 조용히 풀리므로 여기서 잡는다."""
+    assert ENTRY_HIDDEN_PARTS == (
+        "stNumberInputStepDown",
+        "stNumberInputStepUp",
+        "stNumberInputClearButton",
+    )
+    style = entry_style("equipment_shortening_level_pick_entry")
+    assert style.startswith("<style>") and style.endswith("{display:none}</style>")
+    selectors = style.removeprefix("<style>").removesuffix("{display:none}</style>").split(",")
+    assert selectors == [
+        f'.st-key-equipment_shortening_level_pick_entry [data-testid="{part}"]'
+        for part in ENTRY_HIDDEN_PARTS
+    ]
+    bundle = Path(streamlit.__file__).parent / "static" / "static" / "js"
+    shipped = "".join(path.read_text(encoding="utf-8") for path in bundle.glob("NumberInput*.js"))
+    for part in ENTRY_HIDDEN_PARTS:
+        assert re.search(f"[`\"']{part}[`\"']", shipped), part
+    # 숫자 칸 부품을 숨기는 서식은 이 부품 하나다 — 다른 화면이 같은 이름으로 걸면 여기서 드러난다.
+    root = Path(__file__).resolve().parents[1]
+    sources = [*(root / "src").rglob("*.py"), *(root / "app_pages").rglob("*.py"), root / "app.py"]
+    owners = {
+        path.relative_to(root).as_posix()
+        for path in sources
+        if any(part in path.read_text(encoding="utf-8") for part in ENTRY_HIDDEN_PARTS)
+    }
+    assert owners == {"src/capa_simulation/components/target_level_field.py"}
 
 
 @pytest.mark.parametrize(

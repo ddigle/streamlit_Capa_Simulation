@@ -1623,6 +1623,12 @@
 
 ### 화면
 
+- (2026-11-11) **목표 확보율 직접 입력 칸의 − · + · ⊗ 숨김 — 남은 물음 보드 Q226-stepper (나)**(「남은 물음 11-11」 보드,
+  `night/board-a-1111` — 그림은 저장소 밖 `~/projects/Deploy/worklog/review-1111/board-fix/a/shots/`). 목표 확보율 팝업
+  (`components/target_level_field.py` — 필요 단축 일정 · Space 「필요 단축」 보기 공용)의 `% 직접 입력` 숫자 칸만 − · + 단추와 지우기 ⊗ 를
+  숨겨 Enter · 칸 떠남으로만 적용한다 — ↑/↓ 키는 그대로 한 걸음 적용, ⊗ 없이 글을 지우고 Enter 면 빈 칸 거부 한 줄 그대로. 숨김 서식
+  (`entry_style` — Streamlit `stNumberInput` 의 `data-testid` 셋 `ENTRY_HIDDEN_PARTS`)은 그 칸 key 의 칸으로만 좁히고 팝업 본문이라 단위
+  글 캡션에 싣는다(판정 기준 · UPEH 가정 % 등 다른 숫자 칸은 그대로). 규칙 UI-INP-05 · UI-PRF-02 · UI-NTF-03.
 - (2026-11-11) **목표 확보율 직접 입력 — 2026-11-11 사용자 고칠 것 Q2-26**(「권장대로 반영 결과」 보드 Q2-26 줄 「목표 확보율 5개 프리셋 외에
   직접 입력도 가능하도록 수정」, `night/review-1111` — 그림은 저장소 밖 `~/projects/Deploy/worklog/review-1111/q226/`). 공용 부품
   `components/target_level_field.py` 의 팝업이 다섯 라디오 밑에 `% 직접 입력` 숫자 칸을 둔다 — 걸음 · 꼴은 HOME 설정 › 판정 기준 기본 칸(1 ·
