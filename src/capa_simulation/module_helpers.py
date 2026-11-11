@@ -8,8 +8,9 @@
 
 - **BigDataQuery** — 앱의 DB 등록 · 목록 조회와 같은 길(`load_bigdataquery_module` →
   `call_get_data`)이고 같은 실패 갈래(`BigDataQueryCallError.kind`)다. 요청자 계정은 그 길이
-  환경에서 채운다. 기간을 주면 조회문의 `{start_date}` · `{end_date}` 를 앱과 같은 꼴(끝 날 포함 —
-  다음 날 앞까지)로 채운다. 결과는 캐시하지 않는다(모듈의 `cache.py` 몫 — M12).
+  환경에서 채운다. 기간을 주면 조회문의 `{start_date}` 에 시작 날, `{end_date}` 에 끝 날 다음 날을
+  앱과 같은 꼴(`QueryWindow.sql_bounds` — 조회문은 `< '{end_date}'` 로 끝 날까지 담는다)로 채운다.
+  결과는 캐시하지 않는다(모듈의 `cache.py` 몫 — M12).
 - **S3** — 모듈 데이터 자리(`ctx.data_dir`) 아래 파일 하나를 버킷의 `modules/<id>/` 아래 같은
   이름으로 올리고 받는다. 언제 올리고 받을지는 모듈이 정한다 — 코어는 모듈 폴더를 대신
   동기화하지 않는다. 닿는 길은 접속 명단과 같은 작은 객체 경계(`io/s3_small` — 표준 라이브러리

@@ -589,7 +589,7 @@ S3 키는 코어가 쥐고 모듈은 그 값을 읽지 않는다 — 그 환경�
 
 | 함수 | 하는 일 | 돌려주는 것 |
 |---|---|---|
-| `api.query_bigdataquery(ctx, sql, start=…, end=…)` | 앱의 DB 등록과 같은 길로 BigDataQuery 에 묻는다. `start` · `end`(날짜)를 함께 주면 조회문의 `{start_date}` · `{end_date}` 자리를 채운다(끝 날 포함 · 최대 366일) | 표(`DataFrame`) — 0행도 그대로. 실패는 `api.BigDataQueryError` 를 던진다 |
+| `api.query_bigdataquery(ctx, sql, start=…, end=…)` | 앱의 DB 등록과 같은 길로 BigDataQuery 에 묻는다. `start` · `end`(날짜)를 함께 주면 조회문의 `{start_date}` · `{end_date}` 자리를 채운다(끝 날 포함 · 최대 366일 — 아래 「기간 자리」) | 표(`DataFrame`) — 0행도 그대로. 실패는 `api.BigDataQueryError` 를 던진다 |
 | `api.s3_upload(ctx, "<이름>")` | `ctx.data_dir / "<이름>"` 파일 하나를 버킷의 `modules/<id>/<이름>` 으로 올린다(있으면 덮는다) | `api.S3Result` — 예외를 던지지 않는다 |
 | `api.s3_download(ctx, "<이름>")` | 버킷의 `modules/<id>/<이름>` 을 받아 `ctx.data_dir / "<이름>"` 에 둔다(있으면 다 받은 뒤 한 번에 바꾼다) | `api.S3Result` — 예외를 던지지 않는다 |
 
@@ -598,10 +598,15 @@ S3 키는 코어가 쥐고 모듈은 그 값을 읽지 않는다 — 그 환경�
 - **이름** — `ctx.data_dir` 안의 상대 이름이다. `/` 로 나눈 마디 넷까지이고 마디는 영문 · 숫자로 시작해 영문 · 숫자 · `.` · `_` · `-` 만
   쓴다(예: `memo.csv` · `backup/2026-11.csv`). 그 밖(`..` · 절대 경로 · 한글 · 빈칸 · 데이터 자리 밖을 가리키는 링크)은 「이름 거절」 이다.
 - **크기** — 파일 하나는 `api.S3_MAX_BYTES`(8 MiB)까지다. 넘으면 「너무 큼」 이다. 한 번에 메모리에 올려 보내고 받는다.
+- **기다림** — 올리기 · 받기는 끝날 때까지 그 회차를 묶는다. 파일 하나에 최대 약 35초(상한 크기를 가장 느린 속도로 옮길 때)다. 작은
+  파일은 아래 예처럼 처음 설 때 받아도 되지만, 큰 파일은 단추를 눌렀을 때 받는다(4장).
 - **S3 는 배포 서버에서만 된다** — 동기화 모드 `managed` 와 키 · 주소 · 버킷이 있는 운영 서버 하나다. 담당자 클론 · WebIDE · 앱 관리자
   PC 에서는 「쓸 수 없음」 이다. 그래도 화면은 서야 한다 — 받기가 「쓸 수 없음」 이면 데이터 자리에 있는 파일로 돈다.
 - `S3Result` 의 칸 — `ok`(성공) · `reason`(실패 까닭 — 「쓸 수 없음」 · 「이름 거절」 · 「파일 없음」 · 「너무 큼」 · 「전송 실패」 ·
   「파일 오류」) · `detail`(까닭의 자세히 — 고정 낱말) · `size`(옮긴 바이트 수).
+- **기간 자리** — `{start_date}` 에는 시작 날이, `{end_date}` 에는 **끝 날 다음 날**이 들어간다(앱의 조회와 같은 꼴). 그래서 조회문은
+  `>= '{start_date}' AND < '{end_date}'` 로 써야 끝 날까지 꼭 맞게 받는다 — `BETWEEN` 이나 `<=` 로 쓰면 오류 없이 하루를 더 받는다.
+  예: `start=date(2026, 1, 1), end=date(2026, 1, 31)` 이면 `>= '2026-01-01' AND < '2026-02-01'` 이 된다.
 - `BigDataQueryError` 의 `kind` — 「입력」(조회문 · 기간이 틀림 — 묻기 전에 막는다) · 「쓸 수 없음」(패키지 · 요청자 계정이 없음, 모듈
   시험) · 앱 화면과 같은 갈래 「시간 초과」 · 「연결」 · 「SQL」 · 「그 밖」. 글(`str(error)`)은 앱 화면과 같은 안내다.
 - **조회 결과 캐시는 `cache.py` 에** 둔다(M12). 실패는 예외라 캐시에 남지 않는다. 오래 걸리는 조회는 단추를 눌렀을 때만 돈다(4장).
@@ -1106,7 +1111,7 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | `context` | `context(file: str \| os.PathLike[str]) -> ModuleContext` | 보통 `api.context(__file__)`. 파일 위치에서 가장 가까운 `module.json` 을 찾는다 |
 | `page_header` | `page_header(ctx: ModuleContext, title: str, *, description: str \| None = None) -> None` | 머리말(제목은 화면에서 숨는다). 한 회차에 한 번, 화면 맨 위. 세션 키를 만들지 않는다. 성숙도 `L0` · `L1` 이어도 본문에 「구현중」 배지 줄을 그리지 않는다 — 사이드바 라벨 · 화면 탭 표지가 말한다(1.2). `description` 은 받기만 하고 그리지 않는다(1.1) |
 | `palette` | `palette() -> Mapping[str, str]` | 이번 회차 테마의 역할 색. 키는 `PALETTE_KEYS`. 캐시 함수 안에서 부르지 않고 값을 인자로 넘긴다 |
-| `query_bigdataquery` | `query_bigdataquery(ctx: ModuleContext, sql: str, *, start: date \| None = None, end: date \| None = None) -> pd.DataFrame` | 앱의 DB 등록과 같은 길로 BigDataQuery 에 묻는다. 요청자 계정 · 토큰은 코어가 채운다. 기간을 주면 `{start_date}` · `{end_date}` 를 채운다(끝 날 포함 · 최대 366일). 실패는 `BigDataQueryError`. 모듈 시험에서는 늘 「쓸 수 없음」 |
+| `query_bigdataquery` | `query_bigdataquery(ctx: ModuleContext, sql: str, *, start: date \| None = None, end: date \| None = None) -> pd.DataFrame` | 앱의 DB 등록과 같은 길로 BigDataQuery 에 묻는다. 요청자 계정 · 토큰은 코어가 채운다. 기간을 주면 `{start_date}` 에 시작 날, `{end_date}` 에 끝 날 다음 날을 채운다(조회문은 `>= '{start_date}' AND < '{end_date}'` — 끝 날 포함 · 최대 366일, 3-10 「기간 자리」). 실패는 `BigDataQueryError`. 모듈 시험에서는 늘 「쓸 수 없음」 |
 | `s3_download` | `s3_download(ctx: ModuleContext, name: str) -> S3Result` | 버킷의 `modules/<id>/<name>` 을 받아 `ctx.data_dir / name` 에 둔다(다 받은 뒤 한 번에 바꾼다). 배포 서버에서만 되고 그 밖에서는 「쓸 수 없음」 |
 | `s3_upload` | `s3_upload(ctx: ModuleContext, name: str) -> S3Result` | `ctx.data_dir / name` 파일 하나를 버킷의 `modules/<id>/<name>` 으로 올린다(있으면 덮는다). 배포 서버에서만 된다 |
 

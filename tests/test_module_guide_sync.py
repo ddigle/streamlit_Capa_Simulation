@@ -18,6 +18,7 @@ import json
 import re
 import sys
 import textwrap
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -187,7 +188,19 @@ def test_the_helper_section_matches_the_helpers(tmp_path: Path) -> None:
     assert f"{module_api.S3_MAX_BYTES // 1024 // 1024} MiB" in section
     assert f"최대 {module_helpers.MAX_QUERY_WINDOW_DAYS}일" in section
     assert f"`{module_helpers.S3_KEY_PREFIX}<id>/" in section
-    assert f'"api_minor": {module_api.API_VERSION[1]}' in section
+    # 도우미가 생긴 판(1.3)의 작은 판이다 — 다음 작은 판이 와도 3 그대로다.
+    assert '"api_minor": 3' in section
+    # 기간 자리 — `{end_date}` 에는 끝 날 다음 날이 들어간다(지침서의 예가 코드의 답과 같다).
+    bounds = module_helpers.build_module_query(
+        ">= '{start_date}' AND < '{end_date}'", date(2026, 1, 1), date(2026, 1, 31)
+    )
+    assert bounds == ">= '2026-01-01' AND < '2026-02-01'"
+    assert f"`{bounds}`" in section and "start=date(2026, 1, 1), end=date(2026, 1, 31)" in section
+    for text in (section, _section("부록 A")):
+        assert "끝 날 다음 날" in text and "`>= '{start_date}' AND < '{end_date}'`" in text
+    # 기다림 — 상한 크기를 가장 느린 속도로 옮기는 마감(초).
+    longest = round(module_helpers._transfer_deadline(module_api.S3_MAX_BYTES))
+    assert f"최대 약 {longest}초" in section
     assert "대신 올리거나 받지 않는다" in section and "M21" in section
     page = _python_block("데모 백업 모듈의 첫 화면")
     folder = _write(

@@ -259,7 +259,8 @@ def query_bigdataquery(
     """BigDataQuery 조회 한 번 — 앱의 DB 등록과 같은 길 · 같은 실패 갈래로 묻고 표를 돌려준다.
 
     요청자 계정 · 토큰은 코어가 쥔다(모듈은 읽지 않는다 — M21). `start` · `end` 를 함께 주면
-    조회문의 `{start_date}` · `{end_date}` 를 앱과 같은 꼴(끝 날 포함)로 채운다 — 최대 366일.
+    조회문의 `{start_date}` 에 시작 날, `{end_date}` 에 끝 날 다음 날을 앱과 같은 꼴로 채운다 —
+    조회문은 `>= '{start_date}' AND < '{end_date}'` 로 써야 끝 날까지 꼭 맞다. 최대 366일.
     실패는 `BigDataQueryError`(`kind` — 「입력」 · 「쓸 수 없음」 · 앱의 갈래)이고 글은 앱 화면과
     같은 안내다. 결과는 캐시하지 않는다 — 캐시는 모듈의 `cache.py` 에 둔다. 모듈
     시험(`check_module.py`)에서는 늘 「쓸 수 없음」 이다.
