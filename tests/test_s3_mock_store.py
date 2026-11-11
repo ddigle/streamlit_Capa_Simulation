@@ -20,9 +20,9 @@ from s3_mock_store import MockStore, _Server, start_mock  # noqa: E402
 
 NAMESPACE = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-# 가짜 S3 는 127.0.0.1 에서만 듣는다. 기본 `urlopen` 은 환경의 프록시를 따르므로 `NO_PROXY` 에 `127.0.0.1` 이
-# 없는 창(사내 PC)에서는 루프백 요청이 프록시로 간다 — `localhost` 는 `127.0.0.1` 을 덮지 않는다. 프록시를 보지
-# 않는 요청기로 붙는다.
+# 가짜 S3 는 127.0.0.1 에서만 듣는다. 기본 `urlopen` 은 환경의 프록시를 따르므로
+# `NO_PROXY` 에 `127.0.0.1` 이 없는 창(사내 PC)에서는 루프백 요청이 프록시로 간다 —
+# `localhost` 는 `127.0.0.1` 을 덮지 않는다. 프록시를 보지 않는 요청기로 붙는다.
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
