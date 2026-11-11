@@ -91,10 +91,12 @@ class Layout:
 
 # 한 줄 문턱은 칸을 고친 뒤의 단추 줄(편집 취소 · 고칠 칸 포함)로 잰 값이다 — 고치기 전 폭으로
 # 잡으면 첫 칸을 고치는 순간 표가 한 줄만큼 내려앉는다. 왼쪽 비움 = 고친 뒤 단추 줄 폭 + 16px(샘플
-# 관측 — 사이드바 펼침 · 라이트 · 합성 표본).
+# 관측 — 사이드바 펼침 · 라이트 · 합성 표본, 1px 이분 탐색: PKG PLAN 단추 줄 491 · 수율 454 · 그림
+# 단추 막대 445). PKG PLAN 은 사내 보고 창(1283)에서 5px 모자라 두 줄이다(2026-11-12 보드 답 n2 —
+# 찾기 칸 150 그대로).
 LAYOUTS: Final[Mapping[str, Layout]] = {
     PLAN_TABLE: Layout("pkg_plan_actions", "pkg_plan_action_row", "pkg_plan_grid_box", 1288, 507),
-    YIELD_TABLE: Layout("yield_actions", "yield_action_row", "yield_grid_box", 1270, 480),
+    YIELD_TABLE: Layout("yield_actions", "yield_action_row", "yield_grid_box", 1251, 470),
 }
 
 

@@ -120,10 +120,10 @@ ACTIONS_BOX: Final = "reference_actions"
 GRID_BOX: Final = "reference_grid_box"
 ACTION_ROW: Final = "reference_action_row"
 # 단추 줄과 표 도구 막대를 한 줄로 세우는 창 폭. 본문이 고친 뒤의 단추 줄(`ACTION_ROW_RESERVE_PX`
-# 까지) 곁에 막대가 드는 폭이다(샘플 관측 — 사이드바 300 · 좌우 여백 35 · 단추 줄 429 · 막대 약
-# 735). 그보다 좁으면 막대가 표 바로 위 제 줄로 내려앉는다(설계 규칙 UI-LAY-11 · UI-ACC-02 —
-# `edit_grid.one_line_style`).
-ONE_LINE_MIN_WINDOW_PX: Final = 1560
+# 까지) 곁에 막대가 드는 가장 좁은 창이다(샘플 관측 — 사이드바 300 · 좌우 여백 35 · 고친 뒤 단추 줄
+# 429 · 그림 단추 막대 445, 1px 이분 탐색). 사내 보고 창(1283)도 한 줄이다. 그보다 좁으면 막대가 표
+# 바로 위 제 줄로 내려앉는다(설계 규칙 UI-LAY-11 · UI-ACC-02 — `edit_grid.one_line_style`).
+ONE_LINE_MIN_WINDOW_PX: Final = 1241
 ACTION_ROW_RESERVE_PX: Final = 460
 ONE_LINE_STYLE: Final = edit_grid.one_line_style(
     ACTIONS_BOX,
