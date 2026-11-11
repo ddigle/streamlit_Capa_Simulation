@@ -82,6 +82,17 @@ def test_the_placeholders_name_the_field_and_give_an_example() -> None:
     assert SAVED_BY_PLACEHOLDER == "저장자 · 예: 홍길동" == field_placeholder("저장자", "홍길동")
 
 
+def test_the_memo_examples_in_rows_that_leave_toolbar_room_stay_short() -> None:
+    """저장 줄 오른쪽 끝을 표 도구 막대 자리로 비운 두 자리(표시순서 관리 · 가용설비 Preference
+    입력 비가동)는 창 1100 에서 메모 칸이 좁아 긴 예가 잘렸다 — 예를 짧게 둔다(2026-11-11 남은
+    물음 보드 B2 · 2차 보드 Q2-4 (가) 「표시순서 변경」 · 「26.07 PM 1.5대」). 실제로 잘리지
+    않는지는 브라우저 배치라 여기서 재지 않는다 — 글을 다시 늘리면 1100 창에서 다시 잰다."""
+    from capa_simulation.components import display_order_management, manual_downtime_tab
+
+    assert display_order_management.NOTE_PLACEHOLDER == note_placeholder("표시순서 변경")
+    assert manual_downtime_tab.NOTE_PLACEHOLDER == note_placeholder("26.07 PM 1.5대")
+
+
 def test_every_memo_and_saver_field_has_no_label_row_and_names_itself_inside() -> None:
     sites = _sites()
     # HOME 설정 셋 · 과거 구간 · 설비 마스터 저장 · 사이드바 설비 팝업 저장 · Space 배치 저장 · 입력
