@@ -10,15 +10,19 @@
   글자로 받는다. 화면의 무엇을 어떤 칸으로 옮길지는 부르는 쪽(`components/process_capa_workbook.py`)
   몫이다.
 - **Excel 이 「복구」 창 없이 여는 꼴**을 지킨다 — 요소 차례는 ECMA-376 차례(worksheet:
-  `dimension` · `sheetViews` · `sheetFormatPr` · `cols` · `sheetData` · `pageMargins`, styles:
-  `numFmts` · `fonts` · `fills` · `borders` · `cellStyleXfs` · `cellXfs` · `cellStyles`), `fills` 의
-  첫 둘은 `none` · `gray125`, 사용자 숫자 꼴 번호는 164 부터, 색은 `FFRRGGBB`, `[Content_Types].xml`
-  · `_rels/.rels` · `xl/_rels/workbook.xml.rels` · `docProps` 를 갖춘다. 뼈대는 xlsxwriter 출력과
-  같다(테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다).
+  `dimension` · `sheetViews` · `sheetFormatPr` · `cols` · `sheetData` · `pageMargins` ·
+  `ignoredErrors`, styles: `numFmts` · `fonts` · `fills` · `borders` · `cellStyleXfs` · `cellXfs` ·
+  `cellStyles`), `fills` 의 첫 둘은 `none` · `gray125`, 사용자 숫자 꼴 번호는 164 부터, 색은
+  `FFRRGGBB`, `[Content_Types].xml` · `_rels/.rels` · `xl/_rels/workbook.xml.rels` · `docProps` 를
+  갖춘다. 뼈대는 xlsxwriter 출력과 같다(테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다).
 - **글자는 sharedStrings** 이고 XML 1.0 이 받지 않는 제어 문자는 걷는다. 앞뒤 빈칸은
   `xml:space="preserve"` 로 지킨다.
 - **숫자 칸은 숫자 셀**이다. NaN · 무한은 빈 칸이다(그대로 쓰면 Excel 이 복구 창을 띄운다).
   `bool` 은 글자다.
+- **숫자처럼 보이는 글자 칸**(달 머리 「26.11」 · 「2026」 처럼 부르는 쪽이 글자로 넘긴 것 — 숫자로
+  두면 「26.1」 처럼 끝 0 이 사라진다)은 Excel 이 초록 삼각형(「텍스트 형식으로 저장된 숫자」)을
+  띄운다. 작성기가 그런 칸을 모아 시트의 「오류 무시」 표지(`ignoredErrors` · `numberStoredAsText`)
+  범위로 싣는다 — 이웃 칸은 범위로 묶는다. 숫자 칸 · 숫자로 안 보이는 글자 칸은 덮지 않는다.
 - **통이 늘 같다** — zip 항목 시각과 문서 속성 시각은 넘긴 값(없으면 고정 값)이라 같은 입력은 같은
   바이트다.
 """
@@ -60,6 +64,14 @@ _ILLEGAL_XML: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿
 _HORIZONTAL: Final = frozenset({"left", "center", "right"})
 _VERTICAL: Final = frozenset({"top", "center", "bottom"})
 _EDGE_STYLES: Final = frozenset({"thin", "medium", "thick", "dashed", "dotted", "hair"})
+# Excel 이 숫자로 읽을 글자 — 부호 · 천 단위 쉼표 · 소수 · 지수 · 끝 % 와 앞뒤 빈칸. 넓게
+# 잡는다(덮어도 그 칸에는 해가 없고, 놓치면 초록 삼각형이 남는다). 「nan」 · 「inf」 · 「1_0」 ·
+# U+2212 부호는 Excel 이 숫자로 읽지 않아 뺀다. 첫 글자로 먼저 거른다 — 큰 표(5만 칸)의 글자
+# 칸마다 든다.
+_NUMBER_LIKE: Final = re.compile(
+    r" *[+-]?(?:(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?%? *"
+)
+_NUMBER_START: Final = frozenset("0123456789+-. ")
 
 _NS_MAIN: Final = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _NS_REL: Final = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -226,9 +238,18 @@ def _sheet_xml(sheet: Sheet, styles: _StyleBook, strings: _StringTable, *, selec
             )
         parts.append("</cols>")
     parts.append("<sheetData>")
+    # 숫자처럼 보이는 글자 칸 (줄, 열) — 줄 · 열 차례로 모인다.
+    number_text: list[tuple[int, int]] = []
     for row_index, row in enumerate(sheet.rows):
         cells = [
-            _cell_xml(cell, f"{column_letter(column)}{row_index + 1}", styles, strings)
+            _cell_xml(
+                cell,
+                f"{column_letter(column)}{row_index + 1}",
+                styles,
+                strings,
+                at=(row_index, column),
+                number_text=number_text,
+            )
             for column, cell in enumerate(row)
             if cell is not None
         ]
@@ -245,8 +266,43 @@ def _sheet_xml(sheet: Sheet, styles: _StyleBook, strings: _StringTable, *, selec
     parts.append(
         '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>'
     )
+    # ECMA-376 차례로 `pageMargins` 뒤(그 사이 `pageSetup` · `headerFooter` · 쪽 나눔은 이
+    # 작성기가 쓰지 않는다). 빈 `ignoredErrors` 는 받지 않으므로 칸이 없으면 싣지 않는다.
+    if number_text:
+        parts.append(
+            f'<ignoredErrors><ignoredError sqref="{_sqref(number_text)}" '
+            'numberStoredAsText="1"/></ignoredErrors>'
+        )
     parts.append("</worksheet>")
     return "".join(parts)
+
+
+def _sqref(cells: Sequence[tuple[int, int]]) -> str:
+    """(줄, 열) 칸들(줄 · 열 차례) → `sqref` 글. 한 줄에서 이웃한 열은 가로 범위로, 같은 가로
+    범위가 바로 아래 줄에 이어지면 한 네모로 묶는다. 네모는 (첫 줄, 첫 열) 차례다."""
+    runs: list[tuple[int, int, int]] = []
+    for row, column in cells:
+        if runs and runs[-1][0] == row and runs[-1][2] == column - 1:
+            runs[-1] = (row, runs[-1][1], column)
+        else:
+            runs.append((row, column, column))
+    growing: dict[tuple[int, int], tuple[int, int]] = {}
+    boxes: list[tuple[int, int, int, int]] = []
+    for row, first, last in runs:
+        box = growing.get((first, last))
+        if box is not None and box[1] == row - 1:
+            growing[(first, last)] = (box[0], row)
+            continue
+        if box is not None:
+            boxes.append((box[0], first, box[1], last))
+        growing[(first, last)] = (row, row)
+    boxes += [(top, first, bottom, last) for (first, last), (top, bottom) in growing.items()]
+    refs = []
+    for top, first, bottom, last in sorted(boxes):
+        start = f"{column_letter(first)}{top + 1}"
+        end = f"{column_letter(last)}{bottom + 1}"
+        refs.append(start if start == end else f"{start}:{end}")
+    return " ".join(refs)
 
 
 def _sheet_views_xml(freeze: tuple[int, int] | None, *, selected: bool) -> str:
@@ -279,7 +335,16 @@ def _sheet_views_xml(freeze: tuple[int, int] | None, *, selected: bool) -> str:
     return f"<sheetViews>{view}>{pane}</sheetView></sheetViews>"
 
 
-def _cell_xml(cell: XlsxCell, ref: str, styles: _StyleBook, strings: _StringTable) -> str:
+def _cell_xml(
+    cell: XlsxCell,
+    ref: str,
+    styles: _StyleBook,
+    strings: _StringTable,
+    *,
+    at: tuple[int, int],
+    number_text: list[tuple[int, int]],
+) -> str:
+    """칸 하나의 `<c>`. 숫자처럼 보이는 글자 칸이면 그 자리(`at`)를 `number_text` 에 더한다."""
     style_id = styles.index(cell.style)
     style = f' s="{style_id}"' if style_id else ""
     value = cell.value
@@ -289,10 +354,7 @@ def _cell_xml(cell: XlsxCell, ref: str, styles: _StyleBook, strings: _StringTabl
             return f'<c r="{ref}"{style}/>' if style_id else ""
         return f'<c r="{ref}"{style}><v>{_number_text(value)}</v></c>'
     if type(value) is str and value:
-        text = _clean(value)
-        if text:
-            return f'<c r="{ref}"{style} t="s"><v>{strings.index(text)}</v></c>'
-        return f'<c r="{ref}"{style}/>' if style_id else ""
+        return _text_xml(value, ref, style, strings, at=at, number_text=number_text)
     if isinstance(value, bool):
         value = "TRUE" if value else "FALSE"
     if isinstance(value, numbers.Integral):
@@ -304,9 +366,24 @@ def _cell_xml(cell: XlsxCell, ref: str, styles: _StyleBook, strings: _StringTabl
         return f'<c r="{ref}"{style}><v>{_number_text(number)}</v></c>'
     if value is None:
         return f'<c r="{ref}"{style}/>' if style_id else ""
-    text = _clean(str(value))
+    return _text_xml(str(value), ref, style, strings, at=at, number_text=number_text)
+
+
+def _text_xml(
+    raw: str,
+    ref: str,
+    style: str,
+    strings: _StringTable,
+    *,
+    at: tuple[int, int],
+    number_text: list[tuple[int, int]],
+) -> str:
+    """글자 칸 — sharedStrings 번호. 걷고 나서 비면 서식만 남는 칸(서식도 없으면 칸 없음)이다."""
+    text = _clean(raw)
     if not text:
-        return f'<c r="{ref}"{style}/>' if style_id else ""
+        return f'<c r="{ref}"{style}/>' if style else ""
+    if text[0] in _NUMBER_START and _NUMBER_LIKE.fullmatch(text):
+        number_text.append(at)
     return f'<c r="{ref}"{style} t="s"><v>{strings.index(text)}</v></c>'
 
 

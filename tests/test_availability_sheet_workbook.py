@@ -87,6 +87,9 @@ def test_the_sheet_heads_with_the_title_and_the_screen_conditions() -> None:
         None,
         *(month_label(month) for month in MONTHS),
     ]
+    # 글자 달 머리는 「텍스트 형식으로 저장된 숫자」 경고를 끈 칸이고, 숫자 칸은 덮지 않는다.
+    assert {(header, 2 + index) for index in range(len(MONTHS))} <= sheet.number_text_ignored
+    assert not any(sheet.cells[at].numeric for at in sheet.number_text_ignored)
     # 머리 줄 · 구분 · 세부 두 열은 고정이다(공정 Capa 상세 시트와 같은 꼴).
     assert sheet.freeze == (header + 1, 2)
 

@@ -288,7 +288,7 @@ CANVAS_SCHEMA_VERSION: Final = 8
 # 않는다. 시트 꼴이 바뀌면 버전을 올린다.
 SHEET_MEMO_KEY: Final = "process_detail_sheet_memo"
 SHEET_MEMO_LIMIT: Final = 4
-SHEET_SCHEMA_VERSION: Final = 2
+SHEET_SCHEMA_VERSION: Final = 3
 
 # ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
 ROUNDED_IN_NOTE: Final = (

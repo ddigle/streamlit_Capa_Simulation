@@ -182,6 +182,9 @@ def test_the_header_months_and_the_shortage_band_follow_the_canvas() -> None:
     sheet = _detail(_request())
     header = sheet.find_row(f"구분 · {LABEL}")
     assert sheet.row(header)[2:] == [month_label(month) for month in MONTHS]
+    # 글자 달 머리는 「텍스트 형식으로 저장된 숫자」 경고를 끈 칸이고, 숫자 칸은 덮지 않는다.
+    assert {(header, 2 + index) for index in range(len(MONTHS))} <= sheet.number_text_ignored
+    assert not any(sheet.cells[at].numeric for at in sheet.number_text_ignored)
     assert sheet.freeze == (header + 1, 2)
     owned = sheet.find_row("총보유대수")
     statuses = _summary()["판정"].tolist()

@@ -5,7 +5,8 @@
 Excel 은 꼴이 어긋난 통을 「복구」 창으로 연다. 그 꼴을 그물로 둔다 — 잘 짜인 XML, 파트와
 `[Content_Types].xml` · 관계 파일의 짝, worksheet · styles 요소 차례(ECMA-376), `fills` 첫 둘
 (`none` · `gray125`), 사용자 숫자 꼴 번호 164 부터, 숫자 칸은 숫자 셀 · NaN 은 빈 칸, XML 이 받지
-않는 제어 문자 걷기, 같은 입력은 같은 바이트. 실제 Excel 로 여는 확인은 저장소 밖 견본으로 한다.
+않는 제어 문자 걷기, 숫자처럼 보이는 글자 칸만 덮는 「오류 무시」 표지(`ignoredErrors` — 초록
+삼각형), 같은 입력은 같은 바이트. 실제 Excel 로 여는 확인은 저장소 밖 견본으로 한다.
 """
 
 from __future__ import annotations
@@ -52,6 +53,23 @@ WORKSHEET_ORDER = (
     "printOptions",
     "pageMargins",
     "pageSetup",
+    "headerFooter",
+    "rowBreaks",
+    "colBreaks",
+    "customProperties",
+    "cellWatches",
+    "ignoredErrors",
+    "smartTags",
+    "drawing",
+    "legacyDrawing",
+    "legacyDrawingHF",
+    "drawingHF",
+    "picture",
+    "oleObjects",
+    "controls",
+    "webPublishItems",
+    "tableParts",
+    "extLst",
 )
 STYLES_ORDER = (
     "numFmts",
@@ -142,10 +160,15 @@ def test_every_part_is_well_formed_and_declared() -> None:
 
 def test_worksheet_and_styles_children_keep_the_ecma_order() -> None:
     parts = _parts(_book())
-    for name in ("xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"):
+    # 첫 시트는 글자 달 머리 「26.11」 이 있어 `ignoredErrors` 가 맨 끝(`pageMargins` 바로 뒤),
+    # 둘째 시트는 숫자처럼 보이는 글자가 없어 그 요소가 없다(빈 요소는 Excel 이 받지 않는다).
+    for name, last in (
+        ("xl/worksheets/sheet1.xml", ("pageMargins", "ignoredErrors")),
+        ("xl/worksheets/sheet2.xml", ("sheetData", "pageMargins")),
+    ):
         children = [_local(child.tag) for child in parts[name]]
         assert _in_order(children, WORKSHEET_ORDER), children
-        assert children[0] == "dimension" and children[-1] == "pageMargins"
+        assert children[0] == "dimension" and tuple(children[-2:]) == last, children
     styles = [_local(child.tag) for child in parts["xl/styles.xml"]]
     assert _in_order(styles, STYLES_ORDER), styles
     # 글꼴 · 칠 · 테두리의 자식도 차례가 있다.
@@ -239,6 +262,94 @@ def test_freeze_widths_and_heights_land_in_the_sheet() -> None:
         for sheet in (parts["xl/worksheets/sheet1.xml"], parts["xl/worksheets/sheet2.xml"])
     ]
     assert [view.get("tabSelected") for view in views if view is not None] == ["1", None]
+
+
+def test_number_like_text_cells_and_only_those_get_the_ignore_mark() -> None:
+    """글자로 넘긴 숫자 꼴(달 머리 「26.11」 · 해 「2026」 · 쉼표 · % · 지수 · 앞뒤 빈칸)만 「텍스트
+    형식으로 저장된 숫자」 경고를 끈다 — 숫자 칸 · 「—」 · 기간 글 · 호기 이름 · U+2212 부호 · nan ·
+    참거짓은 덮지 않는다. 이웃 칸은 가로 범위, 같은 가로 범위가 이어진 줄은 한 네모다."""
+    rows: list[list[XlsxCell | None]] = [
+        [XlsxCell("구분"), XlsxCell("26.11"), XlsxCell("26.12"), XlsxCell("27.01"), None],
+        [
+            XlsxCell("확보율"),
+            XlsxCell(1.26),
+            XlsxCell("—"),
+            XlsxCell("26.11–27.06"),
+            XlsxCell("U-1"),
+        ],
+        [XlsxCell("2026"), XlsxCell("1,234"), XlsxCell("12%"), XlsxCell("−2"), XlsxCell(" 7 ")],
+        [XlsxCell("001"), XlsxCell("nan"), XlsxCell("inf"), XlsxCell("1e3"), XlsxCell(True)],
+        [XlsxCell("002"), XlsxCell(5), XlsxCell(""), XlsxCell("26.11.5"), XlsxCell(7)],
+        [XlsxCell("003"), XlsxCell(6)],
+    ]
+    data = workbook_bytes([Sheet(name="표", rows=rows)])
+    root = _parts(data)["xl/worksheets/sheet1.xml"]
+    marks = root.findall("m:ignoredErrors/m:ignoredError", NS)
+    assert len(marks) == 1 and marks[0].get("numberStoredAsText") == "1"
+    assert marks[0].get("sqref") == "B1:D1 A3:C3 E3 A4:A6 D4"
+    sheet = read_workbook(data)["표"]
+    covered = sheet.number_text_ignored
+    assert covered <= set(sheet.cells)
+    assert not any(sheet.cells[at].numeric for at in covered)
+    assert {sheet.cells[at].value for at in covered} == {
+        "26.11",
+        "26.12",
+        "27.01",
+        "2026",
+        "1,234",
+        "12%",
+        " 7 ",
+        "001",
+        "002",
+        "003",
+        "1e3",
+    }
+    for at in ((0, 0), (1, 2), (1, 3), (1, 4), (2, 3), (3, 1), (3, 2), (3, 4), (4, 3)):
+        assert at not in covered, at
+
+
+@pytest.mark.parametrize(
+    ("spans", "expected"),
+    [
+        # B:C 범위가 1줄 · 4줄에 다시 나온다 — 2줄 B 가 사이에 끼고 3줄은 비었다.
+        ({0: (1, 2), 1: (1, 1), 3: (1, 2)}, "B1:C1 B2 B4:C4"),
+        # 이어진 네모(1 ~ 2줄)가 끊긴 뒤 같은 가로 범위가 다시 네모(4 ~ 5줄)로 자란다.
+        ({0: (1, 2), 1: (1, 2), 2: (1, 1), 3: (1, 2), 4: (1, 2)}, "B1:C2 B3 B4:C5"),
+    ],
+)
+def test_a_horizontal_span_that_comes_back_after_a_gap_starts_a_new_box(
+    spans: dict[int, tuple[int, int]], expected: str
+) -> None:
+    """같은 가로 범위가 줄을 건너 다시 나오면 앞 네모를 닫고 새 네모를 연다 — 펼친 칸은 넣은 칸
+    그대로이고 네모끼리 겹치지 않는다."""
+    height = max(spans) + 1
+    rows: list[list[XlsxCell | None]] = [
+        [XlsxCell(7), XlsxCell(1), XlsxCell(2)] for _ in range(height)
+    ]
+    for row, (first, last) in spans.items():
+        for column in range(first, last + 1):
+            rows[row][column] = XlsxCell(f"{row}{column}")
+    data = workbook_bytes([Sheet(name="표", rows=rows)])
+    marks = _parts(data)["xl/worksheets/sheet1.xml"].findall("m:ignoredErrors/m:ignoredError", NS)
+    assert [mark.get("sqref") for mark in marks] == [expected]
+    placed = {
+        (row, column) for row, (first, last) in spans.items() for column in range(first, last + 1)
+    }
+    assert read_workbook(data)["표"].number_text_ignored == placed
+
+
+def test_a_sheet_without_number_like_text_has_no_ignore_mark() -> None:
+    data = workbook_bytes(
+        [
+            Sheet(
+                name="표",
+                rows=[[XlsxCell("호기"), XlsxCell("기간")], [XlsxCell("U-1"), XlsxCell(3)]],
+            )
+        ]
+    )
+    root = _parts(data)["xl/worksheets/sheet1.xml"]
+    assert root.find("m:ignoredErrors", NS) is None
+    assert read_workbook(data)["표"].number_text_ignored == frozenset()
 
 
 def test_the_same_input_is_the_same_bytes() -> None:
