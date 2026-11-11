@@ -4,19 +4,21 @@
 
 - **탭 대신 종류 단추 한 줄 + 큰 편집 표 하나**(2026-11-02 사용자 결정 — 편집 표 횡전개). 단추는
   네이티브 `st.segmented_control`(`reference_grid_keys.DATASET_KEY`)이고 옛 탭·안쪽 탭(설비대수 ›
-  보유·대여·가용·현황)을 한 줄로 편 것이다. 고른 편집 표(아홉 모두)를 범용 편집 그리드(마운트 하나
+  보유·대여·가용)을 한 줄로 편 것이다. 고른 편집 표(아홉 모두)를 범용 편집 그리드(마운트 하나
   — `components/reference_grid.py`)에 싣는다. 초안은 표마다 세션(업무 키)이라 다른 종류를 고르거나
-  화면을 떠나도 남고, 적용하지 않은 편집이 남은 종류 단추 옆에는 주황 점이 찍힌다.
-- 읽기 보기 둘(「설비대수 현황」·「STEP 구성」)은 그리드 자리 **아래** 보기 칸에 그 종류를 골랐을
-  때만 그린다 — 그 회차에도 그리드 마운트는 표 없이 같은 자리에 남는다.
+  화면을 떠나도 남고, 적용하지 않은 편집이 남은 종류 단추 옆에는 주황 점이 찍힌다. 설비대수 세
+  표의 단추 글은 「보유대수」 · 「대여대수」 · 「가용대수」 다(2026-11-12 보드 답 k-b1 — 화면 글만,
+  표 이름은 `RQ_EQP_*` 그대로).
+- 읽기 보기 「STEP 구성」 은 그리드 자리 **아래** 보기 칸에 그 종류를 골랐을 때만 그린다 — 그
+  회차에도 그리드 마운트는 표 없이 같은 자리에 남는다.
 - **공정은 사이드바 조회 조건의 공용 공정 칸이다**(2026-11-08 사용자 답 P1 — 공정 공유 1차). 편집
-  표 아홉과 설비대수 현황이 화면들이 같이 쓰는 공정 값을 따라간다 — HOME 「선택 공정 적용」 이나
-  다른 화면에서 좁힌 공정이 이 표에도 걸리고, 여기서 고른 공정도 그 화면들에 걸린다(`SCREEN`).
-  STEP 구성은 잇지 않는다.
-- 공정 밖 표 필터와 설비대수 현황의 「상세」는 사이드바 조건 카드 `표 조건` 이다(표마다 따로). 모든
-  종류가 같은 카드를 써서 한 번 편 카드는 종류를 바꿔도 편 채다. 거를 칸이 공정 하나뿐인 표(일수 ·
-  설비대수 보유 · 대여 · 가용)는 카드를 세우지 않는다. 그리드 표의 필터는 보기만 좁히고(브라우저가
-  거른다) 초안이 업무 키라 잠그지 않는다.
+  표 아홉이 화면들이 같이 쓰는 공정 값을 따라간다 — HOME 「선택 공정 적용」 이나 다른 화면에서 좁힌
+  공정이 이 표에도 걸리고, 여기서 고른 공정도 그 화면들에 걸린다(`SCREEN`). STEP 구성은 잇지
+  않는다.
+- 공정 밖 표 필터는 사이드바 조건 카드 `표 조건` 이다(표마다 따로). 모든 종류가 같은 카드를 써서
+  한 번 편 카드는 종류를 바꿔도 편 채다. 거를 칸이 공정 하나뿐인 표(일수 · 보유대수 · 대여대수 ·
+  가용대수)는 카드를 세우지 않는다. 그리드 표의 필터는 보기만 좁히고(브라우저가 거른다) 초안이
+  업무 키라 잠그지 않는다.
 - 작업 버튼(변경사항 적용·Excel 붙여넣기·편집 취소, STEP 추가·삭제)은 표 **위**다. 붙여넣기와
   STEP 추가·삭제는 팝업이다. 「Excel 붙여넣기」 는 키 붙은 팝업 호스트(`DIALOG_HOST`)가 불러
   여닫아도 페이지를 다시 계산하지 않는다(2026-11-08 사용자 답 U5). STEP 추가·삭제는 같은 열림 칸을
@@ -40,7 +42,6 @@ from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.dialog_host import DialogBody, DialogHost, DialogPicker
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.month_editor import (
-    classification_styled,
     paste_dialog,
     paste_widget_keys,
     scope_text,
@@ -59,7 +60,6 @@ from capa_simulation.components.scenario_edit_bar import (
     source_token,
 )
 from capa_simulation.components.tab_marks import mark_pending_segments
-from capa_simulation.design import tokens
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -73,7 +73,6 @@ from capa_simulation.reference_grid_keys import (
     DATASETS,
     DEFAULT_DATASET,
     EDIT_TABLES,
-    EQUIPMENT_OVERVIEW,
     STEP_VIEW,
     TEMPLATE_DIGESTS_KEY,
     cells_key,
@@ -101,9 +100,7 @@ from capa_simulation.services.display_order_scopes import (
     TAB_WF_RATIO,
 )
 from capa_simulation.services.equipment_count import (
-    DETAILED_EQUIPMENT_DIMENSIONS,
     EQUIPMENT_DIMENSIONS,
-    build_equipment_count_table,
     equipment_count_from_edit_table,
     equipment_count_to_edit_table,
 )
@@ -231,7 +228,7 @@ _chosen = st.segmented_control(
 current_dataset = _chosen if isinstance(_chosen, str) and _chosen in DATASETS else DEFAULT_DATASET
 # 작업 줄 → 그리드 자리 → 읽기 보기 칸. 모두 **늘 서 있는 칸**이라 안의 칸 수가 바뀌어도 아래 자리
 # (그리드 마운트의 앞 형제 순번)가 밀리지 않는다 — 밀리면 그리드가 다시 마운트되어 보내지 않은
-# 출납을 잃는다. 읽기 보기(설비대수 현황·STEP 구성)는 그리드 **아래**라 그 높이가 그리드 자리를
+# 출납을 잃는다. 읽기 보기(STEP 구성)는 그리드 **아래**라 그 높이가 그리드 자리를
 # 밀지 않는다. 편집 표를 고른 회차에는 보기 칸이 비어 표 아래에 아무것도 없다(명세 1-2 의 19 — 표
 # 아래 단추에 초점이 가면 본문이 내려가 머리와 도구 막대가 탭 줄 밑으로 숨는다).
 actions_box = st.container(key=reference_grid.ACTIONS_BOX)
@@ -299,10 +296,9 @@ def _source_template(table_name: str) -> pd.DataFrame:
     """편집 표 하나의 양식(분류 컬럼 + 월 컬럼, 표시순서 차례). 자르다 난 오류는 그대로 던진다.
 
     설비대수 세 표는 `equipment_count_to_edit_table` 로 펴서 표시순서(기준 정보 › 설비대수)를
-    입힌다 — 편집 왕복과 `현황` 표가 같은 조각을 본다(창을 갈라 두면 `apply_month_updates` 가
-    화면에 없던 월을
-    지운다). 나머지는 `get_reference_edit_table` 이 편집 기간·표시순서 내용으로 캐시한다(rerun 마다
-    다시 만들면 UPEH 2,660×39 에서 약 320ms — 샘플 관측)."""
+    입힌다 — 편집 왕복이 적용과 같은 조각을 본다(창을 갈라 두면 `apply_month_updates` 가 화면에
+    없던 월을 지운다). 나머지는 `get_reference_edit_table` 이 편집 기간·표시순서 내용으로
+    캐시한다(rerun 마다 다시 만들면 UPEH 2,660×39 에서 약 320ms — 샘플 관측)."""
     for equipment_table, category, count_column, _ in EQUIPMENT_EDITORS:
         if table_name == equipment_table:
             return apply_display_order(
@@ -884,87 +880,6 @@ if step_tables is not None:
             _render_step_view(step_summary, step_catalog, flash_message)
     if not step_catalog.empty and st.session_state.get(DIALOG_KEY) == STEP_DIALOG:
         _step_dialog(step_catalog)
-
-# `현황` 은 보는 표다(보유·대여를 합친 값에 숫자를 쓸 자리가 없어 편집 대상이 아니다). 「상세」와
-# 공정 밖 필터는 사이드바 `표 조건` 카드이고 그 종류를 골랐을 때만 선다. 선택은 `persist_state` 로
-# 남는다. 공정은 조회 조건 패널의 공용 공정 칸이다(`SCREEN`). 표도 그 회차에만, 「상세」 값에 맞는
-# 한 벌만 만든다.
-if current_dataset == EQUIPMENT_OVERVIEW:
-    # 조각은 카드 밖에서 자른다 — 자르다 난 오류 문구가 사이드바 카드가 아니라 본문에 선다.
-    own_count, lent_count, available_count = (
-        edit_slices.get_or_stop(table_name) for table_name, _, _, _ in EQUIPMENT_EDITORS
-    )
-    with table_card(CARD_NAME):
-        show_equipment_detail = st.toggle(
-            "상세",
-            key="equipment_count_detail",
-            persist_state="session",
-        )
-        equipment_dimensions = (
-            DETAILED_EQUIPMENT_DIMENSIONS if show_equipment_detail else EQUIPMENT_DIMENSIONS
-        )
-        # 표시순서 스코프 문자열은 DB 공용 프로필의 행 키다. 페이지 이름이 바뀌어도 **이 두 인자는
-        # 그대로 둔다** — 안 맞으면 예외가 아니라 정렬이 조용히 사라진다.
-        equipment_table = apply_display_order(
-            build_equipment_count_table(
-                own_count, lent_count, available_count, detailed=show_equipment_detail
-            ),
-            display_order,
-            PAGE_REFERENCE,
-            TAB_EQUIPMENT_COUNT,
-        )
-        equipment_table = render_column_filter_controls(
-            equipment_table,
-            equipment_dimensions,
-            key_prefix="equipment_count_filter",
-            value_labels=process_labels.value_labels(),
-            shared_screen=SCREEN,
-        )
-    with view_box:
-        equipment_month_columns = [
-            column for column in equipment_table.columns if column not in equipment_dimensions
-        ]
-        displayed_equipment_table = equipment_table.copy()
-        displayed_equipment_table[equipment_month_columns] = displayed_equipment_table[
-            equipment_month_columns
-        ].mask(displayed_equipment_table[equipment_month_columns].eq(0))
-        # 필터를 먼저 걸고 그 뒤에 표시명을 입힌다. 순서가 바뀌면 위 `isin` 이 원본 컬럼과
-        # 맞지 않는다. 설비대수 편집 표의 왕복 양식은 따로 만든 프레임이라 이 복사본이 붙여넣기
-        # 경로에 닿지 않는다.
-        displayed_equipment_table["공정"] = process_labels.series(displayed_equipment_table["공정"])
-        st.dataframe(
-            # 고정 uuid — 내용이 같으면 회차마다 같은 메시지라 브라우저가 표를 다시 받지 않는다.
-            # 「상세」 두 꼴은 다른 표라 값을 가른다.
-            classification_styled(
-                displayed_equipment_table,
-                equipment_dimensions,
-                uuid="equipment_count_detail" if show_equipment_detail else "equipment_count",
-            ),
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
-            column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        column,
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in equipment_dimensions
-                },
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        width=80,
-                        format="%,.2f",
-                        alignment="center",
-                    )
-                    for month in equipment_month_columns
-                },
-            },
-        )
-
 
 # 붙여넣기로 비운 칸이 어떻게 되는지는 **표마다 다르다**(2026-09-29 버그 보고 횡전개). 전에는
 # 모든 표에 「계산에서 빠집니다」라고 적었는데 그것은 UPEH(경로가 빠진다)에서만 사실이다.

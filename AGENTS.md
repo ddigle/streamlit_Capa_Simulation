@@ -422,17 +422,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/reference_data.py` — `기준 정보` 화면. Capa 산출 입력(UPEH·설비대수·효율·여유율·일수·측정률·STEP 구성)을
   월별로 편집한다. 설명은 `guides/reference_data.md`.
   - **탭 대신 종류 단추 한 줄 + 큰 편집 표 하나**(2026-11-02 사용자 결정 — 편집 표 횡전개). 단추는 네이티브
-    `st.segmented_control`(`reference_grid_keys.DATASET_KEY`, 선택지 = `DATASETS` 열한 개 — 옛 탭·설비대수 안쪽 탭을 옛 차례로
-    편 것, 기본 UPEH, `persist_state="session"`, 기본값은 위젯 `default=` 가 아니라 세션에 심는다)이다. 그 아래 늘 서 있는 칸
+    `st.segmented_control`(`reference_grid_keys.DATASET_KEY`, 선택지 = `DATASETS` 열 개 — 옛 탭·설비대수 안쪽 탭을 옛 차례로
+    편 것, 기본 UPEH, `persist_state="session"`, 기본값은 위젯 `default=` 가 아니라 세션에 심는다)이다. 설비대수 세 표의 단추
+    글은 「보유대수」 · 「대여대수」 · 「가용대수」 다(2026-11-12 보드 답 k-b1 — 화면 글만, 표 이름 · 표시순서 범위 · DB 키는 그대로). 그 아래 늘 서 있는 칸
     차례가 계약이다 — 작업 줄 칸(`reference_actions`) → 그리드 자리(`reference_grid_box` — 범용 편집 그리드 마운트 하나,
-    `reference_grid_keys.GRID_HOST`) → 읽기 보기 칸(`reference_view` — 「설비대수 현황」·「STEP 구성」 을 골랐을 때만 채운다).
+    `reference_grid_keys.GRID_HOST`) → 읽기 보기 칸(`reference_view` — 「STEP 구성」 을 골랐을 때만 채운다). 세 표를 합쳐 보던
+    「설비대수 현황」 보기는 없다(같은 답 k-b1).
     그리드 마운트는 종류와 상관없이 같은 자리에서 그린다(읽기 보기를 골랐으면 표 없는 껍데기 — 다시 마운트되면 보내지 않은
     출납을 잃는다). 작업 줄 칸 안 단추 줄은 key `reference_action_row`(`reference_grid.ACTION_ROW`)이고, 기준 창(창 폭
     `ONE_LINE_MIN_WINDOW_PX` 1560 이상)에서는 표 도구 막대가 그 줄 오른쪽에 함께 서 표 위가 한 줄이다(`ONE_LINE_STYLE` — 2026-11-07
     답 table-top, 설계 규칙 UI-LAY-11). 표지 · 거부 칸이 서면 풀려 단추 → 그 칸 → 막대 → 표 차례로 쌓인다. 편집 표를 고른 회차에는
     그리드 아래에 아무것도 없다(편집 범위는 그리드 상태 줄 글이다)(표 아래 단추에 초점이 가면 본문이 내려가 머리·도구
     막대가 탭 줄 밑으로 숨는다).
-  - **편집 표 아홉이 모두 범용 편집 그리드다**(`reference_grid_keys.EDIT_TABLES` — UPEH · 설비대수 보유·대여·가용 · 효율 ·
+  - **편집 표 아홉이 모두 범용 편집 그리드다**(`reference_grid_keys.EDIT_TABLES` — UPEH · 보유대수 · 대여대수 · 가용대수 · 효율 ·
     여유율 · 일수 · Lot·WF측정률). 그 회차에는 고른 표와 inbox 에 op 가 쌓인 표의 양식만 만든다(양식·색인·껍데기는 캐시).
     작업 줄(적용·Excel 붙여넣기·편집 취소·변경 수 — key 는 `f"{editor_key}_apply"` 등 표마다 같은 꼴)을 `reference_actions`
     에 그리고 그리드에 싣는다. 「변경사항 적용」 은 칸 오류가 남았으면 고칠 칸 알림으로 멈추고, 아니면 양식에 초안을 업무
@@ -440,7 +442,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     통째로 비면 작업 줄 칸에 빈 결과 한 줄(「이 기간에 … 행이 없습니다」 — 1.0 계산은 그 줄의 풍선)을 쓰고 그리드는 빈
     표(머리만)를 싣는다(필터는 서지 않는다). STEP 추가·삭제는
     UPEH·Lot·WF 의 초안·이력을 버리고(팝업이 먼저 경고, 완료 알림에 버린 표) 다른 표 초안은 남긴다.
-  - **공정은 사이드바 조회 조건 패널의 공용 공정 칸이다**(`SCREEN` = 「기준 정보」, 2026-11-08 답 P1 — 공정 공유 1차). 편집 표 아홉과 설비대수 현황이 다른 화면의 공정을 따라가고 STEP 구성은 잇지 않는다. 공정 밖 칸(양산 · Area 등)은 「표 조건」 카드(표마다 따로)이고 거를 칸이 공정뿐인 표(일수 · 설비대수 보유 · 대여 · 가용)에는 카드가 서지 않는다(`GridTable.card_columns`). 거름에 가려 안 보이는 공정의 초안은 작업 줄 아래 「거름 밖 n개」 표지 + 풍선(`reference_grid.outside_count` · `OUTSIDE_NOTICE` — n 은 가려진 공정 수)이고, 「변경사항 적용」 은 그 편집까지 표 전체에 덮는다. 공용 공정으로 좁혀진 표의 여러 줄 붙여넣기 막기는 feed `filters` 가 맡는다. 「Excel 붙여넣기」 는 키 붙은 팝업 호스트 `DIALOG_HOST`(`DialogHost("reference_data_dialog_host", DIALOG_KEY)`)가 불러 여닫아도 페이지를 다시 계산하지 않는다(답 U5) — 호스트는 매 앱 전체 회차에 여는 단추 뒤 · 「변경사항 적용」 앞에 서고, STEP 추가 · 삭제는 같은 열림 칸을 쓰되 페이지가 부른다. 공정 공유를 되돌릴 때 걷을 줄은 `shared_screen=SCREEN` 세 곳과 `reference_grid` 의 `shared_process` 사용 자리다.
+  - **공정은 사이드바 조회 조건 패널의 공용 공정 칸이다**(`SCREEN` = 「기준 정보」, 2026-11-08 답 P1 — 공정 공유 1차). 편집 표 아홉이 다른 화면의 공정을 따라가고 STEP 구성은 잇지 않는다. 공정 밖 칸(양산 · Area 등)은 「표 조건」 카드(표마다 따로)이고 거를 칸이 공정뿐인 표(일수 · 보유대수 · 대여대수 · 가용대수)에는 카드가 서지 않는다(`GridTable.card_columns`). 거름에 가려 안 보이는 공정의 초안은 작업 줄 아래 「거름 밖 n개」 표지 + 풍선(`reference_grid.outside_count` · `OUTSIDE_NOTICE` — n 은 가려진 공정 수)이고, 「변경사항 적용」 은 그 편집까지 표 전체에 덮는다. 공용 공정으로 좁혀진 표의 여러 줄 붙여넣기 막기는 feed `filters` 가 맡는다. 「Excel 붙여넣기」 는 키 붙은 팝업 호스트 `DIALOG_HOST`(`DialogHost("reference_data_dialog_host", DIALOG_KEY)`)가 불러 여닫아도 페이지를 다시 계산하지 않는다(답 U5) — 호스트는 매 앱 전체 회차에 여는 단추 뒤 · 「변경사항 적용」 앞에 서고, STEP 추가 · 삭제는 같은 열림 칸을 쓰되 페이지가 부른다. 공정 공유를 되돌릴 때 걷을 줄은 `shared_screen=SCREEN` 세 곳과 `reference_grid` 의 `shared_process` 사용 자리다.
   - 적용 검사는 계산이 멈추는 조건과 같게 `reference_consistency.py` 에 두고 페이지는 행만 만든다. 빈칸 뜻은 표마다
     다르고(경로 없음·1.0·0 대·중립값 없음), UPEH 검사는 적용 전 활성 시나리오와 견준다. 격자·붙여넣기는 한 길이다.
   - 편집표와 적용은 같은 적용 기간(선택기간 ∩ 활성 리비전 UPEH 범위)을 쓴다. 필터는 보기만 좁힌다(고른 값은 feed
@@ -3361,7 +3363,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     조각(`merge_edited_months`·`count_month_changes`)은 그리드 횡전개 뒤 부르는 곳이 없어 걷었다(2026-11-03) — 그리드
     초안은 업무 키라 적용이 늘 전체 양식에 덮는다(`reference_grid.merged_template`).
   - `process_labels` 를 import 하지 않는다. 분류 칸 회색 배경은 `classification_styled` 하나가 칸 수 상한까지만 입히고
-    `load_conversion.py`·`reference_data.py`(설비대수 현황) 도 쓴다(`tests/test_classification_style.py`).
+    `load_conversion.py` 도 쓴다(`tests/test_classification_style.py`).
 - `src/capa_simulation/services/revision_compatibility.py` — 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지
   **불러오기 전에** 판정한다(활성화 뒤에 죽으면 되돌릴 길이 없다).
   - 지금 막는 것은 `STEP_SEQ`·`MCP_SEQ` 가 빈 저장분이다. 값을 추정해 채우지 않는다.

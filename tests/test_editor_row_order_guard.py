@@ -298,9 +298,9 @@ def test_an_own_apply_with_an_order_change_keeps_the_order_free_state(
 
 
 def test_the_notice_names_what_was_dropped() -> None:
-    message = scenario_edit_bar.row_order_reset_message(("효율", "설비대수 보유"))
+    message = scenario_edit_bar.row_order_reset_message(("효율", "보유대수"))
     assert message.startswith(NOTICE_HEAD)
-    assert "(효율 · 설비대수 보유)을" in message
+    assert "(효율 · 보유대수)을" in message
     assert message.endswith("다시 입력하세요.")
 
 
@@ -391,7 +391,7 @@ def test_a_display_order_change_keeps_an_equipment_count_draft_too(grid_calls: C
     """설비대수 세 표도 같은 표시순서로 줄을 세운다 — 차례가 바뀌어도 초안은 제 공정에 남고 알리지
     않는다."""
     app = AppTest.from_string(DISPLAY_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
+    app.session_state[DATASET_KEY] = DATASET["보유대수"]
     app.run()
     assert not app.exception
     app = _grid_write(app, grid_calls, "Process-A", MONTH, "0.333")
@@ -746,7 +746,7 @@ def test_equipment_count_grids_keep_two_decimals_and_a_third_of_a_module(
     tab_name: str, grid_calls: Calls
 ) -> None:
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET[f"설비대수 {tab_name}"]
+    app.session_state[DATASET_KEY] = DATASET[f"{tab_name}대수"]
     app.run()
     assert not app.exception
 
@@ -802,7 +802,7 @@ def test_an_all_integer_month_table_takes_a_fraction_on_the_grid(grid_calls: Cal
     )
     assert script != TWO_PROCESS_TEST_SCRIPT
     app = AppTest.from_string(script, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
+    app.session_state[DATASET_KEY] = DATASET["보유대수"]
     app.run()
     assert not app.exception
 

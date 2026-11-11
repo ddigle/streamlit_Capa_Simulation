@@ -205,14 +205,14 @@ def test_no_active_revision_keeps_its_message_unless_every_scenario_is_archived(
 
 @pytest.mark.parametrize(
     ("table", "name"),
-    [("RQ_REQB", "「STEP 구성」"), ("RQ_EQP_AVBL", "「설비대수 가용」"), ("RQ_UPEH", "「UPEH」")],
+    [("RQ_REQB", "「STEP 구성」"), ("RQ_EQP_AVBL", "「가용대수」"), ("RQ_UPEH", "「UPEH」")],
 )
 def test_an_empty_route_table_names_its_screen_table_and_the_source_fix(
     table: str, name: str
 ) -> None:
     """경로 표가 빈 리비전(계획 행만 있는 원천)을 연 계산 화면은 조회기간을 정하다 「RQ_REQB에
     선택할 생산계획년월 데이터가 없습니다」 로만 멈췄다 — 화면의 표 이름과 원천을 고쳐 다시
-    등록하라는 말로 바꾼다(검수 보드 st-month-text). 같은 리비전이 HOME 에서는 설비대수 가용으로
+    등록하라는 말로 바꾼다(검수 보드 st-month-text). 같은 리비전이 HOME 에서는 가용대수으로
     멈춘다."""
     message = bootstrap_error_message(
         ValueError(f"{table}에 선택할 생산계획년월 데이터가 없습니다.")

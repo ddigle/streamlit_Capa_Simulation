@@ -1,4 +1,4 @@
-# Purpose: 보유·대여·가용 설비대수를 월별 조회 표로 결합한다.
+# Purpose: 보유·대여·가용 설비대수를 월별 편집 양식으로 펴고 편집값을 원천 꼴로 되돌린다.
 
 import pandas as pd
 
@@ -9,12 +9,6 @@ from capa_simulation.services.capacity_reference_editor import (
 from capa_simulation.services.frame_contracts import normalize_month_column, require_columns
 
 EQUIPMENT_DIMENSIONS = ["공정"]
-DETAILED_EQUIPMENT_DIMENSIONS = ["공정", "구분"]
-EQUIPMENT_SOURCES = (
-    ("보유", "설비보유"),
-    ("대여", "설비대여평가"),
-    ("가용", "가용대수"),
-)
 
 
 def equipment_count_to_edit_table(
@@ -76,49 +70,6 @@ def equipment_count_from_edit_table(
     )
     validated = _prepare_source(restored, category, value_column)
     return validated.rename(columns={"대수": value_column})[["생산계획년월", "공정", value_column]]
-
-
-def build_equipment_count_table(
-    own: pd.DataFrame,
-    lent: pd.DataFrame,
-    available: pd.DataFrame,
-    *,
-    detailed: bool,
-) -> pd.DataFrame:
-    """Build a monthly equipment-count table from the three equipment queries."""
-    sources = zip((own, lent, available), EQUIPMENT_SOURCES, strict=True)
-    prepared = [
-        _prepare_source(data, category, value_column) for data, (category, value_column) in sources
-    ]
-    if detailed:
-        long_table = pd.concat(prepared, ignore_index=True)
-        dimensions = DETAILED_EQUIPMENT_DIMENSIONS
-    else:
-        long_table = prepared[2].drop(columns="구분")
-        dimensions = EQUIPMENT_DIMENSIONS
-
-    grouped = long_table.groupby(["생산계획년월", *dimensions], as_index=False, dropna=False)[
-        "대수"
-    ].sum()
-    result: pd.DataFrame = grouped.pivot(
-        index=dimensions,
-        columns="생산계획년월",
-        values="대수",
-    ).reset_index()
-    result.columns.name = None
-    raw_month_columns = [column for column in result.columns if column not in dimensions]
-    result = result.rename(columns={month: str(int(month)) for month in raw_month_columns})
-    month_columns = sorted(str(int(month)) for month in raw_month_columns)
-    result = result.reindex(columns=[*dimensions, *month_columns])
-    if detailed:
-        category_order = {category: index for index, (category, _) in enumerate(EQUIPMENT_SOURCES)}
-        result["_category_order"] = result["구분"].map(category_order)
-        result = (
-            result.sort_values(["공정", "_category_order"], kind="stable")
-            .drop(columns="_category_order")
-            .reset_index(drop=True)
-        )
-    return result
 
 
 def _prepare_source(data: pd.DataFrame, category: str, value_column: str) -> pd.DataFrame:

@@ -187,7 +187,7 @@ def test_a_plan_only_source_is_caught_by_its_empty_route_tables() -> None:
     notice = check.notice(1)
     assert notice == (
         "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 공정이 든 경로 행(계획기초정보여부 N)이 "
-        "없는 원천이라 「UPEH」 · 「STEP 구성」 · 「설비대수 가용」 표가 비었습니다. 앱에서 "
+        "없는 원천이라 「UPEH」 · 「STEP 구성」 · 「가용대수」 표가 비었습니다. 앱에서 "
         "고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천에 경로 행을 넣어 다시 등록하세요."
     )
     assert "RQ_" not in notice
@@ -215,7 +215,7 @@ def test_route_rows_dropped_for_blank_cs_point_at_their_cs_not_at_missing_rows()
     notice = check.notice(1)
     assert notice == (
         f"저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — CS 가 빈 경로 행 {routes:,}개를 빼자 "
-        "공정이 든 행이 남지 않아 「UPEH」 · 「STEP 구성」 · 「설비대수 가용」 표가 비었습니다. "
+        "공정이 든 행이 남지 않아 「UPEH」 · 「STEP 구성」 · 「가용대수」 표가 비었습니다. "
         "앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천 경로 행의 CS 를 채워 다시 "
         "등록하세요."
     )
@@ -285,7 +285,7 @@ def test_one_empty_route_table_names_only_itself_without_guessing_why() -> None:
 
         assert check.empty == ("RQ_EQP_AVBL",)
         assert check.notice(1) == (
-            "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 「설비대수 가용」 표가 비었습니다. "
+            "저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — 「가용대수」 표가 비었습니다. "
             "앱에서 고칠 수 없어 새 리비전으로는 풀리지 않습니다 — 원천을 고쳐 다시 등록하세요."
         )
 
