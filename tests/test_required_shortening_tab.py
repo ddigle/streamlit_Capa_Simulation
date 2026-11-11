@@ -48,6 +48,7 @@ from capa_simulation.components.required_shortening_panel import (
     SHORTENING_START_KEY,
     _card_table,
     _LobRows,
+    _style,
     _unit_row,
 )
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
@@ -64,6 +65,8 @@ from capa_simulation.components.shortening_board import (
     SHORTENING_HIGHLIGHT_KEY,
 )
 from capa_simulation.components.shortening_progress_panel import SHORTENING_COMPARE_KEY
+from capa_simulation.components.shortening_timeline import UNIT_NAME_STYLE, unit_name
+from capa_simulation.components.target_level_field import ENTRY_UNIT_LABEL, entry_style
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
@@ -794,7 +797,11 @@ def test_a_target_typed_outside_the_five_plans_that_value_and_keeps_the_five_dow
     assert app.radio(key=LEVEL_FIELD.pick_key).value == 1.1
     entry = app.number_input(key=LEVEL_FIELD.entry_key)
     assert entry.value == 110.0
-    assert "% 직접 입력" in [str(item.value) for item in app.caption]
+    # 단위 글 캡션이 이 칸의 − · + · ⊗ 를 숨기는 서식을 함께 싣는다(남은 물음 보드
+    # Q226-stepper (나)).
+    assert ENTRY_UNIT_LABEL + entry_style(LEVEL_FIELD.entry_key) in [
+        str(item.value) for item in app.caption
+    ]
 
     entry.set_value(115.0).run()
     assert not app.exception, [element.message for element in app.exception]
@@ -895,7 +902,7 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
     markup = _unit_row(row, axis, "", today=date(2026, 10, 8))
     visible = _visible(markup)
 
-    assert '<span class="shk-unit-name">EQ&lt;LONG&gt;-0001</span>' in markup
+    assert '<span class="shk-unit-name"><span dir="ltr">EQ&lt;LONG&gt;-0001</span></span>' in markup
     assert (
         '<span class="shk-muted">기존</span> 12.10 → <span class="shk-muted">단축</span> 10.07'
     ) in visible
@@ -908,6 +915,44 @@ def test_a_shortened_unit_row_is_one_line_with_the_full_detail_in_its_title() ->
         "EQ&lt;LONG&gt;-0001 · 기존 Qual 2026-12-10 → 목표 Qual 2026-10-07 · −64일 · "
         "기여 시작 2026-10-08 · 늘어난 환산대수 +0.29대 · 모듈 2 · 해소 기여 월 26.10"
     )
+
+
+def test_a_long_unit_name_is_shortened_at_its_head_and_keeps_its_tail() -> None:
+    """이름 칸보다 긴 호기 이름은 앞을 줄이고 끝(호기 번호)을 남긴다(남은 물음 보드 D6 (다) — 두
+    날짜가 다음 해 꼴이면 표본 이름도 끝을 줄여서는 「DEMO-MLD-…」 처럼 같아 보인다). 칸은
+    오른쪽에서 왼쪽으로 흘려 넘친 왼쪽 끝에 말줄임을 두고, 이름은 그 안에서 왼쪽에서 오른쪽 한
+    덩이(`dir="ltr"`)라 기호 · 숫자 차례가 뒤집히지 않는다. 넘치지 않으면 왼쪽 맞춤이다. 진척 비교
+    카드도 같은 칸 · 같은 서식이다(`shortening_progress_panel._unit_markup` — 진척 화면 시험이 그
+    꼴을 본다). 전체 이름은 줄 풍선에 그대로 있다."""
+    rule = _style().split(".shk-unit-name {", 1)[1].split("}", 1)[0]
+    for part in (
+        "direction:rtl",
+        "text-align:left",
+        "overflow:hidden",
+        "text-overflow:ellipsis",
+        "white-space:nowrap",
+        "min-width:0",
+    ):
+        assert part in rule, part
+    assert UNIT_NAME_STYLE in rule
+    assert unit_name("DEMO-MLD-0012") == (
+        '<span class="shk-unit-name"><span dir="ltr">DEMO-MLD-0012</span></span>'
+    )
+    axis = (date(2026, 10, 1), date(2028, 1, 1))
+    row: dict[str, object] = {
+        "호기": "DEMO-MLD-0012",
+        "구분": KIND_SHORTENED,
+        "기존 Qual": date(2027, 9, 10),
+        "목표 Qual": date(2027, 3, 7),
+        "단축일수": 187,
+        "늘어난 환산대수": 1.0,
+        "모듈 수": 1,
+        "해소 기여 월": "27.03",
+    }
+    markup = _unit_row(row, axis, "", today=date(2026, 11, 11))
+    assert unit_name("DEMO-MLD-0012") in markup
+    title = re.search(r'title="([^"]*)"', markup)
+    assert title is not None and title.group(1).startswith("DEMO-MLD-0012 · ")
 
 
 def test_the_shortfall_cell_puts_the_after_value_and_the_status_on_separate_lines() -> None:

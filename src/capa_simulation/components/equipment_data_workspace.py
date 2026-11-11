@@ -27,6 +27,7 @@ from capa_simulation.components.literal_markdown import (
     quoted,
 )
 from capa_simulation.components.table_toolbar import (
+    file_name_part,
     render_csv_download,
     toolbar_clearance,
     toolbar_room_css,
@@ -1280,7 +1281,7 @@ def _csv_scenario_mismatch(file_name: str | None, scenario_name: str | None) -> 
     if matched is None:
         return None
     named = matched.group(1)
-    if named == _file_name_part(scenario_name):
+    if named == file_name_part(scenario_name, fallback=_SCENARIO_FILE_FALLBACK):
         return None
     return (
         f"올린 CSV 는 다른 설비 시나리오({quoted(named.replace('_', ' '))})에서 내려받은 「현재 "
@@ -1291,6 +1292,8 @@ def _csv_scenario_mismatch(file_name: str | None, scenario_name: str | None) -> 
 
 # 「현재 데이터」 설비 마스터 내보내기 이름(`current_data_file_name`)에서 시나리오 몫을 꺼낸다.
 _CURRENT_DATA_NAME = re.compile(r"equipment_master_(.+)_r\d+_c\d+(?:_edited)?_\d{8}\.csv")
+# 시나리오 이름이 파일 이름에 쓸 글자를 남기지 않을 때의 토막(`table_toolbar.file_name_part`).
+_SCENARIO_FILE_FALLBACK = "scenario"
 
 
 def layout_lock_origins(
@@ -2430,19 +2433,15 @@ def current_data_file_name(
     suffix = "_edited" if edited else ""
     if latest_snapshot is None:
         return f"{table_slug}_r0{suffix}_{today:%Y%m%d}.csv"
-    scenario = f"_{_file_name_part(scenario_name)}" if scenario_name else ""
+    scenario = (
+        f"_{file_name_part(scenario_name, fallback=_SCENARIO_FILE_FALLBACK)}"
+        if scenario_name
+        else ""
+    )
     schedule = latest_snapshot.schedule
     schedule_no = schedule.revision_no if schedule is not None else 0
     common_no = latest_snapshot.revision.revision_no
     return f"{table_slug}{scenario}_r{schedule_no}_c{common_no}{suffix}_{today:%Y%m%d}.csv"
-
-
-def _file_name_part(text: str) -> str:
-    """파일 이름 한 토막 — 경로·예약 글자와 빈칸을 `_` 로, 겹친 `_` 는 하나로."""
-    cleaned = "".join("_" if char in '\\/:*?"<>|' or char.isspace() else char for char in text)
-    while "__" in cleaned:
-        cleaned = cleaned.replace("__", "_")
-    return cleaned.strip("_") or "scenario"
 
 
 def _saved_basis_words(snapshot: EquipmentSnapshot, scenario_name: str | None) -> str:

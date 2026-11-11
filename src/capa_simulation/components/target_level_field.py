@@ -15,7 +15,11 @@
   꼴). 견주는 값은 세션의 지금 값이라 다시 도는 회차에 같아져 되풀이되지 않는다. 칸에 치고 Enter
   없이 라디오를 누르면 라디오가 이긴다(「버튼 + 직접 입력」 칸 `preset_number_field` 와 같은 규칙 —
   세대 key 없이도 2026-11-11 사본 앱 브라우저에서 누름 길이 0 · 0.15 · 0.6초 여섯 번 모두 라디오).
-  숫자 칸의 − · + 단추와 ↑/↓ 키도 한 걸음이 곧 확정이라 그 값을 적용하고 닫힌다.
+  숫자 칸은 − · + 단추와 지우기 ⊗ 를 숨겨 Enter · 칸 떠남으로만 적용한다(남은 물음 보드
+  Q226-stepper (나) — 단추 한 걸음이 곧 확정이라 걸음마다 앱 전체가 돌며 다섯 밖 목표를 새로
+  계산하게 된다). 숨김은 그 칸 key 의 칸으로만 좁힌다(`entry_style` — 다른 화면 숫자 칸은 그대로).
+  ↑/↓ 키는 그대로 한 걸음이 곧 확정이라 그 값을 적용하고 닫힌다. ⊗ 가 없어도 글을 지우고 Enter 를
+  치면 빈 칸 거부 한 줄이 선다.
 - **직접 입력** — 퍼센트 숫자 칸이다. 걸음 · 자릿수는 판정 기준 기본 칸(HOME 설정 › 판정 기준 —
   `home_preference.DEFAULT_THRESHOLD_STEP` · `DEFAULT_THRESHOLD_FORMAT`)과 같은 1 · `%.0f` 이고,
   받는 범위는 판정 기준 저장 · 제약 확보율과 한 값 50 ~
@@ -60,6 +64,7 @@ from capa_simulation.sidebar_status import keeps_app_run_open, page_condition_sl
 __all__ = [
     "ENTRY_EMPTY",
     "ENTRY_FORMAT",
+    "ENTRY_HIDDEN_PARTS",
     "ENTRY_NOT_A_NUMBER",
     "ENTRY_STEP",
     "LEVEL_ICON",
@@ -67,6 +72,7 @@ __all__ = [
     "LEVEL_SLOT",
     "TargetLevelField",
     "entry_out_of_range",
+    "entry_style",
     "level_text",
     "read_level_entry",
     "target_level",
@@ -85,6 +91,14 @@ ENTRY_FORMAT: Final = "%.0f"
 ENTRY_UNIT_LABEL: Final = "% 직접 입력"
 # 칸 폭 — `preset_number_field` 의 숫자 칸과 같다.
 ENTRY_WIDTH: Final = 132
+# 직접 입력 칸에서 숨기는 Streamlit 숫자 칸 부품(`data-testid`) — − · + 단추와 지우기 ⊗. 한 걸음
+# 누름이 곧 확정이라(Enter 없이 적용 · 닫힘) 숨기고 Enter · 칸 떠남으로만 적용한다(남은 물음 보드
+# Q226-stepper (나)). ↑/↓ 키는 칸이 받는 그대로다.
+ENTRY_HIDDEN_PARTS: Final = (
+    "stNumberInputStepDown",
+    "stNumberInputStepUp",
+    "stNumberInputClearButton",
+)
 # 숫자 칸은 글자를 받지 않으므로 화면에서 서는 거부는 빈 칸(지우기 · ⊗)이다. 숫자 아님은 글 값을
 # 넘길 때(「목표」)뿐이다.
 ENTRY_EMPTY: Final = "칸이 비어 받지 않았습니다."
@@ -152,6 +166,17 @@ def read_level_entry(value: object) -> float | str:
     percent = whole_percent(number)
     accepted = _accepted(percent)
     return entry_out_of_range(percent) if accepted is None else accepted
+
+
+def entry_style(entry_key: str) -> str:
+    """직접 입력 칸 하나의 − · + · ⊗(`ENTRY_HIDDEN_PARTS`)를 숨기는 서식 — 그 칸 key 의 칸
+    (`st-key-<key>`)으로만 좁혀 다른 숫자 칸(판정 기준 · UPEH 가정 % 등)은 건드리지 않는다. 팝업
+    본문은 스타일만 든 `st.html`(이벤트 칸)을 쓰지 않으므로 단위 글 캡션에 실어 보낸다(AGENTS 9장
+    「팝업 본문은 이벤트 칸에 같은 수만」)."""
+    selectors = ",".join(
+        f'.st-key-{entry_key} [data-testid="{part}"]' for part in ENTRY_HIDDEN_PARTS
+    )
+    return f"<style>{selectors}{{display:none}}</style>"
 
 
 def level_text(level: float) -> str:
@@ -255,7 +280,11 @@ class TargetLevelField:
                 label_visibility="collapsed",
                 width=ENTRY_WIDTH,
             )
-            st.caption(ENTRY_UNIT_LABEL, width="content")
+            st.caption(
+                ENTRY_UNIT_LABEL + entry_style(self.entry_key),
+                unsafe_allow_html=True,
+                width="content",
+            )
         picked = target_level(choice)
         if picked is not None and not math.isclose(picked, current):
             self._apply(picked)

@@ -270,15 +270,18 @@ CROSS_CHECK_MONTHS_HELP = (
     "설비 조회기간이 덮는 달로 좁혔습니다 — 시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 "
     "만들지 않았으면 맞댈 수 없습니다. 조회기간을 넓히면 늘어납니다."
 )
-# 「시트 CSV」 · 「시트 엑셀」 을 묶은 「내려받기 ▾」 메뉴(2026-11-10 답 Q2-7 꼴 — 공정 Capa 상세 ·
-# 산출 결과와 같은 도우미)는 「조회 결과 · 표시」 전환 단추(28px)와 같은 높이다 — 기본 단추(35px)면
-# 시트를 보는 회차에만 줄이 7px 높아져 시트 ↔ 호기 목록 · 가용대수 비교를 오갈 때 아래 본문이
-# 오르내린다(설계 규칙 UI-CON-01 · UI-PRF-03, 공정 Capa 상세 표 도구 줄과 같은 꼴). 메뉴 안
-# 단추는 줄 밖(떠 있는 층)이라 기본 높이다. 앱 전체 회차에만 그리므로 스타일만 든 `st.html` 이
-# 이벤트 칸으로 가도 된다.
-SHEET_CSV_STYLE = (
-    f"<style>.st-key-{GAP_SHEET_MENU_KEY} button "
-    "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
+# 「조회 결과 · 표시」 전환 줄과 그 오른쪽 끝 칸(표지 · 「내려받기 ▾」). 끝 칸은 남은 폭을 채우되
+# 제 글 한 줄 폭보다 좁아지지 않는다 — 긴 표지가 좁은 칸 안에서 여러 줄로 접히지 않고, 곁에 자리가
+# 모자라면 칸째(그 안의 메뉴도 함께) 다음 줄로 내려가 오른쪽 끝에 선다(값 글 `"push"` 와 같은 꼴,
+# 설계 규칙 UI-ACC-02). 이 서식을 그리는 회차(분류별 내역)에는 전환 줄이 어디서 접히든 줄 사이가
+# 본문 칸 사이 간격(1rem)이다 — 전환끼리의 넓은 간격(`gap="large"`)은 가로에만 쓴다. 앱 전체
+# 회차에만 그리므로 스타일만 든 `st.html` 이 이벤트 칸으로 가도 된다.
+GAP_SWITCH_ROW_KEY = "equipment_gap_switch_row"
+GAP_ROW_END_KEY = "equipment_gap_row_end"
+ROW_END_STYLE = (
+    f"<style>.st-key-{GAP_SWITCH_ROW_KEY} {{ row-gap: 1rem; }}"
+    f' [data-testid="stLayoutWrapper"]:has(> .st-key-{GAP_ROW_END_KEY})'
+    " { flex: 1 1 fit-content; }</style>"
 )
 # 시트 엑셀 통의 꼴 판 — 같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 올린다.
 GAP_SHEET_SCHEMA_VERSION = 2
@@ -567,7 +570,9 @@ def render_availability_gap_panel(
     # (2026-11-09 사용자 보드 T2 · T3, 설계 규칙 UI-LAY-11 · UI-LAY-03). 전환끼리는 넓게 띄우고,
     # 풍선은 마지막 전환과 한 칸(작은 간격)이다 — Main 머리 줄의 줄 끝 풍선과 같은
     # 간격(UI-CON-03).
-    switches = st.container(horizontal=True, vertical_alignment="center", gap="large")
+    switches = st.container(
+        horizontal=True, vertical_alignment="center", gap="large", key=GAP_SWITCH_ROW_KEY
+    )
     with switches:
         result_group = _switch_group()
     # 줄 끝 풍선이 설 칸 — 지금 줄의 마지막 전환이 든 칸.
@@ -725,13 +730,21 @@ def render_availability_gap_panel(
         )
     row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
     with switches:
-        # 줄 오른쪽 끝 칸 — 시트를 그리는 회차에는 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀),
-        # 호기 목록이 입력 비가동이 든 범위를 보면 그 표지(비면 그리지 않는다).
+        # 줄 오른쪽 끝 칸 — 한쪽에만 있는 공정 · 호기 필터 표지(작은 글), 시트를 그리는 회차에는
+        # 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀), 호기 목록이 입력 비가동이 든 범위를 보면 그
+        # 표지가 이 차례로 선다(비면 그리지 않는다). 표지는 혼자 한 줄을 세우지 않는다(2026-11-11
+        # 보드 D2 — e4-1 과 같은 꼴, 설계 규칙 UI-LAY-13 · UI-TXT-04). 좁으면 칸째 다음 줄로
+        # 내려간다(`ROW_END_STYLE`).
+        st.html(ROW_END_STYLE)
         row_end = st.container(
-            horizontal=True, horizontal_alignment="right", vertical_alignment="center"
+            horizontal=True,
+            horizontal_alignment="right",
+            vertical_alignment="center",
+            key=GAP_ROW_END_KEY,
         )
     if one_sided is not None:
-        st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.")
+        with row_end:
+            st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.", width="content")
     chosen_units: set[str] | None = None
     if units is not None:
         with controls:
@@ -739,12 +752,14 @@ def render_availability_gap_panel(
         if chosen_units is not None:
             # 무엇으로 걸렀는지는 본문에도 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
             # 고른 값은 사람이 적은 이름이라 `_render_unit_filters` 가 이름마다 막아 담았다.
-            st.caption(
-                ":material/filter_alt: 호기 필터 · "
-                + " · ".join(applied)
-                + f" — 호기 {len(chosen_units):,}개만 더합니다.",
-                help=UNIT_FILTER_HELP,
-            )
+            with row_end:
+                st.caption(
+                    ":material/filter_alt: 호기 필터 · "
+                    + " · ".join(applied)
+                    + f" — 호기 {len(chosen_units):,}개만 더합니다.",
+                    help=UNIT_FILTER_HELP,
+                    width="content",
+                )
     if detail_mode == "호기 목록":
         if any(process_name in scope for process_name, _, _ in manual_cells):
             # 숨은 데이터 표지는 혼자 한 줄을 세우지 않고 전환 줄 오른쪽 끝 작은 글이다 — 시트를
@@ -871,12 +886,13 @@ def render_sheet_downloads(bundle: GapSheetBundle, *, heading: Sequence[tuple[st
     """「내려받기 ▾」 메뉴 — 「시트 CSV」 와 「시트 엑셀」(지금 화면 시트를 화면 서식째 —
     `availability_sheet_workbook`). 패널이 「조회 결과 · 표시」 줄 오른쪽 끝에 세운다(2026-11-09
     사용자 보드 T3 — 단추 하나가 따로 한 줄을 차지하지 않는다). 칸 누름과 상관없는 값이라 시트
-    프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와 같다(`SHEET_CSV_STYLE`).
+    프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와 같은 28px 이다 — 메뉴 높이는
+    `table_toolbar.render_download_pair` 한 곳이 정한다(`DOWNLOAD_MENU_STYLE` — 2026-11-11 남은
+    물음 보드 C9).
 
     통은 조건 키(시트 꼴 판 · 범위 지문 — 공정 · 달 · 호기 필터 · 시트 키 — · 머리 글자 · 제목
     세부 글 · 머리 값 줄)로 세션에 몇 벌 기억한다 — 같은 조건 회차 · 칸 누름은 다시 짓지 않는다
     (공정 Capa 상세 · 산출 결과와 같은 길, 새 `st.cache_*` 없음)."""
-    st.html(SHEET_CSV_STYLE)
     stamp = f"{bundle.view.months[0]}_{bundle.view.months[-1]}"
     request = GapWorkbookRequest(
         view=bundle.view,

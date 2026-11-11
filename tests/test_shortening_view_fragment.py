@@ -35,6 +35,7 @@ from typing import Any
 import pandas as pd
 import pytest
 import streamlit as st
+from alert_marks import events
 from fragment_browser import FragmentBrowser, install_fragment_browser
 from streamlit.testing.v1 import AppTest
 from test_required_shortening_tab import _cards, _database, _months
@@ -58,8 +59,10 @@ from capa_simulation.components.required_shortening_panel import (
     VIEW_FRAGMENT_KEY,
 )
 from capa_simulation.components.shortening_progress_panel import (
+    BASELINE_GONE_ALERT,
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
+    gone_baseline_text,
 )
 from capa_simulation.persistence.equipment_cache import (
     clear_equipment_repository,
@@ -445,6 +448,8 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     assert app.session_state[FULL_RUNS_KEY] == full_runs + 1
     assert any("진척 비교 요약" in body for body in _screen(app, world)[0])
 
+    assert not events(app, BASELINE_GONE_ALERT)
+
     # 다른 세션이 그 기준선을 지웠다 — 목표만 바꾼 프래그먼트 회차가 목록이 카드에 세운 것과 다른
     # 것을 보고 앱 전체를 다시 돌린다. 카드 칸이 「비교 안 함」 하나로 되적히고 본문도 비교하지
     # 않는다 — 카드 칸과 본문이 같은 비교를 말한다(설계 규칙 UI-DAT-11).
@@ -460,6 +465,19 @@ def test_saving_a_baseline_in_the_view_reruns_the_whole_app_and_lists_it(
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
     assert app.session_state[SHORTENING_LEVEL_KEY] == 0.9
+    # 그 회차에 사건 알림 한 번(알림 단계 — Alarm 에 남는다) — 화면이 크게 바뀌는 까닭이다(남은
+    # 물음 보드 D4 (나)). 이름은 앞 앱 전체 회차가 상자에 세운 목록에서 찾는다. 화면 자리에는 글이
+    # 없다.
+    (gone,) = events(app, BASELINE_GONE_ALERT)
+    assert gone["code"] == "RS-06" and gone["level"] == "info"
+    assert gone["short"] == gone_baseline_text(stored.name)
+    assert baseline_label(stored) in gone["full"] and "비교 안 함" in gone["full"]
+    assert not any("지워져" in str(item.value) for item in [*app.caption, *app.markdown])
+    # 다음 회차에는 다시 내지 않는다 — 세션 값이 이미 「비교 안 함」 이다.
+    app.session_state[SHORTENING_LEVEL_KEY] = 1.1
+    runner.fragment_queue = []
+    _run(app, world)
+    assert not events(app, BASELINE_GONE_ALERT)
     clear_equipment_repository()
 
 
@@ -546,6 +564,8 @@ def test_deleting_this_sessions_baseline_reruns_the_whole_app_and_a_failed_save_
     assert "기준선을 지웠습니다" in _notices(app)
     picker = app.selectbox(key=SHORTENING_COMPARE_KEY)
     assert picker.value == NO_COMPARISON and list(picker.options) == ["비교 안 함"]
+    # 이 세션이 지운 것은 「지워져 진척 비교를 껐습니다」 가 아니다 — 지우기 결과 알림 하나다.
+    assert not events(app, BASELINE_GONE_ALERT)
     clear_equipment_repository()
 
 

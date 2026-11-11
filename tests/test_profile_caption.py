@@ -323,13 +323,13 @@ from capa_simulation.components.profile_caption import render_heading_value, ren
 render_heading_value(
     "#### 주차별 설비 현황", "마지막 주 W45 · 총 3대", key="demo_weekly", help="값 풍선"
 )
-with st.container(horizontal=True, key="demo_right"):
+with st.container(horizontal=True, key="demo_clone"):
     st.caption("앞 칸")
     render_row_value(
         "복제 대상 · 「A\\~B」 r3 · :orange-badge[미저장 편집 포함]"
         if st.session_state.get("shown", True)
         else None,
-        place="right",
+        place="push",
     )
 with st.container(horizontal=True, key="demo_push"):
     st.caption("앞 칸")
@@ -353,39 +353,39 @@ def _cells(block: Block) -> list[object]:
 
 def test_the_heading_value_sits_at_the_right_end_of_the_title_row() -> None:
     """제목 줄 값 글(2026-11-09 사용자 보드 T2 — 가용설비 결과 제목 줄)은 제목과 한 가로 칸이고 값
-    글은 남은 폭의 오른쪽 맞춤 칸 안이다. 줄 칸 key · 글자 밑줄 맞춤은 공용 버전 줄과 같고 풍선은 값
-    글에 있다."""
+    글은 한 덩이로 줄 오른쪽 끝에 밀린다(`"push"` — 좁으면 통째로 다음 줄, 2026-11-11 보드 D1).
+    줄 칸 key · 글자 밑줄 맞춤은 공용 버전 줄과 같고 풍선은 값 글에 있다."""
     app = AppTest.from_string(VALUE_SCRIPT, default_timeout=30).run()
 
     assert not app.exception
     row = _keyed_row(app, f"{HEADING_KEY_PREFIX}demo_weekly")
-    title, box = _cells(row)
+    title, value = _cells(row)
     assert isinstance(title, Markdown) and not isinstance(title, Caption)
     assert title.value == "#### 주차별 설비 현황" and not title.proto.help
-    assert isinstance(box, Block)
-    assert box.proto.flex_container.direction == BlockProto.FlexContainer.Direction.HORIZONTAL
-    assert box.proto.flex_container.justify == BlockProto.FlexContainer.Justify.JUSTIFY_END
-    (value,) = _cells(box)
     assert isinstance(value, Caption)
-    assert value.value == "마지막 주 W45 · 총 3대" + HEADING_BASELINE_STYLE
+    assert value.value == (
+        f'<span class="{VALUE_END_CLASS}">마지막 주 W45 · 총 3대</span>'
+        + VALUE_END_STYLE
+        + HEADING_BASELINE_STYLE
+    )
     assert value.proto.allow_html and value.proto.help == "값 풍선"
 
 
-def test_row_values_keep_their_three_places() -> None:
-    """값 글 자리 셋 — `"right"` 는 오른쪽 맞춤 칸이 값이 없는 회차에도 서고(글만 빠진다) 서식이
-    없으면 글을 마크다운 그대로 싣는다(시나리오 복제의 배지 지시문). `"push"` 는 표지 칸 + 미는
-    서식을 한 캡션에 싣고(필요 단축 일정 — 이벤트 칸을 쓰지 않는다) 맨 `<` 를 글자로 바꾼다.
-    `"after"` 는 앞 칸 바로 뒤 맨 캡션이다(Proc Rename 표지). 값이 없으면 그 둘은 아무것도 그리지
-    않는다."""
+def test_row_values_keep_their_two_places() -> None:
+    """값 글 자리 둘 — `"push"` 는 표지 칸 + 미는 서식을 한 캡션에 싣고(시나리오 복제 · 필요 단축
+    일정 — 이벤트 칸을 쓰지 않는다) 맨 `<` 를 글자로 바꾼다. 막은 물결표와 배지 지시문은
+    그대로다(시나리오 복제 — 2026-11-11 보드 D1 로 오른쪽 맞춤 칸 꼴에서 옮김). `"after"` 는 앞 칸
+    바로 뒤 맨 캡션이다(Proc Rename 표지). 값이 없으면 둘 다 아무것도 그리지 않는다 — 줄에 빈 칸이
+    남지 않는다."""
     app = AppTest.from_string(VALUE_SCRIPT, default_timeout=30).run()
 
     assert not app.exception
-    _, box = _cells(_keyed_row(app, "demo_right"))
-    assert isinstance(box, Block)
-    assert box.proto.flex_container.justify == BlockProto.FlexContainer.Justify.JUSTIFY_END
-    (clone,) = _cells(box)
-    assert isinstance(clone, Caption) and not clone.proto.allow_html
-    assert clone.value == "복제 대상 · 「A\\~B」 r3 · :orange-badge[미저장 편집 포함]"
+    _, clone = _cells(_keyed_row(app, "demo_clone"))
+    assert isinstance(clone, Caption) and clone.proto.allow_html
+    assert clone.value == (
+        f'<span class="{VALUE_END_CLASS}">'
+        "복제 대상 · 「A\\~B」 r3 · :orange-badge[미저장 편집 포함]</span>" + VALUE_END_STYLE
+    )
 
     _, pushed = _cells(_keyed_row(app, "demo_push"))
     assert isinstance(pushed, Caption) and pushed.proto.allow_html
@@ -406,5 +406,4 @@ def test_row_values_keep_their_three_places() -> None:
 
     app.session_state["shown"] = False
     app.run()
-    _, box = _cells(_keyed_row(app, "demo_right"))
-    assert isinstance(box, Block) and not box.children
+    assert len(_cells(_keyed_row(app, "demo_clone"))) == 1

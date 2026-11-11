@@ -499,6 +499,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     엑셀 단추 하나)의 「시트 엑셀」(늘 — 2026-11-10 보드 c2-picked)은 지금 화면 상태 그대로의 결합 캔버스를 화면 서식째
     xlsx 로 낸다(`components/process_capa_workbook.py` · `io/xlsx_small.py` — 새 의존성 없음). 페이지는 머리 값 줄(공정 ·
     시나리오 · 조회기간 · 설비 시나리오 · 설비 일정 · UPEH 가정 — `sheet_heading`)과 호기 CSV 표(`units_export`)를 넘긴다.
+    두 파일 이름(`process_capa_view.detail_file_names`)은 `process_capa_detail[_units]_<첫 달>_<끝 달>` 뒤 UPEH 가정 꼬리
+    (`_upeh<%>_<구간 첫 달>_<끝 달>`, 켰을 때만), 끝에 화면의 공정 이름(머리 값 줄과 같은 표시명 — 못 쓰는 글자 · 빈칸은
+    `table_toolbar.file_name_part` 가 `_` 로)이다(2026-11-11 남은 물음 보드 B3 (가) — 공정이 달라도 이름이 같던 것).
   - UPEH 가정(조건 카드 끝 「이 세션만」)이 켜지면 가정 요약(이미 받은 확보율 행에 ÷f — 캐시 밖)과 가정 계획(계획 키 끝
     칸 토큰 → 가정 칸)을 더 세운다. **판정은 한 기준**이다 — 부족 띠·② 판정 대조·KPI·원인은 가정, 공식 값은 ① 공식
     줄과 KPI 회색 줄 「공식 n」 에만. 머리 배지·효과 한 줄(그 화면의 목표·기간)·카드의 역산 둘(「이 값으로」)·호기 CSV
@@ -574,13 +577,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     팝업 호스트 바로 뒤 · 데이터를 읽기 전에 세워(`required_shortening_panel.LEVEL_FIELD.render`) 멈춘 회차에도 서고 고를 수 있다(호기가
     없는 회차는 같은 자리, 설비 DB 를 못 읽은 회차는 그 앞 「설비 시나리오」 줄이 서지 않아 한 줄만큼 위) — 값 칸을
     누르면 같은 화면 팝업 호스트(`SHORTENING_DIALOG_HOST`)만 돌아 다섯 목표 라디오와 그 밑 직접 입력 칸(2026-11-11 사용자 고칠 것
-    Q2-26 — 50 ~ 300% 정수 %)이 열리고, 고르거나 넣으면 세션 칸(`SHORTENING_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 닫히며 앱
+    Q2-26 — 50 ~ 300% 정수 %, − · + 단추와 지우기 ⊗ 는 숨기고 Enter · 칸 떠남으로만 적용 — 남은 물음 보드 Q226-stepper (나))이
+    열리고, 고르거나 넣으면 세션 칸(`SHORTENING_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 닫히며 앱
     전체를 한 번 다시 돌린다(값 칸 글이 프래그먼트 밖이라 본문만 다시 돌리지 않는다). 다섯 밖 값은 `_prepare` 가 그 값 하나를 더
     계산해 계획에 더하고(`load_official_shortening(level=)`), 그 목표로 진척 비교를 고르면 견주지 않고 빈 결과 한 줄이다(기준선은
     다섯만 얼린다 — `_render_missing_baseline_level`). 진척 비교는
     사이드바 「필요 단축 일정 조건」 카드 맨 위 칸이고(카드는 처음 펼친 채 — 한 번 접으면 기억 칸), 바꾸면
     본문 프래그먼트(`VIEW_FRAGMENT_KEY` · `_rerun_view`)만 다시 그린다. 본문 프래그먼트는 회차마다 목표 세션 칸을 읽고, 기준선 목록이 카드가 세운 id 들
-    (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 일정 미정 · 사용기준 밖 · 입력 비가동
+    (`_Plan.shown_baselines` · `_view_choices`)과 다르면 앱 전체 회차로 올린다(UI-DAT-11). 보던 기준선이 다른 곳(다른 사용자 · 다른
+    탭)에서 지워져 「비교 안 함」 으로 돌아가는 회차에는 사건 알림 `RS-06`(알림 단계 — 짧은 글 「보던 기준선 「…」이 지워져 진척
+    비교를 껐습니다」)을 한 번 내고 화면 자리에는 글을 달지 않는다(남은 물음 보드 D4 (나) — `shortening_progress_panel.render_compare_select`). 일정 미정 · 사용기준 밖 · 입력 비가동
     반영은 자리에 표지를 세우지 않고 상태 알림 `RS-03` ~ `RS-05`(`_report_status_alerts`)만이다 — 짧은 글이 건수, 전문이 뜻 ·
     내역이다(2026-11-09 사용자 규칙 「상단 여백 · 문구 최소화」, 설계 규칙 UI-NTF-02 · UI-TXT-07). 본문 맨 위는 KPI 이고 기준 값
     「설비 일정 기준 가용(환산) · 오늘」 은 따로 줄을 세우지 않고 CSV 작업 줄 오른쪽 끝 작은 글이다(`_render_basis` — 값 글
@@ -645,8 +651,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     화면은 Alarm 줄 「그 화면으로」 `EQUIPMENT_SCREEN`, 판정을 지나도 계획에 없는 공정은 「계획에 공정 없음」·「Cut-off 미기재」)으로
     멈춘다. 저장본 없음은 설비 DB 전체의 일이라 글에 공정을 넣지 않고, HBM·EDP 호기 없음 빈 상태는 배지 + 회색 평문 한 줄이다.
   - 오류는 넷으로 가른다 — 공통 진입(카드 캡션 — 조회 조건 패널의 공정 줄은 `process_field.render_stopped_process_field()` 의
-    잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다, 산출 결과 · 공정 Capa 상세와 같은 꼴 — 2차 보드 Q2-28. 「설비 시나리오」 줄은 공통
-    진입 뒤에 서므로 멈춘 회차에는 서지 않는다), 제품별 소요 받기(카드 캡션 + 본문 「제품별 소요를 읽지 못했습니다 — {글}」 —
+    잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다, 산출 결과 · 공정 Capa 상세와 같은 꼴 — 2차 보드 Q2-28. 「설비 시나리오」 줄도 공정
+    Capa 상세처럼 잠그지 않고 세워 정상 회차와 같은 높이다 — `equipment_scenario_status.render_stopped_equipment_scenario_row`,
+    2026-11-11 보드 C1), 제품별 소요 받기(카드 캡션 + 본문 「제품별 소요를 읽지 못했습니다 — {글}」 —
     「소요가 있는 제품이 없다」 안내와 가른다), 계획 받기(「설비 일정을 계산하지 못했습니다」 + 두 DB 경로), 어댑터·서비스의
     `ValueError`·`KeyError`(「제약 시뮬레이션을 계산하지 못했습니다 — {글}」). `BOOTSTRAP_ERRORS` 에 `KeyError`·`ValueError`
     가 들어 있어 한 `try` 로 묶으면 뒤의 글이 앞의 글로 둔갑한다.
@@ -803,7 +810,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     2026-11-08 그림 메모 g05)의 이름 줄 + 값 칸(`condition_field` — 칸 key `condition_field_space_target`, 값 칸 key
     `space_shortening_level_field`, `render_level_field` — 필요 단축 일정과 같은 부품 `TargetLevelField`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
     하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 + 직접 입력 칸 팝업을 열고(부품이
-    하나라 필요 단축 일정의 직접 입력 — 2026-11-11 Q2-26 — 이 여기에도 선다, 다섯 밖 값은 `load_space_layer` 가 같은 길로 더한다), 고르거나 넣으면
+    하나라 필요 단축 일정의 직접 입력 — 2026-11-11 Q2-26 · − · + · ⊗ 숨김 Q226-stepper (나) — 이 여기에도 선다, 다섯 밖 값은 `load_space_layer` 가 같은 길로 더한다), 고르거나 넣으면
     세션 칸(`SPACE_SHORT_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 곧바로 닫혀 다시 그린다(HOME 주요공정 히트맵 팝업과 같은 꼴 — 검수
     보드 p-target-form, 옛 전환 단추 다섯 · 한 줄 서식은 걷었다). 배치 편집으로 쉬는 회차에도 값 칸은 잠근 채 서며 까닭은 그 칸 풍선이다. 「단축 없는
     호기 흐리게」(`render_dim_field`)와 기준 달 한 줄(`render_layer_basis` — 풍선이 설비 · 시뮬레이션(미저장 편집 포함) · 오늘)은
@@ -3226,9 +3233,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   2026-11-10 답 Q2-7, 설비 마스터 「선택 ▾」 과 같은 꼴. 안의 단추는 `on_click="ignore"` 라 눌러도 메뉴가 열린 채 초점이 남고
   Esc 로 닫힌다. 시트를 나중에 짓는 화면은 돌려받은 칸에 `render_sheet_download`. 공정 Capa 상세 표 도구 줄 · 산출 결과
   대당 Capa · 소요대수 제목 줄(`table_heading_row(sheet=)`) · 가용설비 Static 대비 일정 시트(전환 줄 끝) · 호기 목록(목록 아래)이 쓰고, `tests/test_table_toolbar.py` 가 엑셀 단추를 다른 자리에서
-  부르지 않는지 · 쌍의 꼴을 본다)과 표 도구 막대 앞 띄움
+  부르지 않는지 · 쌍의 꼴을 본다. 줄에 선 메뉴(CSV 가 없으면 엑셀 칸)의 높이는 네 자리 모두 28px 하나다(2026-11-11 남은 물음
+  보드 C9 — 「구획」 칩 · 「조회 결과 · 표시」 전환 단추와 같은 높이, 메뉴 안 단추는 기본 높이): 메뉴 key 는 접두어
+  `DOWNLOAD_MENU_KEY_PREFIX`(「download_menu_」 — `download_menu_key` 가 붙이고, 아니면 `render_download_pair` 가 거절)로
+  시작하고 CSV 가 없을 때의 엑셀 칸도 그 key 를 받으며, 높이 서식 `DOWNLOAD_MENU_STYLE` 은 `app.py` 가 매 회차 보내는 앱 전체
+  서식 `st.html` 에 한 번 싣는다 — 부르는 자리마다 스타일만 든 `st.html` 을 두면 이벤트 칸에 서서 공정 Capa 상세 본문
+  프래그먼트의 이벤트 칸 수가 바뀐다)과 표 도구 막대 앞 띄움
   (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭), 띄움 대신 표 바로 위 줄 오른쪽 끝을
-  막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. `st.download_button` 은
+  막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. 사람이 적은 글(설비 시나리오
+  이름 · 공정 표시명)을 내려받는 파일 이름에 실을 때는 한 벌 `file_name_part(글, fallback=)` 로 경로 · 예약 글자와 빈칸을
+  `_` 로 바꾼다(설비 「현재 데이터」 CSV · 공정 Capa 상세 두 파일). `st.download_button` 은
   여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
   (`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`), 격자 머리(`add_table_frame` — 바깥 테두리 ·
@@ -3435,13 +3449,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 자리: HOME 설정 상자마다 · 자동 갱신 설정 · 입력 비가동 · 표시순서 · Proc Rename.
   **값 글**(2026-11-09 사용자 보드 T2 — 본문 위에 혼자 서던 값 한 줄을 바로 위 제목 · 단추 줄의 작은 글로)은 화면이 줄만
   세우고 `render_row_value(value, place=…)` 로 그린다 — 가용설비 · 시나리오 복제 · 필요 단축 일정 · Proc Rename 이 따로 짓던 칸을
-  한 벌로 모았다(설계 규칙 UI-CON-04). 자리 셋: `"after"`(앞 칸 바로 뒤 — 공용 버전 줄 · Proc Rename 보유 공정 밖 표지),
-  `"right"`(줄의 남은 폭을 차지하는 오른쪽 맞춤 칸 안 — 가용설비 결과 제목 줄 · 「시나리오 작업」 줄, 값이 없는 회차에도 칸은
-  서고 글만 빠진다, 좁으면 그 칸 안에서 글이 줄을 바꾼다), `"push"`(표지 칸 `VALUE_END_CLASS` + 미는 서식 `VALUE_END_STYLE`
-  을 한 캡션에 — 한 덩이로 줄 오른쪽 끝, 좁으면 통째로 다음 줄 오른쪽 끝, 필요 단축 일정 기준 값). 글은 마크다운 자리 글이고(사람
+  한 벌로 모았다(설계 규칙 UI-CON-04). 자리 둘: `"after"`(앞 칸 바로 뒤 — 공용 버전 줄 · Proc Rename 보유 공정 밖 표지),
+  `"push"`(표지 칸 `VALUE_END_CLASS` + 미는 서식 `VALUE_END_STYLE` 을 한 캡션에 — 한 덩이로 줄 오른쪽 끝, 좁으면 통째로 다음 줄
+  오른쪽 끝, 가용설비 결과 제목 줄 · 「시나리오 작업」 줄 · 필요 단축 일정 기준 값). 값이 `None` 이면 둘 다 아무것도 그리지 않는다.
+  남은 폭의 오른쪽 맞춤 칸 안에 두던 `"right"` 는 창 820px 에서 글이 그 칸 안에서 두 줄로 접혀 걷었다(2026-11-11 「남은 물음
+  11-11」 보드 D1 — 1600 · 1283 · 1100 자리는 같다). `"push"` 도 글 한 줄이 줄 폭보다 넓으면 내려간 줄에서 접힌다 — 820 창(사이드바
+  연 채)의 가용설비 「마지막 주 …」 요약(469px > 본문 줄 457px)은 다음 줄에서 두 줄이라 띠가 279.2 → 310.4, 시나리오 복제 대상은
+  한 줄로 내려가 116.2 → 138.6 이다(샘플 관측 — TODO 4장 열린 물음). 글은 마크다운 자리 글이고(사람
   글은 부르는 쪽이 `literal_markdown`), 서식(`style=` · `"push"`)이 실릴 때만 HTML 캡션이라 맨 `<` 를 `&lt;` 로 바꾼다 — 서식이
-  없으면 `:orange-badge[…]` 같은 지시문도 그대로다. 제목 + 오른쪽 끝 값 글 한 줄은 `render_heading_value`(줄 칸 key ·
-  밑줄 맞춤이 `render_profile_heading` 과 같다).
+  없으면 `:orange-badge[…]` 같은 지시문도 그대로다(HTML 캡션에서도 배지 지시문은 배지로 그려진다 — 시나리오 복제 「미저장 편집
+  포함」). 제목 + 오른쪽 끝 값 글 한 줄은 `render_heading_value`(`"push"` — 줄 칸 key · 밑줄 맞춤이 `render_profile_heading` 과
+  같다).
 - `src/capa_simulation/components/dialog_host.py` — 본문 · 사이드바 단추로 여는 화면 팝업의 키 붙은 호스트 프래그먼트
   (`DialogHost`, 2026-11-08 답 U5 — 여덟 팝업). 열기 · 닫기는 호스트만 돌고, 원본을 바꾸면 `finish`(앱 전체), 판정을 못 넘거나 같은
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
@@ -3463,10 +3481,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
   dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다. 공통 진입이 멈춘 회차(산출 결과 · 공정 Capa 상세 · 제약 시뮬레이션 — 산출 결과는 소요대수 · 확보율 탭의 표가 멈춘 회차도)는
   `render_stopped_process_field()` 가 같은 key 의 잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다(HOME 공정 필터 줄과 같은 꼴 — 검수
-  보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세도 멈춘 회차에 그 앞 「설비 시나리오」 줄을 정상 회차처럼 잠그지
-  않고 세워(`_render_stopped_equipment_row` — 설비 DB 를 못 읽으면 줄 없음, 2026-11-10 답 Q2-29) 같은 높이다. 제약 시뮬레이션은
-  「설비 시나리오」 줄이 공통 진입 뒤에 서므로 멈춘 회차에는 서지 않아 공정 줄과 아래 카드가 한 줄만큼 위에 선다(2차 보드
-  Q2-28). 선택지 기록 · 표지는 남기지
+  보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세 · 제약 시뮬레이션도 멈춘 회차에 그 앞 「설비 시나리오」 줄을
+  정상 회차처럼 잠그지 않고 세워(`equipment_scenario_status.render_stopped_equipment_scenario_row` — 설비 DB 를 못 읽으면 줄 없음,
+  2026-11-10 답 Q2-29 · 2026-11-11 보드 C1) 같은 높이다. 선택지 기록 · 표지는 남기지
   않는다(머리 칩 · 탭 표지의 짐작을 빈 목록으로 덮지 않게).
 - `src/capa_simulation/services/advance_load.py` — 선행 B/O 정규화와 월별 변동률(`기존 계획 ÷ 선행 반영 계획`)·역산.
   - 변동률을 확보율에 곱하고 Wafer 는 나눠 Capa·B/N 순위가 그대로다. 선행을 넣은 달 가운데 선행 반영 계획이 0 이하인
@@ -3929,7 +3946,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `EquipmentSession.layout_differs`, 라벨 dict 의 기본형이라 그리는 동안 저장소 호출 0) → `저장된 리비전` 차례. 잠근
     꼴(팝업 없음)은 값 칸 끝 「(고정)」 — 공정 Capa 상세 HOME 방문뿐이다(줄 아래 표지 한 마디 `LOCK_REASON_MARK` 「HOME 칸
     방문 · 공식 고정」 이 서고 그 까닭 `HOME_VISIT_LOCK_REASON` 은 표지의 풍선이다 — 꺼진 단추라 값 칸에는 풍선이 없다. 푸는 법
-    「이 화면 탭을 닫고 다시 여세요」 까지 적는다). Space 현황은 고를 수 있는 줄이다(S3).
+    「이 화면 탭을 닫고 다시 여세요」 까지 적는다). Space 현황은 고를 수 있는 줄이다(S3). 공통 진입(계산)이 멈춘 회차의 줄은
+    `render_stopped_equipment_scenario_row` 한 벌이다 — 공정 Capa 상세 · 제약 시뮬레이션이 잠긴 공정 줄과 함께 불러 세션 설비
+    시나리오를 잠그지 않고 세운다(설비 DB 를 못 읽으면 줄 없음 — 2026-11-10 답 Q2-29 · 2026-11-11 보드 C1).
   - 팝업은 `app.py` 의 `render_condition_dialogs` 셋째 갈래다. 「불러오기」(시나리오 → 리비전 라디오, 공식 발행 리비전에
     표지, 미저장이면 「변경을 버리고 불러오기」)와 「저장」 — 저장 구획은 편집본을 세우는 가용설비 현황·필요 단축 일정에만
     선다(`SAVE_PAGES`). 저장소는 팝업을 연 동안에만 읽는다(5장 23). 리비전 라디오는 최근 50개까지이고(한 줄씩 길어 — 결정
@@ -4149,15 +4168,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표, 「그 화면으로」 는 Preference 탭 — 교차검증 위 줄에서 옮김). 호기 목록·호기 필터 시트에는 없다 — 호기 목록이
     조회 달에 입력 비가동이 든 범위를 보면 표지 「입력 비가동 · 이 목록에 없음」 + 풍선(`MANUAL_LIST_MARK` · `MANUAL_LIST_HELP`)을
     혼자 한 줄로 세우지 않고 아래 전환 줄 오른쪽 끝 칸(시트의 「내려받기 ▾」 자리 `row_end` — 호기 목록에서는 빈 칸)에 내용 폭
-    작은 글로 둔다(E2E e4-1, 설계 규칙 UI-LAY-13 · UI-TXT-04).
+    작은 글로 둔다(E2E e4-1, 설계 규칙 UI-LAY-13 · UI-TXT-04). 분류별 내역의 다른 두 표지 — 한쪽에만 있는 공정의 「… 있는 쪽 값만
+    보입니다」(`_one_sided_reason`)와 호기 필터의 「호기 필터 · … — 호기 n개만 더합니다」(풍선 `UNIT_FILTER_HELP`) — 도 같은 칸
+    앞쪽에 이 차례로 선다(2026-11-11 「남은 물음 11-11」 보드 D2). 끝 칸(`GAP_ROW_END_KEY`)은 남은 폭을 채우되 제 글 한 줄 폭보다
+    좁아지지 않고, 곁에 자리가 모자라면 칸째 다음 줄 오른쪽 끝으로 내려간다(`ROW_END_STYLE` — 값 글 `"push"` 와 같은 뜻 — 기본
+    꼴이면 긴 표지가 1100 창에서 192px 칸 안 네 줄로 접혔다). 칸째 내려가므로 시트의 「내려받기 ▾」 도 표지와 함께 둘째 줄이다
+    (규칙집 4장 「Static 대비 일정 전환 줄」 의 「메뉴는 줄 오른쪽 끝 · 줄 높이 28px 그대로」 가 그 회차에는 맞지 않는다 — TODO 4장
+    열린 물음). 두 표지가 함께 서면 끝 칸 안에서 나란히, 모자라면 두 줄로 쌓인다(1100 · 820). 줄 사이 1rem 은 이 서식을 그리는
+    분류별 내역 회차의 전환 줄 전체에 걸린다 — 표지 없이 메뉴만 내려가는 좁은 창(820)도 14px 다(가용대수 비교는 서식을 그리지
+    않아 56px 이지만 메뉴가 없어 820 에서도 한 줄). 가용대수 비교의 한쪽 공정 까닭은 그림 대신 서는 빈 상태 한 줄이라 그대로다.
   - 탭 머리에는 구획 제목 · 「확보율 교차검증」 제목을 두지 않고(안쪽 탭 이름 · 고른 전환 값과 같은 말 — UI-TXT-07) `조회 결과` ·
     `표시` 전환 단추는 라벨 줄을 걷는다(2026-11-09 상단 띠 재고). 두 전환의 뜻은 그 줄 끝 빈 캡션 풍선 하나(`RESULT_VIEW_HELP` ·
     `DETAIL_MODE_HELP`)이고 마지막 전환과 작은 간격의 한 칸이다(`_switch_group` — 전환끼리만 넓게, Main 머리 줄 풍선과 같은 간격).
     확보율 교차검증이면 그 풍선 첫 단락이 「맞대어 본 달」 값 · 범위 설명이다(`_cross_check_help` — 자리 캡션 없음, 사용자 보드 T2 의
     「표 제목 풍선」 — 이 보기에는 표 제목이 없어 바로 위 줄 끝 풍선이 받는다). 시트 내려받기는 시트 프래그먼트 밖 그 줄 오른쪽
     끝 칸의 「내려받기 ▾」 메뉴 하나(`render_sheet_downloads` — 「시트 CSV」 · 「시트 엑셀」, `table_toolbar.render_download_pair` —
-    시트 엑셀 넓히기 2, 2026-11-10 답 Q2-7 꼴)이고 그 메뉴 단추는 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이
-    높아지지 않게)(T3). 「시트 엑셀」 은 지금 화면 시트(공정 · 달 · 호기 필터 · 입력 비가동 반영)를 화면 서식째
+    시트 엑셀 넓히기 2, 2026-11-10 답 Q2-7 꼴)이고 그 메뉴 단추는 곁 전환 단추와 같은 28px 다(메뉴 높이 한 곳
+    `table_toolbar.DOWNLOAD_MENU_STYLE` — 시트를 볼 때만 줄이 높아지지 않게)(T3). 「시트 엑셀」 은 지금 화면 시트(공정 · 달 · 호기 필터 · 입력 비가동 반영)를 화면 서식째
     (`components/availability_sheet_workbook.py`) 내고, 맨 위 값 줄은 공정 · 시나리오(Static 세 행이 온 활성 시나리오 — 공정 Capa 상세 · 산출 결과 시트와 같은 머리 띠 위 줄
     `sheet_download.scenario_line`, 올라온 리비전이 없으면 뺀다) · 조회기간 · 설비 시나리오(머리 띠 꼬리 글 `remembered_equipment_suffix` — 없으면 알림 범위 이름) · 호기 필터(걸렸을
     때 — 세션 칸 글 그대로, `_sheet_heading`)다. 통은 조건 키(`GAP_SHEET_SCHEMA_VERSION` · 범위 지문 · 머리 글자 · 제목 세부 글 · 머리
@@ -4172,7 +4199,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `RS-03` ~ `RS-05`(자리 표지 없음), KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
   UPEH 가정 칸(머리 아래 알림 · 기준선 저장 거절)은 패널에 남는다. 표는 줄 이름 칸을 붙박고 달 칸을 74px 로 줄여 기준 창에
-  14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —
+  14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 이름 칸은 넘치면 앞을 줄이고 끝(호기 번호)을 남긴다(`shortening_timeline.unit_name`
+  · `UNIT_NAME_STYLE` — 남은 물음 보드 D6 (다), 전체 이름은 줄 풍선). 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —
   묶음 폭이 이름 칸 + 결과 칸 + 여백(진척 447px · 호기 341px)보다 좁으면 붙박지 않고 줄 전체가 같이 구른다(창 폭이 아니라 묶음
   폭이라 사이드바를 펴도 따라간다). 멈춘 회차 조건 카드는 표지 「공정 · 고를 수 없음」 한 줄이다(g4-22).
 - `src/capa_simulation/components/target_level_field.py` — 필요 단축 목표 확보율의 조회 조건 패널 줄(이름 줄 + 값 칸, 패널 둘째 페이지
@@ -4181,6 +4209,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그 화면 팝업 호스트가 연다(여는 콜백은 호스트만, 고르거나 넣으면 `finish` 로 앱 전체 한 번). 직접 입력(2026-11-11 사용자 고칠 것 Q2-26)은
   판정 기준 기본 칸과 같은 걸음 · 꼴(1 · `%.0f`, 소수는 사사오입 정수 %)과 같은 받는 범위(`THRESHOLD_RANGE` 50 ~ 300%)이고, 범위 밖 ·
   빈 칸은 칸 바로 밑 거부 한 줄(`st.error` — 알림창 · 기록 없음)이다. 범위를 한참 넘는 값은 사사오입 전에 거른다(멈추지 않는다).
+  숫자 칸의 − · + 단추와 지우기 ⊗(`ENTRY_HIDDEN_PARTS` — Streamlit `stNumberInput` 의 `data-testid` 셋)는 숨기고 Enter · 칸 떠남으로만
+  적용한다(남은 물음 보드 Q226-stepper (나) — 단추가 있으면 한 걸음이 곧 확정이라 걸음마다 앱 전체가 돈다). ↑/↓ 키는 그대로 한 걸음 적용이고,
+  ⊗ 없이도 글을 지우고 Enter 면 빈 칸 거부 한 줄이다. 숨김 서식(`entry_style`)은 그 칸 key 의 칸(`st-key-<key>`)으로만 좁혀 다른 숫자
+  칸(판정 기준 · UPEH 가정 % 등)은 그대로이고, 팝업 본문이라 스타일만 든 `st.html` 대신 단위 글 캡션(`% 직접 입력`)에 싣는다
+  (`tests/test_target_level_entry.py` 가 부품 이름이 깔린 Streamlit 에 있는지 · 그 이름을 거는 파일이 이 부품 하나인지 본다).
   숫자 칸은 늘 지금 목표, 라디오는 지금 목표가 다섯 가운데 하나일 때만 켜진다. 세션 칸 · 주소 인자 · 대기 칸도 같은 범위로
   읽는다(`target_level`).
 - `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
@@ -4377,11 +4410,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   Q2-14 — 제약 영향 그래프 · 계산표와 같은 꼴, 막대 좌표의 읽는 법은 제목 풍선 `CHART_HELP`).
 - `src/capa_simulation/components/shortening_progress_panel.py` — 필요 단축 일정 진척 비교의 기준선 고르기·저장·지우기와
   요약·두 줄 카드(`required_shortening_panel` 이 부른다).
-  - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
+  - 「비교 안 함」 은 센티널 `NO_COMPARISON` 이다(pop 금지). 보던 기준선이 목록에서 사라진 회차에 「비교 안 함」 으로 되적으며 사건 알림
+    `RS-06` 을 담는다(`_report_gone_baseline` — 앞 앱 전체 회차가 상자에 세운 id → (이름, 라벨) 칸 `_COMPARE_NAMES_KEY` 에 있던 것만이고,
+    이 세션이 지운 기준선은 지우기 콜백이 먼저 되적거나 옛 화면 두 번째 누름이면 그 칸 · 지우기를 끝낸 표지로 거른다. 목록을 못 읽은
+    회차(`read_baseline_options` 의 읽음 거짓)는 알리지 않는다 — 남은 물음 보드 D4 (나)). 저장 성공 때 이름 칸·폼·팝오버 key 세대를 함께 올리고
     콜백은 그린 회차의 세대가 다르면 쓰지 않는다(빠른 두 번 누름). 샘플·미저장 시나리오 편집은 저장을 거절한다.
   - 쓰기에 성공한 콜백은 표지를 남기고 `consume_baseline_write` 가 거둔다. 카드는 달 축 하나를 같이 쓴다.
 - `src/capa_simulation/components/shortening_timeline.py` — 필요 단축 일정 타임라인의 달 축·위치·격자선·날짜 글자
-  (`month_day`, 올해가 아니면 `YY.MM.DD`)를 공정 카드와 진척 비교(`timeline_months_covering`)가 함께 쓴다.
+  (`month_day`, 올해가 아니면 `YY.MM.DD`)와 호기 이름 칸(`unit_name` · `UNIT_NAME_STYLE` — 칸은 오른쪽에서 왼쪽으로 흘려 넘친 왼쪽
+  끝에 말줄임, 이름은 `dir="ltr"` 한 덩이라 끝(호기 번호)이 남는다 — 남은 물음 보드 D6 (다))을 공정 카드와 진척
+  비교(`timeline_months_covering`)가 함께 쓴다.
 - `src/capa_simulation/components/availability_gap_figure.py` — Static 대 설비 일정 기준 월별 비교 Figure(환산 축,
   입력은 시트의 `SheetView`). 그림은 비교, 분해는 시트가 맡고 GAP 글자·색은 시트와 같은 함수(`gap_text_color`)다.
 - `src/capa_simulation/components/plotly_layout.py` — 제목 주석·외곽 테두리·분기 경계·고정 행과 `hover_chart_config`·
@@ -6832,7 +6870,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 03` · `MO-01`). DB 등록의
   BigDataQuery 설정은 상태 줄 없이 상태 알림 `AD-04` 만이다(다 준비됐으면 아무것도 그리지 않는다).
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
-  `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
+  `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24` · 필요 단축 일정 보던 기준선이 지워져 진척
+  비교를 끔 `RS-06`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가
   보낸다 — 조건에 따라 표지를 쓰면 뒤 팝업 호스트의 이벤트 칸 자리가 회차마다 밀린다. 「알림 닫기」 까지 남는 버림 경고는
   자리에도 그대로다(`PLACE_KEPT`).
 - **팝업 안 제출이 고칠 입력 없이 거부되면** `queue_flash(…, popup_only=True)` + `st.rerun()` 으로 앱 전체 회차에서 알린다(공식

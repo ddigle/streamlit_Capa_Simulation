@@ -1,4 +1,4 @@
-# Purpose: 표 위 제목·부가 설명 줄, CSV·엑셀 내보내기 단추 쌍, 표 도구 막대 앞 띄움·자리를 짓는다.
+# Purpose: 표 제목 줄, CSV·엑셀 내려받기 쌍·높이·파일 이름 토막, 표 도구 막대 띄움·자리를 짓는다.
 
 """One heading row and one CSV download button for every table.
 
@@ -17,7 +17,8 @@
 Capa 상세 표 도구 줄 · 산출 결과 대당 Capa · 소요대수 제목 줄 · 가용설비 Static 대비 일정
 시트(전환 줄 끝) · 호기 목록(목록 아래). 둘은 「내려받기 ▾」 메뉴 하나에 묶인다(2026-11-10 답
 Q2-7 — 설계 규칙 UI-LAY-11 「드물게 쓰는 같은 갈래 단추를 메뉴 하나로」).
-파일이 하나뿐이면(CSV 가 없는 자리) 메뉴 없이 그 단추 하나다.
+파일이 하나뿐이면(CSV 가 없는 자리) 메뉴 없이 그 단추 하나다. 줄에 선 메뉴(또는 그 단추
+하나)의 높이는 네 자리 모두 28px 하나다(2026-11-11 남은 물음 보드 C9 — `DOWNLOAD_MENU_STYLE`).
 """
 
 from __future__ import annotations
@@ -48,6 +49,25 @@ SHEET_XLSX_LABEL = "시트 엑셀"
 # 설비 마스터 「선택 ▾」 과 같은 꼴). 안의 단추는 `on_click="ignore"` 라 눌러도 회차가 돌지 않아
 # 메뉴가 열린 채 초점이 그 단추에 남고 Esc 로 닫힌다.
 DOWNLOAD_MENU_LABEL = "내려받기"
+# 줄에 선 「내려받기 ▾」 메뉴(또는 CSV 가 없어 메뉴 없이 선 「시트 엑셀」 칸)의 key 접두어와
+# 그 단추 높이. 높이는 `render_download_pair` 를 쓰는 네 자리(공정 Capa 상세 표 도구 줄 · 산출
+# 결과 표 제목 줄 · Static 대비 일정 전환 줄 · 호기 목록 아래)가 모두 같다(2026-11-11 남은 물음
+# 보드 C9 「render_download_pair 한 곳에서 같은 높이」). 값은 공정 Capa 상세 표 도구 줄 · Static
+# 대비 일정 전환 줄의 이웃 높이 — 「구획」 칩 · 「조회 결과 · 표시」 전환 단추 28px(설계 규칙
+# UI-CON-01 · 4장) — 이고, 호기 목록 아래 메뉴는 혼자 선다. 산출 결과 표 제목 줄은 곁 칸에 따라 줄
+# 높이가 갈린다 — 메뉴만 선 줄(대당 Capa · 소요대수 상세 끔)은 28.4px, 소요대수 상세 켬은 곁 「표시
+# 범위」 칸(33px)이, 확보율 탭은 맨 CSV 단추(기본 35px)가 줄을 35px 로 세워 탭을 오가거나 상세를
+# 켜고 끌 때 표 윗선이 갈린다(4장 「산출 결과 표 제목 줄」 · UI-PRF-03 — 그 줄의 높이 값은 사용자
+# 물음). 메뉴 안 단추는 줄 밖(떠 있는 층)이라 기본 높이다. 서식은 앱 전체 서식(`app.py` 가 매
+# 회차 보내는 사이드바 서식 `st.html`)에 실어 보낸다 — 부르는 자리마다 스타일만 든 `st.html` 을
+# 두면 이벤트 칸에 서서 본문 프래그먼트(공정 Capa 상세)의 이벤트 칸 수가 바뀐다.
+DOWNLOAD_MENU_KEY_PREFIX = "download_menu_"
+DOWNLOAD_MENU_HEIGHT_PX = 28
+DOWNLOAD_MENU_STYLE = (
+    f'<style>[class*="st-key-{DOWNLOAD_MENU_KEY_PREFIX}"] button '
+    f"{{ min-height: {DOWNLOAD_MENU_HEIGHT_PX}px; height: {DOWNLOAD_MENU_HEIGHT_PX}px; "
+    "padding-block: 0; }</style>"
+)
 
 # 표 앞 띄움(px, `st.space`) — 표에 마우스를 올리면 오른쪽 위 도구 막대(열 보기·내려받기·찾기·
 # 전체 화면)가 표 머리 위 37px 까지 솟는다. 표 바로 위 줄에 누를 것(입력·단추·팝오버·토글·날짜
@@ -59,6 +79,16 @@ TABLE_TOOLBAR_CLEARANCE = 24
 # 더하고 지우는 표 112px · 행이 고정된 표 92.4px — 샘플 관측)가 그 빈 위에 서므로 표 앞 띄움 없이
 # 표가 줄 바로 아래(줄 사이 14px)에 붙는다. 넓은 막대보다 8px 남긴다(AGENTS 9장 「표 도구 막대」).
 TABLE_TOOLBAR_ROOM = 120
+
+
+def file_name_part(text: str, *, fallback: str) -> str:
+    """내려받는 파일 이름의 한 토막 — 경로 · 예약 글자(`\\ / : * ? " < > |`)와 빈칸을 `_` 로,
+    겹친 `_` 는 하나로, 앞뒤 `_` 는 걷는다. 남는 글자가 없으면 `fallback`. 설비 시나리오 이름 ·
+    공정 표시명처럼 사람이 적은 글을 파일 이름에 실을 때 쓴다."""
+    cleaned = "".join("_" if char in '\\/:*?"<>|' or char.isspace() else char for char in text)
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned.strip("_") or fallback
 
 
 def render_csv_download(
@@ -126,8 +156,9 @@ class SheetFile:
 
 
 def download_menu_key(key: str) -> str:
-    """CSV 단추 key 로 짓는 「내려받기 ▾」 메뉴 key(`table_heading_row`)."""
-    return f"{key}_menu"
+    """CSV 단추 key 로 짓는 「내려받기 ▾」 메뉴 key(`table_heading_row`) — 접두어
+    `DOWNLOAD_MENU_KEY_PREFIX` 로 시작한다."""
+    return f"{DOWNLOAD_MENU_KEY_PREFIX}{key}"
 
 
 def render_download_pair(
@@ -138,10 +169,14 @@ def render_download_pair(
 
     시트 바이트를 아직 짓지 못한 회차(공정 Capa 상세 — 제품 행 표를 받은 뒤에야 짓는다)는
     `sheet=None` 으로 부르고, 돌려받은 그 칸에 나중에 `render_sheet_download` 를 부른다. CSV 가 없는
-    표(`csv=None`)는 묶을 것이 없어 메뉴 없이 내용 폭 엑셀 칸만 줄에 선다.
+    표(`csv=None`)는 묶을 것이 없어 메뉴 없이 내용 폭 엑셀 칸만 줄에 선다 — 그 칸이 `menu_key` 를
+    받는다. `menu_key` 는 `DOWNLOAD_MENU_KEY_PREFIX` 로 시작해야 한다 — 줄에 선 메뉴 · 칸의 높이
+    (`DOWNLOAD_MENU_STYLE`)가 그 접두어로 걸린다.
     """
+    if not menu_key.startswith(DOWNLOAD_MENU_KEY_PREFIX):
+        raise ValueError(f"메뉴 key 는 {DOWNLOAD_MENU_KEY_PREFIX!r} 로 시작합니다: {menu_key!r}")
     if csv is None:
-        slot = st.container(width="content")
+        slot = st.container(width="content", key=menu_key)
     else:
         with st.popover(DOWNLOAD_MENU_LABEL, icon=DOWNLOAD_ICON, key=menu_key):
             render_csv_download(

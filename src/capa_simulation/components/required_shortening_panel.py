@@ -115,6 +115,7 @@ from capa_simulation.components.shortening_progress_panel import (
     progress_style,
     progress_summary_markup,
     progress_view,
+    read_baseline_options,
     render_baseline_controls,
     render_baseline_notice,
     render_compare_select,
@@ -132,6 +133,7 @@ from capa_simulation.components.shortening_source import (
     shortening_filter_profile_or_default,
     shortening_month_options,
 )
+from capa_simulation.components.shortening_timeline import UNIT_NAME_STYLE, unit_name
 from capa_simulation.components.shortening_timeline import month_day as _month_day
 from capa_simulation.components.shortening_timeline import timeline_axis as _axis
 from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
@@ -883,10 +885,13 @@ def _render_view_choices(database_path: str | None) -> tuple[str, ...] | None:
     상자는 카드 폭을 다 쓰는 칸이다 — 기준선 라벨(「저장일 · 이름」)이 반 칸에서는 닫힌 칸 · 펼친
     목록 모두 끝이 잘렸다. 돌려주는 값은 상자에 세운 기준선 id 들(상자가 없으면 None)이다 — 본문
     프래그먼트가 목록이 바뀌었는지 견준다(`_view_choices`)."""
-    baselines = load_baseline_options(database_path)
-    if baselines is None:
+    read = read_baseline_options(database_path)
+    if read is None:
         return None
-    render_compare_select(baselines, on_change=_rerun_view, args=(SHORTENING_COMPARE_KEY,))
+    baselines, listed = read
+    render_compare_select(
+        baselines, listed=listed, on_change=_rerun_view, args=(SHORTENING_COMPARE_KEY,)
+    )
     return tuple(summary.baseline_id for summary in baselines)
 
 
@@ -1741,8 +1746,7 @@ def _style() -> str:
   position:sticky;left:0;z-index:1;background:{tokens.SURFACE_SUBTLE}}}
 @container {UNITS_CONTAINER} (width < {_UNIT_STICKY_MIN_PX}px) {{
   .shk-unit-label {{position:static}}}}
-.shk-unit-name {{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;min-width:0}}
+.shk-unit-name {{font-weight:700;font-size:13.5px;{UNIT_NAME_STYLE};min-width:0}}
 .shk-unit-dates {{flex:none;font-size:13px;color:{tokens.TEXT};white-space:nowrap;
   font-variant-numeric:tabular-nums}}
 .shk-unit-dates .shk-muted {{font-size:12px}}
@@ -2158,7 +2162,7 @@ def _unit_row(
     ]
     return (
         f'<div class="shk-unit" title="{_escape(" · ".join(details))}">'
-        f'<div class="shk-unit-label"><span class="shk-unit-name">{name}</span>'
+        f'<div class="shk-unit-label">{unit_name(name)}'
         f'<span class="shk-unit-dates">{dates}</span></div>'
         f'<div class="shk-track">{lines}{marks}</div>'
         f'<div class="shk-result">{result}</div></div>'

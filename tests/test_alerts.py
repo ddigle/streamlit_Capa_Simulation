@@ -50,6 +50,17 @@ def test_state_codes_for_the_screen_bundles_are_registered(
     assert (spec.level, spec.kind, spec.title) == (level, "state", title)
 
 
+def test_the_baseline_gone_event_is_registered_after_the_screens_state_codes() -> None:
+    """필요 단축 일정 「진척 비교」 에서 보던 기준선이 다른 곳에서 지워진 회차의 사건 알림은 그
+    화면 접두(`RS-`)의 다음 번호다 — 알림 단계(Alarm 에 남는다, 남은 물음 보드 D4 (나))."""
+    spec = alerts.spec("RS-06")
+    assert (spec.level, spec.kind, spec.title) == (
+        "info",
+        "event",
+        "필요 단축 일정 — 보던 기준선이 지워져 진척 비교를 끔",
+    )
+
+
 def test_the_registry_refuses_a_duplicate_or_malformed_code() -> None:
     first = alerts.AlertSpec("ZZ-01", "info", "event", "시험")
     with pytest.raises(ValueError, match="겹칩니다"):

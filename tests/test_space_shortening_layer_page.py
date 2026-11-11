@@ -972,7 +972,12 @@ def test_a_target_typed_in_the_space_picker_paints_that_target_with_the_same_par
     받는다."""
     from capa_simulation.components.floor_canvas_dialog import FLOOR_CANVAS_DIALOG_KEY
     from capa_simulation.components.space_shortening_view import LEVEL_FIELD as SPACE_FIELD
-    from capa_simulation.components.target_level_field import TargetLevelField, entry_out_of_range
+    from capa_simulation.components.target_level_field import (
+        ENTRY_UNIT_LABEL,
+        TargetLevelField,
+        entry_out_of_range,
+        entry_style,
+    )
 
     assert isinstance(SPACE_FIELD, TargetLevelField)
     assert LEVEL_ENTRY_KEY == SPACE_FIELD.entry_key
@@ -983,6 +988,11 @@ def test_a_target_typed_in_the_space_picker_paints_that_target_with_the_same_par
     _ok(app.run())
     assert app.radio(key=LEVEL_PICK_KEY).value == 1.1
     assert app.number_input(key=LEVEL_ENTRY_KEY).value == 110.0
+    # 같은 부품이라 Space 칸도 − · + · ⊗ 를 숨긴다 — 이 칸 key 로만(남은 물음 보드
+    # Q226-stepper (나)).
+    assert ENTRY_UNIT_LABEL + entry_style(LEVEL_ENTRY_KEY) in [
+        str(item.value) for item in app.caption
+    ]
 
     app.number_input(key=LEVEL_ENTRY_KEY).set_value(40.0)
     _ok(app.run())

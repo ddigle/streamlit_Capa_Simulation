@@ -30,6 +30,7 @@ from capa_simulation.components.shortening_progress_panel import (
     NO_COMPARISON,
     SHORTENING_COMPARE_KEY,
 )
+from capa_simulation.components.shortening_timeline import unit_name
 from capa_simulation.equipment_scenario_activation import SELECTION_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
@@ -194,6 +195,8 @@ def test_a_saved_baseline_is_listed_and_compares_two_lanes_per_unit(
     cards = _progress_cards(app)
     assert cards, body[:400]
     assert body.count('class="shk-prog-tags"><span>과거</span><span class="now">현재</span>') >= 2
+    # 호기 이름 칸은 공정 카드와 같은 꼴 — 넘치면 앞을 줄이고 끝을 남긴다(남은 물음 보드 D6 (다)).
+    assert f'<div class="shk-prog-label">{unit_name(faster)}' in body
     frame = _progress_csv(app)
     assert list(frame.columns) == list(PROGRESS_EXPORT_COLUMNS)
     rows = frame.set_index("호기")

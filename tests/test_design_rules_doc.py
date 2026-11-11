@@ -12,6 +12,7 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 보드 · 칩 자리 · 상단 판단 줄과 답 · 메모 원문 · 새 규칙(v1.12) · 상단 정리 검수 보드 줄과 고른
 글 · 메모 원문 · 해석 셋(v1.13) · 2차 검수 보드 · 밤샘 다 물음 줄과 고른 글 · 갈래 수 · 답 밖
 줄(v1.14) · 「권장대로 반영 결과」 보드 줄과 고른 글 · 고칠 것 메모 원문 · 닫힌 따라온 물음(v1.15) ·
+「남은 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 · 메모 해석(v1.16) ·
 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
@@ -1196,11 +1197,10 @@ def test_the_result_board_answers_are_recorded_and_the_fix_is_in_the_rules() -> 
     닫힌 줄 열하나가 차례대로 한 줄씩이다. 고칠 것은 UI-LAY-02 예외 · UI-INP-05 근거 · 6-14 Q2-26
     밑 들여쓴 줄에 들고, 6-14 의 다른 줄은 그때 기록 그대로다(앞 시험이 본다)."""
     document = _text()
-    assert "판 v1.15" in document.split("\n## 1. ")[0]
     assert "- **v1.15 — 2026-11-11.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-15. ") :]
+    board = section[section.index("\n### 6-15. ") : section.index("\n### 6-16. ")]
     assert "https://claude.ai/artifact/QNkbQ4RA3brfurDztUevCN" in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -1222,3 +1222,105 @@ def test_the_result_board_answers_are_recorded_and_the_fix_is_in_the_rules() -> 
     assert RESULT_BOARD_MEMO in rules["UI-INP-05"].fields["근거"][0]
     earlier = section[section.index("\n### 6-14. ") : section.index("\n### 6-15. ")]
     assert "\n  - 2026-11-11 사용자 고칠 것 — 직접 입력" in earlier
+
+
+# 2026-11-11 「남은 물음 11-11」 보드(6-16)의 답 — 카드 스물, 고른 선택지는 모두 카드
+# 권장이다. 고친 열은 갈래 셋(`night/board-a-1111` · `night/board-b-1111` ·
+# `night/board-c-1111`)이 입혔고, 그대로 일곱은 코드 · 규칙 글을 바꾸지 않았다. D8 은
+# 선택지 없는 메모 카드라 메모 원문이 고른 글이다.
+REMAINING_BOARD_ADDRESS = "https://claude.ai/artifact/8QQvnxf6SypbaezyGKNjBF"
+REMAINING_BOARD_FIXED = {
+    "Q226-stepper": (
+        "(나) 이 팝업 숫자 칸만 − · + · ⊗ 를 숨기고 Enter · 칸 떠남으로만 적용 — ↑/↓ 키는 그대로"
+        " 한 걸음 적용"
+    ),
+    "B2": "(가) 예를 짧게 — 「표시순서 변경」 · 「26.07 PM 1.5대」",
+    "B3": "(가) 두 파일 이름 끝에 공정 이름을 붙인다",
+    "C1": "(가) 공정 Capa 상세 Q2-29 처럼 잠그지 않고 세움",
+    "C9": "(나) render_download_pair 한 곳에서 같은 높이",
+    "D1": '(나) 모두 통째로 내려가는 꼴("push")로 — 좁으면 통째로 내려가고 접히지 않음',
+    "D2": (
+        "(가) e4-1 처럼 전환 줄 오른쪽 끝 칸에 작은 글로 — 표지 둘이 함께 서면 1100 창에서 접히는지"
+        " 다시 잼"
+    ),
+    "D3": "(나) 아이콘을 붙임(한 줄)",
+    "D4": (
+        "(나) 그 회차에 알림창 사건을 한 번 냄(알림 단계 · Alarm 기록 — 예 「보던 기준선 「…」 이"
+        " 지워져 진척 비교를 껐습니다」), 화면 자리에는 글을 달지 않음"
+    ),
+    "D6": "(다) 앞을 줄이고 이름 끝(호기 번호)을 남기는 말줄임",
+}
+REMAINING_BOARD_KEPT = {
+    "Q226-csv": "(가) 그대로",
+    "Q226-baseline": "(가) 그대로",
+    "Q226-compare": "(가) 그대로",
+    "C3": "(가) 그대로",
+    "C10": "(가) 그대로",
+    "D5": "(가) 지금대로",
+    "D7": "(가) 지금대로",
+}
+REMAINING_BOARD_ORDER = (
+    "Q2-26-fix",
+    "Q226-csv",
+    "Q226-baseline",
+    "Q226-compare",
+    "Q226-stepper",
+    "B2",
+    "B3",
+    "C1",
+    "C3",
+    "C6",
+    "C9",
+    "C10",
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6",
+    "D7",
+    "D8",
+)
+REMAINING_BOARD_LATER = (
+    "(가) CSV 와 시트 엑셀 하나를 「내려받기 ▾」 메뉴로 — 공정 공유 2차를 합친 뒤"
+)
+
+
+def test_the_remaining_questions_board_answers_are_recorded() -> None:
+    """v1.16 — 6-16 은 보드 카드 스물이 보드 차례대로 한 줄씩이고 고른 글은 선택지
+    원문이다. 고친 열 줄은 커밋을 들고, 그대로 일곱 · C6(공정 공유 2차를 합친 뒤) ·
+    D8(메모)은 커밋이 없다. D8 은 메모 원문 「권장대로」 를 「D7 과 한 번에 — 지금대로」
+    로 읽은 것을 밝힌다. 6-15 줄은 그때 기록 그대로다(앞 시험이 6-16 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.16" in document.split("\n## 1. ")[0]
+    assert "- **v1.16 — 2026-11-11.**" in _chapter(document, 8)
+    assert "6-16 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-16. ") :]
+    assert REMAINING_BOARD_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-11) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == REMAINING_BOARD_ORDER
+    assert len(REMAINING_BOARD_FIXED) == 10 and len(REMAINING_BOARD_KEPT) == 7
+    for key, answer in {**REMAINING_BOARD_FIXED, **REMAINING_BOARD_KEPT}.items():
+        assert found[key] == answer, key
+    assert found["Q2-26-fix"] == "좋음"
+    assert found["C6"] == REMAINING_BOARD_LATER
+    assert found["D8"] == "메모 「권장대로」"
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key in (*REMAINING_BOARD_FIXED, "Q2-26-fix"):
+        assert commit.search(by_id[key]), key
+    for key in (*REMAINING_BOARD_KEPT, "C6", "D8"):
+        assert not commit.search(by_id[key]), key
+    assert "「D7 과 한 번에 — 지금대로」" in by_id["D8"]
+    assert "pp2 합친 뒤 할 일" in by_id["C6"]

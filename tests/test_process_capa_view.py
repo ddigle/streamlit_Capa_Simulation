@@ -53,6 +53,7 @@ from capa_simulation.components.process_capa_view import (
     cause_summary,
     contributing_units,
     demand_card,
+    detail_file_names,
     evidence_cards,
     evidence_cards_html,
     initial_scroll_px,
@@ -1016,3 +1017,24 @@ def test_the_gap_link_remembers_the_static_tab_without_touching_its_widget_or_fi
     assert app.session_state[remembered_tab_key(EQUIPMENT_SUMMARY_TAB_KEY)] == EQUIPMENT_GAP_TAB
     assert EQUIPMENT_TAB_KEY not in app.session_state
     assert EQUIPMENT_SUMMARY_TAB_KEY not in app.session_state
+
+
+def test_the_download_names_end_with_the_shown_process_name() -> None:
+    """두 파일 이름은 조회 달 · (UPEH 가정이면) 가정 꼬리 뒤 끝에 화면의 공정 이름(표시명)을 단다 —
+    못 쓰는 글자 · 빈칸은 `_` 로(2026-11-11 남은 물음 보드 B3)."""
+    months = (202611, 202612, 202812)
+    plain = detail_file_names(months, process_label="Mold")
+    assert plain.units_csv == "process_capa_detail_units_202611_202812_Mold.csv"
+    assert plain.sheet == "process_capa_detail_202611_202812_Mold.xlsx"
+    # 원본과 다른 표시명 · 경로 글자 · 빈칸 — 표시명 그대로 싣되 못 쓰는 글자는 `_` 하나.
+    odd = detail_file_names(months, process_label="WF 입고/검사: A?")
+    assert odd.sheet == "process_capa_detail_202611_202812_WF_입고_검사_A.xlsx"
+    assert odd.units_csv == "process_capa_detail_units_202611_202812_WF_입고_검사_A.csv"
+    # UPEH 가정 꼬리는 달 바로 뒤, 공정 이름은 그 뒤 끝이다(두 파일 같은 차례).
+    assumed = detail_file_names(months, process_label="Mold", upeh_token=(120, (202701, 202706)))
+    assert assumed.sheet == "process_capa_detail_202611_202812_upeh120_202701_202706_Mold.xlsx"
+    assert assumed.units_csv == (
+        "process_capa_detail_units_202611_202812_upeh120_202701_202706_Mold.csv"
+    )
+    # 표시명이 쓸 글자를 남기지 않으면 꼬리는 「process」.
+    assert detail_file_names(months, process_label=" / ").sheet.endswith("_202812_process.xlsx")

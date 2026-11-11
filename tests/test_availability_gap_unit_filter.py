@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sheet_reader import sheet_hovers, sheet_value
 from streamlit.testing.v1 import AppTest
+from test_availability_gap_panel import _descendants, switch_row_end
 
 from capa_simulation.components.availability_gap_panel import (
     DETAIL_MODE_KEY,
@@ -192,6 +193,12 @@ def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
     (band,) = [caption for caption in app.caption if "호기 2개만 더합니다" in caption.value]
     assert band.proto.help == UNIT_FILTER_HELP
     assert "호기 속성이 없어" not in captions
+    # 그 줄은 혼자 한 줄을 세우지 않고 「조회 결과 · 표시」 전환 줄 오른쪽 끝 칸의 작은 글이다 —
+    # 「내려받기 ▾」 메뉴 앞(2026-11-11 보드 D2 — e4-1 과 같은 꼴).
+    assert all(child is not band for child in app.main.children.values())
+    end = switch_row_end(app)
+    assert band in _descendants(end)
+    assert list(end.children.values())[0] is band
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
     assert not app.exception
