@@ -1,4 +1,4 @@
-# Purpose: 공개 저장소에 사내 호스트·개인키·키/인증서 파일이 들어오지 않는지 감시한다.
+# Purpose: 공개 저장소에 사내 호스트·S3 값·사람 이름·개인키·키/인증서 파일이 안 들어오게 감시한다.
 
 """공개 저장소 위생.
 
@@ -6,11 +6,17 @@
 인증서)이 대화로 오갔다 — 그 값은 C-DEP 환경변수 표에만 두고 파일 · 시험 · 문서 · 커밋에는 쓰지
 않는다. 이 시험은 그중 파일을 지킨다(커밋 메시지 · 가지 이름은 못 본다 — 손 규칙, AGENTS 10장).
 
-찾을 글자는 조각을 이어 만든다 — 이 파일 원문이 스스로 걸리지 않게. 회사 도메인 접미사(첫째)는 이
-작업 전부터 있던 자리만 **파일별 수로 고정**해 허용한다(사내 BigDataQuery · 오브젝트 스토리지 · 사내
-패키지 인덱스). 새 파일이나 늘어난 수는 실패, 줄어들면 「목록도 줄인다」 로 실패한다 — 목록이 낡지
-않게. 사내에만 생기는 최상위(`review/` · `modules/` · `.deploy/`)는 보지 않는다 — 사내 리뷰 글이
-사내 주소를 담아도 사내 관문이 깨지지 않게.
+찾을 글자는 조각을 이어 만든다 — 이 파일 원문이 스스로 걸리지 않게. 회사 도메인 접미사(첫째)는
+사내 빌드가 실제로 쓰는 두 줄(운영 이미지 기반 · 사내 패키지 인덱스)만 **파일별 수로 고정**해
+허용한다. 새 파일이나 늘어난 수는 실패, 줄어들면 「목록도 줄인다」 로 실패한다 — 목록이 낡지 않게.
+사내에만 생기는 최상위(`review/` · `modules/` · `.deploy/`)는 보지 않는다 — 사내 리뷰 글이 사내
+주소를 담아도 사내 관문이 깨지지 않게.
+
+사내 오브젝트 스토리지 값(저장소 호스트 · 버킷 이름 접두 · 네임스페이스)과 사람 이름 · 회사 메일
+도메인도 같은 꼴로 지킨다(2026-11-12 사용자 결정 — 문서는 자리표, 코드는 환경변수로만). 사람 이름 ·
+메일 도메인 바늘은 이 파일에 새로 적지 않고 앱 연락 메일(`settings.APP_CONTACT_EMAIL`)에서 읽으며,
+허용은 그 한 자리뿐이다. 바늘은 base64 그림 안에서 우연히 맞지 않게 길게 잡았고, 실패 글에는 바늘
+값 대신 이름만 싣는다(공개 CI 기록에 값이 남지 않게).
 """
 
 from __future__ import annotations
@@ -21,11 +27,24 @@ from pathlib import Path
 
 from test_repository_hygiene import _core_tracked, _tracked
 
+from capa_simulation import settings
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 COMPANY_SUFFIX = ("sams" + "ungds").encode("ascii")
 SSO_SUFFIX = ("sec" + "sso").encode("ascii")
 CDEP_HOST = b"cdep." + COMPANY_SUFFIX
+# 사내 값 바늘 — 이름 → (소문자 글자, 허용 자리 · 수). 앞 셋은 조각을 잇고 뒤 둘은 연락 메일에서
+# 읽는다.
+_CONTACT_LOCAL, _CONTACT_DOMAIN = settings.APP_CONTACT_EMAIL.lower().split("@", 1)
+_CONTACT_PLACE = {"src/capa_simulation/settings.py": 1}
+IN_HOUSE_NEEDLES: dict[str, tuple[bytes, dict[str, int]]] = {
+    "저장소 호스트": (("data" + "platform").encode("ascii"), {}),
+    "버킷 이름 접두": (("spkg" + "capa").encode("ascii"), {}),
+    "네임스페이스": (("system" + "_package").encode("ascii"), {}),
+    "사람 이름": (_CONTACT_LOCAL.encode("ascii"), _CONTACT_PLACE),
+    "회사 메일 도메인": (f"@{_CONTACT_DOMAIN}".encode("ascii"), _CONTACT_PLACE),
+}
 PRIVATE_KEY_MARK = re.compile(b"-----BEGIN" + rb"[A-Z ]*" + b"PRIVATE" + rb" KEY-----")
 KEY_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".cer", ".crt", ".der", ".jks")
 
@@ -68,6 +87,31 @@ def test_company_suffix_stays_in_the_fixed_places() -> None:
         f"환경변수로 받고 예시는 example.invalid 로 적습니다: {new_places}"
     )
     assert not shrunk, f"허용 자리가 줄었습니다. `COMPANY_SUFFIX_ALLOWED` 도 줄입니다: {shrunk}"
+
+
+def test_in_house_storage_values_and_people_stay_out() -> None:
+    """사내 S3 값 · 사람 이름이 추적 파일에 다시 들어오면 실패한다. 허용 자리가 줄어도 실패한다."""
+    files = _core_files()
+    new_places: dict[str, dict[str, int]] = {}
+    shrunk: dict[str, dict[str, tuple[int, int]]] = {}
+    for label, (needle, allowed) in IN_HOUSE_NEEDLES.items():
+        found = {path: data.count(needle) for path, data in files.items() if needle in data}
+        grown = {path: count for path, count in found.items() if count > allowed.get(path, 0)}
+        fewer = {
+            path: (count, found.get(path, 0))
+            for path, count in allowed.items()
+            if found.get(path, 0) < count
+        }
+        if grown:
+            new_places[label] = grown
+        if fewer:
+            shrunk[label] = fewer
+
+    assert not new_places, (
+        "사내 값이 추적 파일에 들어왔습니다. 문서는 자리표(<사내 S3 주소> 꼴)로, 코드는 "
+        f"환경변수로만 받습니다(docs/objectstore_setup.md 1 · 2장): {new_places}"
+    )
+    assert not shrunk, f"허용 자리가 줄었습니다. `IN_HOUSE_NEEDLES` 도 줄입니다: {shrunk}"
 
 
 def test_sso_and_service_hosts_never_appear() -> None:
@@ -183,4 +227,7 @@ def test_the_needles_do_not_match_their_own_source() -> None:
 
     assert COMPANY_SUFFIX not in source
     assert SSO_SUFFIX not in source
+    for label, (needle, _allowed) in IN_HOUSE_NEEDLES.items():
+        assert needle not in source, label
+    assert len(_CONTACT_LOCAL) >= 6, "연락 메일 앞자리가 짧으면 바늘이 우연히 맞는다"
     assert not PRIVATE_KEY_MARK.search(source.upper())

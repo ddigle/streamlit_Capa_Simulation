@@ -1778,7 +1778,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 주소 · 버킷 · 프로필(`CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · `CAPA_S3_PROFILE`)은 사내 값이라 **환경변수로만** 받는다 — 코드 · 설정 파일에
     기본값이 없고(공개 저장소, 2026-11-12 사용자 결정) 하나라도 비면 `aws` 를 부르기 전에 넣을 이름을 대고 멈춘다(`require_settings` — 실패
     갈래 `config`). 값을 읽는 `load_settings` 는 멈추지 않는다(동기화를 쓰지 않는 앱이 설정 오류로 내려앉지 않게). 모드 · 영역은
-    `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다.
+    `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다. 사내 값의 꼴이 추적 파일에 다시 들어오면
+    `tests/test_public_repo_hygiene.py` 가 실패한다(10장).
 - `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일 · 모듈 데이터 파일 — 모듈 쪽은 `module_helpers` 가 상한 8 MiB · 크기에 맞춘 마감을 넘긴다)를 앱 프로세스가 직접 GET · PUT · HEAD 하는 경계. 콜백 자리에서 `aws` 프로세스를 띄우지 않고 프로필 없이 환경변수 키로 붙고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
 - `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 숫자처럼 보이는 글자 칸(글자로 둔 달 머리 「26.11」 — 숫자로 두면 「26.1」 처럼 끝 0 이 사라진다)은 작성기가 스스로 모아 시트의 「오류 무시」 표지(`ignoredErrors` · `numberStoredAsText` — `pageMargins` 바로 뒤, 이웃 칸은 범위로 묶음)로 덮어 Excel 의 초록 삼각형(「텍스트 형식으로 저장된 숫자」)을 끈다 — 시트를 짓는 쪽은 범위를 넘기지 않고, 숫자 칸 · 숫자로 안 보이는 글자 칸은 덮지 않는다(2026-11-11 사용자 실기 Q2-6). 같은 입력은 같은 바이트다. 작성기가 내는 바이트가 바뀌면 통을 세션에 기억하는 세 판(`process_capa_view.SHEET_SCHEMA_VERSION` · `availability_gap_panel.GAP_SHEET_SCHEMA_VERSION` · `calculation_result.SHEET_SCHEMA_VERSION`)을 함께 올린다 — 올리지 않으면 같은 조건의 옛 통이 세션에서 그대로 나온다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py` — 되읽기는 표준 라이브러리 시험 도우미 `tests/xlsx_read.py`).
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
@@ -7755,7 +7756,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 `*.example.invalid` · `demo.*`), **커밋 메시지 · 브랜치 이름에도 적지 않는다**(감시 시험이 보지 못하는 자리라 손 규칙이다). 접속 명단은 C-DEP 환경변수 표와 S3 명단 파일에만 둔다(5장 37) — `config/` 에도 앱 DB 에도 두지 않고 리뷰에 옮기지 않는다. 키 · 인증서 파일
 (`*.pem` · `*.key` · `*.p12` · `*.pfx` · `*.cer` · `*.crt` · `*.der` · `*.jks` · `cert/`)은 커밋하지 않는다 — `.gitignore` ·
 `.dockerignore` · 배포 ZIP 금지 접미사가 막고 `tests/test_public_repo_hygiene.py` 가 회사 도메인 접미사 · 개인키 표지 · 그
-확장자를 감시한다. 시험 키는 실행 때 만든다(`tests/sso_support.py`). 실제 값은 C-DEP 배포 설정의 환경변수 표에서만 들어오고,
+확장자를 감시한다. **사내 오브젝트 스토리지 값(주소 · 버킷 이름 · 프로필 이름 · 네임스페이스)과 사람 이름도 같다**(2026-11-12 사용자 결정) —
+문서는 자리표(`<사내 S3 주소>` 꼴), 코드는 환경변수로만 받고(3장 `io/object_storage.py`), 같은 시험이 그 꼴과 연락 메일의 이름 · 도메인을
+앱 연락 메일 한 자리 밖에서 막는다. 회사 도메인은 사내 빌드가 실제로 쓰는 두 줄(운영 이미지 기반 · `requirements-company.txt` 의
+`--index-url`)만 남았다. 시험 키는 실행 때 만든다(`tests/sso_support.py`). 실제 값은 C-DEP 배포 설정의 환경변수 표에서만 들어오고,
 비밀값 `JWT_SECRET_KEY` · S3 명단 키 둘은 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start` — 하위 프로세스가 물려받지
 않게 할 뿐, 기동 때 환경 사본은 `/proc/<pid>/environ` 에 남고 같은 프로세스 코드는 메모리에 닿는다). 시작 스크립트는 통합인증
 값을 앱에 넘기되 결과 파일에는 이름(있음/없음)만 남기고 하위 프로세스에는 비밀값을 넘기지 않는다. 화면 · 로그 · 리뷰에 토큰 ·
