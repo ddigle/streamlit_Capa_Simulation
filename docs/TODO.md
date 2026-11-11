@@ -1600,7 +1600,7 @@
 ### 화면
 
 - (2026-11-11) **계산 멈춤 글의 예시 행 · 점검 풍선 머리**(입력 점검 검토 보드 F7 (나) 「풍선 머리를 「rN」 으로, 예시는 「YY.MM 공정 표시명
-  양산구분」 으로(따로 가지)」, 가지 `feat/stop-notice-1111` — `5cc4dd9`, 다음 배포 몫). 목록 관리 「점검」 멈춤 부제 풍선(계산 멈춤 알림 전문)은
+  양산구분」 으로(따로 가지)」, 가지 `feat/stop-notice-1111` — `5cc4dd9` · `c4759e6`, 다음 배포 몫). 목록 관리 「점검」 멈춤 부제 풍선(계산 멈춤 알림 전문)은
   첫머리가 화면 이름 대신 그 리비전 「rN」 이다(`calculation_stop_notice(place=)`). 계산 멈춤 알림 전문(HOME · Static Capa · 산출 결과 · 표준 목표 —
   알림이 알아보지 못하는 멈춤 글도 `bootstrap_error_message(labels=)`), 저장 · 복제 · 공식 지정 · 월 머지 · 연도 Shift 경고(`capacity_gate` — 표시명은
   끼울 오류 글이 있을 때만 읽음), 등록 경고의 예시 행은 dict 꼴 대신 「YY.MM 공정 표시명 양산구분」 이다(`components/stop_examples.py` — 월 → 공정 →
@@ -4974,7 +4974,7 @@
       (나) 점검 칸은 캐시 없는 읽기(저장소 `load_revision(apply_global_display_order=False)` 그대로)로 — 요약 칸 하나만 남는다(SPEC 결정 18 의 호출 이름과
       AGENTS 5장 39 줄을 함께 고침). 권장 (나).
     - ~~**멈춤 부제 풍선 글**~~(검토 지적) — 2026-11-11 닫음: 검토 보드 F7 (나) 「풍선 머리를 「rN」 으로, 예시는 「YY.MM 공정 표시명 양산구분」
-      으로(따로 가지)」 — 가지 `feat/stop-notice-1111`(`5cc4dd9`, 다음 배포 몫), 3장 「화면」 같은 날 · 규칙집 6-15 ic-3.
+      으로(따로 가지)」 — 가지 `feat/stop-notice-1111`(`5cc4dd9` · `c4759e6`, 다음 배포 몫), 3장 「화면」 같은 날 · 규칙집 6-15 ic-3.
     - **F7 뒤 남은 둘**(2026-11-11 — `feat/stop-notice-1111`) — ① 필요 단축 일정 화면과 Space 「필요 단축」 보기의 계산 멈춤 글(수요를 못 읽음 —
       `shortening_source.load_shortening_demand`)은 아직 dict 꼴 · 원본 공정명이다. 두 자리는 공정 표시명을 쥐고 있지 않아 이번에 새로 읽지 않았다.
       (가) 지금대로 · (나) 그 `except` 에서 표시명을 읽어(`bootstrap_error_message(labels=)`) 같은 꼴. 권장 (나) — 멈춘 회차에만 읽는다. ② 키가
