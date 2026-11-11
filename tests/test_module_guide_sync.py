@@ -565,8 +565,10 @@ def test_the_pr_check_merges_only_the_head_it_checked() -> None:
 
 def test_the_pr_check_looks_for_credential_reads_the_static_rules_do_not_see() -> None:
     """런북 4-6 — 통합 검수 D6 (가)는 키를 앱 환경변수로 넘기는 구조를 두는 대신 PR 점검으로 본다.
-    `check_module.py` 는 환경변수 **읽기**를 보지 않으므로 두 셸의 찾는 줄이 PR 이 더한 줄에서 읽는
-    꼴을 찍어야 하고, 지운 줄 · 무관한 줄은 찍지 않는다. 런북이 말한 규칙 번호는 지침서와 같다."""
+    `check_module.py` 는 자격 이름 · 토큰 파일 자리(M21) 밖의 환경변수 **읽기**를 보지 않으므로 두
+    셸의 찾는 줄이 PR 이 더한 줄에서 읽는 꼴 · `bigdataquery` 직접 import(2026-11-12 「도우미
+    함수로」 — 찾는 글을 넓힘)를 찍어야 하고, 지운 줄 · 무관한 줄은 찍지 않는다. 런북이 말한 규칙
+    번호는 지침서와 같다."""
     runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
     body = re.split(r"\n#{2,3} ", runbook.partition("### 4-6.")[2], maxsplit=1)[0]
     patterns = [pattern for pattern in _runbook_pr_patterns(body) if "CAPA_S3_" in pattern]
@@ -579,13 +581,23 @@ def test_the_pr_check_looks_for_credential_reads_the_static_rules_do_not_see() -
             '+    os.getenv("AWS_SECRET_ACCESS_KEY")',
             '+    Path.home() / ".aws" / "credentials"',
             "+import boto3",
+            "+import bigdataquery",
+            "+from bigdataquery import getData",
+            '+    user = os.environ["CAPA_BDQ_USER_NAME"]',
+            '+    token = Path("/config/.credential") / name',
         ):
             assert re.search(pattern, reads), reads
         assert not re.search(pattern, '-    key = os.environ["CAPA_S3_SECRET_KEY"]')
         assert not re.search(pattern, '+    return ctx.data_dir / "result.csv"')
+        assert not re.search(pattern, "+    rows = api.query_bigdataquery(ctx, SQL)")
 
     assert "**읽기는 보지 않는다**" in body and "통합 검수 D6 (가)" in body
-    for rule, word in (("M07", "`.aws/`"), ("M11", "`os.environ` 쓰기")):
+    for rule, word in (
+        ("M07", "`.aws/`"),
+        ("M11", "`os.environ` 쓰기"),
+        ("M21", "`CAPA_BDQ_`"),
+        ("M21", "`.credential`"),
+    ):
         assert rule in body and word in body
         assert any(line.startswith(f"| {rule} |") and word in line for line in GUIDE.splitlines())
 

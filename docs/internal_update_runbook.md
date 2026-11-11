@@ -833,7 +833,7 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
    git diff --name-only "origin/main...$pr"
    git diff --name-only --diff-filter=A "origin/main...$pr" -- "modules/*/module.json"
    git diff "origin/main...$pr" -- "modules/*/module.json" | Select-String '^\+\s*"maturity"\s*:\s*"L2"'
-   git diff "origin/main...$pr" -- "modules/" | Select-String '^\+.*(environ|getenv|CAPA_S3_|AWS_|\.aws|boto)'
+   git diff "origin/main...$pr" -- "modules/" | Select-String '^\+.*(environ|getenv|CAPA_S3_|CAPA_BDQ_|AWS_|\.aws|\.credential|(import|from) bigdataquery|boto)'
    ```
 
    - 둘째 줄이 `1` 이면 PR 이 지금 사내 main 보다 뒤처져 있다(점검이 옛 코어로 돈다). 담당자에게 PR 화면의 「Update branch」 를 눌러 달라고
@@ -842,8 +842,8 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
    - 넷째 줄이 찍으면 새 모듈이다 — 사용자가 등록을 승인했는지 묻는다(PR 본문의 `승인: 앱 관리자 <날짜>` — 4-8 에서 사용자가 답장한
      날짜). 사용자가 합치는 것이 승인이다.
    - 다섯째 줄이 찍으면 성숙도를 `L2` 로 올리는 PR 이다(배지가 떨어진다 — 지침서 3-4) — 넷째 줄과 같이 사용자가 승인했는지 묻는다.
-   - 여섯째 줄은 **모듈 코드가 환경변수 · 프로필 파일로 자격증명을 읽지 않는지** 본다(2026-11-07 통합 검수 D6 (가) — S3 키를 앱 환경변수로 넘기는 구조를 두는 대신 이 줄로 본다). `check_module.py` 는 글자 `.aws/`(M07)와 `os.environ` 쓰기(M11)만 잡고 환경변수 **읽기는 보지 않는다** — 그래서 점검이 통과여도 이 줄이 찍을 수 있다. 찍힌 줄마다 PR 코드를 읽어, 자격증명 · 비밀을 읽는 꼴이면(`CAPA_S3_*` · `AWS_*` · `~/.aws` · 인자 없이 만든 `boto3` 클라이언트) 합치지 않고 사용자에게 알린다. 자기 설정값을 읽을 뿐이면 그 사실만 함께 적는다. 글자로 찾는 줄이라 이름을 이어 만든 꼴은 못 잡는다 — 위 「`module_api` 밖으로 닿으려는 꼴」 읽기를 대신하지 않는다.
-   - WebIDE(bash)면 `pr=$(git rev-parse FETCH_HEAD)` 로 고정하고, 둘째 줄 끝은 `; echo $?`, 다섯째 줄 끝은 `| grep -E '^\+\s*"maturity"\s*:\s*"L2"'`, 여섯째 줄 끝은 `| grep -E '^\+.*(environ|getenv|CAPA_S3_|AWS_|\.aws|boto)'` 다.
+   - 여섯째 줄은 **모듈 코드가 환경변수 · 프로필 파일로 자격증명을 읽지 않는지** 본다(2026-11-07 통합 검수 D6 (가) — S3 키를 앱 환경변수로 넘기는 구조를 두는 대신 이 줄로 본다). `check_module.py` 는 글자 `.aws/`(M07) · `os.environ` 쓰기(M11) · 자격 이름 `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 와 토큰 파일 자리 `.credential` · `bigdataquery.token`(M21 — 2026-11-12 「도우미 함수로」)을 잡고, 그 밖의 환경변수 **읽기는 보지 않는다** — 그래서 점검이 통과여도 이 줄이 찍을 수 있다. 찍힌 줄마다 PR 코드를 읽어, 자격증명 · 비밀을 읽는 꼴이면(`CAPA_S3_*` · `CAPA_BDQ_*` · `AWS_*` · `~/.aws` · `.credential` · 인자 없이 만든 `boto3` 클라이언트) 합치지 않고 사용자에게 알린다. 자기 설정값을 읽을 뿐이면 그 사실만 함께 적는다. `import bigdataquery` 만 찍히면(점검은 경고 M09) 담당자에게 `api.query_bigdataquery`(지침서 3-10)로 옮기라고 알린다. 글자로 찾는 줄이라 이름을 이어 만든 꼴은 못 잡는다 — 위 「`module_api` 밖으로 닿으려는 꼴」 읽기를 대신하지 않는다.
+   - WebIDE(bash)면 `pr=$(git rev-parse FETCH_HEAD)` 로 고정하고, 둘째 줄 끝은 `; echo $?`, 다섯째 줄 끝은 `| grep -E '^\+\s*"maturity"\s*:\s*"L2"'`, 여섯째 줄 끝은 `| grep -E '^\+.*(environ|getenv|CAPA_S3_|CAPA_BDQ_|AWS_|\.aws|\.credential|(import|from) bigdataquery|boto)'` 다.
 3. PR 머리의 사본 트리에서 그 모듈을 점검한다(6-3 1) 과 같은 꼴 — `HEAD` 대신 `$pr`). 4-5 처럼 매번 묻는 줄이고, 운영 저장소에서 친다.
 
    ```powershell
