@@ -380,6 +380,13 @@ def test_an_upeh_table_stop_is_named_by_its_cell_without_names(simulation_db: Pa
     assert SENTINEL not in "\n".join([described, *lines])
     guide = "\n".join(script.READING_GUIDE)
     assert "`빈 값(UPEH)` · `빈 값(ST)` · `0 이하(ST)`" in guide
+    # 이 셋은 빠질 경로를 빼기 전에 보므로 8-12 의 빈 칸 셈과 짝이 아니다 — 사내가 8-12K 에서 짝을
+    # 찾다 「없음」 을 발견으로 올리지 않게 읽는 법이 그것을 말한다.
+    upeh_line = next(line for line in script.READING_GUIDE if "`RQ_UPEH` 꼴" in line)
+    assert "빠질 경로에서도 멈추고" in upeh_line
+    assert "8-12 는 이 꼴을 남음 · 빠짐 · 안붙음으로 가르지 않는다" in upeh_line
+    assert "안 걸리면 줄이 없다" in upeh_line
+    assert "`RQ_RUN_DAY`)의 `빈 값` 에만 쓴다" in upeh_line
 
 
 def _official_revision(scenario_no: int, *official: int) -> script.RevisionRow:

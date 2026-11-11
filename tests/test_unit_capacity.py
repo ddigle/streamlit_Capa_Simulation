@@ -1216,3 +1216,24 @@ def test_an_upeh_duplicate_on_a_box_route_is_not_counted_once_the_route_is_dropp
         2,
     )
     assert error.problem.spacing_keys == 1
+
+
+def test_an_upeh_value_stop_fires_even_on_a_route_dropped_anyway() -> None:
+    """UPEH 표의 값 칸(Main UPEH · MI ST)은 빠질 경로를 빼기 전에 본다 — 효율 0 이하로 어차피 빠질
+    경로의 칸이라도 멈춘다. 붙이는 표의 빈 칸(위 「빠질 경로의 빈 칸은 멈추지 않는다」)과 다르고,
+    그래서 8-12 의 빈 칸 셈에 들지 않는다(6-3 a 읽는 법)."""
+    blank = _capacity_inputs(["Process-A", "Process-B"])
+    blank["upeh"] = blank["upeh"].assign(UPEH=[100.0, float("nan")])
+    blank["run_rate"] = blank["run_rate"].assign(CAPA_RUN_RATE=[0.8, 0.0])
+    assert _join_error(blank).problem == ReferenceJoinProblem(
+        "RQ_UPEH", JOIN_BLANK_VALUE, columns=("UPEH",), keys=1, rows=1
+    )
+
+    zero = _capacity_inputs(["Process-A", "Process-B"])
+    zero["upeh"] = zero["upeh"].assign(
+        Area_Name=["Main", "MI"], UPEH=[100.0, float("nan")], ST=[float("nan"), 0.0]
+    )
+    zero["run_rate"] = zero["run_rate"].assign(CAPA_RUN_RATE=[0.8, 0.0])
+    assert _join_error(zero).problem == ReferenceJoinProblem(
+        "RQ_UPEH", JOIN_NONPOSITIVE, columns=("ST",), keys=1, rows=1
+    )

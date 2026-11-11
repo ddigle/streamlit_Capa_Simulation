@@ -5448,7 +5448,9 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
   MI ST 빈 값 · MI ST 0 이하)도 같은 예외로 올리되 **글은 그대로다** — 계산 멈춤 알림(`page_bootstrap`
   정규식)과 등록의 푸는 길(`scenario_registration`)이 글을 맞댄다. 그 표의 값 꼴은 어느 칸인지 이름에
   붙고(`빈 값(UPEH)` · `빈 값(ST)` · `0 이하(ST)` — 「0 이하」 는 그 표만의 꼴, 등록 `_CELL_SHAPES` 에도 든다)
-  한 행이 곧 경로라 키와 경로 수가 같다. 같은 표의
+  한 행이 곧 경로라 키와 경로 수가 같다. 이 값 꼴은 빠질 경로를 빼기 전에 보므로 빠질 경로에서도 멈추고,
+  8-12 의 빈 칸 셈(`RQ_RUN_RATE` · `RQ_VITAL` · `RQ_MODULE` · `RQ_RUN_DAY` 의 `빈 값`)에 들지 않는다.
+  같은 표의
   `ValueError` 로만 보이던 꼴들이 고칠 길이 달라서다 — 문구를 찍지 못하는 사내 집계(런북 6-3 a ·
   `scripts/inspect_revision_calculations.py`)는 이것만 적고, 종류 이름은 `failure_kind` 로 `ValueError`
   그대로 적는다. 피클 왕복에서도 꼴을 잃지 않는다(`__reduce__`).
