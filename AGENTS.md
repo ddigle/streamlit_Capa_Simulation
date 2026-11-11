@@ -4182,14 +4182,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   그 화면 팝업 호스트가 연다(여는 콜백은 호스트만, 고르거나 넣으면 `finish` 로 앱 전체 한 번). 직접 입력(2026-11-11 사용자 고칠 것 Q2-26)은
   판정 기준 기본 칸과 같은 걸음 · 꼴(1 · `%.0f`, 소수는 사사오입 정수 %)과 같은 받는 범위(`THRESHOLD_RANGE` 50 ~ 300%)이고, 범위 밖 ·
   빈 칸은 칸 바로 밑 거부 한 줄(`st.error` — 알림창 · 기록 없음)이다. 범위를 한참 넘는 값은 사사오입 전에 거른다(멈추지 않는다).
-  숫자 칸은 늘 지금 목표, 라디오는 지금 목표가 다섯 가운데 하나일 때만 켜진다. 세션 칸 · 주소 인자 · 대기 칸도 같은 범위로
-  읽는다(`target_level`).
-- `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
   숫자 칸의 − · + 단추와 지우기 ⊗(`ENTRY_HIDDEN_PARTS` — Streamlit `stNumberInput` 의 `data-testid` 셋)는 숨기고 Enter · 칸 떠남으로만
   적용한다(남은 물음 보드 Q226-stepper (나) — 단추가 있으면 한 걸음이 곧 확정이라 걸음마다 앱 전체가 돈다). ↑/↓ 키는 그대로 한 걸음 적용이고,
   ⊗ 없이도 글을 지우고 Enter 면 빈 칸 거부 한 줄이다. 숨김 서식(`entry_style`)은 그 칸 key 의 칸(`st-key-<key>`)으로만 좁혀 다른 숫자
   칸(판정 기준 · UPEH 가정 % 등)은 그대로이고, 팝업 본문이라 스타일만 든 `st.html` 대신 단위 글 캡션(`% 직접 입력`)에 싣는다
   (`tests/test_target_level_entry.py` 가 부품 이름이 깔린 Streamlit 에 있는지 · 그 이름을 거는 파일이 이 부품 하나인지 본다).
+  숫자 칸은 늘 지금 목표, 라디오는 지금 목표가 다섯 가운데 하나일 때만 켜진다. 세션 칸 · 주소 인자 · 대기 칸도 같은 범위로
+  읽는다(`target_level`).
+- `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
   모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다. `load_official_shortening(level=)` 은 화면의 지금 목표가 다섯 밖(직접
