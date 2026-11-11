@@ -108,11 +108,38 @@ def _open_tab(app: AppTest, label: str) -> AppTest:
     return app
 
 
+def _shell(host: str) -> dict[str, Any] | None:
+    """그 그리드가 마지막으로 받은 껍데기(한 번도 세우지 않았으면 None)."""
+    return next((data for name, data in reversed(_GRID["calls"]) if name == host), None)
+
+
 def _grid(app: AppTest, host: str) -> pd.DataFrame:
     """그 그리드에 실린 표(분류 칸 원값 + 값 칸, 빈칸 None) — 탭이 닫혔으면 열고 읽는다."""
-    if not last(_GRID["calls"], host).get("table"):
+    shell = _shell(host)
+    if not shell or not shell.get("table"):
         _open_tab(app, PLAN_TAB if host == PLAN_HOST else YIELD_TAB)
     return shell_frame(last(_GRID["calls"], host))
+
+
+def test_a_grid_mounts_once_its_tab_is_opened_and_stays_as_an_empty_shell(
+    seeded_database: Path,
+) -> None:
+    """한 번도 연 적 없는 탭은 그리드를 세우지 않는다(그리드 요소는 등록 JS · CSS 를 싣는다 — 생산
+    계획 진입 전송량). 연 탭의 그리드는 탭이 닫혀도 같은 자리에 표 없는 껍데기로 남는다(다시 세우면
+    보내지 않은 출납을 잃는다)."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    assert not list(app.exception)
+    assert _shell(PLAN_HOST) is None and _shell(YIELD_HOST) is None
+
+    _open_tab(app, PLAN_TAB)
+    shell = _shell(PLAN_HOST)
+    assert shell is not None and shell["table"] == "RQ_PKG_PLAN"
+    assert _shell(YIELD_HOST) is None
+
+    _open_tab(app, ":material/calculate: 환산")
+    shell = _shell(PLAN_HOST)
+    assert shell is not None and shell["table"] is None
+    assert _shell(YIELD_HOST) is None
 
 
 def _grid_edit(app: AppTest, host: str, cells: dict[int, dict[str, str]]) -> AppTest:

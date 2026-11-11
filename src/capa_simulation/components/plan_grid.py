@@ -3,9 +3,10 @@
 """생산 계획 화면과 범용 편집 그리드(`components/edit_grid.py`) 사이의 어댑터 — 2026-11-12 시안 보드
 답 k-a1 · k-a2 · n2(기준 정보와 같은 편집기를 생산 계획에도).
 
-- **탭마다 그리드 하나**(`plan_grid_keys.HOSTS`). 탭이 닫힌 회차에는 표 없는 껍데기를 실어 마운트만
-  남기고(무거운 본문을 보내지 않는다), 그 표의 op 가 inbox 에 쌓였을 때만 양식 색인을 짓는다(기준
-  정보의 「고른 표만」 과 같은 꼴).
+- **탭마다 그리드 하나**(`plan_grid_keys.HOSTS`). 이 세션에 한 번도 연 적 없는 탭은 그리드를 세우지
+  않는다(`mounted` — 그리드 요소는 등록 JS · CSS 를 함께 싣는다). 연 적 있는 탭이 닫힌 회차에는 표
+  없는 껍데기를 실어 마운트만 남기고(무거운 본문을 보내지 않는다), 그 표의 op 가 inbox 에 쌓였을
+  때만 양식 색인을 짓는다(기준 정보의 「고른 표만」 과 같은 꼴).
 - **초안은 표마다 세션 칸**(업무 키 + 월 — `services/edit_grid`). 편집은 출납 콜백이 세션 inbox 에
   쌓기만 하고(`collect`) 본문이 원본을 본 뒤 반영한다(`apply_inbox`).
 - **값 꼴**: PKG PLAN 은 천 단위 · 소수 없이 보이고 0 이상만 받는다. 양식의 0 은 빈칸으로 싣는다 —
@@ -17,7 +18,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -31,6 +32,7 @@ from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.plan_grid_keys import (
     HOSTS,
+    MOUNTED_KEY,
     PLAN_TABLE,
     YIELD_TABLE,
     applied_key,
@@ -171,6 +173,21 @@ def inbox_tables() -> set[str]:
         if isinstance(pending, list) and any(isinstance(op, Op) for op in pending):
             tables.add(table)
     return tables
+
+
+def mounted(open_tables: Iterable[str]) -> frozenset[str]:
+    """그리드를 세울 표 — 지금 열린 탭(`open_tables`), 이 세션에 연 적 있는 탭, inbox 에 op 가 쌓인
+    표.
+
+    한 번도 열지 않은 탭에 그리드를 세우면 화면에 들어오는 회차에 그리드 요소(등록 JS · CSS 포함)를
+    탭마다 보낸다. 한 번 세운 그리드는 탭이 닫혀도 같은 자리에 남긴다 — 다시 세우면 보내지 않은
+    출납을 잃는다."""
+    saved = st.session_state.get(MOUNTED_KEY)
+    before = {str(table) for table in saved} if isinstance(saved, list) else set()
+    tables = (before | set(open_tables) | inbox_tables()) & set(HOSTS)
+    if tables != before:
+        st.session_state[MOUNTED_KEY] = sorted(tables)
+    return frozenset(tables)
 
 
 def collect(table: str) -> None:

@@ -343,9 +343,6 @@ def _plan_content_key() -> str:
     return content
 
 
-# 그리드는 **열린 탭과 inbox 에 op 가 쌓인 표만** 양식을 싣는다 — 닫힌 탭은 표 없는 껍데기로
-# 마운트만 남겨 무거운 본문을 보내지 않는다. 원본을 본 **뒤** 반영해야 버린 초안에 옛 op 가 붙지
-# 않는다. 탭을 바꾸기 직전에 보낸 편집도 그 표 초안에 쓴다.
 def _plan_grid_table() -> plan_grid.PlanGrid:
     return plan_grid.build(
         PLAN_TABLE,
@@ -368,7 +365,16 @@ def _yield_grid_table(table: pd.DataFrame) -> plan_grid.PlanGrid:
     )
 
 
+# 그리드는 **열린 탭과 inbox 에 op 가 쌓인 표만** 양식을 싣는다 — 한 번도 연 적 없는 탭은 그리드를
+# 세우지 않고(`plan_grid.mounted`), 연 적 있는 탭이 닫히면 표 없는 껍데기로 마운트만 남겨 무거운
+# 본문을 보내지 않는다. 원본을 본 **뒤** 반영해야 버린 초안에 옛 op 가 붙지 않는다. 탭을 바꾸기
+# 직전에 보낸 편집도 그 표 초안에 쓴다.
 _grid_inbox = plan_grid.inbox_tables()
+_grid_mounted = plan_grid.mounted(
+    table
+    for table, tab in ((PLAN_TABLE, pkg_plan_tab), (YIELD_TABLE, yield_tab))
+    if not tab_is_hidden(tab)
+)
 plan_table: plan_grid.PlanGrid | None = None
 if not tab_is_hidden(pkg_plan_tab) or PLAN_TABLE in _grid_inbox:
     plan_table = _plan_grid_table()
@@ -889,8 +895,9 @@ with pkg_plan_tab:
         )
     elif _dialog_is_open(VIRTUAL_PRODUCT_DIALOG):
         _virtual_product_dialog(active_scenario)
-    with plan_grid_box:
-        plan_grid.render_grid(PLAN_TABLE, plan_table)
+    if PLAN_TABLE in _grid_mounted:
+        with plan_grid_box:
+            plan_grid.render_grid(PLAN_TABLE, plan_table)
     # 적용 알림 칸(위)이 서는 회차의 소요대수에 들지 않은 수요 — 그리드를 다 그린 뒤에 센다. 적용
     # 알림이 없는 회차에도 이 자리에서 이벤트 칸 한 자리를 쓴다 — 뒤 수율 붙여넣기 팝업의 이벤트 칸
     # 자리가 회차마다 같게(AGENTS 9장 「알림 칸」 — 표지를 쓰는 함수는 늘 같은 자리에서 한 자리).
@@ -946,8 +953,9 @@ with yield_tab:
                 default_yield_table,
                 f"RQ_YLD_{effective_start_month}_{effective_end_month}.csv",
             )
-    with yield_grid_box:
-        plan_grid.render_grid(YIELD_TABLE, yield_table)
+    if YIELD_TABLE in _grid_mounted:
+        with yield_grid_box:
+            plan_grid.render_grid(YIELD_TABLE, yield_table)
     # 원본·줄 차례가 바뀌어 편집을 버린 회차에는 단추가 잠겨 그려지고, Streamlit 은 잠겨 그린 단추의
     # 클릭을 서버에서 버린다 — 그 회차에 함께 온 클릭은 여기까지 오지 않는다. 칸 오류가 남았으면
     # 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에).

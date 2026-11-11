@@ -409,8 +409,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     알림의 표 이름은 화면 이름(`PKG_PLAN_TAB_NAME` · `YIELD_TAB_NAME`)이고, 대기 표 달 칸은 숫자로 읽어 0 을 빈칸으로 그린다.
   - **PKG PLAN · 수율 표는 범용 편집 그리드다**(2026-11-12 보드 답 k-a1 · k-a2 — `components/plan_grid.py`, 이름은
     `plan_grid_keys.py`). 탭마다 그리드 하나(호스트 `plan_grid` · `yield_grid`)이고, 탭 본문은 작업 줄 칸 → 그리드 칸(둘 다 key 붙은
-    늘 서 있는 칸 — `plan_grid.LAYOUTS`) 차례다. 닫힌 탭과 세우지 못한 수율 표는 표 없는 껍데기로 마운트만 남는다(무거운 본문을
-    보내지 않는다 — TODO 「생산 계획 PKG PLAN·수율 편집표 지연 그리기」 가 이 꼴로 풀림). inbox 에 op 가 쌓인 표와 적용이 눌린 표는
+    늘 서 있는 칸 — `plan_grid.LAYOUTS`) 차례다. 이 세션에 한 번도 연 적 없는 탭은 그리드를 세우지 않고(`plan_grid.mounted` — 그리드
+    요소는 등록 JS · CSS 를 싣는다), 연 적 있는 탭이 닫히거나 수율 표를 세우지 못한 회차에는 표 없는 껍데기로 마운트만 남는다(무거운
+    본문을 보내지 않는다 — TODO 「생산 계획 PKG PLAN·수율 편집표 지연 그리기」 가 이 꼴로 풀림). inbox 에 op 가 쌓인 표와 적용이 눌린 표는
     닫힌 탭이어도 양식을 짓는다. PKG PLAN 양식은 붙여넣기 대기 표가 있으면 그 표이고(내용 지문에 대기 표 지문을 더한다), 달 칸을
     수로 읽어 0 을 빈칸으로 싣는다(`plan_grid.zero_as_blank` — 비운 칸은 적용 때 `plan_from_edit_table` 이 0 으로 읽는다). 값 형식은
     `plan_grid.FORMATS`(PKG PLAN 천 단위 · 소수 없이 · 0 이상, 수율 percent · 상한 1). 「변경사항 적용」 은 고친 칸이나 붙여넣기
