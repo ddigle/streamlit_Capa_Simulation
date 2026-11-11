@@ -57,7 +57,9 @@ from capa_simulation.components.tab_state import remember_open_tab, remembered_t
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
+    CALCULATION_RESULT_TAB_KEY,
     LOAD_CONVERSION,
+    LOAD_CONVERSION_TAB_KEY,
     REFERENCE_DATA,
     SCENARIO_MANAGEMENT,
     STATIC_CAPA_SUBPAGES,
@@ -129,17 +131,17 @@ SPINNER_TEXT: Final = "고른 리비전의 전체 기간 계산을 점검하는 
 # 누른 사이 다른 리비전 · 다른 시나리오를 고른 「그 화면으로」 — 아무것도 하지 않는다.
 PICK_MOVED_MESSAGE: Final = "고른 리비전이 바뀌어 하지 않았습니다 — 지금 고른 리비전을 확인하세요."
 EMPTY_REVISIONS: Final = "이 시나리오에 저장된 리비전이 없습니다."
+# 규칙대로 뺀 행이 없어 잠긴 「규칙대로 셈에서 뺀 것」 줄의 까닭 풍선(설계 규칙 UI-INP-07).
+RULES_EMPTY_HELP: Final = "규칙대로 셈에서 뺀 행이 없어 펼칠 것이 없습니다."
 
-# 「그 화면으로」 가 여는 산출 결과 · 생산 계획 탭(그 화면의 `stateful_tabs` key · 라벨). 화면
-# 모듈은 불러올 수 없어 여기 같은 글을 두고 시험이 화면 글과 맞댄다
-# (`tests/test_scenario_input_check.py`).
+# 「그 화면으로」 가 여는 산출 결과 · 생산 계획 탭 라벨. 화면 모듈은 불러올 수 없어 여기 같은 글을
+# 두고 시험이 화면 글과 맞댄다(`tests/test_scenario_input_check.py`). 탭 key 는 화면과 함께 쓰는
+# `navigation` 의 한 벌이다.
 CALCULATION_RESULT: Final = next(
     spec for spec in STATIC_CAPA_SUBPAGES if spec.path == "app_pages/calculation_result.py"
 )
-CALCULATION_TAB_KEY: Final = "calculation_result_active_tab"
 CALCULATION_UNIT_TAB: Final = ":material/insights: 대당 Capa"
 CALCULATION_REQUIRED_TAB: Final = ":material/precision_manufacturing: 소요대수"
-PLAN_TAB_KEY: Final = "load_conversion_active_tab"
 PLAN_PKG_TAB: Final = ":material/edit_calendar: PKG PLAN"
 PLAN_YIELD_TAB: Final = ":material/percent: 수율"
 # 대당 Capa 에서 뺀 기준의 까닭 → 고칠 기준 정보 표(까닭이 하나일 때만 — 결정 15).
@@ -176,7 +178,7 @@ class Arrival:
 
 
 def _calculation_tab(label: str) -> Arrival:
-    return Arrival(CALCULATION_RESULT.path, CALCULATION_TAB_KEY, label)
+    return Arrival(CALCULATION_RESULT.path, CALCULATION_RESULT_TAB_KEY, label)
 
 
 def _reference(table: str | None) -> Arrival:
@@ -210,9 +212,9 @@ def arrival_for(group: InputCheckGroup, check: RevisionInputCheck) -> Arrival | 
     if group.key == GROUP_PLANS:
         yield_only = bool(reasons) and all(reason in _YIELD_REASONS for reason in reasons)
         tab = PLAN_YIELD_TAB if yield_only else PLAN_PKG_TAB
-        return Arrival(LOAD_CONVERSION.path, PLAN_TAB_KEY, tab)
+        return Arrival(LOAD_CONVERSION.path, LOAD_CONVERSION_TAB_KEY, tab)
     if group.key == GROUP_UNROUTED:
-        return Arrival(LOAD_CONVERSION.path, PLAN_TAB_KEY, PLAN_PKG_TAB)
+        return Arrival(LOAD_CONVERSION.path, LOAD_CONVERSION_TAB_KEY, PLAN_PKG_TAB)
     if group.key == GROUP_ASSUMED:
         return _reference(reasons[0] if len(reasons) == 1 else None)
     if group.key == GROUP_SOURCE:
@@ -514,6 +516,7 @@ def _render_rules(
                 on_click=_toggle_group,
                 args=(group.key,),
                 disabled=not group.count,
+                help=None if group.count else RULES_EMPTY_HELP,
             )
             st.markdown(
                 f'<span style="font-weight:800;font-size:{_COUNT_REM}rem;'

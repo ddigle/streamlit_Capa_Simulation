@@ -27,12 +27,10 @@ import capa_simulation.components.scenario_input_check as input_check
 from capa_simulation.components.scenario_input_check import (
     CALCULATION_REQUIRED_TAB,
     CALCULATION_RESULT,
-    CALCULATION_TAB_KEY,
     CALCULATION_UNIT_TAB,
     CHECK_LABELS_KEY,
     GO_LOADS_HELP,
     PLAN_PKG_TAB,
-    PLAN_TAB_KEY,
     PLAN_YIELD_TAB,
     STOP_NOTICE_HEAD,
     WIDE_TAG,
@@ -53,7 +51,12 @@ from capa_simulation.components.scenario_management_tabs import (
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
 from capa_simulation.components.tab_state import remembered_tab_key
-from capa_simulation.navigation import LOAD_CONVERSION, REFERENCE_DATA
+from capa_simulation.navigation import (
+    CALCULATION_RESULT_TAB_KEY,
+    LOAD_CONVERSION,
+    LOAD_CONVERSION_TAB_KEY,
+    REFERENCE_DATA,
+)
 from capa_simulation.page_bootstrap import calculation_stop_notice
 from capa_simulation.page_tabs_state import PAGE_TABS_QUEUED_KEY
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
@@ -311,7 +314,10 @@ def test_go_on_the_loaded_revision_remembers_the_tab_and_queues_the_switch(
 
     assert not app.exception
     assert app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == edited != loaded_before
-    assert app.session_state[remembered_tab_key(CALCULATION_TAB_KEY)] == CALCULATION_REQUIRED_TAB
+    assert (
+        app.session_state[remembered_tab_key(CALCULATION_RESULT_TAB_KEY)]
+        == CALCULATION_REQUIRED_TAB
+    )
     assert app.session_state[PAGE_TABS_QUEUED_KEY] == CALCULATION_RESULT.path
 
     # 이제 올라와 있다 — 다시 누르면 풍선 없이 곧바로 옮긴다.
@@ -504,7 +510,7 @@ def test_each_group_arrives_where_it_is_fixed() -> None:
     )
     assert plan is not None and plan.value == PLAN_PKG_TAB
     unrouted = arrival_for(_group(GROUP_UNROUTED, (("경로 키 어긋남", 1),)), empty)
-    assert unrouted is not None and unrouted.key == PLAN_TAB_KEY
+    assert unrouted is not None and unrouted.key == LOAD_CONVERSION_TAB_KEY
     one = arrival_for(_group(GROUP_ASSUMED, (("RQ_LOT_RATIO", 2),)), empty)
     assert one is not None and (one.path, one.value) == (REFERENCE_DATA.path, "RQ_LOT_RATIO")
     two = arrival_for(_group(GROUP_ASSUMED, (("RQ_LOT_RATIO", 2), ("RQ_WF_RATIO", 1))), empty)
@@ -514,13 +520,14 @@ def test_each_group_arrives_where_it_is_fixed() -> None:
 
 
 def test_the_arrival_tabs_are_the_pages_own_labels() -> None:
-    """산출 결과 · 생산 계획 화면은 불러올 수 없어 탭 key · 라벨을 따로 둔다 — 화면 글과 같다."""
+    """산출 결과 · 생산 계획 화면은 불러올 수 없어 탭 라벨을 따로 둔다 — 화면 글과 같다. 탭 key 는
+    화면과 함께 쓰는 `navigation` 한 벌이다(세션 키 한 주인)."""
     calculation = (PROJECT_ROOT / "app_pages" / "calculation_result.py").read_text(encoding="utf-8")
     plan = (PROJECT_ROOT / "app_pages" / "load_conversion.py").read_text(encoding="utf-8")
-    assert f'key="{CALCULATION_TAB_KEY}"' in calculation
+    assert "key=CALCULATION_RESULT_TAB_KEY," in calculation
     for label in (CALCULATION_UNIT_TAB, CALCULATION_REQUIRED_TAB):
         assert f'"{label}"' in calculation
-    assert f'TAB_KEY = "{PLAN_TAB_KEY}"' in plan
+    assert "TAB_KEY = LOAD_CONVERSION_TAB_KEY" in plan
     for label in (PLAN_PKG_TAB, PLAN_YIELD_TAB):
         assert f'"{label}"' in plan
     assert LOAD_CONVERSION.path == "app_pages/load_conversion.py"
