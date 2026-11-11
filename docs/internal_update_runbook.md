@@ -1762,7 +1762,7 @@ A · 6-3 은 적용 뒤 6-2 · 6-3 1) 부터 한다.
 git show --stat --format= HEAD
 ```
 
-끝줄 「N files changed, …」 의 N 을 아래 「적용에서 보이는 것」 의 기대 수 E 와 견준다. 정상은 E ≤ N ≤ E + a 다 — a 가 0 이면 N = E 뿐이고, a 가 0 이 아니면 N 은 최대 E + a 까지
+끝줄 「N files changed, …」 의 N 을 아래 「적용에서 보이는 것」 의 기대 수 E 와 견준다(이름 바뀜 찾기를 끈 git 이면 그 절이 적은 대로 E 를 바꿔 놓고 견준다). 정상은 E ≤ N ≤ E + a 다 — a 가 0 이면 N = E 뿐이고, a 가 0 이 아니면 N 은 최대 E + a 까지
 클 수 있다(줄끝만 바뀐 파일 — 결함 아님 — 되돌리거나 다시 정규화하지 않는다). 그 밖이면 고치지 않고 두
 수를 「발견」 에 적는다.
 
@@ -1819,10 +1819,10 @@ B 줄 `B 4 = 기록 <n> + 미기록 <4-n>; u<u> a<a>; na칸 <m>; 빈칸 <k>` 와
 - **`변경` 줄은 이 꼴이다.**
 
   ```
-  {APPLY_FACTS}
+  변경    추가 90 · 삭제 4 · 수정 491  (직전 202611060842 대비)
   ```
 
-  그 아래로 추가 · 삭제 · 수정이 8개씩 찍힌 뒤 「… 외 n개」 로 끝난다. 추가는 동기화(`object_sync_engine.py` · `object_sync_worker.py` ·
+  그 아래로 추가는 8개 뒤 「… 외 82개」, 삭제는 넷이 모두 찍혀 「외」 줄이 없고, 수정은 8개 뒤 「… 외 483개」 로 끝난다. 추가는 동기화(`object_sync_engine.py` · `object_sync_worker.py` ·
   `components/object_sync_status.py` · `scripts/container_stage.py`) · 목록 관리 새 표(`components/scenario_list_grid.py` · `scenario_list_state.py` ·
   `services/scenario_list_edits.py` · `components/side_panel.py` · `grid_shared` 부품) · `components/page_box_reveal.py` · `diagnostic_copy.py` · 공용 공정 칸(`components/process_field.py` · `capa_simulation/shared_process.py`) · 팝업 호스트(`components/dialog_host.py`) ·
   시트 엑셀(`io/xlsx_small.py` · `components/process_capa_workbook.py` · `sheet_download.py` · `monthly_table_workbook.py` · `availability_sheet_workbook.py`) ·
@@ -1842,9 +1842,9 @@ B 줄 `B 4 = 기록 <n> + 미기록 <4-n>; u<u> a<a>; na칸 <m>; 빈칸 <k>` 와
   앞 둘은 `components/side_panel_assets/` 로 옮긴 칸막이 부품이고, 셋째는 목록 관리 새 표로 쓰지 않게 된 옛 편집표 조각, 넷째는 실행 관리 머리
   「업무 활용 목적 및 로드맵」 접힘 조각이다(그 말은 실행 관리 `Guide` 첫 단락 — 옛 자리 표). 커밋 뒤 3-4 의
   `git ls-files <위 경로>` 가 아무것도 찍지 않아야 한다.
-- **대조 블록 둘째 칸** — {APPLY_FACTS} 적용 **뒤**(3-1)의 재대조는 「사외에서 지워진 파일」 넷(3-4)만 남고 「목록에 있는데 사내에 없는 파일」 은 없다.
-- **해시 대조는 {APPLY_FACTS}** 이다(「대조    N/N 해시 일치」 꼴).
-- **`deploy:` 커밋의 파일 수 E 는 {APPLY_FACTS}** 이다(추가 + 삭제 + 수정 + 적용 기록 `.deploy/applied.json` 하나에서, `git show --stat` 이 옮긴 파일(이름 바뀜)을 `{옛 폴더 => 새 폴더}` 한 줄로 세는 만큼 뺀 수. 위 줄끝 확인에서 견준다).
+- **대조 블록 둘째 칸** — 적용 **전**(2-1 `--dry-run`)에는 「사외에서 지워진 파일 4개 — 적용이 함께 지웁니다.」 와 「목록에 있는데 사내에 없는 파일 90개 — ZIP 이 채웁니다 — 정상입니다.」(10개만 찍히고 「… 외 80개」 — 위 추가 아흔)가 선다. 적용 **뒤**(3-1)의 재대조는 「사외에서 지워진 파일」 넷(3-4)만 남고 「목록에 있는데 사내에 없는 파일」 은 없다.
+- **해시 대조는 `1,197/1,197`** 이다(「대조    N/N 해시 일치」 꼴).
+- **`deploy:` 커밋의 파일 수 E 는 `584`** 이다(추가 90 + 삭제 4 + 수정 491 + 적용 기록 `.deploy/applied.json` 하나 = 586 에서, `git show --stat` 이 옮긴 파일 둘(지움 앞 둘 — `{equipment_master_grid_assets => side_panel_assets}/splitter.css` · `splitter.js` 꼴)을 지움 · 추가 두 줄이 아니라 한 줄씩으로 세는 만큼 2 를 뺀 수. 이름 바뀜 찾기를 끈 git(`git config diff.renames` 가 `false`)이면 끝줄이 `586` 이고 그때는 E 를 586 으로 놓고 견준다 — 결함이 아니다. 위 줄끝 확인에서 견준다).
 - **맨 위 「건너뛴 배포」 알림 줄은 없다.** 서면 멈추고 `.deploy/applied.json` 을 다시 본다.
 - **`주의` 블록의 `.gitkeep` 세 줄은 결함이 아니다.** `data/input/.gitkeep` · `data/output/.gitkeep` · `data/temp/.gitkeep` 은 배포가 싣는 빈
   폴더 자리표라 배포마다 이렇게 나온다 — `git rm` 하지 않는다(1-4). 그 셋 말고 다른 경로가 이 블록에 있으면 1-4 대로 멈춘다.
@@ -1857,7 +1857,7 @@ B 줄 `B 4 = 기록 <n> + 미기록 <4-n>; u<u> a<a>; na칸 <m>; 빈칸 <k>` 와
 - **`.gitignore` 에 `data/sync_generation.json*` 이 는다** — 이관 `init` 이 만드는 넘김 표지다(이관은 다음 배포 — 이번엔 생기지 않는다). git 밖이고 지우지 않는다.
 - **4-2 에서 앱을 띄우면** HOME 사이드바 맨 아래 앱 정보 카드 첫 줄 끝이 「배포 202611111500」 인지 본다(배포 번호는 적어도 된다). 마이그레이션이
   없어 설비 화면을 일부러 열지 않아도 된다. `시나리오 관리` › `Capa 시나리오` 의 목록 관리가 두 칸(왼쪽 표 · 오른쪽 칸 넷)인 것이 새 판이다.
-- **4-3 네 관문.** `mypy` 끝줄은 {APPLY_FACTS}, `ruff format --check` 는 {APPLY_FACTS} 꼴이다. pytest 는 {APPLY_FACTS} — 건너뜀 · xfail 수는 PC 마다 다르다.
+- **4-3 네 관문.** `mypy` 끝줄은 「Success: no issues found in 992 source files」, `ruff format --check` 는 「1035 files already formatted」 꼴이다. pytest 는 약 16,456 개(사외 WSL 16,434 통과 · 건너뜀 21 · xfail 1 · 실패 0 · 오류 0) — 건너뜀 · xfail 수는 PC 마다 다르다.
   mypy · ruff 두 수가 같고 pytest 의 **실패 0 · 오류 0** 이면 판정 줄이 `관문 ok` 이고(pytest 의 통과 · 건너뜀 수는 견주지 않는다), 다르면 `관문수` 줄에 적는다(5장 차례 2).
   - **발견 1 확인 — 끝줄에 `error` 가 없어야 한다.** `202611060842` 리뷰의 `m-z … 실패 1 오류 2,964` 는 앞 시험 하나의 cp949 출력이 붙잡기 파일을 막아
     뒤 68 파일 setup 이 모두 `UnicodeDecodeError` 로 번진 것이었고 이 ZIP 이 막았다. 두 줄로 나눠 돌렸으면 두 끝줄 모두에서 본다. 같은 꼴(`setup` · `UnicodeDecodeError` 가
