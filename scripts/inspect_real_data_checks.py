@@ -9,13 +9,17 @@
     uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 여덟
     uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq  # BigDataQuery
 
+사내에서는 사용자가 Claude 밖의 별도 PowerShell 창에서 돌리고 사내 에이전트는 `--output` 파일만
+옮긴다(런북 0장 · 8-0 — 에이전트는 사내 DB 를 여는 명령을 치지 않는다). **런북은 `bdq` 블록을
+부르지 않는다** — 꼭 필요하면 사외가 사용자에게 먼저 요청하고 사용자가 직접 돌린다(런북 8-5).
+
 | 블록 | `--only` | 무엇을 |
 |---|---|---|
 | 8-1 | `env` | 두 DB 의 마이그레이션 번호·주요 표 행 수, 적용 배포, `ref_data` 사본 |
 | 8-2 | `legacy` | 기존 결과 대조 차이율·비율 분포, Wafer 경로 값, ST 정의 대조, ≈60 배 가르기 |
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
 | 8-4 | `equipment` | 설비 DB 의 옛 Qual 자리표·모듈 환산비·일정 미정·사용기준·38열 개편 분포 |
-| 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·전 코드 적재일·표본 적재일·사본 여부 |
+| 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·적재일·사본 여부 — 런북은 안 부름 |
 | 8-9 | `home` | HOME 월 축(양산 Density 가 있는 달)에서 빠지는 계획 달 수 — EDP 포함·뺌 |
 | 8-10 | `census` | 「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(센서스) |
 | 8-11 | `grid` | 기준 정보 편집 표 아홉의 줄 · 칸 수와 본문 바이트 — 큰 표 상한 대비 |
@@ -414,7 +418,7 @@ DEFAULT_COPY_CODES: Final = 2
 DEFAULT_COPY_DAYS: Final = 4
 # 사본 확인의 조회(적재일 · 하루치 상세)가 실패하면 이만큼 쉬고 한 번 더 묻는다 — 사내 리뷰
 # `202610271800` 에서 두 판마다 다른 코드의 하루치 상세가 간헐로 「SQL」 실패했다. 시간 초과는 다시
-# 묻지 않는다 — 한 번 더 기다리면 8-5 가 에이전트 호출 제한(30분)을 넘겨 요약까지 잃을 수 있다.
+# 묻지 않는다 — 한 번 더 기다리면 8-5 가 그만큼 길어져 창이 닫히면 요약까지 잃을 수 있다.
 RETRY_PAUSE_SECONDS: Final = 2.0
 
 # 다른 시나리오에서 만든 데이터셋의 원천 종류(`components/` 의 복제·월 병합·연도 이동이 적는 값).
@@ -6114,7 +6118,11 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--only",
         default=",".join(DEFAULT_CHECKS),
-        help=f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 여덟",
+        help=(
+            f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 여덟 — 런북은"
+            " bdq 를 부르지 않는다(꼭 필요하면 사외가 사용자에게 먼저 요청하고 사용자가 직접"
+            " 돌린다)"
+        ),
     )
     parser.add_argument("--database", type=Path, default=DUCKDB_PATH, help="시뮬레이션 DuckDB")
     parser.add_argument(

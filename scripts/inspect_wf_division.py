@@ -8,7 +8,8 @@
 
 **이 스크립트는 읽기만 한다.** `read_only=True` 로 열어 쓰기 경로를 아예 막았다. 사내에서
 SQL 로 직접 고치는 것을 막으려는 것이다 — 리비전은 append-only 이고, 재이관이 필요하면
-사외가 후속 마이그레이션을 만든다.
+사외가 후속 마이그레이션을 만든다. 사내에서는 사용자가 별도 PowerShell 창에서 돌린다 — 사내
+에이전트는 사내 DB 를 여는 명령을 치지 않는다(런북 0장).
 
 **값을 화면에 찍지 않는다.** `WF 구분` 값 자체가 실데이터이므로, 세어야 할 것(`Top`·`Top_e`
 꼴)만 따로 세고 나머지는 **개수만** 보고한다. 리뷰 문서는 사내에서 사외로 나가는 유일한
@@ -29,6 +30,12 @@ EDP-TSV 제품의 PKG 행이 어떤 WF 구분을 싣는지는 사외가 모른�
 
     uv run --no-sync python scripts/inspect_wf_division.py                      # 운영 DB
     uv run --no-sync python scripts/inspect_wf_division.py --database <DB 사본> # 6-3 사본
+    ... --output <저장소 밖 파일>                     # 같은 출력을 파일에도
+
+**`--output` 은 같은 출력을 UTF-8 파일에도 쓴다.** 사용자가 별도 창에서 돌린 결과를 사내
+에이전트가 그 파일로만 읽는다(런북 0장) — 콘솔 출력을 대화에 붙이지 않게. 파일은 시작할 때
+비우고 줄마다 쓰므로 멈춰도 그때까지의 줄이 남는다. PowerShell 5.1 의 `>` 는 콘솔
+코드페이지(cp949)로 읽어 한글을 깨뜨린다.
 
 **`--database` 로 사본을 주면 앱 프로세스를 보지 않는다.** 운영 DB 자리(운영 DB 와 같은
 파일 · 운영 `data/` 아래 · git 저장소 안 — `settings.is_operational_database_place`)를 열 때만
@@ -39,9 +46,11 @@ EDP-TSV 제품의 PKG 행이 어떤 WF 구분을 싣는지는 사외가 모른�
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TextIO, cast
 
 import duckdb
 
@@ -194,12 +203,45 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="시뮬레이션 DuckDB 사본(런북 6-3). 주면 앱 프로세스를 보지 않는다. 비우면 운영 DB",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="같은 출력을 이 파일에도 쓴다(UTF-8, 먼저 비운다). 저장소 밖 경로를 준다",
+    )
     return parser.parse_args(argv)
+
+
+class _Tee:
+    """화면과 `--output` 파일에 같은 글을 쓴다 — 줄마다 비워 중간에 멈춰도 앞 줄이 남는다."""
+
+    def __init__(self, screen: TextIO, file: TextIO) -> None:
+        self._screen = screen
+        self._file = file
+
+    def write(self, text: str) -> int:
+        self._screen.write(text)
+        self._file.write(text)
+        if "\n" in text:
+            self._file.flush()
+        return len(text)
+
+    def flush(self) -> None:
+        self._screen.flush()
+        self._file.flush()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """`argv` 가 없으면 인자 없이 돈다(운영 DB). 명령줄에서는 `__main__` 이 `sys.argv` 를 준다."""
     args = parse_args([] if argv is None else argv)
+    if args.output is None:
+        return _run(args)
+    with Path(args.output).open("w", encoding="utf-8", newline="\n") as file:
+        with contextlib.redirect_stdout(cast(TextIO, _Tee(sys.stdout, file))):
+            return _run(args)
+
+
+def _run(args: argparse.Namespace) -> int:
     path = DUCKDB_PATH if args.database is None else Path(args.database)
     # 경로는 찍지 않는다 — 이름과 예외 종류만. 출력은 리뷰 문서로 그대로 나가는데 DB 경로와
     # DuckDB 잠금 문구에는 사용자 폴더 이름이 든다.

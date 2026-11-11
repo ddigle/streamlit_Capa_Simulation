@@ -1,6 +1,9 @@
 # Purpose: 사내 런북의 모델 구간 표지 · 7장 군살 규칙 · 그림 읽기 막기 권한이 서로 맞는지 본다.
 
-"""런북 0-2 — 사내 적용은 기본 Sonnet 이고 Opus 구간 여섯에서만 모델을 바꿔 달라고 한다(2026-11-03).
+"""런북 0-2 — 사내 적용은 기본 Sonnet 이고 Opus 구간 넷에서만 모델을 바꿔 달라고 한다(2026-11-03).
+
+구간 2(6-3 B 대행)와 6(9장 사내 탐색)은 그 일을 걷어(에이전트는 사내 DB 를 여는 코드를 치지 않는다 —
+런북 0장) 번호를 비워 둔다. 지난 리뷰의 `모델 sonnet <n>` 뜻이 바뀌지 않게 다시 매기지 않는다.
 
 Sonnet 은 구간을 스스로 가르지 않고 표지를 보고 멈춘다. 그래서 0-2 표의 구간 번호와 구간 머리의
 표지가 한 꼴 · 한 벌로 맞아야 하고, 표지는 표가 적은 자리에 서야 한다. 7장은 배포마다 다시 쓰이므로
@@ -29,9 +32,8 @@ HEADED = {
     3: "### 4-6. ",
     4: "## 6. 막혔을 때",
     5: "## 5. 리뷰 문서 쓰기",
-    6: "## 9. 사내 탐색",
 }
-B_PROXY = "**7장 B 를 에이전트가 먼저 채울 때 — B 대행**"
+EMPTIED = (2, 6)
 PICTURES = ("png", "jpg", "jpeg", "webp", "gif", "bmp")
 
 
@@ -53,16 +55,16 @@ def _first_paragraph_after(text: str, heading: str) -> str:
 def test_the_model_section_sits_between_the_two_ways_and_chapter_one() -> None:
     text = _text()
     assert text.index("## 0-1. ") < text.index("## 0-2. ") < text.index("## 1. 시작 전 점검")
-    assert "**0장 · 0-1 · 0-2 · 1장 ~ 6장 · 8장 · 9장은 배포마다 같다**" in text
+    assert "**0장 · 0-1 · 0-2 · 1장 ~ 6장 · 8장은 배포마다 같다**" in text
 
 
 def test_every_opus_section_has_one_marker_where_the_table_says() -> None:
-    """0-2 표의 구간 번호마다 표지가 한 번씩, 표가 적은 자리에 선다 — 머리 다섯은 머리 바로 아래,
-    B 대행은 6-3 안의 그 문단 바로 앞이다."""
+    """0-2 표의 구간 번호마다 표지가 한 번씩, 표가 적은 자리(그 머리 바로 아래)에 선다. 걷은 구간
+    2 · 6 은 표에도 표지에도 없고, 0-2 가 번호를 비워 둔 까닭을 적는다."""
     text = _text()
     model = _section(text, "## 0-2. ", "\n## 1. ")
     table = [int(number) for number in re.findall(r"^\| (\d) \| ", model, re.MULTILINE)]
-    assert table == [1, 2, 3, 4, 5, 6]
+    assert table == [1, 3, 4, 5]
 
     found = Counter(int(match.group("number")) for match in MARKER.finditer(text))
     assert sorted(found) == table
@@ -72,26 +74,19 @@ def test_every_opus_section_has_one_marker_where_the_table_says() -> None:
         assert MARKER.fullmatch(_first_paragraph_after(text, heading)), heading
         assert f"[Opus 구간 {number}]" in _first_paragraph_after(text, heading), heading
 
-    copy_e2e = _section(text, "## 6-3. ", "\n## 7. ")
-    marker = next(match for match in MARKER.finditer(copy_e2e) if match.group("number") == "2")
-    assert copy_e2e[marker.end() :].lstrip("\n").startswith(B_PROXY)
+    for number in EMPTIED:
+        assert f"[Opus 구간 {number}]" not in text, number
+    assert "번호 2(옛 6-3 B 대행)와 6(옛 9장 탐색)은 비워 둔다" in model
 
 
-def test_the_first_two_sections_say_when_they_start() -> None:
-    """Sonnet 첫 읽기(2026-11-03)가 헷갈린 두 자리.
-
-    구간 1 은 2-1 앞에서 한 번이고, 4장 뒤 7장으로 돌아와 표지를 다시 만나도 청하지 않는다.
-    구간 2 는 c 의 전 화면 순회를 하면 표지보다 앞인 그 줄에서 시작한다.
-    """
+def test_the_first_section_says_when_it_starts() -> None:
+    """Sonnet 첫 읽기(2026-11-03)가 헷갈린 자리 — 구간 1 은 2-1 앞에서 한 번이고, 4장 뒤 7장으로
+    돌아와 표지를 다시 만나도 청하지 않는다."""
     text = _text()
     model = _section(text, "## 0-2. ", "\n## 1. ")
     first = next(line for line in model.splitlines() if line.startswith("| 1 | "))
     assert "2-1 앞" in first and "다시 만나도 청하지 않는다" in first
     assert "2-1 앞에서 한 번" in _first_paragraph_after(text, HEADED[1])
-
-    copy_e2e = _section(text, "## 6-3. ", "\n## 7. ")
-    sweep = copy_e2e.index("여기서 0-2 대로 모델을 바꿔 달라고")
-    assert sweep < copy_e2e.index("> **[Opus 구간 2]**")
 
 
 def test_every_marker_line_keeps_the_one_form() -> None:

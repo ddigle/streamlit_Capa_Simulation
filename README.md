@@ -312,9 +312,13 @@ New-Item -ItemType Directory review -Force
 
 - `.claude/settings.json` 은 사내 에이전트가 `review/` 밖을 고치지 못하게 막고, 실화면 그림 파일(png · jpg 등)을 `Read` 로 열지
   못하게 막습니다. `review/` 는 리뷰 문서 자리입니다.
-- 사본 점검 세 줄(런북 6-3 a · b — `inspect_revision_calculations.py` · `benchmark_home.py` · `benchmark_upeh_assumption.py`)은 사본 경로 꼴(값에 사본 폴더
-  이름 `e2e` 가 든 `--database` · `--data-dir`)에만 묻지 않고 돕니다. 운영 DB 자리는 스크립트가 스스로 거절합니다.
-- 사내 적용 세션은 기본 Sonnet 으로 띄웁니다. Opus 가 필요한 여섯 구간에서는 에이전트가 멈추고 `/model opus` 를 청합니다(런북 0-2).
+- 사내 DB 를 여는 스크립트(실데이터 확인 `inspect_real_data_checks.py` · `inspect_wf_division.py` · 사본 점검 세 줄 — 런북 6-3 a · b 의
+  `inspect_revision_calculations.py` · `benchmark_home.py` · `benchmark_upeh_assumption.py` · 화면 확인 `check_deploy_screens.py` · 버킷 명령
+  `sync_object_storage.py`)는 템플릿에 allow 가 없고, 런북 꼴(`uv run --no-sync python scripts/…`)의 줄은 deny 로 막습니다(2026-11-11 — 사내 DB 를
+  Claude 가 읽지 않는다. 사용자가 고정한 auto 모드는 allow 가 없어도 묻지 않고 통과시킬 수 있어서입니다). 사용자가 Claude 밖의 별도 PowerShell
+  창에서 치고, 에이전트는 `--output` 파일만 읽습니다(런북 0장). 열어 둔 것은 압축본을 다시 세는 `inspect_real_data_checks.py --check-summary`(DB 를
+  열지 않는다) 하나이고, 화면 확인의 항목 목록 `--list` 는 deny 밖입니다.
+- 사내 적용 세션은 기본 Sonnet 으로 띄웁니다. Opus 가 필요한 네 구간에서는 에이전트가 멈추고 `/model opus` 를 청합니다(런북 0-2).
 - 둘 다 배포가 **보존**하므로 다음 ZIP 이 덮지 않습니다. 템플릿이 바뀌면 그때 다시 복사합니다.
 - 사내 에이전트 세션은 auto·bypass(권한 건너뛰기) 모드로 띄우지 않습니다 — 템플릿의 방어선은 사람이 승인 프롬프트를 읽는
   것입니다. 배포마다 런북 1-2 가 설정이 템플릿과 같은지와 함께 봅니다.
@@ -642,9 +646,9 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |
 | `compare_legacy_results.py` | 원천에 보존된 기존 결과와 신규 계산값을 대조해 요약·상세 CSV 를 만든다 |
 | **사내 실데이터 확인(읽기 전용 — 값은 찍지 않고 개수만)** | |
-| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인 줄·`0031` 가정 배치 차이·옛 코드 흔적)·BigDataQuery·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)·기준 정보 편집 표 크기(큰 표 상한 대비 — 8-11)·남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전의 꼴(원천 형제 · 부하 · 분포 — 8-12)을 재고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다(런북 8장). `--check-summary <파일>` 은 DB 없이 옮겨 적은 압축본을 다시 센다 |
+| `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인 줄·`0031` 가정 배치 차이·옛 코드 흔적)·BigDataQuery(런북은 이 블록을 부르지 않는다 — 꼭 필요하면 사외가 사용자에게 먼저 요청하고 사용자가 직접 돌린다)·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)·기준 정보 편집 표 크기(큰 표 상한 대비 — 8-11)·남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전의 꼴(원천 형제 · 부하 · 분포 — 8-12)을 재고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다(런북 8장 — 사내는 사용자가 별도 창에서 돌린다). `--check-summary <파일>` 은 DB 없이 옮겨 적은 압축본을 다시 센다 |
 | `inspect_revision_calculations.py` | 모든 리비전의 Capa → 소요대수 → 확보율을 다시 돌린다(런북 6-3 a, `--database` 사본 필수 — 운영 DB 자리는 거절). 대당 Capa 가 기준정보 연결에서 멈추면 그 꼴(빈 값 · 연결값 없음 · 연결 키 중복 …)과 개수만 적는다 |
-| `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다(`--database` 로 사본도) |
+| `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다(`--database` 로 사본도, `--output` 으로 같은 출력을 UTF-8 파일에도 — 사내는 사용자가 별도 창에서 돌린다) |
 | `inspect_top_remigration.py` | `Top` 재이관 마이그레이션의 전제를 잰다 |
 | `audit_top_remigration.py` | `0026` 적용 뒤 이관 결과의 오염·누락을 점검한다 |
 | `check_deploy_screens.py` | 런북 7장 화면 확인을 별도 포트 앱과 저장소 밖 Playwright 로 돌린다 |
@@ -683,7 +687,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/wsl_dev_environment.md` | 사외 개발 자리(데스크탑 WSL) 준비·명령·앱 띄우기·배포 |
 | `docs/review_sample.md` | 검수용 합성 샘플 — 만드는 법 · 만드는 것(시나리오 · 공식버전 · 설비 DB · 모듈 견본) · 이야기 칸 · 끝 점검 · 앱 띄우기 |
 | `docs/dual_env_workflow.md` | 사외·사내 두 환경의 역할과 작업 절차, 코드 밖 산출물(가이드는 사외 완성 — 사외 뼈대 · 사내 완성은 쉼), 리뷰 양식(사람이 옮겨 적는 압축본 `review/<stamp>.md` + 사내에 남는 전문 `.full.md`) |
-| `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 기본 Sonnet · Opus 구간 여섯(0-2)·실 DB 사본 확인(6-3)·실데이터 확인(8장)·사본으로만 하는 사내 탐색(9장) 포함. 따라하기 가이드 사내판 만들기(10장)는 쉼 |
+| `docs/internal_update_runbook.md` | 사내에서 배포 ZIP 을 받아 적용하는 한 번의 작업 런북 — 기본 Sonnet · Opus 구간 넷(0-2)·사내 DB 를 여는 줄은 사용자 별도 창(0장)·실 DB 사본 확인(6-3)·실데이터 확인(8장) 포함. 사내 탐색(9장)은 걷었고 따라하기 가이드 사내판 만들기(10장)는 쉼 |
 | `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
 | `docs/sso_setup.md` | C-DEP 운영 서버의 통합인증(SSO) — 흐름·접속 명단·로그인 유지와 갱신·환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
@@ -700,8 +704,9 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 
 ## 아직 없는 것
 
-- 사내 실데이터 대조의 남은 결론 — BigDataQuery 상세 조회 창, Wafer `WF수(매)` 경로 단위와 소요대수 대조
-  (확인 절차는 런북 8장)
+- 사내 실데이터 대조의 남은 결론 — Wafer `WF수(매)` 경로 단위와 소요대수 대조(확인 절차는 런북 8장). BigDataQuery 상세 조회 기본 창은
+  그대로 두기로 닫았고(2026-10-22), 같은 날 다른 값으로 두 번 실린 「하루 안 충돌 키」 는 근거를 재던 런북 8-5 를 걷어(2026-11-11) 열린 채다 —
+  꼭 필요하면 사외가 배포 전에 사용자에게 쉬운 말로 먼저 묻는다(런북 0장)
 - 시나리오·공식버전·표시순서 관리의 사용자 권한과 승인자 이력(설비 리비전은 「저장자」 선택 입력만)
 - 설비 시나리오 2단계 — 시나리오끼리 일정 비교, 보관·영구 삭제·순서, 공통 대장 이력 표
 - 화면 탭 2단계 — 탭을 끌어내 떠 있는 창으로 보기(무엇을 띄울지 결정 대기, 끌어서 차례 바꾸기는 2026-11-02 들어감)

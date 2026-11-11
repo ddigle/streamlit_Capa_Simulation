@@ -66,7 +66,7 @@ def test_the_blocked_lines_table_lists_every_operational_database_line() -> None
     rule = "운영 DB 를 복사하거나 여는 줄은 막히기를 기다리지 않고 처음부터 사용자에게 준다"
     assert rule in chapter_six
     assert "운영 데이터 백업(1-3)" in rows
-    assert "7-8 개수 조회 두 줄 · 그 뒤 `inspect_wf_division.py`" in rows
+    assert "7-8 의 개수 줄 · 그 뒤 `inspect_wf_division.py`" in rows
     assert "`inspect_real_data_checks.py`(8장, 매번 막혔다)" in rows
 
 

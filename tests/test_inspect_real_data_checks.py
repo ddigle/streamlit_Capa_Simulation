@@ -1950,8 +1950,8 @@ def test_bigdataquery_block_measures_windows_without_naming_codes(
     ]
     assert checks.check_transcript(_summary(output)) == []
     assert not [line for line in output.splitlines() if _self_check_pattern().search(line)]
-    bdq_keys = [line.split(" ", 2)[1] for line in summary]
-    assert all(_matches_a_key(key, bdq_keys) for key in _carried_keys() if key.startswith("8-5"))
+    # 런북 8-6 「늘 옮기는 줄」 에는 BigDataQuery 키가 없다 — 런북은 이 블록을 부르지 않는다(8-5).
+    assert not [key for key in _carried_keys() if key.startswith("8-5")]
 
 
 def test_multi_day_codes_outside_the_sample_fill_the_copy_check(
@@ -3180,12 +3180,9 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-11",
         "8-12",
     ]
-    # 런북 8-6 「늘 옮기는 줄」 의 키는 스크립트가 실제로 찍는 키다(8-5 는 BigDataQuery
-    # 시험이 본다).
+    # 런북 8-6 「늘 옮기는 줄」 의 키는 스크립트가 실제로 찍는 키다.
     carried = _carried_keys()
-    assert carried and all(
-        _matches_a_key(key, keys) for key in carried if not key.startswith("8-5")
-    ), carried
+    assert carried and all(_matches_a_key(key, keys) for key in carried), carried
     assert all(line.startswith("- ") and re.search(r" #\d\d$", line) for line in lines)
     # 손으로 옮겨 적는 줄이라 짧다 — 범례(런북 8-6)가 키의 뜻을 맡는다.
     assert max(len(line) for line in lines) <= 90, lines
@@ -3464,7 +3461,10 @@ def test_check_summary_prints_forms_after_mismatches_and_keeps_exit_zero(
 
 def _sample_compressed_review() -> list[str]:
     """런북 5장 차례 · `docs/dual_env_workflow.md` 4장 양식대로 쓴 압축본 표본. 8장 줄은 스크립트가
-    찍은 그대로(확인 코드째)이고, 늘 옮기는 줄은 판정 · B · A 바로 아래, 나머지는 끝이다."""
+    찍은 그대로(확인 코드째)이고, 늘 옮기는 줄은 판정 · B · A 바로 아래, 나머지는 끝이다.
+    지난 리뷰의 꼴(B 대행 표지 `@a` · `@ua` 와 `a<n>`, `탐색` 줄, BigDataQuery 의 `8-5C<i>`)도
+    담는다 — 런북은 그 줄을 더 쓰지 않지만 `--check-summary` 는 받은 지난 압축본을 그대로 다시
+    센다."""
     eighth = [
         line[2:]
         for line in checks.summary_lines(
