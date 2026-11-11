@@ -144,6 +144,15 @@ def _vital_blank(tables: Tables) -> Tables:
     return {**tables, "RQ_VITAL": vital}
 
 
+def _main_upeh_blank(tables: Tables) -> Tables:
+    """계산 대상 Main 행 하나의 UPEH 를 비운다 — 경로의 바탕 표(`RQ_UPEH`) 자체의 값 칸 멈춤."""
+    upeh = tables["RQ_UPEH"].copy()
+    upeh["UPEH"] = upeh["UPEH"].astype("float64")
+    main = upeh["Area_Name"].eq("Main") & upeh["소요기준"].isin(["CHIP", "WF", "PKG"])
+    upeh.loc[upeh.index[main.to_numpy().nonzero()[0][0]], "UPEH"] = float("nan")
+    return {**tables, "RQ_UPEH": upeh}
+
+
 def _vital_zero(tables: Tables) -> Tables:
     """여유율 한 행을 0 으로 — 연결은 되고 값 검사(`0보다 커야`)에서 멈춘다(연결 꼴 없음)."""
     vital = tables["RQ_VITAL"].copy()
@@ -279,6 +288,23 @@ def test_a_reference_join_stop_keeps_its_route_count_and_folds_the_rest(tables: 
     assert stop is not None and stop.title == "계산 멈춤 — 대당 Capa"
     assert stop.subtitle == outcome.error
     assert uncounted is not None and uncounted.count_text == "셀 수 없음"
+
+
+def test_an_upeh_table_stop_names_its_stage_and_keeps_its_route_count(tables: Tables) -> None:
+    """경로의 바탕 표(`RQ_UPEH`) 자체의 멈춤도 꼴과 수를 들어 제목이 「계산 멈춤 — 대당 Capa」 다
+    (사내 리뷰 202611111500 발견 3)."""
+    edited = _main_upeh_blank(tables)
+    outcome = full_capacity_outcome(edited, edited)
+    assert outcome.problem is not None
+    assert (outcome.problem.table, outcome.problem.label) == ("RQ_UPEH", "빈 값(UPEH)")
+    assert outcome.problem.rows == 1
+
+    check = _check(edited)
+
+    stop = check.group(GROUP_STOP)
+    assert check.stop is not None and check.stop.problem == outcome.problem
+    assert stop is not None and stop.title == "계산 멈춤 — 대당 Capa"
+    assert stop.subtitle == outcome.error
 
 
 def test_a_stop_without_a_join_problem_does_not_name_a_stage(tables: Tables) -> None:

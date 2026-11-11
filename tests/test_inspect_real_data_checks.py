@@ -2840,6 +2840,11 @@ def _census_row(output: str, key: str) -> str:
     return " | ".join(cells[3:]).strip()
 
 
+# 원천 `계획기초정보여부` 에 심는 값 — 다른 표기 하나 · 빈칸 넷(NULL · 빈 글 · 스페이스뿐 · 탭뿐) ·
+# 공백 · 대소문자를 무시하면 `Y` 인 것 하나.
+PLANTED_PLAN_FLAGS: Final = ("x", None, " y ", "", "  ", "\t")
+
+
 def _plant_census(simulation: Path, equipment: Path) -> None:
     """센서스 줄마다 하나씩(대여평가·계획기초정보여부는 둘) 꼴을 심는다. 달을 갈라 줄끼리 섞이지
     않게 하고, 머지 공백 달(202606)에는 아무것도 심지 않는다.
@@ -2908,9 +2913,9 @@ def _plant_census(simulation: Path, equipment: Path) -> None:
             connection.execute(f'DELETE FROM rev_data.{table} WHERE "생산계획년월" = 202606')
         connection.execute("UPDATE app_meta.dataset SET source_type = 'SCENARIO_MONTH_MERGE'")
         flags = connection.execute(
-            "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no LIMIT 3"
+            "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no LIMIT 6"
         ).fetchall()
-        for (row,), value in zip(flags, ["x", None, " y "], strict=True):
+        for (row,), value in zip(flags, PLANTED_PLAN_FLAGS, strict=True):
             connection.execute(
                 'UPDATE raw_data.core_data SET "계획기초정보여부" = ? WHERE source_row_no = ?',
                 [value, row],
@@ -2973,7 +2978,7 @@ def test_the_census_counts_each_planted_shape_without_names(
         "fold": "1 / 1 리비전 | 행 1 |",
         "blank": "1 / 1 리비전 | 칸 1 |",
         "merge": "1 / 1 머지 리비전 | 달 1 |",
-        "flag": "1 / 1 원천 데이터셋 | 행 2 |",
+        "flag": "1 / 1 원천 데이터셋 | 행 5 = 빈칸 4 + 다른표기 1 |",
         "names": "1 / 1 설비 리비전 | 묶음 1 |",
     }
     assert {key: _census_row(output, key) for key in expected} == expected
@@ -2987,12 +2992,23 @@ def test_the_census_counts_each_planted_shape_without_names(
     assert "지금대로" not in "".join(basis.values())
     # 요약 — 0 이 아닌 줄만 키와 함께 한 줄씩, 머리는 그 줄 수와 합.
     summary = _uncoded(_summary(output))
-    assert summary[0] == "- 8-10 활성 1 · 0 아님 12/12 · 합 14"
+    assert summary[0] == "- 8-10 활성 1 · 0 아님 12/12 · 합 17"
+    # C11 은 빈 칸(None · 빈 글 · 스페이스뿐 · 탭뿐)과 다른 표기("x")를 나눠 센다 — " y " 는 공백 ·
+    # 대소문자를 무시하면 Y 다. 탭뿐인 칸은 DuckDB `trim` 이 떼지 않아도 앱 판정처럼 빈칸이다.
     assert summary[1:] == [
         f"- 8-10 C{index} {count}"
-        for index, count in enumerate([1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1], start=1)
+        for index, count in enumerate(
+            [1, 1, 1, 1, 1, 2, 1, 1, 1, 1, "5 = 빈칸 4 + 다른표기 1", 1], start=1
+        )
     ]
     assert checks.check_transcript(_summary(output)) == []
+    # 두 수의 합은 거르는 식 하나가 정한 수다 — 지난 리뷰의 C11 과 견주는 수.
+    with duckdb.connect(str(simulation), read_only=True) as connection:
+        before_split = connection.execute(
+            "SELECT count(*) FROM raw_data.core_data "
+            "WHERE upper(trim(coalesce(\"계획기초정보여부\", ''))) NOT IN ('Y', 'N')"
+        ).fetchone()
+    assert before_split == (5,)
 
 
 def test_the_census_counts_every_revision_only_when_asked(
@@ -3281,6 +3297,39 @@ def test_a_dropped_or_shifted_census_line_is_caught() -> None:
     all_zero = checks._census_notes(scope, zeros, all_revisions=True)
     assert all_zero == ["- 8-10 전부 5 · 모두 0 (12/12)"]
     assert checks.check_transcript(checks.summary_lines(all_zero)) == []
+
+
+def test_the_plan_flag_line_carries_its_split_and_is_checked_by_its_sum() -> None:
+    """C11 은 빈칸 · 다른표기 두 수로 나눠 센다(보드 N6 (가)). 줄의 수(키 뒤 첫 수)는 그 합이라
+    머리의 `0 아님 k` · `합` 은 그대로 맞고, 나눈 두 수를 잘못 옮기면 줄 안 식이 잡는다. 나누기
+    전 꼴(`8-10 C11 205`)로 옮긴 지난 리뷰도 그대로 읽는다."""
+    scope = checks.CensusScope(picked="", revisions=57, label="")
+    rows = [
+        checks.CensusRow(key=item.key, label=item.label, basis=item.basis, unit=item.unit)
+        for item in checks.CENSUS_ITEMS
+    ]
+    rows[8] = replace(rows[8], count=2)
+    rows[10] = replace(rows[10], count=205, parts=(("빈칸", 200), ("다른표기", 5)))
+    assert rows[10].cells()[-1] == "행 205 = 빈칸 200 + 다른표기 5"
+    lines = [
+        line
+        for line in checks.summary_lines(checks._census_notes(scope, rows, all_revisions=False))
+        if line.startswith("- ")
+    ]
+
+    assert _uncoded(lines) == [
+        "- 8-10 활성 57 · 0 아님 2/12 · 합 207",
+        "- 8-10 C9 2",
+        "- 8-10 C11 205 = 빈칸 200 + 다른표기 5",
+    ]
+    assert checks.check_transcript(lines) == []
+    # 손으로 옮기며 칸 가름 · 띄어쓰기를 바꿔도 같다.
+    assert checks.check_transcript([line.replace("빈칸 ", "빈 칸 ") for line in lines]) == []
+    slipped = [lines[0], lines[1], lines[2].replace("빈칸 200", "빈칸 201")]
+    assert any("검산 식이 서지 않는다" in problem for problem in checks.check_transcript(slipped))
+    # 나누기 전 꼴은 머리와 맞대는 수 줄로 그대로 읽는다.
+    before = ["8-10 활성 57 · 0 아님 2/12 · 합 207", "8-10 C9 2", "8-10 C11 205"]
+    assert checks.check_transcript(_coded(*before)) == []
 
 
 def test_check_summary_reads_a_transcript_without_opening_a_database(
@@ -4192,6 +4241,31 @@ def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
     assert [place.label for place in places] == [f"S{revision.scenario_no} r{revision.revision_no}"]
 
 
+def test_a_revision_whose_upeh_table_stops_first_is_noted_by_that_shape(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """빈 효율이 남는 리비전이라도 경로의 바탕 표(`RQ_UPEH`)가 먼저 멈추면 빈 칸을 메워도 계산이
+    서지 않는다 — 8-12 는 재지 않고 그 꼴과 수를 `8-12K` 한 줄로 적는다(값 · 이름 없음). UPEH 표
+    자체의 멈춤도 꼴을 들기 때문이다(사내 리뷰 202611111500 발견 3)."""
+    with duckdb.connect(str(blank_stop_db)) as connection:
+        connection.execute(
+            'UPDATE rev_data.rq_upeh SET "UPEH" = NULL WHERE rowid = (SELECT min(rowid) '
+            'FROM rev_data.rq_upeh WHERE "Area_Name" = \'Main\' AND "UPEH" > 0 '
+            "AND \"소요기준\" IN ('CHIP', 'WF', 'PKG'))"
+        )
+
+    code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    lines = _uncoded(_summary(output))
+    assert [line for line in lines if line.startswith("- 8-12")] == [
+        "- 8-12 전부 1 · 걸림 1",
+        "- 8-12K S1 r1 · UPEH 빈 값(UPEH) 키 1 · 경로 1",
+    ]
+    assert checks.check_transcript(_summary(output)) == []
+
+
 def test_a_slipped_figure_on_the_blank_lines_is_caught(
     blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -4264,7 +4338,15 @@ def test_a_blank_line_above_its_head_is_caught() -> None:
     assert "위에 8-12 머리 줄이 없다" in problem
 
 
-@pytest.mark.parametrize("reason", ["됨", "VITAL 연결값 없음 키 71 · 경로 71", "실패(ValueError)"])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "됨",
+        "VITAL 연결값 없음 키 71 · 경로 71",
+        "UPEH 빈 값(UPEH) 키 1 · 경로 1",
+        "실패(ValueError)",
+    ],
+)
 def test_a_stop_measured_only_by_its_reason_has_a_single_line(reason: str) -> None:
     """꼴을 재지 못한 리비전은 `8-12K` 한 줄뿐이다(런북 8-6 범례)."""
     assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", f"8-12K S1 r1 · {reason}")) == []

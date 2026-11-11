@@ -25,6 +25,7 @@ from capa_simulation.components.availability_gap_panel import (
     RESULT_VIEW_HELP,
     RESULT_VIEW_KEY,
     ROW_END_STYLE,
+    UNIT_FILTER_MARK,
     UNIT_LIST_HELP,
 )
 from capa_simulation.components.availability_sheet_canvas import GROUP_TITLES
@@ -885,6 +886,10 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
     # 결과 · 표시」 전환 줄 오른쪽 끝 칸의 작은 글, 「내려받기 ▾」 메뉴 앞(2026-11-11 보드 D2 (나) —
     # e4-1 과 같은 꼴).
     (mark,) = [item for item in app.caption if str(item.value) == ONE_SIDED_MARK]
+    # 앞 아이콘 없이 끝 풍선 ⓘ 하나다 — 같은 칸의 호기 필터 표지는 깔때기를 그대로 단다(보드 G5 ·
+    # G7).
+    assert ONE_SIDED_MARK == "한쪽 공정 · GAP 없음"
+    assert UNIT_FILTER_MARK.startswith(":material/filter_alt: ")
     assert "「Wire Bond」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다" in mark.proto.help
     assert "있는 쪽 값만 보입니다" in mark.proto.help
     assert not any("GAP 을 내지 않습니다" in str(item.value) for item in app.caption)
