@@ -275,6 +275,8 @@ def s3_upload(ctx: ModuleContext, name: str) -> S3Result:
     `managed` · 키 · 주소 · 버킷이 있음)가 아니면 「쓸 수 없음」 이다. 파일 하나는 `S3_MAX_BYTES`
     까지.
     """
+    if not _module_registry.is_valid_module_id(ctx.id):
+        return S3Result(ok=False, reason=_module_helpers.S3_NAME_REJECTED)
     return _module_helpers.s3_upload(ctx.id, ctx.data_dir, name)
 
 
@@ -284,4 +286,6 @@ def s3_download(ctx: ModuleContext, name: str) -> S3Result:
     다 받은 뒤 한 번에 바꾼다 — 받다 끊겨도 있던 파일은 그대로다. 버킷에 없으면 「파일 없음」 이고
     로컬 파일은 건드리지 않는다. 그 밖은 `s3_upload` 와 같다.
     """
+    if not _module_registry.is_valid_module_id(ctx.id):
+        return S3Result(ok=False, reason=_module_helpers.S3_NAME_REJECTED)
     return _module_helpers.s3_download(ctx.id, ctx.data_dir, name)

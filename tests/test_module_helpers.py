@@ -197,7 +197,7 @@ def test_a_link_out_of_the_data_place_is_refused(
 
 
 def test_a_hand_made_context_with_a_bad_id_cannot_leave_its_prefix(
-    ctx: module_api.ModuleContext, store: MockStore
+    ctx: module_api.ModuleContext, store: MockStore, data_root: Path
 ) -> None:
     forged = module_api.ModuleContext(
         id="../demo_other",
@@ -209,6 +209,10 @@ def test_a_hand_made_context_with_a_bad_id_cannot_leave_its_prefix(
     )
 
     assert module_helpers.s3_upload(forged.id, ctx.data_dir, "demo.csv").reason == "이름 거절"
+    # 창구는 데이터 자리(`ctx.data_dir` — 읽을 때 만든다)를 건드리기 전에 거절한다.
+    assert module_api.s3_upload(forged, "demo.csv").reason == "이름 거절"
+    assert module_api.s3_download(forged, "demo.csv").reason == "이름 거절"
+    assert not (data_root.parent / "demo_other").exists()
     assert store.requests == []
 
 
