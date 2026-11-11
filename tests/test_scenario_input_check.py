@@ -62,6 +62,7 @@ from capa_simulation.components.scenario_list_state import (
     DRAFT_KEY,
     LIST_MODE,
     SIDE_CHECK,
+    SIDE_NEXT_KEY,
 )
 from capa_simulation.components.scenario_management import (
     MODES,
@@ -698,9 +699,11 @@ def test_the_goto_target_rides_on_the_row_only_when_the_revision_is_known() -> N
 
 
 def _press(app: AppTest, scenario_id: str, revision_id: str) -> None:
-    """경고 줄 「그 화면으로」 누름 — 알림 칸이 탭 길(목록 관리 › 「점검」)을 다 연 회차에 콜백이
-    하는 일(`alert_center._on_goto` → `queue_check_target`)을 다음 회차 앞에 둔다."""
+    """경고 줄 「그 화면으로」 누름 — 알림 칸이 탭 길을 목록 관리까지 연 회차에 콜백이 하는
+    일(`alert_center._on_goto` → `queue_check_target` — 대상과 「점검」 칸 열기)을 다음 회차 앞에
+    둔다."""
     app.session_state[CHECK_TARGET_KEY] = (scenario_id, revision_id)
+    app.session_state[SIDE_NEXT_KEY] = SIDE_CHECK
 
 
 def _other_scenario(database: Path, base: str) -> str:
@@ -725,10 +728,11 @@ def _other_scenario(database: Path, base: str) -> str:
 def test_a_pressed_target_is_picked_when_the_check_side_shows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """누른 줄의 리비전 — 목록이 다른 시나리오를 연 채여도 「점검」 칸이 서는 회차에 그 시나리오를
-    열고 그 리비전을 고른다(최신도 올라와 있는 것도 아닌 리비전이어도 고름 씨앗이 덮지 않는다).
-    「상세」 칸 회차에는 꺼내지 않고(그 대상은 다음 앱 전체 회차 앞에서 알림 칸이 버린다 —
-    `test_alert_center`), 한 번 쓴 뒤에는 사용자가 고른 줄이 이긴다."""
+    """누른 줄의 리비전 — 목록이 다른 시나리오를 「상세」 칸에 연 채여도 누른 회차에 「점검」 칸을
+    열고(탭 길 마지막 칸은 콜백이 연다) 그 시나리오 · 리비전을 고른다(최신도 올라와 있는 것도 아닌
+    리비전이어도 고름 씨앗이 덮지 않는다). 「점검」 칸이 서지 않는 회차에 남은 대상은 꺼내지
+    않고(다음 앱 전체 회차 앞에서 알림 칸이 버린다 — `test_alert_center`), 한 번 쓴 뒤에는 사용자가
+    고른 줄이 이긴다."""
     script, database = _seeded(tmp_path)
     scenario_id, base = _official(database)
     target = _save(database, scenario_id, base, _with_exclusions, "빠짐")
@@ -737,8 +741,8 @@ def test_a_pressed_target_is_picked_when_the_check_side_shows(
     app, browser, calls = _check_app(script, monkeypatch, side=SIDE_DETAIL)
     browser.open(other, detail=True)
     assert _draft(app).opened == other
-    _press(app, scenario_id, target)
-
+    # 「점검」 칸이 서지 않는 회차에 남은 대상 — 꺼내지 않는다.
+    app.session_state[CHECK_TARGET_KEY] = (scenario_id, target)
     browser.run()
     assert _draft(app).opened == other
     assert app.session_state[CHECK_TARGET_KEY] == (scenario_id, target)
@@ -746,10 +750,11 @@ def test_a_pressed_target_is_picked_when_the_check_side_shows(
     reveal = (
         app.session_state[LIST_SIDE.reveal_key] if LIST_SIDE.reveal_key in app.session_state else 0
     )
-    app.session_state[SIDE_KEY] = SIDE_CHECK
+    _press(app, scenario_id, target)
     browser.run()
 
     assert not app.exception
+    assert app.session_state[SIDE_KEY] == SIDE_CHECK
     assert CHECK_TARGET_KEY not in app.session_state
     draft = _draft(app)
     assert (draft.opened, draft.picked) == (scenario_id, target)
@@ -778,10 +783,12 @@ def test_each_press_picks_its_own_rows_revision_and_a_hand_opened_check_moves_no
     earlier = _save(database, scenario_id, base, _with_exclusions, "앞 경고")
     newer = _save(database, scenario_id, base, _with_exclusions, "뒤 경고")
     other = _other_scenario(database, base)
-    app, browser, calls = _check_app(script, monkeypatch)
+    app, browser, calls = _check_app(script, monkeypatch, side=SIDE_DETAIL)
 
+    # 상세 칸에서 누름 — 「점검」 칸이 열리며 그 줄의 리비전에 선다.
     _press(app, scenario_id, newer)
     browser.run()
+    assert app.session_state[SIDE_KEY] == SIDE_CHECK
     assert (_draft(app).opened, _draft(app).picked) == (scenario_id, newer)
 
     # 그 사이 다른 리비전을 고른 뒤 같은 줄을 다시 누름.

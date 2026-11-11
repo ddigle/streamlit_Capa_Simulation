@@ -33,8 +33,8 @@ def test_the_panel_opens_in_the_browser_without_a_python_rerun() -> None:
     파이썬 회차가 돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다, 설계 규칙 UI-PRF-01). 이
     JS 가 파이썬을 부르는 자리는 셋이다 — 다시 붙은 탭의 회차(2차 보드 R1 (가)), 공정 판 「모든
     화면에서 해제」(2026-11-09 보드 C1 (라)), 대상을 실은 줄의 「그 화면으로」(2026-11-11 다음 배포
-    물음 보드 F4 뒤 (a) — 탭 길을 다 연 뒤 한 번). 「공정 고르기」 는 사이드바 공정 칸 단추를
-    누른다(그 칸이 연다)."""
+    물음 보드 F4 뒤 (a) — 탭 길을 마지막 칸 앞까지 연 뒤 한 번). 「공정 고르기」 는 사이드바 공정 칸
+    단추를 누른다(그 칸이 연다)."""
     assert "setStateValue" not in JS
     assert JS.count("setTriggerValue") == 2
     assert "const { data, setTriggerValue } = component" in JS
@@ -995,10 +995,12 @@ console.log(JSON.stringify(out))
 
 def test_a_goto_target_is_sent_once_after_the_tab_path_and_its_run_are_done() -> None:
     """대상을 실은 줄의 「그 화면으로」(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)) — 대상은 줄에서
-    꼴을 보고(`goTarget`) 탭 길을 다 연 뒤(`goStep` 이 'send') 그 회차가 끝났을 때 한 번 보낸다.
-    누른 뒤에는 그 누름의 회차 표지가 움직이기 전에 다음 걸음을 보지 않고, 길을 못 다 열면(시간 넘김
-    · 단추 없음) 대상째 버린다. 트리거는 그리기 함수 밖(타이머)에서 보낸다 — 안에서 보낸 트리거는
-    회차 요청에 실리지 않는다(`page_tabs.js` 와 같은 까닭)."""
+    꼴을 보고(`goTarget`) 탭 길을 마지막 칸 앞까지 연 뒤 그 회차가 끝났을 때, 마지막 칸 단추가 선
+    것만 보고 누르는 대신 한 번 보낸다(받는 쪽이 그 칸을 연다 — 따로 누르면 그 회차가 앞 고름으로 한
+    번 더 센다). 탭 길이 없는 줄은 그 화면에 닿으면 보낸다(`goStep` 이 'send'). 누른 뒤에는 그
+    누름의 회차 표지가 움직이기 전에 다음 걸음을 보지 않고, 길을 못 다 열면(시간 넘김 · 단추 없음)
+    대상째 버린다. 트리거는 그리기 함수 밖(타이머)에서 보낸다 — 안에서 보낸 트리거는 회차 요청에
+    실리지 않는다(`page_tabs.js` 와 같은 까닭)."""
     out = _node(
         """
 const good = { kind: 'check', scenario: 'S', revision: 'R', extra: 1 }
@@ -1033,8 +1035,10 @@ console.log(JSON.stringify({
     assert "C.data.here !== pending.href || running() || pending.moves === C.runMoves" in settle
     assert settle.index("running()") < settle.index("sendTarget(C, pending.target)")
     assert "{ ...C.pendingTab, moves: C.runMoves }" in settle
-    # 마지막 칸을 누른 뒤에도 대상이 있으면 기다린다 — 그 회차가 끝난 뒤에 보낸다.
-    assert "C.pendingTab = rest || pending.target ? { ...pending, tab: rest } : null" in settle
+    # 마지막 칸은 단추가 선 것만 보고(없으면 버림) 누르는 대신 대상을 보낸다.
+    last_step = settle.index("if (!rest && pending.target) {")
+    assert settle.index("if (!button) {") < last_step < settle.index("button.click()")
+    assert "sendTarget(C, pending.target)" in settle[last_step : settle.index("button.click()")]
     sender = JS[JS.index("function sendTarget(") :]
     sender = sender[: sender.index("\n}\n")]
     assert "setTimeout(" in sender

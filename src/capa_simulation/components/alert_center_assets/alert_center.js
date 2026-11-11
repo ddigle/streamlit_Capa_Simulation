@@ -44,8 +44,9 @@
 //   `window.__capaAlertQueue` 에 담아 두고 칸이 설 때 꺼낸다). 「그 화면으로」 는 탭 줄의 화면 이동(상한 · 떠나기 확인)에
 //   `capa-open-page` 사건으로 맡긴다. 줄에 화면 안 탭(`tab`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
 //   누른다(`stateful_tabs` — 보통 누름과 같다). 줄이 대상(`target` — 「소요대수에 들지 않은 수요」 경고의 리비전)을 들고 있으면
-//   탭 길을 다 열고 회차가 끝난 뒤 트리거 `goto` 로 한 번 보낸다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a) — 누를 때마다 그 줄의
-//   대상, 길을 못 다 열면 보내지 않는다). 그리기 함수 안에서 보낸 트리거는 회차 요청에 실리지 않으므로 타이머로 미룬다.
+//   마지막 칸 앞까지 열고 회차가 끝난 뒤, 마지막 칸 단추가 선 것을 보고 그 칸을 누르는 대신 트리거 `goto` 로 대상을 한 번 보낸다 —
+//   받는 쪽이 그 칸을 함께 연다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a) — 누를 때마다 그 줄의 대상, 길을 못 다 열면 보내지
+//   않는다). 그리기 함수 안에서 보낸 트리거는 회차 요청에 실리지 않으므로 타이머로 미룬다.
 // - 알림에 딸린 표(`tables` — 본문에서 뺀 목록, 한 줄에 여럿일 수 있다)는 줄의 「… 보기」 단추가 표마다 펼치고 CSV 는 브라우저
 //   안에서 만든다(서버를 부르지 않는다). 칸 머리 풍선(`help`)은 `title` 이다. 표는 코드마다 가장 새 줄에만 남기고, 탭 저장소가
 //   넘치면 저장본에서 오래된 줄의 표부터 뺀다 — 줄은 남고, 그 화면이 다시 보내면 표가 다시 붙는다.
@@ -1365,8 +1366,9 @@ function running() {
 // 「그 화면으로」 가 맡긴 탭 고르기 — 그 화면(`here`)에 닿고 회차가 끝났으면 이름이 맞는 탭 · 전환 단추를 누른다. 이미 열린 탭이면
 // 누르지 않는다. 탭 안 탭이면 바깥 탭부터 한 칸씩 연다 — 누른 칸은 그 회차가 끝난 뒤 다음 칸을, 이미 열린 칸은 곧바로 다음 칸을
 // 본다. 누른 뒤에는 그 누름의 회차 표지가 한 번 움직이기 전에는 다음 걸음을 보지 않는다(`moves` — 누름과 회차 시작 사이의 틈에
-// 다음 칸을 찾다 놓치지 않게). 줄이 대상을 들고 왔으면 길을 다 열고 그 회차가 끝난 뒤 한 번 보낸다(`sendTarget`). 기다리는 시간이
-// 지나거나 단추를 찾지 못하면 대상째 버린다.
+// 다음 칸을 찾다 놓치지 않게). 줄이 대상을 들고 왔으면 마지막 칸은 누르지 않고 그 단추가 선 것만 본 뒤 대상을 한 번 보낸다
+// (`sendTarget`) — 받는 쪽 콜백이 그 칸을 함께 연다(`scenario_list_state.queue_check_target`). 마지막 칸을 따로 누르면 그 회차가 앞
+// 고름으로 한 번 더 그리고 센다(합성 사본 0.6초 — 샘플 관측). 기다리는 시간이 지나거나 단추를 찾지 못하면 대상째 버린다.
 function settleTab(C) {
   while (C.pendingTab) {
     const pending = C.pendingTab
@@ -1382,16 +1384,21 @@ function settleTab(C) {
       return
     }
     const [first, rest] = tabStep(pending.tab)
-    C.pendingTab = rest || pending.target ? { ...pending, tab: rest } : null
     const buttons = [...document.querySelectorAll(TAB_BUTTON), ...document.querySelectorAll(SEGMENT_BUTTON)]
     const button = buttons.find((item) => tabMatches(item.textContent, first))
-    if (button && !tabChosen(button)) {
-      if (C.pendingTab) C.pendingTab = { ...C.pendingTab, moves: C.runMoves }
-      button.click()
-      return
-    }
     if (!button) {
       C.pendingTab = null
+      return
+    }
+    if (!rest && pending.target) {
+      C.pendingTab = null
+      sendTarget(C, pending.target)
+      return
+    }
+    C.pendingTab = rest ? { ...pending, tab: rest } : null
+    if (!tabChosen(button)) {
+      if (C.pendingTab) C.pendingTab = { ...C.pendingTab, moves: C.runMoves }
+      button.click()
       return
     }
   }

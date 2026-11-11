@@ -687,12 +687,12 @@ def _aim_at_check_target(draft: ListDraft, saved: SavedList) -> ListDraft:
     리비전을 고른다(`required_exclusion_notice.required_check_target` — 2026-11-11 입력 점검 검토
     보드 F4 (나) · 다음 배포 물음 보드 F4 뒤 (a)).
 
-    대상은 경고 줄이 들고 다니다 알림 칸이 탭 길(목록 관리 › 「점검」)을 다 연 뒤에만 보내므로
-    (`alert_center._on_goto` → `scenario_list_state.queue_check_target`) 같은 줄을 다시 누르면 다시,
-    앞 경고 줄을 누르면 그 줄의 리비전을 고르고, 누르지 않고 손으로 연 「점검」 칸에는 꺼낼 것이
-    없다. 적어 둔 것은 한 번만 쓴다 — 고른 뒤에는 사용자가 고른 줄이 이긴다. 다른 칸(상세 · 저장 전
-    변경 따위)이 서는 회차에는 꺼내지 않고, 그 회차가 끝나도 남은 것은 다음 앱 전체 회차에
-    버려진다(`scenario_list_state.expire_check_target`).
+    대상은 경고 줄이 들고 다니다 알림 칸이 탭 길을 목록 관리까지 연 뒤에만 보내고 그 콜백이 「점검」
+    칸을 함께 연다(`alert_center._on_goto` → `scenario_list_state.queue_check_target`). 그래서 같은
+    줄을 다시 누르면 다시, 앞 경고 줄을 누르면 그 줄의 리비전을 고르고, 누르지 않고 손으로 연
+    「점검」 칸에는 꺼낼 것이 없다. 적어 둔 것은 한 번만 쓴다 — 고른 뒤에는 사용자가 고른 줄이
+    이긴다. 다른 칸(상세 · 저장 전 변경 따위)이 서는 회차에는 꺼내지 않고, 그 회차가 끝나도 남은
+    것은 다음 앱 전체 회차에 버려진다(`scenario_list_state.expire_check_target`).
     그 사이 보관 · 삭제된 시나리오면 조용히 버리고, 지운 리비전이면 고름 씨앗이 다시 고른다. 연
     시나리오가 바뀌면 상세 칸 작업 칸 · 확인 체크를 버리는 것은 `_opened_revisions` 처음 보기와
     같다. 고름 씨앗(`REVISION_SEED_KEY`)은 올라와 있는 리비전으로 맞춰 다음 회차의 씨앗이 적어 둔
