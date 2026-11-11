@@ -1016,7 +1016,14 @@ render_process_kpis(
     dynamic=dynamic,
     official=official_kpis if upeh_token else None,
 )
-file_names = detail_file_names(months, process_label=process_label, upeh_token=upeh_token)
+# 두 파일 이름 끝 공정은 공정 값 칸 · 고르기 판과 같은 글자다 — 이 화면 선택지 안에서 원본이
+# 다른 공정과 표시명이 겹치면 「표시명 (원본)」(2026-11-11 다음 배포 물음 보드 B3 뒤 (나) · 2차
+# 보드 Q2-18). 머리 · 시트 머리 값 줄은 표시명 그대로다.
+file_names = detail_file_names(
+    months,
+    process_label=process_labels.unique_format_func(process_options)(process),
+    upeh_token=upeh_token,
+)
 
 
 def sheet_heading() -> tuple[tuple[str, str], ...]:

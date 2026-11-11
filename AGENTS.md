@@ -502,8 +502,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     xlsx 로 낸다(`components/process_capa_workbook.py` · `io/xlsx_small.py` — 새 의존성 없음). 페이지는 머리 값 줄(공정 ·
     시나리오 · 조회기간 · 설비 시나리오 · 설비 일정 · UPEH 가정 — `sheet_heading`)과 호기 CSV 표(`units_export`)를 넘긴다.
     두 파일 이름(`process_capa_view.detail_file_names`)은 `process_capa_detail[_units]_<첫 달>_<끝 달>` 뒤 UPEH 가정 꼬리
-    (`_upeh<%>_<구간 첫 달>_<끝 달>`, 켰을 때만), 끝에 화면의 공정 이름(머리 값 줄과 같은 표시명 — 못 쓰는 글자 · 빈칸은
-    `table_toolbar.file_name_part` 가 `_` 로)이다(2026-11-11 남은 물음 보드 B3 (가) — 공정이 달라도 이름이 같던 것).
+    (`_upeh<%>_<구간 첫 달>_<끝 달>`, 켰을 때만), 끝에 화면의 공정 이름(공정 값 칸 · 고르기 판과 같은 글자 — 표시명이고, 이
+    화면 선택지에서 원본이 다른 공정과 표시명이 겹치면 「표시명 (원본)」(`ProcessLabels.unique_format_func` — 2026-11-11 다음
+    배포 물음 보드 B3 뒤 (나) · 2차 보드 Q2-18), 못 쓰는 글자 · 빈칸은 `table_toolbar.file_name_part` 가 `_` 로)이다(2026-11-11
+    남은 물음 보드 B3 (가) — 공정이 달라도 이름이 같던 것). 머리 · 시트 머리 값 줄의 공정은 표시명 그대로다.
   - UPEH 가정(조건 카드 끝 「이 세션만」)이 켜지면 가정 요약(이미 받은 확보율 행에 ÷f — 캐시 밖)과 가정 계획(계획 키 끝
     칸 토큰 → 가정 칸)을 더 세운다. **판정은 한 기준**이다 — 부족 띠·② 판정 대조·KPI·원인은 가정, 공식 값은 ① 공식
     줄과 KPI 회색 줄 「공식 n」 에만. 머리 배지·효과 한 줄(그 화면의 목표·기간)·카드의 역산 둘(「이 값으로」)·호기 CSV

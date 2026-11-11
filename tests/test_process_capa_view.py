@@ -69,6 +69,7 @@ from capa_simulation.components.process_capa_view import (
     shortening_link_needed,
     target_text,
 )
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import theme
 from capa_simulation.process_detail_state import FROM_GAP, FROM_HOME, FROM_SHORTENING
 from capa_simulation.services.process_capa_detail import (
@@ -1038,3 +1039,25 @@ def test_the_download_names_end_with_the_shown_process_name() -> None:
     )
     # 표시명이 쓸 글자를 남기지 않으면 꼬리는 「process」.
     assert detail_file_names(months, process_label=" / ").sheet.endswith("_202812_process.xlsx")
+
+
+def test_a_clashing_display_name_files_under_the_picker_text() -> None:
+    """원본이 다른 두 공정의 표시명이 겹치면(합성 표본 「Shipping Inspection」 → 「AVI」, 원본
+    「AVI」 도 있음) 파일 이름 끝은 값 칸 · 고르기 판과 같은 「표시명 (원본)」 이라 두 공정이 다른
+    이름으로 받아진다(2026-11-11 다음 배포 물음 보드 B3 뒤 (나) · 2차 보드 Q2-18). 겹치지 않는
+    공정은 표시명 그대로다."""
+    months = (202611, 202812)
+    labels = ProcessLabels(labels={"Shipping Inspection": "AVI", "Wire Bond": "W/B"})
+    text = labels.unique_format_func(["AVI", "Shipping Inspection", "Wire Bond"])
+    names = {
+        process: detail_file_names(months, process_label=text(process))
+        for process in ("AVI", "Shipping Inspection", "Wire Bond")
+    }
+    assert names["AVI"].sheet == "process_capa_detail_202611_202812_AVI.xlsx"
+    assert names["Shipping Inspection"].sheet == (
+        "process_capa_detail_202611_202812_AVI_(Shipping_Inspection).xlsx"
+    )
+    assert names["Shipping Inspection"].units_csv == (
+        "process_capa_detail_units_202611_202812_AVI_(Shipping_Inspection).csv"
+    )
+    assert names["Wire Bond"].sheet == "process_capa_detail_202611_202812_W_B.xlsx"
