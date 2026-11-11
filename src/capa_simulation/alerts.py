@@ -402,8 +402,9 @@ class AlertTable(TypedDict):
 class GotoTarget(TypedDict):
     """「그 화면으로」 가 그 화면 · 탭에 닿았을 때 서버에 보내는 대상 — 줄이 들고 다니고 누를 때만
     간다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). `kind` 는 받는 쪽 이름이고 알림 칸이 아는
-    종류만 받는다(`components/alert_center.py` `_on_goto`). 지금은 하나 — 「소요대수에 들지 않은
-    수요」 경고가 든 리비전(`scenario_list_state.CHECK_TARGET_KIND`)."""
+    종류만 받는다(`components/alert_center.py` `GOTO_RECEIVERS` — JS 도 data `goto_kinds` 로 그
+    종류만 들고 가고, 모르는 종류는 대상 없는 줄처럼 탭 길 마지막 칸을 누른다). 지금은 하나 —
+    「소요대수에 들지 않은 수요」 경고가 든 리비전(`scenario_list_state.CHECK_TARGET_KIND`)."""
 
     kind: str
     scenario: str

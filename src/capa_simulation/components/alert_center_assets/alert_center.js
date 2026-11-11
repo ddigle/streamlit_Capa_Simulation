@@ -45,8 +45,11 @@
 //   `capa-open-page` 사건으로 맡긴다. 줄에 화면 안 탭(`tab`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
 //   누른다(`stateful_tabs` — 보통 누름과 같다). 줄이 대상(`target` — 「소요대수에 들지 않은 수요」 경고의 리비전)을 들고 있으면
 //   마지막 칸 앞까지 열고 회차가 끝난 뒤, 마지막 칸 단추가 선 것을 보고 그 칸을 누르는 대신 트리거 `goto` 로 대상을 한 번 보낸다 —
-//   받는 쪽이 그 칸을 함께 연다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a) — 누를 때마다 그 줄의 대상, 길을 못 다 열면 보내지
-//   않는다). 그리기 함수 안에서 보낸 트리거는 회차 요청에 실리지 않으므로 타이머로 미룬다.
+//   받는 쪽이 그 칸을 함께 연다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a) — 누를 때마다 그 줄의 대상). 그리기 함수 안에서 보낸
+//   트리거는 회차 요청에 실리지 않으므로 타이머로 미룬다. 탭 길 · 대상은 탭 줄이 이 누름의 이동을 보냈다고 사건의 `opened` 로
+//   알린 뒤에 닿은 화면에서만 잇는다 — 길이 막히면(떠나기 확인 취소 · 탭 상한 · 붙든 누름이 버려짐) 알리지 않으므로, 그 뒤 손으로
+//   그 화면에 가도 탭을 누르지 · 대상을 보내지 않는다(시간 넘김 · 단추 없음도 보내지 않는다). 대상은 받는 쪽이 아는 종류(data
+//   `goto_kinds`)만 들고 가고, 모르는 종류는 대상 없는 줄처럼 마지막 칸을 누른다.
 // - 알림에 딸린 표(`tables` — 본문에서 뺀 목록, 한 줄에 여럿일 수 있다)는 줄의 「… 보기」 단추가 표마다 펼치고 CSV 는 브라우저
 //   안에서 만든다(서버를 부르지 않는다). 칸 머리 풍선(`help`)은 `title` 이다. 표는 코드마다 가장 새 줄에만 남기고, 탭 저장소가
 //   넘치면 저장본에서 오래된 줄의 표부터 뺀다 — 줄은 남고, 그 화면이 다시 보내면 표가 다시 붙는다.
@@ -307,7 +310,7 @@ function showsGo(href, tab, here) {
 }
 
 // 「그 화면으로」 가 닿은 뒤 보낼 대상(파이썬 `alerts.GotoTarget`) — 세 칸이 모두 비지 않은 글이면 그 셋만 담은 새 값, 아니면 null.
-// 줄은 이 탭 저장소에서도 오므로 꼴을 본다(글자 수 끝 · 아는 종류는 받는 파이썬 `alerts.goto_target` 이 본다).
+// 줄은 이 탭 저장소에서도 오므로 꼴을 본다(글자 수 끝은 받는 파이썬 `alerts.goto_target` 이 본다).
 function goTarget(value) {
   if (!value || typeof value !== 'object') return null
   const names = ['kind', 'scenario', 'revision']
@@ -315,9 +318,17 @@ function goTarget(value) {
   return { kind: value.kind, scenario: value.scenario, revision: value.revision }
 }
 
-// 「그 화면으로」 가 맡긴 일의 다음 걸음 — 탭 길이 남았으면 'tab', 탭 길 없이 대상만 들었으면 'send'(그 화면에 닿으면 보냄), 아니면
-// 'done'. 탭 길이 있는 줄의 대상은 마지막 칸 자리에서 보낸다(`settleTab`).
+// 받는 쪽이 아는 종류(data `goto_kinds` — 파이썬 `alert_center.GOTO_RECEIVERS`)의 대상만 남긴다. 모르는 종류는 대상 없는 줄처럼
+// 탭 길 마지막 칸을 누른다 — 보내면 받는 쪽이 버려 아무도 마지막 칸을 열지 않는다.
+function knownTarget(target, kinds) {
+  return target && Array.isArray(kinds) && kinds.includes(target.kind) ? target : null
+}
+
+// 「그 화면으로」 가 맡긴 일의 다음 걸음 — 그 화면에 닿았는데 탭 줄이 이 누름의 이동을 보낸 적이 없으면(`opened` 거짓 — 떠나기 확인
+// 취소 · 탭 상한 · 붙든 누름이 버려짐) 'drop'(손으로 온 화면이다 — 탭 길 · 대상째 버림). 그 밖에는 탭 길이 남았으면 'tab', 탭 길 없이
+// 대상만 들었으면 'send'(그 화면에 닿으면 보냄), 아니면 'done'. 탭 길이 있는 줄의 대상은 마지막 칸 자리에서 보낸다(`settleTab`).
 function goStep(pending) {
+  if (!pending.opened) return 'drop'
   if (pending.tab) return 'tab'
   return pending.target ? 'send' : 'done'
 }
@@ -1353,11 +1364,17 @@ function processField(C) {
   return button && !button.disabled ? button : null
 }
 
+// 이동은 탭 줄에 맡기고(`capa-open-page`), 탭 줄이 이 누름의 이동을 실제로 보냈을 때(떠나기 확인 · 상한을 지남 · 이미 그 탭) 사건의
+// `opened` 를 부른다 — 그때만 그 화면에 닿은 뒤 탭 길 · 대상을 잇는다. 이미 그 화면이면 처음부터 연 것이다.
 function goTo(C, href, tab, target) {
   closePanel(C, false)
-  const carried = goTarget(target)
-  C.pendingTab = tab || carried ? { href, tab: tab || '', target: carried, until: Date.now() + PENDING_TAB_MS } : null
-  window.dispatchEvent(new CustomEvent(OPEN_PAGE_EVENT, { detail: { href } }))
+  const carried = knownTarget(goTarget(target), C.data.goto_kinds)
+  const pending = tab || carried ? { href, tab: tab || '', target: carried, until: Date.now() + PENDING_TAB_MS, opened: C.data.here === href } : null
+  C.pendingTab = pending
+  const opened = () => {
+    if (pending && C.pendingTab === pending) pending.opened = true
+  }
+  window.dispatchEvent(new CustomEvent(OPEN_PAGE_EVENT, { detail: { href, opened } }))
   settleTab(C)
 }
 
@@ -1371,7 +1388,8 @@ function running() {
 // 본다. 누른 뒤에는 그 누름의 회차 표지가 한 번 움직이기 전에는 다음 걸음을 보지 않는다(`moves` — 누름과 회차 시작 사이의 틈에
 // 다음 칸을 찾다 놓치지 않게). 줄이 대상을 들고 왔으면 마지막 칸은 누르지 않고 그 단추가 선 것만 본 뒤 대상을 한 번 보낸다
 // (`sendTarget`) — 받는 쪽 콜백이 그 칸을 함께 연다(`scenario_list_state.queue_check_target`). 마지막 칸을 따로 누르면 그 회차가 앞
-// 고름으로 한 번 더 그리고 센다(합성 사본 0.6초 — 샘플 관측). 기다리는 시간이 지나거나 단추를 찾지 못하면 대상째 버린다.
+// 고름으로 한 번 더 그리고 센다(합성 사본 0.6초 — 샘플 관측). 기다리는 시간이 지나거나 단추를 찾지 못하면 대상째 버린다. 탭 줄이
+// 이 누름의 이동을 보내지 않았는데 그 화면에 닿았으면(손으로 옴 — `goStep` 의 'drop') 아무것도 누르지 · 보내지 않고 버린다.
 function settleTab(C) {
   while (C.pendingTab) {
     const pending = C.pendingTab

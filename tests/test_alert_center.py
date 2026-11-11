@@ -131,6 +131,11 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
     assert data["sample"] is False
     assert data["marker"] == alerts.MARKER_ATTRIBUTE
     assert data["here"] == ""
+    # 「그 화면으로」 가 들고 갈 대상의 종류는 콜백이 받는 종류 그대로다 — JS 는 모르는 종류를 대상
+    # 없는 줄처럼 다룬다(마지막 칸을 누른다).
+    from capa_simulation.components.scenario_list_state import CHECK_TARGET_KIND
+
+    assert data["goto_kinds"] == sorted(alert_center.GOTO_RECEIVERS) == [CHECK_TARGET_KIND]
     assert set(data["storage"]) == {"log", "states", "seen", "boot"}
     assert [group["id"] for group in data["groups"]] == ["lose", "keep", "assume"]
 

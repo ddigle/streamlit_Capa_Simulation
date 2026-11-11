@@ -34,7 +34,10 @@
 // 알림(상한 · 공식 복귀)은 탭 줄 칸이 아니라 같은 문서의 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 한 꼴 ·
 // Alarm 기록)에 낸다(`raiseAlert` — `window.__capaAlerts.raise`, 칸이 아직 서지 않았으면 `window.__capaAlertQueue`). 알림 칸
 // 「그 화면으로」 는 `capa-open-page` 사건으로 오고, 탭 줄이 제 이동 길(열린 탭이면 고르기 — 떠나기 확인 · 한 번에 하나,
-// 아니면 그 화면 링크 누름 — 상한 거름)로 옮긴다.
+// 아니면 그 화면 링크 누름 — 상한 거름)로 옮긴다. 그 누름의 이동을 실제로 보낼 때(떠나기 확인 · 상한을 지남, 이미 그 탭이거나
+// 그 탭으로 가는 중)만 사건의 `opened` 를 부른다 — 붙들기(`<tabs-hold>`) · 줄 서기(`<tabs-queue>`)를 지나도 그 누름의 것만 들고
+// 가고(`S.waitOpen` · 링크는 `S.linkOpened`), 막히거나 버려지면 부르지 않는다. 알림 칸은 부르지 않은 이동 뒤 손으로 그 화면에
+// 와도 탭 길 · 대상을 잇지 않는다.
 // 새로고침·브라우저 탭 닫기처럼 문서 자체를 떠날 때는 저장하지 않은 편집이 있으면 브라우저 확인 창을 띄운다 — 표지는 테마
 // 단추가 읽는 것과 같은 CSS 변수다(`<tabs-unload>`). 앱이 스스로 새로 읽는 것(테마 단추 — 이미 물었다)은 묻지 않는다.
 const ICON_FONT = 'Material Symbols Rounded'
@@ -652,7 +655,7 @@ export default function (component) {
   const announcer = nav.querySelector('.capa-tabs-announce')
   const S = nav.__capaTabs || (nav.__capaTabs = {
     items: new Map(), noticeId: null, busyTimer: 0, lastActive: null, onFonts: null, onOpenPage: null,
-    onLink: null, linkFlight: null, linkReplay: null, queue: createSelectQueue(), settleTimer: 0, lastPress: null,
+    onLink: null, linkFlight: null, linkReplay: null, linkOpened: null, queue: createSelectQueue(), waitOpen: null, settleTimer: 0, lastPress: null,
     onEdit: null, editAt: -Infinity, gridFocused: false, pressFromGrid: false, hold: null, holdTimer: 0, gridSelector: GRID,
     onScroll: null, resizer: null, reveal: null, onInput: null, inputAt: -Infinity, keyPressAt: null, focusTimer: 0,
     drag: null, endDrag: null, dragEndAt: null, onTouchMove: null, heldPointer: null, onRelease: null,
@@ -913,13 +916,15 @@ export default function (component) {
     clearTimeout(S.settleTimer)
     S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
   }
-  const sendSelect = (item) => {
+  // `opened` 는 알림 칸 「그 화면으로」 의 누름이면 그 사건의 알림이다 — 떠나기 확인을 지나 보낼 때만 부른다.
+  const sendSelect = (item, opened = null) => {
     // 지금 화면에 적용하지 않은 편집표 편집이 있으면 묻는다 — 화면을 떠나면 Streamlit 이 그 편집을 버린다.
     if (!leaveOk()) return
     busy(item)
     moving(item.dataset.id)
     const carried = S.moves.due !== null ? claimDrawn() : {}
     S.send('select', { id: item.dataset.id, epoch: S.data.epoch, ...carried })
+    if (opened) opened()
   }
   // 보낸 이동이 끝났으면(옮긴 화면의 data 가 왔고 그 회차가 다 돌았거나 잠깐 지났다, 아니면 기다림이 다 됐다) 기다리던 누름을
   // 보낸다. 끝나기 전에는 짧은 간격으로 다시 본다 — 회차가 끝났다는 알림은 컴포넌트에 오지 않는다.
@@ -935,8 +940,11 @@ export default function (component) {
       S.settleTimer = setTimeout(() => settle(), SETTLE_POLL_MS)
       return
     }
+    // 기다리던 누름이 「그 화면으로」 의 것이면 그 알림을 들고 간다 — 다른 누름에 덮였으면(id 가 다름) 버린다.
+    const waited = S.waitOpen
+    S.waitOpen = null
     const item = next === null ? null : S.items.get(next)
-    if (item) sendSelect(item)
+    if (item) sendSelect(item, waited !== null && waited.id === next ? waited.opened : null)
     else restoreFocus()
   }
   const appRunning = () => {
@@ -988,19 +996,28 @@ export default function (component) {
     S.pressFromGrid = false
     return !pending
   }
-  const select = (item) => {
+  // `opened` — 알림 칸 「그 화면으로」 의 누름이면 그 사건의 알림(`S.onOpenPage`). 기다리는 누름은 마지막 하나라 그 알림도 그
+  // 누름과 함께 갈아 끼운다(`S.waitOpen`). 그 탭으로 이미 가는 중이면 지금 알린다 — 닿으면 `settleSelect` 가 다시 보내지 않는다.
+  const select = (item, opened = null) => {
     const verdict = pressSelect(S.queue, item.dataset.id, S.data.active, Date.now(), BUSY_MS)
-    if (verdict === 'wait') busy(item)
+    S.waitOpen = null
+    if (verdict === 'wait') {
+      busy(item)
+      const flight = S.queue.flight
+      if (opened && flight !== null && flight.id === item.dataset.id) opened()
+      else if (opened) S.waitOpen = { id: item.dataset.id, opened }
+      return
+    }
     if (verdict !== 'send') return
     if (fresh()) {
       S.hold = null
-      sendSelect(item)
+      sendSelect(item, opened)
       return
     }
     const id = item.dataset.id
     holding(item, () => {
       const target = S.items.get(id)
-      if (target && !target.hidden && id !== S.data.active) sendSelect(target)
+      if (target && !target.hidden && id !== S.data.active) sendSelect(target, opened)
       else if (target) setAttr(target.__parts.tab, 'aria-busy', null)
     })
   }
@@ -1395,16 +1412,22 @@ export default function (component) {
     for (const type of ['keydown', 'pointerdown']) document.addEventListener(type, S.onInput, true)
   }
   if (!S.onLink) {
-    // 붙든 링크를 다시 누른다 — 그 사이 다시 지어졌을 수 있어 주소로 찾는다.
-    const replayLink = (href) => {
+    // 붙든 링크를 다시 누른다 — 그 사이 다시 지어졌을 수 있어 주소로 찾는다. 「그 화면으로」 가 누른 링크였으면 그 알림(`opened`)을
+    // 다시 실어 누른다.
+    const replayLink = (href, opened) => {
       const link = [...document.querySelectorAll(PAGE_LINK)].find((anchor) => anchor.getAttribute('href') === href)
       if (!link) return
       S.linkReplay = href
+      S.linkOpened = opened
       link.click()
+      S.linkOpened = null
     }
     // 왼쪽 단추 누름만 본다 — Streamlit 은 보조 키를 눌러도 같은 창에서 옮긴다. 가운데 단추(새 브라우저 탭)는
     // 새 접속이라 막지 않는다. 새 창으로 여는 바깥 링크도 그대로다. 상한 거름은 열기 표지를 적으므로 붙들기 뒤에 한 번만 돈다.
+    // 「그 화면으로」 가 누른 링크면 그 사건의 알림(`S.linkOpened` — 누르는 동안만 선다)을 꺼내 상한을 지날 때만 부른다.
     S.onLink = (event) => {
+      const opened = S.linkOpened
+      S.linkOpened = null
       if (event.defaultPrevented || event.button !== 0) return
       const link = event.target && event.target.closest ? event.target.closest(PAGE_LINK) : null
       if (!link || link.target === '_blank') return
@@ -1413,14 +1436,17 @@ export default function (component) {
         S.linkReplay = null
       } else {
         const gate = window.__capaLeaveGate
-        if (gate && gate.hold(() => replayLink(href))) {
+        if (gate && gate.hold(() => replayLink(href, opened))) {
           event.preventDefault()
           event.stopPropagation()
           return
         }
       }
       const why = refusal(href.split(/[?#]/)[0])
-      if (!why) return
+      if (!why) {
+        if (opened) opened()
+        return
+      }
       event.preventDefault()
       event.stopPropagation()
       flash('limit', why)
@@ -1440,21 +1466,27 @@ export default function (component) {
     window.addEventListener(PROCESS_EVENT, S.onProcess)
   }
   if (!S.onOpenPage) {
-    // 알림 칸 「그 화면으로」(`capa-open-page` — {href}). 열린 탭이면 탭 고르기와 같은 길(떠나기 확인 · 한 번에 하나), 아니면
-    // 그 화면 링크를 누른다 — 상한 거름(`S.onLink`)이 같은 누름으로 받는다. 지금 화면이면 아무것도 하지 않는다.
+    // 알림 칸 「그 화면으로」(`capa-open-page` — {href, opened}). 열린 탭이면 탭 고르기와 같은 길(떠나기 확인 · 한 번에 하나), 아니면
+    // 그 화면 링크를 누른다 — 상한 거름(`S.onLink`)이 같은 누름으로 받는다. 지금 화면이면 옮기지 않는다. `opened` 는 이 누름의 이동을
+    // 보낼 때(지금 화면이면 곧바로)만 부른다 — 알림 칸이 그때만 그 화면에 닿은 뒤 탭 길 · 대상을 잇는다.
     S.onOpenPage = (event) => {
       const detail = event && event.detail
       if (!detail || typeof detail.href !== 'string') return
       const href = detail.href
+      const opened = typeof detail.opened === 'function' ? detail.opened : null
       for (const item of S.items.values()) {
         if (item.hidden || item.__href !== href) continue
-        if (item.dataset.id !== S.data.active) select(item)
+        if (item.dataset.id !== S.data.active) select(item, opened)
+        else if (opened) opened()
         return
       }
       const link = [...document.querySelectorAll(PAGE_LINK)].find(
         (anchor) => linkPath(anchor.getAttribute('href') || '') === href,
       )
-      if (link) link.click()
+      if (!link) return
+      S.linkOpened = opened
+      link.click()
+      S.linkOpened = null
     }
     window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)
   }

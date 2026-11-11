@@ -75,9 +75,13 @@
   `target`(`alerts.GotoTarget` — 「소요대수에 들지 않은 수요」 경고의 리비전)은 그 줄에 남고, 누르면
   탭 길을 마지막 칸 앞까지 연 뒤 회차가 끝났을 때 마지막 칸을 누르는 대신 트리거(`goto`)로 한 번
   보낸다 — 콜백(`_on_goto`)이 아는 종류만 받아 세션에 적고 마지막 칸(「점검」)을 함께
-  연다(`scenario_list_state.queue_check_target`). 같은 회차의 화면이 그 대상을 쓴다. 그 길을 못 다
-  열면(떠나기 확인 취소 · 탭 상한 · 시간 넘김 · 단추 없음) 보내지 않는다. 남은 대상은 다음 앱 전체
-  회차 앞에서 버린다(`expire_check_target`) — 누르지 않고 손으로 연 화면은 고름을 옮기지 않는다.
+  연다(`scenario_list_state.queue_check_target`). 같은 회차의 화면이 그 대상을 쓴다. 탭 길 · 대상은
+  화면 탭 줄이 그 누름의 이동을 보냈다고 알린(사건의 `opened`) 뒤에 닿은 화면에서만 잇는다 — 길이
+  막히면(떠나기 확인 취소 · 탭 상한 · 붙든 누름이 버려짐) 알리지 않아, 그 뒤 손으로 그 화면에 가도
+  탭을 누르지 · 대상을 보내지 않는다(시간 넘김 · 단추 없음도 보내지 않는다). 대상은 받는 쪽이 아는
+  종류(`GOTO_RECEIVERS` — data `goto_kinds`)만 들고 가고, 모르는 종류는 대상 없는 줄처럼 마지막 칸을
+  누른다. 남은 대상은 다음 앱 전체 회차 앞에서 버린다(`expire_check_target`) — 누르지 않고 손으로
+  연 화면은 고름을 옮기지 않는다.
   글이 같은 두 경고가 한 줄 「×2」 로 합쳐지면 그 줄의 대상은 대상을 든 마지막 경고의 것이다.
 - **키보드 · 초점 껍데기도 이 칸이 맡는다**(`installFocusShell`) — 앱 전체 꼴이라 화면마다 고치지
   않고, 페이지마다 서는 이 칸이 문서에 처리기를 둔다. 꺼진 단추는 Tab 이 건너뛰어 감싼 풍선 칸이 탭
@@ -94,7 +98,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Final
 
@@ -136,6 +140,12 @@ STORAGE: Final = {
 BOOT_MARK: Final = alerts.new_id()
 # 이 세션의 표지가 사는 세션 칸 — 세션마다 한 번 정해 회차가 달라도 그대로다.
 SESSION_MARK_KEY: Final = "alert_center_session_mark_v1"
+# 「그 화면으로」 대상의 종류 → 받는 쪽(시나리오 id, 리비전 id). 콜백(`_on_goto`)이 이 종류만
+# 받고, JS 도 data `goto_kinds` 로 이 종류만 대상으로 들고 간다 — 모르는 종류는 대상 없는 줄처럼
+# 탭 길 마지막 칸을 누른다.
+GOTO_RECEIVERS: Final[Mapping[str, Callable[[str, str], None]]] = {
+    CHECK_TARGET_KIND: queue_check_target
+}
 
 # 알림 칸이 쓰는 글. `{…}` 는 JS 가 채운다. 「사내」 를 쓰지 않는다.
 TEXT: Final[dict[str, str]] = {
@@ -315,6 +325,8 @@ def alert_center_data(
         "marker": alerts.MARKER_ATTRIBUTE,
         # 이번 화면 주소 — 「그 화면으로」 가 탭을 고를 때 그 화면에 닿았는지 본다.
         "here": alerts.current_page()[1],
+        # 「그 화면으로」 가 들고 갈 수 있는 대상의 종류(`GOTO_RECEIVERS`).
+        "goto_kinds": sorted(GOTO_RECEIVERS),
         "storage": dict(STORAGE),
         "boot": {"mark": BOOT_MARK, "notice": alerts.server_restart_note(BOOT_MARK)},
         "session": {"mark": mark, "notice": alerts.session_lost_note(mark)},
@@ -333,13 +345,14 @@ def _reconnected() -> None:
 def _on_goto() -> None:
     """대상을 실은 줄의 「그 화면으로」 트리거(`goto`)의 콜백 — 그 줄의 탭 길을 마지막 칸 앞까지 연
     뒤에만 온다(마지막 칸은 받는 쪽이 연다).
-    값은 이 브라우저 탭 저장소에 있던 줄에서 오므로 꼴을 보고(`alerts.goto_target`) 아는 종류만
-    받는다 — 지금은 「점검」 칸이 고를 리비전 하나(`CHECK_TARGET_KIND`)."""
+    값은 이 브라우저 탭 저장소에 있던 줄에서 오므로 꼴을 보고(`alerts.goto_target`) 아는 종류
+    (`GOTO_RECEIVERS`)만 받는다 — 지금은 「점검」 칸이 고를 리비전 하나(`CHECK_TARGET_KIND`)."""
     state = st.session_state.get(ALERT_CENTER_KEY)
     raw = state.get("goto") if isinstance(state, Mapping) else getattr(state, "goto", None)
     target = alerts.goto_target(raw)
-    if target is not None and target["kind"] == CHECK_TARGET_KIND:
-        queue_check_target(target["scenario"], target["revision"])
+    receive = None if target is None else GOTO_RECEIVERS.get(target["kind"])
+    if target is not None and receive is not None:
+        receive(target["scenario"], target["revision"])
 
 
 def _clear_process() -> None:
