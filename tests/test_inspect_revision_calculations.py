@@ -385,7 +385,7 @@ def test_an_upeh_table_stop_is_named_by_its_cell_without_names(simulation_db: Pa
     upeh_line = next(line for line in script.READING_GUIDE if "`RQ_UPEH` 꼴" in line)
     assert "빠질 경로에서도 멈추고" in upeh_line
     assert "8-12 는 이 꼴을 남음 · 빠짐 · 안붙음으로 가르지 않는다" in upeh_line
-    assert "안 걸리면 줄이 없다" in upeh_line
+    assert "8-12 에 걸리지 않았거나 재지 않았으면(걸림이 상한을 넘은 `잰 k`) 줄이 없다" in upeh_line
     assert "`RQ_RUN_DAY`)의 `빈 값` 에만 쓴다" in upeh_line
 
 

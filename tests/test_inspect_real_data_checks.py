@@ -3002,7 +3002,7 @@ def test_the_census_counts_each_planted_shape_without_names(
         )
     ]
     assert checks.check_transcript(_summary(output)) == []
-    # 두 수의 합은 나누기 전 C11 의 식 그대로다 — 지난 리뷰의 C11 과 견준다.
+    # 두 수의 합은 거르는 식 하나가 정한 수다 — 지난 리뷰의 C11 과 견주는 수.
     with duckdb.connect(str(simulation), read_only=True) as connection:
         before_split = connection.execute(
             "SELECT count(*) FROM raw_data.core_data "
