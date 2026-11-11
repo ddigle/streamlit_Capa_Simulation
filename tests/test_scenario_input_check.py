@@ -50,7 +50,12 @@ from capa_simulation.components.scenario_input_check import (
     render_wide_body,
     wide_target,
 )
-from capa_simulation.components.scenario_list_grid import CHECKS_KEY, REVISIONS_KEY, TABLE_KEY
+from capa_simulation.components.scenario_list_grid import (
+    CHECKS_KEY,
+    LIST_SIDE,
+    REVISIONS_KEY,
+    TABLE_KEY,
+)
 from capa_simulation.components.scenario_list_state import (
     CHECK_TARGET_KEY,
     DRAFT_KEY,
@@ -711,6 +716,9 @@ def test_a_queued_warning_target_is_picked_when_the_check_side_shows(
     assert _draft(app).opened == other.scenario.scenario_id
     assert app.session_state[CHECK_TARGET_KEY] == (scenario_id, target)
 
+    reveal = (
+        app.session_state[LIST_SIDE.reveal_key] if LIST_SIDE.reveal_key in app.session_state else 0
+    )
     app.session_state[SIDE_KEY] = SIDE_CHECK
     browser.run()
 
@@ -718,6 +726,8 @@ def test_a_queued_warning_target_is_picked_when_the_check_side_shows(
     assert CHECK_TARGET_KEY not in app.session_state
     draft = _draft(app)
     assert (draft.opened, draft.picked) == (scenario_id, target)
+    # 접혀 있던 오른쪽 칸도 편다 — 알림 칸은 접힌 칸의 숨은 「점검」 단추를 누른다.
+    assert app.session_state[LIST_SIDE.reveal_key] == reveal + 1
     assert (
         target not in (base, later) and app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == base
     )

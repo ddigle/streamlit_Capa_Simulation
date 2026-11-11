@@ -686,14 +686,19 @@ def _aim_at_check_target(draft: ListDraft, saved: SavedList) -> ListDraft:
     그 사이 보관 · 삭제된 시나리오면 조용히 버리고, 지운 리비전이면 고름 씨앗이 다시 고른다. 연
     시나리오가 바뀌면 상세 칸 작업 칸 · 확인 체크를 버리는 것은 `_opened_revisions` 처음 보기와
     같다. 고름 씨앗(`REVISION_SEED_KEY`)은 올라와 있는 리비전으로 맞춰 다음 회차의 씨앗이 적어 둔
-    리비전을 덮지 않게 한다.
+    리비전을 덮지 않게 한다. 오른쪽 칸이 접혀 있었으면 편다(`switch_side` — 줄을 열 때와 같은 길).
+    알림 칸은 접힌 칸의 숨은 「점검」 단추도 누르므로, 펴지 않으면 그 칸을 고른 채 접힌 채로 남는다.
     """
+    from capa_simulation.components.scenario_list_grid import LIST_SIDE
+    from capa_simulation.components.side_panel import switch_side
+
     target = take_check_target()
     if target is None:
         return draft
     scenario_id, revision_id = target
     if scenario_id not in saved.names:
         return draft
+    switch_side(LIST_SIDE, SIDE_CHECK)
     if st.session_state.get(ACTION_OWNER_KEY) != scenario_id:
         st.session_state[ACTION_OWNER_KEY] = scenario_id
         for key in (ACTION_KEY, DELETE_CONFIRM_KEY, archive_confirm_key(scenario_id)):
