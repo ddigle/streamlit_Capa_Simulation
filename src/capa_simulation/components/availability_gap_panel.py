@@ -280,6 +280,19 @@ SHEET_CSV_STYLE = (
     f"<style>.st-key-{GAP_SHEET_MENU_KEY} button "
     "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
 )
+# 「조회 결과 · 표시」 전환 줄과 그 오른쪽 끝 칸(표지 · 「내려받기 ▾」). 끝 칸은 남은 폭을 채우되
+# 제 글 한 줄 폭보다 좁아지지 않는다 — 곁에 자리가 모자라면 칸째 다음 줄로 내려가 오른쪽 끝에
+# 선다(값 글 `"push"` 와 같은 꼴, 설계 규칙 UI-ACC-02). 기본(남은 폭 112px 바닥)이면 긴 표지가 좁은
+# 칸 안에서 네 줄로 접혔다(1100 창 192px — 샘플 관측). 내려간 줄은 본문 칸 사이 간격(1rem)으로
+# 붙는다 — 전환끼리의 넓은 간격(`gap="large"`)은 가로에만 쓴다. 앱 전체 회차에만 그리므로 스타일만
+# 든 `st.html` 이 이벤트 칸으로 가도 된다.
+GAP_SWITCH_ROW_KEY = "equipment_gap_switch_row"
+GAP_ROW_END_KEY = "equipment_gap_row_end"
+ROW_END_STYLE = (
+    f"<style>.st-key-{GAP_SWITCH_ROW_KEY} {{ row-gap: 1rem; }}"
+    f' [data-testid="stLayoutWrapper"]:has(> .st-key-{GAP_ROW_END_KEY})'
+    " { flex: 1 1 fit-content; }</style>"
+)
 # 시트 엑셀 통의 꼴 판 — 같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 올린다.
 GAP_SHEET_SCHEMA_VERSION = 2
 CROSS_CHECK_MANUAL_HELP = (
@@ -567,7 +580,9 @@ def render_availability_gap_panel(
     # (2026-11-09 사용자 보드 T2 · T3, 설계 규칙 UI-LAY-11 · UI-LAY-03). 전환끼리는 넓게 띄우고,
     # 풍선은 마지막 전환과 한 칸(작은 간격)이다 — Main 머리 줄의 줄 끝 풍선과 같은
     # 간격(UI-CON-03).
-    switches = st.container(horizontal=True, vertical_alignment="center", gap="large")
+    switches = st.container(
+        horizontal=True, vertical_alignment="center", gap="large", key=GAP_SWITCH_ROW_KEY
+    )
     with switches:
         result_group = _switch_group()
     # 줄 끝 풍선이 설 칸 — 지금 줄의 마지막 전환이 든 칸.
@@ -725,13 +740,21 @@ def render_availability_gap_panel(
         )
     row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
     with switches:
-        # 줄 오른쪽 끝 칸 — 시트를 그리는 회차에는 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀),
-        # 호기 목록이 입력 비가동이 든 범위를 보면 그 표지(비면 그리지 않는다).
+        # 줄 오른쪽 끝 칸 — 한쪽에만 있는 공정 · 호기 필터 표지(작은 글), 시트를 그리는 회차에는
+        # 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀), 호기 목록이 입력 비가동이 든 범위를 보면 그
+        # 표지가 이 차례로 선다(비면 그리지 않는다). 표지는 혼자 한 줄을 세우지 않는다(2026-11-11
+        # 보드 D2 — e4-1 과 같은 꼴, 설계 규칙 UI-LAY-13 · UI-TXT-04). 좁으면 칸째 다음 줄로
+        # 내려간다(`ROW_END_STYLE`).
+        st.html(ROW_END_STYLE)
         row_end = st.container(
-            horizontal=True, horizontal_alignment="right", vertical_alignment="center"
+            horizontal=True,
+            horizontal_alignment="right",
+            vertical_alignment="center",
+            key=GAP_ROW_END_KEY,
         )
     if one_sided is not None:
-        st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.")
+        with row_end:
+            st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.", width="content")
     chosen_units: set[str] | None = None
     if units is not None:
         with controls:
@@ -739,12 +762,14 @@ def render_availability_gap_panel(
         if chosen_units is not None:
             # 무엇으로 걸렀는지는 본문에도 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
             # 고른 값은 사람이 적은 이름이라 `_render_unit_filters` 가 이름마다 막아 담았다.
-            st.caption(
-                ":material/filter_alt: 호기 필터 · "
-                + " · ".join(applied)
-                + f" — 호기 {len(chosen_units):,}개만 더합니다.",
-                help=UNIT_FILTER_HELP,
-            )
+            with row_end:
+                st.caption(
+                    ":material/filter_alt: 호기 필터 · "
+                    + " · ".join(applied)
+                    + f" — 호기 {len(chosen_units):,}개만 더합니다.",
+                    help=UNIT_FILTER_HELP,
+                    width="content",
+                )
     if detail_mode == "호기 목록":
         if any(process_name in scope for process_name, _, _ in manual_cells):
             # 숨은 데이터 표지는 혼자 한 줄을 세우지 않고 전환 줄 오른쪽 끝 작은 글이다 — 시트를
