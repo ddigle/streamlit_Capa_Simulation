@@ -22,6 +22,7 @@ from capa_simulation.components.equipment_scenario_management import (
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
 from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
+from capa_simulation.components.scenario_list_state import CHECK_TARGET_KEY
 from capa_simulation.components.scenario_management import DISCARD_LOCK_HELP
 from capa_simulation.components.scenario_status import (
     LOAD_MODE,
@@ -665,8 +666,10 @@ def test_a_save_that_leaves_demand_out_warns_only_through_the_alert_popup(
     assert warned.value == message
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
-    # 「그 화면으로」 는 저장한 화면이 아니라 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    # 「그 화면으로」 는 저장한 화면이 아니라 저장한 리비전을 고른 시나리오 관리 › 목록 관리
+    # 「점검」 칸이다(2026-11-11 검토 보드 F4 (나) — u3-04 의 산출 결과 › 소요대수를 바꿈).
     assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
+    assert app.session_state[CHECK_TARGET_KEY] == (SCENARIOS[0].scenario_id, "revision-3")
 
 
 @pytest.mark.parametrize("allowed", [False, True])

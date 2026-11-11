@@ -68,7 +68,7 @@ from capa_simulation.components.literal_markdown import (
 )
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import render_profile_heading
-from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
+from capa_simulation.components.required_exclusion_notice import required_check_goto
 from capa_simulation.components.scenario_management_tabs import AUTO_UPDATE_TAB_NAME
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
@@ -711,14 +711,15 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
         # 허락하면서 하는 경고는 화면 발행(`scenario_management._official_published`)과 같이 성공
         # 알림 뒤 따로 낸다 — 발행은 끝났고 그 자리에 고칠 입력이 없으니 알림창 · Alarm 에만
         # 낸다(설계 규칙 UI-NTF-03 · AMB-05 (나)).
-        # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
+        # 「그 화면으로」 는 지정한 리비전(리비전 2)을 고른 목록 관리 「점검」 칸이다(같은 리비전 ·
+        # 전체 기간 — 검토 보드 F4 (나)).
         queue_flash(
             RUN_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
-            goto=REQUIRED_TAB_GOTO,
+            goto=required_check_goto(run.created_scenario_id, run.filtered_revision_id),
         )
 
 

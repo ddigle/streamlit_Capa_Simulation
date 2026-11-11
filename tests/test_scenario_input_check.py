@@ -26,6 +26,10 @@ from test_all_pages_render import _page_script
 
 import capa_simulation.components.capacity_gate as capacity_gate
 import capa_simulation.components.scenario_input_check as input_check
+from capa_simulation.components.required_exclusion_notice import (
+    REQUIRED_LIST_NOTE,
+    REQUIRED_TAB_GOTO,
+)
 from capa_simulation.components.scenario_input_check import (
     CALCULATION_REQUIRED_TAB,
     CALCULATION_RESULT,
@@ -47,15 +51,21 @@ from capa_simulation.components.scenario_input_check import (
     wide_target,
 )
 from capa_simulation.components.scenario_list_grid import CHECKS_KEY, REVISIONS_KEY, TABLE_KEY
-from capa_simulation.components.scenario_list_state import DRAFT_KEY
-from capa_simulation.components.scenario_management import (
-    OFFICIAL_DIALOG_KEY,
+from capa_simulation.components.scenario_list_state import (
+    CHECK_TARGET_KEY,
+    DRAFT_KEY,
+    LIST_MODE,
     SIDE_CHECK,
+)
+from capa_simulation.components.scenario_management import (
+    MODES,
+    OFFICIAL_DIALOG_KEY,
     SIDE_DETAIL,
     SIDE_KEY,
     SIDES,
 )
 from capa_simulation.components.scenario_management_tabs import (
+    CAPA_SCENARIO_TAB_NAME,
     QUERY_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
@@ -65,9 +75,10 @@ from capa_simulation.navigation import (
     LOAD_CONVERSION,
     LOAD_CONVERSION_TAB_KEY,
     REFERENCE_DATA,
+    SCENARIO_MANAGEMENT,
 )
 from capa_simulation.page_bootstrap import calculation_stop_notice
-from capa_simulation.page_tabs_state import PAGE_TABS_QUEUED_KEY
+from capa_simulation.page_tabs_state import PAGE_TABS_QUEUED_KEY, tab_label
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.reference_grid_keys import DATASET_KEY
 from capa_simulation.scenario_activation import ACTIVE_PERSISTED_REVISION_ID_KEY
@@ -627,3 +638,110 @@ def test_the_rules_row_opens_into_small_subheadings_without_counts(
     assert "**PKG Buffer 밖**" in captions
     assert not any("PKG Buffer 밖" in str(item.value) for item in app.markdown)
     assert "앞 2행 · 전체 2행" in captions
+
+
+# ------------------------------------------------------------------ 경고의 「그 화면으로」(F4)
+
+
+def test_the_warning_goto_walks_to_the_check_side_by_the_widget_labels() -> None:
+    """저장 · 지정 · 복제 · 자동 갱신 경고의 갈 곳은 시나리오 관리 › Capa 시나리오 › 목록 관리 ›
+    점검이다(2026-11-11 검토 보드 F4 (나)). 알림 칸은 탭 · 전환 단추를 이름으로 차례로 누르므로 탭
+    길의 칸이 위젯 글과 같아야 하고, 나누는 글이 알림 칸 JS 의 탭 길 나눔과 같아야 한다."""
+    page, href, tab = REQUIRED_TAB_GOTO
+    assert (page, href) == (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href)
+    assert tab.split(" › ") == [CAPA_SCENARIO_TAB_NAME, MODES[0], SIDE_CHECK]
+    assert MODES[0] == LIST_MODE and SIDE_CHECK in SIDES
+    script = (
+        PROJECT_ROOT / "src/capa_simulation/components/alert_center_assets/alert_center.js"
+    ).read_text(encoding="utf-8")
+    assert "const TAB_PATH = ' › '" in script
+    assert f"{LIST_MODE} 「{SIDE_CHECK}」 칸" in REQUIRED_LIST_NOTE
+
+
+def test_the_goto_helper_writes_the_target_only_when_it_knows_the_revision() -> None:
+    """쓴 리비전을 알면 적고, 모르면(빠른 둘째 누름이 이어받은 회차 따위) 갈 곳만 준다."""
+    app = AppTest.from_string(
+        "import streamlit as st\n"
+        "from capa_simulation.components.required_exclusion_notice import required_check_goto\n"
+        "st.session_state['known'] = required_check_goto('S', 'R')\n"
+        "st.session_state['first'] = st.session_state.get('scenario_list_check_target')\n"
+        "st.session_state.pop('scenario_list_check_target', None)\n"
+        "st.session_state['unknown'] = required_check_goto('S', None)\n"
+        "st.session_state['second'] = st.session_state.get('scenario_list_check_target')\n"
+    ).run()
+
+    assert not app.exception
+    assert app.session_state["known"] == app.session_state["unknown"] == REQUIRED_TAB_GOTO
+    assert app.session_state["first"] == ("S", "R")
+    assert app.session_state["second"] is None
+    assert CHECK_TARGET_KEY == "scenario_list_check_target"
+
+
+def test_a_queued_warning_target_is_picked_when_the_check_side_shows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """경고가 적어 둔 리비전 — 목록이 다른 시나리오를 연 채여도 「점검」 칸이 서는 회차에 그
+    시나리오를 열고 그 리비전을 고른다(최신도 올라와 있는 것도 아닌 리비전이어도 고름 씨앗이 덮지
+    않는다). 「상세」 칸 회차에는 꺼내지 않고, 한 번 쓴 뒤에는 사용자가 고른 줄이 이긴다."""
+    script, database = _seeded(tmp_path)
+    repository = DuckDBScenarioRepository(database)
+    scenario_id, base = _official(database)
+    target = _save(database, scenario_id, base, _with_exclusions, "빠짐")
+    later = _save(database, scenario_id, base, _vital_blank, "나중")
+    from capa_simulation.persistence.models import ScenarioCreate
+
+    official = repository.load_revision(base)
+    other = repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="다른 시나리오",
+            source_simulation_code="CHECK-TARGET-OTHER",
+            source_simulation_name="다른 시나리오",
+            source_type="DUCKDB_SCENARIO_CLONE",
+            pipeline_version="test-v1",
+        ),
+        official.tables,
+        official.preset,
+    )
+    app, browser, calls = _check_app(script, monkeypatch, side=SIDE_DETAIL)
+    browser.open(other.scenario.scenario_id, detail=True)
+    assert _draft(app).opened == other.scenario.scenario_id
+    app.session_state[CHECK_TARGET_KEY] = (scenario_id, target)
+
+    browser.run()
+    assert _draft(app).opened == other.scenario.scenario_id
+    assert app.session_state[CHECK_TARGET_KEY] == (scenario_id, target)
+
+    app.session_state[SIDE_KEY] = SIDE_CHECK
+    browser.run()
+
+    assert not app.exception
+    assert CHECK_TARGET_KEY not in app.session_state
+    draft = _draft(app)
+    assert (draft.opened, draft.picked) == (scenario_id, target)
+    assert (
+        target not in (base, later) and app.session_state[ACTIVE_PERSISTED_REVISION_ID_KEY] == base
+    )
+    assert last(calls, CHECKS_KEY)["picked"] == target
+    assert _calc(calls)[target][0].startswith("됨 · 확인 ")
+
+    browser.send(CHECKS_KEY, {"op": "pick", "owner": scenario_id, "id": base})
+    browser.run()
+    assert _draft(app).picked == base
+
+
+def test_a_warning_target_for_a_gone_scenario_is_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """그 사이 보관 · 삭제된 시나리오를 적은 경고는 조용히 버린다 — 연 시나리오 · 고름은
+    그대로다."""
+    script, _ = _seeded(tmp_path)
+    app, browser, _ = _check_app(script, monkeypatch)
+    before = _draft(app)
+    app.session_state[CHECK_TARGET_KEY] = ("00000000-gone", "00000000-gone-r1")
+
+    browser.run()
+
+    assert not app.exception
+    assert CHECK_TARGET_KEY not in app.session_state
+    after = _draft(app)
+    assert (after.opened, after.picked) == (before.opened, before.picked)

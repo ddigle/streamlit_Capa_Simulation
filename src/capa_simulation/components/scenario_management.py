@@ -48,7 +48,7 @@ from capa_simulation.components.grid_shared import outbox_mount, outbox_value
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.profile_caption import render_row_value
-from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
+from capa_simulation.components.required_exclusion_notice import required_check_goto
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.save_section import discard_popover
 from capa_simulation.components.scenario_input_check import (
@@ -63,8 +63,10 @@ from capa_simulation.components.scenario_input_check import (
 from capa_simulation.components.scenario_list_state import (
     CHANGES_KEY,
     CHECKS_KEY,
+    LIST_MODE,
     MOUNT_KEYS,
     REVISIONS_KEY,
+    SIDE_CHECK,
     SIDE_CHOICE_KEY,
     SIDE_NEXT_KEY,
     TABLE_KEY,
@@ -73,6 +75,7 @@ from capa_simulation.components.scenario_list_state import (
     remember_shown_order,
     shown_order,
     store_draft,
+    take_check_target,
 )
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.scenario_month_merge import (
@@ -214,7 +217,7 @@ CLONE_SOURCE_NOTE = (
     "공식버전 자동 갱신이 주차(W##)를 읽는 근거라 올라와 있는 시나리오의 값을 물려받지 않습니다."
 )
 MODES = (
-    "목록 관리",
+    LIST_MODE,
     CLONE_MODE,
     "월 머지",
     "연도 Shift",
@@ -227,7 +230,6 @@ DERIVED_SOURCE_ROLES: dict[str, tuple[str, ...]] = {
 # 오른쪽 칸 다섯. 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다). 「점검」 은 고른 리비전의 입력
 # 점검이다(2026-11-11 입력 점검 시안 보드 답 q1 — 「상세」 와 같은 리비전 고름).
 SIDE_DETAIL = "상세"
-SIDE_CHECK = "점검"
 SIDE_CHANGES = "저장 전 변경"
 SIDE_HISTORY = "공식 이력"
 SIDE_ARCHIVE = "보관함"
@@ -419,7 +421,7 @@ def render_scenario_management(
     # 월 머지·연도 Shift 가 메모한 원본(리비전 하나 크기의 살아 있는 표)은 그 모드에서만 둔다.
     forget_derived_sources(keep=DERIVED_SOURCE_ROLES.get(str(mode), ()))
     official_open = False
-    if mode == "목록 관리":
+    if mode == LIST_MODE:
         official_open = _render_list_management(
             repository, database_path, scenarios, _list_view(view), counting=alert_tab is not None
         )
@@ -665,11 +667,42 @@ def _settle_list_draft(
     own = _own_settled(fitted, own_save_marks())
     if own:
         _after_list_save(SavePlan(settled=own))
-    if fitted.draft != draft:
-        store_draft(fitted.draft)
-    problems = list_problems(fitted.draft, saved, LIST_RULES)
-    counts = change_counts(fitted.draft, saved, problems)
-    return _ListView(fitted.draft, saved, releases, problems, counts)
+    settled = (
+        _aim_at_check_target(fitted.draft, saved) if _side_now() == SIDE_CHECK else fitted.draft
+    )
+    if settled != draft:
+        store_draft(settled)
+    problems = list_problems(settled, saved, LIST_RULES)
+    counts = change_counts(settled, saved, problems)
+    return _ListView(settled, saved, releases, problems, counts)
+
+
+def _aim_at_check_target(draft: ListDraft, saved: SavedList) -> ListDraft:
+    """「점검」 칸이 서는 회차에 저장 · 지정 · 복제 · 자동 갱신 경고가 적어 둔 리비전을 고른다
+    (`required_exclusion_notice.required_check_goto` — 2026-11-11 입력 점검 검토 보드 F4 (나)).
+
+    적어 둔 것은 한 번만 쓴다 — 고른 뒤에는 사용자가 고른 줄이 이긴다. 다른 칸(상세 · 저장 전 변경
+    따위)이 서는 회차에는 꺼내지 않는다 — 경고를 누르지 않고 목록에 온 사람의 고름을 옮기지 않는다.
+    그 사이 보관 · 삭제된 시나리오면 조용히 버리고, 지운 리비전이면 고름 씨앗이 다시 고른다. 연
+    시나리오가 바뀌면 상세 칸 작업 칸 · 확인 체크를 버리는 것은 `_opened_revisions` 처음 보기와
+    같다. 고름 씨앗(`REVISION_SEED_KEY`)은 올라와 있는 리비전으로 맞춰 다음 회차의 씨앗이 적어 둔
+    리비전을 덮지 않게 한다.
+    """
+    target = take_check_target()
+    if target is None:
+        return draft
+    scenario_id, revision_id = target
+    if scenario_id not in saved.names:
+        return draft
+    if st.session_state.get(ACTION_OWNER_KEY) != scenario_id:
+        st.session_state[ACTION_OWNER_KEY] = scenario_id
+        for key in (ACTION_KEY, DELETE_CONFIRM_KEY, archive_confirm_key(scenario_id)):
+            st.session_state.pop(key, None)
+    if scenario_id == active_persisted_scenario_id():
+        st.session_state[REVISION_SEED_KEY] = active_persisted_revision_id()
+    else:
+        st.session_state.pop(REVISION_SEED_KEY, None)
+    return replace(draft, opened=scenario_id, picked=revision_id)
 
 
 def _on_list_outbox() -> None:
@@ -1684,14 +1717,15 @@ def _official_published(
     # 끝났고 고칠 입력이 이 자리에 없어 버튼 곁 상자 없이 알림창 · Alarm 에만 낸다(사이드바 리비전
     # 저장과 한 꼴 — 2026-11-04 검수 의견 home-18).
     if warning:
-        # 소요대수에 들지 않은 수요의 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
+        # 소요대수에 들지 않은 수요의 「그 화면으로」 는 지정한 리비전을 고른 목록 관리 「점검」
+        # 칸이다(같은 리비전 · 전체 기간 — 검토 보드 F4 (나)).
         queue_flash(
             FLASH_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
-            goto=REQUIRED_TAB_GOTO if exclusion else None,
+            goto=required_check_goto(release.scenario_id, revision_id) if exclusion else None,
         )
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
@@ -2273,14 +2307,22 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
             # 이 자리에 없어 알림창 · Alarm 에만 낸다 — 소요대수에 들지 않은 수요(2026-11-04 검수
             # 의견 home-18)도, 남은 계산 오류(설계 규칙 AMB-05 (나))도 사이드바 리비전 저장과 한
             # 꼴이다.
-            # 소요대수에 들지 않은 수요의 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수다.
+            # 소요대수에 들지 않은 수요의 「그 화면으로」 는 새 시나리오의 초기 리비전을 고른 목록
+            # 관리 「점검」 칸이다(같은 리비전 · 전체 기간 — 검토 보드 F4 (나)).
             queue_flash(
                 FLASH_WARNING_KEY,
                 markdown_safe_tildes(verdict.message),
                 kind="warning",
                 icon=":material/warning:",
                 popup_only=True,
-                goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
+                goto=(
+                    required_check_goto(
+                        snapshot.scenario.scenario_id if snapshot is not None else None,
+                        snapshot.revision.revision_id if snapshot is not None else None,
+                    )
+                    if verdict.exclusion
+                    else None
+                ),
             )
         # 꼬리 누름의 창(`just_written`)은 뒷정리를 마친 이 시각부터 센다 — 쓰기 시각부터 세면 큰
         # 편집본의 활성화가 그 창을 먹어 새 빈 폼이 선 뒤에는 남지 않는다.

@@ -24,8 +24,8 @@
 `queue_flash(…, popup_only=True)` 로 알림창 · Alarm 에만 낸다. 그런 경고에 목록이 딸리면
 `tables=` 로 그 Alarm 줄의 표(`alerts.AlertTable`)에 싣는다. 목록 · 고칠 곳이 낸 화면이 아니라
 **다른 화면**에 있으면 `goto=` 로 그 화면(과 탭)을 준다 — 줄의 화면 칸과 「그 화면으로」 가 낸 화면
-대신 그 화면이다(상태 알림 `alerts.state(goto=)` 와 같은 꼴 — 소요대수에 들지 않은 수요는 산출 결과
-› 소요대수).
+대신 그 화면이다(상태 알림 `alerts.state(goto=)` 와 같은 꼴 — 소요대수에 들지 않은 수요는 그
+리비전을 고른 시나리오 관리 › 목록 관리 「점검」, `required_exclusion_notice.required_check_goto`).
 
 **그리는 칸은 늘 선다.** `render_flash` 는 알림이 있든 없든 `st.container()` 한 칸을 세우고 그 칸을
 돌려준다. 알림이 생기고 사라질 때 뒤 형제의 순번이 밀리면 key 없는 팝오버·탭·확장 패널이 새로 서며

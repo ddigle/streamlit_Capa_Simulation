@@ -39,7 +39,11 @@ from capa_simulation.components.scenario_list_grid import (
     REVISIONS_KEY,
     TABLE_KEY,
 )
-from capa_simulation.components.scenario_list_state import DRAFT_KEY, SIDE_NEXT_KEY
+from capa_simulation.components.scenario_list_state import (
+    CHECK_TARGET_KEY,
+    DRAFT_KEY,
+    SIDE_NEXT_KEY,
+)
 from capa_simulation.components.scenario_management import (
     ACTION_KEY,
     ARCHIVE_EFFECT_HELP,
@@ -639,8 +643,15 @@ def test_clone_that_leaves_demand_out_warns_only_through_the_alert_popup(
     assert warned.value == message
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
-    # 「그 화면으로」 는 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    # 「그 화면으로」 는 새 시나리오의 초기 리비전을 고른 목록 관리 「점검」 칸이다(2026-11-11 검토
+    # 보드 F4 (나) — u3-04 의 산출 결과 › 소요대수를 바꿈).
     assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
+    created = next(
+        item
+        for item in DuckDBScenarioRepository(database_path).list_scenarios()
+        if item.scenario_name == "빠진 수요 복제"
+    )
+    assert app.session_state[CHECK_TARGET_KEY] == (created.scenario_id, created.active_revision_id)
 
 
 def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
@@ -1647,8 +1658,14 @@ def test_official_release_with_demand_left_out_of_the_requirement_warns_after_pu
     assert "부하량에서 빠진 계획" in warned.value
     assert warned.note is not None
     assert (warned.note["code"], warned.note["level"]) == ("FL-03", "check")
-    # 「그 화면으로」 는 지정한 화면이 아니라 목록이 서는 산출 결과 › 소요대수 탭이다(u3-04).
+    # 「그 화면으로」 는 지정한 리비전을 고른 목록 관리 「점검」 칸이다(2026-11-11 검토 보드 F4 (나)
+    # — u3-04 의 산출 결과 › 소요대수를 바꿈). 지정한 화면이라 줄은 탭 길로 그 칸을 열고, 「상세」
+    # 칸이 선 회차에는 적어 둔 리비전을 꺼내지 않는다.
     assert (warned.note["page"], warned.note["href"], warned.note["tab"]) == REQUIRED_TAB_GOTO
+    assert app.session_state[CHECK_TARGET_KEY] == (
+        saved.scenario.scenario_id,
+        saved.revision.revision_id,
+    )
 
 
 def test_the_card_follows_a_revision_loaded_from_the_sidebar_popup(

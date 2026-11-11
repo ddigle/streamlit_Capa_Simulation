@@ -463,8 +463,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     기준정보」 · `ST-21` 「PKG Buffer 밖 행」(사유로 갈라 표 행 수가 그 알림 건수다), `ST-01` 「부하량에서 빠진 계획」 · 「경로에
     닿지 않은 계획 부하」 둘. 고칠 곳은 까닭 칸(`누락 기준정보` · `제외사유`) 머리 풍선(`alert_table(column_help=…)`)이다(설계 규칙
     UI-TXT-01 · 02 · 03). 표가 `alerts.TABLE_ROW_LIMIT` 를 넘으면 그 목록만 표 위 같은 이름 펼침에 남는다
-    (`render_oversized_lists`). 알림은 그 탭이 열린 회차에만 낸다. 다른 화면 · 저장 검사의 안내(`REQUIRED_LIST_NOTE`)는 「산출 결과
-    → 소요대수 탭을 열면 서는 Alarm 줄의 표」 라고 말한다.
+    (`render_oversized_lists`). 알림은 그 탭이 열린 회차에만 낸다. 저장 · 지정 · 복제 · 자동 갱신 경고의 목록 안내
+    (`REQUIRED_LIST_NOTE`)와 「그 화면으로」(`REQUIRED_TAB_GOTO`)는 이 탭(조회기간)이 아니라 같은 리비전 · 전체 기간인 시나리오 관리 ›
+    목록 관리 「점검」 칸이다(2026-11-11 입력 점검 검토 보드 F4 (나)).
   - 대당 Capa · 소요대수 표 제목 줄에 CSV 와 「시트 엑셀」(시트 엑셀 넓히기 1 — 공정 Capa
     상세 선례, TODO 3장 「계산 결과 Excel 다운로드 — 닫음」)을 묶은 「내려받기 ▾」 메뉴 하나가 선다(`table_toolbar.render_download_pair` — 2026-11-10 답 Q2-7). 지금 화면 상태(보기 · 집계 수준 · 공용 공정 거름 · 상세 ·
     `표 조건` 거름 · 조회기간 달 · 공정 표시명 — CSV 는 원본 이름)의 표를 화면 서식째
@@ -1581,7 +1582,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `UNROUTED_HELP`), 그리고 화면 자리의 상태 알림 함수(`alert_uncounted_demand` · `alert_capacity_exclusions` ·
   `alert_required_exclusions`)를 낸다.
   - 문장은 `capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
-    않는다. 목록 관리 「점검」 은 이 문장을 쓰지 않고 같은 셈의 묶음 수 · 행을 보인다. 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
+    않는다. 목록 관리 「점검」 은 이 문장을 쓰지 않고 같은 셈의 묶음 수 · 행을 보인다 — 그래서 저장 · 지정 · 복제 · 자동 갱신
+    경고의 끝 문장(`REQUIRED_LIST_NOTE`)과 「그 화면으로」(`required_check_goto` → `REQUIRED_TAB_GOTO`)가 그 칸을 가리키고 경고를 낸
+    자리가 그 리비전을 적는다(2026-11-11 검토 보드 F4 (나)). 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
     않게 화면 세 자리도 같은 셈의 **상태 알림**이다(2026-11-03 결정 보드 D2 (나) — 자리에 그리지 않는다): 생산 계획 PKG PLAN
     적용 알림이 서는 회차(쓰기 알림 표지 창의 다시 그리기 포함)의 `ST-04`(`FULL_SCOPE`, `get_full_capacity_outcome` —
     HOME·산출 결과가 같은 결과를 쓴다. 셈은 PKG PLAN 편집표를 그린 **뒤**에 하고 스피너는 그 알림 칸에 선다 — 앞에서 하면 그
@@ -3181,7 +3184,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`)와 앞 세션 op 빼기(`this_session` — 두 표의 `base` 는 `세션 표지:나머지` 꼴이다) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 네 마운트 data(「점검」 칸 `checks_payload` — r · 리비전명 · 계산, 이름 고치기 없음), 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
 - `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
-- `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key. 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다. 「저장 전 변경 n건」 배지는 `pending_count` 가 아니라 그 회차 칸의 수 셋을 더한 `scenario_management._ListView.pending`(`change_counts` — 순서는 옮긴 줄 수)이다.
+- `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key, 「목록 관리」 · 「점검」 글(`LIST_MODE` · `SIDE_CHECK` — 경고 탭 길과 화면 위젯이 함께 쓴다), 경고가 가리키는 리비전 칸(`CHECK_TARGET_KEY` — `queue_check_target` 이 적고 「점검」 칸이 서는 목록 관리 회차의 `scenario_management._aim_at_check_target` 이 한 번 꺼내 고른다 · 상세 칸 회차에는 꺼내지 않는다 · 사라진 시나리오는 버린다). 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다. 「저장 전 변경 n건」 배지는 `pending_count` 가 아니라 그 회차 칸의 수 셋을 더한 `scenario_management._ListView.pending`(`change_counts` — 순서는 옮긴 줄 수)이다.
 - `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 네 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY` · 「점검」 칸 리비전 표 `CHECKS_KEY`(이름 고치기 없이 「계산」 칩 — 단계 색은 팔레트 `level-*`). 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다. 그리는 중의 focusout(`S.painting` — `paint` · `repaintCell`)은 부품 밖 이탈로 치지 않아 300ms 묶음을 끊지 않는다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)과 종류 단추(`st.segmented_control` — `[data-testid="stButtonGroup"]` 아래
@@ -3613,7 +3616,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 보내기 한 길. `queue_flash(key, 글, *, kind,
   icon, alert, popup_only, tables, goto)`(kind 는 success·info·warning·error, `goto=(이름, 주소[, 탭])` 는 사건 알림의 「그 화면으로」
-  를 다른 화면 · 탭으로 보낸다 — 소요대수에 들지 않은 수요 경고는 `REQUIRED_TAB_GOTO`(산출 결과 › 소요대수, 작은 결정 a4), 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
+  를 다른 화면 · 탭으로 보낸다 — 소요대수에 들지 않은 수요 경고는 `required_check_goto(시나리오, 리비전)` 가 주는 `REQUIRED_TAB_GOTO`(시나리오
+  관리 › Capa 시나리오 › 목록 관리 › 점검 — 탭 길은 알림 칸이 이름으로 차례로 누르고, 그 리비전은 `scenario_list_state.queue_check_target`
+  이 적어 「점검」 칸이 서는 목록 관리 회차가 한 번 고른다, 2026-11-11 검토 보드 F4 (나) — 작은 결정 a4 의 산출 결과 › 소요대수를 바꿈), 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
   코드 — 없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`, `tables` 는 그 Alarm 줄의 표 — 커서 None 인 칸은 뺀다)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
   없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 **사건 알림 표지**(`alerts.emit` — 이벤트 칸 한 자리)로 보내고
   그 칸을 돌려준다. 성공 · 안내는 오른쪽 아래 알림창으로만 내고 버튼 곁 칸에는 그리지 않으며, 경고 · 오류(거부 · 실패)만
