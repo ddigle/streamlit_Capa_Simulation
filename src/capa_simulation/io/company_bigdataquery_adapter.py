@@ -503,7 +503,7 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     """
     started = time.monotonic()
     try:
-        return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
+        answer = module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
         if resolve_user_name() is None and "user_name" in str(error):
             _log_failure(
@@ -519,6 +519,7 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
         failure = BigDataQueryCallError(error, hint=hint, seconds=time.monotonic() - started)
         _log_failure("조회 실패", kind=failure.kind, type_names=failure.type_names)
         raise failure from error
+    return answer
 
 
 def _start_check_line(step: str) -> str:
@@ -529,16 +530,15 @@ def _start_check_line(step: str) -> str:
 
 
 def is_login_token_failure(error: BaseException) -> bool:
-    """로그인 토큰이 없거나 받지 않은 패키지 예외인가(`TokenNotFoundException` 꼴). 종류 이름과
-    문구로 가른 추정이고 안내를 덧붙이는 데만 쓴다 — 갈래(`classify_query_failure`)는 그대로다."""
-    chain = _failure_chain(error)
-    if any("token" in type(link).__name__.casefold() for link in chain):
-        return True
-    text = " ".join(str(link) for link in chain).casefold()
-    return "bigdataquery token" in text or ".credential" in text
+    """로그인 토큰이 없거나(`TokenNotFoundException` 꼴) 무효 · 만료인 패키지 예외인가. 종류 이름과
+    문구로 가른 추정이다(`_token_clue`) — 갈래 「토큰」(`classify_query_failure`)과 서버 시작 점검
+    토큰 줄 안내가 같은 판정을 쓴다."""
+    return _token_clue(_failure_chain(error)) is not None
 
 
 # 조회 실패의 갈래. 패키지 예외 종류를 모르므로 예외 사슬의 종류 이름과 문구의 낱말로 가른 추정이다.
+# 「토큰」 은 다시 해도 같다 — 토큰을 새로 넣어야 풀린다(관리자 일).
+QUERY_FAILURE_TOKEN: Final = "토큰"
 QUERY_FAILURE_TIMEOUT: Final = "시간 초과"
 QUERY_FAILURE_CONNECTION: Final = "연결"
 QUERY_FAILURE_SQL: Final = "SQL"
@@ -547,6 +547,21 @@ QUERY_FAILURE_OTHER: Final = "그 밖"
 # (`not found` · `does not exist` 등)는 긴 조회 중 다시 적재한 표에서도 난다
 # (`LONG_FAILURE_SECONDS`).
 _QUERY_TEXT_WORDS: Final[tuple[str, ...]] = ("syntax", "parse", "analysis", "semantic")
+# 로그인 토큰을 탓하는 분명한 낱말만 — 사내 실패 문구를 아직 모르니 넓히지 않는다. 앞 둘은 패키지가
+# 토큰이 없을 때 내는 문구(`TokenNotFoundException` — 「no bigdataquery token issued … at
+# '/config/.credential/'」)에서 온다. 구문 오류의 「unexpected token」 은 여기 없고, 문법 낱말
+# (`_QUERY_TEXT_WORDS`)이 함께 있으면 토큰으로 보지 않는다.
+_TOKEN_FAILURE_WORDS: Final[tuple[str, ...]] = (
+    "bigdataquery token",
+    ".credential",
+    "invalid token",
+    "invalid_token",
+    "token is invalid",
+    "token expired",
+    "token has expired",
+    "token is expired",
+    "expired token",
+)
 # 차례대로 본다 — 「connect timeout」 은 시간 초과, 「host not found」 는 연결이다.
 _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     (
@@ -608,6 +623,8 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 LONG_FAILURE_SECONDS: Final = 300.0
 LONG_FAILURE_CLUE: Final = "오래 걸림"
 _FAILURE_ADVICE: Final[Mapping[str, str]] = {
+    QUERY_FAILURE_TOKEN: "로그인 토큰이 없거나 만료 · 무효입니다 — 다시 해도 같으니 관리자에게 "
+    "알려 주세요(토큰을 새로 넣어야 풀립니다).",
     QUERY_FAILURE_TIMEOUT: "DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
     "기간을 줄여 다시 하세요.",
     QUERY_FAILURE_CONNECTION: "DB 에 닿지 못했습니다 — 네트워크 연결을 확인하고 잠시 뒤 같은 "
@@ -644,10 +661,27 @@ def failure_type_names(error: BaseException) -> tuple[str, ...]:
     return tuple(type(link).__name__ for link in _failure_chain(error))
 
 
+def _token_clue(chain: list[BaseException]) -> str | None:
+    """토큰 실패면 근거 낱말(`_TOKEN_FAILURE_WORDS` 의 것 — 종류 이름으로 가렸으면 빈 글), 아니면
+    None. 문법 낱말이 함께 있으면 구문 오류로 보고 None 이다."""
+    names = " ".join(type(link).__name__ for link in chain).casefold()
+    text = " ".join(str(link) for link in chain).casefold()
+    if any(word in names or word in text for word in _QUERY_TEXT_WORDS):
+        return None
+    if "token" in names:
+        return ""
+    return next((word for word in _TOKEN_FAILURE_WORDS if word in text), None)
+
+
 def _sorted_failure(error: BaseException) -> tuple[str, str]:
     """(갈래, 근거 낱말). 종류(`TimeoutError`·`ConnectionError`)로 가렸거나 맞은 낱말이 없으면
-    낱말은 빈 글이다. 낱말은 `_FAILURE_WORDS` 의 것뿐이라 문구를 싣지 않는다."""
+    낱말은 빈 글이다. 낱말은 `_TOKEN_FAILURE_WORDS` · `_FAILURE_WORDS` 의 것뿐이라 문구를 싣지
+    않는다. 토큰을 맨 앞에 본다 — 사슬에 `ConnectionError` 가 있거나 문구에 연결 낱말이 있어도 토큰
+    실패는 「연결」 안내(네트워크 · 다시)가 틀린 길이다."""
     chain = _failure_chain(error)
+    token = _token_clue(chain)
+    if token is not None:
+        return QUERY_FAILURE_TOKEN, token
     if any(isinstance(link, TimeoutError) for link in chain):
         return QUERY_FAILURE_TIMEOUT, ""
     if any(isinstance(link, ConnectionError) for link in chain):
@@ -686,8 +720,8 @@ def _log_failure(message: str, *, kind: str = "", type_names: tuple[str, ...] = 
 
 
 def _is_long_wait_failure(kind: str, clue: str, seconds: float | None) -> bool:
-    """오래 기다린 끝의 실패를 시간 초과로 올릴지. 시간 초과 · 연결은 그 갈래가 맞고, SQL 은 문법
-    낱말일 때만 그대로 둔다."""
+    """오래 기다린 끝의 실패를 시간 초과로 올릴지. 토큰 · 시간 초과 · 연결은 그 갈래가 맞고, SQL 은
+    문법 낱말일 때만 그대로 둔다."""
     if seconds is None or seconds < LONG_FAILURE_SECONDS:
         return False
     return kind == QUERY_FAILURE_OTHER or (

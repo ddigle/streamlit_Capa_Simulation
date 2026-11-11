@@ -488,7 +488,8 @@ def test_a_failure_the_screen_catches_still_leaves_one_log_line(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """화면이 잡아 보여 주는 실패도 앱 로그에 한 줄 남는다 — 셸·화면을 볼 수 없는 C-DEP CD 에서는
-    로그가 유일한 단서일 수 있다. 원문(계정 이름 등이 든다)은 화면에만 두고 로그에는 갈래·종류만."""
+    로그가 유일한 단서일 수 있다. 원문(계정 이름 등이 든다)은 화면에만 두고 로그에는 갈래·종류만.
+    토큰 자리(`.credential`)를 말하는 실패라 갈래는 토큰이다."""
     secret_like = "AD user 'someone' at '/config/.credential/'"
 
     def refuse(**_kwargs: object) -> pd.DataFrame:
@@ -503,7 +504,7 @@ def test_a_failure_the_screen_catches_still_leaves_one_log_line(
 
     lines = [record.getMessage() for record in caplog.records]
     assert lines == [
-        f"BigDataQuery 실패: 조회 실패 갈래={adapter.QUERY_FAILURE_SQL} 종류=ValueError"
+        f"BigDataQuery 실패: 조회 실패 갈래={adapter.QUERY_FAILURE_TOKEN} 종류=ValueError"
     ]
     assert secret_like not in "\n".join(lines)
 
@@ -985,6 +986,81 @@ def test_a_written_token_that_is_still_refused_points_at_expiry(
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
 
     assert "만료" in str(raised.value) and "WebIDE" in str(raised.value)
+
+
+class HTTPError(OSError):
+    """HTTP 클라이언트가 내는 꼴 — 내장 `ConnectionError` 밖이다."""
+
+
+@pytest.mark.parametrize(
+    ("error", "kind", "clue"),
+    [
+        (Error("invalid token"), adapter.QUERY_FAILURE_TOKEN, "invalid token"),
+        (Error("HTTP 500 invalid token"), adapter.QUERY_FAILURE_TOKEN, "invalid token"),
+        (ConnectionError("500 invalid token"), adapter.QUERY_FAILURE_TOKEN, "invalid token"),
+        (
+            _chained(HTTPError("500 Server Error for url"), ConnectionError("Invalid Token")),
+            adapter.QUERY_FAILURE_TOKEN,
+            "invalid token",
+        ),
+        (Error("Token expired"), adapter.QUERY_FAILURE_TOKEN, "token expired"),
+        (Error("the token has expired"), adapter.QUERY_FAILURE_TOKEN, "token has expired"),
+        (Error('{"error": "invalid_token"}'), adapter.QUERY_FAILURE_TOKEN, "invalid_token"),
+        (
+            TokenNotFoundException("There is no bigdataquery token issued for AD user 'fake'"),
+            adapter.QUERY_FAILURE_TOKEN,
+            "",
+        ),
+        (Error("Syntax error: unexpected token"), adapter.QUERY_FAILURE_SQL, "syntax"),
+        (Error("ParseException: invalid token near 'FROM'"), adapter.QUERY_FAILURE_SQL, "parse"),
+        (Error("unexpected token"), adapter.QUERY_FAILURE_OTHER, ""),
+        (Error("Session expired"), adapter.QUERY_FAILURE_OTHER, "expired"),
+        (ConnectionError("500 Server Error"), adapter.QUERY_FAILURE_CONNECTION, ""),
+    ],
+)
+def test_a_login_token_failure_is_its_own_kind_before_connection(
+    error: BaseException, kind: str, clue: str
+) -> None:
+    """리뷰 202611111500 사외요청 3 — getData 의 invalid token(HTTP 500)이 「연결」 로 갈려 화면이
+    네트워크 · 다시 하기를 가리켰다. 분명한 토큰 낱말만 「토큰」 이고, 구문 오류의 token 은 SQL
+    그대로다. 시작 점검 토큰 줄 안내(`is_login_token_failure`)도 같은 판정이다."""
+    assert (adapter.classify_query_failure(error), adapter.query_failure_clue(error)) == (
+        kind,
+        clue,
+    )
+    assert adapter.is_login_token_failure(error) is (kind == adapter.QUERY_FAILURE_TOKEN)
+
+
+def test_a_token_failure_advises_the_administrator_not_a_retry() -> None:
+    """토큰은 다시 해도 같다 — 네트워크 · 다시 하기가 아니라 관리자에게. 오래 기다린 끝이어도
+    시간 초과로 올리지 않는다."""
+    wrapped = adapter.BigDataQueryCallError(Error("HTTP 500 invalid token"), seconds=907.4)
+
+    assert (wrapped.kind, wrapped.clue) == (adapter.QUERY_FAILURE_TOKEN, "invalid token")
+    text = str(wrapped)
+    assert text.startswith("BigDataQuery 조회가 실패했습니다(토큰).")
+    assert "관리자에게" in text and "다시 해도 같으니" in text
+    assert "네트워크" not in text and "기간을 줄여" not in text
+
+
+def test_an_invalid_token_in_the_cd_container_adds_the_start_check_line(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """「invalid token」 도 토큰 파일 단계 결과를 덧붙인다 — 예전에는 `TokenNotFoundException` 꼴만
+    붙어 이 실패는 연결 안내로만 나갔다."""
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        raise ConnectionError("500 invalid token")
+
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "fake")
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(refuse))
+    _start_report(tmp_path, monkeypatch, token=("ok", "토큰 파일을 씀"), missing=())
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_TOKEN
+    assert "서버 시작 점검" in str(raised.value)
 
 
 def test_a_missing_account_in_the_cd_container_adds_the_start_check_line(
