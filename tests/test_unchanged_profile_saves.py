@@ -1094,8 +1094,8 @@ def test_same_monthly_amounts_folds_order_zeros_and_last_digits() -> None:
 
 def test_every_unchanged_notice_drawn_in_place_wears_the_info_icon() -> None:
     """자리에 그리는 「바뀐 것이 없습니다 — …」(`….info(<…>_UNCHANGED_MESSAGE)`)는 모두 앞
-    아이콘 `:material/info:` 를 단다 — 자동 갱신 설정 한 자리만 없던 것을 맞췄다(2026-11-11 남은
-    물음 보드 D3)."""
+    아이콘 `:material/info:` 를 단다 — 같은 갈래는 한 꼴이다(2026-11-11 남은 물음 보드 D3 ·
+    UI-CON-03)."""
     sites: list[str] = []
     wrong: list[str] = []
     for path, outer, _, _, call in screen_calls(screen_files()):
