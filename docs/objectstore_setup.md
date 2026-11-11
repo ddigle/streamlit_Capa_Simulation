@@ -33,7 +33,7 @@ C-DEP 운영 서버는 영속 볼륨을 쓸 수 없고 CI/CD 때 디스크(`/pro
 | 이름 | 필수 | 뜻 |
 |---|---|---|
 | `CAPA_S3_SYNC_MODE` | 운영 `managed` | 비면 `local`. 틀린 값은 동기화 꺼짐 + `SY-01`. 키가 있고 버킷에 세대가 있는데 비면 `SY-05` — 일부러 끈 서버는 `local` 을 적는다 |
-| `CAPA_S3_BUCKET` | `managed` 필수 | 운영 버킷(예: `SPKGCAPA_Ops`). 없으면 받지 않고 머문다 — config 기본은 개발 버킷이다. 접속 명단도 같은 버킷 |
+| `CAPA_S3_BUCKET` | `managed` 필수 | 운영 버킷(예: `SPKGCAPA_Ops`). 없으면 받지 않고 머문다 — config 기본은 개발 버킷이다. 접속 명단도 같은 버킷. 운영 버킷과 `managed` 는 운영 C-DEP 표에만 둔다 — 개발 서버 · WebIDE · 사내 PC 앱에 넣으면 쓰는 쪽이 둘이 되어 세대가 갈라진다(`원격이 갈라짐`) |
 | `CAPA_S3_ACCESS_KEY` | `managed` 필수 · 비밀 | `~/.aws` 프로필 · 접속 명단 |
 | `CAPA_S3_SECRET_KEY` | `managed` 필수 · 비밀 | `~/.aws` 프로필 · 접속 명단 |
 | `CAPA_S3_ENDPOINT_URL` | 선택 | 없으면 config 값(1장). 접속 명단을 켤 때는 필수 |
@@ -91,7 +91,7 @@ C-DEP 운영 서버는 영속 볼륨을 쓸 수 없고 CI/CD 때 디스크(`/pro
 | 차례 | 누가 | 할 일 | 볼 것 |
 |---|---|---|---|
 | 1 | 사용자 | 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소를 넣고 CI/CD(`CAPA_S3_SYNC_MODE` 는 아직 비움) | Admin 「서버 시작 점검」 — aws 판 `1.46.3` · ECS `HTTP 403 닿음` · 버킷 목록 정상. 이미지의 pip 한 줄이 공개 미러로 받히는지가 여기서 답이 난다 |
-| 2 | 사용자 | 사내 PC 앱을 끄고 `sync_object_storage.py --bucket <운영 버킷> init` → `status`(6장). `aws s3 cp` 를 쓰지 않는다 — 세대 포인터가 없어 받지 못한다 | `status` 의 세대 1 |
+| 2 | 사용자 | 사내 PC 앱을 끄고 `doctor` 먼저(6장 1단계) — 원격 세대가 `비어 있음` 이 아니면 `init` 을 치지 않고 멈춘다(그대로 치면 `init` 은 건너뛰고 3 의 C-DEP 는 그 옛 세대를 받는다). `doctor` 의 `버킷` 줄이 1 의 `CAPA_S3_BUCKET` 과 같은지 눈으로 본 뒤 `sync_object_storage.py --bucket <운영 버킷> init` → `status`(6장). `aws s3 cp` 를 쓰지 않는다 — 세대 포인터가 없어 받지 못한다 | `doctor` 원격 세대 `비어 있음` · `status` 의 세대 1 |
 | 3 | 사용자 | `CAPA_S3_SYNC_MODE=managed` 를 넣고 CI/CD | 앱이 뜨고 「DB 받기」 정상 · HOME 이 사내 PC 와 같다 |
 | 4 | 사용자 | 앱에서 저장 하나 | 「DB 동기화 · 올릴 것 없음」 · 마지막 올림 시각 |
 | 5 | 사용자 | CI/CD 다시 — 저장이 살아 있나. 로그인 중에 한 번 눌러 임시 화면 · 로그인 복귀도 본다 | 그 저장이 보인다 · 「받기 n초 · 앱 응답까지 n초」 |
@@ -139,7 +139,7 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py probe --write config\object_storage_capabilities.json
 ```
 
-**3단계 — 최초 이관(앱을 끈 채로).** `aws s3 cp` 가 아니라 `init` 이다.
+**3단계 — 최초 이관(앱을 끈 채로).** `aws s3 cp` 가 아니라 `init` 이다. 치기 전에 1단계 `doctor` 를 다시 본다 — 원격 세대가 `비어 있음` 이 아니면 치지 않고 멈추고, `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(다르면 `--bucket` 을 고쳐 1단계부터).
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> init --note "최초 이관"
@@ -167,7 +167,7 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 
 | 낱말 | 뜻 | 할 일 |
 |---|---|---|
-| 원격이 비어 있음 | 이관 전 | 4장 2 의 `init` — 다음 시도가 스스로 받는다 |
+| 원격이 비어 있음 | 이관 전 | 먼저 4장 2 의 `doctor` 버킷이 C-DEP 표 값과 같았는지 본다 — 다른 버킷에 `init` 했으면 그 버킷에 다시 해도 풀리지 않는다. 같으면 4장 2 의 `init` — 다음 시도가 스스로 받는다 |
 | 설정 오류 | `CAPA_S3_BUCKET` · 키 없음, 설정 파일 깨짐, `~/.aws` 를 못 써 프로필 없음(`HOME`) | 환경변수 표를 고치고 CI/CD. 표가 맞는데 그대로면 `HOME` 자리에 쓸 수 있는지 담당에 묻는다(임시 화면에 머무는 동안은 Admin 이 없다) |
 | aws 명령 없음 | 이미지에 `aws` 가 없다 | `docker/Dockerfile-prod` 한 줄 · PATH — 사외 요청 |
 | 저장소가 거절 | 키 · 권한 | 키를 고치고 CI/CD |
