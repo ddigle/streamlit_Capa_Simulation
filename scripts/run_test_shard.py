@@ -19,7 +19,8 @@
 - **함께 돌아도** — 캐시(`.pytest_cache`)를 쓰지 않아 조각들이 같은 파일을 덮지 않는다. 한 PC 에서
   여러 조각을 함께 돌릴 때는 `--basetemp-root` 를 준다 — 조각마다 `<폴더>/shard<k>` 를 임시 폴더로
   쓰고(pytest 가 시작 때 비운다), 기본 임시 폴더의 오래된 차례 지우기가 서로의 폴더에 닿지 않는다.
-  주지 않으면 pytest 기본이다.
+  주지 않으면 pytest 기본이다. 폴더는 저장소(git 작업 트리) 밖에 둔다 — 사본 전용 스크립트 시험이
+  조상에 `.git` 이 있는 임시 자리를 운영 자리로 거절해 거짓으로 실패한다.
 - 시험 하나가 `HANG_REPORT_SECONDS` 를 넘기면 내장 faulthandler 가 스레드별 위치를 표준 오류에
   찍는다 — 작업이 시간 제한으로 끊겨도 어디서 멈췄는지 남는다.
 """
@@ -94,7 +95,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--basetemp-root",
         type=Path,
-        help="조각 임시 폴더를 <폴더>/shard<k> 로 — 한 PC 에서 여러 조각을 함께 돌릴 때 준다",
+        help=(
+            "조각 임시 폴더를 <폴더>/shard<k> 로 — 한 PC 에서 여러 조각을 함께 돌릴 때."
+            " 저장소(git 작업 트리) 밖 폴더"
+        ),
     )
     options = parser.parse_args(argv)
     if not 1 <= options.shard <= options.of:
