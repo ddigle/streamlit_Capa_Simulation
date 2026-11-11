@@ -30,6 +30,7 @@ from capa_simulation.components import edit_grid
 from capa_simulation.components.flash import render_flash
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
+from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.plan_grid_keys import (
     HOSTS,
     MOUNTED_KEY,
@@ -68,6 +69,8 @@ ERRORS_NOTICE: Final = "고칠 칸 {n}개 — 빨간 칸을 고치거나 비우�
 ERROR_PLACES: Final = 5
 # 「⋯」 메뉴 단추의 풍선(2026-11-12 보드 답 n2 나).
 MORE_HELP: Final = "더 보기"
+# 「⋯」 팝오버 key 의 세대 칸 꼬리 — 메뉴 안 단추를 누르면 세대를 올려 메뉴를 닫는다.
+MORE_GENERATION_SUFFIX: Final = "_generation"
 
 
 @dataclass(frozen=True)
@@ -318,6 +321,17 @@ class Button:
     on_click: Callable[[], None] | None = None
 
 
+def _closing(callback: Callable[[], None] | None, counter: str) -> Callable[[], None]:
+    """메뉴 안 단추 콜백 — 제 일을 한 뒤 팝오버 세대를 올린다(다음 회차에 메뉴가 닫혀 선다)."""
+
+    def run() -> None:
+        if callback is not None:
+            callback()
+        bump(counter)
+
+    return run
+
+
 @dataclass(frozen=True)
 class Actions:
     """작업 줄 결과 — 「변경사항 적용」 이 눌렸는가와 그 바로 아래 알림 자리(적용 결과 · 오류)."""
@@ -334,7 +348,7 @@ def render_actions(
     locked_help: str,
     paste: Button,
     more: Sequence[Button] = (),
-    more_key: str | None = None,
+    more_key: str = "plan_grid_more",
     discard_help: str,
     discard_click: Callable[[], None],
     discard_key: str,
@@ -362,13 +376,18 @@ def render_actions(
         )
         st.button(paste.label, icon=paste.icon, key=paste.key, on_click=paste.on_click)
         if more:
-            with st.popover("", icon=":material/more_horiz:", help=MORE_HELP, key=more_key):
+            # 메뉴 안 단추를 누르면 메뉴를 닫는다 — 팝오버 key 의 세대를 올려 다음 회차에 새(닫힌)
+            # 팝오버로 선다. 열린 채 두면 그 단추가 여는 창 위에 메뉴가 떠 있다.
+            counter = f"{more_key}{MORE_GENERATION_SUFFIX}"
+            with st.popover(
+                "", icon=":material/more_horiz:", help=MORE_HELP, key=widget_key(more_key, counter)
+            ):
                 for item in more:
                     st.button(
                         item.label,
                         icon=item.icon,
                         key=item.key,
-                        on_click=item.on_click,
+                        on_click=_closing(item.on_click, counter),
                         width="stretch",
                     )
         if pending:
