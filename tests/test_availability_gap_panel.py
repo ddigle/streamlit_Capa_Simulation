@@ -20,6 +20,7 @@ from capa_simulation.components.availability_gap_panel import (
     DETAIL_MODE_KEY,
     GAP_ROW_END_KEY,
     GAP_SIGN_HELP,
+    ONE_SIDED_MARK,
     PROCESS_FILTER_KEY,
     RESULT_VIEW_HELP,
     RESULT_VIEW_KEY,
@@ -650,9 +651,9 @@ def test_missing_static_keeps_dynamic_detail_and_explains_cross_check_limit() ->
         assert _value(app, row) is None
         assert "Static 을 읽지 못해" in hovers[(MONTH, row)]
         assert "기준정보(Static)에 없는" not in hovers[(MONTH, row)]
-    assert "Static 을 읽지 못해 「Die Attach」 공정의 GAP" in " ".join(
-        item.value for item in app.caption
-    )
+    # 자리에는 한쪽 공정과 같은 짧은 표지, 까닭은 풍선이다(2026-11-11 보드 D2 (나)).
+    (mark,) = [item for item in app.caption if str(item.value) == ONE_SIDED_MARK]
+    assert "Static 을 읽지 못해 「Die Attach」 공정의 GAP" in mark.proto.help
 
     _select_view(app, "확보율 교차검증")
     assert not app.dataframe
@@ -880,10 +881,13 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
     for row in (*STATIC_ROWS, *GAP_ROWS):
         assert _value(app, row) is None
         assert "기준정보(Static)에 없는 공정" in hovers[(MONTH, row)]
-    assert "GAP 을 내지 않습니다" in " ".join(item.value for item in app.caption)
-    # 분류별 내역의 그 글은 혼자 한 줄을 세우지 않고 「조회 결과 · 표시」 전환 줄 오른쪽 끝 칸의
-    # 작은 글이다 — 「내려받기 ▾」 메뉴 앞(2026-11-11 보드 D2 — e4-1 과 같은 꼴).
-    (mark,) = [item for item in app.caption if "있는 쪽 값만 보입니다" in str(item.value)]
+    # 분류별 내역에서는 짧은 표지이고 까닭 · 보이는 것은 풍선이다 — 혼자 한 줄을 세우지 않고 「조회
+    # 결과 · 표시」 전환 줄 오른쪽 끝 칸의 작은 글, 「내려받기 ▾」 메뉴 앞(2026-11-11 보드 D2 (나) —
+    # e4-1 과 같은 꼴).
+    (mark,) = [item for item in app.caption if str(item.value) == ONE_SIDED_MARK]
+    assert "「Wire Bond」 공정은 기준정보(Static)에 없어 GAP 을 내지 않습니다" in mark.proto.help
+    assert "있는 쪽 값만 보입니다" in mark.proto.help
+    assert not any("GAP 을 내지 않습니다" in str(item.value) for item in app.caption)
     assert all(child is not mark for child in app.main.children.values())
     end = switch_row_end(app)
     assert mark in _descendants(end)

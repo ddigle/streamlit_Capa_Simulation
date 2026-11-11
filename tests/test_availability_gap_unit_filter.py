@@ -13,6 +13,7 @@ from capa_simulation.components.availability_gap_panel import (
     RESULT_VIEW_KEY,
     UNIT_FILTER_COLUMNS_KEY,
     UNIT_FILTER_HELP,
+    UNIT_FILTER_MARK,
     unit_filter_key,
 )
 from capa_simulation.services.availability_sheet import (
@@ -179,7 +180,7 @@ def test_blank_values_are_not_offered_and_a_chosen_column_with_no_value_filters_
 
 
 def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
-    """캡션의 호기 수는 시트에 실제로 더해진 호기 수다.
+    """표지 풍선의 호기 수는 시트에 실제로 더해진 호기 수다.
 
     Line-A 는 EQ-1(Die Attach)·EQ-3(Etch) 둘인데, 공정을 Die Attach 로 고르면 더해지는 것은
     EQ-1 하나다. 범위 밖 호기까지 세면 「호기 2개」로 적혀 표와 어긋났다(2026-10-01 재현: 동=C1
@@ -187,13 +188,14 @@ def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
     """
     app = _run()
     _filter(app, "공정구분", ["Line-A"])
+    # 자리에는 짧은 표지만 — 고른 값 · 호기 수와 무엇이 빠지는지(기존보유 · 입력 비가동 · Static ·
+    # GAP)는 그 표지의 풍선이다(2026-11-11 보드 D2 (나) — e4-1 과 같은 꼴).
+    (band,) = [caption for caption in app.caption if caption.value == UNIT_FILTER_MARK]
+    assert band.proto.help.startswith("공정구분: Line\\-A — 호기 2개만 더합니다.")
+    assert UNIT_FILTER_HELP in band.proto.help
     captions = " ".join(caption.value for caption in app.caption)
-    assert "호기 2개만 더합니다" in captions
-    # 무엇이 빠지는지(기존보유 · 입력 비가동 · Static · GAP)는 그 줄의 풍선이다 — 자리에는 값만.
-    (band,) = [caption for caption in app.caption if "호기 2개만 더합니다" in caption.value]
-    assert band.proto.help == UNIT_FILTER_HELP
-    assert "호기 속성이 없어" not in captions
-    # 그 줄은 혼자 한 줄을 세우지 않고 「조회 결과 · 표시」 전환 줄 오른쪽 끝 칸의 작은 글이다 —
+    assert "개만 더합니다" not in captions and "호기 속성이 없어" not in captions
+    # 그 표지는 혼자 한 줄을 세우지 않고 「조회 결과 · 표시」 전환 줄 오른쪽 끝 칸의 작은 글이다 —
     # 「내려받기 ▾」 메뉴 앞(2026-11-11 보드 D2 — e4-1 과 같은 꼴).
     assert all(child is not band for child in app.main.children.values())
     end = switch_row_end(app)
@@ -202,19 +204,20 @@ def test_the_caption_counts_only_the_units_inside_the_chosen_process() -> None:
 
     app.selectbox(key=PROCESS_FILTER_KEY).select("Die Attach").run()
     assert not app.exception
-    captions = " ".join(caption.value for caption in app.caption)
-    assert "호기 1개만 더합니다" in captions
+    (band,) = [caption for caption in app.caption if caption.value == UNIT_FILTER_MARK]
+    assert "호기 1개만 더합니다" in band.proto.help
     assert _available(app) == 1.0
 
 
 def test_the_filter_caption_blocks_the_tildes_of_the_chosen_values() -> None:
-    """본문의 「호기 필터 · 공정구분: …」 캡션(마크다운)은 고른 값을 날로 실어 「L~A~X」 의 가운데가
-    지움선이 됐다(2026-10-26 E2E r5 와 같은 결함류 — Summary 걸린 조건 줄). 물결표를 막는다."""
+    """본문 「호기 필터」 표지 풍선의 「공정구분: …」(마크다운)은 고른 값을 날로 실으면 「L~A~X」
+    의 가운데가 지움선이 된다(2026-10-26 E2E r5 와 같은 결함류 — Summary 걸린 조건 줄). 물결표를
+    막는다."""
     app = _run(line_a="L~A~X")
     _filter(app, "공정구분", ["L~A~X"])
 
-    captions = [str(item.value) for item in app.caption if "호기 필터 ·" in str(item.value)]
-    assert captions and all("호기 필터 · 공정구분: L\\~A\\~X —" in text for text in captions)
+    helps = [str(item.proto.help) for item in app.caption if item.value == UNIT_FILTER_MARK]
+    assert helps and all(text.startswith("공정구분: L\\~A\\~X —") for text in helps)
 
 
 def test_the_filter_caption_keeps_the_stars_of_the_chosen_values() -> None:
@@ -223,5 +226,5 @@ def test_the_filter_caption_keeps_the_stars_of_the_chosen_values() -> None:
     app = _run(line_a="L*A*X")
     _filter(app, "공정구분", ["L*A*X"])
 
-    captions = [str(item.value) for item in app.caption if "호기 필터 ·" in str(item.value)]
-    assert captions and all("호기 필터 · 공정구분: L\\*A\\*X —" in text for text in captions)
+    helps = [str(item.proto.help) for item in app.caption if item.value == UNIT_FILTER_MARK]
+    assert helps and all(text.startswith("공정구분: L\\*A\\*X —") for text in helps)
