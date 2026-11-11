@@ -1005,8 +1005,7 @@ def test_an_empty_base64_token_is_failed_without_writing(place: Path, value: str
 )
 def test_a_short_token_is_failed_without_writing(place: Path, value: str) -> None:
     """짧은 값으로 파일을 쓰고 「정상」 이라 하면 조회의 토큰 실패가 만료처럼 보인다(리뷰
-    202611111500 사외요청 3 — 3바이트 토큰도 「정상」 이었다). 길이는 비밀값에서 나온 수라 까닭에
-    싣지 않는다."""
+    202611111500 사외요청 3). 길이는 비밀값에서 나온 수라 까닭에 싣지 않는다."""
     environ = {**ALL_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: value}
 
     report, _ = _main(place, environ, FakeRunner([_probe("ok", "9.9.9")]))

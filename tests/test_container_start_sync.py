@@ -319,8 +319,9 @@ def test_a_forgotten_mode_over_a_bucket_with_generations_leaves_a_mark(
         ((), {}),
         ((), {"CAPA_S3_SYNC_MODE": "local"}),
         ((POINTER_KEY,), {"CAPA_S3_SYNC_MODE": "Local"}),
+        ((POINTER_KEY,), {"CAPA_S3_SYNC_MODE": " "}),
     ],
-    ids=["empty-bucket", "local-empty-bucket", "mistyped-mode"],
+    ids=["empty-bucket", "local-empty-bucket", "mistyped-mode", "only-spaces"],
 )
 def test_no_mark_without_a_forgotten_mode(
     box: SimpleNamespace,
@@ -328,8 +329,8 @@ def test_no_mark_without_a_forgotten_mode(
     keys: tuple[str, ...],
     extra: dict[str, str],
 ) -> None:
-    """이관 전의 첫 CI/CD 는 알릴 것이 없다. 틀린 철자는 앱이 `SY-01` 로 알리므로 표지를 세우지
-    않는다."""
+    """이관 전의 첫 CI/CD 는 알릴 것이 없다. 앱이 바른 `local` 로 읽지 않는 값(다른 철자 · 공백만)은
+    앱이 `SY-01` 로 알리므로 표지를 세우지 않는다."""
     _reachable_ecs(monkeypatch)
 
     _start(box, _environ(box, **extra), Runner(box.log, aws=_bucket_with(*keys)))

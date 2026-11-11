@@ -807,6 +807,14 @@ def _read_storage(environ: Mapping[str, str]) -> StorageSettings | None:
         return None
 
 
+def _reads_as_local(environ: Mapping[str, str]) -> bool:
+    """앱이 이 환경의 모드를 바른 `local` 로 읽나(`load_settings` 그대로 — 빈 칸도 `local`)."""
+    try:
+        return load_settings(environ=environ).mode == MODE_LOCAL
+    except (ObjectStorageError, OSError, ValueError):
+        return False
+
+
 def plan_sync(environ: Mapping[str, str]) -> SyncPlan:
     """`managed` 는 환경변수 한 곳이면 된다 — 설정 파일이 깨져도 받기로 가서 `config` 로 머문다.
     앱이 `local` 로 내려앉아 빈 DB 로 뜨지 않게."""
@@ -1069,10 +1077,9 @@ def prepare_sync(
             else _guarded(lambda: bucket_step(client, heads=saw_heads), redactor)
         )
     # 이 스크립트는 C-DEP 이미지에서만 돈다 — 그 자리에서는 빈 값과 바른 `local` 이 같은 길이라
-    # 둘 다 표지를 세운다. 틀린 철자는 앱이 `SY-01` 로 알린다.
-    head_ignored = (
-        head_listed and not plan.managed and environ.get(MODE_ENV, "").strip() in ("", MODE_LOCAL)
-    )
+    # 둘 다 표지를 세운다. 앱이 바른 `local` 로 읽지 않는 값(다른 철자 · 공백만)은 앱이 `SY-01` 로
+    # 알리므로 세우지 않는다.
+    head_ignored = head_listed and not plan.managed and _reads_as_local(environ)
     reason = "받기 전" if plan.managed else f"{MODE_ENV} 가 {MODE_MANAGED} 아님 — 받지 않음"
     if head_ignored:
         reason = (

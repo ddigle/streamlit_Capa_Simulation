@@ -148,8 +148,8 @@ def load_settings(*, environ: Mapping[str, str] | None = None) -> StorageSetting
     file_config = _read_json(CONFIG_PATH, label="오브젝트 스토리지 설정")
     capabilities = _read_json(CAPABILITIES_PATH, label="스토리지 능력 파일") or {}
     values = file_config or {}
-    mode_text = str(env.get(MODE_ENV) or values.get("mode") or "local").strip()
-    if mode_text not in ("local", MODE_MANAGED):
+    mode_text = str(env.get(MODE_ENV) or values.get("mode") or MODE_LOCAL).strip()
+    if mode_text not in (MODE_LOCAL, MODE_MANAGED):
         raise StorageSettingsError(
             f"{MODE_ENV} 는 local 또는 managed 여야 합니다: {mode_text!r}", label=SETTINGS_BAD_MODE
         )
