@@ -92,7 +92,7 @@ def test_a_blank_run_rate_on_a_live_route_is_caught_before_saving() -> None:
     assert "새 리비전으로 저장하면 r2부터 계산이 섭니다." in notice
 
 
-def _upeh_table_damaged(area: str, process: str, column: str, value: object) -> pd.DataFrame:
+def _upeh_table_damaged(area: str, process: str, column: str, value: float | None) -> pd.DataFrame:
     """한 공정의 첫 달 `area` 행의 `column` 칸을 `value` 로 — UPEH 표 자체의 값 칸 멈춤."""
     frame = SEED.source_data.copy()
     rows = frame["Area_Name"].astype("string").str.upper().eq(area.upper()) & frame["공정"].eq(
@@ -106,7 +106,7 @@ def _upeh_table_damaged(area: str, process: str, column: str, value: object) -> 
 @pytest.mark.parametrize(
     ("source", "label"),
     [
-        (lambda: _upeh_table_damaged("Main", PROCESS, "UPEH", pd.NA), "빈 값(UPEH)"),
+        (lambda: _upeh_table_damaged("Main", PROCESS, "UPEH", None), "빈 값(UPEH)"),
         (lambda: _upeh_table_damaged("MI", "DEMO_Final_Test", "ST", 0.0), "0 이하(ST)"),
     ],
     ids=["main-upeh-blank", "mi-st-zero"],
