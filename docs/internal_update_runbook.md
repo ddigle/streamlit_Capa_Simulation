@@ -546,7 +546,7 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
 - 통합인증 환경변수(이름만 — 값은 리뷰에 옮기지 않는다): `ADFS_CLIENT_ID`(켜는 스위치 — 비면 꺼짐) · `JWT_SECRET_KEY` · `APP_ENV` ·
   `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_PUBLIC_URL` · 선택 `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` ·
   `CAPA_SSO_SESSION_MAX_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` · 접속 명단 `CAPA_ACCESS_ADMINS`(운영 필수) · 선택 `CAPA_ACCESS_USERS` ·
-  `CAPA_ACCESS_CONTACT` · S3 명단 `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY`(있으면 켜짐 · 비밀) · `CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · 선택 `CAPA_S3_REGION` · `CAPA_ACCESS_S3_OBJECT`. 첫 배포 순서 · 진단은
+  `CAPA_ACCESS_CONTACT` · S3 명단 `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY`(있으면 켜짐 · 비밀) · `CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · 선택 `CAPA_S3_REGION` · `CAPA_ACCESS_S3_OBJECT` — 키를 넣으면 시작 점검의 동기화 줄을 위해 `CAPA_S3_PROFILE`(aws 프로필 이름 — 기본값 없음, 없으면 프로필 · 버킷 목록 줄 실패 · Alarm `SY-06`, [`objectstore_setup.md`](objectstore_setup.md) 2장)도. 첫 배포 순서 · 진단은
   [`sso_setup.md`](sso_setup.md). **접속 명단의 값(Admin 「접속 명단」 표 · S3 파일 · 환경변수)은 실제 loginid 라 리뷰 압축본 · 전문에 옮기지 않는다** — 옮기는 것은 「접속 명단」 · 「S3 명단」 사실 줄의 수와 까닭뿐이다(「S3 명단」 줄은 키 · 주소 · 값이 없어 그대로 옮겨도 된다). 켠 서버는 로그인해 10분 넘게 쓴 뒤 Admin 「통합인증 점검」 의 「로그인 갱신」 누계(다시 발급 · 출처·머리
   거절)를 수로만 압축본에 옮긴다(그 배포의 7장이 줄을 정한다).
 - 모듈이 새 패키지가 필요하면 이 파일·`pyproject.toml` 에 넣지 않고 「사외 요청」 으로 낸다(담당자 → 사용자 → 리뷰).
