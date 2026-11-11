@@ -1717,11 +1717,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
     (`classify_query_failure` — 토큰·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
-    원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 토큰은 맨 앞에 본다 — 종류 이름의 `token` 이나 분명한 토큰 낱말
-    (`_TOKEN_FAILURE_WORDS` — `invalid token` · `token expired` 류와 패키지의 「no bigdataquery token」 · `.credential`)이고 문법
-    낱말이 함께 있으면 SQL 로 둔다(구문 오류의 「unexpected token」). 사슬에 `ConnectionError` 가 있어도 「연결」(네트워크 · 다시)이
-    아니라 「다시 해도 같으니 관리자에게」 이고, 시작 점검 토큰 줄 안내(`is_login_token_failure`)와 8-5 의 다시 묻지 않음도 같은
-    판정이다(2026-11-12 리뷰 202611111500 보드 N7). 사외로 가는 스크립트(`inspect_real_data_checks.py` 8-5)는 갈래와
+    원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 토큰은 맨 앞에 보고 분명한 근거만 쓴다 — 토큰 예외 종류 이름
+    (`_TOKEN_FAILURE_TYPE_WORDS` — `TokenNotFound…` · 만료를 단 이름, 문법 낱말보다 먼저)이나 분명한 토큰 낱말(`_TOKEN_FAILURE_WORDS`
+    — `invalid token` · `token expired` 류와 패키지의 「no bigdataquery token」, 종류 이름 `InvalidToken…` 도 이쪽)이고, 이쪽은 문법
+    낱말이 함께 있으면 SQL 로 둔다(구문 오류의 「unexpected token」). 종류 이름의 `token` 하나 · 토큰 자리(`.credential`)만으로는
+    갈래가 서지 않는다. 사슬에 `ConnectionError` 가 있어도 「연결」(네트워크 · 다시)이 아니라 「다시 해도 같으니 관리자에게」 이고
+    8-5 도 다시 묻지 않는다. 시작 점검 토큰 줄 안내(`is_login_token_failure`)는 갈래 「토큰」 이면 늘 붙고 종류 이름의 `token` ·
+    `.credential` 문구에도 붙는다(덧붙일 뿐이라 넓다 — 2026-11-12 리뷰 202611111500 보드 N7). 사외로 가는 스크립트(`inspect_real_data_checks.py` 8-5)는 갈래와
     종류 이름(`type_names`), 그리고 갈래를 정한 목록 낱말(`query_failure_clue` · `BigDataQueryCallError.clue` — 문구 원문이
     아니다)만 찍는다. 까닭을 말하지 않는 낱말(`sql` 등)은 갈래가 그 밖이고 단서로만 붙으며, 그 밖과 넓은 SQL 낱말(`not found` ·
     `does not exist` 등 — 문법 낱말 `_QUERY_TEXT_WORDS` 를 뺀 것)의 실패가 `LONG_FAILURE_SECONDS`(5분)를 넘겨 나면

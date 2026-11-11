@@ -557,10 +557,18 @@ def _start_check_line(step: str) -> str:
 
 
 def is_login_token_failure(error: BaseException) -> bool:
-    """로그인 토큰이 없거나(`TokenNotFoundException` 꼴) 무효 · 만료인 패키지 예외인가. 종류 이름과
-    문구로 가른 추정이다(`_token_clue`) — 갈래 「토큰」(`classify_query_failure`)과 서버 시작 점검
-    토큰 줄 안내가 같은 판정을 쓴다."""
-    return _token_clue(_failure_chain(error)) is not None
+    """서버 시작 점검 토큰 줄 안내를 덧붙일 실패인가 — 로그인 토큰이 없거나(`TokenNotFoundException`
+    꼴) 무효 · 만료인 패키지 예외로 보이는가. 종류 이름과 문구로 가른 추정이다. 갈래 「토큰」
+    (`classify_query_failure` — `_token_clue`)이면 늘 참이고, 안내는 그보다 넓게 종류 이름의 token ·
+    토큰 자리 문구(`.credential`)에도 붙는다 — 안내는 덧붙일 뿐 다시 하기 · 관리자 알림을 바꾸지
+    않는다."""
+    chain = _failure_chain(error)
+    if _token_clue(chain) is not None:
+        return True
+    if any("token" in type(link).__name__.casefold() for link in chain):
+        return True
+    text = " ".join(str(link) for link in chain).casefold()
+    return "bigdataquery token" in text or ".credential" in text
 
 
 # 조회 실패의 갈래. 패키지 예외 종류를 모르므로 예외 사슬의 종류 이름과 문구의 낱말로 가른 추정이다.
@@ -574,13 +582,24 @@ QUERY_FAILURE_OTHER: Final = "그 밖"
 # (`not found` · `does not exist` 등)는 긴 조회 중 다시 적재한 표에서도 난다
 # (`LONG_FAILURE_SECONDS`).
 _QUERY_TEXT_WORDS: Final[tuple[str, ...]] = ("syntax", "parse", "analysis", "semantic")
-# 로그인 토큰을 탓하는 분명한 낱말만 — 사내 실패 문구를 아직 모르니 넓히지 않는다. 앞 둘은 패키지가
-# 토큰이 없을 때 내는 문구(`TokenNotFoundException` — 「no bigdataquery token issued … at
-# '/config/.credential/'」)에서 온다. 구문 오류의 「unexpected token」 은 여기 없고, 문법 낱말
+# 갈래 「토큰」 을 정하는 분명한 근거만 — 사내 실패 문구를 아직 모르니 넓히지 않는다(갈래가 서면
+# 다시 묻지 않고 관리자 알림이 선다). 종류 이름(소문자 · 밑줄 뺌)은 둘로 본다. 앞 셋은 문법 낱말보다
+# 먼저 본다 — 패키지의 토큰 예외(`TokenNotFoundException`, `docs/bigdataquery_webide_setup.md`
+# 1단계)가 문구에 조회문을 실어 와도 토큰이다. 「invalidtoken」 은 SQL 구문 분석기의 종류 이름에도
+# 있을 수 있어 문구 낱말과 같이 문법 낱말이 함께 있으면 SQL 로 둔다. 「token」 하나는 보지 않는다
+# (`Tokenize…` 따위).
+_TOKEN_FAILURE_TYPE_WORDS: Final[tuple[str, ...]] = (
+    "tokennotfound",
+    "tokenexpired",
+    "expiredtoken",
+)
+_TOKEN_FAILURE_TYPE_WORDS_UNLESS_QUERY: Final[tuple[str, ...]] = ("invalidtoken",)
+# 문구 낱말. 첫째는 패키지가 토큰이 없을 때 내는 문구(「There is no bigdataquery token issued for AD
+# user …」)다. 토큰 자리(`.credential`)만 말하는 문구는 갈래를 정하지 않는다(안내만 —
+# `is_login_token_failure`). 구문 오류의 「unexpected token」 은 여기 없고, 문법 낱말
 # (`_QUERY_TEXT_WORDS`)이 함께 있으면 토큰으로 보지 않는다.
 _TOKEN_FAILURE_WORDS: Final[tuple[str, ...]] = (
-    "bigdataquery token",
-    ".credential",
+    "no bigdataquery token",
     "invalid token",
     "invalid_token",
     "token is invalid",
@@ -689,13 +708,16 @@ def failure_type_names(error: BaseException) -> tuple[str, ...]:
 
 
 def _token_clue(chain: list[BaseException]) -> str | None:
-    """토큰 실패면 근거 낱말(`_TOKEN_FAILURE_WORDS` 의 것 — 종류 이름으로 가렸으면 빈 글), 아니면
-    None. 문법 낱말이 함께 있으면 구문 오류로 보고 None 이다."""
-    names = " ".join(type(link).__name__ for link in chain).casefold()
+    """갈래 「토큰」 이면 근거 낱말(`_TOKEN_FAILURE_WORDS` 의 것 — 종류 이름으로 가렸으면 빈 글),
+    아니면 None. 토큰 예외 종류 이름(`_TOKEN_FAILURE_TYPE_WORDS`)이 먼저고, 그 밖의 근거는 문법
+    낱말이 함께 있으면 구문 오류로 보고 None 이다."""
+    names = " ".join(type(link).__name__ for link in chain).casefold().replace("_", "")
+    if any(word in names for word in _TOKEN_FAILURE_TYPE_WORDS):
+        return ""
     text = " ".join(str(link) for link in chain).casefold()
     if any(word in names or word in text for word in _QUERY_TEXT_WORDS):
         return None
-    if "token" in names:
+    if any(word in names for word in _TOKEN_FAILURE_TYPE_WORDS_UNLESS_QUERY):
         return ""
     return next((word for word in _TOKEN_FAILURE_WORDS if word in text), None)
 

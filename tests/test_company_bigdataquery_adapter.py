@@ -488,8 +488,7 @@ def test_a_failure_the_screen_catches_still_leaves_one_log_line(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """화면이 잡아 보여 주는 실패도 앱 로그에 한 줄 남는다 — 셸·화면을 볼 수 없는 C-DEP CD 에서는
-    로그가 유일한 단서일 수 있다. 원문(계정 이름 등이 든다)은 화면에만 두고 로그에는 갈래·종류만.
-    토큰 자리(`.credential`)를 말하는 실패라 갈래는 토큰이다."""
+    로그가 유일한 단서일 수 있다. 원문(계정 이름 등이 든다)은 화면에만 두고 로그에는 갈래·종류만."""
     secret_like = "AD user 'someone' at '/config/.credential/'"
 
     def refuse(**_kwargs: object) -> pd.DataFrame:
@@ -504,7 +503,7 @@ def test_a_failure_the_screen_catches_still_leaves_one_log_line(
 
     lines = [record.getMessage() for record in caplog.records]
     assert lines == [
-        f"BigDataQuery 실패: 조회 실패 갈래={adapter.QUERY_FAILURE_TOKEN} 종류=ValueError"
+        f"BigDataQuery 실패: 조회 실패 갈래={adapter.QUERY_FAILURE_SQL} 종류=ValueError"
     ]
     assert secret_like not in "\n".join(lines)
 
@@ -992,6 +991,14 @@ class HTTPError(OSError):
     """HTTP 클라이언트가 내는 꼴 — 내장 `ConnectionError` 밖이다."""
 
 
+class TokenizeLikeError(Exception):
+    """이름에 token 이 들었을 뿐 로그인 토큰과 상관없는 예외."""
+
+
+class InvalidTokenError(Exception):
+    """무효 토큰을 종류 이름에 단 꼴."""
+
+
 @pytest.mark.parametrize(
     ("error", "kind", "clue"),
     [
@@ -1011,6 +1018,24 @@ class HTTPError(OSError):
             adapter.QUERY_FAILURE_TOKEN,
             "",
         ),
+        (
+            TokenNotFoundException("no bigdataquery token for the query (… analysis)"),
+            adapter.QUERY_FAILURE_TOKEN,
+            "",
+        ),
+        (
+            RuntimeError("There is no bigdataquery token issued for AD user 'fake'"),
+            adapter.QUERY_FAILURE_TOKEN,
+            "no bigdataquery token",
+        ),
+        (InvalidTokenError("HTTP 500"), adapter.QUERY_FAILURE_TOKEN, ""),
+        (InvalidTokenError("Syntax error at line 1"), adapter.QUERY_FAILURE_SQL, "syntax"),
+        (TokenizeLikeError("x"), adapter.QUERY_FAILURE_OTHER, ""),
+        (
+            Error("table not found at '/config/.credential/'"),
+            adapter.QUERY_FAILURE_SQL,
+            "not found",
+        ),
         (Error("Syntax error: unexpected token"), adapter.QUERY_FAILURE_SQL, "syntax"),
         (Error("ParseException: invalid token near 'FROM'"), adapter.QUERY_FAILURE_SQL, "parse"),
         (Error("unexpected token"), adapter.QUERY_FAILURE_OTHER, ""),
@@ -1021,14 +1046,31 @@ class HTTPError(OSError):
 def test_a_login_token_failure_is_its_own_kind_before_connection(
     error: BaseException, kind: str, clue: str
 ) -> None:
-    """리뷰 202611111500 사외요청 3 — getData 의 invalid token(HTTP 500)이 「연결」 로 갈려 화면이
-    네트워크 · 다시 하기를 가리켰다. 분명한 토큰 낱말만 「토큰」 이고, 구문 오류의 token 은 SQL
-    그대로다. 시작 점검 토큰 줄 안내(`is_login_token_failure`)도 같은 판정이다."""
+    """getData 의 invalid token(HTTP 500)은 「연결」 이 아니라 「토큰」 이다 — 「연결」 안내
+    (네트워크 · 다시 하기)는 틀린 길이다(리뷰 202611111500 사외요청 3). 분명한 근거만 「토큰」 이고,
+    구문 오류의 token 은 SQL 그대로다. 토큰 예외 종류 이름은 문법 낱말보다 먼저다. 「토큰」 이면
+    시작 점검 토큰 줄 안내(`is_login_token_failure`)도 붙는다."""
     assert (adapter.classify_query_failure(error), adapter.query_failure_clue(error)) == (
         kind,
         clue,
     )
-    assert adapter.is_login_token_failure(error) is (kind == adapter.QUERY_FAILURE_TOKEN)
+    if kind == adapter.QUERY_FAILURE_TOKEN:
+        assert adapter.is_login_token_failure(error) is True
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        TokenizeLikeError("x"),
+        Error("table not found at '/config/.credential/'"),
+        Error("Could not read the bigdataquery token file"),
+    ],
+)
+def test_the_start_check_line_reaches_wider_than_the_token_kind(error: BaseException) -> None:
+    """안내(서버 시작 점검 토큰 줄)는 종류 이름의 token · 토큰 자리 문구에도 붙는다 — 덧붙일 뿐
+    다시 하기 · 관리자 알림을 바꾸지 않으므로 갈래 「토큰」 보다 넓게 둔다."""
+    assert adapter.is_login_token_failure(error) is True
+    assert adapter.classify_query_failure(error) != adapter.QUERY_FAILURE_TOKEN
 
 
 def test_a_token_failure_advises_the_administrator_not_a_retry() -> None:
@@ -1046,8 +1088,8 @@ def test_a_token_failure_advises_the_administrator_not_a_retry() -> None:
 def test_an_invalid_token_in_the_cd_container_adds_the_start_check_line(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """「invalid token」 도 토큰 파일 단계 결과를 덧붙인다 — 예전에는 `TokenNotFoundException` 꼴만
-    붙어 이 실패는 연결 안내로만 나갔다."""
+    """「invalid token」 도 토큰 파일 단계 결과를 덧붙인다 — 토큰이 없는 꼴
+    (`TokenNotFoundException`)만이 아니다. 갈래는 연결이 아니라 토큰이다."""
 
     def refuse(**_kwargs: object) -> pd.DataFrame:
         raise ConnectionError("500 invalid token")
