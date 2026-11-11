@@ -61,6 +61,7 @@
   - 상자 머리 화면은 색인(켜진 모듈과 그 화면 링크)이고, 모듈 화면은 그 아래 링크로 든다.
   - 켜진 모듈이 없으면 상자도 없다.
 - **이번 단계는 같은 웹에 보이기만 한다.** 코어(이 앱의 계산·DB)와 데이터를 주고받지 않는다. 데이터 연계는 다음 단계다(10장).
+  바깥 자리(BigDataQuery · 배포 서버의 S3 버킷)는 코어 도우미 함수로만 닿는다(3-10).
 - 정본은 **폴더로 가른다**(2026-11-01 결정 — 「모델 2」).
 
 | 무엇 | 정본 | 누가 고치나 |
@@ -84,6 +85,7 @@
 | `data/modules/<id>/` | 읽기만 한다 — 화면이 실행 중에 쓴다. 손으로 넣거나 고치지 않고, 지울 때는 먼저 묻는다 | 네 모듈의 데이터 자리다 — 코드에서는 `ctx.data_dir`. 손으로 넣은 파일은 그 PC 에만 있다(아래) |
 | 그 밖 전부 — `app.py`·`app_pages/`·`src/`·`tests/`·`scripts/`·`docs/`·`config/`·루트 파일·다른 모듈 | 읽기만 한다 | 코어와 남의 모듈이다. 고쳐도 다음 배포가 덮는다 |
 | 코어 두 DB(`data/capa_simulation.duckdb`·`data/equipment_availability.duckdb`)·`data/input`·`data/output`·`data/temp`·`review/`·`.deploy/`·`~/.aws`·`/proc` | 열지도 않는다 | 운영 데이터 · 배포 기록과 운영 버킷 키다 |
+| 자격 — BigDataQuery 요청자 계정 · 토큰(토큰 파일 자리 `.credential` · `bigdataquery.token`), S3 키 · 주소 · 버킷, 통합인증 비밀의 환경변수(`CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 이름) | 읽지도 않는다 — 코드에 그 이름을 적으면 점검 오류(M21) | 코어가 쥔다. 조회 · 올리기 · 받기는 코어 도우미로 한다(3-10). S3 키는 운영 DB 를 지울 수 있는 권한이다 |
 
 - 배포 ZIP 은 `modules/` 를 싣지도 덮지도 지우지도 않는다. `data/modules/` 도 지우지 않는다.
 - **첫 배포 주의** — 이 지침서가 실린 배포를 앱 관리자가 적용하기 **전에는** 저장소에 `modules/` 를 올리지 않는다(PR 도 합치지 않는다).
@@ -95,7 +97,8 @@
 - 손으로 넣은 파일은 그 PC 에만 있다. 앱 관리자 PC 의 운영 앱에도 배포 서버에도 닿지 않는다. 「내 PC 에서는 된다」 의 흔한 원인이다.
 - 합성 시드가 필요하면 `modules/<id>/assets/` 에 1 MB 아래의 합성 파일만 둔다(읽기만 한다).
 - **`ctx.data_dir` 가 비어 있어도 화면이 빈 상태로 서야 한다.** 스모크 시험이 빈 임시 자리로 도는 것이 그 확인이다.
-- **운영 모듈 데이터는 백업이 없다.** 잃어도 되는 것만 둔다. 배포 서버 컨테이너에서는 재배포 때 사라질 수 있다.
+- **코어는 운영 모듈 데이터를 백업하지도 대신 올리지도 않는다.** 배포 서버 컨테이너에서는 재배포 때 사라질 수 있다. 재배포 뒤에도
+  남겨야 하는 파일은 모듈이 스스로 `api.s3_upload` 로 올리고 화면이 설 때 `api.s3_download` 로 받는다(3-10 — 배포 서버에서만 된다).
 - 모듈 DB(DuckDB · SQLite)가 필요하면 `ctx.data_dir` 안에 둔다. 표를 만들고 고치는 일(마이그레이션)도 네 몫이고 코어 번호와 상관없다.
 - **모듈 코드 폴더에는 실행 중에 쓰지 않는다.** 쓰기는 `ctx.data_dir` 만이다. 코드 폴더에 쓴 파일은 커밋되지 않아 어느 점검에도
   보이지 않는다(M13 이 경고하고, 시험 러너는 실패로 만든다).
@@ -578,6 +581,70 @@ frame = cache.load(str(ctx.data_dir), version)
 st.dataframe(frame[frame["종류"] == kind], width="stretch")
 ```
 
+### 3-10. 코어 도우미 — BigDataQuery 조회 · S3 올리기 · 받기
+
+바깥 자리(BigDataQuery · 배포 서버의 S3 버킷)에는 **코어 도우미 함수로만** 닿는다(창구 1.3 — 2026-11-12 결정). 요청자 계정 · 토큰 ·
+S3 키는 코어가 쥐고 모듈은 그 값을 읽지 않는다 — 그 환경변수 이름이나 토큰 파일 자리를 코드에 적으면 점검 오류(M21)다. 도우미를
+쓰는 모듈은 `module.json` 에 `"api_minor": 3` 을 적는다(9-4).
+
+| 함수 | 하는 일 | 돌려주는 것 |
+|---|---|---|
+| `api.query_bigdataquery(ctx, sql, start=…, end=…)` | 앱의 DB 등록과 같은 길로 BigDataQuery 에 묻는다. `start` · `end`(날짜)를 함께 주면 조회문의 `{start_date}` · `{end_date}` 자리를 채운다(끝 날 포함 · 최대 366일 — 아래 「기간 자리」) | 표(`DataFrame`) — 0행도 그대로. 실패는 `api.BigDataQueryError` 를 던진다 |
+| `api.s3_upload(ctx, "<이름>")` | `ctx.data_dir / "<이름>"` 파일 하나를 버킷의 `modules/<id>/<이름>` 으로 올린다(있으면 덮는다) | `api.S3Result` — 예외를 던지지 않는다 |
+| `api.s3_download(ctx, "<이름>")` | 버킷의 `modules/<id>/<이름>` 을 받아 `ctx.data_dir / "<이름>"` 에 둔다(있으면 다 받은 뒤 한 번에 바꾼다) | `api.S3Result` — 예외를 던지지 않는다 |
+
+- **언제 올리고 받을지는 모듈이 정한다.** 코어는 `data/modules/<id>/` 를 대신 올리거나 받지 않는다. 남겨야 하는 파일은 저장 단추에서
+  올리고, 화면이 처음 설 때(파일이 없을 때 · 세션에 한 번) 받는다(아래 예).
+- **이름** — `ctx.data_dir` 안의 상대 이름이다. `/` 로 나눈 마디 넷까지이고 마디는 영문 · 숫자로 시작해 영문 · 숫자 · `.` · `_` · `-` 만
+  쓴다(예: `memo.csv` · `backup/2026-11.csv`). 그 밖(`..` · 절대 경로 · 한글 · 빈칸 · 데이터 자리 밖을 가리키는 링크)은 「이름 거절」 이다.
+- **크기** — 파일 하나는 `api.S3_MAX_BYTES`(8 MiB)까지다. 넘으면 「너무 큼」 이다. 한 번에 메모리에 올려 보내고 받는다.
+- **기다림** — 올리기 · 받기는 끝날 때까지 그 회차를 묶는다. 파일 하나에 최대 약 35초(상한 크기를 가장 느린 속도로 옮길 때)다. 작은
+  파일은 아래 예처럼 처음 설 때 받아도 되지만, 큰 파일은 단추를 눌렀을 때 받는다(4장).
+- **S3 는 배포 서버에서만 된다** — 동기화 모드 `managed` 와 키 · 주소 · 버킷이 있는 운영 서버 하나다. 담당자 클론 · WebIDE · 앱 관리자
+  PC 에서는 「쓸 수 없음」 이다. 그래도 화면은 서야 한다 — 받기가 「쓸 수 없음」 이면 데이터 자리에 있는 파일로 돈다.
+- `S3Result` 의 칸 — `ok`(성공) · `reason`(실패 까닭 — 「쓸 수 없음」 · 「이름 거절」 · 「파일 없음」 · 「너무 큼」 · 「전송 실패」 ·
+  「파일 오류」) · `detail`(까닭의 자세히 — 고정 낱말) · `size`(옮긴 바이트 수).
+- **기간 자리** — `{start_date}` 에는 시작 날이, `{end_date}` 에는 **끝 날 다음 날**이 들어간다(앱의 조회와 같은 꼴). 그래서 조회문은
+  `>= '{start_date}' AND < '{end_date}'` 로 써야 끝 날까지 꼭 맞게 받는다 — `BETWEEN` 이나 `<=` 로 쓰면 오류 없이 하루를 더 받는다.
+  예: `start=date(2026, 1, 1), end=date(2026, 1, 31)` 이면 `>= '2026-01-01' AND < '2026-02-01'` 이 된다.
+- `BigDataQueryError` 의 `kind` — 「입력」(조회문 · 기간이 틀림 — 묻기 전에 막는다) · 「쓸 수 없음」(패키지 · 요청자 계정이 없음, 모듈
+  시험) · 앱 화면과 같은 갈래 「시간 초과」 · 「연결」 · 「SQL」 · 「그 밖」. 글(`str(error)`)은 앱 화면과 같은 안내다.
+- **조회 결과 캐시는 `cache.py` 에** 둔다(M12). 실패는 예외라 캐시에 남지 않는다. 오래 걸리는 조회는 단추를 눌렀을 때만 돈다(4장).
+- `bigdataquery` 를 직접 import 해도 점검은 경고(M09)다(6장). 다만 요청자 계정을 넘길 길이 없어 배포 서버에서 막힌다 — 도우미를 쓴다.
+- **모듈 시험에서는 도우미가 늘 「쓸 수 없음」 이다** — `check_module.py` 가 그렇게 돌려 진짜 조회 · 버킷에 닿지 않는다. 성공 갈래는
+  시험에서 `monkeypatch.setattr(api, "s3_download", <대역 함수>)` 처럼 갈아 끼워 본다.
+
+예 — 저장 단추에서 올리고, 처음 설 때 받는 화면(`modules/demo_backup/page.py`):
+
+```python
+# Purpose: 데모 백업 모듈의 첫 화면 — 메모 파일을 저장할 때 올리고 처음 설 때 받는다.
+
+import streamlit as st
+
+from capa_simulation import module_api as api
+
+ctx = api.context(__file__)
+api.page_header(ctx, "데모 백업")
+
+memo = ctx.data_dir / "memo.txt"
+if not st.session_state.get(ctx.key("pulled")):
+    st.session_state[ctx.key("pulled")] = True
+    if not memo.exists():
+        api.s3_download(ctx, "memo.txt")
+
+
+def _save() -> None:
+    memo.write_text(st.session_state.get(ctx.key("text"), ""), encoding="utf-8")
+    result = api.s3_upload(ctx, "memo.txt")
+    st.session_state[ctx.key("saved")] = "올림" if result.ok else result.reason
+
+
+current = memo.read_text(encoding="utf-8") if memo.exists() else ""
+st.text_area("메모", value=current, key=ctx.key("text"))
+st.button("저장", key=ctx.key("save"), on_click=ctx.callback(_save))
+st.caption(f"마지막 저장 {st.session_state.get(ctx.key('saved'), '-')}")
+```
+
 ---
 
 ## 4. 부딪치지 않게 하는 규칙
@@ -609,6 +676,7 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 | 감싸지 않은 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 에 맨 함수 | `ctx.callback(함수)`(글자 `"rerun"` · `"ignore"` 는 그대로 된다) | 콜백은 앱 코드보다 먼저 돈다. 거기서 난 오류는 그 회차의 사이드바 · 머리 띠 · 탭 줄까지 지운다 | M18 |
 | `use_container_width=` | `width="stretch"` · `width="content"` | Streamlit 이 곧 지울 인자다. 올림 한 번에 그 화면이 오류 카드가 된다 | M19 |
 | 화면이 처음 그려질 때(첫 회차) 팝업을 스스로 열기(점검이 잡지 않는다 — 이 지침으로만 지킨다) · `st.dialog(dismissible=False)`(M20 경고) | 팝업은 단추를 눌렀을 때만 연다. `dismissible` 은 적지 않는다 — 닫기(✕ · Esc · 바깥 누름)가 남는다 | 누가 그 화면 주소로 처음 오면 입장 화면이 먼저 덮인다. 닫을 수 없는 팝업은 그 밑에 숨어 앱 화면을 묶는다 — 아무것도 누를 수 없고 새로고침해도 같아 앱에 들어갈 수 없다 | M20 |
+| 자격 읽기 — `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름, 토큰 파일 자리 `.credential` · `bigdataquery.token`(시험 파일도) | `api.query_bigdataquery` · `api.s3_upload` · `api.s3_download`(3-10) | 계정 · 토큰 · 키는 코어가 쥔다. S3 키는 운영 DB 를 지울 수 있는 권한이고, 한 프로세스라 읽은 값은 어디로든 샐 수 있다 | M21 |
 
 그 밖에 알아 둘 것:
 
@@ -689,6 +757,7 @@ st.dataframe(frame[frame["종류"] == kind], width="stretch")
 - **전이 의존**(`pyarrow` · `PIL`(pillow) · `toml` · `requests` 처럼 다른 패키지가 끌어온 것)은 언제 빠질지 모른다.
   `import pyarrow` · `import PIL` 은 「직접 의존 아님」 경고(M09)다. 경고는 「통과」 를 막지 않는다 — 그대로 써도 점검은 통과한다. 오래
   쓸 것이면 요청해서 직접 의존으로 올린다(위 「요청하는 길」 — 판은 `requirements.txt` 에 적힌 판, 예: `demo_memo: pyarrow==<그 판> parquet 읽기`).
+- BigDataQuery 조회는 코어 도우미 `api.query_bigdataquery` 로 한다(3-10) — 요청자 계정 · 토큰을 코어가 채워 배포 서버에서도 돈다.
 - `requirements-company.txt` 에만 있는 패키지(`bigdataquery`)는 모듈이 써도 된다(2026-11-01 앱 관리자 결정). 점검은 경고(M09)라
   「통과」 를 막지 않는다. 다만 배포 서버 설치는 보장되지 않는다 — 배포 서버에 없으면 그 화면만 import 오류가 난다.
 
@@ -715,7 +784,8 @@ uv run --no-sync python scripts/check_module.py <id>
 - 선언 · 규칙 · ruff · 시험을 함께 본다. 끝에 「통과」 · 「꺼짐」 · 「실패」 와 고칠 자리(`자세히` 줄 — 규칙 · 파일 · 줄 · 고칠 말)를 찍는다.
 - 시험은 감시 러너로 돈다. 시험이 코어 `data/` 를 열거나, 저장소 안 — 모듈 코드 폴더 · 상대 경로로 쓴 저장소 뿌리 자리 — 에 쓰면
   실패한다(쓰기는 시험의 임시 `ctx.data_dir` 만 된다). 같은 폴더 맨이름 import 는 앱처럼 깨진다.
-- 정적 오류(M01 · M06 · M07 · M10 · M11)가 있으면 시험을 돌리지 않고 「시험 안 돎 — 정적 오류 먼저」 로 적는다. 그 오류부터 고친다.
+- 정적 오류(M01 · M06 · M07 · M10 · M11 · M21)가 있으면 시험을 돌리지 않고 「시험 안 돎 — 정적 오류 먼저」 로 적는다. 그 오류부터 고친다.
+- 시험 안에서 코어 도우미(3-10)는 늘 「쓸 수 없음」 이다 — 시험의 환경에는 자격 환경변수도 없다. 성공 갈래는 도우미를 갈아 끼워 본다.
 - **맨 `pytest` · `python -m pytest modules/<id>/tests` 는 쓰지 않는다.** 코어 시험의 보호가 걸리지 않아 그 클론의 진짜
   `data/modules/<id>/` 에 쓴다.
 - 결과는 담당자에게 맡기지 말고 네가 돌려 보여 준다.
@@ -1001,7 +1071,7 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 
 ### 9-4. API 판과 호환
 
-- 모듈은 `module.json` 의 `api` 로 큰 판 하나를 요구한다. 지금 코어는 `1.2` 이다(`api.API_VERSION`).
+- 모듈은 `module.json` 의 `api` 로 큰 판 하나를 요구한다. 지금 코어는 `1.3` 이다(`api.API_VERSION`).
 - 판이 맞지 않으면 그 모듈만 「실패」 로 등록되지 않는다. 까닭에 두 판이 적힌다.
 - 코어는 같은 큰 판 안에서 **더하기만** 한다(새 함수 · 새 선택 인자 · 새 `PALETTE_KEYS` 항목 · `module.json` 의 새 선택 칸). 더하면 작은 판을 올리고
   부록 C 에 한 줄을 적는다. 새 이름을 쓰는 모듈은 `api_minor` 를 그 판으로 적는다 — 예전 코어로 되돌아갔을 때 import 오류 대신 까닭이 보인다.
@@ -1018,7 +1088,8 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 - `module_api` v2 에 **읽기 전용** 코어 창구(활성 시나리오 · 기준정보 · 조회기간 · 표시순서)를 둔다.
 - 모듈은 출력 계약(컬럼 · 단위 · 키)을 문서로 낸다. 코어가 그것을 읽는 꼴이다.
 - 성숙도 `L1` 은 그 뒤에 선다.
-- **지금(v1)은 코어 데이터를 읽지 않는다.** 코어 DB 를 직접 열어 우회하지 않는다(M07).
+- **지금(v1)은 코어 데이터를 읽지 않는다.** 코어 DB 를 직접 열어 우회하지 않는다(M07). BigDataQuery 조회 · S3 올리기 · 받기(3-10)는
+  코어 데이터가 아니라 바깥 자리에 닿는 도우미다.
 
 ---
 
@@ -1028,15 +1099,21 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 
 | 이름 | 꼴 | 뜻 |
 |---|---|---|
-| `API_VERSION` | `tuple[int, int]` — `(1, 2)` | 이 코어의 창구 판(큰 판, 작은 판) |
+| `API_VERSION` | `tuple[int, int]` — `(1, 3)` | 이 코어의 창구 판(큰 판, 작은 판) |
 | `FONT_FAMILY` | `str` | 앱 서체 이름 |
 | `IMPLEMENTING_SUFFIX` | `str` — `"(구현중)"` | 성숙도 `L0` · `L1` 화면의 사이드바 라벨에 붙는 표기 |
 | `PALETTE_KEYS` | `tuple[str, ...]` — `("surface", "surface_subtle", "border", "text", "text_muted", "accent", "secure", "warning", "shortage")` | `palette()` 의 키 |
+| `S3_MAX_BYTES` | `int` — `8388608`(8 MiB) | S3 올리기 · 받기에서 파일 하나의 상한(바이트) |
+| `BigDataQueryError` | `RuntimeError` 의 하위 — 칸 `kind: str` | `query_bigdataquery` 의 실패. `kind` 가 갈래(3-10)이고 글은 앱 화면과 같은 안내다 |
 | `ModuleContext` | 바꿀 수 없는 dataclass | 모듈 문맥(아래) |
 | `ModuleContextError` | `RuntimeError` 의 하위 | 문맥을 못 찾거나 선언이 틀렸을 때 |
+| `S3Result` | 바꿀 수 없는 dataclass — `ok: bool` · `reason: str` · `detail: str` · `size: int` | S3 올리기 · 받기 한 번의 결과(3-10). 성공이면 `reason` 은 빈 글 |
 | `context` | `context(file: str \| os.PathLike[str]) -> ModuleContext` | 보통 `api.context(__file__)`. 파일 위치에서 가장 가까운 `module.json` 을 찾는다 |
 | `page_header` | `page_header(ctx: ModuleContext, title: str, *, description: str \| None = None) -> None` | 머리말(제목은 화면에서 숨는다). 한 회차에 한 번, 화면 맨 위. 세션 키를 만들지 않는다. 성숙도 `L0` · `L1` 이어도 본문에 「구현중」 배지 줄을 그리지 않는다 — 사이드바 라벨 · 화면 탭 표지가 말한다(1.2). `description` 은 받기만 하고 그리지 않는다(1.1) |
 | `palette` | `palette() -> Mapping[str, str]` | 이번 회차 테마의 역할 색. 키는 `PALETTE_KEYS`. 캐시 함수 안에서 부르지 않고 값을 인자로 넘긴다 |
+| `query_bigdataquery` | `query_bigdataquery(ctx: ModuleContext, sql: str, *, start: date \| None = None, end: date \| None = None) -> pd.DataFrame` | 앱의 DB 등록과 같은 길로 BigDataQuery 에 묻는다. 요청자 계정 · 토큰은 코어가 채운다. 기간을 주면 `{start_date}` 에 시작 날, `{end_date}` 에 끝 날 다음 날을 채운다(조회문은 `>= '{start_date}' AND < '{end_date}'` — 끝 날 포함 · 최대 366일, 3-10 「기간 자리」). 실패는 `BigDataQueryError`. 모듈 시험에서는 늘 「쓸 수 없음」 |
+| `s3_download` | `s3_download(ctx: ModuleContext, name: str) -> S3Result` | 버킷의 `modules/<id>/<name>` 을 받아 `ctx.data_dir / name` 에 둔다(다 받은 뒤 한 번에 바꾼다). 배포 서버에서만 되고 그 밖에서는 「쓸 수 없음」 |
+| `s3_upload` | `s3_upload(ctx: ModuleContext, name: str) -> S3Result` | `ctx.data_dir / name` 파일 하나를 버킷의 `modules/<id>/<name>` 으로 올린다(있으면 덮는다). 배포 서버에서만 된다 |
 
 `ModuleContext` 의 칸과 메서드:
 
@@ -1054,7 +1131,7 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | `callback` | `callback(fn: Callable[..., object]) -> Callable[..., None]` | 위젯 콜백(`on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss`)에 넘길 감싼 함수. 오류를 잡아 적고 그 화면 맨 위 카드로 보인다. `st.stop()` · `st.rerun()` 은 그대로 지나간다 |
 | `guard` | `guard() -> AbstractContextManager[None]` | `with ctx.guard():` — 프래그먼트 · `st.dialog` 본문용. 안의 오류를 잡아 적고 그 자리에 오류 카드를 그린다 |
 
-- 데이터(시나리오 · 기준정보 · 조회기간 · DB)는 v1 에 없다. v2 의 몫이다(10장).
+- 코어 데이터(시나리오 · 기준정보 · 조회기간 · DB)는 v1 에 없다. v2 의 몫이다(10장). 바깥 조회 · S3 는 도우미(3-10)다.
 - 이 밖의 코어 이름(`navigation` · `settings` · `components.*` 등)은 import 하지 않는다(M06).
 
 ---
@@ -1081,7 +1158,7 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | M08 | 키 접두 — `key=` 의 글자(또는 f-문자열의 앞 상수), `st.session_state[…]` · `.get` · `.pop` · `.setdefault` · `in st.session_state` · 속성 접근, `st.query_params[…]` 의 글자가 `mod_<id>__` 로 시작하지 않음. `ctx.key(…)` 호출과 판정할 수 없는 읽기 식은 넘긴다 | 오류 |
 | M08 | 세션 전역 조작 — `st.session_state.clear()` · `.popitem()` · `.update(…)`, `del st.session_state[…]` 의 키가 접두 있는 글자 상수나 `ctx.key(…)` 호출이 아님(변수 · 반복 포함) | 오류 |
 | M09 | 패키지 — 최상위 import 이름이 표준 라이브러리 · `streamlit` · `capa_simulation.module_api` · 자기 `modules.<id>` 가 아니면 그 배포 이름이 `requirements.txt` 에 고정돼 있어야 한다. 없으면 오류(「사외 요청」 안내). 설치되지 않은 이름도 오류. 3.10 에 없는 모듈(`tomllib`)도 오류. 줄 끝 환경 표지가 Linux 에서 거짓이면 오류 「CD(Linux)에 설치되지 않음」. 따질 수 없는 표지는 경고 | 오류 |
-| M09 | `requirements.txt` 에 있으나 직접 의존이 아님(`# via` 에 `capa-simulation` 이 없다 — 예: `pyarrow` · `PIL`(pillow) · `toml` · `requests`) — 「직접 의존 아님 — 사외 요청으로 올린다」. `config/module_packages.json` 에 있으면 내지 않는다. `requirements-company.txt` 에만 있음 | 경고 |
+| M09 | `requirements.txt` 에 있으나 직접 의존이 아님(`# via` 에 `capa-simulation` 이 없다 — 예: `pyarrow` · `PIL`(pillow) · `toml` · `requests`) — 「직접 의존 아님 — 사외 요청으로 올린다」. `config/module_packages.json` 에 있으면 내지 않는다. `requirements-company.txt` 에만 있음(`bigdataquery` 면 도우미 `api.query_bigdataquery` 를 가리킨다) | 경고 |
 | M10 | 배경 실행 — `threading` · `_thread` · `multiprocessing` · `concurrent.futures` · `subprocess` import, `os.system` · `os.popen` · `os.fork` · `os.forkpty` · `os.spawn*` · `os.posix_spawn*` · `os.exec*` · `os.abort` · `signal` · `sys.exit` · `os._exit` · `exit()` · `quit()` | 오류 |
 | M10 | `asyncio`, `st.fragment(run_every=…)`, `argparse` · `click` · `typer` · `fire` import | 경고 |
 | M11 | 프로세스 전역 상태 — `os.environ` 쓰기 · `os.putenv` · `os.unsetenv` · `os.chdir` · `os.fchdir`, `sys.path` 바꾸기, `sys.modules` 바꾸기, `builtins.<이름> =`, `sys.excepthook =` · `threading.excepthook =`, `sys.setrecursionlimit` · `sys.settrace` · `sys.setprofile`, `gc.disable` · `gc.set_threshold` · `gc.freeze`, `socket.setdefaulttimeout`, `locale.setlocale`, `pd.set_option` · `pandas.set_option` · `pd.reset_option` · `pd.options.<…> =`(`pd.option_context` 는 허용), `np.seterr` · `np.set_printoptions`, `plotly.io.templates.default =` · `pio.renderers.default =` · `px.defaults.<…> =`(plotly express 기본값), `alt.themes.enable` · `alt.theme.enable` · `alt.data_transformers.enable` · `alt.data_transformers.disable_max_rows`, `matplotlib.use` · `matplotlib.rcParams[…] =` · `rcParams.update` · `plt.style.use`, `logging.basicConfig` · 뿌리 로거(`logging.getLogger()` · `logging.root`)의 `addHandler` · `removeHandler` · `setLevel` | 오류 |
@@ -1093,10 +1170,11 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | M14 | 시험 — `tests/test_*.py` 없음 | 오류 |
 | M15 | `ruff check` 위반(수) | 오류 |
 | M16 | `ruff format --check` 다름(수) | 오류 |
-| M17 | 자기 시험 실패(실패 수/전체). M01 · M06 · M07 · M10 · M11 오류가 있으면 돌리지 않고 「시험 안 돎」(실패로 센다) | 오류 |
+| M17 | 자기 시험 실패(실패 수/전체). M01 · M06 · M07 · M10 · M11 · M21 오류가 있으면 돌리지 않고 「시험 안 돎」(실패로 센다) | 오류 |
 | M18 | 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 인자에 글자 상수(`"rerun"` · `"ignore"`)도 `<무엇>.callback(…)` 호출도 아닌 값이 옴 | 오류 |
 | M19 | 폐기 예정 Streamlit 인자 — `use_container_width=`(`width="stretch"` · `width="content"` 로) | 오류 |
 | M20 | 닫을 수 없는 팝업 — `st.dialog(…)` 의 `dismissible=` 에 `True` 가 아닌 값(`False` · 변수). 처음 들어온 사람의 입장 화면 밑에 숨어 앱 화면을 묶는다(4장) | 경고 |
+| M21 | 자격 · 비밀 — 글자 전체가 `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름(대소문자 무시라 같은 꼴의 데이터 열 이름 `aws_region` 도 걸린다, 앞뒤 `$` · `%` · `{}` 표지와 f-문자열의 앞 상수 포함), 경로 마디로 쓴 토큰 파일 자리 — `.credential` 마디 · `bigdataquery.token` 으로 시작하는 마디(역슬래시 꼴 포함 — 열 이름 · 설명 글 안의 낱말 `db.credential_log` 는 아니다). 시험 파일도 같다. 글자로 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다 — 계정 · 토큰 · 키는 코어가 쥐고 모듈은 도우미(3-10)를 쓴다 | 오류 |
 
 점검 출력의 꼴(합성 예):
 
@@ -1127,3 +1205,4 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | v1.0 | 2026-11-01 | 첫 판 — `API_VERSION` · `FONT_FAMILY` · `IMPLEMENTING_SUFFIX` · `PALETTE_KEYS` · `ModuleContext`(`key` · `data_dir` · `callback` · `guard`) · `ModuleContextError` · `context` · `page_header` · `palette` |
 | v1.1 | 2026-11-08 | `page_header` 의 `description` 을 받기만 하고 그리지 않는다 — 이름 · 서명은 그대로라 넘기던 모듈도 그대로 돈다(화면 머리에 소개 줄을 두지 않는다) |
 | v1.2 | 2026-11-10 | `page_header` 가 성숙도 `L0` · `L1` 의 「구현중」 배지 줄을 본문에 그리지 않는다 — 사이드바 라벨 「(구현중)」 · 화면 탭 「구현중」 표지가 말한다. 이름 · 서명은 그대로라 넘기던 모듈도 그대로 돈다 |
+| v1.3 | 2026-11-12 | 도우미 더하기(3-10) — `query_bigdataquery` · `BigDataQueryError`(BigDataQuery 조회 — 계정 · 토큰은 코어가 쥔다) · `s3_upload` · `s3_download` · `S3Result` · `S3_MAX_BYTES`(모듈 데이터 파일을 버킷의 `modules/<id>/` 아래로). 쓰는 모듈은 `api_minor` 를 3 으로 적는다 |

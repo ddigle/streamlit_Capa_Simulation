@@ -32,11 +32,17 @@ EXPECTED_ALL = [
     "FONT_FAMILY",
     "IMPLEMENTING_SUFFIX",
     "PALETTE_KEYS",
+    "S3_MAX_BYTES",
+    "BigDataQueryError",
     "ModuleContext",
     "ModuleContextError",
+    "S3Result",
     "context",
     "page_header",
     "palette",
+    "query_bigdataquery",
+    "s3_download",
+    "s3_upload",
 ]
 EXPECTED_SIGNATURES = {
     "context": "(file: 'str | os.PathLike[str]') -> 'ModuleContext'",
@@ -44,11 +50,19 @@ EXPECTED_SIGNATURES = {
         "(ctx: 'ModuleContext', title: 'str', *, description: 'str | None' = None) -> 'None'"
     ),
     "palette": "() -> 'Mapping[str, str]'",
+    "query_bigdataquery": (
+        "(ctx: 'ModuleContext', sql: 'str', *, start: 'date | None' = None, "
+        "end: 'date | None' = None) -> 'pd.DataFrame'"
+    ),
+    "s3_upload": "(ctx: 'ModuleContext', name: 'str') -> 'S3Result'",
+    "s3_download": "(ctx: 'ModuleContext', name: 'str') -> 'S3Result'",
+    "BigDataQueryError": "(kind: 'str', message: 'str') -> 'None'",
     "ModuleContext.key": "(self, name: 'str') -> 'str'",
     "ModuleContext.callback": ("(self, fn: 'Callable[..., object]') -> 'Callable[..., None]'"),
     "ModuleContext.guard": "(self) -> 'AbstractContextManager[None]'",
 }
 EXPECTED_FIELDS = ["id", "name", "owner", "maturity", "folder", "api_version"]
+EXPECTED_RESULT_FIELDS = ["ok", "reason", "detail", "size"]
 EXPECTED_PALETTE_KEYS = (
     "surface",
     "surface_subtle",
@@ -104,6 +118,10 @@ def test_every_public_signature_is_pinned() -> None:
         "context": str(inspect.signature(module_api.context)),
         "page_header": str(inspect.signature(module_api.page_header)),
         "palette": str(inspect.signature(module_api.palette)),
+        "query_bigdataquery": str(inspect.signature(module_api.query_bigdataquery)),
+        "s3_upload": str(inspect.signature(module_api.s3_upload)),
+        "s3_download": str(inspect.signature(module_api.s3_download)),
+        "BigDataQueryError": str(inspect.signature(module_api.BigDataQueryError)),
         "ModuleContext.key": str(inspect.signature(module_api.ModuleContext.key)),
         "ModuleContext.callback": str(inspect.signature(module_api.ModuleContext.callback)),
         "ModuleContext.guard": str(inspect.signature(module_api.ModuleContext.guard)),
@@ -114,6 +132,19 @@ def test_every_public_signature_is_pinned() -> None:
     for name in ("key_prefix", "data_dir"):
         member = inspect.getattr_static(module_api.ModuleContext, name)
         assert isinstance(member, property) and member.fset is None, name
+
+
+def test_the_helper_result_and_failure_shapes_are_pinned() -> None:
+    """도우미(창구 1.3)의 결과 칸 · 실패 꼴 · 상한 — 모듈이 `reason` · `kind` 로 가른다."""
+    assert [field.name for field in dataclasses.fields(module_api.S3Result)] == (
+        EXPECTED_RESULT_FIELDS
+    )
+    result = module_api.S3Result(ok=False, reason="쓸 수 없음")
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.ok = True  # type: ignore[misc]
+    assert issubclass(module_api.BigDataQueryError, RuntimeError)
+    assert module_api.BigDataQueryError("입력", "글").kind == "입력"
+    assert module_api.S3_MAX_BYTES == 8 * 1024 * 1024
 
 
 def test_the_context_fields_and_their_order_are_pinned_and_frozen() -> None:

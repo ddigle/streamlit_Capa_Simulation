@@ -458,7 +458,7 @@ git switch -c module/&lt;id&gt;/&lt;주제&gt;</pre></div>
           <tr><td>CI/CD 단추 누르기</td><td>점검을 본 뒤에 앱 관리자만 누릅니다</td><td>앱 관리자에게 부탁</td></tr>
         </tbody>
       </table></div>
-      <div class="note warn"><span class="t">모듈 데이터는 백업되지 않습니다</span><p>잃어도 되는 것만 둡니다. 배포 서버에서는 서버를 다시 만들 때 사라질 수 있습니다(지침서 2장 「데이터」).</p></div>
+      <div class="note warn"><span class="t">모듈 데이터는 백업되지 않습니다</span><p>잃어도 되는 것만 둡니다. 배포 서버에서는 서버를 다시 만들 때 사라질 수 있습니다(지침서 2장 「데이터」).</p><p>남겨야 하는 파일은 에이전트에게 「저장할 때 S3 에 올리고 화면이 처음 설 때 받게 해 줘」 라고 하면 앱의 도우미로 그렇게 만듭니다 — 배포 서버에서만 되고 파일 하나는 8 MiB 까지입니다(지침서 3-10).</p></div>
       <div class="note"><span class="t">내 화면은 다른 사람과 한 서버를 함께 씁니다</span><p>오래 걸리는 계산은 모두의 앱을 느리게 합니다. 무거운 계산은 단추를 눌렀을 때만 돌게 합니다(지침서 4장).</p></div>
 
       <h3 id="s6-2"><span class="n">6-2</span>승인 창 읽기</h3>
@@ -488,7 +488,7 @@ git switch -c module/&lt;id&gt;/&lt;주제&gt;</pre></div>
       <div class="prose"><p>패키지는 남이 만든 기능 묶음입니다(예: 엑셀 읽기). 앱과 배포 서버에 깔린 것만 쓸 수 있습니다(지침서 6장).</p></div>
       <div class="cards">
         <div class="card ok"><span class="tag">바로 써도 된다</span><p>파이썬 기본 기능, <code>streamlit</code>, 앱이 직접 쓰는 패키지(<code>pandas</code> · <code>numpy</code> · <code>plotly</code> · <code>altair</code> · <code>duckdb</code> · <code>pydantic</code> 등). 에이전트가 압니다.</p></div>
-        <div class="card mid"><span class="tag">경고만 난다</span><p><code>pyarrow</code> · <code>pillow</code>(PIL)처럼 다른 패키지를 따라 들어온 것. 점검은 통과하지만 언젠가 빠질 수 있습니다. 오래 쓸 거면 요청합니다.</p><p><code>bigdataquery</code> — 써도 됩니다(경고). 다만 배포 서버에 깔린다는 보장은 없어, 없으면 그 화면만 오류가 납니다.</p></div>
+        <div class="card mid"><span class="tag">경고만 난다</span><p><code>pyarrow</code> · <code>pillow</code>(PIL)처럼 다른 패키지를 따라 들어온 것. 점검은 통과하지만 언젠가 빠질 수 있습니다. 오래 쓸 거면 요청합니다.</p><p><code>bigdataquery</code> — 조회는 앱의 도우미로 합니다(지침서 3-10) — 요청자 계정 · 토큰을 앱이 채워 배포 서버에서도 돕니다. 패키지를 직접 써도 점검은 경고뿐이지만 배포 서버에서 계정을 넘길 길이 없습니다. 계정 · 토큰 · S3 키를 코드에서 읽으면 점검 오류(M21)입니다.</p></div>
         <div class="card no"><span class="tag">그 밖 — 요청</span><p>에이전트가 아래 꼴의 한 줄을 만들어 주면 앱 관리자에게 보냅니다. 꼴은 <code>&lt;id&gt;: &lt;패키지&gt;==&lt;판&gt; &lt;까닭 한 마디&gt;</code> 입니다.</p></div>
       </div>
       <div class="code"><div class="bar"><span>요청 한 줄 예</span><button class="copy" type="button">복사</button></div><pre>demo_memo: openpyxl==3.1.5 엑셀 올리기</pre></div>

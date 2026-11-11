@@ -1,4 +1,4 @@
-# Purpose: 모듈이 import 하는 유일한 코어 창구 v1 — 문맥·키·머리말·색만 내고 데이터는 없다.
+# Purpose: 모듈이 import 하는 유일한 코어 창구 v1 — 문맥·키·머리말·색과 조회·S3 도우미를 낸다.
 
 """모듈 공개 창구 v1(모델 2 — 2026-11-01 사용자 결정).
 
@@ -9,7 +9,11 @@
 받기만 하거나 화면에 그리는 것만 줄이는 변경은 작은 판이다 — 넘기던 모듈이 고치지 않아도 돈다
 (창구 1.1 `description` · 1.2 「구현중」 배지 줄).
 
-- 데이터(시나리오·기준정보·조회기간·DB)는 내지 않는다 — v2(데이터 연계)의 몫이다.
+- 코어 데이터(시나리오·기준정보·조회기간·DB)는 내지 않는다 — v2(데이터 연계)의 몫이다.
+- 바깥 자리는 도우미로만 닿는다(창구 1.3 — 2026-11-12 사용자 결정 「도우미 함수로」) —
+  `query_bigdataquery`(앱과 같은 길의 BigDataQuery 조회)와 `s3_upload` · `s3_download`(모듈 데이터
+  자리 파일 하나를 버킷의 `modules/<id>/` 아래로). 요청자 계정 · 토큰 · S3 키는 코어가 쥐고 모듈은
+  읽지 않는다(M21). 언제 올리고 받을지는 모듈이 정한다. 속은 `module_helpers` 다.
 - 위젯 콜백은 `ctx.callback(fn)` 으로 감싼다. 콜백은 회차 맨 앞(`app.py` 가 돌기 전)에 불려, 감싸지
   않은 콜백의 예외는 그 회차의 사이드바·머리 띠·탭 줄을 지운다.
 - 프래그먼트·`st.dialog` 본문은 `with ctx.guard():` 로 감싼다 — 프래그먼트만 도는 회차는 `app.py`
@@ -27,10 +31,12 @@ import os
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
+import pandas as pd
 import streamlit as st
 from streamlit.errors import FragmentHandledException
 from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlException
@@ -39,6 +45,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlExcepti
 # 뿐이어야 한다(`api.module_registry.settings` 같은 길로 코어 설정·DB 자리에 닿지 않게). 겉면
 # 시험이 지킨다.
 from capa_simulation import module_failures as _module_failures
+from capa_simulation import module_helpers as _module_helpers
 from capa_simulation import module_registry as _module_registry
 from capa_simulation.components.module_failure_card import failure_parts as _failure_parts
 from capa_simulation.components.module_failure_card import (
@@ -53,11 +60,17 @@ __all__ = [
     "FONT_FAMILY",
     "IMPLEMENTING_SUFFIX",
     "PALETTE_KEYS",
+    "S3_MAX_BYTES",
+    "BigDataQueryError",
     "ModuleContext",
     "ModuleContextError",
+    "S3Result",
     "context",
     "page_header",
     "palette",
+    "query_bigdataquery",
+    "s3_download",
+    "s3_upload",
 ]
 
 API_VERSION: Final[tuple[int, int]] = (_module_registry.API_MAJOR, _module_registry.API_MINOR)
@@ -88,6 +101,11 @@ _PALETTE_TOKENS: Final[Mapping[str, str]] = MappingProxyType(
         "shortage": "STATUS_SHORTAGE",
     }
 )
+# S3 올리기 · 받기 한 번에 옮기는 파일 하나의 상한(바이트).
+S3_MAX_BYTES: Final[int] = _module_helpers.S3_MAX_BYTES
+# 도우미의 실패 · 결과 꼴. 정의는 속(`module_helpers`)에 있고 이름은 여기서 낸다.
+BigDataQueryError = _module_helpers.BigDataQueryError
+S3Result = _module_helpers.S3Result
 _LOGGER = logging.getLogger("capa_simulation.modules")
 
 
@@ -233,3 +251,58 @@ def page_header(ctx: ModuleContext, title: str, *, description: str | None = Non
 def palette() -> Mapping[str, str]:
     """이번 회차 테마의 역할 색(`PALETTE_KEYS` → 색). 캐시 함수에는 이 값을 인자로 넘긴다."""
     return MappingProxyType({key: getattr(_tokens, name) for key, name in _PALETTE_TOKENS.items()})
+
+
+def query_bigdataquery(
+    ctx: ModuleContext, sql: str, *, start: date | None = None, end: date | None = None
+) -> pd.DataFrame:
+    """BigDataQuery 조회 한 번 — 앱의 DB 등록과 같은 길 · 같은 실패 갈래로 묻고 표를 돌려준다.
+
+    요청자 계정 · 토큰은 코어가 쥔다(모듈은 읽지 않는다 — M21). `start` · `end` 를 함께 주면
+    조회문의 `{start_date}` 에 시작 날, `{end_date}` 에 끝 날 다음 날을 앱과 같은 꼴로 채운다 —
+    조회문은 `>= '{start_date}' AND < '{end_date}'` 로 써야 끝 날까지 꼭 맞다. 최대 366일.
+    실패는 `BigDataQueryError`(`kind` — 「입력」 · 「쓸 수 없음」 · 앱의 갈래)이고 글은 앱 화면과
+    같은 안내다. 결과는 캐시하지 않는다 — 캐시는 모듈의 `cache.py` 에 둔다. 모듈
+    시험(`check_module.py`)에서는 늘 「쓸 수 없음」 이다.
+    """
+    return _module_helpers.query_bigdataquery(ctx.id, sql, start=start, end=end)
+
+
+def s3_upload(ctx: ModuleContext, name: str) -> S3Result:
+    """`ctx.data_dir / name` 파일 하나를 버킷의 `modules/<id>/<name>` 으로 올린다(있으면 덮는다).
+
+    `name` 은 `ctx.data_dir` 안의 상대 이름이다(`/` 로 나눈 마디 넷까지, 마디는 영문 · 숫자 ·
+    `.` · `_` · `-`). 예외를 던지지 않고 늘 `S3Result` 를 돌려준다 — 운영 서버(동기화 모드
+    `managed` · 키 · 주소 · 버킷이 있음)가 아니면 「쓸 수 없음」 이다. 파일 하나는 `S3_MAX_BYTES`
+    까지.
+    """
+    place = _s3_data_dir(ctx)
+    if isinstance(place, S3Result):
+        return place
+    return _module_helpers.s3_upload(ctx.id, place, name)
+
+
+def s3_download(ctx: ModuleContext, name: str) -> S3Result:
+    """버킷의 `modules/<id>/<name>` 을 받아 `ctx.data_dir / name` 에 둔다(있으면 바꾼다).
+
+    다 받은 뒤 한 번에 바꾼다 — 받다 끊겨도 있던 파일은 그대로다. 버킷에 없으면 「파일 없음」 이고
+    로컬 파일은 건드리지 않는다. 그 밖은 `s3_upload` 와 같다.
+    """
+    place = _s3_data_dir(ctx)
+    if isinstance(place, S3Result):
+        return place
+    return _module_helpers.s3_download(ctx.id, place, name)
+
+
+def _s3_data_dir(ctx: ModuleContext) -> Path | S3Result:
+    """S3 도우미가 쓸 데이터 자리(`ctx.data_dir` — 읽을 때 만든다).
+
+    틀린 id 는 그 자리를 만들기 전에 「이름 거절」 이고, 자리를 만들지 못하면 「파일 오류」 다 —
+    도우미는 예외로 화면을 깨지 않는다.
+    """
+    if not _module_registry.is_valid_module_id(ctx.id):
+        return S3Result(ok=False, reason=_module_helpers.S3_NAME_REJECTED)
+    try:
+        return ctx.data_dir
+    except OSError as error:
+        return S3Result(ok=False, reason=_module_helpers.S3_FILE_ERROR, detail=type(error).__name__)

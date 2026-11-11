@@ -1,4 +1,4 @@
-# Purpose: 모듈 점검의 정적 규칙(M02 ~ M14·M18 ~ M20)을 모듈 폴더의 파일과 AST 로 본다.
+# Purpose: 모듈 점검의 정적 규칙(M02 ~ M14·M18 ~ M21)을 모듈 폴더의 파일과 AST 로 본다.
 
 """모듈 정적 규칙 — `scripts/check_module.py` 가 부른다(사람이 직접 칠 일은 없다).
 
@@ -51,10 +51,11 @@ RULES: Final[Mapping[str, str]] = {
     "M18": "감싸지 않은 콜백",
     "M19": "폐기 예정 Streamlit 인자",
     "M20": "닫을 수 없는 팝업",
+    "M21": "자격 · 비밀",
 }
 # 이 규칙 가운데 하나라도 오류면 자기 시험(M17)을 돌리지 않는다 — 코어 데이터 자리·코어 내부·배경
-# 실행·프로세스 전역을 건드리는 코드를 실행하지 않는다.
-BLOCKING_RULES: Final = frozenset({"M01", "M06", "M07", "M10", "M11"})
+# 실행·프로세스 전역·자격을 건드리는 코드를 실행하지 않는다.
+BLOCKING_RULES: Final = frozenset({"M01", "M06", "M07", "M10", "M11", "M21"})
 
 CACHE_FILE: Final = "cache.py"
 TESTS_DIR: Final = "tests"
@@ -196,6 +197,26 @@ _CORE_DATA_MARKERS: Final = (
 # 때만 그 자리다. `proc` 은 공정을 뜻하는 흔한 낱말이라 열 이름 · 모듈 폴더를 걸면 안 된다.
 _KERNEL_MARKER: Final = "/proc/"
 _KERNEL_PATTERN: Final = re.compile(r"(?<![\w.\-])/proc/")
+
+# 자격 · 비밀(M21) — 2026-11-12 사용자 결정 「도우미 함수로」: BigDataQuery 요청자 계정 · 토큰과
+# S3 키는 코어가 쥐고 모듈은 창구 도우미만 부른다. 그 환경변수 이름(글자 전체가 이름 꼴 — `$` ·
+# `%` · `{}` 표지 허용, 대소문자 무시 — Windows 환경변수는 대소문자를 가리지 않는다. 그래서
+# 같은 꼴의 데이터 열 이름도 걸린다)과 BigDataQuery 토큰 파일 자리를 막는다. 토큰 파일 자리는
+# 경로 마디로만 잡는다 — 마디 전체가 `.credential`, 또는 `bigdataquery.token` 으로 시작하고
+# 뒤가 `.<계정>` · 끝인 마디(역슬래시는 `/` 로 읽는다). 열 이름 · 설명 글 안의 낱말
+# (`db.credential_log` · `(.credential)`)은 걸지 않는다. 글자로 찾는 그물이라 이름을 이어 만든
+# 꼴은 못 잡는다(방어선은 PR 점검 — 런북 4-6). 시험 파일도 같다. `check_module.py` 는 모듈
+# 시험의 환경에서 같은 이름의 변수를 뺀다.
+CREDENTIAL_ENV_PREFIXES: Final = ("CAPA_BDQ_", "CAPA_S3_", "AWS_", "JWT_SECRET", "ADFS_")
+_CREDENTIAL_NAME: Final = re.compile(
+    r"[$%{]*(?P<name>(?:" + "|".join(CREDENTIAL_ENV_PREFIXES) + r")[A-Z0-9_]*)[}%]*",
+    re.IGNORECASE,
+)
+_CREDENTIAL_FILE_PATTERNS: Final = (
+    (".credential", re.compile(r"(?:^|/)\.credential(?:/|$)")),
+    ("bigdataquery.token", re.compile(r"(?:^|/)bigdataquery\.token(?:[./]|$)")),
+)
+CREDENTIAL_FILE_MARKERS: Final = tuple(marker for marker, _ in _CREDENTIAL_FILE_PATTERNS)
 
 _BACKGROUND_IMPORTS: Final = frozenset(
     {"threading", "_thread", "multiprocessing", "subprocess", "signal"}
@@ -808,6 +829,17 @@ def _core_data_marker(text: str) -> str | None:
     )
 
 
+def credential_marker(text: str) -> str | None:
+    """글자가 자격 · 비밀 자리(M21)를 가리키면 보일 글(환경변수 이름 또는 토큰 파일 표지)."""
+    found = _CREDENTIAL_NAME.fullmatch(text.strip())
+    if found is not None:
+        return found["name"]
+    lowered = text.strip().lower().replace("\\", "/")
+    return next(
+        (marker for marker, pattern in _CREDENTIAL_FILE_PATTERNS if pattern.search(lowered)), None
+    )
+
+
 def _check_imports(tree: ast.Module, context: _FileContext) -> None:
     own = f"modules.{context.module_id}"
     for node in ast.walk(tree):
@@ -947,11 +979,16 @@ def _check_package(node: ast.AST, top: str, context: _FileContext) -> None:
     pinned = [environment.requirements[name] for name in names if name in environment.requirements]
     if not pinned:
         if any(name in environment.company for name in names):
+            hint = (
+                " — 조회는 `api.query_bigdataquery` 를 씁니다(계정 · 토큰을 코어가 쥔다)"
+                if top == "bigdataquery"
+                else ""
+            )
             context.add(
                 "M09",
                 "warning",
                 node,
-                f"`import {top}` — requirements-company.txt 에만 있습니다(CD 설치 보장 없음)",
+                f"`import {top}` — requirements-company.txt 에만 있습니다(CD 설치 보장 없음){hint}",
             )
             return
         context.add(
@@ -1018,6 +1055,16 @@ def _check_strings(tree: ast.Module, context: _FileContext) -> None:
                 "warning",
                 node,
                 "`data/` 로 시작하는 경로입니다 — 모듈 데이터는 `ctx.data_dir` 를 씁니다",
+            )
+        credential = credential_marker(text)
+        if credential is not None:
+            context.add(
+                "M21",
+                "error",
+                node,
+                f"자격 · 비밀 자리(`{_short(credential)}`)를 가리킵니다 — 계정 · 토큰 · 키는 "
+                "코어가 쥡니다. BigDataQuery 는 `api.query_bigdataquery`, S3 는 `api.s3_upload` · "
+                "`api.s3_download` 를 씁니다",
             )
 
 
@@ -2224,7 +2271,7 @@ def check_module_folder(
     environment: PackageEnvironment,
     git: GitView | None,
 ) -> StaticResult:
-    """모듈 폴더 하나의 정적 규칙(M02 ~ M14·M18 ~ M20) 전부."""
+    """모듈 폴더 하나의 정적 규칙(M02 ~ M14·M18 ~ M21) 전부."""
     files = module_files(folder)
     page_files = frozenset(pages)
     local_names = local_import_names(folder)

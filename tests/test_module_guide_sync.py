@@ -18,11 +18,13 @@ import json
 import re
 import sys
 import textwrap
+from datetime import date
 from pathlib import Path
 
 import pytest
 
-from capa_simulation import module_api, module_registry
+from capa_simulation import module_api, module_helpers, module_registry
+from capa_simulation.io import company_bigdataquery_adapter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GUIDE_PATH = PROJECT_ROOT / "docs" / "module_guide.md"
@@ -39,7 +41,7 @@ GUIDE = GUIDE_PATH.read_text(encoding="utf-8")
 ENVIRONMENT = rules.load_environment(PROJECT_ROOT)
 _FENCE = re.compile(r"^(?P<indent>[ ]*)```(?P<lang>\w*)\n(?P<body>.*?)^(?P=indent)```", re.S | re.M)
 _RULE_ROW = re.compile(r"^\| (M\d{2}) \|", re.M)
-_NAME_CELL = re.compile(r"^\| `([A-Za-z_]+)` \|", re.M)
+_NAME_CELL = re.compile(r"^\| `([A-Za-z0-9_]+)` \|", re.M)
 # 부록 B 의 점검 출력 예시에서 고장 난 모듈 — 뼈대 화면 끝에 폐기 예정 인자 한 줄을 더한 것이다.
 _DRAFT_EXTRA_LINE = 'st.dataframe({"값": [1, 2]}, use_container_width=True)\n'
 
@@ -167,6 +169,61 @@ def test_the_guide_says_the_implementing_mark_is_not_a_badge_line() -> None:
     assert "| v1.2 |" in _section("부록 C")
     assert "화면에 그리는 것만 줄이는 변경은 작은 판이다" in _section("9-4.")
     assert "description=" not in _python_block("데모 인사 모듈의 첫 화면")
+
+
+def test_the_helper_section_matches_the_helpers(tmp_path: Path) -> None:
+    """3-10(창구 1.3 도우미 — 2026-11-12 사용자 결정 「도우미 함수로」)은 결과 까닭 · 실패 갈래 ·
+    상한 · 기간 상한 · 버킷 자리를 코드와 같게 적고, 예시 화면은 정적 규칙을 통과한다."""
+    section = _section("3-10.")
+    adapter_kinds = [
+        value
+        for name, value in vars(company_bigdataquery_adapter).items()
+        if name.startswith("QUERY_FAILURE_")
+    ]
+
+    for reason in module_helpers.S3_REASONS:
+        assert f"「{reason}」" in section, reason
+    for kind in (module_helpers.QUERY_UNAVAILABLE, module_helpers.QUERY_INPUT, *adapter_kinds):
+        assert f"「{kind}」" in section, kind
+    assert f"{module_api.S3_MAX_BYTES // 1024 // 1024} MiB" in section
+    assert f"최대 {module_helpers.MAX_QUERY_WINDOW_DAYS}일" in section
+    assert f"`{module_helpers.S3_KEY_PREFIX}<id>/" in section
+    # 도우미가 생긴 판(1.3)의 작은 판이다 — 다음 작은 판이 와도 3 그대로다.
+    assert '"api_minor": 3' in section
+    # 기간 자리 — `{end_date}` 에는 끝 날 다음 날이 들어간다(지침서의 예가 코드의 답과 같다).
+    bounds = module_helpers.build_module_query(
+        ">= '{start_date}' AND < '{end_date}'", date(2026, 1, 1), date(2026, 1, 31)
+    )
+    assert bounds == ">= '2026-01-01' AND < '2026-02-01'"
+    assert f"`{bounds}`" in section and "start=date(2026, 1, 1), end=date(2026, 1, 31)" in section
+    for text in (section, _section("부록 A")):
+        assert "끝 날 다음 날" in text and "`>= '{start_date}' AND < '{end_date}'`" in text
+    # 기다림 — 상한 크기를 가장 느린 속도로 옮기는 마감(초).
+    longest = round(module_helpers._transfer_deadline(module_api.S3_MAX_BYTES))
+    assert f"최대 약 {longest}초" in section
+    assert "대신 올리거나 받지 않는다" in section and "M21" in section
+    page = _python_block("데모 백업 모듈의 첫 화면")
+    folder = _write(
+        tmp_path / "modules" / "demo_backup",
+        {
+            "module.json": json.dumps(
+                {
+                    "id": "demo_backup",
+                    "name": "데모 백업",
+                    "api": 1,
+                    "api_minor": module_api.API_VERSION[1],
+                    "owner": "데모 담당",
+                    "enabled": True,
+                    "maturity": "L0",
+                    "pages": [{"slug": "main", "file": "page.py", "title": "데모 백업"}],
+                },
+                ensure_ascii=False,
+            ),
+            "page.py": page,
+            "tests/test_demo_backup_smoke.py": "# Purpose: 데모 백업 시험 자리.\n",
+        },
+    )
+    assert [item.text() for item in _static_findings(folder)] == []
 
 
 def test_rule_numbers_in_the_guide_are_the_checkers_rules() -> None:
@@ -521,8 +578,10 @@ def test_the_pr_check_merges_only_the_head_it_checked() -> None:
 
 def test_the_pr_check_looks_for_credential_reads_the_static_rules_do_not_see() -> None:
     """런북 4-6 — 통합 검수 D6 (가)는 키를 앱 환경변수로 넘기는 구조를 두는 대신 PR 점검으로 본다.
-    `check_module.py` 는 환경변수 **읽기**를 보지 않으므로 두 셸의 찾는 줄이 PR 이 더한 줄에서 읽는
-    꼴을 찍어야 하고, 지운 줄 · 무관한 줄은 찍지 않는다. 런북이 말한 규칙 번호는 지침서와 같다."""
+    `check_module.py` 는 자격 이름 · 토큰 파일 자리(M21) 밖의 환경변수 **읽기**를 보지 않으므로 두
+    셸의 찾는 줄이 PR 이 더한 줄에서 읽는 꼴 · `bigdataquery` 직접 import(2026-11-12 「도우미
+    함수로」 — 찾는 글을 넓힘)를 찍어야 하고, 지운 줄 · 무관한 줄은 찍지 않는다. 런북이 말한 규칙
+    번호는 지침서와 같다."""
     runbook = (PROJECT_ROOT / "docs" / "internal_update_runbook.md").read_text(encoding="utf-8")
     body = re.split(r"\n#{2,3} ", runbook.partition("### 4-6.")[2], maxsplit=1)[0]
     patterns = [pattern for pattern in _runbook_pr_patterns(body) if "CAPA_S3_" in pattern]
@@ -535,13 +594,25 @@ def test_the_pr_check_looks_for_credential_reads_the_static_rules_do_not_see() -
             '+    os.getenv("AWS_SECRET_ACCESS_KEY")',
             '+    Path.home() / ".aws" / "credentials"',
             "+import boto3",
+            "+import bigdataquery",
+            "+from bigdataquery import getData",
+            '+    user = os.environ["CAPA_BDQ_USER_NAME"]',
+            '+NAME = "CAPA_BDQ_USER_NAME"',
+            '+    token = Path("/config/.credential") / name',
+            '+TOKEN = "/config/.credential/x"',
         ):
             assert re.search(pattern, reads), reads
         assert not re.search(pattern, '-    key = os.environ["CAPA_S3_SECRET_KEY"]')
         assert not re.search(pattern, '+    return ctx.data_dir / "result.csv"')
+        assert not re.search(pattern, "+    rows = api.query_bigdataquery(ctx, SQL)")
 
     assert "**읽기는 보지 않는다**" in body and "통합 검수 D6 (가)" in body
-    for rule, word in (("M07", "`.aws/`"), ("M11", "`os.environ` 쓰기")):
+    for rule, word in (
+        ("M07", "`.aws/`"),
+        ("M11", "`os.environ` 쓰기"),
+        ("M21", "`CAPA_BDQ_`"),
+        ("M21", "`.credential`"),
+    ):
         assert rule in body and word in body
         assert any(line.startswith(f"| {rule} |") and word in line for line in GUIDE.splitlines())
 

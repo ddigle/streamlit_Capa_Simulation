@@ -30,6 +30,38 @@ def _add_one() -> None:
 
 st.button("하나 더", key=ctx.key("add"), on_click=ctx.callback(_add_one))
 st.metric("누른 수", int(st.session_state.get(COUNT_KEY, 0)))
+
+STORE_KEY = ctx.key("store")
+QUERY_KEY = ctx.key("query")
+
+
+def _upload() -> None:
+    result: api.S3Result = api.s3_upload(ctx, "demo.csv")
+    st.session_state[STORE_KEY] = "올림" if result.ok else result.reason
+
+
+def _download() -> None:
+    result = api.s3_download(ctx, "demo.csv")
+    st.session_state[STORE_KEY] = "받음" if result.ok else result.reason
+
+
+def _query() -> None:
+    try:
+        frame = api.query_bigdataquery(ctx, "SELECT 1 AS 값")
+    except api.BigDataQueryError as error:
+        st.session_state[QUERY_KEY] = error.kind
+    else:
+        st.session_state[QUERY_KEY] = f"{len(frame)}행"
+
+
+upload, download, query = st.columns(3)
+upload.button("올리기", key=ctx.key("upload"), on_click=ctx.callback(_upload))
+download.button("받기", key=ctx.key("download"), on_click=ctx.callback(_download))
+query.button("조회", key=ctx.key("ask"), on_click=ctx.callback(_query))
+st.caption(
+    f"S3 {st.session_state.get(STORE_KEY, '-')} · 상한 {api.S3_MAX_BYTES // 1024 // 1024} MiB · "
+    f"조회 {st.session_state.get(QUERY_KEY, '-')}"
+)
 saved = sorted(path.name for path in ctx.data_dir.glob("*.csv"))
 st.caption(f"저장한 합성 파일 {len(saved)}개")
 
