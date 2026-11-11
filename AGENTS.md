@@ -3436,13 +3436,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 자리: HOME 설정 상자마다 · 자동 갱신 설정 · 입력 비가동 · 표시순서 · Proc Rename.
   **값 글**(2026-11-09 사용자 보드 T2 — 본문 위에 혼자 서던 값 한 줄을 바로 위 제목 · 단추 줄의 작은 글로)은 화면이 줄만
   세우고 `render_row_value(value, place=…)` 로 그린다 — 가용설비 · 시나리오 복제 · 필요 단축 일정 · Proc Rename 이 따로 짓던 칸을
-  한 벌로 모았다(설계 규칙 UI-CON-04). 자리 셋: `"after"`(앞 칸 바로 뒤 — 공용 버전 줄 · Proc Rename 보유 공정 밖 표지),
-  `"right"`(줄의 남은 폭을 차지하는 오른쪽 맞춤 칸 안 — 가용설비 결과 제목 줄 · 「시나리오 작업」 줄, 값이 없는 회차에도 칸은
-  서고 글만 빠진다, 좁으면 그 칸 안에서 글이 줄을 바꾼다), `"push"`(표지 칸 `VALUE_END_CLASS` + 미는 서식 `VALUE_END_STYLE`
-  을 한 캡션에 — 한 덩이로 줄 오른쪽 끝, 좁으면 통째로 다음 줄 오른쪽 끝, 필요 단축 일정 기준 값). 글은 마크다운 자리 글이고(사람
+  한 벌로 모았다(설계 규칙 UI-CON-04). 자리 둘: `"after"`(앞 칸 바로 뒤 — 공용 버전 줄 · Proc Rename 보유 공정 밖 표지),
+  `"push"`(표지 칸 `VALUE_END_CLASS` + 미는 서식 `VALUE_END_STYLE` 을 한 캡션에 — 한 덩이로 줄 오른쪽 끝, 좁으면 통째로 다음 줄
+  오른쪽 끝, 가용설비 결과 제목 줄 · 「시나리오 작업」 줄 · 필요 단축 일정 기준 값). 값이 `None` 이면 둘 다 아무것도 그리지 않는다.
+  남은 폭의 오른쪽 맞춤 칸 안에 두던 `"right"` 는 창 820px 에서 글이 그 칸 안에서 두 줄로 접혀 걷었다(2026-11-11 「남은 물음
+  11-11」 보드 D1 — 1600 · 1283 · 1100 자리는 같다). 글은 마크다운 자리 글이고(사람
   글은 부르는 쪽이 `literal_markdown`), 서식(`style=` · `"push"`)이 실릴 때만 HTML 캡션이라 맨 `<` 를 `&lt;` 로 바꾼다 — 서식이
-  없으면 `:orange-badge[…]` 같은 지시문도 그대로다. 제목 + 오른쪽 끝 값 글 한 줄은 `render_heading_value`(줄 칸 key ·
-  밑줄 맞춤이 `render_profile_heading` 과 같다).
+  없으면 `:orange-badge[…]` 같은 지시문도 그대로다(HTML 캡션에서도 배지 지시문은 배지로 그려진다 — 시나리오 복제 「미저장 편집
+  포함」). 제목 + 오른쪽 끝 값 글 한 줄은 `render_heading_value`(`"push"` — 줄 칸 key · 밑줄 맞춤이 `render_profile_heading` 과
+  같다).
 - `src/capa_simulation/components/dialog_host.py` — 본문 · 사이드바 단추로 여는 화면 팝업의 키 붙은 호스트 프래그먼트
   (`DialogHost`, 2026-11-08 답 U5 — 여덟 팝업). 열기 · 닫기는 호스트만 돌고, 원본을 바꾸면 `finish`(앱 전체), 판정을 못 넘거나 같은
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
