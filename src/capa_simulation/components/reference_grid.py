@@ -119,35 +119,19 @@ APPLY_LOCKED_HELP: Final = "고친 칸이 있으면 누를 수 있습니다."
 ACTIONS_BOX: Final = "reference_actions"
 GRID_BOX: Final = "reference_grid_box"
 ACTION_ROW: Final = "reference_action_row"
-# 단추 줄과 표 도구 막대를 한 줄로 세우는 창 폭. 본문이 단추 줄(`ACTION_ROW_RESERVE_PX` 까지) 곁에
-# 막대가 드는 폭이다(샘플 관측 — 사이드바 300 · 좌우 여백 35 · 단추 줄 429 · 막대 약 735). 그보다
-# 좁으면 막대가 표 바로 위 제 줄로 내려앉는다(설계 규칙 UI-LAY-11 · UI-ACC-02).
+# 단추 줄과 표 도구 막대를 한 줄로 세우는 창 폭. 본문이 고친 뒤의 단추 줄(`ACTION_ROW_RESERVE_PX`
+# 까지) 곁에 막대가 드는 폭이다(샘플 관측 — 사이드바 300 · 좌우 여백 35 · 단추 줄 429 · 막대 약
+# 735). 그보다 좁으면 막대가 표 바로 위 제 줄로 내려앉는다(설계 규칙 UI-LAY-11 · UI-ACC-02 —
+# `edit_grid.one_line_style`).
 ONE_LINE_MIN_WINDOW_PX: Final = 1560
 ACTION_ROW_RESERVE_PX: Final = 460
-# 한 줄로 설 때 막대를 단추 줄 높이로 올리고 이웃 단추와 같은 꼴로 맞춘다(UI-CON-01) — 값은 CSS
-# 변수로 그림자 DOM 안 막대에 내려간다. `2.5rem` 은 단추 높이, `1rem` 은 세로 칸 간격이다. 왼쪽을
-# 비워 둔 폭(`--eg-toolbar-reserve`)이 막대가 넘쳐도 단추를 덮지 않게 한다. 규칙은 단추 줄이 작업 줄
-# 칸의 끝 자식일 때만 걸린다 — 표지 · 거부 칸이 서면 풀려 단추 → 그 칸 → 막대 → 표 차례로 쌓인다
-# (UI-LAY-03). 단추 줄은 제 폭만 차지하고 그리드보다 위에 있어야 눌리고 막대도 눌린다.
-ONE_LINE_STYLE: Final = f"""<style>
-.st-key-{ACTION_ROW} {{
-  width: fit-content;
-  position: relative;
-  z-index: 1;
-}}
-@media screen and (min-width: {ONE_LINE_MIN_WINDOW_PX}px) {{
-  [data-testid="stLayoutWrapper"]:has(
-      > .st-key-{ACTIONS_BOX} > :last-child > .st-key-{ACTION_ROW}
-    ) + [data-testid="stLayoutWrapper"]:has(> .st-key-{GRID_BOX}) {{
-    margin-top: -3.5rem;
-    --eg-toolbar-justify: flex-end;
-    --eg-toolbar-reserve: {ACTION_ROW_RESERVE_PX}px;
-    --eg-tb-height: 2.5rem;
-    --eg-tb-radius: 8px;
-    --eg-tb-font: 0.875rem;
-  }}
-}}
-</style>"""
+ONE_LINE_STYLE: Final = edit_grid.one_line_style(
+    ACTIONS_BOX,
+    ACTION_ROW,
+    GRID_BOX,
+    min_window_px=ONE_LINE_MIN_WINDOW_PX,
+    reserve_px=ACTION_ROW_RESERVE_PX,
+)
 # 큰 표 안전 상한(명세 1-2 의 22) — 칸 수 · 껍데기 본문 JSON 바이트 · 상한에 걸렸을 때 싣는 줄 수.
 # 실데이터 센서스(`scripts/inspect_real_data_checks.py` 8-11)가 같은 값 · `GRID_FORMATS` 를
 # 옮겨 둔다 — 바꾸면 `tests/test_inspect_real_data_checks.py` 가 잡는다.

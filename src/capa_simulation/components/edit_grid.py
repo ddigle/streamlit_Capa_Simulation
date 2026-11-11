@@ -472,6 +472,38 @@ def hide_feed_style(host: str) -> str:
     return f"<style>.st-key-{feed_key(_check_host(host))}{{display:none}}</style>"
 
 
+def one_line_style(
+    actions_box: str, action_row: str, grid_box: str, *, min_window_px: int, reserve_px: int
+) -> str:
+    """표 위 단추 줄(`action_row` — 작업 줄 칸 `actions_box` 의 끝 자식)과 표 도구 막대를 한 줄로
+    세우는 페이지 CSS(설계 규칙 UI-LAY-11 · UI-ACC-02). 창 폭이 `min_window_px` 이상이면 그리드 칸
+    (`grid_box` — 작업 줄 칸 바로 뒤 형제)을 단추 줄 높이 + 칸 간격만큼 끌어올리고, 막대를 단추 줄
+    높이 · 같은 꼴로 맞추고, 왼쪽 `reserve_px` 를 비워 막대가 넘쳐도 단추를 덮지 않게 한다(값은 CSS
+    변수로 그림자 DOM 안 막대에 내려간다 — `2.5rem` 은 단추 높이, `1rem` 은 세로 칸 간격). 그보다
+    좁으면 막대가 표 바로 위 제 줄로 내려앉는다. 단추 줄 뒤에 표지 · 거부 칸이 서면 풀려 단추 → 그
+    칸 → 막대 → 표 차례로 쌓인다(UI-LAY-03). 단추 줄은 제 폭만 차지하고 그리드보다 위에 있어야
+    눌리고 막대도 눌린다."""
+    return f"""<style>
+.st-key-{action_row} {{
+  width: fit-content;
+  position: relative;
+  z-index: 1;
+}}
+@media screen and (min-width: {min_window_px}px) {{
+  [data-testid="stLayoutWrapper"]:has(
+      > .st-key-{actions_box} > :last-child > .st-key-{action_row}
+    ) + [data-testid="stLayoutWrapper"]:has(> .st-key-{grid_box}) {{
+    margin-top: -3.5rem;
+    --eg-toolbar-justify: flex-end;
+    --eg-toolbar-reserve: {reserve_px}px;
+    --eg-tb-height: 2.5rem;
+    --eg-tb-radius: 8px;
+    --eg-tb-font: 0.875rem;
+  }}
+}}
+</style>"""
+
+
 def render_edit_grid(
     host: str,
     shell: Mapping[str, Any],

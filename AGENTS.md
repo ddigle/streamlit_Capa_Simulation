@@ -407,8 +407,19 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 환산 조건은 조건 카드이고 환산은 그 탭이 열렸을 때만 한다. 작업 줄(적용·붙여넣기·가상 제품 등록)은 표 위, 붙여넣기와
     등록은 세션 키 팝업이다. PKG PLAN 붙여넣기는 탭에만 올리고 전역 반영은 적용 한 곳이며, 수율 붙여넣기는 바로 적용한다. 붙여넣기 창 · 거부 · 적용
     알림의 표 이름은 화면 이름(`PKG_PLAN_TAB_NAME` · `YIELD_TAB_NAME`)이고, 대기 표 달 칸은 숫자로 읽어 0 을 빈칸으로 그린다.
-  - 원본이 바뀌어 편집을 버린 회차는 칩 · 탭 점이 버리기 전 값으로 섰으므로 한 번 다시 돈다 — 줄 차례 비움 결과는
-    `SOURCE_RESET_KEY` 로 넘겨 다시 돈 회차가 알린다(`ST-09`).
+  - **PKG PLAN · 수율 표는 범용 편집 그리드다**(2026-11-12 보드 답 k-a1 · k-a2 — `components/plan_grid.py`, 이름은
+    `plan_grid_keys.py`). 탭마다 그리드 하나(호스트 `plan_grid` · `yield_grid`)이고, 탭 본문은 작업 줄 칸 → 그리드 칸(둘 다 key 붙은
+    늘 서 있는 칸 — `plan_grid.LAYOUTS`) 차례다. 닫힌 탭과 세우지 못한 수율 표는 표 없는 껍데기로 마운트만 남는다(무거운 본문을
+    보내지 않는다 — TODO 「생산 계획 PKG PLAN·수율 편집표 지연 그리기」 가 이 꼴로 풀림). inbox 에 op 가 쌓인 표와 적용이 눌린 표는
+    닫힌 탭이어도 양식을 짓는다. PKG PLAN 양식은 붙여넣기 대기 표가 있으면 그 표이고(내용 지문에 대기 표 지문을 더한다), 달 칸을
+    수로 읽어 0 을 빈칸으로 싣는다(`plan_grid.zero_as_blank` — 비운 칸은 적용 때 `plan_from_edit_table` 이 0 으로 읽는다). 값 형식은
+    `plan_grid.FORMATS`(PKG PLAN 천 단위 · 소수 없이 · 0 이상, 수율 percent · 상한 1). 「변경사항 적용」 은 고친 칸이나 붙여넣기
+    대기가 있을 때 켜지고, 칸 오류가 남았으면 고칠 칸 알림(`plan_grid.error_notice`)으로 멈추고, 아니면 양식에 초안을 업무 키로
+    덮어(`plan_grid.merged`) 옛 적용 길(`plan_from_edit_table` → `attach_plan_attributes` → `apply_month_updates` · `_apply_yield`)을
+    탄다. 「편집 취소」 는 초안(과 PKG PLAN 이면 붙여넣기 대기)을 버린다. PKG PLAN 작업 줄 글은 「변경사항 적용」 · 「Excel 붙여넣기」 ·
+    「⋯」(풍선 「더 보기」 — 안에 「가상 제품 등록」, 2026-11-12 보드 답 n2 나) 차례이고 수율은 「수율 변경사항 적용」 · 「Excel 붙여넣기」 다.
+  - 원본이 바뀌어 편집을 버린 회차는 칩 · 탭 점이 버리기 전 값으로 섰으므로 한 번 다시 돈다. 그리드 초안 · 이력과 붙여넣기 대기는
+    업무 키 · 제 차례라 줄 차례만 바뀐 회차에 남는다(`order_free_keys` — 이 화면에서는 `ST-09` 가 서지 않는다).
   - 가상 제품 등록(기준정보 복제, `virtual_product.py`)은 미적용 편집을 버리므로 먼저 알린다 — 창 맨 위는 경고 상자가 아니라 값 줄
     (고친 칸 수 · 붙여넣기 대기 칸 수, 2026-11-07 g3-19 — 기준 정보 STEP 창도 같다)이고 남기는 법은 등록 단추 풍선이다. 값이 비거나
     범위 밖인 수율 행은 잠가 원본 그대로 되붙이고, 0 이하·100% 초과는 계산을 멈춘다(숨기지 않는다).
@@ -2653,8 +2664,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     일정 [n] 일 밀기」 는 한 덩이(`emg-shift`)로 줄을 바꾼다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/edit_grid.py` (+ `edit_grid_assets/` HTML·CSS·JS) — 범용 편집 그리드(Components v2, 그림자
-  DOM)의 두 등록·그리기·받기와 세션 몫. 기준 정보 9표가 쓴다(편집 표 횡전개 — 설비 마스터 표는 아직 제 등록 그대로, 생산
-  계획은 다음 판).
+  DOM)의 두 등록·그리기·받기와 세션 몫. 기준 정보 9표와 생산 계획 PKG PLAN · 수율이 쓴다(편집 표 횡전개 — 설비 마스터 표는
+  아직 제 등록 그대로). 표 위 단추 줄과 표 도구 막대를 한 줄로 세우는 페이지 CSS 는 `one_line_style`(작업 줄 칸 · 단추 줄 ·
+  그리드 칸 key 와 창 폭 문턱 · 왼쪽 비움)이다.
+  - **표 도구 꼴**(2026-11-12 보드 답 q1 가 — 모든 그리드 공통): 되돌리기 · 다시 실행 · 칸 폭 맞춤 · 전체 화면은 Material Symbols
+    그림 단추(`TB_GLYPH` — 이름은 aria-label, 풍선은 이름 · 단축키 · 하는 일, 단축키 그대로)이고 단추 줄 높이와 같은 정사각형이다.
+    찾기 칸은 150px 이고 위아래 화살표 · 찾은 수는 찾는 글이 있을 때만 선다(`has-q`). 「적용 전 변경 (n)」 은 글 단추 그대로다.
+  - **바탕**(2026-11-12 보드 답 k-b2): 팔레트 `surface` 는 페이지 바탕색(`SURFACE_PAGE`)이다 — 둘레 · 칸 · 칸 입력 칸 · 적용 전 변경
+    판 · 전체 화면 판. 표 도구 단추 · 찾기 칸은 `control`(`SURFACE` — 화면의 다른 단추와 같은 꼴), 고친 칸 · 틀린 칸 · 잠긴 칸은 제 토큰.
   모듈을 읽을 때 두 컴포넌트를 등록한다 — 쓰는 페이지 대본이 늘 import 한다.
   - **두 등록**: 무거운 `capa_edit_grid`(등록 JS·CSS + 껍데기 data — 표가 같으면 회차마다 같은 dict 라 ForwardMsg 해시 참조로 간다)와
     작은 `capa_edit_grid_feed`(JS 3 KB 이하 + 초안·오류·ack). 둘은 `window.__capaEditGrid[host].feed` 칸과 `window` 이벤트
@@ -3301,6 +3318,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   선택지(`DATASET_KEY`·`DATASETS`·`EDIT_TABLES`), 표마다 초안·이력 세션 칸(`cells_key`·`history_key`)과 inbox·ack·토스트 칸,
   시나리오를 바꾸면 지울 칸(`SESSION_KEYS` — 토스트 번호 칸은 넣지 않는다: 1 로 돌아가면 마운트된 그리드가 마지막 번호와 같은
   다음 서버 토스트를 삼킨다, 2026-11-03 마지막 검토 C2). `scenario_activation`(`_STALE_VALUE_KEYS`)과 `page_tabs`(`EDIT_HOST_KEYS`)가 읽는다.
+- `src/capa_simulation/components/plan_grid.py` — 생산 계획 PKG PLAN · 수율 표를 범용 편집 그리드에 잇는 어댑터(2026-11-12 보드 답
+  k-a1 · k-a2). 값 형식(`FORMATS`), 양식 → 규격 · 색인 · 껍데기(`build` — 캐시 `get_edit_grid_base`, 키는 내용 지문 · 표시순서 지문),
+  0 을 빈칸으로 싣는 양식(`zero_as_blank`), 출납 콜백(`collect` — 빈 초안 자리를 둔다, 기준 정보와 같은 까닭) · inbox 반영
+  (`apply_inbox` — 초안 칸을 비우면 참), 작업 줄(`render_actions` — 「⋯」 메뉴 `more` · 알림 칸은 `render_flash`), 그리드 자리
+  (`render_grid` — 표가 없으면 표 없는 껍데기), 고칠 칸 알림(`error_notice`), 초안 되머지(`merged`)가 한 곳이다. 표 위 칸 key 와
+  한 줄 문턱 · 왼쪽 비움은 `LAYOUTS`(고친 뒤 단추 줄 폭으로 잰 샘플 관측 — 설계 규칙집 4장 「생산 계획 표 위 한 줄」).
+- `src/capa_simulation/plan_grid_keys.py` — 생산 계획 그리드의 이름(UI 모름): 표(`PLAN_TABLE` · `YIELD_TABLE`), 호스트 key(`HOSTS`),
+  표마다 초안 · 이력 · inbox · ack · 토스트 · 버린 gen 칸, 시나리오를 바꾸면 지울 칸(`SESSION_KEYS` — 토스트 칸은 넣지 않는다,
+  `reference_grid_keys` 와 같은 까닭). `scenario_activation`(`_STALE_VALUE_KEYS` · 「편집 되돌리기」)과 `page_tabs`(`EDIT_HOST_KEYS`)가 읽는다.
 - `src/capa_simulation/components/status_metric.py` — 조치가 필요한 지표에 상태색 왼쪽 띠를 붙인 metric
   카드다(`tone="neutral"` 이면 기존 카드). `metric_row` 는 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는다. 둘 다
   서식을 스타일만 든 `st.html`(이벤트 칸)로 보내는데, 팝업 본문처럼 이벤트 칸 자리 수가 갈래마다 같아야 하는 곳은
@@ -3359,11 +3385,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     표 아래 상태 줄의 편집 범위 글은 `month_editor.scope_text`(feed `scope` · `eg_toolbar.js` `tbScope`)다 — 칸 위치 · 오류 문구가 먼저이고
     좁으면 편집 범위 글이 먼저 줄어 풍선으로 읽힌다. 빈 메모 · 요약 · 범위 칸은 접는다. 붙여넣기 팝업(`render_reference_clipboard_form`)·왕복 CSV 에는 필터 이전 전체 표를
     넘긴다(부분 표는 행 집합 검증을 통과해 나머지 공정을 지운다).
-  - `float_month_columns`(정수 dtype 월 칸을 실수로 — 생산 계획 편집표)를 둔다. 걸러진 편집표를 원본 전체에 되머지하던
+  - `float_month_columns`(정수 dtype 월 칸을 실수로 — `st.data_editor` 편집표용, 생산 계획이 그리드가 된 뒤 부르는 화면이 없다)를 둔다. 걸러진 편집표를 원본 전체에 되머지하던
     조각(`merge_edited_months`·`count_month_changes`)은 그리드 횡전개 뒤 부르는 곳이 없어 걷었다(2026-11-03) — 그리드
     초안은 업무 키라 적용이 늘 전체 양식에 덮는다(`reference_grid.merged_template`).
-  - `process_labels` 를 import 하지 않는다. 분류 칸 회색 배경은 `classification_styled` 하나가 칸 수 상한까지만 입히고
-    `load_conversion.py` 도 쓴다(`tests/test_classification_style.py`).
+  - `process_labels` 를 import 하지 않는다. 분류 칸 회색 배경은 `classification_styled` 하나가 칸 수 상한까지만 입힌다(생산 계획이
+    그리드가 된 뒤 부르는 화면이 없다 — `tests/test_classification_style.py`).
 - `src/capa_simulation/services/revision_compatibility.py` — 저장된 리비전이 현재 계산 계약으로 쓸 수 있는지
   **불러오기 전에** 판정한다(활성화 뒤에 죽으면 되돌릴 길이 없다).
   - 지금 막는 것은 `STEP_SEQ`·`MCP_SEQ` 가 빈 저장분이다. 값을 추정해 채우지 않는다.

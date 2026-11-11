@@ -2,12 +2,11 @@
 
 """편집표 줄 차례 지키기 · 숫자 칸 `step` 버림 없애기(2026-10-24 사용자 결정 「권장대로」).
 
-- **줄 차례.** `st.data_editor` 의 편집은 줄 위치로 남는다. 생산 계획 2표는 공용 표시순서로 줄을
-  세우는데 표시순서는 기준정보 버전·리비전을 바꾸지 않고 바뀐다. 원본 토큰(`source_token`)에 줄 차례
-  지문이 없으면 적용 전 편집이 다른 공정 줄에 붙은 채 「적용」이 그대로 저장한다. 이제 지문이 바뀌면
-  편집을 비우고 한 번 알린다 — 틀린 저장이 없고 적용 전 편집만 잃는다. 안 바뀐 회차에는 편집이
-  그대로 남는다. 기준 정보 9표는 범용 편집 그리드라 초안이 업무 키 — 차례가 바뀌어도 제 줄에 남고
-  알리지 않는다(2026-11-02 편집 표 횡전개).
+- **줄 차례.** `st.data_editor` 의 편집은 줄 위치로 남는다. 표시순서는 기준정보 버전·리비전을 바꾸지
+  않고 바뀌어, 원본 토큰(`source_token`)에 줄 차례 지문이 없으면 적용 전 편집이 다른 줄에 붙은 채
+  「적용」이 그대로 저장한다 — 지문이 바뀌면 편집표 편집을 비우고 한 번 알린다(단위 시험). 기준 정보
+  9표(2026-11-02 편집 표 횡전개)와 생산 계획 PKG PLAN · 수율(2026-11-12 보드 답 k-a1 · k-a2)은 범용
+  편집 그리드라 초안이 업무 키 — 차례가 바뀌어도 제 줄에 남고 알리지 않는다.
 - **증분 버림.** Streamlit 1.63 `NumberColumn` 은 `step` 의 소수 자릿수 아래를 반올림하지 않고
   버린다. 뜻이 걸리는 칸(효율·여유율·Lot·WF 측정률·수율·설비대수·기존 보유대수)은 `step` 없이
   `format` 만 둔다.
@@ -25,7 +24,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import alert_notes
-from edit_grid_fake import Calls, install_fake_edit_grid, last
+from edit_grid_fake import Calls, install_fake_edit_grid, last, send_ops, shell_frame, shell_key
 from streamlit.testing.v1 import AppTest
 from test_reference_data_page import (
     DATASET,
@@ -444,53 +443,66 @@ assert PLAN_ORDER_SWAP_TEST_SCRIPT.count("test-plan-display-order-swap") == 1
 PLAN_TAB = ":material/edit_calendar: PKG PLAN"
 
 
-def _plan_products(app: AppTest) -> list[str]:
-    editor = next(frame for frame in app.dataframe if _is_editor(frame.proto.id, "pkg_plan_editor"))
-    return [str(value) for value in editor.value["제품정보"]]
+PLAN_HOST = "plan_grid"
+YIELD_HOST = "yield_grid"
+YIELD_TAB = ":material/percent: 수율"
+
+
+def _plan_products(calls: Calls) -> list[str]:
+    """PKG PLAN 그리드에 실린 줄 차례의 제품."""
+    return [str(value) for value in shell_frame(last(calls, PLAN_HOST))["제품정보"]]
+
+
+def _row_key(calls: Calls, host: str, product: str, kind: str | None = None) -> str:
+    """그 제품(수율이면 그 구분) 줄의 업무 키 — 줄 위치가 아니라 키로 고른다."""
+    shell = last(calls, host)
+    frame = shell_frame(shell)
+    hit = frame["제품정보"].eq(product)
+    if kind is not None:
+        hit &= frame["수율 구분"].eq(kind)
+    return shell_key(shell, int(hit.to_numpy().argmax()))
+
+
+def _write(app: AppTest, calls: Calls, host: str, key: str, text: str) -> AppTest:
+    return send_ops(
+        app, calls, {"op": "write", "rows": [key], "cols": [MONTH], "values": [[text]]}, host=host
+    )
 
 
 @pytest.mark.parametrize("descending", [True, False], ids=["order-changed", "order-held"])
-def test_the_plan_editor_drops_an_unapplied_edit_only_when_the_order_changes(
-    descending: bool,
+def test_a_plan_grid_draft_lands_on_its_product_whether_or_not_the_order_changes(
+    descending: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """PKG PLAN 첫 줄(Product-A)을 고친 채 「PKG PLAN 변경사항 적용」을 누른다.
+    """PKG PLAN 그리드 Product-A 칸을 고친 채 「변경사항 적용」 을 누른다.
 
-    표시순서가 뒤집힌 회차면 편집을 비우고 알리며 적용하지 않는다(전에는 Product-B 계획에 저장했다).
-    그대로인 회차면 편집이 남아 Product-A 에 적용된다.
-    """
-    editor_key = "pkg_plan_editor"
+    그리드 초안은 업무 키 + 월이라(2026-11-12 보드 답 k-a1 — 기준 정보와 같은 편집기) 표시순서가
+    뒤집힌 회차에도 버리지 않고 알리지 않으며 Product-A 에 적용된다(옛 편집표는 줄 위치라 비우고
+    알렸다)."""
+    calls = install_fake_edit_grid(monkeypatch)
     app = AppTest.from_string(PLAN_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
     app.session_state["load_conversion_active_tab"] = PLAN_TAB
     app.run()
     assert not app.exception
-    assert _plan_products(app) == ["Product-A", "Product-B"]
-    edit = _edit(MONTH, 555.0)
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
-    app.run()
-    assert not app.exception
+    assert _plan_products(calls) == ["Product-A", "Product-B"]
+    app = _write(app, calls, PLAN_HOST, _row_key(calls, PLAN_HOST, "Product-A"), "555")
     assert not _apply_disabled(app, "apply_pkg_plan_changes")
 
     app.session_state["test_display_order_descending"] = descending
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
+    app.run()
+    assert not app.exception
+    assert _plan_products(calls) == (
+        ["Product-B", "Product-A"] if descending else ["Product-A", "Product-B"]
+    )
     app.button(key="apply_pkg_plan_changes").click()
     app.run()
 
     assert not app.exception
-    if descending:
-        assert _plan_products(app) == ["Product-B", "Product-A"]
-        assert "test_month_updates" not in app.session_state
-        notices = _notices(app)
-        assert len(notices) == 1
-        assert "(PKG PLAN)" in notices[0]
-        app.run()
-        assert not _notices(app)
-    else:
-        assert not _notices(app)
-        saved = app.session_state["test_month_updates"]["RQ_PKG_PLAN"]
-        assert dict(zip(saved["제품정보"], saved["생산수량"], strict=True)) == {
-            "Product-A": 555.0,
-            "Product-B": 100.0,
-        }
+    assert not _notices(app)
+    saved = app.session_state["test_month_updates"]["RQ_PKG_PLAN"]
+    assert dict(zip(saved["제품정보"], saved["생산수량"], strict=True)) == {
+        "Product-A": 555.0,
+        "Product-B": 100.0,
+    }
 
 
 # 앱 머리(칩 · 탭 점)처럼 페이지 본문보다 **먼저** 세는 자리 — 마지막 회차가 본 값.
@@ -502,9 +514,12 @@ _PLAN_HEAD_PROBE = (
 )
 
 
-def test_the_head_stops_counting_a_plan_edit_the_page_dropped_and_the_notice_still_goes() -> None:
-    """원본이 바뀌어 본문이 PKG PLAN 편집을 버리면 앱 머리는 이미 그 편집을 세어 그렸다 — 그 회차에
-    한 번 다시 돌아 칩 · 탭 점을 걷는다(UI-DAT-11). 줄 차례 알림은 다시 돈 회차에 한 번 나간다."""
+def test_the_head_keeps_counting_a_plan_draft_across_an_order_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """줄 차례만 바뀐 회차에 PKG PLAN 그리드 초안은 남는다 — 앱 머리는 그 초안을 계속 세고, 다시
+    돌지 않으며 줄 차례 알림도 없다(UI-DAT-11 — 표지가 일어난 것과 어긋나지 않는다)."""
+    calls = install_fake_edit_grid(monkeypatch)
     script = PLAN_ORDER_SWAP_TEST_SCRIPT.replace(
         '    exec(compile(page.read_text(encoding="utf-8"), str(page), "exec"))\n',
         _PLAN_HEAD_PROBE,
@@ -515,86 +530,66 @@ def test_the_head_stops_counting_a_plan_edit_the_page_dropped_and_the_notice_sti
     app.session_state["load_conversion_active_tab"] = PLAN_TAB
     app.run()
     assert not app.exception
-    edit = _edit(MONTH, 555.0)
-    app.session_state[editor_widget_key_in(app, "pkg_plan_editor")] = edit
-    app.run()
-    assert not app.exception
+    app = _write(app, calls, PLAN_HOST, _row_key(calls, PLAN_HOST, "Product-A"), "555")
     assert app.session_state["probe_head"] == ["생산 계획 · PKG PLAN"]
 
     runs = app.session_state["probe_runs"]
     app.session_state["test_display_order_descending"] = True
-    app.session_state[editor_widget_key_in(app, "pkg_plan_editor")] = edit
     app.run()
     assert not app.exception
-    assert app.session_state["probe_head"] == []
-    assert app.session_state["probe_runs"] == runs + 2
-    assert len(_notices(app)) == 1
-
-    # 다시 돈 회차가 되풀이되지 않고 알림도 한 번이다.
-    app.run()
-    assert app.session_state["probe_runs"] == runs + 3
+    assert app.session_state["probe_head"] == ["생산 계획 · PKG PLAN"]
+    assert app.session_state["probe_runs"] == runs + 1
     assert not _notices(app)
 
 
 PLAN_STAGED_KEY = "pkg_plan_staged_paste"
 
 
-def _stage_plan_paste(app: AppTest, product_a_quantity: float) -> pd.DataFrame:
+def _stage_plan_paste(app: AppTest, calls: Calls, product_a_quantity: float) -> pd.DataFrame:
     """PKG PLAN 「Excel 붙여넣기」 가 남기는 대기 표.
 
-    지금 편집표 그대로에서 Product-A 칸만 바꾼다.
+    지금 그리드 표 그대로(빈칸은 0)에서 Product-A 칸만 바꾼다.
     """
-    editor = next(frame for frame in app.dataframe if _is_editor(frame.proto.id, "pkg_plan_editor"))
-    staged = pd.DataFrame(editor.value).copy()
+    staged = shell_frame(last(calls, PLAN_HOST)).fillna(0.0)
     staged.loc[staged["제품정보"] == "Product-A", MONTH] = product_a_quantity
     app.session_state[PLAN_STAGED_KEY] = staged
     return staged
 
 
 @pytest.mark.parametrize("edit_on_top", [False, True], ids=["staged-only", "edit-on-staged"])
-def test_a_staged_plan_paste_survives_a_display_order_change(edit_on_top: bool) -> None:
-    """붙여넣기 대기 표는 붙여넣은 차례 그대로 편집 원본이 되고 키로 적용된다 — 표시순서와 상관없다.
+def test_a_staged_plan_paste_survives_a_display_order_change(
+    edit_on_top: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """붙여넣기 대기 표는 붙여넣은 차례 그대로 그리드 원본이 되고 키로 적용된다 — 표시순서와
+    상관없다.
 
     전에는 차례가 바뀐 회차에 대기 표까지 버리고 「…(PKG PLAN 붙여넣기)을 다른 줄에 붙지 않게
     버렸습니다」라고 알렸다(2026-10-24 브라우저 E2E — 같은 세션에서 붙여넣기 → Admin 표시순서
-    저장 → 생산 계획 복귀). 이제 대기 표와 그 위의 편집(대기 표 둘째 줄 Product-B)이 남고 알림이
-    없으며, 적용은 제 제품에 든다.
+    저장 → 생산 계획 복귀). 이제 대기 표와 그 위의 그리드 초안(Product-B)이 남고 알림이 없으며,
+    적용은 제 제품에 든다.
     """
-    editor_key = "pkg_plan_editor"
-    second_row_edit = {"edited_rows": {1: {MONTH: 555.0}}, "added_rows": [], "deleted_rows": []}
-
-    def resend_edit() -> None:
-        # AppTest 는 세션에 넣은 편집표 값을 한 회차만 들고 있다 — 브라우저처럼 조작마다
-        # 다시 보낸다.
-        if edit_on_top:
-            app.session_state[editor_widget_key_in(app, editor_key)] = second_row_edit
-
+    calls = install_fake_edit_grid(monkeypatch)
     app = AppTest.from_string(PLAN_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
     app.session_state["load_conversion_active_tab"] = PLAN_TAB
     app.run()
     assert not app.exception
-    staged = _stage_plan_paste(app, 777.0)
+    staged = _stage_plan_paste(app, calls, 777.0)
     app.run()
     assert not app.exception
-    resend_edit()
-    app.run()
-    assert not app.exception
+    if edit_on_top:
+        app = _write(app, calls, PLAN_HOST, _row_key(calls, PLAN_HOST, "Product-B"), "555")
     assert not _apply_disabled(app, "apply_pkg_plan_changes")
-    before = _generation_in(app, editor_key)
 
     app.session_state["test_display_order_descending"] = True
-    resend_edit()
     app.run()
 
     assert not app.exception
     assert not _notices(app)
     assert app.session_state[PLAN_STAGED_KEY] is staged
-    # 편집표는 대기 표의 차례(붙여넣은 차례) 그대로다.
-    assert _plan_products(app) == ["Product-A", "Product-B"]
-    assert _generation_in(app, editor_key) == before
+    # 그리드는 대기 표의 차례(붙여넣은 차례) 그대로다.
+    assert _plan_products(calls) == ["Product-A", "Product-B"]
     assert not _apply_disabled(app, "apply_pkg_plan_changes")
 
-    resend_edit()
     app.button(key="apply_pkg_plan_changes").click()
     app.run()
 
@@ -606,66 +601,43 @@ def test_a_staged_plan_paste_survives_a_display_order_change(edit_on_top: bool) 
     }
 
 
-YIELD_TAB = ":material/percent: 수율"
-
-
-def _yield_rows(app: AppTest) -> list[tuple[str, str]]:
-    editor = next(
-        frame
-        for frame in app.dataframe
-        if frame.proto.editing_mode and _is_editor(frame.proto.id, "yield_editor")
-    )
+def _yield_rows(calls: Calls) -> list[tuple[str, str]]:
+    frame = shell_frame(last(calls, YIELD_HOST))
     return [
         (str(product), str(kind))
-        for product, kind in zip(editor.value["제품정보"], editor.value["수율 구분"], strict=True)
+        for product, kind in zip(frame["제품정보"], frame["수율 구분"], strict=True)
     ]
 
 
 @pytest.mark.parametrize("descending", [True, False], ids=["order-changed", "order-held"])
-def test_the_yield_editor_drops_an_unapplied_edit_only_when_the_order_changes(
-    descending: bool,
+def test_a_yield_grid_draft_lands_on_its_row_whether_or_not_the_order_changes(
+    descending: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """수율 첫 줄(Product-A · BE)을 고친 채 「수율 변경사항 적용」을 누른다.
-
-    표시순서가 뒤집힌 회차면 첫 줄이 Product-B 가 되므로 편집을 비우고 「…(수율)…」을 한 번
-    알리며 적용하지 않는다. 그대로인 회차면 편집이 남아 Product-A 의 BE 수율에 든다.
-    """
-    editor_key = "yield_editor"
+    """수율 그리드 Product-A · BE 칸을 고친 채 「수율 변경사항 적용」 을 누른다 — 표시순서가 뒤집혀
+    첫 줄이 Product-B 가 되어도 초안은 업무 키라 Product-A 의 BE 수율에 들고 알림이 없다."""
+    calls = install_fake_edit_grid(monkeypatch)
     app = AppTest.from_string(PLAN_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
     app.session_state["load_conversion_active_tab"] = YIELD_TAB
     app.run()
     assert not app.exception
-    assert _yield_rows(app)[0] == ("Product-A", "BE")
-    edit = _edit(MONTH, 0.5)
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
-    app.run()
-    assert not app.exception
+    assert _yield_rows(calls)[0] == ("Product-A", "BE")
+    app = _write(app, calls, YIELD_HOST, _row_key(calls, YIELD_HOST, "Product-A", "BE"), "0.5")
     assert not _apply_disabled(app, "apply_yield_changes")
-    before = _generation_in(app, editor_key)
 
     app.session_state["test_display_order_descending"] = descending
-    app.session_state[editor_widget_key_in(app, editor_key)] = edit
+    app.run()
+    assert not app.exception
+    assert _yield_rows(calls)[0][0] == ("Product-B" if descending else "Product-A")
     app.button(key="apply_yield_changes").click()
     app.run()
 
     assert not app.exception
-    if descending:
-        assert _yield_rows(app)[0][0] == "Product-B"
-        assert "test_month_updates" not in app.session_state
-        assert _generation_in(app, editor_key) == before + 1
-        assert _apply_disabled(app, "apply_yield_changes")
-        notices = _notices(app)
-        assert len(notices) == 1
-        assert "(수율)" in notices[0]
-        app.run()
-        assert not _notices(app)
-    else:
-        assert not _notices(app)
-        saved = app.session_state["test_month_updates"]["RQ_YLD"]
-        assert dict(zip(saved["제품정보"], saved["BE_수율"], strict=True)) == {
-            "Product-A": 0.5,
-            "Product-B": 1.0,
-        }
+    assert not _notices(app)
+    saved = app.session_state["test_month_updates"]["RQ_YLD"]
+    assert dict(zip(saved["제품정보"], saved["BE_수율"], strict=True)) == {
+        "Product-A": 0.5,
+        "Product-B": 1.0,
+    }
 
 
 # 회차마다 `test_lock` 으로 잠글지를 정하는 단추 하나.
@@ -772,8 +744,10 @@ def test_the_run_day_grid_takes_whole_days_only(monkeypatch: pytest.MonkeyPatch)
     assert not any(widget.key == "capa_run_day_editor" for widget in app.dataframe)
 
 
-def test_the_yield_and_plan_editors_keep_their_formats() -> None:
-    """수율은 증분 없이 `percent`, PKG PLAN 은 그 단위로 충분해 0.01 증분 그대로다."""
+def test_the_yield_and_plan_grids_keep_their_formats(monkeypatch: pytest.MonkeyPatch) -> None:
+    """수율 그리드는 `percent`(100% 상한) · PKG PLAN 그리드는 천 단위 · 소수 없이 보인다 — 증분이
+    없어 값을 자르지 않는다(보이는 자리만 반올림하고 값은 적은 그대로)."""
+    calls = install_fake_edit_grid(monkeypatch)
     script = TEST_SCRIPT.replace(
         'PAGE_NAME = "reference_data.py"', 'PAGE_NAME = "load_conversion.py"'
     )
@@ -781,15 +755,14 @@ def test_the_yield_and_plan_editors_keep_their_formats() -> None:
     app.session_state["load_conversion_active_tab"] = PLAN_TAB
     app.run()
     assert not app.exception
-
-    yield_configs = _month_configs(app, "yield_editor")
-    assert yield_configs
-    for config in yield_configs.values():
-        assert "step" not in config["type_config"], config
-        assert config["type_config"]["format"] == "percent"
-    plan_configs = _month_configs(app, "pkg_plan_editor")
-    assert plan_configs
-    assert all(config["type_config"]["step"] == 0.01 for config in plan_configs.values())
+    plan = last(calls, PLAN_HOST)["fmt"]
+    assert (plan["kind"], plan["digits"], plan["int"], plan["min"]) == ("fixed", 0, False, 0.0)
+    app.session_state["load_conversion_active_tab"] = YIELD_TAB
+    app.run()
+    assert not app.exception
+    yields = last(calls, YIELD_HOST)["fmt"]
+    assert (yields["kind"], yields["digits"], yields["max"]) == ("percent", 2, 1.0)
+    assert not any(frame.proto.editing_mode for frame in app.dataframe)
 
 
 def test_an_all_integer_month_table_takes_a_fraction_on_the_grid(grid_calls: Calls) -> None:

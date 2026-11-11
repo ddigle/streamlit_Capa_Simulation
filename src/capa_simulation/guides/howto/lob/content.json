@@ -281,7 +281,7 @@
       "id": "change_plan",
       "group": "change",
       "title": "생산계획(PKG PLAN) 바꾸기",
-      "sub": "생산 계획 › PKG PLAN 을 고치고 「PKG PLAN 변경사항 적용」을 눌러야 반영됩니다",
+      "sub": "생산 계획 › PKG PLAN 을 고치고 「변경사항 적용」을 눌러야 반영됩니다",
       "reach": "적용",
       "screens": ["생산 계획", "HOME"],
       "thumb": {"state": "12_loadconv_pkgplan", "targets": ["tab_pkgplan", "pkg_apply"]},
@@ -304,11 +304,11 @@
         },
         {
           "id": "apply",
-          "title": "「PKG PLAN 변경사항 적용」을 누릅니다",
+          "title": "「변경사항 적용」을 누릅니다",
           "where": ["생산 계획", "PKG PLAN"],
           "state": "12_loadconv_pkgplan",
           "focus": [{"t": "pkg_apply", "n": 1}, {"t": "pkg_paste", "kind": "see", "n": "!"}],
-          "do": "[[PKG PLAN 변경사항 적용]] 을 눌러야 환산 · 확보율 · HOME 이 다시 계산됩니다.",
+          "do": "[[변경사항 적용]] 을 눌러야 환산 · 확보율 · HOME 이 다시 계산됩니다.",
           "ok": "「PKG PLAN을 전역 계획값에 반영했습니다…」 문구가 뜹니다.",
           "stuck": [
             "[[Excel 붙여넣기]] 로 넣었는데 HOME 이 그대로다 → PKG PLAN 은 붙여넣기만으로는 대기 상태예요. 이 버튼을 누르세요.",

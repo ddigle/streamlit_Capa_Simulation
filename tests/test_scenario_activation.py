@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import capa_simulation.components.home_preference as home_preference
+from capa_simulation import plan_grid_keys
 from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS, PAST_DATA_TOGGLE_KEY
 from capa_simulation.io.reference_cache import HOME_FIGURE_CACHE_KEY
 from capa_simulation.persistence.models import (
@@ -16,6 +17,7 @@ from capa_simulation.persistence.models import (
     ScenarioSnapshot,
     ScenarioSummary,
 )
+from capa_simulation.plan_grid_keys import SESSION_KEYS as PLAN_GRID_SESSION_KEYS
 from capa_simulation.reference_grid_keys import (
     APPLIED_KEY,
     DISCARDED_KEY,
@@ -324,6 +326,8 @@ def test_only_previous_values_and_home_toggles_are_dropped() -> None:
         HOME_FIGURE_CACHE_KEY,
         # 기준 정보 편집 그리드의 표마다 초안·이력과 반영 전 op(2026-11-02 편집 표 횡전개).
         *REFERENCE_GRID_SESSION_KEYS,
+        # 생산 계획 PKG PLAN · 수율 그리드의 같은 칸(2026-11-12 보드 답 k-a1 · k-a2).
+        *PLAN_GRID_SESSION_KEYS,
     }
 
 
@@ -379,6 +383,24 @@ def test_no_key_in_the_list_is_a_fossil() -> None:
     # 토스트 번호 칸은 지우지 않는다 — 마운트된 그리드가 같은 번호의 다음 토스트를 삼킨다.
     assert TOAST_KEY not in REFERENCE_GRID_SESSION_KEYS
     assert all(table in literals for table in EDIT_TABLES)
+    # 생산 계획 그리드도 표마다 칸을 함수로 짓는다(`plan_grid_keys`) — 토스트 칸은 같은 까닭으로
+    # 뺀다.
+    plan_generated = {
+        name(table)
+        for table in plan_grid_keys.TABLES
+        for name in (
+            plan_grid_keys.cells_key,
+            plan_grid_keys.history_key,
+            plan_grid_keys.inbox_key,
+            plan_grid_keys.applied_key,
+            plan_grid_keys.discarded_key,
+        )
+    }
+    assert set(PLAN_GRID_SESSION_KEYS) == plan_generated
+    assert not {plan_grid_keys.toast_key(table) for table in plan_grid_keys.TABLES} & set(
+        PLAN_GRID_SESSION_KEYS
+    )
+    generated |= plan_generated
     fossils = sorted(
         key
         for key in set(_STALE_UI_KEYS) - _home_toggle_keys()

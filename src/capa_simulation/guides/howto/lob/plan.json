@@ -158,10 +158,10 @@
         "tab_pkgplan": "tab:PKG PLAN",
         "tab_convert": "tab:환산",
         "tab_yield": "tab:수율",
-        "pkg_table": "named:GRID",
-        "pkg_apply": "button:PKG PLAN 변경사항 적용",
+        "pkg_table": "named:EGRID",
+        "pkg_apply": "button:변경사항 적용",
         "pkg_paste": "button:Excel 붙여넣기",
-        "pkg_virtual": "button:가상 제품 등록"
+        "pkg_virtual": "named:KEY_BUTTON(pkg_plan_more)"
       }
     },
     {

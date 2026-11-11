@@ -25,12 +25,15 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+import pandas as pd
 import pytest
 import streamlit as st
 from streamlit.runtime.state.safe_session_state import SafeSessionState
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import edit_grid
+from capa_simulation.services.edit_grid import DUPLICATE_SEPARATOR, KEY_SEPARATOR
+from capa_simulation.services.edit_grid_payload import CODE_ALPHABET
 
 FAKE_EVENT_KEY = "test_fake_edit_grid_event"
 Calls = list[tuple[str, dict[str, Any]]]
@@ -149,3 +152,46 @@ def deliver_ops(
     app.run()
     assert not app.exception, app.exception
     return app
+
+
+def _decoded(text: str, width: int) -> list[int]:
+    """고정 폭 64 진 글자 → 번호 목록(`edit_grid_payload.encode_codes` 의 거꾸로)."""
+    base = len(CODE_ALPHABET)
+    numbers = []
+    for start in range(0, len(text), width):
+        number = 0
+        for char in text[start : start + width]:
+            number = number * base + CODE_ALPHABET.index(char)
+        numbers.append(number)
+    return numbers
+
+
+def shell_frame(shell: dict[str, Any]) -> pd.DataFrame:
+    """껍데기 본문을 표로 푼다 — 분류 칸(원값) + 값 칸(빈칸 None). 줄 차례는 그리드 차례다."""
+    columns: dict[str, list[Any]] = {}
+    for position, column in enumerate(shell["keyCols"]):
+        codes = _decoded(shell["codes"][position], shell["codeWidths"][position])
+        columns[str(column["name"])] = [shell["dims"][position][code] for code in codes]
+    width = int(shell["valWidth"])
+    rows: list[list[Any]] = []
+    for runs in shell["runs"]:
+        line: list[Any] = []
+        for start in range(0, len(runs), width + 1):
+            code = _decoded(runs[start : start + width], width)[0]
+            length = CODE_ALPHABET.index(runs[start + width])
+            line.extend([shell["vals"][code]] * length)
+        rows.append(line)
+    values = pd.DataFrame(rows, columns=list(shell["valueCols"]), dtype=object)
+    return pd.concat([pd.DataFrame(columns), values], axis=1)
+
+
+def shell_key(shell: dict[str, Any], row: int) -> str:
+    """그 줄의 업무 키(분류 원값을 `KEY_SEPARATOR` 로 잇고 같은 키 둘째부터 꼬리표 —
+    `services.edit_grid.row_keys` 와 같다)."""
+    frame = shell_frame(shell)
+    names = [str(column["name"]) for column in shell["keyCols"]]
+    key = KEY_SEPARATOR.join(str(frame.iloc[row][name]) for name in names)
+    for at, count in shell.get("dupes", []):
+        if at == row:
+            key = f"{key}{DUPLICATE_SEPARATOR}{count}"
+    return key
