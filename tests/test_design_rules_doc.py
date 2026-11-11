@@ -13,8 +13,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 글 · 메모 원문 · 해석 셋(v1.13) · 2차 검수 보드 · 밤샘 다 물음 줄과 고른 글 · 갈래 수 · 답 밖
 줄(v1.14) · 「권장대로 반영 결과」 보드 줄과 고른 글 · 고칠 것 메모 원문 · 닫힌 따라온 물음(v1.15) ·
 「남은 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 · 메모 해석(v1.16) · 입력 점검 시안 보드 줄과
-고른 글 · 앱 세션이 정한 줄(v1.17) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS ·
-CLAUDE.md · README)의 연결.
+고른 글 · 앱 세션이 정한 줄(v1.17) · 「다음 배포 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 ·
+메모(v1.18) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -1347,14 +1347,14 @@ def test_the_input_check_board_is_recorded_with_the_app_decisions() -> None:
     """v1.17 — 6-17 은 입력 점검 시안 보드 물음 q1 ~ q7 과 조사 뒤 더한 답(reg-rows)이 차례대로
     한 줄씩이고 고른 글은 보드 선택지 원문 그대로다(답 줄은 커밋을 든다). 그 뒤 `ic-` 줄은 앱
     세션이 정한 작은 결정이라 줄마다 그렇게 밝힌다. q4 는 UI-TXT-03 예외 칸에, q7 이 뒤집은 옛
-    결정 셋(2026-10-19 Admin 탭 · T7 수 표지 · Q-19)은 7-1 에, 펼친 표 칸은 4장에 있다."""
+    결정 셋(2026-10-19 Admin 탭 · T7 수 표지 · Q-19)은 7-1 에, 펼친 표 칸은 4장에 있다. 6-18 은 뒤
+    시험이 본다."""
     document = _text()
-    assert "판 v1.17" in document.split("\n## 1. ")[0]
     assert "- **v1.17 — 2026-11-11.**" in _chapter(document, 8)
-    assert "6-17 에 있다" in _chapter(document, 1)
+    assert "등록 행 보기)은 6-17 에" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-17. ") :]
+    board = section[section.index("\n### 6-17. ") : section.index("\n### 6-18. ")]
     assert "https://claude.ai/artifact/27hDnALn8KGm3zR4opa4PE" in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -1384,3 +1384,102 @@ def test_the_input_check_board_is_recorded_with_the_app_decisions() -> None:
     reversed_ = _chapter(document, 7)
     for phrase in ("q7 (가)로 탭을 걷음", "T7 (가)", "Q-19 (가)"):
         assert phrase in reversed_, phrase
+
+
+# 2026-11-11 「다음 배포 물음 11-11」 보드(6-18)의 답 — 카드 열아홉, 고른 선택지는 모두 카드
+# 권장이다. 고친 여섯은 갈래 넷(`night/nq-dl-1111` · `night/nq-gap-1111` · `night/nq-goto-1111` ·
+# `night/nq-stop-1111`)이 입혔고, 그대로 · 기록만 열셋은 코드 · 규칙 글을 바꾸지 않았다. D6 뒤 ② 는
+# 선택지 없는 메모 카드라 메모 원문이 고른 글이다. 줄 id 는 보드 카드 id 다.
+NEXT_BOARD_ADDRESS = "https://claude.ai/artifact/VB98KF7QZBgHfvMxFEBcPt"
+NEXT_BOARD_FIXED = {
+    "n-c9-row": (
+        "(나) 표 제목 줄 높이를 35 로 고정하고 메뉴만 28 — 두 흔들림이 다 없어지고 표 윗선은"
+        " 바탕과 같은 210.5"
+    ),
+    "n-b3-clash": "(나) 겹친 표시명이면 칩 · 판처럼 「표시명 (원본)」 꼴(Q2-18)",
+    "n-d2-menu": (
+        "(나) 두 표지 모두 짧은 표지 + 풍선(예 「한쪽 공정 · GAP 없음 ⓘ」 · 「호기 필터 ⓘ」 —"
+        " 까닭 · 고른 값 · 호기 수는 풍선)"
+    ),
+    "n-f4-target": (
+        "(a) 줄이 리비전을 들고 가고 누를 때만 고른다 — ① · ② 를 한 길로 풂(누름이 서버로 오는"
+        " 길을 새로 냄)"
+    ),
+    "n-space-stop": "(다) F7 꼴 + 원본 공정명 — 「예시 27.04 TC Bonding 양산」, D10 그대로",
+    "n-f7-clash": "(나) 공용 표시명 규칙 전체의 원본과 겹치면 「표시명 (원본)」",
+}
+NEXT_BOARD_KEPT = {
+    "n-d6-wide": "(가) 그대로 — 같은 이름은 같은 꼴(PRC-01)",
+    "n-d6-name": "메모 「대부분 끝 글자로 갈림」",
+    "n-rs06": "(가) 그대로 — 앱 공통 꼴",
+    "n-d2-gap": "(가) 그대로 — 내려간 줄 위 빈 틈이 줄어듦",
+    "n-d1-820": "(가) 그대로 — 820 은 기준 창 밖",
+    "n-f2-slack": "(나) 지금대로 — 값 줄에만 적고, 사내 글꼴에서 두 줄이면 리뷰에 적어 다시 물음",
+    "n-f7-rest": "(가) 지금대로",
+    "n-f7-beyond": "받음 — 지금 꼴 그대로",
+    "n-autolog": "(가) 지금대로 — 기록은 원문",
+    "n-summary": "(가) 지금대로",
+    "n-runbook": "(가) 다음 배포 7장을 쓸 때 둘 다 넣음",
+    "n-f9-draft": "(가) 초안 그대로",
+    "n-handoff": "(가) 다음 배포 준비 때 HANDOFF 를 새로 쓰며 함께",
+}
+NEXT_BOARD_ORDER = (
+    "n-c9-row",
+    "n-b3-clash",
+    "n-d6-wide",
+    "n-d6-name",
+    "n-rs06",
+    "n-d2-menu",
+    "n-d2-gap",
+    "n-d1-820",
+    "n-f4-target",
+    "n-f2-slack",
+    "n-space-stop",
+    "n-f7-rest",
+    "n-f7-clash",
+    "n-f7-beyond",
+    "n-autolog",
+    "n-summary",
+    "n-runbook",
+    "n-f9-draft",
+    "n-handoff",
+)
+
+
+def test_the_next_deploy_questions_board_answers_are_recorded() -> None:
+    """v1.18 — 6-18 은 「다음 배포 물음 11-11」 보드 카드 열아홉이 보드 차례대로 한 줄씩이고
+    고른 글은 선택지 원문이다(D6 뒤 ② 는 메모 원문). 고친 여섯 줄은 커밋을 들고, 그대로 · 기록만
+    열셋은 커밋이 없다. F2 뒤 (나) 는 사내 글꼴에서 다시 물을 자리(TODO 4장)를 가리키고, 앱 세션이
+    답을 읽은 셋은 줄에 밝힌다. 6-17 줄은 그때 기록 그대로다(앞 시험이 6-18 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.18" in document.split("\n## 1. ")[0]
+    assert "- **v1.18 — 2026-11-11.**" in _chapter(document, 8)
+    assert "6-18 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-18. ") :]
+    assert NEXT_BOARD_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-11) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == NEXT_BOARD_ORDER
+    assert len(NEXT_BOARD_FIXED) == 6 and len(NEXT_BOARD_KEPT) == 13
+    for key, answer in {**NEXT_BOARD_FIXED, **NEXT_BOARD_KEPT}.items():
+        assert found[key] == answer, key
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key in NEXT_BOARD_FIXED:
+        assert commit.search(by_id[key]), key
+    for key in NEXT_BOARD_KEPT:
+        assert not commit.search(by_id[key]), key
+    for key in ("n-d6-name", "n-f4-target", "n-f7-clash"):
+        assert "앱 세션 해석 — 밝힘" in by_id[key], key
+    assert "`docs/TODO.md` 4장" in by_id["n-f2-slack"]
+    assert "`docs/TODO.md` 2장" in by_id["n-runbook"]
