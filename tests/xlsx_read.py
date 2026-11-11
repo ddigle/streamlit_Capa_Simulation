@@ -3,7 +3,8 @@
 """xlsx 읽기 도우미(`capa_simulation.io.xlsx_small` 이 쓴 통).
 
 저장소 의존성에 openpyxl 이 없다 — 시험도 표준 라이브러리로 읽는다. 칸마다 값(글자 · 숫자 · 빈 칸),
-글자 셀인지 숫자 셀인지, 서식 번호가 가리키는 숫자 꼴 · 칠 · 굵기 · 테두리(「꼴:색」)를 돌려준다.
+글자 셀인지 숫자 셀인지, 서식 번호가 가리키는 숫자 꼴 · 칠 · 굵기 · 테두리(「꼴:색」), 시트의 「오류
+무시」 표지(`numberStoredAsText`)가 덮는 칸을 돌려준다.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from xml.etree import ElementTree
 
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _REF = re.compile(r"^([A-Z]+)(\d+)$")
+_RANGE = re.compile(r"^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$")
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,8 @@ class ReadSheet:
 
     freeze: tuple[int, int] | None
     widths: dict[int, float]
+    number_text_ignored: frozenset[tuple[int, int]] = frozenset()
+    """「텍스트 형식으로 저장된 숫자」 경고를 끈 칸 (줄, 열) — `ignoredErrors` 범위를 펼친 것."""
 
     def row(self, index: int) -> list[str | float | None]:
         columns = [column for row, column in self.cells if row == index]
@@ -130,8 +134,33 @@ def read_workbook(data: bytes) -> dict[str, ReadSheet]:
             int(item.get("min", "1")) - 1: float(item.get("width", "0"))
             for item in root.findall("m:cols/m:col", NS)
         }
-        sheets[name] = ReadSheet(name=name, cells=cells, freeze=freeze, widths=widths)
+        sheets[name] = ReadSheet(
+            name=name,
+            cells=cells,
+            freeze=freeze,
+            widths=widths,
+            number_text_ignored=_ignored_number_text(root),
+        )
     return sheets
+
+
+def _ignored_number_text(root: ElementTree.Element) -> frozenset[tuple[int, int]]:
+    """`ignoredErrors` 가운데 `numberStoredAsText` 범위 → 덮인 칸 (줄, 열)."""
+    covered: set[tuple[int, int]] = set()
+    for item in root.findall("m:ignoredErrors/m:ignoredError", NS):
+        if item.get("numberStoredAsText") not in ("1", "true"):
+            continue
+        for ref in item.get("sqref", "").split():
+            matched = _RANGE.match(ref)
+            assert matched is not None, ref
+            first_column, first_row, last_column, last_row = matched.groups()
+            top, left = int(first_row) - 1, column_index(first_column)
+            bottom = int(last_row) - 1 if last_row else top
+            right = column_index(last_column) if last_column else left
+            covered.update(
+                (row, column) for row in range(top, bottom + 1) for column in range(left, right + 1)
+            )
+    return frozenset(covered)
 
 
 def _edges(border: ElementTree.Element) -> dict[str, str | None]:

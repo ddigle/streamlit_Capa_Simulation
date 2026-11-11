@@ -142,6 +142,9 @@ def test_heading_title_freeze_and_widths() -> None:
     assert sheet.row(0) == ["공정별 대당 Capa"]
     assert [tuple(sheet.row(index)) for index in range(1, 1 + len(HEADING))] == list(HEADING)
     assert sheet.row(header) == ["공정", "소요기준", "제품", "26.11", "26.12", "27.01"]
+    # 글자 달 머리는 「텍스트 형식으로 저장된 숫자」 경고를 끈 칸이고, 숫자 칸은 덮지 않는다.
+    assert {(header, column) for column in range(3, 6)} <= sheet.number_text_ignored
+    assert not any(sheet.cells[at].numeric for at in sheet.number_text_ignored)
     assert all(sheet.cells[(header, column)].bold for column in range(6))
     assert sheet.cells[(header, 0)].fill == _argb(tokens.HEADER_BACKGROUND)
     assert sheet.freeze == (header + 1, 3)
