@@ -246,7 +246,7 @@ uv run --no-sync python -c "import shutil, time, pathlib as p; b = p.Path.home()
 
 에이전트가 결과를 볼 수 있는 `!` 한 줄을 먼저 권한다(PowerShell 창에서 쳤으면 블록 끝 줄이 찍은 폴더 이름과 같은 이름 둘씩의 크기를
 사용자에게 받는다). 에이전트는 사용자가 친 출력을 읽는다. 첫 줄(`yyyyMMddHHmm`)이 백업 폴더 이름이고 — 그 배포 7장이 시키면 리뷰 `데이터변화` 줄 끝의
-`백업 <폴더>`(5장 차례 13) — 아래 DB 줄마다 두 수(원본 · 백업 크기)가 같아야 한다. DB 줄이 없거나 두 수가 다르거나 오류가 찍히면
+`백업 <폴더>`(5장 차례 12) — 아래 DB 줄마다 두 수(원본 · 백업 크기)가 같아야 한다. DB 줄이 없거나 두 수가 다르거나 오류가 찍히면
 2장으로 가지 않고 사용자에게 알린다. `.wal` 줄이 서면 앱이 저장을 마치지 못한 채 꺼진 것이다 — 함께 복사됐으니 지우지 않고 사용자에게 알린 뒤 잇는다(운영 DB 가 그 파일과 짝이다).
 출력은 일부러 영문 · 숫자뿐이다 — 사내 Windows 의 콘솔 코드페이지(cp949)를 거치면 한글이
 깨질 수 있다(6-3 b).
@@ -399,7 +399,7 @@ git log --no-merges --format="%h %ad %s" --date=short "$since..HEAD" | Select-St
   `git log --format="%h %ad %s" --date=short -30 | Select-String -NotMatch ' (deploy|review): '`.
 - **둘째 줄(경로)이 한 줄이라도 찍으면** 그 파일을 바꾼 커밋을 `git log --format="%h %s" "$since..HEAD" -- <경로>` 로 찾는다. 합침 커밋이든
   `module(<id>):` 꼴 제목이든 경로로 잡힌다(합침 커밋은 `git show --stat --format=` 가 빈 stat 을 찍어 판정이 안 된다).
-- 셋째 줄이 `deploy:`·`review:`·`module(<id>):` 가 아닌 사내 커밋이다 — 그 수가 압축본 `사내커밋` 이다(5장 차례 13). `module(<id>):` 는 세지
+- 셋째 줄이 `deploy:`·`review:`·`module(<id>):` 가 아닌 사내 커밋이다 — 그 수가 압축본 `사내커밋` 이다(5장 차례 12). `module(<id>):` 는 세지
   않는다 — 경로는 둘째 줄이 이미 봤다.
 
 `deploy:`·`review:` 가 아닌 커밋이 나오면(예: 2026-10-08 `index.html` 발표자료) 그 커밋이 바꾼 파일을 본다 —
@@ -1434,9 +1434,11 @@ e2e="$HOME/e2e_copy/$(date +%Y%m%d%H%M)"; mkdir -p "$e2e" && git archive HEAD | 
 채로 봐야 하면 이 확인은 하지 않는다.
 
 사본 트리에는 `modules/` 도 실리고 `data/modules/` 는 복사하지 않는다 — 모듈 화면이 빈 데이터로 서는 것은 결함이 아니다(모듈은 빈 데이터로
-서야 한다 — `docs/module_guide.md` 2장). 사본 앱을 모듈 없이(사외와 같은 화면으로) 보려면 `CAPA_MODULES_ROOT=off` 를 그 앱에만 건다 —
-PowerShell 은(사본 앱을 띄우는 줄 — 사용자 창) `$env:CAPA_MODULES_ROOT="off"; & $py -m streamlit run app.py --server.address 127.0.0.1 --server.port <포트> --server.headless true`
-뒤 끝나면 `Remove-Item Env:CAPA_MODULES_ROOT`(창에 남아 같은 창에서 띄운 운영 앱의 모듈까지 사라진다), WebIDE 는 `CAPA_MODULES_ROOT=off <같은 줄>`.
+서야 한다 — `docs/module_guide.md` 2장). 사본 앱을 손으로 띄울 일이 있으면(사용자 창 — 2) · 3) 을 마친 뒤) **그 줄이 `PYTHONPATH` 를 스스로
+넣는다** — 3) 블록 끝이 지우므로, 넣지 않고 띄우면 사본 앱이 저장소 `src` 를 읽어 **사용자 DB 를 연다**. 모듈 없이(사외와 같은 화면으로) 보려면
+`CAPA_MODULES_ROOT=off` 를 그 앱에만 건다 — PowerShell 은 `Set-Location $e2e; $env:PYTHONPATH = "$e2e\src"; $env:CAPA_MODULES_ROOT="off"; & $py -m streamlit run app.py --server.address 127.0.0.1 --server.port <포트> --server.headless true`
+(모듈을 둔 채 보려면 `$env:CAPA_MODULES_ROOT="off"; ` 만 뺀다) 뒤 끝나면 `Remove-Item Env:CAPA_MODULES_ROOT; $env:PYTHONPATH = $null; Set-Location <저장소>`(창에 남으면
+같은 창에서 띄운 운영 앱의 모듈까지 사라지고 b 의 가정 계획 스크립트가 사본 `src` 를 읽는다), WebIDE 는 `PYTHONPATH=<사본 폴더>/src CAPA_MODULES_ROOT=off <같은 줄>`.
 화면 확인 스크립트(c)·가이드 생성기는 스스로 모듈을 끈다. 4-5 모듈 점검도 이 사본 트리에서 돈다.
 
 ### 2) DB 복사 — `.wal` 이 없을 때만
@@ -1480,8 +1482,9 @@ $env:PYTHONPATH = $null
   (`PYTHONPATH` 가 안 먹었다).
 - 둘째 줄은 두 사본이 열리는지만 본다(읽기 전용으로 열어 표 수만 센다 — 몇 초). 파일 이름과 표 수 두 줄이 나와야 하고, 오류가
   나면 2) 를 다시 한다. 전 리비전 계산은 여기서 하지 않는다 — 수 분이 걸리고 4-a 가 한다.
-- 끝 줄은 `PYTHONPATH` 를 지운다 — 사용자 창은 이어 쓰므로 남기면 a · b 의 스크립트가 사본 `src` 를 읽어 사본 `data\` 를 운영 자리로 보고
-  거절한다.
+- 끝 줄은 `PYTHONPATH` 를 지운다 — 사용자 창은 이어 쓰므로 남기면 b 의 가정 계획 스크립트가 사본 `src` 를 읽어 사본 `data\` 를 운영 자리로 보고
+  거절할 수 있다. 그래서 사본 앱을 손으로 띄우는 줄(1) 끝)은 `PYTHONPATH` 를 스스로 다시 넣는다 — 지운 채 띄우면 사본 앱이 사용자 DB 를 연다.
+  c 의 스크립트는 자식 앱에 사본 `src` 를 스스로 넣는다.
 
 ### 4) 확인 셋 — 7-0 이 정한 것만, 이 차례로
 
@@ -1635,6 +1638,7 @@ Expand-Archive -Force "<내려받은 ZIP 경로>" $e2e
 ```powershell
 $env:PYTHONPATH = "$e2e\src"
 & $py -c "import sys, hashlib, json, time, pathlib as p, capa_simulation.settings as s; r = s.PROJECT_ROOT; (r / '.git').exists() and sys.exit('stop: settings point at a git tree - set PYTHONPATH to the copy src'); p.Path('.git').exists() or sys.exit('stop: run this from the repository'); m = json.loads((r / 'DEPLOY_MANIFEST.json').read_text(encoding='utf-8')); f = m['files']; h = lambda x: 'sha256:' + hashlib.sha256(x.read_bytes()).hexdigest(); bad = [k for k in f if not (r / k).is_file() or h(r / k) != f[k]]; dep = [k for k in ('pyproject.toml', 'uv.lock') if not p.Path(k).is_file() or h(p.Path(k)) != f.get(k)]; bad or (s.DEPLOY_STATE_PATH.parent.mkdir(exist_ok=True), s.DEPLOY_STATE_PATH.write_text(json.dumps({'stamp': m['stamp'], 'commit': m['commit'], 'commit_subject': m['commit_subject'], 'applied_at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'file_count': m['file_count']}, indent=2) + chr(10), encoding='utf-8')); print('manifest', len(f) - len(bad), '/', len(f), '; deps', ' '.join(dep) or 'same', '; stamp', 'not written' if bad else m['stamp'])"
+$env:PYTHONPATH = $null
 ```
 
 기대는 `manifest N / N ; deps same ; stamp <이번 stamp>` 한 줄이다(출력은 영문 · 숫자뿐 — 1-3 과 같은 까닭). `manifest` 가 N / N 이
@@ -2772,7 +2776,7 @@ HOME 의 월 축은 **양산 Density 가 있는 달만** 선다(`services/dashbo
 
 - **늘 옮기는 줄 — `=` 로 접지 않는다.** 결정 대기의 근거인 `8-2W` · `8-2B`, 그리고 `8-10` 머리와 그 아래 줄(붙여서 —
   머리가 아래 줄 수를 센다) · `8-12` 머리와 그 아래 줄(붙여서 — 머리가 아래 줄 수를 세고 잰 리비전마다 다섯 줄이다. 걸림 0 이면 머리뿐)이다. 압축본에서는 판정 · B · A 바로 아래(5장 차례 6)에 두어 다 옮기지 못해도 남게 한다.
-- 나머지 줄은 압축본 끝(5장 차례 15)에 둔다. 사외가 받은 압축본에 값으로 있던 줄과 같은 줄은 `8장 =<stamp> <키> <키> …` 한 줄로
+- 나머지 줄은 압축본 끝(5장 차례 14)에 둔다. 사외가 받은 압축본에 값으로 있던 줄과 같은 줄은 `8장 =<stamp> <키> <키> …` 한 줄로
   모은다(키는 줄 맨 앞의 `8-1` · `8-3` 같은 것 — `=<stamp>` 를 쓸 수 있는 때는 5장). 그 배포 7장이 값으로 적으라고 한 줄(블록 꼴이
   바뀐 배포 같은 것)은 접지 않는다.
 
@@ -2935,7 +2939,7 @@ uv run --no-sync python scripts/inspect_real_data_checks.py --check-summary revi
 
 ### 10-1. 사본 · 자리 · 준비
 
-- **사본은 6-3 1) ~ 3) 그대로다**(`$e2e` · `$py` · `$env:PYTHONPATH`). 6-3 이 만든 사본을 그대로 써도 된다. 생성기가 사본을
+- **사본은 6-3 1) ~ 3) 그대로다**(`$e2e` · `$py` — 3) 블록 끝이 `$env:PYTHONPATH` 를 지우므로, 사본 앱을 손으로 띄울 때는 6-3 1) 끝의 줄처럼 다시 넣는다). 6-3 이 만든 사본을 그대로 써도 된다. 생성기가 사본을
   다시 본다 — 사본 폴더나 그 위에 `.git` 이 있거나(저장소 안), 사본 `data\` 에 두 DB 가 없거나 `.wal` 이 있으면 띄우지 않고 멈춘다.
 - **생성기를 돌리는 동안 그 사본으로 사본 앱(6-3 c)을 띄우지 않는다.** 생성기는 작업 폴더의 첫 촬영 앞에 사본 두 DB
   의 크기 · sha256(기준 지문)을 재 두고, 촬영 뒤와 같은 작업 폴더로 다시 돌 때마다 그것과 견준다. 사본 앱이 사본 DB 를 쥐고 있으면
