@@ -123,6 +123,7 @@ _READINGS = {
     "HBM·EDP": "이디피",
     "_open_dialog": "다이얼로그",
     "catalog.json": "제이슨",
+    "download_menu_": "메뉴",
     "index.html": "에이치티엠엘",
     "modified_sys_path": "패스",
 }
