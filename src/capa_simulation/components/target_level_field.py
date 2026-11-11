@@ -20,8 +20,9 @@
   `home_preference.DEFAULT_THRESHOLD_STEP` · `DEFAULT_THRESHOLD_FORMAT`)과 같은 1 · `%.0f` 이고,
   받는 범위는 판정 기준 저장 · 제약 확보율과 한 값 50 ~
   300%(`securement_threshold.THRESHOLD_RANGE`)다. 소수를 치면 사사오입한 정수 % 다(109.5 → 110 —
-  `whole_percent`, 판정 기준 칸과 한 규칙). 칸에는 하한 0 만 두고 상한은 두지 않는다(판정 기준 기본
-  칸과 같다) — 범위 밖 값이 서버에 닿아야 그 까닭을 칸 곁에 적는다. 범위 밖 · 빈 칸은 칸 바로 밑
+  `whole_percent`, 판정 기준 칸과 한 규칙). 칸에는 하한 · 상한을 두지 않는다 — 음수를 포함한 범위 밖
+  값이 서버에 닿아야 그 까닭을 칸 곁에 적는다(하한을 두면 그 밑 값은 브라우저 칸 검증이 먼저 막아
+  영어 풍선만 선다 — 하한 0 을 두는 판정 기준 기본 칸과 여기서 다르다). 범위 밖 · 빈 칸은 칸 바로 밑
   거부 한 줄이고 팝업은 열린 채다(설계 규칙 UI-NTF-03 — 팝업 안 검증 거부는 곁만, 알림창 · 기록
   없음). 받는 범위를 한참 넘는 값(주소 인자 · 칸에 친 아주 긴 수)은 사사오입 전에 거른다
   (`Decimal.quantize` 는 28 자리를 넘으면 멈춘다).
@@ -247,7 +248,6 @@ class TargetLevelField:
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             typed = st.number_input(
                 f"{LEVEL_LABEL} 직접 입력",
-                min_value=0.0,
                 value=None,
                 step=ENTRY_STEP,
                 format=ENTRY_FORMAT,

@@ -832,13 +832,20 @@ def test_a_typed_target_out_of_range_or_empty_is_refused_beside_the_entry(
 ) -> None:
     """받는 범위(50 ~ 300% — 판정 기준 칸과 한 값) 밖이거나 칸이 비면 그 칸 바로 밑에 거부 한 줄만
     서고 팝업은 열린 채, 목표 · 값 칸은 그대로다. 소수는 사사오입한 정수 % 다(109.5 → 110 — 판정
-    기준 칸과 한 규칙). 받는 범위를 한참 넘는 값(1 뒤 0 서른)도 멈추지 않고 거부다."""
+    기준 칸과 한 규칙). 받는 범위를 한참 넘는 값(1 뒤 0 서른)도 멈추지 않고 거부다. 칸에는 하한 ·
+    상한이 없다 — 음수도 브라우저 칸 검증(영어 풍선)에 막히지 않고 서버에 닿아 같은 거부 한
+    줄이다."""
     from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
     from capa_simulation.components.target_level_field import ENTRY_EMPTY, entry_out_of_range
 
     app = _run(_database(tmp_path))
     assert not app.exception
+    app.button(key=LEVEL_FIELD.field_key).click().run()
+    assert not app.exception
+    entry = app.number_input(key=LEVEL_FIELD.entry_key)
+    assert (entry.min, entry.max) == (None, None)
     for typed, refusal in (
+        (-5.0, entry_out_of_range(-5)),
         (400.0, entry_out_of_range(400)),
         (49.4, entry_out_of_range(49)),
         (1e30, entry_out_of_range(1e30)),
