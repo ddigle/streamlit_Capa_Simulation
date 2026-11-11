@@ -221,7 +221,7 @@ Windows(PowerShell):
   합집합은 `type` 키로 좁히기, AppTest 노드는 `app.markdown` 같은 타입 있는 접근자나
   `isinstance(node, Caption)`, `.loc[r, c]` 를 숫자로 볼 때는 변환 없이 비교(숫자인지까지 본다).
 - 계약을 **일부러** 어기는 입력(검증 경로 시험)만 그 줄에 `# type: ignore[코드]` 를 단다.
-- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 여덟(사내 리뷰 `202610271800` 발견 2 에서 16개,
+- 시험은 사내 Windows 4관문에서도 돈다 — 사외 Linux 에서는 드러나지 않는 열(사내 리뷰 `202610271800` 발견 2 에서 16개,
   `202611041000` 발견 2 에서 9개가 깨졌다). ① 경로를 글자로 견줄 때는 `relative_to(...).as_posix()` 로 짓는다 — `str(Path)`·f-문자열은 Windows 에서 `\` 로
   잇는다(실패 메시지에만 쓰는 글은 그대로 둬도 된다). 스크립트가 경로를 OS 꼴로 찍으면 기대도 같은 상수로 짓는다.
   `str(경로.relative_to(…))` 는 그물이 막는다(`tests/test_js_runner.py`).
@@ -240,15 +240,23 @@ Windows(PowerShell):
   견주지 말고 git 이 적은 철자를 읽는다(`tests/test_apply_deploy_package.py` 의 `_tracked_spelling`). 파일을 만들지 않는 순수
   목록 시험은 그대로 둔다. ⑥ 프레임을 쌓는 동작(끌기 자동 스크롤)은 시간으로 기다리지 않고 조건으로 기다린다 — Windows
   타이머 해상도(약 15.6ms)에서는 같은 시간에 프레임이 훨씬 적다(`tests/edit_grid_node.py` 의 `until`, 프레임 간격 16ms 를
-  매개값으로 함께 돌린다). ⑦ 자식 프로세스 환경을 좁히는 시험은 `tests/child_env.py` 의 `narrow_child_env` 로 만든다 — Windows 파이썬은
+  매개값으로 함께 돌린다). 같은 단조 시계를 두 번 읽어 견주는 판정도 두 읽기가 같은 눈금이 될 수 있다 — 시각 간격 0
+  (`QUIET_SECONDS` 0 등)에 기대는 시험은 Linux 와 다른 갈래로 간다(`tests/test_object_sync_worker.py` 의 「저장이 깨운다」 는
+  두 DB 를 깨끗하게 하고 시작한다, 리뷰 `202611111500` 발견 1). ⑦ 자식 프로세스 환경을 좁히는 시험은 `tests/child_env.py` 의 `narrow_child_env` 로 만든다 — Windows 파이썬은
   `SYSTEMROOT` 없이 첫 줄에서 죽는다. ⑧ 스크립트의 `sys.stderr.reconfigure(encoding="utf-8")` 는 시험 안에서 pytest 붙잡기
   파일을 건드린다 — `errors` 가 strict 로 돌아가면 fd 2 에 들어온 현지 인코딩 한 바이트가 그 뒤 시험을 모두 setup 에서 깨뜨리므로
   `tests/capture_guard.py` 가 막는다(리뷰 `202611060842` 발견 1). 표준 오류에 현지 언어가 나갈 데몬 스레드 서버는 끊긴 연결을 조용히
-  넘기고 그 밖은 ASCII 한 줄로 알린다(`scripts/s3_mock_store.py` 의 `handle_error`). 사외 CI 의 둘째 작업
-  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 여덟을 사내보다 먼저 보인다 — 작업 단위
+  넘기고 그 밖은 ASCII 한 줄로 알린다(`scripts/s3_mock_store.py` 의 `handle_error`). ⑨ 남이 쥔 포트의 뜻이 다르다 — Linux 는
+  V6ONLY 0 인 `::` 하나가 IPv4 와일드카드까지 막지만 사내 Windows 에서는 임시 응답이 그 포트를 다시 잡았다(기제 미확인).
+  「포트를 못 잡는다」 를 단언하는 시험은 Linux 만 본다(`tests/test_container_stage.py`, 리뷰 `202611111500` 발견 1).
+  ⑩ 사내 PC 창에는 프록시 환경변수가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다 — 루프백 시험 서버로 가는 맨
+  `urllib.request.urlopen` 이 프록시로 가 403 을 받는다. 공용 `tests/conftest.py` 의 `_loopback_skips_proxy` 가 `NO_PROXY` ·
+  `no_proxy` 에 루프백 셋을 붙이고, 루프백 요청기는 `ProxyHandler({})` 로 짓는다(`tests/test_s3_mock_store.py`, 리뷰
+  `202611111500` 발견 2). 사외 CI 의 둘째 작업
+  `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 열을 사내보다 먼저 보인다 — 작업 단위
   `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux 조각을 모은 `verify-result` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
   판 본 뒤 굳힐지 다시 묻는다). 시험은 두 작업 모두 같은 수의 조각으로 돈다(`scripts/run_test_shard.py`) — 러너 한 대로는 시간 안에 끝나지
-  못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 판정은 밀려 취소된 판에서 빠지고(`!cancelled()` — `always()` 면 같은 커밋에 빨강과 초록이 함께 남는다) 조각이 끊기면 빨강이다 — 시험 단계 상한을 작업 상한보다 낮게 두어 시간 초과가 취소와 섞이지 않는다. 그 칸이 빨가면 이 여덟부터 본다. 러너 로캘은 영어라
+  못해 2026-10-25 뒤로 초록도 빨강도 나오지 않았다. 같은 번호 조각은 두 OS 에서 같은 파일이다. 판정은 밀려 취소된 판에서 빠지고(`!cancelled()` — `always()` 면 같은 커밋에 빨강과 초록이 함께 남는다) 조각이 끊기면 빨강이다 — 시험 단계 상한을 작업 상한보다 낮게 두어 시간 초과가 취소와 섞이지 않는다. 그 칸이 빨가면 이 열부터 본다. 러너 로캘은 영어라
   사내 한국어 로캘(cp949 · 한글 오류 글)은 흉내 내지 못한다. 계약은 `tests/test_ci_workflow.py` · `tests/test_run_test_shard.py`.
 
 (Windows 기준 — WSL 샌드박스 사정은 `docs/wsl_dev_environment.md` 2장.) Codex에서 `.venv\Scripts\python.exe`를 샌드박스 안에서 실행하면 가상환경이 참조하는
@@ -262,7 +270,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 개발 환경에서 걸리는 것:
 
-- pytest 를 여럿 동시에 돌릴 때는 각자 전용 `--basetemp` 를 준다 — 기본 임시 폴더(`pytest-of-<사용자>/pytest-N`)는
+- pytest 를 여럿 동시에 돌릴 때는 각자 전용 `--basetemp` 를 준다(조각 실행기는 `--basetemp-root`) — 기본 임시 폴더(`pytest-of-<사용자>/pytest-N`)는
   오래된 차례를 지워 서로의 폴더를 지울 수 있다. 임시 공간이 차서 전체 pytest 가 `OSError: [Errno 28]` 로 멈추면 코드
   결함이 아니다 — 끝난 작업의 찌꺼기만 지우고 다시 돌린다.
 - 샌드박스 안에서 `TMPDIR` 이 비면 파이썬 `tempfile` 은 실패하지 않고 저장소 루트로 내려간다 — 오류로 드러나지 않으니
