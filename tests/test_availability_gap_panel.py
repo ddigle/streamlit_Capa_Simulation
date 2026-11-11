@@ -276,6 +276,7 @@ def _panel_app() -> None:
         static_owned=None if st.session_state.get("missing_static", False) else static_owned,
         static_lent=None if st.session_state.get("missing_static", False) else static_lent,
         static_error="테스트 조회 실패" if st.session_state.get("missing_static", False) else None,
+        static_error_full=st.session_state.get("static_error_full"),
         span_bounds=(date(2026, 10, 1), date(2026, 10, 31))
         if st.session_state.get("short_span", False)
         else (date(2026, 9, 1), date(2026, 10, 31)),
@@ -613,6 +614,24 @@ def test_hidden_tab_skips_output_and_preserves_both_selections() -> None:
     assert app.selectbox(key=PROCESS_FILTER_KEY).value == "Etch"
     assert app.segmented_control(key=RESULT_VIEW_KEY).value == "분류별 내역"
     assert _value(app, ROW_SCHEDULE_AVAILABLE) == 6.0
+
+
+def test_the_static_error_detail_and_fingerprint_stay_the_original_text() -> None:
+    """`EQ-08` 은 전문만 화면 꼴(계산 멈춤 예시 행이 공정 표시명 — 2026-11-11 입력 점검 검토 보드 F7
+    (나))이고 「원본 오류」 칸과 지문은 표시명 없는 원문이다 — 표시명만 고쳐도 알림이 다시 서지
+    않는다(설계 규칙 UI-NTF-04 · UI-DAT-10)."""
+    shown = [
+        active_state(_run(missing_static=True, static_error_full=full), "EQ-08")
+        for full in ("예시 27.04 표시-A 양산", "예시 27.04 표시-B 양산")
+    ]
+
+    assert shown[0] is not None and shown[1] is not None
+    assert shown[0]["full"].endswith("— 예시 27.04 표시-A 양산")
+    assert shown[1]["full"].endswith("— 예시 27.04 표시-B 양산")
+    assert shown[0]["detail"] == shown[1]["detail"] == "테스트 조회 실패"
+    assert shown[0]["fp"] == shown[1]["fp"]
+    plain = active_state(_run(missing_static=True), "EQ-08")
+    assert plain is not None and plain["full"].endswith("— 테스트 조회 실패")
 
 
 def test_missing_static_keeps_dynamic_detail_and_explains_cross_check_limit() -> None:
