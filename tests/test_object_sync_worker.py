@@ -798,14 +798,22 @@ def test_the_loop_survives_what_a_cycle_raises(real_thread: Path) -> None:
 
 
 def test_a_save_wakes_the_thread(real_thread: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """깨끗하게 시작해 첫 확인 뒤 `WAKE_SECONDS` 를 쉬는 일꾼을 저장 하나가 깨워 올린다.
+
+    남은 표시가 있으면 올리기가 저장 없이도 일어나고, `QUIET_SECONDS` 0 에서는 첫 회차가 표시
+    시각과 같은 시계 눈금(Windows 약 15.6ms)이면 HEAD 확인 대신 올리기를 고른다.
+    """
     monkeypatch.setattr(worker_module, "QUIET_SECONDS", 0.0)
     paths = seed_pair(real_thread)
     sync_state.enable(paths.registry)
+    for name, path in paths.databases.items():
+        sync_state.adopt_clean(path, dataset=name)
     engine = FakeEngine(paths)
     worker = ObjectSyncWorker(engine)
     worker.start()
     try:
         assert _wait_for(lambda: engine.watched == 1)
+        assert engine.uploads == 0
         sync_state.mark_dirty(paths.databases["simulation"])
         assert _wait_for(lambda: engine.uploads == 1)
     finally:

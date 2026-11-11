@@ -20,6 +20,10 @@ from s3_mock_store import MockStore, _Server, start_mock  # noqa: E402
 
 NAMESPACE = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+# 가짜 S3 는 127.0.0.1 에서만 듣는다. 기본 `urlopen` 은 환경의 프록시를 따르므로
+# `NO_PROXY` 에 `127.0.0.1` 이 없는 창(사내 PC)에서는 루프백 요청이 프록시로 간다 —
+# `localhost` 는 `127.0.0.1` 을 덮지 않는다. 프록시를 보지 않는 요청기로 붙는다.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 @pytest.fixture()
@@ -61,7 +65,7 @@ def _signed(
 
 def _list(store: MockStore, endpoint: str, query: str) -> ElementTree.Element:
     request = _signed(store, endpoint, "GET", f"/{store.bucket}", query)
-    with urllib.request.urlopen(request, timeout=5) as answer:
+    with _DIRECT.open(request, timeout=5) as answer:
         return ElementTree.fromstring(answer.read())
 
 
@@ -105,7 +109,7 @@ def test_a_changed_query_fails_the_signature(mock: tuple[MockStore, str]) -> Non
     )
 
     with pytest.raises(urllib.error.HTTPError) as caught:
-        urllib.request.urlopen(tampered, timeout=5)
+        _DIRECT.open(tampered, timeout=5)
 
     assert caught.value.code == 403
 
@@ -116,7 +120,7 @@ def test_delete_answers_204_even_for_a_missing_key(mock: tuple[MockStore, str]) 
 
     for _ in range(2):
         request = _signed(store, endpoint, "DELETE", f"/{store.bucket}/a")
-        with urllib.request.urlopen(request, timeout=5) as answer:
+        with _DIRECT.open(request, timeout=5) as answer:
             assert answer.status == 204
 
     assert store.objects == {}
@@ -135,7 +139,7 @@ def test_objects_carry_a_time_the_test_can_set(mock: tuple[MockStore, str]) -> N
     )
     store.modified["a"] = moment - timedelta(days=9)
     head = _signed(store, endpoint, "HEAD", f"/{store.bucket}/a")
-    with urllib.request.urlopen(head, timeout=5) as answer:
+    with _DIRECT.open(head, timeout=5) as answer:
         assert answer.headers["Last-Modified"] == "Fri, 23 Oct 2026 00:00:00 GMT"
 
 
@@ -147,7 +151,7 @@ def test_a_fault_fires_after_its_count_on_its_prefix(mock: tuple[MockStore, str]
     def get() -> int:
         request = _signed(store, endpoint, "GET", f"/{store.bucket}/a/1")
         try:
-            with urllib.request.urlopen(request, timeout=5) as answer:
+            with _DIRECT.open(request, timeout=5) as answer:
                 return int(answer.status)
         except urllib.error.HTTPError as error:
             return error.code

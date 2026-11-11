@@ -184,6 +184,41 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     sso_runtime.reset()
 
 
+# 시험이 띄우는 가짜 서버(가짜 S3 · 가짜 IdP · 임시 응답 · 앱)에 붙는 루프백 이름.
+# urllib 은 IPv6 주소를 괄호 꼴(`[::1]`)로 맞춘다.
+LOOPBACK_NO_PROXY = ("127.0.0.1", "[::1]", "localhost")
+NO_PROXY_NAMES = ("NO_PROXY", "no_proxy")
+
+
+def with_loopback_no_proxy(value: str) -> str:
+    """`NO_PROXY` 값 뒤에 빠진 루프백 이름을 붙인다.
+
+    `*`(모두 우회)는 그대로 둔다 — urllib 은 값 전체가 `*` 일 때만 그 뜻으로 읽는다.
+    """
+    if value == "*":
+        return value
+    present = {part.strip().lower() for part in value.split(",")}
+    missing = [name for name in LOOPBACK_NO_PROXY if name not in present]
+    return ",".join(part for part in (value.strip().strip(","), *missing) if part)
+
+
+@pytest.fixture(autouse=True)
+def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`NO_PROXY` · `no_proxy` 에 루프백 셋을 덧붙여 루프백 요청이 창의 프록시를 거치지 않게 한다.
+
+    사내 PC 창에는 `HTTP(S)_PROXY` 가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다. 파이썬의
+    우회 판정은 이름을 글자 끝으로만 맞춰 `localhost` 가 `127.0.0.1` 을 덮지 않으므로, 127.0.0.1
+    에서 듣는 가짜 서버로 가는 요청이 프록시로 가 403 을 받는다.
+    있던 값은 두고 뒤에 붙인다. 두 이름을 다 쓴다 — Linux 의 urllib 는 소문자가 이기고, 한쪽만
+    있던 창은 다른 쪽도 그 값에서 시작한다. Windows 는 두 이름이 한 변수다. 환경변수라 시험이
+    띄우는 하위 프로세스(aws · 앱)까지 이어진다.
+    """
+    before = {name: os.environ.get(name, "") for name in NO_PROXY_NAMES}
+    fallback = next((value for value in before.values() if value.strip()), "")
+    for name, value in before.items():
+        monkeypatch.setenv(name, with_loopback_no_proxy(value if value.strip() else fallback))
+
+
 @pytest.fixture(autouse=True)
 def _without_internal_modules(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory

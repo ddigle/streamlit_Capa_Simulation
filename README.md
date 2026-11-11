@@ -659,7 +659,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | **배포·병행 개발** | |
 | `build_deploy_package.py` | 사내 배포 ZIP 을 만들고 금지 파일을 검사한다(미커밋 수정·`origin/main` 과 다른 HEAD·이미 있는 같은 stamp 태그·런북 7장 stamp·자리표·화면 확인 수가 어긋나면 멈춤) |
 | `build_site_index.py` | GitHub Pages 첫 화면(뿌리 `index.html` 자료 목록)을 `site/catalog.json` 으로 쓴다(`--check` 는 다르면 실패) |
-| `run_test_shard.py` | CI 시험 조각 실행기 — 시험 파일을 크기로 고르게 N 조각으로 나눠 그중 하나를 `pytest -q` 로 돈다(`--list` 는 파일만 찍는다) |
+| `run_test_shard.py` | 시험 조각 실행기(CI · 한 PC 동시) — 시험 파일을 크기로 고르게 N 조각으로 나눠 그중 하나를 pytest 로 돈다. 끝줄에 수가 서고(`-q` 는 `addopts` 하나) 캐시를 쓰지 않는다. `--basetemp-root <폴더>` 는 조각별 임시 폴더 `<폴더>/shard<k>`(저장소 밖 폴더), `--list` 는 파일만 찍는다 |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
 | `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
