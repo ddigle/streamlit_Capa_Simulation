@@ -276,9 +276,10 @@ def s3_upload(ctx: ModuleContext, name: str) -> S3Result:
     `managed` · 키 · 주소 · 버킷이 있음)가 아니면 「쓸 수 없음」 이다. 파일 하나는 `S3_MAX_BYTES`
     까지.
     """
-    if not _module_registry.is_valid_module_id(ctx.id):
-        return S3Result(ok=False, reason=_module_helpers.S3_NAME_REJECTED)
-    return _module_helpers.s3_upload(ctx.id, ctx.data_dir, name)
+    place = _s3_data_dir(ctx)
+    if isinstance(place, S3Result):
+        return place
+    return _module_helpers.s3_upload(ctx.id, place, name)
 
 
 def s3_download(ctx: ModuleContext, name: str) -> S3Result:
@@ -287,6 +288,21 @@ def s3_download(ctx: ModuleContext, name: str) -> S3Result:
     다 받은 뒤 한 번에 바꾼다 — 받다 끊겨도 있던 파일은 그대로다. 버킷에 없으면 「파일 없음」 이고
     로컬 파일은 건드리지 않는다. 그 밖은 `s3_upload` 와 같다.
     """
+    place = _s3_data_dir(ctx)
+    if isinstance(place, S3Result):
+        return place
+    return _module_helpers.s3_download(ctx.id, place, name)
+
+
+def _s3_data_dir(ctx: ModuleContext) -> Path | S3Result:
+    """S3 도우미가 쓸 데이터 자리(`ctx.data_dir` — 읽을 때 만든다).
+
+    틀린 id 는 그 자리를 만들기 전에 「이름 거절」 이고, 자리를 만들지 못하면 「파일 오류」 다 —
+    도우미는 예외로 화면을 깨지 않는다.
+    """
     if not _module_registry.is_valid_module_id(ctx.id):
         return S3Result(ok=False, reason=_module_helpers.S3_NAME_REJECTED)
-    return _module_helpers.s3_download(ctx.id, ctx.data_dir, name)
+    try:
+        return ctx.data_dir
+    except OSError as error:
+        return S3Result(ok=False, reason=_module_helpers.S3_FILE_ERROR, detail=type(error).__name__)

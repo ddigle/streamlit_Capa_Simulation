@@ -216,6 +216,50 @@ def test_a_hand_made_context_with_a_bad_id_cannot_leave_its_prefix(
     assert store.requests == []
 
 
+# ------------------------------------------------------------------ S3 — 예외 없이 결과로
+
+
+def test_a_data_place_that_cannot_be_made_is_a_file_error(
+    ctx: module_api.ModuleContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """데이터 자리(`ctx.data_dir` — 읽을 때 만든다)를 만들지 못해도 예외가 아니라 결과다."""
+    blocker = tmp_path / "blocker"
+    blocker.write_bytes(b"")
+    monkeypatch.setenv(module_registry.DATA_ROOT_ENV_VAR, str(blocker / "under-a-file"))
+
+    for result in (module_api.s3_upload(ctx, "demo.csv"), module_api.s3_download(ctx, "demo.csv")):
+        assert result == module_api.S3Result(False, "파일 오류", "NotADirectoryError")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="심볼릭 링크는 리눅스에서 본다")
+def test_a_link_loop_is_refused_as_a_name(ctx: module_api.ModuleContext, store: MockStore) -> None:
+    (ctx.data_dir / "loop").symlink_to(ctx.data_dir / "loop")
+
+    assert module_api.s3_upload(ctx, "loop").reason == "이름 거절"
+    assert module_api.s3_download(ctx, "loop/x.csv").reason == "이름 거절"
+    assert store.requests == []
+
+
+def test_a_place_that_cannot_be_looked_at_is_a_file_error(
+    ctx: module_api.ModuleContext, store: MockStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """받을 자리를 볼 수 없으면(권한) 「파일 오류」 이고 받기를 묻지 않는다."""
+    looked_at = Path.is_dir
+
+    def _refused(self: Path) -> bool:
+        if self.name == "locked.csv":
+            raise PermissionError(13, "demo")
+        return looked_at(self)
+
+    monkeypatch.setattr(Path, "is_dir", _refused)
+    store.objects[f"{KEY_PREFIX}locked.csv"] = b"x\n"
+
+    assert module_api.s3_download(ctx, "locked.csv") == module_api.S3Result(
+        False, "파일 오류", "PermissionError"
+    )
+    assert store.requests == []
+
+
 # ------------------------------------------------------------------ S3 — 쓸 수 없음
 
 
@@ -243,12 +287,19 @@ def test_without_the_operating_server_values_it_is_unavailable(
 
 
 def test_the_keys_come_from_the_started_config_not_the_environment(
-    ctx: module_api.ModuleContext, store: MockStore
+    ctx: module_api.ModuleContext, store: MockStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """운영 진입 파일은 기동 때 키를 환경에서 뺀다 — 도우미는 처음 읽은 한 벌로 붙는다."""
+    """운영 진입 파일은 기동 때 키를 환경에서 뺀다 — 도우미는 처음 읽은 한 벌로 붙는다.
+
+    기동은 사본 환경으로 하고(진짜 `os.environ` 에서 통합인증 비밀 · 명단을 빼 뒤 시험을 바꾸지
+    않게), 키를 빼는 일은 monkeypatch 로 따라 한다 — 시험이 끝나면 되돌아간다.
+    """
     runtime.reset()
-    runtime.start(os.environ)
-    assert names.ENV_S3_SECRET_KEY not in os.environ
+    environ = dict(os.environ)
+    runtime.start(environ)
+    assert names.ENV_S3_SECRET_KEY not in environ
+    monkeypatch.delenv(names.ENV_S3_ACCESS_KEY)
+    monkeypatch.delenv(names.ENV_S3_SECRET_KEY)
     (ctx.data_dir / "demo.csv").write_bytes(b"x\n")
 
     assert module_api.s3_upload(ctx, "demo.csv").ok

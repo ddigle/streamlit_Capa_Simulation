@@ -92,6 +92,8 @@ UNAVAILABLE_TEST_RUN: Final = "모듈 시험"
 UNAVAILABLE_NOT_MANAGED: Final = "동기화 모드 managed 아님"
 UNAVAILABLE_SETTINGS: Final = "설정 읽기 실패"
 UNAVAILABLE_NO_TARGET: Final = "키 · 주소 · 버킷 없음"
+# 「파일 오류」 의 자세히 — 받을 자리에 폴더가 있다(그 밖은 예외 종류 이름).
+S3_DETAIL_FOLDER: Final = "폴더가 있음"
 # 「전송 실패」 의 자세히 — `s3_small` 의 까닭 분류 → 고정 낱말.
 _TRANSFER_LABELS: Final = {
     s3_small.KIND_UNREACHABLE: "주소에 닿지 못함",
@@ -228,15 +230,25 @@ def valid_s3_name(name: object) -> bool:
     )
 
 
-def _local_path(module_id: str, data_dir: Path, name: object) -> Path | None:
-    """`data_dir` 아래 그 이름의 자리. 꼴이 틀렸거나 따라간 자리(심볼릭 링크)가 밖이면 None."""
+def _local_path(module_id: str, data_dir: Path, name: object) -> Path | S3Result:
+    """`data_dir` 아래 그 이름의 자리, 또는 거절한 결과.
+
+    꼴이 틀렸거나 따라간 자리(심볼릭 링크)가 밖이거나 링크가 고리를 이루면 「이름 거절」, 경로를
+    따라가다 막히면(권한 등) 「파일 오류」 다.
+    """
     if not module_registry.is_valid_module_id(module_id) or not valid_s3_name(name):
-        return None
+        return _failed(S3_NAME_REJECTED)
     assert isinstance(name, str)
-    root = data_dir.resolve()
-    place = (root / name).resolve()
+    try:
+        root = data_dir.resolve()
+        place = (root / name).resolve()
+    except RuntimeError:
+        # 3.10 의 `Path.resolve` 는 링크 고리를 `RuntimeError` 로 알린다.
+        return _failed(S3_NAME_REJECTED)
+    except OSError as error:
+        return _failed(S3_FILE_ERROR, type(error).__name__)
     if place == root or not place.is_relative_to(root):
-        return None
+        return _failed(S3_NAME_REJECTED)
     return place
 
 
@@ -274,8 +286,8 @@ def _transfer_failure(module_id: str, failure: s3_small.S3Failure, action: str) 
 def s3_upload(module_id: str, data_dir: Path, name: object) -> S3Result:
     """`data_dir/<name>` 파일 하나를 버킷 `modules/<id>/<name>` 으로 올린다(있으면 덮는다)."""
     place = _local_path(module_id, data_dir, name)
-    if place is None:
-        return _failed(S3_NAME_REJECTED)
+    if isinstance(place, S3Result):
+        return place
     assert isinstance(name, str)
     target, unavailable = _s3_target()
     if target is None:
@@ -311,14 +323,17 @@ def s3_download(module_id: str, data_dir: Path, name: object) -> S3Result:
     없으면 「파일 없음」 이고 로컬 파일은 건드리지 않는다.
     """
     place = _local_path(module_id, data_dir, name)
-    if place is None:
-        return _failed(S3_NAME_REJECTED)
+    if isinstance(place, S3Result):
+        return place
     assert isinstance(name, str)
     target, unavailable = _s3_target()
     if target is None:
         return _failed(S3_UNAVAILABLE, unavailable)
-    if place.is_dir():
-        return _failed(S3_FILE_ERROR, "폴더가 있음")
+    try:
+        if place.is_dir():
+            return _failed(S3_FILE_ERROR, S3_DETAIL_FOLDER)
+    except OSError as error:
+        return _failed(S3_FILE_ERROR, type(error).__name__)
     try:
         found = s3_small.get_object(
             target,
