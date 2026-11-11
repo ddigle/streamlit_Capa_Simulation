@@ -376,12 +376,17 @@ def panel_style() -> str:
     group = f'{groups} [class*="st-key-{GROUP_KEY_PREFIX}"]'
     rules = f".st-key-{RULES_KEY}"
     link = f'{groups} [data-testid="stBaseButton-tertiary"]'
+    # 묶음 CSV 내려받기도 글자 단추 꼴이다(시안 「CSV」 — 공용 내려받기 단추를 이 칸에서만 덮는다).
+    download = f'{groups} [data-testid="stDownloadButton"] button'
     return (
         "<style>"
         f"{group} {{ padding: 0.45rem 0.1rem; border-bottom: 1px solid {tokens.BORDER}; }}"
         f"{rules} {{ padding: 0.45rem 0.1rem 0; }}"
         f"{link} {{ color: {tokens.ACCENT}; font-weight: 700; min-height: 0; padding: 0 0.15rem; }}"
         f"{link} p {{ font-size: 0.75rem; font-weight: 700; white-space: nowrap; }}"
+        f"{download} {{ border: none; background: none; color: {tokens.ACCENT}; min-height: 0; "
+        "padding: 0 0.15rem; }"
+        f"{download} p {{ font-size: 0.75rem; font-weight: 700; white-space: nowrap; }}"
         f'{group} [data-testid="stDataFrame"] {{ margin-top: 0.3rem; }}'
         "</style>"
     )
