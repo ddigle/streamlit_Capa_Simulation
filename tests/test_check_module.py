@@ -1126,8 +1126,8 @@ def test_m20_is_a_warning_that_keeps_the_module_passing(
 
 
 # 자격 · 비밀(2026-11-12 사용자 결정 「도우미 함수로」) — 계정 · 토큰 · 키는 코어가 쥐고 모듈은
-# 도우미만 부른다. 환경변수 이름은 글자 전체가 이름 꼴일 때, 토큰 파일 자리는 글자 안 어디서든
-# 잡는다.
+# 도우미만 부른다. 환경변수 이름은 글자 전체가 이름 꼴일 때, 토큰 파일 자리는 경로 마디일 때
+# 잡는다(열 이름 · 설명 글 안의 낱말은 아니다 — 오류라 시험을 막으므로 넓게 잡지 않는다).
 @pytest.mark.parametrize(
     "body",
     [
@@ -1143,6 +1143,9 @@ def test_m20_is_a_warning_that_keeps_the_module_passing(
         'TOKEN = "/config/.credential/bigdataquery.token.demo"\n',
         'from pathlib import Path\nFOLDER = Path("/config") / ".credential"\n',
         'NAME = "bigdataquery.token.demo"\n',
+        'user = "demo"\nNAME = f"bigdataquery.token.{user}"\n',
+        'FOLDER = "C:\\\\Users\\\\demo\\\\.credential"\n',
+        'FOLDER = "~/.credential/"\n',
     ],
 )
 def test_m21_blocks_credential_names_and_token_places(tmp_path: Path, body: str) -> None:
@@ -1157,6 +1160,12 @@ def test_m21_blocks_credential_names_and_token_places(tmp_path: Path, body: str)
         'COLUMN = "aws"\n',
         'NAME = "credentials.csv"\n',
         'NAME = "MY_AWS_KEY"\n',
+        'SQL = "SELECT * FROM db.credential_log"\n',
+        '"""토큰(.credential) 을 읽지 않는다."""\n',
+        'NAME = "user.credentials"\n',
+        'NAME = "demo/.credentials/x"\n',
+        'TEXT = "bigdataquery.token 은 코어가 쥔다"\n',
+        'COLUMN = "bigdataquery.tokens"\n',
     ],
 )
 def test_m21_leaves_other_text_alone(tmp_path: Path, body: str) -> None:

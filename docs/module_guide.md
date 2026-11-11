@@ -1169,7 +1169,7 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | M18 | 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 인자에 글자 상수(`"rerun"` · `"ignore"`)도 `<무엇>.callback(…)` 호출도 아닌 값이 옴 | 오류 |
 | M19 | 폐기 예정 Streamlit 인자 — `use_container_width=`(`width="stretch"` · `width="content"` 로) | 오류 |
 | M20 | 닫을 수 없는 팝업 — `st.dialog(…)` 의 `dismissible=` 에 `True` 가 아닌 값(`False` · 변수). 처음 들어온 사람의 입장 화면 밑에 숨어 앱 화면을 묶는다(4장) | 경고 |
-| M21 | 자격 · 비밀 — 글자 전체가 `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름(대소문자 무시, 앞뒤 `$` · `%` · `{}` 표지와 f-문자열의 앞 상수 포함), 글자 안의 토큰 파일 자리 `.credential` · `bigdataquery.token`. 시험 파일도 같다. 글자로 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다 — 계정 · 토큰 · 키는 코어가 쥐고 모듈은 도우미(3-10)를 쓴다 | 오류 |
+| M21 | 자격 · 비밀 — 글자 전체가 `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름(대소문자 무시라 같은 꼴의 데이터 열 이름 `aws_region` 도 걸린다, 앞뒤 `$` · `%` · `{}` 표지와 f-문자열의 앞 상수 포함), 경로 마디로 쓴 토큰 파일 자리 — `.credential` 마디 · `bigdataquery.token` 으로 시작하는 마디(역슬래시 꼴 포함 — 열 이름 · 설명 글 안의 낱말 `db.credential_log` 는 아니다). 시험 파일도 같다. 글자로 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다 — 계정 · 토큰 · 키는 코어가 쥐고 모듈은 도우미(3-10)를 쓴다 | 오류 |
 
 점검 출력의 꼴(합성 예):
 

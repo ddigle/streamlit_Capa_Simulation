@@ -200,16 +200,22 @@ _KERNEL_PATTERN: Final = re.compile(r"(?<![\w.\-])/proc/")
 
 # 자격 · 비밀(M21) — 2026-11-12 사용자 결정 「도우미 함수로」: BigDataQuery 요청자 계정 · 토큰과
 # S3 키는 코어가 쥐고 모듈은 창구 도우미만 부른다. 그 환경변수 이름(글자 전체가 이름 꼴 — `$` ·
-# `%` · `{}` 표지 허용, 대소문자 무시 — Windows 환경변수는 대소문자를 가리지 않는다)과 BigDataQuery
-# 토큰 파일 자리를 막는다. 글자로 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다(방어선은 PR
-# 점검 — 런북 4-6). 시험 파일도 같다. `check_module.py` 는 모듈 시험의 환경에서 같은 이름의 변수를
-# 뺀다.
+# `%` · `{}` 표지 허용, 대소문자 무시 — Windows 환경변수는 대소문자를 가리지 않는다. 그래서 같은 꼴의
+# 데이터 열 이름도 걸린다)과 BigDataQuery 토큰 파일 자리를 막는다. 토큰 파일 자리는 경로 마디로만
+# 잡는다 — 마디 전체가 `.credential`, 또는 `bigdataquery.token` 으로 시작하고 뒤가 `.<계정>` · 끝인
+# 마디(역슬래시는 `/` 로 읽는다). 열 이름 · 설명 글 안의 낱말(`db.credential_log` · `(.credential)`)은
+# 걸지 않는다. 글자로 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다(방어선은 PR 점검 — 런북 4-6).
+# 시험 파일도 같다. `check_module.py` 는 모듈 시험의 환경에서 같은 이름의 변수를 뺀다.
 CREDENTIAL_ENV_PREFIXES: Final = ("CAPA_BDQ_", "CAPA_S3_", "AWS_", "JWT_SECRET", "ADFS_")
 _CREDENTIAL_NAME: Final = re.compile(
     r"[$%{]*(?P<name>(?:" + "|".join(CREDENTIAL_ENV_PREFIXES) + r")[A-Z0-9_]*)[}%]*",
     re.IGNORECASE,
 )
-CREDENTIAL_FILE_MARKERS: Final = (".credential", "bigdataquery.token")
+_CREDENTIAL_FILE_PATTERNS: Final = (
+    (".credential", re.compile(r"(?:^|/)\.credential(?:/|$)")),
+    ("bigdataquery.token", re.compile(r"(?:^|/)bigdataquery\.token(?:[./]|$)")),
+)
+CREDENTIAL_FILE_MARKERS: Final = tuple(marker for marker, _ in _CREDENTIAL_FILE_PATTERNS)
 
 _BACKGROUND_IMPORTS: Final = frozenset(
     {"threading", "_thread", "multiprocessing", "subprocess", "signal"}
@@ -827,8 +833,10 @@ def credential_marker(text: str) -> str | None:
     found = _CREDENTIAL_NAME.fullmatch(text.strip())
     if found is not None:
         return found["name"]
-    lowered = text.lower().replace("\\", "/")
-    return next((marker for marker in CREDENTIAL_FILE_MARKERS if marker in lowered), None)
+    lowered = text.strip().lower().replace("\\", "/")
+    return next(
+        (marker for marker, pattern in _CREDENTIAL_FILE_PATTERNS if pattern.search(lowered)), None
+    )
 
 
 def _check_imports(tree: ast.Module, context: _FileContext) -> None:
