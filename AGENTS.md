@@ -3104,9 +3104,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소이고 계산 캐시 키·`content_token` 에는 넣지 않는다.
 - `src/capa_simulation/components/stop_examples.py` — 계산 멈춤 글 속 예시 키(서비스 글의 `예시 [{…}]` dict 꼴)를 화면 글을
   지을 때만 「YY.MM 공정 표시명 양산구분」 으로 바꾼다(`readable_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나), 설계 규칙
-  UI-DAT-10). 월 → 공정 → 양산구분이 앞이고 그 밖의 칸(제품정보 · 걸린 값)은 서비스 글 차례대로 값만 뒤에, 공정은 같은 예시 묶음
-  안에서 `unique_format_func` 로 짓는다(겹치면 「표시명 (원본)」). 읽지 못한 예시(`nan` 따위 · dict 아닌 목록 · 빈 목록)는 원문
-  그대로다. 물결표 막기보다 먼저 부른다. 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 가는 글은 `markdown_examples` 로
+  UI-DAT-10). 월 → 공정 → 양산구분이 앞이고 그 밖의 칸(제품정보 · 걸린 값)은 서비스 글 차례대로 값만 뒤에, 공정은 선택 상자와 같은
+  판정(`unique_format_func`)으로 짓는다 — 표시명이 다른 공정의 원본 이름과 겹치면 「표시명 (원본)」 이고, 견주는 공정은 같은 예시
+  묶음의 공정과 이 세션에 불러온 리비전의 보유 공정(`RQ_MODULE` 공정 — Admin `Proc Rename` 겹침 경고 `AD-06` 과 같은 범위,
+  `_owned_processes`)이다(2026-11-11 다음 배포 물음 보드 「F7 뒤 ③」 (나)). 보유 공정은 표시명이 있고 예시가 있을 때만 세션 칸에서
+  읽고(DB 를 열지 않는다), 실행 문맥이 없거나 불러온 리비전이 없으면 예시 묶음 안에서만 가른다. 읽지 못한 예시(`nan` 따위 · dict
+  아닌 목록 · 빈 목록)는 원문 그대로다. 물결표 막기보다 먼저 부른다. 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 가는 글은 `markdown_examples` 로
   짓는다 — 예시 칸 값(공정 표시명 · 원본 이름 · 그 밖의 칸 값)을 `literal_markdown` 으로 막고(표시명도 사람 글 — 9장) 글 전체의
   물결표를 막는다. 앱이 지은 월 `YY.MM` 은 막지 않는다. 평문 자리(`bootstrap_error_message(markdown=False)`)는 막지 않은 글이다.
   부르는 자리: `page_bootstrap.calculation_stop_notice(labels=)` · `bootstrap_error_message(labels=)`(멈춘 계산 화면 넷과 계산을 먼저

@@ -23,6 +23,8 @@ import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.components.required_shortening_panel as shortening_panel
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.components.space_shortening_view as space_shortening_view
+import capa_simulation.components.stop_examples as stop_examples
+import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
@@ -55,15 +57,84 @@ def test_an_example_reads_month_process_and_mass_type_in_that_order() -> None:
     assert readable_examples(text, LABELS) == HEAD + "예시 27.04 절단 ER · 28.01 절단 양산"
 
 
+CLASH_RECORDS = [
+    {"생산계획년월": 202601, "공정": "DEMO-A", "양산구분": "양산"},
+    {"생산계획년월": 202601, "공정": "DEMO-B", "양산구분": "양산"},
+]
+
+
 def test_a_display_name_equal_to_another_example_splits_with_the_original() -> None:
-    """같은 예시 묶음의 다른 공정 원본과 표시명이 겹치면 「표시명 (원본)」 이다(공용 정책)."""
-    records = [
-        {"생산계획년월": 202601, "공정": "DEMO-A", "양산구분": "양산"},
-        {"생산계획년월": 202601, "공정": "DEMO-B", "양산구분": "양산"},
+    """같은 예시 묶음의 다른 공정 원본과 표시명이 겹치면 「표시명 (원본)」 이다(공용 정책). 실행
+    문맥이 없으면(단위 시험) 보유 공정을 읽지 않아 묶음 안에서만 가른다."""
+    assert examples_text(CLASH_RECORDS, LABELS) == "26.01 DEMO-B (DEMO-A) 양산 · 26.01 DEMO-B 양산"
+    assert examples_text(CLASH_RECORDS[:1], LABELS) == "26.01 DEMO-B 양산"
+
+
+def test_a_display_name_equal_to_an_owned_process_splits_outside_the_examples_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표시명이 예시 묶음 밖 보유 공정(이 세션에 불러온 리비전의 `RQ_MODULE` 공정)의 원본 이름과
+    겹쳐도 「표시명 (원본)」 이다 — DEMO-A → 「DEMO-B」 이고 원본 DEMO-B 가 따로 있으면 A 만 든
+    예시도 「DEMO-B (DEMO-A)」(2026-11-11 다음 배포 물음 보드 「F7 뒤 ③」 (나), 선택 상자와 같은
+    판정).
+    겹치지 않는 표시명은 가르지 않고, 보유 공정 밖 예시 공정도 보이지 않는 글자 없이 그대로다."""
+    monkeypatch.setattr(stop_examples, "_owned_processes", lambda: ("DEMO-B", "DEMO-SAW", "DEMO-C"))
+    alone = CLASH_RECORDS[:1]
+    others = [
+        {"생산계획년월": 202704, "공정": "DEMO-SAW", "양산구분": "ER"},
+        {"생산계획년월": 202704, "공정": "DEMO-OUT", "양산구분": "양산"},
     ]
 
-    assert examples_text(records, LABELS) == "26.01 DEMO-B (DEMO-A) 양산 · 26.01 DEMO-B 양산"
-    assert examples_text(records[:1], LABELS) == "26.01 DEMO-B 양산"
+    assert examples_text(alone, LABELS) == "26.01 DEMO-B (DEMO-A) 양산"
+    assert (
+        examples_text(alone, LABELS)
+        == "26.01 " + LABELS.unique_format_func(["DEMO-A", "DEMO-B"])("DEMO-A") + " 양산"
+    )
+    assert examples_text(others, LABELS) == "27.04 절단 ER · 27.04 DEMO-OUT 양산"
+    assert "\u2060" not in examples_text([*alone, *others], LABELS)
+    assert markdown_examples(HEAD + "예시 " + repr(alone), LABELS) == (
+        HEAD + "예시 26.01 DEMO\\-B \\(DEMO\\-A\\) 양산"
+    )
+
+
+def test_owned_processes_are_read_only_with_display_names_and_examples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """보유 공정은 표시명이 있고 예시가 있을 때만 읽는다 — 표시명이 없으면(규칙 0건 · 표시명 없이
+    짓는 자리) 읽지 않고 글자도 원본 그대로다."""
+
+    def refuse() -> tuple[str, ...]:
+        raise AssertionError("보유 공정을 읽었습니다")
+
+    monkeypatch.setattr(stop_examples, "_owned_processes", refuse)
+    text = HEAD + "예시 " + repr(CLASH_RECORDS[:1])
+
+    assert readable_examples(text) == HEAD + "예시 26.01 DEMO-A 양산"
+    assert readable_examples(text, ProcessLabels()) == HEAD + "예시 26.01 DEMO-A 양산"
+    assert readable_examples(HEAD + "예시 없음", LABELS) == HEAD + "예시 없음"
+
+
+def test_owned_processes_come_from_the_loaded_revision_module_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """보유 공정은 이 세션에 불러온 리비전의 `RQ_MODULE` 공정이다(Admin 겹침 경고 `AD-06` 과 같은
+    범위). 실행 문맥이 없거나 불러온 리비전이 없으면 빈 값이다."""
+    assert stop_examples._owned_processes() == ()
+
+    monkeypatch.setattr(stop_examples, "get_script_run_ctx", lambda **_kwargs: object())
+    module = pd.DataFrame({"공정": ["DEMO-B", None, "DEMO-C", "DEMO-B"], "모듈수": [1, 1, 2, 1]})
+    monkeypatch.setattr(
+        reference_cache,
+        "get_effective_reference_tables",
+        lambda: {"RQ_MODULE": module},
+    )
+    assert stop_examples._owned_processes() == ("DEMO-B", "DEMO-C")
+
+    def no_revision() -> dict[str, pd.DataFrame]:
+        raise reference_cache.NoActiveRevision("없음")
+
+    monkeypatch.setattr(reference_cache, "get_effective_reference_tables", no_revision)
+    assert stop_examples._owned_processes() == ()
 
 
 def test_other_keys_and_the_value_follow_in_service_order() -> None:

@@ -16,8 +16,14 @@ calculation_stop_notice` — HOME · 계산 화면 · 입력 점검 풍선) · �
 
 - 한 예시는 월 → 공정 → 양산구분 차례로 앞에 두고, 그 밖의 칸(제품정보 · 걸린 값 따위)은 서비스 글의
   차례대로 뒤에 값만 잇는다. 월은 `YY.MM`(`month_label` — 여섯 자리 달이 아니면 글자 그대로), 공정은
-  공용 표시명이고 같은 예시 묶음의 다른 공정과 겹치면 「표시명 (원본)」(`ProcessLabels.
-  unique_format_func`)이다. 표시명을 주지 않으면 원본 이름이다.
+  공용 표시명이다. 표시명을 주지 않으면 원본 이름이다.
+- 표시명이 **다른 공정의 원본 이름과 겹치면** 「표시명 (원본)」 이다 — 선택 상자와 같은 판정
+  (`ProcessLabels.unique_format_func`)이고, 견주는 공정은 같은 예시 묶음의 공정과 이 세션에 불러온
+  리비전의 보유 공정(`RQ_MODULE` 공정 — Admin `Proc Rename` 겹침 경고 `AD-06` 「보유 공정」 과 같은
+  범위, `_owned_processes`)이다(2026-11-11 다음 배포 물음 보드 「F7 뒤 ③」 (나) — 규칙
+  DEMO-A → 「DEMO-B」 이고 원본 DEMO-B 가 따로 있으면 A 만 든 예시도 「DEMO-B (DEMO-A)」). 보유
+  공정은 표시명이 있고 예시가 있을 때만 읽는다 — 표시명이 없으면 읽지 않고 글자도 원본 그대로다.
+  실행 문맥이 없거나(배경 스레드 · 단위 시험) 불러온 리비전이 없으면 예시 묶음 안에서만 가른다.
 - 예시를 파이썬 글자 꼴로 읽지 못하면(`nan` 따위) 그 예시는 원문 그대로 둔다 — 화면 글을 짓다 멈추지
   않는다. 빈 목록 · dict 가 아닌 목록(`예시 ['P~Q']`)도 그대로다.
 - 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 가는 글은 `markdown_examples` 로
@@ -37,6 +43,9 @@ import warnings
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Final
 
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+import capa_simulation.io.reference_cache as reference_cache
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.services.month_columns import month_label
 
@@ -52,6 +61,8 @@ MONTH_KEY: Final = "생산계획년월"
 PROCESS_KEY: Final = "공정"
 # 앞에 두는 칸 — 고른 꼴 「YY.MM 공정 표시명 양산구분」 의 차례다.
 FRONT_KEYS: Final = (MONTH_KEY, PROCESS_KEY, "양산구분")
+# 보유 공정을 읽는 기준정보 표 — Admin `Proc Rename` 겹침 경고(`AD-06`)의 「보유 공정」 과 같다.
+OWNED_PROCESS_TABLE: Final = "RQ_MODULE"
 
 _Record = Mapping[str, object]
 
@@ -100,13 +111,32 @@ def examples_text(
     escape: Callable[[str], str] | None = None,
 ) -> str:
     """예시 묶음 하나의 화면 글 — 예시마다 「YY.MM 공정 양산구분 …」 를 ` · ` 로 잇는다. `escape` 를
-    주면 칸 값마다 건다(앱이 지은 `YY.MM` 은 빼고)."""
-    processes = [
-        str(record[PROCESS_KEY]) for record in records if record.get(PROCESS_KEY) is not None
-    ]
-    process: Callable[[object], str] = labels.unique_format_func(processes) if labels else _plain
+    주면 칸 값마다 건다(앱이 지은 `YY.MM` 은 빼고). 공정 표시명이 다른 공정의 원본 이름(같은 묶음의
+    공정 · 보유 공정)과 겹치면 「표시명 (원본)」 이다."""
+    process: Callable[[object], str] = _plain
+    if labels:
+        processes = [
+            str(record[PROCESS_KEY]) for record in records if record.get(PROCESS_KEY) is not None
+        ]
+        process = labels.unique_format_func([*processes, *_owned_processes()])
     keep = escape or _as_is
     return EXAMPLE_SEPARATOR.join(_record_text(record, process, keep) for record in records)
+
+
+def _owned_processes() -> tuple[str, ...]:
+    """이 세션에 불러온 리비전의 보유 공정(`RQ_MODULE` 공정) — 예시 속 표시명이 겹치는지 견줄 원본
+    이름이다. 실행 문맥이 없거나(배경 스레드 · 단위 시험) 불러온 리비전이 없으면 빈 값이다(예시 묶음
+    안에서만 가른다). 세션 칸을 읽을 뿐 DB 를 열지 않는다."""
+    if get_script_run_ctx(suppress_warning=True) is None:
+        return ()
+    try:
+        tables = reference_cache.get_effective_reference_tables()
+    except reference_cache.NoActiveRevision:
+        return ()
+    owned = tables.get(OWNED_PROCESS_TABLE)
+    if owned is None or PROCESS_KEY not in owned.columns:
+        return ()
+    return tuple(str(value) for value in owned[PROCESS_KEY].dropna().unique())
 
 
 def _records_at(text: str, opening: int) -> tuple[list[_Record], int] | None:
