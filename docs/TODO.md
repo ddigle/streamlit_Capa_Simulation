@@ -1637,11 +1637,13 @@
 
 - (2026-11-11) **산출 결과 표 제목 줄 높이 · 겹친 표시명 파일 이름 — 다음 배포 물음 보드 C9 뒤 (나) · B3 뒤 (나)**(「다음 배포 물음 11-11」 보드
   `https://claude.ai/artifact/VB98KF7QZBgHfvMxFEBcPt`, 가지 `night/nq-dl-1111` — `e546e76` · `62dd1fe`, 다음 배포 몫. 전 · 후 그림과 잰 값은 저장소 밖
-  `~/projects/Deploy/worklog/next-1111/answers-fix/`(`shots/dl-*` · `dl/out/dl-before.json` · `dl/out/dl-after.json`), 사본 앱 슬롯 31 · 합성 표본 — 샘플 관측).
+  `~/projects/Deploy/worklog/next-1111/answers-fix/`(`shots/dl-*` · `dl/out/dl-before.json` · `dl/out/dl-after.json` ·
+  독립 검토 `dl-review/out/rvdl-head.json`), 사본 앱 슬롯 31 · 32 · 합성 표본 — 샘플 관측).
   ① **C9** 표 제목 줄(`table_toolbar.table_heading_row`)은 곁에 맨 「CSV 다운로드」(35px) · 「내려받기 ▾」 메뉴(28px 그대로 — 카드대로 받음) · 「표시 범위」
   칸 무엇이 서든 35px 하나다 — 줄 key `table_heading_row_key(CSV key)` 와 앱 전체 서식 한 번 `TABLE_HEADING_ROW_STYLE`(min-height — 좁은 창에서 접힌 줄은
   그 높이 그대로). 산출 결과 대당 Capa · 소요대수 상세 끔 줄 28.4 → 35 · 표 윗선 203.9 → 210.5px 로 소요대수 상세 켬 · 확보율(210.5 그대로)과 같아 탭을
-  오가거나 상세를 켜고 끌 때 표가 오르내리지 않는다(1600 · 1283 라이트 같음). 같은 도우미를 쓰는 표준 목표 「주차별 …」 · 생산 계획 「환산」 제목 줄은
+  오가거나 상세를 켜고 끌 때 표가 오르내리지 않는다(1600 · 1283 · 1100 라이트 · 1600 다크 같음 — 1100 · 다크는
+  슬롯 32 독립 검토). 같은 도우미를 쓰는 표준 목표 「주차별 …」 · 생산 계획 「환산」 제목 줄은
   맨 CSV 35px 라 줄 35 · 표 윗선 217.9 · 224.5 그대로, 이 도우미 밖인 공정 Capa 상세 · Static 대비 일정 메뉴 줄은 28.4 그대로다. ② **B3** 공정 Capa 상세
   시트 엑셀 · 「이 공정 단축 일정 CSV」 파일 이름 끝 공정은 공정 값 칸 · 고르기 판과 같은 글자다 — 이 화면 선택지에서 원본이 다른 공정과 표시명이
   겹치면 「표시명 (원본)」(`ProcessLabels.unique_format_func` 그대로 — Q2-18, 못 쓰는 글자는 `file_name_part`). 합성 표본 「AVI」 →
