@@ -11,6 +11,8 @@
 - `.wal` 만 앞뒤로 보면 복사 도중에 저장과 체크포인트가 다 끝난 사본을 놓친다 — 크기·시각도 본다.
 - 6) 적용 전 사본의 대조 줄은 사본에 적용 기록을 쓴다 — `PYTHONPATH` 가 안 먹으면 운영 트리의 적용
   기록을 덮어 다음 적용이 「이미 적용했습니다」로 멈추므로 git 트리면 쓰지 않고 멈춰야 한다.
+- 사본 DB 를 여는 줄(3) · a · b · c)은 사용자가 별도 창에서 친다 — 권한 템플릿이 그 줄을 묻지 않고
+  통과시키면 에이전트가 사내 DB 를 읽게 된다.
 """
 
 import hashlib
@@ -156,72 +158,89 @@ def _rule_matches(rule: str, command: str) -> bool:
     return re.fullmatch(".*".join(re.escape(part) for part in body.split("*")), command) is not None
 
 
-def _copy_check_rules() -> list[str]:
+def _shell_rules() -> list[str]:
     allow = json.loads(TEMPLATE.read_text(encoding="utf-8"))["permissions"]["allow"]
-    return [rule for rule in allow if any(f"scripts/{name}" in rule for name in COPY_CHECKS)]
+    return [rule for rule in allow if rule.startswith(("Bash(", "PowerShell("))]
 
 
-def test_the_settings_template_allows_the_copy_checks_only_on_the_copy_path_shape() -> None:
-    """사본 점검 세 줄(6-3 a · b)은 런북의 부르는 줄과 그것을 실제 폴더로 바꾼 줄에서만 묻지 않는다
-    (2026-11-05 사용자 답). 스크립트 이름만으로 여는 규칙이 없고, 셸 둘이 쌍이다."""
-    rules = _copy_check_rules()
-
-    assert len(rules) == 2 * len(COPY_CHECKS)
-    assert not [rule for rule in rules if ":*" in rule]
-    assert sorted(rule.split("(")[0] for rule in rules) == ["Bash"] * 3 + ["PowerShell"] * 3
-    for name in COPY_CHECKS:
-        script_rules = [rule for rule in rules if f"scripts/{name}" in rule]
-        calls = [
-            line
-            for line in _code_lines(_copy_e2e())
-            if f"scripts/{name}" in line and line.startswith("uv run")
-        ]
-        assert calls, name
-        for call in calls:
-            real_folder = (
-                call.replace("$e2e", "C:/Users/someone/e2e_copy/202611051200")
-                .replace("$HOME", "C:/Users/someone")
-                .replace("\\", "/")
-            )
-            for rule in script_rules:
-                assert _rule_matches(rule, call), (rule, call)
-                assert _rule_matches(rule, real_folder), (rule, real_folder)
-                assert _rule_matches(rule, real_folder.replace('"', "")), (rule, real_folder)
-
-
-def test_the_settings_template_keeps_asking_for_any_other_path_of_the_copy_checks() -> None:
-    """운영 자리 꼴 · 사본 폴더 이름이 없는 경로 · 인자 없는 줄은 묻는다. 스크립트 자신의 거절은
-    `settings.is_operational_database_place` 시험들이 본다."""
-    prefix = "uv run --no-sync python scripts/"
-    asked = (
-        f"{prefix}inspect_revision_calculations.py --database data/capa_simulation.duckdb"
-        " --output revisions.md",
-        f'{prefix}inspect_revision_calculations.py --database "data\\capa_simulation.duckdb"'
-        " --output revisions.md",
-        f"{prefix}inspect_revision_calculations.py --database C:/copy/capa_simulation.duckdb"
-        " --output revisions.md",
-        f"{prefix}inspect_revision_calculations.py --output e2e.md",
-        f"{prefix}benchmark_home.py",
-        f"{prefix}benchmark_home.py --data-dir data --output home.json",
-        f"{prefix}benchmark_upeh_assumption.py --data-dir data --output upeh.json",
+def _as_real_folder(line: str) -> str:
+    return (
+        line.replace("$e2e", "C:/Users/someone/e2e_copy/202611051200")
+        .replace("$HOME", "C:/Users/someone")
+        .replace("\\", "/")
     )
 
-    for command in asked:
-        assert not [rule for rule in _copy_check_rules() if _rule_matches(rule, command)], command
+
+def _database_opening_lines() -> list[str]:
+    """런북이 사용자 별도 창에 주는, 사내 DB 를 여는 줄 — 6-2 · 6-3 a · b · c · 8-0 의 펜스 줄과
+    그것을 실제 폴더로 바꾼 줄, 그리고 걷은 BigDataQuery 줄 · `inspect_wf_division.py`(줄은 7장에
+    있다)."""
+    names = (*COPY_CHECKS, "inspect_real_data_checks.py", "check_deploy_screens.py")
+    sections = (
+        _copy_e2e(),
+        _section("### 8-0.", "### 8-1."),
+        _section("## 6-2.", "## 6-3."),
+    )
+    lines = [
+        line
+        for section in sections
+        for line in _code_lines(section)
+        if any(f"scripts/{name}" in line or f"scripts\\{name}" in line for name in names)
+        and "--list" not in line
+    ]
+    prefix = "uv run --no-sync python scripts/"
+    walked_back = [
+        f"{prefix}inspect_real_data_checks.py --only bdq --output C:/Users/someone/bdq.md",
+        f"{prefix}inspect_real_data_checks.py",
+        f"{prefix}inspect_wf_division.py",
+        f'{prefix}inspect_wf_division.py --database "C:/Users/someone/e2e_copy/1/data/x.duckdb"',
+    ]
+    return [*lines, *(_as_real_folder(line) for line in lines), *walked_back]
 
 
-def test_the_documents_say_the_copy_checks_are_allowed_on_the_copy_path_shape() -> None:
+def test_the_settings_template_lets_no_line_that_opens_an_internal_database_through() -> None:
+    """사내 DB 를 여는 줄은 에이전트가 치지 않는다(런북 0장). 템플릿이 그 줄을 묻지 않고
+    통과시키면 그 규칙이 글뿐이 되므로, 런북의 그런 줄마다 맞는 allow 가 하나도 없어야 한다."""
+    lines = _database_opening_lines()
+    called = {name for name in COPY_CHECKS if any(f"scripts/{name}" in line for line in lines)}
+
+    assert called == set(COPY_CHECKS), called
+    assert any("check_deploy_screens.py" in line for line in lines)
+    for command in lines:
+        for written in (command, command.replace('"', "")):
+            assert not [rule for rule in _shell_rules() if _rule_matches(rule, written)], written
+
+
+def test_the_settings_template_still_lets_the_agent_recount_a_compressed_review() -> None:
+    """`--check-summary` 는 받은 압축본 파일만 다시 센다 — DB 를 열기 전에 끝나므로(`main` 의 첫
+    갈래) 에이전트가 묻지 않고 친다(런북 5장 끝 · 8-6). 두 셸이 쌍이다."""
+    runbook_line = next(
+        line
+        for line in _code_lines(RUNBOOK.read_text(encoding="utf-8"))
+        if "inspect_real_data_checks.py --check-summary" in line
+    )
+    filled = runbook_line.replace("<ZIP 파일명>", "202611111500")
+
+    matched = [rule for rule in _shell_rules() if _rule_matches(rule, filled)]
+    assert sorted(rule.split("(")[0] for rule in matched) == ["Bash", "PowerShell"]
+    script = (PROJECT_ROOT / "scripts" / "inspect_real_data_checks.py").read_text(encoding="utf-8")
+    main = script[script.index("def main(") :]
+    assert main.index("return _check_summary(") < main.index("_run(args")
+
+
+def test_the_documents_say_the_database_lines_run_in_the_users_window() -> None:
     copy_e2e = " ".join(_copy_e2e().split())
-    readme = README.read_text(encoding="utf-8")
+    readme = " ".join(README.read_text(encoding="utf-8").split())
     blocked = RUNBOOK.read_text(encoding="utf-8")
     blocked = blocked[blocked.index("## 6. 막혔을 때") : blocked.index("## 6-1.")]
-    explained = "\n".join(json.loads(TEMPLATE.read_text(encoding="utf-8"))["_설명"])
+    template = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    explained = " ".join("\n".join(template["_설명"]).split())
 
-    assert "권한 템플릿이 이 꼴(`--database` 값에 사본 폴더 이름 `e2e` 가 든 경로)에만" in copy_e2e
+    assert "**사용자가 별도 PowerShell 창에서**" in copy_e2e
     assert "| 사본 E2E 의 `git archive`·복사·스크립트(6-3) |" in blocked
-    assert "사본 경로 꼴에만 allow" in blocked
-    assert "사본 경로 꼴(값에 사본 폴더" in readme
-    assert "$HOME\\e2e_copy" in explained
+    assert "allow 를 걷었다" in blocked
+    assert "Claude 밖의 별도 PowerShell 창" in readme
+    assert "별도 PowerShell 창" in explained and "--check-summary" in explained
     for name in COPY_CHECKS:
         assert name in readme and name in explained, name
 
