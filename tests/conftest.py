@@ -38,6 +38,7 @@ from capa_simulation.components import (
     space_layout_editor,
     voc_draft_keeper,
 )
+from capa_simulation.io import company_bigdataquery_adapter
 from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
@@ -167,6 +168,15 @@ def _without_container_start_report(
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
     for name in CD_ONLY_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _without_token_failure_mark() -> Iterator[None]:
+    """앞 시험의 조회 토큰 실패 표지(프로세스 값 — 관리자 알림 `AD-10`)를 다음 시험에 넘기지
+    않는다."""
+    company_bigdataquery_adapter.forget_token_failure()
+    yield
+    company_bigdataquery_adapter.forget_token_failure()
 
 
 @pytest.fixture(autouse=True)

@@ -20,6 +20,7 @@ from capa_simulation.components.app_header import (
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.change_summary import session_changes
+from capa_simulation.components.container_start_check import render_token_alert
 from capa_simulation.components.equipment_scenario_status import (
     close_equipment_scenario_dialog,
     equipment_scenario_dialog_is_open,
@@ -579,6 +580,9 @@ with pinned_connections(DUCKDB_PATH):
     # 정본 버킷 동기화 알림(`SY-*`). 값은 메모리 사본뿐이고, 알릴 일이 없는 프로세스(개발 PC ·
     # 시험)는 아무것도 쓰지 않는다.
     render_object_sync_alerts()
+    # BigDataQuery 토큰 실패 관리자 알림(`AD-10`). 시작 점검 결과 파일이 없는 서버(C-DEP 밖)는
+    # 아무것도 쓰지 않는다.
+    render_token_alert()
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
     # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).

@@ -234,6 +234,12 @@ def verified_identity() -> Identity | None:
     return None if isinstance(found, IdentityProblem) else found
 
 
+def viewer_is_admin() -> bool:
+    """이 연결의 쿠키를 지금 다시 검증한 신원이 관리자인가. 통합인증이 켜짐이 아니면 늘 거짓이다."""
+    identity = verified_identity()
+    return identity is not None and access_store.is_admin(runtime.config(), identity.loginid)
+
+
 def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:
     """앱 정보 카드 셋째 줄 — 「이름 · 부서 · 로그아웃」. 꺼짐(신원 없음)이면 `None`.
 

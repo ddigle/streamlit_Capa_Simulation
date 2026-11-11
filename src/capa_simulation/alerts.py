@@ -351,6 +351,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 「비교 안 함」 으로 돌린 회차에 한 번 — 화면 자리에는 글을 달지 않는다(남은 물음 보드 D4
     # (나)).
     AlertSpec("RS-06", "info", "event", "필요 단축 일정 — 보던 기준선이 지워져 진척 비교를 끔"),
+    # BigDataQuery 로그인 토큰 실패 — 조회가 토큰 갈래로 실패했거나 서버 시작 점검 토큰 줄이 실패인
+    # C-DEP 서버에서 관리자의 모든 화면 회차에 낸다(`container_start_check.render_token_alert`,
+    # 리뷰 202611111500 보드 N8 (가)). 토큰을 새로 넣어야 풀린다.
+    AlertSpec("AD-10", "action", "state", "BigDataQuery 로그인 토큰 실패 — 조회가 막힘"),
 )
 
 

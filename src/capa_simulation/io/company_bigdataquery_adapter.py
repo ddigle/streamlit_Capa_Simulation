@@ -518,8 +518,35 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
         hint = _start_check_line(STEP_TOKEN) if is_login_token_failure(error) else ""
         failure = BigDataQueryCallError(error, hint=hint, seconds=time.monotonic() - started)
         _log_failure("조회 실패", kind=failure.kind, type_names=failure.type_names)
+        if failure.kind == QUERY_FAILURE_TOKEN:
+            _note_token_failure(True)
         raise failure from error
+    _note_token_failure(False)
     return answer
+
+
+# 이 프로세스의 마지막 조회가 토큰 갈래로 실패했나 — 관리자 상태 알림(`AD-10`)이 회차마다 읽는다.
+# 토큰 실패에 세우고 조회 성공에 내린다(다른 실패는 그대로 둔다 — 토큰이 살아났는지 모른다). 예약
+# 스레드도 조회하므로 Streamlit 은 부르지 않고 값만 둔다.
+_TOKEN_FAILURE_LOCK: Final = threading.Lock()
+_token_failed = False
+
+
+def _note_token_failure(failed: bool) -> None:
+    global _token_failed
+    with _TOKEN_FAILURE_LOCK:
+        _token_failed = failed
+
+
+def last_query_failed_on_token() -> bool:
+    """이 프로세스의 마지막 판정이 토큰 실패인가(성공한 조회가 그 뒤에 없었나)."""
+    with _TOKEN_FAILURE_LOCK:
+        return _token_failed
+
+
+def forget_token_failure() -> None:
+    """시험 전용 — 프로세스에 남은 토큰 실패 표지를 지운다."""
+    _note_token_failure(False)
 
 
 def _start_check_line(step: str) -> str:
