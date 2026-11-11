@@ -3563,9 +3563,15 @@ def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope)
     """원천 `계획기초정보여부` 가 앞뒤 공백·대소문자를 무시해도 `Y`·`N` 이 아닌 행 — `빈칸`(빈 값 ·
     공백뿐)과 `다른표기`(그 밖의 글자)로 나눠 센다. 값은 찍지 않는다.
 
-    둘은 고칠 길이 다르다 — 빈 칸은 원천이 정하지 않은 행이고, 다른 표기는 계획 행으로 잡히지 않아
-    계획이 빠지는 결함 후보다(사내 리뷰 202611111500 물음 lines-8 Q4). 본 리비전의 시나리오가 가진
-    데이터셋 가운데 원천 행이 있는 것(복제는 원천 행이 없다)만 센다.
+    걸러 내는 식(`upper(trim(…)) NOT IN ('Y', 'N')`)은 나누기 전 C11 그대로라 두 수의 합이 지난
+    리뷰의 C11 과 견줘진다. 공백뿐인지는 앱의 계획 행 판정(`plan_row_mask`)과 같은 파이썬
+    `str.strip()` 으로 가른다 — DuckDB `trim` 은 탭 · 줄바꿈을 떼지 않아 탭만 든 칸도 걸러지기
+    때문이다. 같은 까닭으로 앱이 `Y` 로 받는 「`Y` + 탭」 꼴도 걸러져 `다른표기` 에 든다(합을 지난
+    리뷰와 견주려고 거르는 식은 바꾸지 않는다).
+
+    둘은 고칠 길이 다르다 — 빈 칸은 원천이 정하지 않은 행이고, 다른 표기는 대개 계획 행으로 잡히지
+    않아 계획이 빠지는 결함 후보다(사내 리뷰 202611111500 물음 lines-8 Q4). 본 리비전의 시나리오가
+    가진 데이터셋 가운데 원천 행이 있는 것(복제는 원천 행이 없다)만 센다.
     """
     rows = connection.execute(
         f"""
@@ -3574,25 +3580,25 @@ def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope)
             SELECT DISTINCT d.dataset_id
             FROM app_meta.scenario_revision AS r JOIN picked USING (revision_id)
             JOIN app_meta.dataset AS d ON d.scenario_id = r.scenario_id
-        ),
-        flags AS (
-            SELECT c.dataset_id, trim(coalesce(c."계획기초정보여부", '')) AS flag
-            FROM raw_data.core_data AS c JOIN sets USING (dataset_id)
         )
-        SELECT dataset_id,
-            count(*) FILTER (WHERE flag = ''),
-            count(*) FILTER (WHERE flag <> '' AND upper(flag) NOT IN ('Y', 'N'))
-        FROM flags
-        GROUP BY 1
+        SELECT c.dataset_id,
+            CASE WHEN upper(trim(coalesce(c."계획기초정보여부", ''))) NOT IN ('Y', 'N')
+                THEN coalesce(c."계획기초정보여부", '') END AS flag,
+            count(*)
+        FROM raw_data.core_data AS c JOIN sets USING (dataset_id)
+        GROUP BY 1, 2
         """
     ).fetchall()
+    blank: Counter[str] = Counter()
+    other: Counter[str] = Counter()
+    for dataset_id, flag, count in rows:
+        if flag is None:  # `Y` · `N` 인 행
+            continue
+        (other if str(flag).strip() else blank)[str(dataset_id)] += int(count)
     return CensusSplit(
-        hit=sum(1 for _, blank, other in rows if blank or other),
-        seen=len(rows),
-        parts=(
-            ("빈칸", sum(int(blank) for _, blank, _ in rows)),
-            ("다른표기", sum(int(other) for _, _, other in rows)),
-        ),
+        hit=len(blank.keys() | other.keys()),
+        seen=len({str(dataset_id) for dataset_id, _, _ in rows}),
+        parts=(("빈칸", sum(blank.values())), ("다른표기", sum(other.values()))),
     )
 
 
