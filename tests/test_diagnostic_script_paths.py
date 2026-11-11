@@ -185,3 +185,48 @@ def test_a_hard_link_to_the_operational_database_still_looks_for_the_user_app(
     assert capsys.readouterr().out.splitlines() == [
         "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
     ]
+
+
+def test_output_gets_the_same_lines_as_the_screen_in_utf8(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """사내는 사용자가 별도 창에서 돌리고 에이전트는 `--output` 파일만 읽는다(런북 0장) — 파일에
+    화면과 같은 줄이 UTF-8 로 남고, 지난 실행의 글은 비운다."""
+    _point_at(monkeypatch, inspect_wf_division, tmp_path / "live")
+    copy = tmp_path / "copy" / DB_NAME
+    copy.parent.mkdir()
+    duckdb.connect(str(copy)).close()
+    output = tmp_path / "wf_division.md"
+    output.write_text("지난 실행\n", encoding="utf-8")
+
+    assert inspect_wf_division.main(["--database", str(copy), "--output", str(output)]) == 0
+
+    screen = capsys.readouterr().out
+    written = output.read_bytes().decode("utf-8")
+    assert written == screen
+    assert "지난 실행" not in written
+    assert (
+        written.splitlines()[0] == f"파일 {DB_NAME} · 사본(`--database` — 앱 프로세스는 보지 않음)"
+    )
+
+
+def test_output_keeps_the_refusal_line_when_the_user_app_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """앱이 떠 있어 DB 를 열지 않고 멈춰도 그 한 줄이 파일에 남는다 — 에이전트는 파일로 까닭을
+    읽는다."""
+    path = _point_at(monkeypatch, inspect_wf_division, tmp_path)
+    duckdb.connect(str(path)).close()
+    monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: 1)
+    output = tmp_path / "wf_division.md"
+
+    assert inspect_wf_division.main(["--output", str(output)]) == 1
+
+    capsys.readouterr()
+    assert output.read_text(encoding="utf-8").splitlines() == [
+        "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
+    ]

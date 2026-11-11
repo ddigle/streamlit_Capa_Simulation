@@ -54,7 +54,7 @@ shadow root 안이라 `document.querySelector` 로 닿지 않는다(로케이터
 - **Playwright 는 이 저장소의 의존성이 아니다.** `--playwright-dir` 를 `sys.path` 끝에 붙여
   부를 때만 읽는다. 이 파일의 나머지(경로 검사·잠금 확인·앱 수명·결과 꼴)는 Playwright 없이
   돈다.
-- **30분 안에 끝난다.** 사내 백그라운드 실행은 30분이면 죽는다. `--budget-minutes`(기본 15)는
+- **15분 예산 안에 끝난다.** `--budget-minutes`(기본 15 — 배포끼리 견주려고 그대로 둔다)는
   스크립트 시작부터 재고, 넘긴 뒤의 항목은 「미기록 — 시간 예산 넘음」으로 남긴다. `--output` 은
   항목마다 다시 써서 중간에 끊겨도 그때까지 돈 칸이 남는다. 스크립트가 강제로 끝나도 띄운 앱이
   남지 않게 Windows 는 Job Object, Linux 는 `PR_SET_PDEATHSIG` 로 묶는다.
@@ -177,7 +177,7 @@ OVER_BUDGET: Final = f"{UNRECORDED} — 시간 예산 넘음"
 
 DEFAULT_PORT: Final = 8551
 DEFAULT_CHANNEL: Final = "chrome"
-# 스크립트 시작부터 잰다. 사내 백그라운드 제한 30분 안이다.
+# 스크립트 시작부터 잰다. 배포끼리 견주려고 그대로 둔다.
 DEFAULT_BUDGET_MINUTES: Final = 15.0
 # 확인용 앱은 이 PC 안에서만 듣는다.
 APP_ADDRESS: Final = "127.0.0.1"
@@ -1935,7 +1935,7 @@ def run_items(
 BLOCK_COMMENT: Final = (
     "<!-- check_deploy_screens.py — 아래 블록을 리뷰 문서 7장 화면 확인 절에 그대로 붙인다 -->"
 )
-BLOCK_TITLE: Final = "### 화면 확인 (에이전트 · `check_deploy_screens.py`)"
+BLOCK_TITLE: Final = "### 화면 확인 (스크립트 · `check_deploy_screens.py`)"
 
 
 @dataclass
@@ -5482,7 +5482,7 @@ def check_space_shortening(screen: Screen) -> str:
     return summarize_space_shortening(blocks, floor, fader_back, stopped=stopped)
 
 
-# --------------------------------------------------- 7-18 B 대행이 헤드리스로 못 세던 칸
+# --------------------------------------------------- 7-18 손 확인에서 옮겨 온 칸
 #
 # `202610231430` 리뷰 사외 요청 4 의 다섯 칸을 재는 항목들이다. 헤드리스에서 막히는 자리 넷을
 # 피한다 — HOME 칸은 그림을 화면 가운데로 굴린 뒤 화면 안의 칸을 누른다(화면 밖 좌표는 눌리지
@@ -6131,7 +6131,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--budget-minutes",
         type=float,
         default=DEFAULT_BUDGET_MINUTES,
-        help="스크립트 시작부터 이 시간을 넘으면 남은 항목은 돌리지 않는다(사내 제한 30분)",
+        help="스크립트 시작부터 이 시간을 넘으면 남은 항목은 돌리지 않는다(기본 15분)",
     )
     parser.add_argument(
         "--start-timeout", type=float, default=START_TIMEOUT_SECONDS, help="앱 기동을 기다릴 초"
