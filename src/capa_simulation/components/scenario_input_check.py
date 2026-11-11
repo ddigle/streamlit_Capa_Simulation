@@ -112,6 +112,9 @@ CHECK_OPEN_KEY: Final = "scenario_input_check_open"
 CHECK_NOTICE_KEY: Final = "scenario_input_check_notice"
 # 펼친 묶음이 보이는 앞 행 수(시안 「앞 4행 · 전체 134행」).
 PREVIEW_ROWS: Final = 4
+# 묶음 줄을 담는 칸과 묶음 칸 key 앞머리 — 줄 서식(`panel_style`)이 이 key 로 고른다.
+GROUPS_KEY: Final = "input_check_groups"
+GROUP_KEY_PREFIX: Final = "input_check_group_"
 # 「넓게 보기」 팝업의 열림 값 앞머리 — (앞머리, 시나리오 id, 리비전 id, 리비전 번호, 묶음 id). 화면
 # 팝업 호스트 하나를 공식 지정 팝업과 함께 쓴다(열림 값의 꼴로 가른다 — 결정 17).
 WIDE_TAG: Final = "input_check_wide"
@@ -324,39 +327,62 @@ def _render_check(
     """칸 머리 한 줄 · 결과 칸 · 묶음 줄. 그린 「넓게 보기」 단추의 열림 값을 돌려준다."""
     number = f"r{revision.revision_no}"
     period = check.period_label
-    st.caption(f"{number} · 전체 기간 {period}" if period else number)
+    scope = f"{number} · 전체 기간 {period}" if period else number
+    # 칸 머리 한 줄에 묶음 줄 서식을 함께 싣는다(이벤트 칸 자리를 쓰지 않는 캡션 안 서식).
+    st.caption(html.escape(scope) + panel_style(), unsafe_allow_html=True)
     render_flash(CHECK_NOTICE_KEY)
     loaded = revision.revision_id == active_persisted_revision_id()
     opened = _open_groups()
     labels = get_process_labels()
     wide_values: list[WideValue] = []
-    for group in check.groups:
-        if group.key == GROUP_RULES:
-            continue
-        wide_values.extend(
-            _render_group(
-                group,
-                check,
-                expanded=group.key in opened,
-                target=(database_path, summary.scenario_id, revision.revision_id, number),
-                loaded=loaded,
-                labels=labels,
-                fold=fold,
-                open_wide=open_wide,
+    target = (database_path, summary.scenario_id, revision.revision_id, number)
+    with st.container(key=GROUPS_KEY, gap=None):
+        for group in check.groups:
+            if group.key == GROUP_RULES:
+                continue
+            wide_values.extend(
+                _render_group(
+                    group,
+                    check,
+                    expanded=group.key in opened,
+                    target=target,
+                    loaded=loaded,
+                    labels=labels,
+                    fold=fold,
+                    open_wide=open_wide,
+                )
             )
-        )
-    rules = check.group(GROUP_RULES)
-    if rules is not None:
-        wide_values.extend(
-            _render_rules(
-                rules,
-                expanded=GROUP_RULES in opened,
-                target=(database_path, summary.scenario_id, revision.revision_id, number),
-                labels=labels,
-                open_wide=open_wide,
+        rules = check.group(GROUP_RULES)
+        if rules is not None:
+            wide_values.extend(
+                _render_rules(
+                    rules,
+                    expanded=GROUP_RULES in opened,
+                    target=target,
+                    labels=labels,
+                    open_wide=open_wide,
+                )
             )
-        )
     return tuple(wide_values)
+
+
+def panel_style() -> str:
+    """묶음 줄 서식 — 줄 사이 선 · 촘촘한 세로 간격, 글자 단추(행 보기 · 그 화면으로 · 넓게 보기)는
+    강조색 작은 굵은 글(시안 `m-link`), 머리 줄은 접지 않고 이름이 접힌다. 색은 토큰이다."""
+    groups = f".st-key-{GROUPS_KEY}"
+    group = f'{groups} [class*="st-key-{GROUP_KEY_PREFIX}"]'
+    link = f'{groups} [data-testid="stBaseButton-tertiary"]'
+    return (
+        "<style>"
+        f"{group} {{ padding: 0.45rem 0.1rem; border-bottom: 1px solid {tokens.BORDER}; }}"
+        f"{group}:last-child {{ border-bottom: none; }}"
+        f'{group} [data-testid="stCaptionContainer"] p {{ margin: 0; }}'
+        f'{group} [data-testid="stMarkdownContainer"] p {{ margin: 0; }}'
+        f"{link} {{ color: {tokens.ACCENT}; font-weight: 700; min-height: 0; padding: 0 0.15rem; }}"
+        f"{link} p {{ font-size: 0.75rem; font-weight: 700; white-space: nowrap; }}"
+        f'{group} [data-testid="stDataFrame"] {{ margin-top: 0.3rem; }}'
+        "</style>"
+    )
 
 
 def _head_markup(group: InputCheckGroup) -> str:
@@ -418,8 +444,8 @@ def _render_group(
     database_path, scenario_id, revision_id, number = target
     has_rows = bool(group.count) and any(not table.frame.empty for table in group.tables)
     arrival = arrival_for(group, check)
-    with st.container(key=f"input_check_group_{group.key}", gap="small"):
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    with st.container(key=f"{GROUP_KEY_PREFIX}{group.key}", gap=None):
+        with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False):
             st.markdown(_head_markup(group), unsafe_allow_html=True, width="stretch")
             if has_rows:
                 st.button(
@@ -467,8 +493,8 @@ def _render_rules(
 ) -> list[WideValue]:
     """맨 아래 접힌 한 줄 「규칙대로 셈에서 뺀 것」 — 펼치면 두 표(PKG Buffer 밖 · 쓰지 않는 경로
     조합)를 소제목과 함께."""
-    with st.container(key=f"input_check_group_{group.key}", gap="small"):
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    with st.container(key=f"{GROUP_KEY_PREFIX}{group.key}", gap=None):
+        with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False):
             st.button(
                 group.title,
                 icon=":material/expand_more:" if expanded else ":material/chevron_right:",
