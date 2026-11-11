@@ -708,9 +708,9 @@ def test_a_merged_event_row_takes_the_new_text_and_the_new_tables() -> None:
         """
 const table = (title) => ({ title, rows: [[1]] })
 const target = { kind: 'check', scenario: 'S', revision: 'R6' }
-const fresh = (tables) => ({
-  noteId: 'new', full: '새 글', page: '화면', href: 'home', tab: '', target, cause: '', detail: '',
-  origin: '', level: 'check', tables,
+const fresh = (tables, aim = target) => ({
+  noteId: 'new', full: '새 글', page: '화면', href: 'home', tab: '', target: aim, cause: '',
+  detail: '', origin: '', level: 'check', tables,
 })
 const row = () => ({
   noteId: 'old', full: '옛 글', tables: [table('옛 표')],
@@ -722,16 +722,19 @@ console.log(JSON.stringify({
   kept: title(freshenEventRow(row(), fresh([]))),
   full: freshenEventRow(row(), fresh([])).full,
   target: freshenEventRow(row(), fresh([])).target,
+  keptTarget: freshenEventRow(row(), fresh([], null)).target,
 }))
 """
     )
-    # 「×2」 로 합친 줄의 「그 화면으로」 대상은 마지막 경고의 것이다(다음 배포 물음 보드 F4 뒤
-    # (a) — 경고 글에 rN 을 넣지 않아(b 안 고름) 글이 같은 두 경고는 한 줄이다).
+    # 「×2」 로 합친 줄의 「그 화면으로」 대상은 대상을 든 마지막 경고의 것이다(다음 배포 물음 보드
+    # F4 뒤 (a) — 경고 글에 rN 을 넣지 않아(b 안 고름) 글이 같은 두 경고는 한 줄이다). 리비전을
+    # 모르는 이어받은 회차의 같은 경고는 앞 대상을 지우지 않는다(표와 같은 꼴).
     assert out == {
         "replaced": ["새 표"],
         "kept": ["옛 표"],
         "full": "새 글",
         "target": {"kind": "check", "scenario": "S", "revision": "R6"},
+        "keptTarget": {"kind": "check", "scenario": "S", "revision": "R3"},
     }
     writer = JS[JS.index("function writeEventRow") : JS.index("function handleEvent")]
     assert "freshenEventRow(row, rowFor(note, now))" in writer
