@@ -20,10 +20,14 @@ from capa_simulation.components.table_toolbar import (
     DOWNLOAD_MENU_HEIGHT_PX,
     DOWNLOAD_MENU_KEY_PREFIX,
     DOWNLOAD_MENU_STYLE,
+    TABLE_HEADING_ROW_HEIGHT_PX,
+    TABLE_HEADING_ROW_KEY_PREFIX,
+    TABLE_HEADING_ROW_STYLE,
     TABLE_TOOLBAR_CLEARANCE,
     TABLE_TOOLBAR_ROOM,
     download_menu_key,
     file_name_part,
+    table_heading_row_key,
     toolbar_room_css,
 )
 
@@ -703,6 +707,52 @@ def test_the_pair_refuses_a_menu_key_outside_the_prefix() -> None:
 
     app = AppTest.from_function(_outside_prefix_page).run()
     assert app.exception and DOWNLOAD_MENU_KEY_PREFIX in str(app.exception[0].message)
+
+
+def _heading_rows_page() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.table_toolbar import (
+        SheetFile,
+        render_table_heading,
+        table_heading_row,
+    )
+
+    render_table_heading("맨 CSV", csv=b"csv", file_name="a.csv", key="plain_csv")
+    with table_heading_row(
+        "메뉴",
+        csv=b"csv",
+        file_name="b.csv",
+        key="menu_csv",
+        sheet=SheetFile(data=b"xlsx", file_name="b.xlsx", key="menu_sheet"),
+    ):
+        st.container(width="content")
+
+
+def test_the_heading_row_is_one_height_whatever_stands_beside() -> None:
+    """표 제목 줄(`table_heading_row`)은 곁에 맨 CSV 단추(35px) · 「내려받기 ▾」 메뉴(28px) · 「표시
+    범위」 칸 무엇이 서든 35px 하나다 — 산출 결과 탭을 오가거나 소요대수 「상세」 를 켜고 끌 때 표
+    윗선이 그대로다(2026-11-11 다음 배포 물음 보드 C9 뒤 (나)). 높이는 줄 key 접두어로 걸고 서식은
+    메뉴 높이와 같은 앱 전체 서식 한 `st.html` 에 한 번 싣는다. 메뉴는 28px 그대로다."""
+    from streamlit.testing.v1 import AppTest
+
+    assert TABLE_HEADING_ROW_HEIGHT_PX == 35
+    assert DOWNLOAD_MENU_HEIGHT_PX == 28
+    assert TABLE_HEADING_ROW_STYLE == (
+        f'<style>[class*="st-key-{TABLE_HEADING_ROW_KEY_PREFIX}"] '
+        f"{{ min-height: {TABLE_HEADING_ROW_HEIGHT_PX}px; }}</style>"
+    )
+    # 줄 key 는 메뉴 높이 서식(`[class*="st-key-download_menu_"] button`)에 걸리지 않는다 — 걸리면
+    # 줄 안 맨 CSV 단추까지 28px 이 된다.
+    for key in ("download_securement_rate_csv", "download_menu_x"):
+        assert f"st-key-{DOWNLOAD_MENU_KEY_PREFIX}" not in f"st-key-{table_heading_row_key(key)}"
+    entry = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+    assert entry.count("+ TABLE_HEADING_ROW_STYLE") == 1
+    # 맨 CSV 줄 · 메뉴 줄 모두 그 key 를 받는다.
+    app = AppTest.from_function(_heading_rows_page).run()
+    assert not app.exception
+    keys = [getattr(block, "key", None) for block in app.main.children.values()]
+    assert keys == [table_heading_row_key("plain_csv"), table_heading_row_key("menu_csv")]
 
 
 def test_the_file_name_part_drops_path_and_reserved_characters() -> None:

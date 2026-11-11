@@ -19,6 +19,8 @@ Capa 상세 표 도구 줄 · 산출 결과 대당 Capa · 소요대수 제목 �
 Q2-7 — 설계 규칙 UI-LAY-11 「드물게 쓰는 같은 갈래 단추를 메뉴 하나로」).
 파일이 하나뿐이면(CSV 가 없는 자리) 메뉴 없이 그 단추 하나다. 줄에 선 메뉴(또는 그 단추
 하나)의 높이는 네 자리 모두 28px 하나다(2026-11-11 남은 물음 보드 C9 — `DOWNLOAD_MENU_STYLE`).
+표 제목 줄(`table_heading_row`)은 곁에 무엇이 서든 35px 높이다(2026-11-11 다음 배포 물음 보드
+C9 뒤 (나) — `TABLE_HEADING_ROW_STYLE`).
 """
 
 from __future__ import annotations
@@ -54,19 +56,30 @@ DOWNLOAD_MENU_LABEL = "내려받기"
 # 결과 표 제목 줄 · Static 대비 일정 전환 줄 · 호기 목록 아래)가 모두 같다(2026-11-11 남은 물음
 # 보드 C9 「render_download_pair 한 곳에서 같은 높이」). 값은 공정 Capa 상세 표 도구 줄 · Static
 # 대비 일정 전환 줄의 이웃 높이 — 「구획」 칩 · 「조회 결과 · 표시」 전환 단추 28px(설계 규칙
-# UI-CON-01 · 4장) — 이고, 호기 목록 아래 메뉴는 혼자 선다. 산출 결과 표 제목 줄은 곁 칸에 따라 줄
-# 높이가 갈린다 — 메뉴만 선 줄(대당 Capa · 소요대수 상세 끔)은 28.4px, 소요대수 상세 켬은 곁 「표시
-# 범위」 칸(33px)이, 확보율 탭은 맨 CSV 단추(기본 35px)가 줄을 35px 로 세워 탭을 오가거나 상세를
-# 켜고 끌 때 표 윗선이 갈린다(4장 「산출 결과 표 제목 줄」 · UI-PRF-03 — 그 줄의 높이 값은 사용자
-# 물음). 메뉴 안 단추는 줄 밖(떠 있는 층)이라 기본 높이다. 서식은 앱 전체 서식(`app.py` 가 매
-# 회차 보내는 사이드바 서식 `st.html`)에 실어 보낸다 — 부르는 자리마다 스타일만 든 `st.html` 을
-# 두면 이벤트 칸에 서서 본문 프래그먼트(공정 Capa 상세)의 이벤트 칸 수가 바뀐다.
+# UI-CON-01 · 4장) — 이고, 호기 목록 아래 메뉴는 혼자 선다. 산출 결과 표 제목 줄에서는 메뉴가 35px
+# 줄(`TABLE_HEADING_ROW_STYLE`) 가운데에 선다. 메뉴 안 단추는 줄 밖(떠 있는 층)이라 기본 높이다.
+# 서식은 앱 전체 서식(`app.py` 가 매 회차 보내는 사이드바 서식 `st.html`)에 실어 보낸다 — 부르는
+# 자리마다 스타일만 든 `st.html` 을 두면 이벤트 칸에 서서 본문 프래그먼트(공정 Capa 상세)의 이벤트
+# 칸 수가 바뀐다.
 DOWNLOAD_MENU_KEY_PREFIX = "download_menu_"
 DOWNLOAD_MENU_HEIGHT_PX = 28
 DOWNLOAD_MENU_STYLE = (
     f'<style>[class*="st-key-{DOWNLOAD_MENU_KEY_PREFIX}"] button '
     f"{{ min-height: {DOWNLOAD_MENU_HEIGHT_PX}px; height: {DOWNLOAD_MENU_HEIGHT_PX}px; "
     "padding-block: 0; }</style>"
+)
+# 표 제목 줄(`table_heading_row`)의 key 접두어와 줄 높이. 줄은 곁에 무엇이 서든 35px — 맨
+# 「CSV 다운로드」 단추(기본 35px) · 「표시 범위」 칸(바깥 약 35px)이 선 줄과 「내려받기 ▾」
+# 메뉴(28px)만 선 줄이 같은 높이라, 산출 결과 탭을 오가거나 소요대수 「상세」 를 켜고 끌 때 표
+# 윗선이 그대로다(2026-11-11 다음 배포 물음 보드 C9 뒤 (나), 설계 규칙 UI-PRF-03 · UI-CON-01 ·
+# 4장 「산출 결과 표 제목 줄」). 좁은 창에서 줄이 접혀 더 높아지는 회차는 그 높이 그대로라
+# `min-height` 다. 서식은 메뉴 높이와 같은 앱 전체 서식에 싣는다. 접두어는 메뉴 key
+# 접두어(`DOWNLOAD_MENU_KEY_PREFIX`)를 품지 않는다 — 줄 안 단추가 메뉴 높이 서식에 걸리지 않게.
+TABLE_HEADING_ROW_KEY_PREFIX = "table_heading_row_"
+TABLE_HEADING_ROW_HEIGHT_PX = 35
+TABLE_HEADING_ROW_STYLE = (
+    f'<style>[class*="st-key-{TABLE_HEADING_ROW_KEY_PREFIX}"] '
+    f"{{ min-height: {TABLE_HEADING_ROW_HEIGHT_PX}px; }}</style>"
 )
 
 # 표 앞 띄움(px, `st.space`) — 표에 마우스를 올리면 오른쪽 위 도구 막대(열 보기·내려받기·찾기·
@@ -167,6 +180,13 @@ def download_menu_key(key: str) -> str:
     return f"{DOWNLOAD_MENU_KEY_PREFIX}{key}"
 
 
+def table_heading_row_key(key: str) -> str:
+    """CSV 단추 key 로 짓는 표 제목 줄 key(`table_heading_row`) — 접두어
+    `TABLE_HEADING_ROW_KEY_PREFIX` 로 시작하고 줄 높이 서식(`TABLE_HEADING_ROW_STYLE`)이 그 접두어로
+    걸린다."""
+    return f"{TABLE_HEADING_ROW_KEY_PREFIX}{key}"
+
+
 def render_download_pair(
     *, csv: CsvFile | None, sheet: SheetFile | None = None, menu_key: str
 ) -> DeltaGenerator:
@@ -237,9 +257,15 @@ def table_heading_row(
     표와 붙어 있어야 뜻이 통하는 컨트롤이 그렇다. 더 놓을 것이 없으면
     `render_table_heading` 을 쓴다. `sheet` 를 주면 CSV 와 「시트 엑셀」 이 「내려받기 ▾」 메뉴
     하나에 묶인다(`render_download_pair`, 메뉴 key 는 `download_menu_key(key)`) — 주지 않으면 CSV
-    단추 하나다.
+    단추 하나다. 줄은 `table_heading_row_key(key)` 를 받아 35px 높이로
+    선다(`TABLE_HEADING_ROW_STYLE`).
     """
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    with st.container(
+        horizontal=True,
+        vertical_alignment="center",
+        gap="small",
+        key=table_heading_row_key(key),
+    ):
         st.subheader(title, width="content")
         if caption:
             st.caption(caption, width="content")

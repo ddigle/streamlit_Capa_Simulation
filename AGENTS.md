@@ -3268,9 +3268,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `DOWNLOAD_MENU_KEY_PREFIX`(「download_menu_」 — `download_menu_key` 가 붙이고, 아니면 `render_download_pair` 가 거절)로
   시작하고 CSV 가 없을 때의 엑셀 칸도 그 key 를 받으며, 높이 서식 `DOWNLOAD_MENU_STYLE` 은 `app.py` 가 매 회차 보내는 앱 전체
   서식 `st.html` 에 한 번 싣는다 — 부르는 자리마다 스타일만 든 `st.html` 을 두면 이벤트 칸에 서서 공정 Capa 상세 본문
-  프래그먼트의 이벤트 칸 수가 바뀐다)과 표 도구 막대 앞 띄움
-  (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭), 띄움 대신 표 바로 위 줄 오른쪽 끝을
-  막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. 사람이 적은 글(설비 시나리오
+  프래그먼트의 이벤트 칸 수가 바뀐다). 표 제목 줄(`table_heading_row`)은 곁에 맨 CSV 단추(35px) · 「내려받기 ▾」 메뉴(28px) ·
+  「표시 범위」 칸 무엇이 서든 35px 높이다 — 줄 key 는 `table_heading_row_key(CSV key)`(접두어 `TABLE_HEADING_ROW_KEY_PREFIX`
+  「table_heading_row_」 — 메뉴 접두어를 품지 않는다)이고 `min-height` 서식 `TABLE_HEADING_ROW_STYLE` 을 같은 앱 전체 서식에
+  한 번 싣는다(2026-11-11 다음 배포 물음 보드 C9 뒤 (나) — 산출 결과 탭을 오가거나 소요대수 「상세」 를 켜고 끌 때 표 윗선이
+  그대로, 설계 규칙 UI-PRF-03). 표 도구 막대 앞 띄움
+  (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭)과 띄움 대신 표 바로 위 줄 오른쪽 끝을
+  막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)도 이 모듈이다. 사람이 적은 글(설비 시나리오
   이름 · 공정 표시명)을 내려받는 파일 이름에 실을 때는 한 벌 `file_name_part(글, fallback=)` 로 경로 · 예약 글자와 빈칸을
   `_` 로 바꾼다(설비 「현재 데이터」 CSV · 공정 Capa 상세 두 파일). `st.download_button` 은
   여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
