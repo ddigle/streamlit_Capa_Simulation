@@ -405,8 +405,8 @@ def load_space_layer(
     try:
         demand = shortening_source.load_shortening_demand()
     except BOOTSTRAP_ERRORS as exc:
-        # 계산 멈춤 글의 예시 행은 원본 공정소분류다 — 이 보기는 공정 표시명을 읽지 않는다(결정
-        # D10). 아래 달 범위 멈춤 글도 표시명을 넘기지 않는다.
+        # 계산 멈춤 글은 원문이다(예시 행도 dict 꼴 그대로) — 이 보기는 원본 공정소분류만 쓰고 공정
+        # 표시명을 읽지 않는다(결정 D10). 아래 달 범위 멈춤 글도 공용 길이 지은 원문 그대로다.
         return ShorteningStop(
             "scenario",
             bootstrap_error_message(

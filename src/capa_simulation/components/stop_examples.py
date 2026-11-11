@@ -10,7 +10,8 @@
 calculation_stop_notice` — HOME · 계산 화면 · 입력 점검 풍선) · 그 화면들과 계산을 먼저 보는
 화면(필요 단축 일정 포함)의 나머지 멈춤 글(`bootstrap_error_message(labels=)`) · 저장 · 지정 · 파생
 저장 경고(`capacity_gate`) · 등록 경고 · 자동 갱신 「지금 실행」 결과 알림이다. Space 「필요 단축」
-보기의 멈춤 글은 원문이다 — 그 길은 원본 공정소분류만 쓴다(결정 D10).
+보기의 멈춤 글은 원문이다(예시 행도 dict 꼴 그대로 — 이 꼴이 아니다) — 그 길은 원본 공정소분류만
+쓴다(결정 D10).
 
 - 한 예시는 월 → 공정 → 양산구분 차례로 앞에 두고, 그 밖의 칸(제품정보 · 걸린 값 따위)은 서비스 글의
   차례대로 뒤에 값만 잇는다. 월은 `YY.MM`(`month_label` — 여섯 자리 달이 아니면 글자 그대로), 공정은
@@ -26,9 +27,6 @@ calculation_stop_notice` — HOME · 계산 화면 · 입력 점검 풍선) · �
 - services 는 이 조각을 부르지 않는다(표시명 경계 — `tests/test_process_rename.py`). 표시명은
   인자로만 받는다 — `page_bootstrap` 이 이 조각을 부르고 `process_labels` 가 `page_bootstrap` 을
   부르므로 여기서 `process_labels` 를 실행 때 불러오지 않는다.
-- 표시명을 읽지 않는 길(`shortening_source` — 결정 D10 경계 안)이 바깥 자리에서 받은 표시명을 멈춤
-  글에만 그대로 넘길 때는 그 인자 꼴을 `ExampleLabels` 로 적는다 — 표시명 모듈 이름을 그 길의 글에
-  적지 않는다(`tests/test_process_label_boundaries.py`).
 """
 
 from __future__ import annotations
@@ -36,16 +34,13 @@ from __future__ import annotations
 import ast
 import warnings
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Final, TypeAlias
+from typing import TYPE_CHECKING, Final
 
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.services.month_columns import month_label
 
 if TYPE_CHECKING:
     from capa_simulation.components.process_labels import ProcessLabels
-
-# 멈춤 글의 예시 행을 지을 표시명 꼴. 실행 때는 글자일 뿐이라 표시명 모듈을 불러오지 않는다.
-ExampleLabels: TypeAlias = "ProcessLabels"
 
 # 서비스 글이 예시 목록 앞에 다는 말 — 이 말 바로 뒤 `[` 부터 목록이다.
 EXAMPLE_HEAD: Final = "예시 "
