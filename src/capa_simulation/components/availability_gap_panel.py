@@ -281,7 +281,7 @@ SHEET_CSV_STYLE = (
     "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
 )
 # 시트 엑셀 통의 꼴 판 — 같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 올린다.
-GAP_SHEET_SCHEMA_VERSION = 1
+GAP_SHEET_SCHEMA_VERSION = 2
 CROSS_CHECK_MANUAL_HELP = (
     "가용설비 현황 › Preference 의 공정 × 달 비가동을 그 달 가용에서 뺀 값입니다(필요 단축 일정과 "
     "같은 가용)."

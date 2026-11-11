@@ -308,6 +308,36 @@ def test_number_like_text_cells_and_only_those_get_the_ignore_mark() -> None:
         assert at not in covered, at
 
 
+@pytest.mark.parametrize(
+    ("spans", "expected"),
+    [
+        # B:C 범위가 1줄 · 4줄에 다시 나온다 — 2줄 B 가 사이에 끼고 3줄은 비었다.
+        ({0: (1, 2), 1: (1, 1), 3: (1, 2)}, "B1:C1 B2 B4:C4"),
+        # 이어진 네모(1 ~ 2줄)가 끊긴 뒤 같은 가로 범위가 다시 네모(4 ~ 5줄)로 자란다.
+        ({0: (1, 2), 1: (1, 2), 2: (1, 1), 3: (1, 2), 4: (1, 2)}, "B1:C2 B3 B4:C5"),
+    ],
+)
+def test_a_horizontal_span_that_comes_back_after_a_gap_starts_a_new_box(
+    spans: dict[int, tuple[int, int]], expected: str
+) -> None:
+    """같은 가로 범위가 줄을 건너 다시 나오면 앞 네모를 닫고 새 네모를 연다 — 펼친 칸은 넣은 칸
+    그대로이고 네모끼리 겹치지 않는다."""
+    height = max(spans) + 1
+    rows: list[list[XlsxCell | None]] = [
+        [XlsxCell(7), XlsxCell(1), XlsxCell(2)] for _ in range(height)
+    ]
+    for row, (first, last) in spans.items():
+        for column in range(first, last + 1):
+            rows[row][column] = XlsxCell(f"{row}{column}")
+    data = workbook_bytes([Sheet(name="표", rows=rows)])
+    marks = _parts(data)["xl/worksheets/sheet1.xml"].findall("m:ignoredErrors/m:ignoredError", NS)
+    assert [mark.get("sqref") for mark in marks] == [expected]
+    placed = {
+        (row, column) for row, (first, last) in spans.items() for column in range(first, last + 1)
+    }
+    assert read_workbook(data)["표"].number_text_ignored == placed
+
+
 def test_a_sheet_without_number_like_text_has_no_ignore_mark() -> None:
     data = workbook_bytes(
         [

@@ -171,7 +171,7 @@ AVAILABILITY_TAB = "확보율"
 # 키로 몇 벌 기억한다(두 탭이 같이 쓴다). 시트 꼴이 바뀌면 판을 올린다 — 같은 조건의 옛 통이 세션에
 # 남아 있어도 다시 짓는다.
 SHEET_MEMO_KEY = "calculation_result_sheet_memo"
-SHEET_SCHEMA_VERSION = 1
+SHEET_SCHEMA_VERSION = 2
 UNIT_CAPACITY_XLSX_KEY = "download_unit_capacity_xlsx"
 REQUIRED_DETAIL_XLSX_KEY = "download_required_equipment_detail_xlsx"
 REQUIRED_SUMMARY_XLSX_KEY = "download_required_equipment_summary_xlsx"
