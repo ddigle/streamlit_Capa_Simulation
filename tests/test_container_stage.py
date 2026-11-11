@@ -229,6 +229,10 @@ def test_the_same_port_can_be_taken_right_after_closing() -> None:
 
 
 @NEEDS_IPV6
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="임시 응답은 Linux 이미지에서만 선다 — Windows 는 남이 쥔 듀얼 스택 포트를 다시 잡는다",
+)
 def test_a_port_taken_by_someone_else_leaves_an_empty_stage() -> None:
     with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as holder:
         holder.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
