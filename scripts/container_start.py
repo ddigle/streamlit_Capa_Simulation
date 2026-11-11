@@ -23,6 +23,7 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
      패키지가 앱 의존성을 바꾸지 못하게 한다. 이 pip 에는 자격증명이 하나도 없다.
 1. 로그인 토큰 — `CAPA_BDQ_TOKEN` 과 `CAPA_BDQ_USER_NAME` 이 있으면 패키지가 보는 자리
    (`/config/.credential/bigdataquery.token.<계정>`)에 그 값을 쓴다(`base64:` 로 시작하면 풀어서).
+   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다.
 2. 요청자 계정 — `CAPA_BDQ_USER_NAME` 은 앱이 그대로 읽는다. 있는지만 적는다.
 
 결과는 `settings.CONTAINER_START_REPORT_PATH` 에 남고 앱 화면(Admin Area 「서버 시작 점검」)이
@@ -135,6 +136,10 @@ APP_REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 # 패키지(`bdq.login()`·`getData()`)가 토큰을 찾는 자리. 패키지가 이 자리만 보므로 옮기지 않는다.
 CREDENTIAL_DIR = Path("/config/.credential")
 TOKEN_FILE_PREFIX = "bigdataquery.token."
+# 이보다 짧은 토큰 값(푼 내용, 앞뒤 공백 뺌)은 토큰이 아닌 값으로 보고 쓰지 않는다 — 「실패」. 사내
+# 실제 토큰의 바이트 수를 아직 모르니 진짜 토큰을 막지 않는 쪽으로 낮게 둔다: 발급 토큰은 128비트
+# 난수만 담아도 16바이트 아래로 내려가지 않는다. 자리표시 · 잘못 붙인 몇 글자만 걸린다.
+MIN_TOKEN_BYTES = 16
 APP_PORT = "8080"
 # 앱 진입 파일(저장소 뿌리 — `.streamlit/config.toml`·`static/` 을 그 옆에서 찾는다). 실패해도
 # `app.py` 로 물러서지 않는다(모듈 설명).
@@ -601,6 +606,14 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
     if not content.strip():
         # `base64:` 만 넣었거나 빈 출력을 붙여 넣은 값 — 빈 파일은 「정상」 이 아니다.
         return StepResult(STATUS_FAILED, f"{BDQ_TOKEN_ENV} 을 푼 내용이 비었음 — 파일을 쓰지 않음")
+    if len(content.strip()) < MIN_TOKEN_BYTES:
+        # 짧은 값으로 파일을 쓰고 「정상」 이라 하면 조회의 토큰 실패가 만료처럼 보인다. 길이는
+        # 적지 않는다 — 비밀값에서 나온 수다.
+        reason = (
+            f"{BDQ_TOKEN_ENV} 을 푼 내용이 {MIN_TOKEN_BYTES}바이트보다 짧음 — 토큰이 아닌 값으로 "
+            "보고 파일을 쓰지 않음"
+        )
+        return StepResult(STATUS_FAILED, reason)
     try:
         same = target.is_file() and target.read_bytes() == content
     except OSError:
