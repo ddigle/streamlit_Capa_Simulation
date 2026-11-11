@@ -54,6 +54,12 @@ def discarded_key(table: str) -> str:
     return f"plan_grid_discarded__{table}"
 
 
+def last_key(table: str) -> str:
+    """그 표에 마지막으로 보낸 (껍데기, feed) — 닫힌 탭 회차에 그대로 다시 보낸다(보기 상태라
+    시나리오를 바꿔도 지우지 않는다 — 열면 지금 표로 바뀐다)."""
+    return f"plan_grid_last__{table}"
+
+
 # 이 세션에 그리드를 세운 표 — 한 번도 연 적 없는 탭은 그리드(등록 JS · CSS 를 싣는 무거운 요소)를
 # 세우지 않는다. 보기 상태라 시나리오를 바꿔도 지우지 않는다.
 MOUNTED_KEY: Final = "plan_grid_mounted"

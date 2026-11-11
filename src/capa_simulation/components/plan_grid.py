@@ -4,9 +4,9 @@
 답 k-a1 · k-a2 · n2(기준 정보와 같은 편집기를 생산 계획에도).
 
 - **탭마다 그리드 하나**(`plan_grid_keys.HOSTS`). 이 세션에 한 번도 연 적 없는 탭은 그리드를 세우지
-  않는다(`mounted` — 그리드 요소는 등록 JS · CSS 를 함께 싣는다). 연 적 있는 탭이 닫힌 회차에는 표
-  없는 껍데기를 실어 마운트만 남기고(무거운 본문을 보내지 않는다), 그 표의 op 가 inbox 에 쌓였을
-  때만 양식 색인을 짓는다(기준 정보의 「고른 표만」 과 같은 꼴).
+  않는다(`mounted` — 그리드 요소는 등록 JS · CSS 를 함께 싣는다). 연 적 있는 탭이 닫힌 회차에는
+  양식을 짓지 않고 앞서 보낸 껍데기 · feed 를 그대로 다시 보내(해시 참조) 마운트를 남기며, 그 표의
+  op 가 inbox 에 쌓였을 때만 양식 색인을 짓는다(기준 정보의 「고른 표만」 과 같은 꼴).
 - **초안은 표마다 세션 칸**(업무 키 + 월 — `services/edit_grid`). 편집은 출납 콜백이 세션 inbox 에
   쌓기만 하고(`collect`) 본문이 원본을 본 뒤 반영한다(`apply_inbox`).
 - **값 꼴**: PKG PLAN 은 천 단위 · 소수 없이 보이고 0 이상만 받는다. 양식의 0 은 빈칸으로 싣는다 —
@@ -40,6 +40,7 @@ from capa_simulation.plan_grid_keys import (
     discarded_key,
     history_key,
     inbox_key,
+    last_key,
     toast_key,
 )
 from capa_simulation.services.edit_grid import (
@@ -275,19 +276,31 @@ def _shell(table: str, grid: PlanGrid | None) -> dict[str, object]:
     return shell
 
 
-def render_grid(table: str, grid: PlanGrid | None) -> None:
-    """그리드 자리 — 늘 같은 자리에서 부른다(표가 없으면 — 닫힌 탭 · 세우지 못한 표 — 표 없는
-    껍데기로 마운트만 남긴다)."""
-    keys = grid_keys(table)
-    feed = edit_grid.feed_data(
-        HOSTS[table],
-        grid.slot if grid is not None else None,
-        keys,
-        base_key=grid.base_key if grid is not None else "",
-    )
+def render_grid(table: str, grid: PlanGrid | None, *, hidden: bool = False) -> None:
+    """그리드 자리 — 늘 같은 자리에서 부른다.
+
+    표가 있으면 그 표를 싣고 보낸 껍데기 · feed 를 세션에 적어 둔다(`last_key`). 닫힌
+    탭(`hidden`)이라 표를 짓지 않은 회차에는 적어 둔 껍데기 · feed 를 **그대로** 다시 보낸다 — 같은
+    dict 라 ForwardMsg 해시 참조로 가고(그리드 요소는 등록 JS · CSS 를 함께 싣는다 — 다른 data 를
+    보내면 그 몫을 다시 보낸다), 보이지 않는 표라 낡아도 탭을 열면 지금 표로 바뀐다. 적어 둔 것이
+    없거나 열린 탭인데 표를 세우지 못한 회차는 표 없는 껍데기로 마운트만 남긴다."""
+    host = HOSTS[table]
+    sent = st.session_state.get(last_key(table))
+    if grid is None and hidden and isinstance(sent, tuple) and len(sent) == 2:
+        shell, feed = sent
+    else:
+        feed = edit_grid.feed_data(
+            host,
+            grid.slot if grid is not None else None,
+            grid_keys(table),
+            base_key=grid.base_key if grid is not None else "",
+        )
+        shell = _shell(table, grid)
+        if grid is not None:
+            st.session_state[last_key(table)] = (shell, feed)
     edit_grid.render_edit_grid(
-        HOSTS[table],
-        _shell(table, grid),
+        host,
+        shell,
         feed,
         on_outbox=lambda: collect(table),
         page_style=LAYOUTS[table].style,

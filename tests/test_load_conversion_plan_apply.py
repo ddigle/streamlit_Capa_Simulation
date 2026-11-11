@@ -121,24 +121,23 @@ def _grid(app: AppTest, host: str) -> pd.DataFrame:
     return shell_frame(last(_GRID["calls"], host))
 
 
-def test_a_grid_mounts_once_its_tab_is_opened_and_stays_as_an_empty_shell(
+def test_a_grid_mounts_once_its_tab_is_opened_and_resends_its_last_shell_when_hidden(
     seeded_database: Path,
 ) -> None:
     """한 번도 연 적 없는 탭은 그리드를 세우지 않는다(그리드 요소는 등록 JS · CSS 를 싣는다 — 생산
-    계획 진입 전송량). 연 탭의 그리드는 탭이 닫혀도 같은 자리에 표 없는 껍데기로 남는다(다시 세우면
-    보내지 않은 출납을 잃는다)."""
+    계획 진입 전송량). 연 탭의 그리드는 탭이 닫혀도 같은 자리에 남고, 닫힌 회차에는 앞서 보낸 껍데기
+    · feed 를 그대로 다시 보낸다(같은 dict — 해시 참조로 간다)."""
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     assert not list(app.exception)
     assert _shell(PLAN_HOST) is None and _shell(YIELD_HOST) is None
 
     _open_tab(app, PLAN_TAB)
-    shell = _shell(PLAN_HOST)
-    assert shell is not None and shell["table"] == "RQ_PKG_PLAN"
+    opened = _shell(PLAN_HOST)
+    assert opened is not None and opened["table"] == "RQ_PKG_PLAN"
     assert _shell(YIELD_HOST) is None
 
     _open_tab(app, ":material/calculate: 환산")
-    shell = _shell(PLAN_HOST)
-    assert shell is not None and shell["table"] is None
+    assert _shell(PLAN_HOST) == opened
     assert _shell(YIELD_HOST) is None
 
 
@@ -1201,10 +1200,10 @@ def test_the_apply_notice_says_how_much_demand_the_required_count_leaves_out(
         order.append("셈")
         return required_equipment.RequiredExclusionCounts(unrouted_loads=3, excluded_routes=5)
 
-    def recorded_grid(table: str, grid: Any) -> None:
+    def recorded_grid(table: str, grid: Any, *, hidden: bool = False) -> None:
         if table == "RQ_PKG_PLAN":
             order.append("편집표")
-        draw_grid(table, grid)
+        draw_grid(table, grid, hidden=hidden)
 
     monkeypatch.setattr(required_equipment, "required_exclusion_counts", counted)
     monkeypatch.setattr(plan_grid, "render_grid", recorded_grid)
