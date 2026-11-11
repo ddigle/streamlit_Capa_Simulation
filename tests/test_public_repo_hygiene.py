@@ -31,12 +31,10 @@ KEY_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".cer", ".crt", ".der", ".j
 
 # 이 작업(2026-11-02) 전부터 있던 첫째 접미사 자리 — 파일별 수.
 COMPANY_SUFFIX_ALLOWED = {
-    "config/object_storage.json": 1,
     "docker/Dockerfile-prod": 1,
     "docs/bigdataquery_webide_setup.md": 1,
     "docs/objectstore_setup.md": 1,
     "requirements-company.txt": 2,
-    "src/capa_simulation/io/object_storage.py": 1,
 }
 
 

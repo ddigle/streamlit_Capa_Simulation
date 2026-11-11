@@ -108,15 +108,18 @@ from capa_simulation.io.container_start_report import (
     utc_timestamp,
 )
 from capa_simulation.io.object_storage import (
+    ENDPOINT_ENV,
     MODE_ENV,
     MODE_LOCAL,
     MODE_MANAGED,
+    PROFILE_ENV,
     CommandResult,
     ObjectStorageClient,
     ObjectStorageError,
     StorageSettings,
     classify_failure,
     load_settings,
+    missing_environment,
     render_profile_files,
 )
 from capa_simulation.services.object_storage_manifest import (
@@ -159,9 +162,11 @@ BOOT_HUMAN_BACKOFF_SECONDS = 300
 BOOT_HUMAN_KINDS = (FAILURE_FORKED, FAILURE_DIVERGED, FAILURE_SCHEMA_NEWER)
 ECS_TIMEOUT_SECONDS = 5
 ECS_SERVER_ERROR = 500
-# 없으면 받지 않고 머문다 — config 기본(개발 버킷)으로 가면 운영 저장이 개발 버킷에 간다.
+# 없으면 받지 않고 머문다 — 주소 · 버킷 · 프로필은 사내 값이라 코드에 기본값이 없다(고를 곳이 없다).
 SYNC_REQUIRED_ENVIRONMENT = (
     sso_names.ENV_S3_BUCKET,
+    ENDPOINT_ENV,
+    PROFILE_ENV,
     sso_names.ENV_S3_ACCESS_KEY,
     sso_names.ENV_S3_SECRET_KEY,
 )
@@ -869,8 +874,11 @@ def aws_profile_step(environ: Mapping[str, str], storage: StorageSettings | None
     access_key, secret_key = (environ.get(name, "").strip() for name in names)
     pairs = zip(names, (access_key, secret_key), strict=True)
     missing = [name for name, value in pairs if not value]
+    # 프로필 파일에 들어가는 사내 값 둘(주소 · 프로필 이름) — 버킷은 이 줄에 쓰지 않는다.
+    if storage is not None:
+        missing += missing_environment(storage, bucket=False)
     if missing:
-        return StepResult(STATUS_FAILED, f"CD 환경변수 {'·'.join(missing)} 없음 — 만들지 않음")
+        return _missing_environment_step(missing, " — 만들지 않음")
     if storage is None:
         return StepResult(STATUS_FAILED, "설정 파일을 읽지 못해 만들지 않음")
     if _PROFILE_NAME.fullmatch(storage.profile) is None:
@@ -890,6 +898,11 @@ def aws_profile_step(environ: Mapping[str, str], storage: StorageSettings | None
     except OSError as error:
         return StepResult(STATUS_FAILED, f"쓰지 못함({type(error).__name__})")
     return StepResult(STATUS_OK, "씀")
+
+
+def _missing_environment_step(names: Sequence[str], tail: str = "") -> StepResult:
+    """빈 CD 환경변수를 이름으로 대는 실패 줄. 이름만 싣는다(값은 비었다)."""
+    return StepResult(STATUS_FAILED, f"CD 환경변수 {'·'.join(names)} 없음{tail}")
 
 
 def aws_cli_step(client: ObjectStorageClient) -> tuple[StepResult, str | None]:
@@ -1062,7 +1075,11 @@ def prepare_sync(
             head_listed = found
 
         steps[SYNC_STEP_CLI] = _guarded(run_cli, redactor)
-        steps[SYNC_STEP_ECS] = _guarded(lambda: ecs_step(storage.endpoint_url), redactor)
+        steps[SYNC_STEP_ECS] = (
+            _guarded(lambda: ecs_step(storage.endpoint_url), redactor)
+            if storage.endpoint_url
+            else _missing_environment_step([ENDPOINT_ENV])
+        )
         blocked = next(
             (
                 name
@@ -1071,11 +1088,17 @@ def prepare_sync(
             ),
             None,
         )
-        steps[SYNC_STEP_BUCKET] = (
-            StepResult(STATUS_SKIPPED, f"{SYNC_STEP_LABELS[blocked]} 실패로 보지 않음")
-            if blocked is not None
-            else _guarded(lambda: bucket_step(client, heads=saw_heads), redactor)
-        )
+        unset = missing_environment(storage)
+        if blocked is not None:
+            steps[SYNC_STEP_BUCKET] = StepResult(
+                STATUS_SKIPPED, f"{SYNC_STEP_LABELS[blocked]} 실패로 보지 않음"
+            )
+        elif unset:
+            steps[SYNC_STEP_BUCKET] = _missing_environment_step(unset)
+        else:
+            steps[SYNC_STEP_BUCKET] = _guarded(
+                lambda: bucket_step(client, heads=saw_heads), redactor
+            )
     # 이 스크립트는 C-DEP 이미지에서만 돈다 — 그 자리에서는 빈 값과 바른 `local` 이 같은 길이라
     # 둘 다 표지를 세운다. 앱이 바른 `local` 로 읽지 않는 값(다른 철자 · 공백만)은 앱이 `SY-01` 로
     # 알리므로 세우지 않는다.
@@ -1184,6 +1207,7 @@ def pull_until_ready(
     attempt = 0
     while True:
         attempt += 1
+        missing: list[str] = []
         try:
             missing = missing_sync_environment(environ)
             pulled = (
@@ -1196,7 +1220,8 @@ def pull_until_ready(
         if pulled.kind is None:
             return pulled, attempt
         wait = boot_backoff_seconds(pulled.kind, attempt)
-        echo(f"DB 받기 {attempt}회 실패 — {pulled.kind} · {wait}초 뒤 다시")
+        unset = f" · CD 환경변수 {'·'.join(missing)} 없음" if missing else ""
+        echo(f"DB 받기 {attempt}회 실패 — {pulled.kind}{unset} · {wait}초 뒤 다시")
         stage.show(pulling=True, attempts=attempt, kind=pulled.kind)
         sleep(wait)
 

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import json
 import sys
@@ -780,13 +781,22 @@ def test_boot_pull_prints_a_line_without_values(
     assert line["seq"] == 2
 
 
-def test_boot_pull_without_the_bucket_variable_stays(
+@pytest.mark.parametrize("blank", ["endpoint_url", "bucket", "profile"])
+def test_boot_pull_with_a_missing_in_house_value_stays(
     harness: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    blank: str,
 ) -> None:
-    """없을 때 config 기본(개발 버킷)으로 가면 운영 저장이 개발 버킷에 간다."""
-    monkeypatch.delenv("CAPA_S3_BUCKET", raising=False)
+    """주소 · 버킷 · 프로필 가운데 하나라도 비면 받지 않는다 — 기본값이 없으니 고를 곳도 없다."""
+    base = fake_settings()
+    settings = dataclasses.replace(
+        base,
+        endpoint_url="" if blank == "endpoint_url" else base.endpoint_url,
+        bucket="" if blank == "bucket" else base.bucket,
+        profile="" if blank == "profile" else base.profile,
+    )
+    monkeypatch.setattr(harness.script, "build_settings", lambda _args: settings)
 
     assert _run(harness, "boot-pull") == 1
 
