@@ -115,6 +115,7 @@ PREVIEW_ROWS: Final = 4
 # 묶음 줄을 담는 칸과 묶음 칸 key 앞머리 — 줄 서식(`panel_style`)이 이 key 로 고른다.
 GROUPS_KEY: Final = "input_check_groups"
 GROUP_KEY_PREFIX: Final = "input_check_group_"
+RULES_KEY: Final = "input_check_rules"
 # 「넓게 보기」 팝업의 열림 값 앞머리 — (앞머리, 시나리오 id, 리비전 id, 리비전 번호, 묶음 id). 화면
 # 팝업 호스트 하나를 공식 지정 팝업과 함께 쓴다(열림 값의 꼴로 가른다 — 결정 17).
 WIDE_TAG: Final = "input_check_wide"
@@ -368,14 +369,17 @@ def _render_check(
 
 def panel_style() -> str:
     """묶음 줄 서식 — 줄 사이 선 · 촘촘한 세로 간격, 글자 단추(행 보기 · 그 화면으로 · 넓게 보기)는
-    강조색 작은 굵은 글(시안 `m-link`), 머리 줄은 접지 않고 이름이 접힌다. 색은 토큰이다."""
+    강조색 작은 굵은 글(시안 `m-link`), 머리 줄은 접지 않고 이름이 접힌다. 맨 아래 규칙 줄은 선이
+    없다(key 앞머리가 다르다 — 칸마다 감싸개가 따로라 `:last-child` 로 고를 수 없다). 색은
+    토큰이다."""
     groups = f".st-key-{GROUPS_KEY}"
     group = f'{groups} [class*="st-key-{GROUP_KEY_PREFIX}"]'
+    rules = f".st-key-{RULES_KEY}"
     link = f'{groups} [data-testid="stBaseButton-tertiary"]'
     return (
         "<style>"
         f"{group} {{ padding: 0.45rem 0.1rem; border-bottom: 1px solid {tokens.BORDER}; }}"
-        f"{group}:last-child {{ border-bottom: none; }}"
+        f"{rules} {{ padding: 0.45rem 0.1rem 0; }}"
         f"{link} {{ color: {tokens.ACCENT}; font-weight: 700; min-height: 0; padding: 0 0.15rem; }}"
         f"{link} p {{ font-size: 0.75rem; font-weight: 700; white-space: nowrap; }}"
         f'{group} [data-testid="stDataFrame"] {{ margin-top: 0.3rem; }}'
@@ -491,7 +495,7 @@ def _render_rules(
 ) -> list[WideValue]:
     """맨 아래 접힌 한 줄 「규칙대로 셈에서 뺀 것」 — 펼치면 두 표(PKG Buffer 밖 · 쓰지 않는 경로
     조합)를 소제목과 함께."""
-    with st.container(key=f"{GROUP_KEY_PREFIX}{group.key}", gap=None):
+    with st.container(key=RULES_KEY, gap=None):
         with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False):
             st.button(
                 group.title,
