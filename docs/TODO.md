@@ -1645,8 +1645,9 @@
   시뮬레이션 · 재공 현황 · 가용설비 현황 비교 · 필요 단축 일정 — 그물 `tests/test_stop_examples.py`)와 자동 갱신 「지금 실행」
   결과 알림도 같은 꼴이다(검토 지적 고침 `3b37d4e` — 자동 갱신 기록 표 「사유」 칸은 원문). 필요 단축 일정의 달 범위 멈춤 글은 공용 길
   `shortening_source`(표시명을 읽지도 받지도 않는다)가 원문으로 지어 그 예외(`ShorteningStop.cause`)와 함께 돌려주고 패널이 같은 예외로 표시명 글을
-  다시 짓는다(`23d2c6d`). Space 「필요 단축」 보기의 멈춤 글은 원문이다 — 예시 행도 dict 꼴 그대로이고 「YY.MM 공정 양산구분」 꼴이 아니다. 원본
-  공정소분류 길(결정 D10, `tests/test_process_label_boundaries.py`)이라 표시명을 읽을 자리가 없다(`6c1fba8` · `23d2c6d` — 4장 물음). 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림) 글은 예시 칸 값(공정 표시명 따위 사람 글)을 `literal_markdown` 으로 막아 싣는다
+  다시 짓는다(`23d2c6d`). Space 「필요 단축」 보기의 멈춤 글(수요 멈춤 · 달 범위 멈춤)은 같은 꼴이되 공정은 원본 이름이다(2026-11-11 다음 배포
+  물음 보드 「F7 뒤 ①」 (다) — `bootstrap_error_message(labels=None, example_rows=True)`, 달 범위는 공용 길이 실은 예외로 다시 짓는다, 가지
+  `night/nq-stop-1111`). 원본 공정소분류 길(결정 D10, `tests/test_process_label_boundaries.py`)이라 표시명을 읽지 않는다(`6c1fba8` · `23d2c6d`). 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림) 글은 예시 칸 값(공정 표시명 따위 사람 글)을 `literal_markdown` 으로 막아 싣는다
   (`stop_examples.markdown_examples` — 표시명의 `*` · `$` 가 꾸밈 · 수식이 되지 않게, AGENTS 9장). 가용설비 현황 비교의 `EQ-08` 은 전문만 화면
   꼴 평문이고 「원본 오류」 · 지문은 원문이다(표시명만 고쳐도 알림이 다시 서지 않게). 설계 규칙 UI-DAT-10 · UI-NTF-08 · UI-NTF-06 · UI-NTF-04, 그림은 저장소 밖
   `~/projects/Deploy/worklog/check-1111/answers-fix/shots` — 관련: `components/stop_examples.py` · `page_bootstrap.calculation_stop_notice`

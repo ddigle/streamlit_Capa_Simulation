@@ -3113,8 +3113,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   보는 화면 — 공정 Capa 상세 · 제약 시뮬레이션 · 재공 현황 · 가용설비 현황 비교 · 필요 단축 일정(달 범위를 다시 꺼내다 멈춘 글은 공용
   길 `shortening_source` 가 원문으로 지어 그 예외 `ShorteningStop.cause` 와 함께 돌려주고 패널이 같은 예외로 표시명 글을 다시 짓는다 —
   `_named_stop`. 공용 길은 표시명을 읽지도 받지도 않는다), 그물 `tests/test_stop_examples.py`. Space 「필요 단축」
-  보기(`space_shortening_view`)의 멈춤 글은 원문이다 — 예시 행도 dict 꼴 그대로이고 이 조각의 꼴이 아니다(`labels=None`, 달 범위도
-  공용 길이 지은 원문 그대로 — 원본 공정소분류 길, 결정 D10 · `tests/test_process_label_boundaries.py`. 이 꼴로 둘지는 TODO 4장 물음).
+  보기(`space_shortening_view`)의 멈춤 글은 표시명 없이 예시 행만 이 꼴이고 공정은 원본 이름이다(`bootstrap_error_message(labels=None,
+  example_rows=True)`, 달 범위는 공용 길이 실은 `cause` 로 다시 짓는다 — `_original_name_stop`. 원본 공정소분류 길, 결정 D10 ·
+  `tests/test_process_label_boundaries.py` 그대로 — 2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다)).
   가용설비 현황 비교의 알림 `EQ-08` 은 전문만 화면 꼴 평문이고 「원본 오류」 · 지문은 원문이다(`labels=None` — 표시명만 고쳐도 알림이
   다시 서지 않게)),
   `capacity_gate` 의 저장 · 지정 · 파생 저장 경고(`labels` 는 표시명을 내는 함수 — 끼울 오류 글이 있을 때만 부른다), 등록
@@ -4252,14 +4253,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
   모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지도 받지도 않는다 — 달 범위 멈춤 글은 원문으로 짓고 그 예외를
-  `ShorteningStop.cause` 로 싣는다(필요 단축 일정 패널은 같은 예외로 표시명 글을 다시 짓고 Space 보기는 원문 그대로 쓴다).
+  `ShorteningStop.cause` 로 싣는다(필요 단축 일정 패널은 같은 예외로 표시명 글을 다시 짓고(`_named_stop`) Space 보기는 원본 공정명으로
+  예시 행만 화면 꼴로 다시 짓는다(`_original_name_stop`)).
   `load_official_shortening(level=)` 은 화면의 지금 목표가 다섯 밖(직접 입력)이면 그 값 하나를 목표 하나 칸에서 받아
   더한다(`simulation_cache.load_required_shortening(level=)` — 두 화면이 같은 길).
 - `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 사이드바 목표 줄 · 카드
   흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link` ·
   필터 밖 링크 공정 사건 알림 `report_arrival_filter` → `EQ-24`)과 상세 단추 이동
   (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10). 계산
-  멈춤 글도 원문이다 — 예시 행이 dict 꼴 그대로이고 「YY.MM 공정 양산구분」 꼴이 아니다(`labels=None`).
+  멈춤 글(수요 멈춤 · 달 범위 멈춤)의 예시 행은 화면 꼴 「YY.MM 공정 양산구분」 이고 공정은 원본 이름이다(`labels=None` ·
+  `example_rows=True` — 2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다), 달 범위는 공용 길이 실은 `cause` 로 다시 짓는다).
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.

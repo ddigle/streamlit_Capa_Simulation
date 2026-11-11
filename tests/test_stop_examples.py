@@ -230,11 +230,19 @@ def _labels_value(call: ast.Call) -> ast.expr | None:
     return next((keyword.value for keyword in call.keywords if keyword.arg == "labels"), None)
 
 
-# 계산을 먼저 보지만 멈춤 글을 원문으로 두는 자리 — Space 「필요 단축」 보기와 그 보기가 지나는
+# 계산을 먼저 보지만 표시명을 넘기지 않는 자리 — Space 「필요 단축」 보기와 그 보기가 지나는
 # 공용 길(`shortening_source`)은 원본 공정소분류만 쓴다(결정 D10 — 공정 표시명을 읽지 않는다,
-# `test_process_label_boundaries`). 그 `except` 는 `labels=None` 을 밝혀 적는다. 필요 단축 일정
-# 패널은 공용 길의 달 범위 멈춤 글을 같은 예외로 다시 짓는다(아래 시험).
+# `test_process_label_boundaries`). 그 `except` 는 `labels=None` 을 밝혀 적는다. 공용 길은 원문이고
+# 받는 화면이 같은 예외로 다시 짓는다 — 필요 단축 일정 패널은 표시명, Space 보기는 원본 공정명으로
+# 예시 행만 화면 꼴(`example_rows=True` — 2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다),
+# 아래 시험).
 ORIGINAL_NAME_PLACES = frozenset({"shortening_source.py", "space_shortening_view.py"})
+# 그 가운데 예시 행을 화면 꼴로 짓는 자리(원본 공정명).
+EXAMPLE_ROW_PLACES = frozenset({"space_shortening_view.py"})
+
+
+def _example_rows_value(call: ast.Call) -> ast.expr | None:
+    return next((keyword.value for keyword in call.keywords if keyword.arg == "example_rows"), None)
 
 
 def test_screens_that_check_the_calculation_first_pass_display_names_too() -> None:
@@ -243,7 +251,8 @@ def test_screens_that_check_the_calculation_first_pass_display_names_too() -> No
     표시명을 넘긴다 — 예시 행이 같은 꼴이다(F7 (나) 「다른 계산 멈춤 자리도 함께」). 원문을 따로
     드는 글(알림 「원본 오류」 · 지문)은 `labels=None` 을 밝혀 적는다 — 한 `except` 에 표시명을
     넘기는 글이 적어도 하나다. Space 「필요 단축」 보기와 그 공용 길(`ORIGINAL_NAME_PLACES`)만 모든
-    글이 `labels=None` 이다(결정 D10)."""
+    글이 `labels=None` 이다(결정 D10) — Space 보기(`EXAMPLE_ROW_PLACES`)는 예시 행만 화면 꼴
+    (`example_rows=True`), 공용 길은 원문(받는 쪽이 `cause` 로 다시 짓는다)."""
     seen: set[str] = set()
     original: set[str] = set()
     roots = (PROJECT_ROOT / "app_pages", PROJECT_ROOT / "src/capa_simulation/components")
@@ -273,6 +282,13 @@ def test_screens_that_check_the_calculation_first_pass_display_names_too() -> No
                         assert isinstance(value, ast.Constant) and value.value is None, (
                             f"{path.name}:{call.lineno}"
                         )
+                        rows = _example_rows_value(call)
+                        wanted = path.name in EXAMPLE_ROW_PLACES
+                        assert (
+                            isinstance(rows, ast.Constant) and rows.value is True
+                            if wanted
+                            else rows is None
+                        ), f"{path.name}:{call.lineno}"
                     original.add(path.name)
                     continue
                 named = [
@@ -407,11 +423,17 @@ def _space_layer_stop() -> shortening_source.ShorteningStop:
     return stop
 
 
-def test_the_space_shortening_demand_stop_keeps_the_original_text(
+# Space 「필요 단축」 보기의 멈춤 글 — 예시 행은 화면 꼴이고 공정은 원본 이름이다(표시명 「절단」 이
+# 있어도 「DEMO-SAW」). 마크다운 글이라 칸 값은 막혀 있다.
+SPACE_STOPPED_TEXT = markdown_examples(STOPPED_TEXT)
+
+
+def test_the_space_shortening_demand_stop_reads_its_examples_with_original_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Space 「필요 단축」 보기의 수요 멈춤 글은 공용 표시명이 있어도 원문이다(예시 행도 dict 꼴
-    그대로) — 그 길은 원본 공정소분류만 쓴다(결정 D10). 표시명을 부르면 이 시험이 잡는다."""
+    """Space 「필요 단축」 보기의 수요 멈춤 글은 예시 행이 화면 꼴 「YY.MM 공정 양산구분」 이고
+    공정은 공용 표시명이 있어도 원본 이름이다 — 그 길은 원본 공정소분류만 쓴다(결정 D10,
+    2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다)). 표시명을 부르면 이 시험이 잡는다."""
 
     def stopped() -> shortening_source.ShorteningDemand:
         raise ValueError(STOPPED_TEXT)
@@ -421,13 +443,16 @@ def test_the_space_shortening_demand_stop_keeps_the_original_text(
     stop = _space_layer_stop()
 
     assert stop.kind == "scenario"
-    assert stop.message == STOPPED_TEXT
+    assert stop.message == SPACE_STOPPED_TEXT
+    assert readable_examples(STOPPED_TEXT) == HEAD + "예시 27.04 DEMO-SAW 양산"
+    assert stop.cause is None
 
 
-def test_the_space_shortening_month_range_stop_keeps_the_original_text(
+def test_the_space_shortening_month_range_stop_reads_its_examples_with_original_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Space 「필요 단축」 보기의 달 범위 멈춤 글도 원문이다 — 공용 길이 지은 글을 그대로 쓴다."""
+    """Space 「필요 단축」 보기의 달 범위 멈춤 글도 같은 꼴이다 — 공용 길이 원문으로 지어 실은
+    예외로 다시 짓고 예외를 놓는다(필요 단축 일정 패널 `_named_stop` 과 짝 — 그 화면은 표시명)."""
     monkeypatch.setattr(shortening_source, "load_shortening_demand", lambda: DEMAND)
     monkeypatch.setattr(equipment_cache, "load_process_cutoff", lambda _path: CUTOFF)
     _stop_the_month_range(monkeypatch)
@@ -435,7 +460,11 @@ def test_the_space_shortening_month_range_stop_keeps_the_original_text(
     stop = _space_layer_stop()
 
     assert stop.kind == "scenario"
-    assert stop.message == STOPPED_TEXT
+    assert stop.message == SPACE_STOPPED_TEXT
+    # 다시 지은 멈춤은 예외(traceback)를 쥐지 않는다.
+    assert stop.cause is None
+    plain = shortening_source.ShorteningStop("info", "조회기간에 월이 없습니다.")
+    assert space_shortening_view._original_name_stop(plain) is plain
 
 
 # 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 계산 오류 글을 싣는 함수 — 예시 행을
