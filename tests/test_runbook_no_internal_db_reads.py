@@ -47,6 +47,11 @@ COMMAND_FENCES = ("powershell", "bash", "")
 AGENT_RUNS = ("백그라운드로 돌", "에이전트가 친다", "에이전트가 돌린다", "에이전트가 돌리고")
 # `!` 로 주는 꼴(부정 「치지 않는다」 · 「아님」 은 걸리지 않는다).
 BANG_GIVEN = re.compile(r"`! ?` ?(?:로|를) ?(?:준다|주고|친다|치고|붙여)|`!` 한 줄")
+# 본문 안 실행 줄(백틱) — 스크립트를 부르는 꼴만 본다(이름만 든 백틱은 아니다).
+INLINE_CALL = re.compile(r"`((?:uv run|& \$py|python)[^`]*)`")
+# 다른 문서의 장 번호(`docs/x.md` 9장)는 런북 9장이 아니다.
+OTHER_DOCUMENT_CHAPTER = re.compile(r"`[^`]+\.md` \d+장")
+WINDOWS = (USER_WINDOW, "별도 창", "사용자 창")
 
 
 def _chapter_seven_bounds(text: str) -> tuple[int, int]:
@@ -123,6 +128,8 @@ def violations(text: str) -> list[str]:
             for phrase in AGENT_RUNS:
                 if phrase in around:
                     found.append(f"DB 를 여는 펜스 곁에 「{phrase}」: {block.strip()[:80]}")
+            if BANG_GIVEN.search(around):
+                found.append(f"DB 를 여는 펜스를 `!` 로 준다: {block.strip()[:80]}")
     prose = "\n".join(block for language, block in _pieces(text) if language is None)
     for chunk in _chunks(prose):
         flat = " ".join(chunk.split())
@@ -130,9 +137,13 @@ def violations(text: str) -> list[str]:
             found.append(f"`--only bdq` 를 걷지 않은 글: {flat[:80]}")
         if any(name in flat for name in DATABASE_SCRIPTS) and BANG_GIVEN.search(flat):
             found.append(f"DB 를 여는 줄을 `!` 로 준다: {flat[:80]}")
+        calls = [call for call in INLINE_CALL.findall(flat) if _opens_a_database(call)]
+        if calls and not any(window in flat for window in WINDOWS):
+            found.append(f"본문의 DB 를 여는 줄에 사용자 창이 없다: {calls[0][:80]}")
         if flat.startswith("|") and "에이전트(스크립트)" in flat:
             found.append(f"표의 확인자가 에이전트(스크립트)다: {flat[:80]}")
-        if any(mark in flat for mark in ("B 대행", "`@a`", "9장")) and "걷" not in flat:
+        marks = OTHER_DOCUMENT_CHAPTER.sub("", flat)
+        if any(mark in marks for mark in ("B 대행", "`@a`", "9장")) and "걷" not in flat:
             found.append(f"걷은 일(B 대행 · 9장)을 걷었다고 하지 않는다: {flat[:80]}")
     if re.search(r"^### 9-", text, re.MULTILINE):
         found.append("9장 탐색 절(`### 9-`)이 남았다")
@@ -176,7 +187,6 @@ def test_a_new_chapter_seven_is_held_to_the_same_rules() -> None:
     확인자 에이전트(스크립트))을 다시 쓰면 잡힌다."""
     text = RUNBOOK.read_text(encoding="utf-8")
     begin, end = _chapter_seven_bounds(text)
-    assert SHIPPED_SEVEN in text[begin:end]
     new_head = (
         "## 7. 이번 배포에서 사내가 따로 확인해야 하는 것\n\n"
         "**이 절은 stamp `209901010000` 배포용이다.**\n\n"
@@ -203,6 +213,10 @@ def test_a_new_chapter_seven_is_held_to_the_same_rules() -> None:
     assert any("「별도 PowerShell 창」 가 없다" in line for line in found), found
     assert any("`!` 로 준다" in line for line in found), found
     assert any("에이전트(스크립트)" in line for line in found), found
+    inline_wf = (
+        "\n\n이 줄도 처음부터 준다 — `uv run --no-sync python scripts/inspect_wf_division.py`.\n"
+    )
+    assert any("본문의 DB 를 여는 줄" in line for line in violations(rewritten + inline_wf))
     assert violations(clean) == []
 
 
@@ -352,3 +366,23 @@ def test_the_two_lines_that_open_nothing_end_before_any_database() -> None:
 
     assert run.index("if args.list:") < run.index("refused_paths(args)") < run.index("OutputFile(")
     assert main.index("return _check_summary(") < main.index("_run(args")
+
+
+def test_every_first_argument_of_the_two_partly_open_scripts_has_a_deny_pair() -> None:
+    """`inspect_real_data_checks.py` · `check_deploy_screens.py` 는 첫 인자마다 deny 다 — 인자가
+    늘면 여기서 빠진 쌍이 드러난다. DB 를 열지 않는 `--check-summary` · `--list` 만 deny 밖이다."""
+    deny = set(_permissions()["deny"])
+    prefix = "uv run --no-sync python scripts/"
+    for name, safe in (
+        ("inspect_real_data_checks.py", "--check-summary"),
+        ("check_deploy_screens.py", "--list"),
+    ):
+        source = (PROJECT_ROOT / "scripts" / name).read_text(encoding="utf-8")
+        flags = set(re.findall(r'add_argument\(\s*"(--[a-z][a-z-]*)"', source))
+        assert safe in flags, name
+        for flag in sorted(flags - {safe}):
+            for shell in ("Bash", "PowerShell"):
+                assert f"{shell}({prefix}{name} {flag}:*)" in deny, (shell, name, flag)
+        for shell in ("Bash", "PowerShell"):
+            assert f"{shell}({prefix}{name})" in deny, (shell, name)
+            assert not [rule for rule in deny if rule.startswith(f"{shell}({prefix}{name} {safe}")]

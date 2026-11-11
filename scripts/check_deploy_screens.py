@@ -914,7 +914,7 @@ class ConsoleCounter:
     """확인용 앱의 콘솔 출력(stdout · stderr 를 한 파이프로)을 읽으며 정한 글이 든 줄 수만 센다.
 
     줄은 세고 버린다 — 파일에도 쓰지 않는다. 경고 · 예외 문구에 이름이 실릴 수 있고, 스크립트가
-    강제로 끝나도(사내 백그라운드 30분) 남는 것이 없어야 한다. 파이프를 읽지 않으면 앱이 쓰다가
+    강제로 끝나도(창이 닫히거나 끊겨도) 남는 것이 없어야 한다. 파이프를 읽지 않으면 앱이 쓰다가
     막히므로 읽기는 앱이 끝나 파이프가 닫힐 때까지 이어 간다(배경 스레드 하나 — 데몬)."""
 
     def __init__(self, needles: Sequence[str]) -> None:
@@ -1064,7 +1064,7 @@ def _same_path(left: Path, right: Path) -> bool:
     return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
 
 
-# Windows Job Object — 확인용 앱을 이 스크립트의 수명에 묶는다. 스크립트가 강제로 끝나면(30분 제한·
+# Windows Job Object — 확인용 앱을 이 스크립트의 수명에 묶는다. 스크립트가 강제로 끝나면(창 닫힘·
 # 작업 관리자) `finally` 가 돌지 못해 앱이 남고, 다음 실행이 그것을 사용자 앱으로 본다. 잡의 마지막
 # 핸들이 닫히면(스크립트가 어떻게 끝나든) 잡 안의 프로세스가 모두 끝난다. venv 의 python.exe 는 본
 # 해석기를 자식으로 띄우므로 그 자식까지 잡에 들게 앱을 멈춘 채 만들어 잡에 넣은 뒤 깨운다.

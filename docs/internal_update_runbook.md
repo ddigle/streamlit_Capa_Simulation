@@ -1676,7 +1676,7 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 ### 이관 차례
 
 1. 사용자가 C-DEP 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소를 넣고 CI/CD → Admin 「서버 시작 점검」 에서 aws 판 · ECS 연결 · 버킷 목록을 본다.
-2. 사용자가 사내 PC 앱을 끈다(1-1) → `doctor`(`uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> doctor`) — **원격 세대가
+2. 사용자가 사내 PC 앱을 끈다(1-1) → 사용자가 별도 PowerShell 창에서 `doctor`(`uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> doctor`) — **원격 세대가
    `비어 있음` 이 아니면 `init` 을 치지 않고 멈춰 사외에 알린다**(그대로 치면 `init` 은 「원격에 이미 seq …」 로 건너뛰고 3 의 C-DEP 는 그 옛 세대를 받는다).
    사용자는 `doctor` 의 `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(옮기지 않는다 — 다르면 첫 줄부터) →
    `uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> init --note "최초 이관"` → 같은 꼴로 `status`. `aws s3 cp` 를 쓰지 않는다.
