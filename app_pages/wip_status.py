@@ -231,7 +231,9 @@ try:
     equipment_repository = get_equipment_repository(equipment_database)
     availability = load_standard_target_availability(equipment_database)
 except BOOTSTRAP_ERRORS as exc:
-    message = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+    message = bootstrap_error_message(
+        exc, database_paths=(EQUIPMENT_DUCKDB_PATH,), labels=process_labels
+    )
     render_data_error(message, code="WIP-01", text="재공 현황을 준비하지 못했습니다")
     st.stop()
 # 설비 DB 가 이 코드보다 새 버전이면(예전 배포로 되돌린 상태) 상태 알림(`GL-03`). 막지 않는다.

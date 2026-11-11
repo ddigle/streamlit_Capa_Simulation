@@ -330,7 +330,7 @@ except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         st.caption(NO_PROCESS_MARK)
-    _stop_with_error(bootstrap_error_message(exc))
+    _stop_with_error(bootstrap_error_message(exc, labels=process_labels))
 
 thresholds = page_inputs.thresholds
 context = page_inputs.context

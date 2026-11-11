@@ -492,7 +492,7 @@ with gap_tab:
             # 「Static 을 읽지 못해」 문구와 맞지 않는 이 동작은 테스트가 고정한다
             # (`tests/test_equipment_scenario_demand.py`).
             static_error = bootstrap_error_message(
-                exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+                exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH), labels=process_labels
             )
 
         gap_months = _months_between(start_date, end_date)

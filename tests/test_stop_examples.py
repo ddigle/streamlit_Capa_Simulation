@@ -160,6 +160,38 @@ def test_every_stopped_screen_passes_its_display_names() -> None:
     }
 
 
+# 시나리오 전체 기간 계산이 서는지 먼저 보는 호출 — 그 `try` 의 `except` 가 계산 멈춤 글을 받는다.
+CAPACITY_CHECKS = frozenset({"process_page_inputs", "check_scenario_capacity", "_route_choices"})
+
+
+def test_screens_that_check_the_calculation_first_pass_display_names_too() -> None:
+    """계산 멈춤 알림을 쓰지 않고 멈춤 글을 그대로 싣는 화면(공정 Capa 상세 · 제약 시뮬레이션 ·
+    재공 현황 · 가용설비 현황 비교)도 계산을 먼저 보는 `try` 의 멈춤 글에 화면 표시명을 넘긴다 —
+    예시 행이 같은 꼴이다(F7 (나) 「다른 계산 멈춤 자리도 함께」)."""
+    seen: set[str] = set()
+    for path in sorted((PROJECT_ROOT / "app_pages").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
+                continue
+            body = [
+                call for part in node.body for call in ast.walk(part) if isinstance(call, ast.Call)
+            ]
+            if not any(_name(call) in CAPACITY_CHECKS for call in body):
+                continue
+            for handler in node.handlers:
+                for call in ast.walk(handler):
+                    if isinstance(call, ast.Call) and _name(call) == "bootstrap_error_message":
+                        assert "labels" in _keywords(call), f"{path.name}:{call.lineno}"
+                        seen.add(path.name)
+    assert seen == {
+        "available_equipment_status.py",
+        "constraint_simulation.py",
+        "process_capa_detail.py",
+        "wip_status.py",
+    }
+
+
 def test_every_save_check_passes_display_names_to_its_warning() -> None:
     """저장 · 복제 · 공식 지정 · 월 머지 · 연도 Shift 경고는 화면의 표시명을 넘긴다."""
     verdicts = {"revision_save_verdict", "official_publish_verdict", "derived_save_verdict"}

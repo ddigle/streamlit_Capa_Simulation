@@ -3093,7 +3093,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   UI-DAT-10). 월 → 공정 → 양산구분이 앞이고 그 밖의 칸(제품정보 · 걸린 값)은 서비스 글 차례대로 값만 뒤에, 공정은 같은 예시 묶음
   안에서 `unique_format_func` 로 짓는다(겹치면 「표시명 (원본)」). 읽지 못한 예시(`nan` 따위 · dict 아닌 목록 · 빈 목록)는 원문
   그대로다. 물결표 막기보다 먼저 부른다. 부르는 자리: `page_bootstrap.calculation_stop_notice(labels=)` · `bootstrap_error_message(labels=)`
-  (멈춘 계산 화면 넷 — 그물 `tests/test_stop_examples.py`), `capacity_gate` 의 저장 · 지정 · 파생 저장 경고(`labels` 는 표시명을
+  (멈춘 계산 화면 넷과 계산을 먼저 보는 화면 넷 — 공정 Capa 상세 · 제약 시뮬레이션 · 재공 현황 · 가용설비 현황 비교, 그물
+  `tests/test_stop_examples.py`. 표시명을 쥐지 않은 필요 단축 일정 · Space 「필요 단축」 은 아직 원문 — TODO 4장), `capacity_gate` 의 저장 · 지정 · 파생 저장 경고(`labels` 는 표시명을
   내는 함수 — 끼울 오류 글이 있을 때만 부른다), 등록 경고(`bigdataquery_registration`). 서비스 글 · 리비전 메모 · 저장 검사 견줌
   (`_error_kind`) · 사내 집계는 원문이다. `process_labels` 를 실행 때 불러오지 않는다(`page_bootstrap` 이 이 조각을 부르고
   `process_labels` 가 `page_bootstrap` 을 부른다 — 표시명은 인자로만).
