@@ -377,6 +377,9 @@ PANEL_ROW_NAMES: Final = ("시나리오", "조회기간", "공정 필터", "주�
 # 설비 화면(가용설비 현황·필요 단축 일정·공정 Capa 상세·Space 현황)의 설비 시나리오 줄 이름. HOME
 # 에는 서지 않는다(`navigation.PageSpec.equipment_scenario`).
 EQUIPMENT_SCENARIO_ROW_NAME: Final = "설비 시나리오"
+# 페이지가 그리는 공용 공정 줄 이름(`process_field.FIELD_LABEL` — 2026-11-08 공정 공유 1차). HOME 의
+# 「공정 필터」 줄과 다른 줄이라 앞머리가 아니라 글 전체로 가른다.
+PROCESS_ROW_NAME: Final = "공정"
 UNKNOWN_ROW_NAME: Final = "그 밖"
 # 이번 배포에서 걷은 사이드바 상자 제목. 「시나리오·리비전」은 이제 팝업 제목이다(사이드바 밖).
 OLD_BOX_TITLES: Final = ("B/N 집계 공정", "시나리오·리비전")
@@ -415,14 +418,14 @@ EQUIPMENT_STATUS_BADGES: Final = (
     "일정 없이 엶",
 )
 # 다른 화면의 패널 줄(`navigation.PageSpec.reads_*`) — (주소 끝, 결과에 찍는 화면 이름, 줄 이름).
-# 줄 이름이 None 이면 패널이 서지 않는다(Space 현황은 조건 카드만 있어 구역 제목만 선다).
+# 줄 이름이 None 이면 그 화면에는 패널이 서지 않아야 한다.
 OTHER_PAGE_PANELS: Final[tuple[tuple[str, str, tuple[str, ...] | None], ...]] = (
     (SCENARIO_MANAGEMENT_PAGE, "시나리오 관리", ("시나리오", "조회기간")),
     (ADMIN_AREA_PAGE, "Admin Area", ("시나리오",)),
     # Space 현황은 색 기준이 필요 단축이 아니면 시나리오·조회기간을 읽지 않고 설비 시나리오 줄(고를
     # 수 있는 줄 — 그 시나리오의 배치를 그린다)과 공용 공정 줄(2026-11-08 공정 공유 1차)만 선다(이
     # 항목은 기본 색 기준에서 돈다).
-    (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME, "공정")),
+    (SPACE_PAGE, "Space 현황", (EQUIPMENT_SCENARIO_ROW_NAME, PROCESS_ROW_NAME)),
 )
 # 사이드바 계산 그룹(2026-10-17 사용자 결정 — 약속 · 이행 · 실적, 2026-11-02 「생산 진도」 를 이행과
 # 실적 사이에 더함, 2026-11-04 그 하위에 샘플 페이지 셋 — 검수 의견 prog-01) — (상자 slug, 상자
@@ -3214,12 +3217,12 @@ def _sidebar_button(widget_key: str) -> str:
 
 
 def panel_row_name(text: str) -> str:
-    """패널 줄 이름 글을 정한 어휘(`PANEL_ROW_NAMES` 와 설비 시나리오 줄)로. 시나리오 줄은
-    「시나리오 · rN」이라 앞머리로 가른다 — 리비전 번호는 값이라 옮기지 않는다. 어휘에 없으면
-    「그 밖」."""
+    """패널 줄 이름 글을 정한 어휘(`PANEL_ROW_NAMES` 와 설비 시나리오 줄 · 공용 공정 줄)로. 시나리오
+    줄은 「시나리오 · rN」이라 앞머리로 가른다 — 리비전 번호는 값이라 옮기지 않는다. 설비 시나리오 ·
+    공정 줄은 글 전체가 같아야 한다. 어휘에 없으면 「그 밖」."""
     head = text.strip()
-    if head == EQUIPMENT_SCENARIO_ROW_NAME:
-        return EQUIPMENT_SCENARIO_ROW_NAME
+    if head in (EQUIPMENT_SCENARIO_ROW_NAME, PROCESS_ROW_NAME):
+        return head
     for name in PANEL_ROW_NAMES:
         if head == name or head.startswith(f"{name} · "):
             return name

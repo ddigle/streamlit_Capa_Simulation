@@ -2009,15 +2009,22 @@ def test_the_home_panel_summary_never_carries_screen_text() -> None:
 
 
 def test_the_other_pages_summary_says_whether_the_rows_are_as_declared() -> None:
+    # 선언 그대로 선 화면은 「같음」 이다 — 시나리오 줄은 「시나리오 · rN」 꼴로 읽힌다.
     seen = [
-        ("시나리오 관리", ("시나리오", "조회기간"), ["시나리오 · r3", "조회기간"]),
-        ("Admin Area", ("시나리오",), ["시나리오 · r3"]),
-        ("Space 현황", None, None),
+        (
+            title,
+            expected,
+            ["시나리오 · r3" if name == "시나리오" else name for name in expected or ()],
+        )
+        for _page, title, expected in screens.OTHER_PAGE_PANELS
     ]
 
     assert screens.summarize_other_pages(seen) == (
-        "시나리오 관리 2줄(시나리오 · 조회기간) · Admin Area 1줄(시나리오) · Space 현황 패널 없음 "
-        "— 정한 대로 같음"
+        "시나리오 관리 2줄(시나리오 · 조회기간) · Admin Area 1줄(시나리오) · Space 현황 2줄(설비 "
+        "시나리오 · 공정) — 정한 대로 같음"
+    )
+    assert screens.summarize_other_pages([("Space 현황", None, None)]) == (
+        "Space 현황 패널 없음 — 정한 대로 같음"
     )
     wrong = [
         ("Admin Area", ("시나리오",), [f"시나리오 · {SENTINEL}", SENTINEL]),
@@ -2185,7 +2192,12 @@ def test_settle_closes_a_popup_left_open_by_an_earlier_item() -> None:
 
 def test_the_condition_panel_contract_matches_the_app() -> None:
     from capa_simulation import sidebar_status
-    from capa_simulation.components import condition_field, period_field, scenario_status
+    from capa_simulation.components import (
+        condition_field,
+        period_field,
+        process_field,
+        scenario_status,
+    )
     from capa_simulation.components.home_preference import KEY_PROCESS_FIELD_LABEL
     from capa_simulation.navigation import CONDITIONS_SECTION
 
@@ -2208,6 +2220,10 @@ def test_the_condition_panel_contract_matches_the_app() -> None:
     # 시나리오 줄 이름은 「시나리오 · rN」이다 — 앞머리로 어휘에 든다.
     assert screens.panel_row_name(scenario_status.scenario_name_label(12)) == "시나리오"
     assert screens.panel_row_name(scenario_status.scenario_name_label(None)) == "시나리오"
+    # 공용 공정 줄(Space 현황 등)은 앱의 값 칸 이름 그대로이고 HOME 「공정 필터」 와 섞이지 않는다.
+    assert screens.PROCESS_ROW_NAME == process_field.FIELD_LABEL
+    assert screens.panel_row_name(process_field.FIELD_LABEL) == process_field.FIELD_LABEL
+    assert screens.panel_row_name(screens.PROCESS_DIALOG_TITLE) == screens.PROCESS_DIALOG_TITLE
 
 
 def test_the_equipment_scenario_line_contract_matches_the_app() -> None:
@@ -2449,8 +2465,9 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
         active = spec.condition_tabs.first if spec.condition_tabs is not None else None
         common = spec.reads_common_conditions_on(active)
         # 설비 시나리오 줄(`equipment_scenario`·`reads_equipment_scenario_on`)도 선언에서 읽는다 —
-        # Space 현황은 설비 시나리오 줄 하나다(세션 시나리오를 고르는 줄 — 설비 시나리오 2단계 S3).
-        # 공용 공정 줄은 선언이 아니라 페이지가 그린다(`process_field` — 2026-11-08 공정 공유 1차).
+        # Space 현황은 설비 시나리오 줄(세션 시나리오를 고르는 줄 — 설비 시나리오 2단계 S3)과 공용
+        # 공정 줄 둘이다. 공용 공정 줄은 선언이 아니라 페이지가 그린다(`process_field` — 2026-11-08
+        # 공정 공유 1차).
         source = _text(PROJECT_ROOT / spec.path)
         draws_process = "render_process_filter(" in source or "render_process_choice(" in source
         rows = tuple(
@@ -2464,6 +2481,9 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
             if shown
         )
         assert (rows or None) == expected
+        # 정한 줄 이름은 스크립트 어휘 안에 든다 — 들지 않으면 맞는 화면도 「그 밖 … 다름」 이 된다.
+        for name in expected or ():
+            assert screens.panel_row_name(name) == name
 
 
 @pytest.fixture(autouse=True)
@@ -3208,6 +3228,8 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     맞는다(2026-10-25 리뷰 — 사내 에이전트는 런북 글 그대로 찾는다).
 
     - 7-26 A 표의 `equipment_headers` 줄은 39열 기대(`새 이름 8/8`)로 읽는다.
+    - 7-26 A 표의 `panel_rows_other_pages` 줄 정상 꼴은 선언(`OTHER_PAGE_PANELS`) 그대로 선 화면에서
+      스크립트가 찍는 글(「… — 정한 대로 같음」)이다.
     - 7-0 바로 앞 「옛 자리 → 새 자리」 표가 Space 층 상세 아래 호기 표와 표 위 줄
       「… 의 설비 마스터 n줄」 을 도면 위 「호기 정보」 창으로 옮긴 것(2026-11-03)을
       말한다 — 앱에는 그 줄이 없다.
@@ -3227,6 +3249,13 @@ def test_the_deploy_chapter_names_what_the_app_and_the_script_show() -> None:
     headers_row = next(line for line in a_table.splitlines() if "| `equipment_headers` |" in line)
     count = len(screens.EQUIPMENT_NEW_HEADERS)
     assert f"`새 이름 {count}/{count} 있음 · 「설비가동현황」 없음 · 머리 " in headers_row
+    panels_row = next(
+        line for line in a_table.splitlines() if "| `panel_rows_other_pages` |" in line
+    )
+    declared = screens.summarize_other_pages(
+        [(title, expected, expected) for _page, title, expected in screens.OTHER_PAGE_PANELS]
+    )
+    assert f"`{declared}`" in panels_row
     page = _text(PROJECT_ROOT / "app_pages" / "space_status.py")
     assert "의 설비 마스터 {len(picked_rows)}줄" not in page and "sheet=_view_sheet(" in page
     assert "「… 의 **설비 마스터** n줄」" in places
