@@ -288,7 +288,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("SY-02", "error", "state", "저장이 정본에 올라가지 못함"),
     AlertSpec("SY-03", "error", "state", "올리기가 멈춤 — 원격 어긋남"),
     AlertSpec("SY-04", "check", "state", "이 DB 는 정본을 넘긴 사본"),
-    AlertSpec("SY-05", "error", "state", "버킷의 정본을 받지 않은 서버 — 모드 칸이 비었음"),
+    AlertSpec("SY-05", "error", "state", "버킷의 정본을 받지 않은 서버 — 모드 칸이 managed 아님"),
     # 접속 명단 파일이 아직 없어 환경변수 목록을 첫 버전으로 쓰는 동안(`auth/access_store.py`).
     AlertSpec("AD-09", "check", "state", "접속 명단이 환경변수 첫 버전 — S3 파일 없음"),
     # 알림 칸이 data 에 미리 싣고 JS 가 이 탭의 앞 부트 표지와 다를 때만 띄운다
@@ -351,6 +351,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 「비교 안 함」 으로 돌린 회차에 한 번 — 화면 자리에는 글을 달지 않는다(남은 물음 보드 D4
     # (나)).
     AlertSpec("RS-06", "info", "event", "필요 단축 일정 — 보던 기준선이 지워져 진척 비교를 끔"),
+    # BigDataQuery 로그인 토큰 실패 — 조회가 토큰 갈래로 실패했거나 서버 시작 점검 토큰 줄이 실패인
+    # C-DEP 서버에서 관리자의 모든 화면 회차에 낸다(`container_start_check.render_token_alert`,
+    # 리뷰 202611111500 보드 N8 (가)). 토큰을 새로 넣어야 풀린다.
+    AlertSpec("AD-10", "action", "state", "BigDataQuery 로그인 토큰 실패 — 조회가 막힘"),
 )
 
 

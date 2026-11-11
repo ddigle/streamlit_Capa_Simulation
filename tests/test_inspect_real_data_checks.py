@@ -2704,6 +2704,24 @@ def test_a_timeout_is_not_asked_again(_no_retry_pause: list[float], error: BaseE
     assert _no_retry_pause == []
 
 
+@pytest.mark.parametrize(
+    "error",
+    [Exception("HTTP 500 invalid token"), ConnectionError("500 invalid token")],
+    ids=["word", "inside-a-connection-error"],
+)
+def test_a_token_failure_is_not_asked_again(
+    _no_retry_pause: list[float], error: BaseException
+) -> None:
+    """토큰 실패는 다시 물어도 같다 — 토큰을 새로 넣어야 풀린다(리뷰 202611111500 사외요청 3).
+    `ConnectionError` 사슬이어도 「연결」 로 다시 묻지 않는다."""
+    result, probe = _shaky_copy({DAYS[3]: 1}, error)
+
+    assert result.failure is not None
+    assert "· 토큰:invalid token" in result.failure and "두 번" not in result.failure
+    assert probe.calls[DAYS[3]] == 1
+    assert _no_retry_pause == []
+
+
 def test_a_failure_after_a_long_wait_is_not_asked_again(_no_retry_pause: list[float]) -> None:
     """까닭을 말하지 않는 실패도 오래 기다린 뒤라면 시간 초과처럼 다시 묻지 않는다 — 907초를 한 번
     더 기다리면 8-5 가 호출 제한을 넘긴다."""

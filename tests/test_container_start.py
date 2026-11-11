@@ -993,6 +993,42 @@ def test_an_empty_base64_token_is_failed_without_writing(place: Path, value: str
     assert not (place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}").exists()
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "abc",
+        "  abc  ",
+        "x" * (container_start.MIN_TOKEN_BYTES - 1),
+        "base64:" + base64.b64encode(b"abc\n").decode("ascii"),
+    ],
+    ids=["three-bytes", "padded", "one-short", "base64"],
+)
+def test_a_short_token_is_failed_without_writing(place: Path, value: str) -> None:
+    """짧은 값으로 파일을 쓰고 「정상」 이라 하면 조회의 토큰 실패가 만료처럼 보인다(리뷰
+    202611111500 사외요청 3). 길이는 비밀값에서 나온 수라 까닭에 싣지 않는다."""
+    environ = {**ALL_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: value}
+
+    report, _ = _main(place, environ, FakeRunner([_probe("ok", "9.9.9")]))
+
+    token = _steps(report)[report_contract.STEP_TOKEN]
+    assert token["status"] == report_contract.STATUS_FAILED
+    assert f"{container_start.MIN_TOKEN_BYTES}바이트보다 짧음" in token["reason"]
+    assert not (place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}").exists()
+
+
+def test_a_token_at_the_minimum_length_is_written(place: Path) -> None:
+    """문턱은 진짜 토큰을 막지 않는 쪽이다 — 문턱 길이의 값은 쓴다."""
+    value = "x" * container_start.MIN_TOKEN_BYTES
+    environ = {**ALL_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: value}
+
+    report, _ = _main(place, environ, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert _steps(report)[report_contract.STEP_TOKEN]["status"] == report_contract.STATUS_OK
+    target = place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}"
+    assert target.read_bytes() == value.encode("utf-8")
+    assert len(FAKE_BDQ_TOKEN.encode("utf-8")) >= container_start.MIN_TOKEN_BYTES
+
+
 def test_the_report_carries_the_token_place_and_who_runs_the_container(
     place: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

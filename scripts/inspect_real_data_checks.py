@@ -88,6 +88,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (  # noqa: E402
     DETAIL_WINDOW_DAYS_AFTER,
     DETAIL_WINDOW_DAYS_BEFORE,
     QUERY_FAILURE_TIMEOUT,
+    QUERY_FAILURE_TOKEN,
     QUERY_TEMPLATE,
     SOURCE_COLUMN_MAPPING,
     BigDataQueryCallError,
@@ -4809,7 +4810,7 @@ def _bdq_failure(exc: BaseException) -> str:
         return "SQL 미설정"
     if isinstance(exc, ValueError) and "계약 별칭" in text:
         return "목록 결과에 계약 별칭 5개가 없다"
-    # 패키지 예외는 어댑터가 감싸 올린다 — 감싸기 전 사슬의 종류 이름과 갈래(시간 초과·연결·
+    # 패키지 예외는 어댑터가 감싸 올린다 — 감싸기 전 사슬의 종류 이름과 갈래(토큰·시간 초과·연결·
     # SQL, 문구 낱말로 가른 추정)를 적는다. 「Error」 하나로는 시간 초과인지 가를 수 없었다
     # (사내 리뷰 202610200720).
     # 갈래 뒤 `:낱말` 은 갈래를 정한 어댑터 목록의 낱말이다(문구 원문이 아니다) — 같은 「SQL」 이
@@ -4824,12 +4825,12 @@ def _bdq_failure(exc: BaseException) -> str:
 
 
 def _retryable(exc: BaseException) -> bool:
-    """한 번 더 물을 실패인가 — 우리 어댑터의 안내(계정 · 패키지 · SQL 미설정)는 다시 물어도 같고,
-    시간 초과는 시간 예산(`RETRY_PAUSE_SECONDS` 주석) 때문에 다시 묻지 않는다."""
+    """한 번 더 물을 실패인가 — 우리 어댑터의 안내(계정 · 패키지 · SQL 미설정)와 토큰 실패는 다시
+    물어도 같고, 시간 초과는 시간 예산(`RETRY_PAUSE_SECONDS` 주석) 때문에 다시 묻지 않는다."""
     if isinstance(exc, RuntimeError) and not isinstance(exc, BigDataQueryCallError):
         return False
     kind = exc.kind if isinstance(exc, BigDataQueryCallError) else classify_query_failure(exc)
-    return kind != QUERY_FAILURE_TIMEOUT
+    return kind not in (QUERY_FAILURE_TIMEOUT, QUERY_FAILURE_TOKEN)
 
 
 @dataclass(frozen=True)
