@@ -54,7 +54,7 @@ from capa_simulation.components.scenario_management_tabs import (
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
 from capa_simulation.components.tab_state import remember_open_tab, remembered_tab_key
-from capa_simulation.components.table_toolbar import render_csv_download
+from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.design import tokens
 from capa_simulation.navigation import (
     LOAD_CONVERSION,
@@ -120,6 +120,9 @@ RULES_KEY: Final = "input_check_rules"
 # 팝업 호스트 하나를 공식 지정 팝업과 함께 쓴다(열림 값의 꼴로 가른다 — 결정 17).
 WIDE_TAG: Final = "input_check_wide"
 WIDE_TITLE: Final = "넓게 보기"
+# 계산 멈춤 알림 짧은 글(`calculation_stop_notice`)의 머리 — 묶음 이름 「계산 멈춤 — 대당 Capa」 와
+# 겹쳐 부제에서는 뗀다(시험이 알림 글과 맞댄다).
+STOP_NOTICE_HEAD: Final = "대당 Capa 계산 멈춤 — "
 # 「그 화면으로」 풍선 — 고른 리비전이 올라와 있지 않을 때(결정 1).
 GO_LOADS_HELP: Final = "고른 리비전을 불러온 뒤 엽니다."
 SPINNER_TEXT: Final = "고른 리비전의 전체 기간 계산을 점검하는 중입니다..."
@@ -304,6 +307,8 @@ def render_input_check_panel(
             },
             on_outbox=on_outbox,
         )
+    # 「그 화면으로」 의 결과 칸 — 칸이 서는 회차마다(멈춤 · 실패 · 빈 시나리오에도) 한 자리.
+    render_flash(CHECK_NOTICE_KEY)
     if not revisions:
         st.caption(EMPTY_REVISIONS)
         return ()
@@ -331,7 +336,6 @@ def _render_check(
     scope = f"{number} · 전체 기간 {period}" if period else number
     # 칸 머리 한 줄에 묶음 줄 서식을 함께 싣는다(이벤트 칸 자리를 쓰지 않는 캡션 안 서식).
     st.caption(html.escape(scope) + panel_style(), unsafe_allow_html=True)
-    render_flash(CHECK_NOTICE_KEY)
     loaded = revision.revision_id == active_persisted_revision_id()
     opened = _open_groups()
     labels = get_process_labels()
@@ -430,7 +434,7 @@ def _subtitle(group: InputCheckGroup, check: RevisionInputCheck) -> tuple[str, s
     notice = calculation_stop_notice(ValueError(stop.error)) if stop.kind == "capacity" else None
     if notice is None:
         return markdown_safe_tildes(stop.error), None
-    text = notice.text.removeprefix("대당 Capa 계산 멈춤 — ")
+    text = notice.text.removeprefix(STOP_NOTICE_HEAD)
     if stop.problem is not None and stop.problem.rows:
         text = f"{text} · 경로 {stop.problem.rows:,}"
     return text, notice.message
@@ -583,6 +587,8 @@ def _render_rows(
     frame = table.frame
     head = frame.head(PREVIEW_ROWS)
     preview = display_frame(table, head.loc[:, table.preview_columns], labels)
+    # 표 도구 막대가 바로 위 줄의 글자 단추(행 접기 · 그 화면으로)를 덮지 않게 띄운다(AGENTS 9장).
+    toolbar_clearance()
     st.dataframe(
         preview,
         hide_index=True,
@@ -643,6 +649,7 @@ def render_wide_body(database_path: str, value: WideValue) -> None:
     title = group.title if len(group.tables) == 1 else f"{group.title} · {table.title}"
     st.caption(f"{number} · {literal_markdown(title)} · 전체 {len(table.frame):,}행")
     shown = display_frame(table, table.frame, get_process_labels())
+    toolbar_clearance()
     st.dataframe(
         shown,
         hide_index=True,

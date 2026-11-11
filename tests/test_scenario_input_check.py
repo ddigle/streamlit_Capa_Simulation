@@ -34,6 +34,7 @@ from capa_simulation.components.scenario_input_check import (
     PLAN_PKG_TAB,
     PLAN_TAB_KEY,
     PLAN_YIELD_TAB,
+    STOP_NOTICE_HEAD,
     WIDE_TAG,
     arrival_for,
     wide_target,
@@ -53,11 +54,13 @@ from capa_simulation.components.scenario_management_tabs import (
 )
 from capa_simulation.components.tab_state import remembered_tab_key
 from capa_simulation.navigation import LOAD_CONVERSION, REFERENCE_DATA
+from capa_simulation.page_bootstrap import calculation_stop_notice
 from capa_simulation.page_tabs_state import PAGE_TABS_QUEUED_KEY
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.reference_grid_keys import DATASET_KEY
 from capa_simulation.scenario_activation import ACTIVE_PERSISTED_REVISION_ID_KEY
 from capa_simulation.services.revision_input_check import (
+    GROUP_ASSUMED,
     GROUP_CAPACITY,
     GROUP_PLANS,
     GROUP_ROUTES,
@@ -235,6 +238,15 @@ def test_a_stopped_revision_is_marked_and_folds_what_comes_after(
     assert "계산 멈춤 — 대당 Capa" in heads and "셀 수 없음" in heads
     assert "앞 단계가 멈춰 그 뒤 묶음은 세지 못함" in _captions(app)
     assert any("· 경로 " in text for text in _captions(app))
+    # 부제는 계산 멈춤 알림 짧은 글에서 묶음 이름과 겹치는 머리를 뗀 글이다 — 그 머리가 알림 글과
+    # 같아야 떼어진다.
+    check = capacity_gate.input_check_verdict(str(database), scenario_id, stopped)
+    assert check.stop is not None
+    notice = calculation_stop_notice(ValueError(check.stop.error))
+    assert notice is not None and notice.text.startswith(STOP_NOTICE_HEAD)
+    shown = notice.text.removeprefix(STOP_NOTICE_HEAD)
+    assert any(text.startswith(shown) for text in _captions(app))
+    assert not any(text.startswith(STOP_NOTICE_HEAD) for text in _captions(app))
     go = app.button(key=f"input_check_go_{GROUP_STOP}")
     assert go.help == GO_LOADS_HELP
 
@@ -493,6 +505,10 @@ def test_each_group_arrives_where_it_is_fixed() -> None:
     assert plan is not None and plan.value == PLAN_PKG_TAB
     unrouted = arrival_for(_group(GROUP_UNROUTED, (("경로 키 어긋남", 1),)), empty)
     assert unrouted is not None and unrouted.key == PLAN_TAB_KEY
+    one = arrival_for(_group(GROUP_ASSUMED, (("RQ_LOT_RATIO", 2),)), empty)
+    assert one is not None and (one.path, one.value) == (REFERENCE_DATA.path, "RQ_LOT_RATIO")
+    two = arrival_for(_group(GROUP_ASSUMED, (("RQ_LOT_RATIO", 2), ("RQ_WF_RATIO", 1))), empty)
+    assert two is not None and (two.path, two.value) == (REFERENCE_DATA.path, None)
     assert arrival_for(_group(GROUP_ROUTES, ()), empty) is None
     assert arrival_for(InputCheckGroup(GROUP_STOP, "error", "계산 멈춤", 0), empty) is None
 
