@@ -229,7 +229,8 @@ def test_a_data_place_that_cannot_be_made_is_a_file_error(
 
     # 자세히는 예외 종류 이름이다 — 파일 아래 폴더 만들기의 종류는 플랫폼마다 다르다(Linux 는
     # `NotADirectoryError`, Windows 는 다른 하위 종류일 수 있다).
-    os_error_names = {kind.__name__ for kind in (OSError, *_subclasses(OSError))}
+    kinds: list[type[BaseException]] = [OSError, *_subclasses(OSError)]
+    os_error_names = {kind.__name__ for kind in kinds}
     for result in (module_api.s3_upload(ctx, "demo.csv"), module_api.s3_download(ctx, "demo.csv")):
         assert (result.ok, result.reason, result.size) == (False, "파일 오류", 0)
         assert result.detail in os_error_names, result.detail
