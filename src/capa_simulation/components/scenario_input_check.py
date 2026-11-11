@@ -118,6 +118,9 @@ PREVIEW_ROWS: Final = 4
 GROUPS_KEY: Final = "input_check_groups"
 GROUP_KEY_PREFIX: Final = "input_check_group_"
 RULES_KEY: Final = "input_check_rules"
+# 묶음 줄 「행 보기 / 행 접기」 key 앞머리 — 규칙 줄 접기 단추도 같은 앞머리다.
+ROWS_KEY_PREFIX: Final = "input_check_rows_"
+RULES_TOGGLE_KEY: Final = f"{ROWS_KEY_PREFIX}{GROUP_RULES}"
 # 「넓게 보기」 팝업의 열림 값 앞머리 — (앞머리, 시나리오 id, 리비전 id, 리비전 번호, 묶음 id). 화면
 # 팝업 호스트 하나를 공식 지정 팝업과 함께 쓴다(열림 값의 꼴로 가른다 — 결정 17).
 WIDE_TAG: Final = "input_check_wide"
@@ -151,10 +154,14 @@ _CAPACITY_REASON_TABLES: Final[Mapping[str, str]] = {
 }
 # 부하량에서 빠진 계획 가운데 수율 탭에서 고치는 까닭.
 _YIELD_REASONS: Final = frozenset({"RQ_YLD", "RQ_YLD 값 없음"})
-# 묶음 줄 이름 · 수의 글자 크기(rem) — 시안 13px · 14.5px · 표지 11px.
-_TITLE_REM: Final = 0.8125
-_COUNT_REM: Final = 0.906
-_LEVEL_REM: Final = 0.6875
+# 묶음 줄 글자 크기(px) — 시안 그대로: 단계 표지 11 · 이름 13 · 수 14.5 · 「없음」 · 글자 단추 12.
+# 앱 바탕 글자가 14px(`.streamlit/config.toml` `baseFontSize`)라 px 로 적는다 — 이름이 부제
+# 캡션(0.875rem = 12.25px)보다 크다(`tests/test_scenario_input_check.py` 가 바탕 글자로 맞댄다).
+LEVEL_PX: Final = 11.0
+TITLE_PX: Final = 13.0
+COUNT_PX: Final = 14.5
+NONE_PX: Final = 12.0
+LINK_PX: Final = 12.0
 _MONTH_COLUMN: Final = "생산계획년월"
 _COLUMN_LABELS: Final[Mapping[str, str]] = {_MONTH_COLUMN: "년월"}
 
@@ -374,25 +381,24 @@ def _render_check(
 
 
 def panel_style() -> str:
-    """묶음 줄 서식 — 줄 사이 선 · 촘촘한 세로 간격, 글자 단추(행 보기 · 그 화면으로 · 넓게 보기)는
-    강조색 작은 굵은 글(시안 `m-link`), 머리 줄은 접지 않고 이름이 접힌다. 맨 아래 규칙 줄은 선이
-    없다(key 앞머리가 다르다 — 칸마다 감싸개가 따로라 `:last-child` 로 고를 수 없다). 색은
-    토큰이다."""
+    """묶음 줄 서식 — 줄 사이 선 · 촘촘한 세로 간격, 글자 단추(행 보기 · 그 화면으로 · 넓게 보기 ·
+    묶음 CSV)는 강조색 작은 굵은 글(시안 `m-link`), 머리 줄은 접지 않고 이름이 띄어쓰기에서 접힌다.
+    맨 아래 규칙 줄은 선이 없고(key 앞머리가 다르다 — 칸마다 감싸개가 따로라 `:last-child` 로 고를
+    수 없다) 그 접기 단추는 글자 단추가 아니라 흐린 이름이다(시안 `.m-grp.fold .m-gtitle` — 펼친
+    규칙 줄 안의 「넓게 보기」 · CSV 는 그대로 글자 단추). 색은 토큰이다."""
     groups = f".st-key-{GROUPS_KEY}"
     group = f'{groups} [class*="st-key-{GROUP_KEY_PREFIX}"]'
     rules = f".st-key-{RULES_KEY}"
     link = f'{groups} [data-testid="stBaseButton-tertiary"]'
-    # 묶음 CSV 내려받기도 글자 단추 꼴이다(시안 「CSV」 — 공용 내려받기 단추를 이 칸에서만 덮는다).
-    download = f'{groups} [data-testid="stDownloadButton"] button'
+    fold = f'{rules} .st-key-{RULES_TOGGLE_KEY} [data-testid="stBaseButton-tertiary"]'
     return (
         "<style>"
         f"{group} {{ padding: 0.45rem 0.1rem; border-bottom: 1px solid {tokens.BORDER}; }}"
         f"{rules} {{ padding: 0.45rem 0.1rem 0; }}"
         f"{link} {{ color: {tokens.ACCENT}; font-weight: 700; min-height: 0; padding: 0 0.15rem; }}"
-        f"{link} p {{ font-size: 0.75rem; font-weight: 700; white-space: nowrap; }}"
-        f"{download} {{ border: none; background: none; color: {tokens.ACCENT}; min-height: 0; "
-        "padding: 0 0.15rem; }"
-        f"{download} p {{ font-size: 0.75rem; font-weight: 700; white-space: nowrap; }}"
+        f"{link} p {{ font-size: {LINK_PX:g}px; font-weight: 700; white-space: nowrap; }}"
+        f"{fold} {{ color: {tokens.TEXT_MUTED}; font-weight: 600; }}"
+        f"{fold} p {{ font-size: {TITLE_PX:g}px; font-weight: 600; }}"
         f'{group} [data-testid="stDataFrame"] {{ margin-top: 0.3rem; }}'
         "</style>"
     )
@@ -406,20 +412,22 @@ def _head_markup(group: InputCheckGroup) -> str:
     level = LEVEL_LABELS.get(group.level)
     if level is not None:
         parts.append(
-            f'<span style="color:{colors[group.level]};font-size:{_LEVEL_REM}rem;'
+            f'<span style="color:{colors[group.level]};font-size:{LEVEL_PX:g}px;'
             f'font-weight:700;margin-right:0.4rem">{html.escape(level)}</span>'
         )
     muted = group.level in ("muted", "rule")
     title_color = f"color:{tokens.TEXT_MUTED};font-weight:600" if muted else "font-weight:700"
+    # 좁은 칸에서 이름은 띄어쓰기에서만 접힌다 — 음절 사이에서 끊지 않는다(UI-ACC-02).
     parts.append(
-        f'<span style="{title_color};font-size:{_TITLE_REM}rem">{html.escape(group.title)}</span>'
+        f'<span style="{title_color};font-size:{TITLE_PX:g}px;word-break:keep-all;'
+        f'overflow-wrap:break-word">{html.escape(group.title)}</span>'
     )
     count = group.count_text
     if count:
         style = (
-            f"font-weight:800;font-size:{_COUNT_REM}rem;font-variant-numeric:tabular-nums"
+            f"font-weight:800;font-size:{COUNT_PX:g}px;font-variant-numeric:tabular-nums"
             if group.count
-            else f"color:{tokens.TEXT_MUTED};font-size:{_TITLE_REM * 0.92:.3f}rem"
+            else f"color:{tokens.TEXT_MUTED};font-size:{NONE_PX:g}px"
         )
         parts.append(f'<span style="{style};margin-left:0.5rem">{html.escape(count)}</span>')
     return "".join(parts)
@@ -464,7 +472,7 @@ def _render_group(
                 st.button(
                     "행 접기" if expanded else "행 보기",
                     type="tertiary",
-                    key=f"input_check_rows_{group.key}",
+                    key=f"{ROWS_KEY_PREFIX}{group.key}",
                     on_click=_toggle_group,
                     args=(group.key,),
                 )
@@ -512,14 +520,14 @@ def _render_rules(
                 group.title,
                 icon=":material/expand_more:" if expanded else ":material/chevron_right:",
                 type="tertiary",
-                key=f"input_check_rows_{group.key}",
+                key=RULES_TOGGLE_KEY,
                 on_click=_toggle_group,
                 args=(group.key,),
                 disabled=not group.count,
                 help=None if group.count else RULES_EMPTY_HELP,
             )
             st.markdown(
-                f'<span style="font-weight:800;font-size:{_COUNT_REM}rem;'
+                f'<span style="font-weight:800;font-size:{COUNT_PX:g}px;'
                 f'font-variant-numeric:tabular-nums">{html.escape(group.count_text)}</span>',
                 unsafe_allow_html=True,
                 width="stretch",
@@ -532,7 +540,8 @@ def _render_rules(
         for index, table in enumerate(group.tables):
             if table.frame.empty:
                 continue
-            st.markdown(f"**{literal_markdown(table.title)}** · {len(table.frame):,}")
+            # 소제목은 이름보다 작은 굵은 캡션이다 — 수는 부제와 표 아래 「전체 m행」 에 있다.
+            st.caption(f"**{literal_markdown(table.title)}**")
             drawn.append(
                 _render_rows(
                     table,
@@ -590,7 +599,9 @@ def _render_rows(
     frame = table.frame
     head = frame.head(PREVIEW_ROWS)
     preview = display_frame(table, head.loc[:, table.preview_columns], labels)
-    # 표 도구 막대가 바로 위 줄의 글자 단추(행 접기 · 그 화면으로)를 덮지 않게 띄운다(AGENTS 9장).
+    # 표 도구 막대가 바로 위 줄의 글자 단추(행 접기 · 그 화면으로)를 덮지 않게 띄운다(AGENTS 9장)
+    # — 시안(부제 바로 아래)보다 그만큼 내려 선다(설계 규칙 6-15 ic-6). 「넓게 보기」 팝업은 위
+    # 줄이 캡션뿐이라 띄우지 않는다.
     toolbar_clearance()
     st.dataframe(
         preview,
@@ -615,6 +626,7 @@ def _render_rows(
             file_name=f"Capa_Input_Check_{group.key}_{index + 1}_{number}.csv",
             key=f"input_check_csv_{group.key}_{index}",
             label="CSV",
+            text_link=True,
         )
     return wide
 
@@ -652,7 +664,6 @@ def render_wide_body(database_path: str, value: WideValue) -> None:
     title = group.title if len(group.tables) == 1 else f"{group.title} · {table.title}"
     st.caption(f"{number} · {literal_markdown(title)} · 전체 {len(table.frame):,}행")
     shown = display_frame(table, table.frame, get_process_labels())
-    toolbar_clearance()
     st.dataframe(
         shown,
         hide_index=True,

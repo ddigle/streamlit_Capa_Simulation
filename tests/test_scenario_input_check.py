@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import inspect
+import re
 from pathlib import Path
 from typing import Any
 
@@ -29,12 +31,19 @@ from capa_simulation.components.scenario_input_check import (
     CALCULATION_RESULT,
     CALCULATION_UNIT_TAB,
     CHECK_LABELS_KEY,
+    COUNT_PX,
     GO_LOADS_HELP,
+    LEVEL_PX,
+    LINK_PX,
     PLAN_PKG_TAB,
     PLAN_YIELD_TAB,
+    RULES_TOGGLE_KEY,
     STOP_NOTICE_HEAD,
+    TITLE_PX,
     WIDE_TAG,
     arrival_for,
+    panel_style,
+    render_wide_body,
     wide_target,
 )
 from capa_simulation.components.scenario_list_grid import CHECKS_KEY, REVISIONS_KEY, TABLE_KEY
@@ -67,10 +76,12 @@ from capa_simulation.services.revision_input_check import (
     GROUP_CAPACITY,
     GROUP_PLANS,
     GROUP_ROUTES,
+    GROUP_RULES,
     GROUP_SOURCE,
     GROUP_STOP,
     GROUP_UNROUTED,
     InputCheckGroup,
+    InputCheckTable,
     RevisionInputCheck,
 )
 from capa_simulation.services.scenario_list_edits import ListDraft
@@ -396,7 +407,9 @@ def test_rows_open_in_place_and_the_wide_view_opens_on_the_page_host(
     preview = app.dataframe[0].value
     assert list(preview.columns) == ["생산계획년월", "공정", "양산구분", "제품정보", "제외사유"]
     assert "효율(CAPA_RUN_RATE) 0 이하" in set(preview["제외사유"])
-    assert app.get("download_button")
+    # 묶음 CSV 는 이웃 「넓게 보기」 와 같은 글자 단추다 — 아이콘 없는 tertiary(UI-CON-01).
+    (csv,) = app.get("download_button")
+    assert (csv.proto.type, csv.proto.icon) == ("tertiary", "")
 
     app.button(key=f"input_check_wide_{GROUP_CAPACITY}_0").click().run()
 
@@ -498,6 +511,10 @@ def test_each_group_arrives_where_it_is_fixed() -> None:
         _group(GROUP_CAPACITY, (("CAPA_RUN_RATE 0 이하", 3), ("UPEH 0 이하", 1))), empty
     )
     assert both is not None and both.value == CALCULATION_UNIT_TAB
+    # 측정률 음수 · 대당 Capa 0 이하는 까닭이 하나여도 기준 정보 한 표로 가지 않는다(Guide 와 같다).
+    for reason in ("WF측정률 음수", "Lot 측정률 음수", "대당 Capa 0 이하"):
+        alone = arrival_for(_group(GROUP_CAPACITY, ((reason, 1),)), empty)
+        assert alone is not None and alone.value == CALCULATION_UNIT_TAB, reason
     routes = arrival_for(_group(GROUP_ROUTES, (("x", 1),)), empty)
     assert routes is not None and routes.value == CALCULATION_REQUIRED_TAB
     yields = arrival_for(_group(GROUP_PLANS, (("RQ_YLD", 2), ("RQ_YLD 값 없음", 1))), empty)
@@ -532,3 +549,81 @@ def test_the_arrival_tabs_are_the_pages_own_labels() -> None:
         assert f'"{label}"' in plan
     assert LOAD_CONVERSION.path == "app_pages/load_conversion.py"
     assert CHECKS_KEY not in {REVISIONS_KEY, TABLE_KEY}
+
+
+# ------------------------------------------------------------------ 묶음 줄의 꼴
+
+
+def _base_font_px() -> float:
+    config = (PROJECT_ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8")
+    found = re.search(r"^baseFontSize\s*=\s*([0-9.]+)", config, re.MULTILINE)
+    assert found is not None
+    return float(found.group(1))
+
+
+def test_group_names_stand_above_their_subtitles() -> None:
+    """시안 위계 — 단계 표지 < 부제 캡션 < 이름 < 수. 부제는 `st.caption`(0.875rem)이라 바탕
+    글자 크기로 잰다 — rem 상수를 16px 바탕으로 환산하면 이름이 부제보다 작아진다."""
+    caption = _base_font_px() * 0.875
+    assert LEVEL_PX < caption < TITLE_PX < COUNT_PX
+    assert LINK_PX < TITLE_PX
+    head = input_check._head_markup(
+        InputCheckGroup(GROUP_CAPACITY, "check", "대당 Capa 에서 뺀 기준", 3)
+    )
+    assert f"font-size:{TITLE_PX:g}px;word-break:keep-all" in head
+    assert f"font-size:{COUNT_PX:g}px" in head and f"font-size:{LEVEL_PX:g}px" in head
+    assert not re.search(r"font-size:[0-9.]+rem", head)
+
+
+def test_the_rules_fold_is_a_muted_name_and_its_tables_keep_the_links() -> None:
+    """맨 아래 규칙 줄 접기 단추는 흐린 이름(시안 `.m-grp.fold`)이고 글자 단추 서식보다 좁게
+    골라 이긴다 — 펼친 규칙 줄 안의 「넓게 보기」 · CSV 는 그대로 강조색 글자 단추다. 묶음 CSV 는
+    tertiary 라 따로 덮는 서식이 없다."""
+    style = panel_style()
+    fold = f'.st-key-{RULES_TOGGLE_KEY} [data-testid="stBaseButton-tertiary"]'
+    assert f"{fold} {{ color: " in style and f"{fold} p {{ font-size: {TITLE_PX:g}px" in style
+    assert style.index(fold) > style.index('[data-testid="stBaseButton-tertiary"] {')
+    assert f"font-size: {LINK_PX:g}px" in style
+    assert "stDownloadButton" not in style
+
+
+def test_the_wide_view_puts_its_table_right_under_the_caption() -> None:
+    """「넓게 보기」 팝업은 표 위 줄이 캡션뿐이라 도구 막대 띄움을 두지 않는다(띄움 계약 —
+    누를 것이 있는 줄 아래만)."""
+    assert "toolbar_clearance" not in inspect.getsource(render_wide_body)
+
+
+def test_the_rules_row_opens_into_small_subheadings_without_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """규칙 줄을 펼치면 표마다 굵은 캡션 소제목 하나 — 이름보다 크지 않고, 수는 부제와 표 아래
+    「전체 m행」 에만 있다(UI-TXT-07)."""
+    script, _ = _seeded(tmp_path)
+    frame = pd.DataFrame(
+        {
+            "생산계획년월": [202611, 202612],
+            "공정": ["P1", "P2"],
+            "제품정보": ["X", "Y"],
+            "부하량": [1.0, 2.0],
+            "제외사유": ["PKG Buffer 밖", "PKG Buffer 밖"],
+        }
+    )
+    rules = InputCheckGroup(
+        GROUP_RULES,
+        "rule",
+        "규칙대로 셈에서 뺀 것",
+        2,
+        "PKG Buffer 밖 2",
+        tables=(InputCheckTable("PKG Buffer 밖", frame, tuple(frame.columns), "제외사유"),),
+    )
+    check = RevisionInputCheck((rules,))
+    monkeypatch.setattr(input_check, "input_check_verdict", lambda *_args: check)
+    app, _, _ = _check_app(script, monkeypatch)
+
+    app.button(key=RULES_TOGGLE_KEY).click().run()
+
+    assert not app.exception
+    captions = _captions(app)
+    assert "**PKG Buffer 밖**" in captions
+    assert not any("PKG Buffer 밖" in str(item.value) for item in app.markdown)
+    assert "앞 2행 · 전체 2행" in captions

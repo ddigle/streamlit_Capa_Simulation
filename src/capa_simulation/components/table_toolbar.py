@@ -67,18 +67,24 @@ def render_csv_download(
     file_name: str,
     key: str | None = None,
     label: str = CSV_DOWNLOAD_LABEL,
+    text_link: bool = False,
 ) -> None:
     """CSV 내보내기 버튼 하나를 그린다.
 
     `on_click="ignore"` 를 항상 붙인다. 내려받기는 화면 상태를 바꾸지 않으므로 다시
     계산할 이유가 없고, 다시 계산하면 붙여넣던 텍스트나 펼쳐 둔 영역이 초기화된다.
+
+    `text_link` 가 참이면 아이콘 없는 글자 단추(`type="tertiary"`)다 — 같은 줄 이웃이 글자
+    단추뿐인 자리(시나리오 관리 「점검」 묶음 줄 「넓게 보기」 · 「CSV」)에서 이웃과 같은 꼴 ·
+    같은 윗선으로 선다(설계 규칙 UI-CON-01).
     """
     st.download_button(
         label,
         data=data,
         file_name=file_name,
         mime=CSV_MIME,
-        icon=DOWNLOAD_ICON,
+        icon=None if text_link else DOWNLOAD_ICON,
+        type="tertiary" if text_link else "secondary",
         key=key,
         on_click="ignore",
         width="content",

@@ -1,4 +1,4 @@
-# Purpose: 시나리오 스냅샷과 시나리오 독립 공용 프로필의 Streamlit 캐시 경계다.
+# Purpose: 시나리오 스냅샷 · 등록 때 뺀 원천 행과 시나리오 독립 공용 프로필의 Streamlit 캐시 경계다.
 
 """시뮬레이션 DuckDB 읽기의 Streamlit 캐시 경계.
 
