@@ -219,9 +219,11 @@ def _board_data(html: str) -> dict[str, object]:
 
 
 def _identity_needles() -> list[str]:
-    """실 담당 조직 · 문의처와 거기서 나오는 조각(이름 · 회사). 값은 settings 정본에서 읽는다."""
-    from capa_simulation.io.object_storage import DEFAULT_PROFILE
+    """실 담당 조직 · 문의처와 거기서 나오는 조각(이름 · 회사). 값은 settings 정본에서 읽는다.
 
+    오브젝트 스토리지 사내 값(주소 · 버킷 · 프로필)은 코드에 없다 — 저장소 전체는
+    `tests/test_public_repo_hygiene.py` 가 본다.
+    """
     local, domain = settings.APP_CONTACT_EMAIL.split("@", 1)
     return [
         settings.APP_OWNER_TEAM,
@@ -230,7 +232,6 @@ def _identity_needles() -> list[str]:
         *[part for part in re.split(r"[._-]", local) if len(part) >= 3],
         domain,
         domain.split(".", 1)[0],
-        DEFAULT_PROFILE,
     ]
 
 

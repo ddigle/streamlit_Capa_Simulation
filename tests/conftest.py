@@ -38,7 +38,7 @@ from capa_simulation.components import (
     space_layout_editor,
     voc_draft_keeper,
 )
-from capa_simulation.io import company_bigdataquery_adapter
+from capa_simulation.io import company_bigdataquery_adapter, object_storage
 from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
@@ -192,6 +192,19 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     sso_runtime.reset()
     yield
     sso_runtime.reset()
+
+
+@pytest.fixture(autouse=True)
+def _without_object_storage_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """오브젝트 스토리지 설정 환경변수(`object_storage.SETTINGS_ENVIRONMENT`)를 지운다.
+
+    사내 값(주소 · 프로필 이름)은 사내 PC 사용자 환경변수이고, 이관 창에는 모드를 넣는다
+    (`docs/objectstore_setup.md` 6장). 같은 창에서 pytest 를 돌리면 「값이 없을 때」 ·
+    `local` 기본을 보는 시험이 그 값을 읽어 사내에서만 깨진다. 값이 필요한 시험은
+    `monkeypatch.setenv` · `environ=` 로 따로 준다.
+    """
+    for name in object_storage.SETTINGS_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
 
 
 # 시험이 띄우는 가짜 서버(가짜 S3 · 가짜 IdP · 임시 응답 · 앱)에 붙는 루프백 이름.

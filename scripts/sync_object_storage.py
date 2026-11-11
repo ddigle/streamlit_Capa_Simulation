@@ -18,13 +18,15 @@
 `status` · `generations` · `doctor` · `probe` · `fetch-copy` · `rollback` · `prune` 은 앱이 떠
 있어도 안전하다. `boot-pull` 은 컨테이너 시작 스크립트가 앱을 띄우기 전에 부르고, 값 없는 결과 한
 줄(JSON)을 찍는다.
+
+**주소 · 버킷 · 프로필은 환경변수(또는 인자)로만 받는다** — 사내 값이라 저장소에 기본값이 없다.
+비었으면 `aws` 를 부르기 전에 넣을 환경변수 이름을 대고 멈춘다(`docs/objectstore_setup.md` 6장).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import uuid
 from pathlib import Path
@@ -39,6 +41,7 @@ from capa_simulation.io.object_storage import (  # noqa: E402
     ObjectStorageClient,
     ObjectStorageError,
     StorageSettings,
+    StorageSettingsError,
 )
 from capa_simulation.page_bootstrap import (  # noqa: E402
     BOOTSTRAP_ERRORS,
@@ -73,9 +76,11 @@ MIB = 1024 * 1024
 # --------------------------------------------------------------------------- 인자
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", help="AWS CLI 프로필. 생략하면 설정·환경변수를 따른다.")
-    parser.add_argument("--bucket", help="버킷 이름. 생략하면 설정·환경변수를 따른다.")
-    parser.add_argument("--endpoint-url", help="엔드포인트. 생략하면 설정·환경변수를 따른다.")
+    parser.add_argument("--profile", help="AWS CLI 프로필. 생략하면 환경변수 CAPA_S3_PROFILE.")
+    parser.add_argument("--bucket", help="버킷 이름. 생략하면 환경변수 CAPA_S3_BUCKET.")
+    parser.add_argument(
+        "--endpoint-url", help="엔드포인트. 생략하면 환경변수 CAPA_S3_ENDPOINT_URL."
+    )
     parser.add_argument(
         "--dataset",
         choices=("simulation", "equipment", "all"),
@@ -174,7 +179,19 @@ def build_settings(args: argparse.Namespace) -> StorageSettings:
 
 
 def build_client(args: argparse.Namespace) -> ObjectStorageClient:
-    return ObjectStorageClient(settings=build_settings(args))
+    """빈 사내 값이 있으면 여기서 멈춘다 — 스냅샷 내보내기 같은 긴 일을 하기 전에."""
+    settings = build_settings(args)
+    object_storage.require_settings(settings)
+    return ObjectStorageClient(settings=settings)
+
+
+def _missing_line(names: tuple[str, ...]) -> str:
+    """빈 사내 값 — 넣을 이름 한 줄과, 이 스크립트에서만 되는 인자 길 한 줄."""
+    return (
+        f"[중단] {object_storage.missing_settings_message(names)}\n"
+        "        사내 PC 는 사용자 환경변수로 넣는다(docs/objectstore_setup.md 6장 0단계) — "
+        "--endpoint-url · --bucket · --profile 인자로도 준다."
+    )
 
 
 def datasets(args: argparse.Namespace) -> list[DatasetName]:
@@ -214,8 +231,15 @@ def _writer_refusal(args: argparse.Namespace, client: ObjectStorageClient, actio
 
 # --------------------------------------------------------------------------- 명령
 def command_profile(args: argparse.Namespace) -> int:
-    """사내 PC 에서 한 번 실행할 설정 블록. 손으로 옮겨 적지 않게 상수에서 만든다."""
+    """사내 PC 에서 한 번 실행할 설정 블록. 손으로 옮겨 적지 않게 설정에서 만든다.
+
+    주소 · 프로필 이름은 사내 값이라 환경변수(또는 인자)에서 온다 — 비었으면 블록을 찍지 않는다.
+    """
     settings = build_settings(args)
+    missing = object_storage.missing_environment(settings, bucket=False)
+    if missing:
+        print(_missing_line(missing))
+        return 1
     print("# 사내 PC 에서 한 번만 실행합니다(키 두 줄은 실제 값으로 바꾸세요).")
     print(f'$PROF = "{settings.profile}"')
     print("aws configure set aws_access_key_id     <키>   --profile $PROF")
@@ -223,7 +247,7 @@ def command_profile(args: argparse.Namespace) -> int:
     for name, value in object_storage.profile_settings(settings):
         print(f"aws configure set {name} {value} --profile $PROF")
     print()
-    print(f"# 네임스페이스({object_storage.NAMESPACE_NOTE})는 프로필에 매여 있습니다.")
+    print("# 네임스페이스는 프로필(자격증명)에 매여 있어 명령 인자로 넘기지 않습니다.")
     print("# 체크섬 두 줄은 AWS CLI 2.23+ 와 ECS 의 비호환 우회입니다(Dell KB 000299507).")
     return 0
 
@@ -231,10 +255,14 @@ def command_profile(args: argparse.Namespace) -> int:
 def command_doctor(args: argparse.Namespace) -> int:
     settings = build_settings(args)
     print(f"모드          : {settings.mode}")
-    print(f"엔드포인트    : {settings.endpoint_url}")
-    print(f"버킷          : {settings.bucket}")
-    print(f"프로필        : {settings.profile}")
-    print(f"네임스페이스  : {object_storage.NAMESPACE_NOTE} (프로필에 매여 있음)")
+    print(f"엔드포인트    : {settings.endpoint_url or '(없음)'}")
+    print(f"버킷          : {settings.bucket or '(없음)'}")
+    print(f"프로필        : {settings.profile or '(없음)'}")
+    print("네임스페이스  : 프로필에 매여 있음(명령 인자가 아님)")
+    missing = object_storage.missing_environment(settings)
+    if missing:
+        print(_missing_line(missing))
+        return 1
     # 클라이언트는 다른 명령과 똑같이 `build_client` 를 지난다. 여기서만 따로 만들면
     # 실행기를 갈아끼운 테스트가 이 경로만 못 덮는다.
     client = build_client(args)
@@ -608,14 +636,16 @@ def _boot_line(outcome: engine.BootOutcome) -> str:
 def command_boot_pull(args: argparse.Namespace) -> int:
     """앱이 뜨기 전 받기. 종료 코드 0 일 때만 시작 스크립트가 앱을 띄운다.
 
-    `CAPA_S3_BUCKET` 이 없으면 받지 않는다 — config 기본(개발 버킷)으로 가면 운영 저장이 개발 버킷에
-    간다. 부트 기록을 쓰지 못해도 실패다 — 일꾼 없이 뜬 앱의 저장은 어디에도 안 올라간다.
+    주소 · 버킷 · 프로필 가운데 빈 것이 있으면 `aws` 를 부르지 않고 `config` 로 머문다 — 기본값이
+    없으니 고를 곳도 없다. 부트 기록을 쓰지 못해도 실패다 — 일꾼 없이 뜬 앱의 저장은 어디에도 안
+    올라간다.
     """
-    if not os.environ.get("CAPA_S3_BUCKET", "").strip():
+    if object_storage.missing_environment(build_settings(args)):
         print(_boot_line(engine.BootOutcome(kind=FAILURE_CONFIG)))
         return 1
+    client = build_client(args)
     sync_boot.clear_boot_record()
-    outcome = engine.boot_pull(build_client(args), sync_paths())
+    outcome = engine.boot_pull(client, sync_paths())
     if outcome.ok:
         assert outcome.action is not None and outcome.seq is not None
         sync_boot.write_boot_record(
@@ -673,6 +703,8 @@ def main(argv: list[str] | None = None) -> int:
     except ObjectStorageError as exc:
         if args.command == "boot-pull":
             print(_boot_line(engine.BootOutcome(kind=object_storage.classify_failure(exc))))
+        elif isinstance(exc, StorageSettingsError) and exc.label == object_storage.SETTINGS_MISSING:
+            print(_missing_line(object_storage.missing_environment(build_settings(args))))
         else:
             print(f"[중단] {exc}")
         return 1

@@ -83,8 +83,8 @@ C-DEP 배포 설정의 환경변수 표(key · value, 값은 한 줄)에 넣는�
 | `CAPA_ACCESS_ADMINS` | **운영 · 잠금 · 루프백이 아닌 주소에서 필수** — 없거나 읽은 것이 없으면 막힘 | 관리자 loginid 목록(잠김 방지 — 들어올 수 있는 사람이고 다음 단계의 관리자) | `demo.admin` |
 | `CAPA_ACCESS_USERS` | 선택 — **S3 명단이 켜지면 파일이 없을 때의 첫 버전으로만 쓴다**(파일이 있으면 쓰지 않고 점검 표에 알림) | 사용자 loginid 목록. 두 목록에 다 있으면 관리자 | `demo.user,demo.user2` |
 | `CAPA_ACCESS_CONTACT` | 선택 | 거절 화면의 「요청: …」 에 보일 창구 글(500자까지, 값은 이스케이프해 싣는다). **로그인 없이 누구나 보는 글이다** — 사람 loginid 를 쓰지 말고 창구 이름을 쓴다 | `CAPA 담당 창구` |
-| `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY` | S3 명단을 쓸 때 — 둘 다 비면 꺼짐 · **비밀** | S3 명단용 앱 키 한 쌍. 하나라도 있으면 S3 명단이 켜진다. 앱이 기동 때 읽고 `os.environ` 에서 뺀다 | (받은 값) |
-| `CAPA_S3_ENDPOINT_URL` | S3 명단을 켜면 필수 | S3 주소(`http` · `https`, 경로 없음). `io/object_storage.py` 와 같은 이름이고 그 모듈의 기본값을 쓰지 않는다 — 표에 적는다 | `https://store.example.invalid:9021` |
+| `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY` | S3 명단을 쓸 때 — 둘 다 비면 꺼짐 · **비밀** | S3 명단용 앱 키 한 쌍. 하나라도 있으면 S3 명단이 켜진다. 앱이 기동 때 읽고 `os.environ` 에서 뺀다. 키를 넣으면 C-DEP 시작 스크립트의 동기화 점검도 돌므로 `CAPA_S3_PROFILE`(aws 프로필 이름 — 기본값 없음)도 넣는다 — 없으면 「서버 시작 점검」 프로필 · 버킷 목록 줄이 실패이고 Alarm `SY-06` 이 이름을 댄다([`objectstore_setup.md`](objectstore_setup.md) 2장) | (받은 값) |
+| `CAPA_S3_ENDPOINT_URL` | S3 명단을 켜면 필수 | S3 주소(`http` · `https`, 경로 없음). `io/object_storage.py` 와 같은 이름이고 어느 쪽에도 기본값이 없다(사내 값 — 저장소에 적지 않는다) — 표에 적는다 | `https://store.example.invalid:9021` |
 | `CAPA_S3_BUCKET` | S3 명단을 켜면 필수 | 버킷 이름(경로 스타일이라 대문자 · 밑줄 가능) | `Demo_bucket` |
 | `CAPA_S3_REGION` | 선택 | 서명 영역(기본 `us-east-1`) | `us-east-1` |
 | `CAPA_ACCESS_S3_OBJECT` | 선택 | 명단 파일의 객체 키(기본 `access/access_list.json`) — 같은 버킷을 다른 서버와 나눠 쓸 때 | `access/demo_list.json` |

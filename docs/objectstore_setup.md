@@ -21,10 +21,10 @@ C-DEP 운영 서버는 영속 볼륨을 쓸 수 없고 CI/CD 때 디스크(`/pro
 | 항목 | 값 |
 |---|---|
 | CLI | 운영 이미지 `aws-cli/1.46.3`(`docker/Dockerfile-prod` 의 따로 된 한 줄 — 판 값은 `AWS_CLI_VERSION` 과 시험이 맞댄다) · 사내 PC `aws-cli/2.36.8` (Windows exe 번들, 자체 Python 3.14) |
-| 엔드포인트 | `http://s3.dataplatform.samsungds.net:9020` |
-| 프로필 | `hoyeon.jeon-org-system_package_mfg_team` |
-| 네임스페이스 | `org-system_package_mfg_team` — **프로필에 매여 있고 명령 인자가 아니다** |
-| 버킷 | 운영 `SPKGCAPA_Ops`(코드에 없다 — `CAPA_S3_BUCKET` 환경변수로만) · 개발 `SPKGCAPA_Dev`(`config/object_storage.json` 기본값) · 각 1000GiB |
+| 엔드포인트 | 사내 값 — C-DEP 환경변수 표 · 사내 PC 사용자 환경변수(`CAPA_S3_ENDPOINT_URL`)에만 둔다(저장소에 적지 않음 — 공개 저장소) |
+| 프로필 | 사내 값 — 같은 자리(`CAPA_S3_PROFILE`, 저장소에 적지 않음). 사내 PC 는 `~/.aws` 에 이미 만든 이름 그대로, C-DEP 는 시작 스크립트가 그 이름으로 `~/.aws` 를 쓴다 |
+| 네임스페이스 | 사내 값 — 저장소에 적지 않음. **프로필에 매여 있고 명령 인자가 아니다** |
+| 버킷 | 운영 · 개발 둘 · 각 1000GiB. 이름은 사내 값 — 운영은 C-DEP 환경변수 표 `CAPA_S3_BUCKET` 에만, 사내 PC 는 명령마다 `--bucket`(저장소에 적지 않음 · 코드에 기본 버킷이 없다) |
 | 전송 | http 9020(폐쇄망). https 는 서버 TLS 문제로 쓰지 않는다 |
 | 닿음 | 운영 pod 에서 http 403(인증 없는 요청의 정상 답) 확인 · WebIDE 에서 개발 버킷 읽기 쓰기 · probe 셋 true(2026-11-06) |
 | 서버 | 쓰는 쪽 운영 앱 하나 · pod 는 겹치지 않음(새로 띄우면 기존은 죽음) · 끄면 바로 꺼짐(끌 때 올릴 기회가 없다) · 상태 검사 시작 제한 1분 · 메모리 한도 1GiB · 노드 디스크 여유 40GiB · overlay 하나 |
@@ -37,12 +37,12 @@ C-DEP 운영 서버는 영속 볼륨을 쓸 수 없고 CI/CD 때 디스크(`/pro
 | 이름 | 필수 | 뜻 |
 |---|---|---|
 | `CAPA_S3_SYNC_MODE` | 운영 `managed` | 비면 `local` — 표가 빈 값을 받지 않으면 소문자 `local` 을 적는다(같은 길이다). 다른 철자 · 공백 한 칸 같은 틀린 값은 동기화 꺼짐 + `SY-01`. 키가 있고 버킷에 세대가 있는데 `managed` 가 아니면(비었거나 `local`) `SY-05` |
-| `CAPA_S3_BUCKET` | `managed` 필수 | 운영 버킷(예: `SPKGCAPA_Ops`). 없으면 받지 않고 머문다 — config 기본은 개발 버킷이다. 접속 명단도 같은 버킷. 운영 버킷과 `managed` 는 운영 C-DEP 표에만 둔다 — 개발 서버 · WebIDE · 사내 PC 앱에 넣으면 쓰는 쪽이 둘이 되어 세대가 갈라진다(`원격이 갈라짐`) |
+| `CAPA_S3_BUCKET` | `managed` 필수 | 운영 버킷(사내 값). 없으면 받지 않고 머문다 — 코드에 기본 버킷이 없다. 접속 명단도 같은 버킷. 운영 버킷과 `managed` 는 운영 C-DEP 표에만 둔다 — 개발 서버 · WebIDE · 사내 PC 앱에 넣으면 쓰는 쪽이 둘이 되어 세대가 갈라진다(`원격이 갈라짐`) |
 | `CAPA_S3_ACCESS_KEY` | `managed` 필수 · 비밀 | `~/.aws` 프로필 · 접속 명단 |
 | `CAPA_S3_SECRET_KEY` | `managed` 필수 · 비밀 | `~/.aws` 프로필 · 접속 명단 |
-| `CAPA_S3_ENDPOINT_URL` | 선택 | 없으면 config 값(1장). 접속 명단 · 모듈 S3 도우미를 쓸 때는 필수 |
+| `CAPA_S3_ENDPOINT_URL` | `managed` 필수 · 키를 넣으면 필요 | S3 주소(사내 값 — 코드에 기본값이 없다). 없으면 「서버 시작 점검」 의 프로필 · ECS 줄이 `CD 환경변수 CAPA_S3_ENDPOINT_URL 없음` 이고 받지 않고 머문다. 접속 명단 · 모듈 S3 도우미도 이 값을 쓴다 |
 | `CAPA_S3_REGION` | 선택 | 기본 `us-east-1` |
-| `CAPA_S3_PROFILE` | 선택 | aws 프로필 이름, 기본 config 값 |
+| `CAPA_S3_PROFILE` | `managed` 필수 · 키를 넣으면 필요 | aws 프로필 이름 — 시작 스크립트가 이 이름으로 `~/.aws` 를 쓰고 앱 · 받기가 그 이름으로 부른다. 코드에 기본 이름이 없다 — 없으면 프로필 · 버킷 목록 줄이 `CD 환경변수 CAPA_S3_PROFILE 없음` 이고, `managed` 면 받지 않고 머물며 `local` 이면 Alarm `SY-06` 이 이름을 댄다 |
 | `CAPA_ACCESS_S3_OBJECT` | 선택 | 기본 `access/access_list.json` |
 | `CAPA_ACCESS_USERS` | 선택 | 명단 **파일이 처음 없을 때** 첫 판(`docs/sso_setup.md` 5장) |
 | `CAPA_ACCESS_ADMINS` | 운영 필수 | 관리자 — 「지금 올리기」 |
@@ -69,7 +69,7 @@ C-DEP 는 S3 명단을 못 읽어 관리자만 들어오고, 이관 뒤에는 �
 | ⑥ 넘김 | 결과 파일 → 소켓 닫기 → 앱. 틈은 0.7초 안팎, 캐시 없는 첫 실행 1.2초(샘플 관측)이고 쪽의 JS 가 기다렸다 앱으로 간다 | — |
 
 **모드**: 키도 모드도 없으면 지금처럼 ② ③ ⑤ 를 건너뛴다. 키만 있으면 ② ③ 까지 돌고 앱은 빈 디스크로 뜬다(첫 CI/CD 로 aws 판 · 연결을 보는 판). `managed` 면 ⑤ 까지 간다. 그 밖의 값은 동기화 꺼짐으로 앱이 뜨고 `SY-01` 이 알린다
-(올리지도 않으니 정본을 덮지 않는다). **이관 뒤 환경변수 표에서 모드 칸이 빠지거나 `local` 로 남으면** 앱은 같은 길로 빈 디스크로 뜬다 — 두 값은 유효한 `local` 이라 CI/CD 가 초록이다. 그때는 ③ 의 버킷 목록에 세대가 보여 `SY-05` 가 알린다(이 앱의 저장은 다음 CI/CD 에 사라진다).
+(올리지도 않으니 정본을 덮지 않는다). **이관 뒤 환경변수 표에서 모드 칸이 빠지거나 `local` 로 남으면** 앱은 같은 길로 빈 디스크로 뜬다 — 두 값은 유효한 `local` 이라 CI/CD 가 초록이다. 그때는 ③ 의 버킷 목록에 세대가 보여 `SY-05` 가 알린다(이 앱의 저장은 다음 CI/CD 에 사라진다). 주소 · 버킷 · 프로필 칸이 비어 ③ 이 버킷 목록을 못 보면 `SY-05` 를 가릴 수 없다 — 그때는 `SY-06` 이 빈 이름을 댄다.
 
 **받기 판정** — 받기 성공의 끝에 같은 멤버로 포인터 G+1(`origin: boot`, 펜스)을 낸다. 끝나는 옛 pod 가 그 뒤로 내는 게시는 「HEAD 그대로인가」 에서 멈춘다. **그래서 시작마다 세대가 하나 는다.**
 
@@ -92,7 +92,7 @@ C-DEP 는 S3 명단을 못 읽어 관리자만 들어오고, 이관 뒤에는 �
 **정리**: 앱이 시작 10분 뒤 · 이후 하루 한 번 스스로 돈다(C-DEP 에는 셸이 없다). 남기는 것은 HEAD · 멤버 쌍이 다른 최신 5세대 · HEAD 시각 기준 7일 안 세대이고 그 세대가 가리키는 스냅샷이다. 나이는 저장소가 준 시각으로 잰다. 고아는 지키고, 저장을 막지 않는다. 지우는 동안 HEAD 가 움직이면(저장 · `rollback`) 그 자리에서 멈추고 다음 정리가 새 HEAD 로 다시 판정한다.
 
 **볼 자리** — Admin 「서버 시작 점검」(aws 판 · ECS 연결 · 버킷 목록 · DB 받기 · 디스크 · pod · 메모리와 CPU 한도 · DuckDB 기본값 · `받기 n초 · 앱 응답까지 n초` · 앞 pod 마지막 올림과 이번 앱 준비 사이)과 「DB 동기화」(올릴 것 · 마지막 올림 · 세대 · 크기 · 실패 · 갈래).
-알림은 `SY-01`(설정 오류) · `SY-02`(올라가지 못함) · `SY-03`(멈춤) · `SY-04`(정본을 넘긴 사본) · `SY-05`(버킷의 정본을 받지 않은 서버)다. 값에 주소 · 버킷 · 키가 없어 리뷰에 옮겨도 된다(pod 은 이름 끝 다섯 글자만 보인다).
+알림은 `SY-01`(설정 오류) · `SY-02`(올라가지 못함) · `SY-03`(멈춤) · `SY-04`(정본을 넘긴 사본) · `SY-05`(버킷의 정본을 받지 않은 서버) · `SY-06`(빈 CD 환경변수로 정본을 점검하지 못한 서버 — 이름만)이다. 값에 주소 · 버킷 · 키가 없어 리뷰에 옮겨도 된다(pod 은 이름 끝 다섯 글자만 보인다).
 
 ## 4. 이관 차례 (한 번)
 
@@ -100,7 +100,7 @@ C-DEP 는 S3 명단을 못 읽어 관리자만 들어오고, 이관 뒤에는 �
 
 | 차례 | 누가 | 할 일 | 볼 것 |
 |---|---|---|---|
-| 1 | 사용자 | 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소를 넣고 CI/CD(`CAPA_S3_SYNC_MODE` 는 아직 비움 — 표가 빈 값을 받지 않으면 소문자 `local`) | Admin 「서버 시작 점검」 — aws 판 `1.46.3` · ECS `HTTP 403 닿음` · 버킷 목록 정상. 이미지의 pip 한 줄이 공개 미러로 받히는지가 여기서 답이 난다 |
+| 1 | 사용자 | 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소(`CAPA_S3_ENDPOINT_URL`) · 프로필 이름(`CAPA_S3_PROFILE`)을 넣고 CI/CD(`CAPA_S3_SYNC_MODE` 는 아직 비움 — 표가 빈 값을 받지 않으면 소문자 `local`) | Admin 「서버 시작 점검」 — aws 판 `1.46.3` · ECS `HTTP 403 닿음` · 버킷 목록 정상. 이미지의 pip 한 줄이 공개 미러로 받히는지가 여기서 답이 난다 |
 | 2 | 사용자 | 사내 PC 앱을 끄고 `doctor` 먼저(6장 1단계) — 원격 세대가 `비어 있음` 이 아니면 `init` 을 치지 않고 멈춘다(그대로 치면 `init` 은 건너뛰고 3 의 C-DEP 는 그 옛 세대를 받는다). `doctor` 의 `버킷` 줄이 1 의 `CAPA_S3_BUCKET` 과 같은지 눈으로 본 뒤 `sync_object_storage.py --bucket <운영 버킷> init` → `status`(6장). `aws s3 cp` 를 쓰지 않는다 — 세대 포인터가 없어 받지 못한다 | `doctor` 원격 세대 `비어 있음` · `status` 의 세대 1 |
 | 3 | 사용자 | `CAPA_S3_SYNC_MODE` 를 `managed` 로 넣고(`local` 이면 `managed` 로 바꾼다) CI/CD | 앱이 뜨고 「DB 받기」 정상 · HOME 이 사내 PC 와 같다 |
 | 4 | 사용자 | 앱에서 저장 하나 | 「DB 동기화 · 올릴 것 없음」 · 마지막 올림 시각 |
@@ -125,7 +125,18 @@ HEAD(또는 그 세대) 두 멤버를 받아 검증한 뒤에만 그 폴더에 �
 
 ## 6. 사내 PC 준비 · 이관 명령
 
-**0단계 — 프로필(한 번만).** 출력되는 블록을 그대로 붙여 넣는다. 손으로 옮겨 적지 않는다. 키 두 줄만 실제 값으로 바꾼다.
+**0단계 — 사내 값 환경변수와 프로필(한 번만).** 주소 · 프로필 이름은 사내 값이라 저장소에 없다 — 스크립트는 사용자 환경변수에서만 읽고, 비었으면
+aws 를 부르기 전에 `[중단] … 넣을 환경변수: …` 한 줄로 멈춘다. 별도 PowerShell 창에서 한 줄씩 넣고 **새 창을 연다**(넣은 창에는 아직 안 보인다).
+값은 지금 쓰는 주소 · 프로필 이름 그대로다 — 손으로 치지 않고 출력을 붙여 넣는다. 프로필을 이미 만든 PC 는 이름이 `aws configure list-profiles` 에 보이는 그 이름,
+주소가 `aws configure get endpoint_url --profile <그 이름>` 의 출력이다(아래 `profile` 블록이 그 프로필에 넣는다). 그 줄이 비면(프로필을 손으로 만든 PC) 주소는
+2026-11-12 전 판의 `config/object_storage.json` `endpoint_url` 칸에만 있다 — 그 판을 덮기 전에 옮긴다. 버킷은 넣지 않는다 — 명령마다 `--bucket` 이다(아래 3단계 끝).
+
+```powershell
+[Environment]::SetEnvironmentVariable("CAPA_S3_ENDPOINT_URL", "<사내 S3 주소>", "User")
+[Environment]::SetEnvironmentVariable("CAPA_S3_PROFILE", "<사내 aws 프로필 이름>", "User")
+```
+
+프로필을 아직 만들지 않은 PC 는 출력되는 블록을 그대로 붙여 넣는다. 손으로 옮겨 적지 않는다. 키 두 줄만 실제 값으로 바꾼다.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py profile
@@ -141,12 +152,12 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> doctor
 ```
 
-모드 · 엔드포인트 · 버킷 · 프로필과 CLI 버전, 두 DB 의 원격 · 로컬 세대를 찍는다. 원격이 비어 있는 것이 최초 상태의 정상이다. `mode` 는 이 스크립트에서 출력에만 쓰이고 어떤 하위 명령도 막지 않는다. `Content-MD5` 오류가 나면 0단계의 체크섬 설정이 안 먹은 것이다 — 그래도 나면 CLI 를 2.22.x 로 내린다.
+모드 · 엔드포인트 · 버킷 · 프로필과 CLI 버전, 두 DB 의 원격 · 로컬 세대를 찍는다. 빈 값은 `(없음)` 으로 찍고 넣을 환경변수 이름을 대며 멈춘다(0단계). 통과는 종료 코드 0 · `[중단]` 줄 없음 · `CLI` 와 `원격 세대` 줄이 찍힘이다 — 주소 오타 · 없는 프로필 이름은 값 줄이 찍혀도 `[중단] <까닭>` 으로 멈춘다. 원격이 비어 있는 것이 최초 상태의 정상이다. `mode` 는 이 스크립트에서 출력에만 쓰이고 어떤 하위 명령도 막지 않는다. `Content-MD5` 오류가 나면 0단계의 체크섬 설정이 안 먹은 것이다 — 그래도 나면 CLI 를 2.22.x 로 내린다.
 
 **2단계 — 능력 측정.** 확인하지 못한 능력은 없는 것으로 본다. `_probe/` 아래에 임시 객체를 만들었다 지운다. 사내 값은 이미 파일에 있다(2026-11-06) — 저장소가 바뀌었을 때만 돌린다.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py probe --write config\object_storage_capabilities.json
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <개발 버킷> probe --write config\object_storage_capabilities.json
 ```
 
 **3단계 — 최초 이관(앱을 끈 채로).** `aws s3 cp` 가 아니라 `init` 이다. 치기 전에 1단계 `doctor` 를 다시 본다 — 원격 세대가 `비어 있음` 이 아니면 치지 않고 멈추고, `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(다르면 `--bucket` 을 고쳐 1단계부터).
@@ -158,7 +169,7 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 
 `init` 은 원격이 비어 있을 때만 동작하고 두 DB 를 함께 올린다. 이미 세대가 있으면 건너뛴다. 스냅샷을 만드는 과정이 곧 재구축이라 파일이 줄어든다. 넘기지 않고 시험할 때(개발 버킷)는 `init --keep-writer` 다.
 
-`--bucket` · `--dry-run` 은 **하위 명령 앞에** 놓는다. 뒤에 붙이면 `unrecognized arguments` 로 죽는다. `--dry-run` 은 앞 회차가 남긴 포인터도 내지 않는다 — `앞 회차가 남긴 포인터` 줄이 뜨면 실제 실행이 마무리한다. 사내 PC 의 기본 버킷은 개발 버킷이다 — 운영 버킷은 늘 적는다.
+`--bucket` · `--dry-run` 은 **하위 명령 앞에** 놓는다. 뒤에 붙이면 `unrecognized arguments` 로 죽는다. `--dry-run` 은 앞 회차가 남긴 포인터도 내지 않는다 — `앞 회차가 남긴 포인터` 줄이 뜨면 실제 실행이 마무리한다. 코드에 기본 버킷이 없다 — 운영이든 개발이든 `--bucket` 을 늘 적는다(빠지면 `CAPA_S3_BUCKET` 을 대며 멈춘다). 사내 PC 에 `CAPA_S3_BUCKET` 을 넣지 않는다 — 운영 버킷이 남으면 쓰는 쪽이 둘이 된다.
 
 ## 7. 세대 되돌리기
 
@@ -178,7 +189,7 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 | 낱말 | 뜻 | 할 일 |
 |---|---|---|
 | 원격이 비어 있음 | 이관 전 | 먼저 4장 2 의 `doctor` 버킷이 C-DEP 표 값과 같았는지 본다 — 다른 버킷에 `init` 했으면 그 버킷에 다시 해도 풀리지 않는다. 같으면 4장 2 의 `init` — 다음 시도가 스스로 받는다 |
-| 설정 오류 | `CAPA_S3_BUCKET` · 키 없음, 설정 파일 깨짐, `~/.aws` 를 못 써 프로필 없음(`HOME`) | 환경변수 표를 고치고 CI/CD. 표가 맞는데 그대로면 `HOME` 자리에 쓸 수 있는지 담당에 묻는다(임시 화면에 머무는 동안은 Admin 이 없다) |
+| 설정 오류 | `CAPA_S3_BUCKET` · `CAPA_S3_ENDPOINT_URL` · `CAPA_S3_PROFILE` · 키 없음(컨테이너 출력 줄 · Admin 줄이 `CD 환경변수 … 없음` 으로 이름을 댄다), 설정 파일 깨짐, `~/.aws` 를 못 써 프로필 없음(`HOME`) | 환경변수 표를 고치고 CI/CD. 표가 맞는데 그대로면 `HOME` 자리에 쓸 수 있는지 담당에 묻는다(임시 화면에 머무는 동안은 Admin 이 없다) |
 | aws 명령 없음 | 이미지에 `aws` 가 없다 | `docker/Dockerfile-prod` 한 줄 · PATH — 사외 요청 |
 | 저장소가 거절 | 키 · 권한 | 키를 고치고 CI/CD |
 | 버킷 없음 | 버킷 이름 | 이름을 고치고 CI/CD |

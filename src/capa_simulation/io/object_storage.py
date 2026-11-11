@@ -50,19 +50,25 @@ from capa_simulation.settings import PROJECT_ROOT
 # ---------------------------------------------------------------------------
 # 사내 환경 설정 영역
 #
-# 1) 값은 환경변수로 덮어쓴다. WebIDE 로 옮겨 프로필명이 바뀌어도 코드를 고치지 않는다.
-# 2) 버킷명에 대문자·언더바가 있어 경로 스타일 주소가 아니면 서명이 어긋난다.
-# 3) 기본 버킷은 개발 버킷이다. 운영 버킷은 코드에 두지 않고 `CAPA_S3_BUCKET` 으로만 받는다.
+# 1) 주소 · 버킷 · 프로필은 사내 값이다 — 저장소(공개)에 두지 않고 환경변수로만 받는다(사내 PC 는
+#    사용자 환경변수, C-DEP 는 환경변수 표). 설정 파일도 이 셋을 읽지 않는다.
+# 2) 셋 가운데 하나라도 비면 `aws` 를 부르지 않고 넣을 환경변수 이름을 대고 멈춘다
+#    (`require_settings`) — 기본값으로 엉뚱한 저장소 · 버킷에 가지 않는다. 값을 읽기만 하는
+#    `load_settings` 는 멈추지 않는다(동기화를 쓰지 않는 개발 PC 앱이 설정 오류로 내려앉지 않게).
+# 3) 버킷명에 대문자·언더바가 있어 경로 스타일 주소가 아니면 서명이 어긋난다.
+# 4) 기본 버킷이 없다 — 운영 · 개발 어느 쪽도 코드가 고르지 않는다(사내 PC 는 명령마다 `--bucket`).
 # ---------------------------------------------------------------------------
-DEFAULT_ENDPOINT_URL: Final = "http://s3.dataplatform.samsungds.net:9020"
-DEFAULT_BUCKET: Final = "SPKGCAPA_Dev"
-DEFAULT_PROFILE: Final = "hoyeon.jeon-org-system_package_mfg_team"
+ENDPOINT_ENV: Final = "CAPA_S3_ENDPOINT_URL"
+BUCKET_ENV: Final = "CAPA_S3_BUCKET"
+PROFILE_ENV: Final = "CAPA_S3_PROFILE"
+REGION_ENV: Final = "CAPA_S3_REGION"
 DEFAULT_REGION: Final = "us-east-1"
-# 네임스페이스는 프로필에 매여 있어 명령 인자로 넘기는 자리가 없다. 진단 출력에만 쓴다.
-NAMESPACE_NOTE: Final = "org-system_package_mfg_team"
 
 # 켜는 스위치. `managed` 면 시작 때 두 DB 를 받고 저장하면 올린다.
 MODE_ENV: Final = "CAPA_S3_SYNC_MODE"
+# 이 경계의 설정을 바꾸는 환경변수 전부. 시험이 사내 PC 의 사용자 환경변수 · 창에 넣은 모드를 읽지
+# 않게 지운다(`tests/conftest.py`).
+SETTINGS_ENVIRONMENT: Final = (ENDPOINT_ENV, BUCKET_ENV, PROFILE_ENV, REGION_ENV, MODE_ENV)
 MODE_MANAGED: Final = "managed"
 # 끈 값 — 빈 칸도 이 값으로 읽는다(`load_settings`).
 MODE_LOCAL: Final = "local"
@@ -73,6 +79,7 @@ CAPABILITIES_PATH: Final = PROJECT_ROOT / "config" / "object_storage_capabilitie
 SETTINGS_BAD_MODE: Final = "모드 값 틀림"
 SETTINGS_BROKEN_FILE: Final = "설정 파일 깨짐"
 SETTINGS_UNREADABLE: Final = "설정 읽기 실패"
+SETTINGS_MISSING: Final = "설정 값 없음"
 
 # AWS CLI 2.23.0 이상은 ECS 에서 `Missing required header for this request: Content-MD5` 로
 # 실패한다(Dell KB 000299507). 체크섬 계산을 끄면 우회되는 경우가 있고, 안 되면 CLI 를
@@ -139,10 +146,11 @@ class StorageSettings:
 
 
 def load_settings(*, environ: Mapping[str, str] | None = None) -> StorageSettings:
-    """환경변수 > `config/object_storage.json` > 모듈 상수 순으로 설정을 만든다.
+    """설정 한 벌. 주소 · 버킷 · 프로필은 환경변수로만, 모드 · 영역은 환경변수 > 설정 파일 > 상수다.
 
-    설정 파일이 있는데 읽지 못하면 `local` 로 강등하지 않는다 — 조용히 동기화를 꺼 버리면
-    사용자는 저장이 올라간다고 믿는다.
+    셋이 비어도 여기서는 멈추지 않고 빈 글로 둔다 — 멈추는 자리는 `aws` 를 부르는 쪽이다
+    (`require_settings`). 설정 파일이 있는데 읽지 못하면 `local` 로 강등하지 않는다 — 조용히
+    동기화를 꺼 버리면 사용자는 저장이 올라간다고 믿는다.
     """
     env = os.environ if environ is None else environ
     file_config = _read_json(CONFIG_PATH, label="오브젝트 스토리지 설정")
@@ -156,14 +164,39 @@ def load_settings(*, environ: Mapping[str, str] | None = None) -> StorageSetting
     mode: SyncMode = "managed" if mode_text == MODE_MANAGED else "local"
     return StorageSettings(
         mode=mode,
-        endpoint_url=str(
-            env.get("CAPA_S3_ENDPOINT_URL") or values.get("endpoint_url") or DEFAULT_ENDPOINT_URL
-        ),
-        bucket=str(env.get("CAPA_S3_BUCKET") or values.get("bucket") or DEFAULT_BUCKET),
-        profile=str(env.get("CAPA_S3_PROFILE") or values.get("profile") or DEFAULT_PROFILE),
-        region=str(env.get("CAPA_S3_REGION") or values.get("region") or DEFAULT_REGION),
+        endpoint_url=env.get(ENDPOINT_ENV, "").strip(),
+        bucket=env.get(BUCKET_ENV, "").strip(),
+        profile=env.get(PROFILE_ENV, "").strip(),
+        region=str(env.get(REGION_ENV) or values.get("region") or DEFAULT_REGION),
         capabilities=capabilities,
     )
+
+
+def missing_environment(settings: StorageSettings, *, bucket: bool = True) -> tuple[str, ...]:
+    """비어 있는 사내 값의 환경변수 이름(주소 · 버킷 · 프로필 차례).
+
+    프로필 블록(`profile_settings` · `render_profile_files`)은 버킷이 필요 없다(`bucket=False`).
+    """
+    pairs = [(ENDPOINT_ENV, settings.endpoint_url)]
+    if bucket:
+        pairs.append((BUCKET_ENV, settings.bucket))
+    pairs.append((PROFILE_ENV, settings.profile))
+    return tuple(name for name, value in pairs if not value.strip())
+
+
+def missing_settings_message(names: Sequence[str]) -> str:
+    """빈 사내 값을 알리는 한 줄. 이름만 싣는다(값은 없으니 실을 것도 없다)."""
+    return "오브젝트 스토리지 사내 값이 비었습니다 — 넣을 환경변수: " + " · ".join(names)
+
+
+def require_settings(settings: StorageSettings, *, bucket: bool = True) -> None:
+    """빈 사내 값이 있으면 `aws` 를 부르기 전에 멈춘다.
+
+    결과 없는 `ObjectStorageError` 라 실패 갈래는 `config` 다(`classify_failure`).
+    """
+    missing = missing_environment(settings, bucket=bucket)
+    if missing:
+        raise StorageSettingsError(missing_settings_message(missing), label=SETTINGS_MISSING)
 
 
 @dataclass(frozen=True)
@@ -282,6 +315,7 @@ class ObjectStorageClient:
         버킷명에 대문자·언더바가 있어 가상 호스트 스타일로는 표현할 수 없다. 설정이 없으면
         환경변수로 강제하고 있음을 알린다.
         """
+        require_settings(self.settings)
         result = self.runner.run(
             ["aws", "configure", "get", "s3.addressing_style", "--profile", self.settings.profile],
             dict(FORCED_ENV),
@@ -432,7 +466,12 @@ class ObjectStorageClient:
 
     # ------------------------------------------------------------------ 내부
     def _argv(self, operation: str, *args: str) -> list[str]:
-        """`aws s3api` 명령 하나를 조립한다. **`--profile` 이 빠질 수 없는 유일한 자리다.**"""
+        """`aws s3api` 명령 하나를 조립한다. **`--profile` 이 빠질 수 없는 유일한 자리다.**
+
+        주소 · 버킷 · 프로필이 비었으면 조립하지 않는다 — 빈 값을 넘기면 어느 프로필 · 주소로 갈지
+        이 코드가 아니라 aws 의 기본이 정한다.
+        """
+        require_settings(self.settings)
         return [
             "aws",
             "s3api",
@@ -491,7 +530,9 @@ def render_profile_files(
     """`~/.aws` 의 `credentials` · `config` 내용. `aws configure set` 이 쓰는 꼴과 같다.
 
     C-DEP 에는 셸이 없어 시작 스크립트가 파일을 직접 쓴다. 줄은 `profile_settings` 한 벌이다.
+    주소 · 프로필이 비었으면 쓰지 않는다 — 절 머리 · 주소 칸이 빈 파일이 된다.
     """
+    require_settings(settings, bucket=False)
     credentials = (
         f"[{settings.profile}]\n"
         f"aws_access_key_id = {access_key}\n"

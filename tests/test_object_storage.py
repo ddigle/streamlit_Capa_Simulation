@@ -20,7 +20,7 @@ from capa_simulation.io.object_storage import (
 SETTINGS = StorageSettings(
     mode="managed",
     endpoint_url="http://s3.demo.invalid:9020",
-    bucket="SPKGCAPA_Dev",
+    bucket="Demo_dev_bucket",
     profile="demo-org-team",
     region="us-east-1",
     capabilities={},
@@ -76,7 +76,7 @@ def test_commands_target_the_configured_bucket_and_endpoint() -> None:
 
     argv = runner.calls[0]
     assert argv[:3] == ("aws", "s3api", "list-objects-v2")
-    assert argv[argv.index("--bucket") + 1] == "SPKGCAPA_Dev"
+    assert argv[argv.index("--bucket") + 1] == "Demo_dev_bucket"
     assert argv[argv.index("--endpoint-url") + 1] == "http://s3.demo.invalid:9020"
 
 
@@ -380,12 +380,93 @@ def test_settings_prefer_environment_over_file_and_constants() -> None:
     assert settings.bucket == "other-bucket"
 
 
-def test_settings_default_to_local_mode() -> None:
-    """스위치를 잊어도 사내 스토리지에 손대지 않는다."""
+def test_settings_default_to_local_mode_with_no_in_house_values() -> None:
+    """스위치를 잊어도 사내 스토리지에 손대지 않는다. 주소 · 버킷 · 프로필은 기본값이 없다."""
     settings = object_storage.load_settings(environ={})
 
     assert settings.mode == "local"
-    assert settings.profile == object_storage.DEFAULT_PROFILE
+    assert (settings.endpoint_url, settings.bucket, settings.profile) == ("", "", "")
+    assert settings.region == object_storage.DEFAULT_REGION
+    assert object_storage.missing_environment(settings) == (
+        "CAPA_S3_ENDPOINT_URL",
+        "CAPA_S3_BUCKET",
+        "CAPA_S3_PROFILE",
+    )
+    assert object_storage.missing_environment(settings, bucket=False) == (
+        "CAPA_S3_ENDPOINT_URL",
+        "CAPA_S3_PROFILE",
+    )
+
+
+def test_blank_environment_values_count_as_missing() -> None:
+    """사용자 환경변수에 공백만 들어가도 값이 아니다 — 빈 값과 같은 길로 멈춘다."""
+    settings = object_storage.load_settings(
+        environ={"CAPA_S3_ENDPOINT_URL": " ", "CAPA_S3_BUCKET": "\t", "CAPA_S3_PROFILE": " demo "}
+    )
+
+    assert settings.profile == "demo"
+    assert object_storage.missing_environment(settings) == (
+        "CAPA_S3_ENDPOINT_URL",
+        "CAPA_S3_BUCKET",
+    )
+
+
+def test_the_settings_file_cannot_supply_in_house_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """주소 · 버킷 · 프로필은 환경변수로만 받는다 — 설정 파일에 적어도 읽지 않는다(공개 저장소)."""
+    config = tmp_path / "object_storage.json"
+    config.write_text(
+        json.dumps(
+            {
+                "mode": "local",
+                "region": "demo-region-1",
+                "endpoint_url": "http://s3.demo.invalid:9020",
+                "bucket": "Demo_file_bucket",
+                "profile": "demo-file-profile",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(object_storage, "CONFIG_PATH", config)
+
+    settings = object_storage.load_settings(environ={})
+
+    assert (settings.endpoint_url, settings.bucket, settings.profile) == ("", "", "")
+    assert settings.region == "demo-region-1"
+
+
+def test_no_command_is_built_while_an_in_house_value_is_missing() -> None:
+    """빈 주소 · 버킷 · 프로필로 `aws` 를 부르지 않는다 — 어디로 갈지 aws 의 기본이 정하게 된다.
+
+    넣을 환경변수 이름을 대는 한 줄로 멈추고, 실패 갈래는 `config` 다.
+    """
+    runner = FakeRunner()
+    blank = StorageSettings(
+        mode="managed",
+        endpoint_url="",
+        bucket="Demo_dev_bucket",
+        profile="",
+        region="us-east-1",
+        capabilities={},
+    )
+    client = _client(runner, settings=blank)
+
+    for call in (
+        lambda: client.list_objects("simulation/heads/"),
+        lambda: client.head("simulation/heads/x.json"),
+        lambda: client.delete("simulation/heads/x.json"),
+        client.check_addressing_style,
+    ):
+        with pytest.raises(object_storage.StorageSettingsError) as caught:
+            call()
+        assert caught.value.label == object_storage.SETTINGS_MISSING
+        assert str(caught.value).endswith("CAPA_S3_ENDPOINT_URL · CAPA_S3_PROFILE")
+        assert "\n" not in str(caught.value)
+        assert object_storage.classify_failure(caught.value) == "config"
+    assert runner.calls == []
+    with pytest.raises(object_storage.StorageSettingsError):
+        object_storage.render_profile_files(blank, access_key="k", secret_key="s")
 
 
 def test_unknown_mode_is_refused() -> None:
@@ -394,12 +475,13 @@ def test_unknown_mode_is_refused() -> None:
 
 
 def test_committed_config_keeps_local_mode() -> None:
-    """사내 설정이 실수로 커밋되면 개발 PC 가 사내 스토리지를 건드린다."""
+    """사내 설정이 실수로 커밋되면 개발 PC 가 사내 스토리지를 건드린다. 사내 값 칸도 없다."""
     if not object_storage.CONFIG_PATH.exists():
         pytest.skip("설정 파일이 아직 없습니다.")
     payload = json.loads(object_storage.CONFIG_PATH.read_text(encoding="utf-8"))
 
     assert payload.get("mode") == "local"
+    assert not {"endpoint_url", "bucket", "profile"} & set(payload)
 
 
 def test_transfer_timeout_grows_with_size_but_never_shrinks() -> None:
@@ -529,9 +611,18 @@ def test_scratch_names_differ_for_the_same_key(tmp_path: Path) -> None:
     assert names[0] != names[1]
 
 
-def test_the_default_bucket_is_the_development_one() -> None:
-    """운영 버킷은 코드에 두지 않는다 — `CAPA_S3_BUCKET` 으로만 받는다."""
+def test_there_is_no_default_bucket() -> None:
+    """운영 · 개발 어느 버킷도 코드가 고르지 않는다 — `CAPA_S3_BUCKET` 으로만 받는다."""
     settings = object_storage.load_settings(environ={})
 
-    assert settings.bucket == "SPKGCAPA_Dev"
+    assert settings.bucket == ""
     assert object_storage.load_settings(environ={"CAPA_S3_BUCKET": "Demo_ops"}).bucket == "Demo_ops"
+
+
+def test_the_settings_environment_names_match_the_access_list() -> None:
+    """S3 명단(`auth.names`)과 같은 이름이다 — 한쪽만 바꾸면 사내 값을 두 번 넣게 된다."""
+    from capa_simulation.auth import names
+
+    assert object_storage.ENDPOINT_ENV == names.ENV_S3_ENDPOINT
+    assert object_storage.BUCKET_ENV == names.ENV_S3_BUCKET
+    assert object_storage.REGION_ENV == names.ENV_S3_REGION

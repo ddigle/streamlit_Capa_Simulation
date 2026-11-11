@@ -40,6 +40,7 @@ from s3_mock_store import MockStore, start_mock  # noqa: E402
 FAKE_ACCESS_KEY = "FAKE-s3-access-key-0001"
 FAKE_SECRET_KEY = "FAKE-s3-secret-key-0123456789-abcdefghij"
 FAKE_BUCKET = "Demo_ops_bucket"
+FAKE_PROFILE = "demo-container-profile"
 FAKE_ARTIFACTORY_TOKEN = "FAKE-artifactory-token-0000"
 FAKE_BDQ_TOKEN = "FAKE-bdq-login-token-0000"
 CLOSED_ENDPOINT = "http://127.0.0.1:9"
@@ -171,6 +172,7 @@ def _environ(box: SimpleNamespace, **extra: str) -> dict[str, str]:
         sso_names.ENV_S3_SECRET_KEY: FAKE_SECRET_KEY,
         sso_names.ENV_S3_BUCKET: FAKE_BUCKET,
         sso_names.ENV_S3_ENDPOINT: CLOSED_ENDPOINT,
+        object_storage.PROFILE_ENV: FAKE_PROFILE,
         "CAPA_ARTIFACTORY_TOKEN": FAKE_ARTIFACTORY_TOKEN,
         "CAPA_BDQ_TOKEN": FAKE_BDQ_TOKEN,
         **extra,
@@ -337,6 +339,7 @@ def test_no_mark_without_a_forgotten_mode(
 
     assert _step(report_contract.SYNC_STEP_BUCKET)["status"] == report_contract.STATUS_OK
     assert not _sync().get("head_ignored")
+    assert _sync()["head_unchecked"] == []
 
 
 def test_a_mistyped_mode_does_not_pull_and_the_app_still_starts(box: SimpleNamespace) -> None:
@@ -421,7 +424,7 @@ def test_what_only_a_person_can_fix_is_not_hurried(box: SimpleNamespace, kind: s
 
 @pytest.mark.parametrize("name", list(container_start.SYNC_REQUIRED_ENVIRONMENT))
 def test_a_missing_bucket_or_key_is_not_pulled_at_all(box: SimpleNamespace, name: str) -> None:
-    """버킷이 없을 때 config 기본(개발 버킷)으로 가면 운영 저장이 개발 버킷에 간다."""
+    """주소 · 버킷 · 프로필은 사내 값이라 기본값이 없다 — 하나라도 비면 받지 않고 머문다."""
     environ = _managed(box)
     del environ[name]
     runner = Runner(box.log)
@@ -559,8 +562,13 @@ def test_the_profile_is_private_and_says_what_the_profile_command_prints(
         for name in ("credentials", "config"):
             assert stat.S_IMODE((folder / name).stat().st_mode) == 0o600
     storage = object_storage.load_settings(
-        environ={sso_names.ENV_S3_ENDPOINT: CLOSED_ENDPOINT, sso_names.ENV_S3_BUCKET: FAKE_BUCKET}
+        environ={
+            sso_names.ENV_S3_ENDPOINT: CLOSED_ENDPOINT,
+            sso_names.ENV_S3_BUCKET: FAKE_BUCKET,
+            object_storage.PROFILE_ENV: FAKE_PROFILE,
+        }
     )
+    assert storage.profile == FAKE_PROFILE
     keys = configparser.ConfigParser()
     keys.read(folder / "credentials", encoding="utf-8")
     assert keys[storage.profile]["aws_access_key_id"] == FAKE_ACCESS_KEY
@@ -613,6 +621,90 @@ def test_a_key_with_a_line_break_cannot_add_lines_to_the_file(box: SimpleNamespa
 
     assert _step(report_contract.SYNC_STEP_PROFILE)["status"] == report_contract.STATUS_FAILED
     assert not (box.home / ".aws").exists()
+
+
+def test_a_missing_endpoint_is_named_on_the_lines_not_read_as_a_bad_address(
+    box: SimpleNamespace,
+) -> None:
+    """주소가 비면 「주소 꼴이 틀림」 이 아니라 넣을 CD 환경변수 이름을 댄다. 프로필도 안 만든다."""
+    environ = _environ(box)
+    del environ[sso_names.ENV_S3_ENDPOINT]
+    runner = Runner(box.log)
+
+    _start(box, environ, runner)
+
+    missing = f"CD 환경변수 {object_storage.ENDPOINT_ENV} 없음"
+    assert _step(report_contract.SYNC_STEP_PROFILE) == {
+        "status": report_contract.STATUS_FAILED,
+        "reason": f"{missing} — 만들지 않음",
+    }
+    assert _step(report_contract.SYNC_STEP_ECS) == {
+        "status": report_contract.STATUS_FAILED,
+        "reason": missing,
+    }
+    assert _step(report_contract.SYNC_STEP_BUCKET)["status"] == report_contract.STATUS_SKIPPED
+    assert not (box.home / ".aws").exists()
+    assert not [call for call in runner.calls if call[:2] == ["aws", "s3api"]]
+    assert _sync()["head_unchecked"] == [object_storage.ENDPOINT_ENV]
+
+
+def test_a_missing_profile_name_is_named_and_no_bucket_command_runs(
+    box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프로필 이름이 비면 `~/.aws` 를 쓰지 않고 버킷 목록도 부르지 않는다 — 빈 `--profile` 이면
+    어느 프로필로 갈지 aws 의 기본이 정한다."""
+    reached = container_start.StepResult(report_contract.STATUS_OK, "HTTP 403 닿음")
+    monkeypatch.setattr(container_start, "ecs_step", lambda _endpoint: reached)
+    environ = _environ(box)
+    del environ[object_storage.PROFILE_ENV]
+    runner = Runner(box.log)
+
+    _start(box, environ, runner)
+
+    missing = f"CD 환경변수 {object_storage.PROFILE_ENV} 없음"
+    assert _step(report_contract.SYNC_STEP_PROFILE)["reason"] == f"{missing} — 만들지 않음"
+    assert _step(report_contract.SYNC_STEP_BUCKET) == {
+        "status": report_contract.STATUS_FAILED,
+        "reason": missing,
+    }
+    assert not (box.home / ".aws").exists()
+    assert not [call for call in runner.calls if call[:2] == ["aws", "s3api"]]
+    # 버킷을 못 보았으니 `head_ignored` 가 거짓이어도 믿을 수 없다 — 앱이 `SY-06` 으로 이름을 댄다.
+    assert _sync()["head_ignored"] is False
+    assert _sync()["head_unchecked"] == [object_storage.PROFILE_ENV]
+
+
+@pytest.mark.parametrize("extra", [{"CAPA_S3_SYNC_MODE": "Local"}, {}], ids=["mistyped", "managed"])
+def test_no_unchecked_mark_where_the_app_says_something_else(
+    box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, extra: dict[str, str]
+) -> None:
+    """틀린 모드 값은 앱이 `SY-01` 로 알리고, `managed` 는 받지 않고 머물러 앱이 뜨지 않는다 —
+    표지가 쓸 데가 없다."""
+    _reachable_ecs(monkeypatch)
+    environ = _managed(box) if not extra else _environ(box, **extra)
+    del environ[object_storage.PROFILE_ENV]
+
+    if extra:
+        _start(box, environ, Runner(box.log))
+    else:
+        with pytest.raises(Stay):
+            _start(box, environ, Runner(box.log), stay_after=1)
+
+    assert _sync()["head_unchecked"] == []
+
+
+def test_a_missing_value_in_managed_mode_names_it_on_the_console(
+    box: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """임시 화면에 머무는 동안 Admin 은 없다 — 컨테이너 출력 한 줄이 넣을 이름을 댄다."""
+    environ = _managed(box)
+    del environ[object_storage.PROFILE_ENV]
+
+    with pytest.raises(Stay):
+        _start(box, environ, Runner(box.log), stay_after=1)
+
+    printed = capsys.readouterr().out
+    assert f"config · CD 환경변수 {object_storage.PROFILE_ENV} 없음 · 5초 뒤 다시" in printed
 
 
 def test_a_profile_name_cannot_break_the_section_header(box: SimpleNamespace) -> None:

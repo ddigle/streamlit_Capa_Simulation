@@ -355,6 +355,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # C-DEP 서버에서 관리자의 모든 화면 회차에 낸다(`container_start_check.render_token_alert`,
     # 리뷰 202611111500 보드 N8 (가)). 토큰을 새로 넣어야 풀린다.
     AlertSpec("AD-10", "action", "state", "BigDataQuery 로그인 토큰 실패 — 조회가 막힘"),
+    # 정본 버킷 동기화 — 빈 CD 환경변수(주소 · 버킷 · 프로필) 때문에 시작 점검이 버킷 목록을 보지
+    # 못해 `SY-05` 를 가리지 못한 서버(`components/object_sync_status.py`). 이름만 싣는다.
+    AlertSpec("SY-06", "action", "state", "정본을 받았는지 점검하지 못한 서버 — CD 환경변수 없음"),
 )
 
 

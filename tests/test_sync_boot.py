@@ -206,6 +206,33 @@ def test_a_start_without_that_mark_needs_no_alert(
     assert sync_boot.sync_alerts_possible() is False
 
 
+def test_a_start_that_could_not_list_the_bucket_names_what_was_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """빈 CD 환경변수로 버킷 목록을 못 본 서버 — `head_ignored` 가 거짓이어도 받지 않은 정본이
+    있을 수 있다(`SY-06`). 이름 꼴이 아닌 항목은 버린다 — 알림에 값이 실리지 않게."""
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("local"))
+    names = [object_storage.PROFILE_ENV, "demo value", 3, "lower_name"]
+    _start_report(tmp_path, monkeypatch, {"steps": {}, "head_unchecked": names})
+
+    assert sync_boot.head_unchecked() == (object_storage.PROFILE_ENV,)
+    assert sync_boot.head_ignored() is False
+    assert sync_boot.sync_alerts_possible() is True
+
+
+def test_a_managed_process_ignores_the_unchecked_mark(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`managed` 는 빈 값이면 받지 않고 머물러 앱이 뜨지 않는다 — 결과 파일의 표지를 읽지
+    않는다."""
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("managed"))
+    _start_report(
+        tmp_path, monkeypatch, {"steps": {}, "head_unchecked": [object_storage.PROFILE_ENV]}
+    )
+
+    assert sync_boot.head_unchecked() == ()
+
+
 def test_the_boot_record_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     record = sync_boot.BootRecord(

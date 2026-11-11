@@ -56,6 +56,7 @@ OVERDUE_CODE: Final = "SY-02"
 BLOCKED_CODE: Final = "SY-03"
 HANDED_OVER_CODE: Final = "SY-04"
 HEAD_IGNORED_CODE: Final = "SY-05"
+HEAD_UNCHECKED_CODE: Final = "SY-06"
 _MIB: Final = 1024 * 1024
 
 NOT_ADMIN_MESSAGE: Final = "관리자만 지금 올리기를 쓸 수 있습니다"
@@ -80,7 +81,7 @@ def failure_label(kind: str | None) -> str:
 
 
 def render_object_sync_alerts() -> None:
-    """동기화 상태 알림 다섯. `app.py` 가 회차마다 조건 없이 부른다.
+    """동기화 상태 알림 여섯. `app.py` 가 회차마다 조건 없이 부른다.
 
     알릴 일이 있을 수 없는 프로세스(`sync_alerts_possible` 이 거짓 — 프로세스에 한 번 정한 값)에서는
     표지도 쓰지 않는다. 개발 PC · 시험의 요소 순번이 그대로다.
@@ -167,6 +168,23 @@ def render_object_sync_alerts() -> None:
             "버킷에 세대가 있는데 CAPA_S3_SYNC_MODE 칸이 managed 가 아니어서(비었거나 local) "
             "받지 않았습니다. 지금 화면은 정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 "
             "사라집니다. 칸에 managed 를 넣고 CI/CD 를 다시 누르세요."
+        ),
+    )
+    unchecked = " · ".join(sync_boot.head_unchecked())
+    alerts.state(
+        HEAD_UNCHECKED_CODE,
+        scope=None,
+        content=unchecked or None,
+        active=bool(unchecked),
+        text=None if not unchecked else f"정본 점검 못 함 — CD 환경변수 {unchecked} 없음",
+        full=(
+            None
+            if not unchecked
+            else (
+                f"C-DEP 환경변수 표에 {unchecked} 칸이 없어 시작 점검이 버킷에 정본이 있는지 보지 "
+                "못했습니다. 정본이 있는데 받지 않은 서버라면 여기서 저장한 것은 다음 CI/CD 에 "
+                "사라집니다. 표에 넣고 CI/CD 를 다시 누르세요(Admin 「서버 시작 점검」 동기화 줄)."
+            )
         ),
     )
 

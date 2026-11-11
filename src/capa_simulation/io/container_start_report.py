@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -57,6 +58,8 @@ START_SCRIPT: Final = "scripts/container_start.py"
 # 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
 # 견준다.
 AWS_CLI_VERSION: Final = "1.46.3"
+# 결과 파일에 이름으로 싣는 환경변수의 꼴.
+_ENVIRONMENT_NAME: Final = re.compile(r"[A-Z][A-Z0-9_]*")
 
 REPORT_VERSION: Final = 1
 APP_READY_NAME: Final = "container_app_ready.json"
@@ -135,6 +138,9 @@ class SyncStart:
     previous_upload_utc: str | None = None
     # 버킷에 세대가 있는데 모드 칸이 managed 가 아니어서(비었거나 local) 받지 않았다.
     head_ignored: bool = False
+    # 모드 칸이 managed 가 아닌데 빈 CD 환경변수(이름) 때문에 버킷 목록을 보지 못해 위 표지를 가리지
+    # 못했다. 이름만 — 값은 비었다.
+    head_unchecked: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -262,6 +268,15 @@ def parse_sync(data: object) -> SyncStart | None:
         pull_attempts=_int_or_none(data.get("pull_attempts")),
         previous_upload_utc=_text_or_none(data.get("previous_upload_utc")),
         head_ignored=data.get("head_ignored") is True,
+        head_unchecked=_environment_names(data.get("head_unchecked")),
+    )
+
+
+def _environment_names(value: object) -> tuple[str, ...]:
+    """환경변수 이름 목록. 이름 꼴이 아닌 항목은 버린다 — 화면 · 알림에 값이 실리지 않게."""
+    items = value if isinstance(value, list) else []
+    return tuple(
+        item for item in items if isinstance(item, str) and _ENVIRONMENT_NAME.fullmatch(item)
     )
 
 
