@@ -16,8 +16,9 @@
 (`required_exclusion_counts`)을 같은 범위로 묶음 수와 행으로 보이는 자리가 시나리오 관리 › 목록
 관리 「점검」 칸이라 그 경고의 목록 자리 · 「그 화면으로」 도 그 칸이다(`REQUIRED_LIST_NOTE` ·
 `REQUIRED_TAB_GOTO` — 2026-11-11 입력 점검 검토 보드 F4 (나)). 산출 결과 소요대수 탭의 목록은
-조회기간이라 수가 다를 수 있다. 경고를 내는 자리는 `required_check_goto` 로 그 리비전을 적어 칸이
-그 리비전을 고른 채 서게 한다(`services/revision_input_check.py` 는 이 문장을 쓰지 않는다).
+조회기간이라 수가 다를 수 있다. 경고를 내는 자리는 `required_check_target` 으로 그 리비전을 경고
+줄에 실어, 누를 때마다 칸이 그 줄의 리비전을 고른 채 서게 한다(2026-11-11 다음 배포 물음 보드 F4 뒤
+(a) — `services/revision_input_check.py` 는 이 문장을 쓰지 않는다).
 
 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지 않게 두 자리에도 같은 문장을 띄운다 —
 PKG PLAN 적용 알림 칸 맨 아래(시나리오 전체 기간, 적용 알림이 서는 회차)와 Static Capa 현황 요약
@@ -56,9 +57,9 @@ from capa_simulation import alerts
 from capa_simulation.components.exclusion_table import exclusion_export, render_exclusion_table
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.scenario_list_state import (
+    CHECK_TARGET_KIND,
     LIST_MODE,
     SIDE_CHECK,
-    queue_check_target,
 )
 from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
 from capa_simulation.components.state_alerts import (
@@ -99,7 +100,7 @@ REQUIRED_LIST_NOTE_THIS_ROW = "목록은 Alarm 의 이 줄에 딸린 표입니�
 REQUIRED_LIST_NOTE_ON_PAGE = "목록은 산출 결과 → 소요대수 탭에 있습니다."
 # 저장 · 지정 · 복제 · 「지금 실행」 뒤의 이 경고(사건 알림)가 「그 화면으로」 로 열 자리 — 시나리오
 # 관리 › Capa 시나리오 › 목록 관리 › 「점검」(이름, 주소, 탭 길 — 알림 칸이 탭 · 전환 단추를 차례로
-# 누른다). 리비전은 경고를 낼 때 `required_check_goto` 가 적는다.
+# 누른다). 리비전은 경고 줄이 들고 간다(`required_check_target`).
 REQUIRED_TAB_GOTO: Final = (
     tab_label(SCENARIO_MANAGEMENT),
     SCENARIO_MANAGEMENT.href,
@@ -151,14 +152,17 @@ class ExclusionList(NamedTuple):
     table: alerts.AlertTable | None
 
 
-def required_check_goto(scenario_id: str | None, revision_id: str | None) -> tuple[str, str, str]:
-    """「소요대수에 들지 않은 수요」 경고(저장 · 지정 · 복제 · 「지금 실행」)의 갈 곳. 경고가 말하는
-    리비전을 적어 다음에 「점검」 칸이 서는 목록 관리 회차가 그 리비전을 고르게 하고
-    (`scenario_list_state.queue_check_target`), 알림 칸의 갈 곳(`REQUIRED_TAB_GOTO`)을 돌려준다.
-    쓴 리비전을 모르면(빠른 둘째 누름이 첫 쓰기를 이어받은 회차 따위) 적지 않고 갈 곳만 준다."""
-    if scenario_id and revision_id:
-        queue_check_target(scenario_id, revision_id)
-    return REQUIRED_TAB_GOTO
+def required_check_target(
+    scenario_id: str | None, revision_id: str | None
+) -> alerts.GotoTarget | None:
+    """「소요대수에 들지 않은 수요」 경고(저장 · 지정 · 복제 · 「지금 실행」)가 들고 갈 대상 —
+    경고가 말하는 리비전. 갈 곳(`REQUIRED_TAB_GOTO`)과 함께 `queue_flash(goto=, target=)` 에 준다.
+    세션에는 아무것도 적지 않는다 — 그 줄의 「그 화면으로」 가 「점검」 칸에 닿았을 때만 알림 칸이
+    서버에 보낸다(`scenario_list_state.queue_check_target`). 쓴 리비전을 모르면(빠른 둘째 누름이 첫
+    쓰기를 이어받은 회차 따위) None — 갈 곳만 남고 「점검」 칸의 고름은 그대로다."""
+    if not (scenario_id and revision_id):
+        return None
+    return alerts.GotoTarget(kind=CHECK_TARGET_KIND, scenario=scenario_id, revision=revision_id)
 
 
 def plan_side_counts(counts: RequiredExclusionCounts) -> RequiredExclusionCounts:

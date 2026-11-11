@@ -42,7 +42,10 @@ from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.required_exclusion_notice import required_check_goto
+from capa_simulation.components.required_exclusion_notice import (
+    REQUIRED_TAB_GOTO,
+    required_check_target,
+)
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_edit_bar import (
     forget_pending_edits,
@@ -813,15 +816,17 @@ def _render_revision_save(
         # 소요대수에 들지 않은 수요(2026-11-04 검수 의견 home-18)도, 남은 계산 오류(공식 지정이
         # 막힘 — 설계 규칙 AMB-05 (나))도 같다.
         # 소요대수에 들지 않은 수요의 「그 화면으로」 는 저장한 화면이 아니라 저장한 리비전을 고른
-        # 시나리오 관리 › 목록 관리 「점검」 칸이다(같은 리비전 · 전체 기간 — 검토 보드 F4 (나)).
+        # 시나리오 관리 › 목록 관리 「점검」 칸이다(같은 리비전 · 전체 기간 — 검토 보드 F4 (나)). 그
+        # 리비전은 경고 줄이 들고 가 누를 때마다 고른다(다음 배포 물음 보드 F4 뒤 (a)).
         queue_flash(
             SIDEBAR_FLASH_WARNING_KEY,
             markdown_safe_tildes(verdict.message),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
-            goto=(
-                required_check_goto(
+            goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
+            target=(
+                required_check_target(
                     snapshot.scenario.scenario_id if snapshot is not None else None,
                     snapshot.revision.revision_id if snapshot is not None else None,
                 )

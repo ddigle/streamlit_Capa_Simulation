@@ -146,7 +146,7 @@ def test_strip_only_presses_carry_the_order_the_script_already_drew() -> None:
     claim = JS[JS.index("const claimDrawn = () => {") :]
     claim = claim[: claim.index("\n  }\n")]
     assert "order: drawn.ids, pins: drawn.pinned, seq: claimOrder(" in claim
-    select = JS[JS.index("const sendSelect = (item) => {") :]
+    select = JS[JS.index("const sendSelect = (item, opened = null) => {") :]
     select = select[: select.index("\n  }\n")]
     assert "S.moves.due !== null ? claimDrawn() : {}" in select
     click = JS[JS.index("list.onclick = (event) => {") :]
@@ -331,18 +331,61 @@ def test_the_strip_raises_its_notices_in_the_alert_center_and_keeps_no_notice_bo
 
 
 def test_an_alert_center_go_to_page_rides_the_strips_own_move() -> None:
-    """알림 칸 「그 화면으로」(`capa-open-page` — {href})는 탭 줄의 이동 길을 탄다 — 열린 탭이면 탭
-    고르기(떠나기 확인 · 한 번에 하나), 아니면 그 화면 링크를 눌러 상한 거름(`S.onLink`)이 받는다.
-    처리기는 문서에 하나이고 컴포넌트가 내려갈 때 걷는다."""
+    """알림 칸 「그 화면으로」(`capa-open-page` — {href, opened})는 탭 줄의 이동 길을 탄다 — 열린
+    탭이면 탭 고르기(떠나기 확인 · 한 번에 하나), 아니면 그 화면 링크를 눌러 상한 거름(`S.onLink`)이
+    받는다. 처리기는 문서에 하나이고 컴포넌트가 내려갈 때 걷는다."""
     handler = JS[JS.index("S.onOpenPage = (event) => {") :]
     handler = handler[: handler.index("window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)")]
-    assert "select(item)" in handler and "link.click()" in handler
+    assert "select(item, opened)" in handler and "link.click()" in handler
     assert "const OPEN_PAGE_EVENT = 'capa-open-page'" in JS
     assert "window.removeEventListener(OPEN_PAGE_EVENT, S.onOpenPage)" in JS
     from capa_simulation.components import alert_center
 
     center = (alert_center._ASSETS / "alert_center.js").read_text(encoding="utf-8")
     assert "const OPEN_PAGE_EVENT = 'capa-open-page'" in center
+
+
+def test_a_go_to_page_tells_the_alert_center_only_when_its_own_move_is_sent() -> None:
+    """「그 화면으로」 사건의 `opened` 는 그 누름의 이동을 실제로 보낼 때만 부른다 — 알림 칸이
+    그때만 닿은 화면에서 탭 길 · 대상을 잇는다(검토 지적 — 막힌 뒤 손으로 간 화면이 고름을
+    옮겼다). 떠나기 확인을 취소하거나(`leaveOk`) 상한에 걸리면(`refusal`) 부르지 않고,
+    붙들기(`<tabs-hold>`) · 줄 서기(`<tabs-queue>`) · 붙든 링크 다시 누르기를 지나도 그 누름의
+    것만 들고 간다 — 다른 누름이 덮으면 버린다. 이미 그 탭이거나 그 탭으로 가는 중이면 곧바로
+    부른다."""
+    handler = JS[JS.index("S.onOpenPage = (event) => {") :]
+    handler = handler[: handler.index("window.addEventListener(OPEN_PAGE_EVENT, S.onOpenPage)")]
+    assert "const opened = typeof detail.opened === 'function' ? detail.opened : null" in handler
+    assert "else if (opened) opened()" in handler
+    assert "S.linkOpened = opened\n      link.click()\n      S.linkOpened = null" in handler
+    send = JS[JS.index("const sendSelect = (item, opened = null) => {") :]
+    send = send[: send.index("\n  }\n")]
+    assert (
+        send.index("if (!leaveOk()) return")
+        < send.index("S.send('select'")
+        < send.index("if (opened) opened()")
+    )
+    select = JS[JS.index("const select = (item, opened = null) => {") :]
+    select = select[: select.index("\n  }\n")]
+    # 기다리는 누름은 마지막 하나 — 알림도 함께 갈아 끼우고, 그 탭으로 가는 중이면 곧바로 부른다.
+    assert select.index("S.waitOpen = null") < select.index("if (verdict === 'wait') {")
+    assert "if (opened && flight !== null && flight.id === item.dataset.id) opened()" in select
+    assert "else if (opened) S.waitOpen = { id: item.dataset.id, opened }" in select
+    assert "sendSelect(item, opened)" in select and "sendSelect(target, opened)" in select
+    settle = JS[JS.index("  function settle() {") :]
+    settle = settle[: settle.index("\n  }\n")]
+    assert (
+        "sendSelect(item, waited !== null && waited.id === next ? waited.opened : null)" in settle
+    )
+    assert settle.index("if (S.queue.flight !== null) {") < settle.index("S.waitOpen = null")
+    link = JS[JS.index("S.onLink = (event) => {") :]
+    link = link[: link.index("document.addEventListener('click', S.onLink, true)")]
+    assert link.index("const opened = S.linkOpened") < link.index("if (event.defaultPrevented")
+    assert "gate.hold(() => replayLink(href, opened))" in link
+    assert "if (!why) {\n        if (opened) opened()\n        return\n      }" in link
+    assert link.index("if (opened) opened()") < link.index("flash('limit', why)")
+    replay = JS[JS.index("const replayLink = (href, opened) => {") :]
+    replay = replay[: replay.index("\n    }\n")]
+    assert "S.linkOpened = opened\n      link.click()\n      S.linkOpened = null" in replay
 
 
 def test_the_pin_keeps_one_name_and_tells_its_state_with_aria_pressed() -> None:
@@ -682,7 +725,7 @@ def test_a_press_right_after_a_table_edit_waits_for_that_edit_before_asking_to_l
 def test_leaving_presses_consult_the_edit_hold_before_asking() -> None:
     """다른 탭 고르기와 지금 탭 × 는 묻기(`leaveOk`) 전에 편집표에서 막 손을 뗀 누름인지
     본다. 누르는 순간의 편집표 포커스는 `pointerdown`(포커스가 탭으로 옮기기 전)에서 적는다."""
-    select = JS[JS.index("const select = (item) => {") :]
+    select = JS[JS.index("const select = (item, opened = null) => {") :]
     assert select.index("if (fresh())") < select.index("holding(item")
     close = JS[JS.index("const close = (item) => {") :]
     assert close.index("!fresh()") < close.index("closeNow(item)")
@@ -1794,14 +1837,16 @@ def test_a_sidebar_link_press_right_after_a_table_edit_waits_for_its_run() -> No
         )
     ]
     assert on_link.index("S.linkReplay === href") < on_link.index("refusal(")
-    assert "gate.hold(() => replayLink(href))" in on_link
+    assert "gate.hold(() => replayLink(href, opened))" in on_link
     held = on_link[on_link.index("gate.hold(") : on_link.index("refusal(")]
     assert "event.preventDefault()" in held and "event.stopPropagation()" in held
     # 누르는 순간 표에 있던 초점을 적는다 — 링크 click 때는 이미 표를 떠났다.
     on_input = JS[JS.index("S.onInput = (event) => {") : JS.index("S.onInput, true)")]
     assert "closest(PAGE_LINK)" in on_input and "S.pressFromGrid = S.gridFocused" in on_input
     # 다시 누를 때는 그 사이 다시 지어졌을 수 있는 링크를 주소로 찾는다.
-    replay = JS[JS.index("const replayLink = (href) => {") : JS.index("S.onLink = (event) => {")]
+    replay = JS[
+        JS.index("const replayLink = (href, opened) => {") : JS.index("S.onLink = (event) => {")
+    ]
     assert "querySelectorAll(PAGE_LINK)" in replay
     assert "S.linkReplay = href" in replay and "link.click()" in replay
 

@@ -44,10 +44,15 @@ SIDE_NEXT_KEY: Final = "scenario_list_side_next_v1"
 # 읽으면 순환이라 여기 둔다).
 LIST_MODE: Final = "목록 관리"
 SIDE_CHECK: Final = "점검"
-# 저장 · 지정 · 복제 · 자동 갱신 뒤 「소요대수에 들지 않은 수요」 경고가 가리키는 리비전 — (시나리오
-# id, 리비전 id). 「점검」 칸이 서는 목록 관리 회차에 한 번 그 리비전을 고르고 비운다
-# (`queue_check_target` · `take_check_target`).
+# 저장 · 지정 · 복제 · 자동 갱신 뒤 「소요대수에 들지 않은 수요」 경고 줄의 「그 화면으로」 를 누른
+# 리비전 — (시나리오 id, 리비전 id). 경고 줄이 대상(`alerts.GotoTarget`, 종류 `CHECK_TARGET_KIND`)을
+# 들고 다니다 알림 칸이 그 줄의 탭 길을 마지막 칸 앞까지 연 뒤 보내고, 그 회차의 「점검」 칸이 한 번
+# 고르고 비운다(`queue_check_target` · `take_check_target` — 2026-11-11 다음 배포 물음 보드 F4 뒤
+# (a)). 누른 회차(와 그 회차가 끊겼을 때 다음 앱 전체 회차)에만 산다 — `CHECK_TARGET_FRESH_KEY` ·
+# `expire_check_target`.
+CHECK_TARGET_KIND: Final = "check"
 CHECK_TARGET_KEY: Final = "scenario_list_check_target"
+CHECK_TARGET_FRESH_KEY: Final = "scenario_list_check_target_fresh"
 
 
 def peek_draft() -> ListDraft | None:
@@ -104,9 +109,23 @@ def remember_shown_order(order: tuple[str, ...]) -> None:
 
 
 def queue_check_target(scenario_id: str, revision_id: str) -> None:
-    """경고가 가리키는 리비전을 적는다 — 다음에 「점검」 칸이 서는 목록 관리 회차가 그 시나리오를
-    열고 그 리비전을 고른다(2026-11-11 입력 점검 검토 보드 F4 (나)). 새 경고가 앞 것을 덮는다."""
+    """누른 경고 줄의 리비전을 적는다 — 알림 칸의 「그 화면으로」 콜백(`alert_center._on_goto`)이 그
+    줄의 탭 길을 목록 관리까지 연 회차 맨 앞에서 부르고, 같은 회차의 「점검」 칸이 그 시나리오를
+    열고 그 리비전을 고른다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). 탭 길 마지막 칸 「점검」 은
+    알림 칸이 누르지 않고 여기서 연다(`SIDE_NEXT_KEY` — 받기 콜백이 고른 칸과 같은 길) — 따로 누르면
+    그 회차가 앞 고름을 한 번 더 그리고 센다. 이 회차에 새로 적었다는 표지도 함께
+    둔다(`expire_check_target`)."""
     st.session_state[CHECK_TARGET_KEY] = (scenario_id, revision_id)
+    st.session_state[CHECK_TARGET_FRESH_KEY] = True
+    st.session_state[SIDE_NEXT_KEY] = SIDE_CHECK
+
+
+def expire_check_target() -> None:
+    """알림 칸이 앱 전체 회차마다 페이지 앞에서 부른다 — 이 회차에 적은 대상은 표지만 걷어 페이지가
+    쓰게 두고, 앞 회차에 적고 아직 남은 대상(누른 회차가 「점검」 칸까지 가지 못하고 끊김)은 버린다.
+    그래야 나중에 손으로 연 「점검」 칸이 누른 적 없는 대상으로 고름을 옮기지 않는다."""
+    if not st.session_state.pop(CHECK_TARGET_FRESH_KEY, False):
+        st.session_state.pop(CHECK_TARGET_KEY, None)
 
 
 def take_check_target() -> tuple[str, str] | None:

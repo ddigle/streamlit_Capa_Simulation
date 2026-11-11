@@ -31,14 +31,17 @@ def _rule(selector: str) -> str:
 def test_the_panel_opens_in_the_browser_without_a_python_rerun() -> None:
     """패널 · 변경 판 · 공정 판은 브라우저 안에서만 열고 닫는다 — 트리거 · 상태 값을 보내지 않아
     파이썬 회차가 돌지 않는다(HOME 한 번 그리기가 85 ~ 300ms 라 중요하다, 설계 규칙 UI-PRF-01). 이
-    JS 가 파이썬을 부르는 자리는 둘이다 — 다시 붙은 탭의 회차(2차 보드 R1 (가))와 공정 판 「모든
-    화면에서 해제」(2026-11-09 보드 C1 (라)). 「공정 고르기」 는 사이드바 공정 칸 단추를 누른다(그
-    칸이 연다)."""
+    JS 가 파이썬을 부르는 자리는 셋이다 — 다시 붙은 탭의 회차(2차 보드 R1 (가)), 공정 판 「모든
+    화면에서 해제」(2026-11-09 보드 C1 (라)), 대상을 실은 줄의 「그 화면으로」(2026-11-11 다음 배포
+    물음 보드 F4 뒤 (a) — 탭 길을 마지막 칸 앞까지 연 뒤 한 번). 「공정 고르기」 는 사이드바 공정 칸
+    단추를 누른다(그 칸이 연다)."""
     assert "setStateValue" not in JS
     assert JS.count("setTriggerValue") == 2
     assert "const { data, setTriggerValue } = component" in JS
     assert "C.ask = setTriggerValue" in JS
-    assert JS.count("C.ask(") == 2
+    assert JS.count("C.ask(") == 3
+    sender = JS[JS.index("function sendTarget(") : JS.index("function downloadTable(")]
+    assert "C.ask('goto', { ...target, at: Date.now() })" in sender
     asker = JS[JS.index("function connectionMoved(") : JS.index("function endReconnectWait(")]
     assert "C.ask('reconnected', Date.now())" in asker
     panel = JS[JS.index("function buildProcessPanel(") : JS.index("function processField(")]
@@ -47,6 +50,7 @@ def test_the_panel_opens_in_the_browser_without_a_python_rerun() -> None:
     source = Path(alert_center.__file__).read_text(encoding="utf-8")
     assert "on_reconnected_change=_reconnected" in source
     assert "on_process_clear_change=_clear_process" in source
+    assert "on_goto_change=_on_goto" in source
     toggle = JS[JS.index("function togglePanel(") : JS.index("function closePanel(")]
     assert "C.ask" not in toggle
 
@@ -703,20 +707,35 @@ def test_a_merged_event_row_takes_the_new_text_and_the_new_tables() -> None:
     out = _node(
         """
 const table = (title) => ({ title, rows: [[1]] })
-const fresh = (tables) => ({
-  noteId: 'new', full: '새 글', page: '화면', href: 'home', tab: '', cause: '', detail: '',
-  origin: '', level: 'check', tables,
+const target = { kind: 'check', scenario: 'S', revision: 'R6' }
+const fresh = (tables, aim = target) => ({
+  noteId: 'new', full: '새 글', page: '화면', href: 'home', tab: '', target: aim, cause: '',
+  detail: '', origin: '', level: 'check', tables,
 })
-const row = () => ({ noteId: 'old', full: '옛 글', tables: [table('옛 표')] })
+const row = () => ({
+  noteId: 'old', full: '옛 글', tables: [table('옛 표')],
+  target: { kind: 'check', scenario: 'S', revision: 'R3' },
+})
 const title = (item) => item.tables.map((one) => one.title)
 console.log(JSON.stringify({
   replaced: title(freshenEventRow(row(), fresh([table('새 표')]))),
   kept: title(freshenEventRow(row(), fresh([]))),
   full: freshenEventRow(row(), fresh([])).full,
+  target: freshenEventRow(row(), fresh([])).target,
+  keptTarget: freshenEventRow(row(), fresh([], null)).target,
 }))
 """
     )
-    assert out == {"replaced": ["새 표"], "kept": ["옛 표"], "full": "새 글"}
+    # 「×2」 로 합친 줄의 「그 화면으로」 대상은 대상을 든 마지막 경고의 것이다(다음 배포 물음 보드
+    # F4 뒤 (a) — 경고 글에 rN 을 넣지 않아(b 안 고름) 글이 같은 두 경고는 한 줄이다). 리비전을
+    # 모르는 이어받은 회차의 같은 경고는 앞 대상을 지우지 않는다(표와 같은 꼴).
+    assert out == {
+        "replaced": ["새 표"],
+        "kept": ["옛 표"],
+        "full": "새 글",
+        "target": {"kind": "check", "scenario": "S", "revision": "R6"},
+        "keptTarget": {"kind": "check", "scenario": "S", "revision": "R3"},
+    }
     writer = JS[JS.index("function writeEventRow") : JS.index("function handleEvent")]
     assert "freshenEventRow(row, rowFor(note, now))" in writer
 
@@ -977,6 +996,214 @@ console.log(JSON.stringify(out))
     assert timer in _js_function("showPopup")
 
 
+def test_a_goto_target_is_sent_once_after_the_tab_path_and_its_run_are_done() -> None:
+    """대상을 실은 줄의 「그 화면으로」(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)) — 대상은 줄에서
+    꼴을 보고(`goTarget`) 받는 쪽이 아는 종류만(`knownTarget` — data `goto_kinds`) 들고 가, 탭 길을
+    마지막 칸 앞까지 연 뒤 그 회차가 끝났을 때 마지막 칸 단추가 선 것만 보고 누르는 대신 한 번
+    보낸다(받는 쪽이 그 칸을 연다 — 따로 누르면 그 회차가 앞 고름으로 한 번 더 센다). 탭 길이 없는
+    줄은 그 화면에 닿으면 보낸다(`goStep` 이 'send'). 탭 줄이 그 누름의 이동을 보냈다고 알리지
+    않았으면(`opened` 거짓) 닿아도 'drop' 이다. 누른 뒤에는 그 누름의 회차 표지가 움직이기 전에 다음
+    걸음을 보지 않고, 시간 넘김 · 단추 없음도 대상째 버린다. 트리거는 그리기 함수 밖(타이머)에서
+    보낸다 — 안에서 보낸 트리거는 회차 요청에 실리지 않는다(`page_tabs.js` 와 같은 까닭)."""
+    out = _node(
+        """
+const good = { kind: 'check', scenario: 'S', revision: 'R', extra: 1 }
+console.log(JSON.stringify({
+  good: goTarget(good),
+  bad: [
+    goTarget(null), goTarget('check'), goTarget({ kind: 'check', scenario: 'S' }),
+    goTarget({ kind: 'check', scenario: '', revision: 'R' }),
+    goTarget({ kind: 'check', scenario: 'S', revision: 3 }),
+  ],
+  known: [
+    knownTarget(goTarget(good), ['check']),
+    knownTarget(goTarget({ ...good, kind: 'space' }), ['check']),
+    knownTarget(goTarget(good), undefined),
+    knownTarget(null, ['check']),
+  ],
+  steps: [
+    goStep({ tab: 'A › B', target: good, opened: true }),
+    goStep({ tab: '', target: good, opened: true }),
+    goStep({ tab: '', target: null, opened: true }),
+    goStep({ tab: 'A › B', target: good, opened: false }),
+    goStep({ tab: '', target: good }),
+  ],
+}))
+"""
+    )
+    assert out == {
+        "good": {"kind": "check", "scenario": "S", "revision": "R"},
+        "bad": [None, None, None, None, None],
+        "known": [{"kind": "check", "scenario": "S", "revision": "R"}, None, None, None],
+        "steps": ["tab", "send", "done", "drop", "drop"],
+    }
+    assert "target: goTarget(note.target)," in JS
+    go = JS[JS.index("function goTo(") :]
+    go = go[: go.index("\n}\n")]
+    assert "const carried = knownTarget(goTarget(target), C.data.goto_kinds)" in go
+    assert "tab || carried ?" in go
+    settle = JS[JS.index("function settleTab(") :]
+    settle = settle[: settle.index("\n}\n")]
+    # 그 화면 · 회차가 끝남 · 누른 회차가 움직임을 본 다음에야 걸음을 가른다.
+    assert "C.data.here !== pending.href || running() || pending.moves === C.runMoves" in settle
+    assert settle.index("running()") < settle.index("sendTarget(C, pending.target)")
+    assert "{ ...C.pendingTab, moves: C.runMoves }" in settle
+    # 마지막 칸은 단추가 선 것만 보고(없으면 버림) 누르는 대신 대상을 보낸다.
+    last_step = settle.index("if (!rest && pending.target) {")
+    assert settle.index("if (!button) {") < last_step < settle.index("button.click()")
+    assert "sendTarget(C, pending.target)" in settle[last_step : settle.index("button.click()")]
+    sender = JS[JS.index("function sendTarget(") :]
+    sender = sender[: sender.index("\n}\n")]
+    assert "setTimeout(" in sender
+
+
+# 「그 화면으로」(`goTo` · `settleTab` · `sendTarget` — 구획 밖)를 가짜 문서 · 시계로 돌린다.
+# 탭 줄의 답(`reply`)은 사건의 `opened` 를 곧바로 부름('open') · 부르지 않음('refuse') · 나중에
+# 부르도록 쥠('late' — 붙들기 · 줄 서기 뒤 확인 「예」)이다. 화면은 시나리오 관리 「Capa 시나리오
+# › 목록 관리」 아래 전환 단추 「상세」(고른 칸) · 「점검」 이다.
+_GOTO_FAKES = """
+let clock = 1000000
+Date.now = () => clock
+const timers = []
+const setTimeout = (fn) => { timers.push(fn); return 0 }
+const flush = () => { for (const fn of timers.splice(0)) fn() }
+const OPEN_PAGE_EVENT = 'capa-open-page'
+const PENDING_TAB_MS = 20000
+const TAB_BUTTON = 'tab'
+const SEGMENT_BUTTON = 'segment'
+let buttons = []
+const document = { querySelectorAll: (selector) => buttons.filter((one) => one.kind === selector) }
+let reply = 'open'
+let held = null
+class CustomEvent {
+  constructor(type, init) { this.type = type; this.detail = init.detail }
+}
+const window = {
+  dispatchEvent: (event) => {
+    if (event.type !== OPEN_PAGE_EVENT) return true
+    if (reply === 'open') event.detail.opened()
+    if (reply === 'late') held = event.detail.opened
+    return true
+  },
+}
+function closePanel() {}
+function running() { return false }
+const button = (kind, text, chosen) => {
+  const one = { kind, textContent: text, clicks: 0, click: () => { one.clicks += 1 } }
+  const marks = ['aria-selected', 'aria-checked']
+  one.getAttribute = (name) => (marks.includes(name) && chosen ? 'true' : null)
+  return one
+}
+const PAGE = 'scenario_management'
+const PATH = 'Capa 시나리오 › 목록 관리 › 점검'
+const target = (revision) => ({ kind: 'check', scenario: 'S', revision })
+let C = null
+const sent = []
+const start = (here) => {
+  const ask = (name, value) => sent.push([name, value.revision])
+  C = { data: { here, goto_kinds: ['check'] }, pendingTab: null, runMoves: 0, ask }
+  sent.length = 0
+  buttons = []
+}
+const paint = () => {
+  buttons = [
+    button(TAB_BUTTON, 'database Capa 시나리오', true),
+    button(SEGMENT_BUTTON, '목록 관리', true),
+    button(SEGMENT_BUTTON, '상세', true),
+    button(SEGMENT_BUTTON, '점검', false),
+  ]
+}
+// 회차 하나가 그 화면에서 끝났다 — 알림 칸이 회차 끝에 보듯 `settleTab` 을 부르고 미룬
+// 트리거를 보낸다.
+const arrive = (here) => {
+  C.data = { ...C.data, here }
+  C.runMoves += 1
+  paint()
+  settleTab(C)
+  flush()
+}
+const seen = () => ({
+  sent: [...sent],
+  clicks: buttons.map((one) => one.clicks),
+  left: C.pendingTab !== null,
+})
+"""
+
+
+def test_a_goto_continues_only_where_the_strip_said_it_sent_the_move() -> None:
+    """「그 화면으로」 의 탭 길 · 대상은 탭 줄이 그 누름의 이동을 보냈다고 알린(사건의 `opened`) 뒤
+    닿은 화면에서만 잇는다(검토 지적 — 떠나기 확인 취소 · 탭 상한으로 막힌 뒤 20초 안에 손으로 그
+    화면에 가면 탭 길이 저절로 열리고 고름이 그 줄의 리비전으로 옮겨 갔다). 막힌 누름 뒤 손으로 온
+    화면에서는 아무것도 누르지 · 보내지 않고 버린다. 붙들기 · 줄 서기 뒤에 보낸 이동(나중에 온
+    `opened`)은 잇고, 이미 그 화면이면 처음부터 연 것이다. 앞 누름의 늦은 알림은 뒤 누름을 열지
+    않는다. 받는 쪽이 모르는 종류의 대상은 대상 없는 줄처럼 마지막 칸을 누른다."""
+    out = _node(
+        _js_function("goTo")
+        + _js_function("settleTab")
+        + _js_function("sendTarget")
+        + _GOTO_FAKES
+        + """
+const out = {}
+start('home')
+reply = 'refuse'
+goTo(C, PAGE, PATH, target('R3'))
+arrive(PAGE)
+out.refused = seen()
+start('home')
+reply = 'open'
+goTo(C, PAGE, PATH, target('R4'))
+arrive(PAGE)
+out.opened = seen()
+start('home')
+reply = 'late'
+goTo(C, PAGE, PATH, target('R4'))
+held()
+arrive(PAGE)
+out.late = seen()
+start('home')
+reply = 'late'
+goTo(C, PAGE, PATH, target('R3'))
+const first = held
+reply = 'refuse'
+goTo(C, PAGE, PATH, target('R4'))
+first()
+arrive(PAGE)
+out.stale = seen()
+start(PAGE)
+paint()
+reply = 'refuse'
+goTo(C, PAGE, PATH, target('R4'))
+flush()
+out.here = seen()
+start('home')
+reply = 'open'
+goTo(C, PAGE, PATH, { kind: 'space', scenario: 'S', revision: 'R4' })
+arrive(PAGE)
+out.unknown = seen()
+start('home')
+reply = 'open'
+goTo(C, PAGE, PATH, target('R4'))
+clock += 20001
+arrive(PAGE)
+out.late20 = seen()
+console.log(JSON.stringify(out))
+"""
+    )
+    nothing = {"sent": [], "clicks": [0, 0, 0, 0], "left": False}
+    assert out["refused"] == nothing
+    assert out["opened"] == {"sent": [["goto", "R4"]], "clicks": [0, 0, 0, 0], "left": False}
+    assert out["late"] == out["opened"]
+    assert out["stale"] == nothing
+    assert out["here"] == out["opened"]
+    # 모르는 종류 — 대상을 보내지 않고 마지막 칸 「점검」 을 누른다.
+    assert out["unknown"] == {"sent": [], "clicks": [0, 0, 0, 1], "left": False}
+    assert out["late20"] == nothing
+    go = _js_function("goTo")
+    assert "opened: C.data.here === href" in go
+    assert "if (pending && C.pendingTab === pending) pending.opened = true" in go
+    assert "detail: { href, opened }" in go
+
+
 def test_the_js_limits_match_the_registry_constants() -> None:
     """반복 창 · 보관 줄 수의 대체값과 시선 끌기 꼴은 파이썬 상수가 data 로 준다 — JS 에 같은 값을
     두 벌 두지 않는다."""
@@ -1000,8 +1227,8 @@ def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_
         "...document.querySelectorAll(TAB_BUTTON), ...document.querySelectorAll(SEGMENT_BUTTON)"
         in (settle)
     )
-    assert "goTo(C, row.href, row.tab)" in JS
-    # 변경 칩 줄도 같다 — 줄이 그 화면 안 탭을 들고 있으면 그 탭까지 연다.
+    assert "goTo(C, row.href, row.tab, row.target)" in JS
+    # 변경 칩 줄도 같다 — 줄이 그 화면 안 탭을 들고 있으면 그 탭까지 연다(대상은 없다).
     assert "goTo(C, item.href, item.tab)" in JS
     for name in ("table_open", "table_rows", "table_csv"):
         assert name in alert_center.TEXT

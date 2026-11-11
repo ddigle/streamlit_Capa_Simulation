@@ -131,6 +131,11 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
     assert data["sample"] is False
     assert data["marker"] == alerts.MARKER_ATTRIBUTE
     assert data["here"] == ""
+    # 「그 화면으로」 가 들고 갈 대상의 종류는 콜백이 받는 종류 그대로다 — JS 는 모르는 종류를 대상
+    # 없는 줄처럼 다룬다(마지막 칸을 누른다).
+    from capa_simulation.components.scenario_list_state import CHECK_TARGET_KIND
+
+    assert data["goto_kinds"] == sorted(alert_center.GOTO_RECEIVERS) == [CHECK_TARGET_KIND]
     assert set(data["storage"]) == {"log", "states", "seen", "boot"}
     assert [group["id"] for group in data["groups"]] == ["lose", "keep", "assume"]
 
@@ -207,6 +212,80 @@ def test_the_component_declares_the_reconnect_trigger_with_a_callback_that_does_
     assert callback() is None
     # 둘째 트리거 — 공정 칩 판 「모든 화면에서 해제」.
     assert sent[0]["on_process_clear_change"] is alert_center._clear_process
+    # 셋째 트리거 — 대상을 실은 줄의 「그 화면으로」(다음 배포 물음 보드 F4 뒤 (a)).
+    assert sent[0]["on_goto_change"] is alert_center._on_goto
+
+
+def _goto_script() -> None:
+    """알림 칸 회차 차례 그대로 — 트리거 콜백(누른 회차 맨 앞) → 알림 칸 그리기(페이지 앞) → 이
+    회차의 페이지가 볼 대상."""
+    import streamlit as st
+
+    from capa_simulation.components import alert_center
+    from capa_simulation.components.scenario_list_state import CHECK_TARGET_KEY, SIDE_NEXT_KEY
+
+    if "press" in st.session_state:
+        st.session_state[alert_center.ALERT_CENTER_KEY] = {"goto": st.session_state.pop("press")}
+        alert_center._on_goto()
+    alert_center.render_alert_center(changes=[])
+    st.session_state["seen"] = st.session_state.get(CHECK_TARGET_KEY)
+    st.session_state["side"] = st.session_state.pop(SIDE_NEXT_KEY, None)
+
+
+def test_a_pressed_goto_lives_for_its_own_run_and_each_press_brings_its_row_target(
+    sent: list[dict[str, Any]],
+) -> None:
+    """대상을 실은 줄의 「그 화면으로」 는 그 줄의 탭 길을 마지막 칸 앞까지 연 뒤에만 트리거를
+    보낸다 — 콜백이 그 대상을 그 회차의 페이지에 넘기고, 페이지가 쓰지 않은 채 남은 대상은 다음 앱
+    전체 회차 앞에서 버린다(손으로 연 「점검」 칸이 누른 적 없는 대상으로 옮기지 않게). 같은 줄을
+    다시 누르면 다시, 다른 줄을 누르면 그 줄의 대상이다(2026-11-11 다음 배포 물음 보드 F4 뒤
+    (a))."""
+    from capa_simulation.components.scenario_list_state import CHECK_TARGET_KIND, SIDE_CHECK
+
+    app = AppTest.from_function(_goto_script)
+    first = {"kind": CHECK_TARGET_KIND, "scenario": "S", "revision": "R6", "at": 1}
+    app.session_state["press"] = first
+    app.run()
+    assert not app.exception
+    assert app.session_state["seen"] == ("S", "R6")
+    # 탭 길 마지막 칸 「점검」 은 알림 칸이 누르지 않고 콜백이 연다.
+    assert app.session_state["side"] == SIDE_CHECK
+    # 누르지 않은 회차 — 남은 대상을 버린다.
+    app.run()
+    assert app.session_state["seen"] is None
+    assert app.session_state["side"] is None
+    # 같은 줄 다시 · 앞 줄 — 누를 때마다 그 줄의 대상이다.
+    for revision in ("R6", "R3"):
+        app.session_state["press"] = {**first, "revision": revision, "at": 2}
+        app.run()
+        assert app.session_state["seen"] == ("S", revision)
+    assert sent[-1]["on_goto_change"] is alert_center._on_goto
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"kind": "space", "scenario": "S", "revision": "R"},
+        {"kind": "check", "scenario": "S"},
+        {"kind": "check", "scenario": "", "revision": "R"},
+        {"kind": "check", "scenario": "S", "revision": 3},
+        {"kind": "check", "scenario": "S" * (alerts.GOTO_TARGET_LIMIT + 1), "revision": "R"},
+        "check:S:R",
+        None,
+    ],
+)
+def test_a_goto_trigger_takes_only_the_known_kind_in_a_good_shape(
+    payload: object, sent: list[dict[str, Any]]
+) -> None:
+    """트리거 값은 이 브라우저 탭 저장소에 있던 줄에서 온다 — 아는 종류 · 꼴이 맞는 값만 받고 그
+    밖은 세션에 아무것도 적지 않는다(`alerts.goto_target`)."""
+    app = AppTest.from_function(_goto_script)
+    app.session_state["press"] = payload
+    app.run()
+    assert not app.exception
+    assert app.session_state["seen"] is None
+    assert app.session_state["side"] is None
+    assert sent
 
 
 def _chip_script() -> None:

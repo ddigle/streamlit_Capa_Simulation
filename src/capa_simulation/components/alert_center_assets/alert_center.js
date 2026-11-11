@@ -23,8 +23,8 @@
 //   프래그먼트의 요청을 회차 없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. 앱 뿌리의 연결 표지(`data-test-connection-state`)가
 //   붙음으로 돌아오면 본 스레드가 `RECONNECT_WAIT_MS` + 왕복 시간(`reconnectWait`) 조용해지기를 기다리고, 그 사이 프런트가 스스로 돈 회차가 없으면 트리거로 앱 전체 회차를
 //   한 번 부른다. 기다리는 동안 사람 손이 닿으면 그 누름의 회차가 돌아오기를 더 기다린다 — 표지는 왕복해야 움직이므로 그 사이 부르면 누름의 회차를 끊어 누름이 사라진다.
-//   이 JS 가 파이썬을 부르는 자리는 이것과 공정 판 「모든 화면에서 해제」(`process_clear`) 둘이다. 연결 표지와 회차 표지는 관찰자 하나가
-//   본다(`watchRoot` — 칸이 다시 그려져도 늘지 않는다).
+//   이 JS 가 파이썬을 부르는 자리는 이것과 공정 판 「모든 화면에서 해제」(`process_clear`), 대상을 실은 줄의 「그 화면으로」(`goto` — 아래)
+//   셋이다. 연결 표지와 회차 표지는 관찰자 하나가 본다(`watchRoot` — 칸이 다시 그려져도 늘지 않는다).
 // - 서버 재시작(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가)): 재시작 뒤 세션은 새것이라 파이썬은 첫 접속과 가르지 못한다. data 의 부트
 //   표지(`boot.mark`)를 이 탭에 적어 둔 앞 표지와 견주어 앞 표지가 있고 다를 때만 함께 실린 알림(`boot.notice` — `GL-07`)을 띄우고
 //   어느 경우든 지금 표지로 고쳐 적는다.
@@ -43,7 +43,13 @@
 // - 화면 탭 줄 JS(`page_tabs.js`)는 같은 문서의 `window.__capaAlerts.raise(...)` 로 알린다(알림 칸이 아직 서지 않았으면
 //   `window.__capaAlertQueue` 에 담아 두고 칸이 설 때 꺼낸다). 「그 화면으로」 는 탭 줄의 화면 이동(상한 · 떠나기 확인)에
 //   `capa-open-page` 사건으로 맡긴다. 줄에 화면 안 탭(`tab`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추를
-//   누른다(`stateful_tabs` — 보통 누름과 같다).
+//   누른다(`stateful_tabs` — 보통 누름과 같다). 줄이 대상(`target` — 「소요대수에 들지 않은 수요」 경고의 리비전)을 들고 있으면
+//   마지막 칸 앞까지 열고 회차가 끝난 뒤, 마지막 칸 단추가 선 것을 보고 그 칸을 누르는 대신 트리거 `goto` 로 대상을 한 번 보낸다 —
+//   받는 쪽이 그 칸을 함께 연다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a) — 누를 때마다 그 줄의 대상). 그리기 함수 안에서 보낸
+//   트리거는 회차 요청에 실리지 않으므로 타이머로 미룬다. 탭 길 · 대상은 탭 줄이 이 누름의 이동을 보냈다고 사건의 `opened` 로
+//   알린 뒤에 닿은 화면에서만 잇는다 — 길이 막히면(떠나기 확인 취소 · 탭 상한 · 붙든 누름이 버려짐) 알리지 않으므로, 그 뒤 손으로
+//   그 화면에 가도 탭을 누르지 · 대상을 보내지 않는다(시간 넘김 · 단추 없음도 보내지 않는다). 대상은 받는 쪽이 아는 종류(data
+//   `goto_kinds`)만 들고 가고, 모르는 종류는 대상 없는 줄처럼 마지막 칸을 누른다.
 // - 알림에 딸린 표(`tables` — 본문에서 뺀 목록, 한 줄에 여럿일 수 있다)는 줄의 「… 보기」 단추가 표마다 펼치고 CSV 는 브라우저
 //   안에서 만든다(서버를 부르지 않는다). 칸 머리 풍선(`help`)은 `title` 이다. 표는 코드마다 가장 새 줄에만 남기고, 탭 저장소가
 //   넘치면 저장본에서 오래된 줄의 표부터 뺀다 — 줄은 남고, 그 화면이 다시 보내면 표가 다시 붙는다.
@@ -256,11 +262,13 @@ function tableClipped(table) {
 function validTables(value) {
   return Array.isArray(value) ? value.filter((table) => table && typeof table === 'object' && Array.isArray(table.rows)) : []
 }
-// 같은 사건 줄에 새 표지를 합친다 — 글 · 자리 · 계기는 새 표지의 것이고, 표지에 표가 들었으면 표도 새 것이다(코드 + 짧은 글이
-// 같아도 표는 다를 수 있다 — 같은 수의 DB 등록 충돌 `SC-04`).
+// 같은 사건 줄에 새 표지를 합친다 — 글 · 자리 · 계기는 새 표지의 것이고, 표지에 표 · 「그 화면으로」 대상이 들었으면 그것도 새
+// 것이다(코드 + 짧은 글이 같아도 표는 다를 수 있다 — 같은 수의 DB 등록 충돌 `SC-04`). 「×2」 줄의 대상은 대상을 든 마지막 경고의
+// 것이다 — 리비전을 모르는 이어받은 회차의 같은 경고(빠른 둘째 누름)가 앞 대상을 지우지 않는다.
 function freshenEventRow(row, fresh) {
   for (const name of ['noteId', 'full', 'page', 'href', 'tab', 'cause', 'detail', 'origin', 'level']) row[name] = fresh[name]
   if (validTables(fresh.tables).length) row.tables = fresh.tables
+  if (fresh.target) row.target = fresh.target
   return row
 }
 // 표는 코드마다 가장 새 줄(마지막 시각)에만 둔다 — 옛 범위 줄의 표까지 이 탭 저장소에 쌓지 않는다.
@@ -299,6 +307,30 @@ function tabChosen(button) {
 // 줄에 「그 화면으로」 를 세우는가 — 지금 화면을 가리키는 줄은 열 탭이 있을 때만 할 일이 있다.
 function showsGo(href, tab, here) {
   return typeof href === 'string' && (href !== here || Boolean(tab))
+}
+
+// 「그 화면으로」 가 닿은 뒤 보낼 대상(파이썬 `alerts.GotoTarget`) — 세 칸이 모두 비지 않은 글이면 그 셋만 담은 새 값, 아니면 null.
+// 줄은 이 탭 저장소에서도 오므로 꼴을 본다(글자 수 끝은 받는 파이썬 `alerts.goto_target` 이 본다).
+function goTarget(value) {
+  if (!value || typeof value !== 'object') return null
+  const names = ['kind', 'scenario', 'revision']
+  if (!names.every((name) => typeof value[name] === 'string' && value[name] !== '')) return null
+  return { kind: value.kind, scenario: value.scenario, revision: value.revision }
+}
+
+// 받는 쪽이 아는 종류(data `goto_kinds` — 파이썬 `alert_center.GOTO_RECEIVERS`)의 대상만 남긴다. 모르는 종류는 대상 없는 줄처럼
+// 탭 길 마지막 칸을 누른다 — 보내면 받는 쪽이 버려 아무도 마지막 칸을 열지 않는다.
+function knownTarget(target, kinds) {
+  return target && Array.isArray(kinds) && kinds.includes(target.kind) ? target : null
+}
+
+// 「그 화면으로」 가 맡긴 일의 다음 걸음 — 그 화면에 닿았는데 탭 줄이 이 누름의 이동을 보낸 적이 없으면(`opened` 거짓 — 떠나기 확인
+// 취소 · 탭 상한 · 붙든 누름이 버려짐) 'drop'(손으로 온 화면이다 — 탭 길 · 대상째 버림). 그 밖에는 탭 길이 남았으면 'tab', 탭 길 없이
+// 대상만 들었으면 'send'(그 화면에 닿으면 보냄), 아니면 'done'. 탭 길이 있는 줄의 대상은 마지막 칸 자리에서 보낸다(`settleTab`).
+function goStep(pending) {
+  if (!pending.opened) return 'drop'
+  if (pending.tab) return 'tab'
+  return pending.target ? 'send' : 'done'
 }
 
 // 탭 안 탭(가용설비 현황 「Summary › Static 대비 일정」)은 `tab` 에 바깥 → 안 차례로 이 글로 잇는다.
@@ -724,6 +756,7 @@ function rowFor(note, now) {
     page: String(note.page || ''),
     href: typeof note.href === 'string' ? note.href : null,
     tab: String(note.tab || ''),
+    target: goTarget(note.target),
     tables: validTables(note.tables),
     scopeLabel: String(note.scope_label || ''),
     cause: String(note.cause || ''),
@@ -1331,10 +1364,17 @@ function processField(C) {
   return button && !button.disabled ? button : null
 }
 
-function goTo(C, href, tab) {
+// 이동은 탭 줄에 맡기고(`capa-open-page`), 탭 줄이 이 누름의 이동을 실제로 보냈을 때(떠나기 확인 · 상한을 지남 · 이미 그 탭) 사건의
+// `opened` 를 부른다 — 그때만 그 화면에 닿은 뒤 탭 길 · 대상을 잇는다. 이미 그 화면이면 처음부터 연 것이다.
+function goTo(C, href, tab, target) {
   closePanel(C, false)
-  C.pendingTab = tab ? { href, tab, until: Date.now() + PENDING_TAB_MS } : null
-  window.dispatchEvent(new CustomEvent(OPEN_PAGE_EVENT, { detail: { href } }))
+  const carried = knownTarget(goTarget(target), C.data.goto_kinds)
+  const pending = tab || carried ? { href, tab: tab || '', target: carried, until: Date.now() + PENDING_TAB_MS, opened: C.data.here === href } : null
+  C.pendingTab = pending
+  const opened = () => {
+    if (pending && C.pendingTab === pending) pending.opened = true
+  }
+  window.dispatchEvent(new CustomEvent(OPEN_PAGE_EVENT, { detail: { href, opened } }))
   settleTab(C)
 }
 
@@ -1345,7 +1385,11 @@ function running() {
 
 // 「그 화면으로」 가 맡긴 탭 고르기 — 그 화면(`here`)에 닿고 회차가 끝났으면 이름이 맞는 탭 · 전환 단추를 누른다. 이미 열린 탭이면
 // 누르지 않는다. 탭 안 탭이면 바깥 탭부터 한 칸씩 연다 — 누른 칸은 그 회차가 끝난 뒤 다음 칸을, 이미 열린 칸은 곧바로 다음 칸을
-// 본다. 기다리는 시간이 지나면 버린다.
+// 본다. 누른 뒤에는 그 누름의 회차 표지가 한 번 움직이기 전에는 다음 걸음을 보지 않는다(`moves` — 누름과 회차 시작 사이의 틈에
+// 다음 칸을 찾다 놓치지 않게). 줄이 대상을 들고 왔으면 마지막 칸은 누르지 않고 그 단추가 선 것만 본 뒤 대상을 한 번 보낸다
+// (`sendTarget`) — 받는 쪽 콜백이 그 칸을 함께 연다(`scenario_list_state.queue_check_target`). 마지막 칸을 따로 누르면 그 회차가 앞
+// 고름으로 한 번 더 그리고 센다(합성 사본 0.6초 — 샘플 관측). 기다리는 시간이 지나거나 단추를 찾지 못하면 대상째 버린다. 탭 줄이
+// 이 누름의 이동을 보내지 않았는데 그 화면에 닿았으면(손으로 옴 — `goStep` 의 'drop') 아무것도 누르지 · 보내지 않고 버린다.
 function settleTab(C) {
   while (C.pendingTab) {
     const pending = C.pendingTab
@@ -1353,20 +1397,40 @@ function settleTab(C) {
       C.pendingTab = null
       return
     }
-    if (C.data.here !== pending.href || running()) return
-    const [first, rest] = tabStep(pending.tab)
-    C.pendingTab = rest ? { ...pending, tab: rest } : null
-    const buttons = [...document.querySelectorAll(TAB_BUTTON), ...document.querySelectorAll(SEGMENT_BUTTON)]
-    const button = buttons.find((item) => tabMatches(item.textContent, first))
-    if (button && !tabChosen(button)) {
-      button.click()
+    if (C.data.here !== pending.href || running() || pending.moves === C.runMoves) return
+    const step = goStep(pending)
+    if (step !== 'tab') {
+      C.pendingTab = null
+      if (step === 'send') sendTarget(C, pending.target)
       return
     }
+    const [first, rest] = tabStep(pending.tab)
+    const buttons = [...document.querySelectorAll(TAB_BUTTON), ...document.querySelectorAll(SEGMENT_BUTTON)]
+    const button = buttons.find((item) => tabMatches(item.textContent, first))
     if (!button) {
       C.pendingTab = null
       return
     }
+    if (!rest && pending.target) {
+      C.pendingTab = null
+      sendTarget(C, pending.target)
+      return
+    }
+    C.pendingTab = rest ? { ...pending, tab: rest } : null
+    if (!tabChosen(button)) {
+      if (C.pendingTab) C.pendingTab = { ...C.pendingTab, moves: C.runMoves }
+      button.click()
+      return
+    }
   }
+}
+
+// 대상을 트리거로 보낸다 — 그리기 함수(`scan` 을 부르는 기본 내보내기) 안에서 보낸 트리거는 회차 요청에 실리지 않아 타이머로
+// 미룬다(`page_tabs.js` 와 같은 까닭). 같은 줄을 다시 눌러도 다시 가게 시각을 붙인다.
+function sendTarget(C, target) {
+  setTimeout(() => {
+    if (C.ask) C.ask('goto', { ...target, at: Date.now() })
+  }, 0)
 }
 
 function downloadTable(table) {
@@ -1634,7 +1698,7 @@ function paintList(C) {
     if (showsGo(row.href, row.tab, C.data.here)) {
       const go = el('button', 'link', t.go || '')
       go.type = 'button'
-      go.addEventListener('click', () => goTo(C, row.href, row.tab))
+      go.addEventListener('click', () => goTo(C, row.href, row.tab, row.target))
       acts.append(go)
     }
     const tableHolders = []

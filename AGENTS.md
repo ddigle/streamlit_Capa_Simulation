@@ -1596,8 +1596,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `alert_required_exclusions`)를 낸다.
   - 문장은 `capacity_gate`·자동 갱신이 모두 시나리오 전체 기간(`FULL_SCOPE`)으로 쓴다 — HOME 에는 띄우지
     않는다. 목록 관리 「점검」 은 이 문장을 쓰지 않고 같은 셈의 묶음 수 · 행을 보인다 — 그래서 저장 · 지정 · 복제 · 자동 갱신
-    경고의 끝 문장(`REQUIRED_LIST_NOTE`)과 「그 화면으로」(`required_check_goto` → `REQUIRED_TAB_GOTO`)가 그 칸을 가리키고 경고를 낸
-    자리가 그 리비전을 적는다(2026-11-11 검토 보드 F4 (나)). 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
+    경고의 끝 문장(`REQUIRED_LIST_NOTE`)과 「그 화면으로」(`REQUIRED_TAB_GOTO`)가 그 칸을 가리키고 경고를 낸
+    자리가 그 리비전을 경고 줄에 싣는다(`required_check_target` → `queue_flash(target=)` — 2026-11-11 검토 보드 F4 (나) · 다음 배포 물음
+    보드 F4 뒤 (a): 줄이 들고 다녀 누를 때마다 그 줄의 리비전, 손으로 연 「점검」 은 고름을 옮기지 않는다 — 9장 「알림 칸」 의 대상). 경로 쪽 `소요대수 제외 기준정보` 와 따로 둔다. 계획을 고친 사람이 「고쳤는데 수가 안 바뀐다」 고 헷갈리지
     않게 화면 세 자리도 같은 셈의 **상태 알림**이다(2026-11-03 결정 보드 D2 (나) — 자리에 그리지 않는다): 생산 계획 PKG PLAN
     적용 알림이 서는 회차(쓰기 알림 표지 창의 다시 그리기 포함)의 `ST-04`(`FULL_SCOPE`, `get_full_capacity_outcome` —
     HOME·산출 결과가 같은 결과를 쓴다. 셈은 PKG PLAN 편집표를 그린 **뒤**에 하고 스피너는 그 알림 칸에 선다 — 앞에서 하면 그
@@ -2778,8 +2779,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     아닌 화면이면 막고 알린다(data 의 `max`·`pages` — 모든 화면의 주소 → 탭 이름). 알림은 탭 줄 칸이 아니라 같은 문서의
     알림 칸에 낸다(코드 `TAB-01`, 단계 「조치 필요」 — `page_tabs.js` 의 `raiseAlert` → `window.__capaAlerts.raise`, 알림
     칸이 아직 서지 않았으면 `window.__capaAlertQueue`). 옛 탭 줄 알림 칸(`.capa-tabs-notice`)은 걷었다 — 한 칸이라 뒤 알림이
-    앞 알림을 덮었다. 알림 칸 「그 화면으로」 는 `capa-open-page` 사건({href})으로 와 탭 줄 이동 길을 탄다(열린 탭이면
-    `select` — 떠나기 확인 · 한 번에 하나, 아니면 그 화면 링크 누름 — 상한 거름). 지나 보낸 링크가 여는 탭은
+    앞 알림을 덮었다. 알림 칸 「그 화면으로」 는 `capa-open-page` 사건({href, opened})으로 와 탭 줄 이동 길을 탄다(열린 탭이면
+    `select` — 떠나기 확인 · 한 번에 하나, 아니면 그 화면 링크 누름 — 상한 거름). 그 누름의 이동을 실제로 보낼 때(이미 그 탭이거나
+    그 탭으로 가는 중이면 곧바로)만 `opened` 를 부르고 붙들기 · 줄 서기를 지나도 그 누름의 것만 들고 간다(`S.waitOpen` · `S.linkOpened`)
+    — 알림 칸이 그때만 닿은 화면에서 탭 길 · 대상을 잇는다. 지나 보낸 링크가 여는 탭은
     그 탭이 data 에 올 때까지(같은 `epoch`, 길어야 `BUSY_MS`) 열린 탭으로 센다(순수 구획 `<tabs-links>`) — 세지 않으면 탭
     9개에서 링크 둘을 0.05~0.1초 간격으로 누를 때 둘째 누름이 앞 회차 data 의 탭 9개로 세어 거름을 지났고, 서버 되돌림이
     두 화면을 기록에 쌓아 뒤로가기가 갇혔다(2026-10-27 E2E). 그래도 들어온 이동(뒤로·
@@ -3216,7 +3219,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`)와 앞 세션 op 빼기(`this_session` — 두 표의 `base` 는 `세션 표지:나머지` 꼴이다) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 네 마운트 data(「점검」 칸 `checks_payload` — r · 리비전명 · 계산, 이름 고치기 없음), 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
 - `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 멈춤 부제 풍선은 계산 멈춤 알림 전문이되 첫머리가 그 리비전 「rN」 이다(`calculation_stop_notice(place=)` — 입력 점검 검토 보드 F7 (나)). 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
-- `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key, 「목록 관리」 · 「점검」 글(`LIST_MODE` · `SIDE_CHECK` — 경고 탭 길과 화면 위젯이 함께 쓴다), 경고가 가리키는 리비전 칸(`CHECK_TARGET_KEY` — `queue_check_target` 이 적고 「점검」 칸이 서는 목록 관리 회차의 `scenario_management._aim_at_check_target` 이 한 번 꺼내 고른다 · 상세 칸 회차에는 꺼내지 않는다 · 사라진 시나리오는 버린다). 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다. 「저장 전 변경 n건」 배지는 `pending_count` 가 아니라 그 회차 칸의 수 셋을 더한 `scenario_management._ListView.pending`(`change_counts` — 순서는 옮긴 줄 수)이다.
+- `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key, 「목록 관리」 · 「점검」 글(`LIST_MODE` · `SIDE_CHECK` — 경고 탭 길과 화면 위젯이 함께 쓴다), 경고 줄 「그 화면으로」 를 누른 리비전 칸(`CHECK_TARGET_KEY` — 경고 줄이 대상 `CHECK_TARGET_KIND` 를 들고 다니다 알림 칸이 탭 길을 다 연 회차에 그 콜백이 `queue_check_target` 으로 적고, 같은 회차의 「점검」 칸 `scenario_management._aim_at_check_target` 이 한 번 꺼내 고른다 · 상세 칸 회차에는 꺼내지 않는다 · 사라진 시나리오는 버린다 · 쓰지 않고 남은 것은 다음 앱 전체 회차 앞에서 알림 칸이 버린다 `expire_check_target` — `CHECK_TARGET_FRESH_KEY`, 2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다. 「저장 전 변경 n건」 배지는 `pending_count` 가 아니라 그 회차 칸의 수 셋을 더한 `scenario_management._ListView.pending`(`change_counts` — 순서는 옮긴 줄 수)이다.
 - `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 네 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY` · 「점검」 칸 리비전 표 `CHECKS_KEY`(이름 고치기 없이 「계산」 칩 — 단계 색은 팔레트 `level-*`). 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다. 그리는 중의 focusout(`S.painting` — `paint` · `repaintCell`)은 부품 밖 이탈로 치지 않아 300ms 묶음을 끊지 않는다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
   판정 `editor_has_edits`, 색 `PENDING_MARK`)과 종류 단추(`st.segmented_control` — `[data-testid="stButtonGroup"]` 아래
@@ -3665,9 +3668,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 상자는 매 회차 고른 id 를 되쓴다(9장). 마크다운 자리에는 부르는 쪽이 `literal_markdown` 으로 감싼다.
 - `src/capa_simulation/components/flash.py` — 동작 결과 알림의 담기·꺼내 보내기 한 길. `queue_flash(key, 글, *, kind,
   icon, alert, popup_only, tables, goto)`(kind 는 success·info·warning·error, `goto=(이름, 주소[, 탭])` 는 사건 알림의 「그 화면으로」
-  를 다른 화면 · 탭으로 보낸다 — 소요대수에 들지 않은 수요 경고는 `required_check_goto(시나리오, 리비전)` 가 주는 `REQUIRED_TAB_GOTO`(시나리오
-  관리 › Capa 시나리오 › 목록 관리 › 점검 — 탭 길은 알림 칸이 이름으로 차례로 누르고, 그 리비전은 `scenario_list_state.queue_check_target`
-  이 적어 「점검」 칸이 서는 목록 관리 회차가 한 번 고른다, 2026-11-11 검토 보드 F4 (나) — 작은 결정 a4 의 산출 결과 › 소요대수를 바꿈), 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
+  를 다른 화면 · 탭으로 보낸다, `target=` 은 그 화면 · 탭에 닿았을 때만 서버에 보낼 대상 `alerts.GotoTarget` — `goto` 없이는 거절 — 소요대수에 들지 않은 수요 경고는 `REQUIRED_TAB_GOTO`(시나리오
+  관리 › Capa 시나리오 › 목록 관리 › 점검 — 탭 길은 알림 칸이 이름으로 차례로 누르고, 그 리비전은 `required_check_target(시나리오, 리비전)` 을 줄이 들고 가 알림 칸이 탭 길을 마지막 칸 앞까지 연 뒤 보내고 `scenario_list_state.queue_check_target`
+  이 적어 같은 회차의 「점검」 칸이 한 번 고른다, 2026-11-11 검토 보드 F4 (나) — 작은 결정 a4 의 산출 결과 › 소요대수를 바꿈 · 다음 배포 물음 보드 F4 뒤 (a)), 아이콘 · 코드 없는 성공은 글만 담는다, `alert` 는 등록부의 사건
   코드 — 없으면 종류별 `alerts.FLASH_CODES` 의 `FL-01`~`04`, `tables` 는 그 Alarm 줄의 표 — 커서 None 인 칸은 뺀다)로 세션에 담고, 다음 실행에서 `render_flash(*keys)` 가 알림이 있든
   없든 `st.container()` 한 칸을 세워 담긴 알림을 차례대로 **사건 알림 표지**(`alerts.emit` — 이벤트 칸 한 자리)로 보내고
   그 칸을 돌려준다. 성공 · 안내는 오른쪽 아래 알림창으로만 내고 버튼 곁 칸에는 그리지 않으며, 경고 · 오류(거부 · 실패)만
@@ -3716,7 +3719,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   지금 화면을 가리키고 `tab` 이 없는 줄에는 세우지 않는다(`showsGo` — 눌러도 아무 일이 없어서다, 2026-11-07 g1-06). 표지의
   `tab`(그 화면 안 탭 — 탭 안 탭은 `바깥 › 안`, `TAB_PATH`)이 있으면 그 화면에 닿은 회차가 끝난 뒤 이름이 맞는 탭 단추 · 전환 단추를
   바깥 칸부터 한 칸씩 누르고(`tabStep` · `settleTab` — `stateful_tabs` 탭과 `st.segmented_control` 전환 단추, 고른 상태는
-  `aria-checked` 로 본다), 줄 · 로그의 화면 칸은 「화면 › 탭」 이다. 「로그」
+  `aria-checked` 로 본다, 누른 뒤에는 그 누름의 회차 표지가 움직이기 전에 다음 칸을 보지 않는다 — `moves`), 줄 · 로그의 화면 칸은 「화면 › 탭」 이다.
+  표지에 대상(`target` — `alerts.GotoTarget`, 지금은 소요대수에 들지 않은 수요 경고의 리비전)이 실리면 줄이 그것을 들고 다니고(이 탭
+  저장소에도 — 새로고침 뒤에도 같다), 「그 화면으로」 가 탭 길을 마지막 칸 앞까지 열고 그 회차가 끝났을 때 마지막 칸 단추가 선 것만 보고 누르는 대신 트리거 `goto` 로 한 번 보낸다(`goTarget` ·
+  `goStep` · `sendTarget` — 그리기 함수 밖 타이머). 콜백 `alert_center._on_goto` 는 꼴(`alerts.goto_target`)과 아는 종류만 받아
+  세션에 적고 마지막 칸(「점검」 — `SIDE_NEXT_KEY`)을 함께 열어 같은 회차의 화면이 쓴다 — 마지막 칸을 따로 누르면 그 회차가 앞 고름을 한 번
+  더 그리고 센다(합성 사본 0.6초, 샘플 관측). 쓰지 않고 남은 것은 다음 앱 전체 회차 앞에서 버린다(`scenario_list_state.expire_check_target`).
+  탭 길 · 대상은 화면 탭 줄이 그 누름의 이동을 보냈다고 알린(사건 `capa-open-page` 의 `opened` — 떠나기 확인 · 상한을 지남, 이미 그 탭이거나 그 탭으로
+  가는 중) 뒤에 닿은 화면에서만 잇는다(`goStep` 의 'drop') — 길이 막히면(떠나기 확인 취소 · 탭 상한 · 붙든 누름이 버려짐 · 기다리던 누름이 덮임)
+  알리지 않아, 그 뒤 20초(`PENDING_TAB_MS`) 안에 손으로 그 화면에 가도 탭을 누르지 · 대상을 보내지 않는다(시간 넘김 · 단추 없음도 보내지 않는다).
+  탭 줄이 보낸 이동을 서버가 받지 않은 드문 경우(epoch 어긋남 · 되돌림)는 남는다. 대상은 받는 쪽이 아는 종류(`alert_center.GOTO_RECEIVERS` —
+  data `goto_kinds`, `knownTarget`)만 들고 가고, 모르는 종류는 대상 없는 줄처럼 마지막 칸을 누른다. 글이 같은 두 경고가 「×2」 한 줄로 합쳐지면 그
+  줄의 대상은 대상을 든 마지막 경고의 것이다(`freshenEventRow` — 리비전을 모르는 이어받은 회차의 같은 경고는 앞 대상을 지우지 않는다, 2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). 「로그」
   펼침의 「복사」 는 그 줄의 로그 전문(코드 · 단계 · 날짜까지 붙은 처음 · 마지막 · 화면 · 계기 · 범위 · 해소(내용 바뀜 · 범위 바뀜) · 원본 오류 · 전문 —
   `logPairs` · 순수 `copyText`)을 `navigator.clipboard` 로 넣고, 막히면(보안 연결이 아님 · DRM) 고른 글을 든 읽기 전용 칸을
   세워 Ctrl+C 를 청한다(`execCommand` 는 막힌 클립보드에서도 참을 돌려 쓰지 않는다 · 딸린 표는 이름 · 행 수만 — 2026-11-04 검수
@@ -7023,7 +7037,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다시 그리느라 본 스레드가 0.8 ~ 1초 묶이고(샘플 관측) 그 사이 프런트 회차의 표지는 메시지 큐에 묶여 있다. 그래서 제때 깬 틱만 조용한 시간으로 세고(`quietAfter`), 가려진 탭처럼 타이머가 늘 늦으면 5초 상한(`RECONNECT_LIMIT_MS`)에서 부른다. data 가 닿아도 회차로 센다 — 묶인 사이 끝난 회차는 메시지가 한꺼번에 처리돼(`handleMessage`) 표지가 움직이지 않는데, 새 세션은 세션 표지로 data 가 달라 알 수 있다.
   **기다리는 동안 사람 손이 닿으면 부르지 않는다**: 누름의 회차 표지도 왕복해야 움직여, 그 사이 부르면 누름의 회차를 끊어 그 누름이 사라진다(2026-11-08 사본 실측 — 왕복 200ms 에서 다시 붙은 뒤 160 ~ 280ms 에 누른 `on_click` 없는 적용 단추. 고친 뒤 화면 이동도 같은 조건에서 8번 모두 살았다). 기다리는 동안만 `pointerdown` · `click` · `keydown` 을 듣고(`TOUCH_EVENTS`, 듣기는 틱이 끝나면 걷는다) 손이 닿은 뒤 대기 시간 + 700ms(`RECONNECT_TOUCH_MS`) 안에는 부르지 않는다 — 그 사이 표지가 움직이면 그 회차가 재연결 회차를 대신하고, 끝내 움직이지 않으면(회차가 없는 누름) 그때 부른다. 부른 뒤의 누름은 차례가 맞아(서버가 부름 → 누름 순서로 받는다) 사라지지 않는다.
   **남은 겹침**: 세션이 남아 있고 서버 회차가 본 스레드가 묶인 시간보다 짧으면(합성 표본 HOME — 마지막이 프래그먼트 회차인 탭) 표지도 data 도 움직이지 않아 회차가 두 번 돈다. 입력은 그대로이고 값은 앱 전체 회차 한 번이다 — 드문 일을 가르려고 모든 회차에 표지를 더하지 않았다.
-  **이 칸이 파이썬을 부르는 자리는 이것과 공정 판 「모든 화면에서 해제」(`process_clear`) 둘이다** — 패널 · 변경 판 · 공정 판은 지금도 브라우저 안에서만 연다. 연결 표지 · 회차 표지는 관찰자 하나(`watchRoot`)가 보고 칸이 다시 그려져도 늘지 않는다.
+  **이 칸이 파이썬을 부르는 자리는 이것과 공정 판 「모든 화면에서 해제」(`process_clear`), 대상을 실은 줄의 「그 화면으로」(`goto` — 탭 길을 마지막 칸 앞까지 연 뒤 한 번) 셋이다** — 패널 · 변경 판 · 공정 판은 지금도 브라우저 안에서만 연다. 연결 표지 · 회차 표지는 관찰자 하나(`watchRoot`)가 보고 칸이 다시 그려져도 늘지 않는다.
   세션이 남아 있었는지는 회차를 돌려야 알 수 있어 **짧은 끊김에도 회차가 한 번 돈다**(샘플 관측 0.27 ~ 0.45초, 입력 · 고침은 남는다). 대가: 재시작 · 세션 만료 뒤에는 열린
   대화상자 입력이 사라지고 시나리오 · 조회기간 · 화면 탭이 처음으로 돌아간다(사용자가 받아들임). **남은 틈**: 새 세션의 회차가 그 프래그먼트까지 닿기 전에 누른 저장은 여전히 버려진다(샘플 관측 — 다시 붙은 뒤 약 2.6초까지, 그 뒤는 저장됨).
   조용히 버려지지는 않는다 — `GL-07` 이 곧 뜨고, 폼이 남아 있으면 다시 누르면 저장된다(폼이 닫히는 때도 있다). 누른 회차에만 여는 대화상자는 Guide 하나로 줄었고 짧은 끊김에도 닫힌다(입력이 없다). HOME 공정 필터 · 주요공정 히트맵은 2026-11-08 답 U5 로 열림 칸(`home_open_dialog` — 값 `process_filter` · `key_process`)으로 서는 호스트 팝업이 되어 짧은 끊김 뒤 다시 서고 공정 필터 초안도 남는다(검토 재연결 실측: 앞 판 dialogs 0 → 1, 「선택 21 / 24」 유지 — 샘플 관측). 닫기는 `HOME_DIALOG_HOST.close` 로 호스트만 돌아 HOME 회차가 늘지 않는다.
