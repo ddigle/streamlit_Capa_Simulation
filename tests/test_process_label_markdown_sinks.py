@@ -1,4 +1,4 @@
-# Purpose: 공정 표시명이 실적·Dynamic·Chatbot·HOME 마크다운 자리에 글자 그대로 실리는지 본다.
+# Purpose: 공정 표시명이 실적·Dynamic·Chatbot·HOME·계산 멈춤 마크다운 자리에 글자로 실리는지 본다.
 
 """공정 표시명(Proc Rename)은 사람 글이다 — 마크다운 자리에서 막는다(AGENTS 9장).
 
@@ -14,15 +14,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+from test_scenario_input_check import _check_app, _official, _save, _seeded, _vital_blank
+from test_scenario_management_page import _official_button, _open_official
 
 import capa_simulation.components.process_labels as process_labels_module
 from capa_simulation.components.home_preference import key_process_preview
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_labels import ProcessLabels
+from capa_simulation.components.scenario_list_grid import CHECKS_KEY
+from capa_simulation.persistence.cache import clear_global_process_rename_cache
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.services.dynamic_capacity import build_dynamic_capacity_demo
 from capa_simulation.services.performance_actuals import build_monthly_actual_demo
+from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 
 ROOT = Path(__file__).resolve().parents[1]
 CHATBOT_PAGE = ROOT / "app_pages" / "capa_chatbot.py"
@@ -203,6 +210,50 @@ def test_the_preference_notices_show_the_display_name_literally() -> None:
     assert not [text for text in texts if "TC~B~1 *z*" in text], texts
     escaped = literal_markdown("TC~B~1 *z*")
     assert any("26.07·" + escaped in text for text in texts), texts
+
+
+# -------------------------------------------- 계산 멈춤 예시 행(점검 풍선 · 공식 지정 거부)
+
+
+def test_a_stopped_revision_shows_the_display_names_literally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """계산 멈춤 글의 예시 행은 공정 표시명이다(2026-11-11 입력 점검 검토 보드 F7 (나)) — 「점검」
+    칸 멈춤 부제 풍선과 공식 지정 거부 상자(둘 다 마크다운)에서 표시명의 물결표 · 별표가 지움선 ·
+    기울임이 되지 않는다. 표시명은 공용 프로필(Admin Proc Rename 이 쓰는 자리)에 적는다."""
+    script, database = _seeded(tmp_path)
+    scenario_id, base = _official(database)
+    stopped = _save(database, scenario_id, base, _vital_blank, "멈춤")
+    repository = DuckDBScenarioRepository(database)
+    blanked = repository.load_revision(stopped).tables["RQ_VITAL"]["공정"].astype(str).iloc[:2]
+    labels = _renamed(sorted(set(blanked)), MARKED)
+    repository.replace_global_process_rename(
+        pd.DataFrame(list(labels.labels.items()), columns=list(PROCESS_RENAME_COLUMNS)),
+        source="시험",
+    )
+    clear_global_process_rename_cache()
+    number = repository.load_revision(stopped).revision.revision_no
+
+    app, browser, _ = _check_app(script, monkeypatch)
+    browser.send(CHECKS_KEY, {"op": "pick", "owner": scenario_id, "id": stopped})
+
+    assert not app.exception, [item.message for item in app.exception]
+    tips = [str(item.proto.help) for item in app.caption if item.proto.help]
+    stop_tips = [tip for tip in tips if tip.startswith(f"r{number} — 대당 Capa 계산이 멈췄습니다.")]
+    assert len(stop_tips) == 1, tips
+    carrying = _assert_literal(_markdown_texts(app) + tips, labels)
+    assert stop_tips[0] in carrying, stop_tips
+
+    app = AppTest.from_string(script, default_timeout=120)
+    _open_official(app, scenario_id, stopped)
+    _official_button(app).click()
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    refusals = [str(item.value) for item in app.error]
+    assert any("공식버전으로 지정할 수 없습니다" in text for text in refusals), refusals
+    carrying = _assert_literal(_markdown_texts(app), labels)
+    assert any(text in carrying for text in refusals), refusals
 
 
 def test_the_markers_really_turn_into_markdown() -> None:

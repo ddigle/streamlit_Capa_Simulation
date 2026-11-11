@@ -277,6 +277,15 @@ def test_a_stopped_revision_is_marked_and_folds_what_comes_after(
     shown = notice.text.removeprefix(STOP_NOTICE_HEAD)
     assert any(text.startswith(shown) for text in _captions(app))
     assert not any(text.startswith(STOP_NOTICE_HEAD) for text in _captions(app))
+    # 부제 풍선은 알림 전문이되 첫머리가 화면 이름 대신 고른 리비전 「rN」 이고 예시 행은 「YY.MM
+    # 공정 양산구분」 이다(2026-11-11 입력 점검 검토 보드 F7 (나)).
+    number = DuckDBScenarioRepository(database).load_revision(stopped).revision.revision_no
+    tips = [item.proto.help for item in app.caption if item.value.startswith(shown)]
+    expected = calculation_stop_notice(ValueError(check.stop.error), place=f"r{number}")
+    assert expected is not None and tips == [expected.message]
+    assert tips[0].startswith(f"r{number} — 대당 Capa 계산이 멈췄습니다.")
+    assert "시나리오 관리" not in tips[0] and "{'" not in tips[0]
+    assert re.search(r"예시 \d{2}\.\d{2} \S", tips[0])
     go = app.button(key=f"input_check_go_{GROUP_STOP}")
     assert go.help == GO_LOADS_HELP
 

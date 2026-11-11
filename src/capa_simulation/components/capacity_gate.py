@@ -44,16 +44,17 @@ BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 �
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import NamedTuple
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, NamedTuple
 
 import pandas as pd
 
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
     required_exclusion_message,
 )
+from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import get_scenario_repository, load_scenario_snapshot
 from capa_simulation.persistence.models import ScenarioSnapshot
@@ -78,6 +79,9 @@ from capa_simulation.services.simulation_cache import (
     get_revision_input_check,
 )
 
+if TYPE_CHECKING:
+    from capa_simulation.components.process_labels import ProcessLabels
+
 # 입력 점검 칸 머리 「전체 기간」 의 달을 모으는 표 — 계산 입력 표 가운데 달 축이 있는 것(계획
 # `RQ_PKG_PLAN` 포함). 묶음이 그 표들 전체 달의 행을 세므로 기간도 그 합친 범위다.
 INPUT_CHECK_PERIOD_TABLES = tuple(
@@ -92,7 +96,10 @@ class GateVerdict(NamedTuple):
 
     `message` 는 알림 상자(마크다운)로 간다 — 계산 오류 글은 걸린 칸의 예시 키(제품·공정 이름)를,
     파생 저장 경고는 원본 시나리오 이름을 날로 담으므로 끼울 때 막는다(물결표가 지움선이 되지
-    않게). `density_error` 는 막지 않는다 — 자동 갱신 기록(표 칸)에도 그대로 남는다.
+    않게). `density_error` 는 막지 않는다 — 자동 갱신 기록(표 칸)에도 그대로 남는다. 끼우는 오류
+    글의 예시 키는 화면 꼴 「YY.MM 공정 표시명 양산구분」 이다(`_shown` — 판정 · 견줌은 원문). 판정
+    함수의 `labels` 는 공정 표시명을 내는 함수이고 끼울 오류 글이 있을 때만 부른다 — 통과하는
+    저장은 표시명을 읽지 않는다.
 
     `exclusion` 은 계산이 통과했고 `message` 가 소요대수에 들지 않은 수요 경고뿐이라는 표지다 —
     판정 시험이 두 경고(소요대수 제외 · 남은 계산 오류)를 가르는 데 쓴다. 화면은 두 경고를 가르지
@@ -162,8 +169,10 @@ def revision_save_verdict(
     reference_version: int,
     active_scenario: ActiveScenario,
     reference_tables: Mapping[str, pd.DataFrame],
+    *,
+    labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
-    """편집본을 새 리비전으로 저장해도 되는지."""
+    """편집본을 새 리비전으로 저장해도 되는지. `labels` 는 경고 글 예시 키의 공정 표시명을 낸다."""
     edited_outcome, edited = _gate_check(
         (reference_version, active_scenario["content_token"]),
         active_scenario["tables"],
@@ -179,7 +188,7 @@ def revision_save_verdict(
         if active_scenario["content_token"] == base_token
         else _gate_check((reference_version, base_token), reference_tables, reference_tables)[1]
     )
-    shown = markdown_safe_tildes(edited)
+    shown = _shown(edited, labels)
     if base is None:
         return GateVerdict(
             False,
@@ -194,7 +203,7 @@ def revision_save_verdict(
             "Capa 계산 오류가 남아 이 리비전은 공식버전으로 지정할 수 없습니다 — 편집 전과 같은 "
             "종류의 오류가 걸린 칸의 건수·예시만 달라진 채 남았습니다(일부를 고쳤거나 이번 편집이 "
             "같은 오류를 더 만든 것입니다). 남은 오류를 고쳐 다시 저장하세요. "
-            f"편집 뒤 오류: {shown} / 편집 전 오류: {markdown_safe_tildes(base)}"
+            f"편집 뒤 오류: {shown} / 편집 전 오류: {_shown(base, labels)}"
             + module_fix_hint(edited),
         )
     if base != edited:
@@ -203,7 +212,7 @@ def revision_save_verdict(
             "Capa 계산 오류가 남아 이 리비전은 공식버전으로 지정할 수 없습니다 — 편집 전과 다른 "
             "오류입니다(이번 편집이 새로 깨뜨렸거나, 편집 전 오류를 고쳐 그 뒤에 가려져 있던 "
             "오류가 드러난 것 — 계산은 첫 오류에서 멈춥니다). 오류를 고쳐 다시 저장하세요. "
-            f"편집 뒤 오류: {shown} / 편집 전 오류: {markdown_safe_tildes(base)}"
+            f"편집 뒤 오류: {shown} / 편집 전 오류: {_shown(base, labels)}"
             + module_fix_hint(edited),
         )
     return GateVerdict(
@@ -211,6 +220,13 @@ def revision_save_verdict(
         "Capa 계산 오류가 남아 이 리비전은 공식버전으로 지정할 수 없습니다 — 편집 전부터 있던 "
         f"오류입니다. 남은 오류를 고쳐 다시 저장하세요. 오류: {shown}" + module_fix_hint(edited),
     )
+
+
+def _shown(error: str, labels: Callable[[], ProcessLabels] | None) -> str:
+    """경고에 끼우는 오류 글 — 예시 키를 화면 꼴로 바꾸며 칸 값(표시명 따위 사람 글)을 막고
+    (`stop_examples.markdown_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나)) 물결표를 막는다.
+    판정 · 편집 전후 견줌(`_error_kind`) · 모듈수 안내(`module_fix_hint`)는 원문으로 한다."""
+    return markdown_examples(error, None if labels is None else labels())
 
 
 def _error_kind(error: str) -> str:
@@ -223,8 +239,11 @@ def _error_kind(error: str) -> str:
     return error.split(": ", 1)[0]
 
 
-def official_publish_verdict(database_path: str, revision_id: str) -> GateVerdict:
-    """저장된 리비전을 공식버전으로 지정해도 되는지."""
+def official_publish_verdict(
+    database_path: str, revision_id: str, *, labels: Callable[[], ProcessLabels] | None = None
+) -> GateVerdict:
+    """저장된 리비전을 공식버전으로 지정해도 되는지. `labels` 는 경고 글 예시 키의 공정
+    표시명을 낸다."""
     snapshot = load_scenario_snapshot(database_path, revision_id)
     reference_version = reference_version_for_revision(revision_id)
     outcome, error = _gate_check(
@@ -239,7 +258,7 @@ def official_publish_verdict(database_path: str, revision_id: str) -> GateVerdic
         "이 리비전은 Capa 계산이 실패해 공식버전으로 지정할 수 없습니다. 공식버전은 모든 "
         "사용자가 처음 여는 화면이라, 지정하면 모두의 HOME 이 멈춥니다. 기준 정보 페이지에서 "
         "고친 뒤 새 리비전으로 저장하고 그 리비전을 지정하세요. "
-        f"오류: {markdown_safe_tildes(error)}" + module_fix_hint(error),
+        f"오류: {_shown(error, labels)}" + module_fix_hint(error),
     )
 
 
@@ -279,14 +298,18 @@ def input_check_verdict(
 
 
 def derived_save_verdict(
-    tables: Mapping[str, pd.DataFrame], sources: Sequence[ScenarioSnapshot]
+    tables: Mapping[str, pd.DataFrame],
+    sources: Sequence[ScenarioSnapshot],
+    *,
+    labels: Callable[[], ProcessLabels] | None = None,
 ) -> GateVerdict:
     """월 머지·연도 Shift 결과를 새 시나리오로 저장해도 되는지. 규칙은 리비전 저장과 같다.
 
     원본 리비전이 「편집 전」이다. 결과는 아직 어느 리비전도 아니라 계산 캐시에 넣지 않고 한 번
     계산한다 — 캐시 칸은 몇 개뿐이고(`FULL_CAPACITY_MAX_ENTRIES`) 저장 뒤 그 시나리오를 열면
     리비전 키로 다시 계산한다. 원본은 결과가 실패할 때만, 공식 발행 검사와 같은 캐시 칸으로 본다.
-    리비전 저장·발행과 같이 Capa 계산이 통과하면 Density 환산도 본다(`density_error`).
+    리비전 저장·발행과 같이 Capa 계산이 통과하면 Density 환산도 본다(`density_error`). `labels` 는
+    경고 글 예시 키의 공정 표시명을 낸다.
     """
     error = _capacity_error(tables) or density_error(tables)
     if error is None:
@@ -297,7 +320,7 @@ def derived_save_verdict(
             False,
             "이 결과는 Capa 계산이 실패해 저장하지 않았습니다. 원본 리비전은 모두 계산되므로 "
             "이번 머지·연도 이동이 깨뜨린 것입니다 — 원본이나 월 범위를 바꿔 다시 만드세요. "
-            f"오류: {markdown_safe_tildes(error)}",
+            f"오류: {_shown(error, labels)}",
         )
     names = ", ".join(literal_markdown(source.scenario.scenario_name) for source in broken)
     # 결과(공식 지정 불가)를 앞에 둔다 — 이 경고는 알림창 · Alarm 에만 가고 알림창 짧은 글이 앞
@@ -306,7 +329,7 @@ def derived_save_verdict(
         True,
         "Capa 계산 오류가 남아 이 시나리오는 공식버전으로 지정할 수 없습니다 — "
         f"원본({names})부터 있던 오류가 결과에도 남았습니다. 남은 오류를 고쳐 새 리비전으로 "
-        f"저장하세요. 오류: {markdown_safe_tildes(error)}" + module_fix_hint(error),
+        f"저장하세요. 오류: {_shown(error, labels)}" + module_fix_hint(error),
     )
 
 

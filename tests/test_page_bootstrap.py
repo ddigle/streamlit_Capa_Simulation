@@ -7,6 +7,8 @@ import pandas as pd
 import pytest
 
 from capa_simulation import alerts, page_bootstrap, settings
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.io.reference_cache import NoActiveRevision
 from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.page_bootstrap import (
@@ -20,6 +22,7 @@ from capa_simulation.reference_grid_keys import DATASETS
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import pristine_content_token
 from capa_simulation.services import unit_capacity
+from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 from capa_simulation.services.simulation_cache import outside_period_error
 
 
@@ -385,8 +388,9 @@ def test_a_blank_stop_points_at_the_table_to_fill_on_the_reference_screen(
         f"HOME — 대당 Capa 계산이 멈췄습니다. 기준 정보 「{name}」 표의 "
     )
     assert "「변경사항 적용」" in stop.message
-    assert f"「{name}」 표의 빈 칸: 1건, 예시 " in stop.message
-    assert "'공정': 'DEMO-P1'" in stop.message
+    # 예시 행은 dict 꼴이 아니라 화면 꼴이다(F7 (나)) — 이 오류의 키는 공정 하나다. 전문은
+    # 마크다운이라 이름은 막혀 있다(`literal_markdown`).
+    assert stop.message.endswith(f"「{name}」 표의 빈 칸: 1건, 예시 {literal_markdown('DEMO-P1')}")
     assert table not in stop.message and column not in stop.message
 
 
@@ -421,6 +425,96 @@ def test_a_stop_without_a_page_name_starts_from_the_stop_itself(
     stop = calculation_stop_notice(ValueError(_service_stop(unit_capacity._VALUE_BLANK)))
 
     assert stop is not None and stop.message.startswith("대당 Capa 계산이 멈췄습니다.")
+
+
+def _service_month_stop(labels: list[str]) -> str:
+    """효율 표 빈 칸으로 멈춘 계산이 실제로 내는 오류 글 — 키가 월 · 공정 · 양산구분이다."""
+    joined = pd.DataFrame(
+        {
+            "생산계획년월": [202704] * len(labels),
+            "공정": labels,
+            "양산구분": ["양산", "ER"][: len(labels)],
+            "상태": [unit_capacity._VALUE_BLANK] * len(labels),
+        }
+    )
+    check = unit_capacity._PendingCheck(
+        "RQ_RUN_RATE", "CAPA_RUN_RATE", unit_capacity.RUN_RATE_KEYS, "상태", None
+    )
+    with pytest.raises(ValueError) as error:
+        unit_capacity._raise_on_unusable_values(joined, check)
+    return str(error.value)
+
+
+def test_the_stop_examples_read_as_month_display_name_and_mass_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """전문의 예시 행은 서비스 글의 dict 꼴 대신 「YY.MM 공정 표시명 양산구분」 이다(2026-11-11 입력
+    점검 검토 보드 F7 (나), UI-DAT-10). 표시명은 그 화면의 공용 표시명이고 겹치면 「표시명 (원본)」
+    이다. 서비스 글(원문)은 그대로다."""
+    _on_page(monkeypatch)
+    error = _service_month_stop(["DEMO-TCB", "DEMO-TCB"])
+    labels = process_labels_from_rules(
+        pd.DataFrame([("DEMO-TCB", "TC 본딩")], columns=list(PROCESS_RENAME_COLUMNS))
+    )
+
+    plain = calculation_stop_notice(ValueError(error))
+    named = calculation_stop_notice(ValueError(error), labels=labels)
+
+    assert "{'" in error and "'공정': 'DEMO-TCB'" in error
+    assert plain is not None and named is not None
+    raw = literal_markdown("DEMO-TCB")
+    assert plain.message.endswith(f"예시 27.04 {raw} 양산 · 27.04 {raw} ER")
+    assert named.message.endswith("예시 27.04 TC 본딩 양산 · 27.04 TC 본딩 ER")
+    assert "{'" not in named.message and "DEMO-TCB" not in named.message
+    assert named.text == plain.text and named.goto == plain.goto
+
+    clash = process_labels_from_rules(
+        pd.DataFrame([("DEMO-A", "DEMO-B")], columns=list(PROCESS_RENAME_COLUMNS))
+    )
+    split = calculation_stop_notice(
+        ValueError(_service_month_stop(["DEMO-A", "DEMO-B"])), labels=clash
+    )
+    assert split is not None
+    both, alone = literal_markdown("DEMO-B (DEMO-A)"), literal_markdown("DEMO-B")
+    assert split.message.endswith(f"예시 27.04 {both} 양산 · 27.04 {alone} ER")
+
+
+def test_a_stop_counted_for_a_revision_leads_with_its_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """입력 점검 풍선은 화면 이름 대신 고른 리비전 「rN」 으로 시작한다(F7 (나)) — 멈춘 것은 그
+    화면이 아니라 그 리비전이다. 짧은 글 · 갈 곳은 같다."""
+    _on_page(monkeypatch, "시나리오 관리")
+    error = ValueError(_service_stop(unit_capacity._VALUE_BLANK))
+
+    shown = calculation_stop_notice(error)
+    counted = calculation_stop_notice(error, place="r3")
+
+    assert shown is not None and counted is not None
+    assert shown.message.startswith("시나리오 관리 — 대당 Capa 계산이 멈췄습니다.")
+    assert counted.message.startswith("r3 — 대당 Capa 계산이 멈췄습니다.")
+    assert "시나리오 관리" not in counted.message
+    assert counted.message.partition(".")[2] == shown.message.partition(".")[2]
+    assert (counted.text, counted.goto) == (shown.text, shown.goto)
+
+
+def test_the_rest_of_a_stopped_screen_reads_its_examples_only_when_given_labels() -> None:
+    """계산 멈춤 알림이 알아보지 못하는 멈춤(표 자체가 깨진 꼴)도 그 화면은 표시명을 넘겨 예시 행을
+    같은 꼴로 바꾼다. 표시명을 넘기지 않는 자리(그 밖의 화면 · 스크립트)는 원문 그대로다."""
+    error = ValueError(
+        "RQ_VITAL의 연결 키가 중복되었습니다: 1건, 예시 "
+        "[{'생산계획년월': 202601, '공정': 'DEMO~P1', '양산구분': '양산'}]"
+    )
+    labels = process_labels_from_rules(pd.DataFrame(columns=list(PROCESS_RENAME_COLUMNS)))
+
+    assert calculation_stop_notice(error) is None
+    assert bootstrap_error_message(error, labels=labels) == (
+        "RQ_VITAL의 연결 키가 중복되었습니다: 1건, 예시 26.01 DEMO\\~P1 양산"
+    )
+    assert bootstrap_error_message(error) == markdown_safe_tildes(error)
+    assert bootstrap_error_message(error, labels=labels, markdown=False).endswith(
+        "예시 26.01 DEMO~P1 양산"
+    )
 
 
 def _service_nonpositive(table: str, column: str) -> str:
@@ -552,8 +646,11 @@ def test_a_module_count_stop_says_the_app_cannot_fix_it(
         "HOME — 대당 Capa 계산이 멈췄습니다. 모듈수는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 "
         "않습니다 — 원천의 모듈수를 고쳐 다시 등록하세요.\n\n"
     )
-    assert f"모듈수 표의 {cell.removesuffix(' 1건')}: 1건, 예시 " in stop.message
-    assert "'공정': 'DEMO-P1'" in stop.message
+    assert (
+        f"모듈수 표의 {cell.removesuffix(' 1건')}: 1건, 예시 {literal_markdown('DEMO-P1')}"
+        in stop.message
+    )
+    assert "{'" not in stop.message
     assert "RQ_MODULE" not in stop.message and "기준 정보" not in stop.message
 
 

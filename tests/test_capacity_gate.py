@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import random
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,10 +25,13 @@ from capa_simulation.components.capacity_gate import (
     official_publish_verdict,
     revision_save_verdict,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.process_labels import ProcessLabels, process_labels_from_rules
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
+from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 from capa_simulation.services.scenario_month_merge import merge_scenario_months
 from capa_simulation.services.scenario_transform import MONTHLY_TABLES, NON_MONTHLY_TABLES
 from capa_simulation.services.simulation_cache import (
@@ -210,6 +214,51 @@ def test_the_same_error_with_another_count_is_not_called_a_different_one(
     assert "같은 종류" in verdict.message
     assert "1건" in verdict.message and "2건" in verdict.message
     assert "공식버전으로 지정할 수 없습니다" in _popup_short(verdict.message)
+
+
+def test_a_save_warning_reads_its_examples_with_display_names(
+    tables: dict[str, pd.DataFrame],
+) -> None:
+    """경고에 끼운 오류 글(편집 뒤 · 편집 전)의 예시 키는 dict 꼴 대신 「YY.MM 공정 표시명
+    양산구분」 이다(2026-11-11 입력 점검 검토 보드 F7 (나)). 오류 갈래 판정은 원문 그대로라 같은
+    종류 오류로 남는다."""
+    version = _version()
+    names = tables["RQ_VITAL"]["공정"].astype(str).unique()
+    labels = process_labels_from_rules(
+        pd.DataFrame(
+            [(name, f"표시-{name}") for name in names], columns=list(PROCESS_RENAME_COLUMNS)
+        )
+    )
+
+    plain = revision_save_verdict(
+        version, _edited(version, _vital_blank(tables, 1)), _vital_blank(tables, 2)
+    )
+    named = revision_save_verdict(
+        version,
+        _edited(version, _vital_blank(tables, 1)),
+        _vital_blank(tables, 2),
+        labels=lambda: labels,
+    )
+
+    assert plain.message is not None and named.message is not None
+    assert "같은 종류" in named.message
+    for message in (plain.message, named.message):
+        assert "{'" not in message and "예시 [" not in message
+        assert re.search(r"예시 \d{2}\.\d{2} \S", message)
+    # 경고는 알림 상자(마크다운)다 — 예시 칸 값(표시명)은 `literal_markdown` 으로 막혀 실린다.
+    assert literal_markdown("표시-") in named.message and "표시" not in plain.message
+    assert not any(f" {literal_markdown(name)} " in named.message for name in names)
+
+
+def test_a_passing_check_never_reads_the_display_names(tables: dict[str, pd.DataFrame]) -> None:
+    """표시명은 끼울 오류 글이 있을 때만 읽는다 — 통과하는 저장 · 지정은 읽지 않는다(사이드바 저장
+    팝업 시험처럼 DB 를 흉내 낸 자리에서도 표시명 읽기가 저장소 DB 를 열지 않는다)."""
+
+    def unread() -> ProcessLabels:
+        raise AssertionError("통과하는 검사가 표시명을 읽었다")
+
+    version = _version()
+    assert revision_save_verdict(version, _edited(version, tables), tables, labels=unread).allowed
 
 
 def _density_broken(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:

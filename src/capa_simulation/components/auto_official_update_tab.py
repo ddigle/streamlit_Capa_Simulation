@@ -70,6 +70,7 @@ from capa_simulation.components.process_labels import ProcessLabels, get_process
 from capa_simulation.components.profile_caption import render_profile_heading
 from capa_simulation.components.required_exclusion_notice import required_check_goto
 from capa_simulation.components.scenario_management_tabs import AUTO_UPDATE_TAB_NAME
+from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
     SeenToken,
@@ -700,10 +701,13 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
         reason, warning = split_published_reason(reason)
     kind, icon = _RUN_RESULT_STYLES.get(run.status, ("info", None))
     # 사유는 회차 기록(표 칸 — 평문)과 같은 글이라 짓는 곳(`_RunLog.finish`)이 아니라 알림 칸에
-    # 담는 여기서 막는다 — 저장한 시나리오 이름·원천 시뮬레이션명을 날로 담는다.
+    # 담는 여기서 막는다 — 저장한 시나리오 이름·원천 시뮬레이션명을 날로 담는다. 판정 · 지정 전
+    # 검사가 멈춘 사유의 계산 오류 글은 예시 행을 화면 꼴 「YY.MM 공정 표시명 양산구분」 으로
+    # 바꾼다(`markdown_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나) 「다른 계산 멈춤 자리도
+    # 함께」). 기록 표 「사유」 칸은 기록이라 원문이다.
     queue_flash(
         RUN_RESULT_KEY,
-        markdown_safe_tildes(_run_result_text(run, reason)),
+        markdown_examples(_run_result_text(run, reason), get_process_labels()),
         kind=kind,
         icon=icon,
     )

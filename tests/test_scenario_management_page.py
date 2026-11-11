@@ -634,7 +634,7 @@ def test_clone_that_leaves_demand_out_warns_only_through_the_alert_popup(
     monkeypatch.setattr(
         scenario_management,
         "revision_save_verdict",
-        lambda *args: GateVerdict(True, message, exclusion=True),
+        lambda *args, **kwargs: GateVerdict(True, message, exclusion=True),
     )
     app = AppTest.from_string(script, default_timeout=120).run()
     app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
@@ -675,7 +675,9 @@ def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
     assert release is not None
 
     monkeypatch.setattr(
-        scenario_management, "revision_save_verdict", lambda *args: GateVerdict(False, message)
+        scenario_management,
+        "revision_save_verdict",
+        lambda *args, **kwargs: GateVerdict(False, message),
     )
     app = AppTest.from_string(script, default_timeout=120).run()
     app.segmented_control(key=MODE_KEY).set_value(CLONE_MODE).run()
@@ -683,7 +685,9 @@ def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
     assert [item.value for item in app.error] == [shown]
 
     monkeypatch.setattr(
-        scenario_management, "revision_save_verdict", lambda *args: GateVerdict(True, message)
+        scenario_management,
+        "revision_save_verdict",
+        lambda *args, **kwargs: GateVerdict(True, message),
     )
     _fill_clone(app, "물결표 경고 복제", "CLONE-TILDE-WARNED")
     # 복제 뒤 남은 계산 오류 경고는 알림창 표지로만 간다(설계 규칙 AMB-05 (나)). 단계는 확인
@@ -694,7 +698,9 @@ def test_gate_refusals_and_warnings_keep_tildes_in_example_keys(
     assert not app.warning
 
     monkeypatch.setattr(
-        scenario_management, "official_publish_verdict", lambda *args: GateVerdict(False, message)
+        scenario_management,
+        "official_publish_verdict",
+        lambda *args, **kwargs: GateVerdict(False, message),
     )
     app = AppTest.from_string(script, default_timeout=120)
     _open_official(app, release.scenario_id, release.revision_id)

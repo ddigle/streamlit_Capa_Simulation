@@ -10,6 +10,7 @@ import streamlit as st
 from capa_simulation.components.capacity_gate import derived_save_verdict
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.required_exclusion_notice import required_check_goto
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_list_state import follow_created_scenario
@@ -283,7 +284,7 @@ def render_derived_save(
     if not submitted or already_saved:
         return
     with st.spinner("저장 전에 결과의 Capa 계산을 검사하는 중입니다..."):
-        verdict = derived_save_verdict(tables, gate_sources or (source,))
+        verdict = derived_save_verdict(tables, gate_sources or (source,), labels=get_process_labels)
     if not verdict.allowed:
         st.error(markdown_safe_tildes(verdict.message))
         return

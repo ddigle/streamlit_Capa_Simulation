@@ -41,6 +41,7 @@ from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.required_exclusion_notice import required_check_goto
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_edit_bar import (
@@ -749,7 +750,9 @@ def _render_revision_save(
             reference_version = get_effective_reference_version()
             reference_tables = get_effective_reference_tables()
             active_scenario = ensure_active_scenario(reference_tables, reference_version)
-            verdict = revision_save_verdict(reference_version, active_scenario, reference_tables)
+            verdict = revision_save_verdict(
+                reference_version, active_scenario, reference_tables, labels=get_process_labels
+            )
             if not verdict.allowed:
                 st.error(markdown_safe_tildes(verdict.message))
                 return

@@ -47,6 +47,7 @@ from capa_simulation.components.flash import (
 from capa_simulation.components.grid_shared import outbox_mount, outbox_value
 from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.profile_caption import render_row_value
 from capa_simulation.components.required_exclusion_notice import required_check_goto
 from capa_simulation.components.revision_label import revision_label
@@ -1672,7 +1673,9 @@ def _render_official(
         # 공식버전은 모두의 첫 화면이다. 계산이 안 되는 리비전을 지정하면 모두의 HOME 이
         # 멈춘다. 검사는 HOME 과 같은 캐시 칸을 써서, 통과하면 HOME 이 이미 데워져 있다.
         with st.spinner("공식버전으로 지정할 수 있는지 Capa 계산을 확인하는 중입니다..."):
-            verdict = official_publish_verdict(database_path, revision_id)
+            verdict = official_publish_verdict(
+                database_path, revision_id, labels=get_process_labels
+            )
         if not verdict.allowed:
             st.error(markdown_safe_tildes(verdict.message))
             return
@@ -2241,7 +2244,10 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
         with st.spinner("지금 편집본을 새 시나리오로 복제하는 중입니다..."):
             # 지금 편집본이 새 시나리오의 초기 리비전이 된다 — 리비전 저장과 같은 검사다.
             verdict = revision_save_verdict(
-                get_effective_reference_version(), active_scenario, reference_tables
+                get_effective_reference_version(),
+                active_scenario,
+                reference_tables,
+                labels=get_process_labels,
             )
             if not verdict.allowed:
                 st.error(markdown_safe_tildes(verdict.message))

@@ -81,6 +81,7 @@ PLAIN_SINKS = frozenset({"code", "text", "json", "escape", "_escape"})
 GUARDS = frozenset(
     {
         "bootstrap_error_message",
+        "markdown_examples",
         "markdown_safe_tildes",
         "literal_markdown",
         "literal_names",
@@ -117,10 +118,10 @@ REESCAPING_GUARDS = frozenset({"literal_markdown", "quoted"})
 PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
     ("src/capa_simulation/components/capacity_gate.py", "density_error"): (
         "판정 글 — 자동 갱신 기록 표 칸(평문)에도 남는다. 알림 상자 · 점검 칸은 그리는 자리"
-        "(capacity_gate · scenario_input_check)에서 markdown_safe_tildes"
+        "(capacity_gate · scenario_input_check)에서 markdown_examples(물결표 · 예시 칸 값)"
     ),
     ("src/capa_simulation/components/capacity_gate.py", "_capacity_error"): (
-        "판정 글 — density_error 와 같은 길(그리는 자리에서 markdown_safe_tildes)"
+        "판정 글 — density_error 와 같은 길(그리는 자리에서 markdown_examples)"
     ),
     ("src/capa_simulation/components/equipment_data_workspace.py", "save_equipment_buffer"): (
         "FAB 저장 거부 글 — 늘 다시 던지는 ValueError 에 담겨 받는 쪽이 bootstrap_error_message"
@@ -145,7 +146,7 @@ PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
     ),
     ("src/capa_simulation/scenario_registration.py", "check_registration_capacity"): (
         "등록 때 돌려 본 대당 Capa 계산 글 — 리비전 메모에는 싣지 않고(꼴·개수만), 등록 경고 띠는 "
-        "그리는 자리(bigdataquery_registration._save_scenario)에서 markdown_safe_tildes"
+        "그리는 자리(bigdataquery_registration._save_scenario)에서 markdown_examples"
     ),
 }
 
@@ -153,7 +154,7 @@ PLAIN_EXCEPTION_TEXT: dict[tuple[str, str], str] = {
 PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
     ("src/capa_simulation/auto_official_update_runner.py", "finish"): (
         "자동 갱신 회차 사유 — 회차 기록(기록 표 칸 — 평문)에 남는다. 「지금 실행」 결과 알림은 "
-        "알림 칸에 담는 자리(auto_official_update_tab._hold_run_result)에서 markdown_safe_tildes"
+        "알림 칸에 담는 자리(auto_official_update_tab._hold_run_result)에서 markdown_examples"
     ),
     ("src/capa_simulation/components/app_header.py", "equipment_return_mark"): (
         "새로 읽은 화면의 「공식으로 돌아왔습니다」 이름 — 띠 CSS 변수(퍼센트 인코딩)로만 "

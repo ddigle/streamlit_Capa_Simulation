@@ -11,7 +11,10 @@
 - 수요(`load_shortening_demand`) — 활성 시나리오·조회기간 → 시나리오 키·소요대수 로더·계산 오류
   확인. 못 읽으면 `BOOTSTRAP_ERRORS` 를 그대로 올린다.
 - 달(`shortening_month_options`) — Cut-off 빔·조회기간에 소요대수 없음·고를 달 없음이면
-  `ShorteningStop`(두 화면이 같은 글로 멈춘다).
+  `ShorteningStop`(두 화면이 같은 글로 멈춘다). 달 범위를 다시 꺼내다 멈춘 글은 원문(예시 행도
+  dict 꼴 그대로)으로 짓고 그 예외를 `ShorteningStop.cause` 로 함께 싣는다 — Space 「필요 단축」
+  보기는 그 글을 그대로 쓰고(원본 공정소분류 — 결정 D10), 필요 단축 일정 패널은 같은 예외로 화면
+  표시명 글을 다시 짓는다.
 - 공용 조회 조건(0019)을 못 읽으면 빈 프로필(= 코드 기본 달)로 계속한다 — 두 화면이 같이 물러선다.
 - 샘플 fleet 세 표(`shortening_frames`)와 계획(`load_official_shortening` — 공식 칸, UPEH 가정 토큰
   `()`, 직접 넣은 다섯 밖 목표는 그 값 하나를 더함).
@@ -20,13 +23,13 @@
 
 아래로 내려가는 부름은 **모듈 속성으로** 한다(`page_bootstrap.load_page_context()`·
 `simulation_cache.…`·`equipment_cache.…`) — 시험이 모듈 속성을 갈아 끼워 부름을 센다. 공정
-표시명을 읽지 않는다(표시명은 패널 몫이다).
+표시명을 읽지도 받지도 않는다(표시명은 패널 몫이다).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Final
 
@@ -93,13 +96,16 @@ class ShorteningStop:
     `kind` 는 `scenario`(활성 시나리오 경고 — `message` 는 덧붙일 까닭), `input`(다른 화면에서 채울
     입력이 빠짐 — Cut-off), `info`(그릴 것이 없는 빈 상태), `error` 다. `info` 는 회색 평문 한 줄,
     나머지는 「데이터 Error」 마크 + 알림이다. `reason` 은 알림창 짧은 글 꼬리, `goto` 는 채울
-    입력이 있는 화면(이름, 주소 — Alarm 줄의 「그 화면으로」)이다.
+    입력이 있는 화면(이름, 주소 — Alarm 줄의 「그 화면으로」)이다. `cause` 는 `message` 를 지은
+    예외다 — 이 길은 표시명 없이 원문으로 지으므로, 화면 표시명을 쓰는 화면은 같은 예외로 글을
+    다시 짓는다(필요 단축 일정 패널).
     """
 
     kind: str
     message: str | None = None
     reason: str = ""
     goto: tuple[str, str] | None = None
+    cause: BaseException | None = field(default=None, compare=False, repr=False)
 
     def brief(self, lead: str) -> str:
         """알림창 짧은 글 — 무엇을 못 했는지(`lead`) + 있으면 까닭 꼬리."""
@@ -157,7 +163,11 @@ def shortening_month_options(
     demand: ShorteningDemand, cutoff: pd.DataFrame
 ) -> list[int] | ShorteningStop:
     """고를 수 있는 달, 또는 멈출 까닭(Cut-off 빔·달 범위를 못 꺼냄·조회기간에 소요대수 없음·달
-    없음)."""
+    없음).
+
+    달 범위를 못 꺼낸 멈춤 글은 원문이고 그 예외를 `cause` 로 싣는다 — 표시명 글은 부르는 쪽이
+    같은 예외로 짓는다.
+    """
     if cutoff.empty:
         return ShorteningStop(
             "input",
@@ -171,8 +181,11 @@ def shortening_month_options(
         )
     except page_bootstrap.BOOTSTRAP_ERRORS as exc:
         # 오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다 — 수요를 못 읽은 것과 같은
-        # 경고로 알린다.
-        return ShorteningStop("scenario", page_bootstrap.bootstrap_error_message(exc))
+        # 경고로 알린다. 이 길은 원본 공정소분류라 글은 원문이고, 화면 표시명 글은 받는 쪽이
+        # `cause` 로 다시 짓는다.
+        return ShorteningStop(
+            "scenario", page_bootstrap.bootstrap_error_message(exc, labels=None), cause=exc
+        )
     if demand_months is None:
         # 조회기간에 소요대수가 하나도 없다 — 다른 계산 화면(`resolve_effective_months`)과 같은
         # 문구.

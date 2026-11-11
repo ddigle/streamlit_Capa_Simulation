@@ -457,6 +457,7 @@ with gap_tab:
         # 함수로 넘긴다.
         gap_no_demand_message: Callable[[], str] | None = None
         static_error: str | None = None
+        static_error_full: str | None = None
         try:
             gap_context = load_page_context()
             static_availability = gap_context.reference_tables["RQ_EQP_AVBL"]
@@ -491,8 +492,13 @@ with gap_tab:
             # 계산이 멈춘 오류도 이 문구로 알린다. 그때도 이미 읽은 Static 은 비교에 그대로 쓴다 —
             # 「Static 을 읽지 못해」 문구와 맞지 않는 이 동작은 테스트가 고정한다
             # (`tests/test_equipment_scenario_demand.py`).
-            static_error = bootstrap_error_message(
-                exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+            # 알림 「원본 오류」 칸과 지문(`EQ-08` content)은 표시명 없는 원문이다 — 표시명만 고쳐도
+            # 알림이 다시 서지 않게. 알림 전문만 예시 행을 공정 표시명으로 바꾼 평문이다(알림 칸이
+            # 글자 그대로 그린다 — F7 (나)).
+            gap_databases = (DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+            static_error = bootstrap_error_message(exc, database_paths=gap_databases, labels=None)
+            static_error_full = bootstrap_error_message(
+                exc, database_paths=gap_databases, labels=process_labels, markdown=False
             )
 
         gap_months = _months_between(start_date, end_date)
@@ -563,6 +569,7 @@ with gap_tab:
                 static_owned=static_owned,
                 static_lent=static_lent,
                 static_error=static_error,
+                static_error_full=static_error_full,
                 span_bounds=(span_start, span_end),
                 conversion_ratios=gap_ratios,
                 required_equipment=gap_required_equipment,

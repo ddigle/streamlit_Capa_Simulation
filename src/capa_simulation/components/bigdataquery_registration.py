@@ -40,11 +40,11 @@ from capa_simulation.components.flash import (
     queue_flash,
     render_flash,
 )
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.scenario_list_state import follow_created_scenario
 from capa_simulation.components.scenario_management_tabs import QUERY_TAB_NAME
 from capa_simulation.components.state_alerts import alarm_table_place, alert_table
+from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.widget_generation import bump, widget_key
 from capa_simulation.design import tokens
@@ -852,7 +852,9 @@ def _save_scenario(
         # 보드 st-route-only).
         queue_flash(
             REGISTRATION_CAPACITY_FLASH_KEY,
-            markdown_safe_tildes(registration.capacity.notice(snapshot.revision.revision_no)),
+            markdown_examples(
+                registration.capacity.notice(snapshot.revision.revision_no), get_process_labels()
+            ),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,

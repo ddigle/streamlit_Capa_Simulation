@@ -226,7 +226,7 @@ def sidebar_replacements() -> dict[str, Any]:
         "capture_scenario_preset": lambda _tables: SimpleNamespace(),
         # 저장 검사는 따로 검증한다(`test_capacity_gate.py`). 여기서는 판정을 세션에서 읽어
         # 화면이 그 판정대로 움직이는지만 본다.
-        "revision_save_verdict": lambda *_args: st.session_state.get(
+        "revision_save_verdict": lambda *_args, **_kwargs: st.session_state.get(
             "test_save_verdict", GateVerdict(True)
         ),
         # 옛 리비전 호환 검사는 따로 검증한다(`test_revision_compatibility.py`).

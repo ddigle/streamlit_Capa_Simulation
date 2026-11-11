@@ -270,9 +270,9 @@ except BOOTSTRAP_ERRORS as exc:
     for error_tab in (unit_capacity_tab, required_tab, availability_tab):
         with error_tab:
             render_data_error_mark()
-    stop = calculation_stop_notice(exc)
+    stop = calculation_stop_notice(exc, labels=process_labels)
     alert_page_error(
-        bootstrap_error_message(exc) if stop is None else stop.message,
+        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message,
         code="ST-20",
         text=None if stop is None else stop.text,
         goto=None if stop is None else stop.goto,

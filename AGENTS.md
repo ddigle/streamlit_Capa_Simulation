@@ -3102,6 +3102,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `category_axis` 는 공정을 범주 축에 늘어놓는 그림의 범주 값(원본)과 눈금·hover 글자(표시명)다(8장 ③).
     `ProcessLabelFormatter` 는 값을 글자로 주고받지 않는 자리(버튼·Figure)용이다.
   - `ProcessLabels.version` 은 HOME Figure 캐시 키 원소이고 계산 캐시 키·`content_token` 에는 넣지 않는다.
+- `src/capa_simulation/components/stop_examples.py` — 계산 멈춤 글 속 예시 키(서비스 글의 `예시 [{…}]` dict 꼴)를 화면 글을
+  지을 때만 「YY.MM 공정 표시명 양산구분」 으로 바꾼다(`readable_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나), 설계 규칙
+  UI-DAT-10). 월 → 공정 → 양산구분이 앞이고 그 밖의 칸(제품정보 · 걸린 값)은 서비스 글 차례대로 값만 뒤에, 공정은 같은 예시 묶음
+  안에서 `unique_format_func` 로 짓는다(겹치면 「표시명 (원본)」). 읽지 못한 예시(`nan` 따위 · dict 아닌 목록 · 빈 목록)는 원문
+  그대로다. 물결표 막기보다 먼저 부른다. 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 가는 글은 `markdown_examples` 로
+  짓는다 — 예시 칸 값(공정 표시명 · 원본 이름 · 그 밖의 칸 값)을 `literal_markdown` 으로 막고(표시명도 사람 글 — 9장) 글 전체의
+  물결표를 막는다. 앱이 지은 월 `YY.MM` 은 막지 않는다. 평문 자리(`bootstrap_error_message(markdown=False)`)는 막지 않은 글이다.
+  부르는 자리: `page_bootstrap.calculation_stop_notice(labels=)` · `bootstrap_error_message(labels=)`(멈춘 계산 화면 넷과 계산을 먼저
+  보는 화면 — 공정 Capa 상세 · 제약 시뮬레이션 · 재공 현황 · 가용설비 현황 비교 · 필요 단축 일정(달 범위를 다시 꺼내다 멈춘 글은 공용
+  길 `shortening_source` 가 원문으로 지어 그 예외 `ShorteningStop.cause` 와 함께 돌려주고 패널이 같은 예외로 표시명 글을 다시 짓는다 —
+  `_named_stop`. 공용 길은 표시명을 읽지도 받지도 않는다), 그물 `tests/test_stop_examples.py`. Space 「필요 단축」
+  보기(`space_shortening_view`)의 멈춤 글은 원문이다 — 예시 행도 dict 꼴 그대로이고 이 조각의 꼴이 아니다(`labels=None`, 달 범위도
+  공용 길이 지은 원문 그대로 — 원본 공정소분류 길, 결정 D10 · `tests/test_process_label_boundaries.py`. 이 꼴로 둘지는 TODO 4장 물음).
+  가용설비 현황 비교의 알림 `EQ-08` 은 전문만 화면 꼴 평문이고 「원본 오류」 · 지문은 원문이다(`labels=None` — 표시명만 고쳐도 알림이
+  다시 서지 않게)),
+  `capacity_gate` 의 저장 · 지정 · 파생 저장 경고(`labels` 는 표시명을 내는 함수 — 끼울 오류 글이 있을 때만 부른다), 등록
+  경고(`bigdataquery_registration`), 자동 갱신 「지금 실행」 결과 알림(`auto_official_update_tab._hold_run_result` — 기록 표 「사유」
+  칸은 원문). 서비스 글 · 리비전 메모 · 저장 검사 견줌(`_error_kind`) · 사내 집계 · 자동 갱신 기록은 원문이다. `process_labels` 를
+  실행 때 불러오지 않는다(`page_bootstrap` 이 이 조각을 부르고 `process_labels` 가 `page_bootstrap` 을 부른다 — 표시명은 인자로만).
 - `src/capa_simulation/components/process_rename_management.py` — Admin Area `Proc Rename` 탭. 공용 공정 표시명의
   CSV·Excel 붙여넣기·직접 편집과 저장이다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다. 공용 버전 줄은 「직접 편집」
   제목 옆이다(`profile_caption.render_profile_heading`, 그림 메모 g18). 그 제목 줄(`HEADING_ROW_KEY`) 오른쪽 끝에 「보유 공정
@@ -3194,7 +3213,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/grid_shared.py` (+ `grid_shared_assets/`) — 브라우저 표끼리 함께 쓰는 팔레트(`grid_palette`) · 받은 값 읽기(`state_value` · `outbox_value` · `outbox_mount`) · 자산 잇기(`joined_assets`). 조각은 `nav.js`(`<grid-nav>`) · `outbox.js`(`<grid-outbox>`) · `dom.js` · `cells.css`(칸 상태 차례 그대로 · 꺼진 단추를 감싼 칸의 풍선 `.emg-tip`) · `changes.css`. 등록이 없어 어디서 불러도 된다.
 - `src/capa_simulation/services/grid_outbox.py` — 출납 고르기(`pending_ops` · `MOUNT_LIMIT`)와 앞 세션 op 빼기(`this_session` — 두 표의 `base` 는 `세션 표지:나머지` 꼴이다) — 설비 마스터 표와 시나리오 목록 표가 함께 쓴다. op 의 뜻과 `base` 대조는 부르는 쪽 몫이다.
 - `src/capa_simulation/services/scenario_list_edits.py` — 시나리오 목록 관리의 순수 판정(streamlit · persistence 를 부르지 않는다): op 접기(`fold_ops` — `name` · `move` · `revert` · `open` · `pick`), 지금 저장본에 맞추기(`reconcile`), 막힘(`list_problems` — 규칙 글은 `ListRules` 로 받는다), 수 넷, 네 마운트 data(「점검」 칸 `checks_payload` — r · 리비전명 · 계산, 이름 고치기 없음), 저장 계획(`save_plan`) · 지문(`draft_fingerprint`).
-- `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
+- `src/capa_simulation/components/scenario_input_check.py` — 목록 관리 「점검」 칸(2026-11-11 입력 점검 보드 답 q1 ~ q7). 이 칸 전용 리비전 표(`CHECKS_KEY` — 같은 `picked`, 「계산」 칸은 이 세션에서 센 리비전만 글 · 나머지 「—」 — 세션 칸 `CHECK_LABELS_KEY`) · 칸 머리 한 줄(「rN · 전체 기간 YY.MM–YY.MM」 — 기간은 계산이 본 달, 곧 계획과 달 축이 있는 계산 입력 표의 달을 합친 범위(`revision_input_check.calculation_period` · `capacity_gate.INPUT_CHECK_PERIOD_TABLES` — 2026-11-11 검토 보드 F5 (가))) · 묶음 줄(단계 · 이름 · 수 · 부제, 「행 보기」 · 「그 화면으로」, 펼침의 앞 칸 · 앞 행 · 「넓게 보기」 · 묶음 CSV)을 그린다. 멈춤 부제 풍선은 계산 멈춤 알림 전문이되 첫머리가 그 리비전 「rN」 이다(`calculation_stop_notice(place=)` — 입력 점검 검토 보드 F7 (나)). 셈은 고른 리비전 하나를 칸이 열린 회차에만(`capacity_gate.input_check_verdict`, 숨은 탭 회차는 세지 않음), 「그 화면으로」 는 콜백에서 고른 리비전을 불러온 뒤(미저장 편집이면 사이드바 팝업) 도착 칸을 적고 `page_tabs_state.queue_switch`(`tests/test_scenario_input_check.py`). 도착 탭 key 중 생산 계획 · 산출 결과 것은 그 화면과 함께 쓰는 `navigation` 한 벌(`LOAD_CONVERSION_TAB_KEY` · `CALCULATION_RESULT_TAB_KEY` — 세션 키 한 주인, `tests/test_session_key_collisions.py`)이고 탭 라벨은 화면 글과 시험이 맞댄다.
 - `src/capa_simulation/components/scenario_list_state.py` — 목록 초안의 세션 칸(`load_draft` · `store_draft` · `list_has_edits` · `pending_count`)과 마운트 key, 「목록 관리」 · 「점검」 글(`LIST_MODE` · `SIDE_CHECK` — 경고 탭 길과 화면 위젯이 함께 쓴다), 경고가 가리키는 리비전 칸(`CHECK_TARGET_KEY` — `queue_check_target` 이 적고 「점검」 칸이 서는 목록 관리 회차의 `scenario_management._aim_at_check_target` 이 한 번 꺼내 고른다 · 상세 칸 회차에는 꺼내지 않는다 · 사라진 시나리오는 버린다). 등록이 없어 화면 탭 줄 · 변경 칩이 이것만 읽는다. 「저장 전 변경 n건」 배지는 `pending_count` 가 아니라 그 회차 칸의 수 셋을 더한 `scenario_management._ListView.pending`(`change_counts` — 순서는 옮긴 줄 수)이다.
 - `src/capa_simulation/components/scenario_list_grid.py` (+ `scenario_list_grid_assets/` HTML · CSS · JS) — 목록 관리 브라우저 표(Components v2, 그림자 DOM). 한 등록을 네 자리에 마운트한다 — 시나리오 표 `TABLE_KEY` · 리비전 표 `REVISIONS_KEY` · 저장 전 변경 `CHANGES_KEY` · 「점검」 칸 리비전 표 `CHECKS_KEY`(이름 고치기 없이 「계산」 칩 — 단계 색은 팔레트 `level-*`). 브라우저 → 서버는 상태 값 `outbox` 하나이고 트리거는 없다(`open` · `pick` 도 출납 — 리비전 줄을 누르고 바로 단추를 눌러도 그 리비전에 걸려야 한다). 칸을 쓰는 · 끄는 · 누르는 동안 돌아온 회차는 다시 그리지 않고 받은 data 만 든다(`canRepaint` — 입력칸을 다시 지으면 한글 조합이 깨지고, 누른 사이 줄을 다시 지으면 그 click 이 사라진다). 줄은 다 그리고 `content-visibility: auto`(편집 줄만 `visible`)다 — 끌기 · 낭독기 · `Ctrl+F` 가 깨지지 않는다. 이름 칸 손짓은 연 줄이면 편집, 아니면 먼저 연다. 시험 대역 `tests/scenario_list_fake.py`, 순수 구획 · 가짜 DOM 은 `tests/test_scenario_list_grid_assets.py`. 표 최소 폭은 칸 합이라 긴 이름이 값 칸을 밀지 않고(이름 · 공식버전 · 상태는 말줄임 + 칸 풍선), 리비전 표 높이는 값 줄 · 작업 줄 몫을 남긴다. 두 표 머리는 윗선이 같다 — 작업 줄 높이 + 아래 간격(CSS)이 오른쪽 칸 머리 높이 `SIDE_HEAD_PX` 와 같고, 고르기나 작업 줄이 접히면 시나리오 표 마운트가 둘의 크기를 지켜보며 높은 쪽에 맞춘다 — 오른쪽이 높으면 작업 줄 아래 간격을 늘리고, 작업 줄이 접혀 왼쪽이 높으면 오른쪽 칸 본문을 내린다(`data.side` · `headFit` — 공용 틀은 그대로, 내림은 본문 칸 인라인 `margin-top` 이고 표가 내려가면 거둔다. 접힘 · 쌓임은 CSS 값). 받은 data 에 보낼 op 를 얹은 화면 차례는 한 벌을 쓰고(`currentView` — 칸마다 접으면 누를수록 느려진다), 회차가 부른 다시 그리기는 스크롤을 끌고 가지 않으며(`preventScroll` — 키보드 손짓만 따라간다), 끝에 닿아 꺼지는 이동 단추는 감싼 칸이 초점 · 까닭 풍선을 받고, 저장 전 변경은 되돌린 줄의 초점을 다음 되돌리기로 넘긴다. 그리는 중의 focusout(`S.painting` — `paint` · `repaintCell`)은 부품 밖 이탈로 치지 않아 300ms 묶음을 끊지 않는다.
 - `src/capa_simulation/components/tab_marks.py` — 적용하지 않은 편집이 남은 탭 이름 옆 점(`mark_pending_tabs`,
@@ -4232,12 +4251,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
-  모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다. `load_official_shortening(level=)` 은 화면의 지금 목표가 다섯 밖(직접
-  입력)이면 그 값 하나를 목표 하나 칸에서 받아 더한다(`simulation_cache.load_required_shortening(level=)` — 두 화면이 같은 길).
+  모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지도 받지도 않는다 — 달 범위 멈춤 글은 원문으로 짓고 그 예외를
+  `ShorteningStop.cause` 로 싣는다(필요 단축 일정 패널은 같은 예외로 표시명 글을 다시 짓고 Space 보기는 원문 그대로 쓴다).
+  `load_official_shortening(level=)` 은 화면의 지금 목표가 다섯 밖(직접 입력)이면 그 값 하나를 목표 하나 칸에서 받아
+  더한다(`simulation_cache.load_required_shortening(level=)` — 두 화면이 같은 길).
 - `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 사이드바 목표 줄 · 카드
   흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link` ·
   필터 밖 링크 공정 사건 알림 `report_arrival_filter` → `EQ-24`)과 상세 단추 이동
-  (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10).
+  (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10). 계산
+  멈춤 글도 원문이다 — 예시 행이 dict 꼴 그대로이고 「YY.MM 공정 양산구분」 꼴이 아니다(`labels=None`).
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.
@@ -6883,7 +6905,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   「앱에서 고칠 수 없음 — 원천을 다시 등록」(조회기간 밖 글 `simulation_cache.outside_period_error` 가 모듈수 오류면 `OUTSIDE_PERIOD_MODULE_FIX`(원천 재등록)를 싣고, 계산 멈춤
   전문은 첫머리와 같은 그 대목을 뺀다 — 작은 결정 a10. 표 이름은 화면 이름
   `calculation_stop_tables` 이고 사본 진단 `scripts/benchmark_home.py` 가 그 이름으로 계약 표 이름을 되찾는다), DB 잠금 · 읽기 실패 · 표 자체가
-  깨진 꼴(컬럼 · 월 형식 · 연결 키)과 편집표 밖의 표는 None 이라 예전 꼴이다. 경로 표가 빈 리비전(계획 행만 있는 원천)이 조회기간을
+  깨진 꼴(컬럼 · 월 형식 · 연결 키)과 편집표 밖의 표는 None 이라 예전 꼴이다. 전문의 예시 행은 서비스 글의 dict 꼴 대신 「YY.MM 공정
+  표시명 양산구분」 이다 — 멈춘 화면이 그 화면의 표시명을 알림(`labels=`)과 None 일 때의 글(`bootstrap_error_message(labels=)`)에 함께
+  넘기고, 입력 점검 풍선은 첫머리를 화면 이름 대신 그 리비전 「rN」 으로 둔다(`place=` — 2026-11-11 입력 점검 검토 보드 F7 (나),
+  `components/stop_examples.py`). 경로 표가 빈 리비전(계획 행만 있는 원천)이 조회기간을
   정하다 멈춘 글(「RQ_REQB에 선택할 생산계획년월 데이터가 없습니다」 꼴)은 모든 화면이 지나는 `bootstrap_error_message` 가
   「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.」 로 바꾼다(`empty_source_table_stop` — 경로 표 셋, 이름은 등록 점검과 한
   사전 `scenario_registration.ROUTE_TABLES`, 사본 진단은 그 글 꼴로 표를 되찾는다 — 검수 보드 st-month-text). 계획 표가 빈 리비전(경로 행만 있는 원천 —
@@ -7466,7 +7491,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
   공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·
-  Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션,
+  Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션, 계산 멈춤 글의 예시 행 —
+  `stop_examples.markdown_examples`(점검 풍선 · 공식 지정 거부 · 저장 경고 · 계산 화면 알림),
   `tests/test_process_label_markdown_sinks.py`). 「변경 메모」 가 출처가 되는 공용 프로필 버전 캡션은
   `profile_version_caption` 이 출처를 막아 짓는다 — 날로 이으면 판정 기준·선행 B/O·확보율 보정 캡션에 메모의 물결표·
   별표·`$`·백틱이 꾸밈으로 그려졌다(2026-10-27 E2E, `tests/test_profile_caption.py`).

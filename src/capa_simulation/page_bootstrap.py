@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, NamedTuple, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Final, NamedTuple, ParamSpec, TypeVar, overload
 
 import duckdb
 import pandas as pd
@@ -29,6 +29,7 @@ import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts, settings
 from capa_simulation.components import write_guard
 from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
+from capa_simulation.components.stop_examples import markdown_examples, readable_examples
 from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
@@ -58,6 +59,9 @@ from capa_simulation.sidebar_status import (
     show_calculation_stopped,
     show_month_range_unavailable,
 )
+
+if TYPE_CHECKING:
+    from capa_simulation.components.process_labels import ProcessLabels
 
 # 페이지 준비 단계에서 실제로 나올 수 있는 예외다. 활성 리비전이 없으면 RuntimeError,
 # 기준정보 컬럼이 비면 KeyError·ValueError·TypeError 다. **DuckDB 실패는 OSError 가
@@ -219,6 +223,7 @@ def bootstrap_error_message(
     *,
     database_paths: Sequence[Path] = (DUCKDB_PATH,),
     markdown: bool = True,
+    labels: ProcessLabels | None = None,
 ) -> str:
     """화면에 보여 줄 오류 문구.
 
@@ -256,6 +261,12 @@ def bootstrap_error_message(
     생산계획년월 데이터가 없습니다」)은 「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐
     다시 등록하세요.」 꼴로 바꾼다(`empty_source_table_stop` — 계획 표는 「「PKG PLAN」 표가 비어
     …」) — 모든 계산 화면의 오류 알림이 이 함수를 지난다.
+
+    **계산 멈춤 자리는 그 화면의 공정 표시명(`labels`)을 넘긴다** — 그러면 나머지 예외 글 속 예시
+    키(`예시 [{…}]`)를 화면 꼴 「YY.MM 공정 표시명 양산구분」 으로 바꾼다(`stop_examples.
+    readable_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나)). 안 넘기면 원문 그대로다. 마크다운
+    글이면 예시 칸 값(표시명 따위 사람 글)을 `literal_markdown` 으로 막는다(`markdown_examples` —
+    표시명의 `*` · `$` 가 꾸밈 · 수식이 되지 않게), `markdown=False` 면 막지 않는다.
     """
     if isinstance(exc, reference_cache.NoActiveRevision) and _only_archived_scenarios():
         return ARCHIVED_ONLY_MESSAGE
@@ -263,7 +274,10 @@ def bootstrap_error_message(
     if empty_table is not None:
         return empty_table
     if not isinstance(exc, duckdb.Error):
-        return markdown_safe_tildes(exc) if markdown else str(exc)
+        text = str(exc)
+        if labels is None:
+            return markdown_safe_tildes(text) if markdown else text
+        return markdown_examples(text, labels) if markdown else readable_examples(text, labels)
     files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
     if is_own_process_lock(exc):
         return (
@@ -331,15 +345,26 @@ class CalculationStop(NamedTuple):
     앱에서 고칠 수 없으면 None(멈춘 화면 그대로)."""
 
     message: str
-    """알림 전문 — 어느 화면의 멈춤인지 · 고칠 곳 · 건수와 예시 행. 표 이름은 화면 이름이다."""
+    """알림 전문 — 어느 화면(또는 리비전)의 멈춤인지 · 고칠 곳 · 건수와 예시 행. 표 이름은 화면
+    이름이고 예시 행은 「YY.MM 공정 표시명 양산구분」 꼴이다. 마크다운 글이다 — 예시 칸 값은
+    `literal_markdown` 으로 막혀 있고 알림은 평문으로 걷어(`alerts.plain_text`) 싣는다."""
 
 
-def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
+def calculation_stop_notice(
+    exc: BaseException, *, labels: ProcessLabels | None = None, place: str | None = None
+) -> CalculationStop | None:
     """받은 오류가 기준정보 한 칸 때문에 멈춘 대당 Capa 계산이면 그 알림 재료, 아니면 None.
 
     멈춘 자리의 `render_data_error(stop.message, code=…, text=stop.text, goto=stop.goto)` 로 쓴다.
-    None 이면 지금처럼 `bootstrap_error_message(exc)` 만 넘긴다 — 같은 `except BOOTSTRAP_ERRORS` 가
-    DB 잠금 · 읽기 실패와 자료 없는 달도 받고, 그 갈래에는 고칠 화면이 없다(설계 규칙 UI-NTF-08).
+    None 이면 지금처럼 `bootstrap_error_message(exc, labels=…)` 만 넘긴다 — 같은 `except
+    BOOTSTRAP_ERRORS` 가 DB 잠금 · 읽기 실패와 자료 없는 달도 받고, 그 갈래에는 고칠 화면이
+    없다(설계 규칙 UI-NTF-08).
+
+    전문의 예시 행은 서비스 글의 dict 꼴 대신 「YY.MM 공정 표시명 양산구분」 이다(`stop_examples` —
+    2026-11-11 입력 점검 검토 보드 F7 (나)). 공정 표시명은 그 화면의 `labels` 로 짓고(겹치면
+    「표시명 (원본)」), 안 주면 원본 이름이다. 전문 첫머리는 그 화면 이름이고 `place` 를 주면 그
+    말이다 — 저장 리비전을 세는 입력 점검 풍선은 「rN」 이다(멈춘 것은 그 화면이 아니라 고른
+    리비전이다).
 
     기준 정보 편집표의 칸(빈 칸 · 숫자 아닌 칸 · 0 이하 칸 · UPEH 표 Main · MI 행 값)이면 고칠
     표를 말하고 「그 화면으로」 가 기준 정보를 연다. 모듈수(`RQ_MODULE`)는 앱에서 고칠 수 없어
@@ -364,14 +389,17 @@ def calculation_stop_notice(exc: BaseException) -> CalculationStop | None:
     what = f"{cell} {groups['count']}건" if groups.get("count") else cell
     module = table == _MODULE_TABLE
     name = calculation_stop_tables()[table]
-    # 건수가 있는 꼴은 머리를 통째로 칸 이름으로, 없는 꼴(UPEH 표)은 표 이름만 바꾼다.
-    body = bootstrap_error_message(exc)
+    # 건수가 있는 꼴은 머리를 통째로 칸 이름으로, 없는 꼴(UPEH 표)은 표 이름만 바꾼다. 멈춤 글은
+    # ValueError 라 `bootstrap_error_message` 와 같은 물결표 막기이고, 예시를 바꾸며 칸 값(사람이
+    # 적은 이름 · 값)을 `literal_markdown` 으로 막는다 — 전문은 알림(평문으로 걷음) · 풍선
+    # (마크다운)으로 간다.
+    body = markdown_examples(error, labels)
     body = (
         body.replace(found[0], f"{name} 표의 {cell}")
         if groups.get("count")
         else body.replace(f"{table}의", f"{name} 표의")
     )
-    page = alerts.current_page()[0]
+    page = alerts.current_page()[0] if place is None else place
     lead = f"{f'{page} — ' if page else ''}대당 Capa 계산이 멈췄습니다."
     if module:
         # 조회기간 밖 글의 고칠 곳 대목은 첫머리와 같은 말이라 뺀다(두 번 읽히지 않게).

@@ -304,7 +304,7 @@ except BOOTSTRAP_ERRORS as exc:
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON, default=True):
         st.caption(NO_PROCESS_MARK)
-    message = bootstrap_error_message(exc)
+    message = bootstrap_error_message(exc, labels=process_labels)
     render_data_error(message, code="CS-01", text="제약 시뮬레이션을 준비하지 못했습니다")
     st.stop()
 

@@ -56,6 +56,7 @@ from capa_simulation.components.equipment_scenario_status import (
 )
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.qual_deadline_calculator import (
     PASTE_TEXT_KEY,
     render_qual_deadline_calculator,
@@ -241,8 +242,9 @@ try:
         demand.loader,
     )
 except BOOTSTRAP_ERRORS as exc:
+    # 계산 멈춤 글의 예시 행은 공정 표시명으로 — 멈춘 회차에만 읽는다(F7 (나)).
     shortening_error = bootstrap_error_message(
-        exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+        exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH), labels=get_process_labels()
     )
 render_required_shortening_tab(
     equipment=dashboard_equipment,

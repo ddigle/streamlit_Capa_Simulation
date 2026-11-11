@@ -257,9 +257,9 @@ except BOOTSTRAP_ERRORS as exc:
     threshold_caption_slot.caption(
         securement_threshold_caption(thresholds, start_month=0, end_month=0, with_warning=True)
     )
-    stop = calculation_stop_notice(exc)
+    stop = calculation_stop_notice(exc, labels=process_labels)
     render_data_error(
-        bootstrap_error_message(exc) if stop is None else stop.message,
+        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message,
         code="ST-20",
         text=None if stop is None else stop.text,
         goto=None if stop is None else stop.goto,

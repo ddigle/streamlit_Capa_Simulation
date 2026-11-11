@@ -577,7 +577,7 @@ def test_a_refused_save_form_does_not_grow_a_second_save_button(
 
     _, database, base, donor = sources
 
-    def refuse(*args: object) -> object:
+    def refuse(*args: object, **kwargs: object) -> object:
         raise ValueError("저장 쪽 거부")
 
     monkeypatch.setattr(scenario_transform, "derived_save_verdict", refuse)
@@ -703,7 +703,7 @@ def test_a_refused_derived_save_writes_nothing(
     monkeypatch.setattr(
         scenario_transform,
         "derived_save_verdict",
-        lambda *args: GateVerdict(False, "이번 머지가 깨뜨린 것입니다"),
+        lambda *args, **kwargs: GateVerdict(False, "이번 머지가 깨뜨린 것입니다"),
     )
     app = _app(database, base, donor)
     app.text_input(key="scenario_merge_name").set_value("막힐 머지")
@@ -717,7 +717,7 @@ def test_a_refused_derived_save_writes_nothing(
     monkeypatch.setattr(
         scenario_transform,
         "derived_save_verdict",
-        lambda *args: GateVerdict(True, "원본부터 있던 오류가 남아 있습니다"),
+        lambda *args, **kwargs: GateVerdict(True, "원본부터 있던 오류가 남아 있습니다"),
     )
     _save_button(app).click().run()
 
@@ -740,7 +740,9 @@ def test_the_save_notices_keep_tildes_in_names_as_typed(
     repository, database, base, donor = sources
     refusal = "이 결과는 Capa 계산이 실패해 저장하지 않았습니다. 오류: 「P~Q~R」 칸"
     monkeypatch.setattr(
-        scenario_transform, "derived_save_verdict", lambda *args: GateVerdict(False, refusal)
+        scenario_transform,
+        "derived_save_verdict",
+        lambda *args, **kwargs: GateVerdict(False, refusal),
     )
     app = _app(database, base, donor)
     app.text_input(key="scenario_merge_name").set_value("머지~결과~본")
@@ -751,7 +753,9 @@ def test_the_save_notices_keep_tildes_in_names_as_typed(
 
     warning = "원본(베이스~2027~)부터 있던 Capa 계산 오류가 결과에도 남아 있습니다."
     monkeypatch.setattr(
-        scenario_transform, "derived_save_verdict", lambda *args: GateVerdict(True, warning)
+        scenario_transform,
+        "derived_save_verdict",
+        lambda *args, **kwargs: GateVerdict(True, warning),
     )
     _save_button(app).click().run()
 

@@ -76,7 +76,7 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 import pandas as pd
@@ -526,9 +526,13 @@ def _prepare(
     demand = ShorteningDemand(
         context=context, key=required_equipment_key, loader=required_equipment
     )
+    # 화면에서만 갈아 끼운다 — 계산·CSV 캐시 키에는 닿지 않으므로 표시명을 고치면 다음 회차에 그대로
+    # 보인다(공용 프로필 캐시는 Admin 저장이 비운다). 달 범위 멈춤 글의 예시 행도 이 표시명으로
+    # 다시 짓는다(`_named_stop` — F7 (나)).
+    labels = process_labels_module.get_process_labels()
     month_options = shortening_month_options(demand, cutoff)
     if isinstance(month_options, ShorteningStop):
-        return _mark_empty_card(month_options, controls)
+        return _mark_empty_card(_named_stop(month_options, labels), controls)
     profile = shortening_filter_profile_or_default(database_path)
     with controls:
         # 무엇을 볼지가 맨 위 — 그 밑이 「공용 설정」 묶음(기간·공정)이다.
@@ -563,9 +567,6 @@ def _prepare(
     plan = official.plan
 
     ordered = _ordered_processes(plan, context)
-    # 화면에서만 갈아 끼운다 — 계산·CSV 캐시 키에는 닿지 않으므로 표시명을 고치면 다음 회차에 그대로
-    # 보인다(공용 프로필 캐시는 Admin 저장이 비운다).
-    labels = process_labels_module.get_process_labels()
     with controls:
         selected = _render_process_filter(
             ordered, profile=profile, labels=labels, database_path=database_path
@@ -589,6 +590,18 @@ def _prepare(
         assumption=assumption,
         shown_baselines=shown_baselines,
     )
+
+
+def _named_stop(stop: ShorteningStop, labels: ProcessLabels) -> ShorteningStop:
+    """공용 길이 원문으로 지어 온 멈춤 글을 같은 예외(`cause`)로 다시 짓는다 — 예시 행이 이 화면의
+    공정 표시명 꼴이다. `shortening_source` 는 표시명을 읽지도 받지도 않는다(Space 「필요 단축」
+    보기가 같은 길을 원본 공정소분류로 쓴다 — 결정 D10). 예외가 없는 멈춤은 그대로다.
+
+    돌려주는 멈춤은 예외를 놓는다 — 본문 프래그먼트 인자로 다음 앱 회차까지 남으므로 예외의
+    traceback(계산 프레임의 지역 값)을 쥐지 않게."""
+    if stop.cause is None:
+        return stop
+    return replace(stop, message=bootstrap_error_message(stop.cause, labels=labels), cause=None)
 
 
 def _mark_empty_card(
