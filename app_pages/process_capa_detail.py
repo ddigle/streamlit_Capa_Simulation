@@ -82,6 +82,7 @@ from capa_simulation.components.equipment_scenario_status import (
     equipment_basis_label,
     render_equipment_scenario_row,
     render_legacy_trace_warning,
+    render_stopped_equipment_scenario_row,
 )
 from capa_simulation.components.intro_summary import latest_official_revision
 from capa_simulation.components.literal_markdown import literal_markdown
@@ -305,18 +306,6 @@ def _stop_with_error(message: str) -> NoReturn:
     st.stop()
 
 
-def _render_stopped_equipment_row() -> None:
-    """계산이 멈춘 회차의 「설비 시나리오」 줄 — 정상 회차처럼 세션 설비 시나리오를 잠그지 않고
-    세운다(2026-11-10 답 Q2-29 — 다른 설비 시나리오로 옮기는 길이고, 아래 공정 줄 · 카드가 한 줄
-    올라오지 않는다). HOME 칸 방문의 공식 고정은 공정 · 달을 정한 뒤의 일이라 걸지 않는다. 설비 DB
-    를 못 읽으면 줄 없이 둔다 — 그 까닭은 계산이 서는 회차의 설비 일정 구획이 말한다."""
-    try:
-        session = resolve_equipment_session(str(EQUIPMENT_DUCKDB_PATH.resolve()))
-    except BOOTSTRAP_ERRORS:
-        return
-    render_equipment_scenario_row(session)
-
-
 try:
     # 판정 기준(HOME 설정 → 판정 기준 탭의 공용 프로필)·공통 진입·유효 기간(`RQ_REQB`)·시나리오
     # 키·확보율·공정 선택지를 제약 시뮬레이션과 **같은 차례**로
@@ -324,7 +313,9 @@ try:
     # 공정·기본 달을 정할 때도 HOME·Static Capa 와 같은 판정 (`thresholds.status`)을 쓴다.
     page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
-    _render_stopped_equipment_row()
+    # 설비 시나리오 줄은 잠그지 않고 선다(2026-11-10 답 Q2-29). HOME 칸 방문의 공식 고정은 공정 ·
+    # 달을 정한 뒤의 일이라 걸지 않는다.
+    render_stopped_equipment_scenario_row()
     # 패널의 공정 줄도 잠긴 채 자리를 지킨다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
     render_stopped_process_field()
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.

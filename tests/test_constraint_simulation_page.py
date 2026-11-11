@@ -47,6 +47,7 @@ from capa_simulation.components.constraint_simulation_figures import (
     ConstraintLabels,
     general_label,
 )
+from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENARIO_FIELD_KEY
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.preset_number_field import CUSTOM_OPTION
 from capa_simulation.components.process_field import CONTEXT_KEY as PROCESS_CONTEXT_KEY
@@ -828,6 +829,34 @@ def test_a_stopped_entry_keeps_the_locked_process_row(databases: tuple[Path, Pat
     assert (field.label, field.disabled) == ("계산 멈춤", True)
     # 조건 카드는 멈춘 회차에도 서고(빈 구역을 만들지 않는다) 계산은 돌지 않는다.
     assert not app.metric
+
+
+def _equipment_field(app: AppTest) -> Any:
+    """사이드바 「설비 시나리오」 값 칸(단독 실행이라 칸 등록이 없어 사이드바에 바로 선다)."""
+    found = [button for button in app.sidebar.button if button.key == EQUIPMENT_SCENARIO_FIELD_KEY]
+    return found[0] if found else None
+
+
+def test_a_stopped_entry_keeps_the_equipment_scenario_row_unlocked(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """공통 진입이 멈춘 회차에도 「설비 시나리오」 줄이 정상 회차처럼 잠그지 않은 채 선다(2026-11-11
+    보드 C1 — 공정 Capa 상세 Q2-29 와 같은 길) — 다른 설비 시나리오로 옮기는 길이고, 빠지면 아래
+    잠긴 공정 줄 · 조건 카드가 한 줄 올라온다. 줄 차례도 정상 회차와 같다."""
+    normal = _ok(_app(dynamic_databases).run())
+    expected = _equipment_field(normal)
+    assert expected is not None and not expected.disabled
+
+    app = _app(dynamic_databases, fail_bootstrap=True)
+    app.run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    field = _equipment_field(app)
+    assert field is not None
+    assert (field.label, field.disabled) == (expected.label, False)
+    assert app.button(key=PROCESS_FIELD_KEY).disabled
+    keys = [str(button.key) for button in app.sidebar.button]
+    assert keys.index(EQUIPMENT_SCENARIO_FIELD_KEY) < keys.index(PROCESS_FIELD_KEY)
 
 
 def test_a_process_without_equipment_stops_with_its_reason(
