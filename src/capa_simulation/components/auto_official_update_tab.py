@@ -68,7 +68,10 @@ from capa_simulation.components.literal_markdown import (
 )
 from capa_simulation.components.process_labels import ProcessLabels, get_process_labels
 from capa_simulation.components.profile_caption import render_profile_heading
-from capa_simulation.components.required_exclusion_notice import required_check_goto
+from capa_simulation.components.required_exclusion_notice import (
+    REQUIRED_TAB_GOTO,
+    required_check_target,
+)
 from capa_simulation.components.scenario_management_tabs import AUTO_UPDATE_TAB_NAME
 from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.components.write_guard import (
@@ -723,7 +726,8 @@ def _hold_run_result(run: AutoOfficialUpdateRun) -> None:
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
-            goto=required_check_goto(run.created_scenario_id, run.filtered_revision_id),
+            goto=REQUIRED_TAB_GOTO,
+            target=required_check_target(run.created_scenario_id, run.filtered_revision_id),
         )
 
 

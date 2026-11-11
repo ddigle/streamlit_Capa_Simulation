@@ -399,13 +399,42 @@ class AlertTable(TypedDict):
     help: dict[str, str]
 
 
+class GotoTarget(TypedDict):
+    """「그 화면으로」 가 그 화면 · 탭에 닿았을 때 서버에 보내는 대상 — 줄이 들고 다니고 누를 때만
+    간다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). `kind` 는 받는 쪽 이름이고 알림 칸이 아는
+    종류만 받는다(`components/alert_center.py` `_on_goto`). 지금은 하나 — 「소요대수에 들지 않은
+    수요」 경고가 든 리비전(`scenario_list_state.CHECK_TARGET_KIND`)."""
+
+    kind: str
+    scenario: str
+    revision: str
+
+
+# 대상 칸 하나의 글자 수 끝 — id 는 uuid(36자)라 넉넉하다. 값은 브라우저 탭 저장소에서 오므로 본다.
+GOTO_TARGET_LIMIT: Final = 80
+
+
+def goto_target(value: object) -> GotoTarget | None:
+    """트리거 · 표지에 실린 값을 대상으로 읽는다. 세 칸이 모두 비지 않은 글(각 `GOTO_TARGET_LIMIT`
+    자 안)일 때만 — 그 밖은 None(브라우저 탭 저장소에서 온 값이라 꼴을 본다)."""
+    if not isinstance(value, Mapping):
+        return None
+    parts = [value.get(name) for name in ("kind", "scenario", "revision")]
+    if not all(isinstance(part, str) and 0 < len(part) <= GOTO_TARGET_LIMIT for part in parts):
+        return None
+    kind, scenario, revision = (str(part) for part in parts)
+    return GotoTarget(kind=kind, scenario=scenario, revision=revision)
+
+
 class AlertNote(TypedDict, total=False):
     """표지 한 칸에 싣는 알림 하나(JSON). 알림 칸 JS 가 읽는 계약이다.
 
     - 사건: `id`(브라우저가 한 번만 띄운다) · `code` · `kind="event"` · `level` · `short` · `full`.
     - 상태: `kind="state"` · `scope`(지문 범위의 짧은 해시) · `fp`(지문) · `active` · 글.
     - 둘 다: `page`·`href`(그 화면 이름 · 주소 — 「그 화면으로」) · `tab`(그 화면 안 탭 이름 —
-      「그 화면으로」 가 그 탭을 연다) · `scope_label`(로그의 범위 줄) · `cause`(계기) ·
+      「그 화면으로」 가 그 탭을 연다) · `target`(그 화면 · 탭에 닿았을 때 서버에 보낼 대상 —
+      `GotoTarget`, 사건 알림 `flash.queue_flash(target=)` 만 싣는다) · `scope_label`(로그의
+      범위 줄) · `cause`(계기) ·
       `detail`(원본 오류) · `tables`(딸린 표들 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
       `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
       읽는다) · `again`(다시 보냄) · `keep`(자리에 마크만 남은 오류 — Alarm 줄이 전문의 유일한
@@ -421,6 +450,7 @@ class AlertNote(TypedDict, total=False):
     page: str
     href: str
     tab: str
+    target: GotoTarget
     scope: str
     scope_label: str
     fp: str

@@ -11,7 +11,10 @@ from capa_simulation.components.capacity_gate import derived_save_verdict
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
-from capa_simulation.components.required_exclusion_notice import required_check_goto
+from capa_simulation.components.required_exclusion_notice import (
+    REQUIRED_TAB_GOTO,
+    required_check_target,
+)
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.scenario_list_state import follow_created_scenario
 from capa_simulation.components.widget_generation import (
@@ -349,8 +352,9 @@ def render_derived_save(
             # 소요대수에 들지 않은 수요는 새 시나리오의 리비전을 고른 목록 관리 「점검」 칸으로 간다
             # (리비전 저장 · 복제 · 공식 지정과 같다 — 검토 보드 F4 (나)). 파생 저장 검사
             # (`derived_save_verdict`)는 지금 그 경고를 내지 않는다.
-            goto=(
-                required_check_goto(
+            goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
+            target=(
+                required_check_target(
                     snapshot.scenario.scenario_id if snapshot is not None else None,
                     snapshot.revision.revision_id if snapshot is not None else None,
                 )

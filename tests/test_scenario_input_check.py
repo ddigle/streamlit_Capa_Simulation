@@ -58,6 +58,7 @@ from capa_simulation.components.scenario_list_grid import (
 )
 from capa_simulation.components.scenario_list_state import (
     CHECK_TARGET_KEY,
+    CHECK_TARGET_KIND,
     DRAFT_KEY,
     LIST_MODE,
     SIDE_CHECK,
@@ -672,36 +673,38 @@ def test_the_warning_goto_walks_to_the_check_side_by_the_widget_labels() -> None
     assert f"{LIST_MODE} 「{SIDE_CHECK}」 칸" in REQUIRED_LIST_NOTE
 
 
-def test_the_goto_helper_writes_the_target_only_when_it_knows_the_revision() -> None:
-    """쓴 리비전을 알면 적고, 모르면(빠른 둘째 누름이 이어받은 회차 따위) 갈 곳만 준다."""
+def test_the_goto_target_rides_on_the_row_only_when_the_revision_is_known() -> None:
+    """경고 줄이 들고 갈 대상 — 쓴 리비전을 알면 그 리비전, 모르면(빠른 둘째 누름이 이어받은 회차
+    따위) None 이라 갈 곳만 남는다. 어느 쪽이든 세션에는 아무것도 적지 않는다 — 누를 때만 알림 칸이
+    적는다(2026-11-11 다음 배포 물음 보드 F4 뒤 (a))."""
     app = AppTest.from_string(
         "import streamlit as st\n"
-        "from capa_simulation.components.required_exclusion_notice import required_check_goto\n"
-        "st.session_state['known'] = required_check_goto('S', 'R')\n"
-        "st.session_state['first'] = st.session_state.get('scenario_list_check_target')\n"
-        "st.session_state.pop('scenario_list_check_target', None)\n"
-        "st.session_state['unknown'] = required_check_goto('S', None)\n"
-        "st.session_state['second'] = st.session_state.get('scenario_list_check_target')\n"
+        "from capa_simulation.components.required_exclusion_notice import required_check_target\n"
+        "before = set(st.session_state.keys())\n"
+        "st.session_state['known'] = required_check_target('S', 'R')\n"
+        "st.session_state['unknown'] = required_check_target('S', None)\n"
+        "st.session_state['written'] = sorted(set(st.session_state.keys()) - before)\n"
     ).run()
 
     assert not app.exception
-    assert app.session_state["known"] == app.session_state["unknown"] == REQUIRED_TAB_GOTO
-    assert app.session_state["first"] == ("S", "R")
-    assert app.session_state["second"] is None
+    assert app.session_state["known"] == {
+        "kind": CHECK_TARGET_KIND,
+        "scenario": "S",
+        "revision": "R",
+    }
+    assert app.session_state["unknown"] is None
+    assert app.session_state["written"] == ["known", "unknown"]
     assert CHECK_TARGET_KEY == "scenario_list_check_target"
 
 
-def test_a_queued_warning_target_is_picked_when_the_check_side_shows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """경고가 적어 둔 리비전 — 목록이 다른 시나리오를 연 채여도 「점검」 칸이 서는 회차에 그
-    시나리오를 열고 그 리비전을 고른다(최신도 올라와 있는 것도 아닌 리비전이어도 고름 씨앗이 덮지
-    않는다). 「상세」 칸 회차에는 꺼내지 않고, 한 번 쓴 뒤에는 사용자가 고른 줄이 이긴다."""
-    script, database = _seeded(tmp_path)
+def _press(app: AppTest, scenario_id: str, revision_id: str) -> None:
+    """경고 줄 「그 화면으로」 누름 — 알림 칸이 탭 길(목록 관리 › 「점검」)을 다 연 회차에 콜백이
+    하는 일(`alert_center._on_goto` → `queue_check_target`)을 다음 회차 앞에 둔다."""
+    app.session_state[CHECK_TARGET_KEY] = (scenario_id, revision_id)
+
+
+def _other_scenario(database: Path, base: str) -> str:
     repository = DuckDBScenarioRepository(database)
-    scenario_id, base = _official(database)
-    target = _save(database, scenario_id, base, _with_exclusions, "빠짐")
-    later = _save(database, scenario_id, base, _vital_blank, "나중")
     from capa_simulation.persistence.models import ScenarioCreate
 
     official = repository.load_revision(base)
@@ -716,13 +719,28 @@ def test_a_queued_warning_target_is_picked_when_the_check_side_shows(
         official.tables,
         official.preset,
     )
+    return other.scenario.scenario_id
+
+
+def test_a_pressed_target_is_picked_when_the_check_side_shows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """누른 줄의 리비전 — 목록이 다른 시나리오를 연 채여도 「점검」 칸이 서는 회차에 그 시나리오를
+    열고 그 리비전을 고른다(최신도 올라와 있는 것도 아닌 리비전이어도 고름 씨앗이 덮지 않는다).
+    「상세」 칸 회차에는 꺼내지 않고(그 대상은 다음 앱 전체 회차 앞에서 알림 칸이 버린다 —
+    `test_alert_center`), 한 번 쓴 뒤에는 사용자가 고른 줄이 이긴다."""
+    script, database = _seeded(tmp_path)
+    scenario_id, base = _official(database)
+    target = _save(database, scenario_id, base, _with_exclusions, "빠짐")
+    later = _save(database, scenario_id, base, _vital_blank, "나중")
+    other = _other_scenario(database, base)
     app, browser, calls = _check_app(script, monkeypatch, side=SIDE_DETAIL)
-    browser.open(other.scenario.scenario_id, detail=True)
-    assert _draft(app).opened == other.scenario.scenario_id
-    app.session_state[CHECK_TARGET_KEY] = (scenario_id, target)
+    browser.open(other, detail=True)
+    assert _draft(app).opened == other
+    _press(app, scenario_id, target)
 
     browser.run()
-    assert _draft(app).opened == other.scenario.scenario_id
+    assert _draft(app).opened == other
     assert app.session_state[CHECK_TARGET_KEY] == (scenario_id, target)
 
     reveal = (
@@ -748,15 +766,59 @@ def test_a_queued_warning_target_is_picked_when_the_check_side_shows(
     assert _draft(app).picked == base
 
 
+def test_each_press_picks_its_own_rows_revision_and_a_hand_opened_check_moves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 경고 줄을 다시 누르면 그 사이 고른 리비전에서 다시 그 줄의 리비전으로, 앞 경고 줄을
+    누르면 그 줄의 리비전으로 간다 — 줄이 대상을 들고 다닌다(2026-11-11 다음 배포 물음 보드 F4 뒤
+    (a)). 누르지 않고 손으로 연 「점검」 칸은 연 시나리오 · 고름을 그대로 둔다 — 경고를 냈다고
+    세션에 남는 것이 없다(저장 · 지정 · 복제 · 자동 갱신 시험이 본다)."""
+    script, database = _seeded(tmp_path)
+    scenario_id, base = _official(database)
+    earlier = _save(database, scenario_id, base, _with_exclusions, "앞 경고")
+    newer = _save(database, scenario_id, base, _with_exclusions, "뒤 경고")
+    other = _other_scenario(database, base)
+    app, browser, calls = _check_app(script, monkeypatch)
+
+    _press(app, scenario_id, newer)
+    browser.run()
+    assert (_draft(app).opened, _draft(app).picked) == (scenario_id, newer)
+
+    # 그 사이 다른 리비전을 고른 뒤 같은 줄을 다시 누름.
+    browser.send(CHECKS_KEY, {"op": "pick", "owner": scenario_id, "id": base})
+    browser.run()
+    assert _draft(app).picked == base
+    _press(app, scenario_id, newer)
+    browser.run()
+    assert _draft(app).picked == newer
+
+    # 앞 경고 줄.
+    _press(app, scenario_id, earlier)
+    browser.run()
+    assert _draft(app).picked == earlier
+    assert last(calls, CHECKS_KEY)["picked"] == earlier
+
+    # 손으로 연 「점검」 — 상세 칸에서 다른 시나리오를 보다가 점검으로.
+    app.session_state[SIDE_KEY] = SIDE_DETAIL
+    browser.open(other, detail=True)
+    assert _draft(app).opened == other
+    app.session_state[SIDE_KEY] = SIDE_CHECK
+    browser.run()
+
+    assert not app.exception
+    assert CHECK_TARGET_KEY not in app.session_state
+    assert _draft(app).opened == other
+
+
 def test_a_warning_target_for_a_gone_scenario_is_dropped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """그 사이 보관 · 삭제된 시나리오를 적은 경고는 조용히 버린다 — 연 시나리오 · 고름은
-    그대로다."""
+    """경고를 낸 뒤 보관 · 삭제된 시나리오의 경고 줄을 누르면 조용히 버린다 — 연 시나리오 ·
+    고름은 그대로다(Alarm 줄은 이 탭 저장소에 남아 그 사이 시나리오가 사라질 수 있다)."""
     script, _ = _seeded(tmp_path)
     app, browser, _ = _check_app(script, monkeypatch)
     before = _draft(app)
-    app.session_state[CHECK_TARGET_KEY] = ("00000000-gone", "00000000-gone-r1")
+    _press(app, "00000000-gone", "00000000-gone-r1")
 
     browser.run()
 

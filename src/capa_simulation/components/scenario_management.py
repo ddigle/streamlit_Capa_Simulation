@@ -49,7 +49,10 @@ from capa_simulation.components.intro_summary import forget_intro_summary_check
 from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.profile_caption import render_row_value
-from capa_simulation.components.required_exclusion_notice import required_check_goto
+from capa_simulation.components.required_exclusion_notice import (
+    REQUIRED_TAB_GOTO,
+    required_check_target,
+)
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.save_section import discard_popover
 from capa_simulation.components.scenario_input_check import (
@@ -680,11 +683,16 @@ def _settle_list_draft(
 
 
 def _aim_at_check_target(draft: ListDraft, saved: SavedList) -> ListDraft:
-    """「점검」 칸이 서는 회차에 저장 · 지정 · 복제 · 자동 갱신 경고가 적어 둔 리비전을 고른다
-    (`required_exclusion_notice.required_check_goto` — 2026-11-11 입력 점검 검토 보드 F4 (나)).
+    """「점검」 칸이 서는 회차에 저장 · 지정 · 복제 · 자동 갱신 경고 줄의 「그 화면으로」 를 누른
+    리비전을 고른다(`required_exclusion_notice.required_check_target` — 2026-11-11 입력 점검 검토
+    보드 F4 (나) · 다음 배포 물음 보드 F4 뒤 (a)).
 
-    적어 둔 것은 한 번만 쓴다 — 고른 뒤에는 사용자가 고른 줄이 이긴다. 다른 칸(상세 · 저장 전 변경
-    따위)이 서는 회차에는 꺼내지 않는다 — 경고를 누르지 않고 목록에 온 사람의 고름을 옮기지 않는다.
+    대상은 경고 줄이 들고 다니다 알림 칸이 탭 길(목록 관리 › 「점검」)을 다 연 뒤에만 보내므로
+    (`alert_center._on_goto` → `scenario_list_state.queue_check_target`) 같은 줄을 다시 누르면 다시,
+    앞 경고 줄을 누르면 그 줄의 리비전을 고르고, 누르지 않고 손으로 연 「점검」 칸에는 꺼낼 것이
+    없다. 적어 둔 것은 한 번만 쓴다 — 고른 뒤에는 사용자가 고른 줄이 이긴다. 다른 칸(상세 · 저장 전
+    변경 따위)이 서는 회차에는 꺼내지 않고, 그 회차가 끝나도 남은 것은 다음 앱 전체 회차에
+    버려진다(`scenario_list_state.expire_check_target`).
     그 사이 보관 · 삭제된 시나리오면 조용히 버리고, 지운 리비전이면 고름 씨앗이 다시 고른다. 연
     시나리오가 바뀌면 상세 칸 작업 칸 · 확인 체크를 버리는 것은 `_opened_revisions` 처음 보기와
     같다. 고름 씨앗(`REVISION_SEED_KEY`)은 올라와 있는 리비전으로 맞춰 다음 회차의 씨앗이 적어 둔
@@ -1727,14 +1735,15 @@ def _official_published(
     # 저장과 한 꼴 — 2026-11-04 검수 의견 home-18).
     if warning:
         # 소요대수에 들지 않은 수요의 「그 화면으로」 는 지정한 리비전을 고른 목록 관리 「점검」
-        # 칸이다(같은 리비전 · 전체 기간 — 검토 보드 F4 (나)).
+        # 칸이다(같은 리비전 · 전체 기간 — 검토 보드 F4 (나) · 리비전은 줄이 들고 감, F4 뒤 (a)).
         queue_flash(
             FLASH_WARNING_KEY,
             markdown_safe_tildes(warning),
             kind="warning",
             icon=":material/warning:",
             popup_only=True,
-            goto=required_check_goto(release.scenario_id, revision_id) if exclusion else None,
+            goto=REQUIRED_TAB_GOTO if exclusion else None,
+            target=required_check_target(release.scenario_id, revision_id) if exclusion else None,
         )
     _close_official_dialog()
     st.session_state.pop(official_confirm_key(revision_id), None)
@@ -2327,8 +2336,9 @@ def _render_clone(repository: DuckDBScenarioRepository) -> None:
                 kind="warning",
                 icon=":material/warning:",
                 popup_only=True,
-                goto=(
-                    required_check_goto(
+                goto=REQUIRED_TAB_GOTO if verdict.exclusion else None,
+                target=(
+                    required_check_target(
                         snapshot.scenario.scenario_id if snapshot is not None else None,
                         snapshot.revision.revision_id if snapshot is not None else None,
                     )

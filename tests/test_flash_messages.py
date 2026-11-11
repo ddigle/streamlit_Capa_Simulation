@@ -281,6 +281,57 @@ render_flash("with_tab", "no_tab", "here", "old")
     assert isinstance(app.session_state["shape"], tuple)
 
 
+def test_a_flash_carries_its_goto_target_on_the_row_and_writes_nothing_else() -> None:
+    """그 화면에서 고를 대상(`target` — 소요대수에 들지 않은 수요 경고의 리비전)은 표지에 실려 줄이
+    들고 다니고, 세션에는 그 알림 칸 말고 아무것도 적지 않는다(2026-11-11 다음 배포 물음 보드 F4 뒤
+    (a)). 갈 곳 없는 대상은 거절하고, 대상이 없던 옛 일곱 칸 튜플 · 꼴이 깨진 대상은 대상 없이
+    읽는다."""
+    script = """
+import streamlit as st
+
+from capa_simulation import alerts
+from capa_simulation.components.flash import queue_flash, render_flash
+
+alerts.note_page("HOME", "")
+before = set(st.session_state.keys())
+queue_flash(
+    "aimed",
+    "빠진 수요 2건",
+    kind="warning",
+    popup_only=True,
+    goto=("시나리오 관리", "scenario_management", "Capa 시나리오 › 목록 관리 › 점검"),
+    target=alerts.GotoTarget(kind="check", scenario="S", revision="R"),
+)
+st.session_state["written"] = sorted(set(st.session_state.keys()) - before)
+try:
+    queue_flash("lost", "갈 곳 없음", target={"kind": "check", "scenario": "S", "revision": "R"})
+except ValueError as exc:
+    st.session_state["refused"] = str(exc)
+goto = ("시나리오 관리", "scenario_management", "점검")
+st.session_state["old"] = ("warning", "옛 칸", None, None, True, (), goto)
+st.session_state["broken"] = ("warning", "깨진 대상", None, None, True, (), goto, {"kind": "check"})
+render_flash("aimed", "old", "broken")
+"""
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert app.session_state["written"] == ["aimed"]
+    assert "갈 화면" in app.session_state["refused"]
+    targets = [
+        (item.value, item.note.get("tab", ""), item.note.get("target"))
+        for item in flashed(app)
+        if item.note is not None
+    ]
+    assert targets == [
+        (
+            "빠진 수요 2건",
+            "Capa 시나리오 › 목록 관리 › 점검",
+            {"kind": "check", "scenario": "S", "revision": "R"},
+        ),
+        ("옛 칸", "점검", None),
+        ("깨진 대상", "점검", None),
+    ]
+
+
 def test_render_flash_writes_exactly_one_event_slot_with_or_without_alerts() -> None:
     """표지는 부를 때마다 이벤트 칸에 정확히 한 자리다 — 알림이 없으면 빈 스타일. 프래그먼트 · 팝업
     본문의 이벤트 칸 자리 수가 갈래와 상관없이 같아야 한다(AGENTS 9장)."""

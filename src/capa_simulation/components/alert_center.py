@@ -38,8 +38,9 @@
   동안 사람 손이 닿으면 그 누름의 회차가 돌아오기를 더 기다린다 — 그 사이 부르면 누름의 회차를 끊어
   누름이 사라진다. 콜백은 하는 일이 없다 — 회차가 도는 것이 목적이다. 세션이 남아 있었는지는
   회차를 돌려야 알 수 있어 짧은 끊김에도 한 번 돈다(입력 · 고침은 남는다).
-  **이 칸이 파이썬을 부르는 자리는 둘이다** — 이 재연결 트리거와 공정 칩 판의 「모든 화면에서 해제」
-  (`process_clear`). 나머지(패널 · 판 여닫기, 거르기, 읽음, 복사, CSV)는 모두 브라우저 안이다.
+  **이 칸이 파이썬을 부르는 자리는 셋이다** — 이 재연결 트리거, 공정 칩 판의 「모든 화면에서 해제」
+  (`process_clear`), 대상을 실은 줄의 「그 화면으로」(`goto` — 아래). 나머지(패널 · 판 여닫기,
+  거르기, 읽음, 복사, CSV, 대상 없는 줄의 「그 화면으로」)는 모두 브라우저 안이다.
 - **서버 재시작은 브라우저가 가른다**(2026-11-07 통합 검수 D4 (가) · 2차 보드 R3 (가)). 재시작 뒤
   세션은 새것이라 파이썬만으로는 재시작과 첫 접속을 가르지 못한다. 프로세스마다 한 번 정하는 부트
   표지(`BOOT_MARK`)와 알림 `GL-07`(`alerts.server_restart_note`)을 data 에 미리 싣고, JS 가 이
@@ -70,6 +71,13 @@
   같은 글꼴 · 13px · 600 · 높이. 변경 칩은 한글 글이라 앱 글꼴(`tokens.FONT_FAMILY`) 그대로다.
 - **「그 화면으로」 는 그 화면 안 탭까지 연다** — 표지의 `tab` 이 있으면 그 화면에 닿은 회차가 끝난
   뒤 이름이 맞는 탭 단추를 누른다(`stateful_tabs` 탭이라 보통 누름과 같은 회차가 돈다).
+- **줄이 대상을 들고 가면 닿은 뒤에만 보낸다**(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). 표지의
+  `target`(`alerts.GotoTarget` — 「소요대수에 들지 않은 수요」 경고의 리비전)은 그 줄에 남고, 누르면
+  탭 길을 다 연 뒤 회차가 끝났을 때 트리거(`goto`)로 한 번 보낸다 — 콜백(`_on_goto`)이 아는
+  종류만 받아 세션에 적고(`scenario_list_state.queue_check_target`) 같은 회차의 화면이 쓴다. 그 길을
+  못 다 열면(떠나기 확인 취소 · 탭 상한 · 시간 넘김) 보내지 않는다. 남은 대상은 다음 앱 전체 회차
+  앞에서 버린다(`expire_check_target`) — 누르지 않고 손으로 연 화면은 고름을 옮기지 않는다. 글이
+  같은 두 경고가 한 줄 「×2」 로 합쳐지면 그 줄의 대상은 마지막 경고의 것이다.
 - **키보드 · 초점 껍데기도 이 칸이 맡는다**(`installFocusShell`) — 앱 전체 꼴이라 화면마다 고치지
   않고, 페이지마다 서는 이 칸이 문서에 처리기를 둔다. 꺼진 단추는 Tab 이 건너뛰어 감싼 풍선 칸이 탭
   자리를 맡고(설계 규칙 UI-INP-07 · 윤곽은 `sidebar_style`), 마우스로 누른 단추는 초점을 쥔 채 남아
@@ -85,6 +93,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
@@ -94,6 +103,11 @@ from capa_simulation import alerts, shared_process
 from capa_simulation.components import process_field
 from capa_simulation.components.change_summary import GROUPS, ChangeItem
 from capa_simulation.components.sample_data import sample_switch_on
+from capa_simulation.components.scenario_list_state import (
+    CHECK_TARGET_KIND,
+    expire_check_target,
+    queue_check_target,
+)
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CHANGES_CHIP_ID,
@@ -315,6 +329,17 @@ def _reconnected() -> None:
     """재연결 트리거의 콜백 — 회차가 도는 것이 목적이라 할 일이 없다."""
 
 
+def _on_goto() -> None:
+    """대상을 실은 줄의 「그 화면으로」 트리거(`goto`)의 콜백 — 그 줄의 탭 길을 다 연 뒤에만 온다.
+    값은 이 브라우저 탭 저장소에 있던 줄에서 오므로 꼴을 보고(`alerts.goto_target`) 아는 종류만
+    받는다 — 지금은 「점검」 칸이 고를 리비전 하나(`CHECK_TARGET_KIND`)."""
+    state = st.session_state.get(ALERT_CENTER_KEY)
+    raw = state.get("goto") if isinstance(state, Mapping) else getattr(state, "goto", None)
+    target = alerts.goto_target(raw)
+    if target is not None and target["kind"] == CHECK_TARGET_KIND:
+        queue_check_target(target["scenario"], target["revision"])
+
+
 def _clear_process() -> None:
     """공정 칩 판 「모든 화면에서 해제」 트리거의 콜백 — 공용 공정 값을 지운다(앱 전체가 돈다)."""
     shared_process.clear()
@@ -324,8 +349,10 @@ def render_alert_center(*, changes: list[ChangeItem], current: PageSpec | None =
     """알림 칸을 그린다 — `app.py` 가 화면 탭 줄 바로 뒤, 페이지 앞에서 매 앱 전체 회차 부른다.
 
     콜백이 담아 둔 사건 알림(`alerts.event`)을 이 회차 data 로 꺼내 보낸다. 이벤트 칸에는 접는
-    스타일 한 자리를 쓴다. `current` 는 지금 화면의 선언이다(없으면 None).
+    스타일 한 자리를 쓴다. `current` 는 지금 화면의 선언이다(없으면 None). 앞 회차의 「그 화면으로」
+    대상이 남았으면 페이지 앞에서 버린다(`expire_check_target` — 이 회차에 누른 것은 남긴다).
     """
+    expire_check_target()
     st.html(_HIDE_STYLE)
     _ALERT_CENTER(
         key=ALERT_CENTER_KEY,
@@ -333,4 +360,5 @@ def render_alert_center(*, changes: list[ChangeItem], current: PageSpec | None =
         width="stretch",
         on_reconnected_change=_reconnected,
         on_process_clear_change=_clear_process,
+        on_goto_change=_on_goto,
     )
