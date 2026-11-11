@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -79,10 +80,15 @@ def test_both_systems_check_python_files_out_with_the_same_size() -> None:
     assert "*.py text eol=lf" in attributes
 
 
-def test_each_shard_command_fits_the_windows_command_line() -> None:
-    for shard in range(1, 9):
+@pytest.mark.parametrize("pieces", [4, 8])
+def test_each_shard_command_fits_the_windows_command_line(pieces: int) -> None:
+    long_root = Path("C:/Users/someone.with.a.long.profile.name/e2e_copy/pt-11121530")
+    for shard in range(1, pieces + 1):
         refuse_overlong_command_line(
-            run_test_shard.pytest_command(run_test_shard.shard_of(shard, 8))
+            run_test_shard.pytest_command(
+                run_test_shard.shard_of(shard, pieces),
+                basetemp=long_root / f"shard{shard}",
+            )
         )
 
 
@@ -141,7 +147,75 @@ def test_the_shard_runs_pytest_from_the_root_and_gives_back_its_code(
     assert run_test_shard.main(["--shard", "2", "--of", "8"]) == code
     [(command, cwd)] = seen
     assert cwd == PROJECT_ROOT
-    assert command[:4] == [sys.executable, "-m", "pytest", "-q"]
+    assert command[:3] == [sys.executable, "-m", "pytest"]
+    assert "-q" not in command, "pyproject addopts 의 -q 와 겹치면 끝줄 수가 사라진다"
+    assert command[command.index("-p") + 1] == "no:cacheprovider"
+    assert _basetemps(command) == []
     assert "faulthandler_timeout=600" in command
     expected = [path.as_posix() for path in run_test_shard.shard_of(2, 8)]
     assert command[-len(expected) :] == expected
+
+
+def _basetemps(command: list[str]) -> list[str]:
+    return [part.removeprefix("--basetemp=") for part in command if part.startswith("--basetemp")]
+
+
+def test_a_basetemp_root_gives_each_shard_its_own_folder_from_the_caller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """pytest 는 저장소 뿌리에서 돈다 — 상대 경로는 부르는 자리 기준으로 풀어 넘긴다."""
+    seen: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], *, cwd: Path, check: bool
+    ) -> subprocess.CompletedProcess[bytes]:
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.chdir(tmp_path)
+
+    for shard in ("1", "2"):
+        assert run_test_shard.main(["--shard", shard, "--of", "4", "--basetemp-root", "pt"]) == 0
+
+    root = tmp_path.resolve() / "pt"
+    assert root.is_dir(), "pytest 는 --basetemp 의 위 폴더를 만들지 않는다"
+    assert [_basetemps(command) for command in seen] == [
+        [str(root / "shard1")],
+        [str(root / "shard2")],
+    ]
+
+
+SYNTHETIC_TEST = """
+def test_leaves_a_mark(tmp_path):
+    (tmp_path / "mark").write_text("x", encoding="utf-8")
+"""
+
+
+def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> None:
+    """저장소 `addopts` 와 함께 실제로 돌린다 — 조각마다 「n passed …」 끝줄로 수를 적는다."""
+    synthetic = tmp_path / "test_synthetic_shard.py"
+    synthetic.write_text(SYNTHETIC_TEST, encoding="utf-8")
+    basetemp = run_test_shard.shard_basetemp(tmp_path / "roots", 3)
+    command = [
+        *run_test_shard.pytest_command([synthetic], basetemp=basetemp),
+        "-c",
+        str(PROJECT_ROOT / "pyproject.toml"),
+    ]
+    env = {key: value for key, value in os.environ.items() if not key.startswith("PYTEST_")}
+
+    finished = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        check=False,
+    )
+
+    assert finished.returncode == 0, finished.stdout + finished.stderr
+    assert finished.stdout.strip().splitlines()[-1].startswith("1 passed"), finished.stdout
+    assert [mark.parent.parent for mark in basetemp.rglob("mark")] == [basetemp]
