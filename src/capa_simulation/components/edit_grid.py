@@ -130,6 +130,8 @@ def palette() -> dict[str, str]:
         "text": tokens.TEXT,
         "muted": tokens.TEXT_MUTED,
         "surface": tokens.SURFACE,
+        # 표 도구 단추 · 찾기 칸 바탕 — 화면의 다른 단추와 같은 꼴.
+        "control": tokens.SURFACE,
         "subtle": tokens.SURFACE_SUBTLE,
         "header": tokens.HEADER_BACKGROUND,
         "border": tokens.BORDER,

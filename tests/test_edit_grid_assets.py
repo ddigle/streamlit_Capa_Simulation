@@ -171,7 +171,8 @@ def test_colours_come_only_from_the_palette() -> None:
 
 def test_the_palette_names_every_token_the_grid_needs() -> None:
     expected = (
-        "font text muted surface subtle header border border-strong accent on-accent changed-fill "
+        "font text muted surface control subtle header border border-strong accent on-accent "
+        "changed-fill "
         "changed-mark error-fill error-line warn-line lock-fill selected-fill match-fill pending"
     )
     assert list(edit_grid.palette()) == expected.split()
