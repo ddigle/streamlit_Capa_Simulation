@@ -37,13 +37,16 @@ STATE_NAMES: Final = frozenset({"outbox"})
 TRIGGER_NAMES: Final = frozenset[str]()
 
 # 처음 폭은 줄의 40%(옛 시제품 측정 — 리비전 표 세 칸이 346px 에서 밀리고 416px 이면 든다). 한계는
-# 설비 마스터와 같다.
+# 설비 마스터와 같다. 칸 고르기 다섯은 단추 좌우 안쪽 여백을 12px 로 좁혀 창 1283 의 처음 폭에서 한
+# 줄이다(2026-11-11 입력 점검 검토 보드 F2 (라) — 다른 화면 고르기는 그대로).
+LIST_CHOICE_PAD_PX: Final = 12
 LIST_SIDE: Final = side_panel.named_side_panel(
     "scenario_list",
     store="capa-scenario-list-side-v1",
     css_name="sls",
     default_share=0.4,
     default_offset_px=0,
+    choice_pad_px=LIST_CHOICE_PAD_PX,
 )
 
 

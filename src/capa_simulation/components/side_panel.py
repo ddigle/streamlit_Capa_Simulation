@@ -43,10 +43,12 @@ _SPLITTER = st.components.v2.component(
 # 오른쪽 칸 폭 한계(2026-11-02 사용자 결정 「너비에 한계를 두고」 — 명세 15-2). 최소 360px 는 칸
 # 머리 한 줄(「오른쪽 칸」 고르기 넷의 자연 폭 310px + 사이 6 + 접기 단추 28)에 칸막이 곁 여백 14 를
 # 더한 값, 최대 760px 은 표에 줄의 40% 이상을 남기는 몫 60% 와 함께 건다. 좁은 줄에서는 몫(최소
-# 40%)이 이긴다. 시나리오 목록 관리의 고르기는 다섯(자연 폭 338px — 2026-11-11 사본 측정)이라 이
-# 최소 폭과 창 1283 의 처음 폭(354px)에서 두 줄로 접히고(창 1100 의 처음 폭 281px 은 넷일 때도 두
-# 줄), 두 표 머리 맞춤(`list.js` `headFit`)이 받는다 — 처음 폭(40%)은 왼쪽 시나리오 표 최소 폭
-# 몫이라 올리지 않는다. 1283 의 두 줄은 상단 띠(설계 규칙 UI-LAY-13)와 맞서는 열린 물음이다.
+# 40%)이 이긴다. 시나리오 목록 관리의 고르기는 다섯이라 단추 좌우 안쪽 여백을 그 칸만 14 → 12px
+# 로 좁힌다(`SidePanel.choice_pad_px` — 2026-11-11 입력 점검 검토 보드 F2 (라)). 단추 합이 338 →
+# 318px 이 되어 창 1283 의 처음 폭(354px — 접기 단추 몫 34 를 빼면 320)에서 한 줄이다(남는 폭 2px
+# 남짓 — 사본 측정 · 글꼴 흉내, 사내 글꼴에서는 다시 잰다). 창 1100 의 처음 폭(281px)은 넷일 때도
+# 두 줄이었고 두 표 머리 맞춤(`list.js` `headFit`)이 받는다 — 처음 폭(40%)은 왼쪽 시나리오 표 최소
+# 폭 몫이라 올리지 않는다.
 SIDE_MIN_PX: Final = 360
 SIDE_MIN_SHARE: Final = 0.4
 SIDE_MAX_PX: Final = 760
@@ -109,10 +111,19 @@ class SidePanel:
     # 처음 폭 — `calc(몫% - 덜기px)`.
     default_share: float
     default_offset_px: int
+    # 칸 고르기 단추의 좌우 안쪽 여백(px). None 이면 Streamlit 기본(14px) 그대로다 — 고르기가 많아
+    # 기준 창의 처음 폭에서 두 줄로 접히는 화면만 좁힌다(시나리오 목록 관리 12 — 검토 보드 F2 (라)).
+    choice_pad_px: int | None = None
 
 
 def named_side_panel(
-    prefix: str, *, store: str, css_name: str, default_share: float, default_offset_px: int
+    prefix: str,
+    *,
+    store: str,
+    css_name: str,
+    default_share: float,
+    default_offset_px: int,
+    choice_pad_px: int | None = None,
 ) -> SidePanel:
     """key 를 앞붙이 하나로 짓는다(`<prefix>_frame` · `<prefix>_side_v1` …)."""
     return SidePanel(
@@ -130,6 +141,7 @@ def named_side_panel(
         css_name=css_name,
         default_share=default_share,
         default_offset_px=default_offset_px,
+        choice_pad_px=choice_pad_px,
     )
 
 
@@ -208,6 +220,7 @@ def side_layout_style(spec: SidePanel) -> str:
                 "width: auto; min-width: 0; max-width: none; z-index: 2; pointer-events: none; }"
             ),
             f"{choice} {{ padding-right: {SIDE_TOGGLE_PX + SIDE_TOGGLE_GAP_PX}px; }}",
+            choice_padding_rule(spec),
             (
                 f"{body} {{ width: calc(100% + {SIDE_SCROLLBAR_PX}px); max-width: none; "
                 f"max-height: {body_cap}; "
@@ -247,6 +260,18 @@ def side_layout_style(spec: SidePanel) -> str:
             "}",
             "</style>",
         ]
+    )
+
+
+def choice_padding_rule(spec: SidePanel) -> str:
+    """칸 고르기 단추의 좌우 안쪽 여백 — 그 화면 고르기(`choice_key`)에만 건다. 여백을 정하지 않은
+    화면은 빈 글이다(다른 화면 고르기는 Streamlit 기본 그대로)."""
+    if spec.choice_pad_px is None:
+        return ""
+    pad = f"{spec.choice_pad_px}px"
+    return (
+        f'.st-key-{spec.choice_key} [data-testid="stButtonGroup"] button '
+        f"{{ padding-left: {pad}; padding-right: {pad}; }}"
     )
 
 
