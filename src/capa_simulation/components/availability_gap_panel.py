@@ -305,6 +305,11 @@ MANUAL_LIST_HELP = (
     "입력 비가동(가용설비 현황 › Preference)은 호기에 잇지 않은 공정 × 달 손실이라 이 목록에 "
     "없습니다 — `시트` 의 설비 일정 기준 대여(비가동) · 가용에는 듭니다."
 )
+# 분류별 내역 끝 칸의 한쪽 공정 · 호기 필터 표지 — 입력 비가동 표지와 같은 꼴로 표지는 낱말 한두
+# 개이고 까닭 · 고른 값 · 호기 수는 풍선이다(설계 규칙 UI-TXT-04 · UI-LAY-13). 그것까지 자리에 두면
+# 곁에 들지 못해 끝 칸째(「내려받기 ▾」 도 함께) 다음 줄로 내려간다.
+ONE_SIDED_MARK = ":material/info: 한쪽 공정 · GAP 없음"
+UNIT_FILTER_MARK = ":material/filter_alt: 호기 필터"
 # GAP 근거 카드 식 줄의 풍선 — 부호의 뜻은 설명이라 식 줄 밑에 늘 세우지 않는다(설계 규칙
 # UI-TXT-01 · UI-TXT-02).
 GAP_SIGN_HELP = (
@@ -736,11 +741,11 @@ def render_availability_gap_panel(
         )
     row_help(f"{RESULT_VIEW_HELP}\n\n{DETAIL_MODE_HELP}")
     with switches:
-        # 줄 오른쪽 끝 칸 — 한쪽에만 있는 공정 · 호기 필터 표지(작은 글), 시트를 그리는 회차에는
-        # 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀), 호기 목록이 입력 비가동이 든 범위를 보면 그
-        # 표지가 이 차례로 선다(비면 그리지 않는다). 표지는 혼자 한 줄을 세우지 않는다(2026-11-11
-        # 보드 D2 — e4-1 과 같은 꼴, 설계 규칙 UI-LAY-13 · UI-TXT-04). 좁으면 칸째 다음 줄로
-        # 내려간다(`ROW_END_STYLE`).
+        # 줄 오른쪽 끝 칸 — 한쪽에만 있는 공정 · 호기 필터 표지(짧은 표지 + 풍선), 시트를 그리는
+        # 회차에는 「내려받기 ▾」 메뉴(시트 CSV · 시트 엑셀), 호기 목록이 입력 비가동이 든 범위를
+        # 보면 그 표지가 이 차례로 선다(비면 그리지 않는다). 표지는 혼자 한 줄을 세우지 않는다
+        # (2026-11-11 보드 D2 — e4-1 과 같은 꼴, 설계 규칙 UI-LAY-13 · UI-TXT-04). 좁으면 칸째 다음
+        # 줄로 내려간다(`ROW_END_STYLE`).
         st.html(ROW_END_STYLE)
         row_end = st.container(
             horizontal=True,
@@ -750,20 +755,21 @@ def render_availability_gap_panel(
         )
     if one_sided is not None:
         with row_end:
-            st.caption(f":material/info: {one_sided} 있는 쪽 값만 보입니다.", width="content")
+            st.caption(ONE_SIDED_MARK, help=f"{one_sided} 있는 쪽 값만 보입니다.", width="content")
     chosen_units: set[str] | None = None
     if units is not None:
         with controls:
             chosen_units, applied = _render_unit_filters(units, scope)
         if chosen_units is not None:
-            # 무엇으로 걸렀는지는 본문에도 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다.
-            # 고른 값은 사람이 적은 이름이라 `_render_unit_filters` 가 이름마다 막아 담았다.
+            # 걸렸다는 표지는 본문에도 남긴다 — 카드가 접혀 있으면 표만 보고는 알 수 없다. 무엇으로
+            # 걸렀는지 · 더하는 호기 수는 풍선이다. 고른 값은 사람이 적은 이름이라
+            # `_render_unit_filters` 가 이름마다 막아 담았다(풍선도 마크다운이다).
             with row_end:
                 st.caption(
-                    ":material/filter_alt: 호기 필터 · "
-                    + " · ".join(applied)
-                    + f" — 호기 {len(chosen_units):,}개만 더합니다.",
-                    help=UNIT_FILTER_HELP,
+                    UNIT_FILTER_MARK,
+                    help=" · ".join(applied)
+                    + f" — 호기 {len(chosen_units):,}개만 더합니다.\n\n"
+                    + UNIT_FILTER_HELP,
                     width="content",
                 )
     if detail_mode == "호기 목록":
@@ -1645,8 +1651,9 @@ def _render_unit_filters(
     )
     if not applied:
         return None, []
-    # 공정 범위 안의 호기만 돌려준다. 시트는 어차피 범위로 다시 좁히지만, 본문 캡션이 이 수를
-    # 「호기 N개만 더합니다」로 적는다 — 범위 밖 호기까지 세면 그 수가 시트와 어긋났다(2026-10-01).
+    # 공정 범위 안의 호기만 돌려준다. 시트는 어차피 범위로 다시 좁히지만, 본문 표지의 풍선이 이
+    # 수를 「호기 N개만 더합니다」로 적는다 — 범위 밖 호기까지 세면 그 수가 시트와 어긋났다
+    # (2026-10-01).
     unit_ids = _text_values(units[EQUIPMENT_ID_COLUMN]).loc[kept & in_scope]
     return set(unit_ids.dropna()), applied
 
