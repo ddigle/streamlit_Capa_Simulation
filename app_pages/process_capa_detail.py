@@ -92,6 +92,7 @@ from capa_simulation.components.process_capa_canvas import DynamicCanvasInput
 from capa_simulation.components.process_capa_view import (
     DynamicView,
     ProcessDetailView,
+    detail_file_names,
     open_shortening_page,
     render_closing_row,
     render_process_detail_view,
@@ -1024,8 +1025,7 @@ render_process_kpis(
     dynamic=dynamic,
     official=official_kpis if upeh_token else None,
 )
-upeh_suffix = f"_upeh{upeh_token[0]}_{upeh_token[1][0]}_{upeh_token[1][-1]}" if upeh_token else ""
-units_csv_file_name = f"process_capa_detail_units_{months[0]}_{months[-1]}{upeh_suffix}.csv"
+file_names = detail_file_names(months, process_label=process_label, upeh_token=upeh_token)
 
 
 def sheet_heading() -> tuple[tuple[str, str], ...]:
@@ -1087,11 +1087,11 @@ render_process_detail_view(
         upeh_token=upeh_token,
         initial_month=entry.scroll_month,
         units_csv=units_csv,
-        units_csv_file_name=units_csv_file_name,
+        units_csv_file_name=file_names.units_csv,
         shortening_link_help=shortening_link_help,
         units_export=units_export,
         sheet_heading=sheet_heading(),
-        sheet_file_name=f"process_capa_detail_{months[0]}_{months[-1]}{upeh_suffix}.xlsx",
+        sheet_file_name=file_names.sheet,
     )
 )
 

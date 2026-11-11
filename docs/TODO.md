@@ -1640,6 +1640,24 @@
   왼쪽으로 흘려 넘친 왼쪽 끝에 말줄임, 이름은 `dir="ltr"` 한 덩이(`shortening_timeline.unit_name` · `UNIT_NAME_STYLE`), 넘치지 않으면
   왼쪽 맞춤, 전체 이름은 줄 풍선 그대로. 같은 칸(`.shk-unit-name`)을 쓰는 진척 비교 카드 호기 줄에도 같이 선다(넓게 입힘 — 같은 화면 ·
   같은 칸). 사내 실제 호기 이름에서 구별 글자가 끝에 오는지는 사용자 확인 메모를 받지 않았다. 규칙 UI-ACC-02 · UI-CON-04 · PRC-01.
+- (2026-11-11) **남은 물음 보드 갈래 B — 내려받기 · 이름 · 작은 글**(2026-11-11 「남은 물음 11-11」 보드 답 B3 (가) · C9 (나) · B2 (가) · D3 (나),
+  `night/board-b-1111` — 전 · 후 그림과 잰 값은 저장소 밖 `~/projects/Deploy/worklog/review-1111/board-fix/b/`(`shots` · `out/b-before.json` ·
+  `out/b-after.json`), 사본 앱 슬롯 17 · 합성 표본 — 샘플 관측). ① **B3** 공정 Capa 상세 시트 엑셀 · 「이 공정 단축 일정 CSV」 파일 이름 끝에 화면의
+  공정 이름(머리 값 줄과 같은 표시명) — `process_capa_detail[_units]_<첫 달>_<끝 달>[_upeh<%>_<구간 첫 달>_<끝 달>]_<공정>`
+  (`process_capa_view.detail_file_names`, 예 `process_capa_detail_202611_202812_Mold.xlsx` · `…_WF_입고검사.csv`). 못 쓰는 글자 · 빈칸은
+  설비 「현재 데이터」 CSV 가 쓰던 도우미를 올린 `table_toolbar.file_name_part`(한 벌 도우미). 런북 · 화면 확인은 이 파일 이름을 보지 않는다.
+  ② **C9** 「내려받기 ▾」 메뉴 높이를 `render_download_pair` 한 곳에서 28px 하나로 — 메뉴 key 접두어 `download_menu_`(`download_menu_key`) ·
+  CSV 가 없을 때의 엑셀 칸도 그 key · 높이 서식 `DOWNLOAD_MENU_STYLE` 은 `app.py` 앱 전체 서식 `st.html` 에 한 번(자리별 `SHEET_CSV_STYLE` ·
+  `DOWNLOAD_STYLE` 단추 높이 걷음 — 본문 프래그먼트 이벤트 칸 수 그대로). 값은 공정 Capa 상세 · Static 대비 일정 두 줄의 이웃(「구획」 칩 ·
+  「조회 결과 · 표시」 전환 단추) 높이다. 산출 결과 대당 Capa · 소요대수 메뉴 · 호기 목록 메뉴 35 → 28px(산출 결과 제목 줄이 메뉴만 선 대당 Capa ·
+  소요대수 상세 끔은 줄 35 → 28.4 · 표 윗선 210.5 → 203.9 — 1600 · 1283 같음), 공정 Capa 상세 · Static 대비 일정 28px · 메뉴 안 단추 35px 그대로.
+  산출 결과 제목 줄은 곁 칸이 줄을 다시 35px 로 세우는 회차가 있다 — 확보율 탭의 맨 「CSV 다운로드」(메뉴 아님) 35px, 소요대수 「상세」 켬의
+  곁 「표시 범위」 칸 33px(메뉴 28 곁) — 그때 표 윗선이 210.5 라 탭을 오갈 때도 상세를 켜고 끌 때도 표가 6.6px 오르내린다(전에는 셋 다 210.5 —
+  UI-PRF-03, 독립 검토 지적 · 슬롯 17 재현 `out/b3-repro.json`. 그 줄의 높이 값은 답 밖 — 물음으로 넘김). ③ **B2** 좁은 창(1100) 메모 칸 안내 글의 예를 「표시순서
+  변경」 · 「26.07 PM 1.5대」 로 — 1100 창 글 폭 / 칸 폭 표시순서 관리 206 / 164.5 → 142.3 / 164.5 · Preference 입력 비가동 214.2 / 211.5 →
+  146.9 / 211.5(둘 다 잘림 → 안 잘림). ④ **D3** 자동 갱신 설정 「바뀐 것이 없습니다 — …」 알림에 `:material/info:`(같은 갈래 여덟 자리와 같은 꼴 —
+  소스 그물 `tests/test_unchanged_profile_saves.py`). 규칙: UI-DAT-10(판단 「사람이 읽나」) · UI-CON-01 · UI-CON-03 · UI-CON-04 · UI-PRF-03 ·
+  UI-ACC-02 · UI-TXT-01 예외 · UI-STA-01.
 - (2026-11-11) **목표 확보율 직접 입력 — 2026-11-11 사용자 고칠 것 Q2-26**(「권장대로 반영 결과」 보드 Q2-26 줄 「목표 확보율 5개 프리셋 외에
   직접 입력도 가능하도록 수정」, `night/review-1111` — 그림은 저장소 밖 `~/projects/Deploy/worklog/review-1111/q226/`). 공용 부품
   `components/target_level_field.py` 의 팝업이 다섯 라디오 밑에 `% 직접 입력` 숫자 칸을 둔다 — 걸음 · 꼴은 HOME 설정 › 판정 기준 기본 칸(1 ·

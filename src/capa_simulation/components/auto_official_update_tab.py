@@ -555,7 +555,7 @@ def _render_settings_form(
         # (`render_flash`)이 방금 성공을 이미 다시 그렸다 — 「바뀐 것이 없습니다」 로 그 알림을
         # 덮지도 겹쳐 쓰지도 않는다(write_guard.held_notice).
         if held_notice(SETTINGS_FLASH_KEY) is None:
-            notice.info(SETTINGS_UNCHANGED_MESSAGE)
+            notice.info(SETTINGS_UNCHANGED_MESSAGE, icon=":material/info:")
         return
     if updated.enabled and not config.enabled:
         # 켜기 전에 막는다 — 주차 없는 공식버전과는 「더 새 코드」를 견줄 수 없다.

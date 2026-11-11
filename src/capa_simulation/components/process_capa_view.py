@@ -53,6 +53,8 @@
 카드(머리 식·판정·원인)와 다음 화면은 가정 요약으로, 공식 값은 ① 공식 줄과 KPI 회색 줄
 (「공식 n」), ③ 카드의 회색 「공식: …」 한 줄에만 둔다. 그림 캐시 키에 가정 토큰이 든다. 시트
 엑셀도 같은 행 모델이라 가정 세 줄 · 가정 판정 칠이 그대로 서고 파일 이름에 가정 꼬리가 붙는다.
+내려받는 두 파일 이름(`detail_file_names`)은 조회 달 · 가정 꼬리 뒤 끝에 화면의 공정 이름(표시명)을
+단다 — 공정마다 파일 이름이 다르다(2026-11-11 남은 물음 보드 B3).
 
 **부족 원인의 다음 화면**(근거 패널 — 고른 달의 원인) — 보유로도 부족 → 「투자 검토 대상」 표지와
 산출 결과, 가용 불일치 → 가용설비 현황 `Summary` › `Static 대비 일정`, 일정 → 필요 단축 일정 이
@@ -127,6 +129,8 @@ from capa_simulation.components.table_toolbar import (
     SHEET_XLSX_LABEL,
     CsvFile,
     SheetFile,
+    download_menu_key,
+    file_name_part,
     render_download_pair,
     render_sheet_download,
 )
@@ -214,6 +218,9 @@ from capa_simulation.services.wd_window import wd_window
 from capa_simulation.sidebar_status import remembered_expander, rerun_app_unless_alone
 
 MONTH: Final = "생산계획년월"
+# 내려받는 두 파일 이름의 머리와, 공정 표시명이 파일 이름에 쓸 글자를 남기지 않을 때의 꼬리.
+DETAIL_FILE_STEM: Final = "process_capa_detail"
+_PROCESS_FILE_FALLBACK: Final = "process"
 
 # ------------------------------------------------------------------ 위젯·칸 키
 # ③·④ 의 30줄 상한(`ROW_LIMIT`)을 넘긴 줄을 모두 그리는 토글. 그림 캐시 키에 든다.
@@ -225,20 +232,19 @@ NEXT_MONTH_KEY: Final = "process_detail_next_month"
 # 닫힌 「경로별 인자」 상자(편 상태를 기억한다).
 ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
 # 표 도구 줄의 내려받기 둘(호기 CSV · 시트 엑셀)은 「내려받기 ▾」 메뉴 하나다(2026-11-10 답 Q2-7 —
-# 호기 CSV 가 없는 공정은 시트 엑셀 단추 하나). 줄에 선 단추(메뉴 또는 시트 엑셀)는 곁의 「구획」
-# 칩과 같은 높이로 둔다(설계 규칙 UI-CON-01 — 칩 28px). 메뉴 안 단추는 줄 밖(떠 있는 층)이라 기본
-# 높이다. 서식은 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가 갈리지 않게).
+# 호기 CSV 가 없는 공정은 시트 엑셀 단추 하나). 줄에 선 단추(메뉴 또는 시트 엑셀)의 높이는 곁의
+# 「구획」 칩과 같은 28px 이고 `table_toolbar.render_download_pair` 가 정한다(설계 규칙 UI-CON-01 ·
+# 2026-11-11 남은 물음 보드 C9). 칸 서식(줄바꿈 없음)은 범례 `st.html` 에 실어 본문 칸으로 보낸다
+# (이벤트 칸 자리 수가 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
 SHEET_XLSX_KEY: Final = "process_detail_sheet_xlsx"
-DOWNLOAD_MENU_KEY: Final = "process_detail_download_menu"
+DOWNLOAD_MENU_KEY: Final = download_menu_key("process_detail")
 # 내려받기 자리를 담는 칸 — 줄이 모자라면 칸째 다음 줄 오른쪽 끝으로 간다.
 DOWNLOADS_KEY: Final = "process_detail_downloads"
 # 「구획」 칩과 그 뜻 ⓘ 를 담는 칸 — ⓘ 가 칩과 작은 간격으로 붙는다(옆 토글의 풍선으로 읽히지 않게).
 SECTIONS_ROW_KEY: Final = "process_detail_sections_row"
 DOWNLOAD_STYLE: Final = (
-    f"<style>.st-key-{DOWNLOADS_KEY} button "
-    "{ min-height: 28px; height: 28px; padding-block: 0; }"
-    f".st-key-{DOWNLOADS_KEY} {{ flex-wrap: nowrap; }}"
+    f"<style>.st-key-{DOWNLOADS_KEY} {{ flex-wrap: nowrap; }}"
     f'[data-testid="stLayoutWrapper"]:has(> .st-key-{DOWNLOADS_KEY}) '
     "{ flex-shrink: 0; min-width: max-content; }</style>"
 )
@@ -357,6 +363,35 @@ _STATUS_NAMES: Final[Mapping[str, str]] = {"secure": "확보", "warning": "경�
 _SHORT_STATUSES: Final = frozenset({"warning", "shortage"})
 
 
+class DetailFileNames(NamedTuple):
+    """표 도구 줄 「내려받기 ▾」 의 두 파일 이름."""
+
+    units_csv: str
+    sheet: str
+
+
+def detail_file_names(
+    months: Sequence[int], *, process_label: str, upeh_token: UpehToken = NO_ASSUMPTION
+) -> DetailFileNames:
+    """「이 공정 단축 일정 CSV」 · 「시트 엑셀」 파일 이름 — 머리 · 조회 첫 달 · 끝 달 · (UPEH
+    가정이 켜졌으면) 가정 꼬리 `_upeh<%>_<구간 첫 달>_<끝 달>` · 공정 이름 차례로, 두 파일이 같은
+    꼴이다.
+
+    공정 이름은 화면 머리 · 시트 머리 값 줄과 같은 표시명이다(사람이 파일을 고르는 이름 — 설계
+    규칙 UI-DAT-10 판단 「사람이 읽나」). 파일 이름에 못 쓰는 글자 · 빈칸은 `_` 로 바꾼다
+    (`table_toolbar.file_name_part`). 2026-11-11 남은 물음 보드 B3 (가) 「두 파일 이름 끝에 공정
+    이름을 붙인다」.
+    """
+    upeh = f"_upeh{upeh_token[0]}_{upeh_token[1][0]}_{upeh_token[1][-1]}" if upeh_token else ""
+    tail = f"{months[0]}_{months[-1]}{upeh}_" + file_name_part(
+        process_label, fallback=_PROCESS_FILE_FALLBACK
+    )
+    return DetailFileNames(
+        units_csv=f"{DETAIL_FILE_STEM}_units_{tail}.csv",
+        sheet=f"{DETAIL_FILE_STEM}_{tail}.xlsx",
+    )
+
+
 # ================================================================== 넘겨받는 묶음
 
 
@@ -426,7 +461,7 @@ class ProcessDetailView:
     """표 도구 줄 「이 공정 단축 일정 CSV」 의 바이트. 설비 일정이 서지 않으면 None(단추 없음)."""
 
     units_csv_file_name: str = ""
-    """그 파일 이름(가정 계획이면 끝에 UPEH 가정 꼬리)."""
+    """그 파일 이름(`detail_file_names` — 가정 계획이면 UPEH 가정 꼬리, 끝에 공정 이름)."""
 
     shortening_link_help: str | None = None
     """필요 단축 일정으로 옮기는 단추의 풍선(`render_closing_row` 의 `link_help` 와 같은 글)."""
@@ -440,7 +475,7 @@ class ProcessDetailView:
     머리 값. 구획 · 펼침 · 단축 목표는 프래그먼트가 덧붙인다."""
 
     sheet_file_name: str = "process_capa_detail.xlsx"
-    """시트 엑셀 파일 이름(가정 계획이면 끝에 UPEH 가정 꼬리)."""
+    """시트 엑셀 파일 이름(`detail_file_names` — 가정 계획이면 UPEH 가정 꼬리, 끝에 공정 이름)."""
 
     @property
     def judgement_summary(self) -> pd.DataFrame:

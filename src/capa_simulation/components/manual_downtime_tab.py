@@ -111,6 +111,7 @@ __all__ = [
     "MANUAL_SAVE_BUTTON",
     "MANUAL_SAVE_NAME",
     "MANUAL_UNCHANGED_MESSAGE",
+    "NOTE_PLACEHOLDER",
     "edited_cells",
     "manual_editor_frame",
     "manual_editor_key",
@@ -130,6 +131,9 @@ MANUAL_FLASH_KEY: Final = "equipment_manual_downtime_flash"
 # (2026-11-10 사용자 그림 메모 「저장 버튼과 시트 사이 여백 조정」, 설계 규칙 UI-LAY-13).
 MANUAL_SAVE_ROW_KEY: Final = "equipment_manual_downtime_save_row"
 MANUAL_SAVE_BUTTON: Final = "입력 비가동 저장"
+# 저장 줄 변경 메모 칸의 안내 글 — 이름 줄 없이 이 글이 칸 이름과 예를 말한다. 오른쪽 끝을 표 도구
+# 막대 자리로 비운 줄이라 예는 창 1100 에서도 칸에 다 드는 짧은 글이다.
+NOTE_PLACEHOLDER: Final = note_placeholder("26.07 PM 1.5대")
 MANUAL_PROCESS_COLUMN: Final = "공정"
 MANUAL_SAVED_MESSAGE: Final = (
     "입력 비가동 대수를 저장했습니다 — 공정 Capa 상세 ②·④·필요 단축 일정·제약 시뮬레이션·"
@@ -336,7 +340,7 @@ def _render_editor(
             ready_note_field(MANUAL_NOTE_KEY, submitted=submitted, start=submitted_base)
             note = st.text_input(
                 "변경 메모",
-                placeholder=note_placeholder("26.07 Wafer Mount PM 1.5대"),
+                placeholder=NOTE_PLACEHOLDER,
                 key=MANUAL_NOTE_KEY,
                 disabled=locked,
                 label_visibility="collapsed",

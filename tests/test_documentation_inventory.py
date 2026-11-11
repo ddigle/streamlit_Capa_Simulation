@@ -22,6 +22,7 @@ SHARED_HELPERS = (
     ("capa_simulation.components.constraint_simulation_figures", "axis_bounds"),
     ("capa_simulation.components.profile_caption", "render_row_value"),
     ("capa_simulation.components.profile_caption", "render_heading_value"),
+    ("capa_simulation.components.table_toolbar", "file_name_part"),
 )
 
 

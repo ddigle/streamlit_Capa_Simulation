@@ -513,7 +513,7 @@ def test_the_heading_row_carries_the_column_note_and_the_form_has_no_label_row(
     assert MANUAL_COLUMNS_HELP in str(heading.proto.help)
     for key, placeholder in (
         (MANUAL_SAVED_BY_KEY, "저장자 · 예: 홍길동"),
-        (MANUAL_NOTE_KEY, "변경 메모 · 예: 26.07 Wafer Mount PM 1.5대"),
+        (MANUAL_NOTE_KEY, "변경 메모 · 예: 26.07 PM 1.5대"),
     ):
         field = app.text_input(key=key)
         assert field.placeholder == placeholder

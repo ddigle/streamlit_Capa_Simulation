@@ -270,16 +270,6 @@ CROSS_CHECK_MONTHS_HELP = (
     "설비 조회기간이 덮는 달로 좁혔습니다 — 시나리오 조회기간이 더 넓어도 그 달의 설비 상태를 "
     "만들지 않았으면 맞댈 수 없습니다. 조회기간을 넓히면 늘어납니다."
 )
-# 「시트 CSV」 · 「시트 엑셀」 을 묶은 「내려받기 ▾」 메뉴(2026-11-10 답 Q2-7 꼴 — 공정 Capa 상세 ·
-# 산출 결과와 같은 도우미)는 「조회 결과 · 표시」 전환 단추(28px)와 같은 높이다 — 기본 단추(35px)면
-# 시트를 보는 회차에만 줄이 7px 높아져 시트 ↔ 호기 목록 · 가용대수 비교를 오갈 때 아래 본문이
-# 오르내린다(설계 규칙 UI-CON-01 · UI-PRF-03, 공정 Capa 상세 표 도구 줄과 같은 꼴). 메뉴 안
-# 단추는 줄 밖(떠 있는 층)이라 기본 높이다. 앱 전체 회차에만 그리므로 스타일만 든 `st.html` 이
-# 이벤트 칸으로 가도 된다.
-SHEET_CSV_STYLE = (
-    f"<style>.st-key-{GAP_SHEET_MENU_KEY} button "
-    "{ min-height: 28px; height: 28px; padding-block: 0; }</style>"
-)
 # 시트 엑셀 통의 꼴 판 — 같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 올린다.
 GAP_SHEET_SCHEMA_VERSION = 2
 CROSS_CHECK_MANUAL_HELP = (
@@ -871,12 +861,13 @@ def render_sheet_downloads(bundle: GapSheetBundle, *, heading: Sequence[tuple[st
     """「내려받기 ▾」 메뉴 — 「시트 CSV」 와 「시트 엑셀」(지금 화면 시트를 화면 서식째 —
     `availability_sheet_workbook`). 패널이 「조회 결과 · 표시」 줄 오른쪽 끝에 세운다(2026-11-09
     사용자 보드 T3 — 단추 하나가 따로 한 줄을 차지하지 않는다). 칸 누름과 상관없는 값이라 시트
-    프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와 같다(`SHEET_CSV_STYLE`).
+    프래그먼트 밖 앱 전체 회차에 그린다. 높이는 곁 전환 단추와 같은 28px 이다 — 메뉴 높이는
+    `table_toolbar.render_download_pair` 한 곳이 정한다(`DOWNLOAD_MENU_STYLE` — 2026-11-11 남은
+    물음 보드 C9).
 
     통은 조건 키(시트 꼴 판 · 범위 지문 — 공정 · 달 · 호기 필터 · 시트 키 — · 머리 글자 · 제목
     세부 글 · 머리 값 줄)로 세션에 몇 벌 기억한다 — 같은 조건 회차 · 칸 누름은 다시 짓지 않는다
     (공정 Capa 상세 · 산출 결과와 같은 길, 새 `st.cache_*` 없음)."""
-    st.html(SHEET_CSV_STYLE)
     stamp = f"{bundle.view.months[0]}_{bundle.view.months[-1]}"
     request = GapWorkbookRequest(
         view=bundle.view,
