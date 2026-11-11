@@ -65,16 +65,25 @@ from capa_simulation.services.revision_input_check import (
     RevisionInputCheck,
     blocked_input_check,
     build_input_check,
-    plan_period,
+    calculation_period,
 )
 from capa_simulation.services.simulation_cache import (
     CAPACITY_INPUT_TABLES,
     DEMAND_INPUT_TABLES,
+    MONTHLESS_INPUT_TABLES,
     CapacityOutcome,
     full_capacity_outcome,
     get_capacity_and_demand,
     get_full_capacity_outcome,
     get_revision_input_check,
+)
+
+# 입력 점검 칸 머리 「전체 기간」 의 달을 모으는 표 — 계산 입력 표 가운데 달 축이 있는 것(계획
+# `RQ_PKG_PLAN` 포함). 묶음이 그 표들 전체 달의 행을 세므로 기간도 그 합친 범위다.
+INPUT_CHECK_PERIOD_TABLES = tuple(
+    name
+    for name in (*CAPACITY_INPUT_TABLES, *DEMAND_INPUT_TABLES)
+    if name not in MONTHLESS_INPUT_TABLES
 )
 
 
@@ -254,7 +263,7 @@ def input_check_verdict(
         repository = get_scenario_repository(database_path)
         tables = repository.load_revision(revision_id, apply_global_display_order=False).tables
         blank_cs = repository.load_source_blank_cs_rows(scenario_id)
-        period = plan_period(tables["RQ_PKG_PLAN"])
+        period = calculation_period(tables, INPUT_CHECK_PERIOD_TABLES)
         blocked = revision_block_reason(tables)
         if blocked is not None:
             return blocked_input_check(blocked, blank_cs, period=period)

@@ -26,6 +26,7 @@ import capa_simulation.persistence.cache as scenario_cache
 import capa_simulation.services.revision_input_check as revision_input_check
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components.capacity_gate import (
+    INPUT_CHECK_PERIOD_TABLES,
     density_error,
     input_check_verdict,
     official_publish_verdict,
@@ -43,6 +44,7 @@ from capa_simulation.services.builtin_seed import (
 )
 from capa_simulation.services.core_data_derivation import derive_q_core_data
 from capa_simulation.services.load_calculator import PLAN_QUANTITY_BLANK_REASON
+from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.required_equipment import (
     PKG_UNCOUNTED_REASON,
     REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR,
@@ -63,7 +65,7 @@ from capa_simulation.services.revision_input_check import (
     RevisionInputCheck,
     blocked_input_check,
     build_input_check,
-    plan_period,
+    calculation_period,
     reason_label,
 )
 from capa_simulation.services.simulation_cache import CapacityOutcome, full_capacity_outcome
@@ -169,7 +171,8 @@ def _check(tables: Tables, blank_cs: pd.DataFrame | None = None) -> RevisionInpu
     """`input_check_verdict` 의 계산 몸통과 같은 차례 — DB · 캐시 없이."""
     outcome = full_capacity_outcome(tables, tables)
     density = density_error(tables) if outcome.error is None else None
-    return build_input_check(outcome, density, blank_cs, period=plan_period(tables["RQ_PKG_PLAN"]))
+    period = calculation_period(tables, INPUT_CHECK_PERIOD_TABLES)
+    return build_input_check(outcome, density, blank_cs, period=period)
 
 
 # ------------------------------------------------------------------ 검사와 같은 수
@@ -218,7 +221,7 @@ def test_every_check_group_is_counted_and_the_calculation_says_how_many(tables: 
     flagged = [group.key for group in check.groups if group.flagged]
     assert flagged == [GROUP_CAPACITY, GROUP_ROUTES, GROUP_PLANS, GROUP_UNROUTED, GROUP_ASSUMED]
     assert check.calculation_label == "됨 · 확인 5"
-    assert check.period == plan_period(edited["RQ_PKG_PLAN"])
+    assert check.period == (min(BUILTIN_SEED_MONTHS), max(BUILTIN_SEED_MONTHS))
     assert check.period_label.count("–") == 1
 
 
@@ -330,6 +333,50 @@ def test_an_old_revision_without_route_keys_stops_without_calculating(
     stop = check.group(GROUP_STOP)
     assert stop is not None and stop.subtitle == "옛 리비전"
     assert blocked_input_check("옛 리비전", None).calculation_label == "멈춤"
+
+
+def test_the_period_covers_every_month_the_calculation_read(tables: Tables) -> None:
+    """칸 머리 「전체 기간」 은 계산이 본 달 전체다 — 기준정보 달이 계획보다 넓으면 그 달까지 넓혀
+    묶음 행의 달이 모두 기간 안이다(2026-11-11 검토 보드 F5 (가)). 계획 끝 달을 지우고 그 달
+    효율을 0 으로 둔 리비전은 계획만 보면 끝 달이 빠지는데 뺀 기준 행은 그 끝 달이다."""
+    edited = {name: frame.copy() for name, frame in tables.items()}
+    plan = edited["RQ_PKG_PLAN"]
+    last = int(_months(plan).max())
+    edited["RQ_PKG_PLAN"] = plan.loc[_months(plan).ne(last)].reset_index(drop=True)
+    run_rate = edited["RQ_RUN_RATE"]
+    run_rate.loc[_months(run_rate).eq(last), "CAPA_RUN_RATE"] = 0.0
+    plan_months = _months(edited["RQ_PKG_PLAN"])
+    assert int(plan_months.max()) < last
+
+    check = _check(edited)
+
+    assert check.period == (int(plan_months.min()), last)
+    start, end = check.period
+    assert check.period_label == f"{month_label(start)}–{month_label(end)}"
+    capacity = check.group(GROUP_CAPACITY)
+    assert capacity is not None and capacity.count
+    assert _months(capacity.tables[0].frame).eq(last).any()
+    for group in check.groups:
+        for table in group.tables:
+            frame = table.frame
+            if group.key == GROUP_SOURCE or frame.empty or "생산계획년월" not in frame.columns:
+                continue
+            assert _months(frame).between(start, end).all(), (group.key, table.title)
+
+
+def test_the_period_skips_monthless_tables_and_says_nothing_without_months() -> None:
+    """달 칸이 없는 표 · 없는 표는 건너뛰고, 어느 표에도 달이 없으면 기간이 없다."""
+    monthless = pd.DataFrame({"제품정보": ["DEMO_A"]})
+    plan = pd.DataFrame({"생산계획년월": [202602, 202603]})
+    upeh = pd.DataFrame({"생산계획년월": [202601, 202604]})
+
+    assert calculation_period({"RQ_MODULE": monthless}, ["RQ_MODULE", "RQ_UPEH"]) is None
+    assert calculation_period(
+        {"RQ_PKG_PLAN": plan, "RQ_UPEH": upeh, "RQ_MODULE": monthless},
+        ["RQ_PKG_PLAN", "RQ_UPEH", "RQ_MODULE"],
+    ) == (202601, 202604)
+    assert "RQ_PKG_PLAN" in INPUT_CHECK_PERIOD_TABLES
+    assert not {"RQ_MODULE", "RQ_CHIP_QTY"} & set(INPUT_CHECK_PERIOD_TABLES)
 
 
 # ------------------------------------------------------------------ DB · 캐시 길

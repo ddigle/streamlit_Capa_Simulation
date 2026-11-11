@@ -120,6 +120,7 @@ SOURCE_PREVIEW: Final = ("생산계획년월", "공정", "제품정보", "계획
 
 # 원천의 계획 행 표시 칸 — 등록 때 뺀 행을 계획 · 경로로 가른다(`plan_row_mask`).
 SOURCE_PLAN_FLAG_COLUMN: Final = "계획기초정보여부"
+_MONTH_COLUMN = "생산계획년월"
 _CAPACITY_REASON_COLUMN = "제외사유"
 _PLAN_REASON_COLUMN = "누락 기준정보"
 _ROUTE_REASON_COLUMN = "제외사유"
@@ -201,7 +202,8 @@ class InputCheckStop:
 
 @dataclass(frozen=True, eq=False)
 class RevisionInputCheck:
-    """리비전 하나의 입력 점검 — 묶음 차례대로, 기간(`RQ_PKG_PLAN` 달 범위), 멈춤."""
+    """리비전 하나의 입력 점검 — 묶음 차례대로, 기간(계산이 본 달 범위 — `calculation_period`),
+    멈춤."""
 
     groups: tuple[InputCheckGroup, ...]
     period: tuple[int, int] | None = None
@@ -242,11 +244,20 @@ def reason_label(reason: str) -> str:
     return REASON_LABELS.get(reason, reason)
 
 
-def plan_period(plan: pd.DataFrame) -> tuple[int, int] | None:
-    """`RQ_PKG_PLAN` 의 달 범위(첫 달, 끝 달). 계획이 없거나 달 칸이 없으면 None."""
-    if "생산계획년월" not in plan.columns:
-        return None
-    months = pd.to_numeric(plan["생산계획년월"], errors="coerce").dropna()
+def calculation_period(
+    tables: Mapping[str, pd.DataFrame], names: Sequence[str]
+) -> tuple[int, int] | None:
+    """계산이 본 달 범위(첫 달, 끝 달) — `names` 표(계획 `RQ_PKG_PLAN` 과 달 축이 있는 계산 입력
+    표)의 달을 합친 범위다. 묶음은 기준정보 표 전체 달의 행을 세므로 기준정보 달이 계획보다 넓으면
+    그 달도 범위에 든다(2026-11-11 입력 점검 검토 보드 F5 (가)). 달 칸이 없는 표 · 없는 표는
+    건너뛰고, 어느 표에도 달이 없으면 None. 등록 때 뺀 원천 행은 계산 밖이라 넣지 않는다."""
+    found: list[pd.Series] = []
+    for name in names:
+        frame = tables.get(name)
+        if frame is None or _MONTH_COLUMN not in frame.columns:
+            continue
+        found.append(pd.to_numeric(frame[_MONTH_COLUMN], errors="coerce").dropna())
+    months = pd.concat(found) if found else pd.Series(dtype="float64")
     if months.empty:
         return None
     return int(months.min()), int(months.max())
@@ -452,7 +463,7 @@ def build_input_check(
 
     `density_error` 는 Capa 계산이 통과했을 때만 본 값이다(`capacity_gate` 의 멈춤 판정과 같은
     차례).
-    `period` 는 그 리비전 `RQ_PKG_PLAN` 의 달 범위(`plan_period`)다.
+    `period` 는 그 리비전 계산이 본 달 범위(`calculation_period`)다.
     """
     source = _source_group(blank_cs)
     if outcome.error is not None:
