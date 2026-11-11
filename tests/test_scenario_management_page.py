@@ -32,6 +32,7 @@ from capa_simulation import alerts
 from capa_simulation.components.bigdataquery_registration import CATALOG_START_DATE_KEY
 from capa_simulation.components.date_panel import panel_key
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.profile_caption import VALUE_END_CLASS, VALUE_END_STYLE
 from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.scenario_list_grid import (
     CHANGES_KEY,
@@ -371,8 +372,10 @@ def test_clone_names_every_missing_required_field_at_once(tmp_path: Path) -> Non
     assert helps["원천 시뮬레이션 코드"] == CLONE_SOURCE_NOTE
     assert helps["원천 시뮬레이션명"] == CLONE_SOURCE_NOTE
     # 복제 대상은 값(복제 대상)과 표지만이고, 폼 위에 따로 선 줄이 아니라 「시나리오 작업」 전환
-    # 단추 줄 오른쪽 끝이다(2026-11-09 사용자 보드 T2).
-    (target,) = [str(item.value) for item in app.caption if str(item.value).startswith("복제 대상")]
+    # 단추 줄 오른쪽 끝이다(2026-11-09 사용자 보드 T2) — 한 덩이로 밀려 좁으면 통째로 다음 줄로
+    # 내려간다(`"push"` — 2026-11-11 보드 D1).
+    pushed = f'<span class="{VALUE_END_CLASS}">복제 대상'
+    (target,) = [str(item.value) for item in app.caption if str(item.value).startswith(pushed)]
     assert "복제합니다" not in target, target
     assert _same_row_as_the_mode_switch(app, target)
     assert _clone_inputs(app)["원천 시뮬레이션 코드"] == ""
@@ -2053,7 +2056,8 @@ def test_the_clone_form_names_what_it_copies(
     assert not app.exception
 
     shown = f"복제 대상 · 「{literal_markdown(release.scenario_name)}」 r{release.revision_no}"
-    assert shown in [item.value for item in app.caption], [item.value for item in app.caption]
+    pushed = f'<span class="{VALUE_END_CLASS}">{shown}</span>{VALUE_END_STYLE}'
+    assert pushed in [item.value for item in app.caption], [item.value for item in app.caption]
     label = SimpleNamespace(scenario_name=release.scenario_name, revision_no=release.revision_no)
     monkeypatch.setattr(scenario_management, "active_scenario_label", lambda: label)
     monkeypatch.setattr(scenario_management, "has_unsaved_scenario_changes", lambda: True)

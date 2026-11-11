@@ -12,6 +12,8 @@
 - **잠근 꼴**(팝업 없음): 값 칸 「운영 일정 · r12 (고정)」 — 공정 Capa 상세 HOME 방문(까닭은 줄 아래
   한 줄). 긴 이름은 값 칸에서 줄여 리비전 번호가 늘 보인다. Space 현황은 고를 수 있는 줄이다(설비
   시나리오 2단계 S3 — 그 시나리오의 배치를 그린다).
+- **계산이 멈춘 회차**(공정 Capa 상세 · 제약 시뮬레이션의 공통 진입 오류)에도 줄은 잠그지 않고
+  선다(`render_stopped_equipment_scenario_row`) — 잠긴 공정 줄 · 조건 카드가 정상 회차 자리에 선다.
 - **팝업은 세션 키로 연다** — `app.py` 의 호스트 프래그먼트가 셋째 갈래로 부른다(한 실행에 팝업
   하나). 「불러오기」 는 모든 설비 화면, 「저장」 은 편집본을 세우는 화면(가용설비 현황·필요 단축
   일정)에만 선다. 저장소는 팝업을 연 동안에만 읽는다.
@@ -405,6 +407,19 @@ def render_equipment_scenario_row(
             # 칸으로 낸다(2026-11-03 결정 보드 D2 · D3 — `report_session_notices`).
             render_flash(FLASH_KEY)
             report_session_notices(session)
+
+
+def render_stopped_equipment_scenario_row() -> None:
+    """계산(공통 진입)이 멈춘 회차의 설비 시나리오 줄 — 정상 회차처럼 세션 설비 시나리오를 잠그지
+    않고 세운다. 다른 설비 시나리오로 옮기는 길이고, 아래 잠긴 공정 줄 · 조건 카드가 한 줄 올라오지
+    않는다(공정 Capa 상세 — 2026-11-10 답 Q2-29, 제약 시뮬레이션 — 2026-11-11 보드 C1). 화면은 잠긴
+    공정 줄(`process_field.render_stopped_process_field`)과 함께 멈춘 갈래에서 부른다. 설비 DB 를 못
+    읽으면 줄 없이 둔다 — 그 까닭은 계산이 서는 회차의 설비 일정 확인이 말한다."""
+    try:
+        session = resolve_equipment_session(str(settings.EQUIPMENT_DUCKDB_PATH.resolve()))
+    except BOOTSTRAP_ERRORS:
+        return
+    render_equipment_scenario_row(session)
 
 
 def open_equipment_scenario_dialog() -> None:

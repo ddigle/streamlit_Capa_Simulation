@@ -26,7 +26,12 @@ from capa_simulation.components.equipment_explorer import (
     TRANSITION_VIEW_KEY,
     WEEKLY_HEADING_KEY,
 )
-from capa_simulation.components.profile_caption import HEADING_BASELINE_STYLE, HEADING_KEY_PREFIX
+from capa_simulation.components.profile_caption import (
+    HEADING_BASELINE_STYLE,
+    HEADING_KEY_PREFIX,
+    VALUE_END_CLASS,
+    VALUE_END_STYLE,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -572,7 +577,8 @@ def test_the_question_view_and_expression_switches_have_no_label_row() -> None:
 def test_the_last_week_summary_sits_at_the_right_end_of_the_chart_heading() -> None:
     """가용대수의 마지막 주 대수 요약은 「주차별 설비 현황」 제목 줄 오른쪽 끝 값 글이다 — 제목
     위에 따로 줄을 세우지 않는다(2026-11-09 사용자 보드 T2). 두 글은 공용 버전 줄과 같은 밑줄
-    맞춤이다."""
+    맞춤이고, 값 글은 한 덩이로 줄 끝에 밀려 좁으면 통째로 다음 줄로 내려간다(`"push"` —
+    2026-11-11 보드 D1)."""
     app = _app()
     row = _keyed_block(app.main, f"{HEADING_KEY_PREFIX}{WEEKLY_HEADING_KEY}")
     assert row is not None
@@ -580,9 +586,10 @@ def test_the_last_week_summary_sits_at_the_right_end_of_the_chart_heading() -> N
     titles = [node.value for node in inside if isinstance(node, Markdown)]
     assert "#### 주차별 설비 현황" in titles
     (summary,) = [node for node in inside if isinstance(node, Caption)]
-    assert summary.value.startswith("마지막 주 ")
-    assert summary.value.endswith(HEADING_BASELINE_STYLE)
-    assert [item.value for item in app.caption if item.value.startswith("마지막 주")] == [
+    pushed = f'<span class="{VALUE_END_CLASS}">'
+    assert summary.value.startswith(f"{pushed}마지막 주 ")
+    assert summary.value.endswith(VALUE_END_STYLE + HEADING_BASELINE_STYLE)
+    assert [item.value for item in app.caption if f"{pushed}마지막 주" in item.value] == [
         summary.value
     ]
 
@@ -592,9 +599,9 @@ def test_the_last_week_summary_sits_at_the_right_end_of_the_chart_heading() -> N
     status_row = _keyed_block(app.main, f"{HEADING_KEY_PREFIX}{STATUS_HEADING_KEY}")
     assert status_row is not None
     (count,) = [node for node in _nodes(status_row) if isinstance(node, Caption)]
-    assert count.value.startswith("설비 마스터 ")
+    assert count.value.startswith(f"{pushed}설비 마스터 ")
     assert count.proto.help == STATUS_COUNT_HELP
-    assert [item.value for item in app.caption if item.value.startswith("설비 마스터 ")] == [
+    assert [item.value for item in app.caption if f"{pushed}설비 마스터 " in item.value] == [
         count.value
     ]
 

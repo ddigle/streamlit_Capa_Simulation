@@ -27,7 +27,8 @@
   조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH 가정·HOME 얹기는 걸지 않는다(D5).
 
 계산은 순수 서비스(`services/constraint_simulation.py`)다. 오류 갈래는 넷으로 가른다 — 공통
-진입(카드 표지 `NO_PROCESS_MARK` · 패널 공정 줄은 잠긴 「계산 멈춤」 — 2차 보드 Q2-28), 제품별
+진입(카드 표지 `NO_PROCESS_MARK` · 패널 공정 줄은 잠긴 「계산 멈춤」 — 2차 보드 Q2-28, 그 앞 설비
+시나리오 줄은 잠그지 않고 선다 — 2026-11-11 보드 C1), 제품별
 소요 받기(카드 표지 `NO_PRODUCT_MARK` + 본문 마크 · 알림 「제품별 소요를 읽지 못했습니다 — {글}」 —
 「소요가 있는 제품이 없다」 안내와 가른다), 계획
 받기(「설비 일정을 계산하지 못했습니다 — …」, 두 DB 경로), 어댑터·서비스의
@@ -100,6 +101,7 @@ from capa_simulation.components.equipment_scenario_status import (
     equipment_basis_label,
     render_equipment_scenario_row,
     render_legacy_trace_warning,
+    render_stopped_equipment_scenario_row,
 )
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
@@ -294,7 +296,10 @@ today = date.today()
 try:
     page_inputs = process_page_inputs(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
-    # 패널의 공정 줄도 잠긴 채 자리를 지킨다(산출 결과 · 공정 Capa 상세와 같은 꼴 — 2차 보드 Q2-28).
+    # 설비 시나리오 줄은 공정 Capa 상세처럼 잠그지 않고 서고(2026-11-11 보드 C1), 패널의 공정 줄은
+    # 잠긴 채 자리를 지킨다(산출 결과 · 공정 Capa 상세와 같은 꼴 — 2차 보드 Q2-28) — 정상 회차와
+    # 같은 높이다.
+    render_stopped_equipment_scenario_row()
     render_stopped_process_field()
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON, default=True):

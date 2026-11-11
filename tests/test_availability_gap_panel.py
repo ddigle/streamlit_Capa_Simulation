@@ -18,10 +18,12 @@ from capa_simulation.components.availability_gap_panel import (
     DETAIL_CATEGORY_KEY,
     DETAIL_MODE_HELP,
     DETAIL_MODE_KEY,
+    GAP_ROW_END_KEY,
     GAP_SIGN_HELP,
     PROCESS_FILTER_KEY,
     RESULT_VIEW_HELP,
     RESULT_VIEW_KEY,
+    ROW_END_STYLE,
     UNIT_LIST_HELP,
 )
 from capa_simulation.components.availability_sheet_canvas import GROUP_TITLES
@@ -860,6 +862,18 @@ def test_a_process_only_in_the_equipment_side_shows_no_gap_and_says_why() -> Non
         assert _value(app, row) is None
         assert "기준정보(Static)에 없는 공정" in hovers[(MONTH, row)]
     assert "GAP 을 내지 않습니다" in " ".join(item.value for item in app.caption)
+    # 분류별 내역의 그 글은 혼자 한 줄을 세우지 않고 「조회 결과 · 표시」 전환 줄 오른쪽 끝 칸의
+    # 작은 글이다 — 「내려받기 ▾」 메뉴 앞(2026-11-11 보드 D2 — e4-1 과 같은 꼴).
+    (mark,) = [item for item in app.caption if "있는 쪽 값만 보입니다" in str(item.value)]
+    assert all(child is not mark for child in app.main.children.values())
+    end = switch_row_end(app)
+    assert mark in _descendants(end)
+    assert list(end.children.values())[0] is mark
+    # 끝 칸은 제 글 한 줄 폭보다 좁아지지 않고 칸째 다음 줄로 내려간다 — 긴 글이 좁은 칸 안에서 여러
+    # 줄로 접히지 않게(브라우저 배치 값이라 서식만 본다).
+    assert f".st-key-{GAP_ROW_END_KEY})" in ROW_END_STYLE
+    assert "flex: 1 1 fit-content" in ROW_END_STYLE
+    assert ROW_END_STYLE in [str(item.proto.body) for item in app.get("html")]
 
     open_cell(app, MONTH, ROW_GAP_AVAILABLE)
     app.run()
@@ -1168,6 +1182,21 @@ def _descendants(node: Any) -> list[Any]:
         if isinstance(child, Block):
             out.extend(_descendants(child))
     return out
+
+
+def switch_row_end(app: AppTest) -> Any:
+    """「조회 결과 · 표시」 전환 줄의 마지막 칸(오른쪽 끝 — 표지 · 「내려받기 ▾」 가 서는 칸)."""
+    from streamlit.testing.v1.element_tree import Block
+
+    (row,) = [
+        block
+        for block in app.main.children.values()
+        if isinstance(block, Block)
+        and any(getattr(child, "key", None) == RESULT_VIEW_KEY for child in _descendants(block))
+    ]
+    end = list(row.children.values())[-1]
+    assert isinstance(end, Block)
+    return end
 
 
 # ------------------------------------------------------------------ 공정 표시명(Proc Rename)

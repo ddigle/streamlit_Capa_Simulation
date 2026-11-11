@@ -43,15 +43,13 @@ render_profile_heading(
 · 「설비 일정 기준 가용(환산) · 오늘 …」)은 바로 위 제목 · 단추 줄의 작은 글이다(2026-11-09 사용자
 보드 T2, 설계 규칙 UI-TXT-04 · UI-LAY-11 · UI-LAY-13). 가용설비 · 시나리오 복제 · 필요 단축 일정 ·
 Proc Rename 이 그 칸을 따로 짓던 것을 여기 하나로 모았다 — 화면은 줄(가로 칸)만 세우고 값 글은 이
-함수로 그린다. 자리는 셋이다(`RowValuePlace`).
+함수로 그린다. 자리는 둘이다(`RowValuePlace`).
 
 - `"after"` — 앞 칸 바로 뒤(Proc Rename 보유 공정 밖 표지 · 공용 버전 줄).
-- `"right"` — 줄의 남은 폭을 차지하는 오른쪽 맞춤 칸 안(가용설비 결과 제목 줄 · 시나리오 작업
-  줄). 자리가 모자라면 글이 그 칸 안에서 줄을 바꾼다(샘플 관측 — 창 820px 에서 두 줄). 값이 없는
-  회차(`None`)에도 그 칸은 늘 선다 — 글만 서고 빠진다.
-- `"push"` — 글 한 덩이를 줄 오른쪽 끝으로 민다(필요 단축 일정 CSV · 멈춤 · 빈 상태 줄). 앞 칸들
-  곁에 자리가 모자라면 통째로 다음 줄 오른쪽 끝으로 내려가고 두 줄로 접히지 않는다(설계 규칙
-  UI-ACC-02).
+- `"push"` — 글 한 덩이를 줄 오른쪽 끝으로 민다(가용설비 결과 제목 줄 · 시나리오 작업 줄 · 필요
+  단축 일정 CSV · 멈춤 · 빈 상태 줄 — 2026-11-11 「남은 물음 11-11」 보드 D1). 앞 칸들 곁에 자리가
+  모자라면 남은 칸 안에서 접히지 않고 통째로 다음 줄 오른쪽 끝으로 내려간다(설계 규칙 UI-ACC-02).
+  글 한 줄이 줄 폭보다 넓으면 내려간 줄에서도 접힌다.
 
 제목 줄 하나에 제목과 오른쪽 끝 값 글을 두는 자리는 `render_heading_value` 다(두 글은 공용 버전
 줄과 같은 밑줄 맞춤).
@@ -60,7 +58,7 @@ Proc Rename 이 그 칸을 따로 짓던 것을 여기 하나로 모았다 — �
 render_heading_value("#### 주차별 설비 현황", summary, key="equipment_weekly")
 with st.container(horizontal=True, vertical_alignment="center", gap="small"):
     st.segmented_control(...)
-    render_row_value(caption if cloning else None, place="right")
+    render_row_value(caption if cloning else None, place="push")
 ```
 """
 
@@ -90,8 +88,8 @@ VALUE_END_CLASS: Final = "capa-row-value"
 VALUE_END_STYLE: Final = (
     f'<style>[data-testid="stElementContainer"]:has(.{VALUE_END_CLASS}){{margin-left:auto}}</style>'
 )
-# 값 글의 자리 — 앞 칸 바로 뒤 · 남은 폭의 오른쪽 맞춤 칸 안 · 한 덩이로 줄 오른쪽 끝.
-RowValuePlace = Literal["after", "right", "push"]
+# 값 글의 자리 — 앞 칸 바로 뒤 · 한 덩이로 줄 오른쪽 끝.
+RowValuePlace = Literal["after", "push"]
 # 앞에 `\` 가 없는 `<` — `literal_markdown` 이 막은 `\<` 는 이미 글자다.
 _RAW_TAG_START: Final = re.compile(r"(?<!\\)<")
 
@@ -190,9 +188,9 @@ def render_profile_heading(
 
 
 def render_heading_value(title: str, value: str, *, key: str, help: str | None = None) -> None:
-    """구획 제목과 그 줄 오른쪽 끝 작은 값 글(`render_row_value` 의 `"right"`) — 값 줄을 제목 위 ·
-    아래에 따로 세우지 않는다(2026-11-09 사용자 보드 T2). 칸이 좁으면 값 글이 제목 곁 칸 안에서 줄을
-    바꾼다.
+    """구획 제목과 그 줄 오른쪽 끝 작은 값 글(`render_row_value` 의 `"push"`) — 값 줄을 제목 위 ·
+    아래에 따로 세우지 않는다(2026-11-09 사용자 보드 T2). 제목 곁에 자리가 모자라면 값 글이 통째로
+    다음 줄 오른쪽 끝으로 내려간다(2026-11-11 보드 D1).
 
     줄 칸 key 는 `render_profile_heading` 과 같은 `HEADING_KEY_PREFIX` + `key` 이고 두 글은 같은
     글자 밑줄 맞춤이다(`HEADING_BASELINE_STYLE` 를 값 글 캡션에 싣는다 — 이벤트 칸을 쓰지 않는다).
@@ -205,7 +203,7 @@ def render_heading_value(title: str, value: str, *, key: str, help: str | None =
         key=f"{HEADING_KEY_PREFIX}{key}",
     ):
         st.markdown(title, width="content")
-        render_row_value(value, place="right", help=help, style=HEADING_BASELINE_STYLE)
+        render_row_value(value, place="push", help=help, style=HEADING_BASELINE_STYLE)
 
 
 def render_row_value(
@@ -220,8 +218,8 @@ def render_row_value(
 
     `value` 는 마크다운 자리 글이다 — 앱이 지은 수 · 날짜 · 표지는 그대로, 사람 글(이름 · 메모)은
     부르는 쪽이 `literal_markdown` 으로 막아 넣는다(`profile_version_caption` 과 같은 약속). `help`
-    는 값 글의 풍선이다. `place` 는 모듈 머리 「값 글」 의 셋이다 — `"right"` 는 값이 `None` 이어도
-    칸을 세운다(그 회차에 글만 빠진다), 다른 둘은 `None` 이면 아무것도 그리지 않는다.
+    는 값 글의 풍선이다. `place` 는 모듈 머리 「값 글」 의 둘이다 — 값이 `None` 이면 아무것도 그리지
+    않는다.
 
     `style` 은 같은 캡션에 싣는 앱이 지은 서식(`<style>…</style>` — 예:
     `HEADING_BASELINE_STYLE`)이다. 서식이 실리면(`"push"` 는 늘 — `VALUE_END_STYLE`) 캡션은 HTML 을
@@ -229,11 +227,6 @@ def render_row_value(
     마크다운 그대로 싣는다(`:orange-badge[…]` 같은 지시문도 그대로). 본문 칸에만 쓰고 이벤트 칸에는
     아무것도 쓰지 않아 팝업 본문 · 프래그먼트 어디서나 부를 수 있다.
     """
-    if place == "right":
-        with st.container(horizontal=True, horizontal_alignment="right"):
-            if value is not None:
-                _value_caption(value, help=help, style=style)
-        return
     if value is None:
         return
     if place == "push":
