@@ -17,8 +17,12 @@ from capa_simulation.components import home_preference
 from capa_simulation.components.table_toolbar import (
     CSV_MIME,
     DOWNLOAD_ICON,
+    DOWNLOAD_MENU_HEIGHT_PX,
+    DOWNLOAD_MENU_KEY_PREFIX,
+    DOWNLOAD_MENU_STYLE,
     TABLE_TOOLBAR_CLEARANCE,
     TABLE_TOOLBAR_ROOM,
+    download_menu_key,
     file_name_part,
     toolbar_room_css,
 )
@@ -561,7 +565,7 @@ def _pair_page(with_csv: bool, deferred: bool) -> None:
         slot = render_download_pair(
             csv=CsvFile(data=b"csv", file_name="t.csv", key="pair_csv") if with_csv else None,
             sheet=None if deferred else sheet,
-            menu_key="pair_menu",
+            menu_key="download_menu_pair",
         )
         st.caption("곁 칸")
     st.caption("줄 아래")
@@ -612,6 +616,93 @@ def test_the_pair_is_one_download_menu_on_the_callers_row() -> None:
     assert shapes[(True, True)] == shapes[(True, False)]
     assert shapes[(False, False)] == [[sheet_slot, ("caption", None)], ("caption", None)]
     assert shapes[(False, True)] == shapes[(False, False)]
+
+
+def _pair_menu_key_page() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.table_toolbar import SheetFile, render_download_pair
+
+    with st.container(horizontal=True):
+        render_download_pair(
+            csv=None,
+            sheet=SheetFile(data=b"xlsx", file_name="t.xlsx", key="pair_sheet"),
+            menu_key="download_menu_pair",
+        )
+
+
+def test_the_pair_menu_height_is_one_value_from_the_pair_helper() -> None:
+    """줄에 선 「내려받기 ▾」 메뉴(또는 CSV 가 없어 메뉴 없이 선 「시트 엑셀」 칸)의 높이는 네
+    자리(공정 Capa 상세 · 산출 결과 · Static 대비 일정 · 호기 목록) 모두 28px 하나다 — 높이는
+    `render_download_pair` 가 메뉴 · 칸에 다는 key 접두어로 걸고, 서식은 `app.py` 가 매 회차
+    보내는 앱 전체 서식에 한 번 싣는다(2026-11-11 남은 물음 보드 C9). 부르는 자리는 제 높이
+    서식을 두지 않는다."""
+    from streamlit.testing.v1 import AppTest
+
+    assert DOWNLOAD_MENU_HEIGHT_PX == 28
+    assert DOWNLOAD_MENU_STYLE.startswith(
+        f'<style>[class*="st-key-{DOWNLOAD_MENU_KEY_PREFIX}"] button'
+    )
+    assert f"height: {DOWNLOAD_MENU_HEIGHT_PX}px;" in DOWNLOAD_MENU_STYLE
+    assert (
+        download_menu_key("download_unit_capacity_csv")
+        == "download_menu_download_unit_capacity_csv"
+    )
+    # 앱 전체 서식 한 `st.html` 에 싣는다(새 이벤트 칸을 세우지 않는다).
+    entry = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
+    assert entry.count("+ DOWNLOAD_MENU_STYLE") == 1
+    # 메뉴 key 를 넘기는 자리는 모두 접두어로 시작하는 이름 · 도우미를 쓴다.
+    from capa_simulation.components import availability_sheet_keys, process_capa_view
+
+    for key in (
+        process_capa_view.DOWNLOAD_MENU_KEY,
+        availability_sheet_keys.GAP_SHEET_MENU_KEY,
+        availability_sheet_keys.GAP_UNIT_LIST_MENU_KEY,
+    ):
+        assert key.startswith(DOWNLOAD_MENU_KEY_PREFIX), key
+    # 접두어로 시작하는 글자 상수는 메뉴 key 자리(`availability_sheet_keys`)에만 선다 — 다른 key 가
+    # 그 글자로 시작해 높이 서식에 걸리지 않게.
+    literal = re.compile(rf"""["']{re.escape(DOWNLOAD_MENU_KEY_PREFIX)}""")
+    stray = [
+        path.relative_to(PROJECT_ROOT).as_posix()
+        for path in _sources()
+        if literal.search(path.read_text(encoding="utf-8"))
+        and path.name != "availability_sheet_keys.py"
+    ]
+    assert stray == [], stray
+    # 부르는 자리가 제 높이 서식을 두지 않는다 — 옛 꼴(칸 · 메뉴 key 에 건 28px)이 없다.
+    for path in _sources():
+        text = path.read_text(encoding="utf-8")
+        assert "SHEET_CSV_STYLE" not in text, path
+        if "render_download_pair(" in text:
+            assert "min-height: 28px; height: 28px" not in text, path
+    # 메뉴 없이 선 「시트 엑셀」 칸도 그 key 를 받는다 — 접두어 밖 key 는 받지 않는다.
+    app = AppTest.from_function(_pair_menu_key_page).run()
+    assert not app.exception
+    keyed = [
+        block
+        for block in app.main.children.values()
+        for child in getattr(block, "children", {}).values()
+        if getattr(child, "key", None) == "download_menu_pair"
+    ]
+    assert len(keyed) == 1
+
+
+def _outside_prefix_page() -> None:
+    from capa_simulation.components.table_toolbar import SheetFile, render_download_pair
+
+    render_download_pair(
+        csv=None,
+        sheet=SheetFile(data=b"xlsx", file_name="t.xlsx", key="pair_sheet"),
+        menu_key="pair_menu",
+    )
+
+
+def test_the_pair_refuses_a_menu_key_outside_the_prefix() -> None:
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_function(_outside_prefix_page).run()
+    assert app.exception and DOWNLOAD_MENU_KEY_PREFIX in str(app.exception[0].message)
 
 
 def test_the_file_name_part_drops_path_and_reserved_characters() -> None:

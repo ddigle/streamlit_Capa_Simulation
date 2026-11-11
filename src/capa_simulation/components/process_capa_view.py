@@ -129,6 +129,7 @@ from capa_simulation.components.table_toolbar import (
     SHEET_XLSX_LABEL,
     CsvFile,
     SheetFile,
+    download_menu_key,
     file_name_part,
     render_download_pair,
     render_sheet_download,
@@ -231,20 +232,19 @@ NEXT_MONTH_KEY: Final = "process_detail_next_month"
 # 닫힌 「경로별 인자」 상자(편 상태를 기억한다).
 ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
 # 표 도구 줄의 내려받기 둘(호기 CSV · 시트 엑셀)은 「내려받기 ▾」 메뉴 하나다(2026-11-10 답 Q2-7 —
-# 호기 CSV 가 없는 공정은 시트 엑셀 단추 하나). 줄에 선 단추(메뉴 또는 시트 엑셀)는 곁의 「구획」
-# 칩과 같은 높이로 둔다(설계 규칙 UI-CON-01 — 칩 28px). 메뉴 안 단추는 줄 밖(떠 있는 층)이라 기본
-# 높이다. 서식은 범례 `st.html` 에 실어 본문 칸으로 보낸다(이벤트 칸 자리 수가 갈리지 않게).
+# 호기 CSV 가 없는 공정은 시트 엑셀 단추 하나). 줄에 선 단추(메뉴 또는 시트 엑셀)의 높이는 곁의
+# 「구획」 칩과 같은 28px 이고 `table_toolbar.render_download_pair` 가 정한다(설계 규칙 UI-CON-01 ·
+# 2026-11-11 남은 물음 보드 C9). 칸 서식(줄바꿈 없음)은 범례 `st.html` 에 실어 본문 칸으로 보낸다
+# (이벤트 칸 자리 수가 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
 SHEET_XLSX_KEY: Final = "process_detail_sheet_xlsx"
-DOWNLOAD_MENU_KEY: Final = "process_detail_download_menu"
+DOWNLOAD_MENU_KEY: Final = download_menu_key("process_detail")
 # 내려받기 자리를 담는 칸 — 줄이 모자라면 칸째 다음 줄 오른쪽 끝으로 간다.
 DOWNLOADS_KEY: Final = "process_detail_downloads"
 # 「구획」 칩과 그 뜻 ⓘ 를 담는 칸 — ⓘ 가 칩과 작은 간격으로 붙는다(옆 토글의 풍선으로 읽히지 않게).
 SECTIONS_ROW_KEY: Final = "process_detail_sections_row"
 DOWNLOAD_STYLE: Final = (
-    f"<style>.st-key-{DOWNLOADS_KEY} button "
-    "{ min-height: 28px; height: 28px; padding-block: 0; }"
-    f".st-key-{DOWNLOADS_KEY} {{ flex-wrap: nowrap; }}"
+    f"<style>.st-key-{DOWNLOADS_KEY} {{ flex-wrap: nowrap; }}"
     f'[data-testid="stLayoutWrapper"]:has(> .st-key-{DOWNLOADS_KEY}) '
     "{ flex-shrink: 0; min-width: max-content; }</style>"
 )

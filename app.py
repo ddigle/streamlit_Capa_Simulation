@@ -66,6 +66,7 @@ from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
 from capa_simulation.components.sso_identity import require_signed_in, sso_credit_line
 from capa_simulation.components.sso_reconnect import sso_reconnect_scripts
 from capa_simulation.components.sso_refresh import sso_refresh_scripts
+from capa_simulation.components.table_toolbar import DOWNLOAD_MENU_STYLE
 from capa_simulation.components.theme_toggle import render_theme_toggle, unsaved_edits_marker
 from capa_simulation.components.typography import render_typography_style
 from capa_simulation.components.widget_generation import note_session_start
@@ -347,6 +348,10 @@ with pinned_connections(DUCKDB_PATH):
             # 통합인증이 켜진 서버는 앱 정보 카드가 셋째 줄까지라 스크롤 여유가 크다.
             app_credit_lines=2 if signed_in is None else 3,
         )
+        # 표 곁 「내려받기 ▾」 메뉴 높이 — 쓰는 네 자리가 한 값
+        # (`table_toolbar.render_download_pair`). 본문 프래그먼트 안에서 그리는 자리가 있어 그
+        # 자리마다 스타일만 든 `st.html` 을 두지 않는다.
+        + DOWNLOAD_MENU_STYLE
         # 테마 버튼은 새로고침으로 테마를 바꾼다(새 세션). 저장하지 않은 시나리오 편집이나 탭에
         # 점을 찍는 편집(설비 편집본·Space FAB 배치 대기·Space 층 사용 편집 초안·적용 전 편집·Past
         # Data 초안·시나리오 관리 표 초안)이 있으면 묻게 표지를 단다 — 어느 페이지에서 눌러도 같은

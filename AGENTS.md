@@ -3229,7 +3229,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   2026-11-10 답 Q2-7, 설비 마스터 「선택 ▾」 과 같은 꼴. 안의 단추는 `on_click="ignore"` 라 눌러도 메뉴가 열린 채 초점이 남고
   Esc 로 닫힌다. 시트를 나중에 짓는 화면은 돌려받은 칸에 `render_sheet_download`. 공정 Capa 상세 표 도구 줄 · 산출 결과
   대당 Capa · 소요대수 제목 줄(`table_heading_row(sheet=)`) · 가용설비 Static 대비 일정 시트(전환 줄 끝) · 호기 목록(목록 아래)이 쓰고, `tests/test_table_toolbar.py` 가 엑셀 단추를 다른 자리에서
-  부르지 않는지 · 쌍의 꼴을 본다)과 표 도구 막대 앞 띄움
+  부르지 않는지 · 쌍의 꼴을 본다. 줄에 선 메뉴(CSV 가 없으면 엑셀 칸)의 높이는 네 자리 모두 28px 하나다(2026-11-11 남은 물음
+  보드 C9 — 「구획」 칩 · 「조회 결과 · 표시」 전환 단추와 같은 높이, 메뉴 안 단추는 기본 높이): 메뉴 key 는 접두어
+  `DOWNLOAD_MENU_KEY_PREFIX`(「download_menu_」 — `download_menu_key` 가 붙이고, 아니면 `render_download_pair` 가 거절)로
+  시작하고 CSV 가 없을 때의 엑셀 칸도 그 key 를 받으며, 높이 서식 `DOWNLOAD_MENU_STYLE` 은 `app.py` 가 매 회차 보내는 앱 전체
+  서식 `st.html` 에 한 번 싣는다 — 부르는 자리마다 스타일만 든 `st.html` 을 두면 이벤트 칸에 서서 공정 Capa 상세 본문
+  프래그먼트의 이벤트 칸 수가 바뀐다)과 표 도구 막대 앞 띄움
   (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭), 띄움 대신 표 바로 위 줄 오른쪽 끝을
   막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. 사람이 적은 글(설비 시나리오
   이름 · 공정 표시명)을 내려받는 파일 이름에 실을 때는 한 벌 `file_name_part(글, fallback=)` 로 경로 · 예약 글자와 빈칸을
@@ -4161,8 +4166,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     확보율 교차검증이면 그 풍선 첫 단락이 「맞대어 본 달」 값 · 범위 설명이다(`_cross_check_help` — 자리 캡션 없음, 사용자 보드 T2 의
     「표 제목 풍선」 — 이 보기에는 표 제목이 없어 바로 위 줄 끝 풍선이 받는다). 시트 내려받기는 시트 프래그먼트 밖 그 줄 오른쪽
     끝 칸의 「내려받기 ▾」 메뉴 하나(`render_sheet_downloads` — 「시트 CSV」 · 「시트 엑셀」, `table_toolbar.render_download_pair` —
-    시트 엑셀 넓히기 2, 2026-11-10 답 Q2-7 꼴)이고 그 메뉴 단추는 곁 전환 단추와 같은 28px 다(`SHEET_CSV_STYLE` — 시트를 볼 때만 줄이
-    높아지지 않게)(T3). 「시트 엑셀」 은 지금 화면 시트(공정 · 달 · 호기 필터 · 입력 비가동 반영)를 화면 서식째
+    시트 엑셀 넓히기 2, 2026-11-10 답 Q2-7 꼴)이고 그 메뉴 단추는 곁 전환 단추와 같은 28px 다(메뉴 높이 한 곳
+    `table_toolbar.DOWNLOAD_MENU_STYLE` — 시트를 볼 때만 줄이 높아지지 않게)(T3). 「시트 엑셀」 은 지금 화면 시트(공정 · 달 · 호기 필터 · 입력 비가동 반영)를 화면 서식째
     (`components/availability_sheet_workbook.py`) 내고, 맨 위 값 줄은 공정 · 시나리오(Static 세 행이 온 활성 시나리오 — 공정 Capa 상세 · 산출 결과 시트와 같은 머리 띠 위 줄
     `sheet_download.scenario_line`, 올라온 리비전이 없으면 뺀다) · 조회기간 · 설비 시나리오(머리 띠 꼬리 글 `remembered_equipment_suffix` — 없으면 알림 범위 이름) · 호기 필터(걸렸을
     때 — 세션 칸 글 그대로, `_sheet_heading`)다. 통은 조건 키(`GAP_SHEET_SCHEMA_VERSION` · 범위 지문 · 머리 글자 · 제목 세부 글 · 머리

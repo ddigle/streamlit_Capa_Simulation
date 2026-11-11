@@ -22,7 +22,6 @@ from capa_simulation.components.availability_gap_panel import (
     PROCESS_FILTER_KEY,
     RESULT_VIEW_HELP,
     RESULT_VIEW_KEY,
-    SHEET_CSV_STYLE,
     UNIT_LIST_HELP,
 )
 from capa_simulation.components.availability_sheet_canvas import GROUP_TITLES
@@ -40,6 +39,7 @@ from capa_simulation.components.availability_sheet_workbook import (
 )
 from capa_simulation.components.table_toolbar import (
     CSV_DOWNLOAD_LABEL,
+    DOWNLOAD_MENU_KEY_PREFIX,
     DOWNLOAD_MENU_LABEL,
     SHEET_XLSX_LABEL,
     render_csv_download,
@@ -1054,10 +1054,10 @@ def test_the_sheet_downloads_are_one_menu_on_the_switch_row() -> None:
     keys = [getattr(child, "key", None) for child in _descendants(switch_row)]
     assert {RESULT_VIEW_KEY, DETAIL_MODE_KEY, GAP_SHEET_MENU_KEY} <= set(keys)
     # 메뉴 단추 높이는 곁 전환 단추(28px)와 같다 — 시트를 보는 회차에만 줄이 높아져 아래 본문이
-    # 오르내리지 않게(설계 규칙 UI-CON-01 · UI-PRF-03).
-    assert SHEET_CSV_STYLE in [str(item.proto.body) for item in app.get("html")]
-    assert f".st-key-{GAP_SHEET_MENU_KEY} button" in SHEET_CSV_STYLE
-    assert "height: 28px;" in SHEET_CSV_STYLE
+    # 오르내리지 않게(설계 규칙 UI-CON-01 · UI-PRF-03). 높이는 `render_download_pair` 한 곳이 메뉴
+    # key 접두어로 건다(2026-11-11 남은 물음 보드 C9 — `tests/test_table_toolbar.py`).
+    assert GAP_SHEET_MENU_KEY.startswith(DOWNLOAD_MENU_KEY_PREFIX)
+    assert GAP_UNIT_LIST_MENU_KEY.startswith(DOWNLOAD_MENU_KEY_PREFIX)
 
     app.segmented_control(key=DETAIL_MODE_KEY).set_value("호기 목록").run()
     assert not app.exception
