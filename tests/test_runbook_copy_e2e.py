@@ -11,8 +11,8 @@
 - `.wal` 만 앞뒤로 보면 복사 도중에 저장과 체크포인트가 다 끝난 사본을 놓친다 — 크기·시각도 본다.
 - 6) 적용 전 사본의 대조 줄은 사본에 적용 기록을 쓴다 — `PYTHONPATH` 가 안 먹으면 운영 트리의 적용
   기록을 덮어 다음 적용이 「이미 적용했습니다」로 멈추므로 git 트리면 쓰지 않고 멈춰야 한다.
-- 사본 DB 를 여는 줄(3) · a · b · c)은 사용자가 별도 창에서 친다 — 권한 템플릿이 그 줄을 묻지 않고
-  통과시키면 에이전트가 사내 DB 를 읽게 된다.
+- 사본 DB 를 여는 줄(a · b · c)은 사용자가 별도 창에서 친다 — 권한 템플릿이 그 줄을 묻지 않고
+  통과시키면 에이전트가 사내 DB 를 읽게 된다. 3) 은 경로만 찍어(DB 를 열지 않는다) 에이전트가 친다.
 """
 
 import hashlib
@@ -153,8 +153,12 @@ def test_the_upeh_plan_benchmark_reads_only_the_copy_and_writes_through_output()
 
 
 def _rule_matches(rule: str, command: str) -> bool:
-    """권한 규칙의 `*` 는 공백까지 아무 글자다(텍스트 맞춤)."""
+    """권한 규칙 맞춤 — 끝의 `:*` 는 앞부분 맞춤, 그 밖의 `*` 는 아무 글자다(텍스트 맞춤)."""
+    if "(" not in rule:
+        return False
     body = rule[rule.index("(") + 1 : -1]
+    if body.endswith(":*"):
+        return command.startswith(body[:-2])
     return re.fullmatch(".*".join(re.escape(part) for part in body.split("*")), command) is not None
 
 
@@ -174,7 +178,7 @@ def _as_real_folder(line: str) -> str:
 def _database_opening_lines() -> list[str]:
     """런북이 사용자 별도 창에 주는, 사내 DB 를 여는 줄 — 6-2 · 6-3 a · b · c · 8-0 의 펜스 줄과
     그것을 실제 폴더로 바꾼 줄, 그리고 걷은 BigDataQuery 줄 · `inspect_wf_division.py`(줄은 7장에
-    있다)."""
+    있다) · 7-8 꼴의 `python -c` 로 DuckDB 를 여는 줄."""
     names = (*COPY_CHECKS, "inspect_real_data_checks.py", "check_deploy_screens.py")
     sections = (
         _copy_e2e(),
@@ -194,6 +198,8 @@ def _database_opening_lines() -> list[str]:
         f"{prefix}inspect_real_data_checks.py",
         f"{prefix}inspect_wf_division.py",
         f'{prefix}inspect_wf_division.py --database "C:/Users/someone/e2e_copy/1/data/x.duckdb"',
+        f"{prefix}inspect_wf_division.py --output C:/Users/someone/wf.md",
+        'uv run --no-sync python -c "import duckdb; duckdb.connect(p, read_only=True)"',
     ]
     return [*lines, *(_as_real_folder(line) for line in lines), *walked_back]
 
@@ -257,13 +263,15 @@ def test_the_copy_compares_size_and_write_time_before_and_after() -> None:
     assert "stat -c '%n %s %y' data/*.duckdb" in _copy_e2e()
 
 
-def test_the_copy_check_before_launch_only_opens_the_two_copies() -> None:
-    """3) 은 사본이 열리는지만 본다 — 전 리비전 계산(수 분)은 4-a 의 몫이다."""
+def test_the_copy_check_before_launch_opens_no_database() -> None:
+    """3) 은 경로만 찍는다 — 두 사본을 여는 줄은 걷었고(열리지 않는 사본은 a · b · c 가 바로
+    알린다), 전 리비전 계산(수 분)은 4-a 의 몫이다."""
     lines = _code_lines(_section("### 3) 사본이 맞는지", "### 4)"))
 
     assert not [line for line in lines if "inspect_revision_calculations.py" in line]
-    opened = lines[_index(lines, "read_only=True")]
-    assert "s.DUCKDB_PATH" in opened and "s.EQUIPMENT_DUCKDB_PATH" in opened
+    assert not [line for line in lines if "duckdb" in line or "read_only" in line]
+    [printed] = [line for line in lines if "DUCKDB_PATH" in line]
+    assert printed.startswith('$env:PYTHONPATH = "$e2e\\src"; ')
 
 
 def _pre_apply_copy() -> str:
