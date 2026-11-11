@@ -14,7 +14,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 줄(v1.14) · 「권장대로 반영 결과」 보드 줄과 고른 글 · 고칠 것 메모 원문 · 닫힌 따라온 물음(v1.15) ·
 「남은 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 · 메모 해석(v1.16) · 입력 점검 시안 보드 줄과
 고른 글 · 앱 세션이 정한 줄(v1.17) · 「다음 배포 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 ·
-메모(v1.18) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+메모(v1.18) · 사내 리뷰 202611111500 보드 줄과 고른 글 · 고친 줄 커밋 · 메모 · 다시 물음 답(v1.19) ·
+문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -1450,14 +1451,14 @@ def test_the_next_deploy_questions_board_answers_are_recorded() -> None:
     """v1.18 — 6-18 은 「다음 배포 물음 11-11」 보드 카드 열아홉이 보드 차례대로 한 줄씩이고
     고른 글은 선택지 원문이다(D6 뒤 ② 는 메모 원문). 고친 여섯 줄은 커밋을 들고, 그대로 · 기록만
     열셋은 커밋이 없다. F2 뒤 (나) 는 사내 글꼴에서 다시 물을 자리(TODO 4장)를 가리키고, 앱 세션이
-    답을 읽은 셋은 줄에 밝힌다. 6-17 줄은 그때 기록 그대로다(앞 시험이 6-18 앞에서 끊어 본다)."""
+    답을 읽은 셋은 줄에 밝힌다. 6-17 줄은 그때 기록 그대로다(앞 시험이 6-18 앞에서 끊어 본다).
+    6-19 는 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.18" in document.split("\n## 1. ")[0]
     assert "- **v1.18 — 2026-11-11.**" in _chapter(document, 8)
-    assert "6-18 에 있다" in _chapter(document, 1)
+    assert "보드의 답은 6-18 에" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-18. ") :]
+    board = section[section.index("\n### 6-18. ") : section.index("\n### 6-19. ")]
     assert NEXT_BOARD_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -1483,3 +1484,139 @@ def test_the_next_deploy_questions_board_answers_are_recorded() -> None:
         assert "앱 세션 해석 — 밝힘" in by_id[key], key
     assert "`docs/TODO.md` 4장" in by_id["n-f2-slack"]
     assert "`docs/TODO.md` 2장" in by_id["n-runbook"]
+
+
+# 2026-11-11 ~ 12 사내 리뷰 202611111500 보드(6-19)의 답 — 카드 마흔하나(C1 ~ C9 · N1 ~ N13 ·
+# R1 ~ R10 · G1 ~ G9). 고른 선택지 스물아홉은 모두 카드 권장이고, 메모 카드 다섯은 메모 원문이 고른
+# 글이다. 메모로 되물은 다섯과 빈칸이던 G1 은 다시 물어 그 물음의 권장을 받았다(「다시 물음 답」).
+# 고친 열다섯은 갈래(`night/noread-1111` · `night/rv-*-1112`)의 커밋을 들고, 문서 한 줄 · 7장 초안 ·
+# 기록만인 스물여섯은 커밋이 없다. C1 ~ C8 은 2026-11-11 밤, 나머지는 2026-11-12 새벽 답이다.
+# 줄 id 는 보드 카드 id 다.
+REVIEW_1500_ADDRESS = "https://claude.ai/artifact/Wm2johykyy7eaRQ6Dsn6Lf"
+REVIEW_1500_FIXED = {
+    "f-key": (
+        "(가) 이번은 그대로 — 다음 7장 · objectstore 2장에 「키를 다시 발급하면 두 곳을 함께"
+        " 바꾼다」 한 줄"
+    ),
+    "f-merge": "메모 「막혀서가 아니고 Squash를 몰랐음」",
+    "x-port": "(가) 그 시험만 Windows 에서 건너뛴다",
+    "x-tests": "(가) 싣고 Windows CI 조각 1 · 5 · 7 결론으로 확인",
+    "x-proxy": (
+        "(가) tests/conftest.py 에 NO_PROXY 로 127.0.0.1 · [::1] · localhost 를 더하는 공용"
+        " 설정 하나"
+    ),
+    "x-upeh": "(가) A안 — 계산 쪽 멈춤에 꼴을 싣는다(반나절)",
+    "x-c11": "(가) 다음 배포에서 「빈 칸 · 다른 표기」 두 수로 센다(값은 찍지 않음)",
+    "x-tokdiag": "(가) 둘 다 — 짧은 토큰은 실패, invalid token 은 새 갈래 「토큰」",
+    "x-tokrenew": ("(가) 사내 확인 여섯을 먼저 받고, 그 전에는 N7 고침과 토큰 실패 관리자 알림만"),
+    "x-modwin": "다시 물음 답 「도우미 함수로」",
+    "x-modenv": "다시 물음 답 「도우미 함수로」",
+    "x-mods3": "다시 물음 답 「도우미 함수로」",
+    "x-shard": (
+        "(가) 실행기 고침(끝줄 · 캐시 · 조각별 임시 폴더) + 7장 선택 줄로 넷 꼴을 한 번 시험한"
+        " 뒤 기본으로"
+    ),
+    "z-sync7": "다시 물음 답 「앱 · 런북 둘 다」",
+    "g-d2-icon": "(가) 앞 아이콘을 뗀다 — 끝 풍선 ⓘ 하나",
+}
+REVIEW_1500_KEPT = {
+    "f-syncmode": "메모 「local로 넣었음」",
+    "f-doctor": "메모 「그랬던것 같은데 확실히 하기위해 사내 체크 리스트로 따로 뺴줘」",
+    "f-filter": "(나) 모름 — 확인 없이 닫음(필요하면 조건 카드에서 다시 고름)",
+    "f-admin": (
+        "메모 「사내 BDQ 및 S3 토큰정보 배치 여부 확인을 위한 임시 수정이었음. 필요한거 다"
+        " 진행했으니 더이상 체크안해도됨」"
+    ),
+    "f-ci6": "메모 「사내 체크리스트로 빼줘」",
+    "f-fulltext": "(가) 다음 사내 세션에 한 줄로 받는다",
+    "f-s33": "(가) 묻지 않고 꼴 이름 고침(N5)이 실린 다음 배포의 6-3 a 를 기다린다",
+    "x-ci": "(가) 빌드 뒤 · 서피스 전달 전에 CI 끝을 확인 — 빨가면 전달 전에 알림",
+    "x-awsdoc": (
+        "(가) objectstore 문서에 「pod 에 HTTP(S)_PROXY 가 있으면 S3 주소를 NO_PROXY 에」 한 줄만"
+    ),
+    "z-push": ("(가) 결함 아님으로 닫고, 다음 7장에 「푸시 <언제>; CI/CD <언제>」 줄을 정식 키로"),
+    "z-mem": "(가) 이관 전에 C-DEP 에서 HOME 첫 화면 시간을 한 번 재 보고 판단",
+    "z-perm": "(가) 묻지 않고 닫는다 — 다음에도 「복사함」 이면 그때 대조 줄 수만 청함",
+    "z-size": "(가) 청하지 않는다 — 이관 배포 7장에서 다시 잰다",
+    "z-84u": "(가) 규칙 그대로 — 사내가 사용기준 칸을 채운다",
+    "z-s27": "(가) 닫는다 — 앱은 고치지 않고, S27 을 쓸지 · 보관할지는 사내 몫",
+    "z-d9": "다시 물음 답 「닫음(안내 안 붙임)」",
+    "z-82lt": "(가) 청하지 않고, 다음 7장에 「8장 =<stamp> 로 접지 않는다」 를 못 박는다",
+    "z-grid4": "(가) 지금대로 닫는다",
+    "g-f7-scope": "다시 물음 답 「지금대로」",
+    "g-f4-blocked": "(가) 대상째 버림 — 지금 그대로",
+    "g-d6-read": "(가) 맞다",
+    "g-b3-head": "(가) 그대로 — 파일 이름만 가름",
+    "g-d2-static": "(가) 그대로 — 까닭은 풍선",
+    "g-d2-1100": "(가) 그대로",
+    "g-f4-gone": "(가) 지금대로 조용히 버림",
+    "g-f2-runbook": "(가) 넣는다 — 「창 1283 · 목록 관리 오른쪽 칸 고르기 다섯이 한 줄인가」",
+}
+REVIEW_1500_ORDER = (
+    *("f-syncmode", "f-key", "f-doctor", "f-filter", "f-admin", "f-merge", "f-ci6"),
+    *("f-fulltext", "f-s33"),
+    *("x-port", "x-tests", "x-proxy", "x-ci", "x-upeh", "x-c11", "x-tokdiag", "x-tokrenew"),
+    *("x-modwin", "x-modenv", "x-mods3", "x-shard", "x-awsdoc"),
+    *("z-push", "z-sync7", "z-mem", "z-perm", "z-size", "z-84u", "z-s27", "z-d9", "z-82lt"),
+    "z-grid4",
+    *("g-f7-scope", "g-f4-blocked", "g-d6-read", "g-b3-head", "g-d2-icon", "g-d2-static"),
+    *("g-d2-1100", "g-f4-gone", "g-f2-runbook"),
+)
+# C1 ~ C8 — 2026-11-11 밤에 답한 카드.
+REVIEW_1500_NIGHT = REVIEW_1500_ORDER[:8]
+
+
+def test_the_review_1500_board_answers_are_recorded() -> None:
+    """v1.19 — 6-19 는 사내 리뷰 202611111500 보드 카드 마흔하나가 보드 차례대로 한 줄씩이고
+    고른 글은 선택지 원문(메모 카드는 메모 원문, 다시 물은 카드는 「다시 물음 답」)이다. 고친
+    열다섯 줄은 커밋을 들고 나머지 스물여섯은 커밋이 없다. C1 ~ C8 은 2026-11-11 밤, 나머지는
+    2026-11-12 답이다. 앱 세션이 답을 읽은 둘(C7 메모의 갈 곳 · R2 차례)은 줄에 밝히고, 바꾼 옛
+    결정 셋은 7-1 에 있다. 6-18 줄은 그때 기록 그대로다(앞 시험이 6-19 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.19" in document.split("\n## 1. ")[0]
+    assert "- **v1.19 — 2026-11-12.**" in _chapter(document, 8)
+    assert "6-19 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-19. ") :]
+    assert REVIEW_1500_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    dates: dict[str, str] = {}
+    for line in lines:
+        match = re.match(
+            r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-1[12]) · ([^()]+)\)$", line
+        )
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        dates[match.group(1)] = match.group(3)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == REVIEW_1500_ORDER
+    assert len(REVIEW_1500_FIXED) == 15 and len(REVIEW_1500_KEPT) == 26
+    assert set(REVIEW_1500_FIXED) | set(REVIEW_1500_KEPT) == set(REVIEW_1500_ORDER)
+    for key, answer in {**REVIEW_1500_FIXED, **REVIEW_1500_KEPT}.items():
+        assert found[key] == answer, key
+    for key, date in dates.items():
+        assert date == ("2026-11-11" if key in REVIEW_1500_NIGHT else "2026-11-12"), key
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key in REVIEW_1500_FIXED:
+        assert commit.search(by_id[key]), key
+    for key in REVIEW_1500_KEPT:
+        assert not commit.search(by_id[key]), key
+    memo = [key for key, answer in found.items() if answer.startswith("메모 「")]
+    assert memo == ["f-syncmode", "f-doctor", "f-admin", "f-merge", "f-ci6"]
+    asked_again = [key for key, answer in found.items() if answer.startswith("다시 물음 답 「")]
+    assert asked_again == ["x-modwin", "x-modenv", "x-mods3", "z-sync7", "z-d9", "g-f7-scope"]
+    for key in ("f-ci6", "z-sync7"):
+        assert "앱 세션 해석 — 밝힘" in by_id[key], key
+    for key in ("f-doctor", "f-s33", "x-tokrenew", "x-shard", "z-push", "z-mem", "g-f2-runbook"):
+        assert "`docs/TODO.md` 2장" in by_id[key], key
+    assert "`docs/TODO.md` 4장" in by_id["z-sync7"]
+
+    reversed_ = _chapter(document, 7)
+    for phrase in ("보드 N10 다시 물음 답", "같은 보드 N11", "같은 보드 R2 다시 물음 답"):
+        assert phrase in reversed_, phrase

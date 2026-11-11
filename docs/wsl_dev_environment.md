@@ -184,7 +184,26 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
 
    어긋나면 태그를 올리기 전이므로 `git tag -d deploy/<STAMP>` → 고쳐 커밋·푸시 → 다시 빌드한다. 맞으면 확인을 받아
    `git push origin deploy/<STAMP>`(샌드박스 밖). `--tags` 는 쓰지 않는다 — 남은 시험 태그가 함께 올라간다.
-3. **서피스로 넘긴다** (WSL Claude, 샌드박스 밖 — 승인 한 번)
+3. **배포 커밋의 CI 결론을 본다 — 서피스로 넘기기 전에** (WSL Claude, 샌드박스 안 — 2026-11-12 사용자 답 「빌드 뒤 · 서피스 전달 전」)
+
+   1단계에서 `main` 에 푸시한 배포 커밋의 GitHub Actions 판(`verify`)을 인증 없는 공개 API 로 읽는다 — 결론은 읽히고 로그는
+   관리자 권한이라 세션이 읽지 못한다. 판은 약 23분 걸려 2단계 빌드 · 확인을 하는 동안 대개 끝난다. **그사이 `main` 에 다른 커밋을
+   올리지 않는다** — `ci.yml` 의 `concurrency`(`cancel-in-progress`)가 같은 브랜치의 앞 판을 취소해 배포 커밋의 결론이 사라진다(태그
+   푸시는 판을 띄우지 않는다).
+
+   ```bash
+   R=$(git remote get-url origin | sed -E 's#^.*github\.com[:/]##; s#\.git$##'); S=$(git rev-parse HEAD)
+   curl -s "https://api.github.com/repos/$R/actions/runs?head_sha=$S&event=push" | .venv/bin/python -c "import json,sys; [print(r['id'], r['status'], r['conclusion']) for r in json.load(sys.stdin)['workflow_runs']]"
+   curl -s "https://api.github.com/repos/$R/actions/runs/<id>/jobs?per_page=100" | .venv/bin/python -c "import json,sys; [print(j['name'], j['status'], j['conclusion']) for j in json.load(sys.stdin)['jobs']]"
+   ```
+
+   첫 줄이 찍은 판 `id` 를 둘째 줄 `<id>` 에 넣는다. **판이 아니라 작업마다 본다** — `windows-pytest (k)` 는 작업 단위
+   `continue-on-error` 라 빨개도 판은 `success` 다(배포 `202611111500` 의 판이 그랬다 — 조각 5 · 6 · 7 이 `failure`). `status` 가
+   `completed` 가 아니면(`queued` · `in_progress`) 기다렸다 다시 읽는다. `cancelled` 는 판정이 없다 — 그사이 `main` 에 올린 것이
+   있는지 보고 사용자에게 알린다. 모든 작업이 `success` 면 다음 단계로 간다. `failure` 인 작업(`verify (k)` · `verify-result` ·
+   `windows-pytest (k)`)이 있으면 **서피스로 넘기기 전에** 사용자에게 작업 이름을 알린다 — 실패한 시험 이름은 사용자가 GitHub 웹
+   Actions 의 그 작업 로그에서 본다. 넘길지는 사용자가 정한다.
+4. **서피스로 넘긴다** (WSL Claude, 샌드박스 밖 — 승인 한 번)
 
    ```bash
    scp ~/projects/Deploy/<STAMP>.zip surface: && sftp -b - surface <<< 'ls -l <STAMP>.zip'
@@ -193,10 +212,10 @@ Chrome 연동은 WSL 을 지원하지 않아(공식 문서) WSL Claude 는 메�
    `ls -l` 의 크기가 위 2단계 1) 의 `stat` 값과 같은지 본다. 서피스 OpenSSH 가 양자 내성 키 교환을 몰라 접속마다
    `** WARNING: connection is not using a post-quantum key exchange algorithm.` 석 줄이 찍힌다 — 실패가 아니다. 그다음 보고 끝에 ZIP 이름·크기·sha256 과 메일 규격(보낸 사람·받는 사람·제목
    `<STAMP>.zip`·본문 한 줄)을 적어 넘긴다.
-4. **사용자** — 서피스 Chrome 의 Outlook 웹 작성창(`outlook.live.com/mail/0/deeplink/compose`)에서 보낸 사람을
+5. **사용자** — 서피스 Chrome 의 Outlook 웹 작성창(`outlook.live.com/mail/0/deeplink/compose`)에서 보낸 사람을
    outlook.com 별칭으로 고르고 `C:\Dev\update_publishing\<STAMP>.zip` 을 붙여 보낸다. 서피스 Outlook 앱에는 보낼 별칭이
    뜨지 않는다.
-5. **WSL Claude** — 사용자가 「보냈다」고 하면 HANDOFF 에 발송(시각·stamp·커밋·크기)을 적고 `docs/TODO.md` 의 「다음 배포」
+6. **WSL Claude** — 사용자가 「보냈다」고 하면 HANDOFF 에 발송(시각·stamp·커밋·크기)을 적고 `docs/TODO.md` 의 「다음 배포」
    항목을 닫아(지워) 커밋한다 — 실은 것의 기록은 그 커밋 메시지와 런북 7장이다. 이 기록 커밋은 다음 푸시 때 함께
    올린다(확인 뒤).
 
