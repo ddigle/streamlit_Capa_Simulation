@@ -3,10 +3,12 @@
 from dataclasses import dataclass
 from typing import NamedTuple
 
+import numpy as np
 import pandas as pd
 
 from capa_simulation.services.frame_checks import assert_unique_keys, strip_text_columns
 from capa_simulation.services.frame_contracts import (
+    AREA_NAMES,
     UNIMPLEMENTED_BASES,
     assert_complete,
     normalize_area_name,
@@ -130,7 +132,8 @@ _VALUE_NO_MATCH = 3
 
 # 기준정보 한 표를 경로에 붙이다 멈춘 꼴(`ReferenceJoinProblem.shape`). 여러 꼴이 모두 같은 표
 # 이름의 `ValueError` 로 올라오므로, 문구를 찍지 못하는 집계(사내 런북 6-3 a)는 이 이름과 개수로
-# 가른다.
+# 가른다. `RQ_UPEH` 표 자체의 검사(`_prepare_performance`)도 같은 이름을 쓰고, MI 행 ST 0 이하만
+# 그 표의 꼴(`JOIN_NONPOSITIVE`)이다.
 JOIN_MISSING_COLUMN = "컬럼 없음"
 JOIN_BAD_MONTH = "월 형식"
 JOIN_BAD_AREA = "Area_Name 값"
@@ -139,6 +142,12 @@ JOIN_DUPLICATE_KEY = "연결 키 중복"
 JOIN_NOT_NUMERIC = "숫자 아님"
 JOIN_BLANK_VALUE = "빈 값"
 JOIN_NO_MATCH = "연결값 없음"
+JOIN_NONPOSITIVE = "0 이하"
+# 경로 칸 하나를 채우거나 고치면 풀리는 값 꼴 — 개수는 키 · 경로로 센다.
+_VALUE_SHAPES = (JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC, JOIN_NO_MATCH, JOIN_NONPOSITIVE)
+# 경로의 바탕 표. 한 행이 곧 경로 하나이고 값 칸이 둘(Main 행 UPEH · MI 행 ST)이라, 값 꼴은 어느
+# 칸인지 이름에 붙인다 — 다른 표의 꼴 이름은 지난 리뷰와 견주므로 그대로 둔다.
+UPEH_TABLE = "RQ_UPEH"
 
 
 @dataclass(frozen=True)
@@ -151,7 +160,8 @@ class ReferenceJoinProblem:
 
     - `keys` — 걸린 업무 키 수. `rows` — 걸린 행 수다. 붙인 뒤에 보는 꼴(빈 값·숫자 아님·
       연결값 없음)은 그 키에 붙은 대당 Capa **경로** 행 가운데 제외 뒤에 남은 것, 붙이기 전에 보는
-      꼴(월 형식·연결 키)은 그 기준정보 표의 행이다.
+      꼴(월 형식·연결 키)은 그 기준정보 표의 행이다. 경로의 바탕 표(`RQ_UPEH`)의 값 꼴(빈 값 ·
+      0 이하)은 그 표의 행이 곧 경로라 키와 경로가 같고, 어느 칸인지(UPEH · ST)는 `columns` 다.
     - `spacing_keys` — 연결 키 중복 가운데 원래 글자로는 다르고 앞뒤 공백을 떼면 같아지는 키.
       등록은 원래 글자로 접고 계산은 공백을 떼고 붙여서 생기는 겹침이다.
     """
@@ -170,12 +180,14 @@ class ReferenceJoinProblem:
             return f"{self.shape}(앞뒤 공백만 다름)"
         if self.shape in (JOIN_MISSING_COLUMN, JOIN_BLANK_KEY) and self.columns:
             return f"{self.shape}({', '.join(self.columns)})"
+        if self.table == UPEH_TABLE and self.shape in _VALUE_SHAPES and self.columns:
+            return f"{self.shape}({', '.join(self.columns)})"
         return self.shape
 
     def summary(self) -> str:
         """개수까지 — 리비전 한 줄에 싣는다. 값·이름은 없다."""
-        if self.shape in (JOIN_BLANK_VALUE, JOIN_NOT_NUMERIC, JOIN_NO_MATCH):
-            return f"{self.shape} 키 {self.keys:,} · 경로 {self.rows:,}"
+        if self.shape in _VALUE_SHAPES:
+            return f"{self.label} 키 {self.keys:,} · 경로 {self.rows:,}"
         if self.shape == JOIN_DUPLICATE_KEY:
             text = f"{self.shape} 키 {self.keys:,} · 행 {self.rows:,}"
             if self.spacing_keys:
@@ -354,35 +366,108 @@ def unit_capacity_to_month_table(unit_capacity: pd.DataFrame) -> pd.DataFrame:
 
 
 def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
-    table_name = "RQ_UPEH"
-    required = [*PERFORMANCE_KEYS, "소요기준", "UPEH", "ST"]
-    require_columns(data, required, table_name)
+    """`RQ_UPEH` 를 경로 행으로 맞춘다 — 표 자체가 깨졌으면 꼴 · 개수를 든 `ReferenceJoinError` 다.
+
+    여덟 검사(컬럼 · 월 형식 · 연결 키 빈 값 · Area_Name · 연결 키 중복 · Main UPEH 빈 값 · MI ST
+    빈 값 · MI ST 0 이하)의 **글은 예전 그대로다.** 계산 멈춤 알림(`page_bootstrap._CELL_STOPS`)과
+    등록의 푸는 길(`scenario_registration`)이 글을 맞대 읽는다. 그래서 공용 검사를 그대로 부르고 그
+    글에 꼴만 실어 다시 올린다 — 붙이는 표의 도우미(`_prepared_reference` ·
+    `_raise_on_duplicate_keys`)는 건수 · 예시를 덧붙인 다른 글을 내므로 셈만 나눠 쓴다. 차례도
+    예전 그대로다.
+
+    이 표의 행 하나가 곧 경로 하나라 값 꼴의 키 수와 경로 수는 같다. 붙이기 전에 보는 꼴(월 형식 ·
+    연결 키 · Area_Name)의 행 수는 BOX · PCB 를 빼기 전(월 형식) · 뺀 뒤(나머지)의 표 행이다.
+    """
+    table_name = UPEH_TABLE
+    keys = [*PERFORMANCE_KEYS, "소요기준"]
+    required = [*keys, "UPEH", "ST"]
+    try:
+        require_columns(data, required, table_name)
+    except ValueError as exc:
+        absent = tuple(column for column in required if column not in data.columns)
+        raise ReferenceJoinError(
+            str(exc), ReferenceJoinProblem(table_name, JOIN_MISSING_COLUMN, columns=absent)
+        ) from exc
     result = data[required].copy()
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
         return result
-    normalize_month_column(result, table_name)
+    try:
+        normalize_month_column(result, table_name)
+    except ValueError as exc:
+        months = pd.to_numeric(result["생산계획년월"], errors="coerce")
+        raise ReferenceJoinError(
+            str(exc),
+            ReferenceJoinProblem(
+                table_name,
+                JOIN_BAD_MONTH,
+                columns=("생산계획년월",),
+                rows=int((~valid_month_mask(months)).sum()),
+            ),
+        ) from exc
     strip_text_columns(result, [key for key in PERFORMANCE_KEYS if key != "생산계획년월"])
     result["Area_Name"] = result["Area_Name"].astype("string").str.strip()
     result["소요기준"] = result["소요기준"].astype("string").str.strip().str.upper()
-    result = result.loc[~result["소요기준"].isin(UNIMPLEMENTED_BASES)].copy()
+    kept = ~result["소요기준"].isin(UNIMPLEMENTED_BASES)
+    # 남긴 행의 받은 표 자리 — 겹친 키의 원래 글자를 index 가 아니라 자리로 다시 본다.
+    positions = np.flatnonzero(kept.to_numpy())
+    result = result.loc[kept].copy()
     if result.empty:
         result["환산_UPEH"] = pd.Series(dtype="float64")
         return result
-    assert_complete(result, [*PERFORMANCE_KEYS, "소요기준"], table_name)
-    result["Area_Name"] = normalize_area_name(result["Area_Name"], table_name)
-    assert_unique_keys(result, [*PERFORMANCE_KEYS, "소요기준"], f"{table_name}의 연결 키가")
+    try:
+        assert_complete(result, keys, table_name)
+    except ValueError as exc:
+        problem = _blank_key_problem(_blank_keys(result, keys), table_name)
+        raise ReferenceJoinError(str(exc), problem) from exc
+    try:
+        result["Area_Name"] = normalize_area_name(result["Area_Name"], table_name)
+    except ValueError as exc:
+        folded = result["Area_Name"].str.casefold()
+        invalid = ~folded.isin([name.casefold() for name in AREA_NAMES])
+        raise ReferenceJoinError(
+            str(exc),
+            ReferenceJoinProblem(
+                table_name, JOIN_BAD_AREA, columns=("Area_Name",), rows=int(invalid.sum())
+            ),
+        ) from exc
+    try:
+        assert_unique_keys(result, keys, f"{table_name}의 연결 키가")
+    except ValueError as exc:
+        text_keys = [key for key in keys if key != "생산계획년월"]
+        found = _duplicate_keys(result, data[text_keys].iloc[positions], keys, text_keys)
+        raise ReferenceJoinError(str(exc), found.problem(table_name)) from exc
 
     upeh_values = pd.to_numeric(result["UPEH"], errors="coerce")
     st_values = pd.to_numeric(result["ST"], errors="coerce")
     main_rows = result["Area_Name"].eq("Main")
     mi_rows = result["Area_Name"].eq("MI")
-    if upeh_values.loc[main_rows].isna().any():
-        raise ValueError("RQ_UPEH의 Main 행에 UPEH 누락값 또는 숫자가 아닌 값이 있습니다.")
-    if st_values.loc[mi_rows].isna().any():
-        raise ValueError("RQ_UPEH의 MI 행에 ST 누락값 또는 숫자가 아닌 값이 있습니다.")
-    if st_values.loc[mi_rows].le(0).any():
-        raise ValueError("RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다.")
+    for stopped, column, shape, message in (
+        (
+            main_rows & upeh_values.isna(),
+            "UPEH",
+            JOIN_BLANK_VALUE,
+            f"{table_name}의 Main 행에 UPEH 누락값 또는 숫자가 아닌 값이 있습니다.",
+        ),
+        (
+            mi_rows & st_values.isna(),
+            "ST",
+            JOIN_BLANK_VALUE,
+            f"{table_name}의 MI 행에 ST 누락값 또는 숫자가 아닌 값이 있습니다.",
+        ),
+        (
+            mi_rows & st_values.le(0),
+            "ST",
+            JOIN_NONPOSITIVE,
+            f"{table_name}의 MI 행 ST 값은 0보다 커야 합니다.",
+        ),
+    ):
+        count = int(stopped.sum())
+        if count:
+            raise ReferenceJoinError(
+                message,
+                ReferenceJoinProblem(table_name, shape, columns=(column,), keys=count, rows=count),
+            )
 
     result["환산_UPEH"] = converted_upeh(
         upeh_values,
@@ -392,6 +477,20 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
         per_kea=result["소요기준"].isin(["CHIP", "PKG"]),
     )
     return result
+
+
+def _blank_keys(prepared: pd.DataFrame, keys: list[str]) -> dict[str, pd.Series]:
+    """연결 키가 빈 칸 — `frame_contracts.assert_complete` 와 같은 판정. 빈 칸 있는 컬럼만 든다."""
+    blank_by_column = {
+        column: prepared[column].isna() | prepared[column].eq("").fillna(False) for column in keys
+    }
+    return {column: mask for column, mask in blank_by_column.items() if bool(mask.any())}
+
+
+def _blank_key_problem(blank: dict[str, pd.Series], table_name: str) -> ReferenceJoinProblem:
+    """빈 칸이 있는 컬럼(`_blank_keys`)과, 키 칸 하나라도 빈 행 수."""
+    rows = int(pd.concat(list(blank.values()), axis=1).any(axis=1).sum()) if blank else 0
+    return ReferenceJoinProblem(table_name, JOIN_BLANK_KEY, columns=tuple(blank), rows=rows)
 
 
 class _PendingCheck(NamedTuple):
@@ -590,20 +689,66 @@ def _prepared_reference(
 
 def _raise_on_blank_keys(prepared: pd.DataFrame, keys: list[str], table_name: str) -> None:
     """연결 키가 빈 행 — `frame_contracts.assert_complete` 와 같은 판정에 컬럼과 행 수를 붙인다."""
-    blank_by_column = {
-        column: prepared[column].isna() | prepared[column].eq("").fillna(False) for column in keys
-    }
-    counts = {column: int(mask.sum()) for column, mask in blank_by_column.items() if mask.any()}
-    if not counts:
+    blank = _blank_keys(prepared, keys)
+    if not blank:
         return
-    blank_rows = pd.concat(list(blank_by_column.values()), axis=1).any(axis=1)
-    detail = " · ".join(f"{column} {count:,}행" for column, count in counts.items())
+    detail = " · ".join(f"{column} {int(mask.sum()):,}행" for column, mask in blank.items())
     raise ReferenceJoinError(
         f"{table_name}의 필수 연결 키에 누락값이 있습니다: {detail}",
-        ReferenceJoinProblem(
-            table_name, JOIN_BLANK_KEY, columns=tuple(counts), rows=int(blank_rows.sum())
-        ),
+        _blank_key_problem(blank, table_name),
     )
+
+
+class _DuplicateKeys(NamedTuple):
+    """맞춘 키가 겹친 행 — 겹친 키(예시용) · 그 행 수 · 원래 글자의 앞뒤 공백만 달라 겹친 키 수."""
+
+    distinct: pd.DataFrame
+    rows: int
+    spacing: int
+    keys: tuple[str, ...]
+
+    def problem(self, table_name: str) -> ReferenceJoinProblem:
+        return ReferenceJoinProblem(
+            table_name,
+            JOIN_DUPLICATE_KEY,
+            columns=self.keys,
+            keys=len(self.distinct),
+            rows=self.rows,
+            spacing_keys=self.spacing,
+        )
+
+
+def _duplicate_keys(
+    prepared: pd.DataFrame, raw: pd.DataFrame, keys: list[str], text_keys: list[str]
+) -> _DuplicateKeys:
+    """`prepared` 에서 키가 겹친 행을 센다. `raw` 는 `prepared` 와 행 차례가 같은 원래 글자 키다.
+
+    등록(`reference_conflicts.validated_distinct`)은 원래 글자로 접으므로 `P1`·`P1 ` 은 두 행으로
+    저장되고, 계산이 공백을 떼면 한 키가 된다. 그 꼴은 원천을 고쳐 다시 등록해야 풀리므로 따로 센다.
+    """
+    duplicated = prepared.duplicated(keys, keep=False)
+    if not bool(duplicated.any()):
+        return _DuplicateKeys(prepared.iloc[:0][keys], 0, 0, tuple(keys))
+    overlapping = prepared.loc[duplicated, keys]
+    distinct = overlapping.drop_duplicates()
+    spacing = 0
+    if text_keys:
+        # 자리로 고른다 — 받은 표의 index 가 겹쳐도 같은 행을 본다. 앞뒤 공백을 떼면 같아지는 원래
+        # 글자가 둘 이상인 키만 센다 — Area_Name 의 대소문자(`Main`·`main`)처럼 다른 정규화로 겹친
+        # 키는 공백 꼴이 아니다.
+        spelled_keys = raw[text_keys].iloc[np.flatnonzero(duplicated.to_numpy())].astype("string")
+        spelled_keys.index = overlapping.index
+        spelled = spelled_keys.fillna("\0").agg("\x1f".join, axis=1)
+        stripped = (
+            spelled_keys.apply(lambda column: column.str.strip())
+            .fillna("\0")
+            .agg("\x1f".join, axis=1)
+        )
+        spellings = overlapping.assign(_원래글자=spelled, _뗀글자=stripped)
+        grouped = spellings.groupby(keys, dropna=False)
+        variants = grouped["_원래글자"].nunique() > grouped["_뗀글자"].nunique()
+        spacing = int(variants.sum())
+    return _DuplicateKeys(distinct, len(overlapping), spacing, tuple(keys))
 
 
 def _raise_on_duplicate_keys(
@@ -615,46 +760,20 @@ def _raise_on_duplicate_keys(
 ) -> None:
     """맞춘 키가 겹치는 행 — 건수·예시와, 원래 글자의 앞뒤 공백만 달라 겹친 키의 수를 싣는다.
 
-    등록(`reference_conflicts.validated_distinct`)은 원래 글자로 접으므로 `P1`·`P1 ` 은 두 행으로
-    저장되고, 여기서 공백을 떼면 한 키가 된다. 그 꼴은 원천을 고쳐 다시 등록해야 풀리므로 따로 센다.
+    `prepared` 는 받은 표(`reference`)를 그대로 떠 행 차례가 같다.
     """
-    duplicated = prepared.duplicated(keys, keep=False)
-    if not bool(duplicated.any()):
+    found = _duplicate_keys(prepared, reference, keys, text_keys)
+    if not found.rows:
         return
-    overlapping = prepared.loc[duplicated, keys]
-    distinct = overlapping.drop_duplicates()
-    spacing = 0
-    if text_keys:
-        # 자리로 고른다 — 받은 표의 index 가 겹쳐도 같은 행을 본다(`prepared` 는 그 표를 그대로
-        # 떴다). 앞뒤 공백을 떼면 같아지는 원래 글자가 둘 이상인 키만 센다 — Area_Name 의
-        # 대소문자(`Main`·`main`)처럼 다른 정규화로 겹친 키는 공백 꼴이 아니다.
-        raw = reference[text_keys].loc[duplicated.to_numpy()].astype("string")
-        raw.index = overlapping.index
-        spelled = raw.fillna("\0").agg("\x1f".join, axis=1)
-        stripped = (
-            raw.apply(lambda column: column.str.strip()).fillna("\0").agg("\x1f".join, axis=1)
-        )
-        spellings = overlapping.assign(_원래글자=spelled, _뗀글자=stripped)
-        grouped = spellings.groupby(keys, dropna=False)
-        variants = grouped["_원래글자"].nunique() > grouped["_뗀글자"].nunique()
-        spacing = int(variants.sum())
     message = (
-        f"{table_name}의 연결 키가 중복되었습니다: {len(distinct):,}건, "
-        f"예시 {distinct.head(5).to_dict('records')}"
+        f"{table_name}의 연결 키가 중복되었습니다: {len(found.distinct):,}건, "
+        f"예시 {found.distinct.head(5).to_dict('records')}"
     )
-    if spacing:
-        message += f" — 그 가운데 {spacing:,}건은 원래 글자에서 앞뒤 공백만 다른 행이 겹친 것입니다"
-    raise ReferenceJoinError(
-        message,
-        ReferenceJoinProblem(
-            table_name,
-            JOIN_DUPLICATE_KEY,
-            columns=tuple(keys),
-            keys=len(distinct),
-            rows=len(overlapping),
-            spacing_keys=spacing,
-        ),
-    )
+    if found.spacing:
+        message += (
+            f" — 그 가운데 {found.spacing:,}건은 원래 글자에서 앞뒤 공백만 다른 행이 겹친 것입니다"
+        )
+    raise ReferenceJoinError(message, found.problem(table_name))
 
 
 def _attached_error(

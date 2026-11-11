@@ -4192,6 +4192,31 @@ def test_the_blank_block_splits_the_stopping_cells_by_the_shape_of_their_source(
     assert [place.label for place in places] == [f"S{revision.scenario_no} r{revision.revision_no}"]
 
 
+def test_a_revision_whose_upeh_table_stops_first_is_noted_by_that_shape(
+    blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """빈 효율이 남는 리비전이라도 경로의 바탕 표(`RQ_UPEH`)가 먼저 멈추면 빈 칸을 메워도 계산이
+    서지 않는다 — 8-12 는 재지 않고 그 꼴과 수를 `8-12K` 한 줄로 적는다(값 · 이름 없음). UPEH 표
+    자체의 멈춤도 꼴을 들기 때문이다(사내 리뷰 202611111500 발견 3)."""
+    with duckdb.connect(str(blank_stop_db)) as connection:
+        connection.execute(
+            'UPDATE rev_data.rq_upeh SET "UPEH" = NULL WHERE rowid = (SELECT min(rowid) '
+            'FROM rev_data.rq_upeh WHERE "Area_Name" = \'Main\' AND "UPEH" > 0 '
+            "AND \"소요기준\" IN ('CHIP', 'WF', 'PKG'))"
+        )
+
+    code, output = _run(capsys, "--only", "blank", "--database", str(blank_stop_db))
+
+    assert code == 0
+    _assert_no_leak(output)
+    lines = _uncoded(_summary(output))
+    assert [line for line in lines if line.startswith("- 8-12")] == [
+        "- 8-12 전부 1 · 걸림 1",
+        "- 8-12K S1 r1 · UPEH 빈 값(UPEH) 키 1 · 경로 1",
+    ]
+    assert checks.check_transcript(_summary(output)) == []
+
+
 def test_a_slipped_figure_on_the_blank_lines_is_caught(
     blank_stop_db: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -4264,7 +4289,15 @@ def test_a_blank_line_above_its_head_is_caught() -> None:
     assert "위에 8-12 머리 줄이 없다" in problem
 
 
-@pytest.mark.parametrize("reason", ["됨", "VITAL 연결값 없음 키 71 · 경로 71", "실패(ValueError)"])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "됨",
+        "VITAL 연결값 없음 키 71 · 경로 71",
+        "UPEH 빈 값(UPEH) 키 1 · 경로 1",
+        "실패(ValueError)",
+    ],
+)
 def test_a_stop_measured_only_by_its_reason_has_a_single_line(reason: str) -> None:
     """꼴을 재지 못한 리비전은 `8-12K` 한 줄뿐이다(런북 8-6 범례)."""
     assert checks.check_transcript(_coded("8-12 전부 77 · 걸림 1", f"8-12K S1 r1 · {reason}")) == []

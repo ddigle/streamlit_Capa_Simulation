@@ -5443,7 +5443,12 @@ Dummy 판별은 `WF 구분` 이름 단독이 아니라 **`(제품타입, WF 구�
 - **기준정보 연결이 멈추면 `ReferenceJoinError`(`ValueError` 의 하위)로 올린다.** 글은 화면용 — 머리 문장은
   예전 그대로이고 건수(키·행)와 키 예시 5건을 붙인다. 예외는 꼴과 개수만 든 `ReferenceJoinProblem` 을 함께
   들고 간다(꼴 — 컬럼 없음 · 월 형식 · Area_Name 값 · 연결 키 빈 값 · 연결 키 중복 · 숫자 아님 · 빈 값 ·
-  연결값 없음, 개수 — 키 · 경로나 행 · 앞뒤 공백만 다른 키). 같은 표의
+  연결값 없음, 개수 — 키 · 경로나 행 · 앞뒤 공백만 다른 키). 경로의 바탕 표 `RQ_UPEH` 자체의 검사
+  여덟(`_prepare_performance` — 컬럼 · 월 형식 · 연결 키 빈 값 · Area_Name · 연결 키 중복 · Main UPEH 빈 값 ·
+  MI ST 빈 값 · MI ST 0 이하)도 같은 예외로 올리되 **글은 그대로다** — 계산 멈춤 알림(`page_bootstrap`
+  정규식)과 등록의 푸는 길(`scenario_registration`)이 글을 맞댄다. 그 표의 값 꼴은 어느 칸인지 이름에
+  붙고(`빈 값(UPEH)` · `빈 값(ST)` · `0 이하(ST)` — 「0 이하」 는 그 표만의 꼴, 등록 `_CELL_SHAPES` 에도 든다)
+  한 행이 곧 경로라 키와 경로 수가 같다. 같은 표의
   `ValueError` 로만 보이던 꼴들이 고칠 길이 달라서다 — 문구를 찍지 못하는 사내 집계(런북 6-3 a ·
   `scripts/inspect_revision_calculations.py`)는 이것만 적고, 종류 이름은 `failure_kind` 로 `ValueError`
   그대로 적는다. 피클 왕복에서도 꼴을 잃지 않는다(`__reduce__`).

@@ -351,6 +351,37 @@ def test_a_run_rate_stop_is_split_by_its_shape_without_names(
     assert SENTINEL not in printed
 
 
+def _blank_main_upeh(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """계산 대상 Main 행 하나의 UPEH 를 비운다 — 경로의 바탕 표 자체의 값 칸 멈춤."""
+    upeh = tables["RQ_UPEH"].copy()
+    upeh["UPEH"] = upeh["UPEH"].astype("float64")
+    main = upeh["Area_Name"].eq("Main") & upeh["소요기준"].isin(["CHIP", "WF", "PKG"])
+    upeh.loc[upeh.index[main.to_numpy().nonzero()[0][0]], "UPEH"] = float("nan")
+    return {**tables, "RQ_UPEH": upeh}
+
+
+def test_an_upeh_table_stop_is_named_by_its_cell_without_names(simulation_db: Path) -> None:
+    """경로의 바탕 표(`RQ_UPEH`) 자체가 멈춰도 꼴 「-」 가 아니라 어느 칸인지(`빈 값(UPEH)`)와 키 ·
+    경로 수가 찍힌다(사내 리뷰 202611111500 발견 3 — S33 r1). 종류는 그대로 `ValueError` 다."""
+    seed, tables = _seed_tables(simulation_db)
+
+    outcome = script.calculate(_blank_main_upeh(tables))
+
+    assert (outcome.status, outcome.stage, outcome.kind) == (
+        script.STOPPED,
+        "대당 Capa",
+        "ValueError",
+    )
+    assert outcome.tables == ("RQ_UPEH",)
+    described = script.describe(outcome)
+    assert described == "멈춤 — 대당 Capa(ValueError · RQ_UPEH · 빈 값(UPEH) 키 1 · 경로 1)"
+    lines = script.summary_lines([seed], [outcome], active_only=False)
+    assert "| 멈춤 | 대당 Capa | ValueError | RQ_UPEH | 빈 값(UPEH) | 1 |" in lines
+    assert SENTINEL not in "\n".join([described, *lines])
+    guide = "\n".join(script.READING_GUIDE)
+    assert "`빈 값(UPEH)` · `빈 값(ST)` · `0 이하(ST)`" in guide
+
+
 def _official_revision(scenario_no: int, *official: int) -> script.RevisionRow:
     return script.RevisionRow(
         scenario_no=scenario_no,

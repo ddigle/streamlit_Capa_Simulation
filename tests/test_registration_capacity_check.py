@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -89,6 +90,43 @@ def test_a_blank_run_rate_on_a_live_route_is_caught_before_saving() -> None:
     assert PROCESS in notice
     assert "기준 정보 화면 「효율」 표에서 그 칸에 0보다 큰 값을 넣고" in notice
     assert "새 리비전으로 저장하면 r2부터 계산이 섭니다." in notice
+
+
+def _upeh_table_damaged(area: str, process: str, column: str, value: object) -> pd.DataFrame:
+    """한 공정의 첫 달 `area` 행의 `column` 칸을 `value` 로 — UPEH 표 자체의 값 칸 멈춤."""
+    frame = SEED.source_data.copy()
+    rows = frame["Area_Name"].astype("string").str.upper().eq(area.upper()) & frame["공정"].eq(
+        process
+    )
+    month = int(frame.loc[rows, "생산계획년월"].min())
+    frame.loc[rows & frame["생산계획년월"].eq(month), column] = value
+    return frame
+
+
+@pytest.mark.parametrize(
+    ("source", "label"),
+    [
+        (lambda: _upeh_table_damaged("Main", PROCESS, "UPEH", pd.NA), "빈 값(UPEH)"),
+        (lambda: _upeh_table_damaged("MI", "DEMO_Final_Test", "ST", 0.0), "0 이하(ST)"),
+    ],
+    ids=["main-upeh-blank", "mi-st-zero"],
+)
+def test_an_upeh_table_stop_names_its_shape_and_points_to_the_upeh_table(
+    source: Callable[[], pd.DataFrame], label: str
+) -> None:
+    """UPEH 표 자체의 값 칸(Main UPEH 빈 값 · MI ST 0)도 꼴과 수가 메모에 실리고, 푸는 길은 기준
+    정보 「UPEH」 표다 — MI ST 0 을 「표 자체가 깨진 꼴 — 원천 다시 등록」 으로 보내지 않는다(사내
+    리뷰 202611111500 발견 3)."""
+    check = check_registration_capacity(_prepared(source()).reference_tables)
+
+    assert check.stopped and check.problem is not None
+    assert (check.problem.table, check.problem.label) == ("RQ_UPEH", label)
+    assert check.problem.rows > 0
+    assert check.memo() == f"대당 Capa 계산 멈춤(RQ_UPEH {check.problem.summary()})"
+    assert check.memo().startswith(f"대당 Capa 계산 멈춤(RQ_UPEH {label} 키 ")
+    assert "기준 정보 화면 「UPEH」 표에서 그 칸에 0보다 큰 값을 넣고" in check.fix_hint(1)
+    assert not check.fixed_at_source
+    assert check.notice(1).startswith("저장은 했지만 r1은 대당 Capa 계산이 멈춥니다 — RQ_UPEH의 ")
 
 
 def test_a_blank_run_rate_only_on_routes_dropped_anyway_does_not_warn() -> None:

@@ -26,6 +26,8 @@ from test_all_pages_render import _page_script
 
 import capa_simulation.components.capacity_gate as capacity_gate
 import capa_simulation.components.scenario_input_check as input_check
+from capa_simulation.components.capacity_gate import INPUT_CHECK_PERIOD_TABLES
+from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.components.required_exclusion_notice import (
     REQUIRED_LIST_NOTE,
     REQUIRED_TAB_GOTO,
@@ -89,6 +91,7 @@ from capa_simulation.page_tabs_state import PAGE_TABS_QUEUED_KEY, tab_label
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
 from capa_simulation.reference_grid_keys import DATASET_KEY
 from capa_simulation.scenario_activation import ACTIVE_PERSISTED_REVISION_ID_KEY
+from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.revision_input_check import (
     GROUP_ASSUMED,
     GROUP_CAPACITY,
@@ -101,8 +104,11 @@ from capa_simulation.services.revision_input_check import (
     InputCheckGroup,
     InputCheckTable,
     RevisionInputCheck,
+    build_input_check,
+    calculation_period,
 )
 from capa_simulation.services.scenario_list_edits import ListDraft
+from capa_simulation.services.simulation_cache import full_capacity_outcome
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE_PATH = "app_pages/scenario_management.py"
@@ -586,6 +592,29 @@ def _base_font_px() -> float:
     found = re.search(r"^baseFontSize\s*=\s*([0-9.]+)", config, re.MULTILINE)
     assert found is not None
     return float(found.group(1))
+
+
+def test_an_upeh_table_stop_subtitle_ends_with_its_route_count() -> None:
+    """경로의 바탕 표(`RQ_UPEH`) 자체의 멈춤도 꼴과 수를 들어, 계산 멈춤 알림이 알아보는 칸(Main 행
+    UPEH)이면 부제 끝에 「· 경로 n」 이 붙는다(사내 리뷰 202611111500 발견 3)."""
+    tables = dict(build_builtin_seed_dataset().reference_tables)
+    upeh = tables["RQ_UPEH"].copy()
+    upeh["UPEH"] = upeh["UPEH"].astype("float64")
+    main = upeh["Area_Name"].eq("Main") & upeh["소요기준"].isin(["CHIP", "WF", "PKG"])
+    upeh.loc[upeh.index[main.to_numpy().nonzero()[0][:2]], "UPEH"] = float("nan")
+    edited = {**tables, "RQ_UPEH": upeh}
+    outcome = full_capacity_outcome(edited, edited)
+    check = build_input_check(
+        outcome, None, None, period=calculation_period(edited, INPUT_CHECK_PERIOD_TABLES)
+    )
+    stop = check.group(GROUP_STOP)
+    assert stop is not None and stop.title == "계산 멈춤 — 대당 Capa"
+
+    text, tip = input_check._subtitle(stop, check, number="r2", labels=ProcessLabels())
+
+    assert text.startswith("기준 정보 「UPEH」 ")
+    assert text.endswith(" · 경로 2")
+    assert tip is not None and tip.startswith("r2 — 대당 Capa 계산이 멈췄습니다.")
 
 
 def test_group_names_stand_above_their_subtitles() -> None:

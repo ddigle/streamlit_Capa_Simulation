@@ -2,6 +2,7 @@
 
 import pickle
 import re
+from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
@@ -20,6 +21,7 @@ from capa_simulation.services.unit_capacity import (
     JOIN_BLANK_VALUE,
     JOIN_DUPLICATE_KEY,
     JOIN_NO_MATCH,
+    JOIN_NONPOSITIVE,
     MODULE_KEYS,
     RUN_DAY_KEYS,
     UNIT_CAPACITY_DIMENSIONS,
@@ -1055,3 +1057,162 @@ def test_the_join_error_is_still_a_value_error_and_survives_a_pickle_round_trip(
     # 집계에 적는 종류 이름은 지난 리뷰와 같은 `ValueError` 다.
     assert failure_kind(error.value) == "ValueError"
     assert failure_kind(KeyError("x")) == "KeyError"
+
+
+# ------------------------- `RQ_UPEH` 표 자체 검사 여덟 곳 — 글은 그대로, 꼴과 개수를 싣는다
+# 붙이는 여섯 표처럼 UPEH 표 자체의 멈춤도 꼴과 개수를 들어야 6-3 a 가 「꼴 -」 대신 이름을 찍는다
+# (사내 리뷰 202611111500 발견 3 — S33 r1). 글은 계산 멈춤 알림(`page_bootstrap._CELL_STOPS`)과
+# 등록 푸는 길(`scenario_registration`)이 맞대 읽으므로 한 글자도 바꾸지 않는다.
+
+
+def _upeh_damage(**columns: list[Any]) -> Callable[[pd.DataFrame], pd.DataFrame]:
+    return lambda upeh: upeh.assign(**columns)
+
+
+def _upeh_spaced_duplicate(upeh: pd.DataFrame) -> pd.DataFrame:
+    """공정 이름 뒤 공백만 다른 한 행을 더한다 — 원래 글자로 접힌 등록의 꼴."""
+    return pd.concat([upeh, upeh.iloc[[0]].assign(공정="Process-A ")], ignore_index=True)
+
+
+UPEH_TABLE_STOPS: list[tuple[str, Callable[[pd.DataFrame], pd.DataFrame], str, str, str]] = [
+    (
+        "column",
+        lambda upeh: upeh.drop(columns=["ST"]),
+        "RQ_UPEH 필수 컬럼이 없습니다: ST",
+        "컬럼 없음(ST)",
+        "컬럼 없음(ST)",
+    ),
+    (
+        "month",
+        _upeh_damage(생산계획년월=[202608, 2026081]),
+        "RQ_UPEH의 생산계획년월은 YYYYMM 형식이어야 합니다.",
+        "월 형식",
+        "월 형식 행 1",
+    ),
+    (
+        "blank-key",
+        _upeh_damage(소요기준=["CHIP", None]),
+        "RQ_UPEH의 필수 연결 키에 누락값이 있습니다.",
+        "연결 키 빈 값(소요기준)",
+        "연결 키 빈 값(소요기준) 행 1",
+    ),
+    (
+        "area",
+        _upeh_damage(Area_Name=["Main", "Sub"]),
+        "RQ_UPEH의 Area_Name은 Main 또는 MI여야 합니다: ['Sub']",
+        "Area_Name 값",
+        "Area_Name 값 행 1",
+    ),
+    (
+        "duplicate",
+        _upeh_spaced_duplicate,
+        "RQ_UPEH의 연결 키가 중복되었습니다: [{'생산계획년월': 202608, 'Area_Name': 'Main', "
+        "'공정': 'Process-A', 'STEP_SEQ': 'P100', 'MCP_SEQ': '1A', '양산구분': '양산', "
+        "'제품정보': 'Product-A', 'Stack': '12H', 'WF 구분': 'Core', '소요기준': 'CHIP'}]",
+        "연결 키 중복(앞뒤 공백만 다름)",
+        "연결 키 중복 키 1 · 행 2 · 앞뒤 공백만 다른 키 1",
+    ),
+    (
+        "main-upeh",
+        _upeh_damage(UPEH=[100.0, None]),
+        "RQ_UPEH의 Main 행에 UPEH 누락값 또는 숫자가 아닌 값이 있습니다.",
+        "빈 값(UPEH)",
+        "빈 값(UPEH) 키 1 · 경로 1",
+    ),
+    (
+        "mi-st",
+        _upeh_damage(Area_Name=["Main", "MI"], UPEH=[100.0, None], ST=[None, None]),
+        "RQ_UPEH의 MI 행에 ST 누락값 또는 숫자가 아닌 값이 있습니다.",
+        "빈 값(ST)",
+        "빈 값(ST) 키 1 · 경로 1",
+    ),
+    (
+        "mi-st-zero",
+        _upeh_damage(Area_Name=["Main", "MI"], UPEH=[100.0, None], ST=[None, 0.0]),
+        "RQ_UPEH의 MI 행 ST 값은 0보다 커야 합니다.",
+        "0 이하(ST)",
+        "0 이하(ST) 키 1 · 경로 1",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [(damage, message) for _, damage, message, _, _ in UPEH_TABLE_STOPS],
+    ids=[name for name, *_ in UPEH_TABLE_STOPS],
+)
+def test_an_upeh_table_stop_keeps_its_text(
+    damage: Callable[[pd.DataFrame], pd.DataFrame], message: str
+) -> None:
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["upeh"] = damage(inputs["upeh"])
+
+    with pytest.raises(ValueError) as error:
+        calculate_unit_capacity(**inputs)
+
+    assert str(error.value) == message
+
+
+@pytest.mark.parametrize(
+    ("damage", "message", "label", "summary"),
+    [stop[1:] for stop in UPEH_TABLE_STOPS],
+    ids=[name for name, *_ in UPEH_TABLE_STOPS],
+)
+def test_an_upeh_table_stop_carries_its_shape_and_counts(
+    damage: Callable[[pd.DataFrame], pd.DataFrame], message: str, label: str, summary: str
+) -> None:
+    """여덟 곳 모두 `ReferenceJoinError` 다 — 표는 `RQ_UPEH`, 꼴 이름은 붙이는 표와 같은 상수이고
+    새 꼴은 「0 이하」 하나다. 값 꼴은 Main UPEH · MI ST 어느 칸인지 이름에 붙는다(값 칸이 둘)."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["upeh"] = damage(inputs["upeh"])
+
+    error = _join_error(inputs)
+
+    assert str(error) == message
+    assert error.problem.table == "RQ_UPEH"
+    assert (error.problem.label, error.problem.summary()) == (label, summary)
+    _assert_no_values(error.problem)
+    restored = pickle.loads(pickle.dumps(error))
+    assert (str(restored), restored.problem) == (message, error.problem)
+    assert failure_kind(error) == "ValueError"
+
+
+def test_upeh_value_shapes_keep_the_shape_name_and_put_the_cell_in_columns() -> None:
+    """꼴 글자 자체는 「빈 값」 · 「0 이하」 그대로다 — 칸 이름은 `columns` 에 들고 이름(`label`)
+    에만 붙는다. 등록 푸는 길(`scenario_registration._CELL_SHAPES`)이 꼴 글자로 가른다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    inputs["upeh"] = inputs["upeh"].assign(Area_Name=["MI", "MI"], ST=[0.0, -1.0])
+
+    error = _join_error(inputs)
+
+    assert error.problem == ReferenceJoinProblem(
+        "RQ_UPEH", JOIN_NONPOSITIVE, columns=("ST",), keys=2, rows=2
+    )
+    blank = _capacity_inputs(["Process-A", "Process-B", "Process-C"])
+    # 숫자가 아닌 값도 같은 글(「누락값 또는 숫자가 아닌 값」)이라 같은 꼴로 센다(DB 칸은 DOUBLE).
+    values: list[Any] = [None, "N/A", 100.0]
+    blank["upeh"] = blank["upeh"].assign(UPEH=values)
+    assert _join_error(blank).problem == ReferenceJoinProblem(
+        "RQ_UPEH", JOIN_BLANK_VALUE, columns=("UPEH",), keys=2, rows=2
+    )
+
+
+def test_an_upeh_duplicate_on_a_box_route_is_not_counted_once_the_route_is_dropped() -> None:
+    """BOX · PCB 는 계산에서 빼므로 그 행끼리의 겹침은 멈추지 않는다 — 남은 행만 센다. 받은 표의
+    index 가 겹쳐도 공백 셈은 자리로 같은 행을 본다."""
+    inputs = _capacity_inputs(["Process-A", "Process-B"])
+    upeh = inputs["upeh"]
+    box = upeh.iloc[[1]].assign(소요기준="BOX")
+    doubled = pd.concat(
+        [box, box, upeh, upeh.iloc[[0]].assign(STEP_SEQ=" P100")], ignore_index=False
+    )
+    inputs["upeh"] = doubled
+
+    error = _join_error(inputs)
+
+    assert (error.problem.shape, error.problem.keys, error.problem.rows) == (
+        JOIN_DUPLICATE_KEY,
+        1,
+        2,
+    )
+    assert error.problem.spacing_keys == 1
