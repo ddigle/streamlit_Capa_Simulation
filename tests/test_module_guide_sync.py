@@ -22,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from capa_simulation import module_api, module_registry
+from capa_simulation import module_api, module_helpers, module_registry
+from capa_simulation.io import company_bigdataquery_adapter
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GUIDE_PATH = PROJECT_ROOT / "docs" / "module_guide.md"
@@ -39,7 +40,7 @@ GUIDE = GUIDE_PATH.read_text(encoding="utf-8")
 ENVIRONMENT = rules.load_environment(PROJECT_ROOT)
 _FENCE = re.compile(r"^(?P<indent>[ ]*)```(?P<lang>\w*)\n(?P<body>.*?)^(?P=indent)```", re.S | re.M)
 _RULE_ROW = re.compile(r"^\| (M\d{2}) \|", re.M)
-_NAME_CELL = re.compile(r"^\| `([A-Za-z_]+)` \|", re.M)
+_NAME_CELL = re.compile(r"^\| `([A-Za-z0-9_]+)` \|", re.M)
 # 부록 B 의 점검 출력 예시에서 고장 난 모듈 — 뼈대 화면 끝에 폐기 예정 인자 한 줄을 더한 것이다.
 _DRAFT_EXTRA_LINE = 'st.dataframe({"값": [1, 2]}, use_container_width=True)\n'
 
@@ -167,6 +168,49 @@ def test_the_guide_says_the_implementing_mark_is_not_a_badge_line() -> None:
     assert "| v1.2 |" in _section("부록 C")
     assert "화면에 그리는 것만 줄이는 변경은 작은 판이다" in _section("9-4.")
     assert "description=" not in _python_block("데모 인사 모듈의 첫 화면")
+
+
+def test_the_helper_section_matches_the_helpers(tmp_path: Path) -> None:
+    """3-10(창구 1.3 도우미 — 2026-11-12 사용자 결정 「도우미 함수로」)은 결과 까닭 · 실패 갈래 ·
+    상한 · 기간 상한 · 버킷 자리를 코드와 같게 적고, 예시 화면은 정적 규칙을 통과한다."""
+    section = _section("3-10.")
+    adapter_kinds = [
+        value
+        for name, value in vars(company_bigdataquery_adapter).items()
+        if name.startswith("QUERY_FAILURE_")
+    ]
+
+    for reason in module_helpers.S3_REASONS:
+        assert f"「{reason}」" in section, reason
+    for kind in (module_helpers.QUERY_UNAVAILABLE, module_helpers.QUERY_INPUT, *adapter_kinds):
+        assert f"「{kind}」" in section, kind
+    assert f"{module_api.S3_MAX_BYTES // 1024 // 1024} MiB" in section
+    assert f"최대 {module_helpers.MAX_QUERY_WINDOW_DAYS}일" in section
+    assert f"`{module_helpers.S3_KEY_PREFIX}<id>/" in section
+    assert f'"api_minor": {module_api.API_VERSION[1]}' in section
+    assert "대신 올리거나 받지 않는다" in section and "M21" in section
+    page = _python_block("데모 백업 모듈의 첫 화면")
+    folder = _write(
+        tmp_path / "modules" / "demo_backup",
+        {
+            "module.json": json.dumps(
+                {
+                    "id": "demo_backup",
+                    "name": "데모 백업",
+                    "api": 1,
+                    "api_minor": module_api.API_VERSION[1],
+                    "owner": "데모 담당",
+                    "enabled": True,
+                    "maturity": "L0",
+                    "pages": [{"slug": "main", "file": "page.py", "title": "데모 백업"}],
+                },
+                ensure_ascii=False,
+            ),
+            "page.py": page,
+            "tests/test_demo_backup_smoke.py": "# Purpose: 데모 백업 시험 자리.\n",
+        },
+    )
+    assert [item.text() for item in _static_findings(folder)] == []
 
 
 def test_rule_numbers_in_the_guide_are_the_checkers_rules() -> None:

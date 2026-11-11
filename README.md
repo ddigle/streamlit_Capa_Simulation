@@ -658,9 +658,9 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `run_test_shard.py` | CI 시험 조각 실행기 — 시험 파일을 크기로 고르게 N 조각으로 나눠 그중 하나를 `pytest -q` 로 돈다(`--list` 는 파일만 찍는다) |
 | `apply_deploy_package.py` | 사내에서 배포 ZIP 을 송장대로 검증·적용하고 커밋한다(`modules/` 는 보존 — 싣지도 덮지도 지우지도 않는다) |
 | `new_module.py` | 모듈 뼈대(`module.json`·첫 화면·스모크 시험·README)를 `modules/<id>/` 안에만 만든다(새 모듈은 앱 관리자 승인 뒤) |
-| `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M20)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
+| `check_module.py` | 모듈의 선언·정적 규칙(M01 ~ M21)·ruff·자기 시험을 보고 리뷰에 붙일 결과 블록과 「전송용 요약」 한 줄을 찍는다(사내 런북 4-5 는 `git archive` 사본 트리에서) |
 | `module_test_runner.py` | `check_module.py` 가 부르는 모듈 시험 감시 러너 — 코어 `data/` 접근·저장소 안 쓰기(모듈 폴더·상대 경로)를 실패로, AppTest import 길을 앱과 같게 |
-| `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18 ~ M20 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
+| `module_check_rules.py` | `check_module.py` 의 정적 규칙 부품(M02 ~ M14·M18 ~ M21 — AST·파일 꼴). 규칙 번호 표 `RULES` 는 `docs/module_guide.md` 부록 B 와 같다(`tests/test_module_guide_sync.py`) |
 | `container_start.py` | C-DEP CD 이미지의 `CMD` — 임시 응답을 세우고 환경변수로 `bigdataquery` 설치·로그인 토큰 파일 · 두 DB 받기를 마치고 결과를 남긴 뒤 앱(`streamlit run capa_server.py --server.port 8080` — 통합인증 진입점)으로 바뀐다. 개발·사내 PC 에서는 부르지 않는다 |
 | `container_stage.py` | 시작 스크립트의 임시 응답 — 앱이 뜨기 전까지 같은 포트에서 상태 검사에 답하고 값 없는 안내만 보인다 |
 | `sso_mock_idp.py` | 개발·시험용 가짜 통합인증 IdP — 실행 때 키를 메모리에만 만들고 form_post 로 id_token 을 보낸다. 앱이 읽을 환경변수 파일을 저장소 밖에 쓴다(운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장) |

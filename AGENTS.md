@@ -127,6 +127,14 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   3. 키 접두 `mod_<id>__` 필수 — 코어는 `mod_` 로 시작하는 키를 만들지 않는다.
   4. 전역 CSS · `st.sidebar` · `st.set_page_config` · 프로세스 전역 상태 금지.
   5. 들어갈 때만 불러오기 — 찾기는 `module.json` 만 읽고 `.py` 를 import 하지 않는다.
+- **자격은 코어가 쥐고 모듈은 창구 도우미만 부른다**(2026-11-12 사용자 결정 「도우미 함수로」 — 리뷰 202611111500 사외요청 2,
+  보드 N9 · N10 · N11). BigDataQuery 조회는 `module_api.query_bigdataquery`(앱의 DB 등록과 같은 길 · 같은 실패 갈래 — 요청자
+  계정 · 토큰은 코어가 채운다), S3 는 `s3_upload` · `s3_download`(모듈 데이터 자리 파일 하나를 버킷의 `modules/<id>/` 아래로 —
+  접속 명단과 같은 키 · 주소 · 버킷, 동기화 모드 `managed` 서버에서만, 파일 하나 8 MiB, 예외 없이 `S3Result`)다 — 창구 1.3, 속은
+  `module_helpers`. 언제 올리고 받을지는 모듈이 정한다. 자격 환경변수 이름(`CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` ·
+  `ADFS_`)과 토큰 파일 자리(`.credential` · `bigdataquery.token`)를 코드에 적으면 점검 오류 M21(시험 막음)이다. `bigdataquery`
+  직접 import 는 2026-11-01 결정대로 경고(M09)로 둔다. 모듈 시험(`check_module.py`)은 자격 이름의 변수를 빼고
+  `CAPA_MODULES_TEST_RUN` 을 켜 도우미가 밖에 닿지 않는다(조회 · S3 모두 「쓸 수 없음」).
 - 깨진 모듈은 그 화면만 오류 카드다 — 화면 본문은 `module_runtime.run_module_page`, 위젯 콜백은 `ctx.callback`, 프래그먼트 · 팝업
   본문은 `ctx.guard` 가 감싼다. 끄는 스위치는 둘이다 — `module.json` 의 `"enabled": false` 와 실행 환경변수 `CAPA_MODULES_DISABLED`
   (`*` 또는 id 들). 사이드바 상자 「모듈」 은 켜진 모듈이 있을 때만 서고 자리는 Dynamic 다음 · Support 앞이다.
@@ -162,7 +170,9 @@ GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json
   닫았다). 밖 변경은 승인 뒤에도 모듈 커밋이 아니라 리뷰 「사외 요청」 으로 사외가 한다 — 코어는 사외가 정본이고 앱 관리자는 폴더 밖을 바꾼
   PR 을 합치지 않으며 런북 1-7 도 그런 모듈 커밋을 받지 않는다. 앱 관리자는 배포를 적용할 때마다 모듈 점검 결과를 본다.
 - **v1 은 운영 모듈 데이터를 백업하지 않는다** — 잃어도 되는 것만 둔다(런북 1-3 에 선택 줄을 더하지 않는다). 위 기본값이 아니라
-  2026-11-01 사용자 「권장대로」 로 정한 것이다(사양 10장 5 — `docs/TODO.md` 3장 「모듈 사양 10장」).
+  2026-11-01 사용자 「권장대로」 로 정한 것이다(사양 10장 5 — `docs/TODO.md` 3장 「모듈 사양 10장」). 코어는 모듈 데이터를 대신
+  올리고 받지도 않는다(2026-11-07 통합 검수 C4 그대로) — 재배포 뒤에도 남겨야 하는 파일은 모듈이 창구 도우미 `s3_upload` ·
+  `s3_download` 로 스스로 올리고 받는다(2026-11-12 사용자 결정 「도우미 함수로」).
 - 모듈 쪽 정본은 `docs/module_guide.md`, 코어 창구는 `module_api`(하위 호환으로만 — 12장 「코어 공개 창구(`module_api`) 변경」).
 - 담당자(사람)가 읽는 안내서는 `docs/module_colleague_guide.md` 다(2026-11-03 — `docs/TODO.md` 3장 「운영·배포」). 지침서의 사람 몫을
   쉬운 말로 옮긴 것이라 규칙을 새로 정하지 않고, 어긋나면 지침서를 따른다. 첫 지시 블록은 지침서 0장 그대로이고 지침서 · 안내서
@@ -1746,7 +1756,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - 설정은 `CAPA_S3_*` > `config/object_storage.json` > 상수이고, 커밋되는 `mode` 는 반드시 `local` 이다.
-- `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일)를 앱 프로세스가 직접 GET · PUT · HEAD 하는 경계. 콜백 자리에서 `aws` 프로세스를 띄우지 않고 프로필 없이 환경변수 키로 붙고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
+- `src/capa_simulation/io/s3_small.py` — 같은 저장소의 작은 객체 하나(접속 명단 파일 · 모듈 데이터 파일 — 모듈 쪽은 `module_helpers` 가 상한 8 MiB · 크기에 맞춘 마감을 넘긴다)를 앱 프로세스가 직접 GET · PUT · HEAD 하는 경계. 콜백 자리에서 `aws` 프로세스를 띄우지 않고 프로필 없이 환경변수 키로 붙고 의존성을 늘리지 않으려 표준 라이브러리(`http.client` · `hmac` · `hashlib`)로 SigV4 를 서명한다(경로 스타일 · 연결 3초 · 읽기 5초 · 재시도 없음 · 프록시와 리다이렉트를 따르지 않음 · 받는 본문 1 MiB 상한). Streamlit 을 끌고 오지 않는다 — `auth/` 가 import 한다. 블로킹이라 이벤트 루프에서 부르지 않는다. 실패는 `S3Failure`(까닭 분류 · HTTP 상태 · 저장소 오류 코드뿐 — 키 · 주소 · 본문 없음). S3 에 붙는 자리는 이 둘뿐이다.
 - `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 숫자처럼 보이는 글자 칸(글자로 둔 달 머리 「26.11」 — 숫자로 두면 「26.1」 처럼 끝 0 이 사라진다)은 작성기가 스스로 모아 시트의 「오류 무시」 표지(`ignoredErrors` · `numberStoredAsText` — `pageMargins` 바로 뒤, 이웃 칸은 범위로 묶음)로 덮어 Excel 의 초록 삼각형(「텍스트 형식으로 저장된 숫자」)을 끈다 — 시트를 짓는 쪽은 범위를 넘기지 않고, 숫자 칸 · 숫자로 안 보이는 글자 칸은 덮지 않는다(2026-11-11 사용자 실기 Q2-6). 같은 입력은 같은 바이트다. 작성기가 내는 바이트가 바뀌면 통을 세션에 기억하는 세 판(`process_capa_view.SHEET_SCHEMA_VERSION` · `availability_gap_panel.GAP_SHEET_SCHEMA_VERSION` · `calculation_result.SHEET_SCHEMA_VERSION`)을 함께 올린다 — 올리지 않으면 같은 조건의 옛 통이 세션에서 그대로 나온다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py` — 되읽기는 표준 라이브러리 시험 도우미 `tests/xlsx_read.py`).
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
 - `src/capa_simulation/io/reference_cache.py` — 세션 활성 리비전의 표·공용 표시순서 경계다(5장 1, XLSB 대체 없음). 활성
@@ -2347,9 +2357,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     품은 바깥 탭은 `ConditionTabs.sub`(`SubTabs`)로 적고, 사이드바는 `ConditionTabs.active_label`(위젯 값 → 기억 칸 → 첫
     탭, 라벨 목록 밖의 옛 값은 첫 탭)로 **가장 안쪽 라벨**을 본다 — `labels`·`card_labels` 도 안쪽 라벨로 적는다.
 - `src/capa_simulation/module_registry.py` — 모듈(`modules/<id>/`) 찾기·`module.json` 검증·상태(켜짐·꺼짐·실패와 까닭). Streamlit 실행 문맥 없이 돌고 프로세스마다 한 번 찾는다(`discovered` — 키는 뿌리·끄는 환경변수). `scripts/check_module.py` 가 같은 검증을 쓴다. 모듈끼리 화면 이름이 겹치면 차례(order → id)가 뒤인 모듈 전체가 실패하고 까닭에 상대(코어 · 앞 모듈 id)를 적는다(`ModuleRecord.clash` — 점검은 앞 모듈에 M01 경고를 단다).
-- `src/capa_simulation/module_api.py` — 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 데이터 없음 — 창구
+- `src/capa_simulation/module_api.py` — 모듈이 import 하는 **유일한** 코어 창구 v1(문맥·키 접두·머리말·색, 코어 데이터 없음 — 창구
   1.1 부터 `page_header(description=)` 은 받기만 하고 그리지 않는다, 작은 결정 d1. 1.2 부터 `page_header` 는 L0 · L1 의 「구현중」
-  배지 줄도 그리지 않는다 — 화면 탭 표지가 말한다, 2026-11-10 보드 Q-5). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
+  배지 줄도 그리지 않는다 — 화면 탭 표지가 말한다, 2026-11-10 보드 Q-5. 1.3 부터 바깥 자리 도우미 `query_bigdataquery` ·
+  `s3_upload` · `s3_download` 와 `BigDataQueryError` · `S3Result` · `S3_MAX_BYTES` — 2026-11-12 사용자 결정 「도우미 함수로」). 하위 호환으로만 바꾸며 `tests/test_module_api_surface.py` 가 겉면을 고정한다(12장 「코어 공개 창구 변경」).
+- `src/capa_simulation/module_helpers.py` — 창구 도우미의 속(모듈은 import 하지 않는다 — M06). BigDataQuery 는 앱과 같은 길
+  (`load_bigdataquery_module` → `call_get_data`)로 묻고 실패 갈래를 `BigDataQueryError.kind` 로 옮긴다(기간 자리 `{start_date}` ·
+  `{end_date}` 는 `str.replace` — 최대 366일). S3 는 `io/s3_small` 로 `modules/<id>/<이름>` 을 주고받는다(이름은 마디 넷 ·
+  영숫자 꼴, 링크로 데이터 자리 밖을 가리키면 거절, 받기는 임시 파일에서 한 번에 바꿈). 키 · 주소 · 버킷은
+  `auth.runtime.config().access_s3`(운영 진입 파일이 환경에서 뺀 뒤에도 남는 한 벌), 모드는 `object_storage.load_settings`.
+  모듈 시험 표지(`module_registry.TEST_RUN_ENV_VAR`)면 밖에 닿지 않는다. 까닭 · 로그는 고정 낱말뿐이다.
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·

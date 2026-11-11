@@ -1,6 +1,6 @@
 # Purpose: 모듈의 선언·정적 규칙·ruff·자기 시험을 보고 리뷰 블록과 전송용 요약 한 줄을 찍는다.
 
-"""모듈 점검 — 선언(M01)·정적 규칙(M02 ~ M14·M18 ~ M20)·ruff(M15·M16)·자기 시험(M17).
+"""모듈 점검 — 선언(M01)·정적 규칙(M02 ~ M14·M18 ~ M21)·ruff(M15·M16)·자기 시험(M17).
 
 사외(개발 PC, WSL):
 
@@ -25,9 +25,11 @@
 사본의 코어·`pyproject.toml`·`requirements.txt` 로 본다. 모듈 시험은 감시
 러너(`module_test_runner.py`)가 하위 프로세스로 돌린다 — 코어 `data/` 를 열거나 모듈 폴더·트리
 안(상대 경로 쓰기)에 쓰면 실패하고, 같은 폴더 맨이름 import 는 앱처럼 깨진다. 임시 데이터
-자리를 쓰므로 앱이 떠 있어도 운영 모듈 데이터를 잠그지 않는다. DB 를 열지 않는다.
+자리를 쓰므로 앱이 떠 있어도 운영 모듈 데이터를 잠그지 않는다. DB 를 열지 않는다. 모듈 시험의
+환경에서는 자격 이름(M21 — `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_`)의 변수를
+빼고 `module_registry.TEST_RUN_ENV_VAR` 를 켠다 — 창구 도우미(조회 · S3)가 밖에 닿지 않는다.
 
-**정적 오류가 먼저다.** M01·M06·M07·M10·M11 가운데 오류가 하나라도 있으면 시험을 돌리지
+**정적 오류가 먼저다.** M01·M06·M07·M10·M11·M21 가운데 오류가 하나라도 있으면 시험을 돌리지
 않는다(실패로 센다). `CAPA_MODULES_ROOT`·`CAPA_MODULES_DISABLED` 는 따르지 않는다(앱 실행 때의
 일이다) — 값이 있으면 머리 줄에 알린다.
 
@@ -295,13 +297,18 @@ def run_tests(
 
 def module_test_environment(*, root: Path, tree: Path, data_root: Path) -> dict[str, str]:
     """모듈 시험 하위 프로세스의 환경 — `modules.<id>` 가 **점검하는 그 뿌리**로 풀리게."""
-    environment = dict(os.environ)
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.upper().startswith(rules.CREDENTIAL_ENV_PREFIXES)
+    }
     front = [str(root.parent), str(tree / "src")]
     existing = environment.get("PYTHONPATH", "")
     environment["PYTHONPATH"] = os.pathsep.join([*front, *([existing] if existing else [])])
     environment[module_registry.DATA_ROOT_ENV_VAR] = str(data_root)
     environment[module_registry.ROOT_ENV_VAR] = str(root)
     environment.pop(module_registry.DISABLED_ENV_VAR, None)
+    environment[module_registry.TEST_RUN_ENV_VAR] = "1"
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment["PYTHONIOENCODING"] = "utf-8"
     return environment
@@ -743,7 +750,13 @@ def main(
         return 2
     worktree: WorktreeState | None = None
     # `~/.aws` 와 프로세스 환경의 커널 사본에는 운영 버킷 키가 있다 — 이 키는 운영 DB 삭제 권한이다.
-    protect = [PROJECT_ROOT / "data", Path.home() / ".aws", Path("/proc/self/environ")]
+    # BigDataQuery 토큰 자리(배포 서버 · WebIDE)도 모듈 시험이 열지 않는다(M21).
+    protect = [
+        PROJECT_ROOT / "data",
+        Path.home() / ".aws",
+        Path("/proc/self/environ"),
+        Path("/config/.credential"),
+    ]
     if args.worktree_of is not None:
         repository = Path(args.worktree_of).resolve()
         try:

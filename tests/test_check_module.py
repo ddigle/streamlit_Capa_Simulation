@@ -151,7 +151,7 @@ def test_the_good_fixture_passes_with_ruff_and_its_tests(
 
     assert code == 0, out
     assert (
-        "- m1 demo_ok 통과 · L0 · API 1.0 · 화면 2 · 오류 0 · 경고 0 · ruff ok · 시험 1 통과" in out
+        "- m1 demo_ok 통과 · L0 · API 1.3 · 화면 2 · 오류 0 · 경고 0 · ruff ok · 시험 1 통과" in out
     )
     assert "제3자 패키지: pandas" in out
 
@@ -1122,6 +1122,119 @@ def test_m20_is_a_warning_that_keeps_the_module_passing(
     assert _summary(out).endswith("ng 없음")
 
 
+# ------------------------------------------------------------------ M21
+
+
+# 자격 · 비밀(2026-11-12 사용자 결정 「도우미 함수로」) — 계정 · 토큰 · 키는 코어가 쥐고 모듈은
+# 도우미만 부른다. 환경변수 이름은 글자 전체가 이름 꼴일 때, 토큰 파일 자리는 글자 안 어디서든
+# 잡는다.
+@pytest.mark.parametrize(
+    "body",
+    [
+        'import os\nKEY = os.environ["CAPA_S3_SECRET_KEY"]\n',
+        'import os\nUSER = os.environ.get("CAPA_BDQ_USER_NAME", "")\n',
+        'import os\nMODE = os.getenv("CAPA_S3_SYNC_MODE")\n',
+        'import os\nKEY = os.getenv("aws_secret_access_key")\n',
+        'from os import environ\nSECRET = environ["JWT_SECRET_KEY"]\n',
+        'import os\nCLIENT = os.environ["ADFS_CLIENT_ID"]\n',
+        'import os\nPREFIX = "CAPA_S3_"\nNAMES = [n for n in os.environ if n.startswith(PREFIX)]\n',
+        'import os\npart = "KEY"\nKEY = os.environ[f"CAPA_S3_{part}"]\n',
+        'import os\nTEXT = os.path.expandvars("${AWS_PROFILE}")\n',
+        'TOKEN = "/config/.credential/bigdataquery.token.demo"\n',
+        'from pathlib import Path\nFOLDER = Path("/config") / ".credential"\n',
+        'NAME = "bigdataquery.token.demo"\n',
+    ],
+)
+def test_m21_blocks_credential_names_and_token_places(tmp_path: Path, body: str) -> None:
+    assert ("M21", "error") in _page_rules(tmp_path, body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'import os\nROOT = os.environ.get("CAPA_MODULES_DATA_ROOT", "")\n',
+        'LABEL = "AWS 계정은 코어가 쥔다"\n',
+        'COLUMN = "aws"\n',
+        'NAME = "credentials.csv"\n',
+        'NAME = "MY_AWS_KEY"\n',
+    ],
+)
+def test_m21_leaves_other_text_alone(tmp_path: Path, body: str) -> None:
+    assert ("M21", "error") not in _page_rules(tmp_path, body)
+
+
+def test_m21_looks_at_module_tests_too(tmp_path: Path) -> None:
+    body = 'def test_x(monkeypatch) -> None:\n    monkeypatch.setenv("CAPA_S3_BUCKET", "x")\n'
+    assert ("M21", "error") in _page_rules(tmp_path, body, rel="tests/test_demo_x_more.py")
+
+
+def test_m21_is_blocking_and_names_the_helpers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "modules"
+    body = 'import os\n\nUSER = os.environ.get("CAPA_BDQ_USER_NAME", "")\n'
+    _module(root, "demo_x", {"page.py": HEADER + body})
+    monkeypatch.setattr(check_module, "run_tests", _must_not_run)
+
+    code, out = _run(["demo_x", "--root", str(root), "--no-ruff"], capsys)
+
+    assert code == 1
+    assert "M21" in rules.BLOCKING_RULES
+    assert "시험 안 돎 — 정적 오류 먼저" in out
+    detail = next(line for line in out.splitlines() if " M21 " in line)
+    assert detail.startswith("  m1 demo_x 오류 M21 page.py:4 ")
+    assert "`CAPA_BDQ_USER_NAME`" in detail and "`api.query_bigdataquery`" in detail
+
+
+HELPER_TESTS = """# Purpose: 모듈 시험 안에서 코어 도우미가 밖에 닿지 않는지 본다.
+
+import pytest
+
+from capa_simulation import module_api as api
+
+
+def test_the_helpers_stay_inside() -> None:
+    ctx = api.context(__file__)
+    (ctx.data_dir / "x.csv").write_text("a\\n", encoding="utf-8")
+    assert api.s3_upload(ctx, "x.csv") == api.S3Result(False, "쓸 수 없음", "모듈 시험")
+    assert api.s3_download(ctx, "x.csv").detail == "모듈 시험"
+    with pytest.raises(api.BigDataQueryError) as caught:
+        api.query_bigdataquery(ctx, "SELECT 1")
+    assert caught.value.kind == "쓸 수 없음"
+"""
+
+
+def test_m17_module_tests_run_with_the_helpers_kept_inside(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """앱 관리자 PC 의 점검(런북 4-5 · 4-6)이 모듈 시험으로 진짜 조회 · 버킷에 닿지 않는다."""
+    root = tmp_path / "modules"
+    folder = _module(root, "demo_x", {"page.py": HEADER + "import streamlit as st\n"})
+    (folder / "tests" / "test_demo_x_helpers.py").write_text(HELPER_TESTS, encoding="utf-8")
+
+    code, out = _run(["demo_x", "--root", str(root), "--no-ruff"], capsys)
+
+    assert code == 0, out
+    assert "시험 2 통과" in out
+
+
+def test_m09_points_a_direct_bigdataquery_import_at_the_helper(tmp_path: Path) -> None:
+    """직접 import 는 2026-11-01 결정대로 경고 그대로다 — 글만 창구 도우미를 가리킨다."""
+    environment = _packages(
+        requirements=REQUIREMENTS,
+        distributions={"bigdataquery": ["bigdataquery"]},
+        company="bigdataquery==2.5.0\n",
+    )
+    files = {"page.py": HEADER + "import bigdataquery\n"}
+    folder = _module(tmp_path / "modules", "demo_x", files)
+    result = rules.check_module_folder(
+        folder, module_id="demo_x", pages=["page.py"], environment=environment, git=None
+    )
+    [finding] = [item for item in result.findings if item.rule == "M09"]
+    assert finding.level == "warning"
+    assert "`api.query_bigdataquery`" in finding.message
+
+
 # ------------------------------------------------------------------ ruff · 시험
 
 
@@ -1235,6 +1348,7 @@ def test_the_process_environment_file_is_on_the_watch_list(
 
     assert Path("/proc/self/environ") in seen[0]
     assert Path.home() / ".aws" in seen[0]
+    assert Path("/config/.credential") in seen[0]
 
 
 def test_m17_is_not_run_when_a_blocking_static_error_exists(
@@ -1282,7 +1396,12 @@ def test_the_module_test_imports_the_checked_copy_of_its_helpers(
     assert "시험 2 통과" in out
 
 
-def test_the_module_test_environment_points_at_the_checked_root(tmp_path: Path) -> None:
+def test_the_module_test_environment_points_at_the_checked_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("CAPA_S3_SECRET_KEY", "CAPA_BDQ_USER_NAME", "AWS_PROFILE", "JWT_SECRET_KEY"):
+        monkeypatch.setenv(name, "demo-value")
+    monkeypatch.setenv("adfs_client_id", "demo-value")
     root = tmp_path / "modules"
     data = tmp_path / "data-root"
     environment = check_module.module_test_environment(root=root, tree=PROJECT_ROOT, data_root=data)
@@ -1292,6 +1411,11 @@ def test_the_module_test_environment_points_at_the_checked_root(tmp_path: Path) 
     assert environment["CAPA_MODULES_ROOT"] == str(root)
     assert environment["PYTHONDONTWRITEBYTECODE"] == "1"
     assert "CAPA_MODULES_DISABLED" not in environment
+    # 모듈 시험은 자격 이름(M21)의 변수를 받지 않고, 창구 도우미가 밖에 닿지 않게 표지를 켠다.
+    assert not [
+        name for name in environment if name.upper().startswith(rules.CREDENTIAL_ENV_PREFIXES)
+    ]
+    assert environment[module_registry.TEST_RUN_ENV_VAR] == "1"
 
 
 # ------------------------------------------------------------------ 결과 블록 · 요약 · 종료 코드
@@ -1417,9 +1541,9 @@ def test_the_output_option_writes_the_same_block(
     assert target.read_text(encoding="utf-8") == out
 
 
-def test_the_rule_table_lists_m01_to_m20() -> None:
-    assert list(rules.RULES) == [f"M{number:02d}" for number in range(1, 21)]
-    assert rules.BLOCKING_RULES == {"M01", "M06", "M07", "M10", "M11"}
+def test_the_rule_table_lists_m01_to_m21() -> None:
+    assert list(rules.RULES) == [f"M{number:02d}" for number in range(1, 22)]
+    assert rules.BLOCKING_RULES == {"M01", "M06", "M07", "M10", "M11", "M21"}
 
 
 def test_a_regular_package_file_at_the_modules_root_is_warned(

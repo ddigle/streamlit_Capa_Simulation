@@ -43,7 +43,7 @@ MATURITY_LABELS: Final = {"L0": "L0 Lab", "L1": "L1 연결", "L2": "L2 검증"}
 # 사이드바 라벨에 「(구현중)」 을 달고 화면 탭에 「구현중」 표지를 세우는 성숙도.
 IMPLEMENTING_LEVELS: Final = frozenset({"L0", "L1"})
 API_MAJOR: Final = 1
-API_MINOR: Final = 2
+API_MINOR: Final = 3
 # 받는 큰 판. 큰 판을 올리면 옛 판을 남겨 두고, 압축본 판 분포에서 그 판이 0 이 된 다음 배포에 뺀다.
 SUPPORTED_API_MAJORS: Final = frozenset({1})
 # 모듈 뿌리를 바꾸는 환경변수. 비면 `settings.MODULES_DIR`, `off`(대소문자 무시)면 뿌리가 없다 —
@@ -53,6 +53,10 @@ ROOT_OFF: Final = "off"
 # 운영에서 문제 모듈을 숨기는 스위치 — `*` 는 모두, `a,b` 는 그 id 들. 기록은 남는다(「꺼짐」).
 DISABLED_ENV_VAR: Final = "CAPA_MODULES_DISABLED"
 DATA_ROOT_ENV_VAR: Final = "CAPA_MODULES_DATA_ROOT"
+# 모듈 시험(`scripts/check_module.py` 가 띄우는 감시 러너)이 켜는 표지. 켜져 있으면 창구 도우미
+# (BigDataQuery 조회 · S3 올리기 · 받기 — `module_helpers`)가 밖에 닿지 않고 「쓸 수 없음」 이다 —
+# 앱 관리자 PC 의 점검이 진짜 조회 · 버킷에 닿지 않게.
+TEST_RUN_ENV_VAR: Final = "CAPA_MODULES_TEST_RUN"
 DEFAULT_PAGE_ICON: Final = ":material/extension:"
 PAGE_ICON_PATTERN: Final = re.compile(r":material/[a-z0-9_]+:")
 # 화면 이름은 `st.Page`·`st.page_link` 가 Markdown 으로 그린다(`**`·`:red[]` 가 먹는다).
