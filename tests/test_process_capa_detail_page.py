@@ -995,7 +995,11 @@ def test_the_unit_csv_is_this_process_only_with_the_tab_columns(
     frame = pd.read_csv(io.BytesIO(captured["data"]), encoding="utf-8-sig")
     assert list(frame.columns) == list(UNIT_EXPORT_COLUMNS)
     assert set(frame["공정"].astype(str)) <= {DYNAMIC_PROCESS}
-    assert captured["file_name"].startswith("process_capa_detail_units_")
+    months = _months(app)
+    # 이름 끝은 화면의 공정 이름이다(2026-11-11 남은 물음 보드 B3 — 시트 엑셀과 같은 꼴).
+    assert captured["file_name"] == (
+        f"process_capa_detail_units_{months[0]}_{months[-1]}_{DYNAMIC_PROCESS}.csv"
+    )
     assert captured["data"].startswith("﻿".encode())
 
 
@@ -1028,7 +1032,9 @@ def test_the_sheet_xlsx_follows_the_screen_state(
     months = _months(app)
     captured, book = _sheet(app)
 
-    assert captured["file_name"] == f"process_capa_detail_{months[0]}_{months[-1]}.xlsx"
+    assert captured["file_name"] == (
+        f"process_capa_detail_{months[0]}_{months[-1]}_{DYNAMIC_PROCESS}.xlsx"
+    )
     assert list(book) == [DETAIL_SHEET, UNITS_SHEET]
     detail = book[DETAIL_SHEET]
     heading = _heading(detail)
@@ -1447,13 +1453,15 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     assert any(text.startswith("확보 기준 미달 0 → ") for text in inverse), inverse
     assert any(text.startswith("구간 안 단축 0 → ") for text in inverse), inverse
     captured = app.session_state["captured_downloads"][UNITS_CSV_KEY]
-    assert "_upeh110_202601_202612" in captured["file_name"]
+    # 가정 꼬리 뒤 끝이 공정 이름이다(두 파일 같은 차례 — 2026-11-11 남은 물음 보드 B3).
+    assert captured["file_name"].endswith(f"_upeh110_202601_202612_{DYNAMIC_PROCESS}.csv")
     frame = pd.read_csv(io.BytesIO(captured["data"]), encoding="utf-8-sig")
     assert list(frame.columns) == ["UPEH 가정", *UNIT_EXPORT_COLUMNS]
     assert set(frame["UPEH 가정"].astype(str)) <= {"UPEH 가정 110% · 26.01–26.12"}
-    # 시트 엑셀도 가정 표지 — 파일 이름 꼬리 · 머리 값 줄 · ① 끝 가정 세 줄 · 둘째 시트 첫 열.
+    # 시트 엑셀도 가정 표지 — 파일 이름(공정 이름 앞) · 머리 값 줄 · ① 끝 가정 세 줄 · 둘째
+    # 시트 첫 열.
     sheet, book = _sheet(app)
-    assert sheet["file_name"].endswith("_upeh110_202601_202612.xlsx")
+    assert sheet["file_name"].endswith(f"_upeh110_202601_202612_{DYNAMIC_PROCESS}.xlsx")
     detail = book[DETAIL_SHEET]
     assert _heading(detail)["UPEH 가정"] == "UPEH 가정 110% · 26.01–26.12"
     upeh_labels = [str(value) for value in detail.column(0) if value is not None]

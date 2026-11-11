@@ -1,4 +1,4 @@
-# Purpose: 표 위 제목·부가 설명 줄, CSV·엑셀 내보내기 단추 쌍, 표 도구 막대 앞 띄움·자리를 짓는다.
+# Purpose: 표 제목 줄, CSV·엑셀 내려받기 쌍·파일 이름 토막, 표 도구 막대 띄움·자리를 짓는다.
 
 """One heading row and one CSV download button for every table.
 
@@ -59,6 +59,16 @@ TABLE_TOOLBAR_CLEARANCE = 24
 # 더하고 지우는 표 112px · 행이 고정된 표 92.4px — 샘플 관측)가 그 빈 위에 서므로 표 앞 띄움 없이
 # 표가 줄 바로 아래(줄 사이 14px)에 붙는다. 넓은 막대보다 8px 남긴다(AGENTS 9장 「표 도구 막대」).
 TABLE_TOOLBAR_ROOM = 120
+
+
+def file_name_part(text: str, *, fallback: str) -> str:
+    """내려받는 파일 이름의 한 토막 — 경로 · 예약 글자(`\\ / : * ? " < > |`)와 빈칸을 `_` 로,
+    겹친 `_` 는 하나로, 앞뒤 `_` 는 걷는다. 남는 글자가 없으면 `fallback`. 설비 시나리오 이름 ·
+    공정 표시명처럼 사람이 적은 글을 파일 이름에 실을 때 쓴다."""
+    cleaned = "".join("_" if char in '\\/:*?"<>|' or char.isspace() else char for char in text)
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned.strip("_") or fallback
 
 
 def render_csv_download(

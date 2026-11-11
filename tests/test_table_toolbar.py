@@ -19,6 +19,7 @@ from capa_simulation.components.table_toolbar import (
     DOWNLOAD_ICON,
     TABLE_TOOLBAR_CLEARANCE,
     TABLE_TOOLBAR_ROOM,
+    file_name_part,
     toolbar_room_css,
 )
 
@@ -611,3 +612,11 @@ def test_the_pair_is_one_download_menu_on_the_callers_row() -> None:
     assert shapes[(True, True)] == shapes[(True, False)]
     assert shapes[(False, False)] == [[sheet_slot, ("caption", None)], ("caption", None)]
     assert shapes[(False, True)] == shapes[(False, False)]
+
+
+def test_the_file_name_part_drops_path_and_reserved_characters() -> None:
+    """파일 이름 한 토막(설비 「현재 데이터」 의 시나리오 이름 · 공정 Capa 상세 두 파일의 공정
+    이름 — 2026-11-11 남은 물음 보드 B3)."""
+    assert file_name_part("셋업 실무", fallback="scenario") == "셋업_실무"
+    assert file_name_part(' WF  입고/검사:*?"<>| ', fallback="x") == "WF_입고_검사"
+    assert file_name_part(" / ", fallback="process") == "process"

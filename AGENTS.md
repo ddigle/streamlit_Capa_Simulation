@@ -499,6 +499,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     엑셀 단추 하나)의 「시트 엑셀」(늘 — 2026-11-10 보드 c2-picked)은 지금 화면 상태 그대로의 결합 캔버스를 화면 서식째
     xlsx 로 낸다(`components/process_capa_workbook.py` · `io/xlsx_small.py` — 새 의존성 없음). 페이지는 머리 값 줄(공정 ·
     시나리오 · 조회기간 · 설비 시나리오 · 설비 일정 · UPEH 가정 — `sheet_heading`)과 호기 CSV 표(`units_export`)를 넘긴다.
+    두 파일 이름(`process_capa_view.detail_file_names`)은 `process_capa_detail[_units]_<첫 달>_<끝 달>` 뒤 UPEH 가정 꼬리
+    (`_upeh<%>_<구간 첫 달>_<끝 달>`, 켰을 때만), 끝에 화면의 공정 이름(머리 값 줄과 같은 표시명 — 못 쓰는 글자 · 빈칸은
+    `table_toolbar.file_name_part` 가 `_` 로)이다(2026-11-11 남은 물음 보드 B3 (가) — 공정이 달라도 이름이 같던 것).
   - UPEH 가정(조건 카드 끝 「이 세션만」)이 켜지면 가정 요약(이미 받은 확보율 행에 ÷f — 캐시 밖)과 가정 계획(계획 키 끝
     칸 토큰 → 가정 칸)을 더 세운다. **판정은 한 기준**이다 — 부족 띠·② 판정 대조·KPI·원인은 가정, 공식 값은 ① 공식
     줄과 KPI 회색 줄 「공식 n」 에만. 머리 배지·효과 한 줄(그 화면의 목표·기간)·카드의 역산 둘(「이 값으로」)·호기 CSV
@@ -3228,7 +3231,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   대당 Capa · 소요대수 제목 줄(`table_heading_row(sheet=)`) · 가용설비 Static 대비 일정 시트(전환 줄 끝) · 호기 목록(목록 아래)이 쓰고, `tests/test_table_toolbar.py` 가 엑셀 단추를 다른 자리에서
   부르지 않는지 · 쌍의 꼴을 본다)과 표 도구 막대 앞 띄움
   (`toolbar_clearance()` — 숫자는 `TABLE_TOOLBAR_CLEARANCE` 하나, 다른 이름은 그 별칭), 띄움 대신 표 바로 위 줄 오른쪽 끝을
-  막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. `st.download_button` 은
+  막대 자리로 비우는 서식(`toolbar_room_css(줄 key)` — `TABLE_TOOLBAR_ROOM` 120px)이다. 사람이 적은 글(설비 시나리오
+  이름 · 공정 표시명)을 내려받는 파일 이름에 실을 때는 한 벌 `file_name_part(글, fallback=)` 로 경로 · 예약 글자와 빈칸을
+  `_` 로 바꾼다(설비 「현재 데이터」 CSV · 공정 Capa 상세 두 파일). `st.download_button` 은
   여기서만 부르고 라벨에 아이콘을 섞지 않는다(테스트가 잡는다, 9장 「표 도구 막대」).
 - `src/capa_simulation/components/monthly_table_base.py` — 두 월별 Plotly 표가 공유하는 상수·텍스트 폭·분류 폭
   (`classification_widths`)과 `go.Table` 두 벌 조립(`build_split_table_figures`), 격자 머리(`add_table_frame` — 바깥 테두리 ·
