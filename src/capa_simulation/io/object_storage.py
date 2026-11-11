@@ -62,12 +62,13 @@ ENDPOINT_ENV: Final = "CAPA_S3_ENDPOINT_URL"
 BUCKET_ENV: Final = "CAPA_S3_BUCKET"
 PROFILE_ENV: Final = "CAPA_S3_PROFILE"
 REGION_ENV: Final = "CAPA_S3_REGION"
-# 이 경계의 설정을 바꾸는 환경변수 전부. 시험이 사내 PC 의 사용자 환경변수를 읽지 않게 지운다.
-SETTINGS_ENVIRONMENT: Final = (ENDPOINT_ENV, BUCKET_ENV, PROFILE_ENV, REGION_ENV)
 DEFAULT_REGION: Final = "us-east-1"
 
 # 켜는 스위치. `managed` 면 시작 때 두 DB 를 받고 저장하면 올린다.
 MODE_ENV: Final = "CAPA_S3_SYNC_MODE"
+# 이 경계의 설정을 바꾸는 환경변수 전부. 시험이 사내 PC 의 사용자 환경변수 · 창에 넣은 모드를 읽지
+# 않게 지운다(`tests/conftest.py`).
+SETTINGS_ENVIRONMENT: Final = (ENDPOINT_ENV, BUCKET_ENV, PROFILE_ENV, REGION_ENV, MODE_ENV)
 MODE_MANAGED: Final = "managed"
 # 끈 값 — 빈 칸도 이 값으로 읽는다(`load_settings`).
 MODE_LOCAL: Final = "local"

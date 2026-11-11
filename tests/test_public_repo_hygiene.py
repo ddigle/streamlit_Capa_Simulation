@@ -15,8 +15,11 @@
 사내 오브젝트 스토리지 값(저장소 호스트 · 버킷 이름 접두 · 네임스페이스)과 사람 이름 · 회사 메일
 도메인도 같은 꼴로 지킨다(2026-11-12 사용자 결정 — 문서는 자리표, 코드는 환경변수로만). 사람 이름 ·
 메일 도메인 바늘은 이 파일에 새로 적지 않고 앱 연락 메일(`settings.APP_CONTACT_EMAIL`)에서 읽으며,
-허용은 그 한 자리뿐이다. 바늘은 base64 그림 안에서 우연히 맞지 않게 길게 잡았고, 실패 글에는 바늘
-값 대신 이름만 싣는다(공개 CI 기록에 값이 남지 않게).
+허용은 그 한 자리뿐이다. 이름은 앞자리 통째와, 구분자(`.` · `_` · `-`)로 나눈 조각 가운데 여섯 자
+이상인 것을 따로 본다 — 구분자 · 차례가 다른 꼴로 들어와도 걸리게. 바늘은 base64 그림 안에서 우연히
+맞지 않게 여섯 자 이상으로 잡았고, 실패 글에는 바늘 값 대신 이름만 싣는다(공개 CI 기록에 값이 남지
+않게). 연락 메일을 걷을 때는(범위 밖 따로 물음) 이름 · 도메인 바늘을 위 셋처럼 조각 잇기로 이 파일에
+옮긴다 — 바늘째 지우면 이름 그물이 없어진다.
 """
 
 from __future__ import annotations
@@ -38,12 +41,23 @@ CDEP_HOST = b"cdep." + COMPANY_SUFFIX
 # 읽는다.
 _CONTACT_LOCAL, _CONTACT_DOMAIN = settings.APP_CONTACT_EMAIL.lower().split("@", 1)
 _CONTACT_PLACE = {"src/capa_simulation/settings.py": 1}
+# 바늘의 가장 짧은 길이 — 이보다 짧으면 base64 그림 · 흔한 낱말에 우연히 맞는다.
+NEEDLE_MIN_LENGTH = 6
+_NAME_PIECES = [
+    piece
+    for piece in re.split(r"[._-]", _CONTACT_LOCAL)
+    if len(piece) >= NEEDLE_MIN_LENGTH and piece != _CONTACT_LOCAL
+]
 IN_HOUSE_NEEDLES: dict[str, tuple[bytes, dict[str, int]]] = {
     "저장소 호스트": (("data" + "platform").encode("ascii"), {}),
     "버킷 이름 접두": (("spkg" + "capa").encode("ascii"), {}),
     "네임스페이스": (("system" + "_package").encode("ascii"), {}),
     "사람 이름": (_CONTACT_LOCAL.encode("ascii"), _CONTACT_PLACE),
-    "회사 메일 도메인": (f"@{_CONTACT_DOMAIN}".encode("ascii"), _CONTACT_PLACE),
+    **{
+        f"사람 이름 조각 {index}": (piece.encode("ascii"), _CONTACT_PLACE)
+        for index, piece in enumerate(_NAME_PIECES, 1)
+    },
+    "회사 메일 도메인": (_CONTACT_DOMAIN.encode("ascii"), _CONTACT_PLACE),
 }
 PRIVATE_KEY_MARK = re.compile(b"-----BEGIN" + rb"[A-Z ]*" + b"PRIVATE" + rb" KEY-----")
 KEY_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".cer", ".crt", ".der", ".jks")
@@ -112,6 +126,16 @@ def test_in_house_storage_values_and_people_stay_out() -> None:
         f"환경변수로만 받습니다(docs/objectstore_setup.md 1 · 2장): {new_places}"
     )
     assert not shrunk, f"허용 자리가 줄었습니다. `IN_HOUSE_NEEDLES` 도 줄입니다: {shrunk}"
+
+
+def test_the_in_house_needles_are_long_enough_to_mean_something() -> None:
+    """짧은 바늘은 그림 · 낱말에 우연히 맞아 허용 목록이 늘어난다. 이름 조각도 하나는 있다."""
+    short = [
+        label for label, (needle, _) in IN_HOUSE_NEEDLES.items() if len(needle) < NEEDLE_MIN_LENGTH
+    ]
+
+    assert not short, f"바늘이 너무 짧습니다: {short}"
+    assert _NAME_PIECES, "연락 메일 앞자리에서 여섯 자 이상 이름 조각을 찾지 못했습니다"
 
 
 def test_sso_and_service_hosts_never_appear() -> None:
