@@ -1,5 +1,5 @@
-// 시나리오 관리 › 목록 관리 표 — 한 등록을 세 자리(data.mode)에 마운트한다: scenarios(시나리오 표) · revisions(연 시나리오의
-// 리비전 표와 값 줄) · changes(저장 전 변경).
+// 시나리오 관리 › 목록 관리 표 — 한 등록을 네 자리(data.mode)에 마운트한다: scenarios(시나리오 표) · revisions(연 시나리오의
+// 리비전 표와 값 줄) · changes(저장 전 변경) · checks(「점검」 칸 리비전 표 — 이름 고치기 없이 「계산」 칸, 고름은 revisions 와 같다).
 // 브라우저 → 서버는 상태 값 `outbox` 하나다(반영되지 않은 조작 전부, mount·seq) — 트리거는 다음 트리거에 덮여 잃으므로 쓰지
 // 않는다. 고름도 출납이다: 리비전 줄을 누르고 바로 「공식으로 지정…」 을 눌러도 그 리비전에 걸려야 한다. 글자를 치는 동안에는
 // 아무것도 보내지 않고, 확정 뒤 묶어 보낸다. 칸을 쓰거나 줄을 끄는 동안(누르는 동안도) 돌아온 회차는 다시 그리지 않고 받은
@@ -28,11 +28,18 @@ const COLUMNS = {
     { key: 'name', head: '리비전명', editable: true },
     { key: 'status', head: '상태' },
   ],
+  checks: [
+    { key: 'no', head: 'r' },
+    { key: 'name', head: '리비전명' },
+    { key: 'calc', head: '계산' },
+  ],
 }
-const TABLE_LABELS = { scenarios: '시나리오 목록', revisions: '리비전' }
+const TABLE_LABELS = { scenarios: '시나리오 목록', revisions: '리비전', checks: '리비전 점검' }
 const NAME_KIND = { scenarios: 'scenario', revisions: 'revision' }
 // 말줄임으로 잘릴 수 있는 칸 — 값 전체를 칸 풍선에 둔다.
-const TIP_COLUMNS = new Set(['name', 'official', 'status'])
+const TIP_COLUMNS = new Set(['name', 'official', 'status', 'calc'])
+// 「계산」 칸 칩의 단계(data `tone`) — 확인 n · 멈춤 · 됨 · 아직 안 셈(—). 모르는 값은 안 셈이다.
+const CALC_TONES = new Set(['check', 'error', 'done', 'none'])
 
 // <list-move>
 // 줄 옮기기 — 파이썬 `move_before` 와 같은 답을 낸다(시험이 대 본다). `before` 가 없거나 모르는 줄이면 끝이다.
@@ -562,12 +569,20 @@ function cellElement(S, row, column, k, index) {
     return cell
   }
   const shown = (column.key === 'name' && row.problem ? '! ' : '') + (value || (column.key === 'name' ? '(빈 이름)' : ''))
-  const press = button('emg-cb', shown)
+  const press = column.key === 'calc' ? calcPress(row, value) : button('emg-cb', shown)
   press.tabIndex = tabStop(S, row, column) ? 0 : -1
   press.setAttribute('aria-label', label + (column.editable ? '' : ' ' + value))
   if (row.problem && column.key === 'name') press.setAttribute('aria-invalid', 'true')
   cell.appendChild(press)
   return cell
+}
+
+// 「계산」 칸 — 글은 칩 하나다(단계 색 + 글자, 색만으로 뜻을 나르지 않는다).
+function calcPress(row, value) {
+  const tone = CALC_TONES.has(row.tone) ? row.tone : 'none'
+  const press = button('emg-cb')
+  press.appendChild(el('span', 'sgl-chip is-' + tone, value))
+  return press
 }
 
 // 표 본문의 Tab 정지는 초점 칸 하나다(로빙). 아직 초점이 없으면 연 줄(없으면 맨 위 줄)의 이름 칸이다.

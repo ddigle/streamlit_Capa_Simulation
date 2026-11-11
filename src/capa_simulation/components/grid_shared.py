@@ -25,6 +25,8 @@ from capa_simulation.design import tokens
 SHARED_ASSETS: Final = Path(__file__).with_name("grid_shared_assets")
 SHARED_JS: Final = ("nav.js", "outbox.js", "dom.js")
 SHARED_CSS: Final = ("cells.css", "changes.css")
+# 단계 칩 바탕의 옅기 — 단계 색을 바탕 위에 이만큼 얹은 불투명 색(`tokens.opaque_mix`).
+LEVEL_FILL_ALPHA: Final = 0.14
 
 
 def grid_palette() -> dict[str, str]:
@@ -50,6 +52,11 @@ def grid_palette() -> dict[str, str]:
         "layout-head": tokens.GRID_LAYOUT_HEAD,
         "selected-fill": tokens.GRID_SELECTED_FILL,
         "new-fill": tokens.GRID_NEW_FILL,
+        # 단계 칩(시나리오 목록 「점검」 칸 「계산」) — 알림 단계 색과 같은 확인 필요 · 오류.
+        "level-check": tokens.ALERT_CHECK,
+        "level-check-fill": tokens.opaque_mix(tokens.ALERT_CHECK, tokens.SURFACE, LEVEL_FILL_ALPHA),
+        "level-error": tokens.ALERT_ERROR,
+        "level-error-fill": tokens.opaque_mix(tokens.ALERT_ERROR, tokens.SURFACE, LEVEL_FILL_ALPHA),
     }
 
 

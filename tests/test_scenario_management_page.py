@@ -146,9 +146,9 @@ def test_every_tab_form_is_rendered_in_one_run(
 def test_list_management_opens_a_scenario_in_the_side_panel(
     seeded_databases: tuple[Path, Path],
 ) -> None:
-    """왼쪽 표 + 오른쪽 칸 넷이다. 첫 진입에 올라와 있는 시나리오가 열려 오른쪽 칸이 빈 채 서지
-    않는다. 고친 수는 「저장 전 변경」 칸의 수 넷이 말한다 — 표 위에 값 줄을 세우지
-    않는다(UI-TXT-07)."""
+    """왼쪽 표 + 오른쪽 칸 다섯이다(점검 — `tests/test_scenario_input_check.py`). 첫 진입에 올라와
+    있는 시나리오가 열려 오른쪽 칸이 빈 채 서지 않는다. 고친 수는 「저장 전 변경」 칸의 수 넷이
+    말한다 — 표 위에 값 줄을 세우지 않는다(UI-TXT-07)."""
     database_path, equipment_path = seeded_databases
     script = _page_script(PAGE_PATH, database_path, equipment_path)
 

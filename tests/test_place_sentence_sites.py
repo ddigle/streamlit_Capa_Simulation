@@ -251,6 +251,12 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         BESIDE_INPUT,
     ),
     ("src/capa_simulation/components/required_shortening_panel.py", "_render_progress"): (EMPTY,),
+    # 「점검」 칸 — 리비전이 없는 시나리오(「상세」 칸과 같은 글), 「넓게 보기」 가 그린 뒤 묶음이
+    # 비었을 때.
+    ("src/capa_simulation/components/scenario_input_check.py", "render_input_check_panel"): (
+        EMPTY,
+    ),
+    ("src/capa_simulation/components/scenario_input_check.py", "render_wide_body"): (EMPTY,),
     ("src/capa_simulation/components/scenario_management.py", "_render_archived_scenarios"): (
         EMPTY,
     ),

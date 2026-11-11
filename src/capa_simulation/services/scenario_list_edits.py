@@ -639,6 +639,39 @@ def revisions_payload(
     }
 
 
+# 「점검」 칸 리비전 표의 「계산」 칸 — 이 세션에 아직 세지 않은 리비전의 글과 단계(`tone`). 단계는
+# 칸 칩의 색 갈래다 — 확인(확인 n) · 오류(멈춤) · 됨(확인할 것 없음) · 없음(아직 안 셈).
+CHECK_NOT_COUNTED: Final = "—"
+CheckTone = Literal["check", "error", "done", "none"]
+
+
+def checks_payload(
+    draft: ListDraft,
+    *,
+    owner: str,
+    facts: Sequence[RevisionFacts],
+    calculations: Mapping[str, tuple[str, CheckTone]],
+) -> dict[str, Any]:
+    """「점검」 칸 리비전 표 data — r · 리비전명 · 계산. 이름은 고치지 않는다(초안의 고침은 보이기만
+    한다 — 「상세」 칸 표와 같은 이름). 고름은 「상세」 칸 표와 같은 `picked` 다. `calculations` 는
+    리비전 id → (「계산」 칸 글, 단계)이고 없는 리비전은 「—」 다(그 세션에서 아직 세지 않음)."""
+    rows = []
+    for fact in facts:
+        edit = draft.revisions.get(fact.revision_id)
+        text, tone = calculations.get(fact.revision_id, (CHECK_NOT_COUNTED, "none"))
+        row: dict[str, Any] = {
+            "id": fact.revision_id,
+            "no": f"r{fact.no}",
+            "name": edit.text if edit is not None else fact.name,
+            "calc": text,
+            "tone": tone,
+        }
+        if edit is not None:
+            row["saved"] = fact.name
+        rows.append(row)
+    return {"mode": "checks", "owner": owner, "picked": draft.picked, "rows": rows}
+
+
 def changes_payload(
     draft: ListDraft, saved: SavedList, problems: ListProblems, counts: ChangeCounts
 ) -> dict[str, Any]:

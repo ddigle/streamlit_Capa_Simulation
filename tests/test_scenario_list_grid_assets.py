@@ -1261,3 +1261,78 @@ def test_the_changes_panel_lists_old_and_new_and_reverts_once() -> None:
     assert out["keptDuringPress"] is True
     assert out["afterPress"] == "목록 차례"
     assert out["empty"] == "아직 고친 것이 없습니다."
+
+
+_CHECKS = (
+    _DOM
+    + """
+const CHECKS = {
+  mode: 'checks', base: 's:0', owner: 'a', picked: 'r2', limits: {},
+  rows: [
+    { id: 'r3', no: 'r3', name: '셋째', calc: '멈춤', tone: 'error' },
+    { id: 'r2', no: 'r2', name: '둘째 새', saved: '둘째', calc: '됨 · 확인 4', tone: 'check' },
+    { id: 'r1', no: 'r1', name: '첫째', calc: '—', tone: 'none' },
+    { id: 'r0', no: 'r0', name: '영', calc: '됨', tone: 'odd' },
+  ],
+}
+const out = {}
+;(async () => {
+  const m = mount(CHECKS)
+  out.root = m.host.querySelector('.sgl-root').className
+  out.heads = m.host.querySelector('.sgl-head').children.map((node) => node.textContent)
+  out.parts = m.host.querySelector('.sgl-root').children.map((node) => node.className)
+  out.label = m.host.querySelector('.sgl-table').getAttribute('aria-label')
+  out.chips = ['r3', 'r2', 'r1', 'r0'].map((id) => {
+    const chip = press(cell(m.host, id, 'calc')).querySelector('.sgl-chip')
+    return [chip.className, chip.textContent]
+  })
+  out.open = m.host.querySelectorAll('.is-open').map((node) => node.dataset.row)
+  out.changed = cell(m.host, 'r2', 'name').className.includes('is-changed')
+  // 연 줄의 이름을 다시 눌러도 고치지 않는다 — 이 표는 이름을 고치지 않는다.
+  click(press(cell(m.host, 'r2', 'name')))
+  key(press(cell(m.host, 'r2', 'name')), 'F2')
+  out.editor = editor(m.host) !== null
+  // 다른 줄을 누르면 바로 고름을 보낸다(상세 칸 표와 같은 `pick`).
+  click(press(cell(m.host, 'r1', 'calc')))
+  out.sent = m.sent.map((entry) => entry[1].ops.map((op) => [op.op, op.owner, op.id]))
+  out.openAfter = m.host.querySelectorAll('.is-open').map((node) => node.dataset.row)
+  m.cleanup()
+  process.stdout.write(JSON.stringify(out))
+})()
+"""
+)
+
+
+def test_the_check_table_shows_the_calculation_chip_and_only_picks() -> None:
+    """「점검」 칸 리비전 표 — r · 리비전명 · 계산. 「계산」 은 단계 칩(모르는 단계는 「아직 안
+    셈」 꼴)이고, 이름은 고치지 않으며 누르면 「상세」 칸 표와 같은 고름을 보낸다. 제목 · 값 줄은
+    없다."""
+    out = _node({}, _CHECKS, _MOUNT_SOURCE)
+    assert "sgl-checks" in out["root"]
+    assert out["heads"] == ["r", "리비전명", "계산"]
+    assert out["label"] == "리비전 점검"
+    assert out["parts"] == ["sgl-box", "sgl-status"]
+    assert out["chips"] == [
+        ["sgl-chip is-error", "멈춤"],
+        ["sgl-chip is-check", "됨 · 확인 4"],
+        ["sgl-chip is-none", "—"],
+        ["sgl-chip is-none", "됨"],
+    ]
+    assert out["open"] == ["r2"] and out["changed"] is True
+    assert out["editor"] is False
+    assert out["sent"][-1][-1] == ["pick", "a", "r1"]
+    assert all(op[0] == "pick" for entry in out["sent"] for op in entry)
+    assert out["openAfter"] == ["r1"]
+
+
+def test_the_check_table_is_as_narrow_as_its_columns() -> None:
+    """「점검」 칸 표 최소 폭도 칸 합이다 — r · 이름(최소 120) · 계산. 칩 색은 팔레트 단계 색이다."""
+    widths = {
+        name: int(value)
+        for name, value in re.findall(r"\.sgl-w-(\w+) \{\n\s*width: (\d+)px", OWN_CSS)
+    }
+    checks = re.search(r"\.sgl-checks \.sgl-table \{\s*min-width: (\d+)px;", OWN_CSS)
+    assert checks and int(checks[1]) == widths["no"] + 120 + widths["calc"]
+    assert re.search(r"\.sgl-chip\.is-check \{[^}]*var\(--emg-level-check\);", OWN_CSS)
+    assert re.search(r"\.sgl-chip\.is-error \{[^}]*var\(--emg-level-error\);", OWN_CSS)
+    assert "'calc'" in OWN_JS and "checks: [" in OWN_JS

@@ -25,6 +25,10 @@
   max-height: max(136px, calc(100vh - 580px));
 }
 
+.sgl-checks .sgl-box {
+  max-height: max(136px, calc(100vh - 580px));
+}
+
 .sgl-table {
   position: relative;
   width: 100%;
@@ -36,6 +40,10 @@
 
 .sgl-revisions .sgl-table {
   min-width: 312px;
+}
+
+.sgl-checks .sgl-table {
+  min-width: 276px;
 }
 
 .sgl-table .emg-row {
@@ -117,12 +125,51 @@
   width: 44px;
 }
 
-.sgl-revisions .sgl-w-name {
+.sgl-revisions .sgl-w-name,
+.sgl-checks .sgl-w-name {
   min-width: 120px;
 }
 
 .sgl-w-status {
   width: 148px;
+}
+
+.sgl-w-calc {
+  width: 112px;
+}
+
+.sgl-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sgl-chip.is-check {
+  background: var(--emg-level-check-fill);
+  color: var(--emg-level-check);
+}
+
+.sgl-chip.is-error {
+  background: var(--emg-level-error-fill);
+  color: var(--emg-level-error);
+}
+
+.sgl-chip.is-done,
+.sgl-chip.is-none {
+  padding: 0;
+  font-weight: 400;
+}
+
+.sgl-chip.is-none {
+  color: var(--emg-muted);
 }
 
 .sgl-grip {
@@ -249,6 +296,7 @@
   }
 
   .sgl-box,
+  .sgl-checks .sgl-box,
   .sgl-revisions .sgl-box {
     max-height: none;
     overflow: visible;

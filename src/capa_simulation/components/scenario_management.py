@@ -8,9 +8,10 @@
 - 왼쪽: 시나리오 표(`components/scenario_list_grid` — 브라우저 표). 이름을 눌러 열고, 연 줄의
   이름을 다시 눌러 고치고, 줄을 끌어 옮긴다. 칸을 고치는 동안 앱이 돌지 않고 확정 뒤 묶어 한 번
   돈다.
-- 오른쪽 칸 넷: 상세(그 시나리오의 리비전 표 · 값 줄 · 불러오기 · 공식으로 지정… · 보관…) · 저장 전
-  변경(수 넷 · 옛 값 → 새 값 · 줄 되돌리기 · 모두 버리기 · 변경 저장) · 공식 이력 · 보관함(되돌리기
-  · 영구 삭제).
+- 오른쪽 칸 다섯: 상세(그 시나리오의 리비전 표 · 값 줄 · 불러오기 · 공식으로 지정… · 보관…) · 점검
+  (고른 리비전의 계산에서 빠진 행 묶음 — `components/scenario_input_check.py`) · 저장 전 변경(수
+  넷 · 옛 값 → 새 값 · 줄 되돌리기 · 모두 버리기 · 변경 저장) · 공식 이력 · 보관함(되돌리기 · 영구
+  삭제).
 
 고침은 행 id 로 세션 초안에 둔다(`services/scenario_list_edits.ListDraft`) — 다른 시나리오를 열어도
 리비전명 고침이 남고, 다른 세션이 차례를 바꿔도 엉뚱한 줄에 붙지 않는다. 리비전 **내용**은
@@ -50,8 +51,18 @@ from capa_simulation.components.profile_caption import render_row_value
 from capa_simulation.components.required_exclusion_notice import REQUIRED_TAB_GOTO
 from capa_simulation.components.revision_label import revision_label
 from capa_simulation.components.save_section import discard_popover
+from capa_simulation.components.scenario_input_check import (
+    CHECK_NOTICE_KEY,
+    WIDE_TITLE,
+    WideValue,
+    WideValues,
+    render_input_check_panel,
+    render_wide_body,
+    wide_target,
+)
 from capa_simulation.components.scenario_list_state import (
     CHANGES_KEY,
+    CHECKS_KEY,
     MOUNT_KEYS,
     REVISIONS_KEY,
     SIDE_CHOICE_KEY,
@@ -213,12 +224,14 @@ DERIVED_SOURCE_ROLES: dict[str, tuple[str, ...]] = {
     "월 머지": MERGE_SOURCE_ROLES,
     "연도 Shift": SHIFT_SOURCE_ROLES,
 }
-# 오른쪽 칸 넷. 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다).
+# 오른쪽 칸 다섯. 라벨은 고정한다(수를 넣으면 위젯 id 가 흔들린다). 「점검」 은 고른 리비전의 입력
+# 점검이다(2026-11-11 입력 점검 시안 보드 답 q1 — 「상세」 와 같은 리비전 고름).
 SIDE_DETAIL = "상세"
+SIDE_CHECK = "점검"
 SIDE_CHANGES = "저장 전 변경"
 SIDE_HISTORY = "공식 이력"
 SIDE_ARCHIVE = "보관함"
-SIDES = (SIDE_DETAIL, SIDE_CHANGES, SIDE_HISTORY, SIDE_ARCHIVE)
+SIDES = (SIDE_DETAIL, SIDE_CHECK, SIDE_CHANGES, SIDE_HISTORY, SIDE_ARCHIVE)
 SIDE_KEY = SIDE_CHOICE_KEY
 # 「저장 전 변경」 칸 결과 · 오류 칸. 콜백이 적고 다음 회차에 그 칸 단추 바로 아래에 한 번 그린다 —
 # 그 회차에 칸이 안 서면 맨 위 칸이 알림창 · Alarm 으로 낸다(`_notices_without_a_place`).
@@ -408,7 +421,7 @@ def render_scenario_management(
     official_open = False
     if mode == "목록 관리":
         official_open = _render_list_management(
-            repository, database_path, scenarios, _list_view(view)
+            repository, database_path, scenarios, _list_view(view), counting=alert_tab is not None
         )
     elif mode == CLONE_MODE:
         _render_clone(repository)
@@ -423,10 +436,11 @@ def _render_official_host(database_path: str, *, official_open: bool) -> None:
     """공식버전 지정 팝업의 호스트 — 이 탭을 그리는 매 앱 전체 회차 끝에 한 번(이벤트 칸 늘 한
     자리).
 
-    `official_open` 은 이 회차 「상세」 칸이 열림 칸의 시나리오 · 리비전을 그렸는지다 — 아니면(다른
-    작업 · 다른 칸 · 그 사이 빠진 줄) 열림 칸을 비우고 팝업을 걷는다. 호스트만 도는 여닫는 회차는 이
-    함수를 거치지 않는다 — 열림 값은 여는 콜백이 지금 연 줄로 적었고, 팝업 본문이 저장값을 다시
-    읽는다(`_official_dialog`).
+    `official_open` 은 이 회차 「상세」 칸이 열림 칸의 시나리오 · 리비전을 그렸는지(「점검」 칸이면
+    그 「넓게 보기」 단추를 그렸는지)다 — 아니면(다른 작업 · 다른 칸 · 그 사이 빠진 줄) 열림 칸을
+    비우고 팝업을 걷는다. 호스트 하나를 두 팝업이 함께 쓰고 열림 값의 꼴로 가른다. 호스트만 도는
+    여닫는 회차는 이 함수를 거치지 않는다 — 열림 값은 여는 콜백이 지금 연 줄로 적었고, 팝업 본문이
+    저장값을 다시 읽는다(`_official_dialog`).
     """
     if not official_open:
         st.session_state.pop(OFFICIAL_DIALOG_KEY, None)
@@ -436,7 +450,11 @@ def _render_official_host(database_path: str, *, official_open: bool) -> None:
 
 
 def _pick_official_dialog(database_path: str, value: object) -> DialogBody | None:
-    """열림 값 (시나리오 id, 리비전 id) → 그 팝업. 꼴이 다르면 None(빈 자리)."""
+    """열림 값 (시나리오 id, 리비전 id) → 공식 지정 팝업, 「넓게 보기」 꼴(`wide_target`) → 그
+    팝업. 꼴이 다르면 None(빈 자리)."""
+    wide = wide_target(value)
+    if wide is not None:
+        return partial(_wide_dialog, database_path, wide)
     if not (
         isinstance(value, tuple)
         and len(value) == 2
@@ -447,7 +465,10 @@ def _pick_official_dialog(database_path: str, value: object) -> DialogBody | Non
 
 
 def _official_widget_keys(value: object) -> tuple[str, ...]:
-    """팝업의 입력 위젯 — 가상 제품 확인 체크(리비전마다) · 공식버전명 · 메모."""
+    """팝업의 입력 위젯 — 가상 제품 확인 체크(리비전마다) · 공식버전명 · 메모. 「넓게 보기」 는
+    입력 위젯이 없다."""
+    if wide_target(value) is not None:
+        return ()
     keys = (OFFICIAL_NAME_KEY, OFFICIAL_NOTE_KEY)
     if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], str):
         return (official_confirm_key(value[1]), *keys)
@@ -541,6 +562,8 @@ def _notices_without_a_place(list_mode: bool) -> tuple[str, ...]:
         keys.append(LIST_NOTICE_KEY)
     if not list_mode or side != SIDE_DETAIL:
         keys.append(CARD_NOTICE_KEY)
+    if not list_mode or side != SIDE_CHECK:
+        keys.append(CHECK_NOTICE_KEY)
     for key in keys:
         send_to_popup(key)
     return tuple(keys)
@@ -576,10 +599,11 @@ def _fold_outboxes() -> ListDraft:
     if notes:
         _warn_list(" ".join(notes))
     if result.opened:
-        # 「저장 전 변경」 을 보며 다른 줄을 연다 — 그 칸 안 이름 누름만 「상세」 로 돌린다.
+        # 「저장 전 변경」 · 「점검」 을 보며 다른 줄을 연다 — 그 칸을 둔다(점검은 다른 시나리오의
+        # 리비전을 이어 본다 — 결정 16). 「저장 전 변경」 칸 안 이름 누름만 「상세」 로 돌린다.
         current = st.session_state.get(SIDE_KEY)
-        keep = current == SIDE_CHANGES and not result.to_detail
-        switch_side(LIST_SIDE, SIDE_CHANGES if keep else SIDE_DETAIL)
+        keep = current in (SIDE_CHANGES, SIDE_CHECK) and not result.to_detail
+        switch_side(LIST_SIDE, str(current) if keep else SIDE_DETAIL)
     return result.draft
 
 
@@ -696,12 +720,16 @@ def _render_list_management(
     database_path: str,
     scenarios: Sequence[ScenarioSummary],
     view: _ListView,
+    *,
+    counting: bool,
 ) -> bool:
-    """목록 관리 두 칸 — 왼쪽 시나리오 표, 오른쪽 칸(상세 · 저장 전 변경 · 공식 이력 · 보관함).
-    「상세」 칸이 공식 지정 팝업의 시나리오 · 리비전을 그렸으면 `True`(그 팝업이 열려 있어도 된다).
+    """목록 관리 두 칸 — 왼쪽 시나리오 표, 오른쪽 칸(상세 · 점검 · 저장 전 변경 · 공식 이력 ·
+    보관함). 「상세」 칸이 공식 지정 팝업의 시나리오 · 리비전을, 「점검」 칸이 열린 「넓게 보기」 의
+    단추를 그렸으면 `True`(그 팝업이 열려 있어도 된다).
 
     Capa 탭은 다른 탭이 열린 회차에도 그린다(폼 · 보관함 입력을 잃지 않는다) — 표 data 가 그대로면
-    브라우저로 다시 보내지 않아 그 회차 비용은 줄 조립뿐이다.
+    브라우저로 다시 보내지 않아 그 회차 비용은 줄 조립뿐이다. `counting` 은 이 탭이 열린 회차인가다
+    — 닫힌 회차의 「점검」 칸은 전체 기간 계산을 돌리지 않는다.
     """
     from capa_simulation.components.scenario_list_grid import LIST_SIDE, render_list_mount
     from capa_simulation.components.side_panel import render_side_head, split_frame
@@ -732,13 +760,81 @@ def _render_list_management(
     with body:
         if side == SIDE_DETAIL:
             official_open = _render_detail(repository, database_path, scenarios, view)
+        elif side == SIDE_CHECK:
+            drawn = _render_check(repository, database_path, scenarios, view, counting=counting)
+            official_open = st.session_state.get(OFFICIAL_DIALOG_KEY) in drawn
         elif side == SIDE_CHANGES:
             _render_changes(database_path, view)
         elif side == SIDE_HISTORY:
             _render_official_history(view.releases)
-        else:
+        elif side == SIDE_ARCHIVE:
             _render_archived_scenarios(repository)
     return official_open
+
+
+def _render_check(
+    repository: DuckDBScenarioRepository,
+    database_path: str,
+    scenarios: Sequence[ScenarioSummary],
+    view: _ListView,
+    *,
+    counting: bool,
+) -> WideValues:
+    """「점검」 칸 — 연 시나리오의 리비전 표(r · 리비전명 · 계산)와 고른 리비전의 입력 점검
+    (`components/scenario_input_check.py`). 고름 · 씨앗은 「상세」 칸과 같다(`_opened_revisions`).
+    그린 「넓게 보기」 단추의 열림 값을 돌려준다."""
+    opened = _opened_revisions(repository, scenarios, view)
+    if opened is None:
+        return ()
+    summary, revisions, draft = opened
+    return render_input_check_panel(
+        database_path,
+        summary,
+        revisions,
+        draft,
+        facts=_revision_facts(repository, revisions, view.releases),
+        mount_data=_list_common(draft, CHECKS_KEY),
+        on_outbox=_on_list_outbox,
+        fold=_fold_outboxes,
+        open_wide=OFFICIAL_HOST.open,
+        counting=counting,
+    )
+
+
+def _opened_revisions(
+    repository: DuckDBScenarioRepository,
+    scenarios: Sequence[ScenarioSummary],
+    view: _ListView,
+) -> tuple[ScenarioSummary, list[RevisionSummary], ListDraft] | None:
+    """「상세」 · 「점검」 칸이 함께 쓰는 머리 — 연 시나리오, 그 리비전, 고름을 씨앗 규칙으로 맞춘
+    초안. 연 시나리오가 없으면 None.
+
+    연 시나리오가 바뀌면 열려 있던 작업 칸 · 확인 체크를 버린다. 고른 리비전은 씨앗 규칙이 다시
+    고른다(`_seed_revision_pick`). 리비전명 고침은 리비전 id 로 초안에 남는다. 두 칸이 같은 기록
+    칸(`ACTION_OWNER_KEY` · `REVISION_SEED_KEY`)을 써서 한 칸에서 고른 리비전이 다른 칸으로 옮겨도
+    다시 씨앗을 넣지 않는다.
+    """
+    draft = view.draft
+    summary = next((item for item in scenarios if item.scenario_id == draft.opened), None)
+    if summary is None:
+        return None
+    first_view = st.session_state.get(ACTION_OWNER_KEY) != summary.scenario_id
+    if first_view:
+        st.session_state[ACTION_OWNER_KEY] = summary.scenario_id
+        for key in (
+            ACTION_KEY,
+            DELETE_CONFIRM_KEY,
+            archive_confirm_key(summary.scenario_id),
+            REVISION_SEED_KEY,
+        ):
+            st.session_state.pop(key, None)
+    revisions = repository.list_revisions(summary.scenario_id)
+    revision_ids = [revision.revision_id for revision in revisions]
+    picked_id = _seed_revision_pick(summary, draft.picked, revision_ids, first_view)
+    if picked_id != draft.picked:
+        draft = replace(draft, picked=picked_id)
+        store_draft(draft)
+    return summary, revisions, draft
 
 
 def _render_changes(database_path: str, view: _ListView) -> None:
@@ -1036,28 +1132,12 @@ def _render_detail(
     """
     from capa_simulation.components.scenario_list_grid import render_list_mount
 
-    draft = view.draft
-    summary = next((item for item in scenarios if item.scenario_id == draft.opened), None)
-    if summary is None:
+    opened = _opened_revisions(repository, scenarios, view)
+    if opened is None:
         return False
-    # 연 시나리오가 바뀌면 열려 있던 작업 칸 · 확인 체크를 버린다. 고른 리비전은 씨앗 규칙이 다시
-    # 고른다. 리비전명 고침은 리비전 id 로 초안에 남는다.
-    first_view = st.session_state.get(ACTION_OWNER_KEY) != summary.scenario_id
-    if first_view:
-        st.session_state[ACTION_OWNER_KEY] = summary.scenario_id
-        for key in (
-            ACTION_KEY,
-            DELETE_CONFIRM_KEY,
-            archive_confirm_key(summary.scenario_id),
-            REVISION_SEED_KEY,
-        ):
-            st.session_state.pop(key, None)
-    revisions = repository.list_revisions(summary.scenario_id)
+    summary, revisions, draft = opened
     revision_by_id = {revision.revision_id: revision for revision in revisions}
-    picked_id = _seed_revision_pick(summary, draft.picked, list(revision_by_id), first_view)
-    if picked_id != draft.picked:
-        draft = replace(draft, picked=picked_id)
-        store_draft(draft)
+    picked_id = draft.picked
     render_list_mount(
         REVISIONS_KEY,
         {
@@ -1395,6 +1475,13 @@ def _kept_official_view(scenario_id: str, revision_id: str) -> _OfficialView | N
     ):
         return kept
     return None
+
+
+@st.dialog(WIDE_TITLE, width="large", on_dismiss=_close_official_dialog)
+def _wide_dialog(database_path: str, value: WideValue) -> None:
+    """「점검」 칸 「넓게 보기」 — 그 묶음 표의 모든 칸 · 모든 행. 호스트(`OFFICIAL_HOST`)가 공식
+    지정 팝업과 함께 열림 값의 꼴로 가른다(결정 17). 원본을 바꾸지 않는 읽기 팝업이다."""
+    render_wide_body(database_path, value)
 
 
 @st.dialog("공식버전 지정", width="medium", on_dismiss=_close_official_dialog)

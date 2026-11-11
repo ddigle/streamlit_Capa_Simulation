@@ -27,11 +27,14 @@ if TYPE_CHECKING:
 DRAFT_KEY: Final = "scenario_list_draft"
 # 지난 회차에 그린 저장 차례 — `move` 의 `token` 을 대조하고 처음 옮길 때의 `order_base` 가 된다.
 SHOWN_ORDER_KEY: Final = "scenario_list_shown_order"
-# 세 마운트 key — 화면 탭 줄의 떠나기 붙들기(`page_tabs.EDIT_HOST_KEYS`)도 읽는다.
+# 네 마운트 key — 화면 탭 줄의 떠나기 붙들기(`page_tabs.EDIT_HOST_KEYS`)도 읽는다. 「점검」 칸의
+# 리비전 표(`CHECKS_KEY`)는 이름을 고치지 않고 고름만 보낸다 — 「상세」 칸 리비전 표와 같은
+# 고름이다.
 TABLE_KEY: Final = "scenario_list_table"
 REVISIONS_KEY: Final = "scenario_list_revisions"
 CHANGES_KEY: Final = "scenario_list_changes"
-MOUNT_KEYS: Final = (TABLE_KEY, REVISIONS_KEY, CHANGES_KEY)
+CHECKS_KEY: Final = "scenario_list_checks"
+MOUNT_KEYS: Final = (TABLE_KEY, REVISIONS_KEY, CHANGES_KEY, CHECKS_KEY)
 # 오른쪽 칸 고르기 · 받기 콜백이 고른 칸 — 맨 위 알림 칸이 표 모듈을 읽지 않고 본다(이름은
 # `scenario_list_grid.LIST_SIDE` 와 같다 — 시험이 맞댄다).
 SIDE_CHOICE_KEY: Final = "scenario_list_side_v1"
