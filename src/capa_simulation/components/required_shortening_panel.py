@@ -133,6 +133,7 @@ from capa_simulation.components.shortening_source import (
     shortening_filter_profile_or_default,
     shortening_month_options,
 )
+from capa_simulation.components.shortening_timeline import UNIT_NAME_STYLE, unit_name
 from capa_simulation.components.shortening_timeline import month_day as _month_day
 from capa_simulation.components.shortening_timeline import timeline_axis as _axis
 from capa_simulation.components.shortening_timeline import timeline_grid_lines as _grid_lines
@@ -1745,8 +1746,7 @@ def _style() -> str:
   position:sticky;left:0;z-index:1;background:{tokens.SURFACE_SUBTLE}}}
 @container {UNITS_CONTAINER} (width < {_UNIT_STICKY_MIN_PX}px) {{
   .shk-unit-label {{position:static}}}}
-.shk-unit-name {{font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;min-width:0}}
+.shk-unit-name {{font-weight:700;font-size:13.5px;{UNIT_NAME_STYLE};min-width:0}}
 .shk-unit-dates {{flex:none;font-size:13px;color:{tokens.TEXT};white-space:nowrap;
   font-variant-numeric:tabular-nums}}
 .shk-unit-dates .shk-muted {{font-size:12px}}
@@ -2162,7 +2162,7 @@ def _unit_row(
     ]
     return (
         f'<div class="shk-unit" title="{_escape(" · ".join(details))}">'
-        f'<div class="shk-unit-label"><span class="shk-unit-name">{name}</span>'
+        f'<div class="shk-unit-label">{unit_name(name)}'
         f'<span class="shk-unit-dates">{dates}</span></div>'
         f'<div class="shk-track">{lines}{marks}</div>'
         f'<div class="shk-result">{result}</div></div>'

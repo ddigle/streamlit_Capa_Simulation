@@ -4175,7 +4175,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `RS-03` ~ `RS-05`(자리 표지 없음), KPI·`계획 · LOB 요약`·공정 카드·CSV 세 벌). 수요·달(Cut-off 빔 포함)·공용 조건 물러서기·계획 꺼내기는
   `components/shortening_source.py` 로 옮겼다(Space 필요 단축 보기와 한 길 — 세 세션 칸도 거기서 다시 내보낸다). 표시명·맞대지 못함·
   UPEH 가정 칸(머리 아래 알림 · 기준선 저장 거절)은 패널에 남는다. 표는 줄 이름 칸을 붙박고 달 칸을 74px 로 줄여 기준 창에
-  14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —
+  14달을 담는다(g4-17). 호기 줄(호기별 단축 · 진척 비교)의 이름 칸은 넘치면 앞을 줄이고 끝(호기 번호)을 남긴다(`shortening_timeline.unit_name`
+  · `UNIT_NAME_STYLE` — 남은 물음 보드 D6 (다), 전체 이름은 줄 풍선). 붙박인 이름 칸은 호기 줄 묶음 `.shk-units` 의 컨테이너 질의로 갈린다 —
   묶음 폭이 이름 칸 + 결과 칸 + 여백(진척 447px · 호기 341px)보다 좁으면 붙박지 않고 줄 전체가 같이 구른다(창 폭이 아니라 묶음
   폭이라 사이드바를 펴도 따라간다). 멈춘 회차 조건 카드는 표지 「공정 · 고를 수 없음」 한 줄이다(g4-22).
 - `src/capa_simulation/components/target_level_field.py` — 필요 단축 목표 확보율의 조회 조건 패널 줄(이름 줄 + 값 칸, 패널 둘째 페이지
@@ -4392,7 +4393,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     콜백은 그린 회차의 세대가 다르면 쓰지 않는다(빠른 두 번 누름). 샘플·미저장 시나리오 편집은 저장을 거절한다.
   - 쓰기에 성공한 콜백은 표지를 남기고 `consume_baseline_write` 가 거둔다. 카드는 달 축 하나를 같이 쓴다.
 - `src/capa_simulation/components/shortening_timeline.py` — 필요 단축 일정 타임라인의 달 축·위치·격자선·날짜 글자
-  (`month_day`, 올해가 아니면 `YY.MM.DD`)를 공정 카드와 진척 비교(`timeline_months_covering`)가 함께 쓴다.
+  (`month_day`, 올해가 아니면 `YY.MM.DD`)와 호기 이름 칸(`unit_name` · `UNIT_NAME_STYLE` — 칸은 오른쪽에서 왼쪽으로 흘려 넘친 왼쪽
+  끝에 말줄임, 이름은 `dir="ltr"` 한 덩이라 끝(호기 번호)이 남는다 — 남은 물음 보드 D6 (다))을 공정 카드와 진척
+  비교(`timeline_months_covering`)가 함께 쓴다.
 - `src/capa_simulation/components/availability_gap_figure.py` — Static 대 설비 일정 기준 월별 비교 Figure(환산 축,
   입력은 시트의 `SheetView`). 그림은 비교, 분해는 시트가 맡고 GAP 글자·색은 시트와 같은 함수(`gap_text_color`)다.
 - `src/capa_simulation/components/plotly_layout.py` — 제목 주석·외곽 테두리·분기 경계·고정 행과 `hover_chart_config`·

@@ -50,6 +50,7 @@ from capa_simulation.components.shortening_timeline import (
     timeline_grid_lines,
     timeline_months_covering,
     timeline_position,
+    unit_name,
 )
 from capa_simulation.components.table_toolbar import render_csv_download
 from capa_simulation.components.widget_generation import (
@@ -1149,7 +1150,7 @@ def _unit_markup(
     )
     return (
         f'<div class="shk-prog-unit" title="{_escape(" · ".join(details))}">'
-        f'<div class="shk-prog-label"><span class="shk-unit-name">{_escape(name)}</span>'
+        f'<div class="shk-prog-label">{unit_name(_escape(name))}'
         f'<span class="shk-prog-meta">{meta}</span></div>'
         '<div class="shk-prog-tags"><span>과거</span><span class="now">현재</span></div>'
         f'<div class="shk-prog-tracks">{lines}'
