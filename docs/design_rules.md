@@ -745,7 +745,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 화면 모듈 · components
 - 예외: 없음
 - 판단: 이 꼴을 다른 화면도 그리나? 그렇다면 같은 함수를 부르나?
-- 그물: `tests/test_documentation_inventory.py`(`SHARED_HELPERS` 등재) · `tests/test_profile_caption.py`(화면마다 같은 글 · 값 글 자리 셋) · `tests/test_table_toolbar.py`(`download_button` 한 곳) · `tests/test_formula_text.py` · `tests/test_scenario_list_grid_assets.py`(브라우저 표 공용 조각 `grid_shared_assets/` 가 앞) · `tests/test_dialog_host.py`(화면 팝업을 여는 꼴 한 부품 `DialogHost`)
+- 그물: `tests/test_documentation_inventory.py`(`SHARED_HELPERS` 등재) · `tests/test_profile_caption.py`(화면마다 같은 글 · 값 글 자리 둘) · `tests/test_table_toolbar.py`(`download_button` 한 곳) · `tests/test_formula_text.py` · `tests/test_scenario_list_grid_assets.py`(브라우저 표 공용 조각 `grid_shared_assets/` 가 앞) · `tests/test_dialog_host.py`(화면 팝업을 여는 꼴 한 부품 `DialogHost`)
 - 그물 후보: 사본 꼴 그물
 - 근거: CLAUDE.md 아키텍처 「components/」, AGENTS 8장, TODO 3장 기록(2026-11-04), 사용자 답 안 3(2026-11-06) — 목록 관리가 설비 마스터의 칸 틀 · 칸 조각 · 「모두 버리기」 를 함께 쓴다, 아침 검수 보드 g18 · U5 · P1(2026-11-08) — 제목 옆 버전 줄 한 부품(`profile_caption.render_profile_heading`) · 화면 팝업 호스트 한 부품(`DialogHost`) · 공정 값 칸 한 부품(`process_field`), 검수 보드 상단 판단 T2(2026-11-09) 뒤 정리 — 제목 · 단추 줄 값 글 한 부품(`profile_caption.render_row_value`)
 - 지금 값: 없음
