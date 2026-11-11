@@ -67,7 +67,11 @@ from capa_simulation.components.shortening_board import (
     HIGHLIGHT_FROM_DETAIL,
     SHORTENING_HIGHLIGHT_KEY,
 )
-from capa_simulation.components.table_toolbar import DOWNLOAD_MENU_LABEL, SHEET_XLSX_LABEL
+from capa_simulation.components.table_toolbar import (
+    DOWNLOAD_MENU_LABEL,
+    SHEET_XLSX_LABEL,
+    file_name_part,
+)
 from capa_simulation.home_state import EXECUTION_TOGGLE_KEY
 from capa_simulation.navigation import (
     AVAILABLE_EQUIPMENT_STATUS,
@@ -218,7 +222,12 @@ def dynamic_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, P
     (목표 미달 → 단축 계획). 한 호기에는 비가동을 둬 ④ 화살표가 선다. 오늘(실제 날짜)이 축을 지나면
     모든 달이 「기한 지남」이 되지만 구획은 그대로 선다 — 시험은 개수를 단언하지 않는다.
     """
-    root = tmp_path_factory.mktemp("process_capa_detail_dynamic")
+    return _dynamic_pair(tmp_path_factory.mktemp("process_capa_detail_dynamic"))
+
+
+def _dynamic_pair(root: Path) -> tuple[Path, Path]:
+    """`dynamic_databases` 의 두 DB 를 `root` 에 짓는다(설비 DB 만 — 시나리오 DB 는 페이지가 첫
+    회차에 시드로 부트스트랩한다)."""
     equipment_path = root / "equipment.duckdb"
     repository = DuckDBEquipmentRepository(equipment_path)
     repository.initialize()
@@ -1019,6 +1028,39 @@ def _heading(sheet: Any) -> dict[str, str]:
         rows[str(name)] = str(value)
         index += 1
     return rows
+
+
+def test_a_clashing_display_name_downloads_under_the_picker_text(tmp_path: Path) -> None:
+    """다른 공정의 원본 이름과 같은 표시명(Admin `Proc Rename`)을 단 공정은 두 파일 이름 끝이
+    값 칸 · 고르기 판과 같은 「표시명 (원본)」 이다 — 겹친 두 공정이 같은 이름으로 받아지지
+    않는다(2026-11-11 다음 배포 물음 보드 B3 뒤 (나) · 2차 보드 Q2-18). 원본 이름 그대로인 쪽은
+    그 이름이다."""
+    databases = _dynamic_pair(tmp_path)
+    app = _dynamic_app(databases)
+    other = next(option for option in _process_box(app).options if option != DYNAMIC_PROCESS)
+    DuckDBScenarioRepository(databases[0]).replace_global_process_rename(
+        pd.DataFrame({"공정": [DYNAMIC_PROCESS], "표시명": [other]}), source="겹친 표시명 시험"
+    )
+    clear_global_process_rename_cache()
+    try:
+        _ok(app.run())
+        months = _months(app)
+        tail = file_name_part(f"{other} ({DYNAMIC_PROCESS})", fallback="process")
+        captured = app.session_state["captured_downloads"]
+        assert captured[UNITS_CSV_KEY]["file_name"] == (
+            f"process_capa_detail_units_{months[0]}_{months[-1]}_{tail}.csv"
+        )
+        assert captured[SHEET_XLSX_KEY]["file_name"] == (
+            f"process_capa_detail_{months[0]}_{months[-1]}_{tail}.xlsx"
+        )
+        app.query_params["process"] = other
+        _ok(app.run())
+        assert _process_box(app).value == other
+        sheet_name = app.session_state["captured_downloads"][SHEET_XLSX_KEY]["file_name"]
+        assert sheet_name.endswith(f"_{file_name_part(other, fallback='process')}.xlsx")
+        assert tail not in sheet_name
+    finally:
+        clear_global_process_rename_cache()
 
 
 def test_the_sheet_xlsx_follows_the_screen_state(

@@ -1635,6 +1635,21 @@
 
 ### 화면
 
+- (2026-11-11) **산출 결과 표 제목 줄 높이 · 겹친 표시명 파일 이름 — 다음 배포 물음 보드 C9 뒤 (나) · B3 뒤 (나)**(「다음 배포 물음 11-11」 보드
+  `https://claude.ai/artifact/VB98KF7QZBgHfvMxFEBcPt`, 가지 `night/nq-dl-1111` — `e546e76` · `62dd1fe`, 다음 배포 몫. 전 · 후 그림과 잰 값은 저장소 밖
+  `~/projects/Deploy/worklog/next-1111/answers-fix/`(`shots/dl-*` · `dl/out/dl-before.json` · `dl/out/dl-after.json` ·
+  독립 검토 `dl-review/out/rvdl-head.json`), 사본 앱 슬롯 31 · 32 · 합성 표본 — 샘플 관측).
+  ① **C9** 표 제목 줄(`table_toolbar.table_heading_row`)은 곁에 맨 「CSV 다운로드」(35px) · 「내려받기 ▾」 메뉴(28px 그대로 — 카드대로 받음) · 「표시 범위」
+  칸 무엇이 서든 35px 하나다 — 줄 key `table_heading_row_key(CSV key)` 와 앱 전체 서식 한 번 `TABLE_HEADING_ROW_STYLE`(min-height — 좁은 창에서 접힌 줄은
+  그 높이 그대로). 산출 결과 대당 Capa · 소요대수 상세 끔 줄 28.4 → 35 · 표 윗선 203.9 → 210.5px 로 소요대수 상세 켬 · 확보율(210.5 그대로)과 같아 탭을
+  오가거나 상세를 켜고 끌 때 표가 오르내리지 않는다(1600 · 1283 · 1100 라이트 · 1600 다크 같음 — 1100 · 다크는
+  슬롯 32 독립 검토). 같은 도우미를 쓰는 표준 목표 「주차별 …」 · 생산 계획 「환산」 제목 줄은
+  맨 CSV 35px 라 줄 35 · 표 윗선 217.9 · 224.5 그대로, 이 도우미 밖인 공정 Capa 상세 · Static 대비 일정 메뉴 줄은 28.4 그대로다. ② **B3** 공정 Capa 상세
+  시트 엑셀 · 「이 공정 단축 일정 CSV」 파일 이름 끝 공정은 공정 값 칸 · 고르기 판과 같은 글자다 — 이 화면 선택지에서 원본이 다른 공정과 표시명이
+  겹치면 「표시명 (원본)」(`ProcessLabels.unique_format_func` 그대로 — Q2-18, 못 쓰는 글자는 `file_name_part`). 합성 표본 「AVI」 →
+  `process_capa_detail_202611_202812_AVI.xlsx` · `…_units_…_AVI.csv`, 「AVI (Shipping Inspection)」 → `process_capa_detail_202611_202812_AVI_(Shipping_Inspection).xlsx`
+  (전에는 둘 다 `…_AVI.xlsx`. 이 공정은 설비 일정이 없어 CSV 가 없다 — CSV 의 겹침 꼴은 AppTest 로 봄). 머리 · 시트 머리 값 줄의 공정은 표시명 그대로다.
+  규칙 UI-PRF-03 · UI-CON-01 · UI-CON-04 · UI-DAT-10 · PRC-01.
 - (2026-11-11) **계산 멈춤 글의 예시 행 · 점검 풍선 머리**(입력 점검 검토 보드 F7 (나) 「풍선 머리를 「rN」 으로, 예시는 「YY.MM 공정 표시명
   양산구분」 으로(따로 가지)」, 가지 `feat/stop-notice-1111` — `5cc4dd9` · `c4759e6` · 검토 지적 고침 `3b37d4e` · D10 경계 관문 고침 `6c1fba8` · 경계 우회 고침 `23d2c6d`, 다음 배포 몫). 목록 관리 「점검」 멈춤 부제 풍선(계산 멈춤 알림 전문)은
   첫머리가 화면 이름 대신 그 리비전 「rN」 이다(`calculation_stop_notice(place=)`). 계산 멈춤 알림 전문(HOME · Static Capa · 산출 결과 · 표준 목표 —
