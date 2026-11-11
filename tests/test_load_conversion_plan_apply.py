@@ -244,9 +244,9 @@ def _stack_field(app: AppTest) -> TextInput:
 def test_the_virtual_product_button_sits_in_the_more_menu_that_closes_when_picked(
     seeded_database: Path,
 ) -> None:
-    """PKG PLAN 작업 줄은 「변경사항 적용」 · 「Excel 붙여넣기」 · 「⋯」(풍선 「더 보기」) 차례이고 「가상
-    제품 등록」 은 「⋯」 안이다(2026-11-12 보드 답 n2 나). 메뉴 안 단추를 누르면 팝오버 key 세대가
-    올라 다음 회차에 메뉴가 닫혀 선다 — 열린 채면 그 단추가 연 창 위에 메뉴가 떠 있다."""
+    """PKG PLAN 작업 줄은 「변경사항 적용」 · 「Excel 붙여넣기」 · 「⋯」(풍선 「더 보기」) 차례이고
+    「가상 제품 등록」 은 「⋯」 안이다(2026-11-12 보드 답 n2 나). 메뉴 안 단추를 누르면 팝오버 key
+    세대가 올라 다음 회차에 메뉴가 닫혀 선다 — 열린 채면 그 단추가 연 창 위에 메뉴가 떠 있다."""
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     app = _open_tab(app, PLAN_TAB)
     assert app.button(key="apply_pkg_plan_changes").label == "변경사항 적용"
