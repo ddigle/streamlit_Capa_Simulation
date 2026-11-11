@@ -369,11 +369,11 @@ def _prepare_performance(data: pd.DataFrame) -> pd.DataFrame:
     """`RQ_UPEH` 를 경로 행으로 맞춘다 — 표 자체가 깨졌으면 꼴 · 개수를 든 `ReferenceJoinError` 다.
 
     여덟 검사(컬럼 · 월 형식 · 연결 키 빈 값 · Area_Name · 연결 키 중복 · Main UPEH 빈 값 · MI ST
-    빈 값 · MI ST 0 이하)의 **글은 예전 그대로다.** 계산 멈춤 알림(`page_bootstrap._CELL_STOPS`)과
-    등록의 푸는 길(`scenario_registration`)이 글을 맞대 읽는다. 그래서 공용 검사를 그대로 부르고 그
-    글에 꼴만 실어 다시 올린다 — 붙이는 표의 도우미(`_prepared_reference` ·
-    `_raise_on_duplicate_keys`)는 건수 · 예시를 덧붙인 다른 글을 내므로 셈만 나눠 쓴다. 차례도
-    예전 그대로다.
+    빈 값 · MI ST 0 이하)의 **글은 공용 검사의 글 그대로다.** 계산 멈춤
+    알림(`page_bootstrap._CELL_STOPS`)과 등록의 푸는 길(`scenario_registration`)이 글을 맞대 읽는다.
+    그래서 공용 검사를 부르고 그 글에 꼴만 실어 다시 올린다 — 붙이는 표의 도우미
+    (`_prepared_reference` · `_raise_on_duplicate_keys`)는 건수 · 예시를 덧붙인 다른 글을 내므로
+    셈만 나눠 쓴다. 검사 차례는 위 나열 차례다.
 
     이 표의 행 하나가 곧 경로 하나라 값 꼴의 키 수와 경로 수는 같다. 붙이기 전에 보는 꼴(월 형식 ·
     연결 키 · Area_Name)의 행 수는 BOX · PCB 를 빼기 전(월 형식) · 뺀 뒤(나머지)의 표 행이다.
