@@ -195,7 +195,7 @@ def with_loopback_no_proxy(value: str) -> str:
 
     `*`(모두 우회)는 그대로 둔다 — urllib 은 값 전체가 `*` 일 때만 그 뜻으로 읽는다.
     """
-    if value.strip() == "*":
+    if value == "*":
         return value
     present = {part.strip().lower() for part in value.split(",")}
     missing = [name for name in LOOPBACK_NO_PROXY if name not in present]
@@ -208,7 +208,7 @@ def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
 
     사내 PC 창에는 `HTTP(S)_PROXY` 가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다. 파이썬의
     우회 판정은 이름을 글자 끝으로만 맞춰 `localhost` 가 `127.0.0.1` 을 덮지 않으므로, 127.0.0.1
-    에서 듣는 가짜 서버로 가는 요청이 프록시로 가 403 을 받는다(리뷰 `202611111500` 발견 2).
+    에서 듣는 가짜 서버로 가는 요청이 프록시로 가 403 을 받는다.
     있던 값은 두고 뒤에 붙인다. 두 이름을 다 쓴다 — Linux 의 urllib 는 소문자가 이기고, 한쪽만
     있던 창은 다른 쪽도 그 값에서 시작한다. Windows 는 두 이름이 한 변수다. 환경변수라 시험이
     띄우는 하위 프로세스(aws · 앱)까지 이어진다.
