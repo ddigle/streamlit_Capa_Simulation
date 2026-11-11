@@ -358,6 +358,8 @@ def test_the_month_range_stop_is_original_and_carries_its_cause(
     assert named.message == markdown_examples(STOPPED_TEXT, LABELS)
     assert "절단" in (named.message or "")
     assert (named.kind, named.reason, named.goto) == (stop.kind, stop.reason, stop.goto)
+    # 다시 지은 멈춤은 본문 프래그먼트 인자로 남으므로 예외(traceback)를 쥐지 않는다.
+    assert named.cause is None
     plain = shortening_source.ShorteningStop("info", "조회기간에 월이 없습니다.")
     assert shortening_panel._named_stop(plain, LABELS) is plain
 
@@ -386,6 +388,7 @@ def test_the_shortening_panel_names_the_month_range_stop(
     assert isinstance(stop, shortening_source.ShorteningStop)
     assert stop.kind == "scenario"
     assert stop.message == markdown_examples(STOPPED_TEXT, LABELS)
+    assert stop.cause is None
 
 
 def _space_layer_stop() -> shortening_source.ShorteningStop:

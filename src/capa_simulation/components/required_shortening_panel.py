@@ -585,10 +585,13 @@ def _prepare(
 def _named_stop(stop: ShorteningStop, labels: ProcessLabels) -> ShorteningStop:
     """공용 길이 원문으로 지어 온 멈춤 글을 같은 예외(`cause`)로 다시 짓는다 — 예시 행이 이 화면의
     공정 표시명 꼴이다. `shortening_source` 는 표시명을 읽지도 받지도 않는다(Space 「필요 단축」
-    보기가 같은 길을 원본 공정소분류로 쓴다 — 결정 D10). 예외가 없는 멈춤은 그대로다."""
+    보기가 같은 길을 원본 공정소분류로 쓴다 — 결정 D10). 예외가 없는 멈춤은 그대로다.
+
+    돌려주는 멈춤은 예외를 놓는다 — 본문 프래그먼트 인자로 다음 앱 회차까지 남으므로 예외의
+    traceback(계산 프레임의 지역 값)을 쥐지 않게."""
     if stop.cause is None:
         return stop
-    return replace(stop, message=bootstrap_error_message(stop.cause, labels=labels))
+    return replace(stop, message=bootstrap_error_message(stop.cause, labels=labels), cause=None)
 
 
 def _mark_empty_card(
