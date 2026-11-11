@@ -2973,7 +2973,7 @@ def test_the_census_counts_each_planted_shape_without_names(
         "fold": "1 / 1 리비전 | 행 1 |",
         "blank": "1 / 1 리비전 | 칸 1 |",
         "merge": "1 / 1 머지 리비전 | 달 1 |",
-        "flag": "1 / 1 원천 데이터셋 | 행 2 |",
+        "flag": "1 / 1 원천 데이터셋 | 행 2 = 빈칸 1 + 다른표기 1 |",
         "names": "1 / 1 설비 리비전 | 묶음 1 |",
     }
     assert {key: _census_row(output, key) for key in expected} == expected
@@ -2988,9 +2988,12 @@ def test_the_census_counts_each_planted_shape_without_names(
     # 요약 — 0 이 아닌 줄만 키와 함께 한 줄씩, 머리는 그 줄 수와 합.
     summary = _uncoded(_summary(output))
     assert summary[0] == "- 8-10 활성 1 · 0 아님 12/12 · 합 14"
+    # C11 은 빈 칸(None)과 다른 표기("x")를 나눠 센다 — " y " 는 공백 · 대소문자를 무시하면 Y 다.
     assert summary[1:] == [
         f"- 8-10 C{index} {count}"
-        for index, count in enumerate([1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1], start=1)
+        for index, count in enumerate(
+            [1, 1, 1, 1, 1, 2, 1, 1, 1, 1, "2 = 빈칸 1 + 다른표기 1", 1], start=1
+        )
     ]
     assert checks.check_transcript(_summary(output)) == []
 
@@ -3284,6 +3287,39 @@ def test_a_dropped_or_shifted_census_line_is_caught() -> None:
     all_zero = checks._census_notes(scope, zeros, all_revisions=True)
     assert all_zero == ["- 8-10 전부 5 · 모두 0 (12/12)"]
     assert checks.check_transcript(checks.summary_lines(all_zero)) == []
+
+
+def test_the_plan_flag_line_carries_its_split_and_is_checked_by_its_sum() -> None:
+    """C11 은 빈칸 · 다른표기 두 수로 나눠 센다(보드 N6 (가)). 줄의 수(키 뒤 첫 수)는 그 합이라
+    머리의 `0 아님 k` · `합` 은 그대로 맞고, 나눈 두 수를 잘못 옮기면 줄 안 식이 잡는다. 나누기
+    전 꼴(`8-10 C11 205`)로 옮긴 지난 리뷰도 그대로 읽는다."""
+    scope = checks.CensusScope(picked="", revisions=57, label="")
+    rows = [
+        checks.CensusRow(key=item.key, label=item.label, basis=item.basis, unit=item.unit)
+        for item in checks.CENSUS_ITEMS
+    ]
+    rows[8] = replace(rows[8], count=2)
+    rows[10] = replace(rows[10], count=205, parts=(("빈칸", 200), ("다른표기", 5)))
+    assert rows[10].cells()[-1] == "행 205 = 빈칸 200 + 다른표기 5"
+    lines = [
+        line
+        for line in checks.summary_lines(checks._census_notes(scope, rows, all_revisions=False))
+        if line.startswith("- ")
+    ]
+
+    assert _uncoded(lines) == [
+        "- 8-10 활성 57 · 0 아님 2/12 · 합 207",
+        "- 8-10 C9 2",
+        "- 8-10 C11 205 = 빈칸 200 + 다른표기 5",
+    ]
+    assert checks.check_transcript(lines) == []
+    # 손으로 옮기며 칸 가름 · 띄어쓰기를 바꿔도 같다.
+    assert checks.check_transcript([line.replace("빈칸 ", "빈 칸 ") for line in lines]) == []
+    slipped = [lines[0], lines[1], lines[2].replace("빈칸 200", "빈칸 201")]
+    assert any("검산 식이 서지 않는다" in problem for problem in checks.check_transcript(slipped))
+    # 나누기 전 꼴은 머리와 맞대는 수 줄로 그대로 읽는다.
+    before = ["8-10 활성 57 · 0 아님 2/12 · 합 207", "8-10 C9 2", "8-10 C11 205"]
+    assert checks.check_transcript(_coded(*before)) == []
 
 
 def test_check_summary_reads_a_transcript_without_opening_a_database(

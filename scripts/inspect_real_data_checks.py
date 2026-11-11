@@ -66,7 +66,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from functools import lru_cache, partial
 from pathlib import Path
-from typing import Final, Protocol, TextIO, TypeVar, cast
+from typing import Final, NamedTuple, Protocol, TextIO, TypeVar, cast
 
 import duckdb
 import numpy as np
@@ -3383,6 +3383,14 @@ class CensusRow:
     seen: int = 0
     count: int = 0
     failure: str | None = None
+    parts: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def figure(self) -> str:
+        """수 — 나눠 센 줄은 `합 = 이름 수 + 이름 수`(요약 줄의 식 검산이 본다)."""
+        if not self.parts:
+            return f"{self.count:,}"
+        return f"{self.count:,} = " + " + ".join(f"{name} {count:,}" for name, count in self.parts)
 
     def cells(self) -> list[str]:
         if self.failure is not None:
@@ -3392,7 +3400,7 @@ class CensusRow:
             self.label,
             self.basis,
             f"{self.hit:,} / {self.seen:,} {self.scope}",
-            f"{self.unit} {self.count:,}",
+            f"{self.unit} {self.figure}",
         ]
 
 
@@ -3551,10 +3559,13 @@ def _census_merge_gaps(connection: duckdb.DuckDBPyConnection, scope: CensusScope
     return len(found), len(merged), sum(found.values())
 
 
-def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> CensusCount:
-    """원천 `계획기초정보여부` 가 앞뒤 공백·대소문자를 무시해도 `Y`·`N` 이 아닌 행(빈 칸 포함).
+def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> CensusSplit:
+    """원천 `계획기초정보여부` 가 앞뒤 공백·대소문자를 무시해도 `Y`·`N` 이 아닌 행 — `빈칸`(빈 값 ·
+    공백뿐)과 `다른표기`(그 밖의 글자)로 나눠 센다. 값은 찍지 않는다.
 
-    본 리비전의 시나리오가 가진 데이터셋 가운데 원천 행이 있는 것(복제는 원천 행이 없다)만 센다.
+    둘은 고칠 길이 다르다 — 빈 칸은 원천이 정하지 않은 행이고, 다른 표기는 계획 행으로 잡히지 않아
+    계획이 빠지는 결함 후보다(사내 리뷰 202611111500 물음 lines-8 Q4). 본 리비전의 시나리오가 가진
+    데이터셋 가운데 원천 행이 있는 것(복제는 원천 행이 없다)만 센다.
     """
     rows = connection.execute(
         f"""
@@ -3563,15 +3574,26 @@ def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope)
             SELECT DISTINCT d.dataset_id
             FROM app_meta.scenario_revision AS r JOIN picked USING (revision_id)
             JOIN app_meta.dataset AS d ON d.scenario_id = r.scenario_id
+        ),
+        flags AS (
+            SELECT c.dataset_id, trim(coalesce(c."계획기초정보여부", '')) AS flag
+            FROM raw_data.core_data AS c JOIN sets USING (dataset_id)
         )
-        SELECT c.dataset_id, count(*) FILTER (
-            WHERE upper(trim(coalesce(c."계획기초정보여부", ''))) NOT IN ('Y', 'N')
-        )
-        FROM raw_data.core_data AS c JOIN sets USING (dataset_id)
+        SELECT dataset_id,
+            count(*) FILTER (WHERE flag = ''),
+            count(*) FILTER (WHERE flag <> '' AND upper(flag) NOT IN ('Y', 'N'))
+        FROM flags
         GROUP BY 1
         """
     ).fetchall()
-    return sum(1 for _, count in rows if count), len(rows), sum(int(count) for _, count in rows)
+    return CensusSplit(
+        hit=sum(1 for _, blank, other in rows if blank or other),
+        seen=len(rows),
+        parts=(
+            ("빈칸", sum(int(blank) for _, blank, _ in rows)),
+            ("다른표기", sum(int(other) for _, _, other in rows)),
+        ),
+    )
 
 
 def _census_equipment_names(connection: duckdb.DuckDBPyConnection) -> CensusCount:
@@ -3602,12 +3624,23 @@ def _opened(connection: duckdb.DuckDBPyConnection | None, label: str) -> duckdb.
 
 
 CensusCount = tuple[int, int, int]
-CensusRun = Callable[[Session, CensusScope], CensusCount]
+
+
+class CensusSplit(NamedTuple):
+    """(걸린 수, 본 수, 꼴을 나눠 센 (이름, 수)) — 줄의 수는 나눈 수의 합이다."""
+
+    hit: int
+    seen: int
+    parts: tuple[tuple[str, int], ...]
+
+
+CensusRun = Callable[[Session, CensusScope], CensusCount | CensusSplit]
 
 
 @dataclass(frozen=True)
 class CensusItem:
-    """센서스 한 줄의 정의 — `run` 은 (걸린 수, 본 수, 꼴의 수) 를 돌려준다.
+    """센서스 한 줄의 정의 — `run` 은 (걸린 수, 본 수, 꼴의 수) 를 돌려준다. 꼴을 나눠 세는 줄은
+    `CensusSplit` 이고 줄의 수는 그 합이다 — 키 · 합은 지난 리뷰와 그대로 견준다.
 
     `key`(C1 ~)는 전송용 요약이 이 줄을 가리키는 이름이다 — 줄을 더할 때는 끝에 새 번호로 더하고
     지운 번호를 다시 쓰지 않는다(옮겨 적은 지난 리뷰와 견준다). `basis` 는 이 수가 근거가 되는
@@ -3627,11 +3660,17 @@ class CensusItem:
             key=self.key, label=self.label, basis=self.basis, unit=self.unit, scope=self.scope
         )
         try:
-            hit, seen, count = self.run(session, scope)
+            measured = self.run(session, scope)
         except _NotOpened as exc:
             return replace(row, failure=str(exc))
         except Exception as exc:  # 한 줄이 멈춰도 다음 줄은 센다. 문구는 찍지 않는다
             return replace(row, failure=_failure(exc))
+        if isinstance(measured, CensusSplit):
+            total = sum(count for _, count in measured.parts)
+            return replace(
+                row, hit=measured.hit, seen=measured.seen, count=total, parts=measured.parts
+            )
+        hit, seen, count = measured
         return replace(row, hit=hit, seen=seen, count=count)
 
 
@@ -3646,7 +3685,7 @@ def _per_revision(count: Callable[..., Counter[str]], *args: object) -> CensusRu
 
 
 def _on_simulation(
-    count: Callable[[duckdb.DuckDBPyConnection, CensusScope], CensusCount],
+    count: Callable[[duckdb.DuckDBPyConnection, CensusScope], CensusCount | CensusSplit],
 ) -> CensusRun:
     return lambda session, scope: count(_opened(session.simulation, "시뮬레이션 DB"), scope)
 
@@ -3731,7 +3770,7 @@ CENSUS_ITEMS: Final[tuple[CensusItem, ...]] = (
     ),
     CensusItem(
         "C11",
-        "원천 `계획기초정보여부` 의 `Y`·`N` 밖 표기(빈 칸 포함)",
+        "원천 `계획기초정보여부` 의 `Y`·`N` 밖 표기(빈 칸 포함 — 빈칸 · 다른표기로 나눔)",
         "근거 · 사내 확인 요청(P8 표기)",
         "행",
         _on_simulation(_census_plan_flag),
@@ -3786,7 +3825,7 @@ def _census_notes(
     parts.append(f"합 {sum(row.count for row in nonzero):,}")
     return [
         _note("8-10", *parts),
-        *(_note(f"8-10 {row.key}", f"{row.count:,}") for row in nonzero),
+        *(_note(f"8-10 {row.key}", row.figure) for row in nonzero),
         *(_note(f"8-10 {row.key}", str(row.failure)) for row in failed),
     ]
 
@@ -6297,14 +6336,15 @@ def summary_lines(notes: Sequence[str], *, interrupted: bool = False) -> list[st
     return [*lines, ""]
 
 
-# 옮겨 적은 8-10 — 머리의 `0 아님 k/n` 과 `합 S`, 아래 수 줄(`8-10 C<번호> <수>`). 칸 가름은
-# `_CELL_SEP` 꼴이면 된다(손으로 옮기며 가운뎃점을 바꿔 쓴 줄).
+# 옮겨 적은 8-10 — 머리의 `0 아님 k/n` 과 `합 S`, 아래 수 줄(`8-10 C<번호> <수>` — 꼴을 나눠 센
+# 줄은 뒤에 `= 이름 수 + 이름 수` 가 붙고 그 식은 줄 안 검산이 본다). 칸 가름은 `_CELL_SEP` 꼴이면
+# 된다(손으로 옮기며 가운뎃점을 바꿔 쓴 줄).
 _CENSUS_HEAD: Final = re.compile(
     rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}0\s*아님\s*(?P<k>\d+)\s*/\s*\d+.*{_CELL_SEP}"
     r"합\s*(?P<sum>[\d,]+)"
 )
 _CENSUS_ALL_ZERO: Final = re.compile(rf"^8-10\s+\S+\s+[\d,]+{_CELL_SEP}모두\s*0\b")
-_CENSUS_ITEM: Final = re.compile(r"^8-10\s+C\s*\d+\s+(?P<count>[\d,]+)\s*$")
+_CENSUS_ITEM: Final = re.compile(r"^8-10\s+C\s*\d+\s+(?P<count>[\d,]+)\s*(?:=.*)?$")
 # 옮겨 적은 8-12 — 머리의 `걸림 m`(걸림이 재는 상한을 넘으면 `잰 k`)만큼 `8-12K` 줄이 있고, 자세히
 # 잰 리비전(`8-12K` 에 `쓰는키` 칸이 있다)은 다섯 키가 다 있어야 한다. 까닭만 적은 `8-12K`(`됨` ·
 # 다른 꼴 · `실패`)는 그 줄뿐이다.
