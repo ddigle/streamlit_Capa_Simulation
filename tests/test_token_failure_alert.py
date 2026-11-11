@@ -115,8 +115,8 @@ def test_a_failed_start_token_step_tells_the_administrator(
     assert note is not None
     assert reason in note["full"] and "`" not in note["full"]
     assert "최근 BigDataQuery 조회" not in note["full"]
-    # 시작 점검 실패의 까닭은 토큰 값만이 아니다 — 할 일은 까닭대로 고치기다.
-    assert "까닭대로 C-DEP 환경변수를 고치고" in note["full"] and "새 토큰" not in note["full"]
+    # 시작 점검 실패의 까닭은 토큰 값만이 아니다 — 할 일은 그 까닭 고치기다.
+    assert "그 까닭을 고치고 CI/CD" in note["full"] and "새 토큰" not in note["full"]
     assert (note["page"], note["href"]) == (tab_label(ADMIN_AREA), ADMIN_AREA.href)
     assert note["short"] == "BigDataQuery 로그인 토큰 실패 — 조회가 막힙니다"
     assert note["level"] == "action"
@@ -161,7 +161,7 @@ def test_a_failed_start_with_a_failed_query_asks_for_the_start_fix(
     full = note["full"]
     assert "「로그인 토큰 파일」 줄이 실패입니다(까닭)" in full
     assert "최근 BigDataQuery 조회가 토큰 갈래로 실패" in full
-    assert "까닭대로 C-DEP 환경변수를 고치고" in full and "새 토큰" not in full
+    assert "그 까닭을 고치고 CI/CD" in full and "새 토큰" not in full
     assert "`" not in full
 
 

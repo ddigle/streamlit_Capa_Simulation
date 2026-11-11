@@ -378,7 +378,8 @@ def render_token_alert() -> None:
 def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
     """전문(평문 — 알림창 · Alarm 은 `textContent` 로 넣는다) — 무엇이 실패했고 무엇을 하면 풀리나.
     시작 점검 까닭은 시작 스크립트가 이미 가린 글이다. 시작 점검 실패의 까닭은 토큰 값만이 아니다
-    (계정 칸 · 폴더 쓰기 등) — 그때 할 일은 까닭대로 고치기이고, 새 토큰은 조회 실패만의 길이다."""
+    (계정 칸 · 파일 권한 · 폴더 쓰기 등) — 그때 할 일은 그 까닭 고치기이고, 새 토큰은 조회 실패만의
+    길이다."""
     found: list[str] = []
     if start_reason is not None:
         found.append(f"서버 시작 점검의 「로그인 토큰 파일」 줄이 실패입니다({start_reason})")
@@ -387,7 +388,7 @@ def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
             "최근 BigDataQuery 조회가 토큰 갈래로 실패했습니다(로그인 토큰이 없거나 만료 · 무효)"
         )
     if start_reason is not None:
-        fix = "그 까닭대로 C-DEP 환경변수를 고치고 CI/CD 를 다시 누르세요"
+        fix = "그 까닭을 고치고 CI/CD 를 다시 누르세요"
     else:
         fix = f"{BDQ_TOKEN_ENV} 에 새 토큰을 넣고 CI/CD 를 다시 누르세요"
     return ". ".join(found) + f". {fix} — Admin 「서버 시작 점검」 에서 토큰 줄을 봅니다."
