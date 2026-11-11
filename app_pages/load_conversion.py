@@ -74,6 +74,7 @@ from capa_simulation.components.table_toolbar import (
 )
 from capa_simulation.components.write_guard import held_flash, note_notice, notice_marks
 from capa_simulation.design import tokens
+from capa_simulation.navigation import LOAD_CONVERSION_TAB_KEY
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
@@ -303,7 +304,7 @@ register_pending_edits(
 # 위 `source_token` 이 바뀌므로 이 화면의 편집표·붙여넣기 대기분도 다음 회차에 함께 비워진다.
 # 탭 이름 앞 아이콘은 탭이 하는 일이다 — 환산은 계산해 보는 곳, PKG PLAN·수율은 값을 고치는
 # 곳이다(2026-09-29 사용자 결정, 탭 목록 개선안 B).
-TAB_KEY = "load_conversion_active_tab"
+TAB_KEY = LOAD_CONVERSION_TAB_KEY
 TAB_CONVERSION = ":material/calculate: 환산"
 TAB_PKG_PLAN = ":material/edit_calendar: PKG PLAN"
 TAB_YIELD = ":material/percent: 수율"
@@ -393,7 +394,7 @@ def _render_uncounted_demand_after_apply(context: PageContext, slot: DeltaGenera
 
     그 달 `RQ_REQB` 경로가 없는 칸에 넣은 계획은 소요대수에 들지 않아 「다시 계산됩니다」 뒤에도
     현황 요약 수가 그대로라 「고쳤는데 안 바뀐다」 고 헷갈렸다(E2E r2 static #57, 개선 I38). 셈은
-    저장·발행 검사·Admin 「알림 모음」 과 같은 시나리오 전체 기간 결과(`get_full_capacity_outcome`
+    저장·발행 검사와 같은 시나리오 전체 기간 결과(`get_full_capacity_outcome`
     — 적용으로 내용 토큰이 바뀌어 여기서 처음 계산하면 HOME·산출 결과가 그 결과를 그대로 쓴다)다.
     계산이 멈추면 그 오류는 계산 화면들이 말하므로 여기서는 말하지 않는다. 계획 쪽 건수만 싣는다
     (`plan_side_counts` — 경로 쪽 「대당 Capa 가 없어 뺀 부하 경로」 는 계획을 고치지 않아도 늘 있을

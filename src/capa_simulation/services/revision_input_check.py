@@ -19,7 +19,7 @@ DB 를 모른다. 계산(`simulation_cache.full_capacity_outcome`)과 멈춤 판
   그대로다(설계 규칙 UI-DAT-10).
 - **멈춘 리비전**은 앞 단계가 멈춰 뒤 묶음을 세지 못한다 — 묶음 하나(「셀 수 없음」)로 접는다.
   등록 때 뺀 원천 행은 계산과 상관없이 센다. HOME Density 환산만 멈춘 리비전도 지금은 같이
-  접는다(Admin 「알림 모음」 의 꼴) — 대당 Capa · 소요대수는 끝났으므로 셀 수는 있다
+  접는다(시안 `mock_ga_stop` 의 꼴) — 대당 Capa · 소요대수는 끝났으므로 셀 수는 있다
   (`DENSITY_STOP_KEEPS_COUNTS`).
 """
 
@@ -98,7 +98,7 @@ CALCULATED_LABEL: Final = "됨"
 STOPPED_LABEL: Final = "멈춤"
 
 # HOME Density 환산만 멈춘 리비전(대당 Capa · 소요대수는 끝남)에서 뒤 묶음을 셀지. 거짓이면 Capa
-# 계산이 멈춘 리비전처럼 「셀 수 없음」 한 묶음으로 접는다(Admin 「알림 모음」 의 옛 꼴).
+# 계산이 멈춘 리비전처럼 「셀 수 없음」 한 묶음으로 접는다(시안 `mock_ga_stop` 의 꼴).
 DENSITY_STOP_KEEPS_COUNTS: Final = False
 
 # 까닭 원본 값 → 화면 표시명. 없는 값은 원본 그대로 보인다. CSV 는 늘 원본 값이다. 부하량에서 빠진
