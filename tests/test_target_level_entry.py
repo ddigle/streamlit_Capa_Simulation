@@ -90,10 +90,14 @@ def test_the_entry_follows_the_threshold_fields_step_format_and_range() -> None:
         (400, entry_out_of_range(400)),
         (49.4, entry_out_of_range(49)),
         (300.5, entry_out_of_range(301)),
+        # 칸에 하한이 없어 음수도 서버에 닿는다 — 같은 범위 밖 거부다(-0.4 는 사사오입하면 0%).
+        (-5, entry_out_of_range(-5)),
+        (-0.4, entry_out_of_range(0)),
         # 받는 범위를 한참 넘는 값은 사사오입(`Decimal.quantize` — 28 자리) 전에 거부다.
         (1e30, entry_out_of_range(1e30)),
         ("1e30", entry_out_of_range(1e30)),
         ("1e300", entry_out_of_range(1e300)),
+        ("-1e30", entry_out_of_range(-1e30)),
         # 숫자 칸이 비면(지우기 · ⊗) 빈 칸 거부다 — 숫자 아님은 칸 밖에서 넘어온 값뿐이다.
         (None, ENTRY_EMPTY),
         ("  ", ENTRY_EMPTY),
