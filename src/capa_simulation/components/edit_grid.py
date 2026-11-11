@@ -129,8 +129,8 @@ def palette() -> dict[str, str]:
         "font": tokens.FONT_FAMILY,
         "text": tokens.TEXT,
         "muted": tokens.TEXT_MUTED,
-        # 그리드 둘레 · 칸 · 입력 칸 · 적용 전 변경 판 · 전체 화면 판은 페이지 바탕색이다(화면의 다른
-        # 기본 표와 같은 꼴). 고친 칸 · 틀린 칸 · 잠긴 칸은 제 칠 그대로.
+        # 그리드 둘레 · 칸 · 입력 칸 · 적용 전 변경 판 · 전체 화면 판은 페이지 바탕색이다(화면의
+        # 다른 기본 표와 같은 꼴). 고친 칸 · 틀린 칸 · 잠긴 칸은 제 칠 그대로.
         "surface": tokens.SURFACE_PAGE,
         # 표 도구 단추 · 찾기 칸 바탕 — 화면의 다른 단추와 같은 꼴.
         "control": tokens.SURFACE,
