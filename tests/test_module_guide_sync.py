@@ -597,7 +597,9 @@ def test_the_pr_check_looks_for_credential_reads_the_static_rules_do_not_see() -
             "+import bigdataquery",
             "+from bigdataquery import getData",
             '+    user = os.environ["CAPA_BDQ_USER_NAME"]',
+            '+NAME = "CAPA_BDQ_USER_NAME"',
             '+    token = Path("/config/.credential") / name',
+            '+TOKEN = "/config/.credential/x"',
         ):
             assert re.search(pattern, reads), reads
         assert not re.search(pattern, '-    key = os.environ["CAPA_S3_SECRET_KEY"]')
