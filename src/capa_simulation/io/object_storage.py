@@ -64,6 +64,8 @@ NAMESPACE_NOTE: Final = "org-system_package_mfg_team"
 # 켜는 스위치. `managed` 면 시작 때 두 DB 를 받고 저장하면 올린다.
 MODE_ENV: Final = "CAPA_S3_SYNC_MODE"
 MODE_MANAGED: Final = "managed"
+# 끈 값 — 빈 칸도 이 값으로 읽는다(`load_settings`).
+MODE_LOCAL: Final = "local"
 CONFIG_PATH: Final = PROJECT_ROOT / "config" / "object_storage.json"
 CAPABILITIES_PATH: Final = PROJECT_ROOT / "config" / "object_storage_capabilities.json"
 

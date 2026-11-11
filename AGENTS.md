@@ -1738,7 +1738,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     토큰을 `/config/.credential/` 에 0600 으로 쓴 뒤(폴더는 이미지가 `$DSUSER` 몫으로 만들어 둔다) `os.execvpe` 로 옛
     `CMD` 와 같은 `streamlit run` 줄이 된다. 비밀값은 결과 파일·표준 출력·명령줄·하위 프로세스와 앱의 환경 어디에도
     남기지 않고(`tests/test_container_start.py`), 예상하지 못한 예외가 나도 「도중에 멈춤」 결과를 남기고 앱은 뜬다 — **`managed` 의 DB 받기만 예외다**
-    (앱을 띄우는 길은 그 실행의 `boot-pull` 종료 코드 0 한 길, `tests/test_container_start_sync.py`). 틀린 모드 값은 받지 않고 앱이 뜨고(`SY-01`) 모드가 `managed` 인데 설정이 깨졌으면 머문다. 모드 칸이 비었는데 버킷에 세대가 있으면 앱은 뜨되 결과 파일에 표지(`head_ignored`)를 남겨 `SY-05` 가 알린다(일부러 `local` 을 적은 서버 · 빈 버킷은 알리지 않는다).
+    (앱을 띄우는 길은 그 실행의 `boot-pull` 종료 코드 0 한 길, `tests/test_container_start_sync.py`). 틀린 모드 값은 받지 않고 앱이 뜨고(`SY-01`) 모드가 `managed` 인데 설정이 깨졌으면 머문다. 모드 칸이 비었거나 `local` 인데 버킷에 세대가 있으면 앱은 뜨되 결과 파일에 표지(`head_ignored`)를 남겨 `SY-05` 가 알린다(빈 버킷은 알리지 않는다 — 2026-11-12 리뷰 202611111500 보드 R2: 이 스크립트는 C-DEP 이미지에서만 돌아 그 자리의 `local` 은 이관 뒤 빠뜨린 `managed` 와 같다. 결과 파일이 없는 사내 PC · 개발 실행에는 표지가 없다).
     시험은 `tests/conftest.py` 가 결과 파일 자리를 늘 없는 곳으로 돌리고 CD 전용 환경변수를 지운다.
   - 시작 차례는 ① 임시 응답(`scripts/container_stage.py` — 맨 앞에서 앱 포트를 잡아 상태 검사 셋 꼴에 답하고 고정 글 · 갈래 낱말만 보인다, 시험 `tests/test_container_stage.py`) ② `~/.aws` 프로필(`object_storage.render_profile_files`, 0600)
     ③ 점검 ④ 설치 · 토큰 ⑤ `boot-pull` 되풀이 ⑥ 소켓을 닫고 앱. 결과의 `sync` 칸은 더하기만 한 꼴이고(`parse_sync` — 옛 파일은 `None`), 앱 응답 시각은 `capa_server.py` 끝의 `note_app_ready` 가 결과 파일 옆에 남긴다.

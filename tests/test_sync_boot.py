@@ -184,6 +184,18 @@ def test_a_start_that_left_the_bucket_unread_needs_its_alert(
     assert sync_boot.sync_alerts_possible() is True
 
 
+def test_a_local_server_without_a_start_report_needs_no_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사내 PC · 개발 실행 — 결과 파일은 C-DEP 이미지의 시작 스크립트만 쓰므로 `local` 이어도 표지가
+    없다. `SY-05` 가 C-DEP 밖에 새로 서지 않는다."""
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("local"))
+    monkeypatch.setattr(app_settings, "CONTAINER_START_REPORT_PATH", tmp_path / "없음.json")
+
+    assert sync_boot.head_ignored() is False
+    assert sync_boot.sync_alerts_possible() is False
+
+
 def test_a_start_without_that_mark_needs_no_alert(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

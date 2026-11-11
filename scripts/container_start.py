@@ -108,6 +108,7 @@ from capa_simulation.io.container_start_report import (
 )
 from capa_simulation.io.object_storage import (
     MODE_ENV,
+    MODE_LOCAL,
     MODE_MANAGED,
     CommandResult,
     ObjectStorageClient,
@@ -1054,10 +1055,16 @@ def prepare_sync(
             if blocked is not None
             else _guarded(lambda: bucket_step(client, heads=saw_heads), redactor)
         )
-    head_ignored = head_listed and not plan.managed and not environ.get(MODE_ENV, "").strip()
+    # 이 스크립트는 C-DEP 이미지에서만 돈다 — 그 자리에서는 빈 값과 바른 `local` 이 같은 길이라
+    # 둘 다 표지를 세운다. 틀린 철자는 앱이 `SY-01` 로 알린다.
+    head_ignored = (
+        head_listed and not plan.managed and environ.get(MODE_ENV, "").strip() in ("", MODE_LOCAL)
+    )
     reason = "받기 전" if plan.managed else f"{MODE_ENV} 가 {MODE_MANAGED} 아님 — 받지 않음"
     if head_ignored:
-        reason = f"{MODE_ENV} 가 비어 버킷의 정본을 받지 않음"
+        reason = (
+            f"{MODE_ENV} 가 {MODE_MANAGED} 아님(비었거나 {MODE_LOCAL}) — 버킷의 정본을 받지 않음"
+        )
     steps[SYNC_STEP_PULL] = StepResult(STATUS_SKIPPED, reason)
     for name, result in steps.items():
         echo(f"{SYNC_STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")

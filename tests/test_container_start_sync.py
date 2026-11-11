@@ -291,27 +291,36 @@ def _reachable_ecs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(container_start, "ecs_step", lambda _url: ok)
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [{}, {"CAPA_S3_SYNC_MODE": "local"}, {"CAPA_S3_SYNC_MODE": " local "}],
+    ids=["blank", "local", "local-with-spaces"],
+)
 def test_a_forgotten_mode_over_a_bucket_with_generations_leaves_a_mark(
-    box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, extra: dict[str, str]
 ) -> None:
-    """모드 칸을 빠뜨린 CI/CD — 알리지 않으면 빈 시드 앱에 저장한 것이 다음 CI/CD 에 사라진다."""
+    """모드 칸을 빠뜨렸거나 `local` 로 남긴 CI/CD — 알리지 않으면 빈 시드 앱에 저장한 것이 다음
+    CI/CD 에 사라진다. 이 스크립트가 도는 C-DEP 에서는 빈 칸과 `local` 이 같은 길이다(표가 빈 값을
+    받지 않아 `local` 을 적는다 — 리뷰 202611111500 보드 R2)."""
     _reachable_ecs(monkeypatch)
     runner = Runner(box.log, aws=_bucket_with(POINTER_KEY))
 
-    launched = _start(box, _environ(box), runner)
+    launched = _start(box, _environ(box, **extra), runner)
 
     assert len(launched) == 1
     assert _sync()["head_ignored"] is True
-    assert "버킷의 정본을 받지 않음" in _step(report_contract.SYNC_STEP_PULL)["reason"]
+    reason = _step(report_contract.SYNC_STEP_PULL)["reason"]
+    assert "버킷의 정본을 받지 않음" in reason and "비었거나 local" in reason
 
 
 @pytest.mark.parametrize(
     ("keys", "extra"),
     [
         ((), {}),
-        ((POINTER_KEY,), {"CAPA_S3_SYNC_MODE": "local"}),
+        ((), {"CAPA_S3_SYNC_MODE": "local"}),
+        ((POINTER_KEY,), {"CAPA_S3_SYNC_MODE": "Local"}),
     ],
-    ids=["empty-bucket", "local-on-purpose"],
+    ids=["empty-bucket", "local-empty-bucket", "mistyped-mode"],
 )
 def test_no_mark_without_a_forgotten_mode(
     box: SimpleNamespace,
@@ -319,7 +328,8 @@ def test_no_mark_without_a_forgotten_mode(
     keys: tuple[str, ...],
     extra: dict[str, str],
 ) -> None:
-    """이관 전의 첫 CI/CD · 일부러 `local` 을 넣은 서버는 알릴 것이 없다."""
+    """이관 전의 첫 CI/CD 는 알릴 것이 없다. 틀린 철자는 앱이 `SY-01` 로 알리므로 표지를 세우지
+    않는다."""
     _reachable_ecs(monkeypatch)
 
     _start(box, _environ(box, **extra), Runner(box.log, aws=_bucket_with(*keys)))

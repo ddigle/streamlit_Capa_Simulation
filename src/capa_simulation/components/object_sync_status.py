@@ -164,9 +164,9 @@ def render_object_sync_alerts() -> None:
         active=head_ignored,
         text="정본을 받지 않은 서버입니다 — 이 저장은 다음 CI/CD 에 사라집니다",
         full=(
-            "버킷에 세대가 있는데 CAPA_S3_SYNC_MODE 칸이 비어 받지 않았습니다. 지금 화면은 "
-            "정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 사라집니다. 칸에 managed 를 넣고 "
-            "CI/CD 를 다시 누르세요. 일부러 끈 서버면 local 을 넣습니다."
+            "버킷에 세대가 있는데 CAPA_S3_SYNC_MODE 칸이 managed 가 아니어서(비었거나 local) "
+            "받지 않았습니다. 지금 화면은 정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 "
+            "사라집니다. 칸에 managed 를 넣고 CI/CD 를 다시 누르세요."
         ),
     )
 
