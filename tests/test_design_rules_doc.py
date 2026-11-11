@@ -11,7 +11,8 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 보드 15줄 · 2차 보드 7줄과 답(v1.10) · 아침 검수 보드 줄과 답 · 메모 원문(v1.11) · 2026-11-09 검수
 보드 · 칩 자리 · 상단 판단 줄과 답 · 메모 원문 · 새 규칙(v1.12) · 상단 정리 검수 보드 줄과 고른
 글 · 메모 원문 · 해석 셋(v1.13) · 2차 검수 보드 · 밤샘 다 물음 줄과 고른 글 · 갈래 수 · 답 밖
-줄(v1.14) · 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
+줄(v1.14) · 입력 점검 시안 보드 줄과 고른 글 · 앱 세션이 정한 줄(v1.15) · 문서 안팎의 id 참조 ·
+그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
 from __future__ import annotations
@@ -1130,11 +1131,10 @@ def test_the_second_check_board_and_the_night_answers_are_recorded() -> None:
     목록 줄과 Q2-23 의 예외 글(UI-LAY-13), 뒤집힌 옛 결정 둘(다-3 ④ · bottom-row → Q2-8)이
     문서에 있다."""
     document = _text()
-    assert "판 v1.14" in document.split("\n## 1. ")[0]
     assert "- **v1.14 — 2026-11-11.**" in _chapter(document, 8)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-14. ") :]
+    board = section[section.index("\n### 6-14. ") : section.index("\n### 6-15. ")]
     assert "https://claude.ai/artifact/GABcdxkXpoLAxUqGALsr26" in board
     assert "「전부 권장대로」" in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
@@ -1165,4 +1165,62 @@ def test_the_second_check_board_and_the_night_answers_are_recorded() -> None:
     assert SECOND_CHECK_EXCEPTION["Q2-23"] in rules["UI-LAY-13"].fields["예외"][0]
     reversed_ = _chapter(document, 7)
     for phrase in ("다-3 ④", "Q2-8", "bottom-row"):
+        assert phrase in reversed_, phrase
+
+
+# 2026-11-11 입력 점검 시안 보드(6-15)의 답 — q1 ~ q7 모두 권장 (가)이고, 조사 뒤 더한 답
+# 하나(reg-rows)가 있다. 고른 글은 보드 선택지 원문 그대로다. 그 뒤 `ic-` 줄은 답이 말하지 않아
+# 앱 세션이 정한 작은 결정이다(사용자 답이 아니다).
+INPUT_CHECK_CHOICES = {
+    "q1": "(가) 시나리오 관리 › 목록 관리 오른쪽 칸 「점검」",
+    "q2": "빠진 행 네 묶음 + 계산 멈춤 까닭 + 측정률 1.0 가정 + 등록 때 뺀 원천 행 수",
+    "q3": "맨 아래 접힌 한 줄에 수만 — 펼치면 행",
+    "q4": "묶음마다 「그 화면으로」 하나 — Alarm 줄과 같은 꼴, 그 표 · 종류 단추까지 연다",
+    "q5": "리비전 전체 기간 — 저장 · 공식 지정 검사와 같은 셈",
+    "q6": "고른 리비전만 그때 센다 — 이번에 센 것만 채우고 나머지는 「—」",
+    "q7": "새 자리로 합치고 탭은 걷는다",
+    "reg-rows": "다른 묶음과 같은 꼴 — 수 + 「행 보기」 · CSV",
+}
+INPUT_CHECK_DECIDED = tuple(f"ic-{n}" for n in range(1, 14))
+
+
+def test_the_input_check_board_is_recorded_with_the_app_decisions() -> None:
+    """v1.15 — 6-15 는 입력 점검 시안 보드 물음 q1 ~ q7 과 조사 뒤 더한 답(reg-rows)이 차례대로
+    한 줄씩이고 고른 글은 보드 선택지 원문 그대로다(답 줄은 커밋을 든다). 그 뒤 `ic-` 줄은 앱
+    세션이 정한 작은 결정이라 줄마다 그렇게 밝힌다. q4 는 UI-TXT-03 예외 칸에, q7 이 뒤집은 옛
+    결정 셋(2026-10-19 Admin 탭 · T7 수 표지 · Q-19)은 7-1 에, 펼친 표 칸은 4장에 있다."""
+    document = _text()
+    assert "판 v1.15" in document.split("\n## 1. ")[0]
+    assert "- **v1.15 — 2026-11-11.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-15. ") :]
+    assert "https://claude.ai/artifact/27hDnALn8KGm3zR4opa4PE" in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-11) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert list(found) == [*INPUT_CHECK_CHOICES, *INPUT_CHECK_DECIDED]
+    for key, answer in INPUT_CHECK_CHOICES.items():
+        assert found[key] == answer, key
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    for key in INPUT_CHECK_CHOICES:
+        assert re.search(r"커밋 `[0-9a-f]{7}`", by_id[key]), key
+        assert "앱 세션이 정함" not in by_id[key], key
+    for key in INPUT_CHECK_DECIDED:
+        assert "앱 세션이 정함" in by_id[key], key
+
+    rules = {rule.id: rule for rule in _rules()}
+    exception = rules["UI-TXT-03"].fields["예외"][0]
+    assert "q4" in exception and "「그 화면으로」" in exception
+    assert "「점검」 칸" in rules["UI-NTF-05"].text
+    values = _chapter(document, 4)
+    assert any(line.startswith("| 점검 표 앞 다섯 칸 |") for line in values.splitlines())
+    reversed_ = _chapter(document, 7)
+    for phrase in ("q7 (가)로 탭을 걷음", "T7 (가)", "Q-19 (가)"):
         assert phrase in reversed_, phrase
