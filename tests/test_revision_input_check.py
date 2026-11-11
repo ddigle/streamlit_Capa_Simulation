@@ -299,8 +299,8 @@ def test_a_stop_without_a_join_problem_does_not_name_a_stage(tables: Tables) -> 
 def test_a_density_stop_is_a_stop_and_the_switch_decides_the_groups(
     tables: Tables, monkeypatch: pytest.MonkeyPatch, keeps_counts: bool
 ) -> None:
-    """Density 만 멈춰도 「멈춤」 이다. 뒤 묶음은 지금 접고(셀 수 없음), 스위치를 켜면 센다 — 대당
-    Capa · 소요대수는 끝났다."""
+    """Density 만 멈춰도 「멈춤」 이다. 스위치가 켜지면(지금 — 검토 보드 F1 (나)) 뒤 묶음을 세고,
+    끄면 접는다(셀 수 없음) — 대당 Capa · 소요대수는 끝났다."""
     monkeypatch.setattr(revision_input_check, "DENSITY_STOP_KEEPS_COUNTS", keeps_counts)
     edited = _density_broken(tables)
 
@@ -434,6 +434,12 @@ def test_the_stop_verdict_is_the_publish_verdict_density_included(tmp_path: Path
         "여유율 빈 칸",
         "구분_EQ 0",
     ]
+    # Density 만 멈춘 리비전은 멈춤 줄은 두고 뒤 묶음도 센다(2026-11-11 검토 보드 F1 (나)) —
+    # 스위치를 바꾸지 않은 출하 기본값 그대로의 길이다.
+    density = input_check_verdict(str(database), scenario_id, revisions["구분_EQ 0"])
+    assert density.stop is not None and density.stop.kind == "density"
+    assert density.group(GROUP_CAPACITY) is not None and density.group(GROUP_UNCOUNTED) is None
+    assert density.calculation_label == "멈춤"
 
 
 def test_the_check_keeps_only_its_summary_slot_and_reads_the_rest_uncached(

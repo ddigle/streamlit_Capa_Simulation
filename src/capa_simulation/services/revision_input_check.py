@@ -18,9 +18,9 @@ DB 를 모른다. 계산(`simulation_cache.full_capacity_outcome`)과 멈춤 판
 - **까닭**은 원본 값과 수로 든다 — 화면 표시명은 그릴 때 `reason_label` 로 바꾸고 CSV 는 원본 값
   그대로다(설계 규칙 UI-DAT-10).
 - **멈춘 리비전**은 앞 단계가 멈춰 뒤 묶음을 세지 못한다 — 묶음 하나(「셀 수 없음」)로 접는다.
-  등록 때 뺀 원천 행은 계산과 상관없이 센다. HOME Density 환산만 멈춘 리비전도 지금은 같이
-  접는다(시안 `mock_ga_stop` 의 꼴) — 대당 Capa · 소요대수는 끝났으므로 셀 수는 있다
-  (`DENSITY_STOP_KEEPS_COUNTS`).
+  등록 때 뺀 원천 행은 계산과 상관없이 센다. HOME Density 환산만 멈춘 리비전은 「멈춤」 줄은 두고
+  뒤 묶음도 센다 — 대당 Capa · 소요대수는 끝났으므로 셀 수 있다(2026-11-11 입력 점검 검토 보드
+  F1 (나), `DENSITY_STOP_KEEPS_COUNTS`).
 """
 
 from __future__ import annotations
@@ -97,9 +97,10 @@ DENSITY_STOP_STAGE: Final = "Density 환산"
 CALCULATED_LABEL: Final = "됨"
 STOPPED_LABEL: Final = "멈춤"
 
-# HOME Density 환산만 멈춘 리비전(대당 Capa · 소요대수는 끝남)에서 뒤 묶음을 셀지. 거짓이면 Capa
-# 계산이 멈춘 리비전처럼 「셀 수 없음」 한 묶음으로 접는다(시안 `mock_ga_stop` 의 꼴).
-DENSITY_STOP_KEEPS_COUNTS: Final = False
+# HOME Density 환산만 멈춘 리비전(대당 Capa · 소요대수는 끝남)에서 뒤 묶음을 셀지. 참이면 「멈춤」
+# 줄 뒤에 다른 묶음을 그대로 센다(2026-11-11 검토 보드 F1 (나)). 거짓이면 Capa 계산이 멈춘
+# 리비전처럼 「셀 수 없음」 한 묶음으로 접는다(시안 `mock_ga_stop` 의 꼴).
+DENSITY_STOP_KEEPS_COUNTS: Final = True
 
 # 까닭 원본 값 → 화면 표시명. 없는 값은 원본 그대로 보인다. CSV 는 늘 원본 값이다. 부하량에서 빠진
 # 계획의 까닭은 표 이름만이면 그 표에 계획 키 행이 없는 것, 「… 값 없음」 이면 행은 있고 값이 빈
