@@ -435,15 +435,19 @@ def test_orphans_sharing_a_number_can_still_be_cleared_on_request() -> None:
 
 
 def test_keys_outside_the_generation_shapes_are_never_touched() -> None:
-    """접속 명단은 목록에 섞여 들어와도 지우지 않는다."""
+    """접속 명단 · 모듈 데이터(모듈이 창구 도우미로 올린 `modules/<id>/` — 2026-11-12 「도우미
+    함수로」)는 목록에 섞여 들어와도 지우지 않는다."""
     pointers, snapshots = _generations(12)
     snapshots.append(_listed("access/access_list.json", 400))
+    snapshots.append(_listed("modules/demo_x/a.csv", 400))
 
     plan = manifest.prune_generations(pointers=pointers, snapshots=snapshots, include_orphans=True)
 
     assert "access/access_list.json" not in plan.snapshots
+    assert "modules/demo_x/a.csv" not in plan.snapshots
     assert all(prefix.endswith("/") for prefix in manifest.PRUNE_PREFIXES)
-    assert not any(prefix.startswith("access") for prefix in manifest.PRUNE_PREFIXES)
+    for kept in ("access", "modules"):
+        assert not any(prefix.startswith(kept) for prefix in manifest.PRUNE_PREFIXES)
 
 
 def test_no_head_means_nothing_to_prune() -> None:
