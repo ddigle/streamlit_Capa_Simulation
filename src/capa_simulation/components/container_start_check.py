@@ -23,7 +23,8 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 판정) 시작 점검 토큰 줄이 「실패」 면 관리자의 모든 화면 회차에 상태 알림으로 낸다
 (`render_token_alert` — `app.py` 가 동기화 알림 곁에서 부른다). 토큰은 공용 계정 하나라 고칠 사람이
 관리자다. 결과 파일이 없는 서버(개발 · 사내 PC · WebIDE · 시험)는 Streamlit 호출이 없어 요소 순번이
-그대로다.
+그대로다. `app.py` 는 페이지보다 먼저 표지를 읽으므로 그 회차 페이지 조회의 실패는 다음 회차부터
+알림이 된다(실패 글은 화면 곁에 바로 선다).
 """
 
 from __future__ import annotations
@@ -375,8 +376,9 @@ def render_token_alert() -> None:
 
 
 def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
-    """전문 — 무엇이 실패했고 무엇을 하면 풀리나. 시작 점검 까닭은 시작 스크립트가 이미 가린
-    글이다."""
+    """전문(평문 — 알림창 · Alarm 은 `textContent` 로 넣는다) — 무엇이 실패했고 무엇을 하면 풀리나.
+    시작 점검 까닭은 시작 스크립트가 이미 가린 글이다. 시작 점검 실패의 까닭은 토큰 값만이 아니다
+    (계정 칸 · 폴더 쓰기 등) — 그때 할 일은 까닭대로 고치기이고, 새 토큰은 조회 실패만의 길이다."""
     found: list[str] = []
     if start_reason is not None:
         found.append(f"서버 시작 점검의 「로그인 토큰 파일」 줄이 실패입니다({start_reason})")
@@ -384,7 +386,8 @@ def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
         found.append(
             "최근 BigDataQuery 조회가 토큰 갈래로 실패했습니다(로그인 토큰이 없거나 만료 · 무효)"
         )
-    return (
-        ". ".join(found) + f". `{BDQ_TOKEN_ENV}` 에 새 토큰을 넣고 CI/CD 를 다시 누르세요 — "
-        "Admin 「서버 시작 점검」 에서 토큰 줄을 봅니다."
-    )
+    if start_reason is not None:
+        fix = "그 까닭대로 C-DEP 환경변수를 고치고 CI/CD 를 다시 누르세요"
+    else:
+        fix = f"{BDQ_TOKEN_ENV} 에 새 토큰을 넣고 CI/CD 를 다시 누르세요"
+    return ". ".join(found) + f". {fix} — Admin 「서버 시작 점검」 에서 토큰 줄을 봅니다."
