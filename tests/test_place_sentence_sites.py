@@ -136,8 +136,6 @@ ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
         EMPTY,
         EMPTY,
         EMPTY,
-        MARKER,
-        MARKER,
         EMPTY,
     ),
     ("src/capa_simulation/components/bigdataquery_registration.py", "_render_catalog_list"): (
