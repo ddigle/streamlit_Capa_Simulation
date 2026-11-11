@@ -313,7 +313,8 @@ function goTarget(value) {
   return { kind: value.kind, scenario: value.scenario, revision: value.revision }
 }
 
-// 「그 화면으로」 가 맡긴 일의 다음 걸음 — 탭 길이 남았으면 'tab', 다 열었고 대상이 있으면 'send', 아니면 'done'.
+// 「그 화면으로」 가 맡긴 일의 다음 걸음 — 탭 길이 남았으면 'tab', 탭 길 없이 대상만 들었으면 'send'(그 화면에 닿으면 보냄), 아니면
+// 'done'. 탭 길이 있는 줄의 대상은 마지막 칸 자리에서 보낸다(`settleTab`).
 function goStep(pending) {
   if (pending.tab) return 'tab'
   return pending.target ? 'send' : 'done'
