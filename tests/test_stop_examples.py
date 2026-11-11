@@ -10,13 +10,18 @@
 from __future__ import annotations
 
 import ast
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 import pytest
 
 import capa_simulation.components.auto_official_update_tab as auto_update_tab
+import capa_simulation.components.process_labels as process_labels_module
+import capa_simulation.components.shortening_source as shortening_source
+import capa_simulation.components.space_shortening_view as space_shortening_view
+import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
 from capa_simulation.components.process_labels import ProcessLabels, process_labels_from_rules
 from capa_simulation.components.stop_examples import (
@@ -24,6 +29,7 @@ from capa_simulation.components.stop_examples import (
     markdown_examples,
     readable_examples,
 )
+from capa_simulation.page_bootstrap import PageContext
 from capa_simulation.persistence.models import AutoOfficialUpdateRun
 from capa_simulation.services.auto_official_update import STATUS_PUBLISH_SKIPPED
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
@@ -221,13 +227,22 @@ def _labels_value(call: ast.Call) -> ast.expr | None:
     return next((keyword.value for keyword in call.keywords if keyword.arg == "labels"), None)
 
 
+# 계산을 먼저 보지만 멈춤 글을 원본 이름으로 두는 자리 — Space 「필요 단축」 보기는 원본
+# 공정소분류만 쓰는 길이다(결정 D10 — 공정 표시명을 읽지 않는다, `test_process_label_boundaries`).
+# 그 `except` 는 `labels=None` 을 밝혀 적는다.
+ORIGINAL_NAME_PLACES = frozenset({"space_shortening_view.py"})
+
+
 def test_screens_that_check_the_calculation_first_pass_display_names_too() -> None:
     """계산 멈춤 알림을 쓰지 않고 멈춤 글을 그대로 싣는 화면(공정 Capa 상세 · 제약 시뮬레이션 ·
-    재공 현황 · 가용설비 현황 비교 · 필요 단축 일정 · Space 「필요 단축」)도 계산을 먼저 보는 `try`
-    의 멈춤 글에 화면 표시명을 넘긴다 — 예시 행이 같은 꼴이다(F7 (나) 「다른 계산 멈춤 자리도
-    함께」). 원문을 따로 드는 글(알림 「원본 오류」 · 지문)은 `labels=None` 을 밝혀 적는다 — 한
-    `except` 에 표시명을 넘기는 글이 적어도 하나다."""
+    재공 현황 · 가용설비 현황 비교 · 필요 단축 일정)도 계산을 먼저 보는 `try` 의 멈춤 글에 화면
+    표시명을 넘긴다 — 예시 행이 같은 꼴이다(F7 (나) 「다른 계산 멈춤 자리도 함께」). 원문을 따로
+    드는 글(알림 「원본 오류」 · 지문)은 `labels=None` 을 밝혀 적는다 — 한 `except` 에 표시명을
+    넘기는 글이 적어도 하나다. 표시명을 읽지 않는 길의 `shortening_source` 는 부르는 쪽이 넘긴
+    표시명(인자 `labels`)을 싣는다. Space 「필요 단축」 보기(`ORIGINAL_NAME_PLACES`)만 모든 글이
+    `labels=None` 이다(결정 D10)."""
     seen: set[str] = set()
+    original: set[str] = set()
     roots = (PROJECT_ROOT / "app_pages", PROJECT_ROOT / "src/capa_simulation/components")
     for path in sorted(path for root in roots for path in root.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -249,6 +264,14 @@ def test_screens_that_check_the_calculation_first_pass_display_names_too() -> No
                     continue
                 for call in messages:
                     assert "labels" in _keywords(call), f"{path.name}:{call.lineno}"
+                if path.name in ORIGINAL_NAME_PLACES:
+                    for call in messages:
+                        value = _labels_value(call)
+                        assert isinstance(value, ast.Constant) and value.value is None, (
+                            f"{path.name}:{call.lineno}"
+                        )
+                    original.add(path.name)
+                    continue
                 named = [
                     call
                     for call in messages
@@ -265,9 +288,92 @@ def test_screens_that_check_the_calculation_first_pass_display_names_too() -> No
         "process_capa_detail.py",
         "required_shortening.py",
         "shortening_source.py",
-        "space_shortening_view.py",
         "wip_status.py",
     }
+    assert original == ORIGINAL_NAME_PLACES
+
+
+def test_the_month_range_stop_takes_display_names_only_from_the_shortening_panel() -> None:
+    """`shortening_month_options` 는 표시명을 읽지 않고 인자 `labels` 로 받는다 — 기본값이 원본이라
+    부르는 쪽이 빠뜨려도 위 그물은 통과한다. 그래서 부르는 쪽을 본다: 필요 단축 일정 패널은 읽은
+    표시명을 넘기고, Space 「필요 단축」 보기는 넘기지 않는다(결정 D10)."""
+    callers: dict[str, list[ast.Call]] = {}
+    roots = (PROJECT_ROOT / "app_pages", PROJECT_ROOT / "src/capa_simulation/components")
+    for path in sorted(path for root in roots for path in root.glob("*.py")):
+        for call in _calls(path):
+            if _name(call) == "shortening_month_options":
+                callers.setdefault(path.name, []).append(call)
+
+    assert set(callers) == {"required_shortening_panel.py", "space_shortening_view.py"}
+    for call in callers["required_shortening_panel.py"]:
+        value = _labels_value(call)
+        assert value is not None and not (isinstance(value, ast.Constant) and value.value is None)
+    for call in callers["space_shortening_view.py"]:
+        assert "labels" not in _keywords(call), call.lineno
+
+
+STOPPED_TEXT = HEAD + "예시 [{'생산계획년월': 202704, '공정': 'DEMO-SAW', '양산구분': '양산'}]"
+
+
+def _month_range_stop(
+    monkeypatch: pytest.MonkeyPatch, labels: ProcessLabels | None
+) -> shortening_source.ShorteningStop:
+    def stopped(*_args: object, **_kwargs: object) -> tuple[int, int] | None:
+        raise ValueError(STOPPED_TEXT)
+
+    monkeypatch.setattr(simulation_cache, "get_required_month_span", stopped)
+    demand = shortening_source.ShorteningDemand(
+        context=cast(PageContext, None), key=(1, "token", 1, 1), loader=pd.DataFrame
+    )
+    stop = shortening_source.shortening_month_options(
+        demand, pd.DataFrame({"공정": ["DEMO-SAW"]}), labels=labels
+    )
+    assert isinstance(stop, shortening_source.ShorteningStop)
+    return stop
+
+
+def test_the_month_range_stop_reads_its_examples_with_the_names_it_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """달 범위를 다시 꺼내다 멈춘 글 — 넘긴 표시명이면 화면 꼴(막아 실음), 없으면 원문이다."""
+    named = _month_range_stop(monkeypatch, LABELS)
+    plain = _month_range_stop(monkeypatch, None)
+
+    assert named.kind == plain.kind == "scenario"
+    assert named.message == markdown_examples(STOPPED_TEXT, LABELS)
+    assert "절단" in (named.message or "")
+    assert plain.message == STOPPED_TEXT
+
+
+def test_the_space_shortening_stop_keeps_the_original_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Space 「필요 단축」 보기의 멈춤 글은 공용 표시명이 있어도 원문이다 — 그 길은 원본
+    공정소분류만 쓴다(결정 D10). 표시명을 부르면 이 시험이 잡는다."""
+
+    def stopped() -> shortening_source.ShorteningDemand:
+        raise ValueError(STOPPED_TEXT)
+
+    def refuse() -> ProcessLabels:
+        raise AssertionError("Space 「필요 단축」 보기가 공정 표시명을 읽었습니다")
+
+    monkeypatch.setattr(shortening_source, "load_shortening_demand", stopped)
+    monkeypatch.setattr(process_labels_module, "get_process_labels", refuse)
+    empty = (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+    stop = space_shortening_view.load_space_layer(
+        saved=empty,
+        sample=False,
+        show_sample=False,
+        has_snapshot=True,
+        database_path="unused.duckdb",
+        today=date(2026, 11, 11),
+        level=1.1,
+        unmerged=False,
+    )
+
+    assert isinstance(stop, shortening_source.ShorteningStop)
+    assert stop.kind == "scenario"
+    assert stop.message == STOPPED_TEXT
 
 
 # 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 계산 오류 글을 싣는 함수 — 예시 행을

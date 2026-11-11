@@ -519,7 +519,11 @@ def _prepare(
     demand = ShorteningDemand(
         context=context, key=required_equipment_key, loader=required_equipment
     )
-    month_options = shortening_month_options(demand, cutoff)
+    # 화면에서만 갈아 끼운다 — 계산·CSV 캐시 키에는 닿지 않으므로 표시명을 고치면 다음 회차에 그대로
+    # 보인다(공용 프로필 캐시는 Admin 저장이 비운다). 달 범위 멈춤 글의 예시 행도 이 표시명으로
+    # 짓는다 — `shortening_source` 는 표시명을 읽지 않고 받은 것을 그 글에만 쓴다(F7 (나)).
+    labels = process_labels_module.get_process_labels()
+    month_options = shortening_month_options(demand, cutoff, labels=labels)
     if isinstance(month_options, ShorteningStop):
         return _mark_empty_card(month_options, controls)
     profile = shortening_filter_profile_or_default(database_path)
@@ -553,9 +557,6 @@ def _prepare(
     plan = official.plan
 
     ordered = _ordered_processes(plan, context)
-    # 화면에서만 갈아 끼운다 — 계산·CSV 캐시 키에는 닿지 않으므로 표시명을 고치면 다음 회차에 그대로
-    # 보인다(공용 프로필 캐시는 Admin 저장이 비운다).
-    labels = process_labels_module.get_process_labels()
     with controls:
         selected = _render_process_filter(
             ordered, profile=profile, labels=labels, database_path=database_path

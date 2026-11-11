@@ -3096,9 +3096,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   짓는다 — 예시 칸 값(공정 표시명 · 원본 이름 · 그 밖의 칸 값)을 `literal_markdown` 으로 막고(표시명도 사람 글 — 9장) 글 전체의
   물결표를 막는다. 앱이 지은 월 `YY.MM` 은 막지 않는다. 평문 자리(`bootstrap_error_message(markdown=False)`)는 막지 않은 글이다.
   부르는 자리: `page_bootstrap.calculation_stop_notice(labels=)` · `bootstrap_error_message(labels=)`(멈춘 계산 화면 넷과 계산을 먼저
-  보는 화면 — 공정 Capa 상세 · 제약 시뮬레이션 · 재공 현황 · 가용설비 현황 비교 · 필요 단축 일정 · Space 「필요 단축」(`shortening_source`
-  · `space_shortening_view` — 표시명은 멈춘 회차의 `except` 에서만 읽는다), 그물 `tests/test_stop_examples.py`. 가용설비 현황 비교의
-  알림 `EQ-08` 은 전문만 화면 꼴 평문이고 「원본 오류」 · 지문은 원문이다(`labels=None` — 표시명만 고쳐도 알림이 다시 서지 않게)),
+  보는 화면 — 공정 Capa 상세 · 제약 시뮬레이션 · 재공 현황 · 가용설비 현황 비교 · 필요 단축 일정(달 범위를 다시 꺼내다 멈춘 글은 패널이
+  읽은 표시명을 `shortening_month_options(labels=)` 로 넘기고, 표시명을 읽지 않는 `shortening_source` 는 받은 것을 그 글에만 쓴다 — 인자
+  꼴 이름 `ExampleLabels`), 그물 `tests/test_stop_examples.py`. Space 「필요 단축」 보기(`space_shortening_view`)의 멈춤 글은
+  원문이다(`labels=None`, 달 범위도 표시명을 넘기지 않음 — 원본 공정소분류 길, 결정 D10 · `tests/test_process_label_boundaries.py`).
+  가용설비 현황 비교의 알림 `EQ-08` 은 전문만 화면 꼴 평문이고 「원본 오류」 · 지문은 원문이다(`labels=None` — 표시명만 고쳐도 알림이
+  다시 서지 않게)),
   `capacity_gate` 의 저장 · 지정 · 파생 저장 경고(`labels` 는 표시명을 내는 함수 — 끼울 오류 글이 있을 때만 부른다), 등록
   경고(`bigdataquery_registration`), 자동 갱신 「지금 실행」 결과 알림(`auto_official_update_tab._hold_run_result` — 기록 표 「사유」
   칸은 원문). 서비스 글 · 리비전 메모 · 저장 검사 견줌(`_error_kind`) · 사내 집계 · 자동 갱신 기록은 원문이다. `process_labels` 를
@@ -4198,11 +4201,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/shortening_source.py` — 필요 단축 일정 화면과 Space 필요 단축 보기가 **같은 함수·같은 키·같은
   캐시 칸**으로 계획을 꺼내는 길(`load_shortening_demand`·`shortening_month_options`·`shortening_filter_profile_or_default`·
   `shortening_frames`·`load_official_shortening`·`ShorteningStop`). 캐시 데코레이터가 없고(경계는 `simulation_cache`), 아래 부름은
-  모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다.
+  모듈 속성으로 한다(시험이 센다). 공정 표시명을 읽지 않는다 — 달 범위 멈춤 글의 예시 행에 쓸 표시명은 부르는 쪽이 인자
+  `labels` 로 넘긴다(필요 단축 일정 패널은 넘기고 Space 보기는 넘기지 않는다).
 - `src/capa_simulation/components/space_shortening_view.py` — Space 현황 「필요 단축」 보기의 그리기 — 사이드바 목표 줄 · 카드
   흐리게 칸 · 기준 달 줄, 맞대지 못한 공정 알림(`RS-02`), 못 읽음 마크·FAB 요약·층 보기 칸·누른 호기 상세, 링크 도착(`consume_layer_link` ·
   필터 밖 링크 공정 사건 알림 `report_arrival_filter` → `EQ-24`)과 상세 단추 이동
-  (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10).
+  (`switch_to_queued_shortening` — 강조 칸·목표 칸 둘만 적음). 공정 표시명을 읽지 않는다(원본 공정소분류 — 결정 D10). 계산
+  멈춤 글의 예시 행도 원문이다(`labels=None`).
   - 공정을 비우면 목표 미달 공정 전체다. 조건 셋은 공용 프로필(`0019`)이라 세션이 비었을 때만 심고 `on_change` 에서만
     쓴다.
   - `계획 · LOB 요약` 은 HOME 과 같은 키(`build_home_simulation_cache_key`)로 캐시를 나누고 CSV 도 캐시에서 고른다.

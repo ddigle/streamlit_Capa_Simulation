@@ -11,7 +11,9 @@
 - 수요(`load_shortening_demand`) — 활성 시나리오·조회기간 → 시나리오 키·소요대수 로더·계산 오류
   확인. 못 읽으면 `BOOTSTRAP_ERRORS` 를 그대로 올린다.
 - 달(`shortening_month_options`) — Cut-off 빔·조회기간에 소요대수 없음·고를 달 없음이면
-  `ShorteningStop`(두 화면이 같은 글로 멈춘다).
+  `ShorteningStop`(두 화면이 같은 글로 멈춘다). 달 범위를 다시 꺼내다 멈춘 글의 예시 행은 부르는
+  쪽이 넘긴 표시명(`labels`)으로 짓는다 — 필요 단축 일정 패널은 넘기고 Space 「필요 단축」 보기는
+  넘기지 않는다(원본 공정소분류 — 결정 D10).
 - 공용 조회 조건(0019)을 못 읽으면 빈 프로필(= 코드 기본 달)로 계속한다 — 두 화면이 같이 물러선다.
 - 샘플 fleet 세 표(`shortening_frames`)와 계획(`load_official_shortening` — 공식 칸, UPEH 가정 토큰
   `()`).
@@ -20,7 +22,7 @@
 
 아래로 내려가는 부름은 **모듈 속성으로** 한다(`page_bootstrap.load_page_context()`·
 `simulation_cache.…`·`equipment_cache.…`) — 시험이 모듈 속성을 갈아 끼워 부름을 센다. 공정
-표시명을 읽지 않는다(표시명은 패널 몫이다).
+표시명을 읽지 않는다(표시명은 패널 몫이다) — 받은 표시명은 멈춤 글에만 넘긴다.
 """
 
 from __future__ import annotations
@@ -32,10 +34,10 @@ from typing import Final
 
 import pandas as pd
 
-import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.page_bootstrap as page_bootstrap
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.services.simulation_cache as simulation_cache
+from capa_simulation.components.stop_examples import ExampleLabels
 from capa_simulation.navigation import AVAILABLE_EQUIPMENT_STATUS
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.services.equipment_samples import (
@@ -155,10 +157,14 @@ def month_options(context: page_bootstrap.PageContext, demand_months: tuple[int,
 
 
 def shortening_month_options(
-    demand: ShorteningDemand, cutoff: pd.DataFrame
+    demand: ShorteningDemand, cutoff: pd.DataFrame, *, labels: ExampleLabels | None = None
 ) -> list[int] | ShorteningStop:
     """고를 수 있는 달, 또는 멈출 까닭(Cut-off 빔·달 범위를 못 꺼냄·조회기간에 소요대수 없음·달
-    없음)."""
+    없음).
+
+    `labels` 는 부르는 쪽이 읽은 공정 표시명이고 달 범위를 못 꺼낸 멈춤 글의 예시 행에만
+    쓴다 — 여기서는 표시명을 읽지 않는다(없으면 원본 이름).
+    """
     if cutoff.empty:
         return ShorteningStop(
             "input",
@@ -172,12 +178,9 @@ def shortening_month_options(
         )
     except page_bootstrap.BOOTSTRAP_ERRORS as exc:
         # 오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다 — 수요를 못 읽은 것과 같은
-        # 경고로 알린다. 계산 멈춤 글의 예시 행은 공정 표시명으로(멈춘 회차에만 읽는다 — F7 (나)).
+        # 경고로 알린다. 계산 멈춤 글의 예시 행은 부르는 쪽이 넘긴 표시명으로(F7 (나)).
         return ShorteningStop(
-            "scenario",
-            page_bootstrap.bootstrap_error_message(
-                exc, labels=process_labels_module.get_process_labels()
-            ),
+            "scenario", page_bootstrap.bootstrap_error_message(exc, labels=labels)
         )
     if demand_months is None:
         # 조회기간에 소요대수가 하나도 없다 — 다른 계산 화면(`resolve_effective_months`)과 같은
