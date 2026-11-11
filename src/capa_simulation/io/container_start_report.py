@@ -133,7 +133,7 @@ class SyncStart:
     pull_seconds: float | None = None
     pull_attempts: int | None = None
     previous_upload_utc: str | None = None
-    # 버킷에 세대가 있는데 모드 칸이 비어 받지 않았다.
+    # 버킷에 세대가 있는데 모드 칸이 managed 가 아니어서(비었거나 local) 받지 않았다.
     head_ignored: bool = False
 
 
