@@ -1814,12 +1814,12 @@ def get_revision_input_check(
     """저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리 「점검」). 계산은 `_compute` 가 한다.
 
     `cache_key` 는 (reference_version, pristine content_token) 이다 — 저장 리비전은 append-only 라
-    리비전 하나에 내용 하나다. `_compute` 는 그 키를 만든 리비전을 **공유 칸을 밀지 않는 길**로
-    계산한다 — 스냅샷은 공용 표시순서를 얹지 않은 읽기, 계산은 캐시 없는 `full_capacity_outcome`
-    (`capacity_gate.input_check_verdict`). 계산 페이지 · 저장 검사가 쓰는 전체 기간 칸
-    (`get_full_capacity_outcome`, 4칸)과 공유 스냅샷 칸(4칸)에 고른 리비전마다 한 칸씩 들이면 활성
-    리비전 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시 계산한다. 몸통은 묶음 행 · 수 · 오류만
-    남기고 결과 프레임은 버린다. 적중하면 스냅샷도 읽지 않는다.
+    리비전 하나에 내용 하나다. `_compute` 는 그 키를 만든 리비전을 **이 칸 밖의 캐시를 쓰지 않는
+    길**로 계산한다 — 스냅샷(공용 표시순서를 얹지 않은 것) · 등록 때 뺀 원천 행은 저장소에서 캐시
+    없이 읽고, 계산은 캐시 없는 `full_capacity_outcome`(`capacity_gate.input_check_verdict`). 계산
+    페이지 · 저장 검사가 쓰는 전체 기간 칸(`get_full_capacity_outcome`, 4칸)과 공유 스냅샷 칸(4칸)에
+    고른 리비전마다 한 칸씩 들이면 활성 리비전 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시
+    계산한다. 몸통은 묶음 행 · 수 · 오류만 남기고 결과 프레임은 버린다. 적중하면 DB 도 읽지 않는다.
     """
     del cache_key
     return _compute()

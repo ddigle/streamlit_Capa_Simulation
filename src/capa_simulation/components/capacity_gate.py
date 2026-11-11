@@ -36,7 +36,7 @@ BigDataQuery 등록과 내장 시드 부트스트랩은 검사하지 않는다 �
 
 **입력 점검**(`input_check_verdict` — 시나리오 관리 › 목록 관리 「점검」)도 같은 멈춤
 판정(`_stop_error`)을 쓴다. 고른 리비전마다 부르므로 아래 「같은 캐시 칸」 이 아니라 따로 둔
-요약 칸을 쓴다.
+요약 칸 하나만 쓰고, 스냅샷 · 원천 행은 캐시 없이 읽는다.
 
 검사는 계산 페이지와 **같은 캐시 칸**을 쓴다. 발행이 통과하면 그 리비전의 HOME 계산이 이미
 데워져 있다.
@@ -55,7 +55,7 @@ from capa_simulation.components.required_exclusion_notice import (
     required_exclusion_message,
 )
 from capa_simulation.io.reference_cache import reference_version_for_revision
-from capa_simulation.persistence.cache import load_scenario_snapshot, load_source_blank_cs_rows
+from capa_simulation.persistence.cache import get_scenario_repository, load_scenario_snapshot
 from capa_simulation.persistence.models import ScenarioSnapshot
 from capa_simulation.scenario_state import ActiveScenario, pristine_content_token
 from capa_simulation.services.load_calculator import calculate_density_load
@@ -240,19 +240,20 @@ def input_check_verdict(
     """저장 리비전 하나의 입력 점검(시나리오 관리 › 목록 관리 「점검」) — 멈춤 판정은 공식
     발행 검사와 같고(Density 포함), 계산에서 빠진 행을 묶음으로 센다.
 
-    고른 리비전마다 부르므로 **공유 칸을 밀지 않는다** — 스냅샷은 공용 표시순서를 얹지 않은
-    읽기(`apply_global_display_order=False`), 계산은 캐시 없는 `full_capacity_outcome` 이고,
-    묶음만 입력 점검 요약 칸(`get_revision_input_check`)에 둔다. 적중하면 스냅샷도 읽지 않는다.
-    경로 키가 없는 옛 리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`).
-    미저장 편집은 보지 않는다 — 저장된 리비전 그대로다.
+    고른 리비전마다 부르므로 **캐시는 입력 점검 요약 칸(`get_revision_input_check`) 하나뿐이다**
+    — 스냅샷 · 등록 때 뺀 원천 행은 저장소에서 캐시 없이 읽고(스냅샷은 공용 표시순서를 얹지 않은
+    `load_revision(apply_global_display_order=False)`), 계산은 캐시 없는 `full_capacity_outcome`
+    이다. 요약 칸이 적중하면 DB 도 읽지 않고, 빠진 칸은 DB 를 한 번 더 읽는다 — 읽기 칸에 리비전을
+    쥐면 요약 칸이 적중한 뒤로는 다시 쓰이지 않는 스냅샷이 메모리에 남는다. 경로 키가 없는 옛
+    리비전은 계산을 부르지 않고 그 까닭으로 멈춘다(`revision_block_reason`). 미저장 편집은 보지
+    않는다 — 저장된 리비전 그대로다.
     """
     reference_version = reference_version_for_revision(revision_id)
 
     def compute() -> RevisionInputCheck:
-        tables = load_scenario_snapshot(
-            database_path, revision_id, apply_global_display_order=False
-        ).tables
-        blank_cs = load_source_blank_cs_rows(database_path, scenario_id)
+        repository = get_scenario_repository(database_path)
+        tables = repository.load_revision(revision_id, apply_global_display_order=False).tables
+        blank_cs = repository.load_source_blank_cs_rows(scenario_id)
         period = plan_period(tables["RQ_PKG_PLAN"])
         blocked = revision_block_reason(tables)
         if blocked is not None:

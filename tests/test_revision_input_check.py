@@ -389,24 +389,45 @@ def test_the_stop_verdict_is_the_publish_verdict_density_included(tmp_path: Path
     ]
 
 
-def test_the_check_does_not_take_the_shared_calculation_or_snapshot_slots(
+def test_the_check_keeps_only_its_summary_slot_and_reads_the_rest_uncached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """고른 리비전마다 부르는 점검은 계산 페이지 · 저장 검사의 공유 칸(전체 기간 결과 4칸 ·
-    표시순서를 얹은 스냅샷 4칸)을 쓰지 않는다. 다시 부르면 요약 칸에서 나와 스냅샷도 읽지
-    않는다(결정 18)."""
+    """고른 리비전마다 부르는 점검은 요약 칸 하나만 쓴다 — 계산 페이지 · 저장 검사의 공유 칸(전체
+    기간 결과 4칸 · 표시순서를 얹은 스냅샷 4칸)도, 표시순서 없는 스냅샷 피클 칸도 쓰지 않고
+    저장소에서 캐시 없이 읽는다. 다시 부르면 요약 칸에서 나와 DB 도 읽지 않는다(결정 18 —
+    2026-11-11 검토 보드 F6 (나))."""
     database, scenario_id, revision_id = _seeded(tmp_path)
 
     def shared_slot(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("공유 칸을 쓰면 안 된다")
+        raise AssertionError("요약 칸 밖의 캐시를 쓰면 안 된다")
+
+    reads: list[str] = []
+    load_revision = DuckDBScenarioRepository.load_revision
+    load_blank = DuckDBScenarioRepository.load_source_blank_cs_rows
+
+    def counted_revision(self: DuckDBScenarioRepository, revision: str, **kwargs: bool) -> object:
+        assert kwargs == {"apply_global_display_order": False}
+        reads.append("revision")
+        return load_revision(self, revision, **kwargs)
+
+    def counted_blank(self: DuckDBScenarioRepository, scenario: str) -> object:
+        reads.append("source")
+        return load_blank(self, scenario)
 
     monkeypatch.setattr(capacity_gate, "get_full_capacity_outcome", shared_slot)
-    monkeypatch.setattr(scenario_cache, "_load_scenario_snapshot_resource", shared_slot)
-    first = input_check_verdict(str(database), scenario_id, revision_id)
     monkeypatch.setattr(capacity_gate, "load_scenario_snapshot", shared_slot)
+    monkeypatch.setattr(scenario_cache, "_load_scenario_snapshot_resource", shared_slot)
+    monkeypatch.setattr(scenario_cache, "_load_stored_order_snapshot_payload", shared_slot)
+    monkeypatch.setattr(DuckDBScenarioRepository, "load_revision", counted_revision)
+    monkeypatch.setattr(DuckDBScenarioRepository, "load_source_blank_cs_rows", counted_blank)
+
+    first = input_check_verdict(str(database), scenario_id, revision_id)
+    assert reads == ["revision", "source"]
     again = input_check_verdict(str(database), scenario_id, revision_id)
 
+    assert reads == ["revision", "source"]
     assert first.calculation_label == again.calculation_label == "됨"
+    assert not hasattr(scenario_cache, "load_source_blank_cs_rows")
 
 
 def test_a_read_failure_is_raised_every_time_instead_of_being_kept(tmp_path: Path) -> None:
@@ -497,10 +518,9 @@ def test_the_registration_drop_is_read_back_as_the_derivation_counted_it(tmp_pat
     assert derived.rows > 0 and derived.plan_rows > 0 and derived.route_rows > 0
 
     rows = repository.load_source_blank_cs_rows(scenario_id)
-    cached = scenario_cache.load_source_blank_cs_rows(str(database), scenario_id)
 
-    assert rows is not None and cached is not None
-    assert len(rows) == len(cached) == derived.rows
+    assert rows is not None
+    assert len(rows) == derived.rows
     assert list(rows.columns) == list(repository.load_source_data(scenario_id).columns)
     check = input_check_verdict(str(database), scenario_id, revision_id)
     source = check.group(GROUP_SOURCE)

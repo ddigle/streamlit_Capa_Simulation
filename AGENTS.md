@@ -1567,7 +1567,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 입력 점검(`input_check_verdict(database_path, scenario_id, revision_id)` — 시나리오 관리 › 목록 관리 「점검」)도 같은 멈춤 판정
     (`_stop_error` — Capa 오류가 먼저, 통과하면 Density)을 쓰고 `tests/test_gate_density_coverage.py` 그물 안이다. 고른 리비전마다
     부르므로 위 「같은 캐시 칸」 이 아니라 입력 점검 요약 칸(`simulation_cache.get_revision_input_check`, 5장 39)에 두고, 계산은 공유 칸을
-    밀지 않는 길(표시순서를 얹지 않은 스냅샷 · 캐시 없는 `full_capacity_outcome`)이다. 경로 키가 없는 옛 리비전은 계산을 부르지 않고
+    밀지 않는 길(저장소에서 캐시 없이 읽은 표시순서 없는 스냅샷 · 원천 행, 캐시 없는 `full_capacity_outcome`)이다. 경로 키가 없는 옛 리비전은 계산을 부르지 않고
     그 까닭으로 멈춘다(`revision_block_reason`). 저장된 리비전 그대로를 세고 미저장 편집은 보지 않는다.
 - `src/capa_simulation/components/capacity_assumption_notice.py` — 측정률 행이 없어 중립값 1.0 으로 이어 간 건수와
   달(조회기간 밖 포함)을 HOME·`산출 결과` 대당 Capa 탭에 상태 알림 `HM-02` 로 낸다(자리에 그리지 않는다, `goto` 는 기준 정보 — 9장 「알림 칸」).
@@ -4619,10 +4619,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   스냅샷·층/FAB 도면·설비 마스터 탭 이력·필요 단축 일정 조건·기준선의 Streamlit 캐시 경계.
   - 키는 불변 id 나 DB 경로이고 저장 길이 맞는 `clear_*` 를 부른다(판정 기준은 공식버전 지정 때도,
     `clear_floor_layout_cache` 는 층과 FAB 를 함께).
-  - 등록 때 CS 가 비어 뺀 원천 행(`load_source_blank_cs_rows` — 목록 관리 「점검」)은 시나리오 id 키에 리비전 스냅샷과 같은 쓰기 세대
-    `"snapshot"` 을 쓴다 — 새 세대 종류를 만들지 않고, `_clear_snapshot_payloads` 가 함께 비워 지운 시나리오의 행이 되살아나지 않는다.
-    「점검」 이 고른 리비전을 셀 때는 공용 표시순서를 얹지 않은 읽기(`load_scenario_snapshot(..., apply_global_display_order=False)`)라
-    공유 스냅샷 칸(`_load_scenario_snapshot_resource`)을 밀지 않는다.
+  - 목록 관리 「점검」 은 이 경계의 칸을 쓰지 않는다 — 고른 리비전의 스냅샷(공용 표시순서를 얹지 않은 것)과 등록 때 CS 가 비어 뺀
+    원천 행은 저장소에서 캐시 없이 읽고(`get_scenario_repository(...).load_revision(..., apply_global_display_order=False)` ·
+    `load_source_blank_cs_rows`), 캐시는 요약 칸 하나다(5장 39 — 2026-11-11 검토 보드 F6 (나)).
   - 덮어쓰거나 지울 수 있는 값을 담는 캐시(시뮬레이션 공용 프로필·리비전 스냅샷·비교 계획, 설비 최신 id·Cut-off·
     주차별 가용대수·층/FAB 도면·층 사용 상태·필요 단축 일정 조건·기준선)는 키에 쓰기 세대(`WriteGeneration`)를 두고 `clear_*` 가
     `.clear()` 앞에서 그 종류의 세대를 올린다. `.clear()` 는 진행 중인 캐시 미스를 막지 못해, 저장 직전에 시작된 다른
@@ -5214,9 +5213,11 @@ RQ_MODULE
     `SNAPSHOT_RESOURCE_*` 4칸)에 들이지 않는다 — 들이면 활성 · 공식 리비전 칸이 밀려 다음 화면이 처음부터 다시 계산한다.
     `simulation_cache.get_revision_input_check(cache_key, _compute)`(`INPUT_CHECK_MAX_ENTRIES` 16칸)의 키는 (`reference_version_for_revision`,
     `pristine_content_token`) — 저장 리비전 내용은 append-only 라 리비전 하나에 내용 하나다. 몸통 `_compute` 는
-    `capacity_gate.input_check_verdict` 가 넘기고, 그 안에서 표시순서를 얹지 않은 스냅샷 · 등록 때 뺀 원천 행(`persistence/cache` — 쓰기 세대
-    `"snapshot"`) · 캐시 없는 `full_capacity_outcome` 을 부른 뒤 **묶음 행 · 수 · 오류만** 담는다(전체 결과 프레임을 담지 않는다). 적중하면
-    스냅샷도 읽지 않는다. 읽기 · 계산 실패는 예외로 올라와 칸에 남지 않는다(화면은 `SC-02` 마크). `simulation_cache` 는 persistence ·
+    `capacity_gate.input_check_verdict` 가 넘기고, 그 안에서 표시순서를 얹지 않은 스냅샷 · 등록 때 뺀 원천 행을 **저장소에서 캐시 없이**
+    읽고(`load_revision(apply_global_display_order=False)` · `load_source_blank_cs_rows` — `persistence/cache` 의 읽기 칸을 쓰지 않는다)
+    캐시 없는 `full_capacity_outcome` 을 부른 뒤 **묶음 행 · 수 · 오류만** 담는다(전체 결과 프레임을 담지 않는다). 적중하면 DB 도 읽지
+    않고, 칸이 빠졌으면 DB 를 한 번 더 읽는다 — 읽기 칸을 두면 요약 칸이 적중한 뒤로 다시 쓰이지 않는 스냅샷이 메모리를 쥔다(2026-11-11
+    검토 보드 F6 (나)). 읽기 · 계산 실패는 예외로 올라와 칸에 남지 않는다(화면은 `SC-02` 마크). `simulation_cache` 는 persistence ·
     components 를 import 하지 않으므로 몸통을 인자로 받는다. 「계산」 칸 글은 DB 가 아니라 세션 칸(`CHECK_LABELS_KEY`)이다 — 이 세션에서
     센 리비전만 글이 서고 나머지는 「—」(q6 (가) — 새 DB 칸 없음). `CapacityOutcome.problem`(기준정보 연결 오류의 꼴과 수 — 값 없는 frozen
     dataclass 라 피클로 실린다)은 멈춘 리비전의 「경로 n」 을 글을 다시 읽지 않고 세는 재료다.
