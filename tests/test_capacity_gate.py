@@ -25,6 +25,7 @@ from capa_simulation.components.capacity_gate import (
     official_publish_verdict,
     revision_save_verdict,
 )
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.process_labels import ProcessLabels, process_labels_from_rules
 from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset, ScenarioSnapshot
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
@@ -244,8 +245,9 @@ def test_a_save_warning_reads_its_examples_with_display_names(
     for message in (plain.message, named.message):
         assert "{'" not in message and "예시 [" not in message
         assert re.search(r"예시 \d{2}\.\d{2} \S", message)
-    assert "표시-" in named.message and "표시-" not in plain.message
-    assert not any(f" {name} " in named.message for name in names)
+    # 경고는 알림 상자(마크다운)다 — 예시 칸 값(표시명)은 `literal_markdown` 으로 막혀 실린다.
+    assert literal_markdown("표시-") in named.message and "표시" not in plain.message
+    assert not any(f" {literal_markdown(name)} " in named.message for name in names)
 
 
 def test_a_passing_check_never_reads_the_display_names(tables: dict[str, pd.DataFrame]) -> None:

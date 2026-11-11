@@ -49,12 +49,12 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import pandas as pd
 
-from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
+from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.required_exclusion_notice import (
     FULL_SCOPE,
     required_exclusion_message,
 )
-from capa_simulation.components.stop_examples import readable_examples
+from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.io.reference_cache import reference_version_for_revision
 from capa_simulation.persistence.cache import load_scenario_snapshot, load_source_blank_cs_rows
 from capa_simulation.persistence.models import ScenarioSnapshot
@@ -214,10 +214,10 @@ def revision_save_verdict(
 
 
 def _shown(error: str, labels: Callable[[], ProcessLabels] | None) -> str:
-    """경고에 끼우는 오류 글 — 예시 키를 화면 꼴로 바꾸고(`stop_examples` — 2026-11-11 입력 점검
-    검토 보드 F7 (나)) 물결표를 막는다. 판정 · 편집 전후 견줌(`_error_kind`) · 모듈수 안내
-    (`module_fix_hint`)는 원문으로 한다."""
-    return markdown_safe_tildes(readable_examples(error, None if labels is None else labels()))
+    """경고에 끼우는 오류 글 — 예시 키를 화면 꼴로 바꾸며 칸 값(표시명 따위 사람 글)을 막고
+    (`stop_examples.markdown_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나)) 물결표를 막는다.
+    판정 · 편집 전후 견줌(`_error_kind`) · 모듈수 안내(`module_fix_hint`)는 원문으로 한다."""
+    return markdown_examples(error, None if labels is None else labels())
 
 
 def _error_kind(error: str) -> str:

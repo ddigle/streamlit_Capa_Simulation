@@ -29,7 +29,7 @@ import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts, settings
 from capa_simulation.components import write_guard
 from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
-from capa_simulation.components.stop_examples import readable_examples
+from capa_simulation.components.stop_examples import markdown_examples, readable_examples
 from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
@@ -264,7 +264,9 @@ def bootstrap_error_message(
 
     **계산 멈춤 자리는 그 화면의 공정 표시명(`labels`)을 넘긴다** — 그러면 나머지 예외 글 속 예시
     키(`예시 [{…}]`)를 화면 꼴 「YY.MM 공정 표시명 양산구분」 으로 바꾼다(`stop_examples.
-    readable_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나)). 안 넘기면 원문 그대로다.
+    readable_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나)). 안 넘기면 원문 그대로다. 마크다운
+    글이면 예시 칸 값(표시명 따위 사람 글)을 `literal_markdown` 으로 막는다(`markdown_examples` —
+    표시명의 `*` · `$` 가 꾸밈 · 수식이 되지 않게), `markdown=False` 면 막지 않는다.
     """
     if isinstance(exc, reference_cache.NoActiveRevision) and _only_archived_scenarios():
         return ARCHIVED_ONLY_MESSAGE
@@ -272,8 +274,10 @@ def bootstrap_error_message(
     if empty_table is not None:
         return empty_table
     if not isinstance(exc, duckdb.Error):
-        text = str(exc) if labels is None else readable_examples(str(exc), labels)
-        return markdown_safe_tildes(text) if markdown else text
+        text = str(exc)
+        if labels is None:
+            return markdown_safe_tildes(text) if markdown else text
+        return markdown_examples(text, labels) if markdown else readable_examples(text, labels)
     files = "\n".join(f"- 파일: `{path}`" for path in database_paths)
     if is_own_process_lock(exc):
         return (
@@ -342,7 +346,8 @@ class CalculationStop(NamedTuple):
 
     message: str
     """알림 전문 — 어느 화면(또는 리비전)의 멈춤인지 · 고칠 곳 · 건수와 예시 행. 표 이름은 화면
-    이름이고 예시 행은 「YY.MM 공정 표시명 양산구분」 꼴이다."""
+    이름이고 예시 행은 「YY.MM 공정 표시명 양산구분」 꼴이다. 마크다운 글이다 — 예시 칸 값은
+    `literal_markdown` 으로 막혀 있고 알림은 평문으로 걷어(`alerts.plain_text`) 싣는다."""
 
 
 def calculation_stop_notice(
@@ -385,8 +390,10 @@ def calculation_stop_notice(
     module = table == _MODULE_TABLE
     name = calculation_stop_tables()[table]
     # 건수가 있는 꼴은 머리를 통째로 칸 이름으로, 없는 꼴(UPEH 표)은 표 이름만 바꾼다. 멈춤 글은
-    # ValueError 라 `bootstrap_error_message` 와 같은 물결표 막기이고, 예시를 바꾼 뒤에 막는다.
-    body = markdown_safe_tildes(readable_examples(error, labels))
+    # ValueError 라 `bootstrap_error_message` 와 같은 물결표 막기이고, 예시를 바꾸며 칸 값(사람이
+    # 적은 이름 · 값)을 `literal_markdown` 으로 막는다 — 전문은 알림(평문으로 걷음) · 풍선
+    # (마크다운)으로 간다.
+    body = markdown_examples(error, labels)
     body = (
         body.replace(found[0], f"{name} 표의 {cell}")
         if groups.get("count")

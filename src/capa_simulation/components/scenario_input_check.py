@@ -53,7 +53,7 @@ from capa_simulation.components.scenario_management_tabs import (
     QUERY_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
-from capa_simulation.components.stop_examples import readable_examples
+from capa_simulation.components.stop_examples import markdown_examples
 from capa_simulation.components.tab_state import remember_open_tab, remembered_tab_key
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.design import tokens
@@ -452,7 +452,7 @@ def _subtitle(
         else None
     )
     if notice is None:
-        return markdown_safe_tildes(readable_examples(stop.error, labels)), None
+        return markdown_examples(stop.error, labels), None
     text = notice.text.removeprefix(STOP_NOTICE_HEAD)
     if stop.problem is not None and stop.problem.rows:
         text = f"{text} · 경로 {stop.problem.rows:,}"

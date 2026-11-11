@@ -49,6 +49,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.errors import StreamlitPageNotFoundError
 
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.components.required_shortening_panel as shortening_panel
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
@@ -405,9 +406,14 @@ def load_space_layer(
     try:
         demand = shortening_source.load_shortening_demand()
     except BOOTSTRAP_ERRORS as exc:
+        # 계산 멈춤 글의 예시 행은 공정 표시명으로 — 멈춘 회차에만 읽는다(F7 (나)).
         return ShorteningStop(
             "scenario",
-            bootstrap_error_message(exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)),
+            bootstrap_error_message(
+                exc,
+                database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH),
+                labels=process_labels_module.get_process_labels(),
+            ),
         )
     try:
         cutoff = equipment_cache.load_process_cutoff(database_path)

@@ -3092,12 +3092,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   지을 때만 「YY.MM 공정 표시명 양산구분」 으로 바꾼다(`readable_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나), 설계 규칙
   UI-DAT-10). 월 → 공정 → 양산구분이 앞이고 그 밖의 칸(제품정보 · 걸린 값)은 서비스 글 차례대로 값만 뒤에, 공정은 같은 예시 묶음
   안에서 `unique_format_func` 로 짓는다(겹치면 「표시명 (원본)」). 읽지 못한 예시(`nan` 따위 · dict 아닌 목록 · 빈 목록)는 원문
-  그대로다. 물결표 막기보다 먼저 부른다. 부르는 자리: `page_bootstrap.calculation_stop_notice(labels=)` · `bootstrap_error_message(labels=)`
-  (멈춘 계산 화면 넷과 계산을 먼저 보는 화면 넷 — 공정 Capa 상세 · 제약 시뮬레이션 · 재공 현황 · 가용설비 현황 비교, 그물
-  `tests/test_stop_examples.py`. 표시명을 쥐지 않은 필요 단축 일정 · Space 「필요 단축」 은 아직 원문 — TODO 4장), `capacity_gate` 의 저장 · 지정 · 파생 저장 경고(`labels` 는 표시명을
-  내는 함수 — 끼울 오류 글이 있을 때만 부른다), 등록 경고(`bigdataquery_registration`). 서비스 글 · 리비전 메모 · 저장 검사 견줌
-  (`_error_kind`) · 사내 집계는 원문이다. `process_labels` 를 실행 때 불러오지 않는다(`page_bootstrap` 이 이 조각을 부르고
-  `process_labels` 가 `page_bootstrap` 을 부른다 — 표시명은 인자로만).
+  그대로다. 물결표 막기보다 먼저 부른다. 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 가는 글은 `markdown_examples` 로
+  짓는다 — 예시 칸 값(공정 표시명 · 원본 이름 · 그 밖의 칸 값)을 `literal_markdown` 으로 막고(표시명도 사람 글 — 9장) 글 전체의
+  물결표를 막는다. 앱이 지은 월 `YY.MM` 은 막지 않는다. 평문 자리(`bootstrap_error_message(markdown=False)`)는 막지 않은 글이다.
+  부르는 자리: `page_bootstrap.calculation_stop_notice(labels=)` · `bootstrap_error_message(labels=)`(멈춘 계산 화면 넷과 계산을 먼저
+  보는 화면 — 공정 Capa 상세 · 제약 시뮬레이션 · 재공 현황 · 가용설비 현황 비교 · 필요 단축 일정 · Space 「필요 단축」(`shortening_source`
+  · `space_shortening_view` — 표시명은 멈춘 회차의 `except` 에서만 읽는다), 그물 `tests/test_stop_examples.py`. 가용설비 현황 비교의
+  알림 `EQ-08` 은 전문만 화면 꼴 평문이고 「원본 오류」 · 지문은 원문이다(`labels=None` — 표시명만 고쳐도 알림이 다시 서지 않게)),
+  `capacity_gate` 의 저장 · 지정 · 파생 저장 경고(`labels` 는 표시명을 내는 함수 — 끼울 오류 글이 있을 때만 부른다), 등록
+  경고(`bigdataquery_registration`), 자동 갱신 「지금 실행」 결과 알림(`auto_official_update_tab._hold_run_result` — 기록 표 「사유」
+  칸은 원문). 서비스 글 · 리비전 메모 · 저장 검사 견줌(`_error_kind`) · 사내 집계 · 자동 갱신 기록은 원문이다. `process_labels` 를
+  실행 때 불러오지 않는다(`page_bootstrap` 이 이 조각을 부르고 `process_labels` 가 `page_bootstrap` 을 부른다 — 표시명은 인자로만).
 - `src/capa_simulation/components/process_rename_management.py` — Admin Area `Proc Rename` 탭. 공용 공정 표시명의
   CSV·Excel 붙여넣기·직접 편집과 저장이다. 저장은 공용 프로필 교체이고 리비전을 만들지 않는다. 공용 버전 줄은 「직접 편집」
   제목 옆이다(`profile_caption.render_profile_heading`, 그림 메모 g18). 그 제목 줄(`HEADING_ROW_KEY`) 오른쪽 끝에 「보유 공정
@@ -7420,7 +7425,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   `literal_markdown` 으로 감싼다 — 그대로면 「A~B~C」의 물결표는 취소선으로, 「$…$」는 수식으로 사라지고 `![x](주소)` 는
   보는 사람마다 그 주소를 부르는 이미지가 된다. 물결표 하나인 이름(「10~12월 증설」)도 한 글에 두 번 나오면 짝이 맞는다.
   공정 표시명(Proc Rename)도 사람 글이다 — `**{이름}**` 처럼 굵게 감싼 자리도 `literal_markdown` 으로 막는다(실적 요약·
-  Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션,
+  Dynamic Capa 결론 경고·공정 상세 캡션·Capa Chatbot 결론·질문·조건·HOME 주요공정 히트맵 팝업 캡션, 계산 멈춤 글의 예시 행 —
+  `stop_examples.markdown_examples`(점검 풍선 · 공식 지정 거부 · 저장 경고 · 계산 화면 알림),
   `tests/test_process_label_markdown_sinks.py`). 「변경 메모」 가 출처가 되는 공용 프로필 버전 캡션은
   `profile_version_caption` 이 출처를 막아 짓는다 — 날로 이으면 판정 기준·선행 B/O·확보율 보정 캡션에 메모의 물결표·
   별표·`$`·백틱이 꾸밈으로 그려졌다(2026-10-27 E2E, `tests/test_profile_caption.py`).

@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from capa_simulation import alerts, page_bootstrap, settings
-from capa_simulation.components.literal_markdown import markdown_safe_tildes
+from capa_simulation.components.literal_markdown import literal_markdown, markdown_safe_tildes
 from capa_simulation.components.process_labels import process_labels_from_rules
 from capa_simulation.io.reference_cache import NoActiveRevision
 from capa_simulation.navigation import REFERENCE_DATA
@@ -388,8 +388,9 @@ def test_a_blank_stop_points_at_the_table_to_fill_on_the_reference_screen(
         f"HOME — 대당 Capa 계산이 멈췄습니다. 기준 정보 「{name}」 표의 "
     )
     assert "「변경사항 적용」" in stop.message
-    # 예시 행은 dict 꼴이 아니라 화면 꼴이다(F7 (나)) — 이 오류의 키는 공정 하나다.
-    assert stop.message.endswith(f"「{name}」 표의 빈 칸: 1건, 예시 DEMO-P1")
+    # 예시 행은 dict 꼴이 아니라 화면 꼴이다(F7 (나)) — 이 오류의 키는 공정 하나다. 전문은
+    # 마크다운이라 이름은 막혀 있다(`literal_markdown`).
+    assert stop.message.endswith(f"「{name}」 표의 빈 칸: 1건, 예시 {literal_markdown('DEMO-P1')}")
     assert table not in stop.message and column not in stop.message
 
 
@@ -461,7 +462,8 @@ def test_the_stop_examples_read_as_month_display_name_and_mass_type(
 
     assert "{'" in error and "'공정': 'DEMO-TCB'" in error
     assert plain is not None and named is not None
-    assert plain.message.endswith("예시 27.04 DEMO-TCB 양산 · 27.04 DEMO-TCB ER")
+    raw = literal_markdown("DEMO-TCB")
+    assert plain.message.endswith(f"예시 27.04 {raw} 양산 · 27.04 {raw} ER")
     assert named.message.endswith("예시 27.04 TC 본딩 양산 · 27.04 TC 본딩 ER")
     assert "{'" not in named.message and "DEMO-TCB" not in named.message
     assert named.text == plain.text and named.goto == plain.goto
@@ -473,7 +475,8 @@ def test_the_stop_examples_read_as_month_display_name_and_mass_type(
         ValueError(_service_month_stop(["DEMO-A", "DEMO-B"])), labels=clash
     )
     assert split is not None
-    assert split.message.endswith("예시 27.04 DEMO-B (DEMO-A) 양산 · 27.04 DEMO-B ER")
+    both, alone = literal_markdown("DEMO-B (DEMO-A)"), literal_markdown("DEMO-B")
+    assert split.message.endswith(f"예시 27.04 {both} 양산 · 27.04 {alone} ER")
 
 
 def test_a_stop_counted_for_a_revision_leads_with_its_number(
@@ -643,7 +646,10 @@ def test_a_module_count_stop_says_the_app_cannot_fix_it(
         "HOME — 대당 Capa 계산이 멈췄습니다. 모듈수는 앱에서 고칠 수 없어 새 리비전으로는 풀리지 "
         "않습니다 — 원천의 모듈수를 고쳐 다시 등록하세요.\n\n"
     )
-    assert f"모듈수 표의 {cell.removesuffix(' 1건')}: 1건, 예시 DEMO-P1" in stop.message
+    assert (
+        f"모듈수 표의 {cell.removesuffix(' 1건')}: 1건, 예시 {literal_markdown('DEMO-P1')}"
+        in stop.message
+    )
     assert "{'" not in stop.message
     assert "RQ_MODULE" not in stop.message and "기준 정보" not in stop.message
 

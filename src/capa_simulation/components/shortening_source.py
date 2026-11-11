@@ -32,6 +32,7 @@ from typing import Final
 
 import pandas as pd
 
+import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.page_bootstrap as page_bootstrap
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.services.simulation_cache as simulation_cache
@@ -171,8 +172,13 @@ def shortening_month_options(
         )
     except page_bootstrap.BOOTSTRAP_ERRORS as exc:
         # 오류 확인이 적중한 뒤 밀려난 소요대수를 다시 꺼내다 멈춘 자리다 — 수요를 못 읽은 것과 같은
-        # 경고로 알린다.
-        return ShorteningStop("scenario", page_bootstrap.bootstrap_error_message(exc))
+        # 경고로 알린다. 계산 멈춤 글의 예시 행은 공정 표시명으로(멈춘 회차에만 읽는다 — F7 (나)).
+        return ShorteningStop(
+            "scenario",
+            page_bootstrap.bootstrap_error_message(
+                exc, labels=process_labels_module.get_process_labels()
+            ),
+        )
     if demand_months is None:
         # 조회기간에 소요대수가 하나도 없다 — 다른 계산 화면(`resolve_effective_months`)과 같은
         # 문구.

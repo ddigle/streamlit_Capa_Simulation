@@ -402,6 +402,7 @@ def render_availability_gap_panel(
     static_owned: pd.DataFrame | None = None,
     static_lent: pd.DataFrame | None = None,
     static_error: str | None = None,
+    static_error_full: str | None = None,
     span_bounds: tuple[date, date] | None = None,
     conversion_ratios: Mapping[str, float] | None = None,
     required_equipment: pd.DataFrame | Callable[[], pd.DataFrame] | None = None,
@@ -428,7 +429,9 @@ def render_availability_gap_panel(
     Static 은 기준정보 세 표다 — `static_availability`(`RQ_EQP_AVBL`)·`static_owned`
     (`RQ_EQP_OWN`)·`static_lent`(`RQ_EQP_LENT`). 페이지는 세션 활성 저장 리비전에서 셋을 함께
     읽는다. `static_availability` 가 None 이면 Static 을 읽지 못한 것이다(시트의 Static·GAP 은
-    「—」).
+    「—」). `static_error` 는 그 까닭의 원문(알림 `EQ-08` 의 「원본 오류」 · 지문)이고
+    `static_error_full` 은 알림 전문에 싣는 화면 꼴 평문(계산 멈춤 예시 행이 공정 표시명 —
+    2026-11-11 입력 점검 검토 보드 F7 (나))이다. 주지 않으면 원문을 싣는다.
 
     `counterfactual_spans` 는 `spans` 와 같은 마스터·같은 범위에서 **비가동만 비운** 구간(또는
     그것을 꺼내는 로더)이다 — 비교 시트의 설비 일정 기준 보유·대여가 이것으로 나온다. 로더는 `분류별
@@ -544,7 +547,10 @@ def render_availability_gap_panel(
         content=static_error or None,
         active=bool(static_error),
         text="Static 가용대수를 읽지 못해 설비 일정 기준만 보입니다 — 기준 정보 · 시나리오 확인",
-        full=f"Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — {static_error}",
+        full=(
+            "Static 가용대수를 읽지 못해 설비 일정 기준만 표시합니다 — "
+            f"{static_error_full or static_error}"
+        ),
         detail=static_error or "",
     )
     # 조회 달로 좁힌 입력 비가동 칸 — 시트·교차검증이 뺀다(캐시 키의 끝 칸과 같은 값).

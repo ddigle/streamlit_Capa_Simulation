@@ -10,13 +10,22 @@
 from __future__ import annotations
 
 import ast
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from capa_simulation.components.process_labels import process_labels_from_rules
-from capa_simulation.components.stop_examples import examples_text, readable_examples
+import capa_simulation.components.auto_official_update_tab as auto_update_tab
+from capa_simulation import alerts
+from capa_simulation.components.process_labels import ProcessLabels, process_labels_from_rules
+from capa_simulation.components.stop_examples import (
+    examples_text,
+    markdown_examples,
+    readable_examples,
+)
+from capa_simulation.persistence.models import AutoOfficialUpdateRun
+from capa_simulation.services.auto_official_update import STATUS_PUBLISH_SKIPPED
 from capa_simulation.services.process_rename import PROCESS_RENAME_COLUMNS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +121,40 @@ def test_every_list_in_a_save_warning_is_read_on_its_own() -> None:
     )
 
 
+MARKED = process_labels_from_rules(
+    pd.DataFrame([("DEMO-SAW", "TC~B~ *z* $x$")], columns=list(PROCESS_RENAME_COLUMNS))
+)
+
+
+def test_the_markdown_text_blocks_the_values_but_not_the_month() -> None:
+    """마크다운 자리 글(`markdown_examples`)은 예시 칸 값 — 사람이 적은 공정 표시명 · 원본 이름 ·
+    걸린 값 · 여섯 자리 달이 아닌 월 값 — 을 `literal_markdown` 으로 막는다. 표시명의 `*` · `$` 가
+    기울임 · 수식이 되지 않는다(AGENTS 9장 — 표시명도 사람 글). 앱이 지은 `YY.MM` 은 막지 않고 글의
+    물결표는 한 번만 막는다. 알림(평문으로 걷음)에는 적은 글자 그대로다."""
+    text = (
+        HEAD + "예시 [{'생산계획년월': 202704, '공정': 'DEMO-SAW', '양산구분': '양산'}, "
+        "{'생산계획년월': '2026-13', '공정': 'DEMO-A', 'CAPA_RUN_RATE': 'a*b'}] — 10~12월"
+    )
+
+    shown = markdown_examples(text, MARKED)
+
+    assert shown == (
+        HEAD + "예시 27.04 TC\\~B\\~ \\*z\\* \\$x\\$ 양산 · 2026\\-13 DEMO\\-A a\\*b — 10\\~12월"
+    )
+    assert alerts.plain_text(shown) == (
+        HEAD + "예시 27.04 TC~B~ *z* $x$ 양산 · 2026-13 DEMO-A a*b — 10~12월"
+    )
+    # 막지 않는 글(평문 자리)은 그대로다.
+    assert readable_examples(text, MARKED) == (
+        HEAD + "예시 27.04 TC~B~ *z* $x$ 양산 · 2026-13 DEMO-A a*b — 10~12월"
+    )
+
+
+def test_the_markdown_text_of_an_unread_example_only_blocks_tildes() -> None:
+    """읽지 못한 예시는 원문 그대로이고 물결표만 막는다(바꾸기 전과 같은 꼴)."""
+    assert markdown_examples(HEAD + "예시 ['P~Q~R']", MARKED) == HEAD + "예시 ['P\\~Q\\~R']"
+
+
 # ------------------------------------------------------------------ 부르는 자리
 
 
@@ -161,15 +204,32 @@ def test_every_stopped_screen_passes_its_display_names() -> None:
 
 
 # 시나리오 전체 기간 계산이 서는지 먼저 보는 호출 — 그 `try` 의 `except` 가 계산 멈춤 글을 받는다.
-CAPACITY_CHECKS = frozenset({"process_page_inputs", "check_scenario_capacity", "_route_choices"})
+# 필요 단축 일정 · Space 「필요 단축」 은 수요(`load_shortening_demand`)와 달 범위
+# (`get_required_month_span`)에서 멈춘다.
+CAPACITY_CHECKS = frozenset(
+    {
+        "process_page_inputs",
+        "check_scenario_capacity",
+        "_route_choices",
+        "load_shortening_demand",
+        "get_required_month_span",
+    }
+)
+
+
+def _labels_value(call: ast.Call) -> ast.expr | None:
+    return next((keyword.value for keyword in call.keywords if keyword.arg == "labels"), None)
 
 
 def test_screens_that_check_the_calculation_first_pass_display_names_too() -> None:
     """계산 멈춤 알림을 쓰지 않고 멈춤 글을 그대로 싣는 화면(공정 Capa 상세 · 제약 시뮬레이션 ·
-    재공 현황 · 가용설비 현황 비교)도 계산을 먼저 보는 `try` 의 멈춤 글에 화면 표시명을 넘긴다 —
-    예시 행이 같은 꼴이다(F7 (나) 「다른 계산 멈춤 자리도 함께」)."""
+    재공 현황 · 가용설비 현황 비교 · 필요 단축 일정 · Space 「필요 단축」)도 계산을 먼저 보는 `try`
+    의 멈춤 글에 화면 표시명을 넘긴다 — 예시 행이 같은 꼴이다(F7 (나) 「다른 계산 멈춤 자리도
+    함께」). 원문을 따로 드는 글(알림 「원본 오류」 · 지문)은 `labels=None` 을 밝혀 적는다 — 한
+    `except` 에 표시명을 넘기는 글이 적어도 하나다."""
     seen: set[str] = set()
-    for path in sorted((PROJECT_ROOT / "app_pages").glob("*.py")):
+    roots = (PROJECT_ROOT / "app_pages", PROJECT_ROOT / "src/capa_simulation/components")
+    for path in sorted(path for root in roots for path in root.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Try):
@@ -180,16 +240,118 @@ def test_screens_that_check_the_calculation_first_pass_display_names_too() -> No
             if not any(_name(call) in CAPACITY_CHECKS for call in body):
                 continue
             for handler in node.handlers:
-                for call in ast.walk(handler):
-                    if isinstance(call, ast.Call) and _name(call) == "bootstrap_error_message":
-                        assert "labels" in _keywords(call), f"{path.name}:{call.lineno}"
-                        seen.add(path.name)
+                messages = [
+                    call
+                    for call in ast.walk(handler)
+                    if isinstance(call, ast.Call) and _name(call) == "bootstrap_error_message"
+                ]
+                if not messages:
+                    continue
+                for call in messages:
+                    assert "labels" in _keywords(call), f"{path.name}:{call.lineno}"
+                named = [
+                    call
+                    for call in messages
+                    if not (
+                        isinstance(value := _labels_value(call), ast.Constant)
+                        and value.value is None
+                    )
+                ]
+                assert named, f"{path.name}:{handler.lineno}"
+                seen.add(path.name)
     assert seen == {
         "available_equipment_status.py",
         "constraint_simulation.py",
         "process_capa_detail.py",
+        "required_shortening.py",
+        "shortening_source.py",
+        "space_shortening_view.py",
         "wip_status.py",
     }
+
+
+# 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 계산 오류 글을 싣는 함수 — 예시 행을
+# `markdown_examples` 로 짓는다(칸 값을 막는다).
+MARKDOWN_EXAMPLE_PLACES = {
+    ("src/capa_simulation/page_bootstrap.py", "bootstrap_error_message"),
+    ("src/capa_simulation/page_bootstrap.py", "calculation_stop_notice"),
+    ("src/capa_simulation/components/capacity_gate.py", "_shown"),
+    ("src/capa_simulation/components/scenario_input_check.py", "_subtitle"),
+    ("src/capa_simulation/components/bigdataquery_registration.py", "_save_scenario"),
+    ("src/capa_simulation/components/auto_official_update_tab.py", "_hold_run_result"),
+}
+
+
+def test_markdown_places_block_the_example_values() -> None:
+    """계산 오류 글을 마크다운 자리에 싣는 함수는 `markdown_examples` 를 부른다. 막지 않는
+    `readable_examples` 는 조각 자신과 평문 길(`bootstrap_error_message(markdown=False)`)뿐이다 —
+    표시명의 `*` · `$` 가 꾸밈 · 수식이 되는 자리가 새로 생기지 않게."""
+    bare: list[str] = []
+    for path in sorted((PROJECT_ROOT / "src/capa_simulation").rglob("*.py")):
+        relative = path.relative_to(PROJECT_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for function in ast.walk(tree):
+            if not isinstance(function, ast.FunctionDef):
+                continue
+            names = {_name(call) for call in ast.walk(function) if isinstance(call, ast.Call)}
+            if (relative, function.name) in MARKDOWN_EXAMPLE_PLACES:
+                assert "markdown_examples" in names, f"{relative}:{function.name}"
+            if "readable_examples" in names and relative not in {
+                "src/capa_simulation/components/stop_examples.py",
+                "src/capa_simulation/page_bootstrap.py",
+            }:
+                bare.append(f"{relative}:{function.name}")
+    assert bare == []
+
+
+def _skipped_run(reason: str) -> AutoOfficialUpdateRun:
+    now = datetime(2026, 11, 11, 7, 0)
+    return AutoOfficialUpdateRun(
+        run_id="run-stop",
+        run_key="manual-stop",
+        trigger_kind="MANUAL",
+        run_date=now.date(),
+        status=STATUS_PUBLISH_SKIPPED,
+        stage="done",
+        started_at=now,
+        finished_at=now,
+        keyword="PSM",
+        threshold=0.8,
+        settings_version=1,
+        reason=reason,
+    )
+
+
+def test_the_run_now_result_reads_its_examples_with_display_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """자동 갱신 「지금 실행」 결과 알림의 사유가 계산 멈춤 글이면 예시 행은 화면 꼴(공정 표시명 —
+    막아 실음)이다(F7 (나) 「다른 계산 멈춤 자리도 함께」). 회차 기록(`run.reason` — 기록 표
+    「사유」 칸)은 원문이다."""
+    reason = (
+        "Capa 계산이 실패해 확보율을 판정하지 못했습니다 — 공식으로 지정하지 않았습니다. "
+        + HEAD
+        + "예시 [{'생산계획년월': 202704, '공정': 'DEMO-SAW', '양산구분': '양산'}]"
+    )
+    flashed: list[str] = []
+
+    def capture(key: str, message: str, **_: object) -> None:
+        flashed.append(message)
+
+    def labels() -> ProcessLabels:
+        return MARKED
+
+    monkeypatch.setattr(auto_update_tab, "queue_flash", capture)
+    monkeypatch.setattr(auto_update_tab, "get_process_labels", labels)
+    run = _skipped_run(reason)
+
+    auto_update_tab._hold_run_result(run)
+
+    (message,) = flashed
+    assert "{'" not in message
+    assert message.endswith("예시 27.04 TC\\~B\\~ \\*z\\* \\$x\\$ 양산")
+    assert alerts.plain_text(message).endswith("예시 27.04 TC~B~ *z* $x$ 양산")
+    assert run.reason == reason
 
 
 def test_every_save_check_passes_display_names_to_its_warning() -> None:
