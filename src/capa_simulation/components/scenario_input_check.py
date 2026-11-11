@@ -53,6 +53,7 @@ from capa_simulation.components.scenario_management_tabs import (
     QUERY_TAB,
     SCENARIO_MANAGEMENT_TABS_KEY,
 )
+from capa_simulation.components.stop_examples import readable_examples
 from capa_simulation.components.tab_state import remember_open_tab, remembered_tab_key
 from capa_simulation.components.table_toolbar import render_csv_download, toolbar_clearance
 from capa_simulation.design import tokens
@@ -433,17 +434,25 @@ def _head_markup(group: InputCheckGroup) -> str:
     return "".join(parts)
 
 
-def _subtitle(group: InputCheckGroup, check: RevisionInputCheck) -> tuple[str, str | None]:
+def _subtitle(
+    group: InputCheckGroup, check: RevisionInputCheck, *, number: str, labels: ProcessLabels
+) -> tuple[str, str | None]:
     """부제(마크다운으로 막은 글)와 풍선. 멈춤은 계산 멈춤 알림의 짧은 글에서 제목과 겹치는 머리를
-    뗀 글 + 「경로 n」 이고 전문은 풍선이다. 알림이 알아보지 못하는 멈춤은 원문이다."""
+    뗀 글 + 「경로 n」 이고 전문은 풍선이다 — 풍선 첫머리는 화면 이름 대신 고른 리비전 「rN」 이고
+    예시 행은 「YY.MM 공정 표시명 양산구분」 이다(2026-11-11 입력 점검 검토 보드 F7 (나)). 알림이
+    알아보지 못하는 멈춤은 원문이다(예시 행만 같은 꼴로)."""
     if group.key != GROUP_STOP or check.stop is None:
         return literal_markdown(group.subtitle), None
     stop = check.stop
     if stop.kind == "blocked":
         return "경로 키 없는 옛 리비전", markdown_safe_tildes(stop.error)
-    notice = calculation_stop_notice(ValueError(stop.error)) if stop.kind == "capacity" else None
+    notice = (
+        calculation_stop_notice(ValueError(stop.error), labels=labels, place=number)
+        if stop.kind == "capacity"
+        else None
+    )
     if notice is None:
-        return markdown_safe_tildes(stop.error), None
+        return markdown_safe_tildes(readable_examples(stop.error, labels)), None
     text = notice.text.removeprefix(STOP_NOTICE_HEAD)
     if stop.problem is not None and stop.problem.rows:
         text = f"{text} · 경로 {stop.problem.rows:,}"
@@ -486,7 +495,7 @@ def _render_group(
                     on_click=_go,
                     args=(database_path, scenario_id, revision_id, arrival, fold),
                 )
-        subtitle, tip = _subtitle(group, check)
+        subtitle, tip = _subtitle(group, check, number=number, labels=labels)
         if subtitle:
             st.caption(subtitle, help=tip)
         if not (expanded and has_rows):

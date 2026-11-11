@@ -885,9 +885,9 @@ try:
     )
     standard_target_exception_rows = standard_target_summary.exception_rows
 except BOOTSTRAP_ERRORS as exc:
-    stop = calculation_stop_notice(exc)
+    stop = calculation_stop_notice(exc, labels=process_labels)
     render_data_error(
-        bootstrap_error_message(exc) if stop is None else stop.message,
+        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message,
         code="ST-20",
         text=None if stop is None else stop.text,
         goto=None if stop is None else stop.goto,

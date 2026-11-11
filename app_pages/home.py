@@ -579,9 +579,9 @@ except BOOTSTRAP_ERRORS as exc:
         render_stopped_key_process_field()
     # 기준 정보의 빈 칸으로 멈췄으면 알림이 채울 화면을 연다. 같은 `except` 가 받는 DB 오류 · 자료
     # 없는 달은 그 화면이 없어 HOME 줄 그대로다.
-    stop = calculation_stop_notice(exc)
+    stop = calculation_stop_notice(exc, labels=process_labels)
     render_data_error(
-        bootstrap_error_message(exc) if stop is None else stop.message,
+        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message,
         code="HM-01",
         text=None if stop is None else stop.text,
         goto=None if stop is None else stop.goto,

@@ -9,7 +9,8 @@
 경계는 코드로 지킨다. 이 모듈은 `components/` 안에만 있고 `services/` 어디에서도
 import 하지 않는다(`tests/test_process_rename.py` 가 검사한다). 그래서 왕복 CSV·클립보드,
 표시순서 `분류값`, 예외 메시지, 프리셋·세션 저장값, 설비 DB 의 공정명에는 표시명이
-닿을 길이 없다.
+닿을 길이 없다. 계산 멈춤 글의 예시 키는 화면 글을 지을 때만 표시명으로 바꾼다
+(`components/stop_examples.py` — 예외 글 자체는 원문이다).
 """
 
 from __future__ import annotations
