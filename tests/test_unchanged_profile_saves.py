@@ -15,6 +15,7 @@ AppTest 회차 사이 시간이 들쭉날쭉해 둘째 누름의 창(`TRAILING_P
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import infos, place_errors, successes
+from source_sites import screen_calls, screen_files
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import TextInput
@@ -1088,3 +1090,23 @@ def test_same_monthly_amounts_folds_order_zeros_and_last_digits() -> None:
 
     assert same_monthly_amounts(same, stored, value_column="선행 물량")
     assert not same_monthly_amounts(moved, stored, value_column="선행 물량")
+
+
+def test_every_unchanged_notice_drawn_in_place_wears_the_info_icon() -> None:
+    """자리에 그리는 「바뀐 것이 없습니다 — …」(`….info(<…>_UNCHANGED_MESSAGE)`)는 모두 앞
+    아이콘 `:material/info:` 를 단다 — 자동 갱신 설정 한 자리만 없던 것을 맞췄다(2026-11-11 남은
+    물음 보드 D3)."""
+    sites: list[str] = []
+    wrong: list[str] = []
+    for path, outer, _, _, call in screen_calls(screen_files()):
+        if not (isinstance(call.func, ast.Attribute) and call.func.attr == "info" and call.args):
+            continue
+        first = call.args[0]
+        if not (isinstance(first, ast.Name) and first.id.endswith("_UNCHANGED_MESSAGE")):
+            continue
+        sites.append(f"{path}::{outer} {first.id}")
+        icon = next((item.value for item in call.keywords if item.arg == "icon"), None)
+        if not (isinstance(icon, ast.Constant) and icon.value == ":material/info:"):
+            wrong.append(sites[-1])
+    assert len(sites) >= 9, sites
+    assert not wrong, wrong

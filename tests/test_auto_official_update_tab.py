@@ -521,6 +521,8 @@ def test_an_unchanged_save_says_nothing_changed_and_keeps_the_version(
 
     assert not app.exception and not place_errors(app)
     assert [str(item.value) for item in infos(app)] == [SETTINGS_UNCHANGED_MESSAGE]
+    # 같은 갈래 무변경 알림처럼 앞 아이콘을 단다(2026-11-11 남은 물음 보드 D3).
+    assert [item.icon for item in infos(app)] == [":material/info:"]
     assert SETTINGS_UNCHANGED_MESSAGE.startswith("바뀐 것이 없습니다 — ")
     assert repository.load_auto_official_update_settings().version == 0
 
