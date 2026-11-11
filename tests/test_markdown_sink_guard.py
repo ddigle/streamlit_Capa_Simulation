@@ -184,6 +184,14 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "나가 평문이다(막으면 막음 글자가 이름에 그대로 들었다). 보이는 같은 글은 바로 위 "
         "st.markdown 이 literal_markdown 으로 막는다"
     ),
+    ("src/capa_simulation/components/shortening_progress_panel.py", "gone_baseline_text"): (
+        "보던 기준선이 지워진 사건 알림(RS-06)의 짧은 글 — 알림 칸 JS 가 textContent 로 그린다"
+        "(마크다운 자리가 아니다)"
+    ),
+    ("src/capa_simulation/components/shortening_progress_panel.py", "_report_gone_baseline"): (
+        "보던 기준선이 지워진 사건 알림(RS-06)의 전문 — 알림 칸 JS 가 textContent 로 그린다"
+        "(마크다운 자리가 아니다)"
+    ),
     ("src/capa_simulation/components/change_summary.py", "session_changes"): (
         "머리 변경 칩 판의 줄 글(설비 가정 「이름」) — 알림 칸 JS 가 textContent 로 그린다"
         "(마크다운 자리가 아니다)"
