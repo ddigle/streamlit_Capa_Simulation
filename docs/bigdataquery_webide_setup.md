@@ -23,10 +23,11 @@ C-DEP WebIDE(서버 환경)에서 `bigdataquery` 로 DB 를 조회할 때 막히
    `invalid peer certificate: UnknownIssuer` 가 난다. (`curl` 이 통과하는 것은 그쪽이 OS
    인증서를 쓰기 때문이고, 그래서 "네트워크는 멀쩡한데 uv 만 안 되는" 모양이 된다.)
 
-추가 인덱스로 넣고 시스템 인증서를 쓰게 한다.
+추가 인덱스로 넣고 시스템 인증서를 쓰게 한다. `<사내 Artifactory 주소>` 는 `requirements-company.txt` 의 `--index-url` 줄에서 `https://` 를
+뗀 나머지다(사내 값이라 이 문서에 적지 않는다 — 공개 저장소).
 
 ```bash
-export UV_EXTRA_INDEX_URL="https://<AD 계정>:<Artifactory API 토큰>@artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple"
+export UV_EXTRA_INDEX_URL="https://<AD 계정>:<Artifactory API 토큰>@<사내 Artifactory 주소>"
 uv pip install bigdataquery==2.5.0 --system-certs
 ```
 

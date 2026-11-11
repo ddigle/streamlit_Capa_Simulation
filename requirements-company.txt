@@ -29,8 +29,10 @@
 #
 # 그래서 WebIDE 에서는 **추가 인덱스로 넣고 시스템 인증서를 쓰게** 한다:
 #
-#     export UV_EXTRA_INDEX_URL="https://<AD 계정>:<Artifactory API 토큰>@artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple"
+#     export UV_EXTRA_INDEX_URL="https://<AD 계정>:<Artifactory API 토큰>@<사내 Artifactory 주소>"
 #     uv pip install bigdataquery==2.5.0 --system-certs
+#
+# `<사내 Artifactory 주소>` 는 아래 `--index-url` 줄에서 `https://` 를 뗀 나머지다.
 #
 # 아래 `--index-url` 은 개발 PC 표기로 남겨 둔다 — WebIDE 에서는 위 환경변수가 이긴다.
 
