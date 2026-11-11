@@ -1826,7 +1826,8 @@ B 줄 `B 4 = 기록 <n> + 미기록 <4-n>; u<u> a<a>; na칸 <m>; 빈칸 <k>` 와
   `components/object_sync_status.py` · `scripts/container_stage.py`) · 목록 관리 새 표(`components/scenario_list_grid.py` · `scenario_list_state.py` ·
   `services/scenario_list_edits.py` · `components/side_panel.py` · `grid_shared` 부품) · `components/page_box_reveal.py` · `diagnostic_copy.py` · 공용 공정 칸(`components/process_field.py` · `capa_simulation/shared_process.py`) · 팝업 호스트(`components/dialog_host.py`) ·
   시트 엑셀(`io/xlsx_small.py` · `components/process_capa_workbook.py` · `sheet_download.py` · `monthly_table_workbook.py` · `availability_sheet_workbook.py`) ·
-  목표 확보율 칸(`components/target_level_field.py`) · 새 Guide 일곱 · 테스트다.
+  목표 확보율 칸(`components/target_level_field.py`) · 새 Guide 일곱 · 그 밖 작은 부품(저장 줄 `components/save_section.py` · `saved_note.py` ·
+  팝오버 칸 `popover_field_commit.py` · 그리드 보낼 함 `services/grid_outbox.py` · 시험 조각 실행기 `scripts/run_test_shard.py`) · 테스트다.
   수정은 화면 · 조각 · 서비스 · 스크립트 · 테스트 · 문서와 `pyproject.toml` · `.gitignore` · `docker/Dockerfile-prod` · `.github/workflows/ci.yml` 이다.
 - **지움이 있다 — 넷이고 모두 예상된 삭제다.** 적용기는 `지움    사외에서 없어진 4개` 아래에 이 경로를 찍는다. 2-1 의 `지움` · 「사외에서
   지워진 파일」 이 이것과 같으면 그대로 진행하고(3-4 — 적용 직후 재대조에 한 번 더 찍히는 것도 정상), 다른 경로가 하나라도 있으면 멈추고
