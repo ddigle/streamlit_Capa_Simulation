@@ -5,7 +5,8 @@
 DuckDB 스냅샷처럼 큰 파일은 `io/object_storage.py`(`aws` CLI) 몫이고, 여기는 접속 명단 파일처럼 몇
 KiB 짜리 객체 하나를 앱 프로세스가 직접 주고받는 자리다. 따로 둔 까닭은 판정을 다시 읽는 콜백
 자리에서 `aws` 프로세스를 띄우지 않고, 프로필 없이 환경변수 키로 붙고, 의존성을 늘리지 않으려는
-것이다.
+것이다. 모듈 데이터 파일(`module_helpers` — 모듈 화면이 부르는 올리기 · 받기)도 이 경계를 쓰고, 그
+쪽만 상한 · 마감을 넓혀 넘긴다(`get_object` · `put_object` 의 `max_bytes` · `deadline_seconds`).
 
 - **표준 라이브러리만** 쓴다 — `auth` 가 import 해도 Streamlit · 무거운 모듈이 딸려 오지 않는다.
 - **경로 스타일 주소**(`/<버킷>/<키>`) — 버킷 이름에 대문자 · 밑줄이 있어 가상 호스트로 적지 못한다.
@@ -268,9 +269,19 @@ def _round_trip(
     path: str,
     body: bytes,
     headers: Mapping[str, str],
+    *,
+    max_bytes: int | None = None,
+    deadline_seconds: float | None = None,
 ) -> tuple[int, str, bytes]:
-    """요청 하나를 마감 안에서 주고받는다."""
-    deadline = time.monotonic() + REQUEST_DEADLINE_SECONDS
+    """요청 하나를 마감 안에서 주고받는다. 본문은 상한을 한 바이트 넘는 데서 읽기를 멈춘다.
+
+    상한 · 마감을 넘기지 않으면 이 경계의 값(`MAX_OBJECT_BYTES` · `REQUEST_DEADLINE_SECONDS`)이다 —
+    부를 때 읽는다.
+    """
+    limit = MAX_OBJECT_BYTES if max_bytes is None else max_bytes
+    deadline = time.monotonic() + (
+        REQUEST_DEADLINE_SECONDS if deadline_seconds is None else deadline_seconds
+    )
     sock = _open_socket(parts, deadline)
     try:
         # 이어 둔 소켓을 건네므로 주소 인자는 쓰이지 않는다(`Host` 머리는 서명한 값을 싣는다).
@@ -279,7 +290,7 @@ def _round_trip(
         try:
             connection.request(method, path, body=body or None, headers=dict(headers))
             response = connection.getresponse()
-            data = response.read(MAX_OBJECT_BYTES + 1)
+            data = response.read(limit + 1)
             return response.status, (response.getheader("ETag") or "").strip().strip('"'), data
         finally:
             connection.close()
@@ -304,6 +315,8 @@ def _exchange(
     body: bytes = b"",
     extra: Mapping[str, str] | None = None,
     moment: float | None = None,
+    max_bytes: int | None = None,
+    deadline_seconds: float | None = None,
 ) -> tuple[int, str, bytes]:
     """요청 하나 — `(상태, ETag, 본문)`. 닿지 못한 것만 여기서 `S3Failure` 로 올린다."""
     parts = urlsplit(target.endpoint_url)
@@ -318,7 +331,15 @@ def _exchange(
         extra=extra,
     )
     try:
-        return _round_trip(parts, method, path, body, headers)
+        return _round_trip(
+            parts,
+            method,
+            path,
+            body,
+            headers,
+            max_bytes=max_bytes,
+            deadline_seconds=deadline_seconds,
+        )
     except (OSError, ValueError, http.client.HTTPException) as error:
         failure = _failure_of(error)
     raise failure
@@ -334,18 +355,28 @@ def _rejected(status: int, data: bytes, *, bucket_missing: bool = False) -> S3Fa
     return S3Failure(KIND_OTHER, status, code)
 
 
-def get_object(target: S3Target, key: str, *, moment: float | None = None) -> S3Object | None:
+def get_object(
+    target: S3Target,
+    key: str,
+    *,
+    moment: float | None = None,
+    max_bytes: int | None = None,
+    deadline_seconds: float | None = None,
+) -> S3Object | None:
     """객체를 받는다. 키가 없으면(404 · `NoSuchKey`) `None`.
 
     그 밖의 404 는 실패다 — 버킷이 없거나, 저장소 앞단이 코드 없이 답한 것이다(HTML · 빈 본문).
-    그것을 「파일 없음」 으로 읽으면 멀쩡한 파일을 두고 빈 명단으로 선다.
+    그것을 「파일 없음」 으로 읽으면 멀쩡한 파일을 두고 빈 명단으로 선다. 상한 · 마감은 기본이 이
+    경계의 값이고, 조금 큰 객체를 받는 쪽(모듈 데이터 — `module_helpers`)만 넓혀 넘긴다.
     """
-    status, etag, data = _exchange(target, "GET", key, moment=moment)
+    status, etag, data = _exchange(
+        target, "GET", key, moment=moment, max_bytes=max_bytes, deadline_seconds=deadline_seconds
+    )
     if status == 404 and _error_code(data) == _NO_SUCH_KEY:
         return None
     if status != 200:
         raise _rejected(status, data)
-    if len(data) > MAX_OBJECT_BYTES:
+    if len(data) > (MAX_OBJECT_BYTES if max_bytes is None else max_bytes):
         raise S3Failure(KIND_TOO_LARGE, status)
     return S3Object(body=data, etag=etag)
 
@@ -371,13 +402,15 @@ def put_object(
     *,
     content_type: str = "application/json",
     moment: float | None = None,
+    max_bytes: int | None = None,
+    deadline_seconds: float | None = None,
 ) -> str:
     """객체를 올린다 — 저장소가 준 ETag(주지 않으면 빈 글).
 
     `Content-MD5` 를 싣는다 — 전송 중 깨진 본문을 저장소가 거절하고, 이 머리를 요구하는 S3 호환
     저장소(`docs/objectstore_setup.md` 「Content-MD5」)에서도 그대로 들어간다.
     """
-    if len(body) > MAX_OBJECT_BYTES:
+    if len(body) > (MAX_OBJECT_BYTES if max_bytes is None else max_bytes):
         raise S3Failure(KIND_TOO_LARGE)
     digest = hashlib.md5(body, usedforsecurity=False).digest()
     status, etag, data = _exchange(
@@ -390,6 +423,7 @@ def put_object(
             "Content-MD5": base64.b64encode(digest).decode("ascii"),
         },
         moment=moment,
+        deadline_seconds=deadline_seconds,
     )
     if not 200 <= status < 300:
         raise _rejected(status, data, bucket_missing=True)
