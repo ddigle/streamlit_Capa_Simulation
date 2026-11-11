@@ -4,8 +4,8 @@
 가능하도록 수정」).
 
 - **받는 값** — 판정 기준 칸과 한 범위 · 걸음 · 자릿수(50 ~ 300%, 1, 정수 % 사사오입). 범위 밖 ·
-  숫자 아님은 거부 글이다(`read_level_entry`). 세션 칸 · 주소 인자(`target_level`)도 같은 범위로
-  읽는다.
+  빈 칸 · 숫자 아님은 거부 글이다(`read_level_entry`). 세션 칸 · 주소 인자(`target_level`)도 같은
+  범위로 읽는다. 범위를 한참 넘는 값(1e30)은 사사오입 전에 거른다 — 멈추지 않는다.
 - **계산** — 다섯 밖 값은 목표 하나 칸(`get_required_shortening_for_target` — 값이 키에 든다)에서 그
   값 하나만 계산해 다섯 값 계획에 스칼라로 더한다(`load_required_shortening(level=)`). 다섯 가운데
   하나를 그 길로 계산해도 미리 계산한 것과 같다.
@@ -34,6 +34,7 @@ from test_equipment_view_cache import _required as _fleet_required
 
 from capa_simulation.components import home_preference
 from capa_simulation.components.target_level_field import (
+    ENTRY_EMPTY,
     ENTRY_FORMAT,
     ENTRY_NOT_A_NUMBER,
     ENTRY_STEP,
@@ -71,6 +72,7 @@ def test_the_entry_follows_the_threshold_fields_step_format_and_range() -> None:
     assert read_level_entry(49) == entry_out_of_range(49)
     assert read_level_entry(301) == entry_out_of_range(301)
     assert entry_out_of_range(400) == "50% ~ 300% 밖이라 받지 않았습니다 — 400%."
+    assert entry_out_of_range(1e30) == "50% ~ 300% 밖이라 받지 않았습니다 — 1e+30%."
 
 
 @pytest.mark.parametrize(
@@ -88,7 +90,13 @@ def test_the_entry_follows_the_threshold_fields_step_format_and_range() -> None:
         (400, entry_out_of_range(400)),
         (49.4, entry_out_of_range(49)),
         (300.5, entry_out_of_range(301)),
-        (None, ENTRY_NOT_A_NUMBER),
+        # 받는 범위를 한참 넘는 값은 사사오입(`Decimal.quantize` — 28 자리) 전에 거부다.
+        (1e30, entry_out_of_range(1e30)),
+        ("1e30", entry_out_of_range(1e30)),
+        ("1e300", entry_out_of_range(1e300)),
+        # 숫자 칸이 비면(지우기 · ⊗) 빈 칸 거부다 — 숫자 아님은 칸 밖에서 넘어온 값뿐이다.
+        (None, ENTRY_EMPTY),
+        ("  ", ENTRY_EMPTY),
         ("목표", ENTRY_NOT_A_NUMBER),
         (float("nan"), ENTRY_NOT_A_NUMBER),
         (True, ENTRY_NOT_A_NUMBER),
@@ -124,6 +132,10 @@ def test_a_typed_preset_is_the_same_float_as_the_radio_option() -> None:
         (3.0, 3.0),
         (0.3, None),
         (3.01, None),
+        # 범위를 한참 넘는 주소 인자는 사사오입 전에 None 이다(`target=1e30`).
+        (1e30, None),
+        ("1e30", None),
+        ("1e300", None),
         ("목표", None),
         (None, None),
         (float("nan"), None),

@@ -13,15 +13,18 @@
   고르거나 칸에 넣고 Enter(칸을 떠나도)를 누르면 곧바로 세션 칸에 적고 닫힌 뒤 앱 전체를 다시 돌린다
   (`DialogHost.finish` — 값 칸 글과 본문이 함께 새 목표로 선다, HOME 주요공정 히트맵 팝업과 같은
   꼴). 견주는 값은 세션의 지금 값이라 다시 도는 회차에 같아져 되풀이되지 않는다. 칸에 치고 Enter
-  없이 라디오를 누르면 라디오가 이긴다(「버튼 + 직접 입력」 칸 `preset_number_field` 와 같은 규칙).
+  없이 라디오를 누르면 라디오가 이긴다(「버튼 + 직접 입력」 칸 `preset_number_field` 와 같은 규칙 —
+  세대 key 없이도 2026-11-11 사본 앱 브라우저에서 누름 길이 0 · 0.15 · 0.6초 여섯 번 모두 라디오).
+  숫자 칸의 − · + 단추와 ↑/↓ 키도 한 걸음이 곧 확정이라 그 값을 적용하고 닫힌다.
 - **직접 입력** — 퍼센트 숫자 칸이다. 걸음 · 자릿수는 판정 기준 기본 칸(HOME 설정 › 판정 기준 —
   `home_preference.DEFAULT_THRESHOLD_STEP` · `DEFAULT_THRESHOLD_FORMAT`)과 같은 1 · `%.0f` 이고,
   받는 범위는 판정 기준 저장 · 제약 확보율과 한 값 50 ~
   300%(`securement_threshold.THRESHOLD_RANGE`)다. 소수를 치면 사사오입한 정수 % 다(109.5 → 110 —
   `whole_percent`, 판정 기준 칸과 한 규칙). 칸에는 하한 0 만 두고 상한은 두지 않는다(판정 기준 기본
-  칸과 같다) — 범위 밖 값이 서버에 닿아야 그 까닭을 칸 곁에 적는다. 범위 밖 · 숫자 아님(빈 칸)은 칸
-  바로 밑 거부 한 줄이고 팝업은 열린 채다(설계 규칙 UI-NTF-03 — 팝업 안 검증 거부는 곁만, 알림창 ·
-  기록 없음).
+  칸과 같다) — 범위 밖 값이 서버에 닿아야 그 까닭을 칸 곁에 적는다. 범위 밖 · 빈 칸은 칸 바로 밑
+  거부 한 줄이고 팝업은 열린 채다(설계 규칙 UI-NTF-03 — 팝업 안 검증 거부는 곁만, 알림창 · 기록
+  없음). 받는 범위를 한참 넘는 값(주소 인자 · 칸에 친 아주 긴 수)은 사사오입 전에 거른다
+  (`Decimal.quantize` 는 28 자리를 넘으면 멈춘다).
 - **지금 값 한 꼴** — 숫자 칸은 늘 지금 목표를 보이고, 라디오는 지금 목표가 다섯 가운데 하나일 때만
   그것이 켜진다(직접 넣은 값이면 라디오는 모두 꺼짐 — `preset_number_field` 의 버튼 줄과 같은 꼴).
   값 칸 글은 다섯이든 직접 넣은 값이든 「115%」 꼴이다(`level_text`).
@@ -54,6 +57,7 @@ from capa_simulation.services.threshold_label import threshold_percent, whole_pe
 from capa_simulation.sidebar_status import keeps_app_run_open, page_condition_slot
 
 __all__ = [
+    "ENTRY_EMPTY",
     "ENTRY_FORMAT",
     "ENTRY_NOT_A_NUMBER",
     "ENTRY_STEP",
@@ -80,15 +84,23 @@ ENTRY_FORMAT: Final = "%.0f"
 ENTRY_UNIT_LABEL: Final = "% 직접 입력"
 # 칸 폭 — `preset_number_field` 의 숫자 칸과 같다.
 ENTRY_WIDTH: Final = 132
+# 숫자 칸은 글자를 받지 않으므로 화면에서 서는 거부는 빈 칸(지우기 · ⊗)이다. 숫자 아님은 글 값을
+# 넘길 때(「목표」)뿐이다.
+ENTRY_EMPTY: Final = "칸이 비어 받지 않았습니다."
 ENTRY_NOT_A_NUMBER: Final = "숫자가 아니라 받지 않았습니다."
 # 받는 범위의 정수 %(사사오입) — 판정 기준 저장 검사
 # (`securement_threshold.out_of_range_thresholds`)와 같은 견줌이다(49.5 → 50 은 든다).
 _LOW_PERCENT, _HIGH_PERCENT = (threshold_percent(bound) for bound in THRESHOLD_RANGE)
+# 사사오입(`threshold_percent` · `whole_percent` — `Decimal.quantize`, 28 자리)에 넘기는 수의
+# 크기 상한. 받는 범위(50 ~ 300%)를 한참 넘는 값은 반올림 없이 범위 밖이다 — 비율 · 퍼센트 어느
+# 쪽으로 읽어도 범위 밖이고, 그 100 배도 28 자리에 한참 못 미친다.
+_ROUNDING_LIMIT: Final = 1e6
 
 
-def entry_out_of_range(percent: int) -> str:
-    """범위 밖 거부 한 줄 — 받는 범위와 친 값(사사오입한 정수 %)."""
-    return f"{threshold_range_text()} 밖이라 받지 않았습니다 — {percent}%."
+def entry_out_of_range(percent: float) -> str:
+    """범위 밖 거부 한 줄 — 받는 범위와 친 값(사사오입한 정수 %, 사사오입 전에 거른 아주 큰 값은
+    `g` 꼴 — 「1e+30%」)."""
+    return f"{threshold_range_text()} 밖이라 받지 않았습니다 — {percent:g}%."
 
 
 def _number(value: object) -> float | None:
@@ -114,10 +126,11 @@ def target_level(value: object) -> float | None:
     """받을 수 있는 목표(비율)면 그 값, 아니면 None — 세션 칸 · 주소 인자(`target=1.15`)를 읽는다.
 
     다섯 가운데 하나면 그 선택지와 같은 float 이고, 그 밖은 사사오입한 정수 %(`threshold_percent` —
-    1.153 → 115%)가 받는 범위(50 ~ 300%) 안일 때 그 % 의 비율이다. 숫자가 아니거나 범위 밖이면 None.
+    1.153 → 115%)가 받는 범위(50 ~ 300%) 안일 때 그 % 의 비율이다. 숫자가 아니거나 범위 밖이면 None
+    — 범위를 한참 넘는 값(`target=1e30`)은 사사오입 전에 None 이다.
     """
     number = _number(value)
-    if number is None:
+    if number is None or abs(number) > _ROUNDING_LIMIT:
         return None
     return target_preset(number) or _accepted(threshold_percent(number))
 
@@ -125,11 +138,16 @@ def target_level(value: object) -> float | None:
 def read_level_entry(value: object) -> float | str:
     """직접 입력 칸 값(퍼센트)을 목표(비율)로 — 받을 수 없으면 칸 곁에 적을 거부 글.
 
-    소수는 사사오입한 정수 %(`whole_percent` — 109.5 → 110)로 읽고 그 정수로 범위를 견준다.
+    소수는 사사오입한 정수 %(`whole_percent` — 109.5 → 110)로 읽고 그 정수로 범위를 견준다. 범위를
+    한참 넘는 값은 사사오입 전에 친 값 그대로 범위 밖 거부다.
     """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return ENTRY_EMPTY
     number = _number(value)
     if number is None:
         return ENTRY_NOT_A_NUMBER
+    if abs(number) > _ROUNDING_LIMIT:
+        return entry_out_of_range(number)
     percent = whole_percent(number)
     accepted = _accepted(percent)
     return entry_out_of_range(percent) if accepted is None else accepted

@@ -827,24 +827,22 @@ def test_a_target_typed_outside_the_five_plans_that_value_and_keeps_the_five_dow
     clear_equipment_repository()
 
 
-def test_a_typed_target_out_of_range_or_not_a_number_is_refused_beside_the_entry(
+def test_a_typed_target_out_of_range_or_empty_is_refused_beside_the_entry(
     tmp_path: Path,
 ) -> None:
-    """받는 범위(50 ~ 300% — 판정 기준 칸과 한 값) 밖이거나 숫자가 아니면(빈 칸) 그 칸 바로 밑에
-    거부 한 줄만 서고 팝업은 열린 채, 목표 · 값 칸은 그대로다. 소수는 사사오입한 정수 % 다(109.5 →
-    110 — 판정 기준 칸과 한 규칙)."""
+    """받는 범위(50 ~ 300% — 판정 기준 칸과 한 값) 밖이거나 칸이 비면 그 칸 바로 밑에 거부 한 줄만
+    서고 팝업은 열린 채, 목표 · 값 칸은 그대로다. 소수는 사사오입한 정수 % 다(109.5 → 110 — 판정
+    기준 칸과 한 규칙). 받는 범위를 한참 넘는 값(1 뒤 0 서른)도 멈추지 않고 거부다."""
     from capa_simulation.components.required_shortening_panel import SHORTENING_DIALOG_HOST
-    from capa_simulation.components.target_level_field import (
-        ENTRY_NOT_A_NUMBER,
-        entry_out_of_range,
-    )
+    from capa_simulation.components.target_level_field import ENTRY_EMPTY, entry_out_of_range
 
     app = _run(_database(tmp_path))
     assert not app.exception
     for typed, refusal in (
         (400.0, entry_out_of_range(400)),
         (49.4, entry_out_of_range(49)),
-        (None, ENTRY_NOT_A_NUMBER),
+        (1e30, entry_out_of_range(1e30)),
+        (None, ENTRY_EMPTY),
     ):
         _type_level(app, typed)
         assert app.session_state[SHORTENING_DIALOG_HOST.open_key] == LEVEL_FIELD.dialog, typed

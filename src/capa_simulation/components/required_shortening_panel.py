@@ -187,6 +187,7 @@ from capa_simulation.services.required_shortening import (
     KIND_NEW,
     STATUS_EXPIRED,
     STATUS_NEW_LIMIT,
+    TARGET_LEVELS,
     LevelPlan,
     ShorteningPlan,
     level_percent,
@@ -821,9 +822,11 @@ def _render_body(
                     render_space_link(process, floors=space_floors, level=level)
 
 
-# 기준선에 없는 목표(다섯 밖 직접 입력)로 진척 비교를 고른 회차 — 빈 결과 줄의 풍선.
+# 기준선에 없는 목표(다섯 밖 직접 입력)로 진척 비교를 고른 회차 — 빈 결과 줄의 풍선. 다섯은
+# 기준선이 얼리는 목표 그대로다(`TARGET_LEVELS` — 설계 규칙 UI-CON-04, 같은 꼴은 한 곳).
+_BASELINE_LEVELS_TEXT = " · ".join(str(level_percent(level)) for level in TARGET_LEVELS)
 MISSING_BASELINE_LEVEL_HELP = (
-    "기준선은 저장할 때 목표 다섯(90 · 100 · 110 · 120 · 130%)의 결과만 얼립니다 — 그 가운데 "
+    f"기준선은 저장할 때 목표 다섯({_BASELINE_LEVELS_TEXT}%)의 결과만 얼립니다 — 그 가운데 "
     "하나를 고르면 견줍니다."
 )
 
