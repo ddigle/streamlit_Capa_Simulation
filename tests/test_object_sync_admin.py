@@ -39,7 +39,7 @@ from capa_simulation.components.object_sync_status import render_object_sync_ale
 
 render_object_sync_alerts()
 """
-SY_CODES = ("SY-01", "SY-02", "SY-03", "SY-04", "SY-05")
+SY_CODES = ("SY-01", "SY-02", "SY-03", "SY-04", "SY-05", "SY-06")
 ADMIN = "demo.admin"
 USER = "demo.user"
 
@@ -75,8 +75,9 @@ def _boot(
     disabled_reason: str | None = None,
     handed_over_utc: str | None = None,
     head_ignored: bool = False,
+    head_unchecked: tuple[str, ...] = (),
 ) -> None:
-    decided = SyncBoot(managed, disabled_reason, handed_over_utc, head_ignored)
+    decided = SyncBoot(managed, disabled_reason, handed_over_utc, head_ignored, head_unchecked)
     monkeypatch.setattr(sync_boot, "_boot", lambda: decided)
 
 
@@ -400,6 +401,21 @@ def test_a_server_that_did_not_read_the_bucket_says_so(monkeypatch: pytest.Monke
     note = active_state(app, "SY-05")
     assert note is not None
     assert "CAPA_S3_SYNC_MODE" in note["full"]
+    assert not active_state(app, "SY-01")
+
+
+def test_a_server_that_could_not_list_the_bucket_names_the_missing_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """빈 CD 환경변수로 버킷 목록을 못 보면 `SY-05` 를 세울지 모른다 — 넣을 이름을 대는 `SY-06`."""
+    _boot(monkeypatch, head_unchecked=("CAPA_S3_PROFILE",))
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-06")
+    assert note is not None
+    assert "CAPA_S3_PROFILE" in note["short"] and "CAPA_S3_PROFILE" in note["full"]
+    assert not active_state(app, "SY-05")
     assert not active_state(app, "SY-01")
 
 

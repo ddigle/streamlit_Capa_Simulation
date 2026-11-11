@@ -14,8 +14,10 @@
 
 모드 칸이 비었거나 `local` 로 뜬 C-DEP 서버는 시작 점검이 버킷에서 세대를 보았는지 결과 파일로
 받는다(`head_ignored`). 두 값은 유효해서 `SY-01` 이 서지 않으므로, 이 표지가 없으면 CI/CD 가 초록인
-채 빈 시드 앱이 뜨고 저장이 다음 CI/CD 에 사라진다. 알림은 `SY-05` 다. 결과 파일은 C-DEP 이미지의
-시작 스크립트만 쓰므로 사내 PC · 개발 실행에는 이 표지가 없다.
+채 빈 시드 앱이 뜨고 저장이 다음 CI/CD 에 사라진다. 알림은 `SY-05` 다. 빈 CD 환경변수(주소 · 버킷 ·
+프로필) 때문에 버킷 목록을 보지 못했으면 그 이름을 받아(`head_unchecked`) `SY-06` 이 알린다 — 그
+서버는 `SY-05` 를 세울지 가리지 못했다. 결과 파일은 C-DEP 이미지의 시작 스크립트만 쓰므로 사내 PC ·
+개발 실행에는 두 표지가 없다.
 
 판정은 프로세스에 한 번이다. `app.py` 는 회차마다 부르지만 설정 파일을 회차마다 다시 읽지 않는다
 (설정·환경변수를 바꾸면 앱을 다시 띄운다).
@@ -68,6 +70,8 @@ class SyncBoot:
     handed_over_utc: str | None = None
     # 버킷에 세대가 있는데 모드가 managed 가 아니어서 받지 않은 서버(시작 점검이 남긴 표지).
     head_ignored: bool = False
+    # 빈 CD 환경변수 때문에 위 표지를 가리지 못한 서버 — 그 이름(시작 점검이 남긴 표지).
+    head_unchecked: tuple[str, ...] = ()
 
 
 _BOOT_LOCK = threading.Lock()
@@ -85,16 +89,23 @@ def _decide() -> SyncBoot:
         _LOGGER.warning("오브젝트 스토리지 설정을 읽지 못해 동기화를 끕니다 — %s", reason)
         return SyncBoot(managed=False, disabled_reason=reason, handed_over_utc=handed_over)
     if storage.mode != "managed":
+        ignored, unchecked = _start_head_marks()
         return SyncBoot(
-            managed=False, handed_over_utc=handed_over, head_ignored=_start_ignored_head()
+            managed=False,
+            handed_over_utc=handed_over,
+            head_ignored=ignored,
+            head_unchecked=unchecked,
         )
     sync_state.enable(MANAGED_PATHS)  # type: ignore[arg-type]
     return SyncBoot(managed=True, handed_over_utc=handed_over)
 
 
-def _start_ignored_head() -> bool:
+def _start_head_marks() -> tuple[bool, tuple[str, ...]]:
+    """시작 점검이 남긴 두 표지 — 받지 않은 정본 · 빈 CD 환경변수 때문에 보지 못한 이름."""
     report = read_container_start_report()
-    return report is not None and report.sync is not None and report.sync.head_ignored
+    if report is None or report.sync is None:
+        return False, ()
+    return report.sync.head_ignored, report.sync.head_unchecked
 
 
 def _boot() -> SyncBoot:
@@ -130,6 +141,12 @@ def head_ignored() -> bool:
     return _boot().head_ignored
 
 
+def head_unchecked() -> tuple[str, ...]:
+    """빈 CD 환경변수 때문에 시작 점검이 버킷의 정본을 보지 못했다면 그 이름들 — `head_ignored` 가
+    거짓이어도 이 서버가 정본을 받지 않은 채 떴는지 모른다."""
+    return _boot().head_unchecked
+
+
 def sync_alerts_possible() -> bool:
     """이 프로세스에 동기화 알림이 설 수 있는가. 아니면 화면 쪽이 Streamlit 을 부르지 않는다.
 
@@ -139,6 +156,7 @@ def sync_alerts_possible() -> bool:
     return (
         boot.managed
         or boot.head_ignored
+        or bool(boot.head_unchecked)
         or boot.disabled_reason is not None
         or boot.handed_over_utc is not None
     )

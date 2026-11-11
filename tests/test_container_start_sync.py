@@ -339,6 +339,7 @@ def test_no_mark_without_a_forgotten_mode(
 
     assert _step(report_contract.SYNC_STEP_BUCKET)["status"] == report_contract.STATUS_OK
     assert not _sync().get("head_ignored")
+    assert _sync()["head_unchecked"] == []
 
 
 def test_a_mistyped_mode_does_not_pull_and_the_app_still_starts(box: SimpleNamespace) -> None:
@@ -644,6 +645,7 @@ def test_a_missing_endpoint_is_named_on_the_lines_not_read_as_a_bad_address(
     assert _step(report_contract.SYNC_STEP_BUCKET)["status"] == report_contract.STATUS_SKIPPED
     assert not (box.home / ".aws").exists()
     assert not [call for call in runner.calls if call[:2] == ["aws", "s3api"]]
+    assert _sync()["head_unchecked"] == [object_storage.ENDPOINT_ENV]
 
 
 def test_a_missing_profile_name_is_named_and_no_bucket_command_runs(
@@ -667,6 +669,28 @@ def test_a_missing_profile_name_is_named_and_no_bucket_command_runs(
     }
     assert not (box.home / ".aws").exists()
     assert not [call for call in runner.calls if call[:2] == ["aws", "s3api"]]
+    # 버킷을 못 보았으니 `head_ignored` 가 거짓이어도 믿을 수 없다 — 앱이 `SY-06` 으로 이름을 댄다.
+    assert _sync()["head_ignored"] is False
+    assert _sync()["head_unchecked"] == [object_storage.PROFILE_ENV]
+
+
+@pytest.mark.parametrize("extra", [{"CAPA_S3_SYNC_MODE": "Local"}, {}], ids=["mistyped", "managed"])
+def test_no_unchecked_mark_where_the_app_says_something_else(
+    box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, extra: dict[str, str]
+) -> None:
+    """틀린 모드 값은 앱이 `SY-01` 로 알리고, `managed` 는 받지 않고 머물러 앱이 뜨지 않는다 —
+    표지가 쓸 데가 없다."""
+    _reachable_ecs(monkeypatch)
+    environ = _managed(box) if not extra else _environ(box, **extra)
+    del environ[object_storage.PROFILE_ENV]
+
+    if extra:
+        _start(box, environ, Runner(box.log))
+    else:
+        with pytest.raises(Stay):
+            _start(box, environ, Runner(box.log), stay_after=1)
+
+    assert _sync()["head_unchecked"] == []
 
 
 def test_a_missing_value_in_managed_mode_names_it_on_the_console(

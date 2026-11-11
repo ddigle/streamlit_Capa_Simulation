@@ -1102,7 +1102,13 @@ def prepare_sync(
     # 이 스크립트는 C-DEP 이미지에서만 돈다 — 그 자리에서는 빈 값과 바른 `local` 이 같은 길이라
     # 둘 다 표지를 세운다. 앱이 바른 `local` 로 읽지 않는 값(다른 철자 · 공백만)은 앱이 `SY-01` 로
     # 알리므로 세우지 않는다.
-    head_ignored = head_listed and not plan.managed and _reads_as_local(environ)
+    reads_as_local = not plan.managed and _reads_as_local(environ)
+    head_ignored = head_listed and reads_as_local
+    # 빈 사내 값 때문에 버킷 목록을 보지 못해 `head_ignored` 를 가리지 못한 서버 — 그 이름(`SY-06`).
+    # `managed` 는 받지 않고 머물러 앱이 뜨지 않으므로 표지가 쓸 데가 없다.
+    head_unchecked = (
+        list(missing_environment(storage)) if storage is not None and reads_as_local else []
+    )
     reason = "받기 전" if plan.managed else f"{MODE_ENV} 가 {MODE_MANAGED} 아님 — 받지 않음"
     if head_ignored:
         reason = (
@@ -1116,6 +1122,7 @@ def prepare_sync(
         "started_at_utc": started_at_utc,
         "aws_version": version,
         "head_ignored": head_ignored,
+        "head_unchecked": head_unchecked,
         **machine_facts(environ),
         **duckdb_defaults(runner, child_environment(environ)),
     }
