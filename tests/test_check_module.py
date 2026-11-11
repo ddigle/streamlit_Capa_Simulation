@@ -320,6 +320,18 @@ def test_the_crash_fixture_missing_package_is_caught_through_importlib(tmp_path:
             "import capa_simulation.module_api\nPATH = capa_simulation.settings.DUCKDB_PATH\n",
             ("M06", "error"),
         ),
+        # 창구 도우미의 속(키 · 버킷 한 벌을 쥔다)도 겉면 밖이다.
+        ("from capa_simulation import module_helpers\n", ("M06", "error")),
+        (
+            "from capa_simulation import module_api as api\n"
+            "TARGET = api._module_helpers._s3_target()\n",
+            ("M06", "error"),
+        ),
+        (
+            "from capa_simulation import module_api as api\n"
+            'HELPERS = getattr(api, "_module_helpers")\n',
+            ("M06", "error"),
+        ),
         # 글자 상수로 부르는 동적 import 도 같은 규칙이다.
         (
             'import importlib\nimportlib.import_module("capa_simulation.settings")\n',
