@@ -218,9 +218,10 @@ def _load_stored_order_snapshot_payload(
 ) -> _ScenarioSnapshotPayload:
     """공용 표시순서를 얹지 않은 저장 원본(파생 시나리오 입력). 드물게 쓰여 피클로만 둔다.
 
-    시나리오 관리의 월 머지·연도 Shift 가 원본을 고를 때만 부르고, 그 화면은 고른 원본을 세션에
-    따로 둔다. 공유 칸(`_load_scenario_snapshot_resource`)에 올리면 칸 하나를 차지해 공식 리비전을
-    밀어낼 수 있다.
+    시나리오 관리의 월 머지·연도 Shift 가 원본을 고를 때와 목록 관리 「점검」 이 고른 리비전을 셀
+    때(`capacity_gate.input_check_verdict` — 적중하면 이 읽기도 하지 않는다)만 부르고, 월 머지 ·
+    연도 Shift 화면은 고른 원본을 세션에 따로 둔다. 공유 칸(`_load_scenario_snapshot_resource`)에
+    올리면 칸 하나를 차지해 공식 리비전을 밀어낼 수 있다.
     """
     del generation
     snapshot = get_scenario_repository(database_path).load_revision(

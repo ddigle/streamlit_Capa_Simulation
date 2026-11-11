@@ -18,8 +18,9 @@ DB 를 모른다. 계산(`simulation_cache.full_capacity_outcome`)과 멈춤 판
 - **까닭**은 원본 값과 수로 든다 — 화면 표시명은 그릴 때 `reason_label` 로 바꾸고 CSV 는 원본 값
   그대로다(설계 규칙 UI-DAT-10).
 - **멈춘 리비전**은 앞 단계가 멈춰 뒤 묶음을 세지 못한다 — 묶음 하나(「셀 수 없음」)로 접는다.
-  등록 때 뺀 원천 행은 계산과 상관없이 센다. HOME Density 환산만 멈춘 리비전은 대당 Capa ·
-  소요대수가 끝났으므로 뒤 묶음을 그대로 센다(`DENSITY_STOP_KEEPS_COUNTS`).
+  등록 때 뺀 원천 행은 계산과 상관없이 센다. HOME Density 환산만 멈춘 리비전도 지금은 같이
+  접는다(Admin 「알림 모음」 의 꼴) — 대당 Capa · 소요대수는 끝났으므로 셀 수는 있다
+  (`DENSITY_STOP_KEEPS_COUNTS`).
 """
 
 from __future__ import annotations
@@ -98,7 +99,7 @@ STOPPED_LABEL: Final = "멈춤"
 
 # HOME Density 환산만 멈춘 리비전(대당 Capa · 소요대수는 끝남)에서 뒤 묶음을 셀지. 거짓이면 Capa
 # 계산이 멈춘 리비전처럼 「셀 수 없음」 한 묶음으로 접는다(Admin 「알림 모음」 의 옛 꼴).
-DENSITY_STOP_KEEPS_COUNTS: Final = True
+DENSITY_STOP_KEEPS_COUNTS: Final = False
 
 # 까닭 원본 값 → 화면 표시명. 없는 값은 원본 그대로 보인다. CSV 는 늘 원본 값이다. 부하량에서 빠진
 # 계획의 까닭은 표 이름만이면 그 표에 계획 키 행이 없는 것, 「… 값 없음」 이면 행은 있고 값이 빈

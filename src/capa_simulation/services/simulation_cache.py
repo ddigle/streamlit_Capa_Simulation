@@ -1793,7 +1793,9 @@ def full_capacity_outcome(
     """`get_full_capacity_outcome` 의 캐시 없는 순수 코어 — 같은 표 묶음, 같은 계산, 같은 실패 판정.
 
     Streamlit 실행 문맥이 없는 배경 작업(공식버전 자동 갱신)이 쓴다. 화면은 이것을 직접 부르지 않고
-    캐시된 `get_full_capacity_outcome` 을 쓴다.
+    캐시된 `get_full_capacity_outcome` 을 쓴다 — 하나 남은 예외는 입력 점검이다. 고른 리비전마다
+    계산하므로 공유 칸을 밀지 않게 이것을 부르고 결과 대신 묶음만 요약
+    칸(`get_revision_input_check`)에 둔다.
     """
     return _capacity_outcome(_capacity_tables(scenario_tables, reference_tables, None))
 

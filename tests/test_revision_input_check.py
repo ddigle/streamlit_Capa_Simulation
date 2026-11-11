@@ -23,6 +23,7 @@ import pytest
 
 import capa_simulation.components.capacity_gate as capacity_gate
 import capa_simulation.persistence.cache as scenario_cache
+import capa_simulation.services.revision_input_check as revision_input_check
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components.capacity_gate import (
     density_error,
@@ -291,7 +292,13 @@ def test_a_stop_without_a_join_problem_does_not_name_a_stage(tables: Tables) -> 
     assert stop.subtitle == outcome.error
 
 
-def test_a_density_stop_is_a_stop_that_still_counts_the_calculated_groups(tables: Tables) -> None:
+@pytest.mark.parametrize("keeps_counts", [False, True], ids=["folded", "counted"])
+def test_a_density_stop_is_a_stop_and_the_switch_decides_the_groups(
+    tables: Tables, monkeypatch: pytest.MonkeyPatch, keeps_counts: bool
+) -> None:
+    """Density 만 멈춰도 「멈춤」 이다. 뒤 묶음은 지금 접고(셀 수 없음), 스위치를 켜면 센다 — 대당
+    Capa · 소요대수는 끝났다."""
+    monkeypatch.setattr(revision_input_check, "DENSITY_STOP_KEEPS_COUNTS", keeps_counts)
     edited = _density_broken(tables)
 
     check = _check(edited)
@@ -300,8 +307,9 @@ def test_a_density_stop_is_a_stop_that_still_counts_the_calculated_groups(tables
     assert check.stop is not None and check.stop.kind == "density"
     stop = check.group(GROUP_STOP)
     assert stop is not None and stop.title == "계산 멈춤 — Density 환산"
-    assert check.group(GROUP_CAPACITY) is not None
-    assert check.group(GROUP_UNCOUNTED) is None
+    assert (check.group(GROUP_CAPACITY) is not None) is keeps_counts
+    assert (check.group(GROUP_UNCOUNTED) is None) is keeps_counts
+    assert check.group(GROUP_SOURCE) is not None
 
 
 def test_an_old_revision_without_route_keys_stops_without_calculating(
@@ -399,6 +407,20 @@ def test_the_check_does_not_take_the_shared_calculation_or_snapshot_slots(
     again = input_check_verdict(str(database), scenario_id, revision_id)
 
     assert first.calculation_label == again.calculation_label == "됨"
+
+
+def test_a_read_failure_is_raised_every_time_instead_of_being_kept(tmp_path: Path) -> None:
+    """없는 리비전 · 지운 시나리오처럼 읽지 못하면 부를 때마다 화면이 받는
+    예외(`BOOTSTRAP_ERRORS`)로 올라온다 — 실패가 요약 칸에 남으면 다음 회차가 옛 실패를 보거나
+    고친 뒤에도 그대로다(결정 22)."""
+    from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
+
+    database, scenario_id, _ = _seeded(tmp_path)
+    missing = "00000000-0000-4000-8000-000000000000"
+
+    for _attempt in range(2):
+        with pytest.raises(BOOTSTRAP_ERRORS):
+            input_check_verdict(str(database), scenario_id, missing)
 
 
 def test_the_check_and_its_outcome_survive_the_cache_pickle(tables: Tables) -> None:
