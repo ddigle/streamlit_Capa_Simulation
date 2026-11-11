@@ -224,6 +224,7 @@ def bootstrap_error_message(
     database_paths: Sequence[Path] = (DUCKDB_PATH,),
     markdown: bool = True,
     labels: ProcessLabels | None = None,
+    example_rows: bool = False,
 ) -> str:
     """화면에 보여 줄 오류 문구.
 
@@ -267,6 +268,12 @@ def bootstrap_error_message(
     readable_examples` — 2026-11-11 입력 점검 검토 보드 F7 (나)). 안 넘기면 원문 그대로다. 마크다운
     글이면 예시 칸 값(표시명 따위 사람 글)을 `literal_markdown` 으로 막는다(`markdown_examples` —
     표시명의 `*` · `$` 가 꾸밈 · 수식이 되지 않게), `markdown=False` 면 막지 않는다.
+
+    **원본 공정명으로 그리는 화면은 `example_rows=True` 를 넘긴다** — 표시명 없이 예시 행만 같은
+    화면 꼴로 바꾸고 공정은 원본 이름이다(Space 「필요 단축」 보기 — 결정 D10 그대로,
+    2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다)). `labels` 를 넘기면 이 인자는 보지 않는다.
+    둘 다 없으면 원문 그대로다 — 알림 「원본 오류」 · 지문(가용설비 현황 비교 `EQ-08`)과 공용
+    길(`shortening_source`)의 원문은 이 기본값이다.
     """
     if isinstance(exc, reference_cache.NoActiveRevision) and _only_archived_scenarios():
         return ARCHIVED_ONLY_MESSAGE
@@ -275,7 +282,7 @@ def bootstrap_error_message(
         return empty_table
     if not isinstance(exc, duckdb.Error):
         text = str(exc)
-        if labels is None:
+        if labels is None and not example_rows:
             return markdown_safe_tildes(text) if markdown else text
         return markdown_examples(text, labels) if markdown else readable_examples(text, labels)
     files = "\n".join(f"- 파일: `{path}`" for path in database_paths)

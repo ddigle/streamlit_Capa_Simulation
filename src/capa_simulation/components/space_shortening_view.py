@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from functools import partial
 from typing import Any, Final
@@ -410,12 +410,16 @@ def load_space_layer(
     try:
         demand = shortening_source.load_shortening_demand()
     except BOOTSTRAP_ERRORS as exc:
-        # 계산 멈춤 글은 원문이다(예시 행도 dict 꼴 그대로) — 이 보기는 원본 공정소분류만 쓰고 공정
-        # 표시명을 읽지 않는다(결정 D10). 아래 달 범위 멈춤 글도 공용 길이 지은 원문 그대로다.
+        # 계산 멈춤 글의 예시 행은 화면 꼴 「YY.MM 공정 양산구분」 이고 공정은 원본 이름이다 — 이
+        # 보기는 원본 공정소분류만 쓰고 공정 표시명을 읽지 않는다(결정 D10). 아래 달 범위 멈춤
+        # 글도 같은 꼴로 다시 짓는다(`_original_name_stop`).
         return ShorteningStop(
             "scenario",
             bootstrap_error_message(
-                exc, database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH), labels=None
+                exc,
+                database_paths=(DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH),
+                labels=None,
+                example_rows=True,
             ),
         )
     try:
@@ -426,7 +430,7 @@ def load_space_layer(
         )
     options = shortening_source.shortening_month_options(demand, cutoff)
     if isinstance(options, ShorteningStop):
-        return options
+        return _original_name_stop(options)
     months = effective_filter_months(
         options,
         shortening_source.shortening_filter_profile_or_default(database_path),
@@ -466,6 +470,20 @@ def load_space_layer(
         months=tuple(months),
         scenario=demand.context.active_scenario,
     )
+
+
+def _original_name_stop(stop: ShorteningStop) -> ShorteningStop:
+    """공용 길이 원문으로 지어 온 달 범위 멈춤 글을 같은 예외(`cause`)로 다시 짓는다 — 예시 행이
+    화면 꼴이고 공정은 원본 이름이다(결정 D10 그대로 — 2026-11-11 다음 배포 물음 보드
+    「F7 뒤 ①」 (다)). 필요 단축 일정 패널이 같은 예외로 표시명 글을 짓는 것(`_named_stop`)과
+    짝이다. 예외가 없는 멈춤은 그대로다.
+
+    돌려주는 멈춤은 예외를 놓는다 — 예외의 traceback(계산 프레임의 지역 값)을 회차 너머로 쥐지
+    않게."""
+    if stop.cause is None:
+        return stop
+    message = bootstrap_error_message(stop.cause, labels=None, example_rows=True)
+    return replace(stop, message=message, cause=None)
 
 
 def _equipment_basis_text(session: EquipmentSession) -> str:

@@ -517,6 +517,25 @@ def test_the_rest_of_a_stopped_screen_reads_its_examples_only_when_given_labels(
     )
 
 
+def test_original_name_screens_read_their_examples_without_display_names() -> None:
+    """원본 공정명으로 그리는 화면(Space 「필요 단축」 — 결정 D10)은 `example_rows=True` 로 표시명
+    없이 예시 행만 화면 꼴로 바꾼다 — 공정은 표시명이 있어도 원본 이름이다(2026-11-11 다음 배포
+    물음 보드 「F7 뒤 ①」 (다)). 기본값(`labels=None`)은 원문 그대로다(알림 「원본 오류」 ·
+    지문)."""
+    error = ValueError(
+        "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, 예시 "
+        "[{'생산계획년월': 202704, '공정': 'DEMO~P1', '양산구분': '양산'}]"
+    )
+    head = "RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, "
+
+    assert bootstrap_error_message(error, example_rows=True) == head + "예시 27.04 DEMO\\~P1 양산"
+    assert bootstrap_error_message(error, example_rows=True, markdown=False) == (
+        head + "예시 27.04 DEMO~P1 양산"
+    )
+    assert bootstrap_error_message(error, labels=None) == markdown_safe_tildes(str(error))
+    assert bootstrap_error_message(error, labels=None, markdown=False) == str(error)
+
+
 def _service_nonpositive(table: str, column: str) -> str:
     """0 이하로 멈춘 계산이 실제로 내는 오류 글(`unit_capacity._assert_positive`). 한 칸이 세 계산
     경로에 붙은 꼴이다 — 글의 건수가 행이 아니라 고칠 칸이어야 「0 이하 칸 1건」 이 맞는다."""

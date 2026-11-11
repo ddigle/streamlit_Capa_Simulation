@@ -23,6 +23,8 @@ import capa_simulation.components.process_labels as process_labels_module
 import capa_simulation.components.required_shortening_panel as shortening_panel
 import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.components.space_shortening_view as space_shortening_view
+import capa_simulation.components.stop_examples as stop_examples
+import capa_simulation.io.reference_cache as reference_cache
 import capa_simulation.persistence.equipment_cache as equipment_cache
 import capa_simulation.services.simulation_cache as simulation_cache
 from capa_simulation import alerts
@@ -55,15 +57,84 @@ def test_an_example_reads_month_process_and_mass_type_in_that_order() -> None:
     assert readable_examples(text, LABELS) == HEAD + "예시 27.04 절단 ER · 28.01 절단 양산"
 
 
+CLASH_RECORDS = [
+    {"생산계획년월": 202601, "공정": "DEMO-A", "양산구분": "양산"},
+    {"생산계획년월": 202601, "공정": "DEMO-B", "양산구분": "양산"},
+]
+
+
 def test_a_display_name_equal_to_another_example_splits_with_the_original() -> None:
-    """같은 예시 묶음의 다른 공정 원본과 표시명이 겹치면 「표시명 (원본)」 이다(공용 정책)."""
-    records = [
-        {"생산계획년월": 202601, "공정": "DEMO-A", "양산구분": "양산"},
-        {"생산계획년월": 202601, "공정": "DEMO-B", "양산구분": "양산"},
+    """같은 예시 묶음의 다른 공정 원본과 표시명이 겹치면 「표시명 (원본)」 이다(공용 정책). 실행
+    문맥이 없으면(단위 시험) 보유 공정을 읽지 않아 묶음 안에서만 가른다."""
+    assert examples_text(CLASH_RECORDS, LABELS) == "26.01 DEMO-B (DEMO-A) 양산 · 26.01 DEMO-B 양산"
+    assert examples_text(CLASH_RECORDS[:1], LABELS) == "26.01 DEMO-B 양산"
+
+
+def test_a_display_name_equal_to_an_owned_process_splits_outside_the_examples_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """표시명이 예시 묶음 밖 보유 공정(이 세션에 불러온 리비전의 `RQ_MODULE` 공정)의 원본 이름과
+    겹쳐도 「표시명 (원본)」 이다 — DEMO-A → 「DEMO-B」 이고 원본 DEMO-B 가 따로 있으면 A 만 든
+    예시도 「DEMO-B (DEMO-A)」(2026-11-11 다음 배포 물음 보드 「F7 뒤 ③」 (나), 선택 상자와 같은
+    판정).
+    겹치지 않는 표시명은 가르지 않고, 보유 공정 밖 예시 공정도 보이지 않는 글자 없이 그대로다."""
+    monkeypatch.setattr(stop_examples, "_owned_processes", lambda: ("DEMO-B", "DEMO-SAW", "DEMO-C"))
+    alone = CLASH_RECORDS[:1]
+    others = [
+        {"생산계획년월": 202704, "공정": "DEMO-SAW", "양산구분": "ER"},
+        {"생산계획년월": 202704, "공정": "DEMO-OUT", "양산구분": "양산"},
     ]
 
-    assert examples_text(records, LABELS) == "26.01 DEMO-B (DEMO-A) 양산 · 26.01 DEMO-B 양산"
-    assert examples_text(records[:1], LABELS) == "26.01 DEMO-B 양산"
+    assert examples_text(alone, LABELS) == "26.01 DEMO-B (DEMO-A) 양산"
+    assert (
+        examples_text(alone, LABELS)
+        == "26.01 " + LABELS.unique_format_func(["DEMO-A", "DEMO-B"])("DEMO-A") + " 양산"
+    )
+    assert examples_text(others, LABELS) == "27.04 절단 ER · 27.04 DEMO-OUT 양산"
+    assert "\u2060" not in examples_text([*alone, *others], LABELS)
+    assert markdown_examples(HEAD + "예시 " + repr(alone), LABELS) == (
+        HEAD + "예시 26.01 DEMO\\-B \\(DEMO\\-A\\) 양산"
+    )
+
+
+def test_owned_processes_are_read_only_with_display_names_and_examples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """보유 공정은 표시명이 있고 예시가 있을 때만 읽는다 — 표시명이 없으면(규칙 0건 · 표시명 없이
+    짓는 자리) 읽지 않고 글자도 원본 그대로다."""
+
+    def refuse() -> tuple[str, ...]:
+        raise AssertionError("보유 공정을 읽었습니다")
+
+    monkeypatch.setattr(stop_examples, "_owned_processes", refuse)
+    text = HEAD + "예시 " + repr(CLASH_RECORDS[:1])
+
+    assert readable_examples(text) == HEAD + "예시 26.01 DEMO-A 양산"
+    assert readable_examples(text, ProcessLabels()) == HEAD + "예시 26.01 DEMO-A 양산"
+    assert readable_examples(HEAD + "예시 없음", LABELS) == HEAD + "예시 없음"
+
+
+def test_owned_processes_come_from_the_loaded_revision_module_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """보유 공정은 이 세션에 불러온 리비전의 `RQ_MODULE` 공정이다(Admin 겹침 경고 `AD-06` 과 같은
+    범위). 실행 문맥이 없거나 불러온 리비전이 없으면 빈 값이다."""
+    assert stop_examples._owned_processes() == ()
+
+    monkeypatch.setattr(stop_examples, "get_script_run_ctx", lambda **_kwargs: object())
+    module = pd.DataFrame({"공정": ["DEMO-B", None, "DEMO-C", "DEMO-B"], "모듈수": [1, 1, 2, 1]})
+    monkeypatch.setattr(
+        reference_cache,
+        "get_effective_reference_tables",
+        lambda: {"RQ_MODULE": module},
+    )
+    assert stop_examples._owned_processes() == ("DEMO-B", "DEMO-C")
+
+    def no_revision() -> dict[str, pd.DataFrame]:
+        raise reference_cache.NoActiveRevision("없음")
+
+    monkeypatch.setattr(reference_cache, "get_effective_reference_tables", no_revision)
+    assert stop_examples._owned_processes() == ()
 
 
 def test_other_keys_and_the_value_follow_in_service_order() -> None:
@@ -230,11 +301,19 @@ def _labels_value(call: ast.Call) -> ast.expr | None:
     return next((keyword.value for keyword in call.keywords if keyword.arg == "labels"), None)
 
 
-# 계산을 먼저 보지만 멈춤 글을 원문으로 두는 자리 — Space 「필요 단축」 보기와 그 보기가 지나는
+# 계산을 먼저 보지만 표시명을 넘기지 않는 자리 — Space 「필요 단축」 보기와 그 보기가 지나는
 # 공용 길(`shortening_source`)은 원본 공정소분류만 쓴다(결정 D10 — 공정 표시명을 읽지 않는다,
-# `test_process_label_boundaries`). 그 `except` 는 `labels=None` 을 밝혀 적는다. 필요 단축 일정
-# 패널은 공용 길의 달 범위 멈춤 글을 같은 예외로 다시 짓는다(아래 시험).
+# `test_process_label_boundaries`). 그 `except` 는 `labels=None` 을 밝혀 적는다. 공용 길은 원문이고
+# 받는 화면이 같은 예외로 다시 짓는다 — 필요 단축 일정 패널은 표시명, Space 보기는 원본 공정명으로
+# 예시 행만 화면 꼴(`example_rows=True` — 2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다),
+# 아래 시험).
 ORIGINAL_NAME_PLACES = frozenset({"shortening_source.py", "space_shortening_view.py"})
+# 그 가운데 예시 행을 화면 꼴로 짓는 자리(원본 공정명).
+EXAMPLE_ROW_PLACES = frozenset({"space_shortening_view.py"})
+
+
+def _example_rows_value(call: ast.Call) -> ast.expr | None:
+    return next((keyword.value for keyword in call.keywords if keyword.arg == "example_rows"), None)
 
 
 def test_screens_that_check_the_calculation_first_pass_display_names_too() -> None:
@@ -243,7 +322,8 @@ def test_screens_that_check_the_calculation_first_pass_display_names_too() -> No
     표시명을 넘긴다 — 예시 행이 같은 꼴이다(F7 (나) 「다른 계산 멈춤 자리도 함께」). 원문을 따로
     드는 글(알림 「원본 오류」 · 지문)은 `labels=None` 을 밝혀 적는다 — 한 `except` 에 표시명을
     넘기는 글이 적어도 하나다. Space 「필요 단축」 보기와 그 공용 길(`ORIGINAL_NAME_PLACES`)만 모든
-    글이 `labels=None` 이다(결정 D10)."""
+    글이 `labels=None` 이다(결정 D10) — Space 보기(`EXAMPLE_ROW_PLACES`)는 예시 행만 화면 꼴
+    (`example_rows=True`), 공용 길은 원문(받는 쪽이 `cause` 로 다시 짓는다)."""
     seen: set[str] = set()
     original: set[str] = set()
     roots = (PROJECT_ROOT / "app_pages", PROJECT_ROOT / "src/capa_simulation/components")
@@ -273,6 +353,13 @@ def test_screens_that_check_the_calculation_first_pass_display_names_too() -> No
                         assert isinstance(value, ast.Constant) and value.value is None, (
                             f"{path.name}:{call.lineno}"
                         )
+                        rows = _example_rows_value(call)
+                        wanted = path.name in EXAMPLE_ROW_PLACES
+                        assert (
+                            isinstance(rows, ast.Constant) and rows.value is True
+                            if wanted
+                            else rows is None
+                        ), f"{path.name}:{call.lineno}"
                     original.add(path.name)
                     continue
                 named = [
@@ -407,11 +494,17 @@ def _space_layer_stop() -> shortening_source.ShorteningStop:
     return stop
 
 
-def test_the_space_shortening_demand_stop_keeps_the_original_text(
+# Space 「필요 단축」 보기의 멈춤 글 — 예시 행은 화면 꼴이고 공정은 원본 이름이다(표시명 「절단」 이
+# 있어도 「DEMO-SAW」). 마크다운 글이라 칸 값은 막혀 있다.
+SPACE_STOPPED_TEXT = markdown_examples(STOPPED_TEXT)
+
+
+def test_the_space_shortening_demand_stop_reads_its_examples_with_original_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Space 「필요 단축」 보기의 수요 멈춤 글은 공용 표시명이 있어도 원문이다(예시 행도 dict 꼴
-    그대로) — 그 길은 원본 공정소분류만 쓴다(결정 D10). 표시명을 부르면 이 시험이 잡는다."""
+    """Space 「필요 단축」 보기의 수요 멈춤 글은 예시 행이 화면 꼴 「YY.MM 공정 양산구분」 이고
+    공정은 공용 표시명이 있어도 원본 이름이다 — 그 길은 원본 공정소분류만 쓴다(결정 D10,
+    2026-11-11 다음 배포 물음 보드 「F7 뒤 ①」 (다)). 표시명을 부르면 이 시험이 잡는다."""
 
     def stopped() -> shortening_source.ShorteningDemand:
         raise ValueError(STOPPED_TEXT)
@@ -421,13 +514,16 @@ def test_the_space_shortening_demand_stop_keeps_the_original_text(
     stop = _space_layer_stop()
 
     assert stop.kind == "scenario"
-    assert stop.message == STOPPED_TEXT
+    assert stop.message == SPACE_STOPPED_TEXT
+    assert readable_examples(STOPPED_TEXT) == HEAD + "예시 27.04 DEMO-SAW 양산"
+    assert stop.cause is None
 
 
-def test_the_space_shortening_month_range_stop_keeps_the_original_text(
+def test_the_space_shortening_month_range_stop_reads_its_examples_with_original_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Space 「필요 단축」 보기의 달 범위 멈춤 글도 원문이다 — 공용 길이 지은 글을 그대로 쓴다."""
+    """Space 「필요 단축」 보기의 달 범위 멈춤 글도 같은 꼴이다 — 공용 길이 원문으로 지어 실은
+    예외로 다시 짓고 예외를 놓는다(필요 단축 일정 패널 `_named_stop` 과 짝 — 그 화면은 표시명)."""
     monkeypatch.setattr(shortening_source, "load_shortening_demand", lambda: DEMAND)
     monkeypatch.setattr(equipment_cache, "load_process_cutoff", lambda _path: CUTOFF)
     _stop_the_month_range(monkeypatch)
@@ -435,7 +531,11 @@ def test_the_space_shortening_month_range_stop_keeps_the_original_text(
     stop = _space_layer_stop()
 
     assert stop.kind == "scenario"
-    assert stop.message == STOPPED_TEXT
+    assert stop.message == SPACE_STOPPED_TEXT
+    # 다시 지은 멈춤은 예외(traceback)를 쥐지 않는다.
+    assert stop.cause is None
+    plain = shortening_source.ShorteningStop("info", "조회기간에 월이 없습니다.")
+    assert space_shortening_view._original_name_stop(plain) is plain
 
 
 # 마크다운 자리(알림 전문 · 풍선 · 거부 상자 · 결과 알림)로 계산 오류 글을 싣는 함수 — 예시 행을
