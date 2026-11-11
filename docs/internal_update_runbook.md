@@ -2270,7 +2270,7 @@ git 이력에 있다). 7-8 이 늘 마지막이다.
 - **`Pack Code` 업무 키 승격의 후속** — 시뮬레이션 `0013` 이전에 저장한 리비전은 `Pack Code` 가 비어 있어 `생산 계획` 화면이 「RQ_PKG_PLAN의 편집 테이블 식별 컬럼에 누락값이 있습니다: Pack Code …」로 선다. 실데이터를 **다시 등록**하고,
   승격 전에 내려받은 PKG PLAN CSV 양식은 **다시 받는다.**
 - **BigDataQuery 조회** — WebIDE 처럼 요청자 계정이 필요한 환경에서만 `export CAPA_BDQ_USER_NAME="<AD 계정>"` 를 넣고 앱을 다시 띄운다(사내 PC 의 Windows 는 로그인 이름으로 묻는다 — 8-5 `준비` 줄). 자세한 것은
-  [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md). 조회가 실패하면 화면이 갈래(시간 초과 · 연결 · SQL · 그 밖)와 다시 할 길을 알린다 — 일시 실패면 같은 조회를 한 번 더 한다.
+  [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md). 조회가 실패하면 화면이 갈래(토큰 · 시간 초과 · 연결 · SQL · 그 밖)와 다시 할 길을 알린다 — 일시 실패면 같은 조회를 한 번 더 한다.
 
 WebIDE 환경 넷(`aws` PATH · 재시작 주기 · 디스크 영속성 · `CAPA_BDQ_USER_NAME`)은 네 번 연속 미기록이었고 **WebIDE 이관이 보류**라(BigDataQuery → S3 Drive 전환이 끝나면 다시 한다 — 2026-10-10 사용자 결정) 묻지 않는다. 이관을 다시 열 때 7장에 다시 싣는다.
 
