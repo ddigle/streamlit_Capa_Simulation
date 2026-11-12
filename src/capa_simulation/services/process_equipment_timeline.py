@@ -53,8 +53,8 @@
 공정 Capa 상세 「③ 비가동」 구획의 비가동대수(2026-11-12 사용자 답 q5 (가))는 달마다 비가동이 깎은
 가용이다(`downtime_impact`). 손실 = 호기 비가동 손실(위 반사실의 그 달 합 — `호기 비가동 손실`) +
 입력 비가동 반영(그 달 가용에서 멈춘 뒤 실제로 뺀 몫)이고, 곧 「비가동이 하나도 없었을 때의 가용 −
-지금 가용」 이다. 확보율 영향은 그 손실 ÷ 소요 × 100(%)이고 가용·소요는 계획
-(`LevelPlan.process_months`)의 단축 전 값이라 계획의 `확보율` 과 같은 길이다.
+지금 가용」 이다. 가용·소요는 계획(`LevelPlan.process_months`)의 단축 전 값이라 `확보율` 이 계획의
+`확보율` 과 같은 길이다.
 
 ## 총보유대수 — 달력 월
 
@@ -340,17 +340,14 @@ IMPACT_COLUMNS = (
     "가용대수",
     "비가동 없는 가용대수",
     "확보율",
-    "비가동 없는 확보율",
-    "확보율 영향(%)",
 )
 """비가동 손실(`downtime_impact`) — 전월 대비의 달마다 한 행. 대수는 환산대수다. 공정 Capa 상세
 「③ 비가동」 의 비가동대수가 `비가동 손실` 이다.
 
 `비가동 손실 = 호기 비가동 손실 + 입력 비가동 손실 = 비가동 없는 가용대수 − 가용대수` 이고 입력
 몫은 가용에서 실제로 뺀 몫(`입력 비가동 반영` — 0 에서 멈춘 뒤)이다. `소요대수`·`가용대수` 는 계획의
-단축 전 값이라 `확보율` 이 계획의 `확보율` 과 같다. `확보율 영향(%) = 비가동 손실 ÷ 소요대수 × 100`
-이다.
-소요가 0 이면 두 확보율과 영향이 NaN 이고, 계획에 없는 달은 소요부터 NaN 이다.
+단축 전 값이라 `확보율` 이 계획의 `확보율` 과 같다. 소요가 0 이면 `확보율` 이 NaN 이고, 계획에 없는
+달은 소요부터 NaN 이다.
 """
 
 ARROW_COLUMNS = (
@@ -1621,8 +1618,7 @@ def _units_by_month(contributions: pd.DataFrame) -> dict[tuple[str, int], float]
 
 
 def downtime_impact(bridge: pd.DataFrame, process_months: pd.DataFrame) -> pd.DataFrame:
-    """달마다 비가동이 깎은 가용과 그 확보율 영향(`IMPACT_COLUMNS`) — 「③ 비가동」 비가동대수의
-    재료.
+    """달마다 비가동이 깎은 가용(`IMPACT_COLUMNS`) — 「③ 비가동」 비가동대수의 재료.
 
     `bridge` 는 그 공정의 `availability_bridge`(`ProcessEquipmentTimeline.bridge`),
     `process_months` 는 같은 공정의 계획 달 행(`LevelPlan.process_months` 를 그 공정으로 거른 것 —
@@ -1676,8 +1672,6 @@ def downtime_impact(bridge: pd.DataFrame, process_months: pd.DataFrame) -> pd.Da
                 if not math.isnan(available)
                 else math.nan,
                 "확보율": available / need if counted else math.nan,
-                "비가동 없는 확보율": (available + loss) / need if counted else math.nan,
-                "확보율 영향(%)": _tidy(loss / need * 100) if counted else math.nan,
             }
         )
     frame = pd.DataFrame(rows, columns=columns)

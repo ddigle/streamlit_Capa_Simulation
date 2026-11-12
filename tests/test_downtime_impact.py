@@ -1,10 +1,10 @@
-# Purpose: 비가동 손실 갈림·확보율 영향 계산과 공정 Capa 상세 「③ 비가동」 비가동대수 줄을 고정한다.
+# Purpose: 비가동 손실 갈림 계산과 공정 Capa 상세 「③ 비가동」 비가동대수 줄을 고정한다.
 
 """비가동 손실(`downtime_impact`)과 공정 Capa 상세 「③ 비가동」 의 비가동대수 줄(2026-11-12 사용자
 답 q5 (가) — 호기별 비가동 일정이 깎은 대수 + 입력 비가동 대수).
 
 달마다 손실 = 호기 비가동 손실(비가동을 비운 반사실 − 실제) + 입력 비가동 반영(0 에서 멈춘 뒤
-실제로 뺀 몫)이고, 확보율 영향은 그 손실 ÷ 소요 × 100(%)이다 — 가용·소요는 계획의 단축 전 값이다.
+실제로 뺀 몫)이다 — 가용·소요는 계획의 단축 전 값이라 확보율이 계획의 확보율과 같다.
 계산(`downtime_impact`)은 손으로 셀 수 있는 표와 실제 설비 일정 둘로 보고, 그림은 결합 캔버스
 시험의 설비 일정(`_dynamic`)에 손실 칸만 덧입혀 본다.
 """
@@ -71,9 +71,9 @@ def _impact_rows(bridge: dict[str, list[Any]], plan: dict[str, list[Any]]) -> pd
     return downtime_impact(pd.DataFrame(bridge), pd.DataFrame(plan)).set_index("생산계획년월")
 
 
-def test_the_loss_is_the_unit_and_input_split_and_the_points_divide_by_demand() -> None:
-    """5월: 호기 0.6 + 입력 0.4 = 1.0 대, 소요 5 · 가용 4 → 비가동 없으면 5 (100%) · 지금 80% ·
-    20%. 6월은 깎은 것이 없고, 7월은 소요 0 이라 대수만, 8월은 계획에 없는 달이다."""
+def test_the_loss_is_the_unit_and_input_split_and_the_rate_is_the_plans() -> None:
+    """5월: 호기 0.6 + 입력 0.4 = 1.0 대, 소요 5 · 가용 4 → 비가동 없으면 5 · 지금 확보율 80%.
+    6월은 깎은 것이 없고, 7월은 소요 0 이라 대수만, 8월은 계획에 없는 달이다."""
     frame = _impact_rows(
         {
             "생산계획년월": [MAY, JUNE, JULY, AUGUST],
@@ -92,18 +92,15 @@ def test_the_loss_is_the_unit_and_input_split_and_the_points_divide_by_demand() 
     assert (may["호기 비가동 손실"], may["입력 비가동 손실"], may["비가동 손실"]) == (0.6, 0.4, 1.0)
     assert may["비가동 없는 가용대수"] == 5.0
     assert may["확보율"] == pytest.approx(0.8)
-    assert may["비가동 없는 확보율"] == pytest.approx(1.0)
-    assert may["확보율 영향(%)"] == pytest.approx(20.0)
-    # 영향은 두 확보율의 차이 그 자체다.
-    assert may["확보율 영향(%)"] == pytest.approx((may["비가동 없는 확보율"] - may["확보율"]) * 100)
+    # 화면에서 쓰지 않게 된 두 칸은 걷었다(2026-11-12 남은 물음 보드 ⑥-1 (가)).
+    assert "비가동 없는 확보율" not in frame.columns and "확보율 영향(%)" not in frame.columns
     june = frame.loc[JUNE]
-    assert (june["비가동 손실"], june["확보율 영향(%)"]) == (0.0, 0.0)
+    assert june["비가동 손실"] == 0.0
     assert june["비가동 없는 가용대수"] == june["가용대수"] == 4.0
     july = frame.loc[JULY]
     assert july["비가동 손실"] == pytest.approx(0.3)
     assert july["비가동 없는 가용대수"] == pytest.approx(2.3)
-    for column in ("확보율", "비가동 없는 확보율", "확보율 영향(%)"):
-        assert math.isnan(july[column]), column
+    assert math.isnan(july["확보율"])
     august = frame.loc[AUGUST]
     assert august["비가동 손실"] == pytest.approx(0.7)
     assert math.isnan(august["소요대수"]) and math.isnan(august["비가동 없는 가용대수"])
@@ -194,7 +191,6 @@ def test_the_input_share_is_clamped_and_no_downtime_at_all_is_the_free_schedule(
     free = _impact_timeline(rows, _downtime()).set_index("생산계획년월")
     assert list(impact["비가동 없는 가용대수"]) == pytest.approx(list(free["가용대수"]))
     assert list(impact["가용대수"]) == pytest.approx(list(by_month["가용대수"]))
-    assert list(impact["확보율 영향(%)"]) == pytest.approx(list(impact["비가동 손실"] / 5.0 * 100))
     assert list(impact["확보율"]) == pytest.approx(list(plan.process_months["확보율"]))
 
 

@@ -966,7 +966,7 @@ def apply_stories(fleet: Fleet, facts: SimFacts) -> None:
     for unit in fleet.units:
         by_process[unit.process].append(unit)
 
-    # Ball Attach 27.01–04 신규 Qual 지연(기준✓·일정✕). r1 은 더 늦고 r2 는 앞 3대만 당겼다.
+    # Ball Attach 27.01–04 신규 Qual 지연(Static✓·일정✕). r1 은 더 늦고 r2 는 앞 3대만 당겼다.
     ball_new = sorted(
         (
             u
@@ -2314,7 +2314,8 @@ def checks(
         + (f" · 밖 {', '.join(worst)}" if worst else ""),
     )
 
-    # 판정 대조 넷(기준 = 공식 확보율, 일정 = 설비 일정 확보율, 목표 110%·월별 예외).
+    # 공정 Capa 상세 ① Static · ② 일정 가용 확보율 판정의 네 조합(Static = 공식 확보율, 일정 = 설비
+    # 일정 확보율, 목표 110%·월별 예외)이 표본에 모두 있는가.
     thresholds = facts.thresholds
     combos: Counter[str] = Counter()
     for process, month, required, available in zip(
@@ -2329,14 +2330,15 @@ def checks(
         )
         schedule_ok = float(available) / required >= target - 1e-9
         combos[
-            ("기준✓" if official_ok else "기준✕") + "·" + ("일정✓" if schedule_ok else "일정✕")
+            ("Static✓" if official_ok else "Static✕") + "·" + ("일정✓" if schedule_ok else "일정✕")
         ] += 1
     check(
         all(
             combos.get(k, 0) >= 1
-            for k in ("기준✓·일정✓", "기준✓·일정✕", "기준✕·일정✓", "기준✕·일정✕")
+            for k in ("Static✓·일정✓", "Static✓·일정✕", "Static✕·일정✓", "Static✕·일정✕")
         ),
-        "판정 대조 " + " · ".join(f"{k} {v}" for k, v in sorted(combos.items())),
+        "① Static · ② 일정 가용 판정 조합 "
+        + " · ".join(f"{k} {v}" for k, v in sorted(combos.items())),
     )
 
     rows_total = len(official.equipment)
