@@ -2224,15 +2224,16 @@ CONFIRM_1113_MEMOS = {
 }
 CONFIRM_1113_OTHERS = ("foot-contract", "d-foot-shapes")
 # 고양이 그림 고침 커밋 — 두 (나) 줄이 함께 든다.
-CONFIRM_1113_CAT_COMMIT = "87b6df4"
-CONFIRM_1113_COMMITS = {key: (CONFIRM_1113_CAT_COMMIT,) for key in CONFIRM_1113_OTHERS}
+CONFIRM_1113_CAT_COMMITS = ("87b6df4", "d7db0ba")
+CONFIRM_1113_COMMITS = {key: CONFIRM_1113_CAT_COMMITS for key in CONFIRM_1113_OTHERS}
+CONFIRM_1113_CAT_ADDRESS = "https://claude.ai/artifact/WyNh8ACZXtHBR15WDmr9LT"
 
 
 def test_the_space_confirm_1113_board_answers_are_recorded() -> None:
     """v1.24 — 6-24 는 「Space 구현 확인」 보드 카드 열일곱이 보드 차례대로 한 줄씩이고
     고른 글은 선택지 원문(알림 카드는 메모)이다. 권장과 다른 답은 둘(1 · 2-10 — 고양이 발
     모양만 바꿈)이고 둘 다 메모 원문과 고양이 그림 고침 커밋을 든다. 나머지 열다섯은 커밋이
-    없다. 저장 키 `cat` 은 그대로이고 바꾼 그림은 배포 전에 다시 여쭙는다. 6-22 · 6-23 줄은
+    없다. 저장 키 `cat` 은 그대로이고 바꾼 그림은 시안 보드에서 다시 골랐다(B). 6-22 · 6-23 줄은
     그때 기록 그대로다(앞 시험이 6-24 앞에서 끊어 본다)."""
     document = _text()
     assert "판 v1.24" in document.split("\n## 1. ")[0]
@@ -2270,6 +2271,8 @@ def test_the_space_confirm_1113_board_answers_are_recorded() -> None:
     for key, note in CONFIRM_1113_MEMOS.items():
         assert f"메모 「{note}」" in by_id[key], key
     assert "`cat`" in by_id["foot-contract"]
+    assert "「B 큰 젤리」" in by_id["foot-contract"]
+    assert CONFIRM_1113_CAT_ADDRESS in board
     assert "`docs/TODO.md` 2장 「뒤로 미룬 것 — order 2단」" in by_id["later-stack"]
     for phrase in ("Ctrl+Z", "「다음 배포로」", "`202611131000`"):
         assert phrase in board, phrase
