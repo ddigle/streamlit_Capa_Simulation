@@ -2178,6 +2178,8 @@ def _write_shared(
     - 형제 하나라도 잠겼으면 그 묶음 쓰기를 통째로 넣지 않고 까닭을 적는다. 한 번에 같은 묶음 ·
       같은 칸에 다른 값이 오면 같이 바꾸지 않고 받은 칸만 쓴다 — 어느 값이 맞는지 고르지 않는다.
     - 고친 줄 값이 그대로여도 형제가 바뀌면 바뀐 것이다 — 갈린 묶음을 같은 값 다시 넣기로 푼다.
+      막지 않는 칸(레이아웃표시 — `_QUIET_SHARED`)만은 고친 줄 값이 실제로 바뀔 때만 형제에게
+      퍼뜨린다 — 보이는 모듈에 같은 Y 를 다시 붙여넣어도 일부러 끈 모듈이 켜지지 않는다.
     - 모두 같은 `_Patch` 에 쌓여 「한 단계 되돌리기」 한 번에 돌아간다. 불러오지 않은 형제는 고친
       줄 바로 아래에 끼운다(`_insert_siblings` — 되돌려도 끼운 줄은 남는다)."""
     result = _Shared()
@@ -2204,6 +2206,8 @@ def _write_shared(
                 drafted = _set_overlay(work, patch, key, texts[(position, write.column)])
                 result.changed += int(drafted)
             continue
+        if write.group is not None and not _spreads(work, write):
+            write = replace(write, group=None, rows=write.asked)
         locked = [
             position
             for position in write.rows
@@ -2229,6 +2233,24 @@ def _write_shared(
             result.spread.append((write, together))
             _insert_siblings(work, index, write)
     return result
+
+
+# 같이 바뀌기만 하고 묶음 갈림으로 막지 않는 칸 — 고친 줄 값이 실제로 바뀔 때만 형제에게 퍼진다.
+_QUIET_SHARED: Final = frozenset(UNIT_SHARED_COLUMNS) - {
+    *UNIT_CONSISTENT_COLUMNS,
+    *UNIT_SAVE_CONSISTENT_COLUMNS,
+}
+
+
+def _spreads(work: _Work, write: GroupWrite) -> bool:
+    """묶음 쓰기가 형제까지 가나 — 막는 열세 칸은 늘(같은 값 다시 넣기가 갈린 묶음을 푼다), 막지
+    않는 칸은 고친 줄 가운데 하나라도 값이 바뀔 때만이다(2026-11-12 설계 G4 — 일부러 끈 모듈의
+    레이아웃표시를 같은 값 다시 넣기로 켜지 않는다)."""
+    if write.column not in _QUIET_SHARED:
+        return True
+    target = cell_text(write.value)
+    column = _loc(work.master, write.column)
+    return any(cell_text(work.master.iat[p, column]) != target for p in write.asked)
 
 
 def _group_refusal(

@@ -313,6 +313,28 @@ def test_a_locked_sibling_refuses_the_whole_group_write_and_says_why() -> None:
     assert _column(taken, "레이아웃표시", [*GROUP, len(master) - 1]) == ["N"] * 5
 
 
+def test_putting_the_same_layout_flag_again_does_not_turn_on_a_hidden_module() -> None:
+    """레이아웃표시는 같이 바뀌기만 하고 막지 않는 칸이다 — 보이는 모듈에 같은 Y 를 다시 붙여넣거나
+    값 넣기 해도 일부러 끈(N) 모듈이 켜지지 않는다(설계 G4). 고친 줄 값이 실제로 바뀌면 묶음 모든
+    줄이 따라간다."""
+    master = _grouped_frames()[1].copy()
+    master.loc[6, "레이아웃표시"] = "N"
+    state = _grouped(master)
+    visible = _ids(state, [0, 2])
+
+    pasted = ops_apply(
+        state, ops_op("paste", 1, ids=visible[:1], cols=["레이아웃표시"], rows=[["Y"]])
+    )
+    put = ops_apply(state, ops_op("set", 1, ids=visible, col="레이아웃표시", text="Y"))
+    for result in (pasted, put):
+        assert _column(result, "레이아웃표시", GROUP) == ["Y", "Y", "Y", "N"]
+        assert not result.changed and result.inserted == ()
+
+    hidden = ops_apply(state, ops_op("set", 1, ids=visible, col="레이아웃표시", text="N"))
+    assert _column(hidden, "레이아웃표시", GROUP) == ["N"] * 4
+    assert hidden.toast == "값 넣기 — 2칸 바뀜 · 묶음 1개 1칸 같이"
+
+
 def test_an_unreadable_value_stays_a_draft_on_its_own_row() -> None:
     """못 다듬은 글(동 「Z9」)은 그 줄 칸 초안만 생기고 형제에게 퍼지지 않는다."""
     state = _grouped()
