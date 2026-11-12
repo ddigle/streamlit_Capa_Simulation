@@ -224,6 +224,33 @@ def test_the_boundary_dates_follow_the_decided_rules() -> None:
     assert by_name["STOP_EXIT"]["offline"] == [["2026-10-20", None]]
     assert {name for name, item in by_name.items() if item["flag"]} == {"UNCONFIRMED"}
     assert by_name["STORED"]["storage"] is True
+    # 반입 일정 글의 재료(2026-11-12 Space 보드 답 1-1 · 1-5) — 실적이 있으면 실적일(점선 테가
+    # 실선이 되는 날), 없으면 반입일정. 반입상태 지연은 실적이 없을 때만. 날짜가 없으면 None.
+    arrival = {
+        name: (item["arrivalPlan"], item["arrivalDelayed"]) for name, item in by_name.items()
+    }
+    assert arrival["ACTUAL"] == ("2026-01-07", False)
+    assert arrival["FUTURE"] == ("2026-11-01", False)
+    assert arrival["LATE_IN"] == ("2026-09-01", True)
+    assert arrival["EXISTING"] == arrival["STORED"] == (None, False)
+    assert arrival["EXISTING_LATER"] == ("2027-01-10", False)
+
+
+def test_the_arrival_words_drop_the_delay_once_the_unit_has_arrived() -> None:
+    """반입상태가 「지연」 이어도 실적이 들어오면 지연이 아니다(실적일을 쓴다). 지연인데 일정이 비면
+    날짜 없이 지연이다(「미정 지연」)."""
+    rows = pd.DataFrame(
+        [
+            _row("LATE_DONE", 반입일정="2026-09-01", 반입상태="지연", 반입실적="2026-09-20"),
+            _row("LATE_UNDATED", 반입일정=None, 반입상태="지연"),
+        ]
+    )
+    payload = boundary_payload(unit_boundaries(rows, pd.DataFrame(), today=TODAY))
+
+    assert [(item["arrivalPlan"], item["arrivalDelayed"]) for item in payload] == [
+        ("2026-09-20", False),
+        (None, True),
+    ]
 
 
 def test_an_old_revision_without_the_new_columns_reads_schedules_only() -> None:

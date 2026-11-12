@@ -410,6 +410,16 @@ COMPARE_HELP = (
     "칸과 층 블록 풍선 한 줄이 섭니다. 도면 요소·Main 설비명 위치 차이는 가정 배치 알림(알림창 · "
     "Alarm)의 수로만 봅니다."
 )
+# 「반입 일정」(2026-11-12 Space 보드 답 1-1 ~ 1-6) — 견주기 바로 아래 토글. 층 보기에서 반입
+# 전(점선 테) 호기에 반입 일정을 쓴다(epoch 밖 — 켜고 꺼도 도면을 다시 마운트하지 않는다). 처음은
+# 끔이고 켠 값은 세션에 남는다. 층 배치 편집 중과 FAB 전체(호기 상자가 없다)에는 다른 key 의 끈 채
+# 잠근 토글을 같은 자리에 세운다 — 세션 값은 그대로라 편집을 끄거나 층으로 가면 돌아온다.
+ARRIVAL_KEY = "space_arrival_dates_v1"
+ARRIVAL_LOCKED_KEY = "space_arrival_dates_locked_v1"
+ARRIVAL_LABEL = "반입 일정"
+ARRIVAL_HELP = "층 도면의 반입 전 호기에 반입 일정을 씁니다."
+ARRIVAL_EDIT_LOCK = "배치 편집 중에는 쓰지 않습니다."
+ARRIVAL_FAB_LOCK = "층 도면에서 씁니다."
 # 비활성 층을 연 회차의 표지(「비활성 층 · 사유」) 풍선 — 빠지는 곳과 다시 켜는 곳.
 INACTIVE_FLOOR_HELP = (
     "FAB 도면·층 바로 가기·「다른 층으로 보내기」에서 빠집니다. 호기는 그대로이고 FAB 전체 층 목록 "
@@ -2191,6 +2201,23 @@ with space_box:
             COMPARE_LABEL, value=False, key=COMPARE_LOCKED_KEY, disabled=True, help=compare_lock
         )
         compare_on = False
+    # 반입 일정 — 견주기 바로 아래 토글 하나(라벨이 이름이다). 층 보기에서만 그린다.
+    arrival_lock = (
+        ARRIVAL_FAB_LOCK
+        if selected is None
+        else ARRIVAL_EDIT_LOCK
+        if editable and editing
+        else None
+    )
+    if arrival_lock is None:
+        arrival_on = st.toggle(
+            ARRIVAL_LABEL, key=ARRIVAL_KEY, persist_state="session", help=ARRIVAL_HELP
+        )
+    else:
+        st.toggle(
+            ARRIVAL_LABEL, value=False, key=ARRIVAL_LOCKED_KEY, disabled=True, help=arrival_lock
+        )
+        arrival_on = False
 
 # 저장 안 한 배치 상자의 자리는 늘 서 있다(내용만 비었다 찼다). 상자가 첫 적용에 새로
 # 서거나 저장·버리기로 사라질 때 아래 층 상세·FAB 상자의 순번이 밀리면, Streamlit 은 요소를
@@ -2702,6 +2729,8 @@ else:
                 # 빠지지 않은 것. 「도면」 칸은 도면에 선 호기면 배치다.
                 sheet=_view_sheet(floor_status, floor_equipment, floor_sheet_csv),
                 pick_to_server=shown_layer is not None,
+                # 「반입 일정」 — epoch 밖, 켠 회차에만 키가 실린다.
+                arrival_dates=arrival_on,
             )
     # 필요 단축 보기 칸 — 바깥은 늘 서는 테두리 없는 칸이고 켠 동안만 안쪽 테두리 칸이 선다(빈 칸에
     # 테두리를 주지 않는다 — 끈 동안 빈 테두리가 선다).

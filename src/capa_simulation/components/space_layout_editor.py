@@ -231,7 +231,8 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
     색 기준의 면·글자(`fill`·`ink`, `#RRGGBB` 만 — 아니면 빈 글자라 브라우저가 기본 회색)와 경계
     날짜(`realFrom`·`exitOn`·`stopOn`·`delays`·`offline`,
-    `services/space_unit_state.boundary_payload`)· `storage`·`flag` 도 여기를 지난다. 이름에
+    `services/space_unit_state.boundary_payload`)· `storage`·`flag`·반입 일정(`arrivalPlan` —
+    날짜 글자 또는 None, `arrivalDelayed`) 도 여기를 지난다. 이름에
     `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다. `share` 는 기준일
     설비지분(모듈 행 넷이 모두 반입했으면 0.25, 없으면 1 — 범례와 같은 칸)이고 층 상세 보기
     요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다.
@@ -269,6 +270,8 @@ def _clean_item(item: Mapping[str, Any]) -> dict[str, Any]:
         "offline": _spans(item.get("offline")),
         "flag": bool(item.get("flag")),
         "share": _share_or_one(item.get("share")),
+        "arrivalPlan": _day_or_none(item.get("arrivalPlan")),
+        "arrivalDelayed": bool(item.get("arrivalDelayed")),
     }
     if item.get("layer") in _LAYER_BUCKETS:
         cleaned["layer"] = str(item["layer"])
@@ -514,6 +517,7 @@ def render_space_layout_viewer(
     pending_save: bool = False,
     sheet: Mapping[str, Any] | None = None,
     pick_to_server: bool = True,
+    arrival_dates: bool = False,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -559,7 +563,11 @@ def render_space_layout_viewer(
     `sheet` 는 도면 위 「호기 정보」 창의 표(`_clean_sheet` — 고른 호기의 칸·칸 필터로 맞는 호기
     목록과 도면 강조, 2026-11-03 사용자 요청)이고 epoch 밖이다. `pick_to_server` 가 거짓이면
     브라우저가 호기 누르기를 `pick` 으로 보내지 않는다(누를 때마다 앱 전체가 돌지 않게 — 받는 쪽이
-    필요 단축 칸뿐이라 그 보기를 켠 동안만 참이다, 사양 D11)."""
+    필요 단축 칸뿐이라 그 보기를 켠 동안만 참이다, 사양 D11).
+
+    `arrival_dates` 는 사이드바 「반입 일정」 을 켠 회차다(2026-11-12 Space 보드 답 1-1 ~ 1-6) — 켠
+    회차에만 data `arrivalDates` 가 실리고(epoch 밖) 브라우저가 반입 전 호기에 반입 일정을 쓴다.
+    재료(호기마다 `arrivalPlan`·`arrivalDelayed`)는 늘 실린다 — 풍선이 토글과 상관없이 쓴다."""
     layer_fields: dict[str, Any] = {}
     if badges is not None:
         layer_fields["shortBadges"] = _clean_badges(badges)
@@ -593,6 +601,7 @@ def render_space_layout_viewer(
             "sheet": _clean_sheet(sheet),
             "pickToServer": bool(pick_to_server),
             **layer_fields,
+            **({"arrivalDates": True} if arrival_dates else {}),
         },
         on_apply_change=lambda: None,
         on_asOf_change=partial(_dispatch_as_of, key, on_as_of),

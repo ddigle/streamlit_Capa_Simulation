@@ -827,7 +827,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `배치 편집`(층 `space_layout_edit_mode`·잠기거나 설비 저장본이 없는 층이면 꺼진 짝 `space_layout_edit_mode_locked` — 풍선이
     까닭 / FAB `space_fab_edit_mode`, 줄마다 위젯 하나 · 가로 줄은 자리 줄 하나 — 2026-11-12 Space 보드 답 1-4 「캔버스 편집버튼은
     지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기` · 잠금 줄(`_render_edit_lock_line` —
-    표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글이다 — **상자에는 조작만 둔다**
+    표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글 · `반입 일정` 토글
+    (`space_arrival_dates_v1`, 층 배치 편집 중 · FAB 이면 꺼진 짝 `space_arrival_dates_locked_v1` — 2026-11-12 Space 보드 답
+    1-4 · 1-6 · A5, 켠 회차에만 뷰어 data `arrivalDates`)이다 — **상자에는 조작만 둔다**
     (줄 이름 「자리」 · 「도면」 도 달지 않는다 — 2026-11-09 사용자 검수 P1-5).
     상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태 알림이다(2026-11-04 Space 결정 보드 답 — 「인터페이스에 설명 문구를 다는
     걸 지양」, 9장 「알림 칸」): 배치 차이 `EQ-13`(알림 — `space_layout_notices` 의 `LayoutNotice` — 짧은 글 「가정 배치 · 공식과
@@ -1386,6 +1388,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옮기기·연결은 되고 `[열기]` 만 꺼진다(`syncInspector`).
   - 호기 값은 `_clean_items`·첫 회차 `readUnit`·같은 epoch 합치기 세 경로를 모두 지난다. CSS 의 `--sle-*` 는 모두
     `_palette()` 에 둔다(블록 색 대비는 `tests/test_design_tokens.py`). 보기 높이는 localStorage 에만 둔다.
+  - **반입 일정**(층 보기만 — data `arrivalDates` 를 실은 회차, 2026-11-12 Space 보드 답 1-1 ~ 1-6): 그날 반입 전이고
+    보이는 호기(`arrivalShown` — 칠한 `is-pre` · `__visible`)에 `27.05.09` · 「지연」(굵은 tspan) · 「미정」 을 쓴다. 순수
+    함수는 `// <view-arrival>` 구획(`arrivalWords` · `groupArrivalMode` · `arrivalBoxLines` · `arrivalPill`, node 시험
+    `tests/test_space_arrival_js.py`)이다. 낱 호기와 글이 다른 묶음('each')은 상자 안 이름 아래(`syncArrival` — 이름 0.82배,
+    7px 아래면 숨음), 글이 모두 같은 묶음('once')은 Main 설비명 알약 둘째 줄이다(`drawGroupNames` 가 묶음마다 `S.arrivalModes`
+    를 정하고 모듈 상자를 다시 맞춘다 — 가운데 이름 글자 상한은 두 줄 높이 `ARRIVAL_PILL_TALL`, 위 알약이면 「필요 단축」
+    배지가 그만큼 더 비킨다). 같은 epoch 에서 켜고 끄면(`S.lastArrival`) 묶음 자리와 모든 호기를 다시 맞춘다. 반입 전 호기
+    풍선은 토글과 상관없이 「반입 일정 …」 을 붙인다(`arrivalTipWords`).
   - **Main 설비 모듈 묶음**(편집기 모듈 + 숨은 모듈이 둘 이상, 2026-10-23 사용자 요청)은 묶음 범위(이 층 도면에 선
     모듈의 바깥 상자)만 고치고 안은 바둑판 자동 배치다 — 모듈 2·3 은 가로 한 줄(열 n·행 1), 넷부터 ⌈√n⌉ 열(넷이면
     2×2, 2026-10-23 사용자 답). 바둑판 순수 함수는 `// <module-tiling>` 구획(`moduleGrid`·`moduleCells`·
@@ -2126,6 +2136,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `simulation_cache.get_schedule_confirmation_issues`(마스터 지문 + 오늘)로 읽는다.
 - `src/capa_simulation/services/space_unit_state.py` — Space 호기 경계 날짜(`unit_boundaries`)·기준일 판정의 한 곳이다.
   - 실적은 여기서만 쓴다(6장). 편집기 JS 가 같은 판정을 하므로 `tests/test_space_unit_state.py` 가 둘을 대조한다.
+  - 층 보기 「반입 일정」 의 재료도 여기다 — 반입 표시일(반입실적, 없으면 반입일정 — 점선 테가 실선이 되는 날과 같은 재료)과
+    반입 지연(반입상태 지연 · 실적 없음)을 `boundary_payload` 가 `arrivalPlan` · `arrivalDelayed` 로 늘 싣는다(판정에는 쓰지
+    않는다, 2026-11-12 Space 보드 답 1-1 · 1-5 · A1).
 - `src/capa_simulation/services/space_unit_sheet.py` — Space 「호기 정보」 창(도면 위 — 2026-11-03 사용자 요청)의 표 재료
   `unit_sheet(rows, columns=, place_of=)` — 있는 칸만 그 차례 + 끝 「도면」(배치·미배치·레이아웃 제외, `place_of` 가 없으면
   레이아웃표시로), 칸 꼴(날짜 「YYYY-MM-DD」 글 · 투자Capa 는 수 — 못 읽는 글은 글 · 그 밖은 글, 200자 넘으면 줄임, 빈 값 None),

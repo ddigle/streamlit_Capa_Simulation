@@ -23,6 +23,9 @@
   비가동과 같은 날 경계다(`_active_downtime`).
 - **미확인** — 오늘 기준으로 고정한다(`schedule_confirmation` 의 미확인 — T 를 따르지 않는다).
 - **보관** — 보관유무 Y.
+- **반입 표시일 · 반입 지연** — 층 보기 「반입 일정」 이 반입 전(점선 테) 호기에 쓰는 날짜(반입실적,
+  없으면 반입일정 — 점선 테가 실선이 되는 날과 같은 재료)와 반입상태 지연(실적이 아직 없을 때만).
+  판정에는 쓰지 않는다(2026-11-12 Space 보드 답 1-1 · 1-5).
 
 **T 의 판정**(`unit_states_at`): 보임 = 도면이탈일 없음 또는 T < 도면이탈일, 실물 = 처음부터이거나
 실물시작일 ≤ T, 반출/이설 예정 = T < 도면이탈일, 정지 중 = 정지일 ≤ T < 도면이탈일, 지연 = T 가
@@ -68,6 +71,8 @@ DELAY_SPANS_COLUMN: Final = "지연구간"
 OFFLINE_SPANS_COLUMN: Final = "비가동구간"
 STORAGE_COLUMN: Final = "보관"
 FLAG_COLUMN: Final = "미확인"
+ARRIVAL_SHOWN_COLUMN: Final = "반입표시일"
+ARRIVAL_LATE_COLUMN: Final = "반입지연"
 
 # T 의 판정 칸(`unit_states_at` 결과, 모두 bool).
 VISIBLE_STATE: Final = "보임"
@@ -238,6 +243,8 @@ def unit_boundaries(status: pd.DataFrame, downtime: pd.DataFrame, *, today: date
             ),
             STORAGE_COLUMN: storage,
             FLAG_COLUMN: names.isin(flagged).fillna(False).astype(bool),
+            ARRIVAL_SHOWN_COLUMN: arrival_actual.fillna(arrival_plan).astype("datetime64[ns]"),
+            ARRIVAL_LATE_COLUMN: (arrival_delayed & arrival_actual.isna()).astype(bool),
         },
         index=status.index,
     )
@@ -292,7 +299,8 @@ def boundary_payload(boundaries: pd.DataFrame) -> list[dict[str, Any]]:
 
     `realFrom` 은 없으면 None, 처음부터면 `REAL_FROM_START`. `exitOn`·`stopOn` 은 없으면 None.
     `delays`· `offline` 은 ``[[시작, 끝 | None], …]`` 이다. `flag`(미확인)·`storage`(보관)는
-    참·거짓이다.
+    참·거짓이다. `arrivalPlan`(반입 표시일, 없으면 None)·`arrivalDelayed`(반입 지연)는 층 보기
+    「반입 일정」 글과 풍선의 재료다 — 판정에는 쓰지 않는다.
     """
     payload: list[dict[str, Any]] = []
     for row in boundaries.itertuples(index=False):
@@ -308,6 +316,8 @@ def boundary_payload(boundaries: pd.DataFrame) -> list[dict[str, Any]]:
                 "offline": _span_payload(values[OFFLINE_SPANS_COLUMN]),
                 "flag": bool(values[FLAG_COLUMN]),
                 "storage": bool(values[STORAGE_COLUMN]),
+                "arrivalPlan": _day(values[ARRIVAL_SHOWN_COLUMN]),
+                "arrivalDelayed": bool(values[ARRIVAL_LATE_COLUMN]),
             }
         )
     return payload
