@@ -1573,6 +1573,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       복사 앞이다. 뒤집을 것이 없으면 키를 막지 않는다. 보기 화면에는 없다. 뒤집기는 서식이 아니다(서식 붓이 옮기지 않는다).
     - 넣기는 도면 요소 칸 「도형 ▾」 갤러리 — 누르면 보이는 가운데, 끌면 놓은 자리(`ghostDrag`·`dropSpot`), 키보드 click 도.
       읽기(`readMark` — 모르는 채우기 색은 파랑)·바뀜 판정·적용값·복사(`clipOf`)·되돌리기에 모양 값·색·빗금이 함께 간다.
+  - **발자국**(2026-11-12 Space 시안 보드 6-1 ~ 6-6 — 층·FAB). 종류 `footprints` 는 길을 따라 놓은 발 모양 줄이고 **선 꼴 요소**다
+    — 상자의 한 축이 길이, 다른 축이 띠(3칸 고정 — 발 크기는 상자를 따르지 않는다). 순수 판정은 `// <foot-geometry>`(모양 여섯의
+    윤곽 자료 · `footCount` — max(1, ⌊길이 ÷ 걸음⌋), 걸음 좁게 2.6 · 보통 3.5 · 넓게 4.8 · `footprintsShape` — 첫 발은 시작 끝에서 반
+    걸음, 남는 길이는 끝 쪽이라 늘이면 앞 발은 그대로이고 새 발이 끝에 는다 · `footLineEnds` · `footFitted`)이고
+    `tests/test_space_footprints_js.py` 가 node 로 돌려 모든 모양 × 간격 × 길이가 띠 · 길이 안인지(곡선 조절점까지) 본다.
+    - 선 꼴 편집: 손잡이는 걷는 축 두 끝만 둥글게 서고(`positionHandles` — 작아도 숨기지 않는다) 끌면 길이만 바뀐다(`resizeTo` —
+      `FOOT_MIN_LENGTH` 아래로 줄지 않음). 띠는 `fit` 한 곳에서 묶는다(`footFitted` — 숫자 칸 · Ctrl+방향키 · 서식 크기 · 붙여넣기 ·
+      넣기 · 돌리기가 모두 지난다 — 띠 쪽 값은 바뀐 것이 없어 되돌리기 기록도 늘지 않는다). 고르면 점선 상자 대신 가운데 축 점선
+      (`sle-foot-axis`)이다. 발자국 하나를 고르면 숫자 칸이 X · Y · 「길이」 셋이다(띠 칸 숨김 — `footSyncFields`). 자유 각도는 없다
+      — 90° 돌리기 · 좌우/상하 뒤집기(`canFlip`, 뒤집으면 걷는 쪽이 거꾸로)이고 꺾인 길은 조각 여럿으로 잇는다.
+    - 선택 칸: 선 색은 동선 · 베이와 같은 칸(`isLined` — 발자국만이면 머리 크기 · 굵기 · 선 모양 숨김, 섞어 고르면 그 셋은 동선 · 베이
+      값만 본다), 그 아래 「발자국 서식」(`footSyncProps` — 발 모양 그림 판 `sle-foot-gallery` · 간격 목록, `setLooks` 되돌리기
+      한 번). 이름 줄은 「발자국 · 발 n개」(`markTitle`). 겹은 동선처럼 호기 위(`onZoneLayer` 밖)이고 막는 요소가 아니다.
+    - 서식 붓: 발자국끼리는 길이 · 선 색 · 간격을 옮기고 발 모양 · 뒤집기는 옮기지 않는다. 동선 · 베이 · 도형과는 선 색만 오간다
+      (발자국 서식은 굵기 · 선 모양을 담지 않아 동선의 자동 굵기를 건드리지 않는다).
   - **서식 복사·붙여넣기**(2026-11-03 사용자 요청 — 사양 (다), 층·FAB 편집). 엑셀 서식 붓이다. 순수 판정은 `// <format-paint>`
     (`formatOf` — 서식 {kind, module, size(자기 방향), paint, text}, `formatPatch` — 받는 쪽에 붙일 {size, fields, look} 또는 null,
     `patchedLook`, 저장소에서 읽은 서식 거르기 `formatFrom`)이고 `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
@@ -2359,6 +2374,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     선 `line`(`SHAPE_LINE_KEYS` — `auto`·`none`·`ink`·영역 색, 강조색 없음)·`lineWidth`·`lineStyle`·`flip`. 채우기 색은 요소
     `color`(`shape_fill` — `SHAPE_FILL_KEYS`, 처음 파랑, `mark_color`), 빗금은 영역·도형만(`HATCH_MARK_KINDS`), 「설비 금지」는
     영역만이다. 막는 요소(`BLOCKING_MARK_KINDS`)가 아니다.
+  - 발자국(`footprints`, 층·FAB — 2026-11-12 Space 시안 보드 6-1 ~ 6-6)은 선 꼴 요소다. 상자의 한 축이 길이, 다른 축이 띠
+    (`FOOT_BAND` 3칸 고정 — 0·180° 는 높이, 90·270° 는 폭)이고 길이는 `FOOT_MIN_LENGTH` 3칸부터다. 어긋나면 `footprint_box` 가
+    거부한다(조용히 고치지 않는다 — 띠 값은 저장 계약). 모양 값은 발 모양 `foot`(`FOOT_SHAPES` 여섯 — 처음 밑창)·간격 `gap`
+    (`FOOT_GAPS` 셋 — 처음 보통)·선 색 `line`(`LINE_COLOR_KEYS` — 처음 강조색)·`flip` 이다. 막는 요소가 아니고 빗금이 없다.
   - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데·위·아래 모두 행으로 받는다. 고른 적이 없거나 처음 위치로
     되돌린 묶음은 행이 없고 모양의 처음 위치 `space_layout_edit.default_group_label` 로 선다 — 한 줄 묶음(모듈 2·3)은
     위라 가운데를 고르면 가운데 행이 남는다)의 검증은 `prepare_group_labels`(Main 설비 이름은
@@ -2395,7 +2414,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     팝업·발행 쓰기 거부가 같이 쓴다).
 - `src/capa_simulation/services/fab_layout.py` — FAB 동·층 정의, 층 이름·주소 인자 변환, FAB 전체 도면의 계약·검증
   (`prepare_fab_layout_marks`)을 둔다. 요소 행이 없으면 `default_fab_layout()` 기본 배치를 그린다. FAB 요소 종류는 영역·글자·
-  동선·도형·층 블록(`FAB_MARK_KINDS`)이고 도형·모양 값은 층 요소와 같은 규칙이다.
+  동선·발자국·도형·층 블록(`FAB_MARK_KINDS`)이고 도형·발자국·모양 값은 층 요소와 같은 규칙이다.
 - `src/capa_simulation/services/space_layout_edit.py` — Space 배치 편집기의 순수 계산(입력, 적용값 검증, 반영, 미저장
   차이)이다. 적용값은 하나라도 어긋나면 전체 거부한다(`parse_editor_apply`).
   - 이름 겹침은 바꾼 뒤 상태를 설비 마스터 전체에서 `scalar_match_key` 로 본다(저장 검증보다 엄하다). 지운 채 저장 안 한
@@ -5072,7 +5091,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 층 Main 설비명 위치(`floor_layout_group_label`, `0025`)는 `floor_group_labels`(층마다 전체)로 같은 트랜잭션에 쓰고
     층 대조(`floor_layout_bases`)가 요소와 함께 본다. 영역 테두리 모양·이름표 정렬은 두 요소 표의 `border_style`·
     `label_align`(`0025`, 영역 아닌 요소는 NULL)이다. 요소 모양 값은 두 요소 표와 가정 차이 표의 `look_json`(`0033` — 정규 JSON
-    글, 빈 글 ↔ NULL, 동선·베이·도형 아닌 요소는 NULL)이다. 도형의 채우기 색·빗금은 기존 `color_key`·`hatch` 칸이다.
+    글, 빈 글 ↔ NULL, 동선·발자국·베이·도형 아닌 요소는 NULL)이다. 도형의 채우기 색·빗금은 기존 `color_key`·`hatch` 칸이다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 두 진입점(설비 저장의 캔버스·
     `save_floor_layout_canvas`)은 각 ACTIVE 설비 시나리오 최신·최신 공식
     발행의 **가정 요소**(`set`)도 본다(`_require_overlay_marks_fit` → `EquipmentLayoutOverflow`). 가정 차이 호기는 막지 않는다 —

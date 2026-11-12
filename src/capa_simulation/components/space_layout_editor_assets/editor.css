@@ -178,6 +178,15 @@
 /* 굵기를 고른 동선은 화면 px 굵기·무늬다(베이와 같다). 고르지 않으면 지금처럼 상자 높이를 따르는 도면 단위다. */
 .sle-flow.is-px { vector-effect: non-scaling-stroke; }
 .sle-flow-head { fill: var(--sle-accent); }
+/* 발자국 — 발은 선 색(look.line, JS 가 인라인에 단다)으로 채우고, 새 발자국의 세 갈래 선은 도면 단위 굵기다(확대를 따른다). */
+.sle-foot { fill: var(--sle-accent); }
+.sle-foot-line { fill: none; stroke: var(--sle-accent); stroke-linecap: round; stroke-linejoin: round; }
+/* 고른 발자국은 점선 상자 대신 가운데 축 점선이다(선 꼴 — 끝 손잡이 둘로 길이만 바꾼다). 여럿 골랐을 때도 같은 축이다. */
+.sle-foot-axis { display: none; stroke: var(--sle-accent); stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.mark-footprints.is-selected .sle-foot-axis { display: inline; }
+.mark-footprints.is-grouped .sle-foot-axis { display: inline; stroke-width: 1; stroke-dasharray: 2 3; }
+.sle-mark.mark-footprints.is-selected:not(.mark-zone) .sle-mark-box,
+.sle-mark.mark-footprints.is-grouped:not(.mark-zone) .sle-mark-box { stroke: none; }
 /* 베이 화살표(U자) — 선 색·굵기·무늬는 JS 가 모양 값(look)으로 인라인에 단다. 머리는 선 색으로 채운다. */
 .sle-bay-line { fill: none; stroke: var(--sle-mark-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .sle-bay-head { fill: var(--sle-mark-ink); }
@@ -548,6 +557,20 @@
 .sle-head-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 52px)); gap: 4px; }
 .sle button.sle-head-cell { width: 100%; height: 28px; padding: 0; justify-content: center; }
 .sle button.sle-head-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
+/* 발자국 서식 — 발 모양 단추(지금 발 그림 + 이름)와 그림 판(칸마다 작은 발 둘), 간격 목록. 발자국만 고르면 선 칸에는 선 색만 남고
+   (머리 크기 · 굵기 · 선 모양 숨김), 발자국 하나면 숫자 칸의 띠 칸이 숨는다. */
+.sle-lineprops > .sle-field[hidden], .sle-fields .sle-field[hidden] { display: none !important; }
+.sle-footprops { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.sle-footprops[hidden], .sle-foot-gallery[hidden] { display: none !important; }
+.sle-foot-field { display: grid; grid-template-columns: 5.6em minmax(0, 1fr); align-items: center; }
+.sle button.sle-foot-toggle { justify-content: flex-start; gap: 6px; min-width: 0; }
+.sle-foot-now { width: 28px; height: 16px; flex: none; }
+.sle-foot-cell svg { width: 42px; height: 24px; flex: none; }
+.sle-foot-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 56px)); gap: 4px; }
+.sle button.sle-foot-cell { width: 100%; height: 32px; padding: 0; justify-content: center; }
+.sle button.sle-foot-cell[aria-pressed="true"] { border-color: var(--sle-accent); box-shadow: inset 0 0 0 1px var(--sle-accent); }
+.sle-foot-ico { fill: currentColor; }
+.sle-foot-ico-line { fill: none; stroke: currentColor; stroke-width: 0.3; stroke-linecap: round; }
 /* 서식(왼쪽 칸 「서식」 — 엑셀 서식 붓). 붓을 든 동안 단추는 강조색 면이고 잠그면 안쪽 테가 하나 더 선다. 붓을 든 무대의 커서는
    copy 다(손잡이·끌기 커서보다 앞 — 붓을 든 채 누르면 끌지 않고 붙인다). Space·가운데 버튼 화면 이동 중에는 이동 커서 그대로. */
 .sle-format { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }

@@ -171,7 +171,9 @@ def test_flips_follow_the_selection_and_flip_all_at_once_in_one_undo() -> None:
     assert "MARK_KINDS[mark.kind].rotatable && (!isShape(mark) || turnsShape(mark))" in turns
     assert "const flips = chosen.some(canFlip)" in turns
     assert "turnsRow.hidden = !rotates && !flips" in turns
-    assert "const canFlip = (m) => onCanvas(m) && (isBay(m) || turnsShape(m))" in JS
+    assert (
+        "const canFlip = (m) => onCanvas(m) && (isBay(m) || turnsShape(m) || isFootprints(m))" in JS
+    )
     flip = _between("  function flipMarks(", "  // 돌리기·뒤집기 줄")
     assert "const list = selectedItems().filter(canFlip)" in flip
     assert "if (!list.length) return false" in flip

@@ -410,7 +410,7 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   옛 도면이 든 행을 DELETE+INSERT 로 다시 쓰면 수정마다 BLOB 한 벌씩 파일이 커진다(실측: 3.8MB
   한 장을 6회 수정하면 51.7MB). 캔버스를 바꿀 때는 치수 두 컬럼만 UPDATE 한다.
 - `floor_layout_mark`(마이그레이션 11): 동·층별 비설비 도면 요소(반입구·문·영역·기둥·글자·
-  동선·베이·도형 — 베이 `bay`·도형 `shape` 는 마이그레이션 없이 종류 값이 하나씩 는 것이고, 베이는 `label` 에 번호만,
+  동선·발자국·베이·도형 — 발자국 `footprints`·베이 `bay`·도형 `shape` 는 마이그레이션 없이 종류 값이 하나씩 는 것이고, 베이는 `label` 에 번호만,
   도형은 채우기 색을 `color_key`(영역 색 여섯 + `ink`·`surface`)에, 빗금을 `hatch` 에 둔다). `floor_layout_profile` 처럼 `revision_id` 가 없는 층 현행값이라 설비 리비전을 저장해도
   복제되지 않는다. 저장은 그 층 요소 전체를 DELETE+INSERT 로 갈아 끼우고(BLOB 이 없어 파일
   증가는 미미하다) `source_row_no` 가 그리는 순서다. PK 는 두지 않는다 — 같은 트랜잭션에서
@@ -427,7 +427,11 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   길이는 짧은 변 기준, 삼각형 꼭짓점은 폭 · 블록 화살표 몸통은 높이 기준 — 2026-11-04. ㄴ자 · ㄷ자 팔과 블록 화살표 머리는
   그 축 길이까지 굵어질 수 있어 저장 상한이 상한 × 100 이다 — `SHAPE_ADJUST_BASE` · `SHAPE_STRETCH_MAX`)·채우기
   불투명 `fillAlpha`(0~100 의 5 단위, 처음 20)·선 `line`(`auto`·`none`·`ink`·영역 색)·`lineWidth`·`lineStyle`·`flip` 이다(`fab_layout_mark`
-  도 같다). NULL 은 모두 처음 값(동선은 지금 모습)이고 그 밖 종류는 늘 NULL 이다. 검사는 `services/floor_layout_mark.mark_look`.
+  도 같다). 발자국(`footprints`, 층·FAB — 2026-11-12)은 발 모양 `foot`(`sole`·`toes`·`dots`·`cat`·`bird`·`heel` — 처음 `sole`)·
+  걸음 간격 `gap`(`narrow`·`normal`·`wide` — 처음 `normal`)·선 색 `line`(동선과 같은 여덟 — 처음 `accent`)·`flip` 이다. 발자국
+  상자는 새 칸 없이 지금 칸에 담는다 — 0·180° 는 `x_size` 가 길이·`y_size` 가 띠, 90·270° 는 그 반대이고, 띠는 3, 길이는 3 이상이다
+  (`footprint_box` — 어긋나면 저장 거부. 띠 값은 저장 계약이다). NULL 은 모두 처음 값(동선은 지금 모습)이고 그 밖 종류는 늘 NULL
+  이다. 검사는 `services/floor_layout_mark.mark_look`.
 - `floor_layout_group_label`(마이그레이션 25): 층마다 Main 설비 모듈 묶음 이름표의 위치(`center`·`top`·`bottom`).
   설비 마스터 칸이 아니라 `floor_layout_mark` 처럼 리비전 없는 층 현행값이다. 행이 없는 묶음은 모양의 처음
   위치(한 줄 묶음 — 모듈 2·3 — 은 위, 그 밖은 가운데, `space_layout_edit.default_group_label`)로 서고, 처음 위치를

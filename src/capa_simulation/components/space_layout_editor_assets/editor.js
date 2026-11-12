@@ -158,6 +158,9 @@ export default function (component) {
     column: { name: '기둥', size: [1.5, 1.5], label: '', rotatable: false },
     text: { name: '글자', size: [14, 3], label: '메모', rotatable: true },
     arrow: { name: '동선', size: [16, 3], label: '', rotatable: true },
+    // 발자국(2026-11-12 Space 시안 보드 6-1 ~ 6-6) — 선 꼴 요소. 넣는 크기는 길이 16 × 띠 3(`// <foot-geometry>` — 띠는 고정, 끝 손잡이로
+    // 길이만 바꾼다). 층 · FAB 둘 다이고 동선처럼 호기 위 층에 그린다.
+    footprints: { name: '발자국', size: [16, 3], label: '', rotatable: true },
     // 베이 화살표(U자 — 2026-11-03 사용자 요청). 0° 는 여는 쪽이 왼쪽인 ⊃ 꼴이고 머리는 아래 팔 끝에서 왼쪽을 향한다. 가운데 글은
     // 「B<번호>」 — 이름표 칸에는 번호만 둔다(`bayNumber`). 층 도면에만 있다(FAB 에는 넣지 않는다 — 사양 D7).
     bay: { name: '베이', size: [10, 4], label: '', rotatable: true },
@@ -218,7 +221,10 @@ export default function (component) {
   const markKindName = (item) => (item.kind === 'shape' ? `도형(${SHAPE_PRESETS[shapeOf(item.look)].name})` : MARK_KINDS[item.kind].name)
   const markTitle = (item) => {
     const shown = item.kind === 'bay' ? bayCaption(item) : item.label
-    return `${markKindName(item)}${shown ? ` · ${shown}` : ''}`
+    // 발자국은 값만 하나 더 — 발 개수(「발자국 · 발 4개」).
+    const feet = item.kind === 'footprints'
+      ? ` · 발 ${footCount(footLength(item.rot, item.w, item.h), lookValue(item.look, 'footprints', 'gap'))}개` : ''
+    return `${markKindName(item)}${shown ? ` · ${shown}` : ''}${feet}`
   }
   // 두 옆 칸(2026-11-03 사용자 요청 — 왼쪽 도구 칸 · 오른쪽 미배치 칸, 폭 끌기·접기·기억). 칸 폭 한계는 `panelBounds`(아래
   // 순수 구획), 기억은 `capa.space.panels.v1`(범위·모드별 {left, right: {w, min}}). 편집기 폭이 NARROW_PX 아래면 두 칸이
@@ -322,6 +328,17 @@ export default function (component) {
   const lineColor = q('.sle-line-color')
   const lineWidth = q('.sle-line-width')
   const lineStyle = q('.sle-line-style')
+  // 머리 크기 · 굵기 · 선 모양 칸은 동선 · 베이만 갖는다 — 발자국만 고르면 선 색만 남는다.
+  const headField = headToggle.closest('.sle-head-field')
+  const lineWidthField = lineWidth.closest('.sle-field')
+  const lineStyleField = lineStyle.closest('.sle-field')
+  // 발자국 서식(여럿 골라도 — 고른 것 가운데 발자국 모두에 건다) — 발 모양 그림 판 · 간격.
+  const footProps = q('.sle-footprops')
+  const footToggle = q('.sle-foot-toggle')
+  const footNow = q('.sle-foot-now')
+  const footWord = q('.sle-foot-word')
+  const footGallery = q('.sle-foot-gallery')
+  const footGap = q('.sle-foot-gap')
   // 도형 서식(여럿 골라도 — 고른 것 가운데 도형 모두에 건다)과 도면 요소 칸의 도형 넣기 갤러리.
   const shapeProps = q('.sle-shapeprops')
   const shapeSwap = q('.sle-shape-swap')
@@ -920,16 +937,19 @@ export default function (component) {
   // `LOOK_DEFAULTS` 와 같다(처음 값인 키는 빼고, 정규 글은 키 차례 JSON — node 시험이 파이썬과 대조한다). 머리 크기는 엑셀의
   // 3×3(「너비·길이」 두 글자, 각 S·M·L)이고 동선의 MM 이 지금 그림이다. 도형(shape)은 프리셋 키 look.shape 하나로 아홉 꼴을
   // 가르고 모양 조절 값 look.adj 의 처음 값은 프리셋마다 다르다(`SHAPE_PRESETS` — 파이썬 `SHAPE_ADJUST`). 그리기는 돌리기 전
-  // 제자리 좌표(lw×lh, y 아래로)다. `tests/test_space_mark_look_js.py`·`tests/test_space_shape_js.py` 가 아래 두 표시 줄 사이를
-  // 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // 제자리 좌표(lw×lh, y 아래로)다. 발자국(footprints)은 발 모양 look.foot · 걸음 간격 look.gap · 선 색 · 뒤집기를 갖는다(파이썬
+  // `FOOT_SHAPES`·`FOOT_GAPS` — 그리기는 아래 발자국 경로 구획). `tests/test_space_mark_look_js.py`·`tests/test_space_shape_js.py` 가
+  // 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
   // <mark-look>
   const LOOK_KEYS = {
     arrow: ['head', 'line', 'lineWidth', 'lineStyle'],
+    footprints: ['foot', 'gap', 'line', 'flip'],
     bay: ['head', 'line', 'lineWidth', 'lineStyle', 'flip'],
     shape: ['shape', 'adj', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'flip'],
   }
   const LOOK_DEFAULTS = {
     arrow: { head: 'MM', line: 'accent', lineStyle: 'dashed' },
+    footprints: { foot: 'sole', gap: 'normal', line: 'accent', flip: false },
     bay: { head: 'MM', line: 'ink', lineWidth: 2, lineStyle: 'solid', flip: false },
     shape: { shape: 'rect', fillAlpha: 20, line: 'auto', lineWidth: 1.5, lineStyle: 'solid', flip: false },
   }
@@ -938,6 +958,9 @@ export default function (component) {
   const LINE_COLORS = ['accent', 'ink', 'blue', 'rose', 'green', 'violet', 'sky', 'gray']
   const LINE_WIDTHS = [0.75, 1, 1.5, 2, 3, 4.5, 6]
   const LINE_STYLES = ['solid', 'dashed', 'dotted']
+  // 발자국 발 모양 여섯(처음 밑창)과 걸음 간격 셋(처음 보통) — 파이썬 `FOOT_SHAPES`·`FOOT_GAPS`.
+  const FOOT_SHAPE_KEYS = ['sole', 'toes', 'dots', 'cat', 'bird', 'heel']
+  const FOOT_GAP_KEYS = ['narrow', 'normal', 'wide']
   // 도형 프리셋 아홉(2026-11-03 사용자 요청 — 엑셀 도형처럼). adj 는 모양 조절 값마다 [하한, 상한, 처음 값](0.01 단위 비율 —
   // 파이썬 `SHAPE_ADJUST`), base 는 그 값이 무엇의 비율인가(파이썬 `SHAPE_ADJUST_BASE`), words 는 그 값의 이름(선택 칸·손잡이
   // 풍선), size 는 넣을 때의 크기, turn 은 돌리기·뒤집기에 뜻이 있는 꼴인가(대칭 꼴은 그 단추가 숨는다). 두께·둥글기·머리 길이는
@@ -984,6 +1007,8 @@ export default function (component) {
     if (key === 'lineStyle') return LINE_STYLES.includes(value)
     if (key === 'flip') return typeof value === 'boolean'
     if (key === 'shape') return SHAPE_KEYS.includes(value)
+    if (key === 'foot') return FOOT_SHAPE_KEYS.includes(value)
+    if (key === 'gap') return FOOT_GAP_KEYS.includes(value)
     if (key === 'fillAlpha') return Number.isInteger(value) && value >= 0 && value <= 100 && value % FILL_ALPHA_STEP === 0
     return false
   }
@@ -1334,12 +1359,148 @@ export default function (component) {
   }
   // </shape-geometry>
 
+  // ---------------------------------------------------------------- 발자국 경로·선 꼴(순수 함수)
+  // 발자국(footprints — 2026-11-12 Space 시안 보드 6-1 ~ 6-6)은 길을 따라 놓은 발 모양 줄이다. 선 꼴 요소라 상자의 한 축이 길이(늘이면
+  // 발이 는다), 다른 축이 띠(FOOT_BAND 칸 고정 — 발 크기는 상자를 따르지 않는다)다. 파이썬 `floor_layout_mark.FOOT_BAND`·
+  // `FOOT_MIN_LENGTH`·`FOOT_SHAPES` 와 같다. 그리기는 돌리기 전 제자리(lw × 띠, y 아래로 — 0° 는 오른쪽으로 걷기)이고 발 크기는
+  // 도면 단위 고정값이다(사람 발 2.2 × 1.0칸 — 동물 · 새 발은 띠 안에서 제 비율). 걸음은 모양과 상관없이 간격마다 같은 바탕이라 모양을
+  // 바꿔도 개수가 그대로다 — 개수 = max(1, ⌊길이 ÷ 걸음⌋). 첫 발은 시작 끝에서 반 걸음 뒤에 서고 남는 길이는 끝 쪽에 둔다(끝 손잡이를
+  // 끌면 있던 발은 그대로이고 새 발이 끝에 는다). 한 발이고 길이가 걸음보다 짧으면 가운데다. 왼발이 위 줄(띠의 0.3)에서 먼저 나오고
+  // 오른발은 아래 줄(0.7)이다. 모든 모양 × 간격 × 길이에서 발이 띠 [0, 3] · 길이 [0, lw] 안에 든다(곡선 조절점까지 — 시험이 본다).
+  // `tests/test_space_footprints_js.py` 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <foot-geometry>
+  const FOOT_BAND = 3
+  const FOOT_MIN_LENGTH = 3
+  const FOOT_STRIDE = { narrow: 2.6, normal: 3.5, wide: 4.8 }
+  const FOOT_ROWS = [0.9, 2.1]
+  // 새 발자국의 세 갈래 선 굵기(도면 단위 — 확대를 따라 굵어진다).
+  const FOOT_BIRD_STROKE = 0.17
+  // 발 모양 여섯 — 이름(선택 칸 그림 판), 발 길이 · 너비(도면 단위). 윤곽점은 (u, v) — u 는 뒤꿈치 −0.5 → 앞 0.5, v 는 안쪽 − →
+  // 바깥 +(왼발은 바깥이 위). 손으로 적은 점 자료다(설계 그림 생성기와 같은 값).
+  const FOOT_SHAPES = {
+    sole: { name: '밑창', length: 2.2, width: 1.0 },
+    toes: { name: '발가락', length: 2.2, width: 1.0 },
+    dots: { name: '점', length: 2.2, width: 1.0 },
+    cat: { name: '고양이', length: 1.9, width: 1.7 },
+    bird: { name: '새', length: 2.2, width: 1.7 },
+    heel: { name: '구두', length: 2.2, width: 1.0 },
+  }
+  const FOOT_SOLE = [[-0.5, 0], [-0.45, 0.33], [-0.28, 0.4], [-0.08, 0.35], [0.14, 0.42], [0.32, 0.48], [0.46, 0.32], [0.5, 0.04],
+    [0.46, -0.28], [0.32, -0.47], [0.12, -0.4], [-0.06, -0.26], [-0.26, -0.33], [-0.44, -0.32]]
+  const FOOT_PAD = [[-0.5, 0.02], [-0.45, 0.32], [-0.25, 0.36], [-0.05, 0.3], [0.12, 0.42], [0.22, 0.4], [0.27, 0.05], [0.22, -0.42],
+    [0.08, -0.4], [-0.06, -0.16], [-0.25, -0.24], [-0.44, -0.28]]
+  // 발가락 — (u, v, 반지름 × 너비).
+  const FOOT_TOES = [[0.4, -0.3, 0.19], [0.44, -0.02, 0.13], [0.41, 0.18, 0.12], [0.37, 0.34, 0.1], [0.31, 0.47, 0.09]]
+  const FOOT_CAT_PAD = [[0.02, 0], [-0.02, 0.2], [-0.12, 0.32], [-0.3, 0.36], [-0.42, 0.3], [-0.47, 0.18], [-0.45, 0.09], [-0.49, 0],
+    [-0.45, -0.09], [-0.47, -0.18], [-0.42, -0.3], [-0.3, -0.36], [-0.12, -0.32], [-0.02, -0.2]]
+  // 고양이 발가락 — (u, v, 반지름 × 길이, 반지름 × 너비).
+  const FOOT_CAT_TOES = [[0.2, -0.37, 0.12, 0.11], [0.37, -0.13, 0.12, 0.1], [0.37, 0.13, 0.12, 0.1], [0.2, 0.37, 0.12, 0.11]]
+  // 구두 — 앞창과 굽 두 조각.
+  const FOOT_FORE = [[-0.08, 0.05], [-0.04, 0.36], [0.14, 0.44], [0.32, 0.48], [0.46, 0.32], [0.5, 0.04], [0.46, -0.28], [0.32, -0.47],
+    [0.12, -0.42], [-0.04, -0.3]]
+  const FOOT_HEEL = [[-0.22, 0.3], [-0.34, 0.34], [-0.47, 0.28], [-0.5, 0], [-0.47, -0.28], [-0.34, -0.32], [-0.22, -0.28], [-0.2, 0]]
+  // 새 발자국 — 가운데(u −0.12)에서 앞 셋 · 뒤 하나로 뻗는 선.
+  const FOOT_BIRD_TIPS = [[0.5, 0], [0.3, 0.42], [0.3, -0.42], [-0.5, 0]]
+  const footNum = (v) => Math.round(v * 1000) / 1000 + 0
+  // 닫힌 Catmull-Rom 곡선 → 3차 베지어(점을 모두 지난다).
+  function footCurve(points) {
+    const n = points.length
+    let d = `M ${footNum(points[0][0])} ${footNum(points[0][1])}`
+    for (let i = 0; i < n; i += 1) {
+      const p0 = points[(i - 1 + n) % n]
+      const p1 = points[i]
+      const p2 = points[(i + 1) % n]
+      const p3 = points[(i + 2) % n]
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6]
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6]
+      d += ` C ${footNum(c1[0])} ${footNum(c1[1])} ${footNum(c2[0])} ${footNum(c2[1])} ${footNum(p2[0])} ${footNum(p2[1])}`
+    }
+    return `${d} Z`
+  }
+  // 타원(원은 rx = ry) — 절대 좌표 반원 호 둘.
+  function footEllipse(x, y, rx, ry) {
+    const a = `${footNum(rx)} ${footNum(ry)} 0 1 0`
+    return `M ${footNum(x - rx)} ${footNum(y)} A ${a} ${footNum(x + rx)} ${footNum(y)} A ${a} ${footNum(x - rx)} ${footNum(y)} Z`
+  }
+  // 발 하나 — 가운데 (cx, cy), 왼발이면 바깥이 위. {fill: 채우는 경로들, stroke: 긋는 경로들(새 발자국)}.
+  function footParts(foot, cx, cy, left) {
+    const spec = FOOT_SHAPES[foot] || FOOT_SHAPES.sole
+    const at = ([u, v]) => [cx + u * spec.length, cy + (left ? -v : v) * spec.width]
+    const fill = []
+    const stroke = []
+    if (foot === 'toes') {
+      fill.push(footCurve(FOOT_PAD.map(at)))
+      for (const [u, v, r] of FOOT_TOES) {
+        const [x, y] = at([u, v])
+        fill.push(footEllipse(x, y, r * spec.width, r * spec.width))
+      }
+    } else if (foot === 'dots') {
+      const r = Math.min(spec.width * 0.55, spec.length * 0.4)
+      fill.push(footEllipse(cx, cy, r, r))
+    } else if (foot === 'cat') {
+      fill.push(footCurve(FOOT_CAT_PAD.map(at)))
+      for (const [u, v, ru, rv] of FOOT_CAT_TOES) {
+        const [x, y] = at([u, v])
+        fill.push(footEllipse(x, y, ru * spec.length, rv * spec.width))
+      }
+    } else if (foot === 'bird') {
+      const [hx, hy] = at([-0.12, 0])
+      for (const tip of FOOT_BIRD_TIPS) {
+        const [x, y] = at(tip)
+        stroke.push(`M ${footNum(hx)} ${footNum(hy)} L ${footNum(x)} ${footNum(y)}`)
+      }
+    } else if (foot === 'heel') {
+      fill.push(footCurve(FOOT_FORE.map(at)), footCurve(FOOT_HEEL.map(at)))
+    } else {
+      fill.push(footCurve(FOOT_SOLE.map(at)))
+    }
+    return { fill, stroke }
+  }
+  // 길이 length 에 간격 gap 으로 놓이는 발 개수.
+  function footCount(length, gap) {
+    const stride = FOOT_STRIDE[gap] || FOOT_STRIDE.normal
+    return Math.max(1, Math.floor(length / stride + 1e-9))
+  }
+  // 제자리(길이 lw × 띠) 발자국 — {fill: 채우는 경로(한 줄), stroke: 긋는 경로(새 발자국 — 없으면 빈 글), count}. 모르는 모양 · 간격은
+  // 밑창 · 보통이다.
+  function footprintsShape(lw, foot, gap) {
+    const shape = FOOT_SHAPES[foot] ? foot : 'sole'
+    const stride = FOOT_STRIDE[gap] || FOOT_STRIDE.normal
+    const count = footCount(lw, gap)
+    const fill = []
+    const stroke = []
+    for (let k = 0; k < count; k += 1) {
+      const cx = count * stride <= lw + 1e-9 ? stride * (k + 0.5) : lw / 2
+      const left = k % 2 === 0
+      const part = footParts(shape, cx, FOOT_ROWS[left ? 0 : 1], left)
+      fill.push(...part.fill)
+      stroke.push(...part.stroke)
+    }
+    return { fill: fill.join(' '), stroke: stroke.join(' '), count }
+  }
+  // 선 꼴 편집에서 보일 끝 손잡이 둘(손잡이 글자는 움직이는 변) — 0·180° 는 오른쪽 · 왼쪽, 90·270° 는 위 · 아래.
+  function footLineEnds(rot) {
+    return (((Number(rot) || 0) % 180) + 180) % 180 ? ['n', 's'] : ['e', 'w']
+  }
+  // 걷는 축의 길이 — 0·180° 는 폭, 90·270° 는 높이.
+  function footLength(rot, w, h) {
+    return (((Number(rot) || 0) % 180) + 180) % 180 ? h : w
+  }
+  // 상자 크기 {w, h} 를 선 꼴에 맞춘다 — 띠 쪽은 FOOT_BAND, 길이 쪽은 FOOT_MIN_LENGTH 이상. 숫자 칸 · Ctrl+방향키 · 서식 크기 ·
+  // 붙여넣기 · 넣기 · 돌리기가 모두 이 한 곳을 지난다(`fit`).
+  function footFitted(rot, w, h) {
+    const turned = Boolean((((Number(rot) || 0) % 180) + 180) % 180)
+    const length = Math.max(Number(turned ? h : w) || 0, FOOT_MIN_LENGTH)
+    return turned ? { w: FOOT_BAND, h: length } : { w: length, h: FOOT_BAND }
+  }
+  // </foot-geometry>
+
   // ---------------------------------------------------------------- 서식 복사·붙여넣기(순수 함수)
   // 엑셀 서식 붓처럼 고른 것 하나의 서식을 담아 다른 것에 붙인다(2026-11-03 사용자 요청). 서식은 세 묶음(「붙일 것」 체크)이다 —
   // 크기(같은 종류끼리만: 요소는 같은 kind, 호기는 낱 호기끼리·Main 설비 모듈 묶음끼리 — 묶음은 범위 크기. 크기는 상자 자기 방향의
   // 길이·두께라 돌린 요소에는 돌린 대로 붙는다), 색·선(면 색은 영역·도형·층 블록 사이 — 받는 쪽에 없는 값은 그 칸만 건너뛴다,
   // 채우기 투명도는 도형끼리, 선 색·굵기·모양은 도형·동선·베이 사이, 영역 테두리 모양 ↔ 선 모양, 머리 크기는 동선·베이 사이,
-  // 빗금은 영역·도형 사이), 글자(크기·색은 모든 도면 요소, 이름표 정렬은 영역끼리). 자리·이름표 글·회전·뒤집기·도형 꼴·모양 조절
+  // 빗금은 영역·도형 사이, 발자국은 선 색만 그 셋과 오가고 간격은 발자국끼리), 글자(크기·색은 모든 도면 요소, 이름표 정렬은 영역끼리). 자리·이름표 글·회전·뒤집기·도형 꼴·모양 조절
   // 값·설비 금지·연결 층은 넣지 않는다(엑셀 붓도 꼴·회전은 옮기지 않는다). 호기의 면 색은 계산 값이라 호기에는 크기만 붙는다.
   // 담는 값은 그 종류가 지금 그리는 값(처음 값 포함)이다. `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
   // 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
@@ -1393,6 +1554,11 @@ export default function (component) {
     if (kind === 'zone') paint.lineStyle = FORMAT_BORDERS.includes(item.borderStyle) ? item.borderStyle : FORMAT_BORDERS[0]
     if (FORMAT_HEADED.includes(kind)) paint.head = lookValue(item.look, kind, 'head')
     if (FORMAT_HATCHED.includes(kind)) paint.hatch = Boolean(item.hatch)
+    // 발자국은 선 색 · 간격만 담는다(굵기 · 선 모양이 없다 — 동선 쪽 「자동 굵기」 를 건드리지 않게). 발 모양 · 뒤집기는 꼴이라 담지 않는다.
+    if (kind === 'footprints') {
+      paint.line = lookValue(item.look, kind, 'line')
+      paint.gap = lookValue(item.look, kind, 'gap')
+    }
     fmt.paint = paint
     fmt.text = { fontSize: item.fontSize ?? null, fontColor: String(item.fontColor || '') }
     if (kind === 'zone') fmt.text.labelAlign = FORMAT_ALIGNS.includes(item.labelAlign) ? item.labelAlign : FORMAT_ALIGNS[0]
@@ -1425,6 +1591,10 @@ export default function (component) {
       if (kind === 'zone' && FORMAT_BORDERS.includes(p.lineStyle)) out.fields.borderStyle = p.lineStyle
       if (FORMAT_HEADED.includes(kind) && lookAllowed('head', p.head, kind)) out.look.head = p.head
       if (FORMAT_HATCHED.includes(kind) && typeof p.hatch === 'boolean') out.fields.hatch = p.hatch
+      if (kind === 'footprints') {
+        if (lookAllowed('line', p.line, kind)) out.look.line = p.line
+        if (lookAllowed('gap', p.gap, kind)) out.look.gap = p.gap
+      }
     }
     const t = fmt.text
     if (kind !== 'unit' && t && on('text')) {
@@ -1458,7 +1628,7 @@ export default function (component) {
     }
     if (raw.kind === 'unit') return fmt
     if (raw.paint && typeof raw.paint === 'object') {
-      const keep = ['color', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'head', 'hatch']
+      const keep = ['color', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'head', 'hatch', 'gap']
       fmt.paint = Object.fromEntries(keep.filter((key) => key in raw.paint).map((key) => [key, raw.paint[key]]))
     }
     if (raw.text && typeof raw.text === 'object') {
@@ -2486,8 +2656,10 @@ export default function (component) {
     }
     return box
   }
-  // 좌표를 캔버스 안·정밀도 안으로 맞춘다. 크기 먼저, 그다음 위치(위치 상한이 크기에 달려 있다).
+  // 좌표를 캔버스 안·정밀도 안으로 맞춘다. 크기 먼저, 그다음 위치(위치 상한이 크기에 달려 있다). 발자국은 띠 쪽을 FOOT_BAND, 길이 쪽을
+  // FOOT_MIN_LENGTH 이상으로 먼저 묶는다(`footFitted` — 숫자 칸 · Ctrl+방향키 · 서식 크기 · 붙여넣기 · 넣기 · 돌리기가 모두 여기를 지난다).
   const fit = (item) => {
+    if (item.kind === 'footprints') Object.assign(item, footFitted(item.rot, item.w, item.h))
     item.w = floorTo(clamp(roundTo(item.w), Math.min(minSize(), W()), W()))
     item.h = floorTo(clamp(roundTo(item.h), Math.min(minSize(), H()), H()))
     item.x = clamp(roundTo(item.x), 0, floorTo(W() - item.w))
@@ -3168,6 +3340,8 @@ export default function (component) {
     const hs = HANDLE_PX * unitsPerPx()
     const xs = { w: item.x, c: item.x + item.w / 2, e: item.x + item.w }
     const ys = { n: top, c: top + item.h / 2, s: top + item.h }
+    // 발자국은 선 꼴이다 — 걷는 축의 두 끝 손잡이만 둥글게 서고(작아도 숨기지 않는다) 띠 쪽 · 모서리 손잡이는 없다(발 크기는 고정).
+    const ends = item.kind === 'footprints' ? footLineEnds(item.rot) : null
     for (const handle of group.querySelectorAll('.sle-handle')) {
       const dir = handle.dataset.dir
       const hx = dir.includes('w') ? xs.w : dir.includes('e') ? xs.e : xs.c
@@ -3176,6 +3350,11 @@ export default function (component) {
       handle.setAttribute('y', hy - hs / 2)
       handle.setAttribute('width', hs)
       handle.setAttribute('height', hs)
+      if (ends) {
+        handle.setAttribute('rx', hs / 2)
+        handle.style.display = ends.includes(dir) ? '' : 'none'
+        continue
+      }
       // 작은 것은 변 가운데 손잡이가 모서리 손잡이와 겹친다 — 그때는 변 손잡이를 감춘다.
       const edge = dir.length === 1
       const tooSmall = (dir === 'n' || dir === 's') ? item.w < hs * 3 : item.h < hs * 3
@@ -3270,8 +3449,10 @@ export default function (component) {
     const lh = rot % 180 ? item.w : item.h
     const cx = item.x + item.w / 2
     const cy = top + item.h / 2
-    // 베이·도형은 좌우 뒤집기(look.flip)를 돌리기 앞에 건다 — 가운데 축 거울. 글자는 뒤집지도 돌리지도 않는다.
-    const flip = (item.kind === 'bay' || item.kind === 'shape') && lookValue(item.look, item.kind, 'flip') === true
+    // 베이·도형·발자국은 좌우 뒤집기(look.flip)를 돌리기 앞에 건다 — 가운데 축 거울(발자국은 걷는 쪽이 거꾸로). 글자는 뒤집지도
+    // 돌리지도 않는다.
+    const flip = ((item.kind === 'bay' || item.kind === 'shape') && lookValue(item.look, item.kind, 'flip') === true)
+      || (item.kind === 'footprints' && lookValue(item.look, 'footprints', 'flip') === true)
     const inner = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot})${flip ? ' scale(-1 1)' : ''} translate(${-lw / 2} ${-lh / 2})` })
     const upp = unitsPerPx()
     // 이름표 글자는 기준 크기(고른 크기, 없으면 LABEL_PX)에 배율 글자 배율을 곱한 화면 px 다 — 확대하면 커지고 축소하면
@@ -3362,6 +3543,25 @@ export default function (component) {
       const point = el('polygon', { class: 'sle-flow-head', points: geo.head.map((pt) => pt.join(',')).join(' ') })
       if (color) { shaft.style.stroke = color; point.style.fill = color }
       inner.append(shaft, point)
+    } else if (item.kind === 'footprints') {
+      // 발자국: 0° 는 왼쪽에서 오른쪽으로 걷는다. 발 모양(look.foot)·간격(look.gap)의 발을 선 색(look.line — 동선과 같은 여덟)으로
+      // 채운다. 발 크기는 도면 단위 고정값이라 확대를 따라 커지고 상자를 따르지 않는다(`// <foot-geometry>`). 새 발자국은 같은 색의
+      // 도면 단위 선이다. 상자 전체가 잡힌다(동선과 같다).
+      const geo = footprintsShape(lw, lookValue(item.look, 'footprints', 'foot'), lookValue(item.look, 'footprints', 'gap'))
+      const color = lineInk(lookValue(item.look, 'footprints', 'line'))
+      if (geo.fill) {
+        const body = el('path', { class: 'sle-foot', d: geo.fill })
+        if (color) body.style.fill = color
+        inner.append(body)
+      }
+      if (geo.stroke) {
+        const lines = el('path', { class: 'sle-foot-line', d: geo.stroke })
+        lines.style.strokeWidth = String(FOOT_BIRD_STROKE)
+        if (color) lines.style.stroke = color
+        inner.append(lines)
+      }
+      // 고른 발자국은 점선 상자 대신 가운데 축 점선이다(CSS 가 고를 때만 보인다).
+      inner.append(el('line', { class: 'sle-foot-axis', x1: 0, y1: lh / 2, x2: lw, y2: lh / 2 }))
     } else if (item.kind === 'bay') {
       // 베이(U자): 0° 는 ⊃ — 위 팔에서 굽은 곳을 돌아 아래 팔 왼쪽 끝 머리(왼쪽을 향함). 선은 화면 px 굵기(처음 2px)·모양(처음
       // 실선)·색(처음 도면 글자색), 머리는 선 색으로 채운다. 상자 전체가 잡힌다(동선과 같다).
@@ -3462,10 +3662,11 @@ export default function (component) {
     }
     if (item.kind === 'column' && item.label && caption.shown) shape.append(text(item.label, cx, cy, fs))
     // 반입구·문·동선의 이름표는 돌리지 않는다(세로 글자가 되지 않게). 상자 바깥, 방 쪽(반입구·문)이나
-    // 옆(동선)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
-    if (item.label && caption.shown && (item.kind === 'shutter' || item.kind === 'door' || item.kind === 'arrow')) {
+    // 옆(동선 — 발자국도 같다)에 가로로 쓴다. 0° 일 때 방은 위쪽이다(아래 변이 벽).
+    const lineLike = item.kind === 'arrow' || item.kind === 'footprints'
+    if (item.label && caption.shown && (item.kind === 'shutter' || item.kind === 'door' || lineLike)) {
       const gap = fs * 0.4
-      const sides = item.kind === 'arrow'
+      const sides = lineLike
         ? (rot % 180 ? 'right' : 'up')
         : ({ 0: 'up', 90: 'right', 180: 'down', 270: 'left' })[rot] || 'up'
       const left = item.x
@@ -4466,6 +4667,7 @@ export default function (component) {
     syncTurns(chosen, mark)
     syncLineProps(chosen)
     syncShapeProps(chosen)
+    footSyncProps(chosen, editable && single && isFootprints(single) ? single : null)
     if (mark) {
       // 베이는 이름 칸이 「번호」 이고 칸 앞에 고정 글 「B」 가 선다(그릴 때 늘 붙는다 — 칸에는 번호만).
       const bay = mark.kind === 'bay'
@@ -4503,7 +4705,7 @@ export default function (component) {
   const HEAD_WIDTH_WORDS = { S: '좁게', M: '보통', L: '넓게' }
   const HEAD_LENGTH_WORDS = { S: '짧게', M: '보통', L: '길게' }
   const LINE_COLOR_NAMES = { accent: '강조색', ink: '진하게', ...ZONE_COLOR_NAMES }
-  const isLined = (m) => isMark(m) && (m.kind === 'arrow' || m.kind === 'bay')
+  const isLined = (m) => isMark(m) && (m.kind === 'arrow' || m.kind === 'bay' || m.kind === 'footprints')
   const headAria = (head) => `너비 ${HEAD_WIDTH_WORDS[head[0]]} · 길이 ${HEAD_LENGTH_WORDS[head[1]]}`
   const headShort = (head) => (head === 'MM' ? '보통' : `${HEAD_WIDTH_WORDS[head[0]]}·${HEAD_LENGTH_WORDS[head[1]]}`)
   // 갤러리·단추의 작은 동선 그림(24×12 — 몸통은 실선, 머리는 그 크기의 꼴).
@@ -4548,22 +4750,25 @@ export default function (component) {
   function syncLineProps(chosen) {
     const lined = chosen.filter(isLined)
     lineProps.hidden = !lined.length
-    if (!lined.length) {
+    // 머리 크기 · 굵기 · 선 모양은 동선 · 베이만 갖는다 — 발자국만이면 숨고, 섞어 고르면 동선 · 베이의 값만 본다(선 색은 모두).
+    const headed = lined.filter((m) => m.kind !== 'footprints')
+    for (const node of [headField, lineWidthField, lineStyleField]) node.hidden = !headed.length
+    if (!headed.length) {
       headGallery.hidden = true
       headToggle.setAttribute('aria-expanded', 'false')
-      return
     }
+    if (!lined.length) return
     fillLineOptions()
-    const head = sharedLook(lined, 'head')
+    const head = sharedLook(headed, 'head')
     drawHeadIcon(headNow, head || 'MM')
     setText(headWord, head ? headShort(head) : '여러 값')
     setAttr(headToggle, 'aria-label', `머리 크기 — ${head ? headAria(head) : '여러 값'}`)
     for (const cell of headGallery.children) setAttr(cell, 'aria-pressed', String(cell.dataset.head === head))
     const color = sharedLook(lined, 'line')
     lineColor.value = color === null ? MIXED : color
-    const width = sharedLook(lined, 'lineWidth')
+    const width = sharedLook(headed, 'lineWidth')
     lineWidth.value = width === null ? MIXED : String(width)
-    const style = sharedLook(lined, 'lineStyle')
+    const style = sharedLook(headed, 'lineStyle')
     lineStyle.value = style === null ? MIXED : style
   }
   // 고른 동선·베이 모두의 모양 값을 바꾼다(patch 의 null 은 처음 값으로). 그 종류가 받지 않는 키는 빠진다(`cleanLook`).
@@ -4583,13 +4788,14 @@ export default function (component) {
     drawSelectionBox()
     updateStatus()
   }
-  // 고른 것 가운데 뒤집을 수 있는 것(베이 · 비대칭 도형 — `canFlip`)을 모두 뒤집는다 — 좌우(h)는 look.flip 만, 상하(v)는 180° 돌림
+  // 고른 것 가운데 뒤집을 수 있는 것(베이 · 비대칭 도형 · 발자국 — `canFlip`)을 모두 뒤집는다 — 좌우(h)는 look.flip 만, 상하(v)는 180° 돌림
   // + 좌우 뒤집기(같은 상자). 되돌리기 한 번. 뒤집은 것이 있으면 참(단축키가 키를 막을지 가른다). 뒤집기는 서식이 아니다(서식 붓이
   // 옮기지 않는다 — `// <format-paint>`).
   const isBay = (m) => isMark(m) && m.kind === 'bay'
   const isShape = (m) => isMark(m) && m.kind === 'shape'
   const turnsShape = (m) => isShape(m) && SHAPE_PRESETS[shapeOf(m.look)].turn
-  const canFlip = (m) => onCanvas(m) && (isBay(m) || turnsShape(m))
+  const isFootprints = (m) => isMark(m) && m.kind === 'footprints'
+  const canFlip = (m) => onCanvas(m) && (isBay(m) || turnsShape(m) || isFootprints(m))
   function flipMarks(axis) {
     const list = selectedItems().filter(canFlip)
     if (!list.length) return false
@@ -4612,6 +4818,70 @@ export default function (component) {
     const flips = chosen.some(canFlip)
     for (const button of flipButtons) button.hidden = !flips
     turnsRow.hidden = !rotates && !flips
+  }
+
+  // ---------------------------------------------------------------- 발자국 서식(선택 칸)
+  // 고른 것 가운데 발자국이 있으면 선택 칸에 「발 모양」(그림 판 — 칸마다 작은 발 둘 · aria-pressed)과 「간격」(좁게 · 보통 · 넓게)이 선다
+  // (2026-11-12 Space 시안 보드 6-2 · 6-3). 선 색은 동선 · 베이와 같은 칸이다(`syncLineProps`). 여럿이면 모두에 걸고 되돌리기 한 번이다
+  // (`setLooks`). 값이 서로 다르면 「여러 값」. 발자국 하나를 고르면 숫자 칸이 선 꼴이다 — 걷는 축 칸이 「길이」 이고 띠 칸은 숨는다(이
+  // 종류에 두께가 없다).
+  const FOOT_GAP_NAMES = { narrow: '좁게', normal: '보통', wide: '넓게' }
+  const FOOT_FIELD_WORDS = { w: '폭', h: '높이' }
+  // 그림 판 · 단추의 작은 발 둘(좁게 — 5.2 × 3).
+  function footDrawIcon(svgNode, foot) {
+    const geo = footprintsShape(5.2, foot, 'narrow')
+    const parts = []
+    if (geo.fill) parts.push(el('path', { class: 'sle-foot-ico', d: geo.fill }))
+    if (geo.stroke) parts.push(el('path', { class: 'sle-foot-ico-line', d: geo.stroke }))
+    svgNode.replaceChildren(...parts)
+  }
+  function footFillOptions() {
+    if (footGallery.children.length) return
+    const mixed = new Option('여러 값', MIXED)
+    mixed.disabled = true
+    mixed.hidden = true
+    footGap.replaceChildren(mixed, ...Object.keys(FOOT_STRIDE).map((key) => new Option(FOOT_GAP_NAMES[key] || key, key)))
+    footGallery.replaceChildren(...Object.keys(FOOT_SHAPES).map((key) => {
+      const icon = el('svg', { viewBox: '0 0 5.2 3', 'aria-hidden': 'true' })
+      footDrawIcon(icon, key)
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'sle-foot-cell'
+      button.dataset.foot = key
+      button.title = FOOT_SHAPES[key].name
+      button.setAttribute('aria-label', `발 모양 — ${FOOT_SHAPES[key].name}`)
+      button.append(icon)
+      return button
+    }))
+  }
+  function footCloseGallery() {
+    footGallery.hidden = true
+    footToggle.setAttribute('aria-expanded', 'false')
+  }
+  // 숫자 칸 이름(폭 · 높이) — 발자국 하나(foot)를 고르면 걷는 축 칸이 「길이」, 띠 칸은 숨는다. 아니면 처음 이름으로 되돌린다.
+  function footSyncFields(foot) {
+    const along = foot ? (((foot.rot || 0) % 180) ? 'h' : 'w') : null
+    for (const input of fieldInputs) {
+      const field = input.dataset.field
+      if (!FOOT_FIELD_WORDS[field]) continue
+      const label = input.closest('.sle-field')
+      label.hidden = Boolean(foot) && field !== along
+      setText(label.querySelector('span'), field === along ? '길이' : FOOT_FIELD_WORDS[field])
+    }
+  }
+  function footSyncProps(chosen, single) {
+    footSyncFields(single)
+    const feet = chosen.filter(isFootprints)
+    footProps.hidden = !feet.length
+    if (!feet.length) { footCloseGallery(); return }
+    footFillOptions()
+    const foot = sharedLook(feet, 'foot')
+    footDrawIcon(footNow, foot || 'sole')
+    setText(footWord, foot ? FOOT_SHAPES[foot].name : '여러 값')
+    setAttr(footToggle, 'aria-label', `발 모양 — ${foot ? FOOT_SHAPES[foot].name : '여러 값'} · 눌러서 바꾸기`)
+    for (const cell of footGallery.children) setAttr(cell, 'aria-pressed', String(cell.dataset.foot === foot))
+    const gap = sharedLook(feet, 'gap')
+    footGap.value = gap === null ? MIXED : gap
   }
 
   // ---------------------------------------------------------------- 도형 서식(선택 칸)
@@ -5417,6 +5687,7 @@ export default function (component) {
     if (typeof paint.color === 'string') words.push(paint.color ? SHAPE_FILL_NAMES[paint.color] || paint.color : '기본 색')
     if (LINE_STYLE_WORDS[paint.lineStyle]) words.push(LINE_STYLE_WORDS[paint.lineStyle])
     if (ARROW_HEADS.includes(paint.head)) words.push(`머리 ${headShort(paint.head)}`)
+    if (FOOT_GAP_NAMES[paint.gap]) words.push(`간격 ${FOOT_GAP_NAMES[paint.gap]}`)
     if (fmt.text) words.push(fmt.text.fontSize ? `글자 ${fmt.text.fontSize}` : '글자 자동')
     return words.join(' · ')
   }
@@ -5970,7 +6241,10 @@ export default function (component) {
     return { x, y, w: roundTo(Math.min(roundTo(right), floorTo(W())) - x), h: roundTo(Math.min(roundTo(top), floorTo(H())) - y) }
   }
   function resizeTo(item, b, dir, dx, dTop) {
-    Object.assign(item, resizedBox(b, dir, dx, dTop, minSize(), minSize()))
+    // 발자국은 걷는 축이 FOOT_MIN_LENGTH 아래로 줄지 않는다(끝 손잡이 둘만 선다 — 띠는 그대로).
+    const foot = item.kind === 'footprints'
+    const turned = Boolean((item.rot || 0) % 180)
+    Object.assign(item, resizedBox(b, dir, dx, dTop, foot && !turned ? FOOT_MIN_LENGTH : minSize(), foot && turned ? FOOT_MIN_LENGTH : minSize()))
     item.sizeGuessed = false
   }
 
@@ -6801,6 +7075,27 @@ export default function (component) {
   lineColor.onchange = () => { if (lineColor.value !== MIXED) setLooks({ line: lineColor.value }) }
   lineWidth.onchange = () => { if (lineWidth.value !== MIXED) setLooks({ lineWidth: lineWidth.value === '' ? null : Number(lineWidth.value) }) }
   lineStyle.onchange = () => { if (lineStyle.value !== MIXED) setLooks({ lineStyle: lineStyle.value }) }
+  footToggle.onclick = () => {
+    const open = footGallery.hidden
+    footGallery.hidden = !open
+    footToggle.setAttribute('aria-expanded', String(open))
+    if (open) (footGallery.querySelector('[aria-pressed="true"]') || footGallery.firstElementChild)?.focus()
+  }
+  footGallery.onclick = (event) => {
+    const cell = event.target.closest('.sle-foot-cell')
+    if (!cell) return
+    footCloseGallery()
+    setLooks({ foot: cell.dataset.foot })
+    footToggle.focus()
+  }
+  footGallery.onkeydown = (event) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    footCloseGallery()
+    footToggle.focus()
+  }
+  footGap.onchange = () => { if (footGap.value !== MIXED) setLooks({ gap: footGap.value }) }
   for (const button of flipButtons) button.onclick = () => flipMarks(button.dataset.flip)
   shapeSwap.onclick = () => {
     const open = shapeGallery.hidden

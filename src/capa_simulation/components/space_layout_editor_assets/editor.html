@@ -76,6 +76,8 @@
               <svg viewBox="0 0 16 16" aria-hidden="true"><text x="8" y="12.5" text-anchor="middle" class="ico-text">T</text></svg>글자</button>
             <button type="button" data-kind="arrow" title="동선 화살표">
               <svg viewBox="0 0 16 16" aria-hidden="true"><line x1="2" y1="8" x2="12" y2="8" class="ico-dash"/><polyline points="10,5 14,8 10,11" class="ico-line"/></svg>동선</button>
+            <button type="button" data-kind="footprints" title="발자국 — 끝 손잡이로 길이를 늘이면 발이 늘어납니다(발 크기는 그대로)">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="5" cy="5.5" rx="3" ry="1.6" class="ico-fill"/><ellipse cx="11" cy="10.5" rx="3" ry="1.6" class="ico-fill"/></svg>발자국</button>
             <button type="button" class="sle-floor-only" data-kind="bay" title="베이 화살표(U자) — 가운데에 「B<번호>」, 머리는 아래 팔 끝에서 왼쪽">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5H10.5A3.5 3.5 0 0 1 10.5 11.5H5.5" class="ico-line"/><polyline points="6.5,9.5 3.5,11.5 6.5,13.5" class="ico-line"/></svg>베이</button>
             <button type="button" class="sle-fab-only" data-kind="block" title="층 블록 — 연결 층(필수)을 가리키고, 보기 화면에서 누르면 그 층이 열립니다">
@@ -126,9 +128,9 @@
                 <span class="sle-turns" hidden role="group" aria-label="돌리기·뒤집기">
                   <button type="button" class="sle-mark-rotate" title="가운데를 축으로 90° 돌립니다">90° 돌리기</button>
                   <button type="button" class="sle-flip" data-flip="h" aria-keyshortcuts="Shift+H"
-                          title="좌우 뒤집기 (Shift+H) — 고른 것 가운데 베이·ㄴ자·ㄷ자·삼각형·블록 화살표 모두"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13" class="ico-dash"/><path d="M6 4.5L2 12.5h4z" class="ico-fill"/><path d="M10 4.5l4 8h-4z" class="ico-line"/></svg>좌우 뒤집기</button>
+                          title="좌우 뒤집기 (Shift+H) — 고른 것 가운데 베이·발자국·ㄴ자·ㄷ자·삼각형·블록 화살표 모두"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13" class="ico-dash"/><path d="M6 4.5L2 12.5h4z" class="ico-fill"/><path d="M10 4.5l4 8h-4z" class="ico-line"/></svg>좌우 뒤집기</button>
                   <button type="button" class="sle-flip" data-flip="v" aria-keyshortcuts="Shift+V"
-                          title="상하 뒤집기 (Shift+V) — 180° 돌리고 좌우로 뒤집은 것과 같습니다(고른 베이·비대칭 도형 모두)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h13" class="ico-dash"/><path d="M4.5 6l8-4v4z" class="ico-fill"/><path d="M4.5 10l8 4v-4z" class="ico-line"/></svg>상하 뒤집기</button>
+                          title="상하 뒤집기 (Shift+V) — 180° 돌리고 좌우로 뒤집은 것과 같습니다(고른 베이·발자국·비대칭 도형 모두)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h13" class="ico-dash"/><path d="M4.5 6l8-4v4z" class="ico-fill"/><path d="M4.5 10l8 4v-4z" class="ico-line"/></svg>상하 뒤집기</button>
                 </span>
                 <span class="sle-lineprops" hidden role="group" aria-label="화살표 선·머리">
                   <span class="sle-field sle-head-field">
@@ -137,9 +139,18 @@
                             title="화살표 머리의 너비·길이(엑셀 머리 크기처럼 3×3) — 고른 동선·베이 모두에"><svg class="sle-head-now" viewBox="0 0 24 12" aria-hidden="true"></svg><span class="sle-head-word">보통</span> ▾</button>
                   </span>
                   <span class="sle-head-gallery" id="sle-head-gallery" role="group" aria-label="머리 크기 — 행 너비, 열 길이" hidden></span>
-                  <label class="sle-field" title="선 색 — 처음은 동선 강조색, 베이 진하게"><span>선 색</span><select class="sle-line-color" aria-label="선 색"></select></label>
+                  <label class="sle-field" title="선 색 — 처음은 동선 · 발자국 강조색, 베이 진하게"><span>선 색</span><select class="sle-line-color" aria-label="선 색"></select></label>
                   <label class="sle-field" title="선 굵기(화면 px) — 기본은 동선이 상자 높이를 따르고 베이는 2"><span>굵기</span><select class="sle-line-width" aria-label="선 굵기"></select></label>
                   <label class="sle-field" title="선 모양 — 처음은 동선 점선, 베이 실선"><span>선 모양</span><select class="sle-line-style" aria-label="선 모양"><option value="solid">실선</option><option value="dashed">점선</option><option value="dotted">점</option></select></label>
+                </span>
+                <span class="sle-footprops" hidden role="group" aria-label="발자국 서식">
+                  <span class="sle-field sle-foot-field">
+                    <span>발 모양</span>
+                    <button type="button" class="sle-foot-toggle" aria-expanded="false" aria-controls="sle-foot-gallery"
+                            title="발 모양 — 고른 발자국 모두에"><svg class="sle-foot-now" viewBox="0 0 5.2 3" aria-hidden="true"></svg><span class="sle-foot-word">밑창</span> ▾</button>
+                  </span>
+                  <span class="sle-foot-gallery" id="sle-foot-gallery" role="group" aria-label="발 모양" hidden></span>
+                  <label class="sle-field" title="걸음 간격 — 같은 길이에 놓이는 발 개수가 바뀝니다(발 크기는 그대로)"><span>간격</span><select class="sle-foot-gap" aria-label="발자국 간격"></select></label>
                 </span>
                 <span class="sle-shapeprops" hidden role="group" aria-label="도형 서식">
                   <span class="sle-field sle-shape-field">
