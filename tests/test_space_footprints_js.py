@@ -15,7 +15,8 @@ import re
 from typing import Any
 
 import pytest
-from test_space_module_group import _node
+from test_space_format_paint_js import _APPLY_DECLS
+from test_space_module_group import _js_decl, _node
 
 from capa_simulation.components import space_layout_editor
 from capa_simulation.services.floor_layout_mark import (
@@ -33,7 +34,9 @@ CSS = (ASSETS / "editor.css").read_text(encoding="utf-8")
 HTML = (ASSETS / "editor.html").read_text(encoding="utf-8")
 _FOOT = re.compile(r"// <foot-geometry>\n(?P<body>.*?)\n\s*// </foot-geometry>", re.S)
 _LOOK = re.compile(r"// <mark-look>\n(?P<body>.*?)\n\s*// </mark-look>", re.S)
-LENGTHS = [3, 3.5, 4.8, 5.1, 7.3, 10, 16, 23, 30, 31.7]
+_PAINT = re.compile(r"// <format-paint>\n(?P<body>.*?)\n\s*// </format-paint>", re.S)
+_TILING = re.compile(r"// <module-tiling>\n(?P<body>.*?)\n\s*// </module-tiling>", re.S)
+LENGTHS: list[float] = [3, 3.5, 4.8, 5.1, 7.3, 10, 16, 23, 30, 31.7]
 
 _RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
@@ -199,9 +202,9 @@ def test_one_short_foot_stands_in_the_middle_and_the_left_foot_leads_on_the_top_
 def test_every_shape_gap_and_length_stays_inside_the_band_and_the_length() -> None:
     """모든 모양 × 간격 × 길이(3 ~ 31.7칸)에서 발이 띠 [0, 3] · 길이 [0, lw] 안에 든다 — 곡선은
     조절점까지, 새 발자국 선은 굵기의 반까지 넣어 본다(손으로 적은 점 자료를 지킨다)."""
-    cases = [[length, foot, gap] for foot in FOOT_SHAPES for gap in FOOT_GAPS for length in LENGTHS]
-    paths = _run({"paths": cases})["paths"]
-    stroke = _run({})["constants"]["FOOT_BIRD_STROKE"]
+    cases = [(length, foot, gap) for foot in FOOT_SHAPES for gap in FOOT_GAPS for length in LENGTHS]
+    paths = _run({"paths": [list(case) for case in cases]})["paths"]
+    stroke = float(_run({})["constants"]["FOOT_BIRD_STROKE"])
     for (length, foot, gap), path in zip(cases, paths, strict=True):
         assert path["fill"] or path["stroke"], (foot, gap, length)
         for d, pad in ((path["fill"], 0.0), (path["stroke"], stroke / 2)):
@@ -264,3 +267,222 @@ def test_draw_mark_fills_the_feet_with_the_line_colour_and_flips_before_turning(
     assert "const lineLike = item.kind === 'arrow' || item.kind === 'footprints'" in draw
     assert ".sle-foot { fill: var(--sle-accent); }" in CSS
     assert "isFootprints(m))" in _between("const canFlip = ", "function flipMarks(")
+
+
+# ------------------------------------------------------------------------------- 선 꼴 편집
+
+
+def test_only_the_two_ends_on_the_walking_axis_are_handles() -> None:
+    out = _run({"ends": [0, 90, 180, 270, -90, None]})
+    assert out["ends"] == [["e", "w"], ["n", "s"], ["e", "w"], ["n", "s"], ["n", "s"], ["e", "w"]]
+
+
+def test_the_box_keeps_the_band_and_the_shortest_length() -> None:
+    fitted = _run(
+        {
+            "fitted": [
+                [0, 16, 3],
+                [0, 16, 10],
+                [0, 2, 3],
+                [90, 10, 20],
+                [180, 1, 1],
+                [270, 3, 2.5],
+            ]
+        }
+    )["fitted"]
+    assert fitted == [
+        {"w": 16, "h": 3},
+        {"w": 16, "h": 3},
+        {"w": 3, "h": 3},
+        {"w": 3, "h": 20},
+        {"w": 3, "h": 3},
+        {"w": 3, "h": 3},
+    ]
+
+
+# 크기를 바꾸는 길 — editor.js 선언을 글자 그대로 떼어 돌린다(서식 붙이기 둘레와 같은 선언 +
+# 손잡이 끌기). 돌리기는 편집기 `rotateMark` 의 상자 맞바꿈 뒤 `fit` 이다.
+_FIT_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const SCALE = 10
+const W = () => 100
+const H = () => 60
+const roundTo = (v) => Math.round(v * SCALE) / SCALE
+const floorTo = (v) => Math.floor(v * SCALE + 1e-9) / SCALE
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi))
+const minSize = () => 1 / SCALE
+const window = { localStorage: { getItem: () => null, setItem: () => {} } }
+const S = { items: new Map(), ghosts: new Map(), original: new Map(), flash: '', formatParts: null }
+const stack = []
+const pushUndo = (ops) => { if (ops.length) { S.flash = ''; stack.push(ops) } }
+const redraw = () => {}
+%s
+%s
+const make = (m) => {
+  const item = {
+    placed: true, moveTo: null, sizeGuessed: false, rot: 0, label: '', color: '', hatch: false,
+    keepOut: false, link: '', fontSize: null, fontColor: '', borderStyle: 'dashed',
+    labelAlign: 'left', look: {}, group: null, kind: 'footprints', x: 10, y: 10, w: 16, h: 3, ...m,
+  }
+  S.items.set(item.id, item)
+  S.original.set(item.id, snapshot(item))
+  return item
+}
+const box = (m) => [m.rot, m.x, m.y, m.w, m.h]
+const out = {}
+out.sizes = (input.sizes || []).map(([raw, patch]) => {
+  const item = make(raw)
+  const { entries } = sizeEntries([item], (m) => (typeof patch === 'string'
+    ? { w: m.w + (patch === 'right' ? 0.5 : 0), h: m.h + (patch === 'up' ? 0.5 : 0) } : patch))
+  return [...box(item), entries.length]
+})
+out.turns = (input.turns || []).map((raw) => {
+  const item = make(raw)
+  const cx = item.x + item.w / 2
+  const cy = item.y + item.h / 2
+  const rot = ((item.rot || 0) + 90) %% 360
+  Object.assign(item, { rot, w: item.h, h: item.w, x: cx - item.h / 2, y: cy - item.w / 2 })
+  fit(item)
+  return box(item)
+})
+out.drags = (input.drags || []).map(([raw, dir, dx, dTop]) => {
+  const item = make(raw)
+  resizeTo(item, snapshot(item), dir, dx, dTop)
+  return box(item)
+})
+out.formats = (input.formats || []).map(([source, target]) => {
+  S.items = new Map()
+  const from = make(source)
+  const to = make(target)
+  applyFormat([to], { fmt: formatOf(formatShell(from)), origin: '' })
+  return [...box(to), lookText(to.look)]
+})
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def _run_fit(payload: dict[str, Any]) -> dict[str, Any]:
+    blocks = "\n".join(_block(pattern) for pattern in (_LOOK, _PAINT, _TILING, _FOOT))
+    heads = (*_APPLY_DECLS, "function resizedBox(", "function resizeTo(")
+    decls = "\n".join(_js_decl(head) for head in heads)
+    return _node(_FIT_RUNNER % (blocks, decls), payload)
+
+
+def test_every_size_path_keeps_the_band_and_only_changes_the_length() -> None:
+    """숫자 칸 · Ctrl+방향키는 `sizeEntries` → `fit` 을 지난다 — 띠 쪽 값(0° 의 높이 칸 · Ctrl+↑)은
+    바뀐 것이 없어 되돌리기 기록도 늘지 않고, 길이 쪽은 3칸 아래로 줄지 않는다."""
+    turned = {"id": "F", "rot": 90, "w": 3, "h": 16}
+    sizes = _run_fit(
+        {
+            "sizes": [
+                [{"id": "F"}, {"h": 10}],
+                [{"id": "F"}, {"w": 20}],
+                [{"id": "F"}, {"w": 2}],
+                [{"id": "F"}, "up"],
+                [{"id": "F"}, "right"],
+                [turned, {"w": 10}],
+                [turned, {"h": 25}],
+                [turned, "right"],
+                [turned, "up"],
+            ]
+        }
+    )["sizes"]
+    assert sizes == [
+        [0, 10, 10, 16, 3, 0],
+        [0, 10, 10, 20, 3, 1],
+        [0, 10, 10, 3, 3, 1],
+        [0, 10, 10, 16, 3, 0],
+        [0, 10, 10, 16.5, 3, 1],
+        [90, 10, 10, 3, 16, 0],
+        [90, 10, 10, 3, 25, 1],
+        [90, 10, 10, 3, 16, 0],
+        [90, 10, 10, 3, 16.5, 1],
+    ]
+
+
+def test_turning_moves_the_band_and_the_end_handles_never_shorten_below_three() -> None:
+    out = _run_fit(
+        {
+            "turns": [{"id": "F", "x": 20, "y": 20}],
+            "drags": [
+                [{"id": "F"}, "e", 9, 0],
+                [{"id": "F"}, "e", -20, 0],
+                [{"id": "F"}, "w", 14, 0],
+                [{"id": "F", "rot": 90, "w": 3, "h": 16}, "n", 0, -5],
+                [{"id": "F", "rot": 90, "w": 3, "h": 16}, "s", 0, -20],
+            ],
+        }
+    )
+    # 16 × 3 을 돌리면 3 × 16 — 가운데 그대로, 띠가 따라간다.
+    assert out["turns"] == [[90, 26.5, 13.5, 3, 16]]
+    assert out["drags"] == [
+        [0, 10, 10, 25, 3],
+        [0, 10, 10, 3, 3],
+        [0, 23, 10, 3, 3],
+        [90, 10, 10, 3, 21],
+        [90, 10, 23, 3, 3],
+    ]
+
+
+def test_the_format_brush_moves_length_line_colour_and_gap_but_not_the_shape() -> None:
+    """발자국끼리는 길이 · 선 색 · 간격을 옮기고 발 모양 · 뒤집기는 옮기지 않는다. 동선 ↔ 발자국은
+    선 색만 오간다(동선의 굵기 · 선 모양 · 머리는 그대로)."""
+    source = {
+        "id": "S",
+        "w": 24,
+        "look": {"foot": "cat", "gap": "wide", "line": "rose", "flip": True},
+    }
+    arrow = {
+        "id": "A",
+        "kind": "arrow",
+        "look": {"line": "ink", "lineWidth": 3, "lineStyle": "solid", "head": "LL"},
+    }
+    formats = _run_fit(
+        {
+            "formats": [
+                [source, {"id": "T", "rot": 90, "w": 3, "h": 16, "look": {"foot": "bird"}}],
+                [arrow, {"id": "T", "look": {"gap": "narrow"}}],
+                [source, {**arrow, "id": "T"}],
+            ]
+        }
+    )["formats"]
+    assert formats == [
+        [90, 10, 10, 3, 24, '{"foot":"bird","gap":"wide","line":"rose"}'],
+        [0, 10, 10, 16, 3, '{"gap":"narrow","line":"ink"}'],
+        [0, 10, 10, 16, 3, '{"head":"LL","line":"rose","lineStyle":"solid","lineWidth":3}'],
+    ]
+
+
+def test_the_editor_wires_line_editing_and_the_inspector() -> None:
+    handles = _between("function positionHandles(", "function position(")
+    assert "const ends = item.kind === 'footprints' ? footLineEnds(item.rot) : null" in handles
+    assert "handle.style.display = ends.includes(dir) ? '' : 'none'" in handles
+    assert "handle.setAttribute('rx', hs / 2)" in handles
+    fit = _between("const fit = (item) => {", "const clampShift = ")
+    assert (
+        "if (item.kind === 'footprints') Object.assign(item, footFitted(item.rot, item.w, item.h))"
+        in fit
+    )
+    assert "fit(item)" in _between("function pasteMarks(", "\n  }\n")
+    inspector = _between("  function syncInspector() {", "  function syncLineProps(")
+    assert inspector.index("syncShapeProps(chosen)") < inspector.index("footSyncProps(chosen, ")
+    title = _between("const markTitle = ", "// 두 옆 칸")
+    assert "lookValue(item.look, 'footprints', 'gap'))}개`" in title
+    lines = _between("  function syncLineProps(", "  function setLooks(")
+    assert "const headed = lined.filter((m) => m.kind !== 'footprints')" in lines
+    assert "sharedLook(headed, 'lineWidth')" in lines and "sharedLook(lined, 'line')" in lines
+    # 선택 칸 — 선 칸 바로 아래 발 모양 그림 판 · 간격(고르면 그 값, 다르면 「여러 값」).
+    for selector in (
+        'class="sle-footprops"',
+        'class="sle-foot-toggle"',
+        'class="sle-foot-gallery"',
+        'class="sle-foot-gap"',
+    ):
+        assert selector in HTML, selector
+    assert HTML.index('class="sle-lineprops"') < HTML.index('class="sle-footprops"')
+    assert HTML.index('class="sle-footprops"') < HTML.index('class="sle-shapeprops"')
+    assert "setLooks({ foot: cell.dataset.foot })" in JS
+    assert "setLooks({ gap: footGap.value })" in JS
+    # 고른 발자국은 점선 상자 대신 가운데 축 점선이다.
+    assert ".mark-footprints.is-selected .sle-foot-axis { display: inline; }" in CSS
+    assert ".sle-lineprops > .sle-field[hidden], .sle-fields .sle-field[hidden]" in CSS
