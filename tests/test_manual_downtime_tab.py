@@ -146,7 +146,7 @@ def test_edit_save_and_the_table_redraws_the_saved_values(tmp_path: Path) -> Non
     stored = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert stored.rows == ((B, 202608, 0.25), (A, 202607, 1.5))
     assert (stored.version, stored.saved_by, stored.note) == (1, "홍길동", "26.07 PM")
-    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
+    assert any("입력 비가동대수를 저장했습니다" in item.value for item in successes(app))
 
     # 다시 그린 표(새 세션 — 위젯 편집 없이)는 저장한 값이다.
     fresh = _editor_values(_app(path))
@@ -246,7 +246,7 @@ def test_a_double_press_that_cut_the_first_run_still_empties_the_note(
     app._run(widget_state=pressed)
 
     assert not app.exception, [element.message for element in app.exception]
-    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
+    assert any("입력 비가동대수를 저장했습니다" in item.value for item in successes(app))
     assert _memo(app).value == ""
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
 
@@ -278,7 +278,7 @@ def test_a_second_press_with_another_note_keeps_the_note_it_did_not_save(
     _edit(app, {(row_a, "202607"): 1.0}, version=seen_version)
     app = _save(app, note="둘째 메모")
 
-    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
+    assert any("입력 비가동대수를 저장했습니다" in item.value for item in successes(app))
     assert _memo(app).value == "둘째 메모"
     saves = DuckDBEquipmentRepository(path).load_manual_downtime_saves()
     assert [(save.version, save.note) for save in saves] == [(1, "첫 메모")]
@@ -436,7 +436,7 @@ def test_a_trailing_press_of_the_same_input_repeats_the_success(
 
     app = _save(app)
     assert DuckDBEquipmentRepository(path).load_manual_downtime().version == 1
-    assert any("입력 비가동 대수를 저장했습니다" in item.value for item in successes(app))
+    assert any("입력 비가동대수를 저장했습니다" in item.value for item in successes(app))
     assert not any(item.value == MANUAL_UNCHANGED_MESSAGE for item in infos(app))
 
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 0.0)
@@ -508,7 +508,7 @@ def test_the_heading_row_carries_the_column_note_and_the_form_has_no_label_row(
     path = tmp_path / "equipment.duckdb"
     app = _app(path)
     assert not any("열 · 생산월" in item.value for item in app.caption)
-    (heading,) = [item for item in app.markdown if "월별 비가동 대수(입력)" in item.value]
+    (heading,) = [item for item in app.markdown if "월별 비가동대수(입력)" in item.value]
     assert "지금 열: 생산월 26.07–26.08." in str(heading.proto.help)
     assert MANUAL_COLUMNS_HELP in str(heading.proto.help)
     for key, placeholder in (

@@ -745,7 +745,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `app_pages/available_equipment_status.py` — `가용설비 현황`. 설비 운영 DB 의 입력·조회·Static 비교를 **탭 셋**으로 다룬다
   (2026-10-24 사용자 결정 — 두 탭 개편, 2026-10-27 셋째 탭): ① `설비 마스터`(처음 여는 탭 — 설비 마스터 표·작은 편집표 둘·오른쪽 칸 호기 상세/
   새 호기/저장 전 변경/저장 이력, 개편 B1·C — `components/equipment_master_tab.py`, 개편 전 `RawData`) ②
-  `Summary`(안쪽 탭 `Main`·`Static 대비 일정` — 라벨 글자는 개편 전 그대로) ③ `Preference`(공정 × 생산월 **입력 비가동 대수** —
+  `Summary`(안쪽 탭 `Main`·`Static 대비 일정` — 라벨 글자는 개편 전 그대로) ③ `Preference`(공정 × 생산월 **입력 비가동대수** —
   `components/manual_downtime_tab.py`, 설비 `0032` 공용 프로필. 개편 전 같은 이름 탭은 Cut-off 표였다 — 그것은 지금 「가용설비
   설정」 팝업이다). 공정별 Cut-off 는 사이드바 「가용설비 설정」 상자의 팝업(`equipment_settings_dialog.py` — 2026-11-03 부터
   사이드바 설정 상자 `components/settings_box.py`, 그 전에는 제목 줄 끝 「설정」 단추, 개편 전 `Preference` 탭), Qual 마감
@@ -3649,12 +3649,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `ShorteningFilterProfile` 과 정규화·심기·`merge_filter_processes` 규칙. Streamlit·DB 를 모르고 값은 원본 공정명이다.
   `effective_filter_months`·`filter_month_window` 는 필요 단축 일정 시작·끝 월 칸의 심기를 **읽기만** 해 같은 달을 낸다(Space
   필요 단축 보기 — 세션 값은 인자로 받는다).
-- `src/capa_simulation/services/manual_downtime.py` — 입력 비가동 대수(설비 DB `0032`, 2026-10-27 결정) 모델 `ManualDowntime`
+- `src/capa_simulation/services/manual_downtime.py` — 입력 비가동대수(설비 DB `0032`, 2026-10-27 결정) 모델 `ManualDowntime`
   (0 아닌 칸만의 (공정, 생산월, 환산 대수) 튜플 — 캐시에 실린다)·저장 이력 `ManualDowntimeSave` 와 규칙. 저장 입구
   `prepare_manual_downtime`(빈칸 = 0, 0 이상 소수, 상한 9999, `YYYYMM`), 보이는 범위만 갈아 쓰기 `merge_visible_cells`, 계산 키
   `manual_downtime_key`(계산할 달로 좁힌 칸 자체), 가용 빼기 `apply_manual_downtime`(그 달 가용에서 0 에서 멈춤 — `clamp_manual_units`
   를 공정 Capa 상세 ③ 비가동대수(전월 대비 표)도 쓴다)과 출처 띠 글(`manual_effect_band`), 대수 글 `manual_units_text`·뺀 몫 글
-  `manual_removed_text`(공정 Capa 상세 두 곳이 같은 글을 쓴다 — 6장 「입력 비가동 대수」). Streamlit·DB 를 모른다.
+  `manual_removed_text`(공정 Capa 상세 두 곳이 같은 글을 쓴다 — 6장 「입력 비가동대수」). Streamlit·DB 를 모른다.
 - `src/capa_simulation/services/floor_state.py` — Space 동·층 사용 상태(설비 DB `0029`, 2026-10-24 결정 S1~S6) 모델
   `FloorStates`(비활성 층만의 (동, 층, 사유) 행 — 사유는 직접 적은 글이고 옛 코드 `UNUSED` 사용 안 함·`NOT_LINE` 생산라인
   아님도 그대로 둔다, 2026-10-26 결정)와 규칙. 저장 입구 `prepare_floor_states`(30개 층, 빈 값 = 사용, 사유는
@@ -3693,7 +3693,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 대수 표와 호기 목록(`build_monthly_equipment_contributions`)은 같은 기여 줄(`_raw_rows`)에서 나온다.
 - `src/capa_simulation/services/securement_cross_check.py` — 같은 소요대수에 Static(`RQ_EQP_AVBL`)과 설비 일정 기준
   가용대수를 각각 나눠 확보율 두 벌을 낸다(화면은 `cross_check_from_monthly` — 설비 일정 쪽 분자에서 입력 비가동
-  `manual_downtime=` 를 더 뺀다, 6장 「입력 비가동 대수」).
+  `manual_downtime=` 를 더 뺀다, 6장 「입력 비가동대수」).
   - `calculate_securement_rate` 를 고치지 않고 가용대수 프레임만 바꿔 두 번 부른다. 설비 일정 쪽에 공정 자체가 없을 때만
     Static 으로 채워 `fallback_processes` 로 알린다. HOME·B/N 은 여전히 Static 을 본다.
 - `src/capa_simulation/services/required_shortening.py` — 일정 기준 가용이 소요대수 × 목표 확보율에 모자란 공정·월마다
@@ -4803,7 +4803,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   견줘 **바뀐 층만** 고친다(다시 켠 층 DELETE · 사유만 바꾼 층 키 아닌 칸 UPDATE · 새로 끈 층 INSERT — 같은 키를 지웠다 넣지
   않는다). 읽기는 30개 층 밖 행을 버리고 머리 없는 층 행은 version 0 으로 싣고 빈 사유는 `UNUSED` 로 읽는다(DB 행은
   고치지 않는다 — 같은 내용 저장은 쓰지 않는다).
-- `src/capa_simulation/persistence/manual_downtime_store.py` — 입력 비가동 대수(설비 DB `0032` — 머리
+- `src/capa_simulation/persistence/manual_downtime_store.py` — 입력 비가동대수(설비 DB `0032` — 머리
   `manual_downtime_profile`, 칸 `manual_downtime` 행 = 0 아닌 (공정, 달)·PK (공정, 달), 이력 `manual_downtime_save`)의 읽기·쓰기 SQL.
   쓰기는 층 사용과 같은 꼴로 **바뀐 칸만** 고치고(비운 칸 DELETE · 값만 바꾼 칸 UPDATE · 새 칸 INSERT) 머리를 다음 version 으로 쓴 뒤
   이력 한 행(바뀐 칸 수·채운 칸 수·대수 합·저장자·메모)을 더한다. 버전 대조·같은 내용이면 쓰지 않기는 저장소
@@ -5164,7 +5164,7 @@ RQ_MODULE
    「키 방침」). 입력을 하나라도 빼면 낡은 값이 나오므로 새 입력을 더하면 키도 더한다
    (`tests/test_equipment_view_cache.py` 가 입력마다 키가 갈리고 캐시 결과 = 새 계산인지 본다).
    **설비 운영 스냅샷을 읽는 시뮬레이션 쪽 페이지**도 있다 — `공정 Capa 상세` 는 설비 DB 의 설비 시나리오 스냅샷(방문
-   기준 — HOME 칸으로 들어온 방문은 그 방문 동안 공식, 그 밖은 세션 설비 시나리오, 32)·Cut-off·입력 비가동 대수(`0032` 공용
+   기준 — HOME 칸으로 들어온 방문은 그 방문 동안 공식, 그 밖은 세션 설비 시나리오, 32)·Cut-off·입력 비가동대수(`0032` 공용
    프로필 — `load_manual_downtime`, 34)를 **읽기만** 해(쓰지 않는다,
    `PageSpec.uses_equipment_db`) 공정 하나의 소요대수와
    맞댄다(설비 일정 기준 가용·신규 설비·비가동, 참고). 계획·설비 일정은 같은 키 방침(15)의
@@ -5174,7 +5174,7 @@ RQ_MODULE
    들어온 방문은 **주소 인자로 받은 출처 값만 적는다**(그 카드의 목표·기간·대수). 거꾸로 공정 Capa 상세가 필요 단축
    일정으로 옮길 때 적는 것은 그 화면의 「강조 공정」 세션 칸 하나다 — 공정 필터 칸(0019 세션 값)을 심으면 사용자가 그
    [공정] 을 지울 때 빈 선택이 공용 프로필에 저장된다(2026-10-22 결함). `제약 시뮬레이션` 도 같은 예외다 — 설비 DB 의
-   설비 시나리오 스냅샷(늘 세션 설비 시나리오 — HOME 방문 잠금 없음)·Cut-off·입력 비가동 대수(`0032`)를 **읽기만** 해 공정 하나의 소요대수(제품정보로
+   설비 시나리오 스냅샷(늘 세션 설비 시나리오 — HOME 방문 잠금 없음)·Cut-off·입력 비가동대수(`0032`)를 **읽기만** 해 공정 하나의 소요대수(제품정보로
    나눔)와 맞댄다. 계획은 공정 Capa 상세와 같은 칸(`get_required_shortening_for_target` — **공식 칸만**, UPEH 가정 토큰
    없음)으로만 부르고, `0019`·`0021`·세션 칸은 읽지도 쓰지도 않으며 **어느 DB 에도 쓰지 않는다**(시뮬레이션·설비 둘 다 —
    `tests/test_constraint_simulation_page.py` 가 두 저장소의 쓰기를 터지는 대역으로 바꿔 본다). 설비 DB 를 여는
@@ -5372,7 +5372,7 @@ RQ_MODULE
     빈 폼에 되살아난다, 9장 「입력 초안」). 탭을 닫아도 그 화면의 보기 조건·세션 편집은
     지우지 않는다. 탭 줄은 23번처럼 DB 를 읽지 않는다 — `tests/test_page_tabs.py` 가 그리는 동안 저장소·연결 호출 0 을
     지킨다. 탭 목록은 `scenario_activation._STALE_UI_KEYS` 에 넣지 않는다(무엇을 보고 있는지라 시나리오를 바꿔도 남는다).
-34. **입력 비가동 대수는 계획 키 안의 칸으로만 계산에 든다**(설비 `0032`, 2026-10-27 결정). 실행 쪽 설비 일정 기준 가용을 내는 모든
+34. **입력 비가동대수는 계획 키 안의 칸으로만 계산에 든다**(설비 `0032`, 2026-10-27 결정). 실행 쪽 설비 일정 기준 가용을 내는 모든
     키 — 필요 단축 일정 계획 키(`RequiredShorteningCacheKey` 끝 칸 — UPEH 토큰 뒤)와 공정 설비 일정 키(`ProcessEquipmentTimelineCacheKey`
     끝 칸 — 그 공정 칸만) — 가 **계산할 달로 좁힌 0 아닌 칸 그 자체**(`manual_downtime_key`)를 싣고, 계산 래퍼는 키에서 칸을 다시
     세운다(목표 `MonthlyTarget` 과 같은 길 — 키와 다른 칸이 계산에 들어올 길이 없다). `required_shortening_cache_key` ·
@@ -5916,7 +5916,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   시트·확보율 교차검증·필요 단축 일정·공정 Capa 상세의 설비 일정 기준 가용이 같은 값이고, 대수(몇 대) 축은 「호기 목록」의
   `대수` 칸에 남는다.
 
-### 입력 비가동 대수
+### 입력 비가동대수
 
 호기에 잇지 않고 **공정 × 생산월로 넣는 비가동 대수**다(2026-10-27 사용자 결정 — 가용설비 현황 셋째 탭 「Preference」, 설비 `0032`
 공용 프로필 하나 — 모든 설비 시나리오가 같이 쓴다). 순수 규칙은 `services/manual_downtime.py` 다.

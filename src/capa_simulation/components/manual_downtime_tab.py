@@ -136,7 +136,7 @@ MANUAL_SAVE_BUTTON: Final = "입력 비가동 저장"
 NOTE_PLACEHOLDER: Final = note_placeholder("26.07 PM 1.5대")
 MANUAL_PROCESS_COLUMN: Final = "공정"
 MANUAL_SAVED_MESSAGE: Final = (
-    "입력 비가동 대수를 저장했습니다 — 공정 Capa 상세 ③·⑤·필요 단축 일정·제약 시뮬레이션·"
+    "입력 비가동대수를 저장했습니다 — 공정 Capa 상세 ③·⑤·필요 단축 일정·제약 시뮬레이션·"
     "Space 필요 단축 보기·Summary › Static 대비 일정이 새 값으로 계산합니다."
 )
 # 바꾼 것 없는 저장의 알림 — 새 버전을 만들지 않는다(설계 규칙 UI-STA-01 — 다른 공용 프로필 저장과
@@ -288,7 +288,7 @@ def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
     period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"
     outside = sum(1 for _, month, _ in profile.rows if month not in set(months))
     render_profile_heading(
-        "#### :material/event_busy: 월별 비가동 대수(입력)",
+        "#### :material/event_busy: 월별 비가동대수(입력)",
         profile,
         key="manual_downtime",
         empty="아직 넣은 입력 비가동이 없습니다",
