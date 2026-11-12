@@ -2583,7 +2583,8 @@ def test_a_redraw_from_the_wheel_or_a_click_does_not_drag_the_scroll_to_the_focu
 
 _CHOICE_PLACE_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
-process.stdout.write(JSON.stringify(input.cases.map((c) => choicePlace(c.cell, c.size, c.view, 8))))
+const places = input.cases.map((c) => choicePlace(c.cell, c.size, c.view, 8))
+process.stdout.write(JSON.stringify({ places }))
 """
 
 
@@ -2601,7 +2602,7 @@ def test_the_choice_list_opens_below_the_cell_or_flips_up_and_stays_on_screen() 
     result = _node(
         {"cases": [{**case, "view": view} for case in cases]},
         runner=_CHOICE_PLACE_RUNNER,
-    )
+    )["places"]
     assert result[0] == {"left": 399, "top": 333, "maxHeight": None, "up": False}
     assert result[1] == {"left": 399, "top": 581, "maxHeight": None, "up": True}
     # 아래 659 · 위 181 — 넓은 아래쪽에 659 만큼 펴고 창 안에서 굴린다.
