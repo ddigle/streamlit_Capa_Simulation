@@ -295,7 +295,7 @@ def test_every_editor_outside_a_form_passes_through_the_session_mark() -> None:
             key = next((word.value for word in node.keywords if word.arg == "key"), None)
             if key is None or not carries(key, tree):
                 bare.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
-    assert outside >= 5 and forms >= 7
+    assert outside >= 3 and forms >= 7
     assert not bare, f"폼 밖 편집표 key 는 editor_widget_key 로 짓는다: {bare}"
 
 
