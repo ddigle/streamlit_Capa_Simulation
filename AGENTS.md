@@ -2660,7 +2660,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     휠이 제자리에서 헛돌았다(2026-11-12 사용자 요청 2). 친 글이 든 칸이 그린 창(`BUFFER_ROWS`) 밖으로 나가면 그 자리에서 확정하고
     (`settleEdit` — 칸이 사라지면 focusout 이 오지 않는다), 초점 칸이 밖으로 나가 문서로 떨어진 초점은 다른 곳이 잡지 않은 동안 돌아오면
     되돌려 준다(`S.heldFocus`). 고르기 창(`.emg-dd`)은 칸 안 자식 그대로 화면 자리에 뜬다(`position: fixed` — `placeChoice` ·
-    `choicePlace`, 아래가 모자라면 위로 · 그래도 모자라면 창 안 스크롤, 오른쪽 끝은 `popoverShift`). 표 상자 안 절대 자리였을 때는
+    `choicePlace`, 아래가 모자라면 위로 · 그래도 모자라면 창 안 스크롤 — 같은 칸의 앞 창 스크롤을 이어 받고 고른 값이 창 안에
+    보이게 맞춘다(`listScroll`), 오른쪽 끝은 `popoverShift`). 표 상자 안 절대 자리였을 때는
     상자에 잘리고 상자를 넘치게 해 줄이 적은 표에서 머리가 밀려 사라졌다. 놓은 칸이 표 · 페이지 스크롤 · 창 크기로 움직이면
     고르지 않은 채 닫는다(`choiceMoved` — 연 뒤 늦게 온 scroll 은 칸이 그 자리라 닫지 않는다). 칸을 열면 그 줄을 머리 밑에서
     꺼내고(`startEdit` 의 `ensureVisible`), 글 편집 칸은 머리 아래 층(공용 `cells.css` z 5 — 시나리오 목록 표도), 고르는 칸만

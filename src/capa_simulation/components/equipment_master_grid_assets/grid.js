@@ -359,6 +359,15 @@ function choicePlace(cell, size, view, margin) {
     up,
   }
 }
+
+// 높이를 줄여 창 안에서 구르는 고르기 창의 스크롤(px) — 고른 값 [top, top + height](창 안 자리)이 보이는 칸
+// [current, current + room] 에 들게 가장 적게 옮긴다. 이미 들면 current 그대로다. pad 는 창 안 여백이라 첫 값이면 0, 끝 값이면
+// 끝까지다.
+function listScroll(current, top, height, room, pad) {
+  if (top - pad < current) return Math.max(top - pad, 0)
+  if (top + height + pad > current + room) return top + height + pad - room
+  return current
+}
 // </grid-place>
 
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
@@ -1643,6 +1652,7 @@ function paintWindow(S) {
   const hadFocus = Boolean(active && body.contains(active))
   const caret = keptCaret(S, active)
   settleEdit(S, start, end)
+  const listTop = keptListScroll(S)
   S.painting = true
   body.style.paddingTop = start * ROW_H + 'px'
   body.style.height = total * ROW_H + 'px'
@@ -1657,7 +1667,15 @@ function paintWindow(S) {
   S.wantFocus = false
   if (hadFocus || want || (S.heldFocus && focusDropped(body))) S.heldFocus = !focusTarget(S, caret, want && S.keying)
   else S.heldFocus = false
-  placeChoice(S)
+  placeChoice(S, listTop)
+}
+
+// 다시 그릴 고르기 창이 이어 받을 창 안 스크롤 — 지금 열린 창이 같은 칸(`S.edit`)의 것일 때만, 아니면 0.
+function keptListScroll(S) {
+  const list = S.edit ? S.body.querySelector('.emg-dd') : null
+  const cell = list ? list.parentNode : null
+  if (!cell || !cell.dataset || cell.dataset.id !== S.edit.id || Number(cell.dataset.col) !== S.edit.col) return 0
+  return Number(list.scrollTop) || 0
 }
 
 // 그리기 전에 연 칸을 정리한다. 고르기 창은 놓은 칸이 표 · 페이지 스크롤로 움직였으면 고르지 않은 채 닫는다(엑셀 · 구글
@@ -1686,8 +1704,10 @@ function focusDropped(node) {
 // 고르기 창을 칸 곁 화면 자리에 띄운다(`position: fixed`, 자리는 `choicePlace`) — 표 상자 안 절대 자리였을 때는 창이 상자에
 // 잘리고 상자를 넘치게 해, 두 줄만 불러온 표에서 창 단추에 초점이 가면 상자가 굴러 머리 · 줄이 위로 밀려 사라졌다. 창은
 // 칸 안 자식 그대로다 — 칸 밖으로 나가는 초점 판정(focusout)과 본문 위임 누르기(`data-pick`)가 그 자리에 기댄다. 놓은 칸의
-// 화면 자리를 적어 두어 칸이 움직이면 닫는다(`choiceMoved`).
-function placeChoice(S) {
+// 화면 자리를 적어 두어 칸이 움직이면 닫는다(`choiceMoved`). 높이를 줄여 창 안에서 구르면 앞 창의 스크롤 keep 을 이어 받고
+// 고른 값이 창 안에 보이게 맞춘다(`listScroll`) — 창은 화살표마다 새로 지어 스크롤이 0 으로 돌아가 고른 값이 창 밖에 남았다.
+// 창 상자만 굴린다(scrollIntoView 는 표 상자 · 페이지까지 굴린다).
+function placeChoice(S, keep) {
   S.choiceAnchor = null
   const list = S.body.querySelector('.emg-dd')
   if (!list || !list.parentNode || !list.getBoundingClientRect) return
@@ -1705,6 +1725,12 @@ function placeChoice(S) {
   list.style.left = place.left + 'px'
   list.style.top = place.top + 'px'
   list.style.maxHeight = place.maxHeight === null ? '' : place.maxHeight + 'px'
+  const active = list.querySelector('button.is-active')
+  if (place.maxHeight !== null && active) {
+    const first = list.children[0]
+    const pad = first ? Number(first.offsetTop) || 0 : 0
+    list.scrollTop = listScroll(keep || 0, Number(active.offsetTop) || 0, active.offsetHeight, list.clientHeight, pad)
+  }
   S.choiceAnchor = { cell, left: rect.left, top: rect.top }
 }
 
