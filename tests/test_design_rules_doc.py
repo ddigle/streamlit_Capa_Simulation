@@ -1840,6 +1840,10 @@ REMAINING_1112_KEPT = tuple(
 )
 # 갈래가 답 밖에서 정한 것을 밝힌 줄.
 REMAINING_1112_BEYOND = ("toolrow-1600", "cancel-icon", "unused-bits")
+# 구현이 답 밖에서 고른 것에 뒤에 「답 밖 — 구현이 정함」 표시를 단 줄과 그 줄이 드는 것.
+REMAINING_1112_BEYOND_IMPLEMENTED = {
+    "deny-data-read": ("`e2e_copy` 통째로", "`capa-copy`(DB 사본 폴더) 막음", "셸 읽기 명령 묶음"),
+}
 # ②-2 메모 — 실제 설비명 둘은 공개 저장소라 가린 꼴로 적는다.
 REMAINING_1112_MEMO = (
     "이거 원인 파악됐어 붙여넣기가 잘못반영돼서 여러개의 모듈에 한개 메인설비명이 들어갔고, 그걸로"
@@ -1898,6 +1902,11 @@ def test_the_remaining_1112_board_answers_are_recorded() -> None:
     assert "`more sizes` 에 8 · 40 이 없음" in by_id["census-bundle"]
     beyond = [key for key, line in by_id.items() if "답 밖 — 갈래가 정함" in line]
     assert beyond == list(REMAINING_1112_BEYOND)
+    implemented = [key for key, line in by_id.items() if "답 밖 — 구현이 정함" in line]
+    assert implemented == list(REMAINING_1112_BEYOND_IMPLEMENTED)
+    for key, parts in REMAINING_1112_BEYOND_IMPLEMENTED.items():
+        for part in parts:
+            assert part in by_id[key], (key, part)
     for key in REMAINING_1112_TODO_2:
         assert "`docs/TODO.md` 2장" in by_id[key], key
 
