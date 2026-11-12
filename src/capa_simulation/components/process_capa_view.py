@@ -8,7 +8,9 @@
 - **표 도구 줄** — 「구획」 칩(`st.pills`, ①~⑤ 가운데 고른 것 = 펼침 — 라벨을 숨긴 칸이라 뜻은
   칩 바로 뒤 ⓘ 하나, 2026-11-10 보드 Q-8), 「비가동 기준」 고르기(`st.segmented_control` —
   Static · 일정, 설비 일정이 서는 공정에서 ③ 을 펼쳤을 때만 — 「③ 비가동」 의 실가용을 어느 가용에서
-  빼나, 처음은 Static, 2026-11-12 사용자 답 q5b (가) · k-c4), 「제품별 소요대수」
+  빼나, 처음은 Static, 2026-11-12 사용자 답 q5b (가) · k-c4)와 「④ 단축」 보기 고르기(전체 · 단축
+  필요만) — 둘 다 보이는 캡션 없이 라벨을 숨긴 칸이고 뜻은 마지막 고르기 바로 뒤 ⓘ 하나다(2026-11-12
+  남은 물음 보드 ③-2 (가) — 1600 창 한 줄, 설계 규칙 UI-LAY-11), 「제품별 소요대수」
   펼침(`st.toggle` — ① · ② 를 함께 — q4 (가))과 펼쳤을 때의 「분류」(`st.segmented_control`),
   그리고 오른쪽 끝 「내려받기 ▾」 메뉴 하나(2026-11-10 답 Q2-7) — 「이 공정 단축 일정 CSV」(설비
   일정이 설 때만 — ④ 구획의 호기 표 곁, 설계 규칙 UI-LAY-03. 없으면 메뉴 없이 시트 엑셀 단추
@@ -260,8 +262,9 @@ DOWNLOAD_MENU_KEY: Final = download_menu_key("process_detail")
 DOWNLOADS_KEY: Final = "process_detail_downloads"
 # 「구획」 칩과 그 뜻 ⓘ 를 담는 칸 — ⓘ 가 칩과 작은 간격으로 붙는다(옆 토글의 풍선으로 읽히지 않게).
 SECTIONS_ROW_KEY: Final = "process_detail_sections_row"
-# 캡션과 그 고르기를 한 칸에 묶는 자리 셋(비가동 기준 · ④ 보기 · 분류) — 줄이 모자라면 캡션과
-# 고르기가 함께 다음 줄로 간다(캡션만 윗줄 끝에 남지 않게 — 설계 규칙 UI-LAY-11).
+# 고르기를 줄바꿈 없는 한 칸에 담는 자리 셋 — 비가동 기준 · ④ 보기(마지막 것이 뜻 ⓘ 를 함께
+# 담는다)와 분류(캡션과 한 칸). 줄이 모자라면 칸째 다음 줄로 간다(캡션 · ⓘ 만 윗줄 끝에 남지 않게 —
+# 설계 규칙 UI-LAY-11).
 BASIS_ROW_KEY: Final = "process_detail_basis_row"
 UNITS_VIEW_ROW_KEY: Final = "process_detail_units_view_row"
 SPLIT_ROW_KEY: Final = "process_detail_split_row"
@@ -291,14 +294,23 @@ _SECTIONS_BEFORE_KNOWN: Final = (SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_UNITS
 # 공정에만 선다(④ 보기와 같은 꼴).
 BASIS_KEY: Final = "process_detail_downtime_basis"
 BASIS_LABELS: Final[Mapping[str, str]] = {BASIS_STATIC: "Static", BASIS_SCHEDULE: "일정"}
-BASIS_CAPTION: Final = "비가동 기준"
 # 「④ 단축」 의 보기 고르기 — 전체 · 단축 필요만(`st.segmented_control`, 세션 값 — 처음은 전체,
-# 2026-11-12 사용자 답 q6 (가) · 메모). ④ 가 펼쳐진 공정에만 선다 — 줄 이름은 칩 이름의 번호 하나다.
+# 2026-11-12 사용자 답 q6 (가) · 메모). ④ 가 펼쳐진 공정에만 선다.
 UNITS_VIEW_KEY: Final = "process_detail_units_view"
 UNITS_VIEW_LABELS: Final[Mapping[str, str]] = {UNITS_ALL: "전체", UNITS_SHORTENING: "단축 필요만"}
-UNITS_VIEW_CAPTION: Final = "④"
-# 보이는 캡션은 번호 하나지만 숨긴 위젯 라벨(접근성 이름)은 뜻 있는 이름이다(설계 규칙 UI-LAY-13).
+# 두 고르기는 보이는 캡션이 없다 — 숨긴 위젯 라벨(접근성 이름)은 뜻 있는 이름이고(설계 규칙
+# UI-LAY-13), 뜻은 마지막 고르기 바로 뒤 ⓘ 하나가 말한다(`picker_help` — 2026-11-12 남은 물음 보드
+# ③-2 (가), UI-TXT-02).
+BASIS_LABEL: Final = "비가동 기준"
 UNITS_VIEW_LABEL: Final = "④ 단축 보기"
+BASIS_HELP: Final = (
+    "Static · 일정 — ③ 비가동의 실가용대수를 ① Static 가용대수에서 뺄지, ② 일정 가용대수에서 "
+    "뺄지 고릅니다."
+)
+UNITS_VIEW_HELP: Final = (
+    "전체 · 단축 필요만 — ④ 단축에 호기 줄을 모두 볼지, 단축 대상과 신규 필요(추가N) 줄만 볼지 "
+    "고릅니다."
+)
 # 시트 엑셀 머리 값 줄의 두 고르기 이름.
 BASIS_HEADING: Final = "비가동 기준"
 UNITS_VIEW_HEADING: Final = "④ 단축"
@@ -624,11 +636,12 @@ def viewed_month(months: Sequence[int]) -> int:
 def _render_tool_row(
     view: ProcessDetailView,
 ) -> tuple[bool, str, frozenset[str], DeltaGenerator]:
-    """「구획」 칩 · 그 뜻 ⓘ · 「비가동 기준」 고르기(설비 일정이 서는 공정에서 ③ 을 펼쳤을 때만) ·
-    「④ 전체 · 단축 필요만」 고르기(호기 줄이 있는 공정에서 ④ 를 펼쳤을 때만) · 「제품별
-    소요대수」 펼침 · 「분류」(펼쳤을 때) · 오른쪽 끝 「내려받기 ▾」 메뉴(호기 CSV — 설비 일정이 설
-    때만, 시트 엑셀 — 늘. 호기 CSV 가 없으면 메뉴 없이 시트 엑셀 단추 하나). 캡션이 붙은 고르기
-    셋은 캡션과 한 칸이라 줄이 모자라면 함께 다음 줄로 간다(`_picker_pair`). 두 고르기는 구획을
+    """「구획」 칩 · 그 뜻 ⓘ · 「Static · 일정」 비가동 기준 고르기(설비 일정이 서는 공정에서 ③ 을
+    펼쳤을 때만) · 「전체 · 단축 필요만」 ④ 보기 고르기(호기 줄이 있는 공정에서 ④ 를 펼쳤을 때만) ·
+    그 두 고르기의 뜻 ⓘ 하나(선 것 가운데 마지막 고르기 바로 뒤) · 「제품별 소요대수」 펼침 ·
+    「분류」(펼쳤을 때) · 오른쪽 끝 「내려받기 ▾」 메뉴(호기 CSV — 설비 일정이 설 때만, 시트 엑셀 —
+    늘. 호기 CSV 가 없으면 메뉴 없이 시트 엑셀 단추 하나). 고르기 셋은 저마다 줄바꿈 없는 칸이라
+    (ⓘ · 「분류」 캡션과 함께) 줄이 모자라면 칸째 다음 줄로 간다(`_picker_pair`). 두 고르기는 구획을
     접어 서지 않는 회차에도 세션 값을 그대로 쓴다(`current_basis` · `current_units_view`).
 
     돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획, 시트 엑셀 자리) 다. 「제품별 소요대수」 는 ① ·
@@ -659,12 +672,17 @@ def _render_tool_row(
             )
             st.caption("", help=SECTIONS_HELP, width="content")
         collapsed = frozenset(SECTION_IDS) - {str(section) for section in opened or ()}
-        if view.dynamic is not None and SECTION_EFFECT not in collapsed:
+        show_basis = view.dynamic is not None and SECTION_EFFECT not in collapsed
+        show_units = (
+            view.dynamic is not None
+            and view.dynamic.canvas.has_units
+            and SECTION_UNITS not in collapsed
+        )
+        if show_basis:
             seed_basis()
             with _picker_pair(BASIS_ROW_KEY):
-                st.caption(BASIS_CAPTION, width="content")
                 st.segmented_control(
-                    BASIS_CAPTION,
+                    BASIS_LABEL,
                     list(BASIS_LABELS),
                     format_func=lambda value: BASIS_LABELS.get(str(value), str(value)),
                     key=BASIS_KEY,
@@ -672,14 +690,11 @@ def _render_tool_row(
                     persist_state="session",
                     label_visibility="collapsed",
                 )
-        if (
-            view.dynamic is not None
-            and view.dynamic.canvas.has_units
-            and SECTION_UNITS not in collapsed
-        ):
+                if not show_units:
+                    st.caption("", help=picker_help(basis=True, units=False), width="content")
+        if show_units:
             seed_units_view()
             with _picker_pair(UNITS_VIEW_ROW_KEY):
-                st.caption(UNITS_VIEW_CAPTION, width="content")
                 st.segmented_control(
                     UNITS_VIEW_LABEL,
                     list(UNITS_VIEW_LABELS),
@@ -689,6 +704,7 @@ def _render_tool_row(
                     persist_state="session",
                     label_visibility="collapsed",
                 )
+                st.caption("", help=picker_help(basis=show_basis, units=True), width="content")
         products_open = SECTION_SUMMARY not in collapsed or (
             view.dynamic is not None and SECTION_DYNAMIC not in collapsed
         )
@@ -738,9 +754,16 @@ def _render_tool_row(
     return bool(expanded) and products_open, split, collapsed, sheet_slot
 
 
+def picker_help(*, basis: bool, units: bool) -> str:
+    """표 도구 줄 두 고르기(비가동 기준 · ④ 보기)의 뜻 ⓘ 풍선 — 선 고르기의 뜻만 차례로 적는다."""
+    return "\n\n".join(
+        text for text, shown in ((BASIS_HELP, basis), (UNITS_VIEW_HELP, units)) if shown
+    )
+
+
 def _picker_pair(key: str) -> DeltaGenerator:
-    """표 도구 줄의 캡션 + 고르기 한 쌍을 담는 칸 — 줄이 모자라면 쌍째 다음 줄로 간다(칸 서식은
-    `DOWNLOAD_STYLE`)."""
+    """표 도구 줄의 고르기 하나와 그 곁 글(캡션 · ⓘ)을 담는 칸 — 줄이 모자라면 칸째 다음 줄로
+    간다(칸 서식은 `DOWNLOAD_STYLE`)."""
     return st.container(
         horizontal=True, vertical_alignment="center", gap="small", width="content", key=key
     )
