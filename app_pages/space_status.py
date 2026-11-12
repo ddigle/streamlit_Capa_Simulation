@@ -159,6 +159,7 @@ from capa_simulation.equipment_scenario_activation import (
     CANVAS_LOCK_REASON,
     FAB_LOCK_REASON,
     FLOOR_STATE_LOCK_REASON,
+    ORDER_LOCK_REASON,
     EquipmentSession,
     official_snapshot_for,
     resolve_equipment_session,
@@ -1823,6 +1824,9 @@ def _render_layout_editor(
         # 층 캔버스는 공용 값이라 가정 설비 시나리오에서 끈다(설계 8-4 — 서버도 아래에서 거부).
         canvas_editable=edit_mode.canvas,
         canvas_lock=None if edit_mode.canvas else CANVAS_LOCK_REASON,
+        # 겹친 순서는 공식 배치에서만 바꾼다(가정 배치 차이는 요소 차례를 담지 않는다 — 보드 7-4).
+        order_editable=edit_mode.order,
+        order_lock=None if edit_mode.order else ORDER_LOCK_REASON,
         # 왼쪽 칸 범례는 채우기 뜻만(편집 화면은 테·덧표시를 그리지 않고 편집본은 저장본과 대수가
         # 다르다).
         legend={"entries": space_legend_entries(None, choice=effective_choice), "asOf": ""},

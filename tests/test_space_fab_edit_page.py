@@ -146,6 +146,45 @@ def test_fab_edit_applies_to_the_session_and_the_same_save_button_writes_it(
     clear_equipment_repository()
 
 
+def test_fab_edit_keeps_the_order_buttons_open_and_saves_an_order_only_change(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """FAB 편집기도 「순서」 단추 넷이 열린다(FAB 은 공식 설비 시나리오에서만 고친다 — 2026-11-12
+    보드 7-5). 요소 차례만 바꾼 적용도 대기분이 서고 저장하면 그 차례로 남는다."""
+    database = tmp_path / "fab_order.duckdb"
+    app = _app(database, saved_fleet=True).run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    assert data.get("orderEditable", True) is True
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": _edited_marks(data),
+    }
+    app.run()
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    saved = [mark.mark_id for mark in repository.load_fab_layout_marks()]
+
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    assert [mark["id"] for mark in data["marks"]] == saved
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": list(reversed(data["marks"])),
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("이 세션에 적용했습니다" in item.value for item in successes(app))
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert [mark.mark_id for mark in repository.load_fab_layout_marks()] == saved[::-1]
+    clear_equipment_repository()
+
+
 def test_two_blocks_on_one_floor_go_to_a_state_alert_not_the_box(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

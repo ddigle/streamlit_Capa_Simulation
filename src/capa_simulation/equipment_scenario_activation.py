@@ -247,6 +247,9 @@ CANVAS_LOCK_REASON = (
 FLOOR_STATE_LOCK_REASON = (
     "층 사용은 공식 설비 시나리오에서 고칩니다 — 건물·층은 가정 설비 시나리오가 없습니다."
 )
+ORDER_LOCK_REASON = (
+    "겹친 순서는 공식 설비 시나리오에서 바꿉니다 — 가정 설비 시나리오는 공식 순서를 따릅니다."
+)
 UNMERGED_LOCK_REASON = (
     "옛 배포로 저장한 공통 대장이 설비 시나리오 일정과 합쳐지지 않아 일정 없이 연 상태라 배치 "
     "편집을 잠갔습니다 — 백업을 복원하세요."
@@ -264,6 +267,8 @@ class SpaceEditMode:
       변경만 버리기」).
     - `new_units` — 새 호기 폼(`new_unit_reason` 이 꺼진 까닭). `canvas`·`fab`·`floor_state` — 층
       캔버스, FAB 전체, 층 사용(0029) 편집(공식 시나리오에서만 — G5·Q3).
+    - `order` — 층 도면 요소의 겹친 순서 편집(공식 배치를 고칠 때만 — 2026-11-12 Space 요청
+      보드 7-4).
     - `fast_forward_from` — 가정·낡음이지만 그 시나리오 최신의 배치 지문이 이 리비전과 같아 배치
       저장을 최신 rM 의 일정 위에 받는다(설계 6-1 배치 빨리 감기). 그 rM 번호.
     - `notice` — 잠금은 아니지만 편집 자리에 둘 한 줄(빨리 감기 캡션).
@@ -286,6 +291,13 @@ class SpaceEditMode:
     @property
     def layout_editable(self) -> bool:
         return self.layout != "locked"
+
+    @property
+    def order(self) -> bool:
+        """층 도면 요소의 겹친 순서를 바꾸나 — 공식 배치를 고치는 동안만이다. 가정 배치 차이는 요소
+        차례를 담지 않아(`layout_overlay.mark_changes`) 가정 시나리오에서 바꾼 차례는 저장되지 않고
+        사라진다 — 편집기가 단추를 잠그고 `ORDER_LOCK_REASON` 을 풍선으로 단다."""
+        return self.layout == "official"
 
     @property
     def master_tab_lock_reason(self) -> str | None:

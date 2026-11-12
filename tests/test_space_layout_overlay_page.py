@@ -63,7 +63,11 @@ from capa_simulation.components.space_floor_list import (
 from capa_simulation.components.space_floor_list import (
     SAVE_BUTTON_KEY as FLOOR_SAVE_BUTTON_KEY,
 )
-from capa_simulation.equipment_scenario_activation import SELECTION_KEY
+from capa_simulation.equipment_scenario_activation import (
+    ORDER_LOCK_REASON,
+    SELECTION_KEY,
+    SpaceEditMode,
+)
 from capa_simulation.navigation import SPACE_STATUS
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
 from capa_simulation.persistence.equipment_repository import (
@@ -314,6 +318,34 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     assert official.equipment.set_index("설비명").loc["EQ-02", "X좌표"] != 60.0
     assert any("가정 배치를 저장했습니다(공식과 다른 호기 2대)" in text for text in _texts(app))
     assert LAYOUT_ROLE_KEY not in app.session_state
+
+
+def test_the_order_is_changed_only_while_editing_the_official_layout() -> None:
+    """겹친 순서(도면 요소 차례)는 공식 배치를 고칠 때만 바꾼다 — 가정 배치 차이는 차례를 담지 않고
+    (`layout_overlay.mark_changes`), 잠긴 배치(가정이던 때의 공식 리비전 등)는 편집기가 서지 않는다
+    (2026-11-12 보드 7-4)."""
+    assert SpaceEditMode(layout="official").order is True
+    assert SpaceEditMode(layout="overlay", new_units=True).order is False
+    assert SpaceEditMode(layout="locked", canvas=True, fab=True, floor_state=True).order is False
+
+
+def test_an_assumption_editor_locks_the_order_buttons_and_an_official_one_opens_them(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """가정 설비 시나리오 편집기는 선택 칸 「순서」 단추 넷 · 순서 키를 끄고 까닭을 풍선으로 단다
+    (UI-INP-07 — 공식 순서를 따른다). 공식 설비 시나리오 편집기는 열려 있다."""
+    _, setup = _overlay(tmp_path)
+    app = _ok(_space(tmp_path, setup).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    data = editor_calls[-1]
+    assert data.get("mode") != "view"
+    assert data["orderEditable"] is False and data["orderLock"] == ORDER_LOCK_REASON
+
+    official = _ok(_space(tmp_path, OPERATIONS).run())
+    official.toggle(key="space_layout_edit_mode").set_value(True).run()
+    data = editor_calls[-1]
+    assert data.get("mode") != "view"
+    assert data["orderEditable"] is True and data["orderLock"] == ""
 
 
 def _apply_rename(app: AppTest, editor_calls: list[dict[str, Any]], *, move: bool = False) -> None:
