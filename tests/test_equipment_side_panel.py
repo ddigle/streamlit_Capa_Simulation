@@ -645,12 +645,14 @@ def test_the_fold_button_sits_in_the_head_and_the_reopen_button_floats_like_the_
     head = 310 + sp.SIDE_TOGGLE_GAP_PX + sp.SIDE_TOGGLE_PX
     assert sp.SIDE_MIN_PX - sp.SIDE_INSET_PX >= head
     assert sp.SIDE_REOPEN_RESERVE_PX >= 89 - 5
-    # 떠 있는 단추는 표 머리 위, 고치는 칸·목록 아래다.
+    # 떠 있는 단추는 표 머리 위, 고르는 칸(목록을 품은 칸) 아래다. 글 편집 칸은 머리 밑이라 단추
+    # 밑이다(2026-11-12 사용자 요청 2 — 머리 밑에 걸친 편집 칸이 머리를 덮었다).
     orders = {
         name: int(value)
         for name, value in re.findall(r"\n(\.emg-[\w.-]+) \{[^}]*?z-index: (\d+);", GRID_CSS)
     }
-    assert orders[".emg-head"] < sp.SIDE_REOPEN_Z_INDEX < orders[".emg-c.is-editing"]
+    choosing = orders[".emg-c.is-editing.is-choosing"]
+    assert orders[".emg-c.is-editing"] < orders[".emg-head"] < sp.SIDE_REOPEN_Z_INDEX < choosing
     # 영역 안쪽 여백에 스크롤 막대 자리가 든다.
     assert sp.SIDE_SCROLLBAR_PX <= sp.SIDE_FRAME_PAD_PX
 
