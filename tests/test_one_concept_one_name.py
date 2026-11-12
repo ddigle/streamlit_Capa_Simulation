@@ -75,7 +75,23 @@ def _folded(text: str) -> str:
 
 
 def _stale(name: str, text: str) -> list[str]:
-    return [old for old in RENAMED if old in text and old not in WAITING.get(name, frozenset())]
+    """`text` 에 남은 옛 이름. 긴 옛 이름 안에만 든 짧은 옛 이름(「입력 비가동 대수」 속
+    「비가동 대수」)은 한 번 더 내지 않는다 — 따로 남은 것이 있을 때만 낸다."""
+    found = [old for old in RENAMED if old in text and old not in WAITING.get(name, frozenset())]
+    return [
+        old
+        for old in found
+        if text.count(old)
+        > sum(text.count(longer) for longer in found if longer != old and old in longer)
+    ]
+
+
+def test_a_short_old_name_inside_a_long_one_is_reported_once() -> None:
+    """옛 꼴 하나는 실패 줄 하나다 — 긴 이름 안의 짧은 이름은 따로 남았을 때만 따로 나온다."""
+    assert _stale("x.py", "입력 비가동 대수를 읽지 못했습니다") == ["입력 비가동 대수"]
+    assert _stale("x.py", "비가동 대수는 숫자여야 합니다") == ["비가동 대수"]
+    assert _stale("x.py", "입력 비가동 대수 · 비가동 대수") == ["입력 비가동 대수", "비가동 대수"]
+    assert _stale("x.py", _folded("총 · 가용 · 비가동 대수에서 뺌")) == []
 
 
 def test_screen_texts_use_the_current_names() -> None:
