@@ -727,13 +727,13 @@ class LayoutPublishPreview:
         )
 
 
-# 층 캔버스 팝업 미리 보임의 한 상자 — (X좌표, Y좌표, Xsize, Ysize).
+# 가정 배치 차이 호기의 한 상자 — (X좌표, Y좌표, Xsize, Ysize).
 UnitBox = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
 class LayoutOverlayExtent:
-    """「캔버스 편집」 팝업의 가정 배치 미리 보임(설계 6-4·7-2).
+    """층 캔버스를 줄일 때 보는 가정 배치(설계 6-4·7-2) — Space 「배치 편집」 「캔버스」 칸의 하한.
 
     캔버스를 바꾸는 저장이 보는 것과 같은 리비전 — ACTIVE 설비 시나리오 최신(배치 차이가 있는 것)과
     최신 공식 발행 — 마다 그 층의 차이 요소 `set` 이 차지한 가장 먼 오른쪽·위(`marks` — (시나리오
@@ -757,6 +757,21 @@ class LayoutOverlayExtent:
         return tuple(
             name for name, right, top in self.marks if right > width + 1e-9 or top > height + 1e-9
         )
+
+    def scenario_extents(self) -> tuple[tuple[str, float, float], ...]:
+        """시나리오마다 그 층의 차이 요소 · 차이 호기가 차지한 가장 먼 오른쪽 · 위((이름, 오른쪽,
+        위), 처음 나온 차례) — 편집기 「캔버스」 칸이 그 아래로 줄이지 못하게 하는 재료다."""
+        reach: dict[str, tuple[float, float]] = {}
+        for name, right, top in self.marks:
+            was = reach.get(name, (0.0, 0.0))
+            reach[name] = (max(was[0], right), max(was[1], top))
+        for name, boxes in self.units:
+            was = reach.get(name, (0.0, 0.0))
+            reach[name] = (
+                max([was[0], *(x + w for x, _, w, _ in boxes)]),
+                max([was[1], *(y + h for _, y, _, h in boxes)]),
+            )
+        return tuple((name, right, top) for name, (right, top) in reach.items())
 
     def units_outside(self, canvas: CanvasSize) -> tuple[tuple[str, int], ...]:
         """시나리오마다 캔버스를 벗어나는 차이 호기 수(0 인 시나리오는 뺀다)."""
@@ -2117,7 +2132,7 @@ class DuckDBEquipmentRepository:
             )
 
     def layout_overlay_extent(self, building: str, floor: str) -> LayoutOverlayExtent:
-        """층 캔버스 팝업의 가정 배치 미리 보임(설계 6-4) — 캔버스를 바꾸는 저장이 보는
+        """층 캔버스를 줄일 때 보는 가정 배치(설계 6-4) — 캔버스를 바꾸는 저장이 보는
         리비전(ACTIVE 시나리오 최신 가운데 차이가 있는 것·최신 공식 발행)마다 그 층의 차이 요소
         범위와 차이 호기 상자. 차이가 없는 리비전은 질의하지 않는다(`read_layout_overlay`)."""
         key = (building, floor)

@@ -231,7 +231,8 @@ def _clean_items(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
     색 기준의 면·글자(`fill`·`ink`, `#RRGGBB` 만 — 아니면 빈 글자라 브라우저가 기본 회색)와 경계
     날짜(`realFrom`·`exitOn`·`stopOn`·`delays`·`offline`,
-    `services/space_unit_state.boundary_payload`)· `storage`·`flag` 도 여기를 지난다. 이름에
+    `services/space_unit_state.boundary_payload`)· `storage`·`flag`·반입 일정(`arrivalPlan` —
+    날짜 글자 또는 None, `arrivalDelayed`) 도 여기를 지난다. 이름에
     `group`(Main 설비 묶음)·`arrived`(다른 층에서 옴)는 이미 쓰인다. `share` 는 기준일
     설비지분(모듈 행 넷이 모두 반입했으면 0.25, 없으면 1 — 범례와 같은 칸)이고 층 상세 보기
     요약의 「겹쳐 숨긴 반입 예정 n대」를 설비 대수로 센다.
@@ -269,6 +270,8 @@ def _clean_item(item: Mapping[str, Any]) -> dict[str, Any]:
         "offline": _spans(item.get("offline")),
         "flag": bool(item.get("flag")),
         "share": _share_or_one(item.get("share")),
+        "arrivalPlan": _day_or_none(item.get("arrivalPlan")),
+        "arrivalDelayed": bool(item.get("arrivalDelayed")),
     }
     if item.get("layer") in _LAYER_BUCKETS:
         cleaned["layer"] = str(item["layer"])
@@ -514,6 +517,7 @@ def render_space_layout_viewer(
     pending_save: bool = False,
     sheet: Mapping[str, Any] | None = None,
     pick_to_server: bool = True,
+    arrival_dates: bool = False,
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -559,7 +563,11 @@ def render_space_layout_viewer(
     `sheet` 는 도면 위 「호기 정보」 창의 표(`_clean_sheet` — 고른 호기의 칸·칸 필터로 맞는 호기
     목록과 도면 강조, 2026-11-03 사용자 요청)이고 epoch 밖이다. `pick_to_server` 가 거짓이면
     브라우저가 호기 누르기를 `pick` 으로 보내지 않는다(누를 때마다 앱 전체가 돌지 않게 — 받는 쪽이
-    필요 단축 칸뿐이라 그 보기를 켠 동안만 참이다, 사양 D11)."""
+    필요 단축 칸뿐이라 그 보기를 켠 동안만 참이다, 사양 D11).
+
+    `arrival_dates` 는 사이드바 「반입 일정」 을 켠 회차다(2026-11-12 Space 보드 답 1-1 ~ 1-6) — 켠
+    회차에만 data `arrivalDates` 가 실리고(epoch 밖) 브라우저가 반입 전 호기에 반입 일정을 쓴다.
+    재료(호기마다 `arrivalPlan`·`arrivalDelayed`)는 늘 실린다 — 풍선이 토글과 상관없이 쓴다."""
     layer_fields: dict[str, Any] = {}
     if badges is not None:
         layer_fields["shortBadges"] = _clean_badges(badges)
@@ -593,6 +601,7 @@ def render_space_layout_viewer(
             "sheet": _clean_sheet(sheet),
             "pickToServer": bool(pick_to_server),
             **layer_fields,
+            **({"arrivalDates": True} if arrival_dates else {}),
         },
         on_apply_change=lambda: None,
         on_asOf_change=partial(_dispatch_as_of, key, on_as_of),
@@ -761,6 +770,7 @@ def render_space_layout_editor(
     group_labels: Mapping[str, str] | None = None,
     canvas_editable: bool = True,
     canvas_lock: str | None = None,
+    overlay_extents: Sequence[tuple[str, float, float]] = (),
     legend: Mapping[str, Any] | None = None,
     pending_save: bool = False,
     sheet: Mapping[str, Any] | None = None,
@@ -770,6 +780,10 @@ def render_space_layout_editor(
     `canvas_editable` 이 거짓이면 「캔버스」 칸(폭·높이·±·맞춤)을 끄고 `canvas_lock` 을 풍선으로
     둔다 — 층 캔버스는 공용 값이라 가정 설비 시나리오에서는 고치지 않는다(설계 8-4). 옛 브라우저가
     보낸 캔버스 값은 서버(`app_pages/space_status.py`)가 다시 거부한다(두 겹).
+
+    「캔버스」 칸은 놓인 호기 · 요소, 도면에 안 보이는 이 층 호기(`EditorInputs.reserved_extent`)와
+    `overlay_extents`(다른 가정 설비 시나리오의 이 층 배치 차이 — (시나리오 이름, 오른쪽, 위),
+    `LayoutOverlayExtent.scenario_extents`)보다 작게 줄이지 못한다. 막은 글이 그 까닭 갈래를 말한다.
 
     면은 보기와 같은 규칙(지연 → 보관 → 체크한 그룹 → 기본, 기준일 `as_of`)이지만 **의미 테·덧표시는
     그리지 않는다** — 편집 화면의 테는 선택·묶음·다른 층·겹침 전용이다. 기준일은 편집 중 고정이다 —
@@ -823,6 +837,14 @@ def render_space_layout_editor(
                 "max": MAX_CANVAS_EXTENT,
                 "reservedW": finite_or_none(inputs.reserved_extent[0]) or 0.0,
                 "reservedH": finite_or_none(inputs.reserved_extent[1]) or 0.0,
+                "overlay": [
+                    {
+                        "name": str(name),
+                        "right": finite_or_none(right) or 0.0,
+                        "top": finite_or_none(top) or 0.0,
+                    }
+                    for name, right, top in overlay_extents
+                ],
             },
             "decimals": CANVAS_DECIMALS,
             "palette": _palette(),

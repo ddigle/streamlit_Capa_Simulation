@@ -135,6 +135,11 @@
 .sle-offline-bar { fill: var(--sle-text); }
 /* 겹침 꼭지는 면색 테를 둘러 어느 상자 면 위에서도 떨어져 보인다(어둡게의 밝은 위험색 × 밝은 면). */
 .sle-corner { fill: var(--sle-danger); stroke: var(--sle-surface); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* 반입 일정 줄(「반입 일정」 을 켠 층 보기 — 2026-11-12 Space 보드 답 1-1 ~ 1-6): 상자 안 이름 아래, 글자 색은 JS 가 이름 색으로
+   칠한다. 묶음 날짜(Main 설비명 알약 둘째 줄)는 알약 글자색이다. 「지연」 은 굵게. 보일지는 JS `syncArrival` 이 정한다. */
+.sle-arrival { fill: var(--sle-text); text-anchor: middle; dominant-baseline: central; pointer-events: none; font-weight: 500; }
+.sle-group-arrival { font-weight: 600; }
+.sle-arrival-late { font-weight: 800; }
 
 /* ---- 도면 요소 ---- */
 .sle-mark-shape { pointer-events: none; }

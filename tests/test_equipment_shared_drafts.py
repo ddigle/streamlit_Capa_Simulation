@@ -221,54 +221,6 @@ def test_a_layout_staged_before_the_first_seeding_survives(tmp_path: Path) -> No
     assert app.session_state["pending"] == {("C1", "1F"): (130.0, 60.0)}
 
 
-def _popup_after_staging(database: str) -> None:
-    """요소를 대기시킨 층의 캔버스를 같은 세션이 팝업으로 저장한 뒤 배치를 저장한다."""
-    import streamlit as st
-
-    from capa_simulation.components.equipment_data_workspace import (
-        ensure_equipment_drafts,
-        rebase_floor_canvas,
-        save_equipment_buffer,
-        stage_floor_canvas,
-        stage_floor_marks,
-    )
-    from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
-    from capa_simulation.services.floor_layout_mark import (
-        marks_fingerprint,
-        prepare_floor_layout_marks,
-    )
-
-    repository = DuckDBEquipmentRepository(__import__("pathlib").Path(database))
-    frames = ensure_equipment_drafts(repository.load_snapshot(str(repository.latest_revision_id())))
-    key = ("C1", "1F")
-    base = (None, marks_fingerprint(repository.load_floor_layout_marks(*key)))
-    stage_floor_marks(
-        key,
-        prepare_floor_layout_marks(
-            [{"id": "D1", "kind": "door", "x": 1, "y": 1, "w": 2, "h": 2}], (100.0, 60.0)
-        ),
-        base=base,
-    )
-    # 팝업 저장과 같은 순서: 저장 → 대기분 기준 캔버스 갈기 → 대기 캔버스 버리기.
-    repository.save_floor_layout_canvas(*key, 120, 60)
-    rebase_floor_canvas(key, (120.0, 60.0))
-    stage_floor_canvas(key, None)
-    st.session_state["message"] = save_equipment_buffer(repository, frames, "")
-
-
-def test_a_popup_canvas_save_does_not_lock_out_the_pending_marks(tmp_path: Path) -> None:
-    database = tmp_path / "equipment.duckdb"
-    _seeded(database)
-    app = AppTest.from_function(
-        _popup_after_staging, args=(str(database),), default_timeout=30
-    ).run()
-
-    assert not app.exception, [item.message for item in app.exception]
-    assert "새 리비전 없이" in app.session_state["message"]
-    repository = DuckDBEquipmentRepository(database)
-    assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["D1"]
-
-
 def _replaced_flag(database: str) -> None:
     import streamlit as st
 

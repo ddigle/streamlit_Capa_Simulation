@@ -111,18 +111,6 @@ WITHDRAWN: tuple[Withdrawn, ...] = (
         ),
     ),
     Withdrawn(
-        what="Space 캔버스 편집 팝업 — 고치는 크기 밖으로 나가는 호기 · 도면 요소 경고 상자",
-        why="검수 equip-60",
-        file="src/capa_simulation/components/floor_canvas_dialog.py",
-        function="_report_outside",
-        code="EQ-16",
-        route="state",
-        test=(
-            "tests/test_equipment_pages.py"
-            "::test_the_canvas_dialog_checks_hidden_units_before_shrinking_the_canvas"
-        ),
-    ),
-    Withdrawn(
         what="사이드바 시나리오 팝업 저장 칸 밑 — 저장 뒤 남은 Capa 계산 오류(공식 지정이 막힘)",
         why="V-14 · AMB-05 (나)",
         file="src/capa_simulation/components/scenario_status.py",

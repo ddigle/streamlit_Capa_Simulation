@@ -1800,8 +1800,8 @@ def _remember_base(key: FloorKey, base: FloorLayoutBase | None) -> None:
 def stage_floor_canvas(
     key: FloorKey, canvas: CanvasSize | None, *, base: FloorLayoutBase | None = None
 ) -> None:
-    """미저장 캔버스를 둔다. None 이면 그 층 대기분을 지운다(저장값과 같아졌을 때·팝업이 그 층
-    캔버스를 저장했을 때). `base` 는 편집을 시작할 때 본 저장값이다."""
+    """미저장 캔버스를 둔다. None 이면 그 층 대기분을 지운다(저장값과 같아졌을 때). `base` 는 편집을
+    시작할 때 본 저장값이다."""
     staged = pending_floor_canvases()
     if canvas is None and key not in staged:
         return
@@ -1856,16 +1856,6 @@ def stage_floor_group_labels(
     _note_if_back_to_saved()
 
 
-def rebase_floor_canvas(key: FloorKey, canvas: CanvasSize | None) -> None:
-    """이 세션이 팝업으로 그 층 캔버스를 방금 저장·삭제했다. 그 층 대기분이 본 저장값의 **캔버스
-    부분만** 새 값으로 바꾼다 — 그대로 두면 다음 저장이 「다른 사용자가 먼저 바꿨다」로 영영 막힌다.
-    요소 지문은 처음 본 값 그대로 둔다(그 사이 남이 바꾼 요소는 여전히 저장 때 걸린다)."""
-    bases = pending_floor_bases()
-    if key in bases:
-        bases[key] = (canvas, bases[key][1])
-        st.session_state[PENDING_BASES_KEY] = bases
-
-
 def effective_floor_canvases(stored: FloorCanvasMap) -> dict[FloorKey, CanvasSize]:
     """저장된 캔버스에 미저장 캔버스를 덮은 값. 저장·미리보기 검증과 편집표 상한이 이것을 본다 —
     Space 에서 넓힌 캔버스에 놓은 호기가 설비 마스터 탭 저장에서 「캔버스 밖」으로 막히지 않게."""
@@ -1906,23 +1896,6 @@ def stage_fab_layout(
         "canvas": canvas,
         "marks": marks,
         "base": current.base if current is not None else base,
-    }
-
-
-def rebase_fab_canvas(canvas: CanvasSize | None) -> None:
-    """이 세션이 팝업으로 FAB 캔버스를 방금 저장·삭제했다. 대기분의 캔버스는 버리고(팝업 값이
-    정본이다), 본 저장값의 **캔버스 부분만** 새 값으로 바꾼다 — 요소 지문은 처음 본 값 그대로라
-    그 사이 남이 바꾼 요소는 여전히 저장 때 걸린다."""
-    current = pending_fab_layout()
-    if current is None:
-        return
-    if current.marks is None:
-        st.session_state.pop(PENDING_FAB_KEY, None)
-        return
-    st.session_state[PENDING_FAB_KEY] = {
-        "canvas": None,
-        "marks": current.marks,
-        "base": (canvas, current.base[1]),
     }
 
 

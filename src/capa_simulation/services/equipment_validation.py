@@ -1191,12 +1191,45 @@ def floor_equipment_outside_canvas(
     """그 동·층 호기 가운데 블럭(좌표 + 크기)이 `canvas` 를 벗어나는 설비명(표 차례).
 
     저장 검증(규칙 `canvas_outside`)과 **같은 행, 같은 판정**이다 — 레이아웃표시·
-    상태·화면 필터와 무관하게 그 층에서 좌표·크기가 다 있는 행을 모두 본다. 층 캔버스를 바꾸는
-    화면(Space `캔버스 편집` 팝업)이 저장된 마스터를 넘겨, 그 캔버스로 바꾸면 다음 설비 저장이
-    「캔버스 밖」으로 막히는지 미리 잰다. 화면에 그린 행만 넘기면 안 보이는 호기를 놓친다.
+    상태·화면 필터와 무관하게 그 층에서 좌표·크기가 다 있는 행을 모두 본다. 화면에 그린 행만
+    넘기면 안 보이는 호기를 놓친다.
     """
-    if equipment.empty or not {"동", "층", *COORDINATE_COLUMNS} <= set(equipment.columns):
+    found = _floor_outside(equipment, floor, canvas)
+    if found is None:
         return []
+    _, outside = found
+    return [str(name) for name in equipment.loc[outside, EQUIPMENT_ID_COLUMN]]
+
+
+def require_floor_inside_canvas(
+    equipment: pd.DataFrame, floor: FloorKey, floor_canvases: FloorCanvasMap
+) -> None:
+    """그 동·층 호기만 캔버스 안인지 본다 — 밖이면 저장 검증(규칙 `canvas_outside`)과 같은 글의
+    `ValueError` 다. 범위만 한 층이다.
+
+    Space 「배치 편집」 의 「적용」 이 부른다(`prepare_equipment_master` 는 캔버스 없이). 다른 층의
+    밖 호기가 이 층을 넓히는 적용을 막지 않게 — 두 층 이상이 밖이어도 층마다 넓혀 두고 「배치
+    저장」 이 마스터 전체를 한 번에 검사한다. 저장된 캔버스가 없는 층은 기본 크기다.
+    """
+    canvas = floor_canvases.get(floor, (DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT))
+    found = _floor_outside(equipment, floor, canvas)
+    if found is None:
+        return
+    numeric, outside = found
+    if not outside.any():
+        return
+    result = equipment.assign(**{column: numeric[column] for column in COORDINATE_COLUMNS})
+    complete = numeric.notna().all(axis=1)
+    raise ValueError(_outside_canvas_message(result, outside, complete, floor_canvases))
+
+
+def _floor_outside(
+    equipment: pd.DataFrame, floor: FloorKey, canvas: CanvasSize
+) -> tuple[pd.DataFrame, pd.Series] | None:
+    """(숫자로 읽은 좌표 · 크기, 그 층에서 `canvas` 를 벗어난 행). 표가 비었거나 칸이 없으면
+    None."""
+    if equipment.empty or not {"동", "층", *COORDINATE_COLUMNS} <= set(equipment.columns):
+        return None
     numeric = equipment.loc[:, list(COORDINATE_COLUMNS)].apply(pd.to_numeric, errors="coerce")
     on_floor = (
         equipment["동"].astype("string").eq(floor[0]).fillna(False)
@@ -1204,7 +1237,7 @@ def floor_equipment_outside_canvas(
         & numeric.notna().all(axis=1)
     )
     outside = on_floor & _beyond_canvas(numeric, float(canvas[0]), float(canvas[1]))
-    return [str(name) for name in equipment.loc[outside, EQUIPMENT_ID_COLUMN]]
+    return numeric, outside.astype(bool)
 
 
 def floors_outside_canvas(
@@ -1306,9 +1339,11 @@ def _outside_canvas_message(
     return (
         f"{_CANVAS_OUTSIDE} — 그 동·층의 캔버스가 호기 좌표보다 "
         f"좁습니다. {'; '.join(floors[:3])}. 설비 마스터 저장은 모든 호기를 한 번에 검증하므로 "
-        "그 층과 무관한 칸만 고쳐도 같은 오류로 막힙니다. Space 현황의 그 동·층 상세 레이아웃에서 "
-        "「캔버스 편집」으로 캔버스를 넓히거나, 가용설비 현황에서 그 호기의 X좌표·Y좌표·"
-        "Xsize·Ysize 를 고치세요."
+        "그 층과 무관한 칸만 고쳐도 같은 오류로 막힙니다. 가용설비 현황에서 그 호기의 X좌표·Y좌표·"
+        "Xsize·Ysize 를 캔버스 안으로 고치거나, Space 현황 그 동·층의 「배치 편집」 왼쪽 칸 "
+        "「캔버스」 로 넓혀 적용한 뒤 「배치 저장」 하세요. 설비를 아직 저장한 적이 없으면 좌표를 "
+        f"기본 캔버스({DEFAULT_CANVAS_WIDTH:g} × {DEFAULT_CANVAS_HEIGHT:g}) 안으로 넣어 먼저 "
+        "저장한 뒤 넓힙니다."
     )
 
 

@@ -51,6 +51,10 @@ export default function (component) {
   const MAX_EXTENT = Number(data.canvasLimits?.max) || 400
   // 편집기에 안 나오지만 이 층에 좌표가 있는 호기가 차지한 범위. 영역은 이보다 줄지 않는다.
   const RESERVED = { right: Number(data.canvasLimits?.reservedW) || 0, top: Number(data.canvasLimits?.reservedH) || 0 }
+  // 다른 가정 설비 시나리오의 이 층 배치 차이(호기 · 도면 요소)가 차지한 범위 — 시나리오마다 {name, right, top}. 공식 층 캔버스를
+  // 이보다 줄이면 그 시나리오의 다음 저장이 막히므로 영역은 이보다도 줄지 않는다. 캔버스를 고치는 회차에만 실린다.
+  const OVERLAY_LIMITS = (Array.isArray(data.canvasLimits?.overlay) ? data.canvasLimits.overlay : [])
+    .map((o) => ({ name: String(o?.name ?? ''), right: Number(o?.right) || 0, top: Number(o?.top) || 0 }))
   const FLOOR = String(data.floor || '')
   const OTHER_FLOORS = (Array.isArray(data.floors) ? data.floors : []).map(String).filter((f) => f !== FLOOR)
   // FAB 편집에서 층 블록이 가리킬 수 있는 층(「C1 1F」, 30개). 층 범위에는 없다.
@@ -854,14 +858,15 @@ export default function (component) {
   // Main 설비명 글자 크기(데이터 단위) — 화면 최대 maxSize px 에서 범위 폭(알약 여백 포함)에 맞춰 줄이고, 가운데면 범위 높이의
   // 0.16 배를 넘지 않게 한다(알약이 모듈 칸 이름표에 닿지 않게). em 은 글자 폭(em), upp 는 화면 px 당 데이터 단위. 화면
   // minSize px 아래로 줄면 그리지 않는다(null). 다만 가운데이고 모듈 칸 이름표가 하나도 서 있지 않은(bare) 묶음은 minSize 의
-  // 알약이 범위 안에 들면 minSize 로 그린다 — 가릴 이름표가 없고, 묶음을 알아볼 글자가 하나는 남는다.
-  function groupNameSize(r, position, em, maxSize, upp, minSize, bare) {
+  // 알약이 범위 안에 들면 minSize 로 그린다 — 가릴 이름표가 없고, 묶음을 알아볼 글자가 하나는 남는다. tall 은 알약 높이 배수다
+  // (반입 일정 둘째 줄 — 가운데 상한을 그만큼 낮춘다).
+  function groupNameSize(r, position, em, maxSize, upp, minSize, bare, tall = 1) {
     const room = (r.w * 0.92) / (Math.max(em, 1) + 0.9)
     let fs = Math.min(maxSize * upp, room)
-    if (position === 'center') fs = Math.min(fs, r.h * 0.16)
+    if (position === 'center') fs = Math.min(fs, (r.h * 0.16) / tall)
     if (fs / upp >= minSize) return fs
     const least = minSize * upp
-    if (position === 'center' && bare && least <= room && least * 1.6 <= r.h) return least
+    if (position === 'center' && bare && least <= room && least * 1.6 * tall <= r.h) return least
     return null
   }
   // 보기 화면에서 Main 설비명을 세울 범위 — 기준일에 보이는 모듈 상자들(shown [{x, y, w, h}])의 바깥 상자. 일부 모듈만 보이는
@@ -1656,6 +1661,105 @@ export default function (component) {
   }
   // </view-cover>
 
+  // ---------------------------------------------------------------- 반입 일정 글(층 상세 보기, 순수 함수)
+  // 사이드바 「반입 일정」 을 켠 층 보기(`data.arrivalDates`)는 그날 반입 전(점선 테)인 호기에 반입 일정을 쓴다(2026-11-12 Space 보드
+  // 답 1-1 ~ 1-6). 글은 `27.05.09`(실적이 있으면 실적일 — 점선 테가 실선이 되는 날), 반입상태 지연이면 뒤에 굵은 「지연」, 날짜가
+  // 없으면 「미정」 이다. 낱 호기는 상자 안 이름 아래, 모듈 묶음(모듈 둘 이상)은 그날 보이는 반입 전 모듈의 글이 모두 같으면 Main
+  // 설비명 알약 안 둘째 줄에 한 번, 다르면 모듈마다 상자 안 아래다(1-1 · 1-3 메모). 작으면 숨는다. `tests/test_space_arrival_js.py`
+  // 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <view-arrival>
+  // 날짜 글자(파이썬 `YYYY-MM-DD` | null)와 지연 → {day, late}. day 는 `27.05.09` 또는 「미정」.
+  function arrivalWords(plan, delayed) {
+    const day = typeof plan === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(plan)
+      ? `${plan.slice(2, 4)}.${plan.slice(5, 7)}.${plan.slice(8, 10)}`
+      : '미정'
+    return { day, late: Boolean(delayed) }
+  }
+  const arrivalText = (words) => (words.late ? `${words.day} 지연` : words.day)
+  // 풍선 글 — 「반입 일정 2027-05-09」 · 「반입 일정 미정」, 지연이면 「(지연)」 을 붙인다(토글과 상관없이 반입 전 호기 풍선에).
+  function arrivalTipWords(plan, delayed) {
+    const day = typeof plan === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(plan) ? plan : '미정'
+    return `반입 일정 ${day}${delayed ? '(지연)' : ''}`
+  }
+  // 모듈 묶음의 날짜 자리 — mates 는 이 층에 선 묶음 모듈, shown(m) 은 그날 도면에 보이는 반입 전 모듈인가다(반입한 · 겹쳐 숨긴 ·
+  // 기준일에 빠진 모듈은 뺀다). 글(날짜 + 지연)이 모두 같으면 'once'(Main 설비명 아래 한 번), 하나라도 다르면 'each'(모듈마다), 그런
+  // 모듈이 없으면 'none'.
+  function groupArrivalMode(mates, shown) {
+    const seen = mates.filter(shown)
+    if (!seen.length) return { mode: 'none', words: null }
+    const first = arrivalWords(seen[0].arrivalPlan, seen[0].arrivalDelayed)
+    const same = seen.every((m) => arrivalText(arrivalWords(m.arrivalPlan, m.arrivalDelayed)) === arrivalText(first))
+    return same ? { mode: 'once', words: first } : { mode: 'each', words: null }
+  }
+  // 날짜 글자는 이름 글자의 이 배수다(상자 폭에 넘치면 더 줄고, 화면 최소 px 아래면 숨는다).
+  const ARRIVAL_FONT_K = 0.82
+  // 상자 안 두 줄 — 이름(글자 fs)은 위로 올리고 날짜(fd)는 그 아래. cy 는 상자 가운데(SVG y, 아래로).
+  function arrivalBoxLines(cy, fs, fd) {
+    const nameY = cy - (fs * 1.15 + fd) / 2 + fs / 2
+    return { nameY, dayY: nameY + fs * 0.65 + fd / 2 }
+  }
+  // Main 설비명 알약 두 줄(1-3 (가) — 이름 밑 둘째 줄이 날짜). cy 는 한 줄 알약의 가운데(SVG y), grow 는 자라는 쪽 — 'up'(범위
+  // 위 바깥 — 아래 끝을 지킨다) · 'down'(범위 아래 바깥 — 위 끝을 지킨다) · 'mid'(가운데). 높이는 한 줄(fs × 1.6)에 날짜 줄
+  // (fd × 1.25)을 더한다.
+  function arrivalPill(cy, fs, fd, grow) {
+    const h = fs * 1.6 + fd * 1.25
+    const top = grow === 'up' ? cy + fs * 0.8 - h : grow === 'down' ? cy - fs * 0.8 : cy - h / 2
+    return { top, h, nameY: top + fs * 0.8, dayY: top + fs * 1.6 + fd * 0.6 }
+  }
+  // 두 줄 알약 높이 ÷ 한 줄 알약 높이 — 가운데 이름 글자 크기 상한과 「필요 단축」 배지가 비킬 높이를 이만큼 키운다.
+  const ARRIVAL_PILL_TALL = (1.6 + ARRIVAL_FONT_K * 1.25) / 1.6
+  // </view-arrival>
+
+  // 「반입 일정」 을 그리는 회차인가(보기 · 층 도면 · 토글 켬 — epoch 밖).
+  const ARRIVAL_ON = VIEW && !FAB && data.arrivalDates === true
+  // 그날 도면에 보이는 반입 전 모듈(묶음 날짜 판정의 재료) — 칠한 판정(`paintUnit` 의 class · `__visible`)을 읽는다.
+  const arrivalShown = (m) => {
+    const group = !m.ghost ? S.groups.get(m.id) : null
+    return Boolean(group && group.__visible !== false && group.classList.contains('is-pre'))
+  }
+  // 한 상자의 날짜 줄과 이름 자리를 맞춘다. 낱 호기와 모듈마다 쓰는 묶음('each')만 상자 안에 쓰고, 그 밖은 이름을 가운데로
+  // 돌린다. 이름이 7px 아래면(밀집 층) 날짜도 쓰지 않는다 — 날짜만 따로 7px 아래면 날짜만 숨긴다. 이 상자의 칠(반입 전 · 보임)은
+  // 받은 group 에서 읽는다 — 처음 그리는 회차에는 `S.groups` 에 아직 없다(`buildGroup` 이 끝에 넣는다).
+  function syncArrival(group, item) {
+    const node = group.__parts && group.__parts.arrival
+    if (!node) return
+    const label = group.querySelector('.sle-label')
+    const cy = svgTop(item) + item.h / 2
+    const mode = ARRIVAL_ON && item.group && S.arrivalModes ? S.arrivalModes.get(groupKeyOf(item)) : undefined
+    const on = ARRIVAL_ON && group.__visible !== false && group.classList.contains('is-pre')
+      && (!mode || mode.mode === 'each')
+    const hide = () => {
+      if (node.style.display !== 'none') node.style.display = 'none'
+      label.setAttribute('y', cy)
+    }
+    if (!on) return hide()
+    const upp = unitsPerPx()
+    const fs = unitLabelSize(item, upp)
+    const words = arrivalWords(item.arrivalPlan, item.arrivalDelayed)
+    const fd = Math.min(fs * ARRIVAL_FONT_K, (item.w * 0.94) / Math.max(labelEm(arrivalText(words)), 1))
+    if (fs / upp < UNIT_LABEL_MIN_PX || fd / upp < UNIT_LABEL_MIN_PX) return hide()
+    writeArrival(node, words)
+    const lines = arrivalBoxLines(cy, fs, fd)
+    label.setAttribute('y', lines.nameY)
+    node.setAttribute('x', item.x + item.w / 2)
+    node.setAttribute('y', lines.dayY)
+    node.setAttribute('font-size', fd)
+    node.style.fill = label.style.fill
+    node.style.display = ''
+  }
+  // 날짜 글 — 「지연」 은 굵은 tspan 이다. 같은 글이면 다시 쓰지 않는다.
+  function writeArrival(node, words) {
+    const key = arrivalText(words)
+    if (node.__arrival === key) return
+    node.__arrival = key
+    node.replaceChildren(document.createTextNode(words.day))
+    if (words.late) {
+      const late = el('tspan', { class: 'sle-arrival-late' })
+      late.textContent = ' 지연'
+      node.append(late)
+    }
+  }
+
   // ---------------------------------------------------------------- 공식과 견주기(층 상세 보기, 순수 함수)
   // 파이썬 `services/layout_overlay.layout_compare` 가 낸 재료(`data.compare` — epoch 밖)를 그릴 꼴로 바꾼다(설계 8-3). 점선 상자
   // (`ghosts` — 기준 쪽 자리)는 꼬리표가 없으면 지금 상자(boxOf)와 가운데끼리 가는 선으로 잇고, 꼬리표가 있으면 상자 왼쪽 위에
@@ -2088,7 +2192,7 @@ export default function (component) {
     const st = unitState(item, S.asOf)
     const exitNamed = st.exitPlan && (stage === '반출/이설 예정' || (stage === '정지 예정' && !item.stopOn))
     const words = []
-    if (!st.real) words.push('반입 전(실물 없음)')
+    if (!st.real) words.push('반입 전(실물 없음)', arrivalTipWords(item.arrivalPlan, item.arrivalDelayed))
     if (st.exitPlan && !exitNamed) words.push(`반출/이설 예정 ${item.exitOn}`)
     if (st.stopped && stage !== '정지') words.push('정지 중')
     if (st.delay) words.push('지연')
@@ -2358,17 +2462,37 @@ export default function (component) {
       return true
     })
   }
-  // 놓인 호기·요소가 차지한 가장 먼 오른쪽·위. 캔버스는 이보다 작게 줄일 수 없다.
-  const extents = () => {
-    let right = RESERVED.right
-    let top = RESERVED.top
-    // 숨은 모듈은 묶음과 함께 옮겨지므로 지금 자리로 센다(처음 자리는 RESERVED 에 들어 있다).
-    for (const item of [...S.items.values(), ...S.ghosts.values()]) {
-      if (!onCanvas(item)) continue
-      right = Math.max(right, item.x + item.w)
-      top = Math.max(top, item.y + item.h)
+  // 캔버스를 줄이지 못하게 하는 것마다 차지한 가장 먼 오른쪽·위 — 도면에 놓인 호기·요소(drawn), 도면에 안 보이는 호기(hidden —
+  // 숨은 모듈은 묶음과 함께 옮겨지므로 지금 자리, 처음 자리와 편집기 밖 호기는 RESERVED), 가정 설비 시나리오 배치(OVERLAY_LIMITS).
+  function extentParts() {
+    const drawn = { right: 0, top: 0 }
+    const hidden = { right: RESERVED.right, top: RESERVED.top }
+    for (const [list, into] of [[S.items.values(), drawn], [S.ghosts.values(), hidden]]) {
+      for (const item of list) {
+        if (!onCanvas(item)) continue
+        into.right = Math.max(into.right, item.x + item.w)
+        into.top = Math.max(into.top, item.y + item.h)
+      }
     }
+    return { drawn, hidden, overlay: OVERLAY_LIMITS }
+  }
+  // 놓인 호기·요소 · 안 보이는 호기 · 가정 배치가 차지한 가장 먼 오른쪽·위. 캔버스는 이보다 작게 줄일 수 없다.
+  const extents = () => {
+    const parts = extentParts()
+    let right = Math.max(parts.drawn.right, parts.hidden.right)
+    let top = Math.max(parts.drawn.top, parts.hidden.top)
+    for (const o of parts.overlay) { right = Math.max(right, o.right); top = Math.max(top, o.top) }
     return { right: ceilTo(right), top: ceilTo(top) }
+  }
+  // 캔버스를 한 축(axis — 'right' | 'top')의 하한 limit(ceil 맞춘 값) 아래로 줄이지 못한 까닭 — 하한에 닿은 것 모두를 「 · 」 로
+  // 잇는다(「호기·요소」 · 「도면에 안 보이는 호기」 · 「가정 설비 시나리오 「이름」 배치」). 모두 받침 없이 끝나 뒤에 「가」 를 붙인다.
+  function canvasLimitWords(axis, limit, parts, ceil) {
+    const reach = (value) => ceil(value) >= limit - 1e-9
+    const words = []
+    if (reach(parts.drawn[axis])) words.push('호기·요소')
+    if (reach(parts.hidden[axis])) words.push('도면에 안 보이는 호기')
+    for (const o of parts.overlay) if (reach(o[axis])) words.push(`가정 설비 시나리오 「${o.name}」 배치`)
+    return words.length ? words.join(' · ') : '호기·요소'
   }
 
   // ---------------------------------------------------------------- Main 설비명(모듈 묶음 이름표)
@@ -2431,8 +2555,18 @@ export default function (component) {
     if (FAB) return
     const upp = unitsPerPx()
     const ts = textScale(1 / upp)
+    // 반입 일정을 쓰는 동안 묶음마다 날짜 자리(`groupArrivalMode` — 한 번 · 모듈마다 · 없음)를 정한다. 이름표가 서지 않는
+    // 묶음(작음 · 묶음째 숨음)도 정한다 — 한 번 쓸 묶음은 이름표가 없으면 날짜도 없다(모듈 상자에도 쓰지 않는다).
+    const hadModes = Boolean(S.arrivalModes)
+    const modes = ARRIVAL_ON ? new Map() : null
+    const bundled = []
     for (const [key, lead] of moduleGroups()) {
       const mods = moduleMembers(lead)
+      if (modes && mods) {
+        const placed = mods.filter(onCanvas)
+        modes.set(key, groupArrivalMode(placed, arrivalShown))
+        bundled.push(...placed)
+      }
       const whole = mods ? groupRange(mods) : null
       if (!whole || !groupShown(mods)) continue
       // 보기 화면에서 일부 모듈만 보이면 보이는 모듈의 바깥 상자에 세운다(`shownRange`).
@@ -2443,20 +2577,49 @@ export default function (component) {
       const position = groupLabelOf(key, mods.length)
       // 모듈 칸 이름표가 하나도 서 있지 않으면(밀집 층·작은 묶음) 가운데 이름은 가장 작은 크기로라도 선다.
       const bare = !seen.some((m) => unitLabelSize(m, upp) / upp >= UNIT_LABEL_MIN_PX)
-      const fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX * ts, upp, UNIT_LABEL_MIN_PX, bare)
+      let fs = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX * ts, upp, UNIT_LABEL_MIN_PX, bare)
+      // 묶음 날짜를 한 번 쓰면 알약이 두 줄이다(1-3 (가)) — 가운데 이름 글자 상한을 두 줄 높이로 다시 맞춘다. 날짜 줄이 7px
+      // 아래가 되면 한 줄 알약 그대로다(날짜는 숨는다).
+      const once = modes && modes.get(key)?.mode === 'once' ? modes.get(key).words : null
+      let fd = 0
+      if (once && fs !== null) {
+        const tall = groupNameSize(range, position, labelEm(name), GROUP_NAME_PX * ts, upp, UNIT_LABEL_MIN_PX, bare, ARRIVAL_PILL_TALL)
+        if (tall !== null && (tall * ARRIVAL_FONT_K) / upp >= UNIT_LABEL_MIN_PX) {
+          fs = tall
+          fd = tall * ARRIVAL_FONT_K
+        }
+      }
       if (fs === null) continue
       const spot = groupNameSpot(range, position, fs, 2 * upp, H())
       const cy = H() - spot.y
-      const pillW = Math.min(range.w, labelEm(name) * fs + fs * 0.9)
-      const node = el('g', { class: `sle-group-name-tag is-${position}` })
+      const pillW = Math.min(range.w, Math.max(labelEm(name) * fs, fd ? labelEm(arrivalText(once)) * fd : 0) + fs * 0.9)
+      const node = el('g', { class: `sle-group-name-tag is-${position}${fd ? ' has-arrival' : ''}` })
       node.dataset.group = key
+      // 두 줄 알약은 바깥(위 · 아래)이면 범위 쪽 끝을 지키고 바깥으로 자란다 — 영역 끝에 닿아 안쪽으로 뒤집힌 알약은 거꾸로.
+      const inside = position === 'top' ? spot.y < range.y + range.h : position === 'bottom' ? spot.y > range.y : false
+      const pill = fd
+        ? arrivalPill(cy, fs, fd, position === 'center' ? 'mid' : (position === 'top') !== inside ? 'up' : 'down')
+        : { top: cy - fs * 0.8, h: fs * 1.6, nameY: cy, dayY: cy }
       node.append(
-        el('rect', { class: 'sle-group-name-pill', x: spot.x - pillW / 2, y: cy - fs * 0.8, width: pillW, height: fs * 1.6, rx: fs * 0.8 }),
+        el('rect', { class: 'sle-group-name-pill', x: spot.x - pillW / 2, y: pill.top, width: pillW, height: pill.h, rx: fs * 0.8 }),
       )
-      const text = el('text', { class: 'sle-group-name-text', x: spot.x, y: cy, 'font-size': fs })
+      const text = el('text', { class: 'sle-group-name-text', x: spot.x, y: pill.nameY, 'font-size': fs })
       text.textContent = name
       node.append(text)
+      if (fd) {
+        const day = el('text', { class: 'sle-arrival sle-group-arrival', x: spot.x, y: pill.dayY, 'font-size': fd })
+        writeArrival(day, once)
+        node.append(day)
+      }
       namesLayer.append(node)
+    }
+    S.arrivalModes = modes
+    // 묶음 날짜 자리가 바뀌면 모듈 상자의 날짜 줄도 따라간다(한 번 쓰는 묶음은 상자에 쓰지 않는다).
+    if (modes || hadModes) {
+      for (const m of modes ? bundled : [...S.items.values()].filter((item) => isUnit(item) && item.group)) {
+        const group = S.groups.get(m.id)
+        if (group) syncArrival(group, m)
+      }
     }
     // 배지는 Main 설비 이름표가 「위」면 그 위로 비킨다 — 이름표가 다시 설 때마다 배지도 다시 선다.
     drawShortBadges()
@@ -2489,12 +2652,16 @@ export default function (component) {
       const lead = seen[0]
       const key = lead.group ? groupKeyOf(lead) : null
       const size = key ? counts.get(key) || 0 : 0
-      const above = Boolean(key && size >= 2 && groupLabelOf(key, size) === 'top'
-        && namesLayer.querySelector(`.sle-group-name-tag.is-top[data-group="${CSS.escape(key)}"]`))
+      const tag = key && size >= 2 && groupLabelOf(key, size) === 'top'
+        ? namesLayer.querySelector(`.sle-group-name-tag.is-top[data-group="${CSS.escape(key)}"]`)
+        : null
+      const above = Boolean(tag)
       const main = String(badge.main || '')
       const sub = String(badge.sub || '')
+      // 반입 일정 둘째 줄을 단 알약(위)은 그만큼 더 높이 비킨다.
+      const nameK = tag && tag.classList.contains('has-arrival') ? ts * ARRIVAL_PILL_TALL : ts
       const spot = badgeSpot(seen.map((m) => ({ x: m.x, y: m.y, w: m.w, h: m.h })), upp, above,
-        { main: labelEm(main), sub: labelEm(sub) }, H(), k, ts)
+        { main: labelEm(main), sub: labelEm(sub) }, H(), k, nameK)
       drawn.push({ badge, ids, main, sub, spot })
     }
     const settled = settleBadges(drawn.map((entry) => entry.spot), upp, H(), k)
@@ -2890,6 +3057,7 @@ export default function (component) {
       label.setAttribute('font-size', fontSize)
       label.style.display = fontSize / upp < UNIT_LABEL_MIN_PX ? 'none' : ''
       positionUnitMarks(group, item, top)
+      syncArrival(group, item)
       const ring = group.querySelector('.sle-filter-ring')
       if (ring) {
         const gap = FILTER_GAP_PX * upp
@@ -3241,12 +3409,14 @@ export default function (component) {
         flagDot: el('circle', { class: 'sle-flag-dot' }),
         flagText: el('text', { class: 'sle-flag-text' }),
         corner: el('polygon', { class: 'sle-corner' }),
+        // 반입 일정 줄(`syncArrival` — 「반입 일정」 을 켠 층 보기에서만 보인다).
+        arrival: el('text', { class: 'sle-arrival' }),
       }
       parts.flagText.textContent = '!'
       parts.offline.append(parts.offlineDot, ...parts.offlineBars)
       parts.flag.append(parts.flagDot, parts.flagText)
       group.__parts = parts
-      group.append(parts.halo, rect, parts.hatch, parts.ringOut, parts.ring, label, parts.offline, parts.flag, parts.corner, tip)
+      group.append(parts.halo, rect, parts.hatch, parts.ringOut, parts.ring, label, parts.arrival, parts.offline, parts.flag, parts.corner, tip)
     } else {
       group.append(rect, label, tip)
     }
@@ -3274,7 +3444,7 @@ export default function (component) {
     const look = unitColors(item, st)
     // 층 상세 보기에서 그날 보이는 호기와 겹친 반입 예정 호기는 숨긴다(`coveredBy`). 숨긴 호기의 몫은 요약 줄에 센다.
     const covered = VIEW && !FAB && coveredAt(item, st)
-    const code = `${look.fill}|${look.ink}|${+st.visible}${+st.real}${+st.exitPlan}${+st.stopped}${+st.flag}${+st.offline}${+covered}|${item.layer || ''}${+Boolean(item.dim)}`
+    const code = `${look.fill}|${look.ink}|${+st.visible}${+st.real}${+st.exitPlan}${+st.stopped}${+st.flag}${+st.offline}${+covered}|${item.layer || ''}${+Boolean(item.dim)}|${item.arrivalPlan || ''}${+Boolean(item.arrivalDelayed)}`
     group.__visible = st.visible && !covered
     if (covered) S.covered.set(item.id, item.share)
     else S.covered.delete(item.id)
@@ -3293,6 +3463,7 @@ export default function (component) {
     // 「필요 단축」 — 표시된 호기·흐릴 호기(파이썬이 정해 보낸다 — 공정 칩 논리는 JS 에 없다).
     group.classList.toggle('is-layer', Boolean(item.layer))
     group.classList.toggle('is-dim', Boolean(item.dim))
+    syncArrival(group, item)
   }
 
   function buildMark(item) {
@@ -3613,13 +3784,17 @@ export default function (component) {
   // 크기(`position`)는 건드리지 않는다. 숨김이 바뀐 때만 겹침을 다시 센다.
   function paintUnits(ids) {
     const flipped = []
+    // 반입 일정을 쓰는 동안 묶음 모듈의 칠(반입 전 · 후 · 반입 일정)이 바뀌면 묶음 날짜 자리(한 번 · 모듈마다)도 다시 정한다.
+    let arrivalTurned = false
     const paintOne = (id) => {
       const group = S.groups.get(id)
       const item = S.items.get(id)
       if (!group || !item || !isUnit(item)) return
       const was = group.__visible
+      const wasCode = group.__paint
       paintUnit(group, item)
       if (was !== group.__visible) flipped.push(id)
+      else if (ARRIVAL_ON && item.group && wasCode !== group.__paint) arrivalTurned = true
     }
     if (ids) {
       // 겹친 반입 예정 숨김은 이웃의 판정에도 달렸다 — 판정이 바뀐 호기와 넓이가 겹치는 이웃도 다시 본다.
@@ -3638,7 +3813,7 @@ export default function (component) {
     } else for (const id of S.groups.keys()) paintOne(id)
     if (flipped.length) markOverlaps(flipped)
     // 기준일에 묶음이 통째로 보이거나 숨으면 Main 설비명도 따라간다.
-    if (flipped.some((id) => S.items.get(id)?.group)) drawGroupNames()
+    if (arrivalTurned || flipped.some((id) => S.items.get(id)?.group)) drawGroupNames()
     else if (flipped.length && ASOF_PINNED) drawShortBadges()
     if (S.selection.size) updateStatus()
     showSummary()
@@ -3667,6 +3842,7 @@ export default function (component) {
     && o.fill === n.fill && o.ink === n.ink && Boolean(o.storage) === Boolean(n.storage) && Boolean(o.flag) === Boolean(n.flag)
     && o.realFrom === n.realFrom && o.exitOn === n.exitOn && o.stopOn === n.stopOn && o.share === n.share
     && (o.layer || '') === (n.layer || '') && Boolean(o.dim) === Boolean(n.dim)
+    && (o.arrivalPlan || null) === (n.arrivalPlan || null) && Boolean(o.arrivalDelayed) === Boolean(n.arrivalDelayed)
     && sameSpans(o.delays || [], n.delays || []) && sameSpans(o.offline || [], n.offline || [])
 
   // 보기 화면의 같은 epoch 회차 — 받은 값이 바뀐 호기만 고친다. 이름표가 바뀐 호기만 자리·글자 크기를 다시 맞추고, 풍선은
@@ -4644,13 +4820,17 @@ export default function (component) {
     // 길도 막는다. 서버도 적용의 캔버스 값을 거부한다(두 겹).
     if (data.canvasEditable === false) { areaW.value = W(); areaH.value = H(); return }
     const ext = extents()
+    const parts = extentParts()
     const minW = Math.max(MIN_EXTENT, ext.right)
     const minH = Math.max(MIN_EXTENT, ext.top)
     let w = roundTo(Number.isFinite(requestedW) ? requestedW : W())
     let h = roundTo(Number.isFinite(requestedH) ? requestedH : H())
     const notes = []
-    if (w < minW) { notes.push(`폭은 ${minW} 아래로 줄일 수 없습니다(${ext.right > MIN_EXTENT ? '호기·요소가 거기까지 놓여 있습니다' : `최소 ${MIN_EXTENT}`})`); w = minW }
-    if (h < minH) { notes.push(`높이는 ${minH} 아래로 줄일 수 없습니다(${ext.top > MIN_EXTENT ? '호기·요소가 거기까지 놓여 있습니다' : `최소 ${MIN_EXTENT}`})`); h = minH }
+    const why = (axis) => ext[axis] > MIN_EXTENT
+      ? `${canvasLimitWords(axis, ext[axis], parts, ceilTo)}가 거기까지 놓여 있습니다`
+      : `최소 ${MIN_EXTENT}`
+    if (w < minW) { notes.push(`폭은 ${minW} 아래로 줄일 수 없습니다(${why('right')})`); w = minW }
+    if (h < minH) { notes.push(`높이는 ${minH} 아래로 줄일 수 없습니다(${why('top')})`); h = minH }
     if (w > MAX_EXTENT) { notes.push(`폭은 최대 ${MAX_EXTENT} 입니다`); w = MAX_EXTENT }
     if (h > MAX_EXTENT) { notes.push(`높이는 최대 ${MAX_EXTENT} 입니다`); h = MAX_EXTENT }
     S.note = notes.join(' · ')
@@ -5644,6 +5824,7 @@ export default function (component) {
     realFrom: dayOr(raw.realFrom), exitOn: dayOr(raw.exitOn), stopOn: dayOr(raw.stopOn),
     delays: spansOf(raw.delays), offline: spansOf(raw.offline), share: shareOf(raw.share),
     layer: SHORT_LAYERS.has(raw.layer) ? raw.layer : '', dim: raw.dim === true,
+    arrivalPlan: dayOr(raw.arrivalPlan), arrivalDelayed: raw.arrivalDelayed === true,
   })
   const readUnit = (raw) => ({
     id: String(raw.id), kind: 'unit', label: String(raw.label ?? raw.id), stage: String(raw.stage || ''),
@@ -5790,6 +5971,16 @@ export default function (component) {
   // 견주기는 epoch 밖이다 — 토글을 켜고 끄거나 기준일·필터만 바뀐 회차에도 다시 마운트하지 않고 이 층만 다시 그린다.
   drawCompare()
   S.lastPinned = ASOF_PINNED
+  // 「반입 일정」 토글(epoch 밖)이 같은 epoch 회차에 바뀌면 묶음 날짜 자리를 다시 정하고(`drawGroupNames`) 모든 호기의 이름 · 날짜
+  // 줄을 다시 맞춘다. 새 epoch 는 처음 그리기가 맞춘다.
+  if (VIEW && !FAB && S.lastArrival !== undefined && S.lastArrival !== ARRIVAL_ON) {
+    drawGroupNames()
+    for (const [id, group] of S.groups) {
+      const item = S.items.get(id)
+      if (item && isUnit(item)) syncArrival(group, item)
+    }
+  }
+  S.lastArrival = ARRIVAL_ON
   // 배지만 바뀐 회차(목표를 바꿔 일수 글만 바뀜·임박 날수만 바뀜)는 호기 값이 그대로라 위 길이 다시 그리지 않는다 — 배지
   // 지문으로 가른다(팔레트와 같은 꼴).
   const badgeKey = ASOF_PINNED ? JSON.stringify(SHORT_BADGES) : ''

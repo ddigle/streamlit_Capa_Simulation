@@ -147,9 +147,10 @@ RULE_NOTES = {
     "UI-DAT-02": ("예외", "rule-notes g2-26"),
     "UI-INP-08": ("예외", "rule-notes g3-14"),
     "UI-LAY-09": ("근거", "rule-notes g5-21"),
-    "UI-LAY-12": ("예외", "rule-notes g6-23"),
-    "UI-STA-06": ("예외", "rule-notes g6-29"),
 }
+# rule-notes 가운데 2026-11-12 Space 보드 답 1-4(「캔버스 편집」 팝업 걷기)로 거둔 칸 — 예외에서
+# 빠진다.
+WITHDRAWN_RULE_NOTES = {"UI-LAY-12": "rule-notes g6-23", "UI-STA-06": "rule-notes g6-29"}
 # 이 문서의 규칙 id 를 부를 수 있는 진입 · 짝 문서.
 CITING_DOCUMENTS = (
     "AGENTS.md",
@@ -366,10 +367,11 @@ def test_the_picture_review_memos_are_recorded_and_written_into_the_rules() -> N
 
 def test_the_board_answers_are_recorded_and_written_into_the_rules() -> None:
     """6-4 는 남은 결정 보드 한 칸에 한 줄이고 답이 사용자 답과 같다. 답이 규칙 글로 들어갔는지
-    핵심만 본다 — v4: UI-INP-03 은 MUST. v2 · v3: 확인 체크를 남기는 저장 둘은 UI-NTF-09 예외.
-    v7: 일정 글 칸은 UI-INP-03 예외. v8: 입력 빠짐 멈춤도 마크 + 「그 화면으로」. v9: placeholder 는
-    창 안 글. v10: 충돌 보고는 자리에 두는 갈래가 아니다. v5: 제안 값 넷은 확정이다. 답이 왔으므로
-    규칙 칸에 「답 대기」 가 남지 않는다."""
+    핵심만 본다 — v4: UI-INP-03 은 MUST. v2: 확인 체크를 남기는 저장은 UI-NTF-09 예외(v3
+    「알고 저장」 은 2026-11-12 Space 보드 답 1-4 로 걷음). v7: 일정 글 칸은 UI-INP-03 예외.
+    v8: 입력 빠짐 멈춤도 마크 + 「그 화면으로」. v9: placeholder 는 창 안 글. v10: 충돌 보고는
+    자리에 두는 갈래가 아니다. v5: 제안 값 넷은 확정이다. 답이 왔으므로 규칙 칸에 「답 대기」 가
+    남지 않는다."""
     section = _chapter(_text(), 6)
     board = section[section.index("\n### 6-4. ") : section.index("\n### 6-5. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]
@@ -391,7 +393,9 @@ def test_the_board_answers_are_recorded_and_written_into_the_rules() -> None:
     assert "일정 글 칸" in rules["UI-INP-03"].fields["예외"][0]
     exceptions = rules["UI-NTF-09"].fields["예외"][0]
     assert "적용하지 않은 편집을 버리고 저장" in exceptions
-    assert "이탈 호기 n대 알고 저장" in exceptions
+    # v3 의 「이탈 호기 n대 알고 저장」 은 2026-11-12 Space 보드 답 1-4 로 그 팝업과 함께 걷었다 —
+    # 확인 체크를 남기는 저장은 시뮬레이션 사이드바 하나다.
+    assert "이탈 호기 n대 알고 저장" not in exceptions
     assert "입력이 빠져 멈춤" not in rules["UI-NTF-08"].fields["예외"][0]
     assert "빠져 멈춤" in rules["UI-NTF-08"].text and "그 화면으로" in rules["UI-NTF-08"].text
     assert "placeholder" in rules["UI-INP-08"].text
@@ -736,6 +740,11 @@ def test_the_sweep_board_answers_are_recorded_and_written_into_the_rules() -> No
     for rule_id, (place, tag) in RULE_NOTES.items():
         written = rules[rule_id].text if place == "text" else rules[rule_id].fields[place][0]
         assert tag in written, (rule_id, tag)
+    # Space 캔버스 크기의 두 자리(g6-23)와 한 번에 끝나는 크기 창(g6-29)은 「캔버스 편집」 팝업을
+    # 걷어 거뒀다(2026-11-12 Space 보드 답 1-4) — 캔버스는 배치 편집 왼쪽 칸 「캔버스」 한 자리다.
+    for rule_id, tag in WITHDRAWN_RULE_NOTES.items():
+        assert tag not in rules[rule_id].fields["예외"][0], rule_id
+        assert "캔버스 편집" not in rules[rule_id].fields["예외"][0], rule_id
     assert "여덟 곳" in rules["UI-NTF-03"].fields["예외"][0]
     # rule-notes 의 「구현 중 화면 유예」(UI-LAY-02 예외 — 조회 조건은 구현 완료 때 사이드바로)는
     # 2026-11-09 상단 정리 보드 T8 (가)로 거뒀다 — 예외에서 빠지고 범위가 구현 중 화면을 품는다.

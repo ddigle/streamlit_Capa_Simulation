@@ -376,7 +376,9 @@ def test_text_on_the_drawing_follows_the_scale_and_ui_marks_do_not() -> None:
     assert "if (item.label && caption.shown && (item.kind === 'shutter'" in draw
     assert "return Math.min(item.h * 0.32, fitFont, 14 * textScale(1 / upp) * upp)" in JS
     badges = _between("function drawShortBadges(", "function drawBadge(")
-    assert "const k = calloutScale(ts)" in badges and "H(), k, ts)" in badges
+    assert "const k = calloutScale(ts)" in badges and "H(), k, nameK)" in badges
+    # 비킬 높이는 Main 설비명 글자 배율 그대로다 — 반입 일정 둘째 줄을 단 알약은 그 두 줄 높이만큼.
+    assert "? ts * ARRIVAL_PILL_TALL : ts" in badges
     assert "settleBadges(drawn.map((entry) => entry.spot), upp, H(), k)" in badges
     compare = _between(
         "function drawCompare(",

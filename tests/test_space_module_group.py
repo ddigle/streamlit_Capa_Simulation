@@ -1050,9 +1050,12 @@ def test_hidden_modules_ride_along_in_the_editor() -> None:
         "function redraw(list) {", "function moveItems("
     )
     assert ".sle-ghost-cell" in CSS and "class: 'sle-ghost-cell'" in JS
-    assert "for (const item of [...S.items.values(), ...S.ghosts.values()])" in _between(
-        "const extents = () => {", "// ---"
+    # 캔버스 하한은 숨은 모듈도 지금 자리로 센다(「도면에 안 보이는 호기」 갈래 — node 시험
+    # `test_space_layout_editor_assets` 의 캔버스 칸 하한).
+    assert "[[S.items.values(), drawn], [S.ghosts.values(), hidden]]" in _between(
+        "function extentParts() {", "// ---"
     )
+    assert "const parts = extentParts()" in _between("const extents = () => {", "// ---")
 
 
 def _js_decl(head: str) -> str:

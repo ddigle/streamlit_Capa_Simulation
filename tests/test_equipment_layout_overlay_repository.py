@@ -930,8 +930,9 @@ def test_the_publish_preview_counts_a_deleted_units_difference_apart(tmp_path: P
 def test_the_canvas_preview_reads_hypothetical_marks_and_units_on_the_floor(
     tmp_path: Path,
 ) -> None:
-    """설계 6-4·7-2 — 캔버스 팝업 미리 보임은 캔버스 저장이 보는 리비전(ACTIVE 최신·최신 공식
-    발행)의 그 층 차이 요소 범위와 차이 호기 상자다."""
+    """설계 6-4·7-2 — 층 캔버스를 줄일 때 보는 가정 배치는 캔버스 저장이 보는 리비전(ACTIVE
+    최신·최신 공식 발행)의 그 층 차이 요소 범위와 차이 호기 상자다. 시나리오마다의 끝 값
+    (`scenario_extents`)이 Space 「배치 편집」 「캔버스」 칸의 하한이다."""
     repository = _seeded(tmp_path)
     assert repository.layout_overlay_extent(*FLOOR) == equipment_repository.LayoutOverlayExtent()
     scenario_id = _hypothetical(repository)
@@ -957,6 +958,11 @@ def test_the_canvas_preview_reads_hypothetical_marks_and_units_on_the_floor(
     assert extent.marks_outside((100.0, 60.0)) == ()
     assert extent.units_outside((90.0, 60.0)) == (("셋업 실무", 1),)
     assert extent.units_outside((100.0, 60.0)) == ()
+    ((name, boxes),) = extent.units
+    ((x, y, w, h),) = boxes
+    assert (name, x) == ("셋업 실무", 85.0)
+    assert extent.scenario_extents() == (("셋업 실무", max(92.0, x + w), max(3.0, y + h)),)
+    assert equipment_repository.LayoutOverlayExtent().scenario_extents() == ()
     assert (
         repository.layout_overlay_extent("C2", "3F") == equipment_repository.LayoutOverlayExtent()
     )
