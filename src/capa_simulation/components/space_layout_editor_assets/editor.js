@@ -8927,6 +8927,9 @@ export default function (component) {
     const col = td.dataset.col
     const mark = sheetEditMark(SHEET_EDIT, sheetEditCells(), S.sheetVerdict || null, id, col, td.dataset.shown || '')
     setText(td, mark.text)
+    // 긴 글의 브라우저 풍선은 지금 글이다(고친 칸이 옛 글을 보이지 않게).
+    if (mark.text.length > 18) td.title = mark.text
+    else td.removeAttribute('title')
     td.classList.toggle('is-editable', !mark.locked)
     td.classList.toggle('is-locked', mark.locked)
     td.classList.toggle('is-edited', mark.edited && !mark.blocked)

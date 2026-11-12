@@ -878,6 +878,22 @@ def test_an_apply_keeps_the_typed_cells_until_a_new_drawing() -> None:
     assert "input.type = 'text'" in opener and "type = 'date'" not in opener
 
 
+def test_a_painted_cell_keeps_its_long_text_tip_in_step_with_the_shown_text() -> None:
+    """R2 리뷰 지적 6 — 18자를 넘는 칸의 브라우저 풍선(`title`)은 표를 그릴 때 받은 글로 달렸고 칸을
+    고친 뒤에도 옛 글을 보였다. 칸을 칠할 때 지금 글로 다시 달고, 짧아지면 걷는다."""
+    paint = JS[
+        JS.index("  function paintSheetCell(td) {") : JS.index("  function paintSheetCells(")
+    ]
+    assert paint.index("setText(td, mark.text)") < paint.index(
+        "if (mark.text.length > 18) td.title = mark.text"
+    )
+    assert "else td.removeAttribute('title')" in paint
+    draw = JS[
+        JS.index("    for (const row of rows) {\n      const tr = document.createElement('tr')") :
+    ]
+    assert "if (text.length > 18) td.title = text" in draw[: draw.index("paintSheetCells(true)")]
+
+
 def test_the_window_edit_colours_come_from_the_master_grid_tokens() -> None:
     """고친 칸 · 막힌 칸 · 잠긴 칸은 설비 마스터 표와 같은 색이다(UI-CON-03) — 팔레트가 싣는다."""
     palette = space_layout_editor._palette()
