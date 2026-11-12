@@ -26,7 +26,15 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import active_state, alert_notes, infos, place_errors, shown, successes
+from alert_marks import (
+    active_state,
+    alert_notes,
+    flashed,
+    infos,
+    place_errors,
+    shown,
+    successes,
+)
 from streamlit.proto.Block_pb2 import Block as BlockProto
 from streamlit.testing.v1 import AppTest
 from test_equipment_migration_0027_scenarios import build_legacy_database
@@ -1482,7 +1490,7 @@ def test_an_assumption_canvas_value_from_an_old_browser_is_refused(
 
     assert any(
         "적용하지 못했습니다" in str(item.value) and "층 캔버스는" in str(item.value)
-        for item in app.error
+        for item in flashed(app, "error")
     )
     assert LAYOUT_ROLE_KEY not in app.session_state
     assert not any("저장 안 한 배치 변경" in str(item.value) for item in app.markdown)

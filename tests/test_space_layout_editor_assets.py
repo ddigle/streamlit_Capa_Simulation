@@ -1302,7 +1302,11 @@ def test_the_toolbar_reasons_are_short_values() -> None:
     """잠긴 까닭은 짧은 값이다 — 변경 0건이면 「적용」 · 「처음 상태로」 가 함께 잠긴다."""
     status = JS[JS.index("function updateStatus() {") : JS.index("function commitTyping(")]
     assert "const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''" in status
-    assert "lockWith(applyButton, noChange)" in status
+    # 막힌 「호기 정보」 창 칸이 있어도 「적용」 이 잠긴다 — 까닭은 그 수 한 마디다.
+    assert (
+        "lockWith(applyButton, noChange || (blockedCells ? "
+        "`「호기 정보」 막힌 칸 ${blockedCells}개` : ''))" in status
+    )
     assert "lockWith(resetButton, noChange)" in status
     assert "lockWith(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')" in status
     assert "(chosen.length ? '고른 것이 도면에 없음' : '고른 것 없음')" in JS

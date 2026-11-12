@@ -66,8 +66,6 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("app_pages/reference_data.py", "_step_dialog"): (1, PRESSED),
     ("app_pages/reference_integrity.py", "_render_detail"): (1, BESIDE),
     ("app_pages/space_status.py", ""): (1, PRESSED),
-    ("app_pages/space_status.py", "_render_fab_editor"): (1, PRESSED),
-    ("app_pages/space_status.py", "_render_layout_editor"): (1, PRESSED),
     ("app_pages/space_status.py", "_render_unsaved_layout_panel"): (2, PRESSED),
     ("app_pages/standard_target_capa.py", ""): (1, BESIDE),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (3, PRESSED),

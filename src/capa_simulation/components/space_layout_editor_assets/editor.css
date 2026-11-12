@@ -779,6 +779,28 @@
 .sle-sheet-table tbody tr:focus-visible td { box-shadow: inset 0 2px 0 var(--sle-accent), inset 0 -2px 0 var(--sle-accent); }
 .sle-sheet-table tbody tr.is-current td { background: var(--sle-canvas); font-weight: 700; }
 .sle-sheet-table tbody tr.is-current td:first-child { box-shadow: inset 3px 0 0 var(--sle-accent); }
+/* 배치 편집 창 칸 고치기 — 고친 칸(같이 바뀐 형제 칸 포함)은 설비 마스터 「바뀐 칸」 꼴, 잠긴 칸은 회색, 막힌 칸은 빨강, 칸
+   커서는 강조색 테(UI-CON-03 · UI-INP-07). 고른 줄 · 올린 줄 칠하기보다 뒤에 둔다(같은 무게라 뒤가 이긴다). */
+.sle-sheet-table tbody tr td.is-editable { cursor: cell; }
+.sle-sheet-table tbody tr td.is-locked { background: var(--sle-cell-lock-fill); color: var(--sle-muted); cursor: not-allowed; }
+.sle-sheet-table tbody tr td.is-edited, .sle-sheet-table tbody tr td.is-cursor { position: relative; }
+.sle-sheet-table tbody tr td.is-edited { background: var(--sle-cell-changed-fill); }
+.sle-sheet-table tbody tr td.is-edited::after {
+  content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 7px 7px 0;
+  border-color: transparent var(--sle-cell-changed-mark) transparent transparent;
+}
+.sle-sheet-table tbody tr td.is-blocked { background: var(--sle-cell-error-fill); box-shadow: inset 0 0 0 1.5px var(--sle-cell-error-line); }
+.sle-sheet-table tbody tr td.is-cursor { box-shadow: inset 0 0 0 2px var(--sle-accent); }
+.sle-sheet-table tbody tr td.is-cursor.is-blocked { box-shadow: inset 0 0 0 2px var(--sle-cell-error-line); }
+.sle-sheet-table tbody tr td.is-cursor.is-bundle::before {
+  content: "묶음"; position: absolute; right: 2px; bottom: 0; font-size: 9px; line-height: 1.1; font-weight: 700; color: var(--sle-accent);
+}
+.sle-sheet-table tbody tr td.is-open { padding: 0; overflow: visible; box-shadow: inset 0 0 0 2px var(--sle-accent); }
+.sle .sle-sheet-input {
+  width: 100%; min-width: 7.5em; box-sizing: border-box; height: 22px; margin: 0; padding: 1px 6px; border: 0; border-radius: 0;
+  font: inherit; background: var(--sle-surface); color: var(--sle-ui-text);
+}
+.sle .sle-sheet-input:focus { outline: none; }
 .sle-sheet-empty, .sle-sheet-cut { margin: 8px 10px; color: var(--sle-muted); font-size: 0.78rem; }
 .sle-sheet-empty[hidden], .sle-sheet-cut[hidden] { display: none; }
 .sle-sheet-note { flex: none; margin: 0; padding: 0 10px; color: var(--sle-muted); font-size: 0.76rem; line-height: 22px; }

@@ -995,6 +995,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     앱 전체가 돌지 않게) 그 보기가 서지 않은 회차(끈 층 보기·배치 편집)에는 페이지가 그 세션 값을 푼다. 다른 층·FAB 로 옮기거나 그
     층 행에 없으면(필터·이름 바꿈) 푼다. 뷰어 호기에는 설비지분 `share`(기준일 보유 지분
     `space_layout.row_unit_shares` — 범례·배치 대수와 같은 칸, 일부 모듈만 반입한 묶음의 반입 전 모듈은 0)를 싣는다.
+  - **창 칸 고치기**(배치 편집 — 2026-11-12 Space 시안 보드 답 5-4 ~ 5-6): `_render_layout_editor` 가 설비 마스터 탭과 같은
+    표 조건(`equipment_master_tab.grid_context` — 세션 · 저장 기준 · 배치 판정 · 캔버스 · 오늘)과 줄마다 잠금 갈래(`space_sheet_edit.
+    unit_lock_kinds`)로 data `sheetEdit` 를 싣는다. 적용값 `cells` 는 `parse_editor_apply(sheet_ids=)` 가 꼴만 읽고 차례는
+    `apply_layout_edits` → `check_sheet_cells`(표와 같은 인자 — 캔버스 · 오늘) → `apply_name_changes` → `prepare_equipment_master`
+    다(칸은 옛 이름으로 온다). 막힌 칸이 있으면 적용 전체를 받지 않고 판정을 세션 `space_sheet_refused_v1` 에 두어 같은 epoch
+    편집기 data `sheetRefused` 로 돌려주며 사건 `EQ-25` 를 담고 한 번 더 돈다(편집기 아래 오류 글 없음). 칸 확정마다 오는
+    「확인만」 은 콜백(`on_sheetCheck_change` → `_check_sheet_request` — 그린 회차의 편집본 · 표 조건 · 잠금 · 캔버스 · 오늘을 쥔
+    `partial`, 편집본 세대가 바뀌었으면 버림)이 본문보다 먼저 같은 `check_sheet_cells` 로 판정해 세션 `space_sheet_verdict_v1`
+    에 두고(다음 회차 data `sheetVerdict`) 새로 막힌 칸(설비명 · 칸 · 글 · 규칙이 앞 판정에 없던 것)만 `EQ-25` 로 낸다 — 편집본에는
+    넣지 않는다. 그 밖의 적용 거부(층 · FAB 편집기의 「적용하지 못했습니다」 · 다시 서는 사이의 누름)도 편집기 아래 글 상자 대신
+    `_refuse_apply`(알림창 · Alarm `FL-04` · `FL-03` + 한 번 더 돎)다(설계 규칙 UI-NTF-03 예외). 받은 적용은 쓴
+    (설비명, 칸)(따라간 묶음 형제 포함)을 작업 공간 `stage_sheet_cells`(이번 이름 바꿈을 따라감)에 두고 세션
+    `space_sheet_applied_v1` 를 올린다 — epoch 에 들어 같은 값으로 다듬어진 적용도 새 epoch 로 브라우저 칸을 비운다. 칸
+    고침은 배치가 아니라 `moved_layout` 에 넣지 않는다(역할 찍기 · 가정 배치 글 없음). 저장 상자는 그 칸 가운데 지금도 저장본과
+    다른 칸을 「호기 정보 칸 n건」 으로 세어 관문 · 머리 값 줄에 넣고(`changed_cell_count`), 「설비 마스터 다른 편집」 셈에서 뺀다
+    (`other_change_count(skip=)`). 칸만 있는 저장도 리비전을 만드는 저장이라 메모 칸이 선다.
   - **층 사용 상태**(설비 `0029`, 2026-10-24 결정 S1~S6 — `load_floor_states`, 설비 시나리오와 무관한 공용 현행값). FAB 아래 층
     목록 자리는 `components/space_floor_list.py` 다(사용 층 표 + 접힌 「비활성 층 n개」, 표 머리 `사용 편집`). 비활성 층 블록은
     FAB 도면에서 회색 빗금 + 사유로 그려 눌러도·Enter 로도 열지 않는다(사유는 사람이 직접 적은 글 — 블록 안 줄은 8글자를
@@ -1381,6 +1397,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고친다. 끄는 동안(`S.drag`)은 쉰다. 빈 표는 결론 한 줄(「맞는 호기가 없습니다」 · 「이 층에 호기가 없습니다」 · 「고른 호기가
     없습니다」), 잘린 줄은 값 「n줄 더 있음」(모든 줄을 받는 `CSV` 펼침은 풍선)이다 — 하는 법 꼬리를 달지 않는다(설계 규칙
     UI-TXT-03 · UI-TXT-04).
+  - **창 칸 고치기**(배치 편집만 — 2026-11-12 Space 시안 보드 답 5-4 ~ 5-6): data `sheetEdit`(epoch 밖 — 파이썬
+    `space_sheet_edit.sheet_edit_data`)가 있을 때 칸마다 `data-col` · `data-shown` 을 달고 `paintSheetCell` 이 고친 칸
+    (`is-edited` — 설비 마스터 「바뀐 칸」 꼴, 묶음 형제의 같이 바뀐 칸 포함) · 잠긴 칸(`is-locked` + 까닭 풍선) · 막힌 칸
+    (`is-blocked` + 까닭 풍선) · 칸 커서(`is-cursor`, 묶음 줄의 같이 바뀌는 칸이면 「묶음」 표지)를 칠한다. 판정은 순수 구획
+    `// <sheet-edit>`(잠금 · 원래 글 · 고르기 값 · 고친 칸 지도 · 판정 열쇠 — `tests/test_space_unit_sheet_js.py`)이고 칸끼리 ·
+    줄끼리 규칙은 파이썬에만 있다. 칸 한 번 누름 = 칸 커서 + `goToUnit`, 같은 칸 두 번 누름(`isDoublePress` — 표를 다시 그려도
+    칸 열쇠로 견줌) · F2 · Enter · 글자 = 열기(고르기 칸은 `<select>`, 그 밖은 글 칸 — 날짜도 글), Enter · Tab 확정, Esc 취소,
+    Delete 비우기. 칸 안 키는 도면 · 창 단축키로 새지 않는다. 고친 칸 `S.sheetCells` 는 적용 전 편집이라 「적용 안 한 변경」
+    셈 · 「적용」(적용값 `cells` — **보내기 전에 지우지 않는다**, 새 epoch · 「처음 상태로」 에서만 비움) · 되돌리기 op `cell`
+    에 든다. 「고른 호기」 탭의 그림 열쇠는 보이는 줄 id 모음(정렬)이라 같은 묶음 안 누르기로 표를 다시 만들지 않고, 열린 칸이
+    있으면 다시 그리기를 닫을 때까지 미룬다. 칸을 확정하거나(Delete 포함) 칸 되돌리기마다 트리거 `sheetCheck`({epoch, seq —
+    오르기만 함, cells — 고친 칸 전부})로 「확인만」 묻고(`sheetEditSend` — 고친 칸이 없으면 묻지 않고 판정을 걷는다), 판정은
+    data `sheetVerdict`({epoch, seq, blocked, follow})를 **마지막으로 보낸 seq** 일 때만 받는다. 막힌 칸으로 거부한 적용은 data
+    `sheetRefused`({epoch, nonce, blocked, follow})를 nonce 마다 한 번 받는다. 둘 다 막힌 칸(판정한 글이 지금 친 글과 같을
+    때만)을 빨갛게 짚고 「적용」 을 잠근다(까닭 「「호기 정보」 막힌 칸 n개」). 색은 팔레트 `cell-*`(설비 마스터 표 토큰
+    `GRID_*`)다.
   - 보기(층 · FAB) 도구 줄의 선택 줄(`.sle-pick`)은 고른 것이 없으면 비어 있다 — 누르기 · 키보드 · 확대 안내는 그 빈 칸의
     풍선(`pickTip` → `title`)이고 자리에 글로 세우지 않는다(설계 규칙 UI-TXT-01, Guide 「층 열기」 · 「호기 정보」).
   - 편집 상태는 브라우저가 쥐고 `적용` 때 한 번 보내며 검증은 서비스(`parse_editor_apply`)다. epoch(내용 지문)가
@@ -2155,6 +2187,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   레이아웃표시로), 칸 꼴(날짜 「YYYY-MM-DD」 글 · 투자Capa 는 수 — 못 읽는 글은 글 · 그 밖은 글, 200자 넘으면 줄임, 빈 값 None),
   행 `{id(설비명 앞뒤 공백 걷음), group(Main 설비), cells}`, 3000줄 상한(`cut`). 거르기·강조는 편집기 JS 이고 Streamlit·DB·색을
   모른다. `tests/test_space_unit_sheet.py`.
+  - 배치 편집 창에서 고친 칸의 꼴 읽기 `parse_sheet_cells`(``[{id, col, text}]`` → `SheetCell` — 적용값 읽기
+    `space_layout_edit.parse_editor_apply` 가 부르므로 판정 파일이 아니라 여기다)도 둔다.
+- `src/capa_simulation/services/space_sheet_edit.py` — Space 배치 편집 「호기 정보」 창 칸 고치기(2026-11-12 시안 보드 답
+  5-4 ~ 5-6)의 streamlit 없는 몫. 칸 꼴 · 고를 값은 설비 마스터 표 칸 정의(`columns_payload`), 줄마다 잠금 갈래는
+  `equipment_grid.row_lock_kinds`(표 모양 · 출납 `_locked` 와 **한 벌** — 설비명으로 옮긴 것 `unit_lock_kinds`), 창에서만
+  잠그는 칸은 `SHEET_FIXED_LOCKS`(설비명 · 동 · 층 · 단계 · 도면)다(data `sheet_edit_data`). 판정 `check_sheet_cells` 는
+  다듬기(`coerce_master_cell`) → 묶음 같이 쓰기 계획(`equipment_units.plan_group_writes` — 계획한 줄 하나라도 잠기면 통째로
+  막음 · 한 번에 다른 값이면 막음) → 받은 칸을 모두 얹은 마지막 상태와 고치기 앞의 규칙 표(`equipment_master_issues`, 표와
+  같은 인자 — 캔버스 · 오늘) 차이로 **새로** 생긴 막는 결과만 그 칸에 짚는다(입력 차례를 타지 않고 다른 호기의 기존
+  오류로 막히지 않는다). 편집본은 고치지 않고 얹은 새 프레임을 돌려준다. `tests/test_space_sheet_edit.py`.
 - `src/capa_simulation/services/space_color_basis.py` — Space 「색 기준」 그룹(공정구분·투자Capa·필요 단축 — 셋째 값은 그룹이
   없다)을 정한다. 색 값은 모른다.
 - `src/capa_simulation/services/space_shortening_layer.py` — Space 「필요 단축」 보기의 순수 규칙 — 계획의 단축 호기를 구간

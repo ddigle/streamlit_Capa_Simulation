@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from alert_marks import active_state, infos, successes
+from alert_marks import active_state, flashed, infos, successes
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Block
 from test_equipment_availability import _baseline, _downtime, _equipment
@@ -386,7 +386,7 @@ def test_a_stale_fab_apply_says_the_drawing_was_reloaded(
     assert not app.exception
     assert any(
         "FAB 도면이 바뀌어" in item.value and "다시 고친 뒤 적용" in item.value
-        for item in app.warning
+        for item in flashed(app, "warning")
     )
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
@@ -431,7 +431,7 @@ def test_a_block_without_a_floor_is_refused(
     app.run()
 
     assert not app.exception
-    assert any("연결 층" in item.value for item in app.error)
+    assert any("연결 층" in item.value for item in flashed(app, "error"))
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
 
@@ -489,8 +489,9 @@ def test_emptying_the_fab_on_a_small_canvas_is_refused_at_apply(
     app.run()
 
     assert not app.exception
-    assert any("적용하지 못했습니다" in item.value for item in app.error)
-    assert any("기본 배치" in item.value for item in app.error)
+    assert not app.error
+    assert any("적용하지 못했습니다" in item.value for item in flashed(app, "error"))
+    assert any("기본 배치" in item.value for item in flashed(app, "error"))
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
 
