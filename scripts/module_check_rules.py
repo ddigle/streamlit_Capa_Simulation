@@ -1454,6 +1454,7 @@ def _check_hand_made_context(tree: ast.Module, names: _Names, context: _FileCont
             isinstance(func, ast.Attribute)
             and func.attr == "__setattr__"
             and len(node.args) >= 2
+            and _holds_context(node.args[0], names, holders)
             and names.constant(node.args[1]) == "id"
         ):
             shown, given = 'object.__setattr__(ctx, "id", …)', None

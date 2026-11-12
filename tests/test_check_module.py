@@ -667,6 +667,9 @@ def test_m06_catches_a_hand_made_context_for_another_module(tmp_path: Path, body
         "import dataclasses\n\n\n@dataclasses.dataclass\nclass Row:\n    id: str\n\n\n"
         'ROW = dataclasses.replace(Row("a"), id="b")\n',
         "FOUND = type(1)(2)\n",
+        "import dataclasses\n\n\n@dataclasses.dataclass(frozen=True)\nclass Row:\n    id: str\n\n"
+        "    def renamed(self, name: str) -> None:\n"
+        '        object.__setattr__(self, "id", name)\n',
     ],
 )
 def test_m06_leaves_the_own_context_alone(tmp_path: Path, body: str) -> None:
