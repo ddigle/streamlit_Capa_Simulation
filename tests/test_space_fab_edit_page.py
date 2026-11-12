@@ -533,7 +533,8 @@ def test_the_fab_canvas_changes_in_the_editor_and_guards_the_blocks(
     app.run()
 
     assert not app.exception
-    assert any("적용하지 못했습니다" in item.value for item in app.error)
+    assert not app.error
+    assert any("적용하지 못했습니다" in item.value for item in flashed(app, "error"))
     assert DuckDBEquipmentRepository(database).load_fab_layout_profile() is None
 
     data = _fab_calls(editor_calls, editing=True)[-1]

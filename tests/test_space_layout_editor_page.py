@@ -366,6 +366,11 @@ def test_a_module_group_apply_is_tiled_and_carries_its_hidden_module(
     assert after["ghosts"] == [
         {"id": "G1-B", "group": "GRP-1", "x": 62.0, "y": 37.0, "w": 10.0, "h": 7.0}
     ]
+    # 놓기 적용은 묶음 같이 쓰기를 타지 않는다 — 놓은 모듈만 Y 이고 숨은 모듈은 N 그대로다(창 칸
+    # 고치기는 같이 쓰기를 타 숨은 모듈까지 바뀐다 —
+    # `test_a_window_cell_on_a_module_follows_its_siblings_on_apply`).
+    shown = app.session_state[BUFFER_KEY][1].set_index("설비명")["레이아웃표시"]
+    assert shown.loc[["G1-A", "G1-B", "G1-C", "G1-D"]].tolist() == ["Y", "N", "Y", "Y"]
     clear_equipment_repository()
 
 
@@ -637,9 +642,11 @@ def test_two_floors_outside_their_canvas_are_widened_one_floor_at_a_time(
         "marks": None,
     }
     app.run()
+    # 적용 거부는 알림창 · Alarm 이다(설계 규칙 UI-NTF-03 예외).
+    assert not app.error
     assert any(
         "적용하지 못했습니다" in item.value and "C1 1F 캔버스 105 × 60" in item.value
-        for item in app.error
+        for item in flashed(app, "error")
     )
     # 넓히면 받는다 — 2F 의 밖 호기가 이 층 적용을 막지 않는다.
     data = editor_calls[-1]
