@@ -38,6 +38,7 @@ DATABASE_SCRIPTS = (
     "benchmark_upeh_assumption.py",
     "check_deploy_screens.py",
     "inspect_wf_division.py",
+    "inspect_db_counts.py",
     "sync_object_storage.py",
 )
 OPENS_A_DATABASE = (*DATABASE_SCRIPTS, "duckdb.connect", "import duckdb")
@@ -268,13 +269,25 @@ def test_the_copy_check_line_the_agent_types_opens_no_database() -> None:
 
 
 def _rule_matches(rule: str, command: str) -> bool:
-    """권한 규칙 맞춤 — 끝의 `:*` 는 앞부분 맞춤, 그 밖의 `*` 는 아무 글자다(텍스트 맞춤)."""
+    """권한 규칙 맞춤 — 끝의 `:*` 는 앞부분 맞춤, 그 밖의 `*` 는 아무 글자다(텍스트 맞춤).
+    Claude Code 처럼 `\\*` 는 글자 별표, `\\\\` 는 역슬래시 하나로 읽는다 — Windows 경로의 `data\\`
+    뒤 아무 글자는 `*data\\\\*` 로 적어야 한다(`*data\\*` 는 글자 `data*` 를 찾는다)."""
     if "(" not in rule:
         return False
     body = rule[rule.index("(") + 1 : -1]
     if body.endswith(":*"):
         return command.startswith(body[:-2])
-    return re.fullmatch(".*".join(re.escape(part) for part in body.split("*")), command) is not None
+    regex = ""
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == "\\" and index + 1 < len(body) and body[index + 1] in "*\\":
+            regex += re.escape(body[index + 1])
+            index += 2
+            continue
+        regex += ".*" if char == "*" else re.escape(char)
+        index += 1
+    return re.fullmatch(regex, command) is not None
 
 
 def _permissions() -> dict[str, list[str]]:
@@ -313,6 +326,8 @@ def test_the_settings_template_denies_every_runbook_line_that_opens_a_database()
         f"{prefix}inspect_wf_division.py --output C:/Users/someone/wf.md",
         f'{prefix}inspect_wf_division.py --database "C:/Users/someone/e2e_copy/1/data/x.duckdb"',
         f"{prefix}check_deploy_screens.py --items alert_popup --playwright-dir C:/pw",
+        f"{prefix}inspect_db_counts.py --output C:/Users/someone/db_counts.md",
+        f"{prefix}inspect_db_counts.py",
     ]
     names = {name for name in DATABASE_SCRIPTS if any(name in line for line in lines)}
 
@@ -386,3 +401,135 @@ def test_every_first_argument_of_the_two_partly_open_scripts_has_a_deny_pair() -
         for shell in ("Bash", "PowerShell"):
             assert f"{shell}({prefix}{name})" in deny, (shell, name)
             assert not [rule for rule in deny if rule.startswith(f"{shell}({prefix}{name} {safe}")]
+
+
+# 실데이터 · 사본 · 백업 폴더 읽기 막음(2026-11-12 사용자 답 ⑤-5 (가)) — 막는 폴더 이름과 셸의
+# 읽는 꼴.
+DATA_FOLDERS = ("data", "e2e_copy", "capa-copy", "deploy_backup")
+READ_VERBS = {"Bash": ("cat", "head", "tail"), "PowerShell": ("Get-Content", "gc", "cat", "type")}
+
+
+def _read_rule_matches(rule: str, path: str) -> bool:
+    """`Read(…)` 경로 규칙 맞춤 — `//` 는 파일 시스템 뿌리부터(Windows 는 `/c/…` 꼴로 바꾼 뒤),
+    슬래시 없는 상대 꼴은 세션 폴더(저장소 뿌리 `/repo`)부터다. `**` 는 몇 마디든, `*` 는 한 마디
+    안이다."""
+    body = rule[len("Read(") : -1]
+    pattern = body[1:] if body.startswith("//") else f"/repo/{body}"
+    regex = ""
+    index = 0
+    while index < len(pattern):
+        if pattern.startswith("/**/", index):
+            regex += "/(?:.*/)?"
+            index += 4
+        elif pattern.startswith("**", index):
+            regex += ".*"
+            index += 2
+        elif pattern[index] == "*":
+            regex += "[^/]*"
+            index += 1
+        else:
+            regex += re.escape(pattern[index])
+            index += 1
+    return re.fullmatch(regex, path) is not None
+
+
+def _windows_path(path: str) -> str:
+    """`C:\\Users\\x\\…` → `/c/Users/x/…`(권한 판단이 Windows 경로를 견주는 꼴)."""
+    drive, rest = path.split(":", 1)
+    return f"/{drive.lower()}{rest.replace(chr(92), '/')}"
+
+
+def _shell_rule_matches(rule: str, command: str) -> bool:
+    """셸 규칙은 줄 전체와 `|` · `;` 로 나눈 조각마다 본다(권한 판단이 이은 명령을 조각으로
+    본다)."""
+    pieces = [command, *(piece.strip() for piece in re.split(r"[|;]", command))]
+    return any(_rule_matches(rule, piece) for piece in pieces if piece)
+
+
+def test_the_settings_template_denies_reading_the_data_copy_and_backup_folders() -> None:
+    """`Read` 도구와 셸의 읽는 꼴 모두 — 저장소 `data/`, 사본(`e2e_copy` · `capa-copy`),
+    백업(`deploy_backup`)."""
+    deny = _permissions()["deny"]
+    reads = [rule for rule in deny if rule.startswith("Read(")]
+    blocked_files = (
+        "/repo/data/capa_simulation.duckdb",
+        "/repo/data/input/Core_Data.csv",
+        "/repo/data/modules/demo_x/notes.json",
+        _windows_path("C:\\Users\\someone\\e2e_copy\\202611121200\\data\\capa_simulation.duckdb"),
+        _windows_path("C:\\Users\\someone\\e2e_copy\\pr-202611121200\\data\\x.duckdb"),
+        _windows_path("C:\\capa-copy\\generation.json"),
+        _windows_path("C:\\Users\\someone\\deploy_backup\\202611121200\\Core_Data.csv"),
+    )
+    for path in blocked_files:
+        assert any(_read_rule_matches(rule, path) for rule in reads), path
+    commands = {
+        "Bash": (
+            "cat data/input/Core_Data.csv",
+            "head -5 /c/Users/someone/e2e_copy/1/data/input/a.csv",
+            "tail -n 3 /c/Users/someone/deploy_backup/202611121200/a.csv",
+            "cat /c/capa-copy/generation.json",
+        ),
+        "PowerShell": (
+            "Get-Content data\\input\\Core_Data.csv",
+            'Get-Content "$e2e\\data\\capa_simulation.duckdb" -TotalCount 1',
+            "gc C:\\Users\\someone\\deploy_backup\\202611121200\\a.csv",
+            "type C:\\capa-copy\\generation.json",
+            "cat ./data/temp/container_start.json",
+            "Select-String -Path C:\\Users\\someone\\e2e_copy\\1\\data\\input\\a.csv -Pattern x",
+        ),
+    }
+    for shell, lines in commands.items():
+        rules = [rule for rule in deny if rule.startswith(shell + "(")]
+        for line in lines:
+            assert any(_shell_rule_matches(rule, line) for rule in rules), (shell, line)
+    # 역슬래시 하나 뒤 별표는 글자 별표다 — 그 꼴로 적으면 Windows 경로를 놓친다.
+    assert not _rule_matches("PowerShell(Get-Content *data\\*)", "Get-Content data\\input\\a.csv")
+    assert not [rule for rule in deny if re.search(r"(?<!\\)\\\*", rule.partition("(")[2])]
+    for shell, verbs in READ_VERBS.items():
+        for verb in verbs:
+            for folder in DATA_FOLDERS:
+                assert any(
+                    rule.startswith(f"{shell}({verb} ") and folder in rule for rule in deny
+                ), (shell, verb, folder)
+
+
+def _new_read_denies() -> list[str]:
+    return [
+        rule
+        for rule in _permissions()["deny"]
+        if rule.startswith(("Bash(", "PowerShell("))
+        and any(folder in rule for folder in DATA_FOLDERS)
+        and not rule.split("(", 1)[1].startswith("uv run")
+    ]
+
+
+def test_the_result_files_the_user_hands_over_stay_readable() -> None:
+    """사용자가 `--output` 으로 준 결과 파일(런북은 `$HOME\\<이름>` 에 둔다)은 막지 않는다 —
+    에이전트가 읽는 유일한 것이다."""
+    text = RUNBOOK.read_text(encoding="utf-8")
+    outputs = set(re.findall(r"--output \"?(\$HOME[\\/][\w.-]+)", text))
+    outputs |= {"$HOME\\db_counts.md", "$HOME\\real_data_check.md", "$HOME\\wf_division.md"}
+    reads = [rule for rule in _permissions()["deny"] if rule.startswith("Read(")]
+    shells = _new_read_denies()
+
+    assert len(outputs) >= 5, outputs
+    for output in sorted(outputs):
+        windows = output.replace("$HOME", "C:\\Users\\someone").replace("/", "\\")
+        assert not [rule for rule in reads if _read_rule_matches(rule, _windows_path(windows))]
+        for line in (f"Get-Content {output}", f"Get-Content {windows}", f"type {windows}"):
+            assert not [rule for rule in shells if _shell_rule_matches(rule, line)], line
+
+
+def test_no_runbook_line_is_caught_by_the_folder_read_denies() -> None:
+    """에이전트가 치는 런북 줄(펜스 안)이 새 읽기 막음에 걸리지 않는다 — 1-6 의 `git ls-files |
+    Select-String -Pattern '…^data/input/…'` 처럼 글자 `data/` 가 든 줄도."""
+    shells = _new_read_denies()
+    caught = [
+        line.strip()
+        for language, block in _pieces(RUNBOOK.read_text(encoding="utf-8"))
+        if language in ("powershell", "bash", "")
+        for line in block.splitlines()
+        if line.strip() and any(_shell_rule_matches(rule, line.strip()) for rule in shells)
+    ]
+
+    assert caught == []

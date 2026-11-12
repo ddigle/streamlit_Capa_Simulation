@@ -244,7 +244,11 @@ Windows(PowerShell):
   모두 읽는다 — 합침이 남긴 겹친 선언(알림 칸 맨 위 `const DIALOG` 두 줄, 2026-11-07)을 구획 시험은 놓쳤다.
   ③ 권한 비트(0600·0700)는
   담는 파일 체계에서만 본다 — Windows 의 chmod 는 읽기 전용 표시 하나만 바꾼다(공용 픽스처 `tests/conftest.py` 의
-  `keeps_permission_bits` — 권한 비트를 단언하는 시험은 모두 받는다, Linux CI 에서는 건너뛰지 않고 실패). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
+  `keeps_permission_bits` — 권한 비트를 단언하는 시험은 모두 받는다, Linux CI 에서는 건너뛰지 않고 실패). ③-1 시험은 운영 DB 자리(저장소
+  `data/` · 운영 DB 와 같은 파일 · git 작업 트리 안 — `settings.is_operational_database_place`, 시험이 갈아끼우기 전 저장소 경로로)를 열지 않는다 —
+  `tests/conftest.py` 가 같은 프로세스의 `duckdb.connect` 를 지켜 열지 않고 멈추고 그 시험을 실패로 바꾼다(여는 쪽이 예외를 삼켜도 끝에서
+  실패). 사내 관문이 운영 저장소에서 돈다(2026-11-12 사용자 답 ⑤-6 (가)). 내보내기 임시 자리처럼 `settings.DATA_DIR` 아래를 쓰는 길은 그 칸을
+  `tmp_path` 로 돌린다. 하위 프로세스는 문지기를 지나지 않아 세션 끝의 「저장소 DB 를 새로 만들었으면 실패」 가 받친다. ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
   화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. ⑤ 대소문자만 다른 두 뿌리
   (`modules/`·`Modules/`)를 실제 폴더로 만들면 NTFS 는 먼저 만든 쪽 하나로 접고 git 도 그 철자로 적는다 — 철자를 글자로
   견주지 말고 git 이 적은 철자를 읽는다(`tests/test_apply_deploy_package.py` 의 `_tracked_spelling`). 파일을 만들지 않는 순수
@@ -1763,8 +1767,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`_TOKEN_FAILURE_TYPE_WORDS` — `TokenNotFound…` · 만료를 단 이름, 문법 낱말보다 먼저)이나 분명한 토큰 낱말(`_TOKEN_FAILURE_WORDS`
     — `invalid token` · `token expired` 류와 패키지의 「no bigdataquery token」, 종류 이름 `InvalidToken…` 도 이쪽)이고, 이쪽은 문법
     낱말이 함께 있으면 SQL 로 둔다(구문 오류의 「unexpected token」). 종류 이름의 `token` 하나 · 토큰 자리(`.credential`)만으로는
-    갈래가 서지 않는다. 사슬에 `ConnectionError` 가 있어도 「연결」(네트워크 · 다시)이 아니라 「다시 해도 같으니 관리자에게」 이고
-    8-5 도 다시 묻지 않는다. 시작 점검 토큰 줄 안내(`is_login_token_failure`)는 갈래 「토큰」 이면 늘 붙고 종류 이름의 `token` ·
+    갈래가 서지 않는다. 사슬에 `ConnectionError` 가 있어도 「연결」(네트워크 · 다시)이 아니라 「다시 해도 같으니 …」 이고
+    8-5 도 다시 묻지 않는다. 그 끝 절은 자리마다다 — 서버 시작 기록(`start_check_hint` 가 단락을 내는 C-DEP)이 있으면 「관리자에게」,
+    없으면(WebIDE · 사내 PC) 「BigDataQuery 로그인을 다시 하세요」(`token_advice` — 2026-11-12 남은 물음 보드 ⑤-4 (나)). 시작 점검 토큰 줄 안내(`is_login_token_failure`)는 갈래 「토큰」 이면 늘 붙고 종류 이름의 `token` ·
     `.credential` 문구에도 붙는다(덧붙일 뿐이라 넓다 — 2026-11-12 리뷰 202611111500 보드 N7). 사외로 가는 스크립트(`inspect_real_data_checks.py` 8-5)는 갈래와
     종류 이름(`type_names`), 그리고 갈래를 정한 목록 낱말(`query_failure_clue` · `BigDataQueryCallError.clue` — 문구 원문이
     아니다)만 찍는다. 까닭을 말하지 않는 낱말(`sql` 등)은 갈래가 그 밖이고 단서로만 붙으며, 그 밖과 넓은 SQL 낱말(`not found` ·
@@ -7910,8 +7915,11 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   무시)에 걸리는 줄이 8-4 사용기준 한 줄뿐인지 보는 시험(그물은 런북에서 읽는다)이 그 블록도 덮게 한다. 앱은 rerun 동안만 DB 를 쥐어 쉬는 앱은 잠금에 안 잡히므로,
   운영 DB 를 열 때는 화면 확인 스크립트의 `running_app_count` 로 앱 프로세스를 먼저 보고 보이면 DB 를 열지
   않고 종료 1 로 멈춘다. 살피지 못하면 잠금만 보고 그 사실을 한 줄 찍는다. 사본만 열거나 BigDataQuery
-  블록뿐이면 보지 않는다. 같은 8장 뒤에 도는 `inspect_wf_division.py` 도 같은 판정으로 멈추고, `--database <사본>` 을 주면(운영
-  DB 자리가 아니면) 앱 프로세스를 보지 않는다. 운영 DB 자리 판정은 `settings.is_operational_database_place` 한 벌이다 — 같은 파일
+  블록뿐이면 보지 않는다. 같은 8장 뒤에 도는 `inspect_wf_division.py` 와 7-8 의 개수 세기 `inspect_db_counts.py` 도 같은 판정으로
+  멈추고, `--database <사본>` 을 주면(운영 DB 자리가 아니면) 앱 프로세스를 보지 않는다. `inspect_db_counts.py` 의 앞 세 줄(개수 ·
+  Space 모듈 묶음 · 파일 크기)은 옛 7-8 `python -c` 세 줄과 글자가 같은 꼴이다 — 7장 기대 줄 · 지난 리뷰 값과 견주므로 꼴을 바꾸지 않는다.
+  넷째 줄은 생산 계획 그리드 두 표의 크기이고 그 표 이름 · 값 꼴 · 0 을 빈칸으로 싣는 양식은 `components/plan_grid.py` 와 같은 값을 들고
+  시험이 맞댄다(2026-11-12 사용자 답 ②-1 · ③-7). 운영 DB 자리 판정은 `settings.is_operational_database_place` 한 벌이다 — 같은 파일
   (하드링크 · Windows 긴 경로 접두 · UNC 공유처럼 글자가 달라도 장치 · 파일 번호로), 운영 `data/` 그 자체나 그 아래, git 저장소
   안(사본은 저장소 밖 — 사본 트리의 스크립트가 다른 저장소의 `data/` 를 못 가리는 것도 이것이 막는다). 경로 글자만 견주지 않는다.
   설비 DB 는 **공식 설비 시나리오**(공통 최신 + 최신 공식 발행)를 앱과 같은 읽기 길(`equipment_repository.read_official_pair`·
@@ -7995,7 +8003,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   적용 뒤 저장소에서 같은 사본 DB 로 부른다. 운영 DB 를 복사하는 줄(1-3 백업 · 6-3 2))은 처음부터 사용자에게 준다(런북 6장 표 —
   `202610271800` 리뷰 사외 요청 5, auto 모드의 권한 판단이 막았다). DB 를 여는 줄(7-8 · 8-0 · `inspect_wf_division.py` · 6-2 화면 확인 ·
   6-3 a · b · c · 6-4 버킷 명령)은 사용자가 Claude 밖의 별도 PowerShell 창에서 친다 — `!` 도 아니다(런북 0장). `inspect_wf_division.py`
-  도 `--output` 으로 결과 파일을 남긴다. 사내 권한 템플릿은 그 스크립트들의 런북 꼴 줄을 deny 로 막는다(사용자가 고정한 auto 모드는 allow
+  · `inspect_db_counts.py`(7-8)도 `--output` 으로 결과 파일을 남긴다. 사내 권한 템플릿은 그 스크립트들의 런북 꼴 줄을 deny 로 막는다(사용자가 고정한 auto 모드는 allow
   가 없어도 묻지 않고 통과시킬 수 있다 — `tests/test_runbook_no_internal_db_reads.py`).
 - **사내 에이전트는 사내 DB(BigDataQuery · 운영 DB · 사본)를 여는 명령을 스스로 치지 않는다**(2026-11-11 사용자 결정 — 「사내 DB 를
   claude 가 읽게끔 하는 것은 보안위반」, 런북 0장. 2026-10-22 「사본 DB 를 보는 것까지는 괜찮다」 를 대신한다). 데이터가 꼭 필요하면

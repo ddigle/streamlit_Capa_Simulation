@@ -1,4 +1,4 @@
-# Purpose: 시험 공용 자동 복원·권한 비트 판정·명령줄 재기·붙잡기 보호와 화면 컴포넌트 대역.
+# Purpose: 시험 공용 자동 복원·권한 비트 판정·명령줄 재기·붙잡기 보호·운영 DB 문지기와 화면 대역.
 
 """AppTest 스크립트가 갈아끼운 모듈 속성을 테스트마다 되돌린다.
 
@@ -12,9 +12,11 @@ import os
 import stat
 import subprocess
 from collections.abc import Iterator
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import duckdb
 import pytest
 from capture_guard import keep_capture_tolerant
 from js_runner import refuse_overlong_command_line
@@ -84,7 +86,55 @@ AUTO_UPDATE_ENV_VAR = "CAPA_AUTO_OFFICIAL_UPDATE"
 
 # 저장소의 실제 DB 자리. 테스트가 경로를 갈아끼우기 **전** 값을 잡아 둔다.
 _REPOSITORY_DATABASES = (settings.DUCKDB_PATH, settings.EQUIPMENT_DUCKDB_PATH)
+_REPOSITORY_DATA_DIR = settings.DATA_DIR
 _EXISTED_AT_START: dict[str, bool] = {}
+
+# 시험이 운영 DB 자리를 연 기록 — 연 시험의 끝(`_no_operational_database_opened`)과 세션 끝에서
+# 실패로 바꾼다. 여는 쪽 코드가 `duckdb.Error` · 화면 예외 튜플로 거절을 삼켜도 실패가 남게 한다.
+_OPERATIONAL_OPENS: list[str] = []
+_duckdb_connect = duckdb.connect
+
+
+def _operational_place(database: object) -> bool:
+    """`duckdb.connect` 에 온 자리가 이 저장소의 운영 DB 자리인가 — 판정은 앱 · 점검 스크립트와 같은
+    `settings.is_operational_database_place` 이고, 시험이 갈아끼우기 전 저장소 경로로 본다(시험이
+    `settings.DATA_DIR` 을 tmp 로 바꿔도 그 tmp 는 운영 자리가 아니다). 메모리 DB 는 아니다."""
+    if not isinstance(database, (str, os.PathLike)):
+        return False
+    text = os.fspath(database)
+    if not isinstance(text, str) or not text or text.startswith((":memory:", "md:", "motherduck:")):
+        return False
+    return settings.is_operational_database_place(
+        Path(text), _REPOSITORY_DATABASES, data_dir=_REPOSITORY_DATA_DIR
+    )
+
+
+def _refuse_operational_database(*args: Any, **kwargs: Any) -> duckdb.DuckDBPyConnection:
+    """시험은 운영 DB 자리(저장소 `data/` · 저장소 DB 와 같은 파일 · git 작업 트리 안)를 열지
+    않는다 — 있는 운영 DB 를 여는 것도, 없는 자리에 새로 만드는 것도. 사내 관문(런북 4-3)이 운영
+    저장소에서 돌아 열면 사내 DB 를 읽고 마이그레이션을 건다(2026-11-12 사용자 답 ⑤-6 (가) — 사내 DB
+    를 Claude 가 읽지 않는다는 11-11 결정을 시험에서도). 연 자리는 적고 열지 않은 채 멈춘다."""
+    database = args[0] if args else kwargs.get("database", ":memory:")
+    if _operational_place(database):
+        _OPERATIONAL_OPENS.append(os.fspath(database))
+        raise PermissionError("시험이 운영 DB 자리를 열려 했습니다 — tmp_path 의 DB 로 바꿉니다")
+    return _duckdb_connect(*args, **kwargs)
+
+
+# 같은 프로세스의 모든 `duckdb.connect`(AppTest 스크립트 스레드 포함)가 이 문지기를 지난다. 시험이
+# 띄운 하위 프로세스(스크립트 실행)는 지나지 않는다 — 그 길은 세션 끝의 「새로 만들었으면 실패」 가
+# 받친다.
+duckdb.connect = _refuse_operational_database
+
+
+@pytest.fixture(autouse=True)
+def _no_operational_database_opened() -> Iterator[None]:
+    """이 시험(또는 앞선 모듈 · 세션 준비)이 운영 DB 자리를 열려 했으면 실패로 끝낸다."""
+    yield
+    if _OPERATIONAL_OPENS:
+        places = ", ".join(sorted(set(_OPERATIONAL_OPENS)))
+        _OPERATIONAL_OPENS.clear()
+        pytest.fail(f"시험이 운영 DB 자리를 열려 했습니다(열지 않음): {places}", pytrace=False)
 
 
 @pytest.fixture(scope="session")
@@ -114,7 +164,10 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """테스트가 저장소의 `data/*.duckdb` 를 **새로 만들었으면** 실패로 끝낸다.
+    """테스트가 운영 DB 자리를 열려 했거나(시험 밖 — 세션 준비 · 정리에서) 저장소의
+    `data/*.duckdb` 를 **새로 만들었으면** 실패로 끝낸다. 같은 프로세스의 여는 길은 문지기
+    (`_refuse_operational_database`)가 열기 전에 막고, 여기서는 그 기록과 하위 프로세스가 만든
+    파일을 본다.
 
     격리를 빠뜨린 AppTest 스크립트는 오류 없이 저장소 DB 를 열고 마이그레이션까지 건다. 앱이 떠
     있는 main 에서는 잠금 오류로, 꺼진 main 에서는 실제 DB 변경으로 나타나 어느 쪽도 원인을
@@ -125,6 +178,14 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     그 앱은 재시작 전까지 빈 DB 를 본다. 앱을 띄우는 확인은 `git archive` 사본(자기 `data/`)에서
     돌린다.
     """
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if _OPERATIONAL_OPENS:
+        places = ", ".join(sorted(set(_OPERATIONAL_OPENS)))
+        if reporter is not None:
+            reporter.write_line(
+                f"시험이 운영 DB 자리를 열려 했습니다(열지 않음): {places}", red=True
+            )
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
     created = [
         path
         for path in _REPOSITORY_DATABASES
@@ -135,7 +196,6 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     for path in created:
         for leftover in (path, path.with_name(path.name + ".wal")):
             leftover.unlink(missing_ok=True)
-    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
     if reporter is not None:
         names = ", ".join(str(path) for path in created)
         reporter.write_line(f"테스트가 저장소 DB 를 만들었습니다(지웠음): {names}", red=True)

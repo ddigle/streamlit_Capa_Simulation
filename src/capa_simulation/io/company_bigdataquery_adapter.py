@@ -572,7 +572,7 @@ def is_login_token_failure(error: BaseException) -> bool:
 
 
 # 조회 실패의 갈래. 패키지 예외 종류를 모르므로 예외 사슬의 종류 이름과 문구의 낱말로 가른 추정이다.
-# 「토큰」 은 다시 해도 같다 — 토큰을 새로 넣어야 풀린다(관리자 일).
+# 「토큰」 은 다시 해도 같다 — 토큰을 새로 받아야 풀린다(C-DEP 는 관리자 일, WebIDE 는 다시 로그인).
 QUERY_FAILURE_TOKEN: Final = "토큰"
 QUERY_FAILURE_TIMEOUT: Final = "시간 초과"
 QUERY_FAILURE_CONNECTION: Final = "연결"
@@ -668,9 +668,19 @@ _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 # `not found` · `does not exist` 도 여기 든다. 잰 가장 긴 성공(366일 목록 157초)의 두 배쯤이다.
 LONG_FAILURE_SECONDS: Final = 300.0
 LONG_FAILURE_CLUE: Final = "오래 걸림"
+# 토큰 실패의 끝 절은 자리마다 다르다 — 서버 시작 기록이 있는 C-DEP 는 토큰을 관리자가 넣고, 그
+# 기록이 없는 WebIDE · 사내 PC 는 사용자가 BigDataQuery 로그인을 다시 해 토큰을 새로 받는다
+# (`token_advice`).
+TOKEN_ADVICE_SERVER: Final = (
+    "로그인 토큰이 없거나 만료 · 무효입니다 — 다시 해도 같으니 관리자에게 "
+    "알려 주세요(토큰을 새로 넣어야 풀립니다)."
+)
+TOKEN_ADVICE_LOCAL: Final = (
+    "로그인 토큰이 없거나 만료 · 무효입니다 — 다시 해도 같으니 BigDataQuery 로그인을 다시 "
+    "하세요(토큰을 새로 받아야 풀립니다)."
+)
 _FAILURE_ADVICE: Final[Mapping[str, str]] = {
-    QUERY_FAILURE_TOKEN: "로그인 토큰이 없거나 만료 · 무효입니다 — 다시 해도 같으니 관리자에게 "
-    "알려 주세요(토큰을 새로 넣어야 풀립니다).",
+    QUERY_FAILURE_TOKEN: TOKEN_ADVICE_SERVER,
     QUERY_FAILURE_TIMEOUT: "DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
     "기간을 줄여 다시 하세요.",
     QUERY_FAILURE_CONNECTION: "DB 에 닿지 못했습니다 — 네트워크 연결을 확인하고 잠시 뒤 같은 "
@@ -682,6 +692,13 @@ _FAILURE_ADVICE: Final[Mapping[str, str]] = {
 }
 # 화면에 옮기는 원문 길이. 패키지 문구에 조회문 전체가 실려 오기도 한다.
 _ORIGINAL_TEXT_LIMIT: Final = 300
+
+
+def token_advice() -> str:
+    """토큰 실패 안내의 끝 절 — 서버 시작 기록(`start_check_hint` 가 그 단계 단락을 내는 자리 —
+    결과 파일이 있거나 CD 전용 환경변수가 들어온 C-DEP)이 있으면 관리자에게, 없으면(WebIDE ·
+    사내 PC) BigDataQuery 로그인을 다시."""
+    return TOKEN_ADVICE_LOCAL if start_check_hint(STEP_TOKEN) is None else TOKEN_ADVICE_SERVER
 
 
 def _original_text(error: BaseException) -> str:
@@ -793,8 +810,9 @@ class BigDataQueryCallError(RuntimeError):
             self.kind = QUERY_FAILURE_TIMEOUT
             self.clue = f"{LONG_FAILURE_CLUE} {self.clue}".strip()
         self.type_names = failure_type_names(error)
+        advice = token_advice() if self.kind == QUERY_FAILURE_TOKEN else _FAILURE_ADVICE[self.kind]
         super().__init__(
-            f"BigDataQuery 조회가 실패했습니다({self.kind}). {_FAILURE_ADVICE[self.kind]}\n\n"
+            f"BigDataQuery 조회가 실패했습니다({self.kind}). {advice}\n\n"
             f"원문 — {_original_text(error)}{hint}"
         )
 

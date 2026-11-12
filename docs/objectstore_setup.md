@@ -24,7 +24,7 @@ C-DEP 운영 서버는 영속 볼륨을 쓸 수 없고 CI/CD 때 디스크(`/pro
 | 엔드포인트 | 사내 값 — C-DEP 환경변수 표 · 사내 PC 사용자 환경변수(`CAPA_S3_ENDPOINT_URL`)에만 둔다(저장소에 적지 않음 — 공개 저장소) |
 | 프로필 | 사내 값 — 같은 자리(`CAPA_S3_PROFILE`, 저장소에 적지 않음). 사내 PC 는 `~/.aws` 에 이미 만든 이름 그대로, C-DEP 는 시작 스크립트가 그 이름으로 `~/.aws` 를 쓴다 |
 | 네임스페이스 | 사내 값 — 저장소에 적지 않음. **프로필에 매여 있고 명령 인자가 아니다** |
-| 버킷 | 운영 · 개발 둘 · 각 1000GiB. 이름은 사내 값 — 운영은 C-DEP 환경변수 표 `CAPA_S3_BUCKET` 에만, 사내 PC 는 명령마다 `--bucket`(저장소에 적지 않음 · 코드에 기본 버킷이 없다) |
+| 버킷 | 운영 · 개발 둘 · 각 1000GiB. 이름은 사내 값 — 운영은 C-DEP 환경변수 표 `CAPA_S3_BUCKET` 에만, 사내 PC 는 명령마다 `--bucket` — 그 창의 변수(`$b`)로만 넣고 PC 환경변수에 남기지 않는다(저장소에 적지 않음 · 코드에 기본 버킷이 없다 — 6장 1단계) |
 | 전송 | http 9020(폐쇄망). https 는 서버 TLS 문제로 쓰지 않는다 |
 | 닿음 | 운영 pod 에서 http 403(인증 없는 요청의 정상 답) 확인 · WebIDE 에서 개발 버킷 읽기 쓰기 · probe 셋 true(2026-11-06) |
 | 서버 | 쓰는 쪽 운영 앱 하나 · pod 는 겹치지 않음(새로 띄우면 기존은 죽음) · 끄면 바로 꺼짐(끌 때 올릴 기회가 없다) · 상태 검사 시작 제한 1분 · 메모리 한도 1GiB · 노드 디스크 여유 40GiB · overlay 하나 |
@@ -101,13 +101,18 @@ C-DEP 는 S3 명단을 못 읽어 관리자만 들어오고, 이관 뒤에는 �
 | 차례 | 누가 | 할 일 | 볼 것 |
 |---|---|---|---|
 | 1 | 사용자 | 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소(`CAPA_S3_ENDPOINT_URL`) · 프로필 이름(`CAPA_S3_PROFILE`)을 넣고 CI/CD(`CAPA_S3_SYNC_MODE` 는 아직 비움 — 표가 빈 값을 받지 않으면 소문자 `local`) | Admin 「서버 시작 점검」 — aws 판 `1.46.3` · ECS `HTTP 403 닿음` · 버킷 목록 정상. 이미지의 pip 한 줄이 공개 미러로 받히는지가 여기서 답이 난다 |
-| 2 | 사용자 | 사내 PC 앱을 끄고 `doctor` 먼저(6장 1단계) — 원격 세대가 `비어 있음` 이 아니면 `init` 을 치지 않고 멈춘다(그대로 치면 `init` 은 건너뛰고 3 의 C-DEP 는 그 옛 세대를 받는다). `doctor` 의 `버킷` 줄이 1 의 `CAPA_S3_BUCKET` 과 같은지 눈으로 본 뒤 `sync_object_storage.py --bucket <운영 버킷> init` → `status`(6장). `aws s3 cp` 를 쓰지 않는다 — 세대 포인터가 없어 받지 못한다 | `doctor` 원격 세대 `비어 있음` · `status` 의 세대 1 |
-| 3 | 사용자 | `CAPA_S3_SYNC_MODE` 를 `managed` 로 넣고(`local` 이면 `managed` 로 바꾼다) CI/CD | 앱이 뜨고 「DB 받기」 정상 · HOME 이 사내 PC 와 같다 |
-| 4 | 사용자 | 앱에서 저장 하나 | 「DB 동기화 · 올릴 것 없음」 · 마지막 올림 시각 |
-| 5 | 사용자 | CI/CD 다시 — 저장이 살아 있나. 로그인 중에 한 번 눌러 임시 화면 · 로그인 복귀도 본다 | 그 저장이 보인다 · 「받기 n초 · 앱 응답까지 n초」 |
-| 6 | 사용자 | 첫 명단 저장 뒤 `CAPA_ACCESS_USERS` 를 지운다(`docs/sso_setup.md` 5장) | 「S3 명단」 줄 |
+| 2 | 사용자 | 사내 PC 앱을 끄고 별도 PowerShell 창에서 운영 버킷 이름을 그 창의 변수(`$b`)로 넣고 `doctor`(6장 1단계) — 원격 세대가 `비어 있음` 이 아니면 3 을 하지 않고 멈춘다(받기 모드를 켜면 C-DEP 가 그 옛 세대를 받는다). `doctor` 의 `버킷` 줄이 1 의 `CAPA_S3_BUCKET` 과 같은지 눈으로 본다. 그 창은 4 까지 닫지 않는다 | `doctor` 원격 세대 `비어 있음` |
+| 3 | 사용자 | `CAPA_S3_SYNC_MODE` 를 `managed` 로 넣고(`local` 이면 `managed` 로 바꾼다) CI/CD — **2 가 「비어 있음」 일 때만** | 주소를 열면 임시 화면 「원격이 비어 있음」 에 머문다 — 정상이다(받을 정본이 아직 없다. 4 뒤 스스로 받는다) |
+| 4 | 사용자 | 2 의 같은 창에서 `init` → `status`(6장 3단계). 끝나면 그 창을 닫는다. `aws s3 cp` 를 쓰지 않는다 — 세대 포인터가 없어 받지 못한다 | `status` 의 세대 1 · 1 ~ 2분 뒤 C-DEP 가 스스로 받아 앱이 뜬다 — 「DB 받기」 정상 · HOME 이 사내 PC 와 같다 |
+| 5 | 사용자 | 앱에서 저장 하나 | 「DB 동기화 · 올릴 것 없음」 · 마지막 올림 시각 |
+| 6 | 사용자 | CI/CD 다시 — 저장이 살아 있나. 로그인 중에 한 번 눌러 임시 화면 · 로그인 복귀도 본다 | 그 저장이 보인다 · 「받기 n초 · 앱 응답까지 n초」 |
+| 7 | 사용자 | 첫 명단 저장 뒤 `CAPA_ACCESS_USERS` 를 지운다(`docs/sso_setup.md` 5장) | 「S3 명단」 줄 |
 
-2 · 3 은 바꿔도 된다 — 3 을 먼저 하면 임시 화면에서 `remote_empty` 로 기다리다 `init` 뒤 스스로 받는다. 2 를 먼저 하고 3 전에 CI/CD 가 돌면 빈 시드 앱이 뜨고 `SY-05` 가 알린다(그 사이 저장은 다음 CI/CD 에 사라진다).
+**받기 모드를 먼저 켜고 정본을 올린다**(2026-11-12 사용자 답 — 런북 6-4 · 그 배포 7장과 같은 차례). `doctor` 는 받기 모드 앞이다 — 원격이
+비어 있지 않은데 받기 모드를 켜면 C-DEP 가 그 옛 세대를 받는다. 3 과 4 사이 C-DEP 는 임시 화면에 머물러 쓸 수 없다(그동안 C-DEP 에서도 사내 PC
+에서도 저장하지 않는다). `init` 을 받기 모드보다 먼저 하면 그 사이에 CI/CD 가 돌 때 빈 시드 앱이 뜨고 `SY-05` 가 알리며, 그 사이 C-DEP 저장은
+다음 CI/CD 에 사라진다 — 그래서 이 차례로 한다. 4 뒤에도 임시 화면이 「원격이 비어 있음」 에 머물면 다시 `init` 하기 전에 2 의 `버킷` 줄이 표 값과
+같았는지 먼저 본다(8장).
 
 **공용 계정으로 옮길 때 버킷 권한을 좁힌다**(사내 할 일 — 2026-11-07 통합 검수 D6 (가)). 이 키가 닿는 곳을 운영 버킷 하나로 줄인다. 버킷 안의 지우기 권한은 뺄 수 없다 — 앱의 하루 한 번 정리(3장)가 지우고, 없으면 세대가 쌓인다. 좁힌 뒤 Admin 「서버 시작 점검」 의 버킷 목록 · 「DB 동기화」 · 「S3 명단」 줄이 그대로인지 보고 결과를 10장 13번에 적는다.
 
@@ -117,8 +122,9 @@ C-DEP 는 S3 명단을 못 읽어 관리자만 들어오고, 이관 뒤에는 �
 `app` · `boot` · `rollback`)에는 표지가 없는 PC 도 같다. `--override-writer` 는 운영 앱의 저장을 덮을 수 있다.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> fetch-copy --to C:\capa-copy
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> fetch-copy --to C:\capa-copy --seq 12
+$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b fetch-copy --to C:\capa-copy
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b fetch-copy --to C:\capa-copy --seq 12
 ```
 
 HEAD(또는 그 세대) 두 멤버를 받아 검증한 뒤에만 그 폴더에 두 DB 와 `generation.json` 을 둔다. `data/` 를 건드리지 않고 운영 DB 자리는 거절한다. 앱이 떠 있어도 된다. 런북의 점검 스크립트는 이 사본을 `--database` · `--equipment-database` 로 받는다(런북 6-4).
@@ -145,11 +151,18 @@ aws 를 부르기 전에 `[중단] … 넣을 환경변수: …` 한 줄로 멈�
 - `s3.addressing_style path` — 버킷명에 대문자와 언더바가 있어 가상 호스트 스타일로는 표현할 수 없다. 없으면 서명 불일치나 DNS 오류가 난다.
 - `request_checksum_calculation` / `response_checksum_validation` = `when_required` — AWS CLI 2.23.0 이상은 ECS 에서 `Missing required header for this request: Content-MD5` 로 실패한다(Dell KB 000299507). **이 오류를 방화벽 · 권한 문제로 오진하면 며칠을 태운다.**
 
-**1단계 — 접속 확인.** `$env:` 는 이 창의 스크립트용이다. 이관 뒤 사내 PC 앱은 `managed` 로 띄우지 않는다.
+**1단계 — 접속 확인.** `$env:` 는 이 창의 스크립트용이다. 이관 뒤 사내 PC 앱은 `managed` 로 띄우지 않는다. **운영 버킷 이름은 그 창의 변수(`$b`)로만 넣는다** —
+PC 환경변수(`[Environment]::SetEnvironmentVariable` · `setx` · 시스템 환경 변수 편집)에 남기지 않는다(2026-11-12 사용자 답 — 사내 PC 에 운영 버킷이 남으면 쓰는 쪽이 둘이 될 수 있다).
+`$b` 는 창을 닫으면 사라지고 그 창에서 띄우는 다른 프로그램에도 넘어가지 않는다 — 3단계까지 같은 창에서 친다(4장 2 ~ 4). `$b` 가 비었으면 PowerShell(사내 PC 의 5.1)이
+그 자리를 빼 바로 뒤 낱말이 버킷 값으로 들어가고 `the following arguments are required: command`(`doctor` · `status` · `generations`) 또는
+`argument command: invalid choice: …`(`init --note …` · `fetch-copy --to …` · `rollback --to …`) 꼴 오류(종료 2)로 멈춘다 — 아무것도 쓰지 않았다.
+빈 글자를 그대로 넘기는 셸이면 `--bucket ""` 이 되어 `CAPA_S3_BUCKET` 환경변수로 넘어간다 — 사내 PC 에는 그 변수가 없으니 `[중단]` 으로 그 이름을 대며
+멈춘다(넣어 두었으면 그 버킷으로 간다 — 넣지 않는 까닭이다). 어느 꼴이든 `$b` 줄부터 다시 친다.
 
 ```powershell
 $env:CAPA_S3_SYNC_MODE = "managed"
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> doctor
+$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b doctor
 ```
 
 모드 · 엔드포인트 · 버킷 · 프로필과 CLI 버전, 두 DB 의 원격 · 로컬 세대를 찍는다. 빈 값은 `(없음)` 으로 찍고 넣을 환경변수 이름을 대며 멈춘다(0단계). 통과는 종료 코드 0 · `[중단]` 줄 없음 · `CLI` 와 `원격 세대` 줄이 찍힘이다 — 주소 오타 · 없는 프로필 이름은 값 줄이 찍혀도 `[중단] <까닭>` 으로 멈춘다. 원격이 비어 있는 것이 최초 상태의 정상이다. `mode` 는 이 스크립트에서 출력에만 쓰이고 어떤 하위 명령도 막지 않는다. `Content-MD5` 오류가 나면 0단계의 체크섬 설정이 안 먹은 것이다 — 그래도 나면 CLI 를 2.22.x 로 내린다.
@@ -160,24 +173,25 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <개발 버킷> probe --write config\object_storage_capabilities.json
 ```
 
-**3단계 — 최초 이관(앱을 끈 채로).** `aws s3 cp` 가 아니라 `init` 이다. 치기 전에 1단계 `doctor` 를 다시 본다 — 원격 세대가 `비어 있음` 이 아니면 치지 않고 멈추고, `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(다르면 `--bucket` 을 고쳐 1단계부터).
+**3단계 — 최초 이관(앱을 끈 채로 · 1단계의 같은 창 — 4장 차례로는 받기 모드(4장 3)를 켠 뒤다).** `aws s3 cp` 가 아니라 `init` 이다. 치기 전에 1단계 `doctor` 를 다시 본다 — 원격 세대가 `비어 있음` 이 아니면 치지 않고 멈추고, `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(다르면 `--bucket` 을 고쳐 1단계부터).
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> init --note "최초 이관"
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> status
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b init --note "최초 이관"
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b status
 ```
 
 `init` 은 원격이 비어 있을 때만 동작하고 두 DB 를 함께 올린다. 이미 세대가 있으면 건너뛴다. 스냅샷을 만드는 과정이 곧 재구축이라 파일이 줄어든다. 넘기지 않고 시험할 때(개발 버킷)는 `init --keep-writer` 다.
 
-`--bucket` · `--dry-run` 은 **하위 명령 앞에** 놓는다. 뒤에 붙이면 `unrecognized arguments` 로 죽는다. `--dry-run` 은 앞 회차가 남긴 포인터도 내지 않는다 — `앞 회차가 남긴 포인터` 줄이 뜨면 실제 실행이 마무리한다. 코드에 기본 버킷이 없다 — 운영이든 개발이든 `--bucket` 을 늘 적는다(빠지면 `CAPA_S3_BUCKET` 을 대며 멈춘다). 사내 PC 에 `CAPA_S3_BUCKET` 을 넣지 않는다 — 운영 버킷이 남으면 쓰는 쪽이 둘이 된다.
+`--bucket` · `--dry-run` 은 **하위 명령 앞에** 놓는다. 뒤에 붙이면 `unrecognized arguments` 로 죽는다. `--dry-run` 은 앞 회차가 남긴 포인터도 내지 않는다 — `앞 회차가 남긴 포인터` 줄이 뜨면 실제 실행이 마무리한다. 코드에 기본 버킷이 없다 — 운영이든 개발이든 `--bucket` 을 늘 적는다(빠지면 `CAPA_S3_BUCKET` 을 대며 멈춘다). 사내 PC 에 `CAPA_S3_BUCKET` 을 넣지 않는다 — 운영 버킷이 남으면 쓰는 쪽이 둘이 된다. 운영 버킷 이름은 명령을 치는 그 창의 `$b` 로만 둔다(1단계).
 
 ## 7. 세대 되돌리기
 
 앱 결함으로 망가진 세대가 게시됐거나 원격이 갈라졌으면 앞 세대의 멤버로 새 HEAD 를 낸다. 지우지 않고 앞으로만 간다.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> generations
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <운영 버킷> rollback --to 12 --yes
+$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b generations
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b rollback --to 12 --yes
 ```
 
 `generations` 는 세대 번호 · 두 멤버의 세대 · 키 꼬리 · 시각을 최신부터 찍는다(포인터 키에 실린 값이라 받지 않는다). **시작마다 같은 멤버의 펜스 세대가 쌓이므로 바로 앞 세대는 깨진 멤버를 그대로 가리킬 수 있다 — 멤버 세대가 HEAD 와 다른 앞 세대를 고른다.** `rollback` 은 멤버가 저장소에 있는지와 크기만 대조하고, 포인터를 낸 뒤 한 번 더 본다 — `새 HEAD 는 나갔지만` 으로 멈추면 그 HEAD 의 멤버가 사라진 것이라(보존 밖 세대를 정리가 지우는 틈) 다른 세대로 다시 `rollback` 한다. 같은 세대에 포인터가 둘이면 `--token <키 꼬리 8자리>` 로 고른다. 그 뒤 운영 앱의 일꾼은 HEAD 가 움직인 것을 보고 멈춘다(`SY-03`) — CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다.**
@@ -188,7 +202,7 @@ $env:CAPA_S3_SYNC_MODE = "managed"
 
 | 낱말 | 뜻 | 할 일 |
 |---|---|---|
-| 원격이 비어 있음 | 이관 전 | 먼저 4장 2 의 `doctor` 버킷이 C-DEP 표 값과 같았는지 본다 — 다른 버킷에 `init` 했으면 그 버킷에 다시 해도 풀리지 않는다. 같으면 4장 2 의 `init` — 다음 시도가 스스로 받는다 |
+| 원격이 비어 있음 | 이관 전 | 먼저 4장 2 의 `doctor` 버킷이 C-DEP 표 값과 같았는지 본다 — 다른 버킷에 `init` 했으면 그 버킷에 다시 해도 풀리지 않는다. 같으면 4장 4 의 `init` — 다음 시도가 스스로 받는다 |
 | 설정 오류 | `CAPA_S3_BUCKET` · `CAPA_S3_ENDPOINT_URL` · `CAPA_S3_PROFILE` · 키 없음(컨테이너 출력 줄 · Admin 줄이 `CD 환경변수 … 없음` 으로 이름을 댄다), 설정 파일 깨짐, `~/.aws` 를 못 써 프로필 없음(`HOME`) | 환경변수 표를 고치고 CI/CD. 표가 맞는데 그대로면 `HOME` 자리에 쓸 수 있는지 담당에 묻는다(임시 화면에 머무는 동안은 Admin 이 없다) |
 | aws 명령 없음 | 이미지에 `aws` 가 없다 | `docker/Dockerfile-prod` 한 줄 · PATH — 사외 요청 |
 | 저장소가 거절 | 키 · 권한 | 키를 고치고 CI/CD |

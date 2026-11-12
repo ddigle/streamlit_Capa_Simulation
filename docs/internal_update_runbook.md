@@ -86,6 +86,9 @@ PowerShell 에서만 돈다 — Git Bash 세션이면 PowerShell 도구가 있�
   수치를 그대로 담아, 에이전트가 열면(Read 도구로 여는 것도) 그림째 세션 기록에 남는다. 그림은 사용자가 보고, 에이전트는
   스크립트가 찍은 ID · 개수 · 꼴만 쓴다(`docs/dual_env_workflow.md` 1-1 「정해 둔 것」). 권한 템플릿이 그림 읽기를 막는다
   (`Read` 의 png · jpg · jpeg · webp · gif · bmp — 저장소 안팎 모두, 1-2). 막혀도 셸 · 파이썬으로 돌아가 열지 않는다(6장).
+  **실데이터 폴더 · 사본 폴더 · 백업 폴더도 열지 않는다** — 저장소 `data\`(운영 DB · `data\input` 원천), `$HOME\e2e_copy`(6-3 사본),
+  `$HOME\deploy_backup`(1-3 · 1-5 백업)이다. 권한 템플릿이 `Read` 와 셸의 읽는 꼴(`Get-Content` · `type` · `cat` · `Select-String -Path` 등)을
+  막는다(2026-11-12). 에이전트가 읽는 것은 사용자가 알려 준 `--output` 결과 파일(`$HOME\<이름>.md` — 이 폴더들 밖)뿐이다.
 
 ## 0-1. 진행 꼴 둘 — 사용자가 고른다
 
@@ -101,9 +104,11 @@ PowerShell 에서만 돈다 — Git Bash 세션이면 PowerShell 도구가 있�
 - 앱이 떠 있는 동안 에이전트가 해도 되는 것은 **4-3 의 네 관문, 4-5 모듈 점검 · 4-6 PR 점검(사본 트리에서만 — 6-3 1)), 6-3 사본 트리
   만들기와 경로 확인(6-3 1) · 3) — DB 를 열지 않는다), 사용자가 별도 창에서 돌린 6-3 a · b · c 의 결과 파일 옮기기, 사용자가 하는 7장 B 의 값 받아 적기뿐**이다
   (사본 DB 를 여는 6-3 a · b · c 는 사용자가 별도 창에서 친다 — 0장. 사본 앱 · 헤드리스를 띄우는 c 는 그 가운데서도 사용자가 앱을 쓰지
-  않는 시간에만 — 6-3 「지키는 것」) — `pytest` 는 임시 DB 만 쓰게 짜여 있다. `tests/conftest.py` 는 시험이 저장소
-  `data/*.duckdb` 를 **새로 만들면** 실패로 끝내지만, 이미 있는 운영 DB 를 여는 것까지 막지는 못한다(격리를 빠뜨린 시험은 떠 있는 앱 아래에서
-  `duckdb.IOException` 으로 드러난다). 7장의 화면 확인 스크립트(6-2)·7-8·8장은
+  않는 시간에만 — 6-3 「지키는 것」) — `pytest` 는 임시 DB 만 쓰게 짜여 있다. `tests/conftest.py` 는 시험이 같은 프로세스의
+  `duckdb.connect` 로 운영 DB 자리(저장소 `data/` · 운영 DB 와 같은 파일 · git 작업 트리 안 — `settings.is_operational_database_place`)를 열려 하면
+  열지 않고 그 시험을 실패로 끝낸다 — 이미 있는 운영 DB 를 여는 것도, 새로 만드는 것도(2026-11-12 — 사내 DB 를 Claude 가 읽지 않는다는 결정을
+  시험에서도). 시험이 띄운 하위 프로세스와 `duckdb.connect` 밖의 길(열린 연결의 `ATTACH`)은 그 문지기를 지나지 않아, 세션 끝에 저장소
+  `data/*.duckdb` 가 새로 생겼는지 한 번 더 본다. 7장의 화면 확인 스크립트(6-2)·7-8·8장은
   같은 DB 를 열어야 하므로 앱이 꺼진 뒤에 사용자가 별도 창에서 돌린다. 7장의 손 확인(사용자가 화면에서 하는 것)만 앱이 떠 있어야 한다.
 - **7장 B(손 확인)는 앱이 떠 있어야 하므로, 4-3 뒤 멈출 때 사용자가 「사용 끝」을 알리기 전에 B 를 할지 묻는다.** 묻지 않고 넘어가면
   B 가 통째로 빠진다(`202610120655` 리뷰는 B 일곱이 모두 미기록이었다). 갈래는 둘이다.
@@ -208,7 +213,7 @@ New-Item -ItemType Directory -Force review | Out-Null
 **권한 설정이 템플릿 그대로인지 한 줄로 본다.** `202610061748` 리뷰는 사내 `.claude/` 에 skills 뿐이라고 적었고,
 `202610071831` 에서는 템플릿이 allow 한 8장 스크립트까지 권한 판단이 막아 사용자가 대신 쳤다 — 설정이 옛 판이거나 없었던
 정황이다. `.claude/` 는 배포가 덮지 않으므로 옛 템플릿이 남아 있을 수 있다. 템플릿은 쓰기 자리만이 아니라 실화면 그림 파일
-읽기도 막는다(0장) — 옛 판이면 그 막기가 빠져 있다. 사내 DB 를 여는 스크립트의 런북 꼴 줄도 deny 로 막는다(0장 · 6장).
+읽기도 막는다 — 실데이터 · 사본 · 백업 폴더도 같다(0장). 옛 판이면 그 막기가 빠져 있다. 사내 DB 를 여는 스크립트의 런북 꼴 줄도 deny 로 막는다(0장 · 6장).
 
 ```powershell
 Compare-Object (Get-Content .claude\settings.json) (Get-Content docs\internal_claude_settings.json)
@@ -835,6 +840,8 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
 **점검 통과는 보증이 아니다.** 모듈은 코어와 한 프로세스에서 돌아, 의도를 가진 코드는 점검이 못 잡은 길로 세션 비밀 · S3 키 · 접속 명단 쓰기 함수에 닿을 수 있다 — 그렇게 고친 명단의
 고친 기록에는 관리자 계정이 남는다(`docs/sso_setup.md` 4장). 이 절이 그 앞의 마지막 방어선이다. 에이전트는 점검 결과만 옮기지 말고 PR 의 바뀐 코드를 읽어, `module_api` 밖으로 닿으려는 꼴
 (문자열을 이어 이름을 만들기 · 내부 속성 들여다보기 · 주소나 키로 보이는 값 다루기)이 보이면 통과여도 사용자에게 알린다. **`~/.aws` 의 키는 이제 운영 DB 삭제 권한이다** — 그 길을 건드리는 코드는 통과여도 알린다.
+PR 코드는 3 의 사본 트리(`$prtree`)가 아니라 git 으로 읽는다 — `git diff "origin/main...$pr" -- modules/<id>/`(새 파일은 통째로 나온다) · `git show "${pr}:<경로>"`(PowerShell 은 `"$pr:…"` 를 변수 한정으로 읽어 깨진다 — 중괄호로 끊는다).
+사본 트리는 `$HOME\e2e_copy` 아래라 권한 템플릿이 읽기를 막는다(0장) — 막혀도 셸 · 파이썬으로 그 폴더를 열지 않는다. git 의 PR 머리는 코드뿐이라 실데이터가 없다.
 
 1. 사용자가 받는다(자격증명은 사람 몫이다). `<번호>` 는 PR 번호다.
 
@@ -1231,6 +1238,7 @@ git push
 | `git push` 가 `protected branch` 로 거절된다 | 사내 main 보호 규칙이 사용자 푸시를 막았다 | 우회하지 않는다 — 사용자가 보호 규칙의 우회 목록을 본다(`docs/dual_env_workflow.md` 1-2) |
 | 가용설비 현황 `설비 마스터` 탭(옛 판 `RawData`)에 `「…」 rN 가 더 새롭습니다` 가 서고 일정 칸이 잠겨 있다 | 다른 사용자가 같은 설비 시나리오에 일정을 저장했다(낡음 — 의도된 잠금) | 사용자가 사이드바 「설비 시나리오」 줄에서 최신 rN 을 불러온다(공통 칸은 잠기지 않고 그대로 저장된다). 결함이 아니다 |
 | 그림 파일(png · jpg 등)을 `Read` 로 열려다 권한에 막힌다 | 권한 템플릿이 실화면 그림 읽기를 막는다(0장 — 의도된 막기) | 열지 않는다. 셸 · 파이썬 · 다른 도구로 돌아가 열지 않는다 — 그림은 사용자가 보고, 에이전트는 스크립트가 찍은 개수 · 꼴과 사용자가 말한 값만 쓴다 |
+| `data\` · `e2e_copy` · `deploy_backup` 아래 파일을 `Read` · `Get-Content` 등으로 열려다 권한에 막힌다 | 권한 템플릿이 실데이터 · 사본 · 백업 폴더 읽기를 막는다(0장 — 의도된 막기) | 열지 않는다. 셸 · 파이썬 · 다른 도구로 돌아가 열지 않는다 — 필요한 수는 사용자가 별도 PowerShell 창에서 돌린 스크립트의 `--output` 결과 파일로만 받는다. 사본 트리의 **코드**(4-6 의 PR 머리 · 4-7 의 `origin/main`)는 그 폴더가 아니라 git 으로 읽는다 — `git diff` · `git show "<커밋>:<경로>"`(코드뿐이라 실데이터가 없다) |
 | HOME 등 계산 페이지가 `조회기간(…) 밖의 달에 기준정보 오류` 로 멈춘다 | 보지 않는 달의 기준정보가 계약을 어겼다. 계산은 시나리오 전체 기간 단위라 어느 달이든 멈춘다(의도된 동작) | 오류 문구의 표·달을 그 표의 화면(수율은 생산 계획 → 수율 탭 — 오류문이 년월·제품을 적는다, 그 밖은 기준 정보)에서 고친다 → 새 리비전 저장 → 공식 발행. 앱 결함이 아니다 — 리뷰 문서에 그 달과 표를 적는다 |
 
 **적용기가 멈췄을 때** 되돌리는 법은 하나다 — **`git checkout -- .`**(적용기는 미저장 변경이 없는 트리에서만 돌아 이 한 줄이
@@ -1258,7 +1266,7 @@ allow 를 두지 않고 런북 꼴의 줄을 deny 로 막는다(2026-11-11 — �
 | `apply_deploy_package.py` 적용(2-3) | ZIP 경로까지 채운 한 줄 |
 | 운영 데이터 백업(1-3) | **처음부터** 사용자에게 준다 — 1-3 의 PowerShell 블록(PowerShell 창) 또는 `!` 한 줄(`uv run --no-sync python -c …`). 출력의 폴더 이름과 크기 줄을 에이전트가 읽는다 |
 | 의존성 맞추기(4-1) | **처음부터** 사용자에게 준다 — `uv sync --inexact` · `uv pip check` · 판 확인 줄을 `!` 로 차례로. 권한 템플릿이 `uv sync` 를 막아(deny) 모드와 상관없이 에이전트는 칠 수 없다. 출력의 끝줄과 판을 에이전트가 읽는다 |
-| 7-8 의 개수 줄 · 그 뒤 `inspect_wf_division.py` | **처음부터** 사용자에게 준다 — 그 배포 7-8 이 적은 줄 그대로. 두 DB 를 `read_only` 로 열고 수만 찍는다. 사용자가 **별도 PowerShell 창**에서 친다(`!` 아님 — 0장). `inspect_wf_division.py` 에는 `--output <저장소 밖 파일>` 을 붙여 주고 에이전트는 그 파일을 읽는다. 권한 템플릿은 `uv run --no-sync python scripts/inspect_wf_division.py` 꼴을 deny 로 막는다 |
+| 7-8 의 개수 줄 · 그 뒤 `inspect_wf_division.py` | **처음부터** 사용자에게 준다 — 그 배포 7-8 이 적은 줄 그대로(개수 세기는 `scripts/inspect_db_counts.py` 한 줄). 두 DB 를 `read_only` 로 열고 수만 찍는다. 사용자가 **별도 PowerShell 창**에서 친다(`!` 아님 — 0장). 두 스크립트 모두 `--output <저장소 밖 파일>` 을 붙여 주고 에이전트는 그 파일만 읽는다. 권한 템플릿은 `uv run --no-sync python scripts/inspect_db_counts.py` · `…/inspect_wf_division.py` 꼴을 Bash · PowerShell 쌍의 deny 로 막는다(`python -c` 줄은 0장 문장이 막는다) |
 | `inspect_real_data_checks.py`(8장, 매번 막혔다) | **처음부터** `--output <저장소 밖 파일>` 을 붙인 한 줄을 사용자에게 준다(8-0). 사용자가 **별도 PowerShell 창**에서 치고, 에이전트는 그 파일만 읽는다(`!` 아님 — 0장). 권한 템플릿 `docs/internal_claude_settings.json` 은 이 스크립트에 `--check-summary`(압축본 다시 셈 — DB 를 열지 않는다) 꼴만 allow 하고, 인자 없는 줄과 그 밖의 첫 인자 꼴은 deny 로 막는다(2026-11-11). 1-1 의 `Get-CimInstance` allow 는 그대로다 |
 | Playwright 설치(6-2) | 설치 한 줄 |
 | `check_deploy_screens.py`(7장 화면 확인, 6-2) | **처음부터** 사용자에게 준다 — 실데이터로 앱을 띄우는 줄이라 사용자가 **별도 PowerShell 창**에서 친다. 권한 템플릿에 allow 가 **일부러 없고**, `--list` 밖의 런북 꼴은 deny 로 막는다. `--list`(항목 목록 — DB 를 열지 않는다)는 에이전트가 쳐도 된다 |
@@ -1375,7 +1383,7 @@ uv run --no-sync python scripts/check_deploy_screens.py --playwright-dir $HOME/p
 ## 6-3. 사용자 앱을 끄지 않고 실 DB 사본으로 확인할 때 (사본 E2E)
 
 **이관 뒤(6-4)에는 2)의 복사 원본이 버킷이다** — 사내 PC `data\` 를 복사하지 않고 `fetch-copy` 로 받은 두 DB 를 `$e2e\data\` 에 둔다(받는 줄도 사용자 창 — 6-4). 아래 「사용자 앱」 · `.wal` 대조는 이관 전 꼴이다.
-**이관하는 그 배포**에서는 다르다 — 6-4 이관 차례 2 앞, 7-8 · 8장으로 앱이 꺼진 사이에 1) ~ 3) 사본(사내 PC `data\` 복사)을 먼저 뜬다. 에이전트 창에는 운영 버킷 이름이 없어(사용자 창의 `$env:`
+**이관하는 그 배포**에서는 다르다 — 6-4 이관 차례 2 앞, 7-8 · 8장으로 앱이 꺼진 사이에 1) ~ 3) 사본(사내 PC `data\` 복사)을 먼저 뜬다. 에이전트 창에는 운영 버킷 이름이 없어(사용자 창의 변수 `$b`
 에만) `fetch-copy` 를 쓰지 않는다.
 
 사용자가 앱(8501)을 계속 써야 하는데 실데이터로 넓게 봐야 할 때 쓴다 — 전 리비전 계산 · 화면 확인 스크립트(c) · HOME 시간.
@@ -1669,21 +1677,26 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 
 ## 6-4. 운영 DB 정본이 버킷으로 옮겨 간 뒤
 
-정본의 절차는 [`objectstore_setup.md`](objectstore_setup.md) 다 — 환경변수(2장) · 이관(4장) · 막혔을 때(8장). 아래 셋(이관 · 사본 받기 · 세대 되돌리기)의 명령은 모두 사용자가 별도 PowerShell 창에서 친다 — 운영 버킷 이름과 키가 사용자 창의 `$env:` 에만 있고, `fetch-copy` 는 받은 사본을 열어 확인한다(0장). 에이전트는 줄을 건네고 사용자가 알려 준 끝줄(세대 · 갈래)만 옮긴다. 쓰는 쪽은 운영 앱 하나다 — **이관 뒤 사내 PC 앱은 쓰지 않는다.** 그 PC 의 앱에는 `SY-04` 가 뜬다. `CAPA_S3_SYNC_MODE=managed` 와 운영
+정본의 절차는 [`objectstore_setup.md`](objectstore_setup.md) 다 — 환경변수(2장) · 이관(4장) · 막혔을 때(8장). 아래 셋(이관 · 사본 받기 · 세대 되돌리기)의 명령은 모두 사용자가 별도 PowerShell 창에서 친다 — 운영 버킷 이름은 사용자 창의 변수(`$b`)에만 있고(PC 환경변수에 남기지 않는다 — `objectstore_setup.md` 6장 1단계), `fetch-copy` 는 받은 사본을 열어 확인한다(0장). 에이전트는 줄을 건네고 사용자가 알려 준 끝줄(세대 · 갈래)만 옮긴다. 쓰는 쪽은 운영 앱 하나다 — **이관 뒤 사내 PC 앱은 쓰지 않는다.** 그 PC 의 앱에는 `SY-04` 가 뜬다. `CAPA_S3_SYNC_MODE=managed` 와 운영
 버킷은 운영 C-DEP 환경변수 표에만 둔다 — 개발 서버 · WebIDE · 사내 PC 앱에는 넣지 않는다(쓰는 쪽이 둘이면 세대가 갈라진다 — 임시 화면
 `원격이 갈라짐`).
 
 ### 이관 차례
 
+받기 모드(`managed`)를 먼저 켜고 정본(`init`)을 올린다 — `objectstore_setup.md` 4장과 같은 차례다(2026-11-12 사용자 답). `doctor` 는 받기 모드 앞이다.
+
 1. 사용자가 C-DEP 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소(`CAPA_S3_ENDPOINT_URL`) · 프로필 이름(`CAPA_S3_PROFILE`)을 넣고 CI/CD → Admin 「서버 시작 점검」 에서 aws 판 · ECS 연결 · 버킷 목록을 본다
    (빈 값은 그 줄이 `CD 환경변수 … 없음` 으로 이름을 댄다 — 셋 다 사내 값이라 코드에 기본값이 없다).
-2. 사용자가 사내 PC 앱을 끈다(1-1) → 사용자가 별도 PowerShell 창에서 `doctor`(`uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> doctor`) — **원격 세대가
-   `비어 있음` 이 아니면 `init` 을 치지 않고 멈춰 사외에 알린다**(그대로 치면 `init` 은 「원격에 이미 seq …」 로 건너뛰고 3 의 C-DEP 는 그 옛 세대를 받는다).
-   사용자는 `doctor` 의 `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(옮기지 않는다 — 다르면 첫 줄부터) →
-   `uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> init --note "최초 이관"` → 같은 꼴로 `status`. `aws s3 cp` 를 쓰지 않는다.
-3. 사용자가 `CAPA_S3_SYNC_MODE=managed` 를 넣고 CI/CD → 앱이 뜨고 HOME 이 사내 PC 와 같은지 본다. 3 뒤 임시 화면이 `원격이 비어 있음` 에 머물면 다시
-   `init` 하기 전에 2 의 `doctor` `버킷` 줄이 표 값과 같았는지 먼저 본다 — 다른 버킷에 다시 `init` 하면 같은 잘못을 되풀이한다.
-4. 앱에서 저장 하나 → Admin 「DB 동기화」 의 마지막 올림 → CI/CD 다시 → 그 저장이 살아 있는지 본다.
+2. 사용자가 사내 PC 앱을 끈다(1-1) → 사용자가 별도 PowerShell 창에서 운영 버킷 이름을 그 창의 변수로 넣고(`$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"`) `doctor`
+   (`uv run --no-sync python scripts/sync_object_storage.py --bucket $b doctor`) — **원격 세대가 `비어 있음` 이 아니면 3 을 하지 않고 멈춰 사외에 알린다**
+   (받기 모드를 켜면 C-DEP 가 그 옛 세대를 받고, `init` 은 「원격에 이미 seq …」 로 건너뛴다). 사용자는 `doctor` 의 `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET`
+   값과 같은지 눈으로 본다(옮기지 않는다 — 다르면 `$b` 줄부터). 그 창은 4 까지 닫지 않는다.
+3. 사용자가 `CAPA_S3_SYNC_MODE=managed` 를 넣고 CI/CD — **2 가 「비어 있음」 일 때만.** C-DEP 주소는 임시 화면 「원격이 비어 있음」 에 머문다 — 정상이다
+   (받을 정본이 아직 없다. 4 뒤 스스로 받는다). 3 과 4 사이에는 C-DEP 에서도 사내 PC 에서도 저장하지 않는다.
+4. 사용자가 2 의 같은 별도 PowerShell 창에서 `uv run --no-sync python scripts/sync_object_storage.py --bucket $b init --note "최초 이관"` → 같은 꼴로 `status` →
+   그 창을 닫는다. `aws s3 cp` 를 쓰지 않는다. 1 ~ 2분 뒤 C-DEP 가 스스로 받아 앱이 뜨고 HOME 이 사내 PC 와 같은지 본다. 4 뒤에도 임시 화면이
+   `원격이 비어 있음` 에 머물면 다시 `init` 하기 전에 2 의 `doctor` `버킷` 줄이 표 값과 같았는지 먼저 본다 — 다른 버킷에 다시 `init` 하면 같은 잘못을 되풀이한다.
+5. 앱에서 저장 하나 → Admin 「DB 동기화」 의 마지막 올림 → CI/CD 다시 → 그 저장이 살아 있는지 본다.
 
 **CI/CD 는 임시 화면에 머물러도 성공으로 보인다.** CI/CD 뒤에는 앱을 열어 본다. **CI/CD 를 누르기 전에는 「DB 동기화」 가 `올릴 것 없음` 인지 본다** — 끌 때 올릴 기회가 없다. 이관 뒤 CI/CD 마다 두 DB 를 받는 몇 분(약 300MB ·
 1 MiB/s 면 5분 안팎 — 스냅샷이 줄면 그만큼 짧다) 임시 화면 「데이터 받는 중」 이 선다 — 정상이니 CI/CD 를 다시 누르지 않는다.
@@ -1693,7 +1706,8 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 이관한 배포 뒤부터 — 앱이 떠 있어도 된다. 운영 앱의 그 시각 세대이고 사내 PC `data\` 를 건드리지 않는다.
 
 ```powershell
-uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> fetch-copy --to "$e2e\data"
+$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b fetch-copy --to "$e2e\data"
 ```
 
 이 줄은 사용자가 별도 PowerShell 창에서 친다(0장 — 받은 사본을 열어 확인한다). 6-3 1) 의 사본 트리에 그대로 받는다(두 DB 와 `generation.json`). 앱을 끄는 줄이 없어지고 8장 · 7-8 의 스크립트는 `--database "$e2e\data\capa_simulation.duckdb" --equipment-database "$e2e\data\equipment_availability.duckdb"` 로 돈다 — 이 줄도, 그 스크립트들도 사용자 창이다(0장). 리뷰의 「돌린 때」 에 받은 세대를 적는다.
@@ -1705,8 +1719,9 @@ uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> 
 두 줄 모두 사용자가 별도 PowerShell 창에서 친다(0장) — 에이전트는 사용자가 알려 준 세대 줄(seq · 갈래)만 옮긴다.
 
 ```powershell
-uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> generations
-uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> rollback --to <세대> --yes
+$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b generations
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b rollback --to <세대> --yes
 ```
 
 같은 세대에 포인터가 둘이면 `--token <키 꼬리 8자리>` 를 더한다. 그 뒤 CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다** — 사용자에게 먼저 알린다. `doctor` · `generations` 의 세대 줄 끝 `<계정>@<PC 이름>`(Windows 사용자 · 컴퓨터
@@ -2725,7 +2740,7 @@ HOME 의 월 축은 **양산 Density 가 있는 달만** 선다(`services/dashbo
     (2026-11-01 사용자 결정 — 결정 7 고침) 이 칸들은 이제 계산을 멈추지 않는다 — 고침이 살린 칸의 규모로 참고만 한다.
   - `월 머지 리비전의 달력 공백 달` — 월 머지로 만든 시나리오의 리비전마다 첫 달 ~ 끝 달 사이 어느 월 표에도 없는 달(결정 9 · D6).
     본 리비전에 머지가 없으면 `0 / 0 머지 리비전` 이다.
-  - `원천 계획기초정보여부 의 Y·N 밖 표기` — 앞뒤 공백 · 대소문자를 무시해도 `Y` · `N` 이 아닌 원천 행(빈 칸 포함). 본 리비전의
+  - `원천 계획기초정보여부 의 Y·N 밖 표기` — 앱의 계획 행 판정(앞뒤 공백 · 탭 · 줄바꿈 · 대소문자 무시)으로 `Y` · `N` 이 아닌 원천 행(빈 칸 포함 — 「Y」 뒤 탭처럼 앱이 받는 꼴은 세지 않는다). 본 리비전의
     시나리오가 가진 원천 데이터셋 단위다(`docs/TODO.md` 「다음 배포 사내 확인 요청」). `수` 는 `빈칸`(빈 값 · 공백뿐) + `다른표기`(그 밖의 글자)로 나눠 적는다(값은 찍지 않는다).
   - `앞뒤 공백·대소문자만 다른 설비명 묶음` — 설비 DB(결정 10 · Q6 · Q7). `걸림 / 봄` 은 설비 리비전, `수` 는 최신 리비전의 묶음 수다.
 - 줄이 `실패(예외 종류)` 나 `설비 DB를 열지 못함` 이면 그 줄만 멈춘 것이다 — 다음 줄은 센다. 그대로 옮긴다.
