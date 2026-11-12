@@ -584,7 +584,7 @@ def render_actions(table: GridTable, *, open_paste: Callable[[], None]) -> Actio
         if pending:
             st.button(
                 "편집 취소",
-                icon=":material/undo:",
+                icon=edit_grid.DISCARD_ICON,
                 key=f"{table.editor_key}_discard",
                 on_click=discard_draft,
                 args=(table.table,),

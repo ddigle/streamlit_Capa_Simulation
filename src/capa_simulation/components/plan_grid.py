@@ -393,7 +393,7 @@ def render_actions(
         if pending:
             st.button(
                 "편집 취소",
-                icon=":material/undo:",
+                icon=edit_grid.DISCARD_ICON,
                 key=discard_key,
                 on_click=discard_click,
                 help=discard_help,
