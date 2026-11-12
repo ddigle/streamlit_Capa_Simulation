@@ -1697,14 +1697,14 @@ def test_the_post_deploy_four_board_answers_are_recorded() -> None:
     고른 글은 선택지 원문(확인 카드는 「좋음」)이다. 메모 여섯은 원문 그대로 그 줄에 있고, 권장
     (가) 와 다른 답 둘(n2 · q6b)은 그 줄이 밝힌다. 스물넷 모두 커밋을 들고, 갈래가 답 밖에서
     정한 것은 그 줄이 밝힌다. q4 (가) 가 받은 ① · ② 의 같은 소요대수 줄은 UI-TXT-07 예외이고,
-    뒤집은 옛 결정은 7-1 에 있다. 6-19 줄은 그때 기록 그대로다(앞 시험이 6-20 앞에서 끊어 본다)."""
+    뒤집은 옛 결정은 7-1 에 있다. 6-19 줄은 그때 기록 그대로다(앞 시험이 6-20 앞에서 끊어 본다).
+    6-21 은 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.20" in document.split("\n## 1. ")[0]
     assert "- **v1.20 — 2026-11-12.**" in _chapter(document, 8)
     assert "6-20 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-20. ") :]
+    board = section[section.index("\n### 6-20. ") : section.index("\n### 6-21. ")]
     assert POST_FOUR_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -1741,3 +1741,63 @@ def test_the_post_deploy_four_board_answers_are_recorded() -> None:
     for phrase in ("「배포 뒤 할 일 넷」 시안 보드 k-c2 · n1 (가) · q5 (가)", "같은 보드 q1 (가)"):
         assert phrase in reversed_, phrase
     assert "n2 (나) · q6b (나)" in _chapter(document, 8)
+
+
+# 2026-11-12 「남은 물음 11-12」 보드(6-21)의 화면 갈래 답 — 고칠 것 일곱. 고른 글은 선택지 원문이고
+# 일곱 모두 권장 (가) 다. 줄 id 는 보드 카드 id 이고 차례는 보드 차례다(③-1 · ③-2 · ③-4 · ③-9 ·
+# ③-10 · ③-11 · ⑥-1). 보드의 나머지 카드(실을 때 · 운영 · 모듈 · 보안 · 지금대로)는 이 절 밖이다.
+REMAINING_1112_ADDRESS = "https://claude.ai/artifact/RxRM2KSDtKKKdDC2ER5dsh"
+REMAINING_1112_ANSWERS = {
+    "owned-vs-avail": "(가) 그런 호기는 총보유대수도 처음부터 가진 것으로 센다",
+    "toolrow-1600": "(가) 보이는 글 「비가동 기준」 · 「④」 를 걷고 ⓘ 풍선 하나로 뜻을 단다",
+    "word-downtime": "(가) 붙여 쓴다",
+    "yield-apply": "(가) 「변경사항 적용」 으로 맞춘다",
+    "search-width": "(가) 세 그리드 공용 찾기 칸을 140 으로",
+    "cancel-icon": "(가) 「편집 취소」 를 다른 그림으로 바꾼다",
+    "unused-bits": (
+        "(가) 글은 지금 이름으로 고치고(공식 확보율 판정과 설비 일정 확보율 판정이 네 가지"
+        " 조합으로 다 나오는지 보는 점검은 그대로 남김), 안 쓰는 칸은 걷는다"
+    ),
+}
+# 갈래가 답 밖에서 정한 것을 밝힌 줄.
+REMAINING_1112_BEYOND = ("toolrow-1600", "cancel-icon", "unused-bits")
+
+
+def test_the_remaining_1112_board_screen_answers_are_recorded() -> None:
+    """v1.21 — 6-21 은 「남은 물음 11-12」 보드의 화면 갈래 카드 일곱이 보드 차례대로 한 줄씩이고
+    고른 글은 선택지 원문이다. 일곱 모두 커밋을 들고, 갈래가 답 밖에서 정한 것(ⓘ 자리 · 고른 그림 ·
+    점검 글)은 그 줄이 밝힌다. 뒤집은 옛 결정은 7-1 에 있다."""
+    document = _text()
+    assert "판 v1.21" in document.split("\n## 1. ")[0]
+    assert "- **v1.21 — 2026-11-12.**" in _chapter(document, 8)
+    assert "6-21 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-21. ") :]
+    assert REMAINING_1112_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-12) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert found == REMAINING_1112_ANSWERS
+    assert tuple(found) == tuple(REMAINING_1112_ANSWERS)
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert commit.search(line), key
+    beyond = [key for key, line in by_id.items() if "답 밖 — 갈래가 정함" in line]
+    assert beyond == list(REMAINING_1112_BEYOND)
+
+    reversed_ = _chapter(document, 7)
+    for phrase in (
+        "「남은 물음 11-12」 보드 ③-1 (가)",
+        "같은 보드 ③-2 (가)",
+        "같은 보드 ③-10 (가)",
+    ):
+        assert phrase in reversed_, phrase
