@@ -12,11 +12,13 @@
   다시 계산하지 않는다(2026-11-08 사용자 답 U5 · 설계 규칙 UI-PRF-01). 입력 위젯 key 는
   `paste_widget_keys` 다.
 - `scope_text` — 표 아래 상태 줄의 「편집 범위」 값 글(월 · 개월 수 · 행 수 · 필터로 보이는 행 수).
-- `classification_styled` — 분류 컬럼 배경색(작은 표만 — `CLASSIFICATION_STYLE_MAX_CELLS`).
-- `float_month_columns` — 정수 dtype 월 칸을 실수로(생산 계획 편집표가 소수를 버리지 않게).
+- `classification_styled` — 분류 컬럼 배경색(작은 표만 — `CLASSIFICATION_STYLE_MAX_CELLS`). 지금
+  부르는 화면은 없다 — pandas Styler 표의 분류 칸 배경을 칠할 때 거치는 길이다(AGENTS 9장).
+- `float_month_columns` — 정수 dtype 월 칸을 실수로(`st.data_editor` 편집표가 소수를 버리지 않게).
+  지금 부르는 화면은 없다 — 정수로 올 수 있는 편집표가 거치는 길이다(AGENTS 9장).
 
-걸러진 편집표를 원본 전체에 되머지하던 조각은 없다 — 기준 정보 그리드의 초안은 업무 키라 적용이
-언제나 전체 양식에 덮고(`reference_grid.merged_template`), 생산 계획 편집표는 제 화면이 맡는다.
+걸러진 편집표를 원본 전체에 되머지하던 조각은 없다 — 기준 정보 · 생산 계획 그리드의 초안은 업무 키라
+적용이 언제나 전체 양식에 덮는다(`reference_grid.merged_template` · `plan_grid.merged`).
 """
 
 from __future__ import annotations
