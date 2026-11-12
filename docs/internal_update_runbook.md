@@ -1380,7 +1380,7 @@ uv run --no-sync python scripts/check_deploy_screens.py --playwright-dir $HOME/p
 ## 6-3. 사용자 앱을 끄지 않고 실 DB 사본으로 확인할 때 (사본 E2E)
 
 **이관 뒤(6-4)에는 2)의 복사 원본이 버킷이다** — 사내 PC `data\` 를 복사하지 않고 `fetch-copy` 로 받은 두 DB 를 `$e2e\data\` 에 둔다(받는 줄도 사용자 창 — 6-4). 아래 「사용자 앱」 · `.wal` 대조는 이관 전 꼴이다.
-**이관하는 그 배포**에서는 다르다 — 6-4 이관 차례 2 앞, 7-8 · 8장으로 앱이 꺼진 사이에 1) ~ 3) 사본(사내 PC `data\` 복사)을 먼저 뜬다. 에이전트 창에는 운영 버킷 이름이 없어(사용자 창의 `$env:`
+**이관하는 그 배포**에서는 다르다 — 6-4 이관 차례 2 앞, 7-8 · 8장으로 앱이 꺼진 사이에 1) ~ 3) 사본(사내 PC `data\` 복사)을 먼저 뜬다. 에이전트 창에는 운영 버킷 이름이 없어(사용자 창의 변수 `$b`
 에만) `fetch-copy` 를 쓰지 않는다.
 
 사용자가 앱(8501)을 계속 써야 하는데 실데이터로 넓게 봐야 할 때 쓴다 — 전 리비전 계산 · 화면 확인 스크립트(c) · HOME 시간.
@@ -1674,21 +1674,26 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 
 ## 6-4. 운영 DB 정본이 버킷으로 옮겨 간 뒤
 
-정본의 절차는 [`objectstore_setup.md`](objectstore_setup.md) 다 — 환경변수(2장) · 이관(4장) · 막혔을 때(8장). 아래 셋(이관 · 사본 받기 · 세대 되돌리기)의 명령은 모두 사용자가 별도 PowerShell 창에서 친다 — 운영 버킷 이름과 키가 사용자 창의 `$env:` 에만 있고, `fetch-copy` 는 받은 사본을 열어 확인한다(0장). 에이전트는 줄을 건네고 사용자가 알려 준 끝줄(세대 · 갈래)만 옮긴다. 쓰는 쪽은 운영 앱 하나다 — **이관 뒤 사내 PC 앱은 쓰지 않는다.** 그 PC 의 앱에는 `SY-04` 가 뜬다. `CAPA_S3_SYNC_MODE=managed` 와 운영
+정본의 절차는 [`objectstore_setup.md`](objectstore_setup.md) 다 — 환경변수(2장) · 이관(4장) · 막혔을 때(8장). 아래 셋(이관 · 사본 받기 · 세대 되돌리기)의 명령은 모두 사용자가 별도 PowerShell 창에서 친다 — 운영 버킷 이름은 사용자 창의 변수(`$b`)에만 있고(PC 환경변수에 남기지 않는다 — `objectstore_setup.md` 6장 1단계), `fetch-copy` 는 받은 사본을 열어 확인한다(0장). 에이전트는 줄을 건네고 사용자가 알려 준 끝줄(세대 · 갈래)만 옮긴다. 쓰는 쪽은 운영 앱 하나다 — **이관 뒤 사내 PC 앱은 쓰지 않는다.** 그 PC 의 앱에는 `SY-04` 가 뜬다. `CAPA_S3_SYNC_MODE=managed` 와 운영
 버킷은 운영 C-DEP 환경변수 표에만 둔다 — 개발 서버 · WebIDE · 사내 PC 앱에는 넣지 않는다(쓰는 쪽이 둘이면 세대가 갈라진다 — 임시 화면
 `원격이 갈라짐`).
 
 ### 이관 차례
 
+받기 모드(`managed`)를 먼저 켜고 정본(`init`)을 올린다 — `objectstore_setup.md` 4장과 같은 차례다(2026-11-12 사용자 답). `doctor` 는 받기 모드 앞이다.
+
 1. 사용자가 C-DEP 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소(`CAPA_S3_ENDPOINT_URL`) · 프로필 이름(`CAPA_S3_PROFILE`)을 넣고 CI/CD → Admin 「서버 시작 점검」 에서 aws 판 · ECS 연결 · 버킷 목록을 본다
    (빈 값은 그 줄이 `CD 환경변수 … 없음` 으로 이름을 댄다 — 셋 다 사내 값이라 코드에 기본값이 없다).
-2. 사용자가 사내 PC 앱을 끈다(1-1) → 사용자가 별도 PowerShell 창에서 `doctor`(`uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> doctor`) — **원격 세대가
-   `비어 있음` 이 아니면 `init` 을 치지 않고 멈춰 사외에 알린다**(그대로 치면 `init` 은 「원격에 이미 seq …」 로 건너뛰고 3 의 C-DEP 는 그 옛 세대를 받는다).
-   사용자는 `doctor` 의 `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(옮기지 않는다 — 다르면 첫 줄부터) →
-   `uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> init --note "최초 이관"` → 같은 꼴로 `status`. `aws s3 cp` 를 쓰지 않는다.
-3. 사용자가 `CAPA_S3_SYNC_MODE=managed` 를 넣고 CI/CD → 앱이 뜨고 HOME 이 사내 PC 와 같은지 본다. 3 뒤 임시 화면이 `원격이 비어 있음` 에 머물면 다시
-   `init` 하기 전에 2 의 `doctor` `버킷` 줄이 표 값과 같았는지 먼저 본다 — 다른 버킷에 다시 `init` 하면 같은 잘못을 되풀이한다.
-4. 앱에서 저장 하나 → Admin 「DB 동기화」 의 마지막 올림 → CI/CD 다시 → 그 저장이 살아 있는지 본다.
+2. 사용자가 사내 PC 앱을 끈다(1-1) → 사용자가 별도 PowerShell 창에서 운영 버킷 이름을 그 창의 변수로 넣고(`$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"`) `doctor`
+   (`uv run --no-sync python scripts/sync_object_storage.py --bucket $b doctor`) — **원격 세대가 `비어 있음` 이 아니면 3 을 하지 않고 멈춰 사외에 알린다**
+   (받기 모드를 켜면 C-DEP 가 그 옛 세대를 받고, `init` 은 「원격에 이미 seq …」 로 건너뛴다). 사용자는 `doctor` 의 `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET`
+   값과 같은지 눈으로 본다(옮기지 않는다 — 다르면 `$b` 줄부터). 그 창은 4 까지 닫지 않는다.
+3. 사용자가 `CAPA_S3_SYNC_MODE=managed` 를 넣고 CI/CD — **2 가 「비어 있음」 일 때만.** C-DEP 주소는 임시 화면 「원격이 비어 있음」 에 머문다 — 정상이다
+   (받을 정본이 아직 없다. 4 뒤 스스로 받는다). 3 과 4 사이에는 C-DEP 에서도 사내 PC 에서도 저장하지 않는다.
+4. 사용자가 2 의 같은 별도 PowerShell 창에서 `uv run --no-sync python scripts/sync_object_storage.py --bucket $b init --note "최초 이관"` → 같은 꼴로 `status` →
+   그 창을 닫는다. `aws s3 cp` 를 쓰지 않는다. 1 ~ 2분 뒤 C-DEP 가 스스로 받아 앱이 뜨고 HOME 이 사내 PC 와 같은지 본다. 4 뒤에도 임시 화면이
+   `원격이 비어 있음` 에 머물면 다시 `init` 하기 전에 2 의 `doctor` `버킷` 줄이 표 값과 같았는지 먼저 본다 — 다른 버킷에 다시 `init` 하면 같은 잘못을 되풀이한다.
+5. 앱에서 저장 하나 → Admin 「DB 동기화」 의 마지막 올림 → CI/CD 다시 → 그 저장이 살아 있는지 본다.
 
 **CI/CD 는 임시 화면에 머물러도 성공으로 보인다.** CI/CD 뒤에는 앱을 열어 본다. **CI/CD 를 누르기 전에는 「DB 동기화」 가 `올릴 것 없음` 인지 본다** — 끌 때 올릴 기회가 없다. 이관 뒤 CI/CD 마다 두 DB 를 받는 몇 분(약 300MB ·
 1 MiB/s 면 5분 안팎 — 스냅샷이 줄면 그만큼 짧다) 임시 화면 「데이터 받는 중」 이 선다 — 정상이니 CI/CD 를 다시 누르지 않는다.
@@ -1698,7 +1703,8 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 이관한 배포 뒤부터 — 앱이 떠 있어도 된다. 운영 앱의 그 시각 세대이고 사내 PC `data\` 를 건드리지 않는다.
 
 ```powershell
-uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> fetch-copy --to "$e2e\data"
+$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b fetch-copy --to "$e2e\data"
 ```
 
 이 줄은 사용자가 별도 PowerShell 창에서 친다(0장 — 받은 사본을 열어 확인한다). 6-3 1) 의 사본 트리에 그대로 받는다(두 DB 와 `generation.json`). 앱을 끄는 줄이 없어지고 8장 · 7-8 의 스크립트는 `--database "$e2e\data\capa_simulation.duckdb" --equipment-database "$e2e\data\equipment_availability.duckdb"` 로 돈다 — 이 줄도, 그 스크립트들도 사용자 창이다(0장). 리뷰의 「돌린 때」 에 받은 세대를 적는다.
@@ -1710,8 +1716,9 @@ uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> 
 두 줄 모두 사용자가 별도 PowerShell 창에서 친다(0장) — 에이전트는 사용자가 알려 준 세대 줄(seq · 갈래)만 옮긴다.
 
 ```powershell
-uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> generations
-uv run --no-sync python scripts/sync_object_storage.py --bucket <운영 버킷> rollback --to <세대> --yes
+$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b generations
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b rollback --to <세대> --yes
 ```
 
 같은 세대에 포인터가 둘이면 `--token <키 꼬리 8자리>` 를 더한다. 그 뒤 CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다** — 사용자에게 먼저 알린다. `doctor` · `generations` 의 세대 줄 끝 `<계정>@<PC 이름>`(Windows 사용자 · 컴퓨터
