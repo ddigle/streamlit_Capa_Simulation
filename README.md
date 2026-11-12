@@ -316,7 +316,9 @@ New-Item -ItemType Directory review -Force
 ```
 
 - `.claude/settings.json` 은 사내 에이전트가 `review/` 밖을 고치지 못하게 막고, 실화면 그림 파일(png · jpg 등)을 `Read` 로 열지
-  못하게 막습니다. `review/` 는 리뷰 문서 자리입니다.
+  못하게 막습니다. 실데이터 · 사본 · 백업 폴더(저장소 `data/` · `e2e_copy` · `capa-copy` · `deploy_backup`)도 `Read` · 셸의 읽는
+  꼴로 열지 못하게 막습니다. `review/` 는 리뷰 문서 자리이고, 에이전트가 읽는 사내 결과는 사용자가 준 `--output` 파일(이 폴더들
+  밖)뿐입니다.
 - 사내 DB 를 여는 스크립트(실데이터 확인 `inspect_real_data_checks.py` · `inspect_wf_division.py` · 7-8 개수 세기 `inspect_db_counts.py` · 사본 점검 세 줄 — 런북 6-3 a · b 의
   `inspect_revision_calculations.py` · `benchmark_home.py` · `benchmark_upeh_assumption.py` · 화면 확인 `check_deploy_screens.py` · 버킷 명령
   `sync_object_storage.py`)는 템플릿에 allow 가 없고, 런북 꼴(`uv run --no-sync python scripts/…`)의 줄은 deny 로 막습니다(2026-11-11 — 사내 DB 를
@@ -702,7 +704,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/equipment_ui_codex_review.md` | 가용설비 현황 개편 후보안(검토 기록) |
 | `docs/module_guide.md` | 모듈 지침서 — 동료(담당자)의 에이전트가 받는 것. 자리·`module.json`·`module_api` v1·점검 규칙·Git 운영 |
 | `docs/module_colleague_guide.md` | 모듈 담당자(사람)용 안내서 — 비전문 동료가 읽는 쉬운 말 판. 할 수 있는 것·첫 지시·하루 흐름(가지 → PR)·에이전트에게 말하는 법·막힐 때. 규칙의 정본은 지침서. 한 파일 HTML 판은 `site/module-guide/index.html` |
-| `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계 — 배포 적용 에이전트용, 그림 파일 읽기도 막는다) |
+| `docs/internal_claude_settings.json` | 사내 `.claude/settings.json` 템플릿(6단계 — 배포 적용 에이전트용, 그림 파일 · 실데이터 · 사본 · 백업 폴더 읽기도 막는다) |
 | `src/capa_simulation/guides/` | 화면별 `Guide` 원문(Markdown) |
 | `static/guides/howto/` | 따라하기 가이드 합성 예시판(한 파일 HTML — 뼈대는 `src/capa_simulation/guides/howto/`, 만들기는 `scripts/build_page_guide.py --example`) |
 | `config/data_contract.json` | Core Data 78컬럼 계약 |
