@@ -623,6 +623,61 @@ def test_m06_leaves_ordinary_code_alone(tmp_path: Path, body: str) -> None:
     assert ("M06", "error") not in _page_rules(tmp_path, body)
 
 
+_API = "from capa_simulation import module_api as api\n"
+_CTX = _API + "ctx = api.context(__file__)\n"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _API + 'OTHER = api.ModuleContext("demo_y", "y", "o", "L0", None, (1, 3))\n',
+        _API + 'OTHER = api.ModuleContext(id="demo_y", name="y", owner="o", maturity="L0",'
+        " folder=None, api_version=(1, 3))\n",
+        "from capa_simulation.module_api import ModuleContext\n"
+        'OTHER = ModuleContext("demo_y", "y", "o", "L0", None, (1, 3))\n',
+        _API + "name = str(1)\nOTHER = api.ModuleContext(name, 'y', 'o', 'L0', None, (1, 3))\n",
+        _API + "FIELDS = {}\nOTHER = api.ModuleContext(**FIELDS)\n",
+        _CTX + 'import dataclasses\nOTHER = dataclasses.replace(ctx, id="demo_y")\n',
+        _CTX + 'from dataclasses import replace\nOTHER = replace(ctx, id="demo_y")\n',
+        _API + "import dataclasses\n\n\ndef other(ctx: api.ModuleContext, name: str) -> object:\n"
+        "    return dataclasses.replace(ctx, id=name)\n",
+        _CTX + "FIELDS = {}\nimport dataclasses\nOTHER = dataclasses.replace(ctx, **FIELDS)\n",
+        _CTX + 'OTHER = type(ctx)("demo_y", "y", "o", "L0", None, (1, 3))\n',
+        _CTX + 'OTHER = ctx.__class__(id="demo_y", name="y", owner="o", maturity="L0",'
+        " folder=None, api_version=(1, 3))\n",
+        _CTX + 'object.__setattr__(ctx, "id", "demo_y")\n',
+    ],
+)
+def test_m06_catches_a_hand_made_context_for_another_module(tmp_path: Path, body: str) -> None:
+    """이름표를 손으로 지어 남의 id(또는 판정할 수 없는 id)를 쓰면 남의 데이터 자리 · 버킷을 읽고
+    덮는다 — M06 오류다(2026-11-12 사용자 답 ④-4 (가)). 시험 파일도 같다."""
+    assert ("M06", "error") in _page_rules(tmp_path / "page", body)
+    assert ("M06", "error") in _page_rules(tmp_path / "test", body, rel="tests/test_demo_x_more.py")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _CTX,
+        _API + "\n\ndef title(ctx: api.ModuleContext) -> str:\n    return ctx.name\n",
+        _API + "FOUND = isinstance(object(), api.ModuleContext)\n",
+        _API + 'OWN = api.ModuleContext("demo_x", "x", "o", "L0", None, (1, 3))\n',
+        _CTX + 'import dataclasses\nOWN = dataclasses.replace(ctx, name="다른 이름")\n',
+        _CTX + 'import dataclasses\nOWN = dataclasses.replace(ctx, id="demo_x")\n',
+        "import dataclasses\n\n\n@dataclasses.dataclass\nclass Row:\n    id: str\n\n\n"
+        'ROW = dataclasses.replace(Row("a"), id="b")\n',
+        "FOUND = type(1)(2)\n",
+    ],
+)
+def test_m06_leaves_the_own_context_alone(tmp_path: Path, body: str) -> None:
+    """`api.context(__file__)` · 꼴 표기 · 자기 id 글자 상수(모듈 시험의 대역) · 이름표가 아닌 값의
+    `replace` · `type(…)(…)` 은 넘긴다."""
+    assert ("M06", "error") not in _page_rules(tmp_path, body)
+    assert ("M06", "error") not in _page_rules(
+        tmp_path / "test", body, rel="tests/test_demo_x_more.py"
+    )
+
+
 def test_the_way_around_the_window_stops_the_self_tests(tmp_path: Path) -> None:
     """그 코드를 실행하지 않는다 — M06 은 시험을 돌리기 전에 멈추는 규칙이다."""
     assert "M06" in rules.BLOCKING_RULES

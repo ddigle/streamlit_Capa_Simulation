@@ -246,6 +246,9 @@ def test_the_guide_names_every_way_around_the_window_the_checker_refuses() -> No
     )
     for name in sorted(rules.WINDOW_ESCAPE_NAMES):
         assert f"`{name}`" in row, name
+    for form in rules.HAND_MADE_CONTEXT_FORMS:
+        assert f"`{form}`" in row, form
+    assert "`api.context(__file__)` 로만 받는다" in row
     assert "보증이 아니다" in row
 
 

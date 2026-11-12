@@ -1356,6 +1356,125 @@ def _check_window_escapes(tree: ast.Module, names: _Names, context: _FileContext
                 _add_escape(node, resolved, context)
 
 
+# 이름표(`ModuleContext`)를 손으로 짓는 꼴(M06) — 자기 id 가 아닌 이름표는 남의 데이터 자리
+# (`data/modules/<그 id>/`)와 버킷의 `modules/<그 id>/` 를 읽고 덮는다(2026-11-12 사용자 답 ④-4
+# (가)). 이름표는 `api.context(__file__)` 로만 받는다. 글자 상수 자기 id 는 넘기고(모듈 시험의
+# 대역), 판정할 수 없는 id 는 오류다. 막는 것은 쉬운 꼴뿐이다 — 방어선은 앱 관리자의 PR 점검이다
+# (런북 4-6).
+CONTEXT_CLASS: Final = f"{_MODULE_API}.ModuleContext"
+_CONTEXT_FACTORY: Final = f"{_MODULE_API}.context"
+_DATACLASS_REPLACE: Final = "dataclasses.replace"
+# 지침서 부록 B 의 M06 우회 줄이 이 꼴을 다 적는다(`tests/test_module_guide_sync.py`).
+HAND_MADE_CONTEXT_FORMS: Final = (
+    "ModuleContext(…)",
+    "dataclasses.replace(ctx, id=…)",
+    "type(ctx)(…)",
+    "ctx.__class__(…)",
+    'object.__setattr__(ctx, "id", …)',
+)
+
+
+def _context_holders(tree: ast.Module, names: _Names) -> set[str]:
+    """이 파일에서 이름표를 담는 이름 — `api.context(…)` 를 대입한 이름과 `api.ModuleContext` 로
+    적은 인자 · 이름."""
+    holders: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg):
+            if node.annotation is not None and names.resolve(node.annotation) == CONTEXT_CLASS:
+                holders.add(node.arg)
+            continue
+        targets: list[ast.expr]
+        value: ast.expr | None
+        annotation: ast.expr | None
+        if isinstance(node, ast.Assign):
+            targets, value, annotation = node.targets, node.value, None
+        elif isinstance(node, ast.AnnAssign):
+            targets, value, annotation = [node.target], node.value, node.annotation
+        else:
+            continue
+        made = isinstance(value, ast.Call) and names.resolve(value.func) == _CONTEXT_FACTORY
+        typed = annotation is not None and names.resolve(annotation) == CONTEXT_CLASS
+        if made or typed:
+            holders.update(target.id for target in targets if isinstance(target, ast.Name))
+    return holders
+
+
+def _holds_context(node: ast.AST, names: _Names, holders: set[str]) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in holders
+    return isinstance(node, ast.Call) and names.resolve(node.func) == _CONTEXT_FACTORY
+
+
+def _context_id(node: ast.Call) -> ast.expr | None:
+    """지어지는 이름표의 id 식 — 첫 자리 인자나 `id=`. `**` 로 넘기면 None(판정할 수 없음)."""
+    for keyword in node.keywords:
+        if keyword.arg == "id":
+            return keyword.value
+    if node.args and not isinstance(node.args[0], ast.Starred):
+        return node.args[0]
+    return None
+
+
+def _check_hand_made_context(tree: ast.Module, names: _Names, context: _FileContext) -> None:
+    """이름표를 손으로 짓는 꼴(M06) — `ModuleContext(…)` · `dataclasses.replace(ctx, id=…)` ·
+    `type(ctx)(…)` · `ctx.__class__(…)` · `object.__setattr__(ctx, "id", …)`. 시험 파일도 같다."""
+    holders = _context_holders(tree, names)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        given: ast.expr | None
+        if names.resolve(func) == CONTEXT_CLASS:
+            shown, given = "ModuleContext(…)", _context_id(node)
+        elif (
+            isinstance(func, ast.Call)
+            and isinstance(func.func, ast.Name)
+            and func.func.id == "type"
+            and func.func.id not in names.aliases
+            and len(func.args) == 1
+            and _holds_context(func.args[0], names, holders)
+        ):
+            shown, given = "type(ctx)(…)", _context_id(node)
+        elif (
+            isinstance(func, ast.Attribute)
+            and func.attr == "__class__"
+            and _holds_context(func.value, names, holders)
+        ):
+            shown, given = "ctx.__class__(…)", _context_id(node)
+        elif (
+            names.resolve(func) == _DATACLASS_REPLACE
+            and node.args
+            and _holds_context(node.args[0], names, holders)
+        ):
+            keyword = {item.arg: item.value for item in node.keywords}
+            if "id" not in keyword and None not in keyword:
+                continue
+            shown, given = "dataclasses.replace(ctx, id=…)", keyword.get("id")
+        elif (
+            isinstance(func, ast.Attribute)
+            and func.attr == "__setattr__"
+            and len(node.args) >= 2
+            and names.constant(node.args[1]) == "id"
+        ):
+            shown, given = 'object.__setattr__(ctx, "id", …)', None
+        else:
+            continue
+        if given is not None and names.constant(given) == context.module_id:
+            continue
+        what = (
+            "판정할 수 없는 id 로"
+            if given is None or names.constant(given) is None
+            else "남의 id 로"
+        )
+        context.add(
+            "M06",
+            "error",
+            node,
+            f"`{shown}` 꼴로 이름표(`ModuleContext`)를 {what} 짓습니다 — 남의 데이터 자리와 버킷을 "
+            "읽고 덮게 됩니다. 이름표는 `api.context(__file__)` 로만 받습니다",
+        )
+
+
 def _path_pieces(node: ast.AST, names: _Names, depth: int = 0) -> list[str | None] | None:
     """경로 식(`a / "b"`·`Path("a", "b")`·`os.path.join(…)`·`p.joinpath(…)`)의 마디 — 모르는 마디는
     None. 경로 식이 아니면 None."""
@@ -2037,6 +2156,7 @@ def check_source(
     _check_references(tree, names, context)
     _check_calls(tree, names, context)
     _check_window_escapes(tree, names, context)
+    _check_hand_made_context(tree, names, context)
     _check_subscripts_and_targets(tree, names, context)
     _check_cache(tree, names, context)
     if not context.is_test and not is_page:
