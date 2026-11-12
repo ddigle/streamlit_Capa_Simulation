@@ -53,14 +53,17 @@
 공정 Capa 상세 「③ 비가동」 구획의 비가동대수(2026-11-12 사용자 답 q5 (가))는 달마다 비가동이 깎은
 가용이다(`downtime_impact`). 손실 = 호기 비가동 손실(위 반사실의 그 달 합 — `호기 비가동 손실`) +
 입력 비가동 반영(그 달 가용에서 멈춘 뒤 실제로 뺀 몫)이고, 곧 「비가동이 하나도 없었을 때의 가용 −
-지금 가용」 이다. 확보율 영향은 그 손실 ÷ 소요 × 100(%)이고 가용·소요는 계획
-(`LevelPlan.process_months`)의 단축 전 값이라 계획의 `확보율` 과 같은 길이다.
+지금 가용」 이다. 가용·소요는 계획(`LevelPlan.process_months`)의 단축 전 값이라 `확보율` 이 계획의
+`확보율` 과 같은 길이다.
 
 ## 총보유대수 — 달력 월
 
 「② 일정 가용」 맨 위 총보유대수(2026-11-12 사용자 답 q3 (가))는 생산월이 아니라 **달력 월**(Cut-off
 없이)로 센 보유 대수다(`owned_unit_counts`). 반입한 달부터 세고 반출/이설하는 날이 든 달부터 뺀다 —
-정지만 한 호기는 아직 가진 것이라 남는다. 모듈은 환산비로 센다.
+정지만 한 호기는 아직 가진 것이라 남는다. 모듈은 환산비로 센다. 기존설비 Y · 보관 Y 호기는
+반입일정과 상관없이 처음부터 가진 것으로 센다 — 가용 엔진의 보유 판정(`기존설비 | 보관 |
+반입일정 ≤ 그날`)과 같은 판단이라 반입일정이 늦게 적힌 이미 가진 호기의 반입 앞 달에 총보유대수가
+가용대수보다 작아지지 않는다(2026-11-12 남은 물음 보드 ③-1 (가)).
 
 ## Dynamic 판정
 
@@ -337,17 +340,14 @@ IMPACT_COLUMNS = (
     "가용대수",
     "비가동 없는 가용대수",
     "확보율",
-    "비가동 없는 확보율",
-    "확보율 영향(%)",
 )
 """비가동 손실(`downtime_impact`) — 전월 대비의 달마다 한 행. 대수는 환산대수다. 공정 Capa 상세
 「③ 비가동」 의 비가동대수가 `비가동 손실` 이다.
 
 `비가동 손실 = 호기 비가동 손실 + 입력 비가동 손실 = 비가동 없는 가용대수 − 가용대수` 이고 입력
 몫은 가용에서 실제로 뺀 몫(`입력 비가동 반영` — 0 에서 멈춘 뒤)이다. `소요대수`·`가용대수` 는 계획의
-단축 전 값이라 `확보율` 이 계획의 `확보율` 과 같다. `확보율 영향(%) = 비가동 손실 ÷ 소요대수 × 100`
-이다.
-소요가 0 이면 두 확보율과 영향이 NaN 이고, 계획에 없는 달은 소요부터 NaN 이다.
+단축 전 값이라 `확보율` 이 계획의 `확보율` 과 같다. 소요가 0 이면 `확보율` 이 NaN 이고, 계획에 없는
+달은 소요부터 NaN 이다.
 """
 
 ARROW_COLUMNS = (
@@ -533,10 +533,12 @@ OWNED_UNIT_COLUMNS = ("년월", "기존보유", "반입", "반출이설", "총�
 """② 총보유대수(`owned_unit_counts`) — 축의 달마다 한 행이고 달은 **달력 월**이다(Cut-off 없이).
 대수는 환산대수다.
 
-`총보유대수 = 기존보유 + 반입 − 반출이설`. `기존보유` 는 기존보유 표(`기존보유대수`)와 반입일정이 빈
-기존설비(`기존설비여부` Y) 호기 — 처음부터 가진 것이다. `반입` 은 반입일정이 그 달 끝까지인 호기,
+`총보유대수 = 기존보유 + 반입 − 반출이설`. `기존보유` 는 기존보유 표(`기존보유대수`)와 기존설비
+(`기존설비여부` Y) · 보관(`보관유무` Y) 호기 — 반입일정과 상관없이 처음부터 가진 것이다(가용
+엔진의 보유 판정과 같다). `반입` 은 그 밖의 호기 가운데 반입일정이 그 달 끝까지인 호기,
 `반출이설` 은 가진 호기 가운데 반출/이설일정이 그 달 끝까지인 호기다. 정지일정만 있는 호기는 아직
-가진 것이라 빼지 않는다. 사용기준 HBM·EDP 호기만 센다 — 셋업 중 · 보관 호기도 반입했으면 센다.
+가진 것이라 빼지 않는다.
+사용기준 HBM·EDP 호기만 센다 — 셋업 중 호기도 반입했으면 센다.
 """
 
 # ---------------------------------------------------------------------- 묶음 결과
@@ -1362,8 +1364,9 @@ def owned_unit_counts(
     """달력 월마다 총보유대수(`OWNED_UNIT_COLUMNS`).
 
     `equipment` 는 그 공정의 정규화한 설비 마스터 행(`prepare_equipment_master` 를 공정으로 거른
-    것), `baseline_units` 는 그 공정의 기존보유 표 합이다. 사용기준 HBM·EDP 행만 센다. 반입일정이 빈
-    행은 기존설비 Y 면 처음부터 가진 것(`기존보유`)이고, 아니면 날짜가 들어올 때까지 세지
+    것), `baseline_units` 는 그 공정의 기존보유 표 합이다. 사용기준 HBM·EDP 행만 센다. 기존설비 Y ·
+    보관 Y 행은 반입일정과 상관없이 처음부터 가진 것(`기존보유`)이다 — 가용 엔진의 보유 판정과
+    같다. 그 밖의 행은 반입일정이 든 달부터 세고, 반입일정이 비었으면 날짜가 들어올 때까지 세지
     않는다(일정 미정). 반출/이설일정이 든 달부터 빼고, 정지일정은 보지 않는다.
     """
     ordered = tuple(sorted({int(month) for month in months}))
@@ -1372,20 +1375,23 @@ def owned_unit_counts(
     if not equipment.empty:
         counted = equipment.loc[counts_for_capacity(equipment).to_numpy()]
         ratios = pd.to_numeric(counted[CONVERSION_RATIO_COLUMN], errors="coerce").fillna(0.0)
-        for ratio, arrived_on, leaves_on, existing_flag in zip(
+        held_from_start = (
+            counted["기존설비여부"].eq("Y") | counted[STORAGE_FLAG_COLUMN].eq("Y")
+        ).fillna(False)
+        for ratio, arrived_on, leaves_on, from_start in zip(
             ratios.astype("float64"),
             counted[ARRIVAL_DATE_COLUMN],
             counted[RELOCATION_DATE_COLUMN],
-            counted["기존설비여부"],
+            held_from_start.astype("bool"),
             strict=True,
         ):
             arrival = _as_date(arrived_on)
             exit_day = _as_date(leaves_on)
             exit_month = exit_day.year * 100 + exit_day.month if exit_day is not None else None
-            if arrival is None:
-                if str(existing_flag or "").strip().upper() != "Y":
-                    continue
+            if from_start:
                 units.append((None, float(ratio), exit_month))
+                continue
+            if arrival is None:
                 continue
             units.append((arrival.year * 100 + arrival.month, float(ratio), exit_month))
     existing = held + sum(ratio for since, ratio, _ in units if since is None)
@@ -1612,8 +1618,7 @@ def _units_by_month(contributions: pd.DataFrame) -> dict[tuple[str, int], float]
 
 
 def downtime_impact(bridge: pd.DataFrame, process_months: pd.DataFrame) -> pd.DataFrame:
-    """달마다 비가동이 깎은 가용과 그 확보율 영향(`IMPACT_COLUMNS`) — 「③ 비가동」 비가동대수의
-    재료.
+    """달마다 비가동이 깎은 가용(`IMPACT_COLUMNS`) — 「③ 비가동」 비가동대수의 재료.
 
     `bridge` 는 그 공정의 `availability_bridge`(`ProcessEquipmentTimeline.bridge`),
     `process_months` 는 같은 공정의 계획 달 행(`LevelPlan.process_months` 를 그 공정으로 거른 것 —
@@ -1667,8 +1672,6 @@ def downtime_impact(bridge: pd.DataFrame, process_months: pd.DataFrame) -> pd.Da
                 if not math.isnan(available)
                 else math.nan,
                 "확보율": available / need if counted else math.nan,
-                "비가동 없는 확보율": (available + loss) / need if counted else math.nan,
-                "확보율 영향(%)": _tidy(loss / need * 100) if counted else math.nan,
             }
         )
     frame = pd.DataFrame(rows, columns=columns)

@@ -733,6 +733,40 @@ def test_owned_units_count_calendar_months_and_drop_only_relocated_units() -> No
     assert empty["총보유대수"].tolist() == [1.5, 1.5, 1.5]
 
 
+@pytest.mark.parametrize(
+    ("unit", "owned_by_month"),
+    [
+        # 기존설비 Y 인데 반입일정이 축 안(6/5)에 늦게 적혔다 — 5월에도 이미 가진 것이다.
+        (
+            _unit("OLD1", date(2026, 6, 20), arrival=date(2026, 6, 5), existing="Y"),
+            [1.0, 1.0, 1.0],
+        ),
+        # 보관 Y · 반입일정 없음(기존설비 N) — 보관 중인 호기는 가진 것이다(가용은 아니다).
+        (_unit("ST1", date(2026, 5, 10), arrival=None, storage="Y"), [1.0, 1.0, 1.0]),
+        # 보관 Y · 반입일정이 축 안(6/3) — 반입일정과 상관없이 처음부터 가진 것이다.
+        (_unit("ST2", date(2026, 6, 20), arrival=date(2026, 6, 3), storage="Y"), [1.0, 1.0, 1.0]),
+        # 보관 Y · 반입일정이 축 앞(4/1) — 그대로 처음부터.
+        (_unit("ST3", date(2026, 5, 10), arrival=date(2026, 4, 1), storage="Y"), [1.0, 1.0, 1.0]),
+    ],
+)
+def test_existing_and_stored_units_are_owned_from_the_start_like_the_availability_engine(
+    unit: dict[str, Any], owned_by_month: list[float]
+) -> None:
+    """② 총보유대수(2026-11-12 남은 물음 보드 ③-1 (가)) — 기존설비 Y · 보관 Y 호기는 반입일정과
+    상관없이 처음부터 가진 것으로 센다(가용 엔진의 보유 판정과 같은 판단). 그래서 한 구획 안에서
+    총보유대수가 가용대수(비가동 빼기 전)보다 작은 달이 없다."""
+    timeline = _timeline([unit], baseline=0.0)
+    owned = timeline.owned_units.set_index("년월")
+    bridge = timeline.bridge.set_index("생산계획년월")
+    free = bridge["기존보유"] + bridge["호기 가용"] + bridge["호기 비가동 손실"]
+
+    assert owned["총보유대수"].tolist() == owned_by_month
+    assert owned["기존보유"].tolist() == owned_by_month
+    assert owned["반입"].tolist() == [0.0, 0.0, 0.0]
+    for month in AXIS:
+        assert owned.loc[month, "총보유대수"] >= free[month] - 1e-9, month
+
+
 def test_unit_month_changes_split_the_change_before_downtime_by_unit_group() -> None:
     """② 전월 대비 풍선(2026-11-12 사용자 답 k-c3) — 호기 묶음(설비키)마다 비가동을 비운 가용의 전월
     대비 몫이다. 몫을 모두 더하면 비가동 빼기 전 호기 가용의 전월 대비와 같고, 큰 차례다."""

@@ -42,7 +42,7 @@ from test_reference_data_page import (
 )
 
 from capa_simulation import alerts
-from capa_simulation.components import page_tabs, reference_grid
+from capa_simulation.components import edit_grid, page_tabs, reference_grid
 from capa_simulation.components.edit_grid import feed_key
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.month_editor import APPLY_NOTICE
@@ -398,6 +398,9 @@ def test_the_action_row_sits_above_the_grid_and_discard_drops_the_draft(calls: C
     elements = _walk(app.main)
     keys = [getattr(node, "key", None) for node in elements]
     assert keys.index(APPLY) < keys.index("capa_run_day_editor_discard")
+    # 「편집 취소」 그림은 표 도구 「되돌리기」(undo 화살표)와 다르다(2026-11-12 보드 ③-11).
+    assert app.button(key="capa_run_day_editor_discard").icon == edit_grid.DISCARD_ICON
+    assert "undo" not in edit_grid.DISCARD_ICON
     app.button(key="capa_run_day_editor_discard").click().run()
     assert not app.exception
     assert _draft(app) is None

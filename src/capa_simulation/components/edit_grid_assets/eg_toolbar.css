@@ -10,7 +10,7 @@
 }
 
 .eg-tb-q {
-  width: 150px;
+  width: 140px;
   height: var(--eg-tb-height, 28px);
   padding: 0 8px;
   border: 1px solid var(--eg-border-strong);

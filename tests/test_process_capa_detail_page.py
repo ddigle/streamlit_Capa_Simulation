@@ -64,6 +64,7 @@ from capa_simulation.components.process_capa_view import (
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
     UNITS_VIEW_KEY,
+    picker_help,
     step_button_label,
 )
 from capa_simulation.components.process_capa_workbook import DETAIL_SHEET, UNITS_SHEET
@@ -1226,13 +1227,26 @@ def _pair_block(block: Any, caption: str, key: str) -> bool:
     return any(_pair_block(child, caption, key) for child in children)
 
 
-def test_the_basis_picker_follows_the_effect_section_and_each_picker_keeps_its_caption(
+def _pair_marks(block: Any, key: str) -> list[str]:
+    """위젯 `key` 와 같은 칸의 바로 아래 자식으로 서는 빈 캡션 풍선(ⓘ)들의 글."""
+    children = list(block.children.values()) if hasattr(block, "children") else []
+    if key in {str(getattr(child, "key", "")) for child in children}:
+        return [
+            str(child.proto.help)
+            for child in children
+            if child.type == "caption" and str(child.value) == "" and child.proto.help
+        ]
+    return [mark for child in children for mark in _pair_marks(child, key)]
+
+
+def test_the_basis_picker_follows_the_effect_section_and_the_two_pickers_share_one_info_mark(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
     """「비가동 기준」 고르기는 ③ 이 펼쳐진 동안만 서고(④ 보기와 같은 꼴),
     접힌 동안에도 고른 값은 이 세션에 남아 다시 펴면 그대로이고 시트 엑셀 머리 값도 따른다.
-    캡션 붙은 고르기는 캡션과 한 칸이라 함께 줄을 넘고(UI-LAY-11), ④ 의 숨긴 라벨은 뜻 있는
-    이름이다(UI-LAY-13)."""
+    두 고르기(비가동 기준 · ④ 보기)는 보이는 캡션 없이 서고 뜻은 선 것 가운데 마지막 고르기와 한
+    칸인 ⓘ 하나다(2026-11-12 남은 물음 보드 ③-2 (가) — 줄이는 차례, UI-LAY-11 · UI-TXT-02).
+    숨긴 라벨은 뜻 있는 이름이다(UI-LAY-13). 「분류」 는 캡션과 한 칸이라 함께 줄을 넘는다."""
     app = _dynamic_app(dynamic_databases)
 
     def basis_pickers() -> list[str]:
@@ -1242,9 +1256,26 @@ def test_the_basis_picker_follows_the_effect_section_and_each_picker_keeps_its_c
             return []
 
     assert basis_pickers() == [BASIS_KEY]
-    assert _pair_block(app.main, "비가동 기준", BASIS_KEY)
-    assert _pair_block(app.main, "④", UNITS_VIEW_KEY)
+    captions = {str(item.value) for item in app.caption}
+    assert "비가동 기준" not in captions and "④" not in captions
+    assert app.segmented_control(key=BASIS_KEY).label == "비가동 기준"
     assert app.segmented_control(key=UNITS_VIEW_KEY).label == "④ 단축 보기"
+    both = picker_help(basis=True, units=True)
+    assert "Static · 일정" in both and "전체 · 단축 필요만" in both
+    assert "비가동대수를 ① Static 가용대수에서 뺄지, ② 일정 가용대수에서" in both
+    assert _pair_marks(app.main, BASIS_KEY) == []
+    assert _pair_marks(app.main, UNITS_VIEW_KEY) == [both]
+    assert [item for item in app.caption if item.proto.help == both] != []
+    assert len([item for item in app.caption if "단축 필요만" in str(item.proto.help)]) == 1
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
+        [section for section in SECTION_IDS if section != SECTION_UNITS]
+    )
+    _ok(app.run())
+    assert _pair_marks(app.main, BASIS_KEY) == [picker_help(basis=True, units=False)]
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(list(SECTION_IDS))
+    _ok(app.run())
     app.segmented_control(key=BASIS_KEY).set_value(BASIS_SCHEDULE)
     _ok(app.run())
 
@@ -1255,6 +1286,7 @@ def test_the_basis_picker_follows_the_effect_section_and_each_picker_keeps_its_c
     assert basis_pickers() == []
     assert app.session_state[BASIS_KEY] == BASIS_SCHEDULE
     assert "비가동 기준" not in _heading(_sheet(app)[1][DETAIL_SHEET])
+    assert _pair_marks(app.main, UNITS_VIEW_KEY) == [picker_help(basis=False, units=True)]
 
     app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(list(SECTION_IDS))
     _ok(app.run())

@@ -1463,10 +1463,12 @@ def test_a_locked_apply_button_says_why_and_an_open_one_says_what_it_does(
     seeded_database: Path,
 ) -> None:
     """잠긴 동안 풍선은 까닭이고 눌리면 하는 일이다 — 「적용해야 반영된다」 는 눌리는 단추에 남는다
-    (설계 규칙 UI-INP-07)."""
+    (설계 규칙 UI-INP-07). 두 탭 단추는 같은 일이라 한 이름 「변경사항 적용」 이다(2026-11-12 남은
+    물음 보드 ③-9 (가) — 하는 일은 풍선이 가른다)."""
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     for key in ("apply_pkg_plan_changes", "apply_yield_changes"):
         button = app.button(key=key)
+        assert button.label == "변경사항 적용"
         assert button.disabled
         assert button.proto.help == "고친 칸이 있으면 누를 수 있습니다."
 
@@ -1512,7 +1514,7 @@ def test_the_plan_apply_notice_survives_a_second_press_on_the_locked_button(
 def test_the_yield_apply_notice_survives_a_second_press_on_the_locked_button(
     seeded_database: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """「수율 변경사항 적용」 도 같다(2026-10-27 E2E 4/6)."""
+    """수율 탭 「변경사항 적용」 도 같다(2026-10-27 E2E 4/6)."""
     monkeypatch.setattr(write_guard, "TRAILING_PRESS_SECONDS", 3600.0)
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     grid = _yield_grid(app)

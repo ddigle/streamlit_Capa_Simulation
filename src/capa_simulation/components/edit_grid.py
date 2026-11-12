@@ -74,6 +74,11 @@ FEED_JS: Final = "feed.js"
 STATE_NAMES: Final = ("outbox",)
 TRIGGER_NAMES: Final[tuple[str, ...]] = ()
 HOST_PATTERN: Final = re.compile(r"[A-Za-z0-9_-]+")
+# 작업 줄 「편집 취소」(그 표의 초안 전체를 버림) 그림 — 표 도구 「되돌리기」(한 칸 되돌림 ·
+# Ctrl+Z)의 휘어진 화살표와 가른다. 설비 마스터 · 시나리오 목록 「모두 버리기」
+# (`save_section.discard_popover`)와 같은 그림이다(2026-11-12 남은 물음 보드 ③-11 (가) — 하는 일이
+# 다른 두 단추를 헷갈리지 않게).
+DISCARD_ICON: Final = ":material/delete_sweep:"
 _COMMENT_LINE: Final = re.compile(r"^\s*//")
 
 

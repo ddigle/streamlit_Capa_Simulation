@@ -947,9 +947,7 @@ PLAN_PASTE_BUTTON = plan_grid.Button(
 VIRTUAL_PRODUCT_BUTTON = plan_grid.Button(
     "가상 제품 등록", ":material/library_add:", "open_virtual_product", _open_virtual_product
 )
-YIELD_APPLY_BUTTON = plan_grid.Button(
-    "수율 변경사항 적용", ":material/check:", "apply_yield_changes"
-)
+YIELD_APPLY_BUTTON = plan_grid.Button("변경사항 적용", ":material/check:", "apply_yield_changes")
 YIELD_PASTE_BUTTON = plan_grid.Button(
     "Excel 붙여넣기", ":material/content_paste:", "open_yield_paste", _open_yield_paste
 )

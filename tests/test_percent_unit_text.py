@@ -42,7 +42,6 @@ from capa_simulation.services.performance_actuals import (
     build_monthly_actual_demo,
     build_priority_table,
 )
-from capa_simulation.services.process_equipment_timeline import IMPACT_COLUMNS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = ("app.py", "app_pages", "src", "scripts")
@@ -208,9 +207,8 @@ def test_the_securement_adjustment_hovers_read_percent() -> None:
     assert _execution_delta_note(5.0, "") == "<b>확보율 보정 +5.0%</b>"
 
 
-def test_the_downtime_impact_and_cross_check_columns_read_percent() -> None:
-    """비가동 손실 재료 칸(`downtime_impact`)과 가용설비 현황 확보율 교차검증 차이 칸."""
-    assert "확보율 영향(%)" in IMPACT_COLUMNS
+def test_the_cross_check_column_reads_percent() -> None:
+    """가용설비 현황 확보율 교차검증 차이 칸."""
     type_config = _CROSS_CHECK_FORMAT["확보율차이"].get("type_config")
     assert isinstance(type_config, dict) and type_config.get("format") == "%+.1f%%"
 

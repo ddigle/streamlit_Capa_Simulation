@@ -26,6 +26,7 @@ from test_load_conversion_plan_apply import (  # noqa: F401
 )
 
 import capa_simulation.components.tab_marks as tab_marks
+from capa_simulation.components.edit_grid import DISCARD_ICON
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
 from capa_simulation.services.load_calculator import PLAN_EDITOR_DIMENSIONS
 from capa_simulation.sidebar_status import CONDITION_CARD_PREFIX, remembered_box_key
@@ -162,7 +163,7 @@ def test_the_yield_guide_says_how_to_keep_edits_a_paste_would_drop() -> None:
     guide = load_guide("load_conversion")
     plan_part, yield_part = guide.split("**수율** — ", 1)
     assert "**변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in plan_part
-    assert "**수율 변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in yield_part
+    assert "**변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in yield_part
 
 
 def test_the_guide_explains_every_card_setting_and_action() -> None:
@@ -173,7 +174,6 @@ def test_the_guide_explains_every_card_setting_and_action() -> None:
         "상세",
         "EDP",
         "변경사항 적용",
-        "수율 변경사항 적용",
         "Excel 붙여넣기",
         "가상 제품 등록",
         "신규 리비전 저장",
@@ -216,6 +216,7 @@ def test_plan_apply_waits_for_a_change_and_cancel_drops_a_staged_paste(database:
     _paste(app, _clipboard_text(app, scale=0.5))
     assert not app.button(key="apply_pkg_plan_changes").disabled
 
+    assert app.button(key="discard_pkg_plan_edits").icon == DISCARD_ICON
     app.button(key="discard_pkg_plan_edits").click().run()
     assert not list(app.exception)
     assert "pkg_plan_staged_paste" not in app.session_state

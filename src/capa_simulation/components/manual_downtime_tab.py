@@ -136,7 +136,7 @@ MANUAL_SAVE_BUTTON: Final = "입력 비가동 저장"
 NOTE_PLACEHOLDER: Final = note_placeholder("26.07 PM 1.5대")
 MANUAL_PROCESS_COLUMN: Final = "공정"
 MANUAL_SAVED_MESSAGE: Final = (
-    "입력 비가동 대수를 저장했습니다 — 공정 Capa 상세 ③·⑤·필요 단축 일정·제약 시뮬레이션·"
+    "입력 비가동대수를 저장했습니다 — 공정 Capa 상세 ③·⑤·필요 단축 일정·제약 시뮬레이션·"
     "Space 필요 단축 보기·Summary › Static 대비 일정이 새 값으로 계산합니다."
 )
 # 바꾼 것 없는 저장의 알림 — 새 버전을 만들지 않는다(설계 규칙 UI-STA-01 — 다른 공용 프로필 저장과
@@ -150,7 +150,7 @@ _HISTORY_LIMIT: Final = 20
 # 자리에 늘 두던 설명을 옮긴 풍선(설계 규칙 UI-TXT-01 · UI-TXT-02 — 자리에는 값만). 무엇인가 ·
 # 어디에 드나는 구획 제목, 달 · 빈칸은 값 줄, 저장해야 남는다는 것은 저장 단추(UI-NTF-09)다.
 MANUAL_INTRO_HELP: Final = (
-    "호기에 잇지 않고 공정 × 달로 넣는 비가동 대수(환산 대수, 소수 가능)입니다. 호기별 비가동과 "
+    "호기에 잇지 않고 공정 × 달로 넣는 비가동대수(환산 대수, 소수 가능)입니다. 호기별 비가동과 "
     "별도 손실로 설비 일정 기준 가용대수에서 더 뺍니다 — 공정 Capa 상세 ③·⑤, 필요 단축 일정, 제약 "
     "시뮬레이션, Space 필요 단축 보기, 이 화면 Summary › Static 대비 일정이 같이 바뀝니다. 그 달 "
     "가용보다 크면 가용은 0 에서 멈춥니다. HOME·Static(기준정보 가용)·표준 목표·표준 대비 "
@@ -288,7 +288,7 @@ def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
     period = f"{month_label(months[0])}–{month_label(months[-1])}" if months else "없음"
     outside = sum(1 for _, month, _ in profile.rows if month not in set(months))
     render_profile_heading(
-        "#### :material/event_busy: 월별 비가동 대수(입력)",
+        "#### :material/event_busy: 월별 비가동대수(입력)",
         profile,
         key="manual_downtime",
         empty="아직 넣은 입력 비가동이 없습니다",
