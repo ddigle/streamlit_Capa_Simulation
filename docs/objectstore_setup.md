@@ -153,8 +153,11 @@ aws 를 부르기 전에 `[중단] … 넣을 환경변수: …` 한 줄로 멈�
 
 **1단계 — 접속 확인.** `$env:` 는 이 창의 스크립트용이다. 이관 뒤 사내 PC 앱은 `managed` 로 띄우지 않는다. **운영 버킷 이름은 그 창의 변수(`$b`)로만 넣는다** —
 PC 환경변수(`[Environment]::SetEnvironmentVariable` · `setx` · 시스템 환경 변수 편집)에 남기지 않는다(2026-11-12 사용자 답 — 사내 PC 에 운영 버킷이 남으면 쓰는 쪽이 둘이 될 수 있다).
-`$b` 는 창을 닫으면 사라지고 그 창에서 띄우는 다른 프로그램에도 넘어가지 않는다 — 3단계까지 같은 창에서 친다(4장 2 ~ 4). `$b` 가 비었으면 PowerShell 이
-그 자리를 빼 하위 명령 이름이 버킷 값으로 들어가고 `the following arguments are required: command` 꼴 오류(종료 2)로 멈춘다 — 아무것도 쓰지 않았다. `$b` 줄부터 다시 친다.
+`$b` 는 창을 닫으면 사라지고 그 창에서 띄우는 다른 프로그램에도 넘어가지 않는다 — 3단계까지 같은 창에서 친다(4장 2 ~ 4). `$b` 가 비었으면 PowerShell(사내 PC 의 5.1)이
+그 자리를 빼 바로 뒤 낱말이 버킷 값으로 들어가고 `the following arguments are required: command`(`doctor` · `status` · `generations`) 또는
+`argument command: invalid choice: …`(`init --note …` · `fetch-copy --to …` · `rollback --to …`) 꼴 오류(종료 2)로 멈춘다 — 아무것도 쓰지 않았다.
+빈 글자를 그대로 넘기는 셸이면 `--bucket ""` 이 되어 `CAPA_S3_BUCKET` 환경변수로 넘어간다 — 사내 PC 에는 그 변수가 없으니 `[중단]` 으로 그 이름을 대며
+멈춘다(넣어 두었으면 그 버킷으로 간다 — 넣지 않는 까닭이다). 어느 꼴이든 `$b` 줄부터 다시 친다.
 
 ```powershell
 $env:CAPA_S3_SYNC_MODE = "managed"
