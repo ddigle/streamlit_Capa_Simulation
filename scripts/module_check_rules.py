@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1358,9 +1359,9 @@ def _check_window_escapes(tree: ast.Module, names: _Names, context: _FileContext
 
 # 이름표(`ModuleContext`)를 손으로 짓는 꼴(M06) — 자기 id 가 아닌 이름표는 남의 데이터 자리
 # (`data/modules/<그 id>/`)와 버킷의 `modules/<그 id>/` 를 읽고 덮는다(2026-11-12 사용자 답 ④-4
-# (가)). 이름표는 `api.context(__file__)` 로만 받는다. 글자 상수 자기 id 는 넘기고(모듈 시험의
-# 대역), 판정할 수 없는 id 는 오류다. 막는 것은 쉬운 꼴뿐이다 — 방어선은 앱 관리자의 PR 점검이다
-# (런북 4-6).
+# (가)). 이름표는 `api.context(__file__)` 로만 받는다. 자기 id — 글자 상수(모듈 시험의 대역)와
+# `api.context(__file__)` 이름표의 `.id` — 는 넘기고, 판정할 수 없는 id 는 오류다. 막는 것은
+# 쉬운 꼴뿐이다 — 방어선은 앱 관리자의 PR 점검이다(런북 4-6).
 CONTEXT_CLASS: Final = f"{_MODULE_API}.ModuleContext"
 _CONTEXT_FACTORY: Final = f"{_MODULE_API}.context"
 _DATACLASS_REPLACE: Final = "dataclasses.replace"
@@ -1405,6 +1406,67 @@ def _holds_context(node: ast.AST, names: _Names, holders: set[str]) -> bool:
     return isinstance(node, ast.Call) and names.resolve(node.func) == _CONTEXT_FACTORY
 
 
+def _is_own_context_call(node: ast.AST, names: _Names) -> bool:
+    """글자 그대로 `api.context(__file__)` — 이 파일이 든 모듈의 이름표다."""
+    return (
+        isinstance(node, ast.Call)
+        and names.resolve(node.func) == _CONTEXT_FACTORY
+        and len(node.args) == 1
+        and not node.keywords
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "__file__"
+    )
+
+
+def _own_context_names(tree: ast.Module, names: _Names) -> set[str]:
+    """파일 어디서나 `api.context(__file__)` 만 대입한 이름 — 그 `.id` 는 자기 id 다. 다른 값 ·
+    인자 · 반복 변수 · `with … as` 따위로도 묶이는 이름은 넣지 않는다(어느 이름표인지
+    정적으로 모른다)."""
+    stores: Counter[str] = Counter()
+    own: Counter[str] = Counter()
+    others: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            stores[node.id] += 1
+        elif isinstance(node, ast.arg):
+            others.add(node.arg)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            others.add(node.name)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            others.add(node.name)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            others.update(node.names)
+        if isinstance(node, ast.Assign) and _is_own_context_call(node.value, names):
+            own.update(target.id for target in node.targets if isinstance(target, ast.Name))
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and node.value is not None
+            and _is_own_context_call(node.value, names)
+            and isinstance(node.target, ast.Name)
+        ):
+            own[node.target.id] += 1
+    if stores["__file__"] or "__file__" in others:
+        return set()
+    return {
+        name
+        for name, count in own.items()
+        if stores[name] == count and name not in others and name not in names.aliases
+    }
+
+
+def _is_own_id(node: ast.expr, names: _Names, own_names: set[str], module_id: str) -> bool:
+    """자기 id 로 판정되는 식 — 자기 id 글자 상수(모듈 시험의 대역)와 `api.context(__file__)`
+    이름표의 `.id`."""
+    if names.constant(node) == module_id:
+        return True
+    if not (isinstance(node, ast.Attribute) and node.attr == "id"):
+        return False
+    base = node.value
+    return (isinstance(base, ast.Name) and base.id in own_names) or _is_own_context_call(
+        base, names
+    )
+
+
 def _context_id(node: ast.Call) -> ast.expr | None:
     """지어지는 이름표의 id 식 — 첫 자리 인자나 `id=`. `**` 로 넘기면 None(판정할 수 없음)."""
     for keyword in node.keywords:
@@ -1419,6 +1481,7 @@ def _check_hand_made_context(tree: ast.Module, names: _Names, context: _FileCont
     """이름표를 손으로 짓는 꼴(M06) — `ModuleContext(…)` · `dataclasses.replace(ctx, id=…)` ·
     `type(ctx)(…)` · `ctx.__class__(…)` · `object.__setattr__(ctx, "id", …)`. 시험 파일도 같다."""
     holders = _context_holders(tree, names)
+    own_names = _own_context_names(tree, names)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -1457,10 +1520,11 @@ def _check_hand_made_context(tree: ast.Module, names: _Names, context: _FileCont
             and _holds_context(node.args[0], names, holders)
             and names.constant(node.args[1]) == "id"
         ):
-            shown, given = 'object.__setattr__(ctx, "id", …)', None
+            shown = 'object.__setattr__(ctx, "id", …)'
+            given = node.args[2] if len(node.args) >= 3 else None
         else:
             continue
-        if given is not None and names.constant(given) == context.module_id:
+        if given is not None and _is_own_id(given, names, own_names, context.module_id):
             continue
         what = (
             "판정할 수 없는 id 로"

@@ -646,6 +646,14 @@ _CTX = _API + "ctx = api.context(__file__)\n"
         _CTX + 'OTHER = ctx.__class__(id="demo_y", name="y", owner="o", maturity="L0",'
         " folder=None, api_version=(1, 3))\n",
         _CTX + 'object.__setattr__(ctx, "id", "demo_y")\n',
+        _API + "\n\ndef other(ctx: api.ModuleContext) -> object:\n"
+        '    return api.ModuleContext(ctx.id, "y", "o", "L0", None, (1, 3))\n',
+        _API + 'OTHER = api.ModuleContext(api.context("modules/demo_y/page.py").id, "y", "o", "L0",'
+        " None, (1, 3))\n",
+        _CTX + 'ctx = api.context("modules/demo_y/page.py")\n'
+        'OTHER = api.ModuleContext(ctx.id, "y", "o", "L0", None, (1, 3))\n',
+        _CTX + "for ctx in []:\n    pass\nimport dataclasses\n"
+        "OTHER = dataclasses.replace(ctx, id=ctx.id)\n",
     ],
 )
 def test_m06_catches_a_hand_made_context_for_another_module(tmp_path: Path, body: str) -> None:
@@ -664,6 +672,11 @@ def test_m06_catches_a_hand_made_context_for_another_module(tmp_path: Path, body
         _API + 'OWN = api.ModuleContext("demo_x", "x", "o", "L0", None, (1, 3))\n',
         _CTX + 'import dataclasses\nOWN = dataclasses.replace(ctx, name="다른 이름")\n',
         _CTX + 'import dataclasses\nOWN = dataclasses.replace(ctx, id="demo_x")\n',
+        _CTX + 'OWN = api.ModuleContext(ctx.id, "x", "o", "L0", None, (1, 3))\n',
+        _CTX + "import dataclasses\nOWN = dataclasses.replace(ctx, id=ctx.id)\n",
+        _API + 'OWN = type(api.context(__file__))(api.context(__file__).id, "x", "o", "L0", None,'
+        " (1, 3))\n",
+        _CTX + 'object.__setattr__(ctx, "id", "demo_x")\n',
         "import dataclasses\n\n\n@dataclasses.dataclass\nclass Row:\n    id: str\n\n\n"
         'ROW = dataclasses.replace(Row("a"), id="b")\n',
         "FOUND = type(1)(2)\n",
@@ -673,8 +686,9 @@ def test_m06_catches_a_hand_made_context_for_another_module(tmp_path: Path, body
     ],
 )
 def test_m06_leaves_the_own_context_alone(tmp_path: Path, body: str) -> None:
-    """`api.context(__file__)` · 꼴 표기 · 자기 id 글자 상수(모듈 시험의 대역) · 이름표가 아닌 값의
-    `replace` · `type(…)(…)` 은 넘긴다."""
+    """`api.context(__file__)` · 꼴 표기 · 자기 id(글자 상수 — 모듈 시험의 대역 — 와
+    `api.context(__file__)` 로만 묶은 이름표의 `.id`) · 이름표가 아닌 값의 `replace` ·
+    `type(…)(…)` 은 넘긴다."""
     assert ("M06", "error") not in _page_rules(tmp_path, body)
     assert ("M06", "error") not in _page_rules(
         tmp_path / "test", body, rel="tests/test_demo_x_more.py"
