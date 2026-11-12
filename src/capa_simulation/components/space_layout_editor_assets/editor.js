@@ -2485,7 +2485,7 @@ export default function (component) {
     return { right: ceilTo(right), top: ceilTo(top) }
   }
   // 캔버스를 한 축(axis — 'right' | 'top')의 하한 limit(ceil 맞춘 값) 아래로 줄이지 못한 까닭 — 하한에 닿은 것 모두를 「 · 」 로
-  // 잇는다(「호기·요소」 · 「도면에 안 보이는 호기」 · 「가정 설비 시나리오 「이름」 배치」). 모두 받침 없이 끝나 뒤에 「가」 를 붙인다.
+  // 잇는다(「호기·요소」 · 「도면에 안 보이는 호기」 · 「가정 설비 시나리오 「이름」 배치」). 뒤 조사는 부르는 쪽이 `withJosa` 로 고른다.
   function canvasLimitWords(axis, limit, parts, ceil) {
     const reach = (value) => ceil(value) >= limit - 1e-9
     const words = []
@@ -4827,7 +4827,7 @@ export default function (component) {
     let h = roundTo(Number.isFinite(requestedH) ? requestedH : H())
     const notes = []
     const why = (axis) => ext[axis] > MIN_EXTENT
-      ? `${canvasLimitWords(axis, ext[axis], parts, ceilTo)}가 거기까지 놓여 있습니다`
+      ? `${withJosa(canvasLimitWords(axis, ext[axis], parts, ceilTo), '이')} 거기까지 놓여 있습니다`
       : `최소 ${MIN_EXTENT}`
     if (w < minW) { notes.push(`폭은 ${minW} 아래로 줄일 수 없습니다(${why('right')})`); w = minW }
     if (h < minH) { notes.push(`높이는 ${minH} 아래로 줄일 수 없습니다(${why('top')})`); h = minH }
