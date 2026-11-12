@@ -1,4 +1,4 @@
-# Purpose: 두 DB 의 표 행 수 · 모듈 묶음 · 파일 크기와 생산 계획 편집 표 크기를 읽기만 해 센다.
+# Purpose: 두 DB 의 행 수 · 모듈 묶음 · 파일 크기 · 생산 계획 표 크기 · 묶음 갈림을 읽기만 해 센다.
 
 """런북 7-8 의 개수 세기 — 사내에서는 사용자가 Claude 밖의 별도 PowerShell 창에서 앱을 끈 뒤
 돌리고, 사내 에이전트는 `--output` 파일만 읽어 옮긴다(런북 0장 — 에이전트는 사내 DB 를 여는
@@ -10,7 +10,8 @@
 줄 1 ~ 3 은 7장의 기대 줄 · 지난 리뷰의 값과 견주는 꼴이라 **글자 그대로** 지킨다 — 키 · 차례 ·
 값 꼴을 바꾸지 않는다(`tests/test_inspect_db_counts.py` 가 붙든다). 넷째 줄은 생산 계획 그리드 두
 표(PKG PLAN · 수율)의 크기다(2026-11-12 사용자 답 ③-7 (가) — 큰 표 상한을 둘지 실제 크기를 보고
-정한다).
+정한다). 다섯째 줄은 모듈 묶음 안에서 같이 바뀌는 칸이 갈린 묶음 수다(2026-11-12 Space 요청 3 —
+저장 때만 막는 일곱 칸이 이관 뒤 첫 저장을 막을지 이관 앞에서 안다).
 
 | 줄 | `--only` | 무엇을 |
 |---|---|---|
@@ -18,6 +19,7 @@
 | 2 | `bundles` | 최신 설비 리비전의 Space 모듈 묶음 — 모듈 수 · 상자 · 바둑판 |
 | 3 | `sizes` | 두 DB 파일 크기 · 블록 · `.wal` · gzip 크기 · 블록이 많은 표 여섯 |
 | 4 | `plan` | 생산 계획 PKG PLAN · 수율 그리드 양식의 줄 · 달 · 칸 수와 본문 바이트의 최대 |
+| 5 | `mixed` | 최신 설비 리비전의 모듈 묶음 가운데 같이 바뀌는 칸마다 값이 갈린 묶음 수 |
 
 **지키는 것 셋** — 실데이터 확인(`inspect_real_data_checks.py`)과 같다.
 
@@ -54,9 +56,20 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from capa_simulation.persistence._sql_helpers import load_frame  # noqa: E402
+from capa_simulation.persistence.equipment_repository import (  # noqa: E402
+    EQUIPMENT_MASTER_DB_COLUMNS,
+)
 from capa_simulation.persistence.repository import REVISION_TABLES  # noqa: E402
 from capa_simulation.services.edit_grid import GridSpec, ValueFormat  # noqa: E402
 from capa_simulation.services.edit_grid_payload import build_base  # noqa: E402
+from capa_simulation.services.equipment_contract import (  # noqa: E402
+    AREA_CODE_COLUMN,
+    INVESTMENT_CAPA_COLUMN,
+    STORAGE_FLAG_COLUMN,
+    UNIT_CONSISTENT_COLUMNS,
+    UNIT_SAVE_CONSISTENT_COLUMNS,
+    UNIT_SHARED_COLUMNS,
+)
 from capa_simulation.services.load_calculator import (  # noqa: E402
     PLAN_EDITOR_DIMENSIONS,
     YIELD_EDITOR_DIMENSIONS,
@@ -76,9 +89,9 @@ from capa_simulation.settings import (  # noqa: E402
     is_operational_database_place,
 )
 
-LINES: Final[tuple[str, ...]] = ("counts", "bundles", "sizes", "plan")
+LINES: Final[tuple[str, ...]] = ("counts", "bundles", "sizes", "plan", "mixed")
 _SIMULATION_LINES: Final = frozenset({"counts", "sizes", "plan"})
-_EQUIPMENT_LINES: Final = frozenset({"counts", "bundles", "sizes"})
+_EQUIPMENT_LINES: Final = frozenset({"counts", "bundles", "sizes", "mixed"})
 
 _APP_RUNNING_MESSAGE: Final = (
     "사용자 앱이 떠 있습니다 — DB 는 열지 않았습니다. 앱을 끈 뒤 다시 칩니다(런북 1-1)."
@@ -150,7 +163,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--only",
         default=",".join(LINES),
-        help=f"찍을 줄을 쉼표로({', '.join(LINES)}). 기본은 넷 다",
+        help=f"찍을 줄을 쉼표로({', '.join(LINES)}). 기본은 모두",
     )
     parser.add_argument(
         "--database", type=Path, default=None, help="시뮬레이션 DuckDB 사본. 비우면 운영 DB"
@@ -588,6 +601,107 @@ def plan_line(simulation: duckdb.DuckDBPyConnection) -> str:
     return "; ".join(parts)
 
 
+# ---------------------------------------------------------------------------------- 줄 5 mixed
+
+# 모듈 묶음에서 같이 바뀌는 칸(`UNIT_SHARED_COLUMNS`)의 짧은 키 — 리뷰 압축본에 옮겨 적는 이름이다.
+# 칸 갈래는 계약 튜플에서 나온다: 읽기 · 저장 모두 막는 여섯(`read`), 저장 때만 막는 일곱(`save`),
+# 같이 바뀌기만 하는 나머지(`show` — 레이아웃표시).
+MIXED_KEYS: Final[Mapping[str, str]] = {
+    "공정소분류": "ps",
+    "공정대분류": "pl",
+    "공정구분": "line",
+    "투자구분": "inv",
+    "동": "bldg",
+    "층": "floor",
+    AREA_CODE_COLUMN: "area",
+    "Maker": "maker",
+    "Model": "model",
+    INVESTMENT_CAPA_COLUMN: "capa",
+    "담당자": "owner",
+    STORAGE_FLAG_COLUMN: "store",
+    "기존설비여부": "exist",
+    "레이아웃표시": "show",
+}
+_MIXED_PARTS: Final = (
+    ("read", UNIT_CONSISTENT_COLUMNS),
+    ("save", UNIT_SAVE_CONSISTENT_COLUMNS),
+    (
+        "show",
+        tuple(
+            column
+            for column in UNIT_SHARED_COLUMNS
+            if column not in (*UNIT_CONSISTENT_COLUMNS, *UNIT_SAVE_CONSISTENT_COLUMNS)
+        ),
+    ),
+)
+
+
+def _mixed_counts(
+    equipment: duckdb.DuckDBPyConnection, revision_id: str, column: str
+) -> tuple[int, int]:
+    """(값이 둘 이상인 묶음, 값 하나에 빈 칸이 섞인 묶음) — 묶음은 Main 설비(앞뒤 공백 걷음)가 같은
+    행이 둘 이상이다. 저장 규칙이 빈 칸도 한 값으로 견주므로 둘 다 갈림이다. 글은 앞뒤 공백만 걷고
+    견준다 — 저장은 다듬은 값을 쓰므로 규칙과 같다."""
+    db_column = EQUIPMENT_MASTER_DB_COLUMNS[column]
+    row = equipment.execute(
+        f"""
+        WITH m AS (
+            SELECT trim(parent_equipment_id) AS g,
+                   nullif(trim(CAST({db_column} AS VARCHAR)), '') AS v
+            FROM equipment_ops.equipment_master_snapshot
+            WHERE revision_id = ? AND length(trim(parent_equipment_id)) > 0
+        ), b AS (
+            SELECT g, count(*) AS n, count(DISTINCT v) AS d, count(v) AS filled FROM m GROUP BY g
+        )
+        SELECT count(*) FILTER (WHERE n > 1 AND d > 1),
+               count(*) FILTER (WHERE n > 1 AND d = 1 AND filled < n)
+        FROM b
+        """,
+        [revision_id],
+    ).fetchone()
+    assert row is not None
+    return int(row[0]), int(row[1])
+
+
+def mixed_line(equipment: duckdb.DuckDBPyConnection) -> str:
+    """최신 설비 리비전(줄 2 와 같은 공통 대장)의 모듈 묶음 수와, 같이 바뀌는 칸마다 갈린 묶음 수
+    `a+b`(a 값이 둘 이상 · b 값 하나에 빈 칸 섞임). `read` 여섯은 0+0 이어야 하고(아니면 그
+    리비전이 이미 열리지 않는다), `save` 일곱이 0 이 아니면 그 묶음이 다음 설비 저장을 막는다 —
+    이관 전에 사내 PC 설비 마스터에서 맞춘다(런북 7-8). `show`(레이아웃표시)는 막지 않아 정보로만
+    본다. 값 · 이름은 찍지 않는다."""
+    top = equipment.execute(
+        "SELECT revision_id FROM equipment_ops.revision ORDER BY revision_no DESC LIMIT 1"
+    ).fetchone()
+    if top is None:
+        groups = 0
+    else:
+        groups = int(
+            cast(
+                int,
+                _first(
+                    equipment,
+                    "SELECT count(*) FROM (SELECT trim(parent_equipment_id) AS g "
+                    "FROM equipment_ops.equipment_master_snapshot WHERE revision_id = ? "
+                    "AND length(trim(parent_equipment_id)) > 0 GROUP BY g HAVING count(*) > 1)",
+                    [top[0]],
+                ),
+            )
+        )
+
+    def counted(column: str) -> str:
+        differ, blank = (0, 0) if top is None else _mixed_counts(equipment, str(top[0]), column)
+        return f"{differ}+{blank}"
+
+    parts = [f"unit_mixed groups {groups}"]
+    for label, columns in _MIXED_PARTS:
+        if label == "show":
+            parts.append(" ".join(f"{label} {counted(column)}" for column in columns))
+        else:
+            cells = " ".join(f"{MIXED_KEYS[column]} {counted(column)}" for column in columns)
+            parts.append(f"{label} {cells}")
+    return "; ".join(parts)
+
+
 # ---------------------------------------------------------------------------------- 묶음
 
 
@@ -617,11 +731,17 @@ def _plan(databases: _Databases, _packed: Mapping[Path, int]) -> list[str]:
     return [plan_line(databases.simulation)]
 
 
+def _mixed(databases: _Databases, _packed: Mapping[Path, int]) -> list[str]:
+    assert databases.equipment is not None
+    return [mixed_line(databases.equipment)]
+
+
 _LINE_BUILDERS: Final[dict[str, Callable[[_Databases, Mapping[Path, int]], list[str]]]] = {
     "counts": _counts,
     "bundles": _bundles,
     "sizes": _sizes,
     "plan": _plan,
+    "mixed": _mixed,
 }
 
 
