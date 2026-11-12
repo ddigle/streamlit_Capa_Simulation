@@ -27,13 +27,18 @@ from test_process_capa_canvas import (
     _summary,
 )
 from test_required_shortening import PROCESS
+from xlsx_read import read_workbook
 
 from capa_simulation.components.constraint_equipment_plan import EQUIPMENT_SCREEN
 from capa_simulation.components.process_capa_canvas import (
+    BASIS_SCHEDULE,
+    BASIS_STATIC,
     SECTION_DOWNTIME,
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
+    UNITS_ALL,
+    UNITS_SHORTENING,
     DynamicCanvasInput,
 )
 from capa_simulation.components.process_capa_view import (
@@ -67,6 +72,7 @@ from capa_simulation.components.process_capa_view import (
     shortening_link_needed,
     target_text,
 )
+from capa_simulation.components.process_capa_workbook import DETAIL_SHEET, process_capa_workbook
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import theme
 from capa_simulation.process_detail_state import FROM_GAP, FROM_HOME, FROM_SHORTENING
@@ -588,6 +594,8 @@ def _key(
     units: bool = False,
     arrows: bool = False,
     collapsed: frozenset[str] = frozenset(),
+    basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
 ) -> tuple[object, ...]:
     return canvas_memo_key(
         view,
@@ -597,6 +605,8 @@ def _key(
         show_all_units=units,
         show_all_arrows=arrows,
         collapsed=collapsed,
+        basis=basis,
+        units_view=units_view,
     )
 
 
@@ -621,6 +631,9 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
     assert _key(view, collapsed=frozenset({SECTION_UNITS, SECTION_DOWNTIME})) == _key(
         view, collapsed=frozenset({SECTION_DOWNTIME, SECTION_UNITS})
     )
+    # 비가동 기준 · ④ 보기도 그림에 구워진다(2026-11-12 사용자 답 q5b · q6 메모).
+    assert _key(view, basis=BASIS_SCHEDULE) != key
+    assert _key(view, units_view=UNITS_SHORTENING) != key
     # UPEH 가정 토큰(%·건 달)은 ① 끝 세 줄과 판정 기준을 바꾼다.
     assert _key(_view(upeh_token=(110, (202702,)))) != _key(_view())
     assert _key(_view(upeh_token=(110, (202702,)))) != _key(_view(upeh_token=(120, (202702,))))
@@ -630,11 +643,12 @@ def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() ->
     """구획 접기·모듈 라벨 제거(4), ③ 세 줄 풍선 · 풍선 없는 칸 trace · 줄 이름 칸 풍선 표적(5),
     풍선 식의 「≈」(6 — `customdata` 에 구운 풍선 글), ② 「비가동 영향」 줄(7), 정수 기준 글과 판정
     경계 과부족 풍선(8 — 2026-11-01 사용자 결정), 구획 다섯 · 제목 줄 풍선 · 비가동 기준(9 —
-    2026-11-12 사용자 답)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양
-    버전이 9 다(AGENTS 5장 16)."""
+    2026-11-12 사용자 답), ④ 「단축 후 확보율」 · 보기 · ⑤ 모듈 묶음 Main 줄과 「└ 모듈명」(10 —
+    같은 날 답 q6 · q6b · q7)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양
+    버전이 10 이다(AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 9
+    assert CANVAS_SCHEMA_VERSION == 10
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 
@@ -752,6 +766,14 @@ def test_the_sheet_key_follows_the_heading_and_the_drawn_conditions() -> None:
         show_all_units=False,
         show_all_arrows=False,
     )
+    assert base != sheet_memo_key(
+        view,
+        expanded=False,
+        split="제품정보",
+        show_all_units=False,
+        show_all_arrows=False,
+        units_view=UNITS_SHORTENING,
+    )
 
 
 def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
@@ -781,6 +803,31 @@ def test_the_sheet_sections_line_names_only_the_sections_the_sheet_draws() -> No
         _sheet_sections(_view(dynamic=_dynamic_view()), frozenset({SECTION_UNITS}))
         == "① Static · ② 일정 가용 · ③ 비가동 · ⑤ 비가동 일정"
     )
+
+
+def test_the_sheet_follows_the_units_view_of_the_screen() -> None:
+    """④ 보기를 「단축 필요만」 으로 고르면 시트 엑셀의 ④ 도 그 줄만이다 — 그림과 같은 행
+    모델이다."""
+    view = _view(dynamic=_dynamic_view())
+
+    def unit_labels(units_view: str) -> list[str]:
+        request = sheet_request(
+            view,
+            expanded=False,
+            split="제품정보",
+            collapsed=frozenset(),
+            product_demand=None,
+            show_all_units=False,
+            show_all_arrows=False,
+            units_view=units_view,
+        )
+        assert request.dynamic is not None and request.dynamic.units_view == units_view
+        book = read_workbook(process_capa_workbook(request))
+        return [str(value) for value in book[DETAIL_SHEET].column(0) if value is not None]
+
+    full, only = unit_labels(UNITS_ALL), unit_labels(UNITS_SHORTENING)
+    assert "단축 후 확보율" in full and "단축 후 확보율" in only
+    assert set(only) < set(full)
 
 
 def _callback_script() -> None:

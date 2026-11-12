@@ -19,12 +19,18 @@
    `downtime_impact`, q5 (가)), 실가용대수(비가동 기준 `DynamicCanvasInput.downtime_basis` 의
    가용에서 뺀 값, 0 에서 멈춤. Static 이면 ① 가용대수, 일정이면 ② 가용대수 — 이때 필요 단축
    일정의 가용과 같다), 소요대수(합계만), 확보율 · 확보 기준 과부족.
-4. **④ 단축** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축 대상이면 같은 줄에 ◀ 목표
-   기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축 안에서 정지·반출/이설되는
-   다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 30행 상한(`ROW_LIMIT`)을 넘으면 「n대 더」 한 줄이다.
+4. **④ 단축** — 첫 줄 「단축 후 확보율」(단축 · 신규 필요로 가용이 바뀐 달만 값과 판정 색 — 계획의
+   단축 후 가용 ÷ 소요, q6b (나)), 그 아래 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축
+   대상이면 같은 줄에 ◀ 목표 기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축
+   안에서 정지·반출/이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 보기(`units_view`)가 단축
+   필요만이면 단축 대상 · 추가N 줄만 선다(q6 메모). 30행 상한(`ROW_LIMIT`)을 넘으면 「n대 더」 한
+   줄이다.
 5. **⑤ 비가동 일정** — 비가동 한 행이 화살표 하나. 가용을 깎은 것만 진한 실선과 촉, 나머지는 흐린
-   점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」. 축 안에 입력 비가동(가용설비 현황 ›
-   Preference — 공정 × 생산월 대수)이 있으면 구획 첫 줄이 「월별 비가동대수(입력)」 이다 — 달마다
+   점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」. 모듈 묶음은 같은 비가동(시작일 ·
+   종료일 · 유형)이 모든 모듈에 있으면 Main 줄 화살표 하나로 합치고, 일부 모듈에만 있는 것은 Main
+   줄 아래 「[여백]└ 모듈명」 줄에 그 모듈 것만 둔다(q7 (가) · 메모). 축 안에 입력
+   비가동(가용설비 현황 › Preference — 공정 × 생산월 대수)이 있으면 구획 첫 줄이 「월별
+   비가동대수(입력)」 이다 — 달마다
    넣은 대수이고, 그 달 가용보다 커 0 에서 멈춘 칸은 「⚠」 와 경고색이다. 그 몫은 ③ 비가동대수에
    든다. 호기 줄이 없는 공정(기존보유만)은 ④ · ⑤ 가 서지 않고 그 줄은 ③ 끝에 선다.
 
@@ -34,7 +40,7 @@
 
 호기·Model 라벨에는 모듈 수를 적지 않는다(2026-10-22 사용자 요청) — 모듈 묶음은 풍선이
 밝힌다. ④ 호기 줄·정지 줄 풍선 첫 줄에 「· 모듈 N」, ⑤ 풍선 첫 줄에 「· 모듈 N」과 화살표
-줄마다 그 모듈의 설비명이다.
+줄마다 그 모듈의 설비명(합친 화살표는 「모듈 n 모두」)이다.
 
 **④ 풍선은 세 줄이고 그림 위에서만 뜬다**(2026-10-24 사용자 결정 (가)) — 「호기 · −N일 · Model」,
 「Qual MM.DD → 목표 MM.DD · MM.DD부터 기여 +0.10대」, 「해소 YY.MM · ⚠ 반입 전」(`_unit_hover`).
@@ -208,6 +214,8 @@ __all__ = [
     "BASIS_SCHEDULE",
     "BASIS_STATIC",
     "MANUAL_DOWNTIME_ROW_LABEL",
+    "MODULE_ROW_INDENT_PX",
+    "MODULE_ROW_MARK",
     "CUSTOMDATA_HOVER",
     "CUSTOMDATA_MONTH",
     "CUSTOMDATA_ROW",
@@ -242,6 +250,7 @@ __all__ = [
     "ROW_UPEH_BALANCE",
     "ROW_UPEH_RATE",
     "ROW_UPEH_REQUIRED",
+    "ROW_UNITS_AFTER_RATE",
     "SECTION_DOWNTIME",
     "SECTION_DYNAMIC",
     "SECTION_EFFECT",
@@ -250,6 +259,9 @@ __all__ = [
     "SECTION_UNITS",
     "SUMMARY_TITLE_HEIGHT_PX",
     "SUMMARY_TITLE_HOVER",
+    "UNITS_AFTER_RATE_LABEL",
+    "UNITS_ALL",
+    "UNITS_SHORTENING",
     "AssumptionCanvasInput",
     "DynamicCanvasInput",
     "ProcessCapaCanvas",
@@ -342,6 +354,9 @@ ROW_EFFECT_BALANCE: Final = "effect_balance"
 # 줄(총보유대수 · 가용대수 · 소요대수 · 비가동대수)처럼 붙여 쓴다(2026-11-12 사용자 메모 k-c0).
 ROW_MANUAL_DOWNTIME: Final = "manual_downtime"
 MANUAL_DOWNTIME_ROW_LABEL: Final = "월별 비가동대수(입력)"
+# ④ 첫 줄 「단축 후 확보율」 — 단축으로 가용이 바뀐 달만 값(2026-11-12 사용자 답 q6b (나)).
+ROW_UNITS_AFTER_RATE: Final = "units_after_rate"
+UNITS_AFTER_RATE_LABEL: Final = "단축 후 확보율"
 ROW_UNIT_PREFIX: Final = "unit:"
 ROW_EXIT_PREFIX: Final = "exit:"
 ROW_ARROW_PREFIX: Final = "arrow:"
@@ -364,6 +379,13 @@ SECTION_IDS: Final = (
 # 처음은 Static 이다(2026-11-12 사용자 답 q5b (가)).
 BASIS_STATIC: Final = "static"
 BASIS_SCHEDULE: Final = "schedule"
+# 「④ 단축」 의 보기 — 전체(단축 대상 · 단축 없는 신규 호기 · 정지/반출 · 신규 필요 줄)와 단축
+# 필요만(단축 대상 · 신규 필요 줄). 처음은 전체다(2026-11-12 사용자 답 q6 (가) · 메모).
+UNITS_ALL: Final = "all"
+UNITS_SHORTENING: Final = "shortening"
+# ⑤ 모듈 줄 — Main 줄 아래 「└ 모듈명」 으로 들인 몫(2026-11-12 사용자 답 q7 (가) · 메모).
+MODULE_ROW_INDENT_PX: Final = 12.0
+MODULE_ROW_MARK: Final = "└"
 
 _SHORT_STATUSES: Final = frozenset({"warning", "shortage"})
 _STATUS_NAMES: Final[Mapping[str, str]] = {"secure": "확보", "warning": "경고", "shortage": "부족"}
@@ -411,6 +433,10 @@ class DynamicCanvasInput:
 
     downtime_basis: str = BASIS_STATIC
     """「③ 비가동」 의 비가동 기준(`BASIS_STATIC` · `BASIS_SCHEDULE`) — 표 도구 줄 고르기 값."""
+
+    units_view: str = UNITS_ALL
+    """「④ 단축」 의 보기(`UNITS_ALL` · `UNITS_SHORTENING`) — 표 도구 줄 고르기 값. 단축 필요만이면
+    호기 줄은 단축 대상과 신규 필요(추가N)만이다."""
 
 
 @dataclass(frozen=True, eq=False)
@@ -1069,6 +1095,17 @@ def _dynamic_rows(
     # 표지(◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작)의 뜻은 Guide 「시트 범례」 가 적는다.
     rows.append(_section_title_row(SECTION_UNITS, folded))
     if SECTION_UNITS not in folded:
+        # 맨 위 「단축 후 확보율」 은 보기(전체 · 단축 필요만)와 상관없이 늘 선다.
+        rows.append(
+            _after_rate_row(
+                axis,
+                dynamic,
+                thresholds,
+                process_label=process_label,
+                today_month=today_month,
+                assumption=assumption,
+            )
+        )
         unit_rows, hidden_units = _unit_rows(axis, dynamic)
         rows += unit_rows
     # 진한 화살표 · 끝 날의 읽는 법도 Guide 「시트 범례」 다(설계 규칙 UI-TXT-01 · 02).
@@ -1641,14 +1678,133 @@ _NONZERO_LAST_DIGITS: Final = 9
 적힌다(빈칸 판정과 같은 문턱)."""
 
 
+def _after_rate_row(
+    axis: Sequence[int],
+    dynamic: DynamicCanvasInput,
+    thresholds: SecurementThresholds,
+    *,
+    process_label: str,
+    today_month: int,
+    assumption: AssumptionCanvasInput | None,
+) -> _Row:
+    """④ 첫 줄 「단축 후 확보율」 — 단축(과 신규 필요)으로 가용이 바뀐 달만 값과 판정 색(2026-11-12
+    사용자 답 q6b (나)).
+
+    재료는 계획(`process_months`)이다 — 단축 전 가용은 계획의 `가용대수`(③ 비가동의 일정 기준
+    실가용 — 비가동 기준 고르기와 상관없다), 단축 후는 `단축후가용대수`, 소요는 계획의 소요(UPEH
+    가정이 켜지면 가정 계획의 소요)다. 판정은 ① ~ ③ 과 같은 길(`judge_supply`)이고 부족 띠는
+    바꾸지 않는다.
+    """
+    plan = _by_month(dynamic.process_months, axis)
+    changed: dict[int, float | None] = {}
+    demand: dict[int, float | None] = {}
+    for month in axis:
+        record = plan.get(month, {})
+        before = _number(record.get("가용대수"))
+        after = _number(record.get("단축후가용대수"))
+        demand[month] = _number(record.get("소요대수"))
+        moved = before is not None and after is not None and round(after - before, 9) != 0
+        changed[month] = after if moved else None
+    judged = _by_month(
+        judge_supply(changed, demand, process=process_label, months=axis, thresholds=thresholds),
+        axis,
+    )
+    row = _Row(
+        ROW_UNITS_AFTER_RATE,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=UNITS_AFTER_RATE_LABEL,
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+        group_start=True,
+    )
+    factors = _assumed_factors(axis, assumption)
+    for index, month in enumerate(axis):
+        head = f"<b>{month_label(month)}</b>"
+        outcome = judged.get(month)
+        if outcome is None:
+            row.cells[index] = _Cell(hover=f"{head} · 단축으로 가용이 바뀌지 않는 달")
+            continue
+        before = _number(plan.get(month, {}).get("가용대수"))
+        assumed = (
+            f" · UPEH 가정 {assumption.percent}%"
+            if assumption is not None and month in factors
+            else ""
+        )
+        row.cells[index] = _after_rate_cell(
+            head,
+            outcome,
+            before,
+            thresholds,
+            month,
+            past=month < today_month,
+            assumed=assumed,
+        )
+    return row
+
+
+def _after_rate_cell(
+    head: str,
+    record: Mapping[str, object],
+    before: float | None,
+    thresholds: SecurementThresholds,
+    month: int,
+    *,
+    past: bool,
+    assumed: str,
+) -> _Cell:
+    """「단축 후 확보율」 칸 — 판정 3색과 풍선 식 「단축 후 가용 ÷ 소요」(적힌 수로 검산)."""
+    after = _number(record.get("가용대수"))
+    demand = _number(record.get("소요대수"))
+    rate = _number(record.get("확보율"))
+    status = _status(record.get(STATUS_COLUMN))
+    secure, warning = thresholds.for_month(month)
+    if status is None or rate is None:
+        return _Cell(
+            text=_EMPTY,
+            muted=True,
+            hover=f"{head} · {UNITS_AFTER_RATE_LABEL} {_EMPTY} (소요대수 0)",
+        )
+    written_demand = None if demand is None else round(demand, 1)
+    mark = equals_mark(
+        _percent(rate),
+        _percent(round(after, 1) / written_demand) if after is not None and written_demand else "",
+    )
+    fill = _status_color(status)
+    return _Cell(
+        text=_percent(rate),
+        fill=fill,
+        bold=fill is not None,
+        muted=past,
+        hover=(
+            f"{head} · {UNITS_AFTER_RATE_LABEL} {_percent(rate)} {mark} "
+            f"단축 후 가용 {_one(after)} ÷ 소요 {_one(demand)}{assumed}"
+            f"<br>단축 전 가용 {_one(before)} — ③ 일정 기준 실가용"
+            f"<br>판정 {_STATUS_NAMES.get(status, status)} — "
+            f"확보 기준 {threshold_percent_label(secure)}"
+            f" · 경고 기준 {threshold_percent_label(warning)}"
+        ),
+    )
+
+
 def _unit_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[_Row], int]:
+    """④ 호기 줄 — 보기가 단축 필요만이면 단축 대상과 신규 필요(추가N) 줄만이고, 정지·반출/이설 줄과
+    일정 미정 줄은 서지 않는다(2026-11-12 사용자 답 q6 메모). 30행 상한은 거른 뒤에 센다."""
+    shortening_only = dynamic.units_view == UNITS_SHORTENING
     events = _records(dynamic.unit_events)
+    if shortening_only:
+        events = [event for event in events if event.get("줄") in (ROW_SHORTENED, ROW_VIRTUAL)]
     real = [event for event in events if event.get("줄") != ROW_VIRTUAL]
     virtual = [event for event in events if event.get("줄") == ROW_VIRTUAL]
     shown_units = {str(event.get("호기")) for event in events}
-    exits = [
-        record for record in _records(dynamic.exits) if str(record.get("호기")) not in shown_units
-    ]
+    exits = (
+        []
+        if shortening_only
+        else [
+            record
+            for record in _records(dynamic.exits)
+            if str(record.get("호기")) not in shown_units
+        ]
+    )
     entries: list[tuple[str, dict[str, object]]] = [("event", event) for event in real]
     entries += [("exit", record) for record in exits]
     hidden = 0
@@ -1672,10 +1828,14 @@ def _unit_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[_
             row.cells[index] = _Cell(hover=hover)
         rows.append(row)
     if not rows:
-        rows.append(_note_row("no_new_units", "조회기간에 새로 붙는 설비가 없습니다"))
+        rows.append(
+            _note_row("no_shortening_units", "조회기간에 단축 · 신규 필요 호기가 없습니다")
+            if shortening_only
+            else _note_row("no_new_units", "조회기간에 새로 붙는 설비가 없습니다")
+        )
     if hidden:
         rows.append(_note_row("more_units", f"외 {hidden}대 — 「더 보기」를 켜면 모두 그립니다"))
-    if dynamic.undated_notice:
+    if dynamic.undated_notice and not shortening_only:
         rows.append(_note_row("undated", dynamic.undated_notice))
     return rows, hidden
 
@@ -1868,21 +2028,33 @@ def _arrow_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[
         arrows = groups[unit]
         first = arrows[0]
         model = "" if _blank(first.get("Model")) else str(first.get("Model"))
-        name = unit + (f" · {model}" if model else "")
-        for lane, members in enumerate(_lanes(arrows)):
+        main, by_module = _split_module_arrows(unit, arrows)
+        # Main 줄 — 모든 모듈에 같은 비가동(합친 화살표)과 Main 설비명 · 단독 호기의 비가동. 겹쳐
+        # 한 줄에 못 드는 화살표는 「└ 호기」 줄로 잇는다. 모듈만의 비가동이 있으면 Main 줄은
+        # 화살표가 없어도 선다 — 아래 「└ 모듈명」 줄이 딸린 머리다(2026-11-12 사용자 답 q7 (가) ·
+        # 메모).
+        main_lanes = _lanes(main) or [[]]
+        for lane, members in enumerate(main_lanes):
             rows.append(
-                _Row(
+                _arrow_row(
                     f"{ROW_ARROW_PREFIX}{unit}#{lane}",
-                    _ARROW,
-                    ARROW_ROW_HEIGHT_PX,
-                    label=name if lane == 0 else "⋯ 같은 호기",
-                    label_muted=lane > 0,
-                    label_fill=tokens.SURFACE_CLASSIFICATION,
-                    payload=members,
+                    unit + (f" · {model}" if model else "") if lane == 0 else unit,
+                    members,
+                    axis,
+                    sub=lane > 0,
                 )
             )
-            for index, month in enumerate(axis):
-                rows[-1].cells[index] = _Cell(hover=_arrow_hover(members, month))
+        for module, module_arrows in by_module.items():
+            for lane, members in enumerate(_lanes(module_arrows)):
+                rows.append(
+                    _arrow_row(
+                        f"{ROW_ARROW_PREFIX}{unit}#{module}#{lane}",
+                        module,
+                        members,
+                        axis,
+                        sub=True,
+                    )
+                )
     if not rows:
         rows.append(_note_row("no_downtime", "조회기간에 비가동 일정이 없습니다"))
     if hidden:
@@ -1890,6 +2062,95 @@ def _arrow_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[
     if dynamic.steady_units:
         rows.append(_note_row("steady", f"비가동 없이 축 내내 가용 {dynamic.steady_units}대"))
     return rows, hidden
+
+
+def _arrow_row(
+    row_id: str,
+    name: str,
+    members: list[dict[str, object]],
+    axis: Sequence[int],
+    *,
+    sub: bool,
+) -> _Row:
+    """⑤ 한 줄. `sub` 면 Main 줄 아래 딸린 줄 — 「[여백]└ 이름」(이름은 모듈 설비명, Main 줄이 넘친
+    줄은 호기)이고 흐린 글자다."""
+    row = _Row(
+        row_id,
+        _ARROW,
+        ARROW_ROW_HEIGHT_PX,
+        label=f"{MODULE_ROW_MARK} {name}" if sub else name,
+        label_muted=sub,
+        label_indent=MODULE_ROW_INDENT_PX if sub else 0.0,
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+        payload=members,
+    )
+    for index, month in enumerate(axis):
+        row.cells[index] = _Cell(hover=_arrow_hover(members, month) if members else "")
+    return row
+
+
+# 합친 화살표에 붙이는 표지 — 그 호기의 모듈 수(풍선 「모듈 n 모두」).
+_ALL_MODULES: Final = "모듈 모두"
+
+
+def _split_module_arrows(
+    unit: str, arrows: Sequence[dict[str, object]]
+) -> tuple[list[dict[str, object]], dict[str, list[dict[str, object]]]]:
+    """호기 하나의 화살표 → (Main 줄 화살표, 모듈 설비명 → 그 모듈만의 화살표 — 이름 차례).
+
+    모듈 묶음(`모듈 수` > 1)에서 같은 비가동(시작일 · 종료일 · 비가동유형)이 그 호기의 **모든**
+    모듈에 있으면 화살표 하나로 합쳐 Main 줄에 둔다 — 달별 손실은 모듈 몫의 합이고 풍선 첫 줄이
+    「모듈 n 모두」 다. 일부 모듈에만 있는 것은 그 모듈 것만 따로다(2026-11-12 사용자 답 q7 (가)).
+    Main 설비명으로 넣은 비가동과 단독 호기의 비가동은 늘 Main 줄이다.
+    """
+    modules = _whole(arrows[0].get("모듈 수")) or 1
+    if modules <= 1:
+        return list(arrows), {}
+
+    def module_of(arrow: Mapping[str, object]) -> str:
+        return str(arrow.get(EQUIPMENT_ID_COLUMN) or "").strip()
+
+    def same(arrow: Mapping[str, object]) -> tuple[object, ...]:
+        return (
+            _as_date(arrow.get("시작일")),
+            _as_date(arrow.get("종료일")),
+            str(arrow.get("비가동유형") or "").strip(),
+        )
+
+    main: list[dict[str, object]] = []
+    buckets: dict[tuple[object, ...], list[dict[str, object]]] = {}
+    for arrow in arrows:
+        if module_of(arrow) in ("", unit):
+            main.append(arrow)
+        else:
+            buckets.setdefault(same(arrow), []).append(arrow)
+    by_module: dict[str, list[dict[str, object]]] = {}
+    for members in buckets.values():
+        names = {module_of(member) for member in members}
+        if len(names) >= modules:
+            main.append(_merged_arrow(members, len(names)))
+            continue
+        for member in members:
+            by_module.setdefault(module_of(member), []).append(member)
+    return main, {name: by_module[name] for name in sorted(by_module)}
+
+
+def _merged_arrow(members: Sequence[dict[str, object]], modules: int) -> dict[str, object]:
+    """모든 모듈의 같은 비가동 → 화살표 하나(날짜 · 유형은 같고, 손실은 모듈 몫의 합)."""
+    combined = dict(members[0])
+    losses: dict[int, float] = {}
+    for member in members:
+        for month, value in _month_losses(member.get("달별 손실")):
+            losses[month] = losses.get(month, 0.0) + value
+    combined["달별 손실"] = tuple((month, _tidy(value)) for month, value in sorted(losses.items()))
+    combined["손실 환산대수"] = _tidy(
+        sum(_number(member.get("손실 환산대수")) or 0.0 for member in members)
+    )
+    combined["가용 감소"] = any(bool(member.get("가용 감소")) for member in members)
+    combined["꼬리 위치"] = min(_number(member.get("꼬리 위치")) or 0.0 for member in members)
+    combined["촉 위치"] = max(_number(member.get("촉 위치")) or 0.0 for member in members)
+    combined[_ALL_MODULES] = modules
+    return combined
 
 
 def _lanes(arrows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]:
@@ -1912,8 +2173,11 @@ def _lanes(arrows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]
 
 
 def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
-    """④ 줄 풍선 — 첫 줄은 달·호기(모듈 묶음이면 「· 모듈 N」), 화살표마다 한 줄. 모듈 묶음은 줄마다
-    그 화살표의 모듈 설비명을 앞에 적는다 — 어느 모듈이 멈췄는지(같은 호기 둘째 줄의 까닭)."""
+    """⑤ 줄 풍선 — 첫 줄은 달·호기(모듈 묶음이면 「· 모듈 N」), 화살표마다 한 줄. 모듈 묶음은 줄마다
+    그 화살표의 모듈 설비명을 앞에 적고, 모든 모듈에 같은 비가동을 합친 화살표는 「모듈 n 모두」
+    다. 화살표가 없는 줄(합친 것이 없는 Main 줄)은 풍선이 없다."""
+    if not arrows:
+        return ""
     first = arrows[0]
     grouped = bool(_module_text(first))
     lines = [
@@ -1932,6 +2196,9 @@ def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
         else:
             effect = "가용 영향 없음(셋업·보관·사용기준 제외 등)"
         module = str(arrow.get(EQUIPMENT_ID_COLUMN) or "").strip() if grouped else ""
+        everyone = _whole(arrow.get(_ALL_MODULES))
+        if everyone:
+            module = f"모듈 {everyone} 모두"
         head = f"{html.escape(module)} · " if module else ""
         lines.append(f"{head}{kind} · {start}~{end} · {effect}")
     return "<br>".join(lines)

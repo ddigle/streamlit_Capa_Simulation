@@ -30,6 +30,8 @@ from capa_simulation.components.process_capa_canvas import (
     CUSTOMDATA_HOVER,
     CUSTOMDATA_MONTH,
     CUSTOMDATA_ROW,
+    MODULE_ROW_INDENT_PX,
+    MODULE_ROW_MARK,
     ROW_AVAILABLE,
     ROW_BALANCE,
     ROW_DYNAMIC_AVAILABLE,
@@ -50,6 +52,7 @@ from capa_simulation.components.process_capa_canvas import (
     ROW_RATE,
     ROW_REQUIRED,
     ROW_THRESHOLD,
+    ROW_UNITS_AFTER_RATE,
     ROW_UPEH_BALANCE,
     ROW_UPEH_RATE,
     ROW_UPEH_REQUIRED,
@@ -63,6 +66,8 @@ from capa_simulation.components.process_capa_canvas import (
     SUMMARY_TITLE_HOVER,
     TITLE_HEIGHT_PX,
     UNIT_ROW_HEIGHT_PX,
+    UNITS_AFTER_RATE_LABEL,
+    UNITS_SHORTENING,
     AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaCanvas,
@@ -435,7 +440,10 @@ def test_rows_stack_the_five_sections_in_the_answered_order() -> None:
         ROW_EFFECT_BALANCE,
     ]
     units = ids[ids.index("title:units") + 1 : ids.index("title:downtime")]
-    # 단축 대상(계획 차례) → 나머지 신규 → 축 안 반출·이설 호기 → 추가N → 알림.
+    # 맨 위 「단축 후 확보율」(q6b (나)) → 단축 대상(계획 차례) → 나머지 신규 → 축 안 반출·이설
+    # 호기 → 추가N → 알림.
+    assert units[0] == ROW_UNITS_AFTER_RATE
+    units = units[1:]
     kind_of = {
         f"unit:{unit}": kind
         for unit, kind in zip(dynamic.unit_events["호기"], dynamic.unit_events["줄"], strict=True)
@@ -643,7 +651,8 @@ def test_every_cell_target_carries_its_month_row_and_hover() -> None:
     }
     for data, _, _ in targets:
         if not data[CUSTOMDATA_HOVER]:
-            assert str(data[CUSTOMDATA_ROW]).startswith(("unit:", "exit:"))
+            # ③ 호기 줄의 빈 달 칸과, 모듈만의 비가동만 있어 화살표가 없는 ⑤ Main 머리 줄.
+            assert str(data[CUSTOMDATA_ROW]).startswith(("unit:", "exit:", "arrow:EQ-21#0"))
     rate_months = [
         data[CUSTOMDATA_MONTH] for data, _, _ in targets if data[CUSTOMDATA_ROW] == ROW_RATE
     ]
@@ -1489,6 +1498,88 @@ def test_an_axis_without_new_units_or_downtime_says_so_in_one_line() -> None:
     assert "note:no_downtime" in canvas.row_ids
 
 
+def test_the_after_rate_row_heads_the_units_section_with_only_the_changed_months() -> None:
+    """④ 맨 위 「단축 후 확보율」 — 단축 · 신규 필요로 가용이 바뀐 달만 값과 판정 색이고, 소요는
+    계획의 소요다(2026-11-12 사용자 답 q6b (나)). 판정은 ① 과 같은 길이다."""
+    dynamic = _dynamic()
+    canvas = _canvas(dynamic=dynamic)
+    before = _plan_values(dynamic, "가용대수")
+    after = _plan_values(dynamic, "단축후가용대수")
+    demand = _plan_values(dynamic, "소요대수")
+    changed = [month for month in MONTHS if round(after[month] - before[month], 9) != 0]
+    texts = _row_texts(canvas, ROW_UNITS_AFTER_RATE)
+    fills = _row_fills(canvas, ROW_UNITS_AFTER_RATE)
+
+    ids = canvas.row_ids
+    assert ids[ids.index("title:units") + 1] == ROW_UNITS_AFTER_RATE
+    assert changed and len(changed) < len(MONTHS)
+    assert sorted(texts) == [MONTHS.index(month) for month in changed]
+    for month in changed:
+        index = MONTHS.index(month)
+        rate = after[month] / demand[month]
+        assert _plain(texts[index][0]) == percent(rate)
+        status = THRESHOLDS.status(rate, month)
+        assert (
+            fills[index]
+            == {
+                "secure": tokens.STATUS_SECURE,
+                "warning": tokens.STATUS_WARNING,
+                "shortage": tokens.STATUS_SHORTAGE,
+            }[status]
+        )
+        hover = _plain(_hover_of(canvas, ROW_UNITS_AFTER_RATE, month))
+        assert f"{UNITS_AFTER_RATE_LABEL} {percent(rate)}" in hover
+        assert f"÷ 소요 {demand[month]:.1f}" in hover
+        assert "단축 전 가용" in hover and "③ 일정 기준 실가용" in hover
+    untouched = next(month for month in MONTHS if month not in changed)
+    assert "바뀌지 않는 달" in _hover_of(canvas, ROW_UNITS_AFTER_RATE, untouched)
+
+
+def test_shortening_only_keeps_the_shortened_and_needed_rows() -> None:
+    """④ 보기 「단축 필요만」 — 단축 대상과 신규 필요(추가N) 줄만 남고, 단축 없는 신규 · 정지/반출
+    줄과 일정 미정 줄은 서지 않는다. 「단축 후 확보율」 줄은 그대로다(2026-11-12 사용자 답 q6
+    메모)."""
+    dynamic = _dynamic()
+    full = _canvas(dynamic=dynamic)
+    only = _canvas(dynamic=_dynamic(units_view=UNITS_SHORTENING))
+
+    def units(canvas: ProcessCapaCanvas) -> list[str]:
+        ids = canvas.row_ids
+        return list(ids[ids.index("title:units") + 1 : ids.index("title:downtime")])
+
+    kind_of = dict(
+        zip(
+            (f"unit:{unit}" for unit in dynamic.unit_events["호기"]),
+            dynamic.unit_events["줄"],
+            strict=True,
+        )
+    )
+    assert {kind_of.get(row) for row in units(full)} >= {ROW_SHORTENED, ROW_NEW, ROW_VIRTUAL}
+    assert any(row.startswith("exit:") for row in units(full)) and "note:undated" in units(full)
+    shown = units(only)
+    assert shown[0] == ROW_UNITS_AFTER_RATE
+    assert [kind_of[row] for row in shown[1:]] == [
+        kind for kind in dynamic.unit_events["줄"] if kind in (ROW_SHORTENED, ROW_VIRTUAL)
+    ]
+    assert _row_texts(only, ROW_UNITS_AFTER_RATE) == _row_texts(full, ROW_UNITS_AFTER_RATE)
+
+
+def test_shortening_only_counts_the_thirty_row_cap_after_filtering() -> None:
+    """30줄 상한은 거른 뒤에 센다 — 단축 없는 신규만 35대면 「단축 필요만」 은 줄이 없어 「외
+    n대」 도 없고, 빈 구획은 그 보기의 말로 한 줄이다."""
+    events = _many_new_units(ROW_LIMIT + 5)
+    full = _canvas(dynamic=_dynamic(unit_events=events, exits=pd.DataFrame()))
+    only = _canvas(
+        dynamic=_dynamic(unit_events=events, exits=pd.DataFrame(), units_view=UNITS_SHORTENING)
+    )
+
+    assert full.hidden_units == 5 and "note:more_units" in full.row_ids
+    assert only.hidden_units == 0 and "note:more_units" not in only.row_ids
+    assert not [row for row in only.row_ids if row.startswith("unit:")]
+    assert "note:no_shortening_units" in only.row_ids
+    assert "note:no_new_units" not in only.row_ids
+
+
 # ---------------------------------------------------------------------- ④ 비가동
 
 
@@ -1569,12 +1660,102 @@ def test_unit_and_downtime_labels_leave_the_module_count_to_the_hovers() -> None
     assert "EQ-21A" not in "".join(unit_lines)
     assert "모듈" not in _label_hovers(canvas)["unit:EQ-22"]
 
-    first, *arrows = _row_hover(canvas, "arrow:EQ-21#0").split("<br>")
+    # EQ-21A 만의 비가동 — Main 머리 줄 아래 「└ EQ-21A」 줄이다(2026-11-12 사용자 답 q7 메모).
+    first, *arrows = _row_hover(canvas, "arrow:EQ-21#EQ-21A#0").split("<br>")
     assert first.endswith("EQ-21 · 모듈 2")
     assert arrows and all(line.startswith("EQ-21A · 셋업 · ") for line in arrows)
     single_first, *single = _row_hover(canvas, "arrow:EQ-02#0").split("<br>")
     assert "모듈" not in single_first
     assert all(line.startswith("정기 PM · ") for line in single)
+
+
+def _module_arrows() -> pd.DataFrame:
+    """⑤ 모듈 묶음 화살표 — EQ-31(3모듈)은 셋 모두 「공사」 와 A 만의 「기타」, EQ-32(3모듈)는 A · B
+    「고장」 과 같은 날 C 「기타」(유형이 달라 합치지 않음), 단독 EQ-02 는 겹친 비가동 둘."""
+    modules = [
+        _unit(
+            f"EQ-3{group}{letter}",
+            date(2025, 6, 1),
+            arrival=date(2025, 5, 1),
+            parent=f"EQ-3{group}",
+            existing="Y",
+            confirmation="완료",
+        )
+        for group in (1, 2)
+        for letter in "ABC"
+    ]
+    fleet = _master([*_fleet(), *modules])
+    rows = [
+        *(("EQ-31" + letter, "공사", date(2027, 2, 3), date(2027, 2, 10)) for letter in "ABC"),
+        ("EQ-31A", "기타", date(2027, 3, 5), date(2027, 3, 8)),
+        ("EQ-32A", "고장", date(2027, 4, 1), date(2027, 4, 5)),
+        ("EQ-32B", "고장", date(2027, 4, 1), date(2027, 4, 5)),
+        ("EQ-32C", "기타", date(2027, 4, 1), date(2027, 4, 5)),
+        ("EQ-02", "정기 PM", date(2027, 1, 10), date(2027, 1, 25)),
+        ("EQ-02", "고장", date(2027, 1, 20), date(2027, 1, 28)),
+    ]
+    downtime = pd.DataFrame(
+        [(name, kind, start, end, None, None) for name, kind, start, end in rows],
+        columns=["설비명", "비가동유형", "시작일", "종료일", "상세사유", "비고"],
+    )
+    timeline = build_process_equipment_timeline(
+        fleet, downtime, _baseline(44.0), _cutoff(), process=PROCESS, months=MONTHS
+    )
+    return timeline.arrows
+
+
+def _arrow_section(canvas: ProcessCapaCanvas, unit: str) -> list[str]:
+    return [row for row in canvas.row_ids if row.startswith(f"arrow:{unit}#")]
+
+
+def test_a_downtime_on_every_module_is_one_arrow_on_the_main_row() -> None:
+    """같은 비가동(시작일 · 종료일 · 유형)이 모든 모듈에 있으면 Main 줄 화살표 하나 — 손실은 모듈
+    몫의 합, 풍선은 「모듈 n 모두」. 일부 모듈에만 있는 것은 Main 줄 아래 「[여백]└ 모듈명」
+    줄이다(2026-11-12 사용자 답 q7 (가) · 메모)."""
+    arrows = _module_arrows()
+    canvas = _canvas(dynamic=_dynamic(arrows=arrows))
+    own = arrows.loc[arrows["설비키"].eq("EQ-31") & arrows["비가동유형"].eq("공사")]
+    month = 202702
+    loss = sum(dict(value).get(month, 0.0) for value in own["달별 손실"])
+
+    assert _arrow_section(canvas, "EQ-31") == ["arrow:EQ-31#0", "arrow:EQ-31#EQ-31A#0"]
+    main = _plain(_hover_of(canvas, "arrow:EQ-31#0", month)).split("<br>")
+    assert main[0].endswith("EQ-31 · 모듈 3")
+    assert main[1:] == [
+        f"모듈 3 모두 · 공사 · 2027-02-03~2027-02-10 · 이 달 {signed_one(-loss)} (환산대수)"
+    ]
+    module = _plain(_hover_of(canvas, "arrow:EQ-31#EQ-31A#0", 202703)).split("<br>")
+    assert len(module) == 2 and module[1].startswith("EQ-31A · 기타 · 2027-03-05~2027-03-08")
+    labels = {item["text"]: item for item in _annotations(canvas.labels)}
+    sub = labels[f"{MODULE_ROW_MARK} EQ-31A"]
+    assert sub["xshift"] == labels["EQ-31"]["xshift"] + MODULE_ROW_INDENT_PX
+    assert sub["font"]["color"] == tokens.TEXT_MUTED
+
+
+def test_a_partial_downtime_keeps_a_main_head_row_and_one_row_per_module() -> None:
+    """유형이 다르면 같은 날이라도 합치지 않는다 — 합친 것이 없는 Main 줄은 화살표 없이 머리로 서고
+    (풍선 없음), 모듈마다 「└ 모듈명」 줄이다."""
+    canvas = _canvas(dynamic=_dynamic(arrows=_module_arrows()))
+
+    assert _arrow_section(canvas, "EQ-32") == [
+        "arrow:EQ-32#0",
+        "arrow:EQ-32#EQ-32A#0",
+        "arrow:EQ-32#EQ-32B#0",
+        "arrow:EQ-32#EQ-32C#0",
+    ]
+    assert _hover_months(canvas, "arrow:EQ-32#0") == []
+    labels = [item["text"] for item in _annotations(canvas.labels)]
+    assert [f"{MODULE_ROW_MARK} EQ-32{letter}" in labels for letter in "ABC"] == [True] * 3
+
+
+def test_overlapping_downtime_on_a_single_unit_goes_on_its_own_sub_row() -> None:
+    """단독 호기의 겹친 비가동은 「└ 설비명」 둘째 줄이다 — 「⋯ 같은 호기」 는 없다."""
+    canvas = _canvas(dynamic=_dynamic(arrows=_module_arrows()))
+    labels = [item["text"] for item in _annotations(canvas.labels)]
+
+    assert _arrow_section(canvas, "EQ-02") == ["arrow:EQ-02#0", "arrow:EQ-02#1"]
+    assert f"{MODULE_ROW_MARK} EQ-02" in labels
+    assert not [text for text in labels if "같은 호기" in text]
 
 
 def test_a_stopping_module_group_names_its_modules_in_the_hover() -> None:

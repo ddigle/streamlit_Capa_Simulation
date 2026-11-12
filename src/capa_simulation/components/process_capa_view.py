@@ -108,6 +108,8 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
+    UNITS_ALL,
+    UNITS_SHORTENING,
     AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaCanvas,
@@ -276,6 +278,11 @@ _SECTIONS_BEFORE_KNOWN: Final = (SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_UNITS
 BASIS_KEY: Final = "process_detail_downtime_basis"
 BASIS_LABELS: Final[Mapping[str, str]] = {BASIS_STATIC: "Static", BASIS_SCHEDULE: "일정"}
 BASIS_CAPTION: Final = "비가동 기준"
+# 「④ 단축」 의 보기 고르기 — 전체 · 단축 필요만(`st.segmented_control`, 세션 값 — 처음은 전체,
+# 2026-11-12 사용자 답 q6 (가) · 메모). ④ 가 펼쳐진 공정에만 선다 — 줄 이름은 칩 이름의 번호 하나다.
+UNITS_VIEW_KEY: Final = "process_detail_units_view"
+UNITS_VIEW_LABELS: Final[Mapping[str, str]] = {UNITS_ALL: "전체", UNITS_SHORTENING: "단축 필요만"}
+UNITS_VIEW_CAPTION: Final = "④"
 # 정리 줄의 필요 단축 일정 화면 링크.
 SHORTENING_TAB_LINK_KEY: Final = "process_detail_open_shortening_tab"
 # 부족 원인별 다음 화면 단추 — 근거 패널(그 달)이 그린다.
@@ -313,12 +320,12 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 9
+CANVAS_SCHEMA_VERSION: Final = 10
 # 직전에 만든 시트 엑셀 몇 벌(세션 칸) — 조건이 같은 회차(달 칸 누름 · 다른 위젯)는 통을 다시 만들지
 # 않는다. 시트 꼴이 바뀌면 버전을 올린다.
 SHEET_MEMO_KEY: Final = "process_detail_sheet_memo"
 SHEET_MEMO_LIMIT: Final = 4
-SHEET_SCHEMA_VERSION: Final = 4
+SHEET_SCHEMA_VERSION: Final = 5
 
 # ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
 ROUNDED_IN_NOTE: Final = (
@@ -509,6 +516,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
     month = viewed_month(view.months)
     expanded, split, collapsed, sheet_slot = _render_tool_row(view)
     basis = current_basis()
+    units_view = current_units_view()
     product_demand = (
         simulation_cache.get_process_product_demand(
             view.scenario_key,
@@ -538,6 +546,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
                     show_all_arrows=show_all_arrows,
                     collapsed=collapsed,
                     basis=basis,
+                    units_view=units_view,
                 ),
                 partial(
                     process_capa_workbook,
@@ -550,6 +559,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
                         show_all_units=show_all_units,
                         show_all_arrows=show_all_arrows,
                         basis=basis,
+                        units_view=units_view,
                     ),
                 ),
             ),
@@ -568,6 +578,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
         show_all_arrows=show_all_arrows,
         collapsed=collapsed,
         basis=basis,
+        units_view=units_view,
     )
     _render_canvas(view, canvas)
     _render_more_toggles(
@@ -594,9 +605,10 @@ def viewed_month(months: Sequence[int]) -> int:
 def _render_tool_row(
     view: ProcessDetailView,
 ) -> tuple[bool, str, frozenset[str], DeltaGenerator]:
-    """「구획」 칩 · 그 뜻 ⓘ · 「비가동 기준」 고르기(설비 일정이 설 때만) · 「제품별 소요대수」
-    펼침 · 「분류」(펼쳤을 때) · 오른쪽 끝 「내려받기 ▾」 메뉴(호기 CSV — 설비 일정이 설 때만, 시트
-    엑셀 — 늘. 호기 CSV 가 없으면 메뉴 없이 시트 엑셀 단추 하나).
+    """「구획」 칩 · 그 뜻 ⓘ · 「비가동 기준」 고르기(설비 일정이 설 때만) · 「④ 전체 · 단축
+    필요만」 고르기(호기 줄이 있는 공정에서 ④ 를 펼쳤을 때만) · 「제품별 소요대수」 펼침 ·
+    「분류」(펼쳤을 때) · 오른쪽 끝 「내려받기 ▾」 메뉴(호기 CSV — 설비 일정이 설 때만, 시트 엑셀 —
+    늘. 호기 CSV 가 없으면 메뉴 없이 시트 엑셀 단추 하나).
 
     돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획, 시트 엑셀 자리) 다. 「제품별 소요대수」 는 ① ·
     ② 를 함께 펼친다(2026-11-12 사용자 답 q4 (가)) — 둘 다 접혔으면(설비 일정이 없으면 ① 만 보고)
@@ -634,6 +646,22 @@ def _render_tool_row(
                 list(BASIS_LABELS),
                 format_func=lambda value: BASIS_LABELS.get(str(value), str(value)),
                 key=BASIS_KEY,
+                required=True,
+                persist_state="session",
+                label_visibility="collapsed",
+            )
+        if (
+            view.dynamic is not None
+            and view.dynamic.canvas.has_units
+            and SECTION_UNITS not in collapsed
+        ):
+            seed_units_view()
+            st.caption(UNITS_VIEW_CAPTION, width="content")
+            st.segmented_control(
+                UNITS_VIEW_CAPTION,
+                list(UNITS_VIEW_LABELS),
+                format_func=lambda value: UNITS_VIEW_LABELS.get(str(value), str(value)),
+                key=UNITS_VIEW_KEY,
                 required=True,
                 persist_state="session",
                 label_visibility="collapsed",
@@ -699,6 +727,20 @@ def current_basis() -> str:
     return str(value) if value in BASIS_LABELS else BASIS_STATIC
 
 
+def seed_units_view() -> None:
+    """「④ 단축」 보기 값을 위젯 앞에서 다진다 — 칸이 없거나 모르는 값이면 처음 값(전체)을
+    **적는다**(지우지 않는다 — AGENTS 9장)."""
+    if st.session_state.get(UNITS_VIEW_KEY) not in UNITS_VIEW_LABELS:
+        st.session_state[UNITS_VIEW_KEY] = UNITS_ALL
+
+
+def current_units_view() -> str:
+    """지금 「④ 단축」 의 보기 — 세션 값이 모르는 값이면 처음 값(전체). 고르기가 서지 않은 회차(④
+    접힘)에도 세션 값을 그대로 쓴다 — 다시 펴면 보던 보기다."""
+    value = st.session_state.get(UNITS_VIEW_KEY)
+    return str(value) if value in UNITS_VIEW_LABELS else UNITS_ALL
+
+
 def sheet_request(
     view: ProcessDetailView,
     *,
@@ -709,11 +751,13 @@ def sheet_request(
     show_all_units: bool,
     show_all_arrows: bool,
     basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
 ) -> WorkbookRequest:
     """시트 엑셀 재료 — 이 회차의 화면 상태 그대로(켜진 구획 · 펼친 제품 행과 분류 · 조회기간의 달 ·
-    UPEH 가정 · HOME 표시 확보율 · 「더 보기」 · 비가동 기준). 머리 값은 페이지 값 뒤에 구획 · 펼침
-    · 단축 목표를 덧붙인다 — 「구획」 은 시트에 실제로 선 구획만이다(설비 일정이 서지 않으면 ② ~ ⑤
-    칩이 켜져 있어도 ① 뿐). 그림 캔버스와 같은 인자로 같은 행 모델을 세운다(`remembered_canvas`)."""
+    UPEH 가정 · HOME 표시 확보율 · 「더 보기」 · 비가동 기준 · ④ 보기). 머리 값은 페이지 값 뒤에
+    구획 · 펼침 · 단축 목표를 덧붙인다 — 「구획」 은 시트에 실제로 선 구획만이다(설비 일정이 서지
+    않으면 ② ~ ⑤ 칩이 켜져 있어도 ① 뿐). 그림 캔버스와 같은 인자로 같은 행 모델을 세운다
+    (`remembered_canvas`)."""
     heading = list(view.sheet_heading)
     drawn = SECTION_IDS if view.dynamic is not None else (SECTION_SUMMARY,)
     opened = [SECTION_LABELS[section] for section in drawn if section not in collapsed]
@@ -729,6 +773,7 @@ def sheet_request(
             show_all_units=show_all_units,
             show_all_arrows=show_all_arrows,
             downtime_basis=basis,
+            units_view=units_view,
         )
         if view.dynamic is not None
         else None
@@ -832,9 +877,11 @@ def canvas_memo_key(
     show_all_arrows: bool,
     collapsed: Collection[str] = (),
     basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
 ) -> tuple[object, ...]:
     """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표·접힌 구획·UPEH 가정 토큰·
-    비가동 기준이 그림에 구워지므로 든다(가정 요약은 그 토큰과 시나리오 키·판정 기준이 정한다)."""
+    비가동 기준 · ④ 보기가 그림에 구워지므로 든다(가정 요약은 그 토큰과 시나리오 키·판정 기준이
+    정한다)."""
     home = tuple(sorted(view.home_rates.items())) if view.home_rates is not None else None
     return (
         CANVAS_SCHEMA_VERSION,
@@ -856,6 +903,7 @@ def canvas_memo_key(
         tuple(sorted(str(section) for section in collapsed)),
         view.upeh_token,
         str(basis),
+        str(units_view),
     )
 
 
@@ -870,13 +918,14 @@ def remembered_canvas(
     show_all_arrows: bool,
     collapsed: Collection[str] = (),
     basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
 ) -> ProcessCapaCanvas:
     """결합 캔버스를 세션에 몇 벌 기억한다(`CANVAS_MEMO_LIMIT`). 꺼낸 그림은 고치지 않는다.
 
     키(`canvas_memo_key`)는 그림을 바꾸는 조건 전부다 — 테마·시나리오 키·표시순서
     지문·축·공정·표시명· 판정 기준 지문·펼침/분류/거르기·지금 보는 달·HOME 표시 확보율·설비 일정
-    키(오늘·목표·네 표 지문)· 더 보기 둘·접힌 구획·비가동 기준·그림 모양 버전. 만들다 실패하면
-    기억하지 않는다.
+    키(오늘·목표·네 표 지문)· 더 보기 둘·접힌 구획·비가동 기준·④ 보기·그림 모양 버전. 만들다
+    실패하면 기억하지 않는다.
     """
     key = canvas_memo_key(
         view,
@@ -887,6 +936,7 @@ def remembered_canvas(
         show_all_arrows=show_all_arrows,
         collapsed=collapsed,
         basis=basis,
+        units_view=units_view,
     )
     memo = st.session_state.get(CANVAS_MEMO_KEY)
     entries: list[tuple[tuple[object, ...], ProcessCapaCanvas]] = (
@@ -903,6 +953,7 @@ def remembered_canvas(
             show_all_units=show_all_units,
             show_all_arrows=show_all_arrows,
             downtime_basis=basis,
+            units_view=units_view,
         )
         if view.dynamic is not None
         else None
@@ -941,6 +992,7 @@ def sheet_memo_key(
     show_all_arrows: bool,
     collapsed: Collection[str] = (),
     basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
 ) -> tuple[object, ...]:
     """시트 엑셀을 바꾸는 조건 전부 — 그림 기억 키(`canvas_memo_key`)에서 지금 보는 달 · 테마를 뺀
     것(시트는 고른 달 표지가 없고 늘 밝은 색이다)에 머리 값 줄 · 시트 꼴 버전을 더한다. 둘째
@@ -965,6 +1017,7 @@ def sheet_memo_key(
         view.upeh_token,
         view.sheet_heading,
         str(basis),
+        str(units_view),
     )
 
 

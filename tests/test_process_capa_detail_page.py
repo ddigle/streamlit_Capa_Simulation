@@ -45,6 +45,8 @@ from capa_simulation.components.process_capa_canvas import (
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
+    UNITS_ALL,
+    UNITS_SHORTENING,
 )
 from capa_simulation.components.process_capa_view import (
     BASIS_KEY,
@@ -60,6 +62,7 @@ from capa_simulation.components.process_capa_view import (
     SHORTENING_TAB_LINK_KEY,
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
+    UNITS_VIEW_KEY,
     step_button_label,
 )
 from capa_simulation.components.process_capa_workbook import DETAIL_SHEET, UNITS_SHEET
@@ -1009,6 +1012,9 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
     # 비가동 기준 고르기는 표 도구 줄에 서고 처음은 Static 이다(q5b (가) · k-c4).
     basis = app.segmented_control(key=BASIS_KEY)
     assert list(basis.options) == ["Static", "일정"] and basis.value == BASIS_STATIC
+    # ④ 보기(전체 · 단축 필요만)도 표 도구 줄에 서고 처음은 전체다(2026-11-12 사용자 답 q6 메모).
+    units_view = app.segmented_control(key=UNITS_VIEW_KEY)
+    assert list(units_view.options) == ["전체", "단축 필요만"] and units_view.value == UNITS_ALL
     # 공정 상자 뒤의 선택 상자는 「이 세션만」 UPEH 적용 구간 둘뿐이다(목표를 고르는 상자가 아니다).
     assert {box.key for box in app.get("selectbox")[1:]} <= {
         UPEH_ASSUMPTION_START_KEY,
@@ -1144,6 +1150,32 @@ def test_the_sheet_xlsx_follows_the_screen_state(
     assert "③ 비가동 ▸" in labels and "④ 단축 ▸" in labels and "⑤ 비가동 일정 ▸" in labels
     assert "DA-01" not in labels
     assert "소요대수 ▾" in labels and any(label.startswith("└ ") for label in labels)
+
+
+def test_the_units_view_picker_follows_the_units_section(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """④ 보기 고르기는 ④ 가 펼쳐진 동안만 서고, 고른 값은 이 세션 동안 남는다(2026-11-12 사용자
+    답 q6 메모)."""
+    app = _dynamic_app(dynamic_databases)
+
+    def pickers() -> list[str]:
+        try:
+            return [str(app.segmented_control(key=UNITS_VIEW_KEY).key)]
+        except KeyError:
+            return []
+
+    assert pickers() == [UNITS_VIEW_KEY]
+    app.segmented_control(key=UNITS_VIEW_KEY).set_value(UNITS_SHORTENING)
+    _ok(app.run())
+    assert "단축 후 확보율" in _label_texts(app)
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
+        [section for section in SECTION_IDS if section != SECTION_UNITS]
+    )
+    _ok(app.run())
+    assert pickers() == []
+    assert app.session_state[UNITS_VIEW_KEY] == UNITS_SHORTENING
 
 
 def test_the_sections_meaning_sits_in_one_info_mark_after_the_chips(
