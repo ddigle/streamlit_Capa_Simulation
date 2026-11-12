@@ -1644,7 +1644,7 @@ def _manual_downtime_row(
         label=MANUAL_DOWNTIME_ROW_LABEL,
         label_fill=tokens.SURFACE_CLASSIFICATION,
         label_hover=(
-            "가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동 대수(환산)<br>"
+            "가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동대수(환산)<br>"
             "호기별 비가동과 별도 손실 — ③ 비가동대수에 듭니다"
         ),
     )

@@ -426,7 +426,7 @@ equipment_session: EquipmentSession | None = None
 shown_session: EquipmentSession | None = None
 snapshot: EquipmentSnapshot | None = None
 cutoff = pd.DataFrame()
-# 입력 비가동 대수(가용설비 현황 › Preference — 공용, 설비 0032). ②·④ 와 계획 키에 실린다.
+# 입력 비가동 대수(가용설비 현황 › Preference — 공용, 설비 0032). ③ · ⑤ 와 계획 키에 실린다.
 manual_downtime = ManualDowntime()
 equipment_error = ""
 try:
@@ -869,7 +869,7 @@ if (
             closing_marks.append(
                 (
                     manual_note,
-                    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 ③ 비가동대수에 "
+                    "가용설비 현황 › Preference 의 공정 × 달 비가동대수를 ③ 비가동대수에 "
                     f"넣었습니다({manual_place} — 호기별 비가동과 별도).",
                 )
             )
