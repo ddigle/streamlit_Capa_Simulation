@@ -2046,14 +2046,13 @@ def test_the_space_1112_board_answers_are_recorded() -> None:
     배포1)이고, 메모 여덟은 원문 그대로다. 3-2 move 밖의 줄은 커밋을 들고, 계획 · 갈래가 답 밖에서
     정한 것은 그 줄이 밝힌다. 설계 조사 뒤 물음 둘(Q0 「둘로 나눔」 · P2 「답 그대로 전체」)도 이
     절에 있고, 뒤집은 옛 결정 둘은 7-1 에 있다. 6-21 줄은 그때 기록 그대로다(앞 시험이 6-22 앞에서
-    끊어 본다)."""
+    끊어 본다). 6-23 은 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.22" in document.split("\n## 1. ")[0]
     assert "- **v1.22 — 2026-11-13.**" in _chapter(document, 8)
     assert "6-22 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-22. ") :]
+    board = section[section.index("\n### 6-22. ") : section.index("\n### 6-23. ")]
     assert SPACE_1112_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -2090,3 +2089,100 @@ def test_the_space_1112_board_answers_are_recorded() -> None:
     for phrase in ("Space 요청 시안 보드 1-4 메모", "같은 보드 7-1 (가)"):
         assert phrase in reversed_, phrase
     assert "3-1 (다) · 3-3 (나) · 7-2 (다) · 배포1 (나) 는 권장과 다른 답" in _chapter(document, 8)
+
+
+# 2026-11-12 밤 「남은 물음」 둘째 보드(6-23)의 답 — 카드 열넷. 고른 글은 선택지 원문이고 열은 카드
+# 권장, 셋(11 · 13 · 14)은 사외 권장 없이 보드 의견을 따랐고, 4 만 권장 (나) 와 다른 (가) 다. 코드를
+# 고친 셋(5 · 7 · 12)은 `night/qb-1112` 의 커밋을 들고, 런북 몫 · 기록만 한 열하나는 커밋이 없다.
+# 줄 id 는 보드 카드 id 이고 차례는 보드 표시 차례다.
+REMAINING_1112B_ADDRESS = "https://claude.ai/artifact/9dPJtHaZJMsqxMzw21ximn"
+REMAINING_1112B_ANSWERS = {
+    "peer-off": (
+        "(가) 꺼 둔 채 첫 CI/CD 를 누르고, 리뷰를 보낸 뒤 담당자 고침을 점검 · 합쳐 다시 켠다"
+        "(지금 런북 초안)"
+    ),
+    "peer-count": "(가) 세지 않는다 — 판정 줄에만 그 모듈이 걸렸다고 적는다(지금 런북 초안)",
+    "toolrow-two": "(가) 두 줄을 받는다",
+    "owned-exit": "(가) 지금대로 둔다",
+    "word-downtime2": (
+        "(가) 모두 붙여 쓰고, 한 개념 한 이름 시험에 「입력 비가동 대수」 를 더해 다시 띄어 쓰지"
+        " 못하게 한다"
+    ),
+    "peer-name-ask": (
+        "(가) 예 — 배포 전 미리 확인 9 처럼 사용자가 담당자에게 「모듈 코드나 그 시험이 이름표를"
+        " 손으로 만드는지」 를 함께 묻는다"
+    ),
+    "ctx-file": (
+        "(가) 다른 파일 자리를 넣는 꼴만 점검 오류로 막고, 돌아가는 꼴은 앱 관리자의 PR 점검에"
+        " 맡긴다"
+    ),
+    "names-public": "(가) 가린 채로 둔다",
+    "guard-temp": (
+        "(가) 지금대로 둔다 — 이번 배포 뒤 「시험 임시 폴더를 저장소 안에 두면 처음부터 거절」 과"
+        " 함께 본다"
+    ),
+    "deny-guide": "(가) 지금은 두지 않고, 사내판 가이드를 다시 시작할 때 정한다",
+    "deny-shell": "(가) 지금대로 둔다",
+    "deny-copy": "(가) 지금대로 통째로 막는다",
+    "plan-hand": "(가) 더한다 — 사내 손 확인에 한 칸",
+    "token-pc": "(가) 이번 배포는 지금대로 둔다",
+}
+# 코드를 고친 줄과 그 커밋.
+REMAINING_1112B_COMMITS = {
+    "word-downtime2": ("55e4858", "8124f4e"),
+    "ctx-file": ("db89e3a", "82a50c8"),
+    "deny-copy": ("fd22922",),
+}
+# 사외 권장 없이 보드 의견을 따른 줄.
+REMAINING_1112B_BOARD_VIEW = ("deny-shell", "plan-hand", "token-pc")
+
+
+def test_the_second_remaining_1112_board_answers_are_recorded() -> None:
+    """v1.23 — 6-23 은 「남은 물음」 둘째 보드 카드 열넷이 보드 차례대로 한 줄씩이고 고른 글은
+    선택지 원문이다. 코드를 고친 셋(5 · 7 · 12)은 커밋을 들고 나머지 열하나는 커밋이 없다. 권장과
+    다른 답은 4 owned-exit 하나이고, 셋은 사외 권장 없이 보드 의견을 따랐다. 12 는 6-21
+    deny-data-read 줄에 「답 밖 — 구현이 정함」 표시를 달았고, 뒤집은 옛 결정 둘(6-21 m1-when ·
+    word-downtime)은 7-1 에 있다. 6-22 줄은 그때 기록 그대로다(앞 시험이 6-23 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.23" in document.split("\n## 1. ")[0]
+    assert "- **v1.23 — 2026-11-13.**" in _chapter(document, 8)
+    assert "6-23 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-23. ") :]
+    assert REMAINING_1112B_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-12) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(REMAINING_1112B_ANSWERS)
+    assert len(found) == 14
+    assert found == REMAINING_1112B_ANSWERS
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert bool(commit.search(line)) is (key in REMAINING_1112B_COMMITS), key
+    for key, shas in REMAINING_1112B_COMMITS.items():
+        for sha in shas:
+            assert f"`{sha}`" in by_id[key], (key, sha)
+    others = [key for key, line in by_id.items() if "권장과 다른 답" in line]
+    assert others == ["owned-exit"]
+    view = [key for key, line in by_id.items() if "보드 의견(사외 권장 없음" in line]
+    assert view == list(REMAINING_1112B_BOARD_VIEW)
+    assert "— 메모 「" not in board
+    assert "6-21 deny-data-read 줄에 「답 밖 — 구현이 정함」 표시를 달아" in by_id["deny-copy"]
+    assert "B 는 둘이다" in by_id["plan-hand"]
+
+    reversed_ = _chapter(document, 7)
+    for phrase in (
+        "「남은 물음」 둘째 보드 1 (가)",
+        "둘째 보드 5 (가)",
+    ):
+        assert phrase in reversed_, phrase
+    assert "4 owned-exit (가) 는 권장 (나) 와 다른 답" in _chapter(document, 8)
