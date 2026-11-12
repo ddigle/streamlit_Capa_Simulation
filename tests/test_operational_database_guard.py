@@ -25,15 +25,16 @@ from conftest import (
 import capa_simulation.settings as settings
 
 TESTS = Path(__file__).resolve().parent
+PROBE_NAME = "operational-guard-probe-never-made.duckdb"
 
 # 자식이 겨누는 자리 — 저장소 `data/` 아래(운영 자리)의 없는 파일을 읽기 전용으로. 문지기가 깨져도
 # 자식은 사내 운영 DB 를 열지 않고 파일도 만들지 않는다(읽기 전용은 없는 파일을 만들지 않는다) —
 # 이 시험도 사내 관문에서 운영 저장소를 놓고 돈다.
-_PROBE = """
+_PROBE = f"""
 import duckdb
 from conftest import _REPOSITORY_DATA_DIR
 
-PLACE = _REPOSITORY_DATA_DIR / "operational-guard-probe-never-made.duckdb"
+PLACE = _REPOSITORY_DATA_DIR / {PROBE_NAME!r}
 
 
 def swallow_the_refusal():
@@ -111,6 +112,9 @@ def _child_pytest(folder: Path, body: str) -> subprocess.CompletedProcess[str]:
     끝 판정이 이 세션과 같은 코드다. 자식 폴더에는 conftest 를 두지 않는다(이름이 겹친다)."""
     (folder / "test_probe.py").write_text(body, encoding="utf-8")
     env = {key: value for key, value in os.environ.items() if key != "PYTEST_ADDOPTS"}
+    # 사내 Windows(한국어 로캘)의 파이프는 cp949 다 — 자식 출력을 UTF-8 로 맞춰 아래 읽기와
+    # 같게 한다.
+    env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = os.pathsep.join(
         [str(TESTS), str(TESTS.parent / "src"), *filter(None, [env.get("PYTHONPATH")])]
     )
@@ -148,7 +152,8 @@ def test_a_test_that_swallows_the_refusal_still_fails(tmp_path: Path) -> None:
     # 판정은 시험 정리에서 나므로 그 시험이 「오류」 로 찍힌다 — 세션 끝 판정만 남았다면 오류 없이
     # 「1 passed」 뿐이다.
     assert "1 error" in finished.stdout.splitlines()[-1], finished.stdout
-    assert not (_REPOSITORY_DATA_DIR / "operational-guard-probe-never-made.duckdb").exists()
+    assert PROBE_NAME in finished.stdout
+    assert not (_REPOSITORY_DATA_DIR / PROBE_NAME).exists()
 
 
 def test_an_open_after_the_last_test_still_fails_the_session(tmp_path: Path) -> None:
@@ -159,3 +164,4 @@ def test_an_open_after_the_last_test_still_fails_the_session(tmp_path: Path) -> 
     assert finished.returncode == pytest.ExitCode.TESTS_FAILED, finished.stdout
     assert "1 passed" in finished.stdout, finished.stdout
     assert "시험이 운영 DB 자리를 열려 했습니다(열지 않음)" in finished.stdout
+    assert PROBE_NAME in finished.stdout
