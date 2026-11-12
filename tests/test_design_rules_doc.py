@@ -1868,14 +1868,13 @@ def test_the_remaining_1112_board_answers_are_recorded() -> None:
     선택지 원문이다. 고친 열여덟 줄은 커밋을 들고 나머지 스물셋은 커밋이 없다. 권장과 다른 답은
     ①-1 하나이고(⑤-4 (나) 는 카드 권장), 메모는 ②-2 하나 — 실제 설비명 둘은 가린 꼴이다. 갈래가
     답 밖에서 정한 것(ⓘ 자리 · 고른 그림 · 점검 글)은 그 줄이 밝힌다. 뒤집은 옛 결정은 7-1 에
-    있다. 6-20 줄은 그때 기록 그대로다(앞 시험이 6-21 앞에서 끊어 본다)."""
+    있다. 6-20 줄은 그때 기록 그대로다(앞 시험이 6-21 앞에서 끊어 본다). 6-22 는 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.21" in document.split("\n## 1. ")[0]
     assert "- **v1.21 — 2026-11-12.**" in _chapter(document, 8)
     assert "6-21 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-21. ") :]
+    board = section[section.index("\n### 6-21. ") : section.index("\n### 6-22. ")]
     assert REMAINING_1112_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -1921,3 +1920,164 @@ def test_the_remaining_1112_board_answers_are_recorded() -> None:
     ):
         assert phrase in reversed_, phrase
     assert "①-1 (나) 는 권장과 다른 답" in _chapter(document, 8)
+
+
+# 2026-11-12 Space 요청 시안 보드(6-22)의 답 — 카드 서른여덟(고침 확인 셋 · 고침에 넣은 갈림 넷 ·
+# 규칙집 하나 · 시안 스물일곱 · 메모 카드 하나 · 실을 배포 둘). 고른 글은 선택지 원문(고침 확인은
+# 「좋음」, 메모 카드는 메모)이고, 선택지가 있는 서른넷 가운데 넷(3-1 · 3-3 · 7-2 · 배포1)이 카드
+# 권장과 다른 답이다. 3-2 move 밖의 줄은 커밋을 든다. 줄 id 는 보드 카드 id 이고 차례는 보드 차례다.
+SPACE_1112_ADDRESS = "https://claude.ai/artifact/3PQ7AAePoajQTpqLxJ6srk"
+SPACE_1112_ANSWERS = {
+    "fix-wheel": "좋음",
+    "fix-dropdown": "좋음",
+    "q-dd-wheel": "(가) 창을 닫는다 — 지금 넣은 꼴",
+    "q-draft": "(가) 그 순간 확정한다 — 지금 넣은 꼴",
+    "q-rule-net": "(가) 적는다",
+    "fix-group-cover": "좋음",
+    "q-partial": "(가) 반입 전 모듈만 숨기고 반입한 모듈은 남긴다 — 지금 넣은 꼴",
+    "q-hidden-count": "(가) 그린 모듈 몫의 합 — 지금 넣은 꼴",
+    "arr-format": "(가) 27.05.09",
+    "arr-place": "(가) 상자 안, 이름 아래 작은 줄",
+    "arr-group": "(가) 묶음 범위 바로 아래에 한 번",
+    "arr-toggle": (
+        "(가) 사이드바 「Space 도면」 상자의 「공식과 견주기」 바로 아래 토글 「반입 일정」 —"
+        " 처음엔 꺼짐"
+    ),
+    "arr-target": "(가) 이대로",
+    "arr-edit": "(가) 보기 화면만",
+    "sib-cols": "(다) 여섯 + 레이아웃표시",
+    "sib-main": "(나) 지금처럼 이 모듈만 옮긴다 — 묶음 이름 바꾸기는 Space 편집기에서",
+    "sib-free": "(나) 예 — 늘 같다고 보고 묶음 규칙에도 더한다",
+    "sib-unloaded": (
+        "(가) 형제 줄을 고친 줄 바로 아래 끼워 넣어 「고친 칸」 표지를 보이고, 알림창에 한 줄"
+    ),
+    "sib-paths": "(가) 모든 고치는 길에 같은 규칙 + 호기 상세 「묶음」 표지",
+    "hl-group": (
+        "(가) 층 보기만 — 묶음 테를 실선으로, 누른 모듈 후광은 없앰(묶음이 아닌 호기는 후광 그대로)"
+    ),
+    "hl-when": ("(나) (가) + 필터 · 「도면에서 강조」 로 맞는 호기가 바뀌었는데 5대 이하일 때"),
+    "hl-origin": "(가) 도면 무대 가장자리",
+    "sheet-cols": "(가) 설비 마스터 탭과 같은 칸 · 같은 잠금",
+    "sheet-apply": (
+        "(가) 편집기 「적용」 때 들어가고, 칸만 고쳐도 「배치 저장」 이 켜져 함께 저장 —"
+        " 되돌리기 · 처음 상태로에도 듦"
+    ),
+    "sheet-reject": "메모 「호기 정보 창에서 즉시 막고, 알람으로 띄우게끔」",
+    "foot-kind": "(가) 새 도면 요소 「발자국」 — 도면 요소 칸의 동선 옆 단추",
+    "foot-shape": "(가) 신발 밑창 꼴, 왼발 · 오른발 번갈아",
+    "foot-gap": "(가) 좁게 · 보통 · 넓게 고르는 칸을 둔다",
+    "foot-dir": "(가) 한쪽 — 처음은 왼쪽→오른쪽, 돌리기 · 뒤집기로 바꿈",
+    "foot-color": "(가) 동선과 같은 선 색 고르기 — 처음은 강조색",
+    "foot-fab": "(나) 층 · FAB 둘 다",
+    "zone-tag": ("(가) 위 변 바로 바깥(위)으로 올린다 — 도면 위 끝이면 안쪽 그대로 호기 위에"),
+    "zone-order-scope": "(다) 호기끼리 순서도",
+    "zone-order-ui": "(가) 넷 — 맨 앞으로 · 앞으로 · 뒤로 · 맨 뒤로, 선택 칸 단추",
+    "zone-order-whatif": "(가) 공식에서만 바꾼다 — 가정에서는 단추를 잠그고 까닭은 풍선",
+    "zone-order-fab": "(가) 층 · FAB 둘 다",
+    "ship-space": "(나) 다음 배포",
+    "ship-bugs": "(가) 넣는다 — 답을 받은 뒤 다음 배포 후보에 합친다",
+}
+# 고른 선택지에 단 사용자 메모 원문(끝 빈칸만 뺌). 메모 카드(5-6)는 고른 글 자리에 메모가 선다.
+SPACE_1112_MEMOS = {
+    "arr-format": (
+        "모듈로 구성된 경우, 각 모듈별 일정이 동일하다면 메인호기명 밑에 한번만 날짜를"
+        " 표시하고, 모듈별로 차이가 있는경우 각 모듈마다 아래에 날짜를 표시"
+    ),
+    "arr-group": (
+        "보통 모듈 개수는 4개인 경우가 많음. 그러면 메인 설비명이 정가운데 배치가 되고, 그런"
+        " 경우를 가정해서 정가운데의 메인 설비명 아래에 일정을 적도록 하라는 의도임"
+    ),
+    "arr-toggle": ("배치 편집의 캔버스 편집버튼은 지우고, 각 버튼의 간격 일정하게 배치해."),
+    "sib-free": "사용기준만 제외",
+    "foot-shape": (
+        "신발 밑창 꼴을 기본으로 하고, 모양을 바꿀 수 있게 해서, 발가락과 점도 추가하고"
+        " 여기에 고양이 발바닥, 그 외에도 몇가지 더 추가해줘"
+    ),
+    "foot-gap": (
+        "상자 형태가 아니라 선 형태로만 편집할 수 있게 해서 발크기를 상자높이로 바꿀수 없게"
+        " 하고, 좁게 · 보통 · 넓게로 선택하게끔 함."
+    ),
+    "foot-color": "색상은 다른 도면 요소처럼 여러가지 색상 선택할 수 있도록",
+}
+SPACE_1112_OTHERS = ("sib-cols", "sib-free", "zone-order-scope", "ship-space")
+SPACE_1112_NO_COMMIT = ("sib-main",)
+# 계획 · 갈래가 답 밖에서 정한 것을 밝힌 줄.
+SPACE_1112_BEYOND = (
+    "arr-format",
+    "arr-place",
+    "arr-group",
+    "arr-toggle",
+    "arr-target",
+    "arr-edit",
+    "sib-cols",
+    "sib-free",
+    "sib-unloaded",
+    "sib-paths",
+    "hl-group",
+    "hl-when",
+    "hl-origin",
+    "sheet-cols",
+    "sheet-apply",
+    "sheet-reject",
+    "foot-kind",
+    "foot-shape",
+    "foot-gap",
+    "foot-dir",
+    "foot-color",
+    "zone-tag",
+    "zone-order-ui",
+    "zone-order-whatif",
+    "zone-order-fab",
+)
+
+
+def test_the_space_1112_board_answers_are_recorded() -> None:
+    """v1.22 — 6-22 는 Space 요청 시안 보드 카드 서른여덟이 보드 차례대로 한 줄씩이고 고른 글은
+    선택지 원문(고침 확인은 「좋음」, 메모 카드는 메모)이다. 권장과 다른 답은 넷(3-1 · 3-3 · 7-2 ·
+    배포1)이고, 메모 여덟은 원문 그대로다. 3-2 move 밖의 줄은 커밋을 들고, 계획 · 갈래가 답 밖에서
+    정한 것은 그 줄이 밝힌다. 설계 조사 뒤 물음 둘(Q0 「둘로 나눔」 · P2 「답 그대로 전체」)도 이
+    절에 있고, 뒤집은 옛 결정 둘은 7-1 에 있다. 6-21 줄은 그때 기록 그대로다(앞 시험이 6-22 앞에서
+    끊어 본다)."""
+    document = _text()
+    assert "판 v1.22" in document.split("\n## 1. ")[0]
+    assert "- **v1.22 — 2026-11-13.**" in _chapter(document, 8)
+    assert "6-22 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-22. ") :]
+    assert SPACE_1112_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-12) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(SPACE_1112_ANSWERS)
+    assert len(found) == 38
+    assert found == SPACE_1112_ANSWERS
+    assert sum(answer == "좋음" for answer in found.values()) == 3
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert bool(commit.search(line)) is (key not in SPACE_1112_NO_COMMIT), key
+    others = [key for key, line in by_id.items() if "권장과 다른 답" in line]
+    assert others == list(SPACE_1112_OTHERS)
+    memo = [key for key, line in by_id.items() if "— 메모 「" in line]
+    assert memo == list(SPACE_1112_MEMOS)
+    for key, note in SPACE_1112_MEMOS.items():
+        assert f"메모 「{note}」" in by_id[key], key
+    assert found["sheet-reject"] == "메모 「호기 정보 창에서 즉시 막고, 알람으로 띄우게끔」"
+    beyond = [key for key, line in by_id.items() if "답 밖 — 갈래가 정함" in line]
+    assert beyond == list(SPACE_1112_BEYOND)
+    for phrase in ("「둘로 나눔 (권장)」", "「답 그대로 전체 (권장)」", "설비 마이그레이션 `0034`"):
+        assert phrase in board, phrase
+    assert "`docs/TODO.md` 2장 「뒤로 미룬 것 — order 2단」" in by_id["zone-order-scope"]
+
+    reversed_ = _chapter(document, 7)
+    for phrase in ("Space 요청 시안 보드 1-4 메모", "같은 보드 7-1 (가)"):
+        assert phrase in reversed_, phrase
+    assert "3-1 (다) · 3-3 (나) · 7-2 (다) · 배포1 (나) 는 권장과 다른 답" in _chapter(document, 8)
