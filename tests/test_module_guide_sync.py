@@ -690,6 +690,10 @@ def test_the_query_example_passes_the_static_rules(tmp_path: Path) -> None:
     assert "def daily(_ctx: api.ModuleContext" in cache
     assert "WORK_DATE >= '{start_date}' AND WORK_DATE < '{end_date}'" in cache
     assert "except api.BigDataQueryError as error:" in page
+    # 실패하면 묻는 표지를 지운다 — 남기면 캐시에 없는 실패를 회차마다 다시 묻는다.
+    assert 'st.session_state[ctx.key("asked")] = None' in page
+    assert 'persist_state="session"' in page
+    assert "cache.daily.clear()" in section
     assert '`monkeypatch.setattr(api, "query_bigdataquery", <대역 함수>)`' in section
 
 
@@ -717,7 +721,7 @@ def test_the_move_section_says_when_what_and_how_the_owner_moves_a_direct_query(
         "(9-2)",
     ):
         assert form in section, form
-    assert "지침서 3-11 대로 BigDataQuery 조회를 앱 도우미로" in colleague.replace("\n", "")
+    assert "지침서 3-11 대로 M21 을 고쳐 줘" in colleague.replace("\n", "")
     assert "M21)입니다 — 이미 그렇게 쓰던 모듈은 8-2 끝을 봅니다." in colleague
 
 
