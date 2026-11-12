@@ -319,7 +319,8 @@ def test_the_action_row_is_the_last_box_that_shows_in_its_actions_box(
         children = [actions.children[index] for index in sorted(actions.children)]
         at = [index for index, child in enumerate(children) if getattr(child, "key", None) == row]
         assert len(at) == 1, (step, at)
-        assert all(not getattr(child, "children", None) for child in children[at[0] + 1 :]), step
+        after = children[at[0] + 1 :]
+        assert all(isinstance(child, Block) and not child.children for child in after), step
 
 
 def test_the_stack_field_follows_the_chosen_source_product(seeded_database: Path) -> None:
@@ -1257,26 +1258,34 @@ def test_another_pages_apply_that_changed_the_plan_drops_only_its_draft_and_says
     assert len(sent) == 1, sent
 
 
+@pytest.mark.parametrize(
+    ("drafted", "names"),
+    [(True, "PKG PLAN 1칸 · PKG PLAN 붙여넣기"), (False, "PKG PLAN 붙여넣기")],
+    ids=["with-draft", "paste-only"],
+)
 def test_another_pages_apply_drops_a_staged_paste_with_the_draft_on_it_and_says_so(
-    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch, drafted: bool, names: str
 ) -> None:
     """붙여넣기 대기 표는 다른 화면의 적용에도 버려진다 — 그 위에 둔 PKG PLAN 초안은 대기 표 양식에
-    붙은 값이라 PKG PLAN 내용이 그대로여도 함께 버리고, 알림이 대기 표도 이름으로 부른다."""
+    붙은 값이라 PKG PLAN 내용이 그대로여도 함께 버리고, 알림이 대기 표도 이름으로 부른다. 초안 없이
+    대기 표만 있어도 알린다."""
     app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
     _paste(app, _clipboard_text(app, scale=0.5))
     assert "pkg_plan_staged_paste" in app.session_state
-    app = _cell_edit(app, PLAN_CELL_EDIT)
-    assert _drafted(app, "RQ_PKG_PLAN")
+    if drafted:
+        app = _cell_edit(app, PLAN_CELL_EDIT)
+    assert _drafted(app, "RQ_PKG_PLAN") is drafted
     sent = _sent_drop_notices(monkeypatch)
 
     upeh = app.session_state["active_scenario"]["tables"]["RQ_UPEH"]
-    _inject(app, "RQ_UPEH", pd.DataFrame(upeh).copy(), "test-plan-grid-other-apply-staged")
+    token = f"test-plan-grid-other-apply-staged-{drafted}"
+    _inject(app, "RQ_UPEH", pd.DataFrame(upeh).copy(), token)
     assert not list(app.exception)
     assert "pkg_plan_staged_paste" not in app.session_state
     assert not _drafted(app, "RQ_PKG_PLAN")
-    assert sent == [
-        f"{OTHER_APPLY_NOTICE}(PKG PLAN 1칸 · PKG PLAN 붙여넣기)을 버렸습니다 — 다시 입력하세요."
-    ], sent
+    assert sent == [f"{OTHER_APPLY_NOTICE}({names})을 버렸습니다 — 다시 입력하세요."], sent
+    app.run()
+    assert len(sent) == 1, sent
 
 
 def test_the_plan_grid_shows_zero_as_blank_and_takes_a_cleared_cell_as_zero(
