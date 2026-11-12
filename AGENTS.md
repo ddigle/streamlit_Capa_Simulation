@@ -4661,9 +4661,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   링크다 — 링크는 그 화면 카드에서 온 방문(도착 「← 필요 단축 일정」 이 같은 길)만 빼고 일정 부족 달이 있는 공정에도 선다
   (`shortening_link_needed` — 2026-11-10 답 Q2-8, 설계 규칙 UI-LAY-12 예외 — 근거 패널의 일정 부족 달 단추는 그 달을 골라야 서서 처음 연 달이
   일정 부족 달이 아니면 길이 없었다. KPI 아래 다음 화면 줄은 2026-11-10 보드 c2-picked 로 걷었다). 「구획」 칩은 라벨을 숨긴 칸이라 뜻은 칩 바로 뒤 빈 캡션
-  풍선 하나다(`SECTIONS_HELP`, 2026-11-10 보드 Q-8). 그 곁 「비가동 기준」(`BASIS_KEY` — 설비 일정이 설 때) · 「④ 전체 ·
+  풍선 하나다(`SECTIONS_HELP`, 2026-11-10 보드 Q-8). 그 곁 「비가동 기준」(`BASIS_KEY` — 설비 일정이 서는 공정에서 ③ 을 펼쳤을 때만) · 「④ 전체 ·
   단축 필요만」(`UNITS_VIEW_KEY` — 호기 줄이 있는 공정에서 ④ 를 펼쳤을 때만, 처음 전체, 2026-11-12 사용자 답 q6 메모)은
-  세션 값 고르기다. 단축 목표 글은 화면에 두지 않고 Guide · 시트 엑셀 머리 값 줄이 적으며(2026-11-12 사용자 메모 k-c4)
+  세션 값 고르기이고 접혀 서지 않는 회차에도 세션 값을 쓴다. 캡션 붙은 고르기 셋(비가동 기준 · ④ · 분류)은 캡션과 한 칸
+  (`_picker_pair` — 줄바꿈 없음)이라 줄이 모자라면 함께 다음 줄로 가고, ④ 의 숨긴 위젯 라벨은 「④ 단축 보기」 다(UI-LAY-13). 단축 목표 글은 화면에 두지 않고 Guide · 시트 엑셀 머리 값 줄이 적으며(2026-11-12 사용자 메모 k-c4)
   KPI 칩에 거듭 적지 않고, 공정 카드의 기간 규칙은 「공정」 칸 풍선이다. 일정이 서지 않는 자리는 `constraint_equipment_plan.absent_note` 를 함께 쓴다.
   - 칸 누름·◀▶ 콜백은 `PROCESS_DETAIL_MONTH_KEY` 를 적고 `sidebar_status.rerun_app_unless_alone` 으로 끝낸다
     (`tests/test_app_navigation.py`·`tests/test_process_capa_detail_page.py`).

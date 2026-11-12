@@ -38,6 +38,7 @@ from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENA
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import load_guide
 from capa_simulation.components.process_capa_canvas import (
+    BASIS_SCHEDULE,
     BASIS_STATIC,
     SECTION_DOWNTIME,
     SECTION_DYNAMIC,
@@ -1180,6 +1181,56 @@ def test_the_units_view_picker_follows_the_units_section(
     _ok(app.run())
     assert pickers() == []
     assert app.session_state[UNITS_VIEW_KEY] == UNITS_SHORTENING
+
+
+def _pair_block(block: Any, caption: str, key: str) -> bool:
+    """캡션 `caption` 과 위젯 `key` 가 같은 칸의 바로 아래 자식으로 함께 서는 칸이 있는가."""
+    children = list(block.children.values()) if hasattr(block, "children") else []
+    captions = {str(child.value) for child in children if child.type == "caption"}
+    keys = {str(getattr(child, "key", "")) for child in children}
+    if caption in captions and key in keys:
+        return True
+    return any(_pair_block(child, caption, key) for child in children)
+
+
+def test_the_basis_picker_follows_the_effect_section_and_each_picker_keeps_its_caption(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """「비가동 기준」 고르기는 ③ 이 펼쳐진 동안만 서고(④ 보기와 같은 꼴),
+    접힌 동안에도 고른 값은 이 세션에 남아 다시 펴면 그대로이고 시트 엑셀 머리 값도 따른다.
+    캡션 붙은 고르기는 캡션과 한 칸이라 함께 줄을 넘고(UI-LAY-11), ④ 의 숨긴 라벨은 뜻 있는
+    이름이다(UI-LAY-13)."""
+    app = _dynamic_app(dynamic_databases)
+
+    def basis_pickers() -> list[str]:
+        try:
+            return [str(app.segmented_control(key=BASIS_KEY).key)]
+        except KeyError:
+            return []
+
+    assert basis_pickers() == [BASIS_KEY]
+    assert _pair_block(app.main, "비가동 기준", BASIS_KEY)
+    assert _pair_block(app.main, "④", UNITS_VIEW_KEY)
+    assert app.segmented_control(key=UNITS_VIEW_KEY).label == "④ 단축 보기"
+    app.segmented_control(key=BASIS_KEY).set_value(BASIS_SCHEDULE)
+    _ok(app.run())
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
+        [section for section in SECTION_IDS if section != SECTION_EFFECT]
+    )
+    _ok(app.run())
+    assert basis_pickers() == []
+    assert app.session_state[BASIS_KEY] == BASIS_SCHEDULE
+    assert "비가동 기준" not in _heading(_sheet(app)[1][DETAIL_SHEET])
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(list(SECTION_IDS))
+    _ok(app.run())
+    assert app.segmented_control(key=BASIS_KEY).value == BASIS_SCHEDULE
+    assert _heading(_sheet(app)[1][DETAIL_SHEET])["비가동 기준"] == "일정"
+
+    app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).set_value(True)
+    _ok(app.run())
+    assert _pair_block(app.main, "분류", PROCESS_DETAIL_SPLIT_KEY)
 
 
 def test_the_sections_meaning_sits_in_one_info_mark_after_the_chips(
