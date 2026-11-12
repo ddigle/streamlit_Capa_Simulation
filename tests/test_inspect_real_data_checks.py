@@ -48,7 +48,7 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentSaveRequest,
 )
 from capa_simulation.persistence.repository import REVISION_TABLES, DuckDBScenarioRepository
-from capa_simulation.services.core_data_derivation import build_q_core_data
+from capa_simulation.services.core_data_derivation import build_q_core_data, plan_row_mask
 from capa_simulation.services.equipment_contract import (
     EQUIPMENT_COLUMNS,
     PARENT_EQUIPMENT_COLUMN,
@@ -2859,8 +2859,8 @@ def _census_row(output: str, key: str) -> str:
 
 
 # 원천 `계획기초정보여부` 에 심는 값 — 다른 표기 하나 · 빈칸 넷(NULL · 빈 글 · 스페이스뿐 · 탭뿐) ·
-# 공백 · 대소문자를 무시하면 `Y` 인 것 하나.
-PLANTED_PLAN_FLAGS: Final = ("x", None, " y ", "", "  ", "\t")
+# 공백 · 대소문자를 무시하면 `Y` 인 것 하나 · 앱이 `Y` · `N` 으로 받는 탭 · 줄바꿈 꼬리 둘.
+PLANTED_PLAN_FLAGS: Final = ("x", None, " y ", "", "  ", "\t", "Y\t", "n\n")
 
 
 def _plant_census(simulation: Path, equipment: Path) -> None:
@@ -2931,7 +2931,7 @@ def _plant_census(simulation: Path, equipment: Path) -> None:
             connection.execute(f'DELETE FROM rev_data.{table} WHERE "생산계획년월" = 202606')
         connection.execute("UPDATE app_meta.dataset SET source_type = 'SCENARIO_MONTH_MERGE'")
         flags = connection.execute(
-            "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no LIMIT 6"
+            "SELECT source_row_no FROM raw_data.core_data ORDER BY source_row_no LIMIT 8"
         ).fetchall()
         for (row,), value in zip(flags, PLANTED_PLAN_FLAGS, strict=True):
             connection.execute(
@@ -3012,7 +3012,8 @@ def test_the_census_counts_each_planted_shape_without_names(
     summary = _uncoded(_summary(output))
     assert summary[0] == "- 8-10 활성 1 · 0 아님 12/12 · 합 17"
     # C11 은 빈 칸(None · 빈 글 · 스페이스뿐 · 탭뿐)과 다른 표기("x")를 나눠 센다 — " y " 는 공백 ·
-    # 대소문자를 무시하면 Y 다. 탭뿐인 칸은 DuckDB `trim` 이 떼지 않아도 앱 판정처럼 빈칸이다.
+    # 대소문자를 무시하면 Y 다. 탭뿐인 칸은 DuckDB `trim` 이 떼지 않아도 앱 판정처럼 빈칸이고,
+    # 「Y」 뒤 탭 · 「n」 뒤 줄바꿈은 앱이 Y · N 으로 받아 세지 않는다(보드 ②-8 (가)).
     assert summary[1:] == [
         f"- 8-10 C{index} {count}"
         for index, count in enumerate(
@@ -3020,13 +3021,36 @@ def test_the_census_counts_each_planted_shape_without_names(
         )
     ]
     assert checks.check_transcript(_summary(output)) == []
-    # 두 수의 합은 거르는 식 하나가 정한 수다 — 지난 리뷰의 C11 과 견주는 수.
+    # 거르는 식만으로 센 수(지난 리뷰의 C11)는 앱이 받는 탭 · 줄바꿈 꼬리 둘도 세어 합보다 크다.
     with duckdb.connect(str(simulation), read_only=True) as connection:
         before_split = connection.execute(
             "SELECT count(*) FROM raw_data.core_data "
             "WHERE upper(trim(coalesce(\"계획기초정보여부\", ''))) NOT IN ('Y', 'N')"
         ).fetchone()
-    assert before_split == (5,)
+    assert before_split == (7,)
+
+
+def test_the_plan_flag_kinds_follow_the_apps_plan_row_judgment() -> None:
+    """C11 은 앱의 계획 행 판정 그대로 가른다 — 앱이 `Y` 로 받는 꼴은 `Y` 다(보드 ②-8 (가))."""
+    flags = ["Y", "Y\t", " y\n", "N", "n\t", None, "", " \t\n", "x", "Yes", "Ｙ"]
+
+    kinds = checks._plan_flag_kind(flags)
+
+    assert kinds == [
+        "Y",
+        "Y",
+        "Y",
+        "N",
+        "N",
+        "빈칸",
+        "빈칸",
+        "빈칸",
+        "다른표기",
+        "다른표기",
+        "다른표기",
+    ]
+    frame = pd.DataFrame({"계획기초정보여부": pd.Series(flags, dtype="object")})
+    assert [kind == "Y" for kind in kinds] == plan_row_mask(frame).tolist()
 
 
 def test_the_census_counts_every_revision_only_when_asked(

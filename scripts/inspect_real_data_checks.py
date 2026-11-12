@@ -146,6 +146,7 @@ from capa_simulation.services.capacity_reference_editor import (  # noqa: E402
 from capa_simulation.services.core_data_derivation import (  # noqa: E402
     CS_PRODUCTION_CLASSES,
     derive_q_core_data,
+    plan_row_mask,
 )
 from capa_simulation.services.dashboard import (  # noqa: E402
     build_monthly_wafer_load_from_load,
@@ -3564,15 +3565,30 @@ def _census_merge_gaps(connection: duckdb.DuckDBPyConnection, scope: CensusScope
     return len(found), len(merged), sum(found.values())
 
 
-def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> CensusSplit:
-    """원천 `계획기초정보여부` 가 앞뒤 공백·대소문자를 무시해도 `Y`·`N` 이 아닌 행 — `빈칸`(빈 값 ·
-    공백뿐)과 `다른표기`(그 밖의 글자)로 나눠 센다. 값은 찍지 않는다.
+def _plan_flag_kind(flags: Sequence[object]) -> list[str]:
+    """원천 `계획기초정보여부` 값마다 `Y` · `N` · `빈칸` · `다른표기` — 앱의 판정 그대로.
 
-    거르는 식(`upper(trim(…)) NOT IN ('Y', 'N')`)이 줄의 수(두 수의 합)를 정한다 — 지난 리뷰의 C11
-    과 견주는 수다. 공백뿐인지는 앱의 계획 행 판정(`plan_row_mask`)과 같은 파이썬 `str.strip()` 으로
-    가른다 — DuckDB `trim` 은 탭 · 줄바꿈을 떼지 않아 탭만 든 칸도 걸러지기 때문이다. 같은 까닭으로
-    앱이 `Y` 로 받는 「`Y` + 탭」 꼴도 걸러져 `다른표기` 에 든다(거르는 식을 앱에 맞추면 견주는 합이
-    움직인다 — 사외 물음).
+    `Y` 는 앱의 계획 행 판정(`plan_row_mask`)이 받는 값이고(「`Y`」 뒤 탭 · 줄바꿈도), `N` 은
+    같은 다듬기(파이썬 `str.strip()` · 대문자)로 `N` 인 값이다. 다듬어 빈 글이면 `빈칸`(빈 값 ·
+    공백 · 탭 · 줄바꿈뿐), 그 밖은 `다른표기` 다 — 앱이 `Y` 로도 `N` 으로도 받지 못하는 꼴만 든다.
+    """
+    frame = pd.DataFrame({"계획기초정보여부": pd.Series(list(flags), dtype="object")})
+    planned = plan_row_mask(frame)
+    trimmed = frame["계획기초정보여부"].astype("string").str.strip().str.upper().fillna("")
+    return [
+        "Y" if bool(plan) else "N" if text == "N" else "빈칸" if not text else "다른표기"
+        for plan, text in zip(planned, trimmed, strict=True)
+    ]
+
+
+def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope) -> CensusSplit:
+    """원천 `계획기초정보여부` 가 앱이 `Y` · `N` 으로 받지 못하는 행 — `빈칸`(빈 값 · 공백뿐)과
+    `다른표기`(그 밖의 글자)로 나눠 센다. 값은 찍지 않는다.
+
+    가르는 것은 앱의 계획 행 판정(`_plan_flag_kind` — `plan_row_mask`)이다(2026-11-12 사용자 답
+    ②-8 (가)). DuckDB `trim` 은 탭 · 줄바꿈을 떼지 않으므로, SQL 은 `upper(trim(…)) NOT IN
+    ('Y', 'N')` 으로 넓게 거르고 파이썬이 앱처럼 다시 가른다 — 「`Y`」 뒤 탭처럼 앱이 `Y` 로 받는
+    꼴은 세지 않는다. 그래서 합이 지난 리뷰의 C11(거르는 식만으로 센 수)보다 작을 수 있다.
 
     둘은 고칠 길이 다르다 — 빈 칸은 원천이 정하지 않은 행이고, 다른 표기는 대개 계획 행으로 잡히지
     않아 계획이 빠지는 결함 후보다(사내 리뷰 202611111500 물음 lines-8 Q4). 본 리비전의 시나리오가
@@ -3594,15 +3610,20 @@ def _census_plan_flag(connection: duckdb.DuckDBPyConnection, scope: CensusScope)
         GROUP BY 1, 2
         """
     ).fetchall()
+    filtered = [(str(dataset_id), flag, int(count)) for dataset_id, flag, count in rows]
+    kinds = _plan_flag_kind([flag for _, flag, _ in filtered if flag is not None])
     blank: Counter[str] = Counter()
     other: Counter[str] = Counter()
-    for dataset_id, flag, count in rows:
-        if flag is None:  # `Y` · `N` 인 행
-            continue
-        (other if str(flag).strip() else blank)[str(dataset_id)] += int(count)
+    for (dataset_id, _, count), kind in zip(
+        [row for row in filtered if row[1] is not None], kinds, strict=True
+    ):
+        if kind == "빈칸":
+            blank[dataset_id] += count
+        elif kind == "다른표기":
+            other[dataset_id] += count
     return CensusSplit(
         hit=len(blank.keys() | other.keys()),
-        seen=len({str(dataset_id) for dataset_id, _, _ in rows}),
+        seen=len({dataset_id for dataset_id, _, _ in filtered}),
         parts=(("빈칸", sum(blank.values())), ("다른표기", sum(other.values()))),
     )
 
@@ -3781,7 +3802,7 @@ CENSUS_ITEMS: Final[tuple[CensusItem, ...]] = (
     ),
     CensusItem(
         "C11",
-        "원천 `계획기초정보여부` 의 `Y`·`N` 밖 표기(빈 칸 포함 — 빈칸 · 다른표기로 나눔)",
+        "원천 `계획기초정보여부` 의 `Y`·`N` 밖 표기(앱 판정 — 빈 칸 포함, 빈칸 · 다른표기로 나눔)",
         "근거 · 사내 확인 요청(P8 표기)",
         "행",
         _on_simulation(_census_plan_flag),
