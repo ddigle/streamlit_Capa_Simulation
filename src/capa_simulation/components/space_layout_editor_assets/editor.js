@@ -1718,23 +1718,26 @@ export default function (component) {
     return Boolean(group && group.__visible !== false && group.classList.contains('is-pre'))
   }
   // 한 상자의 날짜 줄과 이름 자리를 맞춘다. 낱 호기와 모듈마다 쓰는 묶음('each')만 상자 안에 쓰고, 그 밖은 이름을 가운데로
-  // 돌린다. 이름이 7px 아래면(밀집 층) 날짜도 쓰지 않는다 — 날짜만 따로 7px 아래면 날짜만 숨긴다.
+  // 돌린다. 이름이 7px 아래면(밀집 층) 날짜도 쓰지 않는다 — 날짜만 따로 7px 아래면 날짜만 숨긴다. 이 상자의 칠(반입 전 · 보임)은
+  // 받은 group 에서 읽는다 — 처음 그리는 회차에는 `S.groups` 에 아직 없다(`buildGroup` 이 끝에 넣는다).
   function syncArrival(group, item) {
     const node = group.__parts && group.__parts.arrival
     if (!node) return
     const label = group.querySelector('.sle-label')
     const cy = svgTop(item) + item.h / 2
     const mode = ARRIVAL_ON && item.group && S.arrivalModes ? S.arrivalModes.get(groupKeyOf(item)) : undefined
-    const on = ARRIVAL_ON && arrivalShown(item) && (!mode || mode.mode === 'each')
+    const on = ARRIVAL_ON && group.__visible !== false && group.classList.contains('is-pre')
+      && (!mode || mode.mode === 'each')
+    const hide = () => {
+      if (node.style.display !== 'none') node.style.display = 'none'
+      label.setAttribute('y', cy)
+    }
+    if (!on) return hide()
     const upp = unitsPerPx()
     const fs = unitLabelSize(item, upp)
     const words = arrivalWords(item.arrivalPlan, item.arrivalDelayed)
     const fd = Math.min(fs * ARRIVAL_FONT_K, (item.w * 0.94) / Math.max(labelEm(arrivalText(words)), 1))
-    if (!on || fs / upp < UNIT_LABEL_MIN_PX || fd / upp < UNIT_LABEL_MIN_PX) {
-      node.style.display = 'none'
-      label.setAttribute('y', cy)
-      return
-    }
+    if (fs / upp < UNIT_LABEL_MIN_PX || fd / upp < UNIT_LABEL_MIN_PX) return hide()
     writeArrival(node, words)
     const lines = arrivalBoxLines(cy, fs, fd)
     label.setAttribute('y', lines.nameY)

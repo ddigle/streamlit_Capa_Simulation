@@ -367,10 +367,11 @@ def test_the_picture_review_memos_are_recorded_and_written_into_the_rules() -> N
 
 def test_the_board_answers_are_recorded_and_written_into_the_rules() -> None:
     """6-4 는 남은 결정 보드 한 칸에 한 줄이고 답이 사용자 답과 같다. 답이 규칙 글로 들어갔는지
-    핵심만 본다 — v4: UI-INP-03 은 MUST. v2 · v3: 확인 체크를 남기는 저장 둘은 UI-NTF-09 예외.
-    v7: 일정 글 칸은 UI-INP-03 예외. v8: 입력 빠짐 멈춤도 마크 + 「그 화면으로」. v9: placeholder 는
-    창 안 글. v10: 충돌 보고는 자리에 두는 갈래가 아니다. v5: 제안 값 넷은 확정이다. 답이 왔으므로
-    규칙 칸에 「답 대기」 가 남지 않는다."""
+    핵심만 본다 — v4: UI-INP-03 은 MUST. v2: 확인 체크를 남기는 저장은 UI-NTF-09 예외(v3
+    「알고 저장」 은 2026-11-12 Space 보드 답 1-4 로 걷음). v7: 일정 글 칸은 UI-INP-03 예외.
+    v8: 입력 빠짐 멈춤도 마크 + 「그 화면으로」. v9: placeholder 는 창 안 글. v10: 충돌 보고는
+    자리에 두는 갈래가 아니다. v5: 제안 값 넷은 확정이다. 답이 왔으므로 규칙 칸에 「답 대기」 가
+    남지 않는다."""
     section = _chapter(_text(), 6)
     board = section[section.index("\n### 6-4. ") : section.index("\n### 6-5. ")]
     lines = [line for line in board.splitlines() if line.startswith("- ")]

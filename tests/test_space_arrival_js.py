@@ -174,7 +174,9 @@ def test_the_drawing_wires_the_dates_into_the_view_only() -> None:
     sync = _between("function syncArrival(group, item) {", "function writeArrival(")
     for part in (
         "const node = group.__parts && group.__parts.arrival",
-        "arrivalShown(item) && (!mode || mode.mode === 'each')",
+        "ARRIVAL_ON && group.__visible !== false && group.classList.contains('is-pre')",
+        "&& (!mode || mode.mode === 'each')",
+        "if (!on) return hide()",
         "fs / upp < UNIT_LABEL_MIN_PX || fd / upp < UNIT_LABEL_MIN_PX",
         "Math.min(fs * ARRIVAL_FONT_K,",
         "node.style.fill = label.style.fill",
@@ -182,7 +184,11 @@ def test_the_drawing_wires_the_dates_into_the_view_only() -> None:
         assert part in sync, part
     shown = JS[JS.index("const arrivalShown = (m) => {") :]
     assert "group.__visible !== false && group.classList.contains('is-pre')" in shown[:400]
+    # 상자 자신의 칠은 받은 group 에서 읽는다 — `buildGroup` 은 칠 · 자리를 맞춘 뒤에야
+    # `S.groups` 에 넣는다(처음 그리는 회차의 낱 호기 날짜가 빠지지 않게).
+    assert "arrivalShown(item)" not in sync
     build = _between("function buildGroup(item) {", "function paintUnit(")
+    assert build.index("position(group, item)") < build.index("S.groups.set(item.id, group)")
     assert "arrival: el('text', { class: 'sle-arrival' })" in build
     assert "label, parts.arrival, parts.offline" in build
     assert "syncArrival(group, item)" in _between("function position(", "function unitLabelSize(")

@@ -85,7 +85,7 @@ HOST.render({PASTE_DIALOG: _paste_dialog}, widget_keys={PASTE_DIALOG: (PASTE_TEX
   달린 팝업(공식 지정의 확인 체크 `official_confirm_key(revision_id)`)은 함수로 준다. 호스트는
   팝업을 그린 회차에 그 key 를 세션 칸(`<호스트 key>__widget_keys`)에 적어 두고 닫기가 그것을
   지운다 — 닫기는 다음 상호작용의 콜백이라 `render` 의 인자를 볼 수 없다.
-- 닫힌 갈래의 자리를 다른 표지가 채워야 하면(팝업을 닫은 회차에 상태 알림을 해소하는 Space 캔버스 —
+- 닫힌 갈래의 자리를 다른 표지가 채워야 하면(팝업을 닫은 회차에 상태 알림을 해소하는 팝업 —
   `alerts.state(..., active=False)` 가 이벤트 칸 한 자리를 쓴다) `idle=` 로 그 함수를 준다.
 - 열림 칸에 이 호스트가 모르는 값이 있으면 호스트는 지우지 않고 빈 자리만 쓴다 — 같은 칸을 쓰되 이
   호스트 밖에서 그리는 팝업(표준 목표 「입력 초기화」)이 있다.
