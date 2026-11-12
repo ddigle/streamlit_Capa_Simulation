@@ -19,8 +19,6 @@ CLEARED_EACH_RUN: frozenset[tuple[str, str]] = frozenset(
     {
         ("available_equipment_status.py", "first_action"),
         ("available_equipment_status.py", "sample_notice"),
-        ("load_conversion.py", "plan_notice"),
-        ("load_conversion.py", "yield_notice"),
     }
 )
 

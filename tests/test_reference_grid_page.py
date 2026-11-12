@@ -111,7 +111,6 @@ def test_dataset_buttons_replace_the_tabs(calls: Calls) -> None:
         "RQ_EQP_OWN",
         "RQ_EQP_LENT",
         "RQ_EQP_AVBL",
-        "EQP_OVERVIEW",
         "RQ_RUN_RATE",
         "RQ_VITAL",
         "RQ_RUN_DAY",
@@ -132,7 +131,7 @@ def test_switching_datasets_keeps_the_grid_draft_and_the_mount(calls: Calls) -> 
     app = _grid_write(app, calls, "Process-A", "202608", "20")
     assert _draft(app) == {"cells": {"Process-A": {"202608": 20.0}}, "bad": {}}
 
-    for name in ("효율", "설비대수 현황", "STEP 구성", "UPEH"):
+    for name in ("효율", "STEP 구성", "UPEH"):
         app = _choose(app, name)
         assert last(calls, GRID_HOST)["table"] == (
             DATASET[name] if DATASET[name] in EDIT_TABLES else None
@@ -163,7 +162,7 @@ def test_an_op_sent_just_before_switching_lands_in_its_own_table(calls: Calls) -
 
 def test_the_pending_dot_style_marks_the_nth_button() -> None:
     style = pending_segments_style(DATASET_KEY, list(DATASETS), {"RQ_RUN_DAY", "RQ_UPEH"})
-    assert '[role="radio"]:nth-of-type(8)::after' in style
+    assert '[role="radio"]:nth-of-type(7)::after' in style
     assert '[role="radio"]:nth-of-type(1)::after' in style
     assert style.count("::after") == 2
     assert pending_segments_style(DATASET_KEY, list(DATASETS), set()) == ""
@@ -418,7 +417,7 @@ def test_the_edit_scope_moved_to_the_status_line_under_the_table(calls: Calls) -
 
 def test_a_read_view_leaves_the_status_line_without_a_scope(calls: Calls) -> None:
     app = _open(TWO_PROCESS_TEST_SCRIPT, "효율")
-    app.session_state[DATASET_KEY] = DATASET["설비대수 현황"]
+    app.session_state[DATASET_KEY] = DATASET["STEP 구성"]
     app.run()
     assert not app.exception
     assert last(calls, FEED).get("scope") is None
@@ -555,9 +554,9 @@ def test_the_vital_table_takes_a_percent_over_one(calls: Calls) -> None:
 @pytest.mark.parametrize(
     ("name", "column"),
     [
-        ("설비대수 보유", "설비보유"),
-        ("설비대수 대여", "설비대여평가"),
-        ("설비대수 가용", "가용대수"),
+        ("보유대수", "설비보유"),
+        ("대여대수", "설비대여평가"),
+        ("가용대수", "가용대수"),
     ],
 )
 def test_an_equipment_blank_is_zero_units(calls: Calls, name: str, column: str) -> None:
@@ -752,7 +751,7 @@ def test_the_paste_template_is_the_whole_table_while_the_filter_narrows_the_grid
     공정을 그 기간에서 지운다) — 그리드는 필터로 한 줄만 보여도 양식은 두 줄이다."""
     for name, editor_key in (
         ("효율", "capa_run_rate_editor"),
-        ("설비대수 가용", "capa_eqp_avbl_editor"),
+        ("가용대수", "capa_eqp_avbl_editor"),
     ):
         app = _filtered_editor_app(name, editor_key, "공정")
         assert [key.split("\x1f")[0] for key in _visible_keys(calls)] == ["Process-B"]
@@ -1172,9 +1171,9 @@ def test_the_paste_popup_refuses_a_fractional_day_like_the_grid() -> None:
 
 
 def test_the_edited_dataset_button_gets_its_dot_drawn_on_the_page(calls: Calls) -> None:
-    """종류 단추 점은 페이지가 그리는 `<style>` 이다 — 고친 표(일수 = 8번째 단추)에 점 규칙이 서고,
+    """종류 단추 점은 페이지가 그리는 `<style>` 이다 — 고친 표(일수 = 7번째 단추)에 점 규칙이 서고,
     고치기 전에는 없다(단위 시험은 CSS 만, 페이지 시험은 넘긴 집합만 보던 틈 — 2026-11-03 리뷰)."""
-    selector = '[role="radio"]:nth-of-type(8)::after'
+    selector = '[role="radio"]:nth-of-type(7)::after'
     app = _open(TWO_PROCESS_TEST_SCRIPT)
     assert not any(selector in element.proto.body for element in app.get("html"))
     app = _grid_write(app, calls, "Process-A", "202608", "20")

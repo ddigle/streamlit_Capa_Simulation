@@ -91,7 +91,8 @@ g.editRow = (el, row)=>{ const a=g.cellRect(el, 0, row); const G=g.gridGeom(el);
 g.gridColumn = (el, title)=>{ const c=g.colIndex(el, title); if(c<0) return null; const h=g.cellRect(el,c,-1), b=g.cellRect(el,c,0); return h&&b? [h[0],h[1],h[2],b[1]+b[3]-h[1]] : null; };
 // 화면 고유 표적(시안 capture.mjs 에서 옮김)
 // 범용 편집 그리드(components/edit_grid — CCv2 그림자 DOM, 가상 굴림). 칸은 진짜 DOM 이라 글·자리를 바로 읽는다.
-g.egridRoot = ()=>{ const host=document.querySelector('[data-testid="stMain"] .st-key-reference_grid'); const sh=host && [...host.querySelectorAll('*')].find(e=>e.shadowRoot && e.shadowRoot.querySelector('.eg-grid')); return sh ? sh.shadowRoot : null; };
+// 그리드 호스트는 기준 정보 하나 · 생산 계획 탭마다 하나다 — 보이는 표가 든 것을 고른다(닫힌 탭의 그리드는 숨어 있다).
+g.egridRoot = ()=>{ for (const key of ['reference_grid', 'plan_grid', 'yield_grid']) { const host=document.querySelector('[data-testid="stMain"] .st-key-'+key); const sh=host && [...host.querySelectorAll('*')].find(e=>e.shadowRoot && e.shadowRoot.querySelector('.eg-grid')); if (sh && g.vis(sh.shadowRoot.querySelector('.eg-grid'))) return sh.shadowRoot; } return null; };
 g.egrid = ()=>{ const r=g.egridRoot(); const e=r && r.querySelector('.eg-grid'); return e && g.vis(e) ? e : null; };
 g.egridCol = (r, label)=> [...r.querySelectorAll('.eg-head [role="columnheader"]')].findIndex(h=>{ const l=h.querySelector('.eg-hl'); return l && g.norm(l.textContent)===String(label); });
 g.egridFind = (s)=>{ const r=g.egridRoot(); if(!r) return null; const sc=r.querySelector('[role="grid"]'); if(!sc) return null; const kc=s.rowColumn ? g.egridCol(r, s.rowColumn) : 0; const vc=g.egridCol(r, s.column); if(kc<0||vc<0) return {found:false, end:true};

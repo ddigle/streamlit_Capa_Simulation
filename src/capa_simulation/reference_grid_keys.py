@@ -7,7 +7,7 @@ UI 를 모르는 모듈이라 `scenario_activation`(시나리오를 바꾸면 �
 붙들기가 보는 호스트 key)가 화면 모듈을 거꾸로 import 하지 않고 이 이름을 읽는다.
 
 - **종류 단추**(`DATASET_KEY` — 네이티브 `st.segmented_control`)는 옛 탭·안쪽 탭을 한 줄로
-  편 것이다. 편집 표 9개 + 읽기 보기 둘(「설비대수 현황」·「STEP 구성」).
+  편 것이다. 편집 표 9개 + 읽기 보기 하나(「STEP 구성」).
 - **그리드 마운트는 하나**(`GRID_HOST`) — 종류를 바꿔도 같은 key·같은 자리라 다시 마운트되지
   않고 표만 바꿔 싣는다.
 - **초안은 표마다 세션 칸**(`cells_key`·`history_key`) — 업무 키 + 월이라 그리지 않는 표의 편집도
@@ -23,17 +23,16 @@ from typing import Final
 GRID_HOST: Final = "reference_grid"
 DATASET_KEY: Final = "reference_dataset"
 # 읽기 보기(편집 표가 아닌 종류).
-EQUIPMENT_OVERVIEW: Final = "EQP_OVERVIEW"
 STEP_VIEW: Final = "STEP"
-# 종류 id → 단추 글. 차례는 옛 탭 차례(UPEH · 설비대수 › 보유·대여·가용·현황 · 효율 · 여유율 · 일수
-# · Lot측정률 · WF측정률 · STEP 구성)이고 기본은 UPEH 다. 단추 글에는 아이콘을 넣지 않는다 — 열한
-# 개가 넓은 본문 한 줄에 들게.
+# 종류 id → 단추 글. 차례는 옛 탭 차례(UPEH · 설비대수 › 보유·대여·가용 · 효율 · 여유율 · 일수 ·
+# Lot측정률 · WF측정률 · STEP 구성)이고 기본은 UPEH 다. 설비대수 세 표의 글은 「보유대수」 ·
+# 「대여대수」 · 「가용대수」 다(2026-11-12 보드 답 k-b1 — 화면 글만, 표 이름은 그대로). 단추 글에는
+# 아이콘을 넣지 않는다 — 열 개가 넓은 본문 한 줄에 들게.
 DATASETS: Final[dict[str, str]] = {
     "RQ_UPEH": "UPEH",
-    "RQ_EQP_OWN": "설비대수 보유",
-    "RQ_EQP_LENT": "설비대수 대여",
-    "RQ_EQP_AVBL": "설비대수 가용",
-    EQUIPMENT_OVERVIEW: "설비대수 현황",
+    "RQ_EQP_OWN": "보유대수",
+    "RQ_EQP_LENT": "대여대수",
+    "RQ_EQP_AVBL": "가용대수",
     "RQ_RUN_RATE": "효율",
     "RQ_VITAL": "여유율",
     "RQ_RUN_DAY": "일수",
@@ -42,10 +41,8 @@ DATASETS: Final[dict[str, str]] = {
     STEP_VIEW: "STEP 구성",
 }
 DEFAULT_DATASET: Final = "RQ_UPEH"
-# 편집 표 아홉(읽기 보기 둘을 뺀 종류 id).
-EDIT_TABLES: Final = tuple(
-    dataset for dataset in DATASETS if dataset not in (EQUIPMENT_OVERVIEW, STEP_VIEW)
-)
+# 편집 표 아홉(읽기 보기를 뺀 종류 id).
+EDIT_TABLES: Final = tuple(dataset for dataset in DATASETS if dataset != STEP_VIEW)
 # 콜백이 쌓은 op(아직 반영 전), 마운트 → 마지막 seq(최근 8개), 마지막 토스트, 「편집 취소」 로
 # 버린 이력 `gen`(그 직전에 보낸 op 를 알림 없이 버린다), 초안이 있는 표의 양식 지문(다른 화면의
 # 적용이 그 표를 바꿨는지 가른다 — `app_pages/reference_data.py`).

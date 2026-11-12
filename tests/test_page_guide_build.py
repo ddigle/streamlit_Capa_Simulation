@@ -1374,7 +1374,9 @@ def test_the_runbook_change_floor_follows_the_script_and_data_shaped(
     assert set(floors) <= {(data, internal), (data, example)}, floors
     assert re.findall(r"사외 예시판은 `(\d+)/(\d+)`", chapter) == [(str(data), str(example))]
     assert re.findall(r"N = (\d+)", chapter) == [str(internal)]
-    data_counts = re.findall(r"데이터 자리 (\d+) 는|\((\d+) 는 지금 원고의 데이터 자리", chapter)
+    data_counts = re.findall(
+        r"데이터 자리 (\d+) (?:은|는)|\((\d+) (?:은|는) 지금 원고의 데이터 자리", chapter
+    )
     assert len(data_counts) == 2
     assert {int(a or b) for a, b in data_counts} == {data}
     examples = re.findall(r"예시 (\d+)[;`]", chapter)

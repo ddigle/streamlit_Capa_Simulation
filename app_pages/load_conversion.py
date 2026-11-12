@@ -10,7 +10,13 @@
   적용하지 않고 넘어가기 쉽다(사용자 지적). 완료 알림도 작업 줄 바로 아래 — 누른 자리에서
   보인다.
 - **Excel 붙여넣기와 가상 제품 등록은 팝업**이다. 가끔 하는 쓰기 작업이라 표 자리를 차지할
-  이유가 없고, 사이드바 조회 조건에 두면 「사이드바 = 보는 조건」이 흐려진다.
+  이유가 없고, 사이드바 조회 조건에 두면 「사이드바 = 보는 조건」이 흐려진다. 「가상 제품 등록」 은
+  PKG PLAN 작업 줄 「Excel 붙여넣기」 바로 뒤 「⋯」 메뉴 안이다(2026-11-12 보드 답 n2 나).
+- **PKG PLAN · 수율 표는 범용 편집 그리드다**(2026-11-12 보드 답 k-a1 · k-a2 — 기준 정보와 같은
+  편집기, `components/plan_grid.py`). 초안은 표마다 세션 칸(업무 키)이라 탭을 오가거나 화면을 떠나도
+  남고, 줄 차례만 바뀐 회차에도 제 칸에 붙는다. 다른 화면의 적용이 그 표 내용을 바꾸지 않았으면
+  남고, 바꿨으면 그 표 초안만 버리고 알림창에 알린다(기준 정보 그리드와 같은 꼴). 닫힌 탭의 그리드는
+  표 없는 껍데기로 마운트만 남는다.
 """
 
 from typing import cast
@@ -20,24 +26,15 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from capa_simulation import alerts
+from capa_simulation.components import plan_grid
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.editor_state import (
-    discard_editor,
-    editor_edit_count,
-    editor_has_edits,
-    editor_widget_key,
-)
-from capa_simulation.components.flash import pending_flash, queue_flash, render_flash
+from capa_simulation.components.flash import pending_flash, queue_flash
 from capa_simulation.components.grouped_monthly_table import (
     build_grouped_monthly_export,
     render_grouped_monthly_table,
 )
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
-from capa_simulation.components.month_editor import (
-    PASTE_DROPS_EDITS_NOTICE,
-    classification_styled,
-    float_month_columns,
-)
+from capa_simulation.components.month_editor import PASTE_DROPS_EDITS_NOTICE
 from capa_simulation.components.monthly_table_base import COLUMN_LABELS
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
@@ -50,7 +47,10 @@ from capa_simulation.components.required_exclusion_notice import (
     plan_exclusion_lists,
 )
 from capa_simulation.components.scenario_edit_bar import (
+    OTHER_APPLY_DROPPED_ICON,
+    OTHER_APPLY_DROPPED_NOTICE,
     mark_own_change,
+    only_revision_changed,
     pending_edit_labels,
     register_pending_edits,
     reset_editors_on_source_change,
@@ -73,7 +73,6 @@ from capa_simulation.components.table_toolbar import (
     render_table_heading,
 )
 from capa_simulation.components.write_guard import held_flash, note_notice, notice_marks
-from capa_simulation.design import tokens
 from capa_simulation.navigation import LOAD_CONVERSION_TAB_KEY
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
@@ -82,6 +81,13 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     load_page_context,
     resolve_effective_months,
+)
+from capa_simulation.plan_grid_keys import (
+    PLAN_TABLE,
+    TEMPLATE_DIGESTS_KEY,
+    YIELD_TABLE,
+    cells_key,
+    history_key,
 )
 from capa_simulation.scenario_state import (
     ActiveScenario,
@@ -118,6 +124,7 @@ from capa_simulation.services.required_equipment import (
 )
 from capa_simulation.services.simulation_cache import (
     display_order_digest,
+    frame_digest,
     get_full_capacity_outcome,
     get_monthly_volume,
     get_plan_edit_table,
@@ -133,8 +140,6 @@ from capa_simulation.services.virtual_product import (
     records_to_frame,
 )
 from capa_simulation.sidebar_status import condition_card
-
-PRODUCT_COLUMN_WIDTH_PX = 100
 
 render_page_header("생산 계획")
 render_page_guide("load_conversion", title="생산 계획")
@@ -204,17 +209,9 @@ try:
         _yield_data=filtered_yield,
         _display_order=prepared_display_order,
     )
-    # 수율 칸은 증분 없이 그린다(아래 편집표). 정수만 붙여넣어 정수 dtype 이 된 표는 실수로 바꾼다 —
-    # 정수 칸에는 Streamlit 이 증분 1 을 스스로 걸어 98.5% 가 0 이 된다.
-    default_yield_table = float_month_columns(
-        default_yield_table,
-        [column for column in default_yield_table.columns if column not in YIELD_EDITOR_DIMENSIONS],
-    )
 except ValueError as exc:
     yield_build_error = bootstrap_error_message(exc)
 
-PLAN_EDITOR_KEY = "pkg_plan_editor"
-YIELD_EDITOR_KEY = "yield_editor"
 SOURCE_TOKEN_KEY = "load_conversion_source_token"
 # 붙여넣기 결과는 곧바로 전역에 반영하지 않고 이 키에 담아 PKG PLAN 탭에만 보여준다.
 # 사용자가 "변경사항 적용" 을 눌러야 활성 시나리오로 넘어간다.
@@ -243,43 +240,102 @@ VIRTUAL_DROP_HELP = (
     "붙여넣어도 됩니다."
 )
 # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다. 이 화면이
-# 스스로 적용한 것이면(`mark_own_change`) 그 탭의 편집표만 비운다 — 수율을 적용했다고 PKG PLAN
-# 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
+# 스스로 적용한 것이면(`mark_own_change`) 그 탭의 그리드 초안만 비운다 — 수율을 적용했다고 PKG
+# PLAN 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다. 다른 화면의 적용(리비전만 오름)이면
+# 그 적용이 내용을 바꾸지 않은 표의 그리드 초안을 남긴다(`_grid_survivors`).
 OWN_CHANGE_KEY = "load_conversion_own_change"
 # 앱 머리를 고치려 다시 도는 회차가 넘기는 줄 차례 비움 결과 — 알림은 다시 돈 회차가 낸다.
 SOURCE_RESET_KEY = "load_conversion_source_reset"
-# 편집표·붙여넣기 대기 이름 — 변경 판 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을 쓴다.
-EDITOR_NAMES = {PLAN_EDITOR_KEY: "PKG PLAN", YIELD_EDITOR_KEY: "수율"}
+# 그리드 초안 · 붙여넣기 대기 이름 — 변경 판 「적용 전 편집」 목록과 줄 차례 비움 알림이 같은 이름을
+# 쓴다.
+DRAFT_NAMES = {cells_key(PLAN_TABLE): "PKG PLAN", cells_key(YIELD_TABLE): "수율"}
 STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
-# 줄 차례 지문은 두 편집표 캐시 키와 같은 표시순서 지문이다 — PKG PLAN·수율 모두 이 표시순서로 줄을
-# 세운다. 바뀌면 적용 전 편집이 다른 제품 줄에 붙으므로 비운다. **붙여넣기 대기 표는 남긴다** —
-# 붙여넣은 차례 그대로 PKG PLAN 편집표의 원본이 되고(아래 `plan_editor_source`) 적용도 업무 키로
-# 하므로 표시순서와 상관없다. 그 표가 편집 원본인 동안(행 차원이 맞는 대기 표 — PKG PLAN 탭의
-# 스키마 검사와 같다)은 그 위의 PKG PLAN 편집도 같은 까닭으로 남긴다.
-_staged_plan = st.session_state.get(PLAN_STAGED_KEY)
-plan_order_free: tuple[str, ...] = (
-    (PLAN_STAGED_KEY, PLAN_EDITOR_KEY)
-    if isinstance(_staged_plan, pd.DataFrame)
-    and set(PLAN_EDITOR_DIMENSIONS).issubset(_staged_plan.columns)
-    else (PLAN_STAGED_KEY,)
+# 그리드 초안 · 이력 세션 칸 — 원본이 바뀌면(기준정보 버전 · 리비전 · 기간) 함께 버린다.
+GRID_SESSION_KEYS = tuple(
+    key for table in (PLAN_TABLE, YIELD_TABLE) for key in (cells_key(table), history_key(table))
 )
+# 다른 화면의 적용으로 그리드 초안 · 붙여넣기 대기를 버린 회차의 알림 칸 — PKG PLAN 작업 줄의
+# `render_flash` 가 꺼낸다(늘 그리는 칸이라 이벤트 칸 자리가 늘지 않는다). 버린 표가 닫힌 탭일 수
+# 있어 단추 곁에는 그리지 않고 알림창 · Alarm 으로만 낸다.
+GRID_DROPPED_FLASH_KEY = "plan_grid_dropped_flash"
+
+
+def _grid_template_digest(table: str, plan_source: pd.DataFrame) -> str | None:
+    """그 표 그리드 양식의 내용 지문 — PKG PLAN 은 `plan_source`(시나리오 표나 붙여넣기 대기 표)를
+    0 을 빈칸으로 실은 꼴, 수율은 시나리오 표다. 수율 표를 세우지 못했으면 None."""
+    if table == PLAN_TABLE:
+        return frame_digest(plan_grid.zero_as_blank(plan_source, PLAN_EDITOR_DIMENSIONS))
+    return None if default_yield_table is None else frame_digest(default_yield_table)
+
+
+def _grid_survivors(previous: object, token: str) -> tuple[set[str], list[str]]:
+    """다른 화면의 적용(활성 리비전만 오름)에 남길 그리드 표와 버릴 편집의 이름(「PKG PLAN 3칸」 ·
+    「PKG PLAN 붙여넣기」).
+
+    다른 화면(기준 정보 등)의 적용은 원본 토큰의 리비전을 올리지만 이 화면의 표는 대개 그대로다.
+    초안은 업무 키 + 월이라 그 표 양식이 같으면 같은 칸에 그대로 붙는다 — 초안이 있는 표마다 이
+    적용 뒤 그릴 양식의 지문을 초안을 둔 때의 지문(`TEMPLATE_DIGESTS_KEY`,
+    `_remember_grid_digests`)과 견줘 같으면 남기고, 다르거나 지문이 없으면 버리고 알린다(기준
+    정보 그리드와 같은 꼴). 붙여넣기 대기 표는 이런 회차에 늘 버리므로
+    (`reset_editors_on_source_change`) PKG PLAN 은 시나리오 표로 견준다 — 대기 표 위에 둔 초안은 그
+    표와 함께 버려진다. 이 화면 자신의 적용(`OWN_CHANGE_KEY`) · 시나리오 · 기간 · 줄 차례가 바뀐
+    회차는 `reset_editors_on_source_change` 가 지금처럼 가른다.
+    """
+    if st.session_state.get(OWN_CHANGE_KEY) is not None or not only_revision_changed(
+        previous, token
+    ):
+        return set(), []
+    digests = st.session_state.get(TEMPLATE_DIGESTS_KEY)
+    saved = digests if isinstance(digests, dict) else {}
+    kept: set[str] = set()
+    dropped: list[str] = []
+    for table in (PLAN_TABLE, YIELD_TABLE):
+        cells = plan_grid.counts(table)[0]
+        if not cells:
+            continue
+        before = saved.get(table)
+        now = _grid_template_digest(table, default_plan_table)
+        if isinstance(before, tuple) and now is not None and before[1] == now:
+            kept.add(table)
+        else:
+            dropped.append(f"{DRAFT_NAMES[cells_key(table)]} {cells:,}칸")
+    if isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame):
+        dropped.append(STAGED_NAMES[PLAN_STAGED_KEY])
+    return kept, dropped
+
+
+plan_token = source_token(
+    reference_version,
+    active_scenario,
+    effective_start_month,
+    effective_end_month,
+    row_order=display_order_key,
+)
+grid_kept, grid_dropped = _grid_survivors(st.session_state.get(SOURCE_TOKEN_KEY), plan_token)
+kept_grid_keys = {key for table in grid_kept for key in plan_grid.own_keys(table)}
 # 앱 머리(칩 · 탭 점)는 이 본문보다 먼저 이 값으로 그렸다.
 edits_in_head = pending_edit_labels("load_conversion.py")
 source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
-    source_token(
-        reference_version,
-        active_scenario,
-        effective_start_month,
-        effective_end_month,
-        row_order=display_order_key,
-    ),
-    (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY),
-    other_keys=(PLAN_STAGED_KEY,),
+    plan_token,
+    (),
+    other_keys=(PLAN_STAGED_KEY, *(key for key in GRID_SESSION_KEYS if key not in kept_grid_keys)),
     own_change_key=OWN_CHANGE_KEY,
-    names={**EDITOR_NAMES, **STAGED_NAMES},
-    order_free_keys=plan_order_free,
+    names={**DRAFT_NAMES, **STAGED_NAMES},
+    # 줄 차례만 바뀐 회차에는 남긴다 — 그리드 초안은 업무 키 + 월이라 제 칸에 붙고, 붙여넣기 대기
+    # 표는 붙여넣은 차례 그대로 PKG PLAN 그리드의 원본이 되며 적용도 업무 키로 한다.
+    order_free_keys=(PLAN_STAGED_KEY, *GRID_SESSION_KEYS),
 )
+# 버림 알림은 담아 두기만 한다 — 아래에서 이 회차를 다시 돌리는지 정해진 뒤 PKG PLAN 작업 줄이
+# 꺼낸다. 먼저 꺼내면 두 회차가 표지를 따로 보내 한 번 일어난 일을 Alarm 이 「×2」 로 센다.
+if grid_dropped:
+    queue_flash(
+        GRID_DROPPED_FLASH_KEY,
+        OTHER_APPLY_DROPPED_NOTICE.format(tables=" · ".join(grid_dropped)),
+        kind="warning",
+        icon=OTHER_APPLY_DROPPED_ICON,
+        popup_only=True,
+    )
 if set(edits_in_head) - set(pending_edit_labels("load_conversion.py")):
     # 원본이 바뀌어 편집을 버렸는데 칩 · 탭 점은 버리기 전 값으로 섰다 — 그대로 두면 다음 조작까지
     # 남는다. 한 번 다시 돈다(다음 회차엔 버릴 편집이 없어 되풀이되지 않는다). 알림을 지금 내면
@@ -288,13 +344,27 @@ if set(edits_in_head) - set(pending_edit_labels("load_conversion.py")):
     st.rerun()
 # 줄 차례가 바뀌어 적용 전 편집을 버린 회차는 오른쪽 아래 알림창에 한 번 알린다(사건 알림 `ST-09`).
 show_row_order_reset(st.session_state.pop(SOURCE_RESET_KEY, source_reset))
-# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 편집표와 붙여넣기
-# 대기분을 알린다. 붙여넣기 대기분은 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
+# 붙여넣기 대기 표는 PKG PLAN 그리드의 원본이다. `source_token` 은 원본의 버전·기간만 보고 표
+# 스키마는 보지 않는다. 그래서 행 차원이 늘어난 뒤에도(예: `Pack Code` 업무 키 승격) 옛 스키마로
+# 붙여넣어 둔 표가 세션에 남아 원본이 되면 양식 색인이 `KeyError` 로 죽는다 — 그 표는 버린다.
+staged_plan_table = st.session_state.get(PLAN_STAGED_KEY)
+if isinstance(staged_plan_table, pd.DataFrame) and not set(PLAN_EDITOR_DIMENSIONS).issubset(
+    staged_plan_table.columns
+):
+    st.session_state.pop(PLAN_STAGED_KEY, None)
+    staged_plan_table = None
+plan_staged = isinstance(staged_plan_table, pd.DataFrame)
+plan_editor_source: pd.DataFrame = (
+    staged_plan_table if isinstance(staged_plan_table, pd.DataFrame) else default_plan_table
+)
+# 사이드바가 저장·불러오기 전에 「적용하지 않은 편집」을 묻도록 이 화면의 그리드 초안과 붙여넣기
+# 대기분을 알린다. 둘 다 세션 칸이라 화면을 옮겨도 남는다. 방금 적용한 표는 사이드바가 빼고 센다.
 register_pending_edits(
     "load_conversion.py",
     "생산 계획",
-    EDITOR_NAMES,
+    {},
     staged=STAGED_NAMES,
+    drafts=DRAFT_NAMES,
     own_change_key=OWN_CHANGE_KEY,
 )
 
@@ -337,19 +407,93 @@ LOCKED_YIELD_GUIDE = (
     "비워 두면 원본 그대로 남습니다."
 )
 conversion_tab, pkg_plan_tab, yield_tab = stateful_tabs(TAB_LABELS, key=TAB_KEY)
+
+
+def _plan_content_key() -> str:
+    """PKG PLAN 그리드 양식의 내용 지문 — 시나리오 내용 · 편집 기간에, 붙여넣기 대기 표가 원본이면
+    그 표 지문을 더한다(같은 시나리오에서 다른 표를 붙여넣으면 껍데기가 바뀌어야 한다)."""
+    content = "/".join(str(part) for part in edit_table_key)
+    if isinstance(staged_plan_table, pd.DataFrame):
+        content += f"|staged:{frame_digest(staged_plan_table)}"
+    return content
+
+
+def _plan_grid_table() -> plan_grid.PlanGrid:
+    return plan_grid.build(
+        PLAN_TABLE,
+        PKG_PLAN_TAB_NAME,
+        plan_grid.zero_as_blank(plan_editor_source, PLAN_EDITOR_DIMENSIONS),
+        PLAN_EDITOR_DIMENSIONS,
+        content_key=_plan_content_key(),
+        order_digest=display_order_key,
+    )
+
+
+def _yield_grid_table(table: pd.DataFrame) -> plan_grid.PlanGrid:
+    return plan_grid.build(
+        YIELD_TABLE,
+        YIELD_TAB_NAME,
+        table,
+        YIELD_EDITOR_DIMENSIONS,
+        content_key="/".join(str(part) for part in edit_table_key),
+        order_digest=display_order_key,
+    )
+
+
+# 그리드는 **열린 탭과 inbox 에 op 가 쌓인 표만** 양식을 싣는다 — 한 번도 연 적 없는 탭은 그리드를
+# 세우지 않고(`plan_grid.mounted`), 연 적 있는 탭이 닫히면 앞서 보낸 껍데기를 그대로 다시 보내
+# 마운트만 남긴다(`plan_grid.render_grid`). 원본을 본 **뒤** 반영해야 버린 초안에 옛 op 가 붙지
+# 않는다. 탭을 바꾸기 직전에 보낸 편집도 그 표 초안에 쓴다.
+_grid_inbox = plan_grid.inbox_tables()
+_grid_mounted = plan_grid.mounted(
+    table
+    for table, tab in ((PLAN_TABLE, pkg_plan_tab), (YIELD_TABLE, yield_tab))
+    if not tab_is_hidden(tab)
+)
+plan_table: plan_grid.PlanGrid | None = None
+if not tab_is_hidden(pkg_plan_tab) or PLAN_TABLE in _grid_inbox:
+    plan_table = _plan_grid_table()
+yield_table: plan_grid.PlanGrid | None = None
+if default_yield_table is not None and (not tab_is_hidden(yield_tab) or YIELD_TABLE in _grid_inbox):
+    yield_table = _yield_grid_table(default_yield_table)
+if plan_grid.apply_inbox({PLAN_TABLE: plan_table, YIELD_TABLE: yield_table}):
+    # 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던 표의 첫 op 가 아무것도 바꾸지
+    # 않음). 화면 탭 점 · 변경 칩은 `app.py` 가 이 본문보다 먼저 옛 칸으로 그렸다 — 한 번 다시 돈다.
+    st.rerun()
+
+
+def _remember_grid_digests() -> None:
+    """초안이 있는 표의 양식 지문을 적어 둔다(`_grid_survivors` 가 다음에 견줄 값). 양식 키(내용
+    지문 · 줄 차례 — PKG PLAN 은 붙여넣기 대기 표 지문도)가 그대로면 다시 재지 않는다 — 적용 ·
+    리비전 · 붙여넣기가 바뀐 회차에만 초안이 있는 표를 잰다(양식 키도 초안이 있는 표만 짓는다)."""
+    digests = st.session_state.get(TEMPLATE_DIGESTS_KEY)
+    saved = dict(digests) if isinstance(digests, dict) else {}
+    for table in (PLAN_TABLE, YIELD_TABLE):
+        if not plan_grid.draft_pending(table):
+            saved.pop(table, None)
+            continue
+        content = _plan_content_key() if table == PLAN_TABLE else str(edit_table_key)
+        stamp = f"{content}|{display_order_key}"
+        before = saved.get(table)
+        if not (isinstance(before, tuple) and before[0] == stamp):
+            digest = _grid_template_digest(table, plan_editor_source)
+            if digest is None:
+                saved.pop(table, None)
+            else:
+                saved[table] = (stamp, digest)
+    if saved != digests:
+        st.session_state[TEMPLATE_DIGESTS_KEY] = saved
+
+
+_remember_grid_digests()
 # 적용하지 않은 편집이나 붙여넣고 아직 적용하지 않은 표가 남은 탭에 점을 찍는다(개선안 C). 다른
 # 탭으로 옮겨도 「저 탭에 아직 적용할 것이 있다」가 보인다.
 mark_pending_tabs(
     TAB_KEY,
     TAB_LABELS,
     {
-        *(
-            [TAB_PKG_PLAN]
-            if editor_has_edits(PLAN_EDITOR_KEY)
-            or isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame)
-            else []
-        ),
-        *([TAB_YIELD] if editor_has_edits(YIELD_EDITOR_KEY) else []),
+        *([TAB_PKG_PLAN] if plan_grid.draft_pending(PLAN_TABLE) or plan_staged else []),
+        *([TAB_YIELD] if plan_grid.draft_pending(YIELD_TABLE) else []),
     },
 )
 
@@ -566,7 +710,7 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
         key_columns=PLAN_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=PLAN_PASTE_KEY,
-        opening=PASTE_DROPS_EDITS_NOTICE if editor_has_edits(PLAN_EDITOR_KEY) else None,
+        opening=PASTE_DROPS_EDITS_NOTICE if plan_grid.draft_pending(PLAN_TABLE) else None,
         apply_label=PLAN_PASTE_APPLY_LABEL,
     )
     if imported is None:
@@ -577,19 +721,20 @@ def _plan_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
         refuse_paste(PLAN_PASTE_KEY, bootstrap_error_message(exc))
         return
     st.session_state[PLAN_STAGED_KEY] = imported
-    # 편집기 위젯이 이전 표의 편집 상태를 덮어쓰지 않도록 브라우저까지 비운다.
-    discard_editor(PLAN_EDITOR_KEY)
+    # 붙여넣은 표가 그리드의 새 원본이다 — 앞 원본에 붙은 초안 · 이력은 버린다(누름 직전에 보낸 op
+    # 도 알림 없이).
+    plan_grid.discard(PLAN_TABLE)
     _queue_done(
         PLAN_PASTE_FLASH_KEY,
         "붙여넣기 표를 PKG PLAN 탭에 올렸습니다. "
-        "확인 후 「PKG PLAN 변경사항 적용」을 눌러야 전역 계획값에 반영됩니다.",
+        "확인 후 「변경사항 적용」을 눌러야 전역 계획값에 반영됩니다.",
     )
     _close_dialog()
     st.rerun()
 
 
 def _discard_plan_edits() -> None:
-    discard_editor(PLAN_EDITOR_KEY)
+    plan_grid.discard(PLAN_TABLE)
     st.session_state.pop(PLAN_STAGED_KEY, None)
 
 
@@ -610,14 +755,14 @@ def _apply_yield(table: pd.DataFrame, origin: str, *, note: str = "") -> None:
         f"{YIELD_TAB_NAME} {origin} 활성 시나리오에 적용했습니다.{note} "
         "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
     )
-    mark_own_change(OWN_CHANGE_KEY, (YIELD_EDITOR_KEY,))
+    mark_own_change(OWN_CHANGE_KEY, plan_grid.own_keys(YIELD_TABLE))
 
 
 def _removed_yield_note(source: pd.DataFrame, applied: pd.DataFrame) -> str:
     """양식에는 값이 있는데 적용하는 표에서는 빈 칸 수를 완료 문구 꼬리로. 없으면 빈 문자열.
 
     한 (키, 월)의 EDS·BE 를 둘 다 비우면 그 달 수율 행이 지워지고 그 계획은 환산·소요대수에서
-    빠진다. 붙여넣기는 적용 전에 변경 수를 보여 주지 않고, 격자는 적용 전 변경 수가 「지운 칸」을
+    빠진다. 붙여넣기는 적용 전에 변경 수를 보여 주지 않고, 그리드는 적용 전 변경 수가 「지운 칸」을
     따로 세지 않는다. 그래서 두 길이 같은 문구로 적용 뒤에 말한다 — 한쪽만 알리면 같은 일이 길에
     따라 말없이 지나간다.
     """
@@ -640,7 +785,7 @@ def _yield_paste_dialog(source: pd.DataFrame, file_name: str) -> None:
         key_columns=YIELD_EDITOR_DIMENSIONS,
         file_name=file_name,
         key=YIELD_PASTE_KEY,
-        opening=PASTE_DROPS_EDITS_NOTICE if editor_has_edits(YIELD_EDITOR_KEY) else None,
+        opening=PASTE_DROPS_EDITS_NOTICE if plan_grid.draft_pending(YIELD_TABLE) else None,
     )
     if imported is None:
         return
@@ -671,7 +816,9 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     staged_paste = isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame)
     # 두 표에 행이 더해지므로 표에서 고치고 적용하지 않은 편집도 버려진다(2026-09-29 2차 리뷰).
     dropped_edits = {
-        name: cells for key, name in EDITOR_NAMES.items() if (cells := editor_edit_count(key))
+        name: cells
+        for table, name in ((PLAN_TABLE, PKG_PLAN_TAB_NAME), (YIELD_TABLE, YIELD_TAB_NAME))
+        if (cells := plan_grid.counts(table)[0])
     }
     pasted_cells = (
         count_plan_value_changes(default_plan_table, st.session_state[PLAN_STAGED_KEY])
@@ -734,8 +881,11 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
         return
     apply_table_updates(scenario, updates)
     remember_virtual_product(VirtualProductRecord.from_request(request))
-    # 복제는 계획·수율 두 표에 행을 더한다 — 두 편집표와 붙여넣기 대기를 비운다.
-    mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, YIELD_EDITOR_KEY, PLAN_STAGED_KEY))
+    # 복제는 계획·수율 두 표에 행을 더한다 — 두 그리드 초안과 붙여넣기 대기를 비운다.
+    mark_own_change(
+        OWN_CHANGE_KEY,
+        (*plan_grid.own_keys(PLAN_TABLE), *plan_grid.own_keys(YIELD_TABLE), PLAN_STAGED_KEY),
+    )
     # 복제된 계획은 원본의 달을 따른다. 그 달이 모두 조회기간 밖이면 새 제품은 PKG PLAN 표에
     # 행이 없어 「아래 표에서 입력」이 거짓이 된다(2026-09-29 횡전개 감사). 기간 달을 0 행으로
     # 채워 주지 않는 것은 그 달의 수율 기준이 없어 넣은 수량이 환산에서 빠지기 때문이다.
@@ -771,73 +921,79 @@ def _virtual_product_dialog(scenario: ActiveScenario) -> None:
     st.rerun()
 
 
+def _open_plan_paste() -> None:
+    _open_dialog(PLAN_PASTE_DIALOG)
+
+
+def _open_virtual_product() -> None:
+    _open_dialog(VIRTUAL_PRODUCT_DIALOG)
+
+
+def _open_yield_paste() -> None:
+    _open_dialog(YIELD_PASTE_DIALOG)
+
+
+def _discard_yield_edits() -> None:
+    plan_grid.discard(YIELD_TABLE)
+
+
+# 여는 단추는 **콜백**으로 연다. 콜백은 스크립트보다 먼저 돌아 열린 팝업이 회차 시작부터 하나로
+# 정해진다 — 단추 값으로 열면 앞 탭의 팝업을 그린 뒤 뒤 탭의 팝업을 또 그려 Streamlit 이 「팝업은 한
+# 번에 하나」로 멈춘다(테스트로 재현).
+PLAN_APPLY_BUTTON = plan_grid.Button("변경사항 적용", ":material/check:", "apply_pkg_plan_changes")
+PLAN_PASTE_BUTTON = plan_grid.Button(
+    "Excel 붙여넣기", ":material/content_paste:", "open_plan_paste", _open_plan_paste
+)
+VIRTUAL_PRODUCT_BUTTON = plan_grid.Button(
+    "가상 제품 등록", ":material/library_add:", "open_virtual_product", _open_virtual_product
+)
+YIELD_APPLY_BUTTON = plan_grid.Button(
+    "수율 변경사항 적용", ":material/check:", "apply_yield_changes"
+)
+YIELD_PASTE_BUTTON = plan_grid.Button(
+    "Excel 붙여넣기", ":material/content_paste:", "open_yield_paste", _open_yield_paste
+)
+
 with pkg_plan_tab:
-    # 붙여넣기한 표가 있으면 그것을 편집 대상으로 보여준다. 아직 전역에는 반영되지 않았다.
-    staged_plan_table = st.session_state.get(PLAN_STAGED_KEY)
-    if isinstance(staged_plan_table, pd.DataFrame) and not set(PLAN_EDITOR_DIMENSIONS).issubset(
-        staged_plan_table.columns
-    ):
-        # `source_token` 은 원본의 버전·기간만 보고 격자 스키마는 보지 않는다. 그래서 행
-        # 차원이 늘어난 뒤에도(예: `Pack Code` 업무 키 승격) 옛 스키마로 붙여넣어 둔 표가
-        # 세션에 남아 편집 원본이 되고, 아래 `set_properties` 가 `KeyError` 로 죽는다.
-        st.session_state.pop(PLAN_STAGED_KEY, None)
-        staged_plan_table = None
-    plan_editor_source = (
-        staged_plan_table if isinstance(staged_plan_table, pd.DataFrame) else default_plan_table
-    )
-    # 작업 줄은 표 **위**다. 버튼 값은 표보다 먼저 만들어도 누른 회차에 표의 편집값이 그대로
-    # 들어온다(편집값은 위젯 상태라 그리는 차례와 상관없다).
-    plan_pending = editor_has_edits(PLAN_EDITOR_KEY) or isinstance(staged_plan_table, pd.DataFrame)
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        # 고친 것이 없으면 누를 수 없다. 같은 값으로 리비전만 올라 `미저장 변경` 이 켜진다.
-        apply_plan = st.button(
-            "PKG PLAN 변경사항 적용",
-            icon=":material/check:",
-            key="apply_pkg_plan_changes",
-            type="primary",
-            help=PLAN_APPLY_HELP if plan_pending else APPLY_LOCKED_HELP,
-            disabled=not plan_pending,
-        )
-        # 여는 버튼은 **콜백**으로 연다. 콜백은 스크립트보다 먼저 돌아 열린 팝업이 회차 시작부터
-        # 하나로 정해진다 — 버튼 값으로 열면 앞 탭의 팝업을 그린 뒤 뒤 탭의 팝업을 또 그려
-        # Streamlit 이 「팝업은 한 번에 하나」로 멈춘다(테스트로 재현).
-        st.button(
-            "Excel 붙여넣기",
-            icon=":material/content_paste:",
-            key="open_plan_paste",
-            on_click=_open_dialog,
-            args=(PLAN_PASTE_DIALOG,),
-        )
-        st.button(
-            "가상 제품 등록",
-            icon=":material/library_add:",
-            key="open_virtual_product",
-            on_click=_open_dialog,
-            args=(VIRTUAL_PRODUCT_DIALOG,),
-        )
-        # 적용하지 않은 편집·붙여넣기 대기분을 버리는 자리. 사이드바 「편집 되돌리기」는 **적용한**
-        # 변경이 있을 때만 서서, 붙여넣기만 해 둔 표는 버릴 길이 없었다(2026-09-29 2차 리뷰).
-        if plan_pending:
-            st.button(
-                "편집 취소",
-                icon=":material/undo:",
-                key="discard_pkg_plan_edits",
-                on_click=_discard_plan_edits,
-                help="PKG PLAN 표에서 적용하지 않은 편집과 붙여넣기 대기분을 버립니다.",
-            )
-    # 적용이 막힌 까닭도 작업 줄 바로 아래다 — 적용 처리는 표 뒤에서 돌지만 알림은 여기 선다.
-    plan_notice = st.empty()
+    # 작업 줄 칸 → 그리드 칸. 둘 다 **늘 서 있는 칸**이라 안의 칸 수가 바뀌어도 그리드 마운트의 앞
+    # 형제 순번이 밀리지 않는다(밀리면 다시 마운트되어 보내지 않은 출납을 잃는다). 기준 창에서는 표
+    # 도구 막대가 단추 줄 곁에 함께 선다(`plan_grid.LAYOUTS`).
+    plan_layout = plan_grid.LAYOUTS[PLAN_TABLE]
+    plan_actions_box = st.container(key=plan_layout.actions_box)
+    plan_grid_box = st.container(key=plan_layout.grid_box)
     # 적용 알림이 서는 회차(담아 둔 알림, 또는 쓰기 직후 창 안에서 다시 그리는 알림)에는 같은 칸
-    # 맨 아래에 소요대수에 들지 않은 수요도 적는다 — 칸 안이라 편집표 자리가 밀리지 않는다. 그
-    # 셈(시나리오 전체 기간 계산)은 편집표를 그린 **뒤**에 한다(아래) — 앞에서 하면 적용 직후 그
-    # 계산이 끝날 때까지 편집표가 서지 않는다.
+    # 맨 아래에 소요대수에 들지 않은 수요도 적는다 — 칸 안이라 그리드 자리가 밀리지 않는다. 그
+    # 셈(시나리오 전체 기간 계산)은 그리드를 그린 **뒤**에 한다(아래) — 앞에서 하면 적용 직후 그
+    # 계산이 끝날 때까지 그리드가 서지 않는다.
     applied_notice_shown = (
         pending_flash(PLAN_APPLIED_FLASH_KEY) is not None
         or held_flash(PLAN_APPLIED_FLASH_KEY) is not None
     )
-    plan_flash_slot = render_flash(
-        PLAN_APPLIED_FLASH_KEY, PLAN_PASTE_FLASH_KEY, PRODUCT_REGISTERED_FLASH_KEY
-    )
+    with plan_actions_box:
+        # 고친 칸도 붙여넣기 대기도 없으면 「변경사항 적용」 을 잠근다(같은 값으로 리비전만 올라
+        # `미저장 변경` 이 켜진다). 「편집 취소」 는 적용하지 않은 편집과 붙여넣기 대기분을 함께
+        # 버린다 — 사이드바 「편집 되돌리기」는 **적용한** 변경이 있을 때만 서서 붙여넣기만 해 둔
+        # 표는 버릴 길이 없었다(2026-09-29 2차 리뷰). 적용 · 붙여넣기 · 등록 알림과 적용이 막힌
+        # 까닭은 단추 줄 바로 아래다.
+        plan_actions = plan_grid.render_actions(
+            PLAN_TABLE,
+            apply=PLAN_APPLY_BUTTON,
+            apply_help=PLAN_APPLY_HELP,
+            locked_help=APPLY_LOCKED_HELP,
+            paste=PLAN_PASTE_BUTTON,
+            more=(VIRTUAL_PRODUCT_BUTTON,),
+            more_key="pkg_plan_more",
+            discard_help="PKG PLAN 표에서 적용하지 않은 편집과 붙여넣기 대기분을 버립니다.",
+            discard_click=_discard_plan_edits,
+            discard_key="discard_pkg_plan_edits",
+            staged=plan_staged,
+            flash_keys=(
+                PLAN_APPLIED_FLASH_KEY,
+                PLAN_PASTE_FLASH_KEY,
+                PRODUCT_REGISTERED_FLASH_KEY,
+                GRID_DROPPED_FLASH_KEY,
+            ),
+        )
     if _dialog_is_open(PLAN_PASTE_DIALOG):
         _plan_paste_dialog(
             plan_editor_source,
@@ -845,101 +1001,51 @@ with pkg_plan_tab:
         )
     elif _dialog_is_open(VIRTUAL_PRODUCT_DIALOG):
         _virtual_product_dialog(active_scenario)
-    plan_month_columns = [
-        column for column in plan_editor_source.columns if column not in PLAN_EDITOR_DIMENSIONS
-    ]
-    displayed_plan_table = plan_editor_source.copy()
-    # 붙여넣기 대기 표의 달 칸은 붙여넣은 글자 그대로다 — 숫자로 읽어야 기본 표처럼 0 칸이 가려진다.
-    # 판정은 붙여넣기 검증(`assert_numeric_edit_values`)과 같은 `to_numeric` 이라 값을 잃지 않는다.
-    plan_month_values = displayed_plan_table[plan_month_columns].apply(
-        pd.to_numeric, errors="coerce"
-    )
-    displayed_plan_table[plan_month_columns] = plan_month_values.mask(plan_month_values.eq(0))
-    edited_plan_table = st.data_editor(
-        classification_styled(displayed_plan_table, PLAN_EDITOR_DIMENSIONS),
-        key=editor_widget_key(PLAN_EDITOR_KEY),
-        hide_index=True,
-        width="content",
-        height=500,
-        row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
-        num_rows="fixed",
-        disabled=PLAN_EDITOR_DIMENSIONS,
-        # 위에서 가린 0 칸은 빈칸으로 그린다. 빈칸 표시를 주지 않으면 Streamlit 이 그 칸마다
-        # "None" 글자를 그린다(2026-10-01 브라우저 E2E).
-        placeholder="",
-        column_config={
-            **{
-                column: st.column_config.TextColumn(
-                    COLUMN_LABELS.get(column, column),
-                    width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
-                    alignment="center",
-                    pinned=True,
-                )
-                for column in PLAN_EDITOR_DIMENSIONS
-            },
-            **{
-                month: st.column_config.NumberColumn(
-                    month,
-                    width=80,
-                    min_value=0.0,
-                    step=0.01,
-                    format="%,.0f",
-                    alignment="center",
-                )
-                for month in plan_month_columns
-            },
-        },
-    )
-    # 적용 알림 칸(위)이 서는 회차의 소요대수에 들지 않은 수요 — 편집표를 다 그린 뒤에 센다. 적용
+    if PLAN_TABLE in _grid_mounted:
+        with plan_grid_box:
+            plan_grid.render_grid(PLAN_TABLE, plan_table, hidden=tab_is_hidden(pkg_plan_tab))
+    # 적용 알림 칸(위)이 서는 회차의 소요대수에 들지 않은 수요 — 그리드를 다 그린 뒤에 센다. 적용
     # 알림이 없는 회차에도 이 자리에서 이벤트 칸 한 자리를 쓴다 — 뒤 수율 붙여넣기 팝업의 이벤트 칸
     # 자리가 회차마다 같게(AGENTS 9장 「알림 칸」 — 표지를 쓰는 함수는 늘 같은 자리에서 한 자리).
     if applied_notice_shown:
-        _render_uncounted_demand_after_apply(context, plan_flash_slot)
+        _render_uncounted_demand_after_apply(context, plan_actions.notice)
     else:
         alerts.flush()
 
 simulation_plan = filtered_plan
 
+apply_yield = False
 with yield_tab:
+    yield_layout = plan_grid.LAYOUTS[YIELD_TABLE]
+    yield_actions_box = st.container(key=yield_layout.actions_box)
+    yield_grid_box = st.container(key=yield_layout.grid_box)
     if default_yield_table is None:
         # 표를 세울 수 없는 원천(연결 키 결측·중복 등)이면 이 탭만 멈춘다. 붙여넣기 양식도 이
         # 표라 팝업을 열 수 없다 — 열려 있던 기억은 지워 원천을 고친 뒤 저절로 뜨지 않게 한다.
+        # 그리드 마운트는 표 없는 껍데기로 같은 자리에 남는다.
         if _dialog_is_open(YIELD_PASTE_DIALOG):
             _close_dialog()
         yield_stop_message = (
             f"수율 표를 만들지 못했습니다: {yield_build_error} 원천 RQ_YLD 를 고치기 전까지 이 "
             "탭만 멈춥니다 — PKG PLAN 편집과 가상 제품 등록은 그대로 쓸 수 있습니다."
         )
-        render_data_error(yield_stop_message, code="ST-20", tab=YIELD_TAB_NAME)
+        with yield_actions_box:
+            render_data_error(yield_stop_message, code="ST-20", tab=YIELD_TAB_NAME)
+        locked_table = None
     else:
-        yield_pending = editor_has_edits(YIELD_EDITOR_KEY)
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            apply_yield = st.button(
-                "수율 변경사항 적용",
-                icon=":material/check:",
-                key="apply_yield_changes",
-                type="primary",
-                help=YIELD_APPLY_HELP if yield_pending else APPLY_LOCKED_HELP,
-                disabled=not yield_pending,
+        with yield_actions_box:
+            yield_actions = plan_grid.render_actions(
+                YIELD_TABLE,
+                apply=YIELD_APPLY_BUTTON,
+                apply_help=YIELD_APPLY_HELP,
+                locked_help=APPLY_LOCKED_HELP,
+                paste=YIELD_PASTE_BUTTON,
+                discard_help="수율 표에서 적용하지 않은 편집을 버립니다.",
+                discard_click=_discard_yield_edits,
+                discard_key="discard_yield_edits",
+                flash_keys=(YIELD_FLASH_KEY,),
             )
-            st.button(
-                "Excel 붙여넣기",
-                icon=":material/content_paste:",
-                key="open_yield_paste",
-                on_click=_open_dialog,
-                args=(YIELD_PASTE_DIALOG,),
-            )
-            if yield_pending:
-                st.button(
-                    "편집 취소",
-                    icon=":material/undo:",
-                    key="discard_yield_edits",
-                    on_click=discard_editor,
-                    args=(YIELD_EDITOR_KEY,),
-                    help="수율 표에서 적용하지 않은 편집을 버립니다.",
-                )
-        yield_notice = st.empty()
-        render_flash(YIELD_FLASH_KEY)
+        apply_yield = yield_actions.submitted
         locked_table = _report_locked_yield_rows(
             locked_yield_rows,
             scope=(
@@ -953,103 +1059,75 @@ with yield_tab:
                 default_yield_table,
                 f"RQ_YLD_{effective_start_month}_{effective_end_month}.csv",
             )
-        yield_month_columns = [
-            column
-            for column in default_yield_table.columns
-            if column not in YIELD_EDITOR_DIMENSIONS
-        ]
-        edited_yield_table = st.data_editor(
-            classification_styled(default_yield_table, YIELD_EDITOR_DIMENSIONS),
-            key=editor_widget_key(YIELD_EDITOR_KEY),
-            hide_index=True,
-            width="content",
-            height=500,
-            row_height=tokens.MONTH_GRID_ROW_HEIGHT_PX,
-            num_rows="fixed",
-            disabled=YIELD_EDITOR_DIMENSIONS,
-            # 편집 불가 행의 달 칸과 원천에 행이 없는 달은 빈칸이다 — "None" 글자가 아니다.
-            placeholder="",
-            column_config={
-                **{
-                    column: st.column_config.TextColumn(
-                        COLUMN_LABELS.get(column, column),
-                        width=(PRODUCT_COLUMN_WIDTH_PX if column == "제품정보" else None),
-                        alignment="center",
-                        pinned=True,
-                    )
-                    for column in YIELD_EDITOR_DIMENSIONS
-                },
-                **{
-                    month: st.column_config.NumberColumn(
-                        month,
-                        width=80,
-                        min_value=0.0,
-                        max_value=1.0,
-                        # 증분을 두지 않는다 — Streamlit 숫자 칸은 증분의 소수 자릿수 아래를 버려
-                        # 0.001 이면 98.75% 가 98.7% 로만 들어간다. 보이는 자리는 `percent` 가
-                        # 소수 둘째 자리까지 반올림하고 값은 적은 그대로다.
-                        format="percent",
-                        alignment="center",
-                    )
-                    for month in yield_month_columns
-                },
-            },
-        )
-        # 원본·줄 차례가 바뀌어 편집을 버린 회차에는 버튼이 잠겨 그려지고, Streamlit 은 잠겨 그린
-        # 버튼의 클릭을 서버에서 버린다 — 그 회차에 함께 온 클릭은 여기까지 오지 않는다.
-        if apply_yield:
+    if YIELD_TABLE in _grid_mounted:
+        with yield_grid_box:
+            plan_grid.render_grid(YIELD_TABLE, yield_table, hidden=tab_is_hidden(yield_tab))
+    # 원본·줄 차례가 바뀌어 편집을 버린 회차에는 단추가 잠겨 그려지고, Streamlit 은 잠겨 그린 단추의
+    # 클릭을 서버에서 버린다 — 그 회차에 함께 온 클릭은 여기까지 오지 않는다. 칸 오류가 남았으면
+    # 고칠 칸을 알리고 멈춘다(업무 규칙 검사 전에).
+    if apply_yield and default_yield_table is not None:
+        # 닫힌 탭의 단추가 눌린 회차(탭을 바꾸는 사이)에도 적용은 그 표 양식으로 한다.
+        if yield_table is None:
+            yield_table = _yield_grid_table(default_yield_table)
+        yield_blocked = plan_grid.error_notice(yield_table)
+        if yield_blocked is not None:
+            yield_actions.notice.error(yield_blocked, icon=":material/error:")
+        else:
             try:
+                edited_yield_table = plan_grid.merged(yield_table)
                 _apply_yield(
                     edited_yield_table,
                     "편집값을",
                     note=_removed_yield_note(default_yield_table, edited_yield_table),
                 )
             except ValueError as exc:
-                yield_notice.error(bootstrap_error_message(exc))
+                yield_actions.notice.error(bootstrap_error_message(exc))
             else:
                 st.rerun()
-        if locked_table is not None and table_clipped(locked_table):
-            render_csv_download(
-                data=locked_yield_rows[LOCKED_YIELD_COLUMNS]
-                .to_csv(index=False)
-                .encode("utf-8-sig"),
-                file_name=LOCKED_YIELD_FILE_NAME,
-                key="download_locked_yield_csv",
-                label=LOCKED_YIELD_CSV_LABEL,
-            )
+    if locked_table is not None and table_clipped(locked_table):
+        render_csv_download(
+            data=locked_yield_rows[LOCKED_YIELD_COLUMNS].to_csv(index=False).encode("utf-8-sig"),
+            file_name=LOCKED_YIELD_FILE_NAME,
+            key="download_locked_yield_csv",
+            label=LOCKED_YIELD_CSV_LABEL,
+        )
 
-# PKG PLAN 적용은 **두 편집표를 모두 그린 뒤**에 한다. 적용은 `st.rerun()` 으로 끝나는데,
-# Streamlit 은 그것을 정상 완료로 보고 그 회차에 그리지 않은 위젯의 상태를 서버에서 지운다. 예전에는
-# 이 블록이 수율 표보다 앞이라, 수율에 적용하지 않은 편집이 있는 채 PKG PLAN 을 적용하면 그 편집이
-# 서버에서 사라져 수율 탭 점과 사이드바 경고가 꺼졌다. 그때 누른 「신규 리비전 저장」은 다음 조작에
-# 브라우저가 되보낸 편집 때문에 잠긴 버튼이 되어 말없이 무시됐다(2026-10-01 브라우저 E2E). 오류
-# 알림은 작업 줄 아래 자리(`plan_notice`)에 쓰므로 여기서 처리해도 누른 자리에 뜬다.
-# 편집을 버린 회차의 클릭은 잠겨 그린 버튼이라 Streamlit 이 버린다(수율과 같다).
-if apply_plan:
-    try:
-        updated_plan = attach_plan_attributes(
-            plan_from_edit_table(edited_plan_table), simulation_plan
-        )
-        apply_month_updates(
-            active_scenario,
-            {"RQ_PKG_PLAN": updated_plan},
-            effective_start_month,
-            effective_end_month,
-        )
-    except ValueError as exc:
-        plan_notice.error(bootstrap_error_message(exc))
+# PKG PLAN 적용은 **두 탭을 모두 그린 뒤**에 한다. 적용은 `st.rerun()` 으로 끝나는데, Streamlit 은
+# 그것을 정상 완료로 보고 그 회차에 그리지 않은 위젯의 상태를 서버에서 지운다 — 수율 그리드의 출납
+# 상태가 그 회차에 그려진 뒤여야 한다. 칸 오류가 남았으면 고칠 칸을 알리고 멈춘다(업무 규칙 검사
+# 전에). 오류 알림은 작업 줄 아래 자리(`plan_actions.notice`)에 쓰므로 여기서 처리해도 누른 자리에
+# 뜬다. 편집을 버린 회차의 클릭은 잠겨 그린 단추라 Streamlit 이 버린다(수율과 같다).
+if plan_actions.submitted:
+    if plan_table is None:
+        plan_table = _plan_grid_table()
+    plan_blocked = plan_grid.error_notice(plan_table)
+    if plan_blocked is not None:
+        plan_actions.notice.error(plan_blocked, icon=":material/error:")
     else:
-        _queue_done(
-            PLAN_APPLIED_FLASH_KEY,
-            f"PKG PLAN을 전역 계획값에 반영했습니다. "
-            f"{month_label(effective_start_month)}–{month_label(effective_end_month)} "
-            "구간의 환산·소요대수·확보율과 "
-            f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
-            "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
-        )
-        st.session_state.pop(PLAN_STAGED_KEY, None)
-        mark_own_change(OWN_CHANGE_KEY, (PLAN_EDITOR_KEY, PLAN_STAGED_KEY))
-        st.rerun()
+        try:
+            updated_plan = attach_plan_attributes(
+                plan_from_edit_table(plan_grid.merged(plan_table)), simulation_plan
+            )
+            apply_month_updates(
+                active_scenario,
+                {"RQ_PKG_PLAN": updated_plan},
+                effective_start_month,
+                effective_end_month,
+            )
+        except ValueError as exc:
+            plan_actions.notice.error(bootstrap_error_message(exc))
+        else:
+            _queue_done(
+                PLAN_APPLIED_FLASH_KEY,
+                f"PKG PLAN을 전역 계획값에 반영했습니다. "
+                f"{month_label(effective_start_month)}–{month_label(effective_end_month)} "
+                "구간의 환산·소요대수·확보율과 "
+                f"홈 대시보드가 이 계획으로 다시 계산됩니다. "
+                "리비전으로 남기려면 사이드바 시나리오 칸 → 「신규 리비전 저장」을 누르세요.",
+            )
+            st.session_state.pop(PLAN_STAGED_KEY, None)
+            mark_own_change(OWN_CHANGE_KEY, (*plan_grid.own_keys(PLAN_TABLE), PLAN_STAGED_KEY))
+            st.rerun()
 
 simulation_yield = filtered_yield
 

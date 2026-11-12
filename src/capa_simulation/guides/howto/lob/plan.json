@@ -4,7 +4,7 @@
   "viewport": {"width": 1440, "height": 900, "scale": 2},
   "mask": ["named:SIDEBAR_FOOTER"],
   "params": {
-    "edit_process": {"type": "text", "default": "Pre B/D", "about": "기준 정보 › 「설비대수 가용」 표에서 고칠 행의 공정 이름(「공정」 열 글자)"},
+    "edit_process": {"type": "text", "default": "Pre B/D", "about": "기준 정보 › 「가용대수」 표에서 고칠 행의 공정 이름(「공정」 열 글자)"},
     "edit_month": {"type": "text", "default": "202612", "about": "고칠 달 — 가용 표의 달 열 머리(YYYYMM). 사이드바 조회기간 안이어야 한다"},
     "edit_delta": {"type": "int", "default": 2, "about": "그 칸에 더할 대수"},
     "revision_name": {"type": "text", "default": "12월 Pre B/D 가용 +2", "about": "저장 팝업 「새 리비전명」에 적을 글"},
@@ -158,22 +158,22 @@
         "tab_pkgplan": "tab:PKG PLAN",
         "tab_convert": "tab:환산",
         "tab_yield": "tab:수율",
-        "pkg_table": "named:GRID",
-        "pkg_apply": "button:PKG PLAN 변경사항 적용",
+        "pkg_table": "named:EGRID",
+        "pkg_apply": "button:변경사항 적용",
         "pkg_paste": "button:Excel 붙여넣기",
-        "pkg_virtual": "button:가상 제품 등록"
+        "pkg_virtual": "named:KEY_BUTTON(pkg_plan_more)"
       }
     },
     {
       "id": "08_ref_avail",
       "page": "기준 정보",
-      "note": "기준 정보 · 종류 단추 「설비대수 가용」",
+      "note": "기준 정보 · 종류 단추 「가용대수」",
       "from": "07_sidebar_static_open",
       "writes": "none",
-      "ops": [{"op": "nav", "text": "기준 정보"}, {"op": "click", "target": "button:설비대수 가용"}],
+      "ops": [{"op": "nav", "text": "기준 정보"}, {"op": "click", "target": "button:가용대수"}],
       "targets": {
-        "subtab_avail": "button:설비대수 가용",
-        "subtab_own": "button:설비대수 보유",
+        "subtab_avail": "button:가용대수",
+        "subtab_own": "button:보유대수",
         "ref_table": "named:EGRID",
         "ref_apply": "button:변경사항 적용",
         "ref_paste": "button:Excel 붙여넣기"
@@ -197,7 +197,7 @@
         {"op": "key", "key": "Escape"}
       ],
       "targets": {
-        "ref_tab_dot": "button:설비대수 가용",
+        "ref_tab_dot": "button:가용대수",
         "ref_apply": "button:변경사항 적용",
         "ref_cancel": "button:편집 취소",
         "ref_edited_cell": "named:EGRID_CELL",
@@ -217,7 +217,7 @@
         "sidebar_scenario": "named:SIDEBAR_SCEN",
         "sidebar_badge": "named:SIDEBAR_BADGE",
         "header_band": "named:HEADER_BAND",
-        "ref_tab_dot": "button:설비대수 가용"
+        "ref_tab_dot": "button:가용대수"
       }
     },
     {

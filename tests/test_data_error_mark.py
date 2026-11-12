@@ -60,7 +60,7 @@ ERROR_REASONS = frozenset({BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, 
 # `render_data_error`, 곁 거부 · 누른 동작의 실패면 까닭과 함께 여기에 둔다.
 PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
     ("app.py", ""): (1, NO_ALARM),
-    ("app_pages/load_conversion.py", ""): (2, PRESSED),
+    ("app_pages/load_conversion.py", ""): (4, PRESSED),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (1, PRESSED),
     ("app_pages/reference_data.py", ""): (2, PRESSED),
     ("app_pages/reference_data.py", "_step_dialog"): (1, PRESSED),

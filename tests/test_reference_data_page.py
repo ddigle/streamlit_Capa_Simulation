@@ -524,7 +524,7 @@ MISSING_CAPACITY_REASON = "대당 Capa 없음"
 REFERENCE_PAGE = Path(__file__).resolve().parents[1] / "app_pages" / "reference_data.py"
 
 
-# 종류 단추 글(아이콘 없음) → 종류 id. 옛 탭 이름과 같은 글이고 설비대수 안쪽 탭은 「설비대수 보유」
+# 종류 단추 글(아이콘 없음) → 종류 id. 옛 탭 이름과 같은 글이고 설비대수 안쪽 탭은 「보유대수」
 # 처럼 한 단추다. 고르기는 세션 칸 `DATASET_KEY` 에 id 를 넣는다(위젯 값).
 DATASET = {label: dataset for dataset, label in DATASETS.items()}
 TAB_EDITORS = {
@@ -709,13 +709,13 @@ def test_equipment_tab_gives_each_rq_its_own_editor_and_clipboard() -> None:
         ("가용", "capa_eqp_avbl_editor"),
     ):
         app = AppTest.from_string(TEST_SCRIPT, default_timeout=60)
-        app.session_state[DATASET_KEY] = DATASET[f"설비대수 {sub_tab}"]
+        app.session_state[DATASET_KEY] = DATASET[f"{sub_tab}대수"]
         app.run()
 
         assert not app.exception
         assert f"{editor_key}_apply" in {button.key for button in app.button}
         app = _open_paste(app, editor_key)
-        assert f"설비대수 {sub_tab} 표 붙여넣기" in {text_area.label for text_area in app.text_area}
+        assert f"{sub_tab}대수 표 붙여넣기" in {text_area.label for text_area in app.text_area}
 
 
 def test_equipment_editor_saves_the_edited_month_to_the_scenario(grid_calls: Calls) -> None:
@@ -724,7 +724,7 @@ def test_equipment_editor_saves_the_edited_month_to_the_scenario(grid_calls: Cal
     필터로 좁힌 화면에서 고쳐도 걸러진 공정이 조회기간에서 지워지지 않아야 한다 —
     `replace_month_range` 가 구간을 통째로 갈아끼우기 때문이다.
     """
-    app = _filtered_editor_app("설비대수 보유", "capa_eqp_own_editor", "공정")
+    app = _filtered_editor_app("보유대수", "capa_eqp_own_editor", "공정")
 
     app = _edit_and_apply(app, grid_calls, "capa_eqp_own_editor", "202608", 7.0)
 
@@ -1042,7 +1042,7 @@ def _walk(node: object) -> list[object]:
     [
         ("일수", "capa_run_day_editor", "RQ_RUN_DAY", "15"),
         ("효율", "capa_run_rate_editor", "RQ_RUN_RATE", "0.5"),
-        ("설비대수 보유", "capa_eqp_own_editor", "RQ_EQP_OWN", "7"),
+        ("보유대수", "capa_eqp_own_editor", "RQ_EQP_OWN", "7"),
         ("UPEH", "capa_upeh_editor", "RQ_UPEH", "55"),
     ],
 )
@@ -1442,21 +1442,20 @@ def test_step_route_delete_removes_the_line_the_user_sees(case: str) -> None:
 
 
 def _equipment_sub_tab_app(sub_tab: str, script: str = RENAMED_TEST_SCRIPT) -> AppTest:
-    """설비대수 탭의 안쪽 탭 하나를 연 화면."""
+    """설비대수 세 표(「보유대수」 · 「대여대수」 · 「가용대수」) 가운데 하나를 연 화면."""
     app = AppTest.from_string(script, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET[f"설비대수 {sub_tab}"]
+    app.session_state[DATASET_KEY] = DATASET[f"{sub_tab}대수"]
     app.run()
     assert not app.exception
     return app
 
 
-def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays_original() -> None:
-    """설비대수 조회 표는 표시명이고, 편집 탭의 왕복 양식은 원본 공정명이다."""
+def test_equipment_count_paste_forms_stay_original_while_the_process_field_shows_labels() -> None:
+    """설비대수 세 표의 공용 공정 칸은 표시명을 보이고, 왕복 양식은 원본 공정명이다."""
     from capa_simulation.components.process_field import CONTEXT_KEY
 
-    app = _equipment_sub_tab_app("현황")
+    app = _equipment_sub_tab_app("보유")
 
-    assert set(_frame_with_column(app, "공정")["공정"]) == {"가공"}
     context = app.session_state[CONTEXT_KEY]
     assert (context.options, context.texts) == (("Process-A",), ("가공",))
     for sub_tab, editor_key in (
@@ -1467,23 +1466,6 @@ def test_equipment_count_table_shows_the_display_name_while_its_paste_form_stays
         editor_app = _open_paste(_equipment_sub_tab_app(sub_tab), editor_key)
         exported = _download_frame(editor_app, f"{editor_key}_csv_download")
         assert exported["공정"].tolist() == ["Process-A"], sub_tab
-
-
-def test_equipment_count_filter_keeps_the_original_selection_value() -> None:
-    """설비대수 현황은 공용 공정 값(원본)을 따라간다 — 글자만 표시명이다. 값이 표시명이면 `isin` 이
-    원본과 맞지 않아 표가 빈다."""
-    from test_process_field import share
-
-    from capa_simulation.components.process_field import FIELD_KEY
-
-    app = AppTest.from_string(RENAMED_TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET["설비대수 현황"]
-    share(app, ["Process-A"])
-    app.run()
-
-    assert not app.exception
-    assert set(_frame_with_column(app, "공정")["공정"]) == {"가공"}
-    assert app.sidebar.button(key=FIELD_KEY).label == "가공"
 
 
 def test_month_editor_shows_the_label_but_returns_the_original_process(
@@ -1558,12 +1540,12 @@ def test_month_editor_paste_template_keeps_the_original_process_name() -> None:
 def test_the_paste_window_uses_the_screen_name_but_the_file_keeps_the_table_name() -> None:
     """글 칸 · 양식 칸은 화면이 부르는 이름이고(UI-CON-02) 내려받는 파일 이름은 원본 표 그대로다."""
     app = AppTest.from_string(TWO_PROCESS_TEST_SCRIPT, default_timeout=60)
-    app.session_state[DATASET_KEY] = DATASET["설비대수 보유"]
+    app.session_state[DATASET_KEY] = DATASET["보유대수"]
     app.run()
     assert not app.exception
     app = _open_paste(app, "capa_eqp_own_editor")
 
-    assert {text_area.label for text_area in app.text_area} == {"설비대수 보유 표 붙여넣기"}
+    assert {text_area.label for text_area in app.text_area} == {"보유대수 표 붙여넣기"}
     file_name = _download(app, "capa_eqp_own_editor_csv_download")["file_name"]
     assert file_name.startswith("RQ_EQP_OWN_") and file_name.endswith(".csv")
 
@@ -1659,10 +1641,11 @@ def test_the_table_filters_and_the_overview_detail_live_in_the_sidebar_card() ->
         "capa_run_rate_editor_filter_양산구분"
     ]
 
-    app = _equipment_sub_tab_app("현황")
-    assert "equipment_count_detail" in {widget.key for widget in app.sidebar.toggle}
+    # 설비대수 표는 거를 칸이 공정뿐이라 「표 조건」 카드가 없다(「상세」 토글도 없다).
+    app = _equipment_sub_tab_app("보유")
     assert FIELD_KEY in {button.key for button in app.sidebar.button}
-    assert not app.main.toggle
+    assert not app.sidebar.toggle and not app.main.toggle
+    assert not [item for item in app.sidebar.expander if "표 조건" in str(item.label)]
 
 
 def test_the_upeh_editor_names_st_minutes_and_keeps_small_values(grid_calls: Calls) -> None:
