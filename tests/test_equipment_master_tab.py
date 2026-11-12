@@ -343,6 +343,33 @@ def test_renaming_in_the_detail_is_the_same_unit_and_follows_the_save(
     assert app.session_state[GRID_DETAIL_KEY] == "s:DA-11"
 
 
+def test_a_new_units_rename_and_its_undo_reach_the_next_table_draw_once(
+    tmp_path: Path, grid: Calls
+) -> None:
+    """새 호기 이름 바꿈은 행 id 를 바꿔 표 목록 지문도 바꾼다 — 그 옮김이 다음 표 그리기에 한 번
+    실려야 브라우저가 고름 · 스크롤을 지킨다(설계 규칙 UI-PRF-03). 전에는 서비스가 낸 옮김을 표
+    data 에 싣지 않아 이름을 바꾸면 표가 맨 위로 튀었다. 「한 단계 되돌리기」 의 되옮김도 같고,
+    상세에 연 id 도 따라간다."""
+    app = _app(tmp_path / "equipment.duckdb")
+    _import(app, _rows("DA-01", "DA-02"))
+    send(app, emg.GRID_KEY, "open", {"view": last(grid, emg.GRID_KEY)["view"], "id": "n:DA-01"})
+
+    send_ops(app, grid, {"op": "cell", "id": "n:DA-01", "col": "설비명", "text": "DA-11"})
+    table = last(grid, emg.GRID_KEY)
+    assert [row["id"] for row in table["rows"]] == ["n:DA-11", "n:DA-02"]
+    assert table["moved"] == {"n:DA-01": "n:DA-11"}
+    assert app.session_state[GRID_DETAIL_KEY] == "n:DA-11"
+    app.run()
+    assert last(grid, emg.GRID_KEY)["moved"] == {}
+
+    app.session_state[SIDE_KEY] = SIDE_CHANGES
+    app.run()
+    app.button(key=UNDO_BUTTON_KEY).click().run()
+    assert not app.exception, app.exception
+    assert last(grid, emg.GRID_KEY)["moved"] == {"n:DA-11": "n:DA-01"}
+    assert app.session_state[GRID_DETAIL_KEY] == "n:DA-01"
+
+
 # 대본 맨 앞에서 부르는 시험용 손 — 진짜 회차에서 콜백이 도는 자리다(`send` 대역은 그리는 자리다).
 RUN_HEAD_KEY = "test_master_tab_run_head"
 _RUN_HEAD = f"""

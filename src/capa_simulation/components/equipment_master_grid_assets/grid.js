@@ -214,6 +214,19 @@ function sortOrder(values, dir, kind) {
 }
 // </grid-sort>
 
+// <grid-view>
+// 목록 지문이 바뀐 회차에 고름 · 기준 줄 · 스크롤을 지키나 — 앞 목록(`before`)에 새 호기 이름 바꿈의 옮김(`moved` — [옛, 새] 쌍)을
+// 얹고 끼운 형제 줄(`inserted`)만 빼면 새 목록(`after`)과 같을 때만이다. 같은 회차에 불러오기 · 비우기 · 빼기가 목록을 바꿨으면
+// 처음으로 돌린다(설계 규칙 UI-PRF-03 — 사용자가 보던 줄이 그 자리에 있나).
+function keptView(before, after, moved, inserted) {
+  if (!moved.length && !inserted.length) return false
+  const map = new Map(moved)
+  const added = new Set(inserted)
+  const rest = after.filter((id) => !added.has(id))
+  return rest.length === before.length && before.every((id, k) => (map.has(id) ? map.get(id) : id) === rest[k])
+}
+// </grid-view>
+
 // <grid-codes>
 // 불러오기 조건 칸 — 파이썬 `equipment_grid.encode_codes` 와 같은 64자 고정 폭 번호.
 const CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'
@@ -1178,8 +1191,9 @@ function editableIn(S, row, col) {
 function drawGrid(host, S, data) {
   receive(S, data)
   S.data = data
-  // 새 호기 이름 바꿈(과 그 되돌리기)은 행 id 를 바꿔 목록 지문도 바꾼다 — 옮김을 먼저 얹고, 그 회차에는 고름·스크롤을
-  // 처음으로 돌리지 않는다(옮길 고름이 사라진다).
+  // 새 호기 이름 바꿈(과 그 되돌리기)은 행 id 를 바꾸고, 모듈 묶음 같이 쓰기는 형제 줄을 끼워 목록 지문도 바꾼다 — 옮김을
+  // 먼저 얹고, 목록이 그것으로만 바뀐 회차에는 고름·스크롤을 처음으로 돌리지 않는다(`keptView`).
+  const before = S.model ? S.model.rows.map((row) => row.id) : []
   const moved = Object.entries(data.moved || {})
   for (const [from, to] of moved) {
     if (S.selected.delete(from)) S.selected.add(to)
@@ -1191,7 +1205,8 @@ function drawGrid(host, S, data) {
   const view = String(data.view || '')
   if (S.view !== view) {
     S.view = view
-    if (!moved.length) {
+    const after = Array.isArray(data.rows) ? data.rows.map((row) => row.id) : []
+    if (!keptView(before, after, moved, Array.isArray(data.inserted) ? data.inserted : [])) {
       S.selected = new Set()
       S.anchor = null
       S.resetScroll = true
@@ -1934,11 +1949,13 @@ function startEdit(S, id, col, initial) {
   paintWindow(S)
 }
 
-function commitEdit(S, move, refocus) {
+// 같은 글은 보내지 않는다 — 막는 오류 표지가 선 칸(모듈 묶음 갈림 등)을 Enter · 고르기로 **확정**(`confirmed`)할 때만 보낸다. 그
+// 줄 값을 다시 넣어 갈린 묶음을 푸는 길이다(2026-11-12 Space 요청 3). 칸을 눌렀다 떠나기만 해서는 보내지 않는다.
+function commitEdit(S, move, refocus, confirmed) {
   const edit = S.edit
   if (!edit) return
   S.committing = true
-  if (edit.draft !== edit.original) {
+  if (edit.draft !== edit.original || (confirmed && blockedCell(S, edit.id, edit.col))) {
     const column = S.model.columns[edit.col]
     enqueue(S, { op: 'cell', id: edit.id, col: column.name, text: edit.draft }, [[edit.id, edit.col, edit.draft]])
     schedule(S)
@@ -1968,11 +1985,16 @@ function commitEdit(S, move, refocus) {
   paintWindow(S)
 }
 
+function blockedCell(S, id, col) {
+  const row = S.model.rows.find((item) => item.id === id)
+  return Boolean(row && row.errors && row.errors[col] !== undefined)
+}
+
 function pickChoice(S, value) {
   const edit = S.edit
   if (!edit) return
   edit.draft = value
-  commitEdit(S, null, true)
+  commitEdit(S, null, true, true)
 }
 
 function ensureVisible(S, id) {
@@ -2045,7 +2067,7 @@ function onBodyKey(S, event) {
     const key = event.key
     if (key === 'Enter') {
       event.preventDefault()
-      commitEdit(S, null, true)
+      commitEdit(S, null, true, true)
     } else if (key === 'Escape') {
       event.preventDefault()
       S.edit = null
@@ -2652,16 +2674,25 @@ function detailField(S, unit, column, k, sets, reasons) {
   if (error !== undefined) field.classList.add('is-error')
   if (pending !== null) field.classList.add('is-pending')
   const id = 'emg-f-' + S.mount + '-' + k
-  const label = el('label', null, column.name)
+  const label = el('label')
   label.htmlFor = id
+  label.appendChild(el('span', null, column.name))
+  // 모듈 묶음(둘 이상) 줄의 같이 바뀌는 칸 — 이름 곁 「묶음」 글 표지 + 풍선(색만으로 나르지 않는다 — 설계 규칙 UI-ACC-03).
+  const shared = S.data && Array.isArray(S.data.sharedCols) ? S.data.sharedCols : []
+  if (unit.group && shared.includes(k)) {
+    const tag = el('span', 'emg-group-tag', '묶음')
+    tag.title = '같은 Main 설비(' + unit.group.name + ') 모듈 ' + Number(unit.group.count).toLocaleString() + '줄에 함께'
+    label.appendChild(tag)
+  }
   field.appendChild(label)
   const tips = []
   if (lock) tips.push(reasons[lock] || '')
   if (changed !== undefined) tips.push('저장본: ' + (changed || '(빈칸)'))
   tips.push(column.help || '')
   field.title = tips.filter(Boolean).join('\n')
-  const commit = (text) => {
-    if (text === shown) return
+  // 같은 글은 보내지 않는다 — 막는 오류 표지가 선 칸을 칩 · Enter 로 확정할 때만 보낸다(`commitEdit` 와 같은 뜻).
+  const commit = (text, confirmed) => {
+    if (text === shown && !(confirmed && error !== undefined)) return
     enqueue(S, { op: 'cell', id: unit.id, col: column.name, text }, [[unit.id, k, text]])
     schedule(S)
   }
@@ -2673,7 +2704,7 @@ function detailField(S, unit, column, k, sets, reasons) {
     const options = choiceOptions(columns, column, rowValueAt(S, unit), shown)
     for (const value of options) {
       const chip = button('emg-chip', value || '(비움)', () => {
-        commit(value)
+        commit(value, true)
         S.drafts.delete(k)
         send(S)
       })
@@ -2694,7 +2725,7 @@ function detailField(S, unit, column, k, sets, reasons) {
       stopKeys(event)
       if (event.key === 'Enter') {
         event.preventDefault()
-        commit(input.value)
+        commit(input.value, true)
         S.drafts.delete(k)
         send(S)
       } else if (event.key === 'Escape') {

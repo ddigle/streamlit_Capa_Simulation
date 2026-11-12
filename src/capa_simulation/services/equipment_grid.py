@@ -20,7 +20,10 @@
 - **출납**(`pending_ops`·`apply_ops`) — 브라우저가 상태 값 `outbox` 로 보낸 「반영되지 않은 조작
   전부」 에서 아직 반영하지 않은 것만 `(at, mount, seq)` 차례로 골라 편집본 세 표에 얹는다. 칸 값은
   저장 정규화와 같은 함수(`equipment_validation.coerce_master_cell`)로 다듬고, 못 다듬은 글은
-  편집본에 넣지 않고 칸 초안(`overlay`)에 둔다 — 편집본 세 표는 늘 계약 dtype 이다.
+  편집본에 넣지 않고 칸 초안(`overlay`)에 둔다 — 편집본 세 표는 늘 계약 dtype 이다. 모듈 묶음 한
+  줄의 같이 바뀌는 칸(`UNIT_SHARED_COLUMNS`)을 고치면 표 전체의 형제 줄도 같은 값이 되고(칸 ·
+  호기 상세 · 붙여넣기 · 값 넣기 — `_write_shared`), 불러오지 않은 형제는 고친 줄 바로 아래에
+  끼운다(`GridApplied.inserted`).
 - **되돌리기**(`UndoStep`) — 한 조작의 역 patch(칸 자리·옛 값, 뺀 행·넣은 행, 옮긴 행 id). 표의
   조작만 쌓이고 다른 길(Space 적용·작은 편집표 적용)이 편집본을 바꾸면 목록을 비우므로 나중
   것부터(LIFO) 되돌리면 자리가 늘 맞는다. 행 조각을 든 단계를 버릴 때는 그보다 앞 단계도 함께
@@ -79,12 +82,14 @@ from capa_simulation.services.equipment_contract import (
     STORAGE_FLAG_COLUMN,
     UNIT_CONSISTENT_COLUMNS,
     UNIT_SAVE_CONSISTENT_COLUMNS,
+    UNIT_SHARED_COLUMNS,
     USAGE_BASIS_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
     counts_for_capacity,
 )
 from capa_simulation.services.equipment_scenario import inherited_unit_names
+from capa_simulation.services.equipment_units import GroupWrite, plan_group_writes
 from capa_simulation.services.equipment_validation import (
     CellParseError,
     MasterIssue,
@@ -940,8 +945,15 @@ def lock_sets_payload() -> dict[str, list[int]]:
     return {kind: [COLUMN_INDEX[c] for c in columns] for kind, columns in LOCK_SETS.items()}
 
 
+def shared_columns_payload() -> list[int]:
+    """모듈 묶음에서 같이 바뀌는 칸(`UNIT_SHARED_COLUMNS`)의 자리 번호 — 「호기 상세」 가 그 칸
+    이름 곁에 「묶음」 표지를 단다(브라우저에 칸 이름을 박지 않는다)."""
+    return [COLUMN_INDEX[name] for name in UNIT_SHARED_COLUMNS]
+
+
 def view_token(ids: Sequence[str]) -> str:
-    """불러온 목록(차례 포함)의 지문 — 바뀌면 브라우저가 고름·기준 줄·스크롤을 처음으로 돌린다."""
+    """불러온 목록(차례 포함)의 지문 — 바뀌면 브라우저가 고름·기준 줄·스크롤을 처음으로 돌린다
+    (`moved` · `inserted` 로만 바뀐 회차는 지킨다 — 브라우저 `keptView`)."""
     return hashlib.sha1("\n".join(ids).encode("utf-8")).hexdigest()[:16]
 
 
@@ -983,10 +995,13 @@ def grid_data(
     *,
     ack: Mapping[str, Any] | None = None,
     moved: Mapping[str, str] | None = None,
+    inserted: Sequence[str] = (),
     open_id: str | None = None,
 ) -> dict[str, Any]:
     """표 마운트(`grid`)의 data(팔레트는 화면 쪽이 더한다). 줄은 불러온 목록 차례이고 편집본에 없는
-    id 는 거른다. `open_id` 는 오른쪽 「호기 상세」 에 연 행 id(그 줄에 띠)다."""
+    id 는 거른다. `open_id` 는 오른쪽 「호기 상세」 에 연 행 id(그 줄에 띠)다. `moved` ·
+    `inserted` 는 앞 출납이 바꾼 행 id · 끼운 형제 줄(`GridApplied`)이다 — 그 회차 하나에만 실어
+    목록 지문이 그것으로만 바뀌었으면 브라우저가 고름 · 스크롤을 지킨다."""
     rows = [_row_payload(view, row_id) for row_id in loaded if row_id in view.values]
     return {
         "mode": "grid",
@@ -1004,6 +1019,7 @@ def grid_data(
         "deleteLock": view.context.delete_lock,
         "limits": {"pasteCells": GRID_PASTE_CELLS, "outboxCells": GRID_OUTBOX_CELLS},
         "moved": dict(moved or {}),
+        "inserted": [row_id for row_id in inserted if row_id in view.values],
         "open": open_id if open_id is not None and open_id in view.values else None,
     }
 
@@ -1202,6 +1218,20 @@ def _official_targets(view: GridView, row_id: str) -> list[str]:
     return _official_names(view.index, parents, view.context.official_places, row_id)
 
 
+def _unit_group(view: GridView, row_id: str) -> dict[str, Any] | None:
+    """그 줄이 든 모듈 묶음(`module_group_rows` — 둘 이상)의 Main 설비와 형제 포함 줄 수. 한 줄
+    묶음 · 묶음 밖 줄은 None 이다(같이 바뀔 형제가 없다)."""
+    position = view.index.live.get(row_id)
+    master = view.source.frames[1].reset_index(drop=True)
+    if position is None or position >= len(master):
+        return None
+    groups = module_group_rows(master)
+    name = groups.iloc[position]
+    if not isinstance(name, str):
+        return None
+    return {"name": name, "count": int(groups.eq(name).sum())}
+
+
 def detail_data(
     view: GridView,
     row_id: str | None,
@@ -1214,7 +1244,9 @@ def detail_data(
 
     이 마운트도 출납을 보내므로 `ack`(이 마운트 몫)를 싣는다 — 빼면 브라우저가 반영된 op 를 들고
     있다가 초점이 나갈 때마다 다시 보낸다. `toast` 는 이 칸 자리 거부 한 줄(`toast_payload`),
-    `reveal_head` 는 이번에 처음 선 이 칸의 머리를 보이라는 표지다(「호기 추가」 뒤)."""
+    `reveal_head` 는 이번에 처음 선 이 칸의 머리를 보이라는 표지다(「호기 추가」 뒤). 모듈 묶음(둘
+    이상) 줄이면 `unit.group`(Main 설비 · 형제 포함 줄 수)을 싣고, 브라우저가 같이 바뀌는
+    칸(`sharedCols`) 이름 곁에 「묶음」 표지를 단다(2026-11-12 사용자 답 3-5)."""
     unit: dict[str, Any] | None = None
     if row_id is not None and row_id in view.values:
         unit = _row_payload(view, row_id)
@@ -1224,6 +1256,9 @@ def detail_data(
         locked = view.context.delete_lock if row_id in view.index.saved else None
         unit["deletable"] = not deleted and not locked
         unit["deleteLock"] = locked if not deleted else None
+        group = None if deleted else _unit_group(view, row_id)
+        if group is not None:
+            unit["group"] = group
         targets = [] if deleted else _official_targets(view, row_id)
         saved_name = view.index.saved_name(row_id)
         if targets and saved_name is not None:
@@ -1244,6 +1279,7 @@ def detail_data(
         "groups": detail_groups_payload(),
         "lockSets": lock_sets_payload(),
         "lockReasons": view.context.lock_reasons(),
+        "sharedCols": shared_columns_payload(),
         "unit": unit,
         "newRowsLocked": view.context.new_rows_locked,
     }
@@ -1900,6 +1936,8 @@ class GridApplied:
       추가」 로 넣지 못한 수.
     - `added` — 「새 호기」 칸에서 넣은 호기마다 (행 id, 설비명). 화면 쪽이 마지막 호기를 상세로
       연다.
+    - `inserted` — 모듈 묶음 같이 쓰기가 불러온 목록에 끼운 형제 줄 id(끼운 차례). `moved` 와 함께
+      다음 표 그리기에 실어 브라우저가 고름 · 기준 줄 · 스크롤을 지킨다(설계 규칙 UI-PRF-03).
     """
 
     state: GridState
@@ -1911,6 +1949,7 @@ class GridApplied:
     dropped: int = 0
     refused: int = 0
     added: tuple[tuple[str, str], ...] = ()
+    inserted: tuple[str, ...] = ()
 
 
 def _loc(frame: pd.DataFrame, column: str) -> int:
@@ -1968,6 +2007,7 @@ class _Work:
     refused: int = 0
     added: list[tuple[str, str]] = field(default_factory=list)
     draft_seq: int = 0
+    inserted: list[str] = field(default_factory=list)
 
     def index(self) -> GridIndex:
         return grid_index(self.master, self.saved[1], self.renames.units)
@@ -2047,13 +2087,22 @@ def _set_overlay(work: _Work, patch: _Patch, key: str, text: str | None) -> bool
 
 def _locked(work: _Work, index: GridIndex, row_id: str, column: str, modules: list[bool]) -> bool:
     """파이썬도 잠금을 본다 — 브라우저 잠금만 믿지 않는다."""
+    return _lock_kind(work, index, row_id, column, modules) is not None
+
+
+def _lock_kind(
+    work: _Work, index: GridIndex, row_id: str, column: str, modules: list[bool]
+) -> str | None:
+    """그 칸을 잠근 갈래(`LOCK_SETS` 이름 — 설비명 · 계약 밖 칸은 `"name"`), 안 잠겼으면 None.
+    묶음 같이 쓰기가 형제 잠김 까닭(`GridContext.lock_reasons`)을 이것으로 고른다."""
     if column == EQUIPMENT_ID_COLUMN or column not in COLUMN_INDEX:
-        return True
+        return "name"
     if work.context.stale_lock and column in LOCK_SETS["stale"]:
-        return True
-    if work.context.layout_lock and column in LOCK_SETS[_layout_kind(index, row_id)]:
-        return True
-    return _module_locked(index, row_id, column, modules)
+        return "stale"
+    layout = _layout_kind(index, row_id)
+    if work.context.layout_lock and column in LOCK_SETS[layout]:
+        return layout
+    return "module" if _module_locked(index, row_id, column, modules) else None
 
 
 def _layout_kind(index: GridIndex, row_id: str) -> str:
@@ -2078,26 +2127,156 @@ def _module_flags(master: pd.DataFrame) -> list[bool]:
     )
 
 
-def _write_cell(
+@dataclass(frozen=True)
+class _Unparsed:
+    """다듬지 못한 글 — 같이 쓰기 계획에서 다듬은 값과 늘 다른 값으로 견줘 형제에게 퍼지지 않고,
+    고친 줄에만 칸 초안으로 남는다."""
+
+    text: str
+
+
+@dataclass
+class _Shared:
+    """칸 글 쓰기 한 번(op 하나)의 셈 — `_write_shared`.
+
+    - `changed` — 고친 칸 가운데 바뀐 수(칸 초안을 두거나 걷은 것 포함).
+    - `skipped` — 넣지 못한 고친 칸(없는 줄 · 잠긴 칸 · 형제가 잠긴 묶음).
+    - `spread` — 형제까지 쓴 묶음 쓰기와 그때 같이 바뀐 형제 칸 수(무엇이든 바뀐 쓰기만).
+    - `refusals` — 형제가 잠겨 통째로 넣지 않은 묶음 쓰기의 글.
+    - `split` — 한 번에 같은 묶음 · 같은 칸에 다른 값이 와 같이 바꾸지 않은 (묶음, 칸) 수.
+    """
+
+    changed: int = 0
+    skipped: int = 0
+    spread: list[tuple[GroupWrite, int]] = field(default_factory=list)
+    refusals: list[str] = field(default_factory=list)
+    split: int = 0
+
+
+GROUP_TOAST: Final = "{group} 묶음 {count:,}줄 {column} {value}"
+GROUP_BLANK_VALUE: Final = "(비움)"
+GROUP_TAIL: Final = " · 묶음 {groups:,}개 {cells:,}칸 같이"
+GROUP_LOCKED_TOAST: Final = (
+    "{group} 묶음 — 형제 {count:,}줄의 {column} 칸이 잠겨 같이 고치지 않았습니다"
+)
+GROUP_SPLIT_TAIL: Final = " · 묶음 안에 서로 다른 값이 와 같이 바꾸지 않은 칸 {count:,}"
+
+
+def _write_shared(
     work: _Work,
     patch: _Patch,
     index: GridIndex,
     modules: list[bool],
-    row_id: str,
-    column: str,
-    text: str,
-) -> int:
-    """칸 하나에 글을 넣는다 — 다듬으면 편집본, 못 다듬으면 칸 초안. 바뀐 칸 수(0·1), 잠겼으면
-    -1."""
-    if row_id not in index.live or _locked(work, index, row_id, column, modules):
-        return -1
-    key = overlay_key(row_id, column)
-    parsed = _coerce(column, text)
-    if isinstance(parsed, CellParseError):
-        return 1 if _set_overlay(work, patch, key, text) else 0
-    cleared = _set_overlay(work, patch, key, None)
-    changed = _set_master(work, patch, index.live[row_id], column, parsed)
-    return 1 if (changed or cleared) else 0
+    cells: Sequence[tuple[str, str, str]],
+) -> _Shared:
+    """칸 글 `(행 id, 칸, 글)` 들을 넣는다 — 표 한 칸 · 호기 상세 · 붙여넣기 · 값 넣기가 같이 쓴다.
+
+    - 없는 줄 · 잠긴 칸은 넣지 않는다. 다듬으면 편집본, 못 다듬으면 그 줄 칸 초안이다.
+    - 모듈 묶음의 같이 바뀌는 칸(`UNIT_SHARED_COLUMNS` — 2026-11-12 사용자 답 3-1 · 3-3 · 3-5)은
+      형제 줄(표 전체 — 불러오지 않은 줄 · 다른 층 · 숨은 모듈 포함)도 같은 값으로 쓴다. 계획은 op
+      하나에 한 번이다(`plan_group_writes`). 못 다듬은 글은 형제에게 퍼뜨리지 않는다.
+    - 형제 하나라도 잠겼으면 그 묶음 쓰기를 통째로 넣지 않고 까닭을 적는다. 한 번에 같은 묶음 ·
+      같은 칸에 다른 값이 오면 같이 바꾸지 않고 받은 칸만 쓴다 — 어느 값이 맞는지 고르지 않는다.
+    - 고친 줄 값이 그대로여도 형제가 바뀌면 바뀐 것이다 — 갈린 묶음을 같은 값 다시 넣기로 푼다.
+    - 모두 같은 `_Patch` 에 쌓여 「한 단계 되돌리기」 한 번에 돌아간다. 불러오지 않은 형제는 고친
+      줄 바로 아래에 끼운다(`_insert_siblings` — 되돌려도 끼운 줄은 남는다)."""
+    result = _Shared()
+    texts: dict[tuple[int, str], str] = {}
+    planned: list[tuple[int, str, object]] = []
+    for row_id, column, text in cells:
+        if row_id not in index.live or _locked(work, index, row_id, column, modules):
+            result.skipped += 1
+            continue
+        position = index.live[row_id]
+        parsed = _coerce(column, text)
+        texts[(position, column)] = text
+        planned.append(
+            (position, column, _Unparsed(text) if isinstance(parsed, CellParseError) else parsed)
+        )
+    if not planned:
+        return result
+    plan = plan_group_writes(work.master, planned)
+    result.split = len(plan.split)
+    for write in plan.writes:
+        if isinstance(write.value, _Unparsed):
+            for position in write.asked:
+                key = overlay_key(index.ids[position], write.column)
+                drafted = _set_overlay(work, patch, key, texts[(position, write.column)])
+                result.changed += int(drafted)
+            continue
+        locked = [
+            position
+            for position in write.rows
+            if position not in write.asked
+            and _locked(work, index, index.ids[position], write.column, modules)
+        ]
+        if locked:
+            result.skipped += len(write.asked)
+            result.refusals.append(_group_refusal(work, index, modules, write, locked))
+            continue
+        asked = together = 0
+        for position in write.rows:
+            cleared = _set_overlay(
+                work, patch, overlay_key(index.ids[position], write.column), None
+            )
+            changed = _set_master(work, patch, position, write.column, write.value) or cleared
+            if position in write.asked:
+                asked += int(changed)
+            else:
+                together += int(changed)
+        result.changed += asked
+        if write.group is not None and (asked or together):
+            result.spread.append((write, together))
+            _insert_siblings(work, index, write)
+    return result
+
+
+def _group_refusal(
+    work: _Work, index: GridIndex, modules: list[bool], write: GroupWrite, locked: Sequence[int]
+) -> str:
+    """형제가 잠겨 넣지 않은 묶음 쓰기의 글 — 첫 잠긴 형제의 잠금 까닭을 꼬리에 단다."""
+    text = GROUP_LOCKED_TOAST.format(group=write.group, count=len(locked), column=write.column)
+    kind = _lock_kind(work, index, index.ids[locked[0]], write.column, modules)
+    reason = work.context.lock_reasons().get(kind or "", "")
+    return f"{text}({reason})" if reason else text
+
+
+def _insert_siblings(work: _Work, index: GridIndex, write: GroupWrite) -> None:
+    """같이 쓴 형제 가운데 불러오지 않은 줄을 고친 줄(불러온 첫 줄) 바로 아래에 표 차례로
+    끼운다(2026-11-12 사용자 답 3-4). 이미 불러온 형제는 자리 그대로다. 고친 줄이 목록에 없으면
+    (호기 상세만 연 호기) 끼울 자리가 없어 끼우지 않는다."""
+    present = set(work.loaded)
+    anchor = next((index.ids[p] for p in write.asked if index.ids[p] in present), None)
+    if anchor is None:
+        return
+    missing = [index.ids[p] for p in write.rows if index.ids[p] not in present]
+    if not missing:
+        return
+    at = work.loaded.index(anchor) + 1
+    work.loaded[at:at] = missing
+    work.inserted.extend(missing)
+
+
+def _group_toast(write: GroupWrite) -> str:
+    """칸 하나를 묶음째 쓴 결과 글 — 「GRP-1 묶음 4줄 동 C1」(빈 값은 「(비움)」)."""
+    value = cell_text(write.value) or GROUP_BLANK_VALUE
+    return GROUP_TOAST.format(
+        group=write.group, count=len(write.rows), column=write.column, value=value
+    )
+
+
+def _shared_tail(shared: _Shared) -> str:
+    """붙여넣기 · 값 넣기 결과 글 꼬리 — 같이 바뀐 묶음 · 형제 잠김 · 갈려 같이 안 바꾼 칸."""
+    tail = ""
+    cells = sum(together for _, together in shared.spread)
+    if cells:
+        groups = len({write.group for write, together in shared.spread if together})
+        tail += GROUP_TAIL.format(groups=groups, cells=cells)
+    for refusal in shared.refusals:
+        tail += f" · {refusal}"
+    if shared.split:
+        tail += GROUP_SPLIT_TAIL.format(count=shared.split)
+    return tail
 
 
 def _rename(work: _Work, patch: _Patch, index: GridIndex, row_id: str, text: str) -> int:
@@ -2333,10 +2512,12 @@ def _restore(work: _Work, ids: Sequence[str]) -> UndoStep | None:
 
 @dataclass
 class _Reverted:
-    """칸·호기 되돌리기 한 번의 셈 — 되돌린 칸·모듈 잠금으로 남긴 칸, 행을 넣고 뺀 단계."""
+    """칸·호기 되돌리기 한 번의 셈 — 되돌린 칸·모듈 잠금으로 남긴 칸·같이 되돌린 형제 칸, 행을
+    넣고 뺀 단계."""
 
     cells: int = 0
     kept: int = 0
+    together: int = 0
     step: UndoStep | None = None
     restored: bool = False
     dropped: bool = False
@@ -2348,7 +2529,8 @@ def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Rev
     저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·배치 편집이 잠긴 회차의 배치 칸 잠금은 막지
     않는다 — 낡기 전에 고친 시나리오 칸을 저장본 값으로 돌려야 저장이 거부되지 않는다. 모듈 묶음
     좌표·크기만 그대로 둔다(한 모듈만 저장본 자리로 가면 묶음 모양이 갈린다 — Space 배치
-    편집기 몫)."""
+    편집기 몫). 모듈 묶음 줄의 같이 바뀌는 칸(`UNIT_SHARED_COLUMNS`)은 형제 줄의 그 칸도 저마다의
+    저장본 값으로 돌린다(`_revert_siblings` — 같이 쓰기로 바뀐 묶음이 갈리지 않게)."""
     index = work.index()
     if column is None and row_id in index.deleted:
         return _Reverted(step=_restore(work, [row_id]), restored=True)
@@ -2366,10 +2548,17 @@ def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Rev
     )
     position = index.live[row_id]
     modules = _module_flags(work.master)
+    siblings = _revert_siblings(work, index, position, saved_row, whole=column is None)
     result = _Reverted()
     for name in columns:
         if name == EQUIPMENT_ID_COLUMN or name not in work.master.columns:
             continue
+        if name in UNIT_SHARED_COLUMNS:
+            for other, other_saved in siblings:
+                key = overlay_key(index.ids[other], name)
+                cleared = _set_overlay(work, patch, key, None)
+                if _set_master(work, patch, other, name, other_saved.get(name)) or cleared:
+                    result.together += 1
         cleared = _set_overlay(work, patch, overlay_key(row_id, name), None)
         changed = cell_text(work.master.iat[position, _loc(work.master, name)]) != cell_text(
             saved_row.get(name)
@@ -2387,6 +2576,30 @@ def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Rev
             _rename(work, patch, work.index(), row_id, origin)
             result.cells += 1
     return result
+
+
+def _revert_siblings(
+    work: _Work, index: GridIndex, position: int, saved_row: pd.Series, *, whole: bool
+) -> list[tuple[int, pd.Series]]:
+    """칸·호기 되돌리기가 같은 칸을 같이 돌릴 형제 — 지금 같은 모듈 묶음(`module_group_rows`)이고
+    저장본이 있는 줄의 (편집본 자리, 저장본 줄). 새 형제는 돌릴 저장본 값이 없어 그대로 둔다. 호기
+    통째 되돌리기가 Main 설비도 돌려 그 줄이 묶음을 떠나면 형제가 아니게 되므로 같이 돌리지
+    않는다. 끼우지 않는다(불러온 목록 그대로)."""
+    groups = module_group_rows(work.master).tolist() if len(work.master) else []
+    group = groups[position] if groups else None
+    if not isinstance(group, str):
+        return []
+    if whole and cell_text(saved_row.get(PARENT_EQUIPMENT_COLUMN)).strip() != group:
+        return []
+    saved = work.saved[1].reset_index(drop=True)
+    pairs: list[tuple[int, pd.Series]] = []
+    for other, name in enumerate(groups):
+        if other == position or not isinstance(name, str) or name != group:
+            continue
+        saved_position = index.saved.get(index.ids[other])
+        if saved_position is not None:
+            pairs.append((other, saved.iloc[saved_position]))
+    return pairs
 
 
 def _shift_dates(work: _Work, patch: _Patch, ids: Sequence[str], days: int) -> int:
@@ -2603,11 +2816,16 @@ def _cell_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
     patch = _Patch()
     index = work.index()
     if column == EQUIPMENT_ID_COLUMN:
-        result = _rename(work, patch, index, row_id, text)
-    else:
-        result = _write_cell(work, patch, index, _module_flags(work.master), row_id, column, text)
-    if result < 0:
+        if _rename(work, patch, index, row_id, text) < 0:
+            work.refused += 1
+        return patch.step(f"{column} 고침")
+    shared = _write_shared(work, patch, index, _module_flags(work.master), [(row_id, column, text)])
+    if shared.skipped:
         work.refused += 1
+    if shared.refusals:
+        work.say(" · ".join(shared.refusals))
+    elif shared.spread:
+        work.say(_group_toast(shared.spread[0][0]))
     return patch.step(f"{column} 고침")
 
 
@@ -2618,22 +2836,19 @@ def _paste_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         return None
     patch = _Patch()
     index = work.index()
-    modules = _module_flags(work.master)
-    changed = 0
     skipped = int(op["skipped"]) if isinstance(op.get("skipped"), int) else 0
-    for row_id, cells in zip(ids, rows, strict=False):
-        if not isinstance(cells, list):
-            continue
-        for column, text in zip(columns, cells, strict=False):
-            if not isinstance(text, str):
-                continue
-            result = _write_cell(work, patch, index, modules, row_id, column, text)
-            if result < 0:
-                skipped += 1
-            else:
-                changed += result
+    cells = [
+        (row_id, column, text)
+        for row_id, line in zip(ids, rows, strict=False)
+        if isinstance(line, list)
+        for column, text in zip(columns, line, strict=False)
+        if isinstance(text, str)
+    ]
+    shared = _write_shared(work, patch, index, _module_flags(work.master), cells)
+    work.refused += len(shared.refusals)
     cut = int(op["cut"]) if isinstance(op.get("cut"), int) else 0
-    work.say(_paste_toast(len(rows) + cut, changed, cut, skipped))
+    toast = _paste_toast(len(rows) + cut, shared.changed, cut, skipped + shared.skipped)
+    work.say(toast + _shared_tail(shared))
     return patch.step("붙여넣기")
 
 
@@ -2644,15 +2859,10 @@ def _set_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
         return None
     patch = _Patch()
     index = work.index()
-    modules = _module_flags(work.master)
-    changed = 0
-    for row_id in dict.fromkeys(ids):
-        result = _write_cell(work, patch, index, modules, row_id, column, text)
-        if result < 0:
-            work.refused += 1
-        else:
-            changed += result
-    work.say(f"값 넣기 — {changed:,}칸 바뀜")
+    cells = [(row_id, column, text) for row_id in dict.fromkeys(ids)]
+    shared = _write_shared(work, patch, index, _module_flags(work.master), cells)
+    work.refused += shared.skipped
+    work.say(f"값 넣기 — {shared.changed:,}칸 바뀜" + _shared_tail(shared))
     return patch.step("값 넣기")
 
 
@@ -2720,7 +2930,13 @@ def _revert_op(work: _Work, op: Mapping[str, Any]) -> UndoStep | None:
             work.say(f"새 호기 {with_object_particle(label)} 뺐습니다")
         return result.step
     where = f"{label} {column}" if column is not None else label
-    text = f"저장본 값으로 되돌림 — {where} {result.cells:,}칸" if result.cells else ""
+    text = (
+        f"저장본 값으로 되돌림 — {where} {result.cells:,}칸"
+        if result.cells or result.together
+        else ""
+    )
+    if result.together:
+        text += GROUP_TAIL.format(groups=1, cells=result.together)
     if result.kept:
         kept = f"{MODULE_LOCK_REASON} — {result.kept:,}칸은 그대로 둡니다"
         text = f"{text} · {kept}" if text else kept
@@ -2932,6 +3148,7 @@ def apply_ops(
         dropped=work.dropped,
         refused=work.refused,
         added=tuple(work.added),
+        inserted=tuple(row_id for row_id in dict.fromkeys(work.inserted) if row_id in work.loaded),
     )
 
 
