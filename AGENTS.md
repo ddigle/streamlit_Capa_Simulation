@@ -1382,7 +1382,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     접힘 포함) 맞는 호기 `is-filter-hit`(새 부품 `.sle-filter-ring` — 보기·편집 모두 만들고 `FILTER_GAP_PX` 5 로 선택 후광 밖, 토큰
     `SPACE_FILTER_RING`), 나머지 `is-filter-out`(`SPACE_FILTER_DIM_OPACITY` — 필요 단축 `is-dim` 과 함께면 `calc` 로 곱함)이고 편집
     오른쪽 칸 칩도 `is-filter-hit` + 칸 머리 「필터 맞음 n」(`.sle-tray-hits`). 닫으면 강조를 끄고 필터는 남는다. 목록 줄 누르기
-    (`goToUnit`) = 고르기 + `zoomToBox`(보기는 `notePick` 도) + 창이 덮으면 덮지 않은 가장 넓은 띠로 밀기(`clearOfSheet`), 편집의
+    (`goToUnit`) = 고르기(칸을 고치는 배치 편집의 「고른 호기」 탭은 고른 것을 두고 누른 호기를 기준으로만 — `sheetRowPick`, 보이는
+    줄이 그대로라 표를 다시 그리지 않아 두 번 누름이 끊기지 않는다) + `zoomToBox`(보기는 `notePick` 도) + 창이 덮으면 덮지 않은 가장
+    넓은 띠로 밀기(`clearOfSheet`), 편집의
     미배치 호기는 오른쪽 칸을 펴 그 칩으로 굴려 깜빡임, 그 밖은 창 아래 한 줄. 편집에서 도면에 선 묶음의 좌표 없는 모듈(`trayKeep` 이 서랍에서 뺌)은 그 모듈을 고른
     채 화면을 그 묶음의 도면에 선 모듈로(같은 `zoomToBox` · `clearOfSheet`) 옮기고 창 아래 「<id> — 도면에 없음 · Main 설비 <묶음>」
     이다. 창 아래 한 줄은 편집 기록(`pushUndo`)마다 지운다. 줄 누르기로 고른 것이 바뀌거나(`attractPicked` — 화면을 다 옮긴 뒤)
