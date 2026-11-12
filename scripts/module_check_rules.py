@@ -1373,6 +1373,15 @@ HAND_MADE_CONTEXT_FORMS: Final = (
     "ctx.__class__(…)",
     'object.__setattr__(ctx, "id", …)',
 )
+# 이름표를 받는 `api.context(…)` 의 인자가 맨이름 `__file__` 이 아닌 꼴(M06) — 남의 모듈 파일 자리를
+# 넣으면 남의 이름표를 받는다. 이 파일이 `__file__` 을 다시 묶으면 맨이름도 이 파일 자리가 아니다.
+# 이름표를 옮겨 담기 · `self.ctx` · 틀 별명 · 주석 없는 인자 같은 돌아가는 꼴은 보지 않는다 — 앱
+# 관리자의 PR 점검 몫이다.
+# 지침서 부록 B 의 M06 우회 줄이 이 꼴을 다 적는다(`tests/test_module_guide_sync.py`).
+OTHER_FILE_CONTEXT_FORMS: Final = (
+    "api.context(<__file__ 이 아닌 인자>)",
+    "api.context(<다시 묶은 __file__>)",
+)
 
 
 def _context_holders(tree: ast.Module, names: _Names) -> set[str]:
@@ -1418,6 +1427,33 @@ def _is_own_context_call(node: ast.AST, names: _Names) -> bool:
     )
 
 
+def _rebinds_file(tree: ast.Module, names: _Names) -> bool:
+    """이 파일이 `__file__` 을 다시 묶는가(대입 · 인자 · 반복 변수 · `with … as` · `except … as` ·
+    `case` 잡기 · 정의 이름 · `global` · import 별명) — 그러면 맨이름 `__file__` 도 이 파일 자리라고
+    믿지 않는다."""
+    if "__file__" in names.aliases:
+        return True
+    for node in ast.walk(tree):
+        bound: str | None
+        if isinstance(node, ast.Name):
+            bound = node.id if isinstance(node.ctx, (ast.Store, ast.Del)) else None
+        elif isinstance(node, ast.arg):
+            bound = node.arg
+        elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)):
+            bound = node.name
+        elif isinstance(node, ast.MatchMapping):
+            bound = node.rest
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound = node.name
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound = "__file__" if "__file__" in node.names else None
+        else:
+            continue
+        if bound == "__file__":
+            return True
+    return False
+
+
 def _own_context_names(tree: ast.Module, names: _Names) -> set[str]:
     """파일 어디서나 `api.context(__file__)` 만 대입한 이름 — 그 `.id` 는 자기 id 다. 다른 값 ·
     인자 · 반복 변수 · `with … as` 따위로도 묶이는 이름은 넣지 않는다(어느 이름표인지
@@ -1445,7 +1481,7 @@ def _own_context_names(tree: ast.Module, names: _Names) -> set[str]:
             and isinstance(node.target, ast.Name)
         ):
             own[node.target.id] += 1
-    if stores["__file__"] or "__file__" in others:
+    if _rebinds_file(tree, names):
         return set()
     return {
         name
@@ -1537,6 +1573,27 @@ def _check_hand_made_context(tree: ast.Module, names: _Names, context: _FileCont
             node,
             f"`{shown}` 꼴로 이름표(`ModuleContext`)를 {what} 짓습니다 — 남의 데이터 자리와 버킷을 "
             "읽고 덮게 됩니다. 이름표는 `api.context(__file__)` 로만 받습니다",
+        )
+
+
+def _check_context_argument(tree: ast.Module, names: _Names, context: _FileContext) -> None:
+    """이름표를 받는 `api.context(…)` 의 인자가 맨이름 `__file__` 이 아닌 꼴(M06) — 글자 경로 ·
+    경로 식 · 변수 · `file=` 이름 인자 · 인자 없음, 그리고 `__file__` 을 다시 묶은 파일의
+    `api.context(__file__)`. 남의 모듈 파일 자리면 남의 이름표를 받는다. 시험 파일도 같다."""
+    rebound = _rebinds_file(tree, names)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or names.resolve(node.func) != _CONTEXT_FACTORY:
+            continue
+        own = _is_own_context_call(node, names)
+        if own and not rebound:
+            continue
+        shown = OTHER_FILE_CONTEXT_FORMS[1 if own else 0]
+        context.add(
+            "M06",
+            "error",
+            node,
+            f"`{shown}` 꼴로 이름표(`ModuleContext`)를 받습니다 — 남의 모듈 파일 자리면 남의 "
+            "데이터 자리와 버킷을 읽고 덮게 됩니다. 이름표는 `api.context(__file__)` 로만 받습니다",
         )
 
 
@@ -2222,6 +2279,7 @@ def check_source(
     _check_calls(tree, names, context)
     _check_window_escapes(tree, names, context)
     _check_hand_made_context(tree, names, context)
+    _check_context_argument(tree, names, context)
     _check_subscripts_and_targets(tree, names, context)
     _check_cache(tree, names, context)
     if not context.is_test and not is_page:

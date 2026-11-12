@@ -695,6 +695,100 @@ def test_m06_leaves_the_own_context_alone(tmp_path: Path, body: str) -> None:
     )
 
 
+def _context_forms(tmp_path: Path, body: str, *, rel: str = "page.py") -> list[str]:
+    """`rel` 에 `body` 를 둔 tmp 모듈에서 M06 이 「이름표를 받는」 꼴로 짚은 것(꼴 표기)."""
+    files = {"page.py": HEADER + "import streamlit as st\n", rel: HEADER + body}
+    folder = _module(tmp_path / "modules", "demo_x", files)
+    result = rules.check_module_folder(
+        folder, module_id="demo_x", pages=["page.py"], environment=ENVIRONMENT, git=None
+    )
+    return [
+        form
+        for item in result.findings
+        if item.path == rel and item.rule == "M06" and item.level == "error"
+        for form in rules.OTHER_FILE_CONTEXT_FORMS
+        if item.message.startswith(f"`{form}` 꼴로 이름표(`ModuleContext`)를 받습니다")
+        and item.message.endswith("이름표는 `api.context(__file__)` 로만 받습니다")
+    ]
+
+
+_NOT_FILE, _REBOUND = rules.OTHER_FILE_CONTEXT_FORMS
+
+
+@pytest.mark.parametrize(
+    ("body", "form"),
+    [
+        (_API + 'ctx = api.context("modules/demo_y/page.py")\n', _NOT_FILE),
+        (
+            "from capa_simulation.module_api import context\n"
+            'ctx = context("modules/demo_y/page.py")\n',
+            _NOT_FILE,
+        ),
+        (
+            "import capa_simulation.module_api\n"
+            'ctx = capa_simulation.module_api.context("modules/demo_y/page.py")\n',
+            _NOT_FILE,
+        ),
+        (
+            _API + "from pathlib import Path\n"
+            'ctx = api.context(Path(__file__).parents[1].parent / "demo_y" / "page.py")\n',
+            _NOT_FILE,
+        ),
+        (_API + "from pathlib import Path\nctx = api.context(Path(__file__))\n", _NOT_FILE),
+        (_API + "ctx = api.context(str(__file__))\n", _NOT_FILE),
+        (_API + 'where = "modules/demo_y/page.py"\nctx = api.context(where)\n', _NOT_FILE),
+        (_API + "\n\ndef other(path: str) -> object:\n    return api.context(path)\n", _NOT_FILE),
+        (_API + "ctx = api.context(file=__file__)\n", _NOT_FILE),
+        (_API + "ctx = api.context()\n", _NOT_FILE),
+        (_API + 'ctx = api.context(__file__, "modules/demo_y/page.py")\n', _NOT_FILE),
+        (_API + "ARGS = [__file__]\nctx = api.context(*ARGS)\n", _NOT_FILE),
+        (_API + 'NAME = api.context("modules/demo_y/page.py").id\n', _NOT_FILE),
+        (_API + '__file__ = "modules/demo_y/page.py"\nctx = api.context(__file__)\n', _REBOUND),
+        (
+            _API + "\n\ndef other(__file__: str) -> object:\n    return api.context(__file__)\n",
+            _REBOUND,
+        ),
+        (
+            _API + 'for __file__ in ["modules/demo_y/page.py"]:\n    ctx = api.context(__file__)\n',
+            _REBOUND,
+        ),
+        (
+            "from os import sep as __file__\n" + _API + "ctx = api.context(__file__)\n",
+            _REBOUND,
+        ),
+    ],
+)
+def test_m06_catches_a_context_taken_from_another_file(
+    tmp_path: Path, body: str, form: str
+) -> None:
+    """이름표를 받는 `api.context(…)` 의 인자가 맨이름 `__file__` 이 아니면 남의 모듈 파일 자리로
+    남의 이름표를 받을 수 있다 — M06 오류다. `__file__` 을 다시 묶은 파일의
+    `api.context(__file__)` 도 같다. 시험 파일도 같다."""
+    assert _context_forms(tmp_path / "page", body) == [form]
+    assert _context_forms(tmp_path / "test", body, rel="tests/test_demo_x_more.py") == [form]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _CTX,
+        _API + "\n\ndef load() -> str:\n    return api.context(__file__).id\n",
+        _API + "\n\nclass Page:\n    def __init__(self) -> None:\n"
+        "        self.ctx = api.context(__file__)\n",
+        'import pandas as pd\n\nwith pd.option_context("display.width", 80):\n    pass\n',
+        '\n\ndef context(path: str) -> str:\n    return path\n\n\nFOUND = context("x")\n',
+        _CTX + "make = api.context\n",
+    ],
+)
+def test_m06_leaves_the_own_file_context_alone(tmp_path: Path, body: str) -> None:
+    """맨이름 `__file__` 하나를 넘긴 `api.context(__file__)`(함수 · 클래스 안 포함)와
+    `module_api` 의 것이 아닌 `context(…)` 는 넘긴다. `api.context` 를 다른 이름에 담는 꼴은
+    돌아가는 꼴이라 보지 않는다(앱 관리자의 PR 점검 몫)."""
+    assert _context_forms(tmp_path / "page", body) == []
+    assert _context_forms(tmp_path / "test", body, rel="tests/test_demo_x_more.py") == []
+    assert ("M06", "error") not in _page_rules(tmp_path / "all", body)
+
+
 def test_the_way_around_the_window_stops_the_self_tests(tmp_path: Path) -> None:
     """그 코드를 실행하지 않는다 — M06 은 시험을 돌리기 전에 멈추는 규칙이다."""
     assert "M06" in rules.BLOCKING_RULES
