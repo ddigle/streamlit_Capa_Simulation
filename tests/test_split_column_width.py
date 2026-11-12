@@ -319,9 +319,9 @@ def test_the_narrow_rule_needs_its_viewport_width() -> None:
 
 def test_process_detail_clips_its_label_drawing_at_every_width_but_not_its_tooltip() -> None:
     """공정 Capa 상세는 줄 이름 칸 풍선이 넘치게 라벨 그림의 `overflow` 를 풀되, 그림·글 SVG 는 어느
-    창 폭에서나 다시 자르고 풍선 SVG(마지막)만 넘치게 둔다. 풀어 두면 라벨 그림의 바깥 테 · 흰 바탕이
-    칸 밖으로 새어 구분 칸이 월 칸 위에 떠 보이고(2026-11-12 사용자 답 k-b3), 좁은 창에서는 줄 이름이
-    월 칸 위에 겹친다(개선 거리 I12)."""
+    창 폭에서나 다시 자르고 풍선 SVG(마지막)만 넘치게 둔다. 풀어 두면 라벨 그림의 바깥 테 · 흰
+    바탕이 칸 밖으로 새어 구분 칸이 월 칸 위에 떠 보이고(2026-11-12 사용자 답 k-b3), 좁은 창에서는
+    줄 이름이 월 칸 위에 겹친다(개선 거리 I12)."""
     from capa_simulation.components.process_capa_view import (
         LABEL_CHART_KEY,
         label_overflow_style,

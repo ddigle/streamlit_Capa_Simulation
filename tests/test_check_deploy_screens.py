@@ -4422,7 +4422,7 @@ def test_the_upeh_rows_summary_carries_counts_only() -> None:
 
 def test_the_entry_sections_item_reads_what_the_app_draws() -> None:
     """구획 칩 key · 칩 글자 차례 · HOME 그림 key · 이동 칸 수 · 근거 카드 링크 · 공정 상자는 앱과
-    같다. 들어온 길마다 다시 펴는 구획(HOME → ①, 가용설비 현황 → ④)도 앱의 표와 같다."""
+    같다. 들어온 길마다 다시 펴는 구획(HOME → ①, 가용설비 현황 → ⑤)도 앱의 표와 같다."""
     from capa_simulation.components import availability_gap_panel as gap
     from capa_simulation.components.home_rendering import KEY_PROCESS_MONTHS_CHART_KEY
     from capa_simulation.components.process_capa_canvas import SECTION_IDS
@@ -4440,7 +4440,7 @@ def test_the_entry_sections_item_reads_what_the_app_draws() -> None:
         SECTION_LABELS[section] for section in SECTION_IDS
     )
     assert SECTION_IDS.index(ENTRY_SECTIONS[FROM_HOME]) == 0
-    assert SECTION_IDS.index(ENTRY_SECTIONS[FROM_GAP]) == 3
+    assert SECTION_IDS.index(ENTRY_SECTIONS[FROM_GAP]) == screens.GAP_ENTRY_SECTION
     assert screens.HOME_KEY_PROCESS_CHART_KEY == KEY_PROCESS_MONTHS_CHART_KEY
     assert screens.HOME_CELL_LINK_FIELD_COUNT == len(HOME_CELL_LINK_FIELDS)
     assert HOME_CELL_LINK_FIELDS[0] == "process"
@@ -4486,20 +4486,25 @@ def test_the_home_cell_link_sits_at_the_end_of_the_key_process_customdata() -> N
 
 
 def test_opened_section_text_names_only_the_entry_section() -> None:
-    assert screens.opened_section_text([True, False, False, False], 0) == "① 공식 만 펼침"
-    assert screens.opened_section_text([False, False, False, True], 3) == "④ 비가동 만 펼침"
-    assert screens.opened_section_text([True, True, False, True], 3) == (
-        "④ 비가동 펼침 · 다른 구획 2개도 펼침"
+    gap = screens.GAP_ENTRY_SECTION
+    assert screens.opened_section_text([True, False, False, False, False], 0) == "① Static 만 펼침"
+    assert screens.opened_section_text([False, False, False, False, True], gap) == (
+        "⑤ 비가동 일정 만 펼침"
     )
-    assert screens.opened_section_text([False, False, False, False], 0) == "① 공식 접힌 채"
+    assert screens.opened_section_text([True, True, False, False, True], gap) == (
+        "⑤ 비가동 일정 펼침 · 다른 구획 2개도 펼침"
+    )
+    assert screens.opened_section_text([False] * 5, 0) == "① Static 접힌 채"
     assert screens.opened_section_text(None, 0) == "구획 칩 없음"
 
 
 def test_the_entry_sections_summary_carries_counts_only() -> None:
-    line = screens.summarize_entry_sections(True, "① 공식 만 펼침", 0, "④ 비가동 만 펼침", True)
+    line = screens.summarize_entry_sections(
+        True, "① Static 만 펼침", 0, "⑤ 비가동 일정 만 펼침", True
+    )
     assert line == (
-        "구획 모두 접음 · HOME 칸 → ① 공식 만 펼침 · 콘솔 경고 0줄 · 근거 카드 링크 → ④ 비가동 만 "
-        "펼침 · 구획 되돌림"
+        "구획 모두 접음 · HOME 칸 → ① Static 만 펼침 · 콘솔 경고 0줄 · 근거 카드 링크 → ⑤ 비가동 "
+        "일정 만 펼침 · 구획 되돌림"
     )
     assert "콘솔 경고 못 셈" in screens.summarize_entry_sections(True, "x", None, "y", True)
     assert screens.summarize_entry_sections(False, "안 해 봄", None, "안 해 봄", False).startswith(
@@ -4584,22 +4589,23 @@ def _raise(exc: BaseException) -> Callable[[], Any]:
 def test_a_home_path_that_stops_still_leaves_the_link_path_and_the_warning_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """2026-10-26 리뷰 — ④ 길이 HOME 길에 묶여 HOME 칸 누름이 예외(1430 대행의 `TimeoutError`)로
-    끝나면 대행 칸 셋(들어온 길 1 · 4 · 경고 0줄)을 한꺼번에 잃었다. 이제 HOME 길만 `멈춤(종류)` 로
-    적고, 공정 Capa 상세를 다시 열어 구획을 접은 뒤 ④ 길을 돌며, 경고 줄은 그때까지를 센다."""
+    """2026-10-26 리뷰 — 근거 카드 길이 HOME 길에 묶여 HOME 칸 누름이 예외(1430 대행의
+    `TimeoutError`)로 끝나면 대행 칸 셋(들어온 길 1 · 4 · 경고 0줄)을 한꺼번에 잃었다. 이제 HOME
+    길만 `멈춤(종류)` 로 적고, 공정 Capa 상세를 다시 열어 구획을 접은 뒤 ⑤ 길을 돌며, 경고 줄은
+    그때까지를 센다."""
     screen = _EntryScreen(console=[2, 2])
     folded = _entry_paths(
         monkeypatch,
         screen,
         home=_raise(TimeoutError("화면이 멈추지 않았다")),
-        gap=lambda: "④ 비가동 만 펼침",
+        gap=lambda: "⑤ 비가동 일정 만 펼침",
     )
 
     line = screens.check_entry_sections(cast(Screen, screen))
 
     assert line == (
         "구획 모두 접음 · HOME 칸 → 멈춤(TimeoutError) · 콘솔 경고 0줄 · 근거 카드 링크 → "
-        "④ 비가동 만 펼침 · 구획 되돌림"
+        "⑤ 비가동 일정 만 펼침 · 구획 되돌림"
     )
     assert "화면이 멈추지 않았다" not in line
     # 접기는 늘 공정 Capa 상세에서 — 처음 · HOME 길 뒤(다시 열고) · 끝 되돌림.
@@ -4610,17 +4616,18 @@ def test_a_home_path_that_stops_still_leaves_the_link_path_and_the_warning_count
 def test_a_home_path_without_a_cell_still_runs_the_link_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """HOME 에 누를 칸이 없으면(결함 아님) 예전에는 ④ 칸이 「안 해 봄」 이었다 — 이제 ④ 길은
+    """HOME 에 누를 칸이 없으면(결함 아님) 예전에는 그 칸이 「안 해 봄」 이었다 — 이제 ⑤ 길은
     돈다."""
     screen = _EntryScreen()
     _entry_paths(
-        monkeypatch, screen, home=lambda: "주요공정 그림 없음", gap=lambda: "④ 비가동 만 펼침"
+        monkeypatch, screen, home=lambda: "주요공정 그림 없음", gap=lambda: "⑤ 비가동 일정 만 펼침"
     )
 
     line = screens.check_entry_sections(cast(Screen, screen))
 
     assert (
-        "HOME 칸 → 주요공정 그림 없음 · 콘솔 경고 못 셈 · 근거 카드 링크 → ④ 비가동 만 펼침" in line
+        "HOME 칸 → 주요공정 그림 없음 · 콘솔 경고 못 셈 · 근거 카드 링크 → ⑤ 비가동 일정 만 펼침"
+        in line
     )
 
 
@@ -4631,7 +4638,7 @@ def test_a_link_path_that_stops_keeps_the_home_cell(monkeypatch: pytest.MonkeyPa
     line = screens.check_entry_sections(cast(Screen, screen))
 
     assert line == (
-        "구획 모두 접음 · HOME 칸 → ① 공식 만 펼침 · 콘솔 경고 1줄 · 근거 카드 링크 → "
+        "구획 모두 접음 · HOME 칸 → ① Static 만 펼침 · 콘솔 경고 1줄 · 근거 카드 링크 → "
         "멈춤(RuntimeError) · 구획 되돌림"
     )
 

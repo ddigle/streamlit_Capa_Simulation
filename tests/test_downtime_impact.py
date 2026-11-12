@@ -1,16 +1,16 @@
-# Purpose: 공정 Capa 상세 ② 「비가동 영향」 의 손실 갈림·확보율 영향 계산과 캔버스 줄을 고정한다.
+# Purpose: 비가동 손실 갈림·확보율 영향 계산과 공정 Capa 상세 「③ 비가동」 비가동대수 줄을 고정한다.
 
-"""② 「비가동 영향」(2026-10-27 사용자 결정 「같이 넣어」).
+"""비가동 손실(`downtime_impact`)과 공정 Capa 상세 「③ 비가동」 의 비가동대수 줄(2026-11-12 사용자
+답 q5 (가) — 호기별 비가동 일정이 깎은 대수 + 입력 비가동 대수).
 
 달마다 손실 = 호기 비가동 손실(비가동을 비운 반사실 − 실제) + 입력 비가동 반영(0 에서 멈춘 뒤
-실제로 뺀 몫)이고, 확보율 영향은 그 손실 ÷ 소요 × 100(%)이다 — 가용·소요는 계획의 단축 전 값
-(② 확보율과 같은 길)이다. 계산(`downtime_impact`)은 손으로 셀 수 있는 표와 실제 설비 일정 둘로
-보고, 그림은 결합 캔버스 시험의 설비 일정(`_dynamic`)에 손실 칸만 덧입혀 본다.
+실제로 뺀 몫)이고, 확보율 영향은 그 손실 ÷ 소요 × 100(%)이다 — 가용·소요는 계획의 단축 전 값이다.
+계산(`downtime_impact`)은 손으로 셀 수 있는 표와 실제 설비 일정 둘로 보고, 그림은 결합 캔버스
+시험의 설비 일정(`_dynamic`)에 손실 칸만 덧입혀 본다.
 """
 
 from __future__ import annotations
 
-import json
 import math
 from datetime import date
 from typing import Any
@@ -19,12 +19,11 @@ import pandas as pd
 import pytest
 from test_process_capa_canvas import (
     MONTHS,
-    REQUIRED,
     _annotations,
     _canvas,
     _dynamic,
-    _label_hovers,
     _row_center,
+    _section_rows,
     _targets,
     _texts,
 )
@@ -45,12 +44,9 @@ from capa_simulation.components.process_capa_canvas import (
     CUSTOMDATA_HOVER,
     CUSTOMDATA_MONTH,
     CUSTOMDATA_ROW,
-    IMPACT_LABEL_HOVER,
-    ROW_DYNAMIC_BALANCE,
-    ROW_DYNAMIC_COMPARE,
-    ROW_DYNAMIC_DELTA,
-    ROW_DYNAMIC_IMPACT,
-    TWO_LINE_ROW_HEIGHT_PX,
+    ROW_EFFECT_LOSS,
+    SECTION_EFFECT,
+    VALUE_ROW_HEIGHT_PX,
     DynamicCanvasInput,
     ProcessCapaCanvas,
 )
@@ -207,7 +203,7 @@ def test_no_downtime_at_all_gives_zero_loss_every_month() -> None:
     assert list(bridge["호기 비가동 손실"]) == [0.0, 0.0, 0.0]
 
 
-# ------------------------------------------------------------------ 공정 Capa 상세 ② 줄
+# ------------------------------------------------------------------ 공정 Capa 상세 ③ 비가동대수 줄
 
 
 def _impact_dynamic(
@@ -231,16 +227,13 @@ def _impact_dynamic(
     return DynamicCanvasInput(**{**base.__dict__, "bridge": bridge, "process_months": months})
 
 
-def _cell_lines(canvas: ProcessCapaCanvas, row_id: str) -> dict[int, list[tuple[str, str]]]:
-    """그 행 칸마다 (글, 색) — 위 줄부터."""
+def _cell_texts(canvas: ProcessCapaCanvas, row_id: str) -> dict[int, tuple[str, str]]:
+    """그 행 칸마다 (글, 색)."""
     center = _row_center(canvas, row_id)
-    found: dict[int, list[tuple[float, str, str]]] = {}
-    for x, y, text, color in _texts(canvas):
-        if abs(y - center) < TWO_LINE_ROW_HEIGHT_PX / 2:
-            found.setdefault(int(x), []).append((y, text, color))
     return {
-        index: [(text, color) for _, text, color in sorted(items, reverse=True)]
-        for index, items in found.items()
+        int(x): (text, color)
+        for x, y, text, color in _texts(canvas)
+        if abs(y - center) < VALUE_ROW_HEIGHT_PX / 2
     }
 
 
@@ -252,135 +245,73 @@ def _hovers(canvas: ProcessCapaCanvas, row_id: str) -> dict[int, str]:
     }
 
 
-def test_the_impact_row_sits_right_under_the_monthly_change_with_two_lines() -> None:
+def test_the_loss_row_heads_the_downtime_section() -> None:
     canvas = _canvas(dynamic=_impact_dynamic({0: 1.0}, {}))
-    ids = list(canvas.row_ids)
-    start = ids.index("title:dynamic")
 
-    assert ids[start + 1 : start + 6] == [
-        ROW_DYNAMIC_COMPARE,
-        "dynamic_available",
-        ROW_DYNAMIC_DELTA,
-        ROW_DYNAMIC_IMPACT,
-        ROW_DYNAMIC_BALANCE,
-    ]
-    targets = [item for item in _targets(canvas) if item[0][CUSTOMDATA_ROW] == ROW_DYNAMIC_IMPACT]
-    assert {height for _, _, height in targets} == {TWO_LINE_ROW_HEIGHT_PX}
+    assert _section_rows(canvas.row_ids, SECTION_EFFECT)[0] == ROW_EFFECT_LOSS
+    targets = [item for item in _targets(canvas) if item[0][CUSTOMDATA_ROW] == ROW_EFFECT_LOSS]
     assert len(targets) == len(MONTHS)  # 빈 달도 칸(풍선)이 있다
     labels = {item["text"] for item in _annotations(canvas.labels)}
-    assert "비가동 영향" in labels
-    assert _label_hovers(canvas)[ROW_DYNAMIC_IMPACT] == IMPACT_LABEL_HOVER
-    # ② 를 접으면 함께 숨는다.
-    folded = _canvas(dynamic=_impact_dynamic({0: 1.0}, {}), collapsed=frozenset({"dynamic"}))
-    assert ROW_DYNAMIC_IMPACT not in folded.row_ids
+    # 줄 이름은 다른 대수 줄처럼 붙여 쓴다(2026-11-12 사용자 메모 k-c0).
+    assert "비가동대수" in labels and "비가동 대수" not in labels
+    folded = _canvas(dynamic=_impact_dynamic({0: 1.0}, {}), collapsed=frozenset({SECTION_EFFECT}))
+    assert ROW_EFFECT_LOSS not in folded.row_ids
 
 
-def test_the_cell_reads_units_then_points_and_the_hover_names_both_rates_and_the_split() -> None:
-    """26.11: 호기 1.2 + 입력 0.6 = 1.8 대, 소요 45 · 가용 45 → 비가동 없으면 104.0% · 지금 100.0% ·
-    −4.0%."""
-    dynamic = _impact_dynamic({0: 1.2}, {0: 0.6}, plan={0: (45.0, 45.0)})
-    canvas = _canvas(dynamic=dynamic)
-    lines = _cell_lines(canvas, ROW_DYNAMIC_IMPACT)
+def test_the_cell_reads_the_loss_and_the_hover_names_the_split() -> None:
+    """26.11: 호기 1.2 + 입력 0.6 = 1.8 대."""
+    canvas = _canvas(dynamic=_impact_dynamic({0: 1.2}, {0: 0.6}, plan={0: (45.0, 45.0)}))
+    texts = _cell_texts(canvas, ROW_EFFECT_LOSS)
 
-    assert [text for text, _ in lines[0]] == [f"{MINUS}1.8대", f"{MINUS}4.0%"]
-    assert {color for _, color in lines[0]} == {tokens.TEXT}
-    hover = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[0]]
-    first, second = hover.split("<br>")
-    assert first == f"<b>26.11</b> · 비가동 영향 {MINUS}1.8대 · {MINUS}4.0%"
-    assert second == (
-        f"비가동 없으면 확보율 104.0% → 지금 100.0% · 호기 비가동 {MINUS}1.2대 + "
-        f"입력 비가동 {MINUS}0.6대"
-    )
+    assert texts[0] == ("1.8", tokens.TEXT)
+    assert _hovers(canvas, ROW_EFFECT_LOSS)[MONTHS[0]].split("<br>") == [
+        "<b>26.11</b> · 비가동대수 1.8",
+        "호기 비가동 1.2 + 입력 비가동 0.6",
+    ]
 
 
 def test_a_month_without_loss_is_blank_and_says_so_in_the_hover() -> None:
     canvas = _canvas(dynamic=_impact_dynamic({0: 1.2}, {}))
-    lines = _cell_lines(canvas, ROW_DYNAMIC_IMPACT)
-    hovers = _hovers(canvas, ROW_DYNAMIC_IMPACT)
+    texts = _cell_texts(canvas, ROW_EFFECT_LOSS)
+    hovers = _hovers(canvas, ROW_EFFECT_LOSS)
 
-    assert set(lines) == {0}
+    assert set(texts) == {0}
     for month in MONTHS[1:]:
-        assert "비가동 영향 없음" in hovers[month]
-        assert "%" not in hovers[month]
+        assert "비가동 없음" in hovers[month]
 
 
 def test_an_input_only_month_names_only_the_input_share() -> None:
-    """27.01: 입력 0.5 만 — 소요 47.5 라 −1.1%, 갈림은 입력 하나(0 인 호기 쪽은 뺀다)."""
     canvas = _canvas(dynamic=_impact_dynamic({}, {2: 0.5}))
-    lines = _cell_lines(canvas, ROW_DYNAMIC_IMPACT)
-    hover = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[2]]
+    hover = _hovers(canvas, ROW_EFFECT_LOSS)[MONTHS[2]]
 
-    assert REQUIRED[2] == 47.5
-    assert [text for text, _ in lines[2]] == [f"{MINUS}0.5대", f"{MINUS}1.1%"]
-    assert hover.endswith(f" · 입력 비가동 {MINUS}0.5대")
+    assert _cell_texts(canvas, ROW_EFFECT_LOSS)[2][0] == "0.5"
+    assert hover.endswith("<br>입력 비가동 0.5")
     assert "호기 비가동" not in hover and " + " not in hover
 
 
-def test_a_zero_demand_month_shows_units_only() -> None:
-    canvas = _canvas(dynamic=_impact_dynamic({3: 0.7}, {}, plan={3: (0.0, 2.0)}))
-    lines = _cell_lines(canvas, ROW_DYNAMIC_IMPACT)
-    hover = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[3]]
-
-    assert [text for text, _ in lines[3]] == [f"{MINUS}0.7대"]
-    assert hover.split("<br>") == [
-        f"<b>27.02</b> · 비가동 영향 {MINUS}0.7대",
-        f"소요 0 — 확보율 영향 없음 · 호기 비가동 {MINUS}0.7대",
-    ]
-
-
 def test_a_split_that_does_not_add_up_as_written_gets_the_approx_mark() -> None:
-    """0.85 + 0.85 = 1.7 인데 적힌 갈림은 −0.8 + −0.8(= −1.6)이다 — 갈림 앞에 「≈」."""
+    """0.85 + 0.85 = 1.7 인데 적힌 갈림은 0.8 + 0.85(= 1.65 — 첫째 자리 1.6)다 — 갈림 앞에 「≈」.
+    입력 몫은 ⑤ 첫 줄과 같은 글(소수 둘째 자리까지)이다."""
     canvas = _canvas(dynamic=_impact_dynamic({5: 0.85}, {5: 0.85}))
-    hover = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[5]]
-    assert f"비가동 영향 {MINUS}1.7대" in hover
-    assert f"≈ 호기 비가동 {MINUS}0.8대 + 입력 비가동 {MINUS}0.8대" in hover
-    exact = _hovers(_canvas(dynamic=_impact_dynamic({0: 1.2}, {0: 0.6})), ROW_DYNAMIC_IMPACT)
-    assert f"· 호기 비가동 {MINUS}1.2대 + 입력 비가동 {MINUS}0.6대" in exact[MONTHS[0]]
-    assert "≈ 호기" not in exact[MONTHS[0]]
+    hover = _hovers(canvas, ROW_EFFECT_LOSS)[MONTHS[5]]
+    assert "비가동대수 1.7" in hover
+    assert "≈ 호기 비가동 0.8 + 입력 비가동 0.85" in hover
+    exact = _hovers(_canvas(dynamic=_impact_dynamic({0: 1.2}, {0: 0.6})), ROW_EFFECT_LOSS)
+    assert exact[MONTHS[0]].endswith("<br>호기 비가동 1.2 + 입력 비가동 0.6")
 
 
 def test_a_tiny_loss_is_not_written_as_zero() -> None:
-    """하루치 손실 × 작은 환산비(0.003대)도 「0.0」 이 아니라 자리를 늘려 적는다.
-    0.0004대(소요 10)는 셋째 자리에서도 0 이라 0 이 아닐 때까지 늘린다 — 「0.00대」 가
-    아니다."""
+    """하루치 손실 × 작은 환산비(0.003대)도 「0.0」 이 아니라 자리를 늘려 적는다(0.05 미만 —
+    2026-11-12 시안 카드 q5 「답 밖에서 정한 것」)."""
     canvas = _canvas(dynamic=_impact_dynamic({1: 0.003}, {}))
-    texts = [text for text, _ in _cell_lines(canvas, ROW_DYNAMIC_IMPACT)[1]]
-    assert texts[0] == f"{MINUS}0.003대"
-
-    tiny = _canvas(dynamic=_impact_dynamic({2: 0.0004}, {}, plan={2: (10.0, 9.0)}))
-    assert [text for text, _ in _cell_lines(tiny, ROW_DYNAMIC_IMPACT)[2]] == [
-        f"{MINUS}0.0004대",
-        f"{MINUS}0.004%",
-    ]
-    hover = _hovers(tiny, ROW_DYNAMIC_IMPACT)[MONTHS[2]]
-    assert hover.endswith(f" · 호기 비가동 {MINUS}0.0004대")
+    assert _cell_texts(canvas, ROW_EFFECT_LOSS)[1][0] == "0.003"
+    tiny = _canvas(dynamic=_impact_dynamic({2: 0.0004}, {}))
+    assert _cell_texts(tiny, ROW_EFFECT_LOSS)[2][0] == "0.0004"
+    assert _hovers(tiny, ROW_EFFECT_LOSS)[MONTHS[2]].endswith("<br>호기 비가동 0.0004")
 
 
-def test_a_rate_pair_that_does_not_recompute_as_written_gets_the_approx_mark() -> None:
-    """소요 100 · 가용 98.46 · 손실 6.48 — 적힌 확보율 짝 98.5 − 104.9 는 −6.4 인데 첫 줄은 −6.5%
-    다(따로 반올림). 짝 앞에 「≈」. 셈이 맞는 짝(104.0% → 100.0% · −4.0%)은 앞붙임이 없다."""
-    canvas = _canvas(dynamic=_impact_dynamic({0: 6.48}, {}, plan={0: (100.0, 98.46)}))
-    first, second = _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[0]].split("<br>")
-    assert first.endswith(f"비가동 영향 {MINUS}6.5대 · {MINUS}6.5%")
-    assert second.startswith("≈ 비가동 없으면 확보율 104.9% → 지금 98.5% · ")
-    exact = _canvas(dynamic=_impact_dynamic({0: 1.2}, {0: 0.6}, plan={0: (45.0, 45.0)}))
-    assert (
-        _hovers(exact, ROW_DYNAMIC_IMPACT)[MONTHS[0]].split("<br>")[1].startswith("비가동 없으면")
-    )
-
-
-def test_past_months_are_muted_in_the_impact_row() -> None:
+def test_past_months_are_muted_in_the_loss_row() -> None:
     canvas = _canvas(dynamic=_impact_dynamic({0: 1.0, 4: 1.0}, {}, today=date(2027, 2, 10)))
-    lines = _cell_lines(canvas, ROW_DYNAMIC_IMPACT)
-    assert {color for _, color in lines[0]} == {tokens.TEXT_MUTED}
-    assert {color for _, color in lines[4]} == {tokens.TEXT}
-
-
-def test_the_upeh_plan_marks_the_impact_row_and_its_hover() -> None:
-    """가정 계획이면 % 가 가정 소요로 바뀌어 라벨에 표지를 달고 풍선이 그 기준을 밝힌다."""
-    dynamic = _impact_dynamic({0: 1.0}, {})
-    marked = DynamicCanvasInput(**{**dynamic.__dict__, "official_pulls": {}})
-    canvas = _canvas(dynamic=marked)
-    labels = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
-    assert "비가동 영향 · UPEH 가정" in labels
-    assert _hovers(canvas, ROW_DYNAMIC_IMPACT)[MONTHS[0]].endswith("확보율은 UPEH 가정 소요 기준")
+    texts = _cell_texts(canvas, ROW_EFFECT_LOSS)
+    assert texts[0][1] == tokens.TEXT_MUTED
+    assert texts[4][1] == tokens.TEXT

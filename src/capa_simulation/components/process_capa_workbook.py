@@ -4,7 +4,7 @@
 
 화면이 그리는 **같은 행 모델**(`process_capa_canvas.build_process_capa_rows`)을 읽어 칸 하나하나를
 엑셀 칸으로 옮긴다 — 판정 · 미달 칠 · 띠를 다시 셈하지 않는다(화면과 갈리면 안 된다). 그래서 켜진
-구획(① ~ ④ 칩) · 「제품별 소요대수」 펼침과 분류 · 조회기간의 달 · UPEH 가정 세 줄 · HOME 표시
+구획(① ~ ⑤ 칩) · 「제품별 소요대수」 펼침과 분류 · 조회기간의 달 · UPEH 가정 세 줄 · HOME 표시
 확보율 줄 · 「더 보기」 30줄 상한이 화면 그대로 선다.
 
 - **서식** — 색은 `design/tokens.py` 의 밝은 테마 토큰이다(엑셀은 흰 바탕 — `theme.pinned_mode`).
@@ -16,9 +16,9 @@
   글이 적는 값과 같은 꼴의 숫자 꼴로 되읽는다(`screen_number`). 엑셀이 보이는 글은 화면 글과
   같다(값은 화면이 반올림한 값이다). 꼴을 모르는 글(「기준✕·일정✕」 · 「—」 · 「기한 지남」)은
   글자 셀이다.
-- **두 줄 칸**(② 가용 「→ 단축 후」 · 목표 과부족 「→ 단축 후 / 기한 지남」 · 비가동 영향 「%」)은
-  숫자 셀 하나에 두 값을 못 담아 바로 아래에 「└ 단축 후」 같은 딸린 줄을 두고 같은 칠을 잇는다.
-- **③ · ④** 는 그림 대신 글이다(`process_capa_canvas.track_texts` — 그림과 같은 자리) — 호기 줄
+- **두 줄 칸**(칸 둘째 줄 `Cell.sub`)은 숫자 셀 하나에 두 값을 못 담아 바로 아래에 「└ 둘째
+  줄」 딸린 줄을 두고 같은 칠을 잇는다.
+- **④ · ⑤** 는 그림 대신 글이다(`process_capa_canvas.track_texts` — 그림과 같은 자리) — 호기 줄
   이름 칸 옆 「세부」 열에 화면 둘째 줄(기존 → 단축 날짜 등)을 둔다.
 - **둘째 시트**는 「이 공정 단축 일정 CSV」 와 같은 표(설비 일정이 설 때만)다.
 
@@ -54,9 +54,6 @@ from capa_simulation.components.month_sheet_canvas import (
     Row,
 )
 from capa_simulation.components.process_capa_canvas import (
-    ROW_DYNAMIC_AVAILABLE,
-    ROW_DYNAMIC_BALANCE,
-    ROW_DYNAMIC_IMPACT,
     AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaRows,
@@ -96,17 +93,13 @@ VALUE_SIZE: Final = 10.0
 SMALL_SIZE: Final = 9.0
 TITLE_SIZE: Final = 12.0
 # 두 줄 칸의 딸린 줄 이름 — 화면 풍선이 그 둘째 줄을 부르는 말이다.
-SUB_ROW_LABELS: Final[Mapping[str, str]] = {
-    ROW_DYNAMIC_AVAILABLE: "단축 후",
-    ROW_DYNAMIC_BALANCE: "단축 후 · 상태",
-    ROW_DYNAMIC_IMPACT: "확보율 영향",
-}
+SUB_ROW_LABELS: Final[Mapping[str, str]] = {}
 SUB_ROW_FALLBACK: Final = "둘째 줄"
 # 둘째 시트 열 너비의 끝(엑셀 단위).
 UNITS_MIN_WIDTH: Final = 6.0
 UNITS_MAX_WIDTH: Final = 40.0
 # 화면 칸 글 → (값, 숫자 꼴). `one` · `percent` · `signed_int` · `signed_one` · 기준 % 라벨 ·
-# 비가동 영향 「−1.8대」 · 입력 비가동 「1.25⚠」 · 단축 후 「→ 25.7」 꼴만 숫자다.
+# 대수 「−1.8대」 · 입력 비가동 「1.25⚠」 · 둘째 줄 「→ 25.7」 꼴만 숫자다.
 _SCREEN_NUMBER: Final = re.compile(
     r"^(?P<prefix>→ )?(?P<sign>[+−-])?(?P<whole>\d{1,3}(?:,\d{3})+|\d+)"
     r"(?:\.(?P<fraction>\d+))?(?P<percent>%)?(?P<unit>대)?(?P<mark> ?⚠)?$"
@@ -191,7 +184,7 @@ def month_rows_sheet(
 ) -> Sheet:
     """월 시트 행 모델(첫 행이 머리) → 시트 한 장 — 맨 위에 제목과 머리 값 줄, 한 줄 띄고 머리(달) ·
     행이다. 열은 구분 · 세부 · 달, 머리 줄 · 두 열은 고정이다. `shortage` 는 부족 달 띠를 칠할 달
-    자리, `dynamic` 은 ③ · ④ 호기 줄을 글로 옮길 재료(공정 Capa 상세만)다.
+    자리, `dynamic` 은 ④ · ⑤ 호기 줄을 글로 옮길 재료(공정 Capa 상세만)다.
 
     색은 지금 테마의 토큰이다 — 부르는 쪽이 밝게로 못박고 부른다(`theme.pinned_mode`).
     """
@@ -349,7 +342,7 @@ def _value_cell(
 
 
 def _track_cell(track: TrackText | None, base: str | None, *, top: Edge | None) -> XlsxCell:
-    """③ · ④ 달 칸 — 그림 대신 글. 「반입 전」 은 경고색 칠, 가용을 깎은 화살표는 그 색 글자."""
+    """④ · ⑤ 달 칸 — 그림 대신 글. 「반입 전」 은 경고색 칠, 가용을 깎은 화살표는 그 색 글자."""
     if track is None:
         return XlsxCell(None, Style(fill=base, left=_grid(), top=top))
     if track.loss:

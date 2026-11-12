@@ -880,7 +880,7 @@ def _key_digest(key: object) -> str:
 def _schedule_detail(process: str | None, cutoff: pd.DataFrame, *, manual: bool = False) -> str:
     """설비 일정 기준 제목의 세부 글 — 출처·축·Cut-off(라벨 칸 한 줄). 「칸을 누르면」 안내는
     칸 풍선(「누르면 호기」)과 Guide 가 맡는다. `manual` 이면(범위에 입력 비가동을 뺀 달이 있다)
-    꼬리에 「입력 비가동 반영」 — 공정 Capa 상세 ② 제목 꼬리와 같은 말이다."""
+    꼬리에 「입력 비가동 반영」 — 공정 Capa 상세 정리 줄 · 필요 단축 일정 알림과 같은 말이다."""
     days = cutoff_setting(cutoff, process) if process is not None else None
     # 계산(`wd_window`)은 적은 값을 내림해 쓴다 — 다른 화면처럼 그 일수로 적고 내림을 함께 둔다.
     production = f"Cut-off {cutoff_days_words(days)}" if days is not None else "Cut-off 공정별"
@@ -1461,8 +1461,9 @@ def _schedule_lines(lines: pd.DataFrame, row: str, *, with_process: bool = True)
 
 
 def _render_detail_link(process: str, month: int) -> None:
-    """공정 Capa 상세 ④(비가동 화살표)로 — 그 공정·그 달로 연다(주소 인자). `from=gap` 이라 상세
-    화면이 ④ 를 접어 두었어도 다시 편다."""
+    """공정 Capa 상세 「⑤ 비가동 일정」(비가동 화살표)으로 — 그 공정·그 달로 연다(주소 인자).
+    `from=gap` 이라 상세 화면이 ⑤ 를 접어 두었어도 다시 편다. 링크 글은 구획 번호 없이 구획
+    이름으로 부른다(2026-11-12 시안 카드 k-c4 — 번호가 바뀌어도 글이 거짓이 되지 않게)."""
     params = {PROCESS_PARAM: process, MONTH_PARAM: str(month), FROM_PARAM: FROM_GAP}
     current_theme = st.query_params.get(THEME_QUERY_PARAM)
     if current_theme:
@@ -1470,14 +1471,14 @@ def _render_detail_link(process: str, month: int) -> None:
     try:
         st.page_link(
             PROCESS_CAPA_DETAIL.path,
-            label="공정 Capa 상세 ④ 에서 비가동 화살표로 보기",
+            label="공정 Capa 상세 비가동 일정에서 화살표로 보기",
             icon=":material/troubleshoot:",
             query_params=params,
         )
     except StreamlitPageNotFoundError:
         # 그 화면을 등록하지 않은 실행(화면 하나만 띄운 시험) — 갈 곳의 이름만 값으로 둔다(길 안내
         # 문장은 두지 않는다 — 설계 규칙 UI-TXT-03).
-        st.caption(":material/troubleshoot: 공정 Capa 상세 ④ · 비가동 화살표")
+        st.caption(":material/troubleshoot: 공정 Capa 상세 비가동 일정 · 화살표")
 
 
 # ================================================================== 둘레

@@ -5,39 +5,44 @@
 페이지(`app_pages/process_capa_detail.py`)가 앱 전체 회차에서 공정·축·요약·설비 일정을 모두
 정해 `ProcessDetailView` 하나로 넘기면, 여기서는 **지금 보는 달**에 닿는 것만 그린다.
 
-- **표 도구 줄** — 「구획」 칩(`st.pills`, ①~④ 가운데 고른 것 = 펼침 — 라벨을 숨긴 칸이라 뜻은
-  칩 바로 뒤 ⓘ 하나, 2026-11-10 보드 Q-8), 「제품별 소요대수」 펼침(`st.toggle`)과 펼쳤을 때의
-  「분류」(`st.segmented_control`), 단축 목표 표시(고르는 위젯 없음 — 2026-10-15 사용자 결정 2),
-  그리고 오른쪽 끝 「내려받기 ▾」 메뉴 하나(2026-11-10 답 Q2-7) — 「이 공정 단축 일정 CSV」(설비
-  일정이 설 때만 — ③ 구획의 호기 표 곁, 설계 규칙 UI-LAY-03. 없으면 메뉴 없이 시트 엑셀 단추
-  하나)와 「시트 엑셀」(늘 — 지금 화면 상태 그대로의 상세 시트를 화면 서식째,
-  2026-11-10 보드 c2-picked — `components/process_capa_workbook.py`. 통은 회차마다 만들지 않고
-  조건이 바뀐 뒤 처음 그리는 회차에 한 번 만들어 세션에 몇 벌 기억한다 — `remembered_sheet`, 그림
-  기억과 같은 꼴). 앞의 셋은 조건 카드가 아니라 본문이다 — 2026-09-29
-  「상세는 카드」 규칙의 예외다(펼침·분류는 2026-10-15 사용자 결정 4 — 목업 그대로, 구획은
-  2026-10-22 사용자 요청 「소요대수처럼 접기」). 구획 칩은 선택지 넷을 늘 고정한다 — 설비 일정이
-  없는 공정에서 ②~④ 를 빼면 세션 값이 선택지 밖으로 나가 지워진다. 밖에서 들어온 회차에는 그 길이
-  가리키는 구획을 다시 편다(`reopen_entry_section` — HOME → ①, 가용설비 현황 → ④, 필요 단축 일정
-  카드 → ③).
+- **표 도구 줄** — 「구획」 칩(`st.pills`, ①~⑤ 가운데 고른 것 = 펼침 — 라벨을 숨긴 칸이라 뜻은
+  칩 바로 뒤 ⓘ 하나, 2026-11-10 보드 Q-8), 「비가동 기준」 고르기(`st.segmented_control` —
+  Static · 일정, 설비 일정이 설 때만 — 「③ 비가동」 의 실가용을 어느 가용에서 빼나, 처음은 Static,
+  2026-11-12 사용자 답 q5b (가) · k-c4), 「제품별 소요대수」 펼침(`st.toggle` — ① · ② 를 함께 —
+  q4 (가))과 펼쳤을 때의 「분류」(`st.segmented_control`), 그리고 오른쪽 끝 「내려받기 ▾」 메뉴
+  하나(2026-11-10 답 Q2-7) — 「이 공정 단축 일정 CSV」(설비 일정이 설 때만 — ④ 구획의 호기 표 곁,
+  설계 규칙 UI-LAY-03. 없으면 메뉴 없이 시트 엑셀 단추 하나)와 「시트 엑셀」(늘 — 지금 화면 상태
+  그대로의 상세 시트를 화면 서식째, 2026-11-10 보드 c2-picked —
+  `components/process_capa_workbook.py`. 통은 회차마다 만들지 않고 조건이 바뀐 뒤 처음 그리는 회차에
+  한 번 만들어 세션에 몇 벌 기억한다 — `remembered_sheet`, 그림 기억과 같은 꼴). 단축 목표 글은
+  Guide 가 적는다(2026-11-12 사용자 메모 k-c4 — 고르는 위젯은 처음부터 없다). 이 줄은 조건 카드가
+  아니라 본문이다 — 2026-09-29 「상세는 카드」 규칙의 예외다(펼침·분류는 2026-10-15 사용자 결정 4 —
+  목업 그대로, 구획은 2026-10-22 사용자 요청 「소요대수처럼 접기」). 구획 칩은 선택지 다섯을 늘
+  고정한다 — 설비 일정이 없는 공정에서 ②~⑤ 를 빼면 세션 값이 선택지 밖으로 나가 지워진다. 밖에서
+  들어온 회차에는 그 길이 가리키는 구획을 다시 편다(`reopen_entry_section` — HOME → ①, 가용설비
+  현황 → ⑤, 필요 단축 일정 카드 → ④).
 - **결합 월 캔버스** — HOME 틀 그대로 라벨 Figure(260px) + 월 Figure(달마다 100px, hover)를 스크롤
-  상자 하나에 둔다. 라벨 Figure 는 줄 이름 칸 풍선(② 비가동 영향·③ 호기 줄·④ 입력 비가동)이
+  상자 하나에 둔다. 라벨 Figure 는 줄 이름 칸 풍선(구획 제목 줄 · ④ 호기 줄 · ⑤ 입력 비가동)이
   있을 때만 hover 를 켜고 아니면 `staticPlot` 이다. 월 Figure 의 칸을 누르면 `on_select` 콜백이 세션
   달을 적고 이 프래그먼트만 다시 돈다 — 프래그먼트 안 위젯이라 기본이 이 프래그먼트 회차이고,
   콜백 끝의 `rerun_app_unless_alone` 이 `rerun_fragment_if_alone` 과 같은 판정으로 프래그먼트만
   돌면 안 될 때(끊긴 전체 실행·다른 위젯도 바뀜)만 앱 전체로 올린다. 빈 선택(같은 칸 다시
   누르기·더블클릭)은 보던 달을 둔다. 그림은 세션에 몇 벌 기억한다(`remembered_canvas`, 재공
   현황 꼴) — 새 `st.cache_data` 를 두지 않는다.
-- **범례**(HTML 한 줄)·**「더 보기」 토글 둘**(③·④ 30줄 상한, 그 구획이 접히면 숨는다)·**설비
-  일정 없음 자리**(데이터 Error 마크 또는 빈 상태 평문 — 제약 시뮬레이션과 같은 꼴).
-- **산출 근거 패널** — ① 소요 ② 가용 ③ 판정·원인 ④ 단축 근거(설비 일정 공정·그 달이 충족이
-  아닐 때)와 ◀▶ 달 이동, 그 달 부족 원인의 다음 화면 링크(원인별 다음 화면은 이 화면에서 여기
-  하나다 — 2026-11-10 보드 c2-picked), 닫힌 「경로별 인자」(`st.dataframe` 만 — Plotly 를 넣지
-  않는다).
+- **「더 보기」 토글 둘**(④·⑤ 30줄 상한, 그 구획이 접히면 숨는다)·**설비 일정 없음 자리**(데이터
+  Error 마크 또는 빈 상태 평문 — 제약 시뮬레이션과 같은 꼴). 시트 범례(띠 · 칸 색 · 표지)는 Guide
+  「시트 범례」 절이다(2026-11-12 사용자 답 k-c5).
+- **산출 근거 패널** — 접힌 머리 한 줄 「산출 근거 · 달 · 공정」(기억 상자 — 달 칸을 누르거나
+  ◀▶ 로 달을 옮기면 펼친다, k-c5). 안은 ① 소요 ② 가용 ③ 판정·원인 ④ 단축 근거(설비 일정 공정·그
+  달이 충족이 아닐 때)와 ◀▶ 달 이동, 그 달 부족 원인의 다음 화면 링크(원인별 다음 화면은 이 화면에서
+  여기 하나다 — 2026-11-10 보드 c2-picked), 닫힌 「경로별 인자」(`st.dataframe` 만 — Plotly 를
+  넣지 않는다).
 
 **이벤트 칸 수는 갈래마다 같다**(AGENTS 「본문 프래그먼트」). 이 프래그먼트가 이벤트 칸에 쓰는
-것은 스타일만 든 `st.html` 셋 — 두 컬럼 폭(`split_scroll_columns_style`)·라벨 칸 위 여백·스크롤
-상자(`horizontal_scroll_canvas`) — 이고 어느 갈래(펼침·분류·설비 일정 유무·고른 달)에서도 셋
-그대로다. 범례·근거 카드의 서식은 그 표시 HTML 과 한 `st.html` 에 실어 본문 칸으로 보낸다.
+것은 스타일만 든 `st.html` 셋 — 두 컬럼 폭(`split_scroll_columns_style`)·라벨 칸 위 여백(표 도구
+줄 내려받기 칸 서식을 함께 싣는다)·스크롤 상자(`horizontal_scroll_canvas`) — 이고 어느 갈래(펼침·
+분류·설비 일정 유무·고른 달·비가동 기준)에서도 셋 그대로다. 근거 카드의 서식은 그 표시 HTML 과 한
+`st.html` 에 실어 본문 칸으로 보낸다.
 토스트·팝업은 없다.
 
 **프래그먼트 회차는 직전 앱 전체 회차의 인자를 쓴다** — 오늘·판정 기준·설비 일정·표시명이
@@ -49,12 +54,13 @@
 
 **UPEH 가정**(조건 카드의 「이 세션만」 % — `components/upeh_assumption_controls.py`)이 켜지면
 페이지가 가정 요약(`ProcessDetailView.assumed_summary`)과 가정 계획(`DynamicView`)을 넘긴다.
-**판정은 한 기준이다** — 캔버스 부족 띠·② 판정 대조·KPI 미달·부족 원인·근거 패널의 ③ 판정
-카드(머리 식·판정·원인)와 다음 화면은 가정 요약으로, 공식 값은 ① 공식 줄과 KPI 회색 줄
-(「공식 n」), ③ 카드의 회색 「공식: …」 한 줄에만 둔다. 그림 캐시 키에 가정 토큰이 든다. 시트
-엑셀도 같은 행 모델이라 가정 세 줄 · 가정 판정 칠이 그대로 서고 파일 이름에 가정 꼬리가 붙는다.
-내려받는 두 파일 이름(`detail_file_names`)은 조회 달 · 가정 꼬리 뒤 끝에 화면의 공정 이름(표시명)을
-단다 — 공정마다 파일 이름이 다르다(2026-11-11 남은 물음 보드 B3).
+**판정은 한 기준이다** — 캔버스 부족 띠·KPI 미달·부족 원인·근거 패널의 ③ 판정 카드(머리 식·판정·
+원인)와 다음 화면은 가정 요약으로, 가정 전 값은 ① Static 줄과 KPI 회색 줄(「가정 전 n」), ③ 카드의
+회색 「가정 전: …」 한 줄에만 둔다(이름은 2026-11-12 사용자 답 q2 (가) — Core Data 숫자는
+「Static」, 가정과 견주는 값은 「가정 전」). ② · ③ 의 소요대수도 가정 소요다. 그림 캐시 키에 가정
+토큰이 든다. 시트 엑셀도 같은 행 모델이라 가정 세 줄 · 가정 판정 칠이 그대로 서고 파일 이름에 가정
+꼬리가 붙는다. 내려받는 두 파일 이름(`detail_file_names`)은 조회 달 · 가정 꼬리 뒤 끝에 화면의 공정
+이름(표시명)을 단다 — 공정마다 파일 이름이 다르다(2026-11-11 남은 물음 보드 B3).
 
 **부족 원인의 다음 화면**(근거 패널 — 고른 달의 원인) — 보유로도 부족 → 「투자 검토 대상」 표지와
 산출 결과, 가용 불일치 → 가용설비 현황 `Summary` › `Static 대비 일정`, 일정 → 필요 단축 일정 이
@@ -69,7 +75,7 @@ import html
 import math
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date
 from functools import partial
 from typing import Final, NamedTuple
 
@@ -94,8 +100,11 @@ from capa_simulation.components.month_sheet_canvas import signed_int
 from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.plotly_layout import hover_chart_config, static_chart_config
 from capa_simulation.components.process_capa_canvas import (
+    BASIS_SCHEDULE,
+    BASIS_STATIC,
     SECTION_DOWNTIME,
     SECTION_DYNAMIC,
+    SECTION_EFFECT,
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
@@ -104,6 +113,7 @@ from capa_simulation.components.process_capa_canvas import (
     ProcessCapaCanvas,
     build_process_capa_canvas,
     canvas_point,
+    loss_text,
 )
 from capa_simulation.components.process_capa_workbook import (
     WorkbookRequest,
@@ -161,7 +171,6 @@ from capa_simulation.process_detail_state import (
     step_to_process,
 )
 from capa_simulation.services.display_order import PreparedDisplayOrder
-from capa_simulation.services.manual_downtime import manual_removed_text
 from capa_simulation.services.month_columns import month_label
 from capa_simulation.services.process_capa_detail import (
     CAUSE_AVAILABILITY_MISMATCH,
@@ -215,7 +224,11 @@ from capa_simulation.services.upeh_assumption import (
     token_percent,
 )
 from capa_simulation.services.wd_window import wd_window
-from capa_simulation.sidebar_status import remembered_expander, rerun_app_unless_alone
+from capa_simulation.sidebar_status import (
+    remembered_box_key,
+    remembered_expander,
+    rerun_app_unless_alone,
+)
 
 MONTH: Final = "생산계획년월"
 # 내려받는 두 파일 이름의 머리와, 공정 표시명이 파일 이름에 쓸 글자를 남기지 않을 때의 꼬리.
@@ -234,7 +247,7 @@ ROUTE_FACTORS_EXPANDER_KEY: Final = "process_detail_route_factors"
 # 표 도구 줄의 내려받기 둘(호기 CSV · 시트 엑셀)은 「내려받기 ▾」 메뉴 하나다(2026-11-10 답 Q2-7 —
 # 호기 CSV 가 없는 공정은 시트 엑셀 단추 하나). 줄에 선 단추(메뉴 또는 시트 엑셀)의 높이는 곁의
 # 「구획」 칩과 같은 28px 이고 `table_toolbar.render_download_pair` 가 정한다(설계 규칙 UI-CON-01 ·
-# 2026-11-11 남은 물음 보드 C9). 칸 서식(줄바꿈 없음)은 범례 `st.html` 에 실어 본문 칸으로 보낸다
+# 2026-11-11 남은 물음 보드 C9). 칸 서식(줄바꿈 없음)은 라벨 칸 서식 `st.html` 에 함께 싣는다
 # (이벤트 칸 자리 수가 갈리지 않게).
 UNITS_CSV_KEY: Final = "process_detail_units_csv"
 SHEET_XLSX_KEY: Final = "process_detail_sheet_xlsx"
@@ -251,9 +264,18 @@ DOWNLOAD_STYLE: Final = (
 # 「구획」 칩의 뜻 — 라벨을 숨긴 칸이라 위젯 풍선이 서지 않는다(Streamlit 1.63 은 풍선을 라벨 줄에
 # 그린다). 칩 바로 뒤 빈 캡션 풍선 하나가 말한다(설계 규칙 UI-TXT-02, 2026-11-10 보드 Q-8).
 SECTIONS_HELP: Final = (
-    "고른 구획만 펼칩니다 — 접힌 구획은 제목 줄(▸)만 남습니다. ②~④ 는 설비 일정이 서는 공정에만 "
+    "고른 구획만 펼칩니다 — 접힌 구획은 제목 줄(▸)만 남습니다. ②~⑤ 는 설비 일정이 서는 공정에만 "
     "있습니다."
 )
+# 「구획」 칩이 아는 구획 id 를 적어 두는 칸(위젯 아님) — 구획이 늘어난 뒤 처음 그리는 회차에 새
+# 구획을 펴 둔다(전에 연 세션에서 새 구획이 접힌 채 뜨지 않게 — 2026-11-12 시안 카드 k-c4).
+SECTIONS_KNOWN_KEY: Final = "process_detail_sections_known"
+# 칸이 없던 세션이 알던 구획 — ③ 비가동이 서기 전의 넷.
+_SECTIONS_BEFORE_KNOWN: Final = (SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_UNITS, SECTION_DOWNTIME)
+# 「③ 비가동」 의 비가동 기준 고르기(`st.segmented_control`, 세션 값 — 처음은 Static).
+BASIS_KEY: Final = "process_detail_downtime_basis"
+BASIS_LABELS: Final[Mapping[str, str]] = {BASIS_STATIC: "Static", BASIS_SCHEDULE: "일정"}
+BASIS_CAPTION: Final = "비가동 기준"
 # 정리 줄의 필요 단축 일정 화면 링크.
 SHORTENING_TAB_LINK_KEY: Final = "process_detail_open_shortening_tab"
 # 부족 원인별 다음 화면 단추 — 근거 패널(그 달)이 그린다.
@@ -266,6 +288,8 @@ SCROLL_KEY: Final = "process_detail_canvas"
 SCROLLBAR_KEY: Final = "process_detail_scrollbar"
 LABEL_CHART_KEY: Final = "process_detail_summary_labels"
 EVIDENCE_PANEL_KEY: Final = "process_detail_evidence"
+# 산출 근거 접는 상자(기억 상자 — `remembered_expander`). 달 칸을 누르면 펼친다.
+EVIDENCE_BOX_KEY: Final = "process_detail_evidence_box"
 DYNAMIC_ABSENT_KEY: Final = "process_detail_dynamic_absent"
 KPI_ROW_KEY: Final = "process_detail_kpis"
 
@@ -289,28 +313,29 @@ CAUSE_HELP: Final = (
 CANVAS_MEMO_KEY: Final = "process_detail_canvas_memo"
 CANVAS_MEMO_LIMIT: Final = 6
 # 그림 모양이 바뀌면 올린다 — 같은 조건의 옛 그림이 세션에 남아 있어도 다시 만든다.
-CANVAS_SCHEMA_VERSION: Final = 8
+CANVAS_SCHEMA_VERSION: Final = 9
 # 직전에 만든 시트 엑셀 몇 벌(세션 칸) — 조건이 같은 회차(달 칸 누름 · 다른 위젯)는 통을 다시 만들지
 # 않는다. 시트 꼴이 바뀌면 버전을 올린다.
 SHEET_MEMO_KEY: Final = "process_detail_sheet_memo"
 SHEET_MEMO_LIMIT: Final = 4
-SHEET_SCHEMA_VERSION: Final = 3
+SHEET_SCHEMA_VERSION: Final = 4
 
 # ③ 판정 — 반올림으로만 확보인 달에서 경계식의 여유(1대 이상)를 0 으로 묶었을 때의 까닭 한 줄.
 ROUNDED_IN_NOTE: Final = (
     "반올림으로 겨우 확보 — 확보율이 {threshold} 에 못 미쳐 남는 대수는 0 으로 적습니다"
 )
 
-# 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 넷이다.
+# 「구획」 칩 글자(값은 캔버스의 구획 id). 선택지는 늘 다섯이다(2026-11-12 사용자 답 k-c4).
 SECTION_LABELS: Final[Mapping[str, str]] = {
-    SECTION_SUMMARY: "① 공식",
+    SECTION_SUMMARY: "① Static",
     SECTION_DYNAMIC: "② 일정 가용",
-    SECTION_UNITS: "③ 단축",
-    SECTION_DOWNTIME: "④ 비가동",
+    SECTION_EFFECT: "③ 비가동",
+    SECTION_UNITS: "④ 단축",
+    SECTION_DOWNTIME: "⑤ 비가동 일정",
 }
 # 밖에서 들어온 길(`from`)이 가리키는 구획 — 그 회차에 다시 편다. HOME 출처 띠는 ① 의 원
-# 확보율을, 가용설비 현황 링크 글은 「④ 에서 비가동 화살표로 보기」를, 필요 단축 일정 카드는 ③ 의
-# 호기를 가리킨다.
+# 확보율을, 가용설비 현황 링크 글은 「비가동 일정에서 화살표로 보기」(⑤)를, 필요 단축 일정 카드는
+# ④ 의 호기를 가리킨다.
 ENTRY_SECTIONS: Final[Mapping[str, str]] = {
     FROM_HOME: SECTION_SUMMARY,
     FROM_GAP: SECTION_DOWNTIME,
@@ -322,19 +347,9 @@ AVAILABLE_EQUIPMENT_PAGE: Final = AVAILABLE_EQUIPMENT_STATUS.path
 CALCULATION_RESULT_PAGE: Final = "app_pages/calculation_result.py"
 # 보유로도 부족 원인의 표지 — 단축으로 못 메우는 투자 검토 대상이다.
 INVESTMENT_BADGE: Final = ":red-badge[투자 검토 대상]"
-# 표 도구 줄에 적는 단축 목표의 이름과, 그 출처(고치는 곳)를 말하는 풍선 — 길은 자리 글이 아니라
-# 풍선이다(설계 규칙 UI-TXT-03).
-TARGET_SOURCE_TEXT: Final = "HOME 설정 → 판정 기준 › 확보 기준(월별)"
+# 시트 엑셀 머리 값 줄에 적는 단축 목표의 이름. 화면에서는 Guide 「단축 목표와 대책」 이 적는다
+# (2026-11-12 사용자 메모 k-c4).
 TARGET_NAME: Final = "확보 기준(월별)"
-TARGET_HELP: Final = (
-    f"단축 목표는 {TARGET_SOURCE_TEXT}을 달마다 그대로 씁니다 — 필요 단축 일정의 목표 다섯 값"
-    "(90~130%)을 고르는 것이 아닙니다."
-)
-# 산출 근거 패널 머리의 풍선(설비 일정이 설 때) — 단축이 바꾸는 숫자.
-EVIDENCE_HELP: Final = (
-    "Qual 을 당기면 바뀌는 것은 설비 일정 기준 가용입니다 — 공식 확보율은 Core Data 의 보유·대여가 "
-    "갱신될 때 바뀝니다(단축 결과는 공식 확보율을 바꾸지 않습니다)."
-)
 # UPEH 가정이 켜졌을 때 경로별 인자 위 표지와 풍선 — 그 표는 기준정보 UPEH 그대로다.
 ROUTE_FACTORS_UPEH_MARK: Final = ":material/science: UPEH 가정 미반영 · 기준정보 UPEH"
 ROUTE_FACTORS_UPEH_HELP: Final = (
@@ -342,15 +357,15 @@ ROUTE_FACTORS_UPEH_HELP: Final = (
     "겁니다(대당 Capa ×f 와 같습니다)."
 )
 # 설비 일정이 멈춘 알림 전문의 끝. Alarm 줄에는 표 곁이 없어 「위」 라 하지 않고 ① 로 가리킨다.
-DYNAMIC_OFFICIAL_KEPT: Final = "① 공식 기준은 그대로입니다."
-# ②~④ 가 서는 조건 — 입력이 빠져 멈춘 자리 알림 전문의 끝.
+DYNAMIC_OFFICIAL_KEPT: Final = "① Static 기준은 그대로입니다."
+# ②~⑤ 가 서는 조건 — 입력이 빠져 멈춘 자리 알림 전문의 끝.
 DYNAMIC_ABSENT_RULE: Final = (
-    "설비 일정 기준 가용·신규 설비·비가동(②~④)은 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
+    "일정 가용·비가동·단축·비가동 일정(②~⑤)은 설비 DB 에 저장본이 있고 이름이 같으며 Cut-off 가 "
     f"적힌 공정에만 섭니다. {DYNAMIC_OFFICIAL_KEPT}"
 )
 # 입력은 다 있고 셀 호기가 없는 공정의 빈 상태 평문 줄 풍선 — 그 공정에 빠진 조건만 적는다.
 NO_COUNTED_UNITS_HELP: Final = (
-    "설비 일정 기준 가용·신규 설비·비가동(②~④)은 사용기준 HBM·EDP 호기나 기존보유가 있는 공정에만 "
+    "일정 가용·비가동·단축·비가동 일정(②~⑤)은 사용기준 HBM·EDP 호기나 기존보유가 있는 공정에만 "
     "섭니다."
 )
 # 판정은 통과했는데 설비 일정 계산이 멈춘 갈래의 알림 짧은 글(머리 배지와 같은 말).
@@ -410,8 +425,8 @@ class DynamicView:
     일정 미정 글."""
 
     official_units: pd.DataFrame | None = None
-    """UPEH 가정 계획을 그릴 때 — 같은 공정의 **공식** 계획 호기 표(KPI 회색 줄 「공식 n」). 공식
-    계획을 그릴 때는 None 이다(`units` 가 곧 공식이다)."""
+    """UPEH 가정 계획을 그릴 때 — 같은 공정의 **가정 전** 계획 호기 표(KPI 회색 줄 「가정 전 n」).
+    공식 계획을 그릴 때는 None 이다(`units` 가 곧 공식이다)."""
 
     official_process_months: pd.DataFrame | None = None
     """위와 같은 때의 공식 계획 공정·월 표."""
@@ -490,9 +505,10 @@ class ProcessDetailView:
 
 @st.fragment(key=PROCESS_DETAIL_VIEW_FRAGMENT_KEY)
 def render_process_detail_view(view: ProcessDetailView) -> None:
-    """표 도구 줄 → 결합 캔버스 → 범례·더 보기 → (설비 일정 없음 카드) → 산출 근거 패널."""
+    """표 도구 줄 → 결합 캔버스 → 더 보기 → (설비 일정 없음 카드) → 산출 근거 패널."""
     month = viewed_month(view.months)
     expanded, split, collapsed, sheet_slot = _render_tool_row(view)
+    basis = current_basis()
     product_demand = (
         simulation_cache.get_process_product_demand(
             view.scenario_key,
@@ -521,6 +537,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
                     show_all_units=show_all_units,
                     show_all_arrows=show_all_arrows,
                     collapsed=collapsed,
+                    basis=basis,
                 ),
                 partial(
                     process_capa_workbook,
@@ -532,6 +549,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
                         product_demand=product_demand,
                         show_all_units=show_all_units,
                         show_all_arrows=show_all_arrows,
+                        basis=basis,
                     ),
                 ),
             ),
@@ -549,6 +567,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
         show_all_units=show_all_units,
         show_all_arrows=show_all_arrows,
         collapsed=collapsed,
+        basis=basis,
     )
     _render_canvas(view, canvas)
     _render_more_toggles(
@@ -557,14 +576,7 @@ def render_process_detail_view(view: ProcessDetailView) -> None:
         show_all_arrows=show_all_arrows,
         collapsed=collapsed,
     )
-    st.html(
-        canvas_legend_html(
-            view.dynamic.canvas if view.dynamic is not None else None,
-            view.months,
-            assumed=bool(view.upeh_token),
-        )
-        + DOWNLOAD_STYLE
-    )
+    # 시트 범례는 Guide 「시트 범례」 절이다(2026-11-12 사용자 답 k-c5) — 시트 아래에 서지 않는다.
     if view.dynamic is None:
         _render_dynamic_absent(view)
     _render_evidence_panel(view, month)
@@ -582,12 +594,13 @@ def viewed_month(months: Sequence[int]) -> int:
 def _render_tool_row(
     view: ProcessDetailView,
 ) -> tuple[bool, str, frozenset[str], DeltaGenerator]:
-    """「구획」 칩 · 그 뜻 ⓘ · 「제품별 소요대수」 펼침 · 「분류」(펼쳤을 때) · 단축 목표 표시 ·
-    오른쪽 끝 「내려받기 ▾」 메뉴(호기 CSV — 설비 일정이 설 때만, 시트 엑셀 — 늘. 호기 CSV 가 없으면
-    메뉴 없이 시트 엑셀 단추 하나).
+    """「구획」 칩 · 그 뜻 ⓘ · 「비가동 기준」 고르기(설비 일정이 설 때만) · 「제품별 소요대수」
+    펼침 · 「분류」(펼쳤을 때) · 오른쪽 끝 「내려받기 ▾」 메뉴(호기 CSV — 설비 일정이 설 때만, 시트
+    엑셀 — 늘. 호기 CSV 가 없으면 메뉴 없이 시트 엑셀 단추 하나).
 
-    돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획, 시트 엑셀 자리) 다. ① 이 접혔으면 제품 행을
-    그리지 않는다. 시트 엑셀 단추는 제품 행 표를 받은 뒤 그 자리에 채운다
+    돌려주는 것은 (제품 행을 그릴지, 분류, 접힌 구획, 시트 엑셀 자리) 다. 「제품별 소요대수」 는 ① ·
+    ② 를 함께 펼친다(2026-11-12 사용자 답 q4 (가)) — 둘 다 접혔으면(설비 일정이 없으면 ① 만 보고)
+    제품 행을 그리지 않는다. 시트 엑셀 단추는 제품 행 표를 받은 뒤 그 자리에 채운다
     (`render_process_detail_view`). 내려받기를 안쪽 칸에 두는 것은 `st.space("stretch")` 를 쓰면
     틈이 한 번 더 들어 기준 창에서 줄이 넘어가기 때문이다.
     """
@@ -613,19 +626,33 @@ def _render_tool_row(
             )
             st.caption("", help=SECTIONS_HELP, width="content")
         collapsed = frozenset(SECTION_IDS) - {str(section) for section in opened or ()}
-        summary_open = SECTION_SUMMARY not in collapsed
+        if view.dynamic is not None:
+            seed_basis()
+            st.caption(BASIS_CAPTION, width="content")
+            st.segmented_control(
+                BASIS_CAPTION,
+                list(BASIS_LABELS),
+                format_func=lambda value: BASIS_LABELS.get(str(value), str(value)),
+                key=BASIS_KEY,
+                required=True,
+                persist_state="session",
+                label_visibility="collapsed",
+            )
+        products_open = SECTION_SUMMARY not in collapsed or (
+            view.dynamic is not None and SECTION_DYNAMIC not in collapsed
+        )
         expanded = st.toggle(
             "제품별 소요대수",
             key=PROCESS_DETAIL_EXPAND_KEY,
             persist_state="session",
-            disabled=not summary_open,
+            disabled=not products_open,
             help=(
-                "켜면 소요대수 아래에 분류별 행이 펼쳐집니다. 사이드바 제품 거르기는 이 행에만 "
-                "걸립니다. ① 이 접혀 있으면 쓰지 않습니다."
+                "켜면 ① · ② 소요대수 아래에 분류별 행이 펼쳐집니다. 사이드바 제품 거르기는 이 "
+                "행에만 걸립니다. ① · ② 가 모두 접혀 있으면 쓰지 않습니다."
             ),
         )
         split = DEFAULT_PRODUCT_SPLIT
-        if expanded and summary_open:
+        if expanded and products_open:
             # 선택지에 없는 값(공정이 바뀌어 빠진 「소요기준」 등)은 지우지 않고 기본값을 적는다.
             if st.session_state.get(PROCESS_DETAIL_SPLIT_KEY) not in options:
                 st.session_state[PROCESS_DETAIL_SPLIT_KEY] = (
@@ -640,12 +667,6 @@ def _render_tool_row(
                 label_visibility="collapsed",
             )
             split = str(chosen) if chosen in options else options[0]
-        if view.dynamic is not None:
-            st.caption(
-                f"단축 목표 = {target_text(view.dynamic.canvas.target, view.months)}",
-                width="content",
-                help=TARGET_HELP,
-            )
         with st.container(horizontal=True, horizontal_alignment="right", key=DOWNLOADS_KEY):
             # 「내려받기 ▾」 — 호기 CSV(설비 일정이 설 때만)와 시트 엑셀 자리. 엑셀은 제품 행 표를
             # 받은 뒤 채운다.
@@ -662,7 +683,20 @@ def _render_tool_row(
                 ),
                 menu_key=DOWNLOAD_MENU_KEY,
             )
-    return bool(expanded) and summary_open, split, collapsed, sheet_slot
+    return bool(expanded) and products_open, split, collapsed, sheet_slot
+
+
+def seed_basis() -> None:
+    """「비가동 기준」 값을 위젯 앞에서 다진다 — 칸이 없거나 모르는 값이면 처음 값(Static)을
+    **적는다**(지우지 않는다 — AGENTS 9장)."""
+    if st.session_state.get(BASIS_KEY) not in BASIS_LABELS:
+        st.session_state[BASIS_KEY] = BASIS_STATIC
+
+
+def current_basis() -> str:
+    """지금 「③ 비가동」 의 비가동 기준 — 세션 값이 모르는 값이면 처음 값(Static)."""
+    value = st.session_state.get(BASIS_KEY)
+    return str(value) if value in BASIS_LABELS else BASIS_STATIC
 
 
 def sheet_request(
@@ -674,11 +708,12 @@ def sheet_request(
     product_demand: pd.DataFrame | None,
     show_all_units: bool,
     show_all_arrows: bool,
+    basis: str = BASIS_STATIC,
 ) -> WorkbookRequest:
     """시트 엑셀 재료 — 이 회차의 화면 상태 그대로(켜진 구획 · 펼친 제품 행과 분류 · 조회기간의 달 ·
-    UPEH 가정 · HOME 표시 확보율 · 「더 보기」). 머리 값은 페이지 값 뒤에 구획 · 펼침 · 단축 목표를
-    덧붙인다 — 「구획」 은 시트에 실제로 선 구획만이다(설비 일정이 서지 않으면 ② ~ ④ 칩이 켜져
-    있어도 ① 뿐). 그림 캔버스와 같은 인자로 같은 행 모델을 세운다(`remembered_canvas`)."""
+    UPEH 가정 · HOME 표시 확보율 · 「더 보기」 · 비가동 기준). 머리 값은 페이지 값 뒤에 구획 · 펼침
+    · 단축 목표를 덧붙인다 — 「구획」 은 시트에 실제로 선 구획만이다(설비 일정이 서지 않으면 ② ~ ⑤
+    칩이 켜져 있어도 ① 뿐). 그림 캔버스와 같은 인자로 같은 행 모델을 세운다(`remembered_canvas`)."""
     heading = list(view.sheet_heading)
     drawn = SECTION_IDS if view.dynamic is not None else (SECTION_SUMMARY,)
     opened = [SECTION_LABELS[section] for section in drawn if section not in collapsed]
@@ -693,6 +728,7 @@ def sheet_request(
             view.dynamic.canvas,
             show_all_units=show_all_units,
             show_all_arrows=show_all_arrows,
+            downtime_basis=basis,
         )
         if view.dynamic is not None
         else None
@@ -721,13 +757,21 @@ def sheet_request(
 
 
 def seed_sections() -> None:
-    """「구획」 칩 값을 위젯 앞에서 다진다 — 칸이 없으면 넷 모두(기본 모두 펼침), 모르는 값이
-    섞였으면 아는 값만 남긴 새 목록을 **적는다**(지우지 않는다 — AGENTS 9장)."""
+    """「구획」 칩 값을 위젯 앞에서 다진다 — 칸이 없으면 다섯 모두(기본 모두 펼침), 모르는 값이
+    섞였으면 아는 값만 남긴 새 목록을 **적는다**(지우지 않는다 — AGENTS 9장).
+
+    세션이 알던 구획(`SECTIONS_KNOWN_KEY`, 칸이 없으면 ③ 비가동이 서기 전의 넷)에 없던 구획은 한 번
+    펴 둔다 — 전에 연 세션에서 새 구획이 접힌 채 뜨지 않게. 그 뒤로는 접고 펴는 대로다.
+    """
     saved = st.session_state.get(PROCESS_DETAIL_SECTIONS_KEY)
+    seen = st.session_state.get(SECTIONS_KNOWN_KEY)
+    st.session_state[SECTIONS_KNOWN_KEY] = tuple(SECTION_IDS)
     if not isinstance(saved, (list, tuple)):
         st.session_state[PROCESS_DETAIL_SECTIONS_KEY] = list(SECTION_IDS)
         return
-    known = [section for section in SECTION_IDS if section in {str(item) for item in saved}]
+    before = set(seen) if isinstance(seen, tuple) else set(_SECTIONS_BEFORE_KNOWN)
+    opened = {str(item) for item in saved} | (set(SECTION_IDS) - before)
+    known = [section for section in SECTION_IDS if section in opened]
     if known != list(saved):
         st.session_state[PROCESS_DETAIL_SECTIONS_KEY] = known
 
@@ -743,7 +787,7 @@ def reopen_entry_section(source: str | None) -> None:
         return
     saved = st.session_state.get(PROCESS_DETAIL_SECTIONS_KEY)
     if not isinstance(saved, (list, tuple)):
-        # 칸이 없으면 칩 앞의 `seed_sections` 가 넷 모두로 심는다 — 이미 펼침이다.
+        # 칸이 없으면 칩 앞의 `seed_sections` 가 다섯 모두로 심는다 — 이미 펼침이다.
         return
     opened = {str(item) for item in saved}
     if section in opened:
@@ -753,9 +797,8 @@ def reopen_entry_section(source: str | None) -> None:
 
 
 def target_text(target: TargetLevel, months: Sequence[int]) -> str:
-    """단축 목표 표기 — 「확보 기준(월별)」, 모든 달이 같으면 그 값도. 출처(HOME 설정 → 판정 기준)는
-    풍선(`TARGET_HELP`)이다. 화면에서 단축 목표를 적는 자리는 표 도구 줄 하나다(설계 규칙
-    UI-TXT-07)."""
+    """단축 목표 표기 — 「확보 기준(월별)」, 모든 달이 같으면 그 값도. 시트 엑셀 머리 값 줄이 쓴다 —
+    화면에서는 Guide 가 적는다(2026-11-12 사용자 메모 k-c4)."""
     value = single_target(target, months)
     if value is not None:
         return f"{TARGET_NAME} {target_label(value)}"
@@ -788,9 +831,10 @@ def canvas_memo_key(
     show_all_units: bool,
     show_all_arrows: bool,
     collapsed: Collection[str] = (),
+    basis: str = BASIS_STATIC,
 ) -> tuple[object, ...]:
-    """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표·접힌 구획·UPEH 가정 토큰이
-    그림에 구워지므로 든다(가정 요약은 그 토큰과 시나리오 키·판정 기준이 정한다)."""
+    """그림을 바꾸는 조건 전부. 지금 보는 달·오늘(설비 일정 키 안)·목표·접힌 구획·UPEH 가정 토큰·
+    비가동 기준이 그림에 구워지므로 든다(가정 요약은 그 토큰과 시나리오 키·판정 기준이 정한다)."""
     home = tuple(sorted(view.home_rates.items())) if view.home_rates is not None else None
     return (
         CANVAS_SCHEMA_VERSION,
@@ -811,6 +855,7 @@ def canvas_memo_key(
         bool(show_all_arrows),
         tuple(sorted(str(section) for section in collapsed)),
         view.upeh_token,
+        str(basis),
     )
 
 
@@ -824,12 +869,14 @@ def remembered_canvas(
     show_all_units: bool,
     show_all_arrows: bool,
     collapsed: Collection[str] = (),
+    basis: str = BASIS_STATIC,
 ) -> ProcessCapaCanvas:
     """결합 캔버스를 세션에 몇 벌 기억한다(`CANVAS_MEMO_LIMIT`). 꺼낸 그림은 고치지 않는다.
 
     키(`canvas_memo_key`)는 그림을 바꾸는 조건 전부다 — 테마·시나리오 키·표시순서
     지문·축·공정·표시명· 판정 기준 지문·펼침/분류/거르기·지금 보는 달·HOME 표시 확보율·설비 일정
-    키(오늘·목표·네 표 지문)· 더 보기 둘·접힌 구획·그림 모양 버전. 만들다 실패하면 기억하지 않는다.
+    키(오늘·목표·네 표 지문)· 더 보기 둘·접힌 구획·비가동 기준·그림 모양 버전. 만들다 실패하면
+    기억하지 않는다.
     """
     key = canvas_memo_key(
         view,
@@ -839,6 +886,7 @@ def remembered_canvas(
         show_all_units=show_all_units,
         show_all_arrows=show_all_arrows,
         collapsed=collapsed,
+        basis=basis,
     )
     memo = st.session_state.get(CANVAS_MEMO_KEY)
     entries: list[tuple[tuple[object, ...], ProcessCapaCanvas]] = (
@@ -854,6 +902,7 @@ def remembered_canvas(
             view.dynamic.canvas,
             show_all_units=show_all_units,
             show_all_arrows=show_all_arrows,
+            downtime_basis=basis,
         )
         if view.dynamic is not None
         else None
@@ -891,6 +940,7 @@ def sheet_memo_key(
     show_all_units: bool,
     show_all_arrows: bool,
     collapsed: Collection[str] = (),
+    basis: str = BASIS_STATIC,
 ) -> tuple[object, ...]:
     """시트 엑셀을 바꾸는 조건 전부 — 그림 기억 키(`canvas_memo_key`)에서 지금 보는 달 · 테마를 뺀
     것(시트는 고른 달 표지가 없고 늘 밝은 색이다)에 머리 값 줄 · 시트 꼴 버전을 더한다. 둘째
@@ -914,6 +964,7 @@ def sheet_memo_key(
         tuple(sorted(str(section) for section in collapsed)),
         view.upeh_token,
         view.sheet_heading,
+        str(basis),
     )
 
 
@@ -927,13 +978,22 @@ def remembered_sheet(key: tuple[object, ...], build: Callable[[], bytes]) -> byt
 def pick_canvas_month(months: Sequence[int]) -> None:
     """월 그림의 칸 선택 콜백 — 누른 칸의 달을 세션에 적는다. 이 프래그먼트 회차로 다시 그린다.
 
-    빈 선택(같은 칸을 다시 누르거나 더블클릭)과 축 밖의 점은 무시한다 — 보던 달 그대로다. ③·④ 줄을
-    눌러도 그 열의 달이다(표적 막대가 그 줄까지 덮는다).
+    빈 선택(같은 칸을 다시 누르거나 더블클릭)과 축 밖의 점은 무시한다 — 보던 달 그대로다. ④·⑤ 줄을
+    눌러도 그 열의 달이다(표적 막대가 그 줄까지 덮는다). 칸을 누르면 접힌 산출 근거를 펼친다
+    (2026-11-12 사용자 답 k-c5 — 같은 달 칸을 다시 눌러도 펼친다).
     """
     point = canvas_point(st.session_state.get(PROCESS_DETAIL_CANVAS_CHART_KEY))
     if point is not None and point[0] in set(int(month) for month in months):
         st.session_state[PROCESS_DETAIL_MONTH_KEY] = int(point[0])
+        open_evidence()
     rerun_app_unless_alone(PROCESS_DETAIL_CANVAS_CHART_KEY)
+
+
+def open_evidence() -> None:
+    """산출 근거 접는 상자를 편다 — 콜백에서 부른다(위젯 값 · 기억 칸을 함께 적는다. 기억 칸의
+    라벨을 비워 두면 `remembered_expander` 가 다음 회차에 그 펼침을 위젯 값으로 다시 적는다)."""
+    st.session_state[EVIDENCE_BOX_KEY] = True
+    st.session_state[remembered_box_key(EVIDENCE_BOX_KEY)] = (True, "")
 
 
 def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
@@ -955,7 +1015,7 @@ def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
     )
     with label_column:
         with st.container(key=LABEL_CANVAS_KEY, gap=None):
-            # 라벨 Figure 의 trace 는 줄 이름 칸 풍선(② 비가동 영향·③ 호기 줄·④ 입력 비가동)의
+            # 라벨 Figure 의 trace 는 줄 이름 칸 풍선(구획 제목 줄·④ 호기 줄·⑤ 입력 비가동)의
             # 표적뿐이다 — 있을 때만 hover 를 켠다.
             st.plotly_chart(
                 canvas.labels,
@@ -964,8 +1024,9 @@ def _render_canvas(view: ProcessDetailView, canvas: ProcessCapaCanvas) -> None:
                 config=hover_chart_config() if canvas.labels.data else static_chart_config(),
             )
     with month_column:
-        # 서식은 이 한 `st.html` 에 둔다(이벤트 칸 수는 갈래마다 같다).
-        st.html(label_overflow_style())
+        # 서식은 이 한 `st.html` 에 둔다(이벤트 칸 수는 갈래마다 같다) — 표 도구 줄 내려받기 칸
+        # 서식도 여기 싣는다(보이는 글이 없는 서식 `st.html` 은 이벤트 칸을 쓴다).
+        st.html(label_overflow_style() + DOWNLOAD_STYLE)
         with st.container(key=MONTH_REGION_KEY, gap=None):
             horizontal_scrollbar.render_horizontal_scrollbar(
                 target_selector=f".st-key-{SCROLL_KEY}_scroll",
@@ -1000,12 +1061,11 @@ def label_overflow_style() -> str:
     풍선은 260px 그림보다 넓을 수 있어(세 줄 ≈ 230~290px) 그림 둘레의 `overflow` 를 풀고 라벨
     컬럼을 월 컬럼 위로 올린다 — 안 풀면 넘친 몫이 잘린다(2026-10-24 브라우저).
 
-    풀어 두는 것은 풍선을 담은 마지막 SVG(Plotly 의 `_hoverpaper` — 그림·글 SVG 뒤에 붙는다)
-    하나다. 그림·글 SVG 는 **어느 창 폭에서나** 칸 안으로 자른다 — 풀어 두면 라벨 그림의 바깥 테
-    (`add_figure_outer_border` — 칸 끝에 걸쳐 반은 밖으로 그려진다)와 흰 바탕이 칸 밖으로 새어 구분
-    칸이 월 칸 위에 떠 보이고(두 배 굵기 테 · 흰 둘레 — 2026-11-12 사용자 답 k-b3), 좁은 창
-    (`NARROW_VIEWPORT_MAX_PX` 이하 — 라벨 칸이 `NARROW_LABEL_COLUMN_WIDTH_PX` 로 준다)에서는 260px 에
-    맞춘 줄 이름이 월 칸 위에 겹친다(E2E r1 #20 — 개선 거리 I12).
+    풀어 두는 것은 풍선을 담은 마지막 SVG(Plotly 의 `_hoverpaper` — 그림·글 SVG 뒤에 붙는다) 하나다.
+    그림·글 SVG 는 **어느 창 폭에서나** 칸 안으로 자른다 — 풀어 두면 라벨 그림의 테와 흰 바탕이 칸
+    밖으로 새어 구분 칸이 월 칸 위에 떠 보이고(두 배 굵기 테 · 흰 둘레 — 2026-11-12 사용자 답
+    k-b3), 좁은 창(`NARROW_VIEWPORT_MAX_PX` 이하 — 라벨 칸이 `NARROW_LABEL_COLUMN_WIDTH_PX` 로
+    준다)에서는 260px 에 맞춘 줄 이름이 월 칸 위에 겹친다(E2E r1 #20 — 개선 거리 I12).
     """
     chart = f".st-key-{LABEL_CHART_KEY}"
     return (
@@ -1054,84 +1114,6 @@ def _render_more_toggles(
     with st.container(horizontal=True, gap="medium"):
         for label, key in shown:
             st.toggle(label, key=key, persist_state="session")
-
-
-# ================================================================== 범례
-
-
-def canvas_legend_html(
-    dynamic: DynamicCanvasInput | None, months: Sequence[int], *, assumed: bool = False
-) -> str:
-    """캔버스 아래 범례 한 줄(서식 포함). 설비 일정이 서면 ②~④ 표지와 「칸 = 생산월」 표지(규칙은 그
-    풍선)를 더한다.
-    `assumed` 면 부족 띠가 UPEH 가정 판정이라고 적는다."""
-    band = tokens.SHORTAGE_MONTH_BAND
-    swatch = "display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px"
-    items = [
-        f'<span style="{swatch};background:{band};border:1px solid '
-        f'{tokens.STATUS_SHORTAGE}"></span>'
-        + ("UPEH 가정 확보 기준 미달 달" if assumed else "공식 확보 기준 미달 달"),
-        f'<span style="{swatch};border:2px solid {tokens.ACCENT}"></span>지금 보는 달',
-        "".join(
-            f'<span style="{swatch};background:{color}"></span>'
-            for color in (tokens.STATUS_SECURE, tokens.STATUS_WARNING, tokens.STATUS_SHORTAGE)
-        )
-        + "확보율·과부족 칸 = 판정(확보 · 경고 · 부족)",
-        f'<span style="color:{tokens.TEXT_MUTED}">기준 확보율 줄은 참고(월별 확보 기준)</span>',
-    ]
-    if dynamic is not None:
-        qual = tokens.QUAL_CONFIRMATION_COLORS
-        dot = (
-            "display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-2px;"
-            f"border:1px solid {tokens.TEXT}"
-        )
-        items += [
-            f'<span style="color:{tokens.TEXT_MUTED};font-size:13px">◆</span>반입',
-            "".join(
-                f'<span style="{dot};background:{qual[name]}"></span>'
-                for name in ("계획", "확정", "완료")
-            )
-            + "기여 시작(Qual 다음 날) · 계획/확정/완료",
-            f'<span style="color:{tokens.TEXT}">◀━</span>단축 목표 기여 시작 · −N일',
-            f'<span style="{dot};background:{tokens.STATUS_SHORTAGE};border-style:dotted"></span>'
-            "추가N(신규 필요)",
-            f'<span style="color:{tokens.EQUIPMENT_STAGE_COLORS["운영 비가동"]};font-weight:700">'
-            "━▶</span>가용을 깎은 비가동",
-            f'<span style="color:{tokens.TEXT_MUTED}">┄┄</span>영향 없는 비가동(셋업·보관 등)',
-            # 생산월 규칙(세는 날 · 이설 이름)은 설명이라 늘 보이는 글이 아니라 이 표지의 풍선이다
-            # (설계 규칙 UI-TXT-01 · 02 — 같은 말이 Guide 「칸은 생산월입니다」 에 있다).
-            f'<span title="{html.escape(production_month_rules(dynamic.cutoff_days, months))}" '
-            'style="cursor:help;text-decoration:underline dotted">'
-            f"칸 = 생산월 · Cut-off {dynamic.cutoff_days}일</span>",
-        ]
-    spans = "".join(f'<span class="pcd-legend-item">{item}</span>' for item in items)
-    return (
-        "<style>"
-        f".pcd-legend{{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;"
-        f"color:{tokens.TEXT_MUTED};font-family:{tokens.FONT_FAMILY};padding:2px 0}}"
-        ".pcd-legend-item{display:inline-flex;align-items:center;gap:5px}"
-        "</style>"
-        f'<div class="pcd-legend">{spans}</div>'
-    )
-
-
-def production_month_rules(cutoff_days: int, months: Sequence[int]) -> str:
-    """범례 「칸 = 생산월」 표지의 풍선 — 예 한 줄과 세는 날 규칙."""
-    return (
-        f"{production_month_example(cutoff_days, months)}. Qual·비가동 끝은 다음 날부터, 정지·"
-        "반출/이설은 당일부터 셉니다 · 비가동유형 「이설」 ≠ 반출/이설일정"
-    )
-
-
-def production_month_example(cutoff_days: int, months: Sequence[int]) -> str:
-    """「칸 = 생산월」 예 — 첫 달 25일 Qual 이 어느 달 칸에 서는가(다음 날 + Cut-off)."""
-    first = int(months[0])
-    qual = date(first // 100, first % 100, 25)
-    position = production_position(qual + timedelta(days=1), cutoff_days, months)
-    return (
-        f"칸 = 생산월 — Cut-off {cutoff_days}일이면 {qual:%m.%d} Qual 은 "
-        f"{position.month % 100}월 칸에 섭니다"
-    )
 
 
 def _render_dynamic_absent(view: ProcessDetailView) -> None:
@@ -1193,13 +1175,22 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
         )
     except (KeyError, ValueError):
         trace = None
-    with st.container(border=True, key=EVIDENCE_PANEL_KEY):
-        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-            st.markdown(
-                f"**산출 근거 · {month_label(month)} · {literal_markdown(view.process_label)}**",
-                help=EVIDENCE_HELP if view.dynamic is not None else None,
-            )
-            st.space("stretch")
+    # 접힌 머리 한 줄(2026-11-12 사용자 답 k-c5) — 달 칸을 누르면 펼친다(`open_evidence`). 머리의
+    # 달 · 공정은 라벨이라 달을 옮기면 라벨이 바뀌어도 펼침은 기억 칸이 잇는다.
+    with (
+        st.container(key=EVIDENCE_PANEL_KEY),
+        remembered_expander(
+            f"산출 근거 · {month_label(month)} · {literal_markdown(view.process_label)}",
+            key=EVIDENCE_BOX_KEY,
+            icon=":material/calculate:",
+        ),
+    ):
+        with st.container(
+            horizontal=True,
+            vertical_alignment="center",
+            horizontal_alignment="right",
+            gap="small",
+        ):
             st.button(
                 f"◀ {month_label(previous)}" if previous is not None else "◀ 첫 달",
                 key=PREVIOUS_MONTH_KEY,
@@ -1228,13 +1219,15 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
 
 
 def step_month(months: Sequence[int], step: int, widget_key: str) -> None:
-    """◀▶ 콜백 — 보던 달에서 한 칸 옮긴다. 축 끝이면 그대로다. 이 프래그먼트 회차로 다시 그린다."""
+    """◀▶ 콜백 — 보던 달에서 한 칸 옮긴다. 축 끝이면 그대로다. 이 프래그먼트 회차로 다시 그린다.
+    단추는 펼친 산출 근거 안에 있어 펼침은 그대로다(옮긴 달의 라벨로 펼친 채 잇는다)."""
     axis = [int(month) for month in months]
     current = st.session_state.get(PROCESS_DETAIL_MONTH_KEY)
     position = axis.index(current) if current in axis else 0
     target = position + step
     if 0 <= target < len(axis):
         st.session_state[PROCESS_DETAIL_MONTH_KEY] = axis[target]
+        open_evidence()
     rerun_app_unless_alone(widget_key)
 
 
@@ -1330,8 +1323,8 @@ def _assumed_demand_note(
     required: float | None, assumed: Mapping[str, object] | None, token: UpehToken
 ) -> str:
     """「UPEH 가정 110%: 소요 12.40 ÷ 1.1 = 11.27 (−1.13대)」 — 구간 밖이면 빈 글자. 적힌 소요로
-    다시 셈한 값이 가정 소요와 다르면 「≈」 다(③ 의 「소요 = 공식 ÷ f」 와 같은 검산). 괄호 차이도
-    적힌 두 소요로 다시 빼면 어긋날 때 앞에 「≈」 다(값은 원값의 차이 그대로)."""
+    다시 셈한 값이 가정 소요와 다르면 「≈」 다(③ 의 「소요 = 가정 전 ÷ f」 와 같은 검산). 괄호
+    차이도 적힌 두 소요로 다시 빼면 어긋날 때 앞에 「≈」 다(값은 원값의 차이 그대로)."""
     if assumed is None or required is None:
         return ""
     value = _number(assumed.get("소요대수"))
@@ -1351,9 +1344,10 @@ def _assumed_demand_note(
 def availability_card(
     record: Mapping[str, object], bridge: Mapping[str, object] | None
 ) -> EvidenceCard:
-    """② 가용 — 보유 − 대여 = 가용(공식). 설비 일정이 서면 기존보유 + 호기 가용(참고) — 그 달에
-    입력 비가동(가용설비 현황 › Preference)을 뺐으면 「− 입력 비가동」 이 붙는다. 두 식 모두
-    적힌 수로 다시 셈한 값이 결과와 다르면 「≈」 다."""
+    """② 가용 — 보유 − 대여 = 가용(Static). 설비 일정이 서면 두 줄을 더한다(2026-11-12 사용자 답
+    n1 (가)) — 「② 일정 가용」 가용대수(기존보유 + 호기, 비가동 빼기 전)와, 비가동이 깎은 달이면
+    「③ 비가동」 일정 기준 실가용(그 가용 − 비가동 = 필요 단축 일정의 가용). 식 모두 적힌 수로 다시
+    셈한 값이 결과와 다르면 「≈」 다."""
     owned = _number(record.get(OWNED_COLUMN))
     lent = _number(record.get(LENT_COLUMN))
     available = _number(record.get("가용대수"))
@@ -1363,33 +1357,45 @@ def availability_card(
     )
     formula = (
         f"보유 {_one(owned)} − 대여 {_one(lent)} {derived_mark} {_one(derived)}\n"
-        f"가용대수 {_one(available)} (공식)"
+        f"가용대수 {_one(available)} (Static)"
     )
     notes: list[str] = []
     if bool(record.get(MISMATCH_COLUMN, False)):
         notes.append("⚠ 가용대수가 보유 − 대여와 다릅니다 — 기준정보 표를 따로 고쳤습니다.")
     if bridge is not None:
-        baseline = _number(bridge.get("기존보유"))
-        units = _number(bridge.get("호기 가용"))
-        total = _number(bridge.get("가용대수"))
-        removed = _number(bridge.get("입력 비가동 반영")) or 0.0
-        # 뺀 몫은 ④ 첫 줄·② 가용 칸 풍선과 같은 글이다 — 다시 셈도 그 적힌 수로 한다.
-        removed_text = manual_removed_text(removed) if round(removed, 9) > 0 else ""
-        written_removed = written_value(removed_text) if removed_text else 0.0
-        total_mark = equals_mark(
-            _one(total),
-            _one(
-                None
-                if baseline is None or units is None or written_removed is None
-                else round(baseline, 1) + round(units, 1) - written_removed
-            ),
-        )
-        manual_text = f" − 입력 비가동 {removed_text}" if removed_text else ""
-        notes.append(
-            f"설비 일정 기준(참고): 기존보유 {_one(baseline)} + 호기 {_one(units)}{manual_text} "
-            f"{total_mark} {_one(total)} (환산)"
-        )
+        notes += _schedule_availability_notes(bridge)
     return EvidenceCard("② 가용", formula, tuple(notes))
+
+
+def _schedule_availability_notes(bridge: Mapping[str, object]) -> list[str]:
+    """② 가용 카드의 설비 일정 줄 — 「일정 가용(참고): 기존보유 a + 호기 b = c」(비가동 빼기 전)와,
+    깎은 비가동이 있으면 「③ 일정 기준 실가용: c − 비가동 d = e」(e 는 필요 단축 일정의 가용)."""
+    baseline = _number(bridge.get("기존보유"))
+    units_now = _number(bridge.get("호기 가용"))
+    unit_loss = _number(bridge.get("호기 비가동 손실")) or 0.0
+    removed = _number(bridge.get("입력 비가동 반영")) or 0.0
+    total = _number(bridge.get("가용대수"))
+    if baseline is None or units_now is None:
+        return [f"일정 가용(참고): {_EMPTY}"]
+    units = units_now + unit_loss
+    free = baseline + units
+    free_mark = equals_mark(_one(free), _one(round(baseline, 1) + round(units, 1)))
+    notes = [
+        f"일정 가용(참고): 기존보유 {_one(baseline)} + 호기 {_one(units)} {free_mark} "
+        f"{_one(free)} (환산 · 비가동 빼기 전)"
+    ]
+    loss = unit_loss + removed
+    if round(loss, 9) > 0 and total is not None:
+        # 비가동은 ③ 비가동대수 칸과 같은 글이다 — 0 이 아닌 작은 값도 0 이 아니게 적는다.
+        loss_written = loss_text(loss)
+        loss_mark = equals_mark(
+            _one(total), _one(round(free, 1) - (written_value(loss_written) or 0.0))
+        )
+        notes.append(
+            f"③ 일정 기준 실가용: {_one(free)} − 비가동 {loss_written} {loss_mark} {_one(total)} "
+            "(필요 단축 일정의 가용)"
+        )
+    return notes
 
 
 def judgement_card(
@@ -1403,8 +1409,8 @@ def judgement_card(
     """③ 판정 — 확보율 식·과부족 식(그 달 확보 기준)과 원인.
 
     그 달이 UPEH 가정 구간이면(`assumed`) 판정은 한 기준이다 — 머리 식·판정·원인을 가정 레코드로
-    내고 식 첫 줄에 「소요 = 공식 ÷ f」 를 드러낸다. 공식 판정은 회색 「공식: …」 한 줄로
-    내린다(부족 띠·② 판정 대조·KPI·다음 화면 줄이 가정 요약을 읽는 것과 같은 기준이다).
+    내고 식 첫 줄에 「소요 = 가정 전 ÷ f」 를 드러낸다. 가정 전 판정은 회색 「가정 전: …」 한 줄로
+    내린다(부족 띠·KPI·다음 화면 줄이 가정 요약을 읽는 것과 같은 기준이다).
     """
     secure, warning = thresholds.for_month(month)
     secure_bound = thresholds.boundary_for(month)[0]
@@ -1457,11 +1463,11 @@ def judgement_card(
 
 
 def _assumed_required_line(official: float | None, assumed: float, token: UpehToken) -> str:
-    """「소요 = 49.80 ÷ 1.5 = 33.20」 — 가정 판정의 소요가 공식 소요에서 어떻게 왔는지(검산이
+    """「소요 = 49.80 ÷ 1.5 = 33.20」 — 가정 판정의 소요가 가정 전 소요에서 어떻게 왔는지(검산이
     어긋나면 「≈」)."""
     factor = token_factor(token)
     if official is None:
-        return f"소요 = 공식 ÷ {factor:g} = {_two(assumed)}"
+        return f"소요 = 가정 전 ÷ {factor:g} = {_two(assumed)}"
     mark = equals_mark(_two(assumed), _two(round(official, 2) / factor))
     return f"소요 = {_two(official)} ÷ {factor:g} {mark} {_two(assumed)}"
 
@@ -1491,16 +1497,16 @@ def _cause_note(record: Mapping[str, object], required: float) -> str:
 
 
 def _official_judgement_note(record: Mapping[str, object]) -> str:
-    """UPEH 가정 달의 회색 한 줄 — 「공식: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도
+    """UPEH 가정 달의 회색 한 줄 — 「가정 전: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도
     부족」."""
     available = _number(record.get("가용대수"))
     required = _number(record.get("소요대수"))
     if required is None or required <= 0 or available is None:
-        return "공식: 소요 없음 — 판정하지 않습니다"
+        return "가정 전: 소요 없음 — 판정하지 않습니다"
     balance = _whole(record.get(BALANCE_COLUMN))
     cause = "" if record.get(CAUSE_COLUMN) is None else str(record.get(CAUSE_COLUMN))
     return (
-        f"공식: 확보율 {available / required:.1%} → "
+        f"가정 전: 확보율 {available / required:.1%} → "
         f"{_STATUS_NAMES.get(str(record.get(STATUS_COLUMN)), _EMPTY)} · 과부족 "
         + (signed_int(balance) if balance is not None else _EMPTY)
         + (f" · 원인 {cause}" if cause else "")
@@ -1682,7 +1688,8 @@ def prescription(dynamic: DynamicView) -> Prescription:
 
 
 def official_prescription(dynamic: DynamicView) -> Prescription | None:
-    """UPEH 가정 계획을 그릴 때 같은 공정의 공식 계획 셈(KPI 회색 줄). 공식 계획을 그리면 None."""
+    """UPEH 가정 계획을 그릴 때 같은 공정의 가정 전 계획 셈(KPI 회색 줄). 가정 전 계획을 그리면
+    None."""
     if dynamic.official_units is None or dynamic.official_process_months is None:
         return None
     return _prescription(dynamic.official_units, dynamic.official_process_months, dynamic.canvas)
@@ -1727,8 +1734,8 @@ def render_process_kpis(
     """KPI 넷 — 최저 확보율, 확보 기준 미달 달·월 최대 부족, 부족 원인, 대책(설비 일정 기준).
 
     값 글자를 짧게 둔다(카드 폭에 한 줄). 뜻풀이는 값 아래 회색 한 줄과 `?` 풍선이다. UPEH 가정이
-    켜졌으면 `kpis` 는 가정 요약의 것이고 `official` 이 공식 요약의 것이다 — 회색 줄에 「공식 n」 을
-    함께 적는다.
+    켜졌으면 `kpis` 는 가정 요약의 것이고 `official` 이 가정 전(Static) 요약의 것이다 — 회색 줄에
+    「가정 전 n」 을 함께 적는다(2026-11-12 사용자 답 q2 (가)).
     """
     lowest_tone: MetricTone = "neutral"
     if kpis.lowest_rate is not None and kpis.lowest_rate_month is not None:
@@ -1740,13 +1747,13 @@ def render_process_kpis(
     plan = prescription(dynamic) if dynamic is not None else None
     official_plan = official_prescription(dynamic) if dynamic is not None else None
     lowest_note = (
-        f" · 공식 {official.lowest_rate:.1%}"
+        f" · 가정 전 {official.lowest_rate:.1%}"
         if official is not None and official.lowest_rate is not None
         else ""
     )
-    shortage_note = f" · 공식 {official.shortage_months}개월" if official is not None else ""
+    shortage_note = f" · 가정 전 {official.shortage_months}개월" if official is not None else ""
     prescription_note = (
-        f" · 공식 {prescription_text(official_plan)}" if official_plan is not None else ""
+        f" · 가정 전 {prescription_text(official_plan)}" if official_plan is not None else ""
     )
     # 이 줄의 값은 글이 섞여 다른 화면의 큰 숫자보다 길다 — 한 단계 작게 둔다.
     st.html(
@@ -1788,7 +1795,7 @@ def render_process_kpis(
             cause_summary(kpis, plan),
             key="process_detail_kpi_cause",
             caption="달 수 · "
-            + ("UPEH 가정 기준" if official is not None else "공식 기준")
+            + ("UPEH 가정 기준" if official is not None else "Static 기준")
             + (" · 일정은 설비 일정" if plan is not None else ""),
             help=CAUSE_HELP,
         )

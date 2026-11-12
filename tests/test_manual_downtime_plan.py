@@ -1,4 +1,4 @@
-# Purpose: 입력 비가동이 계획·전월 대비·계산 키·공정 Capa 상세 ④ 줄에 닿는지 검증한다.
+# Purpose: 입력 비가동이 계획·전월 대비·계산 키·공정 Capa 상세 ③ · ⑤ 줄에 닿는지 검증한다.
 
 """입력 비가동 대수(2026-10-27 사용자 결정)가 실행 관리 쪽 가용에 함께 닿는다.
 
@@ -38,6 +38,7 @@ from capa_simulation.components.process_capa_canvas import (
     CUSTOMDATA_ROW,
     MANUAL_DOWNTIME_ROW_LABEL,
     ROW_DYNAMIC_AVAILABLE,
+    ROW_EFFECT_LOSS,
     ROW_MANUAL_DOWNTIME,
 )
 from capa_simulation.services import simulation_cache
@@ -223,7 +224,7 @@ def test_the_cached_plan_rebuilds_the_input_from_its_key() -> None:
         simulation_cache.get_equipment_lifecycle_spans.clear()
 
 
-# ------------------------------------------------------------------ 공정 Capa 상세 ④
+# ------------------------------------------------------------------ 공정 Capa 상세 ③ · ⑤
 
 
 def _manual_bridge(values: dict[int, float]) -> pd.DataFrame:
@@ -237,7 +238,7 @@ def _manual_bridge(values: dict[int, float]) -> pd.DataFrame:
     return bridge
 
 
-def test_the_fourth_section_gets_the_input_row_only_when_there_is_input() -> None:
+def test_the_fifth_section_gets_the_input_row_only_when_there_is_input() -> None:
     plain = _canvas(dynamic=_dynamic())
     assert ROW_MANUAL_DOWNTIME not in plain.row_ids
 
@@ -261,16 +262,17 @@ def test_the_fourth_section_gets_the_input_row_only_when_there_is_input() -> Non
     assert "가용에서 1.5 뺌" in hovers[first]
     assert "0 에서 멈췄습니다" in hovers[second]
     assert "Preference" in _label_hovers(canvas)[ROW_MANUAL_DOWNTIME]
-    assert MANUAL_DOWNTIME_ROW_LABEL == "월별 비가동 대수(입력)"
+    # 줄 이름은 다른 대수 줄처럼 붙여 쓴다(2026-11-12 사용자 메모 k-c0).
+    assert MANUAL_DOWNTIME_ROW_LABEL == "월별 비가동대수(입력)"
 
 
 def test_the_input_row_hover_writes_the_removed_share_like_the_available_hover() -> None:
-    """④ 첫 줄 칸 풍선의 뺀 몫은 작은 몫도 0 이 아니게, ② 가용 칸 풍선과 같은 수로 적는다.
+    """⑤ 첫 줄 칸 풍선의 뺀 몫은 작은 몫도 0 이 아니게, ③ 비가동대수 풍선의 입력 몫과 같은 수로
+    적는다.
 
-    2026-10-27 E2E — 0.04 를 넣으면 ④ 가 「입력 비가동 0.04대 — 가용에서 0.0 뺌」, 같은 달 ② 가용이
-    「입력 비가동 −0.04 반영」 이었다. 넘치지 않은 달은 뺀 몫 = 넣은 대수라 ④ 의 두 수가 같은
-    글이고(1.25 를 「1.2 뺌」 으로 적으면 덜 뺀 것처럼 읽힌다), 넘친 달의 작은 몫(가용 0.003 만
-    남음)도 0 이 아니게 적는다.
+    2026-10-27 E2E — 0.04 를 넣으면 「입력 비가동 0.04대 — 가용에서 0.0 뺌」 이었다. 넘치지 않은
+    달은 뺀 몫 = 넣은 대수라 두 수가 같은 글이고(1.25 를 「1.2 뺌」 으로 적으면 덜 뺀 것처럼
+    읽힌다), 넘친 달의 작은 몫(가용 0.003 만 남음)도 0 이 아니게 적는다.
     """
     entered = {CANVAS_MONTHS[0]: 0.01, CANVAS_MONTHS[1]: 0.04, CANVAS_MONTHS[2]: 1.25}
     overdrawn = CANVAS_MONTHS[3]
@@ -284,13 +286,17 @@ def test_the_input_row_hover_writes_the_removed_share_like_the_available_hover()
     removed = {CANVAS_MONTHS[0]: "0.01", CANVAS_MONTHS[1]: "0.04", CANVAS_MONTHS[2]: "1.25"}
     for month, text in removed.items():
         assert f"입력 비가동 {text}대 — 가용에서 {text} 뺌" in hovers[(ROW_MANUAL_DOWNTIME, month)]
-        assert f"입력 비가동 −{text} 반영" in hovers[(ROW_DYNAMIC_AVAILABLE, month)]
+        assert f"입력 비가동 {text}" in hovers[(ROW_EFFECT_LOSS, month)]
+        # ② 가용대수는 비가동을 빼기 전 값이다(2026-11-12 사용자 답 n1 (가)).
+        assert "입력 비가동" not in hovers[(ROW_DYNAMIC_AVAILABLE, month)]
     assert "입력 비가동 2대 — 가용에서 0.003 뺌" in hovers[(ROW_MANUAL_DOWNTIME, overdrawn)]
     assert "0 에서 멈췄습니다" in hovers[(ROW_MANUAL_DOWNTIME, overdrawn)]
-    assert "입력 비가동 −0.003 반영" in hovers[(ROW_DYNAMIC_AVAILABLE, overdrawn)]
+    assert "입력 비가동 0.003" in hovers[(ROW_EFFECT_LOSS, overdrawn)]
 
 
-def test_the_bridge_hover_names_the_input_share_of_downtime() -> None:
+def test_the_schedule_change_leaves_downtime_to_the_downtime_section() -> None:
+    """② 전월 대비는 비가동을 빼기 전 가용의 증감이라 입력 비가동 증감을 섞지 않는다 — 비가동은
+    ③ 비가동에서 한 번만 본다(2026-11-12 사용자 답 n1 (가) · k-c3)."""
     bridge = _dynamic().bridge.copy()
     month = CANVAS_MONTHS[2]
     bridge.loc[bridge["생산계획년월"].eq(month), "입력 비가동 증감"] = -0.5
@@ -300,4 +306,4 @@ def test_the_bridge_hover_names_the_input_share_of_downtime() -> None:
         for data, _, _ in _targets(canvas)
         if data[CUSTOMDATA_ROW] == "dynamic_delta" and int(data[CUSTOMDATA_MONTH]) == month
     )
-    assert "(입력 비가동 −0.5 포함)" in hover
+    assert "비가동" not in hover

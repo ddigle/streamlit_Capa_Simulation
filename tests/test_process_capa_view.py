@@ -9,10 +9,10 @@ KPI 글·범례·그림 기억·콜백을 하나씩 고정한다. 재료는 결�
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -43,12 +43,10 @@ from capa_simulation.components.process_capa_view import (
     ENTRY_SECTIONS,
     NO_COUNTED_UNITS_HELP,
     SHEET_MEMO_LIMIT,
-    TARGET_HELP,
     DynamicView,
     Prescription,
     ProcessDetailView,
     availability_card,
-    canvas_legend_html,
     canvas_memo_key,
     cause_summary,
     contributing_units,
@@ -61,7 +59,6 @@ from capa_simulation.components.process_capa_view import (
     month_next_screens,
     prescription,
     prescription_text,
-    production_month_example,
     schedule_short_month,
     sheet_memo_key,
     sheet_request,
@@ -93,6 +90,7 @@ from capa_simulation.services.required_shortening import (
 from capa_simulation.services.securement_rate import CAUSE_COLUMN, CAUSE_OWNED_SHORT
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MINUS = "−"
 
 
@@ -239,9 +237,25 @@ def test_the_availability_card_warns_on_a_mismatch_and_adds_the_schedule_referen
     card = availability_card(record, bridge)
 
     assert card.formula.startswith("보유 52.0 − 대여 4.0 = 48.0")
-    assert "가용대수 48.0 (공식)" in card.formula
+    assert "가용대수 48.0 (Static)" in card.formula
     assert any(note.startswith("⚠") for note in card.notes)
-    assert "설비 일정 기준(참고): 기존보유 44.0 + 호기 3.5 = 47.5 (환산)" in card.notes
+    assert "일정 가용(참고): 기존보유 44.0 + 호기 3.5 = 47.5 (환산 · 비가동 빼기 전)" in card.notes
+    assert not any(note.startswith("③") for note in card.notes)
+
+
+def test_the_availability_card_splits_the_schedule_before_and_after_downtime() -> None:
+    """② 일정 가용은 비가동을 빼기 전, ③ 일정 기준 실가용은 그 가용 − 비가동이고 필요 단축 일정의
+    가용과 같다(2026-11-12 사용자 답 n1 (가) — 산출 근거 식도 맞춘다)."""
+    bridge = {
+        "기존보유": 44.0,
+        "호기 가용": 15.7,
+        "호기 비가동 손실": 3.3,
+        "입력 비가동 반영": 0.0,
+        "가용대수": 59.7,
+    }
+    card = availability_card(_record(_summary(), 202611), bridge)
+    assert "일정 가용(참고): 기존보유 44.0 + 호기 19.0 = 63.0 (환산 · 비가동 빼기 전)" in card.notes
+    assert "③ 일정 기준 실가용: 63.0 − 비가동 3.3 = 59.7 (필요 단축 일정의 가용)" in card.notes
 
 
 def test_the_demand_card_falls_back_without_a_trace() -> None:
@@ -526,41 +540,30 @@ def test_the_target_reads_the_preference_threshold_by_month() -> None:
     assert target_text(uniform, MONTHS) == "확보 기준(월별) 110%"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
     assert target_text(varied, MONTHS) == "확보 기준(월별)"
-    # 그 값을 고치는 곳은 자리 글이 아니라 풍선이다(UI-TXT-03).
-    assert "HOME 설정 → 판정 기준 › 확보 기준(월별)" in TARGET_HELP
+    # 화면에서는 그 값과 고치는 곳을 Guide 가 적는다(2026-11-12 사용자 메모 k-c4).
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/process_capa_detail.md").read_text(
+        encoding="utf-8"
+    )
+    assert "HOME 설정 → 판정 기준 › 확보 기준을 달마다 그대로" in guide
 
 
 # ------------------------------------------------------------------ 범례·스크롤
 
 
-def test_the_legend_adds_the_schedule_marks_only_with_the_schedule() -> None:
-    static = canvas_legend_html(None, MONTHS)
-    assert "공식 확보 기준 미달 달" in static and "지금 보는 달" in static
-    assert "가용을 깎은 비가동" not in static
-    dynamic = canvas_legend_html(_dynamic(), MONTHS)
-    for item in (
-        "반입",
-        "추가N(신규 필요)",
-        "가용을 깎은 비가동",
-        "칸 = 생산월",
-        "≠ 반출/이설일정",
-    ):
-        assert item in dynamic
-    # 생산월 규칙(세는 날 · 이설 이름)은 「칸 = 생산월」 표지의 풍선(title)이고 늘 보이는 글이
-    # 아니다(UI-TXT-01).
-    visible = re.sub(r'title="[^"]*"', "", dynamic)
-    assert "당일부터 셉니다" not in visible and "≠ 반출/이설일정" not in visible
-    assert "칸 = 생산월 · Cut-off" in visible
-    # 서식과 표시 글이 한 덩어리 — 본문 칸으로 간다.
-    assert dynamic.startswith("<style>") and '<div class="pcd-legend">' in dynamic
+def test_the_legend_left_the_sheet_for_the_guide() -> None:
+    """시트 아래 범례 한 줄은 걷고 Guide 「시트 범례」 절이 띠 · 칸 색 · 표지를 적는다(2026-11-12
+    사용자 답 k-c5). 칸 = 생산월 예는 ② 제목 줄 풍선이 적는다."""
+    from capa_simulation.components import process_capa_view
+    from capa_simulation.components.process_capa_canvas import _production_example
 
-
-def test_the_production_month_example_adds_the_next_day_and_the_cutoff() -> None:
-    # 11.25 Qual → 기여 11.26, Cut-off 10 → 12.06 → 12월 칸.
-    assert production_month_example(10, MONTHS) == (
-        "칸 = 생산월 — Cut-off 10일이면 11.25 Qual 은 12월 칸에 섭니다"
+    assert not hasattr(process_capa_view, "canvas_legend_html")
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/process_capa_detail.md").read_text(
+        encoding="utf-8"
     )
-    assert production_month_example(0, MONTHS).endswith("11월 칸에 섭니다")
+    assert "#### 시트 범례 — 띠 · 칸 색 · 표지" in guide
+    # 11.25 Qual → 기여 11.26, Cut-off 10 → 12.06 → 12월 칸.
+    assert _production_example(10, MONTHS) == "11.25 Qual 은 12월 칸"
+    assert _production_example(0, MONTHS) == "11.25 Qual 은 11월 칸"
 
 
 def test_the_scroll_starts_one_column_left_of_the_opened_month() -> None:
@@ -624,11 +627,12 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
 def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() -> None:
     """구획 접기·모듈 라벨 제거(4), ③ 세 줄 풍선 · 풍선 없는 칸 trace · 줄 이름 칸 풍선 표적(5),
     풍선 식의 「≈」(6 — `customdata` 에 구운 풍선 글), ② 「비가동 영향」 줄(7), 정수 기준 글과 판정
-    경계 과부족 풍선(8 — 2026-11-01 사용자 결정)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을
-    다시 쓰지 않게 모양 버전이 8 이다(AGENTS 5장 16)."""
+    경계 과부족 풍선(8 — 2026-11-01 사용자 결정), 구획 다섯 · 제목 줄 풍선 · 비가동 기준(9 —
+    2026-11-12 사용자 답)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양
+    버전이 9 다(AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 8
+    assert CANVAS_SCHEMA_VERSION == 9
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 
@@ -762,18 +766,18 @@ def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
 
 
 def test_the_sheet_sections_line_names_only_the_sections_the_sheet_draws() -> None:
-    """시트 머리 값 「구획」 은 시트에 실제로 선 구획만 적는다 — 설비 일정이 서지 않으면 ② ~ ④ 칩이
+    """시트 머리 값 「구획」 은 시트에 실제로 선 구획만 적는다 — 설비 일정이 서지 않으면 ② ~ ⑤ 칩이
     켜져 있어도 ① 뿐이고, 그 ① 마저 접었으면 「모두 접힘」 이다."""
     nothing: frozenset[str] = frozenset()
-    assert _sheet_sections(_view(dynamic=None), nothing) == "① 공식"
+    assert _sheet_sections(_view(dynamic=None), nothing) == "① Static"
     assert _sheet_sections(_view(dynamic=None), frozenset({SECTION_SUMMARY})) == "모두 접힘"
     assert (
         _sheet_sections(_view(dynamic=_dynamic_view()), nothing)
-        == "① 공식 · ② 일정 가용 · ③ 단축 · ④ 비가동"
+        == "① Static · ② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정"
     )
     assert (
         _sheet_sections(_view(dynamic=_dynamic_view()), frozenset({SECTION_UNITS}))
-        == "① 공식 · ② 일정 가용 · ④ 비가동"
+        == "① Static · ② 일정 가용 · ③ 비가동 · ⑤ 비가동 일정"
     )
 
 
@@ -947,20 +951,20 @@ def test_the_closing_link_steps_aside_only_for_a_visit_from_the_card() -> None:
 @pytest.mark.parametrize(
     ("percent", "month", "head", "official", "owned_link"),
     [
-        # 공식은 경고(보유로도 부족)인데 150% 면 확보 — ③ 머리도 확보, 다음 화면 줄도 없다.
+        # 가정 전은 경고(보유로도 부족)인데 150% 면 확보 — ③ 머리도 확보, 다음 화면 줄도 없다.
         (
             150,
             202702,
             "→ 확보",
-            "공식: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도 부족",
+            "가정 전: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도 부족",
             None,
         ),
-        # 공식은 확보인데 80% 면 부족(보유로도 부족) — ③ 머리도 부족, 다음 화면 줄도 선다.
+        # 가정 전은 확보인데 80% 면 부족(보유로도 부족) — ③ 머리도 부족, 다음 화면 줄도 선다.
         (
             80,
             202611,
             "→ 부족",
-            "공식: 확보율 116.5% → 확보 · 과부족 +2",
+            "가정 전: 확보율 116.5% → 확보 · 과부족 +2",
             "이 달 보유로도 부족 — 산출 결과",
         ),
     ],
@@ -968,9 +972,9 @@ def test_the_closing_link_steps_aside_only_for_a_visit_from_the_card() -> None:
 def test_the_judgement_card_and_next_screens_read_the_same_assumed_basis(
     percent: int, month: int, head: str, official: str, owned_link: str | None
 ) -> None:
-    """UPEH 가정 구간 달의 ③ 판정 카드는 머리 식·판정·원인을 가정 요약으로 내고(소요 = 공식 ÷ f
-    를 식 첫 줄에), 공식 판정은 회색 「공식: …」 한 줄로 내린다 — 같은 패널의 다음 화면 줄과 같은
-    기준이다."""
+    """UPEH 가정 구간 달의 ③ 판정 카드는 머리 식·판정·원인을 가정 요약으로 내고(소요 = 가정 전 ÷ f
+    를 식 첫 줄에), 가정 전 판정은 회색 「가정 전: …」 한 줄로 내린다 — 같은 패널의 다음 화면 줄과
+    같은 기준이다."""
     window = set(MONTHS)
     summary = _summary()
     assumed = _assumed_summary(percent, window)
@@ -989,10 +993,10 @@ def test_the_judgement_card_and_next_screens_read_the_same_assumed_basis(
     cause = _record(assumed, month)[CAUSE_COLUMN]
     assert any(note.startswith("원인: ") for note in card.notes) == bool(cause)
     assert month_next_screens(view, month).owned == owned_link
-    # 가정이 없으면 공식 그대로다(제목·식 두 줄, 「공식:」 줄 없음).
+    # 가정이 없으면 Static 그대로다(제목·식 두 줄, 「가정 전:」 줄 없음).
     plain = evidence_cards(_view(summary=summary), month, None)[2]
     assert plain.title == "③ 판정" and len(plain.formula.split("\n")) == 2
-    assert not any(note.startswith("공식: ") for note in plain.notes)
+    assert not any(note.startswith("가정 전: ") for note in plain.notes)
 
 
 def _gap_script() -> None:
