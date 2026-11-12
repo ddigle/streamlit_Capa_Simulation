@@ -13,7 +13,10 @@
 - `coerce_master_cell` — 칸 하나의 글을 저장 정규화와 **같은 함수**로 계약 꼴 값으로 다듬는다. 못
   다듬으면 그 규칙 문구를 단 `CellParseError`.
 
-리비전을 다시 읽을 때도 이 표를 지나므로 **규칙을 조이지 않는다**(AGENTS 7장).
+리비전을 다시 읽을 때도 이 표를 지나므로 **규칙을 조이지 않는다**(AGENTS 7장). `today` 는 저장 때
+표지다 — 넘기면 날짜에 기대는 규칙(실적 > 오늘 등)과 **저장 때만 막는 규칙**(모듈 묶음의 Area Code·
+Maker 등 — `equipment_contract.UNIT_SAVE_CONSISTENT_COLUMNS`)이 더 돈다. 저장과 저장 전 미리 보기만
+넘기고, 리비전 읽기·계산·발행은 넘기지 않는다.
 """
 
 from __future__ import annotations
@@ -60,6 +63,7 @@ from capa_simulation.services.equipment_contract import (
     STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
     UNIT_CONSISTENT_COLUMNS,
+    UNIT_SAVE_CONSISTENT_COLUMNS,
     VALID_BUILDINGS,
     VALID_FLOORS,
     empty_downtime_schedule,
@@ -185,9 +189,15 @@ def prepare_equipment_master(
     `floor_canvases` 를 넘기면 층별 캔버스 폭·높이를 상한으로 좌표를 검사한다. 넘기지
     않으면 상한 검사를 건너뛴다 — 이미 저장된 리비전은 캔버스가 줄어든 뒤에도 열려야 한다.
 
-    `today` 를 넘기면 **저장할 때만 도는** 실적 검사를 한다(실적이 오늘보다 늦음·반입실적이
-    Qual실적보다 늦음). 결과가 날짜에 따라 달라지는 검사라 리비전을 다시 읽을 때는 넘기지 않는다 —
-    저장 때 통과한 리비전이 시간이 지나 열리지 않으면 안 된다.
+    `today` 는 저장 때 표지다. 넘기면 **저장할 때만 도는** 규칙이 더 돈다.
+
+    - 실적 검사(실적이 오늘보다 늦음·반입실적이 Qual실적보다 늦음) — 결과가 날짜에 따라 달라진다.
+    - 모듈 묶음의 저장 때만 칸(`UNIT_SAVE_CONSISTENT_COLUMNS` — Area Code·Maker·Model·
+      투자Capa·담당자·보관유무·기존설비여부)이 묶음 안에서 갈림 — 사내 저장본에 갈린 묶음이 있어도
+      그 리비전이 열리고 계산·발행되어야 한다.
+
+    리비전을 다시 읽을 때는 넘기지 않는다 — 저장 때 통과한 리비전이 시간이 지나거나 규칙이 늘어
+    열리지 않으면 안 된다.
     """
     master = _read_master(data, floor_canvases=floor_canvases, today=today)
     if master is None:
@@ -318,6 +328,12 @@ def _unit_group_mixed_message(column: str) -> str:
     return f"같은 Main 설비의 모듈 행은 {with_subject_particle(column)} 같아야 합니다"
 
 
+def _unit_group_saved_message(column: str) -> str:
+    # 영문 칸 이름(Area Code·Maker·Model·투자Capa)은 조사 도우미가 끝소리를 못 읽어 「이(가)」 가
+    # 된다 — 「칸이」 를 사이에 둔다.
+    return f"같은 Main 설비의 모듈 행은 {column} 칸이 같아야 합니다"
+
+
 def _flag_message(column: str) -> str:
     return f"{with_topic_particle(column)} Y 또는 N이어야 합니다"
 
@@ -407,6 +423,12 @@ class _MasterFrame:
     ratio_not_positive: pd.Series
     floor_canvases: FloorCanvasMap | None
     today: date | None
+
+    @property
+    def saving(self) -> bool:
+        """저장 때(또는 저장 전 미리 보기)인가 — `today` 를 넘긴 쓰임이다. 저장 때만 막는 규칙이
+        본다."""
+        return self.today is not None
 
     @cached_property
     def placement(self) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -626,17 +648,34 @@ def _check_unit_group_mixed(master: _MasterFrame) -> Iterator[_Finding]:
     """한 설비의 모듈 행끼리 공정·공정구분·투자구분·동·층이 같아야 한다. 화면 필터가 이 값들로
     행을 거르므로, 다르면 필터가 설비를 쪼개 지분 합이 1 이 아니게 된다. 칸 결과는 묶음 모든 줄의
     그 칸이다."""
+    yield from _mixed_findings(master, UNIT_CONSISTENT_COLUMNS, _unit_group_mixed_message)
+
+
+def _check_unit_group_mixed_saved(master: _MasterFrame) -> Iterator[_Finding]:
+    """저장할 때만 — 한 설비의 모듈 행끼리 Area Code·Maker·Model·투자Capa·담당자·보관유무·
+    기존설비여부도 같아야 한다(2026-11-12 사용자 답 3-3). 읽기·계산에는 걸지 않는다 — 사내 저장본에
+    갈린 묶음이 있으면 그 리비전이 열리지 않게 된다. 칸 결과는 묶음 모든 줄의 그 칸이다."""
+    if not master.saving:
+        return
+    yield from _mixed_findings(master, UNIT_SAVE_CONSISTENT_COLUMNS, _unit_group_saved_message)
+
+
+def _mixed_findings(
+    master: _MasterFrame, columns: Sequence[str], message: Callable[[str], str]
+) -> Iterator[_Finding]:
+    """칸마다 값이 둘 이상인 묶음(Main 설비가 같은 행)의 모든 줄. 빈 칸도 한 값으로 견준다 — 한
+    모듈만 비어도 갈림이다."""
     result = master.data
     parents = result[PARENT_EQUIPMENT_COLUMN]
     named = parents.notna()
     if not named.any():
         return
     keys = parents.where(named, result[EQUIPMENT_ID_COLUMN])
-    for column in UNIT_CONSISTENT_COLUMNS:
+    for column in columns:
         values = result[column].astype("string").fillna("")
         mixed = values.groupby(keys).nunique().gt(1)
         groups = mixed.loc[mixed].index
-        head = _unit_group_mixed_message(column)
+        head = message(column)
         yield _hit(
             keys.isin(groups),
             head,
@@ -922,13 +961,14 @@ def _check_module_ratio(master: _MasterFrame) -> Iterator[_Finding]:
 
 # 규칙 표. **차례가 계약이다** — 저장 함수는 이 차례로 처음 걸린 규칙 하나를 던지고(기존 시험이 그
 # 문구를 본다), 칸 결과도 이 차례로 낸다. 리비전을 다시 읽을 때도 이 표를 지나므로 **규칙을 조이지
-# 않는다** — 새 규칙은 기존 저장본이 새로 막히지 않게 걸고, 날짜에 기대는 규칙은 `today` 를 줄 때만
-# 돈다. 줄 끝 주석은 칸 결과의 대표 칸이다.
+# 않는다** — 새 규칙은 기존 저장본이 새로 막히지 않게 걸고, 날짜에 기대는 규칙과 저장 때만 막는
+# 규칙은 `today`(저장 때 표지)를 줄 때만 돈다. 줄 끝 주석은 칸 결과의 대표 칸이다.
 MASTER_RULES: tuple[MasterRule, ...] = (
     MasterRule("required_text", _check_required_text),  # 공정소분류
     MasterRule("duplicate_unit", _check_duplicate_units),  # 설비명(겹친 줄 모두)
     MasterRule("unit_group_collision", _check_unit_group_collision),  # Main 설비 / 설비명
     MasterRule("unit_group_mixed", _check_unit_group_mixed),  # 갈린 칸, 묶음 모든 줄
+    MasterRule("unit_group_mixed_saved", _check_unit_group_mixed_saved),  # 갈린 칸(`today` 때만)
     MasterRule("flag", _check_flags),  # 그 Y/N 칸
     MasterRule("number_unreadable", _check_numbers),  # 그 좌표·크기 칸
     MasterRule("location_range", _check_location_range),  # 동 또는 층

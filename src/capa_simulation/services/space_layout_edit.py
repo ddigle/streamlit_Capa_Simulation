@@ -45,6 +45,12 @@ from capa_simulation.services.equipment_contract import (
     SCENARIO_LAYOUT_COLUMNS,
     STORAGE_FLAG_COLUMN,
 )
+from capa_simulation.services.equipment_units import (
+    module_group_rows as module_group_rows,
+)
+from capa_simulation.services.equipment_units import (
+    parent_equipment as _parents,
+)
 from capa_simulation.services.equipment_units import unit_keys
 from capa_simulation.services.fab_layout import floor_label
 from capa_simulation.services.floor_layout_mark import (
@@ -232,14 +238,6 @@ def _iso_date(value: object, field: str, unit_id: str) -> date | None:
 # ------------------------------------------------------------------ 입력
 
 
-def _parents(frame: pd.DataFrame) -> pd.Series:
-    """행마다 Main 설비(앞뒤 공백 제거, 비면 NA). 선택 컬럼이라 없는 표도 받는다."""
-    if PARENT_EQUIPMENT_COLUMN not in frame.columns:
-        return pd.Series(pd.NA, index=frame.index, dtype="string")
-    parents = frame[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
-    return parents.where(parents.ne(""))
-
-
 def _floor_mask(frame: pd.DataFrame, key: FloorKey) -> pd.Series:
     return frame["동"].eq(key[0]).fillna(False).astype(bool) & frame["층"].eq(key[1]).fillna(
         False
@@ -394,14 +392,6 @@ def new_unit_options(master: pd.DataFrame) -> dict[str, Any]:
         "prefixSizes": prefix_sizes(master),
         "moduleParents": sorted(module_parents(master)),
     }
-
-
-def module_group_rows(master: pd.DataFrame) -> pd.Series:
-    """행마다 그 행이 든 Main 설비 모듈 묶음(Main 설비가 같은 행이 표 전체에서 둘 이상)의 Main 설비,
-    묶음 밖이면 NA. 모듈 묶음 판정의 한 곳이다 — 저장 전 바둑판 검사(`module_layout_violations`)와
-    가정 설비 시나리오 배치 차이의 묶음 통째 규칙(`services/layout_overlay.py`)이 같이 쓴다."""
-    parents = _parents(master)
-    return parents.where(parents.map(parents.value_counts()).fillna(0).ge(2).astype(bool))
 
 
 def _module_rows(master: pd.DataFrame) -> pd.Series:

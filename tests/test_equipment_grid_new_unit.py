@@ -266,10 +266,17 @@ def test_joining_a_module_group_locks_coordinates_and_needs_the_groups_values() 
     master.loc[1, "공정소분류"] = master.loc[0, "공정소분류"]
     state = _state((saved[0], master, saved[2]))
     group_floor = (str(master.loc[0, "동"]), str(master.loc[0, "층"]))
+    # 비운 묶음 칸은 묶음 값으로 채우므로 묶음과 다른 동을 적는다.
+    other_building = "C2" if group_floor[0] != "C2" else "C3"
 
     wrong = _check(
         _draft(
-            설비명="GRP-1E", 공정소분류="TC Bonding", **{"Main 설비": "GRP-1"}, X좌표="3", Y좌표="4"
+            설비명="GRP-1E",
+            공정소분류="TC Bonding",
+            동=other_building,
+            **{"Main 설비": "GRP-1"},
+            X좌표="3",
+            Y좌표="4",
         ),
         state,
     )
@@ -291,6 +298,82 @@ def test_joining_a_module_group_locks_coordinates_and_needs_the_groups_values() 
         state,
     )
     assert not right.blocked, right.errors
+
+
+def _joining(**changes: str) -> tuple[eg.GridState, pd.DataFrame]:
+    """앞 두 줄을 묶음 GRP-1 로 묶은 상태(묶음 칸이 같게 맞춤) — `changes` 는 1번 줄에 얹는 값."""
+    saved = _saved()
+    master = saved[1].copy()
+    master.loc[[0, 1], "Main 설비"] = "GRP-1"
+    for column in ("공정소분류", "동", "층"):
+        master.loc[1, column] = master.loc[0, column]
+    for column, value in changes.items():
+        master.loc[1, column] = value
+    return _state((saved[0], master, saved[2])), master
+
+
+def test_joining_a_group_fills_only_the_group_columns_left_blank() -> None:
+    """2026-11-12 (빈 칸만 채움) — 있는 묶음에 드는 초안은 묶음이 저장 때 같기를 바라는 칸(여섯
+    + 일곱) 가운데 비운 칸을 묶음의 한 값으로 채운다. 넣은 값은 덮지 않고, 기본값이 찬 Y/N 칸
+    (보관유무 · 기존설비여부)도 그대로다. 사용기준은 같이 바뀌는 칸이 아니라 채우지 않는다."""
+    state, master = _joining(Maker="Maker-G", Model="Model-G", 담당자="담당-G")
+    master.loc[0, ["Maker", "Model", "담당자"]] = ["Maker-G", "Model-G", "담당-G"]
+    state = _state((state.saved[0], master, state.saved[2]))
+
+    check = _check(
+        _draft(
+            설비명="GRP-1E",
+            공정소분류=str(master.loc[0, "공정소분류"]),
+            Model="Model-X",
+            **{"Main 설비": "GRP-1"},
+        ),
+        state,
+    )
+
+    def value(column: str) -> str:
+        return check.values[eg.COLUMN_INDEX[column]]
+
+    assert (value("Maker"), value("담당자")) == ("Maker-G", "담당-G")
+    assert (value("동"), value("층")) == (str(master.loc[0, "동"]), str(master.loc[0, "층"]))
+    assert value("Model") == "Model-X"
+    assert check.errors["Model"] == "같은 Main 설비의 모듈 행은 Model 칸이 같아야 합니다"
+    assert value("사용기준") == ""
+    assert (value("보관유무"), value("기존설비여부")) == ("N", "N")
+
+
+def test_a_group_already_split_in_a_column_is_not_filled() -> None:
+    """묶음이 그 칸에서 이미 갈렸으면 채우지 않는다 — 어느 값이 맞는지 앱이 고르지 않는다."""
+    state, master = _joining(담당자="담당-다른")
+
+    check = _check(
+        _draft(
+            설비명="GRP-1E", 공정소분류=str(master.loc[0, "공정소분류"]), **{"Main 설비": "GRP-1"}
+        ),
+        state,
+    )
+
+    assert check.values[eg.COLUMN_INDEX["담당자"]] == ""
+    assert check.errors["담당자"] == "같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다"
+    assert check.blocked
+
+
+def test_a_filled_draft_adds_the_groups_values_to_the_new_module() -> None:
+    """채운 값은 「호기 추가」 가 넣는 줄에도 든다 — 새 모듈이 든 편집본이 저장 규칙을 지난다."""
+    state, master = _joining()
+
+    result = _add(
+        state,
+        _draft(
+            설비명="GRP-1E", 공정소분류=str(master.loc[0, "공정소분류"]), **{"Main 설비": "GRP-1"}
+        ),
+    )
+    edited = result.state.frames[1]
+    row = edited.iloc[-1]
+
+    assert result.added and row["설비명"] == "GRP-1E"
+    for column in ("Maker", "Model", "담당자", "Area Code", "공정구분", "투자구분"):
+        assert eg.cell_text(row[column]) == eg.cell_text(master.loc[0, column]), column
+    prepare_equipment_master(edited, today=ANCHOR)
 
 
 def test_a_stale_session_locks_the_whole_draft_with_the_reason() -> None:

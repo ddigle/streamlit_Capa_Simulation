@@ -77,6 +77,8 @@ from capa_simulation.services.equipment_contract import (
     SCENARIO_SCHEDULE_COLUMNS,
     STOP_DATE_COLUMN,
     STORAGE_FLAG_COLUMN,
+    UNIT_CONSISTENT_COLUMNS,
+    UNIT_SAVE_CONSISTENT_COLUMNS,
     USAGE_BASIS_COLUMN,
     VALID_BUILDINGS,
     VALID_FLOORS,
@@ -1421,7 +1423,8 @@ def unit_texts(master: pd.DataFrame, position: int) -> list[str]:
 class NewUnitCheck:
     """「새 호기」 초안 한 벌의 판정 — 체크 상자·칸 오류·「호기 추가」 가 모두 여기서 나온다.
 
-    - `values` — 잠긴 칸을 비운 초안 글(넣을 값). `errors`·`warns`·`locks` 는 칸 이름 → 글.
+    - `values` — 잠긴 칸을 비운 초안 글(넣을 값). 있는 모듈 묶음에 드는 초안이면 비운 묶음 칸을
+      묶음 값으로 채운 글이다(`_group_fill`). `errors`·`warns`·`locks` 는 칸 이름 → 글.
     - `required`·`flags`·`calc`·`map` — 체크 상자 줄마다 (칸, 됨). `required` 는 설비명·공정소분류
       뒤에 다른 칸 값 때문에 막는 칸이 붙는다 — Qual일정이 있는 신규 호기면 Qual상태(찼어도 남는다),
       그리고 비어서 막는 오류가 걸린 칸(좌표가 있는데 빈 크기 등, 잠긴 칸 빼고). 「에러 없이
@@ -1483,6 +1486,31 @@ def _group_floor(master: pd.DataFrame, values: Sequence[str]) -> dict[str, str]:
     return found if any(found.values()) else {}
 
 
+def _group_fill(
+    master: pd.DataFrame, values: Sequence[str], locks: Mapping[str, str]
+) -> dict[str, str]:
+    """초안이 드는 있는 묶음(Main 설비가 같은 행)과 저장이 같기를 바라는 칸(읽기·저장 막음 여섯 +
+    저장 때만 막음 일곱) 가운데 **초안이 비운 칸**에 넣을 묶음 값(칸 → 글). 묶음이 그 칸에서 한
+    값(빈 칸 아님)일 때만 채운다 — 이미 갈렸거나 묶음도 비었으면 채우지 않는다. 사용자가 넣은 값과
+    잠긴 칸(배치 잠긴 회차의 동·층은 `_group_floor` 몫)은 손대지 않는다."""
+    parent = values[COLUMN_INDEX[PARENT_EQUIPMENT_COLUMN]].strip()
+    if not parent or PARENT_EQUIPMENT_COLUMN not in master.columns:
+        return {}
+    members = master.loc[
+        master[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip().eq(parent).fillna(False)
+    ]
+    if members.empty:
+        return {}
+    found: dict[str, str] = {}
+    for column in (*UNIT_CONSISTENT_COLUMNS, *UNIT_SAVE_CONSISTENT_COLUMNS):
+        if column in locks or values[COLUMN_INDEX[column]].strip():
+            continue
+        texts = {cell_text(value) for value in members[column].tolist()}
+        if len(texts) == 1 and (text := next(iter(texts))):
+            found[column] = text
+    return found
+
+
 def _draft_row(master: pd.DataFrame, cells: Mapping[str, Any]) -> pd.DataFrame:
     """초안 한 줄을 편집본 설비 마스터와 같은 칸·dtype 의 한 줄 표로(빈 칸은 그 칸 형의 결측)."""
     row = master.iloc[0:0].reindex(range(1))
@@ -1532,6 +1560,11 @@ def new_unit_check(
         # 배치 편집이 잠긴 회차의 새 호기는 자리 없이 — 있는 묶음에 드는 모듈은 그 묶음의 동·층으로
         # 들어간다(`locked_layout` 과 같은 판정, 넣은 뒤 `_with_placement` 가 맞춘다).
         for column, text in _group_floor(master, values).items():
+            values[COLUMN_INDEX[column]] = text
+    if not context.new_rows_locked:
+        # 있는 묶음에 드는 모듈은 초안이 비운 묶음 칸을 묶음 값으로 채운다 — 저장 때만 막는 칸이
+        # 늘어 그 칸을 비워 둔 흔한 초안이 「호기 추가」 에서 막히지 않게. 넣은 값은 덮지 않는다.
+        for column, text in _group_fill(master, values, locks).items():
             values[COLUMN_INDEX[column]] = text
     errors: dict[str, str] = {}
     warns: dict[str, str] = {}

@@ -1,4 +1,4 @@
-# Purpose: 모듈 행을 설비 한 대로 묶는 설비키·설비지분과 소수 대수 표기를 정한다.
+# Purpose: 모듈 행을 설비 한 대로 묶는 설비키·설비지분·묶음 판정·같이 쓰기 계획을 정한다.
 
 """**행이 아니라 설비를 센다.**
 
@@ -20,9 +20,17 @@
 않는다. 모듈 하나가 PM 이면 가용 0.75, 비가동 0.25 가 된다.
 
 Qual 계획처럼 보유와 상관없는 표는 고정 지분(`static_unit_shares`, 1 ÷ 행 수)을 쓴다.
+
+**모듈 묶음**(Main 설비가 같은 행이 표 전체에서 둘 이상 — `module_group_rows`)의 판정과, 묶음 한
+줄을 고칠 때 형제 줄이 같이 바뀌는 계획(`plan_group_writes`)도 여기 둔다. 계약만 import 하는 가장
+낮은 층이라 표(`equipment_grid`)·Space 편집기(`space_layout_edit`)·검증이 고리 없이 부른다.
 """
 
 from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -31,6 +39,7 @@ from capa_simulation.services.equipment_contract import (
     EQUIPMENT_ID_COLUMN,
     PARENT_EQUIPMENT_COLUMN,
     QUAL_STATUS_COLUMN,
+    UNIT_SHARED_COLUMNS,
 )
 
 # 설비 한 대로 묶는 키와 그 시점의 몫. 상태 판정·생애주기 구간이 이 이름으로 붙인다.
@@ -164,3 +173,124 @@ def module_group_warnings(equipment: pd.DataFrame) -> list[str]:
         f"{MODULE_RATIO_WARNING}. 모듈 행에는 1 ÷ 모듈수(4모듈이면 0.25)를 적습니다: "
         f"{suspicious[:5]}"
     ]
+
+
+# ------------------------------------------------------------------ 모듈 묶음
+
+
+def parent_equipment(frame: pd.DataFrame) -> pd.Series:
+    """행마다 Main 설비(앞뒤 공백 제거, 비면 NA). 선택 컬럼이라 없는 표도 받는다."""
+    if PARENT_EQUIPMENT_COLUMN not in frame.columns:
+        return pd.Series(pd.NA, index=frame.index, dtype="string")
+    parents = frame[PARENT_EQUIPMENT_COLUMN].astype("string").str.strip()
+    return parents.where(parents.ne(""))
+
+
+def module_group_rows(master: pd.DataFrame) -> pd.Series:
+    """행마다 그 행이 든 Main 설비 모듈 묶음(Main 설비가 같은 행이 표 전체에서 둘 이상)의 Main 설비,
+    묶음 밖이면 NA. 모듈 묶음 판정의 한 곳이다 — 저장 전 바둑판 검사(`space_layout_edit.
+    module_layout_violations`), 가정 설비 시나리오 배치 차이의 묶음 통째 규칙(`services/
+    layout_overlay.py`), 묶음 같이 쓰기 계획(`plan_group_writes`)이 같이 쓴다."""
+    parents = parent_equipment(master)
+    return parents.where(parents.map(parents.value_counts()).fillna(0).ge(2).astype(bool))
+
+
+@dataclass(frozen=True)
+class GroupWrite:
+    """같이 쓸 칸 하나 — 묶음 하나 · 칸 하나 · 값 하나.
+
+    - `group` — 형제까지 퍼지는 쓰기면 그 Main 설비, 그 줄 하나만 쓰면 None(같이 바뀌는 칸이 아님 ·
+      묶음 밖 줄 · 한 번에 같은 묶음 같은 칸에 다른 값이 와 갈린 것 — `GroupPlan.split`).
+    - `value` — 호출부가 `equipment_validation.coerce_master_cell` 로 다듬은 값 그대로다.
+    - `rows` — 쓸 줄 자리(넘긴 표의 `iloc`, 표 차례). 고친 줄과 형제 모두다.
+    - `asked` — 사용자가 직접 고친 줄 자리(넘긴 차례, 겹친 것 뺌). 나머지 `rows` 가 같이 바뀌는
+      형제다.
+    """
+
+    group: str | None
+    column: str
+    value: object
+    rows: tuple[int, ...]
+    asked: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class GroupPlan:
+    """`plan_group_writes` 의 결과 — 쓰기(처음 나온 차례)와, 한 번에 같은 (묶음, 칸)에 서로 다른
+    값이 와 같이 바꾸지 않은 (Main 설비, 칸) 목록(처음 나온 차례)."""
+
+    writes: tuple[GroupWrite, ...]
+    split: tuple[tuple[str, str], ...]
+
+
+def plan_group_writes(master: pd.DataFrame, cells: Sequence[tuple[int, str, object]]) -> GroupPlan:
+    """고친 칸 `(줄 자리, 칸, 값)` 들을 모듈 묶음 같이 쓰기 계획으로 편다(2026-11-12 사용자 답 3-1 ·
+    3-3 · 3-5).
+
+    - 칸이 `UNIT_SHARED_COLUMNS` 이고 그 줄이 모듈 묶음(`module_group_rows` — 둘 이상)이면 묶음 모든
+      줄에 쓴다. 형제는 **넘긴 표 전체**에서 찾는다 — 표에 불러오지 않은 줄 · 다른 층 · 숨은 모듈도
+      든다. 묶음은 고치기 전 `master` 로 가른다.
+    - 그 밖(같이 바뀌지 않는 칸 — Main 설비 · 사용기준 · 일정 등, 묶음 밖 줄, 한 줄 묶음)은 그 줄
+      하나만이다(`group` None).
+    - 같은 (묶음, 칸)에 온 값이 모두 같으면 쓰기 하나다. 서로 다르면 같이 바꾸지 않고 받은 칸만
+      그 줄 하나씩 쓰며 `split` 에 적는다 — 어느 값이 맞는지 고르지 않는다.
+    - 값 견줌은 결측 · 빈 글을 같은 빈 값으로, 나머지는 글자로 본다.
+
+    **잠금은 보지 않고 값을 다듬지 않는다.** 잠금은 길마다 다르다(표는 칸 잠금, Space 창은 창
+    잠금) — 호출부가 `rows` 가운데 하나라도 잠겼으면 그 쓰기를 통째로 거절한다. 값은 호출부가
+    다듬어 넘긴다(검증이 이 파일을 import 하므로 거꾸로 부르면 고리다). 줄 자리가 표 밖이면
+    `IndexError` 다.
+    """
+    groups = module_group_rows(master).tolist() if len(master) else []
+    members: dict[str, list[int]] = {}
+    for position, name in enumerate(groups):
+        if isinstance(name, str):
+            members.setdefault(name, []).append(position)
+    slots: list[tuple[str, str] | int] = []
+    buckets: dict[tuple[str, str], list[int]] = {}
+    for index, (position, column, _value) in enumerate(cells):
+        name = groups[position]
+        if column in UNIT_SHARED_COLUMNS and isinstance(name, str):
+            key = (name, column)
+            if key not in buckets:
+                buckets[key] = []
+                slots.append(key)
+            buckets[key].append(index)
+        else:
+            slots.append(index)
+    writes: list[GroupWrite] = []
+    split: list[tuple[str, str]] = []
+    for slot in slots:
+        if isinstance(slot, int):
+            writes.append(_single_write(cells[slot]))
+            continue
+        picked = [cells[index] for index in buckets[slot]]
+        if len({_value_key(value) for _, _, value in picked}) > 1:
+            split.append(slot)
+            writes.extend(_single_write(cell) for cell in picked)
+            continue
+        name, column = slot
+        writes.append(
+            GroupWrite(
+                group=name,
+                column=column,
+                value=picked[0][2],
+                rows=tuple(members[name]),
+                asked=tuple(dict.fromkeys(position for position, _, _ in picked)),
+            )
+        )
+    return GroupPlan(writes=tuple(writes), split=tuple(split))
+
+
+def _single_write(cell: tuple[int, str, object]) -> GroupWrite:
+    position, column, value = cell
+    return GroupWrite(group=None, column=column, value=value, rows=(position,), asked=(position,))
+
+
+def _value_key(value: object) -> str:
+    """같이 쓸 값의 견줌 열쇠 — 결측(None · NA · NaT · NaN)은 빈 글, 나머지는 글자."""
+    if value is None or value is pd.NA or value is pd.NaT:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
+        return ""
+    return str(value)

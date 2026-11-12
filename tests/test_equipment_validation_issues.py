@@ -85,6 +85,7 @@ def test_the_rule_table_keeps_its_order_and_warnings_last() -> None:
         "duplicate_unit",
         "unit_group_collision",
         "unit_group_mixed",
+        "unit_group_mixed_saved",
         "flag",
         "number_unreadable",
         "location_range",
@@ -223,6 +224,11 @@ def _mixed_building(frame: pd.DataFrame) -> list[tuple[int, str]]:
     return [(0, "동"), (1, "동")]
 
 
+def _mixed_owner(frame: pd.DataFrame) -> list[tuple[int, str]]:
+    frame.at[1, "담당자"] = "다른 담당자"
+    return [(0, "담당자"), (1, "담당자")]
+
+
 def _no_position_size(frame: pd.DataFrame) -> list[tuple[int, str]]:
     frame.loc[2, ["Xsize", "Ysize"]] = None
     return [(2, "Xsize")]
@@ -306,6 +312,13 @@ BROKEN = {
         _mixed_building,
         _exact("같은 Main 설비의 모듈 행은 동이 같아야 합니다: ['GRP-1']"),
         _modules,
+    ),
+    "모듈 행 담당자가 갈림(저장 때만)": _Broken(
+        "unit_group_mixed_saved",
+        _mixed_owner,
+        _exact("같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다: ['GRP-1']"),
+        _modules,
+        today=ANCHOR,
     ),
     "Y/N 밖": _Broken(
         "flag", _set(4, "레이아웃표시", "X"), _units("레이아웃표시는 Y 또는 N이어야 합니다")
@@ -614,6 +627,89 @@ def test_rules_that_a_reread_revision_passed_are_not_tightened() -> None:
     assert _blocking(equipment_master_issues(frame)) == []
     rules = {issue.rule for issue in equipment_master_issues(frame, today=ANCHOR)}
     assert rules == {"actual_future"}
+
+
+# ------------------------------------------------------------ 모듈 묶음 — 저장 때만 막는 칸
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("Area Code", "MI"),
+        ("Maker", "다른 Maker"),
+        ("Model", "다른 Model"),
+        ("투자Capa", "999K"),
+        ("담당자", "다른 담당자"),
+        ("보관유무", "Y"),
+        ("기존설비여부", "Y"),
+    ],
+)
+def test_a_group_split_in_a_save_only_column_reads_but_does_not_save(
+    column: str, value: str
+) -> None:
+    """2026-11-12 답 3-3 (나) — 일곱 칸은 저장 때만 막는다. 그 칸이 갈린 묶음은 리비전
+    읽기(`today` 없음)에 막히지 않고 칸 결과도 없다. 저장(`today`)은 묶음 모든 줄의 그 칸을
+    막는다. 영문 칸 이름도 조사 도우미의 「이(가)」 없이 「{칸} 칸이」 로 읽힌다."""
+    frame = _modules()
+    frame.at[1, column] = value
+
+    prepare_equipment_master(frame)
+    assert [i for i in equipment_master_issues(frame) if i.rule == "unit_group_mixed_saved"] == []
+    head = f"같은 Main 설비의 모듈 행은 {column} 칸이 같아야 합니다"
+    with pytest.raises(ValueError) as caught:
+        prepare_equipment_master(frame, today=ANCHOR)
+    assert str(caught.value) == f"{head}: ['GRP-1']"
+    assert "(가)" not in str(caught.value)
+    saved = [
+        (issue.position, issue.column, issue.message, issue.blocking)
+        for issue in equipment_master_issues(frame, today=ANCHOR)
+        if issue.rule == "unit_group_mixed_saved"
+    ]
+    assert saved == [(0, column, head, True), (1, column, head, True)]
+
+
+def test_a_blank_beside_a_value_splits_a_group_for_saving() -> None:
+    """빈 칸도 한 값으로 견준다 — 한 모듈만 Maker 를 비워도 저장이 막힌다(여섯 칸과 같은 꼴)."""
+    frame = _modules()
+    frame.at[1, "Maker"] = None
+
+    prepare_equipment_master(frame)
+    with pytest.raises(ValueError, match=r"Maker 칸이 같아야 합니다: \['GRP-1'\]"):
+        prepare_equipment_master(frame, today=ANCHOR)
+
+
+def test_usage_basis_and_the_layout_flag_never_block_a_split_group() -> None:
+    """사용기준(답 3-3 「사용기준만 제외」)과 레이아웃표시(같이 바뀌기만 — 본 세션 결정)는 묶음
+    안에서 갈려도 읽기 · 저장 모두 막지 않는다 — 모듈 하나만 끈(N) 묶음은 그대로 저장된다."""
+    frame = _modules()
+    frame.at[1, "사용기준"] = "다른 사용기준"
+    frame.at[1, "레이아웃표시"] = "N" if frame.at[0, "레이아웃표시"] == "Y" else "Y"
+
+    prepare_equipment_master(frame)
+    prepare_equipment_master(frame, today=ANCHOR)
+    assert _blocking(equipment_master_issues(frame, today=ANCHOR)) == []
+
+
+def test_the_six_read_columns_are_named_before_the_seven_save_columns() -> None:
+    """여섯(읽기 · 저장 막음)과 일곱(저장 때만)이 함께 갈리면 저장은 여섯 칸 문구로 먼저 막는다 —
+    규칙 표 차례가 계약이다. 칸 결과는 둘 다 낸다."""
+    frame = _modules()
+    frame.at[1, "동"] = "C2"
+    frame.at[1, "담당자"] = "다른 담당자"
+
+    with pytest.raises(ValueError) as caught:
+        prepare_equipment_master(frame, today=ANCHOR)
+    assert str(caught.value) == "같은 Main 설비의 모듈 행은 동이 같아야 합니다: ['GRP-1']"
+    rules = [issue.rule for issue in _blocking(equipment_master_issues(frame, today=ANCHOR))]
+    assert rules == ["unit_group_mixed"] * 2 + ["unit_group_mixed_saved"] * 2
+
+
+def test_a_lone_row_with_a_main_equipment_is_not_split() -> None:
+    """한 줄뿐인 묶음(지분 1)은 갈릴 형제가 없다 — 일곱 칸 규칙이 걸리지 않는다."""
+    frame = _master()
+    frame.at[0, "Main 설비"] = "LONE-1"
+
+    assert _blocking(equipment_master_issues(frame, today=ANCHOR)) == []
 
 
 def _date_text(frame: pd.DataFrame, column: str) -> pd.DataFrame:

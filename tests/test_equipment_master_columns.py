@@ -40,6 +40,8 @@ from capa_simulation.services.equipment_contract import (
     STOP_DATE_COLUMN,
     TRANSITION_EVENT_COLUMNS,
     UNIT_CONSISTENT_COLUMNS,
+    UNIT_SAVE_CONSISTENT_COLUMNS,
+    UNIT_SHARED_COLUMNS,
     rename_legacy_headers,
 )
 from capa_simulation.services.equipment_csv import (
@@ -266,6 +268,29 @@ def test_derived_constants_use_the_new_names() -> None:
     )
     # Area Code 는 모듈 일치 컬럼이 아니다 — 넣으면 모듈 행끼리 값이 다른 옛 리비전이 열리지 않는다.
     assert AREA_CODE_COLUMN not in UNIT_CONSISTENT_COLUMNS
+    # 저장 때만 막는 일곱 칸(2026-11-12 답 3-3 「사용기준만 제외」) — 읽기 막음 여섯과 겹치지
+    # 않는다.
+    assert UNIT_SAVE_CONSISTENT_COLUMNS == (
+        "Area Code",
+        "Maker",
+        "Model",
+        "투자Capa",
+        "담당자",
+        "보관유무",
+        "기존설비여부",
+    )
+    assert not set(UNIT_SAVE_CONSISTENT_COLUMNS) & set(UNIT_CONSISTENT_COLUMNS)
+    # 같이 바뀌는 칸 = 여섯 + 일곱 + 레이아웃표시(답 3-1) — 14칸. 사용기준 · Main 설비 · 좌표는
+    # 없다.
+    assert UNIT_SHARED_COLUMNS == (
+        *UNIT_CONSISTENT_COLUMNS,
+        *UNIT_SAVE_CONSISTENT_COLUMNS,
+        "레이아웃표시",
+    )
+    assert len(set(UNIT_SHARED_COLUMNS)) == 14
+    assert not {"사용기준", "Main 설비", "X좌표", "Y좌표", "Xsize", "Ysize"} & set(
+        UNIT_SHARED_COLUMNS
+    )
     assert set(OPTIONAL_EQUIPMENT_COLUMNS) == {
         *NEW_COLUMNS,
         *ACTUAL_COLUMNS,
@@ -275,7 +300,14 @@ def test_derived_constants_use_the_new_names() -> None:
     assert set(NEW_COLUMNS) <= set(REFERENCE_TEXT_COLUMNS)
     assert AREA_CODE_COLUMN in REFERENCE_TEXT_COLUMNS
     contract_columns = {*EQUIPMENT_COLUMNS, *DOWNTIME_COLUMNS}
-    for derived in (DATE_COLUMNS, FLAG_COLUMNS, REFERENCE_TEXT_COLUMNS, UNIT_CONSISTENT_COLUMNS):
+    for derived in (
+        DATE_COLUMNS,
+        FLAG_COLUMNS,
+        REFERENCE_TEXT_COLUMNS,
+        UNIT_CONSISTENT_COLUMNS,
+        UNIT_SAVE_CONSISTENT_COLUMNS,
+        UNIT_SHARED_COLUMNS,
+    ):
         assert set(derived) <= contract_columns
 
 
