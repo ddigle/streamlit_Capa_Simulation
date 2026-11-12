@@ -613,8 +613,8 @@ def _yield_rows(calls: Calls) -> list[tuple[str, str]]:
 def test_a_yield_grid_draft_lands_on_its_row_whether_or_not_the_order_changes(
     descending: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """수율 그리드 Product-A · BE 칸을 고친 채 「수율 변경사항 적용」 을 누른다 — 표시순서가 뒤집혀
-    첫 줄이 Product-B 가 되어도 초안은 업무 키라 Product-A 의 BE 수율에 들고 알림이 없다."""
+    """수율 그리드 Product-A · BE 칸을 고친 채 수율 탭 「변경사항 적용」 을 누른다 — 표시순서가
+    뒤집혀 첫 줄이 Product-B 가 되어도 초안은 업무 키라 Product-A 의 BE 수율에 들고 알림이 없다."""
     calls = install_fake_edit_grid(monkeypatch)
     app = AppTest.from_string(PLAN_ORDER_SWAP_TEST_SCRIPT, default_timeout=60)
     app.session_state["load_conversion_active_tab"] = YIELD_TAB

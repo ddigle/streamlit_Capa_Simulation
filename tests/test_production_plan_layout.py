@@ -162,7 +162,7 @@ def test_the_yield_guide_says_how_to_keep_edits_a_paste_would_drop() -> None:
     guide = load_guide("load_conversion")
     plan_part, yield_part = guide.split("**수율** — ", 1)
     assert "**변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in plan_part
-    assert "**수율 변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in yield_part
+    assert "**변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in yield_part
 
 
 def test_the_guide_explains_every_card_setting_and_action() -> None:
@@ -173,7 +173,6 @@ def test_the_guide_explains_every_card_setting_and_action() -> None:
         "상세",
         "EDP",
         "변경사항 적용",
-        "수율 변경사항 적용",
         "Excel 붙여넣기",
         "가상 제품 등록",
         "신규 리비전 저장",
