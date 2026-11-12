@@ -5709,9 +5709,10 @@
     - **묶음에 넣는 「새 호기」 초안 칸이 비어 보임** — 2장 「모듈 묶음 같이 바꾸기의 남은 것」 ②(권장: Main 설비 칸 확정 회차에 채운 초안을 돌려준다).
     - **합친 머리에서 아직 브라우저로 보지 않은 장면**(갈래 그림은 저마다의 갈래 머리) — 창 줄 한 번 누름(칸 고름 + 테 움직임)과 두 번 누름(칸 열기)이
       끊기지 않는지(강조 × 창 편집), 올린 영역 이름표와 반입 일정 묶음 날짜가 겹치는 자리(반입 일정 × 순서 — 겹 차례는 이름표가 Main 설비명 아래),
-      창 칸과 순서를 함께 바꾼 적용의 「변경 n」 · 저장 상자(창 편집 × 순서), 화면 확인 Space 여섯 · 설비 마스터 둘(`check_deploy_screens --items
-      space_drawer,space_fader,space_floor_state,space_scenario_row,space_shortening,space_zone_fields,equipment_grid,equipment_headers`) — 합친 머리 브라우저
-      확인 몫이다(시험으로는 합친 머리에서 놓기 적용의 숨은 모듈 N · 창 칸의 숨은 모듈 같이 바뀜 · 발자국 순서 겹을 붙들었다).
+      창 칸과 순서를 함께 바꾼 적용의 「변경 n」 · 저장 상자(창 편집 × 순서) — 합친 머리 브라우저 확인 몫이다(시험으로는 합친 머리에서 놓기 적용의
+      숨은 모듈 N · 창 칸의 숨은 모듈 같이 바뀜 · 발자국 순서 겹을 붙들었다). 화면 확인 Space 여섯 · 설비 마스터 둘(`check_deploy_screens --items
+      space_drawer,space_fader,space_floor_state,space_scenario_row,space_shortening,space_zone_fields,equipment_grid,equipment_headers`)은 2026-11-13 합친
+      머리 사본(슬롯 52 · 검수용 합성 표본)에서 기록 8 · 미기록 0 이다(결과 저장소 밖 `impl/I/screens.txt`).
     - **7장 초안 7-0 차례와 7-8 `unit_mixed`** — `save` 가 0 이 아닐 때 사내 PC 에서 맞춰 저장하는 일이 초안 7-0 의 7-8 과 7-29 이관 사이에 들어가는지
       보지 않았다(2장 「다음 배포 7장에 넣을 줄 — Space 요청」). 7장을 쓸 때 본다.
   - **공정 공유 2차(`night/pp2-1110`) 물음** — 다음 배포와 무관하고 실을 때 함께 묻는다(괄호는 권장). 싣는 때(가 — 1차 사내 사용 뒤 한꺼번에) · 표준 목표 카드
