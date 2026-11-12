@@ -908,16 +908,19 @@ export default function (component) {
   // `LOOK_DEFAULTS` 와 같다(처음 값인 키는 빼고, 정규 글은 키 차례 JSON — node 시험이 파이썬과 대조한다). 머리 크기는 엑셀의
   // 3×3(「너비·길이」 두 글자, 각 S·M·L)이고 동선의 MM 이 지금 그림이다. 도형(shape)은 프리셋 키 look.shape 하나로 아홉 꼴을
   // 가르고 모양 조절 값 look.adj 의 처음 값은 프리셋마다 다르다(`SHAPE_PRESETS` — 파이썬 `SHAPE_ADJUST`). 그리기는 돌리기 전
-  // 제자리 좌표(lw×lh, y 아래로)다. `tests/test_space_mark_look_js.py`·`tests/test_space_shape_js.py` 가 아래 두 표시 줄 사이를
-  // 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // 제자리 좌표(lw×lh, y 아래로)다. 발자국(footprints)은 발 모양 look.foot · 걸음 간격 look.gap · 선 색 · 뒤집기를 갖는다(파이썬
+  // `FOOT_SHAPES`·`FOOT_GAPS` — 그리기는 `// <foot-geometry>`). `tests/test_space_mark_look_js.py`·`tests/test_space_shape_js.py` 가
+  // 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
   // <mark-look>
   const LOOK_KEYS = {
     arrow: ['head', 'line', 'lineWidth', 'lineStyle'],
+    footprints: ['foot', 'gap', 'line', 'flip'],
     bay: ['head', 'line', 'lineWidth', 'lineStyle', 'flip'],
     shape: ['shape', 'adj', 'fillAlpha', 'line', 'lineWidth', 'lineStyle', 'flip'],
   }
   const LOOK_DEFAULTS = {
     arrow: { head: 'MM', line: 'accent', lineStyle: 'dashed' },
+    footprints: { foot: 'sole', gap: 'normal', line: 'accent', flip: false },
     bay: { head: 'MM', line: 'ink', lineWidth: 2, lineStyle: 'solid', flip: false },
     shape: { shape: 'rect', fillAlpha: 20, line: 'auto', lineWidth: 1.5, lineStyle: 'solid', flip: false },
   }
@@ -926,6 +929,9 @@ export default function (component) {
   const LINE_COLORS = ['accent', 'ink', 'blue', 'rose', 'green', 'violet', 'sky', 'gray']
   const LINE_WIDTHS = [0.75, 1, 1.5, 2, 3, 4.5, 6]
   const LINE_STYLES = ['solid', 'dashed', 'dotted']
+  // 발자국 발 모양 여섯(처음 밑창)과 걸음 간격 셋(처음 보통) — 파이썬 `FOOT_SHAPES`·`FOOT_GAPS`.
+  const FOOT_SHAPE_KEYS = ['sole', 'toes', 'dots', 'cat', 'bird', 'heel']
+  const FOOT_GAP_KEYS = ['narrow', 'normal', 'wide']
   // 도형 프리셋 아홉(2026-11-03 사용자 요청 — 엑셀 도형처럼). adj 는 모양 조절 값마다 [하한, 상한, 처음 값](0.01 단위 비율 —
   // 파이썬 `SHAPE_ADJUST`), base 는 그 값이 무엇의 비율인가(파이썬 `SHAPE_ADJUST_BASE`), words 는 그 값의 이름(선택 칸·손잡이
   // 풍선), size 는 넣을 때의 크기, turn 은 돌리기·뒤집기에 뜻이 있는 꼴인가(대칭 꼴은 그 단추가 숨는다). 두께·둥글기·머리 길이는
@@ -972,6 +978,8 @@ export default function (component) {
     if (key === 'lineStyle') return LINE_STYLES.includes(value)
     if (key === 'flip') return typeof value === 'boolean'
     if (key === 'shape') return SHAPE_KEYS.includes(value)
+    if (key === 'foot') return FOOT_SHAPE_KEYS.includes(value)
+    if (key === 'gap') return FOOT_GAP_KEYS.includes(value)
     if (key === 'fillAlpha') return Number.isInteger(value) && value >= 0 && value <= 100 && value % FILL_ALPHA_STEP === 0
     return false
   }

@@ -34,6 +34,7 @@ from capa_simulation.services.floor_layout_mark import (
     MARKS_PER_FLOOR_MAX,
     ZONE_BORDER_STYLES,
     ZONE_LABEL_ALIGNS,
+    footprint_box,
     look_payload,
     mark_box,
     mark_color,
@@ -96,13 +97,14 @@ FLOOR_KEYS: Final[tuple[FloorKey, ...]] = tuple(
 )
 
 FAB_BLOCK_KIND: Final = "block"
-# FAB 편집기가 넣는 종류 — 영역·글자·동선·도형(꾸밈)과 층 블록. 반입구·문·기둥·베이는 층 도면 요소라
-# 없다.
-FAB_MARK_KINDS: Final = ("zone", "text", "arrow", "shape", FAB_BLOCK_KIND)
+# FAB 편집기가 넣는 종류 — 영역·글자·동선·발자국·도형(꾸밈)과 층 블록. 반입구·문·기둥·베이는 층 도면
+# 요소라 없다.
+FAB_MARK_KINDS: Final = ("zone", "text", "arrow", "footprints", "shape", FAB_BLOCK_KIND)
 FAB_MARK_NAMES: Final[Mapping[str, str]] = {
     "zone": "영역",
     "text": "글자",
     "arrow": "동선",
+    "footprints": "발자국",
     "shape": "도형",
     FAB_BLOCK_KIND: "층 블록",
 }
@@ -342,9 +344,10 @@ def prepare_fab_layout_marks(
     `MARK_COLOR_KEYS` 다. 영역 색은 층 도면과 같고(비면 회색) 도형 채우기 색도 같다(`shape_fill` —
     비면 파랑). 빗금은 영역·도형만이다. 블록이 아닌 요소의 연결은 버린다. 글자 크기·색(`fontSize`·
     `fontColor`)은 층 요소와 같은 규칙으로 모든 종류가 갖고, 테두리 모양·이름표 정렬(`borderStyle`·
-    `labelAlign`)은 층 요소처럼 영역만 갖고, 모양 값(`look` — 동선 머리 크기·선, 도형 프리셋·모양
-    조절·채우기·선)은 동선·도형만 갖는다(층 요소와 같은 `mark_look`). 베이 화살표는 층 도면 요소라
-    FAB 에 없다.
+    `labelAlign`)은 층 요소처럼 영역만 갖고, 모양 값(`look` — 동선 머리 크기·선, 발자국 발
+    모양·간격·선 색·뒤집기, 도형 프리셋·모양 조절·채우기·선)은 동선·발자국·도형만 갖는다(층
+    요소와 같은 `mark_look`). 발자국의 띠·길이도 층 요소와 같다(`footprint_box`). 베이 화살표는
+    층 도면 요소라 FAB 에 없다.
     두 블록이 같은 층을 가리키는 것은 막지 않는다(`duplicate_block_links` 로 경고만)."""
     if len(marks) > MARKS_PER_FLOOR_MAX:
         raise ValueError(f"FAB 도면 요소는 {MARKS_PER_FLOOR_MAX}개까지입니다: {len(marks)}개")
@@ -356,6 +359,8 @@ def prepare_fab_layout_marks(
         if kind not in FAB_MARK_KINDS:
             raise ValueError(f"FAB 도면 요소 {mark_id} 의 종류를 알 수 없습니다: {kind!r}")
         x, y, w, h = mark_box(raw, mark_id, FAB_MARK_NAMES[kind], canvas)
+        rotation = mark_rotation(raw, mark_id)
+        footprint_box(kind, rotation, w, h, mark_id)
         link: FloorKey | None = None
         color = ""
         if kind == FAB_BLOCK_KIND:
@@ -376,7 +381,7 @@ def prepare_fab_layout_marks(
                 label=mark_label(raw, mark_id),
                 color=color,
                 link=link,
-                rotation=mark_rotation(raw, mark_id),
+                rotation=rotation,
                 hatch=kind in HATCH_MARK_KINDS and mark_flag(raw.get("hatch")),
                 font_size=mark_font_size(raw, mark_id),
                 font_color=mark_font_color(raw, mark_id),

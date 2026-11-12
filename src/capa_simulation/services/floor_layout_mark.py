@@ -30,7 +30,17 @@ from typing import Any, Final, Protocol
 from capa_simulation.services.floor_layout_profile import CANVAS_DECIMALS, CanvasSize
 from capa_simulation.services.korean_particle import subject_particle, with_object_particle
 
-MARK_KINDS: Final = ("zone", "shutter", "door", "column", "text", "arrow", "bay", "shape")
+MARK_KINDS: Final = (
+    "zone",
+    "shutter",
+    "door",
+    "column",
+    "text",
+    "arrow",
+    "footprints",
+    "bay",
+    "shape",
+)
 MARK_NAMES: Final[Mapping[str, str]] = {
     "zone": "영역",
     "shutter": "반입구",
@@ -38,6 +48,7 @@ MARK_NAMES: Final[Mapping[str, str]] = {
     "column": "기둥",
     "text": "글자",
     "arrow": "동선",
+    "footprints": "발자국",
     "bay": "베이",
     "shape": "도형",
 }
@@ -148,15 +159,39 @@ SHAPE_STRETCH_MAX: Final = 100
 SHAPE_FILL_KEYS: Final = (*MARK_COLOR_KEYS, "ink", "surface")
 SHAPE_LINE_KEYS: Final = ("auto", "none", "ink", *MARK_COLOR_KEYS)
 FILL_ALPHA_STEP: Final = 5
+# 발자국(`footprints`, 2026-11-12 Space 시안 보드 6-1 ~ 6-6) — 길을 따라 놓은 발 모양
+# 줄. 층·FAB 둘 다다. 선 꼴 요소라 상자의 한 축이 **길이**(늘이면 발이 는다), 다른 축이
+# **띠**(`FOOT_BAND` 칸 고정 — 발 크기는 상자를 따르지 않는다)다. 0·180° 는 폭이 길이,
+# 90·270° 는 높이가 길이다. 길이는 `FOOT_MIN_LENGTH` 칸부터다. 띠·길이가 어긋난 상자는
+# 저장에서 거부한다(`footprint_box` — 조용히 고치지 않는다). 띠 값은 저장 계약이라 바꾸지
+# 않는다.
+# - 발 모양 `look.foot`(`FOOT_SHAPES` — 처음 밑창), 걸음 간격 `look.gap`(`FOOT_GAPS` —
+#   처음 보통), 선 색 `look.line`(동선·베이와 같은 `LINE_COLOR_KEYS` — 처음 강조색),
+#   뒤집기 `look.flip`(걷는 쪽을 거꾸로 — 상하는 180° + 좌우).
+FOOT_BAND: Final = 3.0
+FOOT_MIN_LENGTH: Final = 3.0
+FOOT_SHAPES: Final = ("sole", "toes", "dots", "cat", "bird", "heel")
+FOOT_SHAPE_NAMES: Final[Mapping[str, str]] = {
+    "sole": "밑창",
+    "toes": "발가락",
+    "dots": "점",
+    "cat": "고양이",
+    "bird": "새",
+    "heel": "구두",
+}
+FOOT_GAPS: Final = ("narrow", "normal", "wide")
+FOOT_GAP_NAMES: Final[Mapping[str, str]] = {"narrow": "좁게", "normal": "보통", "wide": "넓게"}
 # 종류마다 받는 키와 그 처음 값. 처음 값이 없는 키(동선 굵기)는 고른 값이면 늘 남는다. 도형의 모양
 # 조절 값(`adj`)은 처음 값이 프리셋마다 달라 `SHAPE_ADJUST` 가 맡는다.
 LOOK_KEYS: Final[Mapping[str, tuple[str, ...]]] = {
     "arrow": ("head", "line", "lineWidth", "lineStyle"),
+    "footprints": ("foot", "gap", "line", "flip"),
     "bay": ("head", "line", "lineWidth", "lineStyle", "flip"),
     "shape": ("shape", "adj", "fillAlpha", "line", "lineWidth", "lineStyle", "flip"),
 }
 LOOK_DEFAULTS: Final[Mapping[str, Mapping[str, object]]] = {
     "arrow": {"head": "MM", "line": "accent", "lineStyle": "dashed"},
+    "footprints": {"foot": "sole", "gap": "normal", "line": "accent", "flip": False},
     "bay": {"head": "MM", "line": "ink", "lineWidth": 2, "lineStyle": "solid", "flip": False},
     "shape": {
         "shape": "rect",
@@ -402,8 +437,9 @@ def prepare_floor_layout_marks(
     `keepOut`·`fontSize`·`fontColor`·`borderStyle`·`labelAlign`·`look`)이다. 좌표는 소수 첫째 자리로
     맞추고 상자가 캔버스 안이어야 한다. 글자 크기·색은 모든 종류가 갖는다(없으면 자동·기본). 테두리
     모양·이름표 정렬은 영역만 갖는다(없으면 점선·왼쪽, 다른 종류는 늘 처음 값이고 보낸 값을 보지
-    않는다). 모양 값(`look`)은 동선·베이·도형만 갖는다(`mark_look`). 베이의 이름표는 번호다
-    (`bay_label`). 색은 영역(`zone_color`)과 도형의 채우기(`shape_fill`)만, 빗금은 영역·도형만
+    않는다). 모양 값(`look`)은 동선·발자국·베이·도형만 갖는다(`mark_look`). 베이의 이름표는 번호다
+    (`bay_label`). 발자국은 띠가 `FOOT_BAND` 칸이고 길이가 `FOOT_MIN_LENGTH` 칸부터여야 한다
+    (`footprint_box`). 색은 영역(`zone_color`)과 도형의 채우기(`shape_fill`)만, 빗금은 영역·도형만
     갖고 「설비 금지」는 영역만이다.
     """
     if len(marks) > MARKS_PER_FLOOR_MAX:
@@ -416,6 +452,8 @@ def prepare_floor_layout_marks(
         if kind not in MARK_KINDS:
             raise ValueError(f"도면 요소 {mark_id} 의 종류를 알 수 없습니다: {kind!r}")
         x, y, w, h = mark_box(raw, mark_id, MARK_NAMES[kind], canvas)
+        rotation = mark_rotation(raw, mark_id)
+        footprint_box(kind, rotation, w, h, mark_id)
         prepared.append(
             FloorLayoutMark(
                 mark_id=mark_id,
@@ -424,7 +462,7 @@ def prepare_floor_layout_marks(
                 y=y,
                 w=w,
                 h=h,
-                rotation=mark_rotation(raw, mark_id),
+                rotation=rotation,
                 label=bay_label(raw, mark_id) if kind == "bay" else mark_label(raw, mark_id),
                 color=mark_color(raw, kind, mark_id),
                 hatch=kind in HATCH_MARK_KINDS and mark_flag(raw.get("hatch")),
@@ -436,6 +474,24 @@ def prepare_floor_layout_marks(
             )
         )
     return tuple(prepared)
+
+
+def footprint_box(kind: str, rotation: int, w: float, h: float, mark_id: str) -> None:
+    """발자국 상자의 띠·길이를 본다 — 0·180° 는 높이가 띠·폭이 길이, 90·270° 는 그 반대다. 띠가
+    `FOOT_BAND` 칸이 아니거나 길이가 `FOOT_MIN_LENGTH` 칸 아래면 `ValueError`(조용히 고치지 않는다 —
+    층·FAB 단위 전체 교체라 버리지 않고 거부한다). 발자국이 아닌 종류는 보지 않는다."""
+    if kind != "footprints":
+        return
+    band, length = (w, h) if rotation % 180 else (h, w)
+    if abs(band - FOOT_BAND) > 1e-9:
+        raise ValueError(
+            f"발자국 {mark_id} 의 띠는 {FOOT_BAND:g}칸이어야 합니다: {band:g} — 발 크기는 "
+            "상자를 따르지 않고 길이만 바꿉니다."
+        )
+    if length < FOOT_MIN_LENGTH - 1e-9:
+        raise ValueError(
+            f"발자국 {mark_id} 의 길이는 {FOOT_MIN_LENGTH:g}칸 이상이어야 합니다: {length:g}"
+        )
 
 
 def zone_look(raw: Mapping[str, Any], kind: str, mark_id: str) -> dict[str, str]:
@@ -511,6 +567,8 @@ _LOOK_WORDS: Final[Mapping[str, str]] = {
     "line": "선 색",
     "lineStyle": "선 모양",
     "shape": "도형 모양",
+    "foot": "발 모양",
+    "gap": "간격",
 }
 
 
@@ -526,6 +584,10 @@ def _look_value(kind: str, key: str, value: object, mark_id: str) -> object:
         allowed = SHAPE_LINE_KEYS if kind == "shape" else LINE_COLOR_KEYS
     elif key == "shape":
         allowed = SHAPE_PRESETS
+    elif key == "foot":
+        allowed = FOOT_SHAPES
+    elif key == "gap":
+        allowed = FOOT_GAPS
     elif key == "fillAlpha":
         number = _look_number(value)
         if (

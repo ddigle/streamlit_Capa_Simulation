@@ -2293,6 +2293,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     선 `line`(`SHAPE_LINE_KEYS` — `auto`·`none`·`ink`·영역 색, 강조색 없음)·`lineWidth`·`lineStyle`·`flip`. 채우기 색은 요소
     `color`(`shape_fill` — `SHAPE_FILL_KEYS`, 처음 파랑, `mark_color`), 빗금은 영역·도형만(`HATCH_MARK_KINDS`), 「설비 금지」는
     영역만이다. 막는 요소(`BLOCKING_MARK_KINDS`)가 아니다.
+  - 발자국(`footprints`, 층·FAB — 2026-11-12 Space 시안 보드 6-1 ~ 6-6)은 선 꼴 요소다. 상자의 한 축이 길이, 다른 축이 띠
+    (`FOOT_BAND` 3칸 고정 — 0·180° 는 높이, 90·270° 는 폭)이고 길이는 `FOOT_MIN_LENGTH` 3칸부터다. 어긋나면 `footprint_box` 가
+    거부한다(조용히 고치지 않는다 — 띠 값은 저장 계약). 모양 값은 발 모양 `foot`(`FOOT_SHAPES` 여섯 — 처음 밑창)·간격 `gap`
+    (`FOOT_GAPS` 셋 — 처음 보통)·선 색 `line`(`LINE_COLOR_KEYS` — 처음 강조색)·`flip` 이다. 막는 요소가 아니고 빗금이 없다.
   - 층의 Main 설비명 위치(`GROUP_LABEL_POSITIONS` — 가운데·위·아래 모두 행으로 받는다. 고른 적이 없거나 처음 위치로
     되돌린 묶음은 행이 없고 모양의 처음 위치 `space_layout_edit.default_group_label` 로 선다 — 한 줄 묶음(모듈 2·3)은
     위라 가운데를 고르면 가운데 행이 남는다)의 검증은 `prepare_group_labels`(Main 설비 이름은
