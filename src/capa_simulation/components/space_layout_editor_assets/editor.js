@@ -1623,10 +1623,11 @@ export default function (component) {
   // 층 상세 보기에서 기준일에 반입 전(실물 없음)인 호기가 그날 보이는 다른 호기 — 반입됐고 아직 도면에서 빠지지 않은, 실선으로
   // 그리는 호기 — 와 넓이가 0 보다 크게 겹치면 그리지 않는다(2026-10-23 사용자 요청 8 · 결정). 기존 설비가 빠진 자리에 들어올
   // 설비는 기존 설비가 빠지는 날부터 반입 예정(점선)으로 보인다. 반입 전끼리만 겹치면 둘 다 보이고, 같은 Main 설비 묶음의
-  // 모듈끼리의 겹침은 셈하지 않는다(모듈 상자마다 판정한다). 배치 편집기는 숨기지 않는다. `tests/test_space_viewer_pick.py` 가 아래
-  // 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // 모듈끼리의 겹침은 셈하지 않는다. 모듈은 Main 설비 묶음째 판정한다 — 반입 전 모듈 하나라도 덮이면 그 묶음의 반입 전 모듈을
+  // 모두 숨기고 이미 반입한 모듈은 남긴다(2026-11-12 사용자 요청 4). 배치 편집기는 숨기지 않는다. `tests/test_space_viewer_pick.py` 가
+  // 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
   // <view-cover>
-  // item 의 판정 st(`unitState`)와 넓이가 겹치는 이웃 호기들 neighbours, 이웃의 판정을 내는 stateOf 로 숨길지 정한다.
+  // item 의 판정 st(`unitState`)와 넓이가 겹치는 이웃 호기들 neighbours, 이웃의 판정을 내는 stateOf 로 그 상자 하나가 덮였는지 정한다.
   function coveredBy(item, st, neighbours, stateOf) {
     // 색 기준 「필요 단축」 에 표시된 호기는 숨기지 않는다 — 단축 후보는 대개 기존 설비 자리에 들어올 반입 전 신규 호기다.
     if (item.layer) return false
@@ -1637,6 +1638,16 @@ export default function (component) {
       if (seen.visible && seen.real) return true
     }
     return false
+  }
+  // 숨길지 — 묶음이 아닌 호기는 그 상자(`coveredBy`), 모듈은 묶음째다. mates 는 이 층에 그린 같은 묶음 모듈 전부(item 포함),
+  // alone(m) 은 모듈 m 상자 하나의 `coveredBy` 판정이다. 덮는 쪽은 늘 반입한 호기라 숨김이 묶음을 건너 번지지 않는다. 묶음에
+  // 「필요 단축」 표시 모듈이 있으면 묶음을 숨기지 않는다.
+  function coveredWithMates(item, st, mates, alone) {
+    if (item.layer) return false
+    if (st.real || !st.visible) return false
+    if (!item.group) return alone(item)
+    if (mates.some((m) => m.layer)) return false
+    return mates.some((m) => alone(m))
   }
   // 대수 글자 — 파이썬 `equipment_units.format_unit_count` 처럼 소수 둘째 자리까지, 끝의 0 은 뗀다(1, 0.25, 1.5).
   function unitCountText(n) {
@@ -3507,6 +3518,7 @@ export default function (component) {
     // 보기 화면은 기준일이 바뀌어도 숨김이 바뀐 호기의 짝만 다시 보도록 겹침 짝을 새로 만든다(그린 호기·자리가 바뀌는 때는
     // 여기뿐이다). 상자를 칠하기(`paintUnit` — 겹친 반입 예정 숨김이 짝을 본다) 전에 비운다.
     S.adjacency = null
+    S.mates = null
     S.covered = new Map()
     // 모듈 묶음의 모듈 상자에는 손잡이가 없다(`is-module` — 크기는 묶음 범위 테두리의 손잡이로 바꾼다).
     const counts = groupCounts()
@@ -3615,6 +3627,12 @@ export default function (component) {
       if (VIEW && !FAB) {
         const pairs = overlapPairs()
         for (const id of ids) for (const other of pairs.get(id) || []) near.add(other)
+        // 모듈은 묶음째 숨는다 — 판정이 바뀐 호기와 그 이웃의 묶음 형제도 다시 본다.
+        const mates = groupMates()
+        for (const id of [...near]) {
+          const key = S.items.get(id)?.group
+          for (const mate of (key && mates.get(key)) || []) near.add(mate.id)
+        }
       }
       for (const id of near) paintOne(id)
     } else for (const id of S.groups.keys()) paintOne(id)
@@ -3886,10 +3904,28 @@ export default function (component) {
     S.blocked = blocked.size
   }
 
-  // 층 상세 보기에서 기준일 판정 st 의 호기를 겹친 반입 예정으로 숨기는가(`coveredBy`). 이웃은 넓이가 겹치는 호기(`overlapPairs`)다.
+  // 층 상세 보기에서 기준일 판정 st 의 호기를 겹친 반입 예정으로 숨기는가(`coveredWithMates`). 이웃은 넓이가 겹치는
+  // 호기(`overlapPairs`), 모듈의 형제는 이 층에 그린 같은 묶음 모듈(`groupMates`)이다.
   function coveredAt(item, st) {
-    const neighbours = (overlapPairs().get(item.id) || []).map((id) => S.items.get(id)).filter(Boolean)
-    return coveredBy(item, st, neighbours, (other) => unitState(other, S.asOf))
+    const stateOf = (other) => unitState(other, S.asOf)
+    const alone = (unit) => {
+      const neighbours = (overlapPairs().get(unit.id) || []).map((id) => S.items.get(id)).filter(Boolean)
+      return coveredBy(unit, unit === item ? st : stateOf(unit), neighbours, stateOf)
+    }
+    const mates = (item.group && groupMates().get(item.group)) || [item]
+    return coveredWithMates(item, st, mates, alone)
+  }
+  // 보기 화면의 묶음 형제(Main 설비 → 이 층 도면에 그린 모듈들). 겹침 짝과 같은 때(`renderItems`)만 다시 만든다.
+  function groupMates() {
+    if (S.mates) return S.mates
+    const mates = new Map()
+    for (const unit of S.items.values()) {
+      if (!isUnit(unit) || !onCanvas(unit) || !unit.group) continue
+      if (!mates.has(unit.group)) mates.set(unit.group, [])
+      mates.get(unit.group).push(unit)
+    }
+    S.mates = mates
+    return mates
   }
   // 도구 줄 오른쪽 한 줄 요약(파이썬 `summary` — 배치·미배치·점유율)에 겹쳐 숨긴 반입 예정 대수를 붙인다. 숨김은 기준일마다
   // 브라우저가 정하므로(페이더를 끄는 동안에도) 붙이는 것도 브라우저다. 범례 대수는 그대로다.

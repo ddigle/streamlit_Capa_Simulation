@@ -1545,8 +1545,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     - 겹친 반입 예정 숨기기: 기준일에 반입 전인 호기가 그날 보이는(반입했고 안 빠진) 다른 호기와 넓이가 0 보다 크게
       겹치면 `is-covered`(visibility hidden)다. 판정은 `// <view-cover>` 구획(`coveredBy`·`unitCountText`,
       `tests/test_space_viewer_pick.py` 가 node 로 돌림)이고 이웃은 겹침 짝(`overlapPairs`, `renderItems` 가 칠하기 전에
-      비움)이다. 반입 전끼리·같은 Main 설비 묶음 모듈끼리는 숨기지 않는다. 숨김은 `__visible` 에 들어 Main 설비명·겹침
-      꼭지가 따라가고, 판정이 바뀐 호기의 겹침 이웃도 다시 칠한다(`paintUnits`). 숨긴 호기의 설비지분(`share`) 합은
+      비움)이다. 반입 전끼리·같은 Main 설비 묶음 모듈끼리는 숨기지 않는다. 모듈은 묶음째다(`coveredWithMates`, 형제는
+      `groupMates` — 겹침 짝과 같이 비움) — 반입 전 모듈 하나라도 덮이면 그 묶음의 반입 전 모듈을 모두 숨기고 반입한 모듈은
+      남긴다(2026-11-12 사용자 요청 4). 숨김은 `__visible` 에 들어 Main 설비명·겹침 꼭지가 따라가고, 판정이 바뀐 호기의 겹침
+      이웃과 그 둘의 묶음 형제도 다시 칠한다(`paintUnits`). 숨긴 호기의 설비지분(`share`) 합은
       `showSummary` 가 요약 끝에 「겹쳐 숨긴 반입 예정 n대」로 붙인다(파이썬 범례 대수는 그대로). 지분은 파이썬 기준일의
       것이라(같은 epoch 회차에도 `unitLook` 으로 새로 받음) 페이더를 끄는 동안에는 숨김(그날)과 지분(직전 날)이 섞인다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
