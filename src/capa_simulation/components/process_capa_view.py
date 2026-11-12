@@ -1000,10 +1000,12 @@ def label_overflow_style() -> str:
     풍선은 260px 그림보다 넓을 수 있어(세 줄 ≈ 230~290px) 그림 둘레의 `overflow` 를 풀고 라벨
     컬럼을 월 컬럼 위로 올린다 — 안 풀면 넘친 몫이 잘린다(2026-10-24 브라우저).
 
-    좁은 창(`NARROW_VIEWPORT_MAX_PX` 이하)은 라벨 칸이 `NARROW_LABEL_COLUMN_WIDTH_PX` 로 줄어 260px
-    에 맞춘 줄 이름이 그림 밖으로 넘친다 — 풀어 둔 `overflow` 그대로면 그 글이 월 칸 위에 겹친다.
-    그래서 그 창에서는 풍선을 담은 마지막 SVG(Plotly 의 `_hoverpaper` — 그림·글 SVG 뒤에 붙는다)
-    말고 그림·글 SVG 만 다시 자른다(E2E r1 #20 — 개선 거리 I12).
+    풀어 두는 것은 풍선을 담은 마지막 SVG(Plotly 의 `_hoverpaper` — 그림·글 SVG 뒤에 붙는다)
+    하나다. 그림·글 SVG 는 **어느 창 폭에서나** 칸 안으로 자른다 — 풀어 두면 라벨 그림의 바깥 테
+    (`add_figure_outer_border` — 칸 끝에 걸쳐 반은 밖으로 그려진다)와 흰 바탕이 칸 밖으로 새어 구분
+    칸이 월 칸 위에 떠 보이고(두 배 굵기 테 · 흰 둘레 — 2026-11-12 사용자 답 k-b3), 좁은 창
+    (`NARROW_VIEWPORT_MAX_PX` 이하 — 라벨 칸이 `NARROW_LABEL_COLUMN_WIDTH_PX` 로 준다)에서는 260px 에
+    맞춘 줄 이름이 월 칸 위에 겹친다(E2E r1 #20 — 개선 거리 I12).
     """
     chart = f".st-key-{LABEL_CHART_KEY}"
     return (
@@ -1012,8 +1014,7 @@ def label_overflow_style() -> str:
         "{ position: relative; z-index: 2; }"
         f"{chart}, {chart} .js-plotly-plot, {chart} .plot-container, {chart} .svg-container, "
         f"{chart} .main-svg {{ overflow: visible !important; }}"
-        f"@media (max-width: {NARROW_VIEWPORT_MAX_PX}px) {{ "
-        f"{chart} svg.main-svg:not(:last-of-type) {{ overflow: hidden !important; }} }}"
+        f"{chart} svg.main-svg:not(:last-of-type) {{ overflow: hidden !important; }}"
         "</style>"
     )
 
