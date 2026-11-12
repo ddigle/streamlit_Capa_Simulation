@@ -2118,8 +2118,9 @@ def _refuse_apply(message: str, *, kind: FlashKind = "error") -> None:
 
 def _overlay_canvas_message(canvas: tuple[float, float], names: Sequence[str]) -> str:
     """편집기 적용이 보낸 캔버스가 다른 가정 설비 시나리오의 이 층 배치 차이보다 작을 때의 거부 글 —
-    편집기 하한 까닭(「가정 설비 시나리오 「이름」 배치」)과 같은 이름 꼴이다."""
-    shown = " · ".join(f"「{name}」" for name in names)
+    편집기 하한 까닭(「가정 설비 시나리오 「이름」 배치」)과 같은 이름 꼴이고 이름은 `quoted` 로
+    막는다(알림창 마크다운 자리)."""
+    shown = " · ".join(quoted(name) for name in names)
     return (
         f"캔버스 {canvas[0]:g} × {canvas[1]:g} 밖에 가정 설비 시나리오 {shown} 배치가 남습니다 — "
         "그 배치보다 작게 줄이지 않습니다."
