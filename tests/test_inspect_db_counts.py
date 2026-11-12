@@ -1,11 +1,9 @@
-# Purpose: 7-8 개수 세기 스크립트가 읽기만 하고 네 줄을 옛 꼴 그대로 수만 찍는지 본다.
+# Purpose: 7-8 개수 세기 스크립트가 읽기만 하고 네 줄을 7장 기대 줄 꼴 그대로 수만 찍는지 본다.
 
-"""`scripts/inspect_db_counts.py` 의 약속 — 런북 7-8 의 옛 `python -c` 세 줄과 같은 꼴의 줄을
-찍고(7장의 기대 줄 · 지난 리뷰 값이 그 꼴이다), 넷째 줄은 생산 계획 그리드 두 표의 크기다. 두 DB 를
-읽기만 하고, 운영 DB 자리를 열 때는 사용자 앱을 먼저 보며, 이름 · 값은 찍지 않는다.
-
-옛 세 줄과 글자가 같은지는 검수용 합성 샘플에서 한 번 맞대 보았다(배포 준비 기록) — 여기서는 꼴과
-갈래(모듈 묶음 크기 · 상자 · 바둑판)를 손으로 지은 설비 DB 로 붙든다.
+"""`scripts/inspect_db_counts.py` 의 약속 — 줄 1 ~ 3 은 런북 7-8 의 기대 줄 · 지난 리뷰 값과 견주는
+꼴이라 키 · 차례 · 값 꼴을 글자 그대로 찍고, 넷째 줄은 생산 계획 그리드 두 표의 크기다. 두 DB 를
+읽기만 하고, 운영 DB 자리를 열 때는 사용자 앱을 먼저 보며, 이름 · 값은 찍지 않는다. 묶음 줄의
+갈래(모듈 묶음 크기 · 상자 · 바둑판)는 손으로 지은 설비 DB 로 붙든다.
 """
 
 from __future__ import annotations
@@ -33,6 +31,41 @@ import check_deploy_screens  # noqa: E402
 import inspect_db_counts as script  # noqa: E402
 
 SENTINEL = "ZZSENTINEL"
+_N = r"(?:\d+|None)"
+
+
+def _listed(size: int) -> str:
+    return r"\[" + ", ".join([_N] * size) + r"\]"
+
+
+# 첫 줄 — 7장 기대 줄의 키 차례와 칸마다의 값 꼴(수 · `None` · 그 목록의 길이) 그대로.
+COUNT_LINE = re.compile(
+    "^"
+    + " ".join(
+        f"{key} {value}"
+        for key, value in (
+            ("migration", r"\d+"),
+            ("equipment_migration", r"\d+"),
+            ("shortening_filter", _listed(2)),
+            ("baselines", _listed(3)),
+            ("advance_shipment", _listed(2)),
+            ("thresholds", _listed(2)),
+            ("fab", _listed(2)),
+            ("layout_marks", r"\d+"),
+            ("dup_names", r"\d+"),
+            ("ref_copies", r"\d+"),
+            ("auto_update", _listed(4)),
+            ("main_cases", _N),
+            ("group_labels", _N),
+            ("eq_scenario", _listed(4)),
+            ("floor_state", _listed(2)),
+            ("layout_overlay", _listed(3)),
+            ("manual_downtime", _listed(3)),
+            ("mark_look", _listed(3)),
+        )
+    )
+    + "$"
+)
 SIZE_LINE = re.compile(
     r"^(sim|eq) file \d+\.\dMiB; blocks \d+ = used \d+ \+ free \d+; block \d+KiB; wal \S+; "
     r"gzip \d+\.\dMiB; tables \d+; top (?:[a-z_]+\.[a-z_0-9]+ \d+\.\dMiB \d+rows(?:, )?)+$"
@@ -72,15 +105,8 @@ def test_the_four_lines_are_counts_only(databases: tuple[Path, Path], tmp_path: 
     sim_version = max(migration.version for migration in load_migrations())
     eq_version = max(migration.version for migration in load_equipment_migrations())
     assert counts.startswith(f"migration {sim_version} equipment_migration {eq_version} ")
-    for key in (
-        "shortening_filter [",
-        "baselines [",
-        "ref_copies 0 ",
-        "auto_update [",
-        "eq_scenario [",
-        "mark_look [",
-    ):
-        assert f" {key}" in counts, key
+    assert COUNT_LINE.match(counts), counts
+    assert " ref_copies 0 " in counts
     assert bundles == (
         "groups 0 = two 0 + three 0 + four 0 + more 0; boxed 0 = all 0 + some 0 + none 0; "
         "untiled 0; more sizes -; more split -"

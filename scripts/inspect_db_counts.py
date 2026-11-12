@@ -6,9 +6,9 @@
 
     uv run --no-sync python scripts/inspect_db_counts.py --output $HOME\\db_counts.md
 
-예전 7-8 은 `python -c` 긴 줄 셋(한 줄 1,000 ~ 2,700자)이라 사용자 창에 붙이면 줄바꿈으로 깨질 수
-있고 결과 파일이 없었다(2026-11-12 사용자 답 ②-1 (가) — 짧은 스크립트로). 그 셋의 출력은 **글자
-그대로** 둔다 — 7장의 기대 줄과 지난 리뷰의 값이 그 꼴이다. 넷째 줄은 생산 계획 그리드 두
+사용자 창에 붙일 짧은 한 줄과 결과 파일을 주려고 스크립트로 둔다(2026-11-12 사용자 답 ②-1 (가)).
+줄 1 ~ 3 은 7장의 기대 줄 · 지난 리뷰의 값과 견주는 꼴이라 **글자 그대로** 지킨다 — 키 · 차례 ·
+값 꼴을 바꾸지 않는다(`tests/test_inspect_db_counts.py` 가 붙든다). 넷째 줄은 생산 계획 그리드 두
 표(PKG PLAN · 수율)의 크기다(2026-11-12 사용자 답 ③-7 (가) — 큰 표 상한을 둘지 실제 크기를 보고
 정한다).
 
@@ -248,7 +248,7 @@ def _run(args: argparse.Namespace) -> int:
         if running_app_count():
             print(_APP_RUNNING_MESSAGE)
             return 1
-    # 줄 3 의 gzip 은 DB 를 열기 전에 파일을 읽는다 — 예전 한 줄과 같은 차례다.
+    # 줄 3 의 gzip 은 DB 를 열기 전에 파일 바이트를 읽는다.
     packed = {path: _gzip_size(path) for path in targets} if "sizes" in selected else {}
     try:
         if needs_simulation:
