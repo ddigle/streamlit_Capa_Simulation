@@ -1479,10 +1479,12 @@ def test_the_canvas_field_will_not_go_below_units_marks_hidden_units_or_a_hypoth
 
 def test_the_canvas_refusal_names_what_reaches_the_floor() -> None:
     """`setCanvas` 의 거부 글은 「… 아래로 줄일 수 없습니다(<까닭>가 거기까지 놓여 있습니다)」 —
-    까닭은 `canvasLimitWords` 이고 조사는 `withJosa` 가 고른다. 칸을 끈 편집기(가정 설비 시나리오)는 그 앞에서 돌아간다."""
+    까닭은 `canvasLimitWords` 이고 조사는 `withJosa` 가 고른다. 칸을 끈 편집기(가정 설비
+    시나리오)는 그 앞에서 돌아간다."""
     body = JS[
         JS.index("function setCanvas(") : JS.index("// 트레이 칩·팔레트에서 끌어 도면에 놓는다.")
     ]
-    assert "${withJosa(canvasLimitWords(axis, ext[axis], parts, ceilTo), '이')} 거기까지 놓여 있습니다" in body
+    why = "${withJosa(canvasLimitWords(axis, ext[axis], parts, ceilTo), '이')}"
+    assert why + " 거기까지 놓여 있습니다" in body
     assert body.index("data.canvasEditable === false") < body.index("extentParts()")
     assert "data.canvasLimits?.overlay" in JS
