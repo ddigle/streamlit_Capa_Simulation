@@ -234,6 +234,9 @@
    선다. 테두리는 범위 그대로(여백 없이) 실선이다. */
 .sle-unit.is-module .sle-handle { display: none; }
 .sle-group-box.is-range { stroke-width: 2; stroke-dasharray: none; }
+/* 보기 화면에서 고른 모듈 묶음(이 층에 그린 모듈 둘 이상)은 모듈 후광 없이 묶음 둘레 실선 하나다 — 범위 테두리와 같은 굵기,
+   점선 상자와 같은 여백(JS `viewBundled`). */
+.sle.is-view .sle-group-box.is-bundle { stroke-width: 2; stroke-dasharray: none; }
 .sle-range-handle { opacity: 1; pointer-events: auto; }
 /* 호기 아래 층(영역·도형)에서 고른 것 하나의 손잡이는 맨 위 층에 다시 선다(JS `proxyHandles` — 호기가 덮은 자리도 잡힌다). 제 그룹
    안의 손잡이는 감춘다. */

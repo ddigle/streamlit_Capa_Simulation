@@ -2276,6 +2276,10 @@ export default function (component) {
     for (const g of S.ghosts.values()) add(g.group)
     return counts
   }
+  // 보기 화면에서 이 층 도면에 그린 모듈이 둘 이상인 묶음의 모듈인가 — 고르면 모듈 후광 없이 묶음 둘레 실선 하나다(2026-11-12
+  // 사용자 요청 5-1). `markSelection`(후광 빼기)과 `drawSelectionBox`(실선 상자)가 같은 판정을 쓴다. 그린 모듈이 하나뿐인 묶음은
+  // 낱 호기처럼 후광이다. 편집 화면은 거짓(묶음 범위 테두리 — `groupCounts`).
+  const viewBundled = (m) => VIEW && isUnit(m) && Boolean(m.group) && placedMembers(m).length >= 2
   // 범위를 정밀도·최소 크기(칸마다 최소 크기 한 칸 — 열·행 × 1 눈금)·영역 안으로 맞춘다. 크기 먼저, 그다음 위치.
   function fitRange(r, count) {
     const [cols, rows] = moduleGrid(count)
@@ -3751,7 +3755,8 @@ export default function (component) {
     return count
   }
 
-  // 함께 움직일 범위(모듈 묶음·여러 개 선택)를 점선 상자로 둘러 보인다. 사각형으로 고르는 중이면 그 사각형도.
+  // 함께 움직일 범위(모듈 묶음·여러 개 선택)를 점선 상자로 둘러 보인다 — 보기 화면의 모듈 묶음은 실선(`is-bundle`). 사각형으로
+  // 고르는 중이면 그 사각형도.
   function drawSelectionBox() {
     // Main 설비명도 범위를 따라간다 — 자리·크기·배율이 바뀌는 길이 모두 여기를 지난다. 견주기 꼬리표도 같다.
     drawGroupNames()
@@ -3784,7 +3789,7 @@ export default function (component) {
     } else if (list.length >= 2) {
       const box = bbox(list)
       overlay.append(el('rect', {
-        class: 'sle-group-box', rx: 0.6,
+        class: chosen.some(viewBundled) ? 'sle-group-box is-bundle' : 'sle-group-box', rx: 0.6,
         x: box.minX - GROUP_PAD, y: H() - box.maxT - GROUP_PAD,
         width: box.maxR - box.minX + GROUP_PAD * 2, height: box.maxT - box.minY + GROUP_PAD * 2,
       }))
@@ -3813,10 +3818,11 @@ export default function (component) {
   function markSelection() {
     const chosen = selectedItems()
     const together = new Set(expanded(chosen).map((m) => m.id))
-    // 편집에서 모듈 묶음은 모듈 하나를 골라도 묶음째 골라진 것이다 — 모듈 상자는 모두 「함께」 테만 두르고 손잡이는 범위
-    // 테두리에 선다. 보기 화면은 누른 모듈이 골라진 것 그대로다(후광).
-    const counts = VIEW ? new Map() : groupCounts()
-    const bundles = new Set(chosen.filter((m) => isUnit(m) && m.group && counts.get(groupKeyOf(m)) >= 2).map((m) => m.group))
+    // 모듈 묶음은 모듈 하나를 골라도 묶음째 골라진 것이다 — 편집은 모듈 상자에 모두 「함께」 테만 두르고 손잡이는 범위
+    // 테두리에 선다. 보기는 모듈 후광 없이 묶음 둘레 실선 하나다(`viewBundled` — 그린 모듈이 하나뿐인 묶음은 후광).
+    const counts = VIEW ? null : groupCounts()
+    const bundled = (m) => (VIEW ? viewBundled(m) : isUnit(m) && Boolean(m.group) && counts.get(groupKeyOf(m)) >= 2)
+    const bundles = new Set(chosen.filter(bundled).map((m) => m.group))
     for (const [id, group] of S.groups) {
       const item = S.items.get(id)
       const selected = S.selection.has(id) && !(item && item.group && bundles.has(item.group))

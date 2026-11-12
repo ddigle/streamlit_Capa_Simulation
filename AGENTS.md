@@ -1408,7 +1408,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     X·Y 칸은 `movePlan`(묶음은 범위), 크기(폭·높이 칸·Ctrl+방향키)는 `setSizes`, 범위 테두리 손잡이는
     `mode: 'range'`(`sle-range-handle`, 모듈 상자 손잡이는 `is-module` 로 숨김)이고 셋 모두 `relayGroup` 으로 다시
     놓는다. 선택은 묶음당 한 대(`onePerGroup`), 고른 묶음 범위 안의 빈 칸을 눌러도 그 묶음을 끈다(`pickedRangeAt`),
-    빼기·다른 층 보내기·서랍 놓기는 묶음째다. 묶음 조작 하나가 되돌리기 한 번이다.
+    빼기·다른 층 보내기·서랍 놓기는 묶음째다. 층 보기에서 고른 묶음(이 층에 그린 모듈 둘 이상 — `viewBundled`)은 모듈
+    후광 없이 묶음 둘레 실선 `is-bundle` 하나이고(2026-11-12 Space 시안 보드 답 5-1), 그린 모듈이 하나뿐인 묶음은 낱 호기처럼
+    후광이다. 묶음 조작 하나가 되돌리기 한 번이다.
     - 칸 자리는 지금 자리를 지킨다(`assignModuleCells` — 이미 바둑판이면 이름 차례와 상관없이 제 칸, 옛 묶음은 가까운
       칸). 자연 정렬은 서랍에서 새로 놓을 때(`naturalSlots`)와 좌표 없던 형제에만 쓴다. 「n등분이 아님」 판정도 칸
       모양(`tileDeviation`)이다.
