@@ -2201,7 +2201,8 @@ def _write_shared(
     - 없는 줄 · 잠긴 칸은 넣지 않는다. 다듬으면 편집본, 못 다듬으면 그 줄 칸 초안이다.
     - 모듈 묶음의 같이 바뀌는 칸(`UNIT_SHARED_COLUMNS` — 2026-11-12 사용자 답 3-1 · 3-3 · 3-5)은
       형제 줄(표 전체 — 불러오지 않은 줄 · 다른 층 · 숨은 모듈 포함)도 같은 값으로 쓴다. 계획은 op
-      하나에 한 번이다(`plan_group_writes`). 못 다듬은 글은 형제에게 퍼뜨리지 않는다.
+      하나에 한 번이다(`plan_group_writes`). 못 다듬은 글은 형제에게 퍼뜨리지 않는다. 같은 op 가
+      Main 설비 값을 바꾸는 줄(엑셀 한 줄 붙여넣기 — 답 3-2 move)은 같이 온 칸도 그 줄만 쓴다.
     - 형제 하나라도 잠겼으면 그 묶음 쓰기를 통째로 넣지 않고 까닭을 적는다. 한 번에 같은 묶음 ·
       같은 칸에 다른 값이 오면 같이 바꾸지 않고 받은 칸만 쓴다 — 어느 값이 맞는지 고르지 않는다.
     - 고친 줄 값이 그대로여도 형제가 바뀌면 바뀐 것이다 — 갈린 묶음을 같은 값 다시 넣기로 푼다.
@@ -2579,7 +2580,9 @@ def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Rev
     않는다 — 낡기 전에 고친 시나리오 칸을 저장본 값으로 돌려야 저장이 거부되지 않는다. 모듈 묶음
     좌표·크기만 그대로 둔다(한 모듈만 저장본 자리로 가면 묶음 모양이 갈린다 — Space 배치
     편집기 몫). 모듈 묶음 줄의 같이 바뀌는 칸(`UNIT_SHARED_COLUMNS`)은 형제 줄의 그 칸도 저마다의
-    저장본 값으로 돌린다(`_revert_siblings` — 같이 쓰기로 바뀐 묶음이 갈리지 않게)."""
+    저장본 값으로 돌린다(`_revert_siblings` — 같이 쓰기로 바뀐 묶음이 갈리지 않게). 저장본이 없는
+    새 형제는 막는 열세 칸만 되돌린 줄의 저장본 값으로 맞추고, 막지 않는 레이아웃표시
+    (`_QUIET_SHARED`)는 그대로 둔다 — 일부러 끈 새 모듈이 되돌리기로 켜지지 않는다."""
     index = work.index()
     if column is None and row_id in index.deleted:
         return _Reverted(step=_restore(work, [row_id]), restored=True)
@@ -2604,9 +2607,12 @@ def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Rev
             continue
         if name in UNIT_SHARED_COLUMNS:
             for other, other_saved in siblings:
+                if other_saved is None and name in _QUIET_SHARED:
+                    continue
                 key = overlay_key(index.ids[other], name)
                 cleared = _set_overlay(work, patch, key, None)
-                if _set_master(work, patch, other, name, other_saved.get(name)) or cleared:
+                value = (saved_row if other_saved is None else other_saved).get(name)
+                if _set_master(work, patch, other, name, value) or cleared:
                     result.together += 1
         cleared = _set_overlay(work, patch, overlay_key(row_id, name), None)
         changed = cell_text(work.master.iat[position, _loc(work.master, name)]) != cell_text(
@@ -2629,11 +2635,11 @@ def _revert(work: _Work, patch: _Patch, row_id: str, column: str | None) -> _Rev
 
 def _revert_siblings(
     work: _Work, index: GridIndex, position: int, saved_row: pd.Series, *, whole: bool
-) -> list[tuple[int, pd.Series]]:
-    """칸·호기 되돌리기가 같은 칸을 같이 돌릴 형제 — 지금 같은 모듈 묶음(`module_group_rows`)이고
-    저장본이 있는 줄의 (편집본 자리, 저장본 줄). 새 형제는 돌릴 저장본 값이 없어 그대로 둔다. 호기
-    통째 되돌리기가 Main 설비도 돌려 그 줄이 묶음을 떠나면 형제가 아니게 되므로 같이 돌리지
-    않는다. 끼우지 않는다(불러온 목록 그대로)."""
+) -> list[tuple[int, pd.Series | None]]:
+    """칸·호기 되돌리기가 같은 칸을 같이 돌릴 형제 — 지금 같은 모듈 묶음(`module_group_rows`)인 줄의
+    (편집본 자리, 저장본 줄). 새 형제는 저장본이 없어 None 이다(부르는 쪽이 되돌린 줄의 저장본
+    값으로 맞춘다). 호기 통째 되돌리기가 Main 설비도 돌려 그 줄이 묶음을 떠나면 형제가 아니게
+    되므로 같이 돌리지 않는다. 끼우지 않는다(불러온 목록 그대로)."""
     groups = module_group_rows(work.master).tolist() if len(work.master) else []
     group = groups[position] if groups else None
     if not isinstance(group, str):
@@ -2641,13 +2647,12 @@ def _revert_siblings(
     if whole and cell_text(saved_row.get(PARENT_EQUIPMENT_COLUMN)).strip() != group:
         return []
     saved = work.saved[1].reset_index(drop=True)
-    pairs: list[tuple[int, pd.Series]] = []
+    pairs: list[tuple[int, pd.Series | None]] = []
     for other, name in enumerate(groups):
         if other == position or not isinstance(name, str) or name != group:
             continue
         saved_position = index.saved.get(index.ids[other])
-        if saved_position is not None:
-            pairs.append((other, saved.iloc[saved_position]))
+        pairs.append((other, None if saved_position is None else saved.iloc[saved_position]))
     return pairs
 
 

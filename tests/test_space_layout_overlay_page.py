@@ -1833,12 +1833,9 @@ def test_loading_an_assumption_drops_the_floor_use_draft_before_the_tab_marks(
         assert app.session_state["test_marks"] == dirty
 
 
-def test_the_official_floor_editor_will_not_shrink_below_a_hypothetical_layout(
-    tmp_path: Path, editor_calls: list[dict[str, Any]]
-) -> None:
-    """S4 — 설계 6-4·7-2. 공식 세션 층 편집기의 「캔버스」 칸 하한에 가정 설비 시나리오 배치의 이
-    층 차이 요소 · 차이 호기가 든다(2026-11-12 — 「캔버스 편집」 팝업이 미리 말하던 것을 편집기가
-    맡는다). 줄이면 그 시나리오의 다음 저장이 막히거나(호기) 공식 저장이 막힌다(요소)."""
+def _far_hypothetical_layout(tmp_path: Path) -> DuckDBEquipmentRepository:
+    """가정 설비 시나리오 「셋업 실무」 가 C1 1F 에 차이 호기(EQ-01 X 85)와 차이 요소(MK-FAR X 90)를
+    둔 저장소 — 편집기 「캔버스」 칸 하한 재료."""
     from test_equipment_layout_overlay_repository import _floor_base, _mark
 
     repository = _seeded(tmp_path)
@@ -1857,6 +1854,16 @@ def test_the_official_floor_editor_will_not_shrink_below_a_hypothetical_layout(
         )
     )
     clear_equipment_repository()
+    return repository
+
+
+def test_the_official_floor_editor_will_not_shrink_below_a_hypothetical_layout(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """S4 — 설계 6-4·7-2. 공식 세션 층 편집기의 「캔버스」 칸 하한에 가정 설비 시나리오 배치의 이
+    층 차이 요소 · 차이 호기가 든다(2026-11-12 — 「캔버스 편집」 팝업이 미리 말하던 것을 편집기가
+    맡는다). 줄이면 그 시나리오의 다음 저장이 막히거나(호기) 공식 저장이 막힌다(요소)."""
+    repository = _far_hypothetical_layout(tmp_path)
     expected = repository.layout_overlay_extent("C1", "1F").scenario_extents()
     assert [name for name, _, _ in expected] == ["셋업 실무"]
     app = _ok(_space(tmp_path, OPERATIONS).run())
@@ -1869,3 +1876,39 @@ def test_the_official_floor_editor_will_not_shrink_below_a_hypothetical_layout(
         {"name": name, "right": right, "top": top} for name, right, top in expected
     ]
     assert data["canvasLimits"]["overlay"][0]["right"] >= 92.0
+
+
+def test_an_apply_canvas_below_a_hypothetical_layout_is_refused(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """편집기 하한의 서버 쪽 겹(R1 리뷰 지적 3) — 낡은 편집기 · 옛 화면이 가정 설비 시나리오의
+    이 층 배치 차이보다 작은 캔버스를 보내면 적용을 받지 않고 알림창으로 그 시나리오를 말한다.
+    하한 이상이면 받는다."""
+    _far_hypothetical_layout(tmp_path)
+    app = _ok(_space(tmp_path, OPERATIONS).run())
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    _ok(app)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [],
+        "canvas": {"width": 80, "height": 60},
+        "marks": None,
+    }
+    _ok(app.run())
+
+    refused = [str(item.value) for item in flashed(app, "error")]
+    assert any(
+        "적용하지 못했습니다" in text
+        and "캔버스 80 × 60 밖에 가정 설비 시나리오 「셋업 실무」 배치가 남습니다" in text
+        for text in refused
+    ), refused
+    assert LAYOUT_ROLE_KEY not in app.session_state
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [],
+        "canvas": {"width": 130, "height": 60},
+        "marks": None,
+    }
+    _ok(app.run())
+    assert LAYOUT_ROLE_KEY in app.session_state

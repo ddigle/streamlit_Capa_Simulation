@@ -773,6 +773,15 @@ class LayoutOverlayExtent:
             )
         return tuple((name, right, top) for name, (right, top) in reach.items())
 
+    def scenarios_outside(self, canvas: CanvasSize) -> tuple[str, ...]:
+        """캔버스 밖에 이 층 차이 요소나 차이 호기가 남는 시나리오 이름(처음 나온 차례 — 요소 먼저).
+
+        Space 「배치 편집」 「캔버스」 칸 하한(`scenario_extents`)의 서버 쪽 겹이다 — 낡은 편집기 ·
+        옛 화면이 그보다 작게 보낸 적용을 적용 길이 거부한다(줄이면 그 시나리오의 다음 저장이
+        막힌다)."""
+        names = [*self.marks_outside(canvas), *(name for name, _ in self.units_outside(canvas))]
+        return tuple(dict.fromkeys(names))
+
     def units_outside(self, canvas: CanvasSize) -> tuple[tuple[str, int], ...]:
         """시나리오마다 캔버스를 벗어나는 차이 호기 수(0 인 시나리오는 뺀다)."""
         width, height = canvas

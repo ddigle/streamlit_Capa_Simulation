@@ -1954,6 +1954,14 @@ def _render_layout_editor(
         if applied.canvas is not None and not edit_mode.canvas:
             # 칸을 껐지만 옛 브라우저가 보낸 캔버스 값(두 겹 — 설계 8-4).
             raise ValueError(CANVAS_LOCK_REASON)
+        if applied.canvas is not None:
+            # 편집기 하한(다른 가정 설비 시나리오의 이 층 배치 차이)의 서버 쪽 겹 — 낡은 편집기 ·
+            # 옛 화면이 그보다 작게 보낸 캔버스(줄이면 그 시나리오의 다음 저장이 막힌다 — 설계 6-4).
+            behind = load_layout_overlay_extent(equipment_database_path, *key).scenarios_outside(
+                applied.canvas
+            )
+            if behind:
+                raise ValueError(_overlay_canvas_message(applied.canvas, behind))
         next_canvases = {**canvases, **({key: applied.canvas} if applied.canvas else {})}
         master = apply_layout_edits(
             frames[1],
@@ -2106,6 +2114,17 @@ def _refuse_apply(message: str, *, kind: FlashKind = "error") -> None:
     남는다."""
     queue_flash(SPACE_FLASH_KEY, markdown_safe_tildes(message), kind=kind, popup_only=True)
     st.rerun()
+
+
+def _overlay_canvas_message(canvas: tuple[float, float], names: Sequence[str]) -> str:
+    """편집기 적용이 보낸 캔버스가 다른 가정 설비 시나리오의 이 층 배치 차이보다 작을 때의 거부 글 —
+    편집기 하한 까닭(「가정 설비 시나리오 「이름」 배치」)과 같은 이름 꼴이고 이름은 `quoted` 로
+    막는다(알림창 마크다운 자리)."""
+    shown = " · ".join(quoted(name) for name in names)
+    return (
+        f"캔버스 {canvas[0]:g} × {canvas[1]:g} 밖에 가정 설비 시나리오 {shown} 배치가 남습니다 — "
+        "그 배치보다 작게 줄이지 않습니다."
+    )
 
 
 class _SheetCellsRefused(Exception):

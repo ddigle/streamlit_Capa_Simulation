@@ -161,6 +161,58 @@ def test_different_values_for_one_group_column_are_not_spread() -> None:
     )
 
 
+@pytest.mark.parametrize("moved_first", [True, False])
+def test_a_row_moving_to_another_group_writes_its_shared_cells_alone(moved_first: bool) -> None:
+    """답 3-2 move — 한 번에 Main 설비와 같이 바뀌는 칸이 함께 오면(엑셀 한 줄 붙여넣기), Main
+    설비를 실제로 바꾸는 줄은 그 모듈만 옮긴다. 같이 온 칸도 그 줄 하나만 쓰고 떠나는 묶음의 형제에
+    번지지 않는다. 남은 형제를 고친 같은 칸 쓰기도 떠나는 줄을 덮지 않는다(넘긴 차례와 무관).
+    옮겨 가는 묶음(GRP-2)으로도 퍼뜨리지 않는다."""
+    moving: list[tuple[int, str, object]] = [
+        (2, "Main 설비", "GRP-2"),
+        (2, "동", "C2"),
+        (2, "담당자", "담당B"),
+    ]
+    staying: list[tuple[int, str, object]] = [(0, "담당자", "담당A")]
+
+    plan = plan_group_writes(_master(), moving + staying if moved_first else staying + moving)
+
+    singles = [
+        GroupWrite(None, "Main 설비", "GRP-2", (2,), (2,)),
+        GroupWrite(None, "동", "C2", (2,), (2,)),
+        GroupWrite(None, "담당자", "담당B", (2,), (2,)),
+    ]
+    rest = [GroupWrite("GRP-1", "담당자", "담당A", rows=(0, 4, 7), asked=(0,))]
+    assert list(plan.writes) == (singles + rest if moved_first else rest + singles)
+    assert plan.split == ()
+
+
+@pytest.mark.parametrize("parent", [None, "", "  "])
+def test_a_row_leaving_its_group_writes_its_shared_cells_alone(parent: object) -> None:
+    """Main 설비를 비우며 같이 바뀌는 칸을 함께 넣어도 그 줄 하나다."""
+    plan = plan_group_writes(_master(), [(2, "Main 설비", parent), (2, "담당자", "혼자담당")])
+
+    assert plan.writes == (
+        GroupWrite(None, "Main 설비", parent, (2,), (2,)),
+        GroupWrite(None, "담당자", "혼자담당", (2,), (2,)),
+    )
+
+
+def test_a_row_keeping_its_parent_still_spreads_its_shared_cells() -> None:
+    """같은 묶음 줄을 통째로 붙이면 Main 설비 값이 그대로다(앞뒤 공백만 다름) — 옮기는 줄이 아니라
+    같이 바뀌는 칸은 지금처럼 형제에게 퍼진다. 묶음에서 한 줄만 남으면 그 줄 하나다."""
+    kept = plan_group_writes(_master(), [(2, "Main 설비", " GRP-1"), (2, "담당자", "담당A")])
+    assert kept.writes == (
+        GroupWrite(None, "Main 설비", " GRP-1", (2,), (2,)),
+        GroupWrite("GRP-1", "담당자", "담당A", rows=GRP_1, asked=(2,)),
+    )
+
+    alone = plan_group_writes(_master(), [(3, "Main 설비", "GRP-1"), (6, "담당자", "담당C")])
+    assert alone.writes == (
+        GroupWrite(None, "Main 설비", "GRP-1", (3,), (3,)),
+        GroupWrite(None, "담당자", "담당C", (6,), (6,)),
+    )
+
+
 def test_writes_keep_the_order_the_cells_first_came_in() -> None:
     plan = plan_group_writes(
         _master(), [(6, "층", "4F"), (1, "메모1", "x"), (4, "층", "4F"), (3, "층", "4F")]
@@ -434,6 +486,40 @@ def test_other_columns_and_rows_outside_a_group_change_one_row(
     assert result.toast is None and result.inserted == ()
 
 
+@pytest.mark.parametrize(
+    ("parent", "values"),
+    [
+        ("GRP-2", ["C2", "2F", "B담당", "B메이커"]),
+        ("", ["C1", "1F", "혼자담당", "Sample Maker"]),
+    ],
+)
+def test_a_pasted_row_moving_out_does_not_carry_its_cells_to_the_group_it_left(
+    parent: str, values: list[str]
+) -> None:
+    """엑셀 한 줄 통째 붙여넣기(R1 리뷰 지적 1) — Main 설비 칸이 그 줄을 다른 묶음으로
+    옮기거나(GRP-2) 묶음 밖으로 빼면(빈 값), 같이 온 동 · 층 · 담당자 · Maker 는 그 줄에만 들어가고
+    떠난 묶음에 남은 형제(0 · 4 · 6)는 그대로다. 알림 글에 묶음 꼬리가 없고 갈린 묶음도 생기지
+    않는다."""
+    master = _grouped_frames()[1].copy()
+    master.loc[PAIR, ["동", "층", "담당자", "Maker"]] = ["C2", "2F", "B담당", "B메이커"]
+    master.loc[PAIR, "공정소분류"] = master.loc[2, "공정소분류"]
+    state = _grouped(master)
+    columns = ["Main 설비", "동", "층", "담당자", "Maker"]
+    stayed = master.loc[[0, 4, 6], columns[1:]].map(eg.cell_text).to_numpy().tolist()
+
+    result = ops_apply(
+        state,
+        ops_op("paste", 1, ids=[ops_id(state, 2)], cols=columns, rows=[[parent, *values]]),
+    )
+
+    after = result.state.frames[1]
+    assert after.loc[[0, 4, 6], columns[1:]].map(eg.cell_text).to_numpy().tolist() == stayed
+    assert [eg.cell_text(after.loc[2, name]) for name in columns] == [parent, *values]
+    assert result.toast is not None and "묶음" not in result.toast
+    assert result.inserted == ()
+    assert _mixed(result) == []
+
+
 def test_the_detail_carries_the_group_and_the_shared_columns() -> None:
     """「호기 상세」 data — 모듈 묶음(둘 이상) 줄에만 `group`(Main 설비 · 형제 포함 줄 수)이 서고,
     같이 바뀌는 14칸 자리(`sharedCols`)가 늘 실린다. 묶음 밖 줄 · 한 줄 묶음에는 없다."""
@@ -471,6 +557,33 @@ def test_reverting_a_shared_cell_brings_every_sibling_back_to_its_saved_value() 
         ops_op("revert", 2, id=ops_id(state, 6), col=None),
     )
     assert _column(left, "담당자", GROUP) == ["가", "가", "가", "샘플 담당자"]
+
+
+def test_reverting_a_shared_cell_brings_a_new_sibling_to_the_reverted_value() -> None:
+    """새(저장 안 한) 형제는 돌릴 저장본이 없다 — 막는 열세 칸은 되돌린 줄의 저장본 값으로 맞춰
+    묶음이 갈리지 않는다(R1 리뷰 지적 2 · 설계 G2 (가)). 막지 않는 레이아웃표시는 새 형제를 건드리지
+    않는다 — 일부러 끈 새 모듈이 되돌리기로 켜지지 않는다(설계 G4)."""
+    saved = _grouped_frames()
+    joiner = saved[1].iloc[[0]].copy()
+    joiner.loc[joiner.index, ["설비명", "레이아웃표시"]] = ["GRP1-NEW", "N"]
+    master = pd.concat([saved[1], joiner], ignore_index=True)
+    state = _grouped(master)
+    rows = [*GROUP, len(master) - 1]
+    changed = ops_apply(state, ops_op("cell", 1, id=ops_id(state, 0), col="담당자", text="새담당"))
+    assert _column(changed, "담당자", rows) == ["새담당"] * 5
+
+    cell = ops_apply(changed.state, ops_op("revert", 2, id=ops_id(state, 2), col="담당자"))
+    assert _column(cell, "담당자", rows) == ["샘플 담당자"] * 5
+    assert _mixed(cell) == []
+    assert cell.toast is not None and cell.toast.endswith(" · 묶음 1개 4칸 같이")
+
+    unit = ops_apply(changed.state, ops_op("revert", 2, id=ops_id(state, 2), col=None))
+    assert _column(unit, "담당자", rows) == ["샘플 담당자"] * 5
+
+    hidden = ops_apply(state, ops_op("cell", 1, id=ops_id(state, 0), col="레이아웃표시", text="N"))
+    assert _column(hidden, "레이아웃표시", rows) == ["N"] * 5
+    shown = ops_apply(hidden.state, ops_op("revert", 2, id=ops_id(state, 2), col="레이아웃표시"))
+    assert _column(shown, "레이아웃표시", rows) == ["Y", "Y", "Y", "Y", "N"]
 
 
 # ------------------------------------------------------------------ 설비 마스터 탭(AppTest)

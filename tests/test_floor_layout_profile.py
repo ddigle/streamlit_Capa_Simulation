@@ -10,7 +10,6 @@ from test_equipment_availability import _baseline, _downtime, _equipment
 
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.services.equipment_validation import (
-    floor_equipment_outside_canvas,
     floors_outside_canvas,
     prepare_equipment_master,
     require_floor_inside_canvas,
@@ -210,10 +209,14 @@ def test_canvas_shrink_check_sees_every_saved_unit_of_the_floor() -> None:
     ]
     saved = prepare_equipment_master(pd.concat([equipment, pd.DataFrame(rows)], ignore_index=True))
 
-    assert floor_equipment_outside_canvas(saved, ("C1", "1F"), (100.0, 60.0)) == ["DEMO-EQ01"]
-    assert floor_equipment_outside_canvas(saved, ("C1", "1F"), (162.0, 60.0)) == []
-    assert floor_equipment_outside_canvas(saved, ("C1", "2F"), (100.0, 60.0)) == ["DEMO-EQ03"]
-    assert floor_equipment_outside_canvas(saved.iloc[0:0], ("C1", "1F"), (10.0, 10.0)) == []
+    with pytest.raises(ValueError) as caught:
+        require_floor_inside_canvas(saved, ("C1", "1F"), {("C1", "1F"): (100.0, 60.0)})
+    assert "['DEMO-EQ01']" in str(caught.value) and "DEMO-EQ04" not in str(caught.value)
+    require_floor_inside_canvas(saved, ("C1", "1F"), {("C1", "1F"): (162.0, 60.0)})
+    with pytest.raises(ValueError) as caught:
+        require_floor_inside_canvas(saved, ("C1", "2F"), {("C1", "2F"): (100.0, 60.0)})
+    assert "['DEMO-EQ03']" in str(caught.value)
+    require_floor_inside_canvas(saved.iloc[0:0], ("C1", "1F"), {("C1", "1F"): (10.0, 10.0)})
 
 
 def test_the_layout_apply_checks_only_its_own_floor_against_the_canvas() -> None:
@@ -241,6 +244,11 @@ def test_the_layout_apply_checks_only_its_own_floor_against_the_canvas() -> None
     assert message.startswith("Space 블럭이 층 캔버스 범위를 벗어났습니다")
     assert "C1 2F 캔버스 100 × 60(저장된 캔버스 없음 · 기본값)" in message
     assert "['DEMO-EQ03']" in message and "C1 1F" not in message
+    # 적용 자리의 글이다 — 이미 「배치 편집」 안이라 그 칸 이름만, 마스터 전체 저장 · 빈 DB 첫 저장
+    # 안내는 붙이지 않는다(R1 리뷰 지적 5).
+    assert "왼쪽 칸 「캔버스」 를 그만큼 넓히거나" in message
+    assert "무관한 칸만" not in message and "Space 현황" not in message
+    assert "저장한 적이 없으면" not in message
     # 2F 도 넓히면 전체 검사가 지난다.
     both = {**canvases, ("C1", "2F"): (200.0, 100.0)}
     require_floor_inside_canvas(saved, ("C1", "2F"), both)

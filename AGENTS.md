@@ -1313,9 +1313,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - Space 층·FAB 캔버스 폭·높이는 따로 여는 팝업이 없다(2026-11-12 Space 보드 답 1-4 — 「캔버스 편집」 팝업 · 사이드바 단추를
   걷었다) — 층·FAB 「배치 편집」 왼쪽 칸 「캔버스」 → 적용 → 「배치 저장」 이다. 칸의 하한은 놓인 호기·요소, 도면에 안 보이는 이
   층 호기(`EditorInputs.reserved_extent`)와 다른 가정 설비 시나리오의 이 층 배치 차이(`LayoutOverlayExtent.scenario_extents`,
-  공식 세션 회차에만 `canvasLimits.overlay`)이고 막은 글이 닿은 까닭을 말한다(editor.js `canvasLimitWords`). 적용의 「캔버스
-  밖」 검사는 그 층만 본다(`equipment_validation.require_floor_inside_canvas` — 두 층 이상이 밖(`EQ-18`)이어도 층마다 넓혀 두고
-  「배치 저장」 이 마스터 전체를 본다). 옛 판이 올린 도면 그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다(마이그레이션
+  공식 세션 회차에만 `canvasLimits.overlay`)이고 막은 글이 닿은 까닭을 말한다(editor.js `canvasLimitWords`). 가정 배치 하한은
+  적용 길도 다시 본다(`LayoutOverlayExtent.scenarios_outside` — 낡은 편집기 · 옛 화면이 그보다 작게 보낸 캔버스를 거부). 적용의
+  「캔버스 밖」 검사는 그 층만 본다(`equipment_validation.require_floor_inside_canvas` — 두 층 이상이 밖(`EQ-18`)이어도 층마다
+  넓혀 두고 「배치 저장」 이 마스터 전체를 본다. 글은 저장 글의 층 조각에 적용 자리의 고칠 곳만 붙인다). 옛 판이 올린 도면 그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다(마이그레이션
   없음). 알림 `EQ-16`(옛 팝업의 밖 알림)은 비워 둔 번호다.
 - `src/capa_simulation/components/space_layout_editor.py` — Space 층·FAB 도면의 Components v2 편집기와 보기 전용 뷰어
   (`render_space_layout_viewer`·`render_fab_layout_viewer`·`render_fab_layout_editor`)다.
@@ -1381,7 +1382,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     접힘 포함) 맞는 호기 `is-filter-hit`(새 부품 `.sle-filter-ring` — 보기·편집 모두 만들고 `FILTER_GAP_PX` 5 로 선택 후광 밖, 토큰
     `SPACE_FILTER_RING`), 나머지 `is-filter-out`(`SPACE_FILTER_DIM_OPACITY` — 필요 단축 `is-dim` 과 함께면 `calc` 로 곱함)이고 편집
     오른쪽 칸 칩도 `is-filter-hit` + 칸 머리 「필터 맞음 n」(`.sle-tray-hits`). 닫으면 강조를 끄고 필터는 남는다. 목록 줄 누르기
-    (`goToUnit`) = 고르기 + `zoomToBox`(보기는 `notePick` 도) + 창이 덮으면 덮지 않은 가장 넓은 띠로 밀기(`clearOfSheet`), 편집의
+    (`goToUnit`) = 고르기(칸을 고치는 배치 편집의 「고른 호기」 탭은 고른 것을 두고 누른 호기를 기준으로만 — `sheetRowPick`, 보이는
+    줄이 그대로라 표를 다시 그리지 않아 두 번 누름이 끊기지 않는다) + `zoomToBox`(보기는 `notePick` 도) + 창이 덮으면 덮지 않은 가장
+    넓은 띠로 밀기(`clearOfSheet`), 편집의
     미배치 호기는 오른쪽 칸을 펴 그 칩으로 굴려 깜빡임, 그 밖은 창 아래 한 줄. 편집에서 도면에 선 묶음의 좌표 없는 모듈(`trayKeep` 이 서랍에서 뺌)은 그 모듈을 고른
     채 화면을 그 묶음의 도면에 선 모듈로(같은 `zoomToBox` · `clearOfSheet`) 옮기고 창 아래 「<id> — 도면에 없음 · Main 설비 <묶음>」
     이다. 창 아래 한 줄은 편집 기록(`pushUndo`)마다 지운다. 줄 누르기로 고른 것이 바뀌거나(`attractPicked` — 화면을 다 옮긴 뒤)
@@ -2195,7 +2198,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/services/equipment_units.py` — 모듈 행을 설비 한 대로 묶는 `설비키`·`설비지분`과 소수 대수 표기,
   모듈 묶음 판정(`module_group_rows` · `parent_equipment` — `space_layout_edit` 가 같은 이름으로 다시 내보낸다)과 묶음 같이 쓰기
   계획(`plan_group_writes` → `GroupPlan` — 형제는 넘긴 표 전체, 한 번에 같은 묶음 · 칸에 다른 값이 오면 같이 바꾸지 않고
-  `split`, 잠금 · 값 다듬기는 호출부 몫)의 단일 정의다. 대수를 세는 곳은 행 수 대신 지분을 더한다. 모듈 묶음 환산비 경고는 줄 판정(`module_ratio_warning_rows`)과
+  `split`, 같은 계획이 Main 설비 값을 바꾸는 줄은 같이 온 칸도 그 줄만(답 3-2 move), 잠금 · 값 다듬기는 호출부 몫)의 단일 정의다. 대수를 세는 곳은 행 수 대신 지분을 더한다. 모듈 묶음 환산비 경고는 줄 판정(`module_ratio_warning_rows`)과
   문장(`module_group_warnings`)이 같은 판정·같은 문구 조각(`MODULE_RATIO_WARNING`)이다 — 검증 전 편집본도 받고, Main 설비를
   적은 줄만 묶음으로 센다(설비명이 겹친 줄·설비명이 빈 줄은 묶음이 아니다). 화면 경고는 줄 판정 쪽(규칙 표 `module_ratio_default`
   → 설비 마스터 표 칸 경고 표지)이다 — 문장 쪽은 개편 D 뒤 운영 호출자가 없고 시험만 부른다(TODO 2장 「다음 손볼 때」).
@@ -2305,8 +2308,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     지우기는 비가동을 함께 빼고, 되살리기는 **저장본 값**을 **저장본 차례** 자리에 넣는다(차례만 다른 공통 리비전을 만들지 않음).
     칸·호기 되돌리기(`revert`)는 저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·가정 배치 칸 잠금을 보지 않는다(낡기 전에 고친
     일정을 되돌려야 저장이 거부되지 않는다) — 모듈 묶음 좌표·크기만 그대로 두고 알림창으로 알린다. 같이 바뀌는 칸은 지금 묶음
-    형제의 그 칸도 저마다의 저장본 값으로 돌린다(새 형제는 그대로, 호기 되돌리기가 Main 설비도 돌려 묶음을 떠나면 같이 돌리지
-    않는다). `base` 가 달라 버린 op 는 까닭을
+    형제의 그 칸도 저마다의 저장본 값으로 돌린다(새 형제는 막는 열세 칸만 되돌린 줄의 저장본 값으로 맞추고 레이아웃표시는 그대로, 호기
+    되돌리기가 Main 설비도 돌려 묶음을 떠나면 같이 돌리지 않는다). `base` 가 달라 버린 op 는 까닭을
     가르지 않는 결과 글(`DROPPED_TOAST` — 내 저장·모두 버리기·불러오기·남의 저장)로 알림창에 센다.
   - 되돌리기 `UndoStep` 은 역 patch(조작 뒤 자리)라 나중 것부터만 맞는다 — 표의 조작만 쌓고 다른 길이 편집본을 바꾸면
     목록을 비운다(B1-c). 되돌리기는 「저장 전 변경」 칸의 「한 단계 되돌리기」 하나다(2026-11-07 답 undo-strip). 불러온 목록은 화면 조작으로도 바뀌므로 사진으로 되돌리지 않고

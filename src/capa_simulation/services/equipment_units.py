@@ -232,6 +232,10 @@ def plan_group_writes(master: pd.DataFrame, cells: Sequence[tuple[int, str, obje
       든다. 묶음은 고치기 전 `master` 로 가른다.
     - 그 밖(같이 바뀌지 않는 칸 — Main 설비 · 사용기준 · 일정 등, 묶음 밖 줄, 한 줄 묶음)은 그 줄
       하나만이다(`group` None).
+    - 같은 `cells` 가 Main 설비 값을 실제로 바꾸는(다듬은 글이 지금 묶음과 다른 — 비우기 포함) 줄은
+      그 모듈만 옮긴다(답 3-2 move) — 그 줄의 같이 바뀌는 칸도 그 줄 하나만 쓰고, 떠나는 묶음의 같이
+      쓰기 줄에서 빠진다. 옮겨 가는 묶음으로도 퍼뜨리지 않는다. 남는 줄이 하나뿐이면 그 줄 하나다.
+      Main 설비가 그대로인 줄(같은 묶음 줄을 통째로 붙임)은 지금처럼 퍼진다.
     - 같은 (묶음, 칸)에 온 값이 모두 같으면 쓰기 하나다. 서로 다르면 같이 바꾸지 않고 받은 칸만
       그 줄 하나씩 쓰며 `split` 에 적는다 — 어느 값이 맞는지 고르지 않는다.
     - 값 견줌은 결측 · 빈 글을 같은 빈 값으로, 나머지는 글자로 본다.
@@ -242,15 +246,27 @@ def plan_group_writes(master: pd.DataFrame, cells: Sequence[tuple[int, str, obje
     `IndexError` 다.
     """
     groups = module_group_rows(master).tolist() if len(master) else []
+    moving = {
+        position
+        for position, column, value in cells
+        if column == PARENT_EQUIPMENT_COLUMN
+        and isinstance(groups[position], str)
+        and _parent_text(value) != groups[position]
+    }
     members: dict[str, list[int]] = {}
     for position, name in enumerate(groups):
-        if isinstance(name, str):
+        if isinstance(name, str) and position not in moving:
             members.setdefault(name, []).append(position)
     slots: list[tuple[str, str] | int] = []
     buckets: dict[tuple[str, str], list[int]] = {}
     for index, (position, column, _value) in enumerate(cells):
         name = groups[position]
-        if column in UNIT_SHARED_COLUMNS and isinstance(name, str):
+        if (
+            column in UNIT_SHARED_COLUMNS
+            and isinstance(name, str)
+            and position not in moving
+            and len(members[name]) > 1
+        ):
             key = (name, column)
             if key not in buckets:
                 buckets[key] = []
@@ -285,6 +301,12 @@ def plan_group_writes(master: pd.DataFrame, cells: Sequence[tuple[int, str, obje
 def _single_write(cell: tuple[int, str, object]) -> GroupWrite:
     position, column, value = cell
     return GroupWrite(group=None, column=column, value=value, rows=(position,), asked=(position,))
+
+
+def _parent_text(value: object) -> str:
+    """넘긴 Main 설비 값의 묶음 견줌 글 — `parent_equipment` 와 같이 앞뒤 공백을 걷는다(결측은
+    빈 글)."""
+    return _value_key(value).strip()
 
 
 def _value_key(value: object) -> str:

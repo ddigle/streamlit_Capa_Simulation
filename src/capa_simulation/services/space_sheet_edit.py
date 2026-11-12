@@ -35,6 +35,7 @@ from capa_simulation.services.equipment_contract import (
     UNIT_SHARED_COLUMNS,
 )
 from capa_simulation.services.equipment_grid import (
+    GROUP_LOCKED_TOAST,
     LOCK_SETS,
     GridContext,
     cell_text,
@@ -263,22 +264,21 @@ def _issue_key(issue: MasterIssue) -> tuple[int, str, str]:
 
 def _lock_message(
     write: GroupWrite,
-    position: int,
-    kind: str,
+    locked: Sequence[tuple[int, str]],
     *,
     names: Sequence[str],
     reasons: Mapping[str, str],
 ) -> tuple[str, str]:
-    """잠긴 줄에 닿은 쓰기의 (갈래, 문구) — 고친 줄이면 그 잠금 까닭, 형제 줄이면 묶음째 거절."""
+    """잠긴 줄(`(줄 자리, 잠금 갈래)`, 쓸 줄 차례)에 닿은 쓰기의 (갈래, 문구) — 첫 잠긴 줄이 고친
+    줄이면 그 잠금 까닭, 형제 줄이면 묶음째 거절이다. 묶음째 거절 글은 설비 마스터 표와 한 벌
+    (`GROUP_LOCKED_TOAST` — 수는 잠긴 형제 줄 수)이고 첫 잠긴 형제를 붙인다."""
+    position, kind = locked[0]
     reason = reasons.get(kind, "잠긴 칸입니다")
     if position in write.asked or write.group is None:
         return RULE_LOCKED, reason
-    siblings = [p for p in write.rows if p not in write.asked]
-    return (
-        RULE_SIBLING_LOCKED,
-        f"{write.group} 묶음 — 형제 {len(siblings)}줄의 {write.column} 칸이 잠겨 같이 고치지 "
-        f"않았습니다({reason}) · 잠긴 줄 {names[position]}",
-    )
+    siblings = [p for p, _ in locked if p not in write.asked]
+    text = GROUP_LOCKED_TOAST.format(group=write.group, count=len(siblings), column=write.column)
+    return RULE_SIBLING_LOCKED, f"{text}({reason}) · 잠긴 줄 {names[position]}"
 
 
 def check_sheet_cells(
@@ -357,16 +357,19 @@ def check_sheet_cells(
                     f"{group} 묶음 {write.column} — 같은 묶음 모듈에 서로 다른 값을 넣었습니다",
                 )
             continue
-        refusal: tuple[str, str] | None = None
-        for position in write.rows:
-            kind = next(
-                (k for k in locks.get(names[position], ()) if write.column in LOCK_SETS[k]),
-                None,
-            )
-            if kind is not None:
-                refusal = _lock_message(write, position, kind, names=names, reasons=reasons)
-                break
-        if refusal is not None:
+        locked = [
+            (position, kind)
+            for position in write.rows
+            for kind in [
+                next(
+                    (k for k in locks.get(names[position], ()) if write.column in LOCK_SETS[k]),
+                    None,
+                )
+            ]
+            if kind is not None
+        ]
+        if locked:
+            refusal = _lock_message(write, locked, names=names, reasons=reasons)
             for at in owners:
                 verdicts[at] = CellVerdict(cells[at], *refusal)
             continue
