@@ -304,7 +304,7 @@ UNITS_VIEW_LABELS: Final[Mapping[str, str]] = {UNITS_ALL: "전체", UNITS_SHORTE
 BASIS_LABEL: Final = "비가동 기준"
 UNITS_VIEW_LABEL: Final = "④ 단축 보기"
 BASIS_HELP: Final = (
-    "Static · 일정 — ③ 비가동의 실가용대수를 ① Static 가용대수에서 뺄지, ② 일정 가용대수에서 "
+    "Static · 일정 — ③ 비가동의 비가동대수를 ① Static 가용대수에서 뺄지, ② 일정 가용대수에서 "
     "뺄지 고릅니다."
 )
 UNITS_VIEW_HELP: Final = (

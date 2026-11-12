@@ -1262,6 +1262,7 @@ def test_the_basis_picker_follows_the_effect_section_and_the_two_pickers_share_o
     assert app.segmented_control(key=UNITS_VIEW_KEY).label == "④ 단축 보기"
     both = picker_help(basis=True, units=True)
     assert "Static · 일정" in both and "전체 · 단축 필요만" in both
+    assert "비가동대수를 ① Static 가용대수에서 뺄지, ② 일정 가용대수에서" in both
     assert _pair_marks(app.main, BASIS_KEY) == []
     assert _pair_marks(app.main, UNITS_VIEW_KEY) == [both]
     assert [item for item in app.caption if item.proto.help == both] != []
