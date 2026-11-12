@@ -98,7 +98,7 @@ def test_a_stale_version_is_refused_without_writing(tmp_path: Path) -> None:
             {(A, 202607): 9.0}, processes=(A,), months=MONTHS, expected_version=0
         )
     assert (caught.value.expected, caught.value.stored) == (0, 1)
-    assert "입력 비가동 대수" in str(caught.value)
+    assert "입력 비가동대수" in str(caught.value)
     profile = repository.load_manual_downtime()
     assert (profile.rows, profile.version) == (((A, 202607, 1.0),), 1)
     assert len(repository.load_manual_downtime_saves()) == 1

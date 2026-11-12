@@ -5,6 +5,7 @@
 소스는 사용자에게 갈 수 있는 글(문자열 상수 · f-string 의 글 조각, docstring 은 빼고)만 본다.
 칸 이름 계약(`확보기준` · `확보기준 과부족` · `경고기준 필요대수` 등)은 코드 이름이라 뺀다.
 필요 단축 일정 글은 사용자 문구 전달 때 함께 고친다(TODO 2장) — 그 글만 `WAITING` 으로 비켜 둔다.
+여러 이름이 「대수」 하나를 나눠 쓴 구절(「총 · 가용 · 비가동 대수」)은 `SHARED` 로 비켜 둔다.
 """
 
 from __future__ import annotations
@@ -37,9 +38,15 @@ RENAMED: Final[dict[str, str]] = {
     # Alarm 거르기 체크 — 해소만이 아니라 내용 바뀜 · 범위 바뀜 줄도 감춘다(지난 보드
     # a-hide-closed).
     "해소된 것 숨김": "닫힌 것 숨김",
+    # 「비가동대수」 는 붙여 쓴다. 마이그레이션 SQL · migration_catalog · data_model · 날짜 붙은
+    # 기록은 이 시험이 보지 않는 자리라 띄어 쓴 그대로다.
+    "입력 비가동 대수": "입력 비가동대수",
+    "비가동 대수": "비가동대수",
 }
 # 칸 이름 계약 — 문자열 전체가 이것이면 화면 글이 아니다(표 머리는 `column_config` 라벨이 말한다).
 COLUMN_NAMES: Final = frozenset({"확보기준", "확보기준 과부족", "확보기준 추가대수"})
+# 여러 이름이 「대수」 하나를 나눠 쓴 구절 — 「비가동 대수」 한 이름이 아니라 이 구절만 지우고 본다.
+SHARED: Final = ("총 · 가용 · 비가동 대수",)
 # 필요 단축 일정 글 — 사용자 문구 전달 때 함께 고친다.
 WAITING: Final[dict[str, frozenset[str]]] = {
     "required_shortening.md": frozenset({"확보기준", "공식으로 발행"}),
@@ -61,7 +68,10 @@ def _texts(path: Path) -> Iterator[tuple[int, str]]:
 
 
 def _folded(text: str) -> str:
-    return re.sub(r"\s+", " ", text)
+    folded = re.sub(r"\s+", " ", text)
+    for phrase in SHARED:
+        folded = folded.replace(phrase, "")
+    return folded
 
 
 def _stale(name: str, text: str) -> list[str]:

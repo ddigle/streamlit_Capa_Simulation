@@ -156,7 +156,7 @@ _UPEH_MEANING: Final = (
 SAME_AS_DETAIL: Final = "공정 Capa 상세 ③ 일정 기준 실가용과 같은 값"
 
 MANUAL_DOWNTIME_HELP: Final = (
-    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 가용에서 뺐습니다(공정 Capa 상세 ③ "
+    "가용설비 현황 › Preference 의 공정 × 달 비가동대수를 가용에서 뺐습니다(공정 Capa 상세 ③ "
     "일정 기준 실가용과 같은 가용)."
 )
 """상태 알림 `CS-05` 전문의 뜻 — 「입력 비가동 반영(…)」 이 무엇을 뺐는지."""
@@ -190,7 +190,7 @@ class EquipmentPlanSource(NamedTuple):
 
     today: date
     manual_downtime: ManualDowntime
-    """입력 비가동 대수(가용설비 현황 › Preference) — 계획 키에 실린다(공정 Capa 상세와 같은
+    """입력 비가동대수(가용설비 현황 › Preference) — 계획 키에 실린다(공정 Capa 상세와 같은
     가용)."""
 
 
