@@ -142,7 +142,7 @@ g.detailBn = ()=> g.union([g.key('bottleneck_title_row'), g.key('bottleneck_deta
 g.bnCell = ()=>{ const region=g.key('production_lob_month_region'), months=g.key('bottleneck_detail_months'); if(!region||!months) return null; const reg=region.getBoundingClientRect(); const red=(e)=>{const m=(getComputedStyle(e).fill||'').match(/\d+/g); return m&&+m[0]>=180&&+m[1]<120&&+m[2]<120};
   const ps=[...months.querySelectorAll('.barlayer .point path')].map(p=>({r:p.getBoundingClientRect(), red:red(p)})).filter(({r})=>r.width>2&&r.height>2&&r.left>=reg.left&&r.right<=reg.right&&r.top>=0&&r.bottom<=innerHeight);
   ps.sort((a,b)=>(b.red-a.red)||a.r.top-b.r.top||a.r.left-b.r.left); const r=ps[0]&&ps[0].r; return r?[r.x,r.y,r.width,r.height]:null; };
-g.procHead = ()=>{ const t=g.text("공식 · Core Data")||g.text("Core Data"); return t? g.up(t, x=>TID(x)==='stHorizontalBlock') || t.parentElement : null; };
+g.procHead = ()=>{ const t=g.text("Static · Core Data")||g.text("Core Data"); return t? g.up(t, x=>TID(x)==='stHorizontalBlock') || t.parentElement : null; };
 g.procMonthCanvas = ()=> g.union([g.key('process_detail_label_canvas'), g.clip(g.key('process_detail_canvas_canvas'), g.key('process_detail_month_region'))]);
 g.pfTiles = ()=>{ const d=g.dialog(); if(!d) return null; const ts=[...d.querySelectorAll('[class*="st-key-home_bn_tile_"]')].filter(g.vis); if(!ts.length) return null; let a=ts[0].parentElement; while(a && !ts.every(t=>a.contains(t))) a=a.parentElement; return a; };
 window.__g = g; })()

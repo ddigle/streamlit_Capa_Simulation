@@ -22,8 +22,8 @@
   limit=CONSTRAINT_PRODUCT_LIMIT)`(행을 다 더하면 그 공정 소요). 한 제품정보의 모든 양산구분이
   든다(D4).
 - **설비 일정 기준 가용(단축 전)** — 사이드바 세션 설비 시나리오(D6)의 계산 세 표·Cut-off 로 공정
-  Capa 상세 ②와 같은 계획 칸(`load_required_shortening_for_target` — 공식 칸, 목표는 키 맞춤용 HOME
-  확보 기준)을 받아 `가용대수` 열만 읽는다(D3). 필요 단축 일정의 공용 조회
+  Capa 상세 ②~④ 와 같은 계획 칸(`load_required_shortening_for_target` — 공식 칸, 목표는 키
+  맞춤용 HOME 확보 기준)을 받아 `가용대수` 열만 읽는다(D3). 필요 단축 일정의 공용 조회
   조건(`0019`)·기준선(`0021`)·세션 칸은 읽지도 쓰지도 않는다. UPEH 가정·HOME 얹기는 걸지 않는다(D5).
 
 계산은 순수 서비스(`services/constraint_simulation.py`)다. 오류 갈래는 넷으로 가른다 — 공통
@@ -848,7 +848,7 @@ def product_ready() -> bool:
 
 # 설비 일정 확인 → 제품 갈래 → 계획(공정 Capa 상세 ② ~ ④ 와 같은 칸·같은 키 — 목표는 키 맞춤용, 단축
 # 열은 읽지 않는다) → 계획에 공정이 있는가. 개조 일정 모드와 같은 함수다. 신규를 켠 회차에는 공정
-# Capa 상세 ③·④ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른 신규 호기도 같은 갈래로 받는다.
+# Capa 상세 ④·⑤ 와 같은 설비 일정 칸(같은 키)을 기준일로 거른 신규 호기도 같은 갈래로 받는다.
 equipment_plan = render_equipment_plan(
     plan_source,
     readiness,
