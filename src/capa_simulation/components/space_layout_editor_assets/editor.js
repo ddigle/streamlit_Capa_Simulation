@@ -1458,12 +1458,12 @@ export default function (component) {
   // 새 발자국의 세 갈래 선 굵기(도면 단위 — 확대를 따라 굵어진다).
   const FOOT_BIRD_STROKE = 0.17
   // 발 모양 여섯 — 이름(선택 칸 그림 판), 발 길이 · 너비(도면 단위). 윤곽점은 (u, v) — u 는 뒤꿈치 −0.5 → 앞 0.5, v 는 안쪽 − →
-  // 바깥 +(왼발은 바깥이 위). 손으로 적은 점 자료다(설계 그림 생성기와 같은 값).
+  // 바깥 +(왼발은 바깥이 위). 손으로 적은 점 자료다.
   const FOOT_SHAPES = {
     sole: { name: '밑창', length: 2.2, width: 1.0 },
     toes: { name: '발가락', length: 2.2, width: 1.0 },
     dots: { name: '점', length: 2.2, width: 1.0 },
-    cat: { name: '고양이', length: 1.9, width: 1.7 },
+    cat: { name: '고양이', length: 1.64, width: 1.74 },
     bird: { name: '새', length: 2.2, width: 1.7 },
     heel: { name: '구두', length: 2.2, width: 1.0 },
   }
@@ -1473,10 +1473,13 @@ export default function (component) {
     [0.08, -0.4], [-0.06, -0.16], [-0.25, -0.24], [-0.44, -0.28]]
   // 발가락 — (u, v, 반지름 × 너비).
   const FOOT_TOES = [[0.4, -0.3, 0.19], [0.44, -0.02, 0.13], [0.41, 0.18, 0.12], [0.37, 0.34, 0.1], [0.31, 0.47, 0.09]]
-  const FOOT_CAT_PAD = [[0.02, 0], [-0.02, 0.2], [-0.12, 0.32], [-0.3, 0.36], [-0.42, 0.3], [-0.47, 0.18], [-0.45, 0.09], [-0.49, 0],
-    [-0.45, -0.09], [-0.47, -0.18], [-0.42, -0.3], [-0.3, -0.36], [-0.12, -0.32], [-0.02, -0.2]]
-  // 고양이 발가락 — (u, v, 반지름 × 길이, 반지름 × 너비).
-  const FOOT_CAT_TOES = [[0.2, -0.37, 0.12, 0.11], [0.37, -0.13, 0.12, 0.1], [0.37, 0.13, 0.12, 0.1], [0.2, 0.37, 0.12, 0.11]]
+  // 고양이 — 발바닥 젤리(메인 패드 하나 + 발가락 콩 넷). 메인 패드는 위(앞)가 둥근 삼각 꼴이고 뒤꿈치 쪽 가장자리가 세 갈래로 오목하다.
+  const FOOT_CAT_PAD = [[0.027, 0], [-0.005, 0.11], [-0.08, 0.21], [-0.196, 0.29], [-0.324, 0.32], [-0.43, 0.29],
+    [-0.477, 0.21], [-0.44, 0.135], [-0.488, 0.07], [-0.499, 0], [-0.488, -0.07], [-0.44, -0.135], [-0.477, -0.21],
+    [-0.43, -0.29], [-0.324, -0.32], [-0.196, -0.29], [-0.08, -0.21], [-0.005, -0.11]]
+  // 고양이 발가락 콩 — (u, v, 앞 · 뒤 · 옆 반지름 × 너비, 기울기 도). 가운데 둘이 더 앞이고 바깥 둘이 더 기운다.
+  const FOOT_CAT_TOES = [[0.111, -0.385, 0.145, 0.115, 0.098, 32], [0.329, -0.152, 0.155, 0.125, 0.106, 10],
+    [0.329, 0.152, 0.155, 0.125, 0.106, 10], [0.111, 0.385, 0.145, 0.115, 0.098, 32]]
   // 구두 — 앞창과 굽 두 조각.
   const FOOT_FORE = [[-0.08, 0.05], [-0.04, 0.36], [0.14, 0.44], [0.32, 0.48], [0.46, 0.32], [0.5, 0.04], [0.46, -0.28], [0.32, -0.47],
     [0.12, -0.42], [-0.04, -0.3]]
@@ -1504,6 +1507,22 @@ export default function (component) {
     const a = `${footNum(rx)} ${footNum(ry)} 0 1 0`
     return `M ${footNum(x - rx)} ${footNum(y)} A ${a} ${footNum(x + rx)} ${footNum(y)} A ${a} ${footNum(x - rx)} ${footNum(y)} Z`
   }
+  // 기운 달걀(콩) 하나의 윤곽점(u, v) 열둘 — 가운데 (u, v), 앞 · 뒤 · 옆 반지름은 발 너비의 몫, turn 도는 앞이 발 가운데 줄에서
+  // 멀어지는 쪽으로 기우는 각이다(v 의 부호를 따른다). footCurve 로 닫는다.
+  function footBean(spec, [u, v, front, back, side, turn]) {
+    const t = ((Math.sign(v) || 1) * turn * Math.PI) / 180
+    const points = []
+    for (let k = 0; k < 12; k += 1) {
+      const a = (k * Math.PI) / 6
+      const along = Math.cos(a) * (Math.cos(a) >= 0 ? front : back)
+      const across = Math.sin(a) * side
+      points.push([
+        u + ((along * Math.cos(t) - across * Math.sin(t)) * spec.width) / spec.length,
+        v + along * Math.sin(t) + across * Math.cos(t),
+      ])
+    }
+    return points
+  }
   // 발 하나 — 가운데 (cx, cy), 왼발이면 바깥이 위. {fill: 채우는 경로들, stroke: 긋는 경로들(새 발자국)}.
   function footParts(foot, cx, cy, left) {
     const spec = FOOT_SHAPES[foot] || FOOT_SHAPES.sole
@@ -1521,10 +1540,7 @@ export default function (component) {
       fill.push(footEllipse(cx, cy, r, r))
     } else if (foot === 'cat') {
       fill.push(footCurve(FOOT_CAT_PAD.map(at)))
-      for (const [u, v, ru, rv] of FOOT_CAT_TOES) {
-        const [x, y] = at([u, v])
-        fill.push(footEllipse(x, y, ru * spec.length, rv * spec.width))
-      }
+      for (const toe of FOOT_CAT_TOES) fill.push(footCurve(footBean(spec, toe).map(at)))
     } else if (foot === 'bird') {
       const [hx, hy] = at([-0.12, 0])
       for (const tip of FOOT_BIRD_TIPS) {
