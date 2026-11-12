@@ -2328,6 +2328,12 @@ export default function (component) {
       .sort((a, b) => (Number(a[0].id !== id) - Number(b[0].id !== id)) || naturalCompare(a[0].id, b[0].id) || a[1] - b[1])
       .map(([row]) => row)
   }
+  // 창 줄 누르기가 고를 호기(차례 — 앞이 기준). 칸을 고치는 배치 편집의 「고른 호기」 탭(`keep`)은 고른 것을 그대로 두고 누른 호기를
+  // 앞에 세워 기준만 바꾼다 — 고름이 좁아지면 보이는 줄이 바뀌어 표가 다시 그려지고, 같은 자리의 두 번째 누름이 다른 줄에 떨어진다.
+  // 누른 호기와 같은 묶음의 고른 모듈은 고르기(`onePerGroup`)가 앞의 것 하나로 접는다. 그 밖은 누른 호기 하나다.
+  function sheetRowPick(selection, id, keep) {
+    return keep ? [id, ...(selection || []).filter((one) => one !== id)] : [id]
+  }
   // 여럿 고른 호기(배치 편집)의 줄 — 고른 차례로 `pickedRows` 를 잇고 같은 줄은 한 번만.
   function pickedRowsMany(rows, ids) {
     const out = []
@@ -8464,7 +8470,8 @@ export default function (component) {
         return
       }
       const picked = [...S.selection]
-      select(id)
+      const keep = Boolean(SHEET_EDIT && S.sheetState && S.sheetState.tab === 'picked')
+      setSelection(sheetRowPick(picked, id, keep), id)
       if (VIEW) notePick()
       zoomToBox(bbox(VIEW ? [item] : expanded([item])), LIST_ROW_ZOOM)
       // 창이 그 호기를 덮으면 창이 덮지 않은 띠로 화면을 민다(옮길 수 있는 만큼).

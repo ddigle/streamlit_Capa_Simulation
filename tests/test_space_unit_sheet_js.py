@@ -41,6 +41,7 @@ process.stdout.write(JSON.stringify({
   values: (input.values || []).map((c) => distinctValues(c.rows, c.index, c.type)),
   picked: (input.picked || []).map((c) => ids(pickedRows(c.rows, c.id))),
   many: (input.many || []).map((c) => ids(pickedRowsMany(c.rows, c.ids))),
+  rowPicks: (input.rowPicks || []).map((c) => sheetRowPick(c.selection, c.id, c.keep)),
   hits: (input.hits || []).map((c) => hits(sheetHits(c.rows, c.columns, c.filters))),
   active: (input.active || []).map((c) => sheetActive(c.columns, c.filters)),
   ranges: (input.ranges || []).map((c) => inRange(c.value, c.rule, c.type)),
@@ -248,6 +249,45 @@ def test_many_picked_units_join_in_order_without_repeats() -> None:
         }
     )
     assert result["many"] == [["C", "A-2", "A-1", "B"], [], ["B"]]
+
+
+def test_a_row_press_in_the_picked_tab_keeps_the_picked_rows() -> None:
+    """R2 리뷰 지적 1 — 칸을 고치는 배치 편집의 「고른 호기」 탭에 둘 이상을 고른 채 줄을 누르면
+    고른 것을 좁히지 않고 누른 호기를 앞(기준)에만 세운다. 보이는 줄 모음(표 열쇠 — 정렬한 id)이
+    그대로라 표를 다시 그리지 않아, 같은 자리의 두 번째 누름이 그 칸을 연다(좁히면 다른 줄이 그
+    자리에 섰다). 같은 묶음의 다른 모듈 줄을 눌러도 같다. 보기 화면 · 「필터」 탭은 누른 호기
+    하나다."""
+    rows = [
+        {"id": "EQ-01", "group": None, "cells": []},
+        {"id": "M-A", "group": "M", "cells": []},
+        {"id": "M-B", "group": "M", "cells": []},
+        {"id": "M-C", "group": "M", "cells": []},
+        {"id": "EQ-02", "group": None, "cells": []},
+    ]
+    picked = ["EQ-01", "M-A"]
+    result = _run(
+        {
+            "rowPicks": [
+                {"selection": picked, "id": "M-C", "keep": True},
+                {"selection": picked, "id": "EQ-01", "keep": True},
+                {"selection": picked, "id": "M-C", "keep": False},
+            ]
+        }
+    )
+    kept, again, narrowed = result["rowPicks"]
+    assert kept == ["M-C", "EQ-01", "M-A"]
+    assert again == ["EQ-01", "M-A"]
+    assert narrowed == ["M-C"]
+    shown = _run({"many": [{"rows": rows, "ids": ids} for ids in (picked, kept, narrowed)]})
+    before, after, alone = (sorted(ids) for ids in shown["many"])
+    assert after == before == ["EQ-01", "M-A", "M-B", "M-C"]
+    assert alone != before
+    go = JS[JS.index("  function goToUnit(id) {") : JS.index("  function setRule(")]
+    assert "const keep = Boolean(SHEET_EDIT && S.sheetState && S.sheetState.tab === 'picked')" in go
+    assert "setSelection(sheetRowPick(picked, id, keep), id)" in go
+    # 표 열쇠는 칸을 고치는 배치 편집에서 보이는 줄 id 모음(정렬)이다 — 고른 차례 · 기준이 바뀌어도
+    # 같다.
+    assert "const pickKey = SHEET_EDIT ? shown.map((row) => row.id).sort() : ids" in JS
 
 
 def test_the_drawing_highlights_only_while_a_filter_is_on() -> None:
@@ -651,7 +691,8 @@ def test_a_list_row_of_a_module_kept_out_of_the_drawer_goes_to_its_standing_bund
     assert lead in go
     assert go.index(lead) < go.index("const item = lead || own") < go.index(on_canvas)
     canvas = go[go.index(on_canvas) : go.index("    if (item && isUnit(item) && !VIEW")]
-    assert "const group = S.groups.get(item.id)" in canvas and "      select(id)\n" in canvas
+    assert "const group = S.groups.get(item.id)" in canvas
+    assert "      setSelection(sheetRowPick(picked, id, keep), id)\n" in canvas
     assert "if (lead) setSheetNote(`${id} — 도면에 없음 · Main 설비 ${own.group}`)" in canvas
     assert "오른쪽 미배치 칸에 있습니다" not in canvas
     # 「범위에 맞춰 n등분」 · 칩 놓기 같은 편집 뒤에는 그 한 줄이 틀릴 수 있어 지운다.

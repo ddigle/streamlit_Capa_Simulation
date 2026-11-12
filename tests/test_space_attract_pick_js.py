@@ -157,7 +157,9 @@ def test_a_row_press_draws_after_the_view_has_moved_to_the_target() -> None:
     열쇠로 견주고, 닿을 테는 묶음 상자(보기 실선 · 편집 범위 테두리), 낱 호기는 상자다. 테 색은
     선택 강조색(`pick`)이다."""
     go = _between("  function goToUnit(id) {", "  function setRule(")
-    assert go.index("const picked = [...S.selection]") < go.index("      select(id)\n")
+    assert go.index("const picked = [...S.selection]") < go.index(
+        "      setSelection(sheetRowPick(picked, id, keep), id)\n"
+    )
     assert go.index("if (shift) panBy(") < go.index("attractPicked(picked, item)")
     picked = _between("  function attractPicked(before, item) {", "  function sheetDefault() {")
     assert "attractPick(before, after, attractKeyOf, () => true, ATTRACT_MOST)" in picked
