@@ -386,10 +386,11 @@ def _load_layout_overlay_extent_payload(
 def load_layout_overlay_extent(
     database_path: str, building: str, floor: str
 ) -> LayoutOverlayExtent:
-    """층 캔버스 팝업의 가정 배치 미리 보임(설계 6-4·7-2) — ACTIVE 설비 시나리오 최신·최신 공식
+    """층 캔버스를 줄일 때 보는 가정 배치(설계 6-4·7-2) — ACTIVE 설비 시나리오 최신·최신 공식
     발행마다 그 층의 차이 요소 범위와 차이 호기 상자. 남의 저장·복제·되돌리기·발행으로 바뀌므로
     목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)에 층 현행값 세대 `"floor_layout"` 을
-    더해 지킨다. 팝업을 그리는 회차에만 부른다."""
+    더해 지킨다. Space 층 「배치 편집」 이 캔버스를 고칠 수 있는 회차(공식 설비 시나리오)에만
+    부른다 — 「캔버스」 칸의 하한이다."""
     return LayoutOverlayExtent(
         **_load_layout_overlay_extent_payload(
             database_path,
@@ -1017,9 +1018,9 @@ def clear_manual_downtime_cache() -> None:
 
 
 def clear_floor_layout_cache() -> None:
-    """층·FAB 캔버스·도면 요소·Main 설비명 위치 캐시를 비운다. 캔버스만 바꾼 저장(팝업)은 설비
-    리비전과 무관하므로 스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴 저장은 부른
-    쪽이 둘 다 비운다."""
+    """층·FAB 캔버스·도면 요소·Main 설비명 위치 캐시를 비운다. 캔버스·요소만 바꾼 저장(FAB 배치
+    저장)은 설비 리비전과 무관하므로 스냅샷 캐시는 비우지 않는다 — 리비전과 캔버스·요소를 함께 쓴
+    저장은 부른 쪽이 둘 다 비운다."""
     _bump_write_generation("floor_layout")
     _load_floor_layout_summaries_payload.clear()
     _load_floor_layout_profile_payload.clear()

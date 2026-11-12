@@ -824,8 +824,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`page_box_key("space")` — `render_equipment_scenario_row` 바로 뒤, 첫 `condition_card` 보다 먼저 자리만 세우고 안은 옛 경로 줄
     자리에서 `with space_box:` 로 채운다 — 호기 없는 화면도 같다). 안은 제목 「Space 도면」 · 자리 줄 `FAB 전체`
     (`space_status_fab_breadcrumb`, FAB 이면 primary)·`층 바로 가기`(`space_status_floor_jump_<fab|C1-1F>`) · 도면 줄
-    `배치 편집`(층 `space_layout_edit_mode`·잠기면 `space_layout_edit_mode_locked` / FAB `space_fab_edit_mode`)·`캔버스 편집`
-    (단추만 — 팝업은 본문 끝 호스트, `floor_canvas_dialog`) · FAB·가정이면 `공식으로 바꾸기` · 잠금 줄(`_render_edit_lock_line` —
+    `배치 편집`(층 `space_layout_edit_mode`·잠기거나 설비 저장본이 없는 층이면 꺼진 짝 `space_layout_edit_mode_locked` — 풍선이
+    까닭 / FAB `space_fab_edit_mode`, 줄마다 위젯 하나 · 가로 줄은 자리 줄 하나 — 2026-11-12 Space 보드 답 1-4 「캔버스 편집버튼은
+    지우고 · 간격 일정하게」, 캔버스는 배치 편집 왼쪽 칸 「캔버스」) · FAB·가정이면 `공식으로 바꾸기` · 잠금 줄(`_render_edit_lock_line` —
     표지 + 「최신 rM 불러오기」·빨리 감기 표지, 편집본이 있는 회차) · `공식과 견주기` 토글이다 — **상자에는 조작만 둔다**
     (줄 이름 「자리」 · 「도면」 도 달지 않는다 — 2026-11-09 사용자 검수 P1-5).
     상자 끝에 서던 배치 줄 · 일정 없는 호기 줄은 상태 알림이다(2026-11-04 Space 결정 보드 답 — 「인터페이스에 설명 문구를 다는
@@ -858,8 +859,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `components/space_shortening_view.py`). 켠 동안만 필요 단축 일정과 같은 계획(같은 키·같은 칸, 설비는 세션 시나리오 — LY6)을
     꺼내고(5장 9), 목표 확보율은 사이드바 조회 조건 패널 페이지 칸(`target_level_field.LEVEL_SLOT` 1 — 첫 칸은 공용 공정 칸,
     2026-11-08 그림 메모 g05)의 이름 줄 + 값 칸(`condition_field` — 칸 key `condition_field_space_target`, 값 칸 key
-    `space_shortening_level_field`, `render_level_field` — 필요 단축 일정과 같은 부품 `TargetLevelField`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`CANVAS_DIALOG_HOST` — 화면당
-    하나, `render_floor_canvas_dialog_host(others=LEVEL_DIALOGS)` 를 보기를 그리는 회차에만)가 다섯 목표 라디오 + 직접 입력 칸 팝업을 열고(부품이
+    `space_shortening_level_field`, `render_level_field` — 필요 단축 일정과 같은 부품 `TargetLevelField`)이다. 값 칸을 누르면 Space 화면 팝업 호스트(`space_shortening_view.SPACE_DIALOG_HOST`
+    — 화면당 하나, 본문 끝이 매 회차 부르고 `LEVEL_DIALOGS` 는 보기를 그리는 회차에만 넘긴다)가 다섯 목표 라디오 + 직접 입력 칸 팝업을 열고(부품이
     하나라 필요 단축 일정의 직접 입력 — 2026-11-11 Q2-26 · − · + · ⊗ 숨김 Q226-stepper (나) — 이 여기에도 선다, 다섯 밖 값은 `load_space_layer` 가 같은 길로 더한다), 고르거나 넣으면
     세션 칸(`SPACE_SHORT_LEVEL_KEY` — 위젯 key 가 아니다)에 적고 곧바로 닫혀 다시 그린다(HOME 주요공정 히트맵 팝업과 같은 꼴 — 검수
     보드 p-target-form, 옛 전환 단추 다섯 · 한 줄 서식은 걷었다). 배치 편집으로 쉬는 회차에도 값 칸은 잠근 채 서며 까닭은 그 칸 풍선이다. 「단축 없는
@@ -1235,7 +1236,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`space_floor_layout.report_canvas_outside` — `services/equipment_validation.floors_outside_canvas` 가 저장된 마스터 전체
     (`snapshot.equipment`, 일정 없는 호기 포함)를 전 층 한 번에 훑고 `simulation_cache.get_floors_outside_canvas` 가 스냅샷 토큰 +
     캔버스로 캐시, 지문은 [층, [캔버스 폭, 높이], 설비명 목록])도 같은 캔버스로 판정한다. 층 화면 맨 위 경고 상자는 걷었다
-    (2026-11-07 답 place-box — 캔버스 편집 팝업의 `EQ-16` 과 다르다). 편집기 모듈을 import 하지 않는다(그쪽은 읽을 때 컴포넌트를 등록한다).
+    (2026-11-07 답 place-box). 편집기 모듈을 import 하지 않는다(그쪽은 읽을 때 컴포넌트를 등록한다).
 - `src/capa_simulation/components/space_floor_list.py` — Space FAB 전체 아래 **층 목록**(2026-10-24 결정 S1~S6). 보기는
   사용 층 표(`사용` 칸, 행 고르기 = 층 열기)와 늘 서는 자리 칸 안의 접힌 「비활성 층 n개」 표(거기서도 연다), 표 머리
   `사용 편집` 토글을 켜면 저장 줄 · 끄기 확인 · 알림 · 동 머리 줄(`st.segmented_control` 다섯 — 값은 회차마다 초안에서
@@ -1291,27 +1292,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `report_layout_notices` 가 그 셋을 회차마다 같은 차례로 낸다(없는 코드는 해소). 「공식과 견주기」(S4)
   재료 `compare_payload`(층 상세 뷰어 `compare`)·`floor_unit_differences`(FAB 층 목록 칸·블록 풍선)도 여기다 — 둘 다 그리는 세션
   스냅샷의 합친 본문과 마스터만 읽는다.
-- `src/capa_simulation/components/floor_canvas_dialog.py` — Space 층·FAB 전체의 캔버스 폭·높이를 고치는 「캔버스 편집」
-  팝업(`FLOOR_CANVAS_DIALOG_KEY`)이다(2026-11-05 검수 equip-60 — 도면 그림 올리기·지우기·종횡비 자동 계산을 걷었다. 옛 판이 올린
-  그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다 — 마이그레이션 없음). 팝업은 화면 팝업 호스트(`DialogHost`
-  `space_canvas_dialog_host`, 답 U5 — Space 화면의 호스트는 이것 하나라 필요 단축 보기의 목표 확보율 팝업도 `others=` 로 받아
-  연다, 검수 보드 p-target-form)가 연다 — 열기 · 보통 닫기는 호스트만 돌고, 밖 알림(`EQ-16`)이 선 채 닫을 때만 앱 전체
-  (`_dismiss` → `close_to_app` — 알림 칸이 짧은 프래그먼트 회차의 표지를 다음 회차까지 못 읽는다), 설비 DB 가 바뀌었으면
-  (`database_stamp`) 본문이 앱 전체로 물러나고, 닫기가 입력 칸 값을 지운다. 성공하면 `finish` 로 앱 전체를 다시 돌린다.
-  - 팝업 머리의 지금 상태는 값 줄 하나(`_saved_line` — 「**C1 1F** · 폭 × 높이 · 저장 시각」, 없으면 「기본값 …」, 설계 규칙
-    UI-TXT-04)이고 자리에는 칸 둘 · 저장 단추뿐이다.
-  - 단추와 팝업을 가른다(2026-11-03 — 단추가 사이드바 「Space 도면」 상자로 갔다): `render_floor_canvas_button(floor=)` 은
-    단추(`space_floor_layout_open_<C1_1F|FAB>`)만 그려 열림 칸을 적고, 팝업은 본문 호스트 `render_floor_canvas_dialog_host`(위 `DialogHost`)
-    (Space 본문 끝 한 자리 — 사이드바 `with` 안에서 팝업을 열지 않는다)가 연다. 잠금(`disabled`)은 둘에 같이 넘긴다(두 겹).
-  - 고치는 크기 밖으로 나가는 호기 · 도면 요소의 목록 · 까닭은 상태 알림 `EQ-16`(`_report_outside` — 팝업 본문 안 숨은 표지, 닫힌
-    회차는 호스트가 해소)이고 팝업 자리에 경고 상자를 세우지 않는다. 호기 이탈은 저장된 설비 마스터의 그 층 호기 전부로 잰다(저장
-    검증과 같은 행) — 확인 칸 `이탈 호기 n대 알고 저장` 을 체크할 때까지 저장 단추가 잠긴다(풍선이 까닭). 도면 요소 이탈은 저장소가
-    거부하므로 잠긴 단추 + 짧은 풍선(필요한 크기)이다. 저장 뒤 그 층의 미저장 캔버스를 버리고 결과는 사건 알림(`FL-01`, 호기를 밖에
-    둔 채면 `FL-03` — 설비 저장이 막힌다는 말까지)이다.
-  - 층이면 가정 설비 시나리오 배치도 미리 본다(S4 — 설계 6-4, `equipment_cache.load_layout_overlay_extent` — 캔버스를 바꾸는
-    저장이 보는 ACTIVE 최신·최신 공식 발행의 그 층 차이). 차이 요소는 저장소가 막으므로 공식 요소처럼 범위에 넣어 단추를 끄고
-    (「가정 배치 「…」 의 요소도 밖입니다」), 차이 호기는 공식 호기처럼 경고(「가정 배치 「…」 호기 n대가 범위를 벗어납니다」) 뒤
-    같은 확인 체크로 받는다(그 시나리오의 다음 저장만 막힌다). 지우기의 기본 캔버스 캡션도 둘을 함께 센다.
+- Space 층·FAB 캔버스 폭·높이는 따로 여는 팝업이 없다(2026-11-12 Space 보드 답 1-4 — 「캔버스 편집」 팝업 · 사이드바 단추를
+  걷었다) — 층·FAB 「배치 편집」 왼쪽 칸 「캔버스」 → 적용 → 「배치 저장」 이다. 칸의 하한은 놓인 호기·요소, 도면에 안 보이는 이
+  층 호기(`EditorInputs.reserved_extent`)와 다른 가정 설비 시나리오의 이 층 배치 차이(`LayoutOverlayExtent.scenario_extents`,
+  공식 세션 회차에만 `canvasLimits.overlay`)이고 막은 글이 닿은 까닭을 말한다(editor.js `canvasLimitWords`). 적용의 「캔버스
+  밖」 검사는 그 층만 본다(`equipment_validation.require_floor_inside_canvas` — 두 층 이상이 밖(`EQ-18`)이어도 층마다 넓혀 두고
+  「배치 저장」 이 마스터 전체를 본다). 옛 판이 올린 도면 그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다(마이그레이션
+  없음). 알림 `EQ-16`(옛 팝업의 밖 알림)은 비워 둔 번호다.
 - `src/capa_simulation/components/space_layout_editor.py` — Space 층·FAB 도면의 Components v2 편집기와 보기 전용 뷰어
   (`render_space_layout_viewer`·`render_fab_layout_viewer`·`render_fab_layout_editor`)다.
   - 「필요 단축」 payload(층 보기만, 값이 있을 때만 키 — 끈 동안 payload 그대로): 호기 `layer`(`s|m|l|x`)·`dim`,
@@ -3614,7 +3601,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   칸에 값이 있으면 앱 전체로 물러난다. 이벤트 칸에는 한 자리만 쓴다. `render(dialogs, widget_keys=)` 의 `widget_keys` 는 꼭 줘야
   한다 — 닫기(호스트만 도는 회차)는 팝업 프래그먼트의 위젯을 거두지 않아 호스트가 지운다(key 가 열림 값에 달린 팝업은 함수 꼴).
   쓰는 자리: HOME(설정 · 공정 필터 · 주요공정 히트맵) · 기준 정보 붙여넣기 · 표준 목표 붙여넣기 · Qual 마감 계산기 · 공식 지정 ·
-  Space(캔버스 편집 · 필요 단축 보기 목표 확보율) · 필요 단축 일정 목표 확보율(Qual 마감 계산기와 한 호스트). 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
+  Space(필요 단축 보기 목표 확보율) · 필요 단축 일정 목표 확보율(Qual 마감 계산기와 한 호스트). 쓰는 법은 모듈 머리 설명과 9장 「팝업과 콜백」.
 - `src/capa_simulation/components/process_field.py` — 공용 공정 칸의 화면 조각(값 칸 + 타일 판 팝업 — `process_field_assets`,
   2026-11-08 답 P1 · P2)과 머리 띠 칩 · 화면 탭 표지의 글 · data. 여러 개 따라감은 `render_process_filter(options, screen=, labels=)`
   가 걸 공정을 돌려주고(산출 결과 셋 · 가용설비 Main · Space, 기준 정보는 `column_filter` 의 `shared_screen=`), 하나 고름은
@@ -4885,8 +4872,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CSV 바이트도 쌍 키다. 이름·리비전명·발행·복제·되돌리기·이어 쓰기 뒤에는 `clear_equipment_scenario_cache()` 만, 설비 마스터
     저장 뒤에는 `clear_equipment_snapshot_cache()`(앞의 것까지 부른다) — 호출부가 비운다. Space 층 사용 끄기 확인의 덧줄
     재료 `load_layout_overlay_floor_counts`(층마다 — ACTIVE 가정 시나리오 최신의 그 층 차이 호기 행 수)도 목록과 같은 세 장치(세대 `"equipment_scenario"`·stat·TTL)이고, 층
-    캔버스 팝업 미리 보임 `load_layout_overlay_extent`(층마다 — 캔버스 저장이 보는 리비전의 차이 요소 범위·차이 호기 상자,
-    S4)는 그 세 장치에 층 현행값 세대 `"floor_layout"` 을 더한다. 공식 발행 확인의 배치 판정 `load_layout_publish_preview`(S4 —
+    배치 편집 「캔버스」 칸의 하한 재료 `load_layout_overlay_extent`(층마다 — 캔버스 저장이 보는 리비전의 차이 요소 범위·차이 호기 상자,
+    S4 — 캔버스를 고치는 공식 세션 회차에만 읽는다)는 그 세 장치에 층 현행값 세대 `"floor_layout"` 을 더한다. 공식 발행 확인의 배치 판정 `load_layout_publish_preview`(S4 —
     (DB, 공통 최신 id, 발행할 리비전, 그 시나리오 최신) 불변 id 셋 + 층 현행값 세대)는 저장소 `preview_layout_publish` 가
     발행 쓰기와 같은 판정(`_layout_publish_preview`)을 쓰지 않고 낸 값이다.
   - **가정 배치 차이(설비 0031)도 리비전 내용이라 불변이다.** 호기 차이는 합친 본문이 이미 얹어 싣는다(`_MergedSnapshotPayload`
@@ -5386,7 +5373,7 @@ RQ_MODULE
       epoch 밖). 차이를 지우는 길은 시나리오 관리 › 설비 시나리오 「배치 차이 모두 지우기」(새 리비전 — 지운 리비전은 남아 되돌리기로
       되살아난다)이고, 발행 확인 팝업은 발행 쓰기와 같은 판정을 미리 읽는다(판정 한 곳 `_layout_publish_preview`). 남이 공통을
       저장해 편집본을 다시 세울 때 가정 역할 배치 일곱 칸 편집은 다시 얹는다(일곱 칸 절댓값이라 새 공통 위에서도 뜻이 같다 —
-      설계 9장). 층 캔버스 팝업은 캔버스를 바꾸는 저장이 보는 가정 배치를 미리 말한다.
+      설계 9장). 층 배치 편집 「캔버스」 칸은 캔버스를 바꾸는 저장이 보는 가정 배치보다 작게 줄이지 못한다(하한 · 막은 글의 까닭).
 33. **화면 탭은 세션 칸이고 화면을 살려 두지 않는다**(2026-10-24 사용자 결정). 탭 목록·고정·이동 대기는
     `page_tabs_state` 의 세션 칸이라 이 접속에만 산다 — 새로고침·테마 바꾸기는 HOME(고정)과 지금 화면만 남긴다. 탭을 누르는 것은
     사이드바 링크와 같은 페이지 바꾸기라, 돌아왔을 때 남는 것은 `persist_state="session"` 위젯과 위젯이 아닌 세션 칸뿐이다
@@ -6849,7 +6836,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   문단을 두지 않는다 — 공용 설정 · 저장하지 않고 닫으면 사라짐 같은 말은 저장 단추 풍선이 한다. 설정이 아닌 것은 본문에
   남는다 — 편집 동작(저장·버리기·내려받기·붙여넣기·기준선 저장·Space 저장자 칸)·편집표에
   딸린 보기 거름(설비 마스터 작은 편집표 · Cut-off 표의 작업 줄 끝 「표 보기 ▾」 팝오버 — 안의 「보기 적용」 과 한 몸)·탭 자체(가용설비 현황
-  `Preference` 탭). Space 의 자리 이동·`배치 편집`·`캔버스 편집`·`공식과 견주기` 는 설정이 아니라 그 화면의 조작이라 설정
+  `Preference` 탭). Space 의 자리 이동·`배치 편집`·`공식과 견주기` 는 설정이 아니라 그 화면의 조작이라 설정
   상자가 아니라 바로 위 화면 조작 상자(「Space 도면」 — 같은 날 사용자 Space 요청)에 선다. 데이터와 잇지 않는 도구 팝업(필요
   단축 일정 「Qual 마감 계산기」)은 설정이 아니지만 2026-11-09 사용자 검수 g03-1(「Qual 마감 계산기도 사이드바 조건박스 상자로
   이동」)로 같은 꼴의 사이드바 팝업 상자(`render_settings_box(icon=":material/calculate:")` — 상자 = 단추 → 같은 제목 팝업)에
@@ -7119,8 +7106,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   곁 거부 · 미정리)과 맞대고, 차례로 짝지은 부름의 꼴도 본다 — 값 · 표지 · 빈 결과는 평문(`st.info` 상자
   아님), 빈 결과는 결론 꼴(「…없습니다」 등), 하는 법 · 길 안내 꼬리 없음(값 · 표지 자리 글을 다른 설명 문장으로 바꾼 것은
   잡지 않는다 — 판단 질문이 본다). 미정리는 그물을 세울 때 있던 설명 · 길 안내 자리라
-  수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을 든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(0곳 —
-  Space 캔버스 팝업의 지금 값이 마지막이었다, 값 줄)를, `tests/test_settings_button_sites.py`
+  수가 늘지 않는다(새 자리는 옮기거나 남을 까닭을 든다). `tests/test_notice_form_sites.py` 는 `st.toast`(0곳) · `st.success`(0곳)를, `tests/test_settings_button_sites.py`
   는 설정 상자 밖에서 설정 팝업을 여는 단추(라벨의 「설정」 · 설정 상자의 여는 함수를 부르는 `on_click` · `if st.button(…):` 본문 ·
   `for` 묶음 라벨 · 콜백 — 허용은 미지정 주요 Case 칩 하나, 설계 규칙 UI-LAY-01 의 예외 · UI-NAV-01)와 설정 팝업마다 같은
   제목의 사이드바 상자(`render_settings_box`)를, `tests/test_withdrawn_warning_alerts.py` 는 자리에서 걷은 경고마다 등록부 코드 · 보내는
@@ -7157,8 +7143,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **닫는 회차에 알림 표지를 쓰는 팝업은 앱 전체로 닫는다**(지난 보드 a-fragment-mark — 2026-11-10 Q-11 권장대로). 알림 칸은 앱 뿌리의
   회차 표지가 바뀔 때만 문서를 훑는다 — 호스트만 도는 짧은 회차(팝업 호스트 닫기)는 그 표지를 움직이지 않아 그 회차가 남긴 알림 ·
   해소 표지를 다음 회차까지 읽지 못한다. 그래서 닫힌 자리(`DialogHost(idle=)` · 닫힌 팝업이 넘긴 알림)가 알림을 내는 팝업 —
-  HOME 「HOME 설정」(`_dismiss_home_settings`, 늘) · Space 캔버스 편집(`floor_canvas_dialog._dismiss`, 밖 알림 `EQ-16` 이 선 채
-  닫을 때만) — 은 `close_to_app` 으로 닫는다. 새 팝업이 닫는 회차에 알림을 쓰면 같은 꼴로 닫는다. 알림 칸이 화면 전체를 늘
+  HOME 「HOME 설정」(`_dismiss_home_settings`, 늘) — 은 `close_to_app` 으로 닫는다. 새 팝업이 닫는 회차에 알림을 쓰면 같은 꼴로 닫는다. 알림 칸이 화면 전체를 늘
   지켜보게(상시 관찰자) 바꾸지 않는다 — 큰 표 화면의 DOM 변화가 많다(그물 `tests/test_dialog_host.py`).
 - **같은 알림 시선 끌기**(D4 A) — 같은 코드 + 같은 짧은 글이 앞 알림창이 떠 있거나 사라진 지 60초 안에 다시 나면 새 칸을
   쌓지 않고 앞 칸을 구석으로 옮겨 「×n」 을 붙이고, 창 가장자리 한 겹 테두리가 450ms easeOutQuad 로 그 칸에 모인다(한 번만 ·
@@ -7241,8 +7226,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다시 읽기, 호스트 key 는 `home_state.HOME_DIALOG_HOST_KEY` — 두 모듈이 같은 값으로 각자 만든다), 기준 정보
   (`reference_data_dialog_host` — `month_editor.paste_dialog(host=)` · `paste_widget_keys`, 그리드 자리 뒤 · 「변경사항 적용」 앞에서
   매 앱 전체 회차), 표준 목표 · 필요 단축 일정(Qual 마감 계산기 + 목표 확보율 — `required_shortening_panel.SHORTENING_DIALOG_HOST`
-  한 호스트, 2차 보드 Q2-26) · 공식 지정 · Space(캔버스 편집 + 필요 단축 보기 목표 확보율 — 한 호스트가
-  `others=` 로 함께 연다). 지킬 것 둘: ① 공용 저장값(DB 현행값 · 공용 프로필)은
+  한 호스트, 2차 보드 Q2-26) · 공식 지정 · Space(필요 단축 보기 목표 확보율 —
+  `space_shortening_view.SPACE_DIALOG_HOST`). 지킬 것 둘: ① 공용 저장값(DB 현행값 · 공용 프로필)은
   팝업 본문에서 다시 읽는다 — 호스트만 도는 여는 회차의 값은 그 화면의 마지막 앱 전체 회차의 것이라 그 값으로 만든 양식을
   되붙이면 남의 저장을 덮는다. ② `render(widget_keys=)` 에 팝업마다 입력 위젯 key 를 빠짐없이 준다 — 닫기는 팝업 프래그먼트의
   위젯을 거두지 않아 호스트가 지운다(key 가 열림 값에 달리면 함수 꼴 · 폼 안 key 없는 글 칸에는 key 를 단다). `render` 는 팝업이

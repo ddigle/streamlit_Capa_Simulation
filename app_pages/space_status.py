@@ -60,10 +60,6 @@ from capa_simulation.components.equipment_scenario_status import (
     report_unscheduled_units,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.components.floor_canvas_dialog import (
-    render_floor_canvas_button,
-    render_floor_canvas_dialog_host,
-)
 from capa_simulation.components.literal_markdown import (
     literal_markdown,
     markdown_safe_tildes,
@@ -127,6 +123,7 @@ from capa_simulation.components.space_layout_editor import (
 from capa_simulation.components.space_shortening_view import (
     LEVEL_DIALOGS,
     PINNED_NOTE,
+    SPACE_DIALOG_HOST,
     SpaceLayer,
     consume_layer_link,
     forget_arrival_note,
@@ -177,6 +174,7 @@ from capa_simulation.persistence.equipment_cache import (
     load_floor_layout_canvases,
     load_floor_layout_profile,
     load_floor_states,
+    load_layout_overlay_extent,
 )
 from capa_simulation.services.equipment_bulk_delete import BASELINE_TARGET, DOWNTIME_TARGET
 from capa_simulation.services.equipment_contract import (
@@ -199,6 +197,7 @@ from capa_simulation.services.equipment_units import (
 from capa_simulation.services.equipment_validation import (
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_master,
+    require_floor_inside_canvas,
 )
 from capa_simulation.services.fab_layout import (
     FLOOR_KEYS,
@@ -238,7 +237,6 @@ from capa_simulation.services.korean_particle import (
     with_object_particle,
     with_topic_particle,
 )
-from capa_simulation.services.layout_overlay import EMPTY_LAYOUT_DIGEST
 from capa_simulation.services.schedule_confirmation import UNCONFIRMED, confirmation_counts
 from capa_simulation.services.simulation_cache import (
     get_floors_outside_canvas,
@@ -378,6 +376,9 @@ FAST_FORWARD_MARK = ":material/fast_forward: 최신 일정에 저장"
 # 「배치 저장」 의 낡은 세션 거절 곁 「최신 rN 불러오기(변경 버림)」.
 SAVE_LOAD_LATEST_KEY = "space_save_load_latest"
 LOCKED_EDIT_TOGGLE_KEY = "space_layout_edit_mode_locked"
+# 설비 저장본이 없는 층(편집본이 서지 않는다)의 꺼진 「배치 편집」 풍선 — 샘플 화면 · 호기 없음.
+SAMPLE_LAYOUT_LOCK = "샘플 데이터를 보는 중에는 배치를 고치지 않습니다."
+NO_FLEET_LAYOUT_LOCK = "설비 마스터를 저장한 뒤 배치를 편집합니다."
 DISCARD_LAYOUT_BUTTON_KEY = "space_layout_discard_layout"
 # 「최신 rM 불러오기」 잠금에서 배치 변경만 남았으면 「배치 변경만 버리기」 곁에 서는 한 단계 단추.
 DISCARD_AND_LOAD_LATEST_KEY = "space_layout_discard_and_load_latest"
@@ -1036,19 +1037,6 @@ def _today_status() -> pd.DataFrame:
     if as_of == today:
         return all_status
     return get_space_equipment_status(equipment, downtime, as_of=today)
-
-
-def _official_master() -> pd.DataFrame:
-    """공식 배치의 설비 마스터 — 층 캔버스 줄이기 검사 재료. 공식 시나리오 세션이면 세션 스냅샷이
-    곧 공식 배치이고, 그 시나리오가 가정이던 때의 리비전을 연 회차만 공식 스냅샷을 따로 읽는다."""
-    if (
-        latest_snapshot is not None
-        and not equipment_session.is_assumption
-        and equipment_session.layout_digest == EMPTY_LAYOUT_DIGEST
-    ):
-        return latest_snapshot.equipment
-    official = official_snapshot_for(equipment_database_path, equipment_session)
-    return official.equipment if official is not None else empty_equipment_master()
 
 
 def _unconfirmed_count() -> int:
@@ -1823,6 +1811,13 @@ def _render_layout_editor(
         # 층 캔버스는 공용 값이라 가정 설비 시나리오에서 끈다(설계 8-4 — 서버도 아래에서 거부).
         canvas_editable=edit_mode.canvas,
         canvas_lock=None if edit_mode.canvas else CANVAS_LOCK_REASON,
+        # 캔버스를 고치는 회차만 — 다른 가정 설비 시나리오의 이 층 배치 차이보다 작게 줄이지 못한다
+        # (줄이면 그 시나리오의 다음 저장이 막힌다 — 설계 6-4).
+        overlay_extents=(
+            load_layout_overlay_extent(equipment_database_path, *key).scenario_extents()
+            if edit_mode.canvas
+            else ()
+        ),
         # 왼쪽 칸 범례는 채우기 뜻만(편집 화면은 테·덧표시를 그리지 않고 편집본은 저장본과 대수가
         # 다르다).
         legend={"entries": space_legend_entries(None, choice=effective_choice), "asOf": ""},
@@ -1876,7 +1871,11 @@ def _render_layout_editor(
         # 이름 바꿈은 배치 변경(옛 이름으로 온다) 뒤에 얹고 비가동 일정의 설비명도 함께 바꾼다.
         master, downtime = apply_name_changes(master, frames[2], applied.renames)
         # 저장 때와 같은 검사를 지금 한다 — 저장 단추에서야 막히면 무엇이 문제인지 멀어진다.
-        prepared = prepare_equipment_master(master, floor_canvases=next_canvases)
+        # 「캔버스 밖」 만은 이 층을 본다 — 다른 층의 밖 호기(`EQ-18`)가 이 층을 넓히는 적용을
+        # 막지 않게. 층마다 넓혀 두면 「배치 저장」 이 마스터 전체를 한 번에 검사한다
+        # (2026-11-12 Space 보드 답 1-4 — 캔버스는 이 칸 하나다).
+        prepared = prepare_equipment_master(master)
+        require_floor_inside_canvas(prepared, key, next_canvases)
         if applied.renames:
             prepare_downtime_for_prepared_equipment(downtime, prepared)
         # Main 설비명 위치 — 실린 모듈 묶음은 보낸 위치로(처음 위치면 행 없음), 이름을 바꾼 묶음은
@@ -2071,19 +2070,15 @@ def _render_fab_editor(
 
 
 # 사이드바 「Space 도면」 상자 채우기(2026-11-03 사용자 요청 — 레이아웃 위 요소: `S.PKG FAB 전체`
-# › 층 · `배치 편집`· `캔버스 편집` · `공식과 견주기` — 배치 줄 · 일정 없는 호기 줄은
-# 2026-11-04 결정 보드 답으로 상태 알림이 됐다, 위 「상자의 자리」). 위젯 key 는 옮기기
-# 전 그대로다(세션 값·화면 확인이 산다). 자리를 옮기는 것은 모두 콜백이다(재실행 한 번). 줄은 FAB·층
-# 모두 같은 수이고 안의 단추만 범위를 따른다. FAB 잠근 까닭 — 샘플 화면, 가정 설비 시나리오(FAB 은
-# 공식에서만 — G5).
+# › 층 · `배치 편집` · `공식과 견주기` — 배치 줄 · 일정 없는 호기 줄은 2026-11-04 결정 보드 답으로
+# 상태 알림이다, 위 「상자의 자리」). 위젯 key 는 옮기기 전 그대로다(세션 값·화면 확인이 산다).
+# 자리를 옮기는 것은 모두 콜백이다(재실행 한 번). 줄은 FAB·층 모두 같은 수이고 안의 위젯만 범위를
+# 따른다. 자리 줄 밑은 줄마다 위젯 하나이고 줄 사이는 Streamlit 기본 칸 틈 그대로다 — 토글
+# 줄끼리의 간격이 같다(2026-11-12 Space 보드 답 1-4 「각 버튼의 간격 일정하게」). 캔버스 폭 ·
+# 높이는 상자가 아니라 「배치 편집」 왼쪽 칸 「캔버스」 다(같은 답 — 「캔버스 편집 버튼은
+# 지우고」). FAB 잠근 까닭 — 샘플 화면, 가정 설비 시나리오(FAB 은 공식에서만 — G5).
 fab_lock = (
     "샘플 데이터를 보는 중에는 FAB 배치를 고치지 않습니다." if showing_sample else FAB_LOCK_REASON
-)
-# 층 캔버스는 공용 값이라 공식 설비 시나리오에서만 고친다(설계 8-4). 설비 샘플 화면은 저장할
-# 호기가 없어 단추를 끄지 않는다(캔버스만 저장한다).
-canvas_editable = edit_mode.canvas and not showing_sample
-drawing_locked = (
-    not fab_editable if selected is None else not canvas_editable and not using_sample_equipment
 )
 editing = False
 fab_editing = False
@@ -2123,58 +2118,52 @@ with space_box:
             width="stretch",
             disabled=not floor_labels,
         )
-    # 도면 줄 — 「배치 편집」 토글과 「캔버스 편집」 단추가 한 줄에 선다(틈 xsmall · 단추
-    # 아이콘 없음 — 245px 상자 안 폭 225px 에 들게. 줄이 감기면 상자가 35px 높아져 아래 견주기가 첫
-    # 화면 밖으로 밀린다).
-    with st.container(
-        horizontal=True, gap="xsmall", vertical_alignment="center", key="space_box_drawing_row"
-    ):
-        if selected is None:
-            # FAB 배치 편집 — 설비 저장본이 없어도 켠다(FAB 는 설비 리비전과 무관한 현행값, 결정 2).
-            # 샘플 화면· 가정 설비 시나리오에서는 끈다. 잠글 때는 **값도 끈다** — 켜 둔 채 잠그면
-            # 스위치는 켜짐인데 보기 전용 도면이 그려져 화면이 서로 다른 말을 했다(2026-10-05 E2E).
-            # 적용해 둔 대기분은 그대로다(어느 세션에서나 저장된다).
-            if not fab_editable:
-                st.session_state[FAB_EDIT_MODE_KEY] = False
-            fab_editing = (
-                st.toggle(
-                    "배치 편집",
-                    key=FAB_EDIT_MODE_KEY,
-                    disabled=not fab_editable,
-                    help=(
-                        fab_lock
-                        if not fab_editable
-                        else "층 블록·영역·글자를 끌어 놓아 자리·크기를 고치고, 층 블록의 "
-                        "연결 층과 색을 고릅니다. 적용한 변경은 저장하기 전까지 이 세션에만 "
-                        "있습니다. " + LAYER_REST_HELP
-                    ),
-                )
-                and fab_editable
-            )
-        elif editable:
-            editing = st.toggle(
-                "배치 편집",
-                key=EDIT_MODE_KEY,
-                help=(
-                    "호기·반입구·문·영역을 끌어 놓아 자리와 크기를 고칩니다. 적용한 변경은 "
-                    "저장하기 전까지 이 세션에만 있습니다. " + LAYER_REST_HELP
-                ),
-            )
-        elif buffer_frames is not None:
-            # 꺼진 단추 — 까닭은 풍선이고 바로 아래 표지 곁에 「최신 rM 불러오기」 가 선다.
+    # 도면 줄 — 「배치 편집」 토글 하나.
+    if selected is None:
+        # FAB 배치 편집 — 설비 저장본이 없어도 켠다(FAB 는 설비 리비전과 무관한 현행값, 결정 2).
+        # 샘플 화면· 가정 설비 시나리오에서는 끈다. 잠글 때는 **값도 끈다** — 켜 둔 채 잠그면
+        # 스위치는 켜짐인데 보기 전용 도면이 그려져 화면이 서로 다른 말을 했다(2026-10-05 E2E).
+        # 적용해 둔 대기분은 그대로다(어느 세션에서나 저장된다).
+        if not fab_editable:
+            st.session_state[FAB_EDIT_MODE_KEY] = False
+        fab_editing = (
             st.toggle(
                 "배치 편집",
-                value=False,
-                key=LOCKED_EDIT_TOGGLE_KEY,
-                disabled=True,
-                help=(literal_markdown(edit_mode.lock_reason) if edit_mode.lock_reason else None),
+                key=FAB_EDIT_MODE_KEY,
+                disabled=not fab_editable,
+                help=(
+                    fab_lock
+                    if not fab_editable
+                    else "층 블록·영역·글자를 끌어 놓아 자리·크기를 고치고, 층 블록의 "
+                    "연결 층과 색을 고릅니다. 적용한 변경은 저장하기 전까지 이 세션에만 "
+                    "있습니다. " + LAYER_REST_HELP
+                ),
             )
-        render_floor_canvas_button(
-            floor=selected,
-            disabled=drawing_locked,
-            reason=(fab_lock if selected is None else CANVAS_LOCK_REASON)
-            if drawing_locked
-            else None,
+            and fab_editable
+        )
+    elif editable:
+        editing = st.toggle(
+            "배치 편집",
+            key=EDIT_MODE_KEY,
+            help=(
+                "호기·반입구·문·영역을 끌어 놓아 자리와 크기를 고칩니다. 적용한 변경은 "
+                "저장하기 전까지 이 세션에만 있습니다. " + LAYER_REST_HELP
+            ),
+        )
+    else:
+        # 꺼진 단추 — 까닭은 풍선이다. 설비 저장본이 있으면 바로 아래 표지 곁에 「최신 rM 불러오기」
+        # 가 선다. 저장본이 없으면(설비 샘플 화면 · 호기 없음 — 편집본이 서지 않는다) 그 까닭이다 —
+        # 줄 수와 자리가 화면마다 같다(설계 규칙 UI-PRF-03).
+        if buffer_frames is not None:
+            locked_help = literal_markdown(edit_mode.lock_reason) if edit_mode.lock_reason else None
+        else:
+            locked_help = SAMPLE_LAYOUT_LOCK if showing_sample else NO_FLEET_LAYOUT_LOCK
+        st.toggle(
+            "배치 편집",
+            value=False,
+            key=LOCKED_EDIT_TOGGLE_KEY,
+            disabled=True,
+            help=locked_help,
         )
     if (
         selected is None
@@ -2285,7 +2274,7 @@ elif not layer_active:
     forget_arrival_note()
 # 맞대지 못한 공정 — 필요 단축 일정과 같은 상태 알림 `RS-02`(같은 계획 · 범위 · 내용). 보기를
 # 그린 회차에만 내고, 그 밖의 회차는 같은 자리에서 `alerts.flush()` 로 한 자리를 채운다(본문 끝
-# 캔버스 팝업 호스트 앞 표지 자리 수가 회차마다 같다 — AGENTS 9장 「알림 칸」).
+# 팝업 호스트 앞 표지 자리 수가 회차마다 같다 — AGENTS 9장 「알림 칸」).
 if space_layer is not None:
     report_layer_unmatched(
         space_layer,
@@ -2374,8 +2363,7 @@ if selected is None:
     # 비활성 층 블록은 눌러도 열지 않는다(브라우저가 거르고 서버도 거른다 — 그린 회차의 집합).
     open_active_floor = partial(_open_unless_inactive, frozenset(inactive_floors))
     # FAB 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
-    # 제목은 도구 줄 제목, 캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자다. 자리는 늘
-    # 서는 칸이다.
+    # 제목은 도구 줄 제목, 배치 편집은 사이드바 「Space 도면」 상자다. 자리는 늘 서는 칸이다.
     with st.container(key="space_fab_stage"):
         if fab_editing:
             _render_fab_editor(block_stats, open_active_floor, pending_save=pending_save)
@@ -2525,8 +2513,8 @@ else:
     )
 
     # 층 도면 — 테두리 상자·머리 줄 없이 편집기/뷰어가 본문 폭을 쓴다(2026-11-03 사용자 요청).
-    # 제목은 도구 줄 제목, 캔버스 편집·배치 편집은 사이드바 「Space 도면」 상자, 범례는 편집기
-    # 왼쪽 칸이다. 자리는 늘 서는 칸이다.
+    # 제목은 도구 줄 제목, 배치 편집은 사이드바 「Space 도면」 상자, 범례는 편집기 왼쪽 칸이다.
+    # 자리는 늘 서는 칸이다.
     with st.container(key="space_floor_stage"):
         # 보기 회차는 이 층 행 전체(세는 행과 페이더 범위의 그리는 행을 모두 품는다)의 경계 날짜를
         # 한 번 구해 범례 대수와 도면 payload 가 나눠 쓴다. 편집 중에는 편집본으로 편집기가 따로
@@ -2732,22 +2720,12 @@ else:
     # 호기 칸과 층 CSV 는 도면 위 「호기 정보」 창 안이다(2026-11-03 사용자 요청 — 「하단이 아니라
     # 편집기 안에서」, 2026-11-04 Space 결정 보드 답 — CSV 단추도 창 안으로). 도면 아래에는 아무것도
     # 두지 않는다.
-# 캔버스 팝업 호스트 — 단추는 사이드바 「Space 도면」 상자에, 팝업은 본문 끝 한 자리에서
-# 연다(사이드바 `with` 안에서 팝업을 열지 않는다). 층 캔버스 이탈 검사는 그린 호기가 아니라 저장된
-# 마스터 전체로 한다 — 저장 검증이 보는 행이 그것이다. 그 회차 세션 스냅샷의 마스터는 공식 배치다
-# (가정이던 때 리비전이면 공식 스냅샷을 따로 읽는다).
-render_floor_canvas_dialog_host(
-    database_path=equipment_database_path,
-    floor=selected,
-    saved_equipment=(
-        _official_master()
-        if selected is not None and canvas_editable and not using_sample_equipment
-        else empty_equipment_master()
-    ),
-    disabled=drawing_locked,
-    # 필요 단축 보기의 목표 확보율 팝업도 이 호스트가 연다(값 칸은 사이드바 조회 조건 패널 줄 —
-    # 검수 보드 p-target-form). 값 칸이 서는(보기를 그리는) 회차에만 넘긴다.
-    others=LEVEL_DIALOGS if layer_active else None,
+# Space 화면 팝업 호스트 — 필요 단축 보기의 목표 확보율 팝업(값 칸은 사이드바 조회 조건 패널 줄 —
+# 검수 보드 p-target-form)을 본문 끝 한 자리에서 연다(사이드바 `with` 안에서 팝업을 열지 않는다).
+# 매 앱 전체 회차 빠짐없이 부르고, 팝업은 값 칸이 서는(보기를 그리는) 회차에만 넘긴다.
+SPACE_DIALOG_HOST.render(
+    {value: body for value, (body, _) in LEVEL_DIALOGS.items()} if layer_active else {},
+    widget_keys={value: keys for value, (_, keys) in LEVEL_DIALOGS.items()},
 )
 # 남의 저장으로 앱 머리(변경 칩 · 화면 탭 점)가 센 편집을 버린 회차 — 머리를 새로 그리려 한 번 더
 # 돈다.

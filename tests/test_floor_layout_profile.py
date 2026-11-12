@@ -13,6 +13,7 @@ from capa_simulation.services.equipment_validation import (
     floor_equipment_outside_canvas,
     floors_outside_canvas,
     prepare_equipment_master,
+    require_floor_inside_canvas,
 )
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
@@ -149,7 +150,11 @@ def test_shrunk_canvas_error_on_an_unrelated_save_names_the_floor_canvas_and_the
     assert "['EQ-02']" in message
     assert "무관한 칸만 고쳐도" in message
     assert "Space 현황" in message
-    assert "「캔버스 편집」" in message
+    # 고칠 곳은 좌표이거나 「배치 편집」 의 「캔버스」 칸이다 — 걷은 「캔버스 편집」 팝업을 가리키지
+    # 않는다. 설비 저장본이 없는 빈 DB 의 첫 저장(편집기가 서지 않는다)에도 맞는 길을 함께 말한다.
+    assert "「캔버스 편집」" not in message
+    assert "「배치 편집」 왼쪽 칸 「캔버스」" in message
+    assert "설비를 아직 저장한 적이 없으면 좌표를 기본 캔버스(100 × 60) 안으로" in message
     assert "X좌표·Y좌표·Xsize·Ysize" in message
     assert len(repository.list_revisions()) == 1
 
@@ -186,7 +191,7 @@ def test_wide_canvas_allows_coordinates_beyond_the_default_range(tmp_path: Path)
 
 
 def test_canvas_shrink_check_sees_every_saved_unit_of_the_floor() -> None:
-    """캔버스 팝업의 줄이기 검사는 저장 검증과 같은 행을 본다 — 레이아웃표시 N·화면 필터와
+    """한 층의 캔버스 밖 검사는 저장 검증과 같은 행을 본다 — 레이아웃표시 N·화면 필터와
     무관하게 그 동·층에서 좌표·크기가 다 있는 호기 전부다. 다른 층·좌표 없는 행은 보지 않는다."""
     equipment = _equipment()
     rows = [
@@ -209,6 +214,38 @@ def test_canvas_shrink_check_sees_every_saved_unit_of_the_floor() -> None:
     assert floor_equipment_outside_canvas(saved, ("C1", "1F"), (162.0, 60.0)) == []
     assert floor_equipment_outside_canvas(saved, ("C1", "2F"), (100.0, 60.0)) == ["DEMO-EQ03"]
     assert floor_equipment_outside_canvas(saved.iloc[0:0], ("C1", "1F"), (10.0, 10.0)) == []
+
+
+def test_the_layout_apply_checks_only_its_own_floor_against_the_canvas() -> None:
+    """Space 「배치 편집」 의 「적용」 은 「캔버스 밖」 을 그 층만 본다(2026-11-12 Space 보드 답
+    1-4 — 「캔버스 편집」 팝업을 걷어, 두 층 이상이 밖일 때 층마다 넓혀 푸는 길). 다른 층의 밖
+    호기는 이 층 적용을 막지 않고, 이 층의 밖 호기는 저장 검증과 같은 글로 막는다. 저장된 캔버스가
+    없는 층은 기본 크기다."""
+    equipment = _equipment()
+    rows = [
+        {**equipment.iloc[0].to_dict(), "설비명": "DEMO-EQ01", "X좌표": 150},
+        {**equipment.iloc[0].to_dict(), "설비명": "DEMO-EQ03", "X좌표": 150, "층": "2F"},
+    ]
+    saved = prepare_equipment_master(pd.concat([equipment, pd.DataFrame(rows)], ignore_index=True))
+    canvases = {("C1", "1F"): (200.0, 100.0)}
+
+    # 1F 는 넓힌 캔버스 안이다 — 2F 의 밖 호기가 1F 적용을 막지 않는다.
+    require_floor_inside_canvas(saved, ("C1", "1F"), canvases)
+    with pytest.raises(ValueError) as caught:
+        prepare_equipment_master(saved, floor_canvases=canvases)
+    assert "C1 2F" in str(caught.value)
+    # 2F 는 저장된 캔버스가 없어 기본 크기다 — 그 층 적용은 저장 검증과 같은 글로 막는다.
+    with pytest.raises(ValueError) as caught:
+        require_floor_inside_canvas(saved, ("C1", "2F"), canvases)
+    message = str(caught.value)
+    assert message.startswith("Space 블럭이 층 캔버스 범위를 벗어났습니다")
+    assert "C1 2F 캔버스 100 × 60(저장된 캔버스 없음 · 기본값)" in message
+    assert "['DEMO-EQ03']" in message and "C1 1F" not in message
+    # 2F 도 넓히면 전체 검사가 지난다.
+    both = {**canvases, ("C1", "2F"): (200.0, 100.0)}
+    require_floor_inside_canvas(saved, ("C1", "2F"), both)
+    prepare_equipment_master(saved, floor_canvases=both)
+    require_floor_inside_canvas(saved.iloc[0:0], ("C1", "1F"), {})
 
 
 def _unit(

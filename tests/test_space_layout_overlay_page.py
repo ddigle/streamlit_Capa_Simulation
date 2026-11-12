@@ -287,8 +287,10 @@ def test_an_assumption_layout_apply_saves_as_that_scenarios_revision(
     app = _ok(_space(tmp_path, setup).run())
     app.toggle(key="space_layout_edit_mode").set_value(True).run()
     data = editor_calls[-1]
-    # 층 캔버스는 공용 값이라 가정 세션 편집기에서 끈다(설계 8-4).
+    # 층 캔버스는 공용 값이라 가정 세션 편집기에서 끈다(설계 8-4) — 하한 재료(가정 배치)도 싣지
+    # 않는다(그 회차에는 읽지 않는다).
     assert data["canvasEditable"] is False and data["canvasLock"]
+    assert data["canvasLimits"]["overlay"] == []
     app.session_state[FAKE_APPLY_KEY] = {
         "epoch": data["epoch"],
         "changes": [{"id": "EQ-02", "placed": True, "x": 60, "y": 20, "w": 12, "h": 7}],
@@ -965,21 +967,6 @@ def test_an_asterisk_scenario_name_stays_literal_in_an_old_official_revision_loc
     _assert_stars_escaped(app)
 
 
-def test_the_canvas_dialog_words_keep_tildes_in_scenario_and_unit_names() -> None:
-    """층 캔버스 팝업의 알림 재료 — 알림 전문은 평문(`textContent`)이라 가정 설비 시나리오 이름과
-    이탈 호기 설비명을 글자 그대로 싣는다(마크다운 막음을 달면 「\\~」 가 그대로 보인다)."""
-    from capa_simulation.components.floor_canvas_dialog import (
-        _unit_names,
-        overlay_mark_words,
-        overlay_unit_words,
-    )
-
-    assert overlay_unit_words((("10~12월 증설", 2),)) == "가정 배치 「10~12월 증설」 호기 2대"
-    assert "가정 배치 「10~12월 증설」 의 요소도 밖입니다" in overlay_mark_words(("10~12월 증설",))
-    assert _unit_names(("NEW~01~", "EQ-02")) == "NEW~01~, EQ-02(2대)"
-    assert _unit_names(("DA*31*R",)) == "DA*31*R(1대)"
-
-
 def test_an_assumption_session_locks_fab_canvas_and_floor_use(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
@@ -992,9 +979,10 @@ def test_an_assumption_session_locks_fab_canvas_and_floor_use(
     assert floor_use.disabled and "층 사용은 공식 설비 시나리오에서" in str(floor_use.help)
     assert not fab.button(key="space_switch_to_official").disabled
 
+    # 층 캔버스는 「배치 편집」 「캔버스」 칸 하나다 — 따로 여는 단추가 없다(2026-11-12 Space 보드
+    # 답 1-4). 가정 세션 편집기는 그 칸을 끈다(`canvasEditable`).
     detail = _ok(_space(tmp_path, setup).run())
-    drawing = next(button for button in detail.button if "_open_" in str(button.key))
-    assert drawing.disabled and "층 캔버스는 공식 설비 시나리오에서" in str(drawing.help)
+    assert not [button for button in detail.button if "_open_" in str(button.key)]
 
     official = _ok(_space(tmp_path, OPERATIONS, floor=False).run())
     assert not official.toggle(key="space_fab_edit_mode").disabled
@@ -1805,11 +1793,12 @@ def test_loading_an_assumption_drops_the_floor_use_draft_before_the_tab_marks(
         assert app.session_state["test_marks"] == dirty
 
 
-def test_the_canvas_dialog_previews_the_hypothetical_layout_before_shrinking(
+def test_the_official_floor_editor_will_not_shrink_below_a_hypothetical_layout(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """S4 — 설계 6-4·7-2. 공식 세션의 층 캔버스 팝업이 가정 설비 시나리오 배치의 이 층 차이
-    요소(밖이면 저장 단추를 끔 — 저장소가 막는다)와 차이 호기(경고 뒤 확인 체크)를 미리 말한다."""
+    """S4 — 설계 6-4·7-2. 공식 세션 층 편집기의 「캔버스」 칸 하한에 가정 설비 시나리오 배치의 이
+    층 차이 요소 · 차이 호기가 든다(2026-11-12 — 「캔버스 편집」 팝업이 미리 말하던 것을 편집기가
+    맡는다). 줄이면 그 시나리오의 다음 저장이 막히거나(호기) 공식 저장이 막힌다(요소)."""
     from test_equipment_layout_overlay_repository import _floor_base, _mark
 
     repository = _seeded(tmp_path)
@@ -1828,23 +1817,15 @@ def test_the_canvas_dialog_previews_the_hypothetical_layout_before_shrinking(
         )
     )
     clear_equipment_repository()
+    expected = repository.layout_overlay_extent("C1", "1F").scenario_extents()
+    assert [name for name, _, _ in expected] == ["셋업 실무"]
     app = _ok(_space(tmp_path, OPERATIONS).run())
-    app.button(key="space_floor_layout_open_C1_1F").click().run()
-    app.number_input(key="space_floor_layout_width_C1_1F").set_value(95.0).run()
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
     _ok(app)
 
-    assert not app.warning
-    note = active_state(app, "EQ-16")
-    assert note is not None
-    assert "가정 배치 「셋업 실무」 호기 1대가 범위를 벗어납니다" in note["full"]
-    assert "도면 요소가 범위를 벗어나" not in note["full"]
-    assert app.button(key="space_floor_layout_save_C1_1F").disabled
-    app.checkbox(key="space_floor_layout_shrink_C1_1F").check().run()
-    assert not app.button(key="space_floor_layout_save_C1_1F").disabled
-
-    app.number_input(key="space_floor_layout_width_C1_1F").set_value(80.0).run()
-    note = active_state(app, "EQ-16")
-    assert note is not None
-    assert "도면 요소가 범위를 벗어나" in note["full"]
-    assert "가정 배치 「셋업 실무」 의 요소도 밖입니다" in note["full"]
-    assert app.button(key="space_floor_layout_save_C1_1F").disabled
+    data = editor_calls[-1]
+    assert data["canvasEditable"] is True
+    assert data["canvasLimits"]["overlay"] == [
+        {"name": name, "right": right, "top": top} for name, right, top in expected
+    ]
+    assert data["canvasLimits"]["overlay"][0]["right"] >= 92.0

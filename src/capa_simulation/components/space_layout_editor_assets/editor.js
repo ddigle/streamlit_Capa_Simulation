@@ -51,6 +51,10 @@ export default function (component) {
   const MAX_EXTENT = Number(data.canvasLimits?.max) || 400
   // 편집기에 안 나오지만 이 층에 좌표가 있는 호기가 차지한 범위. 영역은 이보다 줄지 않는다.
   const RESERVED = { right: Number(data.canvasLimits?.reservedW) || 0, top: Number(data.canvasLimits?.reservedH) || 0 }
+  // 다른 가정 설비 시나리오의 이 층 배치 차이(호기 · 도면 요소)가 차지한 범위 — 시나리오마다 {name, right, top}. 공식 층 캔버스를
+  // 이보다 줄이면 그 시나리오의 다음 저장이 막히므로 영역은 이보다도 줄지 않는다. 캔버스를 고치는 회차에만 실린다.
+  const OVERLAY_LIMITS = (Array.isArray(data.canvasLimits?.overlay) ? data.canvasLimits.overlay : [])
+    .map((o) => ({ name: String(o?.name ?? ''), right: Number(o?.right) || 0, top: Number(o?.top) || 0 }))
   const FLOOR = String(data.floor || '')
   const OTHER_FLOORS = (Array.isArray(data.floors) ? data.floors : []).map(String).filter((f) => f !== FLOOR)
   // FAB 편집에서 층 블록이 가리킬 수 있는 층(「C1 1F」, 30개). 층 범위에는 없다.
@@ -2358,17 +2362,37 @@ export default function (component) {
       return true
     })
   }
-  // 놓인 호기·요소가 차지한 가장 먼 오른쪽·위. 캔버스는 이보다 작게 줄일 수 없다.
-  const extents = () => {
-    let right = RESERVED.right
-    let top = RESERVED.top
-    // 숨은 모듈은 묶음과 함께 옮겨지므로 지금 자리로 센다(처음 자리는 RESERVED 에 들어 있다).
-    for (const item of [...S.items.values(), ...S.ghosts.values()]) {
-      if (!onCanvas(item)) continue
-      right = Math.max(right, item.x + item.w)
-      top = Math.max(top, item.y + item.h)
+  // 캔버스를 줄이지 못하게 하는 것마다 차지한 가장 먼 오른쪽·위 — 도면에 놓인 호기·요소(drawn), 도면에 안 보이는 호기(hidden —
+  // 숨은 모듈은 묶음과 함께 옮겨지므로 지금 자리, 처음 자리와 편집기 밖 호기는 RESERVED), 가정 설비 시나리오 배치(OVERLAY_LIMITS).
+  function extentParts() {
+    const drawn = { right: 0, top: 0 }
+    const hidden = { right: RESERVED.right, top: RESERVED.top }
+    for (const [list, into] of [[S.items.values(), drawn], [S.ghosts.values(), hidden]]) {
+      for (const item of list) {
+        if (!onCanvas(item)) continue
+        into.right = Math.max(into.right, item.x + item.w)
+        into.top = Math.max(into.top, item.y + item.h)
+      }
     }
+    return { drawn, hidden, overlay: OVERLAY_LIMITS }
+  }
+  // 놓인 호기·요소 · 안 보이는 호기 · 가정 배치가 차지한 가장 먼 오른쪽·위. 캔버스는 이보다 작게 줄일 수 없다.
+  const extents = () => {
+    const parts = extentParts()
+    let right = Math.max(parts.drawn.right, parts.hidden.right)
+    let top = Math.max(parts.drawn.top, parts.hidden.top)
+    for (const o of parts.overlay) { right = Math.max(right, o.right); top = Math.max(top, o.top) }
     return { right: ceilTo(right), top: ceilTo(top) }
+  }
+  // 캔버스를 한 축(axis — 'right' | 'top')의 하한 limit(ceil 맞춘 값) 아래로 줄이지 못한 까닭 — 하한에 닿은 것 모두를 「 · 」 로
+  // 잇는다(「호기·요소」 · 「도면에 안 보이는 호기」 · 「가정 설비 시나리오 「이름」 배치」). 모두 받침 없이 끝나 뒤에 「가」 를 붙인다.
+  function canvasLimitWords(axis, limit, parts, ceil) {
+    const reach = (value) => ceil(value) >= limit - 1e-9
+    const words = []
+    if (reach(parts.drawn[axis])) words.push('호기·요소')
+    if (reach(parts.hidden[axis])) words.push('도면에 안 보이는 호기')
+    for (const o of parts.overlay) if (reach(o[axis])) words.push(`가정 설비 시나리오 「${o.name}」 배치`)
+    return words.length ? words.join(' · ') : '호기·요소'
   }
 
   // ---------------------------------------------------------------- Main 설비명(모듈 묶음 이름표)
@@ -4644,13 +4668,17 @@ export default function (component) {
     // 길도 막는다. 서버도 적용의 캔버스 값을 거부한다(두 겹).
     if (data.canvasEditable === false) { areaW.value = W(); areaH.value = H(); return }
     const ext = extents()
+    const parts = extentParts()
     const minW = Math.max(MIN_EXTENT, ext.right)
     const minH = Math.max(MIN_EXTENT, ext.top)
     let w = roundTo(Number.isFinite(requestedW) ? requestedW : W())
     let h = roundTo(Number.isFinite(requestedH) ? requestedH : H())
     const notes = []
-    if (w < minW) { notes.push(`폭은 ${minW} 아래로 줄일 수 없습니다(${ext.right > MIN_EXTENT ? '호기·요소가 거기까지 놓여 있습니다' : `최소 ${MIN_EXTENT}`})`); w = minW }
-    if (h < minH) { notes.push(`높이는 ${minH} 아래로 줄일 수 없습니다(${ext.top > MIN_EXTENT ? '호기·요소가 거기까지 놓여 있습니다' : `최소 ${MIN_EXTENT}`})`); h = minH }
+    const why = (axis) => ext[axis] > MIN_EXTENT
+      ? `${canvasLimitWords(axis, ext[axis], parts, ceilTo)}가 거기까지 놓여 있습니다`
+      : `최소 ${MIN_EXTENT}`
+    if (w < minW) { notes.push(`폭은 ${minW} 아래로 줄일 수 없습니다(${why('right')})`); w = minW }
+    if (h < minH) { notes.push(`높이는 ${minH} 아래로 줄일 수 없습니다(${why('top')})`); h = minH }
     if (w > MAX_EXTENT) { notes.push(`폭은 최대 ${MAX_EXTENT} 입니다`); w = MAX_EXTENT }
     if (h > MAX_EXTENT) { notes.push(`높이는 최대 ${MAX_EXTENT} 입니다`); h = MAX_EXTENT }
     S.note = notes.join(' · ')

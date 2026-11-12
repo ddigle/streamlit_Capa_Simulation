@@ -594,40 +594,88 @@ def test_a_second_press_of_the_same_apply_keeps_the_success_and_applies_once(
     clear_equipment_repository()
 
 
-def test_the_drawing_popup_will_not_cut_off_saved_marks(
+def test_two_floors_outside_their_canvas_are_widened_one_floor_at_a_time(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """도면 요소는 캔버스 밖에 둘 수 없다. 팝업이 누르기 전에 말하고 저장·삭제 단추를 막는다."""
-    database = tmp_path / "space_popup.duckdb"
+    """두 층 이상에 캔버스 밖 호기(`EQ-18`)가 있어도 층마다 「배치 편집」 의 「캔버스」 칸으로
+    넓힌다(2026-11-12 Space 보드 답 1-4 — 「캔버스 편집」 팝업이 한 층씩 풀던 길). 적용은 그 층만
+    보아 받고, 「배치 저장」 은 마스터 전체를 보아 남은 층이 있으면 그 글로 막는다. 남은 층도
+    넓혀 적용하면 저장이 지난다. 같은 층의 밖 호기는 적용에서 막는다."""
+    database = tmp_path / "space_two_floors.duckdb"
     repository = DuckDBEquipmentRepository(database)
     repository.initialize()
-    repository.save_snapshot(_baseline(), _equipment(), _downtime(), note="r1")
-    repository.save_space_layout(
-        _baseline(),
-        _equipment(),
-        _downtime(),
-        floor_canvases={("C1", "1F"): (130.0, 60.0)},
-        floor_marks={
-            ("C1", "1F"): [{"id": "C", "kind": "column", "x": 120, "y": 0, "w": 2, "h": 2}]
-        },
-    )
+    for floor in ("1F", "2F"):
+        repository.save_floor_layout_canvas("C1", floor, 120.0, 60.0)
+    fleet = _equipment()
+    fleet.loc[0, "X좌표"] = 100
+    fleet.loc[1, "층"] = "2F"
+    fleet.loc[1, "X좌표"] = 100
+    repository.save_snapshot(_baseline(), fleet, _downtime(), note="r1")
+    for floor in ("1F", "2F"):
+        repository.save_floor_layout_canvas("C1", floor, 100.0, 60.0)
     clear_equipment_repository()
     app = AppTest.from_string(_page_script(PAGE, database), default_timeout=60)
     app.session_state["space_status_selected_building"] = "C1"
     app.session_state["space_status_selected_floor"] = "1F"
     app.run()
-    app.button(key="space_floor_layout_open_C1_1F").click().run()
+    note = active_state(app, "EQ-18")
+    assert note is not None and note["short"] == "캔버스 밖 호기 2대(C1 1F 외 1개 층)"
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
 
+    # 같은 층의 밖 호기를 그대로 둔 적용은 막는다(이 층만 본 저장 검증 글).
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": {"width": 105, "height": 60},
+        "marks": None,
+    }
+    app.run()
+    assert any(
+        "적용하지 못했습니다" in item.value and "C1 1F 캔버스 105 × 60" in item.value
+        for item in app.error
+    )
+    # 넓히면 받는다 — 2F 의 밖 호기가 이 층 적용을 막지 않는다.
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": {"width": 120, "height": 60},
+        "marks": None,
+    }
+    app.run()
+    assert not app.exception and not app.error
+    assert editor_calls[-1]["canvas"] == {"width": 120.0, "height": 60.0}
+    # 저장은 마스터 전체를 본다 — 2F 가 남아 그 글로 막힌다.
+    app.button(key="space_layout_save").click().run()
     assert not app.exception
-    next(widget for widget in app.number_input if widget.label == "캔버스 폭").set_value(100).run()
+    refused = [str(item.value) for item in app.error]
+    assert any("C1 2F 캔버스 100 × 60" in text for text in refused), refused
+    assert DuckDBEquipmentRepository(database).load_floor_layout_canvases()[("C1", "1F")] == (
+        100.0,
+        60.0,
+    )
 
-    assert not app.exception
-    # 기둥(오른쪽 122)이 밖으로 나간다 — 잠긴 단추의 짧은 풍선과 알림창이 말한다.
-    assert not app.warning
-    note = active_state(app, "EQ-16")
-    assert note is not None and "도면 요소가 범위를 벗어나" in note["full"]
-    save = app.button(key="space_floor_layout_save_C1_1F")
-    assert save.disabled and "필요한 크기 122" in str(save.help)
+    # 2F 로 옮겨 넓혀 적용하면 두 층을 한 번에 저장한다.
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    app.session_state["space_status_selected_floor"] = "2F"
+    app.run()
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    data = editor_calls[-1]
+    assert data["floor"] == "C1 2F"
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": {"width": 120, "height": 60},
+        "marks": None,
+    }
+    app.run()
+    assert not app.exception and not app.error
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception and not app.error
+    canvases = DuckDBEquipmentRepository(database).load_floor_layout_canvases()
+    assert (canvases[("C1", "1F")], canvases[("C1", "2F")]) == ((120.0, 60.0), (120.0, 60.0))
+    assert active_state(app, "EQ-18") is None
     clear_equipment_repository()
 
 

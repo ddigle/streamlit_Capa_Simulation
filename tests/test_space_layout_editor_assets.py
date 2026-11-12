@@ -1378,3 +1378,86 @@ def test_the_editor_script_parses_as_a_whole() -> None:
     assert JS.startswith("export default function (component) {")
     body = JS.replace("export default function (component) {", "return function (component) {", 1)
     assert _node(_PARSE_RUNNER, {"body": body})["parsed"] is True
+
+
+# ------------------------------------------------ 캔버스 칸의 하한(2026-11-12 보드 답 1-4)
+
+_CANVAS_FLOOR_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const SCALE = 10
+const ceilTo = (v) => Math.ceil(v * SCALE - 1e-9) / SCALE
+const RESERVED = input.reserved
+const OVERLAY_LIMITS = input.overlay
+const onCanvas = (m) => m.placed && !m.moveTo
+const S = {
+  items: new Map(input.items.map((m) => [m.id, m])),
+  ghosts: new Map(input.ghosts.map((m) => [m.id, m])),
+}
+%s
+const ext = extents()
+const parts = extentParts()
+process.stdout.write(JSON.stringify({
+  ext,
+  right: canvasLimitWords('right', ext.right, parts, ceilTo),
+  top: canvasLimitWords('top', ext.top, parts, ceilTo),
+}))
+"""
+
+
+def _canvas_floor(
+    items: Sequence[Mapping[str, object]],
+    *,
+    reserved: Mapping[str, float],
+    overlay: Sequence[Mapping[str, object]] = (),
+    ghosts: Sequence[Mapping[str, object]] = (),
+) -> dict[str, object]:
+    decls = "\n".join(
+        _js_decl(head)
+        for head in ("function extentParts(", "const extents = ", "function canvasLimitWords(")
+    )
+    return _node(
+        _CANVAS_FLOOR_RUNNER % decls,
+        {
+            "items": list(items),
+            "ghosts": list(ghosts),
+            "reserved": dict(reserved),
+            "overlay": list(overlay),
+        },
+    )
+
+
+def test_the_canvas_field_will_not_go_below_units_marks_hidden_units_or_a_hypothetical_layout() -> (
+    None
+):
+    """「배치 편집」 「캔버스」 칸은 놓인 호기 · 요소, 도면에 안 보이는 호기(`RESERVED` · 숨은
+    모듈), 다른 가정 설비 시나리오의 이 층 배치 차이(`OVERLAY_LIMITS`)보다 작게 줄이지 못한다 — 걷은
+    「캔버스 편집」 팝업이 미리 말하던 것이다. 막은 글은 하한에 닿은 까닭 갈래를 모두 말한다."""
+    unit = {"id": "EQ-01", "placed": True, "x": 0, "y": 0, "w": 50, "h": 40}
+    mark = {"id": "MK", "placed": True, "x": 60, "y": 0, "w": 2, "h": 2}
+    away = {"id": "EQ-09", "placed": True, "moveTo": "C2 2F", "x": 0, "y": 0, "w": 300, "h": 300}
+    out = _canvas_floor(
+        [unit, mark, away],
+        reserved={"right": 80, "top": 20},
+        overlay=[{"name": "셋업 실무", "right": 90.04, "top": 30}],
+    )
+    assert out["ext"] == {"right": 90.1, "top": 40}
+    assert out["right"] == "가정 설비 시나리오 「셋업 실무」 배치"
+    assert out["top"] == "호기·요소"
+
+    # 하한에 함께 닿으면 모두 말한다. 숨은 모듈은 지금 자리로 「도면에 안 보이는 호기」 다.
+    ghost = {"id": "EQ-05", "placed": True, "x": 70, "y": 0, "w": 10, "h": 40}
+    tied = _canvas_floor([unit, mark], reserved={"right": 62, "top": 0}, ghosts=[ghost])
+    assert tied["ext"] == {"right": 80, "top": 40}
+    assert tied["right"] == "도면에 안 보이는 호기"
+    assert tied["top"] == "호기·요소 · 도면에 안 보이는 호기"
+
+
+def test_the_canvas_refusal_names_what_reaches_the_floor() -> None:
+    """`setCanvas` 의 거부 글은 「… 아래로 줄일 수 없습니다(<까닭>가 거기까지 놓여 있습니다)」 —
+    까닭은 `canvasLimitWords` 다. 칸을 끈 편집기(가정 설비 시나리오)는 그 앞에서 돌아간다."""
+    body = JS[
+        JS.index("function setCanvas(") : JS.index("// 트레이 칩·팔레트에서 끌어 도면에 놓는다.")
+    ]
+    assert "canvasLimitWords(axis, ext[axis], parts, ceilTo)}가 거기까지 놓여 있습니다" in body
+    assert body.index("data.canvasEditable === false") < body.index("extentParts()")
+    assert "data.canvasLimits?.overlay" in JS

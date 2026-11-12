@@ -264,7 +264,8 @@ def test_fab_edit_is_off_while_viewing_the_sample_fleet(
     assert app.toggle(key=FAB_EDIT_KEY).disabled
     # 잠근 스위치는 꺼짐으로 보인다. 켜짐인데 보기 전용 도면이 그려지면 화면이 서로 다른 말을 한다.
     assert app.toggle(key=FAB_EDIT_KEY).value is False
-    assert app.button(key="space_floor_layout_open_FAB").disabled
+    # 캔버스를 바꾸는 단추가 따로 없다 — FAB 캔버스는 FAB 「배치 편집」 왼쪽 칸 「캔버스」 다.
+    assert not [button for button in app.button if str(button.key).startswith("space_floor_layout")]
     assert not _fab_calls(editor_calls, editing=True)
     assert _fab_calls(editor_calls, editing=False)
     clear_equipment_repository()
@@ -511,33 +512,43 @@ def test_the_inspector_open_button_opens_the_block_floor(
     clear_equipment_repository()
 
 
-def test_the_fab_drawing_popup_reuses_the_floor_popup_and_guards_the_blocks(
+def test_the_fab_canvas_changes_in_the_editor_and_guards_the_blocks(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    database = tmp_path / "fab_popup.duckdb"
+    """FAB 캔버스는 FAB 「배치 편집」 의 「캔버스」 칸 → 적용 → 「배치 저장」 이다(2026-11-12
+    Space 보드 답 1-4 — 「캔버스 편집」 팝업을 걷었다). 지금 그린 층 블록 · 요소보다 좁은 캔버스는
+    적용에서 막는다."""
+    database = tmp_path / "fab_canvas.duckdb"
     app = _app(database, saved_fleet=True).run()
-    app.button(key="space_floor_layout_open_FAB").click().run()
+    app.toggle(key=FAB_EDIT_KEY).set_value(True).run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    right, top = marks_extent(default_fab_layout()[1])
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": {"width": right - 5, "height": top},
+        "marks": None,
+    }
+    app.run()
 
     assert not app.exception
-    assert len(app.get("file_uploader")) == 0
-    right, top = marks_extent(default_fab_layout()[1])
-    next(widget for widget in app.number_input if widget.label == "캔버스 폭").set_value(
-        right - 5
-    ).run()
+    assert any("적용하지 못했습니다" in item.value for item in app.error)
+    assert DuckDBEquipmentRepository(database).load_fab_layout_profile() is None
 
-    assert not app.warning
-    note = active_state(app, "EQ-16")
-    assert note is not None and "도면 요소가 범위를 벗어나" in note["full"]
-    assert app.button(key="space_floor_layout_save_FAB").disabled
-
-    next(widget for widget in app.number_input if widget.label == "캔버스 폭").set_value(130).run()
-    app.button(key="space_floor_layout_save_FAB").click().run()
+    data = _fab_calls(editor_calls, editing=True)[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": {"width": 130, "height": data["canvas"]["height"]},
+        "marks": None,
+    }
+    app.run()
+    assert not app.exception and not app.error
+    app.button(key="space_layout_save").click().run()
 
     assert not app.exception
     profile = DuckDBEquipmentRepository(database).load_fab_layout_profile()
     assert profile is not None and profile.canvas_size[0] == 130.0
-    viewer = _fab_calls(editor_calls, editing=False)[-1]
-    assert viewer["canvas"]["width"] == 130.0
     clear_equipment_repository()
 
 

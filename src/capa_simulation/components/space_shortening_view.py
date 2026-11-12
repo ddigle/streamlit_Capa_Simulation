@@ -56,9 +56,8 @@ import capa_simulation.components.shortening_source as shortening_source
 import capa_simulation.persistence.equipment_cache as equipment_cache
 from capa_simulation import alerts
 from capa_simulation.components.data_error_mark import render_data_error
-from capa_simulation.components.dialog_host import DialogBody
+from capa_simulation.components.dialog_host import DialogBody, DialogHost
 from capa_simulation.components.equipment_scenario_status import equipment_value_label
-from capa_simulation.components.floor_canvas_dialog import CANVAS_DIALOG_HOST
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.components.shortening_board import (
     DEFAULT_DUE_DAYS,
@@ -82,7 +81,11 @@ from capa_simulation.components.target_level_field import (
 from capa_simulation.design.theme import THEME_QUERY_PARAM
 from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.navigation import REQUIRED_SHORTENING
-from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
+from capa_simulation.page_bootstrap import (
+    BOOTSTRAP_ERRORS,
+    PAGE_DIALOG_SUFFIX,
+    bootstrap_error_message,
+)
 from capa_simulation.page_tabs_state import refused_at_tab_limit
 from capa_simulation.scenario_activation import (
     active_scenario_label,
@@ -122,6 +125,8 @@ __all__ = [
     "LEVEL_PICK_KEY",
     "PINNED_NOTE",
     "PROCESS_PARAM",
+    "SPACE_DIALOG_HOST",
+    "SPACE_DIALOG_KEY",
     "SPACE_SHORT_DIM_KEY",
     "SPACE_SHORT_LEVEL_KEY",
     "SPACE_SHORT_PROCESS_PREFIX",
@@ -151,11 +156,16 @@ __all__ = [
 ]
 
 SPACE_SHORT_LEVEL_KEY: Final = "space_shortening_level_v1"
+# Space 화면의 팝업 열림 칸과 호스트 프래그먼트(`DialogHost` — 화면당 호스트 하나). 지금 여는
+# 팝업은 목표 확보율 하나다. 열기 · 닫기는 앱 전체 대신 이 호스트만 돈다(U5 · 설계 규칙
+# UI-PRF-01). 페이지를 떠나면 `forget_page_dialogs` 가 열림 칸을 비운다(꼬리 `PAGE_DIALOG_SUFFIX`).
+SPACE_DIALOG_KEY: Final = f"space{PAGE_DIALOG_SUFFIX}"
+SPACE_DIALOG_HOST: Final = DialogHost("space_dialog_host", SPACE_DIALOG_KEY)
 SPACE_SHORT_DIM_KEY: Final = "space_shortening_dim_v1"
 # 목표 확보율 줄 — 조회 조건 패널의 둘째 페이지 칸(`target_level_field.LEVEL_SLOT` — 첫째는 공용
 # 공정 칸)에 다른 조건 줄과 같은 이름 줄 + 값 칸이고 값 칸을 누르면 고르는 팝업이 열린다(검수 보드
 # p-target-form — 필요 단축 일정과 같은 부품 `TargetLevelField`). 팝업은 Space 화면 팝업
-# 호스트(`floor_canvas_dialog.CANVAS_DIALOG_HOST` — 화면당 호스트 하나)가 연다. 칸이 없으면 필요
+# 호스트(`SPACE_DIALOG_HOST` — 화면당 호스트 하나)가 연다. 칸이 없으면 필요
 # 단축 일정 목표(받을 수 있는 값일 때 — 다섯 또는 직접 넣은 값) → 110% 로 심는다.
 LEVEL_FIELD: Final = TargetLevelField(
     state_key=SPACE_SHORT_LEVEL_KEY,
@@ -163,7 +173,7 @@ LEVEL_FIELD: Final = TargetLevelField(
     slug="space_target",
     pick_key="space_shortening_level_pick",
     dialog="space_target_level",
-    host=CANVAS_DIALOG_HOST,
+    host=SPACE_DIALOG_HOST,
     seed_keys=(SHORTENING_LEVEL_KEY,),
 )
 LEVEL_FIELD_KEY: Final = LEVEL_FIELD.field_key
@@ -346,8 +356,8 @@ def render_level_field(*, resting: bool = False) -> float:
     return LEVEL_FIELD.render(help=LEVEL_REST_HELP if resting else None, disabled=resting)
 
 
-# Space 화면 팝업 호스트가 함께 여는 팝업(열림 값 → (팝업, 입력 위젯 key)) — 보기를 그리는 회차에만
-# 넘긴다(`render_floor_canvas_dialog_host(others=)`).
+# Space 화면 팝업 호스트(`SPACE_DIALOG_HOST`)가 여는 팝업(열림 값 → (팝업, 입력 위젯 key)) — 보기를
+# 그리는 회차에만 넘긴다.
 LEVEL_DIALOGS: Final[dict[str, tuple[DialogBody, tuple[str, ...]]]] = LEVEL_FIELD.dialogs
 
 

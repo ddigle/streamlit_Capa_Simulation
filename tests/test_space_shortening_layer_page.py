@@ -906,7 +906,7 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
     못한 공정 등 3줄도 다른 위치로」). 끈 회차에는 줄 · 칸이 서지 않는다(그 회차는 목표를 읽지
     않는다). 배치 편집으로 쉬는 회차는 `_rest_level` 시험이 본다."""
     from capa_simulation.components.condition_field import FIELD_KEY_PREFIX
-    from capa_simulation.components.floor_canvas_dialog import FLOOR_CANVAS_DIALOG_KEY
+    from capa_simulation.components.space_shortening_view import SPACE_DIALOG_KEY
 
     app = _app(_empty_database(tmp_path))
     _ok(app.run())
@@ -950,14 +950,14 @@ def test_the_target_level_sits_in_the_sidebar_panel_row_and_the_dim_box_in_the_s
     # 값 칸을 누르면 Space 화면 팝업 호스트가 고르는 팝업을 연다 — 라디오는 지금 목표다.
     app.button(key=LEVEL_FIELD_KEY).click()
     _ok(app.run())
-    assert app.session_state[FLOOR_CANVAS_DIALOG_KEY] == "space_target_level"
+    assert app.session_state[SPACE_DIALOG_KEY] == "space_target_level"
     picker = app.radio(key=LEVEL_PICK_KEY)
     assert picker.value == 1.1 and list(picker.options) == ["90%", "100%", "110%", "120%", "130%"]
     picker.set_value(1.3)
     _ok(app.run())
     # 고르면 곧바로 닫히고(열림 칸 · 라디오 값을 지운다) 그 목표로 다시 그린다.
     assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.3
-    assert FLOOR_CANVAS_DIALOG_KEY not in app.session_state
+    assert SPACE_DIALOG_KEY not in app.session_state
     assert LEVEL_PICK_KEY not in app.session_state
     assert app.button(key=LEVEL_FIELD_KEY).label == "130%"
 
@@ -970,8 +970,8 @@ def test_a_target_typed_in_the_space_picker_paints_that_target_with_the_same_par
     곧바로 닫히며 그 목표로 도면 · 요약을 그리고(계획은 필요 단축 일정과 같은 키 · 같은 길로 그 값
     하나를 더한다), 범위 밖은 칸 밑 거부 한 줄이다. 「도면에서 보기」 주소의 `target` 도 같은 범위로
     받는다."""
-    from capa_simulation.components.floor_canvas_dialog import FLOOR_CANVAS_DIALOG_KEY
     from capa_simulation.components.space_shortening_view import LEVEL_FIELD as SPACE_FIELD
+    from capa_simulation.components.space_shortening_view import SPACE_DIALOG_KEY
     from capa_simulation.components.target_level_field import (
         ENTRY_UNIT_LABEL,
         TargetLevelField,
@@ -997,13 +997,13 @@ def test_a_target_typed_in_the_space_picker_paints_that_target_with_the_same_par
     app.number_input(key=LEVEL_ENTRY_KEY).set_value(40.0)
     _ok(app.run())
     assert [str(item.value) for item in app.error] == [entry_out_of_range(40)]
-    assert app.session_state[FLOOR_CANVAS_DIALOG_KEY] == "space_target_level"
+    assert app.session_state[SPACE_DIALOG_KEY] == "space_target_level"
     assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.1
 
     app.number_input(key=LEVEL_ENTRY_KEY).set_value(175.0)
     _ok(app.run())
     assert app.session_state[SPACE_SHORT_LEVEL_KEY] == 1.75
-    assert FLOOR_CANVAS_DIALOG_KEY not in app.session_state
+    assert SPACE_DIALOG_KEY not in app.session_state
     assert LEVEL_ENTRY_KEY not in app.session_state
     assert _level(app).value == 1.75
     assert any("목표 175%" in text for text in _texts(app)), _texts(app)
