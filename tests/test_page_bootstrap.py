@@ -741,7 +741,7 @@ def test_the_outside_period_message_of_other_tables_keeps_the_screen_to_fix_them
         ValueError("RQ_PKG_PLAN.생산수량에 숫자가 아닌 값이 있습니다: 1행, 예시 []"),
         ValueError("RQ_VITAL의 연결 키가 중복되었습니다: 1건, 예시 []"),
         ValueError("RQ_RUN_DAY의 생산계획년월은 YYYYMM 형식이어야 합니다: 1행, 예시 []"),
-        ValueError("보유 설비대수에 숫자가 아닌 값 또는 누락값이 있습니다."),
+        ValueError("보유대수에 숫자가 아닌 값 또는 누락값이 있습니다."),
         duckdb.Error("RQ_RUN_RATE의 CAPA_RUN_RATE 값이 빈 대당 Capa 기준이 있습니다: 1건, 예시 []"),
     ],
 )

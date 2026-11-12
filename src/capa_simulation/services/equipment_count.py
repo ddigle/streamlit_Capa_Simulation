@@ -33,7 +33,7 @@ def equipment_count_to_edit_table(
         prepared,
         EQUIPMENT_DIMENSIONS,
         value_column,
-        f"{category} 설비대수",
+        f"{category}대수",
     )
     month_columns = [column for column in table.columns if column not in EQUIPMENT_DIMENSIONS]
     table[month_columns] = table[month_columns].fillna(0.0)
@@ -56,17 +56,17 @@ def equipment_count_from_edit_table(
     blank = raw.isna() | raw.apply(lambda column: column.astype("string").str.strip().eq(""))
     numeric = raw.apply(pd.to_numeric, errors="coerce")
     if (numeric.isna() & ~blank.fillna(False).astype(bool)).any(axis=None):
-        raise ValueError(f"{category} 설비대수의 월별 값에는 숫자를 입력해야 합니다.")
+        raise ValueError(f"{category}대수의 월별 값에는 숫자를 입력해야 합니다.")
     numeric = numeric.fillna(0.0)
     if numeric.lt(0).any(axis=None):
-        raise ValueError(f"{category} 설비대수는 0 이상이어야 합니다.")
+        raise ValueError(f"{category}대수는 0 이상이어야 합니다.")
     prepared = edit_table.copy()
     prepared[month_columns] = numeric
     restored = reference_from_edit_table(
         prepared,
         EQUIPMENT_DIMENSIONS,
         value_column,
-        f"{category} 설비대수 편집값",
+        f"{category}대수 편집값",
     )
     validated = _prepare_source(restored, category, value_column)
     return validated.rename(columns={"대수": value_column})[["생산계획년월", "공정", value_column]]
@@ -74,16 +74,16 @@ def equipment_count_from_edit_table(
 
 def _prepare_source(data: pd.DataFrame, category: str, value_column: str) -> pd.DataFrame:
     required = ["생산계획년월", "공정", value_column]
-    require_columns(data, required, f"{category} 설비대수")
+    require_columns(data, required, f"{category}대수")
     result = data[required].copy().rename(columns={value_column: "대수"})
-    normalize_month_column(result, f"{category} 설비대수")
+    normalize_month_column(result, f"{category}대수")
     result["공정"] = result["공정"].astype("string").str.strip()
     if result["공정"].isna().any() or result["공정"].eq("").any():
-        raise ValueError(f"{category} 설비대수의 공정에 누락값이 있습니다.")
+        raise ValueError(f"{category}대수의 공정에 누락값이 있습니다.")
     result["대수"] = pd.to_numeric(result["대수"], errors="coerce")
     if result["대수"].isna().any():
-        raise ValueError(f"{category} 설비대수에 숫자가 아닌 값 또는 누락값이 있습니다.")
+        raise ValueError(f"{category}대수에 숫자가 아닌 값 또는 누락값이 있습니다.")
     if result["대수"].lt(0).any():
-        raise ValueError(f"{category} 설비대수는 0 이상이어야 합니다.")
+        raise ValueError(f"{category}대수는 0 이상이어야 합니다.")
     result["구분"] = category
     return result[["생산계획년월", "공정", "구분", "대수"]]
