@@ -486,3 +486,24 @@ def test_the_editor_wires_line_editing_and_the_inspector() -> None:
     # 고른 발자국은 점선 상자 대신 가운데 축 점선이다.
     assert ".mark-footprints.is-selected .sle-foot-axis { display: inline; }" in CSS
     assert ".sle-lineprops > .sle-field[hidden], .sle-fields .sle-field[hidden]" in CSS
+
+
+_FROM_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+%s
+%s
+const item = { kind: 'footprints', w: 20, h: 3, rot: 0, look: input.look, fontSize: null }
+const fmt = formatOf({ ...item, fontColor: '' })
+const back = formatFrom(JSON.parse(JSON.stringify(fmt)), [9, 11, 13])
+process.stdout.write(JSON.stringify({ fmt, back }))
+"""
+
+
+def test_a_stored_footprints_clip_keeps_its_gap() -> None:
+    """담은 서식은 저장소를 거쳐 다시 읽힌다(`readFormat` → `formatFrom`) — 발자국의 간격이 그
+    길에서 빠지지 않는다."""
+    blocks = (_block(_LOOK), _block(_PAINT))
+    out = _node(_FROM_RUNNER % blocks, {"look": {"gap": "wide", "line": "rose", "foot": "cat"}})
+    assert out["fmt"]["paint"] == {"line": "rose", "gap": "wide"}
+    assert out["back"]["paint"] == {"line": "rose", "gap": "wide"}
+    assert out["back"]["size"] == {"w": 20, "h": 3}
