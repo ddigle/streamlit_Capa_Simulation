@@ -2098,8 +2098,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 기존 보유대수 자연키는 `BASELINE_KEY_COLUMNS`(공정, 분류)다. 옛 머리 이름은 입구에서 바꿔 읽고(`rename_legacy_headers`)
     빠진 컬럼(`OBSOLETE_EQUIPMENT_COLUMNS`)은 알림만 남긴다. 선택 컬럼은 없어도 된다 — 설비 마스터 입구
     (`read_equipment_update`)에서 새 호기는 빈 칸, 기존 호기는 저장값을 지킨다.
-  - 사용기준 규칙(`COUNTED_USAGE_BASIS`·`counts_for_capacity`)과 모듈 일치 컬럼(`UNIT_CONSISTENT_COLUMNS`)의 단일
-    선언이다. 한글↔DB 칸 매핑은 공통 칸이 `equipment_repository.EQUIPMENT_MASTER_DB_COLUMNS`, 시나리오 일곱 칸이
+  - 사용기준 규칙(`COUNTED_USAGE_BASIS`·`counts_for_capacity`)과 모듈 일치 컬럼(`UNIT_CONSISTENT_COLUMNS` — 읽기·저장 모두
+    막는 여섯, `UNIT_SAVE_CONSISTENT_COLUMNS` — 저장 때만 막는 일곱 Area Code·Maker·Model·투자Capa·담당자·보관유무·기존설비여부,
+    `UNIT_SHARED_COLUMNS` — 묶음 한 줄을 고치면 같이 바뀌는 14칸 = 여섯 + 일곱 + 레이아웃표시, 사용기준은 셋 어디에도 없다 —
+    2026-11-12 사용자 답 3-1 · 3-3)의 단일 선언이다. 한글↔DB 칸 매핑은 공통 칸이 `equipment_repository.EQUIPMENT_MASTER_DB_COLUMNS`, 시나리오 일곱 칸이
     `equipment_scenario_store.SCENARIO_SCHEDULE_DB_COLUMNS` 다(저장소가 그 모듈을 부르므로 그쪽에 둔다).
   - 설비 마스터 39칸은 **공통 32**(`COMMON_MASTER_COLUMNS`)와 **시나리오 7**(`SCENARIO_SCHEDULE_COLUMNS` — 날짜 여섯 +
     `시나리오 메모`)로 갈린다. `시나리오 메모` 는 `반출/이설일정` 다음 칸이고 선택 칸이다(`OPTIONAL_EQUIPMENT_COLUMNS` —
@@ -2127,8 +2129,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     묶음에 저장본에 없던 시작일이 생겼고 그 묶음에서 사라진 행이 없을 때만이다 — 같은 (키, 시작일) 행이 다른 유형으로
     사라졌어도 고침으로 본다(시작일·유형만 고친 비가동은 퍼지지 않는다). 쓸 일정 행은 「저장본에 일정 행이 있던 호기 ∪
     일곱 칸에 값이 있는 호기 ∪ 비가동이 있는 호기 ∪ 새 호기」 다(`select_schedule_rows`).
-- `src/capa_simulation/services/equipment_units.py` — 모듈 행을 설비 한 대로 묶는 `설비키`·`설비지분`과 소수 대수 표기의
-  단일 정의다. 대수를 세는 곳은 행 수 대신 지분을 더한다. 모듈 묶음 환산비 경고는 줄 판정(`module_ratio_warning_rows`)과
+- `src/capa_simulation/services/equipment_units.py` — 모듈 행을 설비 한 대로 묶는 `설비키`·`설비지분`과 소수 대수 표기,
+  모듈 묶음 판정(`module_group_rows` · `parent_equipment` — `space_layout_edit` 가 같은 이름으로 다시 내보낸다)과 묶음 같이 쓰기
+  계획(`plan_group_writes` → `GroupPlan` — 형제는 넘긴 표 전체, 한 번에 같은 묶음 · 칸에 다른 값이 오면 같이 바꾸지 않고
+  `split`, 잠금 · 값 다듬기는 호출부 몫)의 단일 정의다. 대수를 세는 곳은 행 수 대신 지분을 더한다. 모듈 묶음 환산비 경고는 줄 판정(`module_ratio_warning_rows`)과
   문장(`module_group_warnings`)이 같은 판정·같은 문구 조각(`MODULE_RATIO_WARNING`)이다 — 검증 전 편집본도 받고, Main 설비를
   적은 줄만 묶음으로 센다(설비명이 겹친 줄·설비명이 빈 줄은 묶음이 아니다). 화면 경고는 줄 판정 쪽(규칙 표 `module_ratio_default`
   → 설비 마스터 표 칸 경고 표지)이다 — 문장 쪽은 개편 D 뒤 운영 호출자가 없고 시험만 부른다(TODO 2장 「다음 손볼 때」).
@@ -2177,8 +2181,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     가리는 `_zoned_date` 는 넓히지 않는다. 칸 결과는 줄마다,
     저장·붙여넣기 거부는 시간대 줄부터 그 값만 예시로. 표 차례가 저장 거부 문구의 계약이고, 시험이 규칙마다 거부
     문구를 글자 그대로(예시·다섯 개 제한까지) 고정한다(`tests/test_equipment_validation_issues.py`).
-  - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사는 저장할 때만
-    `today=` 로 돈다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
+  - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사와 모듈 묶음 일곱 칸
+    갈림(`unit_group_mixed_saved` — 여섯 칸 `unit_group_mixed` 바로 뒤, `_MasterFrame.saving`)은 저장할 때만 `today=` 로
+    돈다 — 리비전 읽기·계산·발행·복제는 막지 않고 저장(편집본 전체)만 막는다(2026-11-12 사용자 답 3-3 (나) · P2). 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
   - Space 위치: 레이아웃표시는 도면 대상인지만 가르고 좌표를 강제하지 않는다(없으면 미배치 칸). X·Y·크기는 짝으로 둔다.
   - Main 설비는 다른 행의 설비명과 같을 수 없다(`UnitGroupCollisionError`, 문구는 `unit_group_collision_message` 한 곳).
 - `src/capa_simulation/services/equipment_grid.py` — 가용설비 현황 「설비 마스터」 탭 표(개편 B1 — 표 컴포넌트는 아래
@@ -2203,7 +2208,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     겹치면 번호를 올린다. 저장본 호기인지는 **id 글자를 풀지 않고** `GridIndex.saved`·`saved_name`·`is_new` 로 가른다(설비명 규칙은
     「~」 를 받는다). 칸 글자 `cell_text` 가 화면 글자이자 「바뀐 칸」 견줌 글자다.
   - `build_grid_view` 한 번에서 세 마운트 data(`grid_data`·`loader_data`·`detail_data`·`changes_data`)가 나온다 — 같은 입력이면
-    같은 dict. 칸 초안이 있는 칸에는 편집본 옛 값의 규칙 결과를 싣지 않는다(초안 오류 하나). 출납을 보내는 마운트(표·오른쪽 칸 둘)
+    같은 dict. `detail_data` 는 모듈 묶음(둘 이상) 줄에 `unit.group`(Main 설비 · 줄 수)을, 늘 `sharedCols`(같이 바뀌는 14칸 자리)를
+    실어 브라우저가 그 칸 이름 곁에 「묶음」 글 표지 + 풍선을 단다(2026-11-12 답 3-5). 칸 초안이 있는 칸에는 편집본 옛 값의 규칙 결과를 싣지 않는다(초안 오류 하나). 출납을 보내는 마운트(표·오른쪽 칸 둘)
     는 저마다 제 `ack` 를 싣는다. 출납 결과 글(`GridApplied.toast`)은 띠가 아니라 알림창 · Alarm 으로만 가고(`queue_grid_result`,
     설계 규칙 UI-NTF-03 — 2026-11-07 답 undo-strip), 마운트에 싣는 `toast` 는 오른쪽 칸 자리 거부 한 줄(막힌 「호기 추가」 · 가져오기
     「찾지 못했습니다」 — `queue_grid_toast`, `toast_payload`)뿐이다. 「호기 추가」 가 넣은 회차는 그 호기를 「호기 상세」 로 연다
@@ -2212,15 +2218,26 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     64자 고정 폭 글자로 잇는다(`encode_codes` ↔ JS `decodeCodes` — 브라우저는 고른 값을 번호가 아니라 글로 기억한다).
   - 출납: `pending_ops` 가 두 마운트의 상태 값 `outbox` 에서 반영 안 된 op 만 `(at, mount, seq)` 로 고르고, `apply_ops` 가 차례로
     얹는다 — `base` 가 다르면 버림, 잠긴 칸·지운 줄·낡은 세션의 저장본 호기 지우기는 파이썬도 막음, 칸 값은
-    `coerce_master_cell`(저장 정규화와 같은 함수)로 다듬고 못 다듬은 글은 칸 초안(`overlay` — 편집본 밖)에 둔다. 설비명 칸
+    `coerce_master_cell`(저장 정규화와 같은 함수)로 다듬고 못 다듬은 글은 칸 초안(`overlay` — 편집본 밖)에 둔다. 칸·호기 상세·
+    붙여넣기·값 넣기는 한 함수(`_write_shared`)를 지나 모듈 묶음의 같이 바뀌는 칸이면 op 하나에 계획 하나
+    (`plan_group_writes`)로 형제 줄(표 전체)도 같은 값으로 쓰고 한 되돌리기 단계에 쌓는다 — 형제 하나라도 잠기면 통째로 거절해
+    까닭을 알림창에, 한 번에 다른 값이면 받은 칸만, 못 다듬은 글은 그 줄 초안만, 고친 줄이 그대로여도 형제가 바뀌면 바뀐 것(같은 값
+    다시 넣기로 갈린 묶음이 풀린다). 막지 않는 레이아웃표시(`_QUIET_SHARED`)만은 고친 줄 값이 실제로 바뀔 때만 퍼뜨린다(일부러 끈
+    모듈이 같은 값 다시 넣기로 켜지지 않게). 불러오지 않은 형제는 고친 줄 바로 아래에 끼운다(`GridApplied.inserted` — 고친 줄이 목록에
+    없으면 끼우지 않는다, 2026-11-12 답 3-4). 설비명 칸
     확정은 이름 바꿈(`check_unit_rename`·`apply_name_changes`·`compose_unit_renames` — Space 와 같은 넷, 사용자 R2·G4)이다.
     지우기는 비가동을 함께 빼고, 되살리기는 **저장본 값**을 **저장본 차례** 자리에 넣는다(차례만 다른 공통 리비전을 만들지 않음).
     칸·호기 되돌리기(`revert`)는 저장본 쪽으로 가는 길이라 낡은 세션의 시나리오 칸·가정 배치 칸 잠금을 보지 않는다(낡기 전에 고친
-    일정을 되돌려야 저장이 거부되지 않는다) — 모듈 묶음 좌표·크기만 그대로 두고 알림창으로 알린다. `base` 가 달라 버린 op 는 까닭을
+    일정을 되돌려야 저장이 거부되지 않는다) — 모듈 묶음 좌표·크기만 그대로 두고 알림창으로 알린다. 같이 바뀌는 칸은 지금 묶음
+    형제의 그 칸도 저마다의 저장본 값으로 돌린다(새 형제는 그대로, 호기 되돌리기가 Main 설비도 돌려 묶음을 떠나면 같이 돌리지
+    않는다). `base` 가 달라 버린 op 는 까닭을
     가르지 않는 결과 글(`DROPPED_TOAST` — 내 저장·모두 버리기·불러오기·남의 저장)로 알림창에 센다.
   - 되돌리기 `UndoStep` 은 역 patch(조작 뒤 자리)라 나중 것부터만 맞는다 — 표의 조작만 쌓고 다른 길이 편집본을 바꾸면
     목록을 비운다(B1-c). 되돌리기는 「저장 전 변경」 칸의 「한 단계 되돌리기」 하나다(2026-11-07 답 undo-strip). 불러온 목록은 화면 조작으로도 바뀌므로 사진으로 되돌리지 않고
-    옮긴 id(`moved` — 새 호기 이름 바꿈, 칸 초안 열쇠 옮김도 역 patch)·뺀 자리(`unloaded`)로 되돌린다(통째 단계만 사진). 이름 바꿈을
+    옮긴 id(`moved` — 새 호기 이름 바꿈, 칸 초안 열쇠 옮김도 역 patch)·뺀 자리(`unloaded`)로 되돌린다(통째 단계만 사진). 출납 ·
+    「한 단계 되돌리기」 결과의 `moved` · `inserted` 는 다음 표 그리기에 한 번 싣고(`equipment_master_tab.VIEW_CARRY_KEY` →
+    `grid_data(moved=, inserted=)`), 브라우저는 목록 지문이 그것으로만 바뀐 회차에 고름·기준 줄·스크롤을 지킨다(`keptView` —
+    설계 규칙 UI-PRF-03). 이름 바꿈을
     되돌리면 `renamed`·`moved` 를 거꾸로 알린다. 이름을 바꾸면 행 조각을 든 단계와 그 앞 단계를 버린다(`after_row_steps`). 통째
     단계는 하나다. 세션에는 `undo_to_state` 의 기본형으로 둔다.
   - **새 호기**(개편 단계 C — 오른쪽 「새 호기」 칸): `new_unit_check(초안 39칸 글, frames, saved_master, renames, context)` 한
@@ -2303,7 +2320,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `LayoutOverlay` — 호기 차이(키·저장 당시 Main 설비·일곱 칸 **통째**), 층 요소 차이(id 마다 `set`·`drop`), Main 설비명 위치
     차이(None = 공식 행 지움). 지문 `digest()`(빈 차이는 `EMPTY_LAYOUT_DIGEST` = `empty`), 캐시용 기본형 payload
     (`to_payload`·`from_payload` — 꺼낼 때 지금 클래스). 만들 때는 `make_layout_overlay`(차례 맞춤).
-  - 얹기 `apply_unit_overlay` 는 **예외를 내지 않는다**(I4) — 모듈 묶음(Main 설비 행 둘 이상, `space_layout_edit.module_group_rows`
+  - 얹기 `apply_unit_overlay` 는 **예외를 내지 않는다**(I4) — 모듈 묶음(Main 설비 행 둘 이상, `equipment_units.module_group_rows`
     한 규칙)은 머문 구성원(기록한 Main 설비가 지금 묶음, 공식에서 이름만 바꾼 경우 포함)의 많은 쪽 층이 가정 자리이고, 소속이
     바뀐 모듈은 그 자리에 X·Y 를 비워 둔다(`regrouped`). 공통에서 지운 호기의 차이는 버리고 센다.
   - 나누기 `split_layout(편집본 LayoutBase, official, started, role, overlay_present)` — 공식 역할은 바뀐 호기만 공통에(가정이던
@@ -2353,8 +2370,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     잇는 행(지금 설비명 → 저장본 설비명 지도, `equipment_scenario.inherited_unit_names`)의 배치 일곱 칸(`PLACE_COLUMNS`)을
     **저장본** 그 호기와 견주어 다른 행을 찾고 그 칸만 저장본 값으로 되돌린다(제출 전 편집본과 견주면 지운 뒤 다시 넣기·이름을
     바꿨다 되돌리기가 새 호기로 읽혀 지나간다).
-  - 모듈 묶음 판정(Main 설비가 같은 행이 표 전체에서 둘 이상)은 `module_group_rows` 한 곳이다 — 저장 전 바둑판 검사와 가정
-    배치 차이의 묶음 통째 규칙(`layout_overlay`)이 같이 쓴다. `PLACE_COLUMNS` 는 계약의 배치 일곱 칸 `SCENARIO_LAYOUT_COLUMNS` 다.
+  - 모듈 묶음 판정(Main 설비가 같은 행이 표 전체에서 둘 이상)은 `module_group_rows` 한 곳이다(정본은 `equipment_units` —
+    여기는 같은 이름을 다시 내보낸다) — 저장 전 바둑판 검사와 가정 배치 차이의 묶음 통째 규칙(`layout_overlay`)·설비 마스터 표의
+    묶음 같이 쓰기(`plan_group_writes`)가 같이 쓴다. `PLACE_COLUMNS` 는 계약의 배치 일곱 칸 `SCENARIO_LAYOUT_COLUMNS` 다.
   - 모듈 묶음 바둑판의 정본은 `module_cells`(`module_grid` — 모듈 2·3 은 열 n·행 1, 넷부터 열 = ⌈√n⌉·행 = ⌈n÷열⌉,
     칸 번호는 왼→오·위→아래, 저장 정밀도 눈금으로
     똑같이 나누고 마지막 열·행이 나머지를 받아 틈·겹침 0, 칸마다 최소 한 눈금)와 칸 배정 `assign_module_cells`(지금
@@ -7932,7 +7950,9 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   멈추고, `--database <사본>` 을 주면(운영 DB 자리가 아니면) 앱 프로세스를 보지 않는다. `inspect_db_counts.py` 의 앞 세 줄(개수 ·
   Space 모듈 묶음 · 파일 크기)은 옛 7-8 `python -c` 세 줄과 글자가 같은 꼴이다 — 7장 기대 줄 · 지난 리뷰 값과 견주므로 꼴을 바꾸지 않는다.
   넷째 줄은 생산 계획 그리드 두 표의 크기이고 그 표 이름 · 값 꼴 · 0 을 빈칸으로 싣는 양식은 `components/plan_grid.py` 와 같은 값을 들고
-  시험이 맞댄다(2026-11-12 사용자 답 ②-1 · ③-7). 운영 DB 자리 판정은 `settings.is_operational_database_place` 한 벌이다 — 같은 파일
+  시험이 맞댄다(2026-11-12 사용자 답 ②-1 · ③-7). 다섯째 줄 `unit_mixed`(`--only mixed`)는 최신 설비 리비전의 모듈 묶음 수와 같이
+  바뀌는 칸마다 갈린 묶음 수 `값 다름+빈 칸 섞임`이고 칸 갈래(`read` 여섯 · `save` 일곱 · `show`)와 짧은 키(`MIXED_KEYS`)는 계약 튜플을
+  따른다 — `save` 가 0 이 아니면 그 묶음이 다음 설비 저장을 막으므로 이관 앞에서 읽는다(2026-11-12 Space 요청 3 · P2). 운영 DB 자리 판정은 `settings.is_operational_database_place` 한 벌이다 — 같은 파일
   (하드링크 · Windows 긴 경로 접두 · UNC 공유처럼 글자가 달라도 장치 · 파일 번호로), 운영 `data/` 그 자체나 그 아래, git 저장소
   안(사본은 저장소 밖 — 사본 트리의 스크립트가 다른 저장소의 `data/` 를 못 가리는 것도 이것이 막는다). 경로 글자만 견주지 않는다.
   설비 DB 는 **공식 설비 시나리오**(공통 최신 + 최신 공식 발행)를 앱과 같은 읽기 길(`equipment_repository.read_official_pair`·

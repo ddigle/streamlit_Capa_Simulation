@@ -471,7 +471,12 @@ def test_a_common_only_v4_save_keeps_the_8_1_and_8_4_keys(
     official = repository.load_official_snapshot()
     assert official is not None and official.schedule is not None
     equipment = official.equipment.copy()
-    equipment.loc[0, "담당자"] = "담당 바뀜"
+    # 담당자는 모듈 묶음이 저장 때 같아야 하는 칸이라(2026-11-12 답 3-3) 0번 줄의 묶음 모든 줄을
+    # 함께 바꾼다 — 한 모듈만 바꾸면 저장이 묶음 갈림으로 막힌다.
+    parents = equipment["Main 설비"].astype("string")
+    group = parents.eq(parents.iloc[0]).fillna(False).astype(bool)
+    group.iloc[0] = True
+    equipment.loc[group, "담당자"] = "담당 바뀜"
     result = repository.save_equipment(
         EquipmentSaveRequest(
             baseline=official.baseline,

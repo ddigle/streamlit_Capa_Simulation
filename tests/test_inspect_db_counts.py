@@ -1,9 +1,10 @@
-# Purpose: 7-8 개수 세기 스크립트가 읽기만 하고 네 줄을 7장 기대 줄 꼴 그대로 수만 찍는지 본다.
+# Purpose: 7-8 개수 세기 스크립트가 읽기만 하고 다섯 줄을 7장 기대 줄 꼴 그대로 수만 찍는지 본다.
 
 """`scripts/inspect_db_counts.py` 의 약속 — 줄 1 ~ 3 은 런북 7-8 의 기대 줄 · 지난 리뷰 값과 견주는
-꼴이라 키 · 차례 · 값 꼴을 글자 그대로 찍고, 넷째 줄은 생산 계획 그리드 두 표의 크기다. 두 DB 를
-읽기만 하고, 운영 DB 자리를 열 때는 사용자 앱을 먼저 보며, 이름 · 값은 찍지 않는다. 묶음 줄의
-갈래(모듈 묶음 크기 · 상자 · 바둑판)는 손으로 지은 설비 DB 로 붙든다.
+꼴이라 키 · 차례 · 값 꼴을 글자 그대로 찍고, 넷째 줄은 생산 계획 그리드 두 표의 크기, 다섯째 줄은
+모듈 묶음 안에서 같이 바뀌는 칸이 갈린 묶음 수다. 두 DB 를 읽기만 하고, 운영 DB 자리를 열 때는
+사용자 앱을 먼저 보며, 이름 · 값은 찍지 않는다. 묶음 줄의 갈래(모듈 묶음 크기 · 상자 · 바둑판)와
+갈림 줄의 갈래(값 다름 · 빈 칸 섞임)는 손으로 지은 설비 DB 로 붙든다.
 """
 
 from __future__ import annotations
@@ -19,10 +20,18 @@ import pytest
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.components import plan_grid
 from capa_simulation.persistence.equipment_migration_runner import load_equipment_migrations
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    EQUIPMENT_MASTER_DB_COLUMNS,
+    DuckDBEquipmentRepository,
+)
 from capa_simulation.persistence.migration_runner import load_migrations
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.plan_grid_keys import PLAN_TABLE, YIELD_TABLE
+from capa_simulation.services.equipment_contract import (
+    UNIT_CONSISTENT_COLUMNS,
+    UNIT_SAVE_CONSISTENT_COLUMNS,
+    UNIT_SHARED_COLUMNS,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -93,15 +102,15 @@ def _run(args: list[str], tmp_path: Path) -> tuple[int, list[str]]:
     return code, output.read_text(encoding="utf-8").splitlines()
 
 
-def test_the_four_lines_are_counts_only(databases: tuple[Path, Path], tmp_path: Path) -> None:
+def test_the_five_lines_are_counts_only(databases: tuple[Path, Path], tmp_path: Path) -> None:
     simulation, equipment = databases
     code, lines = _run(
         ["--database", str(simulation), "--equipment-database", str(equipment)], tmp_path
     )
 
     assert code == 0
-    assert len(lines) == 5, lines
-    counts, bundles, sim_size, eq_size, plan = lines
+    assert len(lines) == 6, lines
+    counts, bundles, sim_size, eq_size, plan, mixed = lines
     sim_version = max(migration.version for migration in load_migrations())
     eq_version = max(migration.version for migration in load_equipment_migrations())
     assert counts.startswith(f"migration {sim_version} equipment_migration {eq_version} ")
@@ -119,6 +128,10 @@ def test_the_four_lines_are_counts_only(databases: tuple[Path, Path], tmp_path: 
     assert revisions >= 1 and found[8] == "0"
     assert plan_rows > 0 and plan_months > 0 and 0 < plan_cells <= plan_rows * plan_months
     assert int(found[5]) > 0 and int(found[6]) == plan_months
+    assert mixed == (
+        "unit_mixed groups 0; read ps 0+0 pl 0+0 line 0+0 inv 0+0 bldg 0+0 floor 0+0; "
+        "save area 0+0 maker 0+0 model 0+0 capa 0+0 owner 0+0 store 0+0 exist 0+0; show 0+0"
+    )
 
 
 def _bundle_database(path: Path) -> Path:
@@ -178,6 +191,76 @@ def test_the_bundle_line_counts_sizes_boxes_and_tiles_without_names(tmp_path: Pa
     assert lines == [
         "groups 4 = two 1 + three 1 + four 1 + more 1; boxed 4 = all 2 + some 1 + none 1; "
         "untiled 1; more sizes 6; more split 6:f2,t4,p2,c6"
+    ]
+    assert SENTINEL not in "\n".join(lines)
+
+
+def test_the_mixed_line_keys_follow_the_contract_tuples() -> None:
+    """갈림 줄의 칸은 같이 바뀌는 14칸(`UNIT_SHARED_COLUMNS`) 그대로이고 갈래는 계약 튜플에서
+    나온다 — 계약에 칸이 늘거나 빠지면 이 줄도 따라가야 한다(짧은 키는 겹치지 않고 DB 칸이 있다)."""
+    assert set(script.MIXED_KEYS) == set(UNIT_SHARED_COLUMNS)
+    assert len(set(script.MIXED_KEYS.values())) == len(script.MIXED_KEYS)
+    assert all(column in EQUIPMENT_MASTER_DB_COLUMNS for column in script.MIXED_KEYS)
+    parts = dict(script._MIXED_PARTS)
+    assert parts["read"] == UNIT_CONSISTENT_COLUMNS
+    assert parts["save"] == UNIT_SAVE_CONSISTENT_COLUMNS
+    assert parts["show"] == ("레이아웃표시",)
+
+
+def _mixed_database(path: Path) -> Path:
+    """갈림 줄이 보는 두 표만 지은 설비 DB — 갈래마다 묶음 하나(값은 모두 표지값)."""
+    columns = {column: EQUIPMENT_MASTER_DB_COLUMNS[column] for column in UNIT_SHARED_COLUMNS}
+    with duckdb.connect(str(path)) as connection:
+        connection.execute("CREATE SCHEMA equipment_ops")
+        connection.execute(
+            "CREATE TABLE equipment_ops.revision (revision_id VARCHAR, revision_no INTEGER)"
+        )
+        names = ", ".join(f"{db} VARCHAR" for db in columns.values())
+        connection.execute(
+            "CREATE TABLE equipment_ops.equipment_master_snapshot (revision_id VARCHAR, "
+            f"parent_equipment_id VARCHAR, equipment_id VARCHAR, {names})"
+        )
+        connection.execute("INSERT INTO equipment_ops.revision VALUES ('old', 1), ('new', 2)")
+        rows: list[tuple[object, ...]] = []
+
+        def add(revision: str, parent: str, unit: str, **values: str | None) -> None:
+            cells = [values.get(column, f"{SENTINEL}-{column}") for column in columns]
+            rows.append((revision, parent, unit, *cells))
+
+        # 담당자 값 다름 · Maker 빈 칸 섞임 · 동 값 다름(앞뒤 공백은 같은 값) · 레이아웃표시 다름.
+        add("new", f"{SENTINEL}-A", "A1", 담당자="가", 동=" C1 ")
+        add("new", f"{SENTINEL}-A", "A2", 담당자="나", 동="C1")
+        add("new", "B", "B1", Maker=None)
+        add("new", "B", "B2")
+        add("new", "B", "B3", Maker="")
+        add("new", "C", "C1", 동="C1", 레이아웃표시="Y")
+        add("new", "C", "C2", 동="C2", 레이아웃표시="N")
+        # 혼자인 Main · Main 이 빈 행 · 옛 리비전의 갈린 묶음은 세지 않는다.
+        add("new", "E", "E1", 담당자="다")
+        add("new", "  ", "F1", 담당자="라")
+        add("new", "  ", "F2", 담당자="마")
+        add("old", "G", "G1", 담당자="바")
+        add("old", "G", "G2", 담당자="사")
+        marks = ", ".join("?" * (3 + len(columns)))
+        connection.executemany(
+            f"INSERT INTO equipment_ops.equipment_master_snapshot VALUES ({marks})", rows
+        )
+    return path
+
+
+def test_the_mixed_line_tells_a_different_value_from_a_mixed_blank_without_names(
+    tmp_path: Path,
+) -> None:
+    """다섯째 줄 — 최신 리비전의 묶음 수와 칸마다 `값 다름+빈 칸 섞임`. 저장 규칙이 빈 칸도 한
+    값으로 견주므로 둘 다 갈림이다. 값 · 이름은 찍지 않는다."""
+    equipment = _mixed_database(tmp_path / "equipment_availability.duckdb")
+
+    code, lines = _run(["--only", "mixed", "--equipment-database", str(equipment)], tmp_path)
+
+    assert code == 0
+    assert lines == [
+        "unit_mixed groups 3; read ps 0+0 pl 0+0 line 0+0 inv 0+0 bldg 1+0 floor 0+0; "
+        "save area 0+0 maker 0+1 model 0+0 capa 0+0 owner 1+0 store 0+0 exist 0+0; show 1+0"
     ]
     assert SENTINEL not in "\n".join(lines)
 

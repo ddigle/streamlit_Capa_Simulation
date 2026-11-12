@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import date
 from typing import Final
 
 import streamlit as st
@@ -231,8 +232,13 @@ def _queue_review_alerts(review: ImportReview) -> None:
 
 
 def _master_has_errors(frames: Frames, floor_canvases: FloorCanvasMap) -> bool:
+    """편집본에 저장을 막는 칸이 있나 — 미리보기 거부 글에 「「저장 전 변경」 의 고칠 것을 먼저
+    고칩니다」 를 덧붙일지 가른다. 미리보기(`merge_equipment_rows`)와 같이 저장 때 표지(`today`)를
+    넘긴다 — 저장 때만 막는 모듈 묶음 일곱 칸 갈림도 고칠 것이다."""
     try:
-        issues = equipment_master_issues(frames[1], floor_canvases=floor_canvases)
+        issues = equipment_master_issues(
+            frames[1], floor_canvases=floor_canvases, today=date.today()
+        )
     except ValueError:
         return True
     return any(issue.blocking for issue in issues)

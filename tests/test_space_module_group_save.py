@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import duckdb
 import pandas as pd
 import pytest
 from alert_marks import place_errors
@@ -40,8 +41,12 @@ from capa_simulation.components.equipment_data_workspace import (
 )
 from capa_simulation.components.equipment_master_tab import UNDO_BUTTON_KEY
 from capa_simulation.persistence.equipment_cache import clear_equipment_repository
-from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentSaveRequest,
+)
 from capa_simulation.services.equipment_grid import MODULE_LOCK_REASON
+from capa_simulation.services.equipment_validation import prepare_equipment_master
 from capa_simulation.services.layout_overlay import reapply_layout_edits
 from capa_simulation.services.space_layout_edit import (
     apply_layout_edits,
@@ -436,7 +441,8 @@ def test_a_paste_that_moves_one_module_is_flagged_after_putting_and_refused_on_s
 ) -> None:
     """붙여넣기(설비명과 바꿀 열만)로 모듈 하나를 옮기면 넣은 뒤 「저장 전 변경」 고칠 것이 되고
     「리비전 저장」 이 막힌다. 한 단계 되돌리기로 넣기를 거둔 뒤 안 바뀐 옛 묶음만 있는 붙여넣기는
-    저장된다."""
+    저장된다. 담당자는 묶음이 저장 때 같아야 하는 칸이고(2026-11-12 답 3-3) 「엑셀·CSV로 한꺼번에」
+    는 형제를 같이 바꾸지 않아 묶음 넷을 모두 붙인다."""
     path = tmp_path / "equipment.duckdb"
     repository = _seed(path, _saved())
     app = _workspace_app(path)
@@ -453,11 +459,67 @@ def test_a_paste_that_moves_one_module_is_flagged_after_putting_and_refused_on_s
     app.run()
     assert not app.exception, [item.message for item in app.exception]
     assert app.session_state[BUFFER_KEY][1].set_index("설비명").loc["G1-B", "X좌표"] != 61
-    _preview(app, "설비명\t담당자\nG2-A\t담당B\n")
+    _preview(app, "설비명\t담당자\n" + "".join(f"G2-{m}\t담당B\n" for m in "ABCD"))
     _put(app)
     _save(app)
 
     assert not app.exception and not place_errors(app), [e.value for e in app.error]
+    assert len(repository.list_revisions()) == 2
+
+
+def test_a_stored_group_split_in_a_save_only_column_still_reads_but_its_next_save_is_refused(
+    tmp_path: Path,
+) -> None:
+    """2026-11-12 답 3-3 (나) — 담당자 등 일곱 칸은 저장 때만 막는다. 그 칸이 갈린 묶음이 든
+    저장본(옛 저장본 꼴 — 저장소에 바로 넣음)도 열기 · 읽기 검증 · 시나리오 복제 · 공식 발행은
+    그대로 돌고, 그 묶음을 맞추지 않은 다음 저장만 막는다(아무것도 쓰지 않는다). 묶음 모든 줄을 같은
+    값으로 맞추면 저장된다."""
+    path = tmp_path / "equipment.duckdb"
+    repository = _seed(path, _saved())
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "UPDATE equipment_ops.equipment_master_snapshot SET manager_name = '담당B' "
+            "WHERE equipment_id = 'G2-A'"
+        )
+
+    official = repository.load_official_snapshot()
+    assert official is not None and official.schedule is not None
+    assert official.equipment.set_index("설비명").loc["G2-A", "담당자"] == "담당B"
+    prepare_equipment_master(official.equipment)
+    clone = repository.clone_equipment_scenario(
+        official.schedule.schedule_revision_id, name="복제", created_by=None
+    )
+    assert clone.latest_schedule_revision_id is not None
+    release = repository.publish_equipment_release(
+        clone.latest_schedule_revision_id,
+        released_by=None,
+        note=None,
+        expected_latest_release_no=1,
+    )
+    assert release.release_no == 2
+
+    current = repository.load_official_snapshot()
+    assert current is not None and current.schedule is not None
+
+    def _request(equipment: pd.DataFrame) -> EquipmentSaveRequest:
+        assert current is not None and current.schedule is not None
+        return EquipmentSaveRequest(
+            baseline=current.baseline,
+            equipment=equipment,
+            downtime=current.downtime,
+            equipment_scenario_id=clone.equipment_scenario_id,
+            base_common_revision_id=current.revision.revision_id,
+            base_schedule_revision_id=current.schedule.schedule_revision_id,
+        )
+
+    with pytest.raises(ValueError) as refused:
+        repository.save_equipment(_request(current.equipment))
+    assert str(refused.value) == "같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다: ['GRP-2']"
+    assert len(repository.list_revisions()) == 1
+
+    fixed = current.equipment.copy()
+    fixed.loc[fixed["Main 설비"].eq("GRP-2"), "담당자"] = "담당B"
+    repository.save_equipment(_request(fixed))
     assert len(repository.list_revisions()) == 2
 
 

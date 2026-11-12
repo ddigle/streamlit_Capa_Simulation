@@ -353,7 +353,8 @@ OPTIONAL_EQUIPMENT_COLUMNS = (
 )
 
 # 한 설비의 모듈 행끼리 같아야 하는 컬럼. 화면 필터가 이 값들로 행을 거르므로, 다르면
-# 필터가 설비 하나를 쪼개 지분 합이 1 이 아니게 된다.
+# 필터가 설비 하나를 쪼개 지분 합이 1 이 아니게 된다. 저장 때만 막는 칸·같이 바뀌는 칸은 아래
+# 「모듈 묶음 칸」 이다.
 UNIT_CONSISTENT_COLUMNS = ("공정소분류", "공정대분류", "공정구분", "투자구분", "동", "층")
 
 
@@ -495,6 +496,30 @@ def unknown_area_codes(values: pd.Series) -> pd.Series:
 STORAGE_FLAG_COLUMN = "보관유무"
 
 FLAG_COLUMNS = (STORAGE_FLAG_COLUMN, "기존설비여부", "레이아웃표시")
+
+# --------------------------------------------------------------- 모듈 묶음 칸
+# 모듈 묶음(Main 설비가 같은 행)이 같은 값을 갖는 칸은 세 겹으로 가른다.
+#
+# - `UNIT_CONSISTENT_COLUMNS`(위) — 읽기·계산·저장 모두 막는다. 리비전을 다시 읽을 때도 도는
+#   규칙이라 이 튜플은 조이지 않는다(넣으면 그 칸이 갈린 옛 리비전이 열리지 않는다).
+# - `UNIT_SAVE_CONSISTENT_COLUMNS` — **저장할 때만** 막는다(검증의 `today` 를 줄 때 —
+#   `equipment_validation` 의 `unit_group_mixed_saved`). 사내 저장본에 이 칸이 갈린 묶음이 있어도
+#   리비전 열기·계산·발행·복제·되돌리기는 그대로 돌고, 다음 저장이 그 묶음을 맞추게 한다. 사용기준은
+#   모듈마다 다를 수 있어 넣지 않는다(2026-11-12 사용자 답 3-3 「사용기준만 제외」).
+# - `UNIT_SHARED_COLUMNS` — 묶음 한 줄을 고치면 형제 줄이 **같이 바뀌는** 칸(`equipment_units.
+#   plan_group_writes`). 위 둘에 레이아웃표시를 더한 것이다(답 3-1). 레이아웃표시는 같이 바꾸되 막지
+#   않는다 — 모듈 하나만 끈(N) 묶음은 지금처럼 열리고 저장된다.
+UNIT_SAVE_CONSISTENT_COLUMNS = (
+    AREA_CODE_COLUMN,
+    "Maker",
+    "Model",
+    INVESTMENT_CAPA_COLUMN,
+    "담당자",
+    STORAGE_FLAG_COLUMN,
+    "기존설비여부",
+)
+
+UNIT_SHARED_COLUMNS = (*UNIT_CONSISTENT_COLUMNS, *UNIT_SAVE_CONSISTENT_COLUMNS, "레이아웃표시")
 
 # ------------------------------------------------------------------- 사용기준
 # **설비 일정 기준 가용대수에 세는 호기는 사용기준이 이 값들 가운데 하나인 행뿐이다**

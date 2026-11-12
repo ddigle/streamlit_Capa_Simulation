@@ -285,7 +285,9 @@ def test_a_returning_load_does_not_steal_focus_from_the_table() -> None:
 def test_moved_ids_are_applied_before_the_list_fingerprint_resets_the_view() -> None:
     draw = _function("drawGrid")
     assert draw.index("data.moved") < draw.index("S.view !== view")
-    assert "if (!moved.length)" in draw and "S.openId = typeof data.open === 'string'" in draw
+    assert draw.index("const before = S.model") < draw.index("S.model = gridModel(S, data)")
+    assert "keptView(before, after, moved," in draw
+    assert "S.openId = typeof data.open === 'string'" in draw
     click = _function("onBodyClick")
     assert "classList.add('is-open')" in click
 
@@ -315,6 +317,7 @@ _SECTIONS = (
     "grid-match",
     "grid-plan",
     "grid-sort",
+    "grid-view",
     "grid-codes",
     "grid-place",
     "grid-new",
@@ -2839,3 +2842,185 @@ def test_text_typed_in_the_detail_panel_goes_out_like_an_open_cell_when_the_base
     assert result["drafts"] == 0
     assert result["shown"] == "theirs"
     assert result["sent"] == [["cell", "b1", "메모1", "typed"]]
+
+
+# ---------------------------------------------------------------- 모듈 묶음 같이 쓰기(Space 요청 3)
+
+_KEPT_VIEW_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify(input.cases.map((c) => keptView(c[0], c[1], c[2], c[3]))))
+"""
+
+
+def test_the_view_is_kept_only_when_moves_and_inserted_rows_explain_the_new_list() -> None:
+    """목록 지문이 바뀐 회차 — 앞 목록에 옮김을 얹고 끼운 줄만 빼면 새 목록과 같을 때만 고름 ·
+    스크롤을 지킨다. 같은 회차에 불러오기 · 빼기가 목록을 바꿨으면(옮김 · 끼움이 함께 실려도)
+    처음으로 돌린다. 옮김도 끼움도 없으면 늘 처음으로다."""
+    cases = [
+        [["a", "b", "c"], ["a", "x", "y", "b", "c"], [], ["x", "y"]],
+        [["a", "b", "c"], ["a", "b2", "c"], [["b", "b2"]], []],
+        [["a", "b", "c"], ["a", "b2", "x", "c"], [["b", "b2"]], ["x"]],
+        [["a", "b", "c"], ["a", "x", "c"], [], ["x"]],
+        [["a", "b", "c"], ["c", "x", "a", "b"], [], ["x"]],
+        [["a", "b"], ["q", "r"], [], []],
+        [["a", "b"], ["a", "b", "c"], [], []],
+    ]
+    result: object = _node({"cases": cases}, _KEPT_VIEW_RUNNER)
+    assert result == [True, True, True, False, False, False, False]
+
+
+_GROUP_VIEW_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const parentElement = new FakeNode('div')")]
+    + r"""
+FakeNode.prototype.focus = function () { document.activeElement = this }
+FakeNode.prototype.setSelectionRange = function () {}
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const columns = [
+  { name: '설비명', kind: 'name', width: 'name' },
+  { name: 'Model', kind: 'text', width: 'm' },
+  { name: '동', kind: 'choice', width: 's', options: ['C1', 'C2'], blank: true },
+]
+const red = {
+  1: '같은 Main 설비의 모듈 행은 Model 칸이 같아야 합니다',
+  2: '같은 Main 설비의 모듈 행은 동이 같아야 합니다',
+}
+const make = (ids, top, errors) => ({
+  mode: 'grid', base: 'b1', view: ids.join(','), limits: { outboxCells: 10000, pasteCells: 5000 },
+  columns, colSets: [['all', '전체', '', [1, 2]]],
+  rows: ids.map((id) => ({
+    id, values: [id, 'm', 'C1'], ...(errors && errors[id] ? { errors: errors[id] } : {}),
+  })),
+  ...(top || {}),
+})
+const component = { parentElement, setTriggerValue() {}, setStateValue() {} }
+const mount = (data) => globalThis.__mount({ data, ...component })
+const ids = []
+for (let k = 0; k < 60; k += 1) ids.push('r' + k)
+const cleanup = mount(make(ids))
+const S = host.__emg
+const state = () => ({
+  top: S.scroller.scrollTop, selected: Array.from(S.selected).sort(), anchor: S.anchor,
+})
+const queued = () => S.box.ops.map((op) => [op.op, op.id, op.col, op.text])
+const R = {}
+// 줄을 골라 둔 채 표 가운데까지 굴린 뒤 — 형제 둘이 고친 줄(r12) 바로 아래에 끼어 온다.
+S.scroller.scrollTop = 340
+S.selected = new Set(['r12', 'r13'])
+S.anchor = 'r12'
+const withSiblings = [...ids.slice(0, 13), 'x1', 'x2', ...ids.slice(13)]
+mount(make(withSiblings, { inserted: ['x1', 'x2'] }))
+R.inserted = state()
+// 새 호기 이름 바꿈(행 id 옮김) — 고름 · 기준 줄이 새 id 로 따라가고 스크롤은 그대로다.
+const renamed = withSiblings.map((id) => (id === 'r12' ? 'r12b' : id))
+mount(make(renamed, { moved: { r12: 'r12b' } }))
+R.moved = state()
+// 다음 회차(실린 것 없음 · 같은 목록)는 그대로다.
+mount(make(renamed))
+R.again = state()
+// 같은 회차에 다른 줄이 빠졌으면(불러오기 · 빼기) 끼움이 실려도 처음으로 돌린다.
+mount(make([...renamed.filter((id) => id !== 'r40'), 'x3'], { inserted: ['x3'] }))
+R.otherChange = state()
+// 막는 오류 표지가 선 칸은 같은 글도 확정(Enter · 고르기)하면 보낸다 — 칸을 열고 떠나기만
+// 하면, 빨갛지 않은 칸은 보내지 않는다.
+mount(make(ids, null, { r2: red }))
+startEdit(S, 'r3', 1)
+fire(body().querySelector('.emg-ed'), 'keydown', { key: 'Enter' })
+R.plainEnter = queued()
+startEdit(S, 'r2', 1)
+fire(body().querySelector('.emg-ed'), 'focusout', { relatedTarget: null })
+R.redLeave = queued()
+startEdit(S, 'r2', 1)
+fire(body().querySelector('.emg-ed'), 'keydown', { key: 'Enter' })
+R.redEnter = queued()
+startEdit(S, 'r2', 2)
+pickChoice(S, 'C1')
+R.redPick = queued()
+cleanup()
+process.stdout.write(JSON.stringify(R))
+"""
+).replace("body()", "S.body")
+
+
+def test_rows_coming_in_with_a_group_write_keep_the_selection_and_the_scroll() -> None:
+    """모듈 묶음 한 줄을 고치면 불러오지 않은 형제가 고친 줄 바로 아래에 끼어 와 목록 지문이
+    바뀐다 — 그 회차에도 고른 줄 · 기준 줄 · 스크롤이 그대로다(설계 규칙 UI-PRF-03, 2026-11-12
+    사용자 답 3-4). 새 호기 이름 바꿈의 id 옮김도 같다(전에는 옮김이 표 data 에 실리지 않아 맨
+    위로 튀었다). 같은 회차에 다른 길로 목록이 바뀌었으면 처음으로 돌린다. 빨간 칸(묶음 갈림)은 같은
+    글도 Enter · 고르기로 확정하면 보내 갈린 묶음을 푼다 — 열고 떠나기만 해서는 보내지 않는다."""
+    result = _node({}, _GROUP_VIEW_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["inserted"] == {"top": 340, "selected": ["r12", "r13"], "anchor": "r12"}
+    assert result["moved"] == {"top": 340, "selected": ["r12b", "r13"], "anchor": "r12b"}
+    assert result["again"] == result["moved"]
+    assert result["otherChange"] == {"top": 0, "selected": [], "anchor": None}
+    assert result["plainEnter"] == []
+    assert result["redLeave"] == []
+    assert result["redEnter"] == [["cell", "r2", "Model", "m"]]
+    assert result["redPick"] == [["cell", "r2", "Model", "m"], ["cell", "r2", "동", "C1"]]
+
+
+_GROUP_DETAIL_RUNNER = """
+FakeNode.prototype.select = function () {}
+FakeNode.prototype.scrollIntoView = function () {}
+Object.defineProperty(FakeNode.prototype, 'innerHTML', { set() { this.textContent = '' } })
+document.querySelector = () => null
+document.documentElement = { clientWidth: 1200 }
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+const data = (group, errors, shared) => ({
+  mode: 'side', panel: 'detail', base: 'b1',
+  columns: [
+    { name: '설비명', kind: 'name' },
+    { name: '담당자', kind: 'text' },
+    { name: '동', kind: 'choice', options: ['C1', 'C2'], blank: true },
+    { name: '메모1', kind: 'memo' },
+  ],
+  groups: [['main', '기본', '', '', [1, 2, 3]]],
+  sharedCols: shared,
+  unit: {
+    id: 's:D-1', values: ['D-1', '가', 'C1', ''], downtime: [], deletable: true, errors,
+    ...(group ? { group } : {}),
+  },
+})
+const component = { parentElement, setTriggerValue() {}, setStateValue() {} }
+const mount = (d) => globalThis.__mount({ data: d, ...component })
+const tags = () => host.querySelectorAll('.emg-group-tag')
+  .map((node) => [node.parentNode.textContent, node.title])
+const R = {}
+mount(data({ name: 'GRP-1', count: 4 }, {}, [1, 2]))
+const S = host.__emg
+const queued = () => S.box.ops.map((op) => [op.op, op.col, op.text])
+R.tags = tags()
+const chip = (value) => host.querySelectorAll('.emg-chip')
+  .find((node) => node.textContent === value)
+const input = () => host.querySelectorAll('.emg-input')[0]
+fire(chip('C1'), 'click')
+fire(input(), 'keydown', { key: 'Enter' })
+R.plain = queued()
+mount(data({ name: 'GRP-1', count: 4 }, { 1: '갈림', 2: '갈림' }, [1, 2]))
+fire(input(), 'blur')
+R.leave = queued()
+fire(input(), 'keydown', { key: 'Enter' })
+fire(chip('C1'), 'click')
+R.red = queued()
+mount(data(null, {}, [1, 2]))
+R.alone = tags()
+process.stdout.write(JSON.stringify(R))
+"""
+
+
+def test_the_detail_marks_shared_columns_of_a_module_group_and_resends_a_red_value() -> None:
+    """호기 상세 — 모듈 묶음(둘 이상) 줄이면 같이 바뀌는 칸(`sharedCols`) 이름 곁에만 「묶음」 글
+    표지 + 풍선이 선다(2026-11-12 사용자 답 3-5). 묶음 밖 줄은 없다. 빨간 칸은 같은 글도 Enter ·
+    칩으로 확정하면 보낸다 — 떠나기(blur)만 해서는 · 빨갛지 않은 칸은 보내지 않는다."""
+    result = _node({}, _GROUP_DETAIL_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    tip = "같은 Main 설비(GRP-1) 모듈 4줄에 함께"
+    assert result["tags"] == [["담당자묶음", tip], ["동묶음", tip]]
+    assert result["plain"] == []
+    assert result["leave"] == []
+    assert result["red"] == [["cell", "담당자", "가"], ["cell", "동", "C1"]]
+    assert result["alone"] == []
+    rule = re.search(r"\n\.emg-group-tag \{(?P<body>[^}]*)\}", CSS)
+    assert rule is not None and "var(--emg-accent)" in rule["body"]

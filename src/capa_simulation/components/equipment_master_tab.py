@@ -270,6 +270,10 @@ MISSING_KEY: Final = "equipment_grid_missing_v1"
 APPLIED_KEY: Final = "equipment_grid_applied_v1"
 # 편집본이 없을 때 온 출납을 본문에 넘긴다는 표지(`apply_outbox`).
 OUTBOX_HELD_KEY: Final = "equipment_grid_outbox_held_v1"
+# 다음 표 그리기에 한 번 실을 출납 결과 — 새 호기 이름 바꿈의 행 id 옮김(`moved`)과 묶음 같이
+# 쓰기가 끼운 형제 줄(`inserted`). 그리는 회차가 꺼낸다 — 그것으로만 목록 지문이 바뀐 회차에
+# 브라우저가 고름 · 기준 줄 · 스크롤을 지킨다(설계 규칙 UI-PRF-03).
+VIEW_CARRY_KEY: Final = "equipment_grid_view_carry_v1"
 # 저장 구획의 단추·결과 칸.
 SAVE_BUTTON_KEY: Final = "equipment_master_save_v1"
 # 낡은 세션 저장 거절 곁 「최신 rN 불러오기(변경 버림)」.
@@ -675,9 +679,7 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
     result = apply_ops(_grid_state(), ops, context)
     apply_master_grid_result(result)
     _store_loaded(result.state.loaded)
-    detail = _detail_id()
-    if detail is not None and detail in result.moved:
-        st.session_state[GRID_DETAIL_KEY] = result.moved[detail]
+    _follow_view(result)
     _follow_added(ops, result)
     _grid_result(ops, result)
     if result.frames_changed[1] and not _layout_neutral(ops):
@@ -686,6 +688,47 @@ def apply_outbox(context: GridContext, layout: LayoutMode) -> None:
         # 배치에 닿지 않는 편집 — 배치 편집 판정 메모를 새 세대로 옮긴다(다음 회차
         # `live_layout_role` 이 편집본 전체를 다시 재지 않게, 개편 명세 8장).
         carry_layout_memo(before)
+
+
+def _view_carry() -> tuple[dict[str, str], list[str]]:
+    """아직 그리지 않은 출납 결과의 (행 id 옮김, 끼운 줄) — 없거나 꼴이 다르면 빈 것."""
+    value = st.session_state.get(VIEW_CARRY_KEY)
+    if not isinstance(value, dict):
+        return {}, []
+    moved = value.get("moved")
+    inserted = value.get("inserted")
+    return (
+        {str(old): str(new) for old, new in moved.items()} if isinstance(moved, dict) else {},
+        [str(row_id) for row_id in inserted] if isinstance(inserted, list) else [],
+    )
+
+
+def take_view_carry() -> tuple[dict[str, str], list[str]]:
+    """표를 그리는 회차가 한 번 꺼낸다 — 다음 회차에는 다시 실리지 않는다."""
+    carried = _view_carry()
+    st.session_state.pop(VIEW_CARRY_KEY, None)
+    return carried
+
+
+def _follow_view(result: GridApplied) -> None:
+    """출납 결과의 행 id 옮김 · 끼운 형제 줄을 따른다 — 상세에 연 id 를 옮기고, 다음 표 그리기에 한
+    번 실을 몫(`VIEW_CARRY_KEY`)에 잇는다. 앞 몫이 아직 그려지지 않았으면 이어 붙인다(옮김
+    사슬 A → B · B → C 는 A → C, 제자리로 오면 뺀다). 받기 콜백의 출납과 「한 단계 되돌리기」
+    둘 다 지난다."""
+    detail = _detail_id()
+    if detail is not None and detail in result.moved:
+        st.session_state[GRID_DETAIL_KEY] = result.moved[detail]
+    if not (result.moved or result.inserted):
+        return
+    moved, inserted = _view_carry()
+    for old, new in result.moved.items():
+        source = next((key for key, value in moved.items() if value == old), old)
+        if source == new:
+            moved.pop(source, None)
+        else:
+            moved[source] = new
+    inserted = list(dict.fromkeys([*inserted, *result.inserted]))
+    st.session_state[VIEW_CARRY_KEY] = {"moved": moved, "inserted": inserted}
 
 
 def _grid_result(ops: Sequence[Mapping[str, Any]], result: GridApplied) -> None:
@@ -952,6 +995,7 @@ def _grid_undo(context: GridContext, layout: LayoutMode) -> None:
     result = apply_ops(_grid_state(), ops, context)
     apply_master_grid_result(result)
     _store_loaded(result.state.loaded)
+    _follow_view(result)
     _grid_result(ops, result)
     if result.frames_changed[1]:
         _stamp_if_layout_edited(ops, layout)
@@ -1268,6 +1312,7 @@ def _render_grid_section(
     repository: DuckDBEquipmentRepository,
     latest_snapshot: EquipmentSnapshot | None,
     acks: Mapping[str, Mapping[str, Any]],
+    carried: tuple[Mapping[str, str], Sequence[str]] = ({}, ()),
 ) -> None:
     loaded = prune_loaded(grid_loaded_ids(), view.index)
     missing = st.session_state.get(MISSING_KEY)
@@ -1298,6 +1343,8 @@ def _render_grid_section(
             view,
             loaded,
             ack=acks.get("grid"),
+            moved=carried[0],
+            inserted=carried[1],
             open_id=_detail_id(),
         ),
         on_outbox=partial(_on_outbox, context, layout),
@@ -1496,6 +1543,7 @@ def render_equipment_master_tab(
     acks = _acks(_applied())
     toasts = grid_toasts()
     reveal_head = bool(st.session_state.pop(SIDE_HEAD_KEY, False))
+    carried = take_view_carry()
     submit = None
     # 테두리 하나의 편집기 영역 안 두 칸 — 왼쪽 표, 오른쪽 칸(칸막이로 폭을 바꾸고 칸 머리 단추로
     # 접는다). 간격은 서식이 경계선 양쪽 여백으로 둔다. 배치 서식은 늘 같은 글 한 덩이다.
@@ -1510,6 +1558,7 @@ def render_equipment_master_tab(
                 repository=repository,
                 latest_snapshot=latest_snapshot,
                 acks=acks,
+                carried=carried,
             )
         else:
             stale = (basis is not None and basis.stale) or session.unmerged
