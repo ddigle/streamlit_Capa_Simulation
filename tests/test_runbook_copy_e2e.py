@@ -199,6 +199,7 @@ def _database_opening_lines() -> list[str]:
         f"{prefix}inspect_wf_division.py",
         f'{prefix}inspect_wf_division.py --database "C:/Users/someone/e2e_copy/1/data/x.duckdb"',
         f"{prefix}inspect_wf_division.py --output C:/Users/someone/wf.md",
+        f"{prefix}inspect_db_counts.py --output C:/Users/someone/db_counts.md",
         'uv run --no-sync python -c "import duckdb; duckdb.connect(p, read_only=True)"',
     ]
     return [*lines, *(_as_real_folder(line) for line in lines), *walked_back]

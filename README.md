@@ -317,7 +317,7 @@ New-Item -ItemType Directory review -Force
 
 - `.claude/settings.json` 은 사내 에이전트가 `review/` 밖을 고치지 못하게 막고, 실화면 그림 파일(png · jpg 등)을 `Read` 로 열지
   못하게 막습니다. `review/` 는 리뷰 문서 자리입니다.
-- 사내 DB 를 여는 스크립트(실데이터 확인 `inspect_real_data_checks.py` · `inspect_wf_division.py` · 사본 점검 세 줄 — 런북 6-3 a · b 의
+- 사내 DB 를 여는 스크립트(실데이터 확인 `inspect_real_data_checks.py` · `inspect_wf_division.py` · 7-8 개수 세기 `inspect_db_counts.py` · 사본 점검 세 줄 — 런북 6-3 a · b 의
   `inspect_revision_calculations.py` · `benchmark_home.py` · `benchmark_upeh_assumption.py` · 화면 확인 `check_deploy_screens.py` · 버킷 명령
   `sync_object_storage.py`)는 템플릿에 allow 가 없고, 런북 꼴(`uv run --no-sync python scripts/…`)의 줄은 deny 로 막습니다(2026-11-11 — 사내 DB 를
   Claude 가 읽지 않는다. 사용자가 고정한 auto 모드는 allow 가 없어도 묻지 않고 통과시킬 수 있어서입니다). 사용자가 Claude 밖의 별도 PowerShell
@@ -633,7 +633,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 
 ## 보조 스크립트
 
-모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(운영 DB 와 같은 파일 · 저장소 `data/` 아래 · git 저장소 안)를 거절합니다 — 사본은 저장소 밖에 둡니다.
+모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)와 7-8 의 `inspect_db_counts.py` 는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(운영 DB 와 같은 파일 · 저장소 `data/` 아래 · git 저장소 안)를 거절합니다 — 사본은 저장소 밖에 둡니다.
 
 | 스크립트 | 하는 일 |
 |---|---|
@@ -653,6 +653,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | **사내 실데이터 확인(읽기 전용 — 값은 찍지 않고 개수만)** | |
 | `inspect_real_data_checks.py` | 기존 결과 대조 분포·원천 `RQ_REQB` 소요기준·설비 DB(공식 설비 시나리오 — 8-4 에 `0027` 이관 확인 줄·`0031` 가정 배치 차이·옛 코드 흔적)·BigDataQuery(런북은 이 블록을 부르지 않는다 — 꼭 필요하면 사외가 사용자에게 먼저 요청하고 사용자가 직접 돌린다)·HOME 월 축에서 빠지는 계획 달 수·「지금대로」 결정의 유병률(센서스)·기준 정보 편집 표 크기(큰 표 상한 대비 — 8-11)·남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전의 꼴(원천 형제 · 부하 · 분포 — 8-12)을 재고, 끝에 리뷰 압축본에 옮길 「전송용 요약」(짧은 키와 수 + 확인 코드)을 찍는다(런북 8장 — 사내는 사용자가 별도 창에서 돌린다). `--check-summary <파일>` 은 DB 없이 옮겨 적은 압축본을 다시 센다 |
 | `inspect_revision_calculations.py` | 모든 리비전의 Capa → 소요대수 → 확보율을 다시 돌린다(런북 6-3 a, `--database` 사본 필수 — 운영 DB 자리는 거절). 대당 Capa 가 기준정보 연결에서 멈추면 그 꼴(빈 값 · 연결값 없음 · 연결 키 중복 …)과 개수만 적는다 |
+| `inspect_db_counts.py` | 런북 7-8 의 개수 세기 — 두 DB 의 마이그레이션 번호 · 표마다 행 수, Space 모듈 묶음(모듈 수 · 상자 · 바둑판), 두 DB 파일 크기 · 블록 · gzip 크기, 생산 계획 그리드 두 표(PKG PLAN · 수율)의 줄 · 달 · 칸 수와 본문 바이트를 한 줄씩 찍는다(`--only`, `--database` · `--equipment-database` 로 사본도, `--output` 으로 같은 출력을 UTF-8 파일에도 — 사내는 사용자가 별도 창에서 돌린다) |
 | `inspect_wf_division.py` | 기준정보·리비전의 `WF 구분` 값 분포를 센다(`--database` 로 사본도, `--output` 으로 같은 출력을 UTF-8 파일에도 — 사내는 사용자가 별도 창에서 돌린다) |
 | `inspect_top_remigration.py` | `Top` 재이관 마이그레이션의 전제를 잰다 |
 | `audit_top_remigration.py` | `0026` 적용 뒤 이관 결과의 오염·누락을 점검한다 |

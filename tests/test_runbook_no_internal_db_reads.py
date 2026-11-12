@@ -38,6 +38,7 @@ DATABASE_SCRIPTS = (
     "benchmark_upeh_assumption.py",
     "check_deploy_screens.py",
     "inspect_wf_division.py",
+    "inspect_db_counts.py",
     "sync_object_storage.py",
 )
 OPENS_A_DATABASE = (*DATABASE_SCRIPTS, "duckdb.connect", "import duckdb")
@@ -313,6 +314,8 @@ def test_the_settings_template_denies_every_runbook_line_that_opens_a_database()
         f"{prefix}inspect_wf_division.py --output C:/Users/someone/wf.md",
         f'{prefix}inspect_wf_division.py --database "C:/Users/someone/e2e_copy/1/data/x.duckdb"',
         f"{prefix}check_deploy_screens.py --items alert_popup --playwright-dir C:/pw",
+        f"{prefix}inspect_db_counts.py --output C:/Users/someone/db_counts.md",
+        f"{prefix}inspect_db_counts.py",
     ]
     names = {name for name in DATABASE_SCRIPTS if any(name in line for line in lines)}
 
