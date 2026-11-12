@@ -2142,14 +2142,14 @@ def test_the_second_remaining_1112_board_answers_are_recorded() -> None:
     선택지 원문이다. 코드를 고친 셋(5 · 7 · 12)은 커밋을 들고 나머지 열하나는 커밋이 없다. 권장과
     다른 답은 4 owned-exit 하나이고, 셋은 사외 권장 없이 보드 의견을 따랐다. 12 는 6-21
     deny-data-read 줄에 「답 밖 — 구현이 정함」 표시를 달았고, 뒤집은 옛 결정 둘(6-21 m1-when ·
-    word-downtime)은 7-1 에 있다. 6-22 줄은 그때 기록 그대로다(앞 시험이 6-23 앞에서 끊어 본다)."""
+    word-downtime)은 7-1 에 있다. 6-22 줄은 그때 기록 그대로다(앞 시험이 6-23 앞에서 끊어 본다).
+    6-24 는 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.23" in document.split("\n## 1. ")[0]
     assert "- **v1.23 — 2026-11-13.**" in _chapter(document, 8)
     assert "6-23 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-23. ") :]
+    board = section[section.index("\n### 6-23. ") : section.index("\n### 6-24. ")]
     assert REMAINING_1112B_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -2186,3 +2186,94 @@ def test_the_second_remaining_1112_board_answers_are_recorded() -> None:
     ):
         assert phrase in reversed_, phrase
     assert "4 owned-exit (가) 는 권장 (나) 와 다른 답" in _chapter(document, 8)
+
+
+# 2026-11-13 아침 「Space 구현 확인」 보드(6-24)의 답 — 카드 열일곱(① 발자국 저장 계약
+# 하나 · ② 시안과 달라진 화면 열다섯 · ③ 알림 하나). 고른 글은 선택지 원문(알림 카드는
+# 메모)이고, 선택지가 있는 열여섯 가운데 열넷은 카드 권장 (가), 둘(1 · 2-10)은 고양이 발
+# 모양만 바꾸라는 권장과 다른 (나) 다. 커밋은 그 고양이 그림 고침 하나를 두 줄이 들고,
+# 나머지 열다섯은 6-22 구현을 그대로 받아 커밋이 없다. 줄 id 는 보드 카드 id 이고 차례는
+# 보드 차례다.
+CONFIRM_1113_ADDRESS = "https://claude.ai/artifact/FdycLjSu3wtuf4sCEFHrEK"
+CONFIRM_1113_ANSWERS = {
+    "foot-contract": "(나) 이름이나 꼴을 바꾼다 — 메모에 적기",
+    "d-arrival-bundle": "(가) 이대로 싣는다",
+    "d-canvas": "(가) 이대로 싣는다",
+    "d-save-only": "(가) 이대로 싣는다",
+    "d-paths": "(가) 이대로 싣는다",
+    "d-reduced-motion": "(가) 이대로 싣는다",
+    "d-sheet-cols": "(가) 이대로 싣는다",
+    "d-sheet-check": "(가) 이대로 싣는다",
+    "d-refuse-alert": "(가) 이대로 싣는다",
+    "d-foot-line": "(가) 이대로 싣는다",
+    "d-foot-shapes": "(나) 고쳐 달라 — 메모에 적기",
+    "d-zone-tag": "(가) 이대로 싣는다",
+    "d-order-step": "(가) 이대로 싣는다",
+    "d-new-unit-fill": "(가) 이대로 싣는다",
+    "d-small-five": "(가) 다섯 다 그대로 싣는다",
+    "d-multipick": "(가) 이대로 싣는다 — 고름을 두고 칸을 연다",
+    "later-stack": "메모 「권장대로 진행해」",
+}
+# 고른 선택지에 단 사용자 메모 원문. 알림 카드(3)는 고른 글 자리에 메모가 선다.
+CONFIRM_1113_MEMOS = {
+    "foot-contract": (
+        "다른건 다 좋은데 고양이 모양은 고양이 발바닥 젤리같은 모양으로 좀더 귀엽게 바꿔줘. 잘"
+        " 모르겠으면 인터넷에서 검색되는 모양으로 해보고 다시 시안 제안해줘"
+    ),
+    "d-foot-shapes": "고양이 모양만 바꾸는것으로 1번문항에 답변함",
+}
+CONFIRM_1113_OTHERS = ("foot-contract", "d-foot-shapes")
+# 고양이 그림 고침 커밋 — 두 (나) 줄이 함께 든다.
+CONFIRM_1113_CAT_COMMIT = "0000000"
+CONFIRM_1113_COMMITS = {key: (CONFIRM_1113_CAT_COMMIT,) for key in CONFIRM_1113_OTHERS}
+
+
+def test_the_space_confirm_1113_board_answers_are_recorded() -> None:
+    """v1.24 — 6-24 는 「Space 구현 확인」 보드 카드 열일곱이 보드 차례대로 한 줄씩이고
+    고른 글은 선택지 원문(알림 카드는 메모)이다. 권장과 다른 답은 둘(1 · 2-10 — 고양이 발
+    모양만 바꿈)이고 둘 다 메모 원문과 고양이 그림 고침 커밋을 든다. 나머지 열다섯은 커밋이
+    없다. 저장 키 `cat` 은 그대로이고 바꾼 그림은 배포 전에 다시 여쭙는다. 6-22 · 6-23 줄은
+    그때 기록 그대로다(앞 시험이 6-24 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.24" in document.split("\n## 1. ")[0]
+    assert "- **v1.24 — 2026-11-13.**" in _chapter(document, 8)
+    assert "6-24 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-24. ") :]
+    assert CONFIRM_1113_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-13) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(CONFIRM_1113_ANSWERS)
+    assert len(found) == 17
+    assert found == CONFIRM_1113_ANSWERS
+    assert sum(answer.startswith("(가) ") for answer in found.values()) == 14
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert bool(commit.search(line)) is (key in CONFIRM_1113_COMMITS), key
+    for key, shas in CONFIRM_1113_COMMITS.items():
+        for sha in shas:
+            assert f"`{sha}`" in by_id[key], (key, sha)
+    others = [key for key, line in by_id.items() if "권장과 다른 답" in line]
+    assert others == list(CONFIRM_1113_OTHERS)
+    memo = [key for key, line in by_id.items() if "— 메모 「" in line]
+    assert memo == list(CONFIRM_1113_MEMOS)
+    for key, note in CONFIRM_1113_MEMOS.items():
+        assert f"메모 「{note}」" in by_id[key], key
+    assert "`cat`" in by_id["foot-contract"]
+    assert "`docs/TODO.md` 2장 「뒤로 미룬 것 — order 2단」" in by_id["later-stack"]
+    for phrase in ("Ctrl+Z", "「다음 배포로」", "`202611131000`"):
+        assert phrase in board, phrase
+
+    assert "1 foot-contract (나) · 2-10 d-foot-shapes (나) 는 권장과 다른 답" in _chapter(
+        document, 8
+    )
