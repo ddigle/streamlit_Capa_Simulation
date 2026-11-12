@@ -5,7 +5,8 @@
 화면이 그리는 **같은 행 모델**(`process_capa_canvas.build_process_capa_rows`)을 읽어 칸 하나하나를
 엑셀 칸으로 옮긴다 — 판정 · 미달 칠 · 띠를 다시 셈하지 않는다(화면과 갈리면 안 된다). 그래서 켜진
 구획(① ~ ⑤ 칩) · 「제품별 소요대수」 펼침과 분류 · 조회기간의 달 · UPEH 가정 세 줄 · HOME 표시
-확보율 줄 · 「더 보기」 30줄 상한이 화면 그대로 선다.
+확보율 줄 · 「더 보기」 30줄 상한 · ③ 비가동 기준 · ④ 보기(전체 · 단축 필요만)가 화면 그대로
+선다 — 두 고르기 값은 머리 값 줄에도 적힌다(2026-11-12 사용자 답 k-c6).
 
 - **서식** — 색은 `design/tokens.py` 의 밝은 테마 토큰이다(엑셀은 흰 바탕 — `theme.pinned_mode`).
   줄 면(① 공급 파랑 · 소요 베이지 · 제품 줄무늬 · 구획 제목 바탕) · 칸 칠(판정 3색 · 목표 미달) ·
@@ -14,12 +15,14 @@
   흐린 글자를 옮긴다. 지금 보는 달 테두리 · 오늘 점선은 화면 조작 표지라 옮기지 않는다.
 - **숫자는 숫자 셀** — 칸 글(`one` · `percent` · `signed_int` · `signed_one` · 기준 % 라벨)을 그
   글이 적는 값과 같은 꼴의 숫자 꼴로 되읽는다(`screen_number`). 엑셀이 보이는 글은 화면 글과
-  같다(값은 화면이 반올림한 값이다). 꼴을 모르는 글(「기준✕·일정✕」 · 「—」 · 「기한 지남」)은
-  글자 셀이다.
-- **두 줄 칸**(칸 둘째 줄 `Cell.sub`)은 숫자 셀 하나에 두 값을 못 담아 바로 아래에 「└ 둘째
-  줄」 딸린 줄을 두고 같은 칠을 잇는다.
+  같다(값은 화면이 반올림한 값이다). 꼴을 모르는 글(빈 칸 표지 「—」 등)은 글자 셀이다.
+- **두 줄 칸**(엔진 칸 둘째 줄 `Cell.sub`)은 숫자 셀 하나에 두 값을 못 담아 바로 아래에 「└ 둘째
+  줄」 딸린 줄을 두고 같은 칠을 잇는다. 공정 Capa 상세의 다섯 구획에는 두 줄 칸이 없다(②
+  「단축 후」 · 「확보율 영향」 둘째 줄을 걷었다 — k-c2) — 같은 엔진을 쓰는 시트가 두 줄 칸을 낼
+  때의 길이다.
 - **④ · ⑤** 는 그림 대신 글이다(`process_capa_canvas.track_texts` — 그림과 같은 자리) — 호기 줄
-  이름 칸 옆 「세부」 열에 화면 둘째 줄(기존 → 단축 날짜 등)을 둔다.
+  이름 칸 옆 「세부」 열에 화면 둘째 줄(기존 → 단축 날짜 등)을 둔다. ④ 첫 줄 「단축 후 확보율」 은
+  값 줄이고, ⑤ 의 「└ 모듈명」 줄은 화면처럼 한 칸 들인다.
 - **둘째 시트**는 「이 공정 단축 일정 CSV」 와 같은 표(설비 일정이 설 때만)다.
 
 행 모델 → 시트 한 장(`month_rows_sheet`)은 같은 월 시트 엔진(`month_sheet_canvas` 의 `Row` ·
@@ -92,9 +95,8 @@ MONTH_WIDTH: Final = 13.0
 VALUE_SIZE: Final = 10.0
 SMALL_SIZE: Final = 9.0
 TITLE_SIZE: Final = 12.0
-# 두 줄 칸의 딸린 줄 이름 — 화면 풍선이 그 둘째 줄을 부르는 말이다.
-SUB_ROW_LABELS: Final[Mapping[str, str]] = {}
-SUB_ROW_FALLBACK: Final = "둘째 줄"
+# 두 줄 칸의 딸린 줄 이름.
+SUB_ROW_LABEL: Final = "둘째 줄"
 # 둘째 시트 열 너비의 끝(엑셀 단위).
 UNITS_MIN_WIDTH: Final = 6.0
 UNITS_MAX_WIDTH: Final = 40.0
@@ -290,10 +292,9 @@ def _body_rows(
     has_sub = row.kind == KIND_VALUE and any(cell.sub for cell in row.cells.values())
     sub: list[XlsxCell | None] = []
     if has_sub:
-        sub_label = SUB_ROW_LABELS.get(row.row_id, SUB_ROW_FALLBACK)
         sub = [
             XlsxCell(
-                f"└ {sub_label}",
+                f"└ {SUB_ROW_LABEL}",
                 Style(
                     color=_hex(tokens.TEXT_MUTED),
                     size=SMALL_SIZE,

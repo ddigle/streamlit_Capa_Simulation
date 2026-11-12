@@ -23,6 +23,7 @@ from test_process_capa_canvas import (
     _assumed_summary,
     _canvas,
     _dynamic,
+    _module_arrows,
     _products,
     _row_fills,
     _row_texts,
@@ -35,8 +36,11 @@ from capa_simulation.components.process_capa_canvas import (
     ROW_DYNAMIC_RATE,
     ROW_EFFECT_BALANCE,
     ROW_RATE,
+    ROW_UNITS_AFTER_RATE,
     SECTION_DOWNTIME,
     SECTION_UNITS,
+    UNITS_AFTER_RATE_LABEL,
+    UNITS_SHORTENING,
     AssumptionCanvasInput,
 )
 from capa_simulation.components.process_capa_workbook import (
@@ -217,6 +221,35 @@ def test_the_schedule_sections_carry_no_two_line_cells() -> None:
     labels = [str(value) for value in _detail(_request()).column(0) if value is not None]
     assert not any(label.startswith("└ 단축 후") or label == "└ 확보율 영향" for label in labels)
     assert "비가동대수" in labels and "실가용대수" in labels
+
+
+def test_the_after_rate_row_and_module_rows_follow_the_screen() -> None:
+    """④ 「단축 후 확보율」 은 화면 칸 글 그대로의 % 숫자 셀과 판정 칠이고, ⑤ 모듈 묶음은 Main 줄과
+    「└ 모듈명」 줄이다 — 단축 필요만이면 ④ 호기 줄도 그 줄만이다(2026-11-12 사용자 답 q6 · q6b ·
+    q7 · k-c6)."""
+    dynamic = _dynamic(arrows=_module_arrows())
+    sheet = _detail(_request(dynamic=dynamic))
+    canvas = _canvas(dynamic=dynamic)
+    row = sheet.find_row(UNITS_AFTER_RATE_LABEL)
+    texts = _row_texts(canvas, ROW_UNITS_AFTER_RATE)
+    fills = _row_fills(canvas, ROW_UNITS_AFTER_RATE)
+
+    assert texts
+    for index, (text, _) in texts.items():
+        cell = sheet.cells[(row, 2 + index)]
+        written = screen_number(re.sub(r"</?b>", "", text))
+        assert written is not None and cell.numeric and cell.value == written[0]
+        assert cell.number_format.endswith("%")
+        assert cell.fill == "FF" + fills[index].lstrip("#").upper()
+    labels = [str(value) for value in sheet.column(0) if value is not None]
+    assert labels.index("EQ-31") + 1 == labels.index("└ EQ-31A")
+    merged = sheet.find_row("EQ-31")
+    assert str(sheet.cells[(merged, 2 + MONTHS.index(202702))].value).startswith("공사")
+
+    only = _detail(_request(dynamic=_dynamic(units_view=UNITS_SHORTENING)))
+    only_labels = [str(value) for value in only.column(0) if value is not None]
+    assert UNITS_AFTER_RATE_LABEL in only_labels
+    assert "EQ-07" in labels and "EQ-07" not in only_labels
 
 
 def test_folded_sections_and_the_product_toggle_follow_the_screen() -> None:

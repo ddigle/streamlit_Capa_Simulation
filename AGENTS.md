@@ -4652,7 +4652,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   하나하나 엑셀 칸으로 옮긴다(행 모델 → 시트 한 장 `month_rows_sheet` 는 같은 월 시트 엔진을 쓰는 Static 대비 일정 시트 엑셀도 쓴다 —
   머리 칸이 비면 엔진처럼 달 이름)(판정 · 칠 · 띠를 다시 셈하지 않는다). 색은 밝은 테마 토큰(`theme.pinned_mode`), 부족 달 띠는
   `tokens.opaque_over` 로 그 줄 면 위에 섞은 불투명 색, 숫자는 칸 글을 같은 꼴의 숫자 꼴로 되읽은 숫자 셀(`screen_number` —
-  보이는 글이 화면과 같다), 두 줄 칸은 딸린 줄(「└ 단축 후」 등), ③ · ④ 는 글(`track_texts`), 둘째 시트는 호기 CSV 표다.
+  보이는 글이 화면과 같다), 두 줄 칸(엔진 `Cell.sub` — 공정 Capa 상세 다섯 구획에는 없다)은 딸린 줄 「└ 둘째 줄」, ④ ·
+  ⑤ 는 글(`track_texts` — ⑤ 「└ 모듈명」 줄은 한 칸 들임), 둘째 시트는 호기 CSV 표다(④ 보기로 거르지 않는다).
   Streamlit 을 import 하지 않는다(`tests/test_process_capa_workbook.py` 가 그림 칸 글 · 색과 견준다).
 - `src/capa_simulation/components/process_capa_view.py` — `공정 Capa 상세` 의 「본문 프래그먼트」
   (`render_process_detail_view`)와 KPI·정리 줄. `ProcessDetailView` 하나를 받아 지금 보는 달에 닿는 것만 그린다. 표 도구 줄
@@ -4670,7 +4671,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     빼고 머리 값 줄을 더한 것이라 달 칸 누름 · 다른 위젯 회차는 통을 다시 만들지 않는다(콜러블 지연 생성은 쓰지 않는다 — 9장).
     같은 조건에서 시트 꼴(칸 · 숫자 꼴 · 머리 값)을 바꾸면 `SHEET_SCHEMA_VERSION` 을 올린다.
     재료(`sheet_request`)는 그림과 같은 인자(구획 · 펼침과 분류 · 제품 행 표 · 「더 보기」 · UPEH 가정 · 비가동 기준 · ④
-    보기)다.
+    보기)다. 머리 값 줄의 「구획」 은 시트에 선 구획만, 「비가동 기준」 · 「④ 단축」 은 ③ · ④ 가 펼쳐 섰을 때만이다(k-c6).
   - 그림은 세션 칸(`CANVAS_MEMO_KEY`)에 기억한다(새 `st.cache_data` 없음). 근거 카드 식(①~④ 와 원인 줄)은 검산되어야
     하고(어긋나면 `≈` — `formula_text.equals_mark`, 등호 없는 ① 원수요 부하량 ÷ 실효 대당 Capa 줄은 카드의 소요와 어긋날
     때만 줄 앞에)

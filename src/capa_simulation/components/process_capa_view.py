@@ -283,6 +283,9 @@ BASIS_CAPTION: Final = "비가동 기준"
 UNITS_VIEW_KEY: Final = "process_detail_units_view"
 UNITS_VIEW_LABELS: Final[Mapping[str, str]] = {UNITS_ALL: "전체", UNITS_SHORTENING: "단축 필요만"}
 UNITS_VIEW_CAPTION: Final = "④"
+# 시트 엑셀 머리 값 줄의 두 고르기 이름.
+BASIS_HEADING: Final = "비가동 기준"
+UNITS_VIEW_HEADING: Final = "④ 단축"
 # 정리 줄의 필요 단축 일정 화면 링크.
 SHORTENING_TAB_LINK_KEY: Final = "process_detail_open_shortening_tab"
 # 부족 원인별 다음 화면 단추 — 근거 패널(그 달)이 그린다.
@@ -755,16 +758,21 @@ def sheet_request(
 ) -> WorkbookRequest:
     """시트 엑셀 재료 — 이 회차의 화면 상태 그대로(켜진 구획 · 펼친 제품 행과 분류 · 조회기간의 달 ·
     UPEH 가정 · HOME 표시 확보율 · 「더 보기」 · 비가동 기준 · ④ 보기). 머리 값은 페이지 값 뒤에
-    구획 · 펼침 · 단축 목표를 덧붙인다 — 「구획」 은 시트에 실제로 선 구획만이다(설비 일정이 서지
-    않으면 ② ~ ⑤ 칩이 켜져 있어도 ① 뿐). 그림 캔버스와 같은 인자로 같은 행 모델을 세운다
+    구획 · 펼침 · 두 고르기 · 단축 목표를 덧붙인다 — 「구획」 은 시트에 실제로 선 구획만이고(설비
+    일정이 서지 않으면 ② ~ ⑤ 칩이 켜져 있어도 ① 뿐), 「비가동 기준」 · 「④ 단축」 은 그 구획이
+    시트에 펼쳐 섰을 때만이다. 그림 캔버스와 같은 인자로 같은 행 모델을 세운다
     (`remembered_canvas`)."""
     heading = list(view.sheet_heading)
-    drawn = SECTION_IDS if view.dynamic is not None else (SECTION_SUMMARY,)
+    drawn = _drawn_sections(view)
     opened = [SECTION_LABELS[section] for section in drawn if section not in collapsed]
     heading.append(("구획", " · ".join(opened) if opened else "모두 접힘"))
     if expanded:
         filtered = f" · 제품 거르기 {len(view.products)}개" if view.products else ""
         heading.append(("제품별 소요대수", f"펼침 · 분류 {split}{filtered}"))
+    if SECTION_EFFECT in _opened_ids(drawn, collapsed):
+        heading.append((BASIS_HEADING, BASIS_LABELS.get(basis, basis)))
+    if SECTION_UNITS in _opened_ids(drawn, collapsed):
+        heading.append((UNITS_VIEW_HEADING, UNITS_VIEW_LABELS.get(units_view, units_view)))
     if view.dynamic is not None:
         heading.append(("단축 목표", target_text(view.dynamic.canvas.target, view.months)))
     dynamic = (
@@ -799,6 +807,20 @@ def sheet_request(
         ),
         units_export=view.units_export if view.dynamic is not None else None,
     )
+
+
+def _drawn_sections(view: ProcessDetailView) -> tuple[str, ...]:
+    """시트에 서는 구획 — 설비 일정이 없으면 ① 뿐, 호기 줄이 없는 공정(기존보유만)은 ① ~ ③."""
+    if view.dynamic is None:
+        return (SECTION_SUMMARY,)
+    if not view.dynamic.canvas.has_units:
+        return (SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_EFFECT)
+    return SECTION_IDS
+
+
+def _opened_ids(drawn: Sequence[str], collapsed: Collection[str]) -> tuple[str, ...]:
+    """선 구획 가운데 펼친 것(차례 그대로)."""
+    return tuple(section for section in drawn if section not in collapsed)
 
 
 def seed_sections() -> None:

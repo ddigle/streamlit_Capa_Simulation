@@ -34,6 +34,7 @@ from capa_simulation.components.process_capa_canvas import (
     BASIS_SCHEDULE,
     BASIS_STATIC,
     SECTION_DOWNTIME,
+    SECTION_EFFECT,
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
@@ -776,7 +777,13 @@ def test_the_sheet_key_follows_the_heading_and_the_drawn_conditions() -> None:
     )
 
 
-def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
+def _sheet_heading(
+    view: ProcessDetailView,
+    collapsed: frozenset[str],
+    *,
+    basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
+) -> dict[str, str]:
     heading = sheet_request(
         view,
         expanded=False,
@@ -785,8 +792,14 @@ def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
         product_demand=None,
         show_all_units=False,
         show_all_arrows=False,
+        basis=basis,
+        units_view=units_view,
     ).heading
-    return dict(heading)["구획"]
+    return dict(heading)
+
+
+def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
+    return _sheet_heading(view, collapsed)["구획"]
 
 
 def test_the_sheet_sections_line_names_only_the_sections_the_sheet_draws() -> None:
@@ -803,6 +816,33 @@ def test_the_sheet_sections_line_names_only_the_sections_the_sheet_draws() -> No
         _sheet_sections(_view(dynamic=_dynamic_view()), frozenset({SECTION_UNITS}))
         == "① Static · ② 일정 가용 · ③ 비가동 · ⑤ 비가동 일정"
     )
+    # 호기 줄이 없는 공정(기존보유만)은 ④ · ⑤ 가 서지 않는다.
+    baseline_only = replace(
+        _dynamic_view(), canvas=replace(_dynamic_view().canvas, has_units=False)
+    )
+    assert (
+        _sheet_sections(_view(dynamic=baseline_only), nothing)
+        == "① Static · ② 일정 가용 · ③ 비가동"
+    )
+
+
+def test_the_sheet_heading_writes_the_two_pickers_only_for_drawn_sections() -> None:
+    """시트 머리 값 「비가동 기준」 · 「④ 단축」 은 화면 고르기 값 그대로이고, 그 구획(③ · ④)이
+    시트에 펼쳐 섰을 때만 선다(2026-11-12 사용자 답 k-c6 — 화면과 같게)."""
+    nothing: frozenset[str] = frozenset()
+    view = _view(dynamic=_dynamic_view())
+
+    heading = _sheet_heading(view, nothing)
+    assert heading["비가동 기준"] == "Static" and heading["④ 단축"] == "전체"
+    chosen = _sheet_heading(view, nothing, basis=BASIS_SCHEDULE, units_view=UNITS_SHORTENING)
+    assert chosen["비가동 기준"] == "일정" and chosen["④ 단축"] == "단축 필요만"
+    folded = _sheet_heading(view, frozenset({SECTION_EFFECT, SECTION_UNITS}))
+    assert "비가동 기준" not in folded and "④ 단축" not in folded
+    assert "비가동 기준" not in _sheet_heading(_view(dynamic=None), nothing)
+    baseline_only = replace(
+        _dynamic_view(), canvas=replace(_dynamic_view().canvas, has_units=False)
+    )
+    assert "④ 단축" not in _sheet_heading(_view(dynamic=baseline_only), nothing)
 
 
 def test_the_sheet_follows_the_units_view_of_the_screen() -> None:

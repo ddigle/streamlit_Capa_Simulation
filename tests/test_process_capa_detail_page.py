@@ -1116,6 +1116,8 @@ def test_the_sheet_xlsx_follows_the_screen_state(
     assert " · r" in heading["시나리오"] and heading["설비 시나리오"] != "—"
     assert heading["설비 일정"].startswith("설비 일정 참고 · Cut-off 10일")
     assert heading["구획"] == "① Static · ② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정"
+    # 두 고르기는 화면 값 그대로다(2026-11-12 사용자 답 k-c6).
+    assert heading["비가동 기준"] == "Static" and heading["④ 단축"] == "전체"
     assert heading["단축 목표"].startswith("확보 기준(월별)")
     header = detail.find_row(f"구분 · {DYNAMIC_PROCESS}")
     assert detail.row(header)[2:] == [month_label(month) for month in months]
@@ -1146,6 +1148,7 @@ def test_the_sheet_xlsx_follows_the_screen_state(
     heading = _heading(detail)
     assert heading["구획"] == "① Static · ② 일정 가용"
     assert heading["제품별 소요대수"].startswith("펼침 · 분류 ")
+    assert "비가동 기준" not in heading and "④ 단축" not in heading
     labels = [str(value) for value in detail.column(0) if value is not None]
     assert "③ 비가동 ▸" in labels and "④ 단축 ▸" in labels and "⑤ 비가동 일정 ▸" in labels
     assert "DA-01" not in labels
@@ -1155,8 +1158,8 @@ def test_the_sheet_xlsx_follows_the_screen_state(
 def test_the_units_view_picker_follows_the_units_section(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
-    """④ 보기 고르기는 ④ 가 펼쳐진 동안만 서고, 고른 값은 이 세션 동안 남는다(2026-11-12 사용자
-    답 q6 메모)."""
+    """④ 보기 고르기는 ④ 가 펼쳐진 동안만 서고, 고른 값은 이 세션 동안 남아 시트 엑셀 머리 값도
+    따른다(2026-11-12 사용자 답 q6 메모 · k-c6)."""
     app = _dynamic_app(dynamic_databases)
 
     def pickers() -> list[str]:
@@ -1168,6 +1171,7 @@ def test_the_units_view_picker_follows_the_units_section(
     assert pickers() == [UNITS_VIEW_KEY]
     app.segmented_control(key=UNITS_VIEW_KEY).set_value(UNITS_SHORTENING)
     _ok(app.run())
+    assert _heading(_sheet(app)[1][DETAIL_SHEET])["④ 단축"] == "단축 필요만"
     assert "단축 후 확보율" in _label_texts(app)
 
     app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
