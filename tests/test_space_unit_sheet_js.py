@@ -655,3 +655,181 @@ def test_a_list_row_of_a_module_kept_out_of_the_drawer_goes_to_its_standing_bund
     # 「범위에 맞춰 n등분」 · 칩 놓기 같은 편집 뒤에는 그 한 줄이 틀릴 수 있어 지운다.
     undo = JS[JS.index("  function pushUndo(ops) {") : JS.index("  const commit = (entries)")]
     assert "if (sheetNote) setSheetNote('')" in undo
+
+
+# --------------------------------------------- 창 칸 고치기(2026-11-12 시안 보드 답 5-4 ~ 5-6)
+
+_EDIT = re.compile(r"// <sheet-edit>\n(?P<body>.*?)\n\s*// </sheet-edit>", re.S)
+_EDIT_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const edit = input.edit
+const asMap = (pairs) =>
+  new Map(pairs.map(([id, col, text]) => [sheetEditKey(id, col), { id, col, text }]))
+const listed = (cells) => [...cells.values()].map((cell) => [cell.id, cell.col, cell.text])
+const out = {}
+out.locks = input.locks.map(([id, col]) => sheetEditLock(edit, id, col))
+out.originals = input.locks.map(([id, col]) => sheetEditOriginal(edit, id, col))
+out.choices = input.choiceCols.map((col) => sheetEditChoices(edit, col))
+let cells = new Map()
+out.puts = []
+for (const [id, col, text] of input.puts) {
+  const put = sheetEditPut(cells, edit, id, col, text)
+  const before = put.before ? put.before.text : null
+  out.puts.push({ changed: put.changed, before, cells: listed(put.cells) })
+  cells = put.cells
+}
+const held = asMap(input.held)
+out.payload = sheetEditPayload(held)
+const back = sheetEditRestore(held, sheetEditKey('EQ-01', '반입일정'), null)
+out.restored = listed(back)
+const verdict = sheetEditVerdict(input.verdict)
+out.blocked = sheetEditBlocked(held, verdict)
+out.marks = input.marks.map(
+  ([id, col, shown]) => sheetEditMark(edit, held, verdict, id, col, shown)
+)
+process.stdout.write(JSON.stringify(out))
+"""
+
+
+def _edit_run(payload: dict[str, Any]) -> dict[str, Any]:
+    body = _EDIT.search(JS)
+    assert body, "editor.js 에 // <sheet-edit> 구획이 없습니다"
+    return _node(body.group("body") + _EDIT_RUNNER, payload)
+
+
+_EDIT_DATA: dict[str, Any] = {
+    "cols": ["공정구분", "반입일정", "반입상태"],
+    "kinds": {
+        "공정구분": {"kind": "text"},
+        "반입일정": {"kind": "date"},
+        "반입상태": {"kind": "choice", "options": ["계획", "확정"], "blank": True},
+    },
+    "fixed": {"설비명": "이름 칸으로", "동": "보내기로"},
+    "locks": {"stale": ["반입일정"]},
+    "reasons": {"stale": "낡은 세션"},
+    "missing": "한 줄로 못 찾음",
+    "rows": {
+        "EQ-01": {"t": ["PKG", "2026-08-04", ""], "k": [], "g": None},
+        "EQ-02": {"t": ["", "2026-08-11", "계획"], "k": ["stale"], "g": None},
+        "M-A": {"t": ["TEST", "", ""], "k": [], "g": "M"},
+    },
+    "shared": ["공정구분"],
+    "groups": {"M": 3},
+}
+
+
+def test_the_window_edit_locks_choices_and_keeps_only_cells_that_differ() -> None:
+    """잠금은 창에서만 잠그는 칸 → 편집본에 없는 줄 → 표와 같은 갈래 차례다. 원래 글과 같은 글을
+    확정하면 고친 칸에서 빠진다(되돌린 것). 고르기 칸은 목록 밖 값을 받지 않는다."""
+    result = _edit_run(
+        {
+            "edit": _EDIT_DATA,
+            "locks": [
+                ["EQ-01", "설비명"],
+                ["EQ-09", "공정구분"],
+                ["EQ-02", "반입일정"],
+                ["EQ-02", "공정구분"],
+                ["EQ-01", "반입일정"],
+            ],
+            "choiceCols": ["반입상태", "공정구분"],
+            "puts": [
+                ["EQ-01", "반입일정", "2026-08-05"],
+                ["EQ-01", "반입일정", "2026-08-05"],
+                ["EQ-01", "반입상태", "없는값"],
+                ["EQ-02", "반입일정", "2026-09-01"],
+                ["EQ-01", "반입일정", "2026-08-04"],
+            ],
+            "held": [],
+            "verdict": None,
+            "marks": [],
+        }
+    )
+    assert result["locks"] == ["이름 칸으로", "한 줄로 못 찾음", "낡은 세션", "", ""]
+    assert result["originals"] == ["", "", "2026-08-11", "", "2026-08-04"]
+    assert result["choices"] == [["", "계획", "확정"], None]
+    puts = result["puts"]
+    assert puts[0] == {
+        "changed": True,
+        "before": None,
+        "cells": [["EQ-01", "반입일정", "2026-08-05"]],
+    }
+    assert puts[1]["changed"] is False
+    assert puts[2]["changed"] is False and puts[2]["cells"] == puts[1]["cells"]
+    assert puts[3]["changed"] is False  # 낡은 세션 잠금
+    assert puts[4] == {"changed": True, "before": "2026-08-05", "cells": []}
+
+
+def test_the_window_edit_marks_blocked_follow_and_bundle_cells() -> None:
+    """막힌 칸은 판정한 글이 지금 고친 글과 같을 때만 빨갛다 — 다시 고친 칸은 다음 판정을 기다린다.
+    같이 바뀌는 형제 칸은 고친 칸 꼴이고, 묶음 줄의 같이 바뀌는 칸에는 「묶음」 풍선이 선다."""
+    result = _edit_run(
+        {
+            "edit": _EDIT_DATA,
+            "locks": [],
+            "choiceCols": [],
+            "puts": [],
+            "held": [
+                ["EQ-01", "반입일정", "2026-08-01"],
+                ["M-A", "공정구분", "PKG"],
+                ["EQ-01", "공정구분", "새 값"],
+            ],
+            "verdict": {
+                "blocked": [
+                    {"id": "EQ-01", "col": "반입일정", "text": "2026-08-01", "message": "순서"},
+                    {"id": "EQ-01", "col": "공정구분", "text": "옛 값", "message": "옛 판정"},
+                ],
+                "follow": [{"id": "M-B", "col": "공정구분", "text": "PKG"}],
+            },
+            "marks": [
+                ["EQ-01", "반입일정", "2026-08-04"],
+                ["EQ-01", "공정구분", "PKG"],
+                ["M-B", "공정구분", "TEST"],
+                ["M-A", "공정구분", "TEST"],
+                ["EQ-02", "반입일정", "2026-08-11"],
+            ],
+        }
+    )
+    assert result["payload"] == [
+        {"id": "EQ-01", "col": "반입일정", "text": "2026-08-01"},
+        {"id": "M-A", "col": "공정구분", "text": "PKG"},
+        {"id": "EQ-01", "col": "공정구분", "text": "새 값"},
+    ]
+    assert result["restored"] == [["M-A", "공정구분", "PKG"], ["EQ-01", "공정구분", "새 값"]]
+    assert result["blocked"] == 1
+    blocked, again, follow, bundle, locked = result["marks"]
+    assert blocked["blocked"] and blocked["tip"] == "순서" and blocked["text"] == "2026-08-01"
+    assert not again["blocked"] and again["edited"] and again["text"] == "새 값"
+    assert follow["edited"] and follow["text"] == "PKG" and not follow["blocked"]
+    assert bundle["group"] == "M" and bundle["tip"] == "같은 Main 설비(M) 모듈 3줄에 함께"
+    assert locked["locked"] and locked["tip"] == "낡은 세션" and not locked["edited"]
+
+
+def test_an_apply_keeps_the_typed_cells_until_a_new_drawing() -> None:
+    """시안 결함 — 「적용」 이 보내기 전에 고친 칸을 지워, 서버가 거부하면(같은 epoch) 친 값이
+    사라졌다. 고친 칸은 보낸 뒤에도 남고 새 epoch(받아들인 적용 뒤) · 「처음 상태로」 에서만 비운다.
+    칸만 고쳐도 「적용」 이 켜지고, 막힌 칸이 있으면 잠긴다."""
+    apply = JS[JS.index("  applyButton.onclick = () => {") :]
+    apply = apply[: apply.index("\n  }\n")]
+    assert "cells," in apply and "sheetEditPayload(sheetEditCells())" in apply
+    assert "resetSheetEdit" not in apply and "sheetCells = new Map" not in apply
+    assert "!cells.length) return" in apply
+    epoch = JS[JS.index("  if (S.epoch !== data.epoch) {") :]
+    assert epoch.index("resetSheetEdit()") < epoch.index("initFromData()")
+    reset = JS[JS.index("  resetButton.onclick = () => {") :]
+    assert reset.index("resetSheetEdit()") < reset.index("initFromData()")
+    status = JS[JS.index("  function updateStatus() {") : JS.index("  function commitTyping() {")]
+    assert "sheetCells" in status and "sheetEditBlocked(" in status
+    undo = JS[JS.index("  function undo() {") : JS.index("  function adjustedLook(")]
+    assert "op.op === 'cell'" in undo and "sheetEditRestore(" in undo
+    # 칸 안의 키는 도면 단축키로 새지 않는다(Delete 로 호기 빼기 등).
+    opener = JS[JS.index("  function openSheetCell(") : JS.index("  function closeSheetCell(")]
+    assert "event.stopPropagation()" in opener
+    assert "input.type = 'text'" in opener and "type = 'date'" not in opener
+
+
+def test_the_window_edit_colours_come_from_the_master_grid_tokens() -> None:
+    """고친 칸 · 막힌 칸 · 잠긴 칸은 설비 마스터 표와 같은 색이다(UI-CON-03) — 팔레트가 싣는다."""
+    palette = space_layout_editor._palette()
+    for name in ("cell-changed-fill", "cell-changed-mark", "cell-error-fill", "cell-error-line"):
+        assert name in palette and f"var(--sle-{name})" in CSS
+    assert "var(--sle-cell-lock-fill)" in CSS and "cell-lock-fill" in palette

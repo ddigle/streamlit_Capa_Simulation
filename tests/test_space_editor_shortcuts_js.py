@@ -121,6 +121,14 @@ HANDLED: dict[tuple[str, str], str] = {
     ("칩 Ctrl+Shift+클릭", "미배치 칩 범위 더하기"): "() => pickChip(lead, list, keys)",
     ("칩 Enter", "미배치 칩을 도면 가운데에 놓기"): "placeChipByKey(lead, list",
     ("칩 Space", "미배치 칩 고르기(Ctrl · Shift 도)"): "if (event.key === ' ') pickChip(lead",
+    # 「호기 정보」 창 칸 고치기(배치 편집 — 2026-11-12 시안 보드 답 5-4).
+    ("창 칸 두 번 클릭 · F2", "호기 정보 칸 열기(글자를 치면 바로)"): "if (event.key === 'F2' || ",
+    (
+        "창 칸 Enter · Tab",
+        "칸 확정하고 다음 칸으로",
+    ): "closeSheetCell(true, event.shiftKey ? 'left'",
+    ("창 칸 Esc", "칸 고치기 취소"): "closeSheetCell(false, 'stay')",
+    ("창 칸 Delete", "칸 비우기"): "commitSheetCell(cursor.id, cursor.col, '')",
 }
 # 도면 키 처리(`host.onkeydown`)가 이름으로 견주는 키 — 표에 없는 키를 처리에 더하면 실패한다. 값은
 # 그 키를 적은 표 줄의 키조합이다.

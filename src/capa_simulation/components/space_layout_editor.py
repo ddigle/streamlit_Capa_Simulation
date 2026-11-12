@@ -194,6 +194,13 @@ def _palette() -> dict[str, str]:
         # 「호기 정보」 창 필터에 맞는 호기의 테와 맞지 않는 호기의 흐림(필요 단축 흐림과 곱해진다).
         "filter-ring": tokens.SPACE_FILTER_RING,
         "filter-dim-opacity": tokens.SPACE_FILTER_DIM_OPACITY,
+        # 배치 편집 「호기 정보」 창 칸 고치기 — 설비 마스터 표의 바뀐 칸 · 막힌 칸 · 잠긴 칸과 같은
+        # 색(UI-CON-03).
+        "cell-changed-fill": tokens.GRID_CHANGED_FILL,
+        "cell-changed-mark": tokens.GRID_CHANGED_MARK,
+        "cell-error-fill": tokens.GRID_ERROR_FILL,
+        "cell-error-line": tokens.GRID_ERROR_LINE,
+        "cell-lock-fill": tokens.GRID_LOCK_FILL,
     }
 
 
@@ -764,6 +771,8 @@ def render_space_layout_editor(
     legend: Mapping[str, Any] | None = None,
     pending_save: bool = False,
     sheet: Mapping[str, Any] | None = None,
+    sheet_edit: Mapping[str, Any] | None = None,
+    sheet_refused: Mapping[str, Any] | None = None,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
@@ -776,9 +785,13 @@ def render_space_layout_editor(
     도구 줄 제목 옆 칩 「YYYY-MM-DD 고정」(핀 아이콘)이 말한다(기준일이 바뀌면 편집 대상 호기가
     바뀌어 적용하지 않은 편집이 버려진다). `legend` 는 왼쪽 칸 범례(채우기 뜻만), `pending_save` 는
     뷰어와 같다. `sheet` 는 뷰어와 같은 「호기 정보」 창 표다(이 층 편집본 행 + 편집기 호기 —
-    「도면」 칸은 브라우저가 쥔 편집으로 덮어 쓴다).
+    「도면」 칸은 브라우저가 쥔 편집으로 덮어 쓴다). `sheet_edit` 는 그 창의 칸 고치기 재료
+    (`space_sheet_edit.sheet_edit_data` — epoch 밖), `sheet_refused` 는 막힌 창 칸으로 거부한 적용의
+    판정 ``{"epoch", "nonce", "blocked", "follow"}``(`space_sheet_edit.verdict_payload` — 브라우저가
+    nonce 마다 한 번 받아 빨간 칸으로 짚는다).
 
-    적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels"}``.
+    적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels",
+    "cells"}``.
 
     - ``changes``: 바뀐 호기(배치). ``id`` 는 편집기에 보낸 **옛** 설비명이다. 놓인 호기는
       좌표·크기, 트레이로 뺀 호기는 크기만(있으면) 든다. 다른 층으로 보낸 호기는 ``moveTo`` 에 그
@@ -804,6 +817,9 @@ def render_space_layout_editor(
       ``[{"group": 옛 Main 설비, "position": "center"|"top"|"bottom"}]``(다른 층으로 보낸 묶음은
       빠진다). 처음 위치는 `group_labels`(Main 설비 → 가운데·위·아래, 없으면 한 줄 묶음은 위·그
       밖은 가운데)이고 층 위치 목록으로 합치는 것은 `space_layout_edit.next_group_labels` 다.
+    - ``cells``: 「호기 정보」 창에서 고친 칸 ``[{"id": 편집기에 실린 설비명, "col", "text"}]``
+      (2026-11-12 Space 시안 보드 답 5-5). 꼴은 `parse_editor_apply`, 잠금 · 다듬기 · 규칙은
+      `space_sheet_edit.check_sheet_cells` 다.
     """
     items = _clean_items(inputs.items)
     result = _EDITOR(
@@ -837,6 +853,8 @@ def render_space_layout_editor(
             "legend": _clean_legend(legend),
             "pendingSave": bool(pending_save),
             "sheet": _clean_sheet(sheet),
+            "sheetEdit": dict(sheet_edit) if sheet_edit is not None else None,
+            "sheetRefused": dict(sheet_refused) if sheet_refused is not None else None,
         },
         on_apply_change=lambda: None,
         width="stretch",

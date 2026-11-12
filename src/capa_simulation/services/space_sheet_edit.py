@@ -430,13 +430,15 @@ def blocked_line(verdict: CellVerdict) -> str:
 
 
 def verdict_payload(check: SheetCheck) -> dict[str, Any]:
-    """판정의 브라우저 꼴 — ``{"blocked": [{id, col, rule, message}], "follow": [{id, col,
-    text}]}``(편집기 data `sheetVerdict` · `sheetRefused` 의 몸)."""
+    """판정의 브라우저 꼴 — ``{"blocked": [{id, col, text, rule, message}], "follow": [{id, col,
+    text}]}``(편집기 data `sheetVerdict` · `sheetRefused` 의 몸). 막힌 칸의 `text` 는 판정한
+    글이다 — 브라우저는 그 칸을 다시 고치면 다음 판정까지 빨강을 걷는다."""
     return {
         "blocked": [
             {
                 "id": verdict.cell.unit,
                 "col": verdict.cell.column,
+                "text": verdict.cell.text,
                 "rule": verdict.rule,
                 "message": verdict.message,
             }

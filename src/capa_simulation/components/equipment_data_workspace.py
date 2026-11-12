@@ -323,6 +323,11 @@ NAME_CHANGES_CAPTION = (
 # 붙여넣기 등으로 그 묶음 좌표·크기를 고치면 모양이 달라져 다시 검사받는다. 편집본과 함께
 # 버려진다.
 EDITOR_MODULE_LAYOUTS_KEY = "equipment_editor_module_layouts_v1"
+# Space 배치 편집 「호기 정보」 창에서 고쳐 적용한 칸(지금 설비명, 칸) — 따라간 묶음 형제 줄도 든다
+# (2026-11-12 Space 시안 보드 답 5-5). 저장 상자가 「호기 정보 칸 n건」 으로 세고(지금도 저장본과
+# 다른 칸만) 「설비 마스터 다른 편집」 셈에서 뺀다. 편집본과 함께 버려지고 저장하면 비워진다. 「배치
+# 변경만 버리기」 는 이 칸을 남긴다 — 배치가 아니다.
+PENDING_SHEET_CELLS_KEY = "equipment_pending_sheet_cells_v1"
 # 이 편집본에 쌓인 배치 편집을 적용할 때의 역할("official"·"overlay" — 설계 6-2). 배치를 바꾸는
 # 적용마다(Space 편집기 적용·설비 마스터 탭 배치 칸·붙여넣기 배치 칸) 찍고, 편집본을 다시 세우거나
 # 배치 변경을 버리거나 저장하면 지운다. 편집본을 세울 때는 찍지 않는다 — 남의 발행은 토큰을 바꾸지
@@ -470,6 +475,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         PENDING_RENAMES_KEY,
         FOLLOWED_FILTERS_KEY,
         EDITOR_MODULE_LAYOUTS_KEY,
+        PENDING_SHEET_CELLS_KEY,
         LAYOUT_ROLE_KEY,
         LAYOUT_EDITS_MEMO_KEY,
         _SEEDED_GENERATION_KEY,
@@ -851,6 +857,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
             LAST_REMOVED_KEY,
             PENDING_RENAMES_KEY,
             EDITOR_MODULE_LAYOUTS_KEY,
+            PENDING_SHEET_CELLS_KEY,
             *_GRID_SESSION_KEYS,
         ]
         if replaced:
@@ -1196,6 +1203,31 @@ def stage_editor_module_layouts(layouts: Mapping[str, ModuleLayout]) -> None:
     이긴다). 저장 검사가 이 모양 그대로인 묶음을 통과시킨다(`saved_master_violations`)."""
     if layouts:
         st.session_state[EDITOR_MODULE_LAYOUTS_KEY] = {**editor_module_layouts(), **layouts}
+
+
+def pending_sheet_cells() -> frozenset[tuple[str, str]]:
+    """Space 「호기 정보」 창에서 고쳐 적용한 칸(지금 설비명, 칸)."""
+    value = st.session_state.get(PENDING_SHEET_CELLS_KEY)
+    if not isinstance(value, (list, tuple)):
+        return frozenset()
+    return frozenset(
+        (str(item[0]), str(item[1]))
+        for item in value
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    )
+
+
+def stage_sheet_cells(
+    cells: Collection[tuple[str, str]], *, renames: Mapping[str, str] | None = None
+) -> None:
+    """창에서 고쳐 적용한 칸을 더한다. `renames` 는 같은 적용의 설비명 바꿈(옛 이름 → 새 이름) —
+    앞서 둔 칸과 이번 칸(옛 이름으로 온다)이 새 이름을 따라간다."""
+    moves = dict(renames or {})
+    merged = {(moves.get(unit, unit), column) for unit, column in (*pending_sheet_cells(), *cells)}
+    if merged:
+        st.session_state[PENDING_SHEET_CELLS_KEY] = sorted(merged)
+    else:
+        st.session_state.pop(PENDING_SHEET_CELLS_KEY, None)
 
 
 def _saved_master() -> pd.DataFrame:

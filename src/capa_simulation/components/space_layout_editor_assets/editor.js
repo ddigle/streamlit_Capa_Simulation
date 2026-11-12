@@ -433,6 +433,8 @@ export default function (component) {
   // 창 자리·크기·접힘은 localStorage(`SHEET_WIN_KEY`), 열림·탭·필터·강조는 sessionStorage(`SHEET_STATE_KEY` — 탭 안 기억, 층·편집을
   // 오가도 남는다)이고 파이썬으로 보내지 않는다. FAB 에는 없다.
   const SHEET = !FAB && data.sheet && Array.isArray(data.sheet.columns) && Array.isArray(data.sheet.rows) ? data.sheet : null
+  // 배치 편집의 창 칸 고치기 재료(data `sheetEdit` — epoch 밖, `// <sheet-edit>`). 보기 · FAB 에는 없다.
+  const SHEET_EDIT = !VIEW && SHEET && data.sheetEdit && Array.isArray(data.sheetEdit.cols) ? data.sheetEdit : null
   const SHEET_WIN_KEY = 'capa.space.sheet.win.v1'
   const SHEET_STATE_KEY = 'capa.space.sheet.state.v1'
   // 창 최소 크기·처음 크기(px)와 접힌 창 높이. 창은 편집기 몸(`.sle-body`) 안에 묶인다.
@@ -1757,6 +1759,10 @@ export default function (component) {
     ['칩 Ctrl+Shift+클릭', '미배치 칩 범위 더하기', 'ef'],
     ['칩 Enter', '미배치 칩을 도면 가운데에 놓기', 'ef'],
     ['칩 Space', '미배치 칩 고르기(Ctrl · Shift 도)', 'ef'],
+    ['창 칸 두 번 클릭 · F2', '호기 정보 칸 열기(글자를 치면 바로)', 'ef'],
+    ['창 칸 Enter · Tab', '칸 확정하고 다음 칸으로', 'ef'],
+    ['창 칸 Esc', '칸 고치기 취소', 'ef'],
+    ['창 칸 Delete', '칸 비우기', 'ef'],
   ]
   // 그 화면(`vf`·`vb`·`ef`·`eb`)에서 쓸 수 있는 줄 — [키조합, 기능].
   function shortcutRows(screen) {
@@ -2066,6 +2072,107 @@ export default function (component) {
     return `${lines.join('\n')}\n`
   }
   // </unit-sheet>
+  // 배치 편집 「호기 정보」 창 칸 고치기의 판정(순수 함수, 2026-11-12 Space 시안 보드 답 5-4 ~ 5-6). data `sheetEdit`(파이썬
+  // `services/space_sheet_edit.sheet_edit_data` — 고칠 칸 `cols` · 칸 꼴 `kinds` · 창에서만 잠그는 칸 `fixed` · 잠금 갈래 → 칸 `locks` ·
+  // 갈래 → 까닭 `reasons` · 줄 id → {t: 원래 글, k: 잠금 갈래, g: 모듈 묶음} `rows` · 이어지지 않는 줄 까닭 `missing` · 같이 바뀌는 칸
+  // `shared` · 묶음 → 줄 수 `groups`)와 고친 칸 지도(`sheetEditKey` → {id, col, text})·판정(`sheetEditVerdict`)만 본다. 칸끼리 · 줄끼리
+  // 규칙은 파이썬에만 있다(`check_sheet_cells`) — 여기는 잠금 · 고를 값까지다(설비 마스터 표 JS 와 같은 몫). `tests/test_space_unit_sheet_js.py`
+  // 가 아래 두 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <sheet-edit>
+  function sheetEditKey(id, col) {
+    return `${id}\u0000${col}`
+  }
+  // 그 칸이 잠긴 까닭('' 이면 고칠 수 있다) — 창에서만 잠그는 칸, 고칠 칸 밖 · 편집본에 이어지지 않는 줄, 표와 같은 잠금 갈래 차례다.
+  function sheetEditLock(edit, id, col) {
+    if (!edit) return ''
+    const fixed = edit.fixed || {}
+    if (Object.prototype.hasOwnProperty.call(fixed, col)) return String(fixed[col] || '')
+    const row = (edit.rows || {})[id]
+    if (!row || !(edit.cols || []).includes(col)) return String(edit.missing || '')
+    for (const kind of row.k || []) {
+      if (((edit.locks || {})[kind] || []).includes(col)) return String((edit.reasons || {})[kind] || '잠긴 칸입니다')
+    }
+    return ''
+  }
+  // 그 칸의 원래 글(편집본 값 — 창 칸처럼 자르지 않는다). 없으면 ''.
+  function sheetEditOriginal(edit, id, col) {
+    const row = edit ? (edit.rows || {})[id] : null
+    const at = edit ? (edit.cols || []).indexOf(col) : -1
+    return row && at >= 0 && Array.isArray(row.t) && row.t[at] !== null && row.t[at] !== undefined ? String(row.t[at]) : ''
+  }
+  // 고르기 칸에 고를 수 있는 값(빈 값을 받는 칸은 앞에 '') — 그 밖의 칸은 null(글로 친다).
+  function sheetEditChoices(edit, col) {
+    const kind = edit ? (edit.kinds || {})[col] : null
+    if (!kind || kind.kind !== 'choice') return null
+    return [...(kind.blank === false ? [] : ['']), ...(kind.options || []).map(String)]
+  }
+  // 칸 하나를 확정한 뒤 — 원래 글과 같으면 지도에서 뺀다. { cells: 새 지도, before: 앞의 항목(없었으면 null), changed: 보이는 글이 바뀜 }.
+  // 고르기 칸에 목록 밖 값이 오면 그대로 둔다(changed 거짓).
+  function sheetEditPut(cells, edit, id, col, text) {
+    const key = sheetEditKey(id, col)
+    const before = cells.get(key) || null
+    const original = sheetEditOriginal(edit, id, col)
+    const choices = sheetEditChoices(edit, col)
+    if (sheetEditLock(edit, id, col) || (choices && text !== original && !choices.includes(text))) return { cells, before, changed: false }
+    const next = new Map(cells)
+    if (text === original) next.delete(key)
+    else next.set(key, { id, col, text })
+    return { cells: next, before, changed: (before ? before.text : original) !== text }
+  }
+  // 되돌리기 — 앞의 항목으로(없었으면 뺀다).
+  function sheetEditRestore(cells, key, before) {
+    const next = new Map(cells)
+    if (before) next.set(key, { id: before.id, col: before.col, text: before.text })
+    else next.delete(key)
+    return next
+  }
+  // 적용값 · 확인 요청의 `cells` — 고친 차례.
+  function sheetEditPayload(cells) {
+    return [...cells.values()].map((cell) => ({ id: cell.id, col: cell.col, text: cell.text }))
+  }
+  // 판정 몸(파이썬 `verdict_payload` — {blocked: [{id, col, text, rule, message}], follow: [{id, col, text}]}) → 칸 열쇠 지도 둘.
+  function sheetEditVerdict(body) {
+    const blocked = new Map()
+    const follow = new Map()
+    for (const item of (body && body.blocked) || []) {
+      blocked.set(sheetEditKey(String(item.id), String(item.col)), { text: String(item.text ?? ''), message: String(item.message || '') })
+    }
+    for (const item of (body && body.follow) || []) follow.set(sheetEditKey(String(item.id), String(item.col)), String(item.text ?? ''))
+    return { blocked, follow }
+  }
+  // 막힌 칸 수 — 판정이 짚은 글이 지금 고친 글과 같은 칸만(다시 고친 칸은 다음 판정을 기다린다).
+  function sheetEditBlocked(cells, verdict) {
+    if (!verdict) return 0
+    let count = 0
+    for (const [key, cell] of cells) {
+      const hit = verdict.blocked.get(key)
+      if (hit && hit.text === cell.text) count += 1
+    }
+    return count
+  }
+  // 칸 하나의 표지 — 보일 글(`shown` 은 받은 표의 글), 고친 칸(같이 바뀐 형제 포함) · 잠긴 칸 · 막힌 칸, 풍선 글, 「묶음」(같이 바뀌는
+  // 칸이고 모듈 둘 이상인 묶음 줄이면 그 묶음 이름).
+  function sheetEditMark(edit, cells, verdict, id, col, shown) {
+    const key = sheetEditKey(id, col)
+    const lock = sheetEditLock(edit, id, col)
+    const held = cells.get(key)
+    const hit = held && verdict ? verdict.blocked.get(key) : undefined
+    const blocked = Boolean(hit && hit.text === held.text)
+    const follow = !held && verdict ? verdict.follow.get(key) : undefined
+    const row = edit ? (edit.rows || {})[id] : null
+    const name = row && row.g && (edit.shared || []).includes(col) ? String(row.g) : ''
+    const size = name ? Number((edit.groups || {})[name]) || 0 : 0
+    const group = size > 1 ? name : ''
+    return {
+      text: held ? held.text : follow !== undefined ? follow : shown,
+      edited: Boolean(held) || follow !== undefined,
+      locked: Boolean(lock),
+      blocked,
+      group,
+      tip: blocked ? hit.message : lock || (group ? `같은 Main 설비(${group}) 모듈 ${size}줄에 함께` : ''),
+    }
+  }
+  // </sheet-edit>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
   function unitColors(item, st) {
@@ -4468,7 +4575,9 @@ export default function (component) {
     }
     const chosen = selectedItems()
     const item = chosen.length === 1 ? chosen[0] : null
-    const changed = changes().length + renames().length + markChangeCount() + groupLabelChangeCount() + (canvasChanged() ? 1 : 0)
+    // 「호기 정보」 창에서 고친 칸도 적용 안 한 변경이다(2026-11-12 시안 보드 답 5-5) — 칸만 고쳐도 「적용」 이 켜진다.
+    const sheetCells = SHEET_EDIT ? sheetEditCells().size : 0
+    const changed = changes().length + renames().length + markChangeCount() + groupLabelChangeCount() + (canvasChanged() ? 1 : 0) + sheetCells
     statusBox.replaceChildren()
     const add = (text, strong) => {
       if (statusBox.childNodes.length) statusBox.append(document.createTextNode(' · '))
@@ -4527,7 +4636,9 @@ export default function (component) {
     // 잠긴 동안만 풍선이 까닭을 말한다(설계 규칙 UI-INP-07). 「처음 상태로」 는 실행 취소 기록까지 지워 되돌릴 수 없다 — 평소
     // 풍선이 그 결과를 말한다(UI-NTF-09).
     const noChange = changed === 0 ? '적용 안 한 변경 없음' : ''
-    lockWith(applyButton, noChange)
+    // 막힌(빨간) 창 칸이 있는 동안 「적용」 은 잠긴다 — 까닭은 칸 풍선이 말한다(5-6 메모 「창에서 즉시 막고」, UI-INP-07).
+    const blockedCells = SHEET_EDIT ? sheetEditBlocked(sheetEditCells(), S.sheetVerdict || null) : 0
+    lockWith(applyButton, noChange || (blockedCells ? `「호기 정보」 막힌 칸 ${blockedCells}개` : ''))
     lockWith(resetButton, noChange)
     applyButton.classList.toggle('is-pending', changed > 0)
     lockWith(undoButton, S.undo.length === 0 ? '되돌릴 것 없음' : '')
@@ -5552,6 +5663,11 @@ export default function (component) {
           if (op.before === null) S.groupLabels.delete(op.key)
           else S.groupLabels.set(op.key, op.before)
           applied += 1
+        } else if (op.op === 'cell') {
+          // 「호기 정보」 창 칸 — 앞의 글로(없었으면 원래 글로) 돌린다.
+          S.sheetCells = sheetEditRestore(sheetEditCells(), op.key, op.before)
+          S.sheetEditRev = (S.sheetEditRev || 0) + 1
+          applied += 1
         }
       }
       if (!applied) { undo(); return }
@@ -5733,6 +5849,8 @@ export default function (component) {
   if (S.epoch !== data.epoch) {
     S.epoch = data.epoch
     S.undo = []
+    // 「호기 정보」 창에서 고친 칸은 그 도면의 것이다 — 받아들인 적용 뒤 · 다른 층의 새 도면에서 비운다.
+    resetSheetEdit()
     clearSelection()
     S.drag = null
     S.note = ''
@@ -6690,6 +6808,7 @@ export default function (component) {
   undoButton.onclick = undo
   unplaceButton.onclick = () => removeItems(selectedItems())
   resetButton.onclick = () => {
+    resetSheetEdit()
     initFromData()
     S.canvas = { ...S.originalCanvas }
     S.undo = []
@@ -6703,12 +6822,19 @@ export default function (component) {
     button.onclick = () => { S.step = Number(button.dataset.step); updateStatus() }
   }
   applyButton.onclick = () => {
+    // 열린 창 칸은 확정하고 보낸다. 고친 칸은 보내기 전에 지우지 않는다 — 서버가 거부하면 epoch 가 그대로라 편집기가 다시 서지
+    // 않는다(시안 결함 — 친 값이 사라졌다). 지우는 것은 받아들인 적용 뒤의 새 epoch 다.
+    closeSheetCell(true)
+    const cells = SHEET_EDIT ? sheetEditPayload(sheetEditCells()) : []
+    if (SHEET_EDIT && sheetEditBlocked(sheetEditCells(), S.sheetVerdict || null)) return
     const unitChanges = changes()
     const nameChanges = renames()
     const marksChanged = markChangeCount() > 0
     const labelsChanged = groupLabelChangeCount() > 0
-    if (!unitChanges.length && !nameChanges.length && !marksChanged && !labelsChanged && !canvasChanged()) return
+    if (!unitChanges.length && !nameChanges.length && !marksChanged && !labelsChanged && !canvasChanged() && !cells.length) return
     setTriggerValue('apply', {
+      // 「호기 정보」 창에서 고친 칸 [{id(편집기에 실린 설비명), col, text}] — 판정은 파이썬 `check_sheet_cells`.
+      cells,
       epoch: S.epoch,
       changes: unitChanges,
       ghosts: ghostChanges(),
@@ -7344,8 +7470,11 @@ export default function (component) {
     sheetHl.checked = Boolean(state.hl)
     // 표 — 같은 그림이면 고른 줄 표시만 고친다(받은 표가 바뀌면 `adoptSheet` 가 그림 열쇠를 지운다).
     const placeSig = !VIEW && S.sheet.placeIdx >= 0 ? rows.map((row) => row.cells[S.sheet.placeIdx]).join('|') : ''
-    const viewKey = JSON.stringify([state.tab, filterTab ? state.filters : ids, placeSig])
-    if (S.sheetView !== viewKey) {
+    // 칸을 고치는 배치 편집의 「고른 호기」 는 보이는 줄 id 모음(정렬)이 열쇠다 — 같은 묶음 안의 줄을 눌러 고른 호기가 바뀌어도 표를
+    // 다시 만들지 않는다(두 번 누르기가 끊기지 않게). 열린 칸이 있으면 닫을 때까지 미룬다(`closeSheetCell`).
+    const pickKey = SHEET_EDIT ? shown.map((row) => row.id).sort() : ids
+    const viewKey = JSON.stringify([state.tab, filterTab ? state.filters : pickKey, placeSig])
+    if (S.sheetView !== viewKey && !S.sheetOpen) {
       S.sheetView = viewKey
       drawSheetTable(columns, shown, filterTab)
       sheetEmpty.hidden = shown.length > 0
@@ -7361,6 +7490,7 @@ export default function (component) {
     }
     const current = new Set(ids)
     for (const tr of sheetBodyRows.children) tr.classList.toggle('is-current', current.has(tr.dataset.id))
+    paintSheetCells(false)
     if (S.sheetMenu) renderMenu()
     refreshHits()
   }
@@ -7394,17 +7524,23 @@ export default function (component) {
       const tr = document.createElement('tr')
       tr.dataset.id = row.id
       tr.tabIndex = 0
-      for (const value of row.cells) {
+      for (const [index, value] of row.cells.entries()) {
         const td = document.createElement('td')
         const text = sheetText(value)
         td.textContent = text
         if (text.length > 18) td.title = text
         if (typeof value === 'number') td.className = 'is-num'
+        // 칸 고치기 표지가 칸 이름 · 받은 글을 읽는다(`paintSheetCell`).
+        if (SHEET_EDIT) {
+          td.dataset.col = columns[index].name
+          td.dataset.shown = text
+        }
         tr.append(td)
       }
       body.append(tr)
     }
     sheetBodyRows.replaceChildren(body)
+    paintSheetCells(true)
   }
   function openSheet(tab) {
     sheetLoad()
@@ -7736,11 +7872,24 @@ export default function (component) {
     }
     sheetBodyRows.onclick = (event) => {
       const row = event.target.closest ? event.target.closest('tr[data-id]') : null
-      if (row) goToUnit(row.dataset.id)
+      if (!row) return
+      // 배치 편집은 한 번 누름이 칸 고르기 + 그 줄 호기로 가기, 같은 칸을 두 번 누르면 연다(`pressSheetCell`).
+      const cell = SHEET_EDIT && event.target.closest ? event.target.closest('td[data-col]') : null
+      if (cell && pressSheetCell(row.dataset.id, cell.dataset.col)) return
+      goToUnit(row.dataset.id)
+    }
+    sheetBodyRows.onpointerover = (event) => {
+      const cell = SHEET_EDIT && event.target.closest ? event.target.closest('td[data-tip]') : null
+      if (cell) showTip(cell)
+      else if (S.tipFor && S.tipFor.matches && S.tipFor.matches('.sle-sheet-table td')) hideTip()
+    }
+    sheetBodyRows.onpointerleave = () => {
+      if (S.tipFor && S.tipFor.matches && S.tipFor.matches('.sle-sheet-table td')) hideTip()
     }
     sheetBodyRows.onkeydown = (event) => {
       const row = event.target.closest ? event.target.closest('tr[data-id]') : null
       if (!row) return
+      if (SHEET_EDIT && keySheetCell(event, row)) return
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         goToUnit(row.dataset.id)
@@ -7859,6 +8008,222 @@ export default function (component) {
   }
   adoptSheet()
   renderSheet()
+  adoptSheetEdit()
+
+  // ---------------------------------------------------------------- 「호기 정보」 창 칸 고치기(배치 편집 — 2026-11-12 시안 보드 답 5-4 ~ 5-6)
+  // 설비 마스터 표와 같은 칸 · 같은 잠금(data `sheetEdit`, 판정 `// <sheet-edit>`). 칸을 한 번 누르면 칸 커서 + 그 줄 호기로 가기,
+  // 같은 칸을 두 번 누르기 · F2 · Enter · 글자 치기로 열고 Enter · Tab 은 확정, Esc 는 취소, 열지 않은 칸의 Delete 는 비우기다(빈 값을
+  // 받는 칸만). 고친 칸(`S.sheetCells`)은 적용 전 편집이다 — 「적용」 이 배치 편집과 함께 보내고 「되돌리기」 · 「처음 상태로」 에 든다.
+  // 고친 칸과 같이 바뀌는 묶음 형제 칸은 설비 마스터 「바뀐 칸」 꼴, 잠긴 칸은 회색 + 까닭 풍선, 막힌 칸(서버 판정)은 빨강 + 까닭
+  // 풍선이다. 날짜는 설비 마스터 표처럼 글(YYYY-MM-DD)로 친다(설계 규칙 UI-INP-03 예외 「표의 칸」).
+  function sheetEditCells() {
+    if (!(S.sheetCells instanceof Map)) S.sheetCells = new Map()
+    return S.sheetCells
+  }
+  function resetSheetEdit() {
+    closeSheetCell(false, null, true)
+    S.sheetCells = new Map()
+    S.sheetVerdict = null
+    S.sheetCursor = null
+    S.sheetPress = null
+    S.sheetEditRev = (S.sheetEditRev || 0) + 1
+  }
+  // 그려진 줄의 그 칸(td). 없으면 null.
+  function sheetEditTd(id, col) {
+    if (!S.sheet) return null
+    const index = S.sheet.columns.findIndex((column) => column.name === col)
+    if (index < 0) return null
+    for (const tr of sheetBodyRows.children) if (tr.dataset.id === id) return tr.children[index] || null
+    return null
+  }
+  function sheetEditRow(id) {
+    for (const tr of sheetBodyRows.children) if (tr.dataset.id === id) return tr
+    return null
+  }
+  function paintSheetCell(td) {
+    if (!SHEET_EDIT || !td || !td.dataset.col || td.classList.contains('is-open')) return
+    const id = td.parentElement ? td.parentElement.dataset.id : ''
+    const col = td.dataset.col
+    const mark = sheetEditMark(SHEET_EDIT, sheetEditCells(), S.sheetVerdict || null, id, col, td.dataset.shown || '')
+    setText(td, mark.text)
+    td.classList.toggle('is-editable', !mark.locked)
+    td.classList.toggle('is-locked', mark.locked)
+    td.classList.toggle('is-edited', mark.edited && !mark.blocked)
+    td.classList.toggle('is-blocked', mark.blocked)
+    td.classList.toggle('is-bundle', Boolean(mark.group))
+    const cursor = S.sheetCursor
+    td.classList.toggle('is-cursor', Boolean(cursor) && cursor.id === id && cursor.col === col)
+    if (mark.tip) setAttr(td, 'data-tip', mark.tip)
+    else td.removeAttribute('data-tip')
+    if (S.tipFor === td) showTip(td)
+  }
+  // 그려진 칸을 칠한다 — 고친 칸 · 판정이 바뀌었거나(`S.sheetEditRev`) 표를 새로 그렸을 때만(`force`).
+  function paintSheetCells(force) {
+    if (!SHEET_EDIT || !sheetBox || sheetBox.hidden) return
+    const key = `${S.sheetEditRev || 0}|${S.sheetView}`
+    if (!force && S.sheetPainted === key) return
+    S.sheetPainted = key
+    for (const tr of sheetBodyRows.children) for (const td of tr.children) paintSheetCell(td)
+  }
+  function setSheetCursor(id, col) {
+    const before = S.sheetCursor
+    S.sheetCursor = id && col ? { id, col } : null
+    for (const spot of [before, S.sheetCursor]) if (spot) paintSheetCell(sheetEditTd(spot.id, spot.col))
+  }
+  // 칸을 창 굴림 안으로(머리 줄에 가리지 않게). 페이지는 굴리지 않는다.
+  function revealSheetCell(td) {
+    const box = td.getBoundingClientRect()
+    const port = sheetScroll.getBoundingClientRect()
+    const head = sheetHeadRow.getBoundingClientRect().height || 0
+    if (box.left < port.left) sheetScroll.scrollLeft -= port.left - box.left
+    else if (box.right > port.right) sheetScroll.scrollLeft += box.right - port.right
+    if (box.top < port.top + head) sheetScroll.scrollTop -= port.top + head - box.top
+    else if (box.bottom > port.bottom) sheetScroll.scrollTop += box.bottom - port.bottom
+  }
+  // 칸 한 번 누름 — 칸 커서를 둔다. 같은 칸을 두 번 누르면(`isDoublePress`) 열고 참이다(그 누름은 줄 누르기를 하지 않는다). 표를 다시
+  // 그려도 칸 열쇠로 견주므로 두 번 누르기가 끊기지 않는다.
+  function pressSheetCell(id, col) {
+    const key = sheetEditKey(id, col)
+    const now = Date.now()
+    const again = isDoublePress(S.sheetPress, key, now)
+    S.sheetPress = again ? null : { id: key, at: now }
+    setSheetCursor(id, col)
+    if (!again) return false
+    openSheetCell(id, col)
+    return true
+  }
+  // 줄에 초점이 있을 때의 칸 키 — 칸 커서가 그 줄에 있으면 F2 · Enter · 글자는 열기, Delete · Backspace 는 비우기, 방향키는 커서
+  // 옮기기다. 참이면 그 키를 썼다.
+  function keySheetCell(event, row) {
+    const cursor = S.sheetCursor
+    if (!cursor || cursor.id !== row.dataset.id || event.ctrlKey || event.metaKey || event.altKey) return false
+    const moves = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
+    if (event.key === 'F2' || event.key === 'Enter') {
+      event.preventDefault()
+      openSheetCell(cursor.id, cursor.col)
+    } else if (moves[event.key]) {
+      event.preventDefault()
+      moveSheetCursor(moves[event.key])
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      const choices = sheetEditChoices(SHEET_EDIT, cursor.col)
+      if (!choices || choices.includes('')) commitSheetCell(cursor.id, cursor.col, '')
+    } else if (event.key.length === 1) {
+      event.preventDefault()
+      openSheetCell(cursor.id, cursor.col, event.key)
+    } else return false
+    return true
+  }
+  function moveSheetCursor(dir) {
+    const cursor = S.sheetCursor
+    if (!cursor || !S.sheet) return
+    let tr = sheetEditRow(cursor.id)
+    let col = cursor.col
+    if (dir === 'left' || dir === 'right') {
+      const names = S.sheet.columns.map((column) => column.name)
+      const at = names.indexOf(col) + (dir === 'left' ? -1 : 1)
+      if (at < 0 || at >= names.length) return
+      col = names[at]
+    } else if (tr) {
+      tr = dir === 'up' ? tr.previousElementSibling : tr.nextElementSibling
+    }
+    if (!tr) return
+    setSheetCursor(tr.dataset.id, col)
+    tr.focus({ preventScroll: true })
+    const td = sheetEditTd(tr.dataset.id, col)
+    if (td) revealSheetCell(td)
+  }
+  // 칸을 연다 — 고르기 칸(반입상태 · Qual상태)은 목록, 그 밖은 글 칸이다. 잠긴 칸은 열지 않고 까닭 풍선을 띄운다. `seed` 는 친 글자.
+  function openSheetCell(id, col, seed) {
+    if (!SHEET_EDIT) return
+    if (S.sheetOpen) closeSheetCell(true)
+    const td = sheetEditTd(id, col)
+    if (!td) return
+    setSheetCursor(id, col)
+    if (sheetEditLock(SHEET_EDIT, id, col)) {
+      showTip(td)
+      return
+    }
+    const held = sheetEditCells().get(sheetEditKey(id, col))
+    const value = held ? held.text : sheetEditOriginal(SHEET_EDIT, id, col)
+    const choices = sheetEditChoices(SHEET_EDIT, col)
+    let input
+    if (choices) {
+      input = document.createElement('select')
+      const values = choices.includes(value) ? choices : [...choices, value]
+      input.replaceChildren(...values.map((one) => new Option(one || '(비움)', one)))
+      input.value = value
+    } else {
+      input = document.createElement('input')
+      input.type = 'text'
+      input.spellcheck = false
+      input.autocomplete = 'off'
+      input.value = seed === undefined ? value : seed
+    }
+    input.className = 'sle-sheet-input'
+    input.setAttribute('aria-label', `${id} ${col}`)
+    hideTip()
+    td.classList.add('is-open')
+    td.replaceChildren(input)
+    S.sheetOpen = { id, col, input, td }
+    revealSheetCell(td)
+    input.focus({ preventScroll: true })
+    if (!choices && seed === undefined) input.select()
+    // 칸 안의 키는 창 · 도면 단축키(Delete 로 호기 빼기 등)로 새지 않는다.
+    input.onkeydown = (event) => {
+      event.stopPropagation()
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        closeSheetCell(true, event.shiftKey ? 'up' : 'down')
+      } else if (event.key === 'Tab') {
+        event.preventDefault()
+        closeSheetCell(true, event.shiftKey ? 'left' : 'right')
+      } else if (event.key === 'Escape') {
+        event.preventDefault()
+        closeSheetCell(false, 'stay')
+      }
+    }
+    input.onblur = () => closeSheetCell(true)
+    input.onclick = input.ondblclick = input.onpointerdown = (event) => event.stopPropagation()
+  }
+  // 열린 칸을 닫는다 — `keep` 이면 확정. `move` 는 커서를 옮길 쪽('stay' 는 제자리에 초점만). `quiet` 이면 칠하지 않는다(새 도면).
+  function closeSheetCell(keep, move, quiet) {
+    const open = S.sheetOpen
+    if (!open) return
+    S.sheetOpen = null
+    open.input.onblur = null
+    const text = String(open.input.value)
+    open.td.classList.remove('is-open')
+    open.td.replaceChildren(document.createTextNode(open.td.dataset.shown || ''))
+    if (quiet) return
+    if (keep) commitSheetCell(open.id, open.col, text)
+    paintSheetCell(open.td)
+    // 열린 동안 미룬 표 다시 그리기.
+    renderSheet()
+    if (!move) return
+    if (move !== 'stay') moveSheetCursor(move)
+    const row = S.sheetCursor ? sheetEditRow(S.sheetCursor.id) : null
+    if (row) row.focus({ preventScroll: true })
+  }
+  // 칸 하나를 확정한다 — 원래 글과 같으면 고친 칸에서 뺀다. 바뀌었으면 되돌리기에 든다.
+  function commitSheetCell(id, col, text) {
+    const put = sheetEditPut(sheetEditCells(), SHEET_EDIT, id, col, text)
+    if (!put.changed) return
+    S.sheetCells = put.cells
+    S.sheetEditRev = (S.sheetEditRev || 0) + 1
+    pushUndo([{ op: 'cell', key: sheetEditKey(id, col), before: put.before }])
+    updateStatus()
+  }
+  // 적용 거부(data `sheetRefused` — {epoch, nonce, blocked, follow}, 파이썬 `verdict_payload`)를 한 번 받는다 — 막힌 칸이 빨강 + 까닭
+  // 풍선으로 서고 「적용」 이 잠긴다. 고친 칸은 그대로다(같은 epoch).
+  function adoptSheetEdit() {
+    const refused = SHEET_EDIT ? data.sheetRefused : null
+    if (!refused || refused.epoch !== S.epoch || refused.nonce === S.sheetRefusedNonce) return
+    S.sheetRefusedNonce = refused.nonce
+    S.sheetVerdict = sheetEditVerdict(refused)
+    S.sheetEditRev = (S.sheetEditRev || 0) + 1
+    updateStatus()
+  }
 
   // ---------------------------------------------------------------- 기준일 줄(층 도면)·FAB 기준일
   // 층 상세 보기의 맨 위 줄은 페이더다(오늘 ±12개월, 하루 단위, 가운데 오늘). 끄는 동안 서버 회차는 없다 — 프레임마다

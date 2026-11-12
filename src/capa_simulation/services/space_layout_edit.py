@@ -74,6 +74,7 @@ from capa_simulation.services.korean_particle import (
     with_subject_particle,
     with_topic_particle,
 )
+from capa_simulation.services.space_unit_sheet import SheetCell, parse_sheet_cells
 
 POSITION_COLUMNS: Final = ("X좌표", "Y좌표")
 SIZE_COLUMNS: Final = ("Xsize", "Ysize")
@@ -143,6 +144,9 @@ class EditorApply:
     # 적용값에 `groupLabels` 가 없으면 None(위치는 그대로, 이름 바꿈만 따라간다 —
     # `next_group_labels`).
     group_labels: tuple[tuple[str, str], ...] | None = None
+    # 「호기 정보」 창에서 고친 칸(2026-11-12 Space 시안 보드 답 5-5) — 꼴만 읽은 것(창 줄 id 는
+    # 편집기에 실린 **옛** 설비명). 잠금 · 다듬기 · 규칙은 `space_sheet_edit.check_sheet_cells` 다.
+    cells: tuple[SheetCell, ...] = ()
 
     @property
     def unit_renames(self) -> dict[str, str]:
@@ -1342,6 +1346,7 @@ def parse_editor_apply(
     reserved: ReservedNames | None = None,
     editor_items: Sequence[Mapping[str, Any]] = (),
     editor_ghosts: Sequence[Mapping[str, Any]] = (),
+    sheet_ids: Collection[str] = frozenset(),
 ) -> EditorApply:
     """브라우저 적용값을 검증한다. **하나라도 어긋나면 `ValueError`** — 일부만 반영하지 않는다.
 
@@ -1358,8 +1363,12 @@ def parse_editor_apply(
     ``ghosts`` 로 오고 `EditorApply.hidden_moves` 가 된다. 모듈 묶음의 Main 설비명 위치는 적용값의
     ``groupLabels`` 로 오고(실린 모듈 묶음만) `EditorApply.group_labels` 가 된다 — 층 위치 목록으로
     합치는 것은 `next_group_labels` 다.
+
+    「호기 정보」 창에서 고친 칸은 적용값의 ``cells``(``[{id, col, text}]``)로 오고 꼴만 읽어
+    `EditorApply.cells` 가 된다(`parse_sheet_cells` — id 는 창에 실은 줄 `sheet_ids`).
     """
     held = _reserved_reasons(reserved or ReservedNames())
+    cells = parse_sheet_cells(payload.get("cells"), sheet_ids=sheet_ids)
     targets = {floor_label(key): key for key in floors if key != floor}
     new_canvas: CanvasSize | None = None
     raw_canvas = payload.get("canvas")
@@ -1465,6 +1474,7 @@ def parse_editor_apply(
         renames=tuple(renames),
         hidden_moves=tuple(hidden_moves),
         group_labels=group_labels,
+        cells=cells,
     )
 
 
@@ -2285,10 +2295,19 @@ def _parent_follows(
 
 
 def other_change_count(
-    saved: pd.DataFrame, buffer: pd.DataFrame, renames: PendingRenames | None = None
+    saved: pd.DataFrame,
+    buffer: pd.DataFrame,
+    renames: PendingRenames | None = None,
+    *,
+    skip: Collection[tuple[str, str]] = (),
 ) -> int:
     """배치 칸이 아닌 차이가 있는 호기 수(설비 마스터의 저장 안 한 다른 편집). 지운 호기도 센다.
-    이름 바꿈(`renames`)으로 설명되는 설비명·Main 설비 차이는 세지 않는다."""
+    이름 바꿈(`renames`)으로 설명되는 설비명·Main 설비 차이는 세지 않는다. `skip` 의 (지금 설비명,
+    칸)은 따로 세는 칸이라 견주지 않는다 — Space 「호기 정보」 창에서 고쳐 적용한 칸(두 번 세지
+    않는다)."""
+    skipped: dict[str, set[str]] = {}
+    for unit, column in skip:
+        skipped.setdefault(unit, set()).add(column)
     saved_rows = {
         str(row[EQUIPMENT_ID_COLUMN]).strip(): row for row in saved.to_dict(orient="records")
     }
@@ -2309,7 +2328,12 @@ def other_change_count(
             if _text(row.get("호기이력")) != NEW_UNIT_HISTORY:
                 count += 1
             continue
-        differs = [c for c in others if _comparable(before.get(c)) != _comparable(row.get(c))]
+        own = skipped.get(unit_id, set())
+        differs = [
+            c
+            for c in others
+            if c not in own and _comparable(before.get(c)) != _comparable(row.get(c))
+        ]
         if PARENT_EQUIPMENT_COLUMN in differs and _parent_follows(
             before, row, origin=origin, unit_id=unit_id, groups=live.groups
         ):

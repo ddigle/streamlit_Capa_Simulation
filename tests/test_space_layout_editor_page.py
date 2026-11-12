@@ -17,6 +17,7 @@ from alert_marks import (
     active_state,
     data_error_marks,
     data_error_texts,
+    events,
     place_errors,
     states,
     successes,
@@ -1137,4 +1138,110 @@ def test_send_to_another_floor_lists_active_floors_and_an_old_send_is_kept_with_
     (flash,) = [item.value for item in successes(app) if "편집본에 적용했습니다" in item.value]
     assert "보낸 층 C2 2F는 비활성 층입니다" in flash
     assert "C2 2F" not in editor_calls[-1]["floors"]
+    clear_equipment_repository()
+
+
+# ------------------------------- 「호기 정보」 창 칸 고치기(2026-11-12 시안 보드 답 5-4 ~ 5-6)
+
+
+def _cell_apply(app: AppTest, calls: list[dict[str, Any]], *cells: tuple[str, str, str]) -> str:
+    epoch = str(calls[-1]["epoch"])
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": epoch,
+        "changes": [],
+        "cells": [{"id": unit, "col": column, "text": text} for unit, column, text in cells],
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    return epoch
+
+
+def test_the_editor_gets_the_window_edit_data_with_the_master_grid_columns(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    _open_editor(tmp_path)
+    edit = editor_calls[-1]["sheetEdit"]
+    assert "반입상태" in edit["cols"] and "설비명" not in edit["cols"]
+    assert edit["kinds"]["반입상태"]["kind"] == "choice"
+    assert {"설비명", "동", "층", "도면"} <= set(edit["fixed"])
+    assert edit["rows"]["EQ-01"]["t"][edit["cols"].index("반입일정")] == "2026-08-04"
+    assert editor_calls[-1]["sheetRefused"] is None
+    clear_equipment_repository()
+
+
+def test_a_cells_only_apply_lights_the_save_and_one_save_writes_the_cell(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """칸만 고친 적용도 편집본에 들고 「배치 저장」 이 켜진다(시안 결함 — 「저장할 배치 변경
+    없음」).
+    그 칸은 「설비 마스터 다른 편집」 으로 두 번 세지 않는다."""
+    app, database = _open_editor(tmp_path)
+    epoch = _cell_apply(app, editor_calls, ("EQ-01", "반입상태", "확정"))
+
+    buffer = app.session_state[BUFFER_KEY][1]
+    assert buffer.set_index("설비명").loc["EQ-01", "반입상태"] == "확정"
+    assert any(
+        "「호기 정보」 칸 1개를 편집본에 적용했습니다" in item.value for item in successes(app)
+    )
+    assert editor_calls[-1]["epoch"] != epoch
+    assert _save_row(app) == {"save_locked": False}
+    head = [item.value for item in app.markdown if "저장 안 한 배치 변경" in item.value]
+    assert head and "호기 정보 칸 1건" in head[0] and "다른 편집" not in head[0]
+
+    app.button(key="space_layout_save").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    saved = repository.load_snapshot(str(repository.latest_revision_id()))
+    assert saved.equipment.set_index("설비명").loc["EQ-01", "반입상태"] == "확정"
+    assert "equipment_pending_sheet_cells_v1" not in app.session_state
+    clear_equipment_repository()
+
+
+def test_a_blocked_cell_refuses_the_apply_into_the_alarm_and_marks_the_cell(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """반입일정을 물류일정보다 앞으로 넣으면 적용 전체를 받지 않는다 — 편집기 아래 오류 글 없이
+    알림창 · Alarm(`EQ-25`)으로 알리고, 같은 epoch 의 편집기가 막힌 칸을 빨갛게 짚는다(고친 칸은
+    브라우저에 남는다)."""
+    app, _ = _open_editor(tmp_path)
+    before = app.session_state[BUFFER_KEY][1].copy()
+
+    epoch = _cell_apply(app, editor_calls, ("EQ-01", "반입일정", "2026-08-01"))
+
+    pd.testing.assert_frame_equal(app.session_state[BUFFER_KEY][1], before)
+    assert not app.error
+    assert editor_calls[-1]["epoch"] == epoch
+    refused = editor_calls[-1]["sheetRefused"]
+    assert refused["epoch"] == epoch and refused["nonce"]
+    assert [(item["id"], item["col"], item["rule"]) for item in refused["blocked"]] == [
+        ("EQ-01", "반입일정", "schedule_order")
+    ]
+    sent = events(app, "EQ-25")
+    assert sent and sent[0]["short"].startswith("EQ-01 반입일정 2026-08-01 — ")
+    assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
+    clear_equipment_repository()
+
+
+def test_a_window_cell_on_a_module_follows_its_siblings_on_apply(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """창에서 모듈 한 줄의 같이 바뀌는 칸을 고치면 숨은 모듈(레이아웃표시 N)까지 같이 바뀐다(답
+    3-5 —
+    편집기의 놓기 적용은 숨은 모듈을 N 그대로 둔다)."""
+    fleet = _equipment()
+    module = fleet.iloc[[0, 0, 0]].copy()
+    module["설비명"] = ["M-A", "M-B", "M-C"]
+    module["Main 설비"] = "M"
+    module["X좌표"], module["Y좌표"] = [50, 56, 50], [30, 30, 33.5]
+    module["Xsize"], module["Ysize"] = 6, 3.5
+    module["레이아웃표시"] = ["Y", "Y", "N"]
+    app, _ = _open_editor(tmp_path, pd.concat([fleet, module], ignore_index=True))
+
+    _cell_apply(app, editor_calls, ("M-A", "투자구분", "개발"))
+
+    buffer = app.session_state[BUFFER_KEY][1].set_index("설비명")
+    assert list(buffer.loc[["M-A", "M-B", "M-C"], "투자구분"]) == ["개발"] * 3
+    assert buffer.loc["M-C", "레이아웃표시"] == "N"
+    assert any("묶음 형제 2줄도 함께" in item.value for item in successes(app))
     clear_equipment_repository()
