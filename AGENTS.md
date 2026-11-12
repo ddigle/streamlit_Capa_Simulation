@@ -1543,7 +1543,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       보내기 시작한 회차에 이미 고른 호기를 한 번 보낸다(`queueMicrotask` 뒤로).
       문턱(3px)을 넘은 끌기(`drag.travelled` — 전체 보기에서 화면이 움직이지 않아도)는 누르기가 아니다.
     - 겹친 반입 예정 숨기기: 기준일에 반입 전인 호기가 그날 보이는(반입했고 안 빠진) 다른 호기와 넓이가 0 보다 크게
-      겹치면 `is-covered`(visibility hidden)다. 판정은 `// <view-cover>` 구획(`coveredBy`·`unitCountText`,
+      겹치면 `is-covered`(visibility hidden)다. 판정은 `// <view-cover>` 구획(`coveredBy`·`coveredWithMates`·`unitCountText`,
       `tests/test_space_viewer_pick.py` 가 node 로 돌림)이고 이웃은 겹침 짝(`overlapPairs`, `renderItems` 가 칠하기 전에
       비움)이다. 반입 전끼리·같은 Main 설비 묶음 모듈끼리는 숨기지 않는다. 모듈은 묶음째다(`coveredWithMates`, 형제는
       `groupMates` — 겹침 짝과 같이 비움) — 반입 전 모듈 하나라도 덮이면 그 묶음의 반입 전 모듈을 모두 숨기고 반입한 모듈은

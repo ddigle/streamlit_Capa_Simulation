@@ -157,7 +157,8 @@ def test_a_module_group_hides_its_pre_arrival_modules_together() -> None:
       남는다. X 가 빠진 날부터 묶음 모두 보인다.
     - K: K-A 만 Z(늘 실물)와 겹친다. K-A 가 반입한 날(2027-06-01)부터는 덮인 반입 전 모듈이 없어
       아직 반입 전인 K-B 도 다시 보인다.
-    - L: 「필요 단축」 표시 모듈(L-A)이 있는 묶음은 숨기지 않는다.
+    - L: 「필요 단축」 표시 모듈(L-A)이 있는 묶음은 숨기지 않는다 — 표시 없는 형제 L-B 가 늘 실물인
+      V 와 겹쳐도 보인다.
     - N: 도면에 서지 않은 형제(N-A — 미배치)는 덮였는지 셈하지 않는다."""
     items = [
         {"id": "X", "x": 10, "y": 10, "w": 12, "h": 7, "exitOn": "2027-03-01"},
@@ -179,6 +180,7 @@ def test_a_module_group_hides_its_pre_arrival_modules_together() -> None:
             "layer": "b1",
         },
         {"id": "L-B", "x": 85, "y": 12, "w": 3, "h": 2, "group": "L", "realFrom": "2099-01-01"},
+        {"id": "V", "x": 84, "y": 10, "w": 6, "h": 7},
         {"id": "W", "x": 100, "y": 10, "w": 12, "h": 7},
         {
             "id": "N-A",
