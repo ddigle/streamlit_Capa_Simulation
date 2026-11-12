@@ -840,18 +840,7 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         marks[row_id].changed.pop(position, None)
         errors.append((row_id, names[row_id], column, message))
     errors.extend((None, "", "", line) for line in source.table_errors)
-    module_rows = module_group_rows(master).notna().tolist() if len(master) else []
-    locks: dict[str, tuple[str, ...]] = {}
-    for row_id, position in index.live.items():
-        kinds: list[str] = []
-        if context.stale_lock:
-            kinds.append("stale")
-        if context.layout_lock:
-            kinds.append("layout" if row_id in index.saved else "place")
-        if module_rows and module_rows[position]:
-            kinds.append("module")
-        if kinds:
-            locks[row_id] = tuple(kinds)
+    locks = row_lock_kinds(context, index, master)
     return GridView(
         context=context,
         index=index,
@@ -867,6 +856,38 @@ def build_grid_view(source: GridSource, context: GridContext) -> GridView:
         downtime=source.frames[2],
         source=source,
     )
+
+
+def _lock_kinds_at(
+    context: GridContext, index: GridIndex, row_id: str, modules: Sequence[bool]
+) -> tuple[str, ...]:
+    """줄 하나의 잠금 갈래(`LOCK_SETS` 열쇠) — 낡은 세션 `stale`, 배치 편집이 잠긴 회차의 있던 호기
+    `layout` · 새 호기 `place`, 모듈 묶음 `module` 차례다. 지운 표시 줄(`deleted`)은 표 모양이 따로
+    본다(`lock_of`)."""
+    kinds: list[str] = []
+    if context.stale_lock:
+        kinds.append("stale")
+    if context.layout_lock:
+        kinds.append(_layout_kind(index, row_id))
+    position = index.live[row_id]
+    if modules and modules[position]:
+        kinds.append("module")
+    return tuple(kinds)
+
+
+def row_lock_kinds(
+    context: GridContext, index: GridIndex, master: pd.DataFrame
+) -> dict[str, tuple[str, ...]]:
+    """편집본 줄마다의 잠금 갈래(잠금이 있는 줄만) — 표 모양(`build_grid_view`)·출납의 칸 잠금
+    (`_locked`)·Space 「호기 정보」 창(`space_sheet_edit`)이 같이 쓰는 **잠금 판정 한 벌**이다.
+    `master` 는 `index` 를 낸 편집본 설비 마스터다(줄 자리가 `index.live` 와 맞는다)."""
+    modules = _module_flags(master.reset_index(drop=True))
+    locks: dict[str, tuple[str, ...]] = {}
+    for row_id in index.live:
+        kinds = _lock_kinds_at(context, index, row_id, modules)
+        if kinds:
+            locks[row_id] = kinds
+    return locks
 
 
 def lock_of(view: GridView, row_id: str, column: str) -> str | None:
@@ -1942,6 +1963,12 @@ def _store(frame: pd.DataFrame, position: int, column: str, value: Any) -> None:
     frame.iat[position, _loc(frame, column)] = value
 
 
+def store_cell(frame: pd.DataFrame, position: int, column: str, value: Any) -> None:
+    """한 칸(`iloc` 줄 자리)을 계약 dtype 그대로 넣는다 — 표 출납과 같은 넣기(Space 「호기 정보」
+    창이 쓴다). 값은 `coerce_master_cell` 로 다듬은 것이다."""
+    _store(frame, position, column, value)
+
+
 @dataclass
 class _Work:
     """한 번의 `apply_ops` 동안 고쳐 가는 상태(복사본)."""
@@ -2046,14 +2073,13 @@ def _set_overlay(work: _Work, patch: _Patch, key: str, text: str | None) -> bool
 
 
 def _locked(work: _Work, index: GridIndex, row_id: str, column: str, modules: list[bool]) -> bool:
-    """파이썬도 잠금을 본다 — 브라우저 잠금만 믿지 않는다."""
+    """파이썬도 잠금을 본다 — 브라우저 잠금만 믿지 않는다. 갈래는 표 모양과 같은 판정이다
+    (`row_lock_kinds`)."""
     if column == EQUIPMENT_ID_COLUMN or column not in COLUMN_INDEX:
         return True
-    if work.context.stale_lock and column in LOCK_SETS["stale"]:
-        return True
-    if work.context.layout_lock and column in LOCK_SETS[_layout_kind(index, row_id)]:
-        return True
-    return _module_locked(index, row_id, column, modules)
+    return any(
+        column in LOCK_SETS[kind] for kind in _lock_kinds_at(work.context, index, row_id, modules)
+    )
 
 
 def _layout_kind(index: GridIndex, row_id: str) -> str:

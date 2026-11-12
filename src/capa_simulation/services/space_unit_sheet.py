@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Final
 
@@ -46,6 +47,51 @@ MAX_TEXT_LENGTH: Final = 200
 SHEET_TYPES: Final = ("text", "date", "number")
 # 도면에 선 호기 CSV 파일 이름 — 옛 도면 아래 내려받기와 같다.
 FLOOR_CSV_NAME: Final = "space_{building}_{floor}.csv"
+# 배치 편집 「호기 정보」 창에서 고친 칸(적용값 · 확인 요청의 `cells`) 한 번의 상한과 칸 글 하나의
+# 길이 상한 — 망가진 값만 거른다(창은 층 하나의 줄이고 칸은 스물 남짓이다).
+MAX_SHEET_CELLS: Final = 5000
+MAX_SHEET_CELL_TEXT: Final = 10_000
+
+
+@dataclass(frozen=True)
+class SheetCell:
+    """배치 편집 「호기 정보」 창에서 고친 칸 하나 — 창 줄 id(설비명, 편집기에 실린 이름), 칸 이름,
+    친 글. 판정 · 얹기는 `services/space_sheet_edit.check_sheet_cells` 다."""
+
+    unit: str
+    column: str
+    text: str
+
+
+def parse_sheet_cells(raw: object, *, sheet_ids: Collection[str]) -> tuple[SheetCell, ...]:
+    """적용값 · 확인 요청의 `cells`(``[{"id", "col", "text"}]``)를 꼴만 보고 읽는다.
+
+    없거나 None 이면 빈 튜플이다. id 는 창에 실은 줄(`sheet_ids`)이어야 하고 칸 이름 · 글은 글이다.
+    같은 (id, 칸)이 둘이면 뒤엣것이 이긴다(차례는 처음 나온 자리). 꼴이 어긋나면 `ValueError` 다 —
+    칸 값의 뜻(잠금 · 다듬기 · 규칙)은 여기서 보지 않는다."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError("「호기 정보」 창에서 고친 칸 목록을 읽지 못했습니다.")
+    if len(raw) > MAX_SHEET_CELLS:
+        raise ValueError(
+            f"「호기 정보」 창에서 한 번에 고칠 수 있는 칸은 {MAX_SHEET_CELLS}개까지입니다."
+        )
+    ids = set(sheet_ids)
+    cells: dict[tuple[str, str], SheetCell] = {}
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise ValueError("「호기 정보」 창에서 고친 칸을 읽지 못했습니다.")
+        unit, column, text = item.get("id"), item.get("col"), item.get("text")
+        if not isinstance(unit, str) or not isinstance(column, str) or not isinstance(text, str):
+            raise ValueError("「호기 정보」 창에서 고친 칸을 읽지 못했습니다.")
+        unit = unit.strip()
+        if unit not in ids:
+            raise ValueError(f"「호기 정보」 창에 없는 호기의 칸입니다: {unit}")
+        if len(text) > MAX_SHEET_CELL_TEXT:
+            raise ValueError(f"{unit} {column} 칸 글이 너무 깁니다.")
+        cells[(unit, column)] = SheetCell(unit=unit, column=column, text=text)
+    return tuple(cells.values())
 
 
 def _blank(value: object) -> bool:

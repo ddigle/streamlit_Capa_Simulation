@@ -2144,6 +2144,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   레이아웃표시로), 칸 꼴(날짜 「YYYY-MM-DD」 글 · 투자Capa 는 수 — 못 읽는 글은 글 · 그 밖은 글, 200자 넘으면 줄임, 빈 값 None),
   행 `{id(설비명 앞뒤 공백 걷음), group(Main 설비), cells}`, 3000줄 상한(`cut`). 거르기·강조는 편집기 JS 이고 Streamlit·DB·색을
   모른다. `tests/test_space_unit_sheet.py`.
+  - 배치 편집 창에서 고친 칸의 꼴 읽기 `parse_sheet_cells`(``[{id, col, text}]`` → `SheetCell` — 적용값 읽기
+    `space_layout_edit.parse_editor_apply` 가 부르므로 판정 파일이 아니라 여기다)도 둔다.
+- `src/capa_simulation/services/space_sheet_edit.py` — Space 배치 편집 「호기 정보」 창 칸 고치기(2026-11-12 시안 보드 답
+  5-4 ~ 5-6)의 streamlit 없는 몫. 칸 꼴 · 고를 값은 설비 마스터 표 칸 정의(`columns_payload`), 줄마다 잠금 갈래는
+  `equipment_grid.row_lock_kinds`(표 모양 · 출납 `_locked` 와 **한 벌** — 설비명으로 옮긴 것 `unit_lock_kinds`), 창에서만
+  잠그는 칸은 `SHEET_FIXED_LOCKS`(설비명 · 동 · 층 · 단계 · 도면)다(data `sheet_edit_data`). 판정 `check_sheet_cells` 는
+  다듬기(`coerce_master_cell`) → 묶음 같이 쓰기 계획(`equipment_units.plan_group_writes` — 계획한 줄 하나라도 잠기면 통째로
+  막음 · 한 번에 다른 값이면 막음) → 받은 칸을 모두 얹은 마지막 상태와 고치기 앞의 규칙 표(`equipment_master_issues`, 표와
+  같은 인자 — 캔버스 · 오늘) 차이로 **새로** 생긴 막는 결과만 그 칸에 짚는다(입력 차례를 타지 않고 다른 호기의 기존
+  오류로 막히지 않는다). 편집본은 고치지 않고 얹은 새 프레임을 돌려준다. `tests/test_space_sheet_edit.py`.
 - `src/capa_simulation/services/space_color_basis.py` — Space 「색 기준」 그룹(공정구분·투자Capa·필요 단축 — 셋째 값은 그룹이
   없다)을 정한다. 색 값은 모른다.
 - `src/capa_simulation/services/space_shortening_layer.py` — Space 「필요 단축」 보기의 순수 규칙 — 계획의 단축 호기를 구간
