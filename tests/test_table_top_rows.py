@@ -16,11 +16,14 @@
 3. 표시순서 범위 고르기는 「직접 편집」 제목 줄 곁이다 — 배치는
    `tests/test_display_order_management.py` 의 `test_the_scope_pickers_stand_on_the_heading_line`
    이 본다.
+4. 세 그리드 공용 찾기 칸은 140px 이고 한 줄 문턱이 사내 보고 창 1283 이하다(2026-11-12 남은 물음
+   보드 ③-10 (가)).
 """
 
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from capa_simulation.components import plan_grid, reference_grid
@@ -138,3 +141,20 @@ def test_the_plan_grids_take_their_own_one_line_style() -> None:
     for name in ("plan_layout", "yield_layout"):
         assert f"st.container(key={name}.actions_box)" in page, name
         assert f"st.container(key={name}.grid_box)" in page, name
+
+
+def test_the_shared_search_box_lets_all_three_grids_stand_on_one_line_in_the_report_window() -> (
+    None
+):
+    """찾기 칸은 세 그리드(기준 정보 · PKG PLAN · 수율) 공용 140px 이고, 고친 뒤 단추 줄로 잰 한 줄
+    문턱이 모두 사내 보고 창 1283 이하다 — PKG PLAN 도 그 창에서 한 줄이다(2026-11-12 남은 물음
+    보드 ③-10 (가), 문턱은 샘플 관측)."""
+    css = (ROOT / "src/capa_simulation/components/edit_grid_assets/eg_toolbar.css").read_text(
+        "utf-8"
+    )
+    assert re.search(r"\.eg-tb-q \{[^}]*\bwidth: 140px;", css)
+    windows = [
+        reference_grid.ONE_LINE_MIN_WINDOW_PX,
+        *(layout.min_window_px for layout in plan_grid.LAYOUTS.values()),
+    ]
+    assert max(windows) <= 1283
