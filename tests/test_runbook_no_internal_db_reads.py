@@ -484,7 +484,7 @@ def test_the_settings_template_denies_reading_the_data_copy_and_backup_folders()
             assert any(_shell_rule_matches(rule, line) for rule in rules), (shell, line)
     # 역슬래시 하나 뒤 별표는 글자 별표다 — 그 꼴로 적으면 Windows 경로를 놓친다.
     assert not _rule_matches("PowerShell(Get-Content *data\\*)", "Get-Content data\\input\\a.csv")
-    assert not [rule for rule in deny if re.search(r"(?<!\\)\\\*", rule.split("(", 1)[1])]
+    assert not [rule for rule in deny if re.search(r"(?<!\\)\\\*", rule.partition("(")[2])]
     for shell, verbs in READ_VERBS.items():
         for verb in verbs:
             for folder in DATA_FOLDERS:
