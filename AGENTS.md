@@ -244,7 +244,11 @@ Windows(PowerShell):
   모두 읽는다 — 합침이 남긴 겹친 선언(알림 칸 맨 위 `const DIALOG` 두 줄, 2026-11-07)을 구획 시험은 놓쳤다.
   ③ 권한 비트(0600·0700)는
   담는 파일 체계에서만 본다 — Windows 의 chmod 는 읽기 전용 표시 하나만 바꾼다(공용 픽스처 `tests/conftest.py` 의
-  `keeps_permission_bits` — 권한 비트를 단언하는 시험은 모두 받는다, Linux CI 에서는 건너뛰지 않고 실패). ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
+  `keeps_permission_bits` — 권한 비트를 단언하는 시험은 모두 받는다, Linux CI 에서는 건너뛰지 않고 실패). ③-1 시험은 운영 DB 자리(저장소
+  `data/` · 운영 DB 와 같은 파일 · git 작업 트리 안 — `settings.is_operational_database_place`, 시험이 갈아끼우기 전 저장소 경로로)를 열지 않는다 —
+  `tests/conftest.py` 가 같은 프로세스의 `duckdb.connect` 를 지켜 열지 않고 멈추고 그 시험을 실패로 바꾼다(여는 쪽이 예외를 삼켜도 끝에서
+  실패). 사내 관문이 운영 저장소에서 돈다(2026-11-12 사용자 답 ⑤-6 (가)). 내보내기 임시 자리처럼 `settings.DATA_DIR` 아래를 쓰는 길은 그 칸을
+  `tmp_path` 로 돌린다. 하위 프로세스는 문지기를 지나지 않아 세션 끝의 「저장소 DB 를 새로 만들었으면 실패」 가 받친다. ④ 사내에만 깔린 패키지(`bigdataquery`)의 있음·없음으로
   화면이 갈리면 판정 함수를 갈아 끼워 두 경우를 다 본다 — 사외에는 없고 사내에는 있다. ⑤ 대소문자만 다른 두 뿌리
   (`modules/`·`Modules/`)를 실제 폴더로 만들면 NTFS 는 먼저 만든 쪽 하나로 접고 git 도 그 철자로 적는다 — 철자를 글자로
   견주지 말고 git 이 적은 철자를 읽는다(`tests/test_apply_deploy_package.py` 의 `_tracked_spelling`). 파일을 만들지 않는 순수

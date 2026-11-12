@@ -276,9 +276,10 @@ def test_a_head_check_knows_its_own_unanswered_pointer(rig: SimpleNamespace) -> 
 
 
 def test_a_head_check_on_a_first_generation_without_an_answer_is_not_an_empty_remote(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """base 가 아직 없는 자리도 같다. 자기 포인터를 base 로 바꿔 읽으면 「원격이 빔」 이 된다."""
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     paths = seed_pair(tmp_path)
     store = FakeStore()
     client = fake_client(store)
@@ -582,7 +583,10 @@ def test_a_moved_remote_blocks_and_an_unknown_base_blocks(rig: SimpleNamespace) 
     assert _publish(rig).decision is PushDecision.UNKNOWN_BASE
 
 
-def test_an_empty_remote_is_not_filled_by_the_app(tmp_path: Path) -> None:
+def test_an_empty_remote_is_not_filled_by_the_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     paths = seed_pair(tmp_path)
     store = FakeStore()
 
@@ -605,8 +609,11 @@ def test_a_missing_database_stops_the_publish(rig: SimpleNamespace) -> None:
     assert _publish(rig).stop is PublishStop.LOCAL_MISSING
 
 
-def test_an_interrupted_init_is_finished_by_running_it_again(tmp_path: Path) -> None:
+def test_an_interrupted_init_is_finished_by_running_it_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """이관 포인터의 답이 끊겨도 다시 돌리면 끝난다. 그 PC 도 그때 넘긴 쪽이 된다."""
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     paths = seed_pair(tmp_path)
     store = FakeStore()
     client = fake_client(store)
@@ -623,8 +630,11 @@ def test_an_interrupted_init_is_finished_by_running_it_again(tmp_path: Path) -> 
     assert len(store.pointer_keys()) == 1
 
 
-def test_a_dry_run_init_neither_finishes_nor_hands_over(tmp_path: Path) -> None:
+def test_a_dry_run_init_neither_finishes_nor_hands_over(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """끊긴 첫 세대가 남아 있어도 `--dry-run init` 은 게시하지 않고 넘긴 표시도 찍지 않는다."""
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     paths = seed_pair(tmp_path)
     store = FakeStore()
     client = fake_client(store)
@@ -782,8 +792,9 @@ def test_a_local_without_a_generation_is_replaced(rig: SimpleNamespace) -> None:
     assert row_count(rig.simulation) == expected
 
 
-def test_an_empty_remote_stays(tmp_path: Path) -> None:
+def test_an_empty_remote_stays(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """이관 전. 빈 DB 로 떠서 정본을 덮는 길을 막는다."""
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
     paths = seed_pair(tmp_path)
 
     outcome = engine.boot_pull(fake_client(FakeStore()), paths)

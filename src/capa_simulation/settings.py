@@ -69,7 +69,10 @@ def _same_file(first: Path, second: Path) -> bool:
 
 
 def is_operational_database_place(
-    path: Path, operational: Iterable[Path] = (DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH)
+    path: Path,
+    operational: Iterable[Path] = (DUCKDB_PATH, EQUIPMENT_DUCKDB_PATH),
+    *,
+    data_dir: Path | None = None,
 ) -> bool:
     r"""사용자 앱이 여는 운영 DB 자리인가 — 사본 전용 스크립트는 열기 전에 거절하고, 운영 DB 를 여는
     점검 스크립트는 앱 프로세스를 먼저 본다(사내 런북 6-3 · 8-0).
@@ -78,14 +81,14 @@ def is_operational_database_place(
     공유(`\\localhost\C$\…`)·하드링크. 그래서 셋 가운데 하나면 운영 자리로 본다.
 
     1. 운영 DB 파일(`operational`)과 같은 파일 — 글자(`resolve`)나 장치·파일 번호가 같다.
-    2. 운영 data 폴더(운영 DB 들의 폴더와 `DATA_DIR`) 그 자체나 그 아래 — 조상 폴더마다 글자나
-       번호로 견준다.
+    2. 운영 data 폴더(운영 DB 들의 폴더와 `DATA_DIR` — `data_dir` 를 주면 그 폴더) 그 자체나 그
+       아래 — 조상 폴더마다 글자나 번호로 견준다.
     3. git 작업 트리 안 — 조상 폴더에 `.git` 이 있다. 사본은 저장소 밖에 둔다(런북 6-3 —
        `git archive` 사본 트리에는 `.git` 이 없다). 스크립트는 제가 든 트리의 `data/` 만 알아,
        사본 트리의 스크립트에 다른 저장소의 `data/` 를 주는 길을 1·2 로는 못 막는다.
     """
     files = [Path(item) for item in operational]
-    folders = {DATA_DIR, *(item.parent for item in files)}
+    folders = {DATA_DIR if data_dir is None else Path(data_dir), *(item.parent for item in files)}
     given = Path(os.path.abspath(Path(path).expanduser()))
     resolved = given.resolve()
     if any(resolved == item.resolve() or _same_file(given, item) for item in files):
