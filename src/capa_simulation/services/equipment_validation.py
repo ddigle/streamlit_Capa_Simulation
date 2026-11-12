@@ -1185,27 +1185,12 @@ def prepare_downtime_for_prepared_equipment(
     return prepared_downtime
 
 
-def floor_equipment_outside_canvas(
-    equipment: pd.DataFrame, floor: FloorKey, canvas: CanvasSize
-) -> list[str]:
-    """그 동·층 호기 가운데 블럭(좌표 + 크기)이 `canvas` 를 벗어나는 설비명(표 차례).
-
-    저장 검증(규칙 `canvas_outside`)과 **같은 행, 같은 판정**이다 — 레이아웃표시·
-    상태·화면 필터와 무관하게 그 층에서 좌표·크기가 다 있는 행을 모두 본다. 화면에 그린 행만
-    넘기면 안 보이는 호기를 놓친다.
-    """
-    found = _floor_outside(equipment, floor, canvas)
-    if found is None:
-        return []
-    _, outside = found
-    return [str(name) for name in equipment.loc[outside, EQUIPMENT_ID_COLUMN]]
-
-
 def require_floor_inside_canvas(
     equipment: pd.DataFrame, floor: FloorKey, floor_canvases: FloorCanvasMap
 ) -> None:
-    """그 동·층 호기만 캔버스 안인지 본다 — 밖이면 저장 검증(규칙 `canvas_outside`)과 같은 글의
-    `ValueError` 다. 범위만 한 층이다.
+    """그 동·층 호기만 캔버스 안인지 본다 — 밖이면 저장 검증(규칙 `canvas_outside`)과 같은 층 조각
+    (캔버스 크기 · 필요한 크기 · 밖 호기)에 적용 자리의 고칠 곳(왼쪽 칸 「캔버스」 · 좌표)만 붙인
+    `ValueError` 다 — 마스터 전체 저장 · 빈 DB 첫 저장 안내는 붙이지 않는다. 범위만 한 층이다.
 
     Space 「배치 편집」 의 「적용」 이 부른다(`prepare_equipment_master` 는 캔버스 없이). 다른 층의
     밖 호기가 이 층을 넓히는 적용을 막지 않게 — 두 층 이상이 밖이어도 층마다 넓혀 두고 「배치
@@ -1220,7 +1205,11 @@ def require_floor_inside_canvas(
         return
     result = equipment.assign(**{column: numeric[column] for column in COORDINATE_COLUMNS})
     complete = numeric.notna().all(axis=1)
-    raise ValueError(_outside_canvas_message(result, outside, complete, floor_canvases))
+    detail = "; ".join(_outside_canvas_floors(result, outside, complete, floor_canvases))
+    raise ValueError(
+        f"{_CANVAS_OUTSIDE} — {detail}. 왼쪽 칸 「캔버스」 를 그만큼 넓히거나 가용설비 현황에서 그 "
+        "호기의 X좌표·Y좌표·Xsize·Ysize 를 캔버스 안으로 고칩니다."
+    )
 
 
 def _floor_outside(
@@ -1246,7 +1235,7 @@ def floors_outside_canvas(
     """FAB 층마다(`FLOOR_KEYS` 차례) 저장된 캔버스를 벗어났거나 좌표·크기가 맞지 않는 호기의
     설비명(표 차례 — 그런 호기가 있는 층만).
 
-    `floor_equipment_outside_canvas` 와 같은 행이다 — 레이아웃표시·상태·화면 필터를 보지 않아 값이
+    `require_floor_inside_canvas` 와 같은 행이다 — 레이아웃표시·상태·화면 필터를 보지 않아 값이
     고른 층·기준일·조건 카드에 기대지 않는다. 층을 하나씩 재지 않고 한 번에 훑는다. 저장된 캔버스가
     없는 층은 기본 크기다. 저장 검증과 맞추려면 저장된 마스터 전체(`snapshot.equipment`)를 넘긴다 —
     계산 표(`calculation_frames`)는 일정 없는 호기를 뺀다.
@@ -1313,6 +1302,26 @@ def _outside_canvas_message(
     두고(바뀐 행만 보면 검증이 약해진다) 문구만 넓힌다 — 층 이름·캔버스 크기·그 층 호기를
     담는 데 필요한 크기·해결 방법.
     """
+    floors = _outside_canvas_floors(result, outside, complete, floor_canvases)
+    return (
+        f"{_CANVAS_OUTSIDE} — 그 동·층의 캔버스가 호기 좌표보다 "
+        f"좁습니다. {'; '.join(floors[:3])}. 설비 마스터 저장은 모든 호기를 한 번에 검증하므로 "
+        "그 층과 무관한 칸만 고쳐도 같은 오류로 막힙니다. 가용설비 현황에서 그 호기의 X좌표·Y좌표·"
+        "Xsize·Ysize 를 캔버스 안으로 고치거나, Space 현황 그 동·층의 「배치 편집」 왼쪽 칸 "
+        "「캔버스」 로 넓혀 적용한 뒤 「배치 저장」 하세요. 설비를 아직 저장한 적이 없으면 좌표를 "
+        f"기본 캔버스({DEFAULT_CANVAS_WIDTH:g} × {DEFAULT_CANVAS_HEIGHT:g}) 안으로 넣어 먼저 "
+        "저장한 뒤 넓힙니다."
+    )
+
+
+def _outside_canvas_floors(
+    result: pd.DataFrame,
+    outside: pd.Series,
+    complete: pd.Series,
+    floor_canvases: FloorCanvasMap,
+) -> list[str]:
+    """캔버스 밖 호기의 동·층마다 한 조각 — 층 이름·캔버스 크기(저장된 캔버스가 없으면 기본값)·그 층
+    호기를 모두 담는 데 필요한 크기·밖 호기 예(다섯까지)."""
     floors: list[str] = []
     outside_rows = result.loc[outside]
     for (raw_building, raw_floor), rows in outside_rows.groupby(
@@ -1336,15 +1345,7 @@ def _outside_canvas_message(
             f"{label} 캔버스 {width:g} × {height:g}{source} — 이 층 호기를 모두 담으려면 "
             f"{need_width:g} × {need_height:g} 이상: {examples}"
         )
-    return (
-        f"{_CANVAS_OUTSIDE} — 그 동·층의 캔버스가 호기 좌표보다 "
-        f"좁습니다. {'; '.join(floors[:3])}. 설비 마스터 저장은 모든 호기를 한 번에 검증하므로 "
-        "그 층과 무관한 칸만 고쳐도 같은 오류로 막힙니다. 가용설비 현황에서 그 호기의 X좌표·Y좌표·"
-        "Xsize·Ysize 를 캔버스 안으로 고치거나, Space 현황 그 동·층의 「배치 편집」 왼쪽 칸 "
-        "「캔버스」 로 넓혀 적용한 뒤 「배치 저장」 하세요. 설비를 아직 저장한 적이 없으면 좌표를 "
-        f"기본 캔버스({DEFAULT_CANVAS_WIDTH:g} × {DEFAULT_CANVAS_HEIGHT:g}) 안으로 넣어 먼저 "
-        "저장한 뒤 넓힙니다."
-    )
+    return floors
 
 
 def _outside_canvas_cells(

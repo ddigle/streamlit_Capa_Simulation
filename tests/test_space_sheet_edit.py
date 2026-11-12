@@ -260,20 +260,24 @@ def test_different_values_in_one_group_are_blocked_not_picked() -> None:
 
 def test_a_locked_sibling_refuses_the_whole_write(monkeypatch: pytest.MonkeyPatch) -> None:
     """형제 하나라도 잠긴 칸이면 그 쓰기를 통째로 막는다(창에 있는 같이 바뀌는 칸에 걸리는 잠금은
-    지금 없어 잠금 표를 바꿔 본다)."""
+    지금 없어 잠금 표를 바꿔 본다). 거절 글은 설비 마스터 표와 한 벌(`GROUP_LOCKED_TOAST`)이고 수는
+    잠긴 형제 줄 수다(R1 리뷰 지적 6 — 창은 형제 전부를 셌다)."""
     monkeypatch.setattr(space_sheet_edit, "LOCK_SETS", {**eg.LOCK_SETS, "test": ("공정구분",)})
     master = _fleet()
-    check = check_sheet_cells(
-        master,
-        [SheetCell("M-A", "공정구분", "PKG")],
-        columns=COLUMNS,
-        context=eg.GridContext(base="t"),
-        locks={"M-C": ("test",)},
-        today=TODAY,
-    )
-    assert _rules(check) == [RULE_SIBLING_LOCKED]
-    assert "M 묶음 — 형제 2줄의 공정구분 칸이 잠겨" in check.blocked[0].message
-    assert check.written == ()
+    for locks, count in (({"M-C": ("test",)}, 1), ({"M-B": ("test",), "M-C": ("test",)}, 2)):
+        check = check_sheet_cells(
+            master,
+            [SheetCell("M-A", "공정구분", "PKG")],
+            columns=COLUMNS,
+            context=eg.GridContext(base="t"),
+            locks=locks,
+            today=TODAY,
+        )
+        assert _rules(check) == [RULE_SIBLING_LOCKED]
+        head = eg.GROUP_LOCKED_TOAST.format(group="M", count=count, column="공정구분")
+        assert check.blocked[0].message.startswith(f"{head}(")
+        assert check.blocked[0].message.endswith(f" · 잠긴 줄 {min(locks)}")
+        assert check.written == ()
 
 
 # ------------------------------------------------------------------ 꼴 · data · 셈

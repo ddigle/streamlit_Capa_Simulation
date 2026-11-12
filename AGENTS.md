@@ -1313,9 +1313,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - Space 층·FAB 캔버스 폭·높이는 따로 여는 팝업이 없다(2026-11-12 Space 보드 답 1-4 — 「캔버스 편집」 팝업 · 사이드바 단추를
   걷었다) — 층·FAB 「배치 편집」 왼쪽 칸 「캔버스」 → 적용 → 「배치 저장」 이다. 칸의 하한은 놓인 호기·요소, 도면에 안 보이는 이
   층 호기(`EditorInputs.reserved_extent`)와 다른 가정 설비 시나리오의 이 층 배치 차이(`LayoutOverlayExtent.scenario_extents`,
-  공식 세션 회차에만 `canvasLimits.overlay`)이고 막은 글이 닿은 까닭을 말한다(editor.js `canvasLimitWords`). 적용의 「캔버스
-  밖」 검사는 그 층만 본다(`equipment_validation.require_floor_inside_canvas` — 두 층 이상이 밖(`EQ-18`)이어도 층마다 넓혀 두고
-  「배치 저장」 이 마스터 전체를 본다). 옛 판이 올린 도면 그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다(마이그레이션
+  공식 세션 회차에만 `canvasLimits.overlay`)이고 막은 글이 닿은 까닭을 말한다(editor.js `canvasLimitWords`). 가정 배치 하한은
+  적용 길도 다시 본다(`LayoutOverlayExtent.scenarios_outside` — 낡은 편집기 · 옛 화면이 그보다 작게 보낸 캔버스를 거부). 적용의
+  「캔버스 밖」 검사는 그 층만 본다(`equipment_validation.require_floor_inside_canvas` — 두 층 이상이 밖(`EQ-18`)이어도 층마다
+  넓혀 두고 「배치 저장」 이 마스터 전체를 본다. 글은 저장 글의 층 조각에 적용 자리의 고칠 곳만 붙인다). 옛 판이 올린 도면 그림은 설비 DB `image_*` 칸에 남고 읽지도 그리지도 않는다(마이그레이션
   없음). 알림 `EQ-16`(옛 팝업의 밖 알림)은 비워 둔 번호다.
 - `src/capa_simulation/components/space_layout_editor.py` — Space 층·FAB 도면의 Components v2 편집기와 보기 전용 뷰어
   (`render_space_layout_viewer`·`render_fab_layout_viewer`·`render_fab_layout_editor`)다.

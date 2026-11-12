@@ -958,6 +958,10 @@ def test_the_canvas_preview_reads_hypothetical_marks_and_units_on_the_floor(
     assert extent.marks_outside((100.0, 60.0)) == ()
     assert extent.units_outside((90.0, 60.0)) == (("셋업 실무", 1),)
     assert extent.units_outside((100.0, 60.0)) == ()
+    # 적용 길의 서버 쪽 하한 — 요소 · 호기 어느 쪽이 밖이어도 그 시나리오 하나다.
+    assert extent.scenarios_outside((80.0, 60.0)) == ("셋업 실무",)
+    assert extent.scenarios_outside((91.0, 60.0)) == ("셋업 실무",)
+    assert extent.scenarios_outside((100.0, 60.0)) == ()
     ((name, boxes),) = extent.units
     ((x, y, w, h),) = boxes
     assert (name, x) == ("셋업 실무", 85.0)
