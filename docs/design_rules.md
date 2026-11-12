@@ -607,7 +607,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 모든 단추 · 칩 · 고르기 칸 · 툴바 단추
 - 예외: 브라우저 컴포넌트 안에서 판정이 끝나는 단추(조회기간 판 「적용」 등)는 잠근다(UI-INP-04).
 - 판단: 이 조작은 지금만 못 하나(→ 잠금 + 까닭), 이 화면에 아예 없나(→ 숨김)? 잠근 단추가 서버가 판정해야 하는 단추인가? 꺼진 단추의 까닭 풍선을 마우스와 키보드로 열 수 있나?
-- 그물: `tests/test_editor_row_order_guard.py`(「적용」 단추 전제 — 잠긴 위젯 한 자리) · `scripts/check_deploy_screens.py` toolbar(가이드 없는 화면의 Guide 숨김) · `tests/test_equipment_scenario_layout_management.py`(발행 막힘 — 표지 + 꺼진 단추 풍선) · `tests/test_equipment_master_grid_assets.py`(「호기 추가」 풍선 — 칸에 판정 줄 없음 · 감싼 칸 · 판정 전 글, 표 안 잠긴 단추의 까닭 · 감싼 칸) · `tests/test_locked_button_help.py`(코어 Streamlit 잠긴 단추의 풍선 유무) · `tests/test_alert_center_assets.py`(꺼진 단추 탭 자리 · 팝오버 들어가기) · `tests/test_paste_form.py`(잠긴 적용 초점 풍선) · `tests/test_sidebar_stylesheet.py`(칸 초점 윤곽) · `tests/test_space_layout_editor_assets.py`(편집기 까닭 풍선 · 감싼 칸 · 잠긴 칸 빨간 글 없음) · `tests/test_reference_grid_page.py::test_the_locked_apply_says_why_and_the_open_one_says_what_it_does`(풍선 글이 까닭인지) · `tests/test_space_shortening_layer_page.py::test_layout_editing_rests_the_layer_and_shows_the_default_colours`(쉬는 회차에도 사이드바 목표 줄이 잠긴 채 서고 까닭은 값 칸 풍선) · `tests/test_equipment_master_tab_scenarios.py::test_a_stale_warning_that_appears_keeps_the_tab_layout_in_place`(낡은 세션 — 머리 줄 표지 「일정 잠김」 + 풍선)
+- 그물: `tests/test_editor_row_order_guard.py`(「적용」 단추 전제 — 잠긴 위젯 한 자리) · `scripts/check_deploy_screens.py` toolbar(가이드 없는 화면의 Guide 숨김) · `tests/test_equipment_scenario_layout_management.py`(발행 막힘 — 표지 + 꺼진 단추 풍선) · `tests/test_equipment_master_grid_assets.py`(「호기 추가」 풍선 — 칸에 판정 줄 없음 · 감싼 칸 · 판정 전 글, 표 안 잠긴 단추의 까닭 · 감싼 칸) · `tests/test_locked_button_help.py`(코어 Streamlit 잠긴 단추의 풍선 유무) · `tests/test_alert_center_assets.py`(꺼진 단추 탭 자리 · 팝오버 들어가기) · `tests/test_paste_form.py`(잠긴 적용 초점 풍선) · `tests/test_sidebar_stylesheet.py`(칸 초점 윤곽) · `tests/test_space_layout_editor_assets.py`(편집기 까닭 풍선 · 감싼 칸 · 잠긴 칸 빨간 글 없음) · `tests/test_space_stack_order_js.py`(Space 「순서」 단추 — 끝 잠김 풍선 · 가정 잠김 풍선 · 호기만 고르면 줄 숨김) · `tests/test_space_layout_overlay_page.py::test_an_assumption_editor_locks_the_order_buttons_and_an_official_one_opens_them` · `tests/test_reference_grid_page.py::test_the_locked_apply_says_why_and_the_open_one_says_what_it_does`(풍선 글이 까닭인지) · `tests/test_space_shortening_layer_page.py::test_layout_editing_rests_the_layer_and_shows_the_default_colours`(쉬는 회차에도 사이드바 목표 줄이 잠긴 채 서고 까닭은 값 칸 풍선) · `tests/test_equipment_master_tab_scenarios.py::test_a_stale_warning_that_appears_keeps_the_tab_layout_in_place`(낡은 세션 — 머리 줄 표지 「일정 잠김」 + 풍선)
 - 그물 후보: 잠긴 쓰기 단추 그물
 - 근거: 검수 「괜찮음」 sum-u01(2026-11-03), 검수 「괜찮음」 home-12 · prog-03(2026-11-03 ~ 11-04), 사용자 답(남은 결정 넷)(2026-11-03), AGENTS 9장 「잠긴(disabled) 위젯」, 그림 검수표 equip-44(2026-11-05), 전후 그림 보드 v1(2026-11-05) — 「"아직 추가할 수 없습니다 ..." 알람 문구도 호기 추가버튼에 마우스 올리면 팝업창으로 뜨게하고, 해당 창에서는 안보이게해」
 - 지금 값: 없음
@@ -1084,12 +1084,12 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: SHOULD · 확정
 - 범위: 도면 · 차트 이름표 · 확대 축소가 있는 모든 보기
-- 예외: 없음
+- 예외: Space 영역 이름표 — 호기에 덮여도 숨기지 않고 호기 위 겹으로 올려 세운다(위 변 바로 바깥, 도면 위 끝이면 제자리). 올린 이름표는 위쪽 호기 · 요소 일부를 덮을 수 있다(보드 7-1 에서 알고 고름 — 2026-11-12). 배율로 작아 숨는 것은 그대로다.
 - 판단: 가장 작게 줄였을 때 글자가 도면을 덮나?
-- 그물: `tests/test_space_layout_editor_assets.py`(호기에 덮인 영역 이름표 숨김)
+- 그물: `tests/test_space_layout_editor_assets.py`(호기에 덮인 영역 이름표 올림 — `test_a_zone_label_under_a_unit_is_lifted_just_outside_the_top_edge` · `test_a_covered_zone_label_at_the_top_of_the_drawing_stays_in_place_above_the_units` · `test_only_units_on_screen_lift_a_zone_label` · `test_a_lifted_zone_label_sits_between_the_marks_and_the_main_names_and_takes_no_press`)
 - 그물 후보: 없음
-- 근거: Space 결정 보드 D2 「배율에 따른 글자 크기 기준」(2026-11-04), 사용자 요청 2(2026-10-22), 확인 보드 AMB-18 (가)(2026-11-04)
-- 지금 값: Space 이름표 · 찾아가기 글자 8px · 배율 300% — 출처 4장 / 호기에 덮인 영역 이름표는 숨기고 영역 풍선에 남김
+- 근거: Space 결정 보드 D2 「배율에 따른 글자 크기 기준」(2026-11-04), 사용자 요청 2(2026-10-22), 확인 보드 AMB-18 (가)(2026-11-04), Space 요청 시안 보드 7-1 (가)(2026-11-12) — 「영역 요소가 다른 객체와 겹치면 텍스트 표기가 안되는데 표기하게끔 변경.」
+- 지금 값: Space 이름표 · 찾아가기 글자 8px · 배율 300% — 출처 4장 / 호기에 덮인 영역 이름표는 위 변 바로 바깥(호기 위 겹)으로 올림 — 도면 위 끝이면 제자리 위 겹(옛 값 「호기에 덮인 영역 이름표는 숨기고 영역 풍선에 남김」 은 폐기 — 2026-11-12 보드 7-1 (가))
 
 ### 3-11. PRC — 검수 · 결정 과정
 

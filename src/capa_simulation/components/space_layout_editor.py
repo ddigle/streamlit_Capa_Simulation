@@ -808,6 +808,8 @@ def render_space_layout_editor(
     canvas_editable: bool = True,
     canvas_lock: str | None = None,
     overlay_extents: Sequence[tuple[str, float, float]] = (),
+    order_editable: bool = True,
+    order_lock: str | None = None,
     legend: Mapping[str, Any] | None = None,
     pending_save: bool = False,
     sheet: Mapping[str, Any] | None = None,
@@ -820,7 +822,9 @@ def render_space_layout_editor(
 
     `canvas_editable` 이 거짓이면 「캔버스」 칸(폭·높이·±·맞춤)을 끄고 `canvas_lock` 을 풍선으로
     둔다 — 층 캔버스는 공용 값이라 가정 설비 시나리오에서는 고치지 않는다(설계 8-4). 옛 브라우저가
-    보낸 캔버스 값은 서버(`app_pages/space_status.py`)가 다시 거부한다(두 겹).
+    보낸 캔버스 값은 서버(`app_pages/space_status.py`)가 다시 거부한다(두 겹). `order_editable` 이
+    거짓이면 선택 칸 「순서」 단추 넷과 순서 키를 끄고 `order_lock` 을 풍선으로 둔다 — 가정 배치
+    차이는 요소 차례를 담지 않는다(2026-11-12 보드 7-4 — 화면 잠금 한 겹).
 
     「캔버스」 칸은 놓인 호기 · 요소, 도면에 안 보이는 이 층 호기(`EditorInputs.reserved_extent`)와
     `overlay_extents`(다른 가정 설비 시나리오의 이 층 배치 차이 — (시나리오 이름, 오른쪽, 위),
@@ -907,6 +911,8 @@ def render_space_layout_editor(
             "newUnit": dict(new_unit),
             "canvasEditable": bool(canvas_editable),
             "canvasLock": canvas_lock or "",
+            "orderEditable": bool(order_editable),
+            "orderLock": order_lock or "",
             "legend": _clean_legend(legend),
             "pendingSave": bool(pending_save),
             "sheet": _clean_sheet(sheet),

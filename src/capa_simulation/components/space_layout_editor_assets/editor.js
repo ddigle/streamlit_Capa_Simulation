@@ -256,6 +256,8 @@ export default function (component) {
   const zonesLayer = svg.querySelector('.sle-zones')
   const layer = svg.querySelector('.sle-items')
   const marksLayer = svg.querySelector('.sle-marks')
+  // 호기에 덮여 위로 올린 영역 이름표(`syncZoneTag`) — 호기·위 겹 요소 위, Main 설비명 아래.
+  const zoneTagsLayer = svg.querySelector('.sle-zone-tags')
   const namesLayer = svg.querySelector('.sle-group-names')
   const compareLayer = svg.querySelector('.sle-compare')
   const badgesLayer = svg.querySelector('.sle-short-badges')
@@ -317,6 +319,9 @@ export default function (component) {
   const turnsRow = q('.sle-turns')
   const markRotate = q('.sle-mark-rotate')
   const flipButtons = [...host.querySelectorAll('.sle-flip')]
+  // 선택 칸 「순서」 줄 — 맨 앞으로 · 앞으로 · 뒤로 · 맨 뒤로(`data-order` front · fwd · bwd · back).
+  const orderRow = q('.sle-order')
+  const orderButtons = [...host.querySelectorAll('.sle-order-step')]
   const markNameWord = q('.sle-mark-name-word')
   const bayPrefix = q('.sle-bay-prefix')
   // 동선·베이의 선·머리(여럿 골라도 — 고른 것 가운데 동선·베이 모두에 건다).
@@ -862,6 +867,13 @@ export default function (component) {
     if (align === 'right') return lw - tagW
     return 0
   }
+  // 호기에 덮인 영역 이름표를 세울 세로 비킴(도면 좌표 — 0 이 도면 위 끝, 아래가 +). 덮이지 않았으면 null(제자리 · 영역 겹이다).
+  // 덮였으면 호기 위 겹에 세운다 — 위 변 위에 이름표 높이(box.h)만큼 자리가 있으면 -box.h(위 변 바로 바깥), 도면 위 끝이라
+  // 자리가 없으면 0(제자리). box 는 {top, h}.
+  function zoneTagLift(box, covered) {
+    if (!box || !covered) return null
+    return box.top - box.h >= -1e-9 ? -box.h : 0
+  }
   // Main 설비명 글자 가운데 {x, y}(데이터 좌표, Y 는 위로) — 범위 r {x, y, w, h}, 위치 position, 글자 크기 fs·바깥 틈 gap(데이터
   // 단위), 영역 높이 canvasH. 가운데는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를
   // 띄워 붙인다 — 알약 바탕(높이 fs × 1.6)의 반만큼 더 비킨다. 바깥 알약이 영역 위·아래 끝을 넘으면(범위가 영역 끝에 닿은
@@ -903,6 +915,76 @@ export default function (component) {
     return { x, y, w: Math.max(...shown.map((b) => b.x + b.w)) - x, h: Math.max(...shown.map((b) => b.y + b.h)) - y }
   }
   // </layout-look>
+
+  // ---------------------------------------------------------------- 겹친 순서(순수 함수)
+  // 도면 요소의 그리는 차례(2026-11-12 Space 요청 7 — 보드 7-2 · 7-3 · 7-5). 겹은 셋이고 서로 넘지 않는다 — 호기 아래(영역·도형),
+  // 호기, 호기 위(글자·동선·발자국·베이·반입구·문·기둥, FAB 층 블록). 겹 안 차례는 S.items 차례이고 그것이 곧 요소 저장 차례다. 선택 칸
+  // 「순서」 단추 넷 · 단축키 넷이 고른 도면 요소를 제 겹 안에서 움직인다. `tests/test_space_stack_order_js.py` 가 아래 두 표시 줄
+  // 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <stack-order>
+  // 종류 → 겹(한 곳). 종류를 더하면 여기에도 더한다 — 없는 종류는 순서 밖이라 「순서」 줄이 서지 않는다. 아래 겹은 그리는 층
+  // `onZoneLayer` 와 같다(시험이 맞댄다).
+  const STACK_TIERS = {
+    zone: 'below', shape: 'below',
+    shutter: 'above', door: 'above', column: 'above', text: 'above', arrow: 'above', footprints: 'above', bay: 'above',
+    block: 'above',
+  }
+  function tierOf(item) {
+    return item.kind === 'unit' ? 'unit' : STACK_TIERS[item.kind] || ''
+  }
+  // 두 상자({x, y, w, h})가 넓이로 겹치나 — 맞닿기만 하면 아니다.
+  function stackMeet(a, b) {
+    const e = 1e-6
+    return a.x < b.x + b.w - e && b.x < a.x + a.w - e && a.y < b.y + b.h - e && b.y < a.y + a.h - e
+  }
+  // 한 겹(peers — 아래 → 위)에서 고른 것(chosen — id 모음)을 how 쪽으로 움직인 새 차례. 앞(front · fwd)은 위, 뒤(back · bwd)는
+  // 아래다. 맨 앞 · 맨 뒤는 고른 것을 그 끝으로 모으되(고른 것끼리 차례는 그대로) 그 쪽에서 고른 것과 겹친 다른 요소가 하나도
+  // 없으면(이미 맨 앞 · 뒤로 보인다) 움직이지 않는다. 한 걸음은 그 쪽 끝의 고른 것부터, 그 쪽에서 겹친 다른 요소 가운데 가장
+  // 가까운 하나 너머로 간다(보드 7-3 — 목록 한 칸은 대개 화면에 아무 변화가 없다). 다른 고른 것은 넘지 않는다.
+  function stackTier(peers, chosen, how) {
+    const up = how === 'front' || how === 'fwd'
+    const line = up ? peers.slice() : peers.slice().reverse()
+    if (how === 'front' || how === 'back') {
+      const covered = line.some((e, k) => chosen.has(e.id)
+        && line.slice(k + 1).some((o) => !chosen.has(o.id) && stackMeet(e, o)))
+      if (!covered) return peers
+      const moved = [...line.filter((e) => !chosen.has(e.id)), ...line.filter((e) => chosen.has(e.id))]
+      return up ? moved : moved.reverse()
+    }
+    for (let k = line.length - 1; k >= 0; k -= 1) {
+      if (!chosen.has(line[k].id)) continue
+      let j = k + 1
+      while (j < line.length && !chosen.has(line[j].id) && !stackMeet(line[k], line[j])) j += 1
+      if (j >= line.length || chosen.has(line[j].id)) continue
+      const [item] = line.splice(k, 1)
+      line.splice(j, 0, item)
+    }
+    return up ? line : line.reverse()
+  }
+  // entries — 지금 그리는 차례(아래 → 위)의 [{id, tier, x, y, w, h}](tier '' 는 순서 밖). 고른 것을 저마다 제 겹 안에서 움직인 새
+  // id 차례 — 다른 겹의 자리는 그대로다. 바뀐 것이 없으면 null(그 쪽 끝에 닿았다).
+  function stackMove(entries, chosen, how) {
+    const ids = entries.map((e) => e.id)
+    let changed = false
+    for (const tier of new Set(entries.filter((e) => e.tier && chosen.has(e.id)).map((e) => e.tier))) {
+      const slots = []
+      entries.forEach((e, k) => { if (e.tier === tier) slots.push(k) })
+      stackTier(slots.map((k) => entries[k]), chosen, how).forEach((e, n) => {
+        if (ids[slots[n]] !== e.id) { ids[slots[n]] = e.id; changed = true }
+      })
+    }
+    return changed ? ids : null
+  }
+  // 순서 키(파워포인트 관례) — Ctrl+Shift+] 맨 앞으로 · Ctrl+] 앞으로 · Ctrl+[ 뒤로 · Ctrl+Shift+[ 맨 뒤로. 글쇠 자리 code
+  // (BracketRight · BracketLeft)로 읽어 자판과 상관없고 Ctrl 만 본다(macOS ⌘[ · ⌘] 는 브라우저 앞 · 뒤). Alt 와 함께거나 IME 조합
+  // 중이면 아니다. 순서 키면 'front' · 'fwd' · 'bwd' · 'back', 아니면 null.
+  function orderKeyOf(event) {
+    if (event.isComposing || !event.ctrlKey || event.altKey) return null
+    if (event.code === 'BracketRight') return event.shiftKey ? 'front' : 'fwd'
+    if (event.code === 'BracketLeft') return event.shiftKey ? 'back' : 'bwd'
+    return null
+  }
+  // </stack-order>
 
   // ---------------------------------------------------------------- 배율에 따른 글자 크기(순수 함수)
   // 도면에 붙은 글자(요소 이름표·글자 요소·층 블록 글·호기 이름표 상한·Main 설비명·베이 글)는 배율을 따라 커지고 작아진다
@@ -2030,6 +2112,10 @@ export default function (component) {
     ['Alt+Shift+V', '서식 붙여넣기(Ctrl+Shift+V 도)', 'ef eb'],
     ['Shift+H', '좌우 뒤집기', 'ef eb'],
     ['Shift+V', '상하 뒤집기', 'ef eb'],
+    ['Ctrl+Shift+]', '도면 요소 맨 앞으로', 'ef eb'],
+    ['Ctrl+]', '도면 요소 앞으로', 'ef eb'],
+    ['Ctrl+[', '도면 요소 뒤로', 'ef eb'],
+    ['Ctrl+Shift+[', '도면 요소 맨 뒤로', 'ef eb'],
     ['Shift+모서리 끌기', '도형 비율 유지', 'ef eb'],
     ['Alt 누른 채 끌기', '정렬선에 붙이지 않기', 'ef eb'],
     ['Space+끌기', '화면 옮기기', 'ef eb'],
@@ -3492,7 +3578,7 @@ export default function (component) {
         inner.append(tag, words)
       }
       // 이름표가 차지하는 자리 — 영역은 돌리지 않아(`rotatable: false`) 도면 좌표 그대로다. 글이 꼬리표보다 길면 글 끝까지다.
-      group.__tagBox = caption.shown ? { x: item.x + tagX, top, w: Math.max(tagW, emWidth(name) * fs + fs * 0.9), h: fs * 1.6 } : null
+      group.__tagBox = caption.shown ? { x: item.x + tagX, top, w: Math.max(tagW, emWidth(name) * fs + fs * 0.9), h: fs * 1.6, left: item.x } : null
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -4030,6 +4116,7 @@ export default function (component) {
     layer.replaceChildren()
     zonesLayer.replaceChildren()
     marksLayer.replaceChildren()
+    zoneTagsLayer.replaceChildren()
     trayList.replaceChildren()
     leavingList.replaceChildren()
     S.groups = new Map()
@@ -4271,7 +4358,59 @@ export default function (component) {
       if (isChanged(m)) count += 1
     }
     for (const id of S.originalMarkIds) if (!present.has(id)) count += 1
-    return count
+    return count + (markOrderChanged() ? 1 : 0)
+  }
+  // 처음부터 있던 도면 요소끼리의 차례가 처음과 다른가 — 차례만 바꿔도 변경 한 건(층 · FAB 하나에 한 건)이고 적용이 새 차례의
+  // 요소 목록을 보낸다. 새로 넣은 것 · 지운 것은 위에서 따로 센다. `S.originalMarkIds` 는 받은 차례대로 넣은 모음이다.
+  function markOrderChanged() {
+    const kept = [...S.originalMarkIds].filter((id) => {
+      const m = S.items.get(id)
+      return Boolean(m) && isMark(m)
+    })
+    const now = [...S.items.values()].filter((m) => isMark(m) && S.originalMarkIds.has(m.id)).map((m) => m.id)
+    return kept.some((id, k) => now[k] !== id)
+  }
+
+  // ---------------------------------------------------------------- 겹친 순서(선택 칸 「순서」 · 단축키)
+  // 고른 도면 요소를 제 겹 안에서 움직인다(`// <stack-order>`). 호기는 아직 움직이지 않는다. 순서를 바꾸지 않는 편집기(가정 설비
+  // 시나리오 — 가정 배치 차이는 차례를 담지 않아 바꿔도 저장되지 않는다, 보드 7-4)는 단추 넷을 잠그고 까닭을 풍선으로 달며 키도
+  // 듣지 않는다.
+  function orderLockReason() {
+    return data.orderEditable === false ? String(data.orderLock || '이 편집기에서는 겹친 순서를 바꾸지 않습니다') : ''
+  }
+  function stackEntries() {
+    return [...S.items.values()].map((m) => ({ id: m.id, tier: onCanvas(m) ? tierOf(m) : '', x: m.x, y: m.y, w: m.w, h: m.h }))
+  }
+  function stackChosen() {
+    return new Set(selectedItems().filter((m) => isMark(m) && onCanvas(m) && tierOf(m)).map((m) => m.id))
+  }
+  // 한 번 누름(키)이 되돌리기 한 번이다. 움직였으면 참.
+  function stackOrder(how) {
+    if (orderLockReason()) return false
+    const chosen = stackChosen()
+    if (!chosen.size) return false
+    const next = stackMove(stackEntries(), chosen, how)
+    if (!next) return false
+    const before = [...S.items.keys()]
+    setItemOrder(next)
+    pushUndo([{ op: 'order', before }])
+    renderItems()
+    updateStatus()
+    return true
+  }
+  // 선택 칸 「순서」 줄 — 고른 것에 도면 요소가 있을 때만 선다(호기만 고르면 없는 기능이라 숨김 — UI-INP-07). 끝에 닿은 쪽 단추는
+  // 잠그고 「이미 맨 앞입니다」 · 「이미 맨 뒤입니다」 풍선이다.
+  function syncOrder() {
+    const chosen = stackChosen()
+    orderRow.hidden = chosen.size === 0
+    if (!chosen.size) return
+    const entries = stackEntries()
+    const locked = orderLockReason()
+    for (const button of orderButtons) {
+      const how = button.dataset.order
+      const edge = how === 'front' || how === 'fwd' ? '이미 맨 앞입니다' : '이미 맨 뒤입니다'
+      lockWith(button, locked || (stackMove(entries, chosen, how) ? '' : edge))
+    }
   }
 
   // 함께 움직일 범위(모듈 묶음·여러 개 선택)를 점선 상자로 둘러 보인다 — 보기 화면의 모듈 묶음은 실선(`is-bundle`). 사각형으로
@@ -4359,15 +4498,33 @@ export default function (component) {
   const overlaps = (p, q2) => p.x < roundTo(q2.x + q2.w) && q2.x < roundTo(p.x + p.w)
     && p.y < roundTo(q2.y + q2.h) && q2.y < roundTo(p.y + p.h)
 
-  // 영역 이름표는 호기 아래 층이라 호기가 지나가면 반쯤 덮여 잘려 보인다 — 덮일 바에는 숨기고 영역 풍선에 남긴다(설계 규칙
-  // UI-ACC-04). 자리(`__tagBox`)는 `drawMark` 가 배율마다 정하고, 호기가 움직이거나 기준일로 보이는 호기가 바뀌면
-  // `markOverlaps` 가 다시 본다.
+  // 영역 이름표는 호기 아래 겹이라 호기가 지나가면 반쯤 덮여 잘려 보인다 — 덮이면 그 꼬리표·글을 호기 위 겹(`sle-zone-tags`)에
+  // 다시 세운다. 자리는 위 변 바로 바깥, 도면 위 끝이면 제자리다(`zoneTagLift`, 설계 규칙 UI-ACC-04). 올린 이름표는 얇은 테를
+  // 두르고 누르기를 받지 않는다 — 영역은 테두리 띠로 잡힌다. 자리(`__tagBox`)는 `drawMark` 가 배율마다 정하고(작아 숨는 배율이면
+  // 없다), 호기가 움직이거나 기준일로 보이는 호기가 바뀌면 `markOverlaps` 가 다시 본다.
   function syncZoneTag(group) {
     const box = group.__tagBox
-    if (!box) return
-    const covered = [...S.items.values()].some((m) => isUnit(m) && seenModule(m)
+    const nodes = [...group.querySelectorAll('.sle-zone-tag, .sle-zone-name')]
+    const covered = Boolean(box) && [...S.items.values()].some((m) => isUnit(m) && seenModule(m)
       && box.x < m.x + m.w && m.x < box.x + box.w && box.top < svgTop(m) + m.h && svgTop(m) < box.top + box.h)
-    for (const node of group.querySelectorAll('.sle-zone-tag, .sle-zone-name')) node.style.display = covered ? 'none' : ''
+    const lift = zoneTagLift(box, covered)
+    for (const node of nodes) node.style.display = lift === null ? '' : 'none'
+    // 같은 이름표(배율·자리가 바뀌면 `drawMark` 가 새로 그린다)를 같은 자리에 이미 올렸으면 그대로 둔다 — 페이더 칸마다 돈다.
+    const held = group.__tagCopy
+    if (held && lift !== null && held.__from === nodes[0] && held.__lift === lift) return
+    if (held) held.remove()
+    group.__tagCopy = null
+    if (lift === null || !nodes.length) return
+    const copy = el('g', { class: 'sle-zone-tagcopy', transform: `translate(${box.left} ${box.top + lift})` })
+    for (const node of nodes) {
+      const clone = node.cloneNode(true)
+      clone.style.display = ''
+      copy.append(clone)
+    }
+    copy.__from = nodes[0]
+    copy.__lift = lift
+    zoneTagsLayer.append(copy)
+    group.__tagCopy = copy
   }
 
   // 겹침은 막지 않고 알린다(저장도 된다). 호기끼리, 그리고 호기와 반입구·문·기둥·설비 금지 영역.
@@ -4665,6 +4822,7 @@ export default function (component) {
     }
     blockProps.hidden = !mark || mark.kind !== 'block'
     syncTurns(chosen, mark)
+    syncOrder()
     syncLineProps(chosen)
     syncShapeProps(chosen)
     footSyncProps(chosen, editable && single && isFootprints(single) ? single : null)
@@ -5225,7 +5383,7 @@ export default function (component) {
     if (!S.selection.has(S.selected)) S.selected = [...S.selection].pop() ?? null
   }
 
-  // 실행 취소 기록. set = 값 되돌리기, create = 새로 만든 것 지우기, delete = 지운 것 되살리기.
+  // 실행 취소 기록. set = 값 되돌리기, create = 새로 만든 것 지우기, delete = 지운 것 되살리기(지운 자리에), order = 차례 되돌리기.
   function pushUndo(ops) {
     if (!ops.length) return
     S.flash = ''
@@ -6026,7 +6184,8 @@ export default function (component) {
     }
     ops.push(...restoreGhosts(units))
     for (const m of [...marks, ...fresh]) {
-      ops.push({ op: 'delete', item: { ...m } })
+      // 지운 자리(그때 S.items 차례의 칸 — 그리는 차례 · 저장 차례)를 쥔다. 되돌리면 그 자리에 다시 선다(`restoreItem`).
+      ops.push({ op: 'delete', item: { ...m }, at: [...S.items.keys()].indexOf(m.id) })
       S.items.delete(m.id)
     }
     if (!ops.length) return
@@ -6130,6 +6289,22 @@ export default function (component) {
     updateStatus()
   }
 
+  // S.items 의 차례(그리는 차례 = 요소 저장 차례)를 ids 대로 다시 세운다. ids 에 없는 것은 제 차례대로 뒤에 붙고, 없는 id 는
+  // 건너뛴다.
+  function setItemOrder(ids) {
+    const next = new Map()
+    for (const id of ids) if (S.items.has(id) && !next.has(id)) next.set(id, S.items.get(id))
+    for (const [id, item] of S.items) if (!next.has(id)) next.set(id, item)
+    S.items = next
+  }
+  // 지운 것을 지운 자리(`at`)에 되살린다 — 끝(맨 위)으로 가지 않는다. 자리를 모르면(옛 기록) 끝이다.
+  function restoreItem(item, at) {
+    const ids = [...S.items.keys()]
+    ids.splice(Number.isInteger(at) && at >= 0 ? Math.min(at, ids.length) : ids.length, 0, item.id)
+    S.items.set(item.id, item)
+    setItemOrder(ids)
+  }
+
   function undo() {
     const last = S.undo.pop()
     if (!last) return
@@ -6150,7 +6325,10 @@ export default function (component) {
         } else if (op.op === 'create') {
           if (S.items.delete(op.id)) applied += 1
         } else if (op.op === 'delete') {
-          S.items.set(op.item.id, { ...op.item })
+          restoreItem({ ...op.item }, op.at)
+          applied += 1
+        } else if (op.op === 'order') {
+          setItemOrder(op.before)
           applied += 1
         } else if (op.op === 'groupLabel') {
           if (op.before === null) S.groupLabels.delete(op.key)
@@ -6223,7 +6401,29 @@ export default function (component) {
     drawer.classList.remove('is-drop-target')
     redraw([...drag.befores.keys()].map(itemOf))
     clearDragOverlap()
+    restackMarks([...drag.befores.keys()])
     updateStatus()
+  }
+
+  // 끄는 동안 맨 위에 붙였던 도면 요소(누를 때 제 층 맨 뒤로 `append`)를 손을 뗀 뒤 제 차례 자리로 되돌린다 — 그리는 차례가
+  // S.items 차례(저장 차례)와 같아야 눌러 고르기만 한 영역이 맨 위로 튀지 않고, 순서 단추가 보이는 대로 움직인다. 호기는 그대로
+  // 둔다(호기끼리 차례는 바꾸는 길이 없다). 뒤 차례부터 놓아 앞 것이 놓일 자리가 이미 맞다.
+  function restackMarks(ids) {
+    const keys = [...S.items.keys()]
+    const rank = new Map(keys.map((id, k) => [id, k]))
+    const moved = ids.filter((id) => {
+      const m = S.items.get(id)
+      return Boolean(m && isMark(m) && S.groups.get(id)?.parentNode)
+    }).sort((a, b) => rank.get(b) - rank.get(a))
+    for (const id of moved) {
+      const group = S.groups.get(id)
+      let next = null
+      for (let k = rank.get(id) + 1; k < keys.length && !next; k += 1) {
+        const other = S.groups.get(keys[k])
+        if (other && other.parentNode === group.parentNode) next = other
+      }
+      group.parentNode.insertBefore(group, next)
+    }
   }
 
   // 오른쪽·왼쪽·위·아래 변 가운데 움직이는 것만 옮긴다. 반대쪽 변은 그대로다. 폭·높이는 minW·minH 아래로 줄지 않는다.
@@ -6585,7 +6785,7 @@ export default function (component) {
     // 옮기기는 고른 것 전부 — 모듈 묶음은 묶음째(범위를 옮겨 바둑판으로 다시 놓는다). 모듈 하나만 옮기는 길은 없다.
     const plan = mode === 'move' ? movePlan(selectedItems()) : { loose: [item], groups: [], items: [item], box: bbox([item]) }
     const list = plan.items
-    // 끄는 것이 맨 위에 그려지도록 제 층(호기·영역·요소)의 맨 뒤로 옮긴다.
+    // 끄는 것이 맨 위에 그려지도록 제 층(호기·영역·요소)의 맨 뒤로 옮긴다. 도면 요소는 손을 떼면 제 차례로 돌아간다(`restackMarks`).
     for (const m of list) {
       const g = S.groups.get(m.id)
       if (g && g.parentNode) g.parentNode.append(g)
@@ -6762,6 +6962,7 @@ export default function (component) {
       return
     }
     clearDragOverlap()
+    restackMarks(drag.ids)
     if (drag.toTray) {
       // 오른쪽 칸에 놓았다 — 끈 자리를 처음으로 돌린 뒤 고른 호기만 빼기·지우기와 같은 길로 미배치(도면 요소는 제자리,
       // 모듈 묶음은 묶음째). 되돌리기 한 번에 돌아온다.
@@ -6949,6 +7150,10 @@ export default function (component) {
     // 뒤집기 — Shift+H 좌우 · Shift+V 상하(`flipKeyOf` — 수정 키는 Shift 하나만). 뒤집을 것이 없으면 키를 막지 않는다.
     const flipKey = flipKeyOf(event)
     if (flipKey) { if (flipMarks(flipKey)) event.preventDefault(); return }
+    // 겹친 순서 — Ctrl+Shift+] · Ctrl+] · Ctrl+[ · Ctrl+Shift+[(`orderKeyOf` — 글쇠 자리 code, Ctrl 만). 움직일 것이 없으면 키를 막지
+    // 않는다.
+    const orderKey = orderKeyOf(event)
+    if (orderKey) { if (stackOrder(orderKey)) event.preventDefault(); return }
     // 도면 요소 복사·붙여넣기(호기는 복사하지 않는다). 한글 자판에서도 듣게 글쇠 자리(code)도 본다. 글 칸에서는 위에서 비켰다.
     const letter = event.code === 'KeyC' ? 'c' : event.code === 'KeyV' ? 'v' : event.key.toLowerCase()
     if (ctrl && !event.shiftKey && letter === 'c') { if (copyMarks()) event.preventDefault(); return }
@@ -7297,6 +7502,7 @@ export default function (component) {
 
   // ---------------------------------------------------------------- 단추
   moveButton.onclick = () => sendItems(selectedItems(), moveSelect.value)
+  for (const button of orderButtons) button.onclick = () => stackOrder(button.dataset.order)
   moduleTile.onclick = () => {
     const chosen = selectedItems()
     if (chosen.length === 1) retileModules(chosen[0])

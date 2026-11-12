@@ -280,6 +280,54 @@ def test_a_marks_only_save_writes_no_revision(
     clear_equipment_repository()
 
 
+def test_an_order_only_apply_is_staged_and_saved_in_the_new_drawing_order(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """공식 배치 편집에서 도면 요소 차례만 바꾼 적용(편집기 「순서」 단추 — 새 차례의 요소 목록)도
+    대기분이 서고, 저장하면 그 차례(`source_row_no`)로 남아 보기 화면도 그 차례로 그린다(2026-11-12
+    보드 7-2 의 1단 — 편집기는 순서 단추를 연다)."""
+    app, database = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    assert data["orderEditable"] is True and data["orderLock"] == ""
+    zones = [
+        {"id": "Z1", "kind": "zone", "x": 60, "y": 30, "w": 20, "h": 20},
+        {"id": "Z2", "kind": "zone", "x": 70, "y": 40, "w": 20, "h": 15},
+    ]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": zones,
+    }
+    app.run()
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["Z1", "Z2"]
+    data = editor_calls[-1]
+    assert [mark["id"] for mark in data["marks"]] == ["Z1", "Z2"]
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": list(reversed(data["marks"])),
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert any("편집본에 적용했습니다" in item.value for item in successes(app))
+    assert any("도면 요소 1개 층" in item.value for item in app.markdown)
+    assert [mark["id"] for mark in editor_calls[-1]["marks"]] == ["Z2", "Z1"]
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["Z2", "Z1"]
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    viewer = editor_calls[-1]
+    assert viewer["mode"] == "view" and [mark["id"] for mark in viewer["marks"]] == ["Z2", "Z1"]
+    clear_equipment_repository()
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
