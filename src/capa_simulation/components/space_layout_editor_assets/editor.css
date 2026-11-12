@@ -173,6 +173,9 @@
 /* 굵기를 고른 동선은 화면 px 굵기·무늬다(베이와 같다). 고르지 않으면 지금처럼 상자 높이를 따르는 도면 단위다. */
 .sle-flow.is-px { vector-effect: non-scaling-stroke; }
 .sle-flow-head { fill: var(--sle-accent); }
+/* 발자국 — 발은 선 색(look.line, JS 가 인라인에 단다)으로 채우고, 새 발자국의 세 갈래 선은 도면 단위 굵기다(확대를 따른다). */
+.sle-foot { fill: var(--sle-accent); }
+.sle-foot-line { fill: none; stroke: var(--sle-accent); stroke-linecap: round; stroke-linejoin: round; }
 /* 베이 화살표(U자) — 선 색·굵기·무늬는 JS 가 모양 값(look)으로 인라인에 단다. 머리는 선 색으로 채운다. */
 .sle-bay-line { fill: none; stroke: var(--sle-mark-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .sle-bay-head { fill: var(--sle-mark-ink); }
