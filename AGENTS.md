@@ -8191,7 +8191,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
 4. 견본 `tests/fixtures/modules/demo_ok` 가 새 겉면으로 도는지 본다(겉면의 모든 이름을 쓴다 — 창구가 깨지면 사외 관문에서 떨어진다).
 5. 1 · 2 · 3 의 변경은 다음 배포 7장에 「모듈 담당자에게 알릴 것」 한 줄로 적는다.
 6. 창구 · 점검 규칙(`scripts/module_check_rules.py` 의 `RULES`) · 뼈대(`scripts/new_module.py`) · 점검 출력(`scripts/check_module.py`)을
-   바꾸면 같은 변경에서 `docs/module_guide.md` 를 고친다 — 부록 A · B(출력 예시 포함) · 3-7 뼈대 화면 · 3-8 · 3-9 예시(정적 규칙을
+   바꾸면 같은 변경에서 `docs/module_guide.md` 를 고친다 — 부록 A · B(출력 예시 포함) · 3-7 뼈대 화면 · 3-8 · 3-9 · 3-10 예시(정적 규칙을
    통과해야 한다) · 9-2 환경변수는 `tests/test_module_guide_sync.py` 가 코드와 맞댄다. 부록 B 의 「자세히」 예시 줄은 안내서
    (`docs/module_colleague_guide.md` 8-2)와 그 HTML 판(`site/module-guide/index.html`)에도 옮겨 적혀 있어 같이 고친다(같은 시험 ·
    `tests/test_site_index.py`).
