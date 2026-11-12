@@ -73,6 +73,7 @@ from capa_simulation.components.formula_text import (
     written_value,
 )
 from capa_simulation.components.process_capa_canvas import (
+    _after_rate_cell,
     _assumed_change,
     _available_hover,
     _balance_hover,
@@ -109,7 +110,12 @@ from capa_simulation.services.process_capa_detail import (
     MonthEvidence,
     ProcessMonthTrace,
 )
-from capa_simulation.services.securement_rate import CAUSE_COLUMN, CAUSE_OWNED_SHORT, OWNED_COLUMN
+from capa_simulation.services.securement_rate import (
+    CAUSE_COLUMN,
+    CAUSE_OWNED_SHORT,
+    OWNED_COLUMN,
+    STATUS_COLUMN,
+)
 from capa_simulation.services.securement_threshold import SecurementThresholds
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -299,6 +305,25 @@ def test_the_canvas_rate_balloon_recomputes(available: float, demand: float) -> 
     # 적힌 소요가 0.0 이면 다시 셀 수 없다 — 그때도 등호가 「≈」 다.
     if round(demand, 1) == 0:
         assert f"{APPROX} 가용" in text
+        return
+    _assert_checked(text, 1)
+
+
+@pytest.mark.parametrize(("after", "demand"), PAIRS)
+def test_the_after_shortening_rate_balloon_recomputes(after: float, demand: float) -> None:
+    """④ 「단축 후 확보율」 풍선 「단축 후 가용 a ÷ 소요 b」(2026-11-12 사용자 답 q6b (나)) — 적힌
+    수로 다시 셈해 어긋나면 「≈」 다(① ~ ③ 확보율 풍선과 같은 길)."""
+    record = {
+        "가용대수": after,
+        "소요대수": demand,
+        "확보율": after / demand,
+        STATUS_COLUMN: "secure",
+    }
+    text = _after_rate_cell(
+        "<b>26.11</b>", record, after, THRESHOLDS, 202611, past=False, assumed=""
+    ).hover
+    if round(demand, 1) == 0:
+        assert f"{APPROX} 단축 후 가용" in text
         return
     _assert_checked(text, 1)
 
