@@ -31,6 +31,14 @@ from capa_simulation.scenario_state import ActiveScenario
 _PENDING_REGISTRY_KEY = "scenario_pending_edit_registry"
 # 원본 토큰에서 줄 차례 지문이 시작하는 표지. 토큰 앞부분(버전·리비전·기간)에는 나오지 않는 글자다.
 _ROW_ORDER_MARK = "|order:"
+# 다른 화면의 적용(활성 리비전만 오름 — `only_revision_changed`)이 표 내용을 바꿔 그 표의 적용 전
+# 편집을 버린 회차의 알림(`tables` — 「일수 1칸」 처럼 표 이름 · 칸 수). 기준 정보 · 생산 계획
+# 그리드가 같은 글 · 아이콘으로 낸다.
+OTHER_APPLY_DROPPED_NOTICE = (
+    "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집({tables})을 버렸습니다"
+    " — 다시 입력하세요."
+)
+OTHER_APPLY_DROPPED_ICON = ":material/sync_problem:"
 
 
 def source_token(
@@ -78,10 +86,10 @@ def _without_revision(token: object) -> str | None:
 def only_revision_changed(previous: object, token: str) -> bool:
     """두 원본 토큰이 **활성 리비전만** 다른가 — 기준정보 버전·기간·줄 차례는 같다.
 
-    다른 화면의 적용(생산 계획 PKG PLAN·수율 등)은 리비전만 올린다. 그 적용이 건드리지 않은 표는
-    그대로라, 업무 키로 남는 편집(기준 정보 그리드 초안)은 표마다 내용을 견줘 남길 수 있다
-    (`app_pages/reference_data.py`). 시나리오를 바꾸거나 기간·줄 차례가 바뀐 회차는 여기 들지
-    않는다.
+    다른 화면의 적용(생산 계획 PKG PLAN·수율, 기준 정보 표 등)은 리비전만 올린다. 그 적용이
+    건드리지 않은 표는 그대로라, 업무 키로 남는 편집(기준 정보 · 생산 계획 그리드 초안)은 표마다
+    내용을 견줘 남길 수 있다(`app_pages/reference_data.py` · `app_pages/load_conversion.py`).
+    시나리오를 바꾸거나 기간·줄 차례가 바뀐 회차는 여기 들지 않는다.
     """
     before = _without_revision(previous)
     return before is not None and previous != token and before == _without_revision(token)

@@ -52,6 +52,8 @@ from capa_simulation.components.page_header import render_page_header
 from capa_simulation.components.process_labels import get_process_labels
 from capa_simulation.components.reference_csv_tools import queue_reference_import_flash
 from capa_simulation.components.scenario_edit_bar import (
+    OTHER_APPLY_DROPPED_ICON,
+    OTHER_APPLY_DROPPED_NOTICE,
     mark_own_change,
     only_revision_changed,
     pending_edit_labels,
@@ -377,14 +379,9 @@ SOURCE_TOKEN_KEY = "reference_data_source_token"
 # 이 화면이 스스로 적용한 편집(표 하나·STEP). 원본이 바뀌어도 그 적용이 건드린 표만 비운다 —
 # 다른 표에서 고치고 아직 적용하지 않은 편집은 남는다.
 OWN_CHANGE_KEY = "reference_data_own_change"
-# 다른 화면의 적용으로 그리드 초안을 버린 회차의 알림(표 이름 · 칸 수).
-GRID_DROPPED_NOTICE = (
-    "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집({tables})을 버렸습니다"
-    " — 다시 입력하세요."
-)
-# 그 알림 칸(작업 줄 맨 위 — `render_flash` 가 늘 세우는 한 칸).
+# 다른 화면의 적용으로 그리드 초안을 버린 회차의 알림 칸(작업 줄 맨 위 — `render_flash` 가 늘
+# 세우는 한 칸). 글은 생산 계획과 같다(`OTHER_APPLY_DROPPED_NOTICE` — 표 이름 · 칸 수).
 GRID_DROPPED_FLASH_KEY = "reference_grid_dropped_flash"
-GRID_DROPPED_ICON = ":material/sync_problem:"
 
 
 def _template_or_stop(table_name: str) -> pd.DataFrame:
@@ -486,14 +483,14 @@ head_is_stale = bool(set(edits_in_head) - set(pending_edit_labels("reference_dat
 if grid_dropped:
     queue_flash(
         GRID_DROPPED_FLASH_KEY,
-        GRID_DROPPED_NOTICE.format(
+        OTHER_APPLY_DROPPED_NOTICE.format(
             tables=" · ".join(
                 f"{TABLE_NAMES[table_name]} {cells:,}칸"
                 for table_name, cells in grid_dropped.items()
             )
         ),
         kind="warning",
-        icon=GRID_DROPPED_ICON,
+        icon=OTHER_APPLY_DROPPED_ICON,
     )
 
 

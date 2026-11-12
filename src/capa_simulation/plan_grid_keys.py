@@ -63,18 +63,24 @@ def last_key(table: str) -> str:
 # 이 세션에 그리드를 세운 표 — 한 번도 연 적 없는 탭은 그리드(등록 JS · CSS 를 싣는 무거운 요소)를
 # 세우지 않는다. 보기 상태라 시나리오를 바꿔도 지우지 않는다.
 MOUNTED_KEY: Final = "plan_grid_mounted"
+# 초안이 있는 표의 양식 지문 — 다른 화면의 적용이 그 표를 바꿨는지 가른다(`app_pages/
+# load_conversion.py` — 기준 정보 `reference_grid_keys.TEMPLATE_DIGESTS_KEY` 와 같은 꼴).
+TEMPLATE_DIGESTS_KEY: Final = "plan_grid_template_digests"
 
 
-# 시나리오를 바꾸면 지우는 칸 — 앞 시나리오 양식에 붙은 초안·이력과 아직 반영하지 않은 op. 토스트
-# 칸은 넣지 않는다(`reference_grid_keys.SESSION_KEYS` 와 같은 까닭).
-SESSION_KEYS: Final = tuple(
-    key
-    for table in TABLES
-    for key in (
-        cells_key(table),
-        history_key(table),
-        inbox_key(table),
-        applied_key(table),
-        discarded_key(table),
-    )
+# 시나리오를 바꾸면 지우는 칸 — 앞 시나리오 양식에 붙은 초안·이력과 아직 반영하지 않은 op, 그 양식
+# 지문. 토스트 칸은 넣지 않는다(`reference_grid_keys.SESSION_KEYS` 와 같은 까닭).
+SESSION_KEYS: Final = (
+    *(
+        key
+        for table in TABLES
+        for key in (
+            cells_key(table),
+            history_key(table),
+            inbox_key(table),
+            applied_key(table),
+            discarded_key(table),
+        )
+    ),
+    TEMPLATE_DIGESTS_KEY,
 )

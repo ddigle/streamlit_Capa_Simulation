@@ -14,7 +14,9 @@
   PKG PLAN 작업 줄 「Excel 붙여넣기」 바로 뒤 「⋯」 메뉴 안이다(2026-11-12 보드 답 n2 나).
 - **PKG PLAN · 수율 표는 범용 편집 그리드다**(2026-11-12 보드 답 k-a1 · k-a2 — 기준 정보와 같은
   편집기, `components/plan_grid.py`). 초안은 표마다 세션 칸(업무 키)이라 탭을 오가거나 화면을 떠나도
-  남고, 줄 차례만 바뀐 회차에도 제 칸에 붙는다. 닫힌 탭의 그리드는 표 없는 껍데기로 마운트만 남는다.
+  남고, 줄 차례만 바뀐 회차에도 제 칸에 붙는다. 다른 화면의 적용이 그 표 내용을 바꾸지 않았으면
+  남고, 바꿨으면 그 표 초안만 버리고 알림창에 알린다(기준 정보 그리드와 같은 꼴). 닫힌 탭의 그리드는
+  표 없는 껍데기로 마운트만 남는다.
 """
 
 from typing import cast
@@ -45,7 +47,10 @@ from capa_simulation.components.required_exclusion_notice import (
     plan_exclusion_lists,
 )
 from capa_simulation.components.scenario_edit_bar import (
+    OTHER_APPLY_DROPPED_ICON,
+    OTHER_APPLY_DROPPED_NOTICE,
     mark_own_change,
+    only_revision_changed,
     pending_edit_labels,
     register_pending_edits,
     reset_editors_on_source_change,
@@ -77,7 +82,13 @@ from capa_simulation.page_bootstrap import (
     load_page_context,
     resolve_effective_months,
 )
-from capa_simulation.plan_grid_keys import PLAN_TABLE, YIELD_TABLE, cells_key, history_key
+from capa_simulation.plan_grid_keys import (
+    PLAN_TABLE,
+    TEMPLATE_DIGESTS_KEY,
+    YIELD_TABLE,
+    cells_key,
+    history_key,
+)
 from capa_simulation.scenario_state import (
     ActiveScenario,
     apply_month_updates,
@@ -230,7 +241,8 @@ VIRTUAL_DROP_HELP = (
 )
 # 원본이 바뀌면 아직 적용하지 않은 붙여넣기는 행·월 구성이 맞지 않으므로 함께 버린다. 이 화면이
 # 스스로 적용한 것이면(`mark_own_change`) 그 탭의 그리드 초안만 비운다 — 수율을 적용했다고 PKG
-# PLAN 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다.
+# PLAN 에서 고치고 아직 적용하지 않은 값까지 사라지면 안 된다. 다른 화면의 적용(리비전만 오름)이면
+# 그 적용이 내용을 바꾸지 않은 표의 그리드 초안을 남긴다(`_grid_survivors`).
 OWN_CHANGE_KEY = "load_conversion_own_change"
 # 앱 머리를 고치려 다시 도는 회차가 넘기는 줄 차례 비움 결과 — 알림은 다시 돈 회차가 낸다.
 SOURCE_RESET_KEY = "load_conversion_source_reset"
@@ -242,25 +254,88 @@ STAGED_NAMES = {PLAN_STAGED_KEY: "PKG PLAN 붙여넣기"}
 GRID_SESSION_KEYS = tuple(
     key for table in (PLAN_TABLE, YIELD_TABLE) for key in (cells_key(table), history_key(table))
 )
+# 다른 화면의 적용으로 그리드 초안 · 붙여넣기 대기를 버린 회차의 알림 칸 — PKG PLAN 작업 줄의
+# `render_flash` 가 꺼낸다(늘 그리는 칸이라 이벤트 칸 자리가 늘지 않는다). 버린 표가 닫힌 탭일 수
+# 있어 단추 곁에는 그리지 않고 알림창 · Alarm 으로만 낸다.
+GRID_DROPPED_FLASH_KEY = "plan_grid_dropped_flash"
+
+
+def _grid_template_digest(table: str, plan_source: pd.DataFrame) -> str | None:
+    """그 표 그리드 양식의 내용 지문 — PKG PLAN 은 `plan_source`(시나리오 표나 붙여넣기 대기 표)를
+    0 을 빈칸으로 실은 꼴, 수율은 시나리오 표다. 수율 표를 세우지 못했으면 None."""
+    if table == PLAN_TABLE:
+        return frame_digest(plan_grid.zero_as_blank(plan_source, PLAN_EDITOR_DIMENSIONS))
+    return None if default_yield_table is None else frame_digest(default_yield_table)
+
+
+def _grid_survivors(previous: object, token: str) -> tuple[set[str], list[str]]:
+    """다른 화면의 적용(활성 리비전만 오름)에 남길 그리드 표와 버릴 편집의 이름(「PKG PLAN 3칸」 ·
+    「PKG PLAN 붙여넣기」).
+
+    다른 화면(기준 정보 등)의 적용은 원본 토큰의 리비전을 올리지만 이 화면의 표는 대개 그대로다.
+    초안은 업무 키 + 월이라 그 표 양식이 같으면 같은 칸에 그대로 붙는다 — 초안이 있는 표마다 이
+    적용 뒤 그릴 양식의 지문을 초안을 둔 때의 지문(`TEMPLATE_DIGESTS_KEY`,
+    `_remember_grid_digests`)과 견줘 같으면 남기고, 다르거나 지문이 없으면 버리고 알린다(기준
+    정보 그리드와 같은 꼴). 붙여넣기 대기 표는 이런 회차에 늘 버리므로
+    (`reset_editors_on_source_change`) PKG PLAN 은 시나리오 표로 견준다 — 대기 표 위에 둔 초안은 그
+    표와 함께 버려진다. 이 화면 자신의 적용(`OWN_CHANGE_KEY`) · 시나리오 · 기간 · 줄 차례가 바뀐
+    회차는 `reset_editors_on_source_change` 가 지금처럼 가른다.
+    """
+    if st.session_state.get(OWN_CHANGE_KEY) is not None or not only_revision_changed(
+        previous, token
+    ):
+        return set(), []
+    digests = st.session_state.get(TEMPLATE_DIGESTS_KEY)
+    saved = digests if isinstance(digests, dict) else {}
+    kept: set[str] = set()
+    dropped: list[str] = []
+    for table in (PLAN_TABLE, YIELD_TABLE):
+        cells = plan_grid.counts(table)[0]
+        if not cells:
+            continue
+        before = saved.get(table)
+        now = _grid_template_digest(table, default_plan_table)
+        if isinstance(before, tuple) and now is not None and before[1] == now:
+            kept.add(table)
+        else:
+            dropped.append(f"{DRAFT_NAMES[cells_key(table)]} {cells:,}칸")
+    if isinstance(st.session_state.get(PLAN_STAGED_KEY), pd.DataFrame):
+        dropped.append(STAGED_NAMES[PLAN_STAGED_KEY])
+    return kept, dropped
+
+
+plan_token = source_token(
+    reference_version,
+    active_scenario,
+    effective_start_month,
+    effective_end_month,
+    row_order=display_order_key,
+)
+grid_kept, grid_dropped = _grid_survivors(st.session_state.get(SOURCE_TOKEN_KEY), plan_token)
+kept_grid_keys = {key for table in grid_kept for key in plan_grid.own_keys(table)}
 # 앱 머리(칩 · 탭 점)는 이 본문보다 먼저 이 값으로 그렸다.
 edits_in_head = pending_edit_labels("load_conversion.py")
 source_reset = reset_editors_on_source_change(
     SOURCE_TOKEN_KEY,
-    source_token(
-        reference_version,
-        active_scenario,
-        effective_start_month,
-        effective_end_month,
-        row_order=display_order_key,
-    ),
+    plan_token,
     (),
-    other_keys=(PLAN_STAGED_KEY, *GRID_SESSION_KEYS),
+    other_keys=(PLAN_STAGED_KEY, *(key for key in GRID_SESSION_KEYS if key not in kept_grid_keys)),
     own_change_key=OWN_CHANGE_KEY,
     names={**DRAFT_NAMES, **STAGED_NAMES},
     # 줄 차례만 바뀐 회차에는 남긴다 — 그리드 초안은 업무 키 + 월이라 제 칸에 붙고, 붙여넣기 대기
     # 표는 붙여넣은 차례 그대로 PKG PLAN 그리드의 원본이 되며 적용도 업무 키로 한다.
     order_free_keys=(PLAN_STAGED_KEY, *GRID_SESSION_KEYS),
 )
+# 버림 알림은 담아 두기만 한다 — 아래에서 이 회차를 다시 돌리는지 정해진 뒤 PKG PLAN 작업 줄이
+# 꺼낸다. 먼저 꺼내면 두 회차가 표지를 따로 보내 한 번 일어난 일을 Alarm 이 「×2」 로 센다.
+if grid_dropped:
+    queue_flash(
+        GRID_DROPPED_FLASH_KEY,
+        OTHER_APPLY_DROPPED_NOTICE.format(tables=" · ".join(grid_dropped)),
+        kind="warning",
+        icon=OTHER_APPLY_DROPPED_ICON,
+        popup_only=True,
+    )
 if set(edits_in_head) - set(pending_edit_labels("load_conversion.py")):
     # 원본이 바뀌어 편집을 버렸는데 칩 · 탭 점은 버리기 전 값으로 섰다 — 그대로 두면 다음 조작까지
     # 남는다. 한 번 다시 돈다(다음 회차엔 버릴 편집이 없어 되풀이되지 않는다). 알림을 지금 내면
@@ -385,6 +460,32 @@ if plan_grid.apply_inbox({PLAN_TABLE: plan_table, YIELD_TABLE: yield_table}):
     # 반영이 어느 표의 초안 칸을 비웠다(Ctrl+Z 로 0칸 · 초안 없던 표의 첫 op 가 아무것도 바꾸지
     # 않음). 화면 탭 점 · 변경 칩은 `app.py` 가 이 본문보다 먼저 옛 칸으로 그렸다 — 한 번 다시 돈다.
     st.rerun()
+
+
+def _remember_grid_digests() -> None:
+    """초안이 있는 표의 양식 지문을 적어 둔다(`_grid_survivors` 가 다음에 견줄 값). 양식 키(내용
+    지문 · 줄 차례 — PKG PLAN 은 붙여넣기 대기 표 지문도)가 그대로면 다시 재지 않는다 — 적용 ·
+    리비전 · 붙여넣기가 바뀐 회차에만 초안이 있는 표를 잰다(양식 키도 초안이 있는 표만 짓는다)."""
+    digests = st.session_state.get(TEMPLATE_DIGESTS_KEY)
+    saved = dict(digests) if isinstance(digests, dict) else {}
+    for table in (PLAN_TABLE, YIELD_TABLE):
+        if not plan_grid.draft_pending(table):
+            saved.pop(table, None)
+            continue
+        content = _plan_content_key() if table == PLAN_TABLE else str(edit_table_key)
+        stamp = f"{content}|{display_order_key}"
+        before = saved.get(table)
+        if not (isinstance(before, tuple) and before[0] == stamp):
+            digest = _grid_template_digest(table, plan_editor_source)
+            if digest is None:
+                saved.pop(table, None)
+            else:
+                saved[table] = (stamp, digest)
+    if saved != digests:
+        st.session_state[TEMPLATE_DIGESTS_KEY] = saved
+
+
+_remember_grid_digests()
 # 적용하지 않은 편집이나 붙여넣고 아직 적용하지 않은 표가 남은 탭에 점을 찍는다(개선안 C). 다른
 # 탭으로 옮겨도 「저 탭에 아직 적용할 것이 있다」가 보인다.
 mark_pending_tabs(
@@ -886,7 +987,12 @@ with pkg_plan_tab:
             discard_click=_discard_plan_edits,
             discard_key="discard_pkg_plan_edits",
             staged=plan_staged,
-            flash_keys=(PLAN_APPLIED_FLASH_KEY, PLAN_PASTE_FLASH_KEY, PRODUCT_REGISTERED_FLASH_KEY),
+            flash_keys=(
+                PLAN_APPLIED_FLASH_KEY,
+                PLAN_PASTE_FLASH_KEY,
+                PRODUCT_REGISTERED_FLASH_KEY,
+                GRID_DROPPED_FLASH_KEY,
+            ),
         )
     if _dialog_is_open(PLAN_PASTE_DIALOG):
         _plan_paste_dialog(

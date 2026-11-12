@@ -1113,6 +1113,110 @@ def test_applying_one_table_leaves_only_the_other_tables_edit_pending(
     assert app.session_state[PRE_PAGE_LOG_KEY][-1] == [other_label]
 
 
+# --- 다른 화면의 적용(리비전만 오름) 뒤 그리드 초안 — 표 내용이 그대로면 남고 바뀌면 알리고 버림 -
+
+OTHER_APPLY_NOTICE = "다른 화면의 적용으로 표 내용이 바뀌어 적용하지 않은 편집"
+
+
+def _sent_drop_notices(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """버림 알림이 표지로 나갈 때마다 글을 적는다 — 앱 시험의 트리는 마지막 회차만 보여, 다시 돌기
+    전에 나간 표지는 여기서만 잡힌다. 표지 하나가 알림창 · Alarm 의 한 번이다."""
+    sent: list[str] = []
+    remember_sent = alerts.remember_sent
+
+    def spy(key: str, note: alerts.AlertNote) -> None:
+        if OTHER_APPLY_NOTICE in str(note.get("full")):
+            sent.append(str(note.get("full")))
+        remember_sent(key, note)
+
+    monkeypatch.setattr(alerts, "remember_sent", spy)
+    return sent
+
+
+def _drafts_in_both_grids(app: AppTest) -> AppTest:
+    app = _cell_edit(app, PLAN_CELL_EDIT)
+    app = _cell_edit(app, YIELD_CELL_EDIT)
+    assert not list(app.exception)
+    assert _drafted(app, "RQ_PKG_PLAN") and _drafted(app, "RQ_YLD")
+    return app
+
+
+def _draft_cells(app: AppTest, table: str) -> object:
+    from capa_simulation.plan_grid_keys import cells_key
+
+    return app.session_state[cells_key(table)] if cells_key(table) in app.session_state else None
+
+
+def test_another_pages_apply_keeps_the_grid_drafts_of_tables_it_did_not_touch(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """기준 정보처럼 다른 화면의 적용은 리비전만 올린다 — PKG PLAN · 수율 내용이 그대로면 두 그리드
+    초안이 남고(업무 키라 같은 칸에 붙는다) 버렸다는 알림도 없다. 전에는 어느 화면의 적용이든 두 표
+    초안을 말없이 버렸다(2026-11-12 검토 — Guide 「다른 화면에 다녀와도 남고」 와 어긋남)."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    app = _drafts_in_both_grids(app)
+    plan_draft, yield_draft = _draft_cells(app, "RQ_PKG_PLAN"), _draft_cells(app, "RQ_YLD")
+    sent = _sent_drop_notices(monkeypatch)
+
+    upeh = app.session_state["active_scenario"]["tables"]["RQ_UPEH"]
+    _inject(app, "RQ_UPEH", pd.DataFrame(upeh).copy(), "test-plan-grid-other-apply-upeh")
+    assert not list(app.exception)
+    assert _draft_cells(app, "RQ_PKG_PLAN") == plan_draft
+    assert _draft_cells(app, "RQ_YLD") == yield_draft
+    assert sent == []
+    assert not [note for note in alert_notes(app) if OTHER_APPLY_NOTICE in str(note["full"])]
+    # 남은 초안은 그대로 적용된다.
+    app.button(key="apply_pkg_plan_changes").click().run()
+    assert not list(app.exception)
+    assert _applied(app, "PKG PLAN을 전역 계획값에 반영했습니다") == [APPLIED_ICON]
+
+
+def test_another_pages_apply_that_changed_the_plan_drops_only_its_draft_and_says_so(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다른 화면의 적용이 PKG PLAN 내용도 바꿨다 — PKG PLAN 초안만 버리고(옛 양식에 붙은 값이다)
+    알림창 · Alarm 에 표 이름 · 칸 수를 한 번 알린다. 수율 초안은 남는다. 버린 초안을 앱 머리에서
+    걷으려 다시 도는 회차가 있어도 표지는 하나다(둘이면 Alarm 줄이 「×2」 로 센다). 닫힌 탭의 표일
+    수 있어 단추 곁에는 그리지 않는다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    app = _drafts_in_both_grids(app)
+    yield_draft = _draft_cells(app, "RQ_YLD")
+    sent = _sent_drop_notices(monkeypatch)
+
+    plan = pd.DataFrame(app.session_state["active_scenario"]["tables"]["RQ_PKG_PLAN"]).copy()
+    plan["생산수량"] = pd.to_numeric(plan["생산수량"]) * 2
+    _inject(app, "RQ_PKG_PLAN", plan, "test-plan-grid-other-apply-plan-doubled")
+    assert not list(app.exception)
+    assert not _drafted(app, "RQ_PKG_PLAN")
+    assert _draft_cells(app, "RQ_YLD") == yield_draft
+    assert sent == [f"{OTHER_APPLY_NOTICE}(PKG PLAN 1칸)을 버렸습니다 — 다시 입력하세요."], sent
+    assert not any(OTHER_APPLY_NOTICE in str(item.value) for item in app.warning)
+    app.run()
+    assert len(sent) == 1, sent
+
+
+def test_another_pages_apply_drops_a_staged_paste_with_the_draft_on_it_and_says_so(
+    seeded_database: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """붙여넣기 대기 표는 다른 화면의 적용에도 버려진다 — 그 위에 둔 PKG PLAN 초안은 대기 표 양식에
+    붙은 값이라 PKG PLAN 내용이 그대로여도 함께 버리고, 알림이 대기 표도 이름으로 부른다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    _paste(app, _clipboard_text(app, scale=0.5))
+    assert "pkg_plan_staged_paste" in app.session_state
+    app = _cell_edit(app, PLAN_CELL_EDIT)
+    assert _drafted(app, "RQ_PKG_PLAN")
+    sent = _sent_drop_notices(monkeypatch)
+
+    upeh = app.session_state["active_scenario"]["tables"]["RQ_UPEH"]
+    _inject(app, "RQ_UPEH", pd.DataFrame(upeh).copy(), "test-plan-grid-other-apply-staged")
+    assert not list(app.exception)
+    assert "pkg_plan_staged_paste" not in app.session_state
+    assert not _drafted(app, "RQ_PKG_PLAN")
+    assert sent == [
+        f"{OTHER_APPLY_NOTICE}(PKG PLAN 1칸 · PKG PLAN 붙여넣기)을 버렸습니다 — 다시 입력하세요."
+    ], sent
+
+
 def test_the_plan_grid_shows_zero_as_blank_and_takes_a_cleared_cell_as_zero(
     seeded_database: Path,
 ) -> None:

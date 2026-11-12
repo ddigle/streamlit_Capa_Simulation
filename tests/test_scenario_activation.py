@@ -395,7 +395,7 @@ def test_no_key_in_the_list_is_a_fossil() -> None:
             plan_grid_keys.applied_key,
             plan_grid_keys.discarded_key,
         )
-    }
+    } | {plan_grid_keys.TEMPLATE_DIGESTS_KEY}
     assert set(PLAN_GRID_SESSION_KEYS) == plan_generated
     assert not {plan_grid_keys.toast_key(table) for table in plan_grid_keys.TABLES} & set(
         PLAN_GRID_SESSION_KEYS

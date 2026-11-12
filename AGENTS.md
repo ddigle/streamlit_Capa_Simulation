@@ -421,7 +421,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     탄다. 「편집 취소」 는 초안(과 PKG PLAN 이면 붙여넣기 대기)을 버린다. PKG PLAN 작업 줄 글은 「변경사항 적용」 · 「Excel 붙여넣기」 ·
     「⋯」(풍선 「더 보기」 — 안에 「가상 제품 등록」, 2026-11-12 보드 답 n2 나) 차례이고 수율은 「수율 변경사항 적용」 · 「Excel 붙여넣기」 다.
   - 원본이 바뀌어 편집을 버린 회차는 칩 · 탭 점이 버리기 전 값으로 섰으므로 한 번 다시 돈다. 그리드 초안 · 이력과 붙여넣기 대기는
-    업무 키 · 제 차례라 줄 차례만 바뀐 회차에 남는다(`order_free_keys` — 이 화면에서는 `ST-09` 가 서지 않는다).
+    업무 키 · 제 차례라 줄 차례만 바뀐 회차에 남는다(`order_free_keys` — 이 화면에서는 `ST-09` 가 서지 않는다). **활성 리비전만 바뀐
+    회차**(다른 화면의 적용 — `scenario_edit_bar.only_revision_changed`)에는 기준 정보 그리드와 같은 꼴로 초안이 있는 표마다 이 적용 뒤
+    그릴 양식의 내용 지문을 초안을 둔 때의 지문(`plan_grid_keys.TEMPLATE_DIGESTS_KEY` — 양식 키가 바뀐 회차에만 다시 잰다,
+    `_remember_grid_digests`)과 견줘 같으면 초안 · 이력을 남기고(`_grid_survivors`), 다르거나 지문이 없으면 버린다. 붙여넣기 대기는 이런
+    회차에 늘 버리므로 PKG PLAN 은 시나리오 표 양식으로 견준다(대기 표 위 초안은 함께 버려진다). 버린 것(「PKG PLAN 3칸」 · 「PKG PLAN
+    붙여넣기」)은 다시 돌지 정해진 뒤 PKG PLAN 작업 줄 알림 칸(`GRID_DROPPED_FLASH_KEY`)이 알림창 · Alarm 으로만 한 번 알린다 — 글은
+    기준 정보와 같은 `scenario_edit_bar.OTHER_APPLY_DROPPED_NOTICE`, 버린 표가 닫힌 탭일 수 있어 `popup_only`(2026-11-12 검토 — 전에는
+    어느 화면의 적용이든 두 표 초안을 말없이 버렸다).
   - 가상 제품 등록(기준정보 복제, `virtual_product.py`)은 미적용 편집을 버리므로 먼저 알린다 — 창 맨 위는 경고 상자가 아니라 값 줄
     (고친 칸 수 · 붙여넣기 대기 칸 수, 2026-11-07 g3-19 — 기준 정보 STEP 창도 같다)이고 남기는 법은 등록 단추 풍선이다. 값이 비거나
     범위 밖인 수율 행은 잠가 원본 그대로 되붙이고, 0 이하·100% 초과는 계산을 멈춘다(숨기지 않는다).
@@ -472,7 +479,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     업무 키 — 머리가 센 초안을 버린 회차는 한 번 다시 돈다, `head_is_stale`), 이 화면 자신의 적용은 그 표만 버린다(`mark_own_change`). **활성 리비전만 바뀐 회차**(다른 화면의 적용 —
     `scenario_edit_bar.only_revision_changed`)에는 초안이 있는 표마다 지금 양식의 내용 지문(`frame_digest`)을 초안을 둔 때의
     지문(`reference_grid_keys.TEMPLATE_DIGESTS_KEY` — 양식 키가 바뀐 회차에만 다시 잰다)과 견줘 같으면 초안·이력을 남기고, 다르거나 지문이
-    없으면 그 표만 버리고 작업 줄 칸에 한 번 알린다(`GRID_DROPPED_NOTICE` — 2026-11-03 리뷰: 전에는 어느 화면의 적용이든 아홉 표
+    없으면 그 표만 버리고 작업 줄 칸에 한 번 알린다(`scenario_edit_bar.OTHER_APPLY_DROPPED_NOTICE` — 생산 계획과 같은 글, 2026-11-03 리뷰: 전에는 어느 화면의 적용이든 아홉 표
     초안을 말없이 모두 버렸다). 사이드바 「편집 되돌리기」 는 모든 화면의 편집을 버리므로 그리드 칸(`SESSION_KEYS`)을 따로 지운다
     (`scenario_activation.discard_unsaved_scenario_changes`). 「고칠 칸」 알림은 마크다운이라 분류 값을 칸마다 `literal_markdown`
     으로 막는다. 「Excel 붙여넣기」 도 그리드와 같은 하한·상한·정수 규칙(일수 — `ValueFormat.integer`)을 지난다
@@ -3331,7 +3338,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`render_grid` — 표가 없으면 표 없는 껍데기), 고칠 칸 알림(`error_notice`), 초안 되머지(`merged`)가 한 곳이다. 표 위 칸 key 와
   한 줄 문턱 · 왼쪽 비움은 `LAYOUTS`(고친 뒤 단추 줄 폭으로 잰 샘플 관측 — 설계 규칙집 4장 「생산 계획 표 위 한 줄」).
 - `src/capa_simulation/plan_grid_keys.py` — 생산 계획 그리드의 이름(UI 모름): 표(`PLAN_TABLE` · `YIELD_TABLE`), 호스트 key(`HOSTS`),
-  표마다 초안 · 이력 · inbox · ack · 토스트 · 버린 gen 칸, 시나리오를 바꾸면 지울 칸(`SESSION_KEYS` — 토스트 칸은 넣지 않는다,
+  표마다 초안 · 이력 · inbox · ack · 토스트 · 버린 gen 칸, 초안이 있는 표의 양식 지문 칸(`TEMPLATE_DIGESTS_KEY` — 다른 화면의 적용이
+  그 표를 바꿨는지 가른다), 시나리오를 바꾸면 지울 칸(`SESSION_KEYS` — 토스트 칸은 넣지 않는다,
   `reference_grid_keys` 와 같은 까닭). `scenario_activation`(`_STALE_VALUE_KEYS` · 「편집 되돌리기」)과 `page_tabs`(`EDIT_HOST_KEYS`)가 읽는다.
 - `src/capa_simulation/components/status_metric.py` — 조치가 필요한 지표에 상태색 왼쪽 띠를 붙인 metric
   카드다(`tone="neutral"` 이면 기존 카드). `metric_row` 는 카드를 같은 폭·높이로 세우고 모자라면 줄을 접는다. 둘 다
