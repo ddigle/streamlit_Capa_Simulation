@@ -2127,7 +2127,18 @@ def _refuse_sheet_cells(editor_key: str, epoch: str, check: SheetCheck) -> None:
         "nonce": uuid.uuid4().hex[:12],
         **verdict_payload(check),
     }
-    _alert_blocked_cells(check.blocked, cause="「적용」 누름")
+    # 칸 확정의 「확인만」 이 같은 칸 · 같은 글로 이미 알렸으면 다시 알리지 않는다 — 확정 없이
+    # 「적용」 을 누르면 칸을 떠나며 보낸 확인과 적용이 잇달아 와 같은 알림이 두 번 섰다(브라우저
+    # 확인).
+    seen = blocked_keys(_sheet_verdict(editor_key, epoch))
+    _alert_blocked_cells(
+        [
+            verdict
+            for verdict in check.blocked
+            if (verdict.cell.unit, verdict.cell.column, verdict.cell.text, verdict.rule) not in seen
+        ],
+        cause="「적용」 누름",
+    )
     st.rerun()
 
 
