@@ -138,15 +138,16 @@ def test_flip_keys_never_overlap_format_keys_or_element_copy() -> None:
 
 
 def test_the_turns_row_sits_under_the_name_fields_with_rotate_and_both_flips() -> None:
-    """「돌리기·뒤집기」 줄은 요소 속성 칸(이름표 · 글자 크기 · 색 …) 바로 밑, 선 · 도형 서식 칸
-    앞이다 — 옛 자리(베이는 선 칸 끝, 도형은 빗금 밑 맨 끝)의 뒤집기 단추는 없다. 단추에는 그림과
-    키 풍선(Shift+H · Shift+V)이 붙는다."""
+    """「돌리기·뒤집기」 줄은 요소 속성 칸(이름표 · 글자 크기 · 색 …) 바로 밑, 「순서」 줄과 선 ·
+    도형 서식 칸 앞이다 — 옛 자리(베이는 선 칸 끝, 도형은 빗금 밑 맨 끝)의 뒤집기 단추는 없다.
+    단추에는 그림과 키 풍선(Shift+H · Shift+V)이 붙는다."""
     marks = HTML.index('<span class="sle-markprops"')
     turns = HTML.index('<span class="sle-turns" hidden role="group" aria-label="돌리기·뒤집기">')
+    order = HTML.index('<span class="sle-order"')
     lines = HTML.index('<span class="sle-lineprops"')
     shapes = HTML.index('<span class="sle-shapeprops"')
-    assert marks < turns < lines < shapes
-    row = HTML[turns:lines]
+    assert marks < turns < order < lines < shapes
+    row = HTML[turns:order]
     assert (
         row.index('class="sle-mark-rotate"')
         < row.index('data-flip="h"')

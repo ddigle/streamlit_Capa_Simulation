@@ -508,6 +508,15 @@
 .sle-turns { display: flex; flex-wrap: wrap; gap: 6px; }
 .sle-turns[hidden], .sle-flip[hidden] { display: none !important; }
 .sle-flip svg { width: 14px; height: 14px; flex: none; }
+/* 순서 줄(2026-11-12 Space 요청 보드 7-3 (가) — 돌리기·뒤집기 줄 바로 밑, 둘씩 두 줄). 고른 것에 도면 요소가 있을 때만 서고, 끝에
+   닿은 쪽 · 가정 설비 시나리오는 잠그고 감싼 칸이 까닭 풍선을 받는다(UI-INP-07). */
+.sle-order { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 6px; }
+.sle-order[hidden] { display: none !important; }
+.sle-order-word { grid-column: 1 / -1; }
+.sle-order .sle-tiphost { display: block; min-width: 0; }
+.sle .sle-order button { width: 100%; justify-content: flex-start; }
+.sle-order svg { width: 14px; height: 14px; flex: none; }
+.sle-order .ico-soft { fill: var(--sle-surface); }
 /* 도형 서식 칸(여럿 골라도 선다) — 도면 요소 속성 칸과 같은 꼴. 「도형」 단추는 지금 도형 그림 + 이름, 모양 조절·투명도는 숫자 + %. */
 .sle-shapeprops { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
 .sle-shapeprops[hidden], .sle-shape-adj-row[hidden] { display: none !important; }
