@@ -5528,12 +5528,12 @@
       생산월 칸(Cut-off)에 남아, 그 달력 월(과 그 날이 다음 생산월 칸에 들면 그 칸)에 총보유 0 · 가용 > 0 이 선다(탐침 · Cut-off 10 — 6/5 이설: 6월
       총보유 0.00 · 가용 0.47, 5/25 이설: 5월 0.00 · 1.00 · 6월 0.00 · 0.10). ③-1 (가) 는 기존설비 Y · 보관 Y 의 반입 쪽만 맞췄다. (가) 지금대로(q3 (가) 그대로) (나) 반출/이설도 가용과
       같은 생산월로 뺀다 (다) 총보유를 반출/이설 다음 날 기준 달로 — 권장은 정하지 않았다.
-    - **띄어 쓴 「비가동 대수」 가 남은 화면 글**(③-4 (가) 범위 밖) — Preference 탭 안 풍선(「… 넣는 비가동 대수(환산 대수, 소수 가능)」 —
-      `components/manual_downtime_tab.py`) · 읽기 실패 글(「입력 비가동 대수를 읽지 못했습니다」 — 같은 파일 · `app_pages/available_equipment_status.py` ·
-      `components/required_shortening_panel.py`) · 칸 검증 글(「비가동 대수는 숫자여야 …」 — `services/manual_downtime.py`) · 저장 충돌 글 이름표
-      (`persistence/equipment_repository.py`) · 설비 시나리오 상태 글(「입력 비가동 대수는 모든 설비 시나리오 공용입니다」 —
-      `components/equipment_scenario_status.py`) · 필요 단축 일정 · 제약 시뮬레이션 띠 글(「… 공정 × 달 비가동 대수를 …」), 같은 꼴을 옮긴
-      Guide 가용설비 현황 「공정 × 달로 넣는 비가동 대수」 두 곳. 마이그레이션 0032 Purpose 와 그것을 옮긴 `docs/migration_catalog.md` ·
+    - **띄어 쓴 「비가동 대수」 가 남은 화면 글**(③-4 (가) 범위 밖 — 같은 자리인 Preference 탭 제목 풍선 · Guide 가용설비 현황 두 곳 · AGENTS
+      「입력 비가동대수」 절 첫 줄은 ③-4 (가) 로 붙여 썼다) — 읽기 실패 글(「입력 비가동 대수를 읽지 못했습니다」 — `components/manual_downtime_tab.py` ·
+      `app_pages/available_equipment_status.py` · `components/required_shortening_panel.py`) · 칸 검증 글(「비가동 대수는 숫자여야 …」 —
+      `services/manual_downtime.py`) · 저장 충돌 글 이름표(`persistence/equipment_repository.py`) · 설비 시나리오 상태 글(「입력 비가동 대수는 모든
+      설비 시나리오 공용입니다」 — `components/equipment_scenario_status.py`) · 필요 단축 일정 · 제약 시뮬레이션 띠 글(「… 공정 × 달 비가동 대수를 …」)과
+      그것을 옮긴 Guide 제약 시뮬레이션 한 줄. 마이그레이션 0032 Purpose 와 그것을 옮긴 `docs/migration_catalog.md` ·
       `docs/data_model.md` 는 띄어 쓴 그대로다(SQL 은 고칠 수 없음). (가) 모두 붙여 쓰고 `tests/test_one_concept_one_name.py` 에 「입력 비가동 대수」 를
       더한다 (나) 지금대로(카드는 탭 제목 · 저장 알림만) — 권장은 정하지 않았다.
   - **공정 공유 2차(`night/pp2-1110`) 물음** — 다음 배포와 무관하고 실을 때 함께 묻는다(괄호는 권장). 싣는 때(가 — 1차 사내 사용 뒤 한꺼번에) · 표준 목표 카드
