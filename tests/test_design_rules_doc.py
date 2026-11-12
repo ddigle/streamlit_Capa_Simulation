@@ -16,6 +16,7 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 고른 글 · 앱 세션이 정한 줄(v1.17) · 「다음 배포 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 ·
 메모(v1.18) · 사내 리뷰 202611111500 보드 줄과 고른 글 · 고친 줄 커밋 · 메모 · 다시 물음 답(v1.19) ·
 「배포 뒤 할 일 넷」 시안 보드 줄과 고른 글 · 메모 · 권장과 다른 답 · 커밋 · 예외(v1.20) ·
+「남은 물음 11-12」 보드 줄과 고른 글 · 고친 줄 커밋 · 권장과 다른 답 · 가린 메모(v1.21) ·
 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
@@ -1743,30 +1744,122 @@ def test_the_post_deploy_four_board_answers_are_recorded() -> None:
     assert "n2 (나) · q6b (나)" in _chapter(document, 8)
 
 
-# 2026-11-12 「남은 물음 11-12」 보드(6-21)의 화면 갈래 답 — 고칠 것 일곱. 고른 글은 선택지 원문이고
-# 일곱 모두 권장 (가) 다. 줄 id 는 보드 카드 id 이고 차례는 보드 차례다(③-1 · ③-2 · ③-4 · ③-9 ·
-# ③-10 · ③-11 · ⑥-1). 보드의 나머지 카드(실을 때 · 운영 · 모듈 · 보안 · 지금대로)는 이 절 밖이다.
+# 2026-11-12 「남은 물음 11-12」 보드(6-21)의 답 — 카드 마흔하나. 고른 글은 선택지 원문이고 마흔은
+# 카드 권장(⑤-4 는 권장이 (나)), ①-1 만 권장 (가) 와 다른 (나) 다. 고친 열여덟 줄은 갈래
+# (`night/e2e-1112` · `night/pre-ui-1112` · `night/pre-ops-1112`)나 그 합침의 커밋을 들고,
+# 기록 · 다음 7장 몫 · 뒤로 미룬 스물셋은 커밋이 없다. 줄 id 는 보드 카드 id 이고 차례는
+# 보드 차례다.
 REMAINING_1112_ADDRESS = "https://claude.ai/artifact/RxRM2KSDtKKKdDC2ER5dsh"
 REMAINING_1112_ANSWERS = {
+    "ship-post": "(나) 다음 배포에 함께 싣는다",
+    "ship-e2e": "(가) 다음 배포 후보에 합쳐 싣는다",
+    "count-lines": (
+        "(가) 사외가 결과 파일을 쓰는 짧은 스크립트로 옮긴다 — 사용자는 짧은 한 줄만 친다"
+    ),
+    "census-bundle": "(가) 이번에도 센다 — 그 줄에 「사용자 승인 11-12」 를 단다",
+    "migrate-order": "(가) 정본 문서 두 곳의 차례 번호도 「받기 모드 먼저」 로 맞춘다",
+    "bucket-text": "(가) 정본 문서도 「그 창의 변수로만」 꼴로 맞춘다",
+    "summary-length": (
+        "(가) 둘 다 줄인다 — 늦게 보내도 되는 줄은 「남김(리뷰 뒤)」 으로, 겹치는 알림 칸은 한"
+        " 곳으로"
+    ),
+    "rollback-path": "(가) 그때 따로 — 지금대로",
+    "home-time-after": "(가) 이관 뒤 한 번 더 잰다 — 7장 이관 확인 줄에 초 칸 하나",
+    "c11-tab": "(가) 사내 확인도 앱처럼 Y 로 본다",
+    "draft-self": "(가) 넷 다 받는다(초안대로)",
     "owned-vs-avail": "(가) 그런 호기는 총보유대수도 처음부터 가진 것으로 센다",
     "toolrow-1600": "(가) 보이는 글 「비가동 기준」 · 「④」 를 걷고 ⓘ 풍선 하나로 뜻을 단다",
+    "main-head": "(가) 지금처럼 Main 머리 줄을 둔다",
     "word-downtime": "(가) 붙여 쓴다",
+    "word-official": "(가) 그대로 둔다",
+    "discard-notice": "(가) 지금대로",
+    "plan-cap": (
+        "(가) 다음 배포 7장에 생산 계획 두 표 크기 세기를 더해(사용자 별도 창 · 개수만) 잰 뒤"
+        " 정한다"
+    ),
+    "locked-color": "(가) 그대로",
     "yield-apply": "(가) 「변경사항 적용」 으로 맞춘다",
     "search-width": "(가) 세 그리드 공용 찾기 칸을 140 으로",
     "cancel-icon": "(가) 「편집 취소」 를 다른 그림으로 바꾼다",
+    "small-keep": "(가) 다섯 다 지금대로",
+    "m1-when": (
+        "(가) 이번 배포부터 셋 다 켠다 — 적용 앞에 담당자가 도우미로 옮기는 PR 을 먼저 받는다"
+    ),
+    "m1-names": "(가) 그대로 — 앞머리로 한꺼번에 막는다",
+    "mod-s3-open": "(가) 지금대로 — 이관과 함께 연다",
+    "mod-other-id": "(가) 모듈 점검에서 그렇게 만드는 코드를 오류로 막는다",
+    "token-min": "(가) 16 그대로",
+    "sy05-off": "(가) 두지 않는다 — 그런 서버가 생기면 그때",
+    "ad10-nosso": "(가) 지금대로 — 아무에게도 안 띄운다",
+    "token-msg": "(나) WebIDE 에서는 「BigDataQuery 로그인을 다시 하세요」 로 가른다",
+    "deny-data-read": (
+        "(가) 막는다 — 실데이터 폴더 · 사본 폴더 · 백업 폴더 읽기를 권한 설정에서 거절"
+    ),
+    "pytest-guard": "(가) 둔다 — 시험이 운영 DB 자리를 열면 실패하게, 다음 배포에 함께",
+    "pub-image": (
+        "(가) 이번 배포는 그대로 — C-DEP 담당에게 보내기로 한 물음(이미지 만들 때 바깥 값 · 사내"
+        " 바탕 이미지)의 답을 받은 뒤 옮길 길을 정한다"
+    ),
+    "pub-index": (
+        "(가) 다음 배포 뒤 따로 환경변수로 옮긴다 — 사내 PC · C-DEP 표에 한 칸씩(S3 값과 같은 길)"
+    ),
+    "pub-mail": "(가) 환경변수로 받는다 — 비어 있으면 연락처 없이 팀 이름만(다음 배포 뒤 따로)",
     "unused-bits": (
         "(가) 글은 지금 이름으로 고치고(공식 확보율 판정과 설비 일정 확보율 판정이 네 가지"
         " 조합으로 다 나오는지 보는 점검은 그대로 남김), 안 쓰는 칸은 걷는다"
     ),
+    "grid-next": "(가) 이 가지를 실은 뒤 사내 사용을 보고, 차례 2 설비 마스터부터",
+    "test-env": "(가) 다음 배포 뒤 정리 때 일곱을 한꺼번에 본다",
+    "upeh-msg": "(가) 셋 다 고친다 — 다음 배포 뒤",
+    "admin-check": "(가) 다음에 그 근처를 손볼 때 모은다",
 }
+# 화면 · 런북 · 스크립트 · 보안 · 모듈을 고친 줄(커밋을 듦).
+REMAINING_1112_FIXED = (
+    "ship-post",
+    "ship-e2e",
+    "count-lines",
+    "migrate-order",
+    "bucket-text",
+    "c11-tab",
+    "owned-vs-avail",
+    "toolrow-1600",
+    "word-downtime",
+    "plan-cap",
+    "yield-apply",
+    "search-width",
+    "cancel-icon",
+    "mod-other-id",
+    "token-msg",
+    "deny-data-read",
+    "pytest-guard",
+    "unused-bits",
+)
+# 기록만 한 것 · 다음 7장에서 쓸 것 · 뒤로 미룬 것(커밋 없음).
+REMAINING_1112_KEPT = tuple(
+    key for key in REMAINING_1112_ANSWERS if key not in REMAINING_1112_FIXED
+)
 # 갈래가 답 밖에서 정한 것을 밝힌 줄.
 REMAINING_1112_BEYOND = ("toolrow-1600", "cancel-icon", "unused-bits")
+# ②-2 메모 — 실제 설비명 둘은 공개 저장소라 가린 꼴로 적는다.
+REMAINING_1112_MEMO = (
+    "이거 원인 파악됐어 붙여넣기가 잘못반영돼서 여러개의 모듈에 한개 메인설비명이 들어갔고, 그걸로"
+    " 인해 발생된 현상임. [설비명 1]가 40개, [설비명 2]가 8개 모듈로 확인됐고, 다시 정상적으로"
+    " 원복해뒀음"
+)
+# 다음 7장 몫 · 뒤로 미룬 것으로 할 일 문서 2장을 가리키는 줄.
+REMAINING_1112_TODO_2 = (
+    *("count-lines", "census-bundle", "summary-length", "home-time-after", "draft-self"),
+    *("m1-when", "token-min", "deny-data-read", "pub-image", "pub-index", "pub-mail"),
+    *("grid-next", "test-env", "upeh-msg", "admin-check"),
+)
 
 
-def test_the_remaining_1112_board_screen_answers_are_recorded() -> None:
-    """v1.21 — 6-21 은 「남은 물음 11-12」 보드의 화면 갈래 카드 일곱이 보드 차례대로 한 줄씩이고
-    고른 글은 선택지 원문이다. 일곱 모두 커밋을 들고, 갈래가 답 밖에서 정한 것(ⓘ 자리 · 고른 그림 ·
-    점검 글)은 그 줄이 밝힌다. 뒤집은 옛 결정은 7-1 에 있다."""
+def test_the_remaining_1112_board_answers_are_recorded() -> None:
+    """v1.21 — 6-21 은 「남은 물음 11-12」 보드 카드 마흔하나가 보드 차례대로 한 줄씩이고 고른 글은
+    선택지 원문이다. 고친 열여덟 줄은 커밋을 들고 나머지 스물셋은 커밋이 없다. 권장과 다른 답은
+    ①-1 하나이고(⑤-4 (나) 는 카드 권장), 메모는 ②-2 하나 — 실제 설비명 둘은 가린 꼴이다. 갈래가
+    답 밖에서 정한 것(ⓘ 자리 · 고른 그림 · 점검 글)은 그 줄이 밝힌다. 뒤집은 옛 결정은 7-1 에
+    있다. 6-20 줄은 그때 기록 그대로다(앞 시험이 6-21 앞에서 끊어 본다)."""
     document = _text()
     assert "판 v1.21" in document.split("\n## 1. ")[0]
     assert "- **v1.21 — 2026-11-12.**" in _chapter(document, 8)
@@ -1784,20 +1877,38 @@ def test_the_remaining_1112_board_screen_answers_are_recorded() -> None:
         found[match.group(1)] = match.group(2)
         cited = RULE_TOKEN.findall(match.group(4))
         assert cited and set(cited) <= known, line
-    assert found == REMAINING_1112_ANSWERS
     assert tuple(found) == tuple(REMAINING_1112_ANSWERS)
+    assert len(found) == 41
+    assert found == REMAINING_1112_ANSWERS
+    assert len(REMAINING_1112_FIXED) == 18 and len(REMAINING_1112_KEPT) == 23
 
     by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
     commit = re.compile(r"커밋 `[0-9a-f]{7}`")
-    for key, line in by_id.items():
-        assert commit.search(line), key
+    for key in REMAINING_1112_FIXED:
+        assert commit.search(by_id[key]), key
+    for key in REMAINING_1112_KEPT:
+        assert not commit.search(by_id[key]), key
+    others = [key for key, line in by_id.items() if "권장과 다른 답" in line]
+    assert others == ["ship-post"]
+    assert found["ship-post"].startswith("(나) ")
+    assert found["token-msg"].startswith("(나) ") and "카드 권장이다" in by_id["token-msg"]
+    memo = [key for key, line in by_id.items() if "— 메모 「" in line]
+    assert memo == ["census-bundle"]
+    assert f"메모 「{REMAINING_1112_MEMO}」" in by_id["census-bundle"]
+    assert "`more sizes` 에 8 · 40 이 없음" in by_id["census-bundle"]
     beyond = [key for key, line in by_id.items() if "답 밖 — 갈래가 정함" in line]
     assert beyond == list(REMAINING_1112_BEYOND)
+    for key in REMAINING_1112_TODO_2:
+        assert "`docs/TODO.md` 2장" in by_id[key], key
 
     reversed_ = _chapter(document, 7)
     for phrase in (
         "「남은 물음 11-12」 보드 ③-1 (가)",
         "같은 보드 ③-2 (가)",
         "같은 보드 ③-10 (가)",
+        "「남은 물음 11-12」 보드 ②-3 (가)",
+        "같은 보드 ②-8 (가)",
+        "같은 보드 ⑤-4 (나)",
     ):
         assert phrase in reversed_, phrase
+    assert "①-1 (나) 는 권장과 다른 답" in _chapter(document, 8)
