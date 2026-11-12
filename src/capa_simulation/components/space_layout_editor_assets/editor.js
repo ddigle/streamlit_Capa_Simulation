@@ -5451,7 +5451,8 @@ export default function (component) {
     }
     ops.push(...restoreGhosts(units))
     for (const m of [...marks, ...fresh]) {
-      ops.push({ op: 'delete', item: { ...m } })
+      // 지운 자리(그때 S.items 차례의 칸 — 그리는 차례 · 저장 차례)를 쥔다. 되돌리면 그 자리에 다시 선다(`restoreItem`).
+      ops.push({ op: 'delete', item: { ...m }, at: [...S.items.keys()].indexOf(m.id) })
       S.items.delete(m.id)
     }
     if (!ops.length) return
@@ -5555,6 +5556,22 @@ export default function (component) {
     updateStatus()
   }
 
+  // S.items 의 차례(그리는 차례 = 요소 저장 차례)를 ids 대로 다시 세운다. ids 에 없는 것은 제 차례대로 뒤에 붙고, 없는 id 는
+  // 건너뛴다.
+  function setItemOrder(ids) {
+    const next = new Map()
+    for (const id of ids) if (S.items.has(id) && !next.has(id)) next.set(id, S.items.get(id))
+    for (const [id, item] of S.items) if (!next.has(id)) next.set(id, item)
+    S.items = next
+  }
+  // 지운 것을 지운 자리(`at`)에 되살린다 — 끝(맨 위)으로 가지 않는다. 자리를 모르면(옛 기록) 끝이다.
+  function restoreItem(item, at) {
+    const ids = [...S.items.keys()]
+    ids.splice(Number.isInteger(at) && at >= 0 ? Math.min(at, ids.length) : ids.length, 0, item.id)
+    S.items.set(item.id, item)
+    setItemOrder(ids)
+  }
+
   function undo() {
     const last = S.undo.pop()
     if (!last) return
@@ -5574,7 +5591,7 @@ export default function (component) {
         } else if (op.op === 'create') {
           if (S.items.delete(op.id)) applied += 1
         } else if (op.op === 'delete') {
-          S.items.set(op.item.id, { ...op.item })
+          restoreItem({ ...op.item }, op.at)
           applied += 1
         } else if (op.op === 'groupLabel') {
           if (op.before === null) S.groupLabels.delete(op.key)
@@ -5639,7 +5656,29 @@ export default function (component) {
     drawer.classList.remove('is-drop-target')
     redraw([...drag.befores.keys()].map(itemOf))
     clearDragOverlap()
+    restackMarks([...drag.befores.keys()])
     updateStatus()
+  }
+
+  // 끄는 동안 맨 위에 붙였던 도면 요소(누를 때 제 층 맨 뒤로 `append`)를 손을 뗀 뒤 제 차례 자리로 되돌린다 — 그리는 차례가
+  // S.items 차례(저장 차례)와 같아야 눌러 고르기만 한 영역이 맨 위로 튀지 않고, 순서 단추가 보이는 대로 움직인다. 호기는 그대로
+  // 둔다(호기끼리 차례는 바꾸는 길이 없다). 뒤 차례부터 놓아 앞 것이 놓일 자리가 이미 맞다.
+  function restackMarks(ids) {
+    const keys = [...S.items.keys()]
+    const rank = new Map(keys.map((id, k) => [id, k]))
+    const moved = ids.filter((id) => {
+      const m = S.items.get(id)
+      return Boolean(m && isMark(m) && S.groups.get(id)?.parentNode)
+    }).sort((a, b) => rank.get(b) - rank.get(a))
+    for (const id of moved) {
+      const group = S.groups.get(id)
+      let next = null
+      for (let k = rank.get(id) + 1; k < keys.length && !next; k += 1) {
+        const other = S.groups.get(keys[k])
+        if (other && other.parentNode === group.parentNode) next = other
+      }
+      group.parentNode.insertBefore(group, next)
+    }
   }
 
   // 오른쪽·왼쪽·위·아래 변 가운데 움직이는 것만 옮긴다. 반대쪽 변은 그대로다. 폭·높이는 minW·minH 아래로 줄지 않는다.
@@ -5984,7 +6023,7 @@ export default function (component) {
     // 옮기기는 고른 것 전부 — 모듈 묶음은 묶음째(범위를 옮겨 바둑판으로 다시 놓는다). 모듈 하나만 옮기는 길은 없다.
     const plan = mode === 'move' ? movePlan(selectedItems()) : { loose: [item], groups: [], items: [item], box: bbox([item]) }
     const list = plan.items
-    // 끄는 것이 맨 위에 그려지도록 제 층(호기·영역·요소)의 맨 뒤로 옮긴다.
+    // 끄는 것이 맨 위에 그려지도록 제 층(호기·영역·요소)의 맨 뒤로 옮긴다. 도면 요소는 손을 떼면 제 차례로 돌아간다(`restackMarks`).
     for (const m of list) {
       const g = S.groups.get(m.id)
       if (g && g.parentNode) g.parentNode.append(g)
@@ -6161,6 +6200,7 @@ export default function (component) {
       return
     }
     clearDragOverlap()
+    restackMarks(drag.ids)
     if (drag.toTray) {
       // 오른쪽 칸에 놓았다 — 끈 자리를 처음으로 돌린 뒤 고른 호기만 빼기·지우기와 같은 길로 미배치(도면 요소는 제자리,
       // 모듈 묶음은 묶음째). 되돌리기 한 번에 돌아온다.
