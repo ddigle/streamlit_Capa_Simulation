@@ -52,7 +52,9 @@ uv run --no-sync python -c "import bigdataquery as bdq; bdq.login()"
 2. `>> Engter AD Password:` → 사내 AD 비밀번호 (패키지의 오타를 그대로 옮긴 것이다)
 
 토큰은 `/config/.credential/bigdataquery.token.<AD 계정>` 에 저장되고 이후 `getData()` 가
-자동으로 쓴다. **주기적으로 만료되므로** 같은 예외가 다시 뜨면 이 단계를 다시 하면 된다.
+자동으로 쓴다. **주기적으로 만료되므로** 같은 예외가 다시 뜨면 이 단계를 다시 하면 된다. 앱 화면의 조회 실패
+안내도 WebIDE(서버 시작 기록이 없는 곳)에서는 「BigDataQuery 로그인을 다시 하세요」 로 끝난다 — C-DEP 는 토큰을
+관리자가 넣으므로 「관리자에게」 다(아래 「C-DEP CD」).
 
 ## 2. 요청자 계정 — `user_name` 을 채운다
 

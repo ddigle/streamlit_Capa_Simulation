@@ -953,7 +953,8 @@ def test_a_missing_login_token_in_the_cd_container_adds_the_start_check_line(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """토큰이 없다는 패키지 예외에는 토큰 파일 단계 결과와 `CAPA_BDQ_TOKEN` 을 덧붙인다. 갈래·종류
-    이름(점검 스크립트가 찍는 것)은 결과 파일이 있든 없든 같다."""
+    이름(점검 스크립트가 찍는 것)은 결과 파일이 있든 없든 같고, 끝 절만 자리대로다 — 결과 파일이
+    없으면 BigDataQuery 로그인을 다시, 있으면 관리자에게."""
     monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "fake")
     monkeypatch.setattr(importlib, "import_module", lambda _: _module(_missing_token))
 
@@ -966,7 +967,10 @@ def test_a_missing_login_token_in_the_cd_container_adds_the_start_check_line(
         adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
 
     text = str(hinted.value)
-    assert text.startswith(str(plain.value))
+    assert adapter.TOKEN_ADVICE_LOCAL in str(plain.value)
+    assert text.startswith(
+        str(plain.value).replace(adapter.TOKEN_ADVICE_LOCAL, adapter.TOKEN_ADVICE_SERVER)
+    )
     assert "서버 시작 점검" in text and "`CAPA_BDQ_TOKEN`" in text
     assert (hinted.value.kind, hinted.value.type_names) == (
         plain.value.kind,
@@ -1073,16 +1077,36 @@ def test_the_start_check_line_reaches_wider_than_the_token_kind(error: BaseExcep
     assert adapter.classify_query_failure(error) != adapter.QUERY_FAILURE_TOKEN
 
 
-def test_a_token_failure_advises_the_administrator_not_a_retry() -> None:
-    """토큰은 다시 해도 같다 — 네트워크 · 다시 하기가 아니라 관리자에게. 오래 기다린 끝이어도
-    시간 초과로 올리지 않는다."""
+def test_a_token_failure_in_webide_asks_for_a_new_login_not_a_retry() -> None:
+    """토큰은 다시 해도 같다 — 네트워크 · 다시 하기가 아니다. 서버 시작 기록이 없는 자리(WebIDE ·
+    사내 PC)는 사용자가 BigDataQuery 로그인을 다시 해 토큰을 새로 받는다(2026-11-12 보드 ⑤-4 (나)).
+    오래 기다린 끝이어도 시간 초과로 올리지 않는다."""
     wrapped = adapter.BigDataQueryCallError(Error("HTTP 500 invalid token"), seconds=907.4)
 
     assert (wrapped.kind, wrapped.clue) == (adapter.QUERY_FAILURE_TOKEN, "invalid token")
     text = str(wrapped)
     assert text.startswith("BigDataQuery 조회가 실패했습니다(토큰).")
-    assert "관리자에게" in text and "다시 해도 같으니" in text
+    assert adapter.TOKEN_ADVICE_LOCAL in text and "BigDataQuery 로그인을 다시 하세요" in text
+    assert "관리자에게" not in text
     assert "네트워크" not in text and "기간을 줄여" not in text
+
+
+def test_a_token_failure_on_the_cd_server_advises_the_administrator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """서버 시작 기록이 있는 C-DEP 는 관리자가 토큰을 넣는다 — 결과 파일이 있거나, 없어도 CD 전용
+    환경변수가 들어왔으면(시작 스크립트가 돌지 않은 C-DEP) 지금대로 「관리자에게」 다."""
+    _start_report(tmp_path, monkeypatch, token=("ok", "토큰 파일을 씀"), missing=())
+
+    text = str(adapter.BigDataQueryCallError(Error("HTTP 500 invalid token")))
+    assert adapter.TOKEN_ADVICE_SERVER in text and "로그인을 다시" not in text
+
+    import capa_simulation.settings as settings
+
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", tmp_path / "absent.json")
+    monkeypatch.setenv("CAPA_ARTIFACTORY_USER", "fake")
+    text = str(adapter.BigDataQueryCallError(Error("HTTP 500 invalid token")))
+    assert adapter.TOKEN_ADVICE_SERVER in text and "로그인을 다시" not in text
 
 
 def test_an_invalid_token_in_the_cd_container_adds_the_start_check_line(
@@ -1103,6 +1127,7 @@ def test_an_invalid_token_in_the_cd_container_adds_the_start_check_line(
 
     assert raised.value.kind == adapter.QUERY_FAILURE_TOKEN
     assert "서버 시작 점검" in str(raised.value)
+    assert adapter.TOKEN_ADVICE_SERVER in str(raised.value)
 
 
 def test_a_missing_account_in_the_cd_container_adds_the_start_check_line(
