@@ -2655,6 +2655,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     배치 편집기 입력도 `--sle-muted`). 옅은 바탕 호버는 칠하지 않은 단추(`.emg-btn:not(.is-primary)`)에만 걸고 칠한 단추는 제 바탕에 `filter: brightness(1.08)` 만 건다 — 대비는 `docs/design_system.md` 2-2. 빈 날짜 칸 자리표시는 꼴(`DATE_PLACEHOLDER` — `YYYY-MM-DD`)이다(실제 날짜는 값처럼 읽힌다).
     새 호기 칸 막힘 힌트의 칸 이름은 체크 상자 차례(에러 없이 → Y/N → 가용대수 → 도면) 다음 표 차례다. 고른 줄 띠의 「반입·Qual
     일정 [n] 일 밀기」 는 한 덩이(`emg-shift`)로 줄을 바꾼다.
+    표 본문을 다시 그린 뒤 초점을 돌려줄 때(`paintWindow` → `focusTarget`) 스크롤을 끌지 않는다(`preventScroll`) — 키 손짓이 부른
+    그리기(`S.keying` — 세로는 `ensureVisible`, 가로를 따라감)만 기본 focus 다. 끌면 휠마다 초점 칸 자리로 되돌아와 칸을 누른 뒤
+    휠이 제자리에서 헛돌았다(2026-11-12 사용자 요청 2). 친 글이 든 칸이 그린 창(`BUFFER_ROWS`) 밖으로 나가면 그 자리에서 확정하고
+    (`settleEdit` — 칸이 사라지면 focusout 이 오지 않는다), 초점 칸이 밖으로 나가 문서로 떨어진 초점은 다른 곳이 잡지 않은 동안 돌아오면
+    되돌려 준다(`S.heldFocus`). 고르기 창(`.emg-dd`)은 칸 안 자식 그대로 화면 자리에 뜬다(`position: fixed` — `placeChoice` ·
+    `choicePlace`, 아래가 모자라면 위로 · 그래도 모자라면 창 안 스크롤, 오른쪽 끝은 `popoverShift`). 표 상자 안 절대 자리였을 때는
+    상자에 잘리고 상자를 넘치게 해 줄이 적은 표에서 머리가 밀려 사라졌다. 놓은 칸이 표 · 페이지 스크롤 · 창 크기로 움직이면
+    고르지 않은 채 닫는다(`choiceMoved` — 연 뒤 늦게 온 scroll 은 칸이 그 자리라 닫지 않는다). 칸을 열면 그 줄을 머리 밑에서
+    꺼내고(`startEdit` 의 `ensureVisible`), 글 편집 칸은 머리 아래 층(공용 `cells.css` z 5 — 시나리오 목록 표도), 고르는 칸만
+    머리 위(`is-choosing`)다. 창을 칸 밖으로 옮기지 않는다 — 칸 밖 초점 판정(focusout)과 본문 위임 누르기(`data-pick`)가 거기에 기댄다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/edit_grid.py` (+ `edit_grid_assets/` HTML·CSS·JS) — 범용 편집 그리드(Components v2, 그림자
   DOM)의 두 등록·그리기·받기와 세션 몫. 기준 정보 9표가 쓴다(편집 표 횡전개 — 설비 마스터 표는 아직 제 등록 그대로, 생산

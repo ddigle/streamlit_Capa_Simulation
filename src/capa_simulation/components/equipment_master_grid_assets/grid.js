@@ -341,6 +341,24 @@ function popoverShift(left, width, viewport, margin) {
 function overPx(end, start) {
   return Math.max(Math.ceil(Number(end) - Number(start)), 0)
 }
+
+// 고르기 창의 화면 자리(px). 칸 바로 아래(아래 테와 1px 겹침)에 펴고, 아래 자리가 모자라고 위가 더 넓으면 위로 편다. 편 쪽
+// 자리도 모자라면 그만큼만 펴고 창 안에서 굴린다(`maxHeight`, 넉넉하면 null). 화면 오른쪽 끝을 넘으면 왼쪽으로 당긴다.
+// cell = 칸 {left, top, bottom}, size = 창 제 크기 {width, height}, view = 화면 {width, height, top — 머리 띠 · 탭 줄이
+// 가린 아래 끝}, margin = 화면 가장자리 여백.
+function choicePlace(cell, size, view, margin) {
+  const below = view.height - margin - (cell.bottom - 1)
+  const above = cell.top + 1 - view.top
+  const up = size.height > below && above > below
+  const height = Math.min(size.height, Math.max(up ? above : below, 0))
+  const left = cell.left - 1
+  return {
+    left: left + popoverShift(left, size.width, view.width, margin),
+    top: up ? cell.top + 1 - height : cell.bottom - 1,
+    maxHeight: height < size.height ? height : null,
+    up,
+  }
+}
 // </grid-place>
 
 const NAME_PASTE_NOTE = '설비명은 붙여 넣지 않습니다 — 이름은 오른쪽 호기 상세의 설비명 칸에서 바꿉니다'
@@ -1235,7 +1253,24 @@ function buildGridSkeleton(host, S) {
     })
   })
   listen(S, body, 'click', (event) => onBodyClick(S, event))
-  listen(S, body, 'keydown', (event) => onBodyKey(S, event))
+  // 키 손짓이 부른 다시 그리기만 초점 칸을 보이는 자리로 따라간다(`paintWindow`).
+  listen(S, body, 'keydown', (event) => {
+    S.keying = true
+    try {
+      onBodyKey(S, event)
+    } finally {
+      S.keying = false
+    }
+  })
+  // 페이지가 구르거나 창 크기가 바뀌어 고르기 창을 놓은 칸이 움직이면 창을 닫는다 — 페이지 스크롤은 그림자 DOM 밖이라
+  // 문서에서 붙잡는다(표 상자는 위 scroll 이 `paintWindow` 로 본다).
+  const onPageMove = () => {
+    if (!choiceMoved(S)) return
+    S.edit = null
+    paintWindow(S)
+  }
+  listen(S, document, 'scroll', onPageMove, true)
+  if (typeof window !== 'undefined' && window.addEventListener) listen(S, window, 'resize', onPageMove)
   listen(S, body, 'paste', (event) => onPaste(S, event))
   listen(S, body, 'input', (event) => {
     if (event.target.classList.contains('emg-ed') && S.edit) S.edit.draft = event.target.value
@@ -1593,6 +1628,10 @@ function paintHead(S) {
   S.root.classList.toggle('is-empty', empty)
 }
 
+// 그린 창(보이는 줄 + 앞뒤 `BUFFER_ROWS`)만 다시 그린다. 초점은 키 손짓이 부른 그리기만 그 칸을 보이는 자리로 따라가고
+// (`S.keying`), 휠 · 회차 · 누르기로 다시 그린 칸은 스크롤을 끌지 않는다 — 끌면 휠이 초점 칸 자리로 되돌아와 제자리에서
+// 헛돌았다. 초점 칸이 굴러 그린 창 밖으로 나가면 초점은 문서로 떨어지고(`S.heldFocus`), 돌아오면 다른 곳이 초점을 잡지
+// 않은 동안 그 칸에 되돌려 준다.
 function paintWindow(S) {
   const model = S.model
   const body = S.body
@@ -1601,8 +1640,9 @@ function paintWindow(S) {
   const start = Math.max(Math.floor(S.scroller.scrollTop / ROW_H) - BUFFER_ROWS, 0)
   const end = Math.min(start + Math.ceil(viewport / ROW_H) + BUFFER_ROWS * 2, total)
   const active = activeIn(body)
-  const hadFocus = active && body.contains(active)
+  const hadFocus = Boolean(active && body.contains(active))
   const caret = keptCaret(S, active)
+  settleEdit(S, start, end)
   S.painting = true
   body.style.paddingTop = start * ROW_H + 'px'
   body.style.height = total * ROW_H + 'px'
@@ -1613,10 +1653,68 @@ function paintWindow(S) {
     if (first) first.tabIndex = 0
   }
   S.painting = false
-  if (hadFocus || S.wantFocus) {
-    S.wantFocus = false
-    focusTarget(S, caret)
+  const want = S.wantFocus
+  S.wantFocus = false
+  if (hadFocus || want || (S.heldFocus && focusDropped(body))) S.heldFocus = !focusTarget(S, caret, want && S.keying)
+  else S.heldFocus = false
+  placeChoice(S)
+}
+
+// 그리기 전에 연 칸을 정리한다. 고르기 창은 놓은 칸이 표 · 페이지 스크롤로 움직였으면 고르지 않은 채 닫는다(엑셀 · 구글
+// 시트의 목록처럼 — 칸과 떨어져 떠 있지 않게). 글 칸은 그 줄이 그린 창 밖으로 나가면 친 글을 그 자리에서 확정한다 — 칸이
+// 사라지면 focusout 이 오지 않아 그 뒤 다른 칸 누르기가 친 글을 덮어 잃었다.
+function settleEdit(S, start, end) {
+  const edit = S.edit
+  if (!edit) return
+  const column = S.model.columns[edit.col]
+  if (column && column.kind === 'choice') {
+    if (choiceMoved(S)) S.edit = null
+    return
   }
+  const index = S.model.ordered.findIndex((row) => row.id === edit.id)
+  if (index >= 0 && (index < start || index >= end)) commitEdit(S, null, false)
+}
+
+// 초점이 아무 데도 없나 — 그림자 DOM 안 어디에도 없고 문서 초점이 body(빠진 자리)다. 다른 칸 · 단추가 잡았으면 거짓.
+function focusDropped(node) {
+  const root = node.getRootNode ? node.getRootNode() : document
+  if (root !== document && root.activeElement) return false
+  const outer = document.activeElement
+  return !outer || outer === document.body || outer === document.documentElement || (root !== document && outer === root.host)
+}
+
+// 고르기 창을 칸 곁 화면 자리에 띄운다(`position: fixed`, 자리는 `choicePlace`) — 표 상자 안 절대 자리였을 때는 창이 상자에
+// 잘리고 상자를 넘치게 해, 두 줄만 불러온 표에서 창 단추에 초점이 가면 상자가 굴러 머리 · 줄이 위로 밀려 사라졌다. 창은
+// 칸 안 자식 그대로다 — 칸 밖으로 나가는 초점 판정(focusout)과 본문 위임 누르기(`data-pick`)가 그 자리에 기댄다. 놓은 칸의
+// 화면 자리를 적어 두어 칸이 움직이면 닫는다(`choiceMoved`).
+function placeChoice(S) {
+  S.choiceAnchor = null
+  const list = S.body.querySelector('.emg-dd')
+  if (!list || !list.parentNode || !list.getBoundingClientRect) return
+  const cell = list.parentNode
+  const rect = cell.getBoundingClientRect()
+  list.style.minWidth = rect.width + 2 + 'px'
+  const size = list.getBoundingClientRect()
+  const root = document.documentElement || {}
+  const view = {
+    width: root.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 0) || 0,
+    height: (typeof window !== 'undefined' && window.innerHeight) || root.clientHeight || 0,
+    top: coverHeight(),
+  }
+  const place = choicePlace(rect, size, view, 8)
+  list.style.left = place.left + 'px'
+  list.style.top = place.top + 'px'
+  list.style.maxHeight = place.maxHeight === null ? '' : place.maxHeight + 'px'
+  S.choiceAnchor = { cell, left: rect.left, top: rect.top }
+}
+
+// 열린 고르기 창을 놓은 칸이 화면에서 움직였나(0.5px 넘게). 창을 연 뒤 늦게 오는 scroll 이벤트(줄을 보이게 한 스크롤)는 칸이
+// 놓은 자리 그대로라 닫지 않는다.
+function choiceMoved(S) {
+  const anchor = S.choiceAnchor
+  if (!anchor || !S.edit || !S.body || !S.body.contains(anchor.cell)) return false
+  const rect = anchor.cell.getBoundingClientRect()
+  return Math.abs(rect.left - anchor.left) > 0.5 || Math.abs(rect.top - anchor.top) > 0.5
 }
 
 // 다시 그려도 이어 쓸 글자 자리 — 초점 든 편집 칸이 다시 그린 뒤에도 같은 칸으로 열려 있을 때만이다. Tab · ↓ 로 다음 칸을
@@ -1638,26 +1736,38 @@ function repaintCell(S, id, col) {
   S.painting = false
 }
 
-function focusTarget(S, caret) {
+// 초점을 연 칸 · 초점 칸에 돌려준다 — 그린 창에 그 칸이 있으면 참. `follow` 면 브라우저 기본대로 그 칸을 보이는 자리로
+// 데려오고(키보드 — 세로는 `ensureVisible` 이 이미 맞췄고 가로를 따라간다), 아니면 스크롤을 건드리지 않는다. 고르기 창
+// 단추는 늘 끌지 않는다 — 창은 `placeChoice` 가 칸 곁에 놓고, 키보드로 연 창은 칸 단추를 먼저 보이게 한다.
+function focusTarget(S, caret, follow) {
+  const quiet = follow ? undefined : { preventScroll: true }
   if (S.edit) {
     const input = S.body.querySelector('.emg-ed')
     if (input) {
-      input.focus()
+      input.focus(quiet)
       if (caret && caret[0] !== null) input.setSelectionRange(caret[0], caret[1])
       else if (S.edit.selectAll) {
         input.select()
         S.edit.selectAll = false
       }
-      return
+      return true
     }
     const option = S.body.querySelector('.emg-dd button.is-active') || S.body.querySelector('.emg-dd button')
-    if (option) option.focus()
-    return
+    if (!option) return false
+    const press = follow && option.closest ? option.closest('.emg-c') : null
+    const cellPress = press ? press.querySelector('.emg-cb') : null
+    if (cellPress) cellPress.focus()
+    option.focus({ preventScroll: true })
+    return true
   }
   if (S.focus) {
     const cell = S.body.querySelector('[data-id="' + cssEscape(S.focus.id) + '"][data-col="' + S.focus.col + '"] button')
-    if (cell) cell.focus()
+    if (cell) {
+      cell.focus(quiet)
+      return true
+    }
   }
+  return false
 }
 
 function rowElement(S, row, index) {
@@ -1757,6 +1867,7 @@ function cellElement(S, row, k) {
   cell.appendChild(press)
   if (editing) {
     cell.classList.add('is-editing')
+    cell.classList.add('is-choosing')
     const list = el('div', 'emg-dd')
     list.setAttribute('role', 'listbox')
     const options = choiceOptions(model.columns, column, rowValueAt(S, row), value)
@@ -1791,6 +1902,8 @@ function startEdit(S, id, col, initial) {
   const options = choiceOptions(S.model.columns, column, rowValueAt(S, row), current)
   S.edit = { id, col, draft: initial !== undefined ? initial : current, original: current, selectAll: initial === undefined, active: Math.max(options.indexOf(current), 0) }
   S.focus = { id, col }
+  // 머리 밑 · 상자 아래 끝에 걸친 줄은 통째로 보이게 한 뒤 연다 — 연 칸은 머리를 덮지 않는다.
+  ensureVisible(S, id)
   S.wantFocus = true
   paintWindow(S)
 }
