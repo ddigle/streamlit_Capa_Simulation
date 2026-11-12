@@ -511,7 +511,7 @@ with gap_tab:
             if gap_manual_downtime is None:
                 # 입력 비가동을 못 읽은 회차 — 패널을 세우지 않고 이 탭 안에서만 알린다(다른 탭·폼은
                 # 그대로 그린다 — `st.stop()` 을 쓰지 않는다).
-                raise ValueError(f"입력 비가동 대수를 읽지 못했습니다 — {manual_downtime_error}")
+                raise ValueError(f"입력 비가동대수를 읽지 못했습니다 — {manual_downtime_error}")
             # 지분이 바뀌는 날에도 구간을 끊는다. 대수 축이 모듈 행을 설비 한 대로 센다. 보기·위젯을
             # 바꾸는 rerun 마다 다시 만들지 않도록 마스터·비가동 내용 지문과 범위로 캐시한다 —
             # 필요 단축 일정 화면과 같은 캐시라 범위가 같으면 한 벌을 나눈다.

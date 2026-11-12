@@ -135,7 +135,7 @@ def manual_cell_value(value: object, *, where: str = "") -> float:
     prefix = f"{where}: " if where else ""
     if value is None or value is pd.NA or isinstance(value, bool):
         if isinstance(value, bool):
-            raise ValueError(f"{prefix}비가동 대수는 숫자여야 합니다: {value!r}")
+            raise ValueError(f"{prefix}비가동대수는 숫자여야 합니다: {value!r}")
         return 0.0
     if isinstance(value, str):
         text = value.strip().replace(",", "")
@@ -144,21 +144,21 @@ def manual_cell_value(value: object, *, where: str = "") -> float:
         try:
             number = float(text)
         except ValueError:
-            raise ValueError(f"{prefix}비가동 대수는 숫자여야 합니다: {value!r}") from None
+            raise ValueError(f"{prefix}비가동대수는 숫자여야 합니다: {value!r}") from None
     elif isinstance(value, int | float):
         number = float(value)
     else:
         try:
             number = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
-            raise ValueError(f"{prefix}비가동 대수는 숫자여야 합니다: {value!r}") from None
+            raise ValueError(f"{prefix}비가동대수는 숫자여야 합니다: {value!r}") from None
     if math.isnan(number):
         return 0.0
     if math.isinf(number) or number < 0:
-        raise ValueError(f"{prefix}비가동 대수는 0 이상이어야 합니다: {value!r}")
+        raise ValueError(f"{prefix}비가동대수는 0 이상이어야 합니다: {value!r}")
     if number > MANUAL_DOWNTIME_MAX_UNITS:
         raise ValueError(
-            f"{prefix}비가동 대수가 너무 큽니다(상한 {MANUAL_DOWNTIME_MAX_UNITS:g}): {value!r}"
+            f"{prefix}비가동대수가 너무 큽니다(상한 {MANUAL_DOWNTIME_MAX_UNITS:g}): {value!r}"
         )
     return round(number, _STORED_DECIMALS)
 

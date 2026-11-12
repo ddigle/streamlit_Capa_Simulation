@@ -214,7 +214,8 @@ def _guarded(ctx: ModuleContext) -> Iterator[None]:
 
 
 def context(file: str | os.PathLike[str]) -> ModuleContext:
-    """보통 `api.context(__file__)`. 파일 위의 `module.json` 을 찾아 문맥을 만든다.
+    """`api.context(__file__)` 로만 부른다(다른 인자는 모듈 점검 M06 오류). 파일 위의
+    `module.json` 을 찾아 문맥을 만든다.
 
     못 찾았거나 선언이 틀렸으면 `ModuleContextError`. 꺼짐·실패 상태는 보지 않는다 — 앱은 그런
     모듈의 화면을 등록하지 않고, 모듈 시험(`AppTest.from_file`)은 상태와 상관없이 돈다.

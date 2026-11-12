@@ -2420,7 +2420,7 @@ class DuckDBEquipmentRepository:
                 connection,
                 "manual_downtime_profile",
                 expected_version,
-                label="입력 비가동 대수",
+                label="입력 비가동대수",
                 schema="equipment_ops",
             )
             current = read_manual_downtime(connection)

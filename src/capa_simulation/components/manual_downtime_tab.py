@@ -251,10 +251,10 @@ def render_manual_downtime_tab(
         profile = load_manual_downtime(database_path)
     except BOOTSTRAP_ERRORS as exc:
         render_data_error(
-            "입력 비가동 대수를 읽지 못했습니다 — "
+            "입력 비가동대수를 읽지 못했습니다 — "
             + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)),
             code="EQ-09",
-            text="입력 비가동 대수를 읽지 못했습니다",
+            text="입력 비가동대수를 읽지 못했습니다",
         )
         return
     processes, absent = manual_tab_processes(snapshot_processes, profile)

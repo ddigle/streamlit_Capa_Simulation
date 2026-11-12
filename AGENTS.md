@@ -3820,8 +3820,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   신규 호기 Qual 을 며칠 당길지, 당길 호기가 없으면 가상 호기 「추가N」의 Qual 기한을 낸다. 어느 DB 도 열지 않는다.
   - 가용은 Static 대비 일정과 같은 길(`build_monthly_equipment_availability`), 소요는 `calculate_securement_rate` 다.
     같은 이름 공정만 맞대고 나머지는 목록(`required_only`·`missing_cutoff` 등)으로 돌려준다.
-  - 그 가용에서 **입력 비가동**(`manual_downtime=` — 키의 칸)을 맞댄 공정만 더 뺀다(`apply_manual_downtime`, 6장 「입력 비가동
-    대수」). 건 칸·뺀 몫·넘침은 `ShorteningPlan.manual_downtime` 이고 `process_months` 의 `가용대수` 는 뺀 값이다. 칸이 없으면 전과
+  - 그 가용에서 **입력 비가동**(`manual_downtime=` — 키의 칸)을 맞댄 공정만 더 뺀다(`apply_manual_downtime`, 6장 「입력
+    비가동대수」). 건 칸·뺀 몫·넘침은 `ShorteningPlan.manual_downtime` 이고 `process_months` 의 `가용대수` 는 뺀 값이다. 칸이 없으면 전과
     같은 계산이다.
   - 늘어나는 몫은 엔진을 다시 돌리지 않고 기여일로 센다. 후보를 바닥 `max(구간 앞, 오늘)` 뒤에서 모자란 만큼만 당기고,
     한 달 상한을 넘은 가상 호기는 모두 걷는다(남기면 뒤 달 부족을 가린다).
@@ -4392,8 +4392,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `_NARROW_EDITOR_PX` 270px 실측) 안에 두고(넘치면 `신규 호기` 머리가 잘리고 그 칸을 고칠 때 `월` 칸이 가려진다 —
     2026-10-25 E2E) 읽기만 하는 `월` 만 붙박아 넓은 창의 남는 폭은 두 입력 칸이 나눈다(입력 칸을 붙박으면 값이 흐린
     글자라 잠긴 칸처럼 보인다). 호기별 표 `메모` 칸에는 메모 한 가지가 다 보이는 폭을 준다.
-- `src/capa_simulation/components/manual_downtime_tab.py` — 가용설비 현황 탭 ③ 「Preference」 본문 — 공정 × 생산월 입력 비가동
-  대수 편집표(`st.form` 안 `st.data_editor` — 첫 칸 공정 표시명 잠금, 달마다 `NumberColumn` 0 이상 `%.2f`, 빈칸 = 0)·저장자·변경
+- `src/capa_simulation/components/manual_downtime_tab.py` — 가용설비 현황 탭 ③ 「Preference」 본문 — 공정 × 생산월 입력
+  비가동대수 편집표(`st.form` 안 `st.data_editor` — 첫 칸 공정 표시명 잠금, 달마다 `NumberColumn` 0 이상 `%.2f`, 빈칸 = 0)·저장자·변경
   메모(두 칸은 라벨 줄을 걷고 placeholder 가 이름 — 2026-11-09 상단 띠 재고)·「입력 비가동 저장」(버전 대조 — HOME 확보율 보정 편집표와 같은 `write_guard` 길: 본 version·제 저장 짝·거부 뒤 둘째 누름)·
   저장 이력 펼침. 저장은 보이는 범위(조회기간 달 × 보이는 공정)만 갈아 쓰고 성공하면 `clear_manual_downtime_cache()` 뒤 앱 범위
   `st.rerun()` 이다. 잠금(가정 설비 시나리오)이면 표·단추를 끈다. 저장 줄(`MANUAL_SAVE_ROW_KEY`)은 오른쪽 끝을 표 도구 막대

@@ -296,7 +296,7 @@ _MANUAL_OVER_LIMIT = 5
 # 자리에는 값 · 표지만 두고 저장 규칙 · 출처 설명은 풍선으로 둔다.
 SHARED_FILTER_HELP = "기간 · 공정을 바꾸면 모든 사용자의 기본 조회 조건이 됩니다."
 MANUAL_NOTICE_HELP = (
-    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 설비 일정 기준 가용에서 뺐습니다(호기별 "
+    "가용설비 현황 › Preference 의 공정 × 달 비가동대수를 설비 일정 기준 가용에서 뺐습니다(호기별 "
     "비가동과 별도)."
 )
 # 맞대는 규칙 — 맞대지 못한 공정 알림 표(`RS-02`)의 「원본 공정명」 칸 머리 풍선, 맞댄 공정이 하나도
@@ -546,7 +546,7 @@ def _prepare(
         manual = manual_downtime_for(database_path)
     except BOOTSTRAP_ERRORS as exc:
         return ShorteningStop(
-            "error", f"입력 비가동 대수를 읽지 못했습니다 — {bootstrap_error_message(exc)}"
+            "error", f"입력 비가동대수를 읽지 못했습니다 — {bootstrap_error_message(exc)}"
         )
     try:
         # 지금 목표가 다섯 밖의 직접 넣은 값이면 그 값 하나를 더 계산해 계획에 더한다(Space 와 같은
