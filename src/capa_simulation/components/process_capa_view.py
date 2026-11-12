@@ -978,14 +978,15 @@ def remembered_sheet(key: tuple[object, ...], build: Callable[[], bytes]) -> byt
 def pick_canvas_month(months: Sequence[int]) -> None:
     """월 그림의 칸 선택 콜백 — 누른 칸의 달을 세션에 적는다. 이 프래그먼트 회차로 다시 그린다.
 
-    빈 선택(같은 칸을 다시 누르거나 더블클릭)과 축 밖의 점은 무시한다 — 보던 달 그대로다. ④·⑤ 줄을
-    눌러도 그 열의 달이다(표적 막대가 그 줄까지 덮는다). 칸을 누르면 접힌 산출 근거를 펼친다
-    (2026-11-12 사용자 답 k-c5 — 같은 달 칸을 다시 눌러도 펼친다).
+    빈 선택(같은 칸을 다시 누르거나 더블클릭)과 축 밖의 점은 달을 바꾸지 않는다 — 보던 달 그대로다.
+    ④·⑤ 줄을 눌러도 그 열의 달이다(표적 막대가 그 줄까지 덮는다). 칸을 누르면 어느 경우든 접힌
+    산출 근거를 펼친다(2026-11-12 사용자 답 k-c5) — 접은 뒤 같은 달 칸을 다시 누르면 빈 선택이
+    오므로, 그때도 펼쳐야 그 달 근거가 다시 보인다.
     """
     point = canvas_point(st.session_state.get(PROCESS_DETAIL_CANVAS_CHART_KEY))
     if point is not None and point[0] in set(int(month) for month in months):
         st.session_state[PROCESS_DETAIL_MONTH_KEY] = int(point[0])
-        open_evidence()
+    open_evidence()
     rerun_app_unless_alone(PROCESS_DETAIL_CANVAS_CHART_KEY)
 
 

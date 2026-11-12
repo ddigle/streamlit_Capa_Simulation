@@ -41,6 +41,7 @@ from capa_simulation.components.process_capa_view import (
     DYNAMIC_ABSENT_RULE,
     DYNAMIC_OFFICIAL_KEPT,
     ENTRY_SECTIONS,
+    EVIDENCE_BOX_KEY,
     NO_COUNTED_UNITS_HELP,
     SHEET_MEMO_LIMIT,
     DynamicView,
@@ -89,6 +90,7 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.securement_rate import CAUSE_COLUMN, CAUSE_OWNED_SHORT
 from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.sidebar_status import remembered_box_key
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MINUS = "−"
@@ -820,6 +822,10 @@ def test_a_cell_click_writes_the_month_of_the_cell(
     app.run()
     assert not app.exception, [element.message for element in app.exception]
     assert app.session_state["process_detail_month"] == expected
+    # 칸을 누르면 어느 경우든 접힌 산출 근거를 펼친다 — 접은 뒤 같은 달 칸을 다시 누르면 빈 선택이다
+    # (2026-11-12 사용자 답 k-c5).
+    assert app.session_state[EVIDENCE_BOX_KEY] is True
+    assert app.session_state[remembered_box_key(EVIDENCE_BOX_KEY)] == (True, "")
 
 
 def test_the_month_steps_stop_at_the_axis_ends() -> None:
@@ -829,6 +835,8 @@ def test_the_month_steps_stop_at_the_axis_ends() -> None:
         app.session_state["step"] = step
         app.run()
         assert app.session_state["process_detail_month"] == expected
+    # 달을 옮긴 걸음은 산출 근거를 펼친 채 둔다.
+    assert app.session_state[EVIDENCE_BOX_KEY] is True
 
 
 # ------------------------------------------------------------------ 구획 접기
