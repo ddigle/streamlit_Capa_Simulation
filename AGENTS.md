@@ -1571,10 +1571,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       보내기 시작한 회차에 이미 고른 호기를 한 번 보낸다(`queueMicrotask` 뒤로).
       문턱(3px)을 넘은 끌기(`drag.travelled` — 전체 보기에서 화면이 움직이지 않아도)는 누르기가 아니다.
     - 겹친 반입 예정 숨기기: 기준일에 반입 전인 호기가 그날 보이는(반입했고 안 빠진) 다른 호기와 넓이가 0 보다 크게
-      겹치면 `is-covered`(visibility hidden)다. 판정은 `// <view-cover>` 구획(`coveredBy`·`unitCountText`,
+      겹치면 `is-covered`(visibility hidden)다. 판정은 `// <view-cover>` 구획(`coveredBy`·`coveredWithMates`·`unitCountText`,
       `tests/test_space_viewer_pick.py` 가 node 로 돌림)이고 이웃은 겹침 짝(`overlapPairs`, `renderItems` 가 칠하기 전에
-      비움)이다. 반입 전끼리·같은 Main 설비 묶음 모듈끼리는 숨기지 않는다. 숨김은 `__visible` 에 들어 Main 설비명·겹침
-      꼭지가 따라가고, 판정이 바뀐 호기의 겹침 이웃도 다시 칠한다(`paintUnits`). 숨긴 호기의 설비지분(`share`) 합은
+      비움)이다. 반입 전끼리·같은 Main 설비 묶음 모듈끼리는 숨기지 않는다. 모듈은 묶음째다(`coveredWithMates`, 형제는
+      `groupMates` — 겹침 짝과 같이 비움) — 반입 전 모듈 하나라도 덮이면 그 묶음의 반입 전 모듈을 모두 숨기고 반입한 모듈은
+      남긴다(2026-11-12 사용자 요청 4). 숨김은 `__visible` 에 들어 Main 설비명·겹침 꼭지가 따라가고, 판정이 바뀐 호기의 겹침
+      이웃과 그 둘의 묶음 형제도 다시 칠한다(`paintUnits`). 숨긴 호기의 설비지분(`share`) 합은
       `showSummary` 가 요약 끝에 「겹쳐 숨긴 반입 예정 n대」로 붙인다(파이썬 범례 대수는 그대로). 지분은 파이썬 기준일의
       것이라(같은 epoch 회차에도 `unitLook` 으로 새로 받음) 페이더를 끄는 동안에는 숨김(그날)과 지분(직전 날)이 섞인다.
 - `src/capa_simulation/components/dynamic_capacity_dashboard.py` — Dynamic Capa 공정 비교·Capa 손실 Waterfall·일별
@@ -2507,7 +2509,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     편집기 영역 안의 서브페이지 · 접기 단추는 칸 머리 · 접으면 떠 있는 단추):
     두 칸 경계선(왼쪽 감싸개의 오른쪽 테두리 — 줄 높이로 늘어 영역 끝까지 간다) 위 칸막이(`side_panel.render_side_splitter` — 작은 별도 등록)를 끌어 폭을 바꾸고(두 번 누르면 처음
     폭, 키보드 ←·→ 16px · Shift 64px · Home 최대 · End 최소 · Enter 접기), 칸 머리 오른쪽 끝 › 로 접으면 칸 자리가 0 이 되어 표가 줄을 다 쓰고 옛 Space 미배치 서랍 탭과 같은 생김의 단추(지금 칸 이름)가 영역 오른쪽 위에서 8px 들어앉아
-    떠 있다 — 누르면 편다. 단추는 페이지를 내려도 붙어 있고(표 머리 위 · 고치는 칸 · 목록 아래) 접은 동안 표 위 작업 줄이 그 자리를 비운다(`SIDE_REOPEN_RESERVE_PX`). 폭 한계는 `clamp(min(360px, 40%), 저장 폭 또는 30% − 28px, min(760px, 60%, 100% − 239px))`(영역 안 줄 1,137px 에서 360~682, 처음
+    떠 있다 — 누르면 편다. 단추는 페이지를 내려도 붙어 있고(표 머리 위 · 고르는 칸 · 목록 아래 — 글 편집 칸은 머리 밑이라 단추 밑) 접은 동안 표 위 작업 줄이 그 자리를 비운다(`SIDE_REOPEN_RESERVE_PX`). 폭 한계는 `clamp(min(360px, 40%), 저장 폭 또는 30% − 28px, min(760px, 60%, 100% − 239px))`(영역 안 줄 1,137px 에서 360~682, 처음
     360 — 최소는 칸 머리 한 줄 + 칸막이 곁 여백, 239 는 왼쪽 안쪽 224 + 여백 14 + 경계선 1)이고 창 폭이 바뀌어도 페이지 CSS 가 JS 없이 지킨다. 본문 칸은 `max(360px, 100vh − 붙는 높이 − 200px)`(붙는 높이 = 화면
     탭 줄이 붙었을 때의 아래 끝 + 8px, 1.63 에서 97px — 950 창 653px · 800 창 503px) 안에서 스크롤하고(`overflow-y: auto` — 페이지를 늘리지 않는다, 스크롤 막대 자리는 영역 안쪽 여백으로 내보내 내용 끝이 머리 단추와 맞는다), 오른쪽
     칸은 그 높이에 붙고(sticky) 내용이 짧아도 머리 + 상한만큼 높이를 잡는다(칸을 바꿔도 영역이 뛰지 않고 칸막이를 잡을 자리가 있다). 접어도 패널은 `display:none` 으로 그대로 그려 두어 다시 마운트되지 않고 보내지 않은 출납을
@@ -2682,6 +2684,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     배치 편집기 입력도 `--sle-muted`). 옅은 바탕 호버는 칠하지 않은 단추(`.emg-btn:not(.is-primary)`)에만 걸고 칠한 단추는 제 바탕에 `filter: brightness(1.08)` 만 건다 — 대비는 `docs/design_system.md` 2-2. 빈 날짜 칸 자리표시는 꼴(`DATE_PLACEHOLDER` — `YYYY-MM-DD`)이다(실제 날짜는 값처럼 읽힌다).
     새 호기 칸 막힘 힌트의 칸 이름은 체크 상자 차례(에러 없이 → Y/N → 가용대수 → 도면) 다음 표 차례다. 고른 줄 띠의 「반입·Qual
     일정 [n] 일 밀기」 는 한 덩이(`emg-shift`)로 줄을 바꾼다.
+    표 본문을 다시 그린 뒤 초점을 돌려줄 때(`paintWindow` → `focusTarget`) 스크롤을 끌지 않는다(`preventScroll`) — 키 손짓이 부른
+    그리기(`S.keying` — 세로는 `ensureVisible`, 가로를 따라감)만 기본 focus 다. 끌면 휠마다 초점 칸 자리로 되돌아와 칸을 누른 뒤
+    휠이 제자리에서 헛돌았다(2026-11-12 사용자 요청 2). 친 글이 든 칸이 그린 창(`BUFFER_ROWS`) 밖으로 나가면 그 자리에서 확정하고
+    (`settleEdit` — 칸이 사라지면 focusout 이 오지 않는다), 초점 칸이 밖으로 나가 문서로 떨어진 초점은 다른 곳이 잡지 않은 동안 돌아오면
+    되돌려 준다(`S.heldFocus`). 고르기 창(`.emg-dd`)은 칸 안 자식 그대로 화면 자리에 뜬다(`position: fixed` — `placeChoice` ·
+    `choicePlace`, 아래가 모자라면 위로 · 그래도 모자라면 창 안 스크롤 — 같은 칸의 앞 창 스크롤을 이어 받고 고른 값이 창 안에
+    보이게 맞춘다(`listScroll`), 오른쪽 끝은 `popoverShift`). 표 상자 안 절대 자리였을 때는
+    상자에 잘리고 상자를 넘치게 해 줄이 적은 표에서 머리가 밀려 사라졌다. 놓은 칸이 표 · 페이지 스크롤 · 창 크기로 움직이면
+    고르지 않은 채 닫는다(`choiceMoved` — 연 뒤 늦게 온 scroll 은 칸이 그 자리라 닫지 않는다). 칸을 열면 그 줄을 머리 밑에서
+    꺼내고(`startEdit` 의 `ensureVisible`), 글 편집 칸은 머리 아래 층(공용 `cells.css` z 5 — 시나리오 목록 표도), 고르는 칸만
+    머리 위(`is-choosing`)다. 창을 칸 밖으로 옮기지 않는다 — 칸 밖 초점 판정(focusout)과 본문 위임 누르기(`data-pick`)가 거기에 기댄다.
     순수 구획 `// <grid-…>` 은 `tests/test_equipment_master_grid_assets.py` 가 node 로 돌린다.
 - `src/capa_simulation/components/edit_grid.py` (+ `edit_grid_assets/` HTML·CSS·JS) — 범용 편집 그리드(Components v2, 그림자
   DOM)의 두 등록·그리기·받기와 세션 몫. 기준 정보 9표와 생산 계획 PKG PLAN · 수율이 쓴다(편집 표 횡전개 — 설비 마스터 표는

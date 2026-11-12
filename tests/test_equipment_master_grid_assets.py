@@ -2382,6 +2382,396 @@ def test_tab_or_down_into_the_next_cell_selects_its_old_value_to_be_typed_over()
     assert result["same"] == [1, 1]
 
 
+_SCROLL_RUNNER = (
+    _BURST_RUNNER[: _BURST_RUNNER.index("const parentElement = new FakeNode('div')")]
+    + r"""
+// 그림자 뿌리의 초점은 문서 초점을 그대로 따른다(빠지면 둘 다 빈다).
+Object.defineProperty(FAKE_ROOT, 'activeElement', { get: () => document.activeElement, set() {} })
+// 표가 쓰는 겹친 선택자 — 「태그.칸[속성]」 한 덩이와 띄어 쓴 자손
+// (`[data-id="a"][data-col="1"] button`).
+const oneMatch = FakeNode.prototype.matches
+const compound = (node, text) => {
+  const m = text.match(/^([a-zA-Z]*)((?:\.[\w-]+|\[[^\]]+\])*)$/)
+  if (!m || (!m[1] && !m[2])) return oneMatch.call(node, text)
+  if (m[1] && node.tagName !== m[1].toUpperCase()) return false
+  return (m[2].match(/\.[\w-]+|\[[^\]]+\]/g) || []).every((bit) => oneMatch.call(node, bit))
+}
+FakeNode.prototype.matches = function (selector) {
+  return selector.split(',').some((part) => compound(this, part.trim()))
+}
+const oneAll = FakeNode.prototype.querySelectorAll
+FakeNode.prototype.querySelectorAll = function (selector) {
+  const parts = selector.trim().split(/\s+/)
+  if (parts.length < 2 || selector.includes(',')) return oneAll.call(this, selector)
+  let scope = [this]
+  for (const part of parts) {
+    const next = []
+    for (const node of scope) {
+      for (const found of oneAll.call(node, part)) if (!next.includes(found)) next.push(found)
+    }
+    scope = next
+  }
+  return scope
+}
+const focusCalls = []
+FakeNode.prototype.focus = function (options) {
+  document.activeElement = this
+  focusCalls.push(options === undefined ? 'follow' : options)
+}
+FakeNode.prototype.select = function () {}
+FakeNode.prototype.setSelectionRange = function () {}
+let pageShift = 0
+const rectOf = FakeNode.prototype.getBoundingClientRect
+const parentElement = new FakeNode('div')
+const host = parentElement.appendChild(new FakeNode('div'))
+host.className = 'emg'
+// 표 상자 · 페이지가 구르면 칸의 화면 자리도 그만큼 움직인다.
+FakeNode.prototype.getBoundingClientRect = function () {
+  const r = rectOf.call(this)
+  const box = host.__emg && host.__emg.scroller
+  const dy = (this.classList.contains('emg-c') && box ? box.scrollTop : 0) + pageShift
+  return { ...r, top: r.top - dy, bottom: r.bottom - dy }
+}
+const rows = []
+for (let k = 0; k < 60; k += 1) rows.push({ id: 'r' + k, values: ['EQ-' + k, 'm' + k, 'C1'] })
+const data = {
+  mode: 'grid', base: 'b1', view: 'v1', limits: { outboxCells: 10000, pasteCells: 5000 },
+  columns: [
+    { name: '설비명', kind: 'name', width: 'name' },
+    { name: 'Model', kind: 'text', width: 'm' },
+    { name: '동', kind: 'choice', width: 's', options: ['C1', 'C2', 'C3'], blank: true },
+  ],
+  colSets: [['all', '전체', '', [1, 2]]],
+  rows,
+}
+const component = { parentElement, setTriggerValue() {}, setStateValue() {} }
+const cleanup = globalThis.__mount({ data, ...component })
+const S = host.__emg
+const body = S.body
+const clear = Object.getOwnPropertyDescriptor(FakeNode.prototype, 'textContent')
+Object.defineProperty(body, 'textContent', {
+  get: () => clear.get.call(body),
+  set(value) {
+    leaveIfGone(body)
+    clear.set.call(body, value)
+  },
+})
+const cellOf = (id, col) => body.querySelector('[data-id="' + id + '"][data-col="' + col + '"]')
+const press = (id, col) => cellOf(id, col).querySelector('.emg-cb')
+const wheel = async (top) => {
+  S.scroller.scrollTop = top
+  for (const run of S.scroller.listeners.scroll) run()
+  await tick(5)
+}
+const last = () => focusCalls[focusCalls.length - 1]
+const label = () => {
+  const active = document.activeElement
+  return active ? active.getAttribute('aria-label') : null
+}
+const R = {}
+;(async () => {
+  // 칸을 눌러 연 글 칸 — 휠로 다시 그려도 스크롤을 끌지 않는다(preventScroll).
+  fire(press('r2', 1), 'click')
+  R.clickOpen = { edit: [S.edit.id, S.edit.col], focus: last() }
+  await wheel(240)
+  R.wheelEditing = { edit: Boolean(S.edit), focus: last(), top: S.scroller.scrollTop }
+  // Esc 로 닫은 뒤 초점만 남은 칸도 휠에 끌지 않는다. 화살표는 그 칸을 따라간다.
+  fire(body.querySelector('.emg-ed'), 'keydown', { key: 'Escape' })
+  R.escape = last()
+  await wheel(272)
+  R.wheelFocused = last()
+  fire(document.activeElement, 'keydown', { key: 'ArrowDown' })
+  R.arrow = { focus: last(), cell: [S.focus.id, S.focus.col] }
+  // 친 글이 든 칸이 그린 창 밖으로 나가면 그 자리에서 확정하고, 초점은 돌아오면 되돌려 준다.
+  await wheel(0)
+  startEdit(S, 'r2', 1)
+  const input = body.querySelector('.emg-ed')
+  input.value = 'Q'
+  fire(input, 'input')
+  await wheel(34 * 40)
+  R.leftWindow = {
+    edit: S.edit,
+    queued: S.box.ops.map((op) => [op.op, op.id, op.col, op.text]),
+    held: S.heldFocus,
+    active: document.activeElement,
+  }
+  await wheel(0)
+  R.back = { held: S.heldFocus, focus: label(), call: last() }
+  // 고르기 창 — 칸 안 자식이고 화면 자리(fixed)에 놓인다.
+  // 늦게 온 scroll(자리 그대로)은 닫지 않는다.
+  fire(press('r1', 2), 'click')
+  const list = () => body.querySelector('.emg-dd')
+  // 가짜 칸은 0 ~ 600px 이라(`getBoundingClientRect`) 창은 칸 아래 끝 599px 에 선다.
+  R.choice = {
+    open: Boolean(list()),
+    inCell: list() ? list().parentNode === cellOf('r1', 2) : null,
+    placed: list() ? [list().style.left, list().style.top, list().style.minWidth] : null,
+    focus: last(),
+    raised: cellOf('r1', 2).classList.contains('is-choosing'),
+  }
+  await wheel(0)
+  R.lateScroll = Boolean(list())
+  // 표가 구르면 닫고 초점은 그 칸으로(끌지 않음).
+  await wheel(34)
+  R.boxScroll = { open: Boolean(list()), edit: S.edit, focus: label(), call: last() }
+  // 페이지가 구르면 닫는다(문서 scroll — 그림자 DOM 밖).
+  fire(press('r3', 2), 'click')
+  R.reopened = Boolean(list())
+  pageShift = 20
+  for (const run of docListeners.scroll) run()
+  R.pageScroll = { open: Boolean(list()), edit: S.edit }
+  pageShift = 0
+  // 창 크기가 바뀌어도 칸이 움직였으면 닫는다.
+  fire(press('r3', 2), 'click')
+  pageShift = 12
+  window.dispatchEvent(new Event('resize'))
+  R.resized = { open: Boolean(list()), edit: S.edit }
+  pageShift = 0
+  // 키보드(Enter)로 연 창은 칸 단추를 먼저 보이게 하고(기본 focus) 창 단추는 끌지 않는다.
+  press('r3', 2).focus()
+  focusCalls.length = 0
+  fire(press('r3', 2), 'keydown', { key: 'Enter' })
+  R.keyOpen = { open: Boolean(list()), calls: focusCalls.slice() }
+  // 머리 밑에 걸친 줄을 누르면 그 줄을 통째로 꺼낸 뒤 연다(`startEdit` 의 `ensureVisible`).
+  fire(document.activeElement, 'keydown', { key: 'Escape' })
+  S.scroller.scrollTop = 34 * 5 + 17
+  fire(press('r5', 1), 'click')
+  R.reveal = { edit: S.edit ? [S.edit.id, S.edit.col] : null, top: S.scroller.scrollTop }
+  cleanup()
+  process.stdout.write(JSON.stringify(R))
+})()
+"""
+)
+
+
+def test_a_redraw_from_the_wheel_or_a_click_does_not_drag_the_scroll_to_the_focused_cell() -> None:
+    """칸을 누른 뒤 휠을 굴리면 표가 제자리에서 헛돌았다(2026-11-12 사용자 요청 2 · 표 첫 판부터) —
+    스크롤마다 그린 창을 다시 그리며 초점을 되돌리는 focus() 가 스크롤을 초점 칸으로 끌고 갔다.
+    키 손짓이 부른 그리기만 그 칸을 따라가고(가로 — 세로는 `ensureVisible`), 휠 · 누르기는
+    `preventScroll` 이다. 친 글이 든 칸이 그린 창 밖으로 나가면 그 자리에서 확정하고(칸이
+    사라지면 focusout 이 오지 않아 다른 칸 누르기가 친 글을 덮었다), 초점 칸이 돌아오면 초점을
+    되돌려 준다. 고르기 창은 칸 안 자식 그대로 화면 자리에 떠, 표 · 페이지가 굴러 칸이 움직이면
+    고르지 않은 채 닫는다. 머리 밑에 걸친 줄의 칸을 누르면 그 줄을 꺼낸 뒤 연다."""
+    result = _node({}, _SCROLL_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    quiet = {"preventScroll": True}
+    assert result["clickOpen"] == {"edit": ["r2", 1], "focus": quiet}
+    assert result["wheelEditing"] == {"edit": True, "focus": quiet, "top": 240}
+    assert result["escape"] == "follow"
+    assert result["wheelFocused"] == quiet
+    assert result["arrow"] == {"focus": "follow", "cell": ["r3", 1]}
+    assert result["leftWindow"] == {
+        "edit": None,
+        "queued": [["cell", "r2", "Model", "Q"]],
+        "held": True,
+        "active": None,
+    }
+    assert result["back"] == {"held": False, "focus": "EQ-2 Model Q", "call": quiet}
+    assert result["choice"] == {
+        "open": True,
+        "inCell": True,
+        "placed": ["-1px", "599px", "1002px"],
+        "focus": quiet,
+        "raised": True,
+    }
+    assert result["lateScroll"] is True
+    assert result["boxScroll"] == {
+        "open": False,
+        "edit": None,
+        "focus": "EQ-1 동 C1",
+        "call": quiet,
+    }
+    assert result["reopened"] is True
+    assert result["pageScroll"] == {"open": False, "edit": None}
+    assert result["resized"] == {"open": False, "edit": None}
+    assert result["keyOpen"] == {"open": True, "calls": ["follow", quiet]}
+    assert result["reveal"] == {"edit": ["r5", 1], "top": 170}
+
+
+_CHOICE_PLACE_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const places = input.cases.map((c) => choicePlace(c.cell, c.size, c.view, 8))
+const scrolls = input.scrolls.map((c) => listScroll(...c))
+process.stdout.write(JSON.stringify({ places, scrolls }))
+"""
+
+
+def test_the_choice_list_opens_below_the_cell_or_flips_up_and_stays_on_screen() -> None:
+    """고르기 창 자리(`choicePlace`) — 칸 바로 아래(아래 테와 1px 겹침), 아래가 모자라고 위가 더
+    넓으면 위로, 편 쪽도 모자라면 그 높이만큼 펴고 창 안에서 굴린다. 오른쪽 화면 끝을 넘으면
+    왼쪽으로 당긴다. 위로 펼 때 머리 띠 · 탭 줄(view.top) 밑으로 들어가지 않는다. 줄여 편 창 안
+    스크롤(`listScroll`)은 고른 값이 보이는 칸에 들면 그대로, 밖이면 가장 적게 옮긴다."""
+    view = {"width": 1600, "height": 1000, "top": 120}
+    cases = [
+        {"cell": {"left": 400, "top": 300, "bottom": 334}, "size": {"width": 90, "height": 270}},
+        {"cell": {"left": 400, "top": 850, "bottom": 884}, "size": {"width": 90, "height": 270}},
+        {"cell": {"left": 400, "top": 300, "bottom": 334}, "size": {"width": 90, "height": 900}},
+        {"cell": {"left": 1550, "top": 300, "bottom": 334}, "size": {"width": 90, "height": 100}},
+    ]
+    # [지금 스크롤, 값 위, 값 높이, 보이는 높이, 창 안 여백]
+    scrolls = [
+        [0, 4, 24, 171, 4],
+        [0, 186, 24, 171, 4],
+        [58, 108, 24, 171, 4],
+        [58, 30, 24, 171, 4],
+    ]
+    result = _node(
+        {"cases": [{**case, "view": view} for case in cases], "scrolls": scrolls},
+        runner=_CHOICE_PLACE_RUNNER,
+    )
+    places = result["places"]
+    assert places[0] == {"left": 399, "top": 333, "maxHeight": None, "up": False}
+    assert places[1] == {"left": 399, "top": 581, "maxHeight": None, "up": True}
+    # 아래 659 · 위 181 — 넓은 아래쪽에 659 만큼 펴고 창 안에서 굴린다.
+    assert places[2] == {"left": 399, "top": 333, "maxHeight": 659, "up": False}
+    assert places[3] == {"left": 1502, "top": 333, "maxHeight": None, "up": False}
+    # 첫 값은 0, 아래로 벗어난 값은 그 끝 + 여백까지, 보이는 값은 그대로,
+    # 위로 벗어난 값은 그 위 - 여백.
+    assert result["scrolls"] == [0, 43, 58, 26]
+
+
+_LIST_SCROLL_RUNNER = (
+    _SCROLL_RUNNER[: _SCROLL_RUNNER.index("const rows = []")]
+    + """
+// 창 안 자리 — 값 단추는 창 여백 4px 아래에 26px 간격으로 선다. 창은 제 높이(여백 둘 + 단추들)이고,
+// maxHeight 를 받으면 테 둘(2px)을 뺀 만큼만 보인다.
+Object.defineProperty(FakeNode.prototype, 'offsetTop', {
+  get() {
+    const up = this.parentNode
+    return up && up.classList.contains('emg-dd') ? 4 + up.children.indexOf(this) * 26 : 0
+  },
+})
+const make = document.createElement
+document.createElement = (tag) => {
+  const node = make(tag)
+  Object.defineProperty(node, 'clientHeight', {
+    get() {
+      if (!this.classList.contains('emg-dd')) return 600
+      const full = 8 + this.children.length * 26
+      const cap = parseFloat(this.style.maxHeight)
+      return cap > 0 ? Math.min(cap - 2, full) : full
+    },
+    set() {},
+  })
+  return node
+}
+const options = []
+for (let k = 0; k < 20; k += 1) options.push('O' + k)
+const rows = []
+for (let k = 0; k < 6; k += 1) {
+  rows.push({ id: 'r' + k, values: ['EQ-' + k, 'm' + k, k === 3 ? 'O12' : 'O0'] })
+}
+const data = {
+  mode: 'grid', base: 'b1', view: 'v1', limits: { outboxCells: 10000, pasteCells: 5000 },
+  columns: [
+    { name: '설비명', kind: 'name', width: 'name' },
+    { name: 'Model', kind: 'text', width: 'm' },
+    { name: '층', kind: 'choice', width: 's', options, blank: true },
+  ],
+  colSets: [['all', '전체', '', [1, 2]]],
+  rows,
+}
+const component = { parentElement, setTriggerValue() {}, setStateValue() {} }
+const cleanup = globalThis.__mount({ data, ...component })
+const S = host.__emg
+const body = S.body
+const list = () => body.querySelector('.emg-dd')
+const press = (id, col) =>
+  body.querySelector('[data-id="' + id + '"][data-col="' + col + '"]').querySelector('.emg-cb')
+const key = (name, times) => {
+  for (let k = 0; k < times; k += 1) fire(document.activeElement, 'keydown', { key: name })
+}
+// 고른 값이 창 안 보이는 칸에 드나.
+const seen = () => {
+  const box = list()
+  const active = box.querySelector('button.is-active')
+  return {
+    active: active.textContent,
+    focus: document.activeElement === active,
+    top: box.scrollTop,
+    inside: active.offsetTop >= box.scrollTop
+      && active.offsetTop + active.offsetHeight <= box.scrollTop + box.clientHeight,
+  }
+}
+const R = {}
+// 가짜 칸은 0 ~ 600px · 화면 높이 950 이라 창(580px)은 아래 343px 로 줄어 창 안에서 구른다.
+fire(press('r1', 2), 'click')
+R.open = { maxHeight: list().style.maxHeight, ...seen() }
+key('ArrowDown', 15)
+R.down = seen()
+// 휠로 창 안을 굴린 자리는 고른 값이 보이는 동안 화살표로 다시 지어도 이어 받는다.
+list().scrollTop = 200
+key('ArrowUp', 1)
+R.kept = seen()
+key('ArrowUp', 9)
+R.up = seen()
+// 처음 값에서 ↑ 는 끝 값(비움)으로 돈다.
+key('ArrowUp', 6)
+R.wrap = seen()
+// 다른 칸의 창은 앞 창의 스크롤을 이어 받지 않는다 — r3 의 값 O12(창 안 316 ~ 340px)는
+// 앞 창 211 이면 그대로 보인다.
+fire(press('r3', 2), 'click')
+R.other = { cell: S.edit ? S.edit.id : null, ...seen() }
+cleanup()
+process.stdout.write(JSON.stringify(R))
+"""
+)
+
+
+def test_a_shortened_choice_list_keeps_the_active_value_inside_it() -> None:
+    """화면이 낮아 줄여 편 고르기 창에서 ↓ 로 접힌 아래 값에 가면 고른 값이 창 밖에 남았다
+    (2026-11-12 검토) — 창은 화살표마다 새로 지어 창 안 스크롤이 0 으로 돌아갔다. 창 안 스크롤은
+    같은 칸의 앞 창을 이어 받고 고른 값이 보이게 가장 적게 옮긴다(`placeChoice` → `listScroll`).
+    다른 칸의 창은 이어 받지 않는다."""
+    result = _node({}, _LIST_SCROLL_RUNNER, source=FAKE_DOM + _fake_dom_source())
+    assert result["open"] == {
+        "maxHeight": "343px",
+        "active": "O0",
+        "focus": True,
+        "top": 0,
+        "inside": True,
+    }
+    # O15 는 창 안 394 ~ 418px — 보이는 341px 에 여백 4 를 더해 81 까지 굴린다.
+    assert result["down"] == {"active": "O15", "focus": True, "top": 81, "inside": True}
+    assert result["kept"] == {"active": "O14", "focus": True, "top": 200, "inside": True}
+    assert result["up"] == {"active": "O5", "focus": True, "top": 130, "inside": True}
+    assert result["wrap"] == {"active": "(비움)", "focus": True, "top": 211, "inside": True}
+    assert result["other"] == {
+        "cell": "r3",
+        "active": "O12",
+        "focus": True,
+        "top": 3,
+        "inside": True,
+    }
+
+
+def test_the_choice_list_floats_on_screen_and_the_text_editor_stays_under_the_head() -> None:
+    """두 줄만 불러온 표에서 고르기 창을 열면 머리가 위로 밀려 사라지고 값이 잘렸다(2026-11-12
+    사용자 요청 2) — 창이 표 상자 안 절대 자리라 상자를 넘치게 했다. 창은 화면 자리(fixed)에
+    떠 상자에 잘리지 않고 창 안에서 구르며, 고르는 칸만 머리 위로 올린다(위로 편 창이 머리에
+    깔리지 않게). 글 칸은 머리 밑이다 — 머리 밑에 걸친 편집 칸이 머리를 덮었다."""
+    dropdown = re.search(r"\n\.emg-dd \{(?P<body>[^}]*)\}", CSS)
+    assert dropdown is not None
+    for part in ("position: fixed", "overflow-y: auto", "overscroll-behavior: contain"):
+        assert part in dropdown["body"], part
+    for gone in ("top: 33px", "min-width: calc(100% + 2px)", "position: absolute"):
+        assert gone not in dropdown["body"], gone
+    head = re.search(r"\n\.emg-head \{(?P<body>[^}]*)\}", CSS)
+    editing = re.search(r"\n\.emg-c\.is-editing \{(?P<body>[^}]*)\}", CSS)
+    choosing = re.search(r"\n\.emg-c\.is-editing\.is-choosing \{(?P<body>[^}]*)\}", CSS)
+    name = re.search(r"\n\.emg-c-name \{(?P<body>[^}]*)\}", CSS)
+    assert head and editing and choosing and name
+
+    def z(match: re.Match[str]) -> int:
+        found = re.search(r"z-index: (\d+)", match["body"])
+        assert found
+        return int(found.group(1))
+
+    assert z(name) < z(editing) < z(head) < z(choosing)
+    start = _function("startEdit")
+    assert start.index("ensureVisible(S, id)") < start.index("paintWindow(S)")
+    assert "listen(S, document, 'scroll', onPageMove, true)" in _function("buildGridSkeleton")
+
+
 def test_the_table_note_floats_over_the_column_bar_without_pushing_the_table() -> None:
     """브라우저 한 줄(「붙여넣는 중」 · 이름 붙여넣기 거부 · 칸 수 상한)이 볼 칸 줄과 표 사이 흐름에
     끼어 표를 43 ~ 53px 밀었다(c5, 샘플 관측). 표 틀 맨 위 볼 칸 줄 위에 떠서 표는 그 자리다 —

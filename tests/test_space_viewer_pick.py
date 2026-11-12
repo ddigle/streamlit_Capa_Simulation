@@ -10,8 +10,9 @@
 - **겹친 반입 예정 숨기기**(8): 기준일에 반입 전인 호기가 그날 보이는 다른 호기(반입됐고 아직
   안 빠진)와 넓이가 0 보다 크게 겹치면 보기 화면이 그리지 않는다 — 판정은 브라우저
   (`// <view-cover>`)이고 페이더를 끄는 동안에도 바로 바뀐다. 반입 전끼리, 같은 묶음
-  모듈끼리는 숨기지 않는다. 요약 줄에 「겹쳐 숨긴 반입 예정 n대」(설비지분 합)를 붙이고 범례
-  대수는 그대로다. 배치 편집기는 바꾸지 않는다.
+  모듈끼리는 숨기지 않는다. 모듈은 Main 설비 묶음째 — 반입 전 모듈 하나라도 덮이면 그 묶음의
+  반입 전 모듈을 모두 숨기고 반입한 모듈은 남긴다(2026-11-12 사용자 요청 4). 요약 줄에 「겹쳐
+  숨긴 반입 예정 n대」(설비지분 합)를 붙이고 범례 대수는 그대로다. 배치 편집기는 바꾸지 않는다.
 
 AppTest 는 JS 를 못 돌린다 — `_EDITOR` 를 대역으로 바꿔 누른 호기를 컴포넌트 상태에 넣고
 `on_pick_change` 를 부른다(대역은 그리는 자리에서 부르므로 결과는 다음 회차에 본다). JS
@@ -78,7 +79,7 @@ const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 const SCALE = 10
 const VIEW = true
 const FAB = false
-const S = { items: new Map(), adjacency: null, asOf: '' }
+const S = { items: new Map(), adjacency: null, mates: null, asOf: '' }
 %s
 %s
 for (const raw of input.items) {
@@ -104,6 +105,7 @@ _COVER_DECLS = (
     "const OVERLAP_CELL = ",
     "function overlapPairs(",
     "function coveredAt(",
+    "function groupMates(",
 )
 
 
@@ -121,8 +123,8 @@ def test_a_pre_arrival_unit_hides_only_while_a_present_unit_overlaps_it() -> Non
       그대로 보인다.
     - 반입 전끼리(PRE-1·PRE-2)는 겹쳐도 둘 다 보인다.
     - 변만 맞닿은 EDGE(넓이 0)는 숨지 않는다.
-    - 같은 묶음 모듈끼리(G-A 실물·G-B 반입 전)는 숨기지 않고, 다른 호기(STAY)가 덮은 모듈(H-A)은
-      모듈 상자마다 숨는다."""
+    - 같은 묶음 모듈끼리(G-A 실물·G-B 반입 전)는 숨기지 않고, 다른 호기(STAY)가 모듈 하나(H-A)를
+      덮으면 덮이지 않은 형제(H-B)도 묶음째 숨는다(2026-11-12 사용자 요청 4)."""
     items = [
         {"id": "OLD", "x": 10, "y": 10, "w": 12, "h": 7, "exitOn": "2026-12-01"},
         {"id": "NEW", "x": 12, "y": 11, "w": 12, "h": 7, "realFrom": "2027-01-10"},
@@ -139,12 +141,65 @@ def test_a_pre_arrival_unit_hides_only_while_a_present_unit_overlaps_it() -> Non
     days = ["2026-11-01", "2026-11-30", "2026-12-01", "2027-01-10"]
     out = _run_cover(items, days, [1, 0.25, 1.5, 2.0, 1 / 3 * 3, 1234, 0.75])
 
-    assert out["2026-11-01"] == ["H-A", "NEW"]
-    assert out["2026-11-30"] == ["H-A", "NEW"]
+    assert out["2026-11-01"] == ["H-A", "H-B", "NEW"]
+    assert out["2026-11-30"] == ["H-A", "H-B", "NEW"]
     # OLD 가 빠진 날부터 NEW 는 반입 예정으로 보인다(반입 전이지만 덮는 호기가 없다).
-    assert out["2026-12-01"] == ["H-A"]
-    assert out["2027-01-10"] == ["H-A"]
+    assert out["2026-12-01"] == ["H-A", "H-B"]
+    assert out["2027-01-10"] == ["H-A", "H-B"]
     assert out["counts"] == ["1", "0.25", "1.5", "2", "1", "1,234", "0.75"]
+
+
+def test_a_module_group_hides_its_pre_arrival_modules_together() -> None:
+    """모듈은 Main 설비 묶음째 판정한다(2026-11-12 사용자 요청 4) — 반입 전 모듈 하나라도 그날
+    보이는 실물 호기와 겹치면 그 묶음의 반입 전 모듈 모두가 숨는다.
+
+    - M: M-A 만 X(2027-03-01 에 빠짐)와 겹친다. 반입 전 M-B 는 함께 숨고, 이미 반입한 M-C 는
+      남는다. X 가 빠진 날부터 묶음 모두 보인다.
+    - K: K-A 만 Z(늘 실물)와 겹친다. K-A 가 반입한 날(2027-06-01)부터는 덮인 반입 전 모듈이 없어
+      아직 반입 전인 K-B 도 다시 보인다.
+    - L: 「필요 단축」 표시 모듈(L-A)이 있는 묶음은 숨기지 않는다 — 표시 없는 형제 L-B 가 늘 실물인
+      V 와 겹쳐도 보인다.
+    - N: 도면에 서지 않은 형제(N-A — 미배치)는 덮였는지 셈하지 않는다."""
+    items = [
+        {"id": "X", "x": 10, "y": 10, "w": 12, "h": 7, "exitOn": "2027-03-01"},
+        {"id": "M-A", "x": 15, "y": 12, "w": 3, "h": 2, "group": "M", "realFrom": "2027-05-09"},
+        {"id": "M-B", "x": 25, "y": 12, "w": 3, "h": 2, "group": "M", "realFrom": "2027-05-09"},
+        {"id": "M-C", "x": 28, "y": 12, "w": 3, "h": 2, "group": "M"},
+        {"id": "Z", "x": 40, "y": 10, "w": 12, "h": 7},
+        {"id": "K-A", "x": 45, "y": 12, "w": 3, "h": 2, "group": "K", "realFrom": "2027-06-01"},
+        {"id": "K-B", "x": 55, "y": 12, "w": 3, "h": 2, "group": "K", "realFrom": "2027-07-01"},
+        {"id": "Y", "x": 70, "y": 10, "w": 12, "h": 7},
+        {
+            "id": "L-A",
+            "x": 75,
+            "y": 12,
+            "w": 3,
+            "h": 2,
+            "group": "L",
+            "realFrom": "2099-01-01",
+            "layer": "b1",
+        },
+        {"id": "L-B", "x": 85, "y": 12, "w": 3, "h": 2, "group": "L", "realFrom": "2099-01-01"},
+        {"id": "V", "x": 84, "y": 10, "w": 6, "h": 7},
+        {"id": "W", "x": 100, "y": 10, "w": 12, "h": 7},
+        {
+            "id": "N-A",
+            "x": 105,
+            "y": 12,
+            "w": 3,
+            "h": 2,
+            "group": "N",
+            "realFrom": "2099-01-01",
+            "placed": False,
+        },
+        {"id": "N-B", "x": 115, "y": 12, "w": 3, "h": 2, "group": "N", "realFrom": "2099-01-01"},
+    ]
+    days = ["2027-01-01", "2027-03-01", "2027-06-01"]
+    out = _run_cover(items, days, [])
+
+    assert out["2027-01-01"] == ["K-A", "K-B", "M-A", "M-B"]
+    assert out["2027-03-01"] == ["K-A", "K-B"]
+    assert out["2027-06-01"] == []
 
 
 def test_the_viewer_paints_the_cover_and_the_editor_does_not() -> None:
@@ -162,9 +217,13 @@ def test_the_viewer_paints_the_cover_and_the_editor_does_not() -> None:
     )
     units = _between("function paintUnits(ids) {", "function paintAsOf(previous) {")
     assert "for (const other of pairs.get(id) || []) near.add(other)" in units
+    # 모듈은 묶음째 숨는다 — 바뀐 호기 · 그 이웃의 묶음 형제도 다시 칠한다.
+    assert "const mates = groupMates()" in units
+    assert units.index("near.add(other)") < units.index("near.add(mate.id)")
     assert "showSummary()" in units
     render = _between("function renderItems() {", "function repaint() {")
     assert render.index("S.adjacency = null") < render.index("buildGroup(item)")
+    assert render.index("S.mates = null") < render.index("buildGroup(item)")
     assert "S.covered = new Map()" in render
     # 편집기의 겹침 경고는 그대로다(보기 화면 갈래만 숨김을 본다).
     overlaps = _between("function markOverlaps(flipped) {", "function coveredAt(item, st) {")
