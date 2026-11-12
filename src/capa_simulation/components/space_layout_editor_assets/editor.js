@@ -246,6 +246,8 @@ export default function (component) {
   const zonesLayer = svg.querySelector('.sle-zones')
   const layer = svg.querySelector('.sle-items')
   const marksLayer = svg.querySelector('.sle-marks')
+  // 호기에 덮여 위로 올린 영역 이름표(`syncZoneTag`) — 호기·위 겹 요소 위, Main 설비명 아래.
+  const zoneTagsLayer = svg.querySelector('.sle-zone-tags')
   const namesLayer = svg.querySelector('.sle-group-names')
   const compareLayer = svg.querySelector('.sle-compare')
   const badgesLayer = svg.querySelector('.sle-short-badges')
@@ -833,6 +835,13 @@ export default function (component) {
     if (align === 'center') return (lw - tagW) / 2
     if (align === 'right') return lw - tagW
     return 0
+  }
+  // 호기에 덮인 영역 이름표를 세울 세로 비킴(도면 좌표 — 0 이 도면 위 끝, 아래가 +). 덮이지 않았으면 null(제자리 · 영역 겹이다).
+  // 덮였으면 호기 위 겹에 세운다 — 위 변 위에 이름표 높이(box.h)만큼 자리가 있으면 -box.h(위 변 바로 바깥), 도면 위 끝이라
+  // 자리가 없으면 0(제자리). box 는 {top, h}.
+  function zoneTagLift(box, covered) {
+    if (!box || !covered) return null
+    return box.top - box.h >= -1e-9 ? -box.h : 0
   }
   // Main 설비명 글자 가운데 {x, y}(데이터 좌표, Y 는 위로) — 범위 r {x, y, w, h}, 위치 position, 글자 크기 fs·바깥 틈 gap(데이터
   // 단위), 영역 높이 canvasH. 가운데는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를
@@ -2997,7 +3006,7 @@ export default function (component) {
         inner.append(tag, words)
       }
       // 이름표가 차지하는 자리 — 영역은 돌리지 않아(`rotatable: false`) 도면 좌표 그대로다. 글이 꼬리표보다 길면 글 끝까지다.
-      group.__tagBox = caption.shown ? { x: item.x + tagX, top, w: Math.max(tagW, emWidth(name) * fs + fs * 0.9), h: fs * 1.6 } : null
+      group.__tagBox = caption.shown ? { x: item.x + tagX, top, w: Math.max(tagW, emWidth(name) * fs + fs * 0.9), h: fs * 1.6, left: item.x } : null
     } else if (item.kind === 'shutter') {
       // 반입구: 아래 변에 굵은 셔터, 안쪽(위)으로 들어오는 화살표. 상자 전체가 비워 둘 앞 공간이다.
       // 셔터 선은 캔버스 테두리에 묻히지 않게 벽 안쪽으로 조금 들인다.
@@ -3512,6 +3521,7 @@ export default function (component) {
     layer.replaceChildren()
     zonesLayer.replaceChildren()
     marksLayer.replaceChildren()
+    zoneTagsLayer.replaceChildren()
     trayList.replaceChildren()
     leavingList.replaceChildren()
     S.groups = new Map()
@@ -3834,15 +3844,33 @@ export default function (component) {
   const overlaps = (p, q2) => p.x < roundTo(q2.x + q2.w) && q2.x < roundTo(p.x + p.w)
     && p.y < roundTo(q2.y + q2.h) && q2.y < roundTo(p.y + p.h)
 
-  // 영역 이름표는 호기 아래 층이라 호기가 지나가면 반쯤 덮여 잘려 보인다 — 덮일 바에는 숨기고 영역 풍선에 남긴다(설계 규칙
-  // UI-ACC-04). 자리(`__tagBox`)는 `drawMark` 가 배율마다 정하고, 호기가 움직이거나 기준일로 보이는 호기가 바뀌면
-  // `markOverlaps` 가 다시 본다.
+  // 영역 이름표는 호기 아래 겹이라 호기가 지나가면 반쯤 덮여 잘려 보인다 — 덮이면 그 꼬리표·글을 호기 위 겹(`sle-zone-tags`)에
+  // 다시 세운다. 자리는 위 변 바로 바깥, 도면 위 끝이면 제자리다(`zoneTagLift`, 설계 규칙 UI-ACC-04). 올린 이름표는 얇은 테를
+  // 두르고 누르기를 받지 않는다 — 영역은 테두리 띠로 잡힌다. 자리(`__tagBox`)는 `drawMark` 가 배율마다 정하고(작아 숨는 배율이면
+  // 없다), 호기가 움직이거나 기준일로 보이는 호기가 바뀌면 `markOverlaps` 가 다시 본다.
   function syncZoneTag(group) {
     const box = group.__tagBox
-    if (!box) return
-    const covered = [...S.items.values()].some((m) => isUnit(m) && seenModule(m)
+    const nodes = [...group.querySelectorAll('.sle-zone-tag, .sle-zone-name')]
+    const covered = Boolean(box) && [...S.items.values()].some((m) => isUnit(m) && seenModule(m)
       && box.x < m.x + m.w && m.x < box.x + box.w && box.top < svgTop(m) + m.h && svgTop(m) < box.top + box.h)
-    for (const node of group.querySelectorAll('.sle-zone-tag, .sle-zone-name')) node.style.display = covered ? 'none' : ''
+    const lift = zoneTagLift(box, covered)
+    for (const node of nodes) node.style.display = lift === null ? '' : 'none'
+    // 같은 이름표(배율·자리가 바뀌면 `drawMark` 가 새로 그린다)를 같은 자리에 이미 올렸으면 그대로 둔다 — 페이더 칸마다 돈다.
+    const held = group.__tagCopy
+    if (held && lift !== null && held.__from === nodes[0] && held.__lift === lift) return
+    if (held) held.remove()
+    group.__tagCopy = null
+    if (lift === null || !nodes.length) return
+    const copy = el('g', { class: 'sle-zone-tagcopy', transform: `translate(${box.left} ${box.top + lift})` })
+    for (const node of nodes) {
+      const clone = node.cloneNode(true)
+      clone.style.display = ''
+      copy.append(clone)
+    }
+    copy.__from = nodes[0]
+    copy.__lift = lift
+    zoneTagsLayer.append(copy)
+    group.__tagCopy = copy
   }
 
   // 겹침은 막지 않고 알린다(저장도 된다). 호기끼리, 그리고 호기와 반입구·문·기둥·설비 금지 영역.

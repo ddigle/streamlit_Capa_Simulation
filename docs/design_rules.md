@@ -1084,12 +1084,12 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 
 - 수준: SHOULD · 확정
 - 범위: 도면 · 차트 이름표 · 확대 축소가 있는 모든 보기
-- 예외: 없음
+- 예외: Space 영역 이름표 — 호기에 덮여도 숨기지 않고 호기 위 겹으로 올려 세운다(위 변 바로 바깥, 도면 위 끝이면 제자리). 올린 이름표는 위쪽 호기 · 요소 일부를 덮을 수 있다(보드 7-1 에서 알고 고름 — 2026-11-12). 배율로 작아 숨는 것은 그대로다.
 - 판단: 가장 작게 줄였을 때 글자가 도면을 덮나?
-- 그물: `tests/test_space_layout_editor_assets.py`(호기에 덮인 영역 이름표 숨김)
+- 그물: `tests/test_space_layout_editor_assets.py`(호기에 덮인 영역 이름표 올림 — `test_a_zone_label_under_a_unit_is_lifted_just_outside_the_top_edge` · `test_a_covered_zone_label_at_the_top_of_the_drawing_stays_in_place_above_the_units` · `test_only_units_on_screen_lift_a_zone_label` · `test_a_lifted_zone_label_sits_between_the_marks_and_the_main_names_and_takes_no_press`)
 - 그물 후보: 없음
-- 근거: Space 결정 보드 D2 「배율에 따른 글자 크기 기준」(2026-11-04), 사용자 요청 2(2026-10-22), 확인 보드 AMB-18 (가)(2026-11-04)
-- 지금 값: Space 이름표 · 찾아가기 글자 8px · 배율 300% — 출처 4장 / 호기에 덮인 영역 이름표는 숨기고 영역 풍선에 남김
+- 근거: Space 결정 보드 D2 「배율에 따른 글자 크기 기준」(2026-11-04), 사용자 요청 2(2026-10-22), 확인 보드 AMB-18 (가)(2026-11-04), Space 요청 시안 보드 7-1 (가)(2026-11-12) — 「영역 요소가 다른 객체와 겹치면 텍스트 표기가 안되는데 표기하게끔 변경.」
+- 지금 값: Space 이름표 · 찾아가기 글자 8px · 배율 300% — 출처 4장 / 호기에 덮인 영역 이름표는 위 변 바로 바깥(호기 위 겹)으로 올림 — 도면 위 끝이면 제자리 위 겹(옛 값 「호기에 덮인 영역 이름표는 숨기고 영역 풍선에 남김」 은 폐기 — 2026-11-12 보드 7-1 (가))
 
 ### 3-11. PRC — 검수 · 결정 과정
 

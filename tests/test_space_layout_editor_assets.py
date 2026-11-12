@@ -1317,43 +1317,120 @@ const svgTop = (item) => H() - (item.y + item.h)
 const isUnit = (item) => item.unit === true
 const seenModule = (item) => item.seen !== false
 const S = { items: new Map(input.items.map((item, k) => [k, item])) }
-const nodes = [{ style: {} }, { style: {} }]
+const lifted = []
+const zoneTagsLayer = { append: (node) => lifted.push(node) }
+const el = (tag, attrs) => ({
+  tag, attrs, children: [], removed: false,
+  append(...nodes) { this.children.push(...nodes) },
+  remove() { this.removed = true },
+})
+const part = (name) => ({
+  name, style: {}, cloneNode() { return { name, style: { ...this.style } } },
+})
+const nodes = [part('tag'), part('name')]
 const group = { __tagBox: input.box, querySelectorAll: () => nodes }
 %s
+%s
+const look = () => {
+  const copy = group.__tagCopy
+  return {
+    shown: nodes.map((n) => n.style.display),
+    lifted: lifted.filter((c) => !c.removed).length,
+    at: copy ? copy.attrs.transform : null,
+    layer: copy ? copy.attrs.class : null,
+    clones: copy ? copy.children.map((c) => [c.name, c.style.display]) : null,
+  }
+}
 syncZoneTag(group)
-process.stdout.write(JSON.stringify({ shown: nodes.map((n) => n.style.display) }))
+const first = look()
+const held = group.__tagCopy
+syncZoneTag(group)
+const again = { ...look(), same: group.__tagCopy === held }
+S.items = new Map((input.after || []).map((item, k) => [k, item]))
+syncZoneTag(group)
+process.stdout.write(JSON.stringify({ first, again, after: look() }))
 """
-_TAG = {"x": 10, "top": 20, "w": 30, "h": 4}
+# 영역 왼쪽 10 · 위 변 20(도면 좌표 — 아래로 +), 꼬리표 폭 30 · 높이 4.
+_TAG = {"x": 10, "top": 20, "w": 30, "h": 4, "left": 10}
 
 
-def _zone_tag(items: Sequence[Mapping[str, object]]) -> list[str]:
-    source = _ZONE_TAG_RUNNER % _js_decl("function syncZoneTag(")
-    return list(_node(source, {"items": list(items), "box": _TAG})["shown"])
+def _zone_tag(
+    items: Sequence[Mapping[str, object]],
+    after: Sequence[Mapping[str, object]] = (),
+    box: Mapping[str, float] = _TAG,
+) -> dict[str, dict[str, object]]:
+    lift = _js_decl("function zoneTagLift(")
+    source = _ZONE_TAG_RUNNER % (lift, _js_decl("function syncZoneTag("))
+    payload = {"items": list(items), "after": list(after), "box": dict(box)}
+    return dict(_node(source, payload))
 
 
-def test_a_zone_label_hides_under_a_unit_and_comes_back_when_it_leaves() -> None:
-    """영역 이름표는 호기 아래 층이다 — 호기가 덮으면 꼬리표와 글을 함께 숨긴다(UI-ACC-04).
-    이름표 윗선 좌표는 도면(아래로) 좌표이고 호기 `y` 는 위로 재는 값이다(`svgTop`)."""
+def test_a_zone_label_under_a_unit_is_lifted_just_outside_the_top_edge() -> None:
+    """호기가 영역 이름표를 덮으면 그 꼬리표 · 글을 호기 위 겹(`sle-zone-tags`)에 다시
+    세운다 — 자리는 위 변 바로 바깥(이름표 높이만큼 위)이고, 영역 겹의 제 이름표는 숨긴다
+    (UI-ACC-04 — 2026-11-12 보드 7-1 (가)). 이름표 윗선 좌표는 도면(아래로) 좌표이고 호기 `y` 는
+    위로 재는 값이다(`svgTop`). 같은 자리를 다시 보면 새로 세우지 않는다(페이더 칸마다 돈다)."""
     # 윗선 76 ~ 80 은 도면 좌표 20 ~ 24 — 이름표 상자와 넓이가 겹친다.
     over = {"unit": True, "x": 20, "y": 76, "w": 6, "h": 4}
-    assert _zone_tag([over]) == ["none", "none"]
-    # 맞닿기만 하면 겹침이 아니다.
+    out = _zone_tag([over], after=[])
+    assert out["first"] == {
+        "shown": ["none", "none"],
+        "lifted": 1,
+        "at": "translate(10 16)",
+        "layer": "sle-zone-tagcopy",
+        "clones": [["tag", ""], ["name", ""]],
+    }
+    assert out["again"]["same"] is True and out["again"]["lifted"] == 1
+    # 호기가 떠나면 올린 이름표를 걷고 제 이름표가 다시 선다.
+    assert out["after"] == {
+        "shown": ["", ""],
+        "lifted": 0,
+        "at": None,
+        "layer": None,
+        "clones": None,
+    }
+
+
+def test_a_covered_zone_label_at_the_top_of_the_drawing_stays_in_place_above_the_units() -> None:
+    """위 변 위에 이름표 높이만큼 자리가 없으면(도면 위 끝) 제자리에 세우되 호기 위 겹이다 — 덮인 채
+    잘려 보이지 않는다. 맞닿기만 하면 겹침이 아니고, 작아 숨는 배율(자리 없음)이면 올리지 않는다."""
+    top = {**_TAG, "top": 2}
+    over = {"unit": True, "x": 20, "y": 94, "w": 6, "h": 4}
+    out = _zone_tag([over], box=top)
+    assert out["first"]["at"] == "translate(10 2)" and out["first"]["shown"] == ["none", "none"]
     touching = {"unit": True, "x": 40, "y": 76, "w": 6, "h": 4}
-    assert _zone_tag([touching]) == ["", ""]
-    assert _zone_tag([]) == ["", ""]
+    assert _zone_tag([touching])["first"]["lifted"] == 0
+    assert _zone_tag([])["first"]["shown"] == ["", ""]
+    hidden = _node(
+        _ZONE_TAG_RUNNER.replace("group = { __tagBox: input.box,", "group = { __tagBox: null,")
+        % (_js_decl("function zoneTagLift("), _js_decl("function syncZoneTag(")),
+        {"items": [over], "after": [], "box": dict(_TAG)},
+    )
+    assert hidden["first"]["lifted"] == 0 and hidden["first"]["shown"] == ["", ""]
 
 
-def test_only_units_on_screen_hide_a_zone_label() -> None:
-    """기준일에 보이지 않는 호기와 호기 아닌 요소는 이름표를 숨기지 않는다."""
+def test_only_units_on_screen_lift_a_zone_label() -> None:
+    """기준일에 보이지 않는 호기와 호기 아닌 요소는 이름표를 올리지 않는다."""
     gone = {"unit": True, "seen": False, "x": 20, "y": 76, "w": 6, "h": 4}
     mark = {"unit": False, "x": 20, "y": 76, "w": 6, "h": 4}
-    assert _zone_tag([gone, mark]) == ["", ""]
+    out = _zone_tag([gone, mark])
+    assert out["first"]["shown"] == ["", ""] and out["first"]["lifted"] == 0
 
 
-def test_a_zone_keeps_its_name_in_the_tip_and_its_label_is_rechecked_when_units_move() -> None:
-    """숨긴 이름표의 말은 영역 풍선에 남는다(「설비 금지」 도). 자리는 배율마다 정해지고
-    (`drawMark`), 호기가 움직이거나 기준일로 보이는 호기가 바뀌면(`markOverlaps`) 다시 본다. 글이
-    꼬리표보다 길면 글 끝까지 잰다."""
+def test_a_lifted_zone_label_sits_between_the_marks_and_the_main_names_and_takes_no_press() -> None:
+    """올린 이름표의 겹은 위 겹 요소(`sle-marks`)와 Main 설비명(`sle-group-names`) 사이다 —
+    Main 설비명 · 묶음 날짜가 이긴다. 누르기는 받지 않고(영역은 테두리 띠로 잡힌다) 얇은 테를
+    두른다. 다시 그리기는 그 겹을 비운다. 자리는 배율마다 정해지고(`drawMark`), 호기가 움직이거나
+    기준일로 보이는 호기가 바뀌면(`markOverlaps`) 다시 본다. 글이 꼬리표보다 길면 글 끝까지
+    잰다. 영역 풍선에도 이름이 남는다."""
+    layers = ("sle-marks", "sle-zone-tags", "sle-group-names")
+    order = [HTML.index(f'<g class="{name}"') for name in layers]
+    assert order == sorted(order)
+    assert "pointer-events: none" in _rule(".sle-zone-tags")
+    assert "stroke: var(--sle-border)" in _rule(".sle-zone-tagcopy .sle-zone-tag")
+    render = JS[JS.index("  function renderItems() {") :]
+    render = render[: render.index("S.groups = new Map()")]
+    assert "zoneTagsLayer.replaceChildren()" in render
     draw = JS[JS.index("function drawMark(") : JS.index("function appendHandles(")]
     assert "words.classList.add('sle-zone-name')" in draw
     assert "w: Math.max(tagW, emWidth(name) * fs + fs * 0.9)" in draw

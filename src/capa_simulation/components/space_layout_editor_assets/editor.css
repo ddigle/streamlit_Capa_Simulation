@@ -158,6 +158,10 @@
 .mark-zone.is-grouped .sle-zone-select { display: inline; stroke-width: 1.5; stroke-dasharray: 2 3; }
 .mark-zone.is-violated .sle-zone-border, .mark-zone.is-overlap-live .sle-zone-border { stroke: var(--sle-danger) !important; stroke-width: 3; }
 .sle-zone-tag { fill: var(--sle-surface); fill-opacity: 0.88; }
+/* 호기에 덮여 호기 위 겹으로 올린 영역 이름표(위 변 바로 바깥, 도면 위 끝이면 제자리) — 누르기를 받지 않고(영역은 테두리로 잡는다),
+   얇은 테로 둘레의 호기·요소와 가른다. */
+.sle-zone-tags { pointer-events: none; }
+.sle-zone-tagcopy .sle-zone-tag { fill-opacity: 0.94; stroke: var(--sle-border); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .sle-mark-text { fill: var(--sle-mark-ink); font-weight: 700; paint-order: stroke; stroke: var(--sle-surface); stroke-width: 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .sle-hatch-line { stroke: var(--sle-mark-ink); stroke-opacity: 0.35; stroke-width: 0.12; }
 .sle-clear { fill: var(--sle-accent); fill-opacity: 0.07; stroke: var(--sle-mark-muted); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }

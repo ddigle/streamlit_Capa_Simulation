@@ -1346,7 +1346,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     로 닫음, 파이썬으로 보내지 않음)이고 표는 순수 구획 `// <shortcuts>` 한 곳이다(`SHORTCUTS`·`shortcutRows` — 화면 넷 `vf`·`vb`·`ef`·`eb`,
     「키조합 : 기능」, `tests/test_space_editor_shortcuts_js.py` — 키를 더하거나 고치면 표도 고친다, 검수 equip-61). 상태 줄(`updateStatus`)은
     값 · 표지만이고 하는 법은 그 판 · 풍선 · Guide 다. 꺼진 도구 줄 단추는 감싼 칸 `.sle-tiphost` 와 풍선 `.sle-tip`(`lockWith` · `setTip`)이 잠긴 동안 까닭을 말하고
-    키보드 초점도 칸과 단추 사이를 따라간다 — 「적용」 의 sticky 는 감싼 칸 `.sle-apply-host` 쪽이다. 호기에 덮인 영역 이름표는 숨기고 영역 풍선에 남긴다(UI-ACC-04). 도구 줄 제목(`sle-title`)은 보기에도
+    키보드 초점도 칸과 단추 사이를 따라간다 — 「적용」 의 sticky 는 감싼 칸 `.sle-apply-host` 쪽이다. 호기에 덮인 영역 이름표는 호기 위 겹 `sle-zone-tags`(`sle-marks` 와 `sle-group-names` 사이)에 다시 세운다 — 위 변 바로 바깥, 도면 위 끝이면 제자리(`zoneTagLift`), 누르기 안 받음 · 얇은 테, 영역 겹의 제 이름표는 숨김(UI-ACC-04). 도구 줄 제목(`sle-title`)은 보기에도
     서서 지금 층(FAB 은 `FAB_TITLE`)을 말한다. 도구 줄이 넘치면 `fitToolbar` 가 창 폭으로만 정하는 접는 차례를 더한다 — FAB 보기
     ①~③ 다음 ⑥(둘째 줄 — ④ · ⑤ 의 말줄임 단계는 없다, 2026-11-07 답 narrow), 층 보기 ⑥, 편집 `is-efit1`(「호기 정보」·「단축키」·「화면 고정」 아이콘만 · 기준일 칩 날짜만 — 낭독기 글은 남김) → ⑥(빈 칸 뒤 「호기
     정보」·「화면 고정」·「적용」 을 둘째 줄로, 글 다시 섬). 무대 높이를 재기 전에 접는다(둘째 줄이 무대를 내린다 — 검토 browser-1:
