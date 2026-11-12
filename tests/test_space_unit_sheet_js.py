@@ -821,6 +821,14 @@ def test_an_apply_keeps_the_typed_cells_until_a_new_drawing() -> None:
     assert "sheetCells" in status and "sheetEditBlocked(" in status
     undo = JS[JS.index("  function undo() {") : JS.index("  function adjustedLook(")]
     assert "op.op === 'cell'" in undo and "sheetEditRestore(" in undo
+    assert "if (sheetEdited) sheetEditSend()" in undo
+    # 확정마다 「확인만」(5-6 메모 · Q1 (가)) — 고친 칸 전부를 보내고, 판정은 마지막 seq 의 것만
+    # 받는다.
+    commit = JS[JS.index("  function commitSheetCell(") : JS.index("  function adoptSheetEdit(")]
+    assert "sheetEditSend()" in commit
+    assert "setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq," in commit
+    adopt = JS[JS.index("  function adoptSheetEdit(") :]
+    assert "verdict.seq === S.sheetSeq" in adopt[: adopt.index("\n  }\n")]
     # 칸 안의 키는 도면 단축키로 새지 않는다(Delete 로 호기 빼기 등).
     opener = JS[JS.index("  function openSheetCell(") : JS.index("  function closeSheetCell(")]
     assert "event.stopPropagation()" in opener

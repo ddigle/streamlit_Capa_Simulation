@@ -16,7 +16,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import successes
+from alert_marks import flashed, successes
 from streamlit.testing.v1 import AppTest
 from test_equipment_availability import _baseline, _downtime, _equipment
 from test_equipment_pages import PROJECT_ROOT, _page_script
@@ -664,7 +664,7 @@ def test_a_colliding_rename_is_refused_and_leaves_the_draft(
     assert not app.exception
     assert any(
         "적용하지 못했습니다" in item.value and "이미 있는 설비명입니다(EQ-02)" in item.value
-        for item in app.error
+        for item in flashed(app, "error")
     )
     # 편집기는 그대로(같은 epoch — 브라우저의 편집이 남는다), 편집본도 그대로다.
     assert editor_calls[-1]["epoch"] == epoch

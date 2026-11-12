@@ -627,6 +627,30 @@ def _dispatch_pick(key: str, epoch: str, on_pick: Callable[[str | None], None] |
         on_pick(raw.strip())
 
 
+def _dispatch_sheet_check(
+    key: str, epoch: str, on_check: Callable[[Mapping[str, Any]], None] | None
+) -> None:
+    """`on_sheetCheck_change` 콜백. 배치 편집 「호기 정보」 창에서 칸을 확정할 때마다 브라우저가
+    보낸 「확인만」 요청(``{"epoch", "seq", "cells"}``)을 `on_check` 로 넘긴다 — 본문보다 먼저 돌아
+    판정 · 알림이 그 회차에 선다(2026-11-12 Space 시안 보드 답 5-6). 편집기를 그린 epoch 와 다른
+    값(다시 서기 전에 보낸 옛 요청)과 seq 가 정수가 아닌 값은 버린다 — 블록
+    열기(`_dispatch_navigate`)와 같은 규칙이다. 칸 꼴은 받는 쪽이 읽는다(`parse_sheet_cells`)."""
+    if on_check is None:
+        return
+    state = st.session_state.get(key)
+    payload = (
+        state.get("sheetCheck")
+        if isinstance(state, Mapping)
+        else getattr(state, "sheetCheck", None)
+    )
+    if not isinstance(payload, Mapping) or payload.get("epoch") != epoch:
+        return
+    seq = payload.get("seq")
+    if not isinstance(seq, int) or isinstance(seq, bool):
+        return
+    on_check(payload)
+
+
 def _dispatch_navigate(key: str, epoch: str, on_open: Callable[[FloorKey], None]) -> None:
     """`on_navigate_change` 콜백. 누른 블록의 연결(「C1 1F」)이 FAB 의 층이면 연다.
 
@@ -773,6 +797,8 @@ def render_space_layout_editor(
     sheet: Mapping[str, Any] | None = None,
     sheet_edit: Mapping[str, Any] | None = None,
     sheet_refused: Mapping[str, Any] | None = None,
+    sheet_verdict: Mapping[str, Any] | None = None,
+    on_sheet_check: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> EditorSubmission | None:
     """편집기를 그리고 `적용` 이 눌린 회차에만 받은 값을 돌려준다(검증 전 원본).
 
@@ -788,7 +814,10 @@ def render_space_layout_editor(
     「도면」 칸은 브라우저가 쥔 편집으로 덮어 쓴다). `sheet_edit` 는 그 창의 칸 고치기 재료
     (`space_sheet_edit.sheet_edit_data` — epoch 밖), `sheet_refused` 는 막힌 창 칸으로 거부한 적용의
     판정 ``{"epoch", "nonce", "blocked", "follow"}``(`space_sheet_edit.verdict_payload` — 브라우저가
-    nonce 마다 한 번 받아 빨간 칸으로 짚는다).
+    nonce 마다 한 번 받아 빨간 칸으로 짚는다). 창에서 칸을 확정할 때마다 브라우저가 「확인만」 요청
+    ``{"epoch", "seq", "cells"}`` 을 트리거 `sheetCheck` 로 보내고 `on_sheet_check` 가 콜백에서
+    받는다 (`_dispatch_sheet_check`). 그 판정은 다음 회차 `sheet_verdict` ``{"epoch", "seq",
+    "blocked", "follow"}`` 로 돌려준다(브라우저는 마지막으로 보낸 seq 의 것만 받는다).
 
     적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels",
     "cells"}``.
@@ -855,8 +884,10 @@ def render_space_layout_editor(
             "sheet": _clean_sheet(sheet),
             "sheetEdit": dict(sheet_edit) if sheet_edit is not None else None,
             "sheetRefused": dict(sheet_refused) if sheet_refused is not None else None,
+            "sheetVerdict": dict(sheet_verdict) if sheet_verdict is not None else None,
         },
         on_apply_change=lambda: None,
+        on_sheetCheck_change=partial(_dispatch_sheet_check, key, epoch, on_sheet_check),
         width="stretch",
     )
     payload = getattr(result, "apply", None)

@@ -18,6 +18,7 @@ from alert_marks import (
     data_error_marks,
     data_error_texts,
     events,
+    flashed,
     place_errors,
     states,
     successes,
@@ -307,7 +308,10 @@ def test_a_bad_apply_is_refused_with_its_reason_and_leaves_the_draft(
     app.run()
 
     assert not app.exception
-    assert any(message in item.value for item in app.error)
+    # 거부 글은 편집기 아래가 아니라 알림창 · Alarm 이다(2026-11-12 시안 보드 답 5-6 의 같은 꼴 —
+    # 설계 규칙 UI-NTF-03 예외).
+    assert not app.error
+    assert any(message in item.value for item in flashed(app, "error"))
     assert editor_calls[-1]["epoch"] == epoch
     assert not any("저장 안 한 배치 변경" in item.value for item in app.markdown)
     clear_equipment_repository()
@@ -548,7 +552,8 @@ def test_an_apply_from_an_old_editor_is_not_applied(
     app.run()
 
     assert not app.exception
-    assert any("다시 서는 사이" in item.value for item in app.warning)
+    assert not app.warning
+    assert any("다시 서는 사이" in item.value for item in flashed(app, "warning"))
     assert all(item["placed"] for item in editor_calls[-1]["items"])
     clear_equipment_repository()
 
@@ -579,7 +584,7 @@ def test_a_second_press_of_the_same_apply_keeps_the_success_and_applies_once(
     app.run()
 
     assert not app.exception, [item.message for item in app.exception]
-    assert not any("다시 서는 사이" in item.value for item in app.warning)
+    assert not any("다시 서는 사이" in item.value for item in flashed(app, "warning"))
     assert any("편집본에 적용했습니다" in item.value for item in successes(app))
     # 둘째 누름은 얹지 않았다 — 편집본 세대가 그대로다.
     assert app.session_state[BUFFER_GENERATION_KEY] == generation
@@ -591,7 +596,7 @@ def test_a_second_press_of_the_same_apply_keeps_the_success_and_applies_once(
         "changes": [{"id": "EQ-01", "placed": True, "x": 50, "y": 20, "w": 12, "h": 7}],
     }
     app.run()
-    assert any("다시 서는 사이" in item.value for item in app.warning)
+    assert any("다시 서는 사이" in item.value for item in flashed(app, "warning"))
     clear_equipment_repository()
 
 
@@ -1244,4 +1249,116 @@ def test_a_window_cell_on_a_module_follows_its_siblings_on_apply(
     assert list(buffer.loc[["M-A", "M-B", "M-C"], "투자구분"]) == ["개발"] * 3
     assert buffer.loc["M-C", "레이아웃표시"] == "N"
     assert any("묶음 형제 2줄도 함께" in item.value for item in successes(app))
+    clear_equipment_repository()
+
+
+FAKE_CHECK_KEY = "test_fake_sheet_check"
+
+
+@pytest.fixture
+def checking_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """`editor_calls` 와 같은 대역에 창 칸 「확인만」 트리거를 더한다 — 세션에 넣은 요청을 편집기
+    상태 칸에 두고 등록된 콜백(`on_sheetCheck_change`)을 부른다(브라우저 트리거와 같은 길)."""
+    calls: list[dict[str, Any]] = []
+
+    def _stub(**kwargs: Any) -> SimpleNamespace:
+        import streamlit as st
+
+        calls.append(kwargs["data"])
+        check = st.session_state.pop(FAKE_CHECK_KEY, None)
+        if check is not None:
+            st.session_state[kwargs["key"]] = {"sheetCheck": check}
+            kwargs["on_sheetCheck_change"]()
+        return SimpleNamespace(apply=st.session_state.pop(FAKE_APPLY_KEY, None))
+
+    monkeypatch.setattr(space_layout_editor, "_EDITOR", _stub)
+    return calls
+
+
+def _check(
+    app: AppTest, calls: list[dict[str, Any]], seq: int, *cells: tuple[str, str, str]
+) -> list[dict[str, Any]]:
+    """창 칸 확인 한 번 — 낸 `EQ-25` 사건(대역은 본문 안에서 콜백을 불러 그 회차 끝 표지 자리가
+    보낸다 — 브라우저에서는 콜백이 본문보다 먼저라 머리 알림 칸이 보낸다)을 돌려주고, 한 번 더 돌아
+    판정이 편집기 data 에 실린다."""
+    app.session_state[FAKE_CHECK_KEY] = {
+        "epoch": calls[-1]["epoch"],
+        "seq": seq,
+        "cells": [{"id": unit, "col": column, "text": text} for unit, column, text in cells],
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    sent = events(app, "EQ-25")
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    return sent + events(app, "EQ-25")
+
+
+def test_each_confirmed_window_cell_is_checked_at_once_and_new_blocks_alarm(
+    tmp_path: Path, checking_calls: list[dict[str, Any]]
+) -> None:
+    """5-6 메모 「호기 정보 창에서 즉시 막고, 알람으로」(Q1 (가)) — 칸을 확정할 때마다 「확인만」
+    판정이 돌아(편집본은 그대로) 다음 회차 편집기 data `sheetVerdict`(같은 seq)로 막힌 칸을 짚고,
+    **새로** 막힌 칸만 알림창 · Alarm(`EQ-25`)에 낸다. 같은 칸 · 같은 글이 다시 막히면 다시 알리지
+    않는다. 물류를 함께 미루면(마지막 상태가 맞으면) 풀린다 — 입력 차례를 타지 않는다."""
+    app, _ = _open_editor(tmp_path)
+    before = app.session_state[BUFFER_KEY][1].copy()
+
+    sent = _check(app, checking_calls, 1, ("EQ-01", "반입일정", "2026-08-01"))
+
+    verdict = checking_calls[-1]["sheetVerdict"]
+    assert verdict["seq"] == 1 and verdict["epoch"] == checking_calls[-1]["epoch"]
+    assert [(item["id"], item["col"]) for item in verdict["blocked"]] == [("EQ-01", "반입일정")]
+    assert len(sent) == 1 and not app.error
+    assert sent[0]["short"].startswith("EQ-01 반입일정 2026-08-01 — ")
+    pd.testing.assert_frame_equal(app.session_state[BUFFER_KEY][1], before)
+
+    sent = _check(
+        app,
+        checking_calls,
+        2,
+        ("EQ-01", "반입일정", "2026-08-01"),
+        ("EQ-01", "투자구분", "개발"),
+    )
+    assert checking_calls[-1]["sheetVerdict"]["seq"] == 2
+    assert not sent
+
+    sent = _check(
+        app,
+        checking_calls,
+        3,
+        ("EQ-01", "제진대일정", "2026-07-25"),
+        ("EQ-01", "물류일정", "2026-07-30"),
+        ("EQ-01", "반입일정", "2026-08-01"),
+    )
+    assert checking_calls[-1]["sheetVerdict"]["blocked"] == []
+    assert not sent
+    clear_equipment_repository()
+
+
+def test_a_check_returns_the_siblings_that_follow_and_drops_old_requests(
+    tmp_path: Path, checking_calls: list[dict[str, Any]]
+) -> None:
+    """묶음 모듈의 같이 바뀌는 칸은 판정이 형제 줄 값을 함께 돌려준다(창의 형제 줄에도 고친 칸으로
+    보인다). 다시 서기 전의 옛 epoch 요청은 버린다."""
+    fleet = _equipment()
+    module = fleet.iloc[[0, 0]].copy()
+    module["설비명"] = ["M-A", "M-B"]
+    module["Main 설비"] = "M"
+    module["X좌표"], module["Y좌표"] = [50, 56], [30, 30]
+    module["Xsize"], module["Ysize"] = 6, 3.5
+    app, _ = _open_editor(tmp_path, pd.concat([fleet, module], ignore_index=True))
+
+    _check(app, checking_calls, 1, ("M-A", "공정구분", "PKG"))
+    verdict = checking_calls[-1]["sheetVerdict"]
+    assert verdict["blocked"] == []
+    assert verdict["follow"] == [{"id": "M-B", "col": "공정구분", "text": "PKG"}]
+
+    app.session_state[FAKE_CHECK_KEY] = {
+        "epoch": "old",
+        "seq": 2,
+        "cells": [{"id": "M-A", "col": "공정구분", "text": "TEST"}],
+    }
+    app.run()
+    assert checking_calls[-1]["sheetVerdict"]["seq"] == 1
     clear_equipment_repository()

@@ -63,7 +63,7 @@ from capa_simulation.components.equipment_scenario_status import (
     render_load_latest_button,
     report_unscheduled_units,
 )
-from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.components.flash import FlashKind, queue_flash, render_flash
 from capa_simulation.components.floor_canvas_dialog import (
     render_floor_canvas_button,
     render_floor_canvas_dialog_host,
@@ -192,6 +192,7 @@ from capa_simulation.services.equipment_contract import (
     empty_equipment_baseline,
     empty_equipment_master,
 )
+from capa_simulation.services.equipment_grid import GridContext
 from capa_simulation.services.equipment_samples import (
     sample_downtime_schedule,
     sample_equipment_master,
@@ -227,6 +228,7 @@ from capa_simulation.services.floor_layout_mark import (
 from capa_simulation.services.floor_layout_profile import (
     DEFAULT_CANVAS_HEIGHT,
     DEFAULT_CANVAS_WIDTH,
+    FloorCanvasMap,
     FloorKey,
     FloorLayoutProfile,
 )
@@ -282,10 +284,13 @@ from capa_simulation.services.space_layout_edit import (
     viewer_items,
 )
 from capa_simulation.services.space_sheet_edit import (
+    CellVerdict,
     SheetCheck,
+    blocked_keys,
     blocked_line,
     changed_cell_count,
     check_sheet_cells,
+    parse_sheet_cells,
     sheet_edit_data,
     sheet_ids_of,
     unit_lock_kinds,
@@ -344,6 +349,10 @@ SHEET_REFUSED_KEY = "space_sheet_refused_v1"
 # → 2026-08-04)도 새 epoch 로 브라우저의 고친 칸을 비운다(편집본 세대는 내용이 같으면 오르지
 # 않는다).
 SHEET_APPLIED_KEY = "space_sheet_applied_v1"
+# 창 칸 확정마다 받은 「확인만」 판정(편집기 key · epoch · seq · 막힌 칸 · 같이 바뀌는 형제 칸) —
+# 다음 회차 편집기 data `sheetVerdict` 로 간다. 편집본에는 넣지 않는다(2026-11-12 시안 보드 답 5-6 ·
+# Q1 (가)).
+SHEET_VERDICT_KEY = "space_sheet_verdict_v1"
 # 「공식으로 바꾸기」·「최신 rM 불러오기」 실패 글 — 저장 오류와 따로 둔다(저장 안 한 상자가
 # 「배치를 저장하지 못했습니다」 머리로 꺼내 보이지 않게). 잠금 줄 자리에 한 번 보이고 버린다
 # (`flash`).
@@ -1881,6 +1890,21 @@ def _render_layout_editor(
         sheet=sheet,
         sheet_edit=sheet_edit_data(sheet, frames[1], context=context, locks=sheet_locks),
         sheet_refused=_sheet_refused(editor_key, epoch),
+        sheet_verdict=_sheet_verdict(editor_key, epoch),
+        # 칸 확정마다 「확인만」 — 콜백이 본문보다 먼저 판정하고 새로 막힌 칸을 알림창 · Alarm 에
+        # 낸다. 그린 편집본 세대와 다르면(그 사이 편집본이 바뀜) 버린다.
+        on_sheet_check=partial(
+            _check_sheet_request,
+            editor_key,
+            epoch,
+            equipment_buffer_generation(),
+            frames[1],
+            context,
+            sheet_locks,
+            canvases,
+            sheet_ids_of(sheet),
+            today,
+        ),
     )
     if submission is None:
         return
@@ -1889,7 +1913,10 @@ def _render_layout_editor(
         # 방금 받아들인 적용과 같은 입력이면 같은 단추를 한 번 더 누른 꼬리다 — 이미 얹었다(첫
         # 적용의 성공 알림은 알림 칸이 다시 그린다, `write_guard.just_submitted`).
         if not just_submitted(editor_key, submitted):
-            st.warning("편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.")
+            _refuse_apply(
+                "편집기가 새 값으로 다시 서는 사이에 누른 적용이라 반영하지 않았습니다.",
+                kind="warning",
+            )
         return
     try:
         applied = parse_editor_apply(
@@ -1957,7 +1984,7 @@ def _render_layout_editor(
         _refuse_sheet_cells(editor_key, epoch, refused.check)
         return
     except ValueError as exc:
-        st.error(f"적용하지 못했습니다: {bootstrap_error_message(exc)}")
+        _refuse_apply(f"적용하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     stored_canvas = floor_canvases.get(key)
     base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
@@ -2058,6 +2085,16 @@ def _render_layout_editor(
     st.rerun()
 
 
+def _refuse_apply(message: str, *, kind: FlashKind = "error") -> None:
+    """편집기(층 · FAB) 적용 거부 — 편집기 아래 글 상자 대신 알림창 · Alarm 으로 낸다(`FL-04` · 다시
+    서는 사이의 누름은 `FL-03`). 거부 글이 편집기 아래 보이는 칸 밖에 서 보이지 않았다(2026-11-12
+    Space 시안 보드 답 5-6 메모 「즉시 막고, 알람으로」 의 같은 꼴 — 설계 규칙 UI-NTF-03 예외). 담고
+    한 번 더 돈다 — 머리 알림 칸이 그 회차에 보낸다. 편집기는 같은 epoch 라 브라우저의 편집이
+    남는다."""
+    queue_flash(SPACE_FLASH_KEY, markdown_safe_tildes(message), kind=kind, popup_only=True)
+    st.rerun()
+
+
 class _SheetCellsRefused(Exception):
     """「호기 정보」 창에서 고친 칸이 막혀 적용 전체를 받지 않는다(`check_sheet_cells`). 적용값
     검증의 `ValueError` 와 길을 나눈다 — 막힌 칸은 편집기에 빨간 칸으로 돌려준다."""
@@ -2090,14 +2127,14 @@ def _refuse_sheet_cells(editor_key: str, epoch: str, check: SheetCheck) -> None:
         "nonce": uuid.uuid4().hex[:12],
         **verdict_payload(check),
     }
-    _alert_blocked_cells(check, cause="「적용」 누름")
+    _alert_blocked_cells(check.blocked, cause="「적용」 누름")
     st.rerun()
 
 
-def _alert_blocked_cells(check: SheetCheck, *, cause: str) -> None:
+def _alert_blocked_cells(blocked: Sequence[CellVerdict], *, cause: str) -> None:
     """막힌 창 칸을 알림창 · Alarm 사건 `EQ-25` 로 낸다 — 무엇을 · 어디서(「{설비명} {칸} {글} —
     {까닭}」, UI-NTF-06). 그리지 않는다(다음 표지 자리가 보낸다)."""
-    lines = [blocked_line(verdict) for verdict in check.blocked]
+    lines = [blocked_line(verdict) for verdict in blocked]
     if not lines:
         return
     short = lines[0] if len(lines) == 1 else f"{lines[0]} 외 {len(lines) - 1}칸"
@@ -2106,8 +2143,83 @@ def _alert_blocked_cells(check: SheetCheck, *, cause: str) -> None:
         text=short,
         full="「호기 정보」 창에서 고친 칸을 막았습니다.\n" + "\n".join(lines),
         cause=cause,
-        detail=", ".join(sorted({verdict.rule for verdict in check.blocked})),
+        detail=", ".join(sorted({verdict.rule for verdict in blocked})),
     )
+
+
+def _check_sheet_request(
+    editor_key: str,
+    epoch: str,
+    generation: int,
+    master: pd.DataFrame,
+    context: GridContext,
+    locks: Mapping[str, tuple[str, ...]],
+    canvases: FloorCanvasMap,
+    sheet_ids: frozenset[str],
+    today: date,
+    payload: Mapping[str, Any],
+) -> None:
+    """`on_sheetCheck_change` 이 넘긴 창 칸 「확인만」 요청을 판정한다(콜백 — 본문보다 먼저 돈다).
+
+    편집본은 고치지 않는다 — 판정(`check_sheet_cells`, 표와 같은 인자)을 세션에 두어 다음 회차
+    편집기 data `sheetVerdict` 로 돌려주고, **새로** 막힌 칸(같은 편집기 · epoch 의 앞 판정에 없던
+    칸 · 글 · 규칙)만 알림창 · Alarm 사건 `EQ-25` 로 낸다. 그린 회차의 편집본 세대와 지금 세대가
+    다르면(그 사이 편집본이 바뀜 — 다음 회차에 편집기가 새 epoch 로 선다) 버린다. 꼴이 어긋난 요청도
+    조용히 버린다 — 「적용」 이 같은 판정을 한 번 더 한다."""
+    if equipment_buffer_generation() != generation:
+        return
+    try:
+        cells = parse_sheet_cells(payload.get("cells"), sheet_ids=sheet_ids)
+        check = check_sheet_cells(
+            master,
+            cells,
+            columns=FLOOR_TABLE_COLUMNS,
+            context=context,
+            locks=locks,
+            floor_canvases=canvases,
+            today=today,
+        )
+    except (ValueError, TypeError, KeyError):
+        return
+    previous = st.session_state.get(SHEET_VERDICT_KEY)
+    seen = (
+        blocked_keys(previous)
+        if isinstance(previous, Mapping)
+        and previous.get("editor") == editor_key
+        and previous.get("epoch") == epoch
+        else frozenset()
+    )
+    st.session_state[SHEET_VERDICT_KEY] = {
+        "editor": editor_key,
+        "epoch": epoch,
+        "seq": int(payload["seq"]),
+        **verdict_payload(check),
+    }
+    _alert_blocked_cells(
+        [
+            verdict
+            for verdict in check.blocked
+            if (verdict.cell.unit, verdict.cell.column, verdict.cell.text, verdict.rule) not in seen
+        ],
+        cause="「호기 정보」 칸 확정",
+    )
+
+
+def _sheet_verdict(editor_key: str, epoch: str) -> dict[str, Any] | None:
+    """이 편집기 · 이 epoch 의 창 칸 「확인만」 판정(편집기 data `sheetVerdict`), 없으면 None. 다른
+    epoch 의 판정은 버린다."""
+    value = st.session_state.get(SHEET_VERDICT_KEY)
+    if not isinstance(value, Mapping):
+        return None
+    if value.get("editor") != editor_key or value.get("epoch") != epoch:
+        st.session_state.pop(SHEET_VERDICT_KEY, None)
+        return None
+    return {
+        "epoch": epoch,
+        "seq": int(value.get("seq") or 0),
+        "blocked": list(value.get("blocked") or ()),
+        "follow": list(value.get("follow") or ()),
+    }
 
 
 def _sheet_refused(editor_key: str, epoch: str) -> dict[str, Any] | None:
@@ -2189,9 +2301,10 @@ def _render_fab_editor(
     if submission.stale:
         # 방금 받아들인 적용과 같은 입력이면 같은 단추를 한 번 더 누른 꼬리다(층 편집기와 같다).
         if not just_submitted(FAB_EDITOR_KEY, submitted):
-            st.warning(
+            _refuse_apply(
                 "그 사이 FAB 도면이 바뀌어(예: 다른 화면에서 저장) 편집기를 새 값으로 다시 "
-                "불러왔습니다. 방금 누른 적용은 반영하지 않았으니 다시 고친 뒤 적용하세요."
+                "불러왔습니다. 방금 누른 적용은 반영하지 않았으니 다시 고친 뒤 적용하세요.",
+                kind="warning",
             )
         return
     try:
@@ -2204,7 +2317,7 @@ def _render_fab_editor(
         # 요소를 모두 지웠으면 기본 배치를 그린다 — 그것도 영역 안이어야 한다(저장 때와 같은 검사).
         require_fab_layout_fits(next_canvas, next_marks)
     except ValueError as exc:
-        st.error(f"적용하지 못했습니다: {bootstrap_error_message(exc)}")
+        _refuse_apply(f"적용하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     # 저장값과 같아진 쪽은 대기분에서 뺀다. 견주는 기준은 그리는 저장값(요소가 없으면 기본
     # 배치)이고, 저장 때 대조할 본 값은 실제 저장 행이다(캔버스 행이 없으면 None, 요소가 없으면 빈

@@ -74,8 +74,6 @@ REASONS = frozenset(
 
 # (파일, 맨 바깥 함수) → (경고 호출 수, 까닭).
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
-    ("app_pages/space_status.py", "_render_fab_editor"): (1, PLACE_RESULT),
-    ("app_pages/space_status.py", "_render_layout_editor"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/auto_official_update_tab.py", "_render_run_now"): (
         1,
         PLACE_RESULT,

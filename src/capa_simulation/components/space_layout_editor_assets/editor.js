@@ -5641,6 +5641,7 @@ export default function (component) {
   function undo() {
     const last = S.undo.pop()
     if (!last) return
+    let sheetEdited = false
     if (last.kind === 'canvas') {
       S.canvas = { ...last.before }
       S.note = ''
@@ -5667,6 +5668,7 @@ export default function (component) {
           // 「호기 정보」 창 칸 — 앞의 글로(없었으면 원래 글로) 돌린다.
           S.sheetCells = sheetEditRestore(sheetEditCells(), op.key, op.before)
           S.sheetEditRev = (S.sheetEditRev || 0) + 1
+          sheetEdited = true
           applied += 1
         }
       }
@@ -5675,6 +5677,8 @@ export default function (component) {
     pruneSelection()
     renderItems()
     updateStatus()
+    // 되돌린 창 칸도 다시 판정받는다(빨강이 풀리거나 남는다).
+    if (sheetEdited) sheetEditSend()
   }
 
   // 노란 손잡이 index 를 화면 점 p({x, top})에 끌었을 때 도형 item 의 새 모양 값 — 같은 값이면 null.
@@ -8213,14 +8217,43 @@ export default function (component) {
     S.sheetEditRev = (S.sheetEditRev || 0) + 1
     pushUndo([{ op: 'cell', key: sheetEditKey(id, col), before: put.before }])
     updateStatus()
+    sheetEditSend()
+  }
+  // 칸 확정마다 서버에 「확인만」 묻는다(2026-11-12 시안 보드 답 5-6 메모 「호기 정보 창에서 즉시 막고, 알람으로」 · Q1 (가)) —
+  // 고친 칸 전부를 보내 마지막 상태로 판정받으므로 입력 차례를 타지 않고, 편집본에는 넣지 않는다. 판정은 data `sheetVerdict`(같은
+  // seq)로 와 막힌 칸이 친 값 그대로 빨갛게 서고(알림은 파이썬이 낸다) 「적용」 이 잠긴다. 고친 칸이 없으면 묻지 않고 판정을 걷는다.
+  function sheetEditSend() {
+    if (!SHEET_EDIT) return
+    const cells = sheetEditCells()
+    S.sheetSeq = (S.sheetSeq || 0) + 1
+    if (!cells.size) {
+      S.sheetVerdict = null
+      S.sheetEditRev = (S.sheetEditRev || 0) + 1
+      updateStatus()
+      return
+    }
+    setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, cells: sheetEditPayload(cells) })
   }
   // 적용 거부(data `sheetRefused` — {epoch, nonce, blocked, follow}, 파이썬 `verdict_payload`)를 한 번 받는다 — 막힌 칸이 빨강 + 까닭
   // 풍선으로 서고 「적용」 이 잠긴다. 고친 칸은 그대로다(같은 epoch).
+  // 칸 확정의 판정(data `sheetVerdict` — {epoch, seq, blocked, follow})은 마지막으로 보낸 요청의 것(seq 짝)만 받는다 — 그 사이 다시
+  // 고쳤으면 다음 판정을 기다린다.
   function adoptSheetEdit() {
-    const refused = SHEET_EDIT ? data.sheetRefused : null
-    if (!refused || refused.epoch !== S.epoch || refused.nonce === S.sheetRefusedNonce) return
-    S.sheetRefusedNonce = refused.nonce
-    S.sheetVerdict = sheetEditVerdict(refused)
+    if (!SHEET_EDIT) return
+    let changed = false
+    const verdict = data.sheetVerdict
+    if (verdict && verdict.epoch === S.epoch && verdict.seq === S.sheetSeq && verdict.seq !== S.sheetVerdictSeq) {
+      S.sheetVerdictSeq = verdict.seq
+      S.sheetVerdict = sheetEditVerdict(verdict)
+      changed = true
+    }
+    const refused = data.sheetRefused
+    if (refused && refused.epoch === S.epoch && refused.nonce !== S.sheetRefusedNonce) {
+      S.sheetRefusedNonce = refused.nonce
+      S.sheetVerdict = sheetEditVerdict(refused)
+      changed = true
+    }
+    if (!changed) return
     S.sheetEditRev = (S.sheetEditRev || 0) + 1
     updateStatus()
   }

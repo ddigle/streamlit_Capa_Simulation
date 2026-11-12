@@ -450,15 +450,22 @@ def verdict_payload(check: SheetCheck) -> dict[str, Any]:
     }
 
 
-def blocked_keys(payload: Mapping[str, Any] | None) -> frozenset[tuple[str, str, str]]:
-    """판정 몸(`verdict_payload`)의 막힌 칸 열쇠(설비명, 칸, 규칙) — 「새로 막힌 칸」 만 알릴 때 앞
-    판정과 견준다."""
+def blocked_keys(payload: Mapping[str, Any] | None) -> frozenset[tuple[str, str, str, str]]:
+    """판정 몸(`verdict_payload`)의 막힌 칸 열쇠(설비명, 칸, 친 글, 규칙) — 「새로 막힌 칸」 만 알릴
+    때 앞 판정과 견준다(같은 칸에 다른 글을 다시 넣어 막히면 새로 막힌 것이다)."""
     if not isinstance(payload, Mapping):
         return frozenset()
-    keys: set[tuple[str, str, str]] = set()
+    keys: set[tuple[str, str, str, str]] = set()
     for item in payload.get("blocked") or ():
         if isinstance(item, Mapping):
-            keys.add((str(item.get("id")), str(item.get("col")), str(item.get("rule"))))
+            keys.add(
+                (
+                    str(item.get("id")),
+                    str(item.get("col")),
+                    str(item.get("text")),
+                    str(item.get("rule")),
+                )
+            )
     return frozenset(keys)
 
 
