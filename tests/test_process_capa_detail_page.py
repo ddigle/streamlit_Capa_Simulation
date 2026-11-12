@@ -426,6 +426,39 @@ def test_the_route_factor_table_leaves_the_other_basis_cell_blank(
     assert table.proto.HasField("placeholder") and table.proto.placeholder == ""
 
 
+def _route_factor_children(app: AppTest) -> list[Any]:
+    """「경로별 인자」 펼침 안 요소(그리는 차례). 아이콘을 단 펼침은 AppTest 가 `status` 로
+    읽는다."""
+    (box,) = [item for item in app.status if str(item.label).startswith("경로별 인자")]
+    return list(box.children.values())
+
+
+def test_the_route_factor_table_keeps_the_toolbar_off_the_expander_head(
+    databases: tuple[Path, Path],
+) -> None:
+    """경로 표가 「경로별 인자」 펼침의 첫 요소면 표 앞에 띄움이 선다 — 표 도구 막대가 펼침
+    머리 오른쪽 끝 아래 22px 를 덮어 머리를 누른 손이 막대 「Search」 에 먹혔다(2026-11-12 E2E
+    · AGENTS 9장 「표 도구 막대」). 표는 기억 상자(`remembered_expander`) 안 도우미 함수에
+    있어 그물(`tests/test_table_toolbar.py`)이 보지 못한다."""
+    app = _ok(_app(databases).run())
+
+    children = _route_factor_children(app)
+    assert getattr(children[0], "type", None) == "space"
+    assert type(children[1]).__name__ == "Dataframe"
+
+
+def test_the_upeh_mark_stands_between_the_expander_head_and_the_route_table(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """UPEH 가정 표지가 머리와 표 사이에 서면 막대는 그 표지 줄 오른쪽 빈 끝에 뜬다 — 띄움이
+    없다."""
+    app = _upeh_app(dynamic_databases, 110)
+
+    children = _route_factor_children(app)
+    assert "UPEH 가정 미반영" in str(children[0].value)
+    assert type(children[1]).__name__ == "Dataframe"
+
+
 def test_a_chosen_process_survives_reruns_and_keeps_the_month(
     databases: tuple[Path, Path],
 ) -> None:

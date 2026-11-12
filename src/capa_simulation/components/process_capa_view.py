@@ -146,6 +146,7 @@ from capa_simulation.components.table_toolbar import (
     file_name_part,
     render_download_pair,
     render_sheet_download,
+    toolbar_clearance,
 )
 from capa_simulation.design import theme, tokens
 from capa_simulation.navigation import (
@@ -1321,7 +1322,7 @@ def _render_evidence_panel(view: ProcessDetailView, month: int) -> None:
         ):
             if view.upeh_token:
                 st.caption(ROUTE_FACTORS_UPEH_MARK, help=ROUTE_FACTORS_UPEH_HELP)
-            _render_route_factors(trace)
+            _render_route_factors(trace, under_head=not view.upeh_token)
 
 
 def step_month(months: Sequence[int], step: int, widget_key: str) -> None:
@@ -1733,8 +1734,13 @@ def evidence_cards_html(cards: Sequence[EvidenceCard]) -> str:
     )
 
 
-def _render_route_factors(trace: ProcessMonthTrace | None) -> None:
-    """경로마다 인자·근거 칸, 공통 인자(양산구분별 효율·여유율, 일수·모듈수), 제외 경로."""
+def _render_route_factors(trace: ProcessMonthTrace | None, *, under_head: bool) -> None:
+    """경로마다 인자·근거 칸, 공통 인자(양산구분별 효율·여유율, 일수·모듈수), 제외 경로.
+
+    `under_head` 면 경로 표가 「경로별 인자」 펼침의 첫 요소라 바로 위가 펼침 머리다 — 표 도구
+    막대가 머리 오른쪽 끝 아래쪽을 덮어 머리를 누른 손이 막대 단추(찾기 등)에 먹히지 않게 표
+    앞에 띄움을 둔다(AGENTS 9장 「표 도구 막대」). UPEH 가정 표지가 머리와 표 사이에 서면
+    띄움이 없다."""
     if trace is None:
         render_data_error("경로 인자를 읽지 못했습니다.", code="PD-01")
         return
@@ -1742,6 +1748,8 @@ def _render_route_factors(trace: ProcessMonthTrace | None) -> None:
     if routes.empty:
         st.caption("이 달 이 공정의 경로가 없습니다.")
     else:
+        if under_head:
+            toolbar_clearance()
         # 경로마다 UPEH(Main)·ST(MI) 가운데 하나만 값이다 — 다른 칸은 비워 둔다. 주지 않으면
         # Streamlit 이 그 칸에 「None」 글자를 그린다.
         st.dataframe(
