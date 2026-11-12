@@ -92,7 +92,7 @@ def test_the_loss_is_the_unit_and_input_split_and_the_rate_is_the_plans() -> Non
     assert (may["호기 비가동 손실"], may["입력 비가동 손실"], may["비가동 손실"]) == (0.6, 0.4, 1.0)
     assert may["비가동 없는 가용대수"] == 5.0
     assert may["확보율"] == pytest.approx(0.8)
-    # 화면에서 쓰지 않게 된 두 칸은 걷었다(2026-11-12 남은 물음 보드 ⑥-1 (가)).
+    # 화면이 쓰지 않는 두 칸은 계산 결과에 없다(2026-11-12 남은 물음 보드 ⑥-1 (가)).
     assert "비가동 없는 확보율" not in frame.columns and "확보율 영향(%)" not in frame.columns
     june = frame.loc[JUNE]
     assert june["비가동 손실"] == 0.0
