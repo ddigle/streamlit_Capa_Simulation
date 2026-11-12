@@ -269,13 +269,25 @@ def test_the_copy_check_line_the_agent_types_opens_no_database() -> None:
 
 
 def _rule_matches(rule: str, command: str) -> bool:
-    """권한 규칙 맞춤 — 끝의 `:*` 는 앞부분 맞춤, 그 밖의 `*` 는 아무 글자다(텍스트 맞춤)."""
+    """권한 규칙 맞춤 — 끝의 `:*` 는 앞부분 맞춤, 그 밖의 `*` 는 아무 글자다(텍스트 맞춤).
+    Claude Code 처럼 `\\*` 는 글자 별표, `\\\\` 는 역슬래시 하나로 읽는다 — Windows 경로의 `data\\`
+    뒤 아무 글자는 `*data\\\\*` 로 적어야 한다(`*data\\*` 는 글자 `data*` 를 찾는다)."""
     if "(" not in rule:
         return False
     body = rule[rule.index("(") + 1 : -1]
     if body.endswith(":*"):
         return command.startswith(body[:-2])
-    return re.fullmatch(".*".join(re.escape(part) for part in body.split("*")), command) is not None
+    regex = ""
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == "\\" and index + 1 < len(body) and body[index + 1] in "*\\":
+            regex += re.escape(body[index + 1])
+            index += 2
+            continue
+        regex += ".*" if char == "*" else re.escape(char)
+        index += 1
+    return re.fullmatch(regex, command) is not None
 
 
 def _permissions() -> dict[str, list[str]]:
@@ -470,6 +482,9 @@ def test_the_settings_template_denies_reading_the_data_copy_and_backup_folders()
         rules = [rule for rule in deny if rule.startswith(shell + "(")]
         for line in lines:
             assert any(_shell_rule_matches(rule, line) for rule in rules), (shell, line)
+    # 역슬래시 하나 뒤 별표는 글자 별표다 — 그 꼴로 적으면 Windows 경로를 놓친다.
+    assert not _rule_matches("PowerShell(Get-Content *data\\*)", "Get-Content data\\input\\a.csv")
+    assert not [rule for rule in deny if re.search(r"(?<!\\)\\\*", rule.split("(", 1)[1])]
     for shell, verbs in READ_VERBS.items():
         for verb in verbs:
             for folder in DATA_FOLDERS:
