@@ -28,7 +28,6 @@ from capa_simulation.components.home_figure_common import (
     _execution_delta_note,
     _execution_hover_note,
 )
-from capa_simulation.components.process_capa_canvas import IMPACT_LABEL_HOVER
 from capa_simulation.services.chatbot_samples import build_sample_answers
 from capa_simulation.services.modification_schedule import (
     ScheduleConditions,
@@ -210,10 +209,8 @@ def test_the_securement_adjustment_hovers_read_percent() -> None:
 
 
 def test_the_downtime_impact_and_cross_check_columns_read_percent() -> None:
-    """공정 Capa 상세 ② 「비가동 영향」 재료 칸·라벨 풍선과 가용설비 현황 확보율 교차검증
-    차이 칸."""
+    """비가동 손실 재료 칸(`downtime_impact`)과 가용설비 현황 확보율 교차검증 차이 칸."""
     assert "확보율 영향(%)" in IMPACT_COLUMNS
-    assert "확보율 차이(%)" in IMPACT_LABEL_HOVER
     type_config = _CROSS_CHECK_FORMAT["확보율차이"].get("type_config")
     assert isinstance(type_config, dict) and type_config.get("format") == "%+.1f%%"
 

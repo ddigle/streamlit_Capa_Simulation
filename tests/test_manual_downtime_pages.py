@@ -5,7 +5,7 @@
 키 수준 시험(`tests/test_manual_downtime_plan.py`)은 계획 키에 칸을 **싣는가** 만 본다. 어느 화면이
 `load_manual_downtime(equipment_path)` 대신 빈 `ManualDowntime()` 을 넘기거나 출처 띠를 빠뜨리는
 회귀는 그 시험이 잡지 못한다(2026-10-27 리뷰). 여기서는 설비 DB 에 칸을 심고 화면을 띄워 그 칸이
-닿은 흔적 — 공정 Capa 상세 ④ 줄·② 제목 꼬리·닫는 알림, 필요 단축 일정 출처 줄과 줄어든 가용(공정·월
+닿은 흔적 — 공정 Capa 상세 ⑤ 첫 줄·닫는 알림, 필요 단축 일정 출처 줄과 줄어든 가용(공정·월
 CSV), 제약 시뮬레이션 상태 알림 `CS-05`(두 모드) — 을 본다. 하네스는 각 화면 시험의 것을 그대로
 쓴다.
 """
@@ -100,26 +100,29 @@ def test_process_capa_detail_draws_the_entered_row_and_names_it(
     detail_databases: tuple[Path, Path],
 ) -> None:
     before = _dynamic_app(detail_databases)
-    assert "월별 비가동 대수(입력)" not in _label_texts(before)
+    assert "월별 비가동대수(입력)" not in _label_texts(before)
     assert MANUAL_DOWNTIME_BAND not in _texts(before)
 
     _seed(detail_databases[1], DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
     app = _dynamic_app(detail_databases)
     labels = _label_texts(app)
-    # ④ 첫 줄과 ② 제목 꼬리.
-    assert "월별 비가동 대수(입력)" in labels
-    assert f"· {MANUAL_DOWNTIME_BAND}" in labels
+    # ⑤ 첫 줄. ② 제목 줄에는 꼬리를 달지 않는다 — ② 가용은 비가동을 빼기 전 값이고 입력 비가동은
+    # ③ 비가동대수에 든다(2026-11-12 사용자 답 n1 (가)).
+    assert "월별 비가동대수(입력)" in labels
+    assert not any(MANUAL_DOWNTIME_BAND in label for label in labels)
     # 정리 줄의 값 한 마디 — 계획이 건 칸(이 공정·축의 달)이다. 그 자리는 풍선이 말한다(설명은 자리
-    # 글이 아니다 — UI-TXT-01). 호기가 있는 공정이라 ④ 첫 줄을 가리킨다.
+    # 글이 아니다 — UI-TXT-01). 호기가 있는 공정이라 ⑤ 첫 줄을 가리킨다.
     texts = _texts(app)
     assert f"{MANUAL_DOWNTIME_BAND}(" in texts
-    assert "가용에서 뺐습니다" not in texts
-    assert "② 가용에서 뺐습니다(④ 첫 줄" in _manual_mark_help(app)
+    assert "비가동대수에 넣었습니다" not in texts
+    assert "③ 비가동대수에 넣었습니다(⑤ 첫 줄" in _manual_mark_help(app)
     clear_equipment_repository()
 
 
-def test_process_capa_detail_points_below_two_when_there_are_no_units(tmp_path: Path) -> None:
-    """호기 일정이 없는 공정(기존보유만)은 ④ 가 서지 않아 입력 줄이 ② 아래에 선다 — 닫는 알림도
+def test_process_capa_detail_points_to_the_downtime_section_when_there_are_no_units(
+    tmp_path: Path,
+) -> None:
+    """호기 일정이 없는 공정(기존보유만)은 ④ · ⑤ 가 서지 않아 입력 줄이 ③ 끝에 선다 — 닫는 알림도
     그 자리를 가리킨다(2026-10-27 리뷰 nit)."""
     equipment_path = tmp_path / "equipment.duckdb"
     repository = DuckDBEquipmentRepository(equipment_path)
@@ -132,10 +135,10 @@ def test_process_capa_detail_points_below_two_when_there_are_no_units(tmp_path: 
     _seed(equipment_path, DYNAMIC_PROCESS, WIDE_MONTHS, 0.5)
 
     app = _dynamic_app((tmp_path / "scenario.duckdb", equipment_path))
-    assert "월별 비가동 대수(입력)" in _label_texts(app)
+    assert "월별 비가동대수(입력)" in _label_texts(app)
     mark_help = _manual_mark_help(app)
-    assert "② 가용에서 뺐습니다(② 아래 줄" in mark_help
-    assert "④ 첫 줄" not in mark_help
+    assert "③ 비가동대수에 넣었습니다(③ 끝 줄" in mark_help
+    assert "⑤ 첫 줄" not in mark_help
     clear_equipment_repository()
 
 

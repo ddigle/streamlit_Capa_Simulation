@@ -45,6 +45,7 @@ from capa_simulation.services.process_capa_detail import (
     build_process_month_trace,
     build_process_product_demand,
     home_display_rates,
+    judge_supply,
     month_column,
     process_calculation_rows,
     process_capa_kpis,
@@ -52,8 +53,10 @@ from capa_simulation.services.process_capa_detail import (
 )
 from capa_simulation.services.required_equipment import PKG_UNCOUNTED_REASON
 from capa_simulation.services.securement_rate import (
+    BALANCE_COLUMN,
     CAUSE_OWNED_SHORT,
     CAUSE_RENTAL,
+    STATUS_COLUMN,
     calculate_securement_rate,
 )
 from capa_simulation.services.securement_threshold import SecurementThresholds
@@ -319,6 +322,61 @@ def test_product_rows_add_up_to_the_process_demand(
             )
             children = [float(demand[month_column(month)].sum()) for month in months]
             assert children == pytest.approx(parent, abs=TOLERANCE, rel=0)
+
+
+def test_judging_another_supply_takes_the_summarys_path(tables: dict[str, pd.DataFrame]) -> None:
+    """「② 일정 가용」 · 「③ 비가동」 의 판정 칸은 요약과 같은 길이다 — 요약의 가용 · 소요를 넣으면
+    요약과 같은 확보율 · 판정 · 과부족이 나온다(월별 예외 기준 달 포함)."""
+    _, required = get_capacity_and_demand(tables)
+    securement = calculate_securement_rate(tables["RQ_EQP_AVBL"], required)
+    months = _months(required)
+    for process in builtin_seed_processes():
+        summary = build_process_capa_summary(
+            securement,
+            tables["RQ_EQP_OWN"],
+            tables["RQ_EQP_LENT"],
+            process=process,
+            months=months,
+            thresholds=THRESHOLDS,
+        )
+        available = {
+            int(month): float(value)
+            for month, value in zip(summary["생산계획년월"], summary["가용대수"], strict=True)
+        }
+        demand = {
+            int(month): float(value)
+            for month, value in zip(summary["생산계획년월"], summary["소요대수"], strict=True)
+        }
+        judged = judge_supply(
+            dict(available),
+            dict(demand),
+            process=process,
+            months=months,
+            thresholds=THRESHOLDS,
+        )
+        assert judged["생산계획년월"].tolist() == months
+        for column in ("가용대수", "소요대수", "확보율", STATUS_COLUMN, BALANCE_COLUMN):
+            pd.testing.assert_series_equal(
+                judged[column].reset_index(drop=True),
+                summary[column].reset_index(drop=True),
+                check_names=False,
+                check_dtype=False,
+            )
+
+
+def test_judging_another_supply_skips_months_without_both_numbers() -> None:
+    """가용이나 소요가 없는 달은 행이 없다 — 칸은 빈칸으로 남는다. 음수 소요는 0 으로 본다."""
+    judged = judge_supply(
+        {202601: 10.0, 202602: None, 202603: 3.0},
+        {202601: 8.0, 202602: 5.0, 202603: -1.0, 202604: 2.0},
+        process="DEMO",
+        months=[202601, 202602, 202603, 202604],
+        thresholds=THRESHOLDS,
+    )
+    assert judged["생산계획년월"].tolist() == [202601, 202603]
+    assert judged[STATUS_COLUMN].tolist()[1] is None
+    empty = judge_supply({}, {}, process="DEMO", months=[202601], thresholds=THRESHOLDS)
+    assert empty.empty and list(empty.columns)[0] == "생산계획년월"
 
 
 def _many_products(count: int) -> pd.DataFrame:

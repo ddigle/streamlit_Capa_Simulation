@@ -778,10 +778,10 @@ def test_a_clicked_cell_lists_its_units_and_adds_up_to_the_cell() -> None:
     app.run()
     (lines,) = _evidence(app)
     assert _units(lines)["보유"].sum() == pytest.approx(4.5)
-    # 보유 칸도 공정 하나면 공정 Capa 상세 ④ 로 가는 길을 적는다(AppTest 에는 페이지가 없어 캡션).
+    # 보유 칸도 공정 하나면 공정 Capa 상세 ⑤ 로 가는 길을 적는다(AppTest 에는 페이지가 없어 캡션).
     links = [item.proto.label for item in app.get("page_link")]
     captions = " ".join(item.value for item in app.caption)
-    assert any("비가동 화살표" in label for label in links) or "비가동 화살표" in captions
+    assert any("화살표로 보기" in label for label in links) or "비가동 일정 · 화살표" in captions
 
     # Static 칸은 기준정보라 호기 표가 없다(공정 하나면 식 한 줄과 출처).
     open_cell(app, MONTH, ROW_STATIC_AVAILABLE)
@@ -1533,8 +1533,8 @@ def _detail_link_app() -> None:
 
 
 def test_the_detail_link_opens_that_month_with_the_downtime_section() -> None:
-    """「④ 에서 비가동 화살표로 보기」 는 `from=gap` 을 싣는다 — 공정 Capa 상세가 ④ 를 접어 두었어도
-    다시 펴 링크 글이 거짓이 되지 않게. 테마 인자는 지금 값을 함께 싣는다."""
+    """「비가동 일정에서 화살표로 보기」 는 `from=gap` 을 싣는다 — 공정 Capa 상세가 ⑤ 를 접어
+    두었어도 다시 펴 링크 글이 거짓이 되지 않게. 테마 인자는 지금 값을 함께 싣는다."""
     app = AppTest.from_function(_detail_link_app)
     app.query_params["theme"] = "dark"
     app.run()

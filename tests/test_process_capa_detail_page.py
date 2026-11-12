@@ -7,7 +7,7 @@ HOME 칸 클릭과 월 그림의 칸 선택은 AppTest 가 재현하지 못하�
 인자·세션 달)을 넣고 돌린다(`tests/test_process_detail_state.py`·`tests/test_process_capa_view.py`
 가 콜백 쪽을 본다).
 
-- 설비 DB 가 빈 하네스는 「설비 일정 없음: 저장본 없음」 마크와 ① 공식 기준만 선다.
+- 설비 DB 가 빈 하네스는 「설비 일정 없음: 저장본 없음」 마크와 ① Static 기준만 선다.
 - 설비 일정은 시드 공정 하나(`DEMO_Chip_Attach`)에 저장본·Cut-off 를 넣은 따로 된 하네스로 본다.
 - 칸 누름·◀▶ 는 **진짜 프래그먼트 회차**(`tests/fragment_browser.py`)로 본문 프래그먼트만 도는지,
   그 회차가 이벤트 칸에 앱 전체 회차와 같은 수를 쓰는지 본다.
@@ -38,13 +38,19 @@ from capa_simulation.components.equipment_scenario_status import EQUIPMENT_SCENA
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.page_guide import load_guide
 from capa_simulation.components.process_capa_canvas import (
+    BASIS_SCHEDULE,
+    BASIS_STATIC,
     SECTION_DOWNTIME,
     SECTION_DYNAMIC,
+    SECTION_EFFECT,
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
+    UNITS_ALL,
+    UNITS_SHORTENING,
 )
 from capa_simulation.components.process_capa_view import (
+    BASIS_KEY,
     DOWNLOAD_MENU_KEY,
     DOWNLOAD_STYLE,
     DYNAMIC_DB_ERROR_TITLE,
@@ -57,6 +63,7 @@ from capa_simulation.components.process_capa_view import (
     SHORTENING_TAB_LINK_KEY,
     SHOW_ALL_UNITS_KEY,
     UNITS_CSV_KEY,
+    UNITS_VIEW_KEY,
     step_button_label,
 )
 from capa_simulation.components.process_capa_workbook import DETAIL_SHEET, UNITS_SHEET
@@ -116,7 +123,7 @@ from capa_simulation.upeh_assumption_state import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / PROCESS_CAPA_DETAIL.path
 DYNAMIC_PROCESS = "DEMO_Chip_Attach"
-OFFICIAL_BADGE = "공식 · Core Data"
+OFFICIAL_BADGE = "Static · Core Data"
 
 
 def _page_script(database_path: Path, equipment_path: Path, *, fail_bootstrap: bool = False) -> str:
@@ -303,9 +310,12 @@ def _header(app: AppTest) -> str:
 
 
 def _panel_head(app: AppTest) -> str:
-    """산출 근거 패널 머리(`**산출 근거 · YY.MM · 공정**`)."""
-    lines = [str(element.value) for element in app.markdown if "산출 근거 ·" in str(element.value)]
-    assert len(lines) == 1, [str(element.value) for element in app.markdown]
+    """산출 근거 접는 상자의 머리(`산출 근거 · YY.MM · 공정` — 2026-11-12 사용자 답 k-c5). 아이콘을
+    단 접는 상자는 AppTest 가 「status」 요소로 읽는다."""
+    labels = [str(box.label) for box in app.expander]
+    labels += [str(getattr(box, "label", "")) for box in app.get("status")]
+    lines = [label for label in labels if "산출 근거 ·" in label]
+    assert len(lines) == 1, labels
     return lines[0]
 
 
@@ -361,18 +371,18 @@ def test_the_page_opens_with_header_kpis_canvas_and_evidence_without_equipment(
         "대책",
     ]
     assert app.metric[3].value == "일정 없음"
-    # 결합 캔버스 — 라벨 Figure(정적 — ③ 호기 줄이 없어 줄 이름 칸 풍선도 없다)와 월
-    # Figure(칸 선택).
+    # 결합 캔버스 — 라벨 Figure(구획 제목 줄 풍선)와 월 Figure(칸 선택).
     spec = _chart_spec(app, PROCESS_DETAIL_CANVAS_CHART_KEY)
     assert spec["layout"]["xaxis"]["range"][0] == 0
-    assert _chart_config(app, "process_detail_summary_labels")["staticPlot"] is True
-    assert "① 공식 기준" in _label_texts(app)
-    assert "② 설비 일정 기준 가용" not in _label_texts(app)
-    # 산출 근거 패널은 고른 달이고 카드는 ① ~ ③ 셋이다.
-    assert (
-        _panel_head(app)
-        == f"**산출 근거 · {month_label(month)} · {literal_markdown(process_box.value)}**"
+    # 라벨 그림은 ① 제목 줄 풍선(Core Data · 대수 …)이 있어 hover 를 켠다(k-c1).
+    assert "staticPlot" not in _chart_config(app, "process_detail_summary_labels")
+    assert "① Static 기준" in _label_texts(app)
+    assert "② 일정 가용" not in _label_texts(app)
+    # 산출 근거는 고른 달의 접힌 머리 한 줄이고(k-c5) 카드는 ① ~ ③ 셋이다.
+    assert _panel_head(app) == (
+        f"산출 근거 · {month_label(month)} · {literal_markdown(process_box.value)}"
     )
+    assert not any("산출 근거 ·" in str(element.value) for element in app.markdown)
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
     assert "④ 단축 근거" not in cards
@@ -746,17 +756,39 @@ def _sections(app: AppTest) -> list[str]:
     return [str(value) for value in app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).value or []]
 
 
-def test_the_section_chips_start_all_open_with_four_fixed_options(
+def test_the_section_chips_start_all_open_with_five_fixed_options(
     databases: tuple[Path, Path],
 ) -> None:
-    """선택지는 설비 일정이 없는 공정에서도 넷 그대로다 — 빼면 세션 값이 선택지 밖으로 나가
-    지워진다."""
+    """선택지는 설비 일정이 없는 공정에서도 다섯 그대로다 — 빼면 세션 값이 선택지 밖으로 나가
+    지워진다(2026-11-12 사용자 답 k-c4)."""
     app = _ok(_app(databases).run())
     chips = app.pills(key=PROCESS_DETAIL_SECTIONS_KEY)
 
-    assert list(chips.options) == ["① 공식", "② 일정 가용", "③ 단축", "④ 비가동"]
+    assert list(chips.options) == [
+        "① Static",
+        "② 일정 가용",
+        "③ 비가동",
+        "④ 단축",
+        "⑤ 비가동 일정",
+    ]
     assert _sections(app) == list(SECTION_IDS)
-    assert "① 공식 기준 ▾" in _label_texts(app)
+    assert "① Static 기준 ▾" in _label_texts(app)
+
+
+def test_a_session_from_four_sections_opens_the_new_section_once(
+    databases: tuple[Path, Path],
+) -> None:
+    """구획이 넷이던 세션(아는 구획 칸 없음)은 새 「③ 비가동」 을 한 번 펴 둔다 — 전에 연 화면에서
+    새 구획이 접힌 채 뜨지 않게(2026-11-12 시안 카드 k-c4). 그 뒤 접으면 접힌 채다."""
+    app = _app(databases)
+    app.session_state[PROCESS_DETAIL_SECTIONS_KEY] = [SECTION_SUMMARY, SECTION_UNITS]
+    _ok(app.run())
+    assert _sections(app) == [SECTION_SUMMARY, SECTION_EFFECT, SECTION_UNITS]
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([SECTION_SUMMARY])
+    _ok(app.run())
+    _ok(app.run())
+    assert _sections(app) == [SECTION_SUMMARY]
 
 
 def test_folding_the_summary_leaves_its_title_and_disables_the_product_toggle(
@@ -773,14 +805,14 @@ def test_folding_the_summary_leaves_its_title_and_disables_the_product_toggle(
     )
     _ok(app.run())
     labels = _label_texts(app)
-    assert "① 공식 기준 ▸" in labels
+    assert "① Static 기준 ▸" in labels
     assert "총보유대수" not in labels and first_product not in labels
     # 펼침 값은 남고(다시 펴면 그대로) 접힌 동안 토글은 쓸 수 없다. 분류도 서지 않는다.
     assert app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).value is True
     assert app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).proto.disabled
     assert not app.segmented_control
     # 근거 패널은 접힘과 상관없이 선다.
-    assert _panel_head(app).startswith("**산출 근거 ·")
+    assert _panel_head(app).startswith("산출 근거 ·")
 
     # 세션 값이라 다시 돌아도 그대로다.
     _ok(app.run())
@@ -799,7 +831,7 @@ def test_folding_units_hides_its_more_toggle_even_when_it_was_on(
         [SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_DOWNTIME]
     )
     _ok(app.run())
-    assert "③ 신규 설비 일정과 단축 ▸" in _label_texts(app)
+    assert "④ 단축 ▸" in _label_texts(app)
     assert not any(toggle.label == "더 보기 — 신규 설비 모두" for toggle in app.toggle)
     assert app.session_state[SHOW_ALL_UNITS_KEY] is True
 
@@ -807,26 +839,26 @@ def test_folding_units_hides_its_more_toggle_even_when_it_was_on(
 def test_the_gap_link_reopens_the_downtime_section(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
-    """가용설비 현황 「④ 에서 비가동 화살표로 보기」(`from=gap`)로 들어오면 접어 둔 ④ 를 다시 편다 —
-    링크 글이 거짓이 되지 않게. 다른 구획의 접힘은 둔다."""
+    """가용설비 현황 「비가동 일정에서 화살표로 보기」(`from=gap`)로 들어오면 접어 둔 ⑤ 를 다시
+    편다 — 링크 글이 거짓이 되지 않게. 다른 구획의 접힘은 둔다."""
     app = _dynamic_app(dynamic_databases)
     app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([SECTION_SUMMARY])
     _ok(app.run())
-    assert "④ 호기별 비가동 ▸" in _label_texts(app)
+    assert "⑤ 비가동 일정 ▸" in _label_texts(app)
     month = app.session_state[PROCESS_DETAIL_MONTH_KEY]
 
     app.query_params.update({"process": DYNAMIC_PROCESS, "month": str(month), "from": "gap"})
     _ok(app.run())
     assert _sections(app) == [SECTION_SUMMARY, SECTION_DOWNTIME]
-    assert "④ 호기별 비가동 ▾" in _label_texts(app)
-    assert "③ 신규 설비 일정과 단축 ▸" in _label_texts(app)
+    assert "⑤ 비가동 일정 ▾" in _label_texts(app)
+    assert "④ 단축 ▸" in _label_texts(app)
 
 
 def test_a_home_cell_reopens_the_summary_section(databases: tuple[Path, Path]) -> None:
     app = _ok(_app(databases).run())
     app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value([])
     _ok(app.run())
-    assert "① 공식 기준 ▸" in _label_texts(app)
+    assert "① Static 기준 ▸" in _label_texts(app)
     target = str(_process_box(app).value)
 
     app.session_state[PROCESS_DETAIL_REQUEST_KEY] = ProcessDetailRequest(
@@ -834,7 +866,7 @@ def test_a_home_cell_reopens_the_summary_section(databases: tuple[Path, Path]) -
     )
     _ok(app.run())
     assert _sections(app) == [SECTION_SUMMARY]
-    assert "① 공식 기준 ▾" in _label_texts(app)
+    assert "① Static 기준 ▾" in _label_texts(app)
 
 
 # ------------------------------------------------------------------ ◀▶ 공정 넘기기·다음 화면
@@ -963,10 +995,10 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
     assert _process_box(app).value == DYNAMIC_PROCESS
     assert "설비 일정 참고 · Cut-off 10일" in _header(app)
     labels = _label_texts(app)
-    for title in ("② 설비 일정 기준 가용", "③ 신규 설비 일정과 단축", "④ 호기별 비가동"):
+    for title in ("② 일정 가용", "③ 비가동", "④ 단축", "⑤ 비가동 일정"):
         assert title in labels
     assert "DA-01" in labels
-    # ③ 호기 줄 이름 칸에 풍선이 있으면 라벨 그림도 hover 를 켠다(`staticPlot` 을 뺀다).
+    # ④ 호기 줄 이름 칸에 풍선이 있으면 라벨 그림도 hover 를 켠다(`staticPlot` 을 뺀다).
     label_spec = _chart_spec(app, "process_detail_summary_labels")
     assert any(
         str(row_id).startswith(("unit:", "exit:"))
@@ -974,23 +1006,23 @@ def test_a_ready_process_draws_the_equipment_schedule_sections(
         for row_id, _ in trace["customdata"]
     )
     assert "staticPlot" not in _chart_config(app, "process_detail_summary_labels")
-    # 단축 목표는 확보 기준(월별) 표시뿐이다 — 고르는 위젯이 없다. 그 값을 고치는 곳(HOME 설정 →
-    # 판정 기준)은 풍선이다(길 안내는 자리 글이 아니다 — UI-TXT-03).
-    targets = [element for element in app.caption if "단축 목표 = " in str(element.value)]
-    assert len(targets) == 1
-    assert str(targets[0].value).startswith("단축 목표 = 확보 기준(월별)")
-    assert "HOME 설정 → 판정 기준 › 확보 기준(월별)" in str(targets[0].help)
-    # 단축 목표를 적는 자리는 이 한 줄이다 — KPI 칩이 거듭하지 않는다(설계 규칙 UI-TXT-07).
+    # 단축 목표 글은 Guide 가 적는다(2026-11-12 사용자 메모 k-c4) — 표 도구 줄에 서지 않는다. 고르는
+    # 위젯도 없다. KPI 칩도 거듭하지 않는다(설계 규칙 UI-TXT-07).
+    assert not [element for element in app.caption if "단축 목표" in str(element.value)]
     assert _metric(app, "대책").delta == "설비 일정 기준"
+    # 비가동 기준 고르기는 표 도구 줄에 서고 처음은 Static 이다(q5b (가) · k-c4).
+    basis = app.segmented_control(key=BASIS_KEY)
+    assert list(basis.options) == ["Static", "일정"] and basis.value == BASIS_STATIC
+    # ④ 보기(전체 · 단축 필요만)도 표 도구 줄에 서고 처음은 전체다(2026-11-12 사용자 답 q6 메모).
+    units_view = app.segmented_control(key=UNITS_VIEW_KEY)
+    assert list(units_view.options) == ["전체", "단축 필요만"] and units_view.value == UNITS_ALL
     # 공정 상자 뒤의 선택 상자는 「이 세션만」 UPEH 적용 구간 둘뿐이다(목표를 고르는 상자가 아니다).
     assert {box.key for box in app.get("selectbox")[1:]} <= {
         UPEH_ASSUMPTION_START_KEY,
         UPEH_ASSUMPTION_END_KEY,
     }
-    legend = next(body for body in _html(app) if "pcd-legend" in body)
-    # 생산월 규칙은 「칸 = 생산월」 표지의 풍선(title)이다 — 늘 보이는 글이 아니다.
-    assert "칸 = 생산월 · Cut-off 10일</span>" in legend
-    assert 'title="칸 = 생산월 — Cut-off 10일이면' in legend
+    # 시트 범례는 Guide 다(k-c5) — 시트 아래에 서지 않는다.
+    assert not any("pcd-legend" in body for body in _html(app))
     # 설비 일정 없음 카드는 서지 않는다.
     assert not any("설비 마스터가 없습니다" in str(element.value) for element in app.caption)
 
@@ -1084,13 +1116,15 @@ def test_the_sheet_xlsx_follows_the_screen_state(
     # 시나리오 · 설비 시나리오는 머리 띠와 같은 함수의 글이다(위 줄 · 아래 줄 꼬리).
     assert " · r" in heading["시나리오"] and heading["설비 시나리오"] != "—"
     assert heading["설비 일정"].startswith("설비 일정 참고 · Cut-off 10일")
-    assert heading["구획"] == "① 공식 · ② 일정 가용 · ③ 단축 · ④ 비가동"
+    assert heading["구획"] == "① Static · ② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정"
+    # 두 고르기는 화면 값 그대로다(2026-11-12 사용자 답 k-c6).
+    assert heading["비가동 기준"] == "Static" and heading["④ 단축"] == "전체"
     assert heading["단축 목표"].startswith("확보 기준(월별)")
     header = detail.find_row(f"구분 · {DYNAMIC_PROCESS}")
     assert detail.row(header)[2:] == [month_label(month) for month in months]
     assert detail.freeze == (header + 1, 2)
     labels = [str(value) for value in detail.column(0) if value is not None]
-    for title in ("① 공식 기준 ▾", "② 설비 일정 기준 가용 ▾", "③ 신규 설비 일정과 단축 ▾"):
+    for title in ("① Static 기준 ▾", "② 일정 가용 ▾", "③ 비가동 ▾", "④ 단축 ▾"):
         assert title in labels
     assert "DA-01" in labels and "소요대수 ▸" in labels
     rate = detail.find_row("확보율")
@@ -1113,12 +1147,90 @@ def test_the_sheet_xlsx_follows_the_screen_state(
     _, book = _sheet(app)
     detail = book[DETAIL_SHEET]
     heading = _heading(detail)
-    assert heading["구획"] == "① 공식 · ② 일정 가용"
+    assert heading["구획"] == "① Static · ② 일정 가용"
     assert heading["제품별 소요대수"].startswith("펼침 · 분류 ")
+    assert "비가동 기준" not in heading and "④ 단축" not in heading
     labels = [str(value) for value in detail.column(0) if value is not None]
-    assert "③ 신규 설비 일정과 단축 ▸" in labels and "④ 호기별 비가동 ▸" in labels
+    assert "③ 비가동 ▸" in labels and "④ 단축 ▸" in labels and "⑤ 비가동 일정 ▸" in labels
     assert "DA-01" not in labels
     assert "소요대수 ▾" in labels and any(label.startswith("└ ") for label in labels)
+
+
+def test_the_units_view_picker_follows_the_units_section(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """④ 보기 고르기는 ④ 가 펼쳐진 동안만 서고, 고른 값은 이 세션 동안 남아 시트 엑셀 머리 값도
+    따른다(2026-11-12 사용자 답 q6 메모 · k-c6)."""
+    app = _dynamic_app(dynamic_databases)
+
+    def pickers() -> list[str]:
+        try:
+            return [str(app.segmented_control(key=UNITS_VIEW_KEY).key)]
+        except KeyError:
+            return []
+
+    assert pickers() == [UNITS_VIEW_KEY]
+    app.segmented_control(key=UNITS_VIEW_KEY).set_value(UNITS_SHORTENING)
+    _ok(app.run())
+    assert _heading(_sheet(app)[1][DETAIL_SHEET])["④ 단축"] == "단축 필요만"
+    assert "단축 후 확보율" in _label_texts(app)
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
+        [section for section in SECTION_IDS if section != SECTION_UNITS]
+    )
+    _ok(app.run())
+    assert pickers() == []
+    assert app.session_state[UNITS_VIEW_KEY] == UNITS_SHORTENING
+
+
+def _pair_block(block: Any, caption: str, key: str) -> bool:
+    """캡션 `caption` 과 위젯 `key` 가 같은 칸의 바로 아래 자식으로 함께 서는 칸이 있는가."""
+    children = list(block.children.values()) if hasattr(block, "children") else []
+    captions = {str(child.value) for child in children if child.type == "caption"}
+    keys = {str(getattr(child, "key", "")) for child in children}
+    if caption in captions and key in keys:
+        return True
+    return any(_pair_block(child, caption, key) for child in children)
+
+
+def test_the_basis_picker_follows_the_effect_section_and_each_picker_keeps_its_caption(
+    dynamic_databases: tuple[Path, Path],
+) -> None:
+    """「비가동 기준」 고르기는 ③ 이 펼쳐진 동안만 서고(④ 보기와 같은 꼴),
+    접힌 동안에도 고른 값은 이 세션에 남아 다시 펴면 그대로이고 시트 엑셀 머리 값도 따른다.
+    캡션 붙은 고르기는 캡션과 한 칸이라 함께 줄을 넘고(UI-LAY-11), ④ 의 숨긴 라벨은 뜻 있는
+    이름이다(UI-LAY-13)."""
+    app = _dynamic_app(dynamic_databases)
+
+    def basis_pickers() -> list[str]:
+        try:
+            return [str(app.segmented_control(key=BASIS_KEY).key)]
+        except KeyError:
+            return []
+
+    assert basis_pickers() == [BASIS_KEY]
+    assert _pair_block(app.main, "비가동 기준", BASIS_KEY)
+    assert _pair_block(app.main, "④", UNITS_VIEW_KEY)
+    assert app.segmented_control(key=UNITS_VIEW_KEY).label == "④ 단축 보기"
+    app.segmented_control(key=BASIS_KEY).set_value(BASIS_SCHEDULE)
+    _ok(app.run())
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(
+        [section for section in SECTION_IDS if section != SECTION_EFFECT]
+    )
+    _ok(app.run())
+    assert basis_pickers() == []
+    assert app.session_state[BASIS_KEY] == BASIS_SCHEDULE
+    assert "비가동 기준" not in _heading(_sheet(app)[1][DETAIL_SHEET])
+
+    app.pills(key=PROCESS_DETAIL_SECTIONS_KEY).set_value(list(SECTION_IDS))
+    _ok(app.run())
+    assert app.segmented_control(key=BASIS_KEY).value == BASIS_SCHEDULE
+    assert _heading(_sheet(app)[1][DETAIL_SHEET])["비가동 기준"] == "일정"
+
+    app.toggle(key=PROCESS_DETAIL_EXPAND_KEY).set_value(True)
+    _ok(app.run())
+    assert _pair_block(app.main, "분류", PROCESS_DETAIL_SPLIT_KEY)
 
 
 def test_the_sections_meaning_sits_in_one_info_mark_after_the_chips(
@@ -1159,8 +1271,8 @@ def test_the_unit_csv_stands_on_the_tool_row_above_the_canvas(
         "이 공정 단축 일정 CSV",
         SHEET_XLSX_LABEL,
     ]
-    # 곁의 칩과 같은 높이 서식은 보이는 글(범례)과 한 `st.html` 이라 이벤트 칸을 쓰지 않는다.
-    assert any("pcd-legend" in body and DOWNLOAD_STYLE in body for body in _html(app))
+    # 곁의 칩과 같은 높이 서식은 라벨 칸 서식과 한 `st.html` 이다 — 이벤트 칸 수를 늘리지 않는다.
+    assert any(body.endswith(DOWNLOAD_STYLE) and body != DOWNLOAD_STYLE for body in _html(app))
 
 
 def _closing_link(app: AppTest) -> bool:
@@ -1278,9 +1390,10 @@ def usage_databases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
 def test_units_left_out_by_usage_basis_raise_an_alert_and_leave_the_closing_row_quiet(
     usage_databases: tuple[Path, Path],
 ) -> None:
-    """정리 줄에 늘 서던 「사용기준 제외 n대 · 일정 미정 · 오늘이 든 달 · 단축은 공식을 바꾸지
+    """정리 줄에 늘 서던 「사용기준 제외 n대 · 일정 미정 · 오늘이 든 달 · 단축은 Static 을 바꾸지
     않음」 글은 걷었다 — 사용기준 제외 대수는 상태 알림(`PD-04` — 알림창 · Alarm)이고, 단축이 바꾸는
-    숫자는 산출 근거 머리의 풍선이다(설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
+    숫자는 Guide 「단축 목표와 대책」 이 적는다(산출 근거 머리는 접는 상자라 풍선이 없다 —
+    2026-11-12 시안 카드 k-c5 「잃는 것」 · 설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
     app = _dynamic_app(usage_databases)
 
     note = active_state(app, "PD-04")
@@ -1291,15 +1404,15 @@ def test_units_left_out_by_usage_basis_raise_an_alert_and_leave_the_closing_row_
     gone_texts = (
         "사용기준 제외",
         "남은 날만 셉니다",
-        "공식 확보율을 바꾸지 않습니다",
+        "확보율을 바꾸지 않습니다",
         "이 세션만입니다",
     )
     for gone in gone_texts:
         assert not any(gone in caption for caption in captions), gone
     # 호기 CSV 는 표 도구 줄에 그대로다.
     assert UNITS_CSV_KEY in {str(button.key) for button in app.get("download_button")}
-    head = next(item for item in app.markdown if "산출 근거 ·" in str(item.value))
-    assert "공식 확보율" in str(head.help)
+    guide = load_guide("process_capa_detail")
+    assert "단축이 바꾸는 숫자" in guide
 
 
 def test_the_shortening_link_highlights_the_card_without_planting_the_filter(
@@ -1464,8 +1577,8 @@ def _percent_value(text: str) -> float:
 def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     dynamic_databases: tuple[Path, Path],
 ) -> None:
-    """110% 면 머리 배지·효과 한 줄, ① 끝 세 줄, ② 바뀌는 행의 표지, KPI 회색 줄 「공식」, 역산 둘,
-    가정 CSV(파일 이름·첫 열)가 선다."""
+    """110% 면 머리 배지·효과 한 줄, ① 끝 세 줄, KPI 회색 줄 「가정 전」, 역산 둘, 가정 CSV(파일
+    이름·첫 열)가 선다. 가정과 견주는 값은 「가정 전」 이라 부른다(2026-11-12 사용자 답 q2 (가))."""
     app = _upeh_app(dynamic_databases, 110)
 
     assert "UPEH 가정 110% · 26.01–26.12" in _header(app)
@@ -1474,23 +1587,17 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     # 효과 한 줄은 값만 — 이 화면의 목표 · 기간과 필요 단축 일정이 가정을 걸지 않는다는 말은
     # 풍선이다.
     assert "필요 단축 일정" not in str(effect[0].value)
-    assert "필요 단축 일정은 이 가정을 걸지 않습니다(늘 공식)" in str(effect[0].proto.help)
+    assert "필요 단축 일정은 이 가정을 걸지 않습니다(늘 가정 전)" in str(effect[0].proto.help)
     labels = _label_texts(app)
     for row in ("UPEH 110% · 소요대수", "UPEH 110% · 확보율", "UPEH 110% · 확보 기준 과부족"):
         assert row in labels
-    assert "판정 대조 · UPEH 가정" in labels
-    # ② 비가동 영향은 % 가 가정 소요로 바뀌어 표지를 단다.
-    assert "비가동 영향 · UPEH 가정" in labels
-    # ② 가용·전월 대비와 ④ 는 UPEH 와 무관해 표지를 달지 않는다.
-    assert "가용 (환산) · UPEH 가정" not in labels and "전월 대비 · UPEH" not in labels
-    assert "공식" in str(_metric(app, "확보 기준 미달").proto.help) or "공식" in "".join(
-        str(item.value) for item in app.caption
-    )
-    legend = next(body for body in _html(app) if "pcd-legend" in body)
-    assert "UPEH 가정 확보 기준 미달 달" in legend
-    # 근거 ③ 판정 카드도 같은 기준이다 — 머리 식은 가정, 공식 판정은 회색 「공식: …」 한 줄.
+    # ② · ③ 줄 이름에는 표지를 달지 않는다 — 소요 칸 풍선이 가정 소요라고 적는다.
+    assert "판정 대조" not in labels and "비가동 영향" not in labels
+    assert _metric(app, "최저 확보율").delta.split(" · ")[-1].startswith("가정 전 ")
+    assert "공식" not in " ".join(str(metric.delta) for metric in app.metric)
+    # 근거 ③ 판정 카드도 같은 기준이다 — 머리 식은 가정, 가정 전 판정은 회색 「가정 전: …」 한 줄.
     cards = next(body for body in _html(app) if "pcd-cards" in body)
-    assert "③ 판정 (UPEH 가정 110%)" in cards and "공식: 확보율 " in cards
+    assert "③ 판정 (UPEH 가정 110%)" in cards and "가정 전: 확보율 " in cards
     inverse = [str(item.value) for item in app.caption if " → " in str(item.value)]
     assert any(text.startswith("확보 기준 미달 0 → ") for text in inverse), inverse
     assert any(text.startswith("구간 안 단축 0 → ") for text in inverse), inverse
@@ -1507,7 +1614,7 @@ def test_an_upeh_assumption_marks_the_header_rows_kpis_and_csv(
     detail = book[DETAIL_SHEET]
     assert _heading(detail)["UPEH 가정"] == "UPEH 가정 110% · 26.01–26.12"
     upeh_labels = [str(value) for value in detail.column(0) if value is not None]
-    assert "UPEH 110% · 확보율" in upeh_labels and "판정 대조 · UPEH 가정" in upeh_labels
+    assert "UPEH 110% · 확보율" in upeh_labels
     assert book[UNITS_SHEET].row(0)[0] == "UPEH 가정"
 
 
@@ -1517,9 +1624,7 @@ def test_at_100_percent_the_page_shows_only_the_official_basis(
     app = _upeh_app(dynamic_databases, 100)
     assert "UPEH 가정" not in _header(app)
     assert "UPEH 100%" not in _label_texts(app)
-    assert "판정 대조 · UPEH 가정" not in _label_texts(app)
-    legend = next(body for body in _html(app) if "pcd-legend" in body)
-    assert "공식 확보 기준 미달 달" in legend
+    assert "가정 전" not in " ".join(str(metric.delta) for metric in app.metric)
     assert not any("소요 −" in str(item.value) for item in app.caption)
     captured = app.session_state["captured_downloads"][UNITS_CSV_KEY]
     assert "_upeh" not in captured["file_name"]
@@ -1543,7 +1648,7 @@ def test_an_assumption_does_not_leak_into_the_official_rate_cache(
 def test_a_broken_equipment_database_keeps_the_official_section(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """설비 DB 를 못 읽어도 ① 공식 구획·KPI·근거 패널은 남는다. 머리 배지와 알림 짧은 글이 같은
+    """설비 DB 를 못 읽어도 ① Static 구획·KPI·근거 패널은 남는다. 머리 배지와 알림 짧은 글이 같은
     말이다."""
     root = tmp_path_factory.mktemp("process_capa_detail_broken_equipment")
     broken = root / "equipment.duckdb"
@@ -1554,14 +1659,14 @@ def test_a_broken_equipment_database_keeps_the_official_section(
     assert [note["short"] for note in events(app, "PD-01")] == [DYNAMIC_DB_ERROR_TITLE]
     assert data_error_marks(app) == 1
     labels = _label_texts(app)
-    assert "① 공식 기준" in labels and "② 설비 일정 기준 가용" not in labels
+    assert "① Static 기준" in labels and "② 일정 가용" not in labels
     assert [metric.label for metric in app.metric][0] == "최저 확보율"
     cards = next(body for body in _html(app) if "pcd-cards" in body)
     assert all(title in cards for title in ("① 소요", "② 가용", "③ 판정"))
     # 시트 엑셀도 선다 — 머리 값 「구획」 은 칩 넷이 켜져 있어도 시트에 선 ① 뿐이다.
     _, book = _sheet(app)
     assert list(book) == [DETAIL_SHEET]
-    assert _heading(book[DETAIL_SHEET])["구획"] == "① 공식"
+    assert _heading(book[DETAIL_SHEET])["구획"] == "① Static"
 
 
 def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_section(
@@ -1583,7 +1688,7 @@ def test_a_schedule_calculation_error_names_itself_and_keeps_the_official_sectio
     assert note["full"].startswith("설비 일정을 계산하지 못했습니다")
     assert "Cut-off 가 적힌 공정에만" not in note["full"]
     labels = _label_texts(app)
-    assert "① 공식 기준" in labels and "② 설비 일정 기준 가용" not in labels
+    assert "① Static 기준" in labels and "② 일정 가용" not in labels
     # 호기 CSV 와 정리 줄의 탭 링크는 설비 일정이 설 때만이다.
     assert UNITS_CSV_KEY not in {str(button.key) for button in app.get("download_button")}
     assert SHORTENING_TAB_LINK_KEY not in {str(button.key) for button in app.button}

@@ -290,10 +290,10 @@ PROCESS_DETAIL_KEYS: Final[dict[str, str]] = {
     "evidence": "process_detail_evidence",
     "absent": "process_detail_dynamic_absent",
 }
-# 월 그림에서 누를 칸의 세로 자리(px, 그림 위 끝부터) — 머리 36 + ① 제목 44(제목 칸 26 + 세부 글
-# 한 줄 14 + 여백 4) + 값 27 × 3 + 반 줄. 확보율 줄의 가운데다(새 세션의 기본 — ① 은 펼치고 제품
-# 행은 펼치지 않은 그림. 제목 끝 ▾/▸ 는 제목 줄 높이를 바꾸지 않는다).
-PROCESS_DETAIL_RATE_ROW_PX: Final = 36 + 44 + 27 * 3 + 13
+# 월 그림에서 누를 칸의 세로 자리(px, 그림 위 끝부터) — 머리 36 + ① 제목 28(세부 글 없는 한 줄 —
+# 출처 글은 제목 줄 풍선) + 값 27 × 3 + 반 줄. 확보율 줄의 가운데다(새 세션의 기본 — ① 은 펼치고
+# 제품 행은 펼치지 않은 그림. 제목 끝 ▾/▸ 는 제목 줄 높이를 바꾸지 않는다).
+PROCESS_DETAIL_RATE_ROW_PX: Final = 36 + 28 + 27 * 3 + 13
 # 공정 Capa 상세 사이드바 조건 카드(접힘이 기본 — 안의 칸을 쓰려면 편다)와 그 끝 「이 세션만」 UPEH
 # 가정 % 칸, 가정이 켜지면 ① 끝에 서는 세 줄의 라벨(`process_capa_canvas._assumption_rows` —
 # 「UPEH 110% · 소요대수」 꼴)과 머리 배지 앞머리. 값만 옮기고 테스트가 앱과 같은지 본다.
@@ -303,9 +303,16 @@ UPEH_TRIAL_PERCENT: Final = 110
 UPEH_DEFAULT_PERCENT: Final = 100
 UPEH_ROW_NAMES: Final = ("소요대수", "확보율", "확보 기준 과부족")
 # 표 도구 줄의 「구획」 칩(`st.pills` — 누른 칩이 펼친 구획, `aria-pressed`)과 칩 글자 차례. 밖에서
-# 들어온 길이 다시 펴는 구획 — HOME 칸 → ①, 가용설비 현황 근거 카드 링크 → ④.
+# 들어온 길이 다시 펴는 구획 — HOME 칸 → ①, 가용설비 현황 근거 카드 링크 → ⑤(칩 차례 자리).
 PROCESS_DETAIL_SECTIONS_KEY: Final = "process_detail_sections"
-PROCESS_DETAIL_SECTION_LABELS: Final = ("① 공식", "② 일정 가용", "③ 단축", "④ 비가동")
+PROCESS_DETAIL_SECTION_LABELS: Final = (
+    "① Static",
+    "② 일정 가용",
+    "③ 비가동",
+    "④ 단축",
+    "⑤ 비가동 일정",
+)
+GAP_ENTRY_SECTION: Final = 4
 # HOME `주요공정 확보율` 월 그림(칸을 누르면 그 공정·그 달로 공정 Capa 상세가 열린다). 표적
 # 막대(trace 0) `customdata` 끝 일곱 칸이 이동 정보이고 그 첫 칸이 공정이다 — 과거 실적 칸은 비어
 # 누르지 않는다.
@@ -317,11 +324,11 @@ FRAGMENT_CALLBACK_WARNING: Final = "A fragment rerun was triggered"
 # 확인용 앱 콘솔에서 줄 수를 세는 글 — 여기 없는 글은 세지 않는다(`ConsoleCounter`).
 CONSOLE_NEEDLES: Final = (FRAGMENT_CALLBACK_WARNING,)
 # 가용설비 현황 Static 대비 일정의 사이드바 `설비 조회 조건` 카드와 그 안의 `공정` 상자(처음 값
-# `전체 합계`), 공정 하나일 때 근거 카드에 붙는 공정 Capa 상세 ④ 링크 글.
+# `전체 합계`), 공정 하나일 때 근거 카드에 붙는 공정 Capa 상세 비가동 일정(⑤) 링크 글.
 EQUIPMENT_CARD_KEY: Final = "condition_card_equipment"
 GAP_PROCESS_KEY: Final = "equipment_gap_process_filter_v1"
 GAP_ALL_PROCESSES: Final = "전체 합계"
-GAP_DETAIL_LINK_LABEL: Final = "공정 Capa 상세 ④ 에서 비가동 화살표로 보기"
+GAP_DETAIL_LINK_LABEL: Final = "공정 Capa 상세 비가동 일정에서 화살표로 보기"
 # 기준 정보(`app_pages/reference_data.py`) 종류 단추 「UPEH」(기본 종류) 그리드의 월 칸 머리 도움말
 # (`EDITOR_VALUE_HELP`)에서 찾는 글 둘. 풍선은 머리 칸 위에 마우스를 올려야 선다. 종류 단추는 탭이
 # 아니라 본문 전환(`reference_grid_keys.DATASET_KEY`)이다 — 값만 옮기고 테스트가 같은지 본다.
@@ -5486,7 +5493,7 @@ def check_space_shortening(screen: Screen) -> str:
 #
 # `202610231430` 리뷰 사외 요청 4 의 다섯 칸을 재는 항목들이다. 헤드리스에서 막히는 자리 넷을
 # 피한다 — HOME 칸은 그림을 화면 가운데로 굴린 뒤 화면 안의 칸을 누른다(화면 밖 좌표는 눌리지
-# 않는다). 근거 카드의 ④ 링크는 공정 하나를 골랐을 때만 선다(기본은 `전체 합계`). 영역 요소는
+# 않는다). 근거 카드의 ⑤ 링크는 공정 하나를 골랐을 때만 선다(기본은 `전체 합계`). 영역 요소는
 # 초점을 두고 Enter 로 고른다(이름표는 작은 배율에서 서지 않는다). 머리 칸 풍선은 머리 줄 좌표에
 # 마우스를 올려 띄운다(Glide 캔버스라 머리 칸 DOM 은 크기 0). 모두 세션 값만 바꾸고 끝에(깨져도)
 # 되돌린다.
@@ -5696,7 +5703,7 @@ def summarize_entry_sections(
     gap: str,
     restored: bool,
 ) -> str:
-    """들어온 길 한 줄 — 모두 접은 뒤 HOME 칸 → ①, 콘솔 경고 줄 수, 근거 카드 링크 → ④, 되돌림."""
+    """들어온 길 한 줄 — 모두 접은 뒤 HOME 칸 → ①, 콘솔 경고 줄 수, 근거 카드 링크 → ⑤, 되돌림."""
     warned = "콘솔 경고 못 셈" if warnings is None else f"콘솔 경고 {warnings}줄"
     return (
         f"구획 {'모두 접음' if collapsed else '못 접음'} · HOME 칸 → {home} · {warned} · "
@@ -5758,7 +5765,7 @@ def _restore_gap_process(screen: Screen) -> None:
 
 def _gap_link_entry(screen: Screen) -> str:
     """가용설비 현황 → Summary › Static 대비 일정에서 공정 하나를 골라 설비 일정 기준 칸을 누르고
-    근거 카드의 ④ 링크로 공정 Capa 상세에 간다. 들어간 뒤 「구획」 칩 글, 못 갔으면 그 까닭."""
+    근거 카드의 ⑤ 링크로 공정 Capa 상세에 간다. 들어간 뒤 「구획」 칩 글, 못 갔으면 그 까닭."""
     screen.open_page(EQUIPMENT_PAGE)
     open_equipment_tab(screen, GAP_TAB)
     changed: list[tuple[str, str]] = []
@@ -5794,7 +5801,7 @@ def _gap_link_entry(screen: Screen) -> str:
                 screen.wait_idle()
                 if not arrived:
                     return "공정 Capa 상세로 안 감"
-                return opened_section_text(_wait_sections(screen), 3)
+                return opened_section_text(_wait_sections(screen), GAP_ENTRY_SECTION)
             finally:
                 if not screen.path().rstrip("/").endswith(EQUIPMENT_PAGE):
                     screen.open_page(EQUIPMENT_PAGE)
@@ -5813,11 +5820,11 @@ def stopped_path(exc: BaseException) -> str:
 
 def _home_entry(screen: Screen) -> tuple[str, int | None]:
     """HOME 칸 → ① 길 — (그 칸 글, 그 사이 콘솔 경고 줄 수). 길이 예외로 멈춰도 `멈춤(종류)` 로
-    적고 경고 줄은 그때까지를 센다 — 이 길 하나가 깨져도 ④ 길과 경고 칸을 잃지 않는다."""
+    적고 경고 줄은 그때까지를 센다 — 이 길 하나가 깨져도 ⑤ 길과 경고 칸을 잃지 않는다."""
     before = console_lines(screen, FRAGMENT_CALLBACK_WARNING)
     try:
         home = _click_home_cell(screen) or opened_section_text(_wait_sections(screen), 0)
-    except Exception as exc:  # noqa: BLE001 — 이 길만 멈춤으로 적고 ④ 길은 돈다
+    except Exception as exc:  # noqa: BLE001 — 이 길만 멈춤으로 적고 ⑤ 길은 돈다
         home = stopped_path(exc)
     after = settled_console_lines(screen, FRAGMENT_CALLBACK_WARNING, before)
     return home, None if before is None or after is None else after - before
@@ -5825,9 +5832,9 @@ def _home_entry(screen: Screen) -> tuple[str, int | None]:
 
 def check_entry_sections(screen: Screen) -> str:
     """공정 Capa 상세 「구획」 칩을 모두 접은 뒤 밖에서 들어오면 그 길의 구획만 다시 펴지는가 —
-    HOME `주요공정 확보율` 칸 → ①, 가용설비 현황 Static 대비 일정 근거 카드의 ④ 링크 → ④. HOME
+    HOME `주요공정 확보율` 칸 → ①, 가용설비 현황 Static 대비 일정 근거 카드의 ⑤ 링크 → ⑤. HOME
     칸을 누르는 동안 앱 콘솔에 프래그먼트 콜백 경고가 몇 줄 섰는지도 센다(줄 수만). 두 길은 따로
-    돈다 — HOME 쪽이 누를 칸이 없거나 예외로 멈춰도 공정 Capa 상세를 다시 열어 구획을 접고 ④ 길을
+    돈다 — HOME 쪽이 누를 칸이 없거나 예외로 멈춰도 공정 Capa 상세를 다시 열어 구획을 접고 ⑤ 길을
     잰다(멈춘 길은 `멈춤(종류)`). 칩 · 공정 상자 · 전환은 세션 값이고 끝에 되돌린다 — DB 에 쓰지
     않는다. 공정 이름은 찍지 않는다."""
     screen.step("페이지 열기")

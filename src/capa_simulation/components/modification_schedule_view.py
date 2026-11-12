@@ -20,7 +20,7 @@
   상한 버튼 + 직접) / 일정(시작 · 기한 · 달 맞춤 창) / 기준(기준 확보율 — 제약 모드와 **한 정본**,
   정수 % · 안전 여유 % · 목적) / Cut-off 읽기만.
 - **설비 일정 확인 · 계획** — 제약 모드와 같은 함수 하나(`constraint_equipment_plan.
-  render_equipment_plan` — 멈추는 갈래 · 멈춘 자리 · 공정 Capa 상세 ②·제약 모드와 같은 칸을 **같은
+  render_equipment_plan` — 멈추는 갈래 · 멈춘 자리 · 공정 Capa 상세 ②~④·제약 모드와 같은 칸을 **같은
   키**로).
 - **계산** — 순수 서비스 `services/modification_schedule.py`. 「가장 고르게」 는 이분 탐색이라 수백
   ms 까지 가므로 결과를 조건 값으로 세션에 몇 벌 기억한다(`remembered_result` — Streamlit 캐시가

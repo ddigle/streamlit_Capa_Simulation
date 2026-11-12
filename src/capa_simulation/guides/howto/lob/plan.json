@@ -77,10 +77,13 @@
     {
       "id": "03b_process_detail_lower",
       "page": "공정 Capa 상세",
-      "note": "공정 Capa 상세 아래 — 산출 근거와 「경로별 인자」",
+      "note": "공정 Capa 상세 아래 — 접힌 산출 근거 머리를 눌러 펼친 산출 근거와 「경로별 인자」",
       "from": "03_process_detail",
       "writes": "none",
-      "ops": [{"op": "scroll", "target": "key:process_detail_evidence", "block": "end", "offset": 24}],
+      "ops": [
+        {"op": "click", "target": "named:EXPANDER(process_detail_evidence_box)"},
+        {"op": "scroll", "target": "key:process_detail_evidence", "block": "end", "offset": 24}
+      ],
       "targets": {
         "evidence": "key:process_detail_evidence",
         "path_factors": "key:process_detail_route_factors",

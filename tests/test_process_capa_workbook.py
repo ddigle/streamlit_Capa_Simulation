@@ -23,6 +23,7 @@ from test_process_capa_canvas import (
     _assumed_summary,
     _canvas,
     _dynamic,
+    _module_arrows,
     _products,
     _row_fills,
     _row_texts,
@@ -32,10 +33,14 @@ from xlsx_read import ReadSheet, read_workbook
 
 from capa_simulation.components.process_capa_canvas import (
     ROW_BALANCE,
-    ROW_DYNAMIC_BALANCE,
+    ROW_DYNAMIC_RATE,
+    ROW_EFFECT_BALANCE,
     ROW_RATE,
+    ROW_UNITS_AFTER_RATE,
     SECTION_DOWNTIME,
     SECTION_UNITS,
+    UNITS_AFTER_RATE_LABEL,
+    UNITS_SHORTENING,
     AssumptionCanvasInput,
 )
 from capa_simulation.components.process_capa_workbook import (
@@ -152,17 +157,27 @@ def test_words_and_month_labels_stay_text(text: str) -> None:
     assert screen_number(text) is None
 
 
+def _row_after(sheet: ReadSheet, title: str, label: str) -> int:
+    """그 구획 제목 줄 아래 처음 나오는 `label` 줄 — 구획마다 같은 이름 줄(확보율 등)이 있다."""
+    start = sheet.find_row(title)
+    for (row, column), cell in sorted(sheet.cells.items()):
+        if column == 0 and row > start and cell.value == label:
+            return row
+    raise AssertionError(f"{title} 아래 {label!r} 줄이 없다")
+
+
 def test_value_rows_show_the_canvas_text_with_the_canvas_fill() -> None:
     """엑셀이 보일 글은 그림 칸 글과 같고(숫자 셀), 칠은 그림 칸 색과 같다 — ① 확보율 · 과부족과 ②
-    목표 과부족에서 칠한 칸 모두."""
+    · ③ 의 판정 칸에서 칠한 칸 모두."""
     canvas = _canvas(dynamic=_dynamic())
     sheet = _detail(_request())
-    for row_id, label in (
-        (ROW_RATE, "확보율"),
-        (ROW_BALANCE, "확보 기준(110%) 과부족"),
-        (ROW_DYNAMIC_BALANCE, "목표(110%) 과부족"),
+    for row_id, title, label in (
+        (ROW_RATE, "① Static 기준 ▾", "확보율"),
+        (ROW_BALANCE, "① Static 기준 ▾", "확보 기준(110%) 과부족"),
+        (ROW_DYNAMIC_RATE, "② 일정 가용 ▾", "확보율"),
+        (ROW_EFFECT_BALANCE, "③ 비가동 ▾", "확보 기준(110%) 과부족"),
     ):
-        row = sheet.find_row(label)
+        row = _row_after(sheet, title, label)
         texts = _row_texts(canvas, row_id)
         fills = _row_fills(canvas, row_id)
         for index, (text, _) in texts.items():
@@ -200,21 +215,41 @@ def test_the_header_months_and_the_shortage_band_follow_the_canvas() -> None:
             assert fill == "FF" + tokens.SUMMARY_SUPPLY_SURFACE.lstrip("#").upper()
 
 
-def test_two_line_cells_get_a_following_row_with_the_same_paint() -> None:
-    sheet = _detail(_request())
-    main = sheet.find_row("목표(110%) 과부족")
-    sub = main + 1
-    assert sheet.cells[(sub, 0)].value == "└ 단축 후 · 상태"
-    painted = [
-        index
-        for index in range(len(MONTHS))
-        if sheet.cells[(main, 2 + index)].fill == "FF" + tokens.STATUS_SHORTAGE.lstrip("#")
-    ]
-    assert painted
-    for index in painted:
-        assert sheet.cells[(sub, 2 + index)].fill == sheet.cells[(main, 2 + index)].fill
-    assert sheet.cells[(sheet.find_row("가용 (환산)") + 1, 0)].value == "└ 단축 후"
-    assert sheet.cells[(sheet.find_row("비가동 영향") + 1, 0)].value == "└ 확보율 영향"
+def test_the_schedule_sections_carry_no_two_line_cells() -> None:
+    """② 일정 가용 · ③ 비가동은 한 줄 칸뿐이라 딸린 줄이 없다 — 단축 후 · 확보율 영향 같은 둘째 줄을
+    두지 않는다(2026-11-12 사용자 답 k-c2)."""
+    labels = [str(value) for value in _detail(_request()).column(0) if value is not None]
+    assert not any(label.startswith("└ 단축 후") or label == "└ 확보율 영향" for label in labels)
+    assert "비가동대수" in labels and "실가용대수" in labels
+
+
+def test_the_after_rate_row_and_module_rows_follow_the_screen() -> None:
+    """④ 「단축 후 확보율」 은 화면 칸 글 그대로의 % 숫자 셀과 판정 칠이고, ⑤ 모듈 묶음은 Main 줄과
+    「└ 모듈명」 줄이다 — 단축 필요만이면 ④ 호기 줄도 그 줄만이다(2026-11-12 사용자 답 q6 · q6b ·
+    q7 · k-c6)."""
+    dynamic = _dynamic(arrows=_module_arrows())
+    sheet = _detail(_request(dynamic=dynamic))
+    canvas = _canvas(dynamic=dynamic)
+    row = sheet.find_row(UNITS_AFTER_RATE_LABEL)
+    texts = _row_texts(canvas, ROW_UNITS_AFTER_RATE)
+    fills = _row_fills(canvas, ROW_UNITS_AFTER_RATE)
+
+    assert texts
+    for index, (text, _) in texts.items():
+        cell = sheet.cells[(row, 2 + index)]
+        written = screen_number(re.sub(r"</?b>", "", text))
+        assert written is not None and cell.numeric and cell.value == written[0]
+        assert cell.number_format.endswith("%")
+        assert cell.fill == "FF" + fills[index].lstrip("#").upper()
+    labels = [str(value) for value in sheet.column(0) if value is not None]
+    assert labels.index("EQ-31") + 1 == labels.index("└ EQ-31A")
+    merged = sheet.find_row("EQ-31")
+    assert str(sheet.cells[(merged, 2 + MONTHS.index(202702))].value).startswith("공사")
+
+    only = _detail(_request(dynamic=_dynamic(units_view=UNITS_SHORTENING)))
+    only_labels = [str(value) for value in only.column(0) if value is not None]
+    assert UNITS_AFTER_RATE_LABEL in only_labels
+    assert "EQ-07" in labels and "EQ-07" not in only_labels
 
 
 def test_folded_sections_and_the_product_toggle_follow_the_screen() -> None:
@@ -223,11 +258,11 @@ def test_folded_sections_and_the_product_toggle_follow_the_screen() -> None:
     )
     labels = [str(value) for value in folded.column(0) if value is not None]
     assert "소요대수 ▸" in labels and not any(label.startswith("└ PRODUCT") for label in labels)
-    assert "③ 신규 설비 일정과 단축 ▸" in labels and "④ 호기별 비가동 ▸" in labels
+    assert "④ 단축 ▸" in labels and "⑤ 비가동 일정 ▸" in labels
     assert "EQ-21" not in labels
     opened = [str(value) for value in _detail(_request()).column(0) if value is not None]
     assert "소요대수 ▾" in opened and "└ PRODUCT_A" in opened
-    assert "③ 신규 설비 일정과 단축 ▾" in opened and "EQ-21" in opened
+    assert "④ 단축 ▾" in opened and "EQ-21" in opened
     assert "확보율 (HOME 표시)" in opened
 
 
