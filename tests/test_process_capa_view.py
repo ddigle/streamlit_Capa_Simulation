@@ -808,7 +808,7 @@ def _callback_script() -> None:
         ({"selection": {"points": [{"customdata": [202701, "rate", "풍선"]}]}}, 202701),
         # ③ 줄을 눌러도 그 열의 달이다.
         ({"selection": {"points": [{"customdata": [202612, "unit:EQ-1", "풍선"]}]}}, 202612),
-        # 빈 선택(같은 칸 다시 누르기)·축 밖 점은 보던 달 그대로다.
+        # 빈 선택·축 밖 점은 보던 달 그대로다.
         ({"selection": {"points": []}}, 202611),
         ({"selection": {"points": [{"customdata": [199001, "rate", "풍선"]}]}}, 202611),
     ],
@@ -822,8 +822,8 @@ def test_a_cell_click_writes_the_month_of_the_cell(
     app.run()
     assert not app.exception, [element.message for element in app.exception]
     assert app.session_state["process_detail_month"] == expected
-    # 칸을 누르면 어느 경우든 접힌 산출 근거를 펼친다 — 접은 뒤 같은 달 칸을 다시 누르면 빈 선택이다
-    # (2026-11-12 사용자 답 k-c5).
+    # 콜백이 오면 어느 경우든 접힌 산출 근거를 펼친다(2026-11-12 사용자 답 k-c5 — 빈 선택 · 축 밖
+    # 점도). 이미 골라 둔 칸을 다시 누르는 것은 그림이 사건을 보내지 않아 이 콜백까지 오지 않는다.
     assert app.session_state[EVIDENCE_BOX_KEY] is True
     assert app.session_state[remembered_box_key(EVIDENCE_BOX_KEY)] == (True, "")
 

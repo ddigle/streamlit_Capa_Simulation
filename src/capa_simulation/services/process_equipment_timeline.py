@@ -869,7 +869,7 @@ def new_unit_availability(
     timeline: ProcessEquipmentTimeline, *, since: date, excluded: Iterable[str] = ()
 ) -> NewUnitAvailability:
     """`new_units` 가운데 기여 시작(Qual 다음 날)이 `since` 이후(그날 포함)인 호기와 그 기여 시작 ·
-    환산 대수 · 반출. 새 계산 없이 설비 일정 칸(공정 Capa 상세 ③·④ 와 같은 객체)을 거르기만 한다.
+    환산 대수 · 반출. 새 계산 없이 설비 일정 칸(공정 Capa 상세 ④·⑤ 와 같은 객체)을 거르기만 한다.
 
     모듈 묶음은 **첫 모듈 날짜**로 판정한다(2026-11-01 사용자 결정 — 첫 모듈이 기준일 전인 묶음은
     신규가 아니다). 모듈마다의 기여 시작은 `모듈별 Qual` 의 다음 날이고 `NewUnitStart.modules` 에

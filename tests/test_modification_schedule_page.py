@@ -684,8 +684,11 @@ def test_a_process_without_equipment_stops_with_its_reason(databases: tuple[Path
     assert data_error_marks(app) == 1
     (note,) = events(app, "CS-01")
     assert note["full"].startswith("개조 일정 · ")
-    assert "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로" in note["full"]
-    assert "공정 Capa 상세 ② 와 같은 값" not in _captions(app)
+    assert (
+        "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ③ 일정 기준 실가용과 같은 값)으로"
+        in note["full"]
+    )
+    assert "공정 Capa 상세 ③ 일정 기준 실가용과 같은 값" not in _captions(app)
     assert not app.metric
     assert app.number_input(key=SCHEDULE_UNITS_KEY).value == 4
 

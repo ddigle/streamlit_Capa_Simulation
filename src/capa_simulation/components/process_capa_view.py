@@ -978,10 +978,11 @@ def remembered_sheet(key: tuple[object, ...], build: Callable[[], bytes]) -> byt
 def pick_canvas_month(months: Sequence[int]) -> None:
     """월 그림의 칸 선택 콜백 — 누른 칸의 달을 세션에 적는다. 이 프래그먼트 회차로 다시 그린다.
 
-    빈 선택(같은 칸을 다시 누르거나 더블클릭)과 축 밖의 점은 달을 바꾸지 않는다 — 보던 달 그대로다.
-    ④·⑤ 줄을 눌러도 그 열의 달이다(표적 막대가 그 줄까지 덮는다). 칸을 누르면 어느 경우든 접힌
-    산출 근거를 펼친다(2026-11-12 사용자 답 k-c5) — 접은 뒤 같은 달 칸을 다시 누르면 빈 선택이
-    오므로, 그때도 펼쳐야 그 달 근거가 다시 보인다.
+    빈 선택과 축 밖의 점은 달을 바꾸지 않는다 — 보던 달 그대로다. ④·⑤ 줄을 눌러도 그 열의 달이다
+    (표적 막대가 그 줄까지 덮는다). 콜백이 오면 어느 경우든 접힌 산출 근거를 펼친다(2026-11-12
+    사용자 답 k-c5). 다만 이미 골라 둔 칸을 다시 누르면 그림이 선택 사건을 보내지 않아(Streamlit
+    1.63 — 사본 앱 브라우저 확인) 이 콜백이 돌지 않는다 — 접은 뒤 같은 달 칸을 다시 누르면
+    펼쳐지지 않는 것은 시안 카드가 적은 「잃는 것」 그대로다(다른 달 칸 · 머리 누름은 펼친다).
     """
     point = canvas_point(st.session_state.get(PROCESS_DETAIL_CANVAS_CHART_KEY))
     if point is not None and point[0] in set(int(month) for month in months):

@@ -12,7 +12,7 @@
   공정은 원본 공정명(설비 마스터 `공정소분류` = 시나리오 `공정`), 달은 `YYYYMM` 생산월(Cut-off W/D
   월 — 공정 Capa 상세와 같은 달)이다. 표시명(Proc Rename)은 닿지 않는다.
 - **빼는 곳**은 실행 쪽 「설비 일정 기준 가용대수」(단축 전 월별 환산 가용)다(결정 1 — 「실행
-  가용대수에서 뺀다」). 그 가용을 보이는 모든 자리 — 필요 단축 일정 계획·공정 Capa 상세 ②·제약
+  가용대수에서 뺀다」). 그 가용을 보이는 모든 자리 — 필요 단축 일정 계획·공정 Capa 상세 ③·제약
   시뮬레이션·Space 필요 단축·가용설비 현황 Static 대비 일정(그림·시트·확보율 교차검증) — 가 같은
   칸을 같은 규칙으로 뺀다. 호기별 비가동과 **별도 손실**이라 그 위에 더 뺀다(결정 3). 그 달 가용보다
   크면 가용은 0 에서 멈추고 넘친 자리를 알린다(`apply_manual_downtime` — `초과`,
@@ -279,8 +279,8 @@ def manual_rows_for_process(
 
 def clamp_manual_units(units: float, available: float) -> tuple[float, bool]:
     """입력 하나를 그 달 가용에 건다 — (가용에서 뺄 몫, 넘쳤는가). 뺄 몫은 `min(입력, 가용)` 이라
-    가용은 0 에서 멈춘다. 계획(`apply_manual_downtime`)과 공정 Capa 상세 ② 전월 대비가 같은 함수를
-    쓴다 — 둘의 가용대수가 같은 값이어야 한다."""
+    가용은 0 에서 멈춘다. 계획(`apply_manual_downtime`)과 공정 Capa 상세 ③ 비가동대수(전월 대비
+    표)가 같은 함수를 쓴다 — 둘의 가용대수가 같은 값이어야 한다."""
     applied = round(min(float(units), max(float(available), 0.0)), _DECIMALS)
     return applied, round(float(units) - float(available), _DECIMALS) > 0
 

@@ -640,7 +640,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `components/constraint_simulation_view.py`, 설명은 `guides/constraint_simulation.md`.
   - 입력은 새 무거운 계산이 없다 — 공통 진입은 공정 Capa 상세와 같은 `page_bootstrap.process_page_inputs`, 소요는 계획의
     `소요대수`(공정 합)와 `get_process_product_demand(split="제품정보", limit=CONSTRAINT_PRODUCT_LIMIT)`(제품별 — 「그 밖」 이
-    생기지 않는 상한), 가용은 공정 Capa 상세 ② 와 **같은 계획 칸·같은 키**(`load_required_shortening_for_target` 공식 칸,
+    생기지 않는 상한), 가용은 공정 Capa 상세 ②~④ 와 **같은 계획 칸·같은 키**(`load_required_shortening_for_target` 공식 칸,
     목표는 키 맞춤용 HOME 확보 기준)의 단축 전 `가용대수` 다. 설비는 늘 **세션 설비 시나리오**(HOME 칸 방문 공식 잠금을
     잇지 않는다 — D6. 잠긴 상세의 머리 링크로 넘어온 방문은 `CONSTRAINT_LOCKED_ARRIVAL_KEY`(공정, `page_visit()`)에 적어
     세션이 공식 발행 쌍이 아니면 그 공정·그 방문 동안 상태 알림 `CS-03`(「설비는 세션의 「…」 기준입니다 — 공정 Capa 상세는
@@ -699,7 +699,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `{공정: [설비키]}`)이고 위젯 칸은 위젯 앞에서 매 회차 다시 적는다(`settle_held_units` — 글자가 바뀌어도 브라우저가 새
     글자를 받게). 지금 선택지에 없는 호기는 빼고 맨 위 한 줄로 알린다(B3-2 — 같은 공정 · 같은 선택지인 동안 남고 고름을 바꾸면
     걷힌다). 고른 호기는 `HeldUnit` 으로 `ConstraintConditions.held_units` 에 실리고 신규 후보에서 빠진다
-    (`new_unit_availability(excluded=)`). 신규를 켠 회차에만 공정 Capa 상세 ③·④ 와 같은 설비 일정 칸(`get_process_equipment_
+    (`new_unit_availability(excluded=)`). 신규를 켠 회차에만 공정 Capa 상세 ④·⑤ 와 같은 설비 일정 칸(`get_process_equipment_
     timeline`, 같은 키)을 받아 기준일로 거르고 고른 호기를 뺀 호기마다의 기여 시작 · 환산 대수 · 반출(묶음은 첫 모듈과 모듈마다의
     기여 시작 — `new_unit_availability` → `NewUnit(modules=)`)을 `simulate_constraint(new_units=)` 에 넘긴다 — 어느 증가에
     붙일지(개조 일수 안 · 신규 대기)와 남은 보유가 남은 증가를 덮으면 그 증가부터 신규를 붙이지 않는 것(B1 — 증가마다)은
@@ -3607,8 +3607,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (0 아닌 칸만의 (공정, 생산월, 환산 대수) 튜플 — 캐시에 실린다)·저장 이력 `ManualDowntimeSave` 와 규칙. 저장 입구
   `prepare_manual_downtime`(빈칸 = 0, 0 이상 소수, 상한 9999, `YYYYMM`), 보이는 범위만 갈아 쓰기 `merge_visible_cells`, 계산 키
   `manual_downtime_key`(계산할 달로 좁힌 칸 자체), 가용 빼기 `apply_manual_downtime`(그 달 가용에서 0 에서 멈춤 — `clamp_manual_units`
-  를 공정 Capa 상세 ② 전월 대비도 쓴다)과 출처 띠 글(`manual_effect_band`), 대수 글 `manual_units_text`·뺀 몫 글
-  `manual_removed_text`(공정 Capa 상세 세 곳이 같은 글을 쓴다 — 6장 「입력 비가동 대수」). Streamlit·DB 를 모른다.
+  를 공정 Capa 상세 ③ 비가동대수(전월 대비 표)도 쓴다)과 출처 띠 글(`manual_effect_band`), 대수 글 `manual_units_text`·뺀 몫 글
+  `manual_removed_text`(공정 Capa 상세 두 곳이 같은 글을 쓴다 — 6장 「입력 비가동 대수」). Streamlit·DB 를 모른다.
 - `src/capa_simulation/services/floor_state.py` — Space 동·층 사용 상태(설비 DB `0029`, 2026-10-24 결정 S1~S6) 모델
   `FloorStates`(비활성 층만의 (동, 층, 사유) 행 — 사유는 직접 적은 글이고 옛 코드 `UNUSED` 사용 안 함·`NOT_LINE` 생산라인
   아님도 그대로 둔다, 2026-10-26 결정)와 규칙. 저장 입구 `prepare_floor_states`(30개 층, 빈 값 = 사용, 사유는
@@ -4475,7 +4475,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「설비 일정 확인 → 계획」 블록. `equipment_readiness`(설비 DB 오류면 None, 아니면 `dynamic_readiness` — 두 모드 모두 카드
   안에서 먼저 쓴다)와 `render_equipment_plan`(멈추는 갈래 — 설비 DB 오류 · 설비 일정이 서지 않음(풀이 주어는 `subject`) · 그
   모드의 앞 갈래 `before_plan` · 계획 계산 오류 「설비 일정을 계산하지 못했습니다」(두 DB 경로) · 계획에 공정 없음 — 마다 머리
-  한 줄과 까닭을 그리고 None, `st.stop` 은 부르는 쪽). 계획은 공정 Capa 상세 ② 와 같은 칸을 같은 키로 받고(목표는 키 맞춤용
+  한 줄과 까닭을 그리고 None, `st.stop` 은 부르는 쪽). 계획은 공정 Capa 상세 ②~④ 와 같은 칸을 같은 키로 받고(목표는 키 맞춤용
   HOME 확보 기준), `new_unit_since` 를 주면 같은 키의 설비 일정 칸을 그 날로 거른 신규 호기도 같은 `try` 에서 받는다. 계산
   함수는 부를 때 `simulation_cache` 모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 두 모드가 이 함수만 거치는지
   `tests/test_modification_schedule_page.py` 가, 멈추는 갈래 차례와 까닭 글(키 만들기 예외도 계산 오류 갈래)은
@@ -5861,7 +5861,7 @@ Static Capa의 설비 부족 현황은 소요대수 자체는 실수로 유지�
   공정은 원본 공정명이다.
 - **빼는 곳**은 실행 쪽 「설비 일정 기준 가용대수」(단축 전 월별 환산 가용 — 필요 단축 일정 계획의 `가용대수`)다(결정 1 —
   「실행 가용대수에서 뺀다」). 호기별 비가동과 **별도 손실**이라 그 위에 더 뺀다: `가용 = max(0, 기존보유 + 호기 가용 − 입력)`.
-  입력이 그 달 가용보다 크면 가용은 0 에서 멈추고 넘친 칸을 알린다(`초과`). 그래서 공정 Capa 상세 ②·④·필요 단축 일정(그 위에서
+  입력이 그 달 가용보다 크면 가용은 0 에서 멈추고 넘친 칸을 알린다(`초과`). 그래서 공정 Capa 상세 ③·⑤·필요 단축 일정(그 위에서
   단축을 다시 낸다)·제약 시뮬레이션(A = 그 가용)·Space 필요 단축 보기와 가용설비 현황 Static 대비 일정(그림·9행 시트의 설비
   일정 기준 대여(비가동)·가용·확보율 교차검증 — 보유는 그대로라 그 몫이 대여에 든다)이 함께 바뀐다 — 모두 같은 칸·같은
   멈춤 규칙(`clamp_manual_units`)이라 같은 값이다.
