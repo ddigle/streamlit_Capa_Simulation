@@ -4,33 +4,45 @@
 
 공정 하나를 **한 스크롤 상자**에 위에서 아래로 쌓는다. HOME 대시보드 틀 그대로 라벨 칸
 (`DASHBOARD_LABEL_COLUMN_WIDTH_PX`, 260px)과 월 칸(달마다 `MONTH_COLUMN_WIDTH_PX`, 100px)이 Figure
-한 쌍이고, 월 Figure 하나가 가로로 스크롤된다.
+한 쌍이고, 월 Figure 하나가 가로로 스크롤된다. 구획은 다섯이다(2026-11-12 사용자 답 k-c0).
 
-1. **① 공식 기준**(Core Data · 대수) — 총보유대수·가용대수(공급 묶음 면), 소요대수(수요 묶음 면,
-   펼치면 분류 행이 줄무늬·들여쓰기로 붙는다), 확보율(판정 3색 칸), 확보 기준 과부족(부호 있는 정수,
-   부족이면 확보율과 **같은** 판정색, 풍선은 정수 옆에 올림·내림 전 값을 소수 둘째 자리로), 기준
-   확보율(달마다 확보 기준 % — 회색 글자만, 참고 줄), 그리고 넘겨받았을 때만 확보율(HOME 표시).
-2. **② 설비 일정 기준 가용**(참고 · 설비 DB · 환산대수 · 생산월) — 판정 대조(기준✕·일정✕ 만
-   칠한다), 가용(환산, 단축 후는 둘째 줄), 전월 대비, 비가동 영향(그 달 비가동이 깎은 가용
-   「−1.8대」 와 둘째 줄 확보율 영향 「−4.2%」 — 깎은 것이 없으면 빈칸, 소요 0 이면 대수만), 목표
-   과부족(음수만 칠한다, 단축 후·기한 지남은 둘째 줄). 목표는 달마다 다른 확보 기준이다
-   (`MonthlyTarget`).
-3. **③ 신규 설비** — 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축 대상이면 같은 줄에
-   ◀ 목표 기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축 안에서
-   정지·반출/이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 30행 상한(`ROW_LIMIT`)을 넘으면
-   「n대 더」 한 줄이다.
-4. **④ 호기별 비가동** — 비가동 한 행이 화살표 하나. 가용을 깎은 것만 진한 실선과 촉, 나머지는 흐린
-   점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」. 축 안에 입력 비가동(가용설비 현황 ›
-   Preference — 공정 × 생산월 대수)이 있으면 구획 첫 줄이 「월별 비가동 대수(입력)」 이다 —
-   달마다 넣은 대수이고, 그 달 가용보다 커 0 에서 멈춘 칸은 「⚠」 와 경고색이다. ② 가용·전월
-   대비 「비가동」 은 이 몫을 이미 뺐다(호기별 비가동과 별도 손실). 호기 줄이 없는
-   공정(기존보유만)은 ② 아래에 선다.
+1. **① Static 기준**(Core Data · 대수 · 확보율에 쓰는 숫자 — 제목 줄 풍선) —
+   총보유대수·가용대수(공급 묶음 면), 소요대수(수요 묶음 면, 펼치면 분류 행이 줄무늬·들여쓰기로
+   붙는다), 확보율(판정 3색 칸), 확보 기준 과부족(부호 있는 정수, 부족이면 확보율과 **같은**
+   판정색, 풍선은 정수 옆에 올림·내림 전 값을 소수 둘째 자리로), 기준 확보율(달마다 확보 기준 % —
+   회색 글자만, 참고 줄), 그리고 넘겨받았을 때만 확보율(HOME 표시).
+2. **② 일정 가용**(설비 DB · 환산대수 · 생산월 — 제목 줄 풍선이 Cut-off n일 · 오늘 점선 날짜) —
+   총보유대수(달력 월 — `owned_units`), 가용대수(기존보유 + 호기 — **비가동을 빼기 전**, n1 (가)),
+   전월 대비(그 차이 — 풍선은 호기 묶음 몫, k-c3), 소요대수(판정 기준 소요 — 펼치면 ① 과 함께
+   분류 행, q4 (가)), 확보율 · 확보 기준 과부족(① 과 같은 양식 · 같은 판정 길 `judge_supply`).
+3. **③ 비가동** — 비가동대수(호기별 비가동 일정이 깎은 대수 + 입력 비가동 반영 —
+   `downtime_impact`, q5 (가)), 실가용대수(비가동 기준 `DynamicCanvasInput.downtime_basis` 의
+   가용에서 뺀 값, 0 에서 멈춤. Static 이면 ① 가용대수, 일정이면 ② 가용대수 — 이때 필요 단축
+   일정의 가용과 같다), 소요대수(합계만), 확보율 · 확보 기준 과부족.
+4. **④ 단축** — 첫 줄 「단축 후 확보율」(단축 · 신규 필요로 가용이 바뀐 달만 값과 판정 색 — 계획의
+   단축 후 가용 ÷ 소요, q6b (나)), 그 아래 호기마다 한 줄. ◆ 반입 · ● 기여 시작(Qual상태 색), 단축
+   대상이면 같은 줄에 ◀ 목표 기여 시작과 「−N일」, 목표 Qual 이 반입보다 이르면 「반입 전」 배지. 축
+   안에서 정지·반출/이설되는 다른 호기는 ▼ 한 줄, 추가N(◌)은 맨 아래. 보기(`units_view`)가 단축
+   필요만이면 단축 대상 · 추가N 줄만 선다(q6 메모). 30행 상한(`ROW_LIMIT`)을 넘으면 「n대 더」 한
+   줄이다.
+5. **⑤ 비가동 일정** — 비가동 한 행이 화살표 하나. 가용을 깎은 것만 진한 실선과 촉, 나머지는 흐린
+   점선이다. 글자는 비가동유형과 「◂ 이전부터」·「계속 ▸」. 모듈 묶음은 같은 비가동(시작일 ·
+   종료일 · 유형)이 모든 모듈에 있으면 Main 줄 화살표 하나로 합치고, 일부 모듈에만 있는 것은 Main
+   줄 아래 「[여백]└ 모듈명」 줄에 그 모듈 것만 둔다(q7 (가) · 메모). 축 안에 입력
+   비가동(가용설비 현황 › Preference — 공정 × 생산월 대수)이 있으면 구획 첫 줄이 「월별
+   비가동대수(입력)」 이다 — 달마다
+   넣은 대수이고, 그 달 가용보다 커 0 에서 멈춘 칸은 「⚠」 와 경고색이다. 그 몫은 ③ 비가동대수에
+   든다. 호기 줄이 없는 공정(기존보유만)은 ④ · ⑤ 가 서지 않고 그 줄은 ③ 끝에 선다.
+
+**판정 띠는 한 기준이다** — 부족 달 세로 띠는 판정 기준 요약(① Static, UPEH 가정이 켜지면 가정
+요약)의 판정 하나이고, ② · ③ 의 확보율 · 과부족 칸은 그 구획의 가용으로 낸 제 판정 색만 칠한다
+(2026-11-12 사용자 답 q8 (가)).
 
 호기·Model 라벨에는 모듈 수를 적지 않는다(2026-10-22 사용자 요청) — 모듈 묶음은 풍선이
-밝힌다. ③ 호기 줄·정지 줄 풍선 첫 줄에 「· 모듈 N」, ④ 풍선 첫 줄에 「· 모듈 N」과 화살표
-줄마다 그 모듈의 설비명이다.
+밝힌다. ④ 호기 줄·정지 줄 풍선 첫 줄에 「· 모듈 N」, ⑤ 풍선 첫 줄에 「· 모듈 N」과 화살표
+줄마다 그 모듈의 설비명(합친 화살표는 「모듈 n 모두」)이다.
 
-**③ 풍선은 세 줄이고 그림 위에서만 뜬다**(2026-10-24 사용자 결정 (가)) — 「호기 · −N일 · Model」,
+**④ 풍선은 세 줄이고 그림 위에서만 뜬다**(2026-10-24 사용자 결정 (가)) — 「호기 · −N일 · Model」,
 「Qual MM.DD → 목표 MM.DD · MM.DD부터 기여 +0.10대」, 「해소 YY.MM · ⚠ 반입 전」(`_unit_hover`).
 반입일·Qual상태·대상 월은 그림 표지(◆ · ● 색)와 CSV 가 말해 적지 않고, UPEH 가정 계획만 넷째
 줄이다. 줄 이름 칸의 「+0.10대」 는 호기 하나의 요약(대상 월 구간의 몫 — CSV
@@ -43,25 +55,24 @@
 
 **UPEH 가정**(`assumption` — 공정 Capa 상세 조건 카드의 「이 세션만」 값)이 켜지면 ① 끝(기준 확보율
 아래)에 「UPEH 가정」 세 줄(소요대수·확보율·확보 기준 과부족)이 선다 — 구간 달만 값이고 밖은
-빈칸이다(풍선 「구간 밖 — 공식과 같음」). ① 의 공식 줄은 공식 그대로다. **판정 기준은 하나다** —
-가정이 켜지면 부족 띠·② 판정 대조는 가정 요약의 판정으로 칠한다(②~④ 가 가정 계획이라 한 그림에서
-공식 판정과 섞이지 않게) — ② 판정 대조 풍선도 「공식은 …」 이 아니라 「UPEH 가정 기준은 …」
-이다. 「UPEH 가정」 표지는 실제로 바뀌는 행에만 단다 — 가정 세 줄, ② 판정 대조·비가동 영향(% 가
-가정 소요로 바뀐다)·목표 과부족의 행 라벨, ③ 호기 풍선. ② 가용·전월 대비와 ④ 는 설비 일정이라
-UPEH 와 무관하다.
-공식 계획에서는 당겼지만 가정 계획에서는 덜 당기는 호기는 ③ 에 흐린 줄로 남고 풍선에 「공식 −45일 →
+빈칸이다(풍선 「구간 밖 — 가정 전과 같음」). ① 의 Static 줄은 그대로다. 가정과 견주는 값은 「가정
+전」 이라 부른다(2026-11-12 사용자 답 q2 (가)). 가정이 켜지면 부족 띠는 가정 요약의 판정이고(④ 가
+가정 계획이라 한 그림에서 가정 전 판정과 섞이지 않게), ② · ③ 의 소요대수도 가정 소요다(칸 풍선에
+「UPEH 가정 p%」, ② 분류 행은 가정이 걸린 달에 ÷f). 「UPEH 가정 계획」 표지는 ④ 호기 풍선에만
+단다 — ② 총보유 · 가용 · 전월 대비, ③ 비가동대수와 ⑤ 는 설비 일정이라 UPEH 와 무관하다. 가정 전
+계획에서는 당겼지만 가정 계획에서는 덜 당기는 호기는 ④ 에 흐린 줄로 남고 풍선에 「가정 전 −45일 →
 가정 0일」 이다(`DynamicCanvasInput.official_pulls`).
 
 **구획 접기**(`collapsed`, 구획 id `SECTION_IDS`) — 접힌 구획은 제목 줄만 남고(글자 끝 ▸, 펼친
-구획은 ▾) 그 밑 행을 그리지 않는다. 판정·부족 원인은 요약 프레임에서 그대로 내므로 ① 을 접어도 부족
-띠와 ② 판정 대조는 같다. 접힌 ③·④ 는 줄을 만들지 않아 「n대 더」 수도 0 이다.
+구획은 ▾) 그 밑 행을 그리지 않는다. 판정은 요약 프레임에서 그대로 내므로 ① 을 접어도 부족 띠와
+② · ③ 확보율은 같다. 접힌 ④·⑤ 는 줄을 만들지 않아 「n대 더」 수도 0 이다.
 
-**네 구획이 한 Figure 쌍인 까닭** — 확보 기준에 못 미친 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금
+**다섯 구획이 한 Figure 쌍인 까닭** — 확보 기준에 못 미친 달의 세로 띠(`SHORTAGE_MONTH_BAND`)와 지금
 보는 달의 열 테두리가 구획을 넘어 이어져야 하고(구획마다 그림을 나누면 제목 줄에서 끊긴다), 칸
-선택(`on_select`)이 그림 하나에서 와야 한다. 그래서 구획 제목도 Figure 안의 한 줄이다. 제목과 그
-출처·단위 글(세부 글)은 **라벨 Figure** 에 쓴다 — 월 Figure 는 가로로 스크롤되므로 거기 둔 글은
-고른 달로 밀어 연 화면에서 잘리거나 사라진다. 세부 글은 라벨 칸 폭에 맞춰 「 · 」 마디로 줄을
-나누고(`title_detail_lines`), 그 줄 수만큼 제목 줄이 높아진다(`title_row_height`).
+선택(`on_select`)이 그림 하나에서 와야 한다. 그래서 구획 제목도 Figure 안의 한 줄이다. 제목은
+**라벨 Figure** 에 쓴다 — 월 Figure 는 가로로 스크롤되므로 거기 둔 글은 고른 달로 밀어 연 화면에서
+잘리거나 사라진다. 제목 아래 세부 글은 두지 않는다 — 출처 · 단위는 제목 줄 풍선(`Row.label_hover`)과
+Guide 가 적는다(2026-11-12 사용자 답 k-c1 · k-c2).
 
 `go.Table`·`go.Heatmap` 을 쓰지 않는다 — 둘 다 점 선택이 없어 `on_select` 가 오지 않는다. 칸 면은
 `base` 로 띄운 가로막대, 숫자는 `Scatter(text)`, 칸마다 보이지 않는 표적 막대가 hover 와 클릭을
@@ -69,14 +80,15 @@ UPEH 와 무관하다.
 (`CUSTOMDATA_MONTH`·`CUSTOMDATA_ROW`·`CUSTOMDATA_HOVER`). 지금 보는 달의 머리 밑줄과 열 테두리는
 그림에 그린다 — 그래서 그림 캐시 키에 그 달이 든다.
 
-**풍선의 식**(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」, UPEH 가정
-소요 「공식 ÷ f」, ② 목표 과부족 「가용 − 목표대수」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한
-값이 결과와 다르면 「=」 대신 「≈」 다(`formula_text.equals_mark` — 근거 패널 ③·④ 와 같은 길). 두
-과부족 식 줄과 ② 비가동 영향 풍선의 두 식(「비가동 없으면 확보율 X% → 지금 Y%」 — 첫 줄
-% 를 낸다, 「호기 비가동 −a대 + 입력 비가동 −b대」 — 첫 줄 대수를 낸다)은 결과가 앞 줄에
-있고 등호가 없어 어긋날 때만 식 앞에 「≈」 를 둔다.
+**풍선의 식**(① 가용 「보유 − 대여」·확보율 「가용 ÷ 소요」·과부족 「가용 − 소요 × 기준」, UPEH
+가정 소요 「가정 전 ÷ f」, ② 총보유 「기존보유 + 반입 − 반출/이설」 · 가용 「기존보유 + 호기」 ·
+전월 대비 갈림, ③ 실가용 「기준 가용 − 비가동」)은 인수를 칸 자릿수로 적고, 적힌 수로 다시 셈한
+값이 결과와 다르면 「=」 대신 「≈」 다(`formula_text.equals_mark` — 근거 패널 ③·④ 와 같은 길).
+과부족 식 줄과 ③ 비가동대수 풍선의 갈림(「호기 비가동 a + 입력 비가동 b」 — 칸 글을 낸다)은 결과가
+앞 줄에 있고 등호가 없어 어긋날 때만 식 앞에 「≈」 를 둔다.
 
-순수 함수다. 세션·캐시·DB 를 보지 않는다. 그림 캐시·칸 선택 콜백·범례는 페이지가 맡는다.
+순수 함수다. 세션·캐시·DB 를 보지 않는다. 그림 캐시·칸 선택 콜백은 페이지가 맡고, 시트 범례는
+Guide 다.
 """
 
 from __future__ import annotations
@@ -163,7 +175,6 @@ from capa_simulation.services.equipment_contract import (
     STATUS_STOPPED,
 )
 from capa_simulation.services.manual_downtime import (
-    MANUAL_DOWNTIME_BAND,
     manual_removed_text,
     manual_units_text,
 )
@@ -173,6 +184,7 @@ from capa_simulation.services.process_capa_detail import (
     MISMATCH_COLUMN,
     OTHER_ROW_COLUMN,
     PRODUCT_LABEL_COLUMN,
+    judge_supply,
     month_column,
 )
 from capa_simulation.services.process_equipment_timeline import (
@@ -182,18 +194,12 @@ from capa_simulation.services.process_equipment_timeline import (
     downtime_impact,
     month_share,
     production_position,
+    unit_month_changes,
 )
-from capa_simulation.services.required_shortening import (
-    STATUS_EXPIRED,
-    STATUS_NEW_LIMIT,
-    TargetLevel,
-    single_target,
-    target_for_month,
-)
+from capa_simulation.services.required_shortening import TargetLevel
 from capa_simulation.services.securement_rate import (
     BALANCE_COLUMN,
     CAUSE_COLUMN,
-    CAUSE_OWNED_SHORT,
     OWNED_COLUMN,
     STATUS_COLUMN,
     surplus_held_at_zero,
@@ -205,8 +211,11 @@ from capa_simulation.services.threshold_label import (
 )
 
 __all__ = [
-    "IMPACT_LABEL_HOVER",
+    "BASIS_SCHEDULE",
+    "BASIS_STATIC",
     "MANUAL_DOWNTIME_ROW_LABEL",
+    "MODULE_ROW_INDENT_PX",
+    "MODULE_ROW_MARK",
     "CUSTOMDATA_HOVER",
     "CUSTOMDATA_MONTH",
     "CUSTOMDATA_ROW",
@@ -215,9 +224,16 @@ __all__ = [
     "ROW_BALANCE",
     "ROW_DYNAMIC_AVAILABLE",
     "ROW_DYNAMIC_BALANCE",
-    "ROW_DYNAMIC_COMPARE",
     "ROW_DYNAMIC_DELTA",
-    "ROW_DYNAMIC_IMPACT",
+    "ROW_DYNAMIC_OWNED",
+    "ROW_DYNAMIC_PRODUCT_PREFIX",
+    "ROW_DYNAMIC_RATE",
+    "ROW_DYNAMIC_REQUIRED",
+    "ROW_EFFECT_AVAILABLE",
+    "ROW_EFFECT_BALANCE",
+    "ROW_EFFECT_LOSS",
+    "ROW_EFFECT_RATE",
+    "ROW_EFFECT_REQUIRED",
     "ROW_EXIT_PREFIX",
     "ROW_HEADER",
     "ROW_HOME_RATE",
@@ -234,13 +250,18 @@ __all__ = [
     "ROW_UPEH_BALANCE",
     "ROW_UPEH_RATE",
     "ROW_UPEH_REQUIRED",
+    "ROW_UNITS_AFTER_RATE",
     "SECTION_DOWNTIME",
     "SECTION_DYNAMIC",
+    "SECTION_EFFECT",
     "SECTION_IDS",
     "SECTION_SUMMARY",
     "SECTION_UNITS",
-    "SUMMARY_TITLE_DETAIL",
     "SUMMARY_TITLE_HEIGHT_PX",
+    "SUMMARY_TITLE_HOVER",
+    "UNITS_AFTER_RATE_LABEL",
+    "UNITS_ALL",
+    "UNITS_SHORTENING",
     "AssumptionCanvasInput",
     "DynamicCanvasInput",
     "ProcessCapaCanvas",
@@ -250,6 +271,7 @@ __all__ = [
     "build_process_capa_rows",
     "track_texts",
     "canvas_point",
+    "loss_text",
     "title_detail_lines",
     "title_row_height",
 ]
@@ -258,13 +280,12 @@ MONTH: Final = "생산계획년월"
 
 # ------------------------------------------------------------------ 치수
 # 머리 36px·값 행 27px·제목 줄·글자 크기는 엔진(`month_sheet_canvas`)의 값이다(위에서 다시
-# 내보낸다). 여기는 이 캔버스만의 행 — 둘째 줄이 있는 칸(단축 후 값)은 36px, 호기 줄은 라벨 두
-# 줄이 드는 34px 다.
-# ① 제목 세부 글. 그 줄 높이(`SUMMARY_TITLE_HEIGHT_PX`, 파일 끝)로 화면 확인 스크립트가 확보율 줄의
-# 세로 자리를 센다.
-SUMMARY_TITLE_DETAIL: Final = "Core Data · 대수 · 확보율에 쓰는 숫자"
+# 내보낸다). 여기는 이 캔버스만의 행 — 호기 줄은 라벨 두 줄이 드는 34px 다.
+# ① 제목 줄 풍선 글 — 구획 제목 아래 회색 세부 글은 Guide 와 제목 줄 풍선으로 옮겼다(2026-11-12
+# 사용자 답 k-c1). 제목 줄 높이(`SUMMARY_TITLE_HEIGHT_PX`, 파일 끝)로 화면 확인 스크립트가 확보율
+# 줄의 세로 자리를 센다.
+SUMMARY_TITLE_HOVER: Final = "Core Data · 대수 · 확보율에 쓰는 숫자"
 PRODUCT_ROW_HEIGHT_PX: Final = 23
-TWO_LINE_ROW_HEIGHT_PX: Final = 36
 UNIT_ROW_HEIGHT_PX: Final = 34
 ARROW_ROW_HEIGHT_PX: Final = 26
 # 부족 달 머리 아래 띠와 지금 보는 달 밑줄.
@@ -292,9 +313,12 @@ _EXIT_MARKER_PX: Final = 11
 # 배지 35px ↔ 40px). 어림 그대로 세면 그림은 달 경계 안인데 어림만 앞 달로 넘어가 아무것도 없는 칸에
 # 풍선이 뜬다 — 어림의 이 몫까지만 센다.
 _SPAN_TEXT_SHARE: Final = 0.85
-# ③·④ 의 줄 상한. 넘으면 「n대 더」 한 줄을 두고, 페이지의 「더 보기」가 모두 그린다.
+# ④·⑤ 의 줄 상한. 넘으면 「n대 더」 한 줄을 두고, 페이지의 「더 보기」가 모두 그린다.
 ROW_LIMIT: Final = 30
-# ④ 화살표 위 비가동유형 글자의 상한(글자 수).
+# ② 전월 대비 풍선의 호기 묶음 몫 — 큰 차례로 여섯까지(나머지는 「외 n대」), 한 줄에 셋.
+_MOVE_LIMIT: Final = 6
+_MOVES_PER_LINE: Final = 3
+# ⑤ 화살표 위 비가동유형 글자의 상한(글자 수).
 ARROW_TYPE_MAX_CHARS: Final = 12
 # 같은 호기의 두 화살표가 한 줄에 서려면 앞 화살표의 촉과 이만큼(달 단위) 떨어져야 한다.
 _LANE_GAP_MONTHS: Final = 0.02
@@ -312,30 +336,56 @@ ROW_HOME_RATE: Final = "home_rate"
 ROW_UPEH_REQUIRED: Final = "upeh_required"
 ROW_UPEH_RATE: Final = "upeh_rate"
 ROW_UPEH_BALANCE: Final = "upeh_balance"
-ROW_DYNAMIC_COMPARE: Final = "dynamic_compare"
+# ② 일정 가용 — 총보유대수 · 가용대수 · 전월 대비 · 소요대수(제품 줄) · 확보율 · 확보 기준 과부족.
+ROW_DYNAMIC_OWNED: Final = "dynamic_owned"
 ROW_DYNAMIC_AVAILABLE: Final = "dynamic_available"
 ROW_DYNAMIC_DELTA: Final = "dynamic_delta"
+ROW_DYNAMIC_REQUIRED: Final = "dynamic_required"
+ROW_DYNAMIC_PRODUCT_PREFIX: Final = "dynamic_product:"
+ROW_DYNAMIC_RATE: Final = "dynamic_rate"
 ROW_DYNAMIC_BALANCE: Final = "dynamic_balance"
-# ② 「비가동 영향」 — 전월 대비 바로 아래. 그 달 비가동(호기 + 입력)이 깎은 가용과 확보율 영향(%).
-ROW_DYNAMIC_IMPACT: Final = "dynamic_impact"
-IMPACT_LABEL_HOVER: Final = (
-    "그 달 비가동이 없었다면 더 있었을 가용(환산)과 그만큼의 확보율 차이(%)<br>"
-    "호기 비가동(④ 진한 화살표) + 입력 비가동(Preference — 가용에서 실제로 뺀 몫)<br>"
-    "확보율 = 단축 전 가용 ÷ 소요 · 깎은 것이 없으면 빈칸 · 소요 0 이면 대수만"
-)
-# ④ 첫 줄 「월별 비가동 대수(입력)」 — 축 안에 입력 비가동이 있을 때만 선다.
+# ③ 비가동 — 비가동대수 · 실가용대수 · 소요대수(합계) · 확보율 · 확보 기준 과부족.
+ROW_EFFECT_LOSS: Final = "effect_loss"
+ROW_EFFECT_AVAILABLE: Final = "effect_available"
+ROW_EFFECT_REQUIRED: Final = "effect_required"
+ROW_EFFECT_RATE: Final = "effect_rate"
+ROW_EFFECT_BALANCE: Final = "effect_balance"
+# ⑤ 첫 줄 「월별 비가동대수(입력)」 — 축 안에 입력 비가동이 있을 때만 선다. 줄 이름은 다른 대수
+# 줄(총보유대수 · 가용대수 · 소요대수 · 비가동대수)처럼 붙여 쓴다(2026-11-12 사용자 메모 k-c0).
 ROW_MANUAL_DOWNTIME: Final = "manual_downtime"
-MANUAL_DOWNTIME_ROW_LABEL: Final = "월별 비가동 대수(입력)"
+MANUAL_DOWNTIME_ROW_LABEL: Final = "월별 비가동대수(입력)"
+# ④ 첫 줄 「단축 후 확보율」 — 단축으로 가용이 바뀐 달만 값(2026-11-12 사용자 답 q6b (나)).
+ROW_UNITS_AFTER_RATE: Final = "units_after_rate"
+UNITS_AFTER_RATE_LABEL: Final = "단축 후 확보율"
 ROW_UNIT_PREFIX: Final = "unit:"
 ROW_EXIT_PREFIX: Final = "exit:"
 ROW_ARROW_PREFIX: Final = "arrow:"
 
-# 구획 id — 제목 줄 행 id(`title:<id>`)의 꼬리이고, 페이지의 「구획」 칩 값이다.
+# 구획 id — 제목 줄 행 id(`title:<id>`)의 꼬리이고, 페이지의 「구획」 칩 값이다. 차례는 ① Static
+# 기준 · ② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정(2026-11-12 사용자 답 k-c0).
 SECTION_SUMMARY: Final = "summary"
 SECTION_DYNAMIC: Final = "dynamic"
+SECTION_EFFECT: Final = "downtime_effect"
 SECTION_UNITS: Final = "units"
 SECTION_DOWNTIME: Final = "downtime"
-SECTION_IDS: Final = (SECTION_SUMMARY, SECTION_DYNAMIC, SECTION_UNITS, SECTION_DOWNTIME)
+SECTION_IDS: Final = (
+    SECTION_SUMMARY,
+    SECTION_DYNAMIC,
+    SECTION_EFFECT,
+    SECTION_UNITS,
+    SECTION_DOWNTIME,
+)
+# 「③ 비가동」 의 비가동 기준 — 실가용대수를 어느 가용에서 빼나(① Static 가용 · ② 일정 가용).
+# 처음은 Static 이다(2026-11-12 사용자 답 q5b (가)).
+BASIS_STATIC: Final = "static"
+BASIS_SCHEDULE: Final = "schedule"
+# 「④ 단축」 의 보기 — 전체(단축 대상 · 단축 없는 신규 호기 · 정지/반출 · 신규 필요 줄)와 단축
+# 필요만(단축 대상 · 신규 필요 줄). 처음은 전체다(2026-11-12 사용자 답 q6 (가) · 메모).
+UNITS_ALL: Final = "all"
+UNITS_SHORTENING: Final = "shortening"
+# ⑤ 모듈 줄 — Main 줄 아래 「└ 모듈명」 으로 들인 몫(2026-11-12 사용자 답 q7 (가) · 메모).
+MODULE_ROW_INDENT_PX: Final = 12.0
+MODULE_ROW_MARK: Final = "└"
 
 _SHORT_STATUSES: Final = frozenset({"warning", "shortage"})
 _STATUS_NAMES: Final[Mapping[str, str]] = {"secure": "확보", "warning": "경고", "shortage": "부족"}
@@ -343,12 +393,12 @@ _STATUS_NAMES: Final[Mapping[str, str]] = {"secure": "확보", "warning": "경�
 
 @dataclass(frozen=True, eq=False)
 class DynamicCanvasInput:
-    """② ~ ④ 의 재료 — 설비 일정이 「참고」로 설 때(`dynamic_readiness(...).ready`)만 넘긴다.
+    """② ~ ⑤ 의 재료 — 설비 일정이 「참고」로 설 때(`dynamic_readiness(...).ready`)만 넘긴다.
 
     프레임은 모두 **공정 하나**의 것이다. `process_months` 는 `LevelPlan.process_months` 를 그
-    공정으로 거른 것(달마다 한 행), `bridge`·`arrows`·`exits` 는 `ProcessEquipmentTimeline` 의
-    칸, `unit_events` 는 `unit_events(timeline, plan.units)` 다. `exits` 에서 ③ 에 이미 선 호기는
-    여기서 뺀다.
+    공정으로 거른 것(달마다 한 행), `bridge`·`arrows`·`exits`·`owned_units`·`unit_months` 는
+    `ProcessEquipmentTimeline` 의 칸, `unit_events` 는 `unit_events(timeline, plan.units)` 다.
+    `exits` 에서 ④ 에 이미 선 호기는 여기서 뺀다.
     """
 
     cutoff_days: int
@@ -360,25 +410,39 @@ class DynamicCanvasInput:
     arrows: pd.DataFrame
     exits: pd.DataFrame = field(default_factory=pd.DataFrame)
     has_units: bool = True
-    """설비 마스터에 HBM·EDP 호기가 있는가. 기존보유만 있는 공정은 ② 만 서고 「호기 일정 없음」
+    """설비 마스터에 HBM·EDP 호기가 있는가. 기존보유만 있는 공정은 ② · ③ 만 서고 「호기 일정 없음」
     한 줄이다."""
 
     steady_units: int = 0
-    """축 내내 비가동 없이 가용인 호기 수 — ④ 끝의 「k대」 한 줄."""
+    """축 내내 비가동 없이 가용인 호기 수 — ⑤ 끝의 「k대」 한 줄."""
 
     undated_notice: str = ""
-    """③ 끝에 적는 「일정 미정 k대」 글(`undated_equipment_notice`). 비면 줄이 없다."""
+    """④ 끝에 적는 「일정 미정 k대」 글(`undated_equipment_notice`). 비면 줄이 없다."""
 
     show_all_units: bool = False
     show_all_arrows: bool = False
     official_pulls: Mapping[str, tuple[int, int]] | None = None
-    """UPEH 가정 계획을 그릴 때만 — 공식 계획과 단축일수가 다른 호기 → (공식 일, 가정 일)
-    (`upeh_assumption.pull_changes`). None 이면 공식 계획이다(② 라벨에 표지를 달지 않는다)."""
+    """UPEH 가정 계획을 그릴 때만 — 가정 전 계획과 단축일수가 다른 호기 → (가정 전 일, 가정 일)
+    (`upeh_assumption.pull_changes`). None 이면 가정 전 계획이다(④ 풍선에 표지를 달지 않는다)."""
+
+    owned_units: pd.DataFrame = field(default_factory=pd.DataFrame)
+    """② 총보유대수(`ProcessEquipmentTimeline.owned_units` — 달력 월). 비면 그 줄이 빈칸이다."""
+
+    unit_months: pd.DataFrame = field(default_factory=pd.DataFrame)
+    """호기 x 월 기여(`ProcessEquipmentTimeline.unit_months`) — ② 전월 대비 풍선의 호기 묶음 몫."""
+
+    downtime_basis: str = BASIS_STATIC
+    """「③ 비가동」 의 비가동 기준(`BASIS_STATIC` · `BASIS_SCHEDULE`) — 표 도구 줄 고르기 값."""
+
+    units_view: str = UNITS_ALL
+    """「④ 단축」 의 보기(`UNITS_ALL` · `UNITS_SHORTENING`) — 표 도구 줄 고르기 값. 단축 필요만이면
+    호기 줄은 단축 대상과 신규 필요(추가N)만이다."""
 
 
 @dataclass(frozen=True, eq=False)
 class AssumptionCanvasInput:
-    """UPEH 가정 — ① 끝 세 줄과 판정 기준(가정 요약)의 재료."""
+    """UPEH 가정 — ① 끝 세 줄과 판정 기준(가정 요약)의 재료. ② · ③ 의 소요대수도 가정 요약의
+    소요다."""
 
     percent: int
     months: frozenset[int]
@@ -396,10 +460,10 @@ class ProcessCapaCanvas(NamedTuple):
     months: go.Figure
     height: int
     hidden_units: int
-    """30행 상한으로 그리지 않은 ③ 호기 수(추가N 은 늘 그린다)."""
+    """30행 상한으로 그리지 않은 ④ 호기 수(추가N 은 늘 그린다)."""
 
     hidden_arrow_units: int
-    """30대 상한으로 그리지 않은 ④ 호기 수."""
+    """30대 상한으로 그리지 않은 ⑤ 호기 수."""
 
     row_ids: tuple[str, ...]
     """위에서 아래로 그린 행 id."""
@@ -423,7 +487,7 @@ class ProcessCapaRows(NamedTuple):
     hidden_units: int
     hidden_arrow_units: int
     dynamic_first: int | None
-    """②~④ 첫 행의 자리. 설비 일정이 없으면 None."""
+    """②~⑤ 첫 행의 자리. 설비 일정이 없으면 None."""
 
     today_x: float | None
     """오늘 점선 자리(달 단위 x). 축 밖이면 None."""
@@ -451,14 +515,14 @@ def build_process_capa_rows(
     index_of = {month: position for position, month in enumerate(axis)}
     folded = frozenset(str(section) for section in collapsed)
 
-    # 판정·원인은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠·② 판정 대조가 바뀌지 않는다. UPEH
-    # 가정이 켜지면 그 요약 하나가 판정 기준이다(②~④ 가 가정 계획이다).
+    # 판정은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠가 바뀌지 않는다. UPEH 가정이 켜지면 그 요약
+    # 하나가 판정 기준이다(②~④ 가 가정 계획 · 가정 소요다). 부족 띠는 그 판정 하나다 — ② · ③ 의
+    # 확보율 칸은 제 판정 색만 칠한다(2026-11-12 사용자 답 q8 (가)).
     judged = assumption.summary if assumption is not None else summary
     statuses = _summary_statuses(judged, axis)
-    causes = _summary_causes(judged, axis)
     rows: list[_Row] = [_header_row(process_label, axis, thresholds)]
     if SECTION_SUMMARY in folded:
-        rows.append(_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, folded))
+        rows.append(_section_title_row(SECTION_SUMMARY, folded, hover=SUMMARY_TITLE_HOVER))
     else:
         rows += _summary_rows(axis, summary, thresholds, product_demand, home_rates, assumption)
     hidden_units = 0
@@ -468,7 +532,15 @@ def build_process_capa_rows(
     if dynamic is not None:
         dynamic_first = len(rows)
         dynamic_rows, hidden_units, hidden_arrow_units = _dynamic_rows(
-            axis, statuses, causes, dynamic, folded, assumed=assumption is not None
+            axis,
+            dynamic,
+            folded,
+            process_label=process_label,
+            summary=_by_month(summary, axis),
+            judged=_by_month(judged, axis),
+            thresholds=thresholds,
+            product_demand=product_demand,
+            assumption=assumption,
         )
         rows += dynamic_rows
         today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
@@ -510,12 +582,14 @@ def build_process_capa_canvas(
       None 이면 접힌 것이다(소요대수 ▸).
     - `home_rates` 를 넘기면 맨 아래에 「확보율 (HOME 표시)」 줄이 선다(확보율 보정·선행 반영 값,
       회색).
-    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 그 자리는 화면이 둔다).
+    - `dynamic` 이 None 이면 ① 만 그린다(설비 일정 없음 — 그 자리는 화면이 둔다). ② 의 제품 줄도
+      `product_demand` 를 따른다(① · ② 함께 펼침 — 2026-11-12 사용자 답 q4 (가)).
     - `selected_month` 는 지금 보는 달이다. 축에 없으면 표시하지 않는다.
     - `collapsed` 는 접힌 구획 id(`SECTION_IDS`)다. 접힌 구획은 제목 줄(▸)만 남는다. 없는 구획의
       id 는 무시한다.
-    - `assumption` 을 넘기면 ① 끝에 「UPEH 가정」 세 줄이 서고, 부족 띠·② 판정 대조는 그 요약의
-      판정을 쓴다. `dynamic` 도 그때는 가정 계획이어야 한다(페이지가 맞춘다).
+    - `assumption` 을 넘기면 ① 끝에 「UPEH 가정」 세 줄이 서고, 부족 띠는 그 요약의 판정을, ② · ③
+      의 소요대수는 그 요약의 소요를 쓴다. `dynamic` 도 그때는 가정 계획이어야 한다(페이지가
+      맞춘다).
 
     행 모델은 `build_process_capa_rows` 가 낸다 — 엑셀 내려받기도 같은 행을 읽는다.
     """
@@ -559,7 +633,7 @@ def build_process_capa_canvas(
     )
 
 
-# ================================================================== ① 공식 기준
+# ================================================================== ① Static 기준
 
 
 def _summary_statuses(summary: pd.DataFrame, axis: Sequence[int]) -> dict[int, str | None]:
@@ -567,29 +641,23 @@ def _summary_statuses(summary: pd.DataFrame, axis: Sequence[int]) -> dict[int, s
     return {month: _status(records.get(month, {}).get(STATUS_COLUMN)) for month in axis}
 
 
-def _summary_causes(summary: pd.DataFrame, axis: Sequence[int]) -> dict[int, str]:
-    """달마다 공식 기준 부족 원인(`부족 원인`). 확보인 달·원인이 빈 달은 「」이다."""
-    records = _by_month(summary, axis)
-    causes: dict[int, str] = {}
-    for month in axis:
-        cause = records.get(month, {}).get(CAUSE_COLUMN)
-        causes[month] = "" if _blank(cause) else str(cause)
-    return causes
-
-
 # 구획 제목 글자. 끝에 펼침(▾)·접힘(▸)을 붙인다 — ① 소요대수 줄의 ▾/▸ 와 같은 꼴이다.
 _SECTION_TITLES: Final[Mapping[str, str]] = {
-    SECTION_SUMMARY: "① 공식 기준",
-    SECTION_DYNAMIC: "② 설비 일정 기준 가용",
-    SECTION_UNITS: "③ 신규 설비 일정과 단축",
-    SECTION_DOWNTIME: "④ 호기별 비가동",
+    SECTION_SUMMARY: "① Static 기준",
+    SECTION_DYNAMIC: "② 일정 가용",
+    SECTION_EFFECT: "③ 비가동",
+    SECTION_UNITS: "④ 단축",
+    SECTION_DOWNTIME: "⑤ 비가동 일정",
 }
 
 
-def _section_title_row(section: str, detail: str, folded: Collection[str]) -> _Row:
-    """구획 제목 줄. 접혔으면 「▸」, 펼쳤으면 「▾」 — 세부 글은 같아 줄 높이가 그대로다."""
+def _section_title_row(section: str, folded: Collection[str], *, hover: str = "") -> _Row:
+    """구획 제목 줄. 접혔으면 「▸」, 펼쳤으면 「▾」 — 줄 높이는 그대로다. 세부 글은 두지 않고 출처 ·
+    단위 같은 말은 제목 줄 풍선(`hover`)과 Guide 가 적는다(2026-11-12 사용자 답 k-c1 · k-c2)."""
     mark = "▸" if section in folded else "▾"
-    return _title_row(section, f"{_SECTION_TITLES[section]} {mark}", detail)
+    row = _title_row(section, f"{_SECTION_TITLES[section]} {mark}", "")
+    row.label_hover = hover
+    return row
 
 
 def _header_row(process_label: str, axis: Sequence[int], thresholds: SecurementThresholds) -> _Row:
@@ -659,12 +727,6 @@ def _summary_rows(
         month_fill=demand_month,
         group_start=True,
     )
-    uniform = not thresholds.exception_months_within(axis)
-    balance_label = (
-        f"확보 기준({threshold_percent_label(thresholds.default_secure)}) 과부족"
-        if uniform
-        else "확보 기준 과부족"
-    )
     rate = _Row(
         ROW_RATE,
         _VALUE,
@@ -677,7 +739,7 @@ def _summary_rows(
         ROW_BALANCE,
         _VALUE,
         VALUE_ROW_HEIGHT_PX,
-        label=balance_label,
+        label=_balance_label(thresholds, axis),
         label_fill=tokens.SURFACE_CLASSIFICATION,
     )
     # 참고 줄 — 달마다 확보 기준(%) 그대로다. 강조하지 않는다(회색 글자, 면색·굵기 없음).
@@ -696,8 +758,6 @@ def _summary_rows(
         lent_count = _number(record.get(LENT_COLUMN))
         available_count = _number(record.get("가용대수"))
         demand = _number(record.get("소요대수"))
-        rate_value = _number(record.get("확보율"))
-        status = _status(record.get(STATUS_COLUMN))
         mismatch = bool(record.get(MISMATCH_COLUMN, False))
         secure, warning = thresholds.for_month(month)
         owned.cells[index] = _Cell(
@@ -710,22 +770,8 @@ def _summary_rows(
         required.cells[index] = _Cell(
             text=_one(demand), bold=True, hover=f"{head} · 소요대수 {_one(demand)}대"
         )
-        fill = _status_color(status)
-        rate.cells[index] = _Cell(
-            text=_percent(rate_value) if status is not None else _EMPTY,
-            fill=fill,
-            bold=fill is not None,
-            hover=_rate_hover(head, rate_value, available_count, demand, status, secure, warning),
-        )
-        balance_value = _whole(record.get(BALANCE_COLUMN))
-        painted = _status_color(status) if status in _SHORT_STATUSES else None
-        balance.cells[index] = _Cell(
-            text=_signed_int(balance_value) if balance_value is not None else _EMPTY,
-            fill=painted,
-            bold=painted is not None,
-            hover=_balance_hover(
-                head, balance_value, available_count, demand, secure, record.get(CAUSE_COLUMN)
-            ),
+        rate.cells[index], balance.cells[index] = _judgement_cells(
+            head, record, thresholds, month, cause=record.get(CAUSE_COLUMN)
         )
         reference.cells[index] = _Cell(
             text=threshold_percent_label(secure),
@@ -735,10 +781,11 @@ def _summary_rows(
                 f"경고 기준 {threshold_percent_label(warning)}"
             ),
         )
-    rows = [_section_title_row(SECTION_SUMMARY, SUMMARY_TITLE_DETAIL, ())]
+    rows = [_section_title_row(SECTION_SUMMARY, (), hover=SUMMARY_TITLE_HOVER)]
     rows += [owned, available, required]
     if product_demand is not None:
-        rows += _product_rows(axis, product_demand, records)
+        parents = {month: _number(records.get(month, {}).get("소요대수")) for month in axis}
+        rows += _product_rows(axis, product_demand, parents, prefix=ROW_PRODUCT_PREFIX)
     rows += [rate, balance, reference]
     if assumption is not None:
         rows += _assumption_rows(axis, records, thresholds, assumption)
@@ -771,7 +818,7 @@ def _assumption_rows(
     thresholds: SecurementThresholds,
     assumption: AssumptionCanvasInput,
 ) -> list[_Row]:
-    """① 끝 「UPEH 가정」 세 줄 — 구간 달만 값, 밖은 빈칸(풍선 「구간 밖 — 공식과 같음」)."""
+    """① 끝 「UPEH 가정」 세 줄 — 구간 달만 값, 밖은 빈칸(풍선 「구간 밖 — 가정 전과 같음」)."""
     prefix = f"UPEH {assumption.percent}%"
     factor = assumption.percent / 100
     assumed = _by_month(assumption.summary, axis)
@@ -802,7 +849,7 @@ def _assumption_rows(
     for index, month in enumerate(axis):
         head = f"<b>{month_label(month)}</b>"
         if month not in assumption.months:
-            outside = f"{head} · 구간 밖 — 공식과 같음"
+            outside = f"{head} · 구간 밖 — 가정 전과 같음"
             for row in (required, rate, balance):
                 row.cells[index] = _Cell(text="", muted=True, hover=outside)
             continue
@@ -810,53 +857,48 @@ def _assumption_rows(
         record = assumed.get(month, {})
         demand = _number(record.get("소요대수"))
         official_demand = _number(official.get("소요대수"))
-        available = _number(record.get("가용대수"))
-        rate_value = _number(record.get("확보율"))
-        status = _status(record.get(STATUS_COLUMN))
-        secure, warning = thresholds.for_month(month)
         change = _assumed_change(official_demand, demand, factor)
         required.cells[index] = _Cell(
             text=_one(demand),
             bold=True,
             hover=f"{head} · UPEH 가정 {assumption.percent}% 소요대수 {_one(demand)}대{change}",
         )
-        fill = _status_color(status)
-        rate.cells[index] = _Cell(
-            text=_percent(rate_value) if status is not None else _EMPTY,
-            fill=fill,
-            bold=fill is not None,
-            hover=_rate_hover(head, rate_value, available, demand, status, secure, warning)
-            + f"<br>UPEH 가정 {assumption.percent}% — 공식 확보율 "
-            + f"{_percent(_number(official.get('확보율')))}",
+        rate_cell, balance_cell = _judgement_cells(
+            head, record, thresholds, month, cause=record.get(CAUSE_COLUMN)
+        )
+        rate_cell.hover += (
+            f"<br>UPEH 가정 {assumption.percent}% — 가정 전 확보율 "
+            f"{_percent(_number(official.get('확보율')))}"
         )
         value = _whole(record.get(BALANCE_COLUMN))
         official_value = _whole(official.get(BALANCE_COLUMN))
-        painted = _status_color(status) if status in _SHORT_STATUSES else None
-        balance.cells[index] = _Cell(
-            text=_signed_int(value) if value is not None else _EMPTY,
-            fill=painted,
-            bold=painted is not None,
-            hover=_balance_hover(head, value, available, demand, secure, record.get(CAUSE_COLUMN))
-            + (
-                f"<br>공식 {_signed_int(official_value)} → 가정 {_signed_int(value)}"
-                if value is not None and official_value is not None
-                else ""
-            ),
-        )
+        if value is not None and official_value is not None:
+            balance_cell.hover += (
+                f"<br>가정 전 {_signed_int(official_value)} → 가정 {_signed_int(value)}"
+            )
+        rate.cells[index], balance.cells[index] = rate_cell, balance_cell
     return [required, rate, balance]
 
 
 def _product_rows(
     axis: Sequence[int],
     product_demand: pd.DataFrame,
-    records: Mapping[int, Mapping[str, object]],
+    parents: Mapping[int, float | None],
+    *,
+    prefix: str,
+    factors: Mapping[int, float] | None = None,
 ) -> list[_Row]:
+    """「제품별 소요대수」 의 분류 줄 — `parents` 는 부모 소요대수 줄의 달별 값이다.
+
+    `factors` 를 주면(② — UPEH 가정이 걸린 달 → f) 그 달 값을 ÷f 한다. 가정은 소요대수만 ÷f 하므로
+    분류마다 ÷f 해야 줄을 다 더한 값이 부모(가정 소요)와 같다.
+    """
     rows: list[_Row] = []
     for position, record in enumerate(product_demand.to_dict("records")):
         label = str(record.get(PRODUCT_LABEL_COLUMN, ""))
         other = bool(record.get(OTHER_ROW_COLUMN, False))
         row = _Row(
-            f"{ROW_PRODUCT_PREFIX}{label}",
+            f"{prefix}{label}",
             _VALUE,
             PRODUCT_ROW_HEIGHT_PX,
             label=f"└ {label}",
@@ -868,11 +910,19 @@ def _product_rows(
         )
         for index, month in enumerate(axis):
             value = _number(record.get(month_column(month))) or 0.0
-            parent = _number(records.get(month, {}).get("소요대수"))
+            factor = (factors or {}).get(month)
+            assumed = ""
+            if factor is not None:
+                value = value / factor
+                assumed = f" · UPEH 가정 ÷{factor:g}"
+            parent = parents.get(month)
             share = f" · 소요의 {value / parent:.0%}" if parent else ""
             row.cells[index] = _Cell(
                 text=_one(value),
-                hover=f"<b>{month_label(month)}</b> · {html.escape(label)} {_one(value)}대{share}",
+                hover=(
+                    f"<b>{month_label(month)}</b> · {html.escape(label)} {_one(value)}대"
+                    f"{share}{assumed}"
+                ),
             )
         rows.append(row)
     return rows
@@ -901,13 +951,14 @@ def _available_hover(
 
 
 def _assumed_change(official: float | None, demand: float | None, factor: float) -> str:
-    """UPEH 가정 소요 칸 풍선의 둘째 줄 — 「공식 49.80 ÷ 1.5 = 33.20 (−16.60대)」. 적힌 공식
-    소요로 다시 셈한 값이 가정 소요와 다르면 「≈」(근거 패널 ③ 의 「소요 = 공식 ÷ f」 와 같다)."""
+    """UPEH 가정 소요 칸 풍선의 둘째 줄 — 「가정 전 49.80 ÷ 1.5 = 33.20 (−16.60대)」. 적힌 가정 전
+    소요로 다시 셈한 값이 가정 소요와 다르면 「≈」(근거 패널 ③ 의 「소요 = 가정 전 ÷ f」 와
+    같다)."""
     if official is None or demand is None:
         return ""
     mark = equals_mark(_two(demand), _two(round(official, 2) / factor))
     return (
-        f"<br>공식 {_two(official)} ÷ {factor:g} {mark} {_two(demand)} "
+        f"<br>가정 전 {_two(official)} ÷ {factor:g} {mark} {_two(demand)} "
         f"({_signed_two(demand - official)}대)"
     )
 
@@ -979,169 +1030,86 @@ def _balance_hover(
     return text
 
 
-# ================================================================== ② ~ ④ 설비 일정
+# ================================================================== ② ~ ⑤ 설비 일정
 
 
 def _dynamic_rows(
     axis: Sequence[int],
-    statuses: Mapping[int, str | None],
-    causes: Mapping[int, str],
     dynamic: DynamicCanvasInput,
-    folded: Collection[str] = (),
+    folded: Collection[str],
     *,
-    assumed: bool = False,
+    process_label: str,
+    summary: Mapping[int, Mapping[str, object]],
+    judged: Mapping[int, Mapping[str, object]],
+    thresholds: SecurementThresholds,
+    product_demand: pd.DataFrame | None,
+    assumption: AssumptionCanvasInput | None,
 ) -> tuple[list[_Row], int, int]:
-    """② ~ ④ 행. `assumed` 면 `statuses`·`causes` 가 UPEH 가정 요약의 판정이다 — ② 판정 대조 풍선이
-    그 기준을 「UPEH 가정 기준」 이라 부른다(공식 값은 ① 공식 줄과 KPI 회색 줄에만)."""
+    """② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정 행.
+
+    `summary` 는 ① Static 요약, `judged` 는 판정 기준 요약(UPEH 가정이 켜지면 가정 요약)의 달별
+    레코드다. ② · ③ 의 소요대수는 판정 기준의 소요이고, 확보율 · 과부족 칸은 그 구획의 가용으로 낸
+    제 판정 색이다(부족 띠는 판정 기준 하나 — 2026-11-12 사용자 답 q8 (가)).
+    """
     today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
-    # 오늘이 든 생산월보다 앞선 달은 「기한 지남」이다 — 단축으로 바꿀 수 없어 흐리게 둔다.
+    # 오늘이 든 생산월보다 앞선 달은 흐리게 둔다(② · ③ 의 대수 줄 · ④ · ⑤).
     today_month = today_position.month
-    plan = _by_month(dynamic.process_months, axis, unique=True)
     bridge = _by_month(dynamic.bridge, axis)
-    impacts = _by_month(downtime_impact(dynamic.bridge, dynamic.process_months), axis)
-    detail = f"참고 · 설비 DB · 환산대수 · 생산월(Cut-off {dynamic.cutoff_days}일)"
-    if any(
-        round(_number(bridge.get(month, {}).get("입력 비가동")) or 0.0, 9) > 0 for month in axis
-    ):
-        detail += f" · {MANUAL_DOWNTIME_BAND}"
-    if not today_position.before and not today_position.after:
-        detail += f" · 점선은 오늘({dynamic.today:%m.%d})"
-    rows: list[_Row] = [_section_title_row(SECTION_DYNAMIC, detail, folded)]
-    # UPEH 가정 계획이면 바뀌는 행(판정 대조·비가동 영향 %·목표 과부족)의 라벨에만 표지를 단다 —
-    # 제목 줄 높이는 그대로다.
-    assumed_mark = " · UPEH 가정" if dynamic.official_pulls is not None else ""
-    compare = _Row(
-        ROW_DYNAMIC_COMPARE,
-        _VALUE,
-        VALUE_ROW_HEIGHT_PX,
-        label=f"판정 대조{assumed_mark}",
-        label_fill=tokens.SURFACE_CLASSIFICATION,
+    demand = {month: _number(judged.get(month, {}).get("소요대수")) for month in axis}
+    free = {month: _free_available(bridge.get(month)) for month in axis}
+    rows = _schedule_rows(
+        axis,
+        dynamic,
+        folded,
+        process_label=process_label,
+        bridge=bridge,
+        free=free,
+        demand=demand,
+        thresholds=thresholds,
+        product_demand=product_demand,
+        assumption=assumption,
     )
-    available = _Row(
-        ROW_DYNAMIC_AVAILABLE,
-        _VALUE,
-        TWO_LINE_ROW_HEIGHT_PX,
-        label="가용 (환산)",
-        label_fill=tokens.SURFACE_CLASSIFICATION,
+    rows += _effect_rows(
+        axis,
+        dynamic,
+        folded,
+        process_label=process_label,
+        bridge=bridge,
+        free=free,
+        summary=summary,
+        demand=demand,
+        thresholds=thresholds,
+        assumption=assumption,
     )
-    delta = _Row(
-        ROW_DYNAMIC_DELTA,
-        _VALUE,
-        VALUE_ROW_HEIGHT_PX,
-        label="전월 대비",
-        label_fill=tokens.SURFACE_CLASSIFICATION,
-    )
-    # 대수와 % 를 한 줄에 적으면 달 칸(100px)을 넘는다 — 가용 (환산)·목표 과부족처럼 둘째 줄에 %.
-    impact = _Row(
-        ROW_DYNAMIC_IMPACT,
-        _VALUE,
-        TWO_LINE_ROW_HEIGHT_PX,
-        label=f"비가동 영향{assumed_mark}",
-        label_fill=tokens.SURFACE_CLASSIFICATION,
-        label_hover=IMPACT_LABEL_HOVER,
-    )
-    balance = _Row(
-        ROW_DYNAMIC_BALANCE,
-        _VALUE,
-        TWO_LINE_ROW_HEIGHT_PX,
-        label=f"{_target_balance_label(dynamic.target, axis)}{assumed_mark}",
-        label_fill=tokens.SURFACE_CLASSIFICATION,
-    )
-    for index, month in enumerate(axis):
-        head = f"<b>{month_label(month)}</b>"
-        past = month < today_month
-        record = plan.get(month)
-        static_short = statuses.get(month) in _SHORT_STATUSES
-        if record is None:
-            for row in (compare, available, impact, balance):
-                row.cells[index] = _Cell(
-                    text=_EMPTY, muted=True, hover=f"{head} · 설비 일정 계획에 없는 달"
-                )
-        else:
-            before = _number(record.get("가용대수"))
-            after = _number(record.get("단축후가용대수"))
-            removed = _number(bridge.get(month, {}).get("입력 비가동 반영")) or 0.0
-            gap = _number(record.get("과부족"))
-            gap_after = _number(record.get("단축후과부족"))
-            target_units = _number(record.get("목표대수"))
-            state = "" if _blank(record.get("상태")) else str(record.get("상태"))
-            dynamic_short = gap is not None and round(gap, 9) < 0
-            compare.cells[index] = _compare_cell(
-                head,
-                static_short,
-                dynamic_short,
-                cause=causes.get(month, ""),
-                past=past,
-                assumed=assumed,
-            )
-            available.cells[index] = _Cell(
-                text=_one(before),
-                sub=f"→ {_one(after)}" if _changed(before, after) else "",
-                muted=past,
-                hover=(
-                    f"{head} · 설비 일정 기준 가용 {_one(before)} (환산대수)"
-                    + (
-                        f"<br>입력 비가동 {_MINUS}{manual_removed_text(removed)} 반영"
-                        if round(removed, 9) > 0
-                        else ""
-                    )
-                    + (f"<br>단축 후 {_one(after)}" if _changed(before, after) else "")
-                ),
-            )
-            balance.cells[index] = _target_balance_cell(
-                head,
-                gap,
-                gap_after,
-                target_units,
-                before,
-                state,
-                target=target_for_month(dynamic.target, month),
-                past=past,
-            )
-            impact.cells[index] = _impact_cell(
-                head, impacts.get(month, {}), past=past, assumed=dynamic.official_pulls is not None
-            )
-        bridge_record = bridge.get(month, {})
-        change = _number(bridge_record.get("전월대비"))
-        manual_change = _number(bridge_record.get("입력 비가동 증감")) or 0.0
-        delta.cells[index] = _Cell(
-            text=_signed_one(change) if change is not None else _EMPTY,
-            muted=past,
-            hover=(
-                f"{head} · 전월 대비 {_signed_one(change)} = 신규 "
-                f"{_signed_one(_number(bridge_record.get('신규')) or 0.0)} · 비가동 "
-                f"{_signed_one(_number(bridge_record.get('비가동')) or 0.0)}"
-                + (
-                    f"(입력 비가동 {_signed_one(manual_change)} 포함)"
-                    if round(manual_change, 9) != 0
-                    else ""
-                )
-                + " · 정지·반출/이설 "
-                f"{_signed_one(_number(bridge_record.get('반출이설')) or 0.0)}"
-                if change is not None
-                else f"{head} · 축 첫 달이라 전월 대비가 없습니다"
-            ),
-        )
-    if SECTION_DYNAMIC not in folded:
-        rows += [compare, available, delta, impact, balance]
     manual_row = _manual_downtime_row(axis, bridge, today_month)
     if not dynamic.has_units:
-        # 호기 줄이 없는 공정은 ④ 가 서지 않는다 — 입력 비가동 줄은 ② 아래에 둔다(② 를 접으면 함께
-        # 접는다).
-        if manual_row is not None and SECTION_DYNAMIC not in folded:
+        # 호기 줄이 없는 공정은 ④ · ⑤ 가 서지 않는다 — 입력 비가동 줄은 그 몫이 드는 ③ 끝에 둔다
+        # (③ 을 접으면 함께 접는다).
+        if manual_row is not None and SECTION_EFFECT not in folded:
             rows.append(manual_row)
-        # ③·④ 가 서지 않는 공정의 까닭 — ② 를 접어도 남긴다(③·④ 자리의 글이다).
+        # ④ · ⑤ 가 서지 않는 공정의 까닭 — ③ 을 접어도 남긴다(④ · ⑤ 자리의 글이다).
         rows.append(_note_row("no_units", "호기 일정 없음 — 기존보유만 있는 공정입니다"))
         return rows, 0, 0
     hidden_units = 0
     hidden_arrow_units = 0
-    # 표지(◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작)는 캔버스 아래 범례가 적는다.
-    rows.append(_section_title_row(SECTION_UNITS, "", folded))
+    # 표지(◆ 반입 · ● 기여 시작 · ◀ 목표 기여 시작)의 뜻은 Guide 「시트 범례」 가 적는다.
+    rows.append(_section_title_row(SECTION_UNITS, folded))
     if SECTION_UNITS not in folded:
+        # 맨 위 「단축 후 확보율」 은 보기(전체 · 단축 필요만)와 상관없이 늘 선다.
+        rows.append(
+            _after_rate_row(
+                axis,
+                dynamic,
+                thresholds,
+                process_label=process_label,
+                today_month=today_month,
+                assumption=assumption,
+            )
+        )
         unit_rows, hidden_units = _unit_rows(axis, dynamic)
         rows += unit_rows
-    # 진한 화살표 · 끝 날의 읽는 법은 캔버스 아래 범례와 그 풍선이 말한다(설계 규칙 UI-TXT-01).
-    rows.append(_section_title_row(SECTION_DOWNTIME, "", folded))
+    # 진한 화살표 · 끝 날의 읽는 법도 Guide 「시트 범례」 다(설계 규칙 UI-TXT-01 · 02).
+    rows.append(_section_title_row(SECTION_DOWNTIME, folded))
     if SECTION_DOWNTIME not in folded:
         if manual_row is not None:
             rows.append(manual_row)
@@ -1150,14 +1118,521 @@ def _dynamic_rows(
     return rows, hidden_units, hidden_arrow_units
 
 
+def _free_available(record: Mapping[str, object] | None) -> float | None:
+    """② 가용대수 — 비가동을 빼기 전 설비 일정 기준 가용(기존보유 + 호기 가용 + 호기 비가동 손실).
+
+    비가동(호기 비가동 · 입력 비가동)은 ③ 비가동에서 한 번만 뺀다(2026-11-12 사용자 답 n1 (가)). 그
+    달 행이 없으면 None 이다.
+    """
+    if not record:
+        return None
+    parts = [_number(record.get(name)) for name in ("기존보유", "호기 가용", "호기 비가동 손실")]
+    if any(part is None for part in parts):
+        return None
+    return _tidy(sum(part or 0.0 for part in parts))
+
+
+def _schedule_rows(
+    axis: Sequence[int],
+    dynamic: DynamicCanvasInput,
+    folded: Collection[str],
+    *,
+    process_label: str,
+    bridge: Mapping[int, Mapping[str, object]],
+    free: Mapping[int, float | None],
+    demand: Mapping[int, float | None],
+    thresholds: SecurementThresholds,
+    product_demand: pd.DataFrame | None,
+    assumption: AssumptionCanvasInput | None,
+) -> list[_Row]:
+    """② 일정 가용 — 총보유대수 · 가용대수 · 전월 대비 · 소요대수(▾ 면 제품 줄) · 확보율 · 확보 기준
+    과부족(2026-11-12 사용자 답 k-c2 · q3 · q4 · n1). ① Static 기준과 같은 면 · 판정 칸이다."""
+    today_position = production_position(dynamic.today, dynamic.cutoff_days, axis)
+    today_month = today_position.month
+    tips = [
+        f"설비 DB · 환산대수 · 칸 = 생산월(Cut-off {dynamic.cutoff_days}일) — "
+        f"{_production_example(dynamic.cutoff_days, axis)}",
+        "총보유대수는 달력 월(Cut-off 없이) · 비가동은 ③ 비가동에서 뺍니다",
+    ]
+    if not today_position.before and not today_position.after:
+        tips.append(f"점선은 오늘({dynamic.today:%m.%d})")
+    title = _section_title_row(SECTION_DYNAMIC, folded, hover="<br>".join(tips))
+    if SECTION_DYNAMIC in folded:
+        return [title]
+    supply_label, supply_month = tokens.SUMMARY_SUPPLY_CLASSIFICATION, tokens.SUMMARY_SUPPLY_SURFACE
+    owned = _Row(
+        ROW_DYNAMIC_OWNED,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label="총보유대수",
+        label_fill=supply_label,
+        month_fill=supply_month,
+        group_start=True,
+    )
+    available = _Row(
+        ROW_DYNAMIC_AVAILABLE,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label="가용대수",
+        label_fill=supply_label,
+        month_fill=supply_month,
+    )
+    delta = _Row(
+        ROW_DYNAMIC_DELTA,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label="전월 대비",
+        label_fill=supply_label,
+        month_fill=supply_month,
+    )
+    owned_records = _by_month(
+        dynamic.owned_units.rename(columns={"년월": MONTH})
+        if "년월" in dynamic.owned_units.columns
+        else pd.DataFrame(),
+        axis,
+    )
+    moves = unit_month_changes(dynamic.unit_months, axis)
+    for index, month in enumerate(axis):
+        head = f"<b>{month_label(month)}</b>"
+        past = month < today_month
+        owned.cells[index] = _owned_cell(head, owned_records.get(month), past=past)
+        record = bridge.get(month, {})
+        available.cells[index] = _schedule_available_cell(head, record, free.get(month), past=past)
+        if index == 0:
+            delta.cells[index] = _Cell(
+                text=_EMPTY, muted=True, hover=f"{head} · 축 첫 달이라 전월 대비가 없습니다"
+            )
+            continue
+        previous = axis[index - 1]
+        delta.cells[index] = _schedule_delta_cell(
+            head,
+            free.get(month),
+            free.get(previous),
+            record,
+            bridge.get(previous, {}),
+            moves.get(month, ()),
+            past=past,
+        )
+    rows = [title, owned, available, delta]
+    factors = _assumed_factors(axis, assumption)
+    products = (
+        _product_rows(
+            axis,
+            product_demand,
+            demand,
+            prefix=ROW_DYNAMIC_PRODUCT_PREFIX,
+            factors=factors,
+        )
+        if product_demand is not None
+        else []
+    )
+    rows += _judged_rows(
+        axis,
+        free,
+        demand,
+        thresholds,
+        process_label=process_label,
+        ids=(ROW_DYNAMIC_REQUIRED, ROW_DYNAMIC_RATE, ROW_DYNAMIC_BALANCE),
+        required_label=f"소요대수 {'▾' if product_demand is not None else '▸'}",
+        products=products,
+        assumption=assumption,
+    )
+    return rows
+
+
+def _production_example(cutoff_days: int, axis: Sequence[int]) -> str:
+    """「칸 = 생산월」 예 — 첫 달 25일 Qual 이 어느 달 칸에 서는가(다음 날 + Cut-off)."""
+    first = int(axis[0])
+    qual = date(first // 100, first % 100, 25)
+    position = production_position(qual + timedelta(days=1), cutoff_days, axis)
+    return f"{qual:%m.%d} Qual 은 {position.month % 100}월 칸"
+
+
+def _owned_cell(head: str, record: Mapping[str, object] | None, *, past: bool) -> _Cell:
+    """② 총보유대수 칸 — 풍선은 「기존보유 a + 반입 b − 반출/이설 c」 와 달력 월 표지."""
+    if not record:
+        return _Cell(text=_EMPTY, muted=True, hover=f"{head} · 총보유대수 {_EMPTY}")
+    total = _number(record.get("총보유대수"))
+    held = _number(record.get("기존보유"))
+    arrived = _number(record.get("반입"))
+    gone = _number(record.get("반출이설"))
+    written = (
+        round(held, 1) + round(arrived, 1) - round(gone, 1)
+        if held is not None and arrived is not None and gone is not None
+        else None
+    )
+    mark = equals_mark(_one(total), _one(written))
+    return _Cell(
+        text=_one(total),
+        muted=past,
+        hover=(
+            f"{head} · 총보유대수 {_one(total)}대 — 달력 월 기준(Cut-off 없이) · 환산"
+            f"<br>기존보유 {_one(held)} + 반입 {_one(arrived)} {_MINUS} 반출/이설 {_one(gone)} "
+            f"{mark} {_one(total)}"
+        ),
+    )
+
+
+def _schedule_available_cell(
+    head: str, record: Mapping[str, object], value: float | None, *, past: bool
+) -> _Cell:
+    """② 가용대수 칸 — 비가동을 빼기 전 값. 풍선은 「기존보유 + 호기 = 가용」(적힌 수로 검산)."""
+    if value is None:
+        return _Cell(text=_EMPTY, muted=True, hover=f"{head} · 설비 일정에 없는 달")
+    held = _number(record.get("기존보유")) or 0.0
+    units = (_number(record.get("호기 가용")) or 0.0) + (
+        _number(record.get("호기 비가동 손실")) or 0.0
+    )
+    mark = equals_mark(_one(value), _one(round(held, 1) + round(units, 1)))
+    return _Cell(
+        text=_one(value),
+        muted=past,
+        hover=(
+            f"{head} · 가용대수 {_one(value)} (설비 일정 · 환산 · 생산월)"
+            f"<br>기존보유 {_one(held)} + 호기 {_one(units)} {mark} {_one(value)} — 비가동 빼기 전"
+        ),
+    )
+
+
+def _schedule_delta_cell(
+    head: str,
+    value: float | None,
+    previous: float | None,
+    record: Mapping[str, object],
+    previous_record: Mapping[str, object],
+    moves: Sequence[tuple[str, float]],
+    *,
+    past: bool,
+) -> _Cell:
+    """② 전월 대비 칸 — 비가동을 빼기 전 가용의 증감. 풍선 첫 줄은 「신규 + · 정지·반출 −」 갈림,
+    아래는 호기 묶음별 몫을 큰 차례로 여섯까지(나머지는 「외 n대」 — 2026-11-12 사용자 답 k-c3)."""
+    if value is None or previous is None:
+        return _Cell(text=_EMPTY, muted=True, hover=f"{head} · 전월 대비 {_EMPTY}")
+    change = _tidy(value - previous)
+    gained = _number(record.get("신규")) or 0.0
+    lost = _number(record.get("반출이설")) or 0.0
+    held_change = _tidy(
+        (_number(record.get("기존보유")) or 0.0) - (_number(previous_record.get("기존보유")) or 0.0)
+    )
+    parts = [f"신규 {_signed_one(gained)}", f"정지·반출 {_signed_one(lost)}"]
+    written_parts = [_signed_one(gained), _signed_one(lost)]
+    if held_change != 0:
+        parts.append(f"기존보유 {_signed_one(held_change)}")
+        written_parts.append(_signed_one(held_change))
+    written = [written_value(text) for text in written_parts]
+    recomputed = (
+        _signed_one(sum(number for number in written if number is not None))
+        if all(number is not None for number in written)
+        else ""
+    )
+    mark = equals_mark(_signed_one(change), recomputed)
+    lines = [f"{head} · 전월 대비 {_signed_one(change)} {mark} " + " · ".join(parts)]
+    shown = [f"{html.escape(unit)} {_signed_two(share)}" for unit, share in moves[:_MOVE_LIMIT]]
+    for start in range(0, len(shown), _MOVES_PER_LINE):
+        lines.append(" · ".join(shown[start : start + _MOVES_PER_LINE]))
+    if len(moves) > _MOVE_LIMIT:
+        lines.append(f"외 {len(moves) - _MOVE_LIMIT}대")
+    return _Cell(text=_signed_one(change), muted=past, hover="<br>".join(lines))
+
+
+def _effect_rows(
+    axis: Sequence[int],
+    dynamic: DynamicCanvasInput,
+    folded: Collection[str],
+    *,
+    process_label: str,
+    bridge: Mapping[int, Mapping[str, object]],
+    free: Mapping[int, float | None],
+    summary: Mapping[int, Mapping[str, object]],
+    demand: Mapping[int, float | None],
+    thresholds: SecurementThresholds,
+    assumption: AssumptionCanvasInput | None,
+) -> list[_Row]:
+    """③ 비가동 — 비가동대수 · 실가용대수 · 소요대수(합계만) · 확보율 · 확보 기준 과부족
+    (2026-11-12 사용자 답 q5 (가) · q5b (가)).
+
+    비가동대수는 호기별 비가동 일정이 깎은 대수 + 입력 비가동 대수(가용에서 실제로 뺀 몫 —
+    `downtime_impact` 의 `비가동 손실`)다. 실가용대수는 고른
+    기준(`DynamicCanvasInput.downtime_basis` — Static 이면 ① 가용대수, 일정이면 ② 가용대수)에서
+    비가동대수를 뺀 값이고 0 아래로 내려가지 않는다. 기준이 일정이면 실가용이 필요 단축 일정의
+    가용(계획 `가용대수`)과 같다.
+    """
+    today_month = production_position(dynamic.today, dynamic.cutoff_days, axis).month
+    static_basis = dynamic.downtime_basis != BASIS_SCHEDULE
+    basis_name = "Static 가용" if static_basis else "일정 가용"
+    title = _section_title_row(
+        SECTION_EFFECT,
+        folded,
+        hover=(
+            "비가동대수를 뺀 실가용대수로 본 확보율 · 과부족<br>"
+            + (
+                "비가동 기준 Static — ① 가용대수에서 뺍니다"
+                if static_basis
+                else "비가동 기준 일정 — ② 가용대수에서 뺍니다"
+            )
+        ),
+    )
+    if SECTION_EFFECT in folded:
+        return [title]
+    supply_label, supply_month = tokens.SUMMARY_SUPPLY_CLASSIFICATION, tokens.SUMMARY_SUPPLY_SURFACE
+    loss_row = _Row(
+        ROW_EFFECT_LOSS,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label="비가동대수",
+        label_fill=supply_label,
+        month_fill=supply_month,
+        group_start=True,
+    )
+    real_row = _Row(
+        ROW_EFFECT_AVAILABLE,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label="실가용대수",
+        label_fill=supply_label,
+        month_fill=supply_month,
+    )
+    impacts = _by_month(downtime_impact(dynamic.bridge, dynamic.process_months), axis)
+    real: dict[int, float | None] = {}
+    for index, month in enumerate(axis):
+        head = f"<b>{month_label(month)}</b>"
+        past = month < today_month
+        impact = impacts.get(month, {})
+        unit_loss = _number(impact.get("호기 비가동 손실")) or 0.0
+        manual_loss = _number(impact.get("입력 비가동 손실")) or 0.0
+        loss = _number(impact.get("비가동 손실")) or 0.0
+        base = _number(summary.get(month, {}).get("가용대수")) if static_basis else free.get(month)
+        if base is None or month not in bridge:
+            real[month] = None
+        else:
+            real[month] = max(0.0, _tidy(base - loss))
+        loss_row.cells[index] = _loss_cell(head, loss, unit_loss, manual_loss, past=past)
+        real_row.cells[index] = _real_cell(head, real[month], base, loss, basis_name, past=past)
+    return [
+        title,
+        loss_row,
+        real_row,
+        *_judged_rows(
+            axis,
+            real,
+            demand,
+            thresholds,
+            process_label=process_label,
+            ids=(ROW_EFFECT_REQUIRED, ROW_EFFECT_RATE, ROW_EFFECT_BALANCE),
+            required_label="소요대수",
+            products=[],
+            assumption=assumption,
+        ),
+    ]
+
+
+def loss_text(value: float) -> str:
+    """비가동대수 글 — 소수 첫째 자리, 0 이 아닌 값이 0 으로 적히면 0 이 아니게 적힐 때까지 한
+    자리씩 더 본다(0.05 미만이 「0.0」 으로 읽히지 않게)."""
+    digits = 1
+    text = _one(value, digits)
+    while round(value, 9) != 0 and written_value(text) == 0 and digits < _NONZERO_LAST_DIGITS:
+        digits += 1
+        text = _one(value, digits)
+    return text
+
+
+def _loss_cell(
+    head: str, loss: float, unit_loss: float, manual_loss: float, *, past: bool
+) -> _Cell:
+    """③ 비가동대수 칸 — 깎은 것이 없으면 빈칸. 풍선은 「호기 비가동 a + 입력 비가동 b」 갈림(0 인
+    쪽은 뺀다, 둘을 적힌 대로 더한 값이 칸 글과 다르면 「≈」). 입력 몫은 ⑤ 첫 줄 풍선 「가용에서 b
+    뺌」 과 같은 글이다(`manual_removed_text`)."""
+    if round(loss, 9) <= 0:
+        return _Cell(muted=past, hover=f"{head} · 비가동 없음 — 가용을 깎은 비가동이 없습니다")
+    text = loss_text(loss)
+    parts = [
+        (name, writer(value))
+        for name, value, writer in (
+            ("호기 비가동", unit_loss, loss_text),
+            ("입력 비가동", manual_loss, manual_removed_text),
+        )
+        if round(value, 9) > 0
+    ]
+    split = " + ".join(f"{name} {part}" for name, part in parts)
+    if len(parts) == 2:
+        written = [written_value(part) for _, part in parts]
+        recomputed = (
+            loss_text(sum(number for number in written if number is not None))
+            if all(number is not None for number in written)
+            else ""
+        )
+        if equals_mark(text, recomputed) == APPROX:
+            split = f"{APPROX} {split}"
+    return _Cell(text=text, muted=past, hover=f"{head} · 비가동대수 {text}<br>{split}")
+
+
+def _real_cell(
+    head: str,
+    value: float | None,
+    base: float | None,
+    loss: float,
+    basis_name: str,
+    *,
+    past: bool,
+) -> _Cell:
+    """③ 실가용대수 칸 — 「기준 가용 − 비가동 = 실가용」(0 에서 멈췄으면 그 표지)."""
+    if value is None or base is None:
+        return _Cell(text=_EMPTY, muted=True, hover=f"{head} · 실가용대수 {_EMPTY}")
+    clamped = round(base - loss, 9) < 0
+    loss_written = loss_text(loss) if round(loss, 9) > 0 else "0"
+    written_loss = written_value(loss_written) or 0.0
+    mark = equals_mark(_one(value), _one(max(0.0, round(base, 1) - written_loss)))
+    return _Cell(
+        text=_one(value),
+        muted=past,
+        hover=(
+            f"{head} · 실가용대수 {_one(value)}"
+            f"<br>{basis_name} {_one(base)} {_MINUS} 비가동 {loss_written} {mark} {_one(value)}"
+            + ("<br>비가동이 가용보다 커 0 에서 멈췄습니다" if clamped else "")
+        ),
+    )
+
+
+def _assumed_factors(
+    axis: Sequence[int], assumption: AssumptionCanvasInput | None
+) -> dict[int, float]:
+    """UPEH 가정이 걸린 달 → f(가정 % ÷ 100). 가정이 없으면 빈 dict."""
+    if assumption is None:
+        return {}
+    factor = assumption.percent / 100
+    return {month: factor for month in axis if month in assumption.months}
+
+
+def _judged_rows(
+    axis: Sequence[int],
+    available: Mapping[int, float | None],
+    demand: Mapping[int, float | None],
+    thresholds: SecurementThresholds,
+    *,
+    process_label: str,
+    ids: tuple[str, str, str],
+    required_label: str,
+    products: list[_Row],
+    assumption: AssumptionCanvasInput | None,
+) -> list[_Row]:
+    """소요대수 · (제품 줄) · 확보율 · 확보 기준 과부족 — ① Static 기준과 같은 면 · 판정 칸 · 풍선.
+
+    판정은 ① 요약과 같은 길이다(`judge_supply`). `available` 이 그 구획의 가용(② 일정 가용 · ③
+    실가용)이고 `demand` 는 판정 기준의 소요다.
+    """
+    required_id, rate_id, balance_id = ids
+    judged = _by_month(
+        judge_supply(
+            available,
+            demand,
+            process=process_label,
+            months=axis,
+            thresholds=thresholds,
+        ),
+        axis,
+    )
+    required = _Row(
+        required_id,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=required_label,
+        label_bold=True,
+        label_fill=tokens.SUMMARY_DEMAND_CLASSIFICATION,
+        month_fill=tokens.SUMMARY_DEMAND_SURFACE,
+        group_start=True,
+    )
+    rate = _Row(
+        rate_id,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label="확보율",
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+        group_start=True,
+    )
+    balance = _Row(
+        balance_id,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=_balance_label(thresholds, axis),
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+    )
+    factors = _assumed_factors(axis, assumption)
+    for index, month in enumerate(axis):
+        head = f"<b>{month_label(month)}</b>"
+        need = demand.get(month)
+        assumed = (
+            f" · UPEH 가정 {assumption.percent}%"
+            if assumption is not None and month in factors
+            else ""
+        )
+        required.cells[index] = _Cell(
+            text=_one(need), bold=True, hover=f"{head} · 소요대수 {_one(need)}대{assumed}"
+        )
+        record = judged.get(month)
+        if record is None:
+            rate.cells[index] = _Cell(text=_EMPTY, muted=True, hover=f"{head} · 확보율 {_EMPTY}")
+            balance.cells[index] = _Cell(
+                text=_EMPTY, muted=True, hover=f"{head} · 확보 기준 과부족 {_EMPTY}"
+            )
+            continue
+        rate.cells[index], balance.cells[index] = _judgement_cells(
+            head, record, thresholds, month, cause=None
+        )
+    return [required, *products, rate, balance]
+
+
+def _balance_label(thresholds: SecurementThresholds, axis: Sequence[int]) -> str:
+    """확보 기준 과부족 줄 이름 — 월별 예외가 없으면 기준을 함께 적는다(① · ② · ③ 같은 이름)."""
+    if thresholds.exception_months_within(axis):
+        return "확보 기준 과부족"
+    return f"확보 기준({threshold_percent_label(thresholds.default_secure)}) 과부족"
+
+
+def _judgement_cells(
+    head: str,
+    record: Mapping[str, object],
+    thresholds: SecurementThresholds,
+    month: int,
+    *,
+    cause: object,
+) -> tuple[_Cell, _Cell]:
+    """확보율 칸 · 확보 기준 과부족 칸 한 쌍 — 판정 3색(과부족은 경고 · 부족만 칠함)과 풍선 식.
+
+    ① Static 기준 · UPEH 가정 줄 · ② 일정 가용 · ③ 비가동이 같은 칸을 쓴다(같은 역할은 같은 꼴 —
+    설계 규칙 UI-CON-03).
+    """
+    available = _number(record.get("가용대수"))
+    demand = _number(record.get("소요대수"))
+    rate_value = _number(record.get("확보율"))
+    status = _status(record.get(STATUS_COLUMN))
+    secure, warning = thresholds.for_month(month)
+    fill = _status_color(status)
+    rate = _Cell(
+        text=_percent(rate_value) if status is not None else _EMPTY,
+        fill=fill,
+        bold=fill is not None,
+        hover=_rate_hover(head, rate_value, available, demand, status, secure, warning),
+    )
+    value = _whole(record.get(BALANCE_COLUMN))
+    painted = _status_color(status) if status in _SHORT_STATUSES else None
+    balance = _Cell(
+        text=_signed_int(value) if value is not None else _EMPTY,
+        fill=painted,
+        bold=painted is not None,
+        hover=_balance_hover(head, value, available, demand, secure, cause),
+    )
+    return rate, balance
+
+
 def _manual_downtime_row(
     axis: Sequence[int], bridge: Mapping[int, Mapping[str, object]], today_month: int
 ) -> _Row | None:
-    """④ 첫 줄 「월별 비가동 대수(입력)」 — 축 안 어느 달에도 입력이 없으면 None(줄이 없다).
+    """⑤ 첫 줄 「월별 비가동대수(입력)」 — 축 안 어느 달에도 입력이 없으면 None(줄이 없다).
 
     칸 글은 그 달에 넣은 대수(소수 둘째 자리까지)이고 빈 달은 비운다. 입력이 그 달 가용(기존보유 +
     호기 가용)보다 커 가용이 0 에서 멈춘 칸은 「⚠」 와 경고색이다 — 풍선이 실제로 뺀 몫을 적는다
-    (`manual_removed_text` — ② 가용 칸 풍선과 같은 글).
+    (`manual_removed_text`).
     """
     entered = {month: _number(bridge.get(month, {}).get("입력 비가동")) or 0.0 for month in axis}
     if not any(round(value, 9) > 0 for value in entered.values()):
@@ -1169,8 +1644,8 @@ def _manual_downtime_row(
         label=MANUAL_DOWNTIME_ROW_LABEL,
         label_fill=tokens.SURFACE_CLASSIFICATION,
         label_hover=(
-            "가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동 대수(환산)<br>"
-            "호기별 비가동과 별도 손실 — ② 가용에서 이미 뺐습니다"
+            "가용설비 현황 › Preference 에서 공정 × 달로 넣은 비가동대수(환산)<br>"
+            "호기별 비가동과 별도 손실 — ③ 비가동대수에 듭니다"
         ),
     )
     for index, month in enumerate(axis):
@@ -1198,188 +1673,138 @@ def _manual_downtime_row(
     return row
 
 
-def _impact_cell(
-    head: str, record: Mapping[str, object], *, past: bool, assumed: bool = False
-) -> _Cell:
-    """② 비가동 영향 칸 하나 — `downtime_impact` 한 행(없으면 빈 dict).
+_NONZERO_LAST_DIGITS: Final = 9
+"""`loss_text` 가 `one` 에 넘기는 가장 큰 자릿수 — `round(값, 9)` 가 0 이 아닌 값은 0 이 아니게
+적힌다(빈칸 판정과 같은 문턱)."""
 
-    깎은 것이 없으면(손실 0) 빈칸이다. 첫 줄은 손실 대수 「−1.8대」, 둘째 줄은 확보율 영향
-    「−4.2%」 이고 소요가 0 이면(영향 NaN) 대수만 적는다. 풍선 둘째 줄은 「비가동 없으면 확보율
-    X% → 지금 Y%」 와 손실의 갈림(0 인 쪽은 뺀다)이다. 둘 다 결과가 첫 줄에 있는 등호 없는 식이라
-    적힌 수로 다시 셈한 글이 첫 줄과 다를 때만 그 식 앞에 「≈」 를 둔다(과부족 풍선과 같은 길) —
-    갈림 둘을 적힌 대로 더한 값이 첫 줄 대수와, 적힌 Y − X 가 첫 줄 % 와 견줄 짝이다(X·Y 를 소수
-    첫째 자리로 따로 반올림하면 % 와 0.1 어긋날 수 있다).
+
+def _after_rate_row(
+    axis: Sequence[int],
+    dynamic: DynamicCanvasInput,
+    thresholds: SecurementThresholds,
+    *,
+    process_label: str,
+    today_month: int,
+    assumption: AssumptionCanvasInput | None,
+) -> _Row:
+    """④ 첫 줄 「단축 후 확보율」 — 단축(과 신규 필요)으로 가용이 바뀐 달만 값과 판정 색(2026-11-12
+    사용자 답 q6b (나)).
+
+    재료는 계획(`process_months`)이다 — 단축 전 가용은 계획의 `가용대수`(③ 비가동의 일정 기준
+    실가용 — 비가동 기준 고르기와 상관없다), 단축 후는 `단축후가용대수`, 소요는 계획의 소요(UPEH
+    가정이 켜지면 가정 계획의 소요)다. 판정은 ① ~ ③ 과 같은 길(`judge_supply`)이고 부족 띠는
+    바꾸지 않는다.
     """
-    units_loss = _number(record.get("호기 비가동 손실")) or 0.0
-    manual_loss = _number(record.get("입력 비가동 손실")) or 0.0
-    loss = _number(record.get("비가동 손실")) or 0.0
-    if round(loss, 9) <= 0:
-        return _Cell(muted=past, hover=f"{head} · 비가동 영향 없음 — 가용을 깎은 비가동이 없습니다")
-    points = _number(record.get("확보율 영향(%)"))
-    points_number = _nonzero_signed(-points) if points is not None else ""
-    units_text = f"{_nonzero_signed(-loss)}대"
-    points_text = f"{points_number}%" if points_number else ""
-    parts = [
-        f"{name} {_nonzero_signed(-value)}대"
-        for name, value in (("호기 비가동", units_loss), ("입력 비가동", manual_loss))
-        if round(value, 9) > 0
-    ]
-    split = " + ".join(parts)
-    if len(parts) == 2:
-        written = [written_value(_nonzero_signed(-value)) for value in (units_loss, manual_loss)]
-        recomputed = (
-            _nonzero_signed(sum(value for value in written if value is not None))
-            if all(value is not None for value in written)
+    plan = _by_month(dynamic.process_months, axis)
+    changed: dict[int, float | None] = {}
+    demand: dict[int, float | None] = {}
+    for month in axis:
+        record = plan.get(month, {})
+        before = _number(record.get("가용대수"))
+        after = _number(record.get("단축후가용대수"))
+        demand[month] = _number(record.get("소요대수"))
+        moved = before is not None and after is not None and round(after - before, 9) != 0
+        changed[month] = after if moved else None
+    judged = _by_month(
+        judge_supply(changed, demand, process=process_label, months=axis, thresholds=thresholds),
+        axis,
+    )
+    row = _Row(
+        ROW_UNITS_AFTER_RATE,
+        _VALUE,
+        VALUE_ROW_HEIGHT_PX,
+        label=UNITS_AFTER_RATE_LABEL,
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+        group_start=True,
+    )
+    factors = _assumed_factors(axis, assumption)
+    for index, month in enumerate(axis):
+        head = f"<b>{month_label(month)}</b>"
+        outcome = judged.get(month)
+        if outcome is None:
+            row.cells[index] = _Cell(hover=f"{head} · 단축으로 가용이 바뀌지 않는 달")
+            continue
+        before = _number(plan.get(month, {}).get("가용대수"))
+        assumed = (
+            f" · UPEH 가정 {assumption.percent}%"
+            if assumption is not None and month in factors
             else ""
         )
-        if equals_mark(_nonzero_signed(-loss), recomputed) == APPROX:
-            split = f"{APPROX} {split}"
+        row.cells[index] = _after_rate_cell(
+            head,
+            outcome,
+            before,
+            thresholds,
+            month,
+            past=month < today_month,
+            assumed=assumed,
+        )
+    return row
+
+
+def _after_rate_cell(
+    head: str,
+    record: Mapping[str, object],
+    before: float | None,
+    thresholds: SecurementThresholds,
+    month: int,
+    *,
+    past: bool,
+    assumed: str,
+) -> _Cell:
+    """「단축 후 확보율」 칸 — 판정 3색과 풍선 식 「단축 후 가용 ÷ 소요」(적힌 수로 검산)."""
+    after = _number(record.get("가용대수"))
+    demand = _number(record.get("소요대수"))
     rate = _number(record.get("확보율"))
-    free_rate = _number(record.get("비가동 없는 확보율"))
-    if points is None or rate is None or free_rate is None:
-        detail = f"소요 0 — 확보율 영향 없음 · {split}"
-    else:
-        free_text, rate_text = f"{free_rate:.1%}", f"{rate:.1%}"
-        pair = f"비가동 없으면 확보율 {free_text} → 지금 {rate_text}"
-        written_free, written_rate = written_value(free_text), written_value(rate_text)
-        recomputed_points = (
-            _nonzero_signed((written_rate - written_free) * 100)
-            if written_free is not None and written_rate is not None
-            else ""
-        )
-        if equals_mark(points_number, recomputed_points) == APPROX:
-            pair = f"{APPROX} {pair}"
-        detail = f"{pair} · {split}"
-    hover = (
-        f"{head} · 비가동 영향 {units_text}"
-        + (f" · {points_text}" if points_text else "")
-        + f"<br>{detail}"
-        + ("<br>확보율은 UPEH 가정 소요 기준" if assumed and points_text else "")
-    )
-    return _Cell(text=units_text, sub=points_text, muted=past, hover=hover)
-
-
-_NONZERO_LAST_DIGITS: Final = 8
-"""`_nonzero_signed` 가 `signed_one` 에 넘기는 가장 큰 자릿수 — 그 자리로 0 이면 한 자리 더(아홉째)
-적어 `round(값, 9)` 가 0 이 아닌 값은 0 이 아니게 적힌다."""
-
-
-def _nonzero_signed(value: float) -> str:
-    """부호 있는 값(`signed_one`) — 0 이 아닌 값이 0 으로 적히면 0 이 아니게 적힐 때까지 한
-    자리씩 더 본다.
-
-    하루치 손실이 환산비 작은 호기에 서면 0.003대일 수 있다 — 깎았는데 「0.0」·「0.00」 이면 빈칸
-    규칙(깎은 것이 없으면 빈칸)과 어긋나 읽힌다. 빈칸 판정과 같은 문턱(`round(값, 9)`)까지 보므로
-    빈칸이 아닌 칸은 늘 0 이 아닌 글이다(`signed_one` 은 `digits` + 1 자리까지 적어 아홉째 자리면
-    멈춘다).
-    """
-    digits = 1
-    text = _signed_one(value, digits)
-    while round(value, 9) != 0 and written_value(text) == 0 and digits < _NONZERO_LAST_DIGITS:
-        digits += 1
-        text = _signed_one(value, digits)
-    return text
-
-
-def _compare_cell(
-    head: str,
-    static_short: bool,
-    dynamic_short: bool,
-    *,
-    cause: str = "",
-    past: bool,
-    assumed: bool = False,
-) -> _Cell:
-    """② 판정 대조 칸 하나. `assumed` 면 「기준」 판정이 UPEH 가정 요약이라 풍선이 그 이름으로
-    부른다 — 공식 판정이 아니다."""
-    basis = "UPEH 가정" if assumed else "공식"
-    subject = "UPEH 가정 기준은" if assumed else "공식은"
-    if static_short and dynamic_short:
+    status = _status(record.get(STATUS_COLUMN))
+    secure, warning = thresholds.for_month(month)
+    if status is None or rate is None:
         return _Cell(
-            text="기준✕·일정✕",
-            fill=None if past else tokens.STATUS_SHORTAGE,
-            bold=not past,
-            muted=past,
-            hover=(
-                f"{head} · {basis}·설비 일정 두 기준 모두 부족 — 아래 단축이 이 달을 메웁니다"
-                "(단위가 달라 크기는 참고)"
-            ),
-        )
-    if static_short:
-        hover = (
-            f"{head} · {subject} 부족, 설비 일정으로는 충족 — Core Data 보유·대여와 "
-            "설비 DB 일정이 어긋날 수 있습니다"
-        )
-        # 보유로도 부족이면 단축할 것이 없는 달이 아니라 투자를 볼 달이다(설계 logic_final 3).
-        if cause == CAUSE_OWNED_SHORT:
-            hover += f"<br>원인: {CAUSE_OWNED_SHORT} — 투자 검토(단축으로 못 메웁니다)"
-        return _Cell(text="기준✕·일정✓", muted=True, hover=hover)
-    if dynamic_short:
-        return _Cell(
-            text="기준✓·일정✕",
+            text=_EMPTY,
             muted=True,
-            hover=f"{head} · {subject} 충족 — 설비 일정 기준으로만 부족(참고)",
+            hover=f"{head} · {UNITS_AFTER_RATE_LABEL} {_EMPTY} (소요대수 0)",
         )
-    return _Cell(hover=f"{head} · 두 기준 모두 충족")
-
-
-def _target_balance_cell(
-    head: str,
-    gap: float | None,
-    gap_after: float | None,
-    target_units: float | None,
-    available: float | None,
-    state: str,
-    *,
-    target: float,
-    past: bool,
-) -> _Cell:
-    if gap is None:
-        return _Cell(text=_EMPTY, muted=True, hover=f"{head} · 목표 과부족 {_EMPTY}")
-    short = round(gap, 9) < 0
-    if state == STATUS_EXPIRED:
-        sub = "기한 지남"
-    elif state == STATUS_NEW_LIMIT:
-        sub = "남은 날 부족"
-    elif _changed(gap, gap_after):
-        sub = f"→ {_signed_one(gap_after)}"
-    else:
-        sub = ""
-    # 첫 줄의 과부족을 둘째 줄 식(등호 없음)이 낸다. 적힌 가용·목표대수(첫째 자리)로 다시 셈한
-    # 값이 그 과부족과 다르면 식 앞에 「≈」 를 둔다(① 과부족 풍선과 같은 길).
-    mark = EQUALS
-    if available is not None and target_units is not None:
-        mark = equals_mark(
-            _signed_one(gap), _signed_one(round(available, 1) - round(target_units, 1))
-        )
-    hover = (
-        f"{head} · 목표 {threshold_percent_label(target)} 과부족 {_signed_one(gap)}"
-        f"<br>{f'{APPROX} ' if mark == APPROX else ''}가용 {_one(available)} {_MINUS} "
-        f"목표대수 {_one(target_units)} (환산대수)"
+    written_demand = None if demand is None else round(demand, 1)
+    mark = equals_mark(
+        _percent(rate),
+        _percent(round(after, 1) / written_demand) if after is not None and written_demand else "",
     )
-    if _changed(gap, gap_after):
-        hover += f"<br>단축 후 {_signed_one(gap_after)}"
-    if state:
-        hover += f"<br>{html.escape(state)}"
-    painted = short and not past
+    fill = _status_color(status)
     return _Cell(
-        text=_signed_one(gap),
-        sub=sub,
-        fill=tokens.STATUS_SHORTAGE if painted else None,
-        bold=painted,
+        text=_percent(rate),
+        fill=fill,
+        bold=fill is not None,
         muted=past,
-        hover=hover,
+        hover=(
+            f"{head} · {UNITS_AFTER_RATE_LABEL} {_percent(rate)} {mark} "
+            f"단축 후 가용 {_one(after)} ÷ 소요 {_one(demand)}{assumed}"
+            f"<br>단축 전 가용 {_one(before)} — ③ 일정 기준 실가용"
+            f"<br>판정 {_STATUS_NAMES.get(status, status)} — "
+            f"확보 기준 {threshold_percent_label(secure)}"
+            f" · 경고 기준 {threshold_percent_label(warning)}"
+        ),
     )
 
 
 def _unit_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[_Row], int]:
+    """④ 호기 줄 — 보기가 단축 필요만이면 단축 대상과 신규 필요(추가N) 줄만이고, 정지·반출/이설 줄과
+    일정 미정 줄은 서지 않는다(2026-11-12 사용자 답 q6 메모). 30행 상한은 거른 뒤에 센다."""
+    shortening_only = dynamic.units_view == UNITS_SHORTENING
     events = _records(dynamic.unit_events)
+    if shortening_only:
+        events = [event for event in events if event.get("줄") in (ROW_SHORTENED, ROW_VIRTUAL)]
     real = [event for event in events if event.get("줄") != ROW_VIRTUAL]
     virtual = [event for event in events if event.get("줄") == ROW_VIRTUAL]
     shown_units = {str(event.get("호기")) for event in events}
-    exits = [
-        record for record in _records(dynamic.exits) if str(record.get("호기")) not in shown_units
-    ]
+    exits = (
+        []
+        if shortening_only
+        else [
+            record
+            for record in _records(dynamic.exits)
+            if str(record.get("호기")) not in shown_units
+        ]
+    )
     entries: list[tuple[str, dict[str, object]]] = [("event", event) for event in real]
     entries += [("exit", record) for record in exits]
     hidden = 0
@@ -1403,10 +1828,14 @@ def _unit_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[_
             row.cells[index] = _Cell(hover=hover)
         rows.append(row)
     if not rows:
-        rows.append(_note_row("no_new_units", "조회기간에 새로 붙는 설비가 없습니다"))
+        rows.append(
+            _note_row("no_shortening_units", "조회기간에 단축 · 신규 필요 호기가 없습니다")
+            if shortening_only
+            else _note_row("no_new_units", "조회기간에 새로 붙는 설비가 없습니다")
+        )
     if hidden:
         rows.append(_note_row("more_units", f"외 {hidden}대 — 「더 보기」를 켜면 모두 그립니다"))
-    if dynamic.undated_notice:
+    if dynamic.undated_notice and not shortening_only:
         rows.append(_note_row("undated", dynamic.undated_notice))
     return rows, hidden
 
@@ -1433,7 +1862,7 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
     # 가정으로 단축이 필요 없어진 호기 — 흐린 줄로 남긴다(P5).
     if change is not None and kind != ROW_SHORTENED:
         released = True
-        detail = f"가정으로 단축 불필요 · 공식 {_MINUS}{change[0]}일"
+        detail = f"가정으로 단축 불필요 · 가정 전 {_MINUS}{change[0]}일"
     return _Row(
         f"{ROW_UNIT_PREFIX}{unit}",
         _UNIT,
@@ -1449,15 +1878,15 @@ def _unit_row(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> _Row:
 
 
 def _assumption_line(event: Mapping[str, object], dynamic: DynamicCanvasInput) -> str:
-    """UPEH 가정 계획만 붙는 넷째 줄(앞 `<br>` 포함) — 표지와, 공식과 단축일수가 다른 호기면
-    「공식 −N일 → 가정 −M일」. 공식 계획이면 빈 글자."""
+    """UPEH 가정 계획만 붙는 넷째 줄(앞 `<br>` 포함) — 표지와, 가정 전과 단축일수가 다른 호기면
+    「가정 전 −N일 → 가정 −M일」. 가정 전 계획이면 빈 글자."""
     if dynamic.official_pulls is None:
         return ""
     mark = "UPEH 가정 계획"
     change = dynamic.official_pulls.get(str(event.get("호기")))
     if change is not None:
         official_days, assumed_days = change
-        mark += f" · 공식 {_MINUS}{official_days}일 → 가정 " + (
+        mark += f" · 가정 전 {_MINUS}{official_days}일 → 가정 " + (
             f"{_MINUS}{assumed_days}일" if assumed_days else "0일"
         )
     return f"<br>{mark}"
@@ -1599,21 +2028,33 @@ def _arrow_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[
         arrows = groups[unit]
         first = arrows[0]
         model = "" if _blank(first.get("Model")) else str(first.get("Model"))
-        name = unit + (f" · {model}" if model else "")
-        for lane, members in enumerate(_lanes(arrows)):
+        main, by_module = _split_module_arrows(unit, arrows)
+        # Main 줄 — 모든 모듈에 같은 비가동(합친 화살표)과 Main 설비명 · 단독 호기의 비가동. 겹쳐
+        # 한 줄에 못 드는 화살표는 「└ 호기」 줄로 잇는다. 모듈만의 비가동이 있으면 Main 줄은
+        # 화살표가 없어도 선다 — 아래 「└ 모듈명」 줄이 딸린 머리다(2026-11-12 사용자 답 q7 (가) ·
+        # 메모).
+        main_lanes = _lanes(main) or [[]]
+        for lane, members in enumerate(main_lanes):
             rows.append(
-                _Row(
+                _arrow_row(
                     f"{ROW_ARROW_PREFIX}{unit}#{lane}",
-                    _ARROW,
-                    ARROW_ROW_HEIGHT_PX,
-                    label=name if lane == 0 else "⋯ 같은 호기",
-                    label_muted=lane > 0,
-                    label_fill=tokens.SURFACE_CLASSIFICATION,
-                    payload=members,
+                    unit + (f" · {model}" if model else "") if lane == 0 else unit,
+                    members,
+                    axis,
+                    sub=lane > 0,
                 )
             )
-            for index, month in enumerate(axis):
-                rows[-1].cells[index] = _Cell(hover=_arrow_hover(members, month))
+        for module, module_arrows in by_module.items():
+            for lane, members in enumerate(_lanes(module_arrows)):
+                rows.append(
+                    _arrow_row(
+                        f"{ROW_ARROW_PREFIX}{unit}#{module}#{lane}",
+                        module,
+                        members,
+                        axis,
+                        sub=True,
+                    )
+                )
     if not rows:
         rows.append(_note_row("no_downtime", "조회기간에 비가동 일정이 없습니다"))
     if hidden:
@@ -1621,6 +2062,95 @@ def _arrow_rows(axis: Sequence[int], dynamic: DynamicCanvasInput) -> tuple[list[
     if dynamic.steady_units:
         rows.append(_note_row("steady", f"비가동 없이 축 내내 가용 {dynamic.steady_units}대"))
     return rows, hidden
+
+
+def _arrow_row(
+    row_id: str,
+    name: str,
+    members: list[dict[str, object]],
+    axis: Sequence[int],
+    *,
+    sub: bool,
+) -> _Row:
+    """⑤ 한 줄. `sub` 면 Main 줄 아래 딸린 줄 — 「[여백]└ 이름」(이름은 모듈 설비명, Main 줄이 넘친
+    줄은 호기)이고 흐린 글자다."""
+    row = _Row(
+        row_id,
+        _ARROW,
+        ARROW_ROW_HEIGHT_PX,
+        label=f"{MODULE_ROW_MARK} {name}" if sub else name,
+        label_muted=sub,
+        label_indent=MODULE_ROW_INDENT_PX if sub else 0.0,
+        label_fill=tokens.SURFACE_CLASSIFICATION,
+        payload=members,
+    )
+    for index, month in enumerate(axis):
+        row.cells[index] = _Cell(hover=_arrow_hover(members, month) if members else "")
+    return row
+
+
+# 합친 화살표에 붙이는 표지 — 그 호기의 모듈 수(풍선 「모듈 n 모두」).
+_ALL_MODULES: Final = "모듈 모두"
+
+
+def _split_module_arrows(
+    unit: str, arrows: Sequence[dict[str, object]]
+) -> tuple[list[dict[str, object]], dict[str, list[dict[str, object]]]]:
+    """호기 하나의 화살표 → (Main 줄 화살표, 모듈 설비명 → 그 모듈만의 화살표 — 이름 차례).
+
+    모듈 묶음(`모듈 수` > 1)에서 같은 비가동(시작일 · 종료일 · 비가동유형)이 그 호기의 **모든**
+    모듈에 있으면 화살표 하나로 합쳐 Main 줄에 둔다 — 달별 손실은 모듈 몫의 합이고 풍선 첫 줄이
+    「모듈 n 모두」 다. 일부 모듈에만 있는 것은 그 모듈 것만 따로다(2026-11-12 사용자 답 q7 (가)).
+    Main 설비명으로 넣은 비가동과 단독 호기의 비가동은 늘 Main 줄이다.
+    """
+    modules = _whole(arrows[0].get("모듈 수")) or 1
+    if modules <= 1:
+        return list(arrows), {}
+
+    def module_of(arrow: Mapping[str, object]) -> str:
+        return str(arrow.get(EQUIPMENT_ID_COLUMN) or "").strip()
+
+    def same(arrow: Mapping[str, object]) -> tuple[object, ...]:
+        return (
+            _as_date(arrow.get("시작일")),
+            _as_date(arrow.get("종료일")),
+            str(arrow.get("비가동유형") or "").strip(),
+        )
+
+    main: list[dict[str, object]] = []
+    buckets: dict[tuple[object, ...], list[dict[str, object]]] = {}
+    for arrow in arrows:
+        if module_of(arrow) in ("", unit):
+            main.append(arrow)
+        else:
+            buckets.setdefault(same(arrow), []).append(arrow)
+    by_module: dict[str, list[dict[str, object]]] = {}
+    for members in buckets.values():
+        names = {module_of(member) for member in members}
+        if len(names) >= modules:
+            main.append(_merged_arrow(members, len(names)))
+            continue
+        for member in members:
+            by_module.setdefault(module_of(member), []).append(member)
+    return main, {name: by_module[name] for name in sorted(by_module)}
+
+
+def _merged_arrow(members: Sequence[dict[str, object]], modules: int) -> dict[str, object]:
+    """모든 모듈의 같은 비가동 → 화살표 하나(날짜 · 유형은 같고, 손실은 모듈 몫의 합)."""
+    combined = dict(members[0])
+    losses: dict[int, float] = {}
+    for member in members:
+        for month, value in _month_losses(member.get("달별 손실")):
+            losses[month] = losses.get(month, 0.0) + value
+    combined["달별 손실"] = tuple((month, _tidy(value)) for month, value in sorted(losses.items()))
+    combined["손실 환산대수"] = _tidy(
+        sum(_number(member.get("손실 환산대수")) or 0.0 for member in members)
+    )
+    combined["가용 감소"] = any(bool(member.get("가용 감소")) for member in members)
+    combined["꼬리 위치"] = min(_number(member.get("꼬리 위치")) or 0.0 for member in members)
+    combined["촉 위치"] = max(_number(member.get("촉 위치")) or 0.0 for member in members)
+    combined[_ALL_MODULES] = modules
+    return combined
 
 
 def _lanes(arrows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]:
@@ -1643,8 +2173,11 @@ def _lanes(arrows: Sequence[dict[str, object]]) -> list[list[dict[str, object]]]
 
 
 def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
-    """④ 줄 풍선 — 첫 줄은 달·호기(모듈 묶음이면 「· 모듈 N」), 화살표마다 한 줄. 모듈 묶음은 줄마다
-    그 화살표의 모듈 설비명을 앞에 적는다 — 어느 모듈이 멈췄는지(같은 호기 둘째 줄의 까닭)."""
+    """⑤ 줄 풍선 — 첫 줄은 달·호기(모듈 묶음이면 「· 모듈 N」), 화살표마다 한 줄. 모듈 묶음은 줄마다
+    그 화살표의 모듈 설비명을 앞에 적고, 모든 모듈에 같은 비가동을 합친 화살표는 「모듈 n 모두」
+    다. 화살표가 없는 줄(합친 것이 없는 Main 줄)은 풍선이 없다."""
+    if not arrows:
+        return ""
     first = arrows[0]
     grouped = bool(_module_text(first))
     lines = [
@@ -1663,16 +2196,12 @@ def _arrow_hover(arrows: Sequence[Mapping[str, object]], month: int) -> str:
         else:
             effect = "가용 영향 없음(셋업·보관·사용기준 제외 등)"
         module = str(arrow.get(EQUIPMENT_ID_COLUMN) or "").strip() if grouped else ""
+        everyone = _whole(arrow.get(_ALL_MODULES))
+        if everyone:
+            module = f"모듈 {everyone} 모두"
         head = f"{html.escape(module)} · " if module else ""
         lines.append(f"{head}{kind} · {start}~{end} · {effect}")
     return "<br>".join(lines)
-
-
-def _target_balance_label(target: TargetLevel, axis: Sequence[int]) -> str:
-    value = single_target(target, axis)
-    if value is not None:
-        return f"목표({threshold_percent_label(value)}) 과부족"
-    return "목표 과부족"
 
 
 # ================================================================== 월 Figure
@@ -2443,14 +2972,15 @@ def _month_losses(value: object) -> list[tuple[int, float]]:
     return pairs
 
 
+def _tidy(value: float) -> float:
+    """끝자리 부동소수 찌꺼기를 털고 -0.0 을 0.0 으로 둔다(칸에 「-0」 이 찍히지 않게)."""
+    return round(value, 9) + 0.0
+
+
 def _difference(left: float | None, right: float | None) -> float | None:
     if left is None:
         return None
     return left - (right or 0.0)
-
-
-def _changed(before: float | None, after: float | None) -> bool:
-    return before is not None and after is not None and abs(after - before) > 1e-9
 
 
 def _two(value: float | None) -> str:
@@ -2477,4 +3007,4 @@ def _iso(day: date | None) -> str:
 
 
 # 줄 나누기(`_fit`)가 위에서 정의된 뒤에 센다.
-SUMMARY_TITLE_HEIGHT_PX: Final = title_row_height(SUMMARY_TITLE_DETAIL)
+SUMMARY_TITLE_HEIGHT_PX: Final = title_row_height("")

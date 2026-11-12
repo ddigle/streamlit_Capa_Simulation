@@ -17,7 +17,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
-from test_load_conversion_plan_apply import _isolated_custom_renderers, _script  # noqa: F401
+from test_load_conversion_plan_apply import (  # noqa: F401
+    YIELD_HOST,
+    _fake_grids,
+    _grid_edit,
+    _isolated_custom_renderers,
+    _script,
+)
 
 import capa_simulation.components.tab_marks as tab_marks
 from capa_simulation.components.page_guide import GUIDE_TRIGGER_KEY, load_guide
@@ -78,45 +84,27 @@ def test_the_card_shows_only_on_the_conversion_tab_and_remembers_it_was_opened(
     assert app.session_state[CARD_KEY] is True
 
 
-@pytest.mark.parametrize(
-    ("path", "label", "sheet"),
-    [
-        (
-            PAGE,
-            "PKG PLAN 변경사항 적용",
-            "classification_styled(displayed_plan_table, PLAN_EDITOR_DIMENSIONS)",
-        ),
-        (
-            PAGE,
-            "수율 변경사항 적용",
-            "classification_styled(default_yield_table, YIELD_EDITOR_DIMENSIONS)",
-        ),
-    ],
-)
-def test_apply_buttons_sit_above_their_sheets(path: Path, label: str, sheet: str) -> None:
-    """적용 버튼은 표보다 **먼저** 그린다. 표가 높이 500px 이라 아래 두면 화면 밖이다."""
+@pytest.mark.parametrize("table", ["PLAN_TABLE", "YIELD_TABLE"])
+def test_apply_buttons_sit_above_their_grids(table: str) -> None:
+    """작업 줄(적용 단추)은 그리드보다 **먼저** 그린다 — 그리드가 창 아래까지 차서 아래 두면 화면
+    밖이다. 작업 줄 칸 · 그리드 칸도 그 차례로 선다(기준 창에서 표 도구 막대가 단추 줄 곁에
+    선다)."""
     calls = [
         node
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for node in ast.walk(ast.parse(PAGE.read_text(encoding="utf-8")))
         if isinstance(node, ast.Call)
     ]
-    button = [
-        node.lineno
-        for node in calls
-        if ast.unparse(node.func) == "st.button"
-        and node.args
-        and isinstance(node.args[0], ast.Constant)
-        and node.args[0].value == label
-    ]
-    editor = [
-        node.lineno
-        for node in calls
-        if ast.unparse(node.func) == "st.data_editor"
-        and node.args
-        and ast.unparse(node.args[0]) == sheet
-    ]
-    assert len(button) == 1 and len(editor) == 1
-    assert button[0] < editor[0]
+
+    def lines(name: str) -> list[int]:
+        return [
+            node.lineno
+            for node in calls
+            if ast.unparse(node.func) == name and node.args and ast.unparse(node.args[0]) == table
+        ]
+
+    actions, grids = lines("plan_grid.render_actions"), lines("plan_grid.render_grid")
+    assert len(actions) == 1 and len(grids) == 1
+    assert actions[0] < grids[0]
 
 
 def test_the_guide_opens_from_the_hidden_trigger(database: Path) -> None:
@@ -126,7 +114,7 @@ def test_the_guide_opens_from_the_hidden_trigger(database: Path) -> None:
     app.button(key=GUIDE_TRIGGER_KEY).click().run()
     assert not list(app.exception)
     shown = " ".join(item.value for item in app.markdown)
-    assert "환산 조건" in shown and "PKG PLAN 변경사항 적용" in shown
+    assert "환산 조건" in shown and "변경사항 적용" in shown
 
 
 def test_leaving_the_page_forgets_an_open_popup() -> None:
@@ -173,7 +161,7 @@ def test_the_yield_guide_says_how_to_keep_edits_a_paste_would_drop() -> None:
     """붙여넣기 창 알림은 버려진다는 결과만 말한다 — 남기는 법은 두 탭 Guide 가 저마다 말한다."""
     guide = load_guide("load_conversion")
     plan_part, yield_part = guide.split("**수율** — ", 1)
-    assert "**PKG PLAN 변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in plan_part
+    assert "**변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in plan_part
     assert "**수율 변경사항 적용** 을 누르거나 고친 값을 붙여넣을 표에" in yield_part
 
 
@@ -184,7 +172,7 @@ def test_the_guide_explains_every_card_setting_and_action() -> None:
         "소요기준",
         "상세",
         "EDP",
-        "PKG PLAN 변경사항 적용",
+        "변경사항 적용",
         "수율 변경사항 적용",
         "Excel 붙여넣기",
         "가상 제품 등록",
@@ -237,18 +225,8 @@ def test_plan_apply_waits_for_a_change_and_cancel_drops_a_staged_paste(database:
 def test_registering_warns_before_it_drops_unapplied_table_edits(database: Path) -> None:
     """가상 제품은 PKG PLAN·수율 두 표에 행을 더한다 — 표에서 고친 편집도 버려지니 먼저 말한다."""
     app = _app(database)
-    # 조회기간(프리셋 2026-01~12)의 첫 달을 고친 것으로 둔다. 원본을 처음 읽은 회차에 편집표가
-    # 새 세대로 섰으므로 지금 세대의 위젯 키에 넣는다.
-    generation = (
-        app.session_state["yield_editor__generation"]
-        if "yield_editor__generation" in app.session_state
-        else 0
-    )
-    app.session_state[f"yield_editor__g{generation}" if generation else "yield_editor"] = {
-        "edited_rows": {0: {"202601": 0.5, "202602": 0.5}},
-        "added_rows": [],
-        "deleted_rows": [],
-    }
+    # 조회기간(프리셋 2026-01~12)의 첫 두 달을 수율 그리드에서 고친 것으로 둔다.
+    app = _grid_edit(app, YIELD_HOST, {0: {"202601": "0.5", "202602": "0.5"}})
     app.button(key="open_virtual_product").click().run()
 
     assert not list(app.exception)

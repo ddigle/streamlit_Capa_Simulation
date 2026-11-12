@@ -68,7 +68,7 @@ _TABLE_NAME = re.compile(r"^(RQ_[A-Z_]+)")
 ROUTE_TABLES: Final = {
     "RQ_UPEH": "「UPEH」",
     "RQ_REQB": "「STEP 구성」",
-    "RQ_EQP_AVBL": "「설비대수 가용」",
+    "RQ_EQP_AVBL": "「가용대수」",
 }
 # 원천의 계획 행(계획기초정보여부 Y)에서만 나오는 표 → 화면 이름(생산 계획 화면의 탭 이름). 경로
 # 행만 있는 원천이면 빈다 — 대당 Capa · 소요대수는 서지만(소요 0) 이 표의 달로 조회기간을 정하는

@@ -15,7 +15,7 @@ HOME `주요공정 확보율`·`상세 B/N 공정` 칸을 누르면 그 공정·
   칸이 남아 나중에 사이드바로 들어온 방문을 「HOME 에서 온 것」으로 읽지 않는다. 옮기지 못한
   클릭(`StreamlitPageNotFoundError`)도 칸을 남기지 않는다.
 - **주소 인자**(`process`·`month`·`from`) — 링크를 나눌 때의 보조 길. `from` 은 들어온
-  길이다 — `home`·`gap`(가용설비 현황 `Static 대비 일정` 의 「④ 에서 비가동 화살표로
+  길이다 — `home`·`gap`(가용설비 현황 `Static 대비 일정` 의 「비가동 일정에서 화살표로
   보기」)·`shortening`(필요 단축 일정 공정 카드의 「공정 Capa 상세에서 근거 보기」). 들어온 회차에는
   그 길이 가리키는 구획을 다시 편다(`ProcessDetailEntry.source`). 필요 단축 일정 카드는 그 카드의
   목표·기간·단축/신규 대수(`target`·`period`·`shortened`·`new`)도 싣는다 — 상세는 **이 주소 인자만**
@@ -133,7 +133,7 @@ DETAIL_QUERY_PARAMS = (
     EQUIPMENT_PARAM,
 )
 FROM_HOME = "home"
-# 가용설비 현황 `Static 대비 일정` 의 「④ 에서 비가동 화살표로 보기」 링크와 필요 단축 일정 공정
+# 가용설비 현황 `Static 대비 일정` 의 「비가동 일정에서 화살표로 보기」 링크와 필요 단축 일정 공정
 # 카드 링크가 싣는 `from` 값.
 FROM_GAP = "gap"
 FROM_SHORTENING = "shortening"

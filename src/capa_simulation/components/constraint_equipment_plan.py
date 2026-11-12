@@ -3,9 +3,9 @@
 
 """제약 시뮬레이션 — 두 모드가 함께 쓰는 「설비 일정 확인 → 계획」 블록.
 
-두 모드는 같은 가용(설비 일정 기준 단축 전 — 공정 Capa 상세 ② 와 같은 값)으로 계산하므로 멈추는
-갈래와 계획 칸이 같다. 페이지(제약 영향)와 `modification_schedule_view`(개조 일정)가 따로 들던 같은
-꼴의 블록을 `render_equipment_plan` 하나로 모았다.
+두 모드는 같은 가용(설비 일정 기준 단축 전 — 공정 Capa 상세 ③ 일정 기준 실가용과 같은 값)으로
+계산하므로 멈추는 갈래와 계획 칸이 같다. 페이지(제약 영향)와 `modification_schedule_view`(개조
+일정)가 따로 들던 같은 꼴의 블록을 `render_equipment_plan` 하나로 모았다.
 
 - **판정**(`equipment_readiness`) — 설비 DB 를 못 읽었으면 None, 아니면 `dynamic_readiness`. 두 모드
   모두 카드 안에서(개조 일정은 시작 · 기한 선택지에, 제약 영향은 Cut-off 캡션에) 먼저 쓰므로 판정은
@@ -21,10 +21,10 @@
   한 줄이다(UI-TXT-04 — 마크로 세우면 그 공정을 고를 때마다 Alarm 에 오류가 쌓인다). 그 줄이 까닭을
   적으므로 머리 배지는 「설비 일정 없음」 까지다(UI-TXT-07). 저장본 없음은 공정마다 다른 일이 아니라
   설비 DB 전체의 일이라 알림 글에 공정을 넣지 않는다 — 공정을 넘겨도 같은 알림 하나다(UI-NTF-07).
-- **계획** — 공정 Capa 상세 ② 와 같은 칸을 **같은 키**로(`load_required_shortening_for_target`,
+- **계획** — 공정 Capa 상세 ②~④ 와 같은 칸을 **같은 키**로(`load_required_shortening_for_target`,
   목표는 키 맞춤용 HOME 확보 기준 — 단축 열은 읽지 않는다). 계산 함수는 부를 때 `simulation_cache`
   모듈에서 찾는다(페이지 시험이 그 속성을 바꾼다). 제약 영향 모드는 같은 `try` 안에서 두 가지를 더
-  받는다 — 「신규 설비는 개조 없이」 를 켠 회차에는 같은 키의 설비 일정 칸(공정 Capa 상세 ③·④ —
+  받는다 — 「신규 설비는 개조 없이」 를 켠 회차에는 같은 키의 설비 일정 칸(공정 Capa 상세 ④·⑤ —
   `with_timeline`), 매 회차(개조 켬 · 끔과 무관 — 끄면 칸이 잠긴 채 고름을 보인다) 보유 「호기
   고르기」 선택지(`with_held_units` — 같은 마스터 지문의 가벼운 캐시, 2026-11-01 사용자 결정 B3).
   그 계산이 터져도 「설비 일정을 계산하지 못했습니다」 갈래다. 기준일 거르기 · 고른 호기 빼기는
@@ -151,9 +151,13 @@ _UPEH_MEANING: Final = (
 )
 """상태 알림 `CS-06` 전문의 뜻."""
 
+# 이 화면이 쓰는 설비 일정 기준 가용이 공정 Capa 상세의 어느 값과 같은지 — 그 화면 「③ 비가동」 의
+# 비가동 기준 「일정」 실가용대수(비가동을 뺀 값)다.
+SAME_AS_DETAIL: Final = "공정 Capa 상세 ③ 일정 기준 실가용과 같은 값"
+
 MANUAL_DOWNTIME_HELP: Final = (
-    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 가용에서 뺐습니다(공정 Capa 상세 ② 와 "
-    "같은 가용)."
+    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 가용에서 뺐습니다(공정 Capa 상세 ③ "
+    "일정 기준 실가용과 같은 가용)."
 )
 """상태 알림 `CS-05` 전문의 뜻 — 「입력 비가동 반영(…)」 이 무엇을 뺐는지."""
 
@@ -199,7 +203,7 @@ class EquipmentPlan(NamedTuple):
 
     cutoff_days: int
     timeline: ProcessEquipmentTimeline | None
-    """`with_timeline` 을 준 회차의 그 공정 설비 일정(공정 Capa 상세 ③·④ 와 같은 키). 아니면
+    """`with_timeline` 을 준 회차의 그 공정 설비 일정(공정 Capa 상세 ④·⑤ 와 같은 키). 아니면
     None."""
 
     held_choices: tuple[HeldUnitChoice, ...]
@@ -275,8 +279,8 @@ def render_equipment_plan(
         badge = _NO_SCHEDULE_BADGE if empty else readiness.badge
         render_header(process, f"{bold} :blue-badge[{badge}]")
         rule = (
-            f"{subject}{topic_particle(subject)} 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 "
-            "값)으로 계산하므로"
+            f"{subject}{topic_particle(subject)} 설비 일정 기준 가용({SAME_AS_DETAIL})으로 "
+            "계산하므로"
         )
         with st.container(key=CONSTRAINT_ABSENT_KEY):
             if empty:
@@ -383,8 +387,9 @@ def _load_plan(
 ) -> tuple[
     ShorteningPlan, MonthlyTarget, ProcessEquipmentTimeline | None, tuple[HeldUnitChoice, ...]
 ]:
-    """공정 Capa 상세 ②·두 모드와 같은 계획 칸을 같은 키로(목표는 키 맞춤용 HOME 확보 기준). 고르면
-    같은 키의 설비 일정 칸과 보유 「호기 고르기」 선택지도 받는다. 예외는 그대로 올린다."""
+    """공정 Capa 상세 ②~④ ·두 모드와 같은 계획 칸을 같은 키로(목표는 키 맞춤용 HOME 확보
+    기준). 고르면 같은 키의 설비 일정 칸과 보유 「호기 고르기」 선택지도 받는다. 예외는 그대로
+    올린다."""
     page_inputs = source.page_inputs
     months = list(page_inputs.months)
     active_scenario = page_inputs.context.active_scenario

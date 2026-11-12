@@ -232,7 +232,7 @@ class UnitModule:
 class NewUnit:
     """기준일 이후 기여를 시작하는 신규 호기 하나(「신규 설비는 개조 없이」 의 재료).
 
-    날짜는 설비 일정 칸(공정 Capa 상세 ③ 의 Qual 일정)에서 온다 —
+    날짜는 설비 일정 칸(공정 Capa 상세 ④ 의 Qual 일정)에서 온다 —
     `process_equipment_timeline.new_unit_availability`.
     """
 

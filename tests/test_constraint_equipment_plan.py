@@ -172,9 +172,13 @@ def test_an_equipment_db_error_stops_with_its_own_mark_and_no_other_screen(
     [
         (
             "제약 시뮬레이션",
-            "제약 시뮬레이션은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로",
+            "제약 시뮬레이션은 설비 일정 기준 가용(공정 Capa 상세 ③ 일정 기준 실가용과 같은 "
+            "값)으로",
         ),
-        ("개조 일정", "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ② 와 같은 값)으로"),
+        (
+            "개조 일정",
+            "개조 일정은 설비 일정 기준 가용(공정 Capa 상세 ③ 일정 기준 실가용과 같은 값)으로",
+        ),
     ],
 )
 def test_a_process_whose_schedule_cannot_stand_names_the_mode_and_skips_the_mode_branch(

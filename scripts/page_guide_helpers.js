@@ -91,7 +91,8 @@ g.editRow = (el, row)=>{ const a=g.cellRect(el, 0, row); const G=g.gridGeom(el);
 g.gridColumn = (el, title)=>{ const c=g.colIndex(el, title); if(c<0) return null; const h=g.cellRect(el,c,-1), b=g.cellRect(el,c,0); return h&&b? [h[0],h[1],h[2],b[1]+b[3]-h[1]] : null; };
 // 화면 고유 표적(시안 capture.mjs 에서 옮김)
 // 범용 편집 그리드(components/edit_grid — CCv2 그림자 DOM, 가상 굴림). 칸은 진짜 DOM 이라 글·자리를 바로 읽는다.
-g.egridRoot = ()=>{ const host=document.querySelector('[data-testid="stMain"] .st-key-reference_grid'); const sh=host && [...host.querySelectorAll('*')].find(e=>e.shadowRoot && e.shadowRoot.querySelector('.eg-grid')); return sh ? sh.shadowRoot : null; };
+// 그리드 호스트는 기준 정보 하나 · 생산 계획 탭마다 하나다 — 보이는 표가 든 것을 고른다(닫힌 탭의 그리드는 숨어 있다).
+g.egridRoot = ()=>{ for (const key of ['reference_grid', 'plan_grid', 'yield_grid']) { const host=document.querySelector('[data-testid="stMain"] .st-key-'+key); const sh=host && [...host.querySelectorAll('*')].find(e=>e.shadowRoot && e.shadowRoot.querySelector('.eg-grid')); if (sh && g.vis(sh.shadowRoot.querySelector('.eg-grid'))) return sh.shadowRoot; } return null; };
 g.egrid = ()=>{ const r=g.egridRoot(); const e=r && r.querySelector('.eg-grid'); return e && g.vis(e) ? e : null; };
 g.egridCol = (r, label)=> [...r.querySelectorAll('.eg-head [role="columnheader"]')].findIndex(h=>{ const l=h.querySelector('.eg-hl'); return l && g.norm(l.textContent)===String(label); });
 g.egridFind = (s)=>{ const r=g.egridRoot(); if(!r) return null; const sc=r.querySelector('[role="grid"]'); if(!sc) return null; const kc=s.rowColumn ? g.egridCol(r, s.rowColumn) : 0; const vc=g.egridCol(r, s.column); if(kc<0||vc<0) return {found:false, end:true};
@@ -142,7 +143,7 @@ g.detailBn = ()=> g.union([g.key('bottleneck_title_row'), g.key('bottleneck_deta
 g.bnCell = ()=>{ const region=g.key('production_lob_month_region'), months=g.key('bottleneck_detail_months'); if(!region||!months) return null; const reg=region.getBoundingClientRect(); const red=(e)=>{const m=(getComputedStyle(e).fill||'').match(/\d+/g); return m&&+m[0]>=180&&+m[1]<120&&+m[2]<120};
   const ps=[...months.querySelectorAll('.barlayer .point path')].map(p=>({r:p.getBoundingClientRect(), red:red(p)})).filter(({r})=>r.width>2&&r.height>2&&r.left>=reg.left&&r.right<=reg.right&&r.top>=0&&r.bottom<=innerHeight);
   ps.sort((a,b)=>(b.red-a.red)||a.r.top-b.r.top||a.r.left-b.r.left); const r=ps[0]&&ps[0].r; return r?[r.x,r.y,r.width,r.height]:null; };
-g.procHead = ()=>{ const t=g.text("공식 · Core Data")||g.text("Core Data"); return t? g.up(t, x=>TID(x)==='stHorizontalBlock') || t.parentElement : null; };
+g.procHead = ()=>{ const t=g.text("Static · Core Data")||g.text("Core Data"); return t? g.up(t, x=>TID(x)==='stHorizontalBlock') || t.parentElement : null; };
 g.procMonthCanvas = ()=> g.union([g.key('process_detail_label_canvas'), g.clip(g.key('process_detail_canvas_canvas'), g.key('process_detail_month_region'))]);
 g.pfTiles = ()=>{ const d=g.dialog(); if(!d) return null; const ts=[...d.querySelectorAll('[class*="st-key-home_bn_tile_"]')].filter(g.vis); if(!ts.length) return null; let a=ts[0].parentElement; while(a && !ts.every(t=>a.contains(t))) a=a.parentElement; return a; };
 window.__g = g; })()

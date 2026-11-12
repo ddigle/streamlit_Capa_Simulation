@@ -41,10 +41,7 @@ from capa_simulation.services.capacity_reference_editor import (
     build_reference_edit_table,
 )
 from capa_simulation.services.display_order import apply_display_order, prepare_display_order
-from capa_simulation.services.equipment_count import (
-    build_equipment_count_table,
-    equipment_count_to_edit_table,
-)
+from capa_simulation.services.equipment_count import equipment_count_to_edit_table
 from capa_simulation.services.month_filter import filter_month_range
 from capa_simulation.services.route_step_editor import route_step_tables
 
@@ -84,13 +81,7 @@ st.session_state["test_active_tables"] = {
 }
 _probe_original_month_table = _probe_state.scenario_month_table
 _probe_original_route_tables = simulation_cache.get_route_step_tables
-_probe_original_count_table = _probe_equipment.build_equipment_count_table
 _probe_original_count_edit = _probe_equipment.equipment_count_to_edit_table
-
-
-def _probe_count_table(own, lent, available, *, detailed):
-    st.session_state["test_equipment_builds"].append(("현황", detailed))
-    return _probe_original_count_table(own, lent, available, detailed=detailed)
 
 
 def _probe_count_edit(data, category, value_column):
@@ -138,14 +129,12 @@ def _probe_build_grid_table(table, title, editor_key, template, *args, **kwargs)
 _probe_state.scenario_month_table = _probe_month_table
 simulation_cache.get_route_step_tables = _probe_route_tables
 _probe_reference_grid.build_grid_table = _probe_build_grid_table
-_probe_equipment.build_equipment_count_table = _probe_count_table
 _probe_equipment.equipment_count_to_edit_table = _probe_count_edit
 """
 _PROBE_RESTORE = (
     "    _probe_state.scenario_month_table = _probe_original_month_table\n"
     "    simulation_cache.get_route_step_tables = _probe_original_route_tables\n"
     "    _probe_reference_grid.build_grid_table = _probe_original_build_grid_table\n"
-    "    _probe_equipment.build_equipment_count_table = _probe_original_count_table\n"
     "    _probe_equipment.equipment_count_to_edit_table = _probe_original_count_edit\n"
 )
 _TRY_ANCHOR = "\ntry:\n    # `file_name`"
@@ -568,13 +557,12 @@ def _shows_bad_month(app: AppTest, table_name: str) -> bool:
 
 
 def test_a_bad_equipment_month_shows_the_message_in_the_equipment_tabs() -> None:
-    """설비대수 양식·현황은 페이지 앞 `try` 밖에서 자른다(`get_or_stop`). 그래도 문구로 멈춘다."""
+    """설비대수 양식은 페이지 앞 `try` 밖에서 자른다(`_template_or_stop`). 그래도 문구로 멈춘다."""
     app = AppTest.from_string(
         _probed(_with_bad_month("RQ_EQP_OWN"), "test-ref-perf-bad-eqp-month"), default_timeout=60
     )
-    for sub_tab in ("보유", "현황"):
-        app = _open_equipment(app, sub_tab)
-        assert _shows_bad_month(app, "RQ_EQP_OWN"), sub_tab
+    app = _open_equipment(app, "보유")
+    assert _shows_bad_month(app, "RQ_EQP_OWN")
     # 그 표를 쓰지 않는 탭은 연다.
     app = _open_tab(app, "UPEH")
     assert place_errors(app) == []
@@ -604,40 +592,19 @@ EQUIPMENT_EDITORS = {
 
 
 def _builds(app: AppTest) -> list[tuple[str, object]]:
-    """이 회차에 만든 설비대수 표 — ("양식", 구분) 또는 ("현황", 상세)."""
+    """이 회차에 만든 설비대수 양식 — ("양식", 구분)."""
     return list(app.session_state["test_equipment_builds"])
 
 
 def _open_equipment(app: AppTest, sub_tab: str) -> AppTest:
-    app.session_state[DATASET_KEY] = DATASET[f"설비대수 {sub_tab}"]
+    app.session_state[DATASET_KEY] = DATASET[f"{sub_tab}대수"]
     app.run()
     assert not app.exception
     return app
 
 
-def _expected_overview(
-    app: AppTest, *, detailed: bool, display_order: pd.DataFrame | None = None
-) -> pd.DataFrame:
-    """현황 표를 이 회차 활성 시나리오 조각으로 **직접** 만든다(0 은 빈칸으로 둔다).
-
-    표시순서는 기본이 빈 프로필이고, `display_order` 를 주면 그 공용 표시순서로 정렬한다.
-    """
-    own, lent, available = (
-        _month_slice(app, table_name) for table_name, _, _ in EQUIPMENT_EDITORS.values()
-    )
-    table = apply_display_order(
-        build_equipment_count_table(own, lent, available, detailed=detailed),
-        prepare_display_order(_empty_display_order() if display_order is None else display_order),
-        scopes.PAGE_REFERENCE,
-        scopes.TAB_EQUIPMENT_COUNT,
-    )
-    months = [column for column in table.columns if column not in ("공정", "구분")]
-    table[months] = table[months].mask(table[months].eq(0))
-    return table.reset_index(drop=True)
-
-
 def test_the_equipment_block_builds_only_what_the_open_tabs_draw() -> None:
-    """설비대수 탭이 닫히면 아무것도 만들지 않고, 열리면 보이는 안쪽 탭 하나의 표만 만든다."""
+    """설비대수 표를 고르지 않으면 아무것도 만들지 않고, 고르면 그 표 하나의 양식만 만든다."""
     app = AppTest.from_string(_probed(TEST_SCRIPT, "test-ref-perf-equipment"), default_timeout=60)
     app.run()
     assert not app.exception
@@ -651,28 +618,8 @@ def test_the_equipment_block_builds_only_what_the_open_tabs_draw() -> None:
             EQUIPMENT_EDITORS[sub_tab][0]
         }
 
-    app = _open_equipment(app, "현황")
-    assert _builds(app) == [("현황", False)]
-    app = app.sidebar.toggle(key="equipment_count_detail").set_value(True).run()
-    assert not app.exception
-    assert _builds(app) == [("현황", True)]
 
-
-@pytest.mark.parametrize("detailed", [False, True], ids=["summary", "detailed"])
-def test_the_equipment_overview_equals_the_direct_build(detailed: bool) -> None:
-    """현황 표는 「상세」 값에 맞는 한 벌만 만들어도 직접 만든 표와 값이 같다."""
-    app = AppTest.from_string(
-        _probed(TWO_PROCESS_TEST_SCRIPT, f"test-ref-perf-overview-{detailed}"), default_timeout=60
-    )
-    app.session_state["equipment_count_detail"] = detailed
-    app = _open_equipment(app, "현황")
-    displayed = _frame_with_column(app, "공정").reset_index(drop=True)
-    pd.testing.assert_frame_equal(
-        displayed, _expected_overview(app, detailed=detailed), check_dtype=False
-    )
-
-
-# 설비대수 현황 범위에 `공정` 내림차순 규칙 하나 — 빈 프로필로는 정렬이 빠지거나 다른 범위로
+# 설비대수 표시순서 범위에 `공정` 내림차순 규칙 하나 — 빈 프로필로는 정렬이 빠지거나 다른 범위로
 # 정렬돼도 차례가 같아 보인다. 픽스처와 기대값이 같은 표를 쓴다.
 EQUIPMENT_DESCENDING_ORDER = pd.DataFrame(
     [
@@ -703,27 +650,6 @@ _EQUIPMENT_DESCENDING = (
 )
 
 
-@pytest.mark.parametrize("detailed", [False, True], ids=["summary", "detailed"])
-def test_the_equipment_overview_follows_a_non_empty_display_order(detailed: bool) -> None:
-    """현황 표는 공용 표시순서의 설비대수 현황 범위 규칙으로 정렬한 표와 값·차례가 같다."""
-    script = TWO_PROCESS_TEST_SCRIPT.replace(
-        "\nactive = {", _EQUIPMENT_DESCENDING + "\nactive = {", 1
-    )
-    app = AppTest.from_string(
-        _probed(script, f"test-ref-perf-overview-order-{detailed}"), default_timeout=60
-    )
-    app.session_state["equipment_count_detail"] = detailed
-    app = _open_equipment(app, "현황")
-    displayed = _frame_with_column(app, "공정").reset_index(drop=True)
-    assert displayed["공정"].iloc[0] == "Process-B"
-    assert displayed["공정"].iloc[-1] == "Process-A"
-    pd.testing.assert_frame_equal(
-        displayed,
-        _expected_overview(app, detailed=detailed, display_order=EQUIPMENT_DESCENDING_ORDER),
-        check_dtype=False,
-    )
-
-
 @pytest.mark.parametrize("sub_tab", list(EQUIPMENT_EDITORS))
 def test_each_equipment_form_equals_the_direct_build(sub_tab: str) -> None:
     table_name, value_column, editor_key = EQUIPMENT_EDITORS[sub_tab]
@@ -744,11 +670,8 @@ def _descending_equipment_script() -> str:
 
 @pytest.mark.parametrize("sub_tab", list(EQUIPMENT_EDITORS))
 def test_each_equipment_form_follows_the_display_order(sub_tab: str) -> None:
-    """보유·대여·가용 편집 양식도 `현황` 과 같은 표시순서 범위(기준 정보 › 설비대수)로 줄을 세운다.
-
-    다른 편집 탭(UPEH 등)은 표시순서를 따르는데 이 세 표만 공정 이름순이었다 — 같은 화면의
-    `현황` 표와 차례가 달랐다.
-    """
+    """보유·대여·가용 편집 양식도 다른 편집 표처럼 표시순서 범위(기준 정보 › 설비대수)로 줄을
+    세운다."""
     table_name, value_column, editor_key = EQUIPMENT_EDITORS[sub_tab]
     app = AppTest.from_string(
         _probed(_descending_equipment_script(), f"test-ref-perf-form-order-{table_name}"),
@@ -810,62 +733,6 @@ def test_a_pending_equipment_edit_keeps_its_draft_and_lands_on_its_row(grid_call
         "Process-A": 2.0,
         "Process-B": 7.0,
     }
-
-
-def test_an_equipment_apply_shows_in_the_overview(grid_calls: Calls) -> None:
-    """보유를 적용하면(새 토큰) 현황 상세가 그 값으로 다시 만들어진다."""
-    script = _real_apply(
-        TWO_PROCESS_TEST_SCRIPT, "test-capacity-two-process-page", "test-capacity-two-process-page"
-    )
-    app = AppTest.from_string(_probed(script, "test-ref-perf-equipment-apply"), default_timeout=60)
-    app.session_state["equipment_count_detail"] = True
-    app = _open_equipment(app, "현황")
-    before = _frame_with_column(app, "공정")
-    own_a = before.loc[(before["공정"] == "Process-A") & (before["구분"] == "보유"), "202608"]
-    assert own_a.tolist() == [2.0]
-
-    app = _open_equipment(app, "보유")
-    app = _edit_and_apply(app, grid_calls, "capa_eqp_own_editor", "202608", 7.0)
-    assert not app.exception
-    app = _open_equipment(app, "현황")
-    after = _frame_with_column(app, "공정")
-    own_a = after.loc[(after["공정"] == "Process-A") & (after["구분"] == "보유"), "202608"]
-    assert own_a.tolist() == [7.0]
-    pd.testing.assert_frame_equal(
-        after.reset_index(drop=True), _expected_overview(app, detailed=True), check_dtype=False
-    )
-
-
-# ---------------------------------------------------------------- R7 현황 표 고정 uuid
-
-
-def _overview_proto(app: AppTest) -> bytes:
-    """설비대수 현황 표 메시지 바이트 — 브라우저가 다시 받을지는 이 바이트의 해시로 정해진다."""
-    for element in app.dataframe:
-        if "공정" in element.value.columns:
-            data: bytes = element.proto.SerializeToString()
-            return data
-    raise AssertionError("현황 표가 없습니다.")
-
-
-def test_the_overview_message_is_identical_across_reruns() -> None:
-    """내용이 같으면 회차가 바뀌어도 현황 표 메시지가 같다(무작위 Styler uuid 가 없다)."""
-    app = AppTest.from_string(
-        _probed(TWO_PROCESS_TEST_SCRIPT, "test-ref-perf-overview-uuid"), default_timeout=60
-    )
-    app = _open_equipment(app, "현황")
-    first = _overview_proto(app)
-    app.run()
-    assert _overview_proto(app) == first
-
-    app = app.sidebar.toggle(key="equipment_count_detail").set_value(True).run()
-    detailed = _overview_proto(app)
-    assert detailed != first
-    app.run()
-    assert _overview_proto(app) == detailed
-    # 두 꼴은 서로 다른 고정 uuid 다 — 같은 화면에 섞여도 CSS 이름이 겹치지 않는다.
-    assert b"equipment_count_detail" in detailed
-    assert b"equipment_count" in first and b"equipment_count_detail" not in first
 
 
 # ---------------------------------------------------------------- R8 변경 개수

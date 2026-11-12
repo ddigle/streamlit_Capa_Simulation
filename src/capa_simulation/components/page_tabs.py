@@ -147,6 +147,7 @@ from capa_simulation.page_tabs_state import (
     tab_label,
     tabs_epoch,
 )
+from capa_simulation.plan_grid_keys import HOSTS as PLAN_GRID_HOSTS
 from capa_simulation.process_detail_state import PROCESS_DETAIL_REQUEST_KEY
 from capa_simulation.reference_grid_keys import GRID_HOST as REFERENCE_GRID_HOST
 from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_FRAGMENT_KEY, rerun_fragment_if_alone
@@ -206,18 +207,19 @@ WIP_TITLE = "구현 중"
 WIP_SOURCE = " — {source} 미연결"
 WIP_SAMPLE = " · 화면은 합성 샘플로 미리 봄"
 
-# 탭 줄 붙들기(`<tabs-hold>`)가 편집표로 보는 Components v2 칸의 key — 가용설비 현황 설비
-# 마스터 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`), 기준 정보 범용 편집
-# 그리드(`reference_grid_keys.GRID_HOST`). 그림자 DOM 이라 JS 가 바깥 key 칸(`.st-key-<key>`)으로
-# 본다(`<tabs-grid>`). 설비 모듈은 읽을 때 컴포넌트를 등록해 여기서 불러오지 않는다 — key 가
-# 같은지는 시험이 본다. 초점이 나가는 순간 보내 그 회차가 누름보다 늦게 오는 편집 칸을 새로 두면
-# 여기에 더한다.
+# 탭 줄 붙들기(`<tabs-hold>`)가 편집표로 보는 Components v2 칸의 key — 가용설비 현황 설비 마스터
+# 표와 오른쪽 칸(`equipment_master_grid.GRID_KEY`·`side_key(…)`), 기준 정보 · 생산 계획 범용 편집
+# 그리드(`reference_grid_keys.GRID_HOST` · `plan_grid_keys.HOSTS`). 그림자 DOM 이라 JS 가 바깥 key
+# 칸(`.st-key-<key>`)으로 본다(`<tabs-grid>`). 설비 모듈은 읽을 때 컴포넌트를 등록해 여기서 불러오지
+# 않는다 — key 가 같은지는 시험이 본다. 초점이 나가는 순간 보내 그 회차가 누름보다 늦게 오는 편집
+# 칸을 새로 두면 여기에 더한다.
 EDIT_HOST_KEYS: Final = (
     "equipment_grid_table",
     "equipment_grid_side_detail",
     "equipment_grid_side_new",
     "equipment_grid_side_changes",
     REFERENCE_GRID_HOST,
+    *PLAN_GRID_HOSTS.values(),
     *MOUNT_KEYS,
 )
 _SPACE_PAGE_FILE = Path(SPACE_STATUS.path).name

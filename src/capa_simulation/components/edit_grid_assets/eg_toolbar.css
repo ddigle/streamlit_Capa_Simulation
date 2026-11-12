@@ -10,12 +10,12 @@
 }
 
 .eg-tb-q {
-  width: 180px;
+  width: 150px;
   height: var(--eg-tb-height, 28px);
   padding: 0 8px;
   border: 1px solid var(--eg-border-strong);
   border-radius: var(--eg-tb-radius, 6px);
-  background: var(--eg-surface);
+  background: var(--eg-control);
   outline: none;
 }
 
@@ -26,6 +26,12 @@
 
 .eg-tb-q::placeholder {
   color: var(--eg-muted);
+}
+
+.eg-tb-find:not(.has-q) .eg-tb-prev,
+.eg-tb-find:not(.has-q) .eg-tb-next,
+.eg-tb-find:not(.has-q) .eg-tb-count {
+  display: none;
 }
 
 .eg-tb-count {
@@ -45,7 +51,7 @@
   padding: 0 10px;
   border: 1px solid var(--eg-border);
   border-radius: var(--eg-tb-radius, 6px);
-  background: var(--eg-surface);
+  background: var(--eg-control);
   font-size: 12px;
   line-height: 26px;
   white-space: nowrap;
@@ -64,7 +70,7 @@
 
 .eg-tb-btn.is-off {
   color: var(--eg-muted);
-  background: var(--eg-surface);
+  background: var(--eg-control);
   border-color: var(--eg-border);
   cursor: default;
 }
@@ -80,6 +86,33 @@
 .eg-tb-btn[aria-pressed="true"] {
   background: var(--eg-selected-fill);
   border-color: var(--eg-accent);
+}
+
+.eg .eg-tb-btn.eg-tb-glyph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--eg-tb-height, 28px);
+  min-width: var(--eg-tb-height, 28px);
+  padding: 0;
+  font-family: "Material Symbols Rounded";
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}
+
+.eg-tb-glyph.is-busy::after {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-family: var(--eg-font);
+  font-size: 10px;
+  line-height: 1;
 }
 
 .eg-tb-icon {

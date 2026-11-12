@@ -9,7 +9,7 @@
 카드에서 온 방문만 뺌 — 2026-11-10 답 Q2-8, KPI 아래 다음 화면 줄은 걷고 표 도구 줄에 「시트
 엑셀」 — 2026-11-10 보드 c2-picked):
 
-0. **머리** — 공정 표시명과 배지 둘(`공식 · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보 기준
+0. **머리** — 공정 표시명과 배지 둘(`Static · Core Data`, 설비 일정 상태), 그 옆 ◀▶(확보 기준
    미달 공정을 최저 확보율이 낮은 차례로 넘긴다 — 세션 값), 오른쪽 끝 「← HOME」 링크, HOME 에서
    왔으면 출처 띠, 필요 단축 일정 카드에서 왔으면 그 카드 출처 띠(주소 인자만 읽는다)와 「←
    필요 단축 일정」. 사이드바 조회 조건 패널의 「공정」 값 칸(하나 고름 — 공용 공정 칸)과
@@ -21,8 +21,9 @@
    `process_detail_view`) — 표 도구 줄(오른쪽 끝 「이 공정 단축 일정 CSV」 는 설비 일정이 설
    때만, 「시트 엑셀」 은 늘 — 지금 화면 상태 그대로의 상세 시트를 화면 서식째, 조건이 바뀐 회차에만
    만든다),
-   결합 월 캔버스(① 공식 요약 표 · ② 설비 일정 기준 가용 · ③ 신규 설비와 단축 · ④ 호기별 비가동),
-   범례, 산출 근거 패널(그 달 부족 원인의 다음 화면). 칸을 누르면 그 구획만 다시 돈다.
+   결합 월 캔버스(① Static 기준 · ② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정 — 2026-11-12
+   사용자 답 k-c0), 접힌 산출 근거 패널(그 달 부족 원인의 다음 화면 — 달 칸을 누르면 펼친다).
+   시트 범례는 Guide 다. 칸을 누르면 그 구획만 다시 돈다.
 8. **정리 줄**(설비 일정이 설 때만) — 값 표지, 필요 단축 일정 화면 링크(그 화면 카드에서 온 방문 —
    도착 「← 필요 단축 일정」 이 같은 길 — 만 빼고 늘, 일정 부족 달이 있는 공정에도 — 2026-11-10 답
    Q2-8 · `shortening_link_needed`).
@@ -30,7 +31,7 @@
 
 입력은 이 화면이 직접 모은다.
 
-- **공식 기준** — 공통 진입(`page_bootstrap`), 유효 기간은 산출 결과처럼 `RQ_REQB` 원천에서
+- **Static 기준** — 공통 진입(`page_bootstrap`), 유효 기간은 산출 결과처럼 `RQ_REQB` 원천에서
   정한다. 확보율은 키 전용 캐시(`get_scenario_securement_rate`), 요약은 회차마다
   (`build_process_capa_summary` — 판정 기준에 닿는다).
 - **설비 일정(참고)** — 설비 DB 의 최신 저장본·Cut-off 를 **읽기만** 한다
@@ -43,11 +44,11 @@
 - **UPEH 가정**(조건 카드 끝 「이 세션만」 — `components/upeh_assumption_controls.py`, 필요 단축
   일정과 같은 세션 칸) — 100% 가 아니면 구간 달의 소요대수를 ÷f 한 **가정 요약**(이미 받은 확보율
   프레임에 사후로 건다 — 캐시를 쓰지 않는다)과 **가정 계획**(`load_required_shortening_for_target` —
-  계획 키 끝 칸의 토큰이 가정 칸을 고른다)을 더 세운다. 판정 기준은 하나다 — 부족 띠·② 판정
-  대조·KPI·부족 원인은 가정, 공식 값은 ① 공식 줄과 KPI 회색 줄 「공식 n」 에만. 머리에 배지와 효과
-  한 줄, 조건 카드에 역산 둘(구간 안 단축 0 · 확보 기준 미달 0)과 「이 값으로」. 기본 공정·달
-  고르기·◀▶·HOME 표시 확보율은 공식 확보율 그대로다. 가정 프레임은 시나리오 키 전용 칸(HOME 과 같은
-  칸)에 넘기지 않는다.
+  계획 키 끝 칸의 토큰이 가정 칸을 고른다)을 더 세운다. 판정 기준은 하나다 — 부족 띠·KPI·부족
+  원인과 ② · ③ 의 소요는 가정, 가정 전 값은 ① Static 줄과 KPI 회색 줄 「가정 전 n」 에만. 머리에
+  배지와 효과 한 줄, 조건 카드에 역산 둘(구간 안 단축 0 · 확보 기준 미달 0)과 「이 값으로」. 기본
+  공정·달 고르기·◀▶·HOME 표시 확보율은 Static 확보율 그대로다. 가정 프레임은 시나리오 키 전용
+  칸(HOME 과 같은 칸)에 넘기지 않는다.
 - **HOME 표시 확보율** — HOME 의 확보율 보정·선행 B/O 를 켜고 왔거나(출처 띠) 지금 HOME 이 그
   토글을 켜 두었으면, HOME 과 같은 함수로 얹은 값을 요약 표 회색 줄로 둔다. 선행 변동률의
   계획은 HOME 과 **같은 캐시 키**(`display_month_range` 범위)로 받는다. 원 확보율과 같으면 줄을
@@ -252,8 +253,9 @@ from capa_simulation.sidebar_status import NO_PROCESS_MARK, condition_card
 CARD_LABEL = "공정 상세 조건"
 CARD_NAME = "process_capa_detail"
 CARD_ICON = ":material/troubleshoot:"
-# 머리 배지. 공식 숫자는 늘, 설비 일정은 판정에 따라 「참고」·「없음: 까닭」.
-OFFICIAL_BADGE = ":gray-badge[공식 · Core Data]"
+# 머리 배지. Static(Core Data) 숫자는 늘, 설비 일정은 판정에 따라 「참고」·「없음: 까닭」. 이름은
+# 2026-11-12 사용자 답 q2 (가) — Core Data 숫자의 「공식」 은 「Static」(발행본 이름은 그대로).
+OFFICIAL_BADGE = ":gray-badge[Static · Core Data]"
 # 배지 마크다운에서 글만 — 시트 엑셀 머리 값 줄에 싣는다.
 BADGE_PATTERN = re.compile(r":[a-z]+-badge\[(.*)\]")
 # 필요 단축 일정 카드 출처 띠 옆 「← 필요 단축 일정」 단추(그 카드를 강조해 돌아간다).
@@ -271,8 +273,8 @@ SHORTENING_LINK_OFFICIAL_HELP = (
 )
 # UPEH 가정이 켜졌을 때 효과 줄 풍선 끝에 붙는 범위 — 무엇이 가정이고 무엇이 그대로인지.
 UPEH_SCOPE_HELP = (
-    "이 세션만입니다 — 공식 확보율·HOME·공식버전은 그대로이고, ② ~ ④·KPI·이 공정 단축 일정 CSV 는 "
-    "가정 계획입니다."
+    "이 세션만입니다 — Static 확보율·HOME·공식버전은 그대로이고, ② ~ ④·KPI·이 공정 단축 일정 "
+    "CSV 는 가정 계획입니다."
 )
 # 역산 두 줄의 풍선(보수적인 까닭)과, 적용 구간이 이 화면 기간과 겹치지 않을 때의 표지 · 풍선.
 INVERSE_HELP = (
@@ -412,7 +414,7 @@ entry = resolve_process_and_month(
     default_month=default_month_for,
     follow=lambda entered: shared_process.follow_single(SCREEN, process_options, entered=entered),
 )
-# HOME → ①, 가용설비 현황 「④ 에서 비가동 화살표로 보기」 → ④, 필요 단축 일정 카드 → ③. 본문
+# HOME → ①, 가용설비 현황 「비가동 일정에서 화살표로 보기」 → ⑤, 필요 단축 일정 카드 → ④. 본문
 # 프래그먼트의 「구획」 칩보다 앞이라 세션에 적어도 된다.
 reopen_entry_section(entry.source)
 
@@ -424,7 +426,7 @@ equipment_session: EquipmentSession | None = None
 shown_session: EquipmentSession | None = None
 snapshot: EquipmentSnapshot | None = None
 cutoff = pd.DataFrame()
-# 입력 비가동 대수(가용설비 현황 › Preference — 공용, 설비 0032). ②·④ 와 계획 키에 실린다.
+# 입력 비가동 대수(가용설비 현황 › Preference — 공용, 설비 0032). ③ · ⑤ 와 계획 키에 실린다.
 manual_downtime = ManualDowntime()
 equipment_error = ""
 try:
@@ -816,7 +818,7 @@ if (
         official_process_months = official_level.process_months.loc[
             official_in_process.fillna(False).to_numpy()
         ]
-        # 공식 계획에서 당겼지만 가정 계획에서 덜 당기는 호기(③ 흐린 줄, 풍선 「공식 −n일 → 가정
+        # 공식 계획에서 당겼지만 가정 계획에서 덜 당기는 호기(④ 흐린 줄, 풍선 「가정 전 −n일 → 가정
         # m일」).
         changes = pull_changes(official_units, process_units, process) if upeh_token else {}
         events = unit_events(timeline, level.units)
@@ -845,6 +847,8 @@ if (
                 steady_units=timeline.steady_units,
                 undated_notice=undated_line,
                 official_pulls=changes if upeh_token else None,
+                owned_units=timeline.owned_units,
+                unit_months=timeline.unit_months,
             ),
             units=process_units.reset_index(drop=True),
             memo_key=(target_key, timeline_key, undated_line),
@@ -854,18 +858,19 @@ if (
             ),
         )
         # 정리 줄에 늘 서던 설명 · 내역 글은 걷었다(설계 규칙 UI-TXT-01 · 04 · 07) — 일정 미정은
-        # ③ 끝 줄, 오늘이 든 달 · 단축이 바꾸는 숫자는 Guide · 산출 근거 머리 풍선이 말하고,
-        # 사용기준 제외 대수는 상태 알림(`PD-04`)이다. 입력 비가동(가용설비 현황 › Preference)을
-        # 뺐으면 값 한 마디(「입력 비가동 반영(n칸 · 합 x대)」 — 필요 단축 일정과 같은 꼴)를 두고
-        # 그 자리(④ 첫 줄, 호기 일정이 없는 공정은 ② 아래 줄)는 풍선이 말한다.
+        # ④ 끝 줄, 오늘이 든 달 · 단축이 바꾸는 숫자는 Guide 가 말하고, 사용기준 제외 대수는 상태
+        # 알림(`PD-04`)이다. 입력 비가동(가용설비 현황 › Preference)을 뺐으면 값 한 마디(「입력
+        # 비가동 반영(n칸 · 합 x대)」 — 필요 단축 일정과 같은 꼴)를 두고 그 자리(⑤ 첫 줄, 호기
+        # 일정이 없는 공정은 ③ 끝 줄)는 풍선이 말한다. 입력 비가동은 ③ 비가동대수에 든다 — ② 가용은
+        # 비가동을 빼기 전 값이다(2026-11-12 사용자 답 n1 (가)).
         manual_note = manual_effect_band(plan.manual_downtime, (process,))
         if manual_note:
-            manual_place = "④ 첫 줄" if readiness.has_units else "② 아래 줄"
+            manual_place = "⑤ 첫 줄" if readiness.has_units else "③ 끝 줄"
             closing_marks.append(
                 (
                     manual_note,
-                    "가용설비 현황 › Preference 의 공정 × 달 비가동 대수를 ② 가용에서 "
-                    f"뺐습니다({manual_place} — 호기별 비가동과 별도).",
+                    "가용설비 현황 › Preference 의 공정 × 달 비가동대수를 ③ 비가동대수에 "
+                    f"넣었습니다({manual_place} — 호기별 비가동과 별도).",
                 )
             )
         if usage_excluded_count(usage_excluded, processes=[process]) > 0:
@@ -972,12 +977,12 @@ with header_marks.container(horizontal=True, vertical_alignment="center", gap="s
 
 
 def assumption_effect_line() -> tuple[str, str]:
-    """머리 아래 효과 한 줄(값 — 공식 → 가정)과 그 풍선(이 화면의 단축 목표 · 기간, 필요 단축 일정은
-    가정을 걸지 않음 — 설명은 자리에 두지 않는다, 설계 규칙 UI-TXT-04). 가정이 꺼졌으면 빈 글자
-    둘."""
+    """머리 아래 효과 한 줄(값 — 가정 전 → 가정)과 그 풍선(이 화면의 단축 목표 · 기간, 필요 단축
+    일정은 가정을 걸지 않음 — 설명은 자리에 두지 않는다, 설계 규칙 UI-TXT-04). 가정이 꺼졌으면 빈
+    글자 둘."""
     if assumption is None or not assumption.active:
         return "", ""
-    elsewhere = "필요 단축 일정은 이 가정을 걸지 않습니다(늘 공식)."
+    elsewhere = "필요 단축 일정은 이 가정을 걸지 않습니다(늘 가정 전)."
     if not upeh_token or assumed_summary is None:
         return effect_text(AssumptionEffect(percent=assumption.percent, applied=False)), elsewhere
     official_counts = assumed_counts = None

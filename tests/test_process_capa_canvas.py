@@ -23,15 +23,28 @@ from test_required_shortening import PROCESS, _baseline, _cutoff, _master, _requ
 
 from capa_simulation.components.home_dimensions import DASHBOARD_LABEL_COLUMN_WIDTH_PX
 from capa_simulation.components.home_figure_common import _text_width_units
+from capa_simulation.components.month_sheet_canvas import percent, signed_one
 from capa_simulation.components.plotly_layout import plotly_validation
 from capa_simulation.components.process_capa_canvas import (
+    BASIS_SCHEDULE,
     CUSTOMDATA_HOVER,
     CUSTOMDATA_MONTH,
     CUSTOMDATA_ROW,
+    MODULE_ROW_INDENT_PX,
+    MODULE_ROW_MARK,
     ROW_AVAILABLE,
     ROW_BALANCE,
+    ROW_DYNAMIC_AVAILABLE,
     ROW_DYNAMIC_BALANCE,
-    ROW_DYNAMIC_COMPARE,
+    ROW_DYNAMIC_DELTA,
+    ROW_DYNAMIC_OWNED,
+    ROW_DYNAMIC_RATE,
+    ROW_DYNAMIC_REQUIRED,
+    ROW_EFFECT_AVAILABLE,
+    ROW_EFFECT_BALANCE,
+    ROW_EFFECT_LOSS,
+    ROW_EFFECT_RATE,
+    ROW_EFFECT_REQUIRED,
     ROW_HEADER,
     ROW_HOME_RATE,
     ROW_LIMIT,
@@ -39,18 +52,22 @@ from capa_simulation.components.process_capa_canvas import (
     ROW_RATE,
     ROW_REQUIRED,
     ROW_THRESHOLD,
+    ROW_UNITS_AFTER_RATE,
     ROW_UPEH_BALANCE,
     ROW_UPEH_RATE,
     ROW_UPEH_REQUIRED,
     SECTION_DOWNTIME,
     SECTION_DYNAMIC,
+    SECTION_EFFECT,
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
-    SUMMARY_TITLE_DETAIL,
     SUMMARY_TITLE_HEIGHT_PX,
+    SUMMARY_TITLE_HOVER,
     TITLE_HEIGHT_PX,
     UNIT_ROW_HEIGHT_PX,
+    UNITS_AFTER_RATE_LABEL,
+    UNITS_SHORTENING,
     AssumptionCanvasInput,
     DynamicCanvasInput,
     ProcessCapaCanvas,
@@ -233,6 +250,8 @@ def _dynamic(*, today: date = TODAY, **changes: Any) -> DynamicCanvasInput:
         "exits": timeline.exits.loc[~timeline.exits["호기"].astype(str).isin(shown)],
         "steady_units": timeline.steady_units,
         "undated_notice": "일정 미정 1대",
+        "owned_units": timeline.owned_units,
+        "unit_months": timeline.unit_months,
     }
     values.update(changes)
     return DynamicCanvasInput(**values)
@@ -369,7 +388,10 @@ def test_the_two_figures_share_one_height_and_the_month_figure_is_100px_a_month(
     assert months["xaxis"]["fixedrange"] and months["yaxis"]["fixedrange"]
 
 
-def test_rows_stack_the_four_sections_in_the_mock_order() -> None:
+def test_rows_stack_the_five_sections_in_the_answered_order() -> None:
+    """① Static 기준 · ② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정(2026-11-12 사용자 답 k-c0).
+    ② 는 총보유대수 · 가용대수 · 전월 대비 · 소요대수(제품 줄까지 — q4 (가)) · 확보율 · 과부족,
+    ③ 은 비가동대수 · 실가용대수 · 소요대수(합계만) · 확보율 · 과부족이다."""
     dynamic = _dynamic()
     canvas = _canvas(dynamic=dynamic)
     ids = canvas.row_ids
@@ -391,17 +413,37 @@ def test_rows_stack_the_four_sections_in_the_mock_order() -> None:
     ]
     assert list(ids[: len(summary_rows)]) == summary_rows
     titles = [row for row in ids if row.startswith("title:")]
-    assert titles == ["title:summary", "title:dynamic", "title:units", "title:downtime"]
-    dynamic_start = ids.index("title:dynamic")
-    assert list(ids[dynamic_start + 1 : dynamic_start + 6]) == [
-        ROW_DYNAMIC_COMPARE,
-        "dynamic_available",
-        "dynamic_delta",
-        "dynamic_impact",
+    assert titles == [
+        "title:summary",
+        "title:dynamic",
+        "title:downtime_effect",
+        "title:units",
+        "title:downtime",
+    ]
+    assert _section_rows(ids, SECTION_DYNAMIC) == [
+        ROW_DYNAMIC_OWNED,
+        ROW_DYNAMIC_AVAILABLE,
+        ROW_DYNAMIC_DELTA,
+        ROW_DYNAMIC_REQUIRED,
+        "dynamic_product:PRODUCT_A",
+        "dynamic_product:PRODUCT_B",
+        "dynamic_product:PRODUCT_C",
+        "dynamic_product:PRODUCT_D",
+        ROW_DYNAMIC_RATE,
         ROW_DYNAMIC_BALANCE,
     ]
+    assert _section_rows(ids, SECTION_EFFECT) == [
+        ROW_EFFECT_LOSS,
+        ROW_EFFECT_AVAILABLE,
+        ROW_EFFECT_REQUIRED,
+        ROW_EFFECT_RATE,
+        ROW_EFFECT_BALANCE,
+    ]
     units = ids[ids.index("title:units") + 1 : ids.index("title:downtime")]
-    # 단축 대상(계획 차례) → 나머지 신규 → 축 안 반출·이설 호기 → 추가N → 알림.
+    # 맨 위 「단축 후 확보율」(q6b (나)) → 단축 대상(계획 차례) → 나머지 신규 → 축 안 반출·이설
+    # 호기 → 추가N → 알림.
+    assert units[0] == ROW_UNITS_AFTER_RATE
+    units = units[1:]
     kind_of = {
         f"unit:{unit}": kind
         for unit, kind in zip(dynamic.unit_events["호기"], dynamic.unit_events["줄"], strict=True)
@@ -466,14 +508,14 @@ def test_a_collapsed_section_keeps_only_its_title_row(section: str) -> None:
     label_texts = [item["text"] for item in _annotations(folded.labels)]
     marks = {
         name: next(text for text in label_texts if text.startswith("<b>") and text[3:4] == mark)[-5]
-        for name, mark in zip(SECTION_IDS, "①②③④", strict=True)
+        for name, mark in zip(SECTION_IDS, "①②③④⑤", strict=True)
     }
     assert marks == {name: "▸" if name == section else "▾" for name in SECTION_IDS}
     assert folded.height < full.height
 
 
-def test_folding_the_summary_keeps_the_shortage_band_and_the_cross_check() -> None:
-    """판정·원인은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠와 ② 판정 대조는 같다."""
+def test_folding_the_summary_keeps_the_shortage_band_and_the_other_judgements() -> None:
+    """판정은 요약 프레임에서 낸다 — ① 을 접어도 부족 띠와 ② · ③ 확보율 칸은 같다."""
     dynamic = _dynamic()
     full = _canvas(dynamic=dynamic)
     folded = _canvas(dynamic=dynamic, collapsed=frozenset({SECTION_SUMMARY}))
@@ -486,7 +528,8 @@ def test_folding_the_summary_keeps_the_shortage_band_and_the_cross_check() -> No
         )
 
     assert bands(folded) and bands(folded) == bands(full)
-    assert _row_texts(folded, ROW_DYNAMIC_COMPARE) == _row_texts(full, ROW_DYNAMIC_COMPARE)
+    assert _row_texts(folded, ROW_DYNAMIC_RATE) == _row_texts(full, ROW_DYNAMIC_RATE)
+    assert _row_texts(folded, ROW_EFFECT_RATE) == _row_texts(full, ROW_EFFECT_RATE)
     assert ROW_RATE not in folded.row_ids and ROW_HOME_RATE not in folded.row_ids
 
 
@@ -498,13 +541,13 @@ def test_folded_units_and_downtime_draw_no_rows_and_count_nothing_hidden() -> No
     assert _canvas(dynamic=dynamic).hidden_units == 5
     assert folded.hidden_units == 0 and folded.hidden_arrow_units == 0
     assert not [row for row in folded.row_ids if row.startswith(("unit:", "arrow:", "note:"))]
-    # 오늘 점선은 남은 본문(②)에만 긋는다.
+    # 오늘 점선은 남은 본문(② · ③ — 제목 줄로 끊긴 두 덩어리)에만 긋는다.
     dashes = [
         shape
         for shape in _shapes(folded.months)
         if shape["type"] == "line" and shape.get("line", {}).get("dash") == "dash"
     ]
-    assert len(dashes) == 1
+    assert len(dashes) == 2
 
 
 def test_an_absent_or_unknown_section_is_ignored() -> None:
@@ -513,57 +556,52 @@ def test_an_absent_or_unknown_section_is_ignored() -> None:
 
     assert ignored.row_ids == plain.row_ids
     assert ignored.height == plain.height
-    # 설비 일정이 호기 없이 ② 만 서면 ② 를 접어도 ③·④ 자리의 까닭 줄은 남는다.
+    # 설비 일정이 호기 없이 ② · ③ 만 서면 ③ 을 접어도 ④ · ⑤ 자리의 까닭 줄은 남는다.
     baseline_only = _canvas(
-        dynamic=_dynamic(has_units=False), collapsed=frozenset({SECTION_DYNAMIC})
+        dynamic=_dynamic(has_units=False), collapsed=frozenset({SECTION_EFFECT})
     )
-    assert _section_rows(baseline_only.row_ids, SECTION_DYNAMIC) == ["note:no_units"]
+    assert _section_rows(baseline_only.row_ids, SECTION_EFFECT) == ["note:no_units"]
+    titles = [row for row in baseline_only.row_ids if row.startswith("title:")]
+    assert titles == ["title:summary", "title:dynamic", "title:downtime_effect"]
 
 
-def test_section_titles_and_their_details_stand_in_the_fixed_label_column() -> None:
-    """구획 제목의 출처·단위 글은 스크롤되지 않는 라벨 Figure 에 선다 — 월 Figure 에 두면 고른 달로
-    밀어 연 화면에서 잘린다(브라우저 확인 결함). 월 Figure 의 제목 줄에는 글이 없다."""
+def test_section_titles_stand_in_the_fixed_label_column_and_carry_their_notes_as_hovers() -> None:
+    """구획 제목은 스크롤되지 않는 라벨 Figure 에 선다(월 Figure 에는 글이 없다). 제목 아래 회색
+    세부 글은 걷고 그 말은 제목 줄 풍선과 Guide 가 적는다(2026-11-12 사용자 답 k-c1 · k-c2) —
+    공정마다 다른 Cut-off 일수와 오늘 점선 날짜는 ② 제목 줄 풍선이다."""
     canvas = _canvas(dynamic=_dynamic())
     label_texts = [item["text"] for item in _annotations(canvas.labels)]
     month_texts = json.dumps(_annotations(canvas.months), ensure_ascii=False)
-    details = [
-        SUMMARY_TITLE_DETAIL,
-        "참고 · 설비 DB · 환산대수 · 생산월(Cut-off 10일) · 점선은 오늘(11.10)",
-    ]
-    for detail in details:
-        lines = title_detail_lines(detail)
-        assert lines and " · ".join(lines) == detail
-        for line in lines:
-            assert line in label_texts
-            assert line not in month_texts
-    for title in (
-        "① 공식 기준",
-        "② 설비 일정 기준 가용",
-        "③ 신규 설비 일정과 단축",
-        "④ 호기별 비가동",
-    ):
+    for title in ("① Static 기준", "② 일정 가용", "③ 비가동", "④ 단축", "⑤ 비가동 일정"):
         # 펼친 구획은 제목 끝에 ▾ 다(소요대수 줄과 같은 꼴).
         assert f"<b>{title} ▾</b>" in label_texts
         assert title not in month_texts
-    # 읽는 법은 범례 풍선이 말한다 — 구획 머리에 늘 두지 않는다(설계 규칙 UI-TXT-01).
+    assert not any(SUMMARY_TITLE_HOVER in text or "설비 DB" in text for text in label_texts)
     assert not any("화살표" in text or "다음 날부터" in text for text in label_texts)
-    # 세부 글 줄은 라벨 칸 폭(좌우 여백 뺀 240px, 11px 글자) 안이다.
-    budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 20) / 11
-    assert all(
-        _text_width_units(line) <= budget
-        for detail in details
-        for line in title_detail_lines(detail)
-    )
+    titles = [row for row in canvas.row_ids if row.startswith("title:")]
+    hovers = _label_hovers(canvas)
+    assert hovers["title:summary"] == SUMMARY_TITLE_HOVER
+    assert "Cut-off 10일" in hovers["title:dynamic"]
+    assert "점선은 오늘(11.10)" in hovers["title:dynamic"]
+    assert "Static" in hovers["title:downtime_effect"]
+    # 제목 줄은 모두 세부 글 없는 한 줄 높이다.
+    assert SUMMARY_TITLE_HEIGHT_PX == TITLE_HEIGHT_PX
+    assert len(titles) == 5
 
 
 def test_a_title_row_grows_with_its_detail_lines() -> None:
+    """엔진은 세부 글 줄 수만큼 제목 줄을 높인다(다른 월 시트가 쓴다)."""
     assert title_row_height("") == TITLE_HEIGHT_PX
-    one = title_row_height(SUMMARY_TITLE_DETAIL)
-    assert one == SUMMARY_TITLE_HEIGHT_PX > TITLE_HEIGHT_PX
-    assert title_row_height(f"{SUMMARY_TITLE_DETAIL} · {SUMMARY_TITLE_DETAIL}") > one
+    one = title_row_height(SUMMARY_TITLE_HOVER)
+    assert one > TITLE_HEIGHT_PX
+    assert title_row_height(f"{SUMMARY_TITLE_HOVER} · {SUMMARY_TITLE_HOVER}") > one
     # 마디 하나가 칸보다 길면 그 줄만 말줄임한다.
     (line,) = title_detail_lines("가" * 60)
     assert line.endswith("…") and len(line) < 60
+    budget = (DASHBOARD_LABEL_COLUMN_WIDTH_PX - 20) / 11
+    assert all(
+        _text_width_units(item) <= budget for item in title_detail_lines(SUMMARY_TITLE_HOVER)
+    )
 
 
 def test_an_empty_or_unordered_axis_is_refused() -> None:
@@ -613,7 +651,8 @@ def test_every_cell_target_carries_its_month_row_and_hover() -> None:
     }
     for data, _, _ in targets:
         if not data[CUSTOMDATA_HOVER]:
-            assert str(data[CUSTOMDATA_ROW]).startswith(("unit:", "exit:"))
+            # ③ 호기 줄의 빈 달 칸과, 모듈만의 비가동만 있어 화살표가 없는 ⑤ Main 머리 줄.
+            assert str(data[CUSTOMDATA_ROW]).startswith(("unit:", "exit:", "arrow:EQ-21#0"))
     rate_months = [
         data[CUSTOMDATA_MONTH] for data, _, _ in targets if data[CUSTOMDATA_ROW] == ROW_RATE
     ]
@@ -861,93 +900,188 @@ def test_no_accent_when_the_chosen_month_is_off_the_axis() -> None:
         assert tokens.ACCENT not in json.dumps(_json(_canvas(selected=selected).months))
 
 
-# ---------------------------------------------------------------------- ② 설비 일정 기준 가용
+# ---------------------------------------------------------------------- ② 일정 가용 · ③ 비가동
 
 
-def test_the_cross_check_row_paints_only_when_both_bases_fall_short() -> None:
-    dynamic = _dynamic()
-    summary = _summary()
-    canvas = _canvas(summary=summary, dynamic=dynamic)
-    texts = _row_texts(canvas, ROW_DYNAMIC_COMPARE)
-    fills = _row_fills(canvas, ROW_DYNAMIC_COMPARE)
-    gaps = _plan_values(dynamic, "과부족")
-
-    for index, month in enumerate(MONTHS):
-        static_short = summary["판정"].iloc[index] != "secure"
-        dynamic_short = round(gaps[month], 9) < 0
-        if static_short and dynamic_short:
-            assert texts[index] == ("<b>기준✕·일정✕</b>", tokens.TEXT)
-            assert fills[index] == tokens.STATUS_SHORTAGE
-        elif static_short:
-            assert texts[index] == ("기준✕·일정✓", tokens.TEXT_MUTED)
-            assert index not in fills
-        elif dynamic_short:
-            assert texts[index] == ("기준✓·일정✕", tokens.TEXT_MUTED)
-        else:
-            assert index not in texts and index not in fills
+def _bridge_values(dynamic: DynamicCanvasInput, column: str) -> dict[int, float]:
+    frame = dynamic.bridge
+    return {
+        int(month): float(value)
+        for month, value in zip(frame["생산계획년월"].tolist(), frame[column].tolist(), strict=True)
+    }
 
 
-def test_an_owned_short_month_asks_for_investment_in_the_cross_check() -> None:
-    """기준✕·일정✓ 인 달의 원인이 「보유로도 부족」이면 풍선이 투자 검토를 함께 적는다(설계
-    logic_final 3절 표, Guide 판정 대조 표)."""
-    summary = _summary()
-    month = 202612
-    assert summary.loc[summary["생산계획년월"].eq(month), "부족 원인"].item() == "대여 영향"
+def _free(dynamic: DynamicCanvasInput) -> dict[int, float]:
+    """② 가용대수 — 비가동을 빼기 전(기존보유 + 호기 가용 + 호기 비가동 손실)."""
+    held = _bridge_values(dynamic, "기존보유")
+    own = _bridge_values(dynamic, "호기 가용")
+    loss = _bridge_values(dynamic, "호기 비가동 손실")
+    return {month: held[month] + own[month] + loss[month] for month in MONTHS}
 
-    def compare_hover(frame: pd.DataFrame) -> str:
-        canvas = _canvas(summary=frame, dynamic=_dynamic())
-        return str(
-            next(
-                data[CUSTOMDATA_HOVER]
-                for data, _, _ in _targets(canvas)
-                if data[CUSTOMDATA_ROW] == ROW_DYNAMIC_COMPARE and data[CUSTOMDATA_MONTH] == month
-            )
+
+def _plain(text: str) -> str:
+    return text.replace("<b>", "").replace("</b>", "")
+
+
+def _hover_of(canvas: ProcessCapaCanvas, row_id: str, month: int) -> str:
+    return str(
+        next(
+            data[CUSTOMDATA_HOVER]
+            for data, _, _ in _targets(canvas)
+            if data[CUSTOMDATA_ROW] == row_id and data[CUSTOMDATA_MONTH] == month
         )
-
-    assert "기준✕·일정✓" not in compare_hover(summary)  # 풍선에 칸 글은 없다
-    assert "투자 검토" not in compare_hover(summary)
-    owned_short = summary.copy()
-    owned_short.loc[owned_short["생산계획년월"].eq(month), "부족 원인"] = "보유로도 부족"
-    hover = compare_hover(owned_short)
-    assert "공식은 부족, 설비 일정으로는 충족" in hover
-    assert "원인: 보유로도 부족 — 투자 검토" in hover
+    )
 
 
-def test_the_target_balance_paints_only_short_months_and_shows_the_shortened_value() -> None:
+def test_schedule_availability_is_before_downtime_and_the_change_is_its_difference() -> None:
+    """② 가용대수는 비가동을 빼기 전 값이고(2026-11-12 사용자 답 n1 (가)), 전월 대비는 그 두 칸의
+    차이다. 비가동은 ③ 에서 한 번만 뺀다."""
     dynamic = _dynamic()
     canvas = _canvas(dynamic=dynamic)
-    fills = _row_fills(canvas, ROW_DYNAMIC_BALANCE)
-    gaps = _plan_values(dynamic, "과부족")
-    afters = _plan_values(dynamic, "단축후과부족")
-    center = _row_center(canvas, ROW_DYNAMIC_BALANCE)
-    lines = [(x, y, text) for x, y, text, _ in _texts(canvas) if abs(y - center) < 18]
+    free = _free(dynamic)
+    available = _row_texts(canvas, ROW_DYNAMIC_AVAILABLE)
+    delta = _row_texts(canvas, ROW_DYNAMIC_DELTA)
+    losses = _bridge_values(dynamic, "호기 비가동 손실")
 
+    assert any(value > 0 for value in losses.values())
     for index, month in enumerate(MONTHS):
-        gap = round(gaps[month], 9)
-        assert (index in fills) == (gap < 0)
-        if index in fills:
-            assert fills[index] == tokens.STATUS_SHORTAGE
-        after = afters[month]
-        second = [text for x, y, text in lines if int(x) == index and y < center]
-        if abs(after - gap) > 1e-9:
-            assert second and second[0].replace("<b>", "").startswith("→ ")
-    # 목표는 달마다 같은 확보 기준이라 라벨에 % 가 붙는다.
-    assert "목표(110%) 과부족" in {item["text"] for item in _annotations(canvas.labels)}
+        assert _plain(available[index][0]) == f"{free[month]:,.1f}"
+        if index == 0:
+            continue
+        change = free[month] - free[MONTHS[index - 1]]
+        assert _plain(delta[index][0]) == signed_one(round(change, 9) + 0.0)
+    first = _hover_of(canvas, ROW_DYNAMIC_DELTA, MONTHS[0])
+    assert "축 첫 달" in first
 
 
-def test_past_months_are_muted_and_unpainted_in_the_schedule_rows() -> None:
-    """오늘이 든 생산월보다 앞선 달은 단축으로 바꿀 수 없다 — 「기한 지남」으로 흐리게 둔다."""
+def test_the_change_hover_names_unit_groups_largest_first_up_to_six() -> None:
+    """② 전월 대비 칸 풍선(k-c3) — 첫 줄은 「신규 · 정지·반출」 갈림, 아래는 호기 묶음 몫을 큰
+    차례로 여섯까지(한 줄에 셋), 나머지는 「외 n대」."""
+    months = [MONTHS[0], MONTHS[1]]
+    units = [f"EQ-{number:02d}" for number in range(1, 9)]
+    rows = [
+        {
+            "생산계획년월": month,
+            "설비명": unit,
+            "설비키": unit,
+            "구간일수": 30,
+            "실제 기여일수": 0,
+            "비가동 없음 기여일수": 0,
+            "손실 기여일수": 0,
+            "실제 환산대수": 0.0,
+            "비가동 없음 환산대수": (0.1 * (number + 1)) if month == MONTHS[1] else 0.0,
+            "손실 환산대수": 0.0,
+        }
+        for month in months
+        for number, unit in enumerate(units)
+    ]
+    dynamic = _dynamic(unit_months=pd.DataFrame(rows))
+    hover = _hover_of(_canvas(dynamic=dynamic), ROW_DYNAMIC_DELTA, MONTHS[1])
+    lines = hover.split("<br>")
+    assert "신규" in lines[0] and "정지·반출" in lines[0]
+    assert lines[1] == "EQ-08 +0.80 · EQ-07 +0.70 · EQ-06 +0.60"
+    assert lines[2] == "EQ-05 +0.50 · EQ-04 +0.40 · EQ-03 +0.30"
+    assert lines[3] == "외 2대"
+
+
+def test_the_owned_row_reads_the_calendar_month_count() -> None:
+    """② 총보유대수는 설비 일정의 달력 월 보유(q3 (가))다 — 풍선이 갈림과 Cut-off 없음을 적는다."""
+    dynamic = _dynamic()
+    canvas = _canvas(dynamic=dynamic)
+    owned = dynamic.owned_units.set_index("년월")["총보유대수"]
+    texts = _row_texts(canvas, ROW_DYNAMIC_OWNED)
+    for index, month in enumerate(MONTHS):
+        assert _plain(texts[index][0]) == f"{float(owned[month]):,.1f}"
+    hover = _hover_of(canvas, ROW_DYNAMIC_OWNED, MONTHS[-1])
+    assert "달력 월 기준(Cut-off 없이)" in hover and "기존보유" in hover and "반출/이설" in hover
+
+
+def test_schedule_and_effect_rates_take_their_own_judgement_and_the_band_stays_static() -> None:
+    """② · ③ 의 확보율 · 과부족 칸은 그 구획 가용으로 낸 제 판정 색이고(① 과 같은 길), 부족 띠는
+    판정 기준 하나다(2026-11-12 사용자 답 q8 (가))."""
+    from capa_simulation.services.process_capa_detail import judge_supply
+
+    dynamic = _dynamic()
+    summary = _summary()
+    canvas = _canvas(dynamic=dynamic, summary=summary)
+    demand = {month: float(value) for month, value in zip(MONTHS, REQUIRED, strict=True)}
+    judged = judge_supply(
+        _free(dynamic), demand, process=PROCESS, months=MONTHS, thresholds=THRESHOLDS
+    ).set_index("생산계획년월")
+    rates = _row_texts(canvas, ROW_DYNAMIC_RATE)
+    fills = _row_fills(canvas, ROW_DYNAMIC_RATE)
+    colors = {
+        "secure": tokens.STATUS_SECURE,
+        "warning": tokens.STATUS_WARNING,
+        "shortage": tokens.STATUS_SHORTAGE,
+    }
+    rate_of = dict(zip(judged.index, judged["확보율"].astype("float64"), strict=True))
+    status_of = dict(zip(judged.index, judged["판정"].astype(str), strict=True))
+    for index, month in enumerate(MONTHS):
+        assert _plain(rates[index][0]) == percent(float(rate_of[month]))
+        assert fills[index] == colors[status_of[month]]
+    static_bands = sorted(
+        shape["x0"]
+        for shape in _shapes(_canvas(summary=summary).months)
+        if shape.get("fillcolor") == tokens.SHORTAGE_MONTH_BAND
+    )
+    bands = sorted(
+        shape["x0"]
+        for shape in _shapes(canvas.months)
+        if shape.get("fillcolor") == tokens.SHORTAGE_MONTH_BAND
+    )
+    assert bands == static_bands
+
+
+def test_effect_on_the_schedule_basis_is_the_plans_availability() -> None:
+    """③ 비가동 기준 「일정」 의 실가용대수는 필요 단축 일정 계획의 가용대수와 같다 — 비가동을 ②
+    가용에서 한 번만 뺀다(n1 (가) · q5 (가))."""
+    dynamic = _dynamic(downtime_basis=BASIS_SCHEDULE)
+    canvas = _canvas(dynamic=dynamic)
+    plan = _plan_values(dynamic, "가용대수")
+    bridge = _bridge_values(dynamic, "가용대수")
+    real = _row_texts(canvas, ROW_EFFECT_AVAILABLE)
+    loss = _row_texts(canvas, ROW_EFFECT_LOSS)
+    units_loss = _bridge_values(dynamic, "호기 비가동 손실")
+    for index, month in enumerate(MONTHS):
+        assert plan[month] == pytest.approx(bridge[month])
+        assert _plain(real[index][0]) == f"{plan[month]:,.1f}"
+        if units_loss[month] > 0:
+            assert index in loss
+        else:
+            assert index not in loss
+    assert "일정 — ② 가용대수" in _label_hovers(canvas)["title:downtime_effect"]
+
+
+def test_effect_on_the_static_basis_subtracts_from_the_static_availability() -> None:
+    """③ 비가동 기준 「Static」(처음 값 — q5b (가))은 ① 가용대수에서 비가동대수를 빼고 0 에서
+    멈춘다. 소요대수는 합계 한 줄이다."""
+    dynamic = _dynamic()
+    canvas = _canvas(dynamic=dynamic)
+    units_loss = _bridge_values(dynamic, "호기 비가동 손실")
+    manual = _bridge_values(dynamic, "입력 비가동 반영")
+    real = _row_texts(canvas, ROW_EFFECT_AVAILABLE)
+    for index, month in enumerate(MONTHS):
+        expected = max(0.0, AVAILABLE[index] - units_loss[month] - manual[month])
+        assert _plain(real[index][0]) == f"{expected:,.1f}"
+    labels = [item["text"] for item in _annotations(canvas.labels)]
+    assert "비가동대수" in labels and "실가용대수" in labels
+    assert "Static — ① 가용대수" in _label_hovers(canvas)["title:downtime_effect"]
+    assert _section_rows(canvas.row_ids, SECTION_EFFECT)[2] == ROW_EFFECT_REQUIRED
+    assert not any(row.startswith("effect_product") for row in canvas.row_ids)
+
+
+def test_past_months_are_muted_in_the_schedule_count_rows() -> None:
+    """오늘이 든 생산월보다 앞선 달은 ② · ③ 의 대수 줄이 흐리다."""
     dynamic = _dynamic(today=date(2027, 2, 10))
     canvas = _canvas(dynamic=dynamic)
     past = [index for index, month in enumerate(MONTHS) if month < 202702]
 
-    for row in (ROW_DYNAMIC_COMPARE, "dynamic_available", "dynamic_delta", ROW_DYNAMIC_BALANCE):
+    for row in (ROW_DYNAMIC_OWNED, ROW_DYNAMIC_AVAILABLE, ROW_DYNAMIC_DELTA, ROW_EFFECT_AVAILABLE):
         texts = _row_texts(canvas, row)
-        fills = _row_fills(canvas, row)
         for index in past:
             if index in texts:
                 assert texts[index][1] == tokens.TEXT_MUTED, (row, index)
-            assert index not in fills, (row, index)
 
 
 def test_the_today_line_runs_through_the_schedule_body_but_not_the_titles() -> None:
@@ -957,10 +1091,10 @@ def test_the_today_line_runs_through_the_schedule_body_but_not_the_titles() -> N
         for shape in _shapes(canvas.months)
         if shape["type"] == "line" and shape.get("line", {}).get("dash") == "dash"
     ]
-    # ②·③·④ 본문 셋 — 제목 줄에서 끊긴다.
-    assert len(lines) == 3
+    # ② · ③ · ④ · ⑤ 본문 넷 — 제목 줄에서 끊긴다.
+    assert len(lines) == 4
     assert len({shape["x0"] for shape in lines}) == 1
-    assert "점선은 오늘(11.10)" in {item["text"] for item in _annotations(canvas.labels)}
+    assert "점선은 오늘(11.10)" in _label_hovers(canvas)["title:dynamic"]
     assert not [
         shape
         for shape in _shapes(_canvas(dynamic=_dynamic(today=date(2028, 1, 1))).months)
@@ -968,11 +1102,12 @@ def test_the_today_line_runs_through_the_schedule_body_but_not_the_titles() -> N
     ]
 
 
-def test_a_baseline_only_process_shows_only_the_availability_rows() -> None:
+def test_a_baseline_only_process_shows_only_the_availability_and_downtime_rows() -> None:
     canvas = _canvas(dynamic=_dynamic(has_units=False))
 
     assert canvas.row_ids[-1] == "note:no_units"
     assert "title:units" not in canvas.row_ids and "title:downtime" not in canvas.row_ids
+    assert "title:downtime_effect" in canvas.row_ids
 
 
 # ---------------------------------------------------------------------- ③ 신규 설비
@@ -1112,8 +1247,13 @@ def test_unit_hovers_stay_within_three_lines_and_an_assumption_adds_the_fourth()
     assumed = _label_hovers(_assumed_canvas(110, set(MONTHS), dynamic=marked))
     units = [row for row in official if row.startswith(("unit:", "exit:"))]
 
-    # 호기 줄 밖의 줄 이름 칸 풍선은 ② 「비가동 영향」 하나다(입력 비가동이 없는 설비 일정).
-    assert len(units) >= 5 and set(official) - set(units) == {"dynamic_impact"}
+    # 호기 줄 밖의 줄 이름 칸 풍선은 구획 제목 줄뿐이다(입력 비가동이 없는 설비 일정).
+    assert len(units) >= 5
+    assert set(official) - set(units) == {
+        "title:summary",
+        "title:dynamic",
+        "title:downtime_effect",
+    }
     assert all(1 <= len(official[row].split("<br>")) <= 3 for row in units)
     assert all("UPEH" not in hover for hover in official.values())
     for row in (row for row in assumed if row.startswith("unit:")):
@@ -1298,7 +1438,9 @@ def test_a_released_unit_hover_drops_the_official_resolved_months() -> None:
     assert len(_resolved_ticks(_canvas(dynamic=dynamic), "unit:EQ-24")) == 3
     assert _resolved_ticks(canvas, "unit:EQ-24") == []
     assert "해소" not in hovers["unit:EQ-24"]
-    assert hovers["unit:EQ-24"].split("<br>")[-1] == f"UPEH 가정 계획 · 공식 {MINUS}62일 → 가정 0일"
+    assert hovers["unit:EQ-24"].split("<br>")[-1] == (
+        f"UPEH 가정 계획 · 가정 전 {MINUS}62일 → 가정 0일"
+    )
     assert "해소 " in hovers["unit:EQ-25"] and "해소 " in hovers["unit:추가1"]
 
 
@@ -1354,6 +1496,88 @@ def test_an_axis_without_new_units_or_downtime_says_so_in_one_line() -> None:
 
     assert "note:no_new_units" in canvas.row_ids
     assert "note:no_downtime" in canvas.row_ids
+
+
+def test_the_after_rate_row_heads_the_units_section_with_only_the_changed_months() -> None:
+    """④ 맨 위 「단축 후 확보율」 — 단축 · 신규 필요로 가용이 바뀐 달만 값과 판정 색이고, 소요는
+    계획의 소요다(2026-11-12 사용자 답 q6b (나)). 판정은 ① 과 같은 길이다."""
+    dynamic = _dynamic()
+    canvas = _canvas(dynamic=dynamic)
+    before = _plan_values(dynamic, "가용대수")
+    after = _plan_values(dynamic, "단축후가용대수")
+    demand = _plan_values(dynamic, "소요대수")
+    changed = [month for month in MONTHS if round(after[month] - before[month], 9) != 0]
+    texts = _row_texts(canvas, ROW_UNITS_AFTER_RATE)
+    fills = _row_fills(canvas, ROW_UNITS_AFTER_RATE)
+
+    ids = canvas.row_ids
+    assert ids[ids.index("title:units") + 1] == ROW_UNITS_AFTER_RATE
+    assert changed and len(changed) < len(MONTHS)
+    assert sorted(texts) == [MONTHS.index(month) for month in changed]
+    for month in changed:
+        index = MONTHS.index(month)
+        rate = after[month] / demand[month]
+        assert _plain(texts[index][0]) == percent(rate)
+        status = THRESHOLDS.status(rate, month)
+        assert (
+            fills[index]
+            == {
+                "secure": tokens.STATUS_SECURE,
+                "warning": tokens.STATUS_WARNING,
+                "shortage": tokens.STATUS_SHORTAGE,
+            }[status]
+        )
+        hover = _plain(_hover_of(canvas, ROW_UNITS_AFTER_RATE, month))
+        assert f"{UNITS_AFTER_RATE_LABEL} {percent(rate)}" in hover
+        assert f"÷ 소요 {demand[month]:.1f}" in hover
+        assert "단축 전 가용" in hover and "③ 일정 기준 실가용" in hover
+    untouched = next(month for month in MONTHS if month not in changed)
+    assert "바뀌지 않는 달" in _hover_of(canvas, ROW_UNITS_AFTER_RATE, untouched)
+
+
+def test_shortening_only_keeps_the_shortened_and_needed_rows() -> None:
+    """④ 보기 「단축 필요만」 — 단축 대상과 신규 필요(추가N) 줄만 남고, 단축 없는 신규 · 정지/반출
+    줄과 일정 미정 줄은 서지 않는다. 「단축 후 확보율」 줄은 그대로다(2026-11-12 사용자 답 q6
+    메모)."""
+    dynamic = _dynamic()
+    full = _canvas(dynamic=dynamic)
+    only = _canvas(dynamic=_dynamic(units_view=UNITS_SHORTENING))
+
+    def units(canvas: ProcessCapaCanvas) -> list[str]:
+        ids = canvas.row_ids
+        return list(ids[ids.index("title:units") + 1 : ids.index("title:downtime")])
+
+    kind_of = dict(
+        zip(
+            (f"unit:{unit}" for unit in dynamic.unit_events["호기"]),
+            dynamic.unit_events["줄"],
+            strict=True,
+        )
+    )
+    assert {kind_of.get(row) for row in units(full)} >= {ROW_SHORTENED, ROW_NEW, ROW_VIRTUAL}
+    assert any(row.startswith("exit:") for row in units(full)) and "note:undated" in units(full)
+    shown = units(only)
+    assert shown[0] == ROW_UNITS_AFTER_RATE
+    assert [kind_of[row] for row in shown[1:]] == [
+        kind for kind in dynamic.unit_events["줄"] if kind in (ROW_SHORTENED, ROW_VIRTUAL)
+    ]
+    assert _row_texts(only, ROW_UNITS_AFTER_RATE) == _row_texts(full, ROW_UNITS_AFTER_RATE)
+
+
+def test_shortening_only_counts_the_thirty_row_cap_after_filtering() -> None:
+    """30줄 상한은 거른 뒤에 센다 — 단축 없는 신규만 35대면 「단축 필요만」 은 줄이 없어 「외
+    n대」 도 없고, 빈 구획은 그 보기의 말로 한 줄이다."""
+    events = _many_new_units(ROW_LIMIT + 5)
+    full = _canvas(dynamic=_dynamic(unit_events=events, exits=pd.DataFrame()))
+    only = _canvas(
+        dynamic=_dynamic(unit_events=events, exits=pd.DataFrame(), units_view=UNITS_SHORTENING)
+    )
+
+    assert full.hidden_units == 5 and "note:more_units" in full.row_ids
+    assert only.hidden_units == 0 and "note:more_units" not in only.row_ids
+    assert not [row for row in only.row_ids if row.startswith("unit:")]
+    assert "note:no_shortening_units" in only.row_ids
+    assert "note:no_new_units" not in only.row_ids
 
 
 # ---------------------------------------------------------------------- ④ 비가동
@@ -1436,12 +1660,102 @@ def test_unit_and_downtime_labels_leave_the_module_count_to_the_hovers() -> None
     assert "EQ-21A" not in "".join(unit_lines)
     assert "모듈" not in _label_hovers(canvas)["unit:EQ-22"]
 
-    first, *arrows = _row_hover(canvas, "arrow:EQ-21#0").split("<br>")
+    # EQ-21A 만의 비가동 — Main 머리 줄 아래 「└ EQ-21A」 줄이다(2026-11-12 사용자 답 q7 메모).
+    first, *arrows = _row_hover(canvas, "arrow:EQ-21#EQ-21A#0").split("<br>")
     assert first.endswith("EQ-21 · 모듈 2")
     assert arrows and all(line.startswith("EQ-21A · 셋업 · ") for line in arrows)
     single_first, *single = _row_hover(canvas, "arrow:EQ-02#0").split("<br>")
     assert "모듈" not in single_first
     assert all(line.startswith("정기 PM · ") for line in single)
+
+
+def _module_arrows() -> pd.DataFrame:
+    """⑤ 모듈 묶음 화살표 — EQ-31(3모듈)은 셋 모두 「공사」 와 A 만의 「기타」, EQ-32(3모듈)는 A · B
+    「고장」 과 같은 날 C 「기타」(유형이 달라 합치지 않음), 단독 EQ-02 는 겹친 비가동 둘."""
+    modules = [
+        _unit(
+            f"EQ-3{group}{letter}",
+            date(2025, 6, 1),
+            arrival=date(2025, 5, 1),
+            parent=f"EQ-3{group}",
+            existing="Y",
+            confirmation="완료",
+        )
+        for group in (1, 2)
+        for letter in "ABC"
+    ]
+    fleet = _master([*_fleet(), *modules])
+    rows = [
+        *(("EQ-31" + letter, "공사", date(2027, 2, 3), date(2027, 2, 10)) for letter in "ABC"),
+        ("EQ-31A", "기타", date(2027, 3, 5), date(2027, 3, 8)),
+        ("EQ-32A", "고장", date(2027, 4, 1), date(2027, 4, 5)),
+        ("EQ-32B", "고장", date(2027, 4, 1), date(2027, 4, 5)),
+        ("EQ-32C", "기타", date(2027, 4, 1), date(2027, 4, 5)),
+        ("EQ-02", "정기 PM", date(2027, 1, 10), date(2027, 1, 25)),
+        ("EQ-02", "고장", date(2027, 1, 20), date(2027, 1, 28)),
+    ]
+    downtime = pd.DataFrame(
+        [(name, kind, start, end, None, None) for name, kind, start, end in rows],
+        columns=["설비명", "비가동유형", "시작일", "종료일", "상세사유", "비고"],
+    )
+    timeline = build_process_equipment_timeline(
+        fleet, downtime, _baseline(44.0), _cutoff(), process=PROCESS, months=MONTHS
+    )
+    return timeline.arrows
+
+
+def _arrow_section(canvas: ProcessCapaCanvas, unit: str) -> list[str]:
+    return [row for row in canvas.row_ids if row.startswith(f"arrow:{unit}#")]
+
+
+def test_a_downtime_on_every_module_is_one_arrow_on_the_main_row() -> None:
+    """같은 비가동(시작일 · 종료일 · 유형)이 모든 모듈에 있으면 Main 줄 화살표 하나 — 손실은 모듈
+    몫의 합, 풍선은 「모듈 n 모두」. 일부 모듈에만 있는 것은 Main 줄 아래 「[여백]└ 모듈명」
+    줄이다(2026-11-12 사용자 답 q7 (가) · 메모)."""
+    arrows = _module_arrows()
+    canvas = _canvas(dynamic=_dynamic(arrows=arrows))
+    own = arrows.loc[arrows["설비키"].eq("EQ-31") & arrows["비가동유형"].eq("공사")]
+    month = 202702
+    loss = sum(dict(value).get(month, 0.0) for value in own["달별 손실"])
+
+    assert _arrow_section(canvas, "EQ-31") == ["arrow:EQ-31#0", "arrow:EQ-31#EQ-31A#0"]
+    main = _plain(_hover_of(canvas, "arrow:EQ-31#0", month)).split("<br>")
+    assert main[0].endswith("EQ-31 · 모듈 3")
+    assert main[1:] == [
+        f"모듈 3 모두 · 공사 · 2027-02-03~2027-02-10 · 이 달 {signed_one(-loss)} (환산대수)"
+    ]
+    module = _plain(_hover_of(canvas, "arrow:EQ-31#EQ-31A#0", 202703)).split("<br>")
+    assert len(module) == 2 and module[1].startswith("EQ-31A · 기타 · 2027-03-05~2027-03-08")
+    labels = {item["text"]: item for item in _annotations(canvas.labels)}
+    sub = labels[f"{MODULE_ROW_MARK} EQ-31A"]
+    assert sub["xshift"] == labels["EQ-31"]["xshift"] + MODULE_ROW_INDENT_PX
+    assert sub["font"]["color"] == tokens.TEXT_MUTED
+
+
+def test_a_partial_downtime_keeps_a_main_head_row_and_one_row_per_module() -> None:
+    """유형이 다르면 같은 날이라도 합치지 않는다 — 합친 것이 없는 Main 줄은 화살표 없이 머리로 서고
+    (풍선 없음), 모듈마다 「└ 모듈명」 줄이다."""
+    canvas = _canvas(dynamic=_dynamic(arrows=_module_arrows()))
+
+    assert _arrow_section(canvas, "EQ-32") == [
+        "arrow:EQ-32#0",
+        "arrow:EQ-32#EQ-32A#0",
+        "arrow:EQ-32#EQ-32B#0",
+        "arrow:EQ-32#EQ-32C#0",
+    ]
+    assert _hover_months(canvas, "arrow:EQ-32#0") == []
+    labels = [item["text"] for item in _annotations(canvas.labels)]
+    assert [f"{MODULE_ROW_MARK} EQ-32{letter}" in labels for letter in "ABC"] == [True] * 3
+
+
+def test_overlapping_downtime_on_a_single_unit_goes_on_its_own_sub_row() -> None:
+    """단독 호기의 겹친 비가동은 「└ 설비명」 둘째 줄이다 — 「⋯ 같은 호기」 는 없다."""
+    canvas = _canvas(dynamic=_dynamic(arrows=_module_arrows()))
+    labels = [item["text"] for item in _annotations(canvas.labels)]
+
+    assert _arrow_section(canvas, "EQ-02") == ["arrow:EQ-02#0", "arrow:EQ-02#1"]
+    assert f"{MODULE_ROW_MARK} EQ-02" in labels
+    assert not [text for text in labels if "같은 호기" in text]
 
 
 def test_a_stopping_module_group_names_its_modules_in_the_hover() -> None:
@@ -1499,15 +1813,15 @@ def test_the_dark_theme_paints_with_dark_tokens() -> None:
     assert tokens._PALETTES["light"]["SHORTAGE_MONTH_BAND"] not in json.dumps(_json(canvas.months))
 
 
-def test_the_shortening_target_is_not_repeated_in_the_section_titles() -> None:
-    """단축 목표는 표 도구 줄 한 자리에 선다 — 캔버스 구획 머리에 거듭하지 않는다(설계 규칙
-    UI-TXT-07). 줄 이름 「목표 과부족」 은 값 줄의 이름이라 남는다."""
+def test_the_shortening_target_is_not_written_on_the_sheet() -> None:
+    """단축 목표는 Guide 가 적는다(2026-11-12 사용자 메모 k-c4) — 캔버스 구획 머리 · 줄 이름에 두지
+    않고, ② 의 「목표 과부족」 줄도 걷었다(k-c2)."""
     target = MonthlyTarget(1.095, ((202703, 1.2),))
     canvas = _canvas(dynamic=_dynamic(target=target))
     texts = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
 
     assert "단축 목표" not in texts
-    assert "목표 과부족" in {item["text"] for item in _annotations(canvas.labels)}
+    assert "목표 과부족" not in texts and "판정 대조" not in texts and "비가동 영향" not in texts
 
 
 # ---------------------------------------------------------------------- UPEH 가정
@@ -1570,7 +1884,7 @@ def test_three_upeh_rows_stand_at_the_end_of_the_official_section() -> None:
     assert _row_center(assumed, ROW_RATE) - assumed.height == pytest.approx(
         _row_center(official, ROW_RATE) - official.height
     )
-    # 구간 달만 값이고, 밖은 빈칸에 「구간 밖 — 공식과 같음」 풍선이다.
+    # 구간 달만 값이고, 밖은 빈칸에 「구간 밖 — 가정 전과 같음」 풍선이다(q2 (가)).
     required = _row_texts(assumed, ROW_UPEH_REQUIRED)
     inside = MONTHS.index(202702)
     assert required[inside][0] == f"<b>{REQUIRED[inside] / 1.1:,.1f}</b>"
@@ -1579,7 +1893,7 @@ def test_three_upeh_rows_stand_at_the_end_of_the_official_section() -> None:
         for data, _, _ in _targets(assumed)
         if data[CUSTOMDATA_ROW] == ROW_UPEH_RATE and data[CUSTOMDATA_MONTH] not in window
     ]
-    assert outside_hovers and all("구간 밖 — 공식과 같음" in hover for hover in outside_hovers)
+    assert outside_hovers and all("구간 밖 — 가정 전과 같음" in hover for hover in outside_hovers)
     labels = json.dumps(_annotations(assumed.labels), ensure_ascii=False)
     assert "UPEH 110% · 소요대수" in labels and "UPEH 110% · 확보 기준 과부족" in labels
 
@@ -1589,7 +1903,7 @@ def test_at_100_percent_the_rows_are_the_official_rows() -> None:
 
 
 def test_with_an_assumption_the_shortage_band_follows_the_assumed_judgement() -> None:
-    """판정 기준은 하나다 — 가정이 켜지면 부족 띠는 가정 요약의 판정을 따른다(① 공식 줄은 공식
+    """판정 기준은 하나다 — 가정이 켜지면 부족 띠는 가정 요약의 판정을 따른다(① Static 줄은 Static
     그대로)."""
 
     def bands(canvas: ProcessCapaCanvas) -> list[float]:
@@ -1606,43 +1920,46 @@ def test_with_an_assumption_the_shortage_band_follows_the_assumed_judgement() ->
     assert _row_texts(assumed, ROW_RATE) == _row_texts(official, ROW_RATE)
 
 
-def test_the_cross_check_and_target_rows_carry_the_assumption_mark_only_on_changing_rows() -> None:
+def test_an_assumption_moves_the_schedule_demand_and_marks_only_the_unit_hovers() -> None:
+    """가정이 켜지면 ② · ③ 소요대수는 가정 소요다(판정 기준의 소요). 가정 전과 견주는 값은
+    「가정 전」 이라 부른다(2026-11-12 사용자 답 q2 (가))."""
     dynamic = _dynamic()
     marked = DynamicCanvasInput(**{**dynamic.__dict__, "official_pulls": {"EQ-21": (45, 0)}})
     canvas = _assumed_canvas(110, set(MONTHS), dynamic=marked)
     labels = json.dumps(_annotations(canvas.labels), ensure_ascii=False)
-    assert "판정 대조 · UPEH 가정" in labels and "과부족 · UPEH 가정" in labels
-    # 비가동 영향은 % 가 가정 소요로 바뀌어 표지를 단다.
-    assert "비가동 영향 · UPEH 가정" in labels
-    assert "가용 (환산) · UPEH" not in labels and "전월 대비 · UPEH" not in labels
+    assert "UPEH 가정" not in labels.replace("UPEH 110%", "")
+    for row in (ROW_DYNAMIC_REQUIRED, ROW_EFFECT_REQUIRED):
+        texts = _row_texts(canvas, row)
+        assert _plain(texts[0][0]) == f"{REQUIRED[0] / 1.1:,.1f}"
+        assert "UPEH 가정 110%" in _hover_of(canvas, row, MONTHS[0])
     unit_hover = _label_hovers(canvas)["unit:EQ-21"]
-    assert unit_hover.split("<br>")[-1] == f"UPEH 가정 계획 · 공식 {MINUS}45일 → 가정 0일"
+    assert unit_hover.split("<br>")[-1] == f"UPEH 가정 계획 · 가정 전 {MINUS}45일 → 가정 0일"
     cell_lines = _row_hover(canvas, "unit:EQ-21").split("<br>")
     assert cell_lines[0] == unit_hover.split("<br>")[0]
     assert cell_lines[-1] == unit_hover.split("<br>")[-1]
+    assert "공식" not in json.dumps(_json(canvas.months), ensure_ascii=False)
 
 
-def _compare_hovers(canvas: ProcessCapaCanvas) -> dict[int, str]:
-    return {
-        int(data[CUSTOMDATA_MONTH]): str(data[CUSTOMDATA_HOVER])
-        for data, _, _ in _targets(canvas)
-        if data[CUSTOMDATA_ROW] == ROW_DYNAMIC_COMPARE
-    }
-
-
-def test_the_cross_check_hover_names_the_assumed_basis_when_an_assumption_is_on() -> None:
-    """가정이 켜지면 ② 판정 대조의 「기준」 은 가정 요약의 판정이다 — 풍선이 「공식은 …」 이라고
-    적으면 공식 판정처럼 읽힌다. 공식 값은 ① 공식 줄과 KPI 회색 줄에만 둔다(명세 U6)."""
-    official = _compare_hovers(_canvas(dynamic=_dynamic()))
-    assumed = _compare_hovers(_assumed_canvas(80, set(MONTHS), dynamic=_dynamic()))
-
-    disagreeing = [hover for hover in official.values() if "공식은" in hover]
-    assert disagreeing, official
-    assert all("UPEH 가정" not in hover for hover in official.values())
-    named = [hover for hover in assumed.values() if "UPEH 가정" in hover]
-    assert named, assumed
-    assert all("공식은" not in hover and "공식·설비" not in hover for hover in assumed.values())
-    assert any(
-        "UPEH 가정 기준은" in hover or "UPEH 가정·설비 일정 두 기준 모두 부족" in hover
-        for hover in named
+def test_schedule_product_rows_follow_the_assumed_demand() -> None:
+    """「제품별 소요대수」 는 ① · ② 를 함께 펼친다(q4 (가)). 가정이 걸린 달의 ② 제품 줄은 ÷f 라 다
+    더하면 ② 소요대수(가정 소요)와 같다 — ① 제품 줄은 가정 전 소요 그대로다."""
+    window = {202702, 202703}
+    canvas = build_process_capa_canvas(
+        process_label="Die Attach",
+        months=MONTHS,
+        summary=_summary(),
+        thresholds=THRESHOLDS,
+        selected_month=202702,
+        product_demand=_products(),
+        dynamic=_dynamic(),
+        assumption=AssumptionCanvasInput(
+            percent=110, months=frozenset(window), summary=_assumed_summary(110, window)
+        ),
     )
+    index = MONTHS.index(202702)
+    schedule = sum(
+        float(_plain(_row_texts(canvas, f"dynamic_product:{name}")[index][0])) for name in SHARES
+    )
+    static = sum(float(_plain(_row_texts(canvas, f"product:{name}")[index][0])) for name in SHARES)
+    assert schedule == pytest.approx(REQUIRED[index] / 1.1, abs=0.06)
+    assert static == pytest.approx(REQUIRED[index], abs=0.06)

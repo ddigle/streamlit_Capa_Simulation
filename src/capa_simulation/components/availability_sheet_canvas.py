@@ -344,7 +344,7 @@ def _hover(view: SheetView, row: str, month: int, head: str) -> str:
         return (
             f"{head} · 설비 일정 기준 가용 {_three(value)} {mark} 보유 {owned_text} + 대여(비가동) "
             f"{lent_text}"
-            "<br>교차검증·필요 단축 일정·공정 Capa 상세 ② 와 같은 값 · 누르면 호기"
+            "<br>교차검증·필요 단축 일정·공정 Capa 상세 ③ 일정 기준 실가용과 같은 값 · 누르면 호기"
         )
     schedule, static = GAP_PAIRS[row]
     signed = schedule == ROW_SCHEDULE_LENT

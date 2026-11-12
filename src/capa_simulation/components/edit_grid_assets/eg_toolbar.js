@@ -183,6 +183,8 @@ const TB_FIND_MS = 120
 const TB_CHANGES_LIMIT = 500
 const TB_DRAG_SLOP = 2
 const TB_EMPTY = new Int32Array(0)
+// 그림 단추의 Material Symbols 이름 — 단추 이름은 풍선(title)과 aria-label 이다(단축키는 그대로).
+const TB_GLYPH = { undo: 'undo', redo: 'redo', fit: 'fit_width', full: 'fullscreen', fullExit: 'fullscreen_exit' }
 
 function tbText(S, name, fallback) {
   return S.texts && typeof S.texts[name] === 'string' ? S.texts[name] : fallback
@@ -266,14 +268,14 @@ function tbInit(S) {
   find.appendChild(prev)
   find.appendChild(next)
   find.appendChild(count)
-  const undo = tbButton('eg-tb-undo')
-  const redo = tbButton('eg-tb-redo')
+  const undo = tbButton('eg-tb-glyph eg-tb-undo', TB_GLYPH.undo)
+  const redo = tbButton('eg-tb-glyph eg-tb-redo', TB_GLYPH.redo)
   undo.setAttribute('aria-keyshortcuts', 'Control+Z')
   redo.setAttribute('aria-keyshortcuts', 'Control+Y')
-  const fit = tbButton('eg-tb-fit')
+  const fit = tbButton('eg-tb-glyph eg-tb-fit', TB_GLYPH.fit)
   const changes = tbButton('eg-tb-changes')
   changes.setAttribute('aria-pressed', 'false')
-  const full = tbButton('eg-tb-full')
+  const full = tbButton('eg-tb-glyph eg-tb-full', TB_GLYPH.full)
   full.setAttribute('aria-pressed', 'false')
   bar.appendChild(find)
   bar.appendChild(tbEl('span', 'eg-tb-sep'))
@@ -308,7 +310,10 @@ function tbInit(S) {
   S.dom.status.appendChild(scope)
   tb.dom = { input, prev, next, count, undo, redo, fit, changes, full, drawer, title, close, list, more, empty, dialog, scope }
   tbLabels(S)
-  tbListen(S, input, 'input', () => tbFindSoon(S))
+  tbListen(S, input, 'input', () => {
+    tbFindShown(S)
+    tbFindSoon(S)
+  })
   tbListen(S, input, 'keydown', (event) => tbFindKey(S, event))
   tbListen(S, prev, 'click', (event) => tbGridCommand(S, event, () => tbFindGo(S, -1)))
   tbListen(S, next, 'click', (event) => tbGridCommand(S, event, () => tbFindGo(S, 1)))
@@ -349,12 +354,13 @@ function tbLabels(S) {
   d.input.setAttribute('aria-label', tbText(S, 'findHint', '표에서 찾기 (Ctrl+F)'))
   tbLabel(d.prev, tbText(S, 'findPrev', '이전 일치 (Shift+Enter)'))
   tbLabel(d.next, tbText(S, 'findNext', '다음 일치 (Enter)'))
-  d.undo.textContent = tbText(S, 'undo', '되돌리기')
+  // 그림 단추 — 이름은 aria-label, 풍선은 이름과 단축키 · 하는 일.
+  d.undo.setAttribute('aria-label', tbText(S, 'undo', '되돌리기'))
   d.undo.title = tbText(S, 'undoHint', '되돌리기 (Ctrl+Z)')
-  d.redo.textContent = tbText(S, 'redo', '다시 실행')
+  d.redo.setAttribute('aria-label', tbText(S, 'redo', '다시 실행'))
   d.redo.title = tbText(S, 'redoHint', '다시 실행 (Ctrl+Y)')
-  d.fit.textContent = tbText(S, 'fit', '칸 폭 맞춤')
-  d.fit.title = tbText(S, 'fitHint', '모든 칸 폭을 글에 맞춥니다')
+  d.fit.setAttribute('aria-label', tbText(S, 'fit', '칸 폭 맞춤'))
+  d.fit.title = tbText(S, 'fit', '칸 폭 맞춤') + ' — ' + tbText(S, 'fitHint', '모든 칸 폭을 글에 맞춥니다')
   tbLabel(d.close, tbText(S, 'changesClose', '닫기'))
   d.drawer.setAttribute('aria-label', tbText(S, 'changes', '적용 전 변경'))
   d.dialog.setAttribute('aria-label', tbFill(tbText(S, 'fullLabel', '{title} 전체 화면'), { title: S.model ? S.model.title : '' }))
@@ -366,7 +372,9 @@ function tbLabels(S) {
 
 function tbFullLabel(S) {
   const button = S.tb.dom.full
-  button.textContent = S.full ? tbText(S, 'fullExit', '전체 화면 닫기 (Esc)') : tbText(S, 'full', '전체 화면')
+  const name = S.full ? tbText(S, 'fullExit', '전체 화면 닫기 (Esc)') : tbText(S, 'full', '전체 화면')
+  button.textContent = S.full ? TB_GLYPH.fullExit : TB_GLYPH.full
+  tbLabel(button, name)
   button.setAttribute('aria-pressed', S.full ? 'true' : 'false')
 }
 
@@ -420,6 +428,12 @@ function tbFocusFind(S) {
   const input = S.tb.dom.input
   input.focus()
   if (typeof input.select === 'function') input.select()
+}
+
+// 위아래 화살표 · 찾은 수는 찾는 글이 있을 때만 선다(찾기 칸을 줄여 표 위 단추 줄과 한 줄에 들게).
+function tbFindShown(S) {
+  const d = S.tb.dom
+  d.input.parentNode.classList.toggle('has-q', d.input.value !== '')
 }
 
 function tbFindSoon(S) {
@@ -558,6 +572,7 @@ function tbFindGo(S, dir) {
 function tbFindClear(S) {
   const f = S.tb.find
   S.tb.dom.input.value = ''
+  tbFindShown(S)
   if (S.tb.timers.find) clearTimeout(S.tb.timers.find)
   S.tb.timers.find = 0
   f.query = ''

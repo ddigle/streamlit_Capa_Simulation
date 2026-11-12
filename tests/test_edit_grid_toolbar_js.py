@@ -504,7 +504,14 @@ def test_the_toolbar_is_built_with_labels_from_the_shell() -> None:
     prev: d.prev.getAttribute('aria-label'), next: d.next.getAttribute('aria-label'),
     keys: d.input.getAttribute('aria-keyshortcuts') }
   R.buttons = [d.undo, d.redo, d.fit, d.changes, d.full].map((node) => [node.textContent,
-    node.getAttribute('aria-disabled'), node.getAttribute('aria-pressed'), node.title])
+    node.getAttribute('aria-disabled'), node.getAttribute('aria-pressed'), node.title,
+    node.getAttribute('aria-label')])
+  R.findShown = d.input.parentNode.classList.contains('has-q')
+  d.input.value = 'p'
+  fire(d.input, 'input')
+  R.findTyped = d.input.parentNode.classList.contains('has-q')
+  key(d.input, 'Escape')
+  R.findCleared = d.input.parentNode.classList.contains('has-q')
   R.dialog = { inHost: d.dialog.parentNode === host, label: d.dialog.getAttribute('aria-label'),
     open: Boolean(d.dialog.open), registered: S.dom.dialog === d.dialog }
   R.drawer = { hidden: d.drawer.hidden, inFrame: d.drawer.parentNode === S.dom.frame }
@@ -518,12 +525,12 @@ def test_the_toolbar_is_built_with_labels_from_the_shell() -> None:
     assert bar["kids"] == [
         "eg-tb-find",
         "eg-tb-sep",
-        "eg-tb-btn eg-tb-undo is-off",
-        "eg-tb-btn eg-tb-redo is-off",
+        "eg-tb-btn eg-tb-glyph eg-tb-undo is-off",
+        "eg-tb-btn eg-tb-glyph eg-tb-redo is-off",
         "eg-tb-sep",
-        "eg-tb-btn eg-tb-fit",
+        "eg-tb-btn eg-tb-glyph eg-tb-fit",
         "eg-tb-btn eg-tb-changes",
-        "eg-tb-btn eg-tb-full",
+        "eg-tb-btn eg-tb-glyph eg-tb-full",
     ]
     assert result["find"] == {
         "placeholder": "찾기",
@@ -533,12 +540,20 @@ def test_the_toolbar_is_built_with_labels_from_the_shell() -> None:
         "keys": "Control+F",
     }
     undo, redo, fit, changes, full = result["buttons"]
+    # 그림 단추(글은 Material Symbols 이름) — 이름은 aria-label, 풍선은 이름 · 단축키 · 하는 일.
     # feed 의 되돌리기·다시 실행 수가 0 — 꺼짐(초점은 남도록 aria-disabled).
-    assert undo == ["되돌리기", "true", None, "되돌리기 (Ctrl+Z)"]
-    assert redo == ["다시 실행", "true", None, "다시 실행 (Ctrl+Y)"]
-    assert fit[0] == "칸 폭 맞춤" and fit[3].startswith("모든 칸 폭을 글에 맞춥니다")
+    assert undo == ["undo", "true", None, "되돌리기 (Ctrl+Z)", "되돌리기"]
+    assert redo == ["redo", "true", None, "다시 실행 (Ctrl+Y)", "다시 실행"]
+    assert fit[0] == "fit_width" and fit[4] == "칸 폭 맞춤"
+    assert fit[3].startswith("칸 폭 맞춤 — 모든 칸 폭을 글에 맞춥니다")
     assert changes[:3] == ["적용 전 변경 (0)", None, "false"]
-    assert full[:3] == ["전체 화면", None, "false"]
+    assert full == ["fullscreen", None, "false", "전체 화면", "전체 화면"]
+    # 위아래 화살표 · 찾은 수는 찾는 글이 있을 때만(Esc 로 지우면 다시 숨는다).
+    assert (result["findShown"], result["findTyped"], result["findCleared"]) == (
+        False,
+        True,
+        False,
+    )
     assert result["dialog"] == {
         "inHost": True,
         "label": "효율 전체 화면",
@@ -991,6 +1006,7 @@ def test_fullscreen_moves_the_grid_into_a_modal_dialog_and_esc_closes_it() -> No
   R.open = { full: S.full, open: d.dialog.open, modals: d.dialog.modals,
     inside: root.parentNode === d.dialog,
     pressed: d.full.getAttribute('aria-pressed'), text: d.full.textContent,
+    label: d.full.getAttribute('aria-label'), title: d.full.title,
     scroll: [scroller.scrollTop, scroller.scrollLeft], focus: document.activeElement === scroller,
     live: q('.eg-live').textContent }
   // 칸 편집 중 Esc 는 편집만 끝낸다(편집기가 기본 동작을 막아 대화 상자 cancel 이 오지 않는다).
@@ -1008,6 +1024,7 @@ def test_fullscreen_moves_the_grid_into_a_modal_dialog_and_esc_closes_it() -> No
     back: root.parentNode === host
       && host.children.indexOf(root) === host.children.indexOf(d.dialog) - 1,
     pressed: d.full.getAttribute('aria-pressed'), text: d.full.textContent,
+    label: d.full.getAttribute('aria-label'),
     focus: document.activeElement === scroller, scroll: [scroller.scrollTop, scroller.scrollLeft] }
   // 바깥 초점의 Esc 는 브라우저가 대화 상자에 cancel 을 쏜다 — 막고 뿌리를 제자리로 옮겨 닫는다.
   click(d.full)
@@ -1027,7 +1044,8 @@ def test_fullscreen_moves_the_grid_into_a_modal_dialog_and_esc_closes_it() -> No
     result = _run(body, _payloads())
     opened = result["open"]
     assert opened["full"] and opened["open"] and opened["modals"] == 1 and opened["inside"]
-    assert opened["pressed"] == "true" and opened["text"] == "전체 화면 닫기 (Esc)"
+    assert opened["pressed"] == "true" and opened["text"] == "fullscreen_exit"
+    assert opened["label"] == opened["title"] == "전체 화면 닫기 (Esc)"
     assert opened["scroll"] == [120, 30], "옮겨 붙여도 스크롤 자리를 되돌린다"
     assert opened["focus"] and opened["live"] == "전체 화면"
     assert result["editEsc"] == [True, True, True]
@@ -1039,7 +1057,8 @@ def test_fullscreen_moves_the_grid_into_a_modal_dialog_and_esc_closes_it() -> No
         "open": False,
         "back": True,
         "pressed": "false",
-        "text": "전체 화면",
+        "text": "fullscreen",
+        "label": "전체 화면",
         "focus": True,
         "scroll": [150, 40],
     }

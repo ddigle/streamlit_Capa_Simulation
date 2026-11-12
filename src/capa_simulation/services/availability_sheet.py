@@ -15,7 +15,8 @@
 ## 설비 일정 기준 세 행 — 반사실
 
 - **가용** = 지금의 `available_subtotal(...)["Dynamic가용환산대수"]` 그대로(기존보유 + 「가용」
-  환산). 확보율 교차검증의 분자·필요 단축 일정의 가용·공정 Capa 상세 ② `가용 (환산)` 과 같은 값이다.
+  환산). 확보율 교차검증의 분자·필요 단축 일정의 가용·공정 Capa 상세 ③ 비가동(기준 「일정」)의
+  실가용대수와 같은 값이다.
 - **보유** = 기존보유 + **비가동만 비운** 생애주기 구간에서 「가용」 분류에 든 환산대수. 같은
   마스터·같은 구간 범위·같은 엔진으로 비가동 표만 비워 한 번 더 만든 구간(반사실)이다. 그래서 Qual
   다음 날·정지·반출/이설 당일·모듈 지분·W/D 경계는 실제와 반사실에서 같아 상쇄되고, 다른 것은
@@ -23,11 +24,11 @@
   뒤·사용기준 밖 호기는 반사실에서도 가용이 아니라 보유에 들지 않는다.
 - **대여(비가동)** = 가용 − 보유 ≤ 0. 행끼리 `보유 + 대여 = 가용` 이 부동소수 오차 안에서 선다. 셋업
   중·보관 호기에 걸린 비가동은 가용을 깎지 않았으므로 들지 않는다 — 호기 상태 분류의 `운영 비가동`
-  과 다를 수 있는 까닭이다(공정 Capa 상세 ④ 의 흐린 화살표와 같은 뜻).
+  과 다를 수 있는 까닭이다(공정 Capa 상세 ⑤ 의 흐린 화살표와 같은 뜻).
 - **입력 비가동**(가용설비 현황 › Preference — 공정 × 생산월 대수, `services/manual_downtime.py`)은
   호기별 비가동과 별도 손실이라 가용에서 더 뺀다(`manual_downtime` 인자 — 계산할 달로 좁힌 칸).
   뺄 몫은 그 (달, 공정) 가용 환산 소계에서 멈추고(`clamp_manual_units` — 필요 단축 일정 계획·공정
-  Capa 상세 ② 와 같은 규칙), 보유는 그대로라 그 몫이 대여(비가동)에 든다. 넣은 값·뺀 몫은
+  Capa 상세 ③ 과 같은 규칙), 보유는 그대로라 그 몫이 대여(비가동)에 든다. 넣은 값·뺀 몫은
   `입력 비가동`·`입력 비가동 반영` 칸이고 근거 카드가 한 줄(`manual_downtime_lines`)로 보인다.
   호기 필터 시트(기존보유처럼 공정 단위라 들지 않는다)·Static 은 그대로다.
 
@@ -167,7 +168,8 @@ ROW_ITEMS: Final[Mapping[str, str]] = {
 BASELINE_COLUMN: Final = BASELINE_CATEGORY.name
 MISMATCH_COLUMN: Final = "Static 불일치"
 # 입력 비가동 — 그 (달, 공정)에 넣은 대수와 가용에서 실제로 뺀 몫(그 달 가용에서 멈춘다). 공정 Capa
-# 상세 ② 전월 대비(`process_equipment_timeline.BRIDGE_COLUMNS`)와 같은 이름이다.
+# 상세 ③ 비가동 · ⑤ 첫 줄이 읽는 전월 대비 표(`process_equipment_timeline.BRIDGE_COLUMNS`)와 같은
+# 이름이다.
 MANUAL_ENTERED_COLUMN: Final = "입력 비가동"
 MANUAL_APPLIED_COLUMN: Final = "입력 비가동 반영"
 _MANUAL_COLUMNS: Final = (MANUAL_ENTERED_COLUMN, MANUAL_APPLIED_COLUMN)

@@ -9,10 +9,10 @@ KPI 글·범례·그림 기억·콜백을 하나씩 고정한다. 재료는 결�
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -27,13 +27,19 @@ from test_process_capa_canvas import (
     _summary,
 )
 from test_required_shortening import PROCESS
+from xlsx_read import read_workbook
 
 from capa_simulation.components.constraint_equipment_plan import EQUIPMENT_SCREEN
 from capa_simulation.components.process_capa_canvas import (
+    BASIS_SCHEDULE,
+    BASIS_STATIC,
     SECTION_DOWNTIME,
+    SECTION_EFFECT,
     SECTION_IDS,
     SECTION_SUMMARY,
     SECTION_UNITS,
+    UNITS_ALL,
+    UNITS_SHORTENING,
     DynamicCanvasInput,
 )
 from capa_simulation.components.process_capa_view import (
@@ -41,14 +47,13 @@ from capa_simulation.components.process_capa_view import (
     DYNAMIC_ABSENT_RULE,
     DYNAMIC_OFFICIAL_KEPT,
     ENTRY_SECTIONS,
+    EVIDENCE_BOX_KEY,
     NO_COUNTED_UNITS_HELP,
     SHEET_MEMO_LIMIT,
-    TARGET_HELP,
     DynamicView,
     Prescription,
     ProcessDetailView,
     availability_card,
-    canvas_legend_html,
     canvas_memo_key,
     cause_summary,
     contributing_units,
@@ -61,7 +66,6 @@ from capa_simulation.components.process_capa_view import (
     month_next_screens,
     prescription,
     prescription_text,
-    production_month_example,
     schedule_short_month,
     sheet_memo_key,
     sheet_request,
@@ -69,6 +73,7 @@ from capa_simulation.components.process_capa_view import (
     shortening_link_needed,
     target_text,
 )
+from capa_simulation.components.process_capa_workbook import DETAIL_SHEET, process_capa_workbook
 from capa_simulation.components.process_labels import ProcessLabels
 from capa_simulation.design import theme
 from capa_simulation.process_detail_state import FROM_GAP, FROM_HOME, FROM_SHORTENING
@@ -92,7 +97,9 @@ from capa_simulation.services.required_shortening import (
 )
 from capa_simulation.services.securement_rate import CAUSE_COLUMN, CAUSE_OWNED_SHORT
 from capa_simulation.services.securement_threshold import SecurementThresholds
+from capa_simulation.sidebar_status import remembered_box_key
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MINUS = "−"
 
 
@@ -239,9 +246,25 @@ def test_the_availability_card_warns_on_a_mismatch_and_adds_the_schedule_referen
     card = availability_card(record, bridge)
 
     assert card.formula.startswith("보유 52.0 − 대여 4.0 = 48.0")
-    assert "가용대수 48.0 (공식)" in card.formula
+    assert "가용대수 48.0 (Static)" in card.formula
     assert any(note.startswith("⚠") for note in card.notes)
-    assert "설비 일정 기준(참고): 기존보유 44.0 + 호기 3.5 = 47.5 (환산)" in card.notes
+    assert "일정 가용(참고): 기존보유 44.0 + 호기 3.5 = 47.5 (환산 · 비가동 빼기 전)" in card.notes
+    assert not any(note.startswith("③") for note in card.notes)
+
+
+def test_the_availability_card_splits_the_schedule_before_and_after_downtime() -> None:
+    """② 일정 가용은 비가동을 빼기 전, ③ 일정 기준 실가용은 그 가용 − 비가동이고 필요 단축 일정의
+    가용과 같다(2026-11-12 사용자 답 n1 (가) — 산출 근거 식도 맞춘다)."""
+    bridge = {
+        "기존보유": 44.0,
+        "호기 가용": 15.7,
+        "호기 비가동 손실": 3.3,
+        "입력 비가동 반영": 0.0,
+        "가용대수": 59.7,
+    }
+    card = availability_card(_record(_summary(), 202611), bridge)
+    assert "일정 가용(참고): 기존보유 44.0 + 호기 19.0 = 63.0 (환산 · 비가동 빼기 전)" in card.notes
+    assert "③ 일정 기준 실가용: 63.0 − 비가동 3.3 = 59.7 (필요 단축 일정의 가용)" in card.notes
 
 
 def test_the_demand_card_falls_back_without_a_trace() -> None:
@@ -526,41 +549,30 @@ def test_the_target_reads_the_preference_threshold_by_month() -> None:
     assert target_text(uniform, MONTHS) == "확보 기준(월별) 110%"
     varied = MonthlyTarget(1.095, ((202703, 1.2),))
     assert target_text(varied, MONTHS) == "확보 기준(월별)"
-    # 그 값을 고치는 곳은 자리 글이 아니라 풍선이다(UI-TXT-03).
-    assert "HOME 설정 → 판정 기준 › 확보 기준(월별)" in TARGET_HELP
+    # 화면에서는 그 값과 고치는 곳을 Guide 가 적는다(2026-11-12 사용자 메모 k-c4).
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/process_capa_detail.md").read_text(
+        encoding="utf-8"
+    )
+    assert "HOME 설정 → 판정 기준 › 확보 기준을 달마다 그대로" in guide
 
 
 # ------------------------------------------------------------------ 범례·스크롤
 
 
-def test_the_legend_adds_the_schedule_marks_only_with_the_schedule() -> None:
-    static = canvas_legend_html(None, MONTHS)
-    assert "공식 확보 기준 미달 달" in static and "지금 보는 달" in static
-    assert "가용을 깎은 비가동" not in static
-    dynamic = canvas_legend_html(_dynamic(), MONTHS)
-    for item in (
-        "반입",
-        "추가N(신규 필요)",
-        "가용을 깎은 비가동",
-        "칸 = 생산월",
-        "≠ 반출/이설일정",
-    ):
-        assert item in dynamic
-    # 생산월 규칙(세는 날 · 이설 이름)은 「칸 = 생산월」 표지의 풍선(title)이고 늘 보이는 글이
-    # 아니다(UI-TXT-01).
-    visible = re.sub(r'title="[^"]*"', "", dynamic)
-    assert "당일부터 셉니다" not in visible and "≠ 반출/이설일정" not in visible
-    assert "칸 = 생산월 · Cut-off" in visible
-    # 서식과 표시 글이 한 덩어리 — 본문 칸으로 간다.
-    assert dynamic.startswith("<style>") and '<div class="pcd-legend">' in dynamic
+def test_the_legend_left_the_sheet_for_the_guide() -> None:
+    """시트 아래 범례 한 줄은 걷고 Guide 「시트 범례」 절이 띠 · 칸 색 · 표지를 적는다(2026-11-12
+    사용자 답 k-c5). 칸 = 생산월 예는 ② 제목 줄 풍선이 적는다."""
+    from capa_simulation.components import process_capa_view
+    from capa_simulation.components.process_capa_canvas import _production_example
 
-
-def test_the_production_month_example_adds_the_next_day_and_the_cutoff() -> None:
-    # 11.25 Qual → 기여 11.26, Cut-off 10 → 12.06 → 12월 칸.
-    assert production_month_example(10, MONTHS) == (
-        "칸 = 생산월 — Cut-off 10일이면 11.25 Qual 은 12월 칸에 섭니다"
+    assert not hasattr(process_capa_view, "canvas_legend_html")
+    guide = (PROJECT_ROOT / "src/capa_simulation/guides/process_capa_detail.md").read_text(
+        encoding="utf-8"
     )
-    assert production_month_example(0, MONTHS).endswith("11월 칸에 섭니다")
+    assert "#### 시트 범례 — 띠 · 칸 색 · 표지" in guide
+    # 11.25 Qual → 기여 11.26, Cut-off 10 → 12.06 → 12월 칸.
+    assert _production_example(10, MONTHS) == "11.25 Qual 은 12월 칸"
+    assert _production_example(0, MONTHS) == "11.25 Qual 은 11월 칸"
 
 
 def test_the_scroll_starts_one_column_left_of_the_opened_month() -> None:
@@ -583,6 +595,8 @@ def _key(
     units: bool = False,
     arrows: bool = False,
     collapsed: frozenset[str] = frozenset(),
+    basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
 ) -> tuple[object, ...]:
     return canvas_memo_key(
         view,
@@ -592,6 +606,8 @@ def _key(
         show_all_units=units,
         show_all_arrows=arrows,
         collapsed=collapsed,
+        basis=basis,
+        units_view=units_view,
     )
 
 
@@ -616,6 +632,9 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
     assert _key(view, collapsed=frozenset({SECTION_UNITS, SECTION_DOWNTIME})) == _key(
         view, collapsed=frozenset({SECTION_DOWNTIME, SECTION_UNITS})
     )
+    # 비가동 기준 · ④ 보기도 그림에 구워진다(2026-11-12 사용자 답 q5b · q6 메모).
+    assert _key(view, basis=BASIS_SCHEDULE) != key
+    assert _key(view, units_view=UNITS_SHORTENING) != key
     # UPEH 가정 토큰(%·건 달)은 ① 끝 세 줄과 판정 기준을 바꾼다.
     assert _key(_view(upeh_token=(110, (202702,)))) != _key(_view())
     assert _key(_view(upeh_token=(110, (202702,)))) != _key(_view(upeh_token=(120, (202702,))))
@@ -624,11 +643,13 @@ def test_the_canvas_key_moves_with_every_drawn_condition() -> None:
 def test_the_canvas_schema_version_moves_with_the_folding_and_module_labels() -> None:
     """구획 접기·모듈 라벨 제거(4), ③ 세 줄 풍선 · 풍선 없는 칸 trace · 줄 이름 칸 풍선 표적(5),
     풍선 식의 「≈」(6 — `customdata` 에 구운 풍선 글), ② 「비가동 영향」 줄(7), 정수 기준 글과 판정
-    경계 과부족 풍선(8 — 2026-11-01 사용자 결정)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을
-    다시 쓰지 않게 모양 버전이 8 이다(AGENTS 5장 16)."""
+    경계 과부족 풍선(8 — 2026-11-01 사용자 결정), 구획 다섯 · 제목 줄 풍선 · 비가동 기준(9 —
+    2026-11-12 사용자 답), ④ 「단축 후 확보율」 · 보기 · ⑤ 모듈 묶음 Main 줄과 「└ 모듈명」(10 —
+    같은 날 답 q6 · q6b · q7)으로 그림 모양이 바뀌었다 — 세션에 남은 옛 그림을 다시 쓰지 않게 모양
+    버전이 10 이다(AGENTS 5장 16)."""
     from capa_simulation.components.process_capa_view import CANVAS_SCHEMA_VERSION
 
-    assert CANVAS_SCHEMA_VERSION == 8
+    assert CANVAS_SCHEMA_VERSION == 10
     assert _key(_view())[0] == CANVAS_SCHEMA_VERSION
 
 
@@ -746,9 +767,23 @@ def test_the_sheet_key_follows_the_heading_and_the_drawn_conditions() -> None:
         show_all_units=False,
         show_all_arrows=False,
     )
+    assert base != sheet_memo_key(
+        view,
+        expanded=False,
+        split="제품정보",
+        show_all_units=False,
+        show_all_arrows=False,
+        units_view=UNITS_SHORTENING,
+    )
 
 
-def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
+def _sheet_heading(
+    view: ProcessDetailView,
+    collapsed: frozenset[str],
+    *,
+    basis: str = BASIS_STATIC,
+    units_view: str = UNITS_ALL,
+) -> dict[str, str]:
     heading = sheet_request(
         view,
         expanded=False,
@@ -757,24 +792,82 @@ def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
         product_demand=None,
         show_all_units=False,
         show_all_arrows=False,
+        basis=basis,
+        units_view=units_view,
     ).heading
-    return dict(heading)["구획"]
+    return dict(heading)
+
+
+def _sheet_sections(view: ProcessDetailView, collapsed: frozenset[str]) -> str:
+    return _sheet_heading(view, collapsed)["구획"]
 
 
 def test_the_sheet_sections_line_names_only_the_sections_the_sheet_draws() -> None:
-    """시트 머리 값 「구획」 은 시트에 실제로 선 구획만 적는다 — 설비 일정이 서지 않으면 ② ~ ④ 칩이
+    """시트 머리 값 「구획」 은 시트에 실제로 선 구획만 적는다 — 설비 일정이 서지 않으면 ② ~ ⑤ 칩이
     켜져 있어도 ① 뿐이고, 그 ① 마저 접었으면 「모두 접힘」 이다."""
     nothing: frozenset[str] = frozenset()
-    assert _sheet_sections(_view(dynamic=None), nothing) == "① 공식"
+    assert _sheet_sections(_view(dynamic=None), nothing) == "① Static"
     assert _sheet_sections(_view(dynamic=None), frozenset({SECTION_SUMMARY})) == "모두 접힘"
     assert (
         _sheet_sections(_view(dynamic=_dynamic_view()), nothing)
-        == "① 공식 · ② 일정 가용 · ③ 단축 · ④ 비가동"
+        == "① Static · ② 일정 가용 · ③ 비가동 · ④ 단축 · ⑤ 비가동 일정"
     )
     assert (
         _sheet_sections(_view(dynamic=_dynamic_view()), frozenset({SECTION_UNITS}))
-        == "① 공식 · ② 일정 가용 · ④ 비가동"
+        == "① Static · ② 일정 가용 · ③ 비가동 · ⑤ 비가동 일정"
     )
+    # 호기 줄이 없는 공정(기존보유만)은 ④ · ⑤ 가 서지 않는다.
+    baseline_only = replace(
+        _dynamic_view(), canvas=replace(_dynamic_view().canvas, has_units=False)
+    )
+    assert (
+        _sheet_sections(_view(dynamic=baseline_only), nothing)
+        == "① Static · ② 일정 가용 · ③ 비가동"
+    )
+
+
+def test_the_sheet_heading_writes_the_two_pickers_only_for_drawn_sections() -> None:
+    """시트 머리 값 「비가동 기준」 · 「④ 단축」 은 화면 고르기 값 그대로이고, 그 구획(③ · ④)이
+    시트에 펼쳐 섰을 때만 선다(2026-11-12 사용자 답 k-c6 — 화면과 같게)."""
+    nothing: frozenset[str] = frozenset()
+    view = _view(dynamic=_dynamic_view())
+
+    heading = _sheet_heading(view, nothing)
+    assert heading["비가동 기준"] == "Static" and heading["④ 단축"] == "전체"
+    chosen = _sheet_heading(view, nothing, basis=BASIS_SCHEDULE, units_view=UNITS_SHORTENING)
+    assert chosen["비가동 기준"] == "일정" and chosen["④ 단축"] == "단축 필요만"
+    folded = _sheet_heading(view, frozenset({SECTION_EFFECT, SECTION_UNITS}))
+    assert "비가동 기준" not in folded and "④ 단축" not in folded
+    assert "비가동 기준" not in _sheet_heading(_view(dynamic=None), nothing)
+    baseline_only = replace(
+        _dynamic_view(), canvas=replace(_dynamic_view().canvas, has_units=False)
+    )
+    assert "④ 단축" not in _sheet_heading(_view(dynamic=baseline_only), nothing)
+
+
+def test_the_sheet_follows_the_units_view_of_the_screen() -> None:
+    """④ 보기를 「단축 필요만」 으로 고르면 시트 엑셀의 ④ 도 그 줄만이다 — 그림과 같은 행
+    모델이다."""
+    view = _view(dynamic=_dynamic_view())
+
+    def unit_labels(units_view: str) -> list[str]:
+        request = sheet_request(
+            view,
+            expanded=False,
+            split="제품정보",
+            collapsed=frozenset(),
+            product_demand=None,
+            show_all_units=False,
+            show_all_arrows=False,
+            units_view=units_view,
+        )
+        assert request.dynamic is not None and request.dynamic.units_view == units_view
+        book = read_workbook(process_capa_workbook(request))
+        return [str(value) for value in book[DETAIL_SHEET].column(0) if value is not None]
+
+    full, only = unit_labels(UNITS_ALL), unit_labels(UNITS_SHORTENING)
+    assert "단축 후 확보율" in full and "단축 후 확보율" in only
+    assert set(only) < set(full)
 
 
 def _callback_script() -> None:
@@ -802,7 +895,7 @@ def _callback_script() -> None:
         ({"selection": {"points": [{"customdata": [202701, "rate", "풍선"]}]}}, 202701),
         # ③ 줄을 눌러도 그 열의 달이다.
         ({"selection": {"points": [{"customdata": [202612, "unit:EQ-1", "풍선"]}]}}, 202612),
-        # 빈 선택(같은 칸 다시 누르기)·축 밖 점은 보던 달 그대로다.
+        # 빈 선택·축 밖 점은 보던 달 그대로다.
         ({"selection": {"points": []}}, 202611),
         ({"selection": {"points": [{"customdata": [199001, "rate", "풍선"]}]}}, 202611),
     ],
@@ -816,6 +909,10 @@ def test_a_cell_click_writes_the_month_of_the_cell(
     app.run()
     assert not app.exception, [element.message for element in app.exception]
     assert app.session_state["process_detail_month"] == expected
+    # 콜백이 오면 어느 경우든 접힌 산출 근거를 펼친다(2026-11-12 사용자 답 k-c5 — 빈 선택 · 축 밖
+    # 점도). 이미 골라 둔 칸을 다시 누르는 것은 그림이 사건을 보내지 않아 이 콜백까지 오지 않는다.
+    assert app.session_state[EVIDENCE_BOX_KEY] is True
+    assert app.session_state[remembered_box_key(EVIDENCE_BOX_KEY)] == (True, "")
 
 
 def test_the_month_steps_stop_at_the_axis_ends() -> None:
@@ -825,6 +922,8 @@ def test_the_month_steps_stop_at_the_axis_ends() -> None:
         app.session_state["step"] = step
         app.run()
         assert app.session_state["process_detail_month"] == expected
+    # 달을 옮긴 걸음은 산출 근거를 펼친 채 둔다.
+    assert app.session_state[EVIDENCE_BOX_KEY] is True
 
 
 # ------------------------------------------------------------------ 구획 접기
@@ -947,20 +1046,20 @@ def test_the_closing_link_steps_aside_only_for_a_visit_from_the_card() -> None:
 @pytest.mark.parametrize(
     ("percent", "month", "head", "official", "owned_link"),
     [
-        # 공식은 경고(보유로도 부족)인데 150% 면 확보 — ③ 머리도 확보, 다음 화면 줄도 없다.
+        # 가정 전은 경고(보유로도 부족)인데 150% 면 확보 — ③ 머리도 확보, 다음 화면 줄도 없다.
         (
             150,
             202702,
             "→ 확보",
-            "공식: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도 부족",
+            "가정 전: 확보율 100.4% → 경고 · 과부족 −5 · 원인 보유로도 부족",
             None,
         ),
-        # 공식은 확보인데 80% 면 부족(보유로도 부족) — ③ 머리도 부족, 다음 화면 줄도 선다.
+        # 가정 전은 확보인데 80% 면 부족(보유로도 부족) — ③ 머리도 부족, 다음 화면 줄도 선다.
         (
             80,
             202611,
             "→ 부족",
-            "공식: 확보율 116.5% → 확보 · 과부족 +2",
+            "가정 전: 확보율 116.5% → 확보 · 과부족 +2",
             "이 달 보유로도 부족 — 산출 결과",
         ),
     ],
@@ -968,9 +1067,9 @@ def test_the_closing_link_steps_aside_only_for_a_visit_from_the_card() -> None:
 def test_the_judgement_card_and_next_screens_read_the_same_assumed_basis(
     percent: int, month: int, head: str, official: str, owned_link: str | None
 ) -> None:
-    """UPEH 가정 구간 달의 ③ 판정 카드는 머리 식·판정·원인을 가정 요약으로 내고(소요 = 공식 ÷ f
-    를 식 첫 줄에), 공식 판정은 회색 「공식: …」 한 줄로 내린다 — 같은 패널의 다음 화면 줄과 같은
-    기준이다."""
+    """UPEH 가정 구간 달의 ③ 판정 카드는 머리 식·판정·원인을 가정 요약으로 내고(소요 = 가정 전 ÷ f
+    를 식 첫 줄에), 가정 전 판정은 회색 「가정 전: …」 한 줄로 내린다 — 같은 패널의 다음 화면 줄과
+    같은 기준이다."""
     window = set(MONTHS)
     summary = _summary()
     assumed = _assumed_summary(percent, window)
@@ -989,10 +1088,10 @@ def test_the_judgement_card_and_next_screens_read_the_same_assumed_basis(
     cause = _record(assumed, month)[CAUSE_COLUMN]
     assert any(note.startswith("원인: ") for note in card.notes) == bool(cause)
     assert month_next_screens(view, month).owned == owned_link
-    # 가정이 없으면 공식 그대로다(제목·식 두 줄, 「공식:」 줄 없음).
+    # 가정이 없으면 Static 그대로다(제목·식 두 줄, 「가정 전:」 줄 없음).
     plain = evidence_cards(_view(summary=summary), month, None)[2]
     assert plain.title == "③ 판정" and len(plain.formula.split("\n")) == 2
-    assert not any(note.startswith("공식: ") for note in plain.notes)
+    assert not any(note.startswith("가정 전: ") for note in plain.notes)
 
 
 def _gap_script() -> None:
