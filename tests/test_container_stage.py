@@ -336,3 +336,18 @@ def test_the_page_shows_the_new_status_while_waiting() -> None:
     )
 
     assert result == {"more": True, "went": [], "shown": [["받는 중", "다시 시도 2회"]]}
+
+
+def test_the_home_guide_names_the_stage_headlines() -> None:
+    """HOME Guide 「배포 서버(C-DEP)의 저장」(배포 전 미리 확인 8, 2026-11-12 — 모두가
+    보는 자리)은 임시 화면의 두 머리글을 글자 그대로 적는다 — 머리글을 바꾸면 Guide 도
+    같이 고친다."""
+    guide = (
+        Path(__file__).resolve().parents[1] / "src" / "capa_simulation" / "guides" / "home.md"
+    ).read_text(encoding="utf-8")
+    section = guide.partition("#### 배포 서버(C-DEP)의 저장")[2].partition("\n#### ")[0]
+
+    assert section
+    for headline in (container_stage.HEADLINE_PREPARING, container_stage.HEADLINE_PULLING):
+        assert f"`{headline}`" in section, headline
+    assert "DB 동기화" in section and "켜는 날은 앱 관리자가 알립니다" in section

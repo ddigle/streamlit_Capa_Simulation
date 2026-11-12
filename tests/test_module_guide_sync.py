@@ -5,8 +5,8 @@
 지침서는 동료(담당자)의 에이전트가 받는 유일한 문서다. 사외는 모듈을 볼 수 없어, 지침서의
 이름·예시·출력이 코드와 어긋나면 그 어긋남이 사내에서 처음 드러난다. 그래서 지침서에 옮겨 적은 것
 가운데 코드로 따질 수 있는 것은 여기서 코드에 댄다 — 창구 이름(부록 A), 규칙 번호(부록 B ·
-4장 · 7장), 뼈대 화면(3-7), 예시 모듈(3-8 · 3-9 — 정적 규칙을 통과해야 한다), 점검 출력 꼴(부록 B),
-환경변수(9-2), 담당자 클론 설정(8-4)과 배포 적용 템플릿. 담당자(사람)가 읽는 안내서
+4장 · 7장), 뼈대 화면(3-7), 예시 모듈(3-8 · 3-9 · 3-10 — 정적 규칙을 통과해야 한다), 점검
+출력 꼴(부록 B), 환경변수(9-2), 담당자 클론 설정(8-4)과 배포 적용 템플릿. 담당자(사람)가 읽는 안내서
 (`docs/module_colleague_guide.md`)는 첫 지시 블록이 지침서 0장과, 점검 출력 예시 줄(8-2)이 부록 B 와
 같은지만 본다.
 """
@@ -655,3 +655,83 @@ def test_agents_defaults_bullet_is_the_guides_three_defaults_only() -> None:
     assert "백업" not in defaults and "백업" not in _section("8-3.")
     backup = _agents_bullet("**v1 은 운영 모듈 데이터를 백업하지 않는다**")
     assert "사용자 「권장대로」" in backup and "10장 5" in backup
+
+
+def test_the_query_example_passes_the_static_rules(tmp_path: Path) -> None:
+    """3-10 의 조회 예(2026-11-12 사용자 「담당자에게 보낼 내용은 모듈 개발 가이드에
+    반영」)는 창구 1.3 을 적고 정적 규칙을 오류도 경고도 없이 통과한다 — 캐시 함수는
+    `ctx` 를 밑줄 인자로 받는다(M12)."""
+    section = _section("3-10.")
+    cache = _python_block("데모 조회 모듈의 캐시")
+    page = _python_block("데모 조회 모듈의 첫 화면")
+    folder = _write(
+        tmp_path / "modules" / "demo_query",
+        {
+            "module.json": json.dumps(
+                {
+                    "id": "demo_query",
+                    "name": "데모 조회",
+                    "api": 1,
+                    "api_minor": 3,
+                    "owner": "데모 담당",
+                    "enabled": True,
+                    "maturity": "L0",
+                    "pages": [{"slug": "main", "file": "page.py", "title": "데모 조회"}],
+                },
+                ensure_ascii=False,
+            ),
+            "cache.py": cache,
+            "page.py": page,
+            "tests/test_demo_query_smoke.py": "# Purpose: 데모 조회 시험 자리.\n",
+        },
+    )
+
+    assert [item.text() for item in _static_findings(folder)] == []
+    assert "def daily(_ctx: api.ModuleContext" in cache
+    assert "WORK_DATE >= '{start_date}' AND WORK_DATE < '{end_date}'" in cache
+    assert "except api.BigDataQueryError as error:" in page
+    # 실패하면 묻는 표지를 지운다 — 남기면 캐시에 없는 실패를 회차마다 다시 묻는다.
+    assert 'st.session_state[ctx.key("asked")] = None' in page
+    assert 'persist_state="session"' in page
+    assert "cache.daily.clear()" in section
+    assert '`monkeypatch.setattr(api, "query_bigdataquery", <대역 함수>)`' in section
+
+
+def test_the_move_section_says_when_what_and_how_the_owner_moves_a_direct_query() -> None:
+    """3-11 — 직접 조회하던 모듈 옮기기(배포 전 미리 확인 9, 2026-11-12). 도우미가 든
+    판을 적용한 뒤에만 옮길 수 있고(옛 코어는 「API 1.3 필요」 · PR 점검 실패), 걷는 꼴은
+    M21 의 두 꼴이며, 바꾼 꼴은 3-10 과 같다. 안내서 8-2 는 사람에게 그 절을 가리킨다."""
+    section = _section("3-11.")
+    colleague = COLLEAGUE_GUIDE_PATH.read_text(encoding="utf-8")
+    m21 = next(line for line in _section("부록 B").splitlines() if line.startswith("| M21 |"))
+
+    assert section.startswith("### 3-11. 직접 조회하던 모듈을 도우미로 옮기기 — 점검 오류 M21")
+    assert "적용했다고 알린 뒤에 시작한다" in section and "「API 1.3 필요」" in section
+    for word in ("`CAPA_BDQ_`", "`.credential`", "`bigdataquery.token`"):
+        assert word in section and word in m21, word
+    for form in (
+        "`api.query_bigdataquery(ctx, sql, start=…, end=…)`",
+        "`>= '{start_date}' AND < '{end_date}'`",
+        "`api.BigDataQueryError`",
+        "`error.kind`",
+        "밑줄 인자(`_ctx`)",
+        '`"api_minor": 3`',
+        '`monkeypatch.setattr(api, "query_bigdataquery", <대역 함수>)`',
+        "「Squash and merge」",
+        "(9-2)",
+    ):
+        assert form in section, form
+    assert "지침서 3-11 대로 M21 을 고쳐 줘" in colleague.replace("\n", "")
+    assert "M21)입니다 — 이미 그렇게 쓰던 모듈은 8-2 끝을 봅니다." in colleague
+
+
+def test_module_data_on_the_deploy_server_is_outside_the_db_sync_in_every_guide() -> None:
+    """배포 서버의 모듈 데이터는 재배포마다 비워지고 DB 동기화 밖이다 — 지침서 2장 ·
+    3-10 · 안내서 6장이 같은 말을 하고, S3 도우미는 DB 동기화를 켠 뒤에만 된다(배포 전
+    미리 확인 8, 2026-11-12)."""
+    colleague = COLLEAGUE_GUIDE_PATH.read_text(encoding="utf-8").replace("\n", "")
+
+    assert "재배포(CI/CD)마다" in _section("2. 쓸 수 있는 자리").replace("\n  ", "")
+    assert "DB 동기화를 켜기(이관) 전에는 「쓸 수 없음」" in _section("3-10.").replace("\n  ", "")
+    assert "DB 동기화가 켜진 뒤에도 모듈 데이터는 그 밖입니다" in colleague
+    assert "앱 관리자가 DB 동기화를 켠 뒤에만 되고" in colleague

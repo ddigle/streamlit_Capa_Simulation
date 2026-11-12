@@ -97,8 +97,10 @@
 - 손으로 넣은 파일은 그 PC 에만 있다. 앱 관리자 PC 의 운영 앱에도 배포 서버에도 닿지 않는다. 「내 PC 에서는 된다」 의 흔한 원인이다.
 - 합성 시드가 필요하면 `modules/<id>/assets/` 에 1 MB 아래의 합성 파일만 둔다(읽기만 한다).
 - **`ctx.data_dir` 가 비어 있어도 화면이 빈 상태로 서야 한다.** 스모크 시험이 빈 임시 자리로 도는 것이 그 확인이다.
-- **코어는 운영 모듈 데이터를 백업하지도 대신 올리지도 않는다.** 배포 서버 컨테이너에서는 재배포 때 사라질 수 있다. 재배포 뒤에도
-  남겨야 하는 파일은 모듈이 스스로 `api.s3_upload` 로 올리고 화면이 설 때 `api.s3_download` 로 받는다(3-10 — 배포 서버에서만 된다).
+- **코어는 운영 모듈 데이터를 백업하지도 대신 올리지도 않는다.** 배포 서버 컨테이너에는 남는 디스크가 없어 재배포(CI/CD)마다
+  `data/modules/` 가 비워진다 — 코어 두 DB 를 버킷과 맞추는 DB 동기화가 켜진 서버에서도 모듈 데이터는 그 밖이다. 재배포 뒤에도
+  남겨야 하는 파일은 모듈이 스스로 `api.s3_upload` 로 올리고 화면이 설 때 `api.s3_download` 로 받는다(3-10 — 배포 서버에서 DB 동기화가
+  켜진 뒤에만 된다).
 - 모듈 DB(DuckDB · SQLite)가 필요하면 `ctx.data_dir` 안에 둔다. 표를 만들고 고치는 일(마이그레이션)도 네 몫이고 코어 번호와 상관없다.
 - **모듈 코드 폴더에는 실행 중에 쓰지 않는다.** 쓰기는 `ctx.data_dir` 만이다. 코드 폴더에 쓴 파일은 커밋되지 않아 어느 점검에도
   보이지 않는다(M13 이 경고하고, 시험 러너는 실패로 만든다).
@@ -601,7 +603,8 @@ S3 키는 코어가 쥐고 모듈은 그 값을 읽지 않는다 — 그 환경�
 - **기다림** — 올리기 · 받기는 끝날 때까지 그 회차를 묶는다. 파일 하나에 최대 약 35초(상한 크기를 가장 느린 속도로 옮길 때)다. 작은
   파일은 아래 예처럼 처음 설 때 받아도 되지만, 큰 파일은 단추를 눌렀을 때 받는다(4장).
 - **S3 는 배포 서버에서만 된다** — 동기화 모드 `managed` 와 키 · 주소 · 버킷이 있는 운영 서버 하나다. 담당자 클론 · WebIDE · 앱 관리자
-  PC 에서는 「쓸 수 없음」 이다. 그래도 화면은 서야 한다 — 받기가 「쓸 수 없음」 이면 데이터 자리에 있는 파일로 돈다.
+  PC 에서는 「쓸 수 없음」 이다. 배포 서버도 앱 관리자가 DB 동기화를 켜기(이관) 전에는 「쓸 수 없음」 이고, 켰다고 알린 뒤부터 된다.
+  그래도 화면은 서야 한다 — 받기가 「쓸 수 없음」 이면 데이터 자리에 있는 파일로 돈다.
 - `S3Result` 의 칸 — `ok`(성공) · `reason`(실패 까닭 — 「쓸 수 없음」 · 「이름 거절」 · 「파일 없음」 · 「너무 큼」 · 「전송 실패」 ·
   「파일 오류」) · `detail`(까닭의 자세히 — 고정 낱말) · `size`(옮긴 바이트 수).
 - **기간 자리** — `{start_date}` 에는 시작 날이, `{end_date}` 에는 **끝 날 다음 날**이 들어간다(앱의 조회와 같은 꼴). 그래서 조회문은
@@ -609,7 +612,8 @@ S3 키는 코어가 쥐고 모듈은 그 값을 읽지 않는다 — 그 환경�
   예: `start=date(2026, 1, 1), end=date(2026, 1, 31)` 이면 `>= '2026-01-01' AND < '2026-02-01'` 이 된다.
 - `BigDataQueryError` 의 `kind` — 「입력」(조회문 · 기간이 틀림 — 묻기 전에 막는다) · 「쓸 수 없음」(패키지 · 요청자 계정이 없음, 모듈
   시험) · 앱 화면과 같은 갈래 「토큰」 · 「시간 초과」 · 「연결」 · 「SQL」 · 「그 밖」. 글(`str(error)`)은 앱 화면과 같은 안내다.
-- **조회 결과 캐시는 `cache.py` 에** 둔다(M12). 실패는 예외라 캐시에 남지 않는다. 오래 걸리는 조회는 단추를 눌렀을 때만 돈다(4장).
+- **조회 결과 캐시는 `cache.py` 에** 둔다(M12). 실패는 예외라 캐시에 남지 않는다 — 그래서 실패한 뒤 「묻는 중」 표지를 세션에 남겨 두면
+  다음 회차마다 다시 묻는다. 실패하면 표지를 지운다(아래 예). 오래 걸리는 조회는 단추를 눌렀을 때만 돈다(4장).
 - `bigdataquery` 를 직접 import 해도 점검은 경고(M09)다(6장). 다만 요청자 계정을 넘길 길이 없어 배포 서버에서 막힌다 — 도우미를 쓴다.
 - **모듈 시험에서는 도우미가 늘 「쓸 수 없음」 이다** — `check_module.py` 가 그렇게 돌려 진짜 조회 · 버킷에 닿지 않는다. 성공 갈래는
   시험에서 `monkeypatch.setattr(api, "s3_download", <대역 함수>)` 처럼 갈아 끼워 본다.
@@ -644,6 +648,125 @@ st.text_area("메모", value=current, key=ctx.key("text"))
 st.button("저장", key=ctx.key("save"), on_click=ctx.callback(_save))
 st.caption(f"마지막 저장 {st.session_state.get(ctx.key('saved'), '-')}")
 ```
+
+예 — 단추로 BigDataQuery 에 묻고 같은 기간은 10분 동안 캐시에서 보이는 화면(`modules/demo_query/` — `module.json` 에
+`"api_minor": 3`). 10분이 지난 뒤 화면을 다시 그리면 한 번 더 묻는다. 캐시 함수는 `ctx` 를 **밑줄 인자 `_ctx`** 로 받는다 — 모듈 전역 `ctx` 를 읽으면 M12 이고, 밑줄 인자는 캐시 키에 들지 않아 키는 기간
+둘이다. 조회문의 표 · 열 이름은 지어낸 것이다.
+
+`modules/demo_query/cache.py`:
+
+```python
+# Purpose: 데모 조회 모듈의 캐시 — 같은 기간의 BigDataQuery 조회를 10분 동안 다시 묻지 않는다.
+
+from datetime import date
+
+import pandas as pd
+import streamlit as st
+
+from capa_simulation import module_api as api
+
+SQL = (
+    "SELECT WORK_DATE, LINE, QTY FROM DEMO_DAILY "
+    "WHERE WORK_DATE >= '{start_date}' AND WORK_DATE < '{end_date}'"
+)
+
+
+@st.cache_data(ttl=600, max_entries=16)
+def daily(_ctx: api.ModuleContext, start: date, end: date) -> pd.DataFrame:
+    """실패는 `api.BigDataQueryError` 로 던져져 캐시에 남지 않는다."""
+    return api.query_bigdataquery(_ctx, SQL, start=start, end=end)
+```
+
+`modules/demo_query/page.py`:
+
+```python
+# Purpose: 데모 조회 모듈의 첫 화면 — 기간을 고르고 단추로 BigDataQuery 에 묻는다.
+
+from datetime import date, timedelta
+
+import streamlit as st
+
+from capa_simulation import module_api as api
+from modules.demo_query import cache
+
+ctx = api.context(__file__)
+api.page_header(ctx, "데모 조회")
+
+today = date.today()
+
+
+def _ask() -> None:
+    chosen = st.session_state[ctx.key("period")]
+    if len(chosen) == 2:
+        st.session_state[ctx.key("asked")] = tuple(chosen)
+
+
+st.date_input(
+    "기간",
+    value=(today - timedelta(days=6), today),
+    key=ctx.key("period"),
+    persist_state="session",
+)
+st.button("조회", key=ctx.key("ask"), on_click=ctx.callback(_ask))
+
+asked = st.session_state.get(ctx.key("asked"))
+if asked:
+    try:
+        rows = cache.daily(ctx, asked[0], asked[1])
+    except api.BigDataQueryError as error:
+        st.session_state[ctx.key("asked")] = None
+        st.error(str(error))
+    else:
+        st.dataframe(rows, width="stretch", hide_index=True)
+```
+
+- 모듈 시험에서는 단추를 누르면 「쓸 수 없음」 안내가 서고 화면은 그대로 선다 — 시험은 그것을 본다. 표가 서는 갈래는
+  `monkeypatch.setattr(api, "query_bigdataquery", <대역 함수>)` 로 갈아 끼워 본다.
+- **캐시는 시험 사이에 남는다** — 한 시험에서 대역이 돌려준 표를 다음 시험이 캐시에서 받는다. 시험 파일에 아래 fixture 를 두어
+  시험마다 처음에 자기 캐시 함수를 비운다(자기 함수의 `.clear()` 는 M12 가 허용한다).
+
+  ```python
+  @pytest.fixture(autouse=True)
+  def _fresh_cache() -> None:
+      cache.daily.clear()
+  ```
+
+### 3-11. 직접 조회하던 모듈을 도우미로 옮기기 — 점검 오류 M21
+
+도우미(창구 1.3)가 생기기 전에 BigDataQuery 를 직접 불러 조회하던 모듈은 요청자 계정 · 토큰을 스스로 읽는다(S3 버킷을 직접 다루던
+모듈은 키를 읽는다). 그 꼴은 이제 점검 오류 M21 이고, 오류가 있는 모듈은 앱 관리자의 앱과 배포 서버에 오르지 못한다. 담당자가 「M21 을 고쳐 줘」 · 「조회를 도우미로 옮겨 줘」
+라고 하면 아래 차례로 옮긴다.
+
+1. **언제 — 앱 관리자가 창구 1.3 이 든 배포를 적용했다고 알린 뒤에 시작한다.** 그 전의 코어에는 도우미가 없다 — 옮긴 모듈은
+   「API 1.3 필요」 로 서지 않고 PR 점검(런북 4-6)도 통과하지 못한다. 시작할 때 `git switch main` · `git pull --rebase` 로 새 코어를
+   받고 가지를 만든다(8-2 의 1).
+   - 앱 관리자는 M21 이 난 모듈을 끈 채로 그 배포를 적용할 수 있다(9-2). 옮긴 고침이 합쳐지고 앱 관리자가 다시 켤 때까지 그 화면은
+     앱 관리자의 앱 · 배포 서버에서 보이지 않는다 — 담당자에게 그렇게 알린다.
+2. **걷는 것** — 점검의 `자세히` 줄이 가리키는 줄과 그 줄에 딸린 코드다.
+   - 요청자 계정 · 토큰을 환경변수에서 읽는 줄(`CAPA_BDQ_` 로 시작하는 이름).
+   - 토큰 파일 자리(`.credential` · `bigdataquery.token`)를 만들거나 여는 줄.
+   - `bigdataquery` 를 직접 import 해 묻는 줄과, 그 앞뒤의 로그인 · 토큰 처리.
+   - `자세히` 의 이름이 S3 키(`CAPA_S3_` · `AWS_` 로 시작)면 버킷을 직접 다루던 꼴이다 — `api.s3_upload` · `api.s3_download` 로
+     옮긴다(3-10).
+   - 자격과 상관없는 데이터 열 이름(예 `aws_region`)이 걸린 것이면 고치지 말고 담당자에게 알린다 — 담당자가 앱 관리자와 처리를 정한다.
+   - 이름을 쪼개 붙이거나 다른 이름으로 바꿔 점검을 비켜 가지 않는다. 계정 · 토큰 · 키는 코어가 채우고, 앱 관리자의 PR 점검(런북
+     4-6)은 그런 꼴을 코드를 읽어 따로 찾는다.
+3. **바꾸는 것**
+   - 조회 한 번은 `api.query_bigdataquery(ctx, sql, start=…, end=…)` 한 줄이다(3-10 의 예).
+   - 기간을 글자로 붙여 만들던 조회문은 `{start_date}` · `{end_date}` 자리로 바꾸고 `>= '{start_date}' AND < '{end_date}'` 꼴로 쓴다.
+     `BETWEEN` · `<=` 는 하루를 더 받는다(3-10 「기간 자리」).
+   - 실패는 `api.BigDataQueryError` 하나로 받는다. 예전 코드가 토큰 만료 · 연결 실패를 따로 가르던 분기는 `error.kind` 로 바꾸고,
+     안내는 `str(error)` 를 그대로 보인다(앱 화면과 같은 글이다).
+   - 결과 캐시는 `cache.py` 에 두고 `ctx` 를 밑줄 인자(`_ctx`)로 넘긴다(M12 — 3-10 의 예).
+   - `module.json` 에 `"api_minor": 3` 을 더한다(9-4).
+4. **시험** — 모듈 시험에서 도우미는 늘 「쓸 수 없음」 이다. 예전 시험이 진짜 조회나 토큰 파일에 기대던 것은 걷고, 「쓸 수 없음」
+   안내가 서도 화면이 서는지 본다. 표가 서는 갈래는 `monkeypatch.setattr(api, "query_bigdataquery", <대역 함수>)` 로 보고, 시험마다
+   처음에 캐시를 비운다(3-10 예 아래의 fixture).
+5. **점검 · PR** — `check_module.py <id>` 가 「통과」 면 커밋하고 담당자가 PR 을 연다(8-2). PR 본문에 「BigDataQuery 조회를 도우미로
+   옮김(M21)」 한 줄을 적는다. 앱 관리자가 PR 머리를 점검해 「Squash and merge」 로 합치고 모듈을 다시 켠다.
+6. **데이터** — 조회 결과를 데이터 자리에 파일로 남기던 모듈은 2장 「데이터」 를 다시 본다 — 배포 서버에서 그 파일은 재배포마다
+   사라진다. 조회로 언제든 다시 받을 수 있는 결과는 파일로 남기지 않고 캐시로 둔다. 꼭 남겨야 하는 파일만 `api.s3_upload` ·
+   `api.s3_download` 로 옮긴다(3-10).
 
 ---
 
@@ -786,6 +909,7 @@ uv run --no-sync python scripts/check_module.py <id>
   실패한다(쓰기는 시험의 임시 `ctx.data_dir` 만 된다). 같은 폴더 맨이름 import 는 앱처럼 깨진다.
 - 정적 오류(M01 · M06 · M07 · M10 · M11 · M21)가 있으면 시험을 돌리지 않고 「시험 안 돎 — 정적 오류 먼저」 로 적는다. 그 오류부터 고친다.
 - 시험 안에서 코어 도우미(3-10)는 늘 「쓸 수 없음」 이다 — 시험의 환경에는 자격 환경변수도 없다. 성공 갈래는 도우미를 갈아 끼워 본다.
+  도우미 결과를 캐시하는 모듈은 캐시가 시험 사이에 남으니 시험마다 처음에 자기 캐시 함수의 `.clear()` 를 부른다(3-10).
 - **맨 `pytest` · `python -m pytest modules/<id>/tests` 는 쓰지 않는다.** 코어 시험의 보호가 걸리지 않아 그 클론의 진짜
   `data/modules/<id>/` 에 쓴다.
 - 결과는 담당자에게 맡기지 말고 네가 돌려 보여 준다.
@@ -1112,8 +1236,8 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | `page_header` | `page_header(ctx: ModuleContext, title: str, *, description: str \| None = None) -> None` | 머리말(제목은 화면에서 숨는다). 한 회차에 한 번, 화면 맨 위. 세션 키를 만들지 않는다. 성숙도 `L0` · `L1` 이어도 본문에 「구현중」 배지 줄을 그리지 않는다 — 사이드바 라벨 · 화면 탭 표지가 말한다(1.2). `description` 은 받기만 하고 그리지 않는다(1.1) |
 | `palette` | `palette() -> Mapping[str, str]` | 이번 회차 테마의 역할 색. 키는 `PALETTE_KEYS`. 캐시 함수 안에서 부르지 않고 값을 인자로 넘긴다 |
 | `query_bigdataquery` | `query_bigdataquery(ctx: ModuleContext, sql: str, *, start: date \| None = None, end: date \| None = None) -> pd.DataFrame` | 앱의 DB 등록과 같은 길로 BigDataQuery 에 묻는다. 요청자 계정 · 토큰은 코어가 채운다. 기간을 주면 `{start_date}` 에 시작 날, `{end_date}` 에 끝 날 다음 날을 채운다(조회문은 `>= '{start_date}' AND < '{end_date}'` — 끝 날 포함 · 최대 366일, 3-10 「기간 자리」). 실패는 `BigDataQueryError`. 모듈 시험에서는 늘 「쓸 수 없음」 |
-| `s3_download` | `s3_download(ctx: ModuleContext, name: str) -> S3Result` | 버킷의 `modules/<id>/<name>` 을 받아 `ctx.data_dir / name` 에 둔다(다 받은 뒤 한 번에 바꾼다). 배포 서버에서만 되고 그 밖에서는 「쓸 수 없음」 |
-| `s3_upload` | `s3_upload(ctx: ModuleContext, name: str) -> S3Result` | `ctx.data_dir / name` 파일 하나를 버킷의 `modules/<id>/<name>` 으로 올린다(있으면 덮는다). 배포 서버에서만 된다 |
+| `s3_download` | `s3_download(ctx: ModuleContext, name: str) -> S3Result` | 버킷의 `modules/<id>/<name>` 을 받아 `ctx.data_dir / name` 에 둔다(다 받은 뒤 한 번에 바꾼다). 배포 서버에서 DB 동기화를 켠 뒤에만 되고 그 밖에서는 「쓸 수 없음」(3-10) |
+| `s3_upload` | `s3_upload(ctx: ModuleContext, name: str) -> S3Result` | `ctx.data_dir / name` 파일 하나를 버킷의 `modules/<id>/<name>` 으로 올린다(있으면 덮는다). 배포 서버에서 DB 동기화를 켠 뒤에만 되고 그 밖에서는 「쓸 수 없음」(3-10) |
 
 `ModuleContext` 의 칸과 메서드:
 

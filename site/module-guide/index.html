@@ -458,7 +458,7 @@ git switch -c module/&lt;id&gt;/&lt;주제&gt;</pre></div>
           <tr><td>CI/CD 단추 누르기</td><td>점검을 본 뒤에 앱 관리자만 누릅니다</td><td>앱 관리자에게 부탁</td></tr>
         </tbody>
       </table></div>
-      <div class="note warn"><span class="t">모듈 데이터는 백업되지 않습니다</span><p>잃어도 되는 것만 둡니다. 배포 서버에서는 서버를 다시 만들 때 사라질 수 있습니다(지침서 2장 「데이터」).</p><p>남겨야 하는 파일은 에이전트에게 「저장할 때 S3 에 올리고 화면이 처음 설 때 받게 해 줘」 라고 하면 앱의 도우미로 그렇게 만듭니다 — 배포 서버에서만 되고 파일 하나는 8 MiB 까지입니다(지침서 3-10).</p></div>
+      <div class="note warn"><span class="t">모듈 데이터는 백업되지 않습니다</span><p>잃어도 되는 것만 둡니다. 배포 서버에서는 서버를 다시 만들 때(CI/CD)마다 사라집니다 — 앱의 DB 동기화가 켜진 뒤에도 모듈 데이터는 그 밖입니다(지침서 2장 「데이터」).</p><p>남겨야 하는 파일은 에이전트에게 「저장할 때 S3 에 올리고 화면이 처음 설 때 받게 해 줘」 라고 하면 앱의 도우미로 그렇게 만듭니다 — 배포 서버에서 앱 관리자가 DB 동기화를 켠 뒤에만 되고 파일 하나는 8 MiB 까지입니다(지침서 3-10).</p></div>
       <div class="note"><span class="t">내 화면은 다른 사람과 한 서버를 함께 씁니다</span><p>오래 걸리는 계산은 모두의 앱을 느리게 합니다. 무거운 계산은 단추를 눌렀을 때만 돌게 합니다(지침서 4장).</p></div>
 
       <h3 id="s6-2"><span class="n">6-2</span>승인 창 읽기</h3>
@@ -488,7 +488,7 @@ git switch -c module/&lt;id&gt;/&lt;주제&gt;</pre></div>
       <div class="prose"><p>패키지는 남이 만든 기능 묶음입니다(예: 엑셀 읽기). 앱과 배포 서버에 깔린 것만 쓸 수 있습니다(지침서 6장).</p></div>
       <div class="cards">
         <div class="card ok"><span class="tag">바로 써도 된다</span><p>파이썬 기본 기능, <code>streamlit</code>, 앱이 직접 쓰는 패키지(<code>pandas</code> · <code>numpy</code> · <code>plotly</code> · <code>altair</code> · <code>duckdb</code> · <code>pydantic</code> 등). 에이전트가 압니다.</p></div>
-        <div class="card mid"><span class="tag">경고만 난다</span><p><code>pyarrow</code> · <code>pillow</code>(PIL)처럼 다른 패키지를 따라 들어온 것. 점검은 통과하지만 언젠가 빠질 수 있습니다. 오래 쓸 거면 요청합니다.</p><p><code>bigdataquery</code> — 조회는 앱의 도우미로 합니다(지침서 3-10) — 요청자 계정 · 토큰을 앱이 채워 배포 서버에서도 돕니다. 패키지를 직접 써도 점검은 경고뿐이지만 배포 서버에서 계정을 넘길 길이 없습니다. 계정 · 토큰 · S3 키를 코드에서 읽으면 점검 오류(M21)입니다.</p></div>
+        <div class="card mid"><span class="tag">경고만 난다</span><p><code>pyarrow</code> · <code>pillow</code>(PIL)처럼 다른 패키지를 따라 들어온 것. 점검은 통과하지만 언젠가 빠질 수 있습니다. 오래 쓸 거면 요청합니다.</p><p><code>bigdataquery</code> — 조회는 앱의 도우미로 합니다(지침서 3-10) — 요청자 계정 · 토큰을 앱이 채워 배포 서버에서도 돕니다. 패키지를 직접 써도 점검은 경고뿐이지만 배포 서버에서 계정을 넘길 길이 없습니다. 계정 · 토큰 · S3 키를 코드에서 읽으면 점검 오류(M21)입니다 — 이미 그렇게 쓰던 모듈은 8-2 끝을 봅니다.</p></div>
         <div class="card no"><span class="tag">그 밖 — 요청</span><p>에이전트가 아래 꼴의 한 줄을 만들어 주면 앱 관리자에게 보냅니다. 꼴은 <code>&lt;id&gt;: &lt;패키지&gt;==&lt;판&gt; &lt;까닭 한 마디&gt;</code> 입니다.</p></div>
       </div>
       <div class="code"><div class="bar"><span>요청 한 줄 예</span><button class="copy" type="button">복사</button></div><pre>demo_memo: openpyxl==3.1.5 엑셀 올리기</pre></div>
@@ -518,6 +518,7 @@ git switch -c module/&lt;id&gt;/&lt;주제&gt;</pre></div>
       <div class="prose"><p>점검 결과의 <code>자세히</code> 아래 줄이 고칠 곳입니다.</p></div>
       <div class="code wrap"><div class="bar"><span>예</span></div><pre>m1 demo_draft 오류 M19 page.py:19 `use_container_width=` 는 Streamlit 이 곧 지웁니다 — width="stretch" 또는 width="content" 로 바꿉니다</pre></div>
       <div class="prose"><p>읽는 법 — 차례 번호(<code>m1</code>) · 모듈 id · 오류/경고 · 규칙 번호(<code>M19</code>) · 파일과 줄(<code>page.py</code> 19번째 줄) · 고칠 말. 에이전트가 이 줄을 보고 고칩니다. 「시험 안 돎 — 정적 오류 먼저」 가 보이면 다른 오류를 먼저 고쳐야 시험이 돕니다. 규칙 번호의 뜻은 지침서 부록 B 에 있습니다.</p></div>
+      <div class="prose"><p><strong><code>M21</code>(자격 · 비밀)로 실패하면</strong> — 내 모듈 코드에 계정 · 토큰 · 키 이름이 적힌 꼴입니다. 대개 BigDataQuery 계정 · 토큰을 직접 읽던 모듈이고, S3 키 이름이나 같은 꼴의 데이터 열 이름(예 <code>aws_region</code>)도 걸립니다. 이제 조회 · 버킷은 앱의 도우미로만 합니다. 앱 관리자가 「새 판(창구 1.3)을 적용했다」 고 알린 뒤 새 가지(4-1)에서 에이전트에게 「지침서 3-11 대로 M21 을 고쳐 줘」 라고 말합니다. 그 전에는 옮길 수 없습니다 — 옛 판에는 도우미가 없습니다. 고친 뒤에는 평소처럼 커밋 · PR 입니다(4-5 · 4-6). 고침이 합쳐져 앱 관리자가 다시 켤 때까지 내 화면은 모두가 쓰는 앱에서 꺼져 있을 수 있습니다.</p></div>
 
       <h3 id="s8-3"><span class="n">8-3</span>내 PC 에서는 되는데 앱 관리자의 앱에서는 안 된다</h3>
       <div class="prose"><p>흔한 까닭은 다섯입니다.</p>
@@ -603,7 +604,7 @@ git switch -c module/&lt;id&gt;/&lt;주제&gt;</pre></div>
         <div><p class="q">화면 이름이나 화면 개수를 바꾸고 싶어요.</p><p><code>module.json</code> 을 바꾸는 일이라 에이전트에게 부탁하면 됩니다. 앱을 다시 띄워야 보입니다. 화면 주소 끝(slug)을 바꾸면 그 화면을 즐겨찾기한 옛 주소가 끊깁니다(지침서 3-2). 새 화면 이름은 앱의 「모듈」 상자 맨 위 화면(모든 모듈의 화면 목록)에서 다른 모듈과 겹치지 않게 고릅니다 — 겹치면 한쪽 모듈이 통째로 뜨지 않습니다(지침서 3-3).</p></div>
         <div><p class="q">모듈을 그만 쓰고 싶어요.</p><p>먼저 <code>"enabled": false</code> 로 끕니다(8-4). 폴더를 지울지는 앱 관리자에게 묻습니다.</p></div>
         <div><p class="q">화면 이름 옆의 「(구현중)」 을 떼고 싶어요.</p><p>성숙도를 L2 로 올리는 일입니다. 실데이터로 맞는지 확인하는 차례가 있으므로 앱 관리자 승인이 먼저입니다(지침서 3-4).</p></div>
-        <div><p class="q">저장해 둔 모듈 데이터가 사라졌어요.</p><p>모듈 데이터는 백업이 없습니다. 배포 서버에서는 서버를 다시 만들 때 사라질 수 있습니다. 잃으면 안 되는 자료는 모듈 데이터에만 두지 않습니다. 모듈 변경만으로 서버를 다시 만들 때는 앱 관리자가 먼저 알려 주니(4-8), 그때 챙깁니다.</p></div>
+        <div><p class="q">저장해 둔 모듈 데이터가 사라졌어요.</p><p>모듈 데이터는 백업이 없습니다. 배포 서버에서는 서버를 다시 만들 때(CI/CD)마다 사라집니다 — 앱의 DB 동기화를 켠 뒤에도 같습니다. 남겨야 하는 파일은 S3 도우미로 올리게 합니다(6-1). 서버를 다시 만들기 전에는 앱 관리자가 먼저 알려 주니(4-8) 그때 챙깁니다.</p></div>
         <div><p class="q">점검은 통과했는데 화면이 이상해요.</p><p>점검은 규칙과 「켜지는가」 를 봅니다. 화면이 원하는 대로인지는 내가 앱에서 봐야 합니다(4-4). 본 것을 그대로 에이전트에게 말합니다 — 「표의 날짜가 거꾸로 정렬돼 있어」 처럼.</p></div>
       </div>
     </section>
