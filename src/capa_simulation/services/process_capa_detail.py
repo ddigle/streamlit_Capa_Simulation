@@ -9,6 +9,8 @@
   판정·부호 있는 과부족·부족 원인. 판정·과부족은 판정 기준에 닿으므로 캐시하지 않고 회차마다 만든다.
 - **제품별 소요대수**(`build_process_product_demand`): 소요대수 상세를 분류(제품정보 등)로 합한
   월 표. 자식 행을 다 더하면 요약의 소요대수와 같다.
+- **다른 가용의 판정**(`judge_supply`): 설비 일정 기준 가용 · 비가동을 뺀 실가용으로 요약과 같은
+  길의 확보율 · 판정 · 과부족(공정 Capa 상세 「② 일정 가용」 · 「③ 비가동」).
 - **HOME 표시 확보율**(`home_display_rates`): HOME 이 원 확보율에 얹는 확보율 보정·선행 B/O 를 같은
   함수로 얹은 값. 요약 표의 회색 참고 줄이다.
 - **고른 달의 경로 추적**(`build_process_month_trace`): 경로마다 부하량·UPEH/ST·환산 UPEH·측정률·
@@ -225,6 +227,59 @@ def build_process_capa_summary(
         )
     ]
     return result[SUMMARY_COLUMNS]
+
+
+JUDGED_SUPPLY_COLUMNS: Final = [
+    MONTH,
+    "가용대수",
+    "소요대수",
+    "확보율",
+    STATUS_COLUMN,
+    BALANCE_COLUMN,
+]
+
+
+def judge_supply(
+    available: Mapping[int, float | None],
+    demand: Mapping[int, float | None],
+    *,
+    process: str,
+    months: Sequence[int],
+    thresholds: SecurementThresholds,
+) -> pd.DataFrame:
+    """다른 가용(설비 일정 기준 · 비가동을 뺀 실가용)으로 낸 확보율 · 판정 · 과부족
+    (`JUDGED_SUPPLY_COLUMNS`) — 공정 Capa 상세 「② 일정 가용」 · 「③ 비가동」 의 판정 칸.
+
+    요약(`build_process_capa_summary`)과 **같은 길**(`securement_balance` — 그 달 확보기준 · 판정
+    경계 · 반올림으로만 확보인 달의 여유 0)이다 — 요약의 가용 · 소요를 넣으면 요약과 같은 판정 ·
+    과부족이 나온다. 가용 · 소요가 둘 다 있는 달만 행이다(`months` 차례). 부족 원인은 대여를
+    모르므로 내지 않는다.
+    """
+    ordered = [
+        int(month)
+        for month in _ordered_months(months)
+        if available.get(int(month)) is not None and demand.get(int(month)) is not None
+    ]
+    if not ordered:
+        return pd.DataFrame(
+            {
+                column: pd.Series(dtype="int64" if column == MONTH else "object")
+                for column in JUDGED_SUPPLY_COLUMNS
+            }
+        )
+    supply = [float(available[month] or 0.0) for month in ordered]
+    frame = pd.DataFrame(
+        {
+            MONTH: pd.Series(ordered, dtype="int64"),
+            "공정": pd.Series([process.strip()] * len(ordered), dtype="object"),
+            OWNED_COLUMN: pd.Series(supply, dtype="float64"),
+            "가용대수": pd.Series(supply, dtype="float64"),
+            "소요대수": pd.Series(
+                [max(0.0, float(demand[month] or 0.0)) for month in ordered], dtype="float64"
+            ),
+        }
+    )
+    return securement_balance(frame, thresholds=thresholds)[JUDGED_SUPPLY_COLUMNS]
 
 
 class ProcessCapaKpis(NamedTuple):

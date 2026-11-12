@@ -49,6 +49,7 @@ from capa_simulation.services.process_equipment_timeline import (
     NO_COUNTED_UNITS,
     NO_EQUIPMENT,
     NO_SNAPSHOT,
+    OWNED_UNIT_COLUMNS,
     READY,
     ROW_NEW,
     ROW_SHORTENED,
@@ -63,8 +64,10 @@ from capa_simulation.services.process_equipment_timeline import (
     dynamic_readiness,
     held_unit_choices,
     new_unit_availability,
+    owned_unit_counts,
     production_position,
     unit_events,
+    unit_month_changes,
 )
 from capa_simulation.services.required_shortening import (
     MonthlyTarget,
@@ -700,6 +703,54 @@ def test_the_bridge_total_is_the_plans_availability_and_splits_the_monthly_chang
     # SET1(6/25 Qual)이 6/26 부터 7월 구간 26일을 보탠다.
     assert july["신규"] == pytest.approx(26 / 31)
     assert timeline.baseline_units == 3.0
+
+
+def test_owned_units_count_calendar_months_and_drop_only_relocated_units() -> None:
+    """② 총보유대수(2026-11-12 사용자 답 q3 (가)) — 달력 월로 반입한 달부터 세고(Cut-off 없이),
+    반출/이설하는 날이 든 달부터 뺀다. 정지만 한 호기는 남는다. 모듈은 환산비로, 사용기준 HBM·EDP
+    만, 반입일정이 빈 기존설비 Y 는 처음부터, 기존설비 N 인 일정 미정은 세지 않는다."""
+    rows = [
+        _unit("OLD1", date(2025, 1, 10), arrival=None, existing="Y"),
+        # 5/25 반입 — 생산월(Cut-off 10)로는 6월이지만 달력 월은 5월이다.
+        _unit("NEW1", date(2026, 6, 20), arrival=date(2026, 5, 25)),
+        _unit("MA", date(2026, 7, 1), arrival=date(2026, 6, 3), ratio=0.5, parent="M"),
+        _unit("MB", date(2026, 7, 1), arrival=date(2026, 6, 3), ratio=0.5, parent="M"),
+        _unit("STOP1", date(2026, 3, 1), arrival=date(2026, 2, 1), removal=date(2026, 6, 10)),
+        _unit("MOVE1", date(2026, 3, 1), arrival=date(2026, 2, 1), relocation=date(2026, 7, 1)),
+        _unit("UNDATED", date(2026, 8, 1), arrival=None),
+        _unit("OTHER", date(2026, 3, 1), arrival=date(2026, 2, 1), attributes={"사용기준": "기타"}),
+    ]
+    timeline = _timeline(rows, baseline=2.0)
+    owned = timeline.owned_units
+
+    assert tuple(owned.columns) == OWNED_UNIT_COLUMNS
+    assert owned["년월"].tolist() == list(AXIS)
+    assert owned["기존보유"].tolist() == [3.0, 3.0, 3.0]
+    assert owned["반입"].tolist() == [3.0, 4.0, 4.0]
+    assert owned["반출이설"].tolist() == [0.0, 0.0, 1.0]
+    assert owned["총보유대수"].tolist() == [6.0, 7.0, 6.0]
+    empty = owned_unit_counts(_master([]), baseline_units=1.5, months=AXIS)
+    assert empty["총보유대수"].tolist() == [1.5, 1.5, 1.5]
+
+
+def test_unit_month_changes_split_the_change_before_downtime_by_unit_group() -> None:
+    """② 전월 대비 풍선(2026-11-12 사용자 답 k-c3) — 호기 묶음(설비키)마다 비가동을 비운 가용의 전월
+    대비 몫이다. 몫을 모두 더하면 비가동 빼기 전 호기 가용의 전월 대비와 같고, 큰 차례다."""
+    rows, downtime = _arrow_fixture()
+    timeline = _timeline(rows, downtime, baseline=3.0)
+    changes = unit_month_changes(timeline.unit_months, AXIS)
+    bridge = timeline.bridge.set_index("생산계획년월")
+    free = bridge["기존보유"] + bridge["호기 가용"] + bridge["호기 비가동 손실"]
+
+    assert set(changes) == {JUNE, JULY}
+    for previous, month in ((MAY, JUNE), (JUNE, JULY)):
+        assert sum(value for _, value in changes[month]) == pytest.approx(
+            free[month] - free[previous]
+        )
+        sizes = [abs(value) for _, value in changes[month]]
+        assert sizes == sorted(sizes, reverse=True)
+        assert all(value != 0 for _, value in changes[month])
+    assert unit_month_changes(timeline.unit_months, (MAY,)) == {}
 
 
 def test_steady_units_count_units_fully_available_all_axis_long() -> None:
