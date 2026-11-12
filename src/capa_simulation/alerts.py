@@ -110,8 +110,15 @@ POPUP_LIMIT: Final = 3
 # 끈다(D4).
 REPEAT_WINDOW_SECONDS: Final = 60
 # 시선 끌기 — 창 가장자리 테두리가 이 시간 동안 easeOutQuad 로 알림창에 모인다(D4 A 한 겹).
+# 닿으면 그 둘레가 빛 고리로 `ATTENTION_HIT_MS` 머물고 테두리는 `ATTENTION_FADE_MS` 에
+# 걷힌다. 움직임 줄이기 설정이면 움직이지 않는 윤곽이 `ATTENTION_STILL_MS` 선다(설계 규칙
+# UI-NAV-02). 알림 칸과 Space 도면의 「호기 정보」 창 강조가 이 값을 `attention_payload` 로
+# 함께 받는다 — JS 에 같은 수를 두지 않는다.
 ATTENTION_MS: Final = 450
 ATTENTION_EASING: Final = "cubic-bezier(0.5, 1, 0.89, 1)"
+ATTENTION_HIT_MS: Final = 900
+ATTENTION_FADE_MS: Final = 160
+ATTENTION_STILL_MS: Final = 1600
 # Alarm 기록 보관 — 이 브라우저 탭에 이 줄 수 또는 이 시간 가운데 먼저 닿는 쪽까지(D1 (가)).
 HISTORY_ROWS: Final = 200
 HISTORY_HOURS: Final = 12
@@ -478,6 +485,19 @@ def spec(code: str) -> AlertSpec:
 def new_id() -> str:
     """사건 알림 id — 브라우저가 이 값으로 한 번만 띄운다."""
     return uuid.uuid4().hex[:16]
+
+
+def attention_payload() -> dict[str, int | str]:
+    """시선 끌기 값(설계 규칙 UI-NAV-02) — 알림 칸 data `limits` 와 Space 도면 data `attention` 이
+    같은 사전을 받는다. 키는 JS 가 읽는 이름이다: 모이는 시간 · 곡선, 닿은 뒤 빛 고리 · 테두리 걷기
+    시간, 움직임 줄이기의 윤곽 시간(모두 ms)."""
+    return {
+        "attention_ms": ATTENTION_MS,
+        "easing": ATTENTION_EASING,
+        "hit_ms": ATTENTION_HIT_MS,
+        "fade_ms": ATTENTION_FADE_MS,
+        "still_ms": ATTENTION_STILL_MS,
+    }
 
 
 def short_text(text: str, limit: int = SHORT_LIMIT) -> str:

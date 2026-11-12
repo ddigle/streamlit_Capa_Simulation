@@ -107,6 +107,9 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
         "hours": 12,
         "attention_ms": 450,
         "easing": "cubic-bezier(0.5, 1, 0.89, 1)",
+        "hit_ms": 900,
+        "fade_ms": 160,
+        "still_ms": 1600,
     }
     assert (
         data["toolbar"]["order"]

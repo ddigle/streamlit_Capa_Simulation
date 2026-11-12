@@ -635,6 +635,31 @@ def test_the_editor_draws_no_meaning_rings_only_edit_marks() -> None:
     assert "polygon" in build and "sle-corner" in build
 
 
+def test_a_picked_module_bundle_in_the_view_is_one_solid_line_without_module_halos() -> None:
+    """층 보기에서 모듈을 누르면 묶음 둘레 실선 하나만 서고 모듈 후광은 없다(2026-11-12 Space 시안
+    보드 답 5-1 「view」). 후광을 빼는 판정(`markSelection`)과 실선 상자를 그리는 판정
+    (`drawSelectionBox`)은 한 함수 `viewBundled` — 이 층 도면에 그린 모듈 둘 이상(`placedMembers`)
+    이다. 숨은 모듈 · 미배치 줄까지 세는 `groupCounts` 는 쓰지 않는다: 줄은 둘인데 도면에 선
+    모듈이 하나인 묶음은 낱 호기처럼 후광이다. 편집 화면은 그대로 범위 테두리다."""
+    assert (
+        "const viewBundled = (m) => VIEW && isUnit(m) && Boolean(m.group)"
+        " && placedMembers(m).length >= 2" in JS
+    )
+    select = _between("function markSelection() {", "const overlaps =")
+    assert "const counts = VIEW ? null : groupCounts()" in select
+    assert "VIEW ? viewBundled(m) : " in select
+    assert "const bundles = new Set(chosen.filter(bundled).map((m) => m.group))" in select
+    assert "S.selection.has(id) && !(item && item.group && bundles.has(item.group))" in select
+    box = _between("function drawSelectionBox() {", "function proxyHandles(")
+    assert "class: chosen.some(viewBundled) ? 'sle-group-box is-bundle' : 'sle-group-box'" in box
+    # 실선 2px — 편집 범위 테두리와 같은 굵기, 점선 상자와 같은 여백(GROUP_PAD).
+    bundle = _rule(".sle.is-view .sle-group-box.is-bundle")
+    assert "stroke-width: 2" in bundle and "stroke-dasharray: none" in bundle
+    assert "stroke-dasharray: 5 3" in _rule(".sle-group-box")
+    # 후광은 보기의 `is-selected` 에만 선다 — 묶음 모듈은 그 class 를 받지 않는다.
+    assert ".sle.is-view .sle-unit.is-selected .sle-halo { display: inline; }" in CSS
+
+
 def test_a_unit_label_is_fitted_by_its_measured_width() -> None:
     """호기 이름표는 잰 글자 폭으로 상자 폭에 맞춘다. 글자 수 어림(한 글자 0.62em)은 한글·굵은
     대문자를 덜 쳐서 C1 4F 의 「설비호기1」이 상자를 넘어 옆 「SAMPLE1」과 붙어 보였다(2026-10-08).

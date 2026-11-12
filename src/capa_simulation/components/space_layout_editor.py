@@ -34,7 +34,10 @@ FAB 도면의 층 블록을 누르면(또는 초점을 두고 Enter) 브라우�
 고른 호기의 칸(`space_layout.FLOOR_TABLE_COLUMNS` 21칸)과, 칸마다 엑셀 자동 필터 꼴로 거른 호기
 목록을 보이고 맞는 호기를 도면에서 강조한다. 표 재료는 data `sheet`(epoch 밖)이고 거르기·강조는
 JS(`// <unit-sheet>`)라 필터를 고쳐도 앱이 다시 돌지 않는다. 창 자리·크기·접힘은 localStorage,
-탭·필터·강조는 sessionStorage 다.
+탭·필터·강조는 sessionStorage 다. 창 줄을 눌러 고른 것이 바뀌거나 사람이 걸러 맞는 호기가
+바뀌면(이 층 도면에 보이는 맞음 5대 이하 — 묶음은 1대) 그 테에 알림 칸과 같은 시선 끌기를 한 번
+건다(설계 규칙 UI-NAV-02 — 대상 판정은 `// <attract-pick>`). 시간 · 곡선은 data `attention`
+(`alerts.attention_payload` — 알림 칸 `limits` 와 같은 사전)이다.
 
 **기준일 페이더**(층 상세 보기, 도면 상자 맨 위 줄)도 브라우저 몫이다. 끄는 동안에는 파이썬으로
 아무것도 보내지 않고 브라우저가 호기마다 받은 경계 날짜를 글자로 견주어 class·면색만 바꾼다. 손을
@@ -70,6 +73,7 @@ from typing import Any
 
 import streamlit as st
 
+from capa_simulation import alerts
 from capa_simulation.components.date_panel import (
     DATE_PANEL_CSS,
     DATE_PANEL_HTML,
@@ -599,6 +603,7 @@ def render_space_layout_viewer(
             "legend": _clean_legend(legend),
             "pendingSave": bool(pending_save),
             "sheet": _clean_sheet(sheet),
+            "attention": alerts.attention_payload(),
             "pickToServer": bool(pick_to_server),
             **layer_fields,
             **({"arrivalDates": True} if arrival_dates else {}),
@@ -859,6 +864,7 @@ def render_space_layout_editor(
             "legend": _clean_legend(legend),
             "pendingSave": bool(pending_save),
             "sheet": _clean_sheet(sheet),
+            "attention": alerts.attention_payload(),
         },
         on_apply_change=lambda: None,
         width="stretch",
