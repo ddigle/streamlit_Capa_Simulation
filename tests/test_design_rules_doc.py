@@ -15,6 +15,7 @@ id 로 찾을 수 없고, 답한 물음이 「제안」 으로 남거나 결정 
 「남은 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 · 메모 해석(v1.16) · 입력 점검 시안 보드 줄과
 고른 글 · 앱 세션이 정한 줄(v1.17) · 「다음 배포 물음 11-11」 보드 줄과 고른 글 · 고친 줄 커밋 ·
 메모(v1.18) · 사내 리뷰 202611111500 보드 줄과 고른 글 · 고친 줄 커밋 · 메모 · 다시 물음 답(v1.19) ·
+「배포 뒤 할 일 넷」 시안 보드 줄과 고른 글 · 메모 · 권장과 다른 답 · 커밋 · 예외(v1.20) ·
 문서 안팎의 id 참조 · 그물 경로 · 진입 문서(AGENTS · CLAUDE.md · README)의 연결.
 """
 
@@ -1571,14 +1572,14 @@ def test_the_review_1500_board_answers_are_recorded() -> None:
     고른 글은 선택지 원문(메모 카드는 메모 원문, 다시 물은 카드는 「다시 물음 답」)이다. 고친
     열다섯 줄은 커밋을 들고 나머지 스물여섯은 커밋이 없다. C1 ~ C8 은 2026-11-11 밤, 나머지는
     2026-11-12 답이다. 앱 세션이 답을 읽은 둘(C7 메모의 갈 곳 · R2 차례)은 줄에 밝히고, 바꾼 옛
-    결정 셋은 7-1 에 있다. 6-18 줄은 그때 기록 그대로다(앞 시험이 6-19 앞에서 끊어 본다)."""
+    결정 셋은 7-1 에 있다. 6-18 줄은 그때 기록 그대로다(앞 시험이 6-19 앞에서 끊어 본다).
+    6-20 은 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.19" in document.split("\n## 1. ")[0]
     assert "- **v1.19 — 2026-11-12.**" in _chapter(document, 8)
-    assert "6-19 에 있다" in _chapter(document, 1)
+    assert "보드의 답은 6-19 에" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-19. ") :]
+    board = section[section.index("\n### 6-19. ") : section.index("\n### 6-20. ")]
     assert REVIEW_1500_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -1620,3 +1621,123 @@ def test_the_review_1500_board_answers_are_recorded() -> None:
     reversed_ = _chapter(document, 7)
     for phrase in ("보드 N10 다시 물음 답", "같은 보드 N11", "같은 보드 R2 다시 물음 답"):
         assert phrase in reversed_, phrase
+
+
+# 2026-11-12 「배포 뒤 할 일 넷」 시안 보드(6-20)의 답 — 카드 스물넷(확인 열둘 · 고를 것
+# 열둘). 확인 열둘은 모두 「좋음」 이고, 고를 것 열둘의 고른 글은 선택지 원문이다 — 둘(n2 ·
+# q6b)은 카드 권장 (가) 와 다른 (나) 다. 스물넷 모두 화면에 입혀 갈래(`feat/post-ed-1112` ·
+# `feat/post-capa-1112`)의 커밋을 든다. 줄 id 는 보드 카드 id 이고 차례는 보드 차례다.
+POST_FOUR_ADDRESS = "https://claude.ai/artifact/1H2oVt4fcZard14zboQkcU"
+POST_FOUR_ANSWERS = {
+    "k-a1": "좋음",
+    "k-a2": "좋음",
+    "q1": (
+        "(가) 되돌리기 · 다시 실행 · 칸 폭 맞춤 · 전체 화면을 그림 단추로(이름은 풍선), 찾기 칸도"
+        " 조금 줄임 — 사내 보고 창(1283)에서도 한 줄"
+    ),
+    "n2": (
+        "(나) 「PKG PLAN 변경사항 적용」 을 「변경사항 적용」 으로 줄이고, 「가상 제품 등록」 은"
+        " 「⋯」 메뉴로"
+    ),
+    "k-b1": "좋음",
+    "k-b2": "좋음",
+    "k-b3": "좋음",
+    "k-c0": "좋음",
+    "k-c1": "좋음",
+    "q2": (
+        "(가) Core Data 숫자의 「공식」 은 모두 「Static」, 가정과 견주는 값은 「가정 전」, 발행본"
+        " 이름은 그대로"
+    ),
+    "n1": (
+        "(가) 일정 가용의 가용대수는 비가동을 빼기 전 값(설비 일정상 쓸 수 있는 대수). 비가동은"
+        " 비가동 구획에서 한 번만 뺌"
+    ),
+    "k-c2": "좋음",
+    "k-c3": "좋음",
+    "q3": "(가) 반출 · 이설하는 날이 든 달부터 뺌. 정지만 한 호기는 아직 가지고 있으니 남김",
+    "q4": "(가) 함께 펼침 — 「제품별 소요대수」 를 켜면 두 구획 모두 제품 줄까지",
+    "q5": "(가) 둘의 합(호기별 비가동 일정이 깎은 대수 + 입력 비가동 대수)",
+    "q5b": "(가) 처음은 Static",
+    "q8": (
+        "(가) 지금대로 Static 하나. 띠 · 카드 · 근거는 Static(가정을 켜면 가정). 일정 가용 ·"
+        " 비가동 구획의 확보율 칸은 제 판정 색만 칠함"
+    ),
+    "q6": "(가) 지금 줄 모두 그대로",
+    "q6b": "(나) 구획 맨 위에 「단축 후 확보율」 한 줄(단축으로 바뀐 달만 값)",
+    "q7": (
+        "(가) 같은 비가동(시작일 · 종료일 · 유형)이 그 호기의 모든 모듈에 있으면 화살표 하나로"
+        " 합침. 일부 모듈에만 있는 것은 그 모듈 것만 둘째 줄에"
+    ),
+    "k-c4": "좋음",
+    "k-c5": "좋음",
+    "k-c6": "좋음",
+}
+# 사용자 메모 원문 — 확인 카드 셋(k-b1 · k-c0 · k-c4)과 고른 선택지에 단 셋(q1 · q6 · q7).
+POST_FOUR_MEMOS = {
+    "q1": "이 양식을 가능한 다른 편집기에도 공통 적용",
+    "k-b1": "나머지 설비대수 3항목의 이름은 보유대수, 대여대수, 가용대수 로 적용",
+    "k-c0": (
+        "비가동 대수 만 띄어쓰기 적용됐는데 다른 행과 동일하게 비가동대수 로 띄어쓰기 빼고"
+        " 붙여서넣어줘"
+    ),
+    "q6": "옵션 버튼 추가해서 전체를 보이기 or 단축필요만 보이기 선택할 수 있게 구현해",
+    "q7": (
+        "가 기준으로 적용한다면, 같은 호기로 행에 표현되는 모듈은 일정이 다름 등의 이유가"
+        " 있을텐데, 이런경우엔 '... 같은호기' 로 표현하지말고 '[여백]└ 모듈명' 이런식으로"
+        " 표현되게해"
+    ),
+    "k-c4": "단축 목표 = 확보기준 (월별) 문구는 가이드로 빼",
+}
+# 갈래가 답 밖에서 정한 것을 밝힌 줄.
+POST_FOUR_BEYOND = ("k-a1", "q4", "q5", "q5b", "q6", "q7", "k-c6")
+
+
+def test_the_post_deploy_four_board_answers_are_recorded() -> None:
+    """v1.20 — 6-20 은 「배포 뒤 할 일 넷」 시안 보드 카드 스물넷이 보드 차례대로 한 줄씩이고
+    고른 글은 선택지 원문(확인 카드는 「좋음」)이다. 메모 여섯은 원문 그대로 그 줄에 있고, 권장
+    (가) 와 다른 답 둘(n2 · q6b)은 그 줄이 밝힌다. 스물넷 모두 커밋을 들고, 갈래가 답 밖에서
+    정한 것은 그 줄이 밝힌다. q4 (가) 가 받은 ① · ② 의 같은 소요대수 줄은 UI-TXT-07 예외이고,
+    뒤집은 옛 결정은 7-1 에 있다. 6-19 줄은 그때 기록 그대로다(앞 시험이 6-20 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.20" in document.split("\n## 1. ")[0]
+    assert "- **v1.20 — 2026-11-12.**" in _chapter(document, 8)
+    assert "6-20 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-20. ") :]
+    assert POST_FOUR_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-12) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(POST_FOUR_ANSWERS)
+    assert len(found) == 24
+    assert found == POST_FOUR_ANSWERS
+    assert sum(answer == "좋음" for answer in found.values()) == 12
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert commit.search(line), key
+    memo = [key for key, line in by_id.items() if "— 메모 「" in line]
+    assert memo == list(POST_FOUR_MEMOS)
+    for key, note in POST_FOUR_MEMOS.items():
+        assert f"메모 「{note}」" in by_id[key], key
+    others = [key for key, answer in found.items() if answer.startswith("(나) ")]
+    assert others == ["n2", "q6b"]
+    for key in others:
+        assert "권장과 다른 답" in by_id[key], key
+    beyond = [key for key, line in by_id.items() if "답 밖 — 갈래가 정함" in line]
+    assert beyond == list(POST_FOUR_BEYOND)
+
+    rules = {rule.id: rule for rule in _rules()}
+    assert "q4 (가)" in rules["UI-TXT-07"].fields["예외"][0]
+    reversed_ = _chapter(document, 7)
+    for phrase in ("「배포 뒤 할 일 넷」 시안 보드 k-c2 · n1 (가) · q5 (가)", "같은 보드 q1 (가)"):
+        assert phrase in reversed_, phrase
+    assert "n2 (나) · q6b (나)" in _chapter(document, 8)
