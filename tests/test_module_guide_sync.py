@@ -264,6 +264,18 @@ def test_the_guide_says_the_context_takes_only_the_bare_file_name() -> None:
     assert "`api.context` 에 맨이름 `__file__` 이 아닌 인자 넣기" in _section("4. 부딪치지 않게")
 
 
+def test_the_test_section_says_tests_take_the_context_from_their_own_file() -> None:
+    """모듈 시험도 M06 을 받는다 — 7장이 시험 파일에서도 `api.context(__file__)` 로 받고 화면 파일
+    경로(3-8 의 `PAGE`)를 넣으면 M06 이라고 적는다. 3-8 의 `PAGE` 를 그대로 넘기기 쉽다."""
+    line = next(
+        line
+        for line in _section("7. 시험과 확인").splitlines()
+        if "시험 파일에서도 `api.context(__file__)`" in line
+    )
+    assert "`PAGE`" in line and "M06" in line
+    assert 'PAGE = Path(__file__).resolve().parents[1] / "page.py"' in _section("3-8.")
+
+
 def test_the_skeleton_section_shows_what_new_module_writes(tmp_path: Path) -> None:
     section = _section("3-7.")
     root = tmp_path / "modules"
