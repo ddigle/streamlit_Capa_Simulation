@@ -83,6 +83,11 @@ def test_levels_carry_names_and_popup_times() -> None:
     assert dict(alerts.POPUP_SECONDS) == {"info": 8, "check": 15, "action": 15, "error": 15}
     assert (alerts.POPUP_LIMIT, alerts.REPEAT_WINDOW_SECONDS, alerts.ATTENTION_MS) == (3, 60, 450)
     assert alerts.ATTENTION_EASING == "cubic-bezier(0.5, 1, 0.89, 1)"
+    assert (alerts.ATTENTION_HIT_MS, alerts.ATTENTION_FADE_MS, alerts.ATTENTION_STILL_MS) == (
+        900,
+        160,
+        1600,
+    )
     assert (alerts.HISTORY_ROWS, alerts.HISTORY_HOURS, alerts.SHORT_LIMIT) == (200, 12, 60)
 
 

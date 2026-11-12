@@ -445,6 +445,11 @@ export default function (component) {
   const SHEET_PLACE = '도면'
   // 필터에 맞는 호기 테의 띄움(화면 px) — 선택 후광(HALO_GAP_PX ± 1)보다 바깥이다.
   const FILTER_GAP_PX = 5
+  // 창이 바꾼 강조에 거는 시선 끌기(`attractTo`)의 시간 · 곡선 — 파이썬 `alerts.attention_payload`(알림 칸 `limits` 와 같은 사전).
+  // 없으면 걸지 않는다. 셈의 끝은 이 층 도면에 보이는 대상 5대(묶음 1대 — 2026-11-12 Space 시안 보드 답 5-2 「5대 이하」).
+  const ATTENTION = data.attention && typeof data.attention === 'object' ? data.attention : null
+  const ATTRACT_MOST = 5
+  const attractLayer = q('.sle-attract')
   const sheetBox = q('.sle-sheet')
   const sheetToggle = q('.sle-sheet-toggle')
   const sheetHead = q('.sle-sheet-head')
@@ -2066,6 +2071,34 @@ export default function (component) {
     return `${lines.join('\n')}\n`
   }
   // </unit-sheet>
+  // 「호기 정보」 창이 바꾼 도면 강조에 시선을 끌 대상(순수 함수, 2026-11-12 Space 시안 보드 답 5-2 · 5-3 — 설계 규칙 UI-NAV-02).
+  // 강조 대상은 묶음 열쇠다 — Main 설비 모듈 묶음은 묶음 하나, 묶음이 아닌 호기는 자기 id(`keyOf`). before · after 는 앞뒤
+  // 강조의 호기 id 묶음(Set 또는 배열, 강조가 없으면 null) — 필터는 맞은 호기, 줄 누르기는 고른 호기다. seen(id) 는 이 층 도면에
+  // 보이는가(보기는 기준일 · 겹쳐 숨김까지), most 는 셈의 끝이다. 셈은 화면 밖까지 이 층 도면에 보이는 대상 전부(묶음 1대)이고,
+  // 보이는 대상이 앞과 같으면(같은 묶음의 다른 모듈 줄을 누름 · 숨은 호기만 바뀐 거르기) 걸지 않는다. 돌려주는 것은 걸 묶음 열쇠
+  // (처음 만난 차례), 없거나 most 를 넘으면 []. 화면 안인지는 그리는 쪽이 본다. `tests/test_space_attract_pick_js.py` 가 아래 두
+  // 표시 줄 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // <attract-pick>
+  function attractKeys(ids, keyOf, seen) {
+    const keys = []
+    const known = new Set()
+    for (const id of ids || []) {
+      if (!seen(id)) continue
+      const key = keyOf(id)
+      if (known.has(key)) continue
+      known.add(key)
+      keys.push(key)
+    }
+    return keys
+  }
+  function attractPick(before, after, keyOf, seen, most) {
+    const next = attractKeys(after, keyOf, seen)
+    if (!next.length || next.length > most) return []
+    const prev = new Set(attractKeys(before, keyOf, seen))
+    if (prev.size === next.length && next.every((key) => prev.has(key))) return []
+    return next
+  }
+  // </attract-pick>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
   function unitColors(item, st) {
@@ -2715,6 +2748,8 @@ export default function (component) {
     S.view.top = vh >= H() + pad * 2 ? (H() - vh) / 2 : clamp(S.view.top, -pad, H() + pad - vh)
   }
   function applyView({ reposition = true } = {}) {
+    // 시선 끌기 테는 화면 좌표라 배율 · 자리 · 크기가 바뀌면 곧바로 걷는다.
+    stopAttract()
     clampView()
     svg.setAttribute('viewBox', `${S.view.x} ${S.view.top} ${viewW()} ${viewH()}`)
     zoomLabel.textContent = `${Math.round(S.view.z * 100)}%`
@@ -5741,6 +5776,7 @@ export default function (component) {
     S.undo = []
     clearSelection()
     S.drag = null
+    stopAttract()
     S.note = ''
     // 복사·붙여넣기 알림은 그 도면의 것이다 — 적용 뒤·다른 층의 새 도면까지 상태 줄에 남기지 않는다.
     S.flash = ''
@@ -7245,7 +7281,11 @@ export default function (component) {
     const hit = Boolean(hits && chip.__ids && chip.__ids.some((id) => hits.has(id)))
     chip.classList.toggle('is-filter-hit', hit)
   }
-  function refreshHits() {
+  // fromUser — 사람이 거른 손길(칸 필터 · 칩 지우기 · 모두 지우기 · 「도면에서 강조」)의 회차다. 그 손길이 바꾼 맞음에만 시선을
+  // 끈다(`attractHits`) — 회차 · 페이더 · 받은 표(`adoptSheet`)가 바꾼 강조는 걸지 않는다. 칸 필터 펼침이 열린 동안의 체크는 처음
+  // 맞음을 쥐고 있다가 펼침을 닫을 때 한 번 견준다(`closeMenu` → `settleAttract`).
+  function refreshHits(fromUser) {
+    const before = S.filterHits
     S.filterHits = currentHits()
     for (const [id, group] of S.groups) paintFilter(group, id)
     let inTray = 0
@@ -7255,6 +7295,134 @@ export default function (component) {
     }
     trayHits.hidden = !S.filterHits
     setText(trayHits, S.filterHits ? `· 필터 맞음 ${inTray}` : '')
+    if (!fromUser) return
+    if (S.sheetMenu) {
+      if (S.attractBase === undefined) S.attractBase = before || null
+      return
+    }
+    const base = S.attractBase !== undefined ? S.attractBase : before
+    S.attractBase = undefined
+    attractHits(base, S.filterHits)
+  }
+  // 펼침을 닫은 뒤 쥐고 있던 맞음과 지금 맞음을 견준다. 닫은 손길이 이어서 다시 걸렀으면(칩 · 모두 지우기) 그 회차가 이미
+  // 견주어 쥔 것이 없다.
+  function settleAttract() {
+    if (S.attractBase === undefined) return
+    const base = S.attractBase
+    S.attractBase = undefined
+    attractHits(base, S.filterHits)
+  }
+  // ---- 시선 끌기(2026-11-12 Space 시안 보드 답 5-2 · 5-3, 설계 규칙 UI-NAV-02) — 알림 칸 `attract` 와 같은 꼴 · 같은 값(data
+  // `attention`). 무대 가장자리(4px 안쪽, 둥글기 14)의 테두리 한 겹이 닿을 테(화면 사각형 — 대상 하나에 하나) 둘레(5px 밖, 둥글기
+  // 9)로 모이고(앞 12% 에서 불투명), 닿으면 그 테가 빛 고리로 잠깐 선 뒤 걷힌다. 움직임 줄이기 설정이면 움직이지 않는 윤곽만
+  // 선다. 화면 밖 테에는 걸지 않는다. 테는 무대 안 층(`.sle-attract` — 누름을 받지 않음)에 화면 좌표로 서므로 확대 · 이동 · 크기
+  // 바뀜(`applyView`) · 새 도면(epoch)이면 곧바로 걷는다(`stopAttract`). tone 은 닿는 테의 색 — 'pick' 선택 강조색 · 'filter'
+  // 필터 테 색. 도는 움직임은 `S.attractMotions` 에 둔다(걷을 때 멈춘다).
+  const attractKeyOf = (id) => {
+    const item = S.items.get(id)
+    return item && isUnit(item) && item.group ? `g:${groupKeyOf(item)}` : `u:${id}`
+  }
+  const attractSeen = (id) => {
+    const item = S.items.get(id)
+    return Boolean(item) && isUnit(item) && seenModule(item)
+  }
+  const attractBox = (rects) => ({
+    left: Math.min(...rects.map((r) => r.left)), top: Math.min(...rects.map((r) => r.top)),
+    right: Math.max(...rects.map((r) => r.right)), bottom: Math.max(...rects.map((r) => r.bottom)),
+  })
+  function attractStill() {
+    if (typeof attractLayer.animate !== 'function') return true
+    try {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    } catch {
+      return false
+    }
+  }
+  function stopAttract() {
+    S.attractRun = (S.attractRun || 0) + 1
+    clearTimeout(S.attractTimer)
+    S.attractTimer = 0
+    for (const motion of S.attractMotions || []) motion.cancel()
+    S.attractMotions = []
+    if (attractLayer && attractLayer.firstChild) attractLayer.replaceChildren()
+  }
+  function attractTo(boxes, tone) {
+    stopAttract()
+    if (!attractLayer || !ATTENTION) return
+    const port = stage.getBoundingClientRect()
+    const shown = boxes.filter((b) => b.right > port.left && b.left < port.right && b.bottom > port.top && b.top < port.bottom)
+    if (!shown.length) return
+    const run = S.attractRun
+    const ox = port.left + stage.clientLeft
+    const oy = port.top + stage.clientTop
+    const at = (b, grow) => ({
+      left: `${b.left - ox - grow}px`, top: `${b.top - oy - grow}px`,
+      width: `${b.right - b.left + grow * 2}px`, height: `${b.bottom - b.top + grow * 2}px`,
+    })
+    const make = (name, b) => {
+      const node = document.createElement('div')
+      node.className = tone === 'filter' ? `${name} is-filter` : name
+      Object.assign(node.style, at(b, 0))
+      attractLayer.append(node)
+      return node
+    }
+    if (attractStill()) {
+      for (const b of shown) make('sle-attract-still', b)
+      S.attractTimer = setTimeout(() => {
+        if (S.attractRun === run) stopAttract()
+      }, ATTENTION.still_ms)
+      return
+    }
+    const edge = 4
+    const pad = 5
+    const w = stage.clientWidth
+    const h = stage.clientHeight
+    for (const b of shown) {
+      const frame = make('sle-attract-frame', b)
+      const motion = frame.animate(
+        [
+          { left: `${edge}px`, top: `${edge}px`, width: `${w - 2 * edge}px`, height: `${h - 2 * edge}px`, borderRadius: '14px', opacity: 0, offset: 0 },
+          { opacity: 1, offset: 0.12 },
+          { ...at(b, pad), borderRadius: '9px', opacity: 1, offset: 1 },
+        ],
+        { duration: ATTENTION.attention_ms, easing: ATTENTION.easing, fill: 'both' },
+      )
+      S.attractMotions.push(motion)
+      motion.finished
+        .then(() => {
+          if (S.attractRun !== run) return null
+          const hit = make('sle-attract-hit', b)
+          setTimeout(() => hit.remove(), ATTENTION.hit_ms)
+          const fade = frame.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ATTENTION.fade_ms, fill: 'forwards' })
+          S.attractMotions.push(fade)
+          return fade.finished
+        })
+        .then(() => frame.remove())
+        .catch(() => frame.remove())
+    }
+  }
+  // 필터 강조 — 사람이 거른 손길이 바꾼 맞음(`// <attract-pick>` — 이 층 도면에 보이는 대상 5대 이하, 묶음 1대). 닿을 테는 그
+  // 대상의 맞은 호기 필터 테(`.sle-filter-ring` — `paintFilter` 가 칠한 뒤라 보인다)를 두른 사각형이다.
+  function attractHits(before, after) {
+    const keys = new Set(attractPick(before, after, attractKeyOf, attractSeen, ATTRACT_MOST))
+    if (!keys.size) return
+    const rings = new Map()
+    for (const id of after) {
+      const key = attractKeyOf(id)
+      const ring = keys.has(key) && attractSeen(id) ? S.groups.get(id)?.querySelector('.sle-filter-ring') : null
+      if (!ring) continue
+      if (!rings.has(key)) rings.set(key, [])
+      rings.get(key).push(ring.getBoundingClientRect())
+    }
+    attractTo([...rings.values()].map(attractBox), 'filter')
+  }
+  // 줄 누르기 — 고른 것(대상 = 묶음 열쇠)이 바뀌었으면 그 강조 테로. 묶음은 묶음 상자(보기 실선 · 편집 범위 테두리), 낱 호기는
+  // 상자다. 같은 묶음의 다른 모듈 줄 · 같은 줄을 다시 누르면 걸지 않는다.
+  function attractPicked(before, item) {
+    const after = [...S.selection]
+    if (!attractPick(before, after, attractKeyOf, () => true, ATTRACT_MOST).length) return
+    const ring = overlay.querySelector('.sle-group-box') || S.groups.get(item.id)?.querySelector('.sle-rect')
+    if (ring) attractTo([ring.getBoundingClientRect()], 'pick')
   }
   // 창 처음 자리·크기 — 무대 왼쪽 아래, 720×320(무대·몸이 작으면 줄인다).
   function sheetDefault() {
@@ -7283,7 +7451,7 @@ export default function (component) {
   }
   // 창을 그린다. 같은 그림(탭·줄·필터·칸 값)이면 표를 다시 만들지 않고 고른 줄 표시만 고친다. 끄는 동안은 쉰다(놓으면
   // 상태 줄과 함께 다시 부른다).
-  function renderSheet() {
+  function renderSheet(fromUser) {
     if (!sheetBox) return
     sheetLoad()
     const state = S.sheetState
@@ -7297,7 +7465,7 @@ export default function (component) {
     if (!open) {
       closeMenu()
       closeCsvMenu()
-      refreshHits()
+      refreshHits(fromUser)
       return
     }
     if (S.drag) return
@@ -7368,7 +7536,7 @@ export default function (component) {
     const current = new Set(ids)
     for (const tr of sheetBodyRows.children) tr.classList.toggle('is-current', current.has(tr.dataset.id))
     if (S.sheetMenu) renderMenu()
-    refreshHits()
+    refreshHits(fromUser)
   }
   function drawSheetTable(columns, rows, menus) {
     const filters = S.sheetState.filters
@@ -7463,6 +7631,7 @@ export default function (component) {
         setSheetNote(`${id} — 이 기준일에는 도면에 보이지 않습니다(반입 전 겹침·도면 이탈)`)
         return
       }
+      const picked = [...S.selection]
       select(id)
       if (VIEW) notePick()
       zoomToBox(bbox(VIEW ? [item] : expanded([item])), LIST_ROW_ZOOM)
@@ -7470,6 +7639,8 @@ export default function (component) {
       const rect = group && group.querySelector('.sle-rect').getBoundingClientRect()
       const shift = rect && !S.sheetWin.min ? clearOfSheet(stage.getBoundingClientRect(), sheetBox.getBoundingClientRect(), rect) : null
       if (shift) panBy(shift.dx * unitsPerPx(), shift.dy * unitsPerPx())
+      // 화면을 다 옮긴 뒤 바뀐 강조 테에 시선을 끈다.
+      attractPicked(picked, item)
       if (lead) setSheetNote(`${id} — 도면에 없음 · Main 설비 ${own.group}`)
       return
     }
@@ -7504,7 +7675,7 @@ export default function (component) {
     if (sheetRuleOn(kept)) S.sheetState.filters[name] = kept
     else delete S.sheetState.filters[name]
     sheetSaveState()
-    renderSheet()
+    renderSheet(true)
   }
   // ---- 칸 필터 펼침(엑셀 자동 필터 꼴) — 값 목록 체크(개수·찾기), 날짜·숫자 칸은 「부터·까지」 범위. 값 목록은 다른 칸 필터만 지난
   // 줄에서 센다. 모든 값을 고르면 그 칸 값 필터는 풀린다.
@@ -7543,6 +7714,7 @@ export default function (component) {
     const index = S.sheetMenu.index
     S.sheetMenu = null
     sheetMenu.hidden = true
+    if (S.attractBase !== undefined) queueMicrotask(settleAttract)
     if (focusBack) {
       const button = sheetHeadRow.querySelector(`.sle-sheet-funnel[data-col="${index}"]`)
       if (button) button.focus({ preventScroll: true })
@@ -7720,12 +7892,12 @@ export default function (component) {
       S.sheetState.filters = {}
       sheetSaveState()
       closeMenu()
-      renderSheet()
+      renderSheet(true)
     }
     sheetHl.onchange = () => {
       S.sheetState.hl = sheetHl.checked
       sheetSaveState()
-      renderSheet()
+      renderSheet(true)
     }
     sheetChips.onclick = (event) => {
       const chip = event.target.closest ? event.target.closest('.sle-sheet-chip') : null

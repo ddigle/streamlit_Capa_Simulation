@@ -489,7 +489,9 @@ def test_the_csv_button_lives_in_the_window_and_downloads_in_the_browser() -> No
     assert ">도면에 선 호기 · 모든 칸</button>" in menu and "층 전체" not in menu
     adopt = JS[JS.index("  function adoptSheet() {") : JS.index("  function sheetRows() {")]
     assert "typeof SHEET.csv.text === 'string' && typeof SHEET.csv.file === 'string'" in adopt
-    render = JS[JS.index("  function renderSheet() {") : JS.index("  function drawSheetTable(")]
+    render = JS[
+        JS.index("  function renderSheet(fromUser) {") : JS.index("  function drawSheetTable(")
+    ]
     assert "S.sheetShown = shown" in render
     # 잘린 줄 수는 값 「n줄 더 있음」 이고 모든 줄을 받는 자리는 풍선이다 — 빈 결과 · 잘림 줄에
     # 하는 법 꼬리를 달지 않는다(설계 규칙 UI-TXT-03 · UI-TXT-04).

@@ -1379,7 +1379,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`goToUnit`) = 고르기 + `zoomToBox`(보기는 `notePick` 도) + 창이 덮으면 덮지 않은 가장 넓은 띠로 밀기(`clearOfSheet`), 편집의
     미배치 호기는 오른쪽 칸을 펴 그 칩으로 굴려 깜빡임, 그 밖은 창 아래 한 줄. 편집에서 도면에 선 묶음의 좌표 없는 모듈(`trayKeep` 이 서랍에서 뺌)은 그 모듈을 고른
     채 화면을 그 묶음의 도면에 선 모듈로(같은 `zoomToBox` · `clearOfSheet`) 옮기고 창 아래 「<id> — 도면에 없음 · Main 설비 <묶음>」
-    이다. 창 아래 한 줄은 편집 기록(`pushUndo`)마다 지운다. 배치 편집의 「도면」 칸은 적용 전 편집으로 덮어
+    이다. 창 아래 한 줄은 편집 기록(`pushUndo`)마다 지운다. 줄 누르기로 고른 것이 바뀌거나(`attractPicked` — 화면을 다 옮긴 뒤)
+    사람이 걸러 맞음이 바뀌면(`refreshHits(fromUser)` — 칸 필터 · 칩 · 모두 지우기 · 「도면에서 강조」, 펼침 안 체크는 닫을 때 `settleAttract`)
+    그 테에 알림 칸과 같은 시선 끌기를 한 번 건다(`attractTo` — 무대 안 층 `.sle-attract`, 2026-11-12 Space 시안 보드 답 5-2 · 5-3,
+    설계 규칙 UI-NAV-02). 대상 판정은 순수 구획 `// <attract-pick>`(`tests/test_space_attract_pick_js.py`) — 묶음 열쇠로 세고(모듈 묶음 1대)
+    이 층 도면에 보이는 대상이 5대(`ATTRACT_MOST`)를 넘거나 앞과 같으면 걸지 않는다. 화면 밖 테는 빼고, 확대 · 이동 · 크기 바뀜
+    (`applyView`) · 새 epoch 에 걷는다(`stopAttract`). 움직임 줄이기 설정이면 윤곽(`sle-attract-still`)이다. 배치 편집의 「도면」 칸은 적용 전 편집으로 덮어
     쓴다(`sheetRows` — 트레이 = 미배치, 보낸 호기 「→ 층」). 창 안 키는 도면 단축키로 새지 않는다(`sheetBox.onkeydown` 이 멈춤).
     상태는 브라우저에만 — 자리·크기·접힘 localStorage `capa.space.sheet.win.v1`, 열림·탭·필터·강조 sessionStorage
     `capa.space.sheet.state.v1`(탭 안 기억, 층·편집을 오가도 남음 — 필터는 칸 이름으로 남아 새 층의 값으로 다시 센다). 받은 표는
@@ -3811,8 +3816,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   다시 쓰지 않는다, 겹치거나 꼴이 어긋나면 읽는 순간 멈춘다). 단계 넷(`LEVELS` — info 알림 · check 확인 필요 · action 조치
   필요 · error 오류, `LEVEL_LABELS`·`POPUP_SECONDS`), 쌓기 · 반복 창 · 보관 · 시선 끌기 상수(`POPUP_LIMIT` 3 — 넘치면 단계가
   가장 낮은 칸부터, 같은 단계면 먼저 선 칸부터 걷는다(알림 칸 JS `overflowVictim` — 2026-11-10 보드 Q-1) ·
-  `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING`)가 여기
-  한 곳이다. API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
+  `REPEAT_WINDOW_SECONDS` 60 · `HISTORY_ROWS` 200 · `HISTORY_HOURS` 12 · `ATTENTION_MS` 450 · `ATTENTION_EASING` ·
+  `ATTENTION_HIT_MS` 900 · `ATTENTION_FADE_MS` 160 · `ATTENTION_STILL_MS` 1600)가 여기 한 곳이다. 시선 끌기 값은
+  `attention_payload()` 한 사전으로 알림 칸 data `limits` 와 Space 층 보기 · 편집 data `attention` 이 함께 받는다(두 JS 에 수를 두지 않는다). API: 사건 `event(code, text=, full=, level=, cause=, detail=)` — 담기만 한다(`OUTBOX_KEY`), 상태
   `state(code, scope=, content=, active=, text=, full=, scope_label=, tab=, tables=)` — 이벤트 칸 한 자리, 지문(`fingerprint` =
   코드 + 범위 + 내용)이 바뀔 때만 알림창 · 자리에는 그리지 않음(D2 (나)). `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그
   탭까지 연다), `tables` 는 Alarm 줄에서 펼쳐 볼 딸린 표들(`AlertTable` — 칸 · 행(JSON 값) · 원래 행 수 · CSV 파일 이름 · 화면에만

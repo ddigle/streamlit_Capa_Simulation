@@ -310,8 +310,7 @@ def alert_center_data(
             "repeat_ms": alerts.REPEAT_WINDOW_SECONDS * 1000,
             "rows": alerts.HISTORY_ROWS,
             "hours": alerts.HISTORY_HOURS,
-            "attention_ms": alerts.ATTENTION_MS,
-            "easing": alerts.ATTENTION_EASING,
+            **alerts.attention_payload(),
         },
         "toolbar": {
             "slot": TOOLBAR_SLOT,

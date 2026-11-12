@@ -1209,6 +1209,12 @@ def test_the_js_limits_match_the_registry_constants() -> None:
     두 벌 두지 않는다."""
     assert ".repeat_ms" in JS and "limits.rows" in JS and "limits.hours" in JS
     assert alerts.REPEAT_WINDOW_SECONDS * 1000 == 60000
+    # 시선 끌기의 도착 강조 · 걷기 · 움직임 줄이기 윤곽 시간도 data 다(`alerts.attention_payload` —
+    # Space 도면 강조와 같은 사전).
+    for name in ("STILL_MS", "HIT_MS", "FADE_MS"):
+        assert f"const {name}" not in JS, name
+    for name in ("limits.still_ms", "limits.hit_ms", "limits.fade_ms"):
+        assert name in JS, name
 
 
 def test_the_alarm_table_downloads_in_the_browser_and_the_tab_hop_waits_for_the_run() -> None:

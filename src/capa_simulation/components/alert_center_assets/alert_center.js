@@ -84,10 +84,6 @@ const TOOLBAR_VARIABLE = '--capa-toolbar-width'
 const SEEN_LIMIT = 400
 // 상태 표(코드 + 범위)를 이만큼까지 둔다 — 해소된 것부터 걷는다.
 const STATE_LIMIT = 300
-// 움직임 줄이기의 윤곽 · 도착 강조가 서 있는 시간과 도착 뒤 테두리를 걷는 시간.
-const STILL_MS = 1600
-const HIT_MS = 900
-const FADE_MS = 160
 // 툴바 슬롯이 늦게 그려지면 이 간격으로 이 횟수까지 다시 본다.
 const PLACE_RETRY_MS = 200
 const PLACE_RETRIES = 40
@@ -1022,15 +1018,16 @@ function hidePopup(C, key, seen = true) {
 
 // 같은 알림 시선 끌기(D4 A) — 창 가장자리(4px 안쪽, 둥글기 14px) 테두리가 알림창 둘레(5px 밖, 둥글기 9px)로 모인다. 앞
 // 12% 에서 불투명해지고, 도착하면 걷히며 알림창 테두리가 단계 색 100% + 빛 고리로 잠깐 선다. 돌던 중 또 나면 처음부터.
+// 시간 · 곡선은 모두 data `limits`(파이썬 `alerts.attention_payload` — Space 도면 강조와 같은 값)이고 여기에 수를 두지 않는다.
 function attract(C, node, level) {
   if (!node.isConnected) return
+  const limits = C.data.limits || {}
   if (reducedMotion() || typeof node.animate !== 'function') {
     node.classList.add('is-still')
-    setTimeout(() => node.classList.remove('is-still'), STILL_MS)
+    setTimeout(() => node.classList.remove('is-still'), limits.still_ms)
     return
   }
   if (C.frame) C.frame.remove()
-  const limits = C.data.limits || {}
   const box = node.getBoundingClientRect()
   const pad = 5
   const edge = 4
@@ -1047,13 +1044,13 @@ function attract(C, node, level) {
       { opacity: 1, offset: 0.12 },
       { left: `${box.left - pad}px`, top: `${box.top - pad}px`, width: `${box.width + 2 * pad}px`, height: `${box.height + 2 * pad}px`, borderRadius: '9px', opacity: 1, offset: 1 },
     ],
-    { duration: limits.attention_ms || 450, easing: limits.easing || 'ease-out', fill: 'both' },
+    { duration: limits.attention_ms, easing: limits.easing, fill: 'both' },
   )
   motion.finished
     .then(() => {
       node.classList.add('is-hit')
-      setTimeout(() => node.classList.remove('is-hit'), HIT_MS)
-      return frame.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE_MS, fill: 'forwards' }).finished
+      setTimeout(() => node.classList.remove('is-hit'), limits.hit_ms)
+      return frame.animate([{ opacity: 1 }, { opacity: 0 }], { duration: limits.fade_ms, fill: 'forwards' }).finished
     })
     .then(() => {
       frame.remove()
