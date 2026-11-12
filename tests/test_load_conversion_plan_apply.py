@@ -241,6 +241,35 @@ def _stack_field(app: AppTest) -> TextInput:
     return next(field for field in app.text_input if field.label == "Stack")
 
 
+def _block(app: AppTest, key: str) -> Block:
+    """본문에서 그 key 의 칸 하나."""
+    found: list[Block] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, Block) and node.key == key:
+            found.append(node)
+            return
+        for child in getattr(node, "children", {}).values():
+            walk(child)
+
+    walk(app.main)
+    assert len(found) == 1, (key, found)
+    return found[0]
+
+
+def _action_row(app: AppTest, key: str) -> list[str]:
+    """그 단추 줄 칸의 바로 아래 자식 차례 — 단추는 key, 팝오버는 「popover:」 + 안 단추 key 들."""
+    row = _block(app, key)
+    names: list[str] = []
+    for index in sorted(row.children):
+        child = row.children[index]
+        if isinstance(child, Block) and child.type == "popover":
+            names.append("popover:" + ",".join(str(button.key) for button in child.get("button")))
+        else:
+            names.append(str(getattr(child, "key", None) or getattr(child, "type", "")))
+    return names
+
+
 def test_the_virtual_product_button_sits_in_the_more_menu_that_closes_when_picked(
     seeded_database: Path,
 ) -> None:
@@ -252,12 +281,45 @@ def test_the_virtual_product_button_sits_in_the_more_menu_that_closes_when_picke
     assert app.button(key="apply_pkg_plan_changes").label == "변경사항 적용"
     menus = [block for block in app.main.get("popover") if block.proto.popover.help == "더 보기"]
     assert len(menus) == 1 and menus[0].proto.popover.label == ""
+    assert [button.key for button in menus[0].get("button")] == ["open_virtual_product"]
+    assert _action_row(app, "pkg_plan_action_row") == [
+        "apply_pkg_plan_changes",
+        "open_plan_paste",
+        "popover:open_virtual_product",
+    ]
     assert "pkg_plan_more_generation" not in app.session_state
 
     app.button(key="open_virtual_product").click().run()
     assert not list(app.exception)
     assert app.session_state["pkg_plan_more_generation"] == 1
     assert app.session_state["load_conversion_open_dialog"] == "virtual_product"
+
+
+@pytest.mark.parametrize(
+    ("tab", "box", "row"),
+    [
+        (PLAN_TAB, "pkg_plan_actions", "pkg_plan_action_row"),
+        (YIELD_TAB, "yield_actions", "yield_action_row"),
+    ],
+    ids=["pkg-plan", "yield"],
+)
+def test_the_action_row_is_the_last_box_that_shows_in_its_actions_box(
+    seeded_database: Path, tab: str, box: str, row: str
+) -> None:
+    """한 줄 서식은 단추 줄이 작업 줄 칸의 끝 자식일 때만 표 도구 막대를 그 곁으로 올린다
+    (`plan_grid.LAYOUTS`). 알림이 없는 회차에 단추 줄 뒤 칸(알림 칸)은 비어 있어야 한다 — 빈 칸은
+    그려지지 않는다. 칸을 고친 뒤(「편집 취소」 · 「고칠 칸」 이 서는 꼴)도 같다."""
+    app = AppTest.from_string(_script(seeded_database), default_timeout=300).run()
+    app = _open_tab(app, tab)
+    edit = PLAN_CELL_EDIT if tab == PLAN_TAB else YIELD_CELL_EDIT
+    for step in ("before", "after"):
+        if step == "after":
+            app = _cell_edit(app, edit)
+        actions = _block(app, box)
+        children = [actions.children[index] for index in sorted(actions.children)]
+        at = [index for index, child in enumerate(children) if getattr(child, "key", None) == row]
+        assert len(at) == 1, (step, at)
+        assert all(not getattr(child, "children", None) for child in children[at[0] + 1 :]), step
 
 
 def test_the_stack_field_follows_the_chosen_source_product(seeded_database: Path) -> None:

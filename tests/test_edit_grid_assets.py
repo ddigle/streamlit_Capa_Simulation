@@ -179,6 +179,38 @@ def test_the_palette_names_every_token_the_grid_needs() -> None:
     assert all(isinstance(value, str) and value for value in edit_grid.palette().values())
 
 
+def _css_rule(css: str, selector: str) -> str:
+    """`selector {…}` 한 덩이의 몸(첫 덩이) — 없으면 빈 글."""
+    match = re.search(rf"(?m)^{re.escape(selector)} \{{(.*?)^\}}", css, re.S)
+    return match.group(1) if match else ""
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_the_grid_surfaces_take_the_page_background(mode: str) -> None:
+    """그리드 둘레 · 스크롤 · 값 칸 · 칸 입력 칸 · 적용 전 변경 판 · 전체 화면 판은 페이지
+    바탕색이고 표 도구 단추 · 찾기 칸은 화면의 다른 단추와 같은 바탕이다(2026-11-12 보드 답 k-b2 —
+    밝은 · 어두운 테마 둘 다). 흰 편집기 면으로 돌아가면 잡는다. 고친 칸 · 틀린 칸 · 잠긴 칸은 제
+    칠 그대로다."""
+    from capa_simulation.design import theme as theme_module
+    from capa_simulation.design import tokens
+
+    theme_module._LOCAL.mode = mode
+    try:
+        palette = edit_grid.palette()
+        assert palette["surface"] == tokens.SURFACE_PAGE
+        assert palette["control"] == tokens.SURFACE
+        assert palette["surface"] != palette["control"]
+        assert palette["lock-fill"] == tokens.GRID_LOCK_FILL
+        assert palette["changed-fill"] == tokens.GRID_CHANGED_FILL
+        assert palette["error-fill"] == tokens.GRID_ERROR_FILL
+    finally:
+        theme_module._LOCAL.mode = "light"
+    for selector in (".eg-grid", ".eg-scroll", ".eg-c", ".eg-ed", ".eg-drawer", ".eg-dialog"):
+        assert "background: var(--eg-surface);" in _css_rule(REGISTERED_CSS, selector), selector
+    for selector in (".eg-tb-btn", ".eg-tb-q"):
+        assert "background: var(--eg-control);" in _css_rule(REGISTERED_CSS, selector), selector
+
+
 def test_user_text_goes_in_with_text_content_only() -> None:
     """분류 표시명·적은 글·토스트는 데이터다 — innerHTML·insertAdjacentHTML 로 넣지 않는다."""
     for pattern in (

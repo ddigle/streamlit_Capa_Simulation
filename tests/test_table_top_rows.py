@@ -11,6 +11,8 @@
    줄 곁에 선다.
 2. 기준 정보 편집 그리드는 한 줄 서식(`reference_grid.ONE_LINE_STYLE`)을 `page_style=` 로 받고,
    그 서식이 고르는 key 셋(작업 줄 칸 · 단추 줄 · 그리드 칸)이 화면에서 그 이름의 칸으로 선다.
+   생산 계획 PKG PLAN · 수율 그리드도 표마다 같은 꼴이다(`plan_grid.LAYOUTS` — 단추 줄이 작업 줄
+   칸의 끝 자식인지는 `tests/test_load_conversion_plan_apply.py` 가 화면으로 본다).
 3. 표시순서 범위 고르기는 「직접 편집」 제목 줄 곁이다 — 배치는
    `tests/test_display_order_management.py` 의 `test_the_scope_pickers_stand_on_the_heading_line`
    이 본다.
@@ -21,7 +23,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from capa_simulation.components import reference_grid
+from capa_simulation.components import plan_grid, reference_grid
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -107,3 +109,32 @@ def test_the_one_line_style_picks_the_boxes_the_page_draws() -> None:
     assert "st.container(key=reference_grid.GRID_BOX)" in page
     module = (ROOT / "src/capa_simulation/components/reference_grid.py").read_text("utf-8")
     assert "st.container(key=ACTION_ROW," in module
+
+
+def test_the_plan_grids_take_their_own_one_line_style() -> None:
+    """생산 계획 두 그리드는 표마다 한 줄 서식(`plan_grid.LAYOUTS[table].style`)을 받고 — 문턱 ·
+    왼쪽 비움은 표마다 고친 뒤 단추 줄 폭으로 잰 값이다 — 그 서식이 고르는 key 셋이 화면에서 그
+    이름의 칸으로 선다(2026-11-12 보드 답 k-a1 · q1)."""
+    assert set(plan_grid.LAYOUTS) == {"RQ_PKG_PLAN", "RQ_YLD"}
+    keys = [
+        key
+        for layout in plan_grid.LAYOUTS.values()
+        for key in (layout.actions_box, layout.action_row, layout.grid_box)
+    ]
+    assert len(set(keys)) == len(keys)
+    for layout in plan_grid.LAYOUTS.values():
+        style = layout.style
+        for key in (layout.actions_box, layout.action_row, layout.grid_box):
+            assert f".st-key-{key}" in style, key
+        assert (
+            f"> .st-key-{layout.actions_box} > :last-child > .st-key-{layout.action_row}" in style
+        )
+        assert f"min-width: {layout.min_window_px}px" in style
+        assert f"--eg-toolbar-reserve: {layout.reserve_px}px" in style
+    module = (ROOT / "src/capa_simulation/components/plan_grid.py").read_text("utf-8")
+    assert "page_style=LAYOUTS[table].style" in module
+    assert "key=LAYOUTS[table].action_row," in module
+    page = (ROOT / "app_pages/load_conversion.py").read_text(encoding="utf-8")
+    for name in ("plan_layout", "yield_layout"):
+        assert f"st.container(key={name}.actions_box)" in page, name
+        assert f"st.container(key={name}.grid_box)" in page, name
