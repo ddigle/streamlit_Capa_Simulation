@@ -3726,8 +3726,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     길, 소요 0 이면 NaN). 시험 불변식: 비가동 없는 가용 = 비가동 표·입력 없이 만든 설비 일정의 `가용대수`
     (`tests/test_downtime_impact.py`). 새 캐시·새 키가 없다(설비 일정·계획 캐시가 이미 든 값이다).
   - 「② 일정 가용」 총보유대수(q3 (가))는 `owned_unit_counts`(`ProcessEquipmentTimeline.owned_units`) — **달력 월**(Cut-off
-    없이)로 반입한 달부터 세고 반출/이설일정이 든 달부터 뺀다(정지만 한 호기는 남김), 기존보유 표 + 반입일정이 빈 기존설비 Y
-    는 처음부터, 사용기준 HBM·EDP 만, 모듈은 환산비. 전월 대비 풍선(k-c3)은 `unit_month_changes(unit_months, months)` —
+    없이)로 반입한 달부터 세고 반출/이설일정이 든 달부터 뺀다(정지만 한 호기는 남김), 기존보유 표 + 기존설비 Y · 보관 Y 호기는
+    반입일정과 상관없이 처음부터(가용 엔진의 보유 판정 `기존설비 | 보관 | 반입일정 ≤ 그날` 과 같은 판단 — 2026-11-12 남은 물음
+    보드 ③-1 (가), 반입 앞 달에 총보유 < 가용이 서지 않게), 사용기준 HBM·EDP 만, 모듈은 환산비. 전월 대비 풍선(k-c3)은 `unit_month_changes(unit_months, months)` —
     설비키마다 비가동을 비운 가용의 전월 대비 몫(합 = 비가동 빼기 전 호기 가용의 전월 대비).
   - `new_unit_availability(timeline, since=, excluded=)` 는 제약 시뮬레이션 「신규 설비는 개조 없이」 의 재료다 — `new_units`
     가운데 첫 모듈 기여 시작 ≥ 기준일인 호기마다 기여 시작(Qual 다음 날 — 묶음은 **첫 모듈**, 2026-11-01 사용자 결정이라 ③ 의 가장
