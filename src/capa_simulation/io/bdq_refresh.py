@@ -335,10 +335,14 @@ def _token_issued_at(
 def _due(
     place: _Place, mark: bdq_token.InstalledMark | None, now: datetime, env: Mapping[str, str]
 ) -> bool:
+    """갱신할 때인가 — 넣은 때부터 6시간 · 토큰 없음 · 만료 1시간 안. 만료는 토큰에서 읽은 것
+    (JWT `exp`) 또는 그 토큰을 넣은 갱신 응답이 알려 준 것(넣은 때 표지)이다."""
     issued = _token_issued_at(place, mark, now)
     if issued is None or now - issued >= REFRESH_AFTER:
         return True
     expires = bdq_token.current_token(env).expires_at
+    if expires is None and mark is not None and issued == mark.installed_at:
+        expires = mark.expires_at
     return expires is not None and expires - now <= EXPIRY_LEAD
 
 
@@ -467,14 +471,15 @@ def _attempt(
         if not isinstance(got, Exchanged) or not isinstance(got.token, bytes):
             _note_failure("교환 응답 꼴이 다름", now)
             return "failed"
+        expires = got.expires_at if isinstance(got.expires_at, datetime) else None
         outcome = bdq_token.install_content(
-            got.token, "refresh", env, folder=place.folder, at=clock()
+            got.token, "refresh", env, folder=place.folder, at=clock(), expires_at=expires
         )
         if outcome.status == "refused":
             _note_failure(f"받은 토큰을 넣지 못함 — {outcome.reason}", now)
             return "failed"
         if outcome.status == "same":
-            bdq_token.write_installed_mark(place.folder, place.account, "refresh", clock())
+            bdq_token.write_installed_mark(place.folder, place.account, "refresh", clock(), expires)
         with _STATE_LOCK:
             _STATE.last_failure = ""
             _STATE.last_failure_at = None

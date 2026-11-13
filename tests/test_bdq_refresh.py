@@ -290,6 +290,38 @@ def test_a_token_whose_expiry_is_within_an_hour_is_refreshed(
     assert fake.calls == 1
 
 
+def test_an_expiry_the_exchange_reported_brings_the_next_refresh_forward(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """토큰에서 만료를 읽지 못하는 꼴(실측 35바이트)이어도 갱신 응답이 알려 준 만료로 앞당긴다 —
+    표지에 시각만 싣는다."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    reported = clock.now + timedelta(hours=2)
+    fake = FakeExchange()
+    turn_on(monkeypatch, fake)
+    monkeypatch.setattr(
+        bdq_refresh,
+        "exchange",
+        lambda token, account: bdq_refresh.Exchanged(fake(token, account).token, reported),
+    )
+
+    bdq_refresh.before_query()
+    mark = bdq_token.read_installed_mark(folder, ACCOUNT)
+    assert mark is not None and mark.expires_at == reported
+    assert set(json.loads((folder / f"capa-bdq-installed.{ACCOUNT}.json").read_bytes())) == {
+        "installed_at",
+        "source",
+        "expires_at",
+    }
+
+    clock.advance(minutes=59)
+    bdq_refresh.before_query()
+    assert fake.calls == 1
+    clock.advance(minutes=1)
+    bdq_refresh.before_query()
+    assert fake.calls == 2
+
+
 def test_a_missing_token_is_refreshed(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1956,7 +1956,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/bdq_token.py` — BigDataQuery 로그인 토큰 파일(`/config/.credential/bigdataquery.token.<계정>`)의 자리 ·
   0600 원자적 쓰기 · 넣기 판정 · 만료 읽기 한 곳. 시작 스크립트(CD 환경변수 `CAPA_BDQ_TOKEN` → 파일)와 Admin 「토큰 넣기」
   (`components/bdq_token_admin.py`) · 자동 갱신(`io/bdq_refresh.py`)이 같은 쓰기 길(`put_token` — 토큰 곁에 넣은 때 표지
-  `capa-bdq-installed.<계정>.json` 0600: 넣은 UTC 시각 · 출처 `start` · `admin` · `refresh` 뿐, 토큰 글자 · 길이 · 지문 없음. 쓰지 못해도
+  `capa-bdq-installed.<계정>.json` 0600: 넣은 UTC 시각 · 출처 `start` · `admin` · `refresh` · 갱신 응답이 알려 준 만료뿐, 토큰 글자 · 길이 · 지문 없음. 쓰지 못해도
   넣기는 넣음)을 쓴다(2026-11-12 사용자 결정 — 패키지는 조회마다 토큰을 다시 읽고,
   프로세스 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 이 파일보다 앞이라 그 key 가 있으면 넣기를 잠근다). 표준 라이브러리만 쓴다 — 시작
   스크립트가 앱 의존성보다 먼저 읽는다. 토큰 글 · 길이를 어떤 까닭 글에도 싣지 않고, 만료 시각만 (자리, inode, 수정 시각, 크기)

@@ -22,10 +22,11 @@ Admin 「토큰 넣기」(`components/bdq_token_admin.py`)가 관리자가 넣�
 
 **넣은 때 표지.** 넣는 길 셋 — 시작 스크립트(`start`) · Admin 「토큰 넣기」(`admin`) · 자동
 갱신(`refresh`, `io/bdq_refresh.py`) — 은 모두 `put_token` 으로 쓰고, 토큰을 쓴 뒤 곁에
-`capa-bdq-installed.<계정>.json`(0600)을 남긴다 — 넣은 UTC 시각과 출처뿐이고 토큰 글자 · 길이 ·
-지문은 없다. 자동 갱신이 「넣은 때부터 6시간」 을 이 표지로 센다. 표지는 덧붙은 기록이라 쓰지
-못해도 넣기는 넣음이다(그때는 토큰 파일 수정 시각이 대신한다). 패키지 자리 접두
-(`bigdataquery.token.`)를 쓰지 않는다 — 패키지가 그 폴더를 어떻게 훑는지 모른다.
+`capa-bdq-installed.<계정>.json`(0600)을 남긴다 — 넣은 UTC 시각과 출처(자동 갱신이면 응답이
+알려 준 만료 시각도)뿐이고 토큰 글자 · 길이 · 지문은 없다. 자동 갱신이 「넣은 때부터 6시간」
+을 이 표지로 센다. 표지는 덧붙은 기록이라 쓰지 못해도 넣기는 넣음이다(그때는 토큰 파일 수정
+시각이 대신한다). 패키지 자리 접두(`bigdataquery.token.`)를 쓰지 않는다 — 패키지가 그 폴더를
+어떻게 훑는지 모른다.
 
 **만료 시각.** 토큰의 꼴을 아직 모른다(WebIDE 실측 35바이트 — 점 셋 JWT 는 아니다). 지금
 읽는 꼴은 JWT 의 `exp` 하나뿐이고 그 밖은 「모름」 이다 — 실제 토큰의 꼴은 사내 확인
@@ -151,10 +152,12 @@ INSTALL_SOURCES: Final[tuple[InstallSource, ...]] = ("start", "admin", "refresh"
 
 @dataclass(frozen=True)
 class InstalledMark:
-    """토큰을 넣은 UTC 시각과 출처. 토큰 글자 · 길이 · 지문은 없다."""
+    """토큰을 넣은 UTC 시각과 출처, 그리고 자동 갱신 응답이 알려 준 만료(없으면 `None`). 토큰
+    글자 · 길이 · 지문은 없다."""
 
     installed_at: datetime
     source: InstallSource
+    expires_at: datetime | None = None
 
 
 def installed_mark_path(folder: Path, account: str) -> Path | None:
@@ -169,7 +172,12 @@ def _utc_text(moment: datetime) -> str:
 
 
 def put_token(
-    folder: Path, account: str, content: bytes, source: InstallSource, at: datetime | None = None
+    folder: Path,
+    account: str,
+    content: bytes,
+    source: InstallSource,
+    at: datetime | None = None,
+    expires_at: datetime | None = None,
 ) -> None:
     """토큰 파일을 쓰고(0600 원자적 바꿔 끼우기) 곁에 넣은 때 표지를 남긴다. 넣는 길 셋의 한
     곳이다. 토큰 쓰기 실패는 `OSError` 로 올리고, 표지 쓰기 실패는 삼킨다(덧붙은 기록 — 토큰
@@ -180,19 +188,27 @@ def put_token(
     write_private(target, content)
     # 한 시각 눈금 안의 두 쓰기는 같은 열쇠일 수 있다 — 쓴 쪽이 기억을 비운다.
     forget_expiry_memo()
-    write_installed_mark(folder, account, source, at)
+    write_installed_mark(folder, account, source, at, expires_at)
 
 
 def write_installed_mark(
-    folder: Path, account: str, source: InstallSource, at: datetime | None = None
+    folder: Path,
+    account: str,
+    source: InstallSource,
+    at: datetime | None = None,
+    expires_at: datetime | None = None,
 ) -> None:
     """넣은 때 표지만 쓴다(0600). 덧붙은 기록이라 실패를 삼킨다 — 토큰 파일 수정 시각이
-    대신한다. 자동 갱신이 지금 토큰과 같은 토큰을 받았을 때도 넣은 때를 옮긴다."""
+    대신한다. 자동 갱신이 지금 토큰과 같은 토큰을 받았을 때도 넣은 때를 옮긴다. `expires_at` 은
+    자동 갱신 응답이 알려 준 만료다(토큰에서 읽지 못하는 꼴에도 갱신 때를 앞당긴다)."""
     mark = installed_mark_path(folder, account)
     if mark is None:
         return
     moment = datetime.now(timezone.utc) if at is None else at
-    payload = json.dumps({"installed_at": _utc_text(moment), "source": source}).encode("utf-8")
+    fields: dict[str, str] = {"installed_at": _utc_text(moment), "source": source}
+    if expires_at is not None:
+        fields["expires_at"] = _utc_text(expires_at)
+    payload = json.dumps(fields).encode("utf-8")
     try:
         write_private(mark, payload)
     except OSError:
@@ -213,11 +229,20 @@ def read_installed_mark(folder: Path, account: str) -> InstalledMark | None:
     source, stamp = data.get("source"), data.get("installed_at")
     if source not in INSTALL_SOURCES or not isinstance(stamp, str):
         return None
+    moment = _parse_utc_text(stamp)
+    if moment is None:
+        return None
+    expires = data.get("expires_at")
+    return InstalledMark(
+        moment, source, _parse_utc_text(expires) if isinstance(expires, str) else None
+    )
+
+
+def _parse_utc_text(value: str) -> datetime | None:
     try:
-        moment = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
-    return InstalledMark(moment, source)
 
 
 # --- Admin 「토큰 넣기」 ------------------------------------------------------------
@@ -282,6 +307,7 @@ def install_content(
     *,
     folder: Path | None = None,
     at: datetime | None = None,
+    expires_at: datetime | None = None,
 ) -> InstallOutcome:
     """푼 토큰 바이트를 넣는다 — Admin 「토큰 넣기」 와 자동 갱신이 함께 쓴다. 넣기 판정
     (`blocked_reason`) · 빈 값 · 문턱은 같고, 같은 내용이면 쓰지 않는다. 거절 까닭에 토큰 글 ·
@@ -305,7 +331,7 @@ def install_content(
         if holds_same(target, content):
             return InstallOutcome("same")
         try:
-            put_token(place, account, content, source, at)
+            put_token(place, account, content, source, at, expires_at)
         except OSError as error:
             return InstallOutcome("refused", f"토큰 파일을 쓰지 못했습니다({type(error).__name__})")
     return InstallOutcome("written")
