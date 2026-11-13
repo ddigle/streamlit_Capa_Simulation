@@ -5,12 +5,13 @@ from __future__ import annotations
 import importlib.util
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
-from capa_simulation.io.object_storage import CommandResult
+from capa_simulation.io.object_storage import CommandResult, StorageSettings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
@@ -110,8 +111,10 @@ def test_commands_stop_with_the_names_to_set_before_calling_aws(
 
     assert script.command_doctor(script.parse_args(["doctor"])) == 1
     doctor = capsys.readouterr().out
-    assert "엔드포인트    : (없음)" in doctor
-    assert "버킷          : Demo_env_bucket" in doctor
+    assert "엔드포인트    : 없음" in doctor
+    assert "버킷          : De … et · 15자" in doctor
+    assert "프로필        : 없음" in doctor
+    assert "Demo_env_bucket" not in doctor
     assert "[중단] " in doctor and "CAPA_S3_PROFILE" in doctor
 
     assert script.command_profile(script.parse_args(["profile"])) == 1
@@ -161,12 +164,12 @@ def test_values_with_angle_brackets_spaces_or_quotes_stop_before_aws_and_name_on
     assert "Demo_env_bucket" not in printed
 
 
-def test_the_summary_line_carries_no_in_house_value_when_aws_fails(
+def test_no_line_carries_an_in_house_value_when_aws_fails(
     script: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """aws 실패 글 · 「실행한 명령」 줄에는 주소 · 버킷 · 프로필이 실린다(그 위 출력은 그대로). 끝의
-    전송용 요약 한 줄은 갈래 낱말 · 종료 코드뿐이라 그 줄만 리뷰에 옮겨도 값이 나가지 않는다."""
-    values = ("http://s3.demo.invalid:9020", "Demo_secret_bucket", "demo-secret-profile")
+    """aws 실패 글 · 「실행한 명령」 줄은 진단 경계(`explain_failure`)가 값째 만든다. 스크립트가
+    받아 찍는 자리에서 이름표로 바꿔 어느 줄에도 원값이 없다 — 끝의 전송용 요약 꼴은 그대로다."""
+    values = ("http://S3.Demo.invalid:9020", "Demo_secret_bucket", "demo-secret-profile")
     monkeypatch.setenv("CAPA_S3_ENDPOINT_URL", values[0])
     monkeypatch.setenv("CAPA_S3_BUCKET", values[1])
     monkeypatch.setenv("CAPA_S3_PROFILE", values[2])
@@ -175,17 +178,74 @@ def test_the_summary_line_carries_no_in_house_value_when_aws_fails(
     def unreachable(
         _runner: object, argv: Sequence[str], _env: object, *, timeout_seconds: float
     ) -> CommandResult:
-        text = f'Could not connect to the endpoint URL: "{values[0]}/{values[1]}" ({values[2]})'
+        # 서버 글은 호스트를 소문자로 찍는다.
+        url = f"{values[0].lower()}/{values[1]}"
+        text = f'Could not connect to the endpoint URL: "{url}" ({values[2]})'
         return CommandResult(tuple(argv), 255, "", text, 0.1)
 
+    real_client = script.build_client
     monkeypatch.setattr(script.object_storage.SubprocessCommandRunner, "run", unreachable)
+    monkeypatch.setattr(
+        script, "build_client", lambda args: replace(real_client(args), sleep=lambda _s: None)
+    )
 
     for command in ("doctor", "status", "generations"):
         assert script.main([command]) == 1, command
-        lines = capsys.readouterr().out.splitlines()
+        printed = capsys.readouterr().out
+        lines = printed.splitlines()
         assert lines[-1] == f"전송용 요약: {command} 멈춤 저장소에 닿지 못함; 종료 1", command
-        assert any(values[1] in line for line in lines[:-1]), command
-        assert not any(value in lines[-1] for value in values), command
+        assert not [value for value in values if value.lower() in printed.lower()], command
+        assert "s3.demo.invalid" not in printed.lower(), command
+        assert '"<주소>/<버킷>" (<프로필>)' in printed, command
+        # doctor 는 `aws --version` 에서 먼저 멈춘다 — 그 명령 줄에는 값이 없다.
+        if command != "doctor":
+            assert "--bucket <버킷> --endpoint-url <주소> --profile <프로필>" in printed, command
+
+
+def test_doctor_shows_the_bucket_as_its_ends_and_length_and_the_rest_as_present(
+    script: ModuleType,
+) -> None:
+    """C-DEP 표 값과 앞 두 글자 · 뒤 두 글자 · 글자 수를 맞대 본다. 넷 이하면 앞뒤가 값 전부라
+    글자 수만."""
+    assert script.bucket_shape("Demo_env_bucket") == "De … et · 15자"
+    assert script.bucket_shape("abcde") == "ab … de · 5자"
+    assert script.bucket_shape("abcd") == "4자"
+    assert script.bucket_shape("") == "없음"
+    assert (script.presence("x"), script.presence("")) == ("있음", "없음")
+
+
+def test_the_redaction_catches_every_form_of_the_endpoint_and_overlapping_values(
+    script: ModuleType,
+) -> None:
+    """서버 글은 주소를 호스트 · `호스트:포트` · 소문자로도 찍는다. 버킷이 주소 뒤에 붙어 있어도
+    긴 값부터 가린다."""
+    redaction = script._Redaction()
+    redaction.load(
+        StorageSettings(
+            mode="local",
+            endpoint_url="https://S3.Demo.invalid:9021/",
+            bucket="Demo_bucket",
+            profile="demo-profile",
+            region="us-east-1",
+            capabilities={},
+        )
+    )
+    text = (
+        "https://s3.demo.invalid:9021/Demo_bucket?list-type=2 · "
+        "HTTPSConnectionPool(host='s3.demo.invalid', port=9021) · s3.demo.invalid:9021 · "
+        "config profile (demo-profile) could not be found · demo_bucket"
+    )
+
+    assert redaction.apply(text) == (
+        "<주소><버킷>?list-type=2 · HTTPSConnectionPool(host='<주소>', port=9021) · <주소> · "
+        "config profile (<프로필>) could not be found · <버킷>"
+    )
+    assert script.endpoint_forms("s3.demo.invalid:9021") == (
+        "s3.demo.invalid:9021",
+        "s3.demo.invalid",
+    )
+    redaction.clear()
+    assert redaction.apply(text) == text
 
 
 def test_the_container_boot_pull_keeps_its_values_to_aws(script: ModuleType) -> None:
