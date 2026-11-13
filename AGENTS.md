@@ -3368,6 +3368,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 테마 토큰이라 `app.py` 가 `theme.begin_run()` 뒤·부트스트랩 앞에서 매 회차 보낸다(`tests/test_accent_button_style.py`·
     `tests/test_app_navigation.py`). HOME 칠한 주요 Case 칩의 같은 색 규칙(`home_main_case_chips.chip_style`)은 칩 모양
     규칙과 함께 그대로 둔다.
+- `src/capa_simulation/deploy_stamp.py` — 사내 적용 기록(`.deploy/applied.json`)의 배포 번호 읽기. 앱 카드와 감사 기동이 같이
+  쓴다. 감사 기동은 `capa_server.py` 가 Streamlit 런타임 **전에** 부르므로 이 모듈은 `components` 를 import 하지 않는다 —
+  런타임 전에 `st.components.v2.component(...)` 를 부르는 화면 조각을 불러오면 그 컴포넌트가 등록되지 않아 앱이 첫
+  화면에서 멈춘다. `tests/test_server_pre_runtime_imports.py` 가 진입점의 런타임 전 길을 지킨다.
 - `src/capa_simulation/components/app_credits.py` — 앱 이름·버전·빌드일과 개발 팀·문의처 두 줄을 모든 화면
   사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다. 문의처 메일은 사람을 가리키는 사내 값이라
   저장소에 없고 환경변수 `CAPA_APP_CONTACT_EMAIL`(`settings.app_contact_email()` — 부를 때마다 읽음, 사내 PC 사용자 환경변수 ·

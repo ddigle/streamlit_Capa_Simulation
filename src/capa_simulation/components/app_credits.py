@@ -34,20 +34,11 @@ Admin 을 열기 전 어느 화면에서나 알아야 한다). S3 명단을 쓰�
 
 from __future__ import annotations
 
-import json
-from functools import lru_cache
-from pathlib import Path
-
 import streamlit as st
 
 from capa_simulation.components.sso_status import render_access_alerts, render_audit_alerts
-from capa_simulation.settings import (
-    APP_NAME,
-    APP_OWNER_TEAM,
-    APP_VERSION,
-    DEPLOY_STATE_PATH,
-    app_contact_email,
-)
+from capa_simulation.deploy_stamp import deployed_stamp
+from capa_simulation.settings import APP_NAME, APP_OWNER_TEAM, APP_VERSION, app_contact_email
 
 # 카드 컨테이너의 key 이자 CSS 훅(`st-key-…`). 「조회 조건」 제목을 살리는 상자로 세지 않도록
 # 조건 카드 접두어(`condition_card_`)로 시작하지 않는다.
@@ -56,26 +47,6 @@ APP_CREDITS_KEY = "sidebar_app_credits"
 
 # 적용 기록이 없을 때(사외 개발 PC) 첫 줄 끝에 적는 말.
 OUTSIDE_BUILD_LABEL = "사외 개발"
-
-
-def deployed_stamp(state_path: Path = DEPLOY_STATE_PATH) -> str | None:
-    """적용 기록의 배포 번호. 기록이 없거나 읽을 수 없으면 `None`.
-
-    카드는 모든 화면 모든 회차에 서므로 파일은 프로세스에서 한 번만 읽는다(`_read_stamp`).
-    """
-    return _read_stamp(str(state_path))
-
-
-@lru_cache(maxsize=4)
-def _read_stamp(path: str) -> str | None:
-    try:
-        state = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    stamp = state.get("stamp") if isinstance(state, dict) else None
-    if stamp is None:
-        return None
-    return str(stamp).strip() or None
 
 
 def credit_lines(stamp: str | None = None) -> tuple[str, str]:
