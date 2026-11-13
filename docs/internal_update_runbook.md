@@ -598,6 +598,10 @@ uv run --no-sync python -c "import pandas, numpy; print(pandas.__version__, nump
 uv pip install -r requirements-company.txt
 ```
 
+이 줄은 사용자 환경변수 `CAPA_COMPANY_INDEX_URL`(사내 패키지 저장소 주소 — 사내 값이라 저장소에 없다, README 4단계)을 그 파일의
+`--index-url` 줄에 펼쳐 쓴다. 없으면 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}` 로 멈추고 아무것도 깔지 않는다 — 고장이 아니다.
+사용자가 그 환경변수를 넣고 새 창에서 다시 친다.
+
 ### 4-2. 마이그레이션은 앱이 알아서 한다
 
 앱을 한 번 띄우면 `data/capa_simulation.duckdb` 와 `data/equipment_availability.duckdb` 에

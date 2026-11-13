@@ -46,10 +46,13 @@ FAKE_BDQ_USER = "fakeaccount"
 FAKE_BDQ_TOKEN = "FAKE-bdq-login-token-0000"
 FAKE_PIN = "bigdataquery==9.9.9"
 FAKE_INDEX = "https://index.example.invalid/repository/fake-pypi/simple"
+# `requirements-company.txt` 의 인덱스 줄 — 사내 주소 대신 환경변수를 가리킨다(공개 저장소).
+INDEX_REFERENCE = f"${{{report_contract.COMPANY_INDEX_URL_ENV}}}"
 
 ALL_ENVIRONMENT = {
     report_contract.ARTIFACTORY_USER_ENV: FAKE_ART_USER,
     report_contract.ARTIFACTORY_TOKEN_ENV: FAKE_ART_TOKEN,
+    report_contract.COMPANY_INDEX_URL_ENV: FAKE_INDEX,
     report_contract.BDQ_TOKEN_ENV: FAKE_BDQ_TOKEN,
     report_contract.BDQ_USER_NAME_ENV: FAKE_BDQ_USER,
 }
@@ -141,7 +144,7 @@ def place(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     company.write_text(
         "# 머리 주석 — 이 파일의 `--index-url` 은 주석 안이라 읽지 않는다\n"
         f"#     --index-url https://comment.example.invalid/simple\n\n"
-        f"--index-url {FAKE_INDEX}  # 꼬리 주석\n\n{FAKE_PIN}\n",
+        f"--index-url {INDEX_REFERENCE}  # 꼬리 주석\n\n{FAKE_PIN}\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(container_start, "COMPANY_REQUIREMENTS", company)
@@ -634,6 +637,7 @@ def test_the_report_written_by_the_script_is_read_back_by_the_app(place: Path) -
     assert read.steps[report_contract.STEP_INSTALL].status == report_contract.STATUS_SKIPPED
     assert read.missing_environment == (
         report_contract.ARTIFACTORY_TOKEN_ENV,
+        report_contract.COMPANY_INDEX_URL_ENV,
         report_contract.BDQ_TOKEN_ENV,
         report_contract.BDQ_USER_NAME_ENV,
     )
@@ -709,19 +713,93 @@ def test_an_account_is_kept_only_as_its_first_two_letters(account: str, masked: 
 
 
 def test_the_version_and_index_are_read_from_the_company_requirements_file() -> None:
-    """판·인덱스는 스크립트에 따로 적지 않는다 — 정본 `requirements-company.txt` 하나를 읽는다."""
+    """판·인덱스는 스크립트에 따로 적지 않는다 — 정본 `requirements-company.txt` 하나를 읽는다.
+    인덱스 줄은 사내 주소 대신 시작 스크립트 · 화면 안내가 대는 그 환경변수 하나를 가리킨다(공개
+    저장소)."""
     requirement = container_start.read_company_requirement(
         PROJECT_ROOT / "requirements-company.txt"
     )
     assert requirement.pins and all(pin.startswith("bigdataquery==") for pin in requirement.pins)
+    assert requirement.index_url == INDEX_REFERENCE
     company = (PROJECT_ROOT / "requirements-company.txt").read_text(encoding="utf-8")
-    assert f"--index-url {requirement.index_url}" in company
-    assert urllib.parse.urlsplit(requirement.index_url).scheme == "https"
+    assert f"\n--index-url {INDEX_REFERENCE}\n" in company
+    assert (
+        report_contract.COMPANY_INDEX_URL_ENV
+        in report_contract.STEP_ENVIRONMENT[report_contract.STEP_INSTALL]
+    )
+    assert report_contract.COMPANY_INDEX_URL_ENV not in report_contract.CD_ONLY_ENVIRONMENT, (
+        "사내 PC 도 넣는 이름이라 CD 서버인지 가르는 데 쓰지 않는다"
+    )
+    assert container_start.company_index_url(requirement, ALL_ENVIRONMENT) == FAKE_INDEX
 
 
 def test_comment_lines_do_not_count_as_options(place: Path) -> None:
     requirement = container_start.read_company_requirement(container_start.COMPANY_REQUIREMENTS)
-    assert requirement == container_start.CompanyRequirement(pins=(FAKE_PIN,), index_url=FAKE_INDEX)
+    assert requirement == container_start.CompanyRequirement(
+        pins=(FAKE_PIN,), index_url=INDEX_REFERENCE
+    )
+
+
+def test_a_missing_index_variable_skips_the_install_and_names_it(place: Path) -> None:
+    """계정 · 토큰이 있어도 인덱스 주소 환경변수가 없으면 pip 를 부르지 않고 그 이름을 댄다 —
+    「넣을 CD 환경변수」 안내에도 실린다."""
+    environ = {
+        name: value
+        for name, value in ALL_ENVIRONMENT.items()
+        if name != report_contract.COMPANY_INDEX_URL_ENV
+    }
+    runner = FakeRunner([_probe("missing")])
+
+    report, fake_exec = _main(place, environ, runner)
+
+    assert runner.pip_calls == []
+    install = _steps(report)[report_contract.STEP_INSTALL]
+    assert install["status"] == report_contract.STATUS_SKIPPED
+    assert report_contract.COMPANY_INDEX_URL_ENV in install["reason"]
+    assert report_contract.ARTIFACTORY_TOKEN_ENV not in install["reason"]
+    hint = report_contract.start_check_hint(report_contract.STEP_INSTALL)
+    assert hint is not None and report_contract.COMPANY_INDEX_URL_ENV in hint
+    assert fake_exec.calls
+
+
+@pytest.mark.parametrize("value", ["index.example.invalid/simple", "https:///simple", "   "])
+def test_an_index_value_that_is_not_an_address_fails_without_echoing_it(
+    place: Path, value: str
+) -> None:
+    """주소 꼴이 아니면 pip 를 부르지 않고 실패로 적는다 — 이름만 대고 값은 싣지 않는다."""
+    environ = {**ALL_ENVIRONMENT, report_contract.COMPANY_INDEX_URL_ENV: value}
+    runner = FakeRunner([_probe("missing")])
+
+    report, fake_exec = _main(place, environ, runner)
+
+    assert runner.pip_calls == []
+    install = _steps(report)[report_contract.STEP_INSTALL]
+    expected = (
+        report_contract.STATUS_SKIPPED if not value.strip() else report_contract.STATUS_FAILED
+    )
+    assert install["status"] == expected
+    assert report_contract.COMPANY_INDEX_URL_ENV in install["reason"]
+    if value.strip():
+        assert value not in install["reason"]
+        assert "주소 꼴" in install["reason"]
+    assert fake_exec.calls
+
+
+def test_an_index_line_that_names_another_empty_variable_fails_by_name(place: Path) -> None:
+    """파일이 다른 환경변수를 가리키면 그 이름을 대고 멈춘다 — 펼치지 못한 `${…}` 를 pip 에 넘기지
+    않는다."""
+    (place / "requirements-company.txt").write_text(
+        f"--index-url ${{FAKE_OTHER_INDEX}}/simple\n{FAKE_PIN}\n", encoding="utf-8"
+    )
+    runner = FakeRunner([_probe("missing")])
+
+    report, _ = _main(place, ALL_ENVIRONMENT, runner)
+
+    assert runner.pip_calls == []
+    install = _steps(report)[report_contract.STEP_INSTALL]
+    assert install["status"] == report_contract.STATUS_FAILED
+    assert "FAKE_OTHER_INDEX" in install["reason"]
+    assert "${" not in install["reason"]
 
 
 def test_an_unreadable_requirements_file_fails_the_install_step(

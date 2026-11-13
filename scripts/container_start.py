@@ -13,8 +13,10 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 받기 ⑥ 소켓을 닫고 앱이 된다. S3 키도 `managed` 도 없으면 ② ③ ⑤ 를 건너뛰고, 키만 있으면 ② ③ 까지
 돌고 앱은 빈 디스크로 뜬다(첫 CI/CD 로 aws 판 · 연결을 보는 판).
 
-0. 설치 — `bigdataquery` 가 없고 `CAPA_ARTIFACTORY_USER`·`CAPA_ARTIFACTORY_TOKEN` 이 있으면 pip 를
-   두 번 부른다. 판·인덱스는 `requirements-company.txt` 가 정본이다.
+0. 설치 — `bigdataquery` 가 없고 `CAPA_ARTIFACTORY_USER`·`CAPA_ARTIFACTORY_TOKEN`·
+   `CAPA_COMPANY_INDEX_URL` 이 있으면 pip 를 두 번 부른다. 판·인덱스는 `requirements-company.txt` 가
+   정본이다 — 인덱스 줄은 사내 주소 대신 환경변수 `${CAPA_COMPANY_INDEX_URL}` 을 가리키고(공개
+   저장소), pip · uv 와 같은 꼴로 펼친다.
    - 패키지 자신은 **사내 인덱스 하나만** 보고 의존성 없이 깐다(`--no-deps`). 공개 미러를 함께 보면
      같은 이름·판의 공개 패키지가 이길 수 있다(의존성 혼동 — pip 는 인덱스를 차례로 고르지 않는다).
      자격증명은 명령줄이 아니라 그 pip 의 환경(`PIP_INDEX_URL`)으로 준다 — 명령줄은 `ps` 로 누구나
@@ -89,6 +91,7 @@ from capa_simulation.io.container_start_report import (
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     CD_ENVIRONMENT,
+    COMPANY_INDEX_URL_ENV,
     REPORT_VERSION,
     STATUS_FAILED,
     STATUS_LABELS,
@@ -223,6 +226,9 @@ _PROFILE_NAME = re.compile(r"[A-Za-z0-9._@-]+")
 # 주소의 자격증명 칸 — 계정에 `@` 가 들어 있어도 경로(`/`) 앞의 마지막 `@` 까지 가린다.
 _URL_CREDENTIALS = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^\s/]+@")
 _COMMENT = re.compile(r"(^|\s)#.*$")
+# pip · uv 가 요구 사항 파일에서 펼치는 환경변수 꼴(`${NAME}` — 대문자 · 숫자 · 밑줄). 같은 꼴만
+# 펼친다.
+_ENV_REFERENCE = re.compile(r"\$\{(?P<name>[A-Z0-9_]+)\}")
 
 
 class Runner(Protocol):
@@ -280,6 +286,23 @@ def read_company_requirement(path: Path | None = None) -> CompanyRequirement:
     if index_url is None or not pins:
         raise ValueError("판 고정 줄 또는 --index-url 이 없다")
     return CompanyRequirement(pins=tuple(pins), index_url=index_url)
+
+
+def company_index_url(requirement: CompanyRequirement, environ: Mapping[str, str]) -> str:
+    """`--index-url` 의 `${이름}` 을 환경변수 값으로 펼친 주소. 비었거나 주소 꼴(`https://…`)이
+    아니면 `ValueError` — 글에는 이름만 싣고 값은 싣지 않는다."""
+    names = [match.group("name") for match in _ENV_REFERENCE.finditer(requirement.index_url)]
+    missing = [name for name in dict.fromkeys(names) if not environ.get(name, "").strip()]
+    if missing:
+        raise ValueError(f"CD 환경변수 {'·'.join(missing)} 없음")
+    url = _ENV_REFERENCE.sub(
+        lambda match: environ[match.group("name")].strip(), requirement.index_url
+    )
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        source = f"CD 환경변수 {'·'.join(dict.fromkeys(names))} 값" if names else "--index-url 줄"
+        raise ValueError(f"{source}이 주소 꼴(https://…)이 아님")
+    return url
 
 
 def _quote(value: str) -> str:
@@ -518,8 +541,8 @@ def install_step(
     token = environ.get(ARTIFACTORY_TOKEN_ENV, "").strip()
     missing = [
         name
-        for name, value in ((ARTIFACTORY_USER_ENV, user), (ARTIFACTORY_TOKEN_ENV, token))
-        if not value
+        for name in (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, COMPANY_INDEX_URL_ENV)
+        if not environ.get(name, "").strip()
     ]
     if missing:
         reason = f"CD 환경변수 {'·'.join(missing)} 없음 — 설치하지 않음"
@@ -528,6 +551,11 @@ def install_step(
         requirement = read_company_requirement()
     except (OSError, ValueError) as error:
         reason = f"requirements-company.txt 에서 판·인덱스를 읽지 못함({type(error).__name__})"
+        return InstallOutcome(StepResult(STATUS_FAILED, reason), None, [])
+    try:
+        index_url = company_index_url(requirement, environ)
+    except ValueError as error:
+        reason = f"requirements-company.txt 의 인덱스를 펼치지 못함 — {error}"
         return InstallOutcome(StepResult(STATUS_FAILED, reason), None, [])
     user_site = not inside_virtualenv()
     deadline = clock() + INSTALL_TIMEOUT_SECONDS
@@ -538,9 +566,7 @@ def install_step(
             user_site=user_site,
             cert=next((bundle for bundle in CA_BUNDLES if bundle.is_file()), None),
         ),
-        company_pip_environment(
-            environ, index_url_with_credentials(requirement.index_url, user, token)
-        ),
+        company_pip_environment(environ, index_url_with_credentials(index_url, user, token)),
         title="Artifactory 인덱스에서 bigdataquery",
         timeout=deadline - clock(),
         redactor=redactor,
