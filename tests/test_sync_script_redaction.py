@@ -11,7 +11,7 @@ import dataclasses
 import importlib.util
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -19,6 +19,7 @@ import pytest
 from object_store_fakes import Failure, FakeStore, add_row, seed_pair
 
 from capa_simulation import settings as app_settings
+from capa_simulation.io import object_storage
 from capa_simulation.io.object_storage import ObjectStorageClient, StorageSettings
 from capa_simulation.persistence import snapshot_export, sync_state
 from capa_simulation.services import object_storage_manifest as manifest
@@ -261,3 +262,44 @@ def test_the_other_failure_line_hides_the_values(
     _assert_hidden(printed, "generations")
     assert '"<주소>/<버킷>" via <주소> with profile (<프로필>)' in printed
     assert printed.splitlines()[-1] == "전송용 요약: generations 멈춤 그 밖의 실패; 종료 1"
+
+
+def _settings_file_not_in_utf8(monkeypatch: pytest.MonkeyPatch, folder: Path) -> None:
+    """사내 PC 에서 메모장 · PowerShell `Out-File` 로 고쳐 저장한 꼴(cp949)."""
+    record = folder / "object_storage_capabilities.json"
+    record.write_bytes('{"메모": "사내에서 고침"}'.encode("cp949"))
+    monkeypatch.setattr(object_storage, "CAPABILITIES_PATH", record)
+
+
+def _settings_file_refused(monkeypatch: pytest.MonkeyPatch, _folder: Path) -> None:
+    def refuse(*, environ: Mapping[str, str] | None = None) -> StorageSettings:
+        raise PermissionError(13, "Permission denied", "object_storage.json")
+
+    monkeypatch.setattr(object_storage, "load_settings", refuse)
+
+
+@pytest.mark.parametrize(
+    "break_settings",
+    [_settings_file_not_in_utf8, _settings_file_refused],
+    ids=["not-utf8", "permission"],
+)
+def test_settings_the_script_cannot_read_still_end_on_its_own_lines(
+    rig: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    break_settings: Callable[[pytest.MonkeyPatch, Path], None],
+) -> None:
+    """가릴 값을 못 읽어도 명령은 제 자리에서 멈춘다 — `[중단]` 과 전송용 요약, `boot-pull` 은 시작
+    스크립트가 읽는 한 줄. 가림 준비가 그 앞에서 새면 트레이스백만 남는다."""
+    break_settings(monkeypatch, tmp_path)
+
+    code, printed = _run(rig, "doctor")
+
+    assert code == 1
+    assert printed.startswith("[중단] ")
+    assert printed.splitlines()[-1] == "전송용 요약: doctor 멈춤 그 밖의 실패; 종료 1"
+
+    code, printed = _run(rig, "boot-pull")
+
+    assert code == 1
+    assert json.loads(printed.splitlines()[-1])["kind"] == manifest.FAILURE_OTHER

@@ -230,12 +230,13 @@ def _stop_line(error: BaseException) -> str:
 
 
 def _load_redaction(args: argparse.Namespace) -> None:
-    """가릴 값을 이 실행이 쓰는 설정에서 채운다. 설정을 못 읽으면 비운다 — 그 멈춤 글에는 값이
-    없다."""
+    """가릴 값을 이 실행이 쓰는 설정에서 채운다. 설정을 못 읽으면 까닭이 무엇이든 비우고 넘긴다 —
+    명령이 같은 읽기를 다시 해 제 자리(`[중단]` · 전송용 요약 · 시작 줄)에서 멈추고, 그 글에는
+    값이 없다. 여기서 새면 그 자리를 건너뛰고 트레이스백으로 끝난다(UTF-8 이 아닌 설정 파일 등)."""
     _REDACTION.clear()
     try:
         _REDACTION.load(build_settings(args))
-    except ObjectStorageError:
+    except BOOTSTRAP_ERRORS:
         return
 
 
