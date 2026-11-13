@@ -46,7 +46,9 @@ from capa_simulation.components import sso_identity
 from capa_simulation.components.bdq_token_admin import (
     ENVIRONMENT_FIX,
     INSTALL_FIX,
+    refresh_start_step,
     render_expiry_alert,
+    render_refresh_alerts,
     render_token_dialog,
     render_token_row,
     token_line,
@@ -308,8 +310,11 @@ def render_container_start_check() -> None:
     _report_missing(None)
     title = f"서버 시작 점검 · {report_verdict(report)}"
     # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
-    # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
-    steps = build_step_table(report, (sso_start_step(), *sync_rows(report)))
+    # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다). 다섯째 줄
+    # 「토큰 자동 갱신」 도 지금 프로세스의 상태다(`bdq_token_admin.refresh_start_step`).
+    steps = build_step_table(
+        report, (sso_start_step(), refresh_start_step(report.refresh), *sync_rows(report))
+    )
     facts = report_fact_lines(report)
     # 「지금 토큰」 은 시작 기록이 아니라 지금 파일에서 읽는다 — 「토큰 넣기」 가 바꾼다.
     token = token_line()
@@ -363,11 +368,12 @@ def _report_missing(title: str | None, detail: str = "") -> None:
 
 
 def render_token_alert() -> None:
-    """BigDataQuery 토큰 관리자 알림 둘 — 실패 `AD-10` 과 만료 1시간 전 `AD-11`
-    (`bdq_token_admin.render_expiry_alert`). `app.py` 가 회차마다 조건 없이 부른다.
+    """BigDataQuery 토큰 관리자 알림 넷 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
+    (`bdq_token_admin.render_expiry_alert`), 자동 갱신 멈춤 · 실패 `AD-17` 과 갱신 토큰 80일 `AD-18`
+    (`bdq_token_admin.render_refresh_alerts`). `app.py` 가 회차마다 조건 없이 부른다.
 
     결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않는다 — 그 파일은 시작 스크립트가 앱보다 먼저
-    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 두 자리를
+    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 네 자리를
     쓰고 관리자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
     실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다.
     """
@@ -393,6 +399,8 @@ def render_token_alert() -> None:
     )
     # 만료 1시간 전 관리자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
     render_expiry_alert()
+    # 자동 갱신 관리자 알림(`AD-17` · `AD-18`) — 이벤트 칸 두 자리 더.
+    render_refresh_alerts()
 
 
 def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:

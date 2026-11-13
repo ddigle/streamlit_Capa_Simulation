@@ -43,7 +43,7 @@ from capa_simulation.components import (
     space_layout_editor,
     voc_draft_keeper,
 )
-from capa_simulation.io import bdq_token, company_bigdataquery_adapter, object_storage
+from capa_simulation.io import bdq_refresh, bdq_token, company_bigdataquery_adapter, object_storage
 from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
@@ -286,11 +286,13 @@ def _without_container_start_report(
 
 @pytest.fixture(autouse=True)
 def _without_token_failure_mark() -> Iterator[None]:
-    """앞 시험의 조회 토큰 실패 표지(프로세스 값 — 관리자 알림 `AD-10`)를 다음 시험에 넘기지
-    않는다."""
+    """앞 시험의 조회 토큰 실패 표지(프로세스 값 — 관리자 알림 `AD-10`)와 토큰 자동 갱신 기록
+    (`bdq_refresh` 프로세스 상태 — 마지막 시도 · 멈춤)을 다음 시험에 넘기지 않는다."""
     company_bigdataquery_adapter.forget_token_failure()
+    bdq_refresh.forget_state()
     yield
     company_bigdataquery_adapter.forget_token_failure()
+    bdq_refresh.forget_state()
 
 
 @pytest.fixture(autouse=True)

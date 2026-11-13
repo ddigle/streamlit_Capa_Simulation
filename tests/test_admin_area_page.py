@@ -988,9 +988,11 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     [expander] = _start_check_expanders(app)
     assert "실패" in expander
     [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
-    # 넷째 줄 「통합인증」 은 결과 파일이 아니라 지금 설정에서 판정한다(시험 환경은 꺼짐).
-    assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀"]
+    # 넷째 줄 「통합인증」 · 다섯째 줄 「토큰 자동 갱신」 은 결과 파일이 아니라 지금 프로세스에서
+    # 판정한다(시험 환경은 둘 다 꺼짐 — 갱신 토큰이 없다).
+    assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀", "꺼짐"]
     assert steps.value["단계"].iloc[3] == "통합인증"
+    assert steps.value["단계"].iloc[4] == "토큰 자동 갱신"
     # 까닭 칸은 잘리지 않게 넓고 세 칸 합은 창 1283 의 표 폭(샘플 관측 918px) 안이다(g8-21).
     widths = {
         name: column["width"]
@@ -1062,13 +1064,14 @@ def test_the_server_start_check_adds_the_sync_lines_when_the_server_has_them(
     [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
     assert steps.value["단계"].tolist()[3:] == [
         "통합인증",
+        "토큰 자동 갱신",
         "AWS 프로필",
         "aws CLI",
         "ECS 연결",
         "버킷 목록",
         "DB 받기",
     ]
-    assert steps.value["까닭"].iloc[5] == "판 다름 2.36.8"
+    assert steps.value["까닭"].iloc[6] == "판 다름 2.36.8"
     captions = "\n".join(caption.value for caption in app.caption)
     assert "**/project 디스크** · 여유 40.0 GiB · 전체 100.0 GiB" in captions
     assert "**한도** · 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions

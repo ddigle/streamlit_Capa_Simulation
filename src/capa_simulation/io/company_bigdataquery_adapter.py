@@ -22,10 +22,11 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from types import ModuleType
-from typing import Final, Protocol, cast
+from typing import Final, NoReturn, Protocol, cast
 
 import pandas as pd
 
+from capa_simulation.io import bdq_refresh
 from capa_simulation.io.container_start_report import (
     BDQ_USER_NAME_ENV as BDQ_USER_NAME_ENV,
 )
@@ -500,29 +501,66 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     패키지가 내는 `parameter user_name is necessary.` 만으로는 어느 환경변수를 넣어야
     하는지 알 수 없다. 사내 WebIDE 에서 로그인·토큰이 모두 정상인데도 조회가 100% 막혀
     있었고, 원인을 찾는 데 두 세션이 걸렸다.
+
+    **토큰 자동 갱신**(`io/bdq_refresh.py`)의 한 자리다 — `getData` 바로 앞에서 갱신할 때면 먼저
+    갱신하고, 조회가 토큰 갈래(`QUERY_FAILURE_TOKEN` — 관리자 알림 `AD-10` 을 세우는 판정. 안내만
+    넓히는 `is_login_token_failure` 는 쓰지 않는다)로 실패하면 한 번 갱신해 새 토큰이면 조회를 한
+    번만 다시 한다. 꺼짐 · 준비(요청 꼴 미정)는 아무것도 하지 않아 지금과 같다. 같은 조회문의
+    합류(`call_get_data`)는 이 함수 밖이라 기다리는 쪽도 다시 한 결과를 받는다. 예약 스레드에서도
+    돈다 — 갱신 쪽은 Streamlit 을 부르지 않는다.
     """
     started = time.monotonic()
+    keywords = get_data_keywords(query)
+    ticket = bdq_refresh.before_query()
+    retry: bdq_refresh.Ticket | None = None
     try:
-        answer = module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
+        answer = module.getData(**keywords)  # type: ignore[arg-type]
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
-        if resolve_user_name() is None and "user_name" in str(error):
-            _log_failure(
-                f"요청자 계정({BDQ_USER_NAME_ENV}) 없음", type_names=failure_type_names(error)
-            )
-            raise RuntimeError(
-                f"BigDataQuery 조회에 요청자의 AD 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
-                f"환경변수에 본인 AD 계정을 넣고 새 셸에서 앱을 다시 띄우세요 — WebIDE 는 "
-                f'`export {BDQ_USER_NAME_ENV}="<AD 계정>"`, Windows 는 '
-                f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
-            ) from error
-        hint = _start_check_line(STEP_TOKEN) if is_login_token_failure(error) else ""
-        failure = BigDataQueryCallError(error, hint=hint, seconds=time.monotonic() - started)
-        _log_failure("조회 실패", kind=failure.kind, type_names=failure.type_names)
-        if failure.kind == QUERY_FAILURE_TOKEN:
-            _note_token_failure(True)
-        raise failure from error
+        if _is_token_kind(error) and not _needs_user_name(error):
+            retry = bdq_refresh.after_token_failure(ticket)
+        if retry is None:
+            _raise_query_failure(error, started)
+    else:
+        _note_token_failure(False)
+        return answer
+    # 다시 묻기는 첫 실패의 except 밖에서 한다 — 안에서 부르면 둘째 예외의 `__context__` 가 첫
+    # 토큰 실패라, 사슬을 훑는 갈래 판정(`_failure_chain`)이 시간 초과 · SQL 로 끝난 다시 묻기도
+    # 「토큰」 으로 가른다(방금 넣은 새 토큰을 죽음으로 세고 `AD-10` 을 세운다).
+    try:
+        answer = module.getData(**keywords)  # type: ignore[arg-type]
+    except Exception as again:
+        if _is_token_kind(again):
+            bdq_refresh.after_token_failure(retry, refresh=False)
+        _raise_query_failure(again, started)
     _note_token_failure(False)
     return answer
+
+
+def _is_token_kind(error: BaseException) -> bool:
+    return classify_query_failure(error) == QUERY_FAILURE_TOKEN
+
+
+def _needs_user_name(error: BaseException) -> bool:
+    return resolve_user_name() is None and "user_name" in str(error)
+
+
+def _raise_query_failure(error: BaseException, started: float) -> NoReturn:
+    """조회 실패를 화면들이 잡는 예외로 바꿔 올린다 — 요청자 계정 안내 또는 갈래 · 다시 할 길. 토큰
+    갈래면 프로세스 표지(`AD-10`)를 세운다(마지막 시도 뒤에만 부른다)."""
+    if _needs_user_name(error):
+        _log_failure(f"요청자 계정({BDQ_USER_NAME_ENV}) 없음", type_names=failure_type_names(error))
+        raise RuntimeError(
+            f"BigDataQuery 조회에 요청자의 AD 계정이 필요합니다. {BDQ_USER_NAME_ENV} "
+            f"환경변수에 본인 AD 계정을 넣고 새 셸에서 앱을 다시 띄우세요 — WebIDE 는 "
+            f'`export {BDQ_USER_NAME_ENV}="<AD 계정>"`, Windows 는 '
+            f'`setx {BDQ_USER_NAME_ENV} "<AD 계정>"`.' + _start_check_line(STEP_USER_NAME)
+        ) from error
+    hint = _start_check_line(STEP_TOKEN) if is_login_token_failure(error) else ""
+    failure = BigDataQueryCallError(error, hint=hint, seconds=time.monotonic() - started)
+    _log_failure("조회 실패", kind=failure.kind, type_names=failure.type_names)
+    if failure.kind == QUERY_FAILURE_TOKEN:
+        _note_token_failure(True)
+    raise failure from error
 
 
 # 이 프로세스의 마지막 조회가 토큰 갈래로 실패했나 — 관리자 상태 알림(`AD-10`)이 회차마다 읽는다.
