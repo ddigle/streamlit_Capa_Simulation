@@ -157,6 +157,69 @@ SPECS: Final[tuple[EventSpec, ...]] = (
 
 SPEC_BY_NAME: Final[Mapping[str, EventSpec]] = {spec.name: spec for spec in SPECS}
 
+# 상세(`det`) 키의 한글 표시명 — 기록 보기 「상세」 칸이 쓴다. 허용 키를 더하면 여기에도 더한다
+# (`trunc` 는 기록기가 1KB 를 넘겨 줄였을 때 붙인다). 시험이 허용 키 전부와 맞댄다.
+DET_LABELS: Final[Mapping[str, str]] = {
+    "accounts": "계정",
+    "action": "동작",
+    "admin_fp": "관리자 지문",
+    "admins": "관리자 수",
+    "auditors": "점검자 수",
+    "claim": "클레임",
+    "count": "수",
+    "counts": "건수",
+    "datasets": "DB",
+    "date": "날짜",
+    "days": "남은 날",
+    "decision": "판정",
+    "deleted": "지움",
+    "end": "끝",
+    "end_mark": "끝 표지",
+    "env": "실행 자리",
+    "expires": "만료",
+    "failures": "실패 수",
+    "fields": "칸",
+    "hour": "시간",
+    "hours": "유지(시간)",
+    "key": "조각",
+    "kind": "갈래",
+    "max_hours": "최대 유지(시간)",
+    "name": "사건 이름",
+    "parent": "부모 리비전",
+    "partial": "앞당겨 닫음",
+    "prev_h": "앞 해시",
+    "prev_inst": "앞 인스턴스",
+    "prev_seq": "앞 순번",
+    "profile": "설정",
+    "reason": "사유",
+    "release_no": "번호",
+    "resolved": "답변 완료",
+    "result": "결과",
+    "rev_from": "판 전",
+    "rev_to": "판",
+    "revision": "리비전",
+    "rows": "행",
+    "run_id": "실행",
+    "scenario": "시나리오",
+    "schedule_revision": "일정 리비전",
+    "seconds": "초",
+    "seq": "세대",
+    "seq_from": "세대 전",
+    "seq_to": "세대",
+    "source": "출처",
+    "spool": "스풀",
+    "sso": "통합인증",
+    "status": "상태",
+    "sync": "동기화",
+    "tables": "표",
+    "total": "합계",
+    "trunc": "줄임",
+    "version_from": "판 전",
+    "version_to": "판",
+}
+# 참 · 거짓 값의 표시(상세 칸).
+YES_NO: Final[Mapping[bool, str]] = {True: "예", False: "아니오"}
+
 
 def spec_of(name: str) -> EventSpec | None:
     return SPEC_BY_NAME.get(name)

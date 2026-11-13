@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator
 from datetime import date
@@ -13,7 +14,7 @@ from alert_marks import states
 from sso_support import use_config
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.audit import recorder, shipper, spool
+from capa_simulation.audit import events, recorder, shipper, spool
 from capa_simulation.audit.boot import grader
 from capa_simulation.auth import runtime
 from capa_simulation.auth.tokens import issue_session
@@ -61,7 +62,7 @@ def test_the_summary_has_a_blank_row_for_a_day_without_records() -> None:
     today = frame.iloc[0]
     assert (today["접속자"], today["로그인"], today["실패"], today["명단 밖"]) == (1, 1, 1, 1)
     assert (today["작업"], today["공식 발행"], today["삭제"], today["관리"]) == (2, 1, 1, 1)
-    assert frame.iloc[1].iloc[1:].isna().all(), "기록기가 안 돈 날은 0 이 아니라 빈칸"
+    assert frame.iloc[1].iloc[1:].isna().all(), "조건에 맞는 줄이 없는 날은 0 이 아니라 빈칸"
     assert frame.iloc[2]["접속자"] == 1
 
 
@@ -79,7 +80,64 @@ def test_a_delete_that_found_nothing_is_not_counted_as_a_delete() -> None:
 
 def test_today_values_are_the_four_value_cells() -> None:
     assert view.today_values(LINES, TODAY) == (1, 1, 1, 2)
-    assert view.today_values(LINES, date(2026, 11, 12)) == (0, 0, 0, 0)
+    assert view.today_values(LINES, date(2026, 11, 12)) is None, (
+        "줄이 없는 날은 0 이 아니라 값 없음"
+    )
+
+
+def _summary_round(lines: str, start: str, end: str, today: str) -> None:
+    """요약 보기 한 회차 — 인자는 글로 받는다(시험 회차 스크립트에는 이 파일의 import 가 없다)."""
+    import json
+    from datetime import date
+
+    from capa_simulation.components import audit_log_view
+
+    conditions = audit_log_view.LogConditions(date.fromisoformat(start), date.fromisoformat(end))
+    audit_log_view.render_audit_log(conditions, json.loads(lines), date.fromisoformat(today))
+
+
+def _today_cells(start: date, end: date) -> dict[str, str]:
+    args = (json.dumps(LINES), start.isoformat(), end.isoformat(), TODAY.isoformat())
+    app = AppTest.from_function(_summary_round, args=args).run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    return {str(metric.label): str(metric.value) for metric in app.main.metric}
+
+
+def test_a_period_without_today_shows_no_zero_in_the_today_cells() -> None:
+    """월간 점검처럼 오늘이 빠진 기간 — 오늘 줄을 읽지 않았으니 0 이 아니라 「—」(UI-DAT-06)."""
+    assert _today_cells(date(2026, 11, 7), date(2026, 11, 12)) == dict.fromkeys(
+        view.TODAY_LABELS, view.EMPTY_VALUE
+    )
+    assert _today_cells(date(2026, 11, 7), TODAY) == {
+        "오늘 접속자": "1",
+        "로그인 실패": "1",
+        "명단 밖": "1",
+        "작업": "2",
+    }
+
+
+def test_every_detail_key_has_a_korean_label_and_flags_read_in_korean() -> None:
+    keys = {key for spec in events.SPECS for key in spec.det_keys} | {"trunc"}
+
+    assert sorted(keys - set(events.DET_LABELS)) == []
+    assert all(
+        any("가" <= ch <= "힣" for ch in events.DET_LABELS[key])
+        for key in keys
+        if key != "datasets"
+    )
+    login = _line(
+        "2026-11-13T00:10:00.000Z", "authn_login_success", det={"hours": 12, "max_hours": 12}
+    )
+    profile = _line(
+        "2026-11-13T00:11:00.000Z",
+        "data_scenario_delete",
+        det={"profile": "display_order", "version_to": 4, "source": "web", "trunc": True},
+    )
+    voc = _line("2026-11-13T00:12:00.000Z", "data_voc_delete", det={"deleted": False})
+
+    assert view.detail_text(login) == "유지(시간) 12 · 최대 유지(시간) 12"
+    assert view.detail_text(profile) == "설정 display_order · 판 4 · 출처 web · 줄임 예"
+    assert view.detail_text(voc) == "지움 아니오"
 
 
 def test_the_record_table_is_newest_first_with_names_targets_and_details() -> None:

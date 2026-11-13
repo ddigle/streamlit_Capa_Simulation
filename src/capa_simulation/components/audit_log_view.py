@@ -8,8 +8,10 @@
 - **조건** — 사이드바 「조회 조건」 의 「기록 조건」 카드(기간 · 사람 · 사건 갈래 · 결과 · 필터
   초기화). 기간은 KST 날짜다. 위젯은 `persist_state="session"` 이라 탭을 오가도 남는다.
 - **보기** — 「요약 | 기록」 종류 단추(탭 안 탭이 아니다). 요약은 오늘(KST) 값 칸 넷과 날짜별 표,
-  기록은 줄마다 시각 · 사람 · 갈래 · 사건 · 대상 · 결과 · 상세 · 화면 · 세션이다. 기록기가 돌지 않은
-  날은 0 이 아니라 빈칸이다. 설명 글은 화면에 두지 않는다(Guide · 풍선).
+  기록은 줄마다 시각 · 사람 · 갈래 · 사건 · 대상 · 결과 · 상세 · 화면 · 세션이다. 둘 다 고른 조건에
+  맞는 줄로 센다. 조건에 맞는 줄이 없는 날은 0 이 아니라 빈칸이고(기록기가 돌지 않은 날과 아무도
+  쓰지 않은 날을 가르지 못한다 — 기록기 멈춤은 `AD-12` 몫), 오늘 값 칸도 기간이 오늘을 담지 않거나
+  오늘 줄이 없으면 0 이 아니라 「—」 다(UI-DAT-06). 설명 글은 화면에 두지 않는다(Guide · 풍선).
 
 기록을 고치거나 지우는 기능은 없다. 감사 표의 「전체 행 CSV」 · 화면 진입 기록 · 점검 보기는
 2판이다.
@@ -52,6 +54,7 @@ VIEW_HELP: Final = (
     "기록은 고치거나 지울 수 없습니다."
 )
 EMPTY_TEXT: Final = "조건에 맞는 기록이 없습니다"
+TODAY_LABELS: Final = ("오늘 접속자", "로그인 실패", "명단 밖", "작업")
 
 RECORD_COLUMNS: Final = (
     "시각(KST)",
@@ -75,25 +78,7 @@ SUMMARY_COLUMNS: Final = (
     "삭제",
     "관리",
 )
-DETAIL_LABELS: Final[Mapping[str, str]] = {
-    "rows": "행",
-    "count": "수",
-    "total": "합계",
-    "accounts": "계정",
-    "reason": "사유",
-    "result": "결과",
-    "fields": "칸",
-    "version_from": "판 전",
-    "version_to": "판",
-    "rev_from": "판 전",
-    "rev_to": "판",
-    "seq_from": "세대 전",
-    "seq_to": "세대",
-    "release_no": "번호",
-    "end": "끝",
-    "status": "상태",
-    "kind": "갈래",
-}
+EMPTY_VALUE: Final = "—"
 _LOGIN_FAIL_EVENTS: Final = frozenset({"authn_login_fail"})
 _DENIED_EVENTS: Final = frozenset({"authz_fail_access_list"})
 _DELETE_EVENTS: Final = frozenset(
@@ -221,11 +206,13 @@ def detail_text(line: Mapping[str, Any]) -> str:
         return line.get("why", "") or ""
     parts: list[str] = []
     for key, value in det.items():
-        if isinstance(value, Mapping):
+        if isinstance(value, bool):
+            value = events.YES_NO[value]
+        elif isinstance(value, Mapping):
             value = " ".join(f"{name} {count}" for name, count in value.items())
         elif isinstance(value, list):
             value = ", ".join(str(item) for item in value)
-        parts.append(f"{DETAIL_LABELS.get(key, key)} {value}")
+        parts.append(f"{events.DET_LABELS.get(key, key)} {value}")
     return " · ".join(parts)
 
 
@@ -347,12 +334,19 @@ def summary_table(lines: Sequence[Mapping[str, Any]], start: date, end: date) ->
     return frame
 
 
-def today_values(lines: Sequence[Mapping[str, Any]], today: date) -> tuple[int, int, int, int]:
-    """오늘(KST) 값 칸 넷 — 접속자 · 로그인 실패 · 명단 밖 · 작업."""
+def today_values(
+    lines: Sequence[Mapping[str, Any]], today: date
+) -> tuple[int, int, int, int] | None:
+    """오늘(KST) 값 칸 넷 — 접속자 · 로그인 실패 · 명단 밖 · 작업. 오늘 줄이 없으면 `None`(0 이
+    아니라 판정할 값이 없다 — 날짜별 표의 빈칸과 같다)."""
     found = daily_counts(lines, today, today).get(today)
     if found is None:
-        return 0, 0, 0, 0
+        return None
     return len(found.people), found.fails, found.denied, found.work
+
+
+def _cell(value: int | None) -> str:
+    return EMPTY_VALUE if value is None else f"{value:,}"
 
 
 # ------------------------------------------------------------------ 본문
@@ -392,12 +386,12 @@ def render_audit_log(
             placeholder="",
         )
         return
-    people, fails, denied, work = today_values(shown, today)
+    # 기간이 오늘을 담지 않으면 오늘 줄을 읽지 않았다 — 0 이 아니라 값 없음이다.
+    covered = conditions.start <= today <= conditions.end
+    values = today_values(shown, today) if covered else None
     with st.container(horizontal=True, gap="small"):
-        st.metric("오늘 접속자", f"{people:,}")
-        st.metric("로그인 실패", f"{fails:,}")
-        st.metric("명단 밖", f"{denied:,}")
-        st.metric("작업", f"{work:,}")
+        for label, value in zip(TODAY_LABELS, values or (None,) * len(TODAY_LABELS), strict=True):
+            st.metric(label, _cell(value))
     st.dataframe(
         summary_table(shown, conditions.start, conditions.end),
         hide_index=True,
