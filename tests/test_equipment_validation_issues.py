@@ -317,7 +317,10 @@ BROKEN = {
     "모듈 행 담당자가 갈림(저장 때만)": _Broken(
         "unit_group_mixed_saved",
         _mixed_owner,
-        _exact("같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다: ['GRP-1']"),
+        _exact(
+            "같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다 — 설비 마스터에서 GRP-1 묶음의 "
+            "담당자 칸을 맞춘 뒤 저장합니다"
+        ),
         _modules,
         today=ANCHOR,
     ),
@@ -444,6 +447,9 @@ def test_each_rule_is_the_same_rule_for_saving_and_for_cells(name: str) -> None:
         assert str(caught.value).startswith("Space 블럭이 층 캔버스 범위를 벗어났습니다")
     elif case.rule == "required_text":
         assert str(caught.value) == f"{first.message}."
+    elif case.rule == "unit_group_mixed_saved":
+        # 저장 때만 막는 묶음 갈림은 예시 목록 대신 고칠 곳(설비 마스터의 그 묶음 · 칸)을 짚는다.
+        assert str(caught.value).startswith(f"{first.message} — 설비 마스터에서 ")
     else:
         assert str(caught.value).startswith(f"{first.message}: ")
     assert [(issue.position, issue.column) for issue in blocking if issue.rule == case.rule] == (
@@ -659,8 +665,10 @@ def test_a_group_split_in_a_save_only_column_reads_but_does_not_save(
     head = f"같은 Main 설비의 모듈 행은 {column} 칸이 같아야 합니다"
     with pytest.raises(ValueError) as caught:
         prepare_equipment_master(frame, today=ANCHOR)
-    assert str(caught.value) == f"{head}: ['GRP-1']"
-    assert "(가)" not in str(caught.value)
+    assert str(caught.value) == (
+        f"{head} — 설비 마스터에서 GRP-1 묶음의 {column} 칸을 맞춘 뒤 저장합니다"
+    )
+    assert "(가)" not in str(caught.value) and "[" not in str(caught.value)
     saved = [
         (issue.position, issue.column, issue.message, issue.blocking)
         for issue in equipment_master_issues(frame, today=ANCHOR)
@@ -675,7 +683,9 @@ def test_a_blank_beside_a_value_splits_a_group_for_saving() -> None:
     frame.at[1, "Maker"] = None
 
     prepare_equipment_master(frame)
-    with pytest.raises(ValueError, match=r"Maker 칸이 같아야 합니다: \['GRP-1'\]"):
+    with pytest.raises(
+        ValueError, match=r"Maker 칸이 같아야 합니다 — 설비 마스터에서 GRP-1 묶음의 "
+    ):
         prepare_equipment_master(frame, today=ANCHOR)
 
 

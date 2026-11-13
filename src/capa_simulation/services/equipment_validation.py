@@ -539,6 +539,19 @@ def _listed(head: str, examples: Sequence[object]) -> ValueError:
     return ValueError(f"{head}: {list(examples)}")
 
 
+def _listed_groups(head: str, column: str, groups: Sequence[object]) -> ValueError:
+    """여섯 칸(읽기에도 막음)이 갈린 묶음의 거부 — 다른 거부와 같은 예시 목록 꼴이다."""
+    return _listed(head, groups)
+
+
+def _group_split_save_error(head: str, column: str, groups: Sequence[object]) -> ValueError:
+    """일곱 칸(저장 때만)이 갈린 묶음의 저장 거부 — 글 끝에 고칠 곳(설비 마스터의 그 묶음 · 그
+    칸)을 쉼표 글로 짚는다. Space 배치 저장 · 설비 마스터 리비전 저장 · 사이드바 설비 저장이 같은
+    글을 낸다(`['…']` 목록 꼴은 고칠 자리를 말하지 않았다 — 2026-11-13 화면 확인 지적)."""
+    names = ", ".join(str(group) for group in groups)
+    return ValueError(f"{head} — 설비 마스터에서 {names} 묶음의 {column} 칸을 맞춘 뒤 저장합니다")
+
+
 def _listed_values(head: str, values: pd.Series, rows: pd.Series) -> ValueError:
     """`rows` 줄의 `values` 앞 다섯을 예시로 단 거부 — 거부할 때만 센다."""
     return _listed(head, values.loc[rows].head(5).tolist())
@@ -648,7 +661,9 @@ def _check_unit_group_mixed(master: _MasterFrame) -> Iterator[_Finding]:
     """한 설비의 모듈 행끼리 공정·공정구분·투자구분·동·층이 같아야 한다. 화면 필터가 이 값들로
     행을 거르므로, 다르면 필터가 설비를 쪼개 지분 합이 1 이 아니게 된다. 칸 결과는 묶음 모든 줄의
     그 칸이다."""
-    yield from _mixed_findings(master, UNIT_CONSISTENT_COLUMNS, _unit_group_mixed_message)
+    yield from _mixed_findings(
+        master, UNIT_CONSISTENT_COLUMNS, _unit_group_mixed_message, _listed_groups
+    )
 
 
 def _check_unit_group_mixed_saved(master: _MasterFrame) -> Iterator[_Finding]:
@@ -657,14 +672,19 @@ def _check_unit_group_mixed_saved(master: _MasterFrame) -> Iterator[_Finding]:
     갈린 묶음이 있으면 그 리비전이 열리지 않게 된다. 칸 결과는 묶음 모든 줄의 그 칸이다."""
     if not master.saving:
         return
-    yield from _mixed_findings(master, UNIT_SAVE_CONSISTENT_COLUMNS, _unit_group_saved_message)
+    yield from _mixed_findings(
+        master, UNIT_SAVE_CONSISTENT_COLUMNS, _unit_group_saved_message, _group_split_save_error
+    )
 
 
 def _mixed_findings(
-    master: _MasterFrame, columns: Sequence[str], message: Callable[[str], str]
+    master: _MasterFrame,
+    columns: Sequence[str],
+    message: Callable[[str], str],
+    error: Callable[[str, str, Sequence[object]], ValueError],
 ) -> Iterator[_Finding]:
     """칸마다 값이 둘 이상인 묶음(Main 설비가 같은 행)의 모든 줄. 빈 칸도 한 값으로 견준다 — 한
-    모듈만 비어도 갈림이다."""
+    모듈만 비어도 갈림이다. 거부 글은 `error`(머리 · 칸 · 앞 다섯 묶음)다."""
     result = master.data
     parents = result[PARENT_EQUIPMENT_COLUMN]
     named = parents.notna()
@@ -680,7 +700,7 @@ def _mixed_findings(
             keys.isin(groups),
             head,
             column,
-            error=partial(_listed, head, groups.tolist()[:5]),
+            error=partial(error, head, column, groups.tolist()[:5]),
         )
 
 
