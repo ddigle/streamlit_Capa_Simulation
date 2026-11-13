@@ -283,7 +283,8 @@ def test_the_intro_marker_carries_the_line_without_taking_a_place(
 
 def test_the_intro_script_reads_the_same_marker_and_shows_the_failure() -> None:
     """입장 화면 JS 는 같은 속성 이름으로 표지를 읽고, 그릴 때마다 다시 읽어 붙들지 않는다. 실패면
-    상태 낱말 「열지 못함」 · 멈춘 칸의 실패 색 + 낱말 · 상태 줄 아래 까닭 한 줄이다."""
+    상태 낱말 「열지 못함」 · 멈춘 칸의 실패 색 + 낱말 · 상태 줄 아래 까닭 한 줄이고, Summary 는
+    잠근 채 까닭 풍선이며 장면의 웨이퍼는 끝남으로 펼치지 않는다(멈춤)."""
     script = (INTRO_ASSETS / "intro.js").read_text(encoding="utf-8")
     page = (INTRO_ASSETS / "intro.html").read_text(encoding="utf-8")
     css = (INTRO_ASSETS / "intro.css").read_text(encoding="utf-8")
@@ -297,7 +298,23 @@ def test_the_intro_script_reads_the_same_marker_and_shows_the_failure() -> None:
     # 멈춘 칸은 신호로 끝낸 단계 다음 칸이다 — 실행 끝만으로 앞 칸을 끝남으로 그리지 않는다.
     assert "Math.min(signalledSteps(), items.length - 1)" in render
     poll = script.split("  function poll() {", 1)[1].split("\n  }\n", 1)[0]
-    assert "if (ready && bootStopLine() !== shownStop) render();" in poll
+    assert (
+        "if (ready && bootStopLine() !== shownStop) {\n      render();\n      sendProgress();"
+        in poll
+    )
+    # 실패면 Summary 는 잠근 채 까닭(경고 한 줄)을 풍선으로 단다 — 「공식버전 요약을 봅니다」 를
+    # 말하지 않는다(UI-INP-07).
+    assert "summaryButton.disabled = failed || !canSummary();" in render
+    assert 'if (failed) summaryButton.title = stopped || text.failed || "";' in render
+    # 장면에도 끝남(ready) 대신 멈춤(halted)과 신호로 끝낸 단계 수를 보낸다 — 웨이퍼가 다 펼쳐지지
+    # 않는다.
+    send = script.split("  const sendProgress = () => {", 1)[1].split("\n  };\n", 1)[0]
+    assert "const halted = ready && bootStopLine() !== null;" in send
+    assert "reached: halted ? signalledSteps() : reached," in send
+    assert "ready: ready && !halted," in send
+    assert "halted = !!m.halted;" in script
+    assert "settle += ((ready || halted ? 1 : 0) - settle)" in script
+    assert "settle = ready || halted ? 1 : 0;" in script
     assert "shownStop = stopped;" in render
     assert '<p class="reason" hidden></p>' in page
     assert ".steps li.failed .track {\n  background: var(--fail);" in css

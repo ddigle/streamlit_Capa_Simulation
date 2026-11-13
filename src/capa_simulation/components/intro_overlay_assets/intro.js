@@ -655,6 +655,8 @@ function scene(port, gridOf) {
   let reached = 0;
   let total = 5;
   let ready = false;
+  // 앱이 데이터를 열지 못해 멈춤(`progress.halted`) — 웨이퍼는 끝낸 단계만큼만 덮고 검사 원을 멈춘다(끝남으로 펼치지 않는다).
+  let halted = false;
   let stopped = false;
   let paused = false;
   let looping = false;
@@ -2067,7 +2069,7 @@ function scene(port, gridOf) {
     const target = ready ? 1 : Math.min(0.97, (reached + 0.45) / total);
     // 준비 뒤 마지막 확장은 조금 더 느긋하게(시간 상수 0.8초) 가장자리까지 번진다.
     shown += (target - shown) * Math.min(1, dt / (ready ? 800 : 450));
-    settle += ((ready ? 1 : 0) - settle) * Math.min(1, dt / 700);
+    settle += ((ready || halted ? 1 : 0) - settle) * Math.min(1, dt / 700);
     if (g) draw(at);
     nextFrame(frame);
   }
@@ -2080,7 +2082,7 @@ function scene(port, gridOf) {
   function paintOnce() {
     if (stopped || paused || !g) return;
     shown = ready ? 1 : Math.min(0.97, (reached + 0.45) / total);
-    settle = ready ? 1 : 0;
+    settle = ready || halted ? 1 : 0;
     draw(now());
   }
 
@@ -2132,6 +2134,7 @@ function scene(port, gridOf) {
       reached = m.reached;
       total = Math.max(1, m.total);
       ready = !!m.ready;
+      halted = !!m.halted;
       loop();
     } else if (m.type === "resize") {
       resize(m.width, m.height, m.dpr);
@@ -2757,16 +2760,25 @@ function createOverlay(api, data, initial, syncToolbar) {
   let barSeen = false;
   let topPercent = 0;
 
-  const sendProgress = () => sceneHandle.post({ type: "progress", reached, total: steps.length, ready });
-  const canEnter = () => (ready || fallback) && introDone;
-  const canSummary = () => canEnter() && !!summary && prepared;
-
   // 앱이 데이터를 열지 못해 멈췄으면 그 경고 한 줄, 아니면 null. 그릴 때마다 다시 읽는다 — 「다시 시도」 로 붙으면 표지가
   // 사라져 실패 그림도 걷힌다(한 번 세운 실패를 붙들지 않는다).
   const bootStopLine = () => {
     const marker = document.querySelector(`style[${BOOT_STOP_ATTRIBUTE}]`);
     return marker ? marker.getAttribute(BOOT_STOP_ATTRIBUTE) || "" : null;
   };
+  // 실행이 끝났는데 실패 표지가 있으면 장면에 「멈춤」 을 보낸다 — 신호로 끝낸 단계만큼만 덮고 끝남(ready)으로 펼치지 않는다.
+  const sendProgress = () => {
+    const halted = ready && bootStopLine() !== null;
+    sceneHandle.post({
+      type: "progress",
+      reached: halted ? signalledSteps() : reached,
+      total: steps.length,
+      ready: ready && !halted,
+      halted,
+    });
+  };
+  const canEnter = () => (ready || fallback) && introDone;
+  const canSummary = () => canEnter() && !!summary && prepared;
   // 마지막으로 그린 실패 표지 값 — 바뀔 때만 다시 그린다(상태 줄은 낭독 영역이라 같은 글을 거듭 쓰지 않는다).
   let shownStop = null;
   function render() {
@@ -2807,8 +2819,11 @@ function createOverlay(api, data, initial, syncToolbar) {
         easing: OUT,
       });
     }
-    summaryButton.disabled = !canSummary();
-    summaryButton.title = summaryArrived && !summary ? reasonText : text.summary_title || "";
+    // 앱이 데이터를 열지 못해 멈췄으면 요약이 오지 않는다 — 지금만 못 하는 조작이라 감추지 않고 잠근 채 까닭(경고 한 줄)을
+    // 풍선으로 단다(「다시 시도」 로 붙으면 표지가 걷혀 원래 풍선으로 돌아온다).
+    summaryButton.disabled = failed || !canSummary();
+    if (failed) summaryButton.title = stopped || text.failed || "";
+    else summaryButton.title = summaryArrived && !summary ? reasonText : text.summary_title || "";
     // Introduce 도 들어갈 수 있을 때 선다 — 티저 받기는 rerun 이라 첫 실행 도중에 누르면 그 실행을 끊는다.
     const showIntroduce = can && teaser.available;
     const introduceAppearing = showIntroduce && introduceButton.hidden;
@@ -3561,7 +3576,10 @@ function createOverlay(api, data, initial, syncToolbar) {
     if (READY_STATES.has(state)) setReady();
     // 실패 표지는 실행 끝 무렵에 닿을 수도, 다음 회차(「다시 시도」)에 걷힐 수도 있다 — 끝난 뒤에도 표지가 바뀌면
     // 그림을 맞춘다.
-    if (ready && bootStopLine() !== shownStop) render();
+    if (ready && bootStopLine() !== shownStop) {
+      render();
+      sendProgress();
+    }
     if (holding) {
       if (document.getElementById(theme.button_id)) begin();
       else if (READY_STATES.has(state)) {

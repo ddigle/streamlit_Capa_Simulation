@@ -3268,8 +3268,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
   실행이 끝났을 때 앱 시작 실패 표지(`boot_stop.BOOT_STOP_ATTRIBUTE`)가 있으면 「준비 완료」 대신 상태 낱말 「열지 못함」, 끝낸
-  단계까지만 끝남 · 멈춘 칸은 실패 색(`die-short`) + 「멈춤」, 상태 줄 아래 까닭 한 줄(풍선이 아니라 글)이다. 표지는 그릴 때마다
-  다시 읽는다(「다시 시도」 로 붙으면 걷힌다).
+  단계까지만 끝남 · 멈춘 칸은 실패 색(`die-short`) + 「멈춤」, 상태 줄 아래 까닭 한 줄(풍선이 아니라 글)이다. Summary 단추는
+  잠근 채 까닭 풍선(경고 한 줄 — 요약이 오지 않는다, UI-INP-07)이고, 장면에는 끝남 대신 멈춤(`progress.halted` — 신호로 끝낸
+  단계만큼만 덮고 검사 원을 멈춤)을 보낸다. 표지는 그릴 때마다 다시 읽는다(「다시 시도」 로 붙으면 걷혀 풍선 · 펼침이 돌아온다).
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼
   색·그늘을 입장 모습으로 돌리며, 다시 보낼 자리에서 `summary-on` 을 대신한다. 커버 셋째 단추 `Introduce` 는 40초
   티저(`intro_overlay_assets/capa-teaser.html`, `INTRODUCE_TEASER_PATH`)를 오버레이 안 전체 화면 틀(blob 주소)에 띄운다
