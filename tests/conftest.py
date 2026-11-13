@@ -25,6 +25,9 @@ from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
 from capa_simulation import module_failures, module_registry
+from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit import shipper as audit_shipper
+from capa_simulation.audit import spool as audit_spool
 from capa_simulation.auth import names as sso_names
 from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
@@ -87,6 +90,7 @@ AUTO_UPDATE_ENV_VAR = "CAPA_AUTO_OFFICIAL_UPDATE"
 # 저장소의 실제 DB 자리. 테스트가 경로를 갈아끼우기 **전** 값을 잡아 둔다.
 _REPOSITORY_DATABASES = (settings.DUCKDB_PATH, settings.EQUIPMENT_DUCKDB_PATH)
 _REPOSITORY_DATA_DIR = settings.DATA_DIR
+_REPOSITORY_AUDIT_SPOOL = settings.DATA_DIR / "temp" / "audit"
 _EXISTED_AT_START: dict[str, bool] = {}
 
 # 시험이 운영 DB 자리를 연 기록 — 연 시험의 끝(`_no_operational_database_opened`)과 세션 끝에서
@@ -161,6 +165,7 @@ def keeps_permission_bits(tmp_path_factory: pytest.TempPathFactory) -> bool:
 def pytest_sessionstart(session: pytest.Session) -> None:
     for path in _REPOSITORY_DATABASES:
         _EXISTED_AT_START[str(path)] = path.exists()
+    _EXISTED_AT_START[str(_REPOSITORY_AUDIT_SPOOL)] = _REPOSITORY_AUDIT_SPOOL.exists()
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
@@ -184,6 +189,14 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         if reporter is not None:
             reporter.write_line(
                 f"시험이 운영 DB 자리를 열려 했습니다(열지 않음): {places}", red=True
+            )
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    if not _EXISTED_AT_START.get(str(_REPOSITORY_AUDIT_SPOOL), True) and (
+        _REPOSITORY_AUDIT_SPOOL.exists()
+    ):
+        if reporter is not None:
+            reporter.write_line(
+                f"시험이 저장소에 감사 스풀을 만들었습니다: {_REPOSITORY_AUDIT_SPOOL}", red=True
             )
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
     created = [
@@ -293,6 +306,38 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     sso_runtime.reset()
     yield
     sso_runtime.reset()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _audit_spool_outside_repository(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """감사 스풀 뿌리를 세션 임시 폴더로 — 기록기를 켠 시험이 저장소 `data/temp/` 에 쓰지 않는다.
+
+    그물은 둘이다. 여기서 기본 뿌리를 옮기고, 세션 끝(`pytest_sessionfinish`)에 저장소의 기본
+    뿌리가 새로 생겼는지 본다.
+    """
+    audit_spool.configure(tmp_path_factory.mktemp("audit-spool"))
+    yield
+    audit_spool.configure(None)
+
+
+@pytest.fixture(autouse=True)
+def _audit_recorder_off() -> Iterator[None]:
+    """감사 기록기를 끈 채로 시작하고 끝에 비운다 — 켜는 시험은 `start` 를 스스로 부른다.
+
+    앞 시험이 켠 기록기 · 큐 · 해석기 · 사슬 · 스풀 뿌리가 뒤 시험에 남으면 꺼짐 회차의
+    「호출 0」 이 깨진다.
+    """
+    root = audit_spool.configured()
+    audit_recorder.reset()
+    audit_spool.reset()
+    audit_shipper.reset()
+    yield
+    audit_recorder.reset()
+    audit_spool.reset()
+    audit_shipper.reset()
+    audit_spool.configure(root)
 
 
 @pytest.fixture(autouse=True)

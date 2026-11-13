@@ -331,6 +331,46 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `capa_server.py` — C-DEP 운영 진입점(`streamlit run capa_server.py` — 앱 스크립트는 `app.py` 하나 그대로). `app.py` 를
   `st.App` 으로 감싸 통합인증 경로 다섯과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
   조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다.
+- `src/capa_simulation/audit/` — 접속 · 작업 감사 기록(Admin Area 「접속 · 작업 기록」). 두 DB 밖에 쌓는다 — 메모리 큐 →
+  로컬 스풀 → 버킷 `audit/` 접두사의 새 객체(5장 40). 통합인증이 켜진 C-DEP 기동에서만 켜지고(`recorder.enabled()`) 꺼진 곳은
+  호출 0 이다. 사건 이름 · 갈래 · 한글 표시명 · 허용 상세 키는 `audit/events.py`, 글 다듬기(줄바꿈 · 제어 문자 · 길이 · 토큰 꼴
+  가림, 통합인증 로그 칸 `log_field` 도 여기 — `auth/runtime.py` 가 쓴다)는 `audit/text.py`, 해시 사슬(정규화 · 해시 · 검증)은
+  `audit/chain.py`, 기록기(넣기만 · 상한 20,000줄 · 버린 수 · 행위자 해석기 · 시간 묶음 · 통합인증 사건 대응표
+  `from_sso_event`)는 `audit/recorder.py` 다. 비우기(잠금 하나 안에서 사슬을 이어 `<스풀 뿌리>/spool/<UTC날짜>__<inst>.jsonl`
+  에 덧붙이고 fsync · 올림 표지 `.shipped` · 일별 파일이 미러에 든 날짜만 지우기)는 `audit/spool.py`(뿌리 기본
+  `data/temp/audit`, 시험은 conftest 가 세션 임시 폴더로 옮기고 저장소에 새로 생기면 실패), 버킷 키 · 미러 자리 · gzip 꼴은
+  `audit/layout.py`, 화면이 읽는 길(스풀 · 미러만 — S3 를 부르지 않는다, KST +09:00 고정, 같은 (inst, seq) 하나만, 다시 읽지
+  않을 지문)은 `audit/read.py` 다. 넷 다 표준 라이브러리만 쓴다(문지기가 `recorder` 를 부른다 —
+  `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다). 버킷 쪽(스풀 → `seg` 새 객체 ·
+  조건부 쓰기, 지원 확인 전이면 HEAD 뒤 쓰기 · 최근 14일 일별 묶음 `daily/…p<n>` 과 앞 manifest sha256 잇기 · 14일 넘게 늦은
+  조각 `audit_late_segment` · 400일 미러 · 새 인스턴스의 `audit_chain_link` · 시계 차이 `sys_clock_skew` · `AD-12`/`AD-13`
+  까닭)은 `audit/shipper.py` 다(동기화 일꾼이 부른다, 시험은 `tests/test_audit_shipper.py` — `aws` 없이 인자 배열을 가짜 S3
+  에 서명한 요청으로 옮기는 `tests/s3_mock_runner.py` 위). 사내 PC 운영 도구(`sync_object_storage.py` 의 rollback · init ·
+  fetch-copy · prune)는 기록기를 켜지 않고 명령마다 한 줄 조각을 `audit/v1/tool/…` 에 바로 올린다(`audit/tool.py` — 행위자는
+  OS 사용자, `verified` 거짓, 건너뛴 명령 · 빈 설정은 남기지 않음, 올리지 못해도 종료 코드 그대로). 관리자 행위(명단 추가 · 삭제
+  — 대상 loginid 마다 한 줄, 답을 못 받으면 `unknown` · 토큰 넣기 — 결과와 만료만 · 지금 올리기 · 자동 갱신 설정 — 바뀐 칸
+  이름과 판만 · 자동 갱신 수동 실행)는 그 함수 · 콜백이 `recorder.record` 를 부른다. 데이터 작업은 두 저장소의 쓰기 함수에 단
+  표지 `@audited`(`audit/work.py` — 돌아온 뒤(COMMIT 뒤) 한 줄, 예외면 `out=fail` 한 줄을 넣고 예외는 그대로, 꺼진 프로세스는
+  원래 함수만, 표지 단 함수 안의 표지 단 함수는 바깥 한 줄만)이고, 대상 id · 이름표 · 상세(값 원문 · 메모 · VOC 본문 없음,
+  손입력 이름은 `claimed`)는 `persistence/work_audit.py` 가 짓는다(시험 `tests/test_audit_work_events.py` 가 설계서 2-3 표의
+  함수 → 사건을 맞댄다). 켜는 곳은 `audit/boot.py` 하나다 —
+  `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(관리자
+  수 · 목록 지문 8자 · 점검자 수) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 점검자 `CAPA_AUDIT_VIEWERS` · 사용자)를 꽂는다.
+  통합인증 사건은 `auth/runtime.record_event` 가 잠금 밖에서 대응표(`from_sso_event`)로 넘기고(로그인 성공의 이름은 감사
+  줄에만 — `audit=` 칸, 서버 로그 · 고리에는 싣지 않는다), 갱신 누계는 시간 묶음으로 센다.
+  - `components/audit_log_view.py` — Admin Area 「접속 · 작업 기록」 탭. 사이드바 「기록 조건」 카드(기간 — KST,
+    `date_range_field` · 사람 · 사건 갈래 · 결과 · 필터 초기화, 키 `admin_area_log_*`, `persist_state="session"`)와 「요약 |
+    기록」 종류 단추(탭 안 탭 아님) 두 보기. 로컬 스풀 · 미러만 읽고(`audit.read` — S3 안 부름) 읽은 줄은 세션 칸에 지문을
+    키로 둔다(새 `st.cache_*` 없음). 요약은 오늘 값 칸 넷(기간에 오늘이 없거나 오늘 줄이 없으면 「—」)과 날짜별 표(조건에
+    맞는 줄이 없는 날은 빈칸 — 기록기 멈춤을 뜻하지 않는다), 기록은 새것 먼저 한 줄씩(상세 키는 `events.DET_LABELS` 한글). 설명
+    글은 Guide · 풍선이고 빈 결과는 평문 한 줄이다. 닫힌 탭이면 부르지 않는다(카드도 서지 않는다). 감사 알림 `AD-12`(보관
+    안 됨) · `AD-13`(14일 넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 켜진 서버의 매 회차 갈래
+    없이 두 자리를 쓰고 관리자 · 점검자 회차에만 세운다(꺼진 서버는 호출 0). 감사가 켜진 서버의 「통합인증 점검」 은 사람
+    단위 사건 표를 그리지 않고 누계 줄과 리뷰용 「복사」 만 남긴다(설계 AU19).
+  - `components/audit_actor.py` — 감사 기록의 앱 쪽. 스크립트 스레드 행위자 해석기(`resolve` — 쿠키를 **지금** 다시 검증한
+    `sso_identity.verified_identity`, 실행 문맥이 없으면 `None`), 세션 첫 회차의 `session_created`(`note_session` — `sid8` ·
+    `tab8` = Streamlit 세션 id 의 SHA-256 앞 8자), 부트스트랩 뒤 비우기(`drain`). `app.py` 는 신원이 있는 회차(통합인증 켜짐)에만
+    부른다 — 꺼짐은 호출 0(`tests/test_app_navigation.py`).
 - `src/capa_simulation/auth/` — 통합인증(ADFS · form_post). Streamlit 을 import 하지 않는다(문지기는 이벤트 루프에서
   돈다). 환경변수 이름 · 경로 · 쿠키 이름은 `auth/names.py`(표준 라이브러리만), 모드(꺼짐 · 켜짐 · 막힘) 판정과 검증된 설정은
   `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 토큰(HS256 — `sid` · `auth_time` 을 싣고 갱신은 새
@@ -1034,7 +1074,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
     알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
-  `원천 품질` 세 탭(`TAB_NAMES`, `stateful_tabs`)을 모은다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
+  `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자 ·
+  점검자 회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
+  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
+  기록 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드)을
+  읽는다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없어 이 탭이 Admin 회차의 유일한 DB
@@ -1051,7 +1096,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 「모듈 상태」(`components/module_status.py`)는 탭 위 펼침이 아니라 안쪽 탭 줄 오른쪽 끝 팝오버다(2026-11-10 보드 Q-6 — T7 과
     같은 꼴, 설계 규칙 UI-LAY-13). 세 탭은 칸 `TABS_BOX_KEY` 안이고, 그 칸을 DB 를 열기 전에 세워 맨 앞에 `render_module_status(
     box_key=TABS_BOX_KEY)` 를 부른다 — 서식이 단추 칸을 그 칸 오른쪽 위에 절대 위치로 얹고 탭 줄은 그 폭만큼 오른쪽을 비운다(새 줄
-    없음). DB 를 못 열어 멈추는 회차(`AD-07`)에는 그 칸에 탭이 없어 단추가 흐름 안 한 줄로 선다.
+    없음). DB 를 못 열어 멈추는 회차(`AD-07`)에도 탭 묶음이 그 칸에 서고 단추는 탭 줄 끝이다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
 - `app_pages/internal_modules.py` — 사이드바 「모듈」 상자의 머리(현황 요약) — 켜진 모듈과 화면 링크, 꺼짐·실패 수. 켜진 모듈이 없으면 상자가 없다(주소로는 열린다). 설명은 `guides/internal_modules.md`.
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
@@ -1854,7 +1899,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 이어받은 수동 off 와 HOME 표지(`auto_off_marks`)는 같은 근거(`_auto_exclusions` — 조상, 복제본은 복제 전 자동
     리비전 2)를 본다. 같은 프로세스의 겹친 회차는 기다리지 않고 돌아간다(`_RUN_LOCK`).
 - `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼. 앱의 둘째이자 마지막 배경 스레드다(5장 4·9장).
-  차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다.
+  차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다. 감사 기록기가 켜진
+  서버면 감사 할 일(`audit/shipper.py` 의 `AuditTasks` — 비우기 10초 · 올리기 5분 또는 200줄 · 일별 묶음 · 미러)도 같은 고리가
+  한다(새 스레드 없음). 감사 올리기는 DB 올리기보다 먼저고 DB 막힘과 상관없으며 그 실패는 감사 쪽이 삼킨다(DB 실패 수 ·
+  `SY-02` 를 건드리지 않는다). 「지금 올리기」 는 감사부터 올린다(열린 시간 묶음을 앞당겨 닫고, DB 올리기 뒤 그 몫까지 —
+  5장 40). 감사 할 일을 못 세우면 일꾼은 감사 없이 서고 `AD-12` 「올리기 없음」 이 선다.
 - `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신을 매일 지정 시각에 돌리는 배경 스레드다(5장 4·9장).
   - 실행 줄 `CAPA_AUTO_OFFICIAL_UPDATE=1` 일 때만 서고, 지정 시각이 직전 확인과 지금 사이일 때만 돈다(`crossed_slot` —
     놓친 날은 따라잡지 않는다). 스레드 이름(`THREAD_NAME`)으로 하나를 지키고 `st.cache_resource` 는 쓰지 않는다.
@@ -5614,7 +5663,9 @@ RQ_MODULE
     단위다(`runtime.revoke_session` — `auth_time` + 최대 + 30초까지). 판정은 폐기를 끝보다 먼저 본다(`identity.session_check` — 둘 다
     거절이고, 로그아웃이 표 칸을 지운 탭도 `revoked` 로 남게). 갱신 표 · 폐기
     목록 · 갱신 누계 · 쓴 state · 진단 · 사건은 프로세스 메모리(`auth.runtime`, replica 1 전제 — 재시작하면 비워진다, 열린 연결은
-    다시 붙을 때 갱신된 쿠키로 통과)이고 DB 에 쓰지 않으며 캐시 경계도 아니다(`st.cache_*` 없음). 꺼짐(`ADFS_CLIENT_ID` 없음)이면 `app.py` 가 Streamlit 호출을 하나도 하지 않는다 — 개발 ·
+    다시 붙을 때 갱신된 쿠키로 통과)이고 DB 에 쓰지 않으며 캐시 경계도 아니다(`st.cache_*` 없음). 감사 기록기가 켜진 서버는 같은
+    사건을 대응표로 감사 줄로도 넘긴다 — 메모리 큐 → 로컬 스풀 → 버킷 `audit/` 새 객체로 남고(40), 여전히 두 DB 에는 쓰지
+    않는다(설계 AU3). 꺼짐(`ADFS_CLIENT_ID` 없음)이면 `app.py` 가 Streamlit 호출을 하나도 하지 않는다 — 개발 ·
     사내 WebIDE · 시험의 요소 순번이 그대로다. 열린 탭은 websocket 핸드셰이크 때의 쿠키로 계속 돌고 위젯 콜백 · 프래그먼트
     회차는 `app.py` 를 지나지 않으므로, 만료 · 로그아웃은 문지기가 그 연결의 메시지마다 본다(`gate._WatchedSocket` — 9장).
     새 콜백 · `run_every` 를 더할 때 따로 막을 것은 없다.
@@ -5648,6 +5699,33 @@ RQ_MODULE
     components 를 import 하지 않으므로 몸통을 인자로 받는다. 「계산」 칸 글은 DB 가 아니라 세션 칸(`CHECK_LABELS_KEY`)이다 — 이 세션에서
     센 리비전만 글이 서고 나머지는 「—」(q6 (가) — 새 DB 칸 없음). `CapacityOutcome.problem`(기준정보 연결 오류의 꼴과 수 — 값 없는 frozen
     dataclass 라 피클로 실린다)은 멈춘 리비전의 「경로 n」 을 글을 다시 읽지 않고 세는 재료다.
+40. **접속 · 작업 감사 기록은 두 DB 밖에 추가만 한다**(설계 `audit-1113` 1판 — 결정 기록은 `docs/TODO.md` 몫). 켜짐은
+    한 곳이다 — `capa_server.py` 가 통합인증이 켜진 기동에서 `audit/boot.py` 로 켜고(`recorder.enabled()`), 사내 PC · WebIDE ·
+    시험 · `app.py` 개발 실행은 꺼짐이라 기록기 · 탭 · 알림 호출이 0 이다(끄는 환경변수는 두지 않는다 — 관리자가 자기 기록을
+    끌 수 없게). 불변조건:
+    - **추가만 한다.** 줄은 메모리 큐(상한 20,000줄 — 넘치면 버리고 그 수를 `sys_audit_dropped` 로) → 로컬 스풀(해시
+      사슬 `seq` · `prev` · `h`, fsync) → 버킷 `audit/v1/seg/…` · `tool/…` · `daily/…` **새 객체**(조건부 쓰기)로만 쓰고 고치거나
+      지우지 않는다. 앱에는 감사 기록을 고치기 · 지우기 · 끄기 기능이 없다(관리자 자신의 기록 포함). 보관 기간 정리는 버킷 수명
+      규칙 몫이다(권장 3년 + 30일 — 저장소 관리자에게 요청). 로컬 스풀은 그 날짜의 일별 파일이 미러에 든 뒤에야 지운다.
+    - **두 DB 에 쓰지 않는다.** 시뮬레이션 · 설비 DB 에 표가 없고 마이그레이션도 없다 — 쌍 올리기 · 세대 되돌리기 · 사본에 묶이지
+      않는다. `audit/` 접두사는 세대 · 정리(`PRUNE_PREFIXES`) · 되돌리기 밖이다.
+    - **행위자는 인증 신원이다.** 쓰는 순간에 정한다 — 스크립트 스레드는 쿠키를 지금 다시 검증한 loginid(`verified`), 예약 ·
+      일꾼 스레드는 `system:*`, 사내 PC 도구는 OS 사용자(미검증). 손입력 「저장자」 · 「만든 사람」 · VOC 작성자는 다를 때만 `claimed`.
+    - **값 원문을 싣지 않는다.** 셀 값 · 표 내용 · 메모 · 비고 · VOC 본문 · 토큰 · 쿠키 · 키 · 부서를 싣지 않는다 — 사건마다 허용
+      상세 키(`audit/events.py`), 줄바꿈 · 제어 문자 정리와 토큰 꼴 가림(`audit/text.py`), 이름표 60자 · `claimed` 40자. 이름은 로그인
+      성공 줄에만.
+    - **이벤트 루프는 메모리만.** 문지기 · 로그인 경로는 넣기만 하고 파일 · 네트워크를 부르지 않는다. 비우기는 스크립트 스레드
+      (부트스트랩 뒤 — 쌓인 것이 있을 때만 파일 IO)와 동기화 일꾼이 하고, 올리기 · 일별 묶음 · 미러는 일꾼이 한다(새 스레드 없음).
+      감사 실패는 저장 · DB 동기화 상태를 바꾸지 않는다.
+    - **꺼낸 줄을 소리 없이 잃지 않는다.** 비우기가 꺼낸 줄은 스풀에 적힘 · 큐 앞으로 되돌림 · 버린 수(`sys_audit_dropped`)
+      셋 가운데 하나다(해시를 못 매기는 글은 고쳐 다시 매긴다). 반쯤 쓴 꼬리는 되자른다. 버킷 · 스풀에서 읽은 줄은 바깥에서
+      고쳤을 수 있다 — 순번은 `chain.seq_of` 로 읽고 깨진 줄 · 조각은 건너뛰어 올리기 · 일별 묶음 · 화면이 멈추지 않게 한다.
+      한 줄의 상세는 1KB 안이고 줄이기는 반드시 끝난다(시간 묶음 건수 표는 키 글 상한 · 넘치면 `other`).
+    - **「지금 올리기」 뒤 「감사 미전송 0」 이면 그 pod 의 몫이 다 버킷에 있다.** 화면 값은 올리지 않은 줄 + 열린 시간 묶음이고
+      (`spool.unsent_count`), 그 단추는 묶음을 앞당겨 닫고(`partial`) 한 번 더 비운 뒤 올리며 DB 올리기 뒤 그 몫까지 올린다.
+      일꾼의 올리기 때 · 밀림 판정(`unshipped_count`)에는 열린 묶음을 넣지 않는다.
+    - **화면은 로컬 파일만 읽는다.** Admin Area 「접속 · 작업 기록」 은 스풀 · 미러를 읽고(S3 안 부름) 읽은 줄은 세션 칸에 지문
+      키로 둔다 — 「회차마다 DB 0」 · 새 `st.cache_*` 없음을 지킨다. 알림 `AD-12` · `AD-13` 은 메모리 표지만 읽는다.
 
 ## 6. 핵심 계산 규칙
 
@@ -6820,7 +6898,9 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   함수는 받은 그림만 그린다.
 - **배경 스레드에는 Streamlit 실행 문맥(ScriptRunContext)이 없다.** 그런 스레드는 공식버전 자동 갱신
   예약(`auto_update_scheduler.py` — 실행 줄 허락 `CAPA_AUTO_OFFICIAL_UPDATE=1` 이 있는 프로세스)과 동기화 일꾼
-  (`object_sync_worker.py` — `managed` + 시작 받기의 부트 기록이 있는 프로세스) 둘이다. 일꾼은 Streamlit 을 import 하지 않는다. 예약 안에서 `st.*` 화면 명령·`st.session_state`·`st.cache_data`/`st.cache_resource` 래퍼를 부르지
+  (`object_sync_worker.py` — `managed` + 시작 받기의 부트 기록이 있는 프로세스) 둘이다. 일꾼은 Streamlit 을 import 하지 않는다.
+  감사 기록이 켜진 서버면 일꾼이 같은 고리에서 감사 할 일(`audit/shipper.AuditTasks` — 비우기 10초 · 올리기 · 일별 묶음 · 미러)도
+  하고, 그 실패는 감사 쪽이 삼킨다(DB 실패 수 · `SY-02` 를 건드리지 않는다). 감사를 위해 스레드를 더 세우지 않는다. 예약 안에서 `st.*` 화면 명령·`st.session_state`·`st.cache_data`/`st.cache_resource` 래퍼를 부르지
   않는다 — 계산은 순수 코어(`simulation_cache.full_capacity_outcome`·`calculate_securement_rate`), 등록은
   세션 없는 `scenario_registration` 이다. 캐시 정리는 전역 범위 `st.cache_data` 함수의 `.clear()` 처럼
   문맥을 찾지 않는 것만 쓴다. 그 밖의 스레드를 세우지 않는다 — 예약이 더 필요하면 이 모듈에 더한다(`test_object_sync_worker` 가 자리를 센다). `modules/<id>/` 의 모듈도 같다(1장 「모듈 영역」).
@@ -7281,7 +7361,10 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **상태 줄 · 점검 펼침**은 칸의 일이 상태를 보이는 것이다(자동 갱신 「지금 상태」 ·
   Admin 「서버 시작 점검」 · 「통합인증 점검」 · 「모듈 상태」(탭 줄 끝 팝오버)) — 경고 상자 대신 상태 줄(캡션 ·
   마크다운)을 두고, 알릴 조건은 상태 알림으로도 낸다(`SC-01` · `AU-01/02` · `AD-01 ~ 03` · `MO-01`). DB 등록의
-  BigDataQuery 설정은 상태 줄 없이 상태 알림 `AD-04` 만이다(다 준비됐으면 아무것도 그리지 않는다).
+  BigDataQuery 설정은 상태 줄 없이 상태 알림 `AD-04` 만이다(다 준비됐으면 아무것도 그리지 않는다). 접속 · 작업
+  기록의 `AD-12`(버킷에 보관되지 않음 — 동기화 아님 · 올리기 30분 넘게 밀림 · 큐 넘침 · 시계 차이 60초) · `AD-13`(14일
+  넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 감사가 켜진 서버의 **매 회차 갈래 없이 두 자리**를
+  쓰고 관리자 · 점검자 회차에만 세운다(「그 화면으로」 는 Admin Area 기록 탭). 꺼진 서버는 부르지 않아 요소 순번이 그대로다.
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
   `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24` · 필요 단축 일정 보던 기준선이 지워져 진척
   비교를 끔 `RS-06`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가

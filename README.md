@@ -97,7 +97,7 @@ B/N       = 그 달 확보율이 가장 낮은 공정
 | **Dynamic Capa** | 표준 Capa → 효율 손실 → UPEH 손실 → 재공부족 미활용 → 실제 실적의 손실 분해(데모 데이터) |
 | └ 표준 대비 재공 현황 (구현중) | 오늘 −7일~+3일의 보유 재공·유입·Flow 와 일 표준 가능량(결정론적 샘플) |
 | 모듈 (사내만) | 동료가 만든 화면(`modules/<id>/`)을 별도 상자로 띄움. 켜진 모듈이 없으면 상자도 없음(사외에는 늘 없음). 구현 중 모듈도 화면 맨 위 배지 줄은 없고 화면 탭 「구현중」 표지 · 사이드바 라벨이 말함(창구 1.2 — 2026-11-10 보드 Q-5) |
-| Admin Area | 공정 표시명(`Proc Rename`)·공용 표시순서 관리, 원천 품질(계산에서 빠진 행은 시나리오 관리 「점검」 칸). 모듈이 켜지면 안쪽 탭 줄 오른쪽 끝 「모듈 상태 · 켜짐 · 꺼짐 · 실패」 팝오버(2026-11-10 보드 Q-6) |
+| Admin Area | 공정 표시명(`Proc Rename`)·공용 표시순서 관리, 원천 품질(계산에서 빠진 행은 시나리오 관리 「점검」 칸). 통합인증이 켜진 C-DEP 의 관리자 · 점검자(`CAPA_AUDIT_VIEWERS`)에게만 넷째 탭 「접속 · 작업 기록」(요약 · 기록 — 아래 「접속 · 작업 기록」). 모듈이 켜지면 안쪽 탭 줄 오른쪽 끝 「모듈 상태 · 켜짐 · 꺼짐 · 실패」 팝오버(2026-11-10 보드 Q-6) |
 | VOC | 질문·개선 요청·오류 신고 게시판(시나리오와 무관) |
 
 - 제목의 `(구현중)` 은 실적 DB 연결과 운영 기준 확정 전인 화면입니다. 그룹 머리에는 달지 않습니다. 그룹을 옮긴 화면도 파일 이름·제목·주소는 그대로라 북마크가 삽니다.
@@ -679,6 +679,20 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 가용대수, `일정` — ② 가용대수)에서 그 대수를 뺀 값이고, 확보율 · 확보 기준 과부족이 그 실가용으로 납니다. 「② 일정 가용」 의
 가용대수는 비가동을 빼기 전 값입니다(2026-11-12 사용자 답). 깎은 것이 없으면 빈칸입니다.
 
+### 접속 · 작업 기록
+
+통합인증이 켜진 C-DEP 운영 서버는 **누가 언제 들어왔고 무엇을 바꿨는지**를 한 줄씩 남깁니다 — 로그인 · 세션 시작 ·
+로그아웃 · 만료 · 로그인 실패(로그인 전 실패는 한 시간에 한 줄) · 명단 밖 접속, 명단 추가 · 삭제 · 토큰 넣기 · 지금
+올리기 · 자동 갱신 설정, 시나리오 · 리비전 · 공식 발행 · 공용 설정 · VOC · 설비 저장 · 발행 · Space 도면 저장. 값 원문
+(셀 값 · 메모 · VOC 본문 · 토큰)은 싣지 않고 대상은 id 로 적습니다. 기록은 두 DB 밖, 버킷의 `audit/` 접두사에 **새
+파일로만** 쌓고 줄마다 앞 줄의 해시를 이어 고친 곳을 알아챌 수 있게 합니다(마이그레이션 없음 · 세대 되돌리기와 무관).
+앱에는 기록을 고치거나 지우거나 끄는 기능이 없고, 보관 기간이 지난 것을 지우는 것은 버킷 수명 규칙의 몫입니다(권장 3년 — 저장소
+관리자에게 요청할 일).
+
+Admin Area 넷째 탭 「접속 · 작업 기록」 은 관리자와 점검자(`CAPA_AUDIT_VIEWERS`)에게만 서고 요약(오늘 값 · 날짜별 표)과
+기록(한 줄씩)을 보입니다. 사내 PC · WebIDE · 개발 실행처럼 통합인증이 꺼진 곳에는 기록도 탭도 없습니다. 운영 차례(매일
+훑기 · 월간 점검 · 분기 명단 재검토)와 내부관리계획에 적을 값은 `docs/audit_log_operations.md` 입니다.
+
 ## 보조 스크립트
 
 모두 저장소 루트에서 `.venv` 의 Python 으로 돌립니다. DB 를 여는 스크립트는 앱을 끄고 돌립니다 — 앱은 rerun 하는 동안만 DB 를 쥐어, 쉬는 앱 아래에서 돌면 잠금에 걸리지 않고 그 앱 화면을 막습니다. 런북 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)와 7-8 의 `inspect_db_counts.py` 는 운영 DB 를 열기 전에 앱 프로세스를 보고 멈추고, `--database` 로 사본을 주면 앱을 보지 않습니다. 사본 전용인 `inspect_revision_calculations.py`·`benchmark_home.py --data-dir` 는 운영 DB 자리(운영 DB 와 같은 파일 · 저장소 `data/` 아래 · git 저장소 안)를 거절합니다 — 사본은 저장소 밖에 둡니다.
@@ -693,7 +707,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `review_sample_sim.py` · `review_sample_equip.py` · `review_sample_modules.py` · `review_sample_story.py` · `review_sample_core_frame.py` | 그 부품 — 시뮬레이션 DB(앱 저장 API · 끝 점검 52) · 설비 DB(공식 소요 · 가용에서) · 모듈 견본 복사 · 이야기 상수와 산출 자리 지킴 · 78컬럼 원천 |
 | **DB 운영** | |
 | `compact_duckdb.py` | DuckDB 빈 공간을 재구축으로 걷어낸다(인자 없으면 두 DB, `--dry-run`·`--keep-backup`). 앱을 내린 뒤 |
-| `sync_object_storage.py` | 오브젝트 스토리지 진단 · 최초 이관 · 시작 받기(`boot-pull`) · 사본 받기(`fetch-copy`) · 세대 목록(`generations`) · 세대 되돌리기(`rollback`) · 정리 |
+| `sync_object_storage.py` | 오브젝트 스토리지 진단 · 최초 이관 · 시작 받기(`boot-pull`) · 사본 받기(`fetch-copy`) · 세대 목록(`generations`) · 세대 되돌리기(`rollback`) · 정리. `rollback` · `init` · `fetch-copy` · `prune` 은 끝에 감사 조각 한 줄을 버킷 `audit/v1/tool/` 에 올리고(행위자 OS 사용자), `audit-list --date YYYY-MM-DD\|today` · `--month YYYY-MM` 은 그 날짜 · 달의 감사 조각 · 일별 파일 수만 찍는다 |
 | **검증·측정** | |
 | `benchmark_home.py` | HOME 의 콜드·웜·토글별 rerun 시간. 기본은 합성 표본, `--data-dir <사본 폴더>` 면 실 DB 사본 |
 | `validate_duckdb_persistence.py` | Core Data 변환과 DuckDB 왕복 통합 검증(Windows·Excel·xlsb 필요) |
@@ -745,6 +759,7 @@ Main(호기 상태)은 그대로입니다. 표는 폼이라 저장하기 전에 
 | `docs/bigdataquery_webide_setup.md` | 사내 WebIDE 에서 BigDataQuery 조회를 여는 설치·로그인·계정 설정 |
 | `docs/sso_setup.md` | C-DEP 운영 서버의 통합인증(SSO) — 흐름·접속 명단·로그인 유지와 갱신·환경변수·서명 인증서·첫 배포 순서·진단 창구·가짜 IdP 로 개발 |
 | `docs/objectstore_setup.md` | 사내 오브젝트 스토리지 연동 절차 |
+| `docs/audit_log_operations.md` | 접속 · 작업 기록 운영 — 역할 · 매일 · 월간 점검 · 분기 · 이상 징후 기준 · 사건 때 조사 · 내부관리계획에 적을 값 |
 | `docs/parallel_agent_briefing.md` | 병행 개발 에이전트의 시작 절차와 하루 흐름(규칙은 AGENTS 14장) |
 | `docs/scenario_merge_shift_implementation.md` | 시나리오 월 머지·연도 Shift 구현 설명 |
 | `docs/equipment_ui_codex_review.md` | 가용설비 현황 개편 후보안(검토 기록) |

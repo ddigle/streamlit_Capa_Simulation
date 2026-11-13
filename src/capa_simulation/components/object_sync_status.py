@@ -26,8 +26,9 @@ from typing import Final
 import streamlit as st
 
 from capa_simulation import alerts, object_sync_worker, sync_boot
-from capa_simulation.auth import access_store, runtime
-from capa_simulation.auth.config import SsoMode
+from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit import shipper as audit_shipper
+from capa_simulation.audit import spool as audit_spool
 from capa_simulation.components import sso_identity
 from capa_simulation.components.diagnostic_copy import (
     diagnostic_text,
@@ -232,27 +233,37 @@ def status_lines(status: WorkerStatus | None, health: SyncHealth, *, now: float)
         )
     if status.prune_failure is not None:
         lines.append(f"**정리 실패** · {failure_label(status.prune_failure)}")
+    if audit_recorder.enabled():
+        # 접속 · 작업 감사 기록 — CI/CD 앞 「지금 올리기」 뒤 0 이어야 그 pod 의 기록이 남는다.
+        # 아직 열린 시간 묶음(닫히면 한 줄씩)도 센다.
+        lines.append(f"**감사 미전송** · {audit_spool.unsent_count()}줄")
+        audit = audit_shipper.health()
+        if audit.failures:
+            lines.append(
+                f"**감사 올리기 실패** · {audit.failures}회 · {failure_label(audit.failure_kind)}"
+            )
     return lines
 
 
 def _viewer_is_admin() -> bool:
-    cfg = runtime.config()
-    if cfg.mode is not SsoMode.ON:
-        return False
-    identity = sso_identity.verified_identity()
-    return identity is not None and access_store.is_admin(cfg, identity.loginid)
+    """관리자 판정 한 벌(`sso_identity.viewer_is_admin`)을 부른다 — 시험이 이 이름을 바꿔 끼운다."""
+    return sso_identity.viewer_is_admin()
 
 
 def _upload_now() -> None:
     """「지금 올리기」 콜백 — 위젯 콜백은 본문보다 먼저 돌아 보인 회차의 권한을 믿지 않는다. 거부는
     그 자리에 고칠 입력이 없어 알림창 · Alarm 에만 낸다(설계 규칙 UI-NTF-03)."""
     if not _viewer_is_admin():
+        audit_recorder.record("admin_sync_push", out="denied", det={"result": "not_admin"})
         queue_flash(FLASH_KEY, NOT_ADMIN_MESSAGE, kind="error", popup_only=True)
         return
     worker = object_sync_worker.running_worker()
     if worker is None:
+        audit_recorder.record("admin_sync_push", out="fail", det={"result": "no_worker"})
         queue_flash(FLASH_KEY, NO_WORKER_MESSAGE, kind="error", popup_only=True)
         return
+    # 줄을 먼저 넣고 깨운다 — 일꾼이 그 올리기 앞에 한 번 더 비우므로 이 줄이 같은 올리기에 실린다.
+    audit_recorder.record("admin_sync_push", det={"result": "requested"})
     worker.request_now()
     queue_flash(FLASH_KEY, "올리기를 시작했습니다")
 

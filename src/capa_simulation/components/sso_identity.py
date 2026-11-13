@@ -42,6 +42,7 @@ from urllib.parse import urlencode, urlsplit
 
 import streamlit as st
 
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import (
@@ -235,9 +236,27 @@ def verified_identity() -> Identity | None:
 
 
 def viewer_is_admin() -> bool:
-    """이 연결의 쿠키를 지금 다시 검증한 신원이 관리자인가. 통합인증이 켜짐이 아니면 늘 거짓이다."""
+    """이 연결의 쿠키를 지금 다시 검증한 신원이 관리자인가. 통합인증이 켜짐이 아니면 늘 거짓이다.
+
+    관리자 판정은 이것 하나다 — 화면 · 콜백이 사본을 두지 않는다(DB 동기화 · 통합인증 점검도 이것을
+    부른다).
+    """
     identity = verified_identity()
     return identity is not None and access_store.is_admin(runtime.config(), identity.loginid)
+
+
+def viewer_can_audit() -> bool:
+    """접속 · 작업 기록을 볼 수 있는가 — 관리자이거나 점검자(`CAPA_AUDIT_VIEWERS`)이고, 이 서버가
+    감사 기록을 남기는 서버(`audit.recorder.enabled()` — 통합인증 켜짐 기동)다. 아니면 늘 거짓."""
+    if not audit_recorder.enabled():
+        return False
+    identity = verified_identity()
+    if identity is None:
+        return False
+    cfg = runtime.config()
+    return access_store.is_admin(cfg, identity.loginid) or (
+        identity.loginid.strip().lower() in cfg.audit_viewers
+    )
 
 
 def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:

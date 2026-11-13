@@ -35,6 +35,8 @@ from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import NamedTuple
 
+from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit.text import log_field
 from capa_simulation.auth import names
 from capa_simulation.auth.access import AccessList, AccessSource
 from capa_simulation.auth.config import SsoConfig, SsoMode, load_config
@@ -71,7 +73,6 @@ REFRESH_OUTCOMES: tuple[str, ...] = (
     "forbidden",
     "bad_request",
 )
-_FIELD_LIMIT = 200
 
 
 @dataclass(frozen=True)
@@ -324,6 +325,7 @@ def count_refresh(outcome: str) -> None:
         raise ValueError(outcome)
     with _LOCK:
         _STATE.refresh_counts[outcome] += 1
+    audit_recorder.count(audit_recorder.SUMMARY_RENEW, outcome)
 
 
 def refresh_counts() -> dict[str, int]:
@@ -433,14 +435,6 @@ def get_diagnostic(diagnostic_id: str) -> dict[str, str] | None:
         return dict(record)
 
 
-def _clean_field(value: object) -> str:
-    text = str(value)
-    cleaned = "".join(
-        "_" if (ch.isspace() or ch == "=" or ord(ch) < 32 or ord(ch) == 127) else ch for ch in text
-    )
-    return cleaned[:_FIELD_LIMIT] or "-"
-
-
 def is_anonymous(item: SsoEvent) -> bool:
     """로그인하지 않은 누구나 남길 수 있는 사건인가 — 서명이 통과하기 전의 실패(계정 없음)."""
     return item.event in ANONYMOUS_EVENTS and item.value("loginid") in ("", "-")
@@ -463,7 +457,13 @@ def _note_denied(item: SsoEvent) -> None:
     _STATE.denied_total += 1
 
 
-def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> None:
+def record_event(
+    event: str,
+    *,
+    level: int = logging.INFO,
+    audit: Mapping[str, str] | None = None,
+    **fields: str,
+) -> None:
     """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(각 최대 50).
 
     무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다. 명단 밖 로그인
@@ -471,13 +471,17 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
     누계만 센다. 셋 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을
     밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽
     규칙).
+
+    감사 기록기가 켜진 서버면 같은 사건을 대응표(`audit.recorder.from_sso_event`)로 감사 줄에도
+    넣는다 — 잠금 밖에서 부른다(기록기의 등급 판정이 이 모듈의 명단을 읽는다). `audit` 은 감사
+    줄에만 싣는 칸이다(로그인 성공의 이름 — 서버 로그 · 고리에는 싣지 않는다).
     """
-    cleaned = tuple((key, _clean_field(value)) for key, value in fields.items())
-    line = f"sso event={_clean_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
+    cleaned = tuple((key, log_field(value)) for key, value in fields.items())
+    line = f"sso event={log_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
     LOGGER.log(level, line)
     with _LOCK:
         _STATE.event_seq += 1
-        item = SsoEvent(at=_now(), event=_clean_field(event), fields=cleaned, seq=_STATE.event_seq)
+        item = SsoEvent(at=_now(), event=log_field(event), fields=cleaned, seq=_STATE.event_seq)
         if item.event == DENIED_EVENT:
             _note_denied(item)
         elif item.event == ACCESS_RETRY_FAILED_EVENT:
@@ -492,6 +496,7 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
                 _STATE.anonymous_counts[other] = _STATE.anonymous_counts.get(other, 0) + 1
         else:
             _STATE.events.append(item)
+    audit_recorder.from_sso_event(item.event, dict(cleaned), audit)
 
 
 def recent_events(limit: int = MAX_EVENTS, *, anonymous: bool | None = None) -> list[SsoEvent]:

@@ -35,6 +35,7 @@ from typing import Final
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.components import sso_identity
 from capa_simulation.components.admin_dialog import ADMIN_DIALOG_KEY
 from capa_simulation.components.dialog_host import DialogHost
@@ -82,6 +83,16 @@ INSTALL_FIX: Final = (
     f"컨테이너를 다시 띄우면 CD 환경변수 {BDQ_TOKEN_ENV} 값으로 돌아가니 그 값도 새 토큰으로 "
     "바꿔 두세요."
 )
+
+
+def _utc_text(moment: datetime | None) -> str:
+    """감사 줄의 만료 시각 — UTC(서버 시각대에 기대지 않는다). 없거나 넘치면 빈 글."""
+    if moment is None:
+        return ""
+    try:
+        return audit_recorder.ts_text(moment)
+    except (OverflowError, OSError, ValueError):
+        return ""
 
 
 def _clock(moment: datetime, layout: str = CLOCK_FORMAT) -> str:
@@ -155,16 +166,24 @@ def install_from_dialog(raw: str) -> str | None:
     """누른 회차의 넣기 — 거절 글(칸 아래 한 줄) 또는 `None`(넣음 · 같음 — 알림창에 담았다). 신원을
     이 회차의 쿠키에서 다시 검증한다."""
     if not sso_identity.viewer_is_admin():
+        audit_recorder.record("admin_token_set", out="denied", det={"result": "not_admin"})
         return NOT_ADMIN_MESSAGE
     outcome = bdq_token.install_token(raw)
     if outcome.status == "refused":
+        audit_recorder.record("admin_token_set", out="fail", det={"result": "refused"})
         return f"넣지 않았습니다 — {outcome.reason}"
     if outcome.status == "same":
+        audit_recorder.record("admin_token_set", det={"result": "same"})
         queue_flash(FLASH_KEY, "같은 토큰이 이미 들어 있습니다 — 바뀐 것이 없습니다", kind="info")
         return None
     # 알림창 짧은 글 안에 들게 만료는 짧은 시각 꼴이다(다음 조회부터 쓰인다는 말은 단추 풍선 ·
     # Guide). 파일은 이미 썼다 — 만료 읽기가 무엇을 내도 넣음으로 끝낸다(`read_current`).
     expires = read_current().expires_at
+    # 감사 줄에는 결과와 만료일만 — 토큰 값 · 지문은 싣지 않는다.
+    audit_recorder.record(
+        "admin_token_set",
+        det={"result": "installed", "expires": _utc_text(expires)},
+    )
     when = "모름" if expires is None else _clock(expires, SHORT_CLOCK_FORMAT)
     queue_flash(FLASH_KEY, f"BigDataQuery 토큰을 넣었습니다 · 만료 {when}")
     return None

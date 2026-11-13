@@ -17,6 +17,8 @@ from capa_simulation.components.app_header import (
     render_app_header,
     render_shell_style,
 )
+from capa_simulation.components.audit_actor import drain as drain_audit
+from capa_simulation.components.audit_actor import note_session as note_audit_session
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.change_summary import session_changes
@@ -226,6 +228,10 @@ theme.begin_run()
 # **뒤**, 로그인하지 않은 세션에 입장 화면 · DB · 예약 스레드가 돌지 않게 입장 화면 · 부트스트랩
 # **앞**. 꺼짐(`ADFS_CLIENT_ID` 없음)이면 아무것도 그리지 않는다(요소 순번 그대로).
 signed_in = require_signed_in()
+# 접속 · 작업 감사 기록 — 그 Streamlit 세션의 첫 회차에만 `session_created` 한 줄(메모리 큐). 신원이
+# 없는(통합인증 꺼짐) 회차는 부르지 않는다.
+if signed_in is not None:
+    note_audit_session(signed_in)
 # 탭을 처음 연 사용자에게 첫 로딩을 덮는 입장 화면. 무거운 부트스트랩보다 **먼저** 보내야
 # 그동안을 덮는다. 토큰을 읽으므로 `theme.begin_run()` 뒤다. 매 회차 같은 자리에 같은 내용으로
 # 그려야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다 — 이미 들어간 탭이면 브라우저 쪽에서
@@ -304,6 +310,10 @@ with pinned_connections(DUCKDB_PATH):
         with st.expander("원본 오류"):
             st.code(f"{type(exc).__name__}: {exc}")
         st.stop()
+    # 감사 큐를 스풀 파일에 비운다(쌓인 것이 있을 때만 파일 IO — 대개 0). 통합인증 꺼짐은 부르지
+    # 않는다. DB 를 열지 않는다.
+    if signed_in is not None:
+        drain_audit()
     apply_pending_scenario_preset()
     # 공식버전 자동 갱신 예약 — 이 프로세스에 배경 스레드 하나(`auto_update_scheduler`). 실행 줄
     # 허락 (`CAPA_AUTO_OFFICIAL_UPDATE=1`)이 없으면 환경변수만 보고 돌아가고, 있으면 첫 회차에 한 번

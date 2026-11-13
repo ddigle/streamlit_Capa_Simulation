@@ -44,6 +44,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.auto_official_update_runner import (
     AutoUpdateSources,
     Clock,
@@ -679,14 +680,19 @@ def _render_run_now(
                 manual_token=token,
             )
     except BOOTSTRAP_ERRORS as exc:
+        audit_recorder.record("admin_auto_update_run", out="fail", det={"status": "error"})
         st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
         notice.error(bootstrap_error_message(exc))
         return
     st.session_state.pop(PENDING_RUN_TOKEN_KEY, None)
     run = result.run
     if run is None:
+        audit_recorder.record("admin_auto_update_run", out="fail", det={"status": "not_run"})
         notice.warning(markdown_safe_tildes(result.not_run_reason or "회차를 잡지 못했습니다."))
         return
+    audit_recorder.record(
+        "admin_auto_update_run", det={"run_id": run.run_id, "status": str(run.status)}
+    )
     _hold_run_result(run)
     st.rerun()
 

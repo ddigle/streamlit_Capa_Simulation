@@ -854,6 +854,39 @@ def test_the_header_reads_no_database_on_a_rerun(
     assert calls == []
 
 
+def test_an_off_server_never_calls_the_audit_recorder(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """통합인증이 꺼진 `app.py`(개발 · 사내 PC · WebIDE · 시험)는 감사 기록기를 한 번도 부르지
+    않는다 — 세션 시작 · 비우기 · 넣기 모두 0 이고 요소 차례도 그대로다(설계서 AU13)."""
+    from capa_simulation.audit import recorder, spool
+    from capa_simulation.components import audit_actor
+
+    calls: list[str] = []
+
+    def refuse(name: str) -> Any:
+        def called(*args: object, **kwargs: object) -> None:
+            calls.append(name)
+
+        return called
+
+    for module, name in (
+        (audit_actor, "note_session"),
+        (audit_actor, "drain"),
+        (recorder, "record"),
+        (recorder, "take_pending"),
+        (spool, "drain"),
+    ):
+        monkeypatch.setattr(module, name, refuse(name))
+
+    app = _app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    app.run()
+
+    assert calls == []
+    assert not recorder.enabled()
+
+
 def test_the_home_main_case_chips_read_no_database_on_a_rerun(
     _app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:

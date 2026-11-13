@@ -504,13 +504,31 @@ INTERNAL_MODULES = PageSpec(
 # 모듈 상자의 slug — 상자 key `internal_modules_box`, CSS 는 `build_sidebar_stylesheet` 가 낸다.
 MODULE_GROUP_SLUG: Final = "internal_modules"
 
-# 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다.
-# 공정 목록과 원천 품질이 활성 시나리오를 읽는다. 조회기간은 읽지 않는다.
+# Admin Area 탭. 앞 셋은 누구에게나 서고 공정 목록 · 원천 품질이 활성 시나리오를 읽는다.
+# 넷째 「접속 · 작업 기록」 은 통합인증이 켜진 서버의 관리자 · 점검자 회차에만 서고
+# (`sso_identity.viewer_can_audit`) 시나리오를 읽지 않으며 사이드바 「기록 조건」 카드를 세운다.
+# 사이드바(`app.py`)가 열린 탭을 봐야 해서 라벨을 여기 한 곳에 두고 페이지가 읽는다.
+ADMIN_AREA_TAB_KEY = "admin_area_active_tab"
+ADMIN_AREA_TABS = (
+    ":material/label: Proc Rename",
+    ":material/sort: 표시순서 관리",
+    ":material/fact_check: 원천 품질",
+)
+ADMIN_AREA_LOG_TAB = ":material/history: 접속 · 작업 기록"
+# 관리 기능이라 조회 컨트롤과 떨어뜨려 사이드바 맨 아래에 자기 박스로 둔다. 조회기간은 읽지 않는다.
 ADMIN_AREA = PageSpec(
     "app_pages/admin_area.py",
     "Admin Area",
     ":material/admin_panel_settings:",
     reads_period=False,
+    has_condition_cards=True,
+    condition_tabs=ConditionTabs(
+        ADMIN_AREA_TAB_KEY,
+        first=ADMIN_AREA_TABS[0],
+        labels=frozenset(ADMIN_AREA_TABS),
+        card_labels=frozenset({ADMIN_AREA_LOG_TAB}),
+        tabs=(*ADMIN_AREA_TABS, ADMIN_AREA_LOG_TAB),
+    ),
 )
 # VOC 는 계산 화면이 아니라 사람이 쓰는 자리라 계산 그룹 어디에도 속하지 않는다. 관리
 # 상자에 **같은 층위로** 함께 세운다 — 쓰는 사람이 「여기가 말할 곳」을 찾을 때 맨 아래를

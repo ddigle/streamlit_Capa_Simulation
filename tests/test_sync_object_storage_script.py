@@ -47,6 +47,7 @@ def test_every_subcommand_is_wired(script: ModuleType) -> None:
         "rollback",
         "generations",
         "boot-pull",
+        "audit-list",
     }
 
     assert set(script.COMMANDS) == expected

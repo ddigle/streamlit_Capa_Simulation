@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 from typing import Any
@@ -349,6 +350,28 @@ def test_the_status_shows_audit_events_and_anonymous_failures_apart() -> None:
     anonymous = app.dataframe[2].value
     assert len(anonymous) == sso_status.ANONYMOUS_EVENT_LIMIT
     assert set(anonymous["계정"].tolist()) == {"-"}
+
+
+def test_with_the_audit_log_on_the_status_keeps_only_the_count_lines() -> None:
+    """감사 기록이 켜진 서버는 사람 단위 사건 표를 「접속 · 작업 기록」 탭이 보인다 — 점검
+    펼침에는 설정 진단 · 누계 줄과 리뷰용 「복사」 만 남는다(설계 AU19). 복사 글은 그대로 표까지."""
+    from capa_simulation.audit import recorder
+
+    cfg = use_config()
+    runtime.mark_gate_installed()
+    recorder.start(env="cdep", version="test", inst="b0b0b0b0b0b0")
+    runtime.record_event("login_ok", loginid="dev.user", hours="12", jti="abcdefgh")
+    _flood(30)
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    assert len(app.dataframe) == 1, "설정 진단 표 하나만"
+    captions = [str(c.value) for c in app.caption]
+    assert not any(caption.startswith("최근 사건") for caption in captions)
+    assert len([c for c in captions if c.startswith("**로그인 전 실패")]) == 1
+    copied = sso_status.status_text("통합인증 점검", cfg, now=dt.datetime.now(dt.timezone.utc))
+    assert "최근 사건(새것 먼저)" in copied
 
 
 def test_an_unknown_list_file_reads_as_an_unknown_format() -> None:

@@ -394,7 +394,8 @@ def test_the_light_import_does_not_bring_streamlit() -> None:
         "import sys\n"
         "import capa_simulation.io.s3_small\n"
         "import capa_simulation.auth.access_store\n"
-        "print(sorted({'streamlit', 'jwt'} & set(sys.modules)))\n"
+        "import capa_simulation.audit.recorder\n"
+        "print(sorted({'streamlit', 'jwt', 'duckdb'} & set(sys.modules)))\n"
     )
     found = subprocess.run(
         [sys.executable, "-c", code],

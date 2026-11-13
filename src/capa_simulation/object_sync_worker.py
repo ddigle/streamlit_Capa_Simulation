@@ -14,6 +14,7 @@ C-DEP 운영 서버는 영속 볼륨이 없고 끌 때 올릴 기회도 없다. 
 | 판정 막힘 | 올리지 않고 300초마다 다시 판정. 재판정이 실패하면 더 늦은 쪽을 따른다 |
 | 쉬는 동안 | 시작 직후 · 10분마다 HEAD 를 본다 |
 | 정리 | 시작 10분 뒤 첫 번, 이후 24시간마다(남으면 1시간 뒤) |
+| 감사 기록(켜진 서버만) | 비우기 10초마다 · 올리기 5분 또는 200줄 · 묶음 10분 뒤 · 이후 하루 |
 
 **언제 서나.** `capa_server.py` 가 `start_sso()` 뒤 `start_object_sync()` 를 부른다. 첫 접속을
 기다리지 않는다 — 찾아오는 사람이 없는 날도 정리가 돈다. 조건은 `managed` + 시작 때의 받기가 남긴
@@ -32,6 +33,12 @@ C-DEP 운영 서버는 영속 볼륨이 없고 끌 때 올릴 기회도 없다. 
 **실패가 스레드를 죽이지 않는다.** 예상한 실패는 갈래로 적고 물러난다. 고리 바깥에서 `BaseException`
 까지 받아 기록하고 계속한다.
 
+**감사 기록**(`audit.shipper.AuditTasks` — 기록기가 켜진 서버만)도 이 고리가 한다. 고리 맨 앞에서
+스풀로 비우고, 올리기는 DB 올리기보다 먼저 한다(몇 KB 다). DB 판정 · 막힘과 상관없이 돌고 그
+실패는 감사 쪽이 삼킨다 — DB 실패 수(`SY-02`)를 건드리지 않는다. 「지금 올리기」 는 열린 시간
+묶음을 앞당겨 닫고 한 번 더 비운 뒤 감사부터 올리고, DB 올리기 뒤 그 몫까지 한 번 더 올린다(CI/CD
+앞 「감사 미전송 0」). 새 스레드는 없다.
+
 자식 프로세스(`aws`)는 `subprocess.run` 기본(`close_fds=True`)이라 듣는 소켓을 물려받지 않고,
 Python 3.10 은 vfork 를 쓰므로 앱 메모리를 복제하지 않는다.
 """
@@ -48,6 +55,10 @@ from pathlib import Path
 from typing import Final, Protocol, cast
 
 from capa_simulation import sync_boot
+from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit.shipper import AuditTasks
+from capa_simulation.audit.shipper import build_tasks as build_audit_tasks
+from capa_simulation.audit.shipper import note_tasks_missing as note_audit_tasks_missing
 from capa_simulation.io.object_storage import (
     SMALL_TIMEOUT_SECONDS,
     ObjectStorageClient,
@@ -241,8 +252,10 @@ class ObjectSyncWorker:
         *,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], str] = sync_state.utc_now_text,
+        audit: AuditTasks | None = None,
     ) -> None:
         self._engine = engine
+        self._audit = audit
         self._clock = clock
         self._wall_clock = wall_clock
         self._stop = threading.Event()
@@ -319,6 +332,9 @@ class ObjectSyncWorker:
     def tick(self) -> float:
         """확인 한 번. 할 일을 하고, 다음 확인까지 쉴 초를 돌려준다."""
         now = self._clock()
+        audit = self._audit
+        if audit is not None:
+            audit.drain(now)
         requested = sync_state.take_upload_request()
         with self._state_lock:
             manual = self._manual
@@ -336,13 +352,45 @@ class ObjectSyncWorker:
             due: float | None = now
         else:
             due = self._next_upload_at(sync_state.mark_clock())
-        if due is not None and due <= now:
+        shipped_first = False
+        if manual and audit is not None:
+            # 「지금 올리기」 는 감사부터 — CI/CD 앞에 누르는 단추라 감사 미전송도 함께 비운다. 열린
+            # 시간 묶음을 앞당겨 닫고 맨 앞 비우기 뒤에 든 줄까지 한 번 더 비운 뒤 올린다.
+            audit.flush_now(now)
+            self._run_audit(audit.run_ship, now)
+            shipped_first = True
+        if not shipped_first and audit is not None and audit.ship_due(now):
+            self._run_audit(audit.run_ship, now)
+        elif due is not None and due <= now:
             self._run_upload(now)
+            if shipped_first and audit is not None:
+                # DB 올리기가 남긴 감사 몫(올림 시간 묶음 · 막힘 · 실패 줄)도 같은 누름에 올린다 —
+                # 「지금 올리기」 뒤 「감사 미전송 0」 을 보고 CI/CD 한다.
+                after = self._clock()
+                audit.flush_now(after)
+                self._run_audit(audit.run_ship, after)
         elif now >= self._watch_at:
             self._run_watch(now)
         elif now >= self._prune_at:
             self._run_prune(now)
+        elif audit is not None and audit.compact_due(now):
+            self._run_audit(audit.run_compact, now)
+        elif audit is not None and audit.mirror_due(now):
+            self._run_audit(audit.run_mirror, now)
         return self._pause(self._clock())
+
+    def _run_audit(self, task: Callable[[float, Callable[[], bool]], None], now: float) -> None:
+        """감사 할 일 하나 — 쉬는 동안의 회차로 적고 호출마다 마감을 늘린다(실패는 감사 몫)."""
+        try:
+            with self._quiet_cycle(now, QUIET_CALL_SECONDS):
+                task(now, self._audit_step)
+        except Exception:  # noqa: BLE001 — 감사가 DB 동기화 상태를 바꾸지 않는다
+            _LOGGER.exception("감사 기록 할 일이 실패했습니다.")
+
+    def _audit_step(self) -> bool:
+        """감사 버킷 호출 하나 앞 — 진행을 적고 DB 올리기에 자리를 내줄지 본다(정리와 같은 꼴)."""
+        self._set(cycle_deadline=self._clock() + QUIET_CALL_SECONDS)
+        return self._should_yield()
 
     def _read_dirty(self) -> dict[DatasetName, bool]:
         databases = self._engine.paths.databases
@@ -365,6 +413,8 @@ class ObjectSyncWorker:
         due = self._next_upload_at(sync_state.mark_clock())
         if due is not None:
             moments.append(due)
+        if self._audit is not None:
+            moments.append(self._audit.next_due(now))
         wait = max(min(moments) - now, 0.0)
         phase = self._phase(due)
         # 할 일을 마친 시각도 살아 있다는 표지다 — 긴 회차 뒤의 쉼이 「돌지 않음」 이 되지 않게.
@@ -430,6 +480,7 @@ class ObjectSyncWorker:
         self._blocked_until = None
         self._set(failures=0, failure_kind=None, blocked=None)
         if outcome.published and outcome.pointer is not None:
+            audit_recorder.count(audit_recorder.SUMMARY_SYNC, "published")
             self._note_success(
                 outcome.pointer.seq,
                 sizes={name: result.size_bytes for name, result in outcome.uploaded.items()},
@@ -461,6 +512,13 @@ class ObjectSyncWorker:
             )
 
     def _note_blocked(self, decision: PushDecision, now: float) -> None:
+        if self._blocked is not decision:
+            audit_recorder.record(
+                "sys_sync_blocked",
+                out="fail",
+                actor="system:object_sync",
+                det={"decision": decision.value},
+            )
         self._blocked = decision
         self._blocked_until = now + BLOCKED_RECHECK_SECONDS
         self._retry_at = None
@@ -472,6 +530,12 @@ class ObjectSyncWorker:
             self._status = _replaced(self._status, failures=failures, failure_kind=kind)
         steps = FAILURE_BACKOFF_SECONDS
         self._retry_at = now + steps[min(failures, len(steps)) - 1]
+        audit_recorder.record(
+            "sys_sync_fail",
+            out="fail",
+            actor="system:object_sync",
+            det={"kind": kind, "failures": failures},
+        )
 
     @contextmanager
     def _quiet_cycle(self, now: float, seconds: float) -> Iterator[None]:
@@ -573,8 +637,17 @@ def build_storage_engine() -> StorageEngine:
     )
 
 
+def build_audit() -> AuditTasks | None:
+    """감사 할 일 — 기록기가 꺼진 프로세스면 `None`(일꾼이 감사를 부르지 않는다)."""
+    if not audit_recorder.enabled():
+        return None
+    return build_audit_tasks(ObjectStorageClient(settings=load_settings()))
+
+
 def start_object_sync(
-    *, build_engine: Callable[[], SyncEngine] = build_storage_engine
+    *,
+    build_engine: Callable[[], SyncEngine] = build_storage_engine,
+    build_audit_work: Callable[[], AuditTasks | None] = build_audit,
 ) -> WorkerHandle | None:
     """조건이 맞으면 이 프로세스의 일꾼을 (없을 때만) 세운다. 어떤 실패도 올리지 않는다.
 
@@ -590,7 +663,15 @@ def start_object_sync(
             existing = running_worker()
             if existing is not None:
                 return existing
-            worker = ObjectSyncWorker(build_engine())
+            try:
+                audit = build_audit_work()
+            except Exception:
+                # 감사 할 일을 못 세워도 DB 동기화 일꾼은 선다(감사가 DB 동기화를 막지
+                # 않는다). 기록은 스풀에만 쌓이므로 AD-12 「올리기 없음」 으로 알린다.
+                _LOGGER.exception("감사 기록 할 일을 세우지 못했습니다 — 일꾼은 감사 없이 섭니다.")
+                note_audit_tasks_missing()
+                audit = None
+            worker = ObjectSyncWorker(build_engine(), audit=audit)
             worker.start()
             return worker
     except Exception:

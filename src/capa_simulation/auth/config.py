@@ -224,6 +224,9 @@ class SsoConfig:
     access_seed_users: tuple[str, ...] = field(repr=False, compare=False)
     # 화면 · 로그 · repr 에 나오지 않는다. 세션 · 상태 토큰의 키를 여기서 파생한다(`tokens`).
     secret: bytes = field(repr=False, compare=False)
+    # 접속 · 작업 기록 점검자(`CAPA_AUDIT_VIEWERS` 의 loginid — 견주는 꼴). 값이라 repr 에
+    # 싣지 않는다.
+    audit_viewers: frozenset[str] = field(default=frozenset(), repr=False, compare=False)
 
     @property
     def enabled(self) -> bool:
@@ -787,6 +790,9 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
         notices.append(contact_problem)
     s3_requested, object_key, s3_target, s3_notices = _check_access_s3(value)
     notices.extend(s3_notices)
+    audit_viewers, unreadable_viewers = parse_entries(value(names.ENV_AUDIT_VIEWERS))
+    if unreadable_viewers:
+        notices.append(SsoProblem(names.ENV_AUDIT_VIEWERS, "entries_unreadable"))
     access, access_problem, access_notices, seed_users = _check_access(
         value(names.ENV_ACCESS_ADMINS),
         value(names.ENV_ACCESS_USERS),
@@ -884,4 +890,5 @@ def load_config(environ: Mapping[str, str], *, now: datetime | None = None) -> S
         access_s3=s3_target,
         access_seed_users=seed_users,
         secret=secret,
+        audit_viewers=frozenset(audit_viewers),
     )

@@ -27,6 +27,11 @@
 **끝에 「전송용 요약」 한 줄을 찍는다**(`profile` · `boot-pull` 밖). 사람이 리뷰에 옮기는 줄이라
 갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드만 싣는다 — 주소 · 버킷 · 프로필 · 폴더 · 계정 ·
 서버 글은 싣지 않는다. 그 위의 출력은 그대로다.
+
+**정본을 바꾸는 손 동작은 감사 조각을 남긴다.** `rollback` · `init` · `fetch-copy` · `prune` 은 끝에
+그 버킷의 `audit/v1/tool/…` 에 한 줄짜리 조각을 새로 올린다(`audit/tool.py` — 행위자는 OS 사용자,
+미검증). `--dry-run` · `--yes` 없이 건너뛴 명령 · 빈 설정은 남기지 않는다. 올리지 못해도 명령의
+종료 코드는 그대로다. `audit-list` 는 그 날짜 · 달의 조각 · 일별 파일 수만 찍는다(값 없음).
 """
 
 from __future__ import annotations
@@ -35,8 +40,10 @@ import argparse
 import json
 import re
 import sys
+import tempfile
 import uuid
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +51,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from capa_simulation import object_sync_engine as engine  # noqa: E402
 from capa_simulation import sync_boot  # noqa: E402
+from capa_simulation.audit import layout as audit_layout  # noqa: E402
+from capa_simulation.audit.tool import upload_tool_piece  # noqa: E402
 from capa_simulation.io import object_storage  # noqa: E402
 from capa_simulation.io.object_storage import (  # noqa: E402
     ObjectStorageClient,
@@ -81,6 +90,16 @@ DATASET_PATHS: dict[DatasetName, Path] = {
     "equipment": EQUIPMENT_DUCKDB_PATH,
 }
 MIB = 1024 * 1024
+# 감사 조각을 남기는 명령 → 사건. 명령이 채우는 상세(`_AUDIT_DETAIL`)와 건너뜀 표지를
+# main 이 읽는다.
+AUDITED_COMMANDS: dict[str, str] = {
+    "rollback": "admin_sync_rollback",
+    "init": "admin_sync_init",
+    "fetch-copy": "admin_fetch_copy",
+    "prune": "admin_sync_prune",
+}
+_AUDIT_DETAIL: dict[str, object] = {}
+_AUDIT_SKIP = "skip"
 
 # 버킷 · 주소 · 프로필에 들 수 없는 글자 — 꺾쇠 자리표(`"<…>"`)째 넣은 값, 따옴표째 붙인 값,
 # 묻는 줄이 뒤에 붙은 명령 줄을 값으로 먹은 경우(공백)가 여기에 걸린다.
@@ -241,6 +260,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     generations.add_argument("--limit", type=int, default=30, help="찍을 세대 수. 기본 30.")
 
     sub.add_parser("boot-pull", help="컨테이너 시작의 받기 — 결과 한 줄을 찍는다.")
+    audit_list = sub.add_parser(
+        "audit-list", help="감사 기록 조각 · 일별 파일 수를 날짜(또는 달)로 센다(값 없음)."
+    )
+    audit_list.add_argument("--date", help="UTC 날짜 YYYY-MM-DD 또는 today")
+    audit_list.add_argument("--month", help="UTC 달 YYYY-MM")
     return parser.parse_args(argv)
 
 
@@ -541,10 +565,14 @@ def command_init(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         report=_report_progress,
     )
+    if outcome.decision is PushDecision.UP_TO_DATE or outcome.dry_run:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
     if outcome.decision is PushDecision.UP_TO_DATE:
         print(f"[건너뜀] 원격에 이미 {with_subject_particle(f'seq {outcome.head_seq}')} 있습니다.")
         _fact(f"건너뜀 원격 seq {outcome.head_seq}")
         return 0
+    if outcome.published:
+        _AUDIT_DETAIL.update(seq_to=outcome.seq, datasets=sorted(outcome.uploaded))
     return _report_outcome(outcome)
 
 
@@ -725,11 +753,14 @@ def command_prune(args: argparse.Namespace) -> int:
     if plan.deferred:
         print(f"   상한을 넘어 다음 번으로 넘긴 수 {plan.deferred}")
     if not plan.total:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
         return 0
     if args.dry_run or not args.yes:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
         print("   [건너뜀] 실제로 지우려면 --yes 를 함께 주세요.")
         return 0
     outcome = engine.prune(client, **options)
+    _AUDIT_DETAIL["deleted"] = outcome.deleted
     print(f"   {outcome.deleted}개를 지웠습니다.")
     if outcome.interrupted:
         print("   [중단] 판정 뒤 HEAD 가 움직였습니다 — 다시 돌리면 새 판정으로 잇습니다.")
@@ -745,6 +776,7 @@ def command_fetch_copy(args: argparse.Namespace) -> int:
         print(f"[중단] {exc}")
         _stopped(STOP_REQUEST)
         return 1
+    _AUDIT_DETAIL["seq_to"] = outcome.pointer.seq
     print(f"받음 : seq {outcome.pointer.seq} · {outcome.folder}")
     _fact(f"받음 seq {outcome.pointer.seq}")
     return 0
@@ -752,6 +784,7 @@ def command_fetch_copy(args: argparse.Namespace) -> int:
 
 def command_rollback(args: argparse.Namespace) -> int:
     if not args.yes:
+        _AUDIT_DETAIL[_AUDIT_SKIP] = True
         print(f"[건너뜀] seq {args.to} 멤버로 새 HEAD 를 내려면 --yes 를 함께 주세요.")
         _fact("건너뜀 --yes 없음")
         return 0
@@ -762,6 +795,7 @@ def command_rollback(args: argparse.Namespace) -> int:
         print(f"[중단] {exc}")
         _stopped(STOP_REQUEST)
         return 1
+    _AUDIT_DETAIL.update(seq_from=args.to, seq_to=pointer.seq)
     print(f"새 HEAD : seq {pointer.seq} — seq {args.to} 의 멤버를 이어 갑니다.")
     _fact(f"새 HEAD seq {pointer.seq} · 이은 세대 seq {args.to}")
     return 0
@@ -811,6 +845,70 @@ def command_boot_pull(args: argparse.Namespace) -> int:
     return 0 if outcome.ok else 1
 
 
+def _audit_days(args: argparse.Namespace) -> list[date]:
+    if args.month:
+        first = datetime.strptime(args.month, "%Y-%m").date()
+        days = []
+        day = first
+        while day.month == first.month:
+            days.append(day)
+            day += timedelta(days=1)
+        return days
+    if not args.date or args.date == "today":
+        return [datetime.now(timezone.utc).date()]
+    return [datetime.strptime(args.date, "%Y-%m-%d").date()]
+
+
+def command_audit_list(args: argparse.Namespace) -> int:
+    """날짜마다 조각(seg · tool) · 일별 파일 수 — 사람 값 · 키는 찍지 않는다."""
+    try:
+        days = _audit_days(args)
+    except ValueError:
+        print("[중단] --date 는 YYYY-MM-DD 또는 today, --month 는 YYYY-MM 입니다.")
+        return 1
+    client = build_client(args)
+    daily = [
+        audit_layout.parse_daily(record.key)
+        for record in client.list_all_objects(audit_layout.DAILY_PREFIX)
+    ]
+    daily_days = {found[0] for found in daily if found is not None and found[2] == "jsonl.gz"}
+    with_files = 0
+    for day in days:
+        text = day.isoformat()
+        seg = len(client.list_all_objects(audit_layout.piece_prefix("seg", text)))
+        tool = len(client.list_all_objects(audit_layout.piece_prefix("tool", text)))
+        has_daily = text in daily_days
+        with_files += 1 if (seg or tool or has_daily) else 0
+        print(f"{text} : 조각 seg {seg} · tool {tool} · 일별 {'있음' if has_daily else '없음'}")
+    if len(days) > 1:
+        print(f"합계 : {len(days)}일 가운데 기록 있는 날 {with_files}")
+    return 0
+
+
+def _leave_tool_piece(args: argparse.Namespace, code: int) -> None:
+    """정본을 바꾸는 명령의 감사 조각(`audit/tool.py`). 건너뛴 명령 · 빈 설정 · 꼴이 틀린 설정은 남기지 않는다."""
+    event = AUDITED_COMMANDS.get(args.command)
+    if event is None or _AUDIT_DETAIL.get(_AUDIT_SKIP):
+        return
+    try:
+        settings = build_settings(args)
+    except StorageSettingsError:
+        return
+    if object_storage.missing_environment(settings):
+        return
+    detail = {key: value for key, value in _AUDIT_DETAIL.items() if key != _AUDIT_SKIP}
+    detail["result"] = "ok" if code == 0 else "fail"
+    key = upload_tool_piece(
+        build_client(args),
+        event,
+        out="success" if code == 0 else "fail",
+        det=detail,
+        scratch=Path(tempfile.gettempdir()) / "capa-audit-tool",
+    )
+    if key is None:
+        print("[경고] 감사 기록 조각을 올리지 못했습니다 — 명령의 결과는 그대로입니다.")
+
+
 COMMANDS = {
     "profile": command_profile,
     "doctor": command_doctor,
@@ -826,6 +924,7 @@ COMMANDS = {
     "rollback": command_rollback,
     "generations": command_generations,
     "boot-pull": command_boot_pull,
+    "audit-list": command_audit_list,
 }
 
 
@@ -855,8 +954,11 @@ def _run_command(args: argparse.Namespace) -> int:
     # 사이드카 기록은 등록된 경로에만 쓴다. 스크립트는 이 파일들의 주인이므로 여기서 등록한다.
     # `--dataset` 과 상관없이 둘 다다 — 두 DB 는 한 쌍이다.
     sync_state.enable(sync_paths().registry)
+    _AUDIT_DETAIL.clear()
+    code = 1
     try:
-        return int(handler(args))
+        code = int(handler(args))
+        return code
     except ObjectStorageError as exc:
         _stopped(failure_kind(exc))
         if args.command == "boot-pull":
@@ -875,6 +977,11 @@ def _run_command(args: argparse.Namespace) -> int:
         else:
             print(f"[중단] {bootstrap_error_message(exc, markdown=False)}")
         return 1
+    finally:
+        try:
+            _leave_tool_piece(args, code)
+        except Exception:  # noqa: BLE001 — 기록 실패가 운영 명령의 결과를 바꾸지 않는다
+            print("[경고] 감사 기록 조각을 올리지 못했습니다 — 명령의 결과는 그대로입니다.")
 
 
 if __name__ == "__main__":

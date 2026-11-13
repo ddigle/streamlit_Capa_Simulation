@@ -83,6 +83,7 @@ UNSETTLED_SITES = 3
 # (파일, 맨 바깥 함수) → 서술형 문장 부름마다 까닭(문서 차례).
 ALLOWED: dict[tuple[str, str], tuple[str, ...]] = {
     ("app_pages/admin_area.py", ""): (EMPTY,),
+    ("src/capa_simulation/components/audit_log_view.py", "render_audit_log"): (EMPTY,),
     ("app_pages/available_equipment_status.py", ""): (EMPTY,),
     ("app_pages/calculation_result.py", ""): (EMPTY,),
     ("app_pages/constraint_simulation.py", ""): (

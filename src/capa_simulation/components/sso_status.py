@@ -39,7 +39,9 @@ import pandas as pd
 import streamlit as st
 from streamlit.elements.lib.column_types import ColumnConfig
 
-from capa_simulation import alerts
+from capa_simulation import alerts, sync_boot
+from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
@@ -59,12 +61,14 @@ from capa_simulation.io.container_start_report import (
     STATUS_SKIPPED,
     mask_account,
 )
-from capa_simulation.navigation import ADMIN_AREA
+from capa_simulation.navigation import ADMIN_AREA, ADMIN_AREA_LOG_TAB
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.sidebar_status import remembered_expander
 
 # 펼침 key. 「서버 시작 점검」 바로 뒤 · 탭 묶음 위에 서므로 자리를 key 로 고정한다.
 EXPANDER_KEY = "admin_area_sso_status"
+# 감사 알림이 여는 탭(아이콘 없이 — `alerts.state` 의 `tab`).
+AUDIT_TAB_NAME = ADMIN_AREA_LOG_TAB.split(": ", 1)[-1]
 COPY_KEY = "sso_status"
 START_STEP_LABEL = "통합인증"
 RECENT_EVENT_LIMIT = 20
@@ -431,8 +435,8 @@ def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
 
 
 def _viewer_is_admin(cfg: SsoConfig) -> bool:
-    identity = sso_identity.verified_identity()
-    return identity is not None and access_store.is_admin(cfg, identity.loginid)
+    """관리자 판정 한 벌(`sso_identity.viewer_is_admin`) — `cfg` 는 지금 설정과 같다."""
+    return sso_identity.viewer_is_admin()
 
 
 def _admin_area_goto() -> tuple[str, str]:
@@ -501,6 +505,52 @@ def render_access_alerts() -> None:
     admin = _viewer_is_admin(cfg)
     _access_read_alert(cfg, admin=admin)
     _access_seed_alert(admin=admin)
+
+
+def _audit_goto() -> tuple[str, str]:
+    """감사 알림의 고칠 자리 — 어느 화면에서 떠도 Admin Area(「접속 · 작업 기록」 탭)다."""
+    return tab_label(ADMIN_AREA), ADMIN_AREA.href
+
+
+def render_audit_alerts() -> None:
+    """감사 기록 상태 알림 둘(`AD-12` 보관 안 됨 · `AD-13` 사슬 이상) — 매 회차 갈래 없이 부른다.
+
+    감사 기록기가 켜진 서버(통합인증 켜짐 기동 — 프로세스 동안 바뀌지 않는다)에서만 부르고, 꺼진
+    서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
+    서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다. 판정 재료는 메모리 표지뿐이다(파일 IO
+    없음). 관리자 · 점검자 회차에만 세우고 다른 회차는 해소로 부른다.
+    """
+    if not audit_recorder.enabled():
+        return
+    viewer = sso_identity.viewer_can_audit()
+    keeping = audit_shipper.keeping_problems(managed=sync_boot.is_managed()) if viewer else ()
+    alerts.state(
+        "AD-12",
+        scope=None,
+        content=keeping or None,
+        active=bool(keeping),
+        text="접속 · 작업 기록이 버킷에 보관되지 않습니다 — " + " · ".join(keeping),
+        full=(
+            "접속 · 작업 기록이 버킷에 보관되지 않습니다(" + " · ".join(keeping) + "). DB 동기화 "
+            "칸을 보고 「지금 올리기」 를 누릅니다. 계속되면 사외에 리뷰로 알립니다."
+        ),
+        tab=AUDIT_TAB_NAME,
+        goto=_audit_goto(),
+    )
+    late = audit_shipper.chain_problems() if viewer else ()
+    alerts.state(
+        "AD-13",
+        scope=None,
+        content=late or None,
+        active=bool(late),
+        text=f"접속 · 작업 기록 조각 {len(late)}개가 너무 늦게 왔습니다 — 일별 묶음 밖",
+        full=(
+            f"14일보다 늦게 온 기록 조각이 {len(late)}개 있습니다. 고치려 하지 않고 날짜를 점검 "
+            "기록에 적은 뒤 저장소 관리자 · 보안 담당에 알립니다."
+        ),
+        tab=AUDIT_TAB_NAME,
+        goto=_audit_goto(),
+    )
 
 
 def _conclusion(cfg: SsoConfig) -> str:
@@ -596,21 +646,28 @@ def render_sso_status() -> None:
             # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이고 로그인도 없다 — 켜짐에서만 싣는다.
             st.caption(refresh_count_line(), help=REFRESH_HELP)
             st.caption(last_claims_line())
-        events = recent_event_table()
-        if events.empty:
-            st.caption("최근 사건 없음")
-        else:
-            st.caption("최근 사건(새것 먼저)")
-            st.dataframe(events, hide_index=True, width="stretch")
+        # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(관리자 · 점검자)이
+        # 보인다 — 여기에는 누계 줄만 남기고 표는 그리지 않는다(같은 정보를 두 자리에 두지
+        # 않는다, UI-TXT-07). 리뷰용 「복사」 글(`status_text`)은 그대로 표까지 싣는다.
+        tables = not audit_recorder.enabled()
+        if tables:
+            events = recent_event_table()
+            if events.empty:
+                st.caption("최근 사건 없음")
+            else:
+                st.caption("최근 사건(새것 먼저)")
+                st.dataframe(events, hide_index=True, width="stretch")
         denied = denied_account_line()
         if denied is not None:
             st.caption(denied)
-            st.dataframe(denied_account_table(), hide_index=True, width="stretch")
+            if tables:
+                st.dataframe(denied_account_table(), hide_index=True, width="stretch")
         anonymous = anonymous_failure_line()
         if anonymous is not None:
             st.caption(anonymous, help=ANONYMOUS_HELP)
-            st.dataframe(
-                recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
-                hide_index=True,
-                width="stretch",
-            )
+            if tables:
+                st.dataframe(
+                    recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
+                    hide_index=True,
+                    width="stretch",
+                )
