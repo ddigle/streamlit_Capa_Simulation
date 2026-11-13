@@ -2095,12 +2095,13 @@ def _render_layout_editor(
         )
     if applied.stack is not None:
         # 비교는 편집기에 실린 설비명(+ 이번 새 호기)으로 하고, 둘 꼴은 이번 이름 바꿈을 따라간다.
-        # 올림만 바꾼 적용은 층의 호기 차례를 굳히지 않는다(`staged_stack`).
+        # 호기 차례를 손대지 않은 적용(올림만 바꿈)은 층의 호기 차례를 굳히지 않고, 차례를 바꾼
+        # 적용도 편집기 밖 호기(숨은 모듈 포함 — 묶음은 형제 곁)의 자리를 지킨다(`staged_stack`).
         received_ids = [str(item["id"]) for item in received.items]
         order_ids = received_ids + [unit.unit_id for unit in applied.created]
         order_groups = {
             str(item["id"]): str(item["group"]) if item.get("group") else None
-            for item in received.items
+            for item in (*received.items, *received.ghosts)
         }
         after_marks = applied.marks if applied.marks is not None else marks
         staged = staged_stack(

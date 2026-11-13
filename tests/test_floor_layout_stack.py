@@ -171,6 +171,8 @@ def test_a_raise_only_apply_does_not_pin_the_unit_order() -> None:
 
 
 def test_an_unchanged_unit_order_keeps_the_base_rows_and_a_new_order_replaces_them() -> None:
+    """차례를 바꾸면 보낸 차례가 서고, 편집기 밖 호기(`OLD` — `ids` 밖)는 base 에서 바로 아래에
+    있던 보낸 호기 위에 남는다."""
     ids = ["A", "B", "C"]
     base = FloorStack(units=("C", "A", "B", "OLD"))
     same = staged_stack(
@@ -180,7 +182,106 @@ def test_an_unchanged_unit_order_keeps_the_base_rows_and_a_new_order_replaces_th
     moved = staged_stack(
         FloorStack(units=("A", "C", "B")), base=base, ids=ids, groups={}, marks=MARKS
     )
-    assert moved.units == ("A", "C", "B")
+    assert moved.units == ("A", "C", "B", "OLD")
+
+
+def test_a_raise_only_apply_does_not_gather_module_siblings_apart_in_the_received_order() -> None:
+    """받은 차례(설비 마스터 행 차례)에서 같은 묶음 모듈이 떨어져 있어도, 호기 줄을 받은 그대로
+    보낸 적용(올림만 바꿈)은 호기 행을 두지 않는다 — 줄 세운 차례는 묶음을 모아 빈 순서의 차례와
+    달라 보이지만 호기 차례를 손대지 않았다(order2 리뷰 낮음 1 — 묶음이 모여 그림이 바뀌었다)."""
+    ids = ["M1-A", "U9", "M1-B", "U8"]
+    groups: dict[str, str | None] = {"M1-A": "M1", "U9": None, "M1-B": "M1", "U8": None}
+    applied = FloorStack(units=tuple(ids), raised=frozenset({"Z1"}))
+    staged = staged_stack(applied, base=EMPTY_STACK, ids=ids, groups=groups, marks=MARKS)
+    assert staged == FloorStack(raised=frozenset({"Z1"}))
+    assert ordered_ids(ids, groups, staged.units) == ids
+    # 차례를 바꾼 적용은 묶음째다 — 그때 묶음이 모인다(설계 A (가)).
+    moved = staged_stack(
+        FloorStack(units=("U8", "M1-A", "U9", "M1-B")),
+        base=EMPTY_STACK,
+        ids=ids,
+        groups=groups,
+        marks=MARKS,
+    )
+    assert moved.units == ("U8", "M1-A", "U9", "M1-B")
+    assert ordered_ids(ids, groups, moved.units) == ["U8", "M1-A", "M1-B", "U9"]
+
+
+def test_units_off_the_editor_keep_their_saved_place_when_other_units_are_reordered() -> None:
+    """편집기 기준일에 도면에 없는 호기(`X` — 보기 페이더로는 선다)의 저장된 자리는 다른 호기
+    차례를 바꿔 저장해도 남는다(order2 리뷰 낮음 2 — 빠져서 「적히지 않은 호기」 로 맨 위에
+    그려졌다). 호기 차례를 손대지 않은 적용 · 지금 규칙으로 되돌린 적용도 그 자리를 지키고,
+    편집기에 있지만 보내지 않은 호기(도면에서 뺀 · 다른 층으로 보낸 호기)는 버린다."""
+    ids = ["A", "B", "C"]
+    groups: dict[str, str | None] = {}
+    base = FloorStack(units=("X", "A", "B", "C"))
+    swapped = staged_stack(
+        FloorStack(units=("B", "A", "C")), base=base, ids=ids, groups=groups, marks=MARKS
+    )
+    assert swapped.units == ("X", "B", "A", "C")
+    assert ordered_ids(["X", "A", "B", "C"], groups, swapped.units) == ["X", "B", "A", "C"]
+    middle = staged_stack(
+        FloorStack(units=("C", "B", "A")),
+        base=FloorStack(units=("A", "X", "B", "C")),
+        ids=ids,
+        groups=groups,
+        marks=MARKS,
+    )
+    assert middle.units == ("C", "B", "A", "X")
+    raise_only = staged_stack(
+        FloorStack(units=("A", "B", "C"), raised=frozenset({"Z1"})),
+        base=base,
+        ids=ids,
+        groups=groups,
+        marks=MARKS,
+    )
+    assert raise_only.units == base.units and raise_only.raised == {"Z1"}
+    back_to_rule = staged_stack(
+        FloorStack(units=("A", "B")),
+        base=FloorStack(units=("X", "B", "A")),
+        ids=["A", "B"],
+        groups=groups,
+        marks=MARKS,
+    )
+    assert back_to_rule.units == ("X", "A", "B")
+    plain_rule = staged_stack(
+        FloorStack(units=("A", "B")),
+        base=FloorStack(units=("B", "A")),
+        ids=["A", "B"],
+        groups=groups,
+        marks=MARKS,
+    )
+    assert plain_rule.units == ()
+    dropped = staged_stack(
+        FloorStack(units=("C", "A")),
+        base=FloorStack(units=("A", "B", "C")),
+        ids=ids,
+        groups=groups,
+        marks=MARKS,
+    )
+    assert dropped.units == ("C", "A")
+
+
+def test_a_hidden_module_off_the_editor_stays_with_its_bundle() -> None:
+    """편집기 밖 모듈(숨은 모듈 — `groups` 에 묶음이 있다)은 형제 곁에 끼운다 — base 에서 아래에
+    형제가 없으면 첫 형제 바로 아래라, 묶음을 옮긴 차례의 덩이 자리가 그대로다."""
+    ids = ["P", "G1", "G2", "Q"]
+    groups: dict[str, str | None] = {"P": None, "G1": "G", "G2": "G", "Q": None, "GH": "G"}
+    base = FloorStack(units=("P", "GH", "G1", "G2", "Q"))
+    staged = staged_stack(
+        FloorStack(units=("P", "Q", "G1", "G2")), base=base, ids=ids, groups=groups, marks=MARKS
+    )
+    assert staged.units == ("P", "Q", "GH", "G1", "G2")
+    view = ["P", "GH", "G1", "G2", "Q"]
+    assert ordered_ids(view, groups, staged.units) == ["P", "Q", "GH", "G1", "G2"]
+    above = staged_stack(
+        FloorStack(units=("G1", "G2", "P", "Q")),
+        base=FloorStack(units=("P", "G1", "GH", "G2", "Q")),
+        ids=ids,
+        groups=groups,
+        marks=MARKS,
+    )
+    assert above.units == ("G1", "GH", "G2", "P", "Q")
 
 
 def test_same_stack_compares_the_drawn_order_and_the_live_raise() -> None:

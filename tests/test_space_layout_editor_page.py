@@ -570,6 +570,39 @@ def test_a_raise_only_apply_does_not_pin_the_unit_order_and_undoing_it_drops_the
     clear_equipment_repository()
 
 
+def test_a_raise_only_apply_keeps_module_siblings_where_the_master_rows_put_them(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """같은 Main 설비 모듈이 설비 마스터 행 차례에서 떨어져 있는 층(사이에 다른 호기)에서도, 호기
+    줄을 받은 그대로 보낸 적용(올림만 바꿈)은 호기 차례를 굳히지 않고 묶음을 모으지 않는다
+    (order2 리뷰 낮음 1 — 그 층 호기 차례 전체가 저장되고 그림이 바뀌었다)."""
+    module = {"Main 설비": "GRP-1", "Xsize": 10, "Ysize": 7}
+    master = _master(
+        {**module, "설비명": "G1-A", "X좌표": 50.0, "Y좌표": 37.0},
+        {"설비명": "U9", "X좌표": 80.0, "Y좌표": 10.0},
+        {**module, "설비명": "G1-B", "X좌표": 60.0, "Y좌표": 37.0},
+    )
+    app, _ = _open_editor(tmp_path, master)
+    data = editor_calls[-1]
+    received = [item["id"] for item in data["items"]]
+    assert received == ["EQ-01", "EQ-02", "G1-A", "U9", "G1-B"]
+    zone = {"id": "Z1", "kind": "zone", "x": 5, "y": 5, "w": 40, "h": 20}
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": [zone],
+        "stack": {"units": received, "raised": ["Z1"]},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    staged = app.session_state[PENDING_STACKS_KEY][("C1", "1F")]
+    assert staged.units == () and staged.raised == {"Z1"}
+    assert [item["id"] for item in editor_calls[-1]["items"]] == received
+    clear_equipment_repository()
+
+
 def test_a_rename_and_a_reorder_in_one_apply_keep_the_order_under_the_new_name(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

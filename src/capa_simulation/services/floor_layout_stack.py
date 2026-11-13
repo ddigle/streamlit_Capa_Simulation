@@ -235,6 +235,52 @@ def renamed_stack(stack: FloorStack, renames: Mapping[str, str]) -> FloorStack:
     )
 
 
+def _with_outside(
+    units: Sequence[str],
+    base: Sequence[str],
+    inside: Collection[str],
+    groups: Mapping[str, str | None],
+) -> tuple[str, ...]:
+    """보낸 호기 차례(`units`)에 지금 순서(`base`)의 편집기 밖 호기(`inside` 밖 — 편집기 기준일에
+    도면에 없어도 보기 범위에는 설 수 있다)를 base 자리대로 다시 끼운 차례.
+
+    끼우는 자리는 base 에서 바로 아래에 있던 보낸 호기의 위다(없으면 맨 아래). 모듈(`groups` 에
+    묶음이 있고 그 묶음 형제를 보냈다)은 형제 곁에 붙는다 — base 에서 아래에 형제가 있으면 그
+    형제 위, 없으면 첫 형제 바로 아래(덩이 자리가 바뀌지 않게). `inside` 의 보내지 않은 호기(이번에
+    도면에서 뺀 · 다른 층으로 보낸 호기)는 버린다."""
+    sent = set(units)
+    sent_groups = {group for unit in units if (group := groups.get(unit))}
+    after: dict[str | None, list[str]] = {}
+    before: dict[str, list[str]] = {}
+    previous: str | None = None
+    previous_in: dict[str, str] = {}
+    for unit in base:
+        group = groups.get(unit)
+        if unit in sent:
+            previous = unit
+            if group:
+                previous_in[group] = unit
+        elif unit in inside:
+            continue
+        elif group is not None and group in sent_groups:
+            if group in previous_in:
+                after.setdefault(previous_in[group], []).append(unit)
+            else:
+                before.setdefault(group, []).append(unit)
+        else:
+            after.setdefault(previous, []).append(unit)
+    if not after and not before:
+        return tuple(units)
+    out = list(after.get(None, ()))
+    for unit in units:
+        group = groups.get(unit)
+        if group:
+            out += before.pop(group, ())
+        out.append(unit)
+        out += after.get(unit, ())
+    return tuple(out)
+
+
 def staged_stack(
     applied: FloorStack,
     *,
@@ -245,13 +291,18 @@ def staged_stack(
 ) -> FloorStack:
     """편집기가 보낸 순서(`applied` — 편집기에 실린 설비명)를 대기분으로 둘 꼴로 좁힌다.
 
-    비교는 보낸 호기 가운데서 본 줄 세운 차례로 한다(`ids` — 받은 차례, 편집기에 실린 설비명 +
-    이번 적용의 새 호기).
+    `ids` 는 받은 차례(지금 규칙 — 편집기에 실린 설비명 + 이번 적용의 새 호기)이고, 편집기는 그것을
+    지금 순서(`base` — 대기분 또는 저장값)로 줄 세워 받았다. `groups` 는 모듈 묶음(숨은 모듈 포함
+    가능 — 편집기 밖 호기를 끼울 때 쓴다).
 
-    - 호기 차례가 빈 순서의 차례(지금 규칙)와 같으면 호기 행을 두지 않는다 — 올림만 바꾼 적용이
-      층의 호기 차례를 굳히지 않는다.
-    - 호기 차례가 지금 순서(`base` — 대기분 또는 저장값)의 차례와 같으면 그 호기 행을 그대로
-      둔다.
+    - 보낸 호기 줄이 편집기가 받은 차례 그대로면(줄 세우기 전 날 차례로 견준다) 호기 차례를 손대지
+      않은 적용이다 — base 의 호기 행을 그대로 둔다(빈 순서면 비운 채). 올림만 바꾼 적용이 층의 호기
+      차례를 굳히지 않고, 모듈 형제가 받은 차례에서 떨어져 있어도 묶음을 모으지 않는다.
+    - 줄 세운 차례가 base 의 차례와 같으면 base 의 호기 행을 그대로 둔다.
+    - 줄 세운 차례가 빈 순서의 차례(지금 규칙)와 같고 base 에 편집기 밖 호기가 없으면 호기 행을
+      비운다.
+    - 그 밖(차례를 바꿈)은 보낸 차례에 base 의 편집기 밖 호기를 제자리대로 끼운다(`_with_outside` —
+      편집기 기준일에 도면에 없는 호기의 자리가 다른 호기 순서 저장으로 사라지지 않게).
     - 올림은 이 층 영역 · 도형 가운데 보낸 것이다.
     """
     sent = set(applied.units)
@@ -259,14 +310,19 @@ def staged_stack(
     def drawn(units: Sequence[str]) -> list[str]:
         return [unit_id for unit_id in ordered_ids(ids, groups, units) if unit_id in sent]
 
+    raised = raised_ids(applied, marks)
+    received = drawn(base.units)
+    if list(applied.units) == received:
+        return FloorStack(units=base.units, raised=raised)
     order = drawn(applied.units)
-    if order == drawn(()):
-        units: tuple[str, ...] = ()
-    elif order == drawn(base.units):
+    kept = _with_outside(applied.units, base.units, set(ids), groups)
+    if order == received:
         units = base.units
+    elif order == drawn(()) and kept == applied.units:
+        units = ()
     else:
-        units = applied.units
-    return FloorStack(units=units, raised=raised_ids(applied, marks))
+        units = kept
+    return FloorStack(units=units, raised=raised)
 
 
 def same_stack(
