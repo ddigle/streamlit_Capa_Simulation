@@ -146,10 +146,12 @@ from capa_simulation.services.equipment_scenario import (
 )
 from capa_simulation.services.equipment_validation import (
     UnitGroupCollisionError,
+    UnitGroupSplitError,
     prepare_downtime_for_prepared_equipment,
     prepare_equipment_baseline,
     prepare_equipment_master,
     unit_group_collision_message,
+    unit_group_split_message,
 )
 from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
@@ -2701,6 +2703,12 @@ def build_import_review(
                     pasted=_equipment_names(incoming),
                     existing=_equipment_names(equipment),
                 )
+            ) from exc
+        except UnitGroupSplitError as exc:
+            # 저장 때만 막는 묶음 갈림 — 저장 길의 「설비 마스터에서 … 저장합니다」 는 여기서 맞지
+            # 않는다(갈림이 붙여넣을 표에서 왔을 수 있고, 이 자리는 미리보기다).
+            raise ValueError(
+                unit_group_split_message(exc.head, exc.column, exc.groups, pasting=True)
             ) from exc
         equipment = merged
         downtime = merge_downtime_rows(downtime, empty_downtime_schedule(), equipment=equipment)

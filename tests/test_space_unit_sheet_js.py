@@ -878,6 +878,165 @@ def test_an_apply_keeps_the_typed_cells_until_a_new_drawing() -> None:
     assert "input.type = 'text'" in opener and "type = 'date'" not in opener
 
 
+_UNDO_KEY_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  undo: input.cases.map(([view, key]) => sheetEditUndoKey(view, key)),
+}))
+"""
+
+
+def test_ctrl_z_on_a_window_row_undoes_like_the_undo_button() -> None:
+    """창 줄에 초점이 있을 때 Ctrl+Z 가 칸 고침을 되돌린다 — 창 키는 도면 단축키로 새지 않게 모두
+    막지만, 배치 편집에서 입력 칸 밖의 Ctrl(⌘)+Z 만은 「되돌리기」 단추와 같은 `undo()` 로
+    보낸다(Shift 를 더해도 — 편집기 몸과 같은 판정). 그 밖의 키는 여전히 도면으로 새지 않는다. 보기
+    화면 · 입력 칸 안(칸 글 · 펼침 찾기 칸)은 실행 취소가 아니다."""
+    body = _EDIT.search(JS)
+    assert body, "editor.js 에 // <sheet-edit> 구획이 없습니다"
+    row = {"ctrl": True, "meta": False, "key": "z", "tag": "TR"}
+    cases = [
+        [False, row],
+        [False, {**row, "ctrl": False, "meta": True, "key": "Z"}],
+        [False, {**row, "tag": "SECTION"}],
+        [True, row],
+        [False, {**row, "tag": "INPUT"}],
+        [False, {**row, "tag": "SELECT"}],
+        [False, {**row, "ctrl": False}],
+        [False, {**row, "key": "y"}],
+    ]
+    result = _node(body.group("body") + _UNDO_KEY_RUNNER, {"cases": cases})
+    assert result["undo"] == [True, True, True, False, False, False, False, False]
+    inside = JS[
+        JS.index("    sheetBox.onkeydown = (event) => {") : JS.index("    // 펼침 밖을 누르면")
+    ]
+    assert inside.index("escapeSheet(true)") < inside.index("sheetEditUndoKey(VIEW, {")
+    assert inside.index("undo()\n        keepKeysInSheet()") < inside.index(
+        "event.stopPropagation()"
+    )
+    # 편집기 몸의 실행 취소도 같은 판정(입력 칸 밖 · Ctrl 또는 ⌘)이다.
+    host = JS[JS.index("    const typing = event.target && ['INPUT', 'SELECT', 'TEXTAREA']") :]
+    assert "if (ctrl && event.key.toLowerCase() === 'z' && !typing)" in host[:400]
+
+
+_UNDO_PRESS_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  runs: input.cases.map((events) => {
+    let swallow = false
+    let runs = 0
+    for (const event of events) {
+      const step = sheetUndoPress(swallow, event)
+      swallow = step.swallow
+      if (step.run) runs += 1
+    }
+    return runs
+  }),
+}))
+"""
+
+
+def _down(*, dropped: bool, button: int = 0) -> dict[str, Any]:
+    return {"type": "pointerdown", "button": button, "dropped": dropped}
+
+
+def _click(detail: int = 1) -> dict[str, Any]:
+    return {"type": "click", "detail": detail}
+
+
+def test_undo_with_an_open_cell_drops_only_the_typed_text_by_touch_or_mouse() -> None:
+    """칸을 연 채 「되돌리기」 를 누르면 친 글 하나만 버린다 — 누름 시작(pointerdown)이 열린 칸을
+    확정 없이 닫고 그 누름의 click 을 삼킨다(`sheetUndoPress`). 사건 차례는 실제 편집기에서 잰
+    그대로다: 터치는 손을 떼면 pointerleave 가 click 보다 먼저 오고, 마우스도 단추 밖에 나갔다
+    들어와 떼면 click 이 온다 — 그 사이 pointerleave 로 표지를 풀면 click 이 앞 고침까지
+    되돌렸다. 누르다 단추 밖에서 떼면 click 이 단추에 오지 않아 표지가 남지만, 키보드 click(detail
+    0)은 삼키지 않고 다음 누름은 표지를 새로 정한다."""
+    body = _EDIT.search(JS)
+    assert body, "editor.js 에 // <sheet-edit> 구획이 없습니다"
+    leave = {"type": "pointerleave"}
+    up = {"type": "pointerup"}
+    cases = [
+        # 마우스 — pointerdown · pointerup · click.
+        [_down(dropped=True), up, _click()],
+        # 터치 — pointerdown · pointerup · pointerleave · click.
+        [_down(dropped=True), up, leave, _click()],
+        # 마우스가 단추 밖에 나갔다 들어와 뗌.
+        [_down(dropped=True), leave, up, _click()],
+        # 단추 밖에서 떼고(click 은 단추에 오지 않음) Enter.
+        [_down(dropped=True), leave, up, _click(0)],
+        # 터치가 굴리기로 바뀜(pointercancel — click 없음) 뒤 다음 누름.
+        [_down(dropped=True), {"type": "pointercancel"}, _down(dropped=False), _click()],
+        # 친 글이 칸을 바꾸지 않았으면 그 누름은 실행 취소다.
+        [_down(dropped=False), up, _click()],
+        # 칸을 닫은 누름 뒤 두 번째 누름은 실행 취소다.
+        [_down(dropped=True), _click(), _down(dropped=False), _click(2)],
+        # 왼쪽 아닌 단추는 표지를 세우지 않는다.
+        [_down(dropped=True, button=2), _click()],
+    ]
+    result = _node(body.group("body") + _UNDO_PRESS_RUNNER, {"cases": cases})
+    assert result["runs"] == [0, 0, 0, 1, 1, 1, 1, 1]
+
+    block = JS[JS.index("  function dropOpenSheetCell() {") : JS.index("  unplaceButton.onclick =")]
+    drop = block[: block.index("\n  }\n")]
+    assert "closeSheetCell(false)" in drop and "closeSheetCell(true)" not in drop
+    assert (
+        "sheetEditPut(sheetEditCells(), SHEET_EDIT, open.id, open.col, "
+        "String(open.input.value)).changed"
+    ) in drop
+    assert "if (event.button === 0 && !resetButton.disabled) dropOpenSheetCell()" in block
+    assert (
+        "const dropped = event.button === 0 && !undoButton.disabled && dropOpenSheetCell()"
+    ) in block
+    assert (
+        "S.undoSwallow = sheetUndoPress(S.undoSwallow, { type: 'pointerdown', "
+        "button: event.button, dropped }).swallow"
+    ) in block
+    click = block[block.index("  undoButton.onclick = (event) => {") :]
+    assert "sheetUndoPress(S.undoSwallow, { type: 'click', detail: event.detail })" in click
+    assert click.index("S.undoSwallow = press.swallow") < click.index("if (press.run) undo()")
+    assert "onpointerleave" not in block and "onpointercancel" not in block
+    # 「처음 상태로」 의 click 은 그대로 칸 · 배치를 모두 처음으로 돌린다.
+    reset = JS[JS.index("  resetButton.onclick = () => {") :]
+    assert reset.index("resetSheetEdit()") < reset.index("initFromData()")
+    # 다른 곳 누름(열린 칸의 blur)은 여전히 확정이다.
+    opener = JS[JS.index("  function openSheetCell(") : JS.index("  function closeSheetCell(")]
+    assert "input.onblur = () => closeSheetCell(true)" in opener
+
+
+def test_a_locked_reset_or_undo_press_lands_on_its_wrapper_and_only_commits() -> None:
+    """잠긴 「처음 상태로」 · 「되돌리기」 는 누름을 받지 않는다 — 잠긴 단추는 pointer-events 가
+    없어 감싼 칸(`.sle-tiphost`)이 누름을 받는다. 열린 칸은 다른 곳 누름처럼 blur 로 확정되고, 그
+    확정이 단추를 풀어도 click 은 누름을 받은 감싼 칸에 가 단추 동작(처음으로 · 실행 취소)은
+    일어나지 않는다(실제 편집기에서 마우스 · 터치로 잼). 이 CSS 가 빠지면 잠긴 단추가 누름을 받아
+    확정 뒤 단추 동작까지 돈다."""
+    locked = ".sle-tiphost > button:disabled, .sle-area.is-locked :disabled"
+    assert f"{locked} {{ pointer-events: none; }}" in CSS
+    for name in ("sle-undo", "sle-reset"):
+        wrapped = re.search(
+            rf'<span class="sle-tiphost[^"]*"[^>]*><button type="button" class="{name}"', HTML
+        )
+        assert wrapped, name
+    assert "resetButton.parentElement.onpointerdown" not in JS
+    assert "undoButton.parentElement.onpointerdown" not in JS
+
+
+def test_a_check_carries_the_seq_where_the_window_last_emptied() -> None:
+    """고친 칸이 0개가 되면(되돌리기 · 처음 상태로) 묻지 않으므로, 칸이 빈 자리의 seq 를 `base` 로
+    기억해 다음 확인마다 싣는다 — 서버는 그보다 뒤의 판정만 「이미 알린 칸」 의 앞 판정으로
+    쓴다(`space_status._check_sheet_request`). 「처음 상태로」 도 그 자리를 새로 잡고 seq 를 올려
+    늦게 온 앞 판정을 받지 않는다."""
+    send = JS[JS.index("  function sheetEditSend() {") : JS.index("  function adoptSheetEdit(")]
+    empty = send[send.index("if (!cells.size) {") : send.index("setTriggerValue('sheetCheck'")]
+    assert "S.sheetBase = S.sheetSeq" in empty
+    assert (
+        "setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, base: S.sheetBase || 0,"
+    ) in send
+    reset = JS[JS.index("  function resetSheetEdit() {") :]
+    reset = reset[: reset.index("\n  }\n")]
+    assert reset.index("S.sheetSeq = (S.sheetSeq || 0) + 1") < reset.index(
+        "S.sheetBase = S.sheetSeq"
+    )
+
+
 def test_a_painted_cell_keeps_its_long_text_tip_in_step_with_the_shown_text() -> None:
     """R2 리뷰 지적 6 — 18자를 넘는 칸의 브라우저 풍선(`title`)은 표를 그릴 때 받은 글로 달렸고 칸을
     고친 뒤에도 옛 글을 보였다. 칸을 칠할 때 지금 글로 다시 달고, 짧아지면 걷는다."""

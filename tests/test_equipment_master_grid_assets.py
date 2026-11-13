@@ -2869,6 +2869,53 @@ def test_the_view_is_kept_only_when_moves_and_inserted_rows_explain_the_new_list
     assert result == [True, True, True, False, False, False, False]
 
 
+_ROW_SHIFT_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify(input.cases.map((c) => keptRowShift(c[0], c[1], c[2]))))
+"""
+
+
+def test_the_kept_view_scrolls_by_how_far_the_first_seen_row_moved() -> None:
+    """지킨 보기(끼운 형제 줄 · 이름 바꿈만 목록을 바꾼 회차)에서 보던 첫 줄이 새 보이는 차례에서
+    옮겨 간 줄 수만큼 스크롤을 옮겨 보던 줄을 그 자리에 둔다(UI-PRF-03). 고친 줄이 위로 굴러간 채
+    「호기 상세」 에서 고치면 형제가 보던 줄 위에 끼워지고, 정렬한 표에서 정렬 칸을 고치면 고친 줄 ·
+    형제 줄이 보던 줄 앞뒤로 옮겨 간다 — 끼운 줄 수만 세면 정렬로 옮긴 몫이 남았다. 보던 줄이 고친
+    줄 자신이면 옮겨 간 그 줄을 따라간다(음수 — 위로). 늘어난 높이를 먼저 세워 옮긴 스크롤이 옛 끝에
+    잘리지 않는다."""
+    cases = [
+        # 정렬 없음 — 보던 줄(b, 앞 차례 2번째) 앞에 형제 셋이 끼워짐.
+        [["a", "t", "x", "y", "z", "b", "c"], "b", 2],
+        # 끼운 줄이 보던 줄 뒤.
+        [["a", "t", "x", "y", "b", "c"], "a", 0],
+        [["a", "t", "x", "b"], "t", 1],
+        [["x", "a", "b"], "b", 1],
+        # 보던 줄이 새 차례에 없음.
+        [["a", "b"], "q", 0],
+        # Model 오름차순 정렬 — g1 의 Model 을 Z → A 로 고쳐 g1 · 형제 g2 · g3 가 맨 앞으로(앞 차례
+        # a c d e f g1, 보던 줄 e 는 3번째).
+        [["g1", "g2", "g3", "a", "c", "d", "e", "f"], "e", 3],
+        # 같은 고침에서 보던 줄이 g1 자신(앞 차례 5번째)이면 그 줄을 따라 위로.
+        [["g1", "g2", "g3", "a", "c", "d", "e", "f"], "g1", 5],
+        # 보던 줄(c, 2번째) 앞의 a 가 정렬로 뒤로 가고 형제 a2 가 그 뒤에 끼워짐.
+        [["b", "c", "d", "a", "a2"], "c", 2],
+    ]
+    result: object = _node({"cases": cases}, _ROW_SHIFT_RUNNER)
+    assert result == [3, 0, 0, 1, 0, 3, -5, -1]
+    draw = _function("drawGrid")
+    kept = draw[draw.index("if (!keptView(before, after, moved, inserted)) {") :]
+    assert kept.index("S.resetScroll = true") < kept.index(
+        "const top = Math.floor(S.scroller.scrollTop / ROW_H)"
+    )
+    assert "renamed.has(id) ? renamed.get(id) : id" in kept
+    assert "keptRowShift(S.model.ordered.map((row) => row.id), keepTop.id, keepTop.top)" in draw
+    assert "insertedAbove" not in JS
+    shift = draw[draw.index("  if (shift) {") :]
+    assert shift.index("S.body.style.height = S.model.ordered.length * ROW_H + 'px'") < shift.index(
+        "S.scroller.scrollTop += shift * ROW_H"
+    )
+    assert shift.index("S.scroller.scrollTop += shift * ROW_H") < shift.index("paintWindow(S)")
+
+
 _GROUP_VIEW_RUNNER = (
     _BURST_RUNNER[: _BURST_RUNNER.index("const parentElement = new FakeNode('div')")]
     + r"""

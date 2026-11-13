@@ -1013,7 +1013,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「확인만」 은 콜백(`on_sheetCheck_change` → `_check_sheet_request` — 그린 회차의 편집본 · 표 조건 · 잠금 · 캔버스 · 오늘을 쥔
     `partial`, 편집본 세대가 바뀌었으면 버림)이 본문보다 먼저 같은 `check_sheet_cells` 로 판정해 세션 `space_sheet_verdict_v1`
     에 두고(다음 회차 data `sheetVerdict`) 새로 막힌 칸(설비명 · 칸 · 글 · 규칙이 앞 판정에 없던 것)만 `EQ-25` 로 낸다 — 편집본에는
-    넣지 않는다. 그 밖의 적용 거부(층 · FAB 편집기의 「적용하지 못했습니다」 · 다시 서는 사이의 누름)도 편집기 아래 글 상자 대신
+    넣지 않는다. 앞 판정은 요청의 `base`(브라우저에서 고친 칸이 마지막으로 빈 seq)보다 뒤의 seq 일 때만 쓴다 — 칸을 비운 뒤 같은
+    막힌 값을 다시 치면 다시 알린다. 그 밖의 적용 거부(층 · FAB 편집기의 「적용하지 못했습니다」 · 다시 서는 사이의 누름)도 편집기 아래 글 상자 대신
     `_refuse_apply`(알림창 · Alarm `FL-04` · `FL-03` + 한 번 더 돎)다(설계 규칙 UI-NTF-03 예외). 받은 적용은 쓴
     (설비명, 칸)(따라간 묶음 형제 포함)을 작업 공간 `stage_sheet_cells`(이번 이름 바꿈을 따라감)에 두고 세션
     `space_sheet_applied_v1` 를 올린다 — epoch 에 들어 같은 값으로 다듬어진 적용도 새 epoch 로 브라우저 칸을 비운다. 칸
@@ -1404,6 +1405,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이 층 도면에 보이는 대상이 5대(`ATTRACT_MOST`)를 넘거나 앞과 같으면 걸지 않는다. 화면 밖 테는 빼고, 확대 · 이동 · 크기 바뀜
     (`applyView`) · 새 epoch 에 걷는다(`stopAttract`). 움직임 줄이기 설정이면 윤곽(`sle-attract-still`)이다. 배치 편집의 「도면」 칸은 적용 전 편집으로 덮어
     쓴다(`sheetRows` — 트레이 = 미배치, 보낸 호기 「→ 층」). 창 안 키는 도면 단축키로 새지 않는다(`sheetBox.onkeydown` 이 멈춤).
+    배치 편집의 Ctrl(⌘)+Z 만은 입력 칸 밖이면 「되돌리기」 단추와 같은 `undo()` 다(순수 판정 `sheetEditUndoKey` — 편집기 몸과 같은
+    판정).
     상태는 브라우저에만 — 자리·크기·접힘 localStorage `capa.space.sheet.win.v1`, 열림·탭·필터·강조 sessionStorage
     `capa.space.sheet.state.v1`(탭 안 기억, 층·편집을 오가도 남음 — 필터는 칸 이름으로 남아 새 층의 값으로 다시 센다). 받은 표는
     지문(`S.sheetDataKey`)이 바뀐 회차에만 다시 그리고, 상태 줄을 고칠 때마다(`updateStatus` 끝) 같은 그림이면 고른 줄 표시만
@@ -1419,9 +1422,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     칸 열쇠로 견줌) · F2 · Enter · 글자 = 열기(고르기 칸은 `<select>`, 그 밖은 글 칸 — 날짜도 글), Enter · Tab 확정, Esc 취소,
     Delete 비우기. 칸 안 키는 도면 · 창 단축키로 새지 않는다. 고친 칸 `S.sheetCells` 는 적용 전 편집이라 「적용 안 한 변경」
     셈 · 「적용」(적용값 `cells` — **보내기 전에 지우지 않는다**, 새 epoch · 「처음 상태로」 에서만 비움) · 되돌리기 op `cell`
-    에 든다. 「고른 호기」 탭의 그림 열쇠는 보이는 줄 id 모음(정렬)이라 같은 묶음 안 누르기로 표를 다시 만들지 않고, 열린 칸이
+    에 든다. 칸을 연 채 「처음 상태로」 · 「되돌리기」 를 누르면 누름 시작(`onpointerdown` — 칸을 확정하는 blur 보다 먼저)에서
+    열린 칸을 확정 없이 닫는다(`dropOpenSheetCell` — 버릴 글이 「확인만」 으로 나가 `EQ-25` 가 서지 않게). 「되돌리기」
+    는 친 글이 칸을 바꾸는 글이었으면 그 누름의 click 을 삼켜(`S.undoSwallow` — 순수 판정 `sheetUndoPress`) 앞 고침까지
+    되돌리지 않는다. 표지는 pointerdown 마다 새로 정하고 pointerleave 로 풀지 않으며(터치는 손을 떼면 pointerleave 가 click
+    보다 먼저다), 키보드 click(detail 0)은 삼키지 않는다. 잠긴 두 단추는 누름을 받지 않아(`.sle-tiphost > button:disabled` 의
+    pointer-events 없음) 다른 곳 누름처럼 칸을 확정하고, 확정이 단추를 풀어도 click 은 감싼 칸에 가 단추 동작은 없다. 「고른 호기」 탭의 그림 열쇠는 보이는 줄 id 모음(정렬)이라 같은 묶음 안 누르기로 표를 다시 만들지 않고, 열린 칸이
     있으면 다시 그리기를 닫을 때까지 미룬다. 칸을 확정하거나(Delete 포함) 칸 되돌리기마다 트리거 `sheetCheck`({epoch, seq —
-    오르기만 함, cells — 고친 칸 전부})로 「확인만」 묻고(`sheetEditSend` — 고친 칸이 없으면 묻지 않고 판정을 걷는다), 판정은
+    오르기만 함, base — 고친 칸이 마지막으로 빈 seq `S.sheetBase`, cells — 고친 칸 전부})로 「확인만」 묻고(`sheetEditSend` —
+    고친 칸이 없으면 묻지 않고 판정을 걷으며 그 seq 가 다음 base 다. 「처음 상태로」(`resetSheetEdit`)도 seq 를 올려 그 자리를 잡는다), 판정은
     data `sheetVerdict`({epoch, seq, blocked, follow})를 **마지막으로 보낸 seq** 일 때만 받는다. 막힌 칸으로 거부한 적용은 data
     `sheetRefused`({epoch, nonce, blocked, follow})를 nonce 마다 한 번 받는다. 둘 다 막힌 칸(판정한 글이 지금 친 글과 같을
     때만)을 빨갛게 짚고 「적용」 을 잠근다(까닭 「「호기 정보」 막힌 칸 n개」). 색은 팔레트 `cell-*`(설비 마스터 표 토큰
@@ -1516,7 +1525,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       보이지 않으면(`__visible`) 이름도 숨기며 일부만 보이면 보이는 모듈의 바깥 상자(`shownRange`)에 세운다. 글자는 화면
       12px × 글자 배율 s(아래 「배율 글자」)에서 범위 폭에 맞춰 줄고 가운데는 범위 높이의 0.16 배까지이며 7px(`UNIT_LABEL_MIN_PX`) 아래면 숨는다 — 다만
       모듈 칸 이름표가 하나도 서 있지 않은 묶음의 가운데 이름은 7px 알약이 범위 안에 들면 7px 로 선다. 위·아래 알약이
-      영역 위·아래 끝을 넘으면 범위 안쪽 띠로 뒤집는다(`groupNameSpot`).
+      영역 위·아래 끝을 넘으면 범위 안쪽 띠로 뒤집는다(`groupNameSpot`). 반입 일정 두 줄 알약은 바깥으로 더 자라는 둘째 줄
+      높이(fd × 1.25 — `extra`)까지 넣어 잰다 — 들지 않으면 안쪽 띠로 뒤집는다.
   - **베이·머리 크기·배율 글자**(2026-11-03 사용자 요청 — 사양 (나)). 순수 판정은 `// <mark-look>`(모양 값 `cleanLook`·`lookText`·
     `lookValue`, 그리기 `arrowShape`·`bayShape`·`placeLocal`·`bayAutoSize`, `bayNumber`·`lineDash`)와 `// <text-scale>`
     (`textScale`·`calloutScale`·`scaledText`) 구획이고 `tests/test_space_mark_look_js.py` 가 node 로 돌려 파이썬
@@ -2301,7 +2311,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     문구를 글자 그대로(예시·다섯 개 제한까지) 고정한다(`tests/test_equipment_validation_issues.py`).
   - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사와 모듈 묶음 일곱 칸
     갈림(`unit_group_mixed_saved` — 여섯 칸 `unit_group_mixed` 바로 뒤, `_MasterFrame.saving`)은 저장할 때만 `today=` 로
-    돈다 — 리비전 읽기·계산·발행·복제는 막지 않고 저장(편집본 전체)만 막는다(2026-11-12 사용자 답 3-3 (나) · P2). 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
+    돈다 — 리비전 읽기·계산·발행·복제는 막지 않고 저장(편집본 전체)만 막는다(2026-11-12 사용자 답 3-3 (나) · P2). 그 저장 거부
+    글은 예시 목록(`['…']`) 대신 끝에 고칠 곳을 쉼표 글로 짚는다(`UnitGroupSplitError` — 머리 · 칸 · 갈린 묶음 전부를 싣고, 글은
+    `unit_group_split_message` 한 곳: 「… — 설비 마스터에서 {묶음, …} 묶음의 {칸} 칸을 맞춘 뒤 저장합니다」, 묶음은 앞 다섯에
+    넘으면 「외 n」. Space 배치 저장 · 리비전 저장 · 사이드바 저장이 같은 글). 엑셀 · CSV 붙여넣기 미리보기는 이 예외를 잡아
+    「… — 붙여넣을 표나 설비 마스터에서 … 맞춘 뒤 다시 미리봅니다」(`pasting=True`)로 다시 알린다. 여섯 칸은
+    다른 거부와 같은 예시 목록 꼴(앞 다섯)이다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
   - Space 위치: 레이아웃표시는 도면 대상인지만 가르고 좌표를 강제하지 않는다(없으면 미배치 칸). X·Y·크기는 짝으로 둔다.
   - Main 설비는 다른 행의 설비명과 같을 수 없다(`UnitGroupCollisionError`, 문구는 `unit_group_collision_message` 한 곳).
 - `src/capa_simulation/services/equipment_grid.py` — 가용설비 현황 「설비 마스터」 탭 표(개편 B1 — 표 컴포넌트는 아래
@@ -2355,7 +2370,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옮긴 id(`moved` — 새 호기 이름 바꿈, 칸 초안 열쇠 옮김도 역 patch)·뺀 자리(`unloaded`)로 되돌린다(통째 단계만 사진). 출납 ·
     「한 단계 되돌리기」 결과의 `moved` · `inserted` 는 다음 표 그리기에 한 번 싣고(`equipment_master_tab.VIEW_CARRY_KEY` →
     `grid_data(moved=, inserted=)`), 브라우저는 목록 지문이 그것으로만 바뀐 회차에 고름·기준 줄·스크롤을 지킨다(`keptView` —
-    설계 규칙 UI-PRF-03). 이름 바꿈을
+    설계 규칙 UI-PRF-03). 끼운 줄이 있는 그 회차에는 보던 첫 줄이 새 보이는 차례에서 옮겨 간 줄 수 × 줄 높이만큼 스크롤을
+    옮긴다(`keptRowShift` — 고친 줄이 위로 굴러간 채 호기 상세에서 고쳐 형제가 그 앞에 끼워진 때도, 정렬한 칸 값이 바뀌어 줄이
+    앞뒤로 옮겨 간 때도. 보던 줄이 고친 줄 자신이면 그 줄을 따라간다. 늘어난 높이를 먼저 세운다). 이름 바꿈을
     되돌리면 `renamed`·`moved` 를 거꾸로 알린다. 이름을 바꾸면 행 조각을 든 단계와 그 앞 단계를 버린다(`after_row_steps`). 통째
     단계는 하나다. 세션에는 `undo_to_state` 의 기본형으로 둔다.
   - **새 호기**(개편 단계 C — 오른쪽 「새 호기」 칸): `new_unit_check(초안 39칸 글, frames, saved_master, renames, context)` 한

@@ -877,17 +877,18 @@ export default function (component) {
   // Main 설비명 글자 가운데 {x, y}(데이터 좌표, Y 는 위로) — 범위 r {x, y, w, h}, 위치 position, 글자 크기 fs·바깥 틈 gap(데이터
   // 단위), 영역 높이 canvasH. 가운데는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를
   // 띄워 붙인다 — 알약 바탕(높이 fs × 1.6)의 반만큼 더 비킨다. 바깥 알약이 영역 위·아래 끝을 넘으면(범위가 영역 끝에 닿은
-  // 묶음 — 좁은 화면에서는 화면 밖으로 잘린다) 범위 안쪽 위·아래 띠로 뒤집는다.
-  function groupNameSpot(r, position, fs, gap, canvasH) {
+  // 묶음 — 좁은 화면에서는 화면 밖으로 잘린다) 범위 안쪽 위·아래 띠로 뒤집는다. extra 는 바깥으로 더 자라는 알약 높이(반입 일정
+  // 둘째 줄 — `arrivalPill` 의 fd × 1.25)다 — 두 줄 알약은 그 높이까지 영역 안에 들 때만 바깥에 선다.
+  function groupNameSpot(r, position, fs, gap, canvasH, extra = 0) {
     const x = r.x + r.w / 2
     const half = fs * 0.8
     if (position === 'top') {
       const outside = r.y + r.h + gap + half
-      return { x, y: outside + half <= canvasH + 1e-9 ? outside : r.y + r.h - gap - half }
+      return { x, y: outside + half + extra <= canvasH + 1e-9 ? outside : r.y + r.h - gap - half }
     }
     if (position === 'bottom') {
       const outside = r.y - gap - half
-      return { x, y: outside - half >= -1e-9 ? outside : r.y + gap + half }
+      return { x, y: outside - half - extra >= -1e-9 ? outside : r.y + gap + half }
     }
     return { x, y: r.y + r.h / 2 }
   }
@@ -2574,6 +2575,22 @@ export default function (component) {
       tip: blocked ? hit.message : lock || (group ? `같은 Main 설비(${group}) 모듈 ${size}줄에 함께` : ''),
     }
   }
+  // 창 안 키가 실행 취소인가 — 배치 편집(보기 아님)에서 입력 칸(input · select · textarea) 밖의 Ctrl(⌘)+Z 다(Shift 를 더해도 —
+  // 편집기 몸의 실행 취소와 같은 판정). key 는 {ctrl, meta, key, tag(초점 받은 요소의 tagName)}.
+  function sheetEditUndoKey(view, key) {
+    if (view || !key || !(key.ctrl || key.meta)) return false
+    return String(key.key || '').toLowerCase() === 'z' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(String(key.tag || ''))
+  }
+  // 「되돌리기」 단추의 사건 하나(`event` {type, button, dropped, detail})를 받아 click 을 삼킬 표지 `swallow` 를 넘긴다 — {swallow,
+  // run}, run 이 참이면 실행 취소다. 누름 시작(pointerdown)이 열린 칸의 바꾸는 글을 버렸으면(`dropped`) 그 누름의 click 은 친 글
+  // 버리기 하나라 삼킨다. 표지는 pointerdown 마다 새로 정하고 click 이 쓰고 걷는다 — pointerleave · pointercancel 로 풀지 않는다
+  // (터치는 손을 떼면 pointerleave 가 click 보다 먼저 오고, 마우스도 나갔다 들어와 떼면 click 이 온다). 키보드 · 코드의 click
+  // (detail 0)은 누름이 아니라 삼키지 않는다 — 누르다 단추 밖에서 떼어 남은 표지가 다음 Enter 를 먹지 않게.
+  function sheetUndoPress(swallow, event) {
+    if (event.type === 'pointerdown') return { swallow: event.button === 0 && Boolean(event.dropped), run: false }
+    if (event.type === 'click') return { swallow: false, run: !(swallow && event.detail > 0) }
+    return { swallow: Boolean(swallow), run: false }
+  }
   // </sheet-edit>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
@@ -3001,7 +3018,8 @@ export default function (component) {
         }
       }
       if (fs === null) continue
-      const spot = groupNameSpot(range, position, fs, 2 * upp, H())
+      // 두 줄 알약은 바깥으로 둘째 줄 높이만큼 더 자란다 — 그 높이로 자리를 잰다(캔버스 위 · 아래 끝을 넘지 않게).
+      const spot = groupNameSpot(range, position, fs, 2 * upp, H(), fd ? fd * 1.25 : 0)
       const cy = H() - spot.y
       const pillW = Math.min(range.w, Math.max(labelEm(name) * fs, fd ? labelEm(arrivalText(once)) * fd : 0) + fs * 0.9)
       const node = el('g', { class: `sle-group-name-tag is-${position}${fd ? ' has-arrival' : ''}` })
@@ -7552,7 +7570,30 @@ export default function (component) {
     const list = expanded(selectedItems())
     if (list.length) zoomToBox(bbox(list))
   }
-  undoButton.onclick = undo
+  // 칸을 연 채 「처음 상태로」 · 「되돌리기」 를 누르면 누름 시작(칸을 확정하는 blur 보다 먼저)에서 열린 칸을 확정 없이 닫는다 —
+  // 버릴 값이 「확인만」 으로 나가 막힌 값이면 창에 빨간 칸이 없는데 `EQ-25` 가 선다. 「되돌리기」 는 친 글이 칸을
+  // 바꾸는 글이면 그 누름이 친 글 버리기 하나다 — 앞 고침까지 되돌리지 않게 그 누름의 click 을 삼킨다(`sheetUndoPress` — 칸을
+  // 확정하고 그것을 되돌린 것과 같은 결과). 잠긴 단추는 누름을 받지 않는다(`.sle-tiphost > button:disabled` 의 pointer-events
+  // 없음 — 감싼 칸이 받는다): 다른 곳 누름처럼 칸을 확정하고, 그 확정이 단추를 풀어도 click 은 감싼 칸에 가 단추 동작은 없다.
+  function dropOpenSheetCell() {
+    const open = S.sheetOpen
+    if (!open) return false
+    const typed = sheetEditPut(sheetEditCells(), SHEET_EDIT, open.id, open.col, String(open.input.value)).changed
+    closeSheetCell(false)
+    return typed
+  }
+  resetButton.onpointerdown = (event) => {
+    if (event.button === 0 && !resetButton.disabled) dropOpenSheetCell()
+  }
+  undoButton.onpointerdown = (event) => {
+    const dropped = event.button === 0 && !undoButton.disabled && dropOpenSheetCell()
+    S.undoSwallow = sheetUndoPress(S.undoSwallow, { type: 'pointerdown', button: event.button, dropped }).swallow
+  }
+  undoButton.onclick = (event) => {
+    const press = sheetUndoPress(S.undoSwallow, { type: 'click', detail: event.detail })
+    S.undoSwallow = press.swallow
+    if (press.run) undo()
+  }
   unplaceButton.onclick = () => removeItems(selectedItems())
   resetButton.onclick = () => {
     resetSheetEdit()
@@ -8822,13 +8863,18 @@ export default function (component) {
       renderMenu()
     }
     q('.sle-sheet-menu-done').onclick = () => closeMenu(true)
-    // 창 안의 키는 도면 단축키(호기 옮기기·지우기·실행 취소 …)로 새지 않는다.
+    // 창 안의 키는 도면 단축키(호기 옮기기·지우기 …)로 새지 않는다. 배치 편집의 Ctrl(⌘)+Z 만은 입력 칸 밖이면 「되돌리기」
+    // 단추와 같은 실행 취소다 — 창 칸 고침도 되돌리기 기록에 든다(입력 칸 안의 Ctrl+Z 는 그 칸의 글 되돌리기 그대로).
     sheetBox.onkeydown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault()
         // 단축키 판이 열려 있으면 판이 먼저다(도구 줄에서 Tab 으로 창에 들어온 때) — 편집기 몸의 차례와 같다.
         if (keysOpen()) setKeysOpen(false, true)
         else escapeSheet(true)
+      } else if (sheetEditUndoKey(VIEW, { ctrl: event.ctrlKey, meta: event.metaKey, key: event.key, tag: event.target && event.target.tagName })) {
+        event.preventDefault()
+        undo()
+        keepKeysInSheet()
       }
       event.stopPropagation()
     }
@@ -8907,6 +8953,9 @@ export default function (component) {
   function resetSheetEdit() {
     closeSheetCell(false, null, true)
     S.sheetCells = new Map()
+    // 칸이 0개가 된 자리 — 늦게 온 앞 판정은 받지 않고, 다음 확인은 앞 판정을 「이미 알린 칸」 으로 쓰지 않는다(`sheetEditSend`).
+    S.sheetSeq = (S.sheetSeq || 0) + 1
+    S.sheetBase = S.sheetSeq
     S.sheetVerdict = null
     S.sheetCursor = null
     S.sheetPress = null
@@ -9105,17 +9154,20 @@ export default function (component) {
   // 칸 확정마다 서버에 「확인만」 묻는다(2026-11-12 시안 보드 답 5-6 메모 「호기 정보 창에서 즉시 막고, 알람으로」 · Q1 (가)) —
   // 고친 칸 전부를 보내 마지막 상태로 판정받으므로 입력 차례를 타지 않고, 편집본에는 넣지 않는다. 판정은 data `sheetVerdict`(같은
   // seq)로 와 막힌 칸이 친 값 그대로 빨갛게 서고(알림은 파이썬이 낸다) 「적용」 이 잠긴다. 고친 칸이 없으면 묻지 않고 판정을 걷는다.
+  // 고친 칸이 0개가 된 자리의 seq 는 다음 요청들의 `base` 다 — 서버는 그보다 뒤의 판정만 「이미 알린 칸」 으로 쓴다(칸을 비운 뒤
+  // 같은 막힌 값을 다시 치면 다시 알린다. 앞 판정을 받기 전에 잇달아 친 확인은 같은 base 라 두 번 알리지 않는다).
   function sheetEditSend() {
     if (!SHEET_EDIT) return
     const cells = sheetEditCells()
     S.sheetSeq = (S.sheetSeq || 0) + 1
     if (!cells.size) {
+      S.sheetBase = S.sheetSeq
       S.sheetVerdict = null
       S.sheetEditRev = (S.sheetEditRev || 0) + 1
       updateStatus()
       return
     }
-    setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, cells: sheetEditPayload(cells) })
+    setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, base: S.sheetBase || 0, cells: sheetEditPayload(cells) })
   }
   // 적용 거부(data `sheetRefused` — {epoch, nonce, blocked, follow}, 파이썬 `verdict_payload`)를 한 번 받는다 — 막힌 칸이 빨강 + 까닭
   // 풍선으로 서고 「적용」 이 잠긴다. 고친 칸은 그대로다(같은 epoch).

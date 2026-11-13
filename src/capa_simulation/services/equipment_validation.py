@@ -539,6 +539,11 @@ def _listed(head: str, examples: Sequence[object]) -> ValueError:
     return ValueError(f"{head}: {list(examples)}")
 
 
+def _listed_groups(head: str, column: str, groups: Sequence[object]) -> ValueError:
+    """여섯 칸(읽기에도 막음)이 갈린 묶음의 거부 — 다른 거부와 같은 예시 목록 꼴(앞 다섯)이다."""
+    return _listed(head, list(groups)[:_GROUP_SPLIT_EXAMPLES])
+
+
 def _listed_values(head: str, values: pd.Series, rows: pd.Series) -> ValueError:
     """`rows` 줄의 `values` 앞 다섯을 예시로 단 거부 — 거부할 때만 센다."""
     return _listed(head, values.loc[rows].head(5).tolist())
@@ -648,7 +653,9 @@ def _check_unit_group_mixed(master: _MasterFrame) -> Iterator[_Finding]:
     """한 설비의 모듈 행끼리 공정·공정구분·투자구분·동·층이 같아야 한다. 화면 필터가 이 값들로
     행을 거르므로, 다르면 필터가 설비를 쪼개 지분 합이 1 이 아니게 된다. 칸 결과는 묶음 모든 줄의
     그 칸이다."""
-    yield from _mixed_findings(master, UNIT_CONSISTENT_COLUMNS, _unit_group_mixed_message)
+    yield from _mixed_findings(
+        master, UNIT_CONSISTENT_COLUMNS, _unit_group_mixed_message, _listed_groups
+    )
 
 
 def _check_unit_group_mixed_saved(master: _MasterFrame) -> Iterator[_Finding]:
@@ -657,14 +664,20 @@ def _check_unit_group_mixed_saved(master: _MasterFrame) -> Iterator[_Finding]:
     갈린 묶음이 있으면 그 리비전이 열리지 않게 된다. 칸 결과는 묶음 모든 줄의 그 칸이다."""
     if not master.saving:
         return
-    yield from _mixed_findings(master, UNIT_SAVE_CONSISTENT_COLUMNS, _unit_group_saved_message)
+    yield from _mixed_findings(
+        master, UNIT_SAVE_CONSISTENT_COLUMNS, _unit_group_saved_message, UnitGroupSplitError
+    )
 
 
 def _mixed_findings(
-    master: _MasterFrame, columns: Sequence[str], message: Callable[[str], str]
+    master: _MasterFrame,
+    columns: Sequence[str],
+    message: Callable[[str], str],
+    error: Callable[[str, str, Sequence[object]], ValueError],
 ) -> Iterator[_Finding]:
     """칸마다 값이 둘 이상인 묶음(Main 설비가 같은 행)의 모든 줄. 빈 칸도 한 값으로 견준다 — 한
-    모듈만 비어도 갈림이다."""
+    모듈만 비어도 갈림이다. 거부 글은 `error`(머리 · 칸 · 갈린 묶음 전부 — 몇 개를 보일지는 글이
+    정한다)다."""
     result = master.data
     parents = result[PARENT_EQUIPMENT_COLUMN]
     named = parents.notna()
@@ -680,7 +693,7 @@ def _mixed_findings(
             keys.isin(groups),
             head,
             column,
-            error=partial(_listed, head, groups.tolist()[:5]),
+            error=partial(error, head, column, groups.tolist()),
         )
 
 
@@ -1039,6 +1052,46 @@ _COLLISION_HEAD = (
     "Main 설비는 다른 행의 설비명과 같을 수 없습니다 — 설비 행과 그 설비를 Main 설비로 적은 모듈 "
     "행을 함께 두면 같은 설비가 두 번 세어집니다"
 )
+
+
+_GROUP_SPLIT_EXAMPLES = 5
+
+
+def unit_group_split_message(
+    head: str, column: str, groups: Sequence[str], *, pasting: bool = False
+) -> str:
+    """일곱 칸(저장 때만 막는 칸)이 갈린 묶음의 거부 글 — 예시 목록(`['…']`) 대신 끝에 고칠 곳(그
+    묶음 · 그 칸)을 쉼표 글로 짚는다. 묶음은 앞 다섯이고 넘으면 「외 n」 을 붙인다 — 보인 다섯만
+    고치고 다시 막히지 않게.
+
+    저장 길(설비 마스터 리비전 저장 · Space 배치 저장 · 사이드바 설비 저장)은 편집본 전체를
+    저장하니 고칠 곳이 설비 마스터다. `pasting` 이면 엑셀 · CSV 붙여넣기 미리보기다 — 갈림이
+    붙여넣을 표에서 왔을 수도 있으니 두 곳을 다 짚고, 저장이 아니라 다시 미리본다.
+    """
+    shown = list(groups)[:_GROUP_SPLIT_EXAMPLES]
+    more = len(groups) - len(shown)
+    names = ", ".join(shown) + (f" 외 {more}" if more > 0 else "")
+    if pasting:
+        return (
+            f"{head} — 붙여넣을 표나 설비 마스터에서 {names} 묶음의 {column} 칸을 맞춘 뒤 "
+            "다시 미리봅니다"
+        )
+    return f"{head} — 설비 마스터에서 {names} 묶음의 {column} 칸을 맞춘 뒤 저장합니다"
+
+
+class UnitGroupSplitError(ValueError):
+    """일곱 칸(저장 때만)이 갈린 묶음의 저장 거부 — `head`(규칙 글) · `column` · `groups`(갈린 묶음
+    전부, Main 설비 이름)를 그대로 싣는다. 글은 저장 길의 `unit_group_split_message` 이고, 붙여넣기
+    미리보기는 이 예외를 잡아 `pasting=True` 글로 다시 알린다(문자열을 다시 읽지 않는다)."""
+
+    def __init__(self, head: str, column: str, groups: Sequence[object]) -> None:
+        self.head = head
+        self.column = column
+        self.groups = tuple(str(group) for group in groups)
+        super().__init__(unit_group_split_message(head, column, self.groups))
+
+    def __reduce__(self) -> tuple[type[UnitGroupSplitError], tuple[str, str, tuple[str, ...]]]:
+        return (type(self), (self.head, self.column, self.groups))
 
 
 class UnitGroupCollisionError(ValueError):

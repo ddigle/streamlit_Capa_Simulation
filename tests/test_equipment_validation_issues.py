@@ -24,6 +24,10 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from capa_simulation.services.equipment_contract import (
+    UNIT_CONSISTENT_COLUMNS,
+    UNIT_SAVE_CONSISTENT_COLUMNS,
+)
 from capa_simulation.services.equipment_csv import merge_equipment_rows, read_equipment_update
 from capa_simulation.services.equipment_samples import sample_equipment_master
 from capa_simulation.services.equipment_units import module_group_warnings
@@ -32,6 +36,7 @@ from capa_simulation.services.equipment_validation import (
     CellParseError,
     MasterIssue,
     UnitGroupCollisionError,
+    UnitGroupSplitError,
     area_code_warnings,
     coerce_master_cell,
     equipment_master_issues,
@@ -317,8 +322,12 @@ BROKEN = {
     "모듈 행 담당자가 갈림(저장 때만)": _Broken(
         "unit_group_mixed_saved",
         _mixed_owner,
-        _exact("같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다: ['GRP-1']"),
+        _exact(
+            "같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다 — 설비 마스터에서 GRP-1 묶음의 "
+            "담당자 칸을 맞춘 뒤 저장합니다"
+        ),
         _modules,
+        UnitGroupSplitError,
         today=ANCHOR,
     ),
     "Y/N 밖": _Broken(
@@ -444,6 +453,9 @@ def test_each_rule_is_the_same_rule_for_saving_and_for_cells(name: str) -> None:
         assert str(caught.value).startswith("Space 블럭이 층 캔버스 범위를 벗어났습니다")
     elif case.rule == "required_text":
         assert str(caught.value) == f"{first.message}."
+    elif case.rule == "unit_group_mixed_saved":
+        # 저장 때만 막는 묶음 갈림은 예시 목록 대신 고칠 곳(설비 마스터의 그 묶음 · 칸)을 짚는다.
+        assert str(caught.value).startswith(f"{first.message} — 설비 마스터에서 ")
     else:
         assert str(caught.value).startswith(f"{first.message}: ")
     assert [(issue.position, issue.column) for issue in blocking if issue.rule == case.rule] == (
@@ -659,8 +671,10 @@ def test_a_group_split_in_a_save_only_column_reads_but_does_not_save(
     head = f"같은 Main 설비의 모듈 행은 {column} 칸이 같아야 합니다"
     with pytest.raises(ValueError) as caught:
         prepare_equipment_master(frame, today=ANCHOR)
-    assert str(caught.value) == f"{head}: ['GRP-1']"
-    assert "(가)" not in str(caught.value)
+    assert str(caught.value) == (
+        f"{head} — 설비 마스터에서 GRP-1 묶음의 {column} 칸을 맞춘 뒤 저장합니다"
+    )
+    assert "(가)" not in str(caught.value) and "[" not in str(caught.value)
     saved = [
         (issue.position, issue.column, issue.message, issue.blocking)
         for issue in equipment_master_issues(frame, today=ANCHOR)
@@ -675,8 +689,53 @@ def test_a_blank_beside_a_value_splits_a_group_for_saving() -> None:
     frame.at[1, "Maker"] = None
 
     prepare_equipment_master(frame)
-    with pytest.raises(ValueError, match=r"Maker 칸이 같아야 합니다: \['GRP-1'\]"):
+    with pytest.raises(
+        ValueError, match=r"Maker 칸이 같아야 합니다 — 설비 마스터에서 GRP-1 묶음의 "
+    ):
         prepare_equipment_master(frame, today=ANCHOR)
+
+
+def _six_groups() -> pd.DataFrame:
+    """앞 열두 줄을 둘씩 묶은 여섯 설비(GRP-1 ~ GRP-6) — 묶음 안 열세 칸이 같아 그대로는 막히지
+    않는다."""
+    frame = _master()
+    for k in range(6):
+        first, second = 2 * k, 2 * k + 1
+        for column in (*UNIT_CONSISTENT_COLUMNS, *UNIT_SAVE_CONSISTENT_COLUMNS):
+            frame.at[second, column] = frame.at[first, column]
+        frame.loc[[first, second], "Main 설비"] = f"GRP-{k + 1}"
+        frame.loc[[first, second], "환산비"] = 0.5
+    prepare_equipment_master(frame, today=ANCHOR)
+    return frame
+
+
+def test_a_save_only_split_over_five_groups_says_how_many_more() -> None:
+    """일곱 칸 갈림의 저장 거부 글은 앞 다섯 묶음 뒤에 「외 n」 을 붙인다 — 보인 다섯만 고치고
+    저장하면 나머지 때문에 또 막히므로 글이 할 일 전부처럼 읽히면 안 된다. 거부 예외는 갈린 묶음
+    전부를 싣는다. 여섯 칸 갈림은 다른 거부와 같은 예시 목록(앞 다섯) 그대로다."""
+    frame = _six_groups()
+    for k in range(6):
+        frame.at[2 * k + 1, "담당자"] = "다른 담당자"
+
+    with pytest.raises(UnitGroupSplitError) as caught:
+        prepare_equipment_master(frame, today=ANCHOR)
+    assert str(caught.value) == (
+        "같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다 — 설비 마스터에서 GRP-1, GRP-2, "
+        "GRP-3, GRP-4, GRP-5 외 1 묶음의 담당자 칸을 맞춘 뒤 저장합니다"
+    )
+    assert caught.value.groups == tuple(f"GRP-{k}" for k in range(1, 7))
+
+    frame = _six_groups()
+    for k in range(6):
+        other = "개발" if frame.at[2 * k, "투자구분"] != "개발" else "양산"
+        frame.at[2 * k + 1, "투자구분"] = other
+    with pytest.raises(ValueError) as caught_six:
+        prepare_equipment_master(frame)
+    assert not isinstance(caught_six.value, UnitGroupSplitError)
+    assert str(caught_six.value) == (
+        "같은 Main 설비의 모듈 행은 투자구분이 같아야 합니다: "
+        "['GRP-1', 'GRP-2', 'GRP-3', 'GRP-4', 'GRP-5']"
+    )
 
 
 def test_usage_basis_and_the_layout_flag_never_block_a_split_group() -> None:

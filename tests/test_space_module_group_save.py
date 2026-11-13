@@ -514,7 +514,10 @@ def test_a_stored_group_split_in_a_save_only_column_still_reads_but_its_next_sav
 
     with pytest.raises(ValueError) as refused:
         repository.save_equipment(_request(current.equipment))
-    assert str(refused.value) == "같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다: ['GRP-2']"
+    assert str(refused.value) == (
+        "같은 Main 설비의 모듈 행은 담당자 칸이 같아야 합니다 — 설비 마스터에서 GRP-2 묶음의 "
+        "담당자 칸을 맞춘 뒤 저장합니다"
+    )
     assert len(repository.list_revisions()) == 1
 
     fixed = current.equipment.copy()
