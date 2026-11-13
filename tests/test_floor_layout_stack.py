@@ -8,8 +8,26 @@
 
 from __future__ import annotations
 
-import pytest
+from pathlib import Path
+from typing import Any
 
+import duckdb
+import pandas as pd
+import pytest
+from test_equipment_availability import _baseline, _downtime, _equipment
+from test_equipment_scenario_repository import (
+    _clone,
+    _request,
+    _scenario,
+    _session,
+    _set,
+    _with_unit,
+)
+
+from capa_simulation.persistence.equipment_repository import (
+    DuckDBEquipmentRepository,
+    EquipmentLayoutScopeError,
+)
 from capa_simulation.services.floor_layout_mark import (
     FloorLayoutMark,
     floor_layout_fingerprint,
@@ -203,3 +221,211 @@ def test_a_stack_changes_the_floor_fingerprint_with_or_without_labels() -> None:
             MARKS, labels, raised
         )
     assert stack_fingerprint(stack) != stack_fingerprint(FloorStack(units=("k-b",)))
+
+
+# ------------------------------------------------------------------ 저장소(설비 0034)
+
+KEY = ("C1", "1F")
+ZONE = {"id": "Z1", "kind": "zone", "x": 10, "y": 10, "w": 20, "h": 10}
+SHAPE = {"id": "S1", "kind": "shape", "x": 40, "y": 10, "w": 10, "h": 10}
+
+
+def _seeded(tmp_path: Path) -> DuckDBEquipmentRepository:
+    repository = DuckDBEquipmentRepository(tmp_path / "equipment.duckdb")
+    repository.initialize()
+    repository.save_snapshot(_baseline(), _equipment(), _downtime())
+    return repository
+
+
+def _stack_rows(repository: DuckDBEquipmentRepository) -> list[tuple[str, str, int]]:
+    with duckdb.connect(str(repository.database_path), read_only=True) as connection:
+        return [
+            (str(kind), str(ref), int(number))
+            for kind, ref, number in connection.execute(
+                "SELECT item_kind, item_ref, stack_no FROM equipment_ops.floor_layout_stack "
+                "ORDER BY item_kind, stack_no, item_ref"
+            ).fetchall()
+        ]
+
+
+def _base(repository: DuckDBEquipmentRepository) -> tuple[None, str]:
+    return None, floor_layout_fingerprint(
+        repository.load_floor_layout_marks(*KEY),
+        repository.load_floor_group_labels(*KEY),
+        repository.load_floor_layout_stack(*KEY),
+    )
+
+
+def _save_stack(
+    repository: DuckDBEquipmentRepository,
+    stack: FloorStack,
+    *,
+    equipment: pd.DataFrame | None = None,
+    marks: list[dict[str, Any]] | None = None,
+    base: tuple[None, str] | None = None,
+) -> None:
+    repository.save_space_layout(
+        _baseline(),
+        _equipment() if equipment is None else equipment,
+        _downtime(),
+        floor_stacks={KEY: stack},
+        floor_marks={KEY: marks} if marks is not None else None,
+        floor_layout_bases={KEY: base if base is not None else _base(repository)},
+    )
+
+
+def test_an_official_save_writes_unit_keys_and_raised_marks_and_reads_them_back(
+    tmp_path: Path,
+) -> None:
+    repository = _seeded(tmp_path)
+    repository.save_space_layout(
+        _baseline(), _equipment(), _downtime(), floor_marks={KEY: [ZONE, SHAPE]}
+    )
+    revisions = len(repository.list_revisions())
+
+    _save_stack(repository, FloorStack(units=("EQ-02", "EQ-01"), raised=frozenset({"Z1"})))
+
+    keys = repository.load_official_snapshot()
+    assert keys is not None
+    names = {key: name for name, key in keys.unit_keys.items()}
+    stored = repository.load_floor_layout_stack(*KEY)
+    assert [names[key] for key in stored.units] == ["EQ-02", "EQ-01"]
+    assert stored.raised == frozenset({"Z1"})
+    # 층 현행값이라 리비전을 만들지 않는다. 호기 행은 아래 → 위 1 부터, 올림은 0.
+    assert len(repository.list_revisions()) == revisions
+    assert [(kind, number) for kind, _, number in _stack_rows(repository)] == [
+        ("raised", 0),
+        ("unit", 1),
+        ("unit", 2),
+    ]
+    assert repository.load_floor_layout_stack("C1", "2F") == EMPTY_STACK
+
+
+def test_a_renamed_unit_keeps_its_place_and_a_new_unit_gets_its_key_in_the_same_save(
+    tmp_path: Path,
+) -> None:
+    repository = _seeded(tmp_path)
+    equipment = _with_unit(_equipment(), "EQ-03", 50.0)
+    _save_stack(repository, FloorStack(units=("EQ-03", "EQ-02", "EQ-01")), equipment=equipment)
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    assert repository.load_floor_layout_stack(*KEY).units == (
+        keys["EQ-03"],
+        keys["EQ-02"],
+        keys["EQ-01"],
+    )
+    # 이름을 바꿔도 키가 같아 순서 행은 그대로 그 호기를 가리킨다.
+    renamed = _set(snapshot.equipment, "EQ-01", "설비명", "EQ-01B")
+    assert snapshot.schedule is not None
+    downtime = _set(snapshot.downtime, "EQ-01", "설비명", "EQ-01B")
+    repository.save_equipment(
+        _request(
+            snapshot,
+            snapshot.schedule.equipment_scenario_id,
+            equipment=renamed,
+            downtime=downtime,
+            renames={"EQ-01B": "EQ-01"},
+        )
+    )
+    after = repository.load_official_snapshot()
+    assert after is not None
+    names = {key: name for name, key in after.unit_keys.items()}
+    stored = repository.load_floor_layout_stack(*KEY).units
+    assert [names[key] for key in stored] == ["EQ-03", "EQ-02", "EQ-01B"]
+
+
+def test_a_unit_deleted_before_the_save_is_skipped_not_refused(tmp_path: Path) -> None:
+    repository = _seeded(tmp_path)
+    _save_stack(repository, FloorStack(units=("EQ-02", "GONE", "EQ-01")))
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    assert repository.load_floor_layout_stack(*KEY).units == (keys["EQ-02"], keys["EQ-01"])
+
+
+def test_marks_saved_without_a_stack_sweep_raised_rows_of_deleted_marks(tmp_path: Path) -> None:
+    repository = _seeded(tmp_path)
+    repository.save_space_layout(
+        _baseline(), _equipment(), _downtime(), floor_marks={KEY: [ZONE, SHAPE]}
+    )
+    _save_stack(repository, FloorStack(raised=frozenset({"Z1", "S1"})))
+    assert repository.load_floor_layout_stack(*KEY).raised == frozenset({"Z1", "S1"})
+
+    repository.save_space_layout(
+        _baseline(),
+        _equipment(),
+        _downtime(),
+        floor_marks={KEY: [SHAPE]},
+        floor_layout_bases={KEY: _base(repository)},
+    )
+    assert repository.load_floor_layout_stack(*KEY).raised == frozenset({"S1"})
+    # 같은 저장에서 지운 요소의 올림은 쓰지 않는다 — 텍스트 같은 다른 종류도.
+    _save_stack(
+        repository,
+        FloorStack(raised=frozenset({"S1", "Z1"})),
+        marks=[SHAPE, {"id": "T1", "kind": "text", "x": 1, "y": 1, "w": 4, "h": 2}],
+    )
+    assert repository.load_floor_layout_stack(*KEY).raised == frozenset({"S1"})
+
+
+def test_a_stack_save_from_an_old_base_is_refused(tmp_path: Path) -> None:
+    repository = _seeded(tmp_path)
+    seen = _base(repository)
+    _save_stack(repository, FloorStack(units=("EQ-02", "EQ-01")), base=seen)
+
+    with pytest.raises(ValueError, match="겹친 순서·Main 설비명 위치를 다른 사용자가 먼저"):
+        _save_stack(repository, FloorStack(units=("EQ-01", "EQ-02")), base=seen)
+    # 요소만 고친 저장도 남이 먼저 바꾼 순서 위에서는 거부된다.
+    with pytest.raises(ValueError, match="다른 사용자가 먼저"):
+        repository.save_space_layout(
+            _baseline(),
+            _equipment(),
+            _downtime(),
+            floor_marks={KEY: [ZONE]},
+            floor_layout_bases={KEY: seen},
+        )
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    assert repository.load_floor_layout_stack(*KEY).units == (keys["EQ-02"], keys["EQ-01"])
+
+
+def test_a_hypothetical_role_refuses_a_stack_and_writes_nothing(tmp_path: Path) -> None:
+    repository = _seeded(tmp_path)
+    scenario_id = _clone(repository).equipment_scenario_id
+    session = _session(repository, scenario_id)
+    revisions = len(repository.list_schedule_revisions(scenario_id))
+
+    with pytest.raises(EquipmentLayoutScopeError, match="겹친 순서는 공식 설비 시나리오에서"):
+        repository.save_equipment(
+            _request(
+                session,
+                scenario_id,
+                equipment=_set(session.equipment, "EQ-01", "X좌표", 50.0),
+                floor_stacks={KEY: FloorStack(units=("EQ-02", "EQ-01"))},
+            )
+        )
+    assert _stack_rows(repository) == []
+    assert len(repository.list_schedule_revisions(scenario_id)) == revisions
+
+
+def test_stack_rows_leave_hypothetical_layout_digests_alone(tmp_path: Path) -> None:
+    """순서는 가정 배치 차이에 들지 않는다 — 행이 있어도 가정 리비전의 배치 지문이 그대로다."""
+    repository = _seeded(tmp_path)
+    scenario_id = _clone(repository).equipment_scenario_id
+    session = _session(repository, scenario_id)
+    moved = repository.save_equipment(
+        _request(session, scenario_id, equipment=_set(session.equipment, "EQ-01", "X좌표", 50.0))
+    )
+    assert moved.schedule is not None
+    digest = moved.schedule.layout_digest
+    overlay = repository.load_layout_overlay(moved.schedule.schedule_revision_id).digest()
+
+    _save_stack(repository, FloorStack(units=("EQ-02", "EQ-01"), raised=frozenset()))
+
+    after = _scenario(repository, scenario_id)
+    assert after.latest_schedule_revision_id == moved.schedule.schedule_revision_id
+    assert repository.load_layout_overlay(moved.schedule.schedule_revision_id).digest() == overlay
+    summary = repository.schedule_revision_summary(moved.schedule.schedule_revision_id)
+    assert summary is not None and summary.layout_digest == digest

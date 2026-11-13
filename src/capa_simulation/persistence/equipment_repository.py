@@ -142,6 +142,14 @@ from capa_simulation.services.floor_layout_profile import (
     FloorLayoutProfile,
     normalize_canvas_size,
 )
+from capa_simulation.services.floor_layout_stack import (
+    RAISABLE_KINDS,
+    STACK_RAISED,
+    STACK_UNIT,
+    FloorStack,
+    raised_ids,
+    stack_keys,
+)
 from capa_simulation.services.floor_state import FloorStates, prepare_floor_states
 from capa_simulation.services.korean_particle import (
     object_particle,
@@ -202,7 +210,7 @@ _WRITE_LOCK = threading.RLock()
 # 저장본이 하나도 없을 때의 출발 리비전 표시. 편집본이 「빈 저장소에서 나왔다」는 뜻이다.
 EMPTY_REVISION_TOKEN = "empty"
 # 한 층 편집을 시작할 때 본 저장값: (저장된 캔버스 — 없으면 None, 저장된 도면 요소·Main 설비명
-# 위치의 지문 `floor_layout_fingerprint`).
+# 위치·겹친 순서의 지문 `floor_layout_fingerprint`).
 FloorLayoutBase = tuple[CanvasSize | None, str]
 
 
@@ -848,7 +856,9 @@ class EquipmentSaveRequest:
       `EquipmentLayoutRoleChanged`(설계 6-2).
     - `expected_release_no` 는 화면이 본 최신 공식 번호(발행이 없었으면 0)다. None 이면 대조하지
       않는다. 이번 저장이 공식 발행을 할 때만 대조한다.
-    - 층 값(`floor_*`)은 지금 그대로 같은 트랜잭션에 쓰는 층 현행값이다.
+    - 층 값(`floor_*`)은 지금 그대로 같은 트랜잭션에 쓰는 층 현행값이다. `floor_stacks` 는 층의
+      겹친 순서(설비 `0034`)이고 호기는 **편집본의 설비명** 꼴이다 — 저장이 같은 트랜잭션의 호기
+      키(새 호기 키 포함)로 옮겨 쓴다. 공식 배치에서만 받는다.
     """
 
     baseline: pd.DataFrame
@@ -868,6 +878,7 @@ class EquipmentSaveRequest:
     floor_marks: Mapping[FloorKey, Sequence[Mapping[str, object]]] | None = None
     floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None
     floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None
+    floor_stacks: Mapping[FloorKey, FloorStack] | None = None
     group_renames: Mapping[str, str] = MappingProxyType({})
     expected_layout_role: str | None = None
 
@@ -1134,6 +1145,7 @@ class DuckDBEquipmentRepository:
         base_revision_id: str | None = None,
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
         floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None,
+        floor_stacks: Mapping[FloorKey, FloorStack] | None = None,
     ) -> EquipmentSnapshot:
         """호환 래퍼(시험·스크립트용 — 화면·캐시는 `save_equipment` 를 쓴다).
 
@@ -1154,6 +1166,7 @@ class DuckDBEquipmentRepository:
                 base_revision_id=base_revision_id,
                 floor_layout_bases=floor_layout_bases,
                 floor_group_labels=floor_group_labels,
+                floor_stacks=floor_stacks,
             ),
             mode="always",
             official_target=True,
@@ -1175,6 +1188,7 @@ class DuckDBEquipmentRepository:
         base_revision_id: str | None = None,
         floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None = None,
         floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None = None,
+        floor_stacks: Mapping[FloorKey, FloorStack] | None = None,
     ) -> EquipmentSnapshot | None:
         """`save_snapshot` 과 같되, 세 표가 공식 시나리오 최신 쌍과 같으면 **리비전을 만들지 않고**
         캔버스·도면 요소·Main 설비명 위치만 쓴다. 하나라도 바뀌면 두 쪽을 함께 쓰고 발행한다.
@@ -1190,6 +1204,7 @@ class DuckDBEquipmentRepository:
                 base_revision_id=base_revision_id,
                 floor_layout_bases=floor_layout_bases,
                 floor_group_labels=floor_group_labels,
+                floor_stacks=floor_stacks,
             ),
             mode="if_any",
             official_target=True,
@@ -1231,6 +1246,10 @@ class DuckDBEquipmentRepository:
         for (building, floor), labels in (request.floor_group_labels or {}).items():
             _require_floor_key(building, floor)
             prepared_labels[(building, floor)] = prepare_group_labels(labels)
+        stacks: dict[FloorKey, FloorStack] = {}
+        for (building, floor), stack in (request.floor_stacks or {}).items():
+            _require_floor_key(building, floor)
+            stacks[(building, floor)] = stack
         if (
             request.expected_layout_role is not None
             and request.expected_layout_role not in LAYOUT_ROLES
@@ -1291,23 +1310,31 @@ class DuckDBEquipmentRepository:
                     "층 캔버스를 바꾸지 "
                     "않았습니다."
                 )
+            if role == "overlay" and stacks:
+                # 겹친 순서는 공식 층 현행값뿐이다 — 가정 배치 차이(0031)에 담지 않는다(보드 7-4).
+                raise EquipmentLayoutScopeError(
+                    "겹친 순서는 공식 설비 시나리오에서 고칩니다 — "
+                    f"{with_topic_particle(f'「{scenario.scenario_name}」')} 가정 설비 시나리오라 "
+                    "순서를 바꾸지 않았습니다."
+                )
             base_overlay = read_layout_overlay(connection, base_summary)
             stored_canvases = _stored_floor_canvases(connection)
             _require_floor_layout_bases(
                 connection,
                 stored_canvases,
                 request.floor_layout_bases or {},
-                changed={*canvases, *(request.floor_marks or {}), *prepared_labels},
+                changed={*canvases, *(request.floor_marks or {}), *prepared_labels, *stacks},
                 overlay=base_overlay,
             )
             if role == "official" and base_overlay:
-                touched = {*(request.floor_marks or {}), *prepared_labels} & set(
+                touched = {*(request.floor_marks or {}), *prepared_labels, *stacks} & set(
                     base_overlay.floors
                 )
                 if touched:
                     raise EquipmentLayoutScopeError(
                         "이 리비전에는 이 설비 시나리오가 가정이던 때의 배치 차이가 있어 도면 요소·"
-                        "Main 설비명 위치를 고치지 않았습니다 — 최신 리비전을 불러와 고치세요."
+                        "Main 설비명 위치·겹친 순서를 고치지 않았습니다 — 최신 리비전을 불러와 "
+                        "고치세요."
                     )
             # 저장 시점에만 층 캔버스 상한과 실적 날짜(오늘보다 늦음·반입실적 > Qual실적)를
             # 강제한다. 다시 읽을 때는 둘 다 넘기지 않아 이미 저장된 리비전이 계속 열린다.
@@ -1565,11 +1592,26 @@ class DuckDBEquipmentRepository:
                     _replace_floor_marks(connection, building, floor, marks)
                 for (building, floor), labels in prepared_labels.items():
                     _replace_group_labels(connection, building, floor, labels)
+                # 겹친 순서 — 설비명을 같은 트랜잭션의 호기 키(새 호기 키 포함)로 옮긴다. 키가 없는
+                # 설비명(그 사이 설비 마스터에서 지운 호기)과 이 층에 없는 영역 · 도형의 올림은 읽을
+                # 때 건너뛰는 행이라 쓰지 않는다.
+                for (building, floor), stack in stacks.items():
+                    floor_marks = prepared_marks.get((building, floor))
+                    if floor_marks is None:
+                        floor_marks = _stored_floor_marks(connection, building, floor)
+                    keyed = stack_keys(stack, edit.unit_keys)
+                    _replace_floor_stack(
+                        connection,
+                        building,
+                        floor,
+                        FloorStack(units=keyed.units, raised=raised_ids(stack, floor_marks)),
+                    )
                 floors_written = (
                     floors_written
                     or bool(canvases)
                     or bool(prepared_marks)
                     or bool(prepared_labels)
+                    or bool(stacks)
                 )
             if role == "overlay" and write_schedule and schedule_id is not None:
                 # 끝 확인(I4) — 깨진 가정 리비전이 남아 그 세션이 공식으로 밀리지 않게 커밋 전에
@@ -2584,6 +2626,13 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return _stored_group_labels(connection, building, floor)
 
+    def load_floor_layout_stack(self, building: str, floor: str) -> FloorStack:
+        """한 층의 겹친 순서(설비 `0034`) — 호기는 **호기 키** 꼴 아래 → 위, 올림은 요소 id. 행이
+        없으면 빈 순서(지금과 같이 그린다)이고, 지금 없는 호기 · 요소의 행도 그대로 낸다(그리는
+        쪽이 건너뛴다 — `floor_layout_stack.ordered_ids` · `raised_ids`)."""
+        with self._connect() as connection:
+            return _stored_floor_stack(connection, building, floor)
+
     def replace_floor_layout_marks(
         self,
         building: str,
@@ -3282,6 +3331,7 @@ def _wrapper_request(
     base_revision_id: str | None,
     floor_layout_bases: Mapping[FloorKey, FloorLayoutBase] | None,
     floor_group_labels: Mapping[FloorKey, Mapping[str, object]] | None,
+    floor_stacks: Mapping[FloorKey, FloorStack] | None = None,
 ) -> EquipmentSaveRequest:
     """호환 래퍼의 저장 요청 — 시나리오와 출발 일정은 쓰기 잠금 안에서 공식으로 정한다."""
     return EquipmentSaveRequest(
@@ -3296,6 +3346,7 @@ def _wrapper_request(
         floor_marks=floor_marks,
         floor_layout_bases=floor_layout_bases,
         floor_group_labels=floor_group_labels,
+        floor_stacks=floor_stacks,
     )
 
 
@@ -4316,10 +4367,11 @@ def _require_floor_layout_bases(
     changed: set[FloorKey],
     overlay: LayoutOverlay,
 ) -> None:
-    """바꾸려는 층의 캔버스·요소·Main 설비명 위치가 편집을 시작할 때 본 값 그대로인가. 아니면
-    다른 사람이 먼저 저장한 것이다 — 요소·위치는 층 전체 교체라 옛 목록으로 덮으면 그 사람의 것이
-    지워진다. 기대 지문은 편집을 시작할 때 본 **합친** 값(공식 현행 ⊕ 출발 리비전의 배치 차이
-    `overlay`)이다 — 공식 대상은 차이가 비어 지금과 같다(설계 6-1)."""
+    """바꾸려는 층의 캔버스·요소·Main 설비명 위치·겹친 순서가 편집을 시작할 때 본 값 그대로인가.
+    아니면 다른 사람이 먼저 저장한 것이다 — 요소·위치·순서는 층 전체 교체라 옛 목록으로 덮으면 그
+    사람의 것이 지워진다. 기대 지문은 편집을 시작할 때 본 **합친** 값(공식 현행 ⊕ 출발 리비전의
+    배치 차이 `overlay`)이다 — 공식 대상은 차이가 비어 지금과 같다(설계 6-1). 겹친 순서는 공식
+    현행값 그대로다(가정 차이에 들지 않는다)."""
     for key in sorted(changed & set(bases)):
         expected_canvas, expected_marks = bases[key]
         stored_canvas = stored_canvases.get(key)
@@ -4337,13 +4389,14 @@ def _require_floor_layout_bases(
                 effective_group_labels(
                     _stored_group_labels(connection, *key), overlay.labels_for(key)
                 ),
+                _stored_floor_stack(connection, *key),
             )
             == expected_marks
         )
         if not (same_canvas and same_marks):
             raise ValueError(
-                f"{key[0]} {key[1]} 의 캔버스·도면 요소·Main 설비명 위치를 다른 사용자가 먼저 "
-                "바꿔 저장하지 않았습니다. 저장 안 한 배치를 버리고 다시 고치세요."
+                f"{key[0]} {key[1]} 의 캔버스·도면 요소·겹친 순서·Main 설비명 위치를 다른 사용자가 "
+                "먼저 바꿔 저장하지 않았습니다. 저장 안 한 배치를 버리고 다시 고치세요."
             )
 
 
@@ -4563,11 +4616,13 @@ def _replace_floor_marks(
     floor: str,
     marks: Sequence[FloorLayoutMark],
 ) -> None:
-    """그 층 요소를 지우고 받은 순서대로 다시 넣는다(`source_row_no` 가 그리는 순서)."""
+    """그 층 요소를 지우고 받은 순서대로 다시 넣는다(`source_row_no` 가 그리는 순서). 겹친 순서의
+    올림 행 가운데 이제 이 층 영역 · 도형이 아닌 것(지운 요소)을 함께 걷는다."""
     connection.execute(
         "DELETE FROM equipment_ops.floor_layout_mark WHERE building = ? AND floor_name = ?",
         [building, floor],
     )
+    _prune_raised(connection, building, floor, marks)
     if not marks:
         return
     frame = pd.DataFrame(
@@ -4623,6 +4678,66 @@ def _stored_group_labels(
         [building, floor],
     ).fetchall()
     return {str(row[0]): str(row[1]) for row in rows}
+
+
+def _stored_floor_stack(
+    connection: duckdb.DuckDBPyConnection, building: str, floor: str
+) -> FloorStack:
+    """한 층의 겹친 순서 행(호기 키 꼴). 모르는 `item_kind` 의 행은 건너뛴다."""
+    rows = connection.execute(
+        """
+        SELECT item_kind, item_ref
+        FROM equipment_ops.floor_layout_stack
+        WHERE building = ? AND floor_name = ?
+        ORDER BY item_kind, stack_no, item_ref
+        """,
+        [building, floor],
+    ).fetchall()
+    units: list[str] = []
+    raised: set[str] = set()
+    for kind, ref in rows:
+        if kind == STACK_UNIT and str(ref) not in units:
+            units.append(str(ref))
+        elif kind == STACK_RAISED:
+            raised.add(str(ref))
+    return FloorStack(units=tuple(units), raised=frozenset(raised))
+
+
+def _replace_floor_stack(
+    connection: duckdb.DuckDBPyConnection, building: str, floor: str, stack: FloorStack
+) -> None:
+    """그 층의 겹친 순서를 지우고 받은 것을 다시 넣는다 — 호기는 아래 → 위 1 부터, 올림은 0."""
+    connection.execute(
+        "DELETE FROM equipment_ops.floor_layout_stack WHERE building = ? AND floor_name = ?",
+        [building, floor],
+    )
+    rows = [
+        [building, floor, STACK_UNIT, unit, number]
+        for number, unit in enumerate(stack.units, start=1)
+    ] + [[building, floor, STACK_RAISED, mark_id, 0] for mark_id in sorted(stack.raised)]
+    if rows:
+        connection.executemany(
+            "INSERT INTO equipment_ops.floor_layout_stack "
+            "(building, floor_name, item_kind, item_ref, stack_no) VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+
+
+def _prune_raised(
+    connection: duckdb.DuckDBPyConnection,
+    building: str,
+    floor: str,
+    marks: Sequence[FloorLayoutMark],
+) -> None:
+    """올림 행 가운데 그 층 영역 · 도형이 아닌 것을 걷는다(요소를 갈아 끼울 때)."""
+    keep = sorted(mark.mark_id for mark in marks if mark.kind in RAISABLE_KINDS)
+    held = ", ".join("?" for _ in keep)
+    connection.execute(
+        "DELETE FROM equipment_ops.floor_layout_stack "
+        "WHERE building = ? AND floor_name = ? AND item_kind = ?"
+        + (f" AND item_ref NOT IN ({held})" if keep else ""),
+        [building, floor, STACK_RAISED, *keep],
+    )
 
 
 def _replace_group_labels(
