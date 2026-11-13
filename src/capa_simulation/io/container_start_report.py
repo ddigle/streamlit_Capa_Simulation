@@ -42,17 +42,22 @@ BDQ_TOKEN_ENV: Final = "CAPA_BDQ_TOKEN"
 # 사람이 남의 계정으로 조회하게 된다. 어댑터(`getData(user_name=…)`)와 시작 스크립트(토큰 파일
 # 이름)가 함께 읽는다.
 BDQ_USER_NAME_ENV: Final = "CAPA_BDQ_USER_NAME"
+# 사내 패키지 저장소 주소. 사내 값이라 저장소에 두지 않는다(공개 저장소) —
+# `requirements-company.txt` 의 `--index-url` 줄이 이 이름을 `${…}` 로 가리키고, 사내 PC 는 사용자
+# 환경변수 · C-DEP 는 환경변수 표에 둔다. 비밀값은 아니다(자격증명은 시작 스크립트가 따로 넣는다).
+COMPANY_INDEX_URL_ENV: Final = "CAPA_COMPANY_INDEX_URL"
 CD_ENVIRONMENT: Final = (
     ARTIFACTORY_USER_ENV,
     ARTIFACTORY_TOKEN_ENV,
+    COMPANY_INDEX_URL_ENV,
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
 )
 # 시작 스크립트가 앱 프로세스에 넘기지 않는 두 비밀값. 앱 환경에 남아 있으면 스크립트가 돌지
 # 않았다는 뜻이다(`missing_report_notice`).
 APP_WITHHELD_ENVIRONMENT: Final = (ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
-# CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 하나만 쓰므로 그것만으로는
-# CD 서버인지 가르지 않는다.
+# CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 과 `CAPA_COMPANY_INDEX_URL`
+# 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다.
 CD_ONLY_ENVIRONMENT: Final = (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
 START_SCRIPT: Final = "scripts/container_start.py"
 # 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
@@ -76,7 +81,7 @@ STEP_LABELS: Final[Mapping[str, str]] = {
 # 적는다 — 설치 안내에 `CAPA_BDQ_USER_NAME` 이 섞이면 점검 스크립트
 # (`inspect_real_data_checks._bdq_failure`)가 그 이름으로 「요청자 계정 필요」를 가른다.
 STEP_ENVIRONMENT: Final[Mapping[str, tuple[str, ...]]] = {
-    STEP_INSTALL: (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV),
+    STEP_INSTALL: (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, COMPANY_INDEX_URL_ENV),
     STEP_TOKEN: (BDQ_TOKEN_ENV, BDQ_USER_NAME_ENV),
     STEP_USER_NAME: (BDQ_USER_NAME_ENV,),
 }

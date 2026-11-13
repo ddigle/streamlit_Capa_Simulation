@@ -30,9 +30,12 @@ from capa_simulation.components.process_rename_management import (
 from capa_simulation.components.table_toolbar import toolbar_room_css
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
+from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PAGE = PROJECT_ROOT / "app_pages/admin_area.py"
+# 문의처 메일 자리의 가짜 값 — 실제 문의처는 사내 환경변수에만 있다(공개 저장소).
+FAKE_CONTACT = "demo.contact@example.invalid"
 
 
 def _page_script(database_path: Path) -> str:
@@ -51,8 +54,11 @@ exec(
 """
 
 
-def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
+def test_admin_area_renders_without_an_active_scenario(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """활성 시나리오도 저장된 표시명도 없는 상태가 정상이다. 화면이 멈추면 안 된다."""
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
     app = AppTest.from_string(_page_script(tmp_path / "scenario.duckdb")).run(timeout=120)
 
     assert not list(app.exception), [element.message for element in app.exception]
@@ -84,11 +90,10 @@ def test_admin_area_renders_without_an_active_scenario(tmp_path: Path) -> None:
     assert not _start_check_expanders(app)
     # 앱 정보는 이 화면이 아니라 모든 화면 사이드바 맨 아래 카드다(2026-10-07 사용자 결정). 카드는
     # `app.py` 가 그리므로 이 화면만 돌린 여기에는 그 글이 한 줄도 없다.
-    from capa_simulation.settings import APP_CONTACT_EMAIL, APP_VERSION
+    from capa_simulation.settings import APP_VERSION
 
     assert not any(
-        APP_CONTACT_EMAIL in caption.value or APP_VERSION in caption.value
-        for caption in app.caption
+        FAKE_CONTACT in caption.value or APP_VERSION in caption.value for caption in app.caption
     )
 
     # 활성 시나리오가 없으면 원천 품질 탭은 열어도 안내만 남긴다 — 화면을 멈추지 않는다.

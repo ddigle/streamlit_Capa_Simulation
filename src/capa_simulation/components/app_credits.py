@@ -7,9 +7,11 @@
 감추므로 이 카드가 그 값을 보여 주는 유일한 곳이다. 값은 `settings.py` 가 단일 근거다.
 
 **두 줄뿐이다.** 앱·버전·배포 한 줄과 개발 팀·문의처 한 줄. 보안 등급·인증번호·취급 주의 문장은
-싣지 않는다(2026-10-07 사용자 결정). 예외는 통합인증이 켜진 서버 하나다 — 셋째 줄에 로그인한
-사람의 「이름 · 부서 · 로그아웃」 을 붙인다(`components/sso_identity.sso_credit_line`, 2026-11-02
-메인 세션이 정한 기본값). 꺼진 서버(개발 PC · 사내 WebIDE · 시험)는 두 줄 그대로다.
+싣지 않는다(2026-10-07 사용자 결정). 문의처 메일은 사내 값이라 저장소에 없고 환경변수
+(`settings.APP_CONTACT_EMAIL_ENV`)로만 받는다 — 비면 둘째 줄은 팀 이름만이다(2026-11-12 보드 답
+⑤-9). 예외는 통합인증이 켜진 서버 하나다 — 셋째 줄에 로그인한 사람의 「이름 · 부서 · 로그아웃」
+을 붙인다(`components/sso_identity.sso_credit_line`, 2026-11-02 메인 세션이 정한 기본값). 꺼진
+서버(개발 PC · 사내 WebIDE · 시험)는 두 줄 그대로다.
 
 **첫 줄 끝은 적용된 배포 번호다**(2026-10-08 사용자 결정). 손으로 적던 빌드일은 배포마다 고치지
 않아 낡은 날짜가 남았다. 사내에서 배포 ZIP 을 적용하면 남는 기록(`settings.DEPLOY_STATE_PATH`)의
@@ -40,11 +42,11 @@ import streamlit as st
 
 from capa_simulation.components.sso_status import render_access_alerts
 from capa_simulation.settings import (
-    APP_CONTACT_EMAIL,
     APP_NAME,
     APP_OWNER_TEAM,
     APP_VERSION,
     DEPLOY_STATE_PATH,
+    app_contact_email,
 )
 
 # 카드 컨테이너의 key 이자 CSS 훅(`st-key-…`). 「조회 조건」 제목을 살리는 상자로 세지 않도록
@@ -77,13 +79,13 @@ def _read_stamp(path: str) -> str | None:
 
 
 def credit_lines(stamp: str | None = None) -> tuple[str, str]:
-    """보여 줄 두 줄. 앱·배포, 개발 차례다. `stamp` 를 주지 않으면 적용 기록에서 읽는다."""
+    """보여 줄 두 줄. 앱·배포, 개발 차례다. `stamp` 를 주지 않으면 적용 기록에서 읽는다. 문의처는
+    환경변수에서 읽고, 비면 팀 이름만 싣는다."""
     stamp = deployed_stamp() if stamp is None else stamp
     build = f"배포 {stamp}" if stamp else OUTSIDE_BUILD_LABEL
-    return (
-        f"{APP_NAME} v{APP_VERSION} · {build}",
-        f"개발 {APP_OWNER_TEAM} · {APP_CONTACT_EMAIL}",
-    )
+    team = f"개발 {APP_OWNER_TEAM}"
+    contact = app_contact_email()
+    return (f"{APP_NAME} v{APP_VERSION} · {build}", f"{team} · {contact}" if contact else team)
 
 
 def render_app_credits(sso_line: str | None = None) -> None:

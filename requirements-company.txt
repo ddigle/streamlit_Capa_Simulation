@@ -8,6 +8,14 @@
 # 이 파일로 빼면 `pyproject.toml` 과 `uv.lock` 이 **사내·사외에서 완전히 같아진다.** 그래서
 # 배포 ZIP 에서 빼야 할 파일이 없고, 의존성을 바꿔도 ZIP 하나로 사내에 반영된다.
 #
+# 사내 패키지 저장소 주소는 사내 값이라 이 파일에 적지 않는다(공개 저장소). 아래 `--index-url` 줄은
+# 환경변수 `CAPA_COMPANY_INDEX_URL` 을 가리키고, pip · uv 가 읽을 때 `${이름}` 을 그 값으로 펼친다
+# (pip 26.3 · uv 0.2.0 · 0.4.30 · 0.13.0 — Linux 에서 확인). 값은 사내 PC 의 사용자 환경변수와 C-DEP
+# 환경변수 표에만 둔다.
+# 비어 있으면 아무것도 깔지 않고 멈춘다 — uv 는 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}`(종료 2),
+# pip 는 `Could not find a version`(종료 1). C-DEP 시작 스크립트(`scripts/container_start.py`)도 이 줄을
+# 같은 꼴로 펼친다 — 값은 `https://…/simple` 통째이고 계정·토큰은 넣지 않는다(시작 스크립트가 따로 넣는다).
+#
 # 사내 설치 (전체 절차는 README.md 의 「초기 설정」):
 #     uv sync
 #     uv pip install -r requirements-company.txt
@@ -32,10 +40,10 @@
 #     export UV_EXTRA_INDEX_URL="https://<AD 계정>:<Artifactory API 토큰>@<사내 Artifactory 주소>"
 #     uv pip install bigdataquery==2.5.0 --system-certs
 #
-# `<사내 Artifactory 주소>` 는 아래 `--index-url` 줄에서 `https://` 를 뗀 나머지다.
+# `<사내 Artifactory 주소>` 는 `CAPA_COMPANY_INDEX_URL` 값에서 `https://` 를 뗀 나머지다.
 #
-# 아래 `--index-url` 은 개발 PC 표기로 남겨 둔다 — WebIDE 에서는 위 환경변수가 이긴다.
+# 아래 `--index-url` 은 사내 PC 의 `uv pip install -r` 몫으로 남겨 둔다 — WebIDE 에서는 위 환경변수가 이긴다.
 
---index-url https://artifactory.samsungds.net/repository/dataservice-devsecops-pypi/simple
+--index-url ${CAPA_COMPANY_INDEX_URL}
 
 bigdataquery==2.5.0

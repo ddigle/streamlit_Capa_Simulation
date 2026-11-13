@@ -1864,10 +1864,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     안내 **뒤에** 그 단계의 결과 한 단락과 넣을 환경변수를 덧붙인다(첫 문장·갈래·종류 이름은 그대로, 파일이 없으면 지금
     문구 그대로). `BDQ_USER_NAME_ENV` 는 `io/container_start_report.py` 가 이름을 갖고 여기서 다시 내보낸다.
 - `src/capa_simulation/io/container_start_report.py` — C-DEP CD 시작 스크립트(`scripts/container_start.py`)와 앱이 함께
-  쓰는 환경변수 이름 넷(`CD_ENVIRONMENT`)·결과 파일(`settings.CONTAINER_START_REPORT_PATH` = `data/temp/container_start.json`)
+  쓰는 환경변수 이름 다섯(`CD_ENVIRONMENT` — 사내 패키지 저장소 주소 `CAPA_COMPANY_INDEX_URL` 을 더해. 사내 PC 도 넣는 이름이라
+  CD 서버인지 가르는 `CD_ONLY_ENVIRONMENT` 에는 없다)·결과 파일(`settings.CONTAINER_START_REPORT_PATH` = `data/temp/container_start.json`)
   꼴·화면 안내 문장(`step_hint`)이다. 표준 라이브러리와 `settings` 만 읽는다 — 시작 스크립트가 앱 의존성보다 먼저 쓴다.
   - CD 는 시작 명령을 못 바꾸고 셸도 없어 이미지 `CMD` 가 그 스크립트다. 스크립트는 `bigdataquery` 를 하위 프로세스로
-    불러 보고, 없으면 `requirements-company.txt` 의 판·인덱스로 pip 를 두 번 부른다 — 패키지 자신은 **사내 인덱스
+    불러 보고, 없으면 `requirements-company.txt` 의 판·인덱스로 pip 를 두 번 부른다(인덱스 줄은 사내 주소 대신
+    `${CAPA_COMPANY_INDEX_URL}` 을 가리키고 pip · uv 와 같은 꼴로 펼친다 — 비면 설치를 건너뛰고 이름을 대며, `https://주소` 꼴이
+    아니거나 계정·토큰이 들어 있으면 pip 를 부르지 않고 실패다. 값은 싣지 않는다) — 패키지 자신은 **사내 인덱스
     하나만** 보고 `--no-deps` 로(공개 미러를 추가 인덱스로 함께 보면 의존성 혼동에 열린다. 자격증명은 명령줄이 아니라
     그 pip 의 `PIP_INDEX_URL` 로, pip 설정 파일은 끈다), 의존성은 이미지 기본 인덱스로 앱 판 고정을 제약 삼아 채운다.
     토큰을 `/config/.credential/` 에 0600 으로 쓴 뒤(폴더는 이미지가 `$DSUSER` 몫으로 만들어 둔다 — 푼 내용이 비거나
@@ -3264,7 +3267,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `tests/test_app_navigation.py`). HOME 칠한 주요 Case 칩의 같은 색 규칙(`home_main_case_chips.chip_style`)은 칩 모양
     규칙과 함께 그대로 둔다.
 - `src/capa_simulation/components/app_credits.py` — 앱 이름·버전·빌드일과 개발 팀·문의처 두 줄을 모든 화면
-  사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다. 통합인증이 켜진 서버는 셋째 줄
+  사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다. 문의처 메일은 사람을 가리키는 사내 값이라
+  저장소에 없고 환경변수 `CAPA_APP_CONTACT_EMAIL`(`settings.app_contact_email()` — 부를 때마다 읽음, 사내 PC 사용자 환경변수 ·
+  C-DEP 환경변수 표)로만 받는다 — 비면 둘째 줄은 「개발 <팀>」 만이다(2026-11-12 보드 답 ⑤-9). 통합인증 줄이 붙으면 캡션이
+  원문 HTML 이므로 메일 꼴(`이름@도메인.최상위`)이 아닌 값은 비운 것과 같다. 시험은 `tests/conftest.py` 가
+  그 환경변수를 지우고 돈다(필요한 시험만 `…@example.invalid` 를 넣는다). 통합인증이 켜진 서버는 셋째 줄
   「이름 · 부서 · 로그아웃」(`sso_identity.sso_credit_line`)이 붙고, 그 줄이 있을 때만 캡션을 `unsafe_allow_html` 로 그린다
   (로그아웃을 같은 탭에서 여는 원문 링크 — 이름 · 부서는 `literal_markdown` 으로 막았다). 꺼짐은 두 줄 그대로다.
   - 그리는 것은 캡션뿐이고 자리·바닥 고정·면은 `sidebar_style.py` 가 건다. key 는 조건 카드 접두어를 품지 않는다.
@@ -7959,9 +7966,11 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 (`*.pem` · `*.key` · `*.p12` · `*.pfx` · `*.cer` · `*.crt` · `*.der` · `*.jks` · `cert/`)은 커밋하지 않는다 — `.gitignore` ·
 `.dockerignore` · 배포 ZIP 금지 접미사가 막고 `tests/test_public_repo_hygiene.py` 가 회사 도메인 접미사 · 개인키 표지 · 그
 확장자를 감시한다. **사내 오브젝트 스토리지 값(주소 · 버킷 이름 · 프로필 이름 · 네임스페이스)과 사람 이름도 같다**(2026-11-12 사용자 결정) —
-문서는 자리표(`<사내 S3 주소>` 꼴), 코드는 환경변수로만 받고(3장 `io/object_storage.py`), 같은 시험이 그 꼴과 연락 메일의 이름 · 도메인을
-앱 연락 메일 한 자리 밖에서 막는다. 회사 도메인은 사내 빌드가 실제로 쓰는 두 줄(운영 이미지 기반 · `requirements-company.txt` 의
-`--index-url`)만 남았다. 시험 키는 실행 때 만든다(`tests/sso_support.py`). 실제 값은 C-DEP 배포 설정의 환경변수 표에서만 들어오고,
+문서는 자리표(`<사내 S3 주소>` 꼴), 코드는 환경변수로만 받고(3장 `io/object_storage.py`), 같은 시험이 그 꼴과 옛 연락 메일의 이름 · 도메인을
+어느 파일에서도 막는다 — 앱 연락 메일은 환경변수 `CAPA_APP_CONTACT_EMAIL` 로 옮겼고(2026-11-12 보드 답 ⑤-9), 이름은 글자 대신 지문(길이 ·
+굴림 해시 · sha256 — 비밀은 아니다)으로 시험에 둔다(조각 잇기는 원문에 이름을 그대로 보인다). 회사 도메인은 사내 빌드가 실제로 쓰는 한 줄(운영 이미지 기반)만 남았다 — 사내 패키지
+저장소 주소는 `requirements-company.txt` 의 `--index-url ${CAPA_COMPANY_INDEX_URL}` 이 가리키는 환경변수(사내 PC 사용자 환경변수 · C-DEP
+환경변수 표)로 옮겼다(pip · uv 가 요구 사항 파일의 `${이름}` 을 펼친다). 시험 키는 실행 때 만든다(`tests/sso_support.py`). 실제 값은 C-DEP 배포 설정의 환경변수 표에서만 들어오고,
 비밀값 `JWT_SECRET_KEY` · S3 명단 키 둘은 앱 프로세스가 기동 때 읽은 뒤 `os.environ` 에서 뺀다(`auth.runtime.start` — 하위 프로세스가 물려받지
 않게 할 뿐, 기동 때 환경 사본은 `/proc/<pid>/environ` 에 남고 같은 프로세스 코드는 메모리에 닿는다). 시작 스크립트는 통합인증
 값을 앱에 넘기되 결과 파일에는 이름(있음/없음)만 남기고 하위 프로세스에는 비밀값을 넘기지 않는다. 화면 · 로그 · 리뷰에 토큰 ·

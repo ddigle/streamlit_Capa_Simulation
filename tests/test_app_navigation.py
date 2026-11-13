@@ -99,6 +99,8 @@ from capa_simulation.sidebar_status import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
+# 문의처 메일 자리의 가짜 값 — 실제 문의처는 사내 환경변수에만 있다(공개 저장소).
+FAKE_CONTACT = "demo.contact@example.invalid"
 # `_app` 이 바꿔 끼운 요약 컴포넌트가 받은 값. 회차마다 하나씩 쌓인다.
 SENT_SUMMARIES: list[dict[str, Any]] = []
 
@@ -775,7 +777,9 @@ def _header_style(app: AppTest) -> str:
     return str(bodies[0])
 
 
-def test_the_header_names_the_scenario_this_session_applied(_app: AppTest) -> None:
+def test_the_header_names_the_scenario_this_session_applied(
+    _app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """머리 띠 위 줄은 이 세션에 적용 중인 시나리오·리비전과 상태다(2026-10-06 사용자 결정). 빈
     저장소는 내장 시드를 공식 v1 로 올린다. 개발 정보는 머리 띠에 없다(사이드바 맨 아래 카드)."""
     from capa_simulation.services.builtin_seed import (
@@ -783,8 +787,9 @@ def test_the_header_names_the_scenario_this_session_applied(_app: AppTest) -> No
         BUILTIN_SEED_SCENARIO_NAME,
         BUILTIN_SEED_SOURCE_CODE,
     )
-    from capa_simulation.settings import APP_CONTACT_EMAIL
+    from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
     app = _app.run()
     assert not list(app.exception), [element.message for element in app.exception]
 
@@ -794,7 +799,7 @@ def test_the_header_names_the_scenario_this_session_applied(_app: AppTest) -> No
         in style
     )
     assert f'content: "{BUILTIN_SEED_SOURCE_CODE} · 적용 26.01–26.12 · 내장 시드 ' in style
-    assert APP_CONTACT_EMAIL not in style
+    assert FAKE_CONTACT not in style
 
 
 def test_the_header_reads_no_database_on_a_rerun(
@@ -2209,22 +2214,26 @@ def _assert_two_credit_lines(captions: list[str]) -> None:
 
 @pytest.mark.parametrize("page_path", [HOME.path, SCENARIO_MANAGEMENT.path, ADMIN_AREA.path])
 def test_the_app_credits_card_stands_in_the_sidebar_on_every_screen(
-    _app: AppTest, page_path: str
+    _app: AppTest, page_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """앱 정보는 모든 화면의 사이드바 카드 하나다. Admin Area 본문에는 없다.
 
     사이드바 맨 아래 자리와 바닥 고정은 CSS(`sidebar_style`)가 지키고 규칙은
-    `tests/test_sidebar_stylesheet.py` 가 본다. 여기서는 카드가 서는지와 그 두 줄을 본다.
+    `tests/test_sidebar_stylesheet.py` 가 본다. 여기서는 카드가 서는지와 그 두 줄을 본다. 문의처는
+    사내 환경변수에만 있어 가짜 값을 넣고 카드에만 실리는지 본다.
     """
-    from capa_simulation.settings import APP_CONTACT_EMAIL
+    from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
     app = _app.run()
     if page_path != HOME.path:
         app.switch_page(page_path).run()
     assert not list(app.exception), [element.message for element in app.exception]
 
-    _assert_two_credit_lines(_credit_card_captions(app))
-    assert not any(APP_CONTACT_EMAIL in caption.value for caption in app.main.caption)
+    captions = _credit_card_captions(app)
+    _assert_two_credit_lines(captions)
+    assert captions[0].endswith(f" · {FAKE_CONTACT}")
+    assert not any(FAKE_CONTACT in caption.value for caption in app.main.caption)
 
 
 def test_the_app_credits_card_survives_a_screen_that_stops_early(
