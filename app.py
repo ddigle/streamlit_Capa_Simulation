@@ -35,7 +35,10 @@ from capa_simulation.components.intro_summary import (
     summary_label_script,
     warm_intro_summary,
 )
-from capa_simulation.components.object_sync_status import render_object_sync_alerts
+from capa_simulation.components.object_sync_status import (
+    not_canonical_code,
+    render_object_sync_alerts,
+)
 from capa_simulation.components.page_box_reveal import page_box_reveal_script
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.page_link import disabled_link_aria_script
@@ -558,17 +561,19 @@ with pinned_connections(DUCKDB_PATH):
     # (스키마 경고)은 뒤에 둔다.
     render_page_tabs(current_spec, pages=pages, marks=unsaved_marks, leave=leave_notice(page_file))
     # 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩 ·
-    # 공용 공정 칩 · 합성 샘플 표지). 탭 줄처럼 늘 서는 칸이고 페이지보다 앞이다 — 페이지가
-    # `st.stop()` 해도 섰다. 페이지가 이 회차에 내는 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS
-    # 가 회차 끝에 훑는다. 표지가 「화면」 · 「그 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경
-    # 칩 목록은 탭 점과 같은 세션 판정이다(DB 를 읽지 않는다). 본문 위에는 칸을 두지
-    # 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭 표지다(2026-11-09 보드 C1 (라)).
+    # 공용 공정 칩 · 합성 샘플 표지 · 정본이 아닌 데이터로 뜬 서버의 「정본 아님」 표지). 탭 줄처럼
+    # 늘 서는 칸이고 페이지보다 앞이다 — 페이지가 `st.stop()` 해도 섰다. 페이지가 이 회차에 내는
+    # 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS 가 회차 끝에 훑는다. 표지가 「화면」 · 「그
+    # 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경 칩 목록은 탭 점과 같은 세션 판정이다(DB 를
+    # 읽지 않는다). 본문 위에는 칸을 두지 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭
+    # 표지다(2026-11-09 보드 C1 (라)).
     alerts.note_page("" if current_spec is None else tab_label(current_spec), navigation.url_path)
     render_alert_center(
         changes=session_changes(
             page_file, hrefs={spec.path: page.url_path for page, spec in pages.specs}
         ),
         current=current_spec,
+        canon=not_canonical_code(),
     )
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차

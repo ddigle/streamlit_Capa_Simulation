@@ -1799,7 +1799,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 쪽은 산출 결과가 따로 낸다 — 대당 Capa 제외 `ST-14`(지문 내용 = 건수 + 제외사유별 건수, 딸린 표 = 「제외 기준정보」),
     대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일, 딸린 표 = 「소요대수 제외 기준정보」), PKG 의
     Buffer 밖 행 `ST-21`(알림 — 규칙이라 고칠 것이 없다, 딸린 표 = 「PKG Buffer 밖 행」). 두 사유를 한 알림에 섞지 않는다.
-- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래, 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다). `managed` 가 아니면 Streamlit 호출이 없다.
+- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래, 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다 — 짧은 글은 누구나 꼴, 관리자 지시는 관리자 몫 전문에만, `SY-06` 은 관리자 몫에만)과 머리 띠 「정본 아님」 표지의 코드(`not_canonical_code` — 9장 「알림 칸」). `managed` 가 아니면 Streamlit 호출이 없다.
+- `src/capa_simulation/components/admin_view.py` — 관리자 몫 알림 · 전문을 이 회차에 보일지 한 곳(`admin_notes_visible` — 통합인증이 켜짐이 아니면 누구에게나, 켜짐이면 `sso_identity.viewer_is_admin`). 보이기만 가르고 쓰기 · 관리자 단추의 두 번째 벽은 그 자리 판정 그대로다(2026-11-14 보드 리뷰 반영 「관리자 회차에만 은 꺼진 서버에서 아무도 못 본다」).
 - `src/capa_simulation/components/container_start_check.py` — Admin Area 탭 위 「서버 시작 점검」 펼침. C-DEP CD 시작
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + S3 키 · `managed` 가 있는 서버의
@@ -4045,9 +4046,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
-  테두리 · 공정 판)와 머리 툴바 슬롯에 네 호스트(공정 칩 · 합성 샘플 표지 · 변경 칩 · Alarm 단추)를 세우고 칸 자체는
+  테두리 · 공정 판)와 머리 툴바 슬롯에 다섯 호스트(공정 칩 · 합성 샘플 표지 · 「정본 아님」 표지 · 변경 칩 · Alarm 단추)를 세우고 칸 자체는
   접는다(`_HIDE_STYLE`). 공정 칩은 공용 공정 값(`process_field.header_chip`)이 있을 때만, 합성 샘플 표지는 지금 화면이 원천 미연결
-  화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만 선다(2026-11-09 보드 C1 (라) · T8 — 9장 「알림 칸」). data 는 세션만 읽는다
+  화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만, 「정본 아님」 표지는 정본이 아닌 데이터로 뜬 서버(`SY-05` · `SY-01` —
+  `app.py` 가 `object_sync_status.not_canonical_code()` 를 `canon=` 으로 넘긴다)에서만 선다(2026-11-09 보드 C1 (라) · T8, 2026-11-14 「앱 대신
+  뜨는 화면」 보드 d13 (가) — 9장 「알림 칸」). data 는 세션만 읽는다
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
   `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」). 패널은
   브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id · 앞 부트 표지는
@@ -7494,6 +7497,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **합성 샘플 표지**(보드 T8)는 지금 화면이 원천 미연결 화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만 공정
   칩 오른쪽에 선다(`alert_center.shows_sample_mark` — `sample_data.sample_switch_on` 을 읽기만). 변경 칩(주황 면 알약)과 갈리게
   점선 네모 · 주황 글 · 플라스크이고 누르는 것이 없다(풍선 「합성 샘플 — 실적이 아님 · 사이드바 「샘플 데이터」 로 끔」).
+- **「정본 아님」 표지**(2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) · 카드 p1-not-canonical)는 정본이 아닌 데이터로 뜬 서버 —
+  버킷의 정본을 받지 않음(`SY-05`)과 동기화 꺼짐(`SY-01`) — 에서 모든 화면 · 모든 사용자에게 합성 샘플 표지 오른쪽에 늘 선다(여기
+  저장한 것은 다음 배포에 사라진다 — 알림창을 놓쳐도 보이게, 설계 규칙 UI-LAY-04 · UI-LAY-13 — 본문 위가 아니라 머리 띠). 오류 색
+  실선 네모 · 옅은 면 · 구름 끊김 아이콘이고, 누르면 Alarm 패널을 거르기 없이 열고 그 코드의 줄로 굴려 잠깐 빛낸다(`openAlarmAt` —
+  파이썬 회차 없음). 멈춤 화면(통합인증)은 다른 툴바 단추와 함께 감춘다. 저장은 막지 않는다(2026-11-07 결정 그대로). 같은 알림의
+  짧은 글은 누구나 읽는 꼴(「정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다」 · 「저장이 정본에 올라가지 않습니다」)이고
+  환경변수 칸 · CI/CD · 설정 파일 지시는 관리자 몫 전문에만 싣는다(`components/admin_view.admin_notes_visible` — 통합인증이 꺼진
+  서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 관리자 몫에만 선다.
 
 ### 팝업과 콜백
 

@@ -76,6 +76,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 // 깔때기(공정 거름)와 플라스크(합성 샘플) 아이콘 — 24 단위 path 하나. 깔때기는 사이드바 공정 값 칸 아이콘(Material `filter_alt`)과
 // 같은 선 꼴이고 화면 탭 표지와 같은 상수다(`page_tabs.js`).
 const FUNNEL_PATH = 'M11 20q-.425 0-.713-.288T10 19v-6L4.2 5.6q-.375-.5-.113-1.05T5 4h14q.65 0 .913.55t-.113 1.05L14 13v6q0 .425-.288.713T13 20zm1-7.7L16.95 6H7.05z'
+// 「정본 아님」 표지 아이콘 — 머티리얼 cloud_off(24 단위).
+const CLOUD_OFF_PATH =
+  'M19.8 22.6 17.15 20H6.5q-2.3 0-3.9-1.6T1 14.5q0-1.925 1.188-3.425T5.25 9.15q.075-.2.15-.388t.15-.412L1.4 4.2l1.4-1.4 18.4 18.4zM6.5 18h8.65L7.1 9.95q-.05.275-.075.525T7 11h-.5q-1.45 0-2.475 1.025T3 14.5t1.025 2.475T6.5 18m15.1.75-1.45-1.4q.425-.35.638-.812T21 15.5q0-1.05-.725-1.775T18.5 13H17v-2q0-2.075-1.463-3.537T12 6q-.675 0-1.3.163t-1.2.512L8.05 5.225q.875-.6 1.863-.912T12 4q2.925 0 4.963 2.038T19 11q1.725.2 2.863 1.488T23 15.5q0 .975-.375 1.813T21.6 18.75M14.875 12.05'
 const FLASK_PATH =
   'M19.8 18.4 14 10.67V6.5l1.35-1.69c.26-.33.03-.81-.39-.81H9.04c-.42 0-.65.48-.39.81L10 6.5v4.17L4.2 18.4c-.49.66-.02 1.6.8 1.6h14c.82 0 1.29-.94.8-1.6z'
 const TOOLBAR_ATTRIBUTE = 'data-capa-toolbar'
@@ -1168,6 +1171,23 @@ function ensureToolbar(C) {
     C.procHost = host
     C.procChip = chip
   }
+  if (!C.canonHost || !C.canonHost.isConnected) {
+    const host = toolbarHost(C, toolbar.canon, 'capa-alert-canon')
+    const shadow = host.shadowRoot
+    let mark = shadow.querySelector('.canon')
+    if (!mark) {
+      mark = el('button', 'canon')
+      mark.type = 'button'
+      mark.title = t.canon_title || ''
+      mark.setAttribute('aria-label', t.canon_title || '')
+      mark.setAttribute('aria-haspopup', 'dialog')
+      mark.append(icon(CLOUD_OFF_PATH, 'cloud'), el('span', 'word', t.canon || ''))
+      mark.addEventListener('click', () => openAlarmAt(C, C.data.canon))
+      shadow.append(mark)
+    }
+    host.toggleAttribute('data-empty', true)
+    C.canonHost = host
+  }
   if (!C.sampleHost || !C.sampleHost.isConnected) {
     const host = toolbarHost(C, toolbar.sample, 'capa-alert-sample')
     const shadow = host.shadowRoot
@@ -1188,8 +1208,10 @@ function ensureToolbar(C) {
   palette(C, C.chipHost)
   palette(C, C.procHost)
   palette(C, C.sampleHost)
+  palette(C, C.canonHost)
   placeHost(C, slot, C.procHost)
   placeHost(C, slot, C.sampleHost)
+  placeHost(C, slot, C.canonHost)
   placeHost(C, slot, C.chipHost)
   placeHost(C, slot, C.alarmHost)
   watchSlot(C, slot)
@@ -1678,6 +1700,7 @@ function paintList(C) {
   for (const row of shown) {
     const item = el('li', `item${row.unread ? ' unread' : ''}`)
     item.dataset.level = row.level
+    item.dataset.code = row.code
     const line = el('div', 'line')
     const body = el('span', 'tx', row.full)
     body.title = row.full
@@ -1789,6 +1812,27 @@ function paintSample(C) {
   if (C.sampleHost) C.sampleHost.toggleAttribute('data-empty', !C.data.sample)
 }
 
+function paintCanon(C) {
+  if (C.canonHost) C.canonHost.toggleAttribute('data-empty', !C.data.canon)
+}
+
+// 「정본 아님」 표지를 누르면 Alarm 패널을 거르기 없이 열고 그 코드의 가장 새 줄로 굴려 잠깐 빛낸다 — 거르기가 남아 있으면 그 줄이 숨을
+// 수 있다.
+function openAlarmAt(C, code) {
+  C.filter = { level: 'all', page: '', hideResolved: false }
+  if (C.open !== 'alarms') togglePanel(C, 'alarms')
+  else {
+    paintList(C)
+    markRead(C)
+  }
+  if (!code) return
+  const item = C.parts.list.querySelector(`.item[data-code="${CSS.escape(String(code))}"]`)
+  if (!item) return
+  item.scrollIntoView({ block: 'nearest' })
+  item.classList.add('flash')
+  setTimeout(() => item.classList.remove('flash'), 1600)
+}
+
 // 회차 표지를 훑을 때 이 화면의 공정 표지를 읽는다. 지금 탭 표지가 실렸으면 탭 줄에 알린다(그 회차의 탭 줄은 페이지보다 먼저 그려져
 // 처음 그린 화면 · 바뀐 선택지를 모른다).
 function readProcessMark(C) {
@@ -1815,6 +1859,7 @@ function readProcessMark(C) {
 function paintAll(C) {
   paintProcess(C)
   paintSample(C)
+  paintCanon(C)
   paintChanges(C)
   paintBadge(C)
   if (C.open === 'alarms') {

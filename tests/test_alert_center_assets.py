@@ -1569,3 +1569,20 @@ def test_the_process_chip_reads_the_screens_own_mark_over_the_python_guess() -> 
         "tab": None,
         "drawn": False,
     }
+
+
+def test_the_canon_mark_opens_the_alarm_row_without_filters() -> None:
+    """「정본 아님」 표지(2026-11-14 보드 d13 (가))는 누르면 Alarm 패널을 거르기 없이 열고 그 코드의
+    줄로 굴린다 — 거르기가 남으면 그 줄이 숨을 수 있다. 오류 색 실선 네모로 합성 샘플 표지와
+    갈린다."""
+    body = JS[JS.index("function openAlarmAt(C, code)") :]
+    body = body[: body.index("\n}\n")]
+    assert "C.filter = { level: 'all', page: '', hideResolved: false }" in body
+    assert "togglePanel(C, 'alarms')" in body
+    assert '.item[data-code="' in body and "scrollIntoView" in body
+    assert "item.dataset.code = row.code" in JS
+    assert "openAlarmAt(C, C.data.canon)" in JS
+    assert "C.canonHost.toggleAttribute('data-empty', !C.data.canon)" in JS
+    canon = CSS[CSS.index(".canon {") :]
+    canon = canon[: canon.index("}")]
+    assert "var(--ac-error)" in canon and "solid" in canon and "cursor: pointer" in canon

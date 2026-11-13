@@ -15,6 +15,14 @@
 
 상태 알림은 `app.py` 가 `GL-02` 곁 한 자리에서 부른다(`render_object_sync_alerts`). 프래그먼트 ·
 팝업 안에서 부르지 않는다.
+
+**누구나 읽는 짧은 글 · 관리자 몫 전문**(2026-11-14 「앱 대신 뜨는 화면」 보드 카드
+p1-not-canonical). 짧은 글은 누구나 읽는 꼴이고, 일반 사용자가 할 수 없는 지시(C-DEP 환경변수 칸 ·
+CI/CD · 설정 파일)는 관리자 몫 전문에만 싣는다(`admin_view.admin_notes_visible` — 통합인증이 꺼진
+서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 일반 사용자가 할 일이 없어 관리자 몫에만
+세운다 — 정본이 아닌 것이 확인되면 `SY-05` 가 선다. 정본이 아닌 데이터로 뜬 서버(`SY-05` ·
+`SY-01`)는 머리 띠에 상시 표지 「정본 아님」 이 선다(`not_canonical_code` — 알림 칸이 그린다, 누르면
+Alarm 의 그 줄). 저장은 막지 않는다(2026-11-07 결정 그대로).
 """
 
 from __future__ import annotations
@@ -30,6 +38,7 @@ from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
 from capa_simulation.components import sso_identity
+from capa_simulation.components.admin_view import admin_notes_visible
 from capa_simulation.components.diagnostic_copy import (
     diagnostic_text,
     plain_lines,
@@ -81,27 +90,52 @@ def failure_label(kind: str | None) -> str:
     return "" if kind is None else FAILURE_LABELS.get(kind, kind)
 
 
+def not_canonical_code() -> str | None:
+    """정본이 아닌 데이터로 뜬 서버면 그 알림 코드 — 정본을 받지 않음(`SY-05`)이 먼저, 동기화 꺼짐
+    (`SY-01`)이 다음이다. 아니면 None. 값은 프로세스에 한 번 정한 것뿐이라 회차마다 같다(머리 띠
+    「정본 아님」 표지 — 알림 칸 data)."""
+    if not sync_boot.sync_alerts_possible():
+        return None
+    if sync_boot.head_ignored():
+        return HEAD_IGNORED_CODE
+    if sync_boot.sync_disabled_reason() is not None:
+        return DISABLED_CODE
+    return None
+
+
+# 누구나 읽는 짧은 글(카드 p1-not-canonical).
+DISABLED_SHORT: Final = "저장이 정본에 올라가지 않습니다"
+HEAD_IGNORED_SHORT: Final = "정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다"
+
+
 def render_object_sync_alerts() -> None:
     """동기화 상태 알림 여섯. `app.py` 가 회차마다 조건 없이 부른다.
 
     알릴 일이 있을 수 없는 프로세스(`sync_alerts_possible` 이 거짓 — 프로세스에 한 번 정한 값)에서는
-    표지도 쓰지 않는다. 개발 PC · 시험의 요소 순번이 그대로다.
+    표지도 쓰지 않는다. 개발 PC · 시험의 요소 순번이 그대로다. 관리자 몫 판정은 한 번 본다 —
+    관리자가 아닌 회차에도 같은 수의 표지를 쓴다(조건만 거짓).
     """
     if not sync_boot.sync_alerts_possible():
         return
+    admin = admin_notes_visible()
     reason = sync_boot.sync_disabled_reason()
     alerts.state(
         DISABLED_CODE,
         scope=None,
         content=reason,
         active=reason is not None,
-        text=None if reason is None else "동기화 꺼짐 — 저장이 정본에 올라가지 않습니다",
+        text=None if reason is None else DISABLED_SHORT,
         full=(
             None
             if reason is None
             else (
                 f"동기화 꺼짐 — {reason}. 저장은 이 서버의 DB 에만 남습니다. 설정"
                 "(CAPA_S3_SYNC_MODE · config/object_storage.json)을 고친 뒤 다시 띄우세요."
+            )
+            if admin
+            else (
+                "저장이 정본에 올라가지 않습니다 — 동기화가 꺼진 서버라 여기서 저장한 것은 이 "
+                "서버에만 남고 다음 배포에 사라질 수 있습니다. 관리자에게 알려 주세요."
             )
         ),
     )
@@ -164,19 +198,28 @@ def render_object_sync_alerts() -> None:
         scope=None,
         content=None,
         active=head_ignored,
-        text="정본을 받지 않은 서버입니다 — 이 저장은 다음 CI/CD 에 사라집니다",
+        text=HEAD_IGNORED_SHORT,
         full=(
-            "버킷에 세대가 있는데 CAPA_S3_SYNC_MODE 칸이 managed 가 아니어서(비었거나 local) "
-            "받지 않았습니다. 지금 화면은 정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 "
-            "사라집니다. 칸에 managed 를 넣고 CI/CD 를 다시 누르세요."
+            (
+                "버킷에 세대가 있는데 CAPA_S3_SYNC_MODE 칸이 managed 가 아니어서(비었거나 local) "
+                "받지 않았습니다. 지금 화면은 정본이 아니고 여기서 저장한 것은 다음 CI/CD 에 "
+                "사라집니다. 칸에 managed 를 넣고 CI/CD 를 다시 누르세요."
+            )
+            if admin
+            else (
+                "이 서버는 정본을 받지 않고 떴습니다. 지금 화면은 정본이 아니고 여기서 저장한 것은 "
+                "다음 배포에 사라집니다 — 관리자에게 알려 주세요."
+            )
         ),
     )
+    # 일반 사용자는 이 알림으로 할 일이 없다 — 관리자 몫에만 선다(정본이 아닌 것이 확인되면
+    # `SY-05`).
     unchecked = " · ".join(sync_boot.head_unchecked())
     alerts.state(
         HEAD_UNCHECKED_CODE,
         scope=None,
         content=unchecked or None,
-        active=bool(unchecked),
+        active=bool(unchecked) and admin,
         text=None if not unchecked else f"정본 점검 못 함 — CD 환경변수 {unchecked} 없음",
         full=(
             None

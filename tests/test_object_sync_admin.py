@@ -488,3 +488,79 @@ def test_a_stale_button_of_someone_who_lost_the_right_does_not_upload(
 
     assert not list(app.exception)
     assert handle.requests == 0
+
+
+def _view(monkeypatch: pytest.MonkeyPatch, *, admin: bool) -> None:
+    """관리자 몫 보기(`admin_view.admin_notes_visible`)를 바꿔 끼운다."""
+    monkeypatch.setattr(object_sync_status, "admin_notes_visible", lambda: admin)
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_a_server_that_skipped_the_canon_says_so_in_plain_words(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """`SY-05` 짧은 글은 누구나 읽는 꼴이고, 환경변수 칸 · CI/CD 지시는 관리자 몫 전문에만 있다(카드
+    p1-not-canonical)."""
+    _boot(monkeypatch, head_ignored=True)
+    _view(monkeypatch, admin=admin)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-05")
+    assert note is not None
+    assert note["short"] == "정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다"
+    assert ("CAPA_S3_SYNC_MODE" in str(note["full"])) is admin
+    assert ("관리자에게 알려 주세요" in str(note["full"])) is not admin
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_a_broken_setting_says_saves_do_not_reach_the_canon(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """`SY-01` 짧은 글은 「저장이 정본에 올라가지 않습니다」 하나이고 설정 파일 이름은 관리자
+    몫에만."""
+    _boot(monkeypatch, disabled_reason="CAPA_S3_SYNC_MODE 는 local 또는 managed 여야 합니다")
+    _view(monkeypatch, admin=admin)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-01")
+    assert note is not None
+    assert note["short"] == "저장이 정본에 올라가지 않습니다"
+    assert ("config/object_storage.json" in str(note["full"])) is admin
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_an_unchecked_canon_is_for_the_admin_only(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """정본 점검을 못 한 서버(`SY-06`)는 일반 사용자가 할 일이 없어 관리자 몫에만 선다. 관리자가
+    아닌 회차도 같은 수의 표지를 쓴다(조건만 거짓)."""
+    _boot(monkeypatch, head_unchecked=("CAPA_S3_PROFILE",))
+    _view(monkeypatch, admin=admin)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    assert (active_state(app, "SY-06") is not None) is admin
+    assert len([note for note in alert_notes(app) if note["code"] in SY_CODES]) == 6
+
+
+@pytest.mark.parametrize(
+    ("boot", "code"),
+    [
+        ({"head_ignored": True}, "SY-05"),
+        ({"disabled_reason": "꼴이 틀림", "head_ignored": True}, "SY-05"),
+        ({"disabled_reason": "꼴이 틀림"}, "SY-01"),
+        ({"head_unchecked": ("CAPA_S3_PROFILE",)}, None),
+        ({"managed": True}, None),
+        ({}, None),
+    ],
+)
+def test_the_head_mark_names_the_code_of_a_server_off_the_canon(
+    monkeypatch: pytest.MonkeyPatch, boot: dict[str, object], code: str | None
+) -> None:
+    """머리 띠 「정본 아님」 표지는 정본을 받지 않은 서버(`SY-05`)와 동기화가 꺼진 서버(`SY-01`)에만
+    선다 — 점검을 못 한 서버(`SY-06`)는 정본이 아닌지 모른다."""
+    _boot(monkeypatch, **boot)  # type: ignore[arg-type]
+
+    assert object_sync_status.not_canonical_code() == code
