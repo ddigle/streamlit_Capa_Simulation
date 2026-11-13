@@ -140,6 +140,22 @@ def test_the_windows_job_runs_the_same_shard_line_and_only_tests() -> None:
     assert any(line.strip() == "PYTHONIOENCODING: utf-8" for line in jobs[WINDOWS_JOB])
 
 
+def test_only_the_first_windows_shard_gives_the_runner_its_own_temp_root() -> None:
+    """사내 넷 동시 줄의 보존 정책을 Windows 에서 먼저 보는 조각은 하나뿐이다.
+
+    Linux 판정 조각은 기본 꼴 그대로다.
+    """
+    jobs = _jobs()
+    windows = jobs[WINDOWS_JOB]
+    own_root = [line for line in _run_lines(windows) if "--basetemp-root" in line]
+
+    assert own_root == [SHARD_RUN + " --basetemp-root ${{ runner.temp }}/capa-basetemp"]
+    assert own_root[0].startswith(SHARD_RUN)
+    guards = [line.strip() for line in windows if line.strip().startswith("if: matrix.shard")]
+    assert guards == ["if: matrix.shard != 1", "if: matrix.shard == 1"]
+    assert not any("--basetemp-root" in line for line in _run_lines(jobs[LINUX_JOB]))
+
+
 def test_both_jobs_cut_the_tests_into_the_same_shards() -> None:
     """같은 번호가 같은 파일이어야 Windows 빨간 조각을 Linux 같은 번호와 견준다."""
     jobs = _jobs()
