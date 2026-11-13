@@ -29,7 +29,7 @@ from capa_simulation.components.process_rename_management import (
     PROCESS_RENAME_UNCHANGED_MESSAGE,
 )
 from capa_simulation.components.table_toolbar import toolbar_room_css
-from capa_simulation.navigation import ADMIN_AREA_LOG_TAB
+from capa_simulation.navigation import ADMIN_AREA, ADMIN_AREA_LOG_TAB
 from capa_simulation.navigation import ADMIN_AREA_TABS as TAB_NAMES
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -1435,6 +1435,28 @@ def test_the_log_tab_stands_only_for_admins_and_auditors(
     labels = [tab.label for tab in app.main.tabs]
     assert labels == [*TAB_NAMES, ADMIN_AREA_LOG_TAB][:tabs]
     assert not _log_cards(app), "닫힌 기록 탭은 카드를 세우지 않는다"
+
+
+def test_the_log_tab_reads_no_common_condition_and_only_it_stands_a_card() -> None:
+    """사이드바(`app.py`)가 보는 선언 — 기록 탭은 시나리오 · 조회기간 줄을 세우지 않고 「기록 조건」
+    카드만 세운다. 앞 세 탭은 시나리오를 읽고 카드가 없다."""
+    assert all(ADMIN_AREA.reads_common_conditions_on(tab) for tab in TAB_NAMES)
+    assert not ADMIN_AREA.reads_common_conditions_on(ADMIN_AREA_LOG_TAB)
+    assert ADMIN_AREA.has_cards_on(ADMIN_AREA_LOG_TAB)
+    assert not any(ADMIN_AREA.has_cards_on(tab) for tab in TAB_NAMES)
+    assert not ADMIN_AREA.reads_period
+
+
+def test_an_auditor_reads_the_same_summary_on_the_open_log_tab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """점검자(`CAPA_AUDIT_VIEWERS`) 회차도 탭 본문 · 카드가 관리자와 같다."""
+    app = _audit_round(tmp_path, monkeypatch, "other.user", viewers="other.user", open_log=True)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _log_cards(app) == ["기록 조건"]
+    metrics = {str(metric.label): str(metric.value) for metric in app.main.metric}
+    assert (metrics["오늘 접속자"], metrics["작업"]) == ("1", "1")
 
 
 def test_an_open_log_tab_reads_the_spool_and_shows_the_summary(

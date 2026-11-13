@@ -20,6 +20,8 @@ from capa_simulation.auth import runtime
 from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import audit_log_view as view
 from capa_simulation.components import sso_identity
+from capa_simulation.navigation import ADMIN_AREA, ADMIN_AREA_LOG_TAB
+from capa_simulation.page_tabs_state import tab_label
 
 TODAY = date(2026, 11, 13)
 
@@ -203,4 +205,41 @@ def test_an_on_server_writes_both_codes_every_call_and_raises_them_for_viewers(
     # 개발 실행은 managed 가 아니라 「동기화 아님」 이 늘 선다(관리자 · 점검자만).
     assert [item["active"] for item in keeping] == [active, active]
     assert [item["active"] for item in late] == [False, False]
+    if active:
+        # 「그 화면으로」 는 어느 화면에서 떠도 Admin Area 의 「접속 · 작업 기록」 탭이다.
+        assert {(item["page"], item["href"], item["tab"]) for item in keeping} == {
+            (tab_label(ADMIN_AREA), ADMIN_AREA.href, "접속 · 작업 기록")
+        }
+        assert ADMIN_AREA_LOG_TAB.endswith(keeping[0]["tab"])
     shipper.reset()
+
+
+@pytest.mark.parametrize(("loginid", "active"), [("dev.user", True), ("other.user", False)])
+def test_a_late_piece_raises_ad_13_for_viewers_only(
+    cookies: dict[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    loginid: str,
+    active: bool,
+) -> None:
+    cfg = use_config()
+    runtime.mark_gate_installed()
+    spool.configure(tmp_path)
+    recorder.start(env="cdep", version="test", inst="efefefefefef")
+    recorder.set_grader(grader(cfg))
+    token, _ = issue_session(cfg, loginid=loginid, name=None, dept=None, now=int(time.time()))
+    cookies[cfg.session_cookie] = token
+    late_key = "audit/v1/seg/2026/10/20/efefefefefef__0000000001-0000000001.jsonl.gz"
+    monkeypatch.setattr(shipper, "chain_problems", lambda: (late_key,))
+
+    app = AppTest.from_string(ALERT_SCRIPT).run()
+
+    late = states(app, "AD-13")
+    assert [item["active"] for item in late] == [active, active]
+    if active:
+        assert "1개" in late[0]["short"]
+        assert (late[0]["page"], late[0]["href"], late[0]["tab"]) == (
+            tab_label(ADMIN_AREA),
+            ADMIN_AREA.href,
+            "접속 · 작업 기록",
+        )
