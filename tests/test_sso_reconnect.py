@@ -5,8 +5,8 @@
 만료 · 로그아웃한 탭은 문지기가 websocket 을 닫은 뒤 다시 붙지 못하고, Streamlit 프런트는 영어
 「Connection failed with status 401.」 과 CONNECTING 만 보인다(검토 실측). 띠 스크립트가 연결 상태
 표지를 보고 host-config 가 401 이면 한국어 안내와 링크를 세운다. DOM 을 모르는 판정 구획 (`//
-<sso-reconnect-rule>`)은 node(없으면 bun)로 떼어 돌리고, 나머지는 글자로 붙잡는다. 브라우저 동작은
-사본 앱으로 본다.
+<sso-reconnect-rule>`)은 node(없으면 bun)로 떼어 돌리고, 401 + 까닭 머리 → 띠 갈래는 스크립트
+전체를 가짜 창에서 돌리며, 나머지는 글자로 붙잡는다. 브라우저 동작은 사본 앱으로 본다.
 """
 
 from __future__ import annotations
@@ -446,3 +446,138 @@ def test_the_band_is_rebuilt_when_the_reason_changes_between_probes() -> None:
     assert f"box.setAttribute({json.dumps(KIND_ATTRIBUTE)}, kind);" in show
     assert "text.textContent = band.notice;" in show
     assert "link.textContent = band.label;" in show
+
+
+# --------------------------------------------------------------------------- 스크립트 통째로
+# 가짜 창 · 문서(DOM 없음)에서 띠 스크립트 전체를 돌린다 — 틱을 두 번(끊김 시작 ·
+# `PROBE_WAIT_MS` 뒤) 손으로 부르고, host-config 물음에는 진짜 `Response`(머리 이름이 다르면 까닭이
+# 빠진다)로 답한다.
+_WHOLE_SCRIPT_RUNNER = """
+const SCRIPT = %(script)s;
+const ANSWER = %(answer)s;
+const WAIT_MS = %(wait_ms)d;
+let now = 1000000;
+Date.now = () => now;
+const elements = new Map();
+function element(tag) {
+  const node = {
+    tagName: tag, id: "", textContent: "", target: "", href: "", children: [], attrs: {},
+    style: { cssText: "", setProperty() {}, removeProperty() {} },
+    setAttribute(name, value) { this.attrs[name] = String(value); },
+    getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; },
+    hasAttribute(name) { return name in this.attrs; },
+    removeAttribute(name) { delete this.attrs[name]; },
+    appendChild(child) { this.children.push(child); return child; },
+    remove() { elements.delete(this.id); },
+  };
+  return node;
+}
+const root = element("div");
+root.setAttribute("data-test-connection-state", "DISCONNECTED_FOREVER");
+const doc = {
+  body: { appendChild(child) { elements.set(child.id, child); return child; } },
+  createElement: element,
+  getElementById: (id) => elements.get(id) || null,
+  querySelector: (selector) => (selector.includes("stApp") ? root : null),
+  querySelectorAll: () => [],
+};
+const asked = [];
+globalThis.fetch = (url) => {
+  asked.push(String(url));
+  if (ANSWER === null) return Promise.reject(new Error("down"));
+  return Promise.resolve(new Response("", { status: ANSWER.status, headers: ANSWER.headers }));
+};
+let tick = null;
+const parentWindow = {
+  document: doc,
+  location: {
+    origin: "https://capa.example.invalid",
+    href: "https://capa.example.invalid/Space?tab=1",
+    pathname: "/Space",
+    search: "?tab=1",
+  },
+};
+globalThis.window = {
+  parent: parentWindow,
+  setInterval(fn) { tick = fn; return 1; },
+  setTimeout() { return 2; },
+  clearTimeout() {},
+};
+new Function(SCRIPT)();
+(async () => {
+  tick();
+  now += WAIT_MS + 1;
+  tick();
+  for (let i = 0; i < 20; i++) await new Promise((done) => setImmediate(done));
+  const band = elements.get(%(banner_id)s) || null;
+  process.stdout.write(JSON.stringify({
+    asked,
+    band: band && {
+      kind: band.getAttribute(%(kind_attr)s),
+      notice: band.children[0].textContent,
+      label: band.children[1].textContent,
+      href: band.children[1].href,
+    },
+    restart: elements.has(%(restart_id)s),
+  }));
+})();
+"""
+
+
+def _run_whole(script: str, answer: dict[str, Any] | None) -> Any:
+    runner = _WHOLE_SCRIPT_RUNNER % {
+        "script": json.dumps(script),
+        "answer": json.dumps(answer),
+        "wait_ms": PROBE_WAIT_MS,
+        "banner_id": json.dumps(BANNER_ID),
+        "kind_attr": json.dumps(KIND_ATTRIBUTE),
+        "restart_id": json.dumps(RESTART_BANNER_ID),
+    }
+    return run_js_json(runner, what="다시 로그인 띠 스크립트 통째 시험")
+
+
+def test_a_401_with_the_reason_header_raises_that_band_end_to_end() -> None:
+    """끊긴 탭의 물음에 문지기가 401 + 까닭 머리(`names.REASON_HEADER`)로 답하면 그 까닭의 띠가
+    선다 — 물음 칸(`reason`) · `bandKind` · `showBanner` 를 잇는 길 전체를 가짜 창에서 돈다. 머리가
+    없으면 옛 글 띠다(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-tab-ended)."""
+    script = reconnect_script(use_config())
+    bands = band_texts()
+    cases = {
+        names.REASON_DENIED: {names.REASON_HEADER: names.REASON_DENIED},
+        names.REASON_UNREAD: {names.REASON_HEADER: names.REASON_UNREAD},
+        names.REASON_OTHER: {names.REASON_HEADER: names.REASON_OTHER},
+        "legacy": {},
+    }
+
+    for kind, headers in cases.items():
+        result = _run_whole(script, {"status": 401, "headers": headers})
+
+        assert result["asked"] == [PUBLIC_URL + HOST_CONFIG_PATH], kind
+        band = result["band"]
+        assert band is not None, kind
+        assert band["kind"] == kind
+        assert (band["notice"], band["label"]) == (bands[kind]["notice"], bands[kind]["label"])
+        assert band["href"].startswith(PUBLIC_URL + names.LOGIN_PATH + "?next="), kind
+        assert result["restart"] is False, kind
+
+
+def test_a_reason_under_another_header_name_falls_back_to_the_old_band() -> None:
+    """머리 이름이 다르면(앞단이 다른 이름으로 바꿈) 까닭을 읽지 못해 옛 글 띠다 — 위 시험이 머리
+    이름까지 붙잡는다는 것을 보인다."""
+    script = reconnect_script(use_config())
+
+    result = _run_whole(script, {"status": 401, "headers": {"X-Other-Reason": names.REASON_DENIED}})
+
+    assert result["band"] is not None and result["band"]["kind"] == "legacy"
+    assert result["band"]["notice"] == RECONNECT_NOTICE
+
+
+def test_a_401_on_a_server_without_sign_in_raises_no_band() -> None:
+    """통합인증이 꺼진 서버의 스크립트(재시작 띠만)는 401 에 로그인 띠를 세우지 않고 재시작 띠도
+    걷은 채다."""
+    result = _run_whole(
+        restart_script(), {"status": 401, "headers": {names.REASON_HEADER: names.REASON_DENIED}}
+    )
+
+    assert result["band"] is None
+    assert result["restart"] is False

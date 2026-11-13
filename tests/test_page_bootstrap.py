@@ -18,6 +18,7 @@ from capa_simulation.page_bootstrap import (
     calculation_stop_notice,
     resolve_effective_months,
 )
+from capa_simulation.persistence._migration_core import MigrationChanged, MigrationFailed
 from capa_simulation.reference_grid_keys import DATASETS
 from capa_simulation.scenario_preset_state import MONTH_RANGE_KEY
 from capa_simulation.scenario_state import pristine_content_token
@@ -261,6 +262,34 @@ def test_other_empty_tables_keep_their_month_message(table: str) -> None:
     raw = f"{table}에 선택할 생산계획년월 데이터가 없습니다."
 
     assert bootstrap_error_message(ValueError(raw)) == raw
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        MigrationChanged("이미 적용된 DuckDB 마이그레이션이 변경되었습니다: 0001.sql"),
+        MigrationFailed("DuckDB 마이그레이션을 적용하지 못했습니다: 0099_demo.sql"),
+    ],
+    ids=["changed", "failed-sql"],
+)
+def test_no_active_revision_over_a_store_that_cannot_be_upgraded_says_no_official(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: MigrationFailed
+) -> None:
+    """저장소를 열다 판 올리기가 실패하면(`MigrationFailed` — 체크섬이 바뀜 · 새 SQL 실패) 글을
+    고르지 못해 공식버전 없음으로 본다 — 판정이 화면을 멈추지 않는다(드문 상태의 물러섬)."""
+    database = tmp_path / "store.duckdb"
+    database.write_bytes(b"")
+
+    def refuse(_path: str) -> object:
+        raise failure
+
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+    monkeypatch.setattr(page_bootstrap, "get_scenario_repository", refuse)
+
+    message = bootstrap_error_message(NoActiveRevision("아무 글"))
+
+    assert message == page_bootstrap.NO_OFFICIAL_MESSAGE
+    assert "마이그레이션" not in message
 
 
 def test_no_active_revision_does_not_create_a_missing_store(
