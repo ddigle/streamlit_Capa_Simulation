@@ -919,6 +919,34 @@ def test_ctrl_z_on_a_window_row_undoes_like_the_undo_button() -> None:
     assert "if (ctrl && event.key.toLowerCase() === 'z' && !typing)" in host[:400]
 
 
+def test_reset_and_undo_drop_an_open_cell_before_its_blur_commits() -> None:
+    """R2 리뷰 지적 3 — 칸을 연 채 「처음 상태로」 · 「되돌리기」 를 누르면 누름(blur)이 칸을 먼저
+    확정해 「확인만」 이 나가고, 버린 값이 막힌 값이면 창에 빨간 칸이 없는데 `EQ-25` 가 섰다. 두 단추는
+    누름 시작(blur 보다 먼저)에서 열린 칸을 확정 없이 닫고, 「되돌리기」 는 친 글이 칸을 바꾸는 글이면
+    뒤따르는 click 을 한 번 삼켜 앞 고침까지 되돌리지 않는다. 잠긴 단추 · 왼쪽 밖 단추는 그대로(다른
+    곳 누름처럼 blur 가 확정)다."""
+    block = JS[JS.index("  function dropOpenSheetCell() {") : JS.index("  unplaceButton.onclick =")]
+    drop = block[: block.index("\n  }\n")]
+    assert "closeSheetCell(false)" in drop and "closeSheetCell(true)" not in drop
+    assert (
+        "sheetEditPut(sheetEditCells(), SHEET_EDIT, open.id, open.col, "
+        "String(open.input.value)).changed"
+    ) in drop
+    assert "if (event.button === 0 && !resetButton.disabled) dropOpenSheetCell()" in block
+    assert (
+        "S.undoSwallow = event.button === 0 && !undoButton.disabled && dropOpenSheetCell()"
+    ) in block
+    assert "undoButton.onpointerleave = undoButton.onpointercancel" in block
+    click = block[block.index("  undoButton.onclick = () => {") :]
+    assert click.index("if (S.undoSwallow) {") < click.index("    undo()")
+    # 「처음 상태로」 의 click 은 그대로 칸 · 배치를 모두 처음으로 돌린다.
+    reset = JS[JS.index("  resetButton.onclick = () => {") :]
+    assert reset.index("resetSheetEdit()") < reset.index("initFromData()")
+    # 다른 곳 누름(열린 칸의 blur)은 여전히 확정이다.
+    opener = JS[JS.index("  function openSheetCell(") : JS.index("  function closeSheetCell(")]
+    assert "input.onblur = () => closeSheetCell(true)" in opener
+
+
 def test_a_painted_cell_keeps_its_long_text_tip_in_step_with_the_shown_text() -> None:
     """R2 리뷰 지적 6 — 18자를 넘는 칸의 브라우저 풍선(`title`)은 표를 그릴 때 받은 글로 달렸고 칸을
     고친 뒤에도 옛 글을 보였다. 칸을 칠할 때 지금 글로 다시 달고, 짧아지면 걷는다."""

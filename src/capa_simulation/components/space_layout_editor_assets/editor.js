@@ -7558,7 +7558,31 @@ export default function (component) {
     const list = expanded(selectedItems())
     if (list.length) zoomToBox(bbox(list))
   }
-  undoButton.onclick = undo
+  // 칸을 연 채 「처음 상태로」 · 「되돌리기」 를 누르면 누름 시작(칸을 확정하는 blur 보다 먼저)에서 열린 칸을 확정 없이 닫는다 —
+  // 버릴 값이 「확인만」 으로 나가 막힌 값이면 창에 빨간 칸이 없는데 `EQ-25` 가 섰다(R2 리뷰 지적 3). 「되돌리기」 는 친 글이 칸을
+  // 바꾸는 글이면 그 누름이 친 글 버리기 하나다 — 앞 고침까지 되돌리지 않게 뒤따르는 click 을 한 번 삼킨다(칸을 확정한 뒤 되돌리던
+  // 옛 결과와 같다). 잠긴 단추의 누름은 다른 곳 누름처럼 칸을 확정한다.
+  function dropOpenSheetCell() {
+    const open = S.sheetOpen
+    if (!open) return false
+    const typed = sheetEditPut(sheetEditCells(), SHEET_EDIT, open.id, open.col, String(open.input.value)).changed
+    closeSheetCell(false)
+    return typed
+  }
+  resetButton.onpointerdown = (event) => {
+    if (event.button === 0 && !resetButton.disabled) dropOpenSheetCell()
+  }
+  undoButton.onpointerdown = (event) => {
+    S.undoSwallow = event.button === 0 && !undoButton.disabled && dropOpenSheetCell()
+  }
+  undoButton.onpointerleave = undoButton.onpointercancel = () => { S.undoSwallow = false }
+  undoButton.onclick = () => {
+    if (S.undoSwallow) {
+      S.undoSwallow = false
+      return
+    }
+    undo()
+  }
   unplaceButton.onclick = () => removeItems(selectedItems())
   resetButton.onclick = () => {
     resetSheetEdit()
