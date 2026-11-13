@@ -852,19 +852,27 @@ def register_failed_frame(cfg: SsoConfig, ticket: DeniedClaims, now: int) -> Fra
 
 def denied_family_page(
     cfg: SsoConfig, code: str, cookies: Mapping[str, str], *, now: int | None = None
-) -> HTMLResponse:
+) -> Response:
     """거절 갈래 화면. 코드는 갈래만 고르고 꼴은 지금 상태가 정한다(모듈 설명).
 
-    `registered` 는 표가 있고 그 계정이 지금 명단에 들 때만, `register_failed` 는 표가 있고 아직
-    명단
-    밖일 때만 그 꼴이다. 그 밖은 명단을 읽었으면 명단 밖 꼴, 못 읽었으면 확인 못 함 꼴이다.
+    `registered` 는 표가 있고 그 계정이 지금 명단에 들 때만 그 꼴이다. 표의 계정이 지금 명단에
+    드는데
+    다른 코드면(명단을 못 읽은 동안 거절된 사람이 명단이 돌아온 뒤 새로 고침 · 그 사이 관리자가
+    넣음)
+    「명단에 없습니다」 를 보이지 않고 로그인 경로로 보낸다(303 — 처음 가려던 화면으로 들어간다).
+    `register_failed` 는 표가 있고 아직 명단 밖일 때만 그 꼴이다. 그 밖은 명단을 읽었으면 명단 밖
+    꼴,
+    못 읽었으면 확인 못 함 꼴이다.
     """
     moment = _now() if now is None else now
     ticket = read_denied(cfg, cookies, moment)
     allowed = ticket is not None and runtime.current_access(cfg).allows(ticket.loginid)
-    if ticket is not None and code == REGISTERED and allowed:
-        return frame_response(registered_frame(cfg, ticket), status=200, now=moment)
-    if ticket is not None and code == REGISTER_FAILED and not allowed:
+    if ticket is not None and allowed:
+        if code == REGISTERED:
+            return frame_response(registered_frame(cfg, ticket), status=200, now=moment)
+        next_path = sanitize_next(ticket.next_path)
+        return redirect(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': next_path})}", 303)
+    if ticket is not None and code == REGISTER_FAILED:
         return frame_response(register_failed_frame(cfg, ticket, moment), status=403, now=moment)
     if access_store.is_unread(cfg):
         return frame_response(list_unread_frame(cfg, ticket, moment), status=403, now=moment)

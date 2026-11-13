@@ -406,7 +406,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
   - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로` · `관리자` · 등급 `일반` · `관리자` · `관리자(환경변수)`) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다) · 관리자로 · 일반으로(등급 — 환경변수 관리자 · 자기 자신은 내리지 못함) · 지우기 · 다시 읽기를 둔다. 스스로 등록 알림 `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 관리자로 · 일반으로 · 지우기, 끝에 판 · 사용자 · 관리자(환경변수 n) 값. 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 시험은 `tests/test_sso_access_s3.py`.
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
-    선다)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
+    선다. 다만 운영 서버의 Admin Area 는 관리자 전용이라 꺼진 운영 서버에서는 화면에 닿지 않고 `AD-02` 도 서지 않는다 — 첫 배포의 미리 보기는 `APP_ENV` 를 비운 채, `docs/sso_setup.md` 5장)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
     (`CAPA_PUBLIC_URL` 바탕) · `ADFS_ISSUER` · 서명 인증서 지문(x5t · SHA-256 앞 16자)은 포털 등록값과 한 글자씩 대 보려고 보인다.
     이 셋도 사외 리뷰 압축본 · 전문에는 옮기지 않는다(`docs/dual_env_workflow.md`). 최근 사건 표와 「명단 밖 로그인」(계정마다 한 줄 · 횟수,

@@ -489,3 +489,62 @@ def test_the_frame_escapes_every_text() -> None:
 
     assert "<script>" not in html_text and "<b>제목" not in html_text and "<i>" not in html_text
     assert "&lt;script&gt;" in html_text
+
+
+@pytest.mark.parametrize("code", [web.NOT_ON_LIST, web.LIST_UNREAD, web.REGISTER_FAILED])
+def test_a_ticket_whose_account_is_now_listed_goes_in_instead_of_being_told_otherwise(
+    mock_s3: tuple[MockStore, str], code: str
+) -> None:
+    """명단을 못 읽은 동안 거절된 사람이 명단이 돌아온 뒤 새로 고침 · 그 사이 관리자가 넣음 —
+    「명단에 없습니다」 를 보이지 않고 로그인 경로(처음 가려던 화면)로 보낸다(2026-11-08 답 U4)."""
+    store, endpoint = mock_s3
+    cfg = s3_started(store, endpoint, LISTED)
+    app = gated_app()
+    jar: dict[str, str] = {}
+    callback = sign_in_to(app, jar, NEWCOMER, "/space")
+    apply_cookies(jar, callback)
+    from test_sso_access_s3 import identity_of
+
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[NEWCOMER])
+
+    page = http(
+        app,
+        "GET",
+        f"{names.ERROR_PATH}?code={code}",
+        headers={**NAVIGATE, "cookie": cookie_header(jar)},
+    )
+
+    assert page.status == 303
+    assert page.header("location") == f"{PUBLIC_URL}{names.LOGIN_PATH}?next=%2Fspace"
+    assert web.NOT_ON_LIST_TITLE not in page.text
+
+
+def test_an_oversize_ticket_still_fits_and_verifies(mock_s3: tuple[MockStore, str]) -> None:
+    """돌아갈 자리 2 KiB + 긴 한글 이름 · 부서 — 브라우저가 큰 쿠키를 버리지 않게 줄여 심는다."""
+    store, endpoint = mock_s3
+    cfg = s3_started(store, endpoint, LISTED)
+    app = gated_app()
+    jar: dict[str, str] = {}
+    long_next = "/space?" + "&".join(f"p{index}=" + "x" * 20 for index in range(80))
+    assert len(long_next) < web.MAX_NEXT_LENGTH
+    callback = sign_in_to_with(
+        app, jar, NEWCOMER, long_next, username="가" * 100, deptname="나" * 100
+    )
+
+    ticket = callback.cookie(cfg.denied_cookie)
+    assert ticket is not None
+    assert len(cfg.denied_cookie) + len(ticket.value) <= web.MAX_SESSION_COOKIE_BYTES
+    apply_cookies(jar, callback)
+    page = follow(app, jar, callback)
+    assert NEWCOMER in page.text and web.REGISTER_LABEL in page.text
+
+
+def sign_in_to_with(
+    app: App, jar: dict[str, str], loginid: str, next_path: str, *, username: str, deptname: str
+) -> AsgiResponse:
+    from sso_support import id_token_claims, make_id_token
+    from test_sso_access import post_form, start_login
+
+    state, nonce = start_login(app, jar, next_path)
+    claims = id_token_claims(nonce, loginid=loginid, username=username, deptname=deptname)
+    return post_form(app, jar, make_id_token(claims), state)
