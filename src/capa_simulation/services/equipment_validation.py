@@ -547,7 +547,7 @@ def _listed_groups(head: str, column: str, groups: Sequence[object]) -> ValueErr
 def _group_split_save_error(head: str, column: str, groups: Sequence[object]) -> ValueError:
     """일곱 칸(저장 때만)이 갈린 묶음의 저장 거부 — 글 끝에 고칠 곳(설비 마스터의 그 묶음 · 그
     칸)을 쉼표 글로 짚는다. Space 배치 저장 · 설비 마스터 리비전 저장 · 사이드바 설비 저장이 같은
-    글을 낸다(`['…']` 목록 꼴은 고칠 자리를 말하지 않았다 — 2026-11-13 화면 확인 지적)."""
+    글을 낸다(`['…']` 목록 꼴은 고칠 자리를 말하지 않는다)."""
     names = ", ".join(str(group) for group in groups)
     return ValueError(f"{head} — 설비 마스터에서 {names} 묶음의 {column} 칸을 맞춘 뒤 저장합니다")
 
