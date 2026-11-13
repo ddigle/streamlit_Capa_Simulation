@@ -6,6 +6,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import date
 from functools import partial
 from typing import Any, NamedTuple
@@ -31,6 +32,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_floor_canvases,
     pending_floor_group_labels,
     pending_floor_marks,
+    pending_floor_stacks,
     pending_sheet_cells,
     pending_unit_renames,
     pop_drafts_replaced,
@@ -46,6 +48,7 @@ from capa_simulation.components.equipment_data_workspace import (
     stage_floor_canvas,
     stage_floor_group_labels,
     stage_floor_marks,
+    stage_floor_stack,
     stage_sheet_cells,
     stage_unit_renames,
     stamp_layout_role,
@@ -86,7 +89,9 @@ from capa_simulation.components.space_floor_layout import (
     effective_floor_layout,
     floor_layout_differences,
     floor_moved_overlaps,
+    floor_stack_by_name,
     floor_unit_differences,
+    official_floor_stack,
     report_canvas_outside,
     report_layout_notices,
     report_layout_warnings,
@@ -231,6 +236,14 @@ from capa_simulation.services.floor_layout_profile import (
     FloorCanvasMap,
     FloorKey,
     FloorLayoutProfile,
+)
+from capa_simulation.services.floor_layout_stack import (
+    FloorStack,
+    ordered_items,
+    raised_ids,
+    renamed_stack,
+    same_stack,
+    staged_stack,
 )
 from capa_simulation.services.floor_state import (
     floor_states_fingerprint,
@@ -990,9 +1003,12 @@ def _floor_viewer_inputs(
     floor_status: pd.DataFrame,
     boundaries: pd.DataFrame,
     layer_looks: dict[str, dict[str, Any]] | None = None,
-) -> tuple[tuple[FloorLayoutMark, ...], dict[str, str], list[dict[str, Any]], str]:
-    """층 상세 뷰어의 도면 요소·Main 설비명 위치·호기 payload·그리는 호기 지문. 요소·위치는 세션
-    설비 시나리오의 합친 값이다(`effective_floor_layout` — 공식 층 현행값 ⊕ 그 리비전의 배치 차이).
+) -> tuple[tuple[FloorLayoutMark, ...], dict[str, str], list[dict[str, Any]], str, FloorStack]:
+    """층 상세 뷰어의 도면 요소·Main 설비명 위치·호기 payload·그리는 호기 지문·겹친 순서.
+
+    요소·위치는 세션 설비 시나리오의 합친 값이다(`effective_floor_layout` — 공식 층 현행값 ⊕ 그
+    리비전의 배치 차이). 겹친 순서는 공식 층 현행값 그대로다(설비 `0034` — 호기는 그 차례로 줄
+    세우고, 그리는 호기 지문도 그 차례라 순서가 바뀌면 epoch 이 바뀐다).
 
     그리는 호기는 기준일 하나의 행이 아니라 **페이더 범위 전체의 합집합**이다(레이아웃표시 Y ·
     좌표 · 범위 시작 뒤까지 도면에 남음, `drawn_in_range`). 기준일에 안 보이는 호기는 브라우저가
@@ -1001,11 +1017,14 @@ def _floor_viewer_inputs(
     `layer_looks` 는 색 기준 「필요 단축」 을 켠 회차의 설비명 → 구간·흐림(`floor_layer.looks`)이다
     — 기본 면 위에 얹는다(`apply_layer_looks`). epoch 는 바뀌지 않는다(호기마다의 칸만 바뀐다)."""
     marks, labels = effective_floor_layout(equipment_database_path, key, equipment_session)
+    stack = floor_stack_by_name(
+        official_floor_stack(equipment_database_path, key), equipment_session
+    )
     roster_rows = _roster_rows(floor_status, boundaries)
     looks = unit_appearance(roster_rows, boundaries, choice=effective_choice)
     if layer_looks is not None:
         looks = apply_layer_looks(looks, layer_looks)
-    items = viewer_items(roster_rows, looks=looks)
+    items = ordered_items(viewer_items(roster_rows, looks=looks), stack)
     # 설비지분(기준일 보유 지분 — 모듈 넷이 모두 반입했으면 0.25씩, 둘만 반입했으면 그
     # 둘이 0.5씩이고 반입 전 둘은 0) — 뷰어 요약의 「겹쳐 숨긴 반입 예정 n대」를 범례·배치
     # 대수와 같은 축으로 센다. 일부 모듈만 반입한 Main 설비의 반입 전 모듈은 범례의 반입 전
@@ -1021,7 +1040,7 @@ def _floor_viewer_inputs(
     for item in items:
         item["share"] = float(shares.get(str(item["id"]), 1.0))
     roster = hashlib.sha256("|".join(str(item["id"]) for item in items).encode()).hexdigest()[:16]
-    return tuple(marks), labels, items, roster
+    return tuple(marks), labels, items, roster, stack
 
 
 def _exited_mask(rows: pd.DataFrame) -> pd.Series:
@@ -1351,11 +1370,12 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
     canvases = pending_floor_canvases() if frames is not None else {}
     marks = pending_floor_marks() if frames is not None else {}
     group_labels = pending_floor_group_labels() if frames is not None else {}
+    stacks = pending_floor_stacks() if frames is not None else {}
     # 층 배치 편집이 잠긴 회차에 남은 배치 변경 — 저장을 끄고 「배치 변경만 버리기」 를 세운다.
     layout_locked = (
         frames is not None
         and not edit_mode.layout_editable
-        and bool(not changes.empty or canvases or marks or group_labels)
+        and bool(not changes.empty or canvases or marks or group_labels or stacks)
     )
     if (
         changes.empty
@@ -1363,6 +1383,7 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
         and not canvases
         and not marks
         and not group_labels
+        and not stacks
         and not sheet_count
         and fab_pending is None
     ):
@@ -1391,7 +1412,12 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
         ]
     # 호기·층 배치 변경이 없다(FAB 대기분·이름 바꿈·다른 편집만).
     fab_only_layout = (
-        changes.empty and names.empty and not canvases and not marks and not group_labels
+        changes.empty
+        and names.empty
+        and not canvases
+        and not marks
+        and not group_labels
+        and not stacks
     )
     parts = [f"호기 배치 {len(changes)}건"] if not changes.empty else []
     if not names.empty:
@@ -1402,6 +1428,8 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
         parts.append(f"도면 요소 {len(marks)}개 층")
     if group_labels:
         parts.append(f"Main 설비명 위치 {len(group_labels)}개 층")
+    if stacks:
+        parts.append(f"겹친 순서 {len(stacks)}개 층")
     if sheet_count:
         parts.append(f"호기 정보 칸 {sheet_count}건")
     if fab_pending is not None:
@@ -1420,7 +1448,7 @@ def _render_unsaved_layout_panel(frames: Frames | None, *, reserve: bool) -> Uns
         renamed_to_common = (
             "이름 바꿈은 공통 대장에 저장합니다(어느 설비 시나리오에서나 같은 호기의 이름). "
         )
-        layout_changed = not changes.empty or bool(canvases or marks or group_labels)
+        layout_changed = not changes.empty or bool(canvases or marks or group_labels or stacks)
         save_place = (
             f"{_scenario_place()}의 새 리비전(가정 배치)으로 저장합니다 — 공식 배치는 바뀌지 "
             "않습니다. " + (renamed_to_common if not names.empty else "")
@@ -1776,6 +1804,13 @@ def _render_layout_editor(
     )
     marks = pending_floor_marks().get(key, stored_marks)
     group_labels = pending_floor_group_labels().get(key, stored_labels)
+    # 겹친 순서(설비 `0034`) — 공식 층 현행값(호기 키 꼴)을 편집본 설비명으로 옮긴 것, 대기분이
+    # 있으면 그것. 기준 지문은 저장소가 대조하는 호기 키 꼴 그대로다.
+    stored_stack_keys = official_floor_stack(equipment_database_path, key)
+    stored_stack = floor_stack_by_name(
+        stored_stack_keys, equipment_session, pending_unit_renames().units
+    )
+    stack = pending_floor_stacks().get(key, stored_stack)
     try:
         status = get_space_equipment_status(frames[1], frames[2], as_of=as_of)
     except ValueError as exc:
@@ -1800,7 +1835,7 @@ def _render_layout_editor(
     )
     # 편집기도 보기와 같은 채우기(색 기준·보관·지연, 기준일 = 사이드바 기준일)다. 테·덧표시는
     # 그리지 않는다.
-    inputs = editor_inputs(
+    received = editor_inputs(
         status,
         floor=key,
         new_ids=new_ids,
@@ -1809,6 +1844,8 @@ def _render_layout_editor(
             rows, unit_boundaries(rows, frames[2], today=today), choice=effective_choice
         ),
     )
+    # 호기는 겹친 순서로 줄 세워 보낸다(아래 → 위 — 적히지 않은 호기는 그 위에 받은 차례).
+    inputs = replace(received, items=tuple(ordered_items(received.items, stack)))
     options = new_unit_options(frames[1])
     # 낡은 세션(공식 시나리오·배치 빨리 감기) — 새 호기 폼만 끈다(일정이 생기는 새 호기는 낡은
     # 리비전 위 저장에서 막힌다). 가정 세션 최신에서는 새 호기를 넣는다(Q1 — 공식에는 자리 없이
@@ -1843,7 +1880,7 @@ def _render_layout_editor(
             revision_token(latest_snapshot),
             str(equipment_buffer_generation()),
             f"{canvas[0]:g}x{canvas[1]:g}",
-            floor_layout_fingerprint(marks, group_labels),
+            floor_layout_fingerprint(marks, group_labels, stack),
             roster,
             f"sheet{int(st.session_state.get(SHEET_APPLIED_KEY, 0))}",
         )
@@ -1892,6 +1929,7 @@ def _render_layout_editor(
         # 겹친 순서는 공식 배치에서만 바꾼다(가정 배치 차이는 요소 차례를 담지 않는다 — 보드 7-4).
         order_editable=edit_mode.order,
         order_lock=None if edit_mode.order else ORDER_LOCK_REASON,
+        raised=raised_ids(stack, marks),
         # 왼쪽 칸 범례는 채우기 뜻만(편집 화면은 테·덧표시를 그리지 않고 편집본은 저장본과 대수가
         # 다르다).
         legend={"entries": space_legend_entries(None, choice=effective_choice), "asOf": ""},
@@ -1947,7 +1985,11 @@ def _render_layout_editor(
                 latest_snapshot.equipment, frames[1], frames[2], pending_unit_renames()
             ),
             sheet_ids=sheet_ids_of(sheet),
+            current_marks=marks,
         )
+        if applied.stack is not None and not edit_mode.order:
+            # 단추를 잠갔지만 옛 화면이 보낸 순서(두 겹 — 저장소도 가정 역할의 순서를 거부한다).
+            raise ValueError(ORDER_LOCK_REASON)
         if applied.created and not edit_mode.new_units:
             # 폼을 껐지만 옛 화면이 보낸 적용 — 새 호기는 낡은 리비전 위 저장에서 막힌다.
             raise ValueError(new_unit_reason or "새 호기를 넣지 않습니다.")
@@ -2008,7 +2050,10 @@ def _render_layout_editor(
         _refuse_apply(f"적용하지 못했습니다: {bootstrap_error_message(exc)}")
         return
     stored_canvas = floor_canvases.get(key)
-    base = (stored_canvas, floor_layout_fingerprint(stored_marks, stored_labels))
+    base = (
+        stored_canvas,
+        floor_layout_fingerprint(stored_marks, stored_labels, stored_stack_keys),
+    )
     # 알림 표지 dict 는 세션에 얹기 전에 받아 둔다 — 그 뒤 세션 칸 접근은 둘째 누름의 회차에 끊길 수
     # 있다.
     notices = notice_marks()
@@ -2048,6 +2093,25 @@ def _render_layout_editor(
         stage_floor_group_labels(
             key, None if next_labels == stored_labels else next_labels, base=base
         )
+    if applied.stack is not None:
+        # 비교는 편집기에 실린 설비명(+ 이번 새 호기)으로 하고, 둘 꼴은 이번 이름 바꿈을 따라간다.
+        # 올림만 바꾼 적용은 층의 호기 차례를 굳히지 않는다(`staged_stack`).
+        received_ids = [str(item["id"]) for item in received.items]
+        order_ids = received_ids + [unit.unit_id for unit in applied.created]
+        order_groups = {
+            str(item["id"]): str(item["group"]) if item.get("group") else None
+            for item in received.items
+        }
+        after_marks = applied.marks if applied.marks is not None else marks
+        staged = staged_stack(
+            applied.stack, base=stack, ids=order_ids, groups=order_groups, marks=after_marks
+        )
+        unchanged = same_stack(
+            staged, stored_stack, ids=order_ids, groups=order_groups, marks=after_marks
+        )
+        stage_floor_stack(
+            key, None if unchanged else renamed_stack(staged, applied.unit_renames), base=base
+        )
     moved_layout = bool(
         applied.changes
         or applied.hidden_moves
@@ -2055,6 +2119,7 @@ def _render_layout_editor(
         or applied.canvas is not None
         or applied.marks is not None
         or next_labels != group_labels
+        or applied.stack is not None
     )
     if moved_layout:
         # 배치를 바꾼 적용 — 그때의 역할(공식 배치 · 이 시나리오의 가정 배치)을 찍는다. 저장이 쓰기
@@ -2981,7 +3046,7 @@ else:
                     floor_status,
                     get_space_unit_boundaries(floor_status, downtime, today=today),
                 )
-            marks, viewer_labels, items, roster = viewer_inputs
+            marks, viewer_labels, items, roster, viewer_stack = viewer_inputs
             render_space_layout_viewer(
                 key=f"space_layout_viewer_{selected_building}_{selected_floor}",
                 # 저장본·캔버스·요소·그리는 호기(조건 카드 필터, 페이더 범위)가 바뀌면 새로 선다.
@@ -2997,11 +3062,12 @@ else:
                         selected_floor,
                         "sample" if using_sample_equipment else revision_token(latest_snapshot),
                         f"{canvas_width:g}x{canvas_height:g}",
-                        floor_layout_fingerprint(marks, viewer_labels),
+                        floor_layout_fingerprint(marks, viewer_labels, viewer_stack),
                         roster,
                     )
                 ),
                 items=items,
+                raised=raised_ids(viewer_stack, marks),
                 canvas=(canvas_width, canvas_height),
                 floor=(selected_building, selected_floor),
                 marks=marks,

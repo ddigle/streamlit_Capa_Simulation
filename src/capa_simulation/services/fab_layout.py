@@ -419,6 +419,9 @@ def parse_fab_editor_apply(payload: Mapping[str, Any], canvas: CanvasSize) -> Fa
     거부한다. `canvas` 는 지금 편집 영역(적용 전)이다 — 요소는 새 영역(바꿨으면) 안이어야 한다."""
     if payload.get("changes"):
         raise ValueError("FAB 전체 도면에는 호기가 없습니다.")
+    if payload.get("stack") is not None:
+        # FAB 는 같은 겹 안 요소 차례(요소 저장 차례)만 바꾼다 — 호기 겹이 없다(설계 F (가)).
+        raise ValueError("FAB 전체 도면에는 호기 위로 올리는 순서가 없습니다.")
     raw_canvas = payload.get("canvas")
     new_canvas: CanvasSize | None = None
     if isinstance(raw_canvas, Mapping):

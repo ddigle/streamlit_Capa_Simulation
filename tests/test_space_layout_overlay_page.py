@@ -84,6 +84,8 @@ from capa_simulation.persistence.equipment_repository import (
     EquipmentScheduleRevisionSummary,
 )
 from capa_simulation.services.fab_layout import FLOOR_KEYS
+from capa_simulation.services.floor_layout_mark import floor_layout_fingerprint
+from capa_simulation.services.floor_layout_stack import FloorStack
 from capa_simulation.services.korean_particle import subject_particle
 from capa_simulation.services.schedule_confirmation import (
     UNCONFIRMED,
@@ -356,6 +358,51 @@ def test_an_assumption_editor_locks_the_order_buttons_and_an_official_one_opens_
     data = editor_calls[-1]
     assert data.get("mode") != "view"
     assert data["orderEditable"] is True and data["orderLock"] == ""
+
+
+def test_an_assumption_editor_reads_the_official_order_and_refuses_an_order_apply(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """가정 설비 시나리오는 공식 겹친 순서(설비 0034)를 따른다 — 편집기 · 보기는 공식 순서로 호기를
+    보내고, 잠긴 단추를 지나 온 옛 화면의 순서 적용은 대기분을 세우지 않고 거부한다(화면 겹 —
+    저장소도 가정 역할의 순서를 거부한다)."""
+    repository, setup = _overlay(tmp_path)
+    official = repository.load_official_snapshot()
+    assert official is not None
+    seen = floor_layout_fingerprint(
+        repository.load_floor_layout_marks("C1", "1F"),
+        repository.load_floor_group_labels("C1", "1F"),
+    )
+    repository.save_space_layout(
+        official.baseline,
+        official.equipment,
+        official.downtime,
+        floor_stacks={("C1", "1F"): FloorStack(units=("EQ-02", "EQ-01"))},
+        floor_layout_bases={("C1", "1F"): (None, seen)},
+    )
+    clear_equipment_repository()
+    app = _ok(_space(tmp_path, setup).run())
+    assert [item["id"] for item in _viewer(editor_calls)["items"]] == ["EQ-02", "EQ-01"]
+    app.toggle(key="space_layout_edit_mode").set_value(True).run()
+    data = editor_calls[-1]
+    assert data.get("mode") != "view"
+    assert [item["id"] for item in data["items"]] == ["EQ-02", "EQ-01"]
+
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": None,
+        "stack": {"units": ["EQ-01", "EQ-02"], "raised": []},
+    }
+    _ok(app.run())
+    pending = (
+        app.session_state["equipment_pending_floor_stacks_v1"]
+        if ("equipment_pending_floor_stacks_v1" in app.session_state)
+        else {}
+    )
+    assert not pending
+    assert any(ORDER_LOCK_REASON in item.value for item in flashed(app, "error"))
 
 
 def _apply_rename(app: AppTest, editor_calls: list[dict[str, Any]], *, move: bool = False) -> None:

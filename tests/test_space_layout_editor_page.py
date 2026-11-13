@@ -485,6 +485,149 @@ def test_a_group_label_apply_saves_without_a_revision_and_follows_a_rename(
     clear_equipment_repository()
 
 
+def test_a_unit_order_and_a_raised_zone_are_staged_saved_and_drawn_in_that_order(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """호기끼리 순서와 호기 위로 올린 영역(설비 0034 — 2026-11-12 보드 7-2 의 2단)은 적용 →
+    대기분 → 「배치 저장」 한 번에 공식 층 현행값으로 남고, 편집기 · 보기는 그 차례로 호기를 보내고
+    올린 영역에 `raised` 를 단다. 리비전은 만들지 않는다."""
+    app, database = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    assert [item["id"] for item in data["items"]] == ["EQ-01", "EQ-02"]
+    zone = {"id": "Z1", "kind": "zone", "x": 5, "y": 5, "w": 40, "h": 20}
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": [zone],
+        "stack": {"units": ["EQ-02", "EQ-01"], "raised": ["Z1"]},
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    assert any("겹친 순서 1개 층" in item.value for item in app.markdown)
+    data = editor_calls[-1]
+    assert [item["id"] for item in data["items"]] == ["EQ-02", "EQ-01"]
+    assert [mark.get("raised") for mark in data["marks"]] == [True]
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    repository = DuckDBEquipmentRepository(database)
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    stored = repository.load_floor_layout_stack("C1", "1F")
+    assert stored.units == (keys["EQ-02"], keys["EQ-01"]) and stored.raised == {"Z1"}
+    assert len(repository.list_revisions()) == 1
+    assert (
+        "equipment_pending_floor_stacks_v1" not in app.session_state
+        or not (app.session_state["equipment_pending_floor_stacks_v1"])
+    )
+    data = editor_calls[-1]
+    assert [item["id"] for item in data["items"]] == ["EQ-02", "EQ-01"]
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    viewer = editor_calls[-1]
+    assert viewer["mode"] == "view"
+    assert [item["id"] for item in viewer["items"]] == ["EQ-02", "EQ-01"]
+    assert [mark.get("raised") for mark in viewer["marks"]] == [True]
+    clear_equipment_repository()
+
+
+def test_a_raise_only_apply_does_not_pin_the_unit_order_and_undoing_it_drops_the_pending(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """올림만 바꾼 적용은 호기 차례를 굳히지 않는다(빈 순서의 차례와 같은 호기 줄은 행을 두지
+    않는다). 저장값으로 되돌려 적용하면 그 층 순서 대기분이 빠진다."""
+    app, _ = _open_editor(tmp_path)
+    zone = {"id": "Z1", "kind": "zone", "x": 5, "y": 5, "w": 40, "h": 20}
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": [zone],
+        "stack": {"units": ["EQ-01", "EQ-02"], "raised": ["Z1"]},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    staged = app.session_state["equipment_pending_floor_stacks_v1"][("C1", "1F")]
+    assert staged.units == () and staged.raised == {"Z1"}
+
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": None,
+        "stack": {"units": ["EQ-01", "EQ-02"], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert ("C1", "1F") not in app.session_state["equipment_pending_floor_stacks_v1"]
+    assert not any("겹친 순서" in item.value for item in app.markdown)
+    clear_equipment_repository()
+
+
+def test_a_rename_and_a_reorder_in_one_apply_keep_the_order_under_the_new_name(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """같은 적용의 이름 바꿈을 대기 순서가 따라가고, 저장은 그 이름을 같은 호기 키로 옮긴다."""
+    app, database = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": None,
+        "renames": [{"kind": "unit", "from": "EQ-01", "to": "EQ-01R"}],
+        "stack": {"units": ["EQ-01", "EQ-02"][::-1], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    staged = app.session_state["equipment_pending_floor_stacks_v1"][("C1", "1F")]
+    assert staged.units == ("EQ-02", "EQ-01R")
+    assert [item["id"] for item in editor_calls[-1]["items"]] == ["EQ-02", "EQ-01R"]
+
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    assert repository.load_floor_layout_stack("C1", "1F").units == (
+        keys["EQ-02"],
+        keys["EQ-01R"],
+    )
+    clear_equipment_repository()
+
+
+def test_a_stack_naming_a_unit_outside_the_editor_is_refused(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    app, _ = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": None,
+        "stack": {"units": ["EQ-02", "NOT-HERE"], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert (
+        "equipment_pending_floor_stacks_v1" not in app.session_state
+        or not (app.session_state["equipment_pending_floor_stacks_v1"])
+    )
+    assert any(
+        "적용하지 못했습니다" in item.value and "이 편집기에 없는 호기의 순서" in item.value
+        for item in flashed(app, "error")
+    )
+    clear_equipment_repository()
+
+
 def _label_master() -> pd.DataFrame:
     module = {"Main 설비": "GRP-1", "Xsize": 10, "Ysize": 7}
     return _master(

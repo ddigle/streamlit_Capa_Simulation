@@ -65,7 +65,7 @@ JS(`// <unit-sheet>`)라 필터를 고쳐도 앱이 다시 돌지 않는다. 창
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from functools import partial
@@ -506,6 +506,18 @@ def _as_of_fields(as_of: date, today: date, as_of_range: tuple[date, date]) -> d
     }
 
 
+def _mark_payloads(
+    marks: Sequence[FloorLayoutMark], raised: Collection[str] = ()
+) -> list[dict[str, Any]]:
+    """층 요소 payload — 호기 위로 올린 영역 · 도형(설비 `0034`)에만 ``"raised": true`` 를 단다.
+    요소 지문(`FloorLayoutMark.editor_payload`)은 그대로다."""
+    lifted = set(raised)
+    return [
+        {**mark.editor_payload(), **({"raised": True} if mark.mark_id in lifted else {})}
+        for mark in marks
+    ]
+
+
 def render_space_layout_viewer(
     *,
     key: str,
@@ -530,6 +542,7 @@ def render_space_layout_viewer(
     sheet: Mapping[str, Any] | None = None,
     pick_to_server: bool = True,
     arrival_dates: bool = False,
+    raised: Collection[str] = (),
 ) -> None:
     """층 상세 **뷰어**. 편집기와 같은 도면을 보기 전용으로 그린다 — 편집 도구가 없고, 끌기는
     화면 이동, 누르기는 그 호기 정보 한 줄, Ctrl+휠·+/−·더블클릭은 확대다. `summary` 는 도구 줄
@@ -577,6 +590,9 @@ def render_space_layout_viewer(
     브라우저가 호기 누르기를 `pick` 으로 보내지 않는다(누를 때마다 앱 전체가 돌지 않게 — 받는 쪽이
     필요 단축 칸뿐이라 그 보기를 켠 동안만 참이다, 사양 D11).
 
+    `raised` 는 호기 위 겹에 그릴 영역 · 도형 id(설비 `0034` — 공식 층 현행값)다. 그 도형의 안쪽은
+    누르기가 지나가 밑 호기를 누를 수 있다(설계 D (가)).
+
     `arrival_dates` 는 사이드바 「반입 일정」 을 켠 회차다(2026-11-12 Space 보드 답 1-1 ~ 1-6) — 켠
     회차에만 data `arrivalDates` 가 실리고(epoch 밖) 브라우저가 반입 전 호기에 반입 일정을 쓴다.
     재료(호기마다 `arrivalPlan`·`arrivalDelayed`)는 늘 실린다 — 풍선이 토글과 상관없이 쓴다."""
@@ -595,7 +611,7 @@ def render_space_layout_viewer(
             "title": floor_label(floor),
             "summary": summary,
             "items": _clean_items(items),
-            "marks": [mark.editor_payload() for mark in marks],
+            "marks": _mark_payloads(marks, raised),
             "groupLabels": _clean_group_labels(group_labels),
             "picked": picked if isinstance(picked, str) and picked else None,
             "compare": _clean_compare(compare),
@@ -810,6 +826,7 @@ def render_space_layout_editor(
     overlay_extents: Sequence[tuple[str, float, float]] = (),
     order_editable: bool = True,
     order_lock: str | None = None,
+    raised: Collection[str] = (),
     legend: Mapping[str, Any] | None = None,
     pending_save: bool = False,
     sheet: Mapping[str, Any] | None = None,
@@ -823,8 +840,10 @@ def render_space_layout_editor(
     `canvas_editable` 이 거짓이면 「캔버스」 칸(폭·높이·±·맞춤)을 끄고 `canvas_lock` 을 풍선으로
     둔다 — 층 캔버스는 공용 값이라 가정 설비 시나리오에서는 고치지 않는다(설계 8-4). 옛 브라우저가
     보낸 캔버스 값은 서버(`app_pages/space_status.py`)가 다시 거부한다(두 겹). `order_editable` 이
-    거짓이면 선택 칸 「순서」 단추 넷과 순서 키를 끄고 `order_lock` 을 풍선으로 둔다 — 가정 배치
-    차이는 요소 차례를 담지 않는다(2026-11-12 보드 7-4 — 화면 잠금 한 겹).
+    거짓이면 선택 칸 「순서」 단추 넷과 순서 키를 끄고 `order_lock` 을 풍선으로 둔다 — 겹친 순서는
+    공식 층 현행값이다(2026-11-12 보드 7-4 — 가정 배치 차이는 차례를 담지 않고, 화면 · 서버가 두
+    겹으로 막는다). `raised` 는 호기 위 겹에 그리는 영역 · 도형 id(설비 `0034`)다. 호기는
+    `inputs.items` 차례(아래 → 위 — `floor_layout_stack.ordered_items` 로 줄 세운 것)로 그린다.
 
     「캔버스」 칸은 놓인 호기 · 요소, 도면에 안 보이는 이 층 호기(`EditorInputs.reserved_extent`)와
     `overlay_extents`(다른 가정 설비 시나리오의 이 층 배치 차이 — (시나리오 이름, 오른쪽, 위),
@@ -844,7 +863,7 @@ def render_space_layout_editor(
     "blocked", "follow"}`` 로 돌려준다(브라우저는 마지막으로 보낸 seq 의 것만 받는다).
 
     적용값: ``{"epoch", "changes", "ghosts", "renames", "canvas", "marks", "groupLabels",
-    "cells"}``.
+    "cells", "stack"}``.
 
     - ``changes``: 바뀐 호기(배치). ``id`` 는 편집기에 보낸 **옛** 설비명이다. 놓인 호기는
       좌표·크기, 트레이로 뺀 호기는 크기만(있으면) 든다. 다른 층으로 보낸 호기는 ``moveTo`` 에 그
@@ -873,6 +892,9 @@ def render_space_layout_editor(
     - ``cells``: 「호기 정보」 창에서 고친 칸 ``[{"id": 편집기에 실린 설비명, "col", "text"}]``
       (2026-11-12 Space 시안 보드 답 5-5). 꼴은 `parse_editor_apply`, 잠금 · 다듬기 · 규칙은
       `space_sheet_edit.check_sheet_cells` 다.
+    - ``stack``: 겹친 순서를 바꿨을 때만 ``{"units": [도면 위 호기 설비명 아래 → 위], "raised":
+      [호기 위로 올린 영역 · 도형 id]}``(설비 `0034`), 아니면 None. 순서가 바뀌면 요소 차례도
+      함께 바뀌어 ``marks`` 가 같이 온다.
     """
     items = _clean_items(inputs.items)
     result = _EDITOR(
@@ -884,7 +906,7 @@ def render_space_layout_editor(
             "title": title,
             "items": items,
             "ghosts": _clean_ghosts(inputs.ghosts),
-            "marks": [mark.editor_payload() for mark in marks],
+            "marks": _mark_payloads(marks, raised),
             "groupLabels": _clean_group_labels(group_labels),
             "canvas": {"width": canvas[0], "height": canvas[1]},
             "canvasLimits": {

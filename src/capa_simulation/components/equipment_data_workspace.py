@@ -154,6 +154,7 @@ from capa_simulation.services.equipment_validation import (
 from capa_simulation.services.fab_layout import FabLayoutBase, FabLayoutMark
 from capa_simulation.services.floor_layout_mark import FloorLayoutMark
 from capa_simulation.services.floor_layout_profile import CanvasSize, FloorCanvasMap, FloorKey
+from capa_simulation.services.floor_layout_stack import FloorStack, renamed_stack
 from capa_simulation.services.korean_particle import (
     object_particle,
     subject_particle,
@@ -290,6 +291,9 @@ PENDING_MARKS_KEY = "equipment_pending_floor_marks_v1"
 # 층마다 Main 설비 모듈 묶음 이름표 위치((동, 층) → {Main 설비: 위치}, 그 층 전체 — 처음 위치인
 # 묶음은 빠짐).
 PENDING_GROUP_LABELS_KEY = "equipment_pending_floor_group_labels_v1"
+# 층마다 겹친 순서((동, 층) → `FloorStack` — 호기는 편집본 설비명 꼴, 그 층 전체, 설비 `0034`). 공식
+# 배치에서만 선다(가정 설비 시나리오는 공식 순서를 따른다).
+PENDING_STACKS_KEY = "equipment_pending_floor_stacks_v1"
 # 층마다 편집을 시작할 때 본 저장값(캔버스·요소와 위치의 지문). 저장이 이것과 지금 저장값을 견줘, 그
 # 사이 다른 사람이 바꾼 층을 옛 목록으로 덮지 않는다(요소·위치는 층 전체 교체다).
 PENDING_BASES_KEY = "equipment_pending_floor_bases_v1"
@@ -470,6 +474,7 @@ def reset_equipment_drafts(*, keep_fab: bool = False) -> None:
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
         PENDING_GROUP_LABELS_KEY,
+        PENDING_STACKS_KEY,
         PENDING_BASES_KEY,
         *(() if keep_fab else (PENDING_FAB_KEY,)),
         PENDING_RENAMES_KEY,
@@ -869,6 +874,7 @@ def ensure_equipment_drafts(latest_snapshot: EquipmentSnapshot | None) -> Frames
                 PENDING_CANVASES_KEY,
                 PENDING_MARKS_KEY,
                 PENDING_GROUP_LABELS_KEY,
+                PENDING_STACKS_KEY,
                 PENDING_BASES_KEY,
             ]
             if reapplied is None or not reapplied.reapplied:
@@ -1455,6 +1461,7 @@ def live_layout_role() -> str | None:
         pending_floor_canvases()
         or pending_floor_marks()
         or pending_floor_group_labels()
+        or pending_floor_stacks()
         or buffer_has_layout_edits()
     ):
         return stamped
@@ -1598,6 +1605,7 @@ def discard_layout_edits() -> bool:
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
         PENDING_GROUP_LABELS_KEY,
+        PENDING_STACKS_KEY,
         PENDING_BASES_KEY,
         EDITOR_MODULE_LAYOUTS_KEY,
         LAYOUT_ROLE_KEY,
@@ -1633,6 +1641,7 @@ def _buffer_is_saved() -> bool:
         or pending_floor_canvases()
         or pending_floor_marks()
         or pending_floor_group_labels()
+        or pending_floor_stacks()
     ):
         return False
     return all(
@@ -1710,6 +1719,7 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
     - 그 표 목록 필터의 고른 값(`설비명`)도 새 이름으로 옮긴다 — 그대로 두면 다음 회차에 선택지에
       없는 값이라 지워져 필터가 「전체」 로 돌아간다. 필터 위젯이 그려지기 전에만 고칠 수 있어
       `FOLLOWED_FILTERS_KEY` 에 모았다가 `render_small_editor` 가 얹는다.
+    - 저장 안 한 층 겹친 순서(`PENDING_STACKS_KEY` — 설비명 꼴)는 새 설비명으로 옮긴다.
     - 일괄 삭제 되살리기(`LAST_REMOVED_KEY`)는 **어느 이름이든 바꾸면** 버린다. 지운 행은 옛 이름을
       지니므로 되살리면
       비가동 일정이 옛 설비명을 가리키거나 엉뚱한 호기에 붙고, 지운 모듈 행은 옛 Main 설비로 돌아와
@@ -1731,6 +1741,12 @@ def follow_unit_renames(renames: Mapping[str, str], groups: Mapping[str, str]) -
         if target in _NAMED_TARGETS and isinstance(keys, frozenset):
             st.session_state[PENDING_DELETE_KEY] = (target, _renamed_keys(keys, renames))
     _stage_followed_filter(filter_widget_key(DOWNTIME_VIEW_PREFIX, EQUIPMENT_ID_COLUMN), renames)
+    # 대기 겹친 순서는 설비명 꼴이라 새 이름을 따라간다(저장이 그 이름을 호기 키로 옮긴다).
+    stacks = pending_floor_stacks()
+    if renames and stacks:
+        st.session_state[PENDING_STACKS_KEY] = {
+            key: renamed_stack(stack, renames) for key, stack in stacks.items()
+        }
     st.session_state.pop(LAST_REMOVED_KEY, None)
     # 설비 마스터 표의 되돌리기 가운데 행 조각을 든 단계(지우기·되살리기·통째)와 그 앞 단계도 같은
     # 까닭으로 버린다(개편 명세 4-11 셋째 자리 — 역 patch 라 앞 단계는 자리가 맞지 않는다).
@@ -1809,6 +1825,12 @@ def pending_floor_group_labels() -> dict[FloorKey, dict[str, str]]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def pending_floor_stacks() -> dict[FloorKey, FloorStack]:
+    """Space 에서 바꿨지만 아직 저장하지 않은 층 겹친 순서(층 전체 — 호기는 편집본 설비명 꼴)."""
+    value = st.session_state.get(PENDING_STACKS_KEY)
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def pending_floor_bases() -> dict[FloorKey, FloorLayoutBase]:
     """층마다 편집을 시작할 때 본 저장값(캔버스, 요소·위치 지문)."""
     value = st.session_state.get(PENDING_BASES_KEY)
@@ -1822,6 +1844,7 @@ def _remember_base(key: FloorKey, base: FloorLayoutBase | None) -> None:
         key not in pending_floor_canvases()
         and key not in pending_floor_marks()
         and key not in pending_floor_group_labels()
+        and key not in pending_floor_stacks()
     ):
         bases.pop(key, None)
     elif key not in bases and base is not None:
@@ -1883,6 +1906,26 @@ def stage_floor_group_labels(
     else:
         staged[key] = dict(labels)
     st.session_state[PENDING_GROUP_LABELS_KEY] = staged
+    _remember_base(key, base)
+    _bump_buffer_generation()
+    _note_if_back_to_saved()
+
+
+def stage_floor_stack(
+    key: FloorKey,
+    stack: FloorStack | None,
+    *,
+    base: FloorLayoutBase | None = None,
+) -> None:
+    """미저장 겹친 순서(층 전체)를 둔다. None 이면 그 층 대기분을 지운다(저장값과 같아졌을 때)."""
+    staged = pending_floor_stacks()
+    if stack is None and key not in staged:
+        return
+    if stack is None:
+        staged.pop(key, None)
+    else:
+        staged[key] = stack
+    st.session_state[PENDING_STACKS_KEY] = staged
     _remember_base(key, base)
     _bump_buffer_generation()
     _note_if_back_to_saved()
@@ -2154,6 +2197,7 @@ def _save_equipment_frames(
         for key, staged in pending_floor_marks().items()
     }
     labels = pending_floor_group_labels()
+    stacks = pending_floor_stacks()
     scenario_id = (
         basis.equipment_scenario_id
         if basis is not None
@@ -2185,8 +2229,12 @@ def _save_equipment_frames(
         floor_marks=marks,
         floor_layout_bases=pending_floor_bases(),
         floor_group_labels=labels,
+        floor_stacks=stacks,
         expected_layout_role=_layout_role_of(
-            frames[1], renames.units, floor_values=bool(canvases or marks or labels), basis=basis
+            frames[1],
+            renames.units,
+            floor_values=bool(canvases or marks or labels or stacks),
+            basis=basis,
         ),
     )
     own_name = f"{EQUIPMENT_SAVE_NAME}:{scenario_id}"
@@ -2236,7 +2284,7 @@ def _save_equipment_frames(
     # 문구는 대기분이 아니라 **저장 결과**로 만든다(검토 F18b) — 가정 역할의 도면 요소·Main 설비명
     # 위치는 층 현행값이 아니라 그 시나리오 새 리비전의 배치 차이로 갔다.
     floor_layouts = (
-        floor_layout_words(canvases, marks, labels) if result.floor_values_written else ""
+        floor_layout_words(canvases, marks, labels, stacks) if result.floor_values_written else ""
     )
     if not _wrote_anything(result):
         # 설비 쪽은 아무것도 쓰지 않았다. 편집본·변경 메모·선택을 그대로 둔다. 이 누름이 FAB 도 쓰지
@@ -2411,10 +2459,17 @@ def _propagated_words(item: PropagatedRevision) -> str:
     return f"{quoted(item.scenario_name)} r{item.revision_no}{detail}"
 
 
-def floor_layout_words(canvases: object, marks: object, labels: object) -> str:
+def floor_layout_words(
+    canvases: object, marks: object, labels: object, stacks: object = None
+) -> str:
     """저장 알림에 적을 층 현행값 — 대기분이 있는 것만 차례대로(층 캔버스·도면 요소·Main 설비명
-    위치). 하나도 없으면 빈 글자."""
-    parts = (("층 캔버스", canvases), ("도면 요소", marks), ("Main 설비명 위치", labels))
+    위치·겹친 순서). 하나도 없으면 빈 글자."""
+    parts = (
+        ("층 캔버스", canvases),
+        ("도면 요소", marks),
+        ("Main 설비명 위치", labels),
+        ("겹친 순서", stacks),
+    )
     return "·".join(word for word, pending in parts if pending)
 
 

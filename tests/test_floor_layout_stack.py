@@ -28,6 +28,7 @@ from capa_simulation.persistence.equipment_repository import (
     DuckDBEquipmentRepository,
     EquipmentLayoutScopeError,
 )
+from capa_simulation.services.fab_layout import parse_fab_editor_apply
 from capa_simulation.services.floor_layout_mark import (
     FloorLayoutMark,
     floor_layout_fingerprint,
@@ -429,3 +430,10 @@ def test_stack_rows_leave_hypothetical_layout_digests_alone(tmp_path: Path) -> N
     assert repository.load_layout_overlay(moved.schedule.schedule_revision_id).digest() == overlay
     summary = repository.schedule_revision_summary(moved.schedule.schedule_revision_id)
     assert summary is not None and summary.layout_digest == digest
+
+
+def test_the_fab_editor_refuses_an_order_across_tiers() -> None:
+    """FAB 는 같은 겹 안 요소 차례만 바꾼다 — 호기 겹이 없어 순서 값이 오면 거부한다
+    (설계 F (가))."""
+    with pytest.raises(ValueError, match="FAB 전체 도면에는 호기 위로"):
+        parse_fab_editor_apply({"stack": {"units": [], "raised": []}}, (101.0, 62.0))
