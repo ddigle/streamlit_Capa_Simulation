@@ -63,6 +63,9 @@ from capa_simulation.page_failures import PageFailure
 # 카드 칸 key — 한 회차에 카드는 하나다(화면 하나). 화면 확인 스크립트가 이 칸을 오류로 센다.
 CARD_KEY: Final = "capa_page_failure"
 COPY_KEY: Final = "page_failure"
+# 접힌 진단의 key — 이름이 글자 그대로가 아니라(공용 상수) 고정 key 를 단다(`test_popover_keys`).
+# 한 회차에 카드는 하나다.
+DIAGNOSTIC_KEY: Final = "page_failure_diagnostic"
 CARD_ICON: Final = ":material/error:"
 HEADLINE: Final = "이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다"
 ALERT_CODE: Final = "AD-22"
@@ -119,7 +122,7 @@ def render_page_failure(failure: PageFailure, exc: BaseException) -> None:
         st.caption(f"참고 번호 {failure.ref} · {literal_markdown(failure.kind)}")
         if admin_notes_visible():
             lines = diagnostic_lines(failure, exc)
-            with st.expander(ADMIN_DIAGNOSTIC_LABEL):
+            with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=DIAGNOSTIC_KEY):
                 render_diagnostic_copy(diagnostic_text(HEADLINE, lines), key=COPY_KEY)
                 st.code("\n".join(lines), language=None)
 
