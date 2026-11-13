@@ -125,7 +125,8 @@ SIGN_IN_TO_APPLY_LABEL = "로그인하고 신청"
 OTHER_ACCOUNT_LABEL = "다른 계정으로 로그인"
 RECONNECT_LABEL = "다시 접속"
 RETRY_LABEL = "다시 시도"
-DENIED_ACCOUNT_TEXT = "계정 {account} 은 이 앱의 접속 명단에 없습니다."
+# 계정 뒤에는 조사를 못박지 않는다(받침을 모른다 — `tests/test_particle_sites.py`).
+DENIED_ACCOUNT_TEXT = "계정 {account} — 이 앱의 접속 명단에 없습니다."
 DENIED_REGISTER_STEP = "「접속 권한 신청」 을 누르면 바로 명단에 등록됩니다."
 DENIED_OTHER_STEP = "다른 계정으로 들어가려면 「다른 계정으로 로그인」 을 누르세요."
 DENIED_NO_TICKET_TEXT = "신청하려면 먼저 로그인해 계정을 확인합니다."
@@ -137,10 +138,10 @@ ADMIN_TYPO_DIAGNOSTIC = (
 )
 REGISTERED_TITLE = "등록했습니다"
 REGISTERED_TEXT = (
-    "계정 {account} 을 접속 명단에 넣었습니다. 다시 접속하면 처음 가려던 화면으로 들어갑니다."
+    "계정 {account} — 접속 명단에 넣었습니다. 다시 접속하면 처음 가려던 화면으로 들어갑니다."
 )
 REGISTER_FAILED_TITLE = "접속 명단에 넣지 못했습니다"
-REGISTER_FAILED_TEXT = "계정 {account} 을 명단에 넣는 중 서버가 저장하지 못했습니다."
+REGISTER_FAILED_TEXT = "계정 {account} — 명단에 넣는 중 서버가 저장하지 못했습니다."
 LIST_UNREAD_WAIT_TEXT = (
     "서버가 접속 명단을 읽지 못해 지금은 확인할 수 없습니다. 권한 문제가 아닙니다."
 )
