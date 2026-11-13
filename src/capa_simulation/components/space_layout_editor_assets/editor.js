@@ -2574,6 +2574,12 @@ export default function (component) {
       tip: blocked ? hit.message : lock || (group ? `같은 Main 설비(${group}) 모듈 ${size}줄에 함께` : ''),
     }
   }
+  // 창 안 키가 실행 취소인가 — 배치 편집(보기 아님)에서 입력 칸(input · select · textarea) 밖의 Ctrl(⌘)+Z 다(Shift 를 더해도 —
+  // 편집기 몸의 실행 취소와 같은 판정). key 는 {ctrl, meta, key, tag(초점 받은 요소의 tagName)}.
+  function sheetEditUndoKey(view, key) {
+    if (view || !key || !(key.ctrl || key.meta)) return false
+    return String(key.key || '').toLowerCase() === 'z' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(String(key.tag || ''))
+  }
   // </sheet-edit>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
@@ -8822,13 +8828,18 @@ export default function (component) {
       renderMenu()
     }
     q('.sle-sheet-menu-done').onclick = () => closeMenu(true)
-    // 창 안의 키는 도면 단축키(호기 옮기기·지우기·실행 취소 …)로 새지 않는다.
+    // 창 안의 키는 도면 단축키(호기 옮기기·지우기 …)로 새지 않는다. 배치 편집의 Ctrl(⌘)+Z 만은 입력 칸 밖이면 「되돌리기」
+    // 단추와 같은 실행 취소다 — 창 칸 고침도 되돌리기 기록에 든다(입력 칸 안의 Ctrl+Z 는 그 칸의 글 되돌리기 그대로).
     sheetBox.onkeydown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault()
         // 단축키 판이 열려 있으면 판이 먼저다(도구 줄에서 Tab 으로 창에 들어온 때) — 편집기 몸의 차례와 같다.
         if (keysOpen()) setKeysOpen(false, true)
         else escapeSheet(true)
+      } else if (sheetEditUndoKey(VIEW, { ctrl: event.ctrlKey, meta: event.metaKey, key: event.key, tag: event.target && event.target.tagName })) {
+        event.preventDefault()
+        undo()
+        keepKeysInSheet()
       }
       event.stopPropagation()
     }

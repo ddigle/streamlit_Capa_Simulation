@@ -1394,6 +1394,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     이 층 도면에 보이는 대상이 5대(`ATTRACT_MOST`)를 넘거나 앞과 같으면 걸지 않는다. 화면 밖 테는 빼고, 확대 · 이동 · 크기 바뀜
     (`applyView`) · 새 epoch 에 걷는다(`stopAttract`). 움직임 줄이기 설정이면 윤곽(`sle-attract-still`)이다. 배치 편집의 「도면」 칸은 적용 전 편집으로 덮어
     쓴다(`sheetRows` — 트레이 = 미배치, 보낸 호기 「→ 층」). 창 안 키는 도면 단축키로 새지 않는다(`sheetBox.onkeydown` 이 멈춤).
+    배치 편집의 Ctrl(⌘)+Z 만은 입력 칸 밖이면 「되돌리기」 단추와 같은 `undo()` 다(순수 판정 `sheetEditUndoKey` — 편집기 몸과 같은
+    판정, 2026-11-13 사용자 답 「다음 배포로」 · R2 리뷰 지적 2).
     상태는 브라우저에만 — 자리·크기·접힘 localStorage `capa.space.sheet.win.v1`, 열림·탭·필터·강조 sessionStorage
     `capa.space.sheet.state.v1`(탭 안 기억, 층·편집을 오가도 남음 — 필터는 칸 이름으로 남아 새 층의 값으로 다시 센다). 받은 표는
     지문(`S.sheetDataKey`)이 바뀐 회차에만 다시 그리고, 상태 줄을 고칠 때마다(`updateStatus` 끝) 같은 그림이면 고른 줄 표시만

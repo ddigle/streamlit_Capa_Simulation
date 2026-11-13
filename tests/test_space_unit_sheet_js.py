@@ -878,6 +878,47 @@ def test_an_apply_keeps_the_typed_cells_until_a_new_drawing() -> None:
     assert "input.type = 'text'" in opener and "type = 'date'" not in opener
 
 
+_UNDO_KEY_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify({
+  undo: input.cases.map(([view, key]) => sheetEditUndoKey(view, key)),
+}))
+"""
+
+
+def test_ctrl_z_on_a_window_row_undoes_like_the_undo_button() -> None:
+    """R2 리뷰 지적 2 · 2026-11-13 사용자 답 「다음 배포로」 — 창 줄에 초점이 있을 때 Ctrl+Z 가 칸
+    고침을 되돌리지 않았다(창 키를 도면 단축키로 새지 않게 모두 막음). 배치 편집에서 입력 칸 밖의
+    Ctrl(⌘)+Z 만 「되돌리기」 단추와 같은 `undo()` 로 보내고(Shift 를 더해도 — 편집기 몸과 같은 판정),
+    그 밖의 키는 여전히 도면으로 새지 않는다. 보기 화면 · 입력 칸 안(칸 글 · 펼침 찾기 칸)은 실행
+    취소가 아니다."""
+    body = _EDIT.search(JS)
+    assert body, "editor.js 에 // <sheet-edit> 구획이 없습니다"
+    row = {"ctrl": True, "meta": False, "key": "z", "tag": "TR"}
+    cases = [
+        [False, row],
+        [False, {**row, "ctrl": False, "meta": True, "key": "Z"}],
+        [False, {**row, "tag": "SECTION"}],
+        [True, row],
+        [False, {**row, "tag": "INPUT"}],
+        [False, {**row, "tag": "SELECT"}],
+        [False, {**row, "ctrl": False}],
+        [False, {**row, "key": "y"}],
+    ]
+    result = _node(body.group("body") + _UNDO_KEY_RUNNER, {"cases": cases})
+    assert result["undo"] == [True, True, True, False, False, False, False, False]
+    inside = JS[
+        JS.index("    sheetBox.onkeydown = (event) => {") : JS.index("    // 펼침 밖을 누르면")
+    ]
+    assert inside.index("escapeSheet(true)") < inside.index("sheetEditUndoKey(VIEW, {")
+    assert inside.index("undo()\n        keepKeysInSheet()") < inside.index(
+        "event.stopPropagation()"
+    )
+    # 편집기 몸의 실행 취소도 같은 판정(입력 칸 밖 · Ctrl 또는 ⌘)이다.
+    host = JS[JS.index("    const typing = event.target && ['INPUT', 'SELECT', 'TEXTAREA']") :]
+    assert "if (ctrl && event.key.toLowerCase() === 'z' && !typing)" in host[:400]
+
+
 def test_a_painted_cell_keeps_its_long_text_tip_in_step_with_the_shown_text() -> None:
     """R2 리뷰 지적 6 — 18자를 넘는 칸의 브라우저 풍선(`title`)은 표를 그릴 때 받은 글로 달렸고 칸을
     고친 뒤에도 옛 글을 보였다. 칸을 칠할 때 지금 글로 다시 달고, 짧아지면 걷는다."""
