@@ -502,12 +502,24 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence(
     assert not hasattr(settings, "APP_BUILD_DATE")
 
 
-@pytest.mark.parametrize("value", [None, "", "   "])
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        "   ",
+        "담당 창구",
+        "<b>demo</b>@example.invalid",
+        "demo@example",
+        "a b@example.invalid",
+    ],
+)
 def test_without_a_contact_variable_the_credits_name_only_the_team(
     monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> None:
     """문의처 메일은 사내 값이라 저장소에 없다(공개 저장소 — 2026-11-12 보드 답 ⑤-9). 환경변수가
-    없거나 비면 둘째 줄은 팀 이름만이고 빈 「 · 」 꼬리를 남기지 않는다. 값은 부를 때마다 읽는다."""
+    없거나 비면 둘째 줄은 팀 이름만이고 빈 「 · 」 꼬리를 남기지 않는다. 카드는 통합인증 줄이 붙으면
+    원문 HTML 로 그려지므로 메일 꼴이 아닌 값도 비운 것과 같다. 값은 부를 때마다 읽는다."""
     import capa_simulation.settings as settings
 
     if value is not None:

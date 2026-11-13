@@ -1,6 +1,7 @@
 # Purpose: 앱 이름·파일 경로·조회기간 등 공통 설정 상수와 문의처 읽기·운영 DB 자리 판정을 정의한다.
 
 import os
+import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -26,6 +27,9 @@ APP_OWNER_TEAM = "S.PKG 제조팀"
 # 환경변수 · C-DEP 환경변수 표의 이 이름으로만 받는다(`app_contact_email`). 비면 카드는 팀 이름만
 # 싣는다.
 APP_CONTACT_EMAIL_ENV = "CAPA_APP_CONTACT_EMAIL"
+# 받는 메일 꼴. 카드는 통합인증 줄이 붙으면 원문 HTML 로 그려지므로 이 꼴 밖의 값(꺾쇠 · 공백 등)은
+# 싣지 않는다 — 비운 것과 같다.
+_CONTACT_EMAIL_SHAPE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # 브라우저 탭 아이콘. `:material/…:` 이름을 주면 프런트엔드가 fonts.gstatic.com 에서 받아 오는데
 # 사내 WebIDE 는 그 주소에 못 나갈 수 있다. 저장소의 SVG 파일 경로를 주면 Streamlit 이 파일을 읽어
@@ -56,9 +60,10 @@ CONTAINER_START_REPORT_PATH = DATA_DIR / "temp" / "container_start.json"
 
 def app_contact_email(environ: Mapping[str, str] | None = None) -> str:
     """앱 정보 카드의 문의처 메일 — 환경변수 `APP_CONTACT_EMAIL_ENV` 를 부를 때마다 읽는다. 없거나
-    비면 빈 글자다."""
+    비었거나 메일 꼴이 아니면 빈 글자다."""
     env = os.environ if environ is None else environ
-    return env.get(APP_CONTACT_EMAIL_ENV, "").strip()
+    value = env.get(APP_CONTACT_EMAIL_ENV, "").strip()
+    return value if _CONTACT_EMAIL_SHAPE.fullmatch(value) else ""
 
 
 def format_month(month: int) -> str:

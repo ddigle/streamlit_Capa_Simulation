@@ -3259,7 +3259,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/app_credits.py` — 앱 이름·버전·빌드일과 개발 팀·문의처 두 줄을 모든 화면
   사이드바 바닥 카드(`APP_CREDITS_KEY`)로 보인다. 값의 근거는 `settings.py` 다. 문의처 메일은 사람을 가리키는 사내 값이라
   저장소에 없고 환경변수 `CAPA_APP_CONTACT_EMAIL`(`settings.app_contact_email()` — 부를 때마다 읽음, 사내 PC 사용자 환경변수 ·
-  C-DEP 환경변수 표)로만 받는다 — 비면 둘째 줄은 「개발 <팀>」 만이다(2026-11-12 보드 답 ⑤-9). 시험은 `tests/conftest.py` 가
+  C-DEP 환경변수 표)로만 받는다 — 비면 둘째 줄은 「개발 <팀>」 만이다(2026-11-12 보드 답 ⑤-9). 통합인증 줄이 붙으면 캡션이
+  원문 HTML 이므로 메일 꼴(`이름@도메인.최상위`)이 아닌 값은 비운 것과 같다. 시험은 `tests/conftest.py` 가
   그 환경변수를 지우고 돈다(필요한 시험만 `…@example.invalid` 를 넣는다). 통합인증이 켜진 서버는 셋째 줄
   「이름 · 부서 · 로그아웃」(`sso_identity.sso_credit_line`)이 붙고, 그 줄이 있을 때만 캡션을 `unsafe_allow_html` 로 그린다
   (로그아웃을 같은 탭에서 여는 원문 링크 — 이름 · 부서는 `literal_markdown` 으로 막았다). 꺼짐은 두 줄 그대로다.

@@ -10,7 +10,8 @@
 #
 # 사내 패키지 저장소 주소는 사내 값이라 이 파일에 적지 않는다(공개 저장소). 아래 `--index-url` 줄은
 # 환경변수 `CAPA_COMPANY_INDEX_URL` 을 가리키고, pip · uv 가 읽을 때 `${이름}` 을 그 값으로 펼친다
-# (pip 26.3 · uv 0.2 ~ 0.13 에서 확인). 값은 사내 PC 의 사용자 환경변수와 C-DEP 환경변수 표에만 둔다.
+# (pip 26.3 · uv 0.2.0 · 0.4.30 · 0.13.0 — Linux 에서 확인). 값은 사내 PC 의 사용자 환경변수와 C-DEP
+# 환경변수 표에만 둔다.
 # 비어 있으면 아무것도 깔지 않고 멈춘다 — uv 는 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}`(종료 2),
 # pip 는 `Could not find a version`(종료 1). C-DEP 시작 스크립트(`scripts/container_start.py`)도 이 줄을
 # 같은 꼴로 펼친다.
