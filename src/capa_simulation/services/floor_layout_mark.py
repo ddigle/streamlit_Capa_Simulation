@@ -14,7 +14,8 @@
 같은 층 현행값으로 **Main 설비 모듈 묶음 이름표의 위치**(`GROUP_LABEL_POSITIONS` — 묶음 범위
 가운데·위·아래, 2026-10-23 사용자 요청)도 여기 둔다. 설비 마스터 칸이 아니고, 행이 없는 묶음은
 묶음 모양의 처음 위치(`space_layout_edit.default_group_label` — 한 줄 묶음은 위, 그 밖은
-가운데)로 선다. 층 저장의 동시성 대조는 요소와 위치를 함께 본다(`floor_layout_fingerprint`).
+가운데)로 선다. 층 저장의 동시성 대조는 요소 · 위치 · 겹친 순서(설비 `0034` —
+`services/floor_layout_stack`)를 함께 본다(`floor_layout_fingerprint`).
 """
 
 from __future__ import annotations
@@ -724,19 +725,36 @@ def prepare_group_labels(labels: Mapping[str, object]) -> dict[str, str]:
     return dict(sorted(prepared.items()))
 
 
-def floor_layout_fingerprint(marks: Sequence[FloorLayoutMark], labels: GroupLabels) -> str:
-    """한 층의 도면 요소와 Main 설비명 위치를 함께 본 지문. 편집을 시작할 때 본 저장값
-    (`FloorLayoutBase` 의 둘째 값)과 저장 직전 값을 견줘, 남이 먼저 바꾼 층을 옛 목록으로 덮지 않게
-    한다. 위치 행이 없으면 요소 지문(`marks_fingerprint`)과 같다 — 위치를 한 번도 고르지 않은 층은
-    지문이 그대로다."""
-    if not labels:
-        return marks_fingerprint(marks)
-    payload = json.dumps(
-        {
-            "marks": [mark.editor_payload() for mark in marks],
-            "groupLabels": sorted(labels.items()),
-        },
-        ensure_ascii=False,
-        sort_keys=True,
+class StackOrder(Protocol):
+    """겹친 순서 한 벌(`services/floor_layout_stack.FloorStack`)의 꼴 — 지문이 읽는 두 칸."""
+
+    @property
+    def units(self) -> tuple[str, ...]: ...
+
+    @property
+    def raised(self) -> frozenset[str]: ...
+
+
+def floor_layout_fingerprint(
+    marks: Sequence[FloorLayoutMark], labels: GroupLabels, stack: StackOrder | None = None
+) -> str:
+    """한 층의 도면 요소 · Main 설비명 위치 · 겹친 순서(설비 `0034`)를 함께 본 지문. 편집을
+    시작할 때 본 저장값(`FloorLayoutBase` 의 둘째 값)과 저장 직전 값을 견줘, 남이 먼저 바꾼 층을
+    옛 목록으로 덮지 않게 한다. 위치 행이 없으면 요소 지문(`marks_fingerprint`)과 같고, 순서 행이
+    없으면 순서를 넣기 전 지문과 같다 — 위치 · 순서를 한 번도 고르지 않은 층은 지문이 그대로다
+    (배포 직후 편집기 epoch 이 흔들리지 않는다). 순서는 저장 꼴(호기 키) 그대로 넣는다."""
+    order = (
+        {"units": list(stack.units), "raised": sorted(stack.raised)}
+        if stack is not None and (stack.units or stack.raised)
+        else None
     )
+    if not labels and order is None:
+        return marks_fingerprint(marks)
+    body: dict[str, object] = {
+        "marks": [mark.editor_payload() for mark in marks],
+        "groupLabels": sorted(labels.items()),
+    }
+    if order is not None:
+        body["stack"] = order
+    payload = json.dumps(body, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
