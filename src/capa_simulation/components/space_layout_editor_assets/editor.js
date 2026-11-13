@@ -4,7 +4,8 @@ export default function (component) {
   if (!host || !data) return
   const NS = 'http://www.w3.org/2000/svg'
   const S = host.__sle || (host.__sle = {
-    epoch: null, items: new Map(), ghosts: new Map(), original: new Map(), originalMarkIds: new Set(), groups: new Map(), undo: [],
+    epoch: null, items: new Map(), ghosts: new Map(), original: new Map(), originalMarkIds: new Set(), originalUnitIds: new Set(),
+    originalRaised: new Set(), groups: new Map(), undo: [],
     selected: null, selection: new Set(), step: 0.5, drag: null, overlapPairs: 0, blocked: 0,
     canvas: null, originalCanvas: null, note: '', view: { z: 1, x: 0, top: 0 }, spaceDown: false, seq: 0,
     passthrough: [],
@@ -917,10 +918,12 @@ export default function (component) {
   // </layout-look>
 
   // ---------------------------------------------------------------- 겹친 순서(순수 함수)
-  // 도면 요소의 그리는 차례(2026-11-12 Space 요청 7 — 보드 7-2 · 7-3 · 7-5). 겹은 셋이고 서로 넘지 않는다 — 호기 아래(영역·도형),
-  // 호기, 호기 위(글자·동선·발자국·베이·반입구·문·기둥, FAB 층 블록). 겹 안 차례는 S.items 차례이고 그것이 곧 요소 저장 차례다. 선택 칸
-  // 「순서」 단추 넷 · 단축키 넷이 고른 도면 요소를 제 겹 안에서 움직인다. `tests/test_space_stack_order_js.py` 가 아래 두 표시 줄
-  // 사이를 떼어 node 로 돌린다 — 바깥 이름을 쓰지 않는다.
+  // 그리는 차례(2026-11-12 Space 요청 7 — 보드 7-2 ~ 7-5). 겹은 셋이다 — 호기 아래(영역·도형), 호기, 호기 위(글자·동선·발자국·베이·
+  // 반입구·문·기둥, FAB 층 블록, 호기 위로 올린 영역·도형 `raised`). 겹 안 차례는 S.items 차례이고 그것이 곧 요소 저장 차례다(호기
+  // 차례 · 올림은 설비 `0034` 층 순서 표). 선택 칸 「순서」 단추 넷 · 단축키 넷이 고른 것을 움직인다 — 호기는 호기 겹 안에서
+  // 묶음째(설계 A (가)), 영역·도형은 호기 겹을 넘나들고(설계 C (가)), 그 밖의 위 겹 종류는 호기 아래로 내리지 않는다. FAB 에는 호기
+  // 겹이 없어 겹 안만 돈다(설계 F (가) — `raisable` 이 없다). `tests/test_space_stack_order_js.py` 가 아래 두 표시 줄 사이를 떼어
+  // node 로 돌린다 — 바깥 이름을 쓰지 않는다.
   // <stack-order>
   // 종류 → 겹(한 곳). 종류를 더하면 여기에도 더한다 — 없는 종류는 순서 밖이라 「순서」 줄이 서지 않는다. 아래 겹은 그리는 층
   // `onZoneLayer` 와 같다(시험이 맞댄다).
@@ -929,17 +932,24 @@ export default function (component) {
     shutter: 'above', door: 'above', column: 'above', text: 'above', arrow: 'above', footprints: 'above', bay: 'above',
     block: 'above',
   }
+  // 호기 겹을 넘어 호기 위로 올릴 수 있는 종류(파이썬 `floor_layout_stack.RAISABLE_KINDS`).
+  const RAISABLE_KINDS = new Set(['zone', 'shape'])
+  // 위 겹 맨 아래에서 더 내리지 못하는 까닭(밑에 호기 · 호기 아래 요소가 겹칠 때).
+  const KEEP_ABOVE_REASON = '글자 · 동선 · 발자국 · 베이 · 반입구 · 문 · 기둥은 호기 아래로 내리지 않습니다'
   function tierOf(item) {
-    return item.kind === 'unit' ? 'unit' : STACK_TIERS[item.kind] || ''
+    if (item.kind === 'unit') return 'unit'
+    const tier = STACK_TIERS[item.kind] || ''
+    return tier === 'below' && item.raised ? 'above' : tier
   }
-  // 두 상자({x, y, w, h})가 넓이로 겹치나 — 맞닿기만 하면 아니다.
+  // 두 상자({x, y, w, h}) — 또는 상자 묶음(`parts` — 모듈 묶음 · 호기 겹) — 가 넓이로 겹치나. 맞닿기만 하면 아니다.
   function stackMeet(a, b) {
     const e = 1e-6
-    return a.x < b.x + b.w - e && b.x < a.x + a.w - e && a.y < b.y + b.h - e && b.y < a.y + a.h - e
+    const meet = (p, q) => p.x < q.x + q.w - e && q.x < p.x + p.w - e && p.y < q.y + q.h - e && q.y < p.y + p.h - e
+    return (a.parts || [a]).some((p) => (b.parts || [b]).some((q) => meet(p, q)))
   }
   // 한 겹(peers — 아래 → 위)에서 고른 것(chosen — id 모음)을 how 쪽으로 움직인 새 차례. 앞(front · fwd)은 위, 뒤(back · bwd)는
-  // 아래다. 맨 앞 · 맨 뒤는 고른 것을 그 끝으로 모으되(고른 것끼리 차례는 그대로) 그 쪽에서 고른 것과 겹친 다른 요소가 하나도
-  // 없으면(이미 맨 앞 · 뒤로 보인다) 움직이지 않는다. 한 걸음은 그 쪽 끝의 고른 것부터, 그 쪽에서 겹친 다른 요소 가운데 가장
+  // 아래다. 맨 앞 · 맨 뒤는 고른 것을 그 끝으로 모으되(고른 것끼리 차례는 그대로) 그 쪽에서 고른 것과 겹친 다른 것이 하나도
+  // 없으면(이미 맨 앞 · 뒤로 보인다) 움직이지 않는다. 한 걸음은 그 쪽 끝의 고른 것부터, 그 쪽에서 겹친 다른 것 가운데 가장
   // 가까운 하나 너머로 간다(보드 7-3 — 목록 한 칸은 대개 화면에 아무 변화가 없다). 다른 고른 것은 넘지 않는다.
   function stackTier(peers, chosen, how) {
     const up = how === 'front' || how === 'fwd'
@@ -961,19 +971,114 @@ export default function (component) {
     }
     return up ? line : line.reverse()
   }
-  // entries — 지금 그리는 차례(아래 → 위)의 [{id, tier, x, y, w, h}](tier '' 는 순서 밖). 고른 것을 저마다 제 겹 안에서 움직인 새
-  // id 차례 — 다른 겹의 자리는 그대로다. 바뀐 것이 없으면 null(그 쪽 끝에 닿았다).
-  function stackMove(entries, chosen, how) {
+  // 호기 겹(units — 아래 → 위)의 새 id 차례, 움직이지 않으면 null. 모듈 묶음(`group`)은 한 덩이로 움직이고(덩이 자리는 가장 아래
+  // 모듈의 자리) 모듈 하나라도 고르면 그 덩이를 고른 것이다.
+  function stackUnits(units, chosen, how) {
+    const blocks = []
+    const byKey = new Map()
+    for (const unit of units) {
+      const key = unit.group ? `g:${unit.group}` : `u:${unit.id}`
+      let block = byKey.get(key)
+      if (!block) {
+        block = { id: key, parts: [], members: [] }
+        byKey.set(key, block)
+        blocks.push(block)
+      }
+      block.parts.push(unit)
+      block.members.push(unit.id)
+    }
+    const picked = new Set(blocks.filter((b) => b.members.some((id) => chosen.has(id))).map((b) => b.id))
+    const moved = stackTier(blocks, picked, how)
+    if (moved.every((block, k) => block === blocks[k])) return null
+    return moved.flatMap((block) => block.members)
+  }
+  // 도면 요소 겹 — 호기 아래(below) · 호기 겹 하나(호기 상자들) · 호기 위(above)를 한 줄로 본 새 {below, above}, 움직이지 않으면
+  // null. 영역·도형(`raisable`)은 호기 겹을 넘나든다 — 아래 겹 맨 위에서 「앞으로」 면 호기 위 맨 아래(호기와 겹쳤을 때 — 겹치지
+  // 않으면 다음 겹친 것 너머), 「맨 앞으로」 면 위 겹 맨 위, 「맨 뒤로」 면 아래 겹 맨 아래. 그 밖의 것은 제 겹 안에서만 돈다.
+  function stackDeck(below, units, above, chosen, how) {
+    const bar = { id: '', bar: true, parts: units }
+    const line = [...below, bar, ...above]
+    const up = how === 'front' || how === 'fwd'
+    const free = (e) => Boolean(e.raisable)
+    const picked = (e) => !e.bar && chosen.has(e.id)
+    const barAt = below.length
+    // e 가 그 쪽으로 닿을 수 있는 것(가까운 차례) — 넘지 못하는 호기 겹에서 멈춘다.
+    const reach = (e, k, toward) => {
+      const side = toward ? line.slice(k + 1) : line.slice(0, k).reverse()
+      const stop = free(e) ? -1 : side.indexOf(bar)
+      return stop < 0 ? side : side.slice(0, stop)
+    }
+    let next
+    if (how === 'front' || how === 'back') {
+      const covered = line.some((e, k) => picked(e) && reach(e, k, up).some((o) => !picked(o) && stackMeet(e, o)))
+      if (!covered) return null
+      const low = (e) => line.indexOf(e) < barAt
+      const keep = line.filter((e) => !picked(e))
+      const cut = keep.indexOf(bar)
+      const go = line.filter(picked)
+      if (up) {
+        const top = go.filter((e) => free(e) || !low(e))
+        next = [...keep.slice(0, cut), ...go.filter((e) => !free(e) && low(e)), bar, ...keep.slice(cut + 1), ...top]
+      } else {
+        const bottom = go.filter((e) => free(e) || low(e))
+        next = [...bottom, ...keep.slice(0, cut), bar, ...go.filter((e) => !free(e) && !low(e)), ...keep.slice(cut + 1)]
+      }
+    } else {
+      const seq = up ? line.slice() : line.slice().reverse()
+      for (let k = seq.length - 1; k >= 0; k -= 1) {
+        const e = seq[k]
+        if (!picked(e)) continue
+        const wall = (o) => picked(o) || (o.bar && !free(e))
+        let j = k + 1
+        while (j < seq.length && !wall(seq[j]) && !stackMeet(e, seq[j])) j += 1
+        if (j >= seq.length || wall(seq[j])) continue
+        seq.splice(k, 1)
+        seq.splice(j, 0, e)
+      }
+      next = up ? seq : seq.reverse()
+    }
+    if (next.every((e, k) => e === line[k])) return null
+    const at = next.indexOf(bar)
+    return { below: next.slice(0, at), above: next.slice(at + 1) }
+  }
+  // entries — 지금 그리는 차례(아래 → 위, S.items 차례)의 [{id, tier, x, y, w, h, group?, raisable?}](tier '' 는 순서 밖). 고른 것을
+  // 움직인 새 {ids(S.items 차례), raised(호기 위 겹의 영역·도형 id)} — 호기는 호기 자리끼리, 도면 요소는 요소 자리끼리 바꾸어 다른
+  // 자리는 그대로다(겹을 넘은 것이 없으면 겹마다 제 자리끼리). 바뀐 것이 없으면 null(그 쪽 끝에 닿았다).
+  function stackPlan(entries, chosen, how) {
     const ids = entries.map((e) => e.id)
     let changed = false
-    for (const tier of new Set(entries.filter((e) => e.tier && chosen.has(e.id)).map((e) => e.tier))) {
-      const slots = []
-      entries.forEach((e, k) => { if (e.tier === tier) slots.push(k) })
-      stackTier(slots.map((k) => entries[k]), chosen, how).forEach((e, n) => {
-        if (ids[slots[n]] !== e.id) { ids[slots[n]] = e.id; changed = true }
-      })
+    const slotsOf = (test) => entries.flatMap((e, k) => (test(e) ? [k] : []))
+    const put = (slots, list) => list.forEach((item, n) => {
+      const id = typeof item === 'string' ? item : item.id
+      if (ids[slots[n]] !== id) { ids[slots[n]] = id; changed = true }
+    })
+    const units = entries.filter((e) => e.tier === 'unit')
+    if (units.some((e) => chosen.has(e.id))) {
+      const next = stackUnits(units, chosen, how)
+      if (next) put(slotsOf((e) => e.tier === 'unit'), next)
     }
-    return changed ? ids : null
+    const raised = entries.filter((e) => e.tier === 'above' && e.raisable).map((e) => e.id)
+    let lifted = raised
+    const below = entries.filter((e) => e.tier === 'below')
+    const above = entries.filter((e) => e.tier === 'above')
+    if ([...below, ...above].some((e) => chosen.has(e.id))) {
+      const deck = stackDeck(below, units, above, chosen, how)
+      if (deck) {
+        if (deck.below.length === below.length) {
+          put(slotsOf((e) => e.tier === 'below'), deck.below)
+          put(slotsOf((e) => e.tier === 'above'), deck.above)
+        } else put(slotsOf((e) => e.tier === 'below' || e.tier === 'above'), [...deck.below, ...deck.above])
+        lifted = deck.above.filter((e) => e.raisable).map((e) => e.id)
+        if (lifted.length !== raised.length || lifted.some((id) => !raised.includes(id))) changed = true
+      }
+    }
+    return changed ? { ids, raised: lifted } : null
+  }
+  // 고른 위 겹 요소(올릴 수 없는 종류) 밑에 호기나 호기 아래 영역·도형이 겹쳐 있나 — 「뒤로 · 맨 뒤로」 를 잠근 까닭이 「이미 맨
+  // 뒤」 가 아니라 「호기 아래로 내리지 않음」 이다(설계 order.md ② 3).
+  function stackPinned(entries, chosen) {
+    const under = entries.filter((e) => e.tier === 'unit' || (e.tier === 'below' && e.raisable))
+    return entries.some((e) => e.tier === 'above' && !e.raisable && chosen.has(e.id) && under.some((o) => stackMeet(e, o)))
   }
   // 순서 키(파워포인트 관례) — Ctrl+Shift+] 맨 앞으로 · Ctrl+] 앞으로 · Ctrl+[ 뒤로 · Ctrl+Shift+[ 맨 뒤로. 글쇠 자리 code
   // (BracketRight · BracketLeft)로 읽어 자판과 상관없고 Ctrl 만 본다(macOS ⌘[ · ⌘] 는 브라우저 앞 · 뒤). Alt 와 함께거나 IME 조합
@@ -2115,10 +2220,10 @@ export default function (component) {
     ['Alt+Shift+V', '서식 붙여넣기(Ctrl+Shift+V 도)', 'ef eb'],
     ['Shift+H', '좌우 뒤집기', 'ef eb'],
     ['Shift+V', '상하 뒤집기', 'ef eb'],
-    ['Ctrl+Shift+]', '도면 요소 맨 앞으로', 'ef eb'],
-    ['Ctrl+]', '도면 요소 앞으로', 'ef eb'],
-    ['Ctrl+[', '도면 요소 뒤로', 'ef eb'],
-    ['Ctrl+Shift+[', '도면 요소 맨 뒤로', 'ef eb'],
+    ['Ctrl+Shift+]', '고른 것 맨 앞으로', 'ef eb'],
+    ['Ctrl+]', '고른 것 앞으로', 'ef eb'],
+    ['Ctrl+[', '고른 것 뒤로', 'ef eb'],
+    ['Ctrl+Shift+[', '고른 것 맨 뒤로', 'ef eb'],
     ['Shift+모서리 끌기', '도형 비율 유지', 'ef eb'],
     ['Alt 누른 채 끌기', '정렬선에 붙이지 않기', 'ef eb'],
     ['Space+끌기', '화면 옮기기', 'ef eb'],
@@ -3910,6 +4015,8 @@ export default function (component) {
 
   function buildMark(item) {
     const group = el('g', { class: `sle-item sle-mark mark-${item.kind}` })
+    // 호기 위로 올린 영역·도형은 `is-raised` — 도형의 안쪽은 누르기가 지나가 밑 호기를 누른다(설계 D (가), 영역과 같다).
+    if (item.raised) group.classList.add('is-raised')
     group.dataset.id = item.id
     group.append(el('g', { class: 'sle-mark-shape' }), el('rect', { class: 'sle-rect sle-mark-box' }), el('title'))
     if (opensFloor(item)) {
@@ -4115,8 +4222,9 @@ export default function (component) {
     else focus(trayBox.hidden ? svg : traySearch)
   }
 
-  // 호기 아래 층(`sle-zones`)에 그리는 요소 — 영역과 도형(방·벽을 그려도 호기를 덮지 않는다).
-  const onZoneLayer = (item) => item.kind === 'zone' || item.kind === 'shape'
+  // 호기 아래 층(`sle-zones`)에 그리는 요소 — 영역과 도형(방·벽을 그려도 호기를 덮지 않는다). 호기 위로 올린 것(`raised` — 설비
+  // `0034`)은 호기 위 층(`sle-marks`)에 요소 차례대로 그린다.
+  const onZoneLayer = (item) => (item.kind === 'zone' || item.kind === 'shape') && !item.raised
   function renderItems() {
     // 서랍 목록을 비웠다 다시 채우는 동안 목록 높이가 줄어 브라우저가 서랍 스크롤을 맨 위로 잘라 낸다. 놓은 뒤에도
     // 보던 자리에서 이어 놓게 그 자리를 기억했다 되돌린다(2026-10-08 사용자 요청).
@@ -4369,56 +4477,91 @@ export default function (component) {
     for (const id of S.originalMarkIds) if (!present.has(id)) count += 1
     return count + (markOrderChanged() ? 1 : 0)
   }
-  // 처음부터 있던 도면 요소끼리의 차례가 처음과 다른가 — 차례만 바꿔도 변경 한 건(층 · FAB 하나에 한 건)이고 적용이 새 차례의
-  // 요소 목록을 보낸다. 새로 넣은 것 · 지운 것은 위에서 따로 센다. `S.originalMarkIds` 는 받은 차례대로 넣은 모음이다.
+  // 겹친 순서가 처음과 다른가 — 차례만 바꿔도 변경 한 건(층 · FAB 하나에 한 건)이고 적용이 새 차례의 요소 목록을(층이면 호기
+  // 차례 · 올림도 — `stackChanged`) 보낸다. 새로 넣은 것 · 지운 것은 위에서 따로 센다. 셋을 본다 — 그리는 겹마다(호기 아래 · 위)
+  // 처음부터 있던 요소끼리의 차례(겹 사이의 섞임은 그림이 같아 보지 않는다), 호기끼리 차례, 올림. `S.originalMarkIds` ·
+  // `S.originalUnitIds` 는 받은 차례대로 넣은 모음, `S.originalRaised` 는 받은 올림이다.
   function markOrderChanged() {
+    const below = (raised) => (id) => {
+      const m = S.items.get(id)
+      return (m.kind === 'zone' || m.kind === 'shape') && !raised(m)
+    }
     const kept = [...S.originalMarkIds].filter((id) => {
       const m = S.items.get(id)
       return Boolean(m) && isMark(m)
     })
     const now = [...S.items.values()].filter((m) => isMark(m) && S.originalMarkIds.has(m.id)).map((m) => m.id)
-    return kept.some((id, k) => now[k] !== id)
+    const then = below((m) => S.originalRaised.has(m.id))
+    const later = below((m) => Boolean(m.raised))
+    const same = (a, b) => a.length === b.length && a.every((id, k) => id === b[k])
+    const layers = same(kept.filter(then), now.filter(later)) && same(kept.filter((id) => !then(id)), now.filter((id) => !later(id)))
+    return !layers || stackChanged()
+  }
+  // 층 순서 표(설비 `0034`)로 가는 몫이 처음과 다른가 — 도면 위 호기끼리 차례(처음부터 있던 호기끼리) 또는 올린 영역·도형.
+  function stackChanged() {
+    const kept = [...S.originalUnitIds].filter((id) => S.items.has(id))
+    const now = [...S.items.values()].filter((m) => isUnit(m) && S.originalUnitIds.has(m.id)).map((m) => m.id)
+    if (kept.some((id, k) => now[k] !== id)) return true
+    const lifted = raisedIds()
+    const before = [...S.originalRaised].filter((id) => S.items.has(id))
+    return lifted.length !== before.length || lifted.some((id) => !S.originalRaised.has(id))
+  }
+  // 호기 위로 올린 영역·도형 id(S.items 차례).
+  function raisedIds() {
+    return [...S.items.values()].filter((m) => isMark(m) && m.raised && RAISABLE_KINDS.has(m.kind)).map((m) => m.id)
+  }
+  // 올림을 ids 대로 다시 단다 — 영역·도형만, FAB 은 늘 없다.
+  function setRaised(ids) {
+    const lifted = new Set(ids)
+    for (const m of S.items.values()) if (isMark(m) && RAISABLE_KINDS.has(m.kind)) m.raised = !FAB && lifted.has(m.id)
   }
 
   // ---------------------------------------------------------------- 겹친 순서(선택 칸 「순서」 · 단축키)
-  // 고른 도면 요소를 제 겹 안에서 움직인다(`// <stack-order>`). 호기는 아직 움직이지 않는다. 순서를 바꾸지 않는 편집기(가정 설비
-  // 시나리오 — 가정 배치 차이는 차례를 담지 않아 바꿔도 저장되지 않는다, 보드 7-4)는 단추 넷을 잠그고 까닭을 풍선으로 달며 키도
-  // 듣지 않는다.
+  // 고른 것을 움직인다(`// <stack-order>` — 호기는 묶음째 호기 겹 안, 영역·도형은 호기 겹을 넘나들고, 그 밖의 요소는 제 겹 안).
+  // 순서를 바꾸지 않는 편집기(가정 설비 시나리오 — 겹친 순서는 공식 층 현행값이다, 보드 7-4)는 단추 넷을 잠그고 까닭을 풍선으로
+  // 달며 키도 듣지 않는다.
   function orderLockReason() {
     return data.orderEditable === false ? String(data.orderLock || '이 편집기에서는 겹친 순서를 바꾸지 않습니다') : ''
   }
   function stackEntries() {
-    return [...S.items.values()].map((m) => ({ id: m.id, tier: onCanvas(m) ? tierOf(m) : '', x: m.x, y: m.y, w: m.w, h: m.h }))
+    return [...S.items.values()].map((m) => ({
+      id: m.id, tier: onCanvas(m) && !m.ghost ? tierOf(m) : '', x: m.x, y: m.y, w: m.w, h: m.h,
+      group: isUnit(m) ? m.group || null : null, raisable: !FAB && RAISABLE_KINDS.has(m.kind),
+    }))
   }
   function stackChosen() {
-    return new Set(selectedItems().filter((m) => isMark(m) && onCanvas(m) && tierOf(m)).map((m) => m.id))
+    return new Set(selectedItems().filter((m) => onCanvas(m) && !m.ghost && tierOf(m)).map((m) => m.id))
   }
-  // 한 번 누름(키)이 되돌리기 한 번이다. 움직였으면 참.
+  // 한 번 누름(키)이 되돌리기 한 번이다(차례와 올림을 함께 되돌린다). 움직였으면 참.
   function stackOrder(how) {
     if (orderLockReason()) return false
     const chosen = stackChosen()
     if (!chosen.size) return false
-    const next = stackMove(stackEntries(), chosen, how)
-    if (!next) return false
+    const plan = stackPlan(stackEntries(), chosen, how)
+    if (!plan) return false
     const before = [...S.items.keys()]
-    setItemOrder(next)
-    pushUndo([{ op: 'order', before }])
+    const raised = raisedIds()
+    setItemOrder(plan.ids)
+    setRaised(plan.raised)
+    pushUndo([{ op: 'order', before, raised }])
     renderItems()
     updateStatus()
     return true
   }
-  // 선택 칸 「순서」 줄 — 고른 것에 도면 요소가 있을 때만 선다(호기만 고르면 없는 기능이라 숨김 — UI-INP-07). 끝에 닿은 쪽 단추는
-  // 잠그고 「이미 맨 앞입니다」 · 「이미 맨 뒤입니다」 풍선이다.
+  // 선택 칸 「순서」 줄 — 고른 것에 호기나 도면 요소가 있을 때 선다. 끝에 닿은 쪽 단추는 잠그고 「이미 맨 앞입니다」 · 「이미 맨
+  // 뒤입니다」 풍선이다 — 위 겹 요소 밑에 호기 · 호기 아래 요소가 겹쳐 더 내리지 못하면 그 까닭(`KEEP_ABOVE_REASON`)이다.
   function syncOrder() {
     const chosen = stackChosen()
     orderRow.hidden = chosen.size === 0
     if (!chosen.size) return
     const entries = stackEntries()
     const locked = orderLockReason()
+    const pinned = stackPinned(entries, chosen)
     for (const button of orderButtons) {
       const how = button.dataset.order
-      const edge = how === 'front' || how === 'fwd' ? '이미 맨 앞입니다' : '이미 맨 뒤입니다'
-      lockWith(button, locked || (stackMove(entries, chosen, how) ? '' : edge))
+      const up = how === 'front' || how === 'fwd'
+      const edge = up ? '이미 맨 앞입니다' : pinned ? KEEP_ABOVE_REASON : '이미 맨 뒤입니다'
+      lockWith(button, locked || (stackPlan(entries, chosen, how) ? '' : edge))
     }
   }
 
@@ -4717,6 +4860,12 @@ export default function (component) {
     })),
     ...S.passthrough,
   ]
+
+  // 적용값 `stack` — 도면 위 호기(아래 → 위, 편집기에 실린 설비명 · 새 호기 이름)와 호기 위로 올린 영역·도형 id.
+  const stackPayload = () => ({
+    units: [...S.items.values()].filter((m) => isUnit(m) && !m.ghost && onCanvas(m)).map((m) => m.id),
+    raised: raisedIds(),
+  })
 
   // 고른 모듈 묶음의 한 줄 — Main 설비·모듈 수·바둑판(옛 묶음이면 「n등분이 아님」).
   function moduleCaption(item) {
@@ -6338,6 +6487,8 @@ export default function (component) {
           applied += 1
         } else if (op.op === 'order') {
           setItemOrder(op.before)
+          // 올림도 함께 되돌린다(겹을 넘은 영역·도형 — 옛 기록에는 없다).
+          if (Array.isArray(op.raised)) setRaised(op.raised)
           applied += 1
         } else if (op.op === 'groupLabel') {
           if (op.before === null) S.groupLabels.delete(op.key)
@@ -6414,15 +6565,16 @@ export default function (component) {
     updateStatus()
   }
 
-  // 끄는 동안 맨 위에 붙였던 도면 요소(누를 때 제 층 맨 뒤로 `append`)를 손을 뗀 뒤 제 차례 자리로 되돌린다 — 그리는 차례가
-  // S.items 차례(저장 차례)와 같아야 눌러 고르기만 한 영역이 맨 위로 튀지 않고, 순서 단추가 보이는 대로 움직인다. 호기는 그대로
-  // 둔다(호기끼리 차례는 바꾸는 길이 없다). 뒤 차례부터 놓아 앞 것이 놓일 자리가 이미 맞다.
+  // 끄는 동안 맨 위에 붙였던 호기 · 도면 요소(누를 때 제 층 맨 뒤로 `append`)를 손을 뗀 뒤 제 차례 자리로 되돌린다 — 그리는
+  // 차례가 S.items 차례(호기 차례 · 요소 저장 차례)와 같아야 눌러 고르기만 한 영역이 맨 위로 튀지 않고, 끈 호기가 다음 다시
+  // 그리기까지 맨 위에 남지 않으며(설비 `0034` — 호기끼리 차례가 저장된다), 순서 단추가 보이는 대로 움직인다. 뒤 차례부터 놓아
+  // 앞 것이 놓일 자리가 이미 맞다.
   function restackMarks(ids) {
     const keys = [...S.items.keys()]
     const rank = new Map(keys.map((id, k) => [id, k]))
     const moved = ids.filter((id) => {
       const m = S.items.get(id)
-      return Boolean(m && isMark(m) && S.groups.get(id)?.parentNode)
+      return Boolean(m && S.groups.get(id)?.parentNode)
     }).sort((a, b) => rank.get(b) - rank.get(a))
     for (const id of moved) {
       const group = S.groups.get(id)
@@ -6481,6 +6633,8 @@ export default function (component) {
     x: num(raw.x), y: num(raw.y), w: num(raw.w), h: num(raw.h), rot: Number(raw.rot) || 0,
     color: String(raw.color || ''), hatch: Boolean(raw.hatch), keepOut: Boolean(raw.keepOut),
     link: String(raw.link || ''), placed: true, moveTo: null, isNew: false, arrived: false,
+    // 호기 위로 올린 영역·도형(설비 `0034` — 파이썬이 층 순서 표대로 단다). 복사본 · 새 요소는 처음 겹이다(`clipOf` 가 싣지 않는다).
+    raised: !FAB && raw.raised === true && RAISABLE_KINDS.has(String(raw.kind)),
     fontSize: fontSizeOf(raw.fontSize), fontColor: String(raw.fontColor || ''),
     borderStyle: pickOr(raw.borderStyle, BORDER_STYLES), labelAlign: pickOr(raw.labelAlign, LABEL_ALIGNS),
     // 모양 값(동선·베이의 머리 크기·선·뒤집기, 도형의 프리셋·모양 조절·채우기·선)은 처음 값이 아닌 것만 쥔다. 베이 이름표는
@@ -6495,12 +6649,16 @@ export default function (component) {
     S.ghosts = new Map()
     S.original = new Map()
     S.originalMarkIds = new Set()
+    S.originalUnitIds = new Set()
+    S.originalRaised = new Set()
     S.passthrough = []
+    // 호기는 받은 차례(파이썬이 층 순서 표로 줄 세운 것 — 아래 → 위)대로 넣는다.
     for (const raw of data.items || []) {
       const item = readUnit(raw)
       item.placed = Boolean(raw.placed) && [item.x, item.y, item.w, item.h].every(Number.isFinite)
       S.items.set(item.id, item)
       S.original.set(item.id, snapshot(item))
+      S.originalUnitIds.add(item.id)
     }
     // 숨은 모듈(파이썬 `EditorInputs.ghosts`) — 그리지 않고 묶음 바둑판의 칸만 차지한다. 처음 값은 S.original 에 둔다
     // (`ghostChanges` 가 견준다).
@@ -6528,6 +6686,7 @@ export default function (component) {
       S.items.set(mark.id, mark)
       S.original.set(mark.id, snapshot(mark))
       S.originalMarkIds.add(mark.id)
+      if (mark.raised) S.originalRaised.add(mark.id)
     }
   }
 
@@ -6794,7 +6953,7 @@ export default function (component) {
     // 옮기기는 고른 것 전부 — 모듈 묶음은 묶음째(범위를 옮겨 바둑판으로 다시 놓는다). 모듈 하나만 옮기는 길은 없다.
     const plan = mode === 'move' ? movePlan(selectedItems()) : { loose: [item], groups: [], items: [item], box: bbox([item]) }
     const list = plan.items
-    // 끄는 것이 맨 위에 그려지도록 제 층(호기·영역·요소)의 맨 뒤로 옮긴다. 도면 요소는 손을 떼면 제 차례로 돌아간다(`restackMarks`).
+    // 끄는 것이 맨 위에 그려지도록 제 층(호기·영역·요소)의 맨 뒤로 옮긴다. 손을 떼면 제 차례로 돌아간다(`restackMarks`).
     for (const m of list) {
       const g = S.groups.get(m.id)
       if (g && g.parentNode) g.parentNode.append(g)
@@ -7590,6 +7749,8 @@ export default function (component) {
       marks: marksChanged ? marksPayload() : null,
       // 이 층에 남는 모듈 묶음의 Main 설비명 위치(늘 보낸다 — 다른 층으로 보낸 묶음이 빠지는 것도 여기서 안다).
       groupLabels: FAB ? null : groupLabelsPayload(),
+      // 겹친 순서(설비 `0034`) — 호기 차례 · 올림이 바뀌었을 때만(요소 차례는 `marks` 가 싣는다). FAB 은 없다.
+      stack: !FAB && stackChanged() ? stackPayload() : null,
     })
   }
 
