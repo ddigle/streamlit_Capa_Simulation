@@ -1768,11 +1768,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   202611111500 보드 N8 (가))도 여기다 — 결과 파일이 있는 서버(C-DEP)에서만 부르고(없으면 Streamlit 호출 0), 시작 점검 토큰 줄 「실패」 나
   어댑터의 프로세스 표지(`company_bigdataquery_adapter.last_query_failed_on_token` — 조회가 토큰 갈래로 실패하면 서고 조회가 성공하면
   내린다, 예약 스레드도 같은 값을 쓴다)가 있으면 관리자(`sso_identity.viewer_is_admin` — 통합인증이 켜짐이 아니면 아무도 아니다) 회차에
-  조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 자동 갱신은 하지 않는다(사내 확인을 먼저 받는다 —
-  2026-11-12 사용자 결정 「REST 자동 갱신은 조사만」). 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
+  조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 자동 갱신은 틀만 있다(`io/bdq_refresh.py` — 요청 꼴
+  미정이라 「준비」, 2026-11-14 사용자 결정). 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
   CD 환경변수 값 바꿔 두기다 — 패키지가 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 을 읽는 서버(넣기가 잠긴다)면 그 값 바꾸기 + CI/CD
-  (`bdq_token.environment_token_set` — 값은 보지 않는다, 글은 `AD-11` 과 같은 `bdq_token_admin.ENVIRONMENT_FIX`). 같은 함수 끝에서 만료 알림 `AD-11`(`bdq_token_admin.render_expiry_alert`)도 부른다 — 결과 파일이 있는
-  서버는 회차마다 이벤트 칸 두 자리다.
+  (`bdq_token.environment_token_set` — 값은 보지 않는다, 글은 `AD-11` 과 같은 `bdq_token_admin.ENVIRONMENT_FIX`). 같은 함수 끝에서 만료 알림 `AD-11`(`bdq_token_admin.render_expiry_alert`)과
+  자동 갱신 알림 `AD-17` · `AD-18`(`bdq_token_admin.render_refresh_alerts`)도 부른다 — 결과 파일이 있는 서버는 회차마다 이벤트 칸 네 자리다.
+  펼침 표에는 통합인증 줄 뒤에 「토큰 자동 갱신」 줄(`bdq_token_admin.refresh_start_step` — 지금 프로세스에서 판정, 결과 칸 꺼짐 · 준비 ·
+  켜짐 · 멈춤, 까닭 칸 값 낱말만)이 선다.
 - `src/capa_simulation/components/bdq_token_admin.py` — Admin 「서버 시작 점검」 펼침 표 아래 「지금 토큰」 값 줄(`token_line` — 패키지가
   다음 조회에 읽을 토큰의 자리 · 파일 수정 시각 · 만료, 토큰 글 없음 — 복사 글에도 싣는다)과 관리자 회차의 「토큰 넣기」 단추 · 팝업
   (2026-11-12 사용자 결정). 단추는 관리자(`sso_identity.viewer_is_admin`)에게만 서고 — 권한 기능이라 접속 명단처럼 숨긴다 —
@@ -1785,6 +1787,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `container_start_check.render_token_alert` 가 부른다. 만료를 못 읽으면 서지 않는다(`io/bdq_token.token_expiry` — JWT `exp` 만).
   `app.py` 가 모든 화면 회차에 부르는 자리라 지금 토큰을 읽다 무엇이 나도(`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로
   물러서고, 시각대로 못 옮기는 시각은 「알 수 없음」(`_clock`)이다 — 넣기는 쓴 뒤 무엇이 나도 넣음으로 끝난다.
+  자동 갱신(`io/bdq_refresh.py`)의 화면 몫도 여기다 — 표 줄 `refresh_start_step`(시작 때 갱신 토큰을 두지 못했거나 시작 갱신이
+  실패했으면 결과 파일 `refresh` 칸의 까닭), 관리자 알림 `AD-17`(멈춤 — 「같은 계정이 다른 곳에서 로그인했을 수 있음」 · 마지막 시도
+  실패 갈래, 지문은 (상태, 갈래 낱말)) · `AD-18`(갱신 토큰을 처음 쓴 때부터 80일, 지문은 그 시각). 둘 다 「그 화면으로」 Admin Area,
+  짧은 글은 값 + 할 일이고 토큰 · 갱신 토큰 글자 · 길이가 없다. `AD-12` ~ `AD-16` 은 접속 · 작업 기록 갈래 몫이라 비워 둔다.
   시험 `tests/test_bdq_token_admin.py`.
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
@@ -1926,8 +1932,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     프로세스 상태는 메모리뿐이고 시험은 `tests/conftest.py` 가 `forget_state` 로 비운다.
 - `src/capa_simulation/io/container_start_report.py` — C-DEP CD 시작 스크립트(`scripts/container_start.py`)와 앱이 함께
   쓰는 환경변수 이름 다섯(`CD_ENVIRONMENT` — 사내 패키지 저장소 주소 `CAPA_COMPANY_INDEX_URL` 을 더해. 사내 PC 도 넣는 이름이라
-  CD 서버인지 가르는 `CD_ONLY_ENVIRONMENT` 에는 없다)·결과 파일(`settings.CONTAINER_START_REPORT_PATH` = `data/temp/container_start.json`)
-  꼴·화면 안내 문장(`step_hint`)이다. 표준 라이브러리와 `settings` 만 읽는다 — 시작 스크립트가 앱 의존성보다 먼저 쓴다.
+  CD 서버인지 가르는 `CD_ONLY_ENVIRONMENT` 에는 없다. 선택 값인 갱신 토큰 `CAPA_BDQ_REFRESH_TOKEN` 은 `CD_ENVIRONMENT` 밖이고
+  `APP_WITHHELD_ENVIRONMENT` · `CD_ONLY_ENVIRONMENT` 안이다)·결과 파일(`settings.CONTAINER_START_REPORT_PATH` = `data/temp/container_start.json`)
+  꼴(더하기만 한 `refresh` 칸 — 시작 때 자동 갱신 갈래 · 까닭, 옛 파일은 `None`)·화면 안내 문장(`step_hint`)이다. 표준 라이브러리와 `settings` 만 읽는다 — 시작 스크립트가 앱 의존성보다 먼저 쓴다.
   - CD 는 시작 명령을 못 바꾸고 셸도 없어 이미지 `CMD` 가 그 스크립트다. 스크립트는 `bigdataquery` 를 하위 프로세스로
     불러 보고, 없으면 `requirements-company.txt` 의 판·인덱스로 pip 를 두 번 부른다(인덱스 줄은 사내 주소 대신
     `${CAPA_COMPANY_INDEX_URL}` 을 가리키고 pip · uv 와 같은 꼴로 펼친다 — 비면 설치를 건너뛰고 이름을 대며, `https://주소` 꼴이
@@ -1935,7 +1942,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     하나만** 보고 `--no-deps` 로(공개 미러를 추가 인덱스로 함께 보면 의존성 혼동에 열린다. 자격증명은 명령줄이 아니라
     그 pip 의 `PIP_INDEX_URL` 로, pip 설정 파일은 끈다), 의존성은 이미지 기본 인덱스로 앱 판 고정을 제약 삼아 채운다.
     토큰을 `/config/.credential/` 에 0600 으로 쓴 뒤(폴더는 이미지가 `$DSUSER` 몫으로 만들어 둔다 — 푼 내용이 비거나
-    `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다) `os.execvpe` 로 옛
+    `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다. 그 앞에 갱신 토큰 `CAPA_BDQ_REFRESH_TOKEN` 을 같은 폴더의
+    `capa-bdq-refresh.<계정>` 0600 으로 옮기고(같은 내용이면 다시 쓰지 않는다) 자동 갱신이 켜짐이면 바로 갱신해 받은 토큰을
+    쓴다 — `CAPA_BDQ_TOKEN` 은 그 갱신이 실패했을 때만. 꺼짐 · 준비는 지금 길 그대로이고 진행 한 줄 「토큰 자동 갱신 — …」 과 결과
+    파일 `refresh` 칸에 갈래 · 까닭만 남긴다) `os.execvpe` 로 옛
     `CMD` 와 같은 `streamlit run` 줄이 된다. 비밀값은 결과 파일·표준 출력·명령줄·하위 프로세스와 앱의 환경 어디에도
     남기지 않고(`tests/test_container_start.py`), 예상하지 못한 예외가 나도 「도중에 멈춤」 결과를 남기고 앱은 뜬다 — **`managed` 의 DB 받기만 예외다**
     (앱을 띄우는 길은 그 실행의 `boot-pull` 종료 코드 0 한 길, `tests/test_container_start_sync.py`). 틀린 모드 값은 받지 않고 앱이 뜨고(`SY-01`) 모드가 `managed` 인데 설정이 깨졌으면 머문다. 모드 칸이 비었거나 `local` 인데 버킷에 세대가 있으면 앱은 뜨되 결과 파일에 표지(`head_ignored`)를 남겨 `SY-05` 가 알린다(빈 버킷은 알리지 않는다 — 2026-11-12 리뷰 202611111500 보드 R2: 이 스크립트는 C-DEP 이미지에서만 돌아 그 자리의 `local` 은 이관 뒤 빠뜨린 `managed` 와 같다. 결과 파일이 없는 사내 PC · 개발 실행에는 표지가 없다). 그 자리에서 주소 · 버킷 · 프로필 CD 환경변수가 비어 버킷 목록을 못 보았으면 `SY-05` 를 가릴 수 없으니 빈 이름(`head_unchecked`)을 남겨 `SY-06` 이 알린다(이름만 — 2026-11-12 사내 S3 값 걷기 뒤 프로필에 기본값이 없다).

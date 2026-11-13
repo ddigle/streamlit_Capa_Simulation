@@ -1,4 +1,4 @@
-# Purpose: Admin 토큰 넣기 · 지금 토큰 줄 · 만료 알림(AD-11)과 그 물러서기를 본다.
+# Purpose: Admin 토큰 넣기 · 지금 토큰 줄 · 자동 갱신 줄 · 토큰 알림(AD-11 · 17 · 18)을 본다.
 
 from __future__ import annotations
 
@@ -18,7 +18,8 @@ from capa_simulation import alerts
 from capa_simulation import settings as app_settings
 from capa_simulation.components import bdq_token_admin, container_start_check, sso_identity
 from capa_simulation.components.diagnostic_copy import COMPONENT_KEY_PREFIX
-from capa_simulation.io import bdq_token
+from capa_simulation.components.sso_status import CLOCK_FORMAT
+from capa_simulation.io import bdq_refresh, bdq_token
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
@@ -412,3 +413,197 @@ def test_nothing_is_written_off_the_cd_server(monkeypatch: pytest.MonkeyPatch) -
     container_start_check.render_token_alert()
 
     assert calls == []
+
+
+# --- 토큰 자동 갱신 줄 · 알림(AD-17 · AD-18) ----------------------------------------------
+
+FAKE_REFRESH = "FAKE-bdq-refresh-token-9999-zyxwvuts"
+REFRESH_CODE = bdq_token_admin.REFRESH_ALERT_CODE
+AGE_CODE = bdq_token_admin.REFRESH_AGE_ALERT_CODE
+
+
+def _refresh_file(server: Path) -> Path:
+    path = server.parent / f"capa-bdq-refresh.{ACCOUNT}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(FAKE_REFRESH, encoding="utf-8")
+    return path
+
+
+def _refresh_state(monkeypatch: pytest.MonkeyPatch, state: bdq_refresh.RefreshStatus) -> None:
+    monkeypatch.setattr(bdq_token_admin, "read_refresh", lambda: state)
+
+
+def test_the_refresh_alerts_are_registered_outside_the_audit_numbers() -> None:
+    for code in (REFRESH_CODE, AGE_CODE):
+        spec = alerts.REGISTRY[code]
+        assert (spec.level, spec.kind) == ("action", "state")
+    assert {REFRESH_CODE, AGE_CODE}.isdisjoint({f"AD-{n}" for n in range(12, 17)})
+
+
+@pytest.mark.parametrize(
+    ("state", "record", "expected"),
+    [
+        (bdq_refresh.RefreshStatus("off", "갱신 토큰 없음"), None, ("꺼짐", "갱신 토큰 없음")),
+        (
+            bdq_refresh.RefreshStatus("off", "갱신 토큰 없음"),
+            report_contract.StartRefreshRecord(
+                "off", "CAPA_BDQ_REFRESH_TOKEN 의 base64: 값을 풀지 못함", failed=True
+            ),
+            ("꺼짐", "CAPA_BDQ_REFRESH_TOKEN 의 base64: 값을 풀지 못함"),
+        ),
+        (bdq_refresh.RefreshStatus("ready", "요청 꼴 미정"), None, ("준비", "요청 꼴 미정")),
+        (bdq_refresh.RefreshStatus("on"), None, ("켜짐", "갱신 전")),
+        (
+            bdq_refresh.RefreshStatus("on"),
+            report_contract.StartRefreshRecord(
+                "on", "시작 때 갱신 실패 — 교환 실패(OSError)", failed=True
+            ),
+            ("켜짐", "갱신 전 · 시작 때 갱신 실패 — 교환 실패(OSError)"),
+        ),
+        (
+            bdq_refresh.RefreshStatus("halted", bdq_refresh.HALT_ELSEWHERE),
+            None,
+            ("멈춤", bdq_refresh.HALT_ELSEWHERE),
+        ),
+    ],
+    ids=["꺼짐", "시작 때 못 둠", "준비", "켜짐", "시작 갱신 실패", "멈춤"],
+)
+def test_the_refresh_row_carries_only_a_mode_and_value_words(
+    state: bdq_refresh.RefreshStatus,
+    record: report_contract.StartRefreshRecord | None,
+    expected: tuple[str, str],
+) -> None:
+    assert bdq_token_admin.refresh_start_step(record, state) == ("토큰 자동 갱신", *expected)
+
+
+def test_an_on_row_shows_the_last_refresh_and_the_last_failure() -> None:
+    moment = datetime(2026, 11, 14, 1, 0, tzinfo=timezone.utc)
+    state = bdq_refresh.RefreshStatus(
+        "on",
+        last_refreshed_at=moment,
+        last_failure="교환 실패(OSError)",
+        last_failure_at=moment + timedelta(hours=6),
+    )
+
+    _label, mode, reason = bdq_token_admin.refresh_start_step(None, state)
+
+    clock = CLOCK_FORMAT
+    later = (moment + timedelta(hours=6)).astimezone().strftime(clock)
+    assert mode == "켜짐"
+    assert reason == (
+        f"마지막 갱신 {moment.astimezone().strftime(clock)} · 마지막 시도 실패 · "
+        f"교환 실패(OSError) · {later}"
+    )
+
+
+def test_the_check_table_and_copy_text_show_ready_without_the_refresh_token(
+    server: Path, monkeypatch: pytest.MonkeyPatch, diagnostic_copies: dict[str, str]
+) -> None:
+    """지금 꼴 — 갱신 토큰이 있으면 표 줄은 「준비 · 요청 꼴 미정」 이고 갱신 토큰 글은 없다."""
+    _admin(monkeypatch)
+    _token(server, None)
+    _refresh_file(server)
+
+    app = AppTest.from_string(CHECK_SCRIPT).run()
+
+    assert not app.exception
+    [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
+    row = steps.value[steps.value["단계"] == "토큰 자동 갱신"]
+    assert row[["결과", "까닭"]].values.tolist() == [["준비", "요청 꼴 미정"]]
+    text = diagnostic_copies[f"{COMPONENT_KEY_PREFIX}{container_start_check.COPY_KEY}"]
+    assert "토큰 자동 갱신\t준비\t요청 꼴 미정" in text
+    for secret in (FAKE_REFRESH, FAKE_TOKEN):
+        assert secret not in text and secret not in _texts(app)
+        assert secret not in steps.value.to_string()
+
+
+def test_ready_raises_neither_refresh_alert(server: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _admin(monkeypatch)
+    _token(server, None)
+    _refresh_file(server)
+
+    app = AppTest.from_string(ALERT_SCRIPT).run()
+
+    assert active_state(app, REFRESH_CODE) is None and active_state(app, AGE_CODE) is None
+    assert [item["active"] for item in states(app, REFRESH_CODE)] == [False]
+    assert [item["active"] for item in states(app, AGE_CODE)] == [False]
+
+
+def test_a_stopped_refresh_tells_the_administrator_why(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _admin(monkeypatch)
+    _refresh_state(monkeypatch, bdq_refresh.RefreshStatus("halted", bdq_refresh.HALT_ELSEWHERE))
+
+    note = active_state(AppTest.from_string(ALERT_SCRIPT).run(), REFRESH_CODE)
+
+    assert note is not None and note["level"] == "action"
+    assert note["short"] == bdq_token_admin.REFRESH_HALTED_SHORT
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    assert bdq_refresh.HALT_ELSEWHERE in note["full"] and "「토큰 넣기」" in note["full"]
+    assert (note["page"], note["href"]) == (tab_label(ADMIN_AREA), ADMIN_AREA.href)
+
+
+def test_a_failed_attempt_tells_the_administrator_the_kind_only(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _admin(monkeypatch)
+    failed = bdq_refresh.RefreshStatus(
+        "on", last_failure="교환 실패(HTTPError)", last_failure_at=datetime.now(timezone.utc)
+    )
+    _refresh_state(monkeypatch, failed)
+
+    app = AppTest.from_string(ALERT_SCRIPT).run()
+
+    note = active_state(app, REFRESH_CODE)
+    assert note is not None
+    assert note["short"] == bdq_token_admin.REFRESH_FAILED_SHORT
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    assert "교환 실패(HTTPError)" in note["full"]
+    assert report_contract.BDQ_REFRESH_TOKEN_ENV in note["full"]
+
+    _refresh_state(monkeypatch, bdq_refresh.RefreshStatus("on"))
+    app.run()
+    assert active_state(app, REFRESH_CODE) is None
+    assert [item["active"] for item in states(app, REFRESH_CODE)][-1] is False
+
+
+def test_someone_who_is_not_an_administrator_gets_no_refresh_alert(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _admin(monkeypatch, admin=False)
+    long_ago = datetime.now(timezone.utc) - timedelta(days=90)
+    _refresh_state(
+        monkeypatch,
+        bdq_refresh.RefreshStatus(
+            "halted", bdq_refresh.HALT_ELSEWHERE, refresh_token_since=long_ago
+        ),
+    )
+
+    app = AppTest.from_string(ALERT_SCRIPT).run()
+
+    assert active_state(app, REFRESH_CODE) is None and active_state(app, AGE_CODE) is None
+
+
+def test_an_eighty_day_old_refresh_token_asks_for_a_new_one(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _admin(monkeypatch)
+    _token(server, None)
+    refresh_file = _refresh_file(server)
+    seen = (datetime.now(timezone.utc) - timedelta(days=80, minutes=1)).timestamp()
+    os.utime(refresh_file, (seen, seen))
+
+    app = AppTest.from_string(ALERT_SCRIPT).run()
+
+    note = active_state(app, AGE_CODE)
+    assert note is not None and note["short"] == bdq_token_admin.REFRESH_AGE_SHORT
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    assert report_contract.BDQ_REFRESH_TOKEN_ENV in note["full"] and "80일" in note["full"]
+    for item in (note["short"], note["full"]):
+        assert FAKE_REFRESH not in item
+
+    young = (datetime.now(timezone.utc) - timedelta(days=79)).timestamp()
+    os.utime(refresh_file, (young, young))
+    app.run()
+    assert active_state(app, AGE_CODE) is None
