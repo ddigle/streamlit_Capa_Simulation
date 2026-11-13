@@ -2581,6 +2581,16 @@ export default function (component) {
     if (view || !key || !(key.ctrl || key.meta)) return false
     return String(key.key || '').toLowerCase() === 'z' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(String(key.tag || ''))
   }
+  // 「되돌리기」 단추의 사건 하나(`event` {type, button, dropped, detail})를 받아 click 을 삼킬 표지 `swallow` 를 넘긴다 — {swallow,
+  // run}, run 이 참이면 실행 취소다. 누름 시작(pointerdown)이 열린 칸의 바꾸는 글을 버렸으면(`dropped`) 그 누름의 click 은 친 글
+  // 버리기 하나라 삼킨다. 표지는 pointerdown 마다 새로 정하고 click 이 쓰고 걷는다 — pointerleave · pointercancel 로 풀지 않는다
+  // (터치는 손을 떼면 pointerleave 가 click 보다 먼저 오고, 마우스도 나갔다 들어와 떼면 click 이 온다). 키보드 · 코드의 click
+  // (detail 0)은 누름이 아니라 삼키지 않는다 — 누르다 단추 밖에서 떼어 남은 표지가 다음 Enter 를 먹지 않게.
+  function sheetUndoPress(swallow, event) {
+    if (event.type === 'pointerdown') return { swallow: event.button === 0 && Boolean(event.dropped), run: false }
+    if (event.type === 'click') return { swallow: false, run: !(swallow && event.detail > 0) }
+    return { swallow: Boolean(swallow), run: false }
+  }
   // </sheet-edit>
   // 채우기·글자: 「필요 단축」 구간(표시된 호기) → 지연(빨강) → 보관(검정) → 파이썬이 색 기준·체크로 정한 면(체크한
   // 그룹색, 아니면 기본 회색). 「필요 단축」 을 켠 동안(ASOF_PINNED)은 지연·보관 면을 칠하지 않는다(결정 D12).
@@ -7562,8 +7572,9 @@ export default function (component) {
   }
   // 칸을 연 채 「처음 상태로」 · 「되돌리기」 를 누르면 누름 시작(칸을 확정하는 blur 보다 먼저)에서 열린 칸을 확정 없이 닫는다 —
   // 버릴 값이 「확인만」 으로 나가 막힌 값이면 창에 빨간 칸이 없는데 `EQ-25` 가 선다. 「되돌리기」 는 친 글이 칸을
-  // 바꾸는 글이면 그 누름이 친 글 버리기 하나다 — 앞 고침까지 되돌리지 않게 뒤따르는 click 을 한 번 삼킨다(칸을 확정하고 그것을
-  // 되돌린 것과 같은 결과). 잠긴 단추의 누름은 다른 곳 누름처럼 칸을 확정한다.
+  // 바꾸는 글이면 그 누름이 친 글 버리기 하나다 — 앞 고침까지 되돌리지 않게 그 누름의 click 을 삼킨다(`sheetUndoPress` — 칸을
+  // 확정하고 그것을 되돌린 것과 같은 결과). 잠긴 단추는 누름을 받지 않는다(`.sle-tiphost > button:disabled` 의 pointer-events
+  // 없음 — 감싼 칸이 받는다): 다른 곳 누름처럼 칸을 확정하고, 그 확정이 단추를 풀어도 click 은 감싼 칸에 가 단추 동작은 없다.
   function dropOpenSheetCell() {
     const open = S.sheetOpen
     if (!open) return false
@@ -7575,15 +7586,13 @@ export default function (component) {
     if (event.button === 0 && !resetButton.disabled) dropOpenSheetCell()
   }
   undoButton.onpointerdown = (event) => {
-    S.undoSwallow = event.button === 0 && !undoButton.disabled && dropOpenSheetCell()
+    const dropped = event.button === 0 && !undoButton.disabled && dropOpenSheetCell()
+    S.undoSwallow = sheetUndoPress(S.undoSwallow, { type: 'pointerdown', button: event.button, dropped }).swallow
   }
-  undoButton.onpointerleave = undoButton.onpointercancel = () => { S.undoSwallow = false }
-  undoButton.onclick = () => {
-    if (S.undoSwallow) {
-      S.undoSwallow = false
-      return
-    }
-    undo()
+  undoButton.onclick = (event) => {
+    const press = sheetUndoPress(S.undoSwallow, { type: 'click', detail: event.detail })
+    S.undoSwallow = press.swallow
+    if (press.run) undo()
   }
   unplaceButton.onclick = () => removeItems(selectedItems())
   resetButton.onclick = () => {

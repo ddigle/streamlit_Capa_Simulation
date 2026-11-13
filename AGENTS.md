@@ -1414,7 +1414,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     셈 · 「적용」(적용값 `cells` — **보내기 전에 지우지 않는다**, 새 epoch · 「처음 상태로」 에서만 비움) · 되돌리기 op `cell`
     에 든다. 칸을 연 채 「처음 상태로」 · 「되돌리기」 를 누르면 누름 시작(`onpointerdown` — 칸을 확정하는 blur 보다 먼저)에서
     열린 칸을 확정 없이 닫는다(`dropOpenSheetCell` — 버릴 글이 「확인만」 으로 나가 `EQ-25` 가 서지 않게). 「되돌리기」
-    는 친 글이 칸을 바꾸는 글이었으면 뒤따르는 click 을 한 번 삼켜(`S.undoSwallow`) 앞 고침까지 되돌리지 않는다. 「고른 호기」 탭의 그림 열쇠는 보이는 줄 id 모음(정렬)이라 같은 묶음 안 누르기로 표를 다시 만들지 않고, 열린 칸이
+    는 친 글이 칸을 바꾸는 글이었으면 그 누름의 click 을 삼켜(`S.undoSwallow` — 순수 판정 `sheetUndoPress`) 앞 고침까지
+    되돌리지 않는다. 표지는 pointerdown 마다 새로 정하고 pointerleave 로 풀지 않으며(터치는 손을 떼면 pointerleave 가 click
+    보다 먼저다), 키보드 click(detail 0)은 삼키지 않는다. 잠긴 두 단추는 누름을 받지 않아(`.sle-tiphost > button:disabled` 의
+    pointer-events 없음) 다른 곳 누름처럼 칸을 확정하고, 확정이 단추를 풀어도 click 은 감싼 칸에 가 단추 동작은 없다. 「고른 호기」 탭의 그림 열쇠는 보이는 줄 id 모음(정렬)이라 같은 묶음 안 누르기로 표를 다시 만들지 않고, 열린 칸이
     있으면 다시 그리기를 닫을 때까지 미룬다. 칸을 확정하거나(Delete 포함) 칸 되돌리기마다 트리거 `sheetCheck`({epoch, seq —
     오르기만 함, base — 고친 칸이 마지막으로 빈 seq `S.sheetBase`, cells — 고친 칸 전부})로 「확인만」 묻고(`sheetEditSend` —
     고친 칸이 없으면 묻지 않고 판정을 걷으며 그 seq 가 다음 base 다. 「처음 상태로」(`resetSheetEdit`)도 seq 를 올려 그 자리를 잡는다), 판정은
