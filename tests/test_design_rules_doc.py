@@ -2290,14 +2290,14 @@ POST_1113_LINES = ("token-entry", "pub-index", "pub-mail", "test-env", "guard-te
 def test_the_post_1113_records_are_recorded() -> None:
     """v1.25 — 6-25 는 배포 뒤 다섯 일이 입힌 앞 답의 기록 다섯 줄이고, 줄마다 커밋과 「답 밖 —
     구현이 정함」 을 든다. 6-21 · 6-23 의 그 줄들은 커밋 없이 6-25 를 가리킨다(앞 시험들이 커밋
-    없음을 본다). 6-24 줄은 그때 기록 그대로다(앞 시험이 6-25 앞에서 끊어 본다)."""
+    없음을 본다). 6-24 줄은 그때 기록 그대로다(앞 시험이 6-25 앞에서 끊어 본다). 6-26 은 뒤 시험이
+    본다."""
     document = _text()
-    assert "판 v1.25" in document.split("\n## 1. ")[0]
     assert "- **v1.25 — 2026-11-13.**" in _chapter(document, 8)
     assert "6-25 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-25. ") :]
+    record = section[section.index("\n### 6-25. ") : section.index("\n### 6-26. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -2317,3 +2317,75 @@ def test_the_post_1113_records_are_recorded() -> None:
     for key in ("pub-index", "pub-mail", "test-env", "guard-temp"):
         line = next(item for item in earlier.splitlines() if item.startswith(f"- {key} · "))
         assert f"6-25 {key}" in line, key
+
+
+# 2026-11-13 오후 「배포 뒤 다섯 일」 확인 보드(6-26)의 답 — 카드 열일곱 모두 카드 권장이고 메모는
+# 없다. 사외 작업 방식 · 정리 넷(6 ~ 9)은 이 문서에 줄을 두지 않아 줄은 열셋이다. 고른 글은 보드
+# 선택지 라벨(권장대로 해 둔 카드는 「좋음」)이고, 고친 셋만 커밋을 든다. 줄 id 는 보드 카드 id 이고
+# 차례는 보드 차례다.
+NEXT_1113_ADDRESS = "https://claude.ai/artifact/Gdfawn1fhgjiB2yrZepB6z"
+NEXT_1113_ANSWERS = {
+    "order2-raised-back": "(가) 고친다",
+    "token-start-fail": "(가) 지금대로",
+    "env-name-net": "(가) 지문 그대로 + 할 일 한 줄",
+    "ci-win-tmp": "(가) 한 조각에 건다",
+    "claude-md-0034": "(가) 넣는다",
+    "order2-rules": "좋음",
+    "sheet2-six": "좋음",
+    "sheet2-locked": "좋음",
+    "sheet2-sorted": "좋음",
+    "sheet2-perf": "좋음",
+    "token-expiry": "좋음",
+    "token-restart": "좋음",
+    "testenv-lines": "좋음",
+}
+NEXT_1113_COMMITS = {
+    "order2-raised-back": ("c8c33af", "63a076c"),
+    "ci-win-tmp": ("b3e911a",),
+    "claude-md-0034": ("b3e911a",),
+}
+
+
+def test_the_next_1113_board_answers_are_recorded() -> None:
+    """v1.26 — 6-26 은 「배포 뒤 다섯 일」 확인 보드 카드 가운데 이 문서 몫 열셋이 보드 차례대로 한
+    줄씩이고 고른 글은 선택지 라벨이다. 모두 카드 권장이고 메모가 없다. 고친 셋(1 · 4 · 5)은 커밋을
+    들고 나머지 열은 커밋이 없다. 1 (가) 의 예외는 6-22 zone-order-ui · 6-24 d-order-step 줄과 7-1
+    에 있다. 6-25 줄은 답 구절만 고쳤다(앞 시험이 6-26 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.26" in document.split("\n## 1. ")[0]
+    assert "- **v1.26 — 2026-11-13.**" in _chapter(document, 8)
+    assert "6-26 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-26. ") :]
+    assert NEXT_1113_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-13) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(NEXT_1113_ANSWERS)
+    assert len(found) == 13
+    assert found == NEXT_1113_ANSWERS
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert bool(commit.search(line)) is (key in NEXT_1113_COMMITS), key
+    for key, shas in NEXT_1113_COMMITS.items():
+        for sha in shas:
+            assert f"`{sha}`" in by_id[key], (key, sha)
+    assert "권장과 다른 답" not in board
+    assert "— 메모 「" not in board
+
+    def earlier(head: str, key: str) -> str:
+        part = section[section.index(head) :]
+        return next(item for item in part.splitlines() if item.startswith(f"- {key} · "))
+
+    assert "같은 보드 1 (가)" in earlier("\n### 6-22. ", "zone-order-ui")
+    assert "확인 보드 1 (가)로 예외 하나" in earlier("\n### 6-24. ", "d-order-step")
+    assert "2026-11-13 오후 확인 보드 1 (가)로 호기 위로 올린 영역" in _chapter(document, 7)
