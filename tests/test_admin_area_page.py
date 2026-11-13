@@ -1342,7 +1342,7 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
 ) -> None:
     """DB 를 못 열어 멈추는 회차(`AD-07`)에도 모듈 상태 팝오버와 `MO-01` 은 선다 — 탭 묶음 칸을
     DB 를 열기 전에 세워 그 안에 먼저 그린다. 탭 묶음도 DB 앞이라(설계 AU20 — DB 를 쓰지 않는
-    기록 탭이 장애 때도 열리게) 탭 셋이 서고, 「데이터 Error」 마크는 DB 를 쓰는 탭 안에만 선다."""
+    기록 탭이 장애 때도 열리게) 탭 셋이 서고, 「데이터 Error」 마크는 열린 DB 탭 안에만 선다."""
     from capa_simulation import module_registry
 
     monkeypatch.setenv(
@@ -1356,7 +1356,7 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
     assert _module_status_labels(app) == ["모듈 상태 · 켜짐 3 · 꺼짐 1 · 실패 2"]
     (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
     assert [child.type for child in box.children.values()][0] == "flex_container"
-    assert data_error_marks(app) == len(TAB_NAMES)
+    assert data_error_marks(app) == 1, "열린 DB 탭 안에만"
     assert [item["active"] for item in states(app, "MO-01")] == [False]
 
 
@@ -1480,5 +1480,10 @@ def test_the_log_tab_opens_even_when_the_database_cannot(
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert [tab.label for tab in app.main.tabs] == [*TAB_NAMES, ADMIN_AREA_LOG_TAB]
-    assert data_error_marks(app) == len(TAB_NAMES)
+    assert data_error_marks(app) == 0, "기록 탭이 열린 회차에는 DB 탭 마크가 서지 않는다"
     assert _log_cards(app) == ["기록 조건"]
+    assert any("2건 · " in str(caption.value) for caption in app.main.caption)
+
+    app.session_state["admin_area_active_tab"] = TAB_NAMES[0]
+    app.run(timeout=120)
+    assert data_error_marks(app) == 1

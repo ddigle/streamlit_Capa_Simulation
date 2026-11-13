@@ -361,9 +361,13 @@ def render_audit_log(
             key=VIEW_KEY,
             persist_state="session",
             label_visibility="collapsed",
+        )
+        # 접은 라벨의 풍선은 보이지 않는다 — 뜻은 줄 끝 값 글의 ⓘ 풍선에 둔다.
+        st.caption(
+            range_text(len(shown), conditions.start, conditions.end),
+            width="content",
             help=VIEW_HELP,
         )
-        st.caption(range_text(len(shown), conditions.start, conditions.end), width="content")
     if not shown:
         st.caption(EMPTY_TEXT)
         return
@@ -373,6 +377,7 @@ def render_audit_log(
             hide_index=True,
             width="stretch",
             key=TABLE_KEY,
+            placeholder="",
         )
         return
     people, fails, denied, work = today_values(shown, today)
@@ -385,6 +390,7 @@ def render_audit_log(
         summary_table(shown, conditions.start, conditions.end),
         hide_index=True,
         width="stretch",
+        placeholder="",
     )
 
 

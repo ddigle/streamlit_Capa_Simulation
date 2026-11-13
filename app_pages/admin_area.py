@@ -86,9 +86,13 @@ try:
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
     message = bootstrap_error_message(exc)
+    # 마크는 DB 를 쓰는 탭 가운데 열린 탭 안에만 선다(같은 글의 알림은 한 번 — 기록 탭이
+    # 열린 회차에는 서지 않고, DB 탭을 여는 회차에 선다).
     for database_tab, label in zip(
         (process_rename_tab, display_order_tab, source_quality_tab), TAB_NAMES, strict=True
     ):
+        if tab_is_hidden(database_tab):
+            continue
         with database_tab:
             render_data_error(
                 message,
