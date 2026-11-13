@@ -101,6 +101,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     # --- 작업 ---------------------------------------------------------------------------------
     _spec("data_scenario_create", "data", "시나리오 만들기", "source", "rows"),
     _spec("data_scenario_rename", "data", "시나리오 이름 바꾸기"),
+    _spec("data_scenario_reorder", "data", "시나리오 순서 바꾸기", "rows"),
     _spec("data_scenario_archive", "data", "시나리오 보관"),
     _spec("data_scenario_restore", "data", "시나리오 되살리기"),
     _spec("data_scenario_delete", "data", "시나리오 삭제", lvl="warn"),

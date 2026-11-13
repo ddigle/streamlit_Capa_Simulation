@@ -17,7 +17,7 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.audit import recorder as audit_recorder
-from capa_simulation.audit.work import audited
+from capa_simulation.audit.work import audited, audited_each
 from capa_simulation.io.core_data_source import (
     build_source_column_profile,
     core_data_hash,
@@ -1698,6 +1698,7 @@ class DuckDBScenarioRepository:
                 [scenario_id],
             )
 
+    @audited("data_scenario_reorder", work_audit.scenario_reorder)
     def reorder_scenarios(self, scenario_ids: Sequence[str]) -> list[ScenarioSummary]:
         """목록의 누적 순서를 통째로 다시 매긴다.
 
@@ -1728,6 +1729,10 @@ class DuckDBScenarioRepository:
                 )
         return self.list_scenarios()
 
+    @audited_each(
+        ("data_scenario_rename", "data_revision_rename", "data_scenario_reorder"),
+        work_audit.scenario_list_edits,
+    )
     def apply_scenario_list_edits(
         self,
         renames: Mapping[str, tuple[str, str]],

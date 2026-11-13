@@ -70,6 +70,36 @@ def revision_rename(args: Mapping[str, Any], result: Any) -> WorkNote:
     return WorkNote(tgt=_target("revision", args.get("revision_id"), args.get("revision_name")))
 
 
+def scenario_reorder(args: Mapping[str, Any], result: Any) -> WorkNote:
+    return WorkNote(det={"rows": _rows(args.get("scenario_ids"))})
+
+
+def _new_names(value: Any) -> list[tuple[str, str]]:
+    """(id → (본 이름, 새 이름)) → (id, 새 이름 — 저장처럼 앞뒤 공백을 뗌)."""
+    if not isinstance(value, Mapping):
+        return []
+    named: list[tuple[str, str]] = []
+    for identifier, pair in value.items():
+        wanted = pair[1] if isinstance(pair, tuple | list) and len(pair) == 2 else ""
+        named.append((str(identifier), str(wanted).strip()))
+    return named
+
+
+def scenario_list_edits(args: Mapping[str, Any], result: Any) -> list[tuple[str, WorkNote]]:
+    """목록 관리 일괄 저장 — 이름을 바꾼 시나리오 · 리비전마다 한 줄, 순서를 고쳤으면 한 줄."""
+    notes = [
+        ("data_scenario_rename", WorkNote(tgt=_target("scenario", identifier, name or None)))
+        for identifier, name in _new_names(args.get("renames"))
+    ]
+    notes.extend(
+        ("data_revision_rename", WorkNote(tgt=_target("revision", identifier, name or None)))
+        for identifier, name in _new_names(args.get("revision_renames"))
+    )
+    if args.get("order") is not None:
+        notes.append(("data_scenario_reorder", WorkNote(det={"rows": _rows(args.get("order"))})))
+    return notes
+
+
 def official_publish(args: Mapping[str, Any], result: Any) -> WorkNote:
     return WorkNote(
         tgt=_target(
