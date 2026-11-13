@@ -3257,8 +3257,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `<cell-press-hold>`(node 시험 `tests/test_cell_press_guard.py`). 화면을 옮기는 칸 선택 그림을 더하면 여기에도 넘긴다.
 - `src/capa_simulation/components/boot_stop.py` — 앱이 데이터를 열지 못한 회차의 앱 안 멈춤 판(`app.py` 의 부트스트랩
   `except` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()`). 갈래(`classify_boot_failure`)는 잠김(남 · 자기 — 쥔 PID 가 적힘) →
-  판 올리기 실패(`_migration_core.MigrationChanged` — 이미 적용된 SQL 의 체크섬이 바뀜, 「다시 시도」 없음) → 디스크 가득
-  (errno · 영문 고정 문구) → 파일 권한 → 열 수 없음(`Cannot open`·`Could not set lock`) → 그 밖(새 SQL 실행 실패 포함)이다.
+  판 올리기 실패(`_migration_core.MigrationFailed` — 이미 적용된 SQL 의 체크섬이 바뀜(`MigrationChanged`) · 새 SQL 이 SQL · 데이터
+  오류로 실패함, 「다시 시도」 없음) → 디스크 가득(errno · 영문 고정 문구) → 파일 권한 → 열 수 없음(`Cannot open`·`Could not set
+  lock`) → 그 밖이다. 진단의 원문은 판 올리기 실패가 감싼 DuckDB 오류(`__cause__`)다.
   판은 쉬운 경고 한 줄(`st.error` — UI-NTF-08 예외) · 주 단추 「다시 시도」(누름이 회차 하나 — 부트스트랩은 성공한 회차에만
   「해 봤다」 표지) · 「문의 <메일>」 · 「참고 <갈래 키> · <UTC 분>」 · 접힌 「관리자용 진단」(복사 단추 · 지금의
   `bootstrap_error_message` 글 — PID · 파일 경로 · 조치 — 와 원문)이다. 공용 조각은 `components/stop_panel.py`(통합인증 멈춤과
@@ -5093,6 +5094,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `copy_database()`(외래 키 부모 표부터)도 여기 있어 스냅샷 내보내기와 `scripts/compact_duckdb.py` 가 함께 쓴다.
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
+  - 다시 해도 같은 실패는 `MigrationFailed`(`RuntimeError`)다 — 이미 적용된 파일이 바뀜(`MigrationChanged`)과, 새 SQL 이
+    SQL · 데이터 오류(`_SQL_FAILURES` — 구문 · 표 · 제약 · 변환, 원래 오류는 `__cause__`)로 실패해 그 건을 되돌림. 입출력 ·
+    메모리 · 트랜잭션 충돌은 감싸지 않는다. 앱 시작 실패 판(`components/boot_stop.py`)이 이 종류로 「다시 시도」 없는 갈래를 가른다.
   - DB 가 코드보다 새 것이면(옛 배포 ZIP 으로 되돌림) 막지 않고 `MigrationOutcome.schema_ahead`(`SchemaAheadOfCode`)로
     알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 상태 알림(`page_bootstrap.render_schema_ahead_warning`)은
     시뮬레이션 DB 는 `app.py`(`GL-02`), 설비 DB 는 그 DB 를 여는 화면(`GL-06`)이 낸다.

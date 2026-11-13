@@ -32,6 +32,7 @@ from capa_simulation.components.literal_markdown import markdown_safe_tildes, qu
 from capa_simulation.components.stop_examples import markdown_examples, readable_examples
 from capa_simulation.navigation import REFERENCE_DATA
 from capa_simulation.page_tabs_state import tab_label
+from capa_simulation.persistence._migration_core import MigrationFailed
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
@@ -188,8 +189,8 @@ ARCHIVED_ONLY_MESSAGE = (
 def _only_archived_scenarios() -> bool:
     """시뮬레이션 저장소에 시나리오가 있고 모두 보관본인가 — 활성 리비전이 없는 회차에만 부른다.
 
-    DB 파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면 아니라고 본다 — 지금
-    글이 그대로 선다. 경로는 부를 때 설정에서 읽는다(시험이 바꾼다).
+    DB 파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면(판 올리기 실패 포함)
+    아니라고 본다 — 지금 글이 그대로 선다. 경로는 부를 때 설정에서 읽는다(시험이 바꾼다).
     """
     path = settings.DUCKDB_PATH
     if not path.exists():
@@ -198,7 +199,7 @@ def _only_archived_scenarios() -> bool:
         scenarios = get_scenario_repository(str(path.resolve())).list_scenarios(
             include_archived=True
         )
-    except (OSError, duckdb.Error):
+    except (OSError, duckdb.Error, MigrationFailed):
         return False
     return bool(scenarios) and all(scenario.status != "ACTIVE" for scenario in scenarios)
 

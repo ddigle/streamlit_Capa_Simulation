@@ -35,6 +35,7 @@ import pytest
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.persistence import DuckDBScenarioRepository, ScenarioCreate
+from capa_simulation.persistence._migration_core import MigrationFailed
 from capa_simulation.persistence.migration_runner import apply_migrations, load_migrations
 from capa_simulation.persistence.repository import DATASET_TABLES, REVISION_TABLES
 
@@ -599,8 +600,11 @@ def test_a_failure_midway_rolls_back_every_table(
     schema_before = _ref_data_schema(connection)
     connection.execute("DELETE FROM app_meta.schema_migration WHERE version = ?", [CLEANUP_VERSION])
 
-    with pytest.raises(duckdb.BinderException):
+    # 같은 SQL 은 다시 해도 같은 Binder 오류라 판 올리기 실패로 감싸 올린다(원래 오류는
+    # `__cause__`).
+    with pytest.raises(MigrationFailed) as raised:
         apply_migrations(connection)
+    assert isinstance(raised.value.__cause__, duckdb.BinderException)
 
     assert _all_rows(connection, "ref_data", list(REVISION_TABLES.values())) == rows_before
     assert _ref_data_schema(connection) == schema_before

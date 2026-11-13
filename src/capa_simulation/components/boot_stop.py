@@ -11,11 +11,12 @@
   (DB 도구를 닫으라 등) · 원문은 접힌 진단 안으로 옮긴다(복사 단추 — UI-NTF-10). 접어도 누구나
   펼친다 — 로그인한 사람만 닿는 앱 안 화면이다.
 - 갈래(`classify_boot_failure`): 잠김(다른 프로세스 · 이 앱 자신이 정리하는 동안) → 「지금은
-  데이터를 열 수 없습니다」 + 「다시 시도」. 판 올리기 실패(이미 적용된 마이그레이션이 바뀜 —
-  `MigrationChanged`) → 「앱 업데이트를 마치지 못했습니다 — 관리자가 고칠 때까지 열 수 없습니다」,
-  다시 해도 같아 「다시 시도」 를 두지 않는다(UI-INP-07). 열기 · 쓰기 실패와 그 밖 → 같은 경고 끝에
-  낱말 하나(「디스크가 가득 참」 · 「파일 권한」 · 「파일을 열 수 없음」 · 「그 밖」) + 「다시
-  시도」. 새 SQL 을 적용하다 난 DuckDB 오류는 종류로 가를 길이 없어 「그 밖」 이다.
+  데이터를 열 수 없습니다」 + 「다시 시도」. 판 올리기 실패(`MigrationFailed` — 이미 적용된
+  마이그레이션이 바뀜 · 새 SQL 이 SQL · 데이터 오류로 실패함) → 「앱 업데이트를 마치지 못했습니다 —
+  관리자가 고칠 때까지 열 수 없습니다」, 다시 해도 같아 「다시 시도」 를 두지 않는다(UI-INP-07).
+  열기 · 쓰기 실패와 그 밖 → 같은 경고 끝에 낱말 하나(「디스크가 가득 참」 · 「파일 권한」 ·
+  「파일을 열 수 없음」 · 「그 밖」) + 「다시 시도」. 새 SQL 을 적용하다 난 입출력 오류(디스크 가득
+  등)는 감싸지 않아 제 갈래로 간다.
 - 참고 줄의 사유 낱말은 이 갈래 키이고 새 번호 체계가 아니다. 시각은 UTC 분까지다.
 - 「다시 시도」 는 회차 하나다(누름이 앱 전체를 다시 돌린다) — 부트스트랩은 성공한 회차에만 「해
   봤다」 표지를 세워 다음 회차가 다시 연다.
@@ -39,7 +40,7 @@ from capa_simulation import alerts
 from capa_simulation.components.diagnostic_copy import diagnostic_text, render_diagnostic_copy
 from capa_simulation.components.stop_panel import reference_line, render_contact_caption
 from capa_simulation.page_bootstrap import bootstrap_error_message
-from capa_simulation.persistence._migration_core import MigrationChanged
+from capa_simulation.persistence._migration_core import MigrationFailed
 from capa_simulation.persistence._sql_helpers import lock_holder_pid
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ def classify_boot_failure(exc: BaseException) -> BootFailure:
     그 밖이다. 글은 종류 · 영문 고정 문구 · errno 로만 가른다(번역된 앞부분은 보지 않는다)."""
     if lock_holder_pid(exc) is not None:
         return BootFailure(LOCKED, LOCKED_LINE, retry=True)
-    if isinstance(exc, MigrationChanged):
+    if isinstance(exc, MigrationFailed):
         return BootFailure(MIGRATION_FAILED, UPDATE_LINE, retry=False)
     text = str(exc)
     code = getattr(exc, "errno", None)
@@ -111,10 +112,18 @@ def classify_boot_failure(exc: BaseException) -> BootFailure:
     return _io_failure(OTHER)
 
 
+def _source(exc: BaseException) -> BaseException:
+    """원문이 될 오류 — 판 올리기 실패가 감싼 DuckDB 오류면 그것(`__cause__`), 아니면 그대로."""
+    cause = exc.__cause__
+    return cause if isinstance(exc, MigrationFailed) and cause is not None else exc
+
+
 def original_line(exc: BaseException) -> str:
-    """원문 한 줄 — 종류 이름과 앞 `ORIGINAL_LIMIT` 자(줄바꿈은 빈칸으로)."""
-    text = " ".join(str(exc).split())
-    return f"{type(exc).__name__}: {text[:ORIGINAL_LIMIT]}"
+    """원문 한 줄 — 종류 이름과 앞 `ORIGINAL_LIMIT` 자(줄바꿈은 빈칸으로). 판 올리기 실패가 감싼
+    DuckDB 오류면 그 오류다(어느 파일인지는 진단의 앞 글이 말한다)."""
+    source = _source(exc)
+    text = " ".join(str(source).split())
+    return f"{type(source).__name__}: {text[:ORIGINAL_LIMIT]}"
 
 
 def boot_marker_html(failure: BootFailure) -> str:
@@ -127,7 +136,7 @@ def render_boot_stop(exc: BaseException) -> None:
     failure = classify_boot_failure(exc)
     reference = reference_line(failure.code)
     # 운영 서버의 서버 기록에는 갈래와 종류 이름만 — 원문은 화면의 접힌 진단에 있다.
-    _LOGGER.warning("앱 시작 실패 %s (%s)", failure.code, type(exc).__name__)
+    _LOGGER.warning("앱 시작 실패 %s (%s)", failure.code, type(_source(exc)).__name__)
     st.html(boot_marker_html(failure))
     st.error(failure.line, icon=":material/database_off:")
     if failure.retry:

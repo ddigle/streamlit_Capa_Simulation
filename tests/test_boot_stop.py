@@ -12,7 +12,9 @@ from __future__ import annotations
 import errno
 import os
 import re
-from collections.abc import Callable
+import sys
+import uuid
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,7 +23,11 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import boot_stop
-from capa_simulation.persistence._migration_core import MigrationChanged
+from capa_simulation.persistence._migration_core import (
+    MigrationChanged,
+    MigrationFailed,
+    apply_migrations_to,
+)
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +43,16 @@ def _lock(pid: int) -> duckdb.IOException:
     )
 
 
+def _failed_sql() -> MigrationFailed:
+    """새 SQL 이 Catalog 오류로 실패해 판 올리기 실패로 감싼 꼴(`apply_migrations_to`)."""
+    try:
+        raise MigrationFailed("DuckDB 마이그레이션을 적용하지 못했습니다: 0099_demo.sql") from (
+            duckdb.CatalogException("Catalog Error: Table with name demo_gone does not exist!")
+        )
+    except MigrationFailed as error:
+        return error
+
+
 @pytest.mark.parametrize(
     ("make", "code", "retry"),
     [
@@ -47,6 +63,7 @@ def _lock(pid: int) -> duckdb.IOException:
             boot_stop.MIGRATION_FAILED,
             False,
         ),
+        (_failed_sql, boot_stop.MIGRATION_FAILED, False),
         (lambda: OSError(errno.ENOSPC, "No space left on device"), boot_stop.DISK_FULL, True),
         (
             lambda: duckdb.IOException("IO Error: Could not write file: No space left on device"),
@@ -99,7 +116,82 @@ def test_failures_split_into_the_board_branches(
 
 def test_a_changed_migration_is_still_a_runtime_error() -> None:
     """종류만 따로 두었다 — `RuntimeError` 를 받던 자리는 그대로 받는다."""
-    assert issubclass(MigrationChanged, RuntimeError)
+    assert issubclass(MigrationChanged, MigrationFailed)
+    assert issubclass(MigrationFailed, RuntimeError)
+
+
+@pytest.fixture
+def demo_migrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """시험 전용 마이그레이션 패키지(저장소 밖 임시 폴더) — SQL 파일을 넣고 이름을 돌려준다."""
+    name = f"demo_migrations_{uuid.uuid4().hex[:8]}"
+    package = tmp_path / name
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    yield package
+    sys.modules.pop(name, None)
+
+
+def _apply(package: Path) -> None:
+    with duckdb.connect(":memory:") as connection:
+        apply_migrations_to(
+            connection,
+            package=package.name,
+            schema="app_meta",
+            label="DuckDB",
+            database_name="시험 DB",
+        )
+
+
+@pytest.mark.parametrize(
+    ("sql", "cause"),
+    [
+        ("SELEC 1;", duckdb.ParserException),
+        ("DROP TABLE demo_gone;", duckdb.CatalogException),
+        (
+            "CREATE TABLE demo_once (id INTEGER PRIMARY KEY); "
+            "INSERT INTO demo_once VALUES (1), (1);",
+            duckdb.ConstraintException,
+        ),
+        ("SELECT CAST('a' AS INTEGER);", duckdb.ConversionException),
+    ],
+)
+def test_a_new_migration_that_fails_as_sql_is_an_update_failure(
+    demo_migrations: Path, sql: str, cause: type[duckdb.Error]
+) -> None:
+    """새 SQL 이 SQL · 데이터 오류로 실패하면 다시 해도 같다 — 판 올리기 실패(「다시 시도」 없음)로
+    가른다. 원문은 감싼 DuckDB 오류다(카드 p1-boot · 조사 boot-migration-failed 의 (나))."""
+    (demo_migrations / "0001_demo.sql").write_text(sql, encoding="utf-8")
+
+    with pytest.raises(MigrationFailed) as raised:
+        _apply(demo_migrations)
+
+    error = raised.value
+    assert isinstance(error.__cause__, cause)
+    assert str(error) == "DuckDB 마이그레이션을 적용하지 못했습니다: 0001_demo.sql"
+    failure = boot_stop.classify_boot_failure(error)
+    assert (failure.code, failure.line, failure.retry) == (
+        boot_stop.MIGRATION_FAILED,
+        boot_stop.UPDATE_LINE,
+        False,
+    )
+    assert boot_stop.original_line(error).startswith(f"{cause.__name__}: ")
+
+
+def test_an_io_failure_while_migrating_is_not_wrapped(
+    demo_migrations: Path, tmp_path: Path
+) -> None:
+    """입출력 오류는 지나갈 수 있어 감싸지 않는다 — 제 갈래(열 수 없음 · 디스크 가득 등)로 간다."""
+    target = tmp_path / "no-such-folder" / "out.csv"
+    (demo_migrations / "0001_demo.sql").write_text(
+        f"COPY (SELECT 1) TO '{target.as_posix()}';", encoding="utf-8"
+    )
+
+    with pytest.raises(duckdb.IOException) as raised:
+        _apply(demo_migrations)
+
+    assert not isinstance(raised.value, MigrationFailed)
+    assert boot_stop.classify_boot_failure(raised.value).retry
 
 
 SCRIPT = """
