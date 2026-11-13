@@ -17,6 +17,18 @@ Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면(셋째
 고칠 입력이 있는 거부 · 동작 실패(곁 오류 — UI-NTF-03), 모듈 오류 카드(`module_failure_card`), 앱이
 서지 못해 알림 칸이 없는 부트스트랩 실패(`app.py` — 그때는 볼 `Alarm` 이 없다).
 
+**불러온 리비전이 없는 회차는 빈 상태다.** 이 함수들이 받은 글이 `page_bootstrap.empty_state` 의 글
+(공식버전 없음 · 보관본만 · 안 불러옴 — 화면이 머리를 붙였어도)이면 마크 대신 회색 한 줄(「공식버전
+없음」)을 세우고, 글은 그 화면 코드의 **확인 단계** 사건 알림(「공식버전 없음 — 시나리오 관리에서
+발행」 · 「그 화면으로」 시나리오 관리 › Capa 시나리오)으로 보낸다. 상태 알림 `SC-01` 을 함께 쓰지
+않는 것은 계산 화면이 정상 회차에 해소를 낼 자리가 없어서다 — 발행한 뒤에도 Alarm 줄이 「지금도
+있음」 으로 남는다.
+
+**알림 짧은 글 꼴.** 사람이 고칠 수 없는 DB 실패(`page_bootstrap.screen_error_short`)는 「… —
+관리자에게 알려 주세요」 로 끝나고, 사용자가 고칠 원인인데 부르는 쪽이 고칠 화면을 주지 않은 경로 ·
+계획 표 빈 리비전은 「그 화면으로」 가 시나리오 관리 「DB 등록」 을
+연다(`page_bootstrap.screen_error_goto`).
+
 **한 칸에 함께 그린다.** 마크와 알림 표지(`alerts.hidden_marker`)가 `st.html` 하나라 이벤트 칸을
 쓰지 않는다 — 본문 프래그먼트 · 팝업 본문에서도 갈래마다 이벤트 칸 자리 수가 그대로다(AGENTS 9장).
 색은 그 회차 테마 토큰이고, 폭이 좁으면 두 칸이 줄을 바꾼다.
@@ -24,17 +36,22 @@ Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면(셋째
 
 from __future__ import annotations
 
+import html
 from typing import Final, TypeAlias
 
 import streamlit as st
 
-from capa_simulation import alerts
+from capa_simulation import alerts, page_bootstrap
 from capa_simulation.design import tokens
 
 MARK_LABEL: Final = "데이터 Error"
 MARK_NEXT: Final = "Alarm 확인 필요"
 # 마크의 클래스 — 시험이 이 이름으로 찾는다.
 MARK_CLASS: Final = "capa-data-error-mark"
+# 빈 상태 회색 한 줄의 클래스 — 시험이 이 이름으로 찾는다.
+EMPTY_CLASS: Final = "capa-empty-state"
+# 빈 상태 알림의 로그 「계기」.
+EMPTY_CAUSE: Final = "불러온 시나리오가 없어 볼 것이 없음"
 # 칠한 칸 옆 면의 농도 — 글이 묻히지 않을 만큼만 물들인다.
 _TINT_ALPHA: Final = 0.08
 
@@ -68,6 +85,34 @@ def data_error_mark_html() -> str:
     )
 
 
+def empty_state_html(line: str) -> str:
+    """빈 상태 회색 한 줄의 HTML — 캡션과 같은 크기 · 흐린 글자(그 회차 테마 토큰)."""
+    return (
+        f'<p class="{EMPTY_CLASS}" style="margin:0;color:{tokens.TEXT_MUTED};'
+        f'font-size:0.875rem;line-height:1.5;">{html.escape(line)}</p>'
+    )
+
+
+def _empty_state_note(
+    message: str, state: page_bootstrap.EmptyState, *, code: str
+) -> alerts.AlertNote:
+    """빈 상태의 확인 단계 사건 알림 — 같은 코드 + 같은 글이면 같은 id 라 이 탭에 한 번 뜬다."""
+    plain = alerts.plain_text(message)
+    note = alerts.event_note(
+        code,
+        text=state.text,
+        full=plain,
+        level="check",
+        cause=EMPTY_CAUSE,
+        alert_id="empty-" + alerts.fingerprint(code, None, plain),
+        tab=state.goto[2] if state.goto is not None else "",
+        keep=True,
+    )
+    if state.goto is not None:
+        note["page"], note["href"] = state.goto[0], state.goto[1]
+    return note
+
+
 def data_error_note(
     message: str,
     *,
@@ -77,7 +122,20 @@ def data_error_note(
     goto: ErrorGoto | None = None,
 ) -> alerts.AlertNote:
     """오류 글의 사건 알림 표지 한 칸(`alerts.page_error_note`) — `goto` 셋째 칸을 `tab` 으로 푼다.
-    그 칸이 있으면 줄의 화면 칸이 「화면 › 표」 이고 「그 화면으로」 가 그 표까지 연다."""
+    그 칸이 있으면 줄의 화면 칸이 「화면 › 표」 이고 「그 화면으로」 가 그 표까지 연다.
+
+    빈 상태 글이면 확인 단계 알림(`_empty_state_note`)이고, `text` · `goto` 를 주지 않았으면 짧은
+    글 · 고칠 곳을 글에서 고른다(`page_bootstrap.screen_error_short` · `screen_error_goto`)."""
+    state = page_bootstrap.empty_state(message)
+    if state is not None:
+        return _empty_state_note(message, state, code=code)
+    admin_short = page_bootstrap.screen_error_short(message)
+    if text is None:
+        text = admin_short
+    elif admin_short is not None and not text.endswith(page_bootstrap.ADMIN_TAIL):
+        text += page_bootstrap.ADMIN_TAIL
+    if goto is None:
+        goto = page_bootstrap.screen_error_goto(message)
     if goto is None:
         return alerts.page_error_note(message, code=code, tab=tab, text=text)
     name, href, *rest = goto
@@ -86,9 +144,16 @@ def data_error_note(
     )
 
 
-def render_data_error_mark() -> None:
-    """마크만 그린다 — 알림을 따로 한 번 보내는 자리(`state_alerts.alert_page_error`)가 쓴다."""
-    st.html(data_error_mark_html())
+def place_html(message: str | None) -> str:
+    """오류 자리 한 칸 — 빈 상태 글이면 회색 한 줄, 아니면 「데이터 Error」 마크."""
+    state = None if message is None else page_bootstrap.empty_state(message)
+    return data_error_mark_html() if state is None else empty_state_html(state.line)
+
+
+def render_data_error_mark(message: str | None = None) -> None:
+    """마크만 그린다 — 알림을 따로 한 번 보내는 자리(`state_alerts.alert_page_error`)가 쓴다.
+    `message` 가 빈 상태 글이면 마크 대신 회색 한 줄이다."""
+    st.html(place_html(message))
 
 
 def render_data_error(
@@ -104,4 +169,4 @@ def render_data_error(
     없다. `code` 는 그 화면의 코드, `tab` 은 「그 화면으로」 가 열 탭, `text` 는 알림창 짧은
     글, `goto` 는 채울 입력이 다른 화면에 있을 때 「그 화면으로」 가 열 화면(`ErrorGoto`)이다."""
     note = data_error_note(message, code=code, tab=tab, text=text, goto=goto)
-    st.html(data_error_mark_html() + alerts.hidden_marker([*alerts.drain_outbox(), note]))
+    st.html(place_html(message) + alerts.hidden_marker([*alerts.drain_outbox(), note]))

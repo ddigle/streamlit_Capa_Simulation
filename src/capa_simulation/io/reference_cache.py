@@ -17,11 +17,30 @@ SESSION_REFERENCE_VERSION_KEY = "persisted_reference_version"
 HOME_FIGURE_CACHE_KEY = "home_dashboard_figure_cache"
 
 
+# 이 세션에 불러온 리비전이 없을 때의 글 셋 — 오류가 아니라 볼 것이 없는 빈 상태다. 계산 화면은
+# 「데이터 Error」 마크 대신 회색 한 줄을 세우고(`components/data_error_mark`) 이 글을 그 화면의
+# 확인 단계 알림 전문으로 낸다. 어느 글인지는 오류를 글로 바꾸는
+# 쪽(`page_bootstrap.no_revision_message`)이 저장소를 보고 고른다 — 이 잎 모듈은 저장소를 읽지
+# 않는다. 화면이 글 앞에 머리를 붙여도 이 글이 그대로 들어 있어 가를 수 있게 고정 글이다.
+NO_OFFICIAL_MESSAGE = (
+    "공식버전이 없어 불러온 시나리오가 없습니다 — 시나리오 관리 › Capa 시나리오 › 목록 관리에서 "
+    "리비전 하나를 「공식으로 지정…」 하면 새 세션이 그 공식버전을 불러옵니다."
+)
+ARCHIVED_ONLY_MESSAGE = (
+    "보관본만 있어 불러올 시나리오가 없습니다 — 시나리오 관리 › Capa 시나리오 › 목록 관리의 "
+    "「보관함」 에서 「되돌리기」 한 뒤 불러오세요."
+)
+NOT_LOADED_MESSAGE = (
+    "이 세션에 불러온 시나리오가 없습니다 — 공식버전은 있으니 새로고침하면 불러옵니다(사이드바 "
+    "「시나리오」 에서 골라 불러와도 됩니다)."
+)
+
+
 class NoActiveRevision(RuntimeError):
     """이 세션에 불러온 리비전이 없다 — 첫 접속에 불러올 공식버전이 없었거나 아직 고르지 않았다.
 
-    저장소의 시나리오가 모두 보관본이면 `page_bootstrap.bootstrap_error_message` 가 글을 갈라
-    보관함을 가리킨다. 이 잎 모듈은 저장소를 읽지 않는다 — 그 판정은 오류를 글로 바꾸는 쪽이 한다.
+    글은 기본 `NO_OFFICIAL_MESSAGE` 다. 저장소를 보고 셋 가운데 맞는 글을 고르는 것은
+    `page_bootstrap.bootstrap_error_message` 다.
     """
 
 
@@ -34,17 +53,14 @@ def get_effective_reference_tables() -> dict[str, pd.DataFrame]:
         and all(isinstance(frame, pd.DataFrame) for frame in saved.values())
     ):
         return saved
-    raise NoActiveRevision(
-        "활성 DuckDB 시나리오가 없습니다. 시나리오 페이지에서 공식버전을 지정하거나 "
-        "저장된 리비전을 불러오세요."
-    )
+    raise NoActiveRevision(NO_OFFICIAL_MESSAGE)
 
 
 def get_effective_reference_version() -> int:
     saved = st.session_state.get(SESSION_REFERENCE_VERSION_KEY)
     if isinstance(saved, int) and not isinstance(saved, bool):
         return saved
-    raise NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다.")
+    raise NoActiveRevision(NO_OFFICIAL_MESSAGE)
 
 
 def reference_version_for_revision(revision_id: str) -> int:

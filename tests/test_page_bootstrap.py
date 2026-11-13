@@ -176,13 +176,13 @@ def _store_with_scenarios(path: Path, *, archived: int, active: int) -> None:
 def test_no_active_revision_over_a_store_of_archived_scenarios_points_at_the_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """시나리오가 모두 보관본이면 첫 접속이 불러올 것도, 목록에서 고를 것도 없다 — 「활성 DuckDB
-    리비전 버전이 없습니다」 대신 보관함에서 되돌리라고 한다(2026-11-08 결정 a8)."""
+    """시나리오가 모두 보관본이면 첫 접속이 불러올 것도, 목록에서 고를 것도 없다 — 공식버전 없음
+    대신 보관함에서 되돌리라고 한다(2026-11-08 결정 a8)."""
     database = tmp_path / "archived.duckdb"
     _store_with_scenarios(database, archived=2, active=0)
     monkeypatch.setattr(settings, "DUCKDB_PATH", database)
 
-    message = bootstrap_error_message(NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다."))
+    message = bootstrap_error_message(NoActiveRevision("아무 글"))
 
     assert message == page_bootstrap.ARCHIVED_ONLY_MESSAGE
     assert "보관함" in message and "되돌리기" in message
@@ -190,17 +190,38 @@ def test_no_active_revision_over_a_store_of_archived_scenarios_points_at_the_arc
 
 
 @pytest.mark.parametrize(("archived", "active"), [(1, 1), (0, 0)], ids=["listed", "empty"])
-def test_no_active_revision_keeps_its_message_unless_every_scenario_is_archived(
+def test_no_active_revision_says_there_is_no_official_unless_every_scenario_is_archived(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, archived: int, active: int
 ) -> None:
+    """공식버전이 없는 저장소는 예외 글과 상관없이 「공식버전 없음」 글 하나다(카드 p1-no-revision —
+    내부 말 「DuckDB」 를 걷는다)."""
     database = tmp_path / "store.duckdb"
     _store_with_scenarios(database, archived=archived, active=active)
     monkeypatch.setattr(settings, "DUCKDB_PATH", database)
 
-    assert (
-        bootstrap_error_message(NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다."))
-        == "활성 DuckDB 리비전 버전이 없습니다."
+    message = bootstrap_error_message(NoActiveRevision("아무 글"))
+
+    assert message == page_bootstrap.NO_OFFICIAL_MESSAGE
+    assert "DuckDB" not in message
+
+
+def test_no_active_revision_when_an_official_exists_says_to_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """첫 접속 뒤에 공식버전이 발행돼 이 세션만 안 불러왔으면 「새로고침하면 불러옴」 글이다 —
+    공식버전 없음이라고 하지 않는다."""
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = tmp_path / "store.duckdb"
+    _store_with_scenarios(database, archived=0, active=1)
+    repository = DuckDBScenarioRepository(database)
+    (scenario,) = repository.list_scenarios()
+    repository.publish_official_revision(
+        scenario.scenario_id, scenario.active_revision_id, release_name="DEMO v1", note=""
     )
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+
+    assert bootstrap_error_message(NoActiveRevision()) == page_bootstrap.NOT_LOADED_MESSAGE
 
 
 @pytest.mark.parametrize(
@@ -249,9 +270,9 @@ def test_no_active_revision_does_not_create_a_missing_store(
     database = tmp_path / "absent.duckdb"
     monkeypatch.setattr(settings, "DUCKDB_PATH", database)
 
-    message = bootstrap_error_message(NoActiveRevision("활성 DuckDB 리비전 버전이 없습니다."))
+    message = bootstrap_error_message(NoActiveRevision("아무 글"))
 
-    assert message == "활성 DuckDB 리비전 버전이 없습니다."
+    assert message == page_bootstrap.NO_OFFICIAL_MESSAGE
     assert not database.exists()
 
 

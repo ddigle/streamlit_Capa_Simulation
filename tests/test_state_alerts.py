@@ -146,12 +146,13 @@ def test_a_goto_with_a_table_opens_that_table_on_the_other_screen() -> None:
 
 def test_a_separately_sent_page_error_alerts_once_per_message() -> None:
     """마크와 따로 보내는 오류 알림도 사건 알림 하나(오류 단계)다. id 가 글의 지문이라 회차마다
-    다시 그려도 같은 글이면 브라우저가 한 번만 띄운다. 알림창 짧은 글은 첫 문단이다."""
+    다시 그려도 같은 글이면 브라우저가 한 번만 띄운다. 알림창 짧은 글은 첫 문단이고, 사람이 고칠 수
+    없는 DB 실패면 그 갈래 이름 + 「— 관리자에게 알려 주세요」 다(카드 p1-no-revision)."""
     app = AppTest.from_string(PAGE_ERROR).run()
     assert not app.exception
     (first,) = alert_notes(app)
     assert (first["code"], first["kind"], first["level"]) == ("ST-20", "event", "error")
-    assert first["short"] == "데이터베이스를 열지 못했습니다."
+    assert first["short"] == "데이터베이스를 열지 못함 — 관리자에게 알려 주세요"
     assert first["full"] == "데이터베이스를 열지 못했습니다. - 원문: lock"
     assert (first["page"], first["tab"]) == ("산출 결과", "소요대수")
 

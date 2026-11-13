@@ -30,7 +30,7 @@ from capa_simulation import alerts, settings
 from capa_simulation.components import write_guard
 from capa_simulation.components.literal_markdown import markdown_safe_tildes, quoted
 from capa_simulation.components.stop_examples import markdown_examples, readable_examples
-from capa_simulation.navigation import REFERENCE_DATA
+from capa_simulation.navigation import REFERENCE_DATA, SCENARIO_MANAGEMENT
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 from capa_simulation.persistence.cache import (
@@ -176,31 +176,119 @@ def empty_source_table_stop(exc: BaseException) -> str | None:
     return EMPTY_TABLE_STOP.format(name=EMPTY_SOURCE_TABLES[found["table"]])
 
 
-# 이 세션에 불러온 리비전이 없고(`reference_cache.NoActiveRevision`) 저장소의 시나리오가 모두
-# 보관본일 때의 글 — 첫 접속이 불러올 공식버전도, 목록에서 고를 시나리오도 없다. 되살리는 길(목록
-# 관리 오른쪽 「보관함」 칸의 「되돌리기」)을 Alarm 줄 두 줄 안에 든다.
-ARCHIVED_ONLY_MESSAGE = (
-    "보관본만 있어 불러올 시나리오가 없습니다 — 시나리오 관리 › Capa 시나리오 › 목록 관리의 "
-    "「보관함」 에서 「되돌리기」 한 뒤 불러오세요."
+# 이 세션에 불러온 리비전이 없을 때의 글 셋(`reference_cache` 가 갖는다 — 화면이 머리를 붙여도 이
+# 글이 그대로 들어 있어 빈 상태를 가른다). 이름은 앞 시험 · 화면이 읽던 그대로 둔다.
+ARCHIVED_ONLY_MESSAGE = reference_cache.ARCHIVED_ONLY_MESSAGE
+NO_OFFICIAL_MESSAGE = reference_cache.NO_OFFICIAL_MESSAGE
+NOT_LOADED_MESSAGE = reference_cache.NOT_LOADED_MESSAGE
+
+
+# 사람이 고칠 수 없는 DB 실패의 첫 문단(`bootstrap_error_message`)과 화면 알림의 짧은 글
+# (`screen_error_short`). 짧은 글은 머리를 붙인 화면 글에서도 이 첫 문단으로 갈래를 알아 늘 같은
+# 꼴이다.
+HELD_LEAD: Final = "데이터베이스를 열지 못했습니다 — 다른 프로그램이 파일을 열어 두었습니다."
+WRITE_FAILED_LEAD: Final = (
+    "데이터베이스에 쓰지 못했습니다 — 저장되지 않았습니다. 디스크 공간과 쓰기 권한을 확인하세요."
+)
+DB_FAILED_LEAD: Final = "데이터베이스 작업이 실패했습니다."
+OPEN_FAILED_LEAD: Final = "데이터베이스를 열지 못했습니다."
+ADMIN_TAIL: Final = " — 관리자에게 알려 주세요"
+_ADMIN_LEADS: Final[tuple[tuple[str, str], ...]] = (
+    (HELD_LEAD, "데이터베이스를 열지 못함(다른 프로그램이 엶)"),
+    (WRITE_FAILED_LEAD, "데이터베이스에 쓰지 못함"),
+    (DB_FAILED_LEAD, "데이터베이스 작업 실패"),
+    (OPEN_FAILED_LEAD, "데이터베이스를 열지 못함"),
 )
 
 
-def _only_archived_scenarios() -> bool:
-    """시뮬레이션 저장소에 시나리오가 있고 모두 보관본인가 — 활성 리비전이 없는 회차에만 부른다.
+def screen_error_short(message: str) -> str | None:
+    """화면을 그리지 못한 오류 글이 사람이 고칠 수 없는 DB 실패면 알림 짧은 글(「… — 관리자에게 알려
+    주세요」), 아니면 None(부르는 쪽 글 그대로). 첫 문단 뒤 빈 줄까지 맞대 「열지 못했습니다」 의 두
+    꼴을 가른다."""
+    for lead, short in _ADMIN_LEADS:
+        if f"{lead}\n\n" in message:
+            return short + ADMIN_TAIL
+    return None
 
-    DB 파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면 아니라고 본다 — 지금
-    글이 그대로 선다. 경로는 부를 때 설정에서 읽는다(시험이 바꾼다).
+
+def screen_error_goto(message: str) -> tuple[str, str, str] | None:
+    """사용자가 고칠 원인인데 화면이 「그 화면으로」 를 주지 않은 글의 고칠 곳 — 경로 · 계획 표가 빈
+    리비전(`EMPTY_TABLE_STOP` — 원천을 고쳐 다시 등록)은 시나리오 관리 「DB 등록」. 아니면 None."""
+    if EMPTY_TABLE_STOP.removeprefix("{name}") in message:
+        return (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href, REGISTRATION_TAB_NAME)
+    return None
+
+
+def no_revision_message() -> str:
+    """불러온 리비전이 없는 회차의 글 — 저장소를 보고 셋 가운데 하나를 고른다.
+
+    공식버전이 있으면(이 세션이 첫 접속 뒤에 발행된 것을 아직 안 불러옴) `NOT_LOADED_MESSAGE`,
+    시나리오가 있고 모두 보관본이면 `ARCHIVED_ONLY_MESSAGE`, 그 밖은 `NO_OFFICIAL_MESSAGE` 다. DB
+    파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면 공식버전 없음으로 본다.
+    경로는 부를 때 설정에서 읽는다(시험이 바꾼다). 드문 상태라 회차 비용이 없다.
     """
     path = settings.DUCKDB_PATH
     if not path.exists():
-        return False
+        return NO_OFFICIAL_MESSAGE
     try:
-        scenarios = get_scenario_repository(str(path.resolve())).list_scenarios(
-            include_archived=True
-        )
+        repository = get_scenario_repository(str(path.resolve()))
+        if repository.latest_official_release() is not None:
+            return NOT_LOADED_MESSAGE
+        scenarios = repository.list_scenarios(include_archived=True)
     except (OSError, duckdb.Error):
-        return False
-    return bool(scenarios) and all(scenario.status != "ACTIVE" for scenario in scenarios)
+        return NO_OFFICIAL_MESSAGE
+    if scenarios and all(scenario.status != "ACTIVE" for scenario in scenarios):
+        return ARCHIVED_ONLY_MESSAGE
+    return NO_OFFICIAL_MESSAGE
+
+
+class EmptyState(NamedTuple):
+    """불러온 리비전이 없어 화면에 볼 것이 없는 빈 상태 — 「데이터 Error」 마크 대신 서는 것."""
+
+    line: str
+    """본문 회색 한 줄(값 — 설계 규칙 UI-TXT-04)."""
+
+    text: str
+    """그 화면 확인 단계 알림의 짧은 글 — 무엇이 없고 어디서 푸나."""
+
+    goto: tuple[str, str, str] | None
+    """Alarm 줄의 「그 화면으로」 — (화면 이름, 주소, 탭). 고칠 화면이 없으면 None."""
+
+
+# 공식버전 · 보관본을 푸는 자리 — 시나리오 관리 「Capa 시나리오」 탭(탭 이름은
+# `scenario_management_tabs.CAPA_SCENARIO_TAB_NAME` 과 같은 글 — 그 모듈은 여기서 부를 수 없어
+# 시험이 맞댄다).
+SCENARIO_TAB_NAME: Final = "Capa 시나리오"
+REGISTRATION_TAB_NAME: Final = "DB 등록"
+_EMPTY_STATES: Final[tuple[tuple[str, str, str, bool], ...]] = (
+    (NO_OFFICIAL_MESSAGE, "공식버전 없음", "공식버전 없음 — 시나리오 관리에서 발행", True),
+    (
+        ARCHIVED_ONLY_MESSAGE,
+        "불러올 시나리오 없음 · 보관본만",
+        "불러올 시나리오 없음 — 보관본만 · 시나리오 관리 보관함에서 되돌림",
+        True,
+    ),
+    (
+        NOT_LOADED_MESSAGE,
+        "불러온 시나리오 없음",
+        "불러온 시나리오 없음 — 새로고침하면 공식버전을 엶",
+        False,
+    ),
+)
+
+
+def empty_state(message: str) -> EmptyState | None:
+    """화면 오류 글이 불러온 리비전 없음(`no_revision_message` 의 글 셋 — 머리를 붙였어도)이면 그 빈
+    상태, 아니면 None."""
+    for full, line, text, to_scenarios in _EMPTY_STATES:
+        if full in message:
+            goto = (
+                (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href, SCENARIO_TAB_NAME)
+                if to_scenarios
+                else None
+            )
+            return EmptyState(line=line, text=text, goto=goto)
+    return None
 
 
 def _original_line(exc: BaseException) -> str:
@@ -254,9 +342,15 @@ def bootstrap_error_message(
     `try` 가 둘 다 받는 자리도 있다. 경로를 여기에 박아 두면 설비 DB 가 잠겼을 때 사용자가
     멀쩡한 시뮬레이션 파일을 들여다보게 된다.
 
-    **불러온 리비전이 없는 오류**(`reference_cache.NoActiveRevision`)는 저장소의 시나리오가 모두
-    보관본일 때만 글을 갈라(`ARCHIVED_ONLY_MESSAGE`) 보관함에서 되돌리라고 한다 — 그때는 목록에도
-    고를 것이 없다. 그 판정만 이 갈래에서 저장소를 읽는다(드문 상태라 회차 비용이 없다).
+    **불러온 리비전이 없는 오류**(`reference_cache.NoActiveRevision`)는 저장소를 보고 글 셋 가운데
+    하나로 바꾼다(`no_revision_message` — 공식버전 없음 · 보관본만 · 공식은 있는데 안 불러옴). 그
+    판정만 이 갈래에서 저장소를 읽는다(드문 상태라 회차 비용이 없다). 화면은 그 글을 「데이터
+    Error」 마크가 아니라 회색 한 줄의 빈 상태로 그린다(`empty_state`).
+
+    **사람이 고칠 수 없는 DB 실패**(다른 프로그램의 잠금 · 쓰기 실패 · 열기 실패 · 그 밖의 DB
+    실패)는 첫 문단을 고정 글(`_ADMIN_LEADS`)로 둔다 — 화면 알림의 짧은 글이 그 첫 문단으로 그
+    갈래를 알고 「— 관리자에게 알려 주세요」 로 끝난다(`screen_error_short`). 이 앱 자신의 잠금은
+    새로고침으로 풀려 그 갈래가 아니다.
 
     **경로 표 · 계획 표가 빈 리비전**이 조회기간을 정하다 멈춘 글(「RQ_REQB에 선택할
     생산계획년월 데이터가 없습니다」)은 「「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐
@@ -275,8 +369,8 @@ def bootstrap_error_message(
     둘 다 없으면 원문 그대로다 — 알림 「원본 오류」 · 지문(가용설비 현황 비교 `EQ-08`)과 공용
     길(`shortening_source`)의 원문은 이 기본값이다.
     """
-    if isinstance(exc, reference_cache.NoActiveRevision) and _only_archived_scenarios():
-        return ARCHIVED_ONLY_MESSAGE
+    if isinstance(exc, reference_cache.NoActiveRevision):
+        return no_revision_message()
     empty_table = empty_source_table_stop(exc)
     if empty_table is not None:
         return empty_table
@@ -297,7 +391,7 @@ def bootstrap_error_message(
     holder = lock_holder_pid(exc)
     if holder is not None:
         return (
-            "데이터베이스를 열지 못했습니다 — 다른 프로그램이 파일을 열어 두었습니다.\n\n"
+            f"{HELD_LEAD}\n\n"
             f"{files}\n"
             f"- 파일을 연 프로세스: PID {holder}. DuckDB 는 한 번에 한 프로세스만 파일을 "
             "엽니다. 이 앱을 한 번 더 띄운 서버나 DB 도구·동기화 스크립트라면 그것을 닫고 "
@@ -306,24 +400,19 @@ def bootstrap_error_message(
         )
     text = str(exc)
     if any(marker in text for marker in _WRITE_FAILURE_MARKERS):
-        return (
-            "데이터베이스에 쓰지 못했습니다 — 저장되지 않았습니다. 디스크 공간과 쓰기 권한을 "
-            "확인하세요.\n\n"
-            f"{files}\n"
-            f"{_original_line(exc)}"
-        )
+        return f"{WRITE_FAILED_LEAD}\n\n{files}\n{_original_line(exc)}"
     if not (
         isinstance(exc, duckdb.IOException)
         and any(marker in text for marker in _OPEN_FAILURE_MARKERS)
     ):
         return (
-            "데이터베이스 작업이 실패했습니다.\n\n"
+            f"{DB_FAILED_LEAD}\n\n"
             f"{files}\n"
             "- 같은 실패가 이어지면 아래 원문을 관리자에게 알려 주세요.\n"
             f"{_original_line(exc)}"
         )
     return (
-        "데이터베이스를 열지 못했습니다.\n\n"
+        f"{OPEN_FAILED_LEAD}\n\n"
         f"{files}\n"
         "- 같은 파일을 연 다른 프로그램(이 앱을 한 번 더 띄운 서버, DB 도구, 동기화 "
         "스크립트)이 있으면 닫고 새로고침하세요. DuckDB 는 한 번에 한 프로세스만 파일을 "
