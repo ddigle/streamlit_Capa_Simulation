@@ -375,6 +375,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # (동기화 아님 · 올리기 밀림 · 큐 넘침 · 시계 차이)과 기록 사슬 이상(1판은 14일 넘게 늦은 조각).
     AlertSpec("AD-12", "action", "state", "접속 · 작업 기록이 버킷에 보관되지 않음"),
     AlertSpec("AD-13", "error", "state", "접속 · 작업 기록 사슬 이상 — 너무 늦게 온 조각"),
+    # 통합인증 로그인 최대 시간 10분 전 — 그 로그인의 첫 회차에 한 번(`components/sso_expiry.py`,
+    # 2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-expiry). 쓰는 중에도 늘지 않는 끝이라 저장해
+    # 두라고 알린다. 글은 남은 분을 부를 때 준다.
+    AlertSpec("AD-20", "action", "event", "로그인 최대 시간 10분 전 — 저장해 두기"),
 )
 
 
@@ -679,6 +683,7 @@ def event(
     cause: str = "",
     detail: str = "",
     tab: str = "",
+    alert_id: str | None = None,
 ) -> None:
     """사건 알림 하나를 담는다 — **그리지 않는다**(이벤트 칸을 쓰지 않으니 어느 갈래에서 불러도
     된다).
@@ -686,9 +691,20 @@ def event(
     같은 회차의 다음 표지 자리(`render_flash` · `state` · `flush`)가 보내고, 그런 자리가 없으면 다음
     앱 전체 회차의 알림 칸 data 가 보낸다(콜백에서 담은 것은 바로 그 회차다). `text` 는 알림창 짧은
     글(60자 안팎), `full` 은 패널 · 로그의 전문, `cause` 는 로그의 계기(「「저장」 누름」), `detail`
-    은 원본 오류 글, `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그 탭을 연다)이다.
+    은 원본 오류 글, `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그 탭을 연다)이다. `alert_id` 를
+    고정 값으로 주면 이 브라우저 탭이 그 알림을 한 번만 띄운다(새로고침 · 테마 전환의 새 세션에도 —
+    `event_note`).
     """
-    note = event_note(code, text=text, full=full, level=level, cause=cause, detail=detail, tab=tab)
+    note = event_note(
+        code,
+        text=text,
+        full=full,
+        level=level,
+        cause=cause,
+        detail=detail,
+        tab=tab,
+        alert_id=alert_id,
+    )
     outbox = st.session_state.get(OUTBOX_KEY)
     st.session_state[OUTBOX_KEY] = [*outbox, note] if isinstance(outbox, list) else [note]
 

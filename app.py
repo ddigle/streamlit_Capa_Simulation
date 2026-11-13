@@ -66,6 +66,7 @@ from capa_simulation.components.scenario_status import (
     show_scenario_dialog,
 )
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
+from capa_simulation.components.sso_expiry import note_expiry_alert
 from capa_simulation.components.sso_identity import require_signed_in, sso_credit_line
 from capa_simulation.components.sso_reconnect import sso_reconnect_scripts
 from capa_simulation.components.sso_refresh import sso_refresh_scripts
@@ -229,9 +230,11 @@ theme.begin_run()
 # **앞**. 꺼짐(`ADFS_CLIENT_ID` 없음)이면 아무것도 그리지 않는다(요소 순번 그대로).
 signed_in = require_signed_in()
 # 접속 · 작업 감사 기록 — 그 Streamlit 세션의 첫 회차에만 `session_created` 한 줄(메모리 큐). 신원이
-# 없는(통합인증 꺼짐) 회차는 부르지 않는다.
+# 없는(통합인증 꺼짐) 회차는 부르지 않는다. 로그인 최대 시간 10분 전 첫 회차에는 「저장해 두세요」
+# 사건 알림을 한 번 담는다(`AD-20` — 그리지 않으므로 요소 순번 그대로).
 if signed_in is not None:
     note_audit_session(signed_in)
+    note_expiry_alert(signed_in)
 # 탭을 처음 연 사용자에게 첫 로딩을 덮는 입장 화면. 무거운 부트스트랩보다 **먼저** 보내야
 # 그동안을 덮는다. 토큰을 읽으므로 `theme.begin_run()` 뒤다. 매 회차 같은 자리에 같은 내용으로
 # 그려야 첫 실행 도중의 rerun 에도 덮개가 내려가지 않는다 — 이미 들어간 탭이면 브라우저 쪽에서

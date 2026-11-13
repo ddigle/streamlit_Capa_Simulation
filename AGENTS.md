@@ -393,6 +393,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 관리자 회차 판정 `viewer_is_admin`(지금 다시 검증한 신원 — 켜짐이 아니면 거짓, `AD-10`)과 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
     은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 끝 30분 전 경고는 갱신 표까지 본 끝
     (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
+    최대 시간이 정한 끝 10분 안의 첫 회차에는 `components/sso_expiry.py` 가 사건 알림 `AD-20`(「로그인 최대 시간까지 n분 — 저장해
+    두세요」)을 한 번 담는다 — 세션 칸(그 sid)과 고정 id(`alerts.event` 의 `alert_id` — sid 지문)로 같은 탭에 한 번이다. `app.py` 가
+    신원이 있을 때만 부르고 담기만 한다(요소 순번 그대로).
     멈춤 화면은 `st.stop()` 앞에서 껍데기 스타일(`app_header.render_shell_style` — ⋮ 메뉴 · Deploy 감춤)과 툴바 단추 감춤
     (`_STOP_TOOLBAR_STYLE` — 툴바 iframe 이 세운 Guide · Print · 테마)을 스스로 보낸다(`_render_stop_chrome`) — 앞 회차 iframe 이
     세운 단추는 듣개가 죽어 눌러도 아무 일도 없다. 알림 칸이 세운 변경 칩 · Alarm 은 듣개가 살아 있어 둔다(변경 칩은 새로고침하면
