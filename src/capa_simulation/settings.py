@@ -1,7 +1,7 @@
-# Purpose: 앱 이름·파일 경로·조회기간 등 프로젝트 공통 설정 상수와 운영 DB 자리 판정을 정의한다.
+# Purpose: 앱 이름·파일 경로·조회기간 등 공통 설정 상수와 문의처 읽기·운영 DB 자리 판정을 정의한다.
 
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 # 탭 아이콘은 `st.set_page_config(page_icon=...)` 가 맡는다. 이름에 이모지를 붙이면
@@ -19,10 +19,13 @@ MONTH_SELECTION_START = 202501
 MONTH_SELECTION_END = 203012
 # 앱의 버전·빌드일과 누가 만들었는지(담당 조직·문의처) 알리는 메타다. 보여 주는 곳은 모든 화면
 # 사이드바 맨 아래의 앱 정보 카드(`components/app_credits.py`) 한 곳이다 — ⋮ 메뉴(About)는
-# 감추고, 머리 띠는 적용 중인 시나리오를 싣는다. 담당 조직과 문의처는 실제 값이다.
+# 감추고, 머리 띠는 적용 중인 시나리오를 싣는다. 담당 조직은 실제 값이다.
 APP_VERSION = "0.9.0-demo"
 APP_OWNER_TEAM = "S.PKG 제조팀"
-APP_CONTACT_EMAIL = "hoyeon.jeon@samsung.com"
+# 문의처 메일은 사람을 가리키는 사내 값이라 저장소에 두지 않는다(공개 저장소) — 사내 PC 사용자
+# 환경변수 · C-DEP 환경변수 표의 이 이름으로만 받는다(`app_contact_email`). 비면 카드는 팀 이름만
+# 싣는다.
+APP_CONTACT_EMAIL_ENV = "CAPA_APP_CONTACT_EMAIL"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # 브라우저 탭 아이콘. `:material/…:` 이름을 주면 프런트엔드가 fonts.gstatic.com 에서 받아 오는데
 # 사내 WebIDE 는 그 주소에 못 나갈 수 있다. 저장소의 SVG 파일 경로를 주면 Streamlit 이 파일을 읽어
@@ -49,6 +52,13 @@ CORE_DATA_CSV_PATH = INPUT_DIR / "Core_Data.csv"
 # Area 「서버 시작 점검」·BigDataQuery 안내)이 이 파일을 읽는다. 개발·사내 PC 에는 없다.
 # `data/temp/` 라 git·이미지에 실리지 않는다.
 CONTAINER_START_REPORT_PATH = DATA_DIR / "temp" / "container_start.json"
+
+
+def app_contact_email(environ: Mapping[str, str] | None = None) -> str:
+    """앱 정보 카드의 문의처 메일 — 환경변수 `APP_CONTACT_EMAIL_ENV` 를 부를 때마다 읽는다. 없거나
+    비면 빈 글자다."""
+    env = os.environ if environ is None else environ
+    return env.get(APP_CONTACT_EMAIL_ENV, "").strip()
 
 
 def format_month(month: int) -> str:

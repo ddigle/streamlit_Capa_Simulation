@@ -24,6 +24,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from test_public_repo_hygiene import identity_hits
 
 from capa_simulation import settings
 from capa_simulation.components import page_guide
@@ -218,21 +219,18 @@ def _board_data(html: str) -> dict[str, object]:
     return data
 
 
-def _identity_needles() -> list[str]:
-    """실 담당 조직 · 문의처와 거기서 나오는 조각(이름 · 회사). 값은 settings 정본에서 읽는다.
+def _identity_hits(text: str) -> list[str]:
+    """실 담당 조직 · 옛 문의처에서 나오는 조각(이름 · 회사)이 글에 있으면 그 이름표.
 
-    오브젝트 스토리지 사내 값(주소 · 버킷 · 프로필)은 코드에 없다 — 저장소 전체는
-    `tests/test_public_repo_hygiene.py` 가 본다.
+    담당 조직은 settings 정본에서 읽는다. 문의처 메일은 저장소에 없고(환경변수) 그 이름 · 회사
+    조각은 `tests/test_public_repo_hygiene.py` 의 지문 · 바늘로 본다 — 세 자 이상 이름 조각 · 회사
+    이름까지. 오브젝트 스토리지 사내 값(주소 · 버킷 · 프로필)은 코드에 없다 — 저장소 전체는 그
+    시험이 본다.
     """
-    local, domain = settings.APP_CONTACT_EMAIL.split("@", 1)
-    return [
-        settings.APP_OWNER_TEAM,
-        settings.APP_CONTACT_EMAIL,
-        local,
-        *[part for part in re.split(r"[._-]", local) if len(part) >= 3],
-        domain,
-        domain.split(".", 1)[0],
-    ]
+    hits = identity_hits(text)
+    if settings.APP_OWNER_TEAM.lower() in text.lower():
+        hits.append("담당 조직")
+    return hits
 
 
 def test_the_committed_example_board_is_one_synthetic_self_contained_file() -> None:
@@ -256,9 +254,7 @@ def test_the_committed_example_board_is_one_synthetic_self_contained_file() -> N
     assert "@import" not in html and "<link" not in html
     # 그림 밖 글(그림 바이트를 걷어 낸 나머지)에 실 식별값이 없다. 그림은 촬영기가 가린다.
     text = re.sub(r"data:image/webp;base64,[A-Za-z0-9+/=]+", "", html)
-    lowered = text.lower()
-    for needle in _identity_needles():
-        assert needle.lower() not in lowered, "예시판에 실 식별값이 남았습니다"
+    assert not _identity_hits(text), "예시판에 실 식별값이 남았습니다"
     assert not re.findall(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", text)
     # 설정 사전(md 대화상자로 가는 길)이 실린 틀로 만들었다.
     assert ">설정 사전</button>" in html

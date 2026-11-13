@@ -33,13 +33,16 @@ from capa_simulation.design import theme
 from capa_simulation.page_tabs_state import PAGE_TABS_COMPONENT_KEY
 from capa_simulation.scenario_activation import ActiveScenarioLabel
 from capa_simulation.settings import (
-    APP_CONTACT_EMAIL,
+    APP_CONTACT_EMAIL_ENV,
     APP_LABEL,
     APP_NAME,
     APP_OWNER_TEAM,
     APP_SUBTITLE,
     APP_VERSION,
 )
+
+# 문의처 메일 자리의 가짜 값 — 실제 문의처는 사내 환경변수에만 있다(공개 저장소).
+FAKE_CONTACT = "demo.contact@example.invalid"
 
 LABEL = ActiveScenarioLabel(
     scenario_id="scenario-1",
@@ -472,17 +475,21 @@ def test_print_does_not_split_charts_but_lets_long_tables_break() -> None:
         assert table not in block
 
 
-def test_the_app_credits_are_two_lines_without_the_clearance_sentence() -> None:
+def test_the_app_credits_are_two_lines_without_the_clearance_sentence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """⋮ 메뉴의 About 이 없고 머리 띠는 시나리오를 싣는다 — 앱 정보는 사이드바 맨 아래 카드뿐이다.
 
     두 줄이다 — 앱·버전·빌드, 개발 팀·문의처. 보안 등급·인증번호(유효기간)·취급 주의 문장은 싣지
-    않고, 그것만 쓰는 설정 상수도 두지 않는다(2026-10-07 사용자 결정).
+    않고, 그것만 쓰는 설정 상수도 두지 않는다(2026-10-07 사용자 결정). 문의처는 환경변수가 있을
+    때만 붙는다(아래 시험).
     """
     import capa_simulation.settings as settings
 
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
     assert credit_lines(stamp="202610081234") == (
         f"{APP_NAME} v{APP_VERSION} · 배포 202610081234",
-        f"개발 {APP_OWNER_TEAM} · {APP_CONTACT_EMAIL}",
+        f"개발 {APP_OWNER_TEAM} · {FAKE_CONTACT}",
     )
     text = "\n".join(credit_lines())
     for removed in ("인증번호", "유효기간", "반출", "CONFIDENTIAL"):
@@ -491,8 +498,27 @@ def test_the_app_credits_are_two_lines_without_the_clearance_sentence() -> None:
         assert not hasattr(settings, name), name
     # 머리 띠에는 싣지 않는다.
     css = _header_css(*header_lines(LABEL, official=None, unsaved=False))
-    assert APP_CONTACT_EMAIL not in css and "배포 " not in css
+    assert FAKE_CONTACT not in css and "배포 " not in css
     assert not hasattr(settings, "APP_BUILD_DATE")
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_without_a_contact_variable_the_credits_name_only_the_team(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """문의처 메일은 사내 값이라 저장소에 없다(공개 저장소 — 2026-11-12 보드 답 ⑤-9). 환경변수가
+    없거나 비면 둘째 줄은 팀 이름만이고 빈 「 · 」 꼬리를 남기지 않는다. 값은 부를 때마다 읽는다."""
+    import capa_simulation.settings as settings
+
+    if value is not None:
+        monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, value)
+    assert credit_lines(stamp="202610081234")[1] == f"개발 {APP_OWNER_TEAM}"
+    assert settings.app_contact_email() == ""
+    assert not hasattr(settings, "APP_CONTACT_EMAIL"), "읽어 둔 상수는 두지 않는다"
+
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, f"  {FAKE_CONTACT}  ")
+    assert credit_lines(stamp="202610081234")[1] == f"개발 {APP_OWNER_TEAM} · {FAKE_CONTACT}"
+    assert settings.app_contact_email({APP_CONTACT_EMAIL_ENV: FAKE_CONTACT}) == FAKE_CONTACT
 
 
 def test_the_credits_show_the_applied_deploy_stamp_or_say_outside(tmp_path: Path) -> None:

@@ -90,10 +90,10 @@ import page_guide_core as core  # noqa: E402
 
 from capa_simulation.services.korean_particle import with_topic_particle  # noqa: E402
 from capa_simulation.settings import (  # noqa: E402
-    APP_CONTACT_EMAIL,
     APP_OWNER_TEAM,
     DUCKDB_PATH,
     EQUIPMENT_DUCKDB_PATH,
+    app_contact_email,
 )
 
 EXIT_OK: Final = screens.EXIT_OK
@@ -111,8 +111,6 @@ BASELINE_FILE: Final = "db_baseline.json"
 DB_CHANGED_MESSAGE: Final = (
     "DB 변화 있음 — 사본 DB 가 이 --work 의 첫 촬영 앞(기준 지문)과 다릅니다"
 )
-# 찍기 전마다 감추고, 감춘 뒤에도 남으면 찍지 않는 글 — 담당 조직 · 문의처(settings 정본).
-MASK_NEEDLES: Final = (APP_OWNER_TEAM, APP_CONTACT_EMAIL)
 # 예시판 시드 — 검수용 합성 샘플 생성기(사본의 것). 사본 뿌리에 data/ 두 DB 를 만든다.
 SEED_SCRIPT: Final = Path("scripts") / "generate_review_sample.py"
 SEED_ARGUMENTS: Final = ("--no-csv", "--skip-inspect")
@@ -127,6 +125,16 @@ _PATH_OPTIONS: Final = (
     ("--output", "output"),
     ("--playwright-dir", "playwright_dir"),
 )
+
+
+def mask_needles() -> tuple[str, ...]:
+    """찍기 전마다 감추고, 감춘 뒤에도 남으면 찍지 않는 글 — 담당 조직 · 문의처(settings 정본).
+
+    문의처는 환경변수(`settings.APP_CONTACT_EMAIL_ENV`)에서 촬영할 때 읽는다 — 촬영 자식 앱은 이
+    환경을 물려받아(`check_deploy_screens.app_environment`) 카드에 같은 값을 싣는다. 비면 카드에도
+    없어 뺀다.
+    """
+    return tuple(needle for needle in (APP_OWNER_TEAM, app_contact_email()) if needle)
 
 
 def _progress(message: str) -> None:
@@ -817,7 +825,7 @@ def _shoot(
                         viewport=fresh.viewport,
                         scale=fresh.scale,
                         mask=list(skeleton.plan["mask"]),
-                        needles=MASK_NEEDLES,
+                        needles=mask_needles(),
                     )
                     try:
                         capture.run_states(

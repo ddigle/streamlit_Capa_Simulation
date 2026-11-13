@@ -43,6 +43,8 @@ import page_guide_core as core  # noqa: E402
 from capa_simulation import settings  # noqa: E402
 from capa_simulation.components import app_credits  # noqa: E402
 
+# 문의처 메일 자리의 가짜 값 — 실제 문의처는 사내 환경변수에만 있다(공개 저장소).
+FAKE_CONTACT = "demo.contact@example.invalid"
 VIEWPORT = (1440, 900)
 SKELETON = core.load_skeleton()
 # 리뷰 한 줄 · 기준 줄의 뼈대 판(`lob@1108` 꼴) — 원고 판을 올려도 시험 글을 고치지 않는다.
@@ -257,7 +259,7 @@ def test_board_carries_no_owner_contact_or_email(tmp_path: Path) -> None:
     text = re.sub(r"data:image/webp;base64,[A-Za-z0-9+/=]+", "", html)
 
     assert settings.APP_OWNER_TEAM not in text
-    assert settings.APP_CONTACT_EMAIL not in text
+    # 문의처 메일은 저장소에 없다(환경변수) — 메일 꼴 글이 하나도 없는지 본다.
     assert not re.findall(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", text)
 
 
@@ -1146,11 +1148,19 @@ def test_every_plan_target_word_compiles_to_a_page_expression() -> None:
                 assert f"g.{name} = " in helpers, (word, name)
 
 
-def test_mask_hides_the_credit_card_and_the_settings_owner_and_contact() -> None:
+def test_mask_hides_the_credit_card_and_the_settings_owner_and_contact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """가림 글은 담당 조직과, 문의처 환경변수가 있으면 그 값이다 — 촬영 자식 앱이 같은 환경을
+    물려받아 카드에 싣는 값이다. 촬영할 때 읽는다(모듈을 부른 뒤 넣어도 걸린다)."""
     assert SKELETON.plan["mask"] == ["named:SIDEBAR_FOOTER"]
     assert capture.APP_CREDITS_KEY == app_credits.APP_CREDITS_KEY
     assert capture.APP_CREDITS_KEY in capture.target_expr("named:SIDEBAR_FOOTER", None)
-    assert builder.MASK_NEEDLES == (settings.APP_OWNER_TEAM, settings.APP_CONTACT_EMAIL)
+    assert builder.mask_needles() == (settings.APP_OWNER_TEAM,)
+    monkeypatch.setenv(settings.APP_CONTACT_EMAIL_ENV, FAKE_CONTACT)
+    assert builder.mask_needles() == (settings.APP_OWNER_TEAM, FAKE_CONTACT)
+    child = screens.app_environment(PROJECT_ROOT)
+    assert settings.app_contact_email(child) == FAKE_CONTACT, "촬영 자식 앱도 같은 값을 본다"
 
 
 class _MaskPage:
@@ -1170,7 +1180,7 @@ def test_capture_stops_when_owner_or_contact_text_stays_visible() -> None:
         viewport=VIEWPORT,
         scale=2,
         mask=["named:SIDEBAR_FOOTER"],
-        needles=[settings.APP_OWNER_TEAM, settings.APP_CONTACT_EMAIL],
+        needles=[settings.APP_OWNER_TEAM, FAKE_CONTACT],
     )
     camera.page = _MaskPage(visible=1)
     with pytest.raises(capture.CaptureError):

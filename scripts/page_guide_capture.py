@@ -20,8 +20,9 @@
 않는다.
 
 **가림.** 찍기 전마다 계획의 `mask`(사이드바 꼬리말 카드)와 담당 조직 · 문의처 글자
-(`settings.APP_OWNER_TEAM` · `APP_CONTACT_EMAIL`)를 감춘다. 감춘 뒤에도 그 글자가 화면 글
-(`innerText`)에 남으면 찍지 않고 그 상태를 실패로 둔다.
+(`settings.APP_OWNER_TEAM` · 환경변수에서 읽는 `settings.app_contact_email()` — 생성기의
+`mask_needles`)를 감춘다. 감춘 뒤에도 그 글자가 화면 글(`innerText`)에 남으면 찍지 않고 그 상태를
+실패로 둔다.
 """
 
 from __future__ import annotations

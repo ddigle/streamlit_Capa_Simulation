@@ -267,6 +267,17 @@ def _without_object_storage_environment(monkeypatch: pytest.MonkeyPatch) -> None
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _without_app_contact_email(monkeypatch: pytest.MonkeyPatch) -> None:
+    """앱 정보 카드의 문의처 환경변수(`settings.APP_CONTACT_EMAIL_ENV`)를 지운다.
+
+    사내 PC · C-DEP 는 이 값을 넣어 둔다. 같은 창에서 pytest 를 돌려도 사외와 같은 「문의처 없음」
+    을 보게 한다. 문의처가 필요한 시험은 `monkeypatch.setenv` 로 가짜 값(`…@example.invalid`)을
+    준다.
+    """
+    monkeypatch.delenv(settings.APP_CONTACT_EMAIL_ENV, raising=False)
+
+
 # 시험이 띄우는 가짜 서버(가짜 S3 · 가짜 IdP · 임시 응답 · 앱)에 붙는 루프백 이름.
 # urllib 은 IPv6 주소를 괄호 꼴(`[::1]`)로 맞춘다.
 LOOPBACK_NO_PROXY = ("127.0.0.1", "[::1]", "localhost")

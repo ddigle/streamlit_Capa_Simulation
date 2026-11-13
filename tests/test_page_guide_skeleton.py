@@ -795,7 +795,7 @@ def test_skeleton_carries_no_owner_or_contact_values() -> None:
 
     for name, text in texts.items():
         assert settings.APP_OWNER_TEAM not in text, name
-        assert settings.APP_CONTACT_EMAIL not in text, name
+        # 문의처 메일은 저장소에 없다(환경변수) — 메일 꼴 글이 하나도 없는지 본다.
         assert not re.findall(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", text), name
 
 
