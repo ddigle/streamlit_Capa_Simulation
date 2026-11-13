@@ -108,7 +108,8 @@ Python은 **3.10.11 64-bit** 고정이고 실행은 `.venv`를 쓴다. 아래 Po
 끝까지 돌린다. 운영 `APP_ENV`·루프백 아닌 주소에서는 거절, `docs/sso_setup.md` 8장),
 `scripts/s3_mock_store.py`(개발 · 시험용 가짜 S3 — 서명을 검증하며 객체 GET · PUT · HEAD · DELETE · 목록을 메모리로 받는다. 실제 `aws` 1.46.3 도 붙는다 — 접속 명단 · DB 동기화 시험, `docs/sso_setup.md` 8장, 루프백만),
 `scripts/container_start.py`(C-DEP 이미지 `CMD` — 맨 앞에서 포트를 잡고(임시 응답 `container_stage.py`) 프로필 · 점검 · 설치 · `managed` 면 두 DB 받기 뒤 앱이 된다. 어떤 실패에도 앱을 띄우되 DB 받기만 예외다 — `docs/objectstore_setup.md`),
-`scripts/sync_object_storage.py`(두 DB 정본 도구 — 사내 PC 의 이관 `init` · 사본 `fetch-copy` · 세대 `generations` · `rollback`, 컨테이너의 `boot-pull`),
+`scripts/sync_object_storage.py`(두 DB 정본 도구 — 사내 PC 의 이관 `init` · 사본 `fetch-copy` · 세대 `generations` · `rollback`, 컨테이너의 `boot-pull`.
+`rollback` · `init` · `fetch-copy` · `prune` 은 끝에 감사 조각 한 줄을 버킷 `audit/v1/tool/` 에 올리고 `audit-list` 는 날짜 · 달의 감사 조각 수만 찍는다),
 `scripts/build_page_guide.py`(따라하기 가이드 생성기 — 앱 사본을 `127.0.0.1`·8552 부터에 띄워 찍고 원고·사내 덮어쓰기와 한 파일
 HTML 로 묶는다. `--example` 은 `git archive` 사본 + 검수용 합성 샘플 시드 `scripts/generate_review_sample.py`, `--internal`(사내판 —
 2026-11-02 부터 쉼)은 런북 6-3 사본 트리에서만 돌고 사본 두 DB 지문이 앞뒤로 같아야 한다. 결과는 늘 저장소 밖 `--dist` — 부품은 `page_guide_core.py`·
@@ -161,7 +162,10 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   페이지 본문에 설정 단추를 두지 않고 사이드바 설정 상자(`components/settings_box.py`)로 둔다(2026-11-03).
 - `capa_server.py` — C-DEP 운영 진입점(시작 스크립트가 `streamlit run capa_server.py --server.port 8080` 으로 띄운다). `app.py` 를
   `st.App` 으로 감싸 통합인증 경로·문지기를 같은 프로세스에 붙인다(`src/capa_simulation/auth/`). 개발·WebIDE·시험·화면 확인은
-  `app.py` 로 띄운다(통합인증 꺼짐). 자세한 것은 `docs/sso_setup.md`.
+  `app.py` 로 띄운다(통합인증 꺼짐). 자세한 것은 `docs/sso_setup.md`. 통합인증이 켜진 기동에서만 접속 · 작업 감사 기록기를
+  켠다(`src/capa_simulation/audit/` — 메모리 큐 → 로컬 스풀 → 버킷 `audit/` 새 객체, 두 DB · 마이그레이션 밖. Admin Area 넷째 탭
+  「접속 · 작업 기록」 은 관리자 · 점검자 `CAPA_AUDIT_VIEWERS` 만). 꺼진 곳(개발 · WebIDE · 시험 · 사내 PC)은 기록기 · 탭 호출이 0 이다.
+  규칙은 AGENTS 5장 40, 운영은 `docs/audit_log_operations.md`.
 - `src/capa_simulation/navigation.py` — 사이드바 페이지 목록의 **선언 한 곳**. 하위 페이지
   추가·제목 변경뿐 아니라 **새 최상위 그룹**도 여기서 끝난다 — `SIDEBAR_GROUPS`에 한 줄을
   더하면 `app.py`의 박스·CSS 선택자·페이지 순서가 모두 그 선언에서 나온다. HOME과 Admin
@@ -199,7 +203,9 @@ Core_Data (BigDataQuery / data/input/Core_Data.csv / 내장 합성 시드)
   (AGENTS.md 5장 4·9장 「배경 스레드」). 예약 하나와 동기화 일꾼 하나뿐이고 더 세우지 않는다.
 - `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼(스레드 `capa-object-sync`). `capa_server.py` 가
   시작 때 세우고 `managed` + 시작 받기의 부트 기록(`sync_boot`)이 있을 때만 선다 — `app.py` 개발 실행 · 사내 PC · 시험에는 없다.
-  저장을 20 ~ 60초 모아 세대를 올리고 공식 발행은 바로 올리며 하루 한 번 정리한다. Streamlit 을 import 하지 않고 캐시를 건드리지
+  저장을 20 ~ 60초 모아 세대를 올리고 공식 발행은 바로 올리며 하루 한 번 정리한다. 감사 기록이 켜진 서버면 같은 고리에서 감사
+  스풀 비우기(10초) · 올리기(5분 또는 200줄 — DB 올리기보다 먼저, DB 멈춤과 상관없이) · 일별 묶음 · 미러도 한다(`audit/shipper.py` —
+  새 스레드 없음, 감사 실패는 DB 실패 수를 건드리지 않는다). Streamlit 을 import 하지 않고 캐시를 건드리지
   않는다. 차례는 `object_sync_engine.py`(유실을 막는 순서), 판정은 `services/object_storage_manifest.py`.
 - `src/capa_simulation/services/frame_contracts.py` — 서비스 공용 컬럼 계약과 업무 키 정규화.
 - `src/capa_simulation/io/reference_cache.py` — 활성 기준정보 경계. 계산 페이지는 기준정보를
