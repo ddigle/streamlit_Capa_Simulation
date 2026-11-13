@@ -4868,9 +4868,10 @@ export default function (component) {
     ...S.passthrough,
   ]
 
-  // 적용값 `stack` — 도면 위 호기(아래 → 위, 편집기에 실린 설비명 · 새 호기 이름)와 호기 위로 올린 영역·도형 id.
+  // 적용값 `stack` — 도면 위 호기(아래 → 위, 편집기에 실린 설비명 · 새 호기 이름)와 호기 위로 올린 영역·도형 id. 새 호기는
+  // `changes()` 와 같이 지금 이름이다(열쇠는 만들 때 이름이라 적용 전에 고친 이름과 다르다 — 파이썬은 새 호기를 지금 이름으로 받는다).
   const stackPayload = () => ({
-    units: [...S.items.values()].filter((m) => isUnit(m) && !m.ghost && onCanvas(m)).map((m) => m.id),
+    units: [...S.items.values()].filter((m) => isUnit(m) && !m.ghost && onCanvas(m)).map((m) => (m.created ? m.label : m.id)),
     raised: raisedIds(),
   })
 

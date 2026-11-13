@@ -1606,9 +1606,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`Ctrl+Shift+]` · `Ctrl+]` · `Ctrl+[` · `Ctrl+Shift+[`, 서식 · 뒤집기 키 뒤)는 `stackOrder` 한 길이고 되돌리기 한 번(`op: 'order'`
     — 차례와 올림 `raised` 를 함께)이다. 겹마다의 요소 차례 · 호기 차례 · 올림 가운데 하나라도 처음과 다르면 `markChangeCount` 가
     한 건을 더하고(`markOrderChanged`), 적용이 새 차례의 `marks` 를, 호기 차례 · 올림이 바뀌었으면(`stackChanged`) `stack`
-    (`{units: 도면 위 호기 아래 → 위, raised}` — FAB 은 없음)을 함께 보낸다. 올린 도형은 `is-raised` 라 안쪽 누르기가 지나간다
-    (`.sle-mark.is-raised .sle-shape-hit` — 설계 D (가), 영역과 같다). 지운 요소 되돌리기는 지운 자리(`op.at` → `restoreItem`)이고,
-    누를 때 끌 준비로 겹 맨 위에 붙인 호기 · 요소는 손을 떼면 제 차례로 돌아간다(`restackMarks`). 올린 영역은 이름표 덮임 판정
+    (`{units: 도면 위 호기 아래 → 위, raised}` — FAB 은 없음, 새 호기는 `changes` 와 같은 지금 이름이고 열쇠가 아니다)을 함께
+    보낸다. 올린 도형은 `is-raised` 라 안쪽 누르기가 지나간다(`.sle-mark.is-raised .sle-shape-hit` — 설계 D (가), 영역과 같다).
+    지운 요소 되돌리기는 지운 자리(`op.at` → `restoreItem`)이고, 누를 때 끌 준비로 겹 맨 위에 붙인 호기 · 요소는 손을 떼면 제 차례로 돌아간다(`restackMarks`). 올린 영역은 이름표 덮임 판정
     (`syncZoneTag`)을 하지 않는다(호기 위라 늘 제자리).
   - **서식 복사·붙여넣기**(2026-11-03 사용자 요청 — 사양 (다), 층·FAB 편집). 엑셀 서식 붓이다. 순수 판정은 `// <format-paint>`
     (`formatOf` — 서식 {kind, module, size(자기 방향), paint, text}, `formatPatch` — 받는 쪽에 붙일 {size, fields, look} 또는 null,

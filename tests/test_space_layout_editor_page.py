@@ -34,6 +34,7 @@ from capa_simulation.components import space_layout_editor, write_guard
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
     BUFFER_KEY,
+    PENDING_STACKS_KEY,
 )
 from capa_simulation.components.popover_field_commit import ESC_COMMIT_PREFIX
 from capa_simulation.persistence.equipment_cache import (
@@ -600,6 +601,42 @@ def test_a_rename_and_a_reorder_in_one_apply_keep_the_order_under_the_new_name(
         keys["EQ-02"],
         keys["EQ-01R"],
     )
+    clear_equipment_repository()
+
+
+def test_a_renamed_new_unit_and_a_reorder_in_one_apply_stage_the_order_under_its_name(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """편집기에서 만든 새 호기는 적용값의 `changes` · `stack` 모두 지금 이름으로 온다(적용 전에
+    고친 이름 — 편집기 열쇠가 아니다, `test_space_stack_order_js` 가 편집기 쪽을 붙든다). 같은
+    적용의 순서 바꿈이 그 이름으로 대기분에 서고 편집기가 그 차례로 다시 선다(order2 리뷰 중간 1
+    — 열쇠 꼴이 적용 전체를 거부했다)."""
+    app, _ = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [
+            {
+                "id": "NEW-2",
+                "placed": True,
+                "x": 70.0,
+                "y": 40.0,
+                "w": 8,
+                "h": 5,
+                "created": {"process": "Process-A", "existing": True},
+            }
+        ],
+        "canvas": None,
+        "marks": None,
+        "stack": {"units": ["EQ-02", "NEW-2", "EQ-01"], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    assert not flashed(app, "error"), [item.value for item in flashed(app, "error")]
+    staged = app.session_state[PENDING_STACKS_KEY][("C1", "1F")]
+    assert staged.units == ("EQ-02", "NEW-2", "EQ-01")
+    assert [item["id"] for item in editor_calls[-1]["items"]] == ["EQ-02", "NEW-2", "EQ-01"]
     clear_equipment_repository()
 
 

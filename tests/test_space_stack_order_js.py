@@ -692,3 +692,45 @@ def test_the_fab_editor_order_buttons_say_they_stay_inside_their_layer() -> None
     )
     floor_titles = re.findall(r'data-order="\w+"[^>]*\n\s*title="([^"]+)"', HTML)
     assert len(floor_titles) == 4 and any("호기 위로" in title for title in floor_titles)
+
+
+_PAYLOAD_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const S = { items: new Map() }
+const isUnit = (m) => m.kind === 'unit'
+const isMark = (m) => m.kind !== 'unit'
+const onCanvas = (m) => m.placed && !m.moveTo
+const isChanged = (m) => Boolean(m.created || m.touched)
+%s
+%s
+for (const item of input.items) S.items.set(item.id, item)
+process.stdout.write(JSON.stringify({ changes: changes(), stack: stackPayload() }))
+"""
+
+
+def test_a_new_unit_goes_out_under_its_current_name_in_both_changes_and_the_stack() -> None:
+    """편집기에서 만든 새 호기는 적용값의 `changes` 와 `stack` 이 같은 지금 이름으로 나간다 —
+    적용 전에 이름을 고친 새 호기(열쇠는 만들 때 이름), 같은 이름으로 다시 만들어 열쇠가
+    `이름~n` 인 새 호기 모두다. 열쇠를 보내면 파이썬(`prepare_floor_stack` — 새 호기는 지금
+    이름으로 받는다)이 「이 편집기에 없는 호기의 순서」 로 적용 전체를 거부했다(order2 리뷰 중간
+    1). 있던 호기는 이름을 바꿔도 옛 설비명(열쇠)이다 — 서버가 같은 적용의 이름 바꿈으로 옮긴다."""
+    look = {"kind": "unit", "x": 1, "y": 1, "w": 4, "h": 4, "placed": True, "moveTo": None}
+    created = {"process": "Process-A", "existing": True}
+    items = [
+        {**look, "id": "EQ-01", "label": "EQ-01R", "touched": True},
+        {**look, "id": "EQ-02", "label": "EQ-02"},
+        {**look, "id": "NEW-1", "label": "NEW-2", "created": created},
+        {**look, "id": "NEW-3~2", "label": "NEW-3", "created": created},
+        {**look, "id": "Z-1", "kind": "zone", "label": "", "raised": True},
+    ]
+    source = _PAYLOAD_RUNNER % (
+        _stack_body(),
+        "\n".join(
+            _js_decl(head)
+            for head in ("function changes(", "function raisedIds(", "const stackPayload = ")
+        ),
+    )
+    out: Any = _node(source, {"items": items})
+    assert [change["id"] for change in out["changes"]] == ["EQ-01", "NEW-2", "NEW-3"]
+    assert out["stack"]["units"] == ["EQ-01", "EQ-02", "NEW-2", "NEW-3"]
+    assert out["stack"]["raised"] == ["Z-1"]
