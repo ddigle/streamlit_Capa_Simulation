@@ -323,7 +323,7 @@ def _append_loopback_no_proxy(patch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True, scope="session")
 def _loopback_skips_proxy_from_the_start() -> Iterator[None]:
     """세션 처음에 한 번 덧붙인다 — 모듈 · 세션 범위 준비는 함수 범위 준비보다 먼저 서므로, 그때
-    띄우는 하위 프로세스(가짜 서버 · aws · 앱)는 아래 함수 범위 덧붙임 전 환경을 받았다."""
+    띄우는 하위 프로세스(가짜 서버 · aws · 앱)도 루프백 셋이 든 환경을 받게 한다."""
     with pytest.MonkeyPatch.context() as patch:
         _append_loopback_no_proxy(patch)
         yield
