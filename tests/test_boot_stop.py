@@ -205,7 +205,8 @@ def test_the_intro_script_reads_the_same_marker_and_shows_the_failure() -> None:
     # 멈춘 칸은 신호로 끝낸 단계 다음 칸이다 — 실행 끝만으로 앞 칸을 끝남으로 그리지 않는다.
     assert "Math.min(signalledSteps(), items.length - 1)" in render
     poll = script.split("  function poll() {", 1)[1].split("\n  }\n", 1)[0]
-    assert "if (ready) render();" in poll
+    assert "if (ready && bootStopLine() !== shownStop) render();" in poll
+    assert "shownStop = stopped;" in render
     assert '<p class="reason" hidden></p>' in page
     assert ".steps li.failed .track {\n  background: var(--fail);" in css
     assert '"--fail": palette["die-short"],' in script

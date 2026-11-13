@@ -2767,8 +2767,11 @@ function createOverlay(api, data, initial, syncToolbar) {
     const marker = document.querySelector(`style[${BOOT_STOP_ATTRIBUTE}]`);
     return marker ? marker.getAttribute(BOOT_STOP_ATTRIBUTE) || "" : null;
   };
+  // 마지막으로 그린 실패 표지 값 — 바뀔 때만 다시 그린다(상태 줄은 낭독 영역이라 같은 글을 거듭 쓰지 않는다).
+  let shownStop = null;
   function render() {
     const stopped = ready ? bootStopLine() : null;
+    shownStop = stopped;
     const failed = stopped !== null;
     // 실패면 신호로 끝낸 단계까지만 끝남이고 멈춘 칸(아직 못 끝낸 첫 칸)이 실패 색 + 낱말이다 — 실행이 끝났다는 것만으로
     // 일어나지 않은 단계를 끝남으로 그리지 않는다(`ready` 는 남은 칸을 한꺼번에 채운다).
@@ -3556,8 +3559,9 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
     const state = app ? app.getAttribute("data-test-script-state") : null;
     if (READY_STATES.has(state)) setReady();
-    // 실패 표지는 실행 끝 무렵에 닿을 수도, 다음 회차(「다시 시도」)에 걷힐 수도 있다 — 끝난 뒤에도 그림을 맞춘다.
-    if (ready) render();
+    // 실패 표지는 실행 끝 무렵에 닿을 수도, 다음 회차(「다시 시도」)에 걷힐 수도 있다 — 끝난 뒤에도 표지가 바뀌면
+    // 그림을 맞춘다.
+    if (ready && bootStopLine() !== shownStop) render();
     if (holding) {
       if (document.getElementById(theme.button_id)) begin();
       else if (READY_STATES.has(state)) {

@@ -51,7 +51,7 @@ def _count(**outcomes: int) -> None:
 
 def test_only_an_admin_sees_refusals_without_any_renewal(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _config()
-    _count(forbidden=3, skipped=2)
+    _count(forbidden=3, unauthorized=1)
 
     for who, expected in ((ADMIN, True), (USER, False), (None, False)):
         _as(cfg, who, monkeypatch)
@@ -70,12 +70,16 @@ def test_only_an_admin_sees_refusals_without_any_renewal(monkeypatch: pytest.Mon
     assert (note["page"], note["href"]) == ("Admin Area", "admin_area")
 
 
-@pytest.mark.parametrize("outcomes", [{}, {"forbidden": 2, "renewed": 1}, {"unauthorized": 4}])
+@pytest.mark.parametrize(
+    "outcomes",
+    [{}, {"forbidden": 2, "renewed": 1}, {"forbidden": 2, "skipped": 1}, {"unauthorized": 4}],
+)
 def test_no_alert_once_a_renewal_went_through_or_nothing_was_refused(
     outcomes: dict[str, int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """한 번이라도 다시 발급했으면 길은 열렸다 — 한 사람의 다른 주소 접속 같은 잡음으로 세우지
-    않는다. 로그인 없음(401)은 끝난 세션이라 이 알림의 일이 아니다."""
+    """한 번이라도 다시 발급했거나 건너뛰었으면(둘 다 출처 · 머리 검사를 지났다) 길은 열렸다 — 한
+    사람의 다른 주소 접속 같은 잡음으로 세우지 않는다. 로그인 없음(401)은 끝난 세션이라 이 알림의
+    일이 아니다."""
     cfg = _config()
     _count(**outcomes)
     _as(cfg, ADMIN, monkeypatch)

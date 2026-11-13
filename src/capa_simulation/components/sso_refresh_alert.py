@@ -9,9 +9,9 @@
 있어 Admin 을 열기 전에는 아무도 모른다 — 그래서 관리자의 모든 화면 회차에 상태 알림 `AD-21` 을
 세운다.
 
-- 조건: 기동 뒤 누계(`runtime.refresh_counts`)의 「출처·머리 거절」 이 1 이상이고 「다시 발급」 이
-  0. 한 번이라도 다시 발급했으면 길은 열린 것이라 세우지 않는다(한 사람의 다른 주소 접속 같은
-  잡음).
+- 조건: 기동 뒤 누계(`runtime.refresh_counts`)의 「출처·머리 거절」 이 1 이상이고 「다시 발급」 ·
+  「건너뜀」 이 모두 0. 건너뜀(60초 안 · 상한)도 출처 · 머리 검사를 지난 요청이라, 한 번이라도 다시
+  발급했거나 건너뛰었으면 길은 열린 것이라 세우지 않는다(한 사람의 다른 주소 접속 같은 잡음).
 - 내용(지문)은 고정 값이다 — 거절 수를 넣으면 새 거절마다 알림창이 다시 뜬다.
 - 관리자 회차에만 세우고 다른 회차는 해소로 부른다(`sso_status._access_read_alert` 와 같은 꼴 —
   회차마다 이벤트 칸 한 자리).
@@ -40,10 +40,10 @@ CONTENT = "forbidden-without-renewal"
 
 
 def refresh_refused() -> bool:
-    """기동 뒤 갱신이 출처 · 머리 검사에서만 거절됐는가(「출처·머리 거절」 1 이상 · 「다시
-    발급」 0)."""
+    """기동 뒤 갱신이 출처 · 머리 검사에서만 거절됐는가(「출처·머리 거절」 1 이상 · 검사를 지난
+    「다시 발급」 · 「건너뜀」 0)."""
     counts = runtime.refresh_counts()
-    return counts["forbidden"] > 0 and counts["renewed"] == 0
+    return counts["forbidden"] > 0 and counts["renewed"] == 0 and counts["skipped"] == 0
 
 
 def render_refresh_alert() -> None:
