@@ -43,6 +43,7 @@ from capa_simulation.services.object_storage_manifest import (
     DATASET_NAMES,
     FAILURE_LABELS,
     PushDecision,
+    origin_tail,
 )
 from capa_simulation.sidebar_status import remembered_expander
 
@@ -205,9 +206,11 @@ def status_lines(status: WorkerStatus | None, health: SyncHealth, *, now: float)
     """펼침 본문 — 라벨 · 값 줄(UI-TXT-01). 값은 갈래 · 수 · 시각뿐이다."""
     if status is None:
         return [f"**까닭** · {failure_label(health.overdue)}"]
+    # 시작 펜스(받기 끝에 같은 멤버로 낸 세대)면 번호 뒤 꼬리 — 저장 없이 는 세대다(UI-TXT-04 표지).
+    generation = "없음" if status.seq is None else f"{status.seq}{origin_tail(status.origin)}"
     lines = [
         f"**마지막 올림** · {_clock_text(status.last_success_utc)}",
-        f"**세대** · {'없음' if status.seq is None else status.seq}",
+        f"**세대** · {generation}",
     ]
     changed = [DATASET_LABELS[name] for name in DATASET_NAMES if status.dirty.get(name)]
     lines.append(f"**변경 있는 DB** · {' · '.join(changed) if changed else '없음'}")

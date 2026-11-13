@@ -87,7 +87,7 @@ DISK_MARGIN_BYTES: Final = 200 * _MIB
 DISK_MARGIN_RATIO: Final = 1.2
 UNPUBLISHED_MOVED: Final = "moved"
 UNPUBLISHED_FORKED: Final = "forked"
-ORIGIN_NOTE_BOOT: Final = "시작 펜스"
+ORIGIN_NOTE_BOOT: Final = manifest.BOOT_FENCE_LABEL
 
 
 @dataclass(frozen=True)

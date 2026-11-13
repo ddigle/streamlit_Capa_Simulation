@@ -511,3 +511,15 @@ def test_push_and_pull_messages_do_not_collide_on_shared_enum_values() -> None:
 
     assert push == "두 DB 는 원격과 같습니다(원격 seq 1)."
     assert pull == "두 DB 는 이미 원격 seq 1 입니다."
+
+
+def test_only_a_start_fence_carries_a_tail_after_its_number() -> None:
+    """펜스는 저장 없이 는 세대다 — 번호 뒤 꼬리 한 마디로 가른다. 포인터 메모와 같은 낱말이다."""
+    from capa_simulation.object_sync_engine import ORIGIN_NOTE_BOOT
+
+    assert manifest.origin_tail("boot") == " (시작 펜스)"
+    assert [manifest.origin_tail(origin) for origin in ("init", "app", "manual", "rollback")] == [
+        ""
+    ] * 4
+    assert manifest.origin_tail(None) == ""
+    assert ORIGIN_NOTE_BOOT == manifest.BOOT_FENCE_LABEL

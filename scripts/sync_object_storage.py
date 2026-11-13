@@ -26,7 +26,14 @@
 
 **끝에 「전송용 요약」 한 줄을 찍는다**(`profile` · `boot-pull` 밖). 사람이 리뷰에 옮기는 줄이라
 갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드만 싣는다 — 주소 · 버킷 · 프로필 · 폴더 · 계정 ·
-서버 글은 싣지 않는다. 그 위의 출력은 그대로다.
+서버 글은 싣지 않는다.
+
+**그 위의 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다**(`profile` 밖 — 셸에 붙여 넣을 블록이라
+값이 든다). `doctor` 의 값 줄은 버킷을 앞 두 글자 … 뒤 두 글자 · 글자 수로, 주소 · 프로필은
+있음/없음으로 찍고, 진단 글(오류 첫 줄 · 「실행한 명령」 — `io/object_storage.py` 가 원격 진단용으로
+값째 만든다) 안의 값은 받아 찍는 자리에서 `<주소>` · `<버킷>` · `<프로필>` 로 바꾼다. 세대 줄의
+작성자는 `<작성자>` 다. 원값을 보는 옵션은 없다 — 값은 C-DEP 환경변수 표와 사용자 창의 변수에만
+있다.
 
 **정본을 바꾸는 손 동작은 감사 조각을 남긴다.** `rollback` · `init` · `fetch-copy` · `prune` 은 끝에
 그 버킷의 `audit/v1/tool/…` 에 한 줄짜리 조각을 새로 올린다(`audit/tool.py` — 행위자는 OS 사용자,
@@ -45,6 +52,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -168,6 +176,100 @@ def _cli_label(version: str) -> str:
     """aws 판만 — 판 글의 나머지(파이썬 · OS 꼬리)는 싣지 않는다."""
     found = _CLI_VERSION.search(version)
     return "판 모름" if found is None else found.group(0)
+
+
+# --------------------------------------------------------------------------- 가림
+ENDPOINT_TAG = "<주소>"
+BUCKET_TAG = "<버킷>"
+PROFILE_TAG = "<프로필>"
+AUTHOR_TAG = "<작성자>"
+# 버킷을 이 글자 수 이하면 글자 수만 찍는다 — 앞 두 글자와 뒤 두 글자가 값 전부가 된다.
+SHORT_BUCKET = 4
+
+
+@dataclass
+class _Redaction:
+    """이 실행이 쓰는 주소 · 버킷 · 프로필을 이름표로 바꾸는 한 벌. 긴 꼴부터 맞춰 겹친 값도 가린다.
+
+    대소문자를 가리지 않는다 — 서버 글은 호스트를 소문자로 찍기도 한다.
+    """
+
+    pattern: re.Pattern[str] | None = None
+    tags: list[str] = field(default_factory=list)
+
+    def load(self, settings: StorageSettings) -> None:
+        pairs: dict[str, str] = {}
+        for value, tag in (
+            *((form, ENDPOINT_TAG) for form in endpoint_forms(settings.endpoint_url)),
+            (settings.bucket, BUCKET_TAG),
+            (settings.profile, PROFILE_TAG),
+        ):
+            if value:
+                pairs.setdefault(value, tag)
+        ordered = sorted(pairs.items(), key=lambda pair: len(pair[0]), reverse=True)
+        self.tags = [tag for _, tag in ordered]
+        self.pattern = (
+            re.compile("|".join(f"({re.escape(value)})" for value, _ in ordered), re.IGNORECASE)
+            if ordered
+            else None
+        )
+
+    def clear(self) -> None:
+        self.pattern = None
+        self.tags = []
+
+    def apply(self, text: str) -> str:
+        if self.pattern is None:
+            return text
+        tags = self.tags
+        return self.pattern.sub(lambda found: tags[(found.lastindex or 1) - 1], text)
+
+
+_REDACTION = _Redaction()
+
+
+def endpoint_forms(endpoint: str) -> tuple[str, ...]:
+    """주소가 글에 나오는 꼴 — 넣은 그대로 · 끝 `/` 를 뗀 것 · `호스트:포트` · 호스트."""
+    forms = [endpoint, endpoint.rstrip("/")]
+    try:
+        parts = urlsplit(endpoint if "//" in endpoint else f"//{endpoint}")
+        forms += [parts.netloc, parts.hostname or ""]
+    except ValueError:
+        pass
+    return tuple(dict.fromkeys(form for form in forms if form))
+
+
+def masked(text: str) -> str:
+    """받아 찍는 글 안의 사내 값을 이름표로 — 진단 글 · 엔진이 감싼 실패 글이 지난다."""
+    return _REDACTION.apply(text)
+
+
+def _stop_line(error: BaseException) -> str:
+    return f"[중단] {masked(str(error))}"
+
+
+def _load_redaction(args: argparse.Namespace) -> None:
+    """가릴 값을 이 실행이 쓰는 설정에서 채운다. 설정을 못 읽으면 까닭이 무엇이든 비우고 넘긴다 —
+    명령이 같은 읽기를 다시 해 제 자리(`[중단]` · 전송용 요약 · 시작 줄)에서 멈추고, 그 글에는
+    값이 없다. 여기서 새면 그 자리를 건너뛰고 트레이스백으로 끝난다(UTF-8 이 아닌 설정 파일 등)."""
+    _REDACTION.clear()
+    try:
+        _REDACTION.load(build_settings(args))
+    except BOOTSTRAP_ERRORS:
+        return
+
+
+def presence(value: str) -> str:
+    return "있음" if value else "없음"
+
+
+def bucket_shape(bucket: str) -> str:
+    """버킷 대보기 꼴 — 앞 두 글자 … 뒤 두 글자 · 글자 수(C-DEP 표 값과 사람이 맞대 본다)."""
+    if not bucket:
+        return "없음"
+    if len(bucket) <= SHORT_BUCKET:
+        return f"{len(bucket)}자"
+    return f"{bucket[:2]} … {bucket[-2:]} · {len(bucket)}자"
 
 
 # --------------------------------------------------------------------------- 인자
@@ -386,9 +488,9 @@ def command_profile(args: argparse.Namespace) -> int:
 def command_doctor(args: argparse.Namespace) -> int:
     settings = build_settings(args)
     print(f"모드          : {settings.mode}")
-    print(f"엔드포인트    : {settings.endpoint_url or '(없음)'}")
-    print(f"버킷          : {settings.bucket or '(없음)'}")
-    print(f"프로필        : {settings.profile or '(없음)'}")
+    print(f"엔드포인트    : {presence(settings.endpoint_url)}")
+    print(f"버킷          : {bucket_shape(settings.bucket)}")
+    print(f"프로필        : {presence(settings.profile)}")
     print("네임스페이스  : 프로필에 매여 있음(명령 인자가 아님)")
     missing = object_storage.missing_environment(settings)
     if missing:
@@ -405,7 +507,7 @@ def command_doctor(args: argparse.Namespace) -> int:
         print(f"주소 스타일   : {client.check_addressing_style()}")
         head = _head_pointer(client)
     except ObjectStorageError as exc:
-        print(f"[중단] {exc}")
+        print(_stop_line(exc))
         _stopped(failure_kind(exc))
         return 1
     print(f"원격 세대     : {'비어 있음' if head is None else _generation_line(head)}")
@@ -421,7 +523,8 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 
 def _generation_line(pointer: manifest.Pointer) -> str:
-    return f"seq {pointer.seq} · {pointer.origin} · {pointer.author}"
+    """작성자(`계정@PC 이름`)는 이름표로만 — 갈래(`origin`)가 누가 냈는지를 말한다."""
+    return f"seq {pointer.seq} · {pointer.origin} · {AUTHOR_TAG}"
 
 
 def command_probe(args: argparse.Namespace) -> int:
@@ -463,10 +566,10 @@ def command_probe(args: argparse.Namespace) -> int:
             # 이미 있는 키인데 통과했다면 조건이 무시된 것이다 — 지원한다고 보면 안 된다.
             results["conditional_put_if_none_match_star"] = second.precondition_failed
         except ObjectStorageError as exc:
-            print(f"조건부 쓰기   : 거부됨 — {exc}")
+            print(f"조건부 쓰기   : 거부됨 — {masked(str(exc))}")
             results["conditional_put_if_none_match_star"] = False
     except ObjectStorageError as exc:
-        print(f"[중단] {exc}")
+        print(_stop_line(exc))
         _stopped(failure_kind(exc))
         return 1
     finally:
@@ -476,7 +579,8 @@ def command_probe(args: argparse.Namespace) -> int:
             print(f"[건너뜀] 정리 실패 — {key} 객체를 손으로 지워야 할 수 있습니다.")
         sample.unlink(missing_ok=True)
 
-    print(json.dumps(results, ensure_ascii=False, indent=1))
+    shown = {**results, "_확인자": AUTHOR_TAG}
+    print(json.dumps(shown, ensure_ascii=False, indent=1))
     if args.write:
         args.write.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"기록          : {args.write}")
@@ -579,8 +683,10 @@ def command_init(args: argparse.Namespace) -> int:
 def command_status(args: argparse.Namespace) -> int:
     client = build_client(args)
     decision, remote, state, dirty = engine.plan_push(client, sync_paths())
-    print(f"원격 : {'비어 있음' if remote.head_seq is None else f'seq {remote.head_seq}'}")
-    _seq_fact("원격", remote.head_seq, none="비어 있음")
+    tail = _head_tail(client, remote)
+    remote_text = "비어 있음" if remote.head_seq is None else f"seq {remote.head_seq}{tail}"
+    print(f"원격 : {remote_text}")
+    _fact(f"원격 {remote_text}")
     print(f"로컬 : {'세대 미상' if state.base_seq is None else f'seq {state.base_seq}'}")
     _seq_fact("로컬", state.base_seq, none="세대 미상")
     for dataset in datasets(args):
@@ -604,6 +710,20 @@ def command_status(args: argparse.Namespace) -> int:
         return 0
     print(f"판정 : {manifest.decision_message(decision, head_seq=remote.head_seq)}")
     return 0
+
+
+def _head_tail(client: ObjectStorageClient, remote: engine.RemoteHead) -> str:
+    """원격 HEAD 가 시작 펜스면 ` (시작 펜스)` — HEAD 포인터를 한 번 받는다. 받거나 읽지 못하면 꼬리
+    없이 둔다(세대 번호 · 판정은 목록 한 번으로 이미 났다)."""
+    if remote.head_key is None:
+        return ""
+    try:
+        head = engine.read_pointer(client, remote.head_key)
+    except (ObjectStorageError, ValueError, KeyError, TypeError, OSError):
+        # 본문이 깨진 꼴(`seq` 없음 · null)을 파서는 ValueError 말고 KeyError · TypeError 로도 낸다
+        # (일꾼의 `base_origin` 도 이 셋을 받는다). 받을 작업 폴더를 못 만들면 OSError 다.
+        return ""
+    return manifest.origin_tail(head.origin)
 
 
 def command_generations(args: argparse.Namespace) -> int:
@@ -773,7 +893,7 @@ def command_fetch_copy(args: argparse.Namespace) -> int:
     try:
         outcome = engine.fetch_copy(client, sync_paths(), args.to, seq=args.seq, token=args.token)
     except ValueError as exc:
-        print(f"[중단] {exc}")
+        print(_stop_line(exc))
         _stopped(STOP_REQUEST)
         return 1
     _AUDIT_DETAIL["seq_to"] = outcome.pointer.seq
@@ -792,7 +912,8 @@ def command_rollback(args: argparse.Namespace) -> int:
     try:
         pointer = engine.rollback(client, to_seq=args.to, token=args.token, note=args.note)
     except ValueError as exc:
-        print(f"[중단] {exc}")
+        # 포인터를 낸 뒤의 멤버 확인 실패는 aws 진단 글을 감싸 온다(값이 든다).
+        print(_stop_line(exc))
         _stopped(STOP_REQUEST)
         return 1
     _AUDIT_DETAIL.update(seq_from=args.to, seq_to=pointer.seq)
@@ -958,6 +1079,7 @@ def _run_command(args: argparse.Namespace) -> int:
     # `--dataset` 과 상관없이 둘 다다 — 두 DB 는 한 쌍이다.
     sync_state.enable(sync_paths().registry)
     _AUDIT_DETAIL.clear()
+    _load_redaction(args)
     code = 1
     try:
         code = int(handler(args))
@@ -969,7 +1091,7 @@ def _run_command(args: argparse.Namespace) -> int:
         elif isinstance(exc, StorageSettingsError) and exc.label == object_storage.SETTINGS_MISSING:
             print(_missing_line(object_storage.missing_environment(build_settings(args))))
         else:
-            print(f"[중단] {exc}")
+            print(_stop_line(exc))
         return 1
     except BOOTSTRAP_ERRORS as exc:
         # `duckdb.Error` 는 RuntimeError 가 아니다. 이걸 잡지 않으면 앱을 켜 둔 채 돌렸을 때
@@ -978,7 +1100,7 @@ def _run_command(args: argparse.Namespace) -> int:
         if args.command == "boot-pull":
             print(_boot_line(engine.BootOutcome(kind=FAILURE_OTHER)))
         else:
-            print(f"[중단] {bootstrap_error_message(exc, markdown=False)}")
+            print(f"[중단] {masked(bootstrap_error_message(exc, markdown=False))}")
         return 1
     finally:
         try:

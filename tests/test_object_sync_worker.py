@@ -44,12 +44,24 @@ from capa_simulation.object_sync_worker import (
     SyncHealth,
     WorkerStatus,
     assess,
+    base_origin,
     running_worker,
     start_object_sync,
 )
 from capa_simulation.persistence import snapshot_export, sync_state
-from capa_simulation.persistence.sync_state import MarkClock
-from capa_simulation.services.object_storage_manifest import PrunePlan, PushDecision
+from capa_simulation.persistence.sync_state import GenerationState, MarkClock
+from capa_simulation.services.object_storage_manifest import (
+    DATASET_NAMES,
+    POINTER_SCHEMA_VERSION,
+    Member,
+    Origin,
+    Pointer,
+    PrunePlan,
+    PushDecision,
+    pointer_key,
+    pointer_to_json,
+    snapshot_key,
+)
 
 CLEAN = PublishOutcome(decision=PushDecision.UP_TO_DATE)
 UNREACHABLE = ObjectStorageError(
@@ -631,9 +643,91 @@ def test_a_landed_generation_records_the_numbers(rig: Rig) -> None:
 
     status = rig.worker.status()
     assert status.seq == 7
+    assert status.origin == "app"
     assert status.last_success_utc is not None
     assert status.lock_seconds == 0.12
     assert status.transfer_seconds == 3.4
+
+
+def _pointer_at(seq: int, origin: Origin) -> Pointer:
+    members = {
+        name: Member(
+            seq=1,
+            snapshot_key=snapshot_key(
+                name, 1, created_at_utc="2026-11-13T07:13:00Z", sha256="ab" * 32
+            ),
+            sha256="ab" * 32,
+            md5_base64="",
+            size_bytes=1,
+            source_db_bytes=1,
+            migration_version=1,
+        )
+        for name in DATASET_NAMES
+    }
+    return Pointer(
+        schema=POINTER_SCHEMA_VERSION,
+        seq=seq,
+        pointer_key=pointer_key(seq, simulation_seq=1, equipment_seq=1, token="abcdef0" + str(seq)),
+        parent_seq=seq - 1,
+        parent_pointer_key=None,
+        origin=origin,
+        members=members,
+        app_version="demo",
+        author="demo@pod",
+        created_at_utc="2026-11-13T07:14:16Z",
+        note="",
+    )
+
+
+def _adopt_base(rig: Rig, pointer: Pointer | None, *, json_text: str | None = None) -> None:
+    state = GenerationState(
+        base_pointer_key=None if pointer is None else pointer.pointer_key,
+        base_seq=None if pointer is None else pointer.seq,
+        base_pointer_json=(
+            json_text if json_text is not None or pointer is None else pointer_to_json(pointer)
+        ),
+        base_synced_at_utc="2026-11-13T07:14:16Z",
+    )
+    sync_state.write_generation(rig.paths.generation, state)
+
+
+@pytest.mark.parametrize(("origin", "expected"), [("boot", "boot"), ("app", "app")])
+def test_a_fresh_worker_reads_who_made_the_base_generation_from_the_sidecar(
+    rig: Rig, origin: Origin, expected: str
+) -> None:
+    """받기 끝의 펜스로 뜬 pod 는 저장 전까지 기준 세대가 펜스다 — 화면이 그 세대 줄에 꼬리를
+    단다. 포인터 본문은 받을 때 사이드카에 들었으니 다시 받지 않는다."""
+    _adopt_base(rig, _pointer_at(2, origin))
+
+    status = ObjectSyncWorker(rig.engine, clock=rig.clock).status()
+
+    assert (status.seq, status.origin) == (2, expected)
+
+
+def test_an_unreadable_base_pointer_leaves_the_origin_unknown(rig: Rig) -> None:
+    """꼬리 하나 때문에 일꾼을 세우지 못하면 안 된다."""
+    pointer = _pointer_at(2, "boot")
+    _adopt_base(rig, pointer, json_text="{")
+    assert ObjectSyncWorker(rig.engine, clock=rig.clock).status().origin is None
+
+    _adopt_base(rig, None)
+    assert base_origin(sync_state.read_generation(rig.paths.generation)) is None
+
+
+def test_a_save_after_the_fence_drops_the_tail(rig: Rig) -> None:
+    """펜스로 뜬 뒤 저장이 올라가면 기준 세대는 앱의 세대다."""
+    _adopt_base(rig, _pointer_at(2, "boot"))
+    worker = ObjectSyncWorker(rig.engine, clock=rig.clock)
+    rig.worker = worker
+    _settled(rig)
+    rig.engine.results.append(
+        PublishOutcome(decision=PushDecision.PUBLISH, published=True, pointer=_pointer_at(3, "app"))
+    )
+    sync_state.request_upload()
+
+    worker.tick()
+
+    assert (worker.status().seq, worker.status().origin) == (3, "app")
 
 
 def _status(**changes: object) -> WorkerStatus:

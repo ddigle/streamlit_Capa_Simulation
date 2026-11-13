@@ -1799,7 +1799,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 쪽은 산출 결과가 따로 낸다 — 대당 Capa 제외 `ST-14`(지문 내용 = 건수 + 제외사유별 건수, 딸린 표 = 「제외 기준정보」),
     대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일, 딸린 표 = 「소요대수 제외 기준정보」), PKG 의
     Buffer 밖 행 `ST-21`(알림 — 규칙이라 고칠 것이 없다, 딸린 표 = 「PKG Buffer 밖 행」). 두 사유를 한 알림에 섞지 않는다.
-- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래, 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다). `managed` 가 아니면 Streamlit 호출이 없다.
+- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다). `managed` 가 아니면 Streamlit 호출이 없다.
 - `src/capa_simulation/components/container_start_check.py` — Admin Area 탭 위 「서버 시작 점검」 펼침. C-DEP CD 시작
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + S3 키 · `managed` 가 있는 서버의
@@ -2231,7 +2231,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     있다 — `scripts/validate_duckdb_persistence.py` 는 같은 보정을 건 뒤 견준다.
 - `src/capa_simulation/services/core_data_pipeline.py` — CSV·BigDataQuery 결과를 같은 정규화·RQ 변환 길로 잇는다.
 - `src/capa_simulation/services/object_storage_manifest.py` — 세대 포인터의 키 계약과 받기 · 올리기 · 정리 판정을 담는 순수 계층이다.
-  - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄).
+  - 가변 포인터(`current.json`) 없이 불변 키 시퀀스로 둔다. 두 DB 는 한 쌍이고 포인터 하나가 두 멤버를 가리키며 키에 멤버 세대를 싣는다(정리가 GET 없이 참조를 안다). 차례는 `object_sync_engine.py` 이고 `scripts/sync_object_storage.py` 는 인자를 읽고 찍기만 한다 — 꺾쇠 · 공백 · 따옴표가 든 주소 · 버킷 · 프로필은 `aws` 앞에서 값이 온 자리 이름만 대고 거절하고(`boot-pull` 밖 — C-DEP 표 값), 하위 명령 끝에 값 없는 「전송용 요약」 한 줄(갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드)을 찍는다(`profile` · `boot-pull` 밖 — 셸에 붙여 넣는 블록 · 시작 스크립트가 읽는 JSON 끝줄). 그 위 출력도 주소 · 버킷 · 프로필 · 작성자를 가린다(`profile` 밖) — `doctor` 값 줄은 버킷 앞뒤 두 글자 · 글자 수와 있음/없음, 받아 찍는 진단 글 안의 값은 이름표(`masked`)이고 원값을 보는 옵션은 없다. 진단 글을 값째 만드는 `io/object_storage.py` 의 `explain_failure` 는 그대로다(시작 스크립트 · 일꾼 쪽은 갈래 낱말만 싣는다).
 - `src/capa_simulation/services/bigdataquery_catalog_view.py` — 코드 목록을 표시·검색용으로 정리하고 등록 폼 기본값을
   만드는 순수 계층이다(Streamlit import 없음). 코드·PLAN 당 한 행만 남긴다.
 - `src/capa_simulation/services/auto_official_update.py` — 공식버전 자동 갱신의 규칙(주차·후보·판정·설정·예약·표지)을

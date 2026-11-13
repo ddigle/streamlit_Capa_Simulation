@@ -464,7 +464,8 @@ def test_rollback_needs_yes_and_then_moves_the_head_forward(harness: SimpleNames
 
 
 def _summary(capsys: pytest.CaptureFixture[str]) -> str:
-    """출력의 끝줄 — 전송용 요약이어야 한다(그 위 출력은 그대로)."""
+    """출력의 끝줄 — 전송용 요약이어야 한다(그 위 출력의 사내 값 가림은
+    `test_sync_script_redaction.py`)."""
     last = capsys.readouterr().out.splitlines()[-1]
     assert last.startswith("전송용 요약: "), last
     return last.removeprefix("전송용 요약: ")
@@ -588,6 +589,97 @@ def test_status_on_a_pc_that_handed_over_points_at_a_copy_not_resolve(
     printed = capsys.readouterr().out
     assert "fetch-copy" in printed
     assert "resolve" not in printed
+
+
+def _gets(harness: SimpleNamespace) -> int:
+    return sum(1 for operation, _ in harness.store.operations() if operation == "get-object")
+
+
+def test_status_names_a_start_fence_head_after_its_number(
+    harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """이관 직후 C-DEP 가 받기 끝에 낸 펜스(seq 2)는 저장이 아니다(사내 리뷰 202611131000 정할 것
+    7 (가)). 원격 줄과 요약 칸의 번호 뒤에 꼬리를 달고, 압축본이 읽는 `원격 seq <n>` 꼴은 그대로다.
+    앱 저장이 그 위로 오면 꼬리가 없고, HEAD 포인터를 받지 못하면 꼬리 없이 통과한다."""
+    assert _run(harness, "init") == 0
+    state = sync_state.read_generation(harness.paths.generation)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    sync_state.write_generation(harness.paths.generation, state)
+    capsys.readouterr()
+    gets_before = _gets(harness)
+
+    assert _run(harness, "status") == 0
+    lines = capsys.readouterr().out.splitlines()
+    # 더 드는 것은 HEAD 포인터 받기 하나뿐이다.
+    assert _gets(harness) - gets_before == 1
+    assert "원격 : seq 2 (시작 펜스)" in lines
+    assert lines[-1].startswith(
+        "전송용 요약: status 통과; 종료 0; 원격 seq 2 (시작 펜스); 로컬 seq 1;"
+    )
+
+    harness.store.failures.append(Failure("get-object", times=3))
+    assert _run(harness, "status") == 0
+    printed = capsys.readouterr().out
+    assert "원격 : seq 2\n" in printed and "시작 펜스" not in printed
+    harness.store.failures.clear()
+
+    _another_pod_republishes(harness)
+    assert _run(harness, "status") == 0
+    printed = capsys.readouterr().out
+    assert "원격 : seq 3\n" in printed and "시작 펜스" not in printed
+    assert "; 원격 seq 3; 로컬 seq 1;" in printed.splitlines()[-1]
+
+
+def _without_seq(payload: dict[str, object], _monkeypatch: pytest.MonkeyPatch) -> None:
+    del payload["seq"]
+
+
+def _null_seq(payload: dict[str, object], _monkeypatch: pytest.MonkeyPatch) -> None:
+    payload["seq"] = None
+
+
+def _member_without_seq(payload: dict[str, object], _monkeypatch: pytest.MonkeyPatch) -> None:
+    members = payload["members"]
+    assert isinstance(members, dict)
+    del members["simulation"]["seq"]
+
+
+def _no_scratch_folder(_payload: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse() -> Path:
+        raise PermissionError(13, "Permission denied", "objectstore")
+
+    monkeypatch.setattr(snapshot_export, "prepare_scratch", refuse)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [_without_seq, _null_seq, _member_without_seq, _no_scratch_folder],
+    ids=["no-seq", "null-seq", "member-no-seq", "no-scratch"],
+)
+def test_status_on_an_unreadable_head_pointer_drops_only_the_fence_tail(
+    harness: SimpleNamespace,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    damage: Callable[[dict[str, object], pytest.MonkeyPatch], None],
+) -> None:
+    """꼬리는 덤이다 — 세대 번호 · 판정은 목록에서 이미 났다. HEAD 포인터 본문이 깨졌거나(파서가
+    KeyError · TypeError 로 낸다) 받을 작업 폴더를 못 만들어도 status 는 꼬리 없이 종료 0 이다."""
+    assert _run(harness, "init") == 0
+    state = sync_state.read_generation(harness.paths.generation)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    sync_state.write_generation(harness.paths.generation, state)
+    head_key = harness.store.pointer_keys()[0]
+    payload = json.loads(harness.store.objects[head_key].decode("utf-8"))
+    assert payload["origin"] == "boot"
+    damage(payload, monkeypatch)
+    harness.store.objects[head_key] = json.dumps(payload).encode("utf-8")
+    capsys.readouterr()
+
+    assert _run(harness, "status") == 0
+
+    printed = capsys.readouterr().out
+    assert "원격 : seq 2\n" in printed and "시작 펜스" not in printed
+    assert printed.splitlines()[-1].startswith("전송용 요약: status 통과; 종료 0; 원격 seq 2;")
 
 
 def test_resolve_refuses_a_generation_whose_snapshot_is_gone(

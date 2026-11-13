@@ -176,6 +176,31 @@ def test_lines_carry_labels_and_numbers_only(monkeypatch: pytest.MonkeyPatch) ->
     assert "**정리 실패** · 저장소에 닿지 못함" in text
 
 
+@pytest.mark.parametrize(
+    ("origin", "line"),
+    [
+        ("boot", "**세대** · 2 (시작 펜스)"),
+        ("app", "**세대** · 2"),
+        ("rollback", "**세대** · 2"),
+        (None, "**세대** · 2"),
+    ],
+)
+def test_a_start_fence_generation_carries_a_tail_and_a_saved_one_does_not(
+    monkeypatch: pytest.MonkeyPatch, origin: str | None, line: str
+) -> None:
+    """이관 직후 아무도 저장하지 않았는데 세대 2 가 올라가 「마지막 올림」 으로 보였다(사내 리뷰
+    202611131000 정할 것 7 (가)). 펜스는 그대로 두고 세대 줄 끝에 꼬리 한 마디만 단다."""
+    _boot(monkeypatch, managed=True)
+    _admin(monkeypatch, admin=False)
+    _worker(monkeypatch, seq=2, origin=origin, last_success_utc="2026-11-13T07:14:16Z")
+
+    app = AppTest.from_string(PANEL).run()
+
+    captions = [str(item.value) for item in app.caption]
+    assert any(line in caption.split("  \n") for caption in captions), captions
+    assert ("시작 펜스" in _text(app)) is (origin == "boot")
+
+
 def test_a_missing_worker_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
     _boot(monkeypatch, managed=True)
     _admin(monkeypatch, admin=False)
