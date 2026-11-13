@@ -1,10 +1,11 @@
 # Purpose: 앱 시작 실패 판의 갈래 판정 · 그리기 · 진짜 app.py 배선 · 입장 화면 표지를 지킨다.
 
-"""`components/boot_stop.py`(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-boot).
+"""`components/boot_stop.py`(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-boot · d12 (가)).
 
-부트스트랩이 실패하면 쉬운 경고 한 줄 · 「다시 시도」(판 올리기 실패는 없음) · 문의 캡션 · 참고 줄 ·
-접힌 「관리자용 진단」 이 선다. 프로세스 번호 · 서버 파일 경로 · 원문은 접힌 진단 안에만 있다. 입장
-화면이 읽는 스타일 표지도 함께 간다.
+부트스트랩이 실패하면 쉬운 경고 한 줄 · 「다시 시도」(판 올리기 실패는 없음) · 문의 캡션 · 참고
+줄(끝에 오류 종류 이름) · 접힌 「관리자용 진단」 이 선다. 프로세스 번호 · 서버 파일 경로 · 원문은
+접힌 진단 안에만 있고, 그 진단은 관리자 몫(`admin_view.admin_notes_visible`)에만 선다. 입장 화면이
+읽는 스타일 표지도 함께 간다.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import errno
 import os
 import re
 import sys
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -20,9 +22,12 @@ from types import SimpleNamespace
 
 import duckdb
 import pytest
+from sso_support import sso_environ, use_config
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.components import boot_stop
+from capa_simulation.auth import names, runtime
+from capa_simulation.auth.tokens import issue_session
+from capa_simulation.components import boot_stop, sso_identity
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 from capa_simulation.persistence._migration_core import (
     MigrationChanged,
@@ -244,7 +249,9 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
     assert (retry.label, retry.key) == (boot_stop.RETRY_LABEL, boot_stop.RETRY_KEY)
     captions = [str(item.value) for item in app.caption]
     assert captions[0] == "문의 help@example.com"
-    assert re.fullmatch(r"참고 db_locked · \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC", captions[1])
+    assert re.fullmatch(
+        r"참고 db_locked · \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC · IOException", captions[1]
+    )
     # 프로세스 번호 · 서버 파일 경로 · 개발 PC 조치는 접힌 진단 안에만 있다.
     main = _main_text(app)
     assert "PID" not in main and SECRET_PATH not in main
@@ -254,6 +261,85 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
         str(item.value) for item in fold.code
     )
     assert "PID 424242" in folded and SECRET_PATH in folded
+
+
+def _every_text(app: AppTest) -> str:
+    """그려진 모든 글 — 경고 · 캡션 · 단추 이름 · 자리 글 · 코드 칸 · 펼침 이름 · 원문 HTML."""
+    parts = [
+        *(str(item.value) for item in app.error),
+        *(str(item.value) for item in app.caption),
+        *(str(item.label) for item in app.button),
+        *(str(item.value) for item in app.markdown),
+        *(str(item.value) for item in app.code),
+        *(str(item.label) for item in app.expander),
+        *(str(item.proto.body) for item in app.get("html")),
+    ]
+    return "\n".join(parts)
+
+
+def _prod_sso_off() -> None:
+    """운영(`APP_ENV=prod`)인데 통합인증이 꺼진 서버 — 관리자 신원이 없다."""
+    runtime.reset()
+    runtime.start(sso_environ(drop=[names.ENV_CLIENT_ID]))
+
+
+def _prod_sso_on_as(monkeypatch: pytest.MonkeyPatch, loginid: str) -> None:
+    """통합인증이 켜진 운영 서버의 그 사람 회차(진짜 세션 쿠키)."""
+    cfg = use_config({names.ENV_ACCESS_ADMINS: "demo.admin", names.ENV_ACCESS_USERS: "demo.user"})
+    token, _ = issue_session(cfg, loginid=loginid, name=None, dept=None, now=int(time.time()))
+    monkeypatch.setattr(sso_identity, "session_cookies", lambda: {cfg.session_cookie: token})
+
+
+@pytest.mark.parametrize("audience", ["prod-sso-off", "plain-user"])
+def test_someone_outside_the_admin_audience_sees_only_the_kind_name(
+    monkeypatch: pytest.MonkeyPatch, audience: str
+) -> None:
+    """관리자 몫이 아닌 회차(운영인데 통합인증 꺼짐 · 켜진 운영 서버의 일반 사용자)에는 접힌 진단이
+    없고 참고 줄 끝의 오류 종류 이름만 있다 — 프로세스 번호 · 서버 파일 경로 · 개발 PC 조치 · 원문이
+    어느 칸에도 없다(카드 p1-boot · 보드 d12 (가))."""
+    if audience == "prod-sso-off":
+        _prod_sso_off()
+    else:
+        _prod_sso_on_as(monkeypatch, "demo.user")
+
+    app = _run("lock", monkeypatch)
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert list(app.expander) == []
+    shown = _every_text(app)
+    for secret in ("PID", "424242", SECRET_PATH, "Conflicting lock", "DB 도구", "IO Error"):
+        assert secret not in shown, secret
+    assert any(str(item.value).endswith(" · IOException") for item in app.caption)
+    assert [item.label for item in app.button] == [boot_stop.RETRY_LABEL]
+
+
+def test_the_admin_of_a_signed_in_server_gets_the_details_fold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """켜진 운영 서버의 관리자에게는 접힌 진단이 선다 — C-DEP 에는 셸도 로그도 없다."""
+    _prod_sso_on_as(monkeypatch, "demo.admin")
+
+    app = _run("lock", monkeypatch)
+
+    [fold] = app.expander
+    assert fold.label == ADMIN_DIAGNOSTIC_LABEL
+    folded = "\n".join(str(item.value) for item in fold.code)
+    assert "PID 424242" in folded and SECRET_PATH in folded
+
+
+def test_a_failing_admin_check_falls_back_to_no_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    """마지막 자리 — 관리자 몫 판정이 무엇을 내도 판은 서고 진단은 닫힌 쪽(없음)으로 물러선다."""
+
+    def broken() -> bool:
+        raise RuntimeError("판정 실패")
+
+    monkeypatch.setattr(boot_stop, "admin_notes_visible", broken)
+
+    app = _run("lock", monkeypatch)
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert list(app.expander) == []
+    assert "PID" not in _every_text(app)
 
 
 def test_a_changed_migration_offers_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:

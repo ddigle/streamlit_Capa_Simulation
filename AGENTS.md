@@ -3346,8 +3346,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   오류로 실패함, 「다시 시도」 없음) → 디스크 가득(errno · 영문 고정 문구) → 파일 권한 → 열 수 없음(`Cannot open`·`Could not set
   lock`) → 그 밖이다. 진단의 원문은 판 올리기 실패가 감싼 DuckDB 오류(`__cause__`)다.
   판은 쉬운 경고 한 줄(`st.error` — UI-NTF-08 예외) · 주 단추 「다시 시도」(누름이 회차 하나 — 부트스트랩은 성공한 회차에만
-  「해 봤다」 표지) · 「문의 <메일>」 · 「참고 <갈래 키> · <UTC 분>」 · 접힌 「관리자용 진단」(복사 단추 · 지금의
-  `bootstrap_error_message` 글 — PID · 파일 경로 · 조치 — 와 원문)이다. 공용 조각은 `components/stop_panel.py`(통합인증 멈춤과
+  「해 봤다」 표지) · 「문의 <메일>」 · 「참고 <갈래 키> · <UTC 분> · <오류 종류>」(오류 종류 이름은 누구에게나 — 보드 d12 (가)) ·
+  접힌 「관리자용 진단」(복사 단추 · 지금의 `bootstrap_error_message` 글 — PID · 파일 경로 · 조치 — 와 원문)이다. 접힌 진단은
+  관리자 몫(`admin_view.admin_notes_visible`)에만 선다 — 접어도 누구나 펼치므로 접힘으로 가리지 않고, 판정이 무엇을 내도 진단
+  없음으로 물러선다(마지막 자리). 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않는다. 공용 조각은 `components/stop_panel.py`(통합인증 멈춤과
   같은 판). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
   함께 보낸다(자리를 먹지 않는다). 시험은 `tests/test_boot_stop.py`.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
@@ -4204,7 +4206,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/diagnostic_copy.py` — Admin 진단 펼침(서버 시작 점검 · 통합인증 점검 · DB 동기화)과 모듈 상태 팝오버의 글 전체를 한 번에 복사하는 단추와 그 글을
   짓는 도우미다(UI-NTF-10). 브라우저 안에서 끝나 회차가 돌지 않고, 막히면 고른 글을 읽기 전용 칸으로 편다(`execCommand` 는 쓰지 않는다). 복사 글은 밖으로 나가는 글이라
   부르는 쪽이 리뷰에 옮기지 말아야 할 값을 싣지 않는다(`sso_status.status_text`, `container_start_check.report_text`). 접속 명단은 loginid 가 사람이라 복사 단추를 두지 않는다.
-  관리자 몫 접힌 진단 펼침의 이름 「관리자용 진단」 도 여기 한 곳이다(`ADMIN_DIAGNOSTIC_LABEL` — 코어 화면 오류 카드 · 앱 시작 실패 판이 함께 쓰고, Streamlit 을 부르지 않는 시작 임시 화면의 `DIAGNOSTICS_SUMMARY` 는 시험이 맞댄다).
+  접힌 진단 펼침의 이름 「관리자용 진단」 도 여기 한 곳이다(`ADMIN_DIAGNOSTIC_LABEL` — 앱 안의 코어 화면 오류 카드 · 앱 시작 실패 판이 함께 쓰고 둘 다 관리자 몫(`admin_view.admin_notes_visible`)에만 세워 서버 경로 · 원문을 싣는다. 로그인 전 시작 임시 화면은 누구나 펼치되 이름 · 수만 싣고(보드 d9 (가)) Streamlit 을 부르지 않아 그 `DIAGNOSTICS_SUMMARY` 는 시험이 맞댄다).
 - `src/capa_simulation/components/data_error_mark.py` — 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리의 공통 「데이터 Error」 마크(2026-11-05
   사용자 지시). `render_data_error(message, code=, tab=, text=, goto=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
   좁으면 줄 바꿈)와 오류 단계 사건 알림 표지를 `st.html` 한 칸에 그린다 — 이벤트 칸을 쓰지 않아 프래그먼트 · 팝업 본문 어디서나 부른다.
