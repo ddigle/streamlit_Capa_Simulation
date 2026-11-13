@@ -691,7 +691,9 @@ def _head_tail(client: ObjectStorageClient, remote: engine.RemoteHead) -> str:
         return ""
     try:
         head = engine.read_pointer(client, remote.head_key)
-    except (ObjectStorageError, ValueError):
+    except (ObjectStorageError, ValueError, KeyError, TypeError, OSError):
+        # 본문이 깨진 꼴(`seq` 없음 · null)을 파서는 ValueError 말고 KeyError · TypeError 로도 낸다
+        # (일꾼의 `base_origin` 도 이 셋을 받는다). 받을 작업 폴더를 못 만들면 OSError 다.
         return ""
     return manifest.origin_tail(head.origin)
 

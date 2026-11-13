@@ -630,6 +630,58 @@ def test_status_names_a_start_fence_head_after_its_number(
     assert "; 원격 seq 3; 로컬 seq 1;" in printed.splitlines()[-1]
 
 
+def _without_seq(payload: dict[str, object], _monkeypatch: pytest.MonkeyPatch) -> None:
+    del payload["seq"]
+
+
+def _null_seq(payload: dict[str, object], _monkeypatch: pytest.MonkeyPatch) -> None:
+    payload["seq"] = None
+
+
+def _member_without_seq(payload: dict[str, object], _monkeypatch: pytest.MonkeyPatch) -> None:
+    members = payload["members"]
+    assert isinstance(members, dict)
+    del members["simulation"]["seq"]
+
+
+def _no_scratch_folder(_payload: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse() -> Path:
+        raise PermissionError(13, "Permission denied", "objectstore")
+
+    monkeypatch.setattr(snapshot_export, "prepare_scratch", refuse)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [_without_seq, _null_seq, _member_without_seq, _no_scratch_folder],
+    ids=["no-seq", "null-seq", "member-no-seq", "no-scratch"],
+)
+def test_status_on_an_unreadable_head_pointer_drops_only_the_fence_tail(
+    harness: SimpleNamespace,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    damage: Callable[[dict[str, object], pytest.MonkeyPatch], None],
+) -> None:
+    """꼬리는 덤이다 — 세대 번호 · 판정은 목록에서 이미 났다. HEAD 포인터 본문이 깨졌거나(파서가
+    KeyError · TypeError 로 낸다) 받을 작업 폴더를 못 만들어도 status 는 꼬리 없이 종료 0 이다."""
+    assert _run(harness, "init") == 0
+    state = sync_state.read_generation(harness.paths.generation)
+    harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
+    sync_state.write_generation(harness.paths.generation, state)
+    head_key = harness.store.pointer_keys()[0]
+    payload = json.loads(harness.store.objects[head_key].decode("utf-8"))
+    assert payload["origin"] == "boot"
+    damage(payload, monkeypatch)
+    harness.store.objects[head_key] = json.dumps(payload).encode("utf-8")
+    capsys.readouterr()
+
+    assert _run(harness, "status") == 0
+
+    printed = capsys.readouterr().out
+    assert "원격 : seq 2\n" in printed and "시작 펜스" not in printed
+    assert printed.splitlines()[-1].startswith("전송용 요약: status 통과; 종료 0; 원격 seq 2;")
+
+
 def test_resolve_refuses_a_generation_whose_snapshot_is_gone(
     harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
 ) -> None:
