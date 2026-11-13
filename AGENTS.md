@@ -404,7 +404,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
-  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(loginid · 넣은 때 · 넣은 사람) · 추가(공통 붙여넣기 창 `components/paste_form`) · 지우기 · 다시 읽기를 둔다. 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 지울 사람 고르기 칸(라벨 접음, 자리표시 「지울 사람」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 지우기, 끝에 판 · 사용자 값. 「지울 사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 시험은 `tests/test_sso_access_s3.py`.
+  - `components/access_list_admin.py` — Admin Area 「접속 명단」 펼침. 통합인증 · S3 명단이 켜진 서버의 관리자 회차에만 서고(그 밖에는 Streamlit 호출 0) 목록(계정 · 이름 · 부서 · 등록 시각 · 등록 길 `스스로` · `관리자` · 등급 `일반` · `관리자` · `관리자(환경변수)`) · 추가(공통 붙여넣기 창 `components/paste_form` — 머리 줄 `loginid` 또는 `계정` 칸만 읽는다) · 관리자로 · 일반으로(등급 — 환경변수 관리자 · 자기 자신은 내리지 못함) · 지우기 · 다시 읽기를 둔다. 스스로 등록 알림 `AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸 받는 쪽 `access_list`). 쓰기는 그 회차의 쿠키를 다시 검증한 신원(`sso_identity.verified_identity`)을 넘기고 `auth/access_store` 가 다시 본다. 알림에는 수 · 까닭만 싣는다. 표 위 작업 줄은 한 줄이다 — 추가 · 다시 읽기 · 사람 고르기 칸(라벨 접음, 자리표시 「사람 고르기」, `wrap=True` — 가로 줄 안 고르기 칸은 기본이 칩 한 줄 가로 스크롤이라 고른 사람이 칸 밖에 숨는다) · 관리자로 · 일반으로 · 지우기, 끝에 판 · 사용자 · 관리자(환경변수 n) 값. 「사람을 고르세요」 곁 거부는 그 줄 바로 아래 · 표 앞이고 알림 칸은 못 읽음 · 빈 명단 · 표 갈래마다 한 번이다. 시험은 `tests/test_sso_access_s3.py`.
   - `components/sso_status.py` — Admin Area 「통합인증 점검」 펼침(꺼짐이고 운영이 아니면 그리지 않음 — `APP_ENV=prod` 면 꺼짐이어도
     선다)과 「서버 시작 점검」 표 넷째 줄 「통합인증」(결과 파일이 아니라 지금 설정에서 판정). 비밀값 · client id 값은 싣지 않는다
     (비밀값은 검사 통과 여부, client id 는 있음/없음, 계정은 앞 두 글자). **예외로 글자 그대로 싣는 것** — redirect_uri
@@ -3377,7 +3377,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「이름 · 부서 · 로그아웃」(`sso_identity.sso_credit_line`)이 붙고, 그 줄이 있을 때만 캡션을 `unsafe_allow_html` 로 그린다
   (로그아웃을 같은 탭에서 여는 원문 링크 — 이름 · 부서는 `literal_markdown` 으로 막았다). 꺼짐은 두 줄 그대로다.
   - 그리는 것은 캡션뿐이고 자리·바닥 고정·면은 `sidebar_style.py` 가 건다. key 는 조건 카드 접두어를 품지 않는다.
-  - 카드 뒤에 접속 명단 알림 `AD-08` · `AD-09` 를 낸다(S3 명단 서버만 · 회차마다 이벤트 칸 두 자리 — 관리자의 어느 화면에서나,
+  - 카드 뒤에 접속 명단 알림 `AD-08` · `AD-09` · `AD-19`(새 스스로 등록 — 최근 30일 수, 지문은 고친 기록의 가장 새 스스로 등록 시각이라 늘 때만 뜬다, 「그 화면으로」 가 「접속 명단」 펼침을 연다) 를 낸다(S3 명단 서버만 · 회차마다 이벤트 칸 세 자리 — 관리자의 어느 화면에서나,
     2026-11-08 답 U4). 남은 시간 표지는 「· 로그인 n분 남음」 · 「· 로그인 최대 시간까지 n분」 까지이고 저장해 두라는 말은 HOME
     Guide 다(작은 결정 b3).
     바닥에 붙은 카드 밑으로 칸이 들어가지 않게 사이드바 스크롤 칸에 `scroll-padding-bottom`(두 줄 `APP_CREDITS_SCROLL_ROOM`,

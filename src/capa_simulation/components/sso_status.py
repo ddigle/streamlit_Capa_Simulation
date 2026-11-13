@@ -33,6 +33,7 @@ HEAD 가 되어도).
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -78,6 +79,8 @@ DENIED_ACCOUNT_LIMIT = 20
 CERT_WARNING_DAYS = 30
 # 진단 펼침의 시각 꼴 — 서버 시각대 초까지(`container_start_check` 도 이 꼴로 적는다).
 CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S"
+# 「새 등록」 알림(`AD-19`)이 세는 기간(일).
+NEW_REGISTRATION_DAYS = 30
 
 # 비밀값 줄의 까닭 — 값은 싣지 않고 검사를 지났다는 사실만. 사람이 고른 문장인지는 가리지 못한다.
 SECRET_CHECKS_PASSED = "길이 · 글자 가짓수 · 자리표 · 되풀이 · 차례 검사 통과(무작위 값인지는 모름)"
@@ -491,13 +494,47 @@ def _access_seed_alert(*, admin: bool) -> None:
     )
 
 
+def _new_registration_alert(*, admin: bool, now: int) -> None:
+    """상태 알림 `AD-19` 「새 등록 n명」 — 최근 30일 스스로 등록해 지금도 명단에 있는 사람 수.
+
+    관리자 회차에만 세우고 개수만 싣는다. 지문은 고친 기록의 가장 새 스스로 등록 시각이라 새 등록이
+    있을 때만 알림창이 뜬다(사람을 빼도 뜨지 않는다 — UI-NTF-07). 「그 화면으로」 가 Admin Area 의
+    「접속 명단」 펼침을 연다(`access_list_admin.open_access_list` — UI-NAV-01).
+    """
+    from capa_simulation.components.access_list_admin import access_list_target
+
+    source = runtime.access_source()
+    document = None if source is None else source.document
+    count, latest = (
+        access_store.recent_self_registrations(document, now=now, days=NEW_REGISTRATION_DAYS)
+        if admin and document is not None
+        else (0, "")
+    )
+    active = admin and count > 0
+    alerts.state(
+        "AD-19",
+        scope=None,
+        content=latest if active else None,
+        active=active,
+        text=f"새 등록 {count}명 — 최근 {NEW_REGISTRATION_DAYS}일 스스로 등록",
+        full=(
+            f"최근 {NEW_REGISTRATION_DAYS}일 동안 거절 화면의 「접속 권한 신청」 으로 "
+            f"스스로 등록한 사람이 {count}명 명단에 있습니다. Admin 「접속 명단」 에서 "
+            "등록 길 「스스로」 줄을 보고 모르는 사람이면 지웁니다."
+        ),
+        goto=_admin_area_goto(),
+        target=access_list_target(),
+    )
+
+
 def render_access_alerts() -> None:
-    """접속 명단 상태 알림 둘(`AD-08` · `AD-09`) — 관리자의 어느 화면에서나 뜨게 매 회차 부른다.
+    """접속 명단 상태 알림 셋(`AD-08` · `AD-09` · `AD-19`) — 관리자의 어느 화면에서나 뜨게 매 회차
+    부른다.
 
     S3 명단을 쓰는 서버에서만 부른다 — 설정은 재시작 전에 바뀌지 않으니 해소할 것이 없고, 꺼진
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
-    서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
-    이 회차 쿠키에서 한 번만 다시 검증해 둘에 쓴다.
+    서버에서는 부를 때마다 이벤트 칸에 늘 세 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
+    이 회차 쿠키에서 한 번만 다시 검증해 셋에 쓴다.
     """
     cfg = runtime.config()
     if not access_store.is_on(cfg):
@@ -505,6 +542,7 @@ def render_access_alerts() -> None:
     admin = _viewer_is_admin(cfg)
     _access_read_alert(cfg, admin=admin)
     _access_seed_alert(admin=admin)
+    _new_registration_alert(admin=admin, now=int(time.time()))
 
 
 def _audit_goto() -> tuple[str, str]:

@@ -376,6 +376,11 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 14일 넘게 늦은 조각).
     AlertSpec("AD-12", "action", "state", "접속 · 작업 기록이 버킷에 보관되지 않음"),
     AlertSpec("AD-13", "error", "state", "접속 · 작업 기록 사슬 이상 — 너무 늦게 온 조각"),
+    # 거절 화면 「접속 권한 신청」 으로 스스로 등록한 사람 — 관리자 회차에만 · 개수만 · 새 등록이
+    # 있을
+    # 때만 뜬다(지문은 고친 기록의 가장 새 스스로 등록 시각). 「그 화면으로」 가 Admin 「접속 명단」
+    # 펼침을 연다(2026-11-14 보드 p0-admin-list). `AD-14` ~ `AD-18` 은 다른 가지가 쓴다.
+    AlertSpec("AD-19", "check", "state", "접속 명단 — 새 스스로 등록(최근 30일)"),
 )
 
 
@@ -459,7 +464,9 @@ class AlertNote(TypedDict, total=False):
     - 상태: `kind="state"` · `scope`(지문 범위의 짧은 해시) · `fp`(지문) · `active` · 글.
     - 둘 다: `page`·`href`(그 화면 이름 · 주소 — 「그 화면으로」) · `tab`(그 화면 안 탭 이름 —
       「그 화면으로」 가 그 탭을 연다) · `target`(그 화면 · 탭에 닿았을 때 서버에 보낼 대상 —
-      `GotoTarget`, 사건 알림 `flash.queue_flash(target=)` 만 싣는다) · `scope_label`(로그의
+      `GotoTarget`, 사건 알림 `flash.queue_flash(target=)` 와 상태 알림 `state(target=)` 가 싣는다)
+      ·
+      `scope_label`(로그의
       범위 줄) · `cause`(계기) ·
       `detail`(원본 오류) · `tables`(딸린 표들 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
       `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
@@ -717,9 +724,13 @@ def state(
     tab: str = "",
     tables: Sequence[AlertTable | None] = (),
     goto: tuple[str, str] | None = None,
+    target: GotoTarget | None = None,
 ) -> None:
     """상태 알림 — 그 조건을 보는 회차마다(없어도 `active=False`) 부른다. **이벤트 칸에 늘 한 자리를
     쓴다.**
+
+    `target` 은 「그 화면으로」 가 그 화면에 닿은 뒤 서버에 보낼 대상이다(`GotoTarget` — 받는 쪽이
+    그 화면 안 자리를 연다, 조건이 있을 때만 싣는다).
 
     `scope` · `content` 는 지문 재료(구조 값 — 모듈 설명), `text` · `full` 은 조건이 있을 때의 짧은
     글 · 전문, `scope_label` 은 로그의 범위 줄(「시나리오 · rN · 조회기간」)이다. `tab` 은 그 화면
@@ -748,6 +759,8 @@ def state(
     carried = [table for table in tables if table is not None]
     if active and carried:
         note["tables"] = carried
+    if active and target is not None:
+        note["target"] = target
     emit([note])
 
 

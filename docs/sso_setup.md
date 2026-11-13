@@ -350,9 +350,9 @@ python -m streamlit run capa_server.py --server.port 8510
    그대로 넘기는지, replica 수(1 전제 — 로그아웃 폐기 목록 · 로그인 갱신 표가 프로세스 메모리다).
 8. 사내 이미지 빌드(pip)와 WebIDE `uv sync --inexact` 가 새 의존성 넷(pyjwt · cryptography · cffi · pycparser) 휠을 받는지.
 9. 앱에 들어올 수 있는 사람의 범위를 포털도 정하는지(그렇다면 포털 범위와 접속 명단을 모두 지나야 한다). AD 그룹 클레임은 쓰지 않기로 했다(2026-11-05 사용자 결정 — `loginid` + S3 명단).
+   통합인증이 포털 거절(`access_denied`)을 앱 콜백으로 돌려보내는지(아니면 포털 거절 화면은 뜨지 않는다), id_token 에 이름 · 부서 칸(`username` · `deptname`)이 실리는지(칸 이름만 —
+   스스로 등록이 그 칸을 명단에 적는다).
 10. C-DEP 환경변수 표를 볼 수 있는 사람 — `JWT_SECRET_KEY` 를 본 사람은 로그인 토큰을 만들 수 있다.
 11. C-DEP 운영 pod 에서 S3 주소(`CAPA_S3_ENDPOINT_URL`)에 닿는지 · 앱용 키를 받을 수 있는지(그 버킷 읽기 · 쓰기) · HTTPS 포트가 열렸는지 — 닿는지는 Admin 「S3 명단」 줄이 답한다. 평문 `http` 면 명단이 사내망에 그대로 흐른다. 프록시를 거쳐야 닿는 망이면 지금 경계는 프록시를 따르지 않아 `주소에 닿지 못함` 이 된다.
 12. 앞단(인그레스 · WebIDE 프록시)이 `X-Capa-Sso-Refresh` 머리와 `Origin` 을 그대로 넘기는지 — 아니면 로그인이 쓰는 중에도 처음
     로그인 6시간 뒤 끊긴다(Admin 「출처·머리 거절」 이 늘고 「다시 발급」 은 0).
-   통합인증이 포털 거절(`access_denied`)을 앱 콜백으로 돌려보내는지(아니면 포털 거절 화면은 뜨지 않는다), id_token 에 이름 · 부서 칸(`username` · `deptname`)이 실리는지(칸 이름만 —
-   스스로 등록이 그 칸을 명단에 적는다).
