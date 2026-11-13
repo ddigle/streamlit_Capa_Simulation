@@ -1,4 +1,4 @@
-# Purpose: 통합인증 경로 다섯의 쿠키 속성·PRG·거절 사유·화면 이스케이프를 검증한다.
+# Purpose: 통합인증 경로 여섯의 쿠키 속성·PRG·거절 사유·화면 이스케이프를 검증한다.
 
 from __future__ import annotations
 
@@ -368,9 +368,12 @@ def test_idp_error_is_shown_by_code_and_its_description_stays_out() -> None:
     assert error_code_of(response) == "idp_error:access_denied"
     cleared = response.cookie(login.cookie_name)
     assert cleared is not None and cleared.deleted
+    attempt = response.cookie(cfg.attempt_cookie)
+    assert attempt is not None and attempt.deleted, "고쳐지지 않는 실패 — 되풀이를 세지 않는다"
     page = follow_error(app, response)
-    assert page.status == 400
-    assert "access_denied" in page.text
+    assert page.status == 403, "포털 거절은 오류 화면이 아니라 거절 꼴이다"
+    assert web.PORTAL_TITLE in page.text
+    assert "idp_error:access_denied" in page.text, "바닥 참고 줄의 사유 코드"
     assert "secret detail" not in page.text
 
 
@@ -523,7 +526,8 @@ def test_error_page_escapes_and_sends_security_headers() -> None:
     assert page.header("content-type") == "text/html; charset=utf-8"
     assert page.header("cache-control") == "no-store"
     assert page.header("content-security-policy") == (
-        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; "
+        "form-action 'self'; base-uri 'none'"
     )
     assert page.header("x-content-type-options") == "nosniff"
     assert page.header("referrer-policy") == "no-referrer"
@@ -562,7 +566,7 @@ def test_error_page_does_not_show_a_made_up_code(code: str) -> None:
 
 @pytest.mark.parametrize(
     "code",
-    ["state_missing", "idp_error:access_denied", "idp_error:other", "claim_missing:loginid"],
+    ["state_missing", "idp_error:other", "claim_missing:loginid"],
 )
 def test_error_page_shows_the_codes_this_server_makes(code: str) -> None:
     use_config()
@@ -749,7 +753,7 @@ def test_routes_are_404_while_off(path: str) -> None:
 @pytest.mark.parametrize("method", ["GET", "HEAD"])
 def test_refresh_read_methods_are_404_while_off_too(method: str) -> None:
     """갱신 경로를 POST 로만 붙이면 꺼짐(문지기가 모두 넘김)의 GET 이 Streamlit 정적 마운트로 가 앱
-    껍데기(200)가 섰다 — 「꺼짐이면 경로 다섯은 404」 를 GET · HEAD 에도 지킨다."""
+    껍데기(200)가 섰다 — 「꺼짐이면 경로 여섯은 404」 를 GET · HEAD 에도 지킨다."""
     runtime.reset()
 
     response = http(routes_app(), method, names.REFRESH_PATH)

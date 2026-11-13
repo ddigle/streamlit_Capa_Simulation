@@ -90,6 +90,7 @@ from capa_simulation.auth.access import (
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import Identity, session_problem
 from capa_simulation.auth.tokens import clean_text
+from capa_simulation.io import s3_small as s3_small_kinds
 from capa_simulation.io.s3_small import (
     KIND_OTHER,
     KIND_TIMEOUT,
@@ -293,6 +294,34 @@ def is_unread(cfg: SsoConfig) -> bool:
         return False
     source = runtime.access_source()
     return source is None or source.document is None
+
+
+# 다시 해도 같은 까닭 — 관리자가 설정 · 파일 · 권한을 고쳐야 풀린다(거절 화면이 「1분 뒤」 를 말하지
+# 않는다). 그 밖(닿지 못함 · 시간 초과 · 인증서 · 5xx)은 잠시 뒤 풀릴 수 있다.
+_ADMIN_FIX_KINDS: Final = frozenset(
+    {
+        KIND_CONFIG,
+        KIND_FILE_GONE,
+        KIND_CORRUPT,
+        KIND_UNKNOWN_FORMAT,
+        s3_small_kinds.KIND_AUTH,
+        s3_small_kinds.KIND_NO_BUCKET,
+        s3_small_kinds.KIND_TOO_LARGE,
+    }
+)
+
+
+def unread_needs_admin(cfg: SsoConfig) -> bool:
+    """못 읽은 까닭이 관리자가 고쳐야 풀리는 것인가(거절 화면 「점검 중」 의 두 갈래). 값 없음."""
+    if not is_unread(cfg):
+        return False
+    source = runtime.access_source()
+    problem = None if source is None else source.problem
+    if problem is None:
+        return False
+    if problem.kind in _ADMIN_FIX_KINDS:
+        return True
+    return problem.kind == KIND_OTHER and problem.status is not None and problem.status < 500
 
 
 def _base_source(cfg: SsoConfig) -> AccessSource:

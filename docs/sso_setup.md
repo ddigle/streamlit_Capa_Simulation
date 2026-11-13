@@ -27,9 +27,9 @@ app.py ── 매 회차 st.context.cookies 의 세션 쿠키를 다시 검증(�
 - **한 프로세스다.** `capa_server.py` 가 `app.py` 를 `st.App(routes=…, middleware=…)` 으로 감싸 콜백 경로와 문지기를 같은
   프로세스에 붙인다. nginx · 사이드카는 없다. C-DEP 시작 스크립트(`scripts/container_start.py`)가
   `streamlit run capa_server.py --server.port 8080` 으로 띄운다. 개발 PC · 사내 WebIDE · 시험은 지금처럼 `app.py` 다.
-- **경로 다섯** — `POST /auth/callback`(포털 Endpoint URL), `GET /auth/sso/login?next=`, `GET /auth/sso/logout`,
-  `GET /auth/sso/error?id=`, `POST /auth/sso/refresh`(로그인 갱신 — 아래). Streamlit 자체 `st.login`(`/auth/login` 등)은 GET 콜백이라
-  쓰지 않는다.
+- **경로 여섯** — `POST /auth/callback`(포털 Endpoint URL), `GET /auth/sso/login?next=`, `GET /auth/sso/logout`,
+  `GET /auth/sso/error?id=`, `POST /auth/sso/refresh`(로그인 갱신 — 아래), `POST /auth/sso/register`(거절 화면의 「접속 권한 신청」 — 6장).
+  Streamlit 자체 `st.login`(`/auth/login` 등)은 GET 콜백이라 쓰지 않는다.
 - **로그인 유지 — 마지막 사용 뒤 6시간, 최대 24시간(기본값 — 2장).** 세션의 끝은 `min(마지막 발급 + 세션 시간, 처음 로그인 + 최대 시간)` 하나이고
   (`auth/tokens.session_end` — 모든 판정이 끝 + 30초까지 받는다), 쿠키 `Max-Age` 도 그 끝 + 30초로 맞춘다. 앱 화면의 사람 입력(누름 ·
   키 · 휠 · 터치 — 스크립트가 만든 사건과 로그아웃 링크 위 입력은 세지 않는다)이 있으면 툴바 스크립트(`components/sso_refresh.py`)가
@@ -151,7 +151,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 4. 명단 밖 계정으로 들어가 거절 화면이 서는지, 「명단 밖 로그인」 표에 앞 두 글자와 횟수로 남는지 본다.
 5. 재시작 없이 사람을 넣고 빼려면 아래 「S3 명단을 켤 때」 로 간다(2026-11-05 사용자 결정 — 그룹 클레임은 쓰지 않고 `loginid` + S3 명단). 「마지막 로그인의 클레임 이름」 은 클레임 문제를 볼 때 쓴다(값은 보이지 않는다).
 
-**전원이 거절되면(앱 관리자 포함)** — `CAPA_ACCESS_ADMINS` 에 오타가 있거나 실제 `loginid` 클레임 값과 다른 값이다. 꼴은 맞으므로 모드는 켜짐이고 설정 화면이 서지 않는다. 거절 화면에는 값이 없고 Admin 에도 들어갈 수 없다.
+**전원이 거절되면(앱 관리자 포함)** — `CAPA_ACCESS_ADMINS` 에 오타가 있거나 실제 `loginid` 클레임 값과 다른 값이다. 꼴은 맞으므로 모드는 켜짐이고 설정 화면이 서지 않는다. 거절 화면은 그 브라우저에서 15분 동안 **본인 계정**을 보인다(거절 표 — 6장) — 그 글자를 환경변수 값과 대 본다. 「접속 권한 신청」 으로 들어와도 일반 등급이라 Admin 에는 들어갈 수 없다.
 푸는 길은 표의 값을 고치고 CI/CD 를 돌리는 것뿐이다. 돌릴 때마다 연결이 끊기고, 영속 볼륨이 없는 동안은 저장한 것도 사라지므로 값을 짐작해 되풀이하지 않는다 — ADFS 담당 · 포털에서 본인 `loginid` 클레임 값을 글자까지 확인해 넣는다. 앱 안에서는 전체 값을 볼 수 없다(사건 표는 앞 두 글자까지, 앱 정보 카드는 이름이 있으면 이름만). 서버 로그를 볼 수 있으면 `sso event=login_denied` 줄에 전체 값이 있다.
 
 **앞 배포 ZIP 으로 되돌리면** — 앞 코드에는 명단 판정이 없다. 되돌린 동안은 환경변수가 무시되어 통합인증을 지난 사람 전부가 들어온다. 포털 범위로 막거나, 그 사실을 알고 되돌린다.
@@ -190,12 +190,26 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   (지운 쿠키를 다시 넣은 탭이 그 끝까지 살아날 수 있다 — 쿠키 자체는 지웠으므로 받아들인다).
 - **CONNECTING 에 머물면** — 위 띠가 서면 「다시 로그인」 을 누른다. 띠 없이 머물면 서버 재시작 · 망 끊김이다 — Streamlit 이
   스스로 다시 붙고, 오래 머물면 새로고침한다(로그인이 끝났으면 로그인부터 다시 탄다).
-- **접속 명단** — 통합인증을 지났어도 명단에 없으면 앱에 들어오지 못한다. 세션 쿠키를 받지 못하고 거절 화면(「접속 권한이 없습니다」 · 「이 앱을 쓸 수 있는 명단에
-  없습니다.」 · `CAPA_ACCESS_CONTACT` 가 있으면 「요청: …」)을 본다(HTTP 403). 「다시 확인」 은 로그인 경로다 — 명단에 들어간 뒤 누르면 그대로 들어온다. `ADFS_LOGOUT_URL` 이
-  있으면 「통합인증에서도 로그아웃」 이 붙는다 — 다른 계정으로 바꾸는 길이다. 이 화면은 로그인 없이 열리므로 loginid · 이름 · 클레임을 싣지 않는다.
-  **S3 명단을 아직 한 번도 읽지 못한 동안**(관리자만 들어옴)은 명단에 든 사람도 막히므로 같은 꼴의 화면이 「접속 권한을 확인하지 못했습니다」 ·
-  「접속 명단을 읽지 못했습니다 — 잠시 뒤 다시 확인하세요.」 로 선다(사유 코드 `list_unread`). 「다시 확인」 이 거절 직전에 명단을 다시 읽어 본다(60초에 한 번까지).
-  재시작 뒤 못 읽은 서버에서 멈춘 열린 탭의 경고도 같은 글이다.
+- **접속 명단 · 거절 화면** — 통합인증을 지났어도 명단에 없으면 앱에 들어오지 못한다. 세션 쿠키를 받지 못하고 거절 화면을 본다(HTTP 403). 거절 갈래 ·
+  포털 거절 화면은 공통 틀(`auth/page_frame.py` — 머리 · 상태 표지 · 제목 · 까닭 · 다음에 할 일 · 주 단추 · 문의 줄 · 바닥 「참고 <사유 코드> · <시각> UTC」 ·
+  접힌 「관리자용 진단」, 밝게 · 어둡게, 스크립트 없음)로 그린다. 문의 줄은 `CAPA_APP_CONTACT_EMAIL`(메일 링크)과 `CAPA_ACCESS_CONTACT`(창구 글)이고 둘 다 비면 없다.
+  - **거절 표** — 콜백이 명단 밖이면 세션 대신 15분짜리 서명 쿠키 `capa_sso_denied`(https 면 `__Host-` 앞붙이 · HttpOnly · SameSite=Lax)를 심는다. 거절 화면은
+    **그 브라우저에만** 본인 계정을 보이고(「계정 ○○ 은 이 앱의 접속 명단에 없습니다.」), 주소만 연 사람 · 15분 지난 사람은 값 없이 「로그인하고 신청」 이다.
+    로그인 성공 · 로그아웃이 지운다. `JWT_SECRET_KEY` 에서 따로 파생한 키 · aud 라 세션 · 상태 토큰과 바꿔 끼울 수 없다.
+  - **「접속 권한 신청」**(S3 명단을 쓰고 한 번 읽은 서버) — 누르면 결재 · 양식 · 메일 없이 거절 표의 본인 계정을 S3 명단에 **일반 등급**으로 바로 넣고(이름 · 부서 · 등록
+    시각 · 등록 길 「스스로」 를 함께 — 이름 · 부서는 통합인증이 그 칸을 줄 때만) 「등록했습니다」(표지 「등록 완료」 · 「다시 접속」)로 간다. 「다시 접속」 은 통합인증을 거쳐
+    처음 가려던 화면으로 바로 들어온다(재시작 없음). 신원은 거절 표에서만 꺼내고 폼 칸은 믿지 않는다(남의 계정 · 등급을 넣을 수 없다). 같은 출처 POST
+    (`Sec-Fetch-Site` · `Origin`)와 그 표에 묶인 숨은 표지를 본다 — 거절 화면만 `Referrer-Policy: same-origin` 이다(`no-referrer` 면 폼의 Origin 이 `null`).
+    새로고침 · 두 번 눌러도 한 번만 쓰고, 이미 명단에 있는 사람(관리자 포함)은 등급 · 칸을 건드리지 않는다. 뺀 사람도 다시 누르면 들어온다(차단 없음 — 일반 등급으로).
+    쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다 — 같은 때 다른 등록 · 관리자의 등급 바꿈을 잃지 않는다.
+  - **넣지 못하는 때** — S3 명단이 꺼진 서버 · 저장 실패(표지 「다시 시도」 · 「접속 명단에 넣지 못했습니다」)는 단추 대신 미리 채운 신청 글 상자(앱 이름 · 계정 ·
+    이름 · 시각 · 참고 — 한 번 눌러 통째로 고른다)와 문의 줄이다.
+  - **S3 명단을 아직 한 번도 읽지 못한 동안**(관리자만 들어옴)은 명단에 든 사람도 막히므로 표지 「점검 중」 · 「접속 권한을 확인하지 못했습니다」 다(사유 코드
+    `list_unread`, 신청 단추 없음). 잠시 뒤 풀리는 까닭(닿지 못함 · 시간 초과 · 5xx)이면 「권한 문제가 아닙니다」 + 「1분 뒤 「다시 확인」」, 관리자가 고칠 까닭(설정 ·
+    파일 사라짐 · 깨짐 · 모르는 형식 · 인증 거절)이면 「관리자가 서버 설정을 고쳐야 열립니다」 다. 거절 표가 있으면 문의처로 보낼 글도 선다. 「다시 확인」 이 거절
+    직전에 명단을 다시 읽어 본다(60초에 한 번까지). 재시작 뒤 못 읽은 서버에서 멈춘 열린 탭의 경고는 앱 안 글(`LIST_UNREAD_TEXT`) 그대로다.
+  - 주소의 `code=` 는 갈래만 고른다 — 「등록했습니다」 는 거절 표가 있고 그 계정이 지금 명단에 들 때만 선다(코드만 넣어 연 사람에게는 거절 화면).
+  - `ADFS_LOGOUT_URL` 이 있으면 「다른 계정으로 로그인」 이 붙는다(전의 「통합인증에서도 로그아웃」 — 하는 일 이름으로).
 - **명단에서 빠진 사람** — 재시작으로 연결이 끊긴 탭은 다시 붙지 못하고 위 「다시 로그인」 띠가 선다. 눌러도 통합인증을 거쳐 거절 화면으로 간다. 그 쿠키로 새로 열어도 같다. **S3 명단에서 지우면 재시작 없이** 그 사람의 열린 탭이 다음 조작(메시지)에 닫혀 같은 길로 간다. 넣으면 거절 화면의 「다시 확인」 으로 바로 들어온다.
 - 앱 안 화면별 권한은 아직 없다 — 명단에 든 사람은 Admin Area 까지 모두 쓴다(다음 단계). 포털이 들어올 수 있는 범위를 따로 정하면 그 범위와 명단을 모두 지나야 한다.
 
@@ -221,9 +235,9 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 - **임시 화면** — 앱이 뜨기 전 시작 스크립트가 같은 포트로 답하는 동안은 로그인 전 화면 하나다. IdP 가 그때 콜백으로 돌아오면 그 화면이 답하고, 앱이 뜨면 쪽이 첫 화면으로 가서 다시 로그인한다. 값을 싣지 않고 요청을 기록하지 않는다.
 - **설정 화면**(막힘) · **오류 화면**(로그인 실패, 새로고침해도 폼이 다시 가지 않는다) — 사유 코드와 한 줄 설명. 토큰 · state ·
   nonce · 쿠키 값 · 비밀값 · 이름 · 부서는 어디에도 보이지 않는다.
-- 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_denied|login_fail|idp_error|logout|session_closed|cert_expiring|access_read|access_retry_failed|access_saved|access_save_failed|access_seed_mark_failed …` 한 줄씩
+- 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_denied|login_fail|idp_error|logout|session_closed|cert_expiring|access_read|access_retry_failed|access_saved|access_self_registered|access_save_failed|access_seed_mark_failed …` 한 줄씩
   (`session_closed` 는 만료 · 로그아웃한 열린 탭의 연결을 문지기가 닫은 것 — 만료면 `end=idle`(쓰지 않아 끝남) · `end=max`(최대 시간)).
-- **거절 화면**(`/auth/sso/error?code=not_on_list`, 403) — 접속 명단 밖. 사유 코드 `not_on_list` 는 IdP 의 `access_denied`(포털이 거절 — 오류 화면 `idp_error:access_denied`)와 다르다. 명단
+- **거절 화면**(`/auth/sso/error?code=not_on_list`, 403) — 접속 명단 밖. 사유 코드 `not_on_list` 는 IdP 의 `access_denied`(포털이 거절 — 같은 틀의 포털 거절 꼴 `idp_error:access_denied`)와 다르다. 바닥 참고 줄의 사유 코드 · 시각으로 Admin 최근 사건과 짝을 맞춘다. 명단
   밖인 사람과 까닭을 맞출 때는 Admin 「명단 밖 로그인」 표를 본다. loginid 는 실데이터라 리뷰 압축본 · 전문에 옮기지 않는다. S3 명단을 아직 못 읽은 동안의
   거절은 `code=list_unread` 의 같은 꼴 화면(「접속 권한을 확인하지 못했습니다」)이고, 그 거절도 「명단 밖 로그인」 표에 센다(사건 사유 코드 `list_unread`).
 - 오류 화면의 사유 코드는 이 서버가 내는 이름뿐이다 — 주소의 `code=` 에 다른 글을 넣어도 `unknown` 으로 보인다(로그인 없이 여는
@@ -250,7 +264,8 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 | 갱신 경로 누계(`refresh_counts`) | `session_renew_summary` | 한 시간에 한 줄 — 결과별 건수 |
 | `cert_expiring` · `access_read`(실패) · `access_save_failed` · `access_seed_mark_failed` | `sys_cert_expiring` · `sys_access_read_fail` · `sys_access_save_fail` | 남은 날 · 사유 · 상태 |
 | (Streamlit 세션 첫 회차) | `session_created` | 계정 · sid 앞 8자 · 탭 꼬리표(Streamlit 세션 id 의 SHA-256 앞 8자) |
-| (명단 저장 `save_changes`) | `user_created` · `user_deleted` | 관리자 · **대상 loginid** · 명단 판 전 → 후, 답을 못 받으면 결과 `unknown` |
+| (명단 저장 `save_changes`) | `user_created` · `user_deleted` · `user_grade_changed` | 관리자 · **대상 loginid** · 명단 판 전 → 후(등급 바꿈은 등급 전 → 후도), 답을 못 받으면 결과 `unknown` |
+| (스스로 등록 `register_self`) | `user_self_registered` | 행위자 = 그 사람(거절 표의 인증 신원) · **대상 loginid** · 판 전 → 후. 서버 로그 · 사건 고리의 `access_self_registered` 에는 계정이 없다 |
 
 - 기동 때 `sys_startup`(환경 · 통합인증 · 동기화 모드)과 `authz_admin_config`(관리자 수 · 목록 지문 8자 — 사람 값은
   없다)를 남긴다.
@@ -332,3 +347,5 @@ python -m streamlit run capa_server.py --server.port 8510
 11. C-DEP 운영 pod 에서 S3 주소(`CAPA_S3_ENDPOINT_URL`)에 닿는지 · 앱용 키를 받을 수 있는지(그 버킷 읽기 · 쓰기) · HTTPS 포트가 열렸는지 — 닿는지는 Admin 「S3 명단」 줄이 답한다. 평문 `http` 면 명단이 사내망에 그대로 흐른다. 프록시를 거쳐야 닿는 망이면 지금 경계는 프록시를 따르지 않아 `주소에 닿지 못함` 이 된다.
 12. 앞단(인그레스 · WebIDE 프록시)이 `X-Capa-Sso-Refresh` 머리와 `Origin` 을 그대로 넘기는지 — 아니면 로그인이 쓰는 중에도 처음
     로그인 6시간 뒤 끊긴다(Admin 「출처·머리 거절」 이 늘고 「다시 발급」 은 0).
+   통합인증이 포털 거절(`access_denied`)을 앱 콜백으로 돌려보내는지(아니면 포털 거절 화면은 뜨지 않는다), id_token 에 이름 · 부서 칸(`username` · `deptname`)이 실리는지(칸 이름만 —
+   스스로 등록이 그 칸을 명단에 적는다).

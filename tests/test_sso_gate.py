@@ -82,7 +82,7 @@ async def _echo(websocket: WebSocket) -> None:
 
 
 def gated_app() -> App:
-    """문지기 + 우리 경로 다섯 + 앱 자리(모든 http 경로 · `/_stcore/stream` · 메아리 websocket)."""
+    """문지기 + 우리 경로 여섯 + 앱 자리(모든 http 경로 · `/_stcore/stream` · 메아리 websocket)."""
     inner = Starlette(
         routes=[
             *sso_routes(),

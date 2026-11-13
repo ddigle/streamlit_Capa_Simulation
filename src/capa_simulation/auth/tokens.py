@@ -18,9 +18,14 @@
   발급(보낸 토큰의 `iat` 와 갱신 표에 적힌 그 sid 의 마지막 발급 가운데 늦은 것)에서
   `RENEW_MIN_INTERVAL` 안이거나 상한에 닿아 늘 것이 없으면 다시 서명하지 않는다.
 - **상태 토큰** — 로그인 시작 때 state · nonce · 돌아갈 자리를 담아 쿠키로 둔다(10분).
+- **거절 표** — 콜백이 검증된 id_token 뒤 명단 밖이면 심는 15분짜리 표(HS256 · HttpOnly 쿠키). 거절
+  화면이 그 브라우저에만 본인 계정을 보이고 「접속 권한 신청」 이 신원을 꺼내는 유일한 자리다(폼
+  칸은
+  믿지 않는다). loginid · 이름 · 부서 · 돌아갈 자리를 싣는다.
 
-세션 · 상태 토큰의 키는 `JWT_SECRET_KEY` 에서 쓰임별로 파생한다 — 서로 바꿔 끼울 수 없다(aud 도
-따로). PyJWT 는 함수 안에서 import 한다 — 통합인증이 꺼진 서버는 이 패키지가 없어도 뜬다.
+세션 · 상태 토큰 · 거절 표의 키는 `JWT_SECRET_KEY` 에서 쓰임별로 파생한다 — 서로 바꿔 끼울 수
+없다(aud 도 따로). PyJWT 는 함수 안에서 import 한다 — 통합인증이 꺼진 서버는 이 패키지가 없어도
+뜬다.
 
 실패는 모두 `SsoReject(code)` 다. 코드는 오류 화면 · 로그가 그대로 쓴다. 진단(`diagnostic`)에는
 서명이 통과한 뒤에만 받은 iss · aud · 시각을 담고, 토큰 · state · nonce · 클레임 값은 담지 않는다.
@@ -51,14 +56,20 @@ if TYPE_CHECKING:
 ISSUER = "capa-simulation"
 SESSION_AUDIENCE = "capa-simulation:session"
 STATE_AUDIENCE = "capa-simulation:sso-state"
+DENIED_AUDIENCE = "capa-simulation:denied"
 SESSION_PURPOSE = b"capa-sso/session/v1"
 STATE_PURPOSE = b"capa-sso/state/v1"
+DENIED_PURPOSE = b"capa-sso/denied/v1"
+# 거절 화면 폼의 숨은 표지(거절 표 jti 의 HMAC) — 표와 다른 쓰임 키다.
+DENIED_FORM_PURPOSE = b"capa-sso/denied-form/v1"
 SESSION_VERSION = 2
 
 ID_TOKEN_LEEWAY = 120
 ID_TOKEN_MAX_AGE = 600
 SESSION_LEEWAY = 30
 STATE_TTL = 600
+# 거절 표의 수명(초) — 본인 계정이 그 브라우저에 보이는 시간(2026-11-13 보드 D2 답 「15분만」).
+DENIED_TTL = 900
 # 그 sid 의 직전 발급이 이보다 가까우면(초) 갱신해도 다시 서명하지 않는다 — 탭 여럿 · 같은 옛 쿠키의
 # 되풀이 요청을 거른다(직전 발급은 보낸 토큰의 `iat` 와 갱신 표의 발급 시각 가운데 늦은 것).
 RENEW_MIN_INTERVAL = 60
@@ -143,6 +154,19 @@ class StateClaims:
     exp: int
 
 
+@dataclass(frozen=True)
+class DeniedClaims:
+    """거절 표의 클레임 — 콜백이 검증한 신원 그대로(이름 · 부서는 없을 수 있다)."""
+
+    loginid: str
+    name: str | None
+    dept: str | None
+    next_path: str
+    iat: int
+    exp: int
+    jti: str
+
+
 def derive_key(secret: bytes, purpose: bytes) -> bytes:
     """`HMAC-SHA256(secret, purpose)` — 쓰임마다 다른 키."""
     return hmac.new(secret, purpose, hashlib.sha256).digest()
@@ -158,6 +182,12 @@ def state_key(cfg: SsoConfig) -> bytes:
     if not cfg.secret:
         raise SsoReject("config_broken")
     return derive_key(cfg.secret, STATE_PURPOSE)
+
+
+def denied_key(cfg: SsoConfig) -> bytes:
+    if not cfg.secret:
+        raise SsoReject("config_broken")
+    return derive_key(cfg.secret, DENIED_PURPOSE)
 
 
 @functools.cache
@@ -586,3 +616,99 @@ def verify_state(token: str, cfg: SsoConfig, *, now: int) -> StateClaims:
     if now > exp:
         raise SsoReject("state_invalid")
     return StateClaims(state=state, nonce=nonce, next_path=next_path, iat=iat, exp=exp)
+
+
+def issue_denied(
+    cfg: SsoConfig,
+    *,
+    loginid: str,
+    name: str | None,
+    dept: str | None,
+    next_path: str,
+    now: int,
+) -> tuple[str, DeniedClaims]:
+    """거절 표를 만든다 — 콜백이 검증된 id_token 뒤(명단 밖)에서만 부른다."""
+    claims = DeniedClaims(
+        loginid=loginid,
+        name=name,
+        dept=dept,
+        next_path=next_path,
+        iat=now,
+        exp=now + DENIED_TTL,
+        jti=secrets.token_urlsafe(16),
+    )
+    payload: dict[str, Any] = {
+        "iss": ISSUER,
+        "aud": DENIED_AUDIENCE,
+        "sub": loginid,
+        "next": next_path,
+        "iat": claims.iat,
+        "exp": claims.exp,
+        "jti": claims.jti,
+    }
+    if name:
+        payload["name"] = name
+    if dept:
+        payload["dept"] = dept
+    return _api().encode(payload, denied_key(cfg), algorithm="HS256"), claims
+
+
+def verify_denied(token: str, cfg: SsoConfig, *, now: int) -> DeniedClaims:
+    """거절 표 값 → 신원. 서명 · aud · 만료 · 꼴이 틀리면 `denied_invalid`(세션 · 상태 토큰은 키와
+    aud
+    가 달라 끼울 수 없다)."""
+    import jwt
+
+    if not token or len(token) > 4096:
+        raise SsoReject("denied_invalid")
+    options: Options = {
+        "require": ["exp", "iat", "sub", "jti"],
+        "strict_aud": True,
+        "verify_exp": False,
+        "verify_iat": False,
+    }
+    try:
+        claims = _api().decode(
+            token,
+            key=denied_key(cfg),
+            algorithms=["HS256"],
+            audience=DENIED_AUDIENCE,
+            issuer=ISSUER,
+            options=options,
+        )
+    except jwt.PyJWTError as exc:
+        raise SsoReject("denied_invalid") from exc
+    sub, jti, next_path = claims.get("sub"), claims.get("jti"), claims.get("next", "/")
+    iat = _int_claim(claims.get("iat"))
+    exp = _int_claim(claims.get("exp"))
+    if (
+        not isinstance(sub, str)
+        or not LOGINID_PATTERN.match(sub)
+        or not isinstance(jti, str)
+        or not _JTI.match(jti)
+        or not isinstance(next_path, str)
+        or iat is None
+        or exp is None
+        or iat > now + SESSION_LEEWAY
+        or exp - iat > DENIED_TTL
+        or now > exp
+    ):
+        raise SsoReject("denied_invalid")
+    name, dept = claims.get("name"), claims.get("dept")
+    return DeniedClaims(
+        loginid=sub,
+        name=_display_claim(name) if name is not None else None,
+        dept=_display_claim(dept) if dept is not None else None,
+        next_path=next_path,
+        iat=iat,
+        exp=exp,
+        jti=jti,
+    )
+
+
+def denied_form_mark(cfg: SsoConfig, jti: str) -> str:
+    """거절 화면 폼의 숨은 표지 — 그 거절 표(jti)에 묶인 HMAC. 폼이 그 화면에서 나왔는지 본다."""
+    if not cfg.secret:
+        raise SsoReject("config_broken")
+    key = derive_key(cfg.secret, DENIED_FORM_PURPOSE)
+    return hmac.new(key, jti.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
