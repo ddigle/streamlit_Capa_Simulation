@@ -555,6 +555,27 @@
   color: var(--text);
 }
 
+/* 앱이 데이터를 열지 못해 멈춘 칸 — 실패 색 줄 + 낱말(색만으로 뜻을 싣지 않는다). */
+.steps li.failed {
+  color: var(--text);
+}
+
+.steps li.failed .track {
+  background: var(--fail);
+}
+
+.steps .word {
+  color: var(--fail);
+  font-weight: 600;
+}
+
+/* 멈춘 까닭 한 줄 — 풍선이 아니라 상태 줄 아래 글이라 키보드 · 터치로도 보인다. */
+.reason {
+  margin: 4px 0 0;
+  font: 500 13px/1.45 var(--body);
+  color: var(--muted);
+}
+
 .status {
   margin: 0;
   font: 500 13px/1.45 var(--body);

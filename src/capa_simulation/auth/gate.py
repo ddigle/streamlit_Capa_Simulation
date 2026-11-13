@@ -17,7 +17,8 @@
 5. 켜짐: 공개 경로(정확 일치 — 상태 검사와 우리 경로 다섯)는 넘기고(갱신 경로는 POST 만 — 그
    밖은 405), 나머지는 세션 쿠키를 검증한다.
    신원이 있으면(websocket 은 Origin 까지 맞으면) 넘기고, 없으면 websocket 은 수락 전 close 1008
-   (→ HTTP 403), 최상위 탐색은 IdP 로 302, 그 밖(fetch · iframe · 업로드)은 401.
+   (→ HTTP 403), 최상위 탐색은 IdP 로 302, 그 밖(fetch · iframe · 업로드)은 401 — 본문은 그대로이고
+   까닭 낱말 머리(`X-Capa-Sso-Reason` — `ended_reason`)를 단다.
 6. 넘긴 websocket 은 **브라우저가 보낸 메시지마다** 핸드셰이크 때의 신원을 다시
    본다(`_WatchedSocket` — 만료 · 로그아웃 폐기 목록 · 접속 명단). 쿠키는 핸드셰이크 때 한 번 찍혀
    그 연결 끝까지 같고, Streamlit 은 위젯 콜백을 스크립트 본문보다 먼저 돌리며 프래그먼트
@@ -41,7 +42,7 @@ import time
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import (
     Identity,
@@ -91,6 +92,19 @@ def is_navigation(method: str, headers: dict[str, str]) -> bool:
     return (
         headers.get("sec-fetch-mode") == "navigate" and headers.get("sec-fetch-dest") == "document"
     )
+
+
+def ended_reason(problem: IdentityProblem, cfg: SsoConfig) -> str:
+    """신원이 아닌 까닭 → 「다시 로그인」 띠 · 앱 안 멈춤이 가르는 낱말 셋.
+
+    명단 밖이면 S3 명단을 아직 한 번도 읽지 못한 동안(관리자만 들어옴)은 `unread`, 아니면
+    `denied` 다. 그 밖(쿠키 없음 · 끝남 · 로그아웃 · 위조)은 `other` 다 — 로그아웃은 쿠키를 지우고
+    끝난 쿠키는 브라우저가 버리므로 그 둘은 대개 쿠키 없음으로 온다. 판정은 메모리 표지뿐이다(S3 에
+    가지 않는다).
+    """
+    if problem is IdentityProblem.DENIED:
+        return names.REASON_UNREAD if access_store.is_unread(cfg) else names.REASON_DENIED
+    return names.REASON_OTHER
 
 
 def _is_public(path: str, method: str) -> bool:
@@ -212,7 +226,10 @@ class SsoGate:
             response = start_login(cfg, parse_cookie_header(headers.get("cookie")), next_path, now)
             await response(scope, receive, send)
             return
-        await text_response(LOGIN_REQUIRED, 401)(scope, receive, send)
+        # 본문은 그대로 두고 까닭 낱말만 머리에 단다 — 「다시 로그인」 띠가 글을 고른다.
+        refusal = text_response(LOGIN_REQUIRED, 401)
+        refusal.headers[names.REASON_HEADER] = ended_reason(identity, cfg)
+        await refusal(scope, receive, send)
 
     async def _broken(
         self,

@@ -386,10 +386,18 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다. 운영 · 개발 안내는 `docs/sso_setup.md`.
   - `components/sso_identity.py` — 앱 스크립트 쪽 두 번째 벽. `app.py` 가 `theme.begin_run()` 바로 뒤 · 입장 화면 앞에서 부르는
     `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
-    없이 뜬 서버는 멈춤 화면 + `st.stop()`). 위젯 콜백(본문보다 먼저 돈다)과 프래그먼트 회차(`app.py` 를 돌리지 않는다)는 이
+    없이 뜬 서버는 멈춤 화면 + `st.stop()`). 로그인 끝남 · 계정 바뀜 멈춤은 앱 안 멈춤 판(`components/stop_panel.py`)이다 — 경고
+    한 줄 · 같은 탭 주 단추 꼴 링크(`primary_link` — `st.link_button` 은 새 탭이고 `st.rerun` 은 앞 계정의 세션을 잇는다. 역할은
+    링크 그대로 — `role="button"` 은 Space 로 열리지 않는다) · 「문의 <메일> · <창구 글>」 캡션(`CAPA_ACCESS_CONTACT` 는 로그인 ·
+    접속 멈춤만 넘긴다 — 둘 다 비면 없음). 단추는 까닭(`gate.ended_reason` — 띠와 같은 낱말)으로 가른다: 명단에서 빠짐 「접속 권한 신청」, 명단 못 읽음
+    `cloud_off` + 「다시 로그인」, 계정 바뀜은 새 계정 이름 + 「새로고침」(풍선 `REFRESH_TIP`). 위젯 콜백(본문보다 먼저 돈다)과 프래그먼트 회차(`app.py` 를 돌리지 않는다)는 이
     벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 관리자 회차 판정 `viewer_is_admin`(지금 다시 검증한 신원 — 켜짐이 아니면 거짓, `AD-10`)과 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
     은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 끝 30분 전 경고는 갱신 표까지 본 끝
     (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
+    최대 시간이 정한 끝 10분 안의 첫 회차에는 `components/sso_expiry.py` 가 사건 알림 `AD-20`(「로그인 최대 시간까지 n분 — 저장해
+    두세요」)을 한 번 담는다 — 세션 칸(그 sid)과 고정 id(`alerts.event` 의 `alert_id` — sid 지문)로 같은 탭에 한 번이다. `app.py` 가
+    신원이 있을 때만 부르고 담기만 한다(요소 순번 그대로). 어느 화면의 일도 아니라 화면 · 주소 없이 싣는다(`alerts.event` 의
+    `pageless` — 이번 회차의 화면은 `app.py` 가 그 뒤에 적는다).
     멈춤 화면은 `st.stop()` 앞에서 껍데기 스타일(`app_header.render_shell_style` — ⋮ 메뉴 · Deploy 감춤)과 툴바 단추 감춤
     (`_STOP_TOOLBAR_STYLE` — 툴바 iframe 이 세운 Guide · Print · 테마)을 스스로 보낸다(`_render_stop_chrome`) — 앞 회차 iframe 이
     세운 단추는 듣개가 죽어 눌러도 아무 일도 없다. 알림 칸이 세운 변경 칩 · Alarm 은 듣개가 살아 있어 둔다(변경 칩은 새로고침하면
@@ -397,7 +405,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로다. 시험은 `tests/test_sso_streamlit.py`.
   - `components/sso_reconnect.py` — 끊긴 탭의 띠 스크립트 하나(같은 틱 · 같은 물음 — `probeKind`). 툴바 iframe(`render_theme_toggle` 의
     `extra_scripts`)에 늘 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를 묻고, 401 이면(통합인증이 켜진 서버만)
-    「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를, 503 + `X-Capa-Stage`(시작 임시 응답)면 `/_capa_stage` 셋째 줄의 짧은 글을
+    「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴 — 띠 글은 문지기가 그 401 에 단 까닭 낱말 머리(`names.REASON_HEADER` —
+    `denied` · `unread` · `other`, `gate.ended_reason`)로 셋을 가르고(`band_texts`), 머리가 없으면 옛 글이다. 까닭이 바뀌면 띠를 다시
+    세운다)를, 503 + `X-Capa-Stage`(시작 임시 응답)면 `/_capa_stage` 셋째 줄의 짧은 글을
     실은 링크 없는 재시작 띠를, 답 없음(연결 실패 · 물음 8초 넘김 `PROBE_TIMEOUT_MS`)이면 「서버 응답을 기다리는 중입니다」(답 없음 20초 넘으면
     「서버에 닿지 않습니다 — 다시 붙는 중」)를 연결 오류 창 위에 세우고 그 영어 창(401 · 5xx · 시간 넘김 · not responding · localhost 의
     still running)을 감춘다. 표 없는 5xx 는 같은 뿌리 health 를 한 번 더 물어 표 없는 2xx(앱이 떠서 거절 — 통합인증 설정 막힘의 503,
@@ -1095,7 +1105,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
     (`components/object_sync_status.py`), 그 뒤에 「통합인증 점검」 펼침(`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
     캡션과 「켜면 막힐 문제」) 그리고, 꺼짐이고 운영이 아니면 그리지 않는다. 알릴 조건(서버 시작 결과 없음 · 못 읽음 `AD-01`,
-    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` — 둘 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area, 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` — C-DEP 에서 `app.py` 가 관리자의 모든 화면 회차에 낸다)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
+    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` — 둘 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area, 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` — C-DEP 에서 `app.py` 가 관리자의 모든 화면 회차에 낸다, 로그인 갱신이 출처 · 머리 검사에서만 거절됨(기동 뒤 「출처·머리 거절」 1 이상 · 「다시 발급」 · 「건너뜀」 0) `AD-21` — 통합인증이 켜진 서버의 앱 정보 카드가 관리자의 모든 화면 회차에 내고(`components/sso_refresh_alert.py` — 지문은 고정 값, 다른 회차는 글 없는 해소) 「그 화면으로」 는 Admin Area)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
     점검 펼침). 편 상태는 기억 칸(`remembered_expander`)이라
     다른 화면에 다녀와도 접히지 않는다. 그 바로 뒤에 「접속 명단」 펼침(`components/access_list_admin.py`)이 관리자 회차에만 선다.
   - 「모듈 상태」(`components/module_status.py`)는 탭 위 펼침이 아니라 안쪽 탭 줄 오른쪽 끝 팝오버다(2026-11-10 보드 Q-6 — T7 과
@@ -3330,8 +3340,22 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     동안(`stApp` 의 `data-test-script-state`, 길어야 `HOLD_MAX_MS`) 그 그림들 위의 누름(`pointerdown`·`mousedown`·
     `dblclick`)을 Plotly 까지 내려보내지 않는다. 첫 누름의 `mouseup`·`click` 은 건드리지 않는다. 판정은 순수 구획
     `<cell-press-hold>`(node 시험 `tests/test_cell_press_guard.py`). 화면을 옮기는 칸 선택 그림을 더하면 여기에도 넘긴다.
+- `src/capa_simulation/components/boot_stop.py` — 앱이 데이터를 열지 못한 회차의 앱 안 멈춤 판(`app.py` 의 부트스트랩
+  `except` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()`). 갈래(`classify_boot_failure`)는 잠김(남 · 자기 — 쥔 PID 가 적힘) →
+  판 올리기 실패(`_migration_core.MigrationFailed` — 이미 적용된 SQL 의 체크섬이 바뀜(`MigrationChanged`) · 새 SQL 이 SQL · 데이터
+  오류로 실패함, 「다시 시도」 없음) → 디스크 가득(errno · 영문 고정 문구) → 파일 권한 → 열 수 없음(`Cannot open`·`Could not set
+  lock`) → 그 밖이다. 진단의 원문은 판 올리기 실패가 감싼 DuckDB 오류(`__cause__`)다.
+  판은 쉬운 경고 한 줄(`st.error` — UI-NTF-08 예외) · 주 단추 「다시 시도」(누름이 회차 하나 — 부트스트랩은 성공한 회차에만
+  「해 봤다」 표지) · 「문의 <메일>」 · 「참고 <갈래 키> · <UTC 분>」 · 접힌 「관리자용 진단」(복사 단추 · 지금의
+  `bootstrap_error_message` 글 — PID · 파일 경로 · 조치 — 와 원문)이다. 공용 조각은 `components/stop_panel.py`(통합인증 멈춤과
+  같은 판). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
+  함께 보낸다(자리를 먹지 않는다). 시험은 `tests/test_boot_stop.py`.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
+  실행이 끝났을 때 앱 시작 실패 표지(`boot_stop.BOOT_STOP_ATTRIBUTE`)가 있으면 「준비 완료」 대신 상태 낱말 「열지 못함」, 끝낸
+  단계까지만 끝남 · 멈춘 칸은 실패 색(`die-short`) + 「멈춤」, 상태 줄 아래 까닭 한 줄(풍선이 아니라 글)이다. Summary 단추는
+  잠근 채 까닭 풍선(경고 한 줄 — 요약이 오지 않는다, UI-INP-07)이고, 장면에는 끝남 대신 멈춤(`progress.halted` — 신호로 끝낸
+  단계만큼만 덮고 검사 원을 멈춤)을 보낸다. 표지는 그릴 때마다 다시 읽는다(「다시 시도」 로 붙으면 걷혀 풍선 · 펼침이 돌아온다).
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼
   색·그늘을 입장 모습으로 돌리며, 다시 보낼 자리에서 `summary-on` 을 대신한다. 커버 셋째 단추 `Introduce` 는 40초
   티저(`intro_overlay_assets/capa-teaser.html`, `INTRODUCE_TEASER_PATH`)를 오버레이 안 전체 화면 틀(blob 주소)에 띄운다
@@ -5171,6 +5195,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `copy_database()`(외래 키 부모 표부터)도 여기 있어 스냅샷 내보내기와 `scripts/compact_duckdb.py` 가 함께 쓴다.
 - `src/capa_simulation/persistence/_migration_core.py` — 두 DuckDB 가 함께 쓰는 마이그레이션 적용 엔진(버전 순
   읽기·체크섬 대조·건별 트랜잭션).
+  - 다시 해도 같은 실패는 `MigrationFailed`(`RuntimeError`)다 — 이미 적용된 파일이 바뀜(`MigrationChanged`)과, 새 SQL 이
+    SQL · 데이터 오류(`_SQL_FAILURES` — 구문 · 표 · 제약 · 변환, 원래 오류는 `__cause__`)로 실패해 그 건을 되돌림. 입출력 ·
+    메모리 · 트랜잭션 충돌은 감싸지 않는다. 앱 시작 실패 판(`components/boot_stop.py`)이 이 종류로 「다시 시도」 없는 갈래를 가른다.
   - DB 가 코드보다 새 것이면(옛 배포 ZIP 으로 되돌림) 막지 않고 `MigrationOutcome.schema_ahead`(`SchemaAheadOfCode`)로
     알린다. 최고 번호끼리만 견주어 결번 2·3 은 알리지 않는다. 화면 상태 알림(`page_bootstrap.render_schema_ahead_warning`)은
     시뮬레이션 DB 는 `app.py`(`GL-02`), 설비 DB 는 그 DB 를 여는 화면(`GL-06`)이 낸다.
@@ -7454,7 +7481,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·
   `WIP-01` · `SC-02` · `AD-07` · `VO-01`, 어느 화면에서나 열리는 사이드바 시나리오 팝업은 `SB-21`). 마크와 표지가 `st.html` 한 칸이라 프래그먼트 ·
   팝업 본문에서도 이벤트 칸 자리 수가 그대로다. **마크가 아닌 것** — 볼 것이 없는 빈 상태(회색 평문 한 줄), 그 자리 입력으로 고치는 거부 · 누른 동작의
-  실패(곁 `st.error`, 조회일 거꾸로 · 월 머지 · 연도 Shift 의 입력 거부 포함), 모듈 오류 카드, 알림 칸이 없는 앱 부트스트랩 실패(`app.py`).
+  실패(곁 `st.error`, 조회일 거꾸로 · 월 머지 · 연도 Shift 의 입력 거부 포함), 모듈 오류 카드, 알림 칸이 없는 앱 부트스트랩 실패(`app.py` →
+  `components/boot_stop.py`).
   `tests/test_data_error_mark.py` 가 `.error(` 전부를 (파일, 함수)마다 수 · 까닭으로 맞대므로(`PLACE_ERROR_SITES`) 구획 끝 꼴도 걸리고, 마크만 그리는
   `render_data_error_mark` 는 산출 결과 한 자리뿐이다.
   `tests/test_data_error_mark.py` 가 `st.error` + `st.stop()` 자리와 코드를 본다.

@@ -23,12 +23,15 @@ from sso_support import LOGINID, PUBLIC_URL, use_config
 from capa_simulation.auth import names
 from capa_simulation.auth.gate import SsoGate
 from capa_simulation.auth.identity import Identity
-from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
+from capa_simulation.components.sso_identity import ACCESS_REQUEST_LABEL, LOGIN_AGAIN_LABEL
 from capa_simulation.components.sso_reconnect import (
     BANNER_ID,
     CONNECTION_DIALOG_TEXT,
+    DENIED_NOTICE,
     HEALTH_PATH,
     HOST_CONFIG_PATH,
+    KIND_ATTRIBUTE,
+    OTHER_NOTICE,
     PROBE_GAP_MS,
     PROBE_TIMEOUT_MS,
     PROBE_WAIT_MS,
@@ -39,8 +42,10 @@ from capa_simulation.components.sso_reconnect import (
     STAGE_HEADER,
     UNREACHABLE_AFTER_MS,
     UNREACHABLE_NOTICE,
+    UNREAD_NOTICE,
     WAITING_NOTICE,
     band_styles,
+    band_texts,
     reconnect_script,
     restart_script,
     sso_reconnect_scripts,
@@ -100,8 +105,9 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     assert "answer.status === 401" in script
     assert 'credentials: "same-origin"' in script
     assert json.dumps(BANNER_ID) in script
-    assert json.dumps(RECONNECT_NOTICE, ensure_ascii=False) in script
-    # 열린 탭이 끝나면 보이는 것은 이 띠뿐이다 — 끝난 까닭 넷을 다 적는다(하루 최대 시간 포함).
+    for notice in (OTHER_NOTICE, DENIED_NOTICE, UNREAD_NOTICE, RECONNECT_NOTICE):
+        assert json.dumps(notice, ensure_ascii=False) in script, notice
+    # 까닭 머리가 없을 때(앞단이 뗌 · 옛 서버)의 옛 글은 끝난 까닭 넷을 다 적는다.
     for reason in (
         "오래 쓰지 않았거나",
         "로그인 최대 시간이 지났거나",
@@ -110,6 +116,8 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     ):
         assert reason in RECONNECT_NOTICE, reason
     assert json.dumps(LOGIN_AGAIN_LABEL, ensure_ascii=False) in script
+    assert json.dumps(ACCESS_REQUEST_LABEL, ensure_ascii=False) in script
+    assert f"response.headers.get({json.dumps(names.REASON_HEADER)})" in script
     assert json.dumps(PUBLIC_URL) in script
     assert json.dumps(names.LOGIN_PATH) in script
     # 띠는 사람이 누른다 — 스크립트가 스스로 IdP · 로그인 경로로 옮기지 않는다.
@@ -243,9 +251,9 @@ def test_the_band_hides_that_window_while_it_stands_and_gives_it_back_after() ->
 
     assert "doc.querySelectorAll('[data-testid=\"stDialog\"]')" in script
     assert 'dialog.style.setProperty("display", "none", "important");' in script
-    show = script.split("function showBanner()", 1)[1].split("function tick()", 1)[0]
+    show = script.split("function showBanner(kind)", 1)[1].split("function tick()", 1)[0]
     assert show.rstrip().endswith("hideConnectionDialogs();\n  }")
-    hide = script.split("function hideBanner()", 1)[1].split("function showBanner()", 1)[0]
+    hide = script.split("function hideBanner()", 1)[1].split("function showBanner(kind)", 1)[0]
     assert "restoreConnectionDialogs();" in hide
     tick = script.split("function tick()", 1)[1]
     assert "if (doc.getElementById(" in tick and "hideConnectionDialogs();" in tick
@@ -395,3 +403,45 @@ def test_the_restart_band_has_no_link_and_yields_to_the_login_band() -> None:
     # 물음마다 시간 상한 — 앞단이 요청을 붙들어도 다음 물음이 막히지 않고 답 없음으로 센다.
     assert f"stop.abort();\n    }}, {PROBE_TIMEOUT_MS});" in ask and "signal: stop.signal" in ask
     assert PROBE_TIMEOUT_MS < PROBE_GAP_MS
+
+
+def test_the_band_picks_its_words_by_the_reason_the_gate_sent() -> None:
+    """문지기가 401 에 단 까닭 낱말로 띠가 셋을 가른다 — 명단에서 빠짐은 「접속 권한 신청」, 명단 못
+    읽음 · 그 밖은 「다시 로그인」. 머리가 없거나 모르는 낱말이면 넷을 다 적은 옛 글이다(2026-11-13
+    「앱 대신 뜨는 화면」 보드 카드 p1-tab-ended)."""
+    script = reconnect_script(use_config())
+    reasons = ["denied", "unread", "other", None, "", "DENIED", "nope"]
+    runner = f"""
+const reasons = {json.dumps(reasons)};
+process.stdout.write(JSON.stringify(reasons.map(bandKind)));
+"""
+    assert _node(script, runner) == [
+        "denied",
+        "unread",
+        "other",
+        "legacy",
+        "legacy",
+        "legacy",
+        "legacy",
+    ]
+    bands = band_texts()
+    assert bands[names.REASON_DENIED] == {"notice": DENIED_NOTICE, "label": ACCESS_REQUEST_LABEL}
+    assert bands[names.REASON_UNREAD] == {"notice": UNREAD_NOTICE, "label": LOGIN_AGAIN_LABEL}
+    assert bands[names.REASON_OTHER] == {"notice": OTHER_NOTICE, "label": LOGIN_AGAIN_LABEL}
+    assert bands["legacy"] == {"notice": RECONNECT_NOTICE, "label": LOGIN_AGAIN_LABEL}
+    # 셋으로 가른 「그 밖」 글은 명단에서 빠짐을 말하지 않는다 — 그 갈래는 따로 선다.
+    assert "명단" not in OTHER_NOTICE
+    assert f"「{LOGIN_AGAIN_LABEL}」" in UNREAD_NOTICE
+
+
+def test_the_band_is_rebuilt_when_the_reason_changes_between_probes() -> None:
+    """끊긴 동안 물음은 이어진다 — 명단을 못 읽다가(unread) 읽은 뒤 빠짐(denied)이 드러나면 띠를
+    다시 세운다. 같은 까닭이면 그대로 둔다."""
+    script = reconnect_script(use_config())
+    show = script.split("function showBanner(kind)", 1)[1].split("function tick()", 1)[0]
+
+    assert f"if (shown.getAttribute({json.dumps(KIND_ATTRIBUTE)}) === kind) return;" in show
+    assert "shown.remove();" in show
+    assert f"box.setAttribute({json.dumps(KIND_ATTRIBUTE)}, kind);" in show
+    assert "text.textContent = band.notice;" in show
+    assert "link.textContent = band.label;" in show

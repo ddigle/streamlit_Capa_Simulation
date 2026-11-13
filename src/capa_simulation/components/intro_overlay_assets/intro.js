@@ -26,6 +26,9 @@ const FONT_FAMILY = "CapaIntroDisplay";
 const NUMBER_FAMILY = "CapaIntroNumber";
 // 사이드바 머리칸의 앱 이름 라벨 id. `intro_overlay.SUMMARY_LABEL_ID` 와 같아야 한다.
 const SUMMARY_LABEL_ID = "capa-brand-label";
+// 앱이 데이터를 열지 못해 멈춘 회차의 표지 속성(스타일만 든 칸 — 값은 경고 한 줄). `boot_stop.BOOT_STOP_ATTRIBUTE` 와
+// 같아야 한다. 실행이 끝났을 때 이 표지가 있으면 「준비 완료」 대신 실패로 그린다.
+const BOOT_STOP_ATTRIBUTE = "data-capa-boot-stop";
 // 이 탭에서 이미 들어갔다는 표시. 테마 버튼·새로고침은 새 세션을 만들지만 같은 탭이라 다시 띄우지 않는다.
 const ENTERED_KEY = "capa-intro-entered";
 const EASE = "cubic-bezier(.6,0,0,1)";
@@ -652,6 +655,8 @@ function scene(port, gridOf) {
   let reached = 0;
   let total = 5;
   let ready = false;
+  // 앱이 데이터를 열지 못해 멈춤(`progress.halted`) — 웨이퍼는 끝낸 단계만큼만 덮고 검사 원을 멈춘다(끝남으로 펼치지 않는다).
+  let halted = false;
   let stopped = false;
   let paused = false;
   let looping = false;
@@ -2064,7 +2069,7 @@ function scene(port, gridOf) {
     const target = ready ? 1 : Math.min(0.97, (reached + 0.45) / total);
     // 준비 뒤 마지막 확장은 조금 더 느긋하게(시간 상수 0.8초) 가장자리까지 번진다.
     shown += (target - shown) * Math.min(1, dt / (ready ? 800 : 450));
-    settle += ((ready ? 1 : 0) - settle) * Math.min(1, dt / 700);
+    settle += ((ready || halted ? 1 : 0) - settle) * Math.min(1, dt / 700);
     if (g) draw(at);
     nextFrame(frame);
   }
@@ -2077,7 +2082,7 @@ function scene(port, gridOf) {
   function paintOnce() {
     if (stopped || paused || !g) return;
     shown = ready ? 1 : Math.min(0.97, (reached + 0.45) / total);
-    settle = ready ? 1 : 0;
+    settle = ready || halted ? 1 : 0;
     draw(now());
   }
 
@@ -2129,6 +2134,7 @@ function scene(port, gridOf) {
       reached = m.reached;
       total = Math.max(1, m.total);
       ready = !!m.ready;
+      halted = !!m.halted;
       loop();
     } else if (m.type === "resize") {
       resize(m.width, m.height, m.dpr);
@@ -2388,6 +2394,7 @@ function createOverlay(api, data, initial, syncToolbar) {
     "--muted": palette.muted,
     "--accent": palette.accent,
     "--track": palette.track,
+    "--fail": palette["die-short"],
     "--button": palette.button,
     "--button-text": palette["button-text"],
     "--button-off-line": palette["button-off-line"],
@@ -2450,6 +2457,7 @@ function createOverlay(api, data, initial, syncToolbar) {
   const main = $(".main");
   const status = $(".status");
   const hint = $(".hint");
+  const reason = $(".reason");
   const tip = $(".tip");
   const labels = $('[data-slot="labels"]');
   const table = $('[data-slot="table"]');
@@ -2752,17 +2760,52 @@ function createOverlay(api, data, initial, syncToolbar) {
   let barSeen = false;
   let topPercent = 0;
 
-  const sendProgress = () => sceneHandle.post({ type: "progress", reached, total: steps.length, ready });
+  // 앱이 데이터를 열지 못해 멈췄으면 그 경고 한 줄, 아니면 null. 그릴 때마다 다시 읽는다 — 「다시 시도」 로 붙으면 표지가
+  // 사라져 실패 그림도 걷힌다(한 번 세운 실패를 붙들지 않는다).
+  const bootStopLine = () => {
+    const marker = document.querySelector(`style[${BOOT_STOP_ATTRIBUTE}]`);
+    return marker ? marker.getAttribute(BOOT_STOP_ATTRIBUTE) || "" : null;
+  };
+  // 실행이 끝났는데 실패 표지가 있으면 장면에 「멈춤」 을 보낸다 — 신호로 끝낸 단계만큼만 덮고 끝남(ready)으로 펼치지 않는다.
+  const sendProgress = () => {
+    const halted = ready && bootStopLine() !== null;
+    sceneHandle.post({
+      type: "progress",
+      reached: halted ? signalledSteps() : reached,
+      total: steps.length,
+      ready: ready && !halted,
+      halted,
+    });
+  };
   const canEnter = () => (ready || fallback) && introDone;
   const canSummary = () => canEnter() && !!summary && prepared;
-
+  // 마지막으로 그린 실패 표지 값 — 바뀔 때만 다시 그린다(상태 줄은 낭독 영역이라 같은 글을 거듭 쓰지 않는다).
+  let shownStop = null;
   function render() {
+    const stopped = ready ? bootStopLine() : null;
+    shownStop = stopped;
+    const failed = stopped !== null;
+    // 실패면 신호로 끝낸 단계까지만 끝남이고 멈춘 칸(아직 못 끝낸 첫 칸)이 실패 색 + 낱말이다 — 실행이 끝났다는 것만으로
+    // 일어나지 않은 단계를 끝남으로 그리지 않는다(`ready` 는 남은 칸을 한꺼번에 채운다).
+    const failedAt = failed ? Math.min(signalledSteps(), items.length - 1) : -1;
     items.forEach((li, index) => {
-      li.className = ready || index < reached ? "done" : index === reached ? "active" : "";
+      const fail = index === failedAt;
+      if (failed) li.className = fail ? "failed" : index < failedAt ? "done" : "";
+      else li.className = ready || index < reached ? "done" : index === reached ? "active" : "";
+      let word = li.querySelector(".word");
+      if (fail && !word) {
+        word = document.createElement("span");
+        word.className = "word";
+        word.textContent = text.failed_step || "";
+        li.appendChild(word);
+      } else if (!fail && word) word.remove();
     });
-    if (ready) status.textContent = text.ready || "";
+    if (failed) status.textContent = text.failed || "";
+    else if (ready) status.textContent = text.ready || "";
     else if (fallback) status.textContent = text.slow || "";
     else status.textContent = progressText || text.boot || "";
+    reason.hidden = !stopped;
+    reason.textContent = stopped || "";
     const can = canEnter();
     detail.disabled = !can;
     detailText.textContent = can ? text.detail || "Detail" : text.waiting || "";
@@ -2776,8 +2819,11 @@ function createOverlay(api, data, initial, syncToolbar) {
         easing: OUT,
       });
     }
-    summaryButton.disabled = !canSummary();
-    summaryButton.title = summaryArrived && !summary ? reasonText : text.summary_title || "";
+    // 앱이 데이터를 열지 못해 멈췄으면 요약이 오지 않는다 — 지금만 못 하는 조작이라 감추지 않고 잠근 채 까닭(경고 한 줄)을
+    // 풍선으로 단다(「다시 시도」 로 붙으면 표지가 걷혀 원래 풍선으로 돌아온다).
+    summaryButton.disabled = failed || !canSummary();
+    if (failed) summaryButton.title = stopped || text.failed || "";
+    else summaryButton.title = summaryArrived && !summary ? reasonText : text.summary_title || "";
     // Introduce 도 들어갈 수 있을 때 선다 — 티저 받기는 rerun 이라 첫 실행 도중에 누르면 그 실행을 끊는다.
     const showIntroduce = can && teaser.available;
     const introduceAppearing = showIntroduce && introduceButton.hidden;
@@ -2809,12 +2855,20 @@ function createOverlay(api, data, initial, syncToolbar) {
   }
 
   // 단계는 앞에서부터 끝난 만큼 찬다. 신호의 뜻은 intro_overlay._steps 가 말한다.
-  function stepDone(step) {
-    if (ready) return true;
+  function signalDone(step) {
     if (step.signal === "boot") return summaryArrived || barSeen;
     if (step.signal === "summary") return summaryArrived;
     if (step.until != null) return topPercent >= step.until;
     return false;
+  }
+  function stepDone(step) {
+    return ready || signalDone(step);
+  }
+  // 실행이 끝났다는 것(`ready`)을 빼고 신호로만 끝낸 앞쪽 단계 수 — 실패 칸을 고른다.
+  function signalledSteps() {
+    let count = 0;
+    while (count < steps.length && signalDone(steps[count])) count += 1;
+    return count;
   }
   function update() {
     let count = 0;
@@ -3520,6 +3574,12 @@ function createOverlay(api, data, initial, syncToolbar) {
     }
     const state = app ? app.getAttribute("data-test-script-state") : null;
     if (READY_STATES.has(state)) setReady();
+    // 실패 표지는 실행 끝 무렵에 닿을 수도, 다음 회차(「다시 시도」)에 걷힐 수도 있다 — 끝난 뒤에도 표지가 바뀌면
+    // 그림을 맞춘다.
+    if (ready && bootStopLine() !== shownStop) {
+      render();
+      sendProgress();
+    }
     if (holding) {
       if (document.getElementById(theme.button_id)) begin();
       else if (READY_STATES.has(state)) {

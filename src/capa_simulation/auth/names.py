@@ -111,6 +111,14 @@ STREAMLIT_AUTH_PATHS: tuple[str, ...] = ("/auth/login", "/auth/logout", "/oauth2
 REFRESH_HEADER = "X-Capa-Sso-Refresh"
 REFRESH_HEADER_VALUE = "1"
 
+# --- 끝난 까닭 머리 ---------------------------------------------------------------------------
+# 문지기가 탐색이 아닌 401 에 다는 까닭 낱말(값 없음) — 열린 탭의 「다시 로그인」 띠가 글을 고른다.
+# 명단에서 빠짐 · S3 명단을 아직 못 읽음 · 그 밖(쿠키 없음 · 끝남 · 위조)이다.
+REASON_HEADER = "X-Capa-Sso-Reason"
+REASON_DENIED = "denied"
+REASON_UNREAD = "unread"
+REASON_OTHER = "other"
+
 # --- 쿠키 바탕 이름 ---------------------------------------------------------------------------
 # https 공개 URL 이면 앞에 `__Host-` 를 붙인다(Secure · Path=/ · Domain 없음이 브라우저에서
 # 강제된다).

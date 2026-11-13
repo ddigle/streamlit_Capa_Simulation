@@ -31,6 +31,32 @@ from capa_simulation.services.korean_particle import with_subject_particle
 _LOGGER = logging.getLogger(__name__)
 
 
+class MigrationFailed(RuntimeError):
+    """판 올리기(마이그레이션)를 마치지 못했다 — 같은 파일로 다시 해도 같아 배포를 고쳐야 풀린다.
+
+    두 꼴이다 — 이미 적용된 파일이 바뀜(`MigrationChanged`)과, 새 SQL 이 DuckDB 에서 SQL · 데이터
+    오류(`_SQL_FAILURES` — 구문 · 표 · 제약 · 변환)로 실패함(원래 오류는 `__cause__`). 앱 시작 실패
+    판(`components/boot_stop.py`)이 이 종류로 「다시 시도」 로는 풀리지 않는 갈래를 가른다.
+    `RuntimeError` 를 받던 자리는 그대로 받는다.
+    """
+
+
+class MigrationChanged(MigrationFailed):
+    """이미 적용된 마이그레이션 파일의 체크섬이 달라졌다 — 고쳐 다시 배포하기 전에는 열 수 없다."""
+
+
+# 새 SQL 이 이 종류로 실패하면 다시 해도 같다(같은 SQL · 같은 DB) — `MigrationFailed` 로 감싼다.
+# 입출력 · 메모리 · 트랜잭션 충돌(`OperationalError`)과 그 밖은 지나갈 수 있어 그대로 올린다 —
+# 디스크 가득 · 파일 권한은 앱 시작 실패 판이 제 갈래로 가른다.
+_SQL_FAILURES: tuple[type[duckdb.Error], ...] = (
+    duckdb.ProgrammingError,
+    duckdb.IntegrityError,
+    duckdb.DataError,
+    duckdb.NotSupportedError,
+    duckdb.DependencyException,
+)
+
+
 @dataclass(frozen=True)
 class Migration:
     version: int
@@ -120,8 +146,9 @@ def apply_migrations_to(
     """대기 중인 마이그레이션을 적용하고, 이미 적용된 파일의 변경을 거부한다.
 
     체크섬이 달라졌다는 것은 적용이 끝난 SQL 을 누가 고쳤다는 뜻이다. 그대로 다시 돌리면
-    이미 그 SQL 로 만들어진 DB 와 어긋나므로 여기서 멈춘다. 반대로 DB 가 코드보다 새 것인
-    것은 멈추지 않는다 — 경고 로그를 남기고 결과에 실어 돌려준다(모듈 설명).
+    이미 그 SQL 로 만들어진 DB 와 어긋나므로 여기서 멈춘다. 새 SQL 이 SQL · 데이터 오류로 실패하면
+    그 건을 되돌리고 `MigrationFailed` 로 올린다(원래 오류는 `__cause__`). 반대로 DB 가 코드보다 새
+    것인 것은 멈추지 않는다 — 경고 로그를 남기고 결과에 실어 돌려준다(모듈 설명).
     """
     connection.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
     connection.execute(
@@ -154,20 +181,25 @@ def apply_migrations_to(
         existing_checksum = applied.get(migration.version)
         if existing_checksum is not None:
             if existing_checksum != migration.checksum:
-                raise RuntimeError(
+                raise MigrationChanged(
                     f"이미 적용된 {label} 마이그레이션이 변경되었습니다: {migration.name}"
                 )
             continue
 
-        with transaction(connection):
-            connection.execute(migration.sql)
-            connection.execute(
-                f"""
-                INSERT INTO {schema}.schema_migration (version, name, checksum)
-                VALUES (?, ?, ?)
-                """,
-                [migration.version, migration.name, migration.checksum],
-            )
+        try:
+            with transaction(connection):
+                connection.execute(migration.sql)
+                connection.execute(
+                    f"""
+                    INSERT INTO {schema}.schema_migration (version, name, checksum)
+                    VALUES (?, ?, ?)
+                    """,
+                    [migration.version, migration.name, migration.checksum],
+                )
+        except _SQL_FAILURES as error:
+            raise MigrationFailed(
+                f"{label} 마이그레이션을 적용하지 못했습니다: {migration.name}"
+            ) from error
         newly_applied.append(migration.version)
 
     return MigrationOutcome(applied=tuple(newly_applied), schema_ahead=schema_ahead)

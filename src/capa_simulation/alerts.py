@@ -382,8 +382,15 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 실패해 멈췄거나 마지막 시도가 실패했을 때, 그리고 갱신 토큰(3개월)을 처음 쓴 때부터 80일.
     AlertSpec("AD-17", "action", "state", "BigDataQuery 토큰 자동 갱신 멈춤 · 마지막 시도 실패"),
     AlertSpec("AD-18", "action", "state", "BigDataQuery 갱신 토큰 80일 — 바꿀 때"),
+    # 통합인증 로그인 최대 시간 10분 전 — 그 로그인의 첫 회차에 한 번(`components/sso_expiry.py`,
+    # 2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-expiry). 쓰는 중에도 늘지 않는 끝이라 저장해
+    # 두라고 알린다. 글은 남은 분을 부를 때 준다.
+    AlertSpec("AD-20", "action", "event", "로그인 최대 시간 10분 전 — 저장해 두기"),
+    # 로그인 갱신이 출처 · 머리 검사에서만 거절되는 서버 — 관리자 회차에만(`components/
+    # sso_refresh_alert.py`, 같은 보드 카드 p2-rare). 그대로면 쓰는 중에도 유지 시간 뒤 끊긴다.
+    AlertSpec("AD-21", "action", "state", "로그인 갱신이 출처 · 머리 검사에서 거절됨"),
     # 코어 화면의 처리 못 한 오류 — 프로세스 기록(`page_failures`)에서 관리자 몫 회차에 낸다(참고
-    # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`). AD-19 ~ AD-21 은 다른 갈래
+    # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`). AD-19 는 다른 갈래(접속 명단)
     # 몫이다.
     AlertSpec("AD-22", "error", "state", "코어 화면의 처리 못 한 오류(참고 번호)"),
 )
@@ -694,6 +701,8 @@ def event(
     cause: str = "",
     detail: str = "",
     tab: str = "",
+    alert_id: str | None = None,
+    pageless: bool = False,
 ) -> None:
     """사건 알림 하나를 담는다 — **그리지 않는다**(이벤트 칸을 쓰지 않으니 어느 갈래에서 불러도
     된다).
@@ -701,9 +710,24 @@ def event(
     같은 회차의 다음 표지 자리(`render_flash` · `state` · `flush`)가 보내고, 그런 자리가 없으면 다음
     앱 전체 회차의 알림 칸 data 가 보낸다(콜백에서 담은 것은 바로 그 회차다). `text` 는 알림창 짧은
     글(60자 안팎), `full` 은 패널 · 로그의 전문, `cause` 는 로그의 계기(「「저장」 누름」), `detail`
-    은 원본 오류 글, `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그 탭을 연다)이다.
+    은 원본 오류 글, `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그 탭을 연다)이다. `alert_id` 를
+    고정 값으로 주면 이 브라우저 탭이 그 알림을 한 번만 띄운다(새로고침 · 테마 전환의 새 세션에도 —
+    `event_note`). `pageless` 는 어느 화면의 일도 아닌 알림이다 — 화면 · 주소를 싣지 않아 줄의 화면
+    칸이 비고 「그 화면으로」 가 서지 않는다(`_open_tab_note` 와 같다).
     """
-    note = event_note(code, text=text, full=full, level=level, cause=cause, detail=detail, tab=tab)
+    note = event_note(
+        code,
+        text=text,
+        full=full,
+        level=level,
+        cause=cause,
+        detail=detail,
+        tab=tab,
+        alert_id=alert_id,
+    )
+    if pageless:
+        note.pop("page", None)
+        note.pop("href", None)
     outbox = st.session_state.get(OUTBOX_KEY)
     st.session_state[OUTBOX_KEY] = [*outbox, note] if isinstance(outbox, list) else [note]
 

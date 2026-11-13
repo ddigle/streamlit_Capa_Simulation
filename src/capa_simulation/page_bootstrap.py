@@ -32,6 +32,7 @@ from capa_simulation.components.literal_markdown import markdown_safe_tildes, qu
 from capa_simulation.components.stop_examples import markdown_examples, readable_examples
 from capa_simulation.navigation import REFERENCE_DATA, SCENARIO_MANAGEMENT
 from capa_simulation.page_tabs_state import tab_label
+from capa_simulation.persistence._migration_core import MigrationFailed
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 from capa_simulation.persistence.cache import (
     get_scenario_repository,
@@ -235,8 +236,9 @@ def no_revision_message() -> str:
 
     공식버전이 있으면(이 세션이 첫 접속 뒤에 발행된 것을 아직 안 불러옴) `NOT_LOADED_MESSAGE`,
     시나리오가 있고 모두 보관본이면 `ARCHIVED_ONLY_MESSAGE`, 그 밖은 `NO_OFFICIAL_MESSAGE` 다. DB
-    파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면 공식버전 없음으로 본다.
-    경로는 부를 때 설정에서 읽는다(시험이 바꾼다). 드문 상태라 회차 비용이 없다.
+    파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면(판 올리기 실패 포함)
+    공식버전 없음으로 본다. 경로는 부를 때 설정에서 읽는다(시험이 바꾼다). 드문 상태라 회차 비용이
+    없다.
     """
     path = settings.DUCKDB_PATH
     if not path.exists():
@@ -246,7 +248,7 @@ def no_revision_message() -> str:
         if repository.latest_official_release() is not None:
             return NOT_LOADED_MESSAGE
         scenarios = repository.list_scenarios(include_archived=True)
-    except (OSError, duckdb.Error):
+    except (OSError, duckdb.Error, MigrationFailed):
         return NO_OFFICIAL_MESSAGE
     if scenarios and all(scenario.status != "ACTIVE" for scenario in scenarios):
         return ARCHIVED_ONLY_MESSAGE
