@@ -341,7 +341,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `data/temp/audit`, 시험은 conftest 가 세션 임시 폴더로 옮기고 저장소에 새로 생기면 실패), 버킷 키 · 미러 자리 · gzip 꼴은
   `audit/layout.py`, 화면이 읽는 길(스풀 · 미러만 — S3 를 부르지 않는다, KST +09:00 고정, 같은 (inst, seq) 하나만, 다시 읽지
   않을 지문)은 `audit/read.py` 다. 넷 다 표준 라이브러리만 쓴다(문지기가 `recorder` 를 부른다 —
-  `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다). 켜는 곳은 `audit/boot.py` 하나다 —
+  `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다). 버킷 쪽(스풀 → `seg` 새 객체 ·
+  조건부 쓰기, 지원 확인 전이면 HEAD 뒤 쓰기 · 최근 14일 일별 묶음 `daily/…p<n>` 과 앞 manifest sha256 잇기 · 14일 넘게 늦은
+  조각 `audit_late_segment` · 400일 미러 · 새 인스턴스의 `audit_chain_link` · 시계 차이 `sys_clock_skew` · `AD-12`/`AD-13`
+  까닭)은 `audit/shipper.py` 다(동기화 일꾼이 부른다, 시험은 `tests/test_audit_shipper.py` — `aws` 없이 인자 배열을 가짜 S3
+  에 서명한 요청으로 옮기는 `tests/s3_mock_runner.py` 위). 켜는 곳은 `audit/boot.py` 하나다 —
   `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(관리자
   수 · 목록 지문 8자 · 점검자 수) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 점검자 `CAPA_AUDIT_VIEWERS` · 사용자)를 꽂는다.
   통합인증 사건은 `auth/runtime.record_event` 가 잠금 밖에서 대응표(`from_sso_event`)로 넘기고(로그인 성공의 이름은 감사
@@ -1873,7 +1877,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 이어받은 수동 off 와 HOME 표지(`auto_off_marks`)는 같은 근거(`_auto_exclusions` — 조상, 복제본은 복제 전 자동
     리비전 2)를 본다. 같은 프로세스의 겹친 회차는 기다리지 않고 돌아간다(`_RUN_LOCK`).
 - `src/capa_simulation/object_sync_worker.py` — 정본 버킷 동기화 일꾼. 앱의 둘째이자 마지막 배경 스레드다(5장 4·9장).
-  차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다.
+  차례는 `object_sync_engine.py` 다. `capa_server.py` 가 세우고 `managed` + 부트 기록이 있을 때만 선다. 감사 기록기가 켜진
+  서버면 감사 할 일(`audit/shipper.py` 의 `AuditTasks` — 비우기 10초 · 올리기 5분 또는 200줄 · 일별 묶음 · 미러)도 같은 고리가
+  한다(새 스레드 없음). 감사 올리기는 DB 올리기보다 먼저고 DB 막힘과 상관없으며 그 실패는 감사 쪽이 삼킨다(DB 실패 수 ·
+  `SY-02` 를 건드리지 않는다). 「지금 올리기」 는 감사부터 올린다.
 - `src/capa_simulation/auto_update_scheduler.py` — 공식버전 자동 갱신을 매일 지정 시각에 돌리는 배경 스레드다(5장 4·9장).
   - 실행 줄 `CAPA_AUTO_OFFICIAL_UPDATE=1` 일 때만 서고, 지정 시각이 직전 확인과 지금 사이일 때만 돈다(`crossed_slot` —
     놓친 날은 따라잡지 않는다). 스레드 이름(`THREAD_NAME`)으로 하나를 지키고 `st.cache_resource` 는 쓰지 않는다.

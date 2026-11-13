@@ -26,6 +26,9 @@ from typing import Final
 import streamlit as st
 
 from capa_simulation import alerts, object_sync_worker, sync_boot
+from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit import shipper as audit_shipper
+from capa_simulation.audit import spool as audit_spool
 from capa_simulation.auth import access_store, runtime
 from capa_simulation.auth.config import SsoMode
 from capa_simulation.components import sso_identity
@@ -232,6 +235,14 @@ def status_lines(status: WorkerStatus | None, health: SyncHealth, *, now: float)
         )
     if status.prune_failure is not None:
         lines.append(f"**정리 실패** · {failure_label(status.prune_failure)}")
+    if audit_recorder.enabled():
+        # 접속 · 작업 감사 기록 — CI/CD 앞 「지금 올리기」 뒤 0 이어야 그 pod 의 기록이 남는다.
+        lines.append(f"**감사 미전송** · {audit_spool.unshipped_count()}줄")
+        audit = audit_shipper.health()
+        if audit.failures:
+            lines.append(
+                f"**감사 올리기 실패** · {audit.failures}회 · {failure_label(audit.failure_kind)}"
+            )
     return lines
 
 
