@@ -271,10 +271,21 @@ def test_upload_now_closes_open_hour_counts_and_carries_a_line_made_after_the_fi
             recorder.record("admin_sync_push", actor="demo.admin", det={"result": "requested"})
 
     monkeypatch.setattr(tasks, "drain", drain_then_click)
+    real_upload = worker._run_upload
+    before_upload: list[list[object]] = []
+
+    def upload_after_audit(now: float) -> None:
+        # DB 올리기는 몇 분 걸리거나 pod 과 함께 끊길 수 있다 — 그 앞에 이미 버킷에 있어야 한다.
+        before_upload.append([line["ev"] for line in _shipped(box)])
+        real_upload(now)
+
+    monkeypatch.setattr(worker, "_run_upload", upload_after_audit)
     monotonic.now += 5
     worker.request_now()
     worker.tick()
 
+    (first,) = before_upload
+    assert "admin_sync_push" in first and recorder.SUMMARY_LOGIN_FAIL in first
     shipped = _shipped(box)
     events = [line["ev"] for line in shipped]
     assert "admin_sync_push" in events
