@@ -1100,10 +1100,9 @@ def _split_owner(repository: DuckDBEquipmentRepository) -> None:
 
 
 def test_a_split_ledger_still_restores_and_clears_a_layout_difference(tmp_path: Path) -> None:
-    """합친 머리 리뷰의 빠진 시험 — 일곱 칸이 갈린 공통 대장에서도 「이 리비전으로 되돌리기」 와
-    「배치 차이 모두 지우기」 는 막히지 않는다(일곱 칸은 저장 때만 막고 되돌리기 · 배치 지우기는
-    편집본 저장이 아니다 — 설계 규칙집 6-22 3-3). 같은 대장의 설비 저장은 고칠 묶음 · 칸을 짚고
-    막힌다."""
+    """일곱 칸이 갈린 공통 대장에서도 「이 리비전으로 되돌리기」 와 「배치 차이 모두 지우기」 는
+    막히지 않는다(일곱 칸은 저장 때만 막고 되돌리기 · 배치 지우기는 편집본 저장이 아니다 — 설계
+    규칙집 6-22 3-3). 같은 대장의 설비 저장은 고칠 묶음 · 칸을 짚고 막힌다."""
     repository = _seeded(tmp_path, _grouped())
     scenario_id = _hypothetical(repository)
     session = _session(repository, scenario_id)

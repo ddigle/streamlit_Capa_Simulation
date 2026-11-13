@@ -1453,10 +1453,10 @@ def test_each_confirmed_window_cell_is_checked_at_once_and_new_blocks_alarm(
 def test_a_check_after_the_window_emptied_alarms_the_same_blocked_cell_again(
     tmp_path: Path, checking_calls: list[dict[str, Any]]
 ) -> None:
-    """R2 리뷰 지적 4 — 처음 상태로 · 되돌리기로 고친 칸이 0개가 되면 브라우저는 묻지 않고 판정을
-    걷는다. 그 뒤 같은 칸에 같은 막힌 값을 다시 치면 서버가 앞 판정을 「이미 알린 칸」 으로 써
-    빨강만 서고 `EQ-25` 가 다시 서지 않았다. 요청의 `base`(칸이 마지막으로 빈 seq)보다 뒤의 판정만
-    앞 판정으로 쓴다 — 잇달아 친 확인(앞 판정을 받기 전, 같은 base)은 두 번 알리지 않는다."""
+    """처음 상태로 · 되돌리기로 고친 칸이 0개가 되면 브라우저는 묻지 않고 판정을 걷는다. 그 뒤
+    같은 칸에 같은 막힌 값을 다시 치면 `EQ-25` 가 다시 선다 — 서버는 요청의 `base`(칸이 마지막으로
+    빈 seq)보다 뒤의 판정만 「이미 알린 칸」 의 앞 판정으로 쓴다. 잇달아 친 확인(앞 판정을 받기
+    전, 같은 base)은 두 번 알리지 않는다."""
     app, _ = _open_editor(tmp_path)
     blocked = ("EQ-01", "반입일정", "2026-08-01")
 
@@ -1475,9 +1475,9 @@ def test_a_check_after_the_window_emptied_alarms_the_same_blocked_cell_again(
 def test_a_check_from_another_buffer_generation_is_dropped(
     tmp_path: Path, checking_calls: list[dict[str, Any]]
 ) -> None:
-    """합친 머리 리뷰의 빠진 시험 — 그린 회차와 판정 회차 사이에 편집본이 바뀌었으면(편집본 세대가
-    다름) 「확인만」 은 판정하지 않고 버린다 — 판정을 세션에 두지 않고 `EQ-25` 도 내지 않는다(다음
-    회차에 편집기가 새 epoch 로 서고 「적용」 이 같은 판정을 한 번 더 한다)."""
+    """그린 회차와 판정 회차 사이에 편집본이 바뀌었으면(편집본 세대가 다름) 「확인만」 은 판정하지
+    않고 버린다 — 판정을 세션에 두지 않고 `EQ-25` 도 내지 않는다(다음 회차에 편집기가 새 epoch 로
+    서고 「적용」 이 같은 판정을 한 번 더 한다)."""
     app, _ = _open_editor(tmp_path)
     blocked = ("EQ-01", "반입일정", "2026-08-01")
     app.session_state[FAKE_STALE_KEY] = True
@@ -1495,10 +1495,9 @@ def test_a_check_from_another_buffer_generation_is_dropped(
 def test_a_cell_and_a_rename_in_one_apply_count_once_each_in_the_save_box(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """합친 머리 리뷰의 빠진 시험 — 한 적용에 창 칸(옛 이름으로 옴)과 그 호기의 이름 바꿈이
-    함께 오면 저장 상자는 「이름 바꿈 1건」 · 「호기 정보 칸 1건」 으로 따로 세고, 그 칸을 「설비
-    마스터 다른 편집」 으로 다시 세지 않는다(`changed_cell_count` 의 이름 따라가기). 한 번 저장이
-    둘 다 쓴다."""
+    """한 적용에 창 칸(옛 이름으로 옴)과 그 호기의 이름 바꿈이 함께 오면 저장 상자는 「이름 바꿈
+    1건」 · 「호기 정보 칸 1건」 으로 따로 세고, 그 칸을 「설비 마스터 다른 편집」 으로 다시 세지
+    않는다(`changed_cell_count` 의 이름 따라가기). 한 번 저장이 둘 다 쓴다."""
     app, database = _open_editor(tmp_path)
     app.session_state[FAKE_APPLY_KEY] = {
         "epoch": editor_calls[-1]["epoch"],
