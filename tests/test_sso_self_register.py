@@ -41,6 +41,7 @@ from capa_simulation.auth.access import (
     ListDocument,
     ListEntry,
 )
+from capa_simulation.components import sso_status
 from capa_simulation.io import s3_small
 from capa_simulation.io.s3_small import S3Failure
 
@@ -551,3 +552,156 @@ def test_recent_self_registrations_count_and_mark_only_new_ones(
     assert after == 1 and latest_after == latest
     old, _ = access_store.recent_self_registrations(source.document, now=now + 40 * 86400, days=30)
     assert old == 0
+
+
+# --- 옛 판 · 되풀이 · 딸린 일 ---------------------------------------------------------------------
+
+
+def _serve_once(monkeypatch: pytest.MonkeyPatch, body: bytes) -> list[str]:
+    """다음 명단 GET 한 번만 `body`(옛 판)를 돌려주는 저장소 — 덮어쓴 직후 옛 판을 주는 꼴."""
+    real_get = s3_small.get_object
+    served: list[str] = []
+
+    def stale_once(
+        target: s3_small.S3Target, key: str, *, moment: float | None = None
+    ) -> s3_small.S3Object | None:
+        if key == OBJECT and not served:
+            served.append(key)
+            return s3_small.S3Object(body=body, etag="stale")
+        return real_get(target, key, moment=moment)
+
+    monkeypatch.setattr(access_store, "get_object", stale_once)
+    return served
+
+
+@pytest.mark.parametrize("returning", [False, True])
+def test_a_stale_read_neither_writes_nor_revives_a_removed_grade_or_person(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch, returning: bool
+) -> None:
+    """다시 받은 판이 메모리 판보다 오래되면 얹지도(쓰기) 올리지도(「이미 있음」) 않는다 — 방금 뺀
+    관리자 등급 · 사람이 S3 와 메모리 어디에서도 되살아나지 않는다(리뷰 데이터 렌즈 1)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    admin = identity_of(cfg, ADMIN)
+    access_store.save_changes(cfg, admin, grades={OTHER: GRADE_ADMIN})
+    stale = store.objects[OBJECT]
+    if returning:
+        access_store.save_changes(cfg, admin, remove=[OTHER])
+    else:
+        access_store.save_changes(cfg, admin, grades={OTHER: GRADE_USER})
+    revision = stored_revision(store)
+    puts = requests_named(store, "PUT")
+    served = _serve_once(monkeypatch, stale)
+
+    with pytest.raises(access_store.StoreConflictError):
+        access_store.register_self(cfg, OTHER if returning else NEWCOMER)
+
+    assert served, "옛 판을 받은 시도다"
+    assert requests_named(store, "PUT") == puts, "옛 판 위에 쓰지 않는다"
+    assert stored_revision(store) == revision
+    assert not access_store.is_admin(cfg, OTHER)
+    source = runtime.access_source()
+    assert source is not None and source.document is not None
+    assert source.document.revision == revision, "옛 판을 메모리에 올리지 않는다"
+    if returning:
+        assert problem_of(cfg, OTHER) is not None, "뺀 사람이 옛 판으로 돌아오지 않는다"
+        assert OTHER not in stored_users(store)
+    else:
+        assert stored_users(store)[OTHER]["grade"] == GRADE_USER
+
+
+@pytest.mark.usefixtures("audit_on")
+def test_a_failed_registration_stays_out_of_the_ring_and_the_automatic_lines(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """명단 밖 사람의 되풀이는 다른 사건을 밀어내지 못한다 — 누계만 세고, 그 사람의 누름이 자동
+    행위 줄(`sys_access_save_fail` · `system:sso`)을 만들지 않는다(리뷰 데이터 렌즈 2 · 4)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    store.force["PUT"] = (403, "AccessDenied")
+    ring = len(runtime.recent_events(anonymous=False))
+    recorder.take_pending()
+
+    for _ in range(5):
+        with pytest.raises(S3Failure):
+            access_store.register_self(cfg, NEWCOMER)
+
+    assert len(runtime.recent_events(anonymous=False)) == ring
+    assert runtime.self_register_failures() == 5
+    assert " · 스스로 등록 실패 5" in sso_status.access_s3_line(cfg), "누계는 「S3 명단」 줄에"
+    pending = recorder.take_pending()
+    assert [line["ev"] for line in pending].count("user_self_registered") == 5
+    assert not [line for line in pending if line["ev"] == "sys_access_save_fail"]
+
+
+@pytest.mark.usefixtures("audit_on")
+def test_what_a_registration_rewrites_on_the_side_is_an_automatic_line(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """스스로 등록이 다시 쓰며 못 읽은 항목이 빠지면 그 수를 자동 행위로 남긴다(리뷰 데이터
+    렌즈 3)."""
+    store, endpoint = mock_s3
+    store.put(
+        OBJECT,
+        json.dumps(
+            {
+                "format": 1,
+                "revision": 4,
+                "users": [{"loginid": USER, "grade": GRADE_USER}, {"loginid": "DOMAIN\\x"}],
+            }
+        ).encode(),
+    )
+    store.put(names.ACCESS_SEEDED_OBJECT, b'{"format": 1}')
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+    recorder.take_pending()
+
+    access_store.register_self(cfg, NEWCOMER)
+
+    (dropped,) = audit_lines("user_bulk_dropped")
+    assert (dropped["actor"], dropped["verified"]) == (recorder.SYSTEM_SSO, False)
+    assert dropped["det"] == {"count": 1, "rev_from": 4, "rev_to": 5}
+
+
+@pytest.mark.usefixtures("audit_on")
+def test_the_first_file_seeded_by_a_registration_is_an_automatic_line(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    store, endpoint = mock_s3
+    cfg = s3_config(store, endpoint, CAPA_ACCESS_USERS=OTHER)
+    access_store.read_at_start(cfg)
+    recorder.take_pending()
+
+    access_store.register_self(cfg, NEWCOMER)
+
+    pending = recorder.take_pending()
+    (seeded,) = [line for line in pending if line["ev"] == "user_seeded"]
+    assert (seeded["actor"], seeded["verified"]) == (recorder.SYSTEM_SSO, False)
+    (own,) = [line for line in pending if line["ev"] == "user_self_registered"]
+    assert (own["actor"], own["verified"]) == (NEWCOMER, True)
+
+
+def test_an_already_listed_press_clears_an_unconfirmed_write(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """답이 끊긴 등록이 실제로 들어갔고 다시 눌러 「이미 있음」 이면, 읽기와 같이 「쓰기 결과 모름」
+    을 걷는다(리뷰 데이터 렌즈 6)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    store.answer_delay["PUT"] = 1.0
+    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.2)
+    with pytest.raises(access_store.SaveUnconfirmedError):
+        access_store.register_self(cfg, NEWCOMER)
+    time.sleep(1.0)
+    store.answer_delay.clear()
+    source = runtime.access_source()
+    assert source is not None and source.save_problem is not None
+    assert source.save_problem.unconfirmed
+    assert NEWCOMER in stored_users(store), "답은 끊겼지만 들어갔다"
+
+    again = access_store.register_self(cfg, NEWCOMER)
+
+    assert not again.added
+    source = runtime.access_source()
+    assert source is not None and source.save_problem is None
+    assert problem_of(cfg, NEWCOMER) is None

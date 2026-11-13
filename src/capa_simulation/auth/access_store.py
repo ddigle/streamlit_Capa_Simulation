@@ -45,7 +45,8 @@
 전제). 관리자의 저장은 직전에 받을 때의 ETag(주지 않는 저장소면 판 번호)와 지금을 견줘 다르면
 덮지 않고 「다시 읽기」 로 돌려보낸다(그 화면에 「다시 읽기」 가 있다). 스스로 등록은 누를 「다시
 읽기」 가 없어 쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다(합침) — 그 사이 다른
-쓰기가 들인 사람 · 등급을 잃지 않는다. 조건부 쓰기(`If-Match`)는 쓰지 않는다 — 확인되지 않은
+쓰기가 들인 사람 · 등급을 잃지 않는다. 받은 판이 메모리 판보다 오래되면 얹지 않고 실패다(뺀 사람 ·
+관리자 등급이 되살아나지 않게). 조건부 쓰기(`If-Match`)는 쓰지 않는다 — 확인되지 않은
 능력이다(`io/s3_small`). 그래서 같은 버킷을 쓰는 다른 프로세스와의 받기 → 쓰기 틈은 replica 1
 전제로 받아들인다.
 
@@ -58,6 +59,9 @@
 로그 · repr 에 싣지 않고 개수만 싣는다. 저지른 관리자의 계정만 다른 사건과 같은 규칙으로 싣는다 —
 서버 로그에는 전체 값(`login_ok` 와 같다), Admin 표에는 앞 두 글자. 스스로 등록은 저지른 사람이 곧
 대상이라 사건 · 로그에 계정을 싣지 않는다 — 계정은 감사 기록(`user_self_registered`)에만 있다.
+그 실패는 명단 밖 사람이 되풀이해 남길 수 있어 사건 고리에 두지 않고 누계만 센다
+(`runtime.SELF_REGISTER_FAILED_EVENT`). 스스로 등록에 딸린 다시 쓰기의 일(못 읽은 항목이 빠짐 ·
+첫 판 심기)은 그 사람이 아니라 자동 행위로 감사에 남긴다.
 """
 
 from __future__ import annotations
@@ -311,17 +315,20 @@ _ADMIN_FIX_KINDS: Final = frozenset(
 )
 
 
+def needs_admin_fix(problem: SourceProblem) -> bool:
+    """읽기 실패의 까닭이 다시 해도 같은 것인가(설정 · 권한 · 파일을 고쳐야 풀린다). 값 없음."""
+    if problem.kind in _ADMIN_FIX_KINDS:
+        return True
+    return problem.kind == KIND_OTHER and problem.status is not None and problem.status < 500
+
+
 def unread_needs_admin(cfg: SsoConfig) -> bool:
     """못 읽은 까닭이 관리자가 고쳐야 풀리는 것인가(거절 화면 「점검 중」 의 두 갈래). 값 없음."""
     if not is_unread(cfg):
         return False
     source = runtime.access_source()
     problem = None if source is None else source.problem
-    if problem is None:
-        return False
-    if problem.kind in _ADMIN_FIX_KINDS:
-        return True
-    return problem.kind == KIND_OTHER and problem.status is not None and problem.status < 500
+    return problem is not None and needs_admin_fix(problem)
 
 
 def _base_source(cfg: SsoConfig) -> AccessSource:
@@ -412,6 +419,17 @@ def _read_locked(cfg: SsoConfig, moment: int, *, retrying: bool = False) -> Sour
             status=str(problem.status or "-"),
         )
         return problem
+    _publish_read(cfg, base, fetched, moment)
+    document = fetched.document
+    runtime.record_event(
+        "access_read", users=str(len(document.entries)), revision=str(document.revision)
+    )
+    return None
+
+
+def _publish_read(cfg: SsoConfig, base: AccessSource, fetched: _Fetched, moment: int) -> None:
+    """잘 받은 한 벌을 메모리에 올린다 — 읽기(`_read_locked`)와 스스로 등록의 「이미 있음」 이 같이
+    쓴다. 받은 파일이 있으면 표지도 맞추고, 답을 받지 못한 쓰기의 표시를 걷는다."""
     document = fetched.document
     mark_missing = fetched.from_file and not _left_seed_mark(cfg.access_s3, moment)
     runtime.publish_access_source(
@@ -433,10 +451,6 @@ def _read_locked(cfg: SsoConfig, moment: int, *, retrying: bool = False) -> Sour
             ),
         )
     )
-    runtime.record_event(
-        "access_read", users=str(len(document.entries)), revision=str(document.revision)
-    )
-    return None
 
 
 def read_at_start(cfg: SsoConfig, *, now: int | None = None) -> None:
@@ -759,18 +773,30 @@ def _audit_list_change(
             )
     if out != "success":
         return
+    _audit_side_effects(document, result.revision, actor=actor, verified=True, seeded=seeded)
+
+
+def _audit_side_effects(
+    document: ListDocument, revision: int, *, actor: str, verified: bool, seeded: bool
+) -> None:
+    """다시 쓰기에 딸린 일의 감사 줄 — 못 읽은 항목이 빠짐 · 첫 판 심기(수만).
+
+    관리자 저장은 그 관리자가 저지른 일로, 스스로 등록에 딸린 것은 자동 행위(`SYSTEM_SSO` —
+    미검증)로 남긴다 — 일반 사용자의 누름이 관리 행위처럼 읽히지 않게.
+    """
+    revisions = {"rev_from": document.revision, "rev_to": revision}
     if document.unreadable:
         audit_recorder.record(
             "user_bulk_dropped",
             actor=actor,
-            verified=True,
+            verified=verified,
             det={"count": document.unreadable, **revisions},
         )
     if seeded:
         audit_recorder.record(
             "user_seeded",
             actor=actor,
-            verified=True,
+            verified=verified,
             det={"count": len(document.entries), **revisions},
         )
 
@@ -840,10 +866,13 @@ def register_self(
     일반 등급으로 명단에 넣는다. 스레드 풀에서 부른다(네트워크).
 
     쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다 — 그 사이 다른 쓰기(관리자의 등급
-    바꿈 · 다른 사람의 등록)를 잃지 않는다. 이미 있으면 쓰지 않고(등급 · 이름 · 부서 그대로) 받은
-    판을 메모리에 올린다. `RegisterRefusedError`(항목 꼴이 아님) · `StoreUnreadError`(S3 명단이
-    꺼졌거나 아직 못 읽음) · `SaveUnconfirmedError` · `S3Failure`(받기 · 쓰기 실패 — 파일 사라짐
-    포함)를 낸다. 실패면 메모리는 그대로다.
+    바꿈 · 다른 사람의 등록)를 잃지 않는다. 받은 판이 메모리 판보다 오래되면(덮어쓴 직후 옛 판을
+    돌려준 저장소 · 옛 사본을 쓴 다른 곳) 얹지도 올리지도 않는다(`StoreConflictError`) — 방금 뺀
+    사람 · 관리자 등급이 되살아나지 않게. 이미 있으면 쓰지 않고(등급 · 이름 · 부서 그대로) 받은 판을
+    메모리에 올린다. `RegisterRefusedError`(항목 꼴이 아님) · `StoreUnreadError`(S3 명단이 꺼졌거나
+    아직 못 읽음) · `StoreConflictError` · `SaveUnconfirmedError` · `S3Failure`(받기 · 쓰기 실패 —
+    파일 사라짐 포함)를 낸다. 실패면 메모리는 그대로이고 사건은 누계만 센다
+    (`runtime.SELF_REGISTER_FAILED_EVENT`).
     """
     moment = int(time.time()) if now is None else now
     key = entry_key(loginid)
@@ -865,26 +894,33 @@ def register_self(
         base: ListDocument = source.document
         try:
             fetched = _fresh_base(cfg, source, moment)
+            if _older_than_memory(source, fetched):
+                raise StoreConflictError
             base = fetched.document
             fresh, result = _changed_document(
                 base, key, add=(), remove=(), moment=moment, joined=joined, seeded=fetched.seeded
             )
             if not result.changed:
                 if fetched.from_file:
-                    _publish_fetched(cfg, source, fetched, moment)
+                    _publish_read(cfg, source, fetched, moment)
                 return RegisterResult(added=False, revision=base.revision)
             etag = _put_noting_no_answer(
                 target, cfg.access_object_key, render_document(fresh), moment
             )
+        except StoreConflictError:
+            _audit_self_register(key, base.revision, base.revision + 1, out="fail")
+            runtime.record_event(
+                runtime.SELF_REGISTER_FAILED_EVENT, level=logging.WARNING, reason="stale"
+            )
+            raise
         except S3Failure as failure:
             outcome = "unknown" if isinstance(failure, SaveUnconfirmedError) else "fail"
             _audit_self_register(key, base.revision, base.revision + 1, out=outcome)
             problem = problem_of(failure)
             runtime.publish_access_source(replace(source, save_problem=problem))
             runtime.record_event(
-                "access_save_failed",
+                runtime.SELF_REGISTER_FAILED_EVENT,
                 level=logging.WARNING,
-                loginid="-",
                 reason=problem.kind,
                 status=str(problem.status or "-"),
             )
@@ -909,35 +945,21 @@ def register_self(
             "access_self_registered", users=str(len(fresh.entries)), revision=str(result.revision)
         )
         _audit_self_register(key, base.revision, result.revision, out="success")
-        if fetched.seeded:
-            audit_recorder.record(
-                "user_seeded",
-                actor=key,
-                verified=True,
-                det={
-                    "count": len(base.entries),
-                    "rev_from": base.revision,
-                    "rev_to": result.revision,
-                },
-            )
+        _audit_side_effects(
+            base,
+            result.revision,
+            actor=audit_recorder.SYSTEM_SSO,
+            verified=False,
+            seeded=fetched.seeded,
+        )
         return RegisterResult(added=True, revision=result.revision)
 
 
-def _publish_fetched(cfg: SsoConfig, source: AccessSource, fetched: _Fetched, moment: int) -> None:
-    """다시 받은 판을 메모리에 올린다 — 읽기(`_read_locked`)가 잘 받았을 때와 같다."""
-    document = fetched.document
-    runtime.publish_access_source(
-        replace(
-            source,
-            access=compose_access(cfg.access, document),
-            document=document,
-            etag=fetched.etag,
-            read_at=moment,
-            attempted_at=moment,
-            problem=None,
-            seeded=fetched.seeded,
-        )
-    )
+def _older_than_memory(source: AccessSource, fetched: _Fetched) -> bool:
+    """다시 받은 판이 메모리에 올라 있는 판보다 오래되었나 — 파일을 받아 둔 칸만 견준다."""
+    if not fetched.from_file or not _holds_a_file(source) or source.document is None:
+        return False
+    return fetched.document.revision < source.document.revision
 
 
 def _audit_self_register(loginid: str, rev_from: int, rev_to: int, *, out: str) -> None:

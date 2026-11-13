@@ -1197,7 +1197,7 @@ def test_reading_again_with_still_no_file_stays_an_empty_list(
 def test_a_404_from_the_front_at_start_is_unread_and_heals_by_itself(
     answer: tuple[int, bytes], mock_s3: tuple[MockStore, str]
 ) -> None:
-    """기동 때 앞단의 404 — 정상 · 사용자 0 으로 서지 않고 「못 읽음」 이라 스스로 회복한다."""
+    """기동 때 앞단의 404 — 정상 · 명단 0 으로 서지 않고 「못 읽음」 이라 스스로 회복한다."""
     store, endpoint = mock_s3
     store.put(OBJECT, file_body(USER))
     store.raw["GET"] = answer
@@ -1918,16 +1918,44 @@ def test_the_admin_sees_the_list(
     app = _admin_app(cfg, monkeypatch)
 
     assert not list(app.exception)
-    assert _labels(app) == ["접속 명단"]
+    assert _labels(app) == [access_list_admin.RECENT_LABEL, "접속 명단"]
     frame = app.dataframe[0].value
     assert list(frame.columns) == ["계정", "이름", "부서", "등록 시각", "등록 길", "등급"]
     assert sorted(frame["계정"].tolist()) == [OTHER, USER]
     assert frame["등록 길"].tolist() == ["관리자", "관리자"], "옛 파일(칸 없음)은 관리자가 넣음"
     assert frame["등급"].tolist() == ["일반", "일반"]
     assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).options
-    assert any(
-        "버전 1 · 사용자 2 · 관리자 1(환경변수 1)" in str(item.value) for item in app.caption
-    )
+    assert any("버전 1 · 명단 2 · 관리자 1(환경변수 1)" in str(item.value) for item in app.caption)
+
+
+def test_the_recent_registrations_and_removals_fold_under_the_table(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표 아래 접힌 「최근 등록 · 빼기(30일)」 — 스스로 등록 · 관리자 추가 · 빼기만, 새것 먼저,
+    30일 넘은 줄과 등급 바꿈은 없다(보드 p0-admin-list)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    admin = identity_of(cfg, ADMIN)
+    now = int(time.time())
+    access_store.register_self(cfg, "demo.old", now=now - 40 * 86400)
+    access_store.register_self(cfg, "demo.self", now=now - 60)
+    access_store.save_changes(cfg, admin, add=["demo.added"])
+    access_store.save_changes(cfg, admin, grades={USER: GRADE_ADMIN})
+    access_store.save_changes(cfg, admin, remove=["demo.added"])
+    source = runtime.access_source()
+    assert source is not None and source.document is not None
+
+    table = access_list_admin.recent_changes_table(source.document, now=now)
+
+    assert list(table.columns) == list(access_list_admin.RECENT_COLUMNS)
+    assert table["계정"].tolist() == ["demo.added", "demo.added", "demo.self"]
+    assert table["한 일"].tolist() == ["뺌", "관리자가 넣음", "스스로 등록"]
+
+    app = _admin_app(cfg, monkeypatch)
+
+    (recent,) = [item for item in app.expander if item.label == access_list_admin.RECENT_LABEL]
+    assert recent.proto.expanded is False, "접혀 있다"
+    assert app.dataframe[1].value["계정"].tolist() == ["demo.added", "demo.added", "demo.self"]
 
 
 def test_an_empty_list_says_so(
@@ -2253,7 +2281,7 @@ def test_reading_again_from_the_screen(
 
     assert sorted(app.dataframe[0].value["계정"].tolist()) == [OTHER, USER]
     assert problem_of(cfg, OTHER) is None
-    assert "사용자 2 · 버전 4" in _flash_text(app)
+    assert "명단 2 · 버전 4" in _flash_text(app)
 
     store.force["GET"] = (403, "AccessDenied")
     app = _button(app, "admin_area_access_list_reread").click().run()
@@ -2361,7 +2389,8 @@ def test_the_pick_refusal_stands_right_below_the_row_and_above_the_table(
     assert [item.value for item in app.warning] == ["사람을 고르세요"]
     assert isinstance(layout[0], list), layout
     assert "warning" in layout[1], layout
-    assert layout[2:] == ["space", "dataframe"], layout
+    assert layout[2:4] == ["space", "dataframe"], layout
+    assert layout[4:] == ["칸:caption"], "표 아래 접힌 「최근 등록 · 빼기」(기록 없음)"
 
 
 def test_removing_everyone_still_tells_the_result(
@@ -2440,6 +2469,7 @@ def test_unread_locks_adding_and_warns_the_admin_on_any_screen(
     assert note is not None
     assert "관리자만 들어옵니다" in note["short"]
     assert "인증 거절(HTTP 403 · AccessDenied)" in note["full"]
+    assert sso_status.ACCESS_READ_FIX_STEP in note["full"], "다시 해도 같은 까닭 — 먼저 고친다"
     assert (note["page"], note["href"]) == ("Admin Area", "admin_area")
 
     store.force.clear()
@@ -2535,6 +2565,7 @@ def test_the_read_alert_goes_only_to_those_who_can_act(
 
     note = active_state(card, "AD-08")
     assert note is not None and "지난 명단으로 판정합니다" in note["short"]
+    assert sso_status.ACCESS_READ_RETRY_STEP in note["full"], "잠시 뒤 풀리는 까닭"
 
 
 def test_the_read_alert_is_gone_after_a_good_save(
@@ -2570,11 +2601,11 @@ def test_the_check_line_when_it_can_read(mock_s3: tuple[MockStore, str]) -> None
     line = sso_status.access_s3_line(cfg)
 
     assert line.startswith("**S3 명단** · 정상 · 마지막 읽기 ")
-    assert "사용자 2 · 버전 1 · 쓰기 저장할 때 알게 됨" in line
+    assert "명단 2 · 버전 1 · 쓰기 저장할 때 알게 됨" in line
     assert_absent(line, USER, OTHER, store.access_key, store.secret_key, endpoint, store.bucket)
 
     access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[GONE])
-    assert "사용자 3 · 버전 2 · 쓰기 정상 · " in sso_status.access_s3_line(cfg)
+    assert "명단 3 · 버전 2 · 쓰기 정상 · " in sso_status.access_s3_line(cfg)
 
     store.force["PUT"] = (403, "AccessDenied")
     with pytest.raises(S3Failure):
@@ -2641,7 +2672,7 @@ def test_the_check_line_keeps_the_last_good_read_after_a_failure(
 
     line = sso_status.access_s3_line(cfg)
     assert line.startswith("**S3 명단** · 실패 · 그 밖의 응답(HTTP 503 · SlowDown) · 시도 ")
-    assert " · 마지막 읽기 " in line and "사용자 1 · 버전 1" in line
+    assert " · 마지막 읽기 " in line and "명단 1 · 버전 1" in line
 
 
 def test_the_check_line_says_it_waits_for_sso(mock_s3: tuple[MockStore, str]) -> None:
@@ -2665,7 +2696,7 @@ def test_the_status_panel_shows_the_line_and_only_names(
     assert not list(app.exception)
     captions = "\n".join(str(item.value) for item in app.caption)
     assert "**S3 명단** · 정상" in captions
-    assert "**접속 명단** · 켜짐 · 관리자 1 · 사용자 2 · 읽지 못함 0" in captions
+    assert "**접속 명단** · 켜짐 · 관리자 1 · 일반 2 · 읽지 못함 0" in captions
     table = app.dataframe[0].value.set_index("환경변수")
     assert table.loc[names.ENV_S3_SECRET_KEY, "상태"] == "있음"
     frames = "\n".join(frame.value.to_csv() for frame in app.dataframe)

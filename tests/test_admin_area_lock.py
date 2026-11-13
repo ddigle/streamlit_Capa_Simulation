@@ -181,6 +181,23 @@ def test_the_production_server_with_sso_off_is_locked_for_everyone() -> None:
     assert not sso_identity.admin_area_locked()
 
 
+def test_the_locked_page_of_a_production_server_with_sso_off_still_raises_the_alarm(
+    tmp_path: Path,
+) -> None:
+    """운영인데 꺼짐 — 모두가 잠긴 화면만 보므로 `AD-02` 는 잠금 앞에서 낸다(펼침 안에만 두면
+    어느 회차에서도 서지 않는 죽은 알림이다 — 리뷰 보안 렌즈 2)."""
+    from alert_marks import active_state
+
+    runtime.reset()
+    runtime.start(sso_environ(drop=[names.ENV_CLIENT_ID]))
+
+    app = _run(tmp_path)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _locked(app)
+    assert active_state(app, "AD-02") is not None
+
+
 @pytest.fixture
 def real_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[[], AppTest]:
     """빈 DuckDB 를 보는 `app.py` — 브라우저로 보내는 컴포넌트만 바꿔

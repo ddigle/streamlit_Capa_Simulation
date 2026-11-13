@@ -27,12 +27,14 @@ n2 답). 등급은 고른 사람에게 「관리자로」 · 「일반으로」 
 못하고,
 자기 등급은 자기가 내리지 못한다(`access_store` 가 다시 본다). 스스로 등록 알림 `AD-19` 의 「그
 화면으로」
-가 이 펼침을 연다(`open_access_list` — 알림 칸의 받는 쪽 `ACCESS_LIST_TARGET_KIND`).
+가 이 펼침을 연다(`open_access_list` — 알림 칸의 받는 쪽 `ACCESS_LIST_TARGET_KIND`). 표 아래
+접힌 「최근 등록 · 빼기(30일)」 은 파일의 고친 기록에서 꺼낸 읽기 전용 표다(시각 · 계정 · 한 일).
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from typing import Final
 
 import pandas as pd
@@ -55,7 +57,7 @@ from capa_simulation.components.admin_dialog import (
 )
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.paste_form import refuse_paste, render_paste_form, tell_paste
-from capa_simulation.components.sso_status import access_problem_text
+from capa_simulation.components.sso_status import NEW_REGISTRATION_DAYS, access_problem_text
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.io.s3_small import S3Failure
 from capa_simulation.sidebar_status import remembered_box_key, remembered_expander
@@ -106,6 +108,15 @@ TO_USER_HELP: Final = (
 )
 # 고르기 칸(지우기 · 등급 바꾸기가 함께 쓴다)의 이름 — 라벨을 접은 칸이라 자리표시 글로 보인다.
 REMOVE_PICKER_LABEL: Final = "사람 고르기"
+# 표 아래 접힌 「최근 등록 · 빼기」(보드 p0-admin-list) — 고친 기록(파일의 마지막 200건)에서 꺼낸다.
+RECENT_EXPANDER_KEY: Final = "admin_area_access_list_recent"
+RECENT_LABEL: Final = f"최근 등록 · 빼기({NEW_REGISTRATION_DAYS}일)"
+RECENT_COLUMNS: Final = ("시각", "계정", "한 일")
+RECENT_WHAT: Final = {
+    access_store.CHANGE_SELF: "스스로 등록",
+    access_store.CHANGE_ADD: "관리자가 넣음",
+    access_store.CHANGE_REMOVE: "뺌",
+}
 
 
 def save_failure_message(failure: S3Failure) -> str:
@@ -203,7 +214,7 @@ def _reread() -> None:
     document = ListDocument() if source is None else source.document or ListDocument()
     queue_flash(
         ACCESS_LIST_FLASH_KEY,
-        f"접속 명단을 다시 읽었습니다 — 사용자 {len(document.entries)} · 버전 {document.revision}",
+        f"접속 명단을 다시 읽었습니다 — 명단 {len(document.entries)} · 버전 {document.revision}",
     )
 
 
@@ -350,6 +361,30 @@ def _render_remove_picker(document: ListDocument) -> None:
     )
 
 
+def recent_changes_table(document: ListDocument, *, now: int) -> pd.DataFrame:
+    """최근 `NEW_REGISTRATION_DAYS` 일의 등록(스스로 · 관리자) · 빼기 — 새것 먼저.
+
+    칸은 시각 | 계정 | 한 일이다.
+
+    고친 기록은 덧붙이기만 하는 마지막 200건이라 그보다 오래된 줄은 없다. 등급 바꿈 · 정리 줄은
+    싣지 않는다(카드 「최근 등록 · 빼기」).
+    """
+    cutoff = datetime.fromtimestamp(now - NEW_REGISTRATION_DAYS * 86400, tz=timezone.utc)
+    rows: list[tuple[str, str, str]] = []
+    for item in reversed(document.changes):
+        what = RECENT_WHAT.get(item.what)
+        if what is None or not item.loginid:
+            continue
+        try:
+            moment = datetime.fromisoformat(item.at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if moment.tzinfo is None or moment < cutoff:
+            continue
+        rows.append((_when_text(item.at), item.loginid, what))
+    return pd.DataFrame(rows, columns=list(RECENT_COLUMNS))
+
+
 def _render_people(document: ListDocument, env_admins: frozenset[str]) -> None:
     if not document.entries:
         st.caption("명단에 사람이 없습니다")
@@ -358,6 +393,16 @@ def _render_people(document: ListDocument, env_admins: frozenset[str]) -> None:
     st.dataframe(
         people_table(document, env_admins), hide_index=True, width="stretch", placeholder=""
     )
+
+
+def _render_recent(document: ListDocument) -> None:
+    """표 아래 접힌 「최근 등록 · 빼기(30일)」 — 읽기만 한다(값은 이 펼침 안 표에만)."""
+    recent = recent_changes_table(document, now=int(time.time()))
+    with st.expander(RECENT_LABEL, key=RECENT_EXPANDER_KEY):
+        if recent.empty:
+            st.caption("없음")
+        else:
+            st.dataframe(recent, hide_index=True, width="stretch", placeholder="")
 
 
 def access_list_target() -> alerts.GotoTarget:
@@ -407,7 +452,7 @@ def render_access_list_admin() -> None:
             if document is not None:
                 access = runtime.current_access(cfg)
                 st.caption(
-                    f"버전 {document.revision} · 사용자 {len(document.entries)} · "
+                    f"버전 {document.revision} · 명단 {len(document.entries)} · "
                     f"관리자 {access.admin_count}(환경변수 {len(env_admins)})",
                     width="content",
                 )
@@ -418,5 +463,6 @@ def render_access_list_admin() -> None:
             st.caption("접속 명단 읽지 못함")
         else:
             _render_people(document, env_admins)
+            _render_recent(document)
     if admin_dialog_is_open(ADD_DIALOG):
         _add_dialog()

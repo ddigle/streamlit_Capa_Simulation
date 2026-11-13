@@ -37,6 +37,8 @@ from capa_simulation.auth import access_store, names, page_frame, runtime, web
 from capa_simulation.auth.access import GRADE_ADMIN, GRADE_USER
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.tokens import DENIED_TTL, issue_denied
+from capa_simulation.io import s3_small
+from capa_simulation.io.s3_small import S3Object, S3Target
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -548,3 +550,116 @@ def sign_in_to_with(
     state, nonce = start_login(app, jar, next_path)
     claims = id_token_claims(nonce, loginid=loginid, username=username, deptname=deptname)
     return post_form(app, jar, make_id_token(claims), state)
+
+
+# --- 리뷰 고침 ------------------------------------------------------------------------------------
+
+
+def test_a_cross_site_callback_still_clears_the_ticket(mock_s3: tuple[MockStore, str]) -> None:
+    """IdP 의 form_post 는 교차 사이트 POST 라 `SameSite=Lax` 인 거절 표가 실려 오지 않는다 — 실려
+    오지 않아도 로그인 성공이 표를 지운다(다른 계정으로 들어온 뒤 앞 사람의 계정이 15분 남지
+    않게 — 리뷰 보안 렌즈 1)."""
+    from sso_support import id_token_claims, make_id_token
+    from test_sso_access import post_form, start_login
+
+    store, endpoint = mock_s3
+    cfg = s3_started(store, endpoint, LISTED)
+    app = gated_app()
+    jar: dict[str, str] = {}
+    denied(app, jar, NEWCOMER)
+    assert cfg.denied_cookie in jar
+    state, nonce = start_login(app, jar)
+    cross_site = {name: value for name, value in jar.items() if name != cfg.denied_cookie}
+
+    callback = post_form(
+        app, cross_site, make_id_token(id_token_claims(nonce, loginid=LISTED)), state
+    )
+
+    assert has_live_session(cfg, callback)
+    cleared = callback.cookie(cfg.denied_cookie)
+    assert cleared is not None and cleared.deleted
+
+
+def test_a_failed_press_cools_down_before_touching_the_store_again(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장 실패 뒤 같은 거절 표의 되풀이는 `REGISTER_COOLDOWN` 동안 저장소에 가지 않고, 사건
+    고리를 밀어내지 않는다(누계만 — 리뷰 데이터 렌즈 2). 틈이 지나면 다시 해 본다."""
+    store, endpoint = mock_s3
+    s3_started(store, endpoint, LISTED)
+    app = gated_app()
+    jar: dict[str, str] = {}
+    mark = form_mark(denied(app, jar, NEWCOMER))
+    store.force["PUT"] = (403, "AccessDenied")
+    ring = len(runtime.recent_events(anonymous=False))
+
+    first = press(app, jar, {"t": mark})
+    touched = len(store.requests)
+    again = [press(app, jar, {"t": mark}) for _ in range(5)]
+
+    assert code_of(first) == web.REGISTER_FAILED
+    assert all(code_of(item) == web.REGISTER_FAILED for item in again)
+    assert len(store.requests) == touched, "틈 안의 되풀이는 저장소에 가지 않는다"
+    assert len(runtime.recent_events(anonymous=False)) == ring
+    assert runtime.self_register_failures() == 1
+
+    store.force.clear()
+    later = int(time.time()) + runtime.REGISTER_COOLDOWN + 1
+    monkeypatch.setattr(web, "_now", lambda: later)
+    done = press(app, jar, {"t": mark})
+
+    assert code_of(done) == web.REGISTERED
+    assert NEWCOMER in stored_users(store)
+
+
+def test_a_stale_store_read_sends_the_press_to_the_note(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """다시 받은 판이 메모리보다 오래되면(옛 판을 돌려준 저장소) 쓰지 않고 신청 글 화면이다."""
+    store, endpoint = mock_s3
+    cfg = s3_started(store, endpoint, LISTED)
+    from test_sso_access_s3 import identity_of
+
+    stale = store.objects[OBJECT]
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=["demo.other"])
+    real_get = s3_small.get_object
+    served: list[str] = []
+
+    def stale_once(target: S3Target, key: str, *, moment: float | None = None) -> S3Object | None:
+        if key == OBJECT and not served:
+            served.append(key)
+            return S3Object(body=stale, etag="stale")
+        return real_get(target, key, moment=moment)
+
+    app = gated_app()
+    jar: dict[str, str] = {}
+    mark = form_mark(denied(app, jar, NEWCOMER))
+    monkeypatch.setattr(access_store, "get_object", stale_once)
+    puts = sum(1 for method, _ in store.requests if method == "PUT")
+
+    pressed = press(app, jar, {"t": mark})
+
+    assert served, "옛 판을 받은 누름이다"
+    assert code_of(pressed) == web.REGISTER_FAILED
+    assert sum(1 for method, _ in store.requests if method == "PUT") == puts
+    assert "demo.other" in stored_users(store) and NEWCOMER not in stored_users(store)
+
+
+def test_without_any_contact_the_steps_name_the_app_admin(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """문의 두 칸이 모두 비어 문의 줄이 없으면 「문의처」 대신 앱 관리자를 가리킨다(리뷰 UX
+    렌즈)."""
+    monkeypatch.delenv("CAPA_APP_CONTACT_EMAIL", raising=False)
+    store, endpoint = mock_s3
+    s3_started(store, endpoint, LISTED)
+    app = gated_app()
+    jar: dict[str, str] = {}
+    mark = form_mark(denied(app, jar, NEWCOMER))
+    store.force["PUT"] = (403, "AccessDenied")
+
+    page = follow(app, jar, press(app, jar, {"t": mark}))
+
+    assert f"{page_frame.CONTACT_LABEL} · " not in page.text, "문의 줄이 없다"
+    assert "문의처" not in page.text
+    assert web.NO_CONTACT_TEXT[web.SEND_NOTE_STEP] in page.text

@@ -158,6 +158,15 @@ PORTAL_STEPS = (
     "모르겠으면 문의처에 아래 참고 번호를 알려 주세요.",
 )
 PORTAL_DIAGNOSTIC = "통합인증이 보낸 거절 글 원문은 Admin 「통합인증 점검」 최근 사건에 있습니다."
+# 문의 설정 두 칸(메일 · 창구 글)이 모두 비어 문의 줄이 서지 않는 서버 — 「문의처」 를 가리키는 글을
+# 앱 관리자로 바꿔 보이지 않는 곳을 가리키지 않는다.
+NO_CONTACT_TEXT: Mapping[str, str] = {
+    SEND_NOTE_STEP: "아래 글을 앱 관리자에게 보내 주세요.",
+    NOTE_LABEL: "앱 관리자에게 보낼 글 — 한 번 누르면 통째로 골라집니다",
+    LIST_UNREAD_WAIT_STEP: "1분 뒤 「다시 확인」 을 누르세요. 계속되면 앱 관리자에게 알려 주세요.",
+    LIST_UNREAD_ADMIN_STEP: "앱 관리자에게 알려 주세요.",
+    PORTAL_STEPS[1]: "모르겠으면 앱 관리자에게 아래 참고 번호를 알려 주세요.",
+}
 
 HTML_HEADERS = {
     "Cache-Control": "no-store",
@@ -736,6 +745,13 @@ def _other_account(cfg: SsoConfig) -> tuple[Link, ...]:
     return (Link(OTHER_ACCOUNT_LABEL, cfg.logout_url),) if cfg.logout_url else ()
 
 
+def _reachable(cfg: SsoConfig, text: str) -> str:
+    """「문의처」 를 가리키는 글 — 문의 줄이 서지 않는 서버(두 칸 모두 빔)면 앱 관리자로 바꾼 글."""
+    if _contact_email() or cfg.access.contact:
+        return text
+    return NO_CONTACT_TEXT.get(text, text)
+
+
 def _note(ticket: DeniedClaims, code: str, now: int) -> str:
     return page_frame.request_note(account=ticket.loginid, name=ticket.name, code=code, now=now)
 
@@ -764,7 +780,7 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
         )
         note = ""
     else:
-        steps = (SEND_NOTE_STEP, *((DENIED_OTHER_STEP,) if other else ()))
+        steps = (_reachable(cfg, SEND_NOTE_STEP), *((DENIED_OTHER_STEP,) if other else ()))
         primary = _login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path)
         note = _note(ticket, NOT_ON_LIST, now)
     secondary = (
@@ -782,7 +798,7 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
         steps=steps,
         primary=primary,
         secondary=secondary,
-        note_label=NOTE_LABEL if note else "",
+        note_label=_reachable(cfg, NOTE_LABEL) if note else "",
         note_text=note,
         reference=NOT_ON_LIST,
         diagnostics=(ADMIN_TYPO_DIAGNOSTIC,),
@@ -806,10 +822,10 @@ def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
         title=LIST_UNREAD_TITLE,
         chip="maintenance",
         lead=(text,),
-        steps=(step,),
+        steps=(_reachable(cfg, step),),
         primary=_login_link(cfg, CHECK_AGAIN_LABEL, "/" if ticket is None else ticket.next_path),
         secondary=_other_account(cfg),
-        note_label=NOTE_LABEL if note else "",
+        note_label=_reachable(cfg, NOTE_LABEL) if note else "",
         note_text=note,
         reference=LIST_UNREAD,
         account="" if ticket is None else ticket.loginid,
@@ -838,10 +854,10 @@ def register_failed_frame(cfg: SsoConfig, ticket: DeniedClaims, now: int) -> Fra
         title=REGISTER_FAILED_TITLE,
         chip="retry",
         lead=(REGISTER_FAILED_TEXT,),
-        steps=(SEND_NOTE_STEP,),
+        steps=(_reachable(cfg, SEND_NOTE_STEP),),
         primary=_login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path),
         secondary=_other_account(cfg),
-        note_label=NOTE_LABEL,
+        note_label=_reachable(cfg, NOTE_LABEL),
         note_text=_note(ticket, REGISTER_FAILED, now),
         reference=REGISTER_FAILED,
         account=ticket.loginid,
@@ -888,7 +904,7 @@ def portal_refused_page(cfg: SsoConfig, *, now: int | None = None) -> HTMLRespon
         title=PORTAL_TITLE,
         chip="denied",
         lead=(PORTAL_TEXT,),
-        steps=PORTAL_STEPS,
+        steps=tuple(_reachable(cfg, step) for step in PORTAL_STEPS),
         primary=other[0] if other else retry,
         secondary=(retry,) if other else (),
         reference=PORTAL_REFUSED,
@@ -1098,8 +1114,9 @@ async def callback(request: Request) -> Response:
         return _fail(cfg, "session_cookie_too_large", state=state, now=now, loginid=login.loginid)
     clear_state_cookie(response, state_cookie)
     clear_attempt_cookie(response, cfg)
-    if cfg.denied_cookie in request.cookies:
-        clear_denied_cookie(response, cfg)
+    # 늘 지운다 — 콜백은 IdP 의 교차 사이트 POST 라 `SameSite=Lax` 인 거절 표가 실려 오지 않아
+    # 있는지 볼 수 없다(남겨 두면 다른 계정으로 들어온 뒤에도 앞 사람의 계정이 15분 보인다).
+    clear_denied_cookie(response, cfg)
     response.headers["Referrer-Policy"] = "no-referrer"
     runtime.record_event(
         "login_ok",
@@ -1216,9 +1233,11 @@ async def register(request: Request) -> Response:
     차례는 모드 → 메서드(GET 은 거절 화면으로 303) → 출처(403) → 폼 꼴(415 · 413 · 400) → 거절
     표(없거나
     만료면 표 없는 거절 화면으로) → 숨은 표지(403) → 이미 명단에 들었으면 쓰지 않고
-    「등록했습니다」 →
+    「등록했습니다」 → 그 표의 신청이 실패한 뒤 `runtime.REGISTER_COOLDOWN` 안이면 저장소에 가지
+    않고 `register_failed` →
     스레드 풀에서 `access_store.register_self` 다. 성공 · 이미 있음은 `registered`, 저장 실패는
     `register_failed` 로 보낸다. 폼의 다른 칸(계정 · 등급)은 읽지 않는다 — 신원은 거절 표뿐이다.
+    실패의 사건은 고리에 두지 않고 누계만 센다(`runtime.SELF_REGISTER_FAILED_EVENT`).
     """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
@@ -1247,6 +1266,8 @@ async def register(request: Request) -> Response:
         return text_response(REGISTER_FORM_REFUSAL, 403)
     if not access_store.is_unread(cfg) and runtime.current_access(cfg).allows(ticket.loginid):
         return _denied_redirect(cfg, REGISTERED)
+    if runtime.register_cooling(ticket.jti, now=now):
+        return _denied_redirect(cfg, REGISTER_FAILED)
     try:
         await run_in_threadpool(
             access_store.register_self,
@@ -1256,11 +1277,18 @@ async def register(request: Request) -> Response:
             dept=ticket.dept,
             now=now,
         )
-    except (S3Failure, access_store.StoreUnreadError, access_store.RegisterRefusedError):
+    except (
+        S3Failure,
+        access_store.StoreUnreadError,
+        access_store.StoreConflictError,
+        access_store.RegisterRefusedError,
+    ):
+        runtime.note_register_failure(ticket.jti, now=now)
         return _denied_redirect(cfg, REGISTER_FAILED)
     except Exception as exc:  # noqa: BLE001 — 어떤 실패든 신청 글 화면으로(앱을 멈추지 않는다)
+        runtime.note_register_failure(ticket.jti, now=now)
         runtime.record_event(
-            "access_save_failed", level=logging.WARNING, loginid="-", reason=type(exc).__name__
+            runtime.SELF_REGISTER_FAILED_EVENT, level=logging.WARNING, reason=type(exc).__name__
         )
         return _denied_redirect(cfg, REGISTER_FAILED)
     return _denied_redirect(cfg, REGISTERED)

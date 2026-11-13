@@ -27,7 +27,10 @@ from capa_simulation.components.sso_identity import (
     admin_area_locked,
     viewer_can_audit,
 )
-from capa_simulation.components.sso_status import render_sso_status
+from capa_simulation.components.sso_status import (
+    render_off_in_production_alert,
+    render_sso_status,
+)
 from capa_simulation.components.state_alerts import open_tab_name, tab_name
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
@@ -57,6 +60,9 @@ TABS_KEY = ADMIN_AREA_TAB_KEY
 TABS_BOX_KEY = "admin_area_tabs_box"
 
 render_page_header("Admin Area")
+# 운영인데 통합인증이 꺼진 서버(`AD-02`)는 관리자 신원이 없어 아래 잠금이 모두를 멈춘다 — 그
+# 알림만은 잠금 앞에서 내 잠긴 회차에도 Alarm 으로 닿게 한다.
+render_off_in_production_alert()
 # 운영 서버에서 관리자가 아니면 메뉴가 없고(`app.py`), 주소로 열어도 여기서 멈춘다 — 판정은
 # `sso_identity.admin_area_locked` 하나다(설계 규칙 UI-INP-07 — 없는 기능은 숨김).
 if admin_area_locked():
@@ -84,8 +90,8 @@ tabs_box = st.container(key=TABS_BOX_KEY)
 with tabs_box:
     render_module_status(box_key=TABS_BOX_KEY)
     # 탭 묶음은 DB 를 열기 **앞**이다 — DB 를 못 열어도 DB 를 쓰지 않는 기록 탭은 열린다(DB
-    # 탭 안에만 「데이터 Error」 마크). 관리자는 환경변수뿐이라 세션 중에 라벨 목록이 바뀌지
-    # 않지만, 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
+    # 탭 안에만 「데이터 Error」 마크). 명단에서 관리자 등급이 바뀌면 세션 중에도 라벨 목록이
+    # 바뀐다 — 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
     tab_labels = (*TAB_NAMES, LOG_TAB) if viewer_can_audit() else TAB_NAMES
     if st.session_state.get(TABS_KEY, tab_labels[0]) not in tab_labels:
         st.session_state[TABS_KEY] = tab_labels[0]

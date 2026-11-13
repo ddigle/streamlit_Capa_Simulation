@@ -3,7 +3,8 @@
 """통합인증 프로세스 상태.
 
 로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리 ·
-명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 지금 접속 명단 한 벌(S3 명단이 켜졌을 때 —
+명단 밖 로그인 표 · 「접속 권한 신청」 실패 뒤의 틈 · 마지막 로그인의 클레임 이름 · 지금 접속 명단
+한 벌(S3 명단이 켜졌을 때 —
 `AccessSource`, 통째로 바꾼다)을 둔다. 모두 프로세스 메모리이고(replica 1 전제)
 재시작하면 비워진다 —
 로그아웃 폐기 목록이 사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는
@@ -56,6 +57,15 @@ MAX_DENIED_ACCOUNTS = MAX_EVENTS
 # 한 번) 생겨 위와 같은 까닭으로 고리에 두지 않고 누계만 센다 — 지금 까닭과 시도 시각은 「S3 명단」
 # 줄이 말하고, 첫 실패는 기동 때의 `access_read` 로 고리에 있다.
 ACCESS_RETRY_FAILED_EVENT = "access_retry_failed"
+# 거절 화면 「접속 권한 신청」 의 실패(`access_store.register_self` · `web.register`).
+# 명단 밖 사람이 되풀이해 남길 수 있어 위와 같은 까닭으로 고리에 두지 않고 누계만 센다 —
+# 지금 까닭은 「S3 명단」 줄의 쓰기 칸이 말하고, 사람마다의 시도는 감사 줄
+# (`user_self_registered` out=fail)에 있다.
+SELF_REGISTER_FAILED_EVENT = "access_self_register_failed"
+# 같은 거절 표로 실패한 신청을 다시 해 보기까지의 틈(초). 그 사이의 신청은 저장소에 가지 않는다 —
+# 저장소가 막힌 동안 한 사람의 되풀이가 입출력 잠금을 잡고 감사 줄을 쌓지 않게.
+REGISTER_COOLDOWN = 60
+MAX_REGISTER_COOLDOWNS = 10_000
 MAX_DIAGNOSTICS = 100
 DIAGNOSTIC_TTL = 600
 MAX_REVOKED = 10_000
@@ -126,6 +136,8 @@ class _State:
     last_login_claims: tuple[str, ...] = ()
     access_source: AccessSource | None = None
     access_retry_failures: int = 0
+    self_register_failures: int = 0
+    register_cooldowns: dict[str, int] = field(default_factory=dict)
 
 
 _LOCK = threading.Lock()
@@ -348,6 +360,33 @@ def remember_used_state(digest: str, exp: int) -> bool:
         return True
 
 
+def note_register_failure(ticket_id: str, *, now: int | None = None) -> None:
+    """그 거절 표(`jti`)의 신청이 실패했다 — `REGISTER_COOLDOWN` 동안 다시 저장소에 가지 않는다."""
+    moment = _now() if now is None else now
+    with _LOCK:
+        _prune(_STATE.register_cooldowns, moment)
+        if (
+            ticket_id not in _STATE.register_cooldowns
+            and len(_STATE.register_cooldowns) >= MAX_REGISTER_COOLDOWNS
+        ):
+            _drop_earliest(_STATE.register_cooldowns)
+        _STATE.register_cooldowns[ticket_id] = moment + REGISTER_COOLDOWN
+
+
+def register_cooling(ticket_id: str, *, now: int | None = None) -> bool:
+    """그 거절 표의 실패한 신청 뒤 `REGISTER_COOLDOWN` 안인가(그러면 저장소에 가지 않고 실패다)."""
+    moment = _now() if now is None else now
+    with _LOCK:
+        until = _STATE.register_cooldowns.get(ticket_id)
+        return until is not None and moment < until
+
+
+def self_register_failures() -> int:
+    """기동 뒤 「접속 권한 신청」 실패 누계 — 고리에 적지 않는다(`SELF_REGISTER_FAILED_EVENT`)."""
+    with _LOCK:
+        return _STATE.self_register_failures
+
+
 def note_login_claims(claim_names: Sequence[str]) -> None:
     """검증을 마친 마지막 로그인의 클레임 이름을 적는다(값 없음 · 거절된 로그인 포함).
 
@@ -467,10 +506,10 @@ def record_event(
     """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(각 최대 50).
 
     무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다. 명단 밖 로그인
-    (`DENIED_EVENT`)은 고리 대신 계정별 표에 두고, 자가 회복 실패(`ACCESS_RETRY_FAILED_EVENT`)는
-    누계만 센다. 셋 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을
-    밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽
-    규칙).
+    (`DENIED_EVENT`)은 고리 대신 계정별 표에 두고, 자가 회복 실패(`ACCESS_RETRY_FAILED_EVENT`) ·
+    「접속 권한 신청」 실패(`SELF_REGISTER_FAILED_EVENT`)는 누계만 센다. 넷 다 다른 사건(설정 ·
+    로그인 · 로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을 밀어내지 못한다. 토큰 · state ·
+    nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽 규칙).
 
     감사 기록기가 켜진 서버면 같은 사건을 대응표(`audit.recorder.from_sso_event`)로 감사 줄에도
     넣는다 — 잠금 밖에서 부른다(기록기의 등급 판정이 이 모듈의 명단을 읽는다). `audit` 은 감사
@@ -486,6 +525,8 @@ def record_event(
             _note_denied(item)
         elif item.event == ACCESS_RETRY_FAILED_EVENT:
             _STATE.access_retry_failures += 1
+        elif item.event == SELF_REGISTER_FAILED_EVENT:
+            _STATE.self_register_failures += 1
         elif is_anonymous(item):
             _STATE.anonymous_events.append(item)
             key = _anonymous_key(item)
@@ -538,7 +579,7 @@ def denied_total() -> int:
 
 def reset() -> None:
     """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건 · 명단 밖
-    로그인 표 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
+    로그인 표 · 신청 틈 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()
