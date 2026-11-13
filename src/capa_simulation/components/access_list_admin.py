@@ -402,6 +402,8 @@ def _render_recent(document: ListDocument) -> None:
         if recent.empty:
             st.caption("없음")
         else:
+            # 펼침의 첫 표 — 표 도구 막대가 머리 오른쪽 끝(접기 누름)을 덮지 않게 띄운다.
+            toolbar_clearance()
             st.dataframe(recent, hide_index=True, width="stretch", placeholder="")
 
 
