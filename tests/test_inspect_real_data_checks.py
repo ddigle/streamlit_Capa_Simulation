@@ -88,9 +88,6 @@ TODAY = date(2026, 10, 7)
 ST_DEFINITION_LINE = (
     "- ST 정의 대조(참고) — 리비전 1 `RQ_UPEH` 의 UPEH × ST ÷ 60(ST 는 분 단위라 기대 1)"
 )
-HOME_PLAN_MONTHS_LINE = (
-    "- 계획 달(`RQ_PKG_PLAN` 에 생산수량이 0 보다 큰 행이 있는 달 · 리비전 1 전체 기간)"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -324,12 +321,10 @@ def test_db_checks_print_aggregates_and_never_the_planted_names(
     _assert_no_leak(output)
     # 읽기만 했다 — 파일이 한 바이트도 바뀌지 않는다.
     assert (_md5(simulation_db), _md5(equipment_db)) == before
-    for heading in ("### 8-1.", "### 8-2.", "### 8-3.", "### 8-4.", "### 8-9.", "### 8-11."):
+    for heading in ("### 8-1.", "### 8-2.", "### 8-3.", "### 8-4.", "### 8-11."):
         assert heading in output
     assert "### 8-5." not in output  # BigDataQuery 는 따로 부를 때만
-    # HOME 월 축 — 내장 시드는 달마다 양산이 있어 빠지는 달이 없다.
-    assert f"{HOME_PLAN_MONTHS_LINE} 12 · 그 가운데 1~12월이 다 든 해 1" in output
-    assert "| **계획 달 가운데 양산 Density 없는 달** | 0 | 0 |" in output
+    assert "### 8-9." not in output  # HOME 월 축 블록은 걷었다
     # 경로는 찍지 않고 파일 이름만.
     assert str(simulation_db.parent) not in output
     assert "`capa_simulation.duckdb`" in output
@@ -692,111 +687,18 @@ def test_an_unknown_demand_basis_is_counted_not_named(
     assert "- 그 밖의 소요기준 1종 1행 1공정(값은 적지 않는다)" in output
 
 
-def _plant_home_months(path: Path) -> None:
-    """HOME 월 축에서 빠지는 달을 셋 만든다. 내장 시드는 달마다 양산 한 행·ER 한 행이다.
+def test_the_withdrawn_home_block_is_no_longer_a_choice(capsys: pytest.CaptureFixture[str]) -> None:
+    """8-9(`home`)는 닫을 조건이 리뷰마다 서서 걷었다 — 고르면 모르는 블록으로 멈추고 DB 를 열지
+    않는다. 지난 압축본의 `8-9` 줄은 다른 요약 줄처럼 그대로 셈한다(리뷰 202611131000 의 꼴)."""
+    code, output = _run(capsys, "--only", "home")
 
-    - 202603 — 양산 행을 ER 로 바꾼다(양산 없이 ER 만 있는 달).
-    - 202605 — 양산 행의 제품을 Density 기준정보에 없는 것으로 바꾼다(양산은 있는데 Density 가
-      붙지 않는 달). 바꾼 이름은 표지값이라 찍히면 누출이다.
-    - 202607 — 양산 행의 제품타입을 EDP-TSV 로 바꾼다(EDP 를 뺀 HOME 에서만 빠지는 달).
-    """
-    with duckdb.connect(str(path)) as connection:
-        for month, column, value in (
-            (202603, "양산구분", "ER"),
-            (202605, "제품정보", f"{SENTINEL}NEW"),
-            (202607, "제품타입", "EDP-TSV"),
-        ):
-            connection.execute(
-                f'UPDATE rev_data.rq_pkg_plan SET "{column}" = ? '
-                'WHERE "생산계획년월" = ? AND "양산구분" = \'양산\'',
-                [value, month],
-            )
-
-
-def test_the_home_block_counts_plan_months_missing_from_the_month_axis(
-    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """HOME 월 축은 양산 Density 가 있는 달만 선다(2026-10-22 결정 A — 그대로 둔다). 실데이터에
-    그런 달이 있는지 개수로만 잰다 — EDP 를 포함한 기본 화면과 EDP 를 뺀 화면 두 칸."""
-    path = tmp_path / "capa_simulation.duckdb"
-    path.write_bytes(simulation_db.read_bytes())
-    _plant_home_months(path)
-    before = _md5(path)
-
-    code, output = _run(capsys, "--only", "home", "--database", str(path))
-
-    assert code == 0
-    _assert_no_leak(output)
-    assert _md5(path) == before
-    assert "### 8-9. HOME 월 축 — 양산 Density 없는 계획 달 (`home`)" in output
-    assert f"{HOME_PLAN_MONTHS_LINE} 12 · 그 가운데 1~12월이 다 든 해 1" in output
-    assert "| HOME 월 축에 서는 달 — 양산 Density 가 있는 달 | 10 | 9 |" in output
-    assert "| **계획 달 가운데 양산 Density 없는 달** | 2 | 3 |" in output
-    assert "| └ 양산 계획이 없는 달(ER 등만 있는 달) | 1 | 2 |" in output
-    assert "| └ 양산 계획은 있는데 Density 가 붙지 않은 달 | 1 | 1 |" in output
-    assert (
-        "| └ 양산 Density 없는 달 가운데 Wafer 부하량이 있는 달(Wafer 계획·Wafer Capa 에서 빠짐) "
-        "| 2 | 3 |"
-    ) in output
-    assert (
-        "| 연간 Total 열이 빠지는 해(계획은 1~12월이 다 있는데 월 축은 아닌 해) | 1 | 1 |" in output
-    )
-
-
-def test_the_home_block_does_not_count_zero_quantity_rows_as_plan(
-    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """수량 0 행은 계산이 걷어내므로 계획으로 세지 않는다(런북 8-9 「계획 달」). 세면 사내
-    실데이터에서 없는 빠진 달을 지어낸다 — 편집 격자는 계획 없는 달에도 수량 0 행을 들고 있다.
-
-    - 202609 — 양산 행만 수량 0. ER 이 남아 계획 달이고, 양산 계획이 없는 달로 센다(Density 미연결이
-      아니다).
-    - 202612 — 모든 행이 수량 0. 계획 달이 아니라 빠진 달로도 세지 않고, 2026 은 1~12월이 다 든 해가
-      아니게 된다.
-    """
-    path = tmp_path / "capa_simulation.duckdb"
-    path.write_bytes(simulation_db.read_bytes())
-    with duckdb.connect(str(path)) as connection:
-        connection.execute(
-            'UPDATE rev_data.rq_pkg_plan SET "생산수량" = 0 '
-            'WHERE ("생산계획년월" = 202609 AND "양산구분" = \'양산\') OR "생산계획년월" = 202612'
-        )
-
-    code, output = _run(capsys, "--only", "home", "--database", str(path))
-
-    assert code == 0
-    _assert_no_leak(output)
-    assert f"{HOME_PLAN_MONTHS_LINE} 11 · 그 가운데 1~12월이 다 든 해 0" in output
-    assert "| HOME 월 축에 서는 달 — 양산 Density 가 있는 달 | 10 | 10 |" in output
-    assert "| **계획 달 가운데 양산 Density 없는 달** | 1 | 1 |" in output
-    assert "| └ 양산 계획이 없는 달(ER 등만 있는 달) | 1 | 1 |" in output
-    assert "| └ 양산 계획은 있는데 Density 가 붙지 않은 달 | 0 | 0 |" in output
-    assert (
-        "| └ 양산 Density 없는 달 가운데 Wafer 부하량이 있는 달(Wafer 계획·Wafer Capa 에서 빠짐) "
-        "| 1 | 1 |"
-    ) in output
-    assert (
-        "| 연간 Total 열이 빠지는 해(계획은 1~12월이 다 있는데 월 축은 아닌 해) | 0 | 0 |" in output
-    )
-
-
-def test_a_home_column_that_stops_is_named_by_kind_only(
-    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """제품타입이 빈 계획이면 EDP 를 뺀 HOME 은 멈춘다. 그 오류 문구에는 제품 이름이 실린다 — 칸에는
-    종류만 적고, EDP 를 포함한 칸은 그대로 센다."""
-    path = tmp_path / "capa_simulation.duckdb"
-    path.write_bytes(simulation_db.read_bytes())
-    with duckdb.connect(str(path)) as connection:
-        connection.execute(
-            'UPDATE rev_data.rq_pkg_plan SET "제품타입" = NULL WHERE "생산계획년월" = 202601'
-        )
-
-    code, output = _run(capsys, "--only", "home", "--database", str(path))
-
-    assert code == 0
-    _assert_no_leak(output)
-    assert "| **계획 달 가운데 양산 Density 없는 달** | 0 | 실패(ValueError) |" in output
+    assert code == 2
+    assert "모르는 블록: ['home']" in output
+    assert "home" not in checks.CHECKS and "home" not in checks.DEFAULT_CHECKS
+    old = "- 8-9 14 · 포함 0 = 0 + 0 · 뺌 0"
+    coded = f"{old} #{checks.summary_code(checks._summary_body(old))}"
+    assert checks.check_transcript([coded]) == []
+    assert checks.check_transcript([coded.replace("포함 0 = 0", "포함 1 = 0")]) != []
 
 
 def _plant_sixty_fold(path: Path) -> tuple[int, int, int]:
@@ -1307,14 +1209,14 @@ def test_a_newer_source_whose_revision_one_stops_is_skipped_for_the_next(
 ) -> None:
     """사내 리뷰 `202610271800` 사외 요청 2 — 가장 최근 원천의 리비전 1 계산이 멈춰 8-2
     맞대기가 비었다. 리비전 1 계산이 서는 가장 최근 원천을 고르고, 건너뛴 것은 차례 · 원천 종류 ·
-    적재일 · 까닭(단계와 예외 종류)만 찍는다. 8-3 · 8-9 도 같은 데이터셋을 본다. 요약에는 8-2D 한
-    줄이 더해지고 확인 코드 꼴은 그대로다."""
+    적재일 · 까닭(단계와 예외 종류)만 찍는다. 8-3 도 같은 데이터셋을 본다. 요약에는 8-2D 한 줄이
+    더해지고 확인 코드 꼴은 그대로다."""
     path = tmp_path / "capa_simulation.duckdb"
     path.write_bytes(simulation_db.read_bytes())
     stopped = f"{SENTINEL}DS-NEW"
     _add_source_dataset(path, stopped, days_later=1, stop=True)
 
-    code, output = _run(capsys, "--only", "legacy,reqb,home", "--database", str(path))
+    code, output = _run(capsys, "--only", "legacy,reqb", "--database", str(path))
 
     assert code == 0
     _assert_no_leak(output)
@@ -1326,10 +1228,10 @@ def test_a_newer_source_whose_revision_one_stops_is_skipped_for_the_next(
         f"  - 최근부터 1번째 · 원천 종류 `BUILTIN_SYNTHETIC_SEED` · 적재 {_imported(path, stopped)}"
         " — 대당 Capa 실패(ValueError)"
     )
-    # 8-2 · 8-3 · 8-9 세 블록 머리가 같은 데이터셋과 건너뛴 줄을 찍는다.
-    assert output.count(picked) == 3
-    assert output.count(SKIP_HEAD) == 3
-    assert output.count(skipped) == 3
+    # 8-2 · 8-3 두 블록 머리가 같은 데이터셋과 건너뛴 줄을 찍는다.
+    assert output.count(picked) == 2
+    assert output.count(SKIP_HEAD) == 2
+    assert output.count(skipped) == 2
     # 고른 데이터셋의 계산은 선다 — 소요대수 대조까지 간다.
     assert "신규 경로 키 72 중 원천 경로에 있는 키 72 (100.00%)" in output
     summary = _summary(output)
@@ -3247,7 +3149,6 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-4",
         "8-4s",
         "8-4u",
-        "8-9",
         "8-10",
         "8-11",
         "8-12",
@@ -3264,17 +3165,16 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert bare[6] == "- 8-2B 0"
     assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
     assert bare[10] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
-    assert bare[11] == "- 8-9 12 · 포함 0 = 0 + 0 · 뺌 0"
-    assert bare[12] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert bare[11] == "- 8-10 활성 1 · 모두 0 (12/12)"
     assert re.fullmatch(
         GRID_SUMMARY_IN_RANGE,
-        bare[13],
-    ), bare[13]
-    assert bare[14] == "- 8-12 전부 1 · 걸림 0"
+        bare[12],
+    ), bare[12]
+    assert bare[13] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
-        sum(1 for line in lines if " = " in line) == 5
-    )  # 8-3 · 8-4 · 8-4u · 8-9 · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
+        sum(1 for line in lines if " = " in line) == 4
+    )  # 8-3 · 8-4 · 8-4u · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
 
 
 def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:

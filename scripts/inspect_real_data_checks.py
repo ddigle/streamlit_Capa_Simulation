@@ -6,7 +6,7 @@
 스크립트는 그 질문을 사내에서 한 번에 재고, 결과를 리뷰 문서에 **그대로 붙일 수 있는 Markdown
 블록**으로 찍는다.
 
-    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 여덟
+    uv run --no-sync python scripts/inspect_real_data_checks.py             # DB 확인 일곱
     uv run --no-sync python scripts/inspect_real_data_checks.py --only bdq  # BigDataQuery
 
 사내에서는 사용자가 Claude 밖의 별도 PowerShell 창에서 돌리고 사내 에이전트는 `--output` 파일만
@@ -20,12 +20,13 @@
 | 8-3 | `reqb` | 원천 `RQ_REQB` 의 소요기준별 행·공정 수 |
 | 8-4 | `equipment` | 설비 DB 의 옛 Qual 자리표·모듈 환산비·일정 미정·사용기준·38열 개편 분포 |
 | 8-5 | `bdq` | 목록 조회 시간·`reg_date` 꼴·코드 규칙 위반·적재일·사본 여부 — 런북은 안 부름 |
-| 8-9 | `home` | HOME 월 축(양산 Density 가 있는 달)에서 빠지는 계획 달 수 — EDP 포함·뺌 |
 | 8-10 | `census` | 「지금대로」 로 정한 결정마다 그 꼴이 저장 리비전에 몇 개 있는지(센서스) |
 | 8-11 | `grid` | 기준 정보 편집 표 아홉의 줄 · 칸 수와 본문 바이트 — 큰 표 상한 대비 |
 | 8-12 | `blank` | 남는 경로의 빈 칸으로 대당 Capa 가 멈춘 리비전 — 칸 분포 · 원천 형제 · 부하 |
 
-8-6 ~ 8-8 은 런북의 다른 절(리뷰에 옮기는 법 등)이 쓰는 번호라 블록 번호로 쓰지 않는다.
+8-6 ~ 8-8 은 런북의 다른 절(리뷰에 옮기는 법 등)이 쓰는 번호라 블록 번호로 쓰지 않는다. 8-9
+(`home` — HOME 월 축에서 빠지는 계획 달)는 닫을 조건(EDP 포함 · 뺌 모두 0)이 리뷰마다 서서 걷었고
+번호는 다시 쓰지 않는다 — 지난 압축본의 `8-9` 줄은 `--check-summary` 가 다른 줄처럼 그대로 셈한다.
 
 **끝에 「전송용 요약」 을 찍는다.** 사내 리뷰는 사람이 손으로 옮겨 적는다(2026-10-22
 사용자 답) — 블록은 리뷰 전문(`review/<stamp>.full.md`)에 남고, 사외로 가는 것은 압축본
@@ -148,10 +149,6 @@ from capa_simulation.services.core_data_derivation import (  # noqa: E402
     derive_q_core_data,
     plan_row_mask,
 )
-from capa_simulation.services.dashboard import (  # noqa: E402
-    build_monthly_wafer_load_from_load,
-    build_production_dashboard,
-)
 from capa_simulation.services.edit_grid import GridSpec, ValueFormat  # noqa: E402
 from capa_simulation.services.edit_grid_payload import build_base  # noqa: E402
 from capa_simulation.services.equipment_contract import (  # noqa: E402
@@ -237,10 +234,7 @@ from capa_simulation.services.load_calculator import (  # noqa: E402
     calculate_chip_load,
     calculate_density_load,
     calculate_wafer_load,
-    drop_unplanned_rows,
-    filter_edp_plan,
 )
-from capa_simulation.services.month_columns import complete_years  # noqa: E402
 from capa_simulation.services.month_filter import (  # noqa: E402
     available_month_range,
     filter_month_range,
@@ -294,7 +288,6 @@ CHECKS: Final[tuple[str, ...]] = (
     "reqb",
     "equipment",
     "bdq",
-    "home",
     "census",
     "grid",
     "blank",
@@ -305,7 +298,6 @@ DEFAULT_CHECKS: Final[tuple[str, ...]] = (
     "legacy",
     "reqb",
     "equipment",
-    "home",
     "census",
     "grid",
     "blank",
@@ -525,7 +517,7 @@ _CELL_SEP: Final = r"\s*(?:·|;|,)\s*"
 # 시작하므로, 스크립트가 그 키로 찍는 첫 낱말(`_BARE_KEY_SHAPE`)일 때만 요약 줄로 본다.
 _SUMMARY_KEY: Final = re.compile(r"^8-\d+[A-Za-z]?\d*(?:\s|$)")
 _BARE_KEY: Final = re.compile(r"^8-\d+(?:\s|$)")
-# 글자 없는 키 뒤에 스크립트가 찍는 첫 낱말 — 수(`8-3 29,238 = …` · `8-9 0`),
+# 글자 없는 키 뒤에 스크립트가 찍는 첫 낱말 — 수(`8-3 29,238 = …` · 걷은 블록의 `8-9 0`),
 # `S 36/36` · `S -`(8-1) · `r83`(8-4) · `C9 2`(8-10 수 줄), 멈춤 · 실패 · 건너뜀 꼴(8-2 원천
 # 못 읽음 · 파생 프레임, 8-4 설비 DB · 리비전 0, 8-5 건너뜀 · 패키지, 8-10 활성 · 전부 · 시뮬레이션
 # DB · 리비전 목록, 모든 블록의 멈춤 · 요약 실패). 키로 찍는 꼴을 더하면 여기도 더한다(시험이
@@ -1086,7 +1078,7 @@ def _imported_day(imported_at: object) -> str:
 
 
 def load_source(session: Session) -> SourceData | None:
-    """원천 데이터셋 하나의 원천과 리비전 1 표. 한 번만 읽고 8-2 · 8-3 · 8-9 가 나눠 본다.
+    """원천 데이터셋 하나의 원천과 리비전 1 표. 한 번만 읽고 8-2 · 8-3 이 나눠 본다.
 
     `--dataset-id` 가 없으면 원천에서 온 데이터셋을 최근 것부터 보아 리비전 1 계산(대당 Capa →
     소요대수)이 서는 첫 것을 고른다 — 서지 않은 것은 건너뛰고 그 차례 · 적재일 · 원천 종류 · 까닭
@@ -2539,105 +2531,6 @@ def check_reqb(session: Session) -> list[str]:
         ]
 
     _noted(session.notes, "8-3", note)
-    return lines
-
-
-# ---------------------------------------------------------------------------------- 8-9 home
-
-# HOME 월 축을 세우는 `양산구분` 값 — `services/dashboard.build_production_dashboard` 가 이 값의
-# 행만 Density 로 세운다. 월 축 자체는 그 함수를 그대로 불러 세우고, 이 값은 빠진 달을 가르는
-# 데만 쓴다.
-MASS_PRODUCTION: Final = "양산"
-_HOME_MONTH_ROWS: Final[tuple[str, ...]] = (
-    "HOME 월 축에 서는 달 — 양산 Density 가 있는 달",
-    "**계획 달 가운데 양산 Density 없는 달**",
-    "└ 양산 계획이 없는 달(ER 등만 있는 달)",
-    "└ 양산 계획은 있는데 Density 가 붙지 않은 달",
-    "└ 양산 Density 없는 달 가운데 Wafer 부하량이 있는 달(Wafer 계획·Wafer Capa 에서 빠짐)",
-    "연간 Total 열이 빠지는 해(계획은 1~12월이 다 있는데 월 축은 아닌 해)",
-)
-
-
-def _months(frame: pd.DataFrame, mask: pd.Series | None = None) -> set[int]:
-    months = pd.to_numeric(frame["생산계획년월"], errors="coerce")
-    if mask is not None:
-        months = months.loc[mask]
-    return {int(month) for month in months.dropna()}
-
-
-def _home_month_column(
-    plan_of: Callable[[], pd.DataFrame], tables: dict[str, pd.DataFrame], plan_months: set[int]
-) -> list[str]:
-    """한 화면(EDP 포함·뺌)의 월 축을 HOME 과 같은 함수로 세우고 빠지는 계획 달을 센다.
-
-    이 블록은 시나리오 전체 기간을, HOME 은 조회기간으로 자른 계획을 계산한다 — 여기서 멈추면
-    멈추게 한 행이 조회기간에 들 때 HOME 도 그 화면에서 멈춘다. 칸마다 종류만 적는다(오류 문구에는
-    제품 이름이 실린다).
-    """
-    try:
-        plan = plan_of()
-        monthly_density, _ = build_production_dashboard(plan, tables["RQ_CHIP_EQ"])
-        monthly_wafer = build_monthly_wafer_load_from_load(
-            calculate_wafer_load(plan, tables["RQ_YLD"], tables["RQ_CHIP_QTY"])
-        )
-    except Exception as exc:  # 원천이 계약을 어기면 계산이 멈춘다 — 종류만 적는다
-        return [_failure(exc)] * len(_HOME_MONTH_ROWS)
-    # 계산 입구와 같이 수량 0 행을 걷는다 — 양산 행이 수량 0 뿐인 달은 「양산 계획이 없는 달」이다.
-    planned = drop_unplanned_rows(plan)
-    mass = planned["양산구분"].astype("string").str.strip().eq(MASS_PRODUCTION).fillna(False)
-    axis = _months(monthly_density)
-    missing = plan_months - axis
-    with_mass = missing & _months(planned, mass)
-    with_wafer = missing & _months(
-        monthly_wafer, pd.to_numeric(monthly_wafer["Wafer 부하량"], errors="coerce").gt(0)
-    )
-    lost_years = set(complete_years(sorted(plan_months))) - set(complete_years(sorted(axis)))
-    counts = (len(axis), len(missing), len(missing - with_mass), len(with_mass), len(with_wafer))
-    return [_count(value) for value in (*counts, len(lost_years))]
-
-
-def check_home_months(session: Session) -> list[str]:
-    """HOME 월 축은 양산 Density 가 있는 달만 선다(`services/dashboard.py`, 2026-10-22 결정 A —
-    그대로 둔다). 그래서 양산 없이 ER 만 있는 달은 Wafer 계획·Wafer Capa·B/N·Top5 에서 빠지고 그 해
-    연간 Total 열이 서지 않는다. 실데이터에 그런 달이 있는지 개수로만 잰다 — 달·제품 이름은 찍지
-    않는다.
-
-    계획 달은 시나리오 전체 기간에서 센다(HOME 조회기간은 그 일부다). EDP 를 뺀 칸은 HOME 토글을 끈
-    화면이다 — 확보율·B/N 은 EDP 를 포함한 전체 계획 그대로라 계획 달도 전체 계획에서 센다.
-    """
-    lines = _heading("8-9", "HOME 월 축 — 양산 Density 없는 계획 달", "home")
-    source = load_source(session)
-    if source is None:
-        session.notes.append(_note("8-9", f"원천 못 읽음 {session._source_failure}"))
-        return [*lines, f"- 원천을 읽지 못함 — {session._source_failure}", ""]
-    tables = source.tables
-    plan = tables.get("RQ_PKG_PLAN", pd.DataFrame())
-    lines.extend([*source.label_lines(), ""])
-    if plan.empty:
-        session.notes.append(_note("8-9", "0"))
-        return [*lines, "- 리비전 1 의 `RQ_PKG_PLAN` 이 비어 있다", ""]
-    plan_months = _months(drop_unplanned_rows(plan))
-    full_years = complete_years(sorted(plan_months))
-    lines.append(
-        "- 계획 달(`RQ_PKG_PLAN` 에 생산수량이 0 보다 큰 행이 있는 달 · 리비전 1 전체 기간) "
-        f"{len(plan_months):,} · 그 가운데 1~12월이 다 든 해 {len(full_years):,}"
-    )
-    columns = (
-        _home_month_column(lambda: plan, tables, plan_months),
-        _home_month_column(lambda: filter_edp_plan(plan, False), tables, plan_months),
-    )
-    rows = [[label, *cells] for label, *cells in zip(_HOME_MONTH_ROWS, *columns, strict=True)]
-    lines.extend(["", *_table(["달 수", "EDP 포함(기본)", "EDP 뺌(HOME 토글)"], rows), ""])
-    shown, hidden = columns
-    # 요약 — 「8-9 계획 달 · 포함 없는 달 = 양산 계획 없는 달 + Density 안 붙은 달 · 뺌 없는 달」.
-    session.notes.append(
-        _note(
-            "8-9",
-            f"{len(plan_months):,}",
-            f"포함 {shown[1]} = {shown[2]} + {shown[3]}",
-            f"뺌 {hidden[1]}",
-        )
-    )
     return lines
 
 
@@ -6188,7 +6081,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--only",
         default=",".join(DEFAULT_CHECKS),
         help=(
-            f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 여덟 — 런북은"
+            f"돌릴 블록을 쉼표로({', '.join(CHECKS)}). 기본은 BigDataQuery 를 뺀 일곱 — 런북은"
             " bdq 를 부르지 않는다(꼭 필요하면 사외가 사용자에게 먼저 요청하고 사용자가 직접"
             " 돌린다)"
         ),
@@ -6308,7 +6201,6 @@ _BLOCK_TITLES: Final[dict[str, str]] = {
     "reqb": "8-3",
     "equipment": "8-4",
     "bdq": "8-5",
-    "home": "8-9",
     "census": "8-10",
     "grid": "8-11",
     "blank": "8-12",
@@ -6332,8 +6224,6 @@ def _block_parts(
         yield check_reqb(session)
     elif name == "equipment":
         yield check_equipment(session)
-    elif name == "home":
-        yield check_home_months(session)
     elif name == "census":
         yield from iter_census(session, all_revisions=args.census_all_revisions)
     elif name == "grid":
@@ -6687,7 +6577,7 @@ def _run(args: argparse.Namespace, sink: _Sink, *, probe: BigDataQueryProbe | No
         dataset_id=args.dataset_id,
     )
     needs_simulation = any(
-        name in selected for name in ("env", "legacy", "reqb", "home", "census", "grid", "blank")
+        name in selected for name in ("env", "legacy", "reqb", "census", "grid", "blank")
     )
     needs_equipment = any(name in selected for name in ("env", "equipment", "census"))
     if _opens_app_database(session, simulation=needs_simulation, equipment=needs_equipment):
