@@ -40,7 +40,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from capa_simulation.components.sso_status import render_access_alerts
+from capa_simulation.components.sso_status import render_access_alerts, render_audit_alerts
 from capa_simulation.settings import (
     APP_NAME,
     APP_OWNER_TEAM,
@@ -102,3 +102,4 @@ def render_app_credits(sso_line: str | None = None) -> None:
         else:
             st.caption("  \n".join((*credit_lines(), sso_line)), unsafe_allow_html=True)
     render_access_alerts()
+    render_audit_alerts()

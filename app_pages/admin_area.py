@@ -1,10 +1,11 @@
-# Purpose: 표시명·표시순서·원천 품질 탭(끝 모듈 상태)과 위의 서버·통합인증 점검·접속 명단.
+# Purpose: 표시명·표시순서·원천 품질·접속 기록 탭(끝 모듈 상태)과 위의 서버·통합인증 점검·접속 명단.
 
 from __future__ import annotations
 
 import streamlit as st
 
 from capa_simulation.components.access_list_admin import render_access_list_admin
+from capa_simulation.components.audit_log_view import render_audit_tab
 from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.display_order_management import (
@@ -18,10 +19,12 @@ from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
 )
 from capa_simulation.components.source_quality import render_source_quality
+from capa_simulation.components.sso_identity import viewer_can_audit
 from capa_simulation.components.sso_status import render_sso_status
 from capa_simulation.components.state_alerts import open_tab_name, tab_name
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
+from capa_simulation.navigation import ADMIN_AREA_LOG_TAB, ADMIN_AREA_TAB_KEY, ADMIN_AREA_TABS
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.scenario_activation import active_persisted_scenario_id
@@ -31,13 +34,12 @@ from capa_simulation.settings import DUCKDB_PATH
 # 라 열린 탭을 서버가 안다 — 위젯이 없는 「원천 품질」 은 닫혀 있으면 건너뛴다. 입력 위젯이 든 탭은
 # 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다. 계산 알림은 이 화면에 두지
 # 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
-# (2026-11-11 입력 점검 보드 q7).
-TAB_NAMES = (
-    ":material/label: Proc Rename",
-    ":material/sort: 표시순서 관리",
-    ":material/fact_check: 원천 품질",
-)
-TABS_KEY = "admin_area_active_tab"
+# (2026-11-11 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째
+# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 관리자 · 점검자 회차에만 선다 — 다른 회차는
+# 탭 셋 그대로다.
+TAB_NAMES = ADMIN_AREA_TABS
+LOG_TAB = ADMIN_AREA_LOG_TAB
+TABS_KEY = ADMIN_AREA_TAB_KEY
 # 안쪽 탭 묶음을 담는 칸 — 그 안 맨 앞에 「모듈 상태」 팝오버 단추를 두면 탭 줄 오른쪽 끝에 선다
 # (`module_status.tools_style`).
 TABS_BOX_KEY = "admin_area_tabs_box"
@@ -63,15 +65,37 @@ render_access_list_admin()
 tabs_box = st.container(key=TABS_BOX_KEY)
 with tabs_box:
     render_module_status(box_key=TABS_BOX_KEY)
+    # 탭 묶음은 DB 를 열기 **앞**이다 — DB 를 못 열어도 DB 를 쓰지 않는 기록 탭은 열린다(DB
+    # 탭 안에만 「데이터 Error」 마크). 관리자는 환경변수뿐이라 세션 중에 라벨 목록이 바뀌지
+    # 않지만, 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
+    tab_labels = (*TAB_NAMES, LOG_TAB) if viewer_can_audit() else TAB_NAMES
+    if st.session_state.get(TABS_KEY, tab_labels[0]) not in tab_labels:
+        st.session_state[TABS_KEY] = tab_labels[0]
+    opened_tabs = stateful_tabs(tab_labels, key=TABS_KEY)
+process_rename_tab, display_order_tab, source_quality_tab = opened_tabs[:3]
+
+if len(opened_tabs) > len(TAB_NAMES):
+    log_tab = opened_tabs[len(TAB_NAMES)]
+    with log_tab:
+        # 닫혀 있으면 읽지 않는다 — 기록 조건 카드도 이 탭이 열린 회차에만 선다.
+        if not tab_is_hidden(log_tab):
+            render_audit_tab()
 
 try:
     database_path = str(DUCKDB_PATH.resolve())
     repository = get_scenario_repository(database_path)
 except BOOTSTRAP_ERRORS as exc:
     message = bootstrap_error_message(exc)
-    render_data_error(
-        message, code="AD-07", text="Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)"
-    )
+    for database_tab, label in zip(
+        (process_rename_tab, display_order_tab, source_quality_tab), TAB_NAMES, strict=True
+    ):
+        with database_tab:
+            render_data_error(
+                message,
+                code="AD-07",
+                tab=tab_name(label),
+                text="Admin Area 를 준비하지 못했습니다(시뮬레이션 DB)",
+            )
     st.stop()
 
 # 공정 목록은 안내·편집 보조일 뿐이라 활성 시나리오가 없어도 화면을 멈추지 않는다.
@@ -89,11 +113,6 @@ try:
     )
 except BOOTSTRAP_ERRORS:
     available_processes = []
-
-with tabs_box:
-    process_rename_tab, display_order_tab, source_quality_tab = stateful_tabs(
-        TAB_NAMES, key=TABS_KEY
-    )
 
 # 탭 안 상태 알림(Proc Rename 표시명 겹침 `AD-06` · 표시순서 분류값 겹침 `AD-05`)은 그 탭이 열린
 # 회차에만 낸다(닫힌 탭이면 None — `open_tab_name`). 「그 화면으로」 가 그 탭을 연다.

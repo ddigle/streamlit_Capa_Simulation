@@ -1,6 +1,7 @@
 # Purpose: Admin Area 페이지와 Proc Rename 탭의 렌더링·저장 흐름을 검증한다.
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,8 @@ from capa_simulation.components.process_rename_management import (
     PROCESS_RENAME_UNCHANGED_MESSAGE,
 )
 from capa_simulation.components.table_toolbar import toolbar_room_css
+from capa_simulation.navigation import ADMIN_AREA_LOG_TAB
+from capa_simulation.navigation import ADMIN_AREA_TABS as TAB_NAMES
 from capa_simulation.persistence.cache import clear_global_process_rename_cache
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
@@ -1338,8 +1341,8 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """DB 를 못 열어 멈추는 회차(`AD-07`)에도 모듈 상태 팝오버와 `MO-01` 은 선다 — 탭 묶음 칸을
-    DB 를 열기 전에 세워 그 안에 먼저 그린다. 그 칸에 탭이 없어 단추는 흐름 안 한 줄이다(서식의
-    `:has(> stTabs)` 가 맞지 않는다)."""
+    DB 를 열기 전에 세워 그 안에 먼저 그린다. 탭 묶음도 DB 앞이라(설계 AU20 — DB 를 쓰지 않는
+    기록 탭이 장애 때도 열리게) 탭 셋이 서고, 「데이터 Error」 마크는 DB 를 쓰는 탭 안에만 선다."""
     from capa_simulation import module_registry
 
     monkeypatch.setenv(
@@ -1349,9 +1352,133 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
     app = AppTest.from_string(_page_script(tmp_path)).run(timeout=120)
     assert not list(app.exception), [element.message for element in app.exception]
 
-    assert not app.main.tabs
+    assert [tab.label for tab in app.main.tabs] == list(TAB_NAMES)
     assert _module_status_labels(app) == ["모듈 상태 · 켜짐 3 · 꺼짐 1 · 실패 2"]
     (box,) = _keyed_blocks(app.main, TABS_BOX_KEY)
-    assert [child.type for child in box.children.values()] == ["flex_container"]
-    assert data_error_marks(app) == 1
+    assert [child.type for child in box.children.values()][0] == "flex_container"
+    assert data_error_marks(app) == len(TAB_NAMES)
     assert [item["active"] for item in states(app, "MO-01")] == [False]
+
+
+# --- 접속 · 작업 기록 탭(관리자 · 점검자 · 일반 · 꺼짐 네 회차) ---------------------------
+
+
+def _audit_round(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    loginid: str | None,
+    *,
+    viewers: str = "",
+    open_log: bool = False,
+    database: Path | None = None,
+) -> AppTest:
+    """통합인증 · 감사 기록이 켜진 서버(`capa_server.py` 로 뜬 꼴)의 한 사람 회차. `loginid` 가 None
+    이면 꺼짐(개발 · 사내 PC)이다."""
+    from sso_support import use_config
+
+    from capa_simulation.audit import recorder, spool
+    from capa_simulation.audit.boot import grader
+    from capa_simulation.auth import names, runtime
+    from capa_simulation.auth.tokens import issue_session
+    from capa_simulation.components import sso_identity
+
+    spool.configure(tmp_path / "audit")
+    if loginid is not None:
+        cfg = use_config({names.ENV_AUDIT_VIEWERS: viewers} if viewers else None)
+        runtime.mark_gate_installed()
+        recorder.start(env="cdep", version="test", inst="adadadadadad")
+        recorder.set_grader(grader(cfg))
+        recorder.record("authn_login_success", actor=loginid, verified=True, name="데모 이름")
+        recorder.record(
+            "data_scenario_delete",
+            actor=loginid,
+            verified=True,
+            tgt={"type": "scenario", "id": "s-1"},
+        )
+        spool.drain()
+        token, _ = issue_session(cfg, loginid=loginid, name=None, dept=None, now=int(time.time()))
+        monkeypatch.setattr(sso_identity, "session_cookies", lambda: {cfg.session_cookie: token})
+    app = AppTest.from_string(_page_script(database or tmp_path / "scenario.duckdb"))
+    if open_log:
+        app.session_state["admin_area_active_tab"] = ADMIN_AREA_LOG_TAB
+    return app.run(timeout=120)
+
+
+def _log_cards(app: AppTest) -> list[str]:
+    return [
+        str(element.label)
+        for element in app.sidebar
+        if hasattr(element, "label") and str(getattr(element, "label", "")) == "기록 조건"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("who", "viewers", "tabs"),
+    [
+        ("dev.user", "", 4),
+        ("other.user", "other.user", 4),
+        ("other.user", "", 3),
+        (None, "", 3),
+    ],
+    ids=["admin", "auditor", "user", "off"],
+)
+def test_the_log_tab_stands_only_for_admins_and_auditors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    who: str | None,
+    viewers: str,
+    tabs: int,
+) -> None:
+    app = _audit_round(tmp_path, monkeypatch, who, viewers=viewers)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    labels = [tab.label for tab in app.main.tabs]
+    assert labels == [*TAB_NAMES, ADMIN_AREA_LOG_TAB][:tabs]
+    assert not _log_cards(app), "닫힌 기록 탭은 카드를 세우지 않는다"
+
+
+def test_an_open_log_tab_reads_the_spool_and_shows_the_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _audit_round(tmp_path, monkeypatch, "dev.user", open_log=True)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert _log_cards(app) == ["기록 조건"]
+    metrics = {str(metric.label): str(metric.value) for metric in app.main.metric}
+    assert metrics["오늘 접속자"] == "1"
+    assert metrics["작업"] == "1"
+    assert any("2건 · " in str(caption.value) for caption in app.main.caption)
+
+    app.session_state["admin_area_log_view"] = "기록"
+    app.run(timeout=120)
+    frames = [frame.value for frame in app.main.dataframe]
+    records = next(frame for frame in frames if "사건" in frame.columns)
+    assert list(records["사건"]) == ["시나리오 삭제", "로그인"]
+    assert list(records["사람"])[1] == "dev.user · 데모 이름"
+
+
+def test_a_user_round_never_reads_the_audit_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from capa_simulation.audit import read
+
+    def refuse(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("기록을 볼 수 없는 회차는 감사 파일을 읽지 않는다")
+
+    monkeypatch.setattr(read, "load_lines", refuse)
+    monkeypatch.setattr(read, "fingerprint", refuse)
+    app = _audit_round(tmp_path, monkeypatch, "other.user", open_log=True)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [tab.label for tab in app.main.tabs] == list(TAB_NAMES)
+
+
+def test_the_log_tab_opens_even_when_the_database_cannot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _audit_round(tmp_path, monkeypatch, "dev.user", open_log=True, database=tmp_path)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert [tab.label for tab in app.main.tabs] == [*TAB_NAMES, ADMIN_AREA_LOG_TAB]
+    assert data_error_marks(app) == len(TAB_NAMES)
+    assert _log_cards(app) == ["기록 조건"]

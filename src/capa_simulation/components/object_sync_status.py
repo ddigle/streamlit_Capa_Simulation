@@ -29,8 +29,6 @@ from capa_simulation import alerts, object_sync_worker, sync_boot
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
-from capa_simulation.auth import access_store, runtime
-from capa_simulation.auth.config import SsoMode
 from capa_simulation.components import sso_identity
 from capa_simulation.components.diagnostic_copy import (
     diagnostic_text,
@@ -247,11 +245,8 @@ def status_lines(status: WorkerStatus | None, health: SyncHealth, *, now: float)
 
 
 def _viewer_is_admin() -> bool:
-    cfg = runtime.config()
-    if cfg.mode is not SsoMode.ON:
-        return False
-    identity = sso_identity.verified_identity()
-    return identity is not None and access_store.is_admin(cfg, identity.loginid)
+    """관리자 판정 한 벌(`sso_identity.viewer_is_admin`)을 부른다 — 시험이 이 이름을 바꿔 끼운다."""
+    return sso_identity.viewer_is_admin()
 
 
 def _upload_now() -> None:

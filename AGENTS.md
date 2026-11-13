@@ -358,6 +358,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   수 · 목록 지문 8자 · 점검자 수) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 점검자 `CAPA_AUDIT_VIEWERS` · 사용자)를 꽂는다.
   통합인증 사건은 `auth/runtime.record_event` 가 잠금 밖에서 대응표(`from_sso_event`)로 넘기고(로그인 성공의 이름은 감사
   줄에만 — `audit=` 칸, 서버 로그 · 고리에는 싣지 않는다), 갱신 누계는 시간 묶음으로 센다.
+  - `components/audit_log_view.py` — Admin Area 「접속 · 작업 기록」 탭. 사이드바 「기록 조건」 카드(기간 — KST,
+    `date_range_field` · 사람 · 사건 갈래 · 결과 · 필터 초기화, 키 `admin_area_log_*`, `persist_state="session"`)와 「요약 |
+    기록」 종류 단추(탭 안 탭 아님) 두 보기. 로컬 스풀 · 미러만 읽고(`audit.read` — S3 안 부름) 읽은 줄은 세션 칸에 지문을
+    키로 둔다(새 `st.cache_*` 없음). 요약은 오늘 값 칸 넷과 날짜별 표(기록 없는 날은 빈칸), 기록은 새것 먼저 한 줄씩. 설명
+    글은 Guide · 풍선이고 빈 결과는 평문 한 줄이다. 닫힌 탭이면 부르지 않는다(카드도 서지 않는다). 감사 알림 `AD-12`(보관
+    안 됨) · `AD-13`(14일 넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 켜진 서버의 매 회차 갈래
+    없이 두 자리를 쓰고 관리자 · 점검자 회차에만 세운다(꺼진 서버는 호출 0). 감사가 켜진 서버의 「통합인증 점검」 은 사람
+    단위 사건 표를 그리지 않고 누계 줄과 리뷰용 「복사」 만 남긴다(설계 AU19).
   - `components/audit_actor.py` — 감사 기록의 앱 쪽. 스크립트 스레드 행위자 해석기(`resolve` — 쿠키를 **지금** 다시 검증한
     `sso_identity.verified_identity`, 실행 문맥이 없으면 `None`), 세션 첫 회차의 `session_created`(`note_session` — `sid8` ·
     `tab8` = Streamlit 세션 id 의 SHA-256 앞 8자), 부트스트랩 뒤 비우기(`drain`). `app.py` 는 신원이 있는 회차(통합인증 켜짐)에만
@@ -1065,7 +1073,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
     알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
-  `원천 품질` 세 탭(`TAB_NAMES`, `stateful_tabs`)을 모은다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
+  `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자 ·
+  점검자 회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
+  `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
+  탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 세 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
+  기록 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드)을
+  읽는다. 셋째는 `components/source_quality.py` 를 그린다. 계산 알림을
   모으는 탭은 두지 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 이 센다(2026-11-11 입력 점검
   보드 q7 — 탭과 탭 이름 곁 수 표지를 함께 걷었다, 설계 규칙 7-1).
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없어 이 탭이 Admin 회차의 유일한 DB
@@ -1082,7 +1095,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 「모듈 상태」(`components/module_status.py`)는 탭 위 펼침이 아니라 안쪽 탭 줄 오른쪽 끝 팝오버다(2026-11-10 보드 Q-6 — T7 과
     같은 꼴, 설계 규칙 UI-LAY-13). 세 탭은 칸 `TABS_BOX_KEY` 안이고, 그 칸을 DB 를 열기 전에 세워 맨 앞에 `render_module_status(
     box_key=TABS_BOX_KEY)` 를 부른다 — 서식이 단추 칸을 그 칸 오른쪽 위에 절대 위치로 얹고 탭 줄은 그 폭만큼 오른쪽을 비운다(새 줄
-    없음). DB 를 못 열어 멈추는 회차(`AD-07`)에는 그 칸에 탭이 없어 단추가 흐름 안 한 줄로 선다.
+    없음). DB 를 못 열어 멈추는 회차(`AD-07`)에도 탭 묶음이 그 칸에 서고 단추는 탭 줄 끝이다.
   - 거래선 정렬은 따로 없다 — `표시순서 관리` 에 `분류컬럼 = Customer` 규칙을 넣는다. 설명은 `guides/admin_area.md`.
 - `app_pages/internal_modules.py` — 사이드바 「모듈」 상자의 머리(현황 요약) — 켜진 모듈과 화면 링크, 꺼짐·실패 수. 켜진 모듈이 없으면 상자가 없다(주소로는 열린다). 설명은 `guides/internal_modules.md`.
 - `app_pages/voc.py` — `Admin Area` 아래의 자유 게시판(질문·개선 요청·오류 신고와 답글)이다.
