@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from alert_marks import active_state, states
+from alert_marks import active_state, flashed, states
 from streamlit.testing.v1 import AppTest
 from test_bdq_token import ACCOUNT, FAKE_TOKEN, fake_jwt
 
@@ -129,6 +129,9 @@ def test_an_administrator_puts_a_token_and_nothing_of_it_stays_in_the_session(
     assert FAKE_TOKEN not in _texts(app)
     shown = [caption.value for caption in app.caption if "지금 토큰" in caption.value]
     assert shown and "파일 · 수정" in shown[0] and "만료 모름" in shown[0]
+    popup = [item.value for item in flashed(app, "success")]
+    assert popup == ["BigDataQuery 토큰을 넣었습니다 · 만료 모름"]
+    assert len(popup[0]) <= alerts.SHORT_LIMIT
 
 
 def test_a_refused_value_keeps_the_dialog_without_keeping_the_value(
@@ -142,7 +145,7 @@ def test_a_refused_value_keeps_the_dialog_without_keeping_the_value(
     assert not app.exception
     assert _dialog_open(app)
     errors = [error.value for error in app.error]
-    assert len(errors) == 1 and "16바이트보다 짧아" in errors[0]
+    assert errors == ["넣지 않았습니다 — 16바이트보다 짧아 토큰이 아닌 값으로 봅니다"]
     assert "FAKE-short" not in errors[0] and "10" not in errors[0]
     assert "FAKE-short" not in str(app.session_state.filtered_state)
     assert not server.exists()

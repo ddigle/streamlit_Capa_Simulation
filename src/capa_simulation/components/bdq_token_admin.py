@@ -133,11 +133,11 @@ def install_from_dialog(raw: str) -> str | None:
     if outcome.status == "same":
         queue_flash(FLASH_KEY, "같은 토큰이 이미 들어 있습니다 — 바뀐 것이 없습니다", kind="info")
         return None
-    state = bdq_token.current_token()
-    queue_flash(
-        FLASH_KEY,
-        f"BigDataQuery 토큰을 넣었습니다 — 다음 조회부터 쓰입니다 · {_expiry_text(state)}",
-    )
+    # 알림창 짧은 글 안에 들게 만료는 짧은 시각 꼴이다(다음 조회부터 쓰인다는 말은 단추 풍선 ·
+    # Guide).
+    expires = bdq_token.current_token().expires_at
+    when = "모름" if expires is None else _clock(expires, SHORT_CLOCK_FORMAT)
+    queue_flash(FLASH_KEY, f"BigDataQuery 토큰을 넣었습니다 · 만료 {when}")
     return None
 
 

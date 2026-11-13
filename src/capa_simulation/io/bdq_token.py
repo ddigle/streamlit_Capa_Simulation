@@ -175,8 +175,7 @@ def install_token(raw: str, environ: Mapping[str, str] | None = None) -> Install
         return InstallOutcome("refused", "푼 내용이 비었습니다")
     if len(content.strip()) < MIN_TOKEN_BYTES:
         return InstallOutcome(
-            "refused",
-            f"{MIN_TOKEN_BYTES}바이트보다 짧아 토큰이 아닌 값으로 보고 넣지 않았습니다",
+            "refused", f"{MIN_TOKEN_BYTES}바이트보다 짧아 토큰이 아닌 값으로 봅니다"
         )
     env = os.environ if environ is None else environ
     target = token_file_path(credential_dir(), env.get(BDQ_USER_NAME_ENV, "").strip())
