@@ -38,6 +38,7 @@ from capa_simulation.components.intro_summary import (
     summary_label_script,
     warm_intro_summary,
 )
+from capa_simulation.components.missing_page import notice_missing_page
 from capa_simulation.components.object_sync_status import (
     not_canonical_code,
     render_object_sync_alerts,
@@ -575,6 +576,9 @@ with pinned_connections(DUCKDB_PATH):
     # 읽지 않는다). 본문 위에는 칸을 두지 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭
     # 표지다(2026-11-09 보드 C1 (라)).
     alerts.note_page("" if current_spec is None else tab_label(current_spec), navigation.url_path)
+    # 없는 화면 주소(꺼진 · 실패한 모듈 화면, 옛 주소, 남이 보낸 링크)로 들어와 HOME 을 도는 회차는
+    # 알림 하나를 담는다 — 이 아래 알림 칸이 보낸다(`components/missing_page.py`).
+    notice_missing_page(navigation.url_path)
     render_alert_center(
         changes=session_changes(
             page_file, hrefs={spec.path: page.url_path for page, spec in pages.specs}

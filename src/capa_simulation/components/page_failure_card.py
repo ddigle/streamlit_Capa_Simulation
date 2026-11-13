@@ -63,6 +63,7 @@ FRAME_LIMIT: Final = 12
 # 관리자 알림 전문에 싣는 최근 실패 수.
 RECENT_SHOWN: Final = 5
 _LOGGER = logging.getLogger(__name__)
+_HERE: Final = os.path.realpath(__file__)
 
 
 def first_line(exc: BaseException) -> str:
@@ -81,7 +82,8 @@ def project_frames(exc: BaseException) -> tuple[str, ...]:
             relative = Path(os.path.realpath(frame.filename)).relative_to(root).as_posix()
         except ValueError:
             continue
-        if relative.startswith(".venv"):
+        # 가상환경 프레임과 이 감싸기 자신의 프레임(늘 같은 줄)은 뺀다.
+        if relative.startswith(".venv") or os.path.realpath(frame.filename) == _HERE:
             continue
         frames.append(f"{relative}:{frame.lineno} in {frame.name}")
     return tuple(frames[-FRAME_LIMIT:])

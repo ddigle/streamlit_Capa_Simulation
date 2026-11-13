@@ -58,8 +58,19 @@ def test_the_admin_diagnostic_carries_the_message_and_repository_frames() -> Non
     (box,) = [item for item in app.expander if item.label == page_failure_card.DIAGNOSTIC_LABEL]
     (code,) = box.code
     assert "오류 · AttributeError: DEMO 값 없음" in code.value
-    assert "src/capa_simulation/components/page_failure_card.py" in code.value
+    # 감싸기 자신의 프레임(늘 같은 줄)과 저장소 밖 경로는 싣지 않는다.
+    assert "page_failure_card.py" not in code.value
     assert "/home/" not in code.value and "site-packages" not in code.value
+
+
+def test_frames_are_repository_relative_without_the_wrapper() -> None:
+    """프레임은 이 저장소 안 것만 상대 경로로 — 감싸기 자신 · 설치 패키지 · 절대 경로는 없다."""
+    try:
+        raise ValueError("DEMO")
+    except ValueError as error:
+        frames = page_failure_card.project_frames(error)
+    assert frames and all(not frame.startswith("/") for frame in frames)
+    assert frames[0].startswith("tests/test_page_failure_card.py:")
 
 
 def test_a_viewer_who_is_not_the_admin_sees_only_the_kind(monkeypatch: pytest.MonkeyPatch) -> None:
