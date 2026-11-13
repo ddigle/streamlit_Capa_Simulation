@@ -476,6 +476,34 @@ def test_the_refresh_row_carries_only_a_mode_and_value_words(
     assert bdq_token_admin.refresh_start_step(record, state) == ("토큰 자동 갱신", *expected)
 
 
+REFUSED_AT_START = report_contract.StartRefreshRecord(
+    "off", "CAPA_BDQ_REFRESH_TOKEN 을 푼 내용이 16바이트보다 짧음", failed=True
+)
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        (bdq_refresh.RefreshStatus("ready", "요청 꼴 미정"), ("준비", "요청 꼴 미정")),
+        (bdq_refresh.RefreshStatus("on"), ("켜짐", "갱신 전")),
+        (
+            bdq_refresh.RefreshStatus("halted", bdq_refresh.HALT_FAILING),
+            ("멈춤", bdq_refresh.HALT_FAILING),
+        ),
+    ],
+    ids=["준비", "켜짐", "멈춤"],
+)
+def test_a_refresh_token_refused_at_start_shows_even_when_the_mode_is_not_off(
+    state: bdq_refresh.RefreshStatus, expected: tuple[str, str]
+) -> None:
+    """시작 때 새 갱신 토큰을 거절했는데 앞 파일이 남아(지우지 못함) 지금이 꺼짐이 아니어도 — 거절
+    까닭이 줄에 선다(관리자가 새 값이 쓰이지 않는 것을 안다)."""
+    label, mode, reason = bdq_token_admin.refresh_start_step(REFUSED_AT_START, state)
+
+    assert (label, mode) == ("토큰 자동 갱신", expected[0])
+    assert reason == f"{expected[1]} · {REFUSED_AT_START.reason}"
+
+
 def test_an_on_row_shows_the_last_refresh_and_the_last_failure() -> None:
     moment = datetime(2026, 11, 14, 1, 0, tzinfo=timezone.utc)
     state = bdq_refresh.RefreshStatus(
@@ -615,6 +643,47 @@ def test_a_refresh_stopped_by_failing_exchanges_points_at_the_refresh_token(
     assert f"{bdq_refresh.FAILED_EXCHANGE_LIMIT}번 잇따라" in note["full"]
     assert report_contract.BDQ_REFRESH_TOKEN_ENV in note["full"] and "「토큰 넣기」" in note["full"]
     assert "5분" not in note["full"]
+
+
+def test_a_refresh_that_cannot_reach_its_server_says_so_and_does_not_promise_a_stop(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """갱신 서버에 닿지 못함 — 갱신 토큰을 가리키지 않고(멀쩡하다) 「3번이면 멈춤」 도 말하지
+    않는다. 닿으면 풀린다."""
+    _admin(monkeypatch)
+    outage = bdq_refresh.RefreshStatus(
+        "on",
+        last_failure=f"{bdq_refresh.UNREACHED}(ConnectionRefusedError)",
+        last_failure_at=datetime.now(timezone.utc),
+        last_failure_unreached=True,
+    )
+    _refresh_state(monkeypatch, outage)
+
+    app = AppTest.from_string(ALERT_SCRIPT).run()
+
+    note = active_state(app, REFRESH_CODE)
+    assert note is not None
+    assert note["short"] == bdq_token_admin.REFRESH_UNREACHED_SHORT
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    assert bdq_refresh.UNREACHED in note["short"]
+    assert "갱신 토큰을 확인" not in note["short"]
+    assert f"{bdq_refresh.UNREACHED}(ConnectionRefusedError)" in note["full"]
+    assert "멈추지 않" in note["full"] and "5분" in note["full"]
+    assert f"{bdq_refresh.FAILED_EXCHANGE_LIMIT}번 잇따라" not in note["full"]
+    assert report_contract.BDQ_REFRESH_TOKEN_ENV not in note["full"]
+
+    _refresh_state(monkeypatch, bdq_refresh.RefreshStatus("on"))
+    app.run()
+    assert active_state(app, REFRESH_CODE) is None
+
+
+def test_the_stop_notes_name_the_ways_back_that_really_work() -> None:
+    """멈춤 전문 — 「토큰 넣기」 와 `CAPA_BDQ_TOKEN` 을 바꾸고 CI/CD 가 길이다. 「다시 띄워도
+    켜집니다」 는 쓰지 않는다(갱신 토큰이 깨졌으면 다시 멈춘다)."""
+    for reason in (bdq_refresh.HALT_ELSEWHERE, bdq_refresh.HALT_FAILING):
+        text = bdq_token_admin._refresh_alert_text(bdq_refresh.RefreshStatus("halted", reason))
+        assert "「토큰 넣기」" in text and report_contract.BDQ_TOKEN_ENV in text
+        assert "다시 띄워도" not in text
 
 
 def test_someone_who_is_not_an_administrator_gets_no_refresh_alert(

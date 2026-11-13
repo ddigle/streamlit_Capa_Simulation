@@ -7,12 +7,15 @@ import errno
 import json
 import logging
 import os
+import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from email.message import Message
 from pathlib import Path
 from types import FrameType, SimpleNamespace
 from typing import get_args
@@ -30,6 +33,14 @@ ACCOUNT = "fakeaccount"
 FAKE_TOKEN = "FAKE-bdq-login-token-0000-abcdefghi"
 FAKE_REFRESH = "FAKE-bdq-refresh-token-9999-zyxwvuts"
 TOKEN_ERROR = "HTTP 401 invalid token"
+
+
+def answered() -> urllib.error.HTTPError:
+    """갱신 서버가 답한 거절 — 요청이 닿았으니 그 교환이 계정의 최신 토큰을 죽였을 수 있다(셈에
+    든다)."""
+    return urllib.error.HTTPError(
+        "https://refresh.example.invalid/", 400, "Bad Request", Message(), None
+    )
 
 
 class Clock:
@@ -355,6 +366,74 @@ def test_a_reported_expiry_already_inside_the_hour_is_not_trusted(
     assert bdq_refresh.status().last_failure == ""
 
 
+def _jwt(expires: datetime, number: int) -> bytes:
+    def part(value: object) -> str:
+        raw = json.dumps(value).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    claims = {"exp": int(expires.timestamp()), "n": number}
+    return f"{part({'alg': 'none'})}.{part(claims)}.FAKE-signature".encode()
+
+
+@pytest.mark.parametrize(
+    ("where", "minutes"),
+    [("응답", 61), ("응답", 66), ("JWT", 30), ("JWT", 61)],
+    ids=["응답 +61분", "응답 +66분", "JWT +30분", "JWT +61분"],
+)
+def test_a_refreshed_token_is_not_refreshed_again_on_its_expiry_right_after_it_was_put(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, where: str, minutes: int
+) -> None:
+    """만료가 넣을 때 1시간을 조금 넘거나(응답 만료) 토큰 자신이 곧 만료라고 말해도(JWT `exp`) —
+    갱신으로 넣은 토큰은 넣은 지 `REFRESHED_HOLD` 안에는 만료를 근거로 다시 갱신하지 않는다(조회마다
+    교환하는 고리를 막는다)."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    fake = FakeExchange()
+    turn_on(monkeypatch, fake)
+
+    def exchange(token: bytes, account: str) -> bdq_refresh.Exchanged:
+        got = fake(token, account)
+        expires = clock.now + timedelta(minutes=minutes)
+        if where == "JWT":
+            return bdq_refresh.Exchanged(_jwt(expires, fake.calls))
+        return bdq_refresh.Exchanged(got.token, expires)
+
+    monkeypatch.setattr(bdq_refresh, "exchange", exchange)
+    for _ in range(10):
+        query(FakeModule(None))
+        clock.advance(minutes=6)
+
+    assert 1 <= fake.calls <= 2
+    assert bdq_refresh.status().mode == "on"
+
+
+def test_a_refreshed_token_killed_within_the_hold_still_counts_toward_the_loop(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """만료가 1시간 남짓한 토큰이 넣은 지 몇 분 만에 죽어도 「제 수명」 으로 빼지 않는다 — 다른 곳의
+    로그인 고리는 그대로 멈춘다(토큰 실패 뒤 갱신은 이 고리 셈이 막는다)."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    fake = FakeExchange()
+    turn_on(monkeypatch, fake)
+    monkeypatch.setattr(
+        bdq_refresh,
+        "exchange",
+        lambda token, account: bdq_refresh.Exchanged(
+            fake(token, account).token, clock.now + timedelta(minutes=61)
+        ),
+    )
+    query(FakeModule(None))
+    for _ in range(3):
+        clock.advance(minutes=6)
+        try:
+            query(FakeModule(Exception(TOKEN_ERROR), None))
+        except adapter.BigDataQueryCallError:
+            pass
+
+    state = bdq_refresh.status()
+    assert (state.mode, state.reason) == ("halted", bdq_refresh.HALT_ELSEWHERE)
+    assert fake.calls == 2
+
+
 def test_a_missing_token_is_refreshed(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -493,7 +572,7 @@ def test_a_failed_early_refresh_does_not_fail_the_query(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lay_out(folder, clock, issued_ago=timedelta(hours=7))
-    fake = FakeExchange(error=ConnectionError("refused"))
+    fake = FakeExchange(error=answered())
     turn_on(monkeypatch, fake)
     module = FakeModule(None)
 
@@ -501,7 +580,7 @@ def test_a_failed_early_refresh_does_not_fail_the_query(
 
     assert (fake.calls, module.calls) == (1, 1)
     state = bdq_refresh.status()
-    assert (state.mode, state.last_failure) == ("on", "교환 실패(ConnectionError)")
+    assert (state.mode, state.last_failure) == ("on", "교환 실패(HTTPError)")
 
 
 # --- 죽이기 고리 막기 ---------------------------------------------------------------------
@@ -720,10 +799,11 @@ def test_a_token_that_cannot_be_put_is_a_failure_and_keeps_the_old_file(
     ("fake", "kind"),
     [
         (FakeExchange(token=lambda _number: b"short"), "받은 토큰을 넣지 못함"),
-        (FakeExchange(error=TimeoutError("read timed out")), "교환 실패(TimeoutError)"),
+        (FakeExchange(error=answered()), "교환 실패(HTTPError)"),
+        (FakeExchange(error=ConnectionResetError("reset")), "교환 실패(ConnectionResetError)"),
         (FakeExchange(token=lambda _number: "not bytes"), "교환 응답 꼴이 다름"),  # type: ignore[arg-type, return-value]
     ],
-    ids=["넣기 거절", "교환 예외", "응답 꼴"],
+    ids=["넣기 거절", "서버가 거절", "닿은 뒤 끊김", "응답 꼴"],
 )
 def test_exchanges_that_keep_failing_after_the_call_stop_the_refresh(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, fake: FakeExchange, kind: str
@@ -755,7 +835,7 @@ def test_a_success_between_failed_exchanges_starts_the_count_again(
     def flaky(refresh_token: bytes, account: str) -> bdq_refresh.Exchanged:
         got = fake(refresh_token, account)
         if outcomes.pop(0):
-            raise ConnectionError("unreachable")
+            raise answered()
         return got
 
     turn_on(monkeypatch, fake)
@@ -768,12 +848,121 @@ def test_a_success_between_failed_exchanges_starts_the_count_again(
     assert bdq_refresh.status().mode == "on"
 
 
+UNREACHED = [
+    ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"),
+    socket.gaierror(socket.EAI_NONAME, "Name or service not known"),
+    TimeoutError("timed out"),
+    urllib.error.URLError(ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused")),
+    urllib.error.URLError(socket.gaierror(socket.EAI_NONAME, "Name or service not known")),
+    urllib.error.URLError(TimeoutError("timed out")),
+    bdq_refresh.ExchangeUnreached("요청을 보내지 못함"),
+]
+UNREACHED_IDS = [
+    "연결 거부",
+    "이름 풀기",
+    "시간 초과",
+    "urllib 연결 거부",
+    "urllib 이름 풀기",
+    "urllib 시간 초과",
+    "닿지 못함 예외",
+]
+
+
+@pytest.mark.parametrize("error", UNREACHED, ids=UNREACHED_IDS)
+def test_an_outage_that_never_reached_the_server_does_not_stop_and_it_resumes(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    """짧은 인증 서버 장애(연결 거부 · 이름 풀기 · 시간 초과) — 갱신 서버에 닿지 못한 교환은 아무
+    토큰도 죽이지 않았으니 멈춤 셈에 넣지 않는다. 5분 간격으로 다시 시도하며 그동안 까닭 「갱신
+    서버에 닿지 못함」 이 서고, 서버가 돌아오면 사람 손 없이 이어진다."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=6, minutes=1), source="refresh")
+    fake = FakeExchange()
+    down = [True]
+
+    def outage(token: bytes, account: str) -> bdq_refresh.Exchanged:
+        got = fake(token, account)
+        if down[0]:
+            raise error
+        return got
+
+    turn_on(monkeypatch, fake)
+    monkeypatch.setattr(bdq_refresh, "exchange", outage)
+    tries = 2 * bdq_refresh.FAILED_EXCHANGE_LIMIT + 1
+    for _ in range(tries):
+        query(FakeModule(None))
+        clock.advance(minutes=6)
+
+    state = bdq_refresh.status()
+    assert fake.calls == tries
+    assert (state.mode, state.reason, state.last_failure_unreached) == ("on", "", True)
+    assert state.last_failure.startswith(f"{bdq_refresh.UNREACHED}(")
+    assert token_file(folder).read_bytes() == FAKE_TOKEN.encode()
+
+    down[0] = False
+    query(FakeModule(None))
+
+    state = bdq_refresh.status()
+    assert fake.calls == tries + 1
+    assert token_file(folder).read_bytes() == f"FAKE-new-login-{tries + 1:04d}-abcdefgh".encode()
+    assert (state.mode, state.last_failure, state.last_failure_unreached) == ("on", "", False)
+
+
+def test_unreached_attempts_neither_count_toward_the_stop_nor_reset_it(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """닿지 못한 시도는 잇따른 실패 수에 더하지도 0 으로 되돌리지도 않는다 — 서버가 답한 거절 셋이면
+    그 사이에 닿지 못한 시도가 끼어도 멈춘다. 닿으면 까닭이 그 거절로 바뀐다."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    outcomes: list[BaseException] = [
+        answered(),
+        ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"),
+        answered(),
+        TimeoutError("timed out"),
+        TimeoutError("timed out"),
+    ]
+    fake = FakeExchange()
+
+    def mixed(token: bytes, account: str) -> bdq_refresh.Exchanged:
+        fake(token, account)
+        raise outcomes.pop(0) if outcomes else answered()
+
+    turn_on(monkeypatch, fake)
+    monkeypatch.setattr(bdq_refresh, "exchange", mixed)
+    for _ in range(5):
+        query(FakeModule(None))
+        clock.advance(minutes=6)
+    state = bdq_refresh.status()
+    assert (state.mode, state.last_failure_unreached) == ("on", True)
+
+    query(FakeModule(None))
+
+    state = bdq_refresh.status()
+    assert fake.calls == 6
+    assert (state.mode, state.reason) == ("halted", bdq_refresh.HALT_FAILING)
+    assert (state.last_failure, state.last_failure_unreached) == ("교환 실패(HTTPError)", False)
+
+
+def test_an_answered_refusal_is_not_taken_for_an_outage() -> None:
+    """서버가 답한 것(HTTP 오류 — `URLError` 의 갈래)과 연결이 닿은 뒤 끊긴 것은 셈에 든다."""
+    reached: list[BaseException] = [
+        answered(),
+        ConnectionResetError("reset"),
+        OSError("other"),
+        RuntimeError("x"),
+    ]
+    for error in reached:
+        assert bdq_refresh.reached_the_server(error) is True
+    for error in UNREACHED:
+        assert bdq_refresh.reached_the_server(error) is False
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="파일 잠금은 POSIX 만")
 def test_a_folder_lock_the_file_system_refuses_falls_back_to_the_thread_lock(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """`/config` 가 잠금을 받지 않는 파일 체계(`ENOLCK`)여도 갱신이 소리 없이 죽지 않는다 — 스레드
-    잠금만으로 가고 그 사실을 로그에 남긴다."""
+    잠금만으로 가고 그 사실을 로그에 한 줄 남긴다(이 프로세스에서 한 번 — 조회마다 쌓지 않는다).
+    표 줄 · `AD-17` 에는 서지 않는다 — 갱신은 제대로 돌았다."""
     lay_out(folder, clock, issued_ago=timedelta(hours=7))
     fake = FakeExchange()
     turn_on(monkeypatch, fake)
@@ -797,6 +986,40 @@ def test_a_folder_lock_the_file_system_refuses_falls_back_to_the_thread_lock(
     retried = FakeModule(Exception(TOKEN_ERROR), None)
     query(retried)
     assert (fake.calls, retried.calls) == (2, 2)
+    clock.advance(hours=7)
+    query(FakeModule(None))
+    assert fake.calls == 3
+    warnings = [r for r in caplog.records if "파일 잠금을 걸지 못함" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="파일 잠금은 POSIX 만")
+def test_a_lock_file_that_cannot_be_opened_is_logged_once_per_process(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """잠금 파일을 열지 못해도(권한) 갱신은 돌고, 멈춘 뒤 조회마다 잠금을 다시 시도해도 경고는 한
+    줄이다."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    fake = FakeExchange(error=answered())
+    turn_on(monkeypatch, fake)
+    opened = os.open
+
+    def refuse(path: object, flags: int, mode: int = 0o777) -> int:
+        if str(path).endswith(bdq_refresh.LOCK_SUFFIX):
+            raise PermissionError(errno.EACCES, "Permission denied")
+        return opened(path, flags, mode)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "open", refuse)
+    caplog.set_level(logging.WARNING)
+
+    for _ in range(bdq_refresh.FAILED_EXCHANGE_LIMIT + 3):
+        query(FakeModule(None))
+        clock.advance(minutes=6)
+
+    assert fake.calls == bdq_refresh.FAILED_EXCHANGE_LIMIT
+    assert bdq_refresh.status().mode == "halted"
+    warnings = [r for r in caplog.records if "잠금 파일을 열지 못함" in r.getMessage()]
+    assert len(warnings) == 1
 
 
 def test_an_unexpected_failure_on_the_query_path_is_recorded_not_swallowed(
@@ -824,10 +1047,10 @@ def test_a_token_a_person_puts_after_a_failure_clears_the_failure(
     """미리 한 갱신이 실패한 뒤 관리자가 「토큰 넣기」 를 하면 마지막 시도 실패(`AD-17`)가 풀린다 —
     다음 교환은 그 토큰의 6시간 뒤다."""
     lay_out(folder, clock, issued_ago=timedelta(hours=7))
-    fake = FakeExchange(error=TimeoutError("read timed out"))
+    fake = FakeExchange(error=answered())
     turn_on(monkeypatch, fake)
     query(FakeModule(None))
-    assert bdq_refresh.status().last_failure == "교환 실패(TimeoutError)"
+    assert bdq_refresh.status().last_failure == "교환 실패(HTTPError)"
 
     clock.advance(minutes=10)
     bdq_token.install_content(b"FAKE-admin-put-login-token-abc", "admin", at=clock.now)
@@ -843,7 +1066,7 @@ def test_a_token_a_person_puts_after_a_failing_stop_clears_both(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lay_out(folder, clock)
-    fake = FakeExchange(error=TimeoutError("read timed out"))
+    fake = FakeExchange(error=answered())
     turn_on(monkeypatch, fake)
     for _ in range(bdq_refresh.FAILED_EXCHANGE_LIMIT):
         with pytest.raises(adapter.BigDataQueryCallError):
@@ -948,12 +1171,13 @@ def test_the_refresh_runs_in_a_thread_without_streamlit(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """공식버전 자동 갱신 예약 스레드도 조회한다 — 미리 갱신 · 토큰 실패 뒤 갱신 · 다시 묻기 · 고리
-    멈춤 · 사람 넣기로 풂 · 교환 실패 기록 · 거듭 실패 멈춤 · 상태 읽기까지 그 스레드에서 Streamlit
-    코드를 한 줄도 돌리지 않는다."""
+    멈춤 · 사람 넣기로 풂 · 서버에 닿지 못함 · 교환 실패 기록 · 거듭 실패 멈춤 · 상태 읽기까지 그
+    스레드에서 Streamlit 코드를 한 줄도 돌리지 않는다."""
     lay_out(folder, clock, issued_ago=timedelta(hours=7))
     fake = FakeExchange()
     turn_on(monkeypatch, fake)
-    failing = FakeExchange(error=TimeoutError("read timed out"))
+    failing = FakeExchange(error=answered())
+    unreachable = FakeExchange(error=urllib.error.URLError(ConnectionRefusedError()))
 
     def quietly(module: FakeModule) -> None:
         try:
@@ -969,6 +1193,10 @@ def test_the_refresh_runs_in_a_thread_without_streamlit(
         assert bdq_refresh.status().reason == bdq_refresh.HALT_ELSEWHERE
         clock.advance(minutes=1)
         bdq_token.install_content(b"FAKE-admin-put-login-token-abc", "admin", at=clock.now)
+        bdq_refresh.exchange = unreachable
+        clock.advance(minutes=6)
+        quietly(FakeModule(Exception(TOKEN_ERROR)))
+        assert bdq_refresh.status().last_failure_unreached
         bdq_refresh.exchange = failing
         for _ in range(bdq_refresh.FAILED_EXCHANGE_LIMIT):
             clock.advance(minutes=6)
@@ -977,6 +1205,7 @@ def test_the_refresh_runs_in_a_thread_without_streamlit(
 
     assert streamlit_calls_in_a_thread(work) == []
     assert fake.calls == 2 and failing.calls == bdq_refresh.FAILED_EXCHANGE_LIMIT
+    assert unreachable.calls == 1
     assert bdq_refresh.status().reason == bdq_refresh.HALT_FAILING
 
 

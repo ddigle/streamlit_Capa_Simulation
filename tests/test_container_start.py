@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import fnmatch
 import getpass
+import hashlib
 import importlib.util
 import io
 import json
@@ -1622,6 +1623,32 @@ def test_a_refresh_token_that_cannot_be_kept_is_a_failure_and_the_token_step_is_
     assert _steps(report)[report_contract.STEP_TOKEN]["reason"] == "토큰 파일을 씀"
 
 
+@pytest.mark.parametrize("value", ["base64:@@@", "too-short"], ids=["base64 못 풂", "짧음"])
+def test_a_refused_new_refresh_token_also_removes_the_one_a_previous_start_left(
+    place: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """표의 새 갱신 토큰이 거절이면 앞 실행이 둔 갱신 토큰 · 표지 · 잠금 · 시작 값 표지도 지운다 —
+    남겨 두면 앱이 옛 갱신 토큰으로 준비 · 켜짐이 되어 관리자는 새 값이 쓰이지 않는 것을 모른다."""
+    _known_shape(monkeypatch)
+    _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+    credentials = place / "config" / ".credential"
+    (credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}.lock").write_bytes(b"")
+    assert len(list(credentials.iterdir())) > 2
+    bdq_refresh.forget_state()
+
+    environ = {**ALL_ENVIRONMENT, report_contract.BDQ_REFRESH_TOKEN_ENV: value}
+    report, _ = _main(place, environ, FakeRunner([_probe("ok", "9.9.9")]))
+
+    token = credentials / f"bigdataquery.token.{FAKE_BDQ_USER}"
+    assert [path.name for path in credentials.iterdir()] == [token.name]
+    assert token.read_bytes() == FAKE_BDQ_TOKEN.encode()
+    refresh = _refresh(report)
+    assert (refresh["mode"], refresh["failed"]) == ("off", True)
+    monkeypatch.setattr(bdq_token, "CREDENTIAL_DIR", credentials)
+    monkeypatch.setenv(report_contract.BDQ_USER_NAME_ENV, FAKE_BDQ_USER)
+    assert bdq_refresh.status().mode == "off"
+
+
 def _known_shape(
     monkeypatch: pytest.MonkeyPatch, *, error: BaseException | None = None
 ) -> list[tuple[bytes, str]]:
@@ -1732,7 +1759,7 @@ def test_a_failed_restart_refresh_keeps_the_refreshed_token(
     refresh = _refresh(report)
     assert (refresh["failed"], refresh["kept"]) == (True, True)
     assert refresh["reason"] == (
-        "시작 때 갱신 실패 — 교환 실패(TimeoutError) · 갱신으로 넣은 토큰을 그대로 씀"
+        "시작 때 갱신 실패 — 갱신 서버에 닿지 못함(TimeoutError) · 갱신으로 넣은 토큰을 그대로 씀"
     )
 
 
@@ -1754,6 +1781,167 @@ def test_a_restart_with_a_young_token_a_person_put_skips_the_exchange_and_writes
         "갱신할 때가 아님",
         False,
     )
+
+
+def test_a_new_refresh_token_that_cannot_be_written_removes_the_old_one(
+    place: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """쓰지 못해도(디스크 · 권한) 앞 갱신 토큰을 남기지 않는다 — 자격 폴더의 갱신 토큰은 표 값이거나
+    없다."""
+    credentials = place / "config" / ".credential"
+    credentials.mkdir(parents=True)
+    old = credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}"
+    old.write_bytes(b"FAKE-old-refresh-token-0000000000")
+
+    def full(_target: Path, _content: bytes) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(container_start, "_write_private", full)
+    report, _ = _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert not old.exists()
+    refresh = _refresh(report)
+    assert (refresh["mode"], refresh["failed"]) == ("off", True)
+    assert refresh["reason"] == "갱신 토큰 파일을 쓰지 못함(OSError)"
+
+
+def test_a_refused_refresh_token_whose_old_file_cannot_be_removed_says_both(
+    place: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앞 파일을 지우지 못하면 앱은 옛 갱신 토큰으로 돈다 — 까닭에 둘 다 싣는다(표 줄이 상태와
+    상관없이 보인다 — `bdq_token_admin.refresh_start_step`)."""
+
+    def stuck(_folder: Path, _account: str) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(bdq_refresh, "forget_refresh_files", stuck)
+    environ = {**ALL_ENVIRONMENT, report_contract.BDQ_REFRESH_TOKEN_ENV: "too-short"}
+
+    report, _ = _main(place, environ, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert _refresh(report)["reason"] == (
+        f"{report_contract.BDQ_REFRESH_TOKEN_ENV} 을 푼 내용이 16바이트보다 짧음 — "
+        "앞 갱신 토큰 파일을 지우지 못함(PermissionError)"
+    )
+
+
+NEW_TABLE_TOKEN = "FAKE-bdq-login-token-from-a-person-1111"
+
+
+def _start_value_file(place: Path) -> Path:
+    return place / "config" / ".credential" / f"capa-bdq-start-value.{FAKE_BDQ_USER}.json"
+
+
+def test_a_token_a_person_changed_in_the_table_is_used_over_the_refreshed_one(
+    place: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/config` 가 남는 자리 — 지난 시작 때와 같은 `CAPA_BDQ_TOKEN` 이면 갱신으로 넣은 토큰을
+    그대로 두고, 사람이 표에서 값을 바꿨으면 교환 없이 그 값을 쓴다(깨진 갱신에서 빠져나오는 길)."""
+    received = _known_shape(monkeypatch)
+    _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+    token = place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}"
+    assert token.read_bytes() == b"FAKE-new-login-token-from-start" and len(received) == 1
+
+    bdq_refresh.forget_state()
+    report, _ = _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+    assert token.read_bytes() == b"FAKE-new-login-token-from-start" and len(received) == 1
+    assert _refresh(report)["kept"] is True
+
+    bdq_refresh.forget_state()
+    changed = {**REFRESH_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: NEW_TABLE_TOKEN}
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert token.read_bytes() == NEW_TABLE_TOKEN.encode() and len(received) == 1
+    refresh = _refresh(report)
+    assert (refresh["mode"], refresh["kept"], refresh["installed"], refresh["failed"]) == (
+        "on",
+        False,
+        False,
+        False,
+    )
+    assert refresh["reason"] == bdq_refresh.START_TABLE_CHANGED
+    assert _steps(report)[report_contract.STEP_TOKEN]["reason"] == "토큰 파일을 씀"
+    mark = bdq_token.read_installed_mark(place / "config" / ".credential", FAKE_BDQ_USER)
+    assert mark is not None and mark.source == "start"
+    assert NEW_TABLE_TOKEN not in json.dumps(report, ensure_ascii=False)
+
+    bdq_refresh.forget_state()
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+    assert _refresh(report)["reason"] == bdq_refresh.START_NOT_DUE and len(received) == 1
+
+
+def test_a_changed_table_token_is_used_without_exchanging_even_when_the_refresh_is_due(
+    place: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """갱신할 때(7시간)여도 사람이 바꾼 값이 이긴다 — 교환하면 그 새 토큰을 죽인다."""
+    received = _known_shape(monkeypatch, error=RuntimeError("refresh token revoked"))
+    token, _content, _written = _persisted(place, source="refresh", age=timedelta(hours=7))
+    bdq_refresh.remember_start_value(
+        place / "config" / ".credential", FAKE_BDQ_USER, FAKE_BDQ_TOKEN.encode()
+    )
+
+    changed = {**REFRESH_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: NEW_TABLE_TOKEN}
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert received == []
+    assert token.read_bytes() == NEW_TABLE_TOKEN.encode()
+    assert _refresh(report)["reason"] == bdq_refresh.START_TABLE_CHANGED
+
+
+def test_without_a_start_value_mark_a_refreshed_token_is_kept_as_before(
+    place: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지난 시작 때 값을 모르면(이 판 앞에서 남은 `/config`) 지금처럼 갱신으로 넣은 토큰을 그대로
+    두고, 그때부터 값을 기억한다."""
+    received = _known_shape(monkeypatch)
+    token, content, _written = _persisted(place, source="refresh", age=timedelta(hours=1))
+    changed = {**REFRESH_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: NEW_TABLE_TOKEN}
+
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert received == [] and token.read_bytes() == content
+    assert _refresh(report)["kept"] is True
+    assert _start_value_file(place).is_file()
+
+
+def test_the_start_value_mark_holds_no_usable_form_of_the_token(
+    place: Path, monkeypatch: pytest.MonkeyPatch, keeps_permission_bits: bool
+) -> None:
+    """시작 값 표지는 파일마다 무작위 소금을 둔 HMAC 뿐이다 — 토큰 글자 · base64 · 소금 없는 지문이
+    없고, 같은 값을 다시 기억해도 소금이 달라 다른 파일과 맞춰 볼 수 없다."""
+    _known_shape(monkeypatch)
+    _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+    mark = _start_value_file(place)
+    text = mark.read_text(encoding="utf-8")
+
+    content = FAKE_BDQ_TOKEN.encode()
+    plain_digests = {
+        hashlib.sha256(content).hexdigest(),
+        hashlib.sha1(content).hexdigest(),
+        hashlib.md5(content).hexdigest(),
+    }
+    forms = {FAKE_BDQ_TOKEN, base64.b64encode(content).decode(), content.hex(), *plain_digests}
+    for form in forms:
+        assert form not in text
+    assert set(json.loads(text)) == {"salt", "mac"}
+    if keeps_permission_bits:
+        assert stat.S_IMODE(mark.stat().st_mode) == 0o600
+
+    mark.unlink()
+    credentials = place / "config" / ".credential"
+    bdq_refresh.remember_start_value(credentials, FAKE_BDQ_USER, content)
+    assert json.loads(mark.read_text(encoding="utf-8"))["salt"] != json.loads(text)["salt"]
+
+
+def test_ready_writes_no_start_value_mark_and_off_removes_it(place: Path) -> None:
+    """준비는 지금 길 그대로(시작 값 표지를 쓰지 않음), 갱신 토큰을 표에서 빼면 그 표지도 지운다."""
+    _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+    assert not _start_value_file(place).exists()
+
+    credentials = place / "config" / ".credential"
+    bdq_refresh.remember_start_value(credentials, FAKE_BDQ_USER, FAKE_BDQ_TOKEN.encode())
+    _main(place, ALL_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+    assert not _start_value_file(place).exists()
 
 
 def test_ready_with_a_persisted_refreshed_token_writes_the_variable_as_before(
