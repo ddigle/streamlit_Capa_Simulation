@@ -463,8 +463,8 @@ def _failure(exc: BaseException) -> str:
     """예외 종류만. 문구는 식별값을 실을 수 있어 찍지 않는다.
 
     대당 Capa 기준정보 연결 오류(`ReferenceJoinError`)도 `ValueError` 로 적는다(`failure_kind`) —
-    꼴과 개수는 6-3 a(`inspect_revision_calculations.py`)가 리비전마다 적고, 8-2D 는 건너뛴 원천에
-    꼴 이름만 덧붙인다(`SkippedSource.shape`).
+    꼴과 개수는 6-3 a(`inspect_revision_calculations.py`)가 리비전마다 적고, 8-2D 는 건너뛴 원천에,
+    8-2R 은 돌아온 원천의 멈춤에 꼴 이름만 덧붙인다(`_shape_name`).
     """
     return f"실패({failure_kind(exc)})"
 
@@ -963,7 +963,9 @@ class SourceData:
     `required` 는 고를 때 이미 돌린 리비전 1 계산(8-2 가 다시 쓴다). `order` 는 원천에서 온
     데이터셋 가운데 최근부터 차례(`--dataset-id` 면 0), `sources` 는 그 수다. `skipped` 는 계산이
     서지 않아 지나친 더 최근 데이터셋이고, `fell_back` 이면 본 후보가 모두 서지 않아 가장 최근
-    것으로 돌아왔다(그때 `skipped` 는 고른 것 말고 본 것이다).
+    것으로 돌아왔다(그때 `skipped` 는 고른 것 말고 본 것이다). `place` 는 돌아왔을 때만 고른 것의
+    자리(6-3 a 와 같은 `S<n> r1` — `SkippedSource.place` 와 같은 규칙)이고, 8-2R 이 멈춤 뒤에
+    꼴과 함께 붙인다 — 멈춘 원천 n 개가 모두 6-3 a 와 번호로 맞대어진다.
     """
 
     dataset_label: str
@@ -975,6 +977,7 @@ class SourceData:
     sources: int = 0
     skipped: tuple[SkippedSource, ...] = ()
     fell_back: bool = False
+    place: str | None = None
 
     def label_lines(self) -> list[str]:
         """블록 머리의 데이터셋 줄 — 고른 데이터셋 한 줄과 건너뛴 데이터셋마다 한 줄."""
@@ -1131,6 +1134,7 @@ class _Candidate:
     revision_id: str
     tables: dict[str, pd.DataFrame]
     required: Required
+    place: str
 
 
 def _imported_day(imported_at: object) -> str:
@@ -1143,8 +1147,8 @@ def load_source(session: Session) -> SourceData | None:
     `--dataset-id` 가 없으면 원천에서 온 데이터셋을 최근 것부터 보아 리비전 1 계산(대당 Capa →
     소요대수)이 서는 첫 것을 고른다 — 서지 않은 것은 건너뛰고 그 차례 · 적재일 · 원천 종류 · 까닭
     (단계와 예외 종류) · 6-3 a 와 같은 자리(`S<n> r1`) · 꼴을 남긴다. 최근 `SOURCE_CANDIDATES` 개가
-    모두 서지 않으면 가장 최근 것으로 돌아간다(그 계산 실패가 8-2 에 그대로 찍힌다).
-    `--dataset-id` 로 고른 것은 건너뛰지 않는다.
+    모두 서지 않으면 가장 최근 것으로 돌아간다(그 계산 실패가 8-2R 에 같은 자리 · 꼴과 함께 찍힌다).
+    `--dataset-id` 로 고른 것은 건너뛰지 않고 자리도 매기지 않는다.
     """
     if session._source is not None or session._source_failure is not None:
         return session._source
@@ -1202,20 +1206,20 @@ def load_source(session: Session) -> SourceData | None:
                 revision_id=loaded[0],
                 tables=loaded[1],
                 required=_calculate_required(loaded[1]),
+                place=_source_place(numbers, scenario_id, revision_one=True),
             )
             if session.dataset_id or candidate.required.frame is not None:
                 picked = candidate
                 break
             newest = newest or candidate
-            problem = candidate.required.problem
             skipped.append(
                 SkippedSource(
                     order,
                     _imported_day(imported_at),
                     source_type,
                     f"{candidate.required.step} {candidate.required.failure}",
-                    place=_source_place(numbers, scenario_id, revision_one=True),
-                    shape=NO_SHAPE if problem is None else problem.label,
+                    place=candidate.place,
+                    shape=_shape_name(candidate.required),
                 )
             )
         fell_back = picked is None and newest is not None
@@ -1265,6 +1269,7 @@ def load_source(session: Session) -> SourceData | None:
         sources=sources,
         skipped=tuple(item for item in skipped if item.order != picked.order),
         fell_back=fell_back,
+        place=picked.place if fell_back else None,
     )
     return session._source
 
@@ -1464,7 +1469,10 @@ def _requirement_section(
     notes: list[str] | None = None,
     *,
     st_reference: Callable[[], StReference | str | None] | None = None,
+    place: str | None = None,
 ) -> list[str]:
+    """`place` 는 돌아온 원천의 자리(`SourceData.place`) — 계산이 멈췄으면 8-2D 처럼 그 뒤에 꼴과
+    함께 붙인다(`8-2R 대당 Capa 실패(ValueError) S<n> r1 <꼴>`). None 이면 옛 꼴 그대로다."""
     notes = [] if notes is None else notes
     lines = [
         "**소요대수** — 신규는 리비전 1 로 다시 계산한 `RQ_REQB` 행별 소요대수다.",
@@ -1476,8 +1484,13 @@ def _requirement_section(
     if required is None:
         # 멈춘 단계(대당 Capa · 소요대수)를 함께 적는다 — 「8-2R 대당 Capa 실패(ValueError)」.
         stopped = f"{calculated.step} {calculated.failure}".strip()
-        notes.append(_note("8-2R", _short(stopped)))
-        return [*lines, f"- 신규 소요대수 계산이 멈췄다 — {stopped}. 대조하지 않았다", ""]
+        if place is None:
+            notes.append(_note("8-2R", _short(stopped)))
+            return [*lines, f"- 신규 소요대수 계산이 멈췄다 — {stopped}. 대조하지 않았다", ""]
+        shape = _shape_name(calculated)
+        notes.append(_note("8-2R", f"{_short(stopped)} {place} {shape}"))
+        where = f"{stopped} · {place}" + ("" if shape == NO_SHAPE else f" · 꼴 {shape}")
+        return [*lines, f"- 신규 소요대수 계산이 멈췄다 — {where}. 대조하지 않았다", ""]
     route = _route_frame(core)
     exclusions = required.attrs.get(REQUIRED_EQUIPMENT_EXCLUSIONS_ATTR)
     excluded_keys = (
@@ -2138,6 +2151,11 @@ def _stopped(step: str, exc: BaseException) -> Required:
     return Required(frame=None, failure=_failure(exc), step=step, problem=problem)
 
 
+def _shape_name(required: Required) -> str:
+    """멈춘 계산의 꼴 칸(8-2D · 8-2R) — 6-3 a 갈래 표 `꼴` 칸과 같은 이름(개수 없이), 없으면 `-`."""
+    return NO_SHAPE if required.problem is None else required.problem.label
+
+
 def _calculate_required(tables: dict[str, pd.DataFrame]) -> Required:
     """대당 Capa → 소요대수. 기준정보 오류면 계산이 멈춘다 — 멈춘 단계와 종류 · 꼴만 적는다."""
     try:
@@ -2524,6 +2542,7 @@ def check_legacy(session: Session) -> list[str]:
             required,
             notes,
             st_reference=partial(load_st_reference, session),
+            place=source.place,
         )
     )
     lines.extend(_pcb_section(raw, core, grain))
