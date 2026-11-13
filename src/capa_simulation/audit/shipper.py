@@ -135,6 +135,8 @@ class AuditHealth:
     """감사 올리기 상태 — 화면(「감사 미전송」 · `AD-12` · `AD-13`)이 읽는 불변 사본."""
 
     worker: bool = False
+    # 동기화 일꾼은 섰는데 감사 할 일을 세우지 못했다 — 기록은 스풀에만 쌓이고 올리는 쪽이 없다.
+    tasks_missing: bool = False
     last_ship_utc: str | None = None
     failures: int = 0
     failure_kind: str | None = None
@@ -165,13 +167,24 @@ def reset() -> None:
         _HEALTH = AuditHealth()
 
 
+def note_tasks_missing() -> None:
+    """동기화 일꾼이 감사 할 일 없이 섰다(`start_object_sync` 가 세우다 실패).
+
+    기록은 스풀에만 쌓이고 올리는 쪽이 없다 — `AD-12` 「올리기 없음」.
+    """
+    _note(tasks_missing=True)
+
+
 def keeping_problems(*, managed: bool, now: float | None = None) -> tuple[str, ...]:
-    """`AD-12` 의 까닭들 — 동기화 아님 · 큐 넘침 · 올리기 30분 넘게 밀림 · 시계 차이."""
+    """`AD-12` 의 까닭들 — 동기화 아님 · 올리기 없음 · 큐 넘침 · 올리기 30분 넘게 밀림 ·
+    시계 차이."""
     state = health()
     moment = time.monotonic() if now is None else now
     reasons: list[str] = []
     if not managed:
         reasons.append("동기화 아님")
+    elif state.tasks_missing:
+        reasons.append("올리기 없음")
     if recorder.dropped_total():
         reasons.append("큐 넘침")
     if state.unshipped_since is not None and moment - state.unshipped_since > OVERDUE_SECONDS:

@@ -58,6 +58,7 @@ from capa_simulation import sync_boot
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit.shipper import AuditTasks
 from capa_simulation.audit.shipper import build_tasks as build_audit_tasks
+from capa_simulation.audit.shipper import note_tasks_missing as note_audit_tasks_missing
 from capa_simulation.io.object_storage import (
     SMALL_TIMEOUT_SECONDS,
     ObjectStorageClient,
@@ -665,8 +666,10 @@ def start_object_sync(
             try:
                 audit = build_audit_work()
             except Exception:
-                # 감사 할 일을 못 세워도 DB 동기화 일꾼은 선다(감사가 DB 동기화를 막지 않는다).
+                # 감사 할 일을 못 세워도 DB 동기화 일꾼은 선다(감사가 DB 동기화를 막지
+                # 않는다). 기록은 스풀에만 쌓이므로 AD-12 「올리기 없음」 으로 알린다.
                 _LOGGER.exception("감사 기록 할 일을 세우지 못했습니다 — 일꾼은 감사 없이 섭니다.")
+                note_audit_tasks_missing()
                 audit = None
             worker = ObjectSyncWorker(build_engine(), audit=audit)
             worker.start()

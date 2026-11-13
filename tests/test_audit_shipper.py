@@ -589,6 +589,9 @@ def test_the_worker_starts_even_if_the_audit_tasks_cannot_be_built(
     try:
         assert handle is not None
         assert getattr(handle, "_audit", "missing") is None
+        # 기록은 스풀에만 쌓이고 올리는 쪽이 없다 — 30분을 기다리지 않고 곧 AD-12 가 선다.
+        assert "올리기 없음" in shipper.keeping_problems(managed=True)
+        assert shipper.keeping_problems(managed=False) == ("동기화 아님",)
     finally:
         if handle is not None:
             handle.stop(timeout=5)
