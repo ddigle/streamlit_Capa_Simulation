@@ -1904,6 +1904,32 @@ def test_without_a_start_value_mark_a_refreshed_token_is_kept_as_before(
     assert _start_value_file(place).is_file()
 
 
+@pytest.mark.parametrize(
+    "broken",
+    [
+        b"not json",
+        b"[]",
+        json.dumps({"salt": "zz", "mac": "00"}).encode(),
+        json.dumps({"salt": "00", "mac": "\u00e9\u00e9"}).encode(),
+    ],
+    ids=["JSON 아님", "꼴 다름", "소금 못 풂", "ASCII 밖"],
+)
+def test_a_broken_start_value_mark_is_unknown_and_the_start_goes_on(
+    place: Path, monkeypatch: pytest.MonkeyPatch, broken: bytes
+) -> None:
+    """망가진 시작 값 표지는 「모름」 — 지금처럼 갱신으로 넣은 토큰을 두고, 시작은 예외 없이 가며
+    표지를 새로 쓴다."""
+    received = _known_shape(monkeypatch)
+    token, content, _written = _persisted(place, source="refresh", age=timedelta(hours=1))
+    _start_value_file(place).write_bytes(broken)
+
+    report, _ = _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert received == [] and token.read_bytes() == content
+    assert (_refresh(report)["kept"], _refresh(report)["failed"]) == (True, False)
+    assert set(json.loads(_start_value_file(place).read_bytes())) == {"salt", "mac"}
+
+
 def test_the_start_value_mark_holds_no_usable_form_of_the_token(
     place: Path, monkeypatch: pytest.MonkeyPatch, keeps_permission_bits: bool
 ) -> None:

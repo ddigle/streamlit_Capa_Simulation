@@ -792,7 +792,8 @@ def _compare_start_value(place: _Place, content: bytes) -> StartValue:
     if not isinstance(data, dict):
         return "unknown"
     salt, mac = data.get("salt"), data.get("mac")
-    if not isinstance(salt, str) or not isinstance(mac, str):
+    # `hmac.compare_digest` 는 ASCII 밖 글자가 든 str 에 TypeError 를 낸다 — 망가진 표지는 모름이다.
+    if not isinstance(salt, str) or not isinstance(mac, str) or not mac.isascii():
         return "unknown"
     try:
         salt_bytes = bytes.fromhex(salt)
