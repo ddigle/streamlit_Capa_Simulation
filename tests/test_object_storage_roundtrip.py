@@ -464,7 +464,8 @@ def test_rollback_needs_yes_and_then_moves_the_head_forward(harness: SimpleNames
 
 
 def _summary(capsys: pytest.CaptureFixture[str]) -> str:
-    """출력의 끝줄 — 전송용 요약이어야 한다(그 위 출력은 그대로)."""
+    """출력의 끝줄 — 전송용 요약이어야 한다(그 위 출력의 사내 값 가림은
+    `test_sync_script_redaction.py`)."""
     last = capsys.readouterr().out.splitlines()[-1]
     assert last.startswith("전송용 요약: "), last
     return last.removeprefix("전송용 요약: ")
@@ -590,6 +591,10 @@ def test_status_on_a_pc_that_handed_over_points_at_a_copy_not_resolve(
     assert "resolve" not in printed
 
 
+def _gets(harness: SimpleNamespace) -> int:
+    return sum(1 for operation, _ in harness.store.operations() if operation == "get-object")
+
+
 def test_status_names_a_start_fence_head_after_its_number(
     harness: SimpleNamespace, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -601,9 +606,12 @@ def test_status_names_a_start_fence_head_after_its_number(
     harness.script.engine.boot_pull(fake_client(harness.store), harness.paths)
     sync_state.write_generation(harness.paths.generation, state)
     capsys.readouterr()
+    gets_before = _gets(harness)
 
     assert _run(harness, "status") == 0
     lines = capsys.readouterr().out.splitlines()
+    # 더 드는 것은 HEAD 포인터 받기 하나뿐이다.
+    assert _gets(harness) - gets_before == 1
     assert "원격 : seq 2 (시작 펜스)" in lines
     assert lines[-1].startswith(
         "전송용 요약: status 통과; 종료 0; 원격 seq 2 (시작 펜스); 로컬 seq 1;"
