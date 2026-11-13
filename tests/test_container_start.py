@@ -158,7 +158,7 @@ def place(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # 시작 차례는 임시 응답으로 앱 포트를 먼저 잡는다. 이 파일의 시험은 그 자리를 빈 껍데기로 둔다 —
     # 임시 응답 자체는 `test_container_stage.py`, 차례는 `test_container_start_sync.py` 가 본다.
     monkeypatch.setattr(
-        container_stage, "open_stage", lambda port, *, base_path="/": container_stage.Stage(None)
+        container_stage, "open_stage", lambda port, **_options: container_stage.Stage(None)
     )
     monkeypatch.chdir(tmp_path)
     return tmp_path

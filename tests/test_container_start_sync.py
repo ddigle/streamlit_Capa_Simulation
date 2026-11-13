@@ -119,14 +119,30 @@ def _raise_or_give(answer: Answer) -> subprocess.CompletedProcess[str]:
 
 
 class FakeStage(container_stage.Stage):
+    """임시 응답에 알린 차례를 적는다 — (「begin」, 받는 서버) · (「step」, 단계) ·
+    (「attempt」, n) · (「fail」, n, 갈래, 기다릴 초)."""
+
     def __init__(self, log: list[str]) -> None:
         super().__init__(None)
         self.log = log
-        self.shown: list[tuple[bool, int, str | None]] = []
+        self.shown: list[tuple[object, ...]] = []
         self.log.append("임시 응답")
 
-    def show(self, *, pulling: bool, attempts: int = 0, kind: str | None = None) -> None:
-        self.shown.append((pulling, attempts, kind))
+    def begin(self, *, managed: bool) -> None:
+        self.shown.append(("begin", managed))
+
+    def step(self, name: str) -> None:
+        self.shown.append(("step", name))
+
+    def attempt(self, number: int) -> None:
+        self.shown.append(("attempt", number))
+
+    def fail(self, number: int, kind: str, *, wait_seconds: float) -> None:
+        self.shown.append(("fail", number, kind, wait_seconds))
+
+    @property
+    def failures(self) -> list[tuple[object, ...]]:
+        return [event for event in self.shown if event[0] == "fail"]
 
     def close(self) -> None:
         if "닫기" not in self.log:
@@ -150,7 +166,7 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNames
     log: list[str] = []
     stages: list[FakeStage] = []
 
-    def open_stage(port: int, *, base_path: str = "/") -> container_stage.Stage:
+    def open_stage(port: int, **_options: object) -> container_stage.Stage:
         stage = FakeStage(log)
         stages.append(stage)
         return stage
@@ -244,10 +260,16 @@ def test_the_stage_comes_first_and_the_app_only_after_the_pull(box: SimpleNamesp
     assert box.log[-3:] == ["boot-pull", "닫기", "앱"]
 
 
-def test_the_stage_says_data_is_coming_from_the_start_when_managed(box: SimpleNamespace) -> None:
+def test_the_stage_follows_the_steps_of_a_pulling_server(box: SimpleNamespace) -> None:
+    """단계마다 알린다 — 설치 단계에 「데이터 받는 중」 이 서지 않게(머리글은 단계를 따른다)."""
     _start(box, _managed(box), Runner(box.log, [_boot(DOWNLOADED)]))
 
-    assert box.stages[0].shown[0] == (True, 0, None)
+    assert box.stages[0].shown == [
+        ("begin", True),
+        ("step", container_stage.STEP_INSTALL),
+        ("step", container_stage.STEP_PULL),
+        ("attempt", 1),
+    ]
 
 
 def test_a_local_server_does_as_before_apart_from_the_stage(box: SimpleNamespace) -> None:
@@ -261,7 +283,7 @@ def test_a_local_server_does_as_before_apart_from_the_stage(box: SimpleNamespace
     assert box.log == ["임시 응답", "설치 확인", "닫기", "앱"]
     assert not (box.home / ".aws").exists()
     assert "sync" not in _report()
-    assert box.stages[0].shown == [(False, 0, None)]
+    assert box.stages[0].shown == [("begin", False), ("step", container_stage.STEP_INSTALL)]
 
 
 def test_keys_without_the_mode_check_the_way_but_do_not_pull(box: SimpleNamespace) -> None:
@@ -392,10 +414,14 @@ def test_a_failed_pull_backs_off_and_only_success_starts_the_app(box: SimpleName
     assert box.slept == [5, 10, 20]
     assert len(launched) == 1
     assert runner.boot_calls == 4
-    assert box.stages[0].shown[1:] == [
-        (True, 1, "unreachable"),
-        (True, 2, "timeout"),
-        (True, 3, "denied"),
+    assert box.stages[0].failures == [
+        ("fail", 1, "unreachable", 5),
+        ("fail", 2, "timeout", 10),
+        ("fail", 3, "denied", 20),
+    ]
+    # 시도마다 「받는 중」 을 먼저 알린다 — 앞 실패 낱말이 다음 시도 내내 남지 않게.
+    assert [event for event in box.stages[0].shown if event[0] == "attempt"] == [
+        ("attempt", number) for number in (1, 2, 3, 4)
     ]
     assert _sync()["pull_attempts"] == 4
 
@@ -433,7 +459,7 @@ def test_a_missing_bucket_or_key_is_not_pulled_at_all(box: SimpleNamespace, name
         _start(box, environ, runner, stay_after=2)
 
     assert runner.boot_calls == 0
-    assert box.stages[0].shown[-1] == (True, 2, "config")
+    assert box.stages[0].shown[-1][:3] == ("fail", 2, "config")
     assert "앱" not in box.log
 
 
@@ -487,7 +513,7 @@ def test_an_unexpected_exception_in_the_pull_keeps_trying(
         _start(box, _managed(box), Runner(box.log), stay_after=3)
 
     assert "앱" not in box.log
-    assert box.stages[0].shown[-1] == (True, 3, "other")
+    assert box.stages[0].shown[-1][:3] == ("fail", 3, "other")
 
 
 def test_failed_checks_do_not_stand_in_for_the_pull(box: SimpleNamespace) -> None:
@@ -1136,7 +1162,7 @@ def test_an_unexpected_failure_in_the_checks_does_not_stop_the_pull(
 def test_a_failed_stage_does_not_stop_the_start(
     box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def explode(port: int, *, base_path: str = "/") -> container_stage.Stage:
+    def explode(port: int, **_options: object) -> container_stage.Stage:
         raise OSError("못 잡음")
 
     monkeypatch.setattr(container_stage, "open_stage", explode)

@@ -219,7 +219,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   최근 사건 표의 `access_read` · `access_saved` · `access_save_failed` · `access_seed_mark_failed`(표지를 못 씀 — 저장은 된 것이고 다음 저장 · 다음 읽기가 다시 쓴다) 는 시각 · 사유 코드 · 저지른 관리자 계정 앞 두 글자만 보인다(서버 로그에는 저지른 관리자의 전체 loginid 와 개수 — `login_ok` 와 같다, **서버 로그를 리뷰에 옮기지 않는다**). 넣고 뺀 사람의 값은 어느 쪽에도 없다 — 고친 기록의 누가 · 무엇은 S3 파일의 `changes` 마지막 200건에 있다. 못 읽은 서버의 자가 회복 실패(`access_retry_failed`)는 표에 쌓지 않는다 — 들어오지 못하는 사람이 되풀이해 남길 수 있어 위 줄의 횟수로만 센다. **명단 값은 실제 loginid 라 리뷰에 옮기지 않는다.**
 - **Admin Area 「서버 시작 점검」** 표 넷째 줄 「통합인증」 — 정상 · 건너뜀(`ADFS_CLIENT_ID` 없음) · 실패(문제 이름). 시작 스크립트가
   남긴 「시작 때 있던 통합인증 환경변수」 이름도 한 줄 붙는다. 그 아래 줄은 S3 키가 있을 때의 동기화 줄이다(`docs/objectstore_setup.md` 3장).
-- **임시 화면** — 앱이 뜨기 전 시작 스크립트가 같은 포트로 답하는 동안은 로그인 전 화면 하나다. IdP 가 그때 콜백으로 돌아오면 그 화면이 답하고, 앱이 뜨면 쪽이 첫 화면으로 가서 다시 로그인한다. 값을 싣지 않고 요청을 기록하지 않는다.
+- **임시 화면** — 앱이 뜨기 전 시작 스크립트가 같은 포트로 답하는 동안은 로그인 전 화면 하나다(`scripts/container_stage.py` — 단계 · 지난 시간 · 머무는 까닭). 앱이 뜨면 쪽이 **처음 연 주소를 다시 읽는다** — 그 사이 누른 로그아웃 · 「다시 로그인」 · 로그인 시작 경로는 앱이 받아 그대로 이어진다. IdP 가 그때 콜백으로 돌아오면(form_post — POST) 그 화면이 받고, 앱이 뜨면 쪽이 바탕 주소로 가서 다시 로그인한다(코드를 되풀이하지 않는다). 값을 싣지 않고 요청 경로 · 질의를 화면에 싣거나 기록하지 않는다.
 - **설정 화면**(막힘) · **오류 화면**(로그인 실패, 새로고침해도 폼이 다시 가지 않는다) — 사유 코드와 한 줄 설명. 토큰 · state ·
   nonce · 쿠키 값 · 비밀값 · 이름 · 부서는 어디에도 보이지 않는다.
 - 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_denied|login_fail|idp_error|logout|session_closed|cert_expiring|access_read|access_retry_failed|access_saved|access_save_failed|access_seed_mark_failed …` 한 줄씩

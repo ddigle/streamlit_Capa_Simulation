@@ -1197,6 +1197,7 @@ def pull_until_ready(
     attempt = 0
     while True:
         attempt += 1
+        stage.attempt(attempt)
         missing: list[str] = []
         try:
             missing = missing_sync_environment(environ)
@@ -1212,7 +1213,7 @@ def pull_until_ready(
         wait = boot_backoff_seconds(pulled.kind, attempt)
         unset = f" · CD 환경변수 {'·'.join(missing)} 없음" if missing else ""
         echo(f"DB 받기 {attempt}회 실패 — {pulled.kind}{unset} · {wait}초 뒤 다시")
-        stage.show(pulling=True, attempts=attempt, kind=pulled.kind)
+        stage.fail(attempt, pulled.kind, wait_seconds=wait)
         sleep(wait)
 
 
@@ -1304,7 +1305,8 @@ def open_start_stage(port: str, environ: Mapping[str, str]) -> container_stage.S
     """임시 응답을 세운다. 세우지 못해도 시작 차례는 이어 간다 — 앱 띄우기가 먼저다."""
     try:
         base = container_stage.base_path_of(environ.get(sso_names.ENV_PUBLIC_URL, ""))
-        stage = container_stage.open_stage(int(port), base_path=base)
+        contact = container_stage.contact_of(environ)
+        stage = container_stage.open_stage(int(port), base_path=base, contact=contact)
     except Exception as error:
         _echo(f"임시 응답을 세우지 못함 — {type(error).__name__}")
         return container_stage.Stage(None)
@@ -1358,10 +1360,12 @@ def main(
     try:
         _forget_app_ready()
         plan = plan_sync(env)
-        stage.show(pulling=plan.managed)
+        stage.begin(managed=plan.managed)
         sync = _prepare_sync(env, plan, runner=runner, started_at_utc=started_at_utc, sleep=sleep)
+        stage.step(container_stage.STEP_INSTALL)
         report = check_and_record(env, credential_dir=args.credential_dir, runner=runner, sync=sync)
         if plan.managed:
+            stage.step(container_stage.STEP_PULL)
             pulled, attempts = pull_until_ready(
                 env, runner=runner, stage=stage, sleep=sleep, echo=_echo
             )
