@@ -40,7 +40,7 @@ from capa_simulation.components import (
     space_layout_editor,
     voc_draft_keeper,
 )
-from capa_simulation.io import company_bigdataquery_adapter, object_storage
+from capa_simulation.io import bdq_token, company_bigdataquery_adapter, object_storage
 from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
@@ -228,6 +228,13 @@ def _without_container_start_report(
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
     for name in CD_ONLY_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+    # 토큰 파일 자리도 없는 곳으로 — 시험이 이 PC 의 진짜 토큰(WebIDE `/config/.credential`)을 읽지
+    # 않게 한다. 패키지가 파일보다 먼저 읽는 환경변수도 지운다.
+    monkeypatch.setattr(
+        bdq_token, "CREDENTIAL_DIR", tmp_path_factory.getbasetemp() / "absent-credential"
+    )
+    monkeypatch.delenv(bdq_token.LOGIN_TOKEN_ENV, raising=False)
+    bdq_token.forget_expiry_memo()
 
 
 @pytest.fixture(autouse=True)

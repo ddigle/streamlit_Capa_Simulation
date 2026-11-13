@@ -1870,6 +1870,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 시작 차례는 ① 임시 응답(`scripts/container_stage.py` — 맨 앞에서 앱 포트를 잡아 상태 검사 셋 꼴에 답하고 고정 글 · 갈래 낱말만 보인다, 시험 `tests/test_container_stage.py`) ② `~/.aws` 프로필(`object_storage.render_profile_files`, 0600)
     ③ 점검 ④ 설치 · 토큰 ⑤ `boot-pull` 되풀이 ⑥ 소켓을 닫고 앱. 결과의 `sync` 칸은 더하기만 한 꼴이고(`parse_sync` — 옛 파일은 `None`), 앱 응답 시각은 `capa_server.py` 끝의 `note_app_ready` 가 결과 파일 옆에 남긴다.
     판 값 `AWS_CLI_VERSION` 은 `docker/Dockerfile-prod` 의 `awscli==` 한 줄과 시험이 맞댄다 — `requirements.txt` · 락 밖이고(`tests/test_requirements_export.py` 가 범위를 본다) 사외 개발 환경에 넣지 않는다. 실제 `aws` 왕복은 `CAPA_TEST_AWS_BIN` 이 있을 때 돈다.
+- `src/capa_simulation/io/bdq_token.py` — BigDataQuery 로그인 토큰 파일(`/config/.credential/bigdataquery.token.<계정>`)의 자리 ·
+  0600 원자적 쓰기 · 넣기 판정 · 만료 읽기 한 곳. 시작 스크립트(CD 환경변수 `CAPA_BDQ_TOKEN` → 파일)와 Admin 「토큰 넣기」
+  가 같은 쓰기 길을 쓴다(2026-11-12 사용자 결정 — 패키지는 조회마다 토큰을 다시 읽고,
+  프로세스 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 이 파일보다 앞이라 그 key 가 있으면 넣기를 잠근다). 표준 라이브러리만 쓴다 — 시작
+  스크립트가 앱 의존성보다 먼저 읽는다. 토큰 글 · 길이를 어떤 까닭 글에도 싣지 않고, 만료 시각만 (자리, 수정 시각, 크기) 열쇠로
+  기억한다. 만료는 JWT `exp` 하나만 읽고 그 밖은 「모름」 이다 — 실제 토큰(WebIDE 실측 35바이트)의 꼴은 사내 확인 거리라
+  꼴을 짐작해 늘리지 않는다. C-DEP 컨테이너를 다시 띄우면 시작 스크립트가 CD 환경변수 값으로 파일을 다시 쓴다. 시험은
+  `tests/conftest.py` 가 토큰 폴더를 없는 곳으로 돌리고 `BIGDATAQUERY_LOGIN_TOKEN` 을 지운다(`tests/test_bdq_token.py`).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - 주소 · 버킷 · 프로필(`CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · `CAPA_S3_PROFILE`)은 사내 값이라 **환경변수로만** 받는다 — 코드 · 설정 파일에

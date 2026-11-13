@@ -53,8 +53,6 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 from __future__ import annotations
 
 import argparse
-import base64
-import binascii
 import getpass
 import json
 import os
@@ -80,6 +78,7 @@ import container_stage
 
 from capa_simulation import settings
 from capa_simulation.auth import names as sso_names
+from capa_simulation.io import bdq_token
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
@@ -136,13 +135,16 @@ from capa_simulation.services.object_storage_manifest import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPANY_REQUIREMENTS = PROJECT_ROOT / "requirements-company.txt"
 APP_REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
-# 패키지(`bdq.login()`·`getData()`)가 토큰을 찾는 자리. 패키지가 이 자리만 보므로 옮기지 않는다.
-CREDENTIAL_DIR = Path("/config/.credential")
-TOKEN_FILE_PREFIX = "bigdataquery.token."
-# 이보다 짧은 토큰 값(푼 내용, 앞뒤 공백 뺌)은 토큰이 아닌 값으로 보고 쓰지 않는다 — 「실패」. 사내
-# 실제 토큰의 바이트 수를 아직 모르니 진짜 토큰을 막지 않는 쪽으로 낮게 둔다: 발급 토큰은 128비트
-# 난수만 담아도 16바이트 아래로 내려가지 않는다. 자리표시 · 잘못 붙인 몇 글자만 걸린다.
-MIN_TOKEN_BYTES = 16
+# 토큰 파일 자리 · 문턱 · 비밀 파일 쓰기는 Admin 「토큰 넣기」 와 한 벌이다
+# (`io/bdq_token.py`). 이름은 여기서 다시 내보낸다 — 시험과 `--credential-dir` 기본값이 본다.
+CREDENTIAL_DIR = bdq_token.CREDENTIAL_DIR
+TOKEN_FILE_PREFIX = bdq_token.TOKEN_FILE_PREFIX
+MIN_TOKEN_BYTES = bdq_token.MIN_TOKEN_BYTES
+token_file_path = bdq_token.token_file_path
+_decode_token = bdq_token.decode_token
+_tighten = bdq_token.tighten
+_tighten_folder = bdq_token.tighten_folder
+_write_private = bdq_token.write_private
 APP_PORT = "8080"
 # 앱 진입 파일(저장소 뿌리 — `.streamlit/config.toml`·`static/` 을 그 옆에서 찾는다). 실패해도
 # `app.py` 로 물러서지 않는다(모듈 설명).
@@ -574,24 +576,6 @@ def install_step(
     )
 
 
-def _decode_token(value: str) -> bytes:
-    """`base64:` 로 시작하면 풀고, 아니면 글자 그대로. 풀 수 없으면 `ValueError`."""
-    if not value.startswith("base64:"):
-        return value.encode("utf-8")
-    body = "".join(value.removeprefix("base64:").split())
-    try:
-        return base64.b64decode(body, validate=True)
-    except (binascii.Error, ValueError) as error:
-        raise ValueError("base64 값이 아니다") from error
-
-
-def token_file_path(credential_dir: Path, account: str) -> Path | None:
-    """계정 이름이 폴더 밖을 가리키면(`/`·`..`) `None`."""
-    if not account or account in (".", "..") or "/" in account or "\\" in account:
-        return None
-    return credential_dir / f"{TOKEN_FILE_PREFIX}{account}"
-
-
 def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
     raw = environ.get(BDQ_TOKEN_ENV, "").strip()
     if not raw:
@@ -619,11 +603,7 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
             "보고 파일을 쓰지 않음"
         )
         return StepResult(STATUS_FAILED, reason)
-    try:
-        same = target.is_file() and target.read_bytes() == content
-    except OSError:
-        same = False
-    if same:
+    if bdq_token.holds_same(target, content):
         try:
             _tighten(target, 0o600)
         except OSError as error:
@@ -636,37 +616,6 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
     except OSError as error:
         return StepResult(STATUS_FAILED, f"{credential_dir} 에 쓰지 못함({type(error).__name__})")
     return StepResult(STATUS_OK, "토큰 파일을 씀")
-
-
-def _tighten(path: Path, mode: int) -> None:
-    """권한이 `mode` 와 다르면(그룹·다른 사람이 읽을 수 있는 0644 등) `mode` 로 맞춘다."""
-    if stat.S_IMODE(path.stat().st_mode) != mode:
-        os.chmod(path, mode)
-
-
-def _tighten_folder(folder: Path) -> None:
-    """이미 있던 토큰 폴더도 0700 으로 좁힌다(`mkdir` 의 mode 는 새로 만들 때만 먹는다). 남의
-    폴더라 못 좁혀도 토큰 파일은 0600 이라 단계를 실패로 보지 않는다."""
-    try:
-        _tighten(folder, 0o700)
-    except OSError:
-        pass
-
-
-def _write_private(target: Path, content: bytes) -> None:
-    """0600 파일로 쓴다. 같은 폴더의 임시 파일에 다 쓴 뒤 바꿔 끼워 반쯤 쓴 토큰을 남기지 않는다."""
-    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    _tighten_folder(target.parent)
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(content)
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, target)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
 
 
 def user_name_step(environ: Mapping[str, str]) -> StepResult:
