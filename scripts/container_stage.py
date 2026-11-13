@@ -58,9 +58,19 @@ from urllib.parse import quote, urlsplit
 
 from capa_simulation.auth.names import CALLBACK_PATH, ENV_ACCESS_CONTACT
 from capa_simulation.services.object_storage_manifest import (
+    DATASET_LABELS,
+    FAILURE_CLI_MISSING,
+    FAILURE_CONFIG,
+    FAILURE_CORRUPT,
+    FAILURE_DENIED,
+    FAILURE_DISK_FULL,
+    FAILURE_DIVERGED,
+    FAILURE_FORKED,
     FAILURE_LABELS,
+    FAILURE_NO_BUCKET,
     FAILURE_OTHER,
     FAILURE_REMOTE_EMPTY,
+    FAILURE_SCHEMA_NEWER,
 )
 from capa_simulation.settings import APP_LABEL, APP_SUBTITLE, app_contact_email
 
@@ -111,6 +121,54 @@ REASON_REMOTE_EMPTY: Final = (
 REASON_TRANSIENT: Final = "저절로 다시 시도합니다."
 NOTE_LONG_RETRY: Final = "계속되면 문의처에 알려 주세요."
 NOSCRIPT_NOTE: Final = "저절로 넘어가지 않으면 잠시 뒤 새로고침하세요."
+# 사람이 고쳐야 풀리는 갈래(시작 스크립트가 300초마다 다시 본다) — (제목, 까닭). 표지는 「점검 중」.
+HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
+    **dict.fromkeys(
+        (FAILURE_CONFIG, FAILURE_CLI_MISSING, FAILURE_DENIED, FAILURE_NO_BUCKET),
+        (
+            "서버 설정 때문에 시작하지 못했습니다",
+            "관리자가 배포 설정을 고쳐야 열립니다. 문의처에 알려 주세요.",
+        ),
+    ),
+    FAILURE_DISK_FULL: (
+        "서버 디스크가 모자라 시작하지 못했습니다",
+        "관리자가 디스크를 늘려야 열립니다. 문의처에 알려 주세요.",
+    ),
+    **dict.fromkeys(
+        (FAILURE_CORRUPT, FAILURE_FORKED),
+        (
+            "데이터를 되돌려야 열립니다",
+            "관리자가 데이터를 앞 판으로 되돌려야 합니다. 문의처에 알려 주세요.",
+        ),
+    ),
+    FAILURE_DIVERGED: (
+        "서버 데이터가 정본과 달라 멈췄습니다",
+        "관리자의 판단이 필요합니다. 문의처에 알려 주세요.",
+    ),
+    FAILURE_SCHEMA_NEWER: (
+        "앱 판이 데이터보다 오래됐습니다",
+        "관리자가 최신 판으로 다시 배포해야 열립니다.",
+    ),
+}
+# 경우별 할 일 한 줄(접힌 「관리자용 진단」).
+HUMAN_ACTIONS: Final[Mapping[str, str]] = {
+    FAILURE_CONFIG: "C-DEP 환경변수 표를 고친 뒤 CI/CD",
+    FAILURE_CLI_MISSING: "이미지 문제 — 사외에 요청",
+    FAILURE_DENIED: "S3 키 · 권한 확인(키 둘을 함께 다시 발급했는지)",
+    FAILURE_NO_BUCKET: "버킷 이름 확인(CAPA_S3_BUCKET)",
+    FAILURE_DISK_FULL: "C-DEP 담당에게 /project 볼륨 늘리기 요청",
+    FAILURE_CORRUPT: "사내 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
+    FAILURE_FORKED: "사내 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
+    FAILURE_DIVERGED: (
+        "CI/CD 를 다시 누르면 풀리지만 이 서버에서 정본에 올리지 못한 변경은 사라집니다"
+    ),
+    FAILURE_SCHEMA_NEWER: "앞 판으로 되돌릴 수 없음 — 최신 배포를 다시 CI/CD(런북 4-2)",
+}
+_ENV_NAME: Final = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+_DATASET_WORDS: Final[Mapping[str, str]] = {
+    str(name): word for name, word in DATASET_LABELS.items()
+}
+_MIB: Final = 1024 * 1024
 LABEL_NEXT_TRY: Final = "다음 시도"
 LABEL_NEXT_CHECK: Final = "다음 확인"
 CLOCK_WORD: Final = "지난 시간"
@@ -237,6 +295,38 @@ def page_css() -> str:
 
 # ---------------------------------------------------------------- 상태 → 보기
 @dataclass(frozen=True)
+class StageFacts:
+    """머문 까닭의 이름 · 수(값 아님 — 2026-11-14 보드 D9) — 접힌 「관리자용 진단」 이 싣는다.
+    모르면 비운다. 환경변수 이름은 꼴(대문자 · 숫자 · 밑줄)만, DB 이름은 아는 것만 지난다."""
+
+    missing_environment: tuple[str, ...] = ()
+    needed_bytes: int | None = None
+    free_bytes: int | None = None
+    seq: int | None = None
+    datasets: tuple[str, ...] = ()
+    file_version: int | None = None
+    code_version: int | None = None
+
+    def checked(self) -> StageFacts:
+        def count(value: int | None) -> int | None:
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return None
+            return value
+
+        return StageFacts(
+            missing_environment=tuple(
+                name for name in self.missing_environment if _ENV_NAME.fullmatch(name)
+            ),
+            needed_bytes=count(self.needed_bytes),
+            free_bytes=count(self.free_bytes),
+            seq=count(self.seq),
+            datasets=tuple(name for name in _DATASET_WORDS if name in self.datasets),
+            file_version=count(self.file_version),
+            code_version=count(self.code_version),
+        )
+
+
+@dataclass(frozen=True)
 class StageState:
     """시작 스크립트가 알린 것. 시각은 모두 서버 시계(epoch 초)다."""
 
@@ -250,6 +340,7 @@ class StageState:
     failed_at: float | None = None
     failing_since: float | None = None
     next_at: float | None = None
+    facts: StageFacts = StageFacts()
     version: int = 0
 
     @property
@@ -406,12 +497,67 @@ def _retry_view(state: StageState) -> StageView:
     )
 
 
+def _megabytes(value: int) -> int:
+    return -(-value // _MIB)
+
+
+def _fact_lines(kind: str, facts: StageFacts) -> list[str]:
+    """갈래별 이름 · 수 줄. 모르는 수는 줄을 빼고 짐작하지 않는다."""
+    lines: list[str] = []
+    if kind == FAILURE_CONFIG and facts.missing_environment:
+        lines.append("비어 있는 환경변수: " + " · ".join(facts.missing_environment))
+    if (
+        kind == FAILURE_DISK_FULL
+        and facts.needed_bytes is not None
+        and facts.free_bytes is not None
+    ):
+        need, free = _megabytes(facts.needed_bytes), _megabytes(facts.free_bytes)
+        lines.append(f"필요 {need} MB · 남음 {free} MB")
+    if kind in (FAILURE_CORRUPT, FAILURE_FORKED) and facts.seq is not None:
+        lines.append(f"멈춘 세대 {facts.seq}")
+    names = " · ".join(_DATASET_WORDS[name] for name in facts.datasets)
+    if kind == FAILURE_DIVERGED and names:
+        lines.append(f"바뀐 DB: {names}")
+    if kind == FAILURE_SCHEMA_NEWER and facts.file_version is not None:
+        code = "?" if facts.code_version is None else str(facts.code_version)
+        lines.append(f"{names or 'DB'} 판 {facts.file_version} · 코드 판 {code}")
+    return lines
+
+
+def _human_view(state: StageState) -> StageView:
+    """사람이 고쳐야 풀리는 시작 실패 — 「점검 중」, 경우별 쉬운 말, 접힌 진단(이름 · 수)."""
+    assert state.kind is not None
+    title, reason = HUMAN_SCREENS[state.kind]
+    retries = state.kind != FAILURE_SCHEMA_NEWER
+    wait = _waiting(state, LABEL_NEXT_CHECK, "다시 확인하는 중") if retries else _Wait()
+    return StageView(
+        tone=TONE_CHECK,
+        chip=CHIP_MAINTENANCE,
+        title=title,
+        reasons=(reason,),
+        reference=state.kind,
+        reference_at=state.failed_at,
+        diagnostics=(
+            _label(state.kind),
+            HUMAN_ACTIONS[state.kind],
+            *_fact_lines(state.kind, state.facts),
+            f"시도 {state.failures}회",
+        ),
+        progress=wait.progress,
+        until=wait.until,
+        until_label=wait.until_label,
+        band="점검 중 · 관리자가 고쳐야 열림",
+    )
+
+
 def stage_view(state: StageState) -> StageView:
     """보이는 것 한 벌을 정한다 — 쪽 · 상태 줄 · 재시작 띠가 이 하나에서 나온다."""
     if state.kind is None:
         return _starting_view(state)
     if state.kind == FAILURE_REMOTE_EMPTY:
         return _remote_empty_view(state)
+    if state.kind in HUMAN_SCREENS:
+        return _human_view(state)
     return _retry_view(state)
 
 
@@ -817,8 +963,16 @@ class Stage:
         """`number` 번째 받기를 시작한다 — 앞 실패 낱말은 남기되 값 줄은 「받는 중」 이 된다."""
         self._change(lambda state: replace(state, attempt=number, trying=True, next_at=None))
 
-    def fail(self, number: int, kind: str, *, wait_seconds: float) -> None:
-        """`number` 번째 받기가 `kind` 로 끝났다 — `wait_seconds` 뒤 다시."""
+    def fail(
+        self,
+        number: int,
+        kind: str,
+        *,
+        wait_seconds: float,
+        facts: StageFacts | None = None,
+    ) -> None:
+        """`number` 번째 받기가 `kind` 로 끝났다 — `wait_seconds` 뒤 다시. `facts` 는 접힌 진단의
+        이름 · 수다."""
         if self._server is None:
             return
         moment = self._server.display.clock()
@@ -831,6 +985,7 @@ class Stage:
                 attempt=number,
                 trying=False,
                 kind=known,
+                facts=(facts or StageFacts()).checked(),
                 failed_at=moment,
                 failing_since=state.failing_since if state.failing_since is not None else moment,
                 next_at=moment + wait_seconds,

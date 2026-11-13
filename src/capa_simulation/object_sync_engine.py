@@ -47,6 +47,7 @@ from capa_simulation.io.object_storage import (
 )
 from capa_simulation.persistence import snapshot_export, sync_state
 from capa_simulation.persistence.snapshot_export import (
+    DiskSpaceShort,
     ExportResult,
     InstallResult,
     SnapshotRejected,
@@ -62,6 +63,7 @@ from capa_simulation.services.korean_particle import with_object_particle
 from capa_simulation.services.object_storage_manifest import (
     DATASET_NAMES,
     FAILURE_CORRUPT,
+    FAILURE_DISK_FULL,
     FAILURE_DIVERGED,
     FAILURE_FORKED,
     FAILURE_OTHER,
@@ -881,6 +883,13 @@ class BootOutcome:
     previous_upload_utc: str | None = None
     total_bytes: int = 0
     elapsed_seconds: float = 0.0
+    # 머문 까닭의 이름 · 수(값 아님) — 시작 임시 화면의 접힌 진단. 모르면 비운다(짐작하지 않는다).
+    # 디스크 부족의 필요 · 남은 바이트, 어긋남 · 판 새로움의 DB 이름, 판 새로움의 DB 판 · 코드 판.
+    needed_bytes: int | None = None
+    free_bytes: int | None = None
+    datasets: tuple[DatasetName, ...] = ()
+    file_version: int | None = None
+    code_version: int | None = None
 
     @property
     def ok(self) -> bool:
@@ -900,17 +909,29 @@ def boot_pull(
     「HEAD 그대로인가」 에서 멈춘다. 세대 대조만 쓰므로 조건부 쓰기가 필요 없다.
     """
     started = time.perf_counter()
+    seen: dict[str, int] = {}
     try:
         for _attempt in range(BOOT_ATTEMPTS):
-            outcome = _boot_once(client, paths, scratch_dir=scratch_dir, started=started)
+            outcome = _boot_once(client, paths, scratch_dir=scratch_dir, started=started, seen=seen)
             if outcome is not None:
                 return outcome
     except SnapshotRejected as exc:
-        return BootOutcome(kind=exc.kind, elapsed_seconds=_since(started))
+        return BootOutcome(kind=exc.kind, seq=seen.get("seq"), elapsed_seconds=_since(started))
     except ValueError:
-        return BootOutcome(kind=FAILURE_CORRUPT, elapsed_seconds=_since(started))
+        return BootOutcome(
+            kind=FAILURE_CORRUPT, seq=seen.get("seq"), elapsed_seconds=_since(started)
+        )
+    except DiskSpaceShort as exc:
+        return BootOutcome(
+            kind=FAILURE_DISK_FULL,
+            needed_bytes=exc.needed_bytes,
+            free_bytes=exc.free_bytes,
+            elapsed_seconds=_since(started),
+        )
     except (ObjectStorageError, OSError) as exc:
-        return BootOutcome(kind=classify_failure(exc), elapsed_seconds=_since(started))
+        return BootOutcome(
+            kind=classify_failure(exc), seq=seen.get("seq"), elapsed_seconds=_since(started)
+        )
     return BootOutcome(kind=FAILURE_OTHER, elapsed_seconds=_since(started))
 
 
@@ -920,14 +941,18 @@ def _boot_once(
     *,
     scratch_dir: Path | None,
     started: float,
+    seen: dict[str, int],
 ) -> BootOutcome | None:
-    """`None` 이면 HEAD 가 움직였다 — 처음부터 다시 본다."""
+    """`None` 이면 HEAD 가 움직였다 — 처음부터 다시 본다. 본 HEAD 세대는 `seen` 에 남긴다(실패 때
+    진단의 「멈춘 세대」)."""
     # 앞 시도가 끊기며 남긴 작업 파일이 디스크 앞 점검을 거짓으로 실패시키지 않게.
     snapshot_export.clear_scratch()
     scratch = scratch_dir or snapshot_export.prepare_scratch()
     read = sync_state.load_generation(paths.generation)
     state = read.state
     remote = read_remote_head(client)
+    if remote.head_seq is not None:
+        seen["seq"] = remote.head_seq
     if read.readable and state.pending is not None:
         settle, state, remote, _ = _settle_pending(
             client, paths, state, remote, scratch_dir=scratch
@@ -952,17 +977,25 @@ def _boot_once(
         BootDecision.DIVERGED: FAILURE_DIVERGED,
     }.get(decision)
     if stay is not None:
-        return BootOutcome(kind=stay, seq=remote.head_seq, elapsed_seconds=_since(started))
+        changed = _changed_datasets(paths, state) if stay == FAILURE_DIVERGED else ()
+        return BootOutcome(
+            kind=stay, seq=remote.head_seq, datasets=changed, elapsed_seconds=_since(started)
+        )
     assert remote.head_key is not None
     pointer = read_pointer(client, remote.head_key, scratch_dir=scratch)
     for name, member in pointer.members.items():
+        code_version = snapshot_export.code_migration_version(name)
         verdict = manifest.compare_migration_version(
-            file_version=member.migration_version,
-            code_version=snapshot_export.code_migration_version(name),
+            file_version=member.migration_version, code_version=code_version
         )
         if verdict == "newer":
             return BootOutcome(
-                kind=FAILURE_SCHEMA_NEWER, seq=pointer.seq, elapsed_seconds=_since(started)
+                kind=FAILURE_SCHEMA_NEWER,
+                seq=pointer.seq,
+                datasets=(name,),
+                file_version=member.migration_version,
+                code_version=code_version,
+                elapsed_seconds=_since(started),
             )
     if decision is BootDecision.DOWNLOAD:
         snapshot_export.require_free_space(scratch, _needed_bytes(pointer))
@@ -982,6 +1015,18 @@ def _boot_once(
         scratch=scratch,
         started=started,
     )
+
+
+def _changed_datasets(paths: SyncPaths, state: GenerationState) -> tuple[DatasetName, ...]:
+    """어긋남에서 올리지 못한 변경이 든 DB — 바뀜 표지가 선 것과 미게시 세대가 본 것. 이름만."""
+    names = {
+        name
+        for name, path in paths.databases.items()
+        if sync_state.sidecar_exists(path) and sync_state.treat_as_dirty(path)
+    }
+    if state.unpublished is not None:
+        names.update(state.unpublished.observed)
+    return tuple(name for name in paths.databases if name in names)
 
 
 def _raise_fence(

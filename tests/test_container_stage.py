@@ -595,3 +595,112 @@ def test_the_page_carries_the_frame_parts_and_both_themes(
     assert "<noscript>" in page and container_stage.NOSCRIPT_NOTE in page
     assert "border-top: 4px solid var(--accent)" in page
     assert "#f7f8fa" not in page
+
+
+# --------------------------------------------------------------------------- 사람이 고쳐야 풀림
+@pytest.mark.parametrize(
+    ("kind", "title"),
+    [
+        ("config", "서버 설정 때문에 시작하지 못했습니다"),
+        ("cli_missing", "서버 설정 때문에 시작하지 못했습니다"),
+        ("denied", "서버 설정 때문에 시작하지 못했습니다"),
+        ("no_bucket", "서버 설정 때문에 시작하지 못했습니다"),
+        ("disk_full", "서버 디스크가 모자라 시작하지 못했습니다"),
+        ("corrupt", "데이터를 되돌려야 열립니다"),
+        ("forked", "데이터를 되돌려야 열립니다"),
+        ("diverged", "서버 데이터가 정본과 달라 멈췄습니다"),
+        ("schema_newer", "앱 판이 데이터보다 오래됐습니다"),
+    ],
+)
+def test_what_a_person_must_fix_says_maintenance_and_who(kind: str, title: str) -> None:
+    """「다시 시도 n회」 처럼 기다리면 될 것으로 보이지 않게 — 「점검 중」 · 경우별 쉬운 말."""
+    view = container_stage.stage_view(
+        _state(attempt=2, kind=kind, failed_at=1100.0, next_at=1400.0)
+    )
+
+    assert (view.chip, view.tone, view.title) == (container_stage.CHIP_MAINTENANCE, "check", title)
+    assert view.diagnostics[0] == FAILURE_LABELS[kind]
+    assert view.diagnostics[1] == container_stage.HUMAN_ACTIONS[kind]
+    assert view.diagnostics[-1] == "시도 2회"
+    assert "다시 시도" not in view.title + " ".join(view.reasons)
+    if kind == "schema_newer":
+        assert container_stage.value_text(view, 1100.0) == ""
+        assert "문의처" not in view.reasons[0]
+    else:
+        assert container_stage.value_text(view, 1100.0) == "다음 확인 300초 뒤"
+        assert view.reasons[0].endswith("문의처에 알려 주세요.")
+
+
+@pytest.mark.parametrize(
+    ("kind", "facts", "line"),
+    [
+        (
+            "config",
+            container_stage.StageFacts(missing_environment=("CAPA_S3_BUCKET", "CAPA_S3_PROFILE")),
+            "비어 있는 환경변수: CAPA_S3_BUCKET · CAPA_S3_PROFILE",
+        ),
+        (
+            "disk_full",
+            container_stage.StageFacts(needed_bytes=300 * 1024 * 1024, free_bytes=120_000_000),
+            "필요 300 MB · 남음 115 MB",
+        ),
+        ("corrupt", container_stage.StageFacts(seq=41), "멈춘 세대 41"),
+        (
+            "diverged",
+            container_stage.StageFacts(datasets=("simulation", "equipment")),
+            "바뀐 DB: 시뮬레이션 · 가용설비",
+        ),
+        (
+            "schema_newer",
+            container_stage.StageFacts(datasets=("equipment",), file_version=40, code_version=38),
+            "가용설비 판 40 · 코드 판 38",
+        ),
+    ],
+)
+def test_the_folded_diagnostics_carry_names_and_numbers(
+    stage: tuple[container_stage.Stage, int],
+    kind: str,
+    facts: container_stage.StageFacts,
+    line: str,
+) -> None:
+    """2026-11-14 보드 D9 — 접힌 「관리자용 진단」 에 이름 · 수(값 · 주소 · 키 · 버킷 이름 아님)."""
+    opened, port = stage
+
+    opened.fail(1, kind, wait_seconds=300, facts=facts)
+
+    page = _ask(port, "GET", "/")[2].decode("utf-8")
+    folded = page.partition("<summary>관리자용 진단</summary>")[2]
+    assert f"<li>{line}</li>" in folded
+
+
+def test_unknown_numbers_leave_their_line_out() -> None:
+    """모르는 수는 짐작하지 않는다 — 받는 도중의 디스크 참 · 세대를 모르는 깨짐."""
+    disk = container_stage.stage_view(_state(attempt=1, kind="disk_full"))
+    corrupt = container_stage.stage_view(_state(attempt=1, kind="corrupt"))
+
+    assert not any("MB" in line for line in disk.diagnostics)
+    assert not any("세대" in line and line[-1].isdigit() for line in corrupt.diagnostics)
+
+
+def test_a_fact_that_is_not_a_name_or_number_never_reaches_the_screen(
+    stage: tuple[container_stage.Stage, int],
+) -> None:
+    """사실 칸도 닫힌 꼴이다 — 환경변수 이름 꼴 · 아는 DB 이름 · 0 이상의 정수만 지난다."""
+    opened, port = stage
+    facts = container_stage.StageFacts(
+        missing_environment=(FAKE_ENDPOINT, FAKE_BUCKET, "CAPA_S3_BUCKET"),
+        datasets=(FAKE_BUCKET, "simulation"),
+        seq=-3,
+    )
+
+    opened.fail(1, "config", wait_seconds=300, facts=facts)
+    opened.fail(2, "diverged", wait_seconds=300, facts=facts)
+
+    page = _ask(port, "GET", "/")[2].decode("utf-8")
+    status = _ask(port, "GET", "/_capa_stage")[2].decode("utf-8")
+    for text in (page, status):
+        assert FAKE_BUCKET not in text and FAKE_ENDPOINT not in text
+    assert "바뀐 DB: 시뮬레이션" in page
+    assert opened._server is not None
+    kept = opened._server.display.read().facts
+    assert kept.missing_environment == ("CAPA_S3_BUCKET",) and kept.seq is None

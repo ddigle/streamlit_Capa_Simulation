@@ -802,7 +802,8 @@ def command_rollback(args: argparse.Namespace) -> int:
 
 
 def _boot_line(outcome: engine.BootOutcome) -> str:
-    """시작 스크립트가 읽는 한 줄. 값은 갈래 · 수뿐이다(주소 · 버킷 · 키 · 서버 글 없음)."""
+    """시작 스크립트가 읽는 한 줄. 값은 갈래 · 수 · DB 이름뿐이다(주소 · 버킷 · 키 · 서버 글
+    없음) — 머문 까닭의 수 · 이름은 시작 임시 화면의 접힌 진단이 싣는다."""
     return json.dumps(
         {
             "kind": outcome.kind,
@@ -811,6 +812,11 @@ def _boot_line(outcome: engine.BootOutcome) -> str:
             "previous_upload_utc": outcome.previous_upload_utc,
             "total_bytes": outcome.total_bytes,
             "seconds": round(outcome.elapsed_seconds, 2),
+            "needed_bytes": outcome.needed_bytes,
+            "free_bytes": outcome.free_bytes,
+            "datasets": list(outcome.datasets),
+            "file_version": outcome.file_version,
+            "code_version": outcome.code_version,
         },
         ensure_ascii=False,
     )

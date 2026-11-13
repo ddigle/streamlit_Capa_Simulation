@@ -776,6 +776,8 @@ def test_a_dirty_local_behind_the_remote_stays(rig: SimpleNamespace) -> None:
 
     assert outcome.kind == manifest.FAILURE_DIVERGED
     assert row_count(rig.simulation) == 11
+    # 다시 누르면 사라질 변경이 든 DB 이름(진단).
+    assert outcome.datasets == ("simulation",)
 
 
 def test_a_local_without_a_generation_is_replaced(rig: SimpleNamespace) -> None:
@@ -867,6 +869,9 @@ def test_a_snapshot_newer_than_the_code_stays(
 
     assert outcome.kind == manifest.FAILURE_SCHEMA_NEWER
     assert not any(op == "get-object" and "snapshots" in key for op, key in rig.store.operations())
+    # 시작 임시 화면의 접힌 진단 — 어느 DB 의 판이 몇이고 코드 판은 몇인가(이름 · 수).
+    assert outcome.datasets == ("simulation",)
+    assert outcome.code_version == 0 and (outcome.file_version or 0) > 0
 
 
 def test_a_snapshot_gone_from_the_store_is_a_broken_generation(rig: SimpleNamespace) -> None:
@@ -878,6 +883,8 @@ def test_a_snapshot_gone_from_the_store_is_a_broken_generation(rig: SimpleNamesp
     outcome = engine.boot_pull(rig.client, rig.paths)
 
     assert outcome.kind == manifest.FAILURE_CORRUPT
+    # 되돌릴 세대를 고를 단서 — 멈춘 HEAD 세대.
+    assert outcome.seq is not None and outcome.seq >= 1
 
 
 def test_too_little_disk_stays_before_downloading(
@@ -892,6 +899,7 @@ def test_too_little_disk_stays_before_downloading(
     outcome = engine.boot_pull(rig.client, rig.paths)
 
     assert outcome.kind == manifest.FAILURE_DISK_FULL
+    assert (outcome.needed_bytes, outcome.free_bytes) == (100, 1)
 
 
 def test_an_unreachable_store_is_a_word_not_a_trace(rig: SimpleNamespace) -> None:

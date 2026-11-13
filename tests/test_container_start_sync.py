@@ -126,6 +126,7 @@ class FakeStage(container_stage.Stage):
         super().__init__(None)
         self.log = log
         self.shown: list[tuple[object, ...]] = []
+        self.facts: list[container_stage.StageFacts | None] = []
         self.log.append("임시 응답")
 
     def begin(self, *, managed: bool) -> None:
@@ -137,8 +138,16 @@ class FakeStage(container_stage.Stage):
     def attempt(self, number: int) -> None:
         self.shown.append(("attempt", number))
 
-    def fail(self, number: int, kind: str, *, wait_seconds: float) -> None:
+    def fail(
+        self,
+        number: int,
+        kind: str,
+        *,
+        wait_seconds: float,
+        facts: container_stage.StageFacts | None = None,
+    ) -> None:
         self.shown.append(("fail", number, kind, wait_seconds))
+        self.facts.append(facts)
 
     @property
     def failures(self) -> list[tuple[object, ...]]:
@@ -406,7 +415,7 @@ def test_a_broken_config_without_the_mode_still_starts_the_app(
 # --------------------------------------------------------------------------- 받기
 def test_a_failed_pull_backs_off_and_only_success_starts_the_app(box: SimpleNamespace) -> None:
     runner = Runner(
-        box.log, [_failed("unreachable"), _failed("timeout"), _failed("denied"), _boot(DOWNLOADED)]
+        box.log, [_failed("unreachable"), _failed("timeout"), _failed("other"), _boot(DOWNLOADED)]
     )
 
     launched = _start(box, _managed(box), runner)
@@ -417,7 +426,7 @@ def test_a_failed_pull_backs_off_and_only_success_starts_the_app(box: SimpleName
     assert box.stages[0].failures == [
         ("fail", 1, "unreachable", 5),
         ("fail", 2, "timeout", 10),
-        ("fail", 3, "denied", 20),
+        ("fail", 3, "other", 20),
     ]
     # 시도마다 「받는 중」 을 먼저 알린다 — 앞 실패 낱말이 다음 시도 내내 남지 않게.
     assert [event for event in box.stages[0].shown if event[0] == "attempt"] == [
@@ -438,14 +447,82 @@ def test_an_empty_remote_keeps_waiting_and_never_starts_the_app(box: SimpleNames
     assert box.slept == [5, 10, 20, 40, 60, 60, 60, 60]
 
 
-@pytest.mark.parametrize("kind", ["forked", "diverged", "schema_newer"])
+HUMAN_KINDS = [
+    "config",
+    "cli_missing",
+    "denied",
+    "no_bucket",
+    "disk_full",
+    "corrupt",
+    "forked",
+    "diverged",
+    "schema_newer",
+]
+
+
+@pytest.mark.parametrize("kind", HUMAN_KINDS)
 def test_what_only_a_person_can_fix_is_not_hurried(box: SimpleNamespace, kind: str) -> None:
+    """다시 해도 풀리지 않는 갈래는 300초마다다(2026-11-14 보드 D10) — 화면 표지는 「점검 중」."""
     runner = Runner(box.log, [_failed(kind)])
 
     with pytest.raises(Stay):
         _start(box, _managed(box), runner, stay_after=1)
 
     assert box.slept == [300]
+    assert container_start.BOOT_HUMAN_KINDS == tuple(HUMAN_KINDS)
+
+
+@pytest.mark.parametrize("kind", ["unreachable", "timeout", "other", "remote_empty"])
+def test_what_clears_by_itself_keeps_the_short_backoff(box: SimpleNamespace, kind: str) -> None:
+    runner = Runner(box.log, [_failed(kind)] * 2)
+
+    with pytest.raises(Stay):
+        _start(box, _managed(box), runner, stay_after=2)
+
+    assert box.slept == [5, 10]
+
+
+def test_the_names_and_numbers_of_a_stay_reach_the_stage(box: SimpleNamespace) -> None:
+    """머문 까닭의 이름 · 수(D9)는 끝줄에서 임시 응답까지 간다 — 값이 아니다."""
+    line = {
+        "kind": "schema_newer",
+        "action": None,
+        "seq": 41,
+        "datasets": ["equipment"],
+        "file_version": 40,
+        "code_version": 38,
+    }
+    runner = Runner(box.log, [_boot(line, code=1)])
+
+    with pytest.raises(Stay):
+        _start(box, _managed(box), runner, stay_after=1)
+
+    assert box.stages[0].facts == [
+        container_stage.StageFacts(
+            seq=41, datasets=("equipment",), file_version=40, code_version=38
+        )
+    ]
+
+
+def test_the_boot_line_facts_are_a_closed_shape() -> None:
+    """수 칸은 0 이상의 정수만, DB 이름은 아는 이름만 — 끝줄의 다른 꼴은 버린다."""
+    parsed = container_start.parse_boot_line(
+        json.dumps(
+            {
+                "kind": "disk_full",
+                "seq": 3,
+                "needed_bytes": "300 MB",
+                "free_bytes": -1,
+                "datasets": ["simulation", "s3://Demo_ops_bucket", 7],
+                "file_version": True,
+                "code_version": 12,
+            }
+        )
+    )
+
+    assert (parsed.needed_bytes, parsed.free_bytes) == (None, None)
+    assert parsed.datasets == ("simulation",)
+    assert (parsed.file_version, parsed.code_version) == (None, 12)
 
 
 @pytest.mark.parametrize("name", list(container_start.SYNC_REQUIRED_ENVIRONMENT))
@@ -460,6 +537,8 @@ def test_a_missing_bucket_or_key_is_not_pulled_at_all(box: SimpleNamespace, name
 
     assert runner.boot_calls == 0
     assert box.stages[0].shown[-1][:3] == ("fail", 2, "config")
+    facts = box.stages[0].facts[-1]
+    assert facts is not None and facts.missing_environment == (name,)
     assert "앱" not in box.log
 
 
@@ -730,7 +809,7 @@ def test_a_missing_value_in_managed_mode_names_it_on_the_console(
         _start(box, environ, Runner(box.log), stay_after=1)
 
     printed = capsys.readouterr().out
-    assert f"config · CD 환경변수 {object_storage.PROFILE_ENV} 없음 · 5초 뒤 다시" in printed
+    assert f"config · CD 환경변수 {object_storage.PROFILE_ENV} 없음 · 300초 뒤 다시" in printed
 
 
 def test_a_profile_name_cannot_break_the_section_header(box: SimpleNamespace) -> None:
