@@ -1485,7 +1485,7 @@ def test_a_check_from_another_buffer_generation_is_dropped(
     assert not _check(app, checking_calls, 1, blocked)
 
     assert "space_sheet_verdict_v1" not in app.session_state
-    assert checking_calls[-1]["sheetVerdict"] is None
+    assert checking_calls[-1].get("sheetVerdict") is None
     # 같은 세대의 확인은 그대로 판정한다.
     assert len(_check(app, checking_calls, 2, blocked)) == 1
     assert checking_calls[-1]["sheetVerdict"]["seq"] == 2
