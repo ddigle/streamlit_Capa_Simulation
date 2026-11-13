@@ -157,8 +157,8 @@ HUMAN_ACTIONS: Final[Mapping[str, str]] = {
     FAILURE_DENIED: "S3 키 · 권한 확인(키 둘을 함께 다시 발급했는지)",
     FAILURE_NO_BUCKET: "버킷 이름 확인(CAPA_S3_BUCKET)",
     FAILURE_DISK_FULL: "C-DEP 담당에게 /project 볼륨 늘리기 요청",
-    FAILURE_CORRUPT: "사내 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
-    FAILURE_FORKED: "사내 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
+    FAILURE_CORRUPT: "앱 관리자 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
+    FAILURE_FORKED: "앱 관리자 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
     FAILURE_DIVERGED: (
         "CI/CD 를 다시 누르면 풀리지만 이 서버에서 정본에 올리지 못한 변경은 사라집니다"
     ),
@@ -460,7 +460,7 @@ def _remote_empty_view(state: StageState) -> StageView:
         reference_at=state.failed_at,
         diagnostics=(
             _label(state.kind),
-            "버킷에 정본 세대가 없음 — 사내 PC 에서 doctor → init",
+            "버킷에 정본 세대가 없음 — 앱 관리자 PC 에서 doctor → init",
             "이미 init 했다면 CAPA_S3_BUCKET 이 같은 버킷인지 확인",
             f"시도 {state.failures}회",
         ),
@@ -486,7 +486,7 @@ def _retry_view(state: StageState) -> StageView:
         reference_at=state.failed_at,
         diagnostics=(
             _label(state.kind),
-            "사내 PC 에서 doctor 로 원문 보기",
+            "앱 관리자 PC 에서 doctor 로 원문 보기",
             "pod 에 프록시 변수가 있으면 NO_PROXY 에 S3 주소가 있는지 확인",
             f"시도 {state.failures}회",
         ),
@@ -748,7 +748,10 @@ if (typeof document !== "undefined") {
     mode: body.dataset.return,
     href: window.location.href,
     fetch: (url, options) => window.fetch(url, options),
-    goTo: (url) => window.location.replace(url),
+    // 같은 주소면 다시 읽는다 — `#…` 가 붙은 주소는 replace 가 조각 이동만 하고 쪽을 다시
+    // 받지 않는다.
+    goTo: (url) =>
+      url === window.location.href ? window.location.reload() : window.location.replace(url),
     show: (headline, detail) => {
       const title = document.querySelector("h1");
       if (title) title.textContent = headline;

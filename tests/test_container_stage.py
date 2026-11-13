@@ -353,6 +353,13 @@ def test_the_page_goes_back_to_the_address_it_was_opened_at() -> None:
     assert result == {"more": False, "went": [opened], "shown": [], "updated": []}
 
 
+def test_going_back_to_the_same_address_reloads_the_page() -> None:
+    """`#…` 가 붙은 주소에 replace 는 조각 이동만 해 쪽을 다시 받지 않는다 — 같은 주소면 다시
+    읽는다."""
+    script = container_stage.PAGE_SCRIPT
+    assert "url === window.location.href ? window.location.reload()" in script
+
+
 def test_a_posted_or_callback_page_goes_to_the_base_instead() -> None:
     """POST 로 받은 쪽 · 콜백 경로는 다시 읽으면 다시 보내거나 쓴 코드를 되풀이한다."""
     result = _tick(

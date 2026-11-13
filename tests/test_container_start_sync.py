@@ -470,6 +470,9 @@ def test_what_only_a_person_can_fix_is_not_hurried(box: SimpleNamespace, kind: s
 
     assert box.slept == [300]
     assert container_start.BOOT_HUMAN_KINDS == tuple(HUMAN_KINDS)
+    # 300초 갈래와 임시 화면의 「점검 중」 갈래는 한 묶음이다 — 갈라지면 300초인데 「다시 시도」
+    # 가 선다.
+    assert set(container_start.BOOT_HUMAN_KINDS) == set(container_stage.HUMAN_SCREENS)
 
 
 @pytest.mark.parametrize("kind", ["unreachable", "timeout", "other", "remote_empty"])

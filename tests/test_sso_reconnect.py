@@ -207,14 +207,15 @@ process.stdout.write(JSON.stringify([
 
 
 def test_only_the_connection_windows_count_as_the_ones_the_bands_replace() -> None:
-    """띠가 선 동안 감추는 창은 Streamlit 의 연결 오류 창(401 · 재시작의 503 · 답 없음)뿐이다 —
-    같은 꼴의 앱 팝업은 아니다(2026-11-08 사용자 답 b2)."""
+    """띠가 선 동안 감추는 창은 Streamlit 의 연결 오류 창(401 · 재시작 · 앞단의 5xx · 답
+    없음)뿐이다 — 같은 꼴의 앱 팝업은 아니다(2026-11-08 사용자 답 b2)."""
     script = reconnect_script(use_config())
     texts = [
         "Connection error Connection failed with status 401.",
         "Connection error Connection failed with status 503.",
         "Streamlit server is not responding. Are you connected to the internet?",
-        "Connection error Connection failed with status 500.",
+        "Connection error Connection failed with status 502.",
+        "Connection error Connection failed with status 404.",
         "공식 지정 · 메모",
         "",
         None,
@@ -223,7 +224,7 @@ def test_only_the_connection_windows_count_as_the_ones_the_bands_replace() -> No
 const texts = {json.dumps(texts)};
 process.stdout.write(JSON.stringify(texts.map(connectionDialog)));
 """
-    assert _node(script, runner) == [True, True, True, False, False, False, False]
+    assert _node(script, runner) == [True, True, True, True, False, False, False, False]
     assert CONNECTION_DIALOG_TEXT == "Connection failed with status 401"
 
 

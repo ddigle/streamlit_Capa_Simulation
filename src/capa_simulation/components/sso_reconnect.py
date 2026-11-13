@@ -53,7 +53,7 @@ b2). 띠가 창 제목과 닫기 X 를 덮고 본문 줄만 삐져나와 같은 
 동안은 「서버 응답을 기다리는 중입니다」, 답 없음이 `UNREACHABLE_AFTER_MS` 를 넘게 이어지면
 「서버에 닿지 않습니다 — 다시 붙는 중」. 그 밖의 답(서버가 떠 있음)은 띠를 걷는다 — Streamlit
 이 스스로 다시 붙는다. 재시작 띠는 링크가 없고(기다리면 붙는다) 로그인 띠가 서 있으면 서지 않는다.
-띠가 선 동안 영어 연결 창(`CONNECTION_DIALOG_TEXTS` — 401 · 503 · not responding)을 감춘다(같은
+띠가 선 동안 영어 연결 창(`CONNECTION_DIALOG_TEXTS` — 401 · 5xx · not responding)을 감춘다(같은
 길). 다시 붙으면 띠를 걷고 서버 재시작 알림(`GL-07`)이 이어 알린다.
 
 **통합인증이 꺼진 서버에도 싣는다** — 재시작은 통합인증과 상관없다. 꺼짐이면 로그인 띠 없이 재시작
@@ -86,10 +86,11 @@ HOST_CONFIG_PATH = "/_stcore/host-config"
 # 띠가 선 동안 감추는 Streamlit 연결 오류 창의 글 — 401 이라 띠가 선 그 창만 고른다(Streamlit 1.63
 # 프런트 글, 비공식 — 판올림으로 글이 바뀌면 창이 남을 뿐 띠는 그대로다).
 CONNECTION_DIALOG_TEXT = "Connection failed with status 401"
-# 재시작 띠가 선 동안 함께 감추는 창 글 — 임시 응답의 503 과 답이 없는 틈(같은 프런트 글).
+# 재시작 띠가 선 동안 함께 감추는 창 글 — 임시 응답의 503 · 앞단의 502 · 504 와 답이 없는 틈(같은
+# 프런트 글). 띠가 선 동안만 감추므로 앱 팝업은 건드리지 않는다.
 CONNECTION_DIALOG_TEXTS = (
     CONNECTION_DIALOG_TEXT,
-    "Connection failed with status 503",
+    "Connection failed with status 5",
     "Streamlit server is not responding",
 )
 RESTART_BANNER_ID = "capa-restart-band"
