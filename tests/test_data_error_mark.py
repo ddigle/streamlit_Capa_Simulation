@@ -16,7 +16,9 @@ from __future__ import annotations
 import ast
 import re
 from collections import Counter
+from pathlib import Path
 
+import duckdb
 import pytest
 from alert_marks import alert_notes, data_error_marks, data_error_texts, events
 from source_sites import (
@@ -31,6 +33,7 @@ from source_sites import (
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts, page_bootstrap
+from capa_simulation.components import admin_view
 from capa_simulation.components.data_error_mark import (
     EMPTY_CAUSE,
     EMPTY_CLASS,
@@ -308,6 +311,37 @@ def test_a_failure_nobody_on_the_screen_can_fix_ends_with_tell_the_admin(
         "\n\n- 파일: `x.duckdb`"
     )
     assert page_bootstrap.ADMIN_TAIL not in data_error_note(own, code="EQ-09")["short"]
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_a_db_failure_shows_paths_and_process_only_to_the_admin(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """사람이 고칠 수 없는 DB 실패의 전문(파일 경로 · 파일을 연 프로세스 번호 · 원문 줄)은 관리자
+    몫에만 — 그 밖의 Alarm 줄 · 로그 · 복사 글은 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」
+    만이다. 짧은 글은 둘 다 같다."""
+    monkeypatch.setattr(admin_view, "admin_notes_visible", lambda: admin)
+    message = "설비 현황을 준비하지 못했습니다. " + page_bootstrap.bootstrap_error_message(
+        duckdb.IOException(
+            'Could not set lock on file "/srv/DEMO/x.duckdb": Conflicting lock is held in '
+            "/usr/bin/python3 (PID 4242) by user demo."
+        ),
+        database_paths=(Path("/srv/DEMO/x.duckdb"),),
+    )
+
+    note = data_error_note(message, code="EQ-09")
+
+    assert (
+        note["short"] == "데이터베이스를 열지 못함(다른 프로그램이 엶)" + page_bootstrap.ADMIN_TAIL
+    )
+    hidden = ("/srv/DEMO", "4242", "DuckDB")
+    if admin:
+        assert all(word in note["full"] for word in hidden)
+        return
+    assert not any(word in note["full"] for word in hidden)
+    assert note["full"] == alerts.plain_text(
+        f"설비 현황을 준비하지 못했습니다. {page_bootstrap.HELD_LEAD}\n\n관리자에게 알려 주세요."
+    )
 
 
 def test_an_empty_source_table_points_at_the_registration_tab() -> None:

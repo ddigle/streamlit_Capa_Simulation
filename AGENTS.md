@@ -4117,7 +4117,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   발행」 · `goto` 시나리오 관리 › Capa 시나리오, 계기 `EMPTY_CAUSE`)이다. 상태 알림 `SC-01` 을 다시 쓰지 않는 것은 계산 화면이 정상 회차에 해소를
   낼 자리가 없어 발행 뒤에도 그 줄이 「지금도 있음」 으로 남기 때문이다. **짧은 글 꼴** — 사람이 고칠 수 없는 DB 실패(다른 프로그램의 잠금 · 쓰기 실패 ·
   열기 실패 · 그 밖의 DB 실패 — `bootstrap_error_message` 의 첫 문단 상수 `HELD_LEAD` 등)는 짧은 글 끝이 「— 관리자에게 알려 주세요」(부르는 쪽이
-  준 짧은 글에도 붙는다 — `screen_error_short`), 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다. 고칠 곳을 주지 않은 경로 · 계획 표 빈 리비전은
+  준 짧은 글에도 붙는다 — `screen_error_short`), 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다. 그 DB 실패의 전문(파일 경로 · 파일을 연 프로세스
+  번호 · 원문 줄)은 관리자 몫(`admin_view.admin_notes_visible`)에만 싣고 그 밖에는 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」 만이다
+  (`screen_error_public`). 고칠 곳을 주지 않은 경로 · 계획 표 빈 리비전은
   「그 화면으로」 가 시나리오 관리 「DB 등록」 이다(`screen_error_goto`). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) ·
   `tests/test_no_revision_pages.py`(공식버전 없는 저장소로 모든 화면 — 마크 없음 · 확인 알림) · `alert_marks.place_errors`(오류 없이 그렸다).
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은

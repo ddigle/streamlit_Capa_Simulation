@@ -211,6 +211,17 @@ def screen_error_short(message: str) -> str | None:
     return None
 
 
+def screen_error_public(message: str) -> str:
+    """사람이 고칠 수 없는 DB 실패 글의 누구나 볼 꼴 — 첫 문단(화면이 붙인 머리까지)과 「관리자에게
+    알려 주세요.」 만. 파일 경로 · 파일을 연 프로세스 번호 · 원문 줄은 관리자 몫 전문에만 싣는다
+    (`data_error_mark.data_error_note`). 그 갈래가 아니면 받은 글 그대로다."""
+    for lead, _ in _ADMIN_LEADS:
+        at = message.find(f"{lead}\n\n")
+        if at >= 0:
+            return message[: at + len(lead)] + "\n\n관리자에게 알려 주세요."
+    return message
+
+
 def screen_error_goto(message: str) -> tuple[str, str, str] | None:
     """사용자가 고칠 원인인데 화면이 「그 화면으로」 를 주지 않은 글의 고칠 곳 — 경로 · 계획 표가 빈
     리비전(`EMPTY_TABLE_STOP` — 원천을 고쳐 다시 등록)은 시나리오 관리 「DB 등록」. 아니면 None."""
