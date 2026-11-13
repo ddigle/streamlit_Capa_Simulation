@@ -168,3 +168,22 @@ def test_profile_command_prints_a_ready_to_paste_block(
     assert "s3.addressing_style path" in printed
     assert "request_checksum_calculation when_required" in printed
     assert "네임스페이스는 프로필(자격증명)에 매여" in printed
+
+
+def test_profile_block_has_no_placeholder_and_asks_for_the_keys_on_its_last_line(
+    script: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """블록째 붙여 넣는다 — 꺾쇠 자리표는 PowerShell 이 그 줄에서 멈추고, 묻는 줄이 중간에 있으면
+    뒤에 붙은 줄을 키 값으로 먹는다. 키는 맨 끝 한 줄이 차례로 묻는다."""
+    monkeypatch.setenv("CAPA_S3_ENDPOINT_URL", "http://s3.demo.invalid:9020")
+    monkeypatch.setenv("CAPA_S3_PROFILE", "demo-org-team")
+
+    assert script.command_profile(script.parse_args(["profile"])) == 0
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+    assert not [line for line in lines if "<" in line or ">" in line]
+    asking = [index for index, line in enumerate(lines) if "Read-Host" in line]
+    assert asking == [len(lines) - 1]
+    assert lines[-1].count("Read-Host") == 2
+    assert "aws_access_key_id" in lines[-1] and "aws_secret_access_key" in lines[-1]

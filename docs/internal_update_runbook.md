@@ -841,9 +841,10 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
   알린다 — 배포 체크아웃의 모듈 자리는 비어 있어야 한다(1-5).
 - **「통과」 가 보증은 아니다** — 쉬운 꼴만 잡는 정적 규칙과 담당자의 시험이다. 모듈은 코어와 한 프로세스라 의도를 가진 코드는 세션 비밀 · S3 키 · 접속 명단 쓰기에도 닿는다(4-6 머리).
 - **실패한 모듈은 고치지 않고 사용자에게 보인다.** 끄는 스위치는 사용자가 켠다 — 사내 PC 는 PowerShell 줄과 끝난 뒤 `Remove-Item Env:…`
-  (`$env:CAPA_MODULES_DISABLED="<id>"; uv run --no-sync python -m streamlit run app.py --server.port <포트>` 뒤 `Remove-Item Env:CAPA_MODULES_DISABLED`
+  (`$env:CAPA_MODULES_DISABLED = Read-Host "끌 모듈 id"; uv run --no-sync python -m streamlit run app.py --server.port <포트>` 뒤 `Remove-Item Env:CAPA_MODULES_DISABLED`
   — 지우지 않으면 같은 창에서 나중에 띄운 앱의 모듈이 말없이 꺼진다), WebIDE 는 그 명령에만 거는 bash 줄
-  (`CAPA_MODULES_DISABLED=<id> uv run --no-sync python -m streamlit run app.py --server.port <포트>`), CD 는 환경변수 표. 지금 값은 Admin
+  (`read -rp "끌 모듈 id: " mid; CAPA_MODULES_DISABLED="$mid" uv run --no-sync python -m streamlit run app.py --server.port <포트>`), CD 는 환경변수 표.
+  `<포트>` 는 에이전트가 채워 건네고, 끌 모듈 id 는 묻는 자리에 사용자가 넣는다(에이전트가 블록의 id 를 알려 준다 — 이 한 줄만 붙여 넣는다). 지금 값은 Admin
   「모듈 상태」 팝오버(안쪽 탭 줄 오른쪽 끝) 안 환경변수 줄과 이 블록 머리에 보인다.
 - 블록은 전문 「적용 · 관문」 에, `전송용 요약` 줄은 압축본 `모듈` 칸(5장 차례 1 · 2)에 옮긴다 — 요약 줄에는 id 가 없다(`m<n>`). 모듈이
   없으면 `모듈 없음`.
@@ -867,11 +868,11 @@ uv run --no-sync python -m streamlit run app.py --server.port 8501
 PR 코드는 3 의 사본 트리(`$prtree`)가 아니라 git 으로 읽는다 — `git diff "origin/main...$pr" -- modules/<id>/`(새 파일은 통째로 나온다) · `git show "${pr}:<경로>"`(PowerShell 은 `"$pr:…"` 를 변수 한정으로 읽어 깨진다 — 중괄호로 끊는다).
 사본 트리는 `$HOME\e2e_copy` 아래라 권한 템플릿이 읽기를 막는다(0장) — 막혀도 셸 · 파이썬으로 그 폴더를 열지 않는다. git 의 PR 머리는 코드뿐이라 실데이터가 없다.
 
-1. 사용자가 받는다(자격증명은 사람 몫이다). `<번호>` 는 PR 번호다.
+1. 사용자가 받는다(자격증명은 사람 몫이다). 둘째 줄이 PR 번호를 묻는다 — 묻는 자리에 PR 번호를 넣는다.
 
    ```powershell
    git fetch origin
-   git fetch origin "pull/<번호>/head"
+   git fetch origin "pull/$(Read-Host 'PR 번호')/head"
    ```
 
 2. 에이전트가 PR 머리를 고정하고 다섯을 본다.
@@ -1701,7 +1702,7 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 
 ## 6-4. 운영 DB 정본이 버킷으로 옮겨 간 뒤
 
-정본의 절차는 [`objectstore_setup.md`](objectstore_setup.md) 다 — 환경변수(2장) · 이관(4장) · 막혔을 때(8장). 아래 셋(이관 · 사본 받기 · 세대 되돌리기)의 명령은 모두 사용자가 별도 PowerShell 창에서 친다 — 운영 버킷 이름은 사용자 창의 변수(`$b`)에만 있고(PC 환경변수에 남기지 않는다 — `objectstore_setup.md` 6장 1단계), `fetch-copy` 는 받은 사본을 열어 확인한다(0장). 에이전트는 줄을 건네고 사용자가 알려 준 끝줄(세대 · 갈래)만 옮긴다. 쓰는 쪽은 운영 앱 하나다 — **이관 뒤 사내 PC 앱은 쓰지 않는다.** 그 PC 의 앱에는 `SY-04` 가 뜬다. `CAPA_S3_SYNC_MODE=managed` 와 운영
+정본의 절차는 [`objectstore_setup.md`](objectstore_setup.md) 다 — 환경변수(2장) · 이관(4장) · 막혔을 때(8장). 아래 셋(이관 · 사본 받기 · 세대 되돌리기)의 명령은 모두 사용자가 별도 PowerShell 창에서 친다 — 운영 버킷 이름은 사용자 창의 변수(`$b`)에만 있고(PC 환경변수에 남기지 않는다 — `objectstore_setup.md` 6장 1단계), `$b` 는 `Read-Host` 한 줄로 받는다 — 그 줄만 붙여 넣고 묻는 자리에 C-DEP 표의 값을 붙여 넣는다(뒤 줄을 함께 붙이면 그 줄이 값으로 들어간다). 묻는 줄은 펜스의 마지막 줄이다. `fetch-copy` 는 받은 사본을 열어 확인한다(0장). 에이전트는 줄을 건네고 사용자가 알려 준 끝줄(세대 · 갈래)만 옮긴다. 쓰는 쪽은 운영 앱 하나다 — **이관 뒤 사내 PC 앱은 쓰지 않는다.** 그 PC 의 앱에는 `SY-04` 가 뜬다. `CAPA_S3_SYNC_MODE=managed` 와 운영
 버킷은 운영 C-DEP 환경변수 표에만 둔다 — 개발 서버 · WebIDE · 사내 PC 앱에는 넣지 않는다(쓰는 쪽이 둘이면 세대가 갈라진다 — 임시 화면
 `원격이 갈라짐`).
 
@@ -1711,7 +1712,7 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 
 1. 사용자가 C-DEP 환경변수 표에 키 둘 · `CAPA_S3_BUCKET` · 주소(`CAPA_S3_ENDPOINT_URL`) · 프로필 이름(`CAPA_S3_PROFILE`)을 넣고 CI/CD → Admin 「서버 시작 점검」 에서 aws 판 · ECS 연결 · 버킷 목록을 본다
    (빈 값은 그 줄이 `CD 환경변수 … 없음` 으로 이름을 댄다 — 셋 다 사내 값이라 코드에 기본값이 없다).
-2. 사용자가 사내 PC 앱을 끈다(1-1) → 사용자가 별도 PowerShell 창에서 운영 버킷 이름을 그 창의 변수로 넣고(`$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"`) `doctor`
+2. 사용자가 사내 PC 앱을 끈다(1-1) → 사용자가 별도 PowerShell 창에서 운영 버킷 이름을 그 창의 변수로 넣고(`$b = Read-Host "C-DEP 표의 CAPA_S3_BUCKET 값"`) `doctor`
    (`uv run --no-sync python scripts/sync_object_storage.py --bucket $b doctor`) — **원격 세대가 `비어 있음` 이 아니면 3 을 하지 않고 멈춰 사외에 알린다**
    (받기 모드를 켜면 C-DEP 가 그 옛 세대를 받고, `init` 은 「원격에 이미 seq …」 로 건너뛴다). 사용자는 `doctor` 의 `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET`
    값과 같은지 눈으로 본다(옮기지 않는다 — 다르면 `$b` 줄부터). 그 창은 4 까지 닫지 않는다.
@@ -1730,7 +1731,12 @@ WebIDE(리눅스)면 덮기는 `<저장소>/.venv/bin/python -c "import zipfile;
 이관한 배포 뒤부터 — 앱이 떠 있어도 된다. 운영 앱의 그 시각 세대이고 사내 PC `data\` 를 건드리지 않는다.
 
 ```powershell
-$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+$b = Read-Host "C-DEP 표의 CAPA_S3_BUCKET 값"
+```
+
+같은 별도 PowerShell 창에서 —
+
+```powershell
 uv run --no-sync python scripts/sync_object_storage.py --bucket $b fetch-copy --to "$e2e\data"
 ```
 
@@ -1740,15 +1746,26 @@ uv run --no-sync python scripts/sync_object_storage.py --bucket $b fetch-copy --
 
 앱 결함으로 망가진 세대가 게시됐거나 임시 화면이 `스냅샷이 깨짐` · `원격이 갈라짐` 에 머물면 앞 세대로 새 HEAD 를 낸다. 지우지 않고 앞으로만 간다. 사람이 고르는 일이라 사용자에게 묻고, 세대 번호는 `generations` 로 본다 — 펜스 세대는 같은 멤버로 쌓이므로 멤버 세대가 HEAD 와 다른 앞 세대를 고른다.
 
-두 줄 모두 사용자가 별도 PowerShell 창에서 친다(0장) — 에이전트는 사용자가 알려 준 세대 줄(seq · 갈래)만 옮긴다.
+세 펜스 모두 사용자가 별도 PowerShell 창에서 차례로 친다(0장) — 에이전트는 사용자가 알려 준 세대 줄(seq · 갈래)만 옮긴다.
 
 ```powershell
-$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
-uv run --no-sync python scripts/sync_object_storage.py --bucket $b generations
-uv run --no-sync python scripts/sync_object_storage.py --bucket $b rollback --to <세대> --yes
+$b = Read-Host "C-DEP 표의 CAPA_S3_BUCKET 값"
 ```
 
-같은 세대에 포인터가 둘이면 `--token <키 꼬리 8자리>` 를 더한다. 그 뒤 CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다** — 사용자에게 먼저 알린다. `doctor` · `generations` 의 세대 줄 끝 `<계정>@<PC 이름>`(Windows 사용자 · 컴퓨터
+같은 별도 PowerShell 창에서 목록을 보고, 묻는 자리에 이어 갈 세대 번호를 넣는다 —
+
+```powershell
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b generations
+$g = Read-Host "이어 갈 세대 번호(seq)"
+```
+
+같은 별도 PowerShell 창에서 —
+
+```powershell
+uv run --no-sync python scripts/sync_object_storage.py --bucket $b rollback --to $g --yes
+```
+
+같은 세대에 포인터가 둘이면 그 세대 줄의 키 꼬리 8자리를 `--token` 뒤에 붙여 더한다. 그 뒤 CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다** — 사용자에게 먼저 알린다. `doctor` · `generations` 의 세대 줄 끝 `<계정>@<PC 이름>`(Windows 사용자 · 컴퓨터
 이름)은 리뷰에 옮기지 않는다 — seq · 갈래만(5장).
 
 ## 7. 이번 배포에서 사내가 따로 확인해야 하는 것

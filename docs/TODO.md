@@ -207,8 +207,9 @@
     `CAPA_BDQ_TOKEN` 값도 바꿔 두라는 말이 된다(패키지가 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 을 읽는 서버는 「그 값을 새 토큰으로 바꾸고 CI/CD」).
   - **사내 확인** — ① 지금 토큰 줄: 위치 낱말(파일 / 환경변수 / 파일 없음 / 확인하지 못함)과 만료가 시각으로 나오는지 「만료 모름」 인지만(시각 값은
     옮기지 않음) — 키 `지금토큰 <위치>; 만료 <시각|모름>`. ② 토큰 형식: WebIDE 별도 창에서
-    `python3 -c "t=open('<토큰 파일>').read().strip();print(t.count('.'),t[:1]=='{')"`(내용은 찍히지 않고 점 개수와 JSON 여부만) — 키 `토큰꼴 점<n>
-    json<예|아니오>`, JSON 이면 `python3 -c "import json;print(sorted(json.load(open('<파일>'))))"` 로 칸 이름만. ③ 토큰 넣기 확인(앱 관리자, C-DEP):
+    `python3 -c "import glob;t=open(glob.glob('/config/.credential/bigdataquery.token.*')[0]).read().strip();print(t.count('.'),t[:1]=='{')"`(내용 ·
+    계정은 찍히지 않고 점 개수와 JSON 여부만) — 키 `토큰꼴 점<n> json<예|아니오>`, JSON 이면
+    `python3 -c "import glob,json;print(sorted(json.load(open(glob.glob('/config/.credential/bigdataquery.token.*')[0]))))"` 로 칸 이름만. ③ 토큰 넣기 확인(앱 관리자, C-DEP):
     WebIDE 에서 새로 받은 토큰을 「토큰 넣기」 로 넣은 뒤 시나리오 관리 → DB 등록 코드 조회가 되는지 — 키 `토큰넣기 정상|거절 <이유 낱말>|조회실패 <종류>`.
     ④ 시각대: 「지금 토큰」 줄의 시각이 한국 시간과 맞는지(컨테이너가 UTC 면 9시간 어긋남) — 키 `토큰시각 맞음|어긋남 <시간>`. ⑤ (선택) CI/CD 한 번 뒤
     「지금 토큰」 의 고친 시각이 시작 기록과 같은지(넣은 토큰이 환경변수 값으로 돌아가는지).
@@ -218,7 +219,9 @@
   저장소 주소(`CAPA_COMPANY_INDEX_URL`)와 앱 문의처 메일(`CAPA_APP_CONTACT_EMAIL`)이 이 배포부터 저장소에 없다. 값은 7장 · 압축본에도 적지 않는다 — 모두
   「지금 쓰는 값 그대로」.
   - **맨 앞 — 배포 전 미리 확인(2장 ZIP 적용 앞)** — 사내 PC 사용자 환경변수 둘을 사용자가 별도 PowerShell 창에서 한 줄씩 넣고 새 창을 연다(꼴
-    `[Environment]::SetEnvironmentVariable("<이름>", "<값>", "User")` — README 4단계). 쉬운 말 안내 「사내 패키지 저장소 주소와 앱 문의처 메일을 이 PC 의
+    `[Environment]::SetEnvironmentVariable("CAPA_COMPANY_INDEX_URL", (Read-Host "사내 패키지 저장소 주소"), "User")` ·
+    `[Environment]::SetEnvironmentVariable("CAPA_APP_CONTACT_EMAIL", (Read-Host "앱 문의처 메일"), "User")` — 한 줄씩 붙여 넣고 묻는 자리에 값을 넣는다,
+    README 4단계). 쉬운 말 안내 「사내 패키지 저장소 주소와 앱 문의처 메일을 이 PC 의
     사용자 환경변수로 옮깁니다」. `CAPA_COMPANY_INDEX_URL` 은 적용 전 `requirements-company.txt` 의 `--index-url` 줄 주소 그대로(`https://…/simple` 통째,
     자격증명 없이) — 적용하면 그 줄이 `${CAPA_COMPANY_INDEX_URL}` 로 바뀌어 주소가 사라지므로 반드시 적용 앞에 옮긴다(놓쳤으면 사용자가 자기 창에서
     `git show <앞 배포 커밋>:requirements-company.txt` 로 읽는다 — 값은 Claude 세션 · 리뷰에 옮기지 않는다). `CAPA_APP_CONTACT_EMAIL` 은 적용 전 앱 사이드바

@@ -255,7 +255,13 @@ uv --version
 ### 1~3단계. 받기 · 환경 만들기 · 확인
 
 ```powershell
-git clone <저장소 주소> C:\dev\streamlit_project
+$repo = Read-Host "저장소 주소"
+```
+
+묻는 자리에 저장소 주소를 붙여 넣은 뒤 같은 창에서 —
+
+```powershell
+git clone $repo C:\dev\streamlit_project
 cd C:\dev\streamlit_project
 uv sync
 .\.venv\Scripts\python.exe -m pytest
@@ -277,8 +283,10 @@ Artifactory 인덱스 주소(`https://…/simple` 통째, 계정·토큰 없이)
 `requirements-company.txt` `--index-url` 줄에 있던 주소이고, 사내 git 이력의 그 판에서 읽을 수 있습니다.
 
 ```powershell
-[Environment]::SetEnvironmentVariable("CAPA_COMPANY_INDEX_URL", "<사내 Artifactory 인덱스 주소>", "User")
+[Environment]::SetEnvironmentVariable("CAPA_COMPANY_INDEX_URL", (Read-Host "사내 Artifactory 인덱스 주소"), "User")
 ```
+
+이 한 줄만 붙여 넣고 묻는 자리에 주소를 붙여 넣습니다(다음 줄을 함께 붙이면 그 줄이 값으로 들어갑니다).
 
 ```powershell
 uv pip install -r requirements-company.txt

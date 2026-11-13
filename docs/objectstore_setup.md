@@ -122,10 +122,15 @@ C-DEP 는 S3 명단을 못 읽어 관리자만 들어오고, 이관 뒤에는 �
 `app` · `boot` · `rollback`)에는 표지가 없는 PC 도 같다. `--override-writer` 는 운영 앱의 저장을 덮을 수 있다.
 
 ```powershell
-$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+$b = Read-Host "C-DEP 표의 CAPA_S3_BUCKET 값"
+```
+
+```powershell
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b fetch-copy --to C:\capa-copy
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b fetch-copy --to C:\capa-copy --seq 12
 ```
+
+`$b` 줄은 그 줄만 붙여 넣고 묻는 자리에 C-DEP 표의 값을 붙여 넣는다(6장 1단계). 둘째 줄의 `12` 는 보기다 — 받을 세대 번호로 바꾼다.
 
 HEAD(또는 그 세대) 두 멤버를 받아 검증한 뒤에만 그 폴더에 두 DB 와 `generation.json` 을 둔다. `data/` 를 건드리지 않고 운영 DB 자리는 거절한다. 앱이 떠 있어도 된다. 런북의 점검 스크립트는 이 사본을 `--database` · `--equipment-database` 로 받는다(런북 6-4).
 
@@ -134,15 +139,19 @@ HEAD(또는 그 세대) 두 멤버를 받아 검증한 뒤에만 그 폴더에 �
 **0단계 — 사내 값 환경변수와 프로필(한 번만).** 주소 · 프로필 이름은 사내 값이라 저장소에 없다 — 스크립트는 사용자 환경변수에서만 읽고, 비었으면
 aws 를 부르기 전에 `[중단] … 넣을 환경변수: …` 한 줄로 멈춘다. 별도 PowerShell 창에서 한 줄씩 넣고 **새 창을 연다**(넣은 창에는 아직 안 보인다).
 값은 지금 쓰는 주소 · 프로필 이름 그대로다 — 손으로 치지 않고 출력을 붙여 넣는다. 프로필을 이미 만든 PC 는 이름이 `aws configure list-profiles` 에 보이는 그 이름,
-주소가 `aws configure get endpoint_url --profile <그 이름>` 의 출력이다(아래 `profile` 블록이 그 프로필에 넣는다). 그 줄이 비면(프로필을 손으로 만든 PC) 주소는
+주소가 `aws configure get endpoint_url --profile (Read-Host "프로필 이름")` 의 출력이다(아래 `profile` 블록이 그 프로필에 넣는다). 그 줄이 비면(프로필을 손으로 만든 PC) 주소는
 2026-11-12 전 판의 `config/object_storage.json` `endpoint_url` 칸에만 있다 — 그 판을 덮기 전에 옮긴다. 버킷은 넣지 않는다 — 명령마다 `--bucket` 이다(아래 3단계 끝).
+아래 두 줄은 **한 줄씩** 붙여 넣는다 — 줄마다 값을 묻고, 묻는 자리에 그 값을 붙여 넣는다(두 줄을 함께 붙이면 둘째 줄이 첫 값으로 들어간다).
 
 ```powershell
-[Environment]::SetEnvironmentVariable("CAPA_S3_ENDPOINT_URL", "<사내 S3 주소>", "User")
-[Environment]::SetEnvironmentVariable("CAPA_S3_PROFILE", "<사내 aws 프로필 이름>", "User")
+[Environment]::SetEnvironmentVariable("CAPA_S3_ENDPOINT_URL", (Read-Host "사내 S3 주소"), "User")
 ```
 
-프로필을 아직 만들지 않은 PC 는 출력되는 블록을 그대로 붙여 넣는다. 손으로 옮겨 적지 않는다. 키 두 줄만 실제 값으로 바꾼다.
+```powershell
+[Environment]::SetEnvironmentVariable("CAPA_S3_PROFILE", (Read-Host "사내 aws 프로필 이름"), "User")
+```
+
+프로필을 아직 만들지 않은 PC 는 출력되는 블록을 그대로 붙여 넣는다. 손으로 옮겨 적지 않는다. 블록의 마지막 줄이 키 둘을 차례로 묻는다 — 묻는 자리에 실제 키를 붙여 넣는다.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py profile
@@ -161,7 +170,12 @@ PC 환경변수(`[Environment]::SetEnvironmentVariable` · `setx` · 시스템 �
 
 ```powershell
 $env:CAPA_S3_SYNC_MODE = "managed"
-$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
+$b = Read-Host "C-DEP 표의 CAPA_S3_BUCKET 값"
+```
+
+묻는 자리에 C-DEP 표의 값을 붙여 넣는다 — `$b` 줄을 펜스의 마지막 줄로 둔 까닭이다(뒤 줄을 함께 붙이면 그 줄이 값으로 들어간다). 같은 창에서 —
+
+```powershell
 .\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b doctor
 ```
 
@@ -170,7 +184,11 @@ $b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
 **2단계 — 능력 측정.** 확인하지 못한 능력은 없는 것으로 본다. `_probe/` 아래에 임시 객체를 만들었다 지운다. 사내 값은 이미 파일에 있다(2026-11-06) — 저장소가 바뀌었을 때만 돌린다.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket <개발 버킷> probe --write config\object_storage_capabilities.json
+$dev = Read-Host "개발 버킷 이름"
+```
+
+```powershell
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $dev probe --write config\object_storage_capabilities.json
 ```
 
 **3단계 — 최초 이관(앱을 끈 채로 · 1단계의 같은 창 — 4장 차례로는 받기 모드(4장 3)를 켠 뒤다).** `aws s3 cp` 가 아니라 `init` 이다. 치기 전에 1단계 `doctor` 를 다시 본다 — 원격 세대가 `비어 있음` 이 아니면 치지 않고 멈추고, `버킷` 줄이 C-DEP 표의 `CAPA_S3_BUCKET` 값과 같은지 눈으로 본다(다르면 `--bucket` 을 고쳐 1단계부터).
@@ -189,12 +207,21 @@ $b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
 앱 결함으로 망가진 세대가 게시됐거나 원격이 갈라졌으면 앞 세대의 멤버로 새 HEAD 를 낸다. 지우지 않고 앞으로만 간다.
 
 ```powershell
-$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b generations
-.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b rollback --to 12 --yes
+$b = Read-Host "C-DEP 표의 CAPA_S3_BUCKET 값"
 ```
 
-`generations` 는 세대 번호 · 두 멤버의 세대 · 키 꼬리 · 시각을 최신부터 찍는다(포인터 키에 실린 값이라 받지 않는다). **시작마다 같은 멤버의 펜스 세대가 쌓이므로 바로 앞 세대는 깨진 멤버를 그대로 가리킬 수 있다 — 멤버 세대가 HEAD 와 다른 앞 세대를 고른다.** `rollback` 은 멤버가 저장소에 있는지와 크기만 대조하고, 포인터를 낸 뒤 한 번 더 본다 — `새 HEAD 는 나갔지만` 으로 멈추면 그 HEAD 의 멤버가 사라진 것이라(보존 밖 세대를 정리가 지우는 틈) 다른 세대로 다시 `rollback` 한다. 같은 세대에 포인터가 둘이면 `--token <키 꼬리 8자리>` 로 고른다. 그 뒤 운영 앱의 일꾼은 HEAD 가 움직인 것을 보고 멈춘다(`SY-03`) — CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다.**
+```powershell
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b generations
+$g = Read-Host "이어 갈 세대 번호(seq)"
+```
+
+```powershell
+.\.venv\Scripts\python.exe scripts\sync_object_storage.py --bucket $b rollback --to $g --yes
+```
+
+묻는 줄은 펜스의 마지막 줄이다 — 펜스 하나씩 붙여 넣고 묻는 자리에 값을 넣는다.
+
+`generations` 는 세대 번호 · 두 멤버의 세대 · 키 꼬리 · 시각을 최신부터 찍는다(포인터 키에 실린 값이라 받지 않는다). **시작마다 같은 멤버의 펜스 세대가 쌓이므로 바로 앞 세대는 깨진 멤버를 그대로 가리킬 수 있다 — 멤버 세대가 HEAD 와 다른 앞 세대를 고른다.** `rollback` 은 멤버가 저장소에 있는지와 크기만 대조하고, 포인터를 낸 뒤 한 번 더 본다 — `새 HEAD 는 나갔지만` 으로 멈추면 그 HEAD 의 멤버가 사라진 것이라(보존 밖 세대를 정리가 지우는 틈) 다른 세대로 다시 `rollback` 한다. 같은 세대에 포인터가 둘이면 그 세대 줄의 키 꼬리 8자리를 `--token` 뒤에 붙여 고른다. 그 뒤 운영 앱의 일꾼은 HEAD 가 움직인 것을 보고 멈춘다(`SY-03`) — CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다.**
 
 ## 8. 막혔을 때
 

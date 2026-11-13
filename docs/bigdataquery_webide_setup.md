@@ -23,12 +23,17 @@ C-DEP WebIDE(서버 환경)에서 `bigdataquery` 로 DB 를 조회할 때 막히
    `invalid peer certificate: UnknownIssuer` 가 난다. (`curl` 이 통과하는 것은 그쪽이 OS
    인증서를 쓰기 때문이고, 그래서 "네트워크는 멀쩡한데 uv 만 안 되는" 모양이 된다.)
 
-추가 인덱스로 넣고 시스템 인증서를 쓰게 한다. `<사내 Artifactory 주소>` 는 사내 패키지 저장소 주소(사내 PC 사용자 환경변수 ·
+추가 인덱스로 넣고 시스템 인증서를 쓰게 한다. 묻는 「사내 Artifactory 주소」 는 사내 패키지 저장소 주소(사내 PC 사용자 환경변수 ·
 C-DEP 환경변수 표의 `CAPA_COMPANY_INDEX_URL` 값 — README 4단계)에서 `https://` 를 뗀 나머지다(사내 값이라 이 문서에도
 `requirements-company.txt` 에도 적지 않는다 — 공개 저장소. 그 파일의 `--index-url` 줄은 그 환경변수를 가리킨다).
+첫 펜스는 한 줄이고 셋을 차례로 묻는다(토큰은 화면에 보이지 않는다) — 그 줄만 붙여 넣고 묻는 자리마다 값을 넣은 뒤 둘째 펜스를 친다.
 
 ```bash
-export UV_EXTRA_INDEX_URL="https://<AD 계정>:<Artifactory API 토큰>@<사내 Artifactory 주소>"
+read -rp "AD 계정: " u; read -rsp "Artifactory API 토큰: " t; echo; read -rp "사내 Artifactory 주소(https:// 뺀 나머지): " h
+```
+
+```bash
+export UV_EXTRA_INDEX_URL="https://$u:$t@$h"
 uv pip install bigdataquery==2.5.0 --system-certs
 ```
 
@@ -68,10 +73,10 @@ Parameter user_name is necessary.
 로그인 토큰과 `user_name` 전달은 **별개**다. 서버(Linux) 환경에는 Windows 처럼 요청자를
 자동으로 알아낼 경로가 없다 — 이 컨테이너에서 `echo $USERNAME` 은 비어 있다.
 
-환경변수에 본인 AD 계정을 넣는다.
+환경변수에 본인 AD 계정을 넣는다 — 이 한 줄만 붙여 넣고 묻는 자리에 계정을 넣는다.
 
 ```bash
-export CAPA_BDQ_USER_NAME="<AD 계정>"
+read -rp "AD 계정: " CAPA_BDQ_USER_NAME; export CAPA_BDQ_USER_NAME
 ```
 
 값을 넣으면 앱이 `getData(user_name=...)` 로 실어 보낸다. **값이 없으면 인자를 아예 넘기지
@@ -164,7 +169,8 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 
 1. WebIDE 에서 위 1단계(로그인)를 한다 — `bdq.login()` 이 `/config/.credential/bigdataquery.token.<AD 계정>` 을 만든다.
 2. 그 파일 내용을 `CAPA_BDQ_TOKEN` 값으로 넣는다. **줄바꿈이 있으면** value 칸에 그대로 못 넣으니 `base64:` 를
-   앞에 붙인 한 줄로 넣는다 — WebIDE 터미널의 `base64 -w0 /config/.credential/bigdataquery.token.<AD 계정>` 출력이다.
+   앞에 붙인 한 줄로 넣는다 — WebIDE 터미널의 `base64 -w0 "/config/.credential/bigdataquery.token.$CAPA_BDQ_USER_NAME"` 출력이다(2단계의 계정 변수 —
+   그 창에 없으면 파일을 찾지 못하고 멈춘다).
 3. 토큰은 **주기적으로 만료된다.** 조회가 토큰 오류로 막히면 WebIDE 에서 다시 로그인해 새 토큰을 받는다. 바로 쓰려면
    관리자가 Admin Area 「서버 시작 점검」 의 **토큰 넣기** 에 그 내용(또는 위 `base64:` 한 줄)을 넣는다 — 시작 스크립트와 같은
    파일에 쓰고 패키지가 다음 조회부터 읽으며(조회마다 토큰을 다시 읽는다), CI/CD 를 누르지 않는다. 컨테이너를 다시 띄우면

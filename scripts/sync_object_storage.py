@@ -240,15 +240,18 @@ def command_profile(args: argparse.Namespace) -> int:
     if missing:
         print(_missing_line(missing))
         return 1
-    print("# 사내 PC 에서 한 번만 실행합니다(키 두 줄은 실제 값으로 바꾸세요).")
-    print(f'$PROF = "{settings.profile}"')
-    print("aws configure set aws_access_key_id     <키>   --profile $PROF")
-    print("aws configure set aws_secret_access_key <비밀> --profile $PROF")
-    for name, value in object_storage.profile_settings(settings):
-        print(f"aws configure set {name} {value} --profile $PROF")
-    print()
+    print("# 사내 PC 에서 한 번만 실행합니다.")
+    print("# 마지막 줄이 키 둘을 차례로 묻습니다 — 묻는 자리에 붙여 넣으세요.")
     print("# 네임스페이스는 프로필(자격증명)에 매여 있어 명령 인자로 넘기지 않습니다.")
     print("# 체크섬 두 줄은 AWS CLI 2.23+ 와 ECS 의 비호환 우회입니다(Dell KB 000299507).")
+    print(f'$PROF = "{settings.profile}"')
+    for name, value in object_storage.profile_settings(settings):
+        print(f"aws configure set {name} {value} --profile $PROF")
+    # 묻는 줄은 맨 끝 한 줄이다 — 블록째 붙여 넣으면 묻는 자리가 그 뒤에 붙은 줄을 값으로 먹는다.
+    print(
+        'aws configure set aws_access_key_id (Read-Host "액세스 키") --profile $PROF; '
+        'aws configure set aws_secret_access_key (Read-Host "비밀 키") --profile $PROF'
+    )
     return 0
 
 
