@@ -404,6 +404,18 @@ def test_an_empty_answer_is_an_empty_frame(
         ),
         ("SELECT '{start_date}' '{end_date}'", {"start": "2026-01-01", "end": "2026-01-02"}),
     ],
+    ids=[
+        "empty",
+        "blank",
+        "too-long",
+        "window-missing",
+        "window-unused",
+        "end-unused",
+        "end-missing",
+        "end-before-start",
+        "window-too-wide",
+        "window-not-dates",
+    ],
 )
 def test_a_wrong_input_is_refused_before_asking(
     ctx: module_api.ModuleContext, package: _FakePackage, sql: str, window: dict[str, Any]

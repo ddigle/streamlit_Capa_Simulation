@@ -101,6 +101,15 @@ def _no_user_app(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(check_deploy_screens, "running_app_count", lambda *_a, **_k: 0)
 
 
+@pytest.fixture(autouse=True)
+def _equipment_default_outside_the_repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`--equipment-database` 를 주지 않은 시험의 기본 설비 DB 를 없는 tmp 자리로 옮긴다.
+
+    저장소 `data/` 에 운영 설비 DB 가 있는 사내 저장소에서도 사외 CI 처럼 「그 파일 없음」 꼴로
+    돌아, 운영 DB 자리 문지기에 걸리지 않는다."""
+    monkeypatch.setattr(checks, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment_not_given.duckdb")
+
+
 def _md5(path: Path) -> str:
     return hashlib.md5(path.read_bytes()).hexdigest()
 
