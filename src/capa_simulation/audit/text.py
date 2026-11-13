@@ -6,9 +6,10 @@
 
 - `log_field` — 서버 로그 `sso event=… key=value` 의 한 칸. 공백 · `=` · 제어 문자를 `_` 로 바꿔 한
   줄이 다른 칸으로 읽히지 않게 한다(`auth/runtime.record_event` 가 쓴다).
-- `clean_text` — 감사 기록 한 줄(JSON)의 글. 줄바꿈 · 제어 문자를 지우고(공백 하나로) 상한에서
-  자른다. 토큰처럼 보이는 글(JWT 세 토막 · 대소문자와 숫자가 섞인 40자 넘는 덩이)은 통째로
-  가린다 — 부르는 쪽 실수로 비밀이 기록에 남지 않게 하는 마지막 그물이다.
+- `clean_text` — 감사 기록 한 줄(JSON)의 글. 줄바꿈 · 제어 문자를 지우고(공백 하나로) 짝 없는
+  서로게이트를 U+FFFD 로 바꾼 뒤 상한에서 자른다. 토큰처럼 보이는 글(JWT 세 토막 · 대소문자와
+  숫자가 섞인 40자 넘는 덩이)은 통째로 가린다 — 부르는 쪽 실수로 비밀이 기록에 남지 않게 하는
+  마지막 그물이다.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ LABEL_LIMIT: Final = 60
 CLAIMED_LIMIT: Final = 40
 REVIEW_LIMIT: Final = 500
 REDACTED: Final = "[가림]"
+REPLACEMENT: Final = "�"
+_SURROGATES: Final = (0xD800, 0xDFFF)
 
 # 줄을 가르는 유니코드 글자(NEL · 줄 구분 · 문단 구분)도 줄바꿈과 같이 다룬다.
 _LINE_BREAKS: Final = frozenset("\u0085  ")
@@ -62,10 +65,20 @@ def looks_like_secret(text: str) -> bool:
     return False
 
 
+def without_surrogates(text: str) -> str:
+    """짝 없는 서로게이트(U+D800 ~ U+DFFF)를 U+FFFD 로 — UTF-8 로 적을 수 없는 글이 줄에 남지 않게.
+
+    IdP 클레임의 `\\ud800` 이스케이프나 UTF-16 단위로 잘린 글이 들어올 수 있다.
+    """
+    return "".join(
+        REPLACEMENT if _SURROGATES[0] <= ord(ch) <= _SURROGATES[1] else ch for ch in text
+    )
+
+
 def clean_text(value: object, limit: int = TEXT_LIMIT) -> str:
-    """감사 기록 한 칸 — 줄바꿈 · 제어 문자는 공백으로, 겹친 공백은 하나로, 앞뒤 공백은 떼고
-    상한에서 자른다. 토큰 꼴이면 `REDACTED`."""
-    text = "".join(" " if _is_control(ch) else ch for ch in str(value))
+    """감사 기록 한 칸 — 줄바꿈 · 제어 문자는 공백으로, 짝 없는 서로게이트는 U+FFFD 로, 겹친 공백은
+    하나로, 앞뒤 공백은 떼고 상한에서 자른다. 토큰 꼴이면 `REDACTED`."""
+    text = "".join(" " if _is_control(ch) else ch for ch in without_surrogates(str(value)))
     text = _SPACES.sub(" ", text).strip()
     if looks_like_secret(text):
         return REDACTED

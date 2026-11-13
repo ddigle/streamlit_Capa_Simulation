@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from capa_simulation.audit import chain, layout, recorder
+from capa_simulation.audit import chain, layout, recorder, text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,8 +104,11 @@ def _append(path: Path, lines: list[dict[str, Any]]) -> None:
 def drain() -> int:
     """큐를 비워 스풀에 적는다. 적은 줄 수. 꺼졌거나 빈 큐면 0(파일 IO 없음).
 
-    날짜 묶음 하나를 쓰다 실패하면 그 묶음부터의 줄을 큐 앞에 돌려놓고 사슬은 쓴 데까지만 나아간다
-    — 빈 순번이 생기지 않는다.
+    꺼낸 줄은 모두 셋 가운데 하나가 된다 — 스풀에 적힘 · 큐 앞으로 되돌림 · 버린 수로 셈
+    (`sys_audit_dropped`). 날짜 묶음 하나를 쓰다 실패하면(어떤 예외든) 그 묶음부터의 줄을 큐 앞에
+    돌려놓고 사슬은 쓴 데까지만 나아간다 — 빈 순번이 생기지 않는다. 해시를 매길 수 없는 줄(UTF-8 로
+    적을 수 없는 글)은 글을 고쳐 다시 매기고, 그래도 안 되면 순번을 쓰지 않고 버린 수로 센다 — 줄
+    하나가 묶음 전체를 잃게 하지 않는다.
     """
     if not recorder.enabled():
         return 0
@@ -116,19 +119,24 @@ def drain() -> int:
         inst = recorder.instance_id()
         groups: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]] = []
         seq, prev = _CHAIN.seq, _CHAIN.prev
+        lost = 0
         for line in pending:
             date = str(line.get("ts", ""))[:10]
-            sealed = chain.seal(line, seq=seq + 1, prev=prev)
+            sealed = _seal(line, seq + 1, prev)
+            if sealed is None:
+                lost += 1
+                continue
             seq, prev = sealed["seq"], sealed["h"]
             if not groups or groups[-1][0] != date:
                 groups.append((date, [], []))
             groups[-1][1].append(sealed)
             groups[-1][2].append(line)
+        recorder.note_dropped(lost)
         written = 0
         for index, (date, sealed_lines, _) in enumerate(groups):
             try:
                 _append(spool_path(date, inst), sealed_lines)
-            except OSError:
+            except Exception:  # noqa: BLE001 — 어떤 실패든 꺼낸 줄을 잃지 않는다
                 _LOGGER.exception("감사 스풀에 적지 못했습니다.")
                 rest = [line for _, _, group in groups[index:] for line in group]
                 recorder.requeue_front(rest)
@@ -137,6 +145,32 @@ def drain() -> int:
             _CHAIN.seq, _CHAIN.prev = int(last["seq"]), str(last["h"])
             written += len(sealed_lines)
         return written
+
+
+def _seal(line: dict[str, Any], seq: int, prev: str) -> dict[str, Any] | None:
+    """해시를 매긴 줄. 못 매기면 글의 짝 없는 서로게이트를 고쳐 한 번 더, 그래도 안 되면 `None`."""
+    try:
+        return chain.seal(line, seq=seq, prev=prev)
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("감사 줄에 해시를 매기지 못해 글을 고쳐 다시 매깁니다.")
+    try:
+        repaired = _repaired(line)
+        if not isinstance(repaired, dict):
+            return None
+        return chain.seal(repaired, seq=seq, prev=prev)
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("감사 줄을 적을 수 없어 버립니다.")
+        return None
+
+
+def _repaired(value: object) -> object:
+    if isinstance(value, str):
+        return text.without_surrogates(value)
+    if isinstance(value, dict):
+        return {_repaired(key): _repaired(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_repaired(item) for item in value]
+    return value
 
 
 def last_sealed() -> tuple[int, str]:

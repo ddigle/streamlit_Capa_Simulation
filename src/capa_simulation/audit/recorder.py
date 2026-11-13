@@ -578,6 +578,15 @@ def requeue_front(lines: list[dict[str, Any]]) -> None:
             _STATE.dropped_total += 1
 
 
+def note_dropped(count: int) -> None:
+    """비우기가 꺼냈지만 적을 수 없어 버린 줄 — 다음 비우기의 `sys_audit_dropped` 에 더한다."""
+    if count <= 0:
+        return
+    with _LOCK:
+        _STATE.dropped += count
+        _STATE.dropped_total += count
+
+
 def pending_count() -> int:
     with _LOCK:
         return len(_STATE.queue)

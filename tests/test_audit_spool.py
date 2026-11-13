@@ -181,6 +181,64 @@ def test_a_failed_write_puts_the_lines_back_without_a_gap(
     assert chain.verify(lines) == ()
 
 
+def test_a_lone_surrogate_in_a_claim_name_never_costs_the_batch(
+    clock: Clock, tmp_path: Path
+) -> None:
+    """IdP 이름 클레임의 짝 없는 서로게이트 — 기록기가 U+FFFD 로 고쳐 같은 묶음의 줄이 모두
+    적힌다."""
+    for _ in range(3):
+        recorder.record("session_created", actor="demo.one")
+    recorder.from_sso_event(
+        "login_ok", {"loginid": "demo.two", "sid": "sid12345"}, {"name": "DEMO\ud800"}
+    )
+    recorder.record("session_created", actor="demo.three")
+
+    assert spool.drain() == 5
+
+    lines = spool.read_lines(spool.spool_path("2026-11-13", INST, tmp_path))
+    assert [line["seq"] for line in lines] == [1, 2, 3, 4, 5]
+    assert lines[3]["name"] == "DEMO\ufffd"
+    assert chain.verify(lines) == ()
+
+
+def test_a_line_that_cannot_be_sealed_is_repaired_or_counted_never_lost_silently(
+    clock: Clock, tmp_path: Path
+) -> None:
+    """기록기를 거치지 않고 큐에 든 줄도 — 서로게이트는 고쳐 적고, 적을 수 없는 줄은 순번을 쓰지
+    않고 버린 수로 센다. 나머지 줄은 빈틈 없이 적힌다."""
+    good = recorder.build_line("session_created", out="success", who=recorder.NOBODY)
+    surrogate = {**good, "tgt": {"type": "scenario", "id": "s-1", "label": "깨진\udc80글"}}
+    unserializable = {**good, "det": {"rows": object()}}
+    recorder.requeue_front([good, surrogate, unserializable, good])
+
+    assert spool.drain() == 3
+    assert spool.drain() == 1
+
+    lines = spool.read_lines(spool.spool_path("2026-11-13", INST, tmp_path))
+    assert [line["seq"] for line in lines] == [1, 2, 3, 4]
+    assert lines[1]["tgt"]["label"] == "깨진\ufffd글"
+    assert lines[3]["ev"] == "sys_audit_dropped" and lines[3]["det"] == {"count": 1}
+    assert chain.verify(lines) == ()
+    assert recorder.dropped_total() == 1
+
+
+def test_any_failure_while_writing_puts_the_lines_back(
+    clock: Clock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder.record("session_created", actor="demo.one")
+    real = spool._append
+
+    def broken(path: Path, lines: list[dict[str, object]]) -> None:
+        raise RuntimeError("뜻밖의 실패")
+
+    monkeypatch.setattr(spool, "_append", broken)
+    assert spool.drain() == 0
+    assert recorder.pending_count() == 1
+    monkeypatch.setattr(spool, "_append", real)
+    assert spool.drain() == 1
+    assert spool.last_sealed()[0] == 1
+
+
 def test_the_fingerprint_changes_when_a_file_grows(clock: Clock, tmp_path: Path) -> None:
     day = date(2026, 11, 13)
     before = read.fingerprint(tmp_path, day, day)
