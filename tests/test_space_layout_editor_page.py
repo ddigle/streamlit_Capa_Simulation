@@ -1356,6 +1356,9 @@ def test_a_window_cell_on_a_module_follows_its_siblings_on_apply(
 
 
 FAKE_CHECK_KEY = "test_fake_sheet_check"
+# 있으면 대역이 콜백을 부르기 직전에 편집본 세대를 올린다(그린 회차와 판정 회차 사이에 편집본이
+# 바뀐 꼴 — 다른 화면 조각 · 다른 콜백의 편집).
+FAKE_STALE_KEY = "test_fake_sheet_check_stale"
 
 
 @pytest.fixture
@@ -1370,6 +1373,9 @@ def checking_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         calls.append(kwargs["data"])
         check = st.session_state.pop(FAKE_CHECK_KEY, None)
         if check is not None:
+            if st.session_state.pop(FAKE_STALE_KEY, False):
+                generation = int(st.session_state.get(BUFFER_GENERATION_KEY, 0))
+                st.session_state[BUFFER_GENERATION_KEY] = generation + 1
             st.session_state[kwargs["key"]] = {"sheetCheck": check}
             kwargs["on_sheetCheck_change"]()
         return SimpleNamespace(apply=st.session_state.pop(FAKE_APPLY_KEY, None))
@@ -1463,6 +1469,60 @@ def test_a_check_after_the_window_emptied_alarms_the_same_blocked_cell_again(
     assert checking_calls[-1]["sheetVerdict"]["seq"] == 4
     # 그 뒤로는 base 3 그대로 — 다시 알리지 않는다.
     assert not _check(app, checking_calls, 5, blocked, ("EQ-01", "투자구분", "개발"), base=3)
+    clear_equipment_repository()
+
+
+def test_a_check_from_another_buffer_generation_is_dropped(
+    tmp_path: Path, checking_calls: list[dict[str, Any]]
+) -> None:
+    """합친 머리 리뷰의 빠진 시험 — 그린 회차와 판정 회차 사이에 편집본이 바뀌었으면(편집본 세대가
+    다름) 「확인만」 은 판정하지 않고 버린다 — 판정을 세션에 두지 않고 `EQ-25` 도 내지 않는다(다음
+    회차에 편집기가 새 epoch 로 서고 「적용」 이 같은 판정을 한 번 더 한다)."""
+    app, _ = _open_editor(tmp_path)
+    blocked = ("EQ-01", "반입일정", "2026-08-01")
+    app.session_state[FAKE_STALE_KEY] = True
+
+    assert not _check(app, checking_calls, 1, blocked)
+
+    assert "space_sheet_verdict_v1" not in app.session_state
+    assert checking_calls[-1]["sheetVerdict"] is None
+    # 같은 세대의 확인은 그대로 판정한다.
+    assert len(_check(app, checking_calls, 2, blocked)) == 1
+    assert checking_calls[-1]["sheetVerdict"]["seq"] == 2
+    clear_equipment_repository()
+
+
+def test_a_cell_and_a_rename_in_one_apply_count_once_each_in_the_save_box(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """합친 머리 리뷰의 빠진 시험 — 한 적용에 창 칸(옛 이름으로 옴)과 그 호기의 이름 바꿈이
+    함께 오면 저장 상자는 「이름 바꿈 1건」 · 「호기 정보 칸 1건」 으로 따로 세고, 그 칸을 「설비
+    마스터 다른 편집」 으로 다시 세지 않는다(`changed_cell_count` 의 이름 따라가기). 한 번 저장이
+    둘 다 쓴다."""
+    app, database = _open_editor(tmp_path)
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": editor_calls[-1]["epoch"],
+        "changes": [],
+        "renames": [{"kind": "unit", "from": "EQ-01", "to": "EQ-01X"}],
+        "cells": [{"id": "EQ-01", "col": "반입상태", "text": "확정"}],
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    buffer = app.session_state[BUFFER_KEY][1].set_index("설비명")
+    assert "EQ-01" not in buffer.index and buffer.loc["EQ-01X", "반입상태"] == "확정"
+    head = [item.value for item in app.markdown if "저장 안 한 배치 변경" in item.value]
+    assert head, [item.value for item in app.markdown]
+    assert "이름 바꿈 1건" in head[0] and "호기 정보 칸 1건" in head[0]
+    assert "다른 편집" not in head[0]
+
+    app.button(key="space_layout_save").click().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    saved = repository.load_snapshot(str(repository.latest_revision_id()))
+    names = saved.equipment.set_index("설비명")
+    assert "EQ-01" not in names.index and names.loc["EQ-01X", "반입상태"] == "확정"
     clear_equipment_repository()
 
 

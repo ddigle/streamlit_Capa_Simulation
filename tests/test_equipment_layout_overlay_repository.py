@@ -1087,6 +1087,62 @@ def test_restoring_a_layout_difference_of_a_deleted_unit_writes_nothing(tmp_path
     assert _scenario(repository, scenario_id).latest_schedule_revision_id == latest
 
 
+def _split_owner(repository: DuckDBEquipmentRepository) -> None:
+    """공통 최신 대장의 APW1 묶음 담당자를 갈라 둔다 — 일곱 칸 규칙(2026-11-12 답 3-3)이 서기 전에
+    저장된 사내 대장의 꼴(7-8 `unit_mixed`). 저장 길은 이 대장을 받지 않는다."""
+    common = _latest_common(repository)
+    with duckdb.connect(str(repository.database_path)) as connection:
+        connection.execute(
+            "UPDATE equipment_ops.equipment_master_snapshot SET manager_name = '담당B' "
+            "WHERE equipment_id = 'EQ-02' AND revision_id = ?",
+            [common],
+        )
+
+
+def test_a_split_ledger_still_restores_and_clears_a_layout_difference(tmp_path: Path) -> None:
+    """합친 머리 리뷰의 빠진 시험 — 일곱 칸이 갈린 공통 대장에서도 「이 리비전으로 되돌리기」 와
+    「배치 차이 모두 지우기」 는 막히지 않는다(일곱 칸은 저장 때만 막고 되돌리기 · 배치 지우기는
+    편집본 저장이 아니다 — 설계 규칙집 6-22 3-3). 같은 대장의 설비 저장은 고칠 묶음 · 칸을 짚고
+    막힌다."""
+    repository = _seeded(tmp_path, _grouped())
+    scenario_id = _hypothetical(repository)
+    session = _session(repository, scenario_id)
+    saved = repository.save_equipment(
+        _request(session, scenario_id, equipment=_moved(session, "EQ-X", 7.0))
+    )
+    assert saved.schedule is not None
+    _split_owner(repository)
+    split = _session(repository, scenario_id)
+    owners = split.equipment.set_index("설비명").loc[["EQ-01", "EQ-02"], "담당자"].tolist()
+    assert owners == ["담당A", "담당B"]
+    with pytest.raises(ValueError, match="설비 마스터에서 APW1 묶음의 담당자 칸을 맞춘 뒤"):
+        repository.save_equipment(
+            _request(
+                split, scenario_id, equipment=_set(split.equipment, "EQ-X", "설비이력", "점검")
+            )
+        )
+
+    cleared = repository.clear_layout_overlay(
+        scenario_id, expected_latest_schedule_revision_id=saved.schedule.schedule_revision_id
+    )
+    assert cleared is not None
+    assert _place(_session(repository, scenario_id), "EQ-X")[2] != 7.0
+
+    common = _latest_common(repository)
+    restored = repository.restore_schedule_revision(
+        saved.schedule.schedule_revision_id,
+        expected_common_revision_id=common,
+        expected_latest_schedule_revision_id=cleared.schedule_revision_id,
+        expected_layout_role="overlay",
+    )
+    assert restored.schedule is not None
+    back = _session(repository, scenario_id)
+    assert _place(back, "EQ-X")[2] == 7.0
+    # 갈린 대장은 그대로 읽힌다(공통 대장은 되돌리기 · 지우기가 건드리지 않는다).
+    assert back.equipment.set_index("설비명").loc["EQ-02", "담당자"] == "담당B"
+    assert repository.latest_revision_id() == common
+
+
 def test_restoring_into_the_official_scenario_drops_the_layout_difference(tmp_path: Path) -> None:
     repository = _seeded(tmp_path)
     scenario_id = _hypothetical(repository)
