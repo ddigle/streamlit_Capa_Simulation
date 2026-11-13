@@ -886,7 +886,10 @@ def command_audit_list(args: argparse.Namespace) -> int:
 
 
 def _leave_tool_piece(args: argparse.Namespace, code: int) -> None:
-    """정본을 바꾸는 명령의 감사 조각(`audit/tool.py`). 건너뛴 명령 · 빈 설정 · 꼴이 틀린 설정은 남기지 않는다."""
+    """정본을 바꾸는 명령의 감사 조각(`audit/tool.py`).
+
+    건너뛴 명령 · 빈 설정 · 꼴이 틀린 설정은 남기지 않는다.
+    """
     event = AUDITED_COMMANDS.get(args.command)
     if event is None or _AUDIT_DETAIL.get(_AUDIT_SKIP):
         return
