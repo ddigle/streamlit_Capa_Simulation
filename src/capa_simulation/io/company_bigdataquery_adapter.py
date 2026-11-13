@@ -512,22 +512,26 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     started = time.monotonic()
     keywords = get_data_keywords(query)
     ticket = bdq_refresh.before_query()
+    retry: bdq_refresh.Ticket | None = None
     try:
         answer = module.getData(**keywords)  # type: ignore[arg-type]
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
-        retry = (
-            bdq_refresh.after_token_failure(ticket)
-            if _is_token_kind(error) and not _needs_user_name(error)
-            else None
-        )
+        if _is_token_kind(error) and not _needs_user_name(error):
+            retry = bdq_refresh.after_token_failure(ticket)
         if retry is None:
             _raise_query_failure(error, started)
-        try:
-            answer = module.getData(**keywords)  # type: ignore[arg-type]
-        except Exception as again:
-            if _is_token_kind(again):
-                bdq_refresh.after_token_failure(retry, refresh=False)
-            _raise_query_failure(again, started)
+    else:
+        _note_token_failure(False)
+        return answer
+    # 다시 묻기는 첫 실패의 except 밖에서 한다 — 안에서 부르면 둘째 예외의 `__context__` 가 첫
+    # 토큰 실패라, 사슬을 훑는 갈래 판정(`_failure_chain`)이 시간 초과 · SQL 로 끝난 다시 묻기도
+    # 「토큰」 으로 가른다(방금 넣은 새 토큰을 죽음으로 세고 `AD-10` 을 세운다).
+    try:
+        answer = module.getData(**keywords)  # type: ignore[arg-type]
+    except Exception as again:
+        if _is_token_kind(again):
+            bdq_refresh.after_token_failure(retry, refresh=False)
+        _raise_query_failure(again, started)
     _note_token_failure(False)
     return answer
 

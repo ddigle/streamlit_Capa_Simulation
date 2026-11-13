@@ -55,6 +55,14 @@ def env(**extra: str) -> dict[str, str]:
     return {BDQ_USER_NAME_ENV: ACCOUNT, **extra}
 
 
+def with_refresh_token(folder: Path) -> Path:
+    """시작 스크립트가 두는 갱신 토큰 파일(가짜) — 있으면 넣은 때 표지를 쓴다."""
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"capa-bdq-refresh.{ACCOUNT}"
+    path.write_bytes(b"FAKE-bdq-refresh-token-9999-zyxwvuts")
+    return path
+
+
 def test_a_token_is_written_where_the_package_reads_it(
     folder: Path, keeps_permission_bits: bool
 ) -> None:
@@ -67,9 +75,9 @@ def test_a_token_is_written_where_the_package_reads_it(
     if keeps_permission_bits:
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
         assert stat.S_IMODE(folder.stat().st_mode) == 0o700
-    # 임시 파일이 남지 않는다 — 토큰과 넣은 때 표지뿐이다.
-    mark = f"capa-bdq-installed.{ACCOUNT}.json"
-    assert sorted(path.name for path in folder.iterdir()) == sorted([target.name, mark])
+    # 임시 파일이 남지 않는다 — 토큰뿐이다(갱신 토큰이 없으면 넣은 때 표지도 없다 — 자동 갱신 앞과
+    # 같은 폴더).
+    assert [path.name for path in folder.iterdir()] == [target.name]
 
 
 def test_a_base64_value_is_written_decoded_like_the_cd_variable(folder: Path) -> None:
@@ -159,8 +167,7 @@ def test_two_sessions_writing_at_once_leave_one_whole_token(folder: Path) -> Non
 
     target = folder / f"bigdataquery.token.{ACCOUNT}"
     assert target.read_text(encoding="utf-8") in tokens
-    mark = folder / f"capa-bdq-installed.{ACCOUNT}.json"
-    assert sorted(path.name for path in folder.iterdir()) == sorted([target.name, mark.name])
+    assert [path.name for path in folder.iterdir()] == [target.name]
 
 
 def test_the_expiry_is_read_from_a_jwt_exp_only() -> None:
@@ -299,6 +306,7 @@ def test_a_put_token_leaves_when_and_from_where_without_the_token(
     folder: Path, keeps_permission_bits: bool
 ) -> None:
     """넣은 때 표지 — 넣은 UTC 시각과 출처뿐이고 토큰 글자 · 길이 · 지문은 없다."""
+    with_refresh_token(folder)
     at = datetime(2026, 11, 14, 1, 2, 3, tzinfo=timezone.utc)
 
     outcome = bdq_token.install_content(FAKE_TOKEN.encode(), "refresh", env(), at=at)
@@ -315,6 +323,7 @@ def test_a_put_token_leaves_when_and_from_where_without_the_token(
 
 
 def test_the_admin_put_is_marked_and_the_same_token_keeps_the_mark(folder: Path) -> None:
+    with_refresh_token(folder)
     assert bdq_token.install_token(FAKE_TOKEN, env()).status == "written"
     first = bdq_token.read_installed_mark(folder, ACCOUNT)
     assert first is not None and first.source == "admin"
@@ -348,9 +357,23 @@ def test_a_broken_mark_reads_as_none(folder: Path, content: bytes) -> None:
 
 def test_a_mark_that_cannot_be_written_does_not_undo_the_put(folder: Path) -> None:
     """표지는 덧붙은 기록이다 — 그 자리가 막혀도 토큰은 넣음이다."""
+    with_refresh_token(folder)
     (folder / f"capa-bdq-installed.{ACCOUNT}.json").mkdir(parents=True)
 
     assert bdq_token.install_token(FAKE_TOKEN, env()).status == "written"
 
     assert (folder / f"bigdataquery.token.{ACCOUNT}").read_text(encoding="utf-8") == FAKE_TOKEN
     assert bdq_token.read_installed_mark(folder, ACCOUNT) is None
+
+
+def test_without_a_refresh_token_a_put_leaves_no_mark_and_clears_an_old_one(folder: Path) -> None:
+    """자동 갱신 꺼짐(갱신 토큰 파일 없음) — 넣기는 표지를 쓰지 않고 앞 실행의 표지를 지운다.
+    패키지가 읽는 자격 폴더가 자동 갱신 앞과 같다."""
+    refresh = with_refresh_token(folder)
+    assert bdq_token.install_token(FAKE_TOKEN, env()).status == "written"
+    assert bdq_token.read_installed_mark(folder, ACCOUNT) is not None
+    refresh.unlink()
+
+    assert bdq_token.install_token(f"{FAKE_TOKEN}-next", env()).status == "written"
+
+    assert [path.name for path in folder.iterdir()] == [f"bigdataquery.token.{ACCOUNT}"]

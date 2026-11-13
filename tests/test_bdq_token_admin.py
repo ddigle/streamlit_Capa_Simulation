@@ -496,6 +496,28 @@ def test_an_on_row_shows_the_last_refresh_and_the_last_failure() -> None:
     )
 
 
+def test_a_failed_start_that_kept_the_refreshed_token_shows_until_this_process_tries() -> None:
+    """시작 갱신이 실패해 갱신으로 넣어 둔 토큰을 그대로 둔 경우 — 이 프로세스가 아직 시도하지
+    않았으면 그 까닭이 마지막 갱신 곁에 선다. 시도했으면 그 결과가 더 새 소식이다."""
+    moment = datetime(2026, 11, 14, 1, 0, tzinfo=timezone.utc)
+    record = report_contract.StartRefreshRecord(
+        "on",
+        "시작 때 갱신 실패 — 교환 실패(TimeoutError) · 갱신으로 넣은 토큰을 그대로 씀",
+        failed=True,
+        kept=True,
+    )
+    fresh = bdq_refresh.RefreshStatus("on", last_refreshed_at=moment)
+
+    _label, _mode, reason = bdq_token_admin.refresh_start_step(record, fresh)
+    assert reason.endswith(f" · {record.reason}")
+
+    tried = bdq_refresh.RefreshStatus(
+        "on", last_refreshed_at=moment, last_attempt_at=moment + timedelta(hours=7)
+    )
+    _label, _mode, reason = bdq_token_admin.refresh_start_step(record, tried)
+    assert record.reason not in reason
+
+
 def test_the_check_table_and_copy_text_show_ready_without_the_refresh_token(
     server: Path, monkeypatch: pytest.MonkeyPatch, diagnostic_copies: dict[str, str]
 ) -> None:
@@ -561,11 +583,38 @@ def test_a_failed_attempt_tells_the_administrator_the_kind_only(
     assert len(note["short"]) <= alerts.SHORT_LIMIT
     assert "교환 실패(HTTPError)" in note["full"]
     assert report_contract.BDQ_REFRESH_TOKEN_ENV in note["full"]
+    assert "5분이 지난 뒤의 조회에서 다시 시도" in note["full"]
+    assert f"{bdq_refresh.FAILED_EXCHANGE_LIMIT}번 잇따라 넣지 못하면 멈춥니다" in note["full"]
 
     _refresh_state(monkeypatch, bdq_refresh.RefreshStatus("on"))
     app.run()
     assert active_state(app, REFRESH_CODE) is None
     assert [item["active"] for item in states(app, REFRESH_CODE)][-1] is False
+
+
+def test_a_refresh_stopped_by_failing_exchanges_points_at_the_refresh_token(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """거듭 실패로 멈춤 — 「같은 계정 로그인」 이 아니라 갱신 토큰을 보라는 글이고, 지문이 다른
+    멈춤과 달라 알림이 새로 선다."""
+    _admin(monkeypatch)
+    stuck = bdq_refresh.RefreshStatus(
+        "halted",
+        bdq_refresh.HALT_FAILING,
+        last_failure="받은 토큰을 넣지 못함 — 16바이트보다 짧아 토큰이 아닌 값으로 봅니다",
+        last_failure_at=datetime.now(timezone.utc),
+    )
+    _refresh_state(monkeypatch, stuck)
+
+    note = active_state(AppTest.from_string(ALERT_SCRIPT).run(), REFRESH_CODE)
+
+    assert note is not None
+    assert note["short"] == bdq_token_admin.REFRESH_STUCK_SHORT
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    assert bdq_refresh.HALT_ELSEWHERE not in note["full"]
+    assert f"{bdq_refresh.FAILED_EXCHANGE_LIMIT}번 잇따라" in note["full"]
+    assert report_contract.BDQ_REFRESH_TOKEN_ENV in note["full"] and "「토큰 넣기」" in note["full"]
+    assert "5분" not in note["full"]
 
 
 def test_someone_who_is_not_an_administrator_gets_no_refresh_alert(

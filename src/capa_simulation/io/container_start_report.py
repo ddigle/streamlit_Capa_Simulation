@@ -193,6 +193,8 @@ class StartRefreshRecord:
     reason: str
     installed: bool = False
     failed: bool = False
+    # 시작 때 갱신으로 넣어 둔 토큰을 그대로 두었나(`CAPA_BDQ_TOKEN` 을 쓰지 않음). 옛 파일은 거짓.
+    kept: bool = False
 
 
 def mask_account(name: str) -> str:
@@ -283,6 +285,7 @@ def parse_refresh(data: object) -> StartRefreshRecord | None:
         reason=reason,
         installed=data.get("installed") is True,
         failed=data.get("failed") is True,
+        kept=data.get("kept") is True,
     )
 
 
