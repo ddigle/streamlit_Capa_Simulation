@@ -287,7 +287,7 @@ _COOKIE_REASON = "로그인 쿠키를 저장하지 못했습니다."
 _NO_COOKIES_REASON = (
     "콜백에 이 앱의 쿠키(상태 · 시도)가 하나도 오지 않았습니다 — 접속 주소가 설정값"
     f"({names.ENV_PUBLIC_URL})과 다르거나 브라우저가 쿠키를 막았거나, 통합인증 화면에 10분 넘게 "
-    "머물렀습니다."
+    "머물렀거나, 로그인을 마치고 10분 넘게 지나 「뒤로」 로 다시 보냈습니다."
 )
 # 관리자용 진단의 사유 한 줄(사유 코드별). 모르는 사유 코드는 빈 글이다 — 제목과 참고 줄만 선다.
 REASON_TEXT: Mapping[str, str] = {
@@ -1227,6 +1227,20 @@ def has_our_cookies(cfg: SsoConfig, cookies: Mapping[str, str]) -> bool:
     return any(name in own or name.startswith(cfg.state_cookie_prefix) for name in cookies)
 
 
+def _missing_state_code(cfg: SsoConfig, cookies: Mapping[str, str], state: str) -> str:
+    """상태 쿠키 없이 온 콜백의 사유 코드.
+
+    이미 쓴 state 면 `state_reused` 다 — 로그인을 마친 뒤 「뒤로」 는 IdP 화면이 같은 state 를
+    다시 보내는데, 성공 · 실패가 상태 · 시도 쿠키를 지우고 세션 쿠키는 `SameSite=Lax` 라 교차 사이트
+    POST 에 실리지 않아 쿠키가 하나도 없다. 이 앱의 다른 쿠키가 왔으면 `state_missing`, 하나도
+    없으면 `no_cookies` 다.
+    """
+    if _STATE_VALUE.match(state):
+        if runtime.state_used(hashlib.sha256(state.encode("utf-8")).hexdigest()):
+            return "state_reused"
+    return "state_missing" if has_our_cookies(cfg, cookies) else NO_COOKIES
+
+
 def _state_next(cfg: SsoConfig, cookies: Mapping[str, str], state: str, now: int) -> str:
     """IdP 오류처럼 상태 검증 전에 실패할 때 그 상태 쿠키에서 처음 가려던 화면을 꺼낸다(없거나
     읽지 못하면 `/`)."""
@@ -1306,8 +1320,7 @@ async def callback(request: Request) -> Response:
         # 뒤로 가기 · 폼 재전송 — 이미 로그인한 브라우저면 조용히 앱으로.
         if isinstance(identity_from_cookies(request.cookies, cfg, now), Identity):
             return redirect(cfg, "/", 303)
-        missing = "state_missing" if has_our_cookies(cfg, request.cookies) else NO_COOKIES
-        return _fail(cfg, missing, state=state, now=now)
+        return _fail(cfg, _missing_state_code(cfg, request.cookies, state), state=state, now=now)
     try:
         claims = verify_state(stored, cfg, now=now)
     except SsoReject:

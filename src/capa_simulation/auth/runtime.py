@@ -383,6 +383,15 @@ def remember_used_state(digest: str, exp: int) -> bool:
         return True
 
 
+def state_used(digest: str) -> bool:
+    """콜백이 이 state 를 이미 썼는가(만료 전) — 읽기만 한다. 상태 쿠키 없이 같은 state 가 다시 오면
+    (로그인을 마친 뒤 「뒤로」 · 폼 재전송) 쿠키 문제가 아니라 재사용이다."""
+    now = _now()
+    with _LOCK:
+        expires = _STATE.used_states.get(digest)
+        return expires is not None and expires >= now
+
+
 def note_register_failure(ticket_id: str, *, now: int | None = None) -> None:
     """그 거절 표(`jti`)의 신청이 실패했다 — `REGISTER_COOLDOWN` 동안 다시 저장소에 가지 않는다."""
     moment = _now() if now is None else now

@@ -231,6 +231,27 @@ def test_no_cookie_at_all_is_its_own_case() -> None:
     assert event.event == "login_fail"
 
 
+def test_back_after_a_login_is_a_reuse_not_a_cookie_problem() -> None:
+    """로그인을 마친 뒤 브라우저 「뒤로」 — IdP 화면이 같은 state 를 쿠키 없이 다시 보낸다(성공이
+    상태 · 시도 쿠키를 지우고 세션 쿠키는 교차 사이트 POST 에 실리지 않는다). 쿠키 문제로 말하지
+    않고 재사용 (잠시 문제)이다."""
+    cfg = use_config()
+    app = routes_app()
+    jar: dict[str, str] = {}
+    nonce = begin(app, cfg, jar, "/voc")
+    token = make_id_token(id_token_claims(nonce))
+    assert callback(app, jar, token).status == 303
+    assert cfg.session_cookie in jar
+
+    replay = callback(app, {STATE_KEY: jar[STATE_KEY]}, token)
+
+    assert query_of(replay)["code"] == "state_reused"
+    assert web.failure_kind("state_reused") == web.KIND_RETRY
+    page = follow(app, replay)
+    assert f"<p>{web.LOGIN_RETRY_TEXT}</p>" in main_part(page)
+    assert web.NO_COOKIES_TEXT not in page.text
+
+
 def test_retrying_a_setup_failure_never_reaches_the_loop_page() -> None:
     """고쳐지지 않는 실패에서 「다시 시도」 를 몇 번 눌러도 되풀이 화면으로 잘못 가지 않는다 —
     실패가 시도 쿠키를 지운다(그 쿠키는 「마지막 시작 뒤 2분 안에 또 시작」 을 센다)."""

@@ -568,7 +568,8 @@ def test_resubmitting_a_denied_form_never_gets_a_session() -> None:
     assert not has_live_session(cfg, again)
     assert error_code_of(again) == "state_reused"
     assert not has_live_session(cfg, after_back)
-    assert error_code_of(after_back) == "state_missing"
+    # 상태 쿠키는 지워졌지만 그 state 는 이미 썼다 — 「뒤로」 다시 보냄은 재사용이다.
+    assert error_code_of(after_back) == "state_reused"
 
 
 def test_pressing_check_again_many_times_never_shows_the_loop_page() -> None:
