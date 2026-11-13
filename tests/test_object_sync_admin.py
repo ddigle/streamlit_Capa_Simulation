@@ -128,16 +128,23 @@ def test_a_plain_local_app_has_no_worker_or_alert_chance() -> None:
 @pytest.mark.parametrize(
     ("values", "title"),
     [
-        ({}, "DB 동기화 · 올릴 것 없음"),
-        ({"dirty": {"simulation": True}}, "DB 동기화 · 올릴 것 있음"),
-        ({"phase": object_sync_worker.PHASE_UPLOADING}, "DB 동기화 · 올리는 중"),
-        ({"failures": 3, "failure_kind": "denied"}, "DB 동기화 · 실패"),
-        ({"blocked": "parent_moved"}, "DB 동기화 · 멈춤"),
+        ({}, "DB 동기화 · 올릴 것 없음 :green-badge[CI/CD 눌러도 됨]"),
+        ({"dirty": {"simulation": True}}, "DB 동기화 · 올릴 것 있음 :orange-badge[기다리세요]"),
+        (
+            {"phase": object_sync_worker.PHASE_UPLOADING},
+            "DB 동기화 · 올리는 중 :orange-badge[기다리세요]",
+        ),
+        (
+            {"failures": 3, "failure_kind": "denied"},
+            "DB 동기화 · 실패 :red-badge[누르면 저장 잃음]",
+        ),
+        ({"blocked": "parent_moved"}, "DB 동기화 · 멈춤 :red-badge[누르면 저장 잃음]"),
     ],
 )
 def test_the_title_is_the_verdict(
     monkeypatch: pytest.MonkeyPatch, values: dict[str, object], title: str
 ) -> None:
+    """펼침 제목 끝에 지금 CI/CD 를 눌러도 되는지 판정 배지 하나(색 + 낱말 — 카드 p2-sync)."""
     _boot(monkeypatch, managed=True)
     _admin(monkeypatch, admin=False)
     _worker(monkeypatch, **values)
@@ -146,6 +153,18 @@ def test_the_title_is_the_verdict(
 
     assert not list(app.exception)
     assert _labels(app) == [title]
+
+
+def test_every_health_title_has_a_cicd_verdict() -> None:
+    """일꾼 판정 제목마다 CI/CD 판정이 있다 — 새 제목을 더하면 여기서 걸린다."""
+    titles = {
+        object_sync_worker.TITLE_CLEAN,
+        object_sync_worker.TITLE_DIRTY,
+        object_sync_worker.TITLE_UPLOADING,
+        object_sync_worker.TITLE_FAILED,
+        object_sync_worker.TITLE_BLOCKED,
+    }
+    assert set(object_sync_status.CICD_VERDICTS) == titles
 
 
 def test_lines_carry_labels_and_numbers_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -183,7 +202,7 @@ def test_a_missing_worker_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
 
     app = AppTest.from_string(PANEL).run()
 
-    assert _labels(app) == ["DB 동기화 · 실패"]
+    assert _labels(app) == ["DB 동기화 · 실패 :red-badge[누르면 저장 잃음]"]
     assert "동기화 일꾼이 돌지 않음" in _text(app)
 
 
@@ -564,3 +583,49 @@ def test_the_head_mark_names_the_code_of_a_server_off_the_canon(
     _boot(monkeypatch, **boot)  # type: ignore[arg-type]
 
     assert object_sync_status.not_canonical_code() == code
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """`SY-02` · `SY-03` 짧은 글은 일반 사용자에게 「— 관리자에게 알려 주세요」 이고, 관리자 몫은
+    갈래 · 런북 · 「그 화면으로」 Admin 「DB 동기화」 다. 일꾼이 서지 않은 서버의 관리자 전문에는
+    CI/CD 를 누르면 저장이 사라진다는 한 줄이 붙는다(카드 p2-sync)."""
+    _boot(monkeypatch, managed=True)
+    _view(monkeypatch, admin=admin)
+    monkeypatch.setattr(object_sync_worker, "current_status", lambda: None)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    overdue = active_state(app, "SY-02")
+    assert overdue is not None
+    if admin:
+        assert overdue["short"] == "저장이 정본에 올라가지 못함 — 동기화 일꾼이 돌지 않음"
+        assert str(overdue["full"]).endswith(object_sync_status.WORKER_ABSENT_LINE)
+        assert overdue["href"] == "admin_area"
+    else:
+        assert overdue["short"] == "저장이 정본에 올라가지 못함 — 관리자에게 알려 주세요"
+        assert "Admin" not in str(overdue["full"]) and "CI/CD" not in str(overdue["full"])
+        assert overdue.get("href", "") != "admin_area"
+
+    handle = _worker(monkeypatch, blocked="forked")
+    app.run()
+    blocked = active_state(app, "SY-03")
+    assert blocked is not None and handle is not None
+    if admin:
+        assert blocked["short"] == "올리기가 멈춤 — 원격이 갈라짐"
+        assert "런북" in str(blocked["full"])
+    else:
+        assert blocked["short"] == "올리기가 멈춤 — 관리자에게 알려 주세요"
+        assert "런북" not in str(blocked["full"])
+
+
+def test_a_handed_over_copy_says_how_to_get_fresh_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """정본을 넘긴 사본(`SY-04`)의 전문은 최신 데이터를 보려면 사본을 다시 받으라고 끝난다."""
+    _boot(monkeypatch, handed_over_utc="2026-11-07T00:00:00Z")
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-04")
+    assert note is not None and "사본을 다시 받습니다" in str(note["full"])

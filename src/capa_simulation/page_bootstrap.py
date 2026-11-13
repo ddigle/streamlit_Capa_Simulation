@@ -533,8 +533,8 @@ def schema_ahead_message(notice: SchemaAheadOfCode) -> str:
         f"{with_subject_particle(notice.database_name)} 이 코드보다 새 버전입니다"
         f"(DB {notice.database_version} · 코드 {notice.code_version}). "
         "예전 배포로 되돌린 상태일 수 있습니다. 화면은 그대로 쓸 수 있지만, 새 버전이 더한 "
-        "표·열은 이 코드가 읽지도 쓰지도 않습니다. 되돌린 것이 아니라면 최신 배포를 다시 "
-        "적용하세요."
+        "표·열은 이 코드가 읽지도 쓰지도 않습니다. 이 상태에서 저장하면 새 판이 더한 칸은 빠진 채 "
+        "저장됩니다. 되돌린 것이 아니라면 최신 배포를 다시 적용하세요."
     )
 
 

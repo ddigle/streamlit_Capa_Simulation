@@ -941,14 +941,17 @@ def _start_check_expanders(app: AppTest) -> list[str]:
 
 
 def _start_check_script(database_path: Path, report_path: Path) -> str:
+    """Admin Area 화면 + `app.py` 가 회차마다 내는 시작 점검 관리자 알림(`AD-01`)."""
     return f"""
 from pathlib import Path
 
 import capa_simulation.settings as settings
+from capa_simulation.components.container_start_check import render_start_check_alert
 
 settings.DUCKDB_PATH = Path({str(database_path)!r})
 settings.CONTAINER_START_REPORT_PATH = Path({str(report_path)!r})
 
+render_start_check_alert()
 source = Path({str(PAGE)!r})
 exec(
     compile(source.read_text(encoding="utf-8"), str(source), "exec"),
@@ -1005,6 +1008,9 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     assert not [c.value for c in app.caption if "시작 때 있던 통합인증" in c.value]
     assert any("No matching distribution" in block.value for block in app.code)
     assert any("fa\\*\\*\\*" in caption.value for caption in app.caption)
+    # 실패한 단계(설치)는 관리자 몫 상태 알림이다 — 로그인 토큰 줄은 `AD-10` 몫이라 넣지 않는다.
+    note = active_state(app, "AD-01")
+    assert note is not None and note["short"] == "서버 시작 점검 실패 — bigdataquery 설치"
     assert [tab.label for tab in app.main.tabs] == [
         ":material/label: Proc Rename",
         ":material/sort: 표시순서 관리",
@@ -1069,6 +1075,14 @@ def test_the_server_start_check_adds_the_sync_lines_when_the_server_has_them(
         "DB 받기",
     ]
     assert steps.value["까닭"].iloc[5] == "판 다름 2.36.8"
+    # 실패한 단계는 펼침 제목뿐 아니라 관리자 몫 상태 알림(`AD-01`)으로도 뜬다 — 「그 화면으로」
+    # Admin Area(카드 p2-sync 「AD-01 범위를 넓힘」).
+    note = active_state(app, "AD-01")
+    assert note is not None and note["short"] == "서버 시작 점검 실패 — aws CLI", states(
+        app, "AD-01"
+    )
+    assert "aws CLI: 판 다름 2.36.8" in note["full"]
+    assert note["href"] == "admin_area"
     captions = "\n".join(caption.value for caption in app.caption)
     assert "**/project 디스크** · 여유 40.0 GiB · 전체 100.0 GiB" in captions
     assert "**한도** · 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions
@@ -1509,3 +1523,25 @@ def test_the_log_tab_opens_even_when_the_database_cannot(
     app.session_state["admin_area_active_tab"] = TAB_NAMES[0]
     app.run(timeout=120)
     assert data_error_marks(app) == 1
+
+
+def test_a_failed_start_check_is_told_to_the_admin_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """통합인증이 켜진 서버에서 관리자가 아니면 `AD-01` 은 해소로 불린다(같은 수의 표지)."""
+    from capa_simulation.components import container_start_check
+
+    report = tmp_path / "container_start.json"
+    failed = {"status": "failed", "reason": "CD 환경변수 DEMO 없음"}
+    ok = {"status": "ok", "reason": "정상"}
+    report.write_text(
+        json.dumps({"version": 1, "steps": {"install": failed, "token": ok, "user_name": ok}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(container_start_check, "admin_notes_visible", lambda: False)
+    app = AppTest.from_string(_start_check_script(tmp_path / "scenario.duckdb", report))
+    app.run(timeout=120)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert active_state(app, "AD-01") is None
+    assert len(states(app, "AD-01")) == 1

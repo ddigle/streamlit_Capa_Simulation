@@ -3,7 +3,8 @@
 """DB 동기화.
 
 운영 서버는 영속 볼륨이 없어 정본이 버킷에 있다. 이 화면은 **CI/CD 를 누르기 전에 보는 자리**다 —
-올릴 것이 남았는지, 마지막으로 언제 올렸는지, 왜 못 올리는지.
+올릴 것이 남았는지, 마지막으로 언제 올렸는지, 왜 못 올리는지. 펼침 제목 끝 배지 하나가 지금 CI/CD 를
+눌러도 되는지 판정한다(`CICD_VERDICTS` — 2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-sync).
 
 `managed` 가 아닌 서버(개발 PC · 사내 PC · 시험)에서는 펼침이 없고 Streamlit 호출도 없다 — 요소
 순번이 그대로다. 값은 일꾼의 메모리 사본만 읽어 디스크 · 네트워크를 쓰지 않고, 주소 · 버킷 · 키를
@@ -45,12 +46,25 @@ from capa_simulation.components.diagnostic_copy import (
     render_diagnostic_copy,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
-from capa_simulation.object_sync_worker import SyncHealth, WorkerStatus, assess
+from capa_simulation.navigation import ADMIN_AREA
+from capa_simulation.object_sync_worker import (
+    TITLE_BLOCKED,
+    TITLE_CLEAN,
+    TITLE_DIRTY,
+    TITLE_FAILED,
+    TITLE_UPLOADING,
+    SyncHealth,
+    WorkerStatus,
+    assess,
+)
+from capa_simulation.page_bootstrap import ADMIN_TAIL
+from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.persistence import sync_state
 from capa_simulation.services.object_storage_manifest import (
     DATASET_LABELS,
     DATASET_NAMES,
     FAILURE_LABELS,
+    FAILURE_WORKER_ABSENT,
     PushDecision,
 )
 from capa_simulation.sidebar_status import remembered_expander
@@ -103,6 +117,24 @@ def not_canonical_code() -> str | None:
     return None
 
 
+# 일꾼이 서지 않은 서버의 관리자 몫 전문 끝 한 줄(카드 p2-sync).
+WORKER_ABSENT_LINE: Final = "일꾼이 돌지 않음 — CI/CD 를 누르면 이 서버의 저장은 사라짐."
+
+
+def _overdue_full(overdue: str, *, admin: bool) -> str:
+    """`SY-02` 전문 — 관리자 몫은 갈래 · 할 일 · (일꾼이 없으면) 그 한 줄, 아니면 누구나 꼴."""
+    if not admin:
+        return (
+            "저장이 정본에 올라가지 못했습니다 — 이대로 배포하면 그 저장은 사라집니다. 관리자에게 "
+            "알려 주세요."
+        )
+    text = (
+        f"저장이 정본에 올라가지 못했습니다 — {failure_label(overdue)}. 이대로 CI/CD 를 누르면 그 "
+        "저장은 사라집니다. Admin 「DB 동기화」 를 보세요."
+    )
+    return f"{text} {WORKER_ABSENT_LINE}" if overdue == FAILURE_WORKER_ABSENT else text
+
+
 # 누구나 읽는 짧은 글(카드 p1-not-canonical).
 DISABLED_SHORT: Final = "저장이 정본에 올라가지 않습니다"
 HEAD_IGNORED_SHORT: Final = "정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다"
@@ -141,6 +173,9 @@ def render_object_sync_alerts() -> None:
     )
     managed = sync_boot.is_managed()
     health = current_health()[1] if managed else None
+    # 관리자 몫 줄의 「그 화면으로」 — Admin 「DB 동기화」 펼침(Admin Area 맨 위). 관리자가 아닌
+    # 회차는 그 화면이 없을 수 있어 달지 않는다.
+    to_panel = (tab_label(ADMIN_AREA), ADMIN_AREA.href) if admin else None
     overdue = None if health is None else health.overdue
     alerts.state(
         OVERDUE_CODE,
@@ -148,16 +183,14 @@ def render_object_sync_alerts() -> None:
         content=overdue,
         active=overdue is not None,
         text=(
-            None if overdue is None else f"저장이 정본에 올라가지 못함 — {failure_label(overdue)}"
-        ),
-        full=(
             None
             if overdue is None
-            else (
-                f"저장이 정본에 올라가지 못했습니다 — {failure_label(overdue)}. 이대로 CI/CD 를 "
-                "누르면 그 저장은 사라집니다. Admin 「DB 동기화」 를 보세요."
-            )
+            else f"저장이 정본에 올라가지 못함 — {failure_label(overdue)}"
+            if admin
+            else f"저장이 정본에 올라가지 못함{ADMIN_TAIL}"
         ),
+        full=None if overdue is None else _overdue_full(overdue, admin=admin),
+        goto=to_panel if overdue is not None else None,
     )
     blocked = None if health is None else health.blocked
     label = "" if blocked is None else BLOCKED_LABELS.get(blocked, blocked)
@@ -166,7 +199,13 @@ def render_object_sync_alerts() -> None:
         scope=None,
         content=blocked,
         active=blocked is not None,
-        text=None if blocked is None else f"올리기가 멈춤 — {label}",
+        text=(
+            None
+            if blocked is None
+            else f"올리기가 멈춤 — {label}"
+            if admin
+            else f"올리기가 멈춤{ADMIN_TAIL}"
+        ),
         full=(
             None
             if blocked is None
@@ -174,7 +213,13 @@ def render_object_sync_alerts() -> None:
                 f"올리기가 멈췄습니다 — {label}. 이 뒤의 저장은 이 서버에만 남습니다. 런북 「세대 "
                 "되돌리기」 를 보고 CI/CD 전에 알려 주세요."
             )
+            if admin
+            else (
+                "올리기가 멈췄습니다 — 이 뒤의 저장은 이 서버에만 남고 다음 배포에 사라질 수 "
+                "있습니다. 관리자에게 알려 주세요."
+            )
         ),
+        goto=to_panel if blocked is not None else None,
     )
     handed_over = sync_boot.handed_over_utc()
     alerts.state(
@@ -188,7 +233,8 @@ def render_object_sync_alerts() -> None:
             if handed_over is None
             else (
                 f"이 DB 는 {handed_over} 에 정본을 넘긴 사본입니다. 여기서 저장해도 정본에 "
-                "올라가지 않습니다."
+                "올라가지 않습니다. 최신 데이터를 보려면 사본을 다시 받습니다(런북 — "
+                "sync_object_storage.py fetch-copy)."
             )
         ),
     )
@@ -315,11 +361,36 @@ def panel_title(health: SyncHealth) -> str:
     return f"DB 동기화 · {health.title}"
 
 
+# 펼침 제목 끝 판정 표지 — 지금 CI/CD 를 눌러도 되는가(카드 p2-sync, 설계 규칙 UI-DAT-03 · UI-ACC-03
+# — 색 + 낱말). 올릴 것이 없으면 눌러도 되고, 올리는 중 · 올릴 것이 있으면 기다리고, 실패 · 멈춤 ·
+# 일꾼 없음이면 누르는 순간 이 서버의 저장을 잃는다. 멈춤을 푸는 단추는 두지 않는다(결정 C3 그대로).
+CICD_VERDICTS: Final[dict[str, tuple[str, str]]] = {
+    TITLE_CLEAN: ("green", "CI/CD 눌러도 됨"),
+    TITLE_DIRTY: ("orange", "기다리세요"),
+    TITLE_UPLOADING: ("orange", "기다리세요"),
+    TITLE_FAILED: ("red", "누르면 저장 잃음"),
+    TITLE_BLOCKED: ("red", "누르면 저장 잃음"),
+}
+
+
+def cicd_verdict(health: SyncHealth) -> tuple[str, str]:
+    """(색, 낱말) — 모르는 판정은 기다리라고 한다."""
+    return CICD_VERDICTS.get(health.title, ("orange", "기다리세요"))
+
+
+def panel_label(health: SyncHealth) -> str:
+    """펼침 제목 — 판정 제목 끝에 CI/CD 판정 배지(마크다운 지시문). 복사 글은 `panel_title` 평문 +
+    판정 낱말이다."""
+    color, word = cicd_verdict(health)
+    return f"{panel_title(health)} :{color}-badge[{word}]"
+
+
 def _render_body() -> None:
     """값 줄과 그 글을 복사하는 단추 — 올리는 동안 다시 그려도 복사 글이 화면과 같다."""
     status, health = current_health()
     lines = status_lines(status, health, now=time.monotonic())
-    render_diagnostic_copy(diagnostic_text(panel_title(health), plain_lines(lines)), key=COPY_KEY)
+    title = f"{panel_title(health)} · {cicd_verdict(health)[1]}"
+    render_diagnostic_copy(diagnostic_text(title, plain_lines(lines)), key=COPY_KEY)
     st.caption("  \n".join(lines))
 
 
@@ -341,7 +412,7 @@ def render_object_sync_status() -> None:
         return
     status, health = current_health()
     uploading = status is not None and status.phase == object_sync_worker.PHASE_UPLOADING
-    with remembered_expander(panel_title(health), icon=":material/cloud_sync:", key=EXPANDER_KEY):
+    with remembered_expander(panel_label(health), icon=":material/cloud_sync:", key=EXPANDER_KEY):
         if _viewer_is_admin():
             st.button(
                 "지금 올리기",

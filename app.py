@@ -22,7 +22,10 @@ from capa_simulation.components.audit_actor import note_session as note_audit_se
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.change_summary import session_changes
-from capa_simulation.components.container_start_check import render_token_alert
+from capa_simulation.components.container_start_check import (
+    render_start_check_alert,
+    render_token_alert,
+)
 from capa_simulation.components.equipment_scenario_status import (
     close_equipment_scenario_dialog,
     equipment_scenario_dialog_is_open,
@@ -595,6 +598,9 @@ with pinned_connections(DUCKDB_PATH):
     # 정본 버킷 동기화 알림(`SY-*`). 값은 메모리 사본뿐이고, 알릴 일이 없는 프로세스(개발 PC ·
     # 시험)는 아무것도 쓰지 않는다.
     render_object_sync_alerts()
+    # 서버 시작 점검 관리자 알림(`AD-01` — 결과 없음 · 못 읽음 · 실패한 단계, 「그 화면으로」 Admin
+    # Area). 결과 파일도 CD 전용 환경변수도 없는 프로세스는 아무것도 쓰지 않는다.
+    render_start_check_alert()
     # BigDataQuery 토큰 관리자 알림 — 실패(`AD-10`)와 만료 1시간 전(`AD-11`). 시작 점검 결과 파일이
     # 없는 서버(C-DEP 밖)는 아무것도 쓰지 않고, 있는 서버는 이벤트 칸 두 자리다.
     render_token_alert()
