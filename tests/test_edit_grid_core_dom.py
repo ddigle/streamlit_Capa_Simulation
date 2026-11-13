@@ -381,7 +381,7 @@ const R = {}
   R.hangulFind = document.activeElement === S.tb.dom.input
   fire(S.tb.dom.input, 'keydown', { key: 'ㄹ', code: 'KeyF', ctrlKey: true })
   R.hangulFindInInput = document.activeElement === S.tb.dom.input
-  // 도구 막대 「변경 (n)」·찾기 ▲▼ 를 마우스로 누르면 초점이 표로 돈다(찾을 글이 없으면
+  // 도구 막대 「적용 전 (n)」·찾기 ▲▼ 를 마우스로 누르면 초점이 표로 돈다(찾을 글이 없으면
   // 찾기 칸).
   S.tb.dom.changes.focus()
   fire(S.tb.dom.changes, 'click', { detail: 1 })
@@ -449,7 +449,7 @@ def test_view_changes_layout_hangul_keys_toolbar_focus_and_table_switches() -> N
     # Ctrl+ㅊ 은 페이지 글 고름을 지우고 copy 를 막지 않는다(브라우저가 표에 copy 를 쏜다).
     assert result["hangulCopy"] == [1, False]
     assert result["hangulFind"] and result["hangulFindInInput"]
-    assert result["changesFocus"], "「변경 (n)」 누름 뒤 초점은 표"
+    assert result["changesFocus"], "「적용 전 (n)」 누름 뒤 초점은 표"
     assert result["emptyFindFocus"], "찾을 글이 없으면 ▼ 는 찾기 칸에 초점"
     assert result["findFocus"], "찾기 ▼ 누름 뒤 초점은 표"
     assert result["keyboardFindFocus"], "자판으로 누른 ▲ 는 단추에 남는다"

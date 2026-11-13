@@ -148,7 +148,7 @@ def test_the_shared_search_box_lets_all_three_grids_stand_on_one_line_in_the_rep
 ):
     """찾기 칸은 세 그리드(기준 정보 · PKG PLAN · 수율) 공용 140px 이고, 고친 뒤 단추 줄로 잰 한 줄
     문턱이 모두 사내 보고 창 1283 이하다 — PKG PLAN 도 그 창에서 한 줄이다(2026-11-12 남은 물음
-    보드 ③-10 (가) · 사내 리뷰 202611131000 보드 카드 4 (나) 막대 단추 「변경 (n)」, 문턱은 본문
+    보드 ③-10 (가) · 사내 리뷰 202611131000 보드 카드 4 (나) 막대 단추 「적용 전 (n)」, 문턱은 본문
     스크롤 막대를 켠 Chrome 샘플 관측)."""
     css = (ROOT / "src/capa_simulation/components/edit_grid_assets/eg_toolbar.css").read_text(
         "utf-8"

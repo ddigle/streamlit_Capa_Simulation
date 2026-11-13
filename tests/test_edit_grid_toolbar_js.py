@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from edit_grid_node import FAKE_DOM, RUNNER_HEAD, asset, mountable, run_node, sections
 
-from capa_simulation.components import edit_grid
+from capa_simulation.components import alert_center, edit_grid
 from capa_simulation.services import edit_grid as eg
 from capa_simulation.services.edit_grid_payload import build_base, encode_base, encode_feed
 
@@ -70,8 +70,11 @@ def test_every_toolbar_text_is_shipped_by_python() -> None:
         assert isinstance(texts[name], str) and texts[name], name
     assert texts["changesEmpty"] == "적용 전 변경이 없습니다"
     # 막대 단추 글만 짧다 — 표 없는 껍데기도 같은 글을 싣는다(texts 가 오기 전 기본값과 같음).
-    assert texts["changesButton"] == "변경" and "'changesButton', '변경')" in TOOLBAR
-    assert edit_grid.texts_for_empty(changes_label="적용 전 변경")["changesButton"] == "변경"
+    assert texts["changesButton"] == "적용 전" and "'changesButton', '적용 전')" in TOOLBAR
+    assert edit_grid.texts_for_empty(changes_label="적용 전 변경")["changesButton"] == "적용 전"
+    # 머리 띠 칩 「변경 n」(이 세션의 변경 건수)의 낱말은 막대 단추에 쓰지 않는다 — 한 화면에 같은
+    # 낱말이 다른 수로 서지 않게(UI-CON-02).
+    assert alert_center.TEXT["changes_word"] not in texts["changesButton"]
     assert texts["fullLabel"] == "효율 전체 화면"
     assert "{count}" in texts["summaryCount"] and "{n}" in texts["fitDone"]
 
@@ -549,9 +552,9 @@ def test_the_toolbar_is_built_with_labels_from_the_shell() -> None:
     assert redo == ["redo", "true", None, "다시 실행 (Ctrl+Y)", "다시 실행"]
     assert fit[0] == "fit_width" and fit[4] == "칸 폭 맞춤"
     assert fit[3].startswith("칸 폭 맞춤 — 모든 칸 폭을 글에 맞춥니다")
-    # 「변경 (n)」 은 글 단추 — 보이는 글이 이름이고 풍선만 변경 목록 이름(서랍 제목 · 빈 글과
+    # 「적용 전 (n)」 은 글 단추 — 보이는 글이 이름이고 풍선만 변경 목록 이름(서랍 제목 · 빈 글과
     # 같은 말).
-    assert changes == ["변경 (0)", None, "false", "적용 전 변경", None]
+    assert changes == ["적용 전 (0)", None, "false", "적용 전 변경", None]
     assert full == ["fullscreen", None, "false", "전체 화면", "전체 화면"]
     # 위아래 화살표 · 찾은 수는 찾는 글이 있을 때만(Esc 로 지우면 다시 숨는다).
     assert (result["findShown"], result["findTyped"], result["findCleared"]) == (
@@ -946,7 +949,7 @@ def test_changes_drawer_lists_old_and_new_values_goes_to_cells_and_reverts() -> 
         "bad": {"DEMO_P05\x1fER": {"202701": ("85", "max")}},
     }
     result = _run(body, _payloads(draft=draft))
-    assert result["label"] == "변경 (3)"
+    assert result["label"] == "적용 전 (3)"
     opened = result["open"]
     assert opened["pressed"] == "true" and not opened["hidden"] and opened["frame"]
     assert opened["title"] == "적용 전 변경 3칸"
@@ -965,7 +968,7 @@ def test_changes_drawer_lists_old_and_new_values_goes_to_cells_and_reverts() -> 
         "rows": 0,
         "empty": False,
         "emptyText": "적용 전 변경이 없습니다",
-        "label": "변경 (0)",
+        "label": "적용 전 (0)",
     }
     assert result["closed"] == [True, False, "false", True]
 
