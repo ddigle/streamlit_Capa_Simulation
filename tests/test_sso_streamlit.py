@@ -265,8 +265,9 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
     assert href.startswith(f"{PUBLIC_URL}{names.LOGIN_PATH}?next=")
     assert parse_qs(urlsplit(href).query)["next"] == ["/process_detail?theme=dark"]
     assert 'target="_self"' in link and sso_identity.LOGIN_AGAIN_LABEL in link
-    # 글 링크가 아니라 앱 주 단추 꼴이다(강조색 면 — 카드 p1-tab-ended).
-    assert 'role="button"' in link and "background:" in link
+    # 글 링크가 아니라 앱 주 단추 꼴이다(강조색 면 — 카드 p1-tab-ended). 역할은 링크 그대로다 —
+    # 단추 역할을 달면 낭독기는 단추로 읽는데 Space 로 열리지 않는다.
+    assert "background:" in link and "role=" not in link
     assert sso_identity.ACCESS_REQUEST_LABEL not in link
     assert app.warning[0].icon == ":material/lock_clock:"
 
@@ -274,19 +275,28 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
 def test_the_stop_panel_names_the_contact_under_its_button(
     cookies: dict[str, str], page_url: Callable[[str | None], None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """사이드바 카드가 서지 않는 멈춤 화면이라 문의 메일을 단추 아래 캡션으로 싣는다(값만). 비면
-    줄이 없다."""
-    use_config()
-    runtime.mark_gate_installed()
+    """사이드바 카드가 서지 않는 멈춤 화면이라 문의처를 단추 아래 캡션으로 싣는다(값만) — 앱 밖
+    화면의 문의 줄과 같은 차례로 메일, 그 뒤에 접속 요청 창구 글. 둘 다 비면 줄이 없다."""
+    window = "데모 접속 창구 *내선* 0000"
     page_url(f"{PUBLIC_URL}/")
     monkeypatch.delenv(APP_CONTACT_EMAIL_ENV, raising=False)
 
+    use_config()
+    runtime.mark_gate_installed()
     bare = AppTest.from_string(SCRIPT).run()
+    use_config({names.ENV_ACCESS_CONTACT: window})
+    runtime.mark_gate_installed()
+    window_only = AppTest.from_string(SCRIPT).run()
     monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, "help@example.com")
-    shown = AppTest.from_string(SCRIPT).run()
+    both = AppTest.from_string(SCRIPT).run()
+    use_config()
+    runtime.mark_gate_installed()
+    mail_only = AppTest.from_string(SCRIPT).run()
 
     assert _caption_values(bare) == []
-    assert _caption_values(shown) == ["문의 help@example.com"]
+    assert _caption_values(window_only) == ["문의 데모 접속 창구 \\*내선\\* 0000"]
+    assert _caption_values(both) == ["문의 help@example.com · 데모 접속 창구 \\*내선\\* 0000"]
+    assert _caption_values(mail_only) == ["문의 help@example.com"]
 
 
 def test_a_dropped_account_is_offered_the_access_request(

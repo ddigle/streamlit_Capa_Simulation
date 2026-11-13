@@ -205,7 +205,8 @@ def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
 
     단추는 까닭으로 가른다(「다시 로그인」 띠와 같은 낱말 — `gate.ended_reason`): 명단에서 빠짐은
     「접속 권한 신청」, 명단 못 읽음은 끊긴 구름 아이콘 + 「다시 로그인」, 그 밖은 「다시 로그인」.
-    셋 다 같은 로그인 경로다. 사이드바 카드가 서지 않아 문의처는 단추 아래 캡션으로 싣는다.
+    셋 다 같은 로그인 경로다. 사이드바 카드가 서지 않아 문의처(문의 메일 · 접속 요청 창구 글)는 단추
+    아래 캡션으로 싣는다.
     """
     _render_stop_chrome()
     reason = ended_reason(problem, cfg)
@@ -213,7 +214,7 @@ def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
     st.warning(signed_out_notice(cfg, problem), icon=icon)
     label = ACCESS_REQUEST_LABEL if reason == names.REASON_DENIED else LOGIN_AGAIN_LABEL
     st.markdown(primary_link(login_url(cfg), label), unsafe_allow_html=True)
-    render_contact_caption()
+    render_contact_caption(cfg.access.contact)
     st.stop()
 
 
@@ -224,7 +225,7 @@ def _stop_account_changed(cfg: SsoConfig, identity: Identity) -> NoReturn:
     st.warning(account_changed_notice(identity.display_name), icon=":material/switch_account:")
     refresh = public_link(cfg, return_path(cfg))
     st.markdown(primary_link(refresh, REFRESH_LABEL, title=REFRESH_TIP), unsafe_allow_html=True)
-    render_contact_caption()
+    render_contact_caption(cfg.access.contact)
     st.stop()
 
 
