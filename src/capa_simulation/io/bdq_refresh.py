@@ -561,20 +561,34 @@ def _attempt(
             return _note_exchange_failure(f"예상하지 못한 실패({type(error).__name__})", now)
 
 
+def _trusted_expiry(reported: object, put_at: datetime) -> datetime | None:
+    """갱신 응답이 알려 준 만료 중 믿을 것 — 시각대가 있고 넣는 때부터 `EXPIRY_LEAD` 넘게 남은 것.
+    넣을 때 이미 1시간 안(또는 지남)이면 모름으로 둔다 — 시각대를 잘못 읽은 응답이면 넣을 때마다
+    다시 「만료 1시간 안」 이라 조회마다 교환하는 고리가 되고, 그 토큰의 실패도 제 수명으로 보여
+    고리 셈에서 빠진다. 모르면 「넣은 때부터 6시간」 과 토큰 실패 뒤 갱신이 대신한다."""
+    if not isinstance(reported, datetime) or reported.tzinfo is None:
+        return None
+    if reported - put_at <= EXPIRY_LEAD:
+        _LOGGER.warning("BigDataQuery 자동 갱신: 응답 만료가 넣을 때 이미 1시간 안이라 쓰지 않음")
+        return None
+    return reported
+
+
 def _put_exchanged(
     place: _Place, env: Mapping[str, str], got: object, now: datetime
 ) -> AttemptResult:
     """교환이 준 토큰을 넣는다 — 잠금 안(`_attempt`)."""
     if not isinstance(got, Exchanged) or not isinstance(got.token, bytes):
         return _note_exchange_failure("교환 응답 꼴이 다름", now)
-    expires = got.expires_at if isinstance(got.expires_at, datetime) else None
+    put_at = clock()
+    expires = _trusted_expiry(got.expires_at, put_at)
     outcome = bdq_token.install_content(
-        got.token, "refresh", env, folder=place.folder, at=clock(), expires_at=expires
+        got.token, "refresh", env, folder=place.folder, at=put_at, expires_at=expires
     )
     if outcome.status == "refused":
         return _note_exchange_failure(f"받은 토큰을 넣지 못함 — {outcome.reason}", now)
     if outcome.status == "same":
-        bdq_token.write_installed_mark(place.folder, place.account, "refresh", clock(), expires)
+        bdq_token.write_installed_mark(place.folder, place.account, "refresh", put_at, expires)
     with _STATE_LOCK:
         _STATE.last_failure = ""
         _STATE.last_failure_at = None

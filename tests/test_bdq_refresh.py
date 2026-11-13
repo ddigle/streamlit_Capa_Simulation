@@ -325,6 +325,36 @@ def test_an_expiry_the_exchange_reported_brings_the_next_refresh_forward(
     assert fake.calls == 2
 
 
+@pytest.mark.parametrize(
+    "reported",
+    [timedelta(minutes=30), timedelta(hours=-1), None],
+    ids=["30분 뒤", "이미 지남", "시각대 없음"],
+)
+def test_a_reported_expiry_already_inside_the_hour_is_not_trusted(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, reported: timedelta | None
+) -> None:
+    """갱신 응답의 만료가 넣을 때 이미 1시간 안이면(시각대를 잘못 읽은 응답) 모름으로 둔다 — 믿으면
+    넣을 때마다 다시 「만료 1시간 안」 이라 조회마다 교환한다(죽이기 고리)."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    fake = FakeExchange()
+    turn_on(monkeypatch, fake)
+
+    def exchange(token: bytes, account: str) -> bdq_refresh.Exchanged:
+        got = fake(token, account)
+        moment = clock.now.replace(tzinfo=None) if reported is None else clock.now + reported
+        return bdq_refresh.Exchanged(got.token, moment)
+
+    monkeypatch.setattr(bdq_refresh, "exchange", exchange)
+    for _ in range(10):
+        query(FakeModule(None))
+        clock.advance(minutes=6)
+
+    assert fake.calls == 1
+    mark = bdq_token.read_installed_mark(folder, ACCOUNT)
+    assert mark is not None and mark.source == "refresh" and mark.expires_at is None
+    assert bdq_refresh.status().last_failure == ""
+
+
 def test_a_missing_token_is_refreshed(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:

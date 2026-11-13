@@ -715,8 +715,9 @@ def store_refresh_token(environ: Mapping[str, str], credential_dir: Path) -> str
 
 
 def refresh_step(environ: Mapping[str, str], credential_dir: Path) -> bdq_refresh.StartRefresh:
-    """갱신 토큰을 두고, 켜짐이면 바로 갱신한다. 꺼짐 · 준비는 아무것도 바꾸지 않는다 — 다음
-    로그인 토큰 단계가 지금 길 그대로 돈다."""
+    """갱신 토큰을 두고, 켜짐이면 갱신할 때만 갱신한다(갱신으로 넣어 둔 토큰은 그대로 둔다 —
+    `bdq_refresh.refresh_at_start`). 꺼짐 · 준비는 아무것도 바꾸지 않는다 — 다음 로그인 토큰 단계가
+    지금 길 그대로 돈다."""
     problem = store_refresh_token(environ, credential_dir)
     if problem is not None:
         return bdq_refresh.StartRefresh("off", problem, failed=True)

@@ -373,8 +373,8 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("AD-11", "action", "state", "BigDataQuery 로그인 토큰 만료 1시간 전 · 지남"),
     # BigDataQuery 토큰 자동 갱신(`io/bdq_refresh.py`, 2026-11-14 사용자 결정) — C-DEP 관리자 회차
     # (`bdq_token_admin.render_refresh_alerts`). `AD-12` ~ `AD-16` 은 접속 · 작업 기록 갈래 몫이라
-    # 비워 둔다. 갱신으로 넣은 토큰이 거듭 죽어(같은 계정의 다른 로그인) · 교환 뒤 넣기가 거듭 실패해
-    # 멈췄거나 마지막 시도가 실패했을 때, 그리고 갱신 토큰(3개월)을 처음 쓴 때부터 80일.
+    # 비워 둔다. 갱신으로 넣은 토큰이 거듭 죽어(같은 계정의 다른 로그인) · 교환 뒤 넣기가 거듭
+    # 실패해 멈췄거나 마지막 시도가 실패했을 때, 그리고 갱신 토큰(3개월)을 처음 쓴 때부터 80일.
     AlertSpec("AD-17", "action", "state", "BigDataQuery 토큰 자동 갱신 멈춤 · 마지막 시도 실패"),
     AlertSpec("AD-18", "action", "state", "BigDataQuery 갱신 토큰 80일 — 바꿀 때"),
 )
