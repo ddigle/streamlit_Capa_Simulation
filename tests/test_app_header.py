@@ -537,7 +537,8 @@ def test_the_credits_show_the_applied_deploy_stamp_or_say_outside(tmp_path: Path
     """첫 줄 끝은 사내 적용 기록의 배포 번호, 기록이 없으면 「사외 개발」 이다(2026-10-08 사용자
     결정 — 손으로 적던 빌드일은 배포마다 고치지 않아 2026-09-08 로 남아 있었다). 깨진 기록도
     「사외 개발」. 기록은 프로세스에서 한 번만 읽으므로 경우마다 다른 경로를 쓴다."""
-    from capa_simulation.components.app_credits import OUTSIDE_BUILD_LABEL, deployed_stamp
+    from capa_simulation.components.app_credits import OUTSIDE_BUILD_LABEL
+    from capa_simulation.deploy_stamp import deployed_stamp
 
     assert deployed_stamp(tmp_path / "missing" / "applied.json") is None
     state = tmp_path / ".deploy" / "applied.json"
