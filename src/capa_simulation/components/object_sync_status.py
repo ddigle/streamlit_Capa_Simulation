@@ -233,8 +233,7 @@ def render_object_sync_alerts() -> None:
             if handed_over is None
             else (
                 f"이 DB 는 {handed_over} 에 정본을 넘긴 사본입니다. 여기서 저장해도 정본에 "
-                "올라가지 않습니다. 최신 데이터를 보려면 사본을 다시 받습니다(런북 — "
-                "sync_object_storage.py fetch-copy)."
+                "올라가지 않습니다. 최신 데이터를 보려면 사본을 다시 받습니다(런북)."
             )
         ),
     )

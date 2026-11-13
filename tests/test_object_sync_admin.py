@@ -622,10 +622,13 @@ def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
 
 
 def test_a_handed_over_copy_says_how_to_get_fresh_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    """정본을 넘긴 사본(`SY-04`)의 전문은 최신 데이터를 보려면 사본을 다시 받으라고 끝난다."""
+    """정본을 넘긴 사본(`SY-04`)의 전문은 최신 데이터를 보려면 사본을 다시 받으라고 끝난다 — 할
+    일은 런북을 가리키고 스크립트 이름은 싣지 않는다(카드 p2-sync 글 그대로)."""
     _boot(monkeypatch, handed_over_utc="2026-11-07T00:00:00Z")
 
     app = AppTest.from_string(ALERTS).run()
 
     note = active_state(app, "SY-04")
-    assert note is not None and "사본을 다시 받습니다" in str(note["full"])
+    assert note is not None
+    assert str(note["full"]).endswith("최신 데이터를 보려면 사본을 다시 받습니다(런북).")
+    assert "sync_object_storage" not in str(note["full"])
