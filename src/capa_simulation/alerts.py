@@ -687,6 +687,7 @@ def event(
     detail: str = "",
     tab: str = "",
     alert_id: str | None = None,
+    pageless: bool = False,
 ) -> None:
     """사건 알림 하나를 담는다 — **그리지 않는다**(이벤트 칸을 쓰지 않으니 어느 갈래에서 불러도
     된다).
@@ -696,7 +697,8 @@ def event(
     글(60자 안팎), `full` 은 패널 · 로그의 전문, `cause` 는 로그의 계기(「「저장」 누름」), `detail`
     은 원본 오류 글, `tab` 은 그 화면 안 탭 이름(「그 화면으로」 가 그 탭을 연다)이다. `alert_id` 를
     고정 값으로 주면 이 브라우저 탭이 그 알림을 한 번만 띄운다(새로고침 · 테마 전환의 새 세션에도 —
-    `event_note`).
+    `event_note`). `pageless` 는 어느 화면의 일도 아닌 알림이다 — 화면 · 주소를 싣지 않아 줄의 화면
+    칸이 비고 「그 화면으로」 가 서지 않는다(`_open_tab_note` 와 같다).
     """
     note = event_note(
         code,
@@ -708,6 +710,9 @@ def event(
         tab=tab,
         alert_id=alert_id,
     )
+    if pageless:
+        note.pop("page", None)
+        note.pop("href", None)
     outbox = st.session_state.get(OUTBOX_KEY)
     st.session_state[OUTBOX_KEY] = [*outbox, note] if isinstance(outbox, list) else [note]
 

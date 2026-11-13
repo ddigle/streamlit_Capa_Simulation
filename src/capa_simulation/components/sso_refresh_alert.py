@@ -14,7 +14,9 @@
   발급했거나 건너뛰었으면 길은 열린 것이라 세우지 않는다(한 사람의 다른 주소 접속 같은 잡음).
 - 내용(지문)은 고정 값이다 — 거절 수를 넣으면 새 거절마다 알림창이 다시 뜬다.
 - 관리자 회차에만 세우고 다른 회차는 해소로 부른다(`sso_status._access_read_alert` 와 같은 꼴 —
-  회차마다 이벤트 칸 한 자리).
+  회차마다 이벤트 칸 한 자리). 해소 표지에는 짧은 글 · 전문을 싣지 않는다 — 일반 사용자 회차의
+  숨은 표지에 운영 낱말(접속 주소 환경변수 · 갱신 머리 이름)이 실리지 않게(알림 칸은 해소에 글을
+  쓰지 않는다).
 - 통합인증이 켜진 서버만 부른다. 꺼짐 · 막힘이면 Streamlit 호출이 하나도 없다(요소 순번 그대로).
 """
 
@@ -57,7 +59,7 @@ def render_refresh_alert() -> None:
         scope=None,
         content=CONTENT if active else None,
         active=active,
-        text=SHORT_TEXT,
-        full=FULL_TEXT.format(hours=cfg.session_seconds // 3600),
+        text=SHORT_TEXT if active else None,
+        full=FULL_TEXT.format(hours=cfg.session_seconds // 3600) if active else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
     )

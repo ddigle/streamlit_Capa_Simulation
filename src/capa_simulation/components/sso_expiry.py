@@ -17,7 +17,8 @@
   회차가 될 수 있다.
 
 꺼짐(신원 없음)이면 부르지 않는다 — `app.py` 가 신원이 있을 때만 부른다. 담기만 하므로 이벤트 칸을
-쓰지 않는다(요소 순번 그대로).
+쓰지 않는다(요소 순번 그대로). 어느 화면의 일도 아니라 화면 · 주소를 싣지 않는다(`pageless` — 이
+회차의 화면은 `app.py` 가 이 뒤에야 적으므로 실으면 앞 회차의 화면이 된다).
 """
 
 from __future__ import annotations
@@ -79,4 +80,5 @@ def note_expiry_alert(identity: Identity, *, now: int | None = None) -> None:
         text=SHORT_TEXT.format(minutes=minutes),
         full=FULL_TEXT.format(period=_period(cfg)),
         alert_id=expiry_alert_id(identity),
+        pageless=True,
     )

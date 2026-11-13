@@ -396,7 +396,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
     최대 시간이 정한 끝 10분 안의 첫 회차에는 `components/sso_expiry.py` 가 사건 알림 `AD-20`(「로그인 최대 시간까지 n분 — 저장해
     두세요」)을 한 번 담는다 — 세션 칸(그 sid)과 고정 id(`alerts.event` 의 `alert_id` — sid 지문)로 같은 탭에 한 번이다. `app.py` 가
-    신원이 있을 때만 부르고 담기만 한다(요소 순번 그대로).
+    신원이 있을 때만 부르고 담기만 한다(요소 순번 그대로). 어느 화면의 일도 아니라 화면 · 주소 없이 싣는다(`alerts.event` 의
+    `pageless` — 이번 회차의 화면은 `app.py` 가 그 뒤에 적는다).
     멈춤 화면은 `st.stop()` 앞에서 껍데기 스타일(`app_header.render_shell_style` — ⋮ 메뉴 · Deploy 감춤)과 툴바 단추 감춤
     (`_STOP_TOOLBAR_STYLE` — 툴바 iframe 이 세운 Guide · Print · 테마)을 스스로 보낸다(`_render_stop_chrome`) — 앞 회차 iframe 이
     세운 단추는 듣개가 죽어 눌러도 아무 일도 없다. 알림 칸이 세운 변경 칩 · Alarm 은 듣개가 살아 있어 둔다(변경 칩은 새로고침하면
@@ -1099,7 +1100,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
     (`components/object_sync_status.py`), 그 뒤에 「통합인증 점검」 펼침(`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
     캡션과 「켜면 막힐 문제」) 그리고, 꺼짐이고 운영이 아니면 그리지 않는다. 알릴 조건(서버 시작 결과 없음 · 못 읽음 `AD-01`,
-    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` — 둘 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area, 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` — C-DEP 에서 `app.py` 가 관리자의 모든 화면 회차에 낸다, 로그인 갱신이 출처 · 머리 검사에서만 거절됨(기동 뒤 「출처·머리 거절」 1 이상 · 「다시 발급」 · 「건너뜀」 0) `AD-21` — 통합인증이 켜진 서버의 앱 정보 카드가 관리자의 모든 화면 회차에 내고(`components/sso_refresh_alert.py` — 지문은 고정 값, 다른 회차는 해소) 「그 화면으로」 는 Admin Area)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
+    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` — 둘 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area, 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` — C-DEP 에서 `app.py` 가 관리자의 모든 화면 회차에 낸다, 로그인 갱신이 출처 · 머리 검사에서만 거절됨(기동 뒤 「출처·머리 거절」 1 이상 · 「다시 발급」 · 「건너뜀」 0) `AD-21` — 통합인증이 켜진 서버의 앱 정보 카드가 관리자의 모든 화면 회차에 내고(`components/sso_refresh_alert.py` — 지문은 고정 값, 다른 회차는 글 없는 해소) 「그 화면으로」 는 Admin Area)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
     점검 펼침). 편 상태는 기억 칸(`remembered_expander`)이라
     다른 화면에 다녀와도 접히지 않는다. 그 바로 뒤에 「접속 명단」 펼침(`components/access_list_admin.py`)이 관리자 회차에만 선다.
   - 「모듈 상태」(`components/module_status.py`)는 탭 위 펼침이 아니라 안쪽 탭 줄 오른쪽 끝 팝오버다(2026-11-10 보드 Q-6 — T7 과

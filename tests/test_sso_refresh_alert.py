@@ -61,6 +61,13 @@ def test_only_an_admin_sees_refusals_without_any_renewal(monkeypatch: pytest.Mon
         assert len(states(app, sso_refresh_alert.ALERT_CODE)) == 1, who
         note = active_state(app, sso_refresh_alert.ALERT_CODE)
         assert (note is not None) is expected, who
+        if not expected:
+            # 해소 표지에는 운영 낱말(접속 주소 환경변수 · 갱신 머리 이름)을 싣지 않는다.
+            [resolved] = states(app, sso_refresh_alert.ALERT_CODE)
+            carried = f"{resolved.get('short', '')} {resolved.get('full', '')}"
+            assert names.ENV_PUBLIC_URL not in carried, who
+            assert names.REFRESH_HEADER not in carried, who
+            assert sso_refresh_alert.SHORT_TEXT not in carried, who
     _as(cfg, ADMIN, monkeypatch)
     note = active_state(AppTest.from_string(SCRIPT, default_timeout=30).run(), "AD-21")
     assert note is not None

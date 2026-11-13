@@ -69,6 +69,8 @@ from capa_simulation.auth.identity import Identity
 from capa_simulation.components import sso_expiry
 
 fields = json.loads(os.environ["SSO_EXPIRY_IDENTITY"])
+# 앞 회차의 화면 — `app.py` 는 이 알림을 담은 뒤에야 이번 회차의 화면을 적는다.
+alerts.note_page("HOME", "home")
 sso_expiry.note_expiry_alert(Identity(**fields), now=int(os.environ["SSO_EXPIRY_NOW"]))
 alerts.flush()
 """
@@ -97,6 +99,8 @@ def test_the_alert_is_queued_once_with_a_fixed_id(monkeypatch: pytest.MonkeyPatc
     )
     assert (first["kind"], first["level"]) == ("event", "action")
     assert first["id"] == sso_expiry.expiry_alert_id(identity)
+    # 어느 화면의 일도 아니다 — 앞 회차의 화면(이동 회차면 떠나온 화면)을 달지 않는다.
+    assert "page" not in first and "href" not in first
     assert again == [], "같은 세션은 한 번"
     assert fresh["id"] == first["id"], "새 세션이 다시 담아도 브라우저 탭은 id 로 한 번만 띄운다"
 
