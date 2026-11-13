@@ -23,6 +23,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components import boot_stop
+from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 from capa_simulation.persistence._migration_core import (
     MigrationChanged,
     MigrationFailed,
@@ -248,7 +249,7 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
     main = _main_text(app)
     assert "PID" not in main and SECRET_PATH not in main
     [fold] = app.expander
-    assert fold.label == boot_stop.DIAGNOSTIC_LABEL
+    assert fold.label == ADMIN_DIAGNOSTIC_LABEL
     folded = "\n".join(str(item.value) for item in fold.markdown) + "\n".join(
         str(item.value) for item in fold.code
     )

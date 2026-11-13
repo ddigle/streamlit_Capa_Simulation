@@ -37,7 +37,11 @@ import duckdb
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components.diagnostic_copy import diagnostic_text, render_diagnostic_copy
+from capa_simulation.components.diagnostic_copy import (
+    ADMIN_DIAGNOSTIC_LABEL,
+    diagnostic_text,
+    render_diagnostic_copy,
+)
 from capa_simulation.components.stop_panel import reference_line, render_contact_caption
 from capa_simulation.page_bootstrap import bootstrap_error_message
 from capa_simulation.persistence._migration_core import MigrationFailed
@@ -51,7 +55,6 @@ LOCKED_LINE: Final = "지금은 데이터를 열 수 없습니다"
 UPDATE_LINE: Final = "앱 업데이트를 마치지 못했습니다 — 관리자가 고칠 때까지 열 수 없습니다"
 RETRY_LABEL: Final = "다시 시도"
 RETRY_KEY: Final = "boot_stop_retry"
-DIAGNOSTIC_LABEL: Final = "관리자용 진단"
 DIAGNOSTIC_KEY: Final = "boot_stop_diagnostic"
 DIAGNOSTIC_TITLE: Final = "앱 시작 실패 진단"
 COPY_KEY: Final = "boot_stop"
@@ -144,7 +147,7 @@ def render_boot_stop(exc: BaseException) -> None:
     render_contact_caption()
     st.caption(reference)
     blocks = ([reference], [alerts.plain_text(bootstrap_error_message(exc))], [original_line(exc)])
-    with st.expander(DIAGNOSTIC_LABEL, key=DIAGNOSTIC_KEY):
+    with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=DIAGNOSTIC_KEY):
         render_diagnostic_copy(diagnostic_text(DIAGNOSTIC_TITLE, *blocks), key=COPY_KEY)
         # 진단 글은 글자 그대로(평문 칸) — 조치 문장 · 파일 경로 · 원문을 자리 글로 늘어놓지 않는다.
         st.code("\n\n".join("\n".join(block) for block in blocks), language=None, wrap_lines=True)

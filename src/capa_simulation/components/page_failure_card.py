@@ -52,7 +52,11 @@ from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlExcepti
 from capa_simulation import alerts, page_failures, settings
 from capa_simulation.components.admin_view import admin_notes_visible
 from capa_simulation.components.container_start_check import start_check_alert_possible
-from capa_simulation.components.diagnostic_copy import diagnostic_text, render_diagnostic_copy
+from capa_simulation.components.diagnostic_copy import (
+    ADMIN_DIAGNOSTIC_LABEL,
+    diagnostic_text,
+    render_diagnostic_copy,
+)
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.page_failures import PageFailure
 
@@ -61,7 +65,6 @@ CARD_KEY: Final = "capa_page_failure"
 COPY_KEY: Final = "page_failure"
 CARD_ICON: Final = ":material/error:"
 HEADLINE: Final = "이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다"
-DIAGNOSTIC_LABEL: Final = "관리자용 진단"
 ALERT_CODE: Final = "AD-22"
 MESSAGE_LIMIT: Final = 200
 FRAME_LIMIT: Final = 12
@@ -116,7 +119,7 @@ def render_page_failure(failure: PageFailure, exc: BaseException) -> None:
         st.caption(f"참고 번호 {failure.ref} · {literal_markdown(failure.kind)}")
         if admin_notes_visible():
             lines = diagnostic_lines(failure, exc)
-            with st.expander("관리자용 진단"):
+            with st.expander(ADMIN_DIAGNOSTIC_LABEL):
                 render_diagnostic_copy(diagnostic_text(HEADLINE, lines), key=COPY_KEY)
                 st.code("\n".join(lines), language=None)
 

@@ -433,6 +433,14 @@ def test_the_two_palettes_match_the_app_tokens() -> None:
     assert container_stage.FONT_FAMILY == tokens.FONT_FAMILY
 
 
+def test_the_diagnostics_fold_has_the_app_admin_diagnostic_name() -> None:
+    """접힌 진단의 이름은 앱 안 판(코어 화면 오류 카드 · 앱 시작 실패 판)과 같은 글이다 — 시작
+    화면은 Streamlit 을 부르지 않아 같은 글을 따로 들고 여기서 맞댄다(설계 규칙 UI-CON-02)."""
+    from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
+
+    assert container_stage.DIAGNOSTICS_SUMMARY == ADMIN_DIAGNOSTIC_LABEL
+
+
 def test_the_mark_is_the_app_mark() -> None:
     svg = (ROOT / "static" / "icons" / "capa_mark.svg").read_text(encoding="utf-8")
 

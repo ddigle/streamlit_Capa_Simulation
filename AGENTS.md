@@ -4204,6 +4204,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/diagnostic_copy.py` — Admin 진단 펼침(서버 시작 점검 · 통합인증 점검 · DB 동기화)과 모듈 상태 팝오버의 글 전체를 한 번에 복사하는 단추와 그 글을
   짓는 도우미다(UI-NTF-10). 브라우저 안에서 끝나 회차가 돌지 않고, 막히면 고른 글을 읽기 전용 칸으로 편다(`execCommand` 는 쓰지 않는다). 복사 글은 밖으로 나가는 글이라
   부르는 쪽이 리뷰에 옮기지 말아야 할 값을 싣지 않는다(`sso_status.status_text`, `container_start_check.report_text`). 접속 명단은 loginid 가 사람이라 복사 단추를 두지 않는다.
+  관리자 몫 접힌 진단 펼침의 이름 「관리자용 진단」 도 여기 한 곳이다(`ADMIN_DIAGNOSTIC_LABEL` — 코어 화면 오류 카드 · 앱 시작 실패 판이 함께 쓰고, Streamlit 을 부르지 않는 시작 임시 화면의 `DIAGNOSTICS_SUMMARY` 는 시험이 맞댄다).
 - `src/capa_simulation/components/data_error_mark.py` — 데이터 때문에 화면 · 탭 · 구획을 그리지 못한 자리의 공통 「데이터 Error」 마크(2026-11-05
   사용자 지시). `render_data_error(message, code=, tab=, text=, goto=)` 는 마크(칠한 칸 「데이터 Error」 + 「Alarm 확인 필요」 — 토큰 색 · 두 테마 ·
   좁으면 줄 바꿈)와 오류 단계 사건 알림 표지를 `st.html` 한 칸에 그린다 — 이벤트 칸을 쓰지 않아 프래그먼트 · 팝업 본문 어디서나 부른다.

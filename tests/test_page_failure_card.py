@@ -12,6 +12,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts, page_failures
 from capa_simulation.components import page_failure_card
+from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 
 pytestmark = pytest.mark.page_failure_card
 
@@ -56,7 +57,7 @@ def test_the_admin_diagnostic_carries_the_message_and_repository_frames() -> Non
     안 프레임 · 복사 단추를 싣는다 — C-DEP 에는 로그가 없어 원문을 보는 자리다."""
     app = AppTest.from_function(_crashing_page).run()
 
-    (box,) = [item for item in app.expander if item.label == page_failure_card.DIAGNOSTIC_LABEL]
+    (box,) = [item for item in app.expander if item.label == ADMIN_DIAGNOSTIC_LABEL]
     (code,) = box.code
     assert "오류 · AttributeError: DEMO 값 없음" in code.value
     # 감싸기 자신의 프레임(늘 같은 줄)과 저장소 밖 경로는 싣지 않는다.
@@ -80,9 +81,7 @@ def test_a_viewer_who_is_not_the_admin_sees_only_the_kind(monkeypatch: pytest.Mo
 
     app = AppTest.from_function(_crashing_page).run()
 
-    assert app.error and not [
-        item for item in app.expander if item.label == page_failure_card.DIAGNOSTIC_LABEL
-    ]
+    assert app.error and not [item for item in app.expander if item.label == ADMIN_DIAGNOSTIC_LABEL]
     assert "DEMO 값 없음" not in "\n".join(str(item.value) for item in app.caption)
 
 
