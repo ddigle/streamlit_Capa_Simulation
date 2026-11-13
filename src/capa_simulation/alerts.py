@@ -371,7 +371,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 관리자 회차(`bdq_token_admin.render_expiry_alert`, 2026-11-12 사용자 결정). 새 토큰을 넣으면
     # 풀린다.
     AlertSpec("AD-11", "action", "state", "BigDataQuery 로그인 토큰 만료 1시간 전 · 지남"),
-    # 접속 · 작업 감사 기록(`audit/`) — 관리자 · 점검자 회차에만 선다. 기록이 버킷에 보관되지 않음
+    # 접속 · 작업 감사 기록(`audit/`) — 관리자 회차에만 선다. 기록이 버킷에 보관되지 않음
     # (동기화 아님 · 올리기 밀림 · 큐 넘침 · 시계 차이)과 기록 사슬 이상(1판은 14일 넘게 늦은 조각).
     AlertSpec("AD-12", "action", "state", "접속 · 작업 기록이 버킷에 보관되지 않음"),
     AlertSpec("AD-13", "error", "state", "접속 · 작업 기록 사슬 이상 — 너무 늦게 온 조각"),

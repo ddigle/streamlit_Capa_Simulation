@@ -246,17 +246,9 @@ def viewer_is_admin() -> bool:
 
 
 def viewer_can_audit() -> bool:
-    """접속 · 작업 기록을 볼 수 있는가 — 관리자이거나 점검자(`CAPA_AUDIT_VIEWERS`)이고, 이 서버가
-    감사 기록을 남기는 서버(`audit.recorder.enabled()` — 통합인증 켜짐 기동)다. 아니면 늘 거짓."""
-    if not audit_recorder.enabled():
-        return False
-    identity = verified_identity()
-    if identity is None:
-        return False
-    cfg = runtime.config()
-    return access_store.is_admin(cfg, identity.loginid) or (
-        identity.loginid.strip().lower() in cfg.audit_viewers
-    )
+    """접속 · 작업 기록을 볼 수 있는가 — 감사 기록을 남기는 서버(`audit.recorder.enabled()` —
+    통합인증 켜짐 기동)이고 보는 사람이 관리자(`viewer_is_admin`)다. 아니면 늘 거짓."""
+    return audit_recorder.enabled() and viewer_is_admin()
 
 
 def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:

@@ -1,4 +1,4 @@
-# Purpose: 접속 사건이 감사 줄이 되는지 — 로그인 · 무인증 홍수 · 세션 닫힘 · 기동 · 점검자.
+# Purpose: 접속 사건이 감사 줄이 되는지 — 로그인 · 무인증 홍수 · 세션 닫힘 · 기동 · 등급.
 
 from __future__ import annotations
 
@@ -140,36 +140,27 @@ def test_boot_turns_the_recorder_on_only_for_an_enabled_sso(tmp_path: Path) -> N
     assert boot.start(off) is False
     assert not recorder.enabled()
 
-    cfg = use_config({names.ENV_AUDIT_VIEWERS: "Demo.Auditor"})
+    cfg = use_config()
     assert boot.start(cfg) is True
     lines = recorder.take_pending()
     assert [line["ev"] for line in lines] == ["sys_startup", "authz_admin_config"]
     assert set(lines[0]["det"]) == {"env", "sso", "sync", "spool"}
     assert (lines[0]["det"]["env"], lines[0]["det"]["sso"]) == ("cdep", "on")
+    assert set(lines[1]["det"]) == {"admins", "admin_fp"}
     assert lines[1]["det"]["admins"] == 1
-    assert lines[1]["det"]["auditors"] == 1
     assert len(lines[1]["det"]["admin_fp"]) == 8
-    payload = _payload(lines)
-    assert LOGINID not in payload and "demo.auditor" not in payload
+    assert LOGINID not in _payload(lines)
     assert all(line["actor"] == "system:app" and line["grade"] == "system" for line in lines)
 
 
-def test_audit_viewers_are_read_withheld_and_graded() -> None:
-    environ_value = "Demo.Auditor; bad!!"
-    cfg = use_config({names.ENV_AUDIT_VIEWERS: environ_value})
+def test_the_grader_knows_only_admins_and_users() -> None:
+    """기록을 보는 사람은 관리자뿐이다 — 판정기의 등급은 관리자 · 사용자 둘이다."""
+    cfg = use_config()
 
-    assert cfg.audit_viewers == frozenset({"demo.auditor"})
-    assert any(
-        problem.env == names.ENV_AUDIT_VIEWERS and problem.code == "entries_unreadable"
-        for problem in cfg.notices
-    )
-    assert names.ENV_AUDIT_VIEWERS in names.WITHHELD_ENVIRONMENT
-    assert names.ENV_AUDIT_VIEWERS in names.SSO_ENVIRONMENT
-    assert "demo.auditor" not in repr(cfg)
     grade = boot.grader(cfg)
-    assert (grade(LOGINID), grade("demo.auditor"), grade("other.user")) == (
+    assert (grade(LOGINID), grade(LOGINID.upper()), grade("other.user")) == (
         "admin",
-        "auditor",
+        "admin",
         "user",
     )
 

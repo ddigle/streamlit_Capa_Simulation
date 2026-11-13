@@ -148,7 +148,7 @@ def set_resolver(resolver: Resolver | None) -> None:
 
 
 def set_grader(grader: Grader | None) -> None:
-    """loginid → 등급(`admin` · `auditor` · `user`) 판정기를 꽂는다(`audit/boot.py`)."""
+    """loginid → 등급(`admin` · `user`) 판정기를 꽂는다(`audit/boot.py`)."""
     with _LOCK:
         _STATE.grader = grader
 

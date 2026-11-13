@@ -355,7 +355,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   손입력 이름은 `claimed`)는 `persistence/work_audit.py` 가 짓는다(시험 `tests/test_audit_work_events.py` 가 설계서 2-3 표의
   함수 → 사건을 맞댄다). 켜는 곳은 `audit/boot.py` 하나다 —
   `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(관리자
-  수 · 목록 지문 8자 · 점검자 수) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 점검자 `CAPA_AUDIT_VIEWERS` · 사용자)를 꽂는다.
+  수 · 목록 지문 8자) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 사용자)를 꽂는다.
   통합인증 사건은 `auth/runtime.record_event` 가 잠금 밖에서 대응표(`from_sso_event`)로 넘기고(로그인 성공의 이름은 감사
   줄에만 — `audit=` 칸, 서버 로그 · 고리에는 싣지 않는다), 갱신 누계는 시간 묶음으로 센다.
   - `components/audit_log_view.py` — Admin Area 「접속 · 작업 기록」 탭. 사이드바 「기록 조건」 카드(기간 — KST,
@@ -365,7 +365,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     맞는 줄이 없는 날은 빈칸 — 기록기 멈춤을 뜻하지 않는다), 기록은 새것 먼저 한 줄씩(상세 키는 `events.DET_LABELS` 한글). 설명
     글은 Guide · 풍선이고 빈 결과는 평문 한 줄이다. 닫힌 탭이면 부르지 않는다(카드도 서지 않는다). 감사 알림 `AD-12`(보관
     안 됨) · `AD-13`(14일 넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 켜진 서버의 매 회차 갈래
-    없이 두 자리를 쓰고 관리자 · 점검자 회차에만 세운다(꺼진 서버는 호출 0). 감사가 켜진 서버의 「통합인증 점검」 은 사람
+    없이 두 자리를 쓰고 관리자 회차에만 세운다(꺼진 서버는 호출 0). 감사가 켜진 서버의 「통합인증 점검」 은 사람
     단위 사건 표를 그리지 않고 누계 줄과 리뷰용 「복사」 만 남긴다(설계 AU19).
   - `components/audit_actor.py` — 감사 기록의 앱 쪽. 스크립트 스레드 행위자 해석기(`resolve` — 쿠키를 **지금** 다시 검증한
     `sso_identity.verified_identity`, 실행 문맥이 없으면 `None`), 세션 첫 회차의 `session_created`(`note_session` — `sid8` ·
@@ -1074,8 +1074,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `valid_location_pairs`·`floor_placements` 는 30개 그대로이고, 목록이 줄기 전에 비활성 층으로 보낸 적용은 받고 flash 끝에
     알린다. FAB 요약은 모든 층 합 그대로에 「 · 비활성 층 n대」 를 붙인다.
 - `app_pages/admin_area.py` — 사이드바 맨 아래 자기 상자의 운영 관리 화면으로 `Proc Rename`·`표시순서 관리`·
-  `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자 ·
-  점검자 회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
+  `원천 품질` 세 탭(`TAB_NAMES` = `navigation.ADMIN_AREA_TABS`, `stateful_tabs`)을 모은다. 감사 기록이 켜진 서버의 관리자
+  회차(`sso_identity.viewer_can_audit`)에만 넷째 「접속 · 작업 기록」(`navigation.ADMIN_AREA_LOG_TAB` —
   `components/audit_log_view.py`)이 선다 — 다른 회차는 탭 셋 그대로다(라벨 밖 세션 값은 첫 라벨로 새로 적는다, pop 없음).
   탭 묶음은 DB 를 열기 **앞**이다(설계 AU20) — DB 를 못 열면 DB 를 쓰는 탭 가운데 열린 탭 안에만 「데이터 Error」 마크(`AD-07`)가 서고
   기록 탭은 열린다. 사이드바는 `ADMIN_AREA` 선언(`ConditionTabs` — 앞 세 탭만 시나리오 줄, 기록 탭만 「기록 조건」 카드)을
@@ -5725,7 +5725,8 @@ RQ_MODULE
       (`spool.unsent_count`), 그 단추는 묶음을 앞당겨 닫고(`partial`) 한 번 더 비운 뒤 올리며 DB 올리기 뒤 그 몫까지 올린다.
       일꾼의 올리기 때 · 밀림 판정(`unshipped_count`)에는 열린 묶음을 넣지 않는다.
     - **화면은 로컬 파일만 읽는다.** Admin Area 「접속 · 작업 기록」 은 스풀 · 미러를 읽고(S3 안 부름) 읽은 줄은 세션 칸에 지문
-      키로 둔다 — 「회차마다 DB 0」 · 새 `st.cache_*` 없음을 지킨다. 알림 `AD-12` · `AD-13` 은 메모리 표지만 읽는다.
+      키로 둔다 — 「회차마다 DB 0」 · 새 `st.cache_*` 없음을 지킨다. 알림 `AD-12` · `AD-13` 은 메모리 표지만 읽는다. 탭과 두
+      알림을 보는 사람은 관리자뿐이다(`sso_identity.viewer_can_audit` — 기록만 보는 역할을 따로 두지 않는다).
 
 ## 6. 핵심 계산 규칙
 
@@ -7364,7 +7365,7 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   BigDataQuery 설정은 상태 줄 없이 상태 알림 `AD-04` 만이다(다 준비됐으면 아무것도 그리지 않는다). 접속 · 작업
   기록의 `AD-12`(버킷에 보관되지 않음 — 동기화 아님 · 올리기 30분 넘게 밀림 · 큐 넘침 · 시계 차이 60초) · `AD-13`(14일
   넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 감사가 켜진 서버의 **매 회차 갈래 없이 두 자리**를
-  쓰고 관리자 · 점검자 회차에만 세운다(「그 화면으로」 는 Admin Area 기록 탭). 꺼진 서버는 부르지 않아 요소 순번이 그대로다.
+  쓰고 관리자 회차에만 세운다(「그 화면으로」 는 Admin Area 기록 탭). 꺼진 서버는 부르지 않아 요소 순번이 그대로다.
 - **한 번 일어난 화면 사건**(세션 이동 `SB-14` · 남의 저장이 내 편집을 버림 `EQ-05` · 넘겨받은 공정 · 달을 열지 못함
   `PD-02/03` · `CS-02` · Space 「도면에서 보기」 로 온 공정이 공정 필터 밖 `EQ-24` · 필요 단축 일정 보던 기준선이 지워져 진척
   비교를 끔 `RS-06`)은 `alerts.event` 로 담고 같은 회차에 **늘 부르는** 표지 자리(`state` · `flush` · `render_flash`)가

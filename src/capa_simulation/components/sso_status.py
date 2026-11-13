@@ -518,7 +518,7 @@ def render_audit_alerts() -> None:
     감사 기록기가 켜진 서버(통합인증 켜짐 기동 — 프로세스 동안 바뀌지 않는다)에서만 부르고, 꺼진
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
     서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다. 판정 재료는 메모리 표지뿐이다(파일 IO
-    없음). 관리자 · 점검자 회차에만 세우고 다른 회차는 해소로 부른다.
+    없음). 관리자 회차에만 세우고 다른 회차는 해소로 부른다.
     """
     if not audit_recorder.enabled():
         return
@@ -646,7 +646,7 @@ def render_sso_status() -> None:
             # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이고 로그인도 없다 — 켜짐에서만 싣는다.
             st.caption(refresh_count_line(), help=REFRESH_HELP)
             st.caption(last_claims_line())
-        # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(관리자 · 점검자)이
+        # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(관리자)이
         # 보인다 — 여기에는 누계 줄만 남기고 표는 그리지 않는다(같은 정보를 두 자리에 두지
         # 않는다, UI-TXT-07). 리뷰용 「복사」 글(`status_text`)은 그대로 표까지 싣는다.
         tables = not audit_recorder.enabled()

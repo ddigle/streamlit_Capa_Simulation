@@ -2459,7 +2459,7 @@ def test_the_other_page_panels_follow_the_navigation_declarations() -> None:
     for page, _title, expected in screens.OTHER_PAGE_PANELS:
         spec = specs[page]
         # 주소 끝이 파일 이름이다(`open_page` 가 그 끝으로 찾는다). 탭으로 가르지 않는다 — Space
-        # 현황은 보기 값(색 기준)으로, Admin Area 는 통합인증 관리자 · 점검자에게만 서는 기록 탭으로
+        # 현황은 보기 값(색 기준)으로, Admin Area 는 통합인증 관리자에게만 서는 기록 탭으로
         # 가르고, 화면 확인(통합인증 꺼짐)은 기본 색 기준 · 첫 탭(첫 값)에서 돈다.
         assert spec.url_path is None
         assert spec.condition_tabs is None or page in (screens.SPACE_PAGE, "admin_area")

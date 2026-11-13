@@ -202,7 +202,7 @@ def test_an_on_server_writes_both_codes_every_call_and_raises_them_for_viewers(
     keeping = states(app, "AD-12")
     late = states(app, "AD-13")
     assert len(keeping) == len(late) == 2, "부를 때마다 두 자리 — 갈래 없이"
-    # 개발 실행은 managed 가 아니라 「동기화 아님」 이 늘 선다(관리자 · 점검자만).
+    # 개발 실행은 managed 가 아니라 「동기화 아님」 이 늘 선다(관리자만).
     assert [item["active"] for item in keeping] == [active, active]
     assert [item["active"] for item in late] == [False, False]
     if active:

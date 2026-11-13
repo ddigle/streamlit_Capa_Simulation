@@ -41,10 +41,6 @@ ENV_ACCESS_ADMINS = "CAPA_ACCESS_ADMINS"
 ENV_ACCESS_USERS = "CAPA_ACCESS_USERS"
 # 거절 화면에 보일 요청 창구 글(선택). 로그인 없이 누구나 보는 글이라 사람 loginid 를 넣지 않는다.
 ENV_ACCESS_CONTACT = "CAPA_ACCESS_CONTACT"
-# 접속 · 작업 기록 점검자(선택) — 관리자가 아니어도 Admin Area 「접속 · 작업 기록」 을 본다. 값은
-# 접속 명단과 같은 꼴의 loginid 들이고 화면 · 로그에 싣지 않는다. 점검자도 접속 명단에 있어야
-# 들어온다. 앱 화면에서 바꾸지 못한다(관리자가 점검자를 고르지 못하게 — 직무 분리).
-ENV_AUDIT_VIEWERS = "CAPA_AUDIT_VIEWERS"
 # S3 명단(`auth/access_store.py`). 키가 하나라도 있으면 켜진다 — 그때 사용자 목록은 파일에서 오고
 # `CAPA_ACCESS_USERS` 는 그 파일이 아직 없을 때의 첫 판으로만 쓴다. 주소 · 버킷 · 영역 이름은
 # `io/object_storage.py` 와 같다.
@@ -77,7 +73,6 @@ SSO_ENVIRONMENT: tuple[str, ...] = (
     ENV_ACCESS_ADMINS,
     ENV_ACCESS_USERS,
     ENV_ACCESS_CONTACT,
-    ENV_AUDIT_VIEWERS,
     ENV_S3_ACCESS_KEY,
     ENV_S3_SECRET_KEY,
     ENV_S3_ENDPOINT,
@@ -94,7 +89,6 @@ WITHHELD_ENVIRONMENT: tuple[str, ...] = (
     *SECRET_ENVIRONMENT,
     ENV_ACCESS_ADMINS,
     ENV_ACCESS_USERS,
-    ENV_AUDIT_VIEWERS,
 )
 
 # --- 경로 -----------------------------------------------------------------------------------

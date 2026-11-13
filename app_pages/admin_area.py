@@ -35,8 +35,8 @@ from capa_simulation.settings import DUCKDB_PATH
 # 닫혀 있어도 늘 그린다 — 건너뛰면 Streamlit 이 그 위젯의 값을 버린다. 계산 알림은 이 화면에 두지
 # 않는다 — 리비전마다 계산에서 빠진 행은 시나리오 관리 › 목록 관리 「점검」 칸이 센다
 # (2026-11-11 입력 점검 보드 q7). 라벨은 사이드바도 읽어 `navigation` 한 곳에 둔다. 넷째
-# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 관리자 · 점검자 회차에만 선다 — 다른 회차는
-# 탭 셋 그대로다.
+# 「접속 · 작업 기록」 은 감사 기록이 켜진 서버의 관리자 회차에만 선다 — 다른 회차는 탭 셋
+# 그대로다.
 TAB_NAMES = ADMIN_AREA_TABS
 LOG_TAB = ADMIN_AREA_LOG_TAB
 TABS_KEY = ADMIN_AREA_TAB_KEY

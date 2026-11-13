@@ -28,7 +28,7 @@ OUTCOMES: Final[Mapping[str, str]] = {
     "unknown": "결과 모름",
 }
 LEVELS: Final = ("info", "warn", "crit")
-GRADES: Final = ("admin", "auditor", "user", "system", "none")
+GRADES: Final = ("admin", "user", "system", "none")
 
 BAD_EVENT: Final = "sys_audit_bad_event"
 
@@ -89,7 +89,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("user_deleted", "admin", "명단 삭제", *_REV),
     _spec("user_bulk_dropped", "admin", "못 읽는 항목 정리", "count", *_REV),
     _spec("user_seeded", "admin", "명단 첫 판 심기", "count", *_REV),
-    _spec("authz_admin_config", "admin", "관리자 구성", "admins", "admin_fp", "auditors"),
+    _spec("authz_admin_config", "admin", "관리자 구성", "admins", "admin_fp"),
     _spec("admin_token_set", "admin", "BigDataQuery 토큰 넣기", "result", "expires"),
     _spec("admin_sync_push", "admin", "지금 올리기", "result"),
     _spec("admin_sync_rollback", "admin", "세대 되돌리기", *_SEQ, "result"),
@@ -164,7 +164,6 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "action": "동작",
     "admin_fp": "관리자 지문",
     "admins": "관리자 수",
-    "auditors": "점검자 수",
     "claim": "클레임",
     "count": "수",
     "counts": "건수",

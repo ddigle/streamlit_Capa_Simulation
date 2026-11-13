@@ -1,6 +1,6 @@
 # Purpose: Admin Area 「접속 · 작업 기록」 탭 — 사이드바 기록 조건 카드와 요약 · 기록 보기.
 
-"""접속 · 작업 기록 탭(관리자 · 점검자 회차에만 — `sso_identity.viewer_can_audit`).
+"""접속 · 작업 기록 탭(관리자 회차에만 — `sso_identity.viewer_can_audit`).
 
 - **읽기** — 로컬 스풀 · 미러 파일만 읽는다(`audit.read` — S3 를 부르지 않는다). 읽은 줄은 세션 칸에
   (파일 목록 · 크기 · 수정 시각 · 기간) 지문을 키로 두고 같으면 다시 읽지 않는다. 새 `st.cache_*`

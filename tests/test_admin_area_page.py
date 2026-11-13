@@ -1360,7 +1360,7 @@ def test_the_module_status_stands_in_the_flow_when_the_database_stops_the_page(
     assert [item["active"] for item in states(app, "MO-01")] == [False]
 
 
-# --- 접속 · 작업 기록 탭(관리자 · 점검자 · 일반 · 꺼짐 네 회차) ---------------------------
+# --- 접속 · 작업 기록 탭(관리자 · 일반 · 꺼짐 세 회차) ------------------------------------
 
 
 def _audit_round(
@@ -1368,7 +1368,6 @@ def _audit_round(
     monkeypatch: pytest.MonkeyPatch,
     loginid: str | None,
     *,
-    viewers: str = "",
     open_log: bool = False,
     database: Path | None = None,
 ) -> AppTest:
@@ -1378,13 +1377,13 @@ def _audit_round(
 
     from capa_simulation.audit import recorder, spool
     from capa_simulation.audit.boot import grader
-    from capa_simulation.auth import names, runtime
+    from capa_simulation.auth import runtime
     from capa_simulation.auth.tokens import issue_session
     from capa_simulation.components import sso_identity
 
     spool.configure(tmp_path / "audit")
     if loginid is not None:
-        cfg = use_config({names.ENV_AUDIT_VIEWERS: viewers} if viewers else None)
+        cfg = use_config()
         runtime.mark_gate_installed()
         recorder.start(env="cdep", version="test", inst="adadadadadad")
         recorder.set_grader(grader(cfg))
@@ -1413,23 +1412,17 @@ def _log_cards(app: AppTest) -> list[str]:
 
 
 @pytest.mark.parametrize(
-    ("who", "viewers", "tabs"),
-    [
-        ("dev.user", "", 4),
-        ("other.user", "other.user", 4),
-        ("other.user", "", 3),
-        (None, "", 3),
-    ],
-    ids=["admin", "auditor", "user", "off"],
+    ("who", "tabs"),
+    [("dev.user", 4), ("other.user", 3), (None, 3)],
+    ids=["admin", "user", "off"],
 )
-def test_the_log_tab_stands_only_for_admins_and_auditors(
+def test_the_log_tab_stands_only_for_admins(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     who: str | None,
-    viewers: str,
     tabs: int,
 ) -> None:
-    app = _audit_round(tmp_path, monkeypatch, who, viewers=viewers)
+    app = _audit_round(tmp_path, monkeypatch, who)
 
     assert not list(app.exception), [element.message for element in app.exception]
     labels = [tab.label for tab in app.main.tabs]
@@ -1445,18 +1438,6 @@ def test_the_log_tab_reads_no_common_condition_and_only_it_stands_a_card() -> No
     assert ADMIN_AREA.has_cards_on(ADMIN_AREA_LOG_TAB)
     assert not any(ADMIN_AREA.has_cards_on(tab) for tab in TAB_NAMES)
     assert not ADMIN_AREA.reads_period
-
-
-def test_an_auditor_reads_the_same_summary_on_the_open_log_tab(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """점검자(`CAPA_AUDIT_VIEWERS`) 회차도 탭 본문 · 카드가 관리자와 같다."""
-    app = _audit_round(tmp_path, monkeypatch, "other.user", viewers="other.user", open_log=True)
-
-    assert not list(app.exception), [element.message for element in app.exception]
-    assert _log_cards(app) == ["기록 조건"]
-    metrics = {str(metric.label): str(metric.value) for metric in app.main.metric}
-    assert (metrics["오늘 접속자"], metrics["작업"]) == ("1", "1")
 
 
 def test_an_open_log_tab_reads_the_spool_and_shows_the_summary(

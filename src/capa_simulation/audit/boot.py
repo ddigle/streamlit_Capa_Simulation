@@ -7,7 +7,7 @@
 환경변수는 두지 않는다.
 
 켜면 줄 셋을 남긴다 — `sys_startup`(환경 · 판 · 통합인증 · 동기화 모드),
-`authz_admin_config`(관리자 수 · 목록 지문 8자 · 점검자 수 — 사람 값은 싣지 않는다), 시작 받기
+`authz_admin_config`(관리자 수 · 목록 지문 8자 — 사람 값은 싣지 않는다), 시작 받기
 기록이 있으면 `sys_boot_pull`.
 """
 
@@ -38,14 +38,10 @@ def deploy_version() -> str:
 
 
 def grader(cfg: SsoConfig) -> recorder.Grader:
-    """loginid → `admin` · `auditor` · `user`. 관리자는 지금 명단(`access_store.is_admin`)."""
+    """loginid → `admin` · `user`. 관리자는 지금 명단(`access_store.is_admin`)."""
 
     def grade(loginid: str) -> str:
-        if access_store.is_admin(cfg, loginid):
-            return "admin"
-        if loginid.strip().lower() in cfg.audit_viewers:
-            return "auditor"
-        return "user"
+        return "admin" if access_store.is_admin(cfg, loginid) else "user"
 
     return grade
 
@@ -79,7 +75,6 @@ def start(cfg: SsoConfig) -> bool:
             det={
                 "admins": cfg.access.admin_count,
                 "admin_fp": admin_fingerprint(cfg),
-                "auditors": len(cfg.audit_viewers),
             },
         )
         boot = sync_boot.read_boot_record() if managed else None

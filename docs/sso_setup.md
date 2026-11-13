@@ -83,7 +83,6 @@ C-DEP 배포 설정의 환경변수 표(key · value, 값은 한 줄)에 넣는�
 | `CAPA_ACCESS_ADMINS` | **운영 · 잠금 · 루프백이 아닌 주소에서 필수** — 없거나 읽은 것이 없으면 막힘 | 관리자 loginid 목록(잠김 방지 — 들어올 수 있는 사람이고 다음 단계의 관리자) | `demo.admin` |
 | `CAPA_ACCESS_USERS` | 선택 — **S3 명단이 켜지면 파일이 없을 때의 첫 버전으로만 쓴다**(파일이 있으면 쓰지 않고 점검 표에 알림) | 사용자 loginid 목록. 두 목록에 다 있으면 관리자 | `demo.user,demo.user2` |
 | `CAPA_ACCESS_CONTACT` | 선택 | 거절 화면의 「요청: …」 에 보일 창구 글(500자까지, 값은 이스케이프해 싣는다). **로그인 없이 누구나 보는 글이다** — 사람 loginid 를 쓰지 말고 창구 이름을 쓴다 | `CAPA 담당 창구` |
-| `CAPA_AUDIT_VIEWERS` | 선택 | 접속 · 작업 기록 **점검자** loginid 목록(목록 꼴은 아래). 관리자가 아니어도 Admin Area 「접속 · 작업 기록」 탭을 본다(앱 설정 · 명단은 못 바꾼다). 점검자도 접속 명단에 있어야 들어온다. 앱이 기동 때 읽고 `os.environ` 에서 뺀다(사람을 가리킨다). 화면에서는 바꿀 수 없다 — 관리자가 점검자를 고르지 못하게 | `demo.auditor` |
 | `CAPA_S3_ACCESS_KEY` · `CAPA_S3_SECRET_KEY` | S3 명단을 쓸 때 — 둘 다 비면 꺼짐 · **비밀** | S3 명단용 앱 키 한 쌍. 하나라도 있으면 S3 명단이 켜진다. 앱이 기동 때 읽고 `os.environ` 에서 뺀다. 키를 넣으면 C-DEP 시작 스크립트의 동기화 점검도 돌므로 `CAPA_S3_PROFILE`(aws 프로필 이름 — 기본값 없음)도 넣는다 — 없으면 「서버 시작 점검」 프로필 · 버킷 목록 줄이 실패이고 Alarm `SY-06` 이 이름을 댄다([`objectstore_setup.md`](objectstore_setup.md) 2장) | (받은 값) |
 | `CAPA_S3_ENDPOINT_URL` | S3 명단을 켜면 필수 | S3 주소(`http` · `https`, 경로 없음). `io/object_storage.py` 와 같은 이름이고 어느 쪽에도 기본값이 없다(사내 값 — 저장소에 적지 않는다) — 표에 적는다 | `https://store.example.invalid:9021` |
 | `CAPA_S3_BUCKET` | S3 명단을 켜면 필수 | 버킷 이름(경로 스타일이라 대문자 · 밑줄 가능) | `Demo_bucket` |
@@ -236,7 +235,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 통합인증이 켜진 기동(`capa_server.py` — 모드 켜짐)에서만 감사 기록기가 켜진다(`audit/boot.py`). 꺼짐 · 막힘 · `app.py` 개발
 실행 · 사내 PC · WebIDE 는 기록도 탭도 없다. 끄는 환경변수는 없다. 위 사건 고리 · 서버 로그는 그대로이고, 같은 사건이 아래
 대응표로 감사 줄이 되어 메모리 큐 → 스풀 → 버킷 `audit/` 에 남는다(`docs/objectstore_setup.md` 「감사 기록 접두사」, 운영은
-`docs/audit_log_operations.md`). 화면은 Admin Area 넷째 탭 「접속 · 작업 기록」(관리자 · `CAPA_AUDIT_VIEWERS` 만)이고, 그 탭이
+`docs/audit_log_operations.md`). 화면은 Admin Area 넷째 탭 「접속 · 작업 기록」(관리자만)이고, 그 탭이
 서는 서버의 「통합인증 점검」 은 최근 사건 · 명단 밖 표를 그리지 않고 누계 줄과 리뷰용 「복사」 만 남긴다.
 
 | 통합인증 사건(`sso event=`) | 감사 줄 | 남기는 것 |
@@ -253,12 +252,12 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 | (Streamlit 세션 첫 회차) | `session_created` | 계정 · sid 앞 8자 · 탭 꼬리표(Streamlit 세션 id 의 SHA-256 앞 8자) |
 | (명단 저장 `save_changes`) | `user_created` · `user_deleted` | 관리자 · **대상 loginid** · 명단 판 전 → 후, 답을 못 받으면 결과 `unknown` |
 
-- 기동 때 `sys_startup`(환경 · 통합인증 · 동기화 모드)과 `authz_admin_config`(관리자 수 · 목록 지문 8자 · 점검자 수 — 사람
-  값은 없다)를 남긴다.
+- 기동 때 `sys_startup`(환경 · 통합인증 · 동기화 모드)과 `authz_admin_config`(관리자 수 · 목록 지문 8자 — 사람 값은
+  없다)를 남긴다.
 - **남기지 않는 것** — 토큰 · 쿠키 · state · nonce · `jti` 전체 · 서명 키 · S3 키 · 비밀값 · 부서. 이름은 로그인 성공 줄에만.
   모든 글은 줄바꿈 · 제어 문자를 지우고 토큰 꼴(JWT 세 토막 · 긴 키 덩이)은 가린다.
 - 접속지(IP) 칸은 비워 둔다 — 사내에서 실제 사용자 IP 가 실리는 머리를 확인한 뒤 로그인 · 세션 시작 줄에만 켠다.
-- 감사 화면(관리자 · 점검자)에는 loginid 가 그대로 보인다. **리뷰 압축본 · 전문에는 옮기지 않는다**(수와 날짜만).
+- 감사 화면(관리자)에는 loginid 가 그대로 보인다. **리뷰 압축본 · 전문에는 옮기지 않는다**(수와 날짜만).
 
 ## 8. 개발 — 가짜 IdP 로 끝까지 돌리기
 

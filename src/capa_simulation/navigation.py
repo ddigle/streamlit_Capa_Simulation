@@ -505,7 +505,7 @@ INTERNAL_MODULES = PageSpec(
 MODULE_GROUP_SLUG: Final = "internal_modules"
 
 # Admin Area 탭. 앞 셋은 누구에게나 서고 공정 목록 · 원천 품질이 활성 시나리오를 읽는다.
-# 넷째 「접속 · 작업 기록」 은 통합인증이 켜진 서버의 관리자 · 점검자 회차에만 서고
+# 넷째 「접속 · 작업 기록」 은 통합인증이 켜진 서버의 관리자 회차에만 서고
 # (`sso_identity.viewer_can_audit`) 시나리오를 읽지 않으며 사이드바 「기록 조건」 카드를 세운다.
 # 사이드바(`app.py`)가 열린 탭을 봐야 해서 라벨을 여기 한 곳에 두고 페이지가 읽는다.
 ADMIN_AREA_TAB_KEY = "admin_area_active_tab"
