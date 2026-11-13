@@ -156,12 +156,12 @@ def blocked_reason(environ: Mapping[str, str] | None = None) -> str | None:
     env = os.environ if environ is None else environ
     if environment_token_set(env):
         return (
-            f"환경변수 {LOGIN_TOKEN_ENV} 가 있어 패키지가 토큰 파일보다 그 값을 먼저 읽습니다 — "
+            f"환경변수 {LOGIN_TOKEN_ENV} 이 있어 패키지가 토큰 파일보다 그 값을 먼저 읽습니다 — "
             "CD 환경변수 표에서 그 key 를 빼야 넣은 토큰이 쓰입니다"
         )
     account = env.get(BDQ_USER_NAME_ENV, "").strip()
     if not account:
-        return f"{BDQ_USER_NAME_ENV} 가 없어 토큰 파일 이름을 정할 수 없습니다"
+        return f"{BDQ_USER_NAME_ENV} 이 없어 토큰 파일 이름을 정할 수 없습니다"
     if token_file_path(credential_dir(), account) is None:
         return f"{BDQ_USER_NAME_ENV} 에 파일 이름으로 못 쓰는 글자가 있습니다"
     return None
@@ -192,7 +192,7 @@ def install_token(raw: str, environ: Mapping[str, str] | None = None) -> Install
     env = os.environ if environ is None else environ
     target = token_file_path(credential_dir(), env.get(BDQ_USER_NAME_ENV, "").strip())
     if target is None:  # blocked_reason 이 먼저 거른다 — 타입을 좁힌다
-        return InstallOutcome("refused", f"{BDQ_USER_NAME_ENV} 를 읽지 못했습니다")
+        return InstallOutcome("refused", f"{BDQ_USER_NAME_ENV} 을 읽지 못했습니다")
     with _WRITE_LOCK:
         if holds_same(target, content):
             return InstallOutcome("same")

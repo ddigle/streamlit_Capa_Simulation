@@ -115,6 +115,7 @@ _JOSA_BLOCK = re.compile(r"// <josa>\n(?P<body>.*?)\n\s*// </josa>", re.S)
 _READINGS = {
     ".deploy/applied.json": "제이슨",
     "Area Code": "코드",
+    "BIGDATAQUERY_LOGIN_TOKEN": "토큰",
     "CAPA_ARTIFACTORY_USER": "유저",
     "CAPA_BDQ_TOKEN": "토큰",
     "CAPA_BDQ_USER_NAME": "네임",
