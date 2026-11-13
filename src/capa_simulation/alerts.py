@@ -480,9 +480,7 @@ class AlertNote(TypedDict, total=False):
     - 둘 다: `page`·`href`(그 화면 이름 · 주소 — 「그 화면으로」) · `tab`(그 화면 안 탭 이름 —
       「그 화면으로」 가 그 탭을 연다) · `target`(그 화면 · 탭에 닿았을 때 서버에 보낼 대상 —
       `GotoTarget`, 사건 알림 `flash.queue_flash(target=)` 와 상태 알림 `state(target=)` 가 싣는다)
-      ·
-      `scope_label`(로그의
-      범위 줄) · `cause`(계기) ·
+      · `scope_label`(로그의 범위 줄) · `cause`(계기) ·
       `detail`(원본 오류) · `tables`(딸린 표들 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
       `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
       읽는다) · `again`(다시 보냄) · `keep`(자리에 마크만 남은 오류 — Alarm 줄이 전문의 유일한

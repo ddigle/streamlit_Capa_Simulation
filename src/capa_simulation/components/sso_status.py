@@ -29,10 +29,10 @@ S3 명단 줄(`access_s3_line`)은 「C-DEP 에서 S3 로 닿는가」 의 답�
 주소를 싣지 않아 리뷰 압축본에 그대로 옮길 수 있다. 쓰기 권한은 저장해 보기 전에는 모른다(GET ·
 HEAD 가 되어도).
 
-접속 명단 상태 알림 둘(`AD-08` 못 읽음 · `AD-09` 환경변수 첫 버전 — `render_access_alerts`)은 이
-펼침이 아니라 앱 정보 카드(`app_credits.render_app_credits` — 모든 화면 모든 회차)가 부른다. 못 읽은
-동안은 관리자만 들어오므로 관리자가 Admin 을 열기 전 어느 화면에서나 알아야 한다(2026-11-08 사용자
-답 U4).
+접속 명단 상태 알림 셋(`AD-08` 못 읽음 · `AD-09` 환경변수 첫 버전 · `AD-19` 새 스스로 등록 —
+`render_access_alerts`)은 이 펼침이 아니라 앱 정보 카드(`app_credits.render_app_credits` — 모든 화면
+모든 회차)가 부른다. 못 읽은 동안은 관리자만 들어오므로 관리자가 Admin 을 열기 전 어느 화면에서나
+알아야 한다(2026-11-08 사용자 답 U4).
 """
 
 from __future__ import annotations
@@ -674,10 +674,10 @@ def render_sso_status() -> None:
 
     서명 인증서 만료 임박(`AD-03`)은 상태 알림이다(알림창 · Alarm — 그리지 않는 회차에도 부른다,
     해소). 운영인데 꺼짐(`AD-02`)은 Admin Area 가 잠금 앞에서 부른다
-    (`render_off_in_production_alert`). 접속 명단 알림(`AD-08` · `AD-09`)은 여기서 부르지 않는다
-    — 앱 정보 카드가 모든 화면에서 부른다(`render_access_alerts`). 펼침 안의 결론은 값 한 줄이고
-    하는 법 · 보관 범위는 풍선 · Guide 가 말한다 — 인증서 만료 임박은 `AD-03` 과 표 까닭 칸이
-    말하므로 줄을 따로 세우지 않는다(설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
+    (`render_off_in_production_alert`). 접속 명단 알림(`AD-08` · `AD-09` · `AD-19`)은 여기서
+    부르지 않는다 — 앱 정보 카드가 모든 화면에서 부른다(`render_access_alerts`). 펼침 안의 결론은
+    값 한 줄이고 하는 법 · 보관 범위는 풍선 · Guide 가 말한다 — 인증서 만료 임박은 `AD-03` 과 표
+    까닭 칸이 말하므로 줄을 따로 세우지 않는다(설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
     cfg = runtime.config()
     now = datetime.now(timezone.utc)
     expiring = _expiring_certs(cfg, now)

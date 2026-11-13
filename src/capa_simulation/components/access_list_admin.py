@@ -432,7 +432,8 @@ def render_access_list_admin() -> None:
     document = None if source is None else source.document
     env_admins = access_store.env_admins(cfg)
     with remembered_expander(EXPANDER_LABEL, icon=":material/group:", key=EXPANDER_KEY):
-        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 버전 · 사용자 값).
+        # 표 위 작업 줄은 한 줄이다(추가 · 다시 읽기 · 고르기 칸 · 지우기, 끝에 버전 · 명단 ·
+        # 관리자 수).
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.button(
                 "추가",
