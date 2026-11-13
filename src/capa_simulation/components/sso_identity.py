@@ -275,6 +275,22 @@ def viewer_is_admin() -> bool:
     return identity is not None and access_store.is_admin(runtime.config(), identity.loginid)
 
 
+ADMIN_ONLY_NOTICE = "관리자만 여는 화면입니다"
+HOME_LINK_LABEL = "HOME 으로"
+
+
+def admin_area_locked() -> bool:
+    """Admin Area 를 이 회차에 닫는가 — 운영 서버(`SsoConfig.operational`)이고 관리자가 아니다.
+
+    판정은 이것 하나다 — 사이드바 링크를 빼는 `app.py` 와 주소로 연 회차를 멈추는 Admin Area 가 같이
+    부른다(2026-11-13 보드 D11 「Admin Area 전체를 관리자 전용으로」). 개발 `app.py` · 사내 WebIDE ·
+    사내 PC(운영 아님)는 지금처럼 연다. 통합인증이 꺼진 운영 서버 · 문지기 없이 뜬 운영 서버는
+    관리자
+    신원이 없어 잠긴 채다(`viewer_is_admin` 은 켜짐이 아니면 거짓).
+    """
+    return runtime.config().operational and not viewer_is_admin()
+
+
 def viewer_can_audit() -> bool:
     """접속 · 작업 기록을 볼 수 있는가 — 감사 기록을 남기는 서버(`audit.recorder.enabled()` —
     통합인증 켜짐 기동)이고 보는 사람이 관리자(`viewer_is_admin`)다. 아니면 늘 거짓."""

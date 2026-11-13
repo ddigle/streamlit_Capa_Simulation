@@ -105,7 +105,7 @@ async def _echo(websocket: WebSocket) -> None:
 
 
 def gated_app() -> App:
-    """문지기 + 우리 경로 다섯 + 앱 자리(모든 http 경로 · 메아리 websocket)."""
+    """문지기 + 우리 경로 여섯 + 앱 자리(모든 http 경로 · 메아리 websocket)."""
     inner = Starlette(
         routes=[
             *sso_routes(),
@@ -583,7 +583,7 @@ def test_pressing_check_again_many_times_never_shows_the_loop_page() -> None:
         apply_cookies(jar, response)
         assert cfg.attempt_cookie not in jar
 
-    assert not jar, "거절 뒤 브라우저에 남는 쿠키가 없다"
+    assert set(jar) == {cfg.denied_cookie}, "거절 뒤 남는 쿠키는 15분짜리 거절 표 하나다"
 
 
 def test_once_listed_the_same_link_lets_the_person_in() -> None:
@@ -872,12 +872,19 @@ def test_a_dropped_tab_goes_from_the_probe_through_the_banner_to_the_denied_page
     callback = post_form(app, jar, token, state)
     assert callback.header("location") == DENIED_LOCATION
     apply_cookies(jar, callback)
-    assert not jar
+    assert set(jar) == {cfg.denied_cookie}, "세션 · 상태 · 시도 쿠키는 지우고 거절 표만 남는다"
 
     location = urlsplit(callback.header("location") or "")
-    page = http(app, "GET", f"{location.path}?{location.query}", headers=NAVIGATE)
+    page = http(
+        app,
+        "GET",
+        f"{location.path}?{location.query}",
+        headers={**NAVIGATE, "cookie": cookie_header(jar)},
+    )
     assert page.status == 403
     assert web.NOT_ON_LIST_TITLE in page.text
+    assert GONE in page.text, "거절 표가 있는 그 브라우저에는 본인 계정이 보인다"
+    assert "%2Fspace%3Ftheme%3Ddark" in page.text, "「다시 확인」 은 처음 가려던 화면으로"
     assert runtime.denied_total() == 1
 
 
@@ -938,6 +945,7 @@ def _denied_page(target: str = f"{names.ERROR_PATH}?code=not_on_list") -> AsgiRe
 
 
 def test_the_denied_page_opens_directly_and_says_only_the_fixed_text() -> None:
+    """주소만 연 사람(거절 표 없음)은 값 없이 「로그인하고 신청」 이다."""
     listed_config()
 
     page = _denied_page()
@@ -946,10 +954,12 @@ def test_the_denied_page_opens_directly_and_says_only_the_fixed_text() -> None:
     assert not page.set_cookies
     assert page.header("cache-control") == "no-store"
     assert web.NOT_ON_LIST_TITLE in page.text and web.NOT_ON_LIST_TEXT in page.text
-    assert "요청:" not in page.text, "창구 글이 없으면 그 줄이 없다"
+    assert web.DENIED_NO_TICKET_TEXT in page.text
+    assert web.SIGN_IN_TO_APPLY_LABEL in page.text
     assert f"{PUBLIC_URL}{names.LOGIN_PATH}?next=%2F" in page.text
-    assert "다시 확인" in page.text
-    assert "통합인증에서도 로그아웃" not in page.text
+    assert "문의 ·" not in page.text, "문의 메일 · 창구 글이 없으면 그 줄이 없다"
+    assert web.REGISTER_LABEL not in page.text, "표가 없으면 신청 단추가 없다"
+    assert web.OTHER_ACCOUNT_LABEL not in page.text
 
 
 def test_the_denied_page_after_a_real_denial_carries_no_claim_value() -> None:
@@ -972,7 +982,7 @@ def test_the_contact_is_escaped() -> None:
     page = _denied_page()
 
     assert "<script>" not in page.text
-    assert "요청: &lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;담당&quot;" in page.text
+    assert "문의 · &lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;담당&quot;" in page.text
 
 
 def test_the_logout_link_appears_when_set() -> None:
@@ -981,23 +991,21 @@ def test_the_logout_link_appears_when_set() -> None:
 
     page = _denied_page()
 
-    assert f'href="{logout}"' in page.text and "통합인증에서도 로그아웃" in page.text
+    assert f'href="{logout}"' in page.text and web.OTHER_ACCOUNT_LABEL in page.text
 
 
-def test_the_unread_page_says_it_could_not_check_not_that_the_person_is_missing() -> None:
-    """S3 명단을 아직 못 읽어 관리자만 들어오는 동안의 거절은 「확인하지 못했습니다」 다 — 명단에
-    든 사람에게 「명단에 없습니다」 를 보이지 않는다(2026-11-08 사용자 답 U4). 꼴은 거절 화면
-    그대로다."""
+def test_the_unread_code_on_a_server_that_read_its_list_shows_the_live_state() -> None:
+    """코드는 갈래만 고른다 — 명단을 읽은 서버에서 `list_unread` 주소를 열면 명단 밖 꼴이다
+    (못 읽은 서버의 「확인하지 못했습니다」 는 `tests/test_sso_self_register_web.py`)."""
     listed_config({names.ENV_ACCESS_CONTACT: "CAPA 담당 창구"})
 
     page = _denied_page(f"{names.ERROR_PATH}?code={web.LIST_UNREAD}")
 
     assert page.status == 403
     assert not page.set_cookies
-    assert web.LIST_UNREAD_TITLE in page.text and web.LIST_UNREAD_TEXT in page.text
-    assert web.NOT_ON_LIST_TITLE not in page.text and web.NOT_ON_LIST_TEXT not in page.text
-    assert "요청: CAPA 담당 창구" in page.text
-    assert f"{PUBLIC_URL}{names.LOGIN_PATH}?next=%2F" in page.text and "다시 확인" in page.text
+    assert web.LIST_UNREAD_TITLE not in page.text
+    assert web.NOT_ON_LIST_TITLE in page.text
+    assert "문의 · CAPA 담당 창구" in page.text
 
 
 def test_the_reason_codes_stay_apart() -> None:
@@ -1007,7 +1015,8 @@ def test_the_reason_codes_stay_apart() -> None:
     assert "not_on_list" in web.allowed_reason_codes(cfg)
     assert web.LIST_UNREAD in web.allowed_reason_codes(cfg)
     portal = _denied_page(f"{names.ERROR_PATH}?code=idp_error:access_denied")
-    assert portal.status == 400 and web.NOT_ON_LIST_TITLE not in portal.text
+    assert portal.status == 403 and web.NOT_ON_LIST_TITLE not in portal.text
+    assert web.PORTAL_TITLE in portal.text and web.REGISTER_LABEL not in portal.text
     made_up = _denied_page(f"{names.ERROR_PATH}?code=not_on_list2")
     assert made_up.status == 400 and "<code>unknown</code>" in made_up.text
 
@@ -1117,7 +1126,7 @@ def test_the_status_shows_counts_only() -> None:
     assert not list(app.exception)
     text = _status_text(app)
     assert_absent(text, ADMIN, "demo.boss", USER, "demo.x", GONE, CONTACT, "DOMAIN")
-    assert "**접속 명단** · 켜짐 · 관리자 2 · 사용자 1 · 읽지 못함 1" in text
+    assert "**접속 명단** · 켜짐 · 관리자 2 · 일반 1 · 읽지 못함 1" in text
     environment = app.dataframe[0].value.set_index("환경변수")
     for name in (names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS, names.ENV_ACCESS_CONTACT):
         assert environment.loc[name, "상태"] == "있음"
@@ -1165,7 +1174,7 @@ def test_the_status_says_how_the_list_stands_in_each_mode() -> None:
     off_in_production = load_config(sso_environ(drop=[names.ENV_CLIENT_ID]))
     assert off_in_production.mode is SsoMode.OFF
     assert sso_status.access_line(off_in_production).startswith(
-        "**접속 명단** · 통합인증이 켜지면 적용 · 관리자 1 · 사용자 1 · 읽지 못함 0"
+        "**접속 명단** · 통합인증이 켜지면 적용 · 관리자 1 · 일반 1 · 읽지 못함 0"
     )
     blocked = load_config(sso_environ(drop=[names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS]))
     assert sso_status.access_line(blocked).startswith(

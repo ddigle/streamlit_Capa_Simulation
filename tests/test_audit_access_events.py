@@ -153,6 +153,23 @@ def test_boot_turns_the_recorder_on_only_for_an_enabled_sso(tmp_path: Path) -> N
     assert all(line["actor"] == "system:app" and line["grade"] == "system" for line in lines)
 
 
+def test_the_deploy_version_falls_back_to_the_app_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """기동 줄의 판 글은 적용 기록의 stamp(`deploy_stamp`)이고, 기록이 없거나 읽기가 터져도 앱 판
+    글로 선다 — 판 글 하나로 감사 기동이 멈추지 않는다."""
+    import capa_simulation.deploy_stamp as deploy_stamp
+    import capa_simulation.settings as settings
+
+    def broken() -> str | None:
+        raise OSError("stamp")
+
+    monkeypatch.setattr(deploy_stamp, "deployed_stamp", lambda: None)
+    assert boot.deploy_version() == settings.APP_VERSION
+    monkeypatch.setattr(deploy_stamp, "deployed_stamp", lambda: "202611140000")
+    assert boot.deploy_version() == "202611140000"
+    monkeypatch.setattr(deploy_stamp, "deployed_stamp", broken)
+    assert boot.deploy_version() == settings.APP_VERSION
+
+
 def test_the_grader_knows_only_admins_and_users() -> None:
     """기록을 보는 사람은 관리자뿐이다 — 판정기의 등급은 관리자 · 사용자 둘이다."""
     cfg = use_config()

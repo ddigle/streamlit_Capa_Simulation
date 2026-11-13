@@ -115,6 +115,10 @@ import streamlit as st
 
 from capa_simulation import alerts, shared_process, sync_boot
 from capa_simulation.components import process_field
+from capa_simulation.components.access_list_admin import (
+    ACCESS_LIST_TARGET_KIND,
+    open_access_list,
+)
 from capa_simulation.components.change_summary import GROUPS, ChangeItem
 from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_list_state import (
@@ -184,7 +188,9 @@ SESSION_MARK_KEY: Final = "alert_center_session_mark_v1"
 # 받고, JS 도 data `goto_kinds` 로 이 종류만 대상으로 들고 간다 — 모르는 종류는 대상 없는 줄처럼
 # 탭 길 마지막 칸을 누른다.
 GOTO_RECEIVERS: Final[Mapping[str, Callable[[str, str], None]]] = {
-    CHECK_TARGET_KIND: queue_check_target
+    CHECK_TARGET_KIND: queue_check_target,
+    # Admin 「접속 명단」 펼침 — 스스로 등록 알림 `AD-19` 가 들고 간다.
+    ACCESS_LIST_TARGET_KIND: open_access_list,
 }
 
 # 알림 칸이 쓰는 글. `{…}` 는 JS 가 채운다. 「사내」 를 쓰지 않는다.
@@ -395,7 +401,8 @@ def _on_goto() -> None:
     """대상을 실은 줄의 「그 화면으로」 트리거(`goto`)의 콜백 — 그 줄의 탭 길을 마지막 칸 앞까지 연
     뒤에만 온다(마지막 칸은 받는 쪽이 연다).
     값은 이 브라우저 탭 저장소에 있던 줄에서 오므로 꼴을 보고(`alerts.goto_target`) 아는 종류
-    (`GOTO_RECEIVERS`)만 받는다 — 지금은 「점검」 칸이 고를 리비전 하나(`CHECK_TARGET_KIND`)."""
+    (`GOTO_RECEIVERS`)만 받는다 — 「점검」 칸이 고를 리비전(`CHECK_TARGET_KIND`)과 Admin 「접속
+    명단」 펼침(`ACCESS_LIST_TARGET_KIND`)."""
     state = st.session_state.get(ALERT_CENTER_KEY)
     raw = state.get("goto") if isinstance(state, Mapping) else getattr(state, "goto", None)
     target = alerts.goto_target(raw)

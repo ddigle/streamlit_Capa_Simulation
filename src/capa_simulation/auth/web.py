@@ -1,4 +1,4 @@
-# Purpose: 통합인증 경로 다섯(로그인 갱신 포함)·로그인 시작·쿠키·돌아갈 자리 정화·작은 HTML 화면.
+# Purpose: 통합인증 경로 여섯(갱신 · 스스로 등록 포함)·로그인 시작·쿠키·돌아갈 자리 정화·HTML 화면.
 
 """통합인증 웹 쪽.
 
@@ -12,17 +12,29 @@
 - `GET /auth/sso/logout` — 쿠키를 지우고 세션 묶음(sid)을 폐기 목록에 넣은 뒤 안내 화면. IdP 로
   자동으로 보내지 않는다.
 - `GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. 진단이 없거나 지났으면 질의 `code` 를
-  싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다. `code=not_on_list` 는 거절 화면
-  (403)이고, S3 명단을 아직 읽지 못해 확인하지 못한 거절은 `code=list_unread` 의 같은 꼴 화면이다
-  (명단에 든 사람에게 「명단에 없습니다」 를 보이지 않는다).
+  싣되 이 서버가 내는 사유 코드(`allowed_reason_codes`)일 때만이다. 거절 갈래(`DENIED_CODES` —
+  `not_on_list` · `list_unread` · `registered` · `register_failed`)는 코드가 갈래만 고르고 **어느
+  꼴인지는 지금 상태**(명단을 읽었나 · 그 브라우저의 거절 표 · 그 계정이 지금 명단에 드나)가 정한다
+  —
+  로그인 없이 열리는 주소라 코드만 넣어 연 사람에게 「등록했습니다」 를 보이지 않는다. 포털 거절
+  (`idp_error:access_denied`)은 오류 화면이 아니라 같은 틀의 거절 꼴이다(403).
 - `POST /auth/sso/refresh` — 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다(204). 같은
   출처 · 갱신 머리 · 본문 없음 · 접속 명단 안의 유효한 세션 쿠키가 있어야 하고, 사건 고리에 적지
   않고 누계만 센다.
+- `POST /auth/sso/register` — 거절 화면의 「접속 권한 신청」. 같은 출처 · 작은 폼 · 거절 표 · 표에
+묶인
+  숨은 표지가 있어야 하고, 신원은 거절 표에서만 꺼낸다(폼 칸의 계정 · 등급은 보지 않는다). 스레드
+  풀에서 S3 명단에 넣은 뒤 303(PRG — 새로고침해도 다시 가지 않는다). GET 은 거절 화면으로 303.
+
+**거절 표**(`tokens.issue_denied` — 15분 · HttpOnly · SameSite=Lax)는 콜백이 명단 밖일 때만 심는다.
+거절 화면은 그 표가 있는 브라우저에만 본인 계정을 보인다(2026-11-13 보드 D2 답) — 주소만 연 사람 ·
+15분 지난 사람은 값 없이 「로그인하고 신청」 이다. 로그인 성공 · 로그아웃이 표를 지운다.
 
 모든 주소(Location · 링크)의 바탕은 `CAPA_PUBLIC_URL` 이다 — 요청의 Host · `X-Forwarded-*` 는 보지
 않는다(앞단을 거치며 포트가 사라지는 일을 막는다). 화면에 싣는 값은 모두 `html.escape` 하고, 토큰 ·
 state · nonce · 쿠키 값 · 비밀값 · 클레임 값(이름 · 부서 포함) · IdP 의 `error_description` 원문은
-싣지 않는다.
+싣지 않는다 — 예외는 거절 표가 있는 그 브라우저의 거절 갈래 화면에 보이는 본인 계정 · 이름 하나다.
+거절 갈래 · 포털 거절 화면은 공통 틀(`auth/page_frame.py`)로 그린다.
 """
 
 from __future__ import annotations
@@ -44,22 +56,31 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
-from capa_simulation.auth import access_store, names, runtime
+from capa_simulation import settings
+from capa_simulation.auth import access_store, names, page_frame, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem, url_origin
 from capa_simulation.auth.identity import Identity, identity_from_cookies
+from capa_simulation.auth.page_frame import Form, Frame, Link
 from capa_simulation.auth.tokens import (
+    DENIED_TTL,
     SESSION_LEEWAY,
     STATE_TTL,
+    DeniedClaims,
     SsoReject,
+    VerifiedLogin,
     clean_text,
     decode_session,
+    denied_form_mark,
+    issue_denied,
     issue_session,
     issue_state,
     renew_session,
+    verify_denied,
     verify_id_token,
     verify_session,
     verify_state,
 )
+from capa_simulation.io.s3_small import S3Failure
 
 MAX_BODY_BYTES = 64 * 1024
 MAX_FORM_FIELDS = 20
@@ -68,12 +89,16 @@ MAX_LOGIN_ATTEMPTS = 3
 ATTEMPT_TTL = 120
 MAX_STATE_COOKIES = 5
 MAX_SESSION_COOKIE_BYTES = 3584
+# 「접속 권한 신청」 폼 본문의 끝 — 숨은 표지 하나뿐이다.
+MAX_REGISTER_BODY_BYTES = 4096
 FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
 
 NO_STORE = {"Cache-Control": "no-store"}
 # 갱신 경로의 거절 글(짧은 text — 브라우저 스크립트는 상태만 본다).
 REFRESH_HEADER_REFUSAL = "refresh header required"
 REFRESH_ORIGIN_REFUSAL = "cross-origin refresh refused"
+REGISTER_ORIGIN_REFUSAL = "cross-origin request refused"
+REGISTER_FORM_REFUSAL = "form refused"
 REFRESH_BODY_REFUSAL = "no body expected"
 LOGIN_REQUIRED = "login required"
 # 접속 명단 밖 — IdP 의 `access_denied`(포털이 거절)와 섞이지 않게 따로 둔 사유 코드와 화면 글.
@@ -85,14 +110,78 @@ NOT_ON_LIST_TEXT = "이 앱을 쓸 수 있는 명단에 없습니다."
 LIST_UNREAD = "list_unread"
 LIST_UNREAD_TITLE = "접속 권한을 확인하지 못했습니다"
 LIST_UNREAD_TEXT = "접속 명단을 읽지 못했습니다 — 잠시 뒤 다시 확인하세요."
+# 「접속 권한 신청」 의 결과 — 등록함(이미 있음 포함) · 저장 실패. 거절 갈래의 넷이다.
+REGISTERED = "registered"
+REGISTER_FAILED = "register_failed"
+DENIED_CODES = (NOT_ON_LIST, LIST_UNREAD, REGISTERED, REGISTER_FAILED)
+# 포털(통합인증)이 앱 사용을 막은 IdP 오류 — 오류 화면이 아니라 거절 꼴 화면이다.
+PORTAL_REFUSED = "idp_error:access_denied"
+
+# 거절 갈래 · 포털 거절 화면의 글(공통 틀 — 「다음에 할 일」 문장은 앱 밖 화면 예외, 6-11 b1 ·
+# 2026-11-13 보드 D8 「넷까지」). `{account}` 는 거절 표가 있는 브라우저에만 서는 본인 계정이다.
+REGISTER_LABEL = "접속 권한 신청"
+CHECK_AGAIN_LABEL = "다시 확인"
+SIGN_IN_TO_APPLY_LABEL = "로그인하고 신청"
+OTHER_ACCOUNT_LABEL = "다른 계정으로 로그인"
+RECONNECT_LABEL = "다시 접속"
+RETRY_LABEL = "다시 시도"
+# 계정 뒤에는 조사를 못박지 않는다(받침을 모른다 — `tests/test_particle_sites.py`).
+DENIED_ACCOUNT_TEXT = "계정 {account} — 이 앱의 접속 명단에 없습니다."
+DENIED_REGISTER_STEP = "「접속 권한 신청」 을 누르면 바로 명단에 등록됩니다."
+DENIED_OTHER_STEP = "다른 계정으로 들어가려면 「다른 계정으로 로그인」 을 누르세요."
+DENIED_NO_TICKET_TEXT = "신청하려면 먼저 로그인해 계정을 확인합니다."
+SEND_NOTE_STEP = "아래 글을 문의처로 보내 주세요."
+NOTE_LABEL = "문의처로 보낼 글 — 한 번 누르면 통째로 골라집니다"
+ADMIN_TYPO_DIAGNOSTIC = (
+    "모두가 이 화면을 본다면 관리자 목록 칸(CAPA_ACCESS_ADMINS)에 위 계정이 철자 그대로 들었는지 "
+    "확인합니다."
+)
+REGISTERED_TITLE = "등록했습니다"
+REGISTERED_TEXT = (
+    "계정 {account} — 접속 명단에 넣었습니다. 다시 접속하면 처음 가려던 화면으로 들어갑니다."
+)
+REGISTER_FAILED_TITLE = "접속 명단에 넣지 못했습니다"
+REGISTER_FAILED_TEXT = "계정 {account} — 명단에 넣는 중 서버가 저장하지 못했습니다."
+LIST_UNREAD_WAIT_TEXT = (
+    "서버가 접속 명단을 읽지 못해 지금은 확인할 수 없습니다. 권한 문제가 아닙니다."
+)
+LIST_UNREAD_WAIT_STEP = "1분 뒤 「다시 확인」 을 누르세요. 계속되면 문의처에 알려 주세요."
+LIST_UNREAD_ADMIN_TEXT = "관리자가 서버 설정을 고쳐야 열립니다. 권한 문제가 아닙니다."
+LIST_UNREAD_ADMIN_STEP = "문의처에 알려 주세요."
+PORTAL_TITLE = "통합인증이 이 앱 사용을 막았습니다"
+PORTAL_TEXT = (
+    "앱의 접속 명단보다 앞 단계에서 통합인증(포털)이 이 계정의 앱 사용을 허락하지 않았습니다. "
+    "앱 관리자가 아니라 포털 권한 담당에게 신청해야 합니다."
+)
+PORTAL_STEPS = (
+    "포털 권한 담당에게 이 앱의 사용 권한을 신청하세요.",
+    "모르겠으면 문의처에 아래 참고 번호를 알려 주세요.",
+)
+PORTAL_DIAGNOSTIC = "통합인증이 보낸 거절 글 원문은 Admin 「통합인증 점검」 최근 사건에 있습니다."
+# 문의 설정 두 칸(메일 · 창구 글)이 모두 비어 문의 줄이 서지 않는 서버 — 「문의처」 를 가리키는 글을
+# 앱 관리자로 바꿔 보이지 않는 곳을 가리키지 않는다.
+NO_CONTACT_TEXT: Mapping[str, str] = {
+    SEND_NOTE_STEP: "아래 글을 앱 관리자에게 보내 주세요.",
+    NOTE_LABEL: "앱 관리자에게 보낼 글 — 한 번 누르면 통째로 골라집니다",
+    LIST_UNREAD_WAIT_STEP: "1분 뒤 「다시 확인」 을 누르세요. 계속되면 앱 관리자에게 알려 주세요.",
+    LIST_UNREAD_ADMIN_STEP: "앱 관리자에게 알려 주세요.",
+    PORTAL_STEPS[1]: "모르겠으면 앱 관리자에게 아래 참고 번호를 알려 주세요.",
+}
+
 HTML_HEADERS = {
     "Cache-Control": "no-store",
+    # 폼 POST 는 같은 출처로만(`form-action` 은 `default-src` 를 물려받지 않는다).
     "Content-Security-Policy": (
-        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; "
+        "form-action 'self'; base-uri 'none'"
     ),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
 }
+# 폼이 있는 거절 화면 — `no-referrer` 면 브라우저가 폼 POST 의 Origin 을 `null` 로 보낸다(그
+# 주소에는
+# 사유 코드만 있어 새는 값이 없다).
+FORM_REFERRER_POLICY = "same-origin"
 
 _STATE_VALUE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 _DIAGNOSTIC_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -164,6 +253,8 @@ REASON_TEXT: Mapping[str, str] = {
     "config_broken": "통합인증 설정을 마치지 못했습니다.",
     NOT_ON_LIST: NOT_ON_LIST_TEXT,
     LIST_UNREAD: LIST_UNREAD_TEXT,
+    REGISTERED: REGISTERED_TITLE,
+    REGISTER_FAILED: REGISTER_FAILED_TITLE,
 }
 # 진단에서 화면에 보여도 되는 칸(비밀 아님)과 그 이름표. 이 목록 밖의 칸은 보이지 않는다.
 DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
@@ -185,15 +276,6 @@ DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
 # 화면 다섯의 색 · 서체는 design/tokens 의 두 팔레트에서 온다(손으로 적은 색을 두지 않는다).
 # 지금 실행의 테마가 아니라 밝은 · 어두운 팔레트를 둘 다 실어 `prefers-color-scheme` 로 고른다 —
 # 이 화면은 Streamlit 바깥이라 앱 테마를 모른다.
-_PALETTE_ROLES = (
-    ("fg", "TEXT"),
-    ("muted", "TEXT_MUTED"),
-    ("bg", "SURFACE_PAGE"),
-    ("card", "SURFACE"),
-    ("line", "BORDER"),
-    ("accent", "ACCENT"),
-    ("accent-text", "ACCENT_TEXT"),
-)
 _CSS_BODY = """
 body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.6;
   font-family: var(--font); }
@@ -215,24 +297,8 @@ a.button { display: inline-block; margin-top: 12px; padding: 8px 16px; border-ra
 
 @functools.cache
 def page_css() -> str:
-    """밝은 · 어두운 팔레트 변수 + 본문 규칙.
-
-    tokens 는 여기서만 불러온다 — `auth` 꾸러미가 import 때 Streamlit(테마 모듈이 딸려 온다)을
-    끌고 오지 않게. `palette_value` 는 실행 문맥을 보지 않는다.
-    """
-    from capa_simulation.design import tokens
-
-    def variables(mode: str) -> str:
-        return " ".join(
-            f"--{name}: {tokens.palette_value(mode, role)};" for name, role in _PALETTE_ROLES
-        )
-
-    font = f"--font: {tokens.FONT_FAMILY};"
-    return (
-        f":root {{ color-scheme: light dark; {variables('light')} {font} }}\n"
-        f"@media (prefers-color-scheme: dark) {{ :root {{ {variables('dark')} }} }}"
-        f"{_CSS_BODY}"
-    )
+    """밝은 · 어두운 팔레트 변수(공통 틀과 한 벌 — `page_frame.palette_css`) + 본문 규칙."""
+    return f"{page_frame.palette_css()}{_CSS_BODY}"
 
 
 def _esc(value: object) -> str:
@@ -401,6 +467,49 @@ def clear_state_cookie(response: Response, name: str) -> None:
 
 def clear_attempt_cookie(response: Response, cfg: SsoConfig) -> None:
     clear_cookie(response, cfg.attempt_cookie, secure=True, samesite="none")
+
+
+def clear_denied_cookie(response: Response, cfg: SsoConfig) -> None:
+    clear_cookie(response, cfg.denied_cookie, secure=cfg.secure_cookies, samesite="lax")
+
+
+def read_denied(cfg: SsoConfig, cookies: Mapping[str, str], now: int) -> DeniedClaims | None:
+    """그 브라우저의 거절 표 — 없거나 위조 · 만료 · 다른 쓰임 토큰이면 `None`(값 없는 화면이
+    된다)."""
+    token = cookies.get(cfg.denied_cookie)
+    if not token:
+        return None
+    try:
+        return verify_denied(token, cfg, now=now)
+    except SsoReject:
+        return None
+
+
+def set_denied_cookie(
+    response: Response, cfg: SsoConfig, login: VerifiedLogin, next_path: str, now: int
+) -> None:
+    """거절 표를 심는다(15분). 쿠키가 브라우저 한도에 걸리면 돌아갈 자리를 `/` 로, 그래도 넘치면
+    이름 · 부서를 빼고 다시 만든다 — 브라우저가 큰 쿠키를 말없이 버리면 표가 없는 꼴이 된다."""
+    attempts = (
+        (next_path, login.name, login.dept),
+        ("/", login.name, login.dept),
+        ("/", None, None),
+    )
+    token = ""
+    for path, name, dept in attempts:
+        token, _ = issue_denied(
+            cfg, loginid=login.loginid, name=name, dept=dept, next_path=path, now=now
+        )
+        if len(cfg.denied_cookie) + len(token) <= MAX_SESSION_COOKIE_BYTES:
+            break
+    set_cookie(
+        response,
+        cfg.denied_cookie,
+        token,
+        max_age=DENIED_TTL,
+        secure=cfg.secure_cookies,
+        samesite="lax",
+    )
 
 
 def _attempts(raw: str | None) -> int:
@@ -608,27 +717,202 @@ def error_page(
     return html_page(ERROR_PAGE_TITLE, "".join(body), status=status)
 
 
-def denied_page(cfg: SsoConfig, *, status: int, unread: bool = False) -> HTMLResponse:
-    """접속 명단 밖의 거절 화면. 로그인 없이 열리는 주소라 loginid · 이름 · 클레임을 싣지 않는다.
-
-    「다시 확인」 은 로그인 경로다 — 명단에 들어간 뒤 누르면 그대로 들어온다. 통합인증 로그아웃은
-    다른 계정으로 바꾸는 길이다(브라우저의 통합인증 로그인이 남아 있으면 IdP 가 묻지 않고 같은
-    계정을 준다). `unread` 면 S3 명단을 읽지 못해 확인하지 못한 거절이다 — 제목 · 글만 다르고
-    「다시 확인」 은 같다(그 길이 거절 직전에 명단을 다시 읽어 본다).
-    """
-    again = public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': '/'})}")
-    title, text = (
-        (LIST_UNREAD_TITLE, LIST_UNREAD_TEXT) if unread else (NOT_ON_LIST_TITLE, NOT_ON_LIST_TEXT)
+def frame_response(frame: Frame, *, status: int, now: int) -> HTMLResponse:
+    """공통 틀 화면 하나. 폼이 있는 화면만 Referrer-Policy 를 같은 출처로
+    둔다(`FORM_REFERRER_POLICY`)."""
+    response = HTMLResponse(
+        page_frame.render(frame, now=now), status_code=status, headers=HTML_HEADERS
     )
-    body = [f"<p>{_esc(text)}</p>"]
-    if cfg.access.contact:
-        body.append(f"<p>요청: {_esc(cfg.access.contact)}</p>")
-    body.append(f'<a class="button" href="{_esc(again)}">다시 확인</a>')
-    if cfg.logout_url:
-        body.append(
-            f'<p class="muted"><a href="{_esc(cfg.logout_url)}">통합인증에서도 로그아웃</a></p>'
+    if isinstance(frame.primary, Form):
+        response.headers["Referrer-Policy"] = FORM_REFERRER_POLICY
+    return response
+
+
+def _login_link(cfg: SsoConfig, label: str, next_path: str = "/") -> Link:
+    return Link(
+        label,
+        public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': sanitize_next(next_path)})}"),
+    )
+
+
+def _contact_email() -> str:
+    """문의 줄의 메일 — 앱 정보 카드와 같은 칸(보드 D7 「기존 두 칸」). 창구 글은
+    `cfg.access.contact`."""
+    return settings.app_contact_email()
+
+
+def _other_account(cfg: SsoConfig) -> tuple[Link, ...]:
+    return (Link(OTHER_ACCOUNT_LABEL, cfg.logout_url),) if cfg.logout_url else ()
+
+
+def _reachable(cfg: SsoConfig, text: str) -> str:
+    """「문의처」 를 가리키는 글 — 문의 줄이 서지 않는 서버(두 칸 모두 빔)면 앱 관리자로 바꾼 글."""
+    if _contact_email() or cfg.access.contact:
+        return text
+    return NO_CONTACT_TEXT.get(text, text)
+
+
+def _note(ticket: DeniedClaims, code: str, now: int) -> str:
+    return page_frame.request_note(account=ticket.loginid, name=ticket.name, code=code, now=now)
+
+
+def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> Frame:
+    """명단 밖 — 표가 있으면 본인 계정과 「접속 권한 신청」(넣지 못하는 서버면 신청 글), 없으면
+    값 없이 「로그인하고 신청」."""
+    if ticket is None:
+        return Frame(
+            title=NOT_ON_LIST_TITLE,
+            chip="denied",
+            lead=(NOT_ON_LIST_TEXT, DENIED_NO_TICKET_TEXT),
+            primary=_login_link(cfg, SIGN_IN_TO_APPLY_LABEL),
+            secondary=_other_account(cfg),
+            reference=NOT_ON_LIST,
+            contact_email=_contact_email(),
+            contact_text=cfg.access.contact,
         )
-    return html_page(title, "".join(body), status=status)
+    other = _other_account(cfg)
+    if access_store.can_register(cfg):
+        steps = (DENIED_REGISTER_STEP, *((DENIED_OTHER_STEP,) if other else ()))
+        primary: Link | Form = Form(
+            REGISTER_LABEL,
+            public_link(cfg, names.REGISTER_PATH),
+            (("t", denied_form_mark(cfg, ticket.jti)),),
+        )
+        note = ""
+    else:
+        steps = (_reachable(cfg, SEND_NOTE_STEP), *((DENIED_OTHER_STEP,) if other else ()))
+        primary = _login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path)
+        note = _note(ticket, NOT_ON_LIST, now)
+    secondary = (
+        other
+        if isinstance(primary, Link)
+        else (
+            _login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path),
+            *other,
+        )
+    )
+    return Frame(
+        title=NOT_ON_LIST_TITLE,
+        chip="denied",
+        lead=(DENIED_ACCOUNT_TEXT,),
+        steps=steps,
+        primary=primary,
+        secondary=secondary,
+        note_label=_reachable(cfg, NOTE_LABEL) if note else "",
+        note_text=note,
+        reference=NOT_ON_LIST,
+        diagnostics=(ADMIN_TYPO_DIAGNOSTIC,),
+        account=ticket.loginid,
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
+
+
+def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> Frame:
+    """명단을 한 번도 읽지 못함 — 권한 문제가 아니다. 잠시 뒤 풀리는 때와 관리자가 고칠 때를
+    가른다."""
+    needs_admin = access_store.unread_needs_admin(cfg)
+    text, step = (
+        (LIST_UNREAD_ADMIN_TEXT, LIST_UNREAD_ADMIN_STEP)
+        if needs_admin
+        else (LIST_UNREAD_WAIT_TEXT, LIST_UNREAD_WAIT_STEP)
+    )
+    note = "" if ticket is None else _note(ticket, LIST_UNREAD, now)
+    return Frame(
+        title=LIST_UNREAD_TITLE,
+        chip="maintenance",
+        lead=(text,),
+        steps=(_reachable(cfg, step),),
+        primary=_login_link(cfg, CHECK_AGAIN_LABEL, "/" if ticket is None else ticket.next_path),
+        secondary=_other_account(cfg),
+        note_label=_reachable(cfg, NOTE_LABEL) if note else "",
+        note_text=note,
+        reference=LIST_UNREAD,
+        account="" if ticket is None else ticket.loginid,
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
+
+
+def registered_frame(cfg: SsoConfig, ticket: DeniedClaims) -> Frame:
+    """「등록했습니다」 — 「다시 접속」 이 처음 가려던 화면으로 간다(재시작 없음)."""
+    return Frame(
+        title=REGISTERED_TITLE,
+        chip="registered",
+        lead=(REGISTERED_TEXT,),
+        primary=_login_link(cfg, RECONNECT_LABEL, ticket.next_path),
+        reference=REGISTERED,
+        account=ticket.loginid,
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
+
+
+def register_failed_frame(cfg: SsoConfig, ticket: DeniedClaims, now: int) -> Frame:
+    """저장 실패 — 단추 대신 미리 채운 신청 글과 문의 줄(보드 D6)."""
+    return Frame(
+        title=REGISTER_FAILED_TITLE,
+        chip="retry",
+        lead=(REGISTER_FAILED_TEXT,),
+        steps=(_reachable(cfg, SEND_NOTE_STEP),),
+        primary=_login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path),
+        secondary=_other_account(cfg),
+        note_label=_reachable(cfg, NOTE_LABEL),
+        note_text=_note(ticket, REGISTER_FAILED, now),
+        reference=REGISTER_FAILED,
+        account=ticket.loginid,
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
+
+
+def denied_family_page(
+    cfg: SsoConfig, code: str, cookies: Mapping[str, str], *, now: int | None = None
+) -> Response:
+    """거절 갈래 화면. 코드는 갈래만 고르고 꼴은 지금 상태가 정한다(모듈 설명).
+
+    `registered` 는 표가 있고 그 계정이 지금 명단에 들 때만 그 꼴이다. 표의 계정이 지금 명단에
+    드는데
+    다른 코드면(명단을 못 읽은 동안 거절된 사람이 명단이 돌아온 뒤 새로 고침 · 그 사이 관리자가
+    넣음)
+    「명단에 없습니다」 를 보이지 않고 로그인 경로로 보낸다(303 — 처음 가려던 화면으로 들어간다).
+    `register_failed` 는 표가 있고 아직 명단 밖일 때만 그 꼴이다. 그 밖은 명단을 읽었으면 명단 밖
+    꼴,
+    못 읽었으면 확인 못 함 꼴이다.
+    """
+    moment = _now() if now is None else now
+    ticket = read_denied(cfg, cookies, moment)
+    allowed = ticket is not None and runtime.current_access(cfg).allows(ticket.loginid)
+    if ticket is not None and allowed:
+        if code == REGISTERED:
+            return frame_response(registered_frame(cfg, ticket), status=200, now=moment)
+        next_path = sanitize_next(ticket.next_path)
+        return redirect(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': next_path})}", 303)
+    if ticket is not None and code == REGISTER_FAILED:
+        return frame_response(register_failed_frame(cfg, ticket, moment), status=403, now=moment)
+    if access_store.is_unread(cfg):
+        return frame_response(list_unread_frame(cfg, ticket, moment), status=403, now=moment)
+    return frame_response(not_on_list_frame(cfg, ticket, moment), status=403, now=moment)
+
+
+def portal_refused_page(cfg: SsoConfig, *, now: int | None = None) -> HTMLResponse:
+    """통합인증(포털)이 앱 사용을 막음 — 신청 칸 없음(서명 전 실패라 누구인지 모른다)."""
+    moment = _now() if now is None else now
+    retry = _login_link(cfg, RETRY_LABEL)
+    other = _other_account(cfg)
+    frame = Frame(
+        title=PORTAL_TITLE,
+        chip="denied",
+        lead=(PORTAL_TEXT,),
+        steps=tuple(_reachable(cfg, step) for step in PORTAL_STEPS),
+        primary=other[0] if other else retry,
+        secondary=(retry,) if other else (),
+        reference=PORTAL_REFUSED,
+        diagnostics=(PORTAL_DIAGNOSTIC,),
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
+    return frame_response(frame, status=403, now=moment)
 
 
 def logout_page(cfg: SsoConfig) -> HTMLResponse:
@@ -689,25 +973,40 @@ def _fail(
     response.headers["Referrer-Policy"] = "no-referrer"
     if state and _STATE_VALUE.match(state):
         clear_state_cookie(response, cfg.state_cookie(state))
+    if code == PORTAL_REFUSED:
+        # 다시 해도 같은 실패 — 시도 쿠키가 남으면 「다시 시도」 를 되풀이한 사람이 쿠키 탓의 되풀이
+        # 화면으로 잘못 간다.
+        clear_attempt_cookie(response, cfg)
     runtime.record_event("login_fail", level=logging.WARNING, reason=code, loginid=loginid or "-")
     return response
 
 
-def _deny(cfg: SsoConfig, state_cookie: str, loginid: str) -> Response:
-    """토큰은 맞는데 접속 명단 밖 — 세션 없이 303 → 거절 화면(PRG).
+def _deny(
+    cfg: SsoConfig, state_cookie: str, login: VerifiedLogin, next_path: str, now: int
+) -> Response:
+    """토큰은 맞는데 접속 명단 밖 — 세션 없이 거절 표를 심고 303 → 거절 화면(PRG).
 
-    진단을 보관하지 않는다 — 그 화면은 로그인 없이 열리고 loginid · 이름을 싣지 않는다. 상태 쿠키 ·
-    시도 쿠키 · 남아 있는 세션 쿠키를 지운다(시도 쿠키가 남으면 「다시 확인」 을 몇 번 누른 사람에게
-    「로그인이 되풀이됩니다」 가 잘못 뜬다). S3 명단을 아직 못 읽었으면 사유 코드가 `list_unread`
-    다 — 명단에 든 사람도 막히는 동안이라 「명단에 없습니다」 라고 하지 않는다.
+    진단을 보관하지 않는다 — 그 화면은 로그인 없이 열리고, 본인 계정은 이 브라우저의 거절 표가 있을
+    때만 선다. 상태 쿠키 · 시도 쿠키 · 남아 있는 세션 쿠키를 지운다(시도 쿠키가 남으면 「다시
+    확인」 을
+    몇 번 누른 사람에게 「로그인이 되풀이됩니다」 가 잘못 뜬다). S3 명단을 아직 못 읽었으면 사유
+    코드가 `list_unread` 다 — 명단에 든 사람도 막히는 동안이라 「명단에 없습니다」 라고 하지 않는다.
     """
     code = LIST_UNREAD if access_store.is_unread(cfg) else NOT_ON_LIST
-    response = redirect(cfg, f"{names.ERROR_PATH}?{urlencode({'code': code})}", 303)
-    response.headers["Referrer-Policy"] = "no-referrer"
+    response = _denied_redirect(cfg, code)
     clear_state_cookie(response, state_cookie)
     clear_attempt_cookie(response, cfg)
     clear_session_cookie(response, cfg)
-    runtime.record_event(runtime.DENIED_EVENT, level=logging.WARNING, reason=code, loginid=loginid)
+    set_denied_cookie(response, cfg, login, sanitize_next(next_path), now)
+    runtime.record_event(
+        runtime.DENIED_EVENT, level=logging.WARNING, reason=code, loginid=login.loginid
+    )
+    return response
+
+
+def _denied_redirect(cfg: SsoConfig, code: str) -> Response:
+    response = redirect(cfg, f"{names.ERROR_PATH}?{urlencode({'code': code})}", 303)
+    response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
 
@@ -804,7 +1103,7 @@ async def callback(request: Request) -> Response:
         # 이벤트 루프에서 부르지 않는다.
         await run_in_threadpool(access_store.retry_unread, cfg)
     if not runtime.current_access(cfg).allows(login.loginid):
-        return _deny(cfg, state_cookie, login.loginid)
+        return _deny(cfg, state_cookie, login, claims.next_path, now)
 
     token, session = issue_session(
         cfg, loginid=login.loginid, name=login.name, dept=login.dept, now=now
@@ -815,6 +1114,9 @@ async def callback(request: Request) -> Response:
         return _fail(cfg, "session_cookie_too_large", state=state, now=now, loginid=login.loginid)
     clear_state_cookie(response, state_cookie)
     clear_attempt_cookie(response, cfg)
+    # 늘 지운다 — 콜백은 IdP 의 교차 사이트 POST 라 `SameSite=Lax` 인 거절 표가 실려 오지 않아
+    # 있는지 볼 수 없다(남겨 두면 다른 계정으로 들어온 뒤에도 앞 사람의 계정이 15분 보인다).
+    clear_denied_cookie(response, cfg)
     response.headers["Referrer-Policy"] = "no-referrer"
     runtime.record_event(
         "login_ok",
@@ -875,6 +1177,7 @@ async def logout(request: Request) -> Response:
     response = logout_page(cfg)
     clear_session_cookie(response, cfg)
     clear_attempt_cookie(response, cfg)
+    clear_denied_cookie(response, cfg)
     for name in _state_cookie_names(cfg, request.cookies):
         clear_state_cookie(response, name)
     return response
@@ -883,8 +1186,10 @@ async def logout(request: Request) -> Response:
 async def error(request: Request) -> Response:
     """`GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. id 가 없거나 지났으면 사유 코드만.
 
-    사유 코드가 `not_on_list` · `list_unread` 면 거절 화면(403)이다 — 콜백이 진단 없이 이 코드로
-    보낸다.
+    거절 갈래(`DENIED_CODES`)는 공통 틀의 거절 화면이다 — 콜백 · 등록 경로가 진단 없이 이 코드로
+    보내고, 꼴은 지금 상태가 정한다(`denied_family_page`). 포털 거절(`idp_error:access_denied`)도
+    같은
+    틀의 거절 꼴이다(403).
     """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
@@ -896,11 +1201,97 @@ async def error(request: Request) -> Response:
         code = record.get("code", "unknown")
     else:
         code = request.query_params.get("code", "")
-        if code in (NOT_ON_LIST, LIST_UNREAD):
-            return denied_page(cfg, status=403, unread=code == LIST_UNREAD)
+        if code in DENIED_CODES:
+            return denied_family_page(cfg, code, request.cookies)
         if code not in allowed_reason_codes(cfg):
             code = "unknown"
+    if code == PORTAL_REFUSED:
+        return portal_refused_page(cfg)
     return error_page(cfg, code, record, status=400)
+
+
+def register_request_problem(headers: Mapping[str, str], cfg: SsoConfig) -> str | None:
+    """「접속 권한 신청」 요청의 출처 판정 — 거절 글 또는 `None`(통과).
+
+    `Sec-Fetch-Site` 가 있으면 `same-origin` 이어야 하고, `Origin` 이 있으면 공개 주소 출처여야 한다
+    (`null` 은 거절 — 거절 화면이 `Referrer-Policy: same-origin` 이라 정상 폼은 출처를 싣는다). 거절
+    표가 `SameSite=Lax` 라 교차 사이트 POST 에는 표가 실리지 않고, 폼의 숨은 표지가 그 표에 묶여
+    있다(두 겹).
+    """
+    site = headers.get("sec-fetch-site")
+    if site is not None and site != "same-origin":
+        return REGISTER_ORIGIN_REFUSAL
+    origin = headers.get("origin")
+    if origin is not None and not origin_allowed(origin, cfg):
+        return REGISTER_ORIGIN_REFUSAL
+    return None
+
+
+async def register(request: Request) -> Response:
+    """`POST /auth/sso/register` — 거절 표의 본인을 S3 접속 명단에 넣고 303(PRG).
+
+    차례는 모드 → 메서드(GET 은 거절 화면으로 303) → 출처(403) → 폼 꼴(415 · 413 · 400) → 거절
+    표(없거나
+    만료면 표 없는 거절 화면으로) → 숨은 표지(403) → 이미 명단에 들었으면 쓰지 않고
+    「등록했습니다」 → 그 표의 신청이 실패한 뒤 `runtime.REGISTER_COOLDOWN` 안이면 저장소에 가지
+    않고 `register_failed` →
+    스레드 풀에서 `access_store.register_self` 다. 성공 · 이미 있음은 `registered`, 저장 실패는
+    `register_failed` 로 보낸다. 폼의 다른 칸(계정 · 등급)은 읽지 않는다 — 신원은 거절 표뿐이다.
+    실패의 사건은 고리에 두지 않고 누계만 센다(`runtime.SELF_REGISTER_FAILED_EVENT`).
+    """
+    cfg = runtime.config()
+    guarded = mode_guard(cfg)
+    if guarded is not None:
+        return guarded
+    if request.method != "POST":
+        return _denied_redirect(cfg, NOT_ON_LIST)
+    refusal = register_request_problem(request.headers, cfg)
+    if refusal is not None:
+        return text_response(refusal, 403)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type != FORM_CONTENT_TYPE:
+        return text_response(REGISTER_FORM_REFUSAL, 415)
+    body = await _read_body(request, limit=MAX_REGISTER_BODY_BYTES)
+    if body is None:
+        return text_response(REGISTER_FORM_REFUSAL, 413)
+    form = _parse_form(body)
+    if form is None:
+        return text_response(REGISTER_FORM_REFUSAL, 400)
+    now = _now()
+    ticket = read_denied(cfg, request.cookies, now)
+    if ticket is None:
+        return _denied_redirect(cfg, NOT_ON_LIST)
+    mark = form.get("t", "")
+    if not hmac.compare_digest(mark.encode("utf-8"), denied_form_mark(cfg, ticket.jti).encode()):
+        return text_response(REGISTER_FORM_REFUSAL, 403)
+    if not access_store.is_unread(cfg) and runtime.current_access(cfg).allows(ticket.loginid):
+        return _denied_redirect(cfg, REGISTERED)
+    if runtime.register_cooling(ticket.jti, now=now):
+        return _denied_redirect(cfg, REGISTER_FAILED)
+    try:
+        await run_in_threadpool(
+            access_store.register_self,
+            cfg,
+            ticket.loginid,
+            name=ticket.name,
+            dept=ticket.dept,
+            now=now,
+        )
+    except (
+        S3Failure,
+        access_store.StoreUnreadError,
+        access_store.StoreConflictError,
+        access_store.RegisterRefusedError,
+    ):
+        runtime.note_register_failure(ticket.jti, now=now)
+        return _denied_redirect(cfg, REGISTER_FAILED)
+    except Exception as exc:  # noqa: BLE001 — 어떤 실패든 신청 글 화면으로(앱을 멈추지 않는다)
+        runtime.note_register_failure(ticket.jti, now=now)
+        runtime.record_event(
+            runtime.SELF_REGISTER_FAILED_EVENT, level=logging.WARNING, reason=type(exc).__name__
+        )
+        return _denied_redirect(cfg, REGISTER_FAILED)
+    return _denied_redirect(cfg, REGISTERED)
 
 
 async def refresh(request: Request) -> Response:

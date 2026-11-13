@@ -724,8 +724,10 @@ def test_entries_go_through_the_same_shape_check() -> None:
     assert parsed.unreadable == 5
 
 
-def test_a_grade_in_the_file_never_makes_an_admin(mock_s3: tuple[MockStore, str]) -> None:
-    """파일에 `admin` 을 적어도 그 사람은 사용자다 — S3 쓰기 권한이 관리자 권한이 되지 않는다."""
+def test_a_grade_in_the_file_makes_an_admin_and_an_unknown_one_reads_as_user(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """파일의 `admin` 은 관리자다(2026-11-14 보드 n2 답) — 그 밖의 등급 값은 일반으로 읽는다."""
     store, endpoint = mock_s3
     store.put(
         OBJECT,
@@ -733,7 +735,11 @@ def test_a_grade_in_the_file_never_makes_an_admin(mock_s3: tuple[MockStore, str]
             {
                 "format": 1,
                 "revision": 1,
-                "users": [{"loginid": OTHER, "grade": GRADE_ADMIN}, {"loginid": USER}],
+                "users": [
+                    {"loginid": OTHER, "grade": GRADE_ADMIN},
+                    {"loginid": USER},
+                    {"loginid": GONE, "grade": "owner"},
+                ],
             }
         ).encode(),
     )
@@ -741,9 +747,11 @@ def test_a_grade_in_the_file_never_makes_an_admin(mock_s3: tuple[MockStore, str]
     cfg = started(store, endpoint)
 
     access = runtime.current_access(cfg)
-    assert access.grade_of(OTHER) == GRADE_USER
-    assert access.admin_count == 1
-    assert not access_store.is_admin(cfg, OTHER)
+    assert access.grade_of(OTHER) == GRADE_ADMIN
+    assert access.grade_of(GONE) == GRADE_USER
+    assert access.admin_count == 2
+    assert access_store.is_admin(cfg, OTHER)
+    assert not access_store.is_admin(cfg, GONE)
     source = runtime.access_source()
     assert source is not None and source.document is not None
     assert source.document.demoted == 1
@@ -1189,7 +1197,7 @@ def test_reading_again_with_still_no_file_stays_an_empty_list(
 def test_a_404_from_the_front_at_start_is_unread_and_heals_by_itself(
     answer: tuple[int, bytes], mock_s3: tuple[MockStore, str]
 ) -> None:
-    """기동 때 앞단의 404 — 정상 · 사용자 0 으로 서지 않고 「못 읽음」 이라 스스로 회복한다."""
+    """기동 때 앞단의 404 — 정상 · 명단 0 으로 서지 않고 「못 읽음」 이라 스스로 회복한다."""
     store, endpoint = mock_s3
     store.put(OBJECT, file_body(USER))
     store.raw["GET"] = answer
@@ -1766,7 +1774,8 @@ def test_a_logged_out_admin_session_cannot_write(mock_s3: tuple[MockStore, str])
         access_store.save_changes(cfg, identity, add=[USER])
 
 
-def test_a_grade_in_the_file_cannot_write_either(mock_s3: tuple[MockStore, str]) -> None:
+def test_a_grade_in_the_file_can_write(mock_s3: tuple[MockStore, str]) -> None:
+    """명단의 관리자 등급도 관리자다 — 넣고 뺄 수 있다(환경변수 관리자 ∪ 명단 관리자)."""
     store, endpoint = mock_s3
     store.put(
         OBJECT,
@@ -1776,8 +1785,10 @@ def test_a_grade_in_the_file_cannot_write_either(mock_s3: tuple[MockStore, str])
     )
     cfg = started(store, endpoint)
 
-    with pytest.raises(access_store.NotAdminError):
-        access_store.save_changes(cfg, identity_of(cfg, OTHER), add=[USER])
+    result = access_store.save_changes(cfg, identity_of(cfg, OTHER), add=[USER])
+
+    assert result.added == 1
+    assert problem_of(cfg, USER) is None
 
 
 # --- Admin 화면 ----------------------------------------------------------------------------------
@@ -1792,7 +1803,8 @@ from capa_simulation.components.sso_status import render_sso_status
 
 render_sso_status()
 """
-# 모든 화면 모든 회차에 서는 앱 정보 카드 — 접속 명단 상태 알림(`AD-08` · `AD-09`)을 여기서 낸다.
+# 모든 화면 모든 회차에 서는 앱 정보 카드 — 접속 명단 상태 알림(`AD-08` · `AD-09` · `AD-19`)을
+# 여기서 낸다.
 CARD_SCRIPT = """
 from capa_simulation.components.app_credits import render_app_credits
 
@@ -1906,13 +1918,44 @@ def test_the_admin_sees_the_list(
     app = _admin_app(cfg, monkeypatch)
 
     assert not list(app.exception)
-    assert _labels(app) == ["접속 명단"]
+    assert _labels(app) == [access_list_admin.RECENT_LABEL, "접속 명단"]
     frame = app.dataframe[0].value
-    assert list(frame.columns) == ["loginid", "넣은 때", "넣은 사람"]
-    assert sorted(frame["loginid"].tolist()) == [OTHER, USER]
-    assert frame["넣은 사람"].tolist() == [ADMIN, ADMIN]
+    assert list(frame.columns) == ["계정", "이름", "부서", "등록 시각", "등록 길", "등급"]
+    assert sorted(frame["계정"].tolist()) == [OTHER, USER]
+    assert frame["등록 길"].tolist() == ["관리자", "관리자"], "옛 파일(칸 없음)은 관리자가 넣음"
+    assert frame["등급"].tolist() == ["일반", "일반"]
     assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).options
-    assert any("버전 1 · 사용자 2 · 관리자 1" in str(item.value) for item in app.caption)
+    assert any("버전 1 · 명단 2 · 관리자 1(환경변수 1)" in str(item.value) for item in app.caption)
+
+
+def test_the_recent_registrations_and_removals_fold_under_the_table(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표 아래 접힌 「최근 등록 · 빼기(30일)」 — 스스로 등록 · 관리자 추가 · 빼기만, 새것 먼저,
+    30일 넘은 줄과 등급 바꿈은 없다(보드 p0-admin-list)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    admin = identity_of(cfg, ADMIN)
+    now = int(time.time())
+    access_store.register_self(cfg, "demo.old", now=now - 40 * 86400)
+    access_store.register_self(cfg, "demo.self", now=now - 60)
+    access_store.save_changes(cfg, admin, add=["demo.added"])
+    access_store.save_changes(cfg, admin, grades={USER: GRADE_ADMIN})
+    access_store.save_changes(cfg, admin, remove=["demo.added"])
+    source = runtime.access_source()
+    assert source is not None and source.document is not None
+
+    table = access_list_admin.recent_changes_table(source.document, now=now)
+
+    assert list(table.columns) == list(access_list_admin.RECENT_COLUMNS)
+    assert table["계정"].tolist() == ["demo.added", "demo.added", "demo.self"]
+    assert table["한 일"].tolist() == ["뺌", "관리자가 넣음", "스스로 등록"]
+
+    app = _admin_app(cfg, monkeypatch)
+
+    (recent,) = [item for item in app.expander if item.label == access_list_admin.RECENT_LABEL]
+    assert recent.proto.expanded is False, "접혀 있다"
+    assert app.dataframe[1].value["계정"].tolist() == ["demo.added", "demo.added", "demo.self"]
 
 
 def test_an_empty_list_says_so(
@@ -2170,7 +2213,7 @@ def test_a_hand_written_time_at_the_edge_does_not_stop_the_admin_screen(
     app = _admin_app(cfg, monkeypatch)
 
     assert not list(app.exception), [item.message for item in app.exception]
-    assert app.dataframe[0].value["loginid"].tolist() == [USER]
+    assert app.dataframe[0].value["계정"].tolist() == [USER]
 
 
 def test_removing_from_the_screen(
@@ -2186,7 +2229,7 @@ def test_removing_from_the_screen(
     assert not list(app.exception), [item.message for item in app.exception]
     assert problem_of(cfg, USER) is IdentityProblem.DENIED
     assert problem_of(cfg, OTHER) is None
-    assert app.dataframe[0].value["loginid"].tolist() == [OTHER]
+    assert app.dataframe[0].value["계정"].tolist() == [OTHER]
     assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).value == []
     assert "1명을 뺐습니다" in _flash_text(app)
     assert "— 버전 " in _flash_text(app) and "판 " not in _flash_text(app)
@@ -2204,7 +2247,7 @@ def test_removing_with_nothing_chosen_writes_nothing(
     app = _button(app, "admin_area_access_list_remove_button").click().run()
 
     assert store.requests == before
-    assert "지울 사람을 고르세요" in _flash_text(app)
+    assert "사람을 고르세요" in _flash_text(app)
 
 
 def test_a_stale_button_of_someone_who_lost_the_right_writes_nothing(
@@ -2236,15 +2279,15 @@ def test_reading_again_from_the_screen(
 
     app = _button(app, "admin_area_access_list_reread").click().run()
 
-    assert sorted(app.dataframe[0].value["loginid"].tolist()) == [OTHER, USER]
+    assert sorted(app.dataframe[0].value["계정"].tolist()) == [OTHER, USER]
     assert problem_of(cfg, OTHER) is None
-    assert "사용자 2 · 버전 4" in _flash_text(app)
+    assert "명단 2 · 버전 4" in _flash_text(app)
 
     store.force["GET"] = (403, "AccessDenied")
     app = _button(app, "admin_area_access_list_reread").click().run()
 
     assert "인증 거절(HTTP 403 · AccessDenied)" in _flash_text(app)
-    assert sorted(app.dataframe[0].value["loginid"].tolist()) == [OTHER, USER]
+    assert sorted(app.dataframe[0].value["계정"].tolist()) == [OTHER, USER]
     assert problem_of(cfg, OTHER) is None
 
 
@@ -2291,12 +2334,14 @@ def test_the_list_actions_stand_in_one_row_above_the_table(
         ("button", "admin_area_access_list_open_add"),
         ("button", "admin_area_access_list_reread"),
         ("multiselect", access_list_admin.ACCESS_LIST_REMOVE_KEY),
+        ("button", "admin_area_access_list_grade_admin"),
+        ("button", "admin_area_access_list_grade_user"),
         ("button", "admin_area_access_list_remove_button"),
     ]
     assert rows[0][-1][0] == "caption"
     picker = app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY)
     assert picker.proto.label_visibility.value == LabelVisibility.LabelVisibilityOptions.COLLAPSED
-    assert picker.label == picker.proto.placeholder == "지울 사람"
+    assert picker.label == picker.proto.placeholder == "사람 고르기"
 
 
 def test_the_picked_people_wrap_instead_of_scrolling_out_of_sight(
@@ -2341,10 +2386,11 @@ def test_the_pick_refusal_stands_right_below_the_row_and_above_the_table(
     app = _button(app, "admin_area_access_list_remove_button").click().run()
 
     layout = _box_layout(app)
-    assert [item.value for item in app.warning] == ["지울 사람을 고르세요"]
+    assert [item.value for item in app.warning] == ["사람을 고르세요"]
     assert isinstance(layout[0], list), layout
     assert "warning" in layout[1], layout
-    assert layout[2:] == ["space", "dataframe"], layout
+    assert layout[2:4] == ["space", "dataframe"], layout
+    assert layout[4:] == ["칸:caption"], "표 아래 접힌 「최근 등록 · 빼기」(기록 없음)"
 
 
 def test_removing_everyone_still_tells_the_result(
@@ -2372,7 +2418,7 @@ def test_a_failed_action_of_the_list_goes_to_the_alert_popup_only(
     cfg = started(store, endpoint, USER)
     app = _admin_app(cfg, monkeypatch)
     app = _button(app, "admin_area_access_list_remove_button").click().run()
-    assert [item.value for item in app.warning] == ["지울 사람을 고르세요"]
+    assert [item.value for item in app.warning] == ["사람을 고르세요"]
 
     store.force["GET"] = (403, "AccessDenied")
     app = _button(app, "admin_area_access_list_reread").click().run()
@@ -2423,6 +2469,7 @@ def test_unread_locks_adding_and_warns_the_admin_on_any_screen(
     assert note is not None
     assert "관리자만 들어옵니다" in note["short"]
     assert "인증 거절(HTTP 403 · AccessDenied)" in note["full"]
+    assert sso_status.ACCESS_READ_FIX_STEP in note["full"], "다시 해도 같은 까닭 — 먼저 고친다"
     assert (note["page"], note["href"]) == ("Admin Area", "admin_area")
 
     store.force.clear()
@@ -2483,11 +2530,11 @@ def test_the_probe_of_an_open_tab_names_the_unread_list(
     assert response.header(names.REASON_HEADER.lower()) == names.REASON_UNREAD
 
 
-def test_the_list_alerts_leave_the_status_box_and_hold_two_event_slots(
+def test_the_list_alerts_leave_the_status_box_and_hold_three_event_slots(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """두 알림은 앱 정보 카드 한 곳에서만 낸다 — 「통합인증 점검」 이 또 내면 Admin 회차에 같은
-    알림이 둘이다. 카드는 S3 명단을 쓰는 서버의 회차마다 이벤트 칸 두 자리로 늘 같다(관리자든
+    """세 알림은 앱 정보 카드 한 곳에서만 낸다 — 「통합인증 점검」 이 또 내면 Admin 회차에 같은
+    알림이 둘이다. 카드는 S3 명단을 쓰는 서버의 회차마다 이벤트 칸 세 자리로 늘 같다(관리자든
     아니든 · 조건이 있든 없든 — 회차마다 자리 수가 달라지면 안 된다). 켜진 서버라 로그인 갱신
     거절 알림(`AD-21`) 한 자리가 늘 함께 선다."""
     store, endpoint = mock_s3
@@ -2501,8 +2548,9 @@ def test_the_list_alerts_leave_the_status_box_and_hold_two_event_slots(
         assert states(status, "AD-08") == [] and states(status, "AD-09") == [], who
         card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
         assert not list(card.exception), who
-        assert len(card._tree.get("html")) == 3, who
+        assert len(card._tree.get("html")) == 4, who
         assert len(states(card, "AD-08")) == 1 and len(states(card, "AD-09")) == 1, who
+        assert len(states(card, "AD-19")) == 1, who
         assert len(states(card, "AD-21")) == 1, who
         assert bool(active_state(card, "AD-08")) is (who == ADMIN), who
 
@@ -2548,6 +2596,7 @@ def test_the_read_alert_goes_only_to_those_who_can_act(
 
     note = active_state(card, "AD-08")
     assert note is not None and "지난 명단으로 판정합니다" in note["short"]
+    assert sso_status.ACCESS_READ_RETRY_STEP in note["full"], "잠시 뒤 풀리는 까닭"
 
 
 def test_the_read_alert_is_gone_after_a_good_save(
@@ -2583,11 +2632,11 @@ def test_the_check_line_when_it_can_read(mock_s3: tuple[MockStore, str]) -> None
     line = sso_status.access_s3_line(cfg)
 
     assert line.startswith("**S3 명단** · 정상 · 마지막 읽기 ")
-    assert "사용자 2 · 버전 1 · 쓰기 저장할 때 알게 됨" in line
+    assert "명단 2 · 버전 1 · 쓰기 저장할 때 알게 됨" in line
     assert_absent(line, USER, OTHER, store.access_key, store.secret_key, endpoint, store.bucket)
 
     access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[GONE])
-    assert "사용자 3 · 버전 2 · 쓰기 정상 · " in sso_status.access_s3_line(cfg)
+    assert "명단 3 · 버전 2 · 쓰기 정상 · " in sso_status.access_s3_line(cfg)
 
     store.force["PUT"] = (403, "AccessDenied")
     with pytest.raises(S3Failure):
@@ -2654,7 +2703,7 @@ def test_the_check_line_keeps_the_last_good_read_after_a_failure(
 
     line = sso_status.access_s3_line(cfg)
     assert line.startswith("**S3 명단** · 실패 · 그 밖의 응답(HTTP 503 · SlowDown) · 시도 ")
-    assert " · 마지막 읽기 " in line and "사용자 1 · 버전 1" in line
+    assert " · 마지막 읽기 " in line and "명단 1 · 버전 1" in line
 
 
 def test_the_check_line_says_it_waits_for_sso(mock_s3: tuple[MockStore, str]) -> None:
@@ -2678,7 +2727,7 @@ def test_the_status_panel_shows_the_line_and_only_names(
     assert not list(app.exception)
     captions = "\n".join(str(item.value) for item in app.caption)
     assert "**S3 명단** · 정상" in captions
-    assert "**접속 명단** · 켜짐 · 관리자 1 · 사용자 2 · 읽지 못함 0" in captions
+    assert "**접속 명단** · 켜짐 · 관리자 1 · 일반 2 · 읽지 못함 0" in captions
     table = app.dataframe[0].value.set_index("환경변수")
     assert table.loc[names.ENV_S3_SECRET_KEY, "상태"] == "있음"
     frames = "\n".join(frame.value.to_csv() for frame in app.dataframe)
@@ -3131,3 +3180,104 @@ def test_the_first_version_alert_goes_only_to_those_who_can_act(
     app = AppTest.from_string(CARD_SCRIPT).run()
 
     assert not active_state(app, "AD-09")
+
+
+# --- 등급 · 새 등록 알림(2026-11-14 보드 p0-admin-list · n2) ------------------------------------
+
+
+def test_the_admin_gives_and_takes_the_admin_grade_on_screen(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, endpoint = mock_s3
+    boss = "demo.boss"
+    cfg = started(store, endpoint, USER, OTHER, boss, CAPA_ACCESS_ADMINS=f"{ADMIN},{boss}")
+    app = _admin_app(cfg, monkeypatch)
+
+    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
+    app = _button(app, "admin_area_access_list_grade_admin").click().run()
+
+    assert not list(app.exception)
+    assert "관리자 등급 1명" in _flash_text(app)
+    assert access_store.is_admin(cfg, USER)
+    frame = app.dataframe[0].value
+    grades = dict(zip(frame["계정"], frame["등급"], strict=True))
+    assert grades == {boss: "관리자(환경변수)", OTHER: "일반", USER: "관리자"}
+    assert USER not in _flash_text(app), "알림에는 개수만"
+
+    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([boss]).run()
+    app = _button(app, "admin_area_access_list_grade_user").click().run()
+    assert access_list_admin.ENV_ADMIN_MESSAGE in _flash_text(app)
+    assert access_store.is_admin(cfg, boss)
+
+
+def test_a_list_admin_cannot_take_their_own_grade_on_screen(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER, OTHER)
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), grades={USER: GRADE_ADMIN})
+    app = _admin_app(cfg, monkeypatch, loginid=USER)
+
+    app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).set_value([USER]).run()
+    app = _button(app, "admin_area_access_list_grade_user").click().run()
+
+    assert access_list_admin.SELF_CHANGE_MESSAGE in _flash_text(app)
+    assert access_store.is_admin(cfg, USER)
+
+
+def test_the_table_pasted_back_reads_the_account_column() -> None:
+    pasted = access_list_admin.pasted_entries(f"계정\t이름\t부서\n{OTHER}\t데모\t부서\n{GONE}\t\t")
+
+    assert pasted == ((OTHER, GONE), 0)
+
+
+def test_a_new_self_registration_alerts_admins_once_with_a_count_only(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`AD-19` — 관리자에게만 · 개수만 · 새 등록이 있을 때만 지문이 바뀐다(사람을 빼도 그대로)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+
+    def card(who: str | None) -> AppTest:
+        _as_person(cfg, who, monkeypatch)
+        return AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
+
+    assert active_state(card(ADMIN), "AD-19") is None
+    access_store.register_self(cfg, "demo.first")
+    access_store.register_self(cfg, "demo.second")
+
+    first = active_state(card(ADMIN), "AD-19")
+    assert first is not None
+    assert first["short"].startswith("새 등록 2명")
+    assert "demo.first" not in json.dumps(first, ensure_ascii=False)
+    assert first["target"]["kind"] == access_list_admin.ACCESS_LIST_TARGET_KIND
+    assert first["page"] == "Admin Area"
+    assert active_state(card(USER), "AD-19") is None, "관리자가 아니면 해소로만"
+
+    again = active_state(card(ADMIN), "AD-19")
+    assert again is not None and again["fp"] == first["fp"], "같은 조건이면 다시 뜨지 않는다"
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), remove=["demo.second"])
+    fewer = active_state(card(ADMIN), "AD-19")
+    assert fewer is not None and fewer["fp"] == first["fp"], "빼도 새 알림이 아니다"
+    access_store.register_self(cfg, "demo.third", now=int(time.time()) + 2)
+    more = active_state(card(ADMIN), "AD-19")
+    assert more is not None and more["fp"] != first["fp"], "새로 늘면 한 번 뜬다"
+
+
+def test_the_goto_receiver_opens_the_access_list_box() -> None:
+    from capa_simulation.components import alert_center
+
+    app = AppTest.from_string(
+        """
+import streamlit as st
+
+from capa_simulation.components import access_list_admin
+
+access_list_admin.open_access_list("-", "-")
+st.text(str(st.session_state[access_list_admin.EXPANDER_KEY]))
+"""
+    ).run()
+
+    assert [element.value for element in app.text] == ["True"]
+    receiver = alert_center.GOTO_RECEIVERS[access_list_admin.ACCESS_LIST_TARGET_KIND]
+    assert receiver is access_list_admin.open_access_list

@@ -35,6 +35,16 @@ from capa_simulation.components.sso_status import render_sso_status
 
 render_sso_status()
 """
+# Admin Area 의 차례 — 운영인데 꺼짐 알림(`AD-02`)은 잠금 앞에서 펼침 밖으로 낸다.
+ADMIN_AREA_SCRIPT = """
+from capa_simulation.components.sso_status import (
+    render_off_in_production_alert,
+    render_sso_status,
+)
+
+render_off_in_production_alert()
+render_sso_status()
+"""
 
 
 def _labels(app: AppTest) -> list[str]:
@@ -64,11 +74,12 @@ def test_off_in_production_warns_and_lists_what_would_block() -> None:
     펼침 안에는 까닭 캡션이 선다(2026-11-03 D2). 나머지 값의 문제를 미리 보인다."""
     runtime.start({names.ENV_APP_ENV: "prod", names.ENV_PUBLIC_URL: "http://capa.example.invalid"})
 
-    app = AppTest.from_string(SCRIPT).run()
+    app = AppTest.from_string(ADMIN_AREA_SCRIPT).run()
 
     assert not list(app.exception)
     assert _labels(app) == ["통합인증 점검 · 꺼짐(운영)"]
     assert not list(app.warning)
+    assert active_state(AppTest.from_string(SCRIPT).run(), "AD-02") is None, "펼침은 내지 않는다"
     note = active_state(app, "AD-02")
     assert note is not None
     assert note["full"] == alerts.plain_text(sso_status.OFF_IN_PRODUCTION_WARNING)

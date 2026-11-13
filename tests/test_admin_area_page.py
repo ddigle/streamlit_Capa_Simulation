@@ -1430,7 +1430,7 @@ def _log_cards(app: AppTest) -> list[str]:
 
 @pytest.mark.parametrize(
     ("who", "tabs"),
-    [("dev.user", 4), ("other.user", 3), (None, 3)],
+    [("dev.user", 4), ("other.user", 0), (None, 3)],
     ids=["admin", "user", "off"],
 )
 def test_the_log_tab_stands_only_for_admins(
@@ -1490,7 +1490,8 @@ def test_a_user_round_never_reads_the_audit_files(
     app = _audit_round(tmp_path, monkeypatch, "other.user", open_log=True)
 
     assert not list(app.exception), [element.message for element in app.exception]
-    assert [tab.label for tab in app.main.tabs] == list(TAB_NAMES)
+    # 운영 서버의 관리자가 아닌 사람에게는 Admin Area 가 통째로 잠긴다(2026-11-13 보드 D11).
+    assert not list(app.main.tabs)
 
 
 def test_the_log_tab_opens_even_when_the_database_cannot(

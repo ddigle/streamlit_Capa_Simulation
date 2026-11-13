@@ -20,11 +20,14 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src" / "capa_simulation"
 WORD = "사내"
 
-# 통합인증이 화면에 내는 글을 가진 모듈 — 로그인 · 오류 · 설정 HTML 화면, 멈춤 화면 · 카드
+# 통합인증이 화면에 내는 글을 가진 모듈 — 로그인 · 오류 · 설정 · 거절 갈래 HTML 화면(공통 틀),
+# Admin 「접속 명단」, 멈춤 화면 · 카드
 # 셋째 줄, 「다시 로그인」 띠, Admin 「통합인증 점검」 · 「서버 시작 점검」(시작 스크립트가 결과
 # 파일에 남긴 단계 까닭 · pip 출력 머리도 그 펼침에 그대로 선다).
 SSO_SCREEN_MODULES = (
     PACKAGE / "auth" / "web.py",
+    PACKAGE / "auth" / "page_frame.py",
+    PACKAGE / "components" / "access_list_admin.py",
     PACKAGE / "components" / "sso_identity.py",
     PACKAGE / "components" / "sso_reconnect.py",
     PACKAGE / "components" / "sso_status.py",

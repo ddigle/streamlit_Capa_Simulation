@@ -382,6 +382,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 실패해 멈췄거나 마지막 시도가 실패했을 때, 그리고 갱신 토큰(3개월)을 처음 쓴 때부터 80일.
     AlertSpec("AD-17", "action", "state", "BigDataQuery 토큰 자동 갱신 멈춤 · 마지막 시도 실패"),
     AlertSpec("AD-18", "action", "state", "BigDataQuery 갱신 토큰 80일 — 바꿀 때"),
+    # 거절 화면 「접속 권한 신청」 으로 스스로 등록한 사람 — 관리자 회차에만 · 개수만 · 새 등록이
+    # 있을 때만 뜬다(지문은 고친 기록의 가장 새 스스로 등록 시각). 「그 화면으로」 가 Admin 「접속
+    # 명단」 펼침을 연다(2026-11-14 보드 p0-admin-list).
+    AlertSpec("AD-19", "check", "state", "접속 명단 — 새 스스로 등록(최근 30일)"),
     # 통합인증 로그인 최대 시간 10분 전 — 그 로그인의 첫 회차에 한 번(`components/sso_expiry.py`,
     # 2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-expiry). 쓰는 중에도 늘지 않는 끝이라 저장해
     # 두라고 알린다. 글은 남은 분을 부를 때 준다.
@@ -390,8 +394,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # sso_refresh_alert.py`, 같은 보드 카드 p2-rare). 그대로면 쓰는 중에도 유지 시간 뒤 끊긴다.
     AlertSpec("AD-21", "action", "state", "로그인 갱신이 출처 · 머리 검사에서 거절됨"),
     # 코어 화면의 처리 못 한 오류 — 프로세스 기록(`page_failures`)에서 관리자 몫 회차에 낸다(참고
-    # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`). AD-19 는 다른 갈래(접속 명단)
-    # 몫이다.
+    # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`).
     AlertSpec("AD-22", "error", "state", "코어 화면의 처리 못 한 오류(참고 번호)"),
 )
 
@@ -476,7 +479,9 @@ class AlertNote(TypedDict, total=False):
     - 상태: `kind="state"` · `scope`(지문 범위의 짧은 해시) · `fp`(지문) · `active` · 글.
     - 둘 다: `page`·`href`(그 화면 이름 · 주소 — 「그 화면으로」) · `tab`(그 화면 안 탭 이름 —
       「그 화면으로」 가 그 탭을 연다) · `target`(그 화면 · 탭에 닿았을 때 서버에 보낼 대상 —
-      `GotoTarget`, 사건 알림 `flash.queue_flash(target=)` 만 싣는다) · `scope_label`(로그의
+      `GotoTarget`, 사건 알림 `flash.queue_flash(target=)` 와 상태 알림 `state(target=)` 가 싣는다)
+      ·
+      `scope_label`(로그의
       범위 줄) · `cause`(계기) ·
       `detail`(원본 오류) · `tables`(딸린 표들 — `AlertTable`) · `origin`(버튼 곁 칸의 세션 key) ·
       `flash`(버튼 곁 결과의 종류) · `markdown` · `icon`(버튼 곁 원문 · 아이콘 — 시험 · 화면 확인이
@@ -755,9 +760,13 @@ def state(
     tab: str = "",
     tables: Sequence[AlertTable | None] = (),
     goto: tuple[str, str] | None = None,
+    target: GotoTarget | None = None,
 ) -> None:
     """상태 알림 — 그 조건을 보는 회차마다(없어도 `active=False`) 부른다. **이벤트 칸에 늘 한 자리를
     쓴다.**
+
+    `target` 은 「그 화면으로」 가 그 화면에 닿은 뒤 서버에 보낼 대상이다(`GotoTarget` — 받는 쪽이
+    그 화면 안 자리를 연다, 조건이 있을 때만 싣는다).
 
     `scope` · `content` 는 지문 재료(구조 값 — 모듈 설명), `text` · `full` 은 조건이 있을 때의 짧은
     글 · 전문, `scope_label` 은 로그의 범위 줄(「시나리오 · rN · 조회기간」)이다. `tab` 은 그 화면
@@ -786,6 +795,8 @@ def state(
     carried = [table for table in tables if table is not None]
     if active and carried:
         note["tables"] = carried
+    if active and target is not None:
+        note["target"] = target
     emit([note])
 
 

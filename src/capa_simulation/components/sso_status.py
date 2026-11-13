@@ -9,8 +9,12 @@ C-DEP 서버에는 셸도 로그도 없어 통합인증의 설정 판정 · 서�
 redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩 대 봐야 하므로 글자 그대로 싣는다.
 
 - 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도 그리지 않는다 — 개발 PC · 사내 WebIDE 화면 그대로.
-- 꺼짐(운영)이면 「주소를 아는 사람은 누구나 들어옵니다」 경고와 「켜면 막힐 문제」(`readiness`) —
-  첫 배포에서 client id 를 넣기 전에 나머지 값이 맞는지 미리 본다(`docs/sso_setup.md`).
+- 꺼짐(운영)이면 「주소를 아는 사람은 누구나 들어옵니다」 경고와 「켜면 막힐 문제」(`readiness`)를
+  그린다. 다만 운영 서버의 Admin Area 는 관리자에게만 열리고(`sso_identity.admin_area_locked`) 꺼진
+  서버에는 관리자 신원이 없어 이 펼침은 화면에 닿지 않는다 — 켜기 전 미리 보기 길이 없고, 켜려다
+  막히면 설정 화면(`web.config_page`)이 같은 표로 까닭을 말한다(`docs/sso_setup.md` 5장). 운영인데
+  꺼짐 알림 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다
+  (`render_off_in_production_alert`) — 잠긴 회차에도 Alarm 으로 닿는다.
 - 막힘이면 문지기가 앱을 열지 않으므로 이 펼침에 닿지 않는다(설정 화면이 진단 창구다). 닿았다면
   문지기 없이 뜬 것이고 `app.py` 가 먼저 멈춘다 — 그래도 판정은 그대로 그린다.
 
@@ -33,6 +37,7 @@ HEAD 가 되어도).
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -78,6 +83,8 @@ DENIED_ACCOUNT_LIMIT = 20
 CERT_WARNING_DAYS = 30
 # 진단 펼침의 시각 꼴 — 서버 시각대 초까지(`container_start_check` 도 이 꼴로 적는다).
 CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S"
+# 「새 등록」 알림(`AD-19`)이 세는 기간(일).
+NEW_REGISTRATION_DAYS = 30
 
 # 비밀값 줄의 까닭 — 값은 싣지 않고 검사를 지났다는 사실만. 사람이 고른 문장인지는 가리지 못한다.
 SECRET_CHECKS_PASSED = "길이 · 글자 가짓수 · 자리표 · 되풀이 · 차례 검사 통과(무작위 값인지는 모름)"
@@ -130,6 +137,12 @@ OFF_IN_PRODUCTION_HELP = (
     f"포털 승인 메일의 Client ID 를 환경변수(`{names.ENV_CLIENT_ID}`)에 넣으면 켜집니다."
 )
 OFF_IN_PRODUCTION_WARNING = f"{OFF_IN_PRODUCTION_CONCLUSION} {OFF_IN_PRODUCTION_HELP}"
+# `AD-08` 전문의 할 일 두 갈래(거절 화면 「점검 중」 과 같은 가름 — `access_store.needs_admin_fix`).
+ACCESS_READ_RETRY_STEP = "잠시 뒤 Admin 「접속 명단」 의 「다시 읽기」 로 다시 읽습니다."
+ACCESS_READ_FIX_STEP = (
+    "다시 해도 같은 까닭입니다 — 환경변수 · 저장소 권한 · 명단 파일을 고친 뒤 "
+    "Admin 「접속 명단」 의 「다시 읽기」 로 다시 읽습니다."
+)
 BROKEN_CONCLUSION = "통합인증 설정을 마치지 못했습니다"
 
 
@@ -220,7 +233,7 @@ def access_line(cfg: SsoConfig) -> str:
         return "**접속 명단** · 꺼짐(인증된 사람 전부)"
     state = "켜짐" if cfg.mode is SsoMode.ON else "통합인증이 켜지면 적용"
     return (
-        f"**접속 명단** · {state} · 관리자 {access.admin_count} · 사용자 {access.user_count} · "
+        f"**접속 명단** · {state} · 관리자 {access.admin_count} · 일반 {access.user_count} · "
         f"읽지 못함 {access.unreadable_count}"
     )
 
@@ -265,14 +278,17 @@ def access_s3_line(cfg: SsoConfig) -> str:
     else:
         parts += [
             f"마지막 읽기 {_clock_text(source.read_at)}",
-            f"사용자 {len(document.entries)}",
+            f"명단 {len(document.entries)}",
             f"버전 {document.revision}",
         ]
         if source.seeded:
             parts.append("환경변수 첫 버전 · 파일 없음")
         if document.demoted:
-            parts.append(f"등급을 사용자로 읽음 {document.demoted}")
+            parts.append(f"등급을 일반으로 읽음 {document.demoted}")
     parts.append(_write_text(source.saved_at, source.save_problem))
+    registrations = runtime.self_register_failures()
+    if registrations:
+        parts.append(f"스스로 등록 실패 {registrations}")
     return " · ".join(parts)
 
 
@@ -449,12 +465,20 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
 
     조치 알림이고 그 자리(「다시 읽기」)가 관리자에게만 있어 관리자 회차(`admin`)에만 세운다. 다른
     사람의 회차는 해소로 부른다 — 사실은 「통합인증 점검」 의 「S3 명단」 줄이 그대로 말한다.
+    할 일은 거절 화면 「점검 중」 과 같은 두 갈래다(`access_store.needs_admin_fix` — 보드
+    p0-unread): 잠시 뒤 풀리는 까닭이면 「다시 읽기」, 다시 해도 같은 까닭이면 설정 · 권한 ·
+    파일을 먼저 고친다.
     """
     source = runtime.access_source()
     problem = None if source is None else source.problem
     unread = access_store.is_unread(cfg)
     active = (problem is not None or unread) and admin
     effect = "관리자만 들어옵니다" if unread else "지난 명단으로 판정합니다"
+    todo = (
+        ACCESS_READ_FIX_STEP
+        if problem is not None and access_store.needs_admin_fix(problem)
+        else ACCESS_READ_RETRY_STEP
+    )
     alerts.state(
         "AD-08",
         scope=None,
@@ -464,7 +488,7 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
         full=(
             f"접속 명단을 S3 에서 읽지 못했습니다"
             f"{f'({access_problem_text(problem)})' if problem is not None else ''} — {effect}. "
-            "Admin 「접속 명단」 의 「다시 읽기」 로 다시 읽습니다."
+            f"{todo}"
         ),
         goto=_admin_area_goto(),
     )
@@ -491,13 +515,47 @@ def _access_seed_alert(*, admin: bool) -> None:
     )
 
 
+def _new_registration_alert(*, admin: bool, now: int) -> None:
+    """상태 알림 `AD-19` 「새 등록 n명」 — 최근 30일 스스로 등록해 지금도 명단에 있는 사람 수.
+
+    관리자 회차에만 세우고 개수만 싣는다. 지문은 고친 기록의 가장 새 스스로 등록 시각이라 새 등록이
+    있을 때만 알림창이 뜬다(사람을 빼도 뜨지 않는다 — UI-NTF-07). 「그 화면으로」 가 Admin Area 의
+    「접속 명단」 펼침을 연다(`access_list_admin.open_access_list` — UI-NAV-01).
+    """
+    from capa_simulation.components.access_list_admin import access_list_target
+
+    source = runtime.access_source()
+    document = None if source is None else source.document
+    count, latest = (
+        access_store.recent_self_registrations(document, now=now, days=NEW_REGISTRATION_DAYS)
+        if admin and document is not None
+        else (0, "")
+    )
+    active = admin and count > 0
+    alerts.state(
+        "AD-19",
+        scope=None,
+        content=latest if active else None,
+        active=active,
+        text=f"새 등록 {count}명 — 최근 {NEW_REGISTRATION_DAYS}일 스스로 등록",
+        full=(
+            f"최근 {NEW_REGISTRATION_DAYS}일 동안 거절 화면의 「접속 권한 신청」 으로 "
+            f"스스로 등록한 사람이 {count}명 명단에 있습니다. Admin 「접속 명단」 에서 "
+            "등록 길 「스스로」 줄을 보고 모르는 사람이면 지웁니다."
+        ),
+        goto=_admin_area_goto(),
+        target=access_list_target(),
+    )
+
+
 def render_access_alerts() -> None:
-    """접속 명단 상태 알림 둘(`AD-08` · `AD-09`) — 관리자의 어느 화면에서나 뜨게 매 회차 부른다.
+    """접속 명단 상태 알림 셋(`AD-08` · `AD-09` · `AD-19`) — 관리자의 어느 화면에서나 뜨게 매 회차
+    부른다.
 
     S3 명단을 쓰는 서버에서만 부른다 — 설정은 재시작 전에 바뀌지 않으니 해소할 것이 없고, 꺼진
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
-    서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
-    이 회차 쿠키에서 한 번만 다시 검증해 둘에 쓴다.
+    서버에서는 부를 때마다 이벤트 칸에 늘 세 자리를 쓴다(갈래와 상관없이 — `alerts.state`). 신원은
+    이 회차 쿠키에서 한 번만 다시 검증해 셋에 쓴다.
     """
     cfg = runtime.config()
     if not access_store.is_on(cfg):
@@ -505,6 +563,7 @@ def render_access_alerts() -> None:
     admin = _viewer_is_admin(cfg)
     _access_read_alert(cfg, admin=admin)
     _access_seed_alert(admin=admin)
+    _new_registration_alert(admin=admin, now=int(time.time()))
 
 
 def _audit_goto() -> tuple[str, str]:
@@ -590,17 +649,15 @@ def status_text(title: str, cfg: SsoConfig, *, now: datetime) -> str:
     )
 
 
-def render_sso_status() -> None:
-    """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다.
+def render_off_in_production_alert() -> None:
+    """상태 알림 `AD-02` 「운영인데 통합인증이 꺼짐」 — Admin Area 가 잠금 판정 **앞**에서 부른다.
 
-    알릴 조건 둘(운영인데 꺼짐 `AD-02` · 서명 인증서 만료 임박 `AD-03`)은 상태 알림이다(알림창 ·
-    Alarm — 그리지 않는 회차에도 부른다, 해소). 접속 명단 알림(`AD-08` · `AD-09`)은 여기서 부르지
-    않는다 — 앱 정보 카드가 모든 화면에서 부른다(`render_access_alerts`). 펼침 안의 결론은 값 한
-    줄이고 하는 법 · 보관 범위는 풍선 · Guide 가 말한다 — 인증서 만료 임박은 `AD-03` 과 표 까닭
-    칸이 말하므로 줄을 따로 세우지 않는다(설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
+    통합인증이 꺼진 운영 서버에는 관리자 신원이 없어 Admin Area 가 모두에게 잠기고(`sso_identity.
+    admin_area_locked`) 펼침 본문에 닿지 않는다 — 잠긴 회차에도 Alarm 으로 닿게 펼침 밖에 둔다. 그
+    서버는 누구나 들어오는 상태라 알림이 보이는 사람을 가리지 않는다. 켜진 서버 · 개발에서는 해소로
+    부른다.
+    """
     cfg = runtime.config()
-    now = datetime.now(timezone.utc)
-    expiring = _expiring_certs(cfg, now)
     off_in_production = cfg.mode is SsoMode.OFF and cfg.prod
     alerts.state(
         "AD-02",
@@ -610,6 +667,20 @@ def render_sso_status() -> None:
         text="운영 서버인데 통합인증이 꺼져 있습니다 — Client ID 환경변수를 넣으세요",
         full=alerts.plain_text(OFF_IN_PRODUCTION_WARNING),
     )
+
+
+def render_sso_status() -> None:
+    """Admin Area 「통합인증 점검」 펼침. 꺼짐이고 운영이 아니면 그리지 않는다.
+
+    서명 인증서 만료 임박(`AD-03`)은 상태 알림이다(알림창 · Alarm — 그리지 않는 회차에도 부른다,
+    해소). 운영인데 꺼짐(`AD-02`)은 Admin Area 가 잠금 앞에서 부른다
+    (`render_off_in_production_alert`). 접속 명단 알림(`AD-08` · `AD-09`)은 여기서 부르지 않는다
+    — 앱 정보 카드가 모든 화면에서 부른다(`render_access_alerts`). 펼침 안의 결론은 값 한 줄이고
+    하는 법 · 보관 범위는 풍선 · Guide 가 말한다 — 인증서 만료 임박은 `AD-03` 과 표 까닭 칸이
+    말하므로 줄을 따로 세우지 않는다(설계 규칙 UI-TXT-01 · 04 · UI-NTF-02)."""
+    cfg = runtime.config()
+    now = datetime.now(timezone.utc)
+    expiring = _expiring_certs(cfg, now)
     alerts.state(
         "AD-03",
         scope=None,

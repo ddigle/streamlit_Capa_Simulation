@@ -99,7 +99,16 @@ LOGOUT_PATH = "/auth/sso/logout"
 ERROR_PATH = "/auth/sso/error"
 # 앱 화면에서 사람이 쓰는 동안 세션 쿠키를 다시 발급한다(POST · 본문 없음 · 같은 출처).
 REFRESH_PATH = "/auth/sso/refresh"
-SSO_PATHS: tuple[str, ...] = (CALLBACK_PATH, LOGIN_PATH, LOGOUT_PATH, ERROR_PATH, REFRESH_PATH)
+# 거절 화면의 「접속 권한 신청」 — 거절 표의 본인을 S3 접속 명단에 넣는다(POST · 같은 출처 · 폼).
+REGISTER_PATH = "/auth/sso/register"
+SSO_PATHS: tuple[str, ...] = (
+    CALLBACK_PATH,
+    LOGIN_PATH,
+    LOGOUT_PATH,
+    ERROR_PATH,
+    REFRESH_PATH,
+    REGISTER_PATH,
+)
 # Streamlit 의 상태 검사. C-DEP 이 본다 — 막힘 모드에서도 열어 둔다.
 HEALTH_PATH = "/_stcore/health"
 # Streamlit 자체 `st.login` 경로. 우리 경로와 이름이 겹치지 않게 피했고, 통합인증이 켜지면 막는다.
@@ -127,6 +136,8 @@ HOST_PREFIX = "__Host-"
 SESSION_COOKIE = "capa_session"
 STATE_COOKIE_PREFIX = "capa_sso_state_"
 ATTEMPT_COOKIE = "capa_sso_attempt"
+# 명단 밖 거절 뒤 15분짜리 거절 표(본인 계정 표시 · 「접속 권한 신청」 의 신원).
+DENIED_COOKIE = "capa_sso_denied"
 
 # --- 클레임 기본 이름 -------------------------------------------------------------------------
 DEFAULT_CLAIM_LOGINID = "loginid"

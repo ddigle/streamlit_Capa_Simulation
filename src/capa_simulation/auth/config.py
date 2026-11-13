@@ -249,6 +249,10 @@ class SsoConfig:
         return f"{self._cookie_prefix()}{names.ATTEMPT_COOKIE}{self.cookie_suffix}"
 
     @property
+    def denied_cookie(self) -> str:
+        return f"{self._cookie_prefix()}{names.DENIED_COOKIE}{self.cookie_suffix}"
+
+    @property
     def state_cookie_prefix(self) -> str:
         base = names.STATE_COOKIE_PREFIX.rstrip("_")
         return f"{self._cookie_prefix()}{base}{self.cookie_suffix}_"
@@ -259,6 +263,21 @@ class SsoConfig:
     @property
     def public_origin(self) -> str:
         return url_origin(self.public_url)
+
+    @property
+    def operational(self) -> bool:
+        """운영 서버인가 — Admin Area 를 관리자에게만 여는 판정(`sso_identity.admin_area_locked`).
+
+        `APP_ENV` 가 운영이면 늘 그렇다(통합인증이 꺼져도 — 관리자 신원이 없으니 잠긴 채다).
+        통합인증이
+        켜졌으면 잠금(`CAPA_SSO=required`)이나 루프백 밖 공개 주소도 운영으로 본다 — 접속 명단이
+        필수가
+        되는 판정과 같다. 꺼진 개발 PC · 사내 WebIDE · 사내 PC 는 `APP_ENV` 만 본다(공개 주소를 넣어
+        두었어도 열린다).
+        """
+        if self.prod:
+            return True
+        return self.mode is SsoMode.ON and (self.locked or _beyond_loopback(self.public_url))
 
 
 def app_env_is_production(value: str | None) -> bool:

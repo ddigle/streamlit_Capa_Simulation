@@ -1,4 +1,4 @@
-# Purpose: 운영 진입 파일을 Streamlit 이 st.App 으로 찾고 경로 다섯·문지기를 싣는지 고정한다.
+# Purpose: 운영 진입 파일을 Streamlit 이 st.App 으로 찾고 경로 여섯·문지기를 싣는지 고정한다.
 
 """진입 파일 시험.
 
@@ -71,6 +71,8 @@ def test_the_entry_is_discovered_as_an_st_app_with_routes_and_gate() -> None:
         # 갱신은 POST 하나지만 GET 도 붙여 처리기가 답한다(꺼짐 404 · 그 밖 405) — 붙이지 않으면
         # Streamlit 정적 마운트가 그 주소에 앱 껍데기를 낸다.
         [names.REFRESH_PATH, ["GET", "HEAD", "POST"]],
+        # 스스로 등록도 POST 하나지만 GET 을 붙여 거절 화면으로 303 한다(같은 까닭).
+        [names.REGISTER_PATH, ["GET", "HEAD", "POST"]],
     ]
     assert result["middleware"] == ["capa_simulation.auth.gate.SsoGate"]
 

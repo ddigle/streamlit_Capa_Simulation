@@ -1,4 +1,5 @@
-# Purpose: 표시명·표시순서·원천 품질·접속 기록 탭(끝 모듈 상태)과 위의 서버·통합인증 점검·접속 명단.
+# Purpose: 관리자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록 탭, 위의 서버·통합인증 점검·접속
+# 명단.
 
 from __future__ import annotations
 
@@ -15,16 +16,30 @@ from capa_simulation.components.module_status import render_module_status
 from capa_simulation.components.object_sync_status import render_object_sync_status
 from capa_simulation.components.page_guide import render_page_guide
 from capa_simulation.components.page_header import render_page_header
+from capa_simulation.components.page_link import render_page_link
 from capa_simulation.components.process_rename_management import (
     render_process_rename_management,
 )
 from capa_simulation.components.source_quality import render_source_quality
-from capa_simulation.components.sso_identity import viewer_can_audit
-from capa_simulation.components.sso_status import render_sso_status
+from capa_simulation.components.sso_identity import (
+    ADMIN_ONLY_NOTICE,
+    HOME_LINK_LABEL,
+    admin_area_locked,
+    viewer_can_audit,
+)
+from capa_simulation.components.sso_status import (
+    render_off_in_production_alert,
+    render_sso_status,
+)
 from capa_simulation.components.state_alerts import open_tab_name, tab_name
 from capa_simulation.components.tab_state import stateful_tabs, tab_is_hidden
 from capa_simulation.io.reference_cache import get_effective_reference_tables
-from capa_simulation.navigation import ADMIN_AREA_LOG_TAB, ADMIN_AREA_TAB_KEY, ADMIN_AREA_TABS
+from capa_simulation.navigation import (
+    ADMIN_AREA_LOG_TAB,
+    ADMIN_AREA_TAB_KEY,
+    ADMIN_AREA_TABS,
+    HOME,
+)
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.scenario_activation import active_persisted_scenario_id
@@ -45,6 +60,15 @@ TABS_KEY = ADMIN_AREA_TAB_KEY
 TABS_BOX_KEY = "admin_area_tabs_box"
 
 render_page_header("Admin Area")
+# 운영인데 통합인증이 꺼진 서버(`AD-02`)는 관리자 신원이 없어 아래 잠금이 모두를 멈춘다 — 그
+# 알림만은 잠금 앞에서 내 잠긴 회차에도 Alarm 으로 닿게 한다.
+render_off_in_production_alert()
+# 운영 서버에서 관리자가 아니면 메뉴가 없고(`app.py`), 주소로 열어도 여기서 멈춘다 — 판정은
+# `sso_identity.admin_area_locked` 하나다(설계 규칙 UI-INP-07 — 없는 기능은 숨김).
+if admin_area_locked():
+    st.warning(ADMIN_ONLY_NOTICE, icon=":material/lock:")
+    render_page_link(HOME.path, label=HOME_LINK_LABEL, icon=":material/home:")
+    st.stop()
 render_page_guide("admin_area", title="Admin Area")
 # C-DEP CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 여기서 읽는다. 결과 파일이 없는
 # 개발·사내 PC 에서는 아무것도 그리지 않는다(DB 를 열지 않고 작은 JSON 하나만 읽는다).
@@ -66,8 +90,8 @@ tabs_box = st.container(key=TABS_BOX_KEY)
 with tabs_box:
     render_module_status(box_key=TABS_BOX_KEY)
     # 탭 묶음은 DB 를 열기 **앞**이다 — DB 를 못 열어도 DB 를 쓰지 않는 기록 탭은 열린다(DB
-    # 탭 안에만 「데이터 Error」 마크). 관리자는 환경변수뿐이라 세션 중에 라벨 목록이 바뀌지
-    # 않지만, 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
+    # 탭 안에만 「데이터 Error」 마크). 명단에서 관리자 등급이 바뀌면 세션 중에도 라벨 목록이
+    # 바뀐다 — 세션의 탭 값이 라벨 밖이면 첫 라벨로 새로 적는다(pop 하지 않는다 — AGENTS 9장).
     tab_labels = (*TAB_NAMES, LOG_TAB) if viewer_can_audit() else TAB_NAMES
     if st.session_state.get(TABS_KEY, tab_labels[0]) not in tab_labels:
         st.session_state[TABS_KEY] = tab_labels[0]
