@@ -226,16 +226,13 @@ function keptView(before, after, moved, inserted) {
   return rest.length === before.length && before.every((id, k) => (map.has(id) ? map.get(id) : id) === rest[k])
 }
 
-// 지킨 보기에서 보던 첫 줄(`anchor` — 새 id) 앞에 끼운 형제 줄 수 — 새 보이는 차례(`ordered` id)에서 그 줄보다 앞에 선 끼운
-// 줄(`inserted`)이다. 그만큼 스크롤을 내려야 보던 줄이 그 자리에 선다(고친 줄이 위로 굴러간 채 「호기 상세」 에서 고치면 형제가
-// 보이는 줄 위에 끼워진다 — UI-PRF-03). 보던 줄이 없으면 0.
-function insertedAbove(ordered, anchor, inserted) {
+// 지킨 보기에서 보던 첫 줄(`anchor` — 새 id, 앞 보이는 차례의 `top` 번째 줄)이 새 보이는 차례(`ordered` id)에서 옮겨 간 줄 수 —
+// 그만큼 스크롤을 옮겨야 보던 줄이 그 자리에 선다(UI-PRF-03). 끼운 형제 줄이 그 앞에 서거나(고친 줄이 위로 굴러간 채 「호기
+// 상세」 에서 고침) 정렬한 칸의 값이 바뀌어 줄이 앞뒤로 옮겨 가도 한 번에 맞춘다 — 음수면 위로다. 보던 줄이 고친 줄 자신이면
+// 정렬로 옮겨 간 그 줄을 따라간다. 보던 줄이 새 차례에 없으면 0.
+function keptRowShift(ordered, anchor, top) {
   const at = ordered.indexOf(anchor)
-  if (at <= 0 || !inserted.length) return 0
-  const added = new Set(inserted)
-  let count = 0
-  for (let index = 0; index < at; index += 1) if (added.has(ordered[index])) count += 1
-  return count
+  return at < 0 ? 0 : at - top
 }
 // </grid-view>
 
@@ -1215,7 +1212,7 @@ function drawGrid(host, S, data) {
     if (S.focus && S.focus.id === from) S.focus.id = to
   }
   const view = String(data.view || '')
-  // 지킨 보기에 끼운 형제 줄이 보던 첫 줄 앞에 서면 그 수만큼 스크롤을 내린다(`insertedAbove`).
+  // 지킨 보기에서 보던 첫 줄이 새 차례에서 옮겨 간 만큼 스크롤을 옮긴다(`keptRowShift`).
   let keepTop = null
   if (S.view !== view) {
     S.view = view
@@ -1226,16 +1223,17 @@ function drawGrid(host, S, data) {
       S.anchor = null
       S.resetScroll = true
     } else if (inserted.length && S.model && S.scroller) {
-      const seen = S.model.ordered[Math.floor(S.scroller.scrollTop / ROW_H)]
+      const top = Math.floor(S.scroller.scrollTop / ROW_H)
+      const seen = S.model.ordered[top]
       const id = seen ? seen.id : null
       const renamed = new Map(moved)
-      if (id !== null) keepTop = { id: renamed.has(id) ? renamed.get(id) : id, inserted }
+      if (id !== null) keepTop = { id: renamed.has(id) ? renamed.get(id) : id, top }
     }
   }
   // 상세에 연 줄의 띠는 파이썬이 아는 상세 id 를 따른다(「저장 전 변경」·고칠 것 줄로 연 호기도).
   if (Object.prototype.hasOwnProperty.call(data, 'open')) S.openId = typeof data.open === 'string' ? data.open : null
   S.model = gridModel(S, data)
-  const shift = keepTop ? insertedAbove(S.model.ordered.map((row) => row.id), keepTop.id, keepTop.inserted) : 0
+  const shift = keepTop ? keptRowShift(S.model.ordered.map((row) => row.id), keepTop.id, keepTop.top) : 0
   const known = new Set(S.model.live.map((row) => row.id))
   for (const id of Array.from(S.selected)) if (!known.has(id)) S.selected.delete(id)
   if (!S.skeleton) buildGridSkeleton(host, S)
@@ -1243,7 +1241,7 @@ function drawGrid(host, S, data) {
   S.repaintNote()
   paintSelection(S)
   paintHead(S)
-  // 늘어난 높이를 먼저 세워야 내린 스크롤이 옛 끝에 잘리지 않는다.
+  // 늘어난 높이를 먼저 세워야 옮긴 스크롤이 옛 끝에 잘리지 않는다.
   if (shift) {
     S.body.style.height = S.model.ordered.length * ROW_H + 'px'
     S.scroller.scrollTop += shift * ROW_H

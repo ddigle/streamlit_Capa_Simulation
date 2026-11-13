@@ -2331,8 +2331,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     옮긴 id(`moved` — 새 호기 이름 바꿈, 칸 초안 열쇠 옮김도 역 patch)·뺀 자리(`unloaded`)로 되돌린다(통째 단계만 사진). 출납 ·
     「한 단계 되돌리기」 결과의 `moved` · `inserted` 는 다음 표 그리기에 한 번 싣고(`equipment_master_tab.VIEW_CARRY_KEY` →
     `grid_data(moved=, inserted=)`), 브라우저는 목록 지문이 그것으로만 바뀐 회차에 고름·기준 줄·스크롤을 지킨다(`keptView` —
-    설계 규칙 UI-PRF-03). 끼운 줄이 보던 첫 줄 앞(새 보이는 차례)에 서면 그 수 × 줄 높이만큼 스크롤을 내린다(`insertedAbove` —
-    고친 줄이 위로 굴러간 채 호기 상세에서 고친 때, 늘어난 높이를 먼저 세운다). 이름 바꿈을
+    설계 규칙 UI-PRF-03). 끼운 줄이 있는 그 회차에는 보던 첫 줄이 새 보이는 차례에서 옮겨 간 줄 수 × 줄 높이만큼 스크롤을
+    옮긴다(`keptRowShift` — 고친 줄이 위로 굴러간 채 호기 상세에서 고쳐 형제가 그 앞에 끼워진 때도, 정렬한 칸 값이 바뀌어 줄이
+    앞뒤로 옮겨 간 때도. 보던 줄이 고친 줄 자신이면 그 줄을 따라간다. 늘어난 높이를 먼저 세운다). 이름 바꿈을
     되돌리면 `renamed`·`moved` 를 거꾸로 알린다. 이름을 바꾸면 행 조각을 든 단계와 그 앞 단계를 버린다(`after_row_steps`). 통째
     단계는 하나다. 세션에는 `undo_to_state` 의 기본형으로 둔다.
   - **새 호기**(개편 단계 C — 오른쪽 「새 호기」 칸): `new_unit_check(초안 39칸 글, frames, saved_master, renames, context)` 한
