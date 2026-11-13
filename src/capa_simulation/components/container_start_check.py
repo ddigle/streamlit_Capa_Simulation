@@ -413,5 +413,5 @@ def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
     return ". ".join(found) + (
         ". Admin 「서버 시작 점검」 의 「토큰 넣기」 로 새 토큰을 넣으면 다음 조회부터 쓰입니다 — "
         f"컨테이너를 다시 띄우면 CD 환경변수 {BDQ_TOKEN_ENV} 값으로 돌아가니 그 값도 새 토큰으로 "
-        "바꿔 두세요."
+        "바꿔 두세요. 이 알림은 넣은 뒤 조회가 한 번 성공하면 풀립니다."
     )

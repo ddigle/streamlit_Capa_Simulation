@@ -17,8 +17,8 @@ Admin 「토큰 넣기」(`components/bdq_token_admin.py`)가 관리자가 넣�
 
 **비밀.** 토큰 글자와 그 길이(비밀에서 나온 수)를 어떤 글(까닭 · 예외 · 로그)에도 싣지
 않는다. 쓰기는 같은 폴더의 임시 파일에 다 쓴 뒤 바꿔 끼워 반쯤 쓴 토큰을 남기지 않고,
-파일은 0600 · 폴더는 0700 이다. 만료 시각만 기억하고(`_EXPIRY_MEMO` — 파일의 수정 시각 ·
-크기가 열쇠) 토큰 글은 붙들지 않는다.
+파일은 0600 · 폴더는 0700 이다. 만료 시각만 기억하고(`_EXPIRY_MEMO` — 파일의 inode · 수정
+시각 · 크기가 열쇠) 토큰 글은 붙들지 않는다.
 
 **만료 시각.** 토큰의 꼴을 아직 모른다(WebIDE 실측 35바이트 — 점 셋 JWT 는 아니다). 지금
 읽는 꼴은 JWT 의 `exp` 하나뿐이고 그 밖은 「모름」 이다 — 실제 토큰의 꼴은 사내 확인
@@ -186,6 +186,8 @@ def install_token(raw: str, environ: Mapping[str, str] | None = None) -> Install
             return InstallOutcome("same")
         try:
             write_private(target, content)
+            # 한 시각 눈금 안의 두 쓰기는 같은 열쇠일 수 있다 — 쓴 쪽이 기억을 비운다.
+            forget_expiry_memo()
         except OSError as error:
             return InstallOutcome("refused", f"토큰 파일을 쓰지 못했습니다({type(error).__name__})")
     return InstallOutcome("written")
@@ -208,8 +210,9 @@ class TokenState:
     expires_at: datetime | None = None
 
 
-# 파일 (자리, 수정 시각 ns, 크기) → 만료 시각. 한 칸만 둔다 — 파일이 바뀌면 열쇠가 바뀐다.
-_EXPIRY_MEMO: dict[tuple[str, int, int], datetime | None] = {}
+# 파일 (자리, inode, 수정 시각 ns, 크기) → 만료 시각. 한 칸만 둔다 — 파일이 바뀌면 열쇠가 바뀐다
+# (바꿔 끼우는 쓰기는 inode 가 바뀐다 — 프로세스 밖 쓰기도 덮는다).
+_EXPIRY_MEMO: dict[tuple[str, int, int, int], datetime | None] = {}
 _EXPIRY_LOCK: Final = threading.Lock()
 
 
@@ -241,7 +244,7 @@ def token_expiry(content: bytes) -> datetime | None:
 
 
 def _file_expiry(target: Path, info: os.stat_result) -> datetime | None:
-    key = (str(target), info.st_mtime_ns, info.st_size)
+    key = (str(target), info.st_ino, info.st_mtime_ns, info.st_size)
     with _EXPIRY_LOCK:
         if key in _EXPIRY_MEMO:
             return _EXPIRY_MEMO[key]

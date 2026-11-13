@@ -40,14 +40,18 @@ def env(**extra: str) -> dict[str, str]:
     return {BDQ_USER_NAME_ENV: ACCOUNT, **extra}
 
 
-def test_a_token_is_written_where_the_package_reads_it(folder: Path) -> None:
+def test_a_token_is_written_where_the_package_reads_it(
+    folder: Path, keeps_permission_bits: bool
+) -> None:
+    """0600 · 폴더 0700 — 비트를 담지 못하는 파일 체계(Windows)에서는 자리 · 내용만 본다."""
     outcome = bdq_token.install_token(f"  {FAKE_TOKEN}\n", env())
 
     assert outcome == bdq_token.InstallOutcome("written")
     target = folder / f"bigdataquery.token.{ACCOUNT}"
     assert target.read_bytes() == FAKE_TOKEN.encode("utf-8")
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
-    assert stat.S_IMODE(folder.stat().st_mode) == 0o700
+    if keeps_permission_bits:
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        assert stat.S_IMODE(folder.stat().st_mode) == 0o700
     assert [path.name for path in folder.iterdir()] == [target.name]
 
 
