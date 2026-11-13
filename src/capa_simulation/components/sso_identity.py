@@ -55,6 +55,7 @@ from capa_simulation.auth.identity import (
 from capa_simulation.auth.web import (
     LIST_UNREAD_TEXT,
     NOT_ON_LIST_TEXT,
+    REGISTER_LABEL,
     public_link,
     sanitize_next,
 )
@@ -93,9 +94,6 @@ NO_GATE_NOTICE = (
     "`streamlit run capa_server.py` 로 띄워야 합니다(C-DEP 은 시작 스크립트가 그렇게 띄웁니다)."
 )
 LOGIN_AGAIN_LABEL = "다시 로그인"
-# 명단에서 빠진 사람의 단추 — 거절 화면의 신청 단추와 같은 이름(설계 규칙 UI-CON-02). 같은 로그인
-# 경로라 통합인증을 거쳐 콜백의 거절 화면으로 간다.
-ACCESS_REQUEST_LABEL = "접속 권한 신청"
 REFRESH_LABEL = "새로고침"
 # 「새로고침」 을 누르기 전에 알아야 하는 되돌릴 수 없는 결과(설계 규칙 UI-NTF-09) — 풍선.
 REFRESH_TIP = "이 탭에서 저장하지 않은 편집은 사라집니다"
@@ -212,7 +210,9 @@ def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
     reason = ended_reason(problem, cfg)
     icon = ":material/cloud_off:" if reason == names.REASON_UNREAD else ":material/lock_clock:"
     st.warning(signed_out_notice(cfg, problem), icon=icon)
-    label = ACCESS_REQUEST_LABEL if reason == names.REASON_DENIED else LOGIN_AGAIN_LABEL
+    # 명단에서 빠진 사람의 단추는 거절 화면의 신청 단추 이름 그대로다(`web.REGISTER_LABEL` — 설계
+    # 규칙 UI-CON-02). 같은 로그인 경로라 통합인증을 거쳐 콜백의 거절 화면으로 간다.
+    label = REGISTER_LABEL if reason == names.REASON_DENIED else LOGIN_AGAIN_LABEL
     st.markdown(primary_link(login_url(cfg), label), unsafe_allow_html=True)
     render_contact_caption(cfg.access.contact)
     st.stop()

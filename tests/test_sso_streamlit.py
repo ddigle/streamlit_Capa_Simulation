@@ -269,7 +269,7 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
     # 글 링크가 아니라 앱 주 단추 꼴이다(강조색 면 — 카드 p1-tab-ended). 역할은 링크 그대로다 —
     # 단추 역할을 달면 낭독기는 단추로 읽는데 Space 로 열리지 않는다.
     assert "background:" in link and "role=" not in link
-    assert sso_identity.ACCESS_REQUEST_LABEL not in link
+    assert web.REGISTER_LABEL not in link
     assert app.warning[0].icon == ":material/lock_clock:"
 
 
@@ -315,7 +315,7 @@ def test_a_dropped_account_is_offered_the_access_request(
 
     assert [warning.value for warning in app.warning] == [web.NOT_ON_LIST_TEXT]
     [link] = [str(item.value) for item in app.markdown]
-    assert sso_identity.ACCESS_REQUEST_LABEL in link
+    assert web.REGISTER_LABEL in link
     href = link.split('href="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
     assert href.startswith(f"{PUBLIC_URL}{names.LOGIN_PATH}?next=")
     assert parse_qs(urlsplit(href).query)["next"] == ["/space_status"]

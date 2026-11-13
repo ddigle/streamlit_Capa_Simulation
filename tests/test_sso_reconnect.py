@@ -23,7 +23,8 @@ from sso_support import LOGINID, PUBLIC_URL, use_config
 from capa_simulation.auth import names
 from capa_simulation.auth.gate import SsoGate
 from capa_simulation.auth.identity import Identity
-from capa_simulation.components.sso_identity import ACCESS_REQUEST_LABEL, LOGIN_AGAIN_LABEL
+from capa_simulation.auth.web import REGISTER_LABEL
+from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
 from capa_simulation.components.sso_reconnect import (
     BANNER_ID,
     CONNECTION_DIALOG_TEXT,
@@ -116,7 +117,7 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     ):
         assert reason in RECONNECT_NOTICE, reason
     assert json.dumps(LOGIN_AGAIN_LABEL, ensure_ascii=False) in script
-    assert json.dumps(ACCESS_REQUEST_LABEL, ensure_ascii=False) in script
+    assert json.dumps(REGISTER_LABEL, ensure_ascii=False) in script
     assert f"response.headers.get({json.dumps(names.REASON_HEADER)})" in script
     assert json.dumps(PUBLIC_URL) in script
     assert json.dumps(names.LOGIN_PATH) in script
@@ -425,7 +426,7 @@ process.stdout.write(JSON.stringify(reasons.map(bandKind)));
         "legacy",
     ]
     bands = band_texts()
-    assert bands[names.REASON_DENIED] == {"notice": DENIED_NOTICE, "label": ACCESS_REQUEST_LABEL}
+    assert bands[names.REASON_DENIED] == {"notice": DENIED_NOTICE, "label": REGISTER_LABEL}
     assert bands[names.REASON_UNREAD] == {"notice": UNREAD_NOTICE, "label": LOGIN_AGAIN_LABEL}
     assert bands[names.REASON_OTHER] == {"notice": OTHER_NOTICE, "label": LOGIN_AGAIN_LABEL}
     assert bands["legacy"] == {"notice": RECONNECT_NOTICE, "label": LOGIN_AGAIN_LABEL}

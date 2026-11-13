@@ -90,7 +90,8 @@ from urllib.parse import urlsplit
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.identity import Identity
-from capa_simulation.components.sso_identity import ACCESS_REQUEST_LABEL, LOGIN_AGAIN_LABEL
+from capa_simulation.auth.web import REGISTER_LABEL
+from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
 from capa_simulation.design import tokens
 
 BANNER_ID = "capa-sso-reconnect"
@@ -441,7 +442,7 @@ def band_texts() -> dict[str, dict[str, str]]:
     """띠 갈래 → (글, 링크 이름). 갈래는 문지기의 까닭 낱말 셋과 머리 없음(`legacy`)이다."""
     return {
         names.REASON_OTHER: {"notice": OTHER_NOTICE, "label": LOGIN_AGAIN_LABEL},
-        names.REASON_DENIED: {"notice": DENIED_NOTICE, "label": ACCESS_REQUEST_LABEL},
+        names.REASON_DENIED: {"notice": DENIED_NOTICE, "label": REGISTER_LABEL},
         names.REASON_UNREAD: {"notice": UNREAD_NOTICE, "label": LOGIN_AGAIN_LABEL},
         "legacy": {"notice": RECONNECT_NOTICE, "label": LOGIN_AGAIN_LABEL},
     }

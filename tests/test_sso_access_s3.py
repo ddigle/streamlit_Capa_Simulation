@@ -2505,7 +2505,7 @@ def test_an_open_tab_stopped_while_the_list_is_unread_says_it_could_not_check(
     assert app.warning[0].icon == ":material/cloud_off:"
     [link] = [str(item.value) for item in app.markdown]
     assert sso_identity.LOGIN_AGAIN_LABEL in link
-    assert sso_identity.ACCESS_REQUEST_LABEL not in link
+    assert web.REGISTER_LABEL not in link
 
 
 def test_the_probe_of_an_open_tab_names_the_unread_list(
