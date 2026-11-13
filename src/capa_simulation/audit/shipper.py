@@ -176,8 +176,13 @@ def note_tasks_missing() -> None:
 
 
 def keeping_problems(*, managed: bool, now: float | None = None) -> tuple[str, ...]:
-    """`AD-12` 의 까닭들 — 동기화 아님 · 올리기 없음 · 큐 넘침 · 올리기 30분 넘게 밀림 ·
-    시계 차이."""
+    """`AD-12` 의 까닭들 — 동기화 아님 · 올리기 없음 · 기록 못 한 줄 n · 올리기 30분 넘게 밀림 ·
+    시계 차이.
+
+    「기록 못 한 줄 n」 은 기동 뒤 기록하지 못하고 버린 줄의 누계다(`recorder.dropped_total` — 큐
+    넘침과 해시를 못 매긴 줄을 같이 센다). 이미 잃은 줄이라 올리기로 풀리지 않고 다시 띄울 때까지
+    남는다.
+    """
     state = health()
     moment = time.monotonic() if now is None else now
     reasons: list[str] = []
@@ -185,8 +190,9 @@ def keeping_problems(*, managed: bool, now: float | None = None) -> tuple[str, .
         reasons.append("동기화 아님")
     elif state.tasks_missing:
         reasons.append("올리기 없음")
-    if recorder.dropped_total():
-        reasons.append("큐 넘침")
+    lost = recorder.dropped_total()
+    if lost:
+        reasons.append(f"기록 못 한 줄 {lost}")
     if state.unshipped_since is not None and moment - state.unshipped_since > OVERDUE_SECONDS:
         reasons.append("올리기 밀림")
     if state.skew_seconds is not None and abs(state.skew_seconds) > SKEW_LIMIT_SECONDS:

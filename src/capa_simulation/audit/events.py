@@ -140,7 +140,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("sys_sync_blocked", "system", "DB 올리기 멈춤", "decision", lvl="warn"),
     _spec("sys_sync_summary", "system", "DB 올리기(시간 묶음)", *_SUMMARY),
     _spec("sys_clock_skew", "system", "시계 차이", "seconds", lvl="warn"),
-    _spec("sys_audit_dropped", "system", "감사 기록 넘쳐 버림", "count", lvl="crit"),
+    _spec("sys_audit_dropped", "system", "기록 못 한 줄", "count", lvl="crit"),
     _spec("sys_audit_ship_fail", "system", "감사 기록 올리기 실패", "kind", "failures", lvl="warn"),
     _spec("sys_audit_bad_event", "system", "목록 밖 감사 사건", "name", lvl="warn"),
     _spec(

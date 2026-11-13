@@ -12,7 +12,8 @@
 돌아간다.
 
 **실패해도 앱은 멈추지 않는다.** 기록을 만들다 난 예외는 로그 한 줄로 삼킨다. 큐가 넘치면(상한
-`MAX_QUEUE`) 버리고 그 수를 세어 다음 비우기 때 `sys_audit_dropped` 한 줄로 낸다.
+`MAX_QUEUE`) 버리고 그 수를 세어 다음 비우기 때 `sys_audit_dropped` 한 줄로 낸다. 비우기가 해시를
+못 매겨 버린 줄(`note_dropped`)도 같은 수에 더한다.
 
 **행위자는 쓰는 순간에 정한다.** 부르는 쪽이 `actor` 를 주지 않으면 스레드 이름(예약 · 일꾼 →
 `system:*`)을 먼저 보고, 아니면 꽂아 둔 해석기(`set_resolver` — 스크립트 스레드의 쿠키를 지금 다시
@@ -634,7 +635,8 @@ def pending_count() -> int:
 
 
 def dropped_total() -> int:
-    """기동 뒤 넘쳐 버린 줄 누계(AD-12)."""
+    """기동 뒤 기록하지 못하고 버린 줄 누계 — 큐 넘침과 해시를 못 매긴 줄을 같이 센다(`AD-12`
+    「기록 못 한 줄 n」)."""
     with _LOCK:
         return _STATE.dropped_total
 

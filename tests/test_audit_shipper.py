@@ -14,7 +14,7 @@ import pytest
 from object_store_fakes import seed_pair
 from s3_mock_runner import MockStoreRunner, mock_client
 
-from capa_simulation.audit import layout, read, recorder, shipper, spool
+from capa_simulation.audit import events, layout, read, recorder, shipper, spool
 from capa_simulation.components import object_sync_status
 from capa_simulation.io.object_storage import ObjectRecord
 from capa_simulation.object_sync_engine import PruneOutcome, SyncPaths, WatchResult
@@ -467,6 +467,35 @@ def test_a_clock_off_by_minutes_is_noted(box: Box, monkeypatch: pytest.MonkeyPat
 def test_keeping_problems_name_a_server_that_is_not_managed(box: Box) -> None:
     assert shipper.keeping_problems(managed=False) == ("동기화 아님",)
     assert shipper.keeping_problems(managed=True) == ()
+
+
+def test_lines_dropped_from_a_full_queue_are_named_as_lines_not_recorded(
+    box: Box, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(recorder, "MAX_QUEUE", 3)
+    for _ in range(5):
+        recorder.record("session_created", actor="demo.user")
+
+    assert shipper.keeping_problems(managed=True) == ("기록 못 한 줄 2",)
+
+
+def test_lines_that_cannot_be_sealed_count_with_the_queue_overflow(
+    box: Box, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """해시를 못 매겨 버린 줄도 큐가 넘쳐 버린 줄과 한 수로 센다 — 감사 줄 이름도 같은 말."""
+    good = recorder.build_line("session_created", out="success", who=recorder.NOBODY)
+    recorder.requeue_front([good, {**good, "det": {"rows": object()}}])
+    spool.drain()
+
+    assert shipper.keeping_problems(managed=True) == ("기록 못 한 줄 1",)
+    assert events.SPEC_BY_NAME["sys_audit_dropped"].label == "기록 못 한 줄"
+
+    monkeypatch.setattr(recorder, "MAX_QUEUE", 1)
+    for _ in range(3):
+        recorder.record("session_created", actor="demo.user")
+
+    assert shipper.keeping_problems(managed=True) == ("기록 못 한 줄 3",)
+    assert shipper.keeping_problems(managed=False) == ("동기화 아님", "기록 못 한 줄 3")
 
 
 def test_the_sync_panel_shows_the_unshipped_audit_lines(box: Box) -> None:
