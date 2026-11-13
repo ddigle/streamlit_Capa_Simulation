@@ -58,6 +58,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Final, NamedTuple
 
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.access import (
     GRADE_ADMIN,
@@ -531,6 +532,9 @@ def save_changes(
         )
         if not result.changed:
             return result
+        before = {entry.loginid for entry in source.document.entries}
+        after = {entry.loginid for entry in fresh.entries}
+        audit_targets = (sorted(after - before), sorted(before - after))
         try:
             if not _remote_unchanged(target, cfg.access_object_key, source, moment):
                 runtime.record_event(
@@ -539,11 +543,14 @@ def save_changes(
                     loginid=actor,
                     reason="conflict",
                 )
+                _audit_list_change(actor, audit_targets, source.document, result, out="fail")
                 raise StoreConflictError
             etag = _put_noting_no_answer(
                 target, cfg.access_object_key, render_document(fresh), moment
             )
         except S3Failure as failure:
+            outcome = "unknown" if isinstance(failure, SaveUnconfirmedError) else "fail"
+            _audit_list_change(actor, audit_targets, source.document, result, out=outcome)
             problem = problem_of(failure)
             runtime.publish_access_source(replace(source, save_problem=problem))
             runtime.record_event(
@@ -578,4 +585,55 @@ def save_changes(
             removed=str(result.removed),
             revision=str(result.revision),
         )
+        _audit_list_change(
+            actor,
+            audit_targets,
+            source.document,
+            result,
+            out="success",
+            seeded=source.seeded,
+        )
         return result
+
+
+def _audit_list_change(
+    actor: str,
+    targets: tuple[list[str], list[str]],
+    document: ListDocument,
+    result: SaveResult,
+    *,
+    out: str,
+    seeded: bool = False,
+) -> None:
+    """명단 고침의 감사 줄 — 대상 loginid 마다 한 줄(처리한 정보주체), 답을 못 받았으면 `unknown`.
+
+    못 읽은 항목 정리 · 첫 판 심기는 수만 남긴다. 기록기가 꺼졌으면 아무것도 하지 않는다.
+    """
+    revisions = {"rev_from": document.revision, "rev_to": result.revision}
+    added, removed = targets
+    for event, keys in (("user_created", added), ("user_deleted", removed)):
+        for key in keys:
+            audit_recorder.record(
+                event,
+                out=out,
+                actor=actor,
+                verified=True,
+                tgt={"type": "loginid", "id": key},
+                det=revisions,
+            )
+    if out != "success":
+        return
+    if document.unreadable:
+        audit_recorder.record(
+            "user_bulk_dropped",
+            actor=actor,
+            verified=True,
+            det={"count": document.unreadable, **revisions},
+        )
+    if seeded:
+        audit_recorder.record(
+            "user_seeded",
+            actor=actor,
+            verified=True,
+            det={"count": len(document.entries), **revisions},
+        )

@@ -345,7 +345,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   조건부 쓰기, 지원 확인 전이면 HEAD 뒤 쓰기 · 최근 14일 일별 묶음 `daily/…p<n>` 과 앞 manifest sha256 잇기 · 14일 넘게 늦은
   조각 `audit_late_segment` · 400일 미러 · 새 인스턴스의 `audit_chain_link` · 시계 차이 `sys_clock_skew` · `AD-12`/`AD-13`
   까닭)은 `audit/shipper.py` 다(동기화 일꾼이 부른다, 시험은 `tests/test_audit_shipper.py` — `aws` 없이 인자 배열을 가짜 S3
-  에 서명한 요청으로 옮기는 `tests/s3_mock_runner.py` 위). 켜는 곳은 `audit/boot.py` 하나다 —
+  에 서명한 요청으로 옮기는 `tests/s3_mock_runner.py` 위). 사내 PC 운영 도구(`sync_object_storage.py` 의 rollback · init ·
+  fetch-copy · prune)는 기록기를 켜지 않고 명령마다 한 줄 조각을 `audit/v1/tool/…` 에 바로 올린다(`audit/tool.py` — 행위자는
+  OS 사용자, `verified` 거짓, 건너뛴 명령 · 빈 설정은 남기지 않음, 올리지 못해도 종료 코드 그대로). 관리자 행위(명단 추가 · 삭제
+  — 대상 loginid 마다 한 줄, 답을 못 받으면 `unknown` · 토큰 넣기 — 결과와 만료만 · 지금 올리기 · 자동 갱신 설정 — 바뀐 칸
+  이름과 판만 · 자동 갱신 수동 실행)는 그 함수 · 콜백이 `recorder.record` 를 부른다. 켜는 곳은 `audit/boot.py` 하나다 —
   `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(관리자
   수 · 목록 지문 8자 · 점검자 수) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 점검자 `CAPA_AUDIT_VIEWERS` · 사용자)를 꽂는다.
   통합인증 사건은 `auth/runtime.record_event` 가 잠금 밖에서 대응표(`from_sso_event`)로 넘기고(로그인 성공의 이름은 감사

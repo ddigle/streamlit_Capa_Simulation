@@ -7,6 +7,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.io.core_data_source import (
     build_source_column_profile,
     core_data_hash,
@@ -1131,17 +1133,42 @@ class DuckDBScenarioRepository:
         """
         source_label = required_text(source, "자동 갱신 설정 변경 출처")
         author = (changed_by or "").strip() or None
-        with self._write_transaction() as connection:
-            before = auto_official_update_store.load_settings(connection).config
-            auto_official_update_store.replace_settings(
-                connection,
-                config=config,
-                source=source_label,
-                changed_by=author,
-                change_text=describe_config_change(before, config),
-                expected_version=expected_version,
+        try:
+            with self._write_transaction() as connection:
+                before = auto_official_update_store.load_settings(connection).config
+                auto_official_update_store.replace_settings(
+                    connection,
+                    config=config,
+                    source=source_label,
+                    changed_by=author,
+                    change_text=describe_config_change(before, config),
+                    expected_version=expected_version,
+                )
+        except Exception:
+            audit_recorder.record(
+                "admin_auto_update_settings",
+                out="fail",
+                claimed=author,
+                det={"version_from": expected_version},
             )
-        return self.load_auto_official_update_settings()
+            raise
+        saved = self.load_auto_official_update_settings()
+        # 감사 줄에는 바뀐 칸 이름과 판만 — 값(키워드 · 기준)은 싣지 않는다. 손입력 이름은
+        # `claimed`.
+        audit_recorder.record(
+            "admin_auto_update_settings",
+            claimed=author,
+            det={
+                "fields": [
+                    item.name
+                    for item in dataclass_fields(config)
+                    if getattr(before, item.name) != getattr(config, item.name)
+                ],
+                "version_from": expected_version,
+                "version_to": saved.version,
+            },
+        )
+        return saved
 
     def list_auto_official_update_setting_changes(
         self, *, limit: int | None = None
