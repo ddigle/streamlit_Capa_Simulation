@@ -135,7 +135,9 @@ def test_a_token_failure_on_a_query_tells_the_administrator_until_a_query_succee
     _query(monkeypatch, ConnectionError("500 invalid token"))
     note = active_state(app.run(), CODE)
     assert note is not None and "최근 BigDataQuery 조회가 토큰 갈래로 실패" in note["full"]
-    assert "CAPA_BDQ_TOKEN 에 새 토큰을 넣고" in note["full"] and "`" not in note["full"]
+    # 할 일은 Admin 「토큰 넣기」 — 다시 띄우면 CD 환경변수 값으로 돌아가니 그 값도 바꿔 둔다.
+    assert "「토큰 넣기」 로 새 토큰을 넣으면" in note["full"] and "`" not in note["full"]
+    assert "CD 환경변수 CAPA_BDQ_TOKEN 값으로 돌아가니" in note["full"]
 
     _query(monkeypatch, Exception("Connection refused"))
     assert active_state(app.run(), CODE) is not None

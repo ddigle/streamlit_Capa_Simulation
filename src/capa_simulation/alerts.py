@@ -367,6 +367,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec(
         "EQ-25", "check", "event", "Space 「호기 정보」 창 — 고친 칸이 설비 마스터 규칙에 걸려 막힘"
     ),
+    # BigDataQuery 로그인 토큰 만료 1시간 전(지난 것 포함) — 토큰에서 만료 시각을 읽은 C-DEP 서버의
+    # 관리자 회차(`bdq_token_admin.render_expiry_alert`, 2026-11-12 사용자 결정). 새 토큰을 넣으면
+    # 풀린다.
+    AlertSpec("AD-11", "action", "state", "BigDataQuery 로그인 토큰 만료 1시간 전 · 지남"),
 )
 
 

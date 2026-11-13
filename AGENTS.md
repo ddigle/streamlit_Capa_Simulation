@@ -1030,11 +1030,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 앞 두 탭(입력 폼)은 늘 그린다. `원천 품질`(위젯 없는 표 — 원천 읽기에 캐시가 없어 이 탭이 Admin 회차의 유일한 DB
     읽기다)은 닫혀 있으면 건너뛴다(`tab_is_hidden`, `tests/test_admin_area_page.py`). 조건 패널은 시나리오 줄만 선다.
   - 두 편집 탭의 붙여넣기 팝업 칸은 페이지에 하나(`components/admin_dialog.py`, 값 `PASTE_DIALOG` 가 탭을 가른다)다.
+    「서버 시작 점검」 의 「토큰 넣기」 팝업(`components/bdq_token_admin.py` — 호스트 `DialogHost`)도 같은 칸을 값으로 쓴다.
   - 탭 위에는 C-DEP CD 서버에서만 「서버 시작 점검」 펼침(`components/container_start_check.py`)이 선다 — 결과 파일도
     CD 전용 환경변수도 없는 개발·사내 PC 에서는 아무것도 그리지 않는다. 그 뒤 `managed` 서버면 「DB 동기화」 펼침
     (`components/object_sync_status.py`), 그 뒤에 「통합인증 점검」 펼침(`components/sso_status.py`)이 선다 — 켜짐 · 막힘이거나 `APP_ENV=prod` 면(꺼짐이어도 「주소를 아는 사람은 누구나 들어옵니다」
     캡션과 「켜면 막힐 문제」) 그리고, 꺼짐이고 운영이 아니면 그리지 않는다. 알릴 조건(서버 시작 결과 없음 · 못 읽음 `AD-01`,
-    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` — 둘 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area, 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` — C-DEP 에서 `app.py` 가 관리자의 모든 화면 회차에 낸다)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
+    운영인데 꺼짐 `AD-02`, 서명 인증서 만료 임박 `AD-03`, S3 명단을 읽지 못함 `AD-08` · 명단 파일이 없어 환경변수 첫 버전을 씀 `AD-09` — 둘 다 그 명단을 쓰는 서버에서 앱 정보 카드가 관리자의 모든 화면 회차에 내고 「그 화면으로」 는 Admin Area, 2026-11-08 답 U4, BigDataQuery 토큰 실패 `AD-10` · 만료 1시간 전 `AD-11` — C-DEP 에서 `app.py` 가 관리자의 모든 화면 회차에 낸다)은 펼침 안 캡션과 함께 상태 알림으로 낸다(9장 「알림 칸」 — 상태 줄 ·
     점검 펼침). 편 상태는 기억 칸(`remembered_expander`)이라
     다른 화면에 다녀와도 접히지 않는다. 그 바로 뒤에 「접속 명단」 펼침(`components/access_list_admin.py`)이 관리자 회차에만 선다.
   - 「모듈 상태」(`components/module_status.py`)는 탭 위 펼침이 아니라 안쪽 탭 줄 오른쪽 끝 팝오버다(2026-11-10 보드 Q-6 — T7 과
@@ -1739,7 +1740,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   202611111500 보드 N8 (가))도 여기다 — 결과 파일이 있는 서버(C-DEP)에서만 부르고(없으면 Streamlit 호출 0), 시작 점검 토큰 줄 「실패」 나
   어댑터의 프로세스 표지(`company_bigdataquery_adapter.last_query_failed_on_token` — 조회가 토큰 갈래로 실패하면 서고 조회가 성공하면
   내린다, 예약 스레드도 같은 값을 쓴다)가 있으면 관리자(`sso_identity.viewer_is_admin` — 통합인증이 켜짐이 아니면 아무도 아니다) 회차에
-  조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 자동 갱신은 하지 않는다(사내 확인을 먼저 받는다).
+  조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 자동 갱신은 하지 않는다(사내 확인을 먼저 받는다 —
+  2026-11-12 사용자 결정 「REST 자동 갱신은 조사만」). 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
+  CD 환경변수 값 바꿔 두기다. 같은 함수 끝에서 만료 알림 `AD-11`(`bdq_token_admin.render_expiry_alert`)도 부른다 — 결과 파일이 있는
+  서버는 회차마다 이벤트 칸 두 자리다.
+- `src/capa_simulation/components/bdq_token_admin.py` — Admin 「서버 시작 점검」 펼침 표 아래 「지금 토큰」 값 줄(`token_line` — 패키지가
+  다음 조회에 읽을 토큰의 자리 · 파일 수정 시각 · 만료, 토큰 글 없음 — 복사 글에도 싣는다)과 관리자 회차의 「토큰 넣기」 단추 · 팝업
+  (2026-11-12 사용자 결정). 단추는 관리자(`sso_identity.viewer_is_admin`)에게만 서고 — 권한 기능이라 접속 명단처럼 숨긴다 —
+  `BIGDATAQUERY_LOGIN_TOKEN` 이 있거나 계정이 없으면 잠그고 까닭 풍선(`io/bdq_token.blocked_reason`)을 단다. 팝업은 Admin Area 열림 칸
+  (`admin_dialog.ADMIN_DIALOG_KEY` — 접속 명단 「추가」 와 값으로 가른다)의 `DialogHost`(`admin_area_bdq_token_dialog_host`)가 열고,
+  폼 안 비밀 칸(`type="password"` · `autocomplete="new-password"` · 라벨 접음) 하나와 「넣기」 뿐이다. 받은 회차에 세션 칸을 곧바로
+  떼고(`tests/test_flash_messages.py` 허용 목록), 누른 회차에 신원을 다시 검증해 관리자일 때만 쓴다. 거절은 칸 아래 한 줄
+  (`tests/test_data_error_mark.py` BESIDE — 토큰 글 · 길이 없음), 넣음 · 같음은 알림창이고 넣으면 `HOST.finish` 로 닫는다. 만료 1시간
+  전 관리자 알림 `AD-11`(`render_expiry_alert` — 지문은 만료 시각 하나, 지난 것도 선다, 「그 화면으로」 Admin Area)은
+  `container_start_check.render_token_alert` 가 부른다. 만료를 못 읽으면 서지 않는다(`io/bdq_token.token_expiry` — JWT `exp` 만).
+  시험 `tests/test_bdq_token_admin.py`.
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 목록 가운데 표가 커서 알림에 싣지 못한 것(대당
@@ -1872,7 +1887,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     판 값 `AWS_CLI_VERSION` 은 `docker/Dockerfile-prod` 의 `awscli==` 한 줄과 시험이 맞댄다 — `requirements.txt` · 락 밖이고(`tests/test_requirements_export.py` 가 범위를 본다) 사외 개발 환경에 넣지 않는다. 실제 `aws` 왕복은 `CAPA_TEST_AWS_BIN` 이 있을 때 돈다.
 - `src/capa_simulation/io/bdq_token.py` — BigDataQuery 로그인 토큰 파일(`/config/.credential/bigdataquery.token.<계정>`)의 자리 ·
   0600 원자적 쓰기 · 넣기 판정 · 만료 읽기 한 곳. 시작 스크립트(CD 환경변수 `CAPA_BDQ_TOKEN` → 파일)와 Admin 「토큰 넣기」
-  가 같은 쓰기 길을 쓴다(2026-11-12 사용자 결정 — 패키지는 조회마다 토큰을 다시 읽고,
+  (`components/bdq_token_admin.py`)가 같은 쓰기 길을 쓴다(2026-11-12 사용자 결정 — 패키지는 조회마다 토큰을 다시 읽고,
   프로세스 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 이 파일보다 앞이라 그 key 가 있으면 넣기를 잠근다). 표준 라이브러리만 쓴다 — 시작
   스크립트가 앱 의존성보다 먼저 읽는다. 토큰 글 · 길이를 어떤 까닭 글에도 싣지 않고, 만료 시각만 (자리, 수정 시각, 크기) 열쇠로
   기억한다. 만료는 JWT `exp` 하나만 읽고 그 밖은 「모름」 이다 — 실제 토큰(WebIDE 실측 35바이트)의 꼴은 사내 확인 거리라

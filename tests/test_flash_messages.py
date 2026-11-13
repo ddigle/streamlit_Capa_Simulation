@@ -455,6 +455,11 @@ FLASH_POP_ALLOWED: dict[tuple[str, str, str], str] = {
         "한 저장의 표시명 실수 여러 줄(dict) — 알림 하나가 아니다. 저장 성공 칸"
         '(`render_flash("display_order_flash")` 가 돌려준 칸) 안에 그려 자리는 그 칸이 고정한다'
     ),
+    ("src/capa_simulation/components/bdq_token_admin.py", "_token_dialog", "INPUT_KEY"): (
+        "알림 칸이 아니라 「토큰 넣기」 비밀 칸의 값이다 — 받은 회차에 세션에서 곧바로 떼어 토큰이"
+        " 세션에 머물지 않게 한다. 그 회차의 거절 한 줄(폼 검증 — UI-NTF-03)은 넣기 결과의 까닭이고"
+        " 뗀 값을 그리지 않는다"
+    ),
 }
 FLASH_OWNER = COMPONENTS / "flash.py"
 # 알림을 그리는 요소. 로거의 `error`·`warning` 은 화면이 아니다.
