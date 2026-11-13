@@ -631,6 +631,14 @@ def test_a_raised_mark_with_nothing_under_it_still_comes_down_under_the_units() 
     steps = [([v2, w2, unit, far], ["W2", "Z"], "bwd"), ([w2, v2, unit, far], ["W2", "Z"], "bwd")]
     assert _moves(steps) == [["W2", "V2", "EQ", "Z"], ["W2", "V2", "EQ", "Z"]]
     assert _moves(steps, raised=True) == [["Z"], []]
+    # 함께 고른 것이 호기여도 같다 — 호기가 한 걸음 간 누름에는 올림이 남고, 호기도 막힌 다음 누름에
+    # 풀린다. 「맨 뒤로」 는 겹친 것이 있을 때처럼 늘 함께 내린다.
+    eq1 = _unit("EQ-01", 0, 0)
+    eq2 = _unit("EQ-02", 2, 2)
+    pair = [([eq1, eq2, far], ["EQ-02", "Z"], "bwd"), ([eq2, eq1, far], ["EQ-02", "Z"], "bwd")]
+    assert _moves(pair) == [["EQ-02", "EQ-01", "Z"], ["EQ-02", "EQ-01", "Z"]]
+    assert _moves(pair, raised=True) == [["Z"], []]
+    assert _moves([([eq1, eq2, far], ["EQ-02", "Z"], "back")], raised=True) == [[]]
     # 그대로인 것 — 올리는 쪽, 올리지 않은 먼 영역, 올릴 수 없는 위 겹 상자.
     plain = _box("P", "above", 40, 40)
     still = _moves(
@@ -728,6 +736,8 @@ def test_a_raised_zone_moved_clear_of_everything_still_comes_down_as_one_change(
     assert moved["raised"] == ["Z-1"] and moved["changes"] == 1
     assert moved["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": "", "back": ""}
     assert bwd_ok is True and bwd["raised"] == [] and bwd["undo"] == 2
+    # 세션 안에서 올렸다 내려 처음 차례로 돌아왔으니 순서 변경은 없다(`stack` 이 나가지 않는다).
+    assert bwd["order"] == ["EQ-01", "EQ-02", "Z-1"] and bwd["stack"] is False
     assert bwd["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": _BACK, "back": _BACK}
     assert undone["raised"] == ["Z-1"] and undone["locks"]["bwd"] == ""
     assert back_ok is True and back["raised"] == []
