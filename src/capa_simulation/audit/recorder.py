@@ -517,6 +517,16 @@ def take_pending() -> list[dict[str, Any]]:
     return taken
 
 
+def requeue_front(lines: list[dict[str, Any]]) -> None:
+    """스풀에 적지 못한 줄을 큐 앞에 돌려놓는다(다음 비우기가 같은 차례로 다시 적는다)."""
+    with _LOCK:
+        _STATE.queue.extendleft(reversed(lines))
+        while len(_STATE.queue) > MAX_QUEUE:
+            _STATE.queue.pop()
+            _STATE.dropped += 1
+            _STATE.dropped_total += 1
+
+
 def pending_count() -> int:
     with _LOCK:
         return len(_STATE.queue)

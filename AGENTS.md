@@ -336,8 +336,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   호출 0 이다. 사건 이름 · 갈래 · 한글 표시명 · 허용 상세 키는 `audit/events.py`, 글 다듬기(줄바꿈 · 제어 문자 · 길이 · 토큰 꼴
   가림, 통합인증 로그 칸 `log_field` 도 여기 — `auth/runtime.py` 가 쓴다)는 `audit/text.py`, 해시 사슬(정규화 · 해시 · 검증)은
   `audit/chain.py`, 기록기(넣기만 · 상한 20,000줄 · 버린 수 · 행위자 해석기 · 시간 묶음 · 통합인증 사건 대응표
-  `from_sso_event`)는 `audit/recorder.py` 다. `recorder` · `chain` · `events` · `text` 는 표준 라이브러리만 쓴다(문지기가
-  부른다 — `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다).
+  `from_sso_event`)는 `audit/recorder.py` 다. 비우기(잠금 하나 안에서 사슬을 이어 `<스풀 뿌리>/spool/<UTC날짜>__<inst>.jsonl`
+  에 덧붙이고 fsync · 올림 표지 `.shipped` · 일별 파일이 미러에 든 날짜만 지우기)는 `audit/spool.py`(뿌리 기본
+  `data/temp/audit`, 시험은 conftest 가 세션 임시 폴더로 옮기고 저장소에 새로 생기면 실패), 버킷 키 · 미러 자리 · gzip 꼴은
+  `audit/layout.py`, 화면이 읽는 길(스풀 · 미러만 — S3 를 부르지 않는다, KST +09:00 고정, 같은 (inst, seq) 하나만, 다시 읽지
+  않을 지문)은 `audit/read.py` 다. 모두 표준 라이브러리만 쓴다(문지기가 `recorder` 를 부른다 —
+  `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다).
 - `src/capa_simulation/auth/` — 통합인증(ADFS · form_post). Streamlit 을 import 하지 않는다(문지기는 이벤트 루프에서
   돈다). 환경변수 이름 · 경로 · 쿠키 이름은 `auth/names.py`(표준 라이브러리만), 모드(꺼짐 · 켜짐 · 막힘) 판정과 검증된 설정은
   `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 토큰(HS256 — `sid` · `auth_time` 을 싣고 갱신은 새

@@ -1,0 +1,212 @@
+# Purpose: 감사 스풀 — 큐를 비워 해시 사슬을 잇고 UTC 날짜 파일에 덧붙이며 올림 표지를 적는다.
+
+"""로컬 스풀(표준 라이브러리만).
+
+**비우기(`drain`)** 는 잠금 하나 안에서 큐를 꺼내 순번(`seq`) · 앞 해시(`prev`) · 이 줄
+해시(`h`)를 매기고 `<스풀 뿌리>/spool/<UTC날짜>__<inst>.jsonl` 끝에 덧붙인 뒤 fsync 한다.
+스크립트 스레드(`app.py` 부트스트랩 뒤)와 동기화 일꾼(고리마다)이 부르고, 이벤트 루프는 부르지
+않는다(파일 IO 를 하지 않는다). 큐가 비었으면 파일을 건드리지 않는다.
+
+**스풀 뿌리** 는 기본이 `data/temp/audit` 이고 `configure` 로 바꾼다 — 통합인증을 켠 시험이 저장소
+`data/temp/` 에 쓰지 않고 `tmp_path` 에 쓴다(conftest 그물).
+
+**올림 표지** 는 파일 옆 `.shipped` 에 올린 마지막 seq 를 적는다. 스풀 파일은 그 날짜의 일별 파일이
+미러에 들어오고 다 올린 뒤에야 지운다(`prune`) — 지난 날짜라도 일별 파일이 오기 전에는 화면이 그
+날짜를 읽을 곳이 스풀뿐이다.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import threading
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Final
+
+from capa_simulation.audit import chain, layout, recorder
+
+_LOGGER = logging.getLogger(__name__)
+
+SPOOL_DIR: Final = "spool"
+SUFFIX: Final = ".jsonl"
+SHIPPED_SUFFIX: Final = ".shipped"
+
+_LOCK = threading.Lock()
+
+
+@dataclass
+class _Chain:
+    seq: int = 0
+    prev: str = chain.GENESIS
+    shipped: int = 0
+
+
+_ROOT: Path | None = None
+_CHAIN = _Chain()
+
+
+def configure(root: Path | None) -> None:
+    """스풀 뿌리를 정한다(`None` 이면 기본 `data/temp/audit`)."""
+    global _ROOT
+    _ROOT = root
+
+
+def configured() -> Path | None:
+    """`configure` 로 정한 뿌리(정하지 않았으면 `None`)."""
+    return _ROOT
+
+
+def root() -> Path:
+    if _ROOT is not None:
+        return _ROOT
+    from capa_simulation import settings
+
+    return settings.DATA_DIR / "temp" / "audit"
+
+
+def spool_dir(base: Path | None = None) -> Path:
+    return (root() if base is None else base) / SPOOL_DIR
+
+
+def spool_path(date: str, inst: str, base: Path | None = None) -> Path:
+    return spool_dir(base) / f"{date}__{inst}{SUFFIX}"
+
+
+def parse_spool_name(path: Path) -> tuple[str, str] | None:
+    """스풀 파일 이름 → (UTC 날짜, inst)."""
+    if not path.name.endswith(SUFFIX):
+        return None
+    date, sep, inst = path.name[: -len(SUFFIX)].partition("__")
+    if not sep or len(date) != 10 or not inst:
+        return None
+    return date, inst
+
+
+def reset() -> None:
+    """시험 전용 — 사슬 상태를 처음으로 돌린다(뿌리는 그대로)."""
+    global _CHAIN
+    with _LOCK:
+        _CHAIN = _Chain()
+
+
+# ------------------------------------------------------------------ 비우기
+def _append(path: Path, lines: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = "".join(chain.dump(line) + "\n" for line in lines).encode("utf-8")
+    with path.open("ab") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def drain() -> int:
+    """큐를 비워 스풀에 적는다. 적은 줄 수. 꺼졌거나 빈 큐면 0(파일 IO 없음).
+
+    날짜 묶음 하나를 쓰다 실패하면 그 묶음부터의 줄을 큐 앞에 돌려놓고 사슬은 쓴 데까지만 나아간다
+    — 빈 순번이 생기지 않는다.
+    """
+    if not recorder.enabled():
+        return 0
+    with _LOCK:
+        pending = recorder.take_pending()
+        if not pending:
+            return 0
+        inst = recorder.instance_id()
+        groups: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]] = []
+        seq, prev = _CHAIN.seq, _CHAIN.prev
+        for line in pending:
+            date = str(line.get("ts", ""))[:10]
+            sealed = chain.seal(line, seq=seq + 1, prev=prev)
+            seq, prev = sealed["seq"], sealed["h"]
+            if not groups or groups[-1][0] != date:
+                groups.append((date, [], []))
+            groups[-1][1].append(sealed)
+            groups[-1][2].append(line)
+        written = 0
+        for index, (date, sealed_lines, _) in enumerate(groups):
+            try:
+                _append(spool_path(date, inst), sealed_lines)
+            except OSError:
+                _LOGGER.exception("감사 스풀에 적지 못했습니다.")
+                rest = [line for _, _, group in groups[index:] for line in group]
+                recorder.requeue_front(rest)
+                break
+            last = sealed_lines[-1]
+            _CHAIN.seq, _CHAIN.prev = int(last["seq"]), str(last["h"])
+            written += len(sealed_lines)
+        return written
+
+
+def last_sealed() -> tuple[int, str]:
+    """이 프로세스가 스풀에 적은 마지막 (seq, h)."""
+    with _LOCK:
+        return _CHAIN.seq, _CHAIN.prev
+
+
+# ------------------------------------------------------------------ 올림 표지
+def shipped_seq(path: Path) -> int:
+    marker = path.with_name(path.name + SHIPPED_SUFFIX)
+    try:
+        return int(marker.read_text(encoding="ascii").strip() or "0")
+    except (OSError, ValueError):
+        return 0
+
+
+def mark_shipped(path: Path, seq: int) -> None:
+    """올린 마지막 seq 를 적는다(바꿔 쓰기 — 반쯤 쓴 표지가 남지 않게)."""
+    marker = path.with_name(path.name + SHIPPED_SUFFIX)
+    temporary = marker.with_name(marker.name + ".tmp")
+    temporary.write_text(str(seq), encoding="ascii")
+    os.replace(temporary, marker)
+    parsed = parse_spool_name(path)
+    if parsed is not None and parsed[1] == recorder.instance_id():
+        with _LOCK:
+            _CHAIN.shipped = max(_CHAIN.shipped, seq)
+
+
+def unshipped_count() -> int:
+    """이 프로세스의 아직 올리지 않은 줄(큐 + 스풀) — 「감사 미전송 n줄」. 메모리만 읽는다."""
+    with _LOCK:
+        drained = _CHAIN.seq - _CHAIN.shipped
+    return max(drained, 0) + recorder.pending_count()
+
+
+def spool_files(base: Path | None = None) -> list[Path]:
+    folder = spool_dir(base)
+    try:
+        return sorted(path for path in folder.iterdir() if parse_spool_name(path) is not None)
+    except OSError:
+        return []
+
+
+def read_lines(path: Path) -> list[dict[str, Any]]:
+    try:
+        return layout.parse_text(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return []
+
+
+def unshipped_lines(path: Path) -> list[dict[str, Any]]:
+    """이 스풀 파일에서 아직 올리지 않은 줄(seq 차례)."""
+    done = shipped_seq(path)
+    lines = [line for line in read_lines(path) if int(line.get("seq", 0)) > done]
+    return sorted(lines, key=lambda line: int(line.get("seq", 0)))
+
+
+def prune(daily_dates: Iterable[str], base: Path | None = None) -> list[Path]:
+    """일별 파일이 미러에 든 날짜의 스풀 가운데 다 올린 것을 지운다. 지운 파일 목록."""
+    covered = set(daily_dates)
+    removed: list[Path] = []
+    for path in spool_files(base):
+        parsed = parse_spool_name(path)
+        if parsed is None or parsed[0] not in covered or unshipped_lines(path):
+            continue
+        try:
+            path.unlink()
+            path.with_name(path.name + SHIPPED_SUFFIX).unlink(missing_ok=True)
+        except OSError:
+            continue
+        removed.append(path)
+    return removed
