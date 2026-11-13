@@ -21,6 +21,10 @@ base64 · 쓰기 실패)은 칸 아래 한 줄이고(폼 검증 — UI-NTF-03) �
 관리자 회차에 조치 알림이 선다. 지문은 만료 시각 하나라 토큰마다 알림창이 한 번이다. 만료를 읽지
 못하면(지금 아는 꼴은 JWT `exp` 하나 — `io/bdq_token.py`) 서지 않고 조회 실패 알림 `AD-10` 이
 뒷벽이다. 회차가 돌 때만 선다 — 배경 스레드를 더하지 않는다(AGENTS 9장).
+
+**물러서기.** 이 알림은 `app.py` 가 모든 화면 회차에 부르는 자리라, 지금 토큰을 읽다 무엇이 나도
+(`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로 물러서고 시각을 못 옮기면 「알 수 없음」
+이다 — 덧붙은 보기가 화면을 멈추지 않는다.
 """
 
 from __future__ import annotations
@@ -66,10 +70,35 @@ NOT_ADMIN_MESSAGE: Final = "관리자만 토큰을 넣을 수 있습니다"
 TOKEN_LINE_LABEL: Final = "**지금 토큰**"
 # 알림창 짧은 글의 만료 시각 꼴(서버 시각대) — 전문은 펼침과 같은 `CLOCK_FORMAT`.
 SHORT_CLOCK_FORMAT: Final = "%m-%d %H:%M"
+UNKNOWN_CLOCK: Final = "알 수 없음"
+# 알림 전문의 할 일 — 패키지가 읽는 자리마다(`AD-10` 조회 실패 · `AD-11` 이 함께 쓴다). 평문이다
+# (알림창 · Alarm 은 `textContent` 로 넣는다).
+ENVIRONMENT_FIX: Final = (
+    f"패키지가 환경변수 {bdq_token.LOGIN_TOKEN_ENV} 의 토큰을 씁니다 — 그 값을 새 토큰으로 "
+    "바꾸고 CI/CD 를 다시 누르세요."
+)
+INSTALL_FIX: Final = (
+    "Admin 「서버 시작 점검」 의 「토큰 넣기」 로 새 토큰을 넣으면 다음 조회부터 쓰입니다 — "
+    f"컨테이너를 다시 띄우면 CD 환경변수 {BDQ_TOKEN_ENV} 값으로 돌아가니 그 값도 새 토큰으로 "
+    "바꿔 두세요."
+)
 
 
 def _clock(moment: datetime, layout: str = CLOCK_FORMAT) -> str:
-    return moment.astimezone().strftime(layout)
+    """서버 시각대의 시각 글. 그 시각대로 옮기지 못하면(넘침) 「알 수 없음」."""
+    try:
+        return moment.astimezone().strftime(layout)
+    except (OverflowError, OSError, ValueError):
+        return UNKNOWN_CLOCK
+
+
+def read_current() -> bdq_token.TokenState:
+    """지금 토큰 — 읽다 무엇이 나도 「확인하지 못함」(`unknown`)으로 물러선다(모듈 설명
+    「물러서기」). 스크립트 멈춤 · 다시 돌기는 `Exception` 이 아니라 지나간다."""
+    try:
+        return bdq_token.current_token()
+    except Exception:
+        return bdq_token.TokenState("unknown")
 
 
 def _expiry_text(state: bdq_token.TokenState) -> str:
@@ -82,11 +111,11 @@ def _expiry_text(state: bdq_token.TokenState) -> str:
 def token_line(state: bdq_token.TokenState | None = None) -> str:
     """「지금 토큰」 값 줄 — 패키지가 다음 조회에 읽을 토큰의 자리 · 바뀐 때 · 만료. 토큰 글은
     없다."""
-    current = bdq_token.current_token() if state is None else state
+    current = read_current() if state is None else state
     if current.source == "environment":
         body = f"환경변수 `{bdq_token.LOGIN_TOKEN_ENV}` · {_expiry_text(current)}"
     elif current.source == "file":
-        modified = _clock(current.modified_at) if current.modified_at else "알 수 없음"
+        modified = _clock(current.modified_at) if current.modified_at else UNKNOWN_CLOCK
         body = f"파일 · 수정 {modified} · {_expiry_text(current)}"
     elif current.source == "missing":
         body = "파일 없음"
@@ -134,8 +163,8 @@ def install_from_dialog(raw: str) -> str | None:
         queue_flash(FLASH_KEY, "같은 토큰이 이미 들어 있습니다 — 바뀐 것이 없습니다", kind="info")
         return None
     # 알림창 짧은 글 안에 들게 만료는 짧은 시각 꼴이다(다음 조회부터 쓰인다는 말은 단추 풍선 ·
-    # Guide).
-    expires = bdq_token.current_token().expires_at
+    # Guide). 파일은 이미 썼다 — 만료 읽기가 무엇을 내도 넣음으로 끝낸다(`read_current`).
+    expires = read_current().expires_at
     when = "모름" if expires is None else _clock(expires, SHORT_CLOCK_FORMAT)
     queue_flash(FLASH_KEY, f"BigDataQuery 토큰을 넣었습니다 · 만료 {when}")
     return None
@@ -165,8 +194,9 @@ def _token_dialog() -> None:
 
 def render_expiry_alert() -> None:
     """토큰 만료 1시간 전 관리자 알림(`AD-11`). 결과 파일이 있는 서버에서 회차마다 조건 없이 부른다
-    (이벤트 칸 한 자리). 지문은 만료 시각 하나다 — 회차마다 바뀌는 지금 시각을 싣지 않는다."""
-    state = bdq_token.current_token()
+    (이벤트 칸 한 자리 — 토큰을 읽지 못해도 해소로 그 자리를 쓴다). 지문은 만료 시각 하나다 —
+    회차마다 바뀌는 지금 시각을 싣지 않는다."""
+    state = read_current()
     expires = state.expires_at
     active = (
         expires is not None and bdq_token.expiry_is_near(state) and sso_identity.viewer_is_admin()
@@ -190,15 +220,6 @@ def render_expiry_alert() -> None:
 def _expiry_alert_text(state: bdq_token.TokenState) -> str:
     """전문(평문) — 언제 만료이고 무엇을 하면 풀리나."""
     expires = state.expires_at
-    when = _clock(expires) if expires is not None else "알 수 없음"
+    when = _clock(expires) if expires is not None else UNKNOWN_CLOCK
     head = f"BigDataQuery 로그인 토큰의 만료 시각은 {when} 입니다(1시간 전부터 알립니다). "
-    if state.source == "environment":
-        return head + (
-            f"패키지가 환경변수 {bdq_token.LOGIN_TOKEN_ENV} 의 토큰을 씁니다 — 그 값을 새 토큰으로 "
-            "바꾸고 CI/CD 를 다시 누르세요."
-        )
-    return head + (
-        "Admin 「서버 시작 점검」 의 「토큰 넣기」 로 새 토큰을 넣으면 다음 조회부터 쓰입니다 — "
-        f"컨테이너를 다시 띄우면 CD 환경변수 {BDQ_TOKEN_ENV} 값으로 돌아가니 그 값도 새 토큰으로 "
-        "바꿔 두세요."
-    )
+    return head + (ENVIRONMENT_FIX if state.source == "environment" else INSTALL_FIX)

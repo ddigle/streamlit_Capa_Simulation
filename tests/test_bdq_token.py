@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import stat
 import threading
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,20 @@ from capa_simulation.io.container_start_report import BDQ_USER_NAME_ENV
 ACCOUNT = "fakeaccount"
 # 가짜 토큰만 쓴다 — 사내 토큰 꼴(35바이트 · 한 줄)을 흉내 낸 값과 가짜 JWT.
 FAKE_TOKEN = "FAKE-bdq-login-token-0000-abcdefghi"
+# 「만료 없음」 자리표시로 흔한 9999-12-31T23:59:59Z — UTC 로는 읽히지만 UTC 보다 앞선 시각대로
+# 옮기면 10000년이 된다.
+FAR_EXPIRY = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+
+
+def jwt_with_body(body: bytes) -> str:
+    """몸을 그대로 담은 가짜 JWT."""
+    middle = base64.urlsafe_b64encode(body).decode("ascii").rstrip("=")
+    return f"{fake_jwt(FAR_EXPIRY).split('.')[0]}.{middle}.FAKE-signature"
+
+
+def deeply_nested_jwt() -> str:
+    """몸이 깊은 중첩 JSON(`[` 를 길게 이은 것)인 가짜 JWT — 풀면 `RecursionError` 가 난다."""
+    return jwt_with_body(b"[" * 100_000)
 
 
 def fake_jwt(expires: datetime) -> str:
@@ -159,6 +174,26 @@ def test_the_expiry_is_read_from_a_jwt_exp_only() -> None:
     assert bdq_token.token_expiry(".".join(no_exp).encode()) is None
 
 
+def test_a_deeply_nested_body_is_an_unknown_expiry(folder: Path) -> None:
+    """만료 읽기는 덧붙은 보기다 — 풀다 재귀 한도를 넘어도 예외 없이 모름이다(파일 · 환경변수)."""
+    token = deeply_nested_jwt()
+
+    assert bdq_token.token_expiry(token.encode()) is None
+    assert bdq_token.install_token(token, env()).status == "written"
+    state = bdq_token.current_token(env())
+    assert state.source == "file" and state.expires_at is None
+    environ = env(**{bdq_token.LOGIN_TOKEN_ENV: token})
+    assert bdq_token.current_token(environ) == bdq_token.TokenState("environment")
+
+
+def test_an_expiry_no_time_zone_can_show_is_unknown() -> None:
+    """어느 시각대로 옮겨도 넘치지 않는 안쪽만 만료로 받는다 — 시각대와 무관한 판정이다."""
+    assert bdq_token.token_expiry(fake_jwt(FAR_EXPIRY).encode()) is None
+    assert bdq_token.token_expiry(jwt_with_body(b'{"exp":-62135596800}').encode()) is None
+    inside = datetime(9999, 12, 29, tzinfo=timezone.utc)
+    assert bdq_token.token_expiry(fake_jwt(inside).encode()) == inside
+
+
 def test_the_current_token_follows_the_package_order(folder: Path) -> None:
     assert bdq_token.current_token({}) == bdq_token.TokenState("unknown")
     assert bdq_token.current_token(env()) == bdq_token.TokenState("missing")
@@ -198,6 +233,52 @@ def test_the_file_is_read_again_only_when_it_changes(
     bdq_token.install_token(fake_jwt(expires + timedelta(days=1)), env())
     assert bdq_token.current_token(env()).expires_at == expires + timedelta(days=1)
     assert len(reads) == 2
+
+
+def _same_size_tokens() -> tuple[datetime, str, datetime, str]:
+    first = datetime(2026, 11, 13, 9, 0, tzinfo=timezone.utc)
+    second = first + timedelta(days=1)
+    tokens = (fake_jwt(first), fake_jwt(second))
+    assert len(tokens[0]) == len(tokens[1])
+    return first, tokens[0], second, tokens[1]
+
+
+def test_a_file_replaced_from_outside_in_the_same_tick_is_read_again(folder: Path) -> None:
+    """프로세스 밖(시작 스크립트 · 다른 앱)이 같은 크기 토큰을 같은 시각 눈금 안에 바꿔 끼워도 새
+    만료를 본다 — 바꿔 끼우는 쓰기는 inode 가 바뀐다(기억 열쇠)."""
+    first, token, second, other = _same_size_tokens()
+    bdq_token.install_token(token, env())
+    target = folder / f"bigdataquery.token.{ACCOUNT}"
+    assert bdq_token.current_token(env()).expires_at == first
+    before = target.stat()
+
+    bdq_token.write_private(target, other.encode())
+    os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+    after = target.stat()
+    assert (after.st_mtime_ns, after.st_size) == (before.st_mtime_ns, before.st_size)
+    assert bdq_token.current_token(env()).expires_at == second
+
+
+def test_a_put_token_shows_its_expiry_even_where_inodes_stay(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """inode 를 믿을 수 없는 파일 체계(같은 자리에 덮어씀 · 같은 시각 눈금 · 같은 크기)에서도 넣은
+    토큰의 만료를 바로 본다 — 넣기가 쓴 뒤 기억을 비운다."""
+    first, token, second, other = _same_size_tokens()
+    bdq_token.install_token(token, env())
+    assert bdq_token.current_token(env()).expires_at == first
+
+    def in_place(target: Path, content: bytes) -> None:
+        before = target.stat()
+        target.write_bytes(content)
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert target.stat().st_ino == before.st_ino
+
+    monkeypatch.setattr(bdq_token, "write_private", in_place)
+    assert bdq_token.install_token(other, env()).status == "written"
+
+    assert bdq_token.current_token(env()).expires_at == second
 
 
 def test_the_warning_starts_one_hour_before_and_stays_after() -> None:

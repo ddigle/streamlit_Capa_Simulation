@@ -1,8 +1,10 @@
-# Purpose: Admin 토큰 넣기의 관리자 문 · 비밀 칸 뒷정리 · 거절과 만료 관리자 알림(AD-11)을 본다.
+# Purpose: Admin 토큰 넣기 · 지금 토큰 줄 · 만료 알림(AD-11)과 그 물러서기를 본다.
 
 from __future__ import annotations
 
 import json
+import os
+import time
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,11 +12,12 @@ from pathlib import Path
 import pytest
 from alert_marks import active_state, flashed, states
 from streamlit.testing.v1 import AppTest
-from test_bdq_token import ACCOUNT, FAKE_TOKEN, fake_jwt
+from test_bdq_token import ACCOUNT, FAKE_TOKEN, FAR_EXPIRY, deeply_nested_jwt, fake_jwt
 
 from capa_simulation import alerts
 from capa_simulation import settings as app_settings
 from capa_simulation.components import bdq_token_admin, container_start_check, sso_identity
+from capa_simulation.components.diagnostic_copy import COMPONENT_KEY_PREFIX
 from capa_simulation.io import bdq_token
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.navigation import ADMIN_AREA
@@ -46,6 +49,21 @@ from capa_simulation.components.bdq_token_admin import install_from_dialog
 
 st.text(install_from_dialog({FAKE_TOKEN!r}))
 """
+
+
+def _install_script(value: str) -> str:
+    """넣기 한 번 + 그 알림창 — 돌려준 거절 글(없으면 `None`)을 글로 그린다."""
+    return f"""
+import streamlit as st
+
+from capa_simulation.components.bdq_token_admin import FLASH_KEY, install_from_dialog
+from capa_simulation.components.flash import render_flash
+
+st.text(str(install_from_dialog({value!r})))
+render_flash(FLASH_KEY)
+"""
+
+
 CODE = bdq_token_admin.EXPIRY_ALERT_CODE
 
 
@@ -69,6 +87,26 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     folder = tmp_path / "credential"
     monkeypatch.setattr(bdq_token, "CREDENTIAL_DIR", folder)
     yield folder / f"bigdataquery.token.{ACCOUNT}"
+
+
+@pytest.fixture
+def east_clock() -> Iterator[None]:
+    """서버 시각대를 UTC 보다 9시간 앞(서울과 같은 차)으로 바꿔 끼우고 끝에 되돌린다. 시각대 db 가
+    없어도 서는 POSIX 꼴이다. 바꿔 끼울 수 없는 OS(Windows)는 건너뛴다."""
+    tzset = getattr(time, "tzset", None)
+    if tzset is None:
+        pytest.skip("시각대를 바꿔 끼울 수 없는 OS")
+    before = os.environ.get("TZ")
+    os.environ["TZ"] = "KST-9"
+    tzset()
+    try:
+        yield
+    finally:
+        if before is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = before
+        tzset()
 
 
 def _admin(monkeypatch: pytest.MonkeyPatch, *, admin: bool = True) -> None:
@@ -214,6 +252,25 @@ def test_the_value_line_and_the_copy_text_show_a_readable_expiry(
     assert fake_jwt(expires) not in line
 
 
+def test_the_copy_text_carries_the_value_line(
+    server: Path, monkeypatch: pytest.MonkeyPatch, diagnostic_copies: dict[str, str]
+) -> None:
+    """복사 글(리뷰로 옮기는 글)에도 「지금 토큰」 줄이 들어가고 토큰 글은 없다."""
+    _admin(monkeypatch, admin=False)
+    token = fake_jwt(datetime.now(timezone.utc) + timedelta(days=2))
+    server.parent.mkdir(parents=True)
+    server.write_text(token, encoding="utf-8")
+
+    app = AppTest.from_string(CHECK_SCRIPT).run()
+
+    assert not app.exception
+    text = diagnostic_copies[f"{COMPONENT_KEY_PREFIX}{container_start_check.COPY_KEY}"]
+    lines = [line for line in text.splitlines() if line.startswith("지금 토큰")]
+    assert len(lines) == 1 and "파일 · 수정" in lines[0] and "만료 " in lines[0]
+    assert "만료 모름" not in lines[0]
+    assert token not in text
+
+
 def _token(server: Path, expires: datetime | None) -> None:
     server.parent.mkdir(parents=True, exist_ok=True)
     server.write_text(FAKE_TOKEN if expires is None else fake_jwt(expires), encoding="utf-8")
@@ -273,6 +330,77 @@ def test_a_past_expiry_still_tells_the_administrator(
 
     assert note is not None
     assert "지남" in bdq_token_admin.token_line()
+
+
+def test_a_deeply_nested_token_leaves_every_screen_standing(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """만료를 읽다 재귀 한도를 넘는 토큰이어도 모든 화면 회차의 알림 자리(`render_token_alert`)와
+    Admin 펼침이 끝까지 돈다 — 만료는 모름이고 알림은 해소다."""
+    _admin(monkeypatch)
+    server.parent.mkdir(parents=True)
+    server.write_text(deeply_nested_jwt(), encoding="utf-8")
+
+    alert = AppTest.from_string(ALERT_SCRIPT).run()
+    check = AppTest.from_string(CHECK_SCRIPT).run()
+
+    assert not alert.exception and not check.exception
+    assert [item["active"] for item in states(alert, CODE)] == [False]
+    assert any(
+        "지금 토큰" in caption.value and "만료 모름" in caption.value for caption in check.caption
+    )
+
+
+def test_a_failure_reading_the_token_falls_back_without_stopping_the_screen(
+    server: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """지금 토큰을 읽다 무엇이 나도 값 줄은 「확인하지 못함」, 만료 알림은 해소로 그 자리를 쓰고,
+    넣기는 쓴 뒤 넣음으로 끝난다."""
+    _admin(monkeypatch)
+
+    def broken(_environ: object = None) -> bdq_token.TokenState:
+        raise RuntimeError("읽다 남")
+
+    monkeypatch.setattr(bdq_token, "current_token", broken)
+
+    alert = AppTest.from_string(ALERT_SCRIPT).run()
+    check = AppTest.from_string(CHECK_SCRIPT).run()
+    direct = AppTest.from_string(_install_script(FAKE_TOKEN)).run()
+
+    assert not alert.exception and not check.exception and not direct.exception
+    assert [item["active"] for item in states(alert, CODE)] == [False]
+    assert any(
+        "지금 토큰" in caption.value and "확인하지 못함" in caption.value
+        for caption in check.caption
+    )
+    assert [text.value for text in direct.text] == ["None"]
+    assert server.read_text(encoding="utf-8") == FAKE_TOKEN
+    assert [item.value for item in flashed(direct, "success")] == [
+        "BigDataQuery 토큰을 넣었습니다 · 만료 모름"
+    ]
+
+
+def test_a_far_expiry_is_shown_as_unknown_east_of_utc(
+    server: Path, monkeypatch: pytest.MonkeyPatch, east_clock: None
+) -> None:
+    """「만료 없음」 자리표시(9999-12-31T23:59:59Z)는 UTC 보다 앞선 시각대로 옮길 수 없다 — 넣기는
+    넣음으로 끝나고 값 줄은 「만료 모름」 이다. 시각대로 못 옮기는 시각은 「알 수 없음」 이다."""
+    _admin(monkeypatch)
+
+    direct = AppTest.from_string(_install_script(fake_jwt(FAR_EXPIRY))).run()
+
+    assert not direct.exception
+    assert [text.value for text in direct.text] == ["None"]
+    assert server.read_text(encoding="utf-8") == fake_jwt(FAR_EXPIRY)
+    assert [item.value for item in flashed(direct, "success")] == [
+        "BigDataQuery 토큰을 넣었습니다 · 만료 모름"
+    ]
+    assert "만료 모름" in bdq_token_admin.token_line()
+    edge = datetime.max.replace(tzinfo=timezone.utc)
+    line = bdq_token_admin.token_line(
+        bdq_token.TokenState("file", modified_at=edge, expires_at=edge)
+    )
+    assert line == f"{bdq_token_admin.TOKEN_LINE_LABEL} · 파일 · 수정 알 수 없음 · 만료 알 수 없음"
 
 
 def test_nothing_is_written_off_the_cd_server(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -19,6 +19,7 @@ from capa_simulation import settings as app_settings
 from capa_simulation.auth import runtime
 from capa_simulation.auth.config import SsoMode
 from capa_simulation.components import container_start_check, sso_identity
+from capa_simulation.io import bdq_token
 from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.navigation import ADMIN_AREA
@@ -146,6 +147,26 @@ def test_a_token_failure_on_a_query_tells_the_administrator_until_a_query_succee
     assert adapter.last_query_failed_on_token() is False
     assert active_state(app.run(), CODE) is None
     assert [item["active"] for item in states(app, CODE)] == [False]
+
+
+def test_a_query_failure_with_the_package_environment_token_asks_to_change_that_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """패키지가 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 을 읽는 서버는 「토큰 넣기」 가 잠긴다 — 할 일은
+    그 값 바꾸기 + CI/CD 이고 잠긴 단추를 가리키지 않는다. 값은 글에 없다."""
+    _report(tmp_path, monkeypatch)
+    _admin(monkeypatch)
+    monkeypatch.setenv(bdq_token.LOGIN_TOKEN_ENV, "FAKE-env-token-0000000000")
+    _query(monkeypatch, ConnectionError("500 invalid token"))
+
+    note = active_state(AppTest.from_string(SCRIPT).run(), CODE)
+
+    assert note is not None
+    full = note["full"]
+    assert "최근 BigDataQuery 조회가 토큰 갈래로 실패" in full
+    assert f"환경변수 {bdq_token.LOGIN_TOKEN_ENV} 의 토큰을 씁니다" in full
+    assert "CI/CD" in full and "「토큰 넣기」" not in full
+    assert "FAKE-env-token" not in full and "`" not in full
 
 
 def test_a_failed_start_with_a_failed_query_asks_for_the_start_fix(

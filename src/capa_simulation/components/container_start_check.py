@@ -44,6 +44,8 @@ from streamlit.elements.lib.column_types import ColumnConfig
 from capa_simulation import alerts
 from capa_simulation.components import sso_identity
 from capa_simulation.components.bdq_token_admin import (
+    ENVIRONMENT_FIX,
+    INSTALL_FIX,
     render_expiry_alert,
     render_token_dialog,
     render_token_row,
@@ -61,9 +63,9 @@ from capa_simulation.components.sso_status import (
     sso_start_step,
     started_environment_caption,
 )
+from capa_simulation.io import bdq_token
 from capa_simulation.io.company_bigdataquery_adapter import last_query_failed_on_token
 from capa_simulation.io.container_start_report import (
-    BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     STATUS_FAILED,
     STATUS_LABELS,
@@ -397,7 +399,9 @@ def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
     """전문(평문 — 알림창 · Alarm 은 `textContent` 로 넣는다) — 무엇이 실패했고 무엇을 하면 풀리나.
     시작 점검 까닭은 시작 스크립트가 이미 가린 글이다. 시작 점검 실패의 까닭은 토큰 값만이 아니다
     (계정 칸 · 파일 권한 · 폴더 쓰기 등) — 그때 할 일은 그 까닭 고치기이고, 새 토큰은 조회 실패만의
-    길이다."""
+    길이다. 조회 실패의 새 토큰 길은 패키지가 읽는 자리를 따른다 — 환경변수
+    `BIGDATAQUERY_LOGIN_TOKEN` 이 있으면 「토큰 넣기」 가 잠기니 그 값 바꾸기다(값은 보지
+    않는다)."""
     found: list[str] = []
     if start_reason is not None:
         found.append(f"서버 시작 점검의 「로그인 토큰 파일」 줄이 실패입니다({start_reason})")
@@ -410,8 +414,6 @@ def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
             ". 그 까닭을 고치고 CI/CD 를 다시 누르세요 — Admin 「서버 시작 점검」 에서 토큰 줄을 "
             "봅니다."
         )
-    return ". ".join(found) + (
-        ". Admin 「서버 시작 점검」 의 「토큰 넣기」 로 새 토큰을 넣으면 다음 조회부터 쓰입니다 — "
-        f"컨테이너를 다시 띄우면 CD 환경변수 {BDQ_TOKEN_ENV} 값으로 돌아가니 그 값도 새 토큰으로 "
-        "바꿔 두세요. 이 알림은 넣은 뒤 조회가 한 번 성공하면 풀립니다."
-    )
+    if bdq_token.environment_token_set():
+        return ". ".join(found) + f". {ENVIRONMENT_FIX}"
+    return ". ".join(found) + f". {INSTALL_FIX} 이 알림은 넣은 뒤 조회가 한 번 성공하면 풀립니다."

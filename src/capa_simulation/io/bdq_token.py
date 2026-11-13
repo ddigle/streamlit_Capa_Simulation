@@ -23,7 +23,8 @@ Admin 「토큰 넣기」(`components/bdq_token_admin.py`)가 관리자가 넣�
 **만료 시각.** 토큰의 꼴을 아직 모른다(WebIDE 실측 35바이트 — 점 셋 JWT 는 아니다). 지금
 읽는 꼴은 JWT 의 `exp` 하나뿐이고 그 밖은 「모름」 이다 — 실제 토큰의 꼴은 사내 확인
 거리다(`docs/TODO.md`). 모르면 만료 전 알림이 서지 않고, 조회 실패 알림(`AD-10`)이
-뒷벽이다.
+뒷벽이다. 읽기는 덧붙은 보기라 무엇을 받아도 예외를 내지 않는다 — 풀 수 없는 몸 · 깊은 중첩 ·
+어느 시각대로도 못 옮길 먼 시각은 모두 「모름」 이다(만료 알림은 모든 화면 회차에 돈다).
 
 시작 스크립트가 앱 의존성보다 먼저 읽으므로 표준 라이브러리만 쓴다.
 """
@@ -38,7 +39,7 @@ import stat
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Final, Literal
 
@@ -58,6 +59,10 @@ LOGIN_TOKEN_ENV: Final = "BIGDATAQUERY_LOGIN_TOKEN"
 BASE64_PREFIX: Final = "base64:"
 # 만료 전 관리자 알림을 세우는 앞당김(2026-11-12 사용자 결정 「만료 1시간 전」).
 EXPIRY_WARNING_SECONDS: Final = 3600
+# 만료로 받는 시각의 범위 — 어느 시각대로 옮겨도(시각대 차는 하루보다 작다) 넘치지 않는 안쪽.
+# 밖(「만료 없음」 자리표시로 흔한 9999-12-31 등)은 보일 수 없어 모름이다.
+_EARLIEST_EXPIRY: Final = datetime.min.replace(tzinfo=timezone.utc) + timedelta(days=1)
+_LATEST_EXPIRY: Final = datetime.max.replace(tzinfo=timezone.utc) - timedelta(days=1)
 
 _WRITE_LOCK: Final = threading.Lock()
 
@@ -139,10 +144,17 @@ class InstallOutcome:
     reason: str = ""
 
 
+def environment_token_set(environ: Mapping[str, str] | None = None) -> bool:
+    """패키지가 토큰 파일보다 먼저 읽는 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 이 이 프로세스에 있나.
+    값은 보지 않는다(풀지 않는다)."""
+    env = os.environ if environ is None else environ
+    return bool(env.get(LOGIN_TOKEN_ENV, "").strip())
+
+
 def blocked_reason(environ: Mapping[str, str] | None = None) -> str | None:
     """이 프로세스에서 넣기를 할 수 없는 까닭(값을 보기 전에 정해지는 것). 할 수 있으면 `None`."""
     env = os.environ if environ is None else environ
-    if env.get(LOGIN_TOKEN_ENV, "").strip():
+    if environment_token_set(env):
         return (
             f"환경변수 {LOGIN_TOKEN_ENV} 가 있어 패키지가 토큰 파일보다 그 값을 먼저 읽습니다 — "
             "CD 환경변수 표에서 그 key 를 빼야 넣은 토큰이 쓰입니다"
@@ -222,7 +234,8 @@ def _base64url(segment: str) -> bytes:
 
 def token_expiry(content: bytes) -> datetime | None:
     """토큰에서 읽은 만료 시각(UTC). 지금 아는 꼴은 JWT(`머리.몸.서명`)의 `exp`(초) 하나다 — 그 밖은
-    `None`(모름). 꼴을 짐작해 늘리지 않는다 — 실제 꼴은 사내 확인 거리다(모듈 설명)."""
+    `None`(모름). 꼴을 짐작해 늘리지 않는다 — 실제 꼴은 사내 확인 거리다(모듈 설명). 예외를 내지
+    않는다 — 깊은 중첩 몸(`RecursionError`) · 시각대로 못 옮길 시각도 모름이다."""
     try:
         text = content.decode("ascii").strip()
     except UnicodeDecodeError:
@@ -232,15 +245,16 @@ def token_expiry(content: bytes) -> datetime | None:
         return None
     try:
         claims = json.loads(_base64url(parts[1]))
-    except (binascii.Error, ValueError):
+    except (binascii.Error, ValueError, RecursionError):
         return None
     expires = claims.get("exp") if isinstance(claims, dict) else None
     if isinstance(expires, bool) or not isinstance(expires, (int, float)):
         return None
     try:
-        return datetime.fromtimestamp(expires, tz=timezone.utc)
+        moment = datetime.fromtimestamp(expires, tz=timezone.utc)
     except (OverflowError, OSError, ValueError):
         return None
+    return moment if _EARLIEST_EXPIRY <= moment <= _LATEST_EXPIRY else None
 
 
 def _file_expiry(target: Path, info: os.stat_result) -> datetime | None:
@@ -259,11 +273,11 @@ def _file_expiry(target: Path, info: os.stat_result) -> datetime | None:
 
 
 def current_token(environ: Mapping[str, str] | None = None) -> TokenState:
-    """패키지가 다음 조회에 읽을 토큰의 상태. 회차마다 불러도 된다 — 파일은 수정 시각 · 크기가 바뀔
-    때만 다시 읽는다."""
+    """패키지가 다음 조회에 읽을 토큰의 상태. 회차마다 불러도 된다 — 파일은 inode · 수정 시각 ·
+    크기가 바뀔 때만 다시 읽는다."""
     env = os.environ if environ is None else environ
-    value = env.get(LOGIN_TOKEN_ENV, "").strip()
-    if value:
+    if environment_token_set(env):
+        value = env.get(LOGIN_TOKEN_ENV, "").strip()
         return TokenState("environment", expires_at=token_expiry(value.encode("utf-8")))
     target = token_file_path(credential_dir(), env.get(BDQ_USER_NAME_ENV, "").strip())
     if target is None:
@@ -276,7 +290,10 @@ def current_token(environ: Mapping[str, str] | None = None) -> TokenState:
         return TokenState("unknown")
     if not stat.S_ISREG(info.st_mode):
         return TokenState("unknown")
-    modified = datetime.fromtimestamp(info.st_mtime, tz=timezone.utc)
+    try:
+        modified: datetime | None = datetime.fromtimestamp(info.st_mtime, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        modified = None
     return TokenState("file", modified_at=modified, expires_at=_file_expiry(target, info))
 
 
@@ -289,6 +306,7 @@ def expiry_is_near(state: TokenState, now: datetime | None = None) -> bool:
 
 
 def forget_expiry_memo() -> None:
-    """시험 전용 — 기억한 만료 시각을 지운다."""
+    """기억한 만료 시각을 지운다 — 넣기가 쓴 뒤(inode 를 믿을 수 없는 파일 체계에서도 새 만료를
+    보게) · 시험이 부른다."""
     with _EXPIRY_LOCK:
         _EXPIRY_MEMO.clear()
