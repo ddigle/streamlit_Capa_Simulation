@@ -202,6 +202,40 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
+def pytest_fixture_post_finalizer(
+    fixturedef: pytest.FixtureDef[Any], request: pytest.FixtureRequest
+) -> None:
+    """정리 뒤 사라진 시험 `tmp_path` 자리에 빈 폴더를 다시 둔다 — 그 이름을 세션 안에서 다시
+    내주지 않게 하는 자동 복원이다.
+
+    보존 정책 `failed`(`tmp_path_retention_policy` — 조각 실행기가 쓴다)는 call 이 통과한 시험과
+    call 까지 가지 못한 시험의 `tmp_path` 를 정리 단계에서 지운다. 지운 채 두면 pytest 가 같은
+    이름(시험 이름 앞 30자 + 번호)을 다음 시험에 다시 내준다. 경로를 키로 쓰는 프로세스 캐시
+    (`get_scenario_repository` · `get_equipment_repository` 와 경로 · 쓰기 세대만 키인
+    `st.cache_data`)가 그 경로에 앞 시험의 저장소 · 값을 돌려줘, 새 빈 DB 를 연 시험이 데이터
+    오류로 멈추거나 앞 시험 값을 조용히 본다. 빈 폴더는 번호만 붙잡고 파일은 지워진 채다.
+
+    pytest 는 준비 하나의 정리(보존 정책의 지우기 포함)를 다 돌린 뒤, 값을 비우기 전에 이 훅을
+    부른다. 그래서 같은 시험의 다른 준비가 정리에서 오류를 내도, `tmp_path` 를
+    `request.getfixturevalue` 로 늦게 받았어도, 준비 오류로 본문까지 못 갔어도 본다. 시험 정리 훅
+    (`pytest_runtest_teardown`)은 앞의 오류에 막히고 `item.funcargs` 에 든 것만 봐 셋을 놓친다.
+    기본 보존에서는 할 일이 없다. 다시 불려 값이 이미 비었거나 준비가 실패해 값이 없으면 넘긴다.
+
+    빈 폴더를 둘 수 없으면(지우다 만 자리 · 권한) 조용히 넘긴다 — 여기서 예외가 나면 pytest 가 준비
+    값을 비우지 못해 뒤 시험이 모두 같은 `tmp_path` 를 받고, 같은 정리의 다른 오류도 묻힌다.
+    """
+    if fixturedef.argname != "tmp_path" or fixturedef.cached_result is None:
+        return
+    path = fixturedef.cached_result[0]
+    if not isinstance(path, Path):
+        return
+    try:
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+
+
 @pytest.fixture(autouse=True)
 def _without_auto_update_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """공식버전 자동 갱신 예약의 실행 줄 허락(`CAPA_AUTO_OFFICIAL_UPDATE`)을 뺀다.
@@ -285,8 +319,7 @@ def with_loopback_no_proxy(value: str) -> str:
     return ",".join(part for part in (value.strip().strip(","), *missing) if part)
 
 
-@pytest.fixture(autouse=True)
-def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+def _append_loopback_no_proxy(patch: pytest.MonkeyPatch) -> None:
     """`NO_PROXY` · `no_proxy` 에 루프백 셋을 덧붙여 루프백 요청이 창의 프록시를 거치지 않게 한다.
 
     사내 PC 창에는 `HTTP(S)_PROXY` 가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다. 파이썬의
@@ -299,7 +332,22 @@ def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     before = {name: os.environ.get(name, "") for name in NO_PROXY_NAMES}
     fallback = next((value for value in before.values() if value.strip()), "")
     for name, value in before.items():
-        monkeypatch.setenv(name, with_loopback_no_proxy(value if value.strip() else fallback))
+        patch.setenv(name, with_loopback_no_proxy(value if value.strip() else fallback))
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _loopback_skips_proxy_from_the_start() -> Iterator[None]:
+    """세션 처음에 한 번 덧붙인다 — 모듈 · 세션 범위 준비는 함수 범위 준비보다 먼저 서므로, 그때
+    띄우는 하위 프로세스(가짜 서버 · aws · 앱)도 루프백 셋이 든 환경을 받게 한다."""
+    with pytest.MonkeyPatch.context() as patch:
+        _append_loopback_no_proxy(patch)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """시험마다 다시 덧붙인다 — 앞 시험이 값을 바꿨어도 루프백 셋에서 시작한다."""
+    _append_loopback_no_proxy(monkeypatch)
 
 
 @pytest.fixture(autouse=True)

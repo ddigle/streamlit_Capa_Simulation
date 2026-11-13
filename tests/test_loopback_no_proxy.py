@@ -1,6 +1,6 @@
 # Purpose: 시험 공용 설정이 루프백 요청을 창의 프록시 밖으로 돌리고 하위 프로세스까지 잇는지 본다.
 
-"""`tests/conftest.py` 의 `_loopback_skips_proxy`.
+"""`tests/conftest.py` 의 `_loopback_skips_proxy_from_the_start` · `_loopback_skips_proxy`.
 
 사내 PC 창에는 프록시 환경변수가 있다. 시험이 127.0.0.1 에 띄운 가짜 서버로 가는 요청이
 프록시로 가면 서버 대신 프록시가 답한다(가짜 S3 시험이 403 을 받는다).
@@ -105,3 +105,30 @@ def test_child_processes_inherit_the_loopback_names() -> None:
     inherited, bypassed = completed.stdout.splitlines()
     assert inherited == os.environ["no_proxy"]
     assert bypassed == str(len(hosts))
+
+
+@pytest.fixture(scope="module")
+def bypass_seen_by_a_module_fixture_child() -> str:
+    """모듈 범위 준비가 띄운 하위 프로세스가 본 우회 판정 — 함수 범위 준비보다 먼저 선다.
+
+    창의 프록시는 닿지 않는 주소로 세운다(함수 범위 `monkeypatch` 를 쓸 수 없어 자식 환경에만 준다).
+    `NO_PROXY` 는 이 프로세스의 그때 값 그대로 물려준다.
+    """
+    env = dict(os.environ, HTTP_PROXY=UNREACHABLE_PROXY, http_proxy=UNREACHABLE_PROXY)
+    hosts = [f"{name}:9000" for name in LOOPBACK_NO_PROXY]
+    completed = subprocess.run(
+        [sys.executable, "-c", CHILD_PROBE, *hosts],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    return completed.stdout.splitlines()[-1]
+
+
+def test_a_module_fixture_child_already_skips_the_proxy(
+    bypass_seen_by_a_module_fixture_child: str,
+) -> None:
+    """모듈 · 세션 준비가 띄우는 하위 프로세스(가짜 서버 · aws · 앱)도 루프백 셋을 받는다."""
+    assert bypass_seen_by_a_module_fixture_child == str(len(LOOPBACK_NO_PROXY))

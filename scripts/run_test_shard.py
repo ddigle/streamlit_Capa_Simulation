@@ -19,8 +19,15 @@
 - **함께 돌아도** — 캐시(`.pytest_cache`)를 쓰지 않아 조각들이 같은 파일을 덮지 않는다. 한 PC 에서
   여러 조각을 함께 돌릴 때는 `--basetemp-root` 를 준다 — 조각마다 `<폴더>/shard<k>` 를 임시 폴더로
   쓰고(pytest 가 시작 때 비운다), 기본 임시 폴더의 오래된 차례 지우기가 서로의 폴더에 닿지 않는다.
-  주지 않으면 pytest 기본이다. 폴더는 저장소(git 작업 트리) 밖에 둔다 — 사본 전용 스크립트 시험이
-  조상에 `.git` 이 있는 임시 자리를 운영 자리로 거절해 거짓으로 실패한다.
+  주지 않으면 pytest 기본이다. 폴더는 저장소(git 작업 트리) 밖에 둔다 — 사본 전용 스크립트 시험과
+  시험 문지기가 조상에 `.git` 이 있는 임시 자리를 운영 자리로 거절해 거짓으로 실패한다. 그래서 그런
+  폴더를 주면 아무것도 만들지 않고 멈춘다(종료 코드 2).
+- **임시 폴더 보존** — `--basetemp-root` 를 주면 보존 정책을 `failed` 로 건다. call 단계가
+  통과하지 못한 시험(실패 · 본문 건너뜀 · xfail)의 `tmp_path` 만 남기고, call 이 통과한 시험(정리
+  오류가 나도)과 준비 오류로 call 까지 못 간 시험의 것은 끝나자마자 지운다(빈 폴더가 번호를
+  붙잡는다 — `tests/conftest.py`). 오류(E)가 난 시험의 임시 파일은 대개 남지 않는다. pytest
+  기본(모두 남김)이면 조각 하나가 GB 단위로 쌓인다 — 시작 때 그 폴더를 비우니 다음 판에는 어차피
+  남지 않는다. 주지 않으면(CI) 정책도 pytest 기본이다.
 - 시험 하나가 `HANG_REPORT_SECONDS` 를 넘기면 내장 faulthandler 가 스레드별 위치를 표준 오류에
   찍는다 — 작업이 시간 제한으로 끊겨도 어디서 멈췄는지 남는다.
 """
@@ -28,6 +35,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -36,6 +44,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TEST_PATTERNS = ("test_*.py", "*_test.py")
 HANG_REPORT_SECONDS = 600
+# `--basetemp-root` 를 줄 때의 임시 폴더 보존 정책 — call 단계가 통과하지 못한 시험의 `tmp_path` 만
+# 남긴다(준비 · 정리 오류만 난 시험의 것은 지운다).
+RETENTION_WITH_ROOT = "failed"
 
 
 def discover_files(root: Path = PROJECT_ROOT) -> list[Path]:
@@ -74,9 +85,32 @@ def pytest_command(files: Sequence[Path], *, basetemp: Path | None = None) -> li
         "no:cacheprovider",
         "-o",
         f"faulthandler_timeout={HANG_REPORT_SECONDS}",
-        *([] if basetemp is None else [f"--basetemp={basetemp}"]),
+        *(
+            []
+            if basetemp is None
+            else [
+                f"--basetemp={basetemp}",
+                "-o",
+                f"tmp_path_retention_policy={RETENTION_WITH_ROOT}",
+            ]
+        ),
         *(path.as_posix() for path in files),
     ]
+
+
+def git_work_tree_holder(path: Path) -> Path | None:
+    """`path` 나 그 위 폴더 가운데 `.git` 을 든 첫 폴더 — git 작업 트리 밖이면 None.
+
+    시험이 운영 DB 자리를 가르는 판정(`settings.is_operational_database_place` 3)과 같다 — 적은
+    그대로의 경로와 푼 경로를 둘 다 보고, `.git` 이 파일인 워크트리도 든다. 그 판정이 거절할 자리를
+    여기서 먼저 거절한다.
+    """
+    given = Path(os.path.abspath(path.expanduser()))
+    for candidate in (given, given.resolve()):
+        for place in (candidate, *candidate.parents):
+            if os.path.lexists(place / ".git"):
+                return place
+    return None
 
 
 def shard_basetemp(root: Path, shard: int) -> Path:
@@ -97,7 +131,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help=(
             "조각 임시 폴더를 <폴더>/shard<k> 로 — 한 PC 에서 여러 조각을 함께 돌릴 때."
-            " 저장소(git 작업 트리) 밖 폴더"
+            " 저장소(git 작업 트리) 밖 폴더. 통과한 시험의 임시 파일은 바로 지운다"
         ),
     )
     options = parser.parse_args(argv)
@@ -108,6 +142,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
+    root = options.basetemp_root
+    if root is not None and git_work_tree_holder(root) is not None:
+        # 사용법 줄 없이 까닭 한 줄만 — 동시 실행 줄은 표준 오류 파일의 첫 줄을 압축본에 옮겨
+        # 적으므로 사용자 폴더 이름이 든 로컬 경로는 싣지 않는다.
+        print(
+            "--basetemp-root 가 git 작업 트리 안입니다(위 폴더에 .git 이 있음) — 그 아래 임시"
+            " 자리는 시험이 운영 자리로 거절하니 저장소 밖 폴더를 주세요.",
+            file=sys.stderr,
+        )
+        return 2
     files = shard_of(options.shard, options.of)
     if not files:
         print(f"조각 {options.shard}/{options.of} 에 시험 파일이 없습니다.", file=sys.stderr)
@@ -116,11 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(path.as_posix() for path in files))
         return 0
     print(f"조각 {options.shard}/{options.of} · 파일 {len(files)}개", flush=True)
-    basetemp = (
-        None
-        if options.basetemp_root is None
-        else shard_basetemp(options.basetemp_root, options.shard)
-    )
+    basetemp = None if root is None else shard_basetemp(root, options.shard)
     command = pytest_command(files, basetemp=basetemp)
     return subprocess.run(command, cwd=PROJECT_ROOT, check=False).returncode
 

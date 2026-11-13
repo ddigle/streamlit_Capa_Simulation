@@ -151,6 +151,7 @@ def test_the_shard_runs_pytest_from_the_root_and_gives_back_its_code(
     assert "-q" not in command, "pyproject addopts 의 -q 와 겹치면 끝줄 수가 사라진다"
     assert command[command.index("-p") + 1] == "no:cacheprovider"
     assert _basetemps(command) == []
+    assert not [part for part in command if part.startswith("tmp_path_retention_policy")]
     assert "faulthandler_timeout=600" in command
     expected = [path.as_posix() for path in run_test_shard.shard_of(2, 8)]
     assert command[-len(expected) :] == expected
@@ -184,16 +185,71 @@ def test_a_basetemp_root_gives_each_shard_its_own_folder_from_the_caller(
         [str(root / "shard1")],
         [str(root / "shard2")],
     ]
+    # 같은 PC 에서 함께 도는 조각은 통과한 시험의 임시 파일을 바로 지운다(조각마다 GB 단위로 쌓임).
+    for command in seen:
+        assert command[command.index("tmp_path_retention_policy=failed") - 1] == "-o"
+
+
+@pytest.mark.parametrize("marker", ["folder", "file"])
+def test_a_basetemp_root_inside_a_git_work_tree_is_refused_before_anything_is_made(
+    marker: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """저장소 안 임시 자리는 사본 전용 스크립트 시험 · 시험 문지기가 운영 자리로 거절해 거짓 실패가
+    쏟아진다 — 실행기가 먼저 멈춘다. 워크트리의 `.git` 은 파일이다."""
+    tree = tmp_path / "repo"
+    tree.mkdir()
+    if marker == "folder":
+        (tree / ".git").mkdir()
+    else:
+        (tree / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    root = tree / "e2e" / "pt"
+
+    def must_not_run(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("거절한 판은 pytest 를 부르지 않는다")
+
+    monkeypatch.setattr(subprocess, "run", must_not_run)
+
+    assert run_test_shard.main(["--shard", "1", "--of", "4", "--basetemp-root", str(root)]) == 2
+
+    captured = capsys.readouterr()
+    # 사내 동시 실행 줄은 표준 오류 파일의 첫 줄을 압축본에 옮겨 적는다 — 그 한 줄이 까닭이고,
+    # 사용자 폴더 이름이 든 로컬 경로는 싣지 않는다.
+    [reason] = captured.err.splitlines()
+    assert "git 작업 트리 안" in reason
+    assert "repo" not in reason and str(tmp_path) not in reason
+    assert captured.out == ""
+    assert not (tree / "e2e").exists()
+
+
+def test_the_holder_is_the_nearest_folder_with_git_on_either_spelling(tmp_path: Path) -> None:
+    holder = run_test_shard.git_work_tree_holder
+    assert holder(tmp_path / "pt") is None
+    tree = tmp_path / "repo"
+    (tree / ".git").mkdir(parents=True)
+    assert holder(tree / "a" / "pt") == tree
+    if os.name != "nt":
+        # 저장소를 가리키는 링크 아래도 저장소 안이다.
+        (tmp_path / "link").symlink_to(tree, target_is_directory=True)
+        assert holder(tmp_path / "link" / "pt") is not None
 
 
 SYNTHETIC_TEST = """
 def test_leaves_a_mark(tmp_path):
     (tmp_path / "mark").write_text("x", encoding="utf-8")
+
+
+def test_keeps_its_mark_when_it_fails(tmp_path):
+    (tmp_path / "mark").write_text("x", encoding="utf-8")
+    assert False
 """
 
 
 def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> None:
-    """저장소 `addopts` 와 함께 실제로 돌린다 — 조각마다 「n passed …」 끝줄로 수를 적는다."""
+    """저장소 `addopts` 와 함께 실제로 돌린다 — 조각마다 「n failed, n passed …」 끝줄로 수를
+    적고, 조각 임시 폴더에는 call 이 실패한 시험의 파일만 남는다(보존 정책 `failed`)."""
     synthetic = tmp_path / "test_synthetic_shard.py"
     synthetic.write_text(SYNTHETIC_TEST, encoding="utf-8")
     basetemp = run_test_shard.shard_basetemp(tmp_path / "roots", 3)
@@ -216,6 +272,10 @@ def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> 
         check=False,
     )
 
-    assert finished.returncode == 0, finished.stdout + finished.stderr
-    assert finished.stdout.strip().splitlines()[-1].startswith("1 passed"), finished.stdout
-    assert [mark.parent.parent for mark in basetemp.rglob("mark")] == [basetemp]
+    assert finished.returncode == 1, finished.stdout + finished.stderr
+    assert finished.stdout.strip().splitlines()[-1].startswith("1 failed, 1 passed"), (
+        finished.stdout
+    )
+    [mark] = basetemp.rglob("mark")
+    assert mark.parent.parent == basetemp
+    assert mark.parent.name.startswith("test_keeps_its_mark_when_it_f")

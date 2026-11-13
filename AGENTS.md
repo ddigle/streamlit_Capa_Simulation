@@ -264,9 +264,11 @@ Windows(PowerShell):
   V6ONLY 0 인 `::` 하나가 IPv4 와일드카드까지 막지만 사내 Windows 에서는 임시 응답이 그 포트를 다시 잡았다(기제 미확인).
   「포트를 못 잡는다」 를 단언하는 시험은 Linux 만 본다(`tests/test_container_stage.py`, 리뷰 `202611111500` 발견 1).
   ⑩ 사내 PC 창에는 프록시 환경변수가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다 — 루프백 시험 서버로 가는 맨
-  `urllib.request.urlopen` 이 프록시로 가 403 을 받는다. 공용 `tests/conftest.py` 의 `_loopback_skips_proxy` 가 `NO_PROXY` ·
+  `urllib.request.urlopen` 이 프록시로 가 403 을 받는다. 공용 `tests/conftest.py` 가 세션 처음과 시험마다
+  (`_loopback_skips_proxy_from_the_start` · `_loopback_skips_proxy` — 모듈 · 세션 범위 준비가 띄우는 하위 프로세스도 받는다) `NO_PROXY` ·
   `no_proxy` 에 루프백 셋을 붙이고, 루프백 요청기는 `ProxyHandler({})` 로 짓는다(`tests/test_s3_mock_store.py`, 리뷰
-  `202611111500` 발견 2). 사외 CI 의 둘째 작업
+  `202611111500` 발견 2). 시험 · 스크립트의 맨 `urlopen` · `urlretrieve` 는 그물 `tests/test_no_bare_urlopen.py` 가 막는다(앱 코드는
+  보지 않는다 — 바깥 주소로 가는 앱 요청은 사내 프록시를 따라야 할 수 있다). 사외 CI 의 둘째 작업
   `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 열 가지를 사내보다 먼저 보인다 — 작업 단위
   `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux 조각을 모은 `verify-result` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
   판 본 뒤 굳힐지 다시 묻는다). 시험은 두 작업 모두 같은 수의 조각으로 돈다(`scripts/run_test_shard.py`) — 러너 한 대로는 시간 안에 끝나지
@@ -284,9 +286,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 
 개발 환경에서 걸리는 것:
 
-- pytest 를 여럿 동시에 돌릴 때는 각자 전용 `--basetemp` 를 준다(조각 실행기는 `--basetemp-root`) — 기본 임시 폴더(`pytest-of-<사용자>/pytest-N`)는
-  오래된 차례를 지워 서로의 폴더를 지울 수 있다. 임시 공간이 차서 전체 pytest 가 `OSError: [Errno 28]` 로 멈추면 코드
+- pytest 를 여럿 동시에 돌릴 때는 각자 전용 `--basetemp` 를 준다(조각 실행기는 `--basetemp-root` — git 작업 트리 안이면 멈추고, 보존 정책 `failed` 를
+  함께 걸어 통과한 시험의 임시 파일을 바로 지운다(아래 줄), 기본 보존이면 조각마다 GB 단위) — 기본 임시 폴더(`pytest-of-<사용자>/pytest-N`)는 오래된 차례를 지워 서로의 폴더를
+  지울 수 있다. 임시 공간이 차서 전체 pytest 가 `OSError: [Errno 28]` 로 멈추면 코드
   결함이 아니다 — 끝난 작업의 찌꺼기만 지우고 다시 돌린다.
+- 보존 정책 `failed`(`-o tmp_path_retention_policy=failed`)는 call 단계가 통과하지 못한 시험(실패 · 본문 건너뜀 · xfail)의 `tmp_path` 만
+  남긴다 — call 이 통과한 시험(정리 오류가 나도)과 call 까지 못 간 시험(준비 오류)의 것은 그 자리에서 지우고 같은 이름(시험 이름 앞 30자 +
+  번호)을 다음 시험에 다시 내준다. 경로를 키로 쓰는 프로세스 캐시(`get_scenario_repository` · `get_equipment_repository` · 경로와 쓰기
+  세대만 키인 `st.cache_data`)가 그 경로에 앞 시험 것을 돌려줘 시험이 깨진다 — `tests/conftest.py` 의 `pytest_fixture_post_finalizer` 가
+  지워진 자리에 빈 폴더를 다시 두어 번호를 붙잡는다(다른 준비의 정리 오류 · `request.getfixturevalue` 로 늦게 받은 `tmp_path` ·
+  준비 오류도 — `tests/test_tmp_path_number_hold.py`).
 - 샌드박스 안에서 `TMPDIR` 이 비면 파이썬 `tempfile` 은 실패하지 않고 저장소 루트로 내려간다 — 오류로 드러나지 않으니
   `echo $TMPDIR` 로 본다(`docs/wsl_dev_environment.md` 2장).
 - UPEH 가정 계획 1회 시간은 `scripts/benchmark_upeh_assumption.py --data-dir <사본 폴더>` 로 잰다(사내 런북 6-3 b — 1초를
