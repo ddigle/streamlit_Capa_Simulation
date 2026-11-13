@@ -115,6 +115,7 @@ table { border-collapse: collapse; width: 100%; margin: 8px 0; table-layout: fix
 th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left;
   vertical-align: top; overflow-wrap: anywhere; }
 th { font-weight: 600; }
+th:first-child, td:first-child { width: 42%; }
 code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; overflow-wrap: anywhere; }
 strong.account { font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
 @media (max-width: 480px) {
