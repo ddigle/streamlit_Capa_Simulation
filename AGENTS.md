@@ -2273,9 +2273,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 신규 호기의 반입·Qual 은 비워도 되고 순서는 있는 날짜끼리 본다. 정지 ≤ 반출/이설이고, 실적 검사와 모듈 묶음 일곱 칸
     갈림(`unit_group_mixed_saved` — 여섯 칸 `unit_group_mixed` 바로 뒤, `_MasterFrame.saving`)은 저장할 때만 `today=` 로
     돈다 — 리비전 읽기·계산·발행·복제는 막지 않고 저장(편집본 전체)만 막는다(2026-11-12 사용자 답 3-3 (나) · P2). 그 저장 거부
-    글은 예시 목록(`['…']`) 대신 끝에 고칠 곳을 쉼표 글로 짚는다(`_group_split_save_error` — 「… — 설비 마스터에서 {묶음, …} 묶음의
-    {칸} 칸을 맞춘 뒤 저장합니다」, Space 배치 저장 · 리비전 저장 · 사이드바 저장이 같은 글). 여섯 칸은
-    다른 거부와 같은 예시 목록 꼴이다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
+    글은 예시 목록(`['…']`) 대신 끝에 고칠 곳을 쉼표 글로 짚는다(`UnitGroupSplitError` — 머리 · 칸 · 갈린 묶음 전부를 싣고, 글은
+    `unit_group_split_message` 한 곳: 「… — 설비 마스터에서 {묶음, …} 묶음의 {칸} 칸을 맞춘 뒤 저장합니다」, 묶음은 앞 다섯에
+    넘으면 「외 n」. Space 배치 저장 · 리비전 저장 · 사이드바 저장이 같은 글). 엑셀 · CSV 붙여넣기 미리보기는 이 예외를 잡아
+    「… — 붙여넣을 표나 설비 마스터에서 … 맞춘 뒤 다시 미리봅니다」(`pasting=True`)로 다시 알린다. 여섯 칸은
+    다른 거부와 같은 예시 목록 꼴(앞 다섯)이다. 환산비·좌표·크기는 빈 칸과 못 읽는 값을 가른다(`_read_number`·`_read_ratio`).
   - Space 위치: 레이아웃표시는 도면 대상인지만 가르고 좌표를 강제하지 않는다(없으면 미배치 칸). X·Y·크기는 짝으로 둔다.
   - Main 설비는 다른 행의 설비명과 같을 수 없다(`UnitGroupCollisionError`, 문구는 `unit_group_collision_message` 한 곳).
 - `src/capa_simulation/services/equipment_grid.py` — 가용설비 현황 「설비 마스터」 탭 표(개편 B1 — 표 컴포넌트는 아래

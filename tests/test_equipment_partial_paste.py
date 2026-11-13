@@ -21,6 +21,7 @@ from pandas.testing import assert_frame_equal, assert_series_equal
 from test_equipment_availability import _downtime, _equipment
 from test_equipment_data_workspace import _app, _preview, _put, _repository, _save
 from test_equipment_master_columns import _old36_layout
+from test_equipment_validation_issues import _modules
 
 from capa_simulation.components.equipment_data_workspace import (
     PREVIEW_KEY,
@@ -321,6 +322,22 @@ def test_a_rule_broken_only_in_the_merged_table_still_blocks() -> None:
     message = str(raised.value)
     assert "Main 설비는 다른 행의 설비명과 같을 수 없습니다" in message
     assert "설비 행 EQ-01(편집본) · 모듈 행 EQ-02(붙여넣기·편집본)" in message
+
+
+def test_a_group_split_made_by_the_paste_names_the_pasted_table_and_the_master() -> None:
+    """붙여넣은 한 줄만 Model 을 바꿔 묶음(GRP-1)이 갈리면 미리보기가 막힌다. 편집본은 갈리지
+    않았으니 고칠 곳은 붙여넣을 표일 수 있다 — 저장 길의 「설비 마스터에서 … 맞춘 뒤 저장합니다」
+    대신 두 곳을 다 짚고 다시 미리보라고 한다."""
+    current = prepare_equipment_master(_modules())
+    module = str(current.loc[1, "설비명"])
+
+    with pytest.raises(ValueError) as raised:
+        _review(_tab(("설비명", "Model"), (module, "DEMO-OTHER")), current)
+
+    assert str(raised.value) == (
+        "같은 Main 설비의 모듈 행은 Model 칸이 같아야 합니다 — 붙여넣을 표나 설비 마스터에서 "
+        "GRP-1 묶음의 Model 칸을 맞춘 뒤 다시 미리봅니다"
+    )
 
 
 def test_invalid_values_in_pasted_columns_are_rejected_as_in_a_full_paste() -> None:
