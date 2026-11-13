@@ -4341,8 +4341,10 @@ _GAP_EVIDENCE_JS = """({keys, closed, heading}) => {
     closed: !!card && card.innerText.includes(closed),
     matches: !!title && !!heading && words(title.textContent).startsWith(words(heading)),
     rows: grid ? Number(grid.getAttribute("aria-rowcount")) - 1 : null,
-    exceptions: document.querySelectorAll('[data-testid="stMain"] [data-testid="stException"]')
-      .length,
+    exceptions: document.querySelectorAll(
+      '[data-testid="stMain"] [data-testid="stException"], '
+        + '[data-testid="stMain"] .st-key-capa_page_failure'
+    ).length,
   };
 }"""
 _HTML_TAG = re.compile(r"<[^>]+>")

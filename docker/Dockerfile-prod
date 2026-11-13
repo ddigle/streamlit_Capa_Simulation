@@ -31,6 +31,11 @@ ENV PYTHONPATH=/project/src
 # 컨테이너에는 브라우저도 입력도 없다. 첫 실행 이메일 안내와 브라우저 열기를 끈다.
 ENV STREAMLIT_SERVER_HEADLESS=true
 
+# 처리하지 못한 오류는 화면에 오류 종류 이름만 보인다 — 서버 경로 · 코드 줄 · 원문은 감춘다(2026-11-14
+# 「앱 대신 뜨는 화면」 보드 d12 (가)). 코어 · 모듈 화면 본문의 오류는 앱이 카드로 감싸고(원문은 관리자용
+# 진단), 이 값은 감싸지 못한 자리(위젯 콜백 · 프래그먼트만 도는 회차)의 Streamlit 기본 오류 상자에 걸린다.
+ENV STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type
+
 # 사내 bigdataquery 가 로그인 토큰을 찾는 자리. 앱은 `$DSUSER` 로 돌아(위 `sudo` 가 그 까닭이다)
 # `/` 에 폴더를 만들 수 없으므로, 시작 스크립트가 토큰 파일을 쓸 수 있게 미리 만들어 넘겨준다.
 RUN sudo mkdir -p /config/.credential \

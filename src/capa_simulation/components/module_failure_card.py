@@ -1,4 +1,4 @@
-# Purpose: 모듈 오류 카드(이름·형식·첫 줄·끄는 법·import 안내·모듈 안 프레임)를 그린다.
+# Purpose: 모듈 오류 카드(머리 한 줄 · 담당 · 접힌 담당자용 진단과 복사)를 그린다.
 
 """모듈 오류 카드.
 
@@ -6,21 +6,29 @@
 프래그먼트 감싸기(`module_api` 의 `ctx.guard`)가 함께 쓴다. 그 화면(또는 그 자리)만 멈추고 사이드바·
 머리 띠·탭 줄·다른 화면은 그대로다.
 
+- **누구나 읽는 머리 한 줄 + 담당**(2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-rare) — 오류
+상자는
+  「「<모듈>」 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」(가드 자리 · 앞 동작이면
+  그 범위의 말) 한 줄이고, 그 아래 값 줄 「담당 <이름>」 만 자리에 둔다. 개발자용 정보(오류 종류 ·
+  첫 줄 · import 안내 · 끄는 법 · 오류 위치)는 접힌 「담당자용 진단」 안에 복사 단추와 함께 둔다 —
+  담당자가 메신저로 옮긴다.
 - Streamlit 기본 traceback 전문(서버 경로가 나간다)을 그리지 않는다. 프레임은 **모듈 폴더 안**의
   것만 `<id>/<상대 경로>:<줄> in <함수>` 꼴로 싣는다.
-- 예외 글은 첫 줄 200자만, 마크다운으로 해석되지 않게(`literal_markdown`) 싣는다.
-- 위젯 key 를 쓰지 않는다(한 화면에 카드가 여럿 서도 겹치지 않는다).
+- 예외 글은 첫 줄 200자만 싣는다(진단 칸은 코드 칸이라 마크다운으로 해석되지 않는다).
+- 복사 단추 key 는 카드마다 새로 짓는다 — 한 화면에 카드가 여럿 서도 겹치지 않는다.
 """
 
 from __future__ import annotations
 
 import os
 import traceback
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.diagnostic_copy import diagnostic_text, render_diagnostic_copy
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.module_registry import API_MAJOR, API_MINOR, DISABLED_ENV_VAR
 
@@ -29,9 +37,8 @@ FRAME_LIMIT = 12
 CARD_ICON = ":material/extension_off:"
 GUIDE_DOCUMENT = "docs/module_guide.md"
 API_MODULE = "capa_simulation.module_api"
-# 카드 둘째 줄의 멈춘 범위 표지(`render_failure_parts`).
-STOPPED_PAGE = "이 화면만 멈춤"
-STOPPED_SPOT = "이 자리만 멈춤"
+# 접힌 진단 칸의 이름 — 개발자용 정보(오류 종류 · 끄는 법 · 오류 위치)는 이 안에만 있다.
+DIAGNOSTIC_LABEL = "담당자용 진단"
 
 
 @dataclass(frozen=True)
@@ -117,27 +124,48 @@ def failure_parts(exc: BaseException, *, module_id: str, folder: Path) -> Failur
     )
 
 
-def _headline(module_name: str, page_title: str | None, parts: FailureParts, where: str) -> str:
-    detail = literal_markdown(parts.kind) + (
-        f": {literal_markdown(parts.message)}" if parts.message else ""
-    )
+def _headline(module_name: str, page_title: str | None, where: str) -> str:
+    """오류 상자 머리 한 줄 — 무엇이 멈췄고 무엇은 그대로인가(누구나 읽는 꼴)."""
     if page_title is None:
-        return f"{quoted(module_name)} 모듈에서 오류가 났습니다 — {detail}"
+        return (
+            f"{quoted(module_name)} 화면의 이 자리에 오류가 났습니다 — 화면의 나머지는 그대로 "
+            "쓸 수 있습니다"
+        )
     if where == "callback":
         return (
-            f"방금 한 동작에서 오류가 났습니다 — {quoted(module_name)} 모듈의 {quoted(page_title)} "
-            f"화면 · {detail}"
+            f"방금 한 동작에서 오류가 났습니다 — {quoted(module_name)} 화면 · 다른 화면은 "
+            "그대로 쓸 수 있습니다"
         )
-    return f"{quoted(module_name)} 모듈의 {quoted(page_title)} 화면에서 오류가 났습니다 — {detail}"
+    return f"{quoted(module_name)} 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다"
 
 
 def switch_off_help(module_id: str, *, page_title: str | None) -> str:
-    """카드 둘째 줄 풍선 — 그대로 쓰는 범위와 모듈을 끄는 법(`docs/module_guide.md` 9-2)."""
+    """진단 칸의 끄는 법 — 그대로 쓰는 범위와 모듈을 끄는 법(`docs/module_guide.md` 9-2)."""
     kept = "화면의 나머지와 다른 화면은" if page_title is None else "다른 화면은"
     return (
         f"{kept} 그대로 씁니다. 끄려면 `module.json` 의 `enabled` 를 false 로 하거나 실행 "
         f"환경변수(`{DISABLED_ENV_VAR}={module_id}`)를 넣고 앱을 다시 띄웁니다."
     )
+
+
+def diagnostic_lines(
+    *, module_id: str, module_name: str, page_title: str | None, parts: FailureParts, where: str
+) -> list[str]:
+    """「담당자용 진단」 평문 줄 — 모듈 · 화면 · 오류(종류: 첫 줄) · import 안내 · 끄는 법 ·
+    위치."""
+    scope = {"page": "화면 본문", "callback": "앞 동작(위젯 콜백)", "guard": "화면의 한 자리"}
+    lines = [
+        f"모듈 · {module_name} ({module_id})",
+        f"화면 · {page_title or '-'} · {scope.get(where, where)}",
+        f"오류 · {parts.kind}" + (f": {parts.message}" if parts.message else ""),
+    ]
+    if parts.hint:
+        lines.append(f"안내 · {parts.hint}")
+    lines.append(f"끄는 법 · {switch_off_help(module_id, page_title=page_title)}")
+    if parts.frames:
+        lines.append("오류 위치")
+        lines.extend(f"  {frame}" for frame in parts.frames)
+    return lines
 
 
 def render_failure_parts(
@@ -150,18 +178,24 @@ def render_failure_parts(
     where: str,
 ) -> None:
     """카드를 지금 자리에 그린다. `page_title` 이 None 이면(guard) 그 자리만 멈춘 꼴로 쓴다."""
-    st.error(_headline(module_name, page_title, parts, where), icon=CARD_ICON)
-    # 자리에는 멈춘 범위와 담당(값 · 표지)만 두고, 끄는 법은 그 줄 풍선이 말한다(설계 규칙
-    # UI-TXT-01 · UI-TXT-02). 오류마다 다른 진단(import 꼴 안내 · 오류 위치)은 오류의 몫이라
-    # 자리에 둔다.
-    stopped = STOPPED_SPOT if page_title is None else STOPPED_PAGE
-    owner_text = f" · 담당 {literal_markdown(owner)}" if owner else ""
-    st.caption(f"{stopped}{owner_text}", help=switch_off_help(module_id, page_title=page_title))
-    if parts.hint:
-        st.caption(parts.hint)
-    if parts.frames:
-        with st.expander("오류 위치"):
-            st.code("\n".join(parts.frames), language=None)
+    st.error(_headline(module_name, page_title, where), icon=CARD_ICON)
+    # 자리에는 담당(값)만 두고, 오류마다 다른 진단 · 끄는 법은 접힌 「담당자용 진단」 이다(설계 규칙
+    # UI-TXT-01 · UI-TXT-04 · UI-NTF-10 — 진단 글에도 복사 단추).
+    if owner:
+        st.caption(f"담당 {literal_markdown(owner)}")
+    lines = diagnostic_lines(
+        module_id=module_id,
+        module_name=module_name,
+        page_title=page_title,
+        parts=parts,
+        where=where,
+    )
+    with st.expander(DIAGNOSTIC_LABEL):
+        render_diagnostic_copy(
+            diagnostic_text(_headline(module_name, page_title, where), lines),
+            key=f"module_failure_{module_id}_{where}_{uuid.uuid4().hex[:8]}",
+        )
+        st.code("\n".join(lines), language=None)
 
 
 def render_module_failure_card(

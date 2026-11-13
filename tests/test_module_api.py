@@ -14,7 +14,7 @@ from streamlit.runtime.scriptrunner_utils.script_requests import RerunData
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import module_api, module_failures, module_registry
-from capa_simulation.components.module_failure_card import STOPPED_SPOT
+from capa_simulation.components.module_failure_card import DIAGNOSTIC_LABEL
 from capa_simulation.module_api import ModuleContextError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -234,10 +234,14 @@ st.write("뒤 줄")
     assert not app.exception
     assert [str(element.value) for element in app.markdown] == ["앞 줄", "뒤 줄"]
     (card,) = app.error
-    assert "「시험 모듈」 모듈에서 오류가 났습니다" in card.value and "KeyError" in card.value
-    # 멈춘 범위는 표지 한 마디, 그대로 쓰는 범위 · 끄는 법은 그 줄 풍선이다.
-    (stopped,) = [caption for caption in app.caption if caption.value.startswith(STOPPED_SPOT)]
-    assert "화면의 나머지와 다른 화면은 그대로" in str(stopped.proto.help)
+    # 머리 한 줄은 누구나 읽는 꼴이고, 오류 종류 · 끄는 법은 접힌 「담당자용 진단」 안이다(카드
+    # p2-rare).
+    assert card.value.startswith("「시험 모듈」 화면의 이 자리에 오류가 났습니다")
+    assert "KeyError" not in card.value
+    (diagnostic,) = [box for box in app.expander if box.label == DIAGNOSTIC_LABEL]
+    (code,) = diagnostic.code
+    assert "KeyError: '자리 오류'" in code.value
+    assert "화면의 나머지와 다른 화면은 그대로" in code.value
     assert module_failures.last_failures()["demo_a"].where == "guard"
 
 

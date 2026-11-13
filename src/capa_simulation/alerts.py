@@ -375,6 +375,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # (동기화 아님 · 올리기 밀림 · 큐 넘침 · 시계 차이)과 기록 사슬 이상(1판은 14일 넘게 늦은 조각).
     AlertSpec("AD-12", "action", "state", "접속 · 작업 기록이 버킷에 보관되지 않음"),
     AlertSpec("AD-13", "error", "state", "접속 · 작업 기록 사슬 이상 — 너무 늦게 온 조각"),
+    # 코어 화면의 처리 못 한 오류 — 프로세스 기록(`page_failures`)에서 관리자 몫 회차에 낸다(참고
+    # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`). AD-14 ~ AD-21 은 다른 갈래
+    # 몫이다.
+    AlertSpec("AD-22", "error", "state", "코어 화면의 처리 못 한 오류(참고 번호)"),
 )
 
 

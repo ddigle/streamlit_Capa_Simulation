@@ -57,8 +57,11 @@ PRESSED = "누른 동작의 실패 — 저장 · 적용 · 불러오기 단추 �
 NO_ALARM = "앱이 서지 못해 알림 칸이 없는 멈춤(UI-NTF-08 예외)"
 CHECK_BOARD = "판 자체 — 점검 화면의 결론 상자"
 MODULE_CARD = "모듈 오류 카드(UI-NTF-08 예외)"
+CORE_CARD = "코어 화면의 처리 못 한 오류 카드 — 참고 번호(UI-NTF-08 예외)"
 ALERT_PATH = "알림 길 — 눌린 회차의 곁 칸(`flash`, 곁 오류의 공통 그리기)"
-ERROR_REASONS = frozenset({BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, ALERT_PATH})
+ERROR_REASONS = frozenset(
+    {BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, CORE_CARD, ALERT_PATH}
+)
 # (파일, 맨 바깥 함수) → (`.error(` 수, 까닭). 새 자리는 실패한다 — 그리기 실패면
 # `render_data_error`, 곁 거부 · 누른 동작의 실패면 까닭과 함께 여기에 둔다.
 PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
@@ -162,6 +165,7 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         MODULE_CARD,
     ),
+    ("src/capa_simulation/components/page_failure_card.py", "render_page_failure"): (1, CORE_CARD),
     ("src/capa_simulation/components/past_data_management.py", "_render_save"): (1, PRESSED),
     ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
         3,

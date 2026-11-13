@@ -43,6 +43,10 @@ from capa_simulation.components.object_sync_status import (
     render_object_sync_alerts,
 )
 from capa_simulation.components.page_box_reveal import page_box_reveal_script
+from capa_simulation.components.page_failure_card import (
+    render_page_failure_alert,
+    run_core_page,
+)
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.page_link import disabled_link_aria_script
 from capa_simulation.components.page_tabs import (
@@ -604,20 +608,29 @@ with pinned_connections(DUCKDB_PATH):
     # BigDataQuery 토큰 관리자 알림 — 실패(`AD-10`)와 만료 1시간 전(`AD-11`). 시작 점검 결과 파일이
     # 없는 서버(C-DEP 밖)는 아무것도 쓰지 않고, 있는 서버는 이벤트 칸 두 자리다.
     render_token_alert()
+    # 코어 화면 오류 관리자 알림(`AD-22` — 처리 못 한 오류의 참고 번호 · 「그 화면으로」 그 화면).
+    # 이 프로세스에서 아직 실패가 없으면 아무것도 쓰지 않는다.
+    render_page_failure_alert()
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
     # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).
     # 입장 화면 Summary 의 GAP 몫이 「준비 중」으로 나갔으면 페이지를 다 그린 **뒤**에 만들어 둔다 —
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
-    # 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림).
-    # 처리한 실패는 정상으로 돌아와 아래 꼬리가 돈다. `st.stop()`·`st.rerun()` 은 지금처럼 지나간다.
+    # 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림). 코어
+    # 화면도 처리 못 한 오류를 그 화면 안 카드 · 참고 번호로 바꾼다(`page_failure_card` — 관리자
+    # 알림 `AD-22`). 처리한 실패는 정상으로 돌아와 아래 꼬리가 돈다. `st.stop()`·`st.rerun()` 은
+    # 지금처럼 지나간다.
     try:
         with equipment_pin:
             if current_spec is not None and current_spec.module is not None:
                 run_module_page(navigation.run, current_spec)
             else:
-                navigation.run()
+                run_core_page(
+                    navigation.run,
+                    page="" if current_spec is None else tab_label(current_spec),
+                    href=navigation.url_path,
+                )
     except StopException as stop:
         app_run.finish_stopped(stop)
         warm_intro_summary(str(DUCKDB_PATH.resolve()))

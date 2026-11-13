@@ -4758,3 +4758,11 @@ def test_the_new_items_never_write() -> None:
     added = {"upeh_rows", "entry_sections", "upeh_help", "space_zone_fields"}
     assert added <= {item.key for item in ITEMS}
     assert not any(item.writes for item in ITEMS if item.key in added)
+
+
+def test_the_core_page_failure_card_counts_as_an_exception() -> None:
+    """코어 화면 감싸기(`page_failure_card`)는 처리 못 한 오류를 Streamlit 오류 상자 대신 카드로 바꾼다 —
+    화면 확인이 예외를 세는 자리는 그 카드 칸도 센다(놓치면 깨진 화면이 「예외 0」 이 된다)."""
+    from capa_simulation.components.page_failure_card import CARD_KEY
+
+    assert f".st-key-{CARD_KEY}" in screens._GAP_EVIDENCE_JS
