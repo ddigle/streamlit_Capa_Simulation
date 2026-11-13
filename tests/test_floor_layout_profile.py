@@ -245,7 +245,7 @@ def test_the_layout_apply_checks_only_its_own_floor_against_the_canvas() -> None
     assert "C1 2F 캔버스 100 × 60(저장된 캔버스 없음 · 기본값)" in message
     assert "['DEMO-EQ03']" in message and "C1 1F" not in message
     # 적용 자리의 글이다 — 이미 「배치 편집」 안이라 그 칸 이름만, 마스터 전체 저장 · 빈 DB 첫 저장
-    # 안내는 붙이지 않는다(R1 리뷰 지적 5).
+    # 안내는 붙이지 않는다.
     assert "왼쪽 칸 「캔버스」 를 그만큼 넓히거나" in message
     assert "무관한 칸만" not in message and "Space 현황" not in message
     assert "저장한 적이 없으면" not in message

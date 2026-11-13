@@ -496,7 +496,7 @@ def test_other_columns_and_rows_outside_a_group_change_one_row(
 def test_a_pasted_row_moving_out_does_not_carry_its_cells_to_the_group_it_left(
     parent: str, values: list[str]
 ) -> None:
-    """엑셀 한 줄 통째 붙여넣기(R1 리뷰 지적 1) — Main 설비 칸이 그 줄을 다른 묶음으로
+    """엑셀 한 줄 통째 붙여넣기 — Main 설비 칸이 그 줄을 다른 묶음으로
     옮기거나(GRP-2) 묶음 밖으로 빼면(빈 값), 같이 온 동 · 층 · 담당자 · Maker 는 그 줄에만 들어가고
     떠난 묶음에 남은 형제(0 · 4 · 6)는 그대로다. 알림 글에 묶음 꼬리가 없고 갈린 묶음도 생기지
     않는다."""
@@ -561,7 +561,7 @@ def test_reverting_a_shared_cell_brings_every_sibling_back_to_its_saved_value() 
 
 def test_reverting_a_shared_cell_brings_a_new_sibling_to_the_reverted_value() -> None:
     """새(저장 안 한) 형제는 돌릴 저장본이 없다 — 막는 열세 칸은 되돌린 줄의 저장본 값으로 맞춰
-    묶음이 갈리지 않는다(R1 리뷰 지적 2 · 설계 G2 (가)). 막지 않는 레이아웃표시는 새 형제를 건드리지
+    묶음이 갈리지 않는다(설계 G2 (가)). 막지 않는 레이아웃표시는 새 형제를 건드리지
     않는다 — 일부러 끈 새 모듈이 되돌리기로 켜지지 않는다(설계 G4)."""
     saved = _grouped_frames()
     joiner = saved[1].iloc[[0]].copy()

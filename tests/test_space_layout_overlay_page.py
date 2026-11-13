@@ -1928,7 +1928,7 @@ def test_the_official_floor_editor_will_not_shrink_below_a_hypothetical_layout(
 def test_an_apply_canvas_below_a_hypothetical_layout_is_refused(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:
-    """편집기 하한의 서버 쪽 겹(R1 리뷰 지적 3) — 낡은 편집기 · 옛 화면이 가정 설비 시나리오의
+    """편집기 하한의 서버 쪽 겹 — 낡은 편집기 · 옛 화면이 가정 설비 시나리오의
     이 층 배치 차이보다 작은 캔버스를 보내면 적용을 받지 않고 알림창으로 그 시나리오를 말한다.
     하한 이상이면 받는다."""
     _far_hypothetical_layout(tmp_path)

@@ -117,7 +117,7 @@ def _core_data_csv_with_a_blank_cs(path: Path) -> int:
 def test_the_blank_cs_notice_is_printed_only_after_the_scenario_is_saved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """「빼고 저장했습니다」 는 저장이 끝난 뒤에 찍는다 — 저장이 실패하면 찍지 않는다(리뷰 지적).
+    """「빼고 저장했습니다」 는 저장이 끝난 뒤에 찍는다 — 저장이 실패하면 찍지 않는다.
 
     빈 저장소의 첫 이관이다. 표시순서를 읽는 XLSB 대신 내장 합성 표시순서를 넣는다.
     """

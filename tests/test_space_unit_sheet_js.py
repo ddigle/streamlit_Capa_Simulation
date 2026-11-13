@@ -252,7 +252,7 @@ def test_many_picked_units_join_in_order_without_repeats() -> None:
 
 
 def test_a_row_press_in_the_picked_tab_keeps_the_picked_rows() -> None:
-    """R2 리뷰 지적 1 — 칸을 고치는 배치 편집의 「고른 호기」 탭에 둘 이상을 고른 채 줄을 누르면
+    """칸을 고치는 배치 편집의 「고른 호기」 탭에 둘 이상을 고른 채 줄을 누르면
     고른 것을 좁히지 않고 누른 호기를 앞(기준)에만 세운다. 보이는 줄 모음(표 열쇠 — 정렬한 id)이
     그대로라 표를 다시 그리지 않아, 같은 자리의 두 번째 누름이 그 칸을 연다(좁히면 다른 줄이 그
     자리에 섰다). 같은 묶음의 다른 모듈 줄을 눌러도 같다. 보기 화면 · 「필터」 탭은 누른 호기
@@ -1038,8 +1038,8 @@ def test_a_check_carries_the_seq_where_the_window_last_emptied() -> None:
 
 
 def test_a_painted_cell_keeps_its_long_text_tip_in_step_with_the_shown_text() -> None:
-    """R2 리뷰 지적 6 — 18자를 넘는 칸의 브라우저 풍선(`title`)은 표를 그릴 때 받은 글로 달렸고 칸을
-    고친 뒤에도 옛 글을 보였다. 칸을 칠할 때 지금 글로 다시 달고, 짧아지면 걷는다."""
+    """18자를 넘는 칸의 브라우저 풍선(`title`)은 칸을 칠할 때 지금 글로 다시 달고, 짧아지면
+    걷는다 — 표를 그릴 때 받은 글로만 두면 칸을 고친 뒤에도 옛 글을 보인다."""
     paint = JS[
         JS.index("  function paintSheetCell(td) {") : JS.index("  function paintSheetCells(")
     ]

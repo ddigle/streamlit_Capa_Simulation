@@ -261,7 +261,7 @@ def test_different_values_in_one_group_are_blocked_not_picked() -> None:
 def test_a_locked_sibling_refuses_the_whole_write(monkeypatch: pytest.MonkeyPatch) -> None:
     """형제 하나라도 잠긴 칸이면 그 쓰기를 통째로 막는다(창에 있는 같이 바뀌는 칸에 걸리는 잠금은
     지금 없어 잠금 표를 바꿔 본다). 거절 글은 설비 마스터 표와 한 벌(`GROUP_LOCKED_TOAST`)이고 수는
-    잠긴 형제 줄 수다(R1 리뷰 지적 6 — 창은 형제 전부를 셌다)."""
+    잠긴 형제 줄 수다."""
     monkeypatch.setattr(space_sheet_edit, "LOCK_SETS", {**eg.LOCK_SETS, "test": ("공정구분",)})
     master = _fleet()
     for locks, count in (({"M-C": ("test",)}, 1), ({"M-B": ("test",), "M-C": ("test",)}, 2)):

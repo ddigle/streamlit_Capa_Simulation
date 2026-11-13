@@ -438,7 +438,7 @@ def _product_routes(source: pd.DataFrame, product: str, basis: str) -> pd.Series
 
 
 def test_dropping_only_route_rows_names_the_plan_lines_that_lose_a_route() -> None:
-    """계획 행을 하나도 빼지 않아도 경로 행을 빼면 남은 계획의 소요대수가 줄 수 있다(리뷰 지적).
+    """계획 행을 하나도 빼지 않아도 경로 행을 빼면 남은 계획의 소요대수가 줄 수 있다.
 
     합성 시드에서 `DEMO_PRODUCT_A` 의 WF 경로 행 12개만 CS 를 비우면 계획은 12줄 그대로인데
     `DEMO_Wafer_Inspect` 로 가는 그 제품의 부하가 경로를 잃는다. 계산은 이 부하를 「그 소요기준·WF
