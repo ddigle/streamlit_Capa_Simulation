@@ -263,6 +263,8 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, "help@example.com")
+    # 접속 요청 창구 글은 이 판에 싣지 않는다 — 데이터를 열지 못한 실패의 연락처가 아니다.
+    monkeypatch.setenv(names.ENV_ACCESS_CONTACT, "데모 창구")
 
     app = _run("lock", monkeypatch)
 

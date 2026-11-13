@@ -8,6 +8,7 @@ C-DEP 상태 검사가 무엇을 묻는지 모른다 — TCP · `/` · `/_stcore
 
 from __future__ import annotations
 
+import html
 import http.client
 import json
 import re
@@ -633,6 +634,52 @@ def test_the_contact_line_takes_only_the_mail_shape_and_plain_text() -> None:
     assert '<p class="contact">문의 <a href="mailto:demo@example.com">demo@example.com</a>' in page
     assert "데모 창구 &lt;1&gt;" in page
     assert 'class="contact"' not in empty
+
+
+def _line_text(page: str, css_class: str) -> str:
+    """그 칸(`<p class=…>`) 하나의 글 — 태그를 걷고 HTML 이스케이프를 푼다."""
+    found = re.search(rf'<p class="{css_class}">(?P<body>.*?)</p>', page)
+    assert found is not None, css_class
+    return html.unescape(re.sub(r"<[^>]+>", "", found["body"]))
+
+
+def test_the_contact_and_reference_lines_read_like_the_in_app_stop_panel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """시작 임시 화면(Streamlit 을 부르지 않는다)과 앱 안 멈춤 판(`components/stop_panel.py`)은 문의
+    줄 · 참고 줄을 따로 짓는다 — 태그를 걷은 글자가 같은 꼴이다(「문의 <메일> · <창구 글>」 ·
+    「참고 <갈래 키> · <YYYY-MM-DD HH:MM> UTC」).
+
+    창구 글(`CAPA_ACCESS_CONTACT`)을 싣는 정책은 일부러 다르다. 시작 임시 화면은 앱 밖 화면의
+    공통 틀(보드 카드 frame — 문의 줄은 메일 + 창구 글)이라 늘 싣고, 앱 안 판은 로그인 · 접속
+    멈춤만 넘기며 앱 시작 실패 판은 메일만이다 — 접속 요청 창구는 데이터를 열지 못한 실패의
+    연락처가 아니다(P1 session 리뷰 고침 · 보드 d7 (가) 「기존 두 칸을 다시 씀」, 앱 시작 실패 판
+    쪽은 `tests/test_boot_stop.py` 가 본다)."""
+    from capa_simulation.components import stop_panel
+
+    monkeypatch.setenv("CAPA_APP_CONTACT_EMAIL", "demo@example.com")
+    contact = container_stage.contact_of(
+        {"CAPA_APP_CONTACT_EMAIL": "demo@example.com", "CAPA_ACCESS_CONTACT": "데모 창구"}
+    )
+    view = container_stage.stage_view(
+        _state(attempt=2, kind="timeout", failed_at=1100.0, next_at=1112.0)
+    )
+    assert view.reference and view.reference_at is not None
+
+    page = container_stage.render_main(view, now=1100.0, version=0, contact=contact)
+
+    assert _line_text(page, "contact") == stop_panel.contact_caption("데모 창구")
+    assert _line_text(page, "ref") == stop_panel.reference_line(
+        view.reference, now=view.reference_at
+    )
+    assert _line_text(page, "contact").startswith(f"{stop_panel.CONTACT_PREFIX} ")
+    assert _line_text(page, "ref").startswith(f"{stop_panel.REFERENCE_PREFIX} ")
+    # 메일만 있으면 두 곳 다 메일만이다 — 앱 시작 실패 판이 넘기는 꼴(창구 글 없음).
+    mail_only = container_stage.render_main(
+        view, now=1100.0, version=0, contact=container_stage.StageContact(email="demo@example.com")
+    )
+    assert _line_text(mail_only, "contact") == stop_panel.contact_caption()
+    assert stop_panel.contact_caption() == "문의 demo@example.com"
 
 
 def test_the_page_carries_the_frame_parts_and_both_themes(
