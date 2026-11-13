@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
@@ -22,6 +25,8 @@ from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.server import sso_routes
 from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 FORM = {"content-type": "application/x-www-form-urlencoded"}
 INST = "0a0b0c0d0e0f"
@@ -151,6 +156,42 @@ def test_boot_turns_the_recorder_on_only_for_an_enabled_sso(tmp_path: Path) -> N
     assert len(lines[1]["det"]["admin_fp"]) == 8
     assert LOGINID not in _payload(lines)
     assert all(line["actor"] == "system:app" and line["grade"] == "system" for line in lines)
+
+
+def test_boot_pulls_no_screen_component_before_the_runtime(tmp_path: Path) -> None:
+    """진입 파일은 Streamlit 실행기가 서기 전에 기동한다 — 그때 화면 조각 모듈(Components v2)을
+    불러오면 등록이 실행기 밖에 남아 모든 회차가 「Component … is not registered」 로 멈춘다."""
+    script = (
+        "import sys\n"
+        "from capa_simulation.audit import boot\n"
+        "boot.deploy_version()\n"
+        "print(sorted(m for m in sys.modules if m.startswith('capa_simulation.components')))\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")},
+        cwd=tmp_path,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip().splitlines()[-1] == "[]"
+
+
+def test_the_deploy_version_reads_the_applied_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import capa_simulation.settings as settings
+
+    state = tmp_path / "applied.json"
+    monkeypatch.setattr(settings, "DEPLOY_STATE_PATH", state)
+    assert boot.deploy_version() == settings.APP_VERSION
+    state.write_text('{"stamp": " 202611140000 "}', encoding="utf-8")
+    assert boot.deploy_version() == "202611140000"
+    state.write_text("not json", encoding="utf-8")
+    assert boot.deploy_version() == settings.APP_VERSION
 
 
 def test_the_grader_knows_only_admins_and_users() -> None:

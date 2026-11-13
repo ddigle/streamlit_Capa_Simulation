@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 
 from capa_simulation import settings, sync_boot
@@ -28,13 +29,19 @@ ENVIRONMENT = "cdep"
 
 
 def deploy_version() -> str:
-    """배포 표지 — 적용 기록의 stamp(앱 정보 카드와 같은 값), 없으면 앱 판 글."""
-    from capa_simulation.components.app_credits import deployed_stamp
+    """배포 표지 — 적용 기록(`settings.DEPLOY_STATE_PATH`)의 stamp(앱 정보 카드와 같은 값), 없으면
+    앱 판 글.
 
+    앱 정보 카드 모듈(`components.app_credits`)을 부르지 않고 같은 파일을 직접 읽는다 — 그 모듈은
+    화면 조각(Components v2 — 입장 화면 등)을 끌고 오는데, 진입 파일이 Streamlit 실행기가 서기 전에
+    부르면 그 조각이 실행기 밖에 등록돼 모든 회차가 「Component … is not registered」 로 멈춘다.
+    """
     try:
-        return deployed_stamp() or settings.APP_VERSION
-    except Exception:  # noqa: BLE001 — 판 글 하나로 기동이 멈추지 않는다
+        state = json.loads(settings.DEPLOY_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return settings.APP_VERSION
+    stamp = state.get("stamp") if isinstance(state, dict) else None
+    return (str(stamp).strip() if stamp is not None else "") or settings.APP_VERSION
 
 
 def grader(cfg: SsoConfig) -> recorder.Grader:
