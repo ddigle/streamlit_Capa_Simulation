@@ -202,6 +202,25 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:
+    """정리 뒤 사라진 시험 `tmp_path` 자리에 빈 폴더를 다시 둔다 — 그 이름을 세션 안에서 다시
+    내주지 않게 하는 자동 복원이다.
+
+    보존 정책 `failed`(`tmp_path_retention_policy` — 조각 실행기가 쓴다)는 통과한 시험의
+    `tmp_path` 를 정리 단계에서 지운다. 지운 채 두면 pytest 가 같은 이름(시험 이름 앞 30자 +
+    번호)을 다음 시험에 다시 내준다. 경로를 키로 쓰는 프로세스 캐시(`get_scenario_repository` ·
+    `get_equipment_repository` 와 경로 · 쓰기 세대만 키인 `st.cache_data`)가 그 경로에 앞 시험의
+    저장소 · 값을 돌려줘, 새 빈 DB 를 연 시험이 데이터 오류로 멈추거나 앞 시험 값을 조용히 본다.
+    빈 폴더는 번호만 붙잡고 파일은 지워진 채다. `trylast` 라 `tmp_path` 정리(보존 정책의
+    지우기)가 끝난 뒤 본다 — 기본 보존에서는 할 일이 없다.
+    """
+    funcargs = getattr(item, "funcargs", None) or {}
+    path = funcargs.get("tmp_path")
+    if isinstance(path, Path) and not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+
+
 @pytest.fixture(autouse=True)
 def _without_auto_update_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """공식버전 자동 갱신 예약의 실행 줄 허락(`CAPA_AUTO_OFFICIAL_UPDATE`)을 뺀다.

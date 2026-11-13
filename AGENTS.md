@@ -287,6 +287,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - pytest 를 여럿 동시에 돌릴 때는 각자 전용 `--basetemp` 를 준다(조각 실행기는 `--basetemp-root`) — 기본 임시 폴더(`pytest-of-<사용자>/pytest-N`)는
   오래된 차례를 지워 서로의 폴더를 지울 수 있다. 임시 공간이 차서 전체 pytest 가 `OSError: [Errno 28]` 로 멈추면 코드
   결함이 아니다 — 끝난 작업의 찌꺼기만 지우고 다시 돌린다.
+- 보존 정책 `failed`(`-o tmp_path_retention_policy=failed`)는 통과한 시험의 `tmp_path` 를 그 자리에서 지우고 같은 이름(시험 이름 앞 30자 +
+  번호)을 다음 시험에 다시 내준다. 경로를 키로 쓰는 프로세스 캐시(`get_scenario_repository` · `get_equipment_repository` · 경로와 쓰기
+  세대만 키인 `st.cache_data`)가 그 경로에 앞 시험 것을 돌려줘 시험이 깨진다 — `tests/conftest.py` 의 `pytest_runtest_teardown` 이
+  지워진 자리에 빈 폴더를 다시 두어 번호를 붙잡는다(`tests/test_tmp_path_number_hold.py`).
 - 샌드박스 안에서 `TMPDIR` 이 비면 파이썬 `tempfile` 은 실패하지 않고 저장소 루트로 내려간다 — 오류로 드러나지 않으니
   `echo $TMPDIR` 로 본다(`docs/wsl_dev_environment.md` 2장).
 - UPEH 가정 계획 1회 시간은 `scripts/benchmark_upeh_assumption.py --data-dir <사본 폴더>` 로 잰다(사내 런북 6-3 b — 1초를
