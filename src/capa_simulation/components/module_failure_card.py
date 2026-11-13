@@ -28,7 +28,11 @@ from pathlib import Path
 
 import streamlit as st
 
-from capa_simulation.components.diagnostic_copy import diagnostic_text, render_diagnostic_copy
+from capa_simulation.components.diagnostic_copy import (
+    COMPONENT_KEY_PREFIX,
+    diagnostic_text,
+    render_diagnostic_copy,
+)
 from capa_simulation.components.literal_markdown import literal_markdown, quoted
 from capa_simulation.module_registry import API_MAJOR, API_MINOR, DISABLED_ENV_VAR
 
@@ -39,6 +43,10 @@ GUIDE_DOCUMENT = "docs/module_guide.md"
 API_MODULE = "capa_simulation.module_api"
 # 접힌 진단 칸의 이름 — 개발자용 정보(오류 종류 · 끄는 법 · 오류 위치)는 이 안에만 있다.
 DIAGNOSTIC_LABEL = "담당자용 진단"
+# 진단 복사 단추의 key 머리. 카드마다 새 key 라 모듈 회차 앞뒤 세션 키 견주기(`module_runtime`)가 이
+# 머리의 세션 키를 코어 키로 빼야 접두 없는 키 알림(`MO-02`)이 거짓으로 서지 않는다.
+COPY_KEY_HEAD = "module_failure_"
+COPY_SESSION_KEY_HEAD = f"{COMPONENT_KEY_PREFIX}{COPY_KEY_HEAD}"
 
 
 @dataclass(frozen=True)
@@ -193,7 +201,7 @@ def render_failure_parts(
     with st.expander(DIAGNOSTIC_LABEL):
         render_diagnostic_copy(
             diagnostic_text(_headline(module_name, page_title, where), lines),
-            key=f"module_failure_{module_id}_{where}_{uuid.uuid4().hex[:8]}",
+            key=f"{COPY_KEY_HEAD}{module_id}_{where}_{uuid.uuid4().hex[:8]}",
         )
         st.code("\n".join(lines), language=None)
 

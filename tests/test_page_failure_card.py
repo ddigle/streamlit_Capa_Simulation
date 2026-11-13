@@ -134,3 +134,26 @@ def test_a_failure_is_told_to_the_admin_with_its_reference(
     assert failure.ref in str(note["full"])
     assert (note["page"], note["href"]) == ("공정 Capa 상세", "process_capa_detail")
     assert alerts.REGISTRY[page_failure_card.ALERT_CODE].level == "error"
+
+
+def test_one_broken_screen_opened_again_does_not_pop_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """고장 난 한 화면을 여럿이 거듭 열어도 같은 (화면, 종류)면 지문이 같아 알림창이 거듭 뜨지
+    않는다 — 건수 · 최근 참고 번호는 글에 실린다. 다른 화면 · 다른 종류면 새 지문이다."""
+    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
+    page_failures.record_failure(page="Static Capa", href="static_capa", kind="AttributeError")
+    app = AppTest.from_function(_alert_script).run()
+    first = active_state(app, page_failure_card.ALERT_CODE)
+
+    latest = page_failures.record_failure(
+        page="Static Capa", href="static_capa", kind="AttributeError"
+    )
+    app.run()
+    again = active_state(app, page_failure_card.ALERT_CODE)
+    assert first is not None and again is not None
+    assert again["fp"] == first["fp"]
+    assert again["short"].startswith("화면 오류 2건") and latest.ref in str(again["full"])
+
+    page_failures.record_failure(page="VOC", href="voc", kind="IndexError")
+    app.run()
+    other = active_state(app, page_failure_card.ALERT_CODE)
+    assert other is not None and other["fp"] != first["fp"]

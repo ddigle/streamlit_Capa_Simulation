@@ -656,3 +656,26 @@ def test_a_deferred_key_warning_is_not_resolved_in_the_run_that_reports_it(
     assert reported == ["DEMO 넘긴 키 알림"]
     module_runtime.run_module_page(lambda: None, spec)
     assert reported == ["DEMO 넘긴 키 알림", None]
+
+
+def _snapshot_script() -> None:
+    import streamlit as st
+
+    from capa_simulation import module_runtime
+    from capa_simulation.components.module_failure_card import COPY_SESSION_KEY_HEAD
+
+    st.session_state[f"{COPY_SESSION_KEY_HEAD}demo_x_page_1234"] = {"text": "진단"}
+    st.session_state["plain_core_key"] = 1
+    st.session_state["snapshot"] = sorted(module_runtime.key_snapshot("demo_x").values)
+
+
+def test_the_card_copy_button_key_is_not_a_module_key() -> None:
+    """오류 카드 「담당자용 진단」 의 복사 단추는 카드마다 새 key 다 — 모듈 회차 앞뒤 세션 키
+    견주기가 그 머리를 코어 키로 빼야 접두 없는 키 알림(`MO-02`)이 거짓으로 서지 않는다(브라우저
+    확인에서 드러났다 — AppTest 는 그 컴포넌트를 대역으로 바꿔 보지 못한다)."""
+    app = AppTest.from_function(_snapshot_script).run()
+
+    assert not app.exception
+    snapshot = app.session_state["snapshot"]
+    assert "plain_core_key" in snapshot
+    assert not [key for key in snapshot if key.startswith("capa_diagnostic_copy_module_failure_")]

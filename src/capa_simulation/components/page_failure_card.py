@@ -141,8 +141,9 @@ def run_core_page(run: Callable[[], None], *, page: str, href: str) -> None:
 def render_page_failure_alert() -> None:
     """코어 화면 오류 관리자 알림(`AD-22`) — `app.py` 가 회차마다 조건 없이 부른다(모듈 설명).
 
-    프로세스에서 아직 실패가 없으면 아무것도 쓰지 않는다. 지문은 최근 참고 번호들이다 — 새 실패가
-    나면 다시 뜬다. 관리자가 아닌 회차는 해소로 부른다."""
+    프로세스에서 아직 실패가 없으면 아무것도 쓰지 않는다. 지문은 (화면, 오류 종류) 쌍의 모음이다 —
+    새 화면 · 새 종류의 실패면 다시 뜨고, 고장 난 한 화면을 여럿이 거듭 열어도 거듭 뜨지 않는다(건수
+    · 최근 참고 번호는 글에 싣는다). 관리자가 아닌 회차는 해소로 부른다."""
     failures = page_failures.recent_failures()
     if not failures:
         return
@@ -155,7 +156,7 @@ def render_page_failure_alert() -> None:
     alerts.state(
         ALERT_CODE,
         scope=None,
-        content=[item.ref for item in shown] if admin else None,
+        content=sorted({(item.page, item.kind) for item in failures}) if admin else None,
         active=admin,
         text=f"화면 오류 {len(failures)}건 — 「{last.page}」 · {last.kind}" if admin else None,
         full=(

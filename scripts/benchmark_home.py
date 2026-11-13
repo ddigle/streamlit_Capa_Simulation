@@ -195,16 +195,18 @@ def applied_lob_key(app: AppTest) -> "LobFigureKey":
     return applied
 
 
-def data_error_messages(app: AppTest) -> list[str]:
-    """그 회차에 선 「데이터 Error」 마크의 오류 글 — 자리에는 없고 마크와 한 칸의 표지에 실린다."""
+def data_error_messages(app: AppTest, *, empty: bool = False) -> list[str]:
+    """그 회차에 선 「데이터 Error」 마크의 오류 글 — 자리에는 없고 마크와 한 칸의 표지에 실린다.
+    `empty` 면 마크 대신 선 빈 상태 회색 한 줄(불러온 리비전 없음 — 공식버전 없는 사본)의 글이다."""
     from capa_simulation import alerts
-    from capa_simulation.components.data_error_mark import MARK_CLASS
+    from capa_simulation.components.data_error_mark import EMPTY_CLASS, MARK_CLASS
 
+    place = EMPTY_CLASS if empty else MARK_CLASS
     bodies = [str(element.proto.body) for element in app.get("html")]
     return [
         str(note["full"])
         for body in bodies
-        if MARK_CLASS in body
+        if place in body
         for note in alerts.marker_notes(body)
         if note.get("keep")
     ]
@@ -220,6 +222,7 @@ def run_phase(app: AppTest, phase: str) -> dict[str, object]:
     ]
     failures.extend(("st.error", str(error.value)) for error in app.error)
     failures.extend(("데이터 Error", message) for message in data_error_messages(app))
+    failures.extend(("빈 상태", message) for message in data_error_messages(app, empty=True))
     if failures:
         raise HomeFailure(phase, failures)
     chart_count = len(app.get("plotly_chart"))
