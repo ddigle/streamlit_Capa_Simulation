@@ -266,7 +266,8 @@ Windows(PowerShell):
   ⑩ 사내 PC 창에는 프록시 환경변수가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다 — 루프백 시험 서버로 가는 맨
   `urllib.request.urlopen` 이 프록시로 가 403 을 받는다. 공용 `tests/conftest.py` 의 `_loopback_skips_proxy` 가 `NO_PROXY` ·
   `no_proxy` 에 루프백 셋을 붙이고, 루프백 요청기는 `ProxyHandler({})` 로 짓는다(`tests/test_s3_mock_store.py`, 리뷰
-  `202611111500` 발견 2). 사외 CI 의 둘째 작업
+  `202611111500` 발견 2). 시험 · 스크립트의 맨 `urlopen` · `urlretrieve` 는 그물 `tests/test_no_bare_urlopen.py` 가 막는다(앱 코드는
+  보지 않는다 — 바깥 주소로 가는 앱 요청은 사내 프록시를 따라야 할 수 있다). 사외 CI 의 둘째 작업
   `windows-pytest`(`windows-latest` · Linux 작업과 같은 설치 · pytest 만)가 이 열 가지를 사내보다 먼저 보인다 — 작업 단위
   `continue-on-error` 라 빨개도 워크플로는 초록이고 판정은 Linux 조각을 모은 `verify-result` 다(2026-11-01 사용자 결정 A7 「처음엔 막지 않음」 — 두어
   판 본 뒤 굳힐지 다시 묻는다). 시험은 두 작업 모두 같은 수의 조각으로 돈다(`scripts/run_test_shard.py`) — 러너 한 대로는 시간 안에 끝나지
