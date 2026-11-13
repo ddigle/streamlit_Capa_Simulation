@@ -927,7 +927,8 @@ _LOOK_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 process.stdout.write(JSON.stringify({
   tags: input.tags.map((c) => zoneTagX(c.lw, c.tagW, c.align)),
-  spots: input.spots.map((c) => groupNameSpot(c.range, c.position, c.fs, c.gap, c.canvasH ?? 100)),
+  spots: input.spots.map((c) =>
+    groupNameSpot(c.range, c.position, c.fs, c.gap, c.canvasH ?? 100, c.extra ?? 0)),
   sizes: input.sizes.map((c) =>
     groupNameSize(c.range, c.position, c.em, c.max, c.upp, c.min ?? 7, c.bare ?? false)),
   shown: (input.shown || []).map((boxes) => shownRange(boxes)),
@@ -1010,6 +1011,33 @@ def test_a_small_group_keeps_its_centre_name_and_edge_names_turn_inward() -> Non
                 {"range": floor_edge, "position": "bottom", "fs": 1, "gap": 0.2, "canvasH": 60},
                 {"range": top_edge, "position": "top", "fs": 1, "gap": 0.2, "canvasH": 70},
                 {"range": floor_edge, "position": "top", "fs": 1, "gap": 0.2, "canvasH": 60},
+                # 두 줄 알약(둘째 줄 0.5 만큼 더 자람) — 한 줄은 드는 자리(위 끝 62)에
+                # 다 들지 않는다.
+                {"range": top_edge, "position": "top", "fs": 1, "gap": 0.2, "canvasH": 62},
+                {
+                    "range": top_edge,
+                    "position": "top",
+                    "fs": 1,
+                    "extra": 0.5,
+                    "gap": 0.2,
+                    "canvasH": 62,
+                },
+                {
+                    "range": top_edge,
+                    "position": "top",
+                    "fs": 1,
+                    "extra": 0.5,
+                    "gap": 0.2,
+                    "canvasH": 63,
+                },
+                {"range": {**floor_edge, "y": 2}, "position": "bottom", "fs": 1, "gap": 0.2},
+                {
+                    "range": {**floor_edge, "y": 2},
+                    "position": "bottom",
+                    "fs": 1,
+                    "extra": 0.5,
+                    "gap": 0.2,
+                },
             ],
             "sizes": [
                 {
@@ -1058,6 +1086,13 @@ def test_a_small_group_keeps_its_centre_name_and_edge_names_turn_inward() -> Non
     # 위에 자리가 있으면 바깥 그대로.
     assert out["spots"][2] == {"x": 20, "y": pytest.approx(61)}
     assert out["spots"][3] == {"x": 20, "y": pytest.approx(11)}
+    # 두 줄 알약 — 한 줄이면 바깥(61, 위 끝 61.8 ≤ 62)이지만 둘째 줄까지(62.3)는 영역 밖이라 안쪽
+    # 띠(59)로 뒤집고, 자리가 넉넉하면(63) 바깥 그대로다. 아래도 같다(바닥 쪽 끝 0.2 − 0.5 < 0).
+    assert out["spots"][4] == {"x": 20, "y": pytest.approx(61)}
+    assert out["spots"][5] == {"x": 20, "y": pytest.approx(59)}
+    assert out["spots"][6] == {"x": 20, "y": pytest.approx(61)}
+    assert out["spots"][7] == {"x": 20, "y": pytest.approx(1)}
+    assert out["spots"][8] == {"x": 20, "y": pytest.approx(3)}
     assert out["shown"] == [{"x": 65, "y": 25, "w": 10, "h": 12}, None]
 
 
@@ -1073,7 +1108,8 @@ def test_the_group_name_follows_the_label_rule_and_the_shown_modules() -> None:
     assert "GROUP_NAME_PX * ts, upp, UNIT_LABEL_MIN_PX, bare)" in draw
     assert "const ts = textScale(1 / upp)" in draw
     assert "if (fs === null) continue" in draw
-    assert "groupNameSpot(range, position, fs, 2 * upp, H())" in draw
+    assert "groupNameSpot(range, position, fs, 2 * upp, H(), fd ? fd * 1.25 : 0)" in draw
+    assert draw.index("let fd = 0") < draw.index("groupNameSpot(range, position, fs, 2 * upp")
     seen = _js_decl("const seenModule = ")
     assert "S.groups.get(m.id)?.__visible !== false" in seen
 

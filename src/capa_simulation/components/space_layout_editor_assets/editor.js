@@ -877,17 +877,18 @@ export default function (component) {
   // Main 설비명 글자 가운데 {x, y}(데이터 좌표, Y 는 위로) — 범위 r {x, y, w, h}, 위치 position, 글자 크기 fs·바깥 틈 gap(데이터
   // 단위), 영역 높이 canvasH. 가운데는 범위 정가운데(넷이면 모듈 꼭짓점이 만나는 자리), 위·아래는 범위 바깥에 테두리를
   // 띄워 붙인다 — 알약 바탕(높이 fs × 1.6)의 반만큼 더 비킨다. 바깥 알약이 영역 위·아래 끝을 넘으면(범위가 영역 끝에 닿은
-  // 묶음 — 좁은 화면에서는 화면 밖으로 잘린다) 범위 안쪽 위·아래 띠로 뒤집는다.
-  function groupNameSpot(r, position, fs, gap, canvasH) {
+  // 묶음 — 좁은 화면에서는 화면 밖으로 잘린다) 범위 안쪽 위·아래 띠로 뒤집는다. extra 는 바깥으로 더 자라는 알약 높이(반입 일정
+  // 둘째 줄 — `arrivalPill` 의 fd × 1.25)다 — 두 줄 알약은 그 높이까지 영역 안에 들 때만 바깥에 선다.
+  function groupNameSpot(r, position, fs, gap, canvasH, extra = 0) {
     const x = r.x + r.w / 2
     const half = fs * 0.8
     if (position === 'top') {
       const outside = r.y + r.h + gap + half
-      return { x, y: outside + half <= canvasH + 1e-9 ? outside : r.y + r.h - gap - half }
+      return { x, y: outside + half + extra <= canvasH + 1e-9 ? outside : r.y + r.h - gap - half }
     }
     if (position === 'bottom') {
       const outside = r.y - gap - half
-      return { x, y: outside - half >= -1e-9 ? outside : r.y + gap + half }
+      return { x, y: outside - half - extra >= -1e-9 ? outside : r.y + gap + half }
     }
     return { x, y: r.y + r.h / 2 }
   }
@@ -3007,7 +3008,8 @@ export default function (component) {
         }
       }
       if (fs === null) continue
-      const spot = groupNameSpot(range, position, fs, 2 * upp, H())
+      // 두 줄 알약은 바깥으로 둘째 줄 높이만큼 더 자란다 — 그 높이로 자리를 잰다(캔버스 위 · 아래 끝을 넘지 않게).
+      const spot = groupNameSpot(range, position, fs, 2 * upp, H(), fd ? fd * 1.25 : 0)
       const cy = H() - spot.y
       const pillW = Math.min(range.w, Math.max(labelEm(name) * fs, fd ? labelEm(arrivalText(once)) * fd : 0) + fs * 0.9)
       const node = el('g', { class: `sle-group-name-tag is-${position}${fd ? ' has-arrival' : ''}` })

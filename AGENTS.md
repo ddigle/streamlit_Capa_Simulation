@@ -1512,7 +1512,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       보이지 않으면(`__visible`) 이름도 숨기며 일부만 보이면 보이는 모듈의 바깥 상자(`shownRange`)에 세운다. 글자는 화면
       12px × 글자 배율 s(아래 「배율 글자」)에서 범위 폭에 맞춰 줄고 가운데는 범위 높이의 0.16 배까지이며 7px(`UNIT_LABEL_MIN_PX`) 아래면 숨는다 — 다만
       모듈 칸 이름표가 하나도 서 있지 않은 묶음의 가운데 이름은 7px 알약이 범위 안에 들면 7px 로 선다. 위·아래 알약이
-      영역 위·아래 끝을 넘으면 범위 안쪽 띠로 뒤집는다(`groupNameSpot`).
+      영역 위·아래 끝을 넘으면 범위 안쪽 띠로 뒤집는다(`groupNameSpot`). 반입 일정 두 줄 알약은 바깥으로 더 자라는 둘째 줄
+      높이(fd × 1.25 — `extra`)까지 넣어 잰다(R2 리뷰 지적 7 — 2026-11-13 1천 대 층 사본에서 위 끝 1.6 거리 묶음 알약이 0.34 넘침을 잼).
   - **베이·머리 크기·배율 글자**(2026-11-03 사용자 요청 — 사양 (나)). 순수 판정은 `// <mark-look>`(모양 값 `cleanLook`·`lookText`·
     `lookValue`, 그리기 `arrowShape`·`bayShape`·`placeLocal`·`bayAutoSize`, `bayNumber`·`lineDash`)와 `// <text-scale>`
     (`textScale`·`calloutScale`·`scaledText`) 구획이고 `tests/test_space_mark_look_js.py` 가 node 로 돌려 파이썬
