@@ -12,8 +12,11 @@
   몫(`admin_view.admin_notes_visible` — 관리자, 또는 운영 아닌 꺼진 서버의 누구나)에만 선다 — 접어도
   누구나 펼치므로 접힘으로 가리지 않는다. 다른 사람에게는 참고 줄 끝의 오류 종류 이름만이다(보드
   d12 (가) — 문의할 때 쓸 이름). 판정이 무엇을 내도 닫힌 쪽(진단 없음)으로 물러선다 — 마지막 자리다.
-- 갈래(`classify_boot_failure`): 잠김(다른 프로세스 · 이 앱 자신이 정리하는 동안) → 「지금은
-  데이터를 열 수 없습니다」 + 「다시 시도」. 판 올리기 실패(`MigrationFailed` — 이미 적용된
+- 갈래(`classify_boot_failure`): 잠김 → 「지금은 데이터를 열 수 없습니다」 + 「다시 시도」. 다른
+  프로세스가 쥔 잠김은 사람이 고칠 수 없는 원인이라 경고 끝이 「— 관리자에게 알려 주세요」 다 — 뒤
+  회차의 같은 잠김(`page_bootstrap.screen_error_short` 의 `ADMIN_TAIL`, 카드 p1-no-revision)과 같은
+  일을 시킨다. 이 앱 자신이 정리하는 동안의 잠김은 다시 하면 풀려 붙이지 않는다(뒤 회차도
+  새로고침을 권한다). 판 올리기 실패(`MigrationFailed` — 이미 적용된
   마이그레이션이 바뀜 · 새 SQL 이 SQL · 데이터 오류로 실패함) → 「앱 업데이트를 마치지 못했습니다 —
   관리자가 고칠 때까지 열 수 없습니다」, 다시 해도 같아 「다시 시도」 를 두지 않는다(UI-INP-07).
   열기 · 쓰기 실패와 그 밖 → 같은 경고 끝에 낱말 하나(「디스크가 가득 참」 · 「파일 권한」 ·
@@ -47,15 +50,17 @@ from capa_simulation.components.diagnostic_copy import (
 )
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.stop_panel import reference_line, render_contact_caption
-from capa_simulation.page_bootstrap import bootstrap_error_message
+from capa_simulation.page_bootstrap import ADMIN_TAIL, bootstrap_error_message
 from capa_simulation.persistence._migration_core import MigrationFailed
-from capa_simulation.persistence._sql_helpers import lock_holder_pid
+from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
 
 _LOGGER = logging.getLogger(__name__)
 
 # 입장 화면 JS 가 읽는 표지 속성 — `intro.js` 의 `BOOT_STOP_ATTRIBUTE` 와 같다(시험이 맞댄다).
 BOOT_STOP_ATTRIBUTE: Final = "data-capa-boot-stop"
 LOCKED_LINE: Final = "지금은 데이터를 열 수 없습니다"
+# 다른 프로세스가 쥔 잠김 — 뒤 회차의 DB 실패 알림 짧은 글과 같은 꼬리.
+HELD_LINE: Final = f"{LOCKED_LINE}{ADMIN_TAIL}"
 UPDATE_LINE: Final = "앱 업데이트를 마치지 못했습니다 — 관리자가 고칠 때까지 열 수 없습니다"
 RETRY_LABEL: Final = "다시 시도"
 RETRY_KEY: Final = "boot_stop_retry"
@@ -101,7 +106,8 @@ def classify_boot_failure(exc: BaseException) -> BootFailure:
     """부트스트랩 예외 → 갈래. 차례는 잠김 → 판 올리기 실패 → 디스크 가득 → 권한 → 열 수 없음 →
     그 밖이다. 글은 종류 · 영문 고정 문구 · errno 로만 가른다(번역된 앞부분은 보지 않는다)."""
     if lock_holder_pid(exc) is not None:
-        return BootFailure(LOCKED, LOCKED_LINE, retry=True)
+        line = LOCKED_LINE if is_own_process_lock(exc) else HELD_LINE
+        return BootFailure(LOCKED, line, retry=True)
     if isinstance(exc, MigrationFailed):
         return BootFailure(MIGRATION_FAILED, UPDATE_LINE, retry=False)
     text = str(exc)

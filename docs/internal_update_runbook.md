@@ -186,7 +186,7 @@ Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.
 찍히니 리뷰 문서에 옮기지 않는다.
 
 **DuckDB 는 프로세스 배타 잠금이다. 앱이 rerun 하는 동안이면 백업·7-8·8장이 `duckdb.IOException` 으로 죽고, 쉬는 앱은
-DB 를 놓아 잠금에 안 잡힌다 — 그 사이 연 연결은 그 앱 화면을 「지금은 데이터를 열 수 없습니다」(첫 회차 — 앱 시작 실패 판)나
+DB 를 놓아 잠금에 안 잡힌다 — 그 사이 연 연결은 그 앱 화면을 「지금은 데이터를 열 수 없습니다 — 관리자에게 알려 주세요」(첫 회차 — 앱 시작 실패 판)나
 DB 오류 알림으로 세운다.** 그래서 잠금 오류가
 없다고 앱이 꺼졌다고 보지 않고 늘 이 명령으로 본다. 8장의 두 스크립트(`inspect_real_data_checks.py`·`inspect_wf_division.py`)는
 운영 DB 를 열기 전에 앱 프로세스를 스스로 한 번 더 보고 멈춘다(8-0).

@@ -29,11 +29,13 @@ from capa_simulation.auth import names, runtime
 from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import boot_stop, sso_identity
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
+from capa_simulation.page_bootstrap import ADMIN_TAIL, bootstrap_error_message, screen_error_short
 from capa_simulation.persistence._migration_core import (
     MigrationChanged,
     MigrationFailed,
     apply_migrations_to,
 )
+from capa_simulation.persistence._sql_helpers import lock_holder_pid
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -108,16 +110,38 @@ def test_failures_split_into_the_board_branches(
     make: Callable[[], BaseException], code: str, retry: bool
 ) -> None:
     """잠김(남 · 자기) → 판 올리기 실패 → 디스크 가득 → 권한 → 열 수 없음 → 그 밖. 판 올리기 실패만
-    「다시 시도」 가 없다(다시 해도 같다)."""
-    failure = boot_stop.classify_boot_failure(make())
+    「다시 시도」 가 없다(다시 해도 같다). 남이 쥔 잠김만 「— 관리자에게 알려 주세요」 로 끝난다."""
+    error = make()
+    failure = boot_stop.classify_boot_failure(error)
 
     assert (failure.code, failure.retry) == (code, retry)
     if code == boot_stop.LOCKED:
-        assert failure.line == boot_stop.LOCKED_LINE
+        own = lock_holder_pid(error) == os.getpid()
+        assert failure.line == (boot_stop.LOCKED_LINE if own else boot_stop.HELD_LINE)
     elif code == boot_stop.MIGRATION_FAILED:
         assert failure.line == boot_stop.UPDATE_LINE
     else:
         assert failure.line == f"{boot_stop.LOCKED_LINE} — {boot_stop.IO_WORDS[code]}"
+
+
+@pytest.mark.parametrize("own", [False, True], ids=["held-by-another", "own-process"])
+def test_the_first_and_later_rounds_ask_the_same_of_a_locked_database(own: bool) -> None:
+    """같은 잠김이면 첫 회차(앱 시작 실패 판)와 뒤 회차(화면 DB 실패 알림의 짧은 글)가 일반
+    사용자에게 같은 일을 시킨다 — 남이 쥔 잠김은 사람이 고칠 수 없어 둘 다 「— 관리자에게 알려
+    주세요」, 이 앱 자신이 정리하는 동안이면 둘 다 다시 하면 풀린다(「다시 시도」 · 새로고침,
+    관리자 꼬리 없음 — 카드 p1-boot · p1-no-revision)."""
+    error = _lock(os.getpid() if own else 424242)
+
+    first = boot_stop.classify_boot_failure(error)
+    later = screen_error_short(bootstrap_error_message(error))
+
+    assert first.retry
+    if own:
+        assert ADMIN_TAIL not in first.line and later is None
+        assert "새로고침" in bootstrap_error_message(error)
+    else:
+        assert first.line.endswith(ADMIN_TAIL)
+        assert later is not None and later.endswith(ADMIN_TAIL)
 
 
 def test_a_changed_migration_is_still_a_runtime_error() -> None:
@@ -243,7 +267,7 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
     app = _run("lock", monkeypatch)
 
     assert not list(app.exception)
-    assert [item.value for item in app.error] == [boot_stop.LOCKED_LINE]
+    assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
     assert app.error[0].icon == ":material/database_off:"
     [retry] = app.button
     assert (retry.label, retry.key) == (boot_stop.RETRY_LABEL, boot_stop.RETRY_KEY)
@@ -361,7 +385,7 @@ def test_the_intro_marker_carries_the_line_without_taking_a_place(
     app = _run("lock", monkeypatch)
 
     bodies = [str(item.proto.body) for item in app.get("html")]
-    assert bodies[0] == f'<style {boot_stop.BOOT_STOP_ATTRIBUTE}="{boot_stop.LOCKED_LINE}"></style>'
+    assert bodies[0] == f'<style {boot_stop.BOOT_STOP_ATTRIBUTE}="{boot_stop.HELD_LINE}"></style>'
     tricky = boot_stop.BootFailure("x", 'a"<b>', retry=True)
     assert boot_stop.boot_marker_html(tricky) == (
         f'<style {boot_stop.BOOT_STOP_ATTRIBUTE}="a&quot;&lt;b&gt;"></style>'
@@ -452,11 +476,11 @@ def test_the_real_app_stops_on_the_panel_and_retries_into_home(real_app: AppTest
     app = real_app.run()
 
     assert not list(app.exception), [item.message for item in app.exception]
-    assert [item.value for item in app.error] == [boot_stop.LOCKED_LINE]
+    assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
     assert "Capa LOB Summary" not in [item.value for item in app.title]
 
     app = app.button(key=boot_stop.RETRY_KEY).click().run()
 
     assert not list(app.exception), [item.message for item in app.exception]
-    assert boot_stop.LOCKED_LINE not in [item.value for item in app.error]
+    assert boot_stop.HELD_LINE not in [item.value for item in app.error]
     assert "Capa LOB Summary" in [item.value for item in app.title], "HOME 이 섰다"
