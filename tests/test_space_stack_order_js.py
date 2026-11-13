@@ -619,6 +619,18 @@ def test_a_raised_mark_with_nothing_under_it_still_comes_down_under_the_units() 
     mixed = [unit, text, far]
     out = _moves([(mixed, ["T", "Z"], "bwd"), (mixed, ["T", "Z"], "back")])
     assert out == [["EQ", "Z", "T"], ["EQ", "Z", "T"]]
+    # 「맨 뒤로」 는 고른 영역 · 도형을 함께 모은다 — 올린 것과 겹친, 함께 고른 안 올린 영역과
+    # 앞뒤가 그대로다(올린 것만 맨 아래로 보내면 둘이 뒤집혀 보인다).
+    v = _free("V", "below", 70, 70)
+    w = _free("W", "below", 42, 42)
+    assert _moves([([v, w, unit, far], ["W", "Z"], "back")]) == [["W", "Z", "EQ", "V"]]
+    # 「뒤로」 는 계획이 통째로 막힐 때만 올림을 푼다 — 함께 고른 다른 것이 한 걸음을 가면 그
+    # 누름에는 올림이 남고, 그것도 막힌 다음 누름에 풀린다.
+    v2 = _free("V2", "below", 71, 71)
+    w2 = _free("W2", "below", 70, 70)
+    steps = [([v2, w2, unit, far], ["W2", "Z"], "bwd"), ([w2, v2, unit, far], ["W2", "Z"], "bwd")]
+    assert _moves(steps) == [["W2", "V2", "EQ", "Z"], ["W2", "V2", "EQ", "Z"]]
+    assert _moves(steps, raised=True) == [["Z"], []]
     # 그대로인 것 — 올리는 쪽, 올리지 않은 먼 영역, 올릴 수 없는 위 겹 상자.
     plain = _box("P", "above", 40, 40)
     still = _moves(
