@@ -304,8 +304,7 @@ def with_loopback_no_proxy(value: str) -> str:
     return ",".join(part for part in (value.strip().strip(","), *missing) if part)
 
 
-@pytest.fixture(autouse=True)
-def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+def _append_loopback_no_proxy(patch: pytest.MonkeyPatch) -> None:
     """`NO_PROXY` · `no_proxy` 에 루프백 셋을 덧붙여 루프백 요청이 창의 프록시를 거치지 않게 한다.
 
     사내 PC 창에는 `HTTP(S)_PROXY` 가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다. 파이썬의
@@ -318,7 +317,22 @@ def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     before = {name: os.environ.get(name, "") for name in NO_PROXY_NAMES}
     fallback = next((value for value in before.values() if value.strip()), "")
     for name, value in before.items():
-        monkeypatch.setenv(name, with_loopback_no_proxy(value if value.strip() else fallback))
+        patch.setenv(name, with_loopback_no_proxy(value if value.strip() else fallback))
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _loopback_skips_proxy_from_the_start() -> Iterator[None]:
+    """세션 처음에 한 번 덧붙인다 — 모듈 · 세션 범위 준비는 함수 범위 준비보다 먼저 서므로, 그때
+    띄우는 하위 프로세스(가짜 서버 · aws · 앱)는 아래 함수 범위 덧붙임 전 환경을 받았다."""
+    with pytest.MonkeyPatch.context() as patch:
+        _append_loopback_no_proxy(patch)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _loopback_skips_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """시험마다 다시 덧붙인다 — 앞 시험이 값을 바꿨어도 루프백 셋에서 시작한다."""
+    _append_loopback_no_proxy(monkeypatch)
 
 
 @pytest.fixture(autouse=True)

@@ -264,7 +264,8 @@ Windows(PowerShell):
   V6ONLY 0 인 `::` 하나가 IPv4 와일드카드까지 막지만 사내 Windows 에서는 임시 응답이 그 포트를 다시 잡았다(기제 미확인).
   「포트를 못 잡는다」 를 단언하는 시험은 Linux 만 본다(`tests/test_container_stage.py`, 리뷰 `202611111500` 발견 1).
   ⑩ 사내 PC 창에는 프록시 환경변수가 있고 `NO_PROXY` 에 `127.0.0.1` 이 없을 수 있다 — 루프백 시험 서버로 가는 맨
-  `urllib.request.urlopen` 이 프록시로 가 403 을 받는다. 공용 `tests/conftest.py` 의 `_loopback_skips_proxy` 가 `NO_PROXY` ·
+  `urllib.request.urlopen` 이 프록시로 가 403 을 받는다. 공용 `tests/conftest.py` 가 세션 처음과 시험마다
+  (`_loopback_skips_proxy_from_the_start` · `_loopback_skips_proxy` — 모듈 · 세션 범위 준비가 띄우는 하위 프로세스도 받는다) `NO_PROXY` ·
   `no_proxy` 에 루프백 셋을 붙이고, 루프백 요청기는 `ProxyHandler({})` 로 짓는다(`tests/test_s3_mock_store.py`, 리뷰
   `202611111500` 발견 2). 시험 · 스크립트의 맨 `urlopen` · `urlretrieve` 는 그물 `tests/test_no_bare_urlopen.py` 가 막는다(앱 코드는
   보지 않는다 — 바깥 주소로 가는 앱 요청은 사내 프록시를 따라야 할 수 있다). 사외 CI 의 둘째 작업
