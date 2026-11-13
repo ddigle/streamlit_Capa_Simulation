@@ -204,6 +204,8 @@
   fill: transparent; stroke: transparent; stroke-width: 12; vector-effect: non-scaling-stroke; pointer-events: all; cursor: grab;
 }
 .sle-shape-hit.is-hollow { fill: none; pointer-events: stroke; }
+/* 호기 위로 올린 도형(설비 0034)은 안쪽을 잡지 않는다 — 테 띠와 이름표로만 잡혀 밑 호기를 누르고 끌 수 있다(설계 D (가), 영역과 같다). */
+.sle-mark.is-raised .sle-shape-hit { fill: none; pointer-events: stroke; }
 .mark-shape .sle-mark-text.is-grab { pointer-events: all; cursor: grab; }
 /* 노란 모양 조절 손잡이 — 하나만 고른 도형에서만, 편집에서만 선다(크기 손잡이 위). 테는 도면 글자색이라 밝은 캔버스에서도 보인다. */
 .sle-adjust { display: none; fill: var(--sle-adjust); stroke: var(--sle-text); stroke-width: 1.2; vector-effect: non-scaling-stroke; }

@@ -1,7 +1,8 @@
 # Purpose: Space 편집기 도면 요소의 그리는 차례(되돌리기 · 끌기 · 순서 단추)를 node 로 검사한다.
 
 """Space 편집기에서 겹 안 그리는 차례는 `S.items` 차례이고, 그것이 곧 도면 요소의 저장
-차례(`floor_layout_mark.source_row_no` · `fab_layout_mark`)다(2026-11-12 Space 요청 7). 편집기
+차례(`floor_layout_mark.source_row_no` · `fab_layout_mark`)다(2026-11-12 Space 요청 7). 호기끼리
+차례와 호기 위로 올린 영역 · 도형은 설비 `0034` 층 순서 표다(같은 요청 7-2 의 2단). 편집기
 JS 의 선언을 글자 그대로 떼어 node 로 돌린다(node · bun 이 없으면 건너뛰고 CI 에서는 실패 —
 `test_space_module_group._node`). 브라우저 조작 자체는 브라우저로 본다.
 """
@@ -114,7 +115,6 @@ const parent = (name) => ({
   },
 })
 const layers = { zone: parent('zones'), unit: parent('items'), text: parent('marks') }
-const isMark = (m) => m.kind !== 'unit'
 const S = { items: new Map(), groups: new Map() }
 for (const [id, kind] of input.items) {
   S.items.set(id, { id, kind })
@@ -134,18 +134,20 @@ process.stdout.write(JSON.stringify({ pressed, after }))
 """
 
 
-def test_a_pressed_mark_goes_back_to_its_drawing_place_when_the_drag_ends() -> None:
-    """누를 때 끌 준비로 제 겹 맨 위에 붙인 도면 요소는 손을 떼면(끌었든 눌러 고르기만 했든)
-    제 차례 자리로 돌아간다 — 그리는 차례가 저장 차례와 같다. 호기는 그대로 둔다(호기끼리
-    차례는 바꾸지 않는다). 여럿을 함께 끌어도 서로의 차례를 지킨다."""
+def test_a_pressed_mark_or_unit_goes_back_to_its_drawing_place_when_the_drag_ends() -> None:
+    """누를 때 끌 준비로 제 겹 맨 위에 붙인 도면 요소 · 호기는 손을 떼면(끌었든 눌러 고르기만
+    했든) 제 차례 자리로 돌아간다 — 그리는 차례가 저장 차례와 같다. 끈 호기가 다음 다시 그리기까지
+    맨 위에 남던 것을 고친다(2026-11-13 「Space 구현 확인」 보드 3 알림 메모 — 호기끼리 차례가
+    설비 0034 로 저장된다). 여럿을 함께 끌어도 서로의 차례를 지킨다."""
     source = _RESTACK_RUNNER % _js_decl("function restackMarks(")
     out: Any = _node(source, {"items": _FLOOR_ITEMS, "pressed": ["Z-1", "Z-2", "EQ-01", "T-1"]})
     assert out["pressed"]["zone"] == ["Z-3", "Z-1", "Z-2"]
     assert out["after"] == {
         "zone": ["Z-1", "Z-2", "Z-3"],
-        "unit": ["EQ-02", "EQ-01"],
+        "unit": ["EQ-01", "EQ-02"],
         "text": ["T-1", "T-2"],
     }
+    assert out["pressed"]["unit"] == ["EQ-02", "EQ-01"]
     up = JS[JS.index("  svg.onpointerup = svg.onpointercancel = (event) => {") :]
     up = up[: up.index("svg.onlostpointercapture")]
     restack = up.index("restackMarks(drag.ids)")
@@ -166,7 +168,10 @@ def _stack_body() -> str:
 _MOVE_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 %s
-const out = input.cases.map(([entries, chosen, how]) => stackMove(entries, new Set(chosen), how))
+const out = input.cases.map(([entries, chosen, how]) => {
+  const plan = stackPlan(entries, new Set(chosen), how)
+  return input.raised ? plan && plan.raised.slice().sort() : plan && plan.ids
+})
 process.stdout.write(JSON.stringify(out))
 """
 
@@ -175,8 +180,12 @@ def _box(item_id: str, tier: str, x: float, y: float, w: float = 4, h: float = 4
     return {"id": item_id, "tier": tier, "x": x, "y": y, "w": w, "h": h}
 
 
-def _moves(cases: list[tuple[list[dict[str, Any]], list[str], str]]) -> list[Any]:
-    out: Any = _node(_MOVE_RUNNER % _stack_body(), {"cases": [list(case) for case in cases]})
+def _moves(
+    cases: list[tuple[list[dict[str, Any]], list[str], str]], *, raised: bool = False
+) -> list[Any]:
+    """`stackPlan` 의 새 id 차례(`raised` 면 그 뒤의 올림 id 모음) — 움직이지 않으면 None."""
+    payload = {"cases": [list(case) for case in cases], "raised": raised}
+    out: Any = _node(_MOVE_RUNNER % _stack_body(), payload)
     return list(out)
 
 
@@ -232,9 +241,10 @@ def test_several_chosen_keep_their_order_and_do_not_jump_over_each_other() -> No
     assert out == [None, ["X", "A", "B"]]
 
 
-def test_each_mark_moves_only_inside_its_own_tier_and_units_stay() -> None:
-    """겹은 서로 넘지 않는다 — 영역 · 도형(호기 아래)과 그 밖의 요소(호기 위)는 따로 움직이고,
-    호기와 순서 밖(tier '')의 자리는 그대로다. 겹친 것이 다른 겹이면 넘을 것이 아니다."""
+def test_marks_that_cannot_be_raised_move_only_inside_their_own_tier_and_units_stay() -> None:
+    """올릴 수 없는 것(`raisable` 없음 — FAB 의 영역 · 도형, 위 겹 종류)은 겹을 넘지 않는다 —
+    호기 아래와 호기 위는 따로 움직이고, 호기와 순서 밖(tier '')의 자리는 그대로다. 겹친 것이 다른
+    겹이면 넘을 것이 아니다(FAB 은 겹 안만 — 설계 F (가))."""
     z1 = _box("Z1", "below", 0, 0)
     unit = _box("EQ-01", "unit", 1, 1)
     t1 = _box("T1", "above", 1, 1)
@@ -267,6 +277,15 @@ def test_every_mark_kind_has_a_tier_that_matches_its_drawing_layer() -> None:
     rows: Any = _node(source, {})
     assert rows and all(tier in ("below", "above") for _, tier, _ in rows), rows
     assert all((tier == "below") == below for _, tier, below in rows), rows
+    # 호기 위로 올린 영역 · 도형(`raised`)은 위 겹이고 그리는 층도 호기 위다 — 다른 종류는 그대로.
+    lifted: Any = _node(
+        source.replace(
+            "[kind, tierOf({ kind }), onZoneLayer({ kind })]",
+            "[kind, tierOf({ kind, raised: true }), onZoneLayer({ kind, raised: true })]",
+        ),
+        {},
+    )
+    assert all(tier == "above" and not below for _, tier, below in lifted), lifted
     unit: Any = _node(
         _stack_body() + "\nprocess.stdout.write(JSON.stringify(tierOf({ kind: 'unit' })))", {}
     )
@@ -297,8 +316,12 @@ def test_the_order_keys_read_the_key_position_with_ctrl_only() -> None:
 
 
 _ORDER_DECLS = (
+    "const onZoneLayer = ",
     "function markChangeCount(",
     "function markOrderChanged(",
+    "function stackChanged(",
+    "function raisedIds(",
+    "function setRaised(",
     "function orderLockReason(",
     "function stackEntries(",
     "function stackChosen(",
@@ -311,8 +334,10 @@ _ORDER_DECLS = (
 _ORDER_RUNNER = """
 const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
 const data = input.data
+const FAB = Boolean(input.fab)
 const S = {
-  items: new Map(), ghosts: new Map(), originalMarkIds: new Set(), undo: [], selection: new Set(),
+  items: new Map(), ghosts: new Map(), originalMarkIds: new Set(), originalUnitIds: new Set(),
+  originalRaised: new Set(), undo: [], selection: new Set(),
 }
 const isUnit = (m) => m.kind === 'unit'
 const isMark = (m) => m.kind !== 'unit'
@@ -331,14 +356,19 @@ const orderButtons = ['front', 'fwd', 'bwd', 'back']
   .map((order) => ({ dataset: { order }, reason: null }))
 %s
 %s
-for (const [id, kind, x, y, w, h] of input.items) {
-  S.items.set(id, { id, kind, x, y, w, h, placed: true, moveTo: null })
+for (const [id, kind, x, y, w, h, group, raised] of input.items) {
+  S.items.set(id, {
+    id, kind, x, y, w, h, placed: true, moveTo: null, group: group || null, raised: Boolean(raised),
+  })
   if (kind !== 'unit') S.originalMarkIds.add(id)
+  else S.originalUnitIds.add(id)
+  if (raised) S.originalRaised.add(id)
 }
 const look = (step) => {
   syncOrder()
   return {
     step, order: [...S.items.keys()], changes: markChangeCount(), undo: S.undo.length,
+    stack: stackChanged(), raised: raisedIds(),
     row: !orderRow.hidden,
     locks: Object.fromEntries(
       orderButtons.map((b) => [b.dataset.order, orderRow.hidden ? null : b.reason]),
@@ -365,16 +395,20 @@ _ITEMS = [
 _START = ["Z-1", "EQ-01", "Z-2", "S-1", "T-1", "Z-3"]
 _FRONT = "이미 맨 앞입니다"
 _BACK = "이미 맨 뒤입니다"
+_KEEP = "글자 · 동선 · 발자국 · 베이 · 반입구 · 문 · 기둥은 호기 아래로 내리지 않습니다"
 
 
 def _order_run(
     steps: list[Any],
     data: dict[str, Any] | None = None,
-    items: Sequence[tuple[str, str, float, float, float, float]] | None = None,
+    items: Sequence[tuple[Any, ...]] | None = None,
+    *,
+    fab: bool = False,
 ) -> list[Any]:
     decls = "\n".join(_js_decl(head) for head in _ORDER_DECLS)
     source = _ORDER_RUNNER % (_stack_body(), decls)
-    out: Any = _node(source, {"items": list(items or _ITEMS), "steps": steps, "data": data or {}})
+    payload = {"items": list(items or _ITEMS), "steps": steps, "data": data or {}, "fab": fab}
+    out: Any = _node(source, payload)
     return list(out)
 
 
@@ -397,17 +431,21 @@ def test_an_order_only_change_counts_as_one_and_undo_brings_it_back_to_zero() ->
     assert undo_two["order"] == _START and undo_two["changes"] == 0 and undo_two["undo"] == 0
 
 
-def test_the_order_row_hides_for_units_only_and_locks_a_lone_mark_at_both_ends() -> None:
-    """호기만 고르면 「순서」 줄이 없다(호기 순서는 이 판에 없는 기능 — UI-INP-07 숨김). 겹친
-    것이 없는 요소는 이미 맨 앞이자 맨 뒤라 넷 다 잠긴다. 호기를 섞어 고르면 요소만 움직인다."""
+def test_units_open_the_order_row_and_an_upper_mark_over_a_unit_says_why_it_stays_up() -> None:
+    """호기만 골라도 「순서」 줄이 선다(설비 0034 — 호기끼리 차례). 겹친 호기가 없는 호기는 이미
+    맨 앞이자 맨 뒤다. 호기 위 겹 요소(글자)가 밑의 호기 · 영역과 겹쳐 더 내리지 못하면 뒤쪽
+    풍선이 그 까닭(호기 아래로 내리지 않음)이다. 호기를 섞어 고르면 저마다 제 겹에서 움직인다 —
+    호기와 겹친 영역은 맨 앞으로 호기 위 겹 맨 위에 올라간다."""
     out = _order_run(
         [[["EQ-01"], None], [None, "front"], [["T-1"], None], [["EQ-01", "Z-1"], "front"]]
     )
     units, refused, units_after, lone, mixed_ok, mixed = out
-    assert units["row"] is False and refused is False and units_after["order"] == _START
+    assert units["row"] is True and refused is False and units_after["order"] == _START
+    assert units["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": _BACK, "back": _BACK}
     assert lone["row"] is True
-    assert lone["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": _BACK, "back": _BACK}
+    assert lone["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": _KEEP, "back": _KEEP}
     assert mixed_ok is True and mixed["order"] == ["Z-2", "EQ-01", "S-1", "Z-3", "T-1", "Z-1"]
+    assert mixed["raised"] == ["Z-1"] and mixed["stack"] is True
 
 
 def test_an_editor_that_does_not_change_the_order_locks_all_four_with_the_reason() -> None:
@@ -481,3 +519,218 @@ def test_footprints_move_inside_the_upper_tier_and_lock_in_an_assumption_editor(
     )
     assert refused is False and after["order"] == _FOOT_START
     assert set(after["locks"].values()) == {reason}
+
+
+# ------------------------------------------------ 2단 — 호기끼리 · 호기 위로(설비 0034)
+
+
+def _free(
+    item_id: str, tier: str, x: float, y: float, w: float = 4, h: float = 4
+) -> dict[str, Any]:
+    """올릴 수 있는 영역 · 도형(층 편집 — `raisable`)."""
+    return {**_box(item_id, tier, x, y, w, h), "raisable": True}
+
+
+def _unit(item_id: str, x: float, y: float, group: str | None = None) -> dict[str, Any]:
+    return {**_box(item_id, "unit", x, y), "group": group}
+
+
+def test_a_zone_steps_over_the_units_and_comes_back_down() -> None:
+    """영역 · 도형은 같은 단추로 호기 겹을 넘는다(설계 C (가)) — 호기와 겹친 아래 겹 맨 위 영역은
+    「앞으로」 한 번에 호기 위(위 겹 맨 아래)로, 올린 것은 「뒤로」 한 번에 호기 아래로 돌아간다.
+    호기와 겹치지 않으면 호기 겹을 그냥 지나 다음 겹친 것 너머로 간다. 「맨 앞으로」 는 위 겹 맨 위,
+    「맨 뒤로」 는 아래 겹 맨 아래다."""
+    zone = _free("Z", "below", 0, 0, 10, 10)
+    lifted = _free("Z", "above", 0, 0, 10, 10)
+    unit = _unit("EQ", 2, 2)
+    text = _box("T", "above", 3, 3, 2, 2)
+    far = _box("T", "above", 50, 50)
+    out = _moves(
+        [
+            ([zone, unit, far], ["Z"], "fwd"),
+            ([unit, lifted, far], ["Z"], "bwd"),
+            ([zone, unit, text], ["Z"], "front"),
+            ([unit, text, lifted], ["Z"], "back"),
+        ],
+        raised=True,
+    )
+    assert out == [["Z"], [], ["Z"], []]
+    # 호기와 겹치지 않는 영역은 호기 겹을 지나 겹친 글자 너머로 — 위 겹에서 글자 위.
+    alone = _free("Z", "below", 40, 40)
+    note = _box("N", "above", 41, 41)
+    assert _moves([([alone, unit, note], ["Z"], "fwd")]) == [["N", "EQ", "Z"]]
+    assert _moves([([alone, unit, note], ["Z"], "fwd")], raised=True) == [["Z"]]
+    # 맨 앞으로 — 글자 위(위 겹 맨 위). 아래 겹 · 위 겹 자리는 요소 자리끼리 바뀐다.
+    assert _moves([([zone, unit, text], ["Z"], "front")]) == [["T", "EQ", "Z"]]
+
+
+def test_an_upper_mark_never_goes_below_the_units() -> None:
+    """글자 · 동선 같은 위 겹 종류는 호기 아래로 내리지 않는다(답 「전부」 에 들지 않는다) — 위
+    겹 맨 아래에서 「뒤로 · 맨 뒤로」 는 움직이지 않고, 밑에 호기가 겹치면 잠긴 까닭이 그것이다.
+    FAB 처럼 올릴 수 없는 영역은 호기 겹을 넘지 않는다."""
+    unit = _unit("EQ", 2, 2)
+    text = _box("T", "above", 3, 3, 2, 2)
+    fab_zone = _box("Z", "below", 0, 0, 10, 10)
+    assert _moves([([unit, text], ["T"], "bwd"), ([unit, text], ["T"], "back")]) == [None, None]
+    assert _moves([([fab_zone, unit], ["Z"], "fwd"), ([fab_zone, unit], ["Z"], "front")]) == [
+        None,
+        None,
+    ]
+    source = (
+        "const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))\n"
+        + _stack_body()
+        + "\nprocess.stdout.write(JSON.stringify(input.cases.map(([entries, chosen]) =>"
+        + " stackPinned(entries, new Set(chosen)))))\n"
+    )
+    far = _box("T", "above", 50, 50)
+    out: Any = _node(source, {"cases": [[[unit, text], ["T"]], [[unit, far], ["T"]]]})
+    assert out == [True, False]
+
+
+def test_units_move_among_units_and_a_module_bundle_moves_as_one() -> None:
+    """호기는 호기 겹 안에서만, 모듈 묶음은 묶음째 움직인다(설계 A (가)) — 덩이 자리는 가장 아래
+    모듈의 자리이고 모듈 하나만 골라도 묶음 전체가 간다. 겹친 것이 없으면 움직이지 않는다."""
+    a = _unit("A", 0, 0)
+    m1 = _unit("M1", 2, 2, "M")
+    b = _unit("B", 30, 30)
+    m2 = _unit("M2", 4, 0, "M")
+    entries = [a, m1, b, m2]
+    out = _moves(
+        [
+            (entries, ["A"], "fwd"),
+            (entries, ["M2"], "back"),
+            (entries, ["M2"], "front"),
+            (entries, ["B"], "fwd"),
+        ]
+    )
+    assert out == [["M1", "M2", "A", "B"], ["M1", "M2", "A", "B"], None, None]
+    # 호기를 움직여도 도면 요소 자리 · 올림은 그대로다.
+    zone = _free("Z", "below", 0, 0)
+    assert _moves([([zone, a, m1, m2], ["A"], "fwd")]) == [["Z", "M1", "M2", "A"]]
+    assert _moves([([zone, a, m1, m2], ["A"], "fwd")], raised=True) == [[]]
+
+
+_UNIT_ITEMS = [
+    ("EQ-01", "unit", 0, 0, 4, 4),
+    ("EQ-02", "unit", 2, 2, 4, 4),
+    ("Z-1", "zone", 1, 1, 6, 6),
+]
+
+
+def test_a_unit_order_or_a_raise_counts_once_goes_out_as_a_stack_and_undoes_whole() -> None:
+    """호기끼리 차례나 올림만 바꿔도 「적용 안 한 변경 1건」 이고 적용값 `stack` 이 나간다
+    (`stackChanged`). 되돌리기 한 번이 차례와 올림을 함께 되돌려 0 이 된다."""
+    out = _order_run(
+        [
+            [["EQ-02"], "back"],
+            [None, "undo"],
+            [["Z-1"], "fwd"],
+            [None, "undo"],
+        ],
+        items=_UNIT_ITEMS,
+    )
+    back_ok, back, undo_one, lift_ok, lift, undo_two = out
+    assert back_ok is True and back["order"] == ["EQ-02", "EQ-01", "Z-1"]
+    assert back["changes"] == 1 and back["stack"] is True and back["raised"] == []
+    assert undo_one["order"] == ["EQ-01", "EQ-02", "Z-1"] and undo_one["changes"] == 0
+    assert undo_one["stack"] is False
+    assert lift_ok is True and lift["order"] == ["EQ-01", "EQ-02", "Z-1"]
+    assert lift["raised"] == ["Z-1"] and lift["changes"] == 1 and lift["stack"] is True
+    assert lift["locks"]["bwd"] == "" and lift["locks"]["front"] == _FRONT
+    assert undo_two["raised"] == [] and undo_two["changes"] == 0 and undo_two["stack"] is False
+
+
+def test_a_raised_zone_that_arrived_raised_counts_nothing_until_it_is_lowered() -> None:
+    """파이썬이 올림을 달아 보낸 영역은 처음부터 위 겹이다 — 그대로면 변경 0, 내리면 1."""
+    items = [*_UNIT_ITEMS[:2], ("Z-1", "zone", 1, 1, 6, 6, None, True)]
+    first, lowered_ok, lowered = _order_run([[["Z-1"], None], [None, "bwd"]], items=items)
+    assert first["raised"] == ["Z-1"] and first["changes"] == 0 and first["stack"] is False
+    assert lowered_ok is True and lowered["raised"] == []
+    assert lowered["changes"] == 1 and lowered["stack"] is True
+
+
+def test_the_fab_editor_keeps_zones_under_its_blocks() -> None:
+    """FAB 은 같은 겹 안 순서만이다(설계 F (가)) — 영역 · 도형은 올릴 수 없어(`raisable` 없음)
+    호기 겹 · 위 겹으로 넘지 않고, 순서 표로 가는 몫(`stack`)도 없다."""
+    items = [("Z-1", "zone", 0, 0, 10, 10), ("B-1", "block", 2, 2, 4, 4)]
+    first, refused, after = _order_run([[["Z-1"], None], [None, "front"]], items=items, fab=True)
+    assert first["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": _BACK, "back": _BACK}
+    assert refused is False and after["raised"] == [] and after["stack"] is False
+
+
+def test_raised_marks_draw_above_units_and_their_inside_lets_presses_through() -> None:
+    """올린 영역 · 도형은 호기 위 층(`sle-marks`)에 그리고(`onZoneLayer` 밖), 무리는 `is-raised` 를
+    단다. 올린 도형의 안쪽은 누르기가 지나가(테 띠 · 이름표로만 잡힘) 밑 호기를 누른다(설계 D (가)).
+    파이썬이 단 `raised` 를 읽되 복사본 · 새 요소는 처음 겹이다(`clipOf` 가 싣지 않는다). 적용은
+    호기 차례 · 올림이 바뀐 때만 `stack` 을 싣는다(FAB 은 없음)."""
+    build = _js_decl("function buildMark(")
+    assert "if (item.raised) group.classList.add('is-raised')" in build
+    rule = CSS[CSS.index(".sle-mark.is-raised .sle-shape-hit") :].split("}")[0]
+    assert "fill: none" in rule and "pointer-events: stroke" in rule
+    read = JS[JS.index("  const readMark = (raw) => ({") :]
+    read = read[: read.index("\n  })\n")]
+    assert "raised: !FAB && raw.raised === true && RAISABLE_KINDS.has(String(raw.kind))" in read
+    clip = JS[JS.index("  const clipOf = (m) => ({") :]
+    assert "raised" not in clip[: clip.index("})")]
+    apply = JS[JS.index("  applyButton.onclick = () => {") :]
+    apply = apply[: apply.index("\n  }\n")]
+    assert "stack: !FAB && stackChanged() ? stackPayload() : null" in apply
+    undo = _js_decl("function undo() {")
+    assert "if (Array.isArray(op.raised)) setRaised(op.raised)" in undo
+
+
+def test_the_fab_editor_order_buttons_say_they_stay_inside_their_layer() -> None:
+    """단추 풍선 글(editor.html)은 층 편집기의 뜻(호기끼리 · 영역 · 도형이 호기 위로)이다 — FAB
+    편집기(호기 겹 없음)는 같은 겹 안 뜻의 글로 바꾼다."""
+    head = JS[JS.index("  const FAB_ORDER_TITLES = {") :]
+    head = head[: head.index("\n  }\n")]
+    assert all(f"{order}: '" in head for order in ("front", "fwd", "bwd", "back"))
+    assert "호기" not in head
+    assert (
+        "for (const button of orderButtons) button.title = FAB_ORDER_TITLES[button.dataset.order]"
+        in JS
+    )
+    floor_titles = re.findall(r'data-order="\w+"[^>]*\n\s*title="([^"]+)"', HTML)
+    assert len(floor_titles) == 4 and any("호기 위로" in title for title in floor_titles)
+
+
+_PAYLOAD_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+const S = { items: new Map() }
+const isUnit = (m) => m.kind === 'unit'
+const isMark = (m) => m.kind !== 'unit'
+const onCanvas = (m) => m.placed && !m.moveTo
+const isChanged = (m) => Boolean(m.created || m.touched)
+%s
+%s
+for (const item of input.items) S.items.set(item.id, item)
+process.stdout.write(JSON.stringify({ changes: changes(), stack: stackPayload() }))
+"""
+
+
+def test_a_new_unit_goes_out_under_its_current_name_in_both_changes_and_the_stack() -> None:
+    """편집기에서 만든 새 호기는 적용값의 `changes` 와 `stack` 이 같은 지금 이름으로 나간다 —
+    적용 전에 이름을 고친 새 호기(열쇠는 만들 때 이름), 같은 이름으로 다시 만들어 열쇠가
+    `이름~n` 인 새 호기 모두다. 열쇠를 보내면 파이썬(`prepare_floor_stack` — 새 호기는 지금
+    이름으로 받는다)이 「이 편집기에 없는 호기의 순서」 로 적용 전체를 거부했다(order2 리뷰 중간
+    1). 있던 호기는 이름을 바꿔도 옛 설비명(열쇠)이다 — 서버가 같은 적용의 이름 바꿈으로 옮긴다."""
+    look = {"kind": "unit", "x": 1, "y": 1, "w": 4, "h": 4, "placed": True, "moveTo": None}
+    created = {"process": "Process-A", "existing": True}
+    items = [
+        {**look, "id": "EQ-01", "label": "EQ-01R", "touched": True},
+        {**look, "id": "EQ-02", "label": "EQ-02"},
+        {**look, "id": "NEW-1", "label": "NEW-2", "created": created},
+        {**look, "id": "NEW-3~2", "label": "NEW-3", "created": created},
+        {**look, "id": "Z-1", "kind": "zone", "label": "", "raised": True},
+    ]
+    source = _PAYLOAD_RUNNER % (
+        _stack_body(),
+        "\n".join(
+            _js_decl(head)
+            for head in ("function changes(", "function raisedIds(", "const stackPayload = ")
+        ),
+    )
+    out: Any = _node(source, {"items": items})
+    assert [change["id"] for change in out["changes"]] == ["EQ-01", "NEW-2", "NEW-3"]
+    assert out["stack"]["units"] == ["EQ-01", "EQ-02", "NEW-2", "NEW-3"]
+    assert out["stack"]["raised"] == ["Z-1"]

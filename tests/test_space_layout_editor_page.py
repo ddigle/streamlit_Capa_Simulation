@@ -34,6 +34,7 @@ from capa_simulation.components import space_layout_editor, write_guard
 from capa_simulation.components.equipment_data_workspace import (
     BUFFER_GENERATION_KEY,
     BUFFER_KEY,
+    PENDING_STACKS_KEY,
 )
 from capa_simulation.components.popover_field_commit import ESC_COMMIT_PREFIX
 from capa_simulation.persistence.equipment_cache import (
@@ -482,6 +483,218 @@ def test_a_group_label_apply_saves_without_a_revision_and_follows_a_rename(
     assert editor_calls[-1]["groupLabels"] == {"GRP-X": "bottom"}
     app.button(key="space_layout_save").click().run()
     assert repository.load_floor_group_labels("C1", "1F") == {"GRP-X": "bottom"}
+    clear_equipment_repository()
+
+
+def test_a_unit_order_and_a_raised_zone_are_staged_saved_and_drawn_in_that_order(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """호기끼리 순서와 호기 위로 올린 영역(설비 0034 — 2026-11-12 보드 7-2 의 2단)은 적용 →
+    대기분 → 「배치 저장」 한 번에 공식 층 현행값으로 남고, 편집기 · 보기는 그 차례로 호기를 보내고
+    올린 영역에 `raised` 를 단다. 리비전은 만들지 않는다."""
+    app, database = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    assert [item["id"] for item in data["items"]] == ["EQ-01", "EQ-02"]
+    zone = {"id": "Z1", "kind": "zone", "x": 5, "y": 5, "w": 40, "h": 20}
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": [zone],
+        "stack": {"units": ["EQ-02", "EQ-01"], "raised": ["Z1"]},
+    }
+    app.run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    assert any("겹친 순서 1개 층" in item.value for item in app.markdown)
+    data = editor_calls[-1]
+    assert [item["id"] for item in data["items"]] == ["EQ-02", "EQ-01"]
+    assert [mark.get("raised") for mark in data["marks"]] == [True]
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+
+    repository = DuckDBEquipmentRepository(database)
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    stored = repository.load_floor_layout_stack("C1", "1F")
+    assert stored.units == (keys["EQ-02"], keys["EQ-01"]) and stored.raised == {"Z1"}
+    assert len(repository.list_revisions()) == 1
+    assert (
+        "equipment_pending_floor_stacks_v1" not in app.session_state
+        or not (app.session_state["equipment_pending_floor_stacks_v1"])
+    )
+    data = editor_calls[-1]
+    assert [item["id"] for item in data["items"]] == ["EQ-02", "EQ-01"]
+    app.toggle(key="space_layout_edit_mode").set_value(False).run()
+    viewer = editor_calls[-1]
+    assert viewer["mode"] == "view"
+    assert [item["id"] for item in viewer["items"]] == ["EQ-02", "EQ-01"]
+    assert [mark.get("raised") for mark in viewer["marks"]] == [True]
+    clear_equipment_repository()
+
+
+def test_a_raise_only_apply_does_not_pin_the_unit_order_and_undoing_it_drops_the_pending(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """올림만 바꾼 적용은 호기 차례를 굳히지 않는다(빈 순서의 차례와 같은 호기 줄은 행을 두지
+    않는다). 저장값으로 되돌려 적용하면 그 층 순서 대기분이 빠진다."""
+    app, _ = _open_editor(tmp_path)
+    zone = {"id": "Z1", "kind": "zone", "x": 5, "y": 5, "w": 40, "h": 20}
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": [zone],
+        "stack": {"units": ["EQ-01", "EQ-02"], "raised": ["Z1"]},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    staged = app.session_state["equipment_pending_floor_stacks_v1"][("C1", "1F")]
+    assert staged.units == () and staged.raised == {"Z1"}
+
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": None,
+        "stack": {"units": ["EQ-01", "EQ-02"], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert ("C1", "1F") not in app.session_state["equipment_pending_floor_stacks_v1"]
+    assert not any("겹친 순서" in item.value for item in app.markdown)
+    clear_equipment_repository()
+
+
+def test_a_raise_only_apply_keeps_module_siblings_where_the_master_rows_put_them(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """같은 Main 설비 모듈이 설비 마스터 행 차례에서 떨어져 있는 층(사이에 다른 호기)에서도, 호기
+    줄을 받은 그대로 보낸 적용(올림만 바꿈)은 호기 차례를 굳히지 않고 묶음을 모으지 않는다
+    (order2 리뷰 낮음 1 — 그 층 호기 차례 전체가 저장되고 그림이 바뀌었다)."""
+    module = {"Main 설비": "GRP-1", "Xsize": 10, "Ysize": 7}
+    master = _master(
+        {**module, "설비명": "G1-A", "X좌표": 50.0, "Y좌표": 37.0},
+        {"설비명": "U9", "X좌표": 80.0, "Y좌표": 10.0},
+        {**module, "설비명": "G1-B", "X좌표": 60.0, "Y좌표": 37.0},
+    )
+    app, _ = _open_editor(tmp_path, master)
+    data = editor_calls[-1]
+    received = [item["id"] for item in data["items"]]
+    assert received == ["EQ-01", "EQ-02", "G1-A", "U9", "G1-B"]
+    zone = {"id": "Z1", "kind": "zone", "x": 5, "y": 5, "w": 40, "h": 20}
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": [zone],
+        "stack": {"units": received, "raised": ["Z1"]},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    staged = app.session_state[PENDING_STACKS_KEY][("C1", "1F")]
+    assert staged.units == () and staged.raised == {"Z1"}
+    assert [item["id"] for item in editor_calls[-1]["items"]] == received
+    clear_equipment_repository()
+
+
+def test_a_rename_and_a_reorder_in_one_apply_keep_the_order_under_the_new_name(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """같은 적용의 이름 바꿈을 대기 순서가 따라가고, 저장은 그 이름을 같은 호기 키로 옮긴다."""
+    app, database = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": None,
+        "renames": [{"kind": "unit", "from": "EQ-01", "to": "EQ-01R"}],
+        "stack": {"units": ["EQ-01", "EQ-02"][::-1], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    staged = app.session_state["equipment_pending_floor_stacks_v1"][("C1", "1F")]
+    assert staged.units == ("EQ-02", "EQ-01R")
+    assert [item["id"] for item in editor_calls[-1]["items"]] == ["EQ-02", "EQ-01R"]
+
+    app.button(key="space_layout_save").click().run()
+    assert not app.exception, [item.message for item in app.exception]
+    repository = DuckDBEquipmentRepository(database)
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    assert repository.load_floor_layout_stack("C1", "1F").units == (
+        keys["EQ-02"],
+        keys["EQ-01R"],
+    )
+    clear_equipment_repository()
+
+
+def test_a_renamed_new_unit_and_a_reorder_in_one_apply_stage_the_order_under_its_name(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """편집기에서 만든 새 호기는 적용값의 `changes` · `stack` 모두 지금 이름으로 온다(적용 전에
+    고친 이름 — 편집기 열쇠가 아니다, `test_space_stack_order_js` 가 편집기 쪽을 붙든다). 같은
+    적용의 순서 바꿈이 그 이름으로 대기분에 서고 편집기가 그 차례로 다시 선다(order2 리뷰 중간 1
+    — 열쇠 꼴이 적용 전체를 거부했다)."""
+    app, _ = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [
+            {
+                "id": "NEW-2",
+                "placed": True,
+                "x": 70.0,
+                "y": 40.0,
+                "w": 8,
+                "h": 5,
+                "created": {"process": "Process-A", "existing": True},
+            }
+        ],
+        "canvas": None,
+        "marks": None,
+        "stack": {"units": ["EQ-02", "NEW-2", "EQ-01"], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert not place_errors(app), [item.value for item in app.error]
+    assert not flashed(app, "error"), [item.value for item in flashed(app, "error")]
+    staged = app.session_state[PENDING_STACKS_KEY][("C1", "1F")]
+    assert staged.units == ("EQ-02", "NEW-2", "EQ-01")
+    assert [item["id"] for item in editor_calls[-1]["items"]] == ["EQ-02", "NEW-2", "EQ-01"]
+    clear_equipment_repository()
+
+
+def test_a_stack_naming_a_unit_outside_the_editor_is_refused(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    app, _ = _open_editor(tmp_path)
+    data = editor_calls[-1]
+    app.session_state[FAKE_APPLY_KEY] = {
+        "epoch": data["epoch"],
+        "changes": [],
+        "canvas": None,
+        "marks": None,
+        "stack": {"units": ["EQ-02", "NOT-HERE"], "raised": []},
+    }
+    app.run()
+    assert not app.exception, [item.message for item in app.exception]
+    assert (
+        "equipment_pending_floor_stacks_v1" not in app.session_state
+        or not (app.session_state["equipment_pending_floor_stacks_v1"])
+    )
+    assert any(
+        "적용하지 못했습니다" in item.value and "이 편집기에 없는 호기의 순서" in item.value
+        for item in flashed(app, "error")
+    )
     clear_equipment_repository()
 
 

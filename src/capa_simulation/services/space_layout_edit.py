@@ -67,6 +67,7 @@ from capa_simulation.services.floor_layout_profile import (
     normalize_canvas_size,
     rounded_to_canvas,
 )
+from capa_simulation.services.floor_layout_stack import FloorStack, prepare_floor_stack
 from capa_simulation.services.frame_contracts import scalar_match_key
 from capa_simulation.services.korean_particle import (
     with_direction_particle,
@@ -147,6 +148,9 @@ class EditorApply:
     # 「호기 정보」 창에서 고친 칸(2026-11-12 Space 시안 보드 답 5-5) — 꼴만 읽은 것(창 줄 id 는
     # 편집기에 실린 **옛** 설비명). 잠금 · 다듬기 · 규칙은 `space_sheet_edit.check_sheet_cells` 다.
     cells: tuple[SheetCell, ...] = ()
+    # 겹친 순서(설비 `0034`) — 편집기가 바꿨을 때만 온다. 호기는 편집기에 실린 **옛** 설비명(과
+    # 이번 적용의 새 호기) 꼴 아래 → 위, 올림은 적용 뒤 이 층 영역 · 도형 id 다.
+    stack: FloorStack | None = None
 
     @property
     def unit_renames(self) -> dict[str, str]:
@@ -1347,6 +1351,7 @@ def parse_editor_apply(
     editor_items: Sequence[Mapping[str, Any]] = (),
     editor_ghosts: Sequence[Mapping[str, Any]] = (),
     sheet_ids: Collection[str] = frozenset(),
+    current_marks: Sequence[FloorLayoutMark] = (),
 ) -> EditorApply:
     """브라우저 적용값을 검증한다. **하나라도 어긋나면 `ValueError`** — 일부만 반영하지 않는다.
 
@@ -1366,6 +1371,10 @@ def parse_editor_apply(
 
     「호기 정보」 창에서 고친 칸은 적용값의 ``cells``(``[{id, col, text}]``)로 오고 꼴만 읽어
     `EditorApply.cells` 가 된다(`parse_sheet_cells` — id 는 창에 실은 줄 `sheet_ids`).
+
+    겹친 순서는 적용값의 ``stack``(``{units, raised}``)으로 오고 `EditorApply.stack` 이 된다
+    (`prepare_floor_stack` — 호기는 이번 편집기 호기와 새 호기, 올림은 적용 뒤 요소 — 적용값에
+    요소가 없으면 `current_marks` — 의 영역 · 도형).
     """
     held = _reserved_reasons(reserved or ReservedNames())
     cells = parse_sheet_cells(payload.get("cells"), sheet_ids=sheet_ids)
@@ -1466,6 +1475,16 @@ def parse_editor_apply(
         created_ids={unit.unit_id for unit in created},
         reserved=reserved,
     )
+    raw_stack = payload.get("stack")
+    stack = (
+        prepare_floor_stack(
+            raw_stack,
+            unit_ids=editor_ids | {unit.unit_id for unit in created},
+            marks=marks if marks is not None else current_marks,
+        )
+        if raw_stack is not None
+        else None
+    )
     return EditorApply(
         changes=tuple(changes),
         created=tuple(created),
@@ -1475,6 +1494,7 @@ def parse_editor_apply(
         hidden_moves=tuple(hidden_moves),
         group_labels=group_labels,
         cells=cells,
+        stack=stack,
     )
 
 

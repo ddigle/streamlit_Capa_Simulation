@@ -101,6 +101,7 @@ from capa_simulation.components.equipment_data_workspace import (
     pending_floor_canvases,
     pending_floor_group_labels,
     pending_floor_marks,
+    pending_floor_stacks,
     pending_unit_renames,
     queue_grid_result,
     queue_grid_toast,
@@ -601,7 +602,10 @@ def _others(frames: Frames, saved: Frames) -> str:
     if downtime:
         parts.append(f"비가동 일정 {downtime:,}행 바뀜")
     floor = floor_layout_words(
-        pending_floor_canvases(), pending_floor_marks(), pending_floor_group_labels()
+        pending_floor_canvases(),
+        pending_floor_marks(),
+        pending_floor_group_labels(),
+        pending_floor_stacks(),
     )
     if floor:
         parts.append(f"층 배치({floor})")
@@ -1026,7 +1030,12 @@ def _has_changes(frames: Frames) -> bool:
     return (
         not buffer_matches_saved(_saved_frames(), frames, pending_unit_renames())
         or bool(grid_overlay())
-        or bool(pending_floor_canvases() or pending_floor_marks() or pending_floor_group_labels())
+        or bool(
+            pending_floor_canvases()
+            or pending_floor_marks()
+            or pending_floor_group_labels()
+            or pending_floor_stacks()
+        )
         or pending_fab_layout() is not None
     )
 
@@ -1396,7 +1405,10 @@ def _render_save_section(
             st.caption(legacy_trace_message(session.legacy_trace_count))
     has_fab = pending_fab_layout() is not None
     floor_pending = bool(
-        pending_floor_canvases() or pending_floor_marks() or pending_floor_group_labels()
+        pending_floor_canvases()
+        or pending_floor_marks()
+        or pending_floor_group_labels()
+        or pending_floor_stacks()
     )
     with st.container(horizontal=True, gap="small"):
         # 「리비전 저장」 처럼 잠그지 않는다 — 출납은 300ms 묶음이라 이 회차의 단계 수는

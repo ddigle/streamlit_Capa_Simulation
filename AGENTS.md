@@ -1611,18 +1611,25 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
       한 번). 이름 줄은 「발자국 · 발 n개」(`markTitle`). 겹은 동선처럼 호기 위(`onZoneLayer` 밖)이고 막는 요소가 아니다.
     - 서식 붓: 발자국끼리는 길이 · 선 색 · 간격을 옮기고 발 모양 · 뒤집기는 옮기지 않는다. 동선 · 베이 · 도형과는 선 색만 오간다
       (발자국 서식은 굵기 · 선 모양을 담지 않아 동선의 자동 굵기를 건드리지 않는다).
-  - **겹친 순서**(2026-11-12 Space 요청 7 — 보드 7-2 ~ 7-5 의 1단, 층·FAB 편집). 그리는 겹은 셋으로 정해져 있고(호기 아래
-    `sle-zones` 영역·도형 → 호기 `sle-items` → 호기 위 `sle-marks` 그 밖의 요소, FAB 층 블록도) 겹 안 차례가 `S.items` 차례 = 요소
-    저장 차례(`source_row_no`)다. 순수 판정은 `// <stack-order>`(종류 → 겹 한 곳 `STACK_TIERS` · `tierOf`, 겹 안에서 움직인 새 차례
-    `stackMove` — 「앞으로 · 뒤로」 는 그 쪽에서 겹친 요소 하나를 넘고 「맨 앞 · 맨 뒤」 는 그 겹 끝으로, 그 쪽에 겹친 다른 요소가 없으면
-    null, 순서 키 `orderKeyOf`)이고 `tests/test_space_stack_order_js.py` 가 node 로 돌린다(종류를 더하면 `STACK_TIERS` 에도 —
-    `onZoneLayer` 와 맞댄다). 선택 칸 「순서」 줄(`.sle-order` — 돌리기·뒤집기 줄 밑, 단추 넷 `sle-order-step`)은 고른 것에 도면
-    요소가 있을 때만 서고 호기만이면 숨으며, 끝에 닿은 쪽 단추와 `data.orderEditable` 거짓(가정 설비 시나리오 — `orderLock` 풍선)은
-    `lockWith` 로 잠근다(`syncOrder`). 단추·키(`Ctrl+Shift+]` · `Ctrl+]` · `Ctrl+[` · `Ctrl+Shift+[`, 서식 · 뒤집기 키 뒤)는
-    `stackOrder` 한 길이고 되돌리기 한 번(`op: 'order'`)이다. 처음부터 있던 요소끼리 차례가 다르면 `markChangeCount` 가 한 건을 더해
-    적용이 새 차례의 `marks` 를 보낸다(따로 적용 칸 없음 — 파이썬은 지문이 차례를 품어 대기분이 선다). 호기는 움직이지 않는다.
-    지운 요소 되돌리기는 지운 자리(`op.at` → `restoreItem`)이고, 누를 때 끌 준비로 겹 맨 위에 붙인 요소는 손을 떼면 제 차례로
-    돌아간다(`restackMarks`).
+  - **겹친 순서**(2026-11-12 Space 요청 7 — 보드 7-2 ~ 7-5, 1단 요소 차례 · 2단 호기끼리 · 호기 위로(설비 `0034`), 층·FAB 편집).
+    그리는 겹은 셋이고(호기 아래 `sle-zones` 영역·도형 → 호기 `sle-items` → 호기 위 `sle-marks` 그 밖의 요소 · FAB 층 블록 · 호기 위로
+    올린 영역·도형 `raised`) 겹 안 차례가 `S.items` 차례다 — 요소는 저장 차례(`source_row_no`), 호기는 파이썬이 층 순서 표로 줄 세워
+    보낸 차례(`floor_layout_stack.ordered_items`), 올림은 요소 payload 의 `raised`(`readMark` — 복사본 · 새 요소는 처음 겹, `clipOf`
+    가 싣지 않는다). 그리는 층은 `onZoneLayer`(영역·도형이고 올리지 않은 것)이다. 순수 판정은 `// <stack-order>` 이고
+    `tests/test_space_stack_order_js.py` 가 node 로 돌린다 — 종류 → 겹 한 곳(`STACK_TIERS` · `tierOf`, 올린 것은 위 겹), 호기 겹
+    (`stackUnits` — 모듈 묶음째 덩이, 설계 A (가)), 요소 겹(`stackDeck` — 아래 겹 · 호기 겹 하나 · 위 겹을 한 줄로 보고 올릴 수 있는
+    영역·도형 `raisable` 만 호기 겹을 넘는다, 설계 C (가); FAB 은 `raisable` 이 없어 겹 안만, 설계 F (가)), 둘을 합친 새 차례 ·
+    올림(`stackPlan` — 「앞으로 · 뒤로」 는 그 쪽에서 겹친 것 하나를 넘고 「맨 앞 · 맨 뒤」 는 끝으로, 그 쪽에 겹친 것이 없으면
+    null), 위 겹 요소가 호기 · 아래 요소 위에 막혀 내리지 못함(`stackPinned` → 풍선 `KEEP_ABOVE_REASON`), 순서 키(`orderKeyOf`)다.
+    선택 칸 「순서」 줄(`.sle-order` — 돌리기·뒤집기 줄 밑, 단추 넷 `sle-order-step`)은 고른 것에 호기나 도면 요소가 있을 때 서고, 끝에
+    닿은 쪽 단추와 `data.orderEditable` 거짓(가정 설비 시나리오 — `orderLock` 풍선)은 `lockWith` 로 잠근다(`syncOrder`). 단추·키
+    (`Ctrl+Shift+]` · `Ctrl+]` · `Ctrl+[` · `Ctrl+Shift+[`, 서식 · 뒤집기 키 뒤)는 `stackOrder` 한 길이고 되돌리기 한 번(`op: 'order'`
+    — 차례와 올림 `raised` 를 함께)이다. 겹마다의 요소 차례 · 호기 차례 · 올림 가운데 하나라도 처음과 다르면 `markChangeCount` 가
+    한 건을 더하고(`markOrderChanged`), 적용이 새 차례의 `marks` 를, 호기 차례 · 올림이 바뀌었으면(`stackChanged`) `stack`
+    (`{units: 도면 위 호기 아래 → 위, raised}` — FAB 은 없음, 새 호기는 `changes` 와 같은 지금 이름이고 열쇠가 아니다)을 함께
+    보낸다. 올린 도형은 `is-raised` 라 안쪽 누르기가 지나간다(`.sle-mark.is-raised .sle-shape-hit` — 설계 D (가), 영역과 같다).
+    지운 요소 되돌리기는 지운 자리(`op.at` → `restoreItem`)이고, 누를 때 끌 준비로 겹 맨 위에 붙인 호기 · 요소는 손을 떼면 제 차례로 돌아간다(`restackMarks`). 올린 영역은 이름표 덮임 판정
+    (`syncZoneTag`)을 하지 않는다(호기 위라 늘 제자리).
   - **서식 복사·붙여넣기**(2026-11-03 사용자 요청 — 사양 (다), 층·FAB 편집). 엑셀 서식 붓이다. 순수 판정은 `// <format-paint>`
     (`formatOf` — 서식 {kind, module, size(자기 방향), paint, text}, `formatPatch` — 받는 쪽에 붙일 {size, fields, look} 또는 null,
     `patchedLook`, 저장소에서 읽은 서식 거르기 `formatFrom`)이고 `tests/test_space_format_paint_js.py` 가 `// <mark-look>` 과 함께
@@ -5167,6 +5174,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     층 대조(`floor_layout_bases`)가 요소와 함께 본다. 영역 테두리 모양·이름표 정렬은 두 요소 표의 `border_style`·
     `label_align`(`0025`, 영역 아닌 요소는 NULL)이다. 요소 모양 값은 두 요소 표와 가정 차이 표의 `look_json`(`0033` — 정규 JSON
     글, 빈 글 ↔ NULL, 동선·발자국·베이·도형 아닌 요소는 NULL)이다. 도형의 채우기 색·빗금은 기존 `color_key`·`hatch` 칸이다.
+  - 층 겹친 순서(`floor_layout_stack`, 설비 `0034` — 호기끼리 차례 · 호기 위로 올린 영역 · 도형)는 `floor_stacks`(층마다 전체 —
+    호기는 **편집본 설비명** 꼴)로 같은 트랜잭션에 쓰고, 저장소가 같은 트랜잭션의 호기 키(`edit.unit_keys` — 새 호기 키 포함)로
+    옮긴다. 키가 없는 설비명(그 사이 지운 호기)과 그 층 영역 · 도형이 아닌 올림은 쓰지 않고(읽을 때 건너뛰는 행이라 저장을 막지
+    않는다), 요소를 갈아 끼우는 저장(`_replace_floor_marks`)은 지운 영역 · 도형의 올림 행을 걷는다. **공식 역할에서만** 받는다 —
+    가정 역할이면 `EquipmentLayoutScopeError`(캔버스와 같은 자리), 공식이어도 가정이던 때의 배치 차이가 있는 층은 요소 · 위치와
+    같이 거부한다. 층 대조(`floor_layout_bases`)의 지문(`floor_layout_fingerprint`)이 순서를 셋째 값(저장 꼴 — 호기 키)으로 보되
+    순서 행이 없으면 `0034` 전 지문 그대로다. 가정 배치 차이(`0031`) · `layout_hash` 에는 들지 않는다. 읽기는
+    `load_floor_layout_stack`(캐시 경계 `equipment_cache.load_floor_layout_stack` — 층 캐시와 같이 비운다)이고 계약 · 줄 세우기는
+    `services/floor_layout_stack.py` 다.
   - 캔버스를 바꾸는 길은 모두 요소가 새 캔버스 안인지 본다(`_require_marks_fit`). 두 진입점(설비 저장의 캔버스·
     `save_floor_layout_canvas`)은 각 ACTIVE 설비 시나리오 최신·최신 공식
     발행의 **가정 요소**(`set`)도 본다(`_require_overlay_marks_fit` → `EquipmentLayoutOverflow`). 가정 차이 호기는 막지 않는다 —
@@ -5540,9 +5556,11 @@ RQ_MODULE
       새 코드가 같은 내용으로 낸 지문과 같아야 배치 빨리 감기·되돌리기 미리 보기가 판올림 경계에서 어긋나지 않는다.
     - **Space 는 세션 설비 시나리오의 배치를 그리고 역할대로 고친다**(S3 — LY3·LY4, 1단계 E5 「Space 는 늘 공식」 을 바꿈).
       공식 배치는 공식 설비 시나리오에서만, 가정 배치는 그 시나리오에서만 고치고(`space_edit_mode` 한 판정 — 설비 마스터 탭
-      배치 칸·붙여넣기도), FAB 전체·층 캔버스·층 사용은 공식에서만이다(G5·Q3). 층 도면 요소의 겹친 순서도 공식 배치에서만
-      바꾼다(`SpaceEditMode.order` — 가정 배치 차이는 요소 차례를 담지 않는다, 편집기 「순서」 단추 잠금 + `ORDER_LOCK_REASON`
-      풍선 한 겹, 2026-11-12 보드 7-4). 배치 편집은 적용할 때 역할을 찍고
+      배치 칸·붙여넣기도), FAB 전체·층 캔버스·층 사용은 공식에서만이다(G5·Q3). 층 도면의 겹친 순서(요소 차례 · 호기끼리 차례 ·
+      호기 위로 올린 영역 · 도형 — 설비 `0034`)도 공식 배치에서만 바꾼다(`SpaceEditMode.order` — 가정 배치 차이는 차례를 담지
+      않는다, 2026-11-12 보드 7-4). 편집기 「순서」 단추 · 키 잠금 + `ORDER_LOCK_REASON` 풍선, 옛 화면이 보낸 `stack` 은 적용이
+      같은 글로 거부하고(`_render_layout_editor`), 저장소도 가정 역할의 순서를 거부한다(세 겹). 가정 세션은 공식 순서를 읽어
+      그린다(`space_floor_layout.floor_stack_by_name` — 보기 · 편집기 모두). 배치 편집은 적용할 때 역할을 찍고
       저장소가 쓰기 잠금 안에서 대조한다(6-2). 가정 세션에서 넣은 새 호기는 공통 배치가 비어(Q1) 공식에서 「동·층 미정」 이고
       자리는 그 시나리오의 배치 차이에 든다 — 저장하면 그 호기가 공식에 자리 없이 같은 일정으로 들어가 공식 가용대수에 센다
       (2026-11-01 N2, 저장 칸 체크는 2026-11-05 걷음).

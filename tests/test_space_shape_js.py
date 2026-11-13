@@ -695,7 +695,10 @@ def test_shapes_are_drawn_from_the_pure_path_under_the_units() -> None:
     )
     assert "drawAdjusts(group, item, preset, adj, { lw, lh, rot, flip, cx, cy, upp })" in draw
     # 호기 아래 층(영역과 같은 층)에 그린다.
-    assert "const onZoneLayer = (item) => item.kind === 'zone' || item.kind === 'shape'" in JS
+    assert (
+        "const onZoneLayer = (item) => (item.kind === 'zone' || item.kind === 'shape')"
+        " && !item.raised" in JS
+    )
     assert "(onZoneLayer(item) ? zonesLayer : marksLayer).append(buildMark(item))" in JS
     assert "shape: { name: '도형', size: [8, 6], label: '', rotatable: true }," in JS
     # 막는 요소가 아니다.

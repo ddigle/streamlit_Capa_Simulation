@@ -123,6 +123,7 @@ equipment_ops.process_cutoff                              공정별 Cut-off 일�
 equipment_ops.floor_layout_profile 1 ── N floor_layout_mark   동·층 캔버스와 비설비 요소(0007·0011·0017·0025·0033)
                        (building, floor_name)
 equipment_ops.floor_layout_group_label                    층 Main 설비명 위치(0025, 키 동·층·Main 설비, PK 없음)
+equipment_ops.floor_layout_stack                          층 겹친 순서(0034, 호기 키 차례·올린 영역/도형 id, PK 없음)
 equipment_ops.fab_layout_profile   1 ── N fab_layout_mark     S.PKG FAB 전체 도면과 층 블록(0013·0017·0025·0033, layout_key 'FAB')
 equipment_ops.shortening_filter_profile 1 ── N shortening_filter_process   필요 단축 일정 공용 조회 조건(0019)
 equipment_ops.floor_state_profile  1 ── N floor_state        Space 층 사용 상태(0029, 행 = 비활성 층, PK 동·층)
@@ -441,6 +442,22 @@ DDL 순이라 둘 다 끝에 있다 — 메모리 프레임 순서를 바꾸면 
   층 저장의 동시성 대조는 요소와 위치를 함께 본 지문(`floor_layout_fingerprint`)이다. 검사는
   `services/floor_layout_mark.prepare_group_labels`, 적용 합치기·이름 바꿈 따라가기는
   `services/space_layout_edit.next_group_labels`.
+- `floor_layout_stack`(마이그레이션 34): 층마다 겹친 순서(2026-11-12 Space 요청 7-2 「전부」 의 둘째 몫). 행은
+  두 꼴이다 — `item_kind = 'unit'` 은 호기끼리 그리는 차례(`item_ref` 는 설비명이 아니라 **호기 키**라 이름을 바꿔도
+  따라간다, `stack_no` 는 아래 → 위 1 부터), `'raised'` 는 호기 위 겹에 그리는 영역 · 도형의 요소 id(`stack_no` 0 —
+  위 겹 안 차례는 `floor_layout_mark.source_row_no` 그대로라 요소 차례는 한 곳에만 둔다). 같은 겹 안 요소 차례는 이
+  표가 아니라 요소 표다. `floor_layout_group_label` 처럼 리비전 없는 **공식** 층 현행값이고 가정 설비 시나리오의
+  배치 차이(마이그레이션 31)에 들지 않는다 — 가정 세션은 공식 순서를 읽기만 하고, 가정 역할 저장이 순서를
+  보내면 거부한다(배치 지문 `layout_hash` 는 그대로다). 행이 없는 층은 지금과 같이 그린다(호기는 설비 마스터 행
+  차례 · 옮겨 온 호기 맨 위, 영역 · 도형은 호기 아래). 읽을 때 적힌 호기를 적힌 차례로 먼저, 적히지 않은 호기는
+  그 위에 그 규칙으로 두고 모듈은 묶음째 붙으며, 지금 그 층에 없는 호기 · 요소의 행은 건너뛴다. 호기 행은 호기
+  차례를 바꾼 적용만 쓴다 — 그때 편집기 도면 위 호기를 보낸 차례로 적고, 편집기 기준일에 도면에 없는 호기(보기
+  페이더 범위에는 설 수 있다)의 저장된 행은 제자리(숨은 모듈은 형제 곁)에 남긴다. 호기 차례를 손대지 않은 적용(올림만
+  바꿈)은 호기 행을 쓰지 않는다(`floor_layout_stack.staged_stack`). 저장은 층 단위
+  DELETE+INSERT(PK 없음)이고 설비명은 같은 트랜잭션의 호기 키로 옮겨 쓴다(새 호기 키 포함 — 키가 없는 설비명은
+  쓰지 않는다). 요소를 갈아 끼우는 저장은 지운 영역 · 도형의 올림 행을 함께 걷는다. 층 저장의 동시성 대조 지문
+  (`floor_layout_fingerprint`)이 이 표를 셋째 값으로 보되 행이 없으면 0034 전 지문 그대로다. 검사 · 줄 세우기는
+  `services/floor_layout_stack.py`.
 - `fab_layout_profile`·`fab_layout_mark`(마이그레이션 13): Space S.PKG FAB 전체 도면. 머리는
   `layout_key = 'FAB'` 한 행(캔버스, `image_*` 는 옛 도면 자리 — `floor_layout_profile` 처럼 UPDATE 로 고친다)이고,
   요소는 `floor_layout_mark` 와 같은 열(동·층 제외)에 층 블록의 연결 대상 `link_building`·

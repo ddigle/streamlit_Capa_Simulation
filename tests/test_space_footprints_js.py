@@ -242,7 +242,10 @@ def test_the_footprints_kind_is_a_rotatable_floor_and_fab_mark_after_the_arrow()
     assert HTML.index('data-kind="arrow"') < HTML.index('data-kind="footprints"')
     assert HTML.index('data-kind="footprints"') < HTML.index('data-kind="bay"')
     # 동선처럼 호기 위 층이다(영역 · 도형만 호기 아래).
-    assert "const onZoneLayer = (item) => item.kind === 'zone' || item.kind === 'shape'" in JS
+    assert (
+        "const onZoneLayer = (item) => (item.kind === 'zone' || item.kind === 'shape')"
+        " && !item.raised" in JS
+    )
 
 
 def test_draw_mark_fills_the_feet_with_the_line_colour_and_flips_before_turning() -> None:

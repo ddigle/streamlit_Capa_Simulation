@@ -72,14 +72,17 @@ def _save_with_pending_layout(database: str, revision_optional: bool) -> None:
     from capa_simulation.components.equipment_data_workspace import (
         PENDING_CANVASES_KEY,
         PENDING_MARKS_KEY,
+        PENDING_STACKS_KEY,
         ensure_equipment_drafts,
         pending_floor_canvases,
         save_equipment_buffer,
         stage_floor_canvas,
         stage_floor_marks,
+        stage_floor_stack,
     )
     from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
     from capa_simulation.services.floor_layout_mark import prepare_floor_layout_marks
+    from capa_simulation.services.floor_layout_stack import FloorStack
 
     repository = DuckDBEquipmentRepository(__import__("pathlib").Path(database))
     latest = repository.load_snapshot(str(repository.latest_revision_id()))
@@ -95,12 +98,16 @@ def _save_with_pending_layout(database: str, revision_optional: bool) -> None:
             [{"id": "MK-1", "kind": "column", "x": 1, "y": 1, "w": 1.5, "h": 1.5}], (130.0, 60.0)
         ),
     )
+    # 겹친 순서(설비 0034)도 같은 저장 한 번에 간다 — 호기는 편집본 설비명 꼴.
+    stage_floor_stack(("C1", "1F"), FloorStack(units=("EQ-02", "EQ-01")))
     st.session_state["staged"] = pending_floor_canvases()
     st.session_state["message"] = save_equipment_buffer(
         repository, (frames[0], master, frames[2]), "배치"
     )
     st.session_state["cleared"] = (
-        PENDING_CANVASES_KEY not in st.session_state and PENDING_MARKS_KEY not in st.session_state
+        PENDING_CANVASES_KEY not in st.session_state
+        and PENDING_MARKS_KEY not in st.session_state
+        and PENDING_STACKS_KEY not in st.session_state
     )
 
 
@@ -114,10 +121,15 @@ def test_rawdata_save_carries_the_canvas_space_enlarged(tmp_path: Path) -> None:
     assert not app.exception
     assert app.session_state["staged"] == {("C1", "1F"): (130.0, 60.0)}
     assert "r2" in app.session_state["message"] and "도면 요소" in app.session_state["message"]
+    assert "겹친 순서" in app.session_state["message"]
     assert app.session_state["cleared"] is True
     repository = DuckDBEquipmentRepository(database)
     assert repository.load_floor_layout_canvases()[("C1", "1F")] == (130.0, 60.0)
     assert [mark.mark_id for mark in repository.load_floor_layout_marks("C1", "1F")] == ["MK-1"]
+    snapshot = repository.load_official_snapshot()
+    assert snapshot is not None
+    keys = snapshot.unit_keys
+    assert repository.load_floor_layout_stack("C1", "1F").units == (keys["EQ-02"], keys["EQ-01"])
 
 
 def test_a_space_save_without_master_changes_makes_no_revision(tmp_path: Path) -> None:
@@ -141,12 +153,15 @@ def _edit_then_someone_saves(database: str) -> None:
     from capa_simulation.components.equipment_data_workspace import (
         ensure_equipment_drafts,
         pending_floor_marks,
+        pending_floor_stacks,
         render_reopen_notices,
         save_equipment_buffer,
         stage_floor_marks,
+        stage_floor_stack,
     )
     from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
     from capa_simulation.services.floor_layout_mark import prepare_floor_layout_marks
+    from capa_simulation.services.floor_layout_stack import FloorStack
 
     repository = DuckDBEquipmentRepository(__import__("pathlib").Path(database))
     step = st.session_state.get("step", 0)
@@ -160,12 +175,14 @@ def _edit_then_someone_saves(database: str) -> None:
                 [{"id": "MK-1", "kind": "door", "x": 1, "y": 1, "w": 2, "h": 2}], (100.0, 60.0)
             ),
         )
+        stage_floor_stack(("C1", "1F"), FloorStack(units=("EQ-02", "EQ-01")))
         other = frames[1].copy()
         other.loc[other["설비명"].eq("EQ-02"), "담당자"] = "담당B"
         repository.save_snapshot(frames[0], other, frames[2], note="다른 사람")
         return
     render_reopen_notices()
     st.session_state["pending"] = pending_floor_marks()
+    st.session_state["pending_stacks"] = pending_floor_stacks()
     st.session_state["message"] = save_equipment_buffer(repository, frames, "")
 
 
@@ -186,10 +203,12 @@ def test_someone_elses_save_discards_pending_layouts_and_says_so(tmp_path: Path)
     (event,) = events(app, "EQ-05")
     assert "다른 사용자가 공통 대장 r2" in str(event["short"]), event
     assert app.session_state["pending"] == {}
+    assert app.session_state["pending_stacks"] == {}
     # 대기분이 버려진 뒤의 저장은 쓴 것이 없다고 말한다(「저장했습니다」가 아니다).
     assert app.session_state["message"] == "바뀐 내용이 없어 저장하지 않았습니다."
     repository = DuckDBEquipmentRepository(database)
     assert repository.load_floor_layout_marks("C1", "1F") == ()
+    assert not repository.load_floor_layout_stack("C1", "1F")
     assert len(repository.list_revisions()) == 2
 
 

@@ -334,6 +334,20 @@ def count_line(simulation: duckdb.DuckDBPyConnection, equipment: duckdb.DuckDBPy
             equipment, f"SELECT count(*) FROM equipment_ops.{table} WHERE look_json IS NOT NULL"
         )
 
+    def stack_counts() -> list[object]:
+        # 설비 0034 — 순서가 있는 층 수 · 호기 행 · 올림 행. 표가 없으면 셋 다 None.
+        if not _has_table(equipment, "equipment_ops", "floor_layout_stack"):
+            return [None, None, None]
+        table = "equipment_ops.floor_layout_stack"
+        return [
+            _first(
+                equipment,
+                f"SELECT count(*) FROM (SELECT DISTINCT building, floor_name FROM {table})",
+            ),
+            _first(equipment, f"SELECT count(*) FROM {table} WHERE item_kind = 'unit'"),
+            _first(equipment, f"SELECT count(*) FROM {table} WHERE item_kind = 'raised'"),
+        ]
+
     parts: list[object] = [
         "migration",
         _first(simulation, "SELECT max(version) FROM app_meta.schema_migration"),
@@ -382,6 +396,8 @@ def count_line(simulation: duckdb.DuckDBPyConnection, equipment: duckdb.DuckDBPy
         [eq_if(table) for table in _MANUAL_DOWNTIME_TABLES],
         "mark_look",
         [looks(table) for table in _MARK_LOOK_TABLES],
+        "layout_stack",
+        stack_counts(),
     ]
     return " ".join(str(part) for part in parts)
 

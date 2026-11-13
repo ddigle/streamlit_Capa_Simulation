@@ -35,6 +35,7 @@ from capa_simulation.equipment_scenario_activation import EquipmentSession
 from capa_simulation.persistence.equipment_cache import (
     load_floor_group_labels,
     load_floor_layout_marks,
+    load_floor_layout_stack,
     load_schedule_layout_overlay,
 )
 from capa_simulation.services.fab_layout import floor_label
@@ -45,6 +46,7 @@ from capa_simulation.services.floor_layout_profile import (
     FloorCanvasMap,
     FloorKey,
 )
+from capa_simulation.services.floor_layout_stack import EMPTY_STACK, FloorStack, stack_names
 from capa_simulation.services.layout_overlay import (
     EMPTY_LAYOUT_DIGEST,
     LayoutOverlay,
@@ -84,6 +86,27 @@ def effective_floor_layout(
         effective_floor_marks(official_marks, overlay.marks_for(key)),
         effective_group_labels(official_labels, overlay.labels_for(key)),
     )
+
+
+def floor_stack_by_name(
+    stored: FloorStack, session: EquipmentSession, renames: Mapping[str, str] | None = None
+) -> FloorStack:
+    """저장된 겹친 순서(호기 키 꼴 — `load_floor_layout_stack`, 공식 층 현행값)를 세션이 그리는
+    설비명 꼴로. 가정 세션도 공식 순서를 그대로 읽는다(설비 `0034` — 가정 차이에 들지 않는다).
+    `renames` 는 저장 안 한 이름 바꿈(지금 이름 → 저장본 이름 — 편집본 이름으로 그릴 때)이다.
+    스냅샷이 없으면(설비 샘플) 빈 순서다."""
+    snapshot = session.snapshot
+    if snapshot is None or not stored:
+        return EMPTY_STACK
+    current = {saved: now for now, saved in (renames or {}).items()}
+    names = {key: current.get(name, name) for name, key in snapshot.unit_keys.items()}
+    return stack_names(stored, names)
+
+
+def official_floor_stack(database_path: str, key: FloorKey) -> FloorStack:
+    """그 층의 저장된 겹친 순서(호기 키 꼴) — 층 기준 지문(`floor_layout_fingerprint` 셋째 값)의
+    재료라 저장소가 대조하는 꼴 그대로다."""
+    return load_floor_layout_stack(database_path, *key)
 
 
 def floor_layout_differences(database_path: str, session: EquipmentSession) -> tuple[int, int]:

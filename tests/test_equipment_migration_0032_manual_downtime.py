@@ -19,6 +19,8 @@ from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepo
 
 MIGRATION_VERSION = 32
 NEW_TABLES = ("manual_downtime_profile", "manual_downtime", "manual_downtime_save")
+# 뒤 번호(설비 0034 — Space 겹친 순서)가 함께 만드는 빈 표.
+LATER_TABLES = ("floor_layout_stack",)
 
 
 def test_a_new_database_gets_three_empty_tables_with_their_constraints(tmp_path: Path) -> None:
@@ -87,11 +89,16 @@ def test_a_database_at_0031_keeps_every_other_row_and_gets_empty_tables(tmp_path
     before = _table_counts(path)
     assert not set(NEW_TABLES) & set(before)
 
-    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 33)
+    assert DuckDBEquipmentRepository(path).initialize() == (MIGRATION_VERSION, 33, 34)
 
     after = _table_counts(path)
     assert {table: after[table] for table in NEW_TABLES} == dict.fromkeys(NEW_TABLES, 0)
-    assert {table: count for table, count in after.items() if table not in NEW_TABLES} == before
+    assert {table: after[table] for table in LATER_TABLES} == dict.fromkeys(LATER_TABLES, 0)
+    assert {
+        table: count
+        for table, count in after.items()
+        if table not in NEW_TABLES and table not in LATER_TABLES
+    } == before
     # 한 번도 저장하지 않은 프로필은 version 0 의 빈 값이다 — 계산은 전과 같다.
     profile = DuckDBEquipmentRepository(path).load_manual_downtime()
     assert (profile.version, profile.rows) == (0, ())
