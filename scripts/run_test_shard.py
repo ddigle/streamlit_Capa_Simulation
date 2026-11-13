@@ -134,18 +134,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     options = parser.parse_args(argv)
     if not 1 <= options.shard <= options.of:
         parser.error("--shard 는 1 이상 --of 이하입니다.")
-    if options.basetemp_root is not None:
-        holder = git_work_tree_holder(options.basetemp_root)
-        if holder is not None:
-            parser.error(
-                f"--basetemp-root 는 저장소(git 작업 트리) 밖 폴더를 줍니다 — {holder} 에 .git 이"
-                " 있어 그 아래 임시 자리는 시험이 운영 자리로 거절합니다."
-            )
     return options
 
 
 def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
+    holder = None if options.basetemp_root is None else git_work_tree_holder(options.basetemp_root)
+    if holder is not None:
+        # 사용법 줄 없이 까닭 한 줄만 — 동시 실행 줄은 표준 오류 파일의 첫 줄을 옮겨 적는다.
+        print(
+            f"--basetemp-root 는 저장소(git 작업 트리) 밖 폴더를 줍니다 — {holder} 에 .git 이 있어"
+            " 그 아래 임시 자리는 시험이 운영 자리로 거절합니다.",
+            file=sys.stderr,
+        )
+        return 2
     files = shard_of(options.shard, options.of)
     if not files:
         print(f"조각 {options.shard}/{options.of} 에 시험 파일이 없습니다.", file=sys.stderr)

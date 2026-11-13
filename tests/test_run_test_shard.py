@@ -212,11 +212,12 @@ def test_a_basetemp_root_inside_a_git_work_tree_is_refused_before_anything_is_ma
 
     monkeypatch.setattr(subprocess, "run", must_not_run)
 
-    with pytest.raises(SystemExit) as caught:
-        run_test_shard.main(["--shard", "1", "--of", "4", "--basetemp-root", str(root)])
+    assert run_test_shard.main(["--shard", "1", "--of", "4", "--basetemp-root", str(root)]) == 2
 
-    assert caught.value.code == 2
-    assert str(tree) in capsys.readouterr().err
+    captured = capsys.readouterr()
+    # 사내 동시 실행 줄은 표준 오류 파일의 첫 줄을 옮겨 적는다 — 그 줄이 까닭이다.
+    assert str(tree) in captured.err.splitlines()[0]
+    assert captured.out == ""
     assert not (tree / "e2e").exists()
 
 
