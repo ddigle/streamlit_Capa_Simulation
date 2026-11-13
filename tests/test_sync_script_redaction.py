@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.util
+import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -18,6 +19,7 @@ import pytest
 from object_store_fakes import Failure, FakeStore, add_row, seed_pair
 
 from capa_simulation import settings as app_settings
+from capa_simulation.io.object_storage import ObjectStorageClient, StorageSettings
 from capa_simulation.persistence import snapshot_export, sync_state
 from capa_simulation.services import object_storage_manifest as manifest
 
@@ -189,3 +191,73 @@ def test_a_rollback_whose_members_vanish_after_the_pointer_hides_the_wrapped_aws
     _assert_hidden(printed, "rollback")
     _assert_tagged(printed, "rollback")
     assert printed.splitlines()[-1] == "전송용 요약: rollback 멈춤 요청 거절; 종료 1"
+
+
+def _probe_on_the_fake_store(rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`probe` 는 조건부 쓰기를 볼 클라이언트를 `build_client` 를 거치지 않고 따로 만든다 — 그것도
+    가짜 저장소에 붙인다(설정은 스크립트가 읽은 그대로)."""
+    store = rig.store
+
+    def client(*, settings: StorageSettings) -> ObjectStorageClient:
+        return ObjectStorageClient(settings=settings, runner=store, sleep=lambda _s: None)
+
+    monkeypatch.setattr(rig.script, "ObjectStorageClient", client)
+
+
+def test_probe_prints_tags_in_place_of_the_values_and_the_author(
+    rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`probe` 의 결과 JSON 은 확인자를 이름표로 찍고, `--write` 로 쓰는 능력 기록은 원값을 그대로
+    둔다. 거절된 조건부 쓰기 줄과 첫 쓰기의 `[중단]` 줄도 같은 가림을 지난다."""
+    _probe_on_the_fake_store(rig, monkeypatch)
+    record = tmp_path / "capabilities.json"
+
+    code, printed = _run(rig, "probe", "--write", str(record))
+
+    assert code == 0, printed
+    _assert_hidden(printed, "probe")
+    assert '"_확인자": "<작성자>"' in printed
+    assert json.loads(record.read_text(encoding="utf-8"))["_확인자"] == AUTHOR
+
+    def fail_the_conditional_put(operation: str, _key: str) -> None:
+        if operation == "put-object" and "--if-none-match" in rig.store.calls[-1]:
+            _fail(rig, "put-object")
+
+    rig.store.before = fail_the_conditional_put
+    code, printed = _run(rig, "probe")
+    rig.store.before = None
+
+    assert code == 0, printed
+    assert "조건부 쓰기   : 거부됨 — " in printed
+    assert '"conditional_put_if_none_match_star": false' in printed
+    _assert_hidden(printed, "probe 조건부 쓰기")
+    _assert_tagged(printed, "probe 조건부 쓰기")
+
+    _fail(rig, "put-object", "_probe/")
+    code, printed = _run(rig, "probe")
+
+    assert code == 1
+    assert printed.startswith("[중단] ")
+    _assert_hidden(printed, "probe 멈춤")
+    _assert_tagged(printed, "probe 멈춤")
+    assert printed.splitlines()[-1].startswith("전송용 요약: probe 멈춤 저장소가 거절; 종료 1")
+
+
+def test_the_other_failure_line_hides_the_values(
+    rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """aws 경계 밖의 실패(`BOOTSTRAP_ERRORS` — DuckDB · 파일 · 스냅샷 오류)의 `[중단]` 줄도 같은
+    가림을 지난다."""
+
+    def fail_carrying_the_values(_client: object, **_options: object) -> object:
+        raise RuntimeError(SERVER_TEXT.strip())
+
+    monkeypatch.setattr(rig.script.engine, "list_generations", fail_carrying_the_values)
+
+    code, printed = _run(rig, "generations")
+
+    assert code == 1
+    assert printed.startswith("[중단] ")
+    _assert_hidden(printed, "generations")
+    assert '"<주소>/<버킷>" via <주소> with profile (<프로필>)' in printed
+    assert printed.splitlines()[-1] == "전송용 요약: generations 멈춤 그 밖의 실패; 종료 1"
