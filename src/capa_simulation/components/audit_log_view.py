@@ -153,6 +153,12 @@ def filtered(
 
 
 # ------------------------------------------------------------------ 조건 카드
+def recorded_categories() -> list[str]:
+    """고를 수 있는 갈래 — 이 판에 사건이 있는 갈래만(사건이 없는 갈래는 늘 빈 결과다)."""
+    present = {spec.cat for spec in events.SPECS}
+    return [category for category in events.CATEGORIES if category in present]
+
+
 def _reset() -> None:
     for key in (PEOPLE_KEY, CATEGORIES_KEY, OUTCOMES_KEY):
         st.session_state[key] = []
@@ -189,7 +195,7 @@ def render_conditions(today: date) -> tuple[LogConditions, list[dict[str, Any]]]
         )
         categories = st.multiselect(
             "사건 갈래",
-            options=list(events.CATEGORIES),
+            options=recorded_categories(),
             key=CATEGORIES_KEY,
             persist_state="session",
             placeholder="",

@@ -26,6 +26,7 @@ from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 import capa_simulation.settings as settings
 from capa_simulation import module_failures, module_registry
 from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
 from capa_simulation.auth import names as sso_names
 from capa_simulation.auth import runtime as sso_runtime
@@ -331,9 +332,11 @@ def _audit_recorder_off() -> Iterator[None]:
     root = audit_spool.configured()
     audit_recorder.reset()
     audit_spool.reset()
+    audit_shipper.reset()
     yield
     audit_recorder.reset()
     audit_spool.reset()
+    audit_shipper.reset()
     audit_spool.configure(root)
 
 

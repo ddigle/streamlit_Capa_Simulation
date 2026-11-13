@@ -53,11 +53,23 @@ MIRROR_DAYS: Final = 400
 SKEW_LIMIT_SECONDS: Final = 60.0
 OVERDUE_SECONDS: Final = 1_800.0
 
-Step = Callable[[], None]
+# 버킷 호출 하나 앞에 부른다 — 일꾼이 그 회차의 마감을 늘리고, 참을 돌려주면 「DB 올리기에
+# 자리를 내줄 때」 다(정리의 `_prune_step` 과 같은 꼴). 일별 묶음 · 미러는 그때 멈추고 다음
+# 고리에 잇는다.
+Step = Callable[[], bool]
 
 
-def _no_step() -> None:
-    return None
+def _no_step() -> bool:
+    return False
+
+
+class _Yield(Exception):
+    """일별 묶음 · 미러가 DB 올리기에 자리를 내주려 멈춘다(실패가 아니다)."""
+
+
+def _pause_point(step: Step) -> None:
+    if step():
+        raise _Yield
 
 
 class AuditBucket(Protocol):
@@ -280,6 +292,7 @@ def note_chain_link(tail: Mapping[str, Any] | None) -> None:
 @dataclass(frozen=True)
 class CompactOutcome:
     written: tuple[str, ...] = ()
+    interrupted: bool = False
 
 
 def _sha256(data: bytes) -> str:
@@ -287,80 +300,95 @@ def _sha256(data: bytes) -> str:
 
 
 def compact(bucket: AuditBucket, *, today: date, step: Step = _no_step) -> CompactOutcome:
-    """최근 14일의 지난 날짜마다 어느 manifest 에도 없는 조각을 새 판으로 묶는다(오래된 날부터)."""
-    step()
-    daily = [layout.parse_daily(record.key) for record in bucket.records(layout.DAILY_PREFIX)]
-    manifests: dict[str, list[int]] = {}
-    for parsed in daily:
-        if parsed is not None and parsed[2] == "manifest.json":
-            manifests.setdefault(parsed[0], []).append(parsed[1])
-    cache: dict[str, bytes] = {}
+    """최근 14일의 지난 날짜마다 어느 manifest 에도 없는 조각을 새 판으로 묶는다(오래된 날부터).
 
-    def manifest_bytes(day: str, part: int) -> bytes:
-        key = layout.manifest_key(day, part)
-        if key not in cache:
-            step()
-            cache[key] = bucket.get(key)
-        return cache[key]
-
-    def latest_before(day: str) -> tuple[str, int] | None:
-        earlier = [found for found in manifests if found < day]
-        if not earlier:
-            return None
-        last_day = max(earlier)
-        return last_day, max(manifests[last_day])
-
+    새 판 번호는 그 날짜에 있는 일별 파일 · manifest 가운데 가장 큰 번호 다음이다 — 일별 파일만
+    들어가고 manifest 를 못 쓴 판이 남아도 그 번호를 다시 쓰지 않는다(남은 일별 파일은 미러 ·
+    화면이 그대로 읽고 같은 (inst, seq) 는 하나만 쓴다). DB 올리기에 자리를 내줘야 하면 판 사이에서
+    멈춘다(`interrupted`) — 다음 고리가 남은 날짜를 잇는다.
+    """
     written: list[str] = []
-    for back in range(LATE_DAYS, 0, -1):
-        day = (today - timedelta(days=back)).isoformat()
-        pieces: list[str] = []
-        for kind in ("seg", "tool"):
+    try:
+        _pause_point(step)
+        daily = [layout.parse_daily(record.key) for record in bucket.records(layout.DAILY_PREFIX)]
+        manifests: dict[str, list[int]] = {}
+        used: dict[str, int] = {}
+        for parsed in daily:
+            if parsed is None:
+                continue
+            used[parsed[0]] = max(used.get(parsed[0], -1), parsed[1])
+            if parsed[2] == "manifest.json":
+                manifests.setdefault(parsed[0], []).append(parsed[1])
+        cache: dict[str, bytes] = {}
+
+        def manifest_bytes(day: str, part: int) -> bytes:
+            key = layout.manifest_key(day, part)
+            if key not in cache:
+                _pause_point(step)
+                cache[key] = bucket.get(key)
+            return cache[key]
+
+        def latest_before(day: str) -> tuple[str, int] | None:
+            earlier = [found for found in manifests if found < day]
+            if not earlier:
+                return None
+            last_day = max(earlier)
+            return last_day, max(manifests[last_day])
+
+        for back in range(LATE_DAYS, 0, -1):
+            day = (today - timedelta(days=back)).isoformat()
+            pieces: list[str] = []
+            for kind in ("seg", "tool"):
+                _pause_point(step)
+                pieces.extend(
+                    record.key
+                    for record in bucket.records(layout.piece_prefix(kind, day))
+                    if layout.parse_piece(record.key) is not None
+                )
+            if not pieces:
+                continue
+            parts = sorted(manifests.get(day, []))
+            covered: set[str] = set()
+            for part in parts:
+                payload = json.loads(manifest_bytes(day, part).decode("utf-8"))
+                covered.update(str(key) for key in payload.get("segments", []))
+            fresh = sorted(set(pieces) - covered)
+            if not fresh:
+                continue
+            lines: dict[tuple[str, int], dict[str, Any]] = {}
+            for key in fresh:
+                _pause_point(step)
+                for line in layout.decode_lines(bucket.get(key)):
+                    lines.setdefault((str(line.get("inst", "")), int(line.get("seq", 0))), line)
+            ordered = [lines[key] for key in sorted(lines)]
+            body = layout.encode_lines(ordered)
+            part = used.get(day, -1) + 1
+            previous: tuple[str, int] | None = (day, parts[-1]) if parts else latest_before(day)
+            manifest = {
+                "v": 1,
+                "date": day,
+                "part": part,
+                "segments": fresh,
+                "lines": len(ordered),
+                "instances": _instances(ordered),
+                "sha256": _sha256(body),
+                "prev_manifest": None if previous is None else _sha256(manifest_bytes(*previous)),
+            }
+            manifest_body = json.dumps(manifest, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            _pause_point(step)
+            if not bucket.put_new(layout.daily_key(day, part), body):
+                # 그 번호를 그 사이 누가 썼다 — 이번 판은 접고 다음 묶음이 새 번호로 다시 본다.
+                used[day] = part
+                continue
+            used[day] = part
             step()
-            pieces.extend(
-                record.key
-                for record in bucket.records(layout.piece_prefix(kind, day))
-                if layout.parse_piece(record.key) is not None
-            )
-        if not pieces:
-            continue
-        parts = sorted(manifests.get(day, []))
-        covered: set[str] = set()
-        for part in parts:
-            payload = json.loads(manifest_bytes(day, part).decode("utf-8"))
-            covered.update(str(key) for key in payload.get("segments", []))
-        fresh = sorted(set(pieces) - covered)
-        if not fresh:
-            continue
-        lines: dict[tuple[str, int], dict[str, Any]] = {}
-        for key in fresh:
-            step()
-            for line in layout.decode_lines(bucket.get(key)):
-                lines.setdefault((str(line.get("inst", "")), int(line.get("seq", 0))), line)
-        ordered = [lines[key] for key in sorted(lines)]
-        body = layout.encode_lines(ordered)
-        part = parts[-1] + 1 if parts else 0
-        if parts:
-            previous: tuple[str, int] | None = (day, parts[-1])
-        else:
-            previous = latest_before(day)
-        manifest = {
-            "v": 1,
-            "date": day,
-            "part": part,
-            "segments": fresh,
-            "lines": len(ordered),
-            "instances": _instances(ordered),
-            "sha256": _sha256(body),
-            "prev_manifest": None if previous is None else _sha256(manifest_bytes(*previous)),
-        }
-        manifest_body = json.dumps(manifest, sort_keys=True, ensure_ascii=False).encode("utf-8")
-        step()
-        bucket.put_new(layout.daily_key(day, part), body)
-        step()
-        bucket.put_new(layout.manifest_key(day, part), manifest_body)
-        cache[layout.manifest_key(day, part)] = manifest_body
-        manifests.setdefault(day, []).append(part)
-        written.append(layout.daily_key(day, part))
+            if not bucket.put_new(layout.manifest_key(day, part), manifest_body):
+                continue
+            cache[layout.manifest_key(day, part)] = manifest_body
+            manifests.setdefault(day, []).append(part)
+            written.append(layout.daily_key(day, part))
+    except _Yield:
+        return CompactOutcome(tuple(written), interrupted=True)
     return CompactOutcome(tuple(written))
 
 
@@ -383,6 +411,7 @@ def _instances(lines: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, object
 class MirrorOutcome:
     downloaded: tuple[str, ...] = ()
     pruned: tuple[Path, ...] = ()
+    interrupted: bool = False
 
 
 def _fetch(bucket: AuditBucket, base: Path, record: ObjectRecord, step: Step) -> bool:
@@ -392,7 +421,7 @@ def _fetch(bucket: AuditBucket, base: Path, record: ObjectRecord, step: Step) ->
             return False
     except OSError:
         pass
-    step()
+    _pause_point(step)
     data = bucket.get(record.key)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(target.name + ".part")
@@ -408,31 +437,38 @@ def mirror(
     base: Path | None = None,
     step: Step = _no_step,
 ) -> MirrorOutcome:
-    """보기 범위의 일별 파일 · 일별 파일이 없는 최근 날짜의 조각을 받고 스풀을 정리한다."""
+    """보기 범위의 일별 파일 · 일별 파일이 없는 최근 날짜의 조각을 받고 스풀을 정리한다.
+
+    manifest 는 받지 않는다(화면이 읽지 않는다). 받은 파일은 다시 받지 않으므로 DB 올리기에 자리를
+    내주려 멈춰도(`interrupted` — 빈 디스크로 뜬 서버의 첫 미러) 다음 고리가 남은 것만 잇는다.
+    멈춘 회차에는 스풀을 지우지 않는다.
+    """
     root = spool.root() if base is None else base
     oldest = (today - timedelta(days=MIRROR_DAYS)).isoformat()
     downloaded: list[str] = []
     daily_dates: set[str] = set()
-    step()
-    for record in bucket.records(layout.DAILY_PREFIX):
-        parsed = layout.parse_daily(record.key)
-        if parsed is None or parsed[0] < oldest:
-            continue
-        if parsed[2] == "jsonl.gz":
+    try:
+        _pause_point(step)
+        for record in bucket.records(layout.DAILY_PREFIX):
+            parsed = layout.parse_daily(record.key)
+            if parsed is None or parsed[0] < oldest or parsed[2] != "jsonl.gz":
+                continue
+            if _fetch(bucket, root, record, step):
+                downloaded.append(record.key)
             daily_dates.add(parsed[0])
-        if _fetch(bucket, root, record, step):
-            downloaded.append(record.key)
-    for back in range(0, LATE_DAYS + 1):
-        day = (today - timedelta(days=back)).isoformat()
-        if day in daily_dates:
-            continue
-        for kind in ("seg", "tool"):
-            step()
-            for record in bucket.records(layout.piece_prefix(kind, day)):
-                if layout.parse_piece(record.key) is None:
-                    continue
-                if _fetch(bucket, root, record, step):
-                    downloaded.append(record.key)
+        for back in range(0, LATE_DAYS + 1):
+            day = (today - timedelta(days=back)).isoformat()
+            if day in daily_dates:
+                continue
+            for kind in ("seg", "tool"):
+                _pause_point(step)
+                for record in bucket.records(layout.piece_prefix(kind, day)):
+                    if layout.parse_piece(record.key) is None:
+                        continue
+                    if _fetch(bucket, root, record, step):
+                        downloaded.append(record.key)
+    except _Yield:
+        return MirrorOutcome(tuple(downloaded), interrupted=True)
     pruned = spool.prune(daily_dates, root)
     return MirrorOutcome(tuple(downloaded), tuple(pruned))
 
@@ -561,19 +597,28 @@ class AuditTasks:
         )
 
     def run_compact(self, now: float, step: Step = _no_step) -> None:
+        """일별 묶음 한 번. DB 올리기에 자리를 내주려 멈췄으면 다음 고리에 잇는다."""
         self._compact_at = now + COMPACT_EVERY_SECONDS
         try:
-            compact(self.bucket, today=self.today(), step=step)
+            outcome = compact(self.bucket, today=self.today(), step=step)
         except Exception:  # noqa: BLE001
             _LOGGER.exception("감사 기록 일별 묶음이 실패했습니다.")
+            return
+        if outcome.interrupted:
+            self._compact_at = now
+            return
         self._mirror_at = now
 
     def run_mirror(self, now: float, step: Step = _no_step) -> None:
+        """미러 한 번. 멈췄으면 다음 고리에 남은 것만 받는다."""
         self._mirror_at = now + COMPACT_EVERY_SECONDS
         try:
-            mirror(self.bucket, today=self.today(), base=self.base, step=step)
+            outcome = mirror(self.bucket, today=self.today(), base=self.base, step=step)
         except Exception:  # noqa: BLE001
             _LOGGER.exception("감사 기록 미러를 받지 못했습니다.")
+            return
+        if outcome.interrupted:
+            self._mirror_at = now
 
     def _check_skew(self, key: str, step: Step) -> None:
         sent = self.wall()

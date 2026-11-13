@@ -16,6 +16,7 @@ from s3_mock_runner import MockStoreRunner, mock_client
 
 from capa_simulation.audit import layout, read, recorder, shipper, spool
 from capa_simulation.components import object_sync_status
+from capa_simulation.io.object_storage import ObjectRecord
 from capa_simulation.object_sync_engine import PruneOutcome, SyncPaths, WatchResult
 from capa_simulation.object_sync_worker import ObjectSyncWorker, SyncHealth, WorkerStatus
 from capa_simulation.persistence import sync_state
@@ -371,3 +372,141 @@ def test_the_sync_panel_shows_the_unshipped_audit_lines(box: Box) -> None:
     assert not [
         line for line in object_sync_status.status_lines(status, health, now=0.0) if "감사" in line
     ]
+
+
+def test_a_long_first_mirror_gives_way_to_a_pending_db_upload(box: Box, tmp_path: Path) -> None:
+    """빈 디스크로 뜬 서버의 첫 미러(일별 파일 여럿)가 유일한 일꾼을 붙잡지 않는다 — 올릴 저장이
+    생기면 받는 사이에 멈추고 DB 올리기가 먼저 돈 뒤, 남은 파일만 다음 고리에 잇는다."""
+    for back in range(1, 31):
+        day = (TODAY - timedelta(days=back)).isoformat()
+        box.store.put(layout.daily_key(day, 0), layout.encode_lines([]))
+        box.store.put(layout.manifest_key(day, 0), b"{}")
+    sync_state.clear_all()
+    monotonic = Monotonic()
+    (tmp_path / "db").mkdir()
+    paths = seed_pair(tmp_path / "db")
+    sync_state.enable(paths.registry)
+    for name, path in paths.databases.items():
+        sync_state.adopt_clean(path, dataset=name)
+
+    @dataclass
+    class QuietEngine:
+        paths: SyncPaths
+        uploads: list[int] = field(default_factory=list)
+
+        def upload(self) -> object:
+            self.uploads.append(len(_mirrored()))
+            from capa_simulation.object_sync_engine import PublishOutcome
+
+            return PublishOutcome(PushDecision.UP_TO_DATE)
+
+        def watch(self) -> WatchResult:
+            return WatchResult(PushDecision.UP_TO_DATE, 1)
+
+        def prune(self, should_stop: Callable[[], bool]) -> PruneOutcome:
+            return PruneOutcome(plan=PrunePlan(), deleted=0)
+
+    def _mirrored() -> list[Path]:
+        return sorted((box.base / layout.MIRROR_DIR).rglob("*.jsonl.gz"))
+
+    calls: list[str] = []
+
+    @dataclass
+    class SavingBucket:
+        """셋째 받기 사이에 사람이 저장한 것처럼 올리기를 청한다."""
+
+        inner: shipper.ClientBucket
+
+        def records(self, prefix: str) -> tuple[ObjectRecord, ...]:
+            return self.inner.records(prefix)
+
+        def put_new(self, key: str, body: bytes) -> bool:
+            return self.inner.put_new(key, body)
+
+        def get(self, key: str) -> bytes:
+            calls.append(key)
+            if len(calls) == 3:
+                sync_state.request_upload()
+            return self.inner.get(key)
+
+        def modified(self, key: str) -> datetime | None:
+            return self.inner.modified(key)
+
+    engine = QuietEngine(paths)
+    tasks = shipper.AuditTasks(
+        SavingBucket(box.bucket),
+        clock=monotonic,
+        today=lambda: TODAY,
+        wall=box.clock,
+        base=box.base,
+    )
+    worker = ObjectSyncWorker(engine, clock=monotonic, audit=tasks)  # type: ignore[arg-type]
+    try:
+        worker.tick()  # 시작 직후 HEAD 확인
+        monotonic.now += shipper.MIRROR_FIRST_SECONDS + 1
+        worker.tick()  # 미러 — 셋째 받기 뒤 저장 요청이 와 멈춘다
+        stopped_at = len(_mirrored())
+        assert 0 < stopped_at < 30
+        assert not any(key.endswith(".manifest.json") for key in calls), "manifest 는 받지 않는다"
+        worker.tick()  # DB 올리기가 먼저
+        assert engine.uploads == [stopped_at]
+        for _ in range(3):
+            worker.tick()
+        assert len(_mirrored()) == 30
+    finally:
+        sync_state.clear_all()
+
+
+def test_the_worker_starts_even_if_the_audit_tasks_cannot_be_built(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from capa_simulation import object_sync_worker as worker_module
+    from capa_simulation import sync_boot
+
+    (tmp_path / "db").mkdir()
+    paths = seed_pair(tmp_path / "db")
+    monkeypatch.setattr(sync_boot, "enable_sync_state_if_managed", lambda: True)
+    monkeypatch.setattr(sync_boot, "read_boot_record", lambda: object())
+
+    def broken() -> shipper.AuditTasks:
+        raise ValueError("남은 스풀이 깨졌다")
+
+    @dataclass
+    class IdleEngine:
+        paths: SyncPaths
+
+        def upload(self) -> object:
+            raise AssertionError
+
+        def watch(self) -> WatchResult:
+            return WatchResult(PushDecision.UP_TO_DATE, 1)
+
+        def prune(self, should_stop: Callable[[], bool]) -> PruneOutcome:
+            return PruneOutcome(plan=PrunePlan(), deleted=0)
+
+    handle = worker_module.start_object_sync(
+        build_engine=lambda: IdleEngine(paths),  # type: ignore[arg-type,return-value]
+        build_audit_work=broken,
+    )
+    try:
+        assert handle is not None
+        assert getattr(handle, "_audit", "missing") is None
+    finally:
+        if handle is not None:
+            handle.stop(timeout=5)
+        sync_state.clear_all()
+
+
+def test_a_daily_file_left_without_its_manifest_is_never_reused(box: Box) -> None:
+    _yesterday(box, 2)
+    box.store.put(layout.daily_key("2026-11-12", 0), b"orphan")
+
+    outcome = shipper.compact(box.bucket, today=TODAY)
+
+    assert outcome.written == (layout.daily_key("2026-11-12", 1),)
+    assert box.store.objects[layout.daily_key("2026-11-12", 0)] == b"orphan"
+    manifest = json.loads(box.store.objects[layout.manifest_key("2026-11-12", 1)])
+    assert (
+        manifest["sha256"]
+        == hashlib.sha256(box.store.objects[layout.daily_key("2026-11-12", 1)]).hexdigest()
+    )

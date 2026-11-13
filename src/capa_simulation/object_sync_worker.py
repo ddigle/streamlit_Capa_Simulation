@@ -369,7 +369,7 @@ class ObjectSyncWorker:
             self._run_audit(audit.run_mirror, now)
         return self._pause(self._clock())
 
-    def _run_audit(self, task: Callable[[float, Callable[[], None]], None], now: float) -> None:
+    def _run_audit(self, task: Callable[[float, Callable[[], bool]], None], now: float) -> None:
         """감사 할 일 하나 — 쉬는 동안의 회차로 적고 호출마다 마감을 늘린다(실패는 감사 몫)."""
         try:
             with self._quiet_cycle(now, QUIET_CALL_SECONDS):
@@ -377,8 +377,10 @@ class ObjectSyncWorker:
         except Exception:  # noqa: BLE001 — 감사가 DB 동기화 상태를 바꾸지 않는다
             _LOGGER.exception("감사 기록 할 일이 실패했습니다.")
 
-    def _audit_step(self) -> None:
+    def _audit_step(self) -> bool:
+        """감사 버킷 호출 하나 앞 — 진행을 적고 DB 올리기에 자리를 내줄지 본다(정리와 같은 꼴)."""
         self._set(cycle_deadline=self._clock() + QUIET_CALL_SECONDS)
+        return self._should_yield()
 
     def _read_dirty(self) -> dict[DatasetName, bool]:
         databases = self._engine.paths.databases
@@ -651,7 +653,13 @@ def start_object_sync(
             existing = running_worker()
             if existing is not None:
                 return existing
-            worker = ObjectSyncWorker(build_engine(), audit=build_audit_work())
+            try:
+                audit = build_audit_work()
+            except Exception:
+                # 감사 할 일을 못 세워도 DB 동기화 일꾼은 선다(감사가 DB 동기화를 막지 않는다).
+                _LOGGER.exception("감사 기록 할 일을 세우지 못했습니다 — 일꾼은 감사 없이 섭니다.")
+                audit = None
+            worker = ObjectSyncWorker(build_engine(), audit=audit)
             worker.start()
             return worker
     except Exception:
