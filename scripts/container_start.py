@@ -16,7 +16,8 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 0. 설치 — `bigdataquery` 가 없고 `CAPA_ARTIFACTORY_USER`·`CAPA_ARTIFACTORY_TOKEN`·
    `CAPA_COMPANY_INDEX_URL` 이 있으면 pip 를 두 번 부른다. 판·인덱스는 `requirements-company.txt` 가
    정본이다 — 인덱스 줄은 사내 주소 대신 환경변수 `${CAPA_COMPANY_INDEX_URL}` 을 가리키고(공개
-   저장소), pip · uv 와 같은 꼴로 펼친다.
+   저장소), pip · uv 와 같은 꼴로 펼친다. 비면 건너뛰고, `https://주소` 꼴이 아니거나 계정·토큰이
+   들어 있으면 pip 를 부르지 않고 「실패」 다(값은 싣지 않는다).
    - 패키지 자신은 **사내 인덱스 하나만** 보고 의존성 없이 깐다(`--no-deps`). 공개 미러를 함께 보면
      같은 이름·판의 공개 패키지가 이길 수 있다(의존성 혼동 — pip 는 인덱스를 차례로 고르지 않는다).
      자격증명은 명령줄이 아니라 그 pip 의 환경(`PIP_INDEX_URL`)으로 준다 — 명령줄은 `ps` 로 누구나
@@ -289,19 +290,26 @@ def read_company_requirement(path: Path | None = None) -> CompanyRequirement:
 
 
 def company_index_url(requirement: CompanyRequirement, environ: Mapping[str, str]) -> str:
-    """`--index-url` 의 `${이름}` 을 환경변수 값으로 펼친 주소. 비었거나 주소 꼴(`https://…`)이
-    아니면 `ValueError` — 글에는 이름만 싣고 값은 싣지 않는다."""
-    names = [match.group("name") for match in _ENV_REFERENCE.finditer(requirement.index_url)]
-    missing = [name for name in dict.fromkeys(names) if not environ.get(name, "").strip()]
+    """`--index-url` 의 `${이름}` 을 환경변수 값으로 펼친 주소. 비었거나, `https://주소` 꼴이
+    아니거나(평문 `http` 면 자격증명이 그대로 흐른다), 계정·토큰(`…@`)이 들어 있으면 `ValueError` —
+    자격증명은 `index_url_with_credentials` 가 따로 넣는다. 글에는 이름만 싣고 값은 싣지 않는다."""
+    references = _ENV_REFERENCE.finditer(requirement.index_url)
+    names = list(dict.fromkeys(match.group("name") for match in references))
+    missing = [name for name in names if not environ.get(name, "").strip()]
     if missing:
         raise ValueError(f"CD 환경변수 {'·'.join(missing)} 없음")
     url = _ENV_REFERENCE.sub(
         lambda match: environ[match.group("name")].strip(), requirement.index_url
     )
     parts = urllib.parse.urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.netloc:
-        source = f"CD 환경변수 {'·'.join(dict.fromkeys(names))} 값" if names else "--index-url 줄"
-        raise ValueError(f"{source}이 주소 꼴(https://…)이 아님")
+    problem: str | None = None
+    if parts.scheme != "https" or not parts.netloc:
+        problem = "주소 꼴(https://…)이 아님"
+    elif "@" in parts.netloc:
+        problem = "계정·토큰이 들어 있음(자격증명은 시작 스크립트가 따로 넣는다)"
+    if problem is not None:
+        where = f"CD 환경변수 {'·'.join(names)} 값" if names else "--index-url 줄"
+        raise ValueError(f"{where}: {problem}")
     return url
 
 

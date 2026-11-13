@@ -272,8 +272,9 @@ uv sync
 ### 4단계. 사내 전용 패키지 넣기 (사내만)
 
 사내 패키지 저장소 주소는 사내 값이라 저장소에 없습니다(공개 저장소). 이 PC 의 사용자 환경변수
-`CAPA_COMPANY_INDEX_URL` 에 한 번 넣고 **새 창**을 엽니다(넣은 창에는 아직 안 보입니다). 값은 지금 쓰는 사내
-Artifactory 인덱스 주소(`https://…/simple`) 그대로입니다.
+`CAPA_COMPANY_INDEX_URL` 에 한 번 넣고 **새 창**을 엽니다(넣은 창과 그 전에 열린 창에는 안 보입니다). 값은 지금 쓰는 사내
+Artifactory 인덱스 주소(`https://…/simple` 통째, 계정·토큰 없이) 그대로입니다 — 이 줄이 환경변수로 바뀌기 전 판의
+`requirements-company.txt` `--index-url` 줄에 있던 주소이고, 사내 git 이력의 그 판에서 읽을 수 있습니다.
 
 ```powershell
 [Environment]::SetEnvironmentVariable("CAPA_COMPANY_INDEX_URL", "<사내 Artifactory 인덱스 주소>", "User")
@@ -284,7 +285,7 @@ uv pip install -r requirements-company.txt
 ```
 
 - `bigdataquery` 를 사내 Artifactory 인덱스에서 받습니다. 그 파일의 `--index-url ${CAPA_COMPANY_INDEX_URL}` 줄을
-  pip · uv 가 위 환경변수 값으로 펼칩니다. 비어 있으면 아무것도 깔지 않고 멈춥니다 — uv 는
+  pip · uv 가 위 환경변수 값으로 펼칩니다. 비었거나 주소 꼴이 아니면 아무것도 깔지 않고 멈춥니다 — uv 는 둘 다
   `Invalid URL … ${CAPA_COMPANY_INDEX_URL}`.
 - C-DEP WebIDE 처럼 이미지가 `UV_DEFAULT_INDEX` 를 고정해 둔 곳에서는 위 설치 줄이 그대로 안 됩니다. 추가 인덱스와
   시스템 인증서로 까는 법, 로그인·요청자 계정 설정은 `docs/bigdataquery_webide_setup.md`.
@@ -347,7 +348,7 @@ New-Item -ItemType Directory review -Force
 |---|---|
 | `uv lock` 이 `dns error` 로 죽는다 | `bigdataquery` 를 `pyproject.toml` 에서 빼 `requirements-company.txt` 에 둡니다. |
 | `bigdataquery` 가 사라졌다 | 맨 `uv sync` 를 돌렸습니다. 4단계를 다시 하고 이후 `--inexact` 를 씁니다. |
-| `uv pip install -r requirements-company.txt` 가 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}` 로 멈춘다 | 이 창에 사용자 환경변수 `CAPA_COMPANY_INDEX_URL` 이 없습니다. 4단계 첫 줄로 넣고 새 창에서 다시 칩니다. |
+| `uv pip install -r requirements-company.txt` 가 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}` 로 멈춘다 | 이 창에 사용자 환경변수 `CAPA_COMPANY_INDEX_URL` 이 없거나 주소 꼴(`https://…/simple` 통째)이 아닙니다. 4단계 첫 줄로 넣고 새 PowerShell 창에서 다시 칩니다 — Claude 세션 안에서 `! ` 로 쳤다면 그 세션은 넣은 값을 보지 못하므로 Claude 를 새 창에서 다시 띄웁니다. |
 | `uv pip check` 가 `bigdataquery` 와 pandas · numpy 충돌을 찍는다 | 락이 그 패키지의 범위를 벗어났습니다. 사외가 `pyproject.toml` 범위와 락을 맞춥니다 — 사내 런북 4-1. |
 | `duckdb.IOException` | 앱이 DB 를 쥔 채 스크립트·테스트를 돌렸습니다(배타 잠금). 앱을 끄고 다시 — 고장이 아닙니다. |
 | 앱이 「Port 8501 is not available」 로 멈춘다 | 다른 것이 8501 을 쥐고 있습니다. 포트를 적었으므로 다음 번호로 말없이 옮겨 서지 않고 멈춘 것입니다. 누가 쥐었는지 보는 법은 [`docs/internal_update_runbook.md`](docs/internal_update_runbook.md) 4-2 「접속이 안 되면」. |
@@ -375,8 +376,8 @@ Windows(PowerShell):
 - 공식버전 자동 갱신(`시나리오 관리 → 자동 갱신`)은 실행 줄에 `CAPA_AUTO_OFFICIAL_UPDATE=1` 을 더해 띄운 앱에서만
   돕니다. 사내 운영 절차는 런북 4-4 입니다.
 - 사이드바 맨 아래 앱 정보 카드의 문의처 메일은 환경변수 `CAPA_APP_CONTACT_EMAIL` 이 있을 때만 붙습니다(사람을 가리키는
-  사내 값이라 저장소에 없습니다 — 공개 저장소). 비었거나 메일 꼴이 아니면 「개발 <팀 이름>」 만 보입니다. 사내 PC 는 사용자 환경변수, C-DEP 는
-  환경변수 표에 넣고 앱을 다시 띄웁니다.
+  사내 값이라 저장소에 없습니다 — 공개 저장소). 비었거나 메일 꼴이 아니면 「개발 <팀 이름>」 만 보입니다. 사내 PC 는 사용자 환경변수에 넣고
+  새 창에서 앱을 다시 띄웁니다(넣기 전에 열린 창에서 띄운 앱에는 붙지 않습니다). C-DEP 는 환경변수 표에 넣고 CI/CD 를 다시 누릅니다.
 - 진입점은 둘입니다. 개발·WebIDE·시험·화면 확인은 위 `app.py` 이고, C-DEP 운영 서버만 `capa_server.py`(`app.py` 를 감싸
   통합인증 경로·문지기를 같은 프로세스에 붙인 것 — 시작 스크립트가 띄웁니다)입니다. 통합인증을 개발 PC 에서 끝까지 돌려 보려면
   가짜 IdP `scripts/sso_mock_idp.py` 와 `capa_server.py` 를 함께 띄웁니다(`docs/sso_setup.md` 8장).

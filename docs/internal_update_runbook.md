@@ -599,8 +599,10 @@ uv pip install -r requirements-company.txt
 ```
 
 이 줄은 사용자 환경변수 `CAPA_COMPANY_INDEX_URL`(사내 패키지 저장소 주소 — 사내 값이라 저장소에 없다, README 4단계)을 그 파일의
-`--index-url` 줄에 펼쳐 쓴다. 없으면 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}` 로 멈추고 아무것도 깔지 않는다 — 고장이 아니다.
-사용자가 그 환경변수를 넣고 새 창에서 다시 친다.
+`--index-url` 줄에 펼쳐 쓴다. 그 값이 없거나 주소 꼴(`https://…/simple` 통째)이 아니면 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}` 로
+멈추고 아무것도 깔지 않는다 — 고장이 아니다. 사용자가 그 환경변수를 넣거나 고친 뒤 **`! ` 로 치던 이 Claude 세션이 아니라** 새
+PowerShell 창에서 다시 친다 — Claude 세션은 시작 때의 환경을 그대로 들고 있어 넣은 값을 보지 못한다(이 세션에서 이어 치려면
+Claude 를 새 창에서 다시 띄운다).
 
 ### 4-2. 마이그레이션은 앱이 알아서 한다
 

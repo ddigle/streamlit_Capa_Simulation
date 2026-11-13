@@ -14,7 +14,7 @@
 # 환경변수 표에만 둔다.
 # 비어 있으면 아무것도 깔지 않고 멈춘다 — uv 는 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}`(종료 2),
 # pip 는 `Could not find a version`(종료 1). C-DEP 시작 스크립트(`scripts/container_start.py`)도 이 줄을
-# 같은 꼴로 펼친다.
+# 같은 꼴로 펼친다 — 값은 `https://…/simple` 통째이고 계정·토큰은 넣지 않는다(시작 스크립트가 따로 넣는다).
 #
 # 사내 설치 (전체 절차는 README.md 의 「초기 설정」):
 #     uv sync

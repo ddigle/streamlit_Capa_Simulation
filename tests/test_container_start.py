@@ -762,11 +762,20 @@ def test_a_missing_index_variable_skips_the_install_and_names_it(place: Path) ->
     assert fake_exec.calls
 
 
-@pytest.mark.parametrize("value", ["index.example.invalid/simple", "https:///simple", "   "])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "index.example.invalid/simple",
+        "https:///simple",
+        "http://index.example.invalid/simple",
+        "   ",
+    ],
+)
 def test_an_index_value_that_is_not_an_address_fails_without_echoing_it(
     place: Path, value: str
 ) -> None:
-    """주소 꼴이 아니면 pip 를 부르지 않고 실패로 적는다 — 이름만 대고 값은 싣지 않는다."""
+    """`https://주소` 꼴이 아니면 pip 를 부르지 않고 실패로 적는다 — 이름만 대고 값은 싣지 않는다.
+    평문 `http` 도 실패다 — 그 주소로 계정·토큰이 그대로 흐른다."""
     environ = {**ALL_ENVIRONMENT, report_contract.COMPANY_INDEX_URL_ENV: value}
     runner = FakeRunner([_probe("missing")])
 
@@ -783,6 +792,51 @@ def test_an_index_value_that_is_not_an_address_fails_without_echoing_it(
         assert value not in install["reason"]
         assert "주소 꼴" in install["reason"]
     assert fake_exec.calls
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://demo.user:FAKE-index-tok@index.example.invalid/simple",
+        "https://demo.user@index.example.invalid/simple",
+    ],
+)
+def test_an_index_value_with_an_account_or_token_fails_without_echoing_it(
+    place: Path, value: str
+) -> None:
+    """인덱스 값에 계정·토큰을 넣으면 받지 않는다 — 자격증명은 계정 · 토큰 환경변수 둘로 따로
+    넣는다. 이름만 대고 계정 · 토큰 글자는 결과 어디에도 싣지 않는다."""
+    environ = {**ALL_ENVIRONMENT, report_contract.COMPANY_INDEX_URL_ENV: value}
+    runner = FakeRunner([_probe("missing")])
+
+    report, fake_exec = _main(place, environ, runner)
+
+    assert runner.pip_calls == []
+    install = _steps(report)[report_contract.STEP_INSTALL]
+    assert install["status"] == report_contract.STATUS_FAILED
+    assert report_contract.COMPANY_INDEX_URL_ENV in install["reason"]
+    assert "계정·토큰" in install["reason"]
+    written = json.dumps(report, ensure_ascii=False)
+    assert "FAKE-index-tok" not in written
+    assert "demo.user" not in written
+    assert fake_exec.calls
+
+
+def test_a_literal_index_line_that_is_not_an_address_fails_by_line(place: Path) -> None:
+    """환경변수 없이 주소를 바로 적은 줄도 같은 규칙이다 — 줄을 대고 값은 싣지 않는다."""
+    (place / "requirements-company.txt").write_text(
+        f"--index-url index.example.invalid/simple\n{FAKE_PIN}\n", encoding="utf-8"
+    )
+    runner = FakeRunner([_probe("missing")])
+
+    report, _ = _main(place, ALL_ENVIRONMENT, runner)
+
+    assert runner.pip_calls == []
+    install = _steps(report)[report_contract.STEP_INSTALL]
+    assert install["status"] == report_contract.STATUS_FAILED
+    assert "--index-url 줄" in install["reason"]
+    assert "주소 꼴" in install["reason"]
+    assert "index.example.invalid" not in install["reason"]
 
 
 def test_an_index_line_that_names_another_empty_variable_fails_by_name(place: Path) -> None:

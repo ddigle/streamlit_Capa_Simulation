@@ -105,13 +105,13 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 |---|---|---|
 | `CAPA_ARTIFACTORY_USER` | 사내 Artifactory 계정(`<AD 계정>`) | 0. 설치 |
 | `CAPA_ARTIFACTORY_TOKEN` | Artifactory API 토큰(읽기 전용으로 발급한 것) | 0. 설치 |
-| `CAPA_COMPANY_INDEX_URL` | 사내 Artifactory 인덱스 주소(`https://…/simple` — 자격증명 없이, 사내 PC 와 같은 값). 사내 값이라 저장소에 없다 | 0. 설치 |
+| `CAPA_COMPANY_INDEX_URL` | 사내 Artifactory 인덱스 주소(`https://…/simple` 통째 — 자격증명 없이, 사내 PC 와 같은 값). 사내 값이라 저장소에 없다. **이 이름을 읽는 판을 싣는 CI/CD 전에 넣는다** — 없으면 설치를 건너뛰어 BigDataQuery 조회가 멈춘다. 이 키를 모르는 앞 배포에 먼저 넣어도 해가 없다 | 0. 설치 |
 | `CAPA_BDQ_TOKEN` | WebIDE 에서 로그인해 만든 토큰 파일의 **내용**(아래) | 1. 로그인 |
 | `CAPA_BDQ_USER_NAME` | 본인 AD 계정(`<AD 계정>`) — 토큰 파일 이름과 `getData(user_name=…)` 에 함께 쓴다 | 1·2 |
 
 - 설치는 `bigdataquery` 가 없을 때만 하고, 판과 인덱스는 `requirements-company.txt` 를 읽는다 — 인덱스 줄의
-  `${CAPA_COMPANY_INDEX_URL}` 을 pip · uv 와 같은 꼴로 펼치고, 그 값이 비면 설치를 건너뛰며(`CD 환경변수 … 없음`) 주소 꼴이
-  아니면 pip 를 부르지 않고 실패로 적는다(값은 싣지 않는다). pip 를 두 번 부른다. 둘째 pip 는 앱 판 고정
+  `${CAPA_COMPANY_INDEX_URL}` 을 pip · uv 와 같은 꼴로 펼치고, 그 값이 비면 설치를 건너뛰며(`CD 환경변수 … 없음`) `https://주소`
+  꼴이 아니거나(평문 `http` 포함) 계정·토큰이 들어 있으면 pip 를 부르지 않고 실패로 적는다(값은 싣지 않는다). pip 를 두 번 부른다. 둘째 pip 는 앱 판 고정
   (`requirements.txt`)을 제약으로 걸므로, 그 판이 `bigdataquery` 의 요구 범위(pandas · numpy 위 끝)를 벗어나면 설치가 「실패」 로 남는다 —
   `pyproject.toml` 이 같은 범위로 묶어 둔 까닭이다. 점검 칸의 `Artifactory 인덱스에서 bigdataquery — pip 종료 코드 n` 은 첫 pip 실패라 판 범위와 상관없다 — 펼침의 pip 출력 끝으로 가른다.
   - **패키지 자신은 사내 인덱스 하나만** 보고 의존성 없이 깐다(`--no-deps`). WebIDE 처럼 공개 미러에 사내 인덱스를
@@ -156,7 +156,7 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 
 | key | 뜻 |
 |---|---|
-| `CAPA_APP_CONTACT_EMAIL` | 사이드바 앱 정보 카드의 문의처 메일(사람을 가리키는 사내 값 — 저장소에 없다). 비었거나 메일 꼴이 아니면 카드 둘째 줄은 팀 이름만. 사내 PC 앱은 사용자 환경변수로 같은 값을 넣는다 |
+| `CAPA_APP_CONTACT_EMAIL` | 사이드바 앱 정보 카드의 문의처 메일(사람을 가리키는 사내 값 — 저장소에 없다). 비었거나 메일 꼴이 아니면 카드 둘째 줄은 팀 이름만. 사내 PC 앱은 사용자 환경변수로 같은 값을 넣는다. 이 키를 모르는 앞 배포에 먼저 넣어도 해가 없다 |
 
 시작 스크립트는 이 값을 그대로 앱에 넘긴다(결과 파일에는 남기지 않는다).
 
