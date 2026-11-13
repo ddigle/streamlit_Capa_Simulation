@@ -151,6 +151,7 @@ def test_the_shard_runs_pytest_from_the_root_and_gives_back_its_code(
     assert "-q" not in command, "pyproject addopts 의 -q 와 겹치면 끝줄 수가 사라진다"
     assert command[command.index("-p") + 1] == "no:cacheprovider"
     assert _basetemps(command) == []
+    assert not [part for part in command if part.startswith("tmp_path_retention_policy")]
     assert "faulthandler_timeout=600" in command
     expected = [path.as_posix() for path in run_test_shard.shard_of(2, 8)]
     assert command[-len(expected) :] == expected
@@ -184,16 +185,25 @@ def test_a_basetemp_root_gives_each_shard_its_own_folder_from_the_caller(
         [str(root / "shard1")],
         [str(root / "shard2")],
     ]
+    # 같은 PC 에서 함께 도는 조각은 통과한 시험의 임시 파일을 바로 지운다(조각마다 GB 단위로 쌓임).
+    for command in seen:
+        assert command[command.index("tmp_path_retention_policy=failed") - 1] == "-o"
 
 
 SYNTHETIC_TEST = """
 def test_leaves_a_mark(tmp_path):
     (tmp_path / "mark").write_text("x", encoding="utf-8")
+
+
+def test_keeps_its_mark_when_it_fails(tmp_path):
+    (tmp_path / "mark").write_text("x", encoding="utf-8")
+    assert False
 """
 
 
 def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> None:
-    """저장소 `addopts` 와 함께 실제로 돌린다 — 조각마다 「n passed …」 끝줄로 수를 적는다."""
+    """저장소 `addopts` 와 함께 실제로 돌린다 — 조각마다 「n failed, n passed …」 끝줄로 수를
+    적고, 조각 임시 폴더에는 실패한 시험의 파일만 남는다(보존 정책 `failed`)."""
     synthetic = tmp_path / "test_synthetic_shard.py"
     synthetic.write_text(SYNTHETIC_TEST, encoding="utf-8")
     basetemp = run_test_shard.shard_basetemp(tmp_path / "roots", 3)
@@ -216,6 +226,10 @@ def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> 
         check=False,
     )
 
-    assert finished.returncode == 0, finished.stdout + finished.stderr
-    assert finished.stdout.strip().splitlines()[-1].startswith("1 passed"), finished.stdout
-    assert [mark.parent.parent for mark in basetemp.rglob("mark")] == [basetemp]
+    assert finished.returncode == 1, finished.stdout + finished.stderr
+    assert finished.stdout.strip().splitlines()[-1].startswith("1 failed, 1 passed"), (
+        finished.stdout
+    )
+    [mark] = basetemp.rglob("mark")
+    assert mark.parent.parent == basetemp
+    assert mark.parent.name.startswith("test_keeps_its_mark_when_it_f")
