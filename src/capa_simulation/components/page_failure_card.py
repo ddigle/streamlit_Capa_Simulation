@@ -111,7 +111,7 @@ def render_page_failure(failure: PageFailure, exc: BaseException) -> None:
         st.caption(f"참고 번호 {failure.ref} · {literal_markdown(failure.kind)}")
         if admin_notes_visible():
             lines = diagnostic_lines(failure, exc)
-            with st.expander(DIAGNOSTIC_LABEL):
+            with st.expander("관리자용 진단"):
                 render_diagnostic_copy(diagnostic_text(HEADLINE, lines), key=COPY_KEY)
                 st.code("\n".join(lines), language=None)
 

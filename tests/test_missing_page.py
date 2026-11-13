@@ -80,6 +80,6 @@ def test_a_switched_off_module_address_names_the_module_and_its_owner(
 
     short, full = missing_page.missing_text("mod-demo_off-main")
 
-    assert short == "「데모 꺼짐」 은 꺼져 있습니다 · 담당 데모 담당"
+    assert short == "「데모 꺼짐」은 꺼져 있습니다 · 담당 데모 담당"
     assert "/mod-demo_off-main" in full
     assert missing_page.missing_text("mod-unknown-main")[0] == missing_page.UNKNOWN_TEXT

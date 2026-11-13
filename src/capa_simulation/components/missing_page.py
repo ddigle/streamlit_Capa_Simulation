@@ -11,7 +11,7 @@
 - 판정은 Streamlit 페이지 관리자가 이 회차에 받은 주소 이름(`intended_page_name` — 주소창 · 링크로
   연 화면)과 `st.navigation()` 이 고른 화면 주소를 맞대는 것이다. 화면 해시로 옮기는
   길(`st.switch_page` · 페이지 링크)은 늘 등록된 화면이라 여기 오지 않는다.
-- 같은 주소는 이 세션에 한 번만 알린다(`SEEN_KEY`) — 주소 이름이 다음 회차에 남아도 거듭 뜨지
+- 같은 주소는 이 세션에 한 번만 알린다(`TOLD_KEY`) — 주소 이름이 다음 회차에 남아도 거듭 뜨지
 않는다.
 - 알림 코드는 지금 등록부의 「동작 결과 — 안내」(`FL-02`)다 — 이 알림만의 번호는 정하지 않았다.
 """
@@ -24,11 +24,12 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from capa_simulation import alerts, module_registry
+from capa_simulation.services.korean_particle import topic_particle
 
 MISSING_CODE: Final = "FL-02"
 MISSING_CAUSE: Final = "없는 화면 주소로 들어옴"
 # 이 세션에 알린 주소 — 같은 주소는 한 번만.
-SEEN_KEY: Final = "missing_page_seen_v1"
+TOLD_KEY: Final = "missing_page_told_v1"
 UNKNOWN_TEXT: Final = "없는 화면 주소 — HOME 을 열었습니다"
 _MODULE_PREFIX: Final = "mod-"
 
@@ -59,7 +60,7 @@ def missing_text(path: str) -> tuple[str, str]:
     manifest = None if record is None else record.manifest
     if record is not None and manifest is not None and record.state != "on":
         owner = f" · 담당 {manifest.owner}" if manifest.owner else ""
-        short = f"「{manifest.name}」 은 꺼져 있습니다{owner}"
+        short = f"「{manifest.name}」{topic_particle(manifest.name)} 꺼져 있습니다{owner}"
         return short, f"{short} — 연 주소 /{path} 대신 HOME 을 열었습니다."
     return UNKNOWN_TEXT, f"없는 화면 주소(/{path})로 들어와 HOME 을 열었습니다."
 
@@ -71,10 +72,10 @@ def notice_missing_page(landed: str) -> None:
     path = requested_path().strip("/")
     if not path or path == landed:
         return
-    seen = st.session_state.get(SEEN_KEY)
-    seen_paths = seen if isinstance(seen, list) else []
-    if path in seen_paths:
+    told = st.session_state.get(TOLD_KEY)
+    told_paths = told if isinstance(told, list) else []
+    if path in told_paths:
         return
-    st.session_state[SEEN_KEY] = [*seen_paths, path][-20:]
+    st.session_state[TOLD_KEY] = [*told_paths, path][-20:]
     short, full = missing_text(path)
     alerts.event(MISSING_CODE, text=short, full=full, cause=MISSING_CAUSE)

@@ -198,7 +198,7 @@ def render_failure_parts(
         parts=parts,
         where=where,
     )
-    with st.expander(DIAGNOSTIC_LABEL):
+    with st.expander("담당자용 진단"):
         render_diagnostic_copy(
             diagnostic_text(_headline(module_name, page_title, where), lines),
             key=f"{COPY_KEY_HEAD}{module_id}_{where}_{uuid.uuid4().hex[:8]}",
