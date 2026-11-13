@@ -66,7 +66,11 @@ from capa_simulation.components.scenario_status import (
     show_scenario_dialog,
 )
 from capa_simulation.components.sidebar_style import build_sidebar_stylesheet
-from capa_simulation.components.sso_identity import require_signed_in, sso_credit_line
+from capa_simulation.components.sso_identity import (
+    admin_area_locked,
+    require_signed_in,
+    sso_credit_line,
+)
 from capa_simulation.components.sso_reconnect import sso_reconnect_scripts
 from capa_simulation.components.sso_refresh import sso_refresh_scripts
 from capa_simulation.components.table_toolbar import (
@@ -469,7 +473,10 @@ with pinned_connections(DUCKDB_PATH):
         st.session_state[ADMIN_BOX_KEY] = True
     with sidebar_expander("Support", key=ADMIN_BOX_KEY, icon=":material/support:"):
         with st.container(key="admin_area_navigation"):
-            st.page_link(pages.admin_area, width="stretch")
+            # 운영 서버의 관리자가 아니면 Admin Area 메뉴가 없다(`sso_identity.admin_area_locked` —
+            # 주소로 열어도 그 화면이 멈춘다). 개발 · WebIDE · 사내 PC 는 지금처럼 선다.
+            if not admin_area_locked():
+                st.page_link(pages.admin_area, width="stretch")
             # VOC 는 계산 화면이 아니라 사람이 쓰는 자리다. 계산 그룹 어디에도 속하지 않아
             # 이 상자에 함께 세운다 — 「말할 곳」을 찾는 사람은 맨 아래를 본다. **하위가
             # 아니라 같은 층위**다. 관리 화면과 게시판은 서로를 포함하지 않으므로 들여쓰기도

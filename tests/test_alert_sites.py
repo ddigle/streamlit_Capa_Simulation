@@ -138,6 +138,9 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ("src/capa_simulation/components/scenario_status.py", "_render_revision_save"): (2, PLACE_FORM),
     ("src/capa_simulation/components/space_floor_list.py", "_render_notices"): (1, PLACE_RESULT),
     ("src/capa_simulation/components/sso_identity.py", "_stop_account_changed"): (1, PLACE_STOP),
+    # 운영 서버에서 관리자가 아닌 사람이 주소로 연 Admin Area — 「관리자만 여는 화면입니다」 뒤
+    # 멈춘다(2026-11-13 보드 D11).
+    ("app_pages/admin_area.py", ""): (1, PLACE_STOP),
     ("src/capa_simulation/components/sso_identity.py", "_stop_signed_out"): (1, PLACE_STOP),
 }
 
