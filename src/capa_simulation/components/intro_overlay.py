@@ -247,6 +247,9 @@ def _data() -> dict[str, Any]:
             "label_waiting": SUMMARY_LABEL_WAITING,
             "label_off": SUMMARY_LABEL_OFF,
             "ready": "준비 완료",
+            # 앱이 데이터를 열지 못해 멈춘 회차(`boot_stop` 표지) — 상태 낱말과 멈춘 단계 칸의 낱말.
+            "failed": "열지 못함",
+            "failed_step": "멈춤",
             "hint": "처음 접속하면 계산 결과를 새로 만드느라 조금 더 걸립니다.",
             "slow": "계산이 길어지고 있습니다. 들어가면 HOME 진행 막대로 이어서 볼 수 있습니다.",
             # 기간 글자 옆 −·+(여섯 달 창을 한 달씩 옮긴다 — 2026-11-02 사용자 요청(검수표)

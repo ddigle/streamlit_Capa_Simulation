@@ -59,7 +59,7 @@ ERROR_REASONS = frozenset({BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, 
 # (파일, 맨 바깥 함수) → (`.error(` 수, 까닭). 새 자리는 실패한다 — 그리기 실패면
 # `render_data_error`, 곁 거부 · 누른 동작의 실패면 까닭과 함께 여기에 둔다.
 PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
-    ("app.py", ""): (1, NO_ALARM),
+    ("src/capa_simulation/components/boot_stop.py", "render_boot_stop"): (1, NO_ALARM),
     ("app_pages/load_conversion.py", ""): (4, PRESSED),
     ("app_pages/load_conversion.py", "_virtual_product_dialog"): (1, PRESSED),
     ("app_pages/reference_data.py", ""): (2, PRESSED),
@@ -381,7 +381,7 @@ def _is_stop(statement: ast.stmt) -> bool:
 
 def test_only_a_refusal_beside_its_input_stops_the_page_with_an_error_box() -> None:
     """화면을 못 그리는 오류는 마크다 — `st.error` + `st.stop()` 은 그 자리 입력으로 고치는 거부만.
-    앱이 서지 못한 `app.py` 부트스트랩 실패는 사이에 「원본 오류」 펼침이 서고 알림 칸이 없다."""
+    앱이 서지 못한 `app.py` 부트스트랩 실패는 앱 안 멈춤 판(`boot_stop`)이 그리고 알림 칸이 없다."""
     assert _stopping_boxes() == Counter(STOPPING_BOXES)
 
 

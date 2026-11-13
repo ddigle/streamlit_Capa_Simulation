@@ -3255,8 +3255,20 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     동안(`stApp` 의 `data-test-script-state`, 길어야 `HOLD_MAX_MS`) 그 그림들 위의 누름(`pointerdown`·`mousedown`·
     `dblclick`)을 Plotly 까지 내려보내지 않는다. 첫 누름의 `mouseup`·`click` 은 건드리지 않는다. 판정은 순수 구획
     `<cell-press-hold>`(node 시험 `tests/test_cell_press_guard.py`). 화면을 옮기는 칸 선택 그림을 더하면 여기에도 넘긴다.
+- `src/capa_simulation/components/boot_stop.py` — 앱이 데이터를 열지 못한 회차의 앱 안 멈춤 판(`app.py` 의 부트스트랩
+  `except` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()`). 갈래(`classify_boot_failure`)는 잠김(남 · 자기 — 쥔 PID 가 적힘) →
+  판 올리기 실패(`_migration_core.MigrationChanged` — 이미 적용된 SQL 의 체크섬이 바뀜, 「다시 시도」 없음) → 디스크 가득
+  (errno · 영문 고정 문구) → 파일 권한 → 열 수 없음(`Cannot open`·`Could not set lock`) → 그 밖(새 SQL 실행 실패 포함)이다.
+  판은 쉬운 경고 한 줄(`st.error` — UI-NTF-08 예외) · 주 단추 「다시 시도」(누름이 회차 하나 — 부트스트랩은 성공한 회차에만
+  「해 봤다」 표지) · 「문의 <메일>」 · 「참고 <갈래 키> · <UTC 분>」 · 접힌 「관리자용 진단」(복사 단추 · 지금의
+  `bootstrap_error_message` 글 — PID · 파일 경로 · 조치 — 와 원문)이다. 공용 조각은 `components/stop_panel.py`(통합인증 멈춤과
+  같은 판). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
+  함께 보낸다(자리를 먹지 않는다). 시험은 `tests/test_boot_stop.py`.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
+  실행이 끝났을 때 앱 시작 실패 표지(`boot_stop.BOOT_STOP_ATTRIBUTE`)가 있으면 「준비 완료」 대신 상태 낱말 「열지 못함」, 끝낸
+  단계까지만 끝남 · 멈춘 칸은 실패 색(`die-short`) + 「멈춤」, 상태 줄 아래 까닭 한 줄(풍선이 아니라 글)이다. 표지는 그릴 때마다
+  다시 읽는다(「다시 시도」 로 붙으면 걷힌다).
   Summary 머리 줄 Detail 왼쪽의 ← 가 입장 화면(커버)으로 되돌린다 — 장면 메시지 `summary-off` 가 차트를 걷고 웨이퍼
   색·그늘을 입장 모습으로 돌리며, 다시 보낼 자리에서 `summary-on` 을 대신한다. 커버 셋째 단추 `Introduce` 는 40초
   티저(`intro_overlay_assets/capa-teaser.html`, `INTRODUCE_TEASER_PATH`)를 오버레이 안 전체 화면 틀(blob 주소)에 띄운다
@@ -7362,7 +7374,8 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   무엇을 그리지 못했는지다. 화면마다 코드가 하나다(`ST-20` 계산 화면 · `HM-01` HOME · `EQ-09` 가용설비 · `EQ-10` Space · `PD-01` · `RS-01` · `CS-01` ·
   `WIP-01` · `SC-02` · `AD-07` · `VO-01`, 어느 화면에서나 열리는 사이드바 시나리오 팝업은 `SB-21`). 마크와 표지가 `st.html` 한 칸이라 프래그먼트 ·
   팝업 본문에서도 이벤트 칸 자리 수가 그대로다. **마크가 아닌 것** — 볼 것이 없는 빈 상태(회색 평문 한 줄), 그 자리 입력으로 고치는 거부 · 누른 동작의
-  실패(곁 `st.error`, 조회일 거꾸로 · 월 머지 · 연도 Shift 의 입력 거부 포함), 모듈 오류 카드, 알림 칸이 없는 앱 부트스트랩 실패(`app.py`).
+  실패(곁 `st.error`, 조회일 거꾸로 · 월 머지 · 연도 Shift 의 입력 거부 포함), 모듈 오류 카드, 알림 칸이 없는 앱 부트스트랩 실패(`app.py` →
+  `components/boot_stop.py`).
   `tests/test_data_error_mark.py` 가 `.error(` 전부를 (파일, 함수)마다 수 · 까닭으로 맞대므로(`PLACE_ERROR_SITES`) 구획 끝 꼴도 걸리고, 마크만 그리는
   `render_data_error_mark` 는 산출 결과 한 자리뿐이다.
   `tests/test_data_error_mark.py` 가 `st.error` + `st.stop()` 자리와 코드를 본다.

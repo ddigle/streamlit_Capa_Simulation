@@ -20,6 +20,7 @@ from capa_simulation.components.app_header import (
 from capa_simulation.components.audit_actor import drain as drain_audit
 from capa_simulation.components.audit_actor import note_session as note_audit_session
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
+from capa_simulation.components.boot_stop import render_boot_stop
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.change_summary import session_changes
 from capa_simulation.components.container_start_check import render_token_alert
@@ -84,7 +85,6 @@ from capa_simulation.module_runtime import run_module_page
 from capa_simulation.navigation import CONDITIONS_SECTION, PageSpec, build_navigation_pages
 from capa_simulation.page_bootstrap import (
     SCHEMA_AHEAD_SIMULATION_CODE,
-    bootstrap_error_message,
     count_page_visit,
     forget_page_dialogs,
     render_schema_ahead_warning,
@@ -302,16 +302,15 @@ with pinned_connections(DUCKDB_PATH):
     try:
         bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
     except Exception as exc:  # 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
-        # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면
-        # 화면이 한 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본
-        # 메시지의 한글이 깨져 나온다. 사용자가 원인을 알 방법이 없어 안내로 바꾼다.
+        # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면 화면이 한
+        # 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본 메시지의 한글이 깨져
+        # 나온다. 사용자가 원인을 알 방법이 없어 앱 안 멈춤 판으로 바꾼다(`components/boot_stop.py`
+        # — 쉬운 경고 한 줄 · 「다시 시도」 · 문의 · 참고 줄, 경로 · 원문은 접힌 「관리자용 진단」).
         # 머리 띠도 이 화면에 세운다 — 아래 `st.stop()` 뒤의 자리에는 닿지 않는다. 세션만 읽으므로
-        # 실패한 부트스트랩을 다시 건드리지 않고, 올라온 시나리오가 없으면 앱 이름 두 줄(메인 라벨·
-        # 부제)이다.
+        # 실패한 부트스트랩을 다시 건드리지 않고, 올라온 시나리오가 없으면 앱 이름 두 줄(메인
+        # 라벨·부제)이다.
         render_app_header()
-        st.error(bootstrap_error_message(exc), icon=":material/database_off:")
-        with st.expander("원본 오류"):
-            st.code(f"{type(exc).__name__}: {exc}")
+        render_boot_stop(exc)
         st.stop()
     # 감사 큐를 스풀 파일에 비운다(쌓인 것이 있을 때만 파일 IO — 대개 0). 통합인증 꺼짐은 부르지
     # 않는다. DB 를 열지 않는다.

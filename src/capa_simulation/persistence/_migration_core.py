@@ -31,6 +31,14 @@ from capa_simulation.services.korean_particle import with_subject_particle
 _LOGGER = logging.getLogger(__name__)
 
 
+class MigrationChanged(RuntimeError):
+    """이미 적용된 마이그레이션 파일의 체크섬이 달라졌다 — 고쳐 다시 배포하기 전에는 열 수 없다.
+
+    글은 그대로 두고 종류만 따로 둔다 — 앱 시작 실패 판(`components/boot_stop.py`)이 「다시 시도」
+    로는 풀리지 않는 갈래로 가른다. `RuntimeError` 를 받던 자리는 그대로 받는다.
+    """
+
+
 @dataclass(frozen=True)
 class Migration:
     version: int
@@ -154,7 +162,7 @@ def apply_migrations_to(
         existing_checksum = applied.get(migration.version)
         if existing_checksum is not None:
             if existing_checksum != migration.checksum:
-                raise RuntimeError(
+                raise MigrationChanged(
                     f"이미 적용된 {label} 마이그레이션이 변경되었습니다: {migration.name}"
                 )
             continue
