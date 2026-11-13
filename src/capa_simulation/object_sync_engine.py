@@ -881,6 +881,9 @@ class BootOutcome:
     seq: int | None = None
     # 앞 pod 의 마지막 올림 시각 — 받은 세대의 `created_at_utc`.
     previous_upload_utc: str | None = None
+    # 받은 세대에서 마지막으로 정본에 올라간 저장 — 멤버 스냅샷 키의 만든 시각 가운데 늦은 것.
+    # 펜스 · 되돌리기는 같은 멤버를 다시 가리켜 세대 시각이 저장 시각이 아니다(서버 재시작 알림).
+    last_save_utc: str | None = None
     total_bytes: int = 0
     elapsed_seconds: float = 0.0
     # 머문 까닭의 이름 · 수(값 아님) — 시작 임시 화면의 접힌 진단. 모르면 비운다(짐작하지 않는다).
@@ -1072,8 +1075,26 @@ def _raise_fence(
         action=action,
         seq=fence.seq,
         previous_upload_utc=pointer.created_at_utc,
+        last_save_utc=last_member_save_utc(pointer),
         total_bytes=pointer.total_bytes,
         elapsed_seconds=_since(started),
+    )
+
+
+def last_member_save_utc(pointer: Pointer) -> str | None:
+    """세대 멤버 스냅샷 키의 만든 시각(올린 때) 가운데 늦은 것 — ISO UTC. 못 읽으면 `None`."""
+    stamps: list[str] = []
+    for member in pointer.members.values():
+        try:
+            stamps.append(manifest.parse_snapshot_key(member.snapshot_key)[1])
+        except ValueError:
+            continue
+    if not stamps:
+        return None
+    compact = max(stamps)
+    return (
+        f"{compact[0:4]}-{compact[4:6]}-{compact[6:8]}T"
+        f"{compact[9:11]}:{compact[11:13]}:{compact[13:15]}Z"
     )
 
 

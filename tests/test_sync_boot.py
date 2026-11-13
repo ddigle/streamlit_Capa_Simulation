@@ -242,6 +242,7 @@ def test_the_boot_record_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyP
         pull_seconds=2.5,
         finished_at_utc="2026-11-07T00:00:02Z",
         total_bytes=10,
+        last_save_utc="2026-11-06T23:58:00Z",
     )
 
     assert sync_boot.read_boot_record() is None
@@ -262,3 +263,45 @@ def test_a_broken_boot_record_reads_as_none(
     for text in ("{ 깨진", "[]", '{"action": "kept"}'):
         path.write_text(text, encoding="utf-8")
         assert sync_boot.read_boot_record() is None
+
+
+def test_a_pulling_process_knows_its_last_canonical_save_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """서버 재시작 알림 전문 한 줄 — managed 시작의 부트 기록에서 프로세스에 한 번 읽는다. 옛
+    기록(칸 없음) · 받지 않는 서버는 없음이다."""
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("managed"))
+    sync_boot.write_boot_record(
+        sync_boot.BootRecord(
+            action="downloaded",
+            seq=5,
+            previous_upload_utc="2026-11-14T05:10:00Z",
+            pull_seconds=9.6,
+            finished_at_utc="2026-11-14T05:20:00Z",
+            last_save_utc="2026-11-14T05:03:12Z",
+        )
+    )
+
+    assert sync_boot.last_canonical_save() == ("2026-11-14T05:03:12Z", "2026-11-14T05:20:00Z")
+    sync_boot.clear_boot_record()
+    assert sync_boot.last_canonical_save() == ("2026-11-14T05:03:12Z", "2026-11-14T05:20:00Z")
+
+    sync_boot.forget_boot_result()
+    path = sync_boot.boot_record_path()
+    path.write_text(
+        json.dumps(
+            {
+                "action": "kept",
+                "seq": 5,
+                "pull_seconds": 1,
+                "finished_at_utc": "2026-11-14T05:20:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert sync_boot.last_canonical_save() is None
+
+    sync_boot.forget_boot_result()
+    monkeypatch.setattr(sync_boot, "load_settings", lambda: _settings("local"))
+    assert sync_boot.last_canonical_save() is None

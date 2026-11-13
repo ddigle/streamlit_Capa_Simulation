@@ -1,4 +1,4 @@
-# Purpose: 만료·로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠를 띄우는 스크립트를 만든다.
+# Purpose: 다시 붙지 못한 탭에 「다시 로그인」 띠와 서버 재시작 띠를 세우는 한 스크립트를 만든다.
 
 """다시 붙지 못한 탭의 「다시 로그인」 띠.
 
@@ -38,12 +38,28 @@ b2). 띠가 창 제목과 닫기 X 를 덮고 본문 줄만 삐져나와 같은 
 않는다).
 
 테마 버튼 iframe 에 다른 툴바 스크립트와 함께 싣는다(`theme_toggle.render_theme_toggle` 의
-`extra_scripts`). 꺼짐이면 싣지 않는다 — iframe 내용 · 요소 순번이 지금과 같다. 켜짐이면 내용이
-프로세스 안에서 늘 같다(공개 주소 · 문구가 고정). 그래서 띠 색은 지금 실행의 테마가 아니라 밝은 ·
-어두운 팔레트를 둘 다 싣고, 띠를 세우는 순간 테마 버튼과 같은 키 규칙(같은 iframe 맨 앞의
-`capaTheme`)으로 앱 테마를 읽어 고른다(Guide · Print 단추와 같은 길). 타이머는 iframe 창의
-것이라 iframe 이 사라지면 같이 멈춘다. 판정(`// <sso-reconnect-rule>`)은 DOM 을 모르는 순수
-구획이라 node 시험이 떼어 돌린다(`tests/test_sso_reconnect.py`).
+`extra_scripts`). 내용은 프로세스 안에서 늘 같다(공개 주소 · 문구가 고정). 그래서 띠 색은
+지금 실행의 테마가 아니라 밝은 · 어두운 팔레트를 둘 다 싣고, 띠를 세우는 순간 테마 버튼과 같은
+키 규칙(같은 iframe 맨 앞의 `capaTheme`)으로 앱 테마를 읽어 고른다(Guide · Print 단추와 같은 길).
+타이머는 iframe 창의 것이라 iframe 이 사라지면 같이 멈춘다. 판정(`// <sso-reconnect-rule>`)은 DOM
+을 모르는 순수 구획이라 node 시험이 떼어 돌린다(`tests/test_sso_reconnect.py`).
+
+**서버 재시작 띠도 같은 스크립트다**(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-restart-tab ·
+리뷰 critic-design — 같은 연결 상태를 1초마다 읽는 스크립트를 둘로 두지 않는다). 같은 틱 · 같은
+물음의 답으로 가른다(`probeKind`): 401 이면 위 「다시 로그인」 띠, 503 + `X-Capa-Stage`(시작 임시
+응답 — `scripts/container_stage.py`)면 그 상태 줄(`/_capa_stage` 셋째 줄의 짧은 글)을 실은
+재시작 띠 「서버를 다시 시작하는 중입니다 — <데이터 받는 중 · 2번째 받기>. 끝나면 이 탭이 저절로
+다시 붙습니다. 이 탭에서 저장하지 않은 편집은 사라집니다.」, 표 없는 5xx(앞단)와 답이 아예 없는
+동안은 「서버 응답을 기다리는 중입니다」, 답 없음이 `UNREACHABLE_AFTER_MS` 를 넘게 이어지면
+「서버에 닿지 않습니다 — 다시 붙는 중」. 그 밖의 답(서버가 떠 있음)은 띠를 걷는다 — Streamlit
+이 스스로 다시 붙는다. 재시작 띠는 링크가 없고(기다리면 붙는다) 로그인 띠가 서 있으면 서지 않는다.
+띠가 선 동안 영어 연결 창(`CONNECTION_DIALOG_TEXTS` — 401 · 503 · not responding)을 감춘다(같은
+길). 다시 붙으면 띠를 걷고 서버 재시작 알림(`GL-07`)이 이어 알린다.
+
+**통합인증이 꺼진 서버에도 싣는다** — 재시작은 통합인증과 상관없다. 꺼짐이면 로그인 띠 없이 재시작
+갈래만 돌고(`restart_script`), 물음은 지금 주소 기준 상대 경로(`<지금 경로의 폴더>/_stcore/…`)로
+보낸다 — 공개 주소 설정이 없어서다(WebIDE `/proxy/<포트>/` 처럼 앞단이 붙인 접두도 그대로 따른다).
+그래서 꺼짐의 툴바 iframe 에도 스크립트 하나가 더 실린다(내용은 프로세스 안에서 늘 같다).
 
 **비공식 경로다.** Streamlit 1.63 프런트의 연결 상태 표지에 기댄다. 판올림으로 표지가 사라지면 띠가
 서지 않을 뿐 나머지는 그대로다 — 올릴 때 만료 · 로그아웃 뒤 다시 붙기를 브라우저로 한 번 본다.
@@ -70,6 +86,21 @@ HOST_CONFIG_PATH = "/_stcore/host-config"
 # 띠가 선 동안 감추는 Streamlit 연결 오류 창의 글 — 401 이라 띠가 선 그 창만 고른다(Streamlit 1.63
 # 프런트 글, 비공식 — 판올림으로 글이 바뀌면 창이 남을 뿐 띠는 그대로다).
 CONNECTION_DIALOG_TEXT = "Connection failed with status 401"
+# 재시작 띠가 선 동안 함께 감추는 창 글 — 임시 응답의 503 과 답이 없는 틈(같은 프런트 글).
+CONNECTION_DIALOG_TEXTS = (
+    CONNECTION_DIALOG_TEXT,
+    "Connection failed with status 503",
+    "Streamlit server is not responding",
+)
+RESTART_BANNER_ID = "capa-restart-band"
+STAGE_HEADER = "X-Capa-Stage"
+STAGE_STATUS_PATH = "/_capa_stage"
+# 답이 아예 없는 물음이 이만큼 이어지면 「닿지 않습니다」 로 바꾼다(답이 한 번 오면 다시 센다).
+UNREACHABLE_AFTER_MS = 20_000
+RESTART_LEAD = "서버를 다시 시작하는 중입니다"
+RESTART_TAIL = "끝나면 이 탭이 저절로 다시 붙습니다. 이 탭에서 저장하지 않은 편집은 사라집니다."
+WAITING_NOTICE = "서버 응답을 기다리는 중입니다"
+UNREACHABLE_NOTICE = "서버에 닿지 않습니다 — 다시 붙는 중"
 # 열린 탭이 끝나면 사용자가 실제로 보는 것은 이 띠다 — 문지기가 앱 스크립트의 만료 화면보다 먼저
 # 연결을 닫는다. 그래서 끝난 까닭 넷(쓰지 않음 · 하루 최대 시간 · 로그아웃 · 명단에서 빠짐)을 여기에
 # 다 적는다.
@@ -98,7 +129,38 @@ function probeDue(since, lastProbe, now, waitMs, gapMs) {
 }
 // 띠가 대신 말하는 Streamlit 연결 오류 창인가 — 그 창의 글로 가른다(앱 팝업은 아니다).
 function connectionDialog(text) {
-  return typeof text === "string" && text.indexOf(%(dialog_text)s) !== -1;
+  if (typeof text !== "string") return false;
+  var marks = %(dialog_texts)s;
+  for (var i = 0; i < marks.length; i++) if (text.indexOf(marks[i]) !== -1) return true;
+  return false;
+}
+// 물음의 답 → 띠 갈래. `status` 가 null 이면 답이 없었다(연결 실패). `staged` 는 시작 임시 응답의
+// 표(`X-Capa-Stage`), `downMs` 는 끊긴 지 지난 시간이다.
+function probeKind(status, staged, downMs, unreachableMs) {
+  if (status === 401) return "login";
+  if (status === null) return downMs >= unreachableMs ? "unreachable" : "waiting";
+  if (staged) return "stage";
+  if (status >= 500) return "waiting";
+  return "none";
+}
+// 재시작 띠 글 — 임시 응답 상태 줄(`/_capa_stage`)의 셋째 줄(JSON) 짧은 글. 없으면(옛 임시 응답)
+// 첫 줄, 그것도 없으면 상태 없이.
+function restartNotice(statusText, lead, tail) {
+  var lines = typeof statusText === "string" ? statusText.split("\\n") : [];
+  var phrase = "";
+  try {
+    var info = JSON.parse(lines[2] || "");
+    if (info && typeof info.band === "string") phrase = info.band;
+  } catch (error) {
+    phrase = "";
+  }
+  if (!phrase) phrase = lines[0] || "";
+  return lead + (phrase ? " — " + phrase : "") + ". " + tail;
+}
+// 물음을 보낼 앱 뿌리 — 켜짐은 공개 주소의 경로 접두, 꺼짐은 지금 경로의 폴더.
+function probeRoot(loginOn, origin, prefix, href) {
+  if (loginOn) return origin + prefix;
+  return new URL(".", href).href.replace(/\\/$/, "");
 }
 // 다시 로그인 주소 — 공개 주소 + 로그인 경로 + next(지금 경로에서 공개 주소의 경로 접두를 뗀
 // 것 + 질의).
@@ -113,6 +175,9 @@ function loginHref(base, prefix, loginPath, pathname, search) {
 
   var since = null;
   var lastProbe = null;
+  // 답이 아예 없기 시작한 때 — 답이 한 번이라도 오면 지운다(임시 응답이 몇 분 답한 뒤 포트를 넘기는
+  // 틈은 「닿지 않습니다」 가 아니다).
+  var silentSince = null;
   var probing = false;
   // 앱 테마는 테마 버튼과 같은 키 규칙(같은 iframe 맨 앞의 `capaTheme`)으로 읽는다.
   function dark() {
@@ -140,6 +205,48 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     var box = doc.getElementById(%(banner_id)s);
     if (box) box.remove();
     restoreConnectionDialogs();
+  }
+  // 재시작 띠 — 링크 없는 한 줄. 로그인 띠가 서 있으면 세우지 않는다(로그인이 먼저다).
+  function hideRestart() {
+    var box = doc.getElementById(%(restart_id)s);
+    if (!box) return;
+    box.remove();
+    if (!doc.getElementById(%(banner_id)s)) restoreConnectionDialogs();
+  }
+  function showRestart(notice) {
+    if (doc.getElementById(%(banner_id)s)) return;
+    var box = doc.getElementById(%(restart_id)s);
+    if (!box) {
+      box = doc.createElement("div");
+      box.id = %(restart_id)s;
+      box.setAttribute("role", "status");
+      box.setAttribute("data-react-aria-top-layer", "");
+      box.style.cssText = dark() ? %(dark_box_style)s : %(light_box_style)s;
+      doc.body.appendChild(box);
+    }
+    if (box.textContent !== notice) box.textContent = notice;
+    hideConnectionDialogs();
+  }
+  function answered(status, staged, downMs) {
+    var kind = probeKind(status, staged, downMs, %(unreachable_ms)d);
+    if (kind === "login" || kind === "none") return Promise.resolve(hideRestart());
+    if (kind === "waiting") return Promise.resolve(showRestart(%(waiting)s));
+    if (kind === "unreachable") return Promise.resolve(showRestart(%(unreachable)s));
+    return fetch(appRoot() + %(stage_path)s, { credentials: "same-origin", cache: "no-store" })
+      .then(function (response) {
+        return response.headers.has(%(stage_header)s) ? response.text() : "";
+      })
+      .catch(function () {
+        return "";
+      })
+      .then(function (text) {
+        showRestart(restartNotice(text, %(restart_lead)s, %(restart_tail)s));
+      });
+  }
+  // 이름이 `tick` 의 `root`(앱 루트 요소)와 겹치지 않게 한다 — 겹치면 그 안에서 함수가 가려진다.
+  function appRoot() {
+    var here = parentWindow.location;
+    return probeRoot(%(login_on)s, here.origin, %(prefix)s, here.href);
   }
   function showBanner() {
     if (doc.getElementById(%(banner_id)s)) return;
@@ -172,20 +279,32 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     if (!disconnected(state)) {
       since = null;
       lastProbe = null;
+      silentSince = null;
       hideBanner();
+      hideRestart();
       return;
     }
     if (since === null) since = now;
     // 창이 띠보다 늦게 떠도 띠가 선 동안은 감춘다.
-    if (doc.getElementById(%(banner_id)s)) hideConnectionDialogs();
+    if (doc.getElementById(%(banner_id)s) || doc.getElementById(%(restart_id)s)) {
+      hideConnectionDialogs();
+    }
     if (probing || !probeDue(since, lastProbe, now, %(wait_ms)d, %(gap_ms)d)) return;
     probing = true;
     lastProbe = now;
-    var probe = parentWindow.location.origin + %(prefix)s + %(host_config)s;
+    var probe = appRoot() + %(host_config)s;
     fetch(probe, { credentials: "same-origin", cache: "no-store" })
-      .then(function (response) {
-        if (response.status === 401) showBanner();
-      })
+      .then(
+        function (response) {
+          if (response.status === 401 && %(login_on)s) showBanner();
+          silentSince = null;
+          return answered(response.status, response.headers.has(%(stage_header)s), 0);
+        },
+        function () {
+          if (silentSince === null) silentSince = now;
+          return answered(null, false, now - silentSince);
+        }
+      )
       .catch(function () {})
       .then(function () {
         probing = false;
@@ -225,32 +344,52 @@ def band_styles(mode: str) -> tuple[str, str]:
     return box_style, link_style
 
 
-def reconnect_script(cfg: SsoConfig) -> str:
-    """다시 붙지 못한 탭에 「다시 로그인」 띠를 세우는 스크립트(주소 · 문구 · 두 팔레트가 고정)."""
-    prefix = urlsplit(cfg.public_url).path.rstrip("/")
+def _script(cfg: SsoConfig | None) -> str:
+    """띠 스크립트 하나 — `cfg` 가 없으면(꺼짐) 로그인 띠 없이 재시작 갈래만 돈다."""
     light_box, light_link = band_styles("light")
     dark_box, dark_link = band_styles("dark")
+    prefix = "" if cfg is None else urlsplit(cfg.public_url).path.rstrip("/")
     return _SCRIPT % {
         "banner_id": script_literal(BANNER_ID),
+        "restart_id": script_literal(RESTART_BANNER_ID),
         "light_box_style": script_literal(light_box),
         "dark_box_style": script_literal(dark_box),
         "light_link_style": script_literal(light_link),
         "dark_link_style": script_literal(dark_link),
         "notice": script_literal(RECONNECT_NOTICE),
         "label": script_literal(LOGIN_AGAIN_LABEL),
-        "base": script_literal(cfg.public_url),
+        "base": script_literal("" if cfg is None else cfg.public_url),
         "prefix": script_literal(prefix),
         "login_path": script_literal(names.LOGIN_PATH),
+        "login_on": "true" if cfg is not None else "false",
         "host_config": script_literal(HOST_CONFIG_PATH),
-        "dialog_text": script_literal(CONNECTION_DIALOG_TEXT),
+        "stage_path": script_literal(STAGE_STATUS_PATH),
+        "stage_header": script_literal(STAGE_HEADER),
+        "dialog_texts": json.dumps(list(CONNECTION_DIALOG_TEXTS)).replace("<", "\\u003c"),
+        "restart_lead": script_literal(RESTART_LEAD),
+        "restart_tail": script_literal(RESTART_TAIL),
+        "waiting": script_literal(WAITING_NOTICE),
+        "unreachable": script_literal(UNREACHABLE_NOTICE),
+        "unreachable_ms": UNREACHABLE_AFTER_MS,
         "wait_ms": PROBE_WAIT_MS,
         "gap_ms": PROBE_GAP_MS,
         "tick_ms": TICK_MS,
     }
 
 
+def reconnect_script(cfg: SsoConfig) -> str:
+    """켜짐 — 다시 붙지 못한 탭의 「다시 로그인」 띠와 서버 재시작 띠(주소 · 문구 · 두 팔레트가
+    고정)."""
+    return _script(cfg)
+
+
+def restart_script() -> str:
+    """꺼짐 — 서버 재시작 띠만(고정 문자열)."""
+    return _script(None)
+
+
 def sso_reconnect_scripts(identity: Identity | None) -> tuple[str, ...]:
-    """테마 버튼 iframe 에 덧붙일 스크립트. 꺼짐(신원 없음)이면 빈 튜플 — iframe 내용이 그대로다."""
+    """테마 버튼 iframe 에 덧붙일 스크립트 하나. 꺼짐(신원 없음)이면 재시작 띠만이다."""
     if identity is None:
-        return ()
+        return (restart_script(),)
     return (reconnect_script(runtime.config()),)

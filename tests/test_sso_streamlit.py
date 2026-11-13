@@ -27,7 +27,7 @@ from capa_simulation.components import sso_identity
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import SHELL_STYLE
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
-from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script
+from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script, restart_script
 from capa_simulation.components.sso_refresh import refresh_script
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
@@ -499,7 +499,8 @@ def test_the_real_app_stops_when_started_without_the_gate(
 def test_the_real_app_off_keeps_the_toolbar_scripts(
     real_app: AppTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """꺼짐(`ADFS_CLIENT_ID` 없음)이면 툴바 iframe 에 띠 · 갱신 스크립트를 싣지 않는다(그대로)."""
+    """꺼짐(`ADFS_CLIENT_ID` 없음)이면 툴바 iframe 에 갱신 스크립트를 싣지 않고, 띠 스크립트는
+    서버 재시작 띠만 실린다(카드 p1-restart-tab — 재시작은 통합인증과 상관없다)."""
     use_config(drop=[names.ENV_CLIENT_ID])
     toolbar = _record_toolbar_scripts(monkeypatch)
 
@@ -507,5 +508,5 @@ def test_the_real_app_off_keeps_the_toolbar_scripts(
 
     assert not list(app.exception), [element.message for element in app.exception]
     assert toolbar
-    assert not [script for script in toolbar[-1] if BANNER_ID in script]
+    assert [script for script in toolbar[-1] if BANNER_ID in script] == [restart_script()]
     assert not [script for script in toolbar[-1] if names.REFRESH_PATH in script]

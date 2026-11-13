@@ -29,8 +29,15 @@ from capa_simulation.components.sso_reconnect import (
     PROBE_GAP_MS,
     PROBE_WAIT_MS,
     RECONNECT_NOTICE,
+    RESTART_BANNER_ID,
+    RESTART_LEAD,
+    RESTART_TAIL,
+    UNREACHABLE_AFTER_MS,
+    UNREACHABLE_NOTICE,
+    WAITING_NOTICE,
     band_styles,
     reconnect_script,
+    restart_script,
     sso_reconnect_scripts,
 )
 from capa_simulation.design import tokens
@@ -58,10 +65,15 @@ def _node(script: str, runner: str) -> Any:
     return run_js_json(match.group("body") + "\n" + runner, what="다시 로그인 띠 JS 구획 시험")
 
 
-def test_off_mode_adds_nothing_to_the_toolbar_iframe() -> None:
+def test_off_mode_carries_only_the_restart_band() -> None:
+    """재시작은 통합인증과 상관없다 — 꺼짐에도 싣되 로그인 띠는 서지 않는다(카드 p1-restart-tab)."""
     use_config(drop=[names.ENV_CLIENT_ID])
 
-    assert sso_reconnect_scripts(None) == ()
+    scripts = sso_reconnect_scripts(None)
+
+    assert scripts == (restart_script(),)
+    assert "response.status === 401 && false" in scripts[0]
+    assert json.dumps(RESTART_BANNER_ID) in scripts[0]
 
 
 def test_on_mode_adds_one_fixed_script() -> None:
@@ -194,12 +206,14 @@ process.stdout.write(JSON.stringify([
     ]
 
 
-def test_only_the_401_connection_window_counts_as_the_one_the_band_replaces() -> None:
-    """띠가 선 동안 감추는 창은 Streamlit 의 401 연결 오류 창뿐이다 — 같은 꼴의 앱 팝업은 아니다
-    (2026-11-08 사용자 답 b2)."""
+def test_only_the_connection_windows_count_as_the_ones_the_bands_replace() -> None:
+    """띠가 선 동안 감추는 창은 Streamlit 의 연결 오류 창(401 · 재시작의 503 · 답 없음)뿐이다 —
+    같은 꼴의 앱 팝업은 아니다(2026-11-08 사용자 답 b2)."""
     script = reconnect_script(use_config())
     texts = [
         "Connection error Connection failed with status 401.",
+        "Connection error Connection failed with status 503.",
+        "Streamlit server is not responding. Are you connected to the internet?",
         "Connection error Connection failed with status 500.",
         "공식 지정 · 메모",
         "",
@@ -209,7 +223,7 @@ def test_only_the_401_connection_window_counts_as_the_one_the_band_replaces() ->
 const texts = {json.dumps(texts)};
 process.stdout.write(JSON.stringify(texts.map(connectionDialog)));
 """
-    assert _node(script, runner) == [True, False, False, False, False]
+    assert _node(script, runner) == [True, True, True, False, False, False, False]
     assert CONNECTION_DIALOG_TEXT == "Connection failed with status 401"
 
 
@@ -228,3 +242,101 @@ def test_the_band_hides_that_window_while_it_stands_and_gives_it_back_after() ->
     assert "if (doc.getElementById(" in tick and "hideConnectionDialogs();" in tick
     restore = script.split("function restoreConnectionDialogs()", 1)[1].split("function", 1)[0]
     assert 'boxes[i].style.removeProperty("display");' in restore
+
+
+# --------------------------------------------------------------------------- 서버 재시작 띠
+def test_one_probe_answer_picks_one_band() -> None:
+    """같은 틱 · 같은 물음 — 401 은 로그인 띠, 임시 응답의 503 은 재시작 띠, 표 없는 5xx 와 답
+    없음은 기다림, 답 없음이 오래면 닿지 않음, 그 밖(서버가 떠 있음)은 띠를 걷는다."""
+    script = restart_script()
+    runner = f"""
+const U = {UNREACHABLE_AFTER_MS};
+process.stdout.write(JSON.stringify([
+  probeKind(401, false, 5000, U),
+  probeKind(503, true, 5000, U),
+  probeKind(502, false, 5000, U),
+  probeKind(503, false, 5000, U),
+  probeKind(null, false, U - 1, U),
+  probeKind(null, false, U, U),
+  probeKind(200, false, 5000, U),
+  probeKind(404, false, 5000, U),
+]));
+"""
+    assert _node(script, runner) == [
+        "login",
+        "stage",
+        "waiting",
+        "waiting",
+        "waiting",
+        "unreachable",
+        "none",
+        "none",
+    ]
+
+
+def test_the_restart_band_carries_the_stage_phrase() -> None:
+    """임시 응답 상태 줄 셋째 줄(JSON)의 짧은 글을 띠에 싣는다 — 옛 임시 응답은 첫 줄."""
+    script = restart_script()
+    info = json.dumps({"v": 4, "band": "데이터 받는 중 · 2번째 받기", "tone": "start", "now": 1})
+    texts = [
+        f"데이터를 받는 중입니다\n2번째 받기 · 지난 시간 1분\n{info}",
+        "받는 중\n둘째",
+        "",
+        None,
+    ]
+    runner = f"""
+const texts = {json.dumps(texts, ensure_ascii=False)};
+process.stdout.write(JSON.stringify(texts.map((t) => restartNotice(t, "L", "T"))));
+"""
+    assert _node(script, runner) == [
+        "L — 데이터 받는 중 · 2번째 받기. T",
+        "L — 받는 중. T",
+        "L. T",
+        "L. T",
+    ]
+    assert RESTART_LEAD == "서버를 다시 시작하는 중입니다"
+    assert RESTART_TAIL.endswith("이 탭에서 저장하지 않은 편집은 사라집니다.")
+    assert (WAITING_NOTICE, UNREACHABLE_NOTICE) == (
+        "서버 응답을 기다리는 중입니다",
+        "서버에 닿지 않습니다 — 다시 붙는 중",
+    )
+
+
+def test_the_probe_root_follows_the_public_prefix_or_the_page_folder() -> None:
+    """켜짐은 공개 주소의 경로 접두, 꺼짐은 지금 경로의 폴더(앞단이 붙인 접두도 따른다)."""
+    script = restart_script()
+    runner = """
+process.stdout.write(JSON.stringify([
+  probeRoot(true, "https://x.invalid", "/spkg/capa", "https://x.invalid/spkg/capa/Space?a=1"),
+  probeRoot(false, "https://x.invalid", "", "https://x.invalid/Space?a=1"),
+  probeRoot(false, "https://x.invalid", "", "https://x.invalid/proxy/8581/home"),
+  probeRoot(false, "https://x.invalid", "", "https://x.invalid/proxy/8581/"),
+]));
+"""
+    assert _node(script, runner) == [
+        "https://x.invalid/spkg/capa",
+        "https://x.invalid",
+        "https://x.invalid/proxy/8581",
+        "https://x.invalid/proxy/8581",
+    ]
+
+
+def test_the_restart_band_has_no_link_and_yields_to_the_login_band() -> None:
+    """재시작 띠는 기다리면 붙어 링크가 없고, 로그인 띠가 서 있으면 서지 않는다. 다시 붙으면
+    걷는다."""
+    script = reconnect_script(use_config())
+    show = script.split("function showRestart(notice)", 1)[1].split("function answered(", 1)[0]
+
+    assert 'createElement("a")' not in show
+    assert show.lstrip("{ \n").startswith(
+        f"if (doc.getElementById({json.dumps(BANNER_ID)})) return;"
+    )
+    assert "hideConnectionDialogs();" in show
+    tick = script.split("function tick()", 1)[1]
+    assert "hideBanner();\n      hideRestart();" in tick
+    # 「닿지 않습니다」 는 답 없음이 이어진 시간으로 센다 — 임시 응답이 답하던 끊김은 세지 않는다.
+    assert "answered(null, false, now - silentSince)" in tick
+    assert "silentSince = null;\n          return answered(response.status" in tick
+    # `tick` 안의 `var root`(앱 루트 요소)가 물음 뿌리 함수를 가리지 않는다(브라우저 실측 — 가려지면
+    # 물음이 한 번도 나가지 않는다).
+    assert "var probe = appRoot() + " in tick and "function root(" not in script

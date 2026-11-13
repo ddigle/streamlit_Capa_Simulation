@@ -72,6 +72,10 @@ class SyncBoot:
     head_ignored: bool = False
     # 빈 CD 환경변수 때문에 위 표지를 가리지 못한 서버 — 그 이름(시작 점검이 남긴 표지).
     head_unchecked: tuple[str, ...] = ()
+    # managed 시작이 받은 세대에서 마지막으로 정본에 올라간 저장 · 받기를 마친 시각(부트 기록, UTC).
+    # 서버 재시작 알림(GL-07) 전문 한 줄이다. 모르면 None.
+    last_save_utc: str | None = None
+    boot_finished_utc: str | None = None
 
 
 _BOOT_LOCK = threading.Lock()
@@ -97,7 +101,13 @@ def _decide() -> SyncBoot:
             head_unchecked=unchecked,
         )
     sync_state.enable(MANAGED_PATHS)  # type: ignore[arg-type]
-    return SyncBoot(managed=True, handed_over_utc=handed_over)
+    record = read_boot_record()
+    return SyncBoot(
+        managed=True,
+        handed_over_utc=handed_over,
+        last_save_utc=None if record is None else record.last_save_utc,
+        boot_finished_utc=None if record is None else record.finished_at_utc,
+    )
 
 
 def _start_head_marks() -> tuple[bool, tuple[str, ...]]:
@@ -147,6 +157,15 @@ def head_unchecked() -> tuple[str, ...]:
     return _boot().head_unchecked
 
 
+def last_canonical_save() -> tuple[str, str] | None:
+    """(마지막으로 정본에 올라간 저장, 이번 받기를 마친 때) — UTC ISO. managed 시작의 부트 기록이
+    있을 때만이고, 프로세스에 한 번 읽어 회차마다 같다."""
+    boot = _boot()
+    if not boot.managed or boot.last_save_utc is None or boot.boot_finished_utc is None:
+        return None
+    return boot.last_save_utc, boot.boot_finished_utc
+
+
 def sync_alerts_possible() -> bool:
     """이 프로세스에 동기화 알림이 설 수 있는가. 아니면 화면 쪽이 Streamlit 을 부르지 않는다.
 
@@ -194,6 +213,8 @@ class BootRecord:
     pull_seconds: float
     finished_at_utc: str
     total_bytes: int = 0
+    # 받은 세대 멤버 가운데 마지막으로 올라간 저장 시각(옛 기록에는 없다).
+    last_save_utc: str | None = None
 
 
 def boot_record_path() -> Path:
@@ -219,6 +240,7 @@ def read_boot_record() -> BootRecord | None:
     try:
         payload = json.loads(boot_record_path().read_text(encoding="utf-8"))
         previous = payload.get("previous_upload_utc")
+        saved = payload.get("last_save_utc")
         return BootRecord(
             action=str(payload["action"]),
             seq=int(payload["seq"]),
@@ -226,6 +248,7 @@ def read_boot_record() -> BootRecord | None:
             pull_seconds=float(payload["pull_seconds"]),
             finished_at_utc=str(payload["finished_at_utc"]),
             total_bytes=int(payload.get("total_bytes", 0)),
+            last_save_utc=saved if isinstance(saved, str) else None,
         )
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None

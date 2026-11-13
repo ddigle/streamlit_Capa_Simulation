@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -754,6 +755,21 @@ def test_a_dirty_local_on_the_same_generation_is_kept_for_the_worker(rig: Simple
     assert outcome.action == engine.ACTION_KEPT
     assert row_count(rig.simulation) == 11
     assert sync_state.treat_as_dirty(rig.simulation) is True
+
+
+def test_the_last_save_is_the_newest_member_snapshot_not_the_fence(rig: SimpleNamespace) -> None:
+    """서버 재시작 알림의 「마지막으로 정본에 올라간 저장」 — 펜스 · 되돌리기는 같은 멤버를 다시
+    가리켜 세대 시각이 저장 시각이 아니다. 멤버 스냅샷 키의 만든 시각 가운데 늦은 것이다."""
+    _another_writer_publishes(rig)
+    head = engine.read_pointer(rig.client, rig.store.pointer_keys()[0])
+    expected = engine.last_member_save_utc(head)
+
+    first = engine.boot_pull(rig.client, rig.paths)
+    again = engine.boot_pull(rig.client, rig.paths)
+
+    assert expected is not None and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", expected)
+    assert first.last_save_utc == again.last_save_utc == expected
+    assert first.previous_upload_utc == "2026-11-07T00:00:00Z" != expected
 
 
 def test_a_clean_local_behind_the_remote_is_replaced_and_kept_as_a_backup(
