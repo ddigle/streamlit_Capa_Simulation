@@ -1586,3 +1586,26 @@ def test_the_canon_mark_opens_the_alarm_row_without_filters() -> None:
     canon = CSS[CSS.index(".canon {") :]
     canon = canon[: canon.index("}")]
     assert "var(--ac-error)" in canon and "solid" in canon and "cursor: pointer" in canon
+
+
+def test_a_restart_raises_only_the_restart_notice_not_the_session_one() -> None:
+    """카드 p1-restart-tab — 다시 붙은 탭에 서버 재시작(`GL-07`)과 세션 사라짐(`GL-08`)이 함께 서지
+    않는다. 재시작은 부트 표지가 달라 세션 표지도 달라지지만 `sessionLost` 는 거짓이다."""
+    out = _node(
+        """
+const values = new Map([['capa-alerts-boot-v1', '"a"']])
+globalThis.window = {
+  sessionStorage: {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, value),
+  },
+}
+const before = { session: { mark: 's1' }, boot: { mark: 'a' }, changes: [{ top: '목록 미저장' }] }
+const after = { session: { mark: 's2' }, boot: { mark: 'b' }, changes: [] }
+console.log(JSON.stringify({
+  restart: bootChanged('capa-alerts-boot-v1', after.boot.mark),
+  session: sessionLost(before, after, true),
+}))
+"""
+    )
+    assert out == {"restart": True, "session": False}

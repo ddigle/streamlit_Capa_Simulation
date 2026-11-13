@@ -112,6 +112,9 @@ class DiskSpaceShort(OSError):
 
     def __init__(self, needed_bytes: int, free_bytes: int) -> None:
         super().__init__(errno.ENOSPC, f"디스크 여유 {free_bytes} < 필요 {needed_bytes}")
+        # 수만이다(비밀 아님) — 시작 임시 화면의 접힌 진단이 「필요 · 남음」 으로 싣는다.
+        self.needed_bytes = needed_bytes
+        self.free_bytes = free_bytes
 
 
 @dataclass(frozen=True)

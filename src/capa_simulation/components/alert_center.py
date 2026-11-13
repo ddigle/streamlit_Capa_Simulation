@@ -53,7 +53,9 @@
   탭에 적어 둔 앞 표지와 다를 때만 그 알림을 띄운다 — 첫 접속 · 새 탭(앞 표지 없음)과 새로고침 ·
   테마 전환 · 복제한 탭(같은 프로세스 — 표지 같음)에는 뜨지 않는다. 둘 다 프로세스 안에서 값이 같아
   위 data 약속이 그대로다. 열어 둔 탭에는 위 재연결 회차의 data 로 조작 없이 뜬다(AGENTS 9장
-  「서버 재시작 알림」).
+  「서버 재시작 알림」). 정본을 받는 서버(managed 시작의 부트 기록이 있음)면 전문 끝에 「마지막으로
+  정본에 올라간 저장 ○시 ○분」(KST, 다시 선 날과 다르면 날짜 — 받은 세대 멤버의 마지막 올림)을 한 줄
+  단다(`restart_save_line` — 프로세스에 한 번 정한 값). 부트 표지가 다르면 `GL-08` 은 서지 않는다.
 - **세션만 사라진 탭도 브라우저가 가른다**(2차 보드 R2 (가)). 서버는 그대로인데 끊긴 지
   `server.disconnectedSessionTTL`(기본 120초)이 지나면 새 세션이라 부트 표지로는 알 수 없다.
   세션마다 한 번 정하는 표지(`session_mark`)와 알림 `GL-08`(`alerts.session_lost_note`)을 data 에
@@ -105,12 +107,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final
 
 import streamlit as st
 
-from capa_simulation import alerts, shared_process
+from capa_simulation import alerts, shared_process, sync_boot
 from capa_simulation.components import process_field
 from capa_simulation.components.change_summary import GROUPS, ChangeItem
 from capa_simulation.components.sample_data import sample_switch_on
@@ -145,6 +148,36 @@ STORAGE: Final = {
 }
 # 이 서버 프로세스의 부트 표지 — 프로세스마다 한 번 정해 세션 · 회차가 달라도 그대로다.
 BOOT_MARK: Final = alerts.new_id()
+# 서버 재시작 알림 전문 끝 한 줄의 시각대 — 사용자는 한국 시각으로 읽는다(컨테이너 시계는 UTC
+# 일 수 있다).
+KST: Final = timezone(timedelta(hours=9), "KST")
+LAST_SAVE_PREFIX: Final = "마지막으로 정본에 올라간 저장"
+
+
+def last_save_line(saved_utc: str, restarted_utc: str) -> str:
+    """「마지막으로 정본에 올라간 저장 ○시 ○분」(KST). 다시 선 날과 다르면 「○월 ○일」 을 앞에
+    붙인다. 시각을 못 읽으면 빈 글(줄을 세우지 않는다)."""
+
+    def kst(value: str) -> datetime:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return moment.astimezone(KST)
+
+    try:
+        saved, restarted = kst(saved_utc), kst(restarted_utc)
+    except (ValueError, OverflowError):
+        return ""
+    day = "" if saved.date() == restarted.date() else f"{saved.month}월 {saved.day}일 "
+    return f"{LAST_SAVE_PREFIX} {day}{saved.hour}시 {saved.minute:02d}분"
+
+
+def restart_save_line() -> str:
+    """이 프로세스의 서버 재시작 알림 끝 줄 — 정본을 받은(managed) 시작의 부트 기록이 있을 때만."""
+    found = sync_boot.last_canonical_save()
+    return "" if found is None else last_save_line(*found)
+
+
 # 이 세션의 표지가 사는 세션 칸 — 세션마다 한 번 정해 회차가 달라도 그대로다.
 SESSION_MARK_KEY: Final = "alert_center_session_mark_v1"
 # 「그 화면으로」 대상의 종류 → 받는 쪽(시나리오 id, 리비전 id). 콜백(`_on_goto`)이 이 종류만
@@ -340,7 +373,10 @@ def alert_center_data(
         # 「그 화면으로」 가 들고 갈 수 있는 대상의 종류(`GOTO_RECEIVERS`).
         "goto_kinds": sorted(GOTO_RECEIVERS),
         "storage": dict(STORAGE),
-        "boot": {"mark": BOOT_MARK, "notice": alerts.server_restart_note(BOOT_MARK)},
+        "boot": {
+            "mark": BOOT_MARK,
+            "notice": alerts.server_restart_note(BOOT_MARK, last_save=restart_save_line()),
+        },
         "session": {"mark": mark, "notice": alerts.session_lost_note(mark)},
         "palette": palette(),
         "font": tokens.FONT_FAMILY,

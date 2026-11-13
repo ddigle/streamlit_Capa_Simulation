@@ -395,9 +395,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세운 단추는 듣개가 죽어 눌러도 아무 일도 없다. 알림 칸이 세운 변경 칩 · Alarm 은 듣개가 살아 있어 둔다(변경 칩은 새로고침하면
     비는 그 세션 변경 목록을 볼 마지막 자리) — 다만 판 안 「그 화면으로」 는 옮기지 못하고 판만 닫는다. 정상 회차 요소 차례는
     그대로다. 시험은 `tests/test_sso_streamlit.py`.
-  - `components/sso_reconnect.py` — 만료 · 로그아웃으로 다시 붙지 못한 탭의 「다시 로그인」 띠. 통합인증이 켜진 서버만 툴바
-    iframe(`render_theme_toggle` 의 `extra_scripts`)에 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를
-    묻고 401 이면 한국어 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를 연결 오류 창 위에 세운다. IdP 로 저절로 보내지 않는다
+  - `components/sso_reconnect.py` — 끊긴 탭의 띠 스크립트 하나(같은 틱 · 같은 물음 — `probeKind`). 툴바 iframe(`render_theme_toggle` 의
+    `extra_scripts`)에 늘 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를 묻고, 401 이면(통합인증이 켜진 서버만)
+    「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를, 503 + `X-Capa-Stage`(시작 임시 응답)면 `/_capa_stage` 셋째 줄의 짧은 글을
+    실은 링크 없는 재시작 띠를, 답 없음(연결 실패 · 물음 8초 넘김 `PROBE_TIMEOUT_MS`)이면 「서버 응답을 기다리는 중입니다」(답 없음 20초 넘으면
+    「서버에 닿지 않습니다 — 다시 붙는 중」)를 연결 오류 창 위에 세우고 그 영어 창(401 · 5xx · 시간 넘김 · not responding · localhost 의
+    still running)을 감춘다. 표 없는 5xx 는 같은 뿌리 health 를 한 번 더 물어 표 없는 2xx(앱이 떠서 거절 — 통합인증 설정 막힘의 503,
+    `appAnswers`)면 띠를 걷고 아니면(앞단 502 · 504 · Streamlit 준비 전) 기다림이다. 로그인 띠가 서 있으면 재시작 띠는 서지 않는다.
+    꺼짐이면 재시작 갈래만(`restart_script` — 물음은 지금 경로의 폴더 기준)이라 꺼짐 툴바 iframe 에도 스크립트 하나가 실린다. IdP 로 저절로 보내지 않는다
     (로그아웃을 조용히 되돌리지 않게). 띠 색은 두 팔레트(`band_styles`)를 함께 싣고 띠를 세우는 순간 `capaTheme` 으로 앱 테마를
     골라 칠하며, 양옆 12px 안에서 내용 폭으로 가운데 선다(`left`/`right` 12px + `margin-inline:auto` + `width:fit-content`).
     바깥 화면(거절 · 로그아웃)의 보조 링크는 강조 토큰 색이다(`auth/web.py`). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
@@ -2030,8 +2035,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     남기지 않고(`tests/test_container_start.py`), 예상하지 못한 예외가 나도 「도중에 멈춤」 결과를 남기고 앱은 뜬다 — **`managed` 의 DB 받기만 예외다**
     (앱을 띄우는 길은 그 실행의 `boot-pull` 종료 코드 0 한 길, `tests/test_container_start_sync.py`). 틀린 모드 값은 받지 않고 앱이 뜨고(`SY-01`) 모드가 `managed` 인데 설정이 깨졌으면 머문다. 모드 칸이 비었거나 `local` 인데 버킷에 세대가 있으면 앱은 뜨되 결과 파일에 표지(`head_ignored`)를 남겨 `SY-05` 가 알린다(빈 버킷은 알리지 않는다 — 2026-11-12 리뷰 202611111500 보드 R2: 이 스크립트는 C-DEP 이미지에서만 돌아 그 자리의 `local` 은 이관 뒤 빠뜨린 `managed` 와 같다. 결과 파일이 없는 사내 PC · 개발 실행에는 표지가 없다). 그 자리에서 주소 · 버킷 · 프로필 CD 환경변수가 비어 버킷 목록을 못 보았으면 `SY-05` 를 가릴 수 없으니 빈 이름(`head_unchecked`)을 남겨 `SY-06` 이 알린다(이름만 — 2026-11-12 사내 S3 값 걷기 뒤 프로필에 기본값이 없다).
     시험은 `tests/conftest.py` 가 결과 파일 자리를 늘 없는 곳으로 돌리고 CD 전용 환경변수를 지운다.
-  - 시작 차례는 ① 임시 응답(`scripts/container_stage.py` — 맨 앞에서 앱 포트를 잡아 상태 검사 셋 꼴에 답하고 고정 글 · 갈래 낱말만 보인다, 시험 `tests/test_container_stage.py`) ② `~/.aws` 프로필(`object_storage.render_profile_files`, 0600)
-    ③ 점검 ④ 설치 · 토큰 ⑤ `boot-pull` 되풀이 ⑥ 소켓을 닫고 앱. 결과의 `sync` 칸은 더하기만 한 꼴이고(`parse_sync` — 옛 파일은 `None`), 앱 응답 시각은 `capa_server.py` 끝의 `note_app_ready` 가 결과 파일 옆에 남긴다.
+  - 시작 차례는 ① 임시 응답(`scripts/container_stage.py` — 맨 앞에서 앱 포트를 잡아 상태 검사 셋 꼴에 답하고 고정 글 · 갈래 낱말 · 시각 · 횟수만 보인다. 꼴은 앱 밖 화면의 공통 틀(표지 「시작 중」 · 「다시 시도」 · 「점검 중」 · 단계 줄 · 지난 시간 · 다음 시도 n초 · 문의 줄 · 참고 줄 · 접힌 「관리자용 진단」)이고 Streamlit · `design.tokens` 를 불러오지 않아 두 팔레트를 상수로 두고 시험이 토큰과 맞댄다. 시작 스크립트는 단계 · 시도 · 실패만 알리고(`Stage.begin` · `step` · `attempt` · `fail`) 순수 `stage_view` 하나가 쪽과 `/_capa_stage`(제목 · 값 한 줄 · JSON 셋째 줄)를 함께 낸다. 앱이 뜨면 쪽은 처음 연 주소를 다시 읽는다 — POST 로 받은 쪽 · 콜백 경로만 바탕 주소, 시험 `tests/test_container_stage.py`) ② `~/.aws` 프로필(`object_storage.render_profile_files`, 0600)
+    ③ 점검 ④ 설치 · 토큰 ⑤ `boot-pull` 되풀이(사람이 손대야 풀리는 갈래 `BOOT_HUMAN_KINDS` 아홉 — 설정 · aws 없음 · 거절 · 버킷 없음 · 디스크 · 깨짐 · 갈라짐 · 어긋남 · 판 새로움 — 은 300초마다 · 화면 표지 「점검 중」. 끝줄의 이름 · 수 칸(필요 · 남은 바이트 · 바뀐 DB · DB 판 · 코드 판 · 세대 — `BootOutcome` 의 더한 칸)은 `parse_boot_line` 이 닫힌 꼴로 다시 보고 임시 화면의 접힌 「관리자용 진단」 에 싣는다 — 모르는 수는 줄을 뺀다) ⑥ 소켓을 닫고 앱. 결과의 `sync` 칸은 더하기만 한 꼴이고(`parse_sync` — 옛 파일은 `None`), 앱 응답 시각은 `capa_server.py` 끝의 `note_app_ready` 가 결과 파일 옆에 남긴다.
     판 값 `AWS_CLI_VERSION` 은 `docker/Dockerfile-prod` 의 `awscli==` 한 줄과 시험이 맞댄다 — `requirements.txt` · 락 밖이고(`tests/test_requirements_export.py` 가 범위를 본다) 사외 개발 환경에 넣지 않는다. 실제 `aws` 왕복은 `CAPA_TEST_AWS_BIN` 이 있을 때 돈다.
 - `src/capa_simulation/io/bdq_token.py` — BigDataQuery 로그인 토큰 파일(`/config/.credential/bigdataquery.token.<계정>`)의 자리 ·
   0600 원자적 쓰기 · 넣기 판정 · 만료 읽기 한 곳. 시작 스크립트(CD 환경변수 `CAPA_BDQ_TOKEN` → 파일)와 Admin 「토큰 넣기」
@@ -7533,7 +7538,12 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   다를 때만 그 알림을 사건 길로 낸다. 첫 접속 · 새 탭(앞 표지 없음)과 새로고침 · 테마 전환 · 복제한 탭(같은 프로세스)에는 뜨지 않고,
   저장소가 막히면 뜨지 않을 뿐 오류가 없다. 표지 · 알림은 프로세스 안에서 값이 같아야 한다 — 회차마다 새 값을 실으면 data 가 달라져 JS 가 회차마다
   불린다(그래서 알림에 화면 · 주소를 싣지 않고 id 도 표지에서 짓는다). 글 「서버가 다시 시작돼 화면을 처음으로 돌렸습니다. 저장하지 않은 고침과 입력은 사라졌습니다.」 는
-  미저장 고침뿐 아니라 열린 대화상자 입력 · 고른 시나리오 · 조회기간 · 화면 탭까지 처음으로 돌아가는 것을 적는다.
+  미저장 고침뿐 아니라 열린 대화상자 입력 · 고른 시나리오 · 조회기간 · 화면 탭까지 처음으로 돌아가는 것을 적는다. 정본을 받는 서버(managed
+  시작의 부트 기록이 있음)면 전문 끝에 「마지막으로 정본에 올라간 저장 ○시 ○분」(KST, 다시 선 날과 다르면 날짜)을 한 줄 단다 — 받은 세대 멤버
+  스냅샷 키의 만든 시각 가운데 늦은 것(`object_sync_engine.last_member_save_utc` → 부트 기록 `last_save_utc` → `sync_boot.last_canonical_save`,
+  프로세스에 한 번)이고 세대 시각(`previous_upload_utc`)이 아니다 — 펜스 · 되돌리기는 같은 멤버를 다시 가리켜 세대 시각이 저장 시각이 아니다.
+  재시작이면 세션 표지도 바뀌지만 `GL-08` 은 서지 않는다(`sessionLost` 가 부트 표지를 본다 — 둘이 함께 서지 않음을 시험이 고정). 다시 띄우는
+  동안 열어 둔 탭의 한국어 띠는 `components/sso_reconnect.py` 의 재시작 갈래다(통합인증 절).
 - **다시 붙은 탭의 재연결 회차**(2026-11-07 2차 보드 R1 (가)). Streamlit 프런트는 회차가 돌던 탭 · 마지막 회차가 프래그먼트였던 탭 · `run_every` 프래그먼트가 있는
   탭에만 다시 붙으며 회차를 요청한다(번들의 재접속 처리). 마지막이 앱 전체였던 탭은 다음 조작까지 옛 화면이었고, 그 탭에서 프래그먼트 · 대화상자 안 조작을 먼저 하면
   새 세션이 모르는 프래그먼트의 요청을 `AppSession.request_rerun` 이 회차 없이 돌려보내 **저장이 조용히 버려졌다**. 그래서 알림 칸 JS 가 앱 뿌리의

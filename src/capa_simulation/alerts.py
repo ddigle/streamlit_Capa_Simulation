@@ -663,13 +663,17 @@ def _open_tab_note(code: str, *, cause: str, alert_id: str) -> AlertNote:
     return note
 
 
-def server_restart_note(boot_mark: str) -> AlertNote:
+def server_restart_note(boot_mark: str, *, last_save: str = "") -> AlertNote:
     """서버 재시작 알림 표지 — JS 가 이 탭의 앞 부트 표지와 다를 때만 띄운다
     (`components/alert_center.py`). id 가 표지에서 나와 한 프로세스 안에서는 어느 세션 · 회차 ·
-    화면이든 값이 같다."""
-    return _open_tab_note(
+    화면이든 값이 같다. `last_save` 는 전문 끝 한 줄 「마지막으로 정본에 올라간 저장 ○시 ○분」
+    (정본을 받는 서버만 — 프로세스에 한 번 정한 값이라 회차마다 같다)."""
+    note = _open_tab_note(
         SERVER_RESTART_CODE, cause=SERVER_RESTART_CAUSE, alert_id=f"restart-{boot_mark}"
     )
+    if last_save:
+        note["full"] = f"{note['full']}\n{last_save}"
+    return note
 
 
 def session_lost_note(session_mark: str) -> AlertNote:

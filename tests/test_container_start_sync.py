@@ -119,14 +119,39 @@ def _raise_or_give(answer: Answer) -> subprocess.CompletedProcess[str]:
 
 
 class FakeStage(container_stage.Stage):
+    """임시 응답에 알린 차례를 적는다 — (「begin」, 받는 서버) · (「step」, 단계) ·
+    (「attempt」, n) · (「fail」, n, 갈래, 기다릴 초)."""
+
     def __init__(self, log: list[str]) -> None:
         super().__init__(None)
         self.log = log
-        self.shown: list[tuple[bool, int, str | None]] = []
+        self.shown: list[tuple[object, ...]] = []
+        self.facts: list[container_stage.StageFacts | None] = []
         self.log.append("임시 응답")
 
-    def show(self, *, pulling: bool, attempts: int = 0, kind: str | None = None) -> None:
-        self.shown.append((pulling, attempts, kind))
+    def begin(self, *, managed: bool) -> None:
+        self.shown.append(("begin", managed))
+
+    def step(self, name: str) -> None:
+        self.shown.append(("step", name))
+
+    def attempt(self, number: int) -> None:
+        self.shown.append(("attempt", number))
+
+    def fail(
+        self,
+        number: int,
+        kind: str,
+        *,
+        wait_seconds: float,
+        facts: container_stage.StageFacts | None = None,
+    ) -> None:
+        self.shown.append(("fail", number, kind, wait_seconds))
+        self.facts.append(facts)
+
+    @property
+    def failures(self) -> list[tuple[object, ...]]:
+        return [event for event in self.shown if event[0] == "fail"]
 
     def close(self) -> None:
         if "닫기" not in self.log:
@@ -150,7 +175,7 @@ def box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNames
     log: list[str] = []
     stages: list[FakeStage] = []
 
-    def open_stage(port: int, *, base_path: str = "/") -> container_stage.Stage:
+    def open_stage(port: int, **_options: object) -> container_stage.Stage:
         stage = FakeStage(log)
         stages.append(stage)
         return stage
@@ -244,10 +269,16 @@ def test_the_stage_comes_first_and_the_app_only_after_the_pull(box: SimpleNamesp
     assert box.log[-3:] == ["boot-pull", "닫기", "앱"]
 
 
-def test_the_stage_says_data_is_coming_from_the_start_when_managed(box: SimpleNamespace) -> None:
+def test_the_stage_follows_the_steps_of_a_pulling_server(box: SimpleNamespace) -> None:
+    """단계마다 알린다 — 설치 단계에 「데이터 받는 중」 이 서지 않게(머리글은 단계를 따른다)."""
     _start(box, _managed(box), Runner(box.log, [_boot(DOWNLOADED)]))
 
-    assert box.stages[0].shown[0] == (True, 0, None)
+    assert box.stages[0].shown == [
+        ("begin", True),
+        ("step", container_stage.STEP_INSTALL),
+        ("step", container_stage.STEP_PULL),
+        ("attempt", 1),
+    ]
 
 
 def test_a_local_server_does_as_before_apart_from_the_stage(box: SimpleNamespace) -> None:
@@ -261,7 +292,7 @@ def test_a_local_server_does_as_before_apart_from_the_stage(box: SimpleNamespace
     assert box.log == ["임시 응답", "설치 확인", "닫기", "앱"]
     assert not (box.home / ".aws").exists()
     assert "sync" not in _report()
-    assert box.stages[0].shown == [(False, 0, None)]
+    assert box.stages[0].shown == [("begin", False), ("step", container_stage.STEP_INSTALL)]
 
 
 def test_keys_without_the_mode_check_the_way_but_do_not_pull(box: SimpleNamespace) -> None:
@@ -384,7 +415,7 @@ def test_a_broken_config_without_the_mode_still_starts_the_app(
 # --------------------------------------------------------------------------- 받기
 def test_a_failed_pull_backs_off_and_only_success_starts_the_app(box: SimpleNamespace) -> None:
     runner = Runner(
-        box.log, [_failed("unreachable"), _failed("timeout"), _failed("denied"), _boot(DOWNLOADED)]
+        box.log, [_failed("unreachable"), _failed("timeout"), _failed("other"), _boot(DOWNLOADED)]
     )
 
     launched = _start(box, _managed(box), runner)
@@ -392,10 +423,14 @@ def test_a_failed_pull_backs_off_and_only_success_starts_the_app(box: SimpleName
     assert box.slept == [5, 10, 20]
     assert len(launched) == 1
     assert runner.boot_calls == 4
-    assert box.stages[0].shown[1:] == [
-        (True, 1, "unreachable"),
-        (True, 2, "timeout"),
-        (True, 3, "denied"),
+    assert box.stages[0].failures == [
+        ("fail", 1, "unreachable", 5),
+        ("fail", 2, "timeout", 10),
+        ("fail", 3, "other", 20),
+    ]
+    # 시도마다 「받는 중」 을 먼저 알린다 — 앞 실패 낱말이 다음 시도 내내 남지 않게.
+    assert [event for event in box.stages[0].shown if event[0] == "attempt"] == [
+        ("attempt", number) for number in (1, 2, 3, 4)
     ]
     assert _sync()["pull_attempts"] == 4
 
@@ -412,14 +447,85 @@ def test_an_empty_remote_keeps_waiting_and_never_starts_the_app(box: SimpleNames
     assert box.slept == [5, 10, 20, 40, 60, 60, 60, 60]
 
 
-@pytest.mark.parametrize("kind", ["forked", "diverged", "schema_newer"])
+HUMAN_KINDS = [
+    "config",
+    "cli_missing",
+    "denied",
+    "no_bucket",
+    "disk_full",
+    "corrupt",
+    "forked",
+    "diverged",
+    "schema_newer",
+]
+
+
+@pytest.mark.parametrize("kind", HUMAN_KINDS)
 def test_what_only_a_person_can_fix_is_not_hurried(box: SimpleNamespace, kind: str) -> None:
+    """다시 해도 풀리지 않는 갈래는 300초마다다(2026-11-14 보드 D10) — 화면 표지는 「점검 중」."""
     runner = Runner(box.log, [_failed(kind)])
 
     with pytest.raises(Stay):
         _start(box, _managed(box), runner, stay_after=1)
 
     assert box.slept == [300]
+    assert container_start.BOOT_HUMAN_KINDS == tuple(HUMAN_KINDS)
+    # 300초 갈래와 임시 화면의 「점검 중」 갈래는 한 묶음이다 — 갈라지면 300초인데 「다시 시도」
+    # 가 선다.
+    assert set(container_start.BOOT_HUMAN_KINDS) == set(container_stage.HUMAN_SCREENS)
+
+
+@pytest.mark.parametrize("kind", ["unreachable", "timeout", "other", "remote_empty"])
+def test_what_clears_by_itself_keeps_the_short_backoff(box: SimpleNamespace, kind: str) -> None:
+    runner = Runner(box.log, [_failed(kind)] * 2)
+
+    with pytest.raises(Stay):
+        _start(box, _managed(box), runner, stay_after=2)
+
+    assert box.slept == [5, 10]
+
+
+def test_the_names_and_numbers_of_a_stay_reach_the_stage(box: SimpleNamespace) -> None:
+    """머문 까닭의 이름 · 수(D9)는 끝줄에서 임시 응답까지 간다 — 값이 아니다."""
+    line = {
+        "kind": "schema_newer",
+        "action": None,
+        "seq": 41,
+        "datasets": ["equipment"],
+        "file_version": 40,
+        "code_version": 38,
+    }
+    runner = Runner(box.log, [_boot(line, code=1)])
+
+    with pytest.raises(Stay):
+        _start(box, _managed(box), runner, stay_after=1)
+
+    assert box.stages[0].facts == [
+        container_stage.StageFacts(
+            seq=41, datasets=("equipment",), file_version=40, code_version=38
+        )
+    ]
+
+
+def test_the_boot_line_facts_are_a_closed_shape() -> None:
+    """수 칸은 0 이상의 정수만, DB 이름은 아는 이름만 — 끝줄의 다른 꼴은 버린다."""
+    parsed = container_start.parse_boot_line(
+        json.dumps(
+            {
+                "kind": "disk_full",
+                "seq": 3,
+                "needed_bytes": "300 MB",
+                "free_bytes": -1,
+                "datasets": ["simulation", "s3://Demo_ops_bucket", 7],
+                "file_version": True,
+                "code_version": 12,
+            }
+        )
+    )
+
+    assert (parsed.needed_bytes, parsed.free_bytes) == (None, None)
+    assert parsed.datasets == ("simulation",)
+    assert (parsed.file_version, parsed.code_version) == (None, 12)
 
 
 @pytest.mark.parametrize("name", list(container_start.SYNC_REQUIRED_ENVIRONMENT))
@@ -433,7 +539,9 @@ def test_a_missing_bucket_or_key_is_not_pulled_at_all(box: SimpleNamespace, name
         _start(box, environ, runner, stay_after=2)
 
     assert runner.boot_calls == 0
-    assert box.stages[0].shown[-1] == (True, 2, "config")
+    assert box.stages[0].shown[-1][:3] == ("fail", 2, "config")
+    facts = box.stages[0].facts[-1]
+    assert facts is not None and facts.missing_environment == (name,)
     assert "앱" not in box.log
 
 
@@ -487,7 +595,7 @@ def test_an_unexpected_exception_in_the_pull_keeps_trying(
         _start(box, _managed(box), Runner(box.log), stay_after=3)
 
     assert "앱" not in box.log
-    assert box.stages[0].shown[-1] == (True, 3, "other")
+    assert box.stages[0].shown[-1][:3] == ("fail", 3, "other")
 
 
 def test_failed_checks_do_not_stand_in_for_the_pull(box: SimpleNamespace) -> None:
@@ -704,7 +812,7 @@ def test_a_missing_value_in_managed_mode_names_it_on_the_console(
         _start(box, environ, Runner(box.log), stay_after=1)
 
     printed = capsys.readouterr().out
-    assert f"config · CD 환경변수 {object_storage.PROFILE_ENV} 없음 · 5초 뒤 다시" in printed
+    assert f"config · CD 환경변수 {object_storage.PROFILE_ENV} 없음 · 300초 뒤 다시" in printed
 
 
 def test_a_profile_name_cannot_break_the_section_header(box: SimpleNamespace) -> None:
@@ -1136,7 +1244,7 @@ def test_an_unexpected_failure_in_the_checks_does_not_stop_the_pull(
 def test_a_failed_stage_does_not_stop_the_start(
     box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def explode(port: int, *, base_path: str = "/") -> container_stage.Stage:
+    def explode(port: int, **_options: object) -> container_stage.Stage:
         raise OSError("못 잡음")
 
     monkeypatch.setattr(container_stage, "open_stage", explode)

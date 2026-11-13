@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -756,6 +757,21 @@ def test_a_dirty_local_on_the_same_generation_is_kept_for_the_worker(rig: Simple
     assert sync_state.treat_as_dirty(rig.simulation) is True
 
 
+def test_the_last_save_is_the_newest_member_snapshot_not_the_fence(rig: SimpleNamespace) -> None:
+    """서버 재시작 알림의 「마지막으로 정본에 올라간 저장」 — 펜스 · 되돌리기는 같은 멤버를 다시
+    가리켜 세대 시각이 저장 시각이 아니다. 멤버 스냅샷 키의 만든 시각 가운데 늦은 것이다."""
+    _another_writer_publishes(rig)
+    head = engine.read_pointer(rig.client, rig.store.pointer_keys()[0])
+    expected = engine.last_member_save_utc(head)
+
+    first = engine.boot_pull(rig.client, rig.paths)
+    again = engine.boot_pull(rig.client, rig.paths)
+
+    assert expected is not None and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", expected)
+    assert first.last_save_utc == again.last_save_utc == expected
+    assert first.previous_upload_utc == "2026-11-07T00:00:00Z" != expected
+
+
 def test_a_clean_local_behind_the_remote_is_replaced_and_kept_as_a_backup(
     rig: SimpleNamespace,
 ) -> None:
@@ -776,6 +792,8 @@ def test_a_dirty_local_behind_the_remote_stays(rig: SimpleNamespace) -> None:
 
     assert outcome.kind == manifest.FAILURE_DIVERGED
     assert row_count(rig.simulation) == 11
+    # 다시 누르면 사라질 변경이 든 DB 이름(진단).
+    assert outcome.datasets == ("simulation",)
 
 
 def test_a_local_without_a_generation_is_replaced(rig: SimpleNamespace) -> None:
@@ -867,6 +885,9 @@ def test_a_snapshot_newer_than_the_code_stays(
 
     assert outcome.kind == manifest.FAILURE_SCHEMA_NEWER
     assert not any(op == "get-object" and "snapshots" in key for op, key in rig.store.operations())
+    # 시작 임시 화면의 접힌 진단 — 어느 DB 의 판이 몇이고 코드 판은 몇인가(이름 · 수).
+    assert outcome.datasets == ("simulation",)
+    assert outcome.code_version == 0 and (outcome.file_version or 0) > 0
 
 
 def test_a_snapshot_gone_from_the_store_is_a_broken_generation(rig: SimpleNamespace) -> None:
@@ -878,6 +899,8 @@ def test_a_snapshot_gone_from_the_store_is_a_broken_generation(rig: SimpleNamesp
     outcome = engine.boot_pull(rig.client, rig.paths)
 
     assert outcome.kind == manifest.FAILURE_CORRUPT
+    # 되돌릴 세대를 고를 단서 — 멈춘 HEAD 세대.
+    assert outcome.seq is not None and outcome.seq >= 1
 
 
 def test_too_little_disk_stays_before_downloading(
@@ -892,6 +915,7 @@ def test_too_little_disk_stays_before_downloading(
     outcome = engine.boot_pull(rig.client, rig.paths)
 
     assert outcome.kind == manifest.FAILURE_DISK_FULL
+    assert (outcome.needed_bytes, outcome.free_bytes) == (100, 1)
 
 
 def test_an_unreachable_store_is_a_word_not_a_trace(rig: SimpleNamespace) -> None:

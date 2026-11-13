@@ -15,7 +15,7 @@ import pytest
 from alert_marks import alert_notes
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation import alerts
+from capa_simulation import alerts, sync_boot
 from capa_simulation.components import alert_center, change_summary
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.theme_toggle import (
@@ -173,6 +173,48 @@ def test_the_data_carries_the_restart_notice_built_through_the_registry(
     other = alert_center.alert_center_data(changes=[], events=[])
     assert other["here"] == "process-capa-detail"
     assert other["boot"] == boot
+
+
+def test_the_restart_notice_names_the_last_canonical_save_on_a_pulling_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """카드 p1-restart-tab — 정본을 받는 서버면 전문 끝에 「마지막으로 정본에 올라간 저장 ○시 ○분」
+    (KST). 짧은 글은 그대로다. 받지 않는 서버(부트 기록 없음)는 줄이 없다."""
+    monkeypatch.setattr(
+        sync_boot,
+        "last_canonical_save",
+        lambda: ("2026-11-14T05:03:12Z", "2026-11-14T05:20:00Z"),
+    )
+    notice = alert_center.alert_center_data(changes=[], events=[])["boot"]["notice"]
+
+    entry = alerts.spec(alerts.SERVER_RESTART_CODE)
+    assert notice["short"] == entry.short
+    assert notice["full"] == f"{entry.short}\n마지막으로 정본에 올라간 저장 14시 03분"
+
+    monkeypatch.setattr(sync_boot, "last_canonical_save", lambda: None)
+    plain = alert_center.alert_center_data(changes=[], events=[])["boot"]["notice"]
+    assert plain["full"] == entry.short
+
+
+@pytest.mark.parametrize(
+    ("saved", "restarted", "line"),
+    [
+        ("2026-11-14T05:03:12Z", "2026-11-14T05:20:00Z", "마지막으로 정본에 올라간 저장 14시 03분"),
+        ("2026-11-13T14:50:00Z", "2026-11-13T14:59:00Z", "마지막으로 정본에 올라간 저장 23시 50분"),
+        (
+            "2026-11-13T14:50:00Z",
+            "2026-11-14T15:10:00Z",
+            "마지막으로 정본에 올라간 저장 11월 13일 23시 50분",
+        ),
+        ("2026-11-14T00:00:00", "2026-11-14T00:30:00Z", "마지막으로 정본에 올라간 저장 9시 00분"),
+        ("깨진", "2026-11-14T05:20:00Z", ""),
+    ],
+)
+def test_the_last_save_line_is_korean_time_with_a_date_only_on_another_day(
+    saved: str, restarted: str, line: str
+) -> None:
+    """컨테이너 시계는 UTC 일 수 있다 — 한국 시각으로 적고, 다시 선 날과 다를 때만 날짜를 붙인다."""
+    assert alert_center.last_save_line(saved, restarted) == line
 
 
 def test_the_data_carries_the_session_notice_built_through_the_registry(

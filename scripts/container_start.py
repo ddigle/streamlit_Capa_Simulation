@@ -79,7 +79,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from types import FrameType
@@ -135,10 +135,16 @@ from capa_simulation.io.object_storage import (
     render_profile_files,
 )
 from capa_simulation.services.object_storage_manifest import (
+    DATASET_LABELS,
+    FAILURE_CLI_MISSING,
     FAILURE_CONFIG,
+    FAILURE_CORRUPT,
+    FAILURE_DENIED,
+    FAILURE_DISK_FULL,
     FAILURE_DIVERGED,
     FAILURE_FORKED,
     FAILURE_LABELS,
+    FAILURE_NO_BUCKET,
     FAILURE_OTHER,
     FAILURE_SCHEMA_NEWER,
     FAILURE_TIMEOUT,
@@ -172,9 +178,21 @@ BOOT_PULL_TIMEOUT_SECONDS = 7200
 BOOT_PULL_SCRIPT = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
 # 받기 실패 뒤 물러남. 끝값으로 되풀이한다.
 BOOT_BACKOFF_SECONDS: tuple[int, ...] = (5, 10, 20, 40, 60)
-# 사람이 손대야 풀리는 갈래는 재촉하지 않는다.
+# 사람이 손대야 풀리는 갈래는 재촉하지 않는다 — 다시 해도 풀리지 않고 저장소만 두드린다. 화면
+# 표지는 「점검 중」 이다(2026-11-14 앱 대신 뜨는 화면 보드 D10). 깨짐은 사내 PC 에서 되돌리면
+# 다음 시도가 저절로 받는다(늦어도 300초).
 BOOT_HUMAN_BACKOFF_SECONDS = 300
-BOOT_HUMAN_KINDS = (FAILURE_FORKED, FAILURE_DIVERGED, FAILURE_SCHEMA_NEWER)
+BOOT_HUMAN_KINDS = (
+    FAILURE_CONFIG,
+    FAILURE_CLI_MISSING,
+    FAILURE_DENIED,
+    FAILURE_NO_BUCKET,
+    FAILURE_DISK_FULL,
+    FAILURE_CORRUPT,
+    FAILURE_FORKED,
+    FAILURE_DIVERGED,
+    FAILURE_SCHEMA_NEWER,
+)
 ECS_TIMEOUT_SECONDS = 5
 ECS_SERVER_ERROR = 500
 # 없으면 받지 않고 머문다 — 주소 · 버킷 · 프로필은 사내 값이라 코드에 기본값이 없다(고를 곳이 없다).
@@ -1215,7 +1233,8 @@ def prepare_sync(
 
 @dataclass(frozen=True)
 class BootPull:
-    """받기 한 번의 끝. `kind` 가 있으면 받지 못했다."""
+    """받기 한 번의 끝. `kind` 가 있으면 받지 못했다. 뒤 다섯 칸은 머문 까닭의 수 · DB 이름
+    (시작 임시 화면의 접힌 진단 — 모르면 비움)."""
 
     kind: str | None
     action: str | None = None
@@ -1223,6 +1242,25 @@ class BootPull:
     previous_upload_utc: str | None = None
     total_bytes: int = 0
     seconds: float = 0.0
+    needed_bytes: int | None = None
+    free_bytes: int | None = None
+    datasets: tuple[str, ...] = ()
+    file_version: int | None = None
+    code_version: int | None = None
+
+
+def _count(value: object) -> int | None:
+    """끝줄의 수 칸 — 0 이상의 정수만(참 · 거짓 · 글은 버린다)."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _dataset_names(value: object) -> tuple[str, ...]:
+    """끝줄의 DB 이름 칸 — 아는 이름(`DATASET_LABELS`)만, 그 차례로."""
+    if not isinstance(value, list):
+        return ()
+    return tuple(name for name in DATASET_LABELS if name in value)
 
 
 def parse_boot_line(stdout: str) -> BootPull:
@@ -1244,6 +1282,11 @@ def parse_boot_line(stdout: str) -> BootPull:
             previous_upload_utc=previous if isinstance(previous, str) else None,
             total_bytes=total if isinstance(total, int) else 0,
             seconds=float(seconds) if isinstance(seconds, (int, float)) else 0.0,
+            needed_bytes=_count(data.get("needed_bytes")),
+            free_bytes=_count(data.get("free_bytes")),
+            datasets=_dataset_names(data.get("datasets")),
+            file_version=_count(data.get("file_version")),
+            code_version=_count(data.get("code_version")),
         )
     return BootPull(kind=FAILURE_OTHER)
 
@@ -1266,7 +1309,7 @@ def boot_pull_once(runner: Runner, env: Mapping[str, str]) -> BootPull:
     pulled = parse_boot_line(completed.stdout)
     if completed.returncode != 0:
         kind = pulled.kind if pulled.kind in FAILURE_LABELS else FAILURE_OTHER
-        return BootPull(kind=kind, seq=pulled.seq)
+        return replace(pulled, kind=kind, action=None, previous_upload_utc=None)
     if pulled.kind is not None or pulled.action is None or pulled.seq is None:
         return BootPull(kind=FAILURE_OTHER)
     return pulled
@@ -1299,6 +1342,7 @@ def pull_until_ready(
     attempt = 0
     while True:
         attempt += 1
+        stage.attempt(attempt)
         missing: list[str] = []
         try:
             missing = missing_sync_environment(environ)
@@ -1314,8 +1358,21 @@ def pull_until_ready(
         wait = boot_backoff_seconds(pulled.kind, attempt)
         unset = f" · CD 환경변수 {'·'.join(missing)} 없음" if missing else ""
         echo(f"DB 받기 {attempt}회 실패 — {pulled.kind}{unset} · {wait}초 뒤 다시")
-        stage.show(pulling=True, attempts=attempt, kind=pulled.kind)
+        stage.fail(attempt, pulled.kind, wait_seconds=wait, facts=stage_facts(pulled, missing))
         sleep(wait)
+
+
+def stage_facts(pulled: BootPull, missing: Sequence[str]) -> container_stage.StageFacts:
+    """머문 까닭의 이름 · 수 — 시작 임시 화면의 접힌 「관리자용 진단」(2026-11-14 보드 D9)."""
+    return container_stage.StageFacts(
+        missing_environment=tuple(missing),
+        needed_bytes=pulled.needed_bytes,
+        free_bytes=pulled.free_bytes,
+        seq=pulled.seq,
+        datasets=pulled.datasets,
+        file_version=pulled.file_version,
+        code_version=pulled.code_version,
+    )
 
 
 def finish_sync(sync: dict[str, object], pulled: BootPull, attempts: int) -> dict[str, object]:
@@ -1406,7 +1463,8 @@ def open_start_stage(port: str, environ: Mapping[str, str]) -> container_stage.S
     """임시 응답을 세운다. 세우지 못해도 시작 차례는 이어 간다 — 앱 띄우기가 먼저다."""
     try:
         base = container_stage.base_path_of(environ.get(sso_names.ENV_PUBLIC_URL, ""))
-        stage = container_stage.open_stage(int(port), base_path=base)
+        contact = container_stage.contact_of(environ)
+        stage = container_stage.open_stage(int(port), base_path=base, contact=contact)
     except Exception as error:
         _echo(f"임시 응답을 세우지 못함 — {type(error).__name__}")
         return container_stage.Stage(None)
@@ -1460,10 +1518,12 @@ def main(
     try:
         _forget_app_ready()
         plan = plan_sync(env)
-        stage.show(pulling=plan.managed)
+        stage.begin(managed=plan.managed)
         sync = _prepare_sync(env, plan, runner=runner, started_at_utc=started_at_utc, sleep=sleep)
+        stage.step(container_stage.STEP_INSTALL)
         report = check_and_record(env, credential_dir=args.credential_dir, runner=runner, sync=sync)
         if plan.managed:
+            stage.step(container_stage.STEP_PULL)
             pulled, attempts = pull_until_ready(
                 env, runner=runner, stage=stage, sleep=sleep, echo=_echo
             )

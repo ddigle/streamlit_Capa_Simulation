@@ -287,7 +287,8 @@ render_theme_toggle(
         page_box_reveal_script(),
         # 팝오버 밖 단추가 읽는 글 칸은 Esc 로 닫아도 친 값이 서버에 간다.
         popover_field_commit_script(),
-        # 통합인증이 켜진 서버만 — 만료 · 로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠.
+        # 끊긴 탭의 띠 하나 — 서버 재시작(시작 임시 응답) 동안 재시작 띠, 통합인증이 켜진 서버면
+        # 만료 · 로그아웃으로 다시 붙지 못한 탭에 「다시 로그인」 띠(같은 스크립트).
         *sso_reconnect_scripts(signed_in),
         # 통합인증이 켜진 서버만 — 사람이 앱을 쓰면(입력) 5분에 한 번 로그인을 늘린다(타이머 없음 ·
         # `components/sso_refresh.py`).
