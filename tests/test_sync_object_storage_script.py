@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+from capa_simulation.io.object_storage import CommandResult
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
@@ -140,8 +143,11 @@ def test_values_with_angle_brackets_spaces_or_quotes_stop_before_aws_and_name_on
         extra = ["--to", "demo-copy"] if command == "fetch-copy" else []
         assert script.main(["--bucket", bucket, command, *extra]) == 1, command
         printed = capsys.readouterr().out
-        assert printed.startswith("[중단] "), command
-        assert len(printed.splitlines()) == 1, command
+        lines = printed.splitlines()
+        assert lines[0].startswith("[중단] "), command
+        assert lines[1:] == (
+            [] if command == "profile" else [f"전송용 요약: {command} 멈춤 설정 값 꼴 틀림; 종료 1"]
+        ), command
         assert "CAPA_S3_ENDPOINT_URL · --bucket · CAPA_S3_PROFILE" in printed, command
         for value in ("Demo_typed_bucket", "s3.demo.invalid", "sync_object_storage.py"):
             assert value not in printed, (command, value)
@@ -153,6 +159,33 @@ def test_values_with_angle_brackets_spaces_or_quotes_stop_before_aws_and_name_on
     printed = capsys.readouterr().out
     assert printed.startswith("[중단] ") and "— CAPA_S3_BUCKET." in printed
     assert "Demo_env_bucket" not in printed
+
+
+def test_the_summary_line_carries_no_in_house_value_when_aws_fails(
+    script: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """aws 실패 글 · 「실행한 명령」 줄에는 주소 · 버킷 · 프로필이 실린다(그 위 출력은 그대로). 끝의
+    전송용 요약 한 줄은 갈래 낱말 · 종료 코드뿐이라 그 줄만 리뷰에 옮겨도 값이 나가지 않는다."""
+    values = ("http://s3.demo.invalid:9020", "Demo_secret_bucket", "demo-secret-profile")
+    monkeypatch.setenv("CAPA_S3_ENDPOINT_URL", values[0])
+    monkeypatch.setenv("CAPA_S3_BUCKET", values[1])
+    monkeypatch.setenv("CAPA_S3_PROFILE", values[2])
+    monkeypatch.setattr(script.sync_state, "enable", lambda _paths: None)
+
+    def unreachable(
+        _runner: object, argv: Sequence[str], _env: object, *, timeout_seconds: float
+    ) -> CommandResult:
+        text = f'Could not connect to the endpoint URL: "{values[0]}/{values[1]}" ({values[2]})'
+        return CommandResult(tuple(argv), 255, "", text, 0.1)
+
+    monkeypatch.setattr(script.object_storage.SubprocessCommandRunner, "run", unreachable)
+
+    for command in ("doctor", "status", "generations"):
+        assert script.main([command]) == 1, command
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[-1] == f"전송용 요약: {command} 멈춤 저장소에 닿지 못함; 종료 1", command
+        assert any(values[1] in line for line in lines[:-1]), command
+        assert not any(value in lines[-1] for value in values), command
 
 
 def test_the_container_boot_pull_keeps_its_values_to_aws(script: ModuleType) -> None:

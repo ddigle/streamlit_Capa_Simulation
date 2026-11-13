@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import json
+import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
@@ -462,6 +463,53 @@ def test_rollback_needs_yes_and_then_moves_the_head_forward(harness: SimpleNames
     assert head["members"] == first["members"]
 
 
+def _summary(capsys: pytest.CaptureFixture[str]) -> str:
+    """출력의 끝줄 — 전송용 요약이어야 한다(그 위 출력은 그대로)."""
+    last = capsys.readouterr().out.splitlines()[-1]
+    assert last.startswith("전송용 요약: "), last
+    return last.removeprefix("전송용 요약: ")
+
+
+def test_each_command_ends_with_one_summary_line_of_kinds_and_numbers(
+    harness: SimpleNamespace,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """런북은 사용자 창의 출력 가운데 이 한 줄만 옮긴다 — 폴더 · 작성자 · 포인터 키 · 서버 글은
+    없다."""
+    folder = tmp_path_factory.mktemp("summary") / "fetched"
+
+    changed = "변경 (?:있음|없음)"
+    assert _run(harness, "doctor") == 0
+    assert re.fullmatch(
+        "doctor 통과; 종료 0; CLI aws-cli/1\\.46\\.3; 원격 비어 있음; 로컬 세대 미상; "
+        f"시뮬레이션 {changed}; 가용설비 {changed}",
+        _summary(capsys),
+    )
+    assert _run(harness, "init") == 0
+    init = _summary(capsys)
+    assert init.startswith("init 통과; 종료 0; 시뮬레이션 ") and init.endswith("; 게시 seq 1")
+    assert "MiB" in init and "초" in init
+    assert _run(harness, "init") == 0
+    assert _summary(capsys) == "init 통과; 종료 0; 건너뜀 원격 seq 1"
+    assert _run(harness, "status") == 0
+    assert re.fullmatch(
+        f"status 통과; 종료 0; 원격 seq 1; 로컬 seq 1; 시뮬레이션 {changed}; 가용설비 {changed}; "
+        "넘김 있음; 판정 \\w+",
+        _summary(capsys),
+    )
+    assert _run(harness, "fetch-copy", "--to", str(folder)) == 0
+    assert _summary(capsys) == "fetch-copy 통과; 종료 0; 받음 seq 1"
+    assert _run(harness, "fetch-copy", "--to", str(harness.tmp_path)) == 1
+    assert _summary(capsys) == "fetch-copy 멈춤 요청 거절; 종료 1"
+    assert _run(harness, "generations") == 0
+    assert _summary(capsys) == "generations 통과; 종료 0; 세대 1; HEAD seq 1"
+    assert _run(harness, "rollback", "--to", "1", "--yes") == 0
+    assert _summary(capsys) == "rollback 통과; 종료 0; 새 HEAD seq 2 · 이은 세대 seq 1"
+    assert _run(harness, "push") == 1
+    assert _summary(capsys) == "push 멈춤 정본 넘김; 종료 1"
+
+
 def _push_a_save(harness: SimpleNamespace) -> None:
     add_row(harness.database)
     sync_state.enable({harness.database: "simulation"})
@@ -511,6 +559,8 @@ def test_generations_cuts_a_long_list(
     assert _run(harness, "generations", "--limit", "2") == 0
 
     lines = capsys.readouterr().out.splitlines()
+    assert lines[-1].startswith(harness.script.SUMMARY_LABEL)
+    lines = lines[:-1]
     assert len(lines) == 3
     assert "2" in lines[2] and "더" in lines[2]
 

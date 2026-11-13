@@ -23,6 +23,10 @@
 비었으면 `aws` 를 부르기 전에 넣을 환경변수 이름을 대고 멈춘다(`docs/objectstore_setup.md` 6장).
 꺾쇠 · 공백 · 따옴표가 든 값(자리표째 넣었거나 다음 줄까지 붙여 넣은 값)도 `aws` 를 부르기 전에
 그 값이 온 자리(인자 이름 또는 환경변수 이름)만 대고 멈춘다 — 값은 찍지 않는다.
+
+**끝에 「전송용 요약」 한 줄을 찍는다**(`profile` · `boot-pull` 밖). 사람이 리뷰에 옮기는 줄이라
+갈래 낱말 · 세대 번호 · 크기 · 초 · 종료 코드만 싣는다 — 주소 · 버킷 · 프로필 · 폴더 · 계정 ·
+서버 글은 싣지 않는다. 그 위의 출력은 그대로다.
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ import json
 import re
 import sys
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -59,6 +64,8 @@ from capa_simulation.services.korean_particle import (  # noqa: E402
 from capa_simulation.services.object_storage_manifest import (  # noqa: E402
     DATASET_LABELS,
     FAILURE_CONFIG,
+    FAILURE_FORKED,
+    FAILURE_LABELS,
     FAILURE_OTHER,
     DatasetName,
     PullDecision,
@@ -85,6 +92,63 @@ _SETTING_SOURCES = (
     ("bucket", "--bucket", object_storage.BUCKET_ENV),
     ("profile", "--profile", object_storage.PROFILE_ENV),
 )
+
+SUMMARY_LABEL = "전송용 요약:"
+# 요약 줄을 찍지 않는 하위 명령 — `profile` 출력은 셸에 그대로 붙여 넣고, `boot-pull` 의 끝줄은 시작
+# 스크립트가 JSON 으로 읽는다.
+NO_SUMMARY = frozenset({"profile", "boot-pull"})
+# 스크립트가 받지 않은 요청(없는 세대 · 운영 DB 자리 · 빈 원격 등) — 엔진의 `ValueError`.
+STOP_REQUEST = "요청 거절"
+_CLI_VERSION = re.compile(r"aws-cli/[0-9][0-9.]*")
+
+
+@dataclass
+class _Summary:
+    """전송용 요약 한 줄의 칸. 하위 명령이 갈래 낱말과 수만 채운다."""
+
+    facts: list[str] = field(default_factory=list)
+    stop: str | None = None
+
+    def reset(self) -> None:
+        self.facts.clear()
+        self.stop = None
+
+
+_SUMMARY = _Summary()
+
+
+def _fact(text: str) -> None:
+    _SUMMARY.facts.append(text)
+
+
+def _stopped(kind: str) -> None:
+    """멈춘 갈래 — 처음 것만 남긴다(뒤의 것은 그 갈래가 낳은 것이다)."""
+    if _SUMMARY.stop is None:
+        _SUMMARY.stop = kind
+
+
+def failure_kind(error: BaseException) -> str:
+    """멈춘 갈래 낱말. 설정을 못 읽은 것은 그 꼬리표(값 없는 고정 낱말), 그 밖은 실패 갈래 낱말."""
+    if isinstance(error, StorageSettingsError):
+        return error.label
+    return FAILURE_LABELS[object_storage.classify_failure(error)]
+
+
+def summary_line(command: str, code: int) -> str:
+    """`전송용 요약: <명령> 통과|멈춤 <갈래>; 종료 <n>; <칸>…` — 값 없는 한 줄."""
+    state = "통과" if code == 0 else f"멈춤 {_SUMMARY.stop or FAILURE_LABELS[FAILURE_OTHER]}"
+    cells = [f"{command} {state}", f"종료 {code}", *_SUMMARY.facts]
+    return f"{SUMMARY_LABEL} {'; '.join(cells)}"
+
+
+def _seq_fact(label: str, seq: int | None, *, none: str) -> None:
+    _fact(f"{label} {none if seq is None else f'seq {seq}'}")
+
+
+def _cli_label(version: str) -> str:
+    """aws 판만 — 판 글의 나머지(파이썬 · OS 꼬리)는 싣지 않는다."""
+    found = _CLI_VERSION.search(version)
+    return "판 모름" if found is None else found.group(0)
 
 
 # --------------------------------------------------------------------------- 인자
@@ -257,11 +321,13 @@ def _writer_refusal(args: argparse.Namespace, client: ObjectStorageClient, actio
     handed_over = sync_state.read_generation(sync_paths().generation).handed_over_utc
     if handed_over is not None:
         print(f"[중단] 이 PC 는 {handed_over} 에 정본을 넘겼습니다 — {action} 하지 않습니다.")
+        _stopped("정본 넘김")
         return True
     head = _head_pointer(client)
     if manifest.writer_taken_over(head):
         assert head is not None
         print(f"[중단] 운영 앱이 정본을 쓰고 있습니다(seq {head.seq}) — {action} 하지 않습니다.")
+        _stopped("정본 넘김")
         return True
     return False
 
@@ -276,6 +342,7 @@ def command_profile(args: argparse.Namespace) -> int:
     missing = object_storage.missing_environment(settings, bucket=False)
     if missing:
         print(_missing_line(missing))
+        _stopped(object_storage.SETTINGS_MISSING)
         return 1
     print("# 사내 PC 에서 한 번만 실행합니다.")
     print("# 마지막 줄이 키 둘을 차례로 묻습니다 — 묻는 자리에 붙여 넣으세요.")
@@ -302,23 +369,30 @@ def command_doctor(args: argparse.Namespace) -> int:
     missing = object_storage.missing_environment(settings)
     if missing:
         print(_missing_line(missing))
+        _stopped(object_storage.SETTINGS_MISSING)
         return 1
     # 클라이언트는 다른 명령과 똑같이 `build_client` 를 지난다. 여기서만 따로 만들면
     # 실행기를 갈아끼운 테스트가 이 경로만 못 덮는다.
     client = build_client(args)
     try:
-        print(f"CLI           : {client.cli_version()}")
+        version = client.cli_version()
+        print(f"CLI           : {version}")
+        _fact(f"CLI {_cli_label(version)}")
         print(f"주소 스타일   : {client.check_addressing_style()}")
         head = _head_pointer(client)
     except ObjectStorageError as exc:
         print(f"[중단] {exc}")
+        _stopped(failure_kind(exc))
         return 1
     print(f"원격 세대     : {'비어 있음' if head is None else _generation_line(head)}")
+    _seq_fact("원격", None if head is None else head.seq, none="비어 있음")
     base = sync_state.read_generation(sync_paths().generation).base_seq
     print(f"로컬 세대     : {'세대 미상' if base is None else f'seq {base}'}")
+    _seq_fact("로컬", base, none="세대 미상")
     for dataset in datasets(args):
         changed = "변경 있음" if sync_state.treat_as_dirty(DATASET_PATHS[dataset]) else "변경 없음"
         print(f"{DATASET_LABELS[dataset]:<8}로컬 : {changed}")
+        _fact(f"{DATASET_LABELS[dataset]} {changed}")
     return 0
 
 
@@ -369,6 +443,7 @@ def command_probe(args: argparse.Namespace) -> int:
             results["conditional_put_if_none_match_star"] = False
     except ObjectStorageError as exc:
         print(f"[중단] {exc}")
+        _stopped(failure_kind(exc))
         return 1
     finally:
         try:
@@ -393,6 +468,10 @@ def _report_progress(event: engine.PublishProgress) -> None:
             f"{label} 스냅샷 : {result.source_bytes / MIB:.1f} MiB → "
             f"{result.size_bytes / MIB:.1f} MiB, {result.elapsed_seconds:.2f}초"
         )
+        _fact(
+            f"{label} {result.source_bytes / MIB:.1f}→{result.size_bytes / MIB:.1f}MiB "
+            f"{result.elapsed_seconds:.2f}초"
+        )
     else:
         print(f"{label} 업로드 : {event.snapshot_key}")
 
@@ -401,34 +480,46 @@ def _report_outcome(outcome: engine.PublishOutcome) -> int:
     """게시 결과를 찍고 종료 코드를 돌려준다. 판정 글은 판정이 낸 그대로다."""
     if outcome.settled is not None:
         print(f"앞 회차 세대를 마무리했습니다 : seq {outcome.settled.seq}")
+        _fact(f"마무리 seq {outcome.settled.seq}")
     if outcome.pending_pointer is not None:
         print(f"앞 회차가 남긴 포인터 : {outcome.pending_pointer}")
         print("[건너뜀] --dry-run 이라 마무리하지 않습니다.")
+        _fact("건너뜀 dry-run 앞 회차 포인터")
         return 0
     if outcome.dry_run:
         print(f"[건너뜀] --dry-run 이라 올리지 않습니다. 예정 seq {outcome.seq}")
+        _fact(f"건너뜀 dry-run 예정 seq {outcome.seq}")
         return 0
     if outcome.published:
         print(f"게시          : seq {outcome.seq}")
+        _fact(f"게시 seq {outcome.seq}")
         return 0
     if outcome.confirm_deferred:
         print("[중단] 포인터가 들어갔는지 확인하지 못했습니다 — 다시 실행하면 가립니다.")
+        _stopped("포인터 확인 못 함")
         return 1
     if outcome.stop is engine.PublishStop.LOCAL_MISSING:
         print("[중단] 로컬 DB 가 없습니다.")
+        _stopped("로컬 DB 없음")
         return 1
     if outcome.stop is engine.PublishStop.REMOTE_MOVED:
         print(
             "[중단] 업로드 도중 원격이 앞섰습니다. 스냅샷은 보존했습니다 — "
             "resolve --keep mine 으로 승격하거나 --keep remote 로 버리세요."
         )
+        _stopped("원격이 앞섬")
         return 1
     if outcome.stop is engine.PublishStop.FORKED:
         print("[중단] 원격이 갈라졌습니다 — rollback 으로 이어 갈 세대를 정하세요.")
+        _stopped(FAILURE_LABELS[FAILURE_FORKED])
         return 1
     message = manifest.decision_message(outcome.decision, head_seq=outcome.head_seq)
     print(f"[건너뜀] {message}")
-    return 1 if outcome.decision in manifest.BLOCKING_PUSH else 0
+    if outcome.decision in manifest.BLOCKING_PUSH:
+        _stopped(f"판정 {outcome.decision.value}")
+        return 1
+    _fact(f"건너뜀 판정 {outcome.decision.value}")
+    return 0
 
 
 def command_init(args: argparse.Namespace) -> int:
@@ -439,6 +530,7 @@ def command_init(args: argparse.Namespace) -> int:
             return 1
         if not database_path.exists():
             print(f"[중단] {DATASET_LABELS[dataset]} 로컬 DB 가 없습니다: {database_path}")
+            _stopped("로컬 DB 없음")
             return 1
     outcome = engine.init_generation(
         client,
@@ -451,6 +543,7 @@ def command_init(args: argparse.Namespace) -> int:
     )
     if outcome.decision is PushDecision.UP_TO_DATE:
         print(f"[건너뜀] 원격에 이미 {with_subject_particle(f'seq {outcome.head_seq}')} 있습니다.")
+        _fact(f"건너뜀 원격 seq {outcome.head_seq}")
         return 0
     return _report_outcome(outcome)
 
@@ -459,17 +552,25 @@ def command_status(args: argparse.Namespace) -> int:
     client = build_client(args)
     decision, remote, state, dirty = engine.plan_push(client, sync_paths())
     print(f"원격 : {'비어 있음' if remote.head_seq is None else f'seq {remote.head_seq}'}")
+    _seq_fact("원격", remote.head_seq, none="비어 있음")
     print(f"로컬 : {'세대 미상' if state.base_seq is None else f'seq {state.base_seq}'}")
+    _seq_fact("로컬", state.base_seq, none="세대 미상")
     for dataset in datasets(args):
         print(f"{DATASET_LABELS[dataset]} 변경 : {'있음' if dirty[dataset] else '없음'}")
+        _fact(f"{DATASET_LABELS[dataset]} 변경 {'있음' if dirty[dataset] else '없음'}")
     if state.pending is not None:
         print(f"올리는 중 : {state.pending.pointer_key}")
+        _fact("올리는 중 있음")
     if state.unpublished is not None:
         print(f"미게시 : {state.unpublished.reason}")
+        _fact("미게시 있음")
     if remote.forked:
         print(f"분기 : {', '.join(remote.forked)}")
+        _fact(f"분기 {len(remote.forked)}")
     if state.handed_over_utc is not None:
         print(f"정본 넘김 : {state.handed_over_utc}")
+    _fact(f"넘김 {'있음' if state.handed_over_utc is not None else '없음'}")
+    _fact(f"판정 {decision.value}")
     if state.handed_over_utc is not None and decision is PushDecision.PARENT_MOVED:
         print("판정 : 정본은 운영 앱에 있습니다 — 읽을 때는 fetch-copy 로 사본을 받으세요.")
         return 0
@@ -480,9 +581,11 @@ def command_status(args: argparse.Namespace) -> int:
 def command_generations(args: argparse.Namespace) -> int:
     """되돌릴 세대를 고르는 목록. 멤버 번호가 깨진 세대와 다른 세대가 되돌릴 자리다."""
     rows = engine.list_generations(build_client(args))
+    _fact(f"세대 {len(rows)}")
     if not rows:
         print("원격 : 비어 있음")
         return 0
+    _fact(f"HEAD seq {rows[0].seq}")
     for index, row in enumerate(rows[: args.limit]):
         members = " · ".join(f"{DATASET_LABELS[name]} {seq}" for name, seq in row.members.items())
         moment = "시각 모름" if row.last_modified is None else row.last_modified.isoformat()
@@ -511,6 +614,7 @@ def _blocked_by_running_app(dataset: DatasetName, action: str) -> bool:
     instance = _app_is_running(dataset)
     if instance is None:
         return False
+    _stopped("앱 실행 중")
     print(
         f"[중단] {DATASET_LABELS[dataset]} — 앱이 이 PC 에서 실행 중입니다"
         f"(인스턴스 {instance}). DuckDB 는 프로세스 배타 잠금이라 앱을 끄지 않으면 "
@@ -639,22 +743,27 @@ def command_fetch_copy(args: argparse.Namespace) -> int:
         outcome = engine.fetch_copy(client, sync_paths(), args.to, seq=args.seq, token=args.token)
     except ValueError as exc:
         print(f"[중단] {exc}")
+        _stopped(STOP_REQUEST)
         return 1
     print(f"받음 : seq {outcome.pointer.seq} · {outcome.folder}")
+    _fact(f"받음 seq {outcome.pointer.seq}")
     return 0
 
 
 def command_rollback(args: argparse.Namespace) -> int:
     if not args.yes:
         print(f"[건너뜀] seq {args.to} 멤버로 새 HEAD 를 내려면 --yes 를 함께 주세요.")
+        _fact("건너뜀 --yes 없음")
         return 0
     client = build_client(args)
     try:
         pointer = engine.rollback(client, to_seq=args.to, token=args.token, note=args.note)
     except ValueError as exc:
         print(f"[중단] {exc}")
+        _stopped(STOP_REQUEST)
         return 1
     print(f"새 HEAD : seq {pointer.seq} — seq {args.to} 의 멤버를 이어 갑니다.")
+    _fact(f"새 HEAD seq {pointer.seq} · 이은 세대 seq {args.to}")
     return 0
 
 
@@ -734,6 +843,14 @@ def _use_utf8_output() -> None:
 def main(argv: list[str] | None = None) -> int:
     _use_utf8_output()
     args = parse_args(argv)
+    _SUMMARY.reset()
+    code = _run_command(args)
+    if args.command not in NO_SUMMARY:
+        print(summary_line(args.command, code))
+    return code
+
+
+def _run_command(args: argparse.Namespace) -> int:
     handler = COMMANDS[args.command]
     # 사이드카 기록은 등록된 경로에만 쓴다. 스크립트는 이 파일들의 주인이므로 여기서 등록한다.
     # `--dataset` 과 상관없이 둘 다다 — 두 DB 는 한 쌍이다.
@@ -741,6 +858,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(handler(args))
     except ObjectStorageError as exc:
+        _stopped(failure_kind(exc))
         if args.command == "boot-pull":
             print(_boot_line(engine.BootOutcome(kind=object_storage.classify_failure(exc))))
         elif isinstance(exc, StorageSettingsError) and exc.label == object_storage.SETTINGS_MISSING:
@@ -751,6 +869,7 @@ def main(argv: list[str] | None = None) -> int:
     except BOOTSTRAP_ERRORS as exc:
         # `duckdb.Error` 는 RuntimeError 가 아니다. 이걸 잡지 않으면 앱을 켜 둔 채 돌렸을 때
         # 원문 트레이스백이 나오고 Windows 로캘에서는 한글까지 깨진다.
+        _stopped(FAILURE_LABELS[FAILURE_OTHER])
         if args.command == "boot-pull":
             print(_boot_line(engine.BootOutcome(kind=FAILURE_OTHER)))
         else:
