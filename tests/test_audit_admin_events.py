@@ -141,7 +141,7 @@ def test_the_token_line_has_the_result_and_expiry_but_never_the_token(
     monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: True)
     outcomes = iter(
         [
-            bdq_token.InstallOutcome("installed"),
+            bdq_token.InstallOutcome("written"),
             bdq_token.InstallOutcome("same"),
             bdq_token.InstallOutcome("refused", "짧음"),
         ]

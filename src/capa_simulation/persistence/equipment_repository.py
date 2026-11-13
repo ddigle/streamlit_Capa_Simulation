@@ -30,8 +30,9 @@ from uuid import uuid4
 import duckdb
 import pandas as pd
 
+from capa_simulation.audit.work import audited
 from capa_simulation.persistence import equipment_scenario_store as scenario_store
-from capa_simulation.persistence import sync_state
+from capa_simulation.persistence import sync_state, work_audit
 from capa_simulation.persistence._sql_helpers import (
     as_datetime,
     as_int,
@@ -1105,6 +1106,7 @@ class DuckDBEquipmentRepository:
             self._database_path, destination, write_lock=_WRITE_LOCK, dataset="equipment"
         )
 
+    @audited("data_equipment_save", work_audit.equipment_save)
     def save_equipment(self, request: EquipmentSaveRequest) -> EquipmentSaveResult:
         """설비 마스터 편집본을 공통 대장·이 설비 시나리오 일정으로 나눠 **바뀐 쪽만** 저장한다.
 
@@ -1133,6 +1135,7 @@ class DuckDBEquipmentRepository:
             request, mode="changed", official_target=False, check_common=True, force_publish=False
         ).result
 
+    @audited("data_equipment_save", work_audit.equipment_wrapper)
     def save_snapshot(
         self,
         baseline: pd.DataFrame,
@@ -1176,6 +1179,7 @@ class DuckDBEquipmentRepository:
         assert saved.common_revision_id is not None
         return self.load_merged_snapshot(saved.common_revision_id, saved.schedule_revision_id)
 
+    @audited("data_layout_save", work_audit.equipment_wrapper)
     def save_space_layout(
         self,
         baseline: pd.DataFrame,
@@ -1663,6 +1667,7 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return _paired_snapshot(connection, revision_id)
 
+    @audited("data_equipment_scenario_clone", work_audit.equipment_clone)
     def clone_equipment_scenario(
         self, source_schedule_revision_id: str, *, name: str, created_by: str | None
     ) -> EquipmentScenarioSummary:
@@ -1727,6 +1732,7 @@ class DuckDBEquipmentRepository:
             created = _require_scenario_summary(connection, new_id)
         return created
 
+    @audited("data_equipment_scenario_rename", work_audit.equipment_rename)
     def rename_equipment_scenario(
         self, equipment_scenario_id: str, *, name: str, expected_name: str
     ) -> EquipmentScenarioSummary:
@@ -1751,6 +1757,7 @@ class DuckDBEquipmentRepository:
             renamed = _require_scenario_summary(connection, equipment_scenario_id)
         return renamed
 
+    @audited("data_equipment_publish", work_audit.equipment_publish)
     def publish_equipment_release(
         self,
         schedule_revision_id: str,
@@ -1818,6 +1825,7 @@ class DuckDBEquipmentRepository:
             assert published is not None
         return _release(published)
 
+    @audited("data_schedule_rename", work_audit.schedule_rename)
     def rename_schedule_revision(
         self,
         schedule_revision_id: str,
@@ -1876,6 +1884,7 @@ class DuckDBEquipmentRepository:
             )
         return preview
 
+    @audited("data_schedule_restore", work_audit.schedule_restore)
     def restore_schedule_revision(
         self,
         schedule_revision_id: str,
@@ -2006,6 +2015,7 @@ class DuckDBEquipmentRepository:
             release_withheld=publish.withheld,
         )
 
+    @audited("data_layout_overlay_clear", work_audit.overlay_clear)
     def clear_layout_overlay(
         self,
         equipment_scenario_id: str,
@@ -2287,6 +2297,7 @@ class DuckDBEquipmentRepository:
             ).fetchall()
         return [_revision_summary(row) for row in rows]
 
+    @audited("data_target_save", work_audit.rows_of("data"))
     def save_standard_target_availability(self, data: pd.DataFrame) -> pd.DataFrame:
         """Upsert the unversioned current weekly availability used by target Capa."""
         prepared = prepare_weekly_availability(data)
@@ -2337,11 +2348,13 @@ class DuckDBEquipmentRepository:
             return pd.DataFrame(columns=["공정", "Weeknum", "가용대수"])
         return prepare_weekly_availability(result)
 
+    @audited("data_target_clear")
     def clear_standard_target_availability(self) -> None:
         """Delete the current weekly availability without creating a revision."""
         with self._write_transaction() as connection:
             connection.execute("DELETE FROM equipment_ops.standard_target_weekly_availability")
 
+    @audited("data_cutoff_save", work_audit.rows_of("data"))
     def save_process_cutoff(
         self, data: pd.DataFrame, *, expected_fingerprint: str | None = None
     ) -> pd.DataFrame:
@@ -2400,6 +2413,7 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return read_floor_states(connection)
 
+    @audited("data_floor_state_save", work_audit.rows_of("inactive"))
     def save_floor_states(
         self,
         inactive: Mapping[FloorKey, object],
@@ -2445,6 +2459,7 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return read_manual_downtime_saves(connection, limit=limit)
 
+    @audited("data_downtime_save", work_audit.rows_of("edited", claimed="saved_by"))
     def save_manual_downtime(
         self,
         edited: Mapping[tuple[str, int], object],
@@ -2544,6 +2559,7 @@ class DuckDBEquipmentRepository:
             outcome.wrote = True
         return True
 
+    @audited("data_baseline_save", work_audit.baseline_save)
     def save_shortening_baseline(
         self, draft: ShorteningBaselineDraft, *, saved_at: datetime | None = None
     ) -> ShorteningBaselineSummary:
@@ -2592,6 +2608,7 @@ class DuckDBEquipmentRepository:
             raise ValueError(f"기준선을 찾지 못했습니다(지워졌을 수 있습니다): {baseline_id}")
         return baseline
 
+    @audited("data_baseline_delete", work_audit.baseline_delete)
     def delete_shortening_baseline(self, baseline_id: str) -> bool:
         """기준선 한 벌을 지운다. 없었으면 아무것도 쓰지 않고 False."""
         outcome = _WriteOutcome(wrote=False)
@@ -2599,6 +2616,7 @@ class DuckDBEquipmentRepository:
             outcome.wrote = delete_baseline(connection, baseline_id)
         return outcome.wrote
 
+    @audited("data_drawing_save", work_audit.drawing)
     def save_floor_layout_canvas(
         self,
         building: str,
@@ -2633,6 +2651,7 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return _stored_floor_stack(connection, building, floor)
 
+    @audited("data_drawing_save", work_audit.drawing)
     def replace_floor_layout_marks(
         self,
         building: str,
@@ -2722,6 +2741,7 @@ class DuckDBEquipmentRepository:
         with self._connect() as connection:
             return _stored_fab_marks(connection)
 
+    @audited("data_drawing_save", work_audit.drawing)
     def save_fab_layout(
         self,
         *,
@@ -2757,6 +2777,7 @@ class DuckDBEquipmentRepository:
                 _replace_fab_marks(connection, prepared)
         return True
 
+    @audited("data_drawing_save", work_audit.drawing)
     def save_fab_layout_canvas(self, canvas_width: float, canvas_height: float) -> FabLayoutProfile:
         """FAB 캔버스 치수를 저장한다. 지금 그리는 요소가 새 캔버스 안이어야 한다."""
         width, height = normalize_canvas_size(canvas_width, canvas_height)

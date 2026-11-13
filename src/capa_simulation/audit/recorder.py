@@ -232,7 +232,11 @@ def clean_det(spec: events.EventSpec, det: Mapping[str, object] | None) -> dict[
     """허용 키만, 값은 다듬어서, 정규화 1KB 안으로."""
     if not det:
         return {}
-    kept = {key: _det_value(value) for key, value in det.items() if key in spec.det_keys}
+    kept = {
+        key: _det_value(value)
+        for key, value in det.items()
+        if key in spec.det_keys and value is not None
+    }
     while kept and len(text_bytes(kept)) > DET_LIMIT_BYTES:
         kept.pop(sorted(kept)[-1])
         kept["trunc"] = True

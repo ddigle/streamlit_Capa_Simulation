@@ -17,6 +17,7 @@ import duckdb
 import pandas as pd
 
 from capa_simulation.audit import recorder as audit_recorder
+from capa_simulation.audit.work import audited
 from capa_simulation.io.core_data_source import (
     build_source_column_profile,
     core_data_hash,
@@ -36,6 +37,7 @@ from capa_simulation.persistence import (
     process_rename_store,
     securement_threshold_store,
     sync_state,
+    work_audit,
 )
 from capa_simulation.persistence._sql_helpers import (
     connect,
@@ -602,6 +604,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return display_order_store.load_global_display_order(connection)
 
+    @audited("data_profile_save", work_audit.profile("display_order", "rules"))
     def replace_global_display_order(
         self,
         rules: pd.DataFrame,
@@ -640,6 +643,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return process_rename_store.load_global_process_rename(connection)
 
+    @audited("data_profile_save", work_audit.profile("process_rename", "rules"))
     def replace_global_process_rename(
         self,
         rules: pd.DataFrame,
@@ -675,6 +679,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return execution_capacity_store.load_global_execution_capacity(connection)
 
+    @audited("data_profile_save", work_audit.profile("execution_capacity", "rows"))
     def replace_global_execution_capacity(
         self,
         rows: pd.DataFrame,
@@ -709,6 +714,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return home_profile_store.load_global_top5_band(connection)
 
+    @audited("data_profile_save", work_audit.profile("top5_band"))
     def replace_global_top5_band(
         self,
         min_rate: float,
@@ -739,6 +745,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return key_process_store.load_global_key_process(connection)
 
+    @audited("data_profile_save", work_audit.profile("key_process_presets", "presets"))
     def replace_global_key_process_presets(
         self,
         presets: Sequence[tuple[str, Sequence[str]]],
@@ -775,6 +782,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return load_voc_replies(connection)
 
+    @audited("data_voc_post", work_audit.voc_post)
     def create_voc_post(self, *, category: str, title: str, body: str, author: str) -> str:
         """글 하나를 남기고 그 id 를 돌려준다."""
         prepared = normalize_post(category=category, title=title, body=body, author=author)
@@ -783,6 +791,7 @@ class DuckDBScenarioRepository:
             insert_voc_post(connection, post_id=post_id, **prepared)
         return post_id
 
+    @audited("data_voc_reply", work_audit.voc_reply)
     def create_voc_reply(self, *, post_id: str, body: str, author: str) -> str:
         """답글 하나를 남기고 그 id 를 돌려준다.
 
@@ -796,6 +805,7 @@ class DuckDBScenarioRepository:
             insert_voc_reply(connection, reply_id=reply_id, post_id=post_id, **prepared)
         return reply_id
 
+    @audited("data_voc_resolve", work_audit.voc_resolve)
     def set_voc_post_resolved(self, post_id: str, *, resolved: bool) -> None:
         """답변 완료 표시. 게시판에서 「아직 답이 없는 질문」을 걸러 보게 한다.
 
@@ -806,6 +816,7 @@ class DuckDBScenarioRepository:
                 raise VocPostGoneError()
             update_voc_post_resolved(connection, post_id=post_id, resolved=resolved)
 
+    @audited("data_voc_delete", work_audit.voc_delete)
     def remove_voc_post(self, post_id: str) -> bool:
         """글과 그 답글을 함께 지운다. 주인 없는 답글은 영영 보이지 않는다.
 
@@ -828,6 +839,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return home_profile_store.load_global_summary_note(connection)
 
+    @audited("data_profile_save", work_audit.profile("summary_note"))
     def replace_global_summary_note(
         self, note: str, *, source: str, expected_version: int | None = None
     ) -> GlobalSummaryNote:
@@ -853,6 +865,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return home_profile_store.load_global_comparison_scenario(connection)
 
+    @audited("data_profile_save", work_audit.profile("comparison_scenario"))
     def replace_global_comparison_scenario(
         self,
         scenario_id: str | None,
@@ -890,6 +903,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return home_profile_store.load_global_main_cases(connection)
 
+    @audited("data_profile_save", work_audit.profile("main_case"))
     def replace_global_main_case(
         self,
         case_no: int,
@@ -932,6 +946,7 @@ class DuckDBScenarioRepository:
             )
         return self.load_global_main_cases()
 
+    @audited("data_profile_save", work_audit.profile("main_case"))
     def clear_global_main_case_scenario(self, scenario_id: str) -> None:
         """이 시나리오를 가리키는 Case 만 비운다. 가리키는 Case 가 없으면 쓰지 않는다.
 
@@ -952,6 +967,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return advance_load_store.load_global_advance_load(connection)
 
+    @audited("data_profile_save", work_audit.profile("advance_load", "rows"))
     def replace_global_advance_load(
         self,
         rows: pd.DataFrame,
@@ -980,6 +996,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return advance_shipment_store.load_global_advance_shipment(connection)
 
+    @audited("data_profile_save", work_audit.profile("advance_shipment", "rows"))
     def replace_global_advance_shipment(
         self,
         rows: pd.DataFrame,
@@ -1052,6 +1069,7 @@ class DuckDBScenarioRepository:
             code_default, default_secure=secure, default_warning=warning, fallback=release
         )
 
+    @audited("data_profile_save", work_audit.profile("securement_threshold", "rows"))
     def replace_global_securement_threshold(
         self,
         default_secure: float,
@@ -1092,6 +1110,7 @@ class DuckDBScenarioRepository:
         with self._connect() as connection:
             return past_data_store.load_global_past_data(connection)
 
+    @audited("data_profile_save", work_audit.profile("past_data", "tables"))
     def replace_global_past_data(
         self,
         tables: Mapping[str, pd.DataFrame],
@@ -1269,6 +1288,7 @@ class DuckDBScenarioRepository:
                 reason=required_text(reason, "중단 사유"),
             )
 
+    @audited("data_auto_update_exclusions", work_audit.exclusions)
     def record_auto_official_update_exclusions(
         self, exclusions: Sequence[AutoOfficialUpdateExclusion]
     ) -> None:
@@ -1291,6 +1311,7 @@ class DuckDBScenarioRepository:
                 filtered_revision_ids=filtered_revision_ids,
             )
 
+    @audited("data_scenario_create", work_audit.scenario_create)
     def create_scenario(
         self,
         metadata: ScenarioCreate,
@@ -1512,6 +1533,7 @@ class DuckDBScenarioRepository:
                 raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
             return max(int(dataset[0]), 0)
 
+    @audited("data_revision_save", work_audit.revision_save)
     def save_revision(
         self,
         scenario_id: str,
@@ -1625,6 +1647,7 @@ class DuckDBScenarioRepository:
             ).fetchall()
         return [scenario_summary(row) for row in rows]
 
+    @audited("data_scenario_archive", work_audit.scenario)
     def archive_scenario(self, scenario_id: str) -> None:
         """시나리오를 목록에서 숨긴다. 행은 그대로 남아 되돌릴 수 있다.
 
@@ -1655,6 +1678,7 @@ class DuckDBScenarioRepository:
                 connection, scenario_id, reason=home_profile_store.MAIN_CASE_CLEARED_ARCHIVED
             )
 
+    @audited("data_scenario_restore", work_audit.scenario)
     def restore_scenario(self, scenario_id: str) -> None:
         """보관을 풀어 목록으로 되돌린다."""
         with self._write_transaction() as connection:
@@ -1804,6 +1828,7 @@ class DuckDBScenarioRepository:
             ).fetchall()
         return [revision_summary(row) for row in rows]
 
+    @audited("data_scenario_rename", work_audit.scenario)
     def rename_scenario(self, scenario_id: str, scenario_name: str) -> ScenarioSummary:
         """Rename mutable scenario metadata without changing immutable revisions."""
         label = required_text(scenario_name, "시나리오명")
@@ -1829,6 +1854,7 @@ class DuckDBScenarioRepository:
                 return scenario
         raise KeyError(f"시나리오를 찾을 수 없습니다: {scenario_id}")
 
+    @audited("data_revision_rename", work_audit.revision_rename)
     def rename_revision(
         self, revision_id: str, revision_name: str, *, expected_name: str
     ) -> RevisionSummary:
@@ -1930,6 +1956,7 @@ class DuckDBScenarioRepository:
                 counts[str(revision_id)] = int(count)
         return counts
 
+    @audited("data_official_publish", work_audit.official_publish)
     def publish_official_revision(
         self,
         scenario_id: str,
@@ -2116,6 +2143,7 @@ class DuckDBScenarioRepository:
                 dataset_id=str(owner_row[0]),
             )
 
+    @audited("data_scenario_delete", work_audit.scenario)
     def delete_scenario(self, scenario_id: str) -> None:
         """시나리오와 그것이 소유한 모든 행을 물리 삭제한다.
 
