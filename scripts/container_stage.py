@@ -156,7 +156,7 @@ HUMAN_ACTIONS: Final[Mapping[str, str]] = {
     FAILURE_CLI_MISSING: "이미지 문제 — 사외에 요청",
     FAILURE_DENIED: "S3 키 · 권한 확인(키 둘을 함께 다시 발급했는지)",
     FAILURE_NO_BUCKET: "버킷 이름 확인(CAPA_S3_BUCKET)",
-    FAILURE_DISK_FULL: "C-DEP 담당에게 /project 볼륨 늘리기 요청",
+    FAILURE_DISK_FULL: "C-DEP 담당에게 컨테이너 디스크 늘리기 요청",
     FAILURE_CORRUPT: "앱 관리자 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
     FAILURE_FORKED: "앱 관리자 PC 에서 generations → rollback(런북 「세대 되돌리기」)",
     FAILURE_DIVERGED: (
@@ -338,6 +338,8 @@ class StageState:
     trying: bool = False
     kind: str | None = None
     failed_at: float | None = None
+    # 잠시 닿지 못함 갈래(`retry_kind`)가 끊김 없이 이어진 첫 실패 시각 — 다른 갈래를 지나면
+    # 새로 센다.
     failing_since: float | None = None
     next_at: float | None = None
     facts: StageFacts = StageFacts()
@@ -471,15 +473,30 @@ def _remote_empty_view(state: StageState) -> StageView:
     )
 
 
+def retry_kind(kind: str) -> bool:
+    """잠시 닿지 못함 갈래인가 — 원격이 비어 있음 · 사람이 고쳐야 풀리는 갈래가 아닌 실패."""
+    return kind != FAILURE_REMOTE_EMPTY and kind not in HUMAN_SCREENS
+
+
 def _retry_view(state: StageState) -> StageView:
+    """잠시 닿지 못함. 다시 받기가 도는 동안은 값 줄이 「n번째 받는 중 · 지난 시간」 으로 흐르고
+    첫 받기의 두 노트가 선다 — 정상으로 받는 몇 분이 멈춘 것처럼 보이지 않게."""
     assert state.kind is not None
     since = state.failing_since
-    wait = _waiting(state, LABEL_NEXT_TRY, f"{state.attempt}번째 받는 중")
+    if state.trying:
+        wait = _Wait(progress=f"{state.attempt}번째 받는 중")
+        notes: tuple[str, ...] = (NOTE_MINUTES, NOTE_NO_CICD)
+        band = f"데이터 받는 중 · {state.attempt}번째 받기"
+    else:
+        wait = _Wait(until=state.next_at, until_label=LABEL_NEXT_TRY)
+        notes = ()
+        band = "저장소에 잠시 닿지 못함 · 다시 시도 중"
     return StageView(
         tone=TONE_RETRY,
         chip=CHIP_RETRY,
         title=TITLE_TRANSIENT,
         reasons=(REASON_TRANSIENT,),
+        notes=notes,
         late_note=NOTE_LONG_RETRY,
         late_after=None if since is None else since + LONG_RETRY_SECONDS,
         reference=state.kind,
@@ -491,9 +508,10 @@ def _retry_view(state: StageState) -> StageView:
             f"시도 {state.failures}회",
         ),
         progress=wait.progress,
+        since=state.started_at if state.trying else None,
         until=wait.until,
         until_label=wait.until_label,
-        band="저장소에 잠시 닿지 못함 · 다시 시도 중",
+        band=band,
     )
 
 
@@ -963,7 +981,8 @@ class Stage:
         self._change(lambda state: replace(state, step=name))
 
     def attempt(self, number: int) -> None:
-        """`number` 번째 받기를 시작한다 — 앞 실패 낱말은 남기되 값 줄은 「받는 중」 이 된다."""
+        """`number` 번째 받기를 시작한다 — 앞 실패 낱말은 남기되 값 줄은 「받는 중」 이 된다(잠시
+        닿지 못함은 지난 시간 · 첫 받기의 두 노트와 함께)."""
         self._change(lambda state: replace(state, attempt=number, trying=True, next_at=None))
 
     def fail(
@@ -990,7 +1009,14 @@ class Stage:
                 kind=known,
                 facts=(facts or StageFacts()).checked(),
                 failed_at=moment,
-                failing_since=state.failing_since if state.failing_since is not None else moment,
+                failing_since=(
+                    state.failing_since
+                    if state.kind is not None
+                    and retry_kind(state.kind)
+                    and retry_kind(known)
+                    and state.failing_since is not None
+                    else moment
+                ),
                 next_at=moment + wait_seconds,
             )
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import socket
 import subprocess
 import sys
@@ -510,17 +511,56 @@ def test_the_value_line_counts_the_time_and_the_next_try() -> None:
     waiting = container_stage.stage_view(
         _state(attempt=2, kind="unreachable", failed_at=1100.0, next_at=1112.0)
     )
-    again = container_stage.stage_view(
-        _state(attempt=3, trying=True, kind="unreachable", failed_at=1100.0)
-    )
 
     assert container_stage.value_text(pulling, 1130.0) == "1번째 받기 · 지난 시간 2분 10초"
     assert container_stage.value_text(waiting, 1100.5) == "다음 시도 12초 뒤"
-    assert container_stage.value_text(again, 1200.0) == "3번째 받는 중"
     assert (waiting.chip, waiting.title) == (
         container_stage.CHIP_RETRY,
         "저장소에 잠시 닿지 못했습니다",
     )
+
+
+def test_a_retry_that_is_pulling_shows_the_clock_and_the_pull_notes() -> None:
+    """잠시 닿지 못한 뒤 다시 받는 몇 분은 멈춘 것처럼 보이지 않는다 — 값 줄이 지난 시간과 함께
+    흐르고, 첫 받기의 두 노트(몇 분 · CI/CD 다시 누르지 않기)가 서며, 열어 둔 탭의 띠는 「데이터
+    받는 중 · n번째 받기」 다. 기다리는 동안에는 노트 없이 다음 시도까지 센다."""
+    waiting = container_stage.stage_view(
+        _state(attempt=2, kind="unreachable", failed_at=1100.0, next_at=1112.0)
+    )
+    again = container_stage.stage_view(
+        _state(attempt=3, trying=True, kind="unreachable", failed_at=1100.0)
+    )
+    page = container_stage.render_main(
+        again, now=1200.0, version=1, contact=container_stage.StageContact()
+    )
+
+    assert container_stage.value_text(again, 1200.0) == "3번째 받는 중 · 지난 시간 3분 20초"
+    assert 'data-since="1000000" data-progress="3번째 받는 중"' in page
+    assert again.notes == (container_stage.NOTE_MINUTES, container_stage.NOTE_NO_CICD)
+    assert again.band == "데이터 받는 중 · 3번째 받기"
+    assert waiting.notes == () and waiting.band == "저장소에 잠시 닿지 못함 · 다시 시도 중"
+
+
+def test_the_ten_minute_line_counts_only_the_unbroken_retry_run(
+    stage: tuple[container_stage.Stage, int],
+) -> None:
+    """10분 문의 줄은 잠시 닿지 못함이 끊김 없이 이어진 시간으로 센다 — 이관 전 · 사람 갈래에 오래
+    머문 뒤의 첫 잠시 닿지 못함에 곧바로 서지 않는다."""
+    moments = iter((1000.0, 1300.0, 4000.0, 4030.0, 4100.0))
+    opened, _port = stage
+    assert opened._server is not None
+    opened._server.display.clock = lambda: next(moments)
+
+    opened.fail(1, "unreachable", wait_seconds=5)
+    opened.fail(2, "remote_empty", wait_seconds=60)
+    opened.fail(3, "timeout", wait_seconds=5)
+    opened.fail(4, "other", wait_seconds=5)
+    first = container_stage.stage_view(opened._server.display.read())
+    opened.fail(5, "denied", wait_seconds=300)
+    human = opened._server.display.read()
+
+    assert first.late_after == 4000.0 + container_stage.LONG_RETRY_SECONDS
+    assert human.failing_since == 4100.0
 
 
 def test_an_empty_remote_is_shown_as_maintenance_not_failure() -> None:
@@ -678,6 +718,15 @@ def test_the_folded_diagnostics_carry_names_and_numbers(
     page = _ask(port, "GET", "/")[2].decode("utf-8")
     folded = page.partition("<summary>관리자용 진단</summary>")[2]
     assert f"<li>{line}</li>" in folded
+
+
+@pytest.mark.parametrize("kind", sorted(FAILURE_LABELS))
+def test_the_folded_diagnostics_carry_no_server_path(kind: str) -> None:
+    """공개 화면의 접힌 진단은 이름 · 수만 — 서버 경로(`/…`)는 이름도 수도 아니다(보드 D9)."""
+    view = container_stage.stage_view(_state(attempt=1, kind=kind))
+
+    for line in view.diagnostics:
+        assert re.search(r"(?:^|[\s(])/[A-Za-z]", line) is None, line
 
 
 def test_unknown_numbers_leave_their_line_out() -> None:
