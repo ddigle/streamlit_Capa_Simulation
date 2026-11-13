@@ -139,7 +139,8 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
    `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_ACCESS_ADMINS` 를 넣고 **client id 와 `APP_ENV` 는 비운 채** CI/CD 를 돌린다.
    앱은 지금처럼 열린다. **켜기 전에 나머지 값을 미리 보는 화면은 없다** — `APP_ENV` 를 비운 꺼진 서버는 「통합인증 점검」 을 그리지 않고, `APP_ENV=prod`
    를 먼저 넣으면 운영 서버라 Admin Area 가 관리자에게만 열리는데 통합인증이 꺼진 동안은 관리자 신원이 없어 아무도 열지 못한다(그 잠긴 화면에
-   Alarm `AD-02` 「운영 서버인데 통합인증이 꺼져 있습니다」 가 뜬다). 나머지 값은 2 에서 켤 때 설정 화면이 본다.
+   Alarm `AD-02` 「운영 서버인데 통합인증이 꺼져 있습니다」 가 뜬다). 같은 까닭으로 관리자 몫 알림 · 진단(시작 점검 `AD-01` · 화면 오류 `AD-22` ·
+   동기화 관리자 전문 · 앱 시작 실패 판과 화면 오류 카드의 「관리자용 진단」 — `admin_view.admin_notes_visible`)도 아무에게도 서지 않는다. 나머지 값은 2 에서 켤 때 설정 화면이 본다.
 2. 포털 승인 메일의 Client ID 를 `ADFS_CLIENT_ID` 에, `APP_ENV=prod` 를 함께 넣고 CI/CD 를 돌린다 → 로그인해 본다. 실패면 오류 화면의 사유 코드 ·
    받은 iss/aud(서명이 맞을 때만 보인다) · 받은 클레임 이름으로 값을 고친다. 설정 화면(막힘)이 뜨면 그 표(환경변수 이름 · 까닭 — 꺼짐 때의 「켜면
    막힐 문제」 와 같은 판정)대로 고친다.
