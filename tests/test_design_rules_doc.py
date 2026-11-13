@@ -2234,14 +2234,13 @@ def test_the_space_confirm_1113_board_answers_are_recorded() -> None:
     고른 글은 선택지 원문(알림 카드는 메모)이다. 권장과 다른 답은 둘(1 · 2-10 — 고양이 발
     모양만 바꿈)이고 둘 다 메모 원문과 고양이 그림 고침 커밋을 든다. 나머지 열다섯은 커밋이
     없다. 저장 키 `cat` 은 그대로이고 바꾼 그림은 시안 보드에서 다시 골랐다(B). 6-22 · 6-23 줄은
-    그때 기록 그대로다(앞 시험이 6-24 앞에서 끊어 본다)."""
+    그때 기록 그대로다(앞 시험이 6-24 앞에서 끊어 본다). 6-25 는 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.24" in document.split("\n## 1. ")[0]
     assert "- **v1.24 — 2026-11-13.**" in _chapter(document, 8)
     assert "6-24 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-24. ") :]
+    board = section[section.index("\n### 6-24. ") : section.index("\n### 6-25. ")]
     assert CONFIRM_1113_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -2280,3 +2279,41 @@ def test_the_space_confirm_1113_board_answers_are_recorded() -> None:
     assert "1 foot-contract (나) · 2-10 d-foot-shapes (나) 는 권장과 다른 답" in _chapter(
         document, 8
     )
+
+
+# 2026-11-13 배포 뒤 다섯 일(6-25)의 기록 — 보드 답이 아니라 앞서 받은 답(2026-11-12 사용자 결정
+# 하나 · 6-21 ⑤-8 · ⑤-9 · ⑥-3 · 6-23 9)을 입힌 줄 다섯이다. 줄마다 커밋을 들고 구현이 답 밖에서
+# 정한 것을 밝힌다. 줄 id 는 그 답의 id 이고 차례는 절 차례다.
+POST_1113_LINES = ("token-entry", "pub-index", "pub-mail", "test-env", "guard-temp")
+
+
+def test_the_post_1113_records_are_recorded() -> None:
+    """v1.25 — 6-25 는 배포 뒤 다섯 일이 입힌 앞 답의 기록 다섯 줄이고, 줄마다 커밋과 「답 밖 —
+    구현이 정함」 을 든다. 6-21 · 6-23 의 그 줄들은 커밋 없이 6-25 를 가리킨다(앞 시험들이 커밋
+    없음을 본다). 6-24 줄은 그때 기록 그대로다(앞 시험이 6-25 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.25" in document.split("\n## 1. ")[0]
+    assert "- **v1.25 — 2026-11-13.**" in _chapter(document, 8)
+    assert "6-25 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-25. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(
+            r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-1[23]) · ([^()]+)\)$", line
+        )
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        assert re.search(r"커밋 `[0-9a-f]{7}`", line), line
+        assert "답 밖 — 구현이 정함" in line, line
+    assert tuple(found) == POST_1113_LINES
+
+    earlier = section[section.index("\n### 6-21. ") : section.index("\n### 6-24. ")]
+    for key in ("pub-index", "pub-mail", "test-env", "guard-temp"):
+        line = next(item for item in earlier.splitlines() if item.startswith(f"- {key} · "))
+        assert f"6-25 {key}" in line, key
