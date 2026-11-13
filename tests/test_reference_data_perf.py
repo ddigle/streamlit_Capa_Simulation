@@ -739,7 +739,7 @@ def test_a_pending_equipment_edit_keeps_its_draft_and_lands_on_its_row(grid_call
 
 
 def _change_count(calls: Calls) -> int:
-    """표 도구 막대 「적용 전 변경 (n)」 의 수(그리드 feed)."""
+    """표 도구 막대 「적용 전 (n)」 의 수(그리드 feed)."""
     return int(last(calls, feed_key(GRID_HOST))["counts"]["cells"])
 
 
@@ -748,7 +748,7 @@ def _action_row_lines(app: AppTest) -> list[str]:
 
 
 def test_the_change_count_lives_only_in_the_grid_toolbar(grid_calls: Calls) -> None:
-    """고친 수는 도구 막대 「적용 전 변경 (n)」 하나가 말하고 작업 줄은 거듭 적지 않는다(UI-TXT-07).
+    """고친 수는 도구 막대 「적용 전 (n)」 하나가 말하고 작업 줄은 거듭 적지 않는다(UI-TXT-07).
     양식과 같은 값으로 되돌린 칸은 초안에서 빠져 수도 0 이다(같은 값 적용으로 리비전만 오르는 일을
     막는 규칙과 같은 뜻)."""
     app = AppTest.from_string(
