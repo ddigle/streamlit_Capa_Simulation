@@ -21,12 +21,15 @@
 
 **주소 · 버킷 · 프로필은 환경변수(또는 인자)로만 받는다** — 사내 값이라 저장소에 기본값이 없다.
 비었으면 `aws` 를 부르기 전에 넣을 환경변수 이름을 대고 멈춘다(`docs/objectstore_setup.md` 6장).
+꺾쇠 · 공백 · 따옴표가 든 값(자리표째 넣었거나 다음 줄까지 붙여 넣은 값)도 `aws` 를 부르기 전에
+그 값이 온 자리(인자 이름 또는 환경변수 이름)만 대고 멈춘다 — 값은 찍지 않는다.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -71,6 +74,17 @@ DATASET_PATHS: dict[DatasetName, Path] = {
     "equipment": EQUIPMENT_DUCKDB_PATH,
 }
 MIB = 1024 * 1024
+
+# 버킷 · 주소 · 프로필에 들 수 없는 글자 — 꺾쇠 자리표(`"<…>"`)째 넣은 값, 따옴표째 붙인 값,
+# 묻는 줄이 뒤에 붙은 명령 줄을 값으로 먹은 경우(공백)가 여기에 걸린다.
+_MALFORMED_VALUE = re.compile(r"[<>\"'\u2018\u2019\u201c\u201d\s]")
+SETTINGS_MALFORMED = "설정 값 꼴 틀림"
+# (설정 칸, 인자, 환경변수) — 멈출 때 값이 온 자리를 이 이름으로 댄다.
+_SETTING_SOURCES = (
+    ("endpoint_url", "--endpoint-url", object_storage.ENDPOINT_ENV),
+    ("bucket", "--bucket", object_storage.BUCKET_ENV),
+    ("profile", "--profile", object_storage.PROFILE_ENV),
+)
 
 
 # --------------------------------------------------------------------------- 인자
@@ -167,14 +181,37 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def build_settings(args: argparse.Namespace) -> StorageSettings:
+    """인자 > 환경변수 한 벌. 꼴이 틀린 값이 있으면 `aws` 를 부르기 전에 그 자리 이름만 대고 멈춘다.
+
+    `boot-pull` 은 C-DEP 환경변수 표의 값이라 손으로 친 줄이 아니다 — 가르지 않고 지금처럼 `aws` 가
+    가린다(시작 스크립트가 읽는 한 줄의 갈래가 바뀌지 않게).
+    """
     base = object_storage.load_settings()
-    return StorageSettings(
+    settings = StorageSettings(
         mode=base.mode,
         endpoint_url=args.endpoint_url or base.endpoint_url,
         bucket=args.bucket or base.bucket,
         profile=args.profile or base.profile,
         region=base.region,
         capabilities=base.capabilities,
+    )
+    malformed = () if args.command == "boot-pull" else malformed_sources(args, settings)
+    if malformed:
+        raise StorageSettingsError(
+            "꺾쇠 · 공백 · 따옴표가 든 값이 있습니다 — "
+            + " · ".join(malformed)
+            + ". aws 를 부르지 않았습니다(값은 찍지 않습니다). 그 값을 넣는 줄부터 다시 칩니다.",
+            label=SETTINGS_MALFORMED,
+        )
+    return settings
+
+
+def malformed_sources(args: argparse.Namespace, settings: StorageSettings) -> tuple[str, ...]:
+    """꺾쇠 · 공백 · 따옴표가 든 값이 온 자리 — 인자로 줬으면 인자 이름, 아니면 환경변수 이름."""
+    return tuple(
+        flag if getattr(args, field) else environment
+        for field, flag, environment in _SETTING_SOURCES
+        if _MALFORMED_VALUE.search(getattr(settings, field))
     )
 
 

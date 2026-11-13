@@ -117,6 +117,53 @@ def test_commands_stop_with_the_names_to_set_before_calling_aws(
     assert "CAPA_S3_ENDPOINT_URL · CAPA_S3_PROFILE" in profile
 
 
+def test_values_with_angle_brackets_spaces_or_quotes_stop_before_aws_and_name_only_the_source(
+    script: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """꺾쇠 자리표째 넣은 버킷(`$b = "<…>"` 의 안쪽만 바꾼 꼴), 묻는 줄이 뒤 명령 줄을 먹은
+    값(공백), 따옴표째 붙인 주소는 aws 를 부르기 전에 멈춘다. 값이 온 자리(인자 · 환경변수 이름)만
+    대고 값은 어디에도 찍지 않는다 — doctor 의 값 줄도 찍기 전이다."""
+    endpoint = "\u201chttp://s3.demo.invalid:9020\u201d"
+    profile = "uv run --no-sync python scripts/sync_object_storage.py --bucket $b doctor"
+    bucket = "<Demo_typed_bucket>"
+    monkeypatch.setenv("CAPA_S3_ENDPOINT_URL", endpoint)
+    monkeypatch.setenv("CAPA_S3_PROFILE", profile)
+
+    def no_aws(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("꼴이 틀린 사내 값으로 aws 를 부르면 안 된다")
+
+    monkeypatch.setattr(script.object_storage.SubprocessCommandRunner, "run", no_aws)
+    monkeypatch.setattr(script.sync_state, "enable", lambda _paths: None)
+    monkeypatch.setattr(script, "_blocked_by_running_app", lambda *_args: False)
+
+    for command in ("doctor", "status", "fetch-copy", "generations", "init", "profile"):
+        extra = ["--to", "demo-copy"] if command == "fetch-copy" else []
+        assert script.main(["--bucket", bucket, command, *extra]) == 1, command
+        printed = capsys.readouterr().out
+        assert printed.startswith("[중단] "), command
+        assert len(printed.splitlines()) == 1, command
+        assert "CAPA_S3_ENDPOINT_URL · --bucket · CAPA_S3_PROFILE" in printed, command
+        for value in ("Demo_typed_bucket", "s3.demo.invalid", "sync_object_storage.py"):
+            assert value not in printed, (command, value)
+
+    monkeypatch.setenv("CAPA_S3_ENDPOINT_URL", "http://s3.demo.invalid:9020")
+    monkeypatch.setenv("CAPA_S3_PROFILE", "demo-env-profile")
+    monkeypatch.setenv("CAPA_S3_BUCKET", "'Demo_env_bucket'")
+    assert script.main(["status"]) == 1
+    printed = capsys.readouterr().out
+    assert printed.startswith("[중단] ") and "— CAPA_S3_BUCKET." in printed
+    assert "Demo_env_bucket" not in printed
+
+
+def test_the_container_boot_pull_keeps_its_values_to_aws(script: ModuleType) -> None:
+    """`boot-pull` 은 C-DEP 환경변수 표의 값이다 — 꼴을 가르지 않아 시작 스크립트가 읽는 갈래가
+    그대로다."""
+    args = script.parse_args(["--bucket", "<Demo_bucket>", "boot-pull"])
+
+    assert script.build_settings(args).bucket == "<Demo_bucket>"
+    assert script.malformed_sources(args, script.build_settings(args)) == ("--bucket",)
+
+
 def test_dataset_selection_defaults_to_both_databases(script: ModuleType) -> None:
     assert script.datasets(script.parse_args(["status"])) == ["simulation", "equipment"]
     assert script.datasets(script.parse_args(["--dataset", "equipment", "status"])) == ["equipment"]
