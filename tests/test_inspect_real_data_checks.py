@@ -594,10 +594,18 @@ def test_an_error_message_carrying_names_is_reported_by_kind_only(
 
     assert code == 0
     _assert_no_leak(output)
-    # 원천 데이터셋이 하나뿐이라 건너뛸 곳이 없다 — 그것으로 돌아와 멈춘 단계와 종류만 적는다.
-    assert "- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError). 대조하지 않았다" in output
+    # 원천 데이터셋이 하나뿐이라 건너뛸 곳이 없다 — 그것으로 돌아와 멈춘 단계와 종류, 6-3 a 와
+    # 같은 자리만 적는다. 기준정보 연결 오류가 아니라 꼴은 `-` 다(본문 줄에는 붙이지 않는다).
+    with duckdb.connect(str(simulation_db), read_only=True) as connection:
+        [(seed,)] = connection.execute("SELECT dataset_id FROM app_meta.dataset").fetchall()
+    place = _revision_one_place(simulation_db, str(seed))
+    assert (
+        f"- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError) · {place}. 대조하지 않았다"
+    ) in output
     assert "(리비전 1 계산이 서는 것이 없어 가장 최근 것으로 돌아왔다)" in output
-    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
+    assert re.search(
+        rf"^- 8-2R 대당 Capa 실패\(ValueError\) {place} - #\d\d$", output, re.MULTILINE
+    )
     assert "- 일정 미정 — 실패(ValueError)" in output
 
 
@@ -1204,13 +1212,46 @@ SKIP_HEAD = (
 )
 
 
+def _revision_one_row(
+    connection: duckdb.DuckDBPyConnection, dataset_id: str
+) -> revisions_script.RevisionRow:
+    """6-3 a(`inspect_revision_calculations.list_revisions`)가 매긴 그 데이터셋 시나리오의
+    리비전 1."""
+    [revision] = [
+        revision
+        for revision in revisions_script.list_revisions(connection, active_only=False)
+        if revision.dataset_id == dataset_id and revision.revision_no == 1
+    ]
+    return revision
+
+
+def _revision_one_place(path: Path, dataset_id: str) -> str:
+    """6-3 a 가 그 데이터셋 시나리오의 리비전 1 에 매기는 자리 `S<n> r1`(계산은 돌리지 않는다)."""
+    with duckdb.connect(str(path), read_only=True) as connection:
+        revision = _revision_one_row(connection, dataset_id)
+    return f"S{revision.scenario_no} r{revision.revision_no}"
+
+
+def _six_three_a(path: Path, dataset_id: str) -> tuple[str, str]:
+    """6-3 a(`inspect_revision_calculations`)가 그 데이터셋 시나리오의 리비전 1 에 적는 자리와 꼴
+    이름 — 8-2D 가 건너뛴 원천 · 8-2R 이 돌아온 원천에 붙이는 `S<n> r1` · 꼴과 같아야 한다(꼴이
+    없으면 `-`). 꼴 이름은 6-3 a 갈래 표 `꼴` 칸의 글자다."""
+    with duckdb.connect(str(path), read_only=True) as connection:
+        revision = _revision_one_row(connection, dataset_id)
+        outcome = revisions_script.inspect_revision(connection, revision)
+    assert outcome.status == revisions_script.STOPPED
+    shape = "-" if outcome.problem is None else outcome.problem.label
+    return f"S{revision.scenario_no} r{revision.revision_no}", shape
+
+
 def test_a_newer_source_whose_revision_one_stops_is_skipped_for_the_next(
     simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """사내 리뷰 `202610271800` 사외 요청 2 — 가장 최근 원천의 리비전 1 계산이 멈춰 8-2
     맞대기가 비었다. 리비전 1 계산이 서는 가장 최근 원천을 고르고, 건너뛴 것은 차례 · 원천 종류 ·
-    적재일 · 까닭(단계와 예외 종류)만 찍는다. 8-3 도 같은 데이터셋을 본다. 요약에는 8-2D 한 줄이
-    더해지고 확인 코드 꼴은 그대로다."""
+    적재일 · 까닭(단계와 예외 종류) · 6-3 a 와 같은 자리 · 꼴만 찍는다. 8-3 도 같은 데이터셋을
+    본다. 요약에는 8-2D 한 줄이 더해지고 확인 코드 꼴은 그대로다. 고른 것은 서므로 8-2R 은 옛
+    꼴 그대로다."""
     path = tmp_path / "capa_simulation.duckdb"
     path.write_bytes(simulation_db.read_bytes())
     stopped = f"{SENTINEL}DS-NEW"
@@ -1224,9 +1265,12 @@ def test_a_newer_source_whose_revision_one_stops_is_skipped_for_the_next(
         "- 원천에서 온 것 가운데 리비전 1 계산이 서는 가장 최근(최근부터 2번째) 데이터셋"
         "(전체 2개 · 원천에서 온 것 2개) · 원천 종류 `BUILTIN_SYNTHETIC_SEED`"
     )
+    # 자리 · 꼴은 6-3 a 가 그 리비전에 적는 것과 같다 — `RQ_RUN_RATE` 를 비우면 연결값이 없다.
+    place, shape = _six_three_a(path, stopped)
+    assert shape == "연결값 없음"
     skipped = (
-        f"  - 최근부터 1번째 · 원천 종류 `BUILTIN_SYNTHETIC_SEED` · 적재 {_imported(path, stopped)}"
-        " — 대당 Capa 실패(ValueError)"
+        f"  - 최근부터 1번째 · {place} · 원천 종류 `BUILTIN_SYNTHETIC_SEED` · 적재 "
+        f"{_imported(path, stopped)} — 대당 Capa 실패(ValueError) · 꼴 {shape}\n"
     )
     # 8-2 · 8-3 두 블록 머리가 같은 데이터셋과 건너뛴 줄을 찍는다.
     assert output.count(picked) == 2
@@ -1236,7 +1280,8 @@ def test_a_newer_source_whose_revision_one_stops_is_skipped_for_the_next(
     assert "신규 경로 키 72 중 원천 경로에 있는 키 72 (100.00%)" in output
     summary = _summary(output)
     assert re.fullmatch(
-        r"- 8-2D 고름 2/2 · 건너뜀 1 · 1번째 대당 Capa 실패\(ValueError\) #\d\d", summary[0]
+        rf"- 8-2D 고름 2/2 · 건너뜀 1 · 1번째 대당 Capa 실패\(ValueError\) {place} {shape} #\d\d",
+        summary[0],
     ), summary[0]
     assert next(line for line in summary if line.startswith("- 8-2R ")).startswith(
         "- 8-2R 100.00% · "
@@ -1249,7 +1294,8 @@ def test_a_named_dataset_is_never_skipped(
     simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`--dataset-id` 로 고른 데이터셋은 계산이 멈춰도 건너뛰지 않는다 — 멈춘 단계와 종류를 찍는다
-    (사내가 보충 줄을 그 길로 얻었다)."""
+    (사내가 보충 줄을 그 길로 얻었다). 고른 것이 ID 로 정해져 있어 8-2R 에 자리 · 꼴을 붙이지
+    않는다 — 옛 꼴 그대로다."""
     path = tmp_path / "capa_simulation.duckdb"
     path.write_bytes(simulation_db.read_bytes())
     stopped = f"{SENTINEL}DS-NEW"
@@ -1272,8 +1318,9 @@ def test_a_named_dataset_is_never_skipped(
 def test_when_no_recent_source_stands_the_newest_is_taken_back(
     simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """최근 후보가 모두 서지 않으면 가장 최근 것으로 돌아간다 — 그 실패가 8-2 에 그대로 찍히고,
-    8-2D 는 「선 것 없음」 과 고른 것 말고 본 것을 적는다."""
+    """최근 후보가 모두 서지 않으면 가장 최근 것으로 돌아간다 — 그 실패가 8-2R 에 6-3 a 와 같은
+    자리 · 꼴과 함께 찍히고, 8-2D 는 「선 것 없음」 과 고른 것 말고 본 것을 적는다 — 멈춘 원천
+    둘이 모두 번호로 6-3 a 와 맞대어진다."""
     path = tmp_path / "capa_simulation.duckdb"
     path.write_bytes(simulation_db.read_bytes())
     with duckdb.connect(str(path)) as connection:
@@ -1293,12 +1340,222 @@ def test_when_no_recent_source_stands_the_newest_is_taken_back(
         "최근 것으로 돌아왔다(런북 8-2). 그 밖에 본 것:"
     ) in output
     summary = _summary(output)
+    with duckdb.connect(str(path), read_only=True) as connection:
+        [(seed,)] = connection.execute(
+            "SELECT dataset_id FROM app_meta.dataset WHERE dataset_id <> ?", [f"{SENTINEL}DS-NEW"]
+        ).fetchall()
+    place, shape = _six_three_a(path, str(seed))
     assert re.fullmatch(
-        r"- 8-2D 고름 1/2 · 선 것 없음 2 · 2번째 대당 Capa 실패\(ValueError\) #\d\d",
+        rf"- 8-2D 고름 1/2 · 선 것 없음 2 · 2번째 대당 Capa 실패\(ValueError\) {place} {shape} "
+        r"#\d\d",
         summary[0],
     ), summary[0]
-    assert re.search(r"^- 8-2R 대당 Capa 실패\(ValueError\) #\d\d$", output, re.MULTILINE)
+    # 돌아온 가장 최근 것(1번째)의 자리 · 꼴은 8-2R 에 — 8-2D 의 2번째와 다른 시나리오다.
+    taken_place, taken_shape = _six_three_a(path, f"{SENTINEL}DS-NEW")
+    assert (taken_shape, taken_place != place) == ("연결값 없음", True)
+    taken = f"8-2R 대당 Capa 실패(ValueError) {taken_place} {taken_shape}"
+    assert f"- {taken} #{checks.summary_code(taken)}" in summary
+    assert (
+        f"- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError) · {taken_place} · 꼴 "
+        f"{taken_shape}. 대조하지 않았다\n"
+    ) in output
+    assert not _self_check_pattern().search(output)
     assert checks.check_transcript(summary) == []
+
+
+def test_a_skipped_source_carries_the_six_three_a_place_and_shape(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """리뷰 202611131000 정할 것 11 (가) — 8-2D 는 건너뛴 원천마다 6-3 a 와 같은 `S<n> r1` 과 멈춤
+    꼴을 줄 끝에 붙인다(사내 S33 r1 의 `0 이하(ST)` 꼴). S 번호는 데이터셋 적재 차례가 아니라 6-3 a
+    처럼 시나리오를 만든 차례다 — 가장 최근 원천이 먼저 만든 시나리오에 있으면 S1 이다. 값 · 이름은
+    찍지 않고, 줄 앞쪽은 옛 꼴 그대로라 옛 압축본의 8-2D 줄도 다시 셈이 맞는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    stopped = f"{SENTINEL}DS-NEW"
+    _add_source_dataset(path, stopped, days_later=1, stop=False)
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "UPDATE app_meta.scenario SET created_at = created_at - INTERVAL 1 DAY "
+            "WHERE scenario_id = ?",
+            [f"{stopped}-SC"],
+        )
+        upeh = REVISION_TABLES["RQ_UPEH"]
+        connection.execute(
+            f'UPDATE rev_data.{upeh} SET "ST" = 0 WHERE rowid IN (SELECT rowid '
+            f"FROM rev_data.{upeh} WHERE revision_id = ? AND \"Area_Name\" = 'MI' "
+            "ORDER BY rowid LIMIT 2)",
+            [f"{stopped}-R1"],
+        )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert _six_three_a(path, stopped) == ("S1 r1", "0 이하(ST)")
+    assert (
+        f"  - 최근부터 1번째 · S1 r1 · 원천 종류 `BUILTIN_SYNTHETIC_SEED` · 적재 "
+        f"{_imported(path, stopped)} — 대당 Capa 실패(ValueError) · 꼴 0 이하(ST)\n"
+    ) in output
+    summary = _summary(output)
+    body = "8-2D 고름 2/2 · 건너뜀 1 · 1번째 대당 Capa 실패(ValueError) S1 r1 0 이하(ST)"
+    assert summary[0] == f"- {body} #{checks.summary_code(body)}"
+    assert not _self_check_pattern().search(output)
+    assert checks.check_transcript(summary) == []
+    # 손으로 옮기며 칸 가름을 바꿔도 같고, S 번호 · 꼴의 수를 잘못 옮기면 잡힌다.
+    assert checks.check_transcript([summary[0].replace(" · ", "; ")]) == []
+    assert checks.check_transcript([summary[0].replace("S1 r1", "S2 r1")]) != []
+    assert checks.check_transcript([summary[0].replace("0 이하", "1 이하")]) != []
+
+
+def test_a_lone_taken_back_source_carries_its_place_and_shape_in_the_requirement_note(
+    simulation_db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """원천이 하나뿐인데 그 리비전 1 이 멈추면 건너뛴 것이 없어 8-2D 줄이 서지 않는다. 돌아온 것의
+    자리 · 꼴은 8-2R 이 6-3 a 와 같은 `S<n> r1` · 꼴 이름으로 싣는다(사내 S33 r1 의 `0 이하(ST)`
+    꼴) — 멈춘 원천이 하나도 빠지지 않고 6-3 a 와 번호로 맞대어진다. 값 · 이름은 찍지 않고, 다시
+    셈은 S 번호 · 꼴의 수를 잘못 옮긴 것을 잡는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    with duckdb.connect(str(path)) as connection:
+        [(seed, revision_id)] = connection.execute(
+            "SELECT d.dataset_id, r.revision_id FROM app_meta.dataset AS d "
+            "JOIN app_meta.scenario_revision AS r ON r.scenario_id = d.scenario_id "
+            "AND r.revision_no = 1"
+        ).fetchall()
+        upeh = REVISION_TABLES["RQ_UPEH"]
+        connection.execute(
+            f'UPDATE rev_data.{upeh} SET "ST" = 0 WHERE rowid IN (SELECT rowid '
+            f"FROM rev_data.{upeh} WHERE revision_id = ? AND \"Area_Name\" = 'MI' "
+            "ORDER BY rowid LIMIT 2)",
+            [revision_id],
+        )
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    place, shape = _six_three_a(path, str(seed))
+    assert shape == "0 이하(ST)"
+    assert "(리비전 1 계산이 서는 것이 없어 가장 최근 것으로 돌아왔다)" in output
+    assert (
+        f"- 신규 소요대수 계산이 멈췄다 — 대당 Capa 실패(ValueError) · {place} · 꼴 0 이하(ST). "
+        "대조하지 않았다\n"
+    ) in output
+    summary = _summary(output)
+    assert not any(line.startswith("- 8-2D ") for line in summary)
+    body = f"8-2R 대당 Capa 실패(ValueError) {place} 0 이하(ST)"
+    [line] = [line for line in summary if line.startswith("- 8-2R ")]
+    assert line == f"- {body} #{checks.summary_code(body)}"
+    assert not _self_check_pattern().search(output)
+    assert checks.check_transcript([line]) == []
+    assert checks.check_transcript([line.replace(place, "S9 r1")]) != []
+    assert checks.check_transcript([line.replace("0 이하", "1 이하")]) != []
+
+
+@pytest.mark.parametrize(
+    ("revision_no", "place"),
+    [(2, "S2"), (None, "S-")],
+    ids=["no-revision-one", "no-revision"],
+)
+def test_a_source_without_revision_one_has_no_r_and_no_shape(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    revision_no: int | None,
+    place: str,
+) -> None:
+    """리비전 1 이 없으면 `r1` 을 지어내지 않는다 — 시나리오에 다른 리비전이 있으면 6-3 a 의 번호
+    `S<n>` 만, 리비전이 하나도 없으면 6-3 a 가 번호를 매기지 않으므로 `S-`. 꼴 칸은 `-` 다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    stopped = f"{SENTINEL}DS-NEW"
+    _add_source_dataset(path, stopped, days_later=1, stop=False)
+    with duckdb.connect(str(path)) as connection:
+        # 베낀 시나리오는 만든 때가 같아 차례가 ID 로 갈린다 — 나중에 만든 것으로 둬 S2 로 둔다.
+        connection.execute(
+            "UPDATE app_meta.scenario SET created_at = created_at + INTERVAL 1 DAY "
+            "WHERE scenario_id = ?",
+            [f"{stopped}-SC"],
+        )
+        if revision_no is None:
+            connection.execute(
+                "DELETE FROM app_meta.scenario_revision WHERE revision_id = ?", [f"{stopped}-R1"]
+            )
+        else:
+            connection.execute(
+                "UPDATE app_meta.scenario_revision SET revision_no = ? WHERE revision_id = ?",
+                [revision_no, f"{stopped}-R1"],
+            )
+        listed = {
+            f"S{revision.scenario_no}"
+            for revision in revisions_script.list_revisions(connection, active_only=False)
+            if revision.dataset_id == stopped
+        }
+    assert listed == (set() if revision_no is None else {place})
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    assert f"  - 최근부터 1번째 · {place} · 원천 종류 `BUILTIN_SYNTHETIC_SEED` · " in output
+    assert "— 리비전 1 없음\n" in output
+    summary = _summary(output)
+    assert re.fullmatch(
+        rf"- 8-2D 고름 2/2 · 건너뜀 1 · 1번째 리비전 1 없음 {place} - #\d\d", summary[0]
+    ), summary[0]
+    assert checks.check_transcript(summary) == []
+
+
+def test_a_stop_without_a_join_shape_gets_a_dash(
+    simulation_db: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """기준정보 연결 오류(`ReferenceJoinError`)가 아닌 멈춤은 꼴이 없다 — 꼴 칸은 `-` 이고 블록
+    줄에는 `· 꼴` 을 붙이지 않는다. 문구는 찍지 않는다."""
+    path = tmp_path / "capa_simulation.duckdb"
+    path.write_bytes(simulation_db.read_bytes())
+    stopped = f"{SENTINEL}DS-NEW"
+    _add_source_dataset(path, stopped, days_later=1, stop=False)
+    calculate = checks._unit_capacity
+    calls: list[int] = []
+
+    def newest_stops(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        # 후보는 최근 것부터 계산한다 — 첫 계산이 가장 최근 원천의 리비전 1 이다.
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError(f"{SENTINEL} 문구")
+        return calculate(tables)
+
+    monkeypatch.setattr(checks, "_unit_capacity", newest_stops)
+
+    code, output = _run(capsys, "--only", "legacy", "--database", str(path))
+
+    assert code == 0
+    _assert_no_leak(output)
+    with duckdb.connect(str(path), read_only=True) as connection:
+        [place] = {
+            f"S{revision.scenario_no} r{revision.revision_no}"
+            for revision in revisions_script.list_revisions(connection, active_only=False)
+            if revision.dataset_id == stopped
+        }
+    assert f"적재 {_imported(path, stopped)} — 대당 Capa 실패(ValueError)\n" in output
+    summary = _summary(output)
+    assert re.fullmatch(
+        rf"- 8-2D 고름 2/2 · 건너뜀 1 · 1번째 대당 Capa 실패\(ValueError\) {place} - #\d\d",
+        summary[0],
+    ), summary[0]
+
+
+def test_an_old_skipped_source_line_still_checks() -> None:
+    """지난 압축본(1500 · 1000)의 자리 · 꼴 없는 8-2D 줄도 `--check-summary` 가 받는다
+    (수만 셈한다)."""
+    assert (
+        checks.check_transcript(["8-2D 고름 2/24; 건너뜀 1; 1번째 대당 Capa 실패(ValueError) #09"])
+        == []
+    )
 
 
 def test_source_candidates_stop_at_the_limit(
