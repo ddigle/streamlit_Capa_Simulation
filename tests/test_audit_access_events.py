@@ -1,0 +1,214 @@
+# Purpose: 접속 사건이 감사 줄이 되는지 — 로그인 · 무인증 홍수 · 세션 닫힘 · 기동 · 점검자.
+
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
+
+import pytest
+from asgi_driver import AsgiResponse, http
+from sso_support import LOGINID, id_token_claims, make_id_token, use_config
+from starlette.applications import Starlette
+from streamlit.testing.v1 import AppTest
+
+from capa_simulation.audit import boot, recorder, spool
+from capa_simulation.auth import names, runtime
+from capa_simulation.auth.config import SsoConfig
+from capa_simulation.auth.server import sso_routes
+from capa_simulation.auth.tokens import issue_session
+from capa_simulation.components import sso_identity
+
+FORM = {"content-type": "application/x-www-form-urlencoded"}
+INST = "0a0b0c0d0e0f"
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.moment = datetime(2026, 11, 13, 1, 0, tzinfo=timezone.utc)
+
+    def __call__(self) -> datetime:
+        return self.moment
+
+
+@pytest.fixture()
+def clock(tmp_path: Path) -> Iterator[Clock]:
+    ticking = Clock()
+    spool.configure(tmp_path)
+    recorder.start(env="cdep", version="test", inst=INST, clock=ticking)
+    yield ticking
+
+
+def _routes() -> Starlette:
+    return Starlette(routes=sso_routes())
+
+
+def _login(app: Starlette, cfg: SsoConfig) -> AsgiResponse:
+    started = http(app, "GET", f"{names.LOGIN_PATH}?next={quote('/', safe='')}")
+    query = {
+        key: values[0]
+        for key, values in parse_qs(urlsplit(started.header("location") or "").query).items()
+    }
+    cookie = started.cookie(cfg.state_cookie(query["state"]))
+    assert cookie is not None
+    token = make_id_token(id_token_claims(query["nonce"]))
+    return http(
+        app,
+        "POST",
+        names.CALLBACK_PATH,
+        headers={**FORM, "cookie": f"{cookie.name}={cookie.value}"},
+        body=urlencode({"id_token": token, "state": query["state"]}).encode(),
+    )
+
+
+def _payload(lines: list[dict[str, Any]]) -> str:
+    return json.dumps(lines, ensure_ascii=False)
+
+
+def test_a_login_through_the_routes_is_one_line_with_the_name_only(clock: Clock) -> None:
+    cfg = use_config()
+    recorder.set_grader(boot.grader(cfg))
+
+    response = _login(_routes(), cfg)
+
+    assert response.status == 303
+    lines = recorder.take_pending()
+    assert [line["ev"] for line in lines] == ["authn_login_success"]
+    (line,) = lines
+    assert (line["actor"], line["verified"], line["grade"]) == (LOGINID, True, "admin")
+    assert line["name"] == "개발 사용자"
+    assert line["det"] == {"hours": 6, "max_hours": 24}
+    assert len(line["sid8"]) == 8
+    payload = _payload(lines)
+    assert "개발부서" not in payload and "jti" not in payload
+    session = response.cookie(cfg.session_cookie)
+    assert session is not None and session.value not in payload
+
+
+def test_an_unauthenticated_flood_is_one_summary_line_per_hour(clock: Clock) -> None:
+    use_config()
+    app = _routes()
+    for _ in range(30):
+        http(app, "POST", names.CALLBACK_PATH, headers=FORM, body=b"state=x&id_token=y")
+
+    assert recorder.take_pending() == []
+    clock.moment += timedelta(hours=1)
+    (line,) = recorder.take_pending()
+    assert line["ev"] == "authn_login_fail_summary"
+    assert line["det"]["total"] == 30
+    assert line["actor"] == ""
+
+
+def test_logout_and_closed_sessions_become_session_lines(clock: Clock) -> None:
+    cfg = use_config()
+    now = int(time.time())
+    token, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=now)
+    http(_routes(), "GET", names.LOGOUT_PATH, headers={"cookie": f"{cfg.session_cookie}={token}"})
+    runtime.record_event("session_closed", reason="expired", loginid=LOGINID, end="idle")
+    runtime.record_event("session_closed", reason="denied", loginid=LOGINID)
+    runtime.record_event("session_closed", reason="missing", loginid="-")
+
+    lines = recorder.take_pending()
+    assert [(line["ev"], line["out"]) for line in lines] == [
+        ("session_logout", "success"),
+        ("session_expired", "success"),
+        ("authz_fail_session", "denied"),
+    ]
+    assert lines[0]["sid8"] == issued.sid[:8]
+    assert lines[1]["det"] == {"end": "idle"}
+
+
+def test_renewals_fold_into_one_line_per_hour(clock: Clock) -> None:
+    for outcome in ("renewed", "renewed", "skipped", "unauthorized"):
+        runtime.count_refresh(outcome)
+
+    assert recorder.take_pending() == []
+    clock.moment += timedelta(hours=1)
+    (line,) = recorder.take_pending()
+    assert line["ev"] == "session_renew_summary"
+    assert line["det"]["counts"] == {"renewed": 2, "skipped": 1, "unauthorized": 1}
+
+
+def test_boot_turns_the_recorder_on_only_for_an_enabled_sso(tmp_path: Path) -> None:
+    spool.configure(tmp_path)
+    off = use_config(drop=[names.ENV_CLIENT_ID])
+
+    assert boot.start(off) is False
+    assert not recorder.enabled()
+
+    cfg = use_config({names.ENV_AUDIT_VIEWERS: "Demo.Auditor"})
+    assert boot.start(cfg) is True
+    lines = recorder.take_pending()
+    assert [line["ev"] for line in lines] == ["sys_startup", "authz_admin_config"]
+    assert set(lines[0]["det"]) == {"env", "sso", "sync", "spool"}
+    assert (lines[0]["det"]["env"], lines[0]["det"]["sso"]) == ("cdep", "on")
+    assert lines[1]["det"]["admins"] == 1
+    assert lines[1]["det"]["auditors"] == 1
+    assert len(lines[1]["det"]["admin_fp"]) == 8
+    payload = _payload(lines)
+    assert LOGINID not in payload and "demo.auditor" not in payload
+    assert all(line["actor"] == "system:app" and line["grade"] == "system" for line in lines)
+
+
+def test_audit_viewers_are_read_withheld_and_graded() -> None:
+    environ_value = "Demo.Auditor; bad!!"
+    cfg = use_config({names.ENV_AUDIT_VIEWERS: environ_value})
+
+    assert cfg.audit_viewers == frozenset({"demo.auditor"})
+    assert any(
+        problem.env == names.ENV_AUDIT_VIEWERS and problem.code == "entries_unreadable"
+        for problem in cfg.notices
+    )
+    assert names.ENV_AUDIT_VIEWERS in names.WITHHELD_ENVIRONMENT
+    assert names.ENV_AUDIT_VIEWERS in names.SSO_ENVIRONMENT
+    assert "demo.auditor" not in repr(cfg)
+    grade = boot.grader(cfg)
+    assert (grade(LOGINID), grade("demo.auditor"), grade("other.user")) == (
+        "admin",
+        "auditor",
+        "user",
+    )
+
+
+SESSION_SCRIPT = """
+from capa_simulation.audit import recorder
+from capa_simulation.components import audit_actor, sso_identity
+
+identity = sso_identity.require_signed_in()
+audit_actor.note_session(identity)
+recorder.note_work("data_scenario_delete", tgt={"type": "scenario", "id": "s-1"})
+audit_actor.drain()
+"""
+
+
+def test_the_session_line_is_once_per_session_and_work_takes_the_cookie_actor(
+    clock: Clock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from capa_simulation.components import audit_actor
+
+    cfg = use_config()
+    runtime.mark_gate_installed()
+    recorder.set_grader(boot.grader(cfg))
+    audit_actor.install()
+    token, issued = issue_session(cfg, loginid=LOGINID, name=None, dept=None, now=int(time.time()))
+    monkeypatch.setattr(sso_identity, "session_cookies", lambda: {cfg.session_cookie: token})
+
+    app = AppTest.from_string(SESSION_SCRIPT).run()
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    lines = spool.read_lines(spool.spool_path("2026-11-13", INST, tmp_path))
+    assert [line["ev"] for line in lines] == [
+        "session_created",
+        "data_scenario_delete",
+        "data_scenario_delete",
+    ]
+    created = lines[0]
+    assert created["sid8"] == issued.sid[:8]
+    assert len(created["tab8"]) == 8 and created["ip"] == ""
+    assert all((line["actor"], line["verified"]) == (LOGINID, True) for line in lines)
+    assert lines[1]["grade"] == "admin"

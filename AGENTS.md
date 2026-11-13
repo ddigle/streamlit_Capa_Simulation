@@ -340,8 +340,16 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   에 덧붙이고 fsync · 올림 표지 `.shipped` · 일별 파일이 미러에 든 날짜만 지우기)는 `audit/spool.py`(뿌리 기본
   `data/temp/audit`, 시험은 conftest 가 세션 임시 폴더로 옮기고 저장소에 새로 생기면 실패), 버킷 키 · 미러 자리 · gzip 꼴은
   `audit/layout.py`, 화면이 읽는 길(스풀 · 미러만 — S3 를 부르지 않는다, KST +09:00 고정, 같은 (inst, seq) 하나만, 다시 읽지
-  않을 지문)은 `audit/read.py` 다. 모두 표준 라이브러리만 쓴다(문지기가 `recorder` 를 부른다 —
-  `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다).
+  않을 지문)은 `audit/read.py` 다. 넷 다 표준 라이브러리만 쓴다(문지기가 `recorder` 를 부른다 —
+  `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다). 켜는 곳은 `audit/boot.py` 하나다 —
+  `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(관리자
+  수 · 목록 지문 8자 · 점검자 수) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 점검자 `CAPA_AUDIT_VIEWERS` · 사용자)를 꽂는다.
+  통합인증 사건은 `auth/runtime.record_event` 가 잠금 밖에서 대응표(`from_sso_event`)로 넘기고(로그인 성공의 이름은 감사
+  줄에만 — `audit=` 칸, 서버 로그 · 고리에는 싣지 않는다), 갱신 누계는 시간 묶음으로 센다.
+  - `components/audit_actor.py` — 감사 기록의 앱 쪽. 스크립트 스레드 행위자 해석기(`resolve` — 쿠키를 **지금** 다시 검증한
+    `sso_identity.verified_identity`, 실행 문맥이 없으면 `None`), 세션 첫 회차의 `session_created`(`note_session` — `sid8` ·
+    `tab8` = Streamlit 세션 id 의 SHA-256 앞 8자), 부트스트랩 뒤 비우기(`drain`). `app.py` 는 신원이 있는 회차(통합인증 켜짐)에만
+    부른다 — 꺼짐은 호출 0(`tests/test_app_navigation.py`).
 - `src/capa_simulation/auth/` — 통합인증(ADFS · form_post). Streamlit 을 import 하지 않는다(문지기는 이벤트 루프에서
   돈다). 환경변수 이름 · 경로 · 쿠키 이름은 `auth/names.py`(표준 라이브러리만), 모드(꺼짐 · 켜짐 · 막힘) 판정과 검증된 설정은
   `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 토큰(HS256 — `sid` · `auth_time` 을 싣고 갱신은 새

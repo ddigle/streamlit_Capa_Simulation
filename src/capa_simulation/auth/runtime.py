@@ -35,6 +35,7 @@ from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import NamedTuple
 
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit.text import log_field
 from capa_simulation.auth import names
 from capa_simulation.auth.access import AccessList, AccessSource
@@ -324,6 +325,7 @@ def count_refresh(outcome: str) -> None:
         raise ValueError(outcome)
     with _LOCK:
         _STATE.refresh_counts[outcome] += 1
+    audit_recorder.count(audit_recorder.SUMMARY_RENEW, outcome)
 
 
 def refresh_counts() -> dict[str, int]:
@@ -455,7 +457,13 @@ def _note_denied(item: SsoEvent) -> None:
     _STATE.denied_total += 1
 
 
-def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> None:
+def record_event(
+    event: str,
+    *,
+    level: int = logging.INFO,
+    audit: Mapping[str, str] | None = None,
+    **fields: str,
+) -> None:
     """사건 한 줄 — 서버 로그(`sso event=… key=value`)와 최근 사건 고리(각 최대 50).
 
     무인증 실패(`is_anonymous`)는 따로 둔 고리에 쌓고 사유별로 센다. 명단 밖 로그인
@@ -463,6 +471,10 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
     누계만 센다. 셋 다 다른 사건(설정 · 로그인 · 로그아웃 · 연결 닫음 · 서명이 통과한 뒤의 실패)을
     밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽
     규칙).
+
+    감사 기록기가 켜진 서버면 같은 사건을 대응표(`audit.recorder.from_sso_event`)로 감사 줄에도
+    넣는다 — 잠금 밖에서 부른다(기록기의 등급 판정이 이 모듈의 명단을 읽는다). `audit` 은 감사
+    줄에만 싣는 칸이다(로그인 성공의 이름 — 서버 로그 · 고리에는 싣지 않는다).
     """
     cleaned = tuple((key, log_field(value)) for key, value in fields.items())
     line = f"sso event={log_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
@@ -484,6 +496,7 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
                 _STATE.anonymous_counts[other] = _STATE.anonymous_counts.get(other, 0) + 1
         else:
             _STATE.events.append(item)
+    audit_recorder.from_sso_event(item.event, dict(cleaned), audit)
 
 
 def recent_events(limit: int = MAX_EVENTS, *, anonymous: bool | None = None) -> list[SsoEvent]:

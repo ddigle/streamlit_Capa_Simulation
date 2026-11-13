@@ -1492,6 +1492,7 @@ def test_the_start_script_reads_the_sso_names_from_the_light_module() -> None:
         sso_names.ENV_S3_SECRET_KEY,
         sso_names.ENV_ACCESS_ADMINS,
         sso_names.ENV_ACCESS_USERS,
+        sso_names.ENV_AUDIT_VIEWERS,
     )
     assert container_start.sso_presence({sso_names.ENV_SCOPE: " "}) == dict.fromkeys(
         sso_names.SSO_ENVIRONMENT, False

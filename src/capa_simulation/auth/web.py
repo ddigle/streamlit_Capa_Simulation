@@ -823,6 +823,7 @@ async def callback(request: Request) -> Response:
         max_hours=str(cfg.session_max_hours),
         sid=session.sid[:8],
         jti=session.jti[:8],
+        audit={"name": login.name or ""},
     )
     if login.name is None:
         runtime.record_event("username_missing", loginid=login.loginid)
