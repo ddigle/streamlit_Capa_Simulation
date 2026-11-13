@@ -50,7 +50,7 @@ from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.access import SourceProblem
 from capa_simulation.auth.config import SsoConfig, SsoMode, SsoProblem
-from capa_simulation.components import sso_identity
+from capa_simulation.components import admin_view, sso_identity
 from capa_simulation.components.diagnostic_copy import (
     diagnostic_text,
     plain_lines,
@@ -451,8 +451,10 @@ def _expiring_certs(cfg: SsoConfig, now: datetime) -> list[str]:
 
 
 def _viewer_is_admin(cfg: SsoConfig) -> bool:
-    """관리자 판정 한 벌(`sso_identity.viewer_is_admin`) — `cfg` 는 지금 설정과 같다."""
-    return sso_identity.viewer_is_admin()
+    """관리자 몫 보기 한 판정(`admin_view.admin_notes_visible`) — `cfg` 는 지금 설정과 같다. S3 명단
+    서버는 통합인증이 켜져 있어(`access_store.is_on`) 관리자 판정(`sso_identity.viewer_is_admin`)과
+    같다."""
+    return admin_view.admin_notes_visible()
 
 
 def _admin_area_goto() -> tuple[str, str]:

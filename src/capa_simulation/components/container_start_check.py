@@ -401,9 +401,9 @@ def start_check_alert_possible() -> bool:
 def render_start_check_alert() -> None:
     """서버 시작 점검 관리자 알림(`AD-01`) — `app.py` 가 회차마다 조건 없이 부른다(모듈 설명).
 
-    관리자가 아닌 회차는 해소로 부른다(같은 수의 표지 — 통합인증이 꺼진 서버는 누구에게나 —
-    `admin_view`). 지문은 (제목, 실패 단계 이름들)이다 — 까닭 글이 바뀌어도 같은 단계면 다시 뜨지
-    않는다."""
+    관리자 몫이 아닌 회차는 해소로 부른다(같은 수의 표지 —
+    `admin_view.admin_notes_visible`, 운영 아닌 꺼진 서버는 누구에게나). 지문은 (제목, 실패
+    단계 이름들)이다 — 까닭 글이 바뀌어도 같은 단계면 다시 뜨지 않는다."""
     if not start_check_alert_possible():
         return
     report = read_container_start_report()
