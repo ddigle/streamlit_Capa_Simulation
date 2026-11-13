@@ -51,6 +51,8 @@ def _spec(name: str, cat: str, label: str, *det: str, lvl: str = "info") -> Even
 _REV: Final = ("rev_from", "rev_to")
 _SEQ: Final = ("seq_from", "seq_to")
 _VERSION: Final = ("version_from", "version_to")
+# 시간 묶음 한 줄 — 건수 표 · 합계 · 묶은 시간 · 정시 전에 앞당겨 닫았는가.
+_SUMMARY: Final = ("counts", "total", "hour", "partial")
 
 SPECS: Final[tuple[EventSpec, ...]] = (
     # --- 접속 ---------------------------------------------------------------------------------
@@ -60,9 +62,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
         "authn_login_fail_summary",
         "access",
         "로그인 전 실패(시간 묶음)",
-        "counts",
-        "total",
-        "hour",
+        *_SUMMARY,
         lvl="warn",
     ),
     _spec("authn_username_missing", "access", "계정 클레임 없음", "claim", lvl="warn"),
@@ -74,6 +74,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
         "total",
         "accounts",
         "hour",
+        "partial",
         lvl="warn",
     ),
     _spec("session_created", "access", "세션 시작"),
@@ -82,7 +83,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("session_revoked", "access", "폐기로 닫힘", "reason"),
     _spec("authz_fail_session", "access", "명단에서 빠져 끊김", "reason", lvl="warn"),
     _spec("session_invalid", "access", "쿠키 이상으로 닫힘", "reason", lvl="warn"),
-    _spec("session_renew_summary", "access", "로그인 갱신(시간 묶음)", "counts", "total", "hour"),
+    _spec("session_renew_summary", "access", "로그인 갱신(시간 묶음)", *_SUMMARY),
     # --- 관리 ---------------------------------------------------------------------------------
     _spec("user_created", "admin", "명단 추가", *_REV),
     _spec("user_deleted", "admin", "명단 삭제", *_REV),
@@ -136,7 +137,7 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("sys_access_save_fail", "system", "접속 명단 저장 실패", "reason", "status", lvl="warn"),
     _spec("sys_sync_fail", "system", "DB 올리기 실패", "kind", "failures", lvl="warn"),
     _spec("sys_sync_blocked", "system", "DB 올리기 멈춤", "decision", lvl="warn"),
-    _spec("sys_sync_summary", "system", "DB 올리기(시간 묶음)", "counts", "total", "hour"),
+    _spec("sys_sync_summary", "system", "DB 올리기(시간 묶음)", *_SUMMARY),
     _spec("sys_clock_skew", "system", "시계 차이", "seconds", lvl="warn"),
     _spec("sys_audit_dropped", "system", "감사 기록 넘쳐 버림", "count", lvl="crit"),
     _spec("sys_audit_ship_fail", "system", "감사 기록 올리기 실패", "kind", "failures", lvl="warn"),

@@ -20,6 +20,7 @@
 
 **시간 묶음.** 무인증 실패 · 로그인 갱신 · 명단 밖 되풀이 · DB 올리기 성공은 사건마다가 아니라 UTC
 정시 단위로 센 뒤, 정시를 넘긴 첫 비우기 때 한 줄을 낸다 — 무인증 홍수가 기록을 밀어내지 못한다.
+「지금 올리기」 는 열린 묶음을 앞당겨 닫는다(`partial` — CI/CD 앞에 메모리 누계를 남긴다).
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ COUNTS_KEY_BUDGET: Final = 768
 _COUNT_KEY_OVERHEAD: Final = 12
 TRUNC_KEY: Final = "trunc"
 OTHER_KEY: Final = "other"
+PARTIAL_KEY: Final = "partial"
 
 # 실행 문맥이 없는 배경 스레드 둘 — 이름은 `auto_update_scheduler.THREAD_NAME` ·
 # `object_sync_worker.THREAD_NAME` 과 같다(시험이 맞댄다). 무거운 모듈을 import 하지 않으려
@@ -93,7 +95,10 @@ def _utc_now() -> datetime:
 class _Bucket:
     hour: str
     counts: dict[str, int] = field(default_factory=dict)
+    # 명단 밖 — 이 시간에 첫 줄을 낸 계정(앞당겨 닫아도 그 시간 동안 남긴다)과, 이 묶음이 열린 뒤
+    # 낸 첫 줄 수(묶음 한 줄의 `accounts` — 줄마다 `total - accounts` 가 되풀이 수다).
     accounts: set[str] = field(default_factory=set)
+    firsts: int = 0
 
 
 @dataclass
@@ -494,6 +499,7 @@ def note_denied(loginid: str, reason: str) -> None:
         bucket.counts["total"] = bucket.counts.get("total", 0) + 1
         if actor not in bucket.accounts and len(bucket.accounts) < MAX_QUEUE:
             bucket.accounts.add(actor)
+            bucket.firsts += 1
             first = True
     if closed is not None:
         _close_bucket(SUMMARY_DENIED, closed)
@@ -508,15 +514,21 @@ def note_denied(loginid: str, reason: str) -> None:
         )
 
 
-def _close_bucket(summary: str, bucket: _Bucket) -> None:
-    """닫힌 시간 묶음을 한 줄로. 명단 밖은 되풀이가 있을 때만(첫 건은 이미 줄이 있다)."""
+def _yields_line(summary: str, bucket: _Bucket) -> bool:
+    """닫으면 한 줄이 나오는 묶음인가 — 명단 밖은 되풀이가 있을 때만(첫 건은 이미 줄이 있다)."""
     if summary == SUMMARY_DENIED:
-        total = bucket.counts.get("total", 0)
-        if total <= len(bucket.accounts):
-            return
+        return bucket.counts.get("total", 0) > bucket.firsts
+    return bool(bucket.counts)
+
+
+def _close_bucket(summary: str, bucket: _Bucket, *, partial: bool = False) -> None:
+    """닫힌 시간 묶음을 한 줄로. `partial` 은 정시 전에 앞당겨 닫은 줄(같은 시간에 줄이 더 온다)."""
+    if not _yields_line(summary, bucket):
+        return
+    if summary == SUMMARY_DENIED:
         det: dict[str, object] = {
-            "total": total,
-            "accounts": len(bucket.accounts),
+            "total": bucket.counts.get("total", 0),
+            "accounts": bucket.firsts,
             "hour": bucket.hour,
         }
     else:
@@ -525,6 +537,8 @@ def _close_bucket(summary: str, bucket: _Bucket) -> None:
             "total": sum(bucket.counts.values()),
             "hour": bucket.hour,
         }
+    if partial:
+        det[PARTIAL_KEY] = True
     record(summary, actor="", det=det, lvl=_SUMMARY_LEVELS.get(summary))
 
 
@@ -539,6 +553,33 @@ def close_finished_buckets() -> None:
             del _STATE.buckets[name]
     for name, bucket in finished:
         _close_bucket(name, bucket)
+
+
+def close_open_buckets() -> None:
+    """아직 열린 이 시간 묶음까지 지금 한 줄씩 낸다(`partial`) — 「지금 올리기」 가 부른다.
+
+    CI/CD 로 pod 이 바뀌면 메모리 누계가 사라지므로 올리기 바로 앞에 앞당겨 닫는다. 같은 시간의
+    나머지는 새 묶음으로 세어 정시 뒤 한 줄이 더 나온다(화면은 줄마다 더한다). 명단 밖은 그 시간에
+    첫 줄을 낸 계정을 그대로 기억해 같은 계정의 첫 줄을 다시 내지 않는다.
+    """
+    if not _STATE.enabled:
+        return
+    close_finished_buckets()
+    with _LOCK:
+        opened = list(_STATE.buckets.items())
+        for name, bucket in opened:
+            if name == SUMMARY_DENIED:
+                _STATE.buckets[name] = _Bucket(bucket.hour, accounts=bucket.accounts)
+            else:
+                del _STATE.buckets[name]
+    for name, bucket in opened:
+        _close_bucket(name, bucket, partial=True)
+
+
+def open_summary_lines() -> int:
+    """열린 시간 묶음 가운데 닫으면 한 줄이 나오는 수 — 「감사 미전송」 에 더한다(메모리만)."""
+    with _LOCK:
+        return sum(1 for name, bucket in _STATE.buckets.items() if _yields_line(name, bucket))
 
 
 # ------------------------------------------------------------------ 꺼내기

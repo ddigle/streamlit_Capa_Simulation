@@ -236,6 +236,104 @@ def test_upload_now_ships_the_audit_first(
     assert "session_created" in [line["ev"] for line in shipped]
 
 
+def _shipped(box: Box) -> list[dict[str, object]]:
+    return [
+        line
+        for key in box.keys(layout.SEG_PREFIX)
+        for line in layout.decode_lines(box.store.objects[key])
+    ]
+
+
+def test_upload_now_closes_open_hour_counts_and_carries_a_line_made_after_the_first_drain(
+    box: Box, worker_rig: tuple[ObjectSyncWorker, Monotonic], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CI/CD 앞 「지금 올리기」 — 메모리에만 있던 이 시간 묶음 누계와, 일꾼이 고리 맨 앞에서 비운
+    뒤에 든 줄(그 단추의 줄)이 같은 올리기에 실리고 「감사 미전송」 이 0 이 된다."""
+    worker, monotonic = worker_rig
+    tasks = worker._audit
+    assert tasks is not None
+    box.record(1)
+    tasks.run_ship(monotonic.now)
+    assert tasks._linked
+    recorder.from_sso_event("login_fail", {"reason": "bad_state", "loginid": "-"})
+    status = WorkerStatus(alive=True, phase="idle", last_tick=0.0)
+    health = SyncHealth("올릴 것 없음")
+    assert spool.unsent_count() >= 1
+    assert spool.unshipped_count() == spool.unsent_count() - 1, "일꾼 판정에는 묶음을 넣지 않는다"
+
+    real_drain = tasks.drain
+    drains: list[float] = []
+
+    def drain_then_click(now: float) -> None:
+        real_drain(now)
+        drains.append(now)
+        if len(drains) == 1:
+            recorder.record("admin_sync_push", actor="demo.admin", det={"result": "requested"})
+
+    monkeypatch.setattr(tasks, "drain", drain_then_click)
+    monotonic.now += 5
+    worker.request_now()
+    worker.tick()
+
+    shipped = _shipped(box)
+    events = [line["ev"] for line in shipped]
+    assert "admin_sync_push" in events
+    (summary,) = [line for line in shipped if line["ev"] == recorder.SUMMARY_LOGIN_FAIL]
+    assert summary["det"] == {
+        "counts": {"login_fail:bad_state": 1},
+        "total": 1,
+        "hour": "2026-11-13T03",
+        "partial": True,
+    }
+    assert "**감사 미전송** · 0줄" in object_sync_status.status_lines(status, health, now=0.0)
+
+
+@dataclass
+class BusyBucket:
+    """올릴 때마다 그 사이 줄 하나가 드는 바쁜 서버의 메모리 버킷."""
+
+    objects: dict[str, bytes] = field(default_factory=dict)
+
+    def records(self, prefix: str) -> tuple[ObjectRecord, ...]:
+        return tuple(
+            ObjectRecord(key, len(body), "", None)
+            for key, body in self.objects.items()
+            if key.startswith(prefix)
+        )
+
+    def put_new(self, key: str, body: bytes) -> bool:
+        recorder.record("session_created", actor="demo.busy")
+        if key in self.objects:
+            return False
+        self.objects[key] = body
+        return True
+
+    def get(self, key: str) -> bytes:
+        return self.objects[key]
+
+    def modified(self, key: str) -> datetime | None:
+        return None
+
+
+def test_steady_uploads_on_a_busy_hour_raise_no_overdue_alarm(box: Box) -> None:
+    """5분마다 잘 올리는데 올리는 사이 줄이 늘 드는 한 시간 — 「올리기 밀림」 이 서지 않는다."""
+    monotonic = Monotonic()
+    bucket = BusyBucket()
+    tasks = shipper.AuditTasks(
+        bucket, clock=monotonic, today=lambda: TODAY, wall=box.clock, base=box.base
+    )
+    box.record(1)
+    start = monotonic.now
+    while monotonic.now - start <= 3_600:
+        tasks.drain(monotonic.now)
+        if tasks.ship_due(monotonic.now):
+            tasks.run_ship(monotonic.now)
+        monotonic.now += 10
+
+    assert len(bucket.objects) >= 10 and shipper.health().failures == 0
+    assert "올리기 밀림" not in shipper.keeping_problems(managed=True, now=monotonic.now)
+
+
 def _yesterday(box: Box, count: int, *, inst: str = INST) -> None:
     box.clock.moment = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
     if inst != recorder.instance_id():

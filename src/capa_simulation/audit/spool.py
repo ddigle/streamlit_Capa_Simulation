@@ -233,10 +233,22 @@ def mark_shipped(path: Path, seq: int) -> None:
 
 
 def unshipped_count() -> int:
-    """이 프로세스의 아직 올리지 않은 줄(큐 + 스풀) — 「감사 미전송 n줄」. 메모리만 읽는다."""
+    """이 프로세스의 아직 올리지 않은 줄(큐 + 스풀) — 일꾼의 올리기 때 · 밀림 판정. 메모리만 읽는다.
+
+    열린 시간 묶음은 넣지 않는다 — 한 시간 내내 열려 있어 넣으면 올리기 밀림이 늘 선다.
+    """
     with _LOCK:
         drained = _CHAIN.seq - _CHAIN.shipped
     return max(drained, 0) + recorder.pending_count()
+
+
+def unsent_count() -> int:
+    """화면 「감사 미전송 n줄」 — 올리지 않은 줄에 아직 열린 시간 묶음(닫히면 한 줄씩)을 더한다.
+
+    CI/CD 앞 「지금 올리기」 뒤 이 값이 0 이어야 그 pod 의 기록이 버킷에 다 남는다(묶음은 「지금
+    올리기」 가 앞당겨 닫는다). 메모리만 읽는다.
+    """
+    return unshipped_count() + recorder.open_summary_lines()
 
 
 def spool_files(base: Path | None = None) -> list[Path]:

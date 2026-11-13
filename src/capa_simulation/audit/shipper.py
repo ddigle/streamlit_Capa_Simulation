@@ -575,6 +575,18 @@ class AuditTasks:
         elif not pending and state.unshipped_since is not None:
             _note(unshipped_since=None)
 
+    def flush_now(self, now: float) -> None:
+        """「지금 올리기」 바로 앞 — 열린 시간 묶음을 앞당겨 닫고 큐를 한 번 더 비운다.
+
+        일꾼이 고리 맨 앞에서 비운 뒤 들어온 줄(그 단추의 `admin_sync_push` 줄 등)과 메모리에만 있는
+        시간 묶음 누계가 같은 올리기에 실린다 — CI/CD 앞에 누르는 단추라 그 pod 의 몫을 남긴다.
+        """
+        try:
+            recorder.close_open_buckets()
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("감사 시간 묶음을 앞당겨 닫지 못했습니다.")
+        self.drain(now)
+
     def ship_due(self, now: float) -> bool:
         if now < self._retry_at:
             return False
@@ -631,11 +643,13 @@ class AuditTasks:
         self._leftover = False
         self._ship_at = now + SHIP_EVERY_SECONDS
         self._retry_at = now
+        # 성공 뒤에도 남은 줄은 이 올리기 동안 들어온 것뿐이다 — 밀림은 지금부터 잰다(옛 시각은
+        # 이미 올라간 줄의 것이라 그대로 두면 바쁜 시간에 「올리기 밀림」 이 잘못 선다).
         _note(
             failures=0,
             failure_kind=None,
             last_ship_utc=recorder.ts_text(self.wall()),
-            unshipped_since=None if not spool.unshipped_count() else health().unshipped_since,
+            unshipped_since=None if not spool.unshipped_count() else now,
         )
 
     def run_compact(self, now: float, step: Step = _no_step) -> None:

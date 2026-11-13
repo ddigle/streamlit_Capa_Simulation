@@ -35,8 +35,9 @@ C-DEP 운영 서버는 영속 볼륨이 없고 끌 때 올릴 기회도 없다. 
 
 **감사 기록**(`audit.shipper.AuditTasks` — 기록기가 켜진 서버만)도 이 고리가 한다. 고리 맨 앞에서
 스풀로 비우고, 올리기는 DB 올리기보다 먼저 한다(몇 KB 다). DB 판정 · 막힘과 상관없이 돌고 그
-실패는 감사 쪽이 삼킨다 — DB 실패 수(`SY-02`)를 건드리지 않는다. 「지금 올리기」 는 감사부터
-올린다. 새 스레드는 없다.
+실패는 감사 쪽이 삼킨다 — DB 실패 수(`SY-02`)를 건드리지 않는다. 「지금 올리기」 는 열린 시간
+묶음을 앞당겨 닫고 한 번 더 비운 뒤 감사부터 올리고, DB 올리기 뒤 그 몫까지 한 번 더 올린다(CI/CD
+앞 「감사 미전송 0」). 새 스레드는 없다.
 
 자식 프로세스(`aws`)는 `subprocess.run` 기본(`close_fds=True`)이라 듣는 소켓을 물려받지 않고,
 Python 3.10 은 vfork 를 쓰므로 앱 메모리를 복제하지 않는다.
@@ -352,13 +353,21 @@ class ObjectSyncWorker:
             due = self._next_upload_at(sync_state.mark_clock())
         shipped_first = False
         if manual and audit is not None:
-            # 「지금 올리기」 는 감사부터 — CI/CD 앞에 누르는 단추라 감사 미전송도 함께 비운다.
+            # 「지금 올리기」 는 감사부터 — CI/CD 앞에 누르는 단추라 감사 미전송도 함께 비운다. 열린
+            # 시간 묶음을 앞당겨 닫고 맨 앞 비우기 뒤에 든 줄까지 한 번 더 비운 뒤 올린다.
+            audit.flush_now(now)
             self._run_audit(audit.run_ship, now)
             shipped_first = True
         if not shipped_first and audit is not None and audit.ship_due(now):
             self._run_audit(audit.run_ship, now)
         elif due is not None and due <= now:
             self._run_upload(now)
+            if shipped_first and audit is not None:
+                # DB 올리기가 남긴 감사 몫(올림 시간 묶음 · 막힘 · 실패 줄)도 같은 누름에 올린다 —
+                # 「지금 올리기」 뒤 「감사 미전송 0」 을 보고 CI/CD 한다.
+                after = self._clock()
+                audit.flush_now(after)
+                self._run_audit(audit.run_ship, after)
         elif now >= self._watch_at:
             self._run_watch(now)
         elif now >= self._prune_at:

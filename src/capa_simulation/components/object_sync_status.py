@@ -235,7 +235,8 @@ def status_lines(status: WorkerStatus | None, health: SyncHealth, *, now: float)
         lines.append(f"**정리 실패** · {failure_label(status.prune_failure)}")
     if audit_recorder.enabled():
         # 접속 · 작업 감사 기록 — CI/CD 앞 「지금 올리기」 뒤 0 이어야 그 pod 의 기록이 남는다.
-        lines.append(f"**감사 미전송** · {audit_spool.unshipped_count()}줄")
+        # 아직 열린 시간 묶음(닫히면 한 줄씩)도 센다.
+        lines.append(f"**감사 미전송** · {audit_spool.unsent_count()}줄")
         audit = audit_shipper.health()
         if audit.failures:
             lines.append(
@@ -261,8 +262,9 @@ def _upload_now() -> None:
         audit_recorder.record("admin_sync_push", out="fail", det={"result": "no_worker"})
         queue_flash(FLASH_KEY, NO_WORKER_MESSAGE, kind="error", popup_only=True)
         return
-    worker.request_now()
+    # 줄을 먼저 넣고 깨운다 — 일꾼이 그 올리기 앞에 한 번 더 비우므로 이 줄이 같은 올리기에 실린다.
     audit_recorder.record("admin_sync_push", det={"result": "requested"})
+    worker.request_now()
     queue_flash(FLASH_KEY, "올리기를 시작했습니다")
 
 

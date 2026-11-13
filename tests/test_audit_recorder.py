@@ -271,6 +271,39 @@ def test_denied_logins_keep_the_first_per_account_and_count_the_rest(on: Clock) 
     assert summary["det"] == {"total": 4, "accounts": 2, "hour": "2026-11-13T07"}
 
 
+def test_an_early_close_writes_partial_lines_and_the_hour_still_adds_up(on: Clock) -> None:
+    """「지금 올리기」 의 앞당겨 닫기 — 열린 묶음마다 `partial` 한 줄, 명단 밖은 그 시간 첫 줄을 낸
+    계정을 기억해 같은 계정의 첫 줄을 다시 내지 않는다. 줄마다 `total - accounts` 를 더하면 되풀이
+    수가 맞는다."""
+    for _ in range(3):
+        recorder.from_sso_event("login_denied", {"loginid": "demo.outsider", "reason": "x"})
+    for _ in range(2):
+        recorder.from_sso_event("login_fail", {"reason": "bad_state", "loginid": "-"})
+    assert recorder.open_summary_lines() == 2
+
+    recorder.close_open_buckets()
+    early = recorder.take_pending()
+    for _ in range(2):
+        recorder.from_sso_event("login_denied", {"loginid": "demo.outsider", "reason": "x"})
+    recorder.from_sso_event("login_denied", {"loginid": "demo.other", "reason": "x"})
+    recorder.from_sso_event("login_fail", {"reason": "bad_state", "loginid": "-"})
+    on.moment += timedelta(hours=1)
+    late = recorder.take_pending()
+
+    lines = [*early, *late]
+    firsts = [line["actor"] for line in lines if line["ev"] == "authz_fail_access_list"]
+    assert firsts == ["demo.outsider", "demo.other"]
+    denied = [line["det"] for line in lines if line["ev"] == recorder.SUMMARY_DENIED]
+    assert denied == [
+        {"total": 3, "accounts": 1, "hour": "2026-11-13T07", "partial": True},
+        {"total": 3, "accounts": 1, "hour": "2026-11-13T07"},
+    ]
+    assert len(firsts) + sum(det["total"] - det["accounts"] for det in denied) == 6
+    fails = [line["det"] for line in lines if line["ev"] == recorder.SUMMARY_LOGIN_FAIL]
+    assert [(det["total"], det.get("partial")) for det in fails] == [(2, True), (1, None)]
+    assert recorder.open_summary_lines() == 0
+
+
 def _finishes(work: Callable[[], object], seconds: float = 5.0) -> list[object]:
     """`work` 를 데몬 스레드로 돌려 `seconds` 안에 끝나는지 본다 — 끝없는 고리가 시험 조각을 붙잡지
     않게 한다. 돌려준 값은 목록 하나에 담는다."""
