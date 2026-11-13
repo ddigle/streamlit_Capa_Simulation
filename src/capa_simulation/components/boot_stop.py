@@ -51,6 +51,7 @@ UPDATE_LINE: Final = "앱 업데이트를 마치지 못했습니다 — 관리�
 RETRY_LABEL: Final = "다시 시도"
 RETRY_KEY: Final = "boot_stop_retry"
 DIAGNOSTIC_LABEL: Final = "관리자용 진단"
+DIAGNOSTIC_KEY: Final = "boot_stop_diagnostic"
 DIAGNOSTIC_TITLE: Final = "앱 시작 실패 진단"
 COPY_KEY: Final = "boot_stop"
 # 화면에 옮기는 원문 길이 — DuckDB 글에는 SQL 줄 · 위치 표시가 붙어 길어진다.
@@ -133,16 +134,8 @@ def render_boot_stop(exc: BaseException) -> None:
         st.button(RETRY_LABEL, key=RETRY_KEY, type="primary")
     render_contact_caption()
     st.caption(reference)
-    message = bootstrap_error_message(exc)
-    with st.expander(DIAGNOSTIC_LABEL):
-        render_diagnostic_copy(
-            diagnostic_text(
-                DIAGNOSTIC_TITLE,
-                [reference],
-                [alerts.plain_text(message)],
-                [original_line(exc)],
-            ),
-            key=COPY_KEY,
-        )
-        st.markdown(message)
-        st.code(original_line(exc), wrap_lines=True)
+    blocks = ([reference], [alerts.plain_text(bootstrap_error_message(exc))], [original_line(exc)])
+    with st.expander(DIAGNOSTIC_LABEL, key=DIAGNOSTIC_KEY):
+        render_diagnostic_copy(diagnostic_text(DIAGNOSTIC_TITLE, *blocks), key=COPY_KEY)
+        # 진단 글은 글자 그대로(평문 칸) — 조치 문장 · 파일 경로 · 원문을 자리 글로 늘어놓지 않는다.
+        st.code("\n\n".join("\n".join(block) for block in blocks), language=None, wrap_lines=True)

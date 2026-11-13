@@ -1766,8 +1766,12 @@ def test_the_alert_popup_item_waits_for_the_stack_to_clear_before_raising(
 
 
 def test_the_app_error_screen_is_an_error_box_without_the_sidebar_menu() -> None:
+    """앱 시작 실패 판(`components/boot_stop.py`)은 본문의 오류 상자(`st.error`)라 화면 확인이
+    「앱 오류 화면 있음」 으로 가른다."""
     app = _text(PROJECT_ROOT / "app.py")
-    assert "st.error(bootstrap_error_message(exc)" in app
+    panel = _text(PROJECT_ROOT / "src" / "capa_simulation" / "components" / "boot_stop.py")
+    assert "render_boot_stop(exc)" in app
+    assert "st.error(failure.line" in panel
     assert "st.page_link(" in app
 
 
