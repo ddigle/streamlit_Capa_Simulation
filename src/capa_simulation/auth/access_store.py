@@ -8,8 +8,11 @@
   관리자만 통과한다(열림으로 떨어지지 않는다).
 - **접속 판정** — 메모리의 한 벌(`runtime.current_access`)로만 한다. 판정이 S3 에 가지 않으므로
   잘 읽어 둔 뒤에는 S3 가 막혀도 판정이 이어진다.
-- **명단 수정** — Admin 화면 → S3 PUT 성공 → 메모리 교체(`save_changes`). 재시작이 없다. 실패면
-  메모리는 그대로다.
+- **명단 수정** — Admin 화면 → S3 PUT 성공 → 메모리 교체(`save_changes` — 넣기 · 빼기 · 등급
+  바꾸기). 재시작이 없다. 실패면 메모리는 그대로다.
+- **스스로 등록** — 거절 화면의 「접속 권한 신청」(`web.register` → 스레드 풀 →
+  `register_self`). 신원은 콜백이 심은 거절 표에서만 오고, 늘 일반 등급이며, 이미 있으면 쓰지
+  않는다(등급 그대로).
 
 파일은 작은 JSON 객체 하나다 — 형식 판(`format`) · 고칠 때마다 느는 판 번호(`revision`) · 사용자
 항목 · 고친 기록 마지막 200건. **받아 둔 파일이 없을 때** 키가 없으면(404 `NoSuchKey`) 첫 판이다 —
@@ -29,22 +32,32 @@
 읽는다.
 
 깨졌거나 형식 판을 모르면 「못 읽음」 이다. 항목은 `access.entry_key` 꼴 판정을 그대로 거치고 읽지
-못한 항목은 개수만 센다. 등급 칸은 사용자로만 읽는다 — 관리자는 환경변수뿐이다.
+못한 항목은 개수만 센다. 등급 칸은 `user` · `admin` 둘이고 그 밖은 일반으로 읽는다
+(`demoted`). 이름 · 부서 · 든 길(`via`) 칸은 형식 판 1 에 더한 칸이다 — 판을 올리지 않아 옛
+코드는 그 칸을 버리고 읽고(관리자 등급은 일반으로), 이 코드는 그 칸이 없는 옛 파일을 빈 이름 ·
+부서 · 관리자가 넣음으로 읽는다.
 
 **새 배경 스레드를 세우지 않는다**(AGENTS 9장). 못 읽은 채로 뜬 프로세스는 콜백이 거절하기 직전
 (`web.callback` → 스레드 풀 → `retry_unread`, 60초에 한 번까지)이나 Admin 「다시 읽기」 가 다시
 읽는다. **이벤트 루프에서 네트워크를 부르지 않는다** — 콜백은 스레드 풀로 넘긴다.
 
-입출력은 프로세스 잠금 하나로 줄 세운다(같은 프로세스의 동시 저장 · 읽기 — replica 1 전제). 저장
-직전에 받을 때의 ETag(주지 않는 저장소면 판 번호)와 지금을 견줘 다르면 덮지 않고 「다시 읽기」 로
-돌려보낸다. 조건부 쓰기(`If-Match`)는 쓰지 않는다 — 확인되지 않은 능력이다(`io/s3_small`).
+입출력은 프로세스 잠금 하나로 줄 세운다(같은 프로세스의 동시 저장 · 등록 · 읽기 — replica 1
+전제). 관리자의 저장은 직전에 받을 때의 ETag(주지 않는 저장소면 판 번호)와 지금을 견줘 다르면
+덮지 않고 「다시 읽기」 로 돌려보낸다(그 화면에 「다시 읽기」 가 있다). 스스로 등록은 누를 「다시
+읽기」 가 없어 쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다(합침) — 그 사이 다른
+쓰기가 들인 사람 · 등급을 잃지 않는다. 조건부 쓰기(`If-Match`)는 쓰지 않는다 — 확인되지 않은
+능력이다(`io/s3_small`). 그래서 같은 버킷을 쓰는 다른 프로세스와의 받기 → 쓰기 틈은 replica 1
+전제로 받아들인다.
 
-쓰기 함수(`save_changes` · `reread`)는 화면과 별개로 신원 · 관리자를 다시 본다 — 위젯 콜백은 그
-회차의 본문보다 먼저 돌고, 보인 회차와 누른 회차의 권한이 달라질 수 있다. 이 벽은 화면의 실수를
+관리자 쓰기 함수(`save_changes` · `reread`)는 화면과 별개로 신원 · 관리자를 다시 본다 — 위젯
+콜백은 그 회차의 본문보다 먼저 돌고, 보인 회차와 누른 회차의 권한이 달라질 수 있다. 등급 규칙도
+여기서 본다 — 환경변수 관리자는 일반으로 못 내리고(`EnvAdminError`), 자기 자신은 내리거나 지우지
+못한다(`SelfChangeError`). 이 벽은 화면의 실수를
 막는 것이고 같은 프로세스의 코드를 막지 못한다 — 모듈 코드가 의도를 가지면 이 함수와 키에 닿는다
 (`docs/sso_setup.md` 4장, 방어선은 앱 관리자의 PR 점검). 명단의 값(넣고 뺀 사람의 loginid)은 사건 ·
 로그 · repr 에 싣지 않고 개수만 싣는다. 저지른 관리자의 계정만 다른 사건과 같은 규칙으로 싣는다 —
-서버 로그에는 전체 값(`login_ok` 와 같다), Admin 표에는 앞 두 글자.
+서버 로그에는 전체 값(`login_ok` 와 같다), Admin 표에는 앞 두 글자. 스스로 등록은 저지른 사람이 곧
+대상이라 사건 · 로그에 계정을 싣지 않는다 — 계정은 감사 기록(`user_self_registered`)에만 있다.
 """
 
 from __future__ import annotations
@@ -63,6 +76,9 @@ from capa_simulation.auth import names, runtime
 from capa_simulation.auth.access import (
     GRADE_ADMIN,
     GRADE_USER,
+    GRADES,
+    VIA_ADMIN,
+    VIA_SELF,
     AccessSource,
     ListChange,
     ListDocument,
@@ -73,6 +89,7 @@ from capa_simulation.auth.access import (
 )
 from capa_simulation.auth.config import SsoConfig, SsoMode
 from capa_simulation.auth.identity import Identity, session_problem
+from capa_simulation.auth.tokens import clean_text
 from capa_simulation.io.s3_small import (
     KIND_OTHER,
     KIND_TIMEOUT,
@@ -99,9 +116,13 @@ KIND_FILE_GONE: Final = "file_gone"
 _NO_ANSWER_KINDS: Final = frozenset({KIND_TIMEOUT, KIND_UNREACHABLE, KIND_TLS})
 
 CHANGE_ADD: Final = "add"
+CHANGE_SELF: Final = "self_add"
 CHANGE_REMOVE: Final = "remove"
+CHANGE_GRADE: Final = "grade"
 CHANGE_DROP: Final = "drop_unreadable"
 CHANGE_SEED: Final = "seed_users"
+# 이름 · 부서 칸의 글자 수 끝(통합인증 표시 칸 `tokens.MAX_DISPLAY_LENGTH` 와 같다).
+MAX_PROFILE_LENGTH: Final = 100
 
 _IO_LOCK = threading.Lock()
 
@@ -122,6 +143,18 @@ class SaveUnconfirmedError(S3Failure):
     """PUT 을 보내고 답을 받지 못했다 — 저장소에 들어갔는지 모른다. 메모리는 그대로다."""
 
 
+class SelfChangeError(PermissionError):
+    """자기 자신의 등급을 일반으로 내리거나 자기를 명단에서 빼려 했다 — 쓰지 않는다."""
+
+
+class EnvAdminError(PermissionError):
+    """환경변수 관리자를 일반으로 내리려 했다 — 늘 관리자라 화면에서 빼지 못한다."""
+
+
+class RegisterRefusedError(ValueError):
+    """스스로 등록할 수 없는 계정이다(명단 항목 꼴이 아님) — 쓰지 않는다."""
+
+
 @dataclass(frozen=True)
 class SaveResult:
     """저장 한 번의 결과 — 개수만(값 없음). `revision` 은 저장 뒤 판 번호다."""
@@ -131,10 +164,11 @@ class SaveResult:
     already: int = 0
     absent: int = 0
     revision: int = 0
+    graded: int = 0
 
     @property
     def changed(self) -> bool:
-        return bool(self.added or self.removed)
+        return bool(self.added or self.removed or self.graded)
 
 
 def _text_field(raw: Mapping[str, Any], name: str) -> str:
@@ -142,8 +176,13 @@ def _text_field(raw: Mapping[str, Any], name: str) -> str:
     return value if isinstance(value, str) else ""
 
 
+def profile_text(value: object) -> str:
+    """이름 · 부서 칸 — 글자만, 제어 · 서식 문자를 빼고 `MAX_PROFILE_LENGTH` 에서 자른다."""
+    return clean_text(value, MAX_PROFILE_LENGTH) if isinstance(value, str) else ""
+
+
 def _parse_entries(raw: object) -> tuple[tuple[ListEntry, ...], int, int]:
-    """파일의 사용자 칸 → (항목들, 읽지 못한 수, 등급을 사용자로 읽은 수)."""
+    """파일의 사용자 칸 → (항목들, 읽지 못한 수, 등급을 일반으로 읽은 수)."""
     if not isinstance(raw, list):
         raise S3Failure(KIND_CORRUPT)
     entries: dict[str, ListEntry] = {}
@@ -154,9 +193,19 @@ def _parse_entries(raw: object) -> tuple[tuple[ListEntry, ...], int, int]:
         if key is None or not isinstance(item, dict):
             unreadable += 1
             continue
-        if item.get("grade", GRADE_USER) != GRADE_USER:
+        grade = item.get("grade", GRADE_USER)
+        if grade not in GRADES:
             demoted += 1
-        entries[key] = ListEntry(key, _text_field(item, "added_by"), _text_field(item, "added_at"))
+            grade = GRADE_USER
+        entries[key] = ListEntry(
+            key,
+            _text_field(item, "added_by"),
+            _text_field(item, "added_at"),
+            name=profile_text(item.get("name")),
+            dept=profile_text(item.get("dept")),
+            via=VIA_SELF if item.get("via") == VIA_SELF else VIA_ADMIN,
+            grade=str(grade),
+        )
     return tuple(entries.values()), unreadable, demoted
 
 
@@ -216,7 +265,10 @@ def render_document(document: ListDocument) -> bytes:
         "users": [
             {
                 "loginid": entry.loginid,
-                "grade": GRADE_USER,
+                "grade": entry.grade if entry.grade in GRADES else GRADE_USER,
+                "name": entry.name,
+                "dept": entry.dept,
+                "via": entry.via if entry.via == VIA_SELF else VIA_ADMIN,
                 "added_by": entry.added_by,
                 "added_at": entry.added_at,
             }
@@ -385,8 +437,13 @@ def retry_unread(cfg: SsoConfig, *, now: int | None = None) -> None:
 
 
 def is_admin(cfg: SsoConfig, loginid: str) -> bool:
-    """지금 관리자인가 — 합성 명단의 등급으로 묻는다(관리자는 환경변수 몫에서만 온다)."""
+    """지금 관리자인가 — 합성 명단의 등급으로 묻는다(환경변수 관리자 ∪ 명단 파일의 관리자 등급)."""
     return runtime.current_access(cfg).grade_of(loginid) == GRADE_ADMIN
+
+
+def env_admins(cfg: SsoConfig) -> frozenset[str]:
+    """환경변수 관리자(견주는 꼴) — 늘 관리자라 화면에서 일반으로 내리지 못한다."""
+    return frozenset(key for key, grade in cfg.access.grades.items() if grade == GRADE_ADMIN)
 
 
 def _require_admin(cfg: SsoConfig, identity: Identity | None, moment: int) -> Identity:
@@ -419,16 +476,27 @@ def _changed_document(
     add: Iterable[str],
     remove: Iterable[str],
     moment: int,
+    grades: Mapping[str, str] | None = None,
     seeded: bool = False,
+    joined: ListEntry | None = None,
 ) -> tuple[ListDocument, SaveResult]:
     """고침을 얹은 새 한 벌과 개수. 판 번호는 바뀐 것이 있을 때만 는다. 값은 꼴을 거친 것이다.
 
+    `grades` 는 loginid → 새 등급(이미 그 등급이면 `already`, 명단에 없으면 `absent`). `joined`
+    는 스스로 등록하는 사람의 항목이다(이미 있으면 `already` — 등급 · 칸을 건드리지 않는다).
     `seeded` 면 첫 판이 파일이 되는 저장이다 — 환경변수에서 온 사람은 기록이 없으니 수로 남긴다.
     """
     stamp = _iso_text(moment)
     entries = {entry.loginid: entry for entry in document.entries}
     changes: list[ListChange] = []
-    added = already = removed = absent = 0
+    added = already = removed = absent = graded = 0
+    if joined is not None:
+        if joined.loginid in entries:
+            already += 1
+        else:
+            entries[joined.loginid] = replace(joined, added_at=stamp)
+            changes.append(ListChange(actor, stamp, CHANGE_SELF, joined.loginid))
+            added += 1
     for key in dict.fromkeys(add):
         if key in entries:
             already += 1
@@ -442,6 +510,17 @@ def _changed_document(
             continue
         changes.append(ListChange(actor, stamp, CHANGE_REMOVE, key))
         removed += 1
+    for key, grade in (grades or {}).items():
+        entry = entries.get(key)
+        if entry is None:
+            absent += 1
+            continue
+        if entry.grade == grade:
+            already += 1
+            continue
+        entries[key] = replace(entry, grade=grade)
+        changes.append(ListChange(actor, stamp, f"{CHANGE_GRADE} {grade}", key))
+        graded += 1
     if not changes:
         return document, SaveResult(already=already, absent=absent, revision=document.revision)
     if document.unreadable:
@@ -455,7 +534,20 @@ def _changed_document(
         entries=tuple(sorted(entries.values(), key=lambda entry: entry.loginid)),
         changes=(*document.changes, *changes)[-MAX_CHANGES:],
     )
-    return fresh, SaveResult(added, removed, already, absent, revision)
+    return fresh, SaveResult(added, removed, already, absent, revision, graded)
+
+
+def _check_grade_rules(
+    cfg: SsoConfig, actor: str, *, remove: tuple[str, ...], grades: Mapping[str, str]
+) -> None:
+    """등급 규칙 — 정확히 둘 · 환경변수 관리자는 일반으로 못 내림 · 자기는 내리거나 빼지 못함."""
+    if any(grade not in GRADES for grade in grades.values()):
+        raise ValueError("grade")
+    own = entry_key(actor)
+    if own is not None and (own in remove or grades.get(own) == GRADE_USER):
+        raise SelfChangeError(own)
+    if any(grades.get(key) == GRADE_USER for key in env_admins(cfg)):
+        raise EnvAdminError("env")
 
 
 def _remote_unchanged(target: S3Target, key: str, source: AccessSource, moment: int) -> bool:
@@ -511,24 +603,35 @@ def save_changes(
     *,
     add: Iterable[str] = (),
     remove: Iterable[str] = (),
+    grades: Mapping[str, str] | None = None,
     now: int | None = None,
 ) -> SaveResult:
-    """관리자의 고침 하나. 저장소에 먼저 쓰고, 쓴 뒤에만 메모리를 바꾼다.
+    """관리자의 고침 하나(넣기 · 빼기 · 등급 바꾸기). 저장소에 먼저 쓰고, 쓴 뒤에만 메모리를 바꾼다.
 
-    `NotAdminError`(권한) · `StoreUnreadError`(아직 못 읽음) · `StoreConflictError`(그 사이 바뀜) ·
-    `SaveUnconfirmedError`(PUT 의 답을 받지 못함 — 들어갔는지 모른다, `S3Failure` 의 하나) ·
-    `S3Failure`(대조 실패 · 거절된 PUT — 저장소 그대로, 파일이 상한을 넘어도 이것)를 낸다. 어느
-    쪽이든 메모리는 그대로다. 바뀐 것이 없으면 쓰지 않는다.
+    `NotAdminError`(권한) · `SelfChangeError`(자기 등급 내림 · 자기 빼기) · `EnvAdminError`(환경변수
+    관리자 내림) · `ValueError`(모르는 등급) · `StoreUnreadError`(아직 못 읽음) ·
+    `StoreConflictError`(그 사이 바뀜) · `SaveUnconfirmedError`(PUT 의 답을 받지 못함 — 들어갔는지
+    모른다, `S3Failure` 의 하나) · `S3Failure`(대조 실패 · 거절된 PUT — 저장소 그대로, 파일이 상한을
+    넘어도 이것)를 낸다. 어느 쪽이든 메모리는 그대로다. 바뀐 것이 없으면 쓰지 않는다.
     """
     moment = int(time.time()) if now is None else now
     actor = _require_admin(cfg, identity, moment).loginid
+    removing = tuple(remove)
+    grading = dict(grades or {})
+    _check_grade_rules(cfg, actor, remove=removing, grades=grading)
     with _IO_LOCK:
         source = runtime.access_source()
         target = cfg.access_s3
         if source is None or source.document is None or target is None:
             raise StoreUnreadError
         fresh, result = _changed_document(
-            source.document, actor, add=add, remove=remove, moment=moment, seeded=source.seeded
+            source.document,
+            actor,
+            add=add,
+            remove=removing,
+            grades=grading,
+            moment=moment,
+            seeded=source.seeded,
         )
         if not result.changed:
             return result
@@ -544,6 +647,7 @@ def save_changes(
                     reason="conflict",
                 )
                 _audit_list_change(actor, audit_targets, source.document, result, out="fail")
+                _audit_grade_change(actor, source.document, fresh, result, out="fail")
                 raise StoreConflictError
             etag = _put_noting_no_answer(
                 target, cfg.access_object_key, render_document(fresh), moment
@@ -551,6 +655,7 @@ def save_changes(
         except S3Failure as failure:
             outcome = "unknown" if isinstance(failure, SaveUnconfirmedError) else "fail"
             _audit_list_change(actor, audit_targets, source.document, result, out=outcome)
+            _audit_grade_change(actor, source.document, fresh, result, out=outcome)
             problem = problem_of(failure)
             runtime.publish_access_source(replace(source, save_problem=problem))
             runtime.record_event(
@@ -583,6 +688,7 @@ def save_changes(
             loginid=actor,
             added=str(result.added),
             removed=str(result.removed),
+            graded=str(result.graded),
             revision=str(result.revision),
         )
         _audit_list_change(
@@ -593,6 +699,7 @@ def save_changes(
             out="success",
             seeded=source.seeded,
         )
+        _audit_grade_change(actor, source.document, fresh, result, out="success")
         return result
 
 
@@ -637,3 +744,194 @@ def _audit_list_change(
             verified=True,
             det={"count": len(document.entries), **revisions},
         )
+
+
+def _audit_grade_change(
+    actor: str, before: ListDocument, after: ListDocument, result: SaveResult, *, out: str
+) -> None:
+    """등급 바꿈의 감사 줄 — 바뀐 loginid 마다 한 줄(전 → 후 등급 · 판). 바뀐 것이 없으면 없다."""
+    if not result.graded:
+        return
+    old = {entry.loginid: entry.grade for entry in before.entries}
+    for entry in after.entries:
+        previous = old.get(entry.loginid)
+        if previous is None or previous == entry.grade:
+            continue
+        audit_recorder.record(
+            "user_grade_changed",
+            out=out,
+            actor=actor,
+            verified=True,
+            tgt={"type": "loginid", "id": entry.loginid},
+            det={
+                "grade_from": previous,
+                "grade_to": entry.grade,
+                "rev_from": before.revision,
+                "rev_to": result.revision,
+            },
+        )
+
+
+@dataclass(frozen=True)
+class RegisterResult:
+    """스스로 등록 한 번의 결과 — 넣었나(아니면 이미 있었다) · 저장 뒤 판 번호(값 없음)."""
+
+    added: bool
+    revision: int
+
+
+def can_register(cfg: SsoConfig) -> bool:
+    """거절 화면이 「접속 권한 신청」 단추를 세울 수 있는가 — S3 명단이 켜졌고 한 번은 읽었다.
+
+    읽어 둔 뒤의 읽기 실패는 막지 않는다 — 등록은 쓰기 직전에 다시 받으므로 그때 실패면 저장 실패
+    화면(신청 글)으로 간다.
+    """
+    return is_on(cfg) and not is_unread(cfg) and cfg.access_s3 is not None
+
+
+def _fresh_base(cfg: SsoConfig, source: AccessSource, moment: int) -> _Fetched:
+    """스스로 등록이 얹을 판 — 저장소의 지금 판을 다시 받는다(합침). 파일이 사라졌으면 실패다.
+
+    받아 둔 파일이 있었거나 표지가 있는데 없으면 `KIND_FILE_GONE` — 다시 만들지 않는다(메모리가
+    마지막 사본일 수 있다). 처음(파일도 표지도 없음)이면 환경변수 첫 판 위에 얹어 그 쓰기가 파일을
+    만든다.
+    """
+    return _fetch(cfg, moment, held=_holds_a_file(source))
+
+
+def register_self(
+    cfg: SsoConfig,
+    loginid: str,
+    *,
+    name: str | None = None,
+    dept: str | None = None,
+    now: int | None = None,
+) -> RegisterResult:
+    """거절 화면 「접속 권한 신청」 — 통합인증으로 확인된 본인(`loginid` — 거절 표에서만 온다)을
+    일반 등급으로 명단에 넣는다. 스레드 풀에서 부른다(네트워크).
+
+    쓰기 직전에 저장소의 지금 판을 다시 받아 그 위에 얹는다 — 그 사이 다른 쓰기(관리자의 등급
+    바꿈 · 다른 사람의 등록)를 잃지 않는다. 이미 있으면 쓰지 않고(등급 · 이름 · 부서 그대로) 받은
+    판을 메모리에 올린다. `RegisterRefusedError`(항목 꼴이 아님) · `StoreUnreadError`(S3 명단이
+    꺼졌거나 아직 못 읽음) · `SaveUnconfirmedError` · `S3Failure`(받기 · 쓰기 실패 — 파일 사라짐
+    포함)를 낸다. 실패면 메모리는 그대로다.
+    """
+    moment = int(time.time()) if now is None else now
+    key = entry_key(loginid)
+    if key is None:
+        raise RegisterRefusedError("loginid")
+    with _IO_LOCK:
+        source = runtime.access_source()
+        target = cfg.access_s3
+        if not is_on(cfg) or source is None or source.document is None or target is None:
+            raise StoreUnreadError
+        joined = ListEntry(
+            key,
+            added_by=key,
+            name=profile_text(name or ""),
+            dept=profile_text(dept or ""),
+            via=VIA_SELF,
+            grade=GRADE_USER,
+        )
+        base: ListDocument = source.document
+        try:
+            fetched = _fresh_base(cfg, source, moment)
+            base = fetched.document
+            fresh, result = _changed_document(
+                base, key, add=(), remove=(), moment=moment, joined=joined, seeded=fetched.seeded
+            )
+            if not result.changed:
+                if fetched.from_file:
+                    _publish_fetched(cfg, source, fetched, moment)
+                return RegisterResult(added=False, revision=base.revision)
+            etag = _put_noting_no_answer(
+                target, cfg.access_object_key, render_document(fresh), moment
+            )
+        except S3Failure as failure:
+            outcome = "unknown" if isinstance(failure, SaveUnconfirmedError) else "fail"
+            _audit_self_register(key, base.revision, base.revision + 1, out=outcome)
+            problem = problem_of(failure)
+            runtime.publish_access_source(replace(source, save_problem=problem))
+            runtime.record_event(
+                "access_save_failed",
+                level=logging.WARNING,
+                loginid="-",
+                reason=problem.kind,
+                status=str(problem.status or "-"),
+            )
+            raise
+        # 파일이 있으면 표지도 있게 — 이 쓰기가 파일을 처음 만들었거나 다른 곳이 만든 파일이다.
+        mark_missing = not _left_seed_mark(target, moment)
+        runtime.publish_access_source(
+            replace(
+                source,
+                access=compose_access(cfg.access, fresh),
+                document=fresh,
+                etag=etag,
+                read_at=moment if fetched.from_file else source.read_at,
+                problem=None,
+                saved_at=moment,
+                save_problem=None,
+                seeded=False,
+                seed_mark_pending=mark_missing,
+            )
+        )
+        runtime.record_event(
+            "access_self_registered", users=str(len(fresh.entries)), revision=str(result.revision)
+        )
+        _audit_self_register(key, base.revision, result.revision, out="success")
+        if fetched.seeded:
+            audit_recorder.record(
+                "user_seeded",
+                actor=key,
+                verified=True,
+                det={
+                    "count": len(base.entries),
+                    "rev_from": base.revision,
+                    "rev_to": result.revision,
+                },
+            )
+        return RegisterResult(added=True, revision=result.revision)
+
+
+def _publish_fetched(cfg: SsoConfig, source: AccessSource, fetched: _Fetched, moment: int) -> None:
+    """다시 받은 판을 메모리에 올린다 — 읽기(`_read_locked`)가 잘 받았을 때와 같다."""
+    document = fetched.document
+    runtime.publish_access_source(
+        replace(
+            source,
+            access=compose_access(cfg.access, document),
+            document=document,
+            etag=fetched.etag,
+            read_at=moment,
+            attempted_at=moment,
+            problem=None,
+            seeded=fetched.seeded,
+        )
+    )
+
+
+def _audit_self_register(loginid: str, rev_from: int, rev_to: int, *, out: str) -> None:
+    """스스로 등록의 감사 줄 — 저지른 사람이 곧 대상(인증 신원 — 거절 표). 계정은 이 줄에만."""
+    audit_recorder.record(
+        "user_self_registered",
+        out=out,
+        actor=loginid,
+        verified=True,
+        tgt={"type": "loginid", "id": loginid},
+        det={"rev_from": rev_from, "rev_to": rev_to},
+    )
+
+
+def recent_self_registrations(document: ListDocument, *, now: int, days: int) -> tuple[int, str]:
+    """`(최근 days 일 안에 스스로 등록해 지금도 명단에 있는 사람 수, 가장 새 스스로 등록 시각)`.
+
+    시각은 고친 기록(덧붙이기만 하는 마지막 200건)에서 꺼낸다 — 사람을 빼도 줄지 않아 알림 지문이
+    새 등록이 있을 때만 바뀐다. 값(loginid)은 돌려주지 않는다.
+    """
+    cutoff = _iso_text(now - days * 86400)
+    count = sum(
+        1 for entry in document.entries if entry.via == VIA_SELF and entry.added_at >= cutoff
+    )
+    latest = max((item.at for item in document.changes if item.what == CHANGE_SELF), default="")
+    return count, latest

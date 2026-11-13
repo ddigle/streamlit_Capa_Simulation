@@ -724,8 +724,10 @@ def test_entries_go_through_the_same_shape_check() -> None:
     assert parsed.unreadable == 5
 
 
-def test_a_grade_in_the_file_never_makes_an_admin(mock_s3: tuple[MockStore, str]) -> None:
-    """파일에 `admin` 을 적어도 그 사람은 사용자다 — S3 쓰기 권한이 관리자 권한이 되지 않는다."""
+def test_a_grade_in_the_file_makes_an_admin_and_an_unknown_one_reads_as_user(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """파일의 `admin` 은 관리자다(2026-11-14 보드 n2 답) — 그 밖의 등급 값은 일반으로 읽는다."""
     store, endpoint = mock_s3
     store.put(
         OBJECT,
@@ -733,7 +735,11 @@ def test_a_grade_in_the_file_never_makes_an_admin(mock_s3: tuple[MockStore, str]
             {
                 "format": 1,
                 "revision": 1,
-                "users": [{"loginid": OTHER, "grade": GRADE_ADMIN}, {"loginid": USER}],
+                "users": [
+                    {"loginid": OTHER, "grade": GRADE_ADMIN},
+                    {"loginid": USER},
+                    {"loginid": GONE, "grade": "owner"},
+                ],
             }
         ).encode(),
     )
@@ -741,9 +747,11 @@ def test_a_grade_in_the_file_never_makes_an_admin(mock_s3: tuple[MockStore, str]
     cfg = started(store, endpoint)
 
     access = runtime.current_access(cfg)
-    assert access.grade_of(OTHER) == GRADE_USER
-    assert access.admin_count == 1
-    assert not access_store.is_admin(cfg, OTHER)
+    assert access.grade_of(OTHER) == GRADE_ADMIN
+    assert access.grade_of(GONE) == GRADE_USER
+    assert access.admin_count == 2
+    assert access_store.is_admin(cfg, OTHER)
+    assert not access_store.is_admin(cfg, GONE)
     source = runtime.access_source()
     assert source is not None and source.document is not None
     assert source.document.demoted == 1
@@ -1766,7 +1774,8 @@ def test_a_logged_out_admin_session_cannot_write(mock_s3: tuple[MockStore, str])
         access_store.save_changes(cfg, identity, add=[USER])
 
 
-def test_a_grade_in_the_file_cannot_write_either(mock_s3: tuple[MockStore, str]) -> None:
+def test_a_grade_in_the_file_can_write(mock_s3: tuple[MockStore, str]) -> None:
+    """명단의 관리자 등급도 관리자다 — 넣고 뺄 수 있다(환경변수 관리자 ∪ 명단 관리자)."""
     store, endpoint = mock_s3
     store.put(
         OBJECT,
@@ -1776,8 +1785,10 @@ def test_a_grade_in_the_file_cannot_write_either(mock_s3: tuple[MockStore, str])
     )
     cfg = started(store, endpoint)
 
-    with pytest.raises(access_store.NotAdminError):
-        access_store.save_changes(cfg, identity_of(cfg, OTHER), add=[USER])
+    result = access_store.save_changes(cfg, identity_of(cfg, OTHER), add=[USER])
+
+    assert result.added == 1
+    assert problem_of(cfg, USER) is None
 
 
 # --- Admin 화면 ----------------------------------------------------------------------------------

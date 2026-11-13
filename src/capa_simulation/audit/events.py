@@ -87,6 +87,8 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     # --- 관리 ---------------------------------------------------------------------------------
     _spec("user_created", "admin", "명단 추가", *_REV),
     _spec("user_deleted", "admin", "명단 삭제", *_REV),
+    _spec("user_self_registered", "admin", "스스로 등록", *_REV),
+    _spec("user_grade_changed", "admin", "등급 바꿈", "grade_from", "grade_to", *_REV),
     _spec("user_bulk_dropped", "admin", "못 읽는 항목 정리", "count", *_REV),
     _spec("user_seeded", "admin", "명단 첫 판 심기", "count", *_REV),
     _spec("authz_admin_config", "admin", "관리자 구성", "admins", "admin_fp"),
@@ -178,6 +180,8 @@ DET_LABELS: Final[Mapping[str, str]] = {
     "expires": "만료",
     "failures": "실패 수",
     "fields": "칸",
+    "grade_from": "등급 전",
+    "grade_to": "등급",
     "hour": "시간",
     "hours": "유지(시간)",
     "key": "조각",

@@ -6,17 +6,21 @@
 파일(`access_store`)에서만 들어오고 이 저장소에는 적지 않는다(공개 저장소 — 실제 loginid 는 사람을
 가리킨다). 표준 라이브러리만 쓴다.
 
-안쪽 자료는 loginid → 등급 맵이다. 지금은 등급을 「들어올 수 있나」 로만 쓰고, 화면별 권한은 다음
-단계가 이 맵에 등급을 늘려 얹는다.
+안쪽 자료는 loginid → 등급 맵이다. 등급은 정확히 둘(`GRADES` — 일반 `user` · 관리자 `admin`)이고
+「들어올 수 있나」 와 「관리자인가」 를 가른다.
 
 순수 함수만 둔다 — 설정(`config.load_config`)이 환경변수 몫을 만들고, S3 명단이 켜져 있으면
 `compose_access` 가 파일 몫을 얹은 한 벌을 `runtime` 이 들고 통째로 바꾼다. 판정은
 `identity.session_check` 와 콜백 · 갱신 경로가 `runtime.current_access(cfg).allows` 로 묻는다.
-**관리자는 환경변수뿐이다** — 파일의 등급 칸으로 관리자를 만들 수 없다(명단 편집 권한이 S3
-쓰기 권한과 같아지지 않게). `LOGINID_PATTERN` 이 여기 있는 까닭은 `tokens` 가 `config` 를
-import 하므로 `config` 가 `tokens` 에서 꺼내면 돌고 돌기 때문이다.
+**관리자 = 환경변수 관리자 ∪ 명단 파일의 관리자 등급**(2026-11-14 「앱 대신 뜨는 화면」 보드 n2 답).
+환경변수 관리자는 늘 관리자라 파일 등급이 덮지 못하고(S3 장애 · 잘못 쓴 파일의 비상구), 파일의
+관리자 등급은 Admin 「접속 명단」 에서 관리자가 주고 뺀다 — 그래서 명단 파일을 쓸 수 있는 S3
+권한은 관리자를 만들 수 있는 권한이기도 하다(`docs/sso_setup.md` 2 · 4장). `LOGINID_PATTERN` 이
+여기 있는 까닭은 `tokens` 가 `config` 를 import 하므로 `config` 가 `tokens` 에서 꺼내면 돌고 돌기
+때문이다.
 
-값은 repr · 로그 · 화면에 나오지 않는다 — 점검 화면에는 개수만, 거절 화면에는 `contact` 만 싣는다.
+값은 repr · 로그 · 화면에 나오지 않는다 — 점검 화면에는 개수만, 거절 화면에는 `contact` 와 그
+브라우저의 거절 표가 든 본인 계정만 싣는다(`auth/web.py`).
 """
 
 from __future__ import annotations
@@ -28,6 +32,12 @@ from dataclasses import dataclass, field
 
 GRADE_ADMIN = "admin"
 GRADE_USER = "user"
+# 등급은 정확히 둘이다 — 파일에 그 밖의 값이 있으면 일반으로 읽는다(`ListDocument.demoted`).
+GRADES = (GRADE_USER, GRADE_ADMIN)
+# 명단에 든 길 — 관리자가 넣음(옛 파일의 칸 없는 항목 · 환경변수 첫 판 포함) · 거절 화면의 「접속
+# 권한 신청」 으로 스스로 넣음.
+VIA_ADMIN = "admin"
+VIA_SELF = "self"
 
 # 쉼표가 든 값을 받지 않는 앞단이 있어 세미콜론 · 공백도 받는다. 환경변수 표는 한 줄 값만 받는다.
 _ENTRY_SEPARATORS = re.compile(r"[,;\s]+")
@@ -126,16 +136,25 @@ def build_access_list(admins: str, users: str, *, enforced: bool, contact: str =
 
 @dataclass(frozen=True)
 class ListEntry:
-    """S3 명단 파일의 사람 하나 — 넣은 사람과 때는 Admin 표에만 보인다."""
+    """S3 명단 파일의 사람 하나 — 넣은 사람 · 때 · 이름 · 부서 · 든 길 · 등급은 Admin 표에만 보인다.
+
+    이름 · 부서는 스스로 등록할 때 통합인증이 준 칸(없으면 빈 칸)이다. 옛 파일(이 칸이 없는 판)은
+    빈 이름 · 부서 · `VIA_ADMIN` · `GRADE_USER` 로 읽는다.
+    """
 
     loginid: str
     added_by: str = ""
     added_at: str = ""
+    name: str = field(default="", repr=False)
+    dept: str = field(default="", repr=False)
+    via: str = VIA_ADMIN
+    grade: str = GRADE_USER
 
 
 @dataclass(frozen=True)
 class ListChange:
-    """고친 기록 한 줄 — 누가 · 언제 · 무엇(`add` · `remove` · `drop_unreadable n`)을 누구에게."""
+    """고친 기록 한 줄 — 누가 · 언제 · 무엇(`add` · `self_add` · `remove` · `grade <등급>` ·
+    `drop_unreadable n`)을 누구에게."""
 
     by: str
     at: str
@@ -151,7 +170,7 @@ class ListDocument:
     entries: tuple[ListEntry, ...] = field(default=(), repr=False)
     changes: tuple[ListChange, ...] = field(default=(), repr=False)
     unreadable: int = 0
-    # 등급 칸이 `user` 가 아니어서 사용자로 읽은 항목 수 — 파일로는 관리자를 만들 수 없다.
+    # 등급 칸이 `GRADES` 밖이어서 일반으로 읽은 항목 수.
     demoted: int = 0
 
 
@@ -193,8 +212,11 @@ class AccessSource:
 
 
 def compose_access(base: AccessList, document: ListDocument) -> AccessList:
-    """환경변수 몫(`base` — 관리자) + S3 파일 몫(사용자). 두 쪽에 다 있으면 관리자다."""
-    grades = dict.fromkeys((entry.loginid for entry in document.entries), GRADE_USER)
+    """환경변수 몫(`base` — 관리자) + S3 파일 몫(파일 등급). 환경변수 관리자는 늘 관리자다."""
+    grades = {
+        entry.loginid: entry.grade if entry.grade in GRADES else GRADE_USER
+        for entry in document.entries
+    }
     grades.update(base.grades)
     return AccessList(
         enforced=True,
