@@ -299,7 +299,8 @@ uv pip install -r requirements-company.txt
 - 패키지가 없어도 앱은 뜹니다. 시나리오 관리 `DB 등록` 탭만 안내를 띄우고 멈춥니다.
 - C-DEP CD(배포 서버)에는 셸이 없어 위 명령을 칠 수 없습니다. 배포 설정의 환경변수 표에 값을 넣으면 이미지의 시작
   스크립트(`scripts/container_start.py`)가 설치·로그인 토큰을 갖추고 결과를 Admin Area 「서버 시작 점검」에 남깁니다 —
-  넣을 key 는 `docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」.
+  넣을 key 는 `docs/bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」. 토큰이 만료되면 관리자가 같은 펼침의
+  「토큰 넣기」 로 새 토큰을 넣어 다음 조회부터 쓰게 합니다(다시 띄우면 환경변수 값으로 돌아갑니다 — 같은 문서 「토큰 값 얻는 법」).
 - C-DEP CD 서버는 디스크가 CI/CD 때 사라집니다. `CAPA_S3_SYNC_MODE=managed` 면 두 DB 의 정본이 운영 버킷에 있고 시작 스크립트가
   받은 뒤에만 앱을 띄웁니다 — 받는 동안은 같은 포트에서 「데이터 받는 중」 만 보입니다. 저장은 앱이 1분 안에 모아 올립니다
   — 이관 · 환경변수 · 복구는 `docs/objectstore_setup.md`.

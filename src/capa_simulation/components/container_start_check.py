@@ -18,6 +18,10 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 캡션에 디스크 · pod 끝 글자 · cgroup · 다운 시간 값이 더해진다 — 사내가 이 값을 보고 정할 것이 있다
 (읽기 전용 화면, DuckDB `memory_limit`). 값은 갈래와 수뿐이라 리뷰 압축본에 옮길 수 있다.
 
+**토큰 넣기 · 만료 알림** — 표 아래 「지금 토큰」 줄과 관리자의 「토큰 넣기」 단추 · 팝업, 만료
+1시간 전 관리자 알림 `AD-11` 은 `bdq_token_admin` 이 짓는다(이 펼침과 아래 `render_token_alert` 가
+부른다).
+
 **토큰 실패 관리자 알림(`AD-10`)** — 결과 파일이 있는 서버(C-DEP)에서 BigDataQuery 조회가 토큰
 갈래로 실패했거나(`company_bigdataquery_adapter.last_query_failed_on_token` — 프로세스의 마지막
 판정) 시작 점검 토큰 줄이 「실패」 면 관리자의 모든 화면 회차에 상태 알림으로 낸다
@@ -39,6 +43,14 @@ from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts
 from capa_simulation.components import sso_identity
+from capa_simulation.components.bdq_token_admin import (
+    ENVIRONMENT_FIX,
+    INSTALL_FIX,
+    render_expiry_alert,
+    render_token_dialog,
+    render_token_row,
+    token_line,
+)
 from capa_simulation.components.diagnostic_copy import (
     diagnostic_text,
     plain_lines,
@@ -51,9 +63,9 @@ from capa_simulation.components.sso_status import (
     sso_start_step,
     started_environment_caption,
 )
+from capa_simulation.io import bdq_token
 from capa_simulation.io.company_bigdataquery_adapter import last_query_failed_on_token
 from capa_simulation.io.container_start_report import (
-    BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     STATUS_FAILED,
     STATUS_LABELS,
@@ -299,17 +311,22 @@ def render_container_start_check() -> None:
     # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
     steps = build_step_table(report, (sso_start_step(), *sync_rows(report)))
     facts = report_fact_lines(report)
+    # 「지금 토큰」 은 시작 기록이 아니라 지금 파일에서 읽는다 — 「토큰 넣기」 가 바꾼다.
+    token = token_line()
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
-        render_diagnostic_copy(report_text(title, report, steps, facts), key=COPY_KEY)
+        render_diagnostic_copy(report_text(title, report, steps, [*facts, token]), key=COPY_KEY)
         st.caption(report_origin_caption(report))
         st.dataframe(steps, column_config=step_column_config(), hide_index=True, width="stretch")
         st.caption("  \n".join(facts))
+        admin = render_token_row(token)
         missing = missing_environment_line(report)
         if missing is not None:
             st.caption(missing)
         if report.pip_tail:
             st.caption(PIP_TAIL_LABEL)
             st.code("\n".join(report.pip_tail), language=None)
+    if admin:
+        render_token_dialog()
 
 
 def _render_missing_report() -> None:
@@ -346,12 +363,13 @@ def _report_missing(title: str | None, detail: str = "") -> None:
 
 
 def render_token_alert() -> None:
-    """BigDataQuery 토큰 실패 관리자 알림(`AD-10`). `app.py` 가 회차마다 조건 없이 부른다.
+    """BigDataQuery 토큰 관리자 알림 둘 — 실패 `AD-10` 과 만료 1시간 전 `AD-11`
+    (`bdq_token_admin.render_expiry_alert`). `app.py` 가 회차마다 조건 없이 부른다.
 
     결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않는다 — 그 파일은 시작 스크립트가 앱보다 먼저
-    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 한 자리를
-    쓰고 관리자가 아닌 회차는 해소로 부른다. 지문은 (시작 점검 토큰 줄 실패, 조회 토큰 실패) 두
-    참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다.
+    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 두 자리를
+    쓰고 관리자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
+    실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다.
     """
     if not report_file_exists():
         return
@@ -373,13 +391,17 @@ def render_token_alert() -> None:
         ),
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
     )
+    # 만료 1시간 전 관리자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
+    render_expiry_alert()
 
 
 def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
     """전문(평문 — 알림창 · Alarm 은 `textContent` 로 넣는다) — 무엇이 실패했고 무엇을 하면 풀리나.
     시작 점검 까닭은 시작 스크립트가 이미 가린 글이다. 시작 점검 실패의 까닭은 토큰 값만이 아니다
     (계정 칸 · 파일 권한 · 폴더 쓰기 등) — 그때 할 일은 그 까닭 고치기이고, 새 토큰은 조회 실패만의
-    길이다."""
+    길이다. 조회 실패의 새 토큰 길은 패키지가 읽는 자리를 따른다 — 환경변수
+    `BIGDATAQUERY_LOGIN_TOKEN` 이 있으면 「토큰 넣기」 가 잠기니 그 값 바꾸기다(값은 보지
+    않는다)."""
     found: list[str] = []
     if start_reason is not None:
         found.append(f"서버 시작 점검의 「로그인 토큰 파일」 줄이 실패입니다({start_reason})")
@@ -388,7 +410,10 @@ def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
             "최근 BigDataQuery 조회가 토큰 갈래로 실패했습니다(로그인 토큰이 없거나 만료 · 무효)"
         )
     if start_reason is not None:
-        fix = "그 까닭을 고치고 CI/CD 를 다시 누르세요"
-    else:
-        fix = f"{BDQ_TOKEN_ENV} 에 새 토큰을 넣고 CI/CD 를 다시 누르세요"
-    return ". ".join(found) + f". {fix} — Admin 「서버 시작 점검」 에서 토큰 줄을 봅니다."
+        return ". ".join(found) + (
+            ". 그 까닭을 고치고 CI/CD 를 다시 누르세요 — Admin 「서버 시작 점검」 에서 토큰 줄을 "
+            "봅니다."
+        )
+    if bdq_token.environment_token_set():
+        return ". ".join(found) + f". {ENVIRONMENT_FIX}"
+    return ". ".join(found) + f". {INSTALL_FIX} 이 알림은 넣은 뒤 조회가 한 번 성공하면 풀립니다."
