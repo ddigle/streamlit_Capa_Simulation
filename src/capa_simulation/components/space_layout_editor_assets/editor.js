@@ -1004,7 +1004,7 @@ export default function (component) {
   // null. 영역·도형(`raisable`)은 호기 겹을 넘나든다 — 아래 겹 맨 위에서 「앞으로」 면 호기 위 맨 아래(호기와 겹쳤을 때 — 겹치지
   // 않으면 다음 겹친 것 너머), 「맨 앞으로」 면 위 겹 맨 위, 「맨 뒤로」 면 아래 겹 맨 아래. 그 밖의 것은 제 겹 안에서만 돈다.
   // 올린 영역·도형은 그 쪽에 겹친 것이 없어도 「뒤로 · 맨 뒤로」 로 올림이 풀린다(`stuck`).
-  function stackDeck(below, units, above, chosen, how) {
+  function stackDeck(below, units, above, chosen, how, unitsMoved = false) {
     const bar = { id: '', bar: true, parts: units }
     const line = [...below, bar, ...above]
     const up = how === 'front' || how === 'fwd'
@@ -1024,10 +1024,11 @@ export default function (component) {
     // 막혀 움직이지 않을 때 — 고른 것에 호기 위로 올린 영역·도형이 있으면 「뒤로 · 맨 뒤로」 가 올림을 푼다. 올림은 그림에 보이지
     // 않는 저장 상태라 그대로 두면 나중에 밑으로 온 호기를 덮는다(2026-11-13 확인 보드 1 (가) — 보드 7-3 「겹친 것이 없으면
     // 움직이지 않는다」 의 이 경우 하나만 예외). 「뒤로」 는 고른 올린 것만 호기 아래 겹 맨 위로, 「맨 뒤로」 는 고른 영역·도형을
-    // 아래 겹 맨 아래로 모은다(고른 것끼리 차례 그대로). 그 밖의 고른 것(위 겹 요소)은 제자리다.
+    // 아래 겹 맨 아래로 모은다(고른 것끼리 차례 그대로). 그 밖의 고른 것(위 겹 요소)은 제자리다. 함께 고른 호기가 한 걸음 간
+    // 「뒤로」 누름은 계획이 막힌 것이 아니라 올림을 남기고 다음 누름에 푼다(「맨 뒤로」 는 늘 함께 내린다).
     const stuck = () => {
       const lifted = line.filter((e, k) => picked(e) && free(e) && k > barAt)
-      if (up || !lifted.length) return null
+      if (up || !lifted.length || (how === 'bwd' && unitsMoved)) return null
       const go = how === 'back' ? line.filter((e) => picked(e) && free(e)) : lifted
       const rest = line.filter((e) => !go.includes(e))
       const cut = how === 'back' ? 0 : rest.indexOf(bar)
@@ -1077,16 +1078,20 @@ export default function (component) {
       if (ids[slots[n]] !== id) { ids[slots[n]] = id; changed = true }
     })
     const units = entries.filter((e) => e.tier === 'unit')
+    let unitsMoved = false
     if (units.some((e) => chosen.has(e.id))) {
       const next = stackUnits(units, chosen, how)
-      if (next) put(slotsOf((e) => e.tier === 'unit'), next)
+      if (next) {
+        put(slotsOf((e) => e.tier === 'unit'), next)
+        unitsMoved = true
+      }
     }
     const raised = entries.filter((e) => e.tier === 'above' && e.raisable).map((e) => e.id)
     let lifted = raised
     const below = entries.filter((e) => e.tier === 'below')
     const above = entries.filter((e) => e.tier === 'above')
     if ([...below, ...above].some((e) => chosen.has(e.id))) {
-      const deck = stackDeck(below, units, above, chosen, how)
+      const deck = stackDeck(below, units, above, chosen, how, unitsMoved)
       if (deck) {
         if (deck.below.length === below.length) {
           put(slotsOf((e) => e.tier === 'below'), deck.below)
