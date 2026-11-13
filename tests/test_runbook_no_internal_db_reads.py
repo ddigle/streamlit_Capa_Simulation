@@ -10,7 +10,11 @@
 검사는 런북 글을 받아 어긋남 목록을 내는 함수(`violations`) 하나다 — 지금 런북이 빈 목록이고,
 옛 꼴 글(에이전트가 백그라운드로 돌림 · `!` 로 줌 · BigDataQuery 줄)을 끼워 넣으면 잡힌다.
 
-7장은 배포마다 새로 쓰인다. 7장 머리의 stamp 가 이미 사내로 나간 `202611111500` 인 동안만 7장을
+사용자가 치는 펜스와 본문 명령 줄에는 사내 값 꺾쇠 자리표(`$b = "<C-DEP 표의 CAPA_S3_BUCKET
+값>"`)를 두지 않는다 — 꺾쇠 안쪽만 바꿔 넣으면 값이 꺾쇠째 aws 로 간다(런북 6-4 — 사내 값은 앞 줄
+`Read-Host`).
+
+7장은 배포마다 새로 쓰인다. 7장 머리의 stamp 가 이미 사내로 나간 `202611131000` 인 동안만 7장을
 떼고 본다 — 그 판은 이 규칙 전에 쓰였다. stamp 를 바꾸면(다음 배포의 7장) 7장도 같은 규칙으로
 본다(`docs/TODO.md` 「다음 배포 7장에 넣을 줄」).
 
@@ -29,7 +33,7 @@ DUAL_ENV = PROJECT_ROOT / "docs" / "dual_env_workflow.md"
 TEMPLATE = PROJECT_ROOT / "docs" / "internal_claude_settings.json"
 PRINCIPLE = "에이전트는 사내 DB(BigDataQuery · 운영 DB · 사본)를 여는 명령을 스스로 치지 않는다"
 USER_WINDOW = "별도 PowerShell 창"
-SHIPPED_SEVEN = "**이 절은 stamp `202611111500` 배포용이다.**"
+SHIPPED_SEVEN = "**이 절은 stamp `202611131000` 배포용이다.**"
 # 사내 DB 를 여는 스크립트 · 코드 조각. `--check-summary` · `--list` 줄은 DB 를 열지 않는다.
 DATABASE_SCRIPTS = (
     "inspect_real_data_checks.py",
@@ -53,6 +57,14 @@ INLINE_CALL = re.compile(r"`((?:uv run|& \$py|python)[^`]*)`")
 # 다른 문서의 장 번호(`docs/x.md` 9장)는 런북 9장이 아니다.
 OTHER_DOCUMENT_CHAPTER = re.compile(r"`[^`]+\.md` \d+장")
 WINDOWS = (USER_WINDOW, "별도 창", "사용자 창")
+# 사내 값(버킷 · 주소 · 프로필 · 계정 · 토큰 · 메일)을 가리키는 꺾쇠 자리표와 따옴표 안 꺾쇠.
+# 사용자가 치는 줄에 두면 꺾쇠 안쪽만 바꿔 넣은 값이 꺾쇠째 간다 — 사내 값은 앞 줄 `Read-Host` ·
+# `read -rp` 로 받는다.
+IN_HOUSE_PLACEHOLDER = re.compile(
+    r"<[^<>\n]*(?:버킷|주소|프로필|계정|토큰|비밀|메일|CAPA_S3|값)[^<>\n]*>"
+)
+QUOTED_PLACEHOLDER = re.compile(r"\"[^\"\n]*<[^<>\n]+>[^\"\n]*\"|'[^'\n]*<[^<>\n]+>[^'\n]*'")
+CODE_SPAN = re.compile(r"`([^`\n]+)`")
 
 
 def _chapter_seven_bounds(text: str) -> tuple[int, int]:
@@ -61,7 +73,7 @@ def _chapter_seven_bounds(text: str) -> tuple[int, int]:
 
 
 def general_text(text: str) -> str:
-    """이미 나간 판의 7장(stamp `202611111500`)만 뗀다 — 다른 stamp 면 7장도 본다."""
+    """이미 나간 판의 7장(stamp `202611131000`)만 뗀다 — 다른 stamp 면 7장도 본다."""
     begin, end = _chapter_seven_bounds(text)
     if SHIPPED_SEVEN in text[begin:end]:
         return text[:begin] + text[end:]
@@ -119,6 +131,8 @@ def violations(text: str) -> list[str]:
                 continue
             if "bdq" in block:
                 found.append(f"BigDataQuery 줄이 펜스에 있다: {block.strip()[:80]}")
+            if IN_HOUSE_PLACEHOLDER.search(block):
+                found.append(f"펜스에 사내 값 꺾쇠 자리표가 있다: {block.strip()[:80]}")
             if not _opens_a_database(block):
                 continue
             around = " ".join((pieces[index - 1][1] + " " + pieces[index + 1][1]).split())
@@ -136,6 +150,9 @@ def violations(text: str) -> list[str]:
         flat = " ".join(chunk.split())
         if "--only bdq" in flat and "걷" not in flat:
             found.append(f"`--only bdq` 를 걷지 않은 글: {flat[:80]}")
+        for span in CODE_SPAN.findall(flat):
+            if IN_HOUSE_PLACEHOLDER.search(span) and QUOTED_PLACEHOLDER.search(span):
+                found.append(f"본문 명령 줄의 따옴표 안에 사내 값 꺾쇠 자리표: {span[:80]}")
         if any(name in flat for name in DATABASE_SCRIPTS) and BANG_GIVEN.search(flat):
             found.append(f"DB 를 여는 줄을 `!` 로 준다: {flat[:80]}")
         calls = [call for call in INLINE_CALL.findall(flat) if _opens_a_database(call)]
@@ -181,6 +198,30 @@ def test_the_net_catches_old_style_lines_put_back_into_the_general_chapters() ->
     assert any("곁에" in line for line in violations(in_four_three))
     assert any("`!` 로 준다" in line for line in violations(bang))
     assert any("BigDataQuery" in line for line in violations(bdq))
+
+
+def test_the_net_catches_an_in_house_placeholder_put_back_into_6_4() -> None:
+    """리뷰 202611131000 의 꼴 — `$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"` 을 6-4 펜스나 본문에 다시
+    심으면 잡히고, 같은 자리의 `Read-Host` 꼴은 잡히지 않는다."""
+    text = RUNBOOK.read_text(encoding="utf-8")
+    asking = '$b = Read-Host "C-DEP 표의 CAPA_S3_BUCKET 값"'
+    old = '$b = "<C-DEP 표의 CAPA_S3_BUCKET 값>"'
+    opening = "```powershell\n"
+    fence = text.index(opening + asking, text.index("## 6-4. ")) + len(opening)
+    in_fence = text[:fence] + old + text[fence + len(asking) :]
+    inline = text.replace(f"(`{asking}`)", f"(`{old}`)", 1)
+    together = text.replace(
+        f"```powershell\n{asking}\n```",
+        f"```powershell\n{asking}\nuv run --no-sync python scripts/sync_object_storage.py"
+        " --bucket $b doctor\n```",
+        1,
+    )
+
+    assert in_fence != text and inline != text and together != text
+    assert any("펜스에 사내 값 꺾쇠 자리표" in line for line in violations(in_fence))
+    assert any("따옴표 안에 사내 값 꺾쇠 자리표" in line for line in violations(inline))
+    assert not [line for line in violations(together) if "꺾쇠" in line]
+    assert violations(text) == []
 
 
 def test_a_new_chapter_seven_is_held_to_the_same_rules() -> None:
