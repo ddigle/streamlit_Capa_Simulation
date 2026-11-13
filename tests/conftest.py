@@ -220,12 +220,20 @@ def pytest_fixture_post_finalizer(
     `request.getfixturevalue` 로 늦게 받았어도, 준비 오류로 본문까지 못 갔어도 본다. 시험 정리 훅
     (`pytest_runtest_teardown`)은 앞의 오류에 막히고 `item.funcargs` 에 든 것만 봐 셋을 놓친다.
     기본 보존에서는 할 일이 없다. 다시 불려 값이 이미 비었거나 준비가 실패해 값이 없으면 넘긴다.
+
+    빈 폴더를 둘 수 없으면(지우다 만 자리 · 권한) 조용히 넘긴다 — 여기서 예외가 나면 pytest 가 준비
+    값을 비우지 못해 뒤 시험이 모두 같은 `tmp_path` 를 받고, 같은 정리의 다른 오류도 묻힌다.
     """
     if fixturedef.argname != "tmp_path" or fixturedef.cached_result is None:
         return
     path = fixturedef.cached_result[0]
-    if isinstance(path, Path) and not path.exists():
-        path.mkdir(parents=True, exist_ok=True)
+    if not isinstance(path, Path):
+        return
+    try:
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
 
 
 @pytest.fixture(autouse=True)

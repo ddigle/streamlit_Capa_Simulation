@@ -14,8 +14,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+from conftest import pytest_fixture_post_finalizer
 
 TESTS = Path(__file__).resolve().parent
 
@@ -192,3 +195,17 @@ def test_a_name_stays_held_when_the_test_order_alone_would_miss_it(tmp_path: Pat
         assert removed.is_dir() and not any(removed.iterdir()), removed.name
     # call 이 통과하지 못한 시험(실패 · 본문 건너뜀 · xfail)의 것은 남긴다.
     assert (skipped / "mark").is_file()
+
+
+def test_a_place_that_cannot_be_held_never_breaks_the_teardown(tmp_path: Path) -> None:
+    """빈 폴더를 다시 둘 수 없어도(지우다 만 자리 · 권한 — 보존 정책이 Windows 에서 처음 돈다) 훅은
+    조용히 넘긴다. 이 훅은 pytest 가 준비 값을 비우기 전에 불러, 여기서 예외가 나면 값이 남아 뒤
+    시험이 모두 앞 시험의 `tmp_path` 를 받고 같은 정리의 다른 오류도 묻힌다."""
+    plain = tmp_path / "plain"
+    plain.write_text("x", encoding="utf-8")
+    unreachable = plain / "tmp_path0"
+    fixturedef = SimpleNamespace(argname="tmp_path", cached_result=(unreachable, None, None))
+
+    pytest_fixture_post_finalizer(cast(Any, fixturedef), cast(Any, None))
+
+    assert plain.is_file() and not unreachable.exists()
