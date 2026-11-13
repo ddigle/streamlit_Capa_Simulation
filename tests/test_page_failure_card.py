@@ -31,14 +31,15 @@ def _crashing_page() -> None:
 
 def test_an_unhandled_error_becomes_a_card_with_a_reference_number() -> None:
     """처리 못 한 오류는 Streamlit 기본 오류 상자(경로 · traceback) 대신 그 화면 안 카드 하나다 —
-    머리 한 줄 · 참고 번호 · 오류 종류. 감싸기 뒤 꼬리(앱 회차 끝)는 그대로 돈다."""
+    머리 한 줄 · 참고 번호 · 오류 종류. 카드 뒤에는 `st.stop()` 으로 멈춰 감싸기 뒤 꼬리가 돌지
+    않는다(`app.py` 는 멈춤 길에서 회차 끝 일을 한다)."""
     app = AppTest.from_function(_crashing_page).run()
 
     assert not app.exception
     (card,) = app.error
     assert card.value == page_failure_card.HEADLINE
     assert "오류 앞까지 그린 줄" in [str(item.value) for item in app.markdown]
-    assert "감싸기 뒤 꼬리" in [str(item.value) for item in app.markdown]
+    assert "감싸기 뒤 꼬리" not in [str(item.value) for item in app.markdown]
     (failure,) = page_failures.recent_failures()
     assert (failure.page, failure.href, failure.kind) == (
         "공정 Capa 상세",
@@ -85,6 +86,47 @@ def test_a_viewer_who_is_not_the_admin_sees_only_the_kind(monkeypatch: pytest.Mo
     assert "DEMO 값 없음" not in "\n".join(str(item.value) for item in app.caption)
 
 
+def _draft_page() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.page_failure_card import run_core_page
+
+    @st.fragment
+    def broken_part() -> None:
+        raise IndexError("DEMO 프래그먼트")
+
+    def body() -> None:
+        failure = st.session_state.get("demo_failure")
+        if failure == "page":
+            raise AttributeError("DEMO 값 없음")
+        if failure == "fragment":
+            broken_part()
+        st.text_input("초안", key="demo_draft")
+
+    run_core_page(body, page="공정 Capa 상세", href="process_capa_detail")
+
+
+@pytest.mark.parametrize("failure", ["page", "fragment"])
+def test_a_failed_run_keeps_unsaved_widget_values_below_it(failure: str) -> None:
+    """처리한 실패는 멈춤으로 끝난다 — 정상으로 돌아오면 Streamlit 이 끝까지 돈 회차로 보고 오류
+    자리 아래에서 이번에 그리지 못한 위젯의 미저장 값을 지웠다(감싸기 없이 예외가 밖으로 나가던
+    꼴은 남겼다). 카드 · 프래그먼트 실패 둘 다 실패한 회차 뒤에도 그 값이 세션에 그대로다."""
+    app = AppTest.from_function(_draft_page).run()
+    app.text_input(key="demo_draft").set_value("저장 전 초안").run()
+
+    app.session_state["demo_failure"] = failure
+    app.run()
+
+    assert len(page_failures.recent_failures()) == 1
+    assert app.session_state["demo_draft"] == "저장 전 초안"
+    if failure == "page":
+        assert not app.exception and len(app.error) == 1
+    else:
+        # 프래그먼트 실패는 Streamlit 이 그 안에 그린 오류 상자뿐이다 — 카드는 없다.
+        assert [item.message for item in app.exception] == ["DEMO 프래그먼트"]
+        assert not app.error
+
+
 @pytest.mark.parametrize("control", [StopException(), KeyboardInterrupt()])
 def test_control_exceptions_pass_through(control: BaseException) -> None:
     """`st.stop()` · `st.rerun()`(Streamlit 제어 예외)와 `KeyboardInterrupt` 는 오류가 아니다 —
@@ -104,13 +146,32 @@ def _alert_script() -> None:
     render_page_failure_alert()
 
 
-def test_no_failure_writes_no_marker() -> None:
-    """프로세스에서 아직 실패가 없으면 표지를 쓰지 않는다 — 개발 · 시험의 요소 순번이 그대로다."""
+@pytest.fixture
+def start_check_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """시작 점검 결과가 있는 서버(C-DEP) — `AD-22` 를 회차마다 부르는 프로세스."""
+    monkeypatch.setattr(page_failure_card, "start_check_alert_possible", lambda: True)
+
+
+@pytest.mark.parametrize("possible", [True, False], ids=["start-check", "plain"])
+def test_the_event_slot_count_does_not_change_with_the_first_failure(
+    monkeypatch: pytest.MonkeyPatch, possible: bool
+) -> None:
+    """이벤트 칸 수는 프로세스 동안 같다 — 다른 세션의 첫 실패가 이 세션의 이벤트 칸 차례(팝업
+    호스트 자리)를 밀지 않는다. 시작 점검 판정이 참인 서버는 실패 앞뒤 모두 한 자리, 거짓인
+    서버(개발 · 사내 PC · 시험)는 앞뒤 모두 0 이다."""
+    monkeypatch.setattr(page_failure_card, "start_check_alert_possible", lambda: possible)
+    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
     app = AppTest.from_function(_alert_script).run()
+    before = len(app.get("html"))
 
-    assert not states(app, page_failure_card.ALERT_CODE)
+    page_failures.record_failure(page="Static Capa", href="static_capa", kind="AttributeError")
+    app.run()
+
+    assert before == len(app.get("html")) == (1 if possible else 0)
+    assert (active_state(app, page_failure_card.ALERT_CODE) is not None) is possible
 
 
+@pytest.mark.usefixtures("start_check_server")
 @pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
 def test_a_failure_is_told_to_the_admin_with_its_reference(
     monkeypatch: pytest.MonkeyPatch, admin: bool
@@ -136,6 +197,7 @@ def test_a_failure_is_told_to_the_admin_with_its_reference(
     assert alerts.REGISTRY[page_failure_card.ALERT_CODE].level == "error"
 
 
+@pytest.mark.usefixtures("start_check_server")
 def test_one_broken_screen_opened_again_does_not_pop_again(monkeypatch: pytest.MonkeyPatch) -> None:
     """고장 난 한 화면을 여럿이 거듭 열어도 같은 (화면, 종류)면 지문이 같아 알림창이 거듭 뜨지
     않는다 — 건수 · 최근 참고 번호는 글에 실린다. 다른 화면 · 다른 종류면 새 지문이다."""
@@ -157,3 +219,37 @@ def test_one_broken_screen_opened_again_does_not_pop_again(monkeypatch: pytest.M
     app.run()
     other = active_state(app, page_failure_card.ALERT_CODE)
     assert other is not None and other["fp"] != first["fp"]
+
+
+@pytest.mark.usefixtures("start_check_server")
+def test_a_broken_home_still_offers_its_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HOME 은 기본 화면이라 주소가 빈 글자다 — 그래도 「그 화면으로」 는 HOME 을 가리킨다(빈
+    주소로 빼면 줄이 관리자가 지금 보는 화면을 가리켰다)."""
+    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
+    page_failures.record_failure(page="HOME", href="", kind="KeyError")
+
+    app = AppTest.from_function(_alert_script).run()
+
+    note = active_state(app, page_failure_card.ALERT_CODE)
+    assert note is not None and (note["page"], note["href"]) == ("HOME", "")
+
+
+@pytest.mark.usefixtures("start_check_server")
+def test_the_count_and_fingerprint_outlive_the_recent_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """최근 줄은 `RECENT_LIMIT` 건이지만 건수는 거기서 멈추지 않고, 지문은 줄에서 밀려난 (화면,
+    종류) 쌍도 든다 — 같은 고장이 줄에서 밀렸다고 다시 뜨지 않는다."""
+    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: True)
+    page_failures.record_failure(page="VOC", href="voc", kind="IndexError")
+    page_failures.record_failure(page="Static Capa", href="static_capa", kind="AttributeError")
+    app = AppTest.from_function(_alert_script).run()
+    first = active_state(app, page_failure_card.ALERT_CODE)
+
+    for _ in range(page_failures.RECENT_LIMIT):
+        page_failures.record_failure(page="Static Capa", href="static_capa", kind="AttributeError")
+    app.run()
+    later = active_state(app, page_failure_card.ALERT_CODE)
+
+    assert all(item.page == "Static Capa" for item in page_failures.recent_failures())
+    assert first is not None and later is not None
+    assert later["fp"] == first["fp"]
+    assert later["short"].startswith(f"화면 오류 {page_failures.RECENT_LIMIT + 2}건")

@@ -9,8 +9,10 @@
 - **메시지 본문은 적지 않는다** — 시각 · 화면 이름 · 주소 · 예외 형식 이름 · 참고 번호만. 실데이터
   값이 기록과 알림에 남지 않게 한다(모듈 기록 `module_failures` 와 같은 꼴). 원문은 그 화면의 카드
   「관리자용 진단」 과 서버 로그(참고 번호로 찾는다)에 있다.
-- 프로세스 전역 줄 하나에 `threading.Lock` 을 건다(스레드를 세우지 않는다). 최근 `RECENT_LIMIT` 건만
-  남기고, 재시작하면 비어 있다.
+- 프로세스 전역 값에 `threading.Lock` 을 건다(스레드를 세우지 않는다). 줄은 최근 `RECENT_LIMIT`
+  건만 남기고, 건수(`failure_count`)와 난 (화면, 종류) 쌍(`failure_pairs` — 알림 지문)은 줄과 따로
+  모두 센다 — 줄이 차도 건수가 멈추지 않고 지문은 늘기만 한다. 쌍은 코어 화면 수 × 예외 형식
+  수라 끝이 있다. 재시작하면 비어 있다.
 """
 
 from __future__ import annotations
@@ -41,6 +43,8 @@ class PageFailure:
 
 _LOCK = threading.Lock()
 _RECENT: deque[PageFailure] = deque(maxlen=RECENT_LIMIT)
+_COUNT = 0
+_PAIRS: set[tuple[str, str]] = set()
 
 
 def new_ref() -> str:
@@ -50,11 +54,14 @@ def new_ref() -> str:
 
 def record_failure(*, page: str, href: str, kind: str) -> PageFailure:
     """실패 하나를 적고 돌려준다."""
+    global _COUNT
     failure = PageFailure(
         ref=new_ref(), at=time.strftime("%H:%M:%S"), page=page, href=href, kind=kind
     )
     with _LOCK:
         _RECENT.append(failure)
+        _COUNT += 1
+        _PAIRS.add((page, kind))
     return failure
 
 
@@ -64,7 +71,22 @@ def recent_failures() -> tuple[PageFailure, ...]:
         return tuple(_RECENT)
 
 
+def failure_count() -> int:
+    """이 프로세스에서 난 실패 건수(줄 상한과 상관없이)."""
+    with _LOCK:
+        return _COUNT
+
+
+def failure_pairs() -> list[tuple[str, str]]:
+    """이 프로세스에서 실패가 난 (화면 이름, 예외 형식 이름) 쌍 모두(정렬)."""
+    with _LOCK:
+        return sorted(_PAIRS)
+
+
 def forget_failures() -> None:
     """기록을 비운다(시험)."""
+    global _COUNT
     with _LOCK:
         _RECENT.clear()
+        _COUNT = 0
+        _PAIRS.clear()
