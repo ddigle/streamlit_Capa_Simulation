@@ -1018,7 +1018,7 @@ def test_the_reason_codes_stay_apart() -> None:
     assert portal.status == 403 and web.NOT_ON_LIST_TITLE not in portal.text
     assert web.PORTAL_TITLE in portal.text and web.REGISTER_LABEL not in portal.text
     made_up = _denied_page(f"{names.ERROR_PATH}?code=not_on_list2")
-    assert made_up.status == 400 and "<code>unknown</code>" in made_up.text
+    assert made_up.status == 400 and "참고 unknown · " in made_up.text
 
 
 def test_the_page_stays_when_the_list_is_not_enforced() -> None:

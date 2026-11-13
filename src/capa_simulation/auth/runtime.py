@@ -1,8 +1,9 @@
-# Purpose: 통합인증 프로세스 상태 — 설정·명단 한 벌·문지기 표지·세션 폐기·갱신 표·진단·사건·로거.
+# Purpose: 통합인증 프로세스 상태 — 설정·명단·문지기 표지·세션 폐기·갱신 표·누계·진단·사건·로거.
 
 """통합인증 프로세스 상태.
 
-로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리 ·
+로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 로그인 시작 · 돌아옴 누계 · 쓴
+state · 진단 · 사건 고리 ·
 명단 밖 로그인 표 · 「접속 권한 신청」 실패 뒤의 틈 · 마지막 로그인의 클레임 이름 · 지금 접속 명단
 한 벌(S3 명단이 켜졌을 때 —
 `AccessSource`, 통째로 바꾼다)을 둔다. 모두 프로세스 메모리이고(replica 1 전제)
@@ -137,6 +138,8 @@ class _State:
     access_source: AccessSource | None = None
     access_retry_failures: int = 0
     self_register_failures: int = 0
+    login_starts: int = 0
+    login_returns: int = 0
     register_cooldowns: dict[str, int] = field(default_factory=dict)
 
 
@@ -344,6 +347,26 @@ def refresh_counts() -> dict[str, int]:
     """기동 뒤 갱신 경로 결과 누계 — `REFRESH_OUTCOMES` 차례, 재시작하면 0."""
     with _LOCK:
         return {outcome: _STATE.refresh_counts[outcome] for outcome in REFRESH_OUTCOMES}
+
+
+def count_login_start() -> None:
+    """로그인 시작 하나(IdP 로 보냄 — 되풀이로 막은 시작은 세지 않는다)."""
+    with _LOCK:
+        _STATE.login_starts += 1
+
+
+def count_login_return() -> None:
+    """통합인증에서 돌아온 콜백 하나(POST — 성공 · 실패 · 거절을 가리지 않는다)."""
+    with _LOCK:
+        _STATE.login_returns += 1
+
+
+def login_flow_counts() -> tuple[int, int]:
+    """기동 뒤 (로그인 시작, 돌아옴) 누계 — 재시작하면 0. 사건 고리에 적지 않는다(누구나 시작할 수
+    있어 고리를 밀어내지 않게). 시작에 비해 돌아옴이 적으면 통합인증(ADFS) 화면에서 멈춘 것이다 —
+    포털 등록 주소 · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 기록이 없다."""
+    with _LOCK:
+        return _STATE.login_starts, _STATE.login_returns
 
 
 def remember_used_state(digest: str, exp: int) -> bool:
@@ -578,8 +601,8 @@ def denied_total() -> int:
 
 
 def reset() -> None:
-    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건 · 명단 밖
-    로그인 표 · 신청 틈 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
+    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 · 로그인 누계 · state · 진단 · 사건 ·
+    명단 밖 로그인 표 · 신청 틈 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()

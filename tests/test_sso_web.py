@@ -412,15 +412,20 @@ def test_a_nonstandard_idp_error_is_kept_for_the_admin_but_not_shown() -> None:
 
 
 def test_missing_state_cookie_is_state_missing() -> None:
+    """그 state 의 상태 쿠키만 없다(다른 탭이 새로 시작 · 10분 지남) — 이 앱의 다른 쿠키(시도
+    쿠키)는 왔다. 잠시 문제라 시도 쿠키를 지우지 않는다."""
     cfg = use_config()
     app = routes_app()
     login = begin(app, cfg)
 
     response = post_callback(
-        app, {"id_token": make_id_token(id_token_claims(login.nonce)), "state": login.state}
+        app,
+        {"id_token": make_id_token(id_token_claims(login.nonce)), "state": login.state},
+        {cfg.attempt_cookie: "1"},
     )
 
     assert error_code_of(response) == "state_missing"
+    assert response.cookie(cfg.attempt_cookie) is None, "잠시 문제는 되풀이를 계속 센다"
 
 
 def test_missing_state_with_a_valid_session_quietly_returns_to_the_app() -> None:
@@ -539,8 +544,12 @@ def test_error_page_without_a_kept_diagnostic_shows_the_code_only() -> None:
     known = http(routes_app(), "GET", f"{names.ERROR_PATH}?id=unknown-id-123&code=state_missing")
     odd = http(routes_app(), "GET", f"{names.ERROR_PATH}?code=%3Cb%3E")
 
-    assert known.status == 400 and "state_missing" in known.text
-    assert odd.status == 400 and "unknown" in odd.text and "<b>" not in odd.text
+    assert known.status == 400 and "참고 state_missing · " in known.text
+    assert "<table>" not in known.text and " · 진단 " not in known.text, (
+        "지난 진단 — 표 · 번호 없음"
+    )
+    assert odd.status == 400 and "참고 unknown · " in odd.text
+    assert odd.text.count("<b>") == 1 and "&lt;b&gt;" not in odd.text, "앱 이름의 굵은 글 하나뿐"
 
 
 @pytest.mark.parametrize(
@@ -560,7 +569,7 @@ def test_error_page_does_not_show_a_made_up_code(code: str) -> None:
     page = http(routes_app(), "GET", f"{names.ERROR_PATH}?{urlencode({'code': code})}")
 
     assert page.status == 400
-    assert "사유 코드 <code>unknown</code>" in page.text
+    assert "참고 unknown · " in page.text
     assert code.split(":", 1)[-1] not in page.text
 
 
@@ -573,7 +582,7 @@ def test_error_page_shows_the_codes_this_server_makes(code: str) -> None:
 
     page = http(routes_app(), "GET", f"{names.ERROR_PATH}?{urlencode({'code': code})}")
 
-    assert f"사유 코드 <code>{code}</code>" in page.text
+    assert f"참고 {code} · " in page.text
 
 
 def test_session_cookie_too_large_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -679,13 +688,19 @@ def test_logout_clears_three_cookies_and_revokes_the_session() -> None:
 
 
 def test_logout_page_links_idp_logout_only_when_configured() -> None:
+    """통합인증 로그아웃 주소는 「다른 계정으로 로그인」 이 한다(전의 「통합인증에서도 로그아웃」 —
+    하는 일 이름으로, 카드 p1-logout). 주소 칸이 없으면 그 링크가 없다."""
     use_config({names.ENV_LOGOUT_URL: "https://idp.example.invalid/adfs/oauth2/logout"})
 
     response = http(routes_app(), "GET", names.LOGOUT_PATH)
+    use_config()
+    bare = http(routes_app(), "GET", names.LOGOUT_PATH)
 
-    assert "통합인증에서도 로그아웃" in response.text
-    assert "https://idp.example.invalid/adfs/oauth2/logout" in response.text
+    assert web.OTHER_ACCOUNT_LABEL in response.text
+    assert "통합인증에서도 로그아웃" not in response.text
+    assert 'href="https://idp.example.invalid/adfs/oauth2/logout"' in response.text
     assert response.header("location") is None
+    assert web.OTHER_ACCOUNT_LABEL not in bare.text
 
 
 def _first_paragraph(page: AsgiResponse) -> str:
@@ -695,7 +710,7 @@ def _first_paragraph(page: AsgiResponse) -> str:
 
 def test_outer_pages_do_not_repeat_their_title_as_the_first_sentence() -> None:
     """바깥 화면(앱 밖 · 규칙 예외)의 설명 문장은 남기되 제목을 거듭하는 첫 문장은 걷고, 단추 이름은
-    「 」 로 감싼다(2026-11-08 사용자 답 b1). 모르는 사유 코드는 제목과 사유 코드만이다."""
+    「 」 로 감싼다(2026-11-08 사용자 답 b1). 모르는 사유 코드는 제목과 참고 줄만이다."""
     cfg = use_config()
 
     logout = http(routes_app(), "GET", names.LOGOUT_PATH)
@@ -704,27 +719,28 @@ def test_outer_pages_do_not_repeat_their_title_as_the_first_sentence() -> None:
     )
     unknown = http(routes_app(), "GET", f"{names.ERROR_PATH}?code=zzz")
 
-    assert _first_paragraph(logout).startswith("이 앱의 로그인만 끝냈습니다")
-    assert "「다시 들어가기」" in logout.text and "[다시 들어가기]" not in logout.text
+    assert _first_paragraph(logout) == web.LOGOUT_TEXT
     assert "로그아웃했습니다. " not in logout.text
-    assert _first_paragraph(loop).startswith("로그인 쿠키가 저장되지 않는 것 같습니다")
+    assert _first_paragraph(loop) == web.LOOP_TEXT
+    assert "「다시 시도」" in loop.text and "[다시 시도]" not in loop.text
     assert "되풀이되고 있습니다" not in loop.text
-    assert "사유 코드 <code>unknown</code>" in unknown.text
-    assert "<p>로그인하지 못했습니다.</p>" not in unknown.text
+    assert "참고 unknown · " in unknown.text
+    assert "<p>" not in unknown.text.split("</h1>", 1)[1], "모르는 사유 코드 — 까닭 문장 없음"
     for page in (logout, loop, unknown):
         assert "[" not in page.text.split("<main>", 1)[1]
 
 
 def test_plain_links_on_the_outer_pages_take_the_accent_token() -> None:
-    """바깥 화면의 보조 링크(「통합인증에서도 로그아웃」 등)는 브라우저 기본 파랑 · 보라가 아니라
-    두 팔레트의 강조 토큰이다 — 단추 꼴 링크(`a.button`)는 선택자가 더 구체적이라 제 글자색을
-    지킨다."""
-    css = web.page_css()
+    """바깥 화면의 보조 링크(「다른 계정으로 로그인」 등)는 브라우저 기본 파랑 · 보라가 아니라
+    두 팔레트의 강조 토큰이다 — 단추 꼴 링크(`.button`)는 제 글자색(강조 위 글자)을 지킨다."""
+    use_config()
+    page = http(routes_app(), "GET", names.LOGOUT_PATH)
+    css = page.text.split("<style>", 1)[1].split("</style>", 1)[0]
 
     assert "\na { color: var(--accent); }\n" in css
     assert "--accent: #" in css.split("@media (prefers-color-scheme: dark)")[0]
     assert "--accent: #" in css.split("@media (prefers-color-scheme: dark)")[1]
-    assert "color: var(--accent-text)" in css.split("a.button", 1)[1]
+    assert "color: var(--accent-text)" in css.split(".button {", 1)[1].split("}", 1)[0]
 
 
 def test_identity_survives_until_logout() -> None:

@@ -34,12 +34,25 @@
 않는다(앞단을 거치며 포트가 사라지는 일을 막는다). 화면에 싣는 값은 모두 `html.escape` 하고, 토큰 ·
 state · nonce · 쿠키 값 · 비밀값 · 클레임 값(이름 · 부서 포함) · IdP 의 `error_description` 원문은
 싣지 않는다 — 예외는 거절 표가 있는 그 브라우저의 거절 갈래 화면에 보이는 본인 계정 · 이름 하나다.
-거절 갈래 · 포털 거절 화면은 공통 틀(`auth/page_frame.py`)로 그린다.
+화면은 모두 공통 틀(`auth/page_frame.py`)로 그린다 — 거절 갈래 · 포털 거절 · 로그인 실패 · 되풀이 ·
+로그아웃 · 설정 막힘.
+
+**로그인 실패 갈래**(`failure_kind` — 2026-11-13 보드 카드 p1-login-fail): 잠시 문제(다시 하면 됨 —
+시작 정보 · state 의 시간 지남 · 다른 탭 · IdP 의 일시 오류) · 설정 문제(다시 해도 같음 — 서명 · 앱
+등록 번호 · 이슈어 · 클레임 · 시각(서버 시계) · 콜백 꼴 · 표준 IdP 설정 오류) · 쿠키 없음(콜백에 이
+앱의 쿠키가 하나도 오지 않음 — 다른 주소로 열었거나 쿠키를 막음) 셋이다. 설정 문제 · 쿠키 없음은
+되풀이를 세는 시도 쿠키를 지운다 — 남기면 고쳐지지 않는 실패에서 「다시 시도」 를 되풀이한 사람이
+되풀이 화면으로 잘못 간다.
+
+**처음 가려던 화면**(`next`) — 실패 · 거절 · 되풀이 · 로그아웃의 단추가 지킨다. 콜백은 검증한 상태
+토큰의 next 를, 로그아웃은 앱 정보 카드 링크의 `?next=` 를 받는다. 거절 갈래는 거절 표가 들고,
+로그인 실패 주소에는 `?next=` 를 싣는다(`/` 면 싣지 않음) — 로그인 없이 열리는 주소라 읽을 때마다
+`sanitize_next` 로 다시 좁혀 같은 출처의 앱 경로만 남기고(열린 리다이렉트 없음) 화면 글로는 싣지
+않는다.
 """
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import hmac
 import html
@@ -125,6 +138,8 @@ SIGN_IN_TO_APPLY_LABEL = "로그인하고 신청"
 OTHER_ACCOUNT_LABEL = "다른 계정으로 로그인"
 RECONNECT_LABEL = "다시 접속"
 RETRY_LABEL = "다시 시도"
+AGAIN_LABEL = "다시 들어가기"
+REOPEN_LABEL = "다시 열기"
 # 계정 뒤에는 조사를 못박지 않는다(받침을 모른다 — `tests/test_particle_sites.py`).
 DENIED_ACCOUNT_TEXT = "계정 {account} — 이 앱의 접속 명단에 없습니다."
 DENIED_REGISTER_STEP = "「접속 권한 신청」 을 누르면 바로 명단에 등록됩니다."
@@ -158,6 +173,37 @@ PORTAL_STEPS = (
     "모르겠으면 문의처에 아래 참고 번호를 알려 주세요.",
 )
 PORTAL_DIAGNOSTIC = "통합인증이 보낸 거절 글 원문은 Admin 「통합인증 점검」 최근 사건에 있습니다."
+# 로그인 실패 · 되풀이 · 로그아웃 · 설정 막힘 화면의 글(카드 p1-login-fail · p1-logout · p2-config).
+LOGIN_FAILED_TITLE = "로그인을 마치지 못했습니다"
+LOGIN_RETRY_TEXT = "로그인 도중 시간이 지났거나 다른 탭에서 로그인을 새로 시작했습니다."
+LOGIN_SETUP_TITLE = "로그인 설정에 문제가 있습니다"
+LOGIN_SETUP_TEXT = "앱 설정 문제라 다시 시도해도 같습니다. 문의처에 아래 참고 번호를 알려 주세요."
+NO_COOKIES_TEXT = (
+    "브라우저가 이 사이트 쿠키를 저장하지 않았거나 다른 주소로 열었습니다 — "
+    "주소창 주소와 쿠키 설정을 보세요."
+)
+LOOP_TITLE = "로그인이 되풀이됩니다"
+LOOP_TEXT = (
+    "여러 탭에서 한꺼번에 로그인을 시작했거나, 같은 실패에서 「다시 시도」 를 되풀이했습니다."
+)
+# `{clock}` 은 「○시 ○분」(KST) — 시도 쿠키가 늦어도 사라지는 때다(`loop_frame`).
+LOOP_WAIT_TEXT = "{clock} 뒤에 「다시 시도」 를 누르세요."
+LOGOUT_TITLE = "로그아웃했습니다"
+LOGOUT_TEXT = (
+    "이 브라우저에서 이 앱의 로그인만 끝냈습니다. "
+    "열어 둔 다른 탭도 다음에 누를 때 로그인 화면으로 갑니다."
+)
+CONFIG_TITLE = "지금은 앱을 열 수 없습니다"
+CONFIG_TEXT = "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 문의처에 알려 주세요."
+CONFIG_BROKEN_TEXT = "통합인증 설정을 마치지 못했습니다"
+CONFIG_FIX_COUNT = "{text} — 고칠 것 {count}개"
+CONFIG_ADMINS_TEXT = (
+    f"관리자 목록({names.ENV_ACCESS_ADMINS})이 비었거나 읽을 수 있는 계정이 없어 막았습니다 — "
+    "값을 넣고 CI/CD 를 다시 돌리세요."
+)
+CONFIG_HOW_TO = "C-DEP 배포 설정의 환경변수 표를 고친 뒤 CI/CD 를 다시 돌리세요."
+CONFIG_ENV_FOLD = "환경변수 전체({count})"
+CONFIG_ENV_HEAD = ("환경변수", "상태", "까닭")
 # 문의 설정 두 칸(메일 · 창구 글)이 모두 비어 문의 줄이 서지 않는 서버 — 「문의처」 를 가리키는 글을
 # 앱 관리자로 바꿔 보이지 않는 곳을 가리키지 않는다.
 NO_CONTACT_TEXT: Mapping[str, str] = {
@@ -166,6 +212,12 @@ NO_CONTACT_TEXT: Mapping[str, str] = {
     LIST_UNREAD_WAIT_STEP: "1분 뒤 「다시 확인」 을 누르세요. 계속되면 앱 관리자에게 알려 주세요.",
     LIST_UNREAD_ADMIN_STEP: "앱 관리자에게 알려 주세요.",
     PORTAL_STEPS[1]: "모르겠으면 앱 관리자에게 아래 참고 번호를 알려 주세요.",
+    LOGIN_SETUP_TEXT: (
+        "앱 설정 문제라 다시 시도해도 같습니다. 앱 관리자에게 아래 참고 번호를 알려 주세요."
+    ),
+    CONFIG_TEXT: (
+        "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 앱 관리자에게 알려 주세요."
+    ),
 }
 
 HTML_HEADERS = {
@@ -217,6 +269,12 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 SameSite = Literal["lax", "strict", "none"]
 
+# 로그인 실패 · 되풀이의 사유 코드(오류 화면 · 사건 고리 · 참고 줄).
+NO_COOKIES = "no_cookies"
+LOGIN_LOOP = "login_loop"
+CONFIG_BROKEN = "config_broken"
+UNKNOWN = "unknown"
+
 _RETRY_REASON = (
     "로그인 시작 정보가 없거나 맞지 않습니다(10분이 지났거나 다른 탭에서 시작) — 다시 시도하세요."
 )
@@ -226,8 +284,12 @@ _KEY_REASON = "서명 인증서가 맞지 않습니다 — 인증서 교체가 �
 _TIME_REASON = "시각이 맞지 않습니다(서버 시계가 어긋났거나 오래된 토큰을 다시 보냄)."
 _NONCE_REASON = "다른 로그인의 토큰입니다."
 _COOKIE_REASON = "로그인 쿠키를 저장하지 못했습니다."
-# 오류 화면 제목. 모르는 사유 코드는 본문에 이 말을 다시 적지 않고 제목과 사유 코드만 둔다.
-ERROR_PAGE_TITLE = "로그인하지 못했습니다"
+_NO_COOKIES_REASON = (
+    "콜백에 이 앱의 쿠키(상태 · 시도)가 하나도 오지 않았습니다 — 접속 주소가 설정값"
+    f"({names.ENV_PUBLIC_URL})과 다르거나 브라우저가 쿠키를 막았거나, 통합인증 화면에 10분 넘게 "
+    "머물렀습니다."
+)
+# 관리자용 진단의 사유 한 줄(사유 코드별). 모르는 사유 코드는 빈 글이다 — 제목과 참고 줄만 선다.
 REASON_TEXT: Mapping[str, str] = {
     "bad_content_type": _FORM_REASON,
     "body_too_large": _FORM_REASON,
@@ -249,13 +311,66 @@ REASON_TEXT: Mapping[str, str] = {
     "nonce_missing": _NONCE_REASON,
     "nonce_mismatch": _NONCE_REASON,
     "session_cookie_too_large": _COOKIE_REASON,
-    "login_loop": _COOKIE_REASON,
-    "config_broken": "통합인증 설정을 마치지 못했습니다.",
+    NO_COOKIES: _NO_COOKIES_REASON,
+    LOGIN_LOOP: "로그인 시작이 짧은 사이에 되풀이됐습니다.",
+    CONFIG_BROKEN: f"{CONFIG_BROKEN_TEXT}.",
     NOT_ON_LIST: NOT_ON_LIST_TEXT,
     LIST_UNREAD: LIST_UNREAD_TEXT,
     REGISTERED: REGISTERED_TITLE,
     REGISTER_FAILED: REGISTER_FAILED_TITLE,
 }
+# 로그인 실패의 갈래(`failure_kind`). 잠시 문제 · 설정 문제 · 쿠키 없음 · 모름.
+KIND_RETRY = "retry"
+KIND_SETUP = "setup"
+KIND_NO_COOKIES = "no_cookies"
+KIND_UNKNOWN = "unknown"
+# 잠시 문제 — 다시 하면 된다(시작 정보의 시간 지남 · 다른 탭 · 뒤로 가기 재전송 · 짝이 다른 토큰).
+RETRY_CODES = frozenset(
+    {
+        "state_missing",
+        "state_invalid",
+        "state_mismatch",
+        "state_reused",
+        "nonce_mismatch",
+        LOGIN_LOOP,
+    }
+)
+# 설정 문제 — 다시 해도 같다. 시각 셋은 상태 토큰(10분)이 맞은 뒤의 실패라 서버 · IdP 시계가 어긋난
+# 것이고, 콜백 꼴 셋은 IdP 의 응답 방식이 다른 것이다.
+SETUP_CODES = frozenset(
+    {
+        "bad_content_type",
+        "body_too_large",
+        "bad_form",
+        "token_missing",
+        "token_malformed",
+        "alg_not_allowed",
+        "signing_key_unknown",
+        "signature_invalid",
+        "aud_mismatch",
+        "iss_mismatch",
+        "token_expired",
+        "token_not_yet_valid",
+        "token_stale",
+        "nonce_missing",
+        "session_cookie_too_large",
+        CONFIG_BROKEN,
+    }
+)
+# IdP 오류 가운데 잠시 문제 — 그 밖의 표준 이름 · `other` 는 설정 문제다(포털 거절은 따로 — 거절
+# 꼴).
+RETRY_IDP_ERRORS = frozenset(
+    {
+        "temporarily_unavailable",
+        "server_error",
+        "login_required",
+        "interaction_required",
+        "account_selection_required",
+        "consent_required",
+    }
+)
+_IDP_ERROR_PREFIX = "idp_error:"
+_CLAIM_PREFIXES = ("claim_missing:", "claim_invalid:")
 # 진단에서 화면에 보여도 되는 칸(비밀 아님)과 그 이름표. 이 목록 밖의 칸은 보이지 않는다.
 DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
     ("expected_iss", "기대한 iss"),
@@ -273,33 +388,6 @@ DIAGNOSTIC_LABELS: tuple[tuple[str, str], ...] = (
     ("at", "기록 시각"),
 )
 
-# 화면 다섯의 색 · 서체는 design/tokens 의 두 팔레트에서 온다(손으로 적은 색을 두지 않는다).
-# 지금 실행의 테마가 아니라 밝은 · 어두운 팔레트를 둘 다 실어 `prefers-color-scheme` 로 고른다 —
-# 이 화면은 Streamlit 바깥이라 앱 테마를 모른다.
-_CSS_BODY = """
-body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.6;
-  font-family: var(--font); }
-main { max-width: 760px; margin: 48px auto; padding: 28px 32px; background: var(--card);
-  border: 1px solid var(--line); border-radius: 12px; }
-h1 { font-size: 1.35rem; margin: 0 0 12px; }
-p { margin: 8px 0; }
-code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; word-break: break-all; }
-table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: .93rem; }
-th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left;
-  vertical-align: top; }
-th { color: var(--muted); font-weight: 600; }
-.muted { color: var(--muted); font-size: .9rem; }
-a { color: var(--accent); }
-a.button { display: inline-block; margin-top: 12px; padding: 8px 16px; border-radius: 8px;
-  background: var(--accent); color: var(--accent-text); text-decoration: none; }
-"""
-
-
-@functools.cache
-def page_css() -> str:
-    """밝은 · 어두운 팔레트 변수(공통 틀과 한 벌 — `page_frame.palette_css`) + 본문 규칙."""
-    return f"{page_frame.palette_css()}{_CSS_BODY}"
-
 
 def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
@@ -312,17 +400,6 @@ def _utc_now_text(now: int) -> str:
 
 def _now() -> int:
     return int(time.time())
-
-
-def html_page(title: str, body: str, *, status: int) -> HTMLResponse:
-    """바깥 자원 없는 작은 한 파일 화면. `body` 는 이미 이스케이프한 HTML 이어야 한다."""
-    document = (
-        '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{_esc(title)}</title><style>{page_css()}</style></head>"
-        f"<body><main><h1>{_esc(title)}</h1>{body}</main></body></html>"
-    )
-    return HTMLResponse(document, status_code=status, headers=HTML_HEADERS)
 
 
 def text_response(text: str, status: int) -> PlainTextResponse:
@@ -561,14 +638,16 @@ def authorize_url(cfg: SsoConfig, *, state: str, nonce: str) -> str:
 
 
 def start_login(cfg: SsoConfig, cookies: Mapping[str, str], next_path: str, now: int) -> Response:
-    """IdP 로 보낸다(302) — 상태 쿠키 · 시도 쿠키를 심는다.
+    """IdP 로 보낸다(302) — 상태 쿠키 · 시도 쿠키를 심고 로그인 시작 누계를 하나 센다.
 
-    같은 브라우저에서 2분에 3번째면 IdP 로 보내지 않고 되돌이 화면을 낸다.
+    시도 쿠키는 시작마다 2분(`ATTEMPT_TTL`)으로 다시 심는다 — 「마지막 시작 뒤 2분 안에 또 시작」 이
+    이어져 넷째 시작이 되면(쿠키 값 3) IdP 로 보내지 않고 되풀이 화면을 낸다(처음 가려던 화면은
+    그 화면의 「다시 시도」 가 지킨다). 되풀이 화면은 쿠키를 다시 심지 않는다.
     """
     attempts = _attempts(cookies.get(cfg.attempt_cookie))
     if attempts >= MAX_LOGIN_ATTEMPTS:
-        runtime.record_event("login_fail", level=logging.WARNING, reason="login_loop", loginid="-")
-        return loop_page(cfg)
+        runtime.record_event("login_fail", level=logging.WARNING, reason=LOGIN_LOOP, loginid="-")
+        return loop_page(cfg, sanitize_next(next_path), now=now)
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     value = issue_state(cfg, state=state, nonce=nonce, next_path=sanitize_next(next_path), now=now)
@@ -590,17 +669,33 @@ def start_login(cfg: SsoConfig, cookies: Mapping[str, str], next_path: str, now:
         secure=True,
         samesite="none",
     )
+    runtime.count_login_start()
     return response
 
 
 # --- 화면 ------------------------------------------------------------------------------------
 
 
-def _env_rows(cfg: SsoConfig) -> str:
+def failure_kind(code: str) -> str:
+    """로그인 실패 사유 코드 → 갈래(`KIND_*`). 모르는 코드(`unknown` 포함)는 `KIND_UNKNOWN`."""
+    if code == NO_COOKIES:
+        return KIND_NO_COOKIES
+    if code in RETRY_CODES:
+        return KIND_RETRY
+    if code in SETUP_CODES or code.startswith(_CLAIM_PREFIXES):
+        return KIND_SETUP
+    if code.startswith(_IDP_ERROR_PREFIX):
+        detail = code[len(_IDP_ERROR_PREFIX) :]
+        return KIND_RETRY if detail in RETRY_IDP_ERRORS else KIND_SETUP
+    return KIND_UNKNOWN
+
+
+def _env_table(cfg: SsoConfig) -> page_frame.Table:
+    """환경변수 전체 — 이름 | 상태(있음 · 없음 · 없음(선택) · 틀림) | 까닭. 값은 싣지 않는다."""
     problems: dict[str, list[SsoProblem]] = {}
     for problem in cfg.problems:
         problems.setdefault(problem.env, []).append(problem)
-    rows: list[str] = []
+    rows: list[tuple[str, str, str]] = []
     for name in names.SSO_ENVIRONMENT:
         present = cfg.env_presence.get(name, False)
         found = problems.pop(name, [])
@@ -610,72 +705,94 @@ def _env_rows(cfg: SsoConfig) -> str:
         else:
             status = "있음" if present else "없음(선택)"
             reason = ""
-        rows.append(
-            f"<tr><td><code>{_esc(name)}</code></td><td>{_esc(status)}</td>"
-            f"<td>{_esc(reason)}</td></tr>"
-        )
+        rows.append((name, status, reason))
     for env, found in problems.items():
-        reason = " · ".join(problem.reason for problem in found)
-        rows.append(
-            f"<tr><td><code>{_esc(env)}</code></td><td>틀림</td><td>{_esc(reason)}</td></tr>"
+        rows.append((env, "틀림", " · ".join(problem.reason for problem in found)))
+    return page_frame.Table(tuple(rows), head=CONFIG_ENV_HEAD, code_columns=(0,))
+
+
+def config_fixes(cfg: SsoConfig) -> list[str]:
+    """「고칠 것」 줄 — 문제가 있는 환경변수마다 한 줄(이름 — 까닭). 관리자 목록이 비었거나 읽을
+    계정이 없으면 그 줄을 카드 글로 맨 앞에 둔다(첫 배포에서 가장 흔한 실수 — 보드 카드
+    p2-config)."""
+    grouped: dict[str, list[SsoProblem]] = {}
+    for problem in cfg.problems:
+        grouped.setdefault(problem.env, []).append(problem)
+    lines: list[str] = []
+    for env, found in grouped.items():
+        if env == names.ENV_ACCESS_ADMINS:
+            lines.insert(0, CONFIG_ADMINS_TEXT)
+            continue
+        lines.append(f"{env} — {' · '.join(problem.reason for problem in found)}")
+    return lines
+
+
+def _config_fold_lines(cfg: SsoConfig, now: int) -> tuple[str, ...]:
+    """「환경변수 전체」 표 아래 — 알림 · 계산한 redirect_uri · 서명 인증서 · 이슈어 후보 · 서버
+    시각. 계산한 주소 · 인증서 지문은 지금까지 이 화면에 실려 온 값이다(보드 D9 — 그대로 둔다)."""
+    lines = [f"알림 · {item.env} — {item.reason}" for item in cfg.notices]
+    if cfg.redirect_uri:
+        lines.append(
+            f"계산한 redirect_uri · {cfg.redirect_uri} — 포털의 Endpoint URL 과 한 글자도 "
+            "같아야 합니다."
         )
-    return (
-        "<table><thead><tr><th>환경변수</th><th>상태</th><th>까닭</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
-    )
-
-
-def _cert_lines(cfg: SsoConfig) -> str:
-    if not cfg.signing_certs:
-        return ""
-    items = "".join(
-        f"<li>x5t <code>{_esc(cert.x5t)}</code> · SHA-256 <code>{_esc(cert.sha256[:16])}…</code>"
-        f" · 만료 {_esc(cert.not_after.strftime('%Y-%m-%d'))} · RSA {cert.key_bits}비트</li>"
+    lines.extend(
+        f"서명 인증서 · x5t {cert.x5t} · SHA-256 {cert.sha256[:16]}… · "
+        f"만료 {cert.not_after.strftime('%Y-%m-%d')} · RSA {cert.key_bits}비트"
         for cert in cfg.signing_certs
     )
-    return f"<p>서명 인증서</p><ul>{items}</ul>"
+    if any(item.env == names.ENV_ISSUER for item in cfg.problems) and cfg.issuer_candidate:
+        lines.append(
+            f"{names.ENV_ISSUER} 후보(관례일 뿐 — 그대로 넣지 말고 첫 로그인 오류 화면의 받은 "
+            f"iss 로 확인) · {cfg.issuer_candidate}"
+        )
+    lines.append(f"서버 시각 {_utc_now_text(now)} · 안내 문서 {names.SETUP_DOC}")
+    return tuple(lines)
+
+
+def config_frame(cfg: SsoConfig, now: int) -> Frame:
+    """설정 막힘 화면 — 위는 누구나 읽는 「지금은 앱을 열 수 없습니다」, 아래 접힌 진단에 고칠 것과
+    다시 접힌 「환경변수 전체(n)」(표 · 알림 · 인증서). 「다시 열기」 는 지금 문서를 다시 연다 —
+    공개 주소(`CAPA_PUBLIC_URL`)가 바로 틀린 변수일 수 있다."""
+    fixes = config_fixes(cfg)
+    table = _env_table(cfg)
+    return Frame(
+        title=CONFIG_TITLE,
+        chip="maintenance",
+        lead=(_reachable(cfg, CONFIG_TEXT),),
+        primary=Link(REOPEN_LABEL, ""),
+        reference=CONFIG_BROKEN,
+        diagnostics=(
+            CONFIG_FIX_COUNT.format(text=CONFIG_BROKEN_TEXT, count=len(fixes)),
+            *fixes,
+            CONFIG_HOW_TO,
+        ),
+        diagnostic_fold=page_frame.Fold(
+            CONFIG_ENV_FOLD.format(count=len(table.rows)),
+            table=table,
+            lines=_config_fold_lines(cfg, now),
+        ),
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
 
 
 def config_page(cfg: SsoConfig, *, status: int, now: int | None = None) -> HTMLResponse:
-    """막힘 모드의 설정 화면 — 환경변수 이름 · 상태 · 까닭과 계산한 사실. 값은 보이지 않는다."""
+    """막힘 모드의 설정 화면(공통 틀) — 환경변수 이름 · 상태 · 까닭과 계산한 사실. 값은 보이지
+    않는다."""
     moment = now if now is not None else _now()
-    parts = [
-        "<p>이 서버는 통합인증(SSO)을 켜도록 설정됐지만 값이 빠지거나 틀려 앱을 열지 않았습니다. "
-        "관리자는 C-DEP 배포 설정의 환경변수 표를 고친 뒤 CI/CD 를 다시 돌리세요.</p>",
-        _env_rows(cfg),
-    ]
-    if cfg.notices:
-        notes = "".join(
-            f"<li><code>{_esc(item.env)}</code> — {_esc(item.reason)}</li>" for item in cfg.notices
-        )
-        parts.append(f"<p>알림</p><ul>{notes}</ul>")
-    if cfg.redirect_uri:
-        parts.append(
-            f"<p>계산한 redirect_uri: <code>{_esc(cfg.redirect_uri)}</code><br>"
-            '<span class="muted">포털의 Endpoint URL 과 한 글자도 같아야 합니다.</span></p>'
-        )
-    parts.append(_cert_lines(cfg))
-    if any(item.env == names.ENV_ISSUER for item in cfg.problems) and cfg.issuer_candidate:
-        parts.append(
-            f"<p>{_esc(names.ENV_ISSUER)} 후보(관례일 뿐 — 그대로 넣지 말고 첫 로그인 오류 화면의 "
-            f"받은 iss 로 확인): <code>{_esc(cfg.issuer_candidate)}</code></p>"
-        )
-    parts.append(
-        f'<p class="muted">서버 시각 {_esc(_utc_now_text(moment))} · 안내 문서 '
-        f"<code>{_esc(names.SETUP_DOC)}</code></p>"
-    )
-    return html_page("통합인증 설정을 마치지 못했습니다", "".join(parts), status=status)
+    return frame_response(config_frame(cfg, moment), status=status, now=moment)
 
 
 def reason_text(code: str) -> str:
-    """사유 코드의 한 줄 설명. 모르는 코드는 빈 글이다 — 화면 제목(`ERROR_PAGE_TITLE`)을 본문에서
-    거듭하지 않는다."""
-    if code.startswith("idp_error:"):
+    """사유 코드의 한 줄 설명(관리자용 진단의 첫 줄). 모르는 코드는 빈 글이다 — 화면은 제목과 참고
+    줄만 둔다."""
+    if code.startswith(_IDP_ERROR_PREFIX):
         detail = code.split(":", 1)[1]
         if detail == "access_denied":
             return "통합인증이 거절했습니다 — 포털에서 이 앱의 사용 권한을 확인하세요."
         return "통합인증이 거절했습니다."
-    if code.startswith(("claim_missing:", "claim_invalid:")):
+    if code.startswith(_CLAIM_PREFIXES):
         return "필요한 클레임이 없거나 꼴이 다릅니다 — 아래 받은 클레임 이름 목록을 보세요."
     return REASON_TEXT.get(code, "")
 
@@ -684,9 +801,9 @@ def allowed_reason_codes(cfg: SsoConfig) -> frozenset[str]:
     """오류 주소의 질의 `code` 로 받아 화면에 실을 수 있는 사유 코드 — 이 서버가 내는 것뿐이다.
 
     `GET /auth/sso/error?code=` 는 로그인 없이 열리고 링크로 보낼 수 있다. 질의 글을 그대로 실으면
-    앱의 출처 · 「로그인하지 못했습니다」 제목 아래 남이 고른 문장(피싱 안내)이 선다. 그래서 정해
-    둔 이름(`REASON_TEXT` · IdP 오류 코드 · 설정한 loginid 클레임 이름의 빠짐/꼴)만 받고 그 밖은
-    `unknown`.
+    앱의 출처 · 「로그인을 마치지 못했습니다」 제목 아래 남이 고른 문장(피싱 안내)이 선다. 그래서
+    정해 둔 이름(`REASON_TEXT` · IdP 오류 코드 · 설정한 loginid 클레임 이름의 빠짐/꼴)만 받고 그
+    밖은 `unknown`.
     """
     return frozenset(
         {
@@ -698,23 +815,68 @@ def allowed_reason_codes(cfg: SsoConfig) -> frozenset[str]:
     )
 
 
-def error_page(
-    cfg: SsoConfig, code: str, details: Mapping[str, str] | None, *, status: int
-) -> HTMLResponse:
-    rows = "".join(
-        f"<tr><th>{_esc(label)}</th><td><code>{_esc(details[key])}</code></td></tr>"
-        for key, label in DIAGNOSTIC_LABELS
-        if details and details.get(key)
-    )
-    body = [f"<p>사유 코드 <code>{_esc(code)}</code></p>"]
+def _diagnostic_table(details: Mapping[str, str] | None) -> page_frame.Table | None:
+    """보관한 진단의 보여도 되는 칸(`DIAGNOSTIC_LABELS`) — 이름표 | 값(글자 그대로). 없으면
+    `None`."""
+    if not details:
+        return None
+    rows = tuple((label, details[key]) for key, label in DIAGNOSTIC_LABELS if details.get(key))
+    return page_frame.Table(rows, code_columns=(1,)) if rows else None
+
+
+def login_failure_frame(
+    cfg: SsoConfig,
+    code: str,
+    details: Mapping[str, str] | None,
+    *,
+    next_path: str = "/",
+    diagnostic_id: str = "",
+) -> Frame:
+    """로그인 실패 화면 — 위는 갈래(`failure_kind`)의 누구나 읽는 글, 아래 접힌 진단에 사유 한 줄 +
+    진단 표, 바닥에 「참고 사유 코드 · 시각 · 진단 번호」. 「다시 시도」 는 처음 가려던 화면으로
+    간다 — 설정 문제는 다시 해도 같아 보조 링크다. 모르는 사유 코드는 제목과 참고 줄만이다."""
+    kind = failure_kind(code)
+    retry = _login_link(cfg, RETRY_LABEL, next_path)
     reason = reason_text(code)
-    if reason:
-        body.append(f"<p>{_esc(reason)}</p>")
-    if rows:
-        body.append(f"<table><tbody>{rows}</tbody></table>")
-    retry = public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': '/'})}")
-    body.append(f'<a class="button" href="{_esc(retry)}">다시 시도</a>')
-    return html_page(ERROR_PAGE_TITLE, "".join(body), status=status)
+    setup = kind == KIND_SETUP
+    leads: dict[str, tuple[str, ...]] = {
+        KIND_SETUP: (_reachable(cfg, LOGIN_SETUP_TEXT),),
+        KIND_RETRY: (LOGIN_RETRY_TEXT,),
+        KIND_NO_COOKIES: (NO_COOKIES_TEXT,),
+    }
+    title, chip = (LOGIN_SETUP_TITLE, "maintenance") if setup else (LOGIN_FAILED_TITLE, "retry")
+    lead = leads.get(kind, ())
+    return Frame(
+        title=title,
+        chip=chip,
+        lead=lead,
+        primary=None if setup else retry,
+        secondary=(retry,) if setup else (),
+        reference=code,
+        reference_id=diagnostic_id,
+        diagnostics=(reason,) if reason else (),
+        diagnostic_table=_diagnostic_table(details),
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
+
+
+def error_page(
+    cfg: SsoConfig,
+    code: str,
+    details: Mapping[str, str] | None,
+    *,
+    status: int,
+    next_path: str = "/",
+    diagnostic_id: str = "",
+    now: int | None = None,
+) -> HTMLResponse:
+    """로그인 실패 화면 응답(공통 틀)."""
+    moment = _now() if now is None else now
+    frame = login_failure_frame(
+        cfg, code, details, next_path=next_path, diagnostic_id=diagnostic_id
+    )
+    return frame_response(frame, status=status, now=moment)
 
 
 def frame_response(frame: Frame, *, status: int, now: int) -> HTMLResponse:
@@ -895,10 +1057,12 @@ def denied_family_page(
     return frame_response(not_on_list_frame(cfg, ticket, moment), status=403, now=moment)
 
 
-def portal_refused_page(cfg: SsoConfig, *, now: int | None = None) -> HTMLResponse:
+def portal_refused_page(
+    cfg: SsoConfig, *, now: int | None = None, next_path: str = "/"
+) -> HTMLResponse:
     """통합인증(포털)이 앱 사용을 막음 — 신청 칸 없음(서명 전 실패라 누구인지 모른다)."""
     moment = _now() if now is None else now
-    retry = _login_link(cfg, RETRY_LABEL)
+    retry = _login_link(cfg, RETRY_LABEL, next_path)
     other = _other_account(cfg)
     frame = Frame(
         title=PORTAL_TITLE,
@@ -915,31 +1079,53 @@ def portal_refused_page(cfg: SsoConfig, *, now: int | None = None) -> HTMLRespon
     return frame_response(frame, status=403, now=moment)
 
 
-def logout_page(cfg: SsoConfig) -> HTMLResponse:
-    """로그아웃 안내 화면. 앱 밖 화면이라 Guide 가 없어 하는 법을 문장으로 둔다(설계 규칙 예외 —
-    2026-11-08 사용자 답 b1) — 제목을 거듭하는 첫 문장은 두지 않는다."""
-    again = public_link(cfg, "/")
-    body = [
-        "<p>이 앱의 로그인만 끝냈습니다 — 브라우저의 통합인증(AD) 로그인은 "
-        "남아 있어 「다시 들어가기」 를 누르면 묻지 않고 다시 들어갑니다.</p>",
-        f'<a class="button" href="{_esc(again)}">다시 들어가기</a>',
-    ]
-    if cfg.logout_url:
-        body.append(
-            f'<p class="muted"><a href="{_esc(cfg.logout_url)}">통합인증에서도 로그아웃</a></p>'
-        )
-    return html_page("로그아웃했습니다", "".join(body), status=200)
+def loop_frame(cfg: SsoConfig, next_path: str, now: int) -> Frame:
+    """되풀이 화면 — 「○시 ○분 뒤에 「다시 시도」 를 누르세요」 + 주 단추 「다시 시도」.
 
-
-def loop_page(cfg: SsoConfig) -> HTMLResponse:
-    """로그인 되풀이 화면 — 로그아웃 안내와 같은 예외 꼴(제목을 거듭하는 첫 문장 없음)."""
-    body = (
-        "<p>로그인 쿠키가 저장되지 않는 것 같습니다 — "
-        "주소가 https 인지, 브라우저가 이 사이트의 쿠키를 막지 않는지 확인하세요. 관리자는 실제 "
-        f"접속 주소가 설정값(<code>{_esc(names.ENV_PUBLIC_URL)}</code>)과 같은지 봅니다.</p>"
-        '<p class="muted">사유 코드 <code>login_loop</code> · 2분 뒤 다시 시도할 수 있습니다.</p>'
+    되풀이는 「마지막 로그인 시작 뒤 2분(`ATTEMPT_TTL`) 안에 또 시작」 이 이어져 넷째 시작이 될 때다
+    — 시도 쿠키는 시작마다 2분으로 다시 심고 이 화면은 다시 심지 않으므로, 지금 + 2분이면 늦어도 그
+    쿠키가 사라진다(분은 올림). 시각은 KST 다(`page_frame.clock_text`).
+    """
+    ready = page_frame.clock_text(now + ATTEMPT_TTL, round_up=True)
+    return Frame(
+        title=LOOP_TITLE,
+        chip="retry",
+        lead=(LOOP_TEXT, LOOP_WAIT_TEXT.format(clock=ready)),
+        primary=_login_link(cfg, RETRY_LABEL, next_path),
+        reference=LOGIN_LOOP,
+        diagnostics=(
+            f"마지막 로그인 시작 뒤 {ATTEMPT_TTL // 60}분 안에 또 시작한 것이 "
+            f"{MAX_LOGIN_ATTEMPTS + 1}번째라 통합인증으로 보내지 않았습니다.",
+        ),
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
     )
-    return html_page("로그인이 되풀이됩니다", body, status=200)
+
+
+def loop_page(cfg: SsoConfig, next_path: str = "/", *, now: int | None = None) -> HTMLResponse:
+    """로그인 되풀이 화면(공통 틀, 200)."""
+    moment = _now() if now is None else now
+    return frame_response(loop_frame(cfg, next_path, moment), status=200, now=moment)
+
+
+def logout_frame(cfg: SsoConfig, next_path: str = "/") -> Frame:
+    """「로그아웃했습니다」 — 표지 없음. 「다시 들어가기」 는 로그아웃 전에 보던 화면으로, 「다른
+    계정으로 로그인」 은 통합인증 로그아웃 주소가 있을 때만(전의 「통합인증에서도 로그아웃」 이 하던
+    일)."""
+    return Frame(
+        title=LOGOUT_TITLE,
+        chip=None,
+        lead=(LOGOUT_TEXT,),
+        primary=Link(AGAIN_LABEL, public_link(cfg, sanitize_next(next_path))),
+        secondary=_other_account(cfg),
+        contact_email=_contact_email(),
+        contact_text=cfg.access.contact,
+    )
+
+
+def logout_page(cfg: SsoConfig, next_path: str = "/") -> HTMLResponse:
+    """로그아웃 안내 화면(공통 틀, 200)."""
+    return frame_response(logout_frame(cfg, next_path), status=200, now=_now())
 
 
 # --- 경로 처리기 ------------------------------------------------------------------------------
@@ -962,20 +1148,23 @@ def _fail(
     now: int,
     diagnostic: Mapping[str, str] | None = None,
     loginid: str | None = None,
+    next_path: str = "/",
 ) -> Response:
-    """콜백 실패 — 진단을 보관하고 303 → 오류 화면(PRG). 그 상태 쿠키는 지운다."""
+    """콜백 실패 — 진단을 보관하고 303 → 오류 화면(PRG). 그 상태 쿠키는 지운다.
+
+    주소에 처음 가려던 화면(`next` — 검증한 상태 토큰의 것, `/` 면 싣지 않음)을 싣는다. 잠시 문제가
+    아니면(설정 문제 · 쿠키 없음 · 포털 거절) 시도 쿠키를 지운다 — 다시 해도 같은 실패라 남기면
+    「다시 시도」 를 되풀이한 사람이 되풀이 화면으로 잘못 간다.
+    """
     record = {"code": code, "at": _utc_now_text(now)}
     if diagnostic:
         record.update({key: value for key, value in diagnostic.items() if key != "code"})
     diagnostic_id = runtime.keep_diagnostic(record)
-    location = f"{names.ERROR_PATH}?{urlencode({'id': diagnostic_id, 'code': code})}"
-    response = redirect(cfg, location, 303)
+    response = redirect(cfg, _error_location(code, next_path, diagnostic_id), 303)
     response.headers["Referrer-Policy"] = "no-referrer"
     if state and _STATE_VALUE.match(state):
         clear_state_cookie(response, cfg.state_cookie(state))
-    if code == PORTAL_REFUSED:
-        # 다시 해도 같은 실패 — 시도 쿠키가 남으면 「다시 시도」 를 되풀이한 사람이 쿠키 탓의 되풀이
-        # 화면으로 잘못 간다.
+    if failure_kind(code) != KIND_RETRY:
         clear_attempt_cookie(response, cfg)
     runtime.record_event("login_fail", level=logging.WARNING, reason=code, loginid=loginid or "-")
     return response
@@ -1004,16 +1193,50 @@ def _deny(
     return response
 
 
+def _error_location(code: str, next_path: str = "/", diagnostic_id: str = "") -> str:
+    """오류 · 거절 화면 주소 — 진단 번호(있으면) · 사유 코드 · 처음 가려던 화면(`/` 가 아니면).
+    거절 갈래는 처음 가려던 화면을 거절 표가 들고 있어 싣지 않는다."""
+    query: list[tuple[str, str]] = [("id", diagnostic_id)] if diagnostic_id else []
+    query.append(("code", code))
+    if next_path != "/":
+        query.append(("next", next_path))
+    return f"{names.ERROR_PATH}?{urlencode(query)}"
+
+
 def _denied_redirect(cfg: SsoConfig, code: str) -> Response:
-    response = redirect(cfg, f"{names.ERROR_PATH}?{urlencode({'code': code})}", 303)
+    response = redirect(cfg, _error_location(code), 303)
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
 
 def _fail_now(cfg: SsoConfig, code: str, status: int) -> Response:
-    """본문을 읽기 전 실패(415 · 413) — 상태를 모르니 바로 답한다."""
+    """본문을 읽기 전 실패(415 · 413) — 상태를 모르니 바로 답한다. 설정 문제라 시도 쿠키를
+    지운다."""
     runtime.record_event("login_fail", level=logging.WARNING, reason=code, loginid="-")
-    return error_page(cfg, code, None, status=status)
+    response = error_page(cfg, code, None, status=status)
+    clear_attempt_cookie(response, cfg)
+    return response
+
+
+def has_our_cookies(cfg: SsoConfig, cookies: Mapping[str, str]) -> bool:
+    """이 앱의 통합인증 쿠키(상태 · 시도 · 세션 · 거절 표)가 하나라도 왔는가. 콜백은 교차 사이트
+    POST 라 대개 `SameSite=None` 인 상태 · 시도 쿠키만 실린다 — 하나도 없으면 브라우저가 이 주소의
+    쿠키를 저장하지 않았거나 다른 주소로 시작한 것이다(통합인증 화면에 10분 넘게 머물러 둘 다
+    사라진 때와는 가르지 못한다)."""
+    own = (cfg.attempt_cookie, cfg.session_cookie, cfg.denied_cookie)
+    return any(name in own or name.startswith(cfg.state_cookie_prefix) for name in cookies)
+
+
+def _state_next(cfg: SsoConfig, cookies: Mapping[str, str], state: str, now: int) -> str:
+    """IdP 오류처럼 상태 검증 전에 실패할 때 그 상태 쿠키에서 처음 가려던 화면을 꺼낸다(없거나
+    읽지 못하면 `/`)."""
+    stored = cookies.get(cfg.state_cookie(state)) if _STATE_VALUE.match(state) else None
+    if stored is None:
+        return "/"
+    try:
+        return sanitize_next(verify_state(stored, cfg, now=now).next_path)
+    except SsoReject:
+        return "/"
 
 
 async def _read_body(request: Request, *, limit: int = MAX_BODY_BYTES) -> bytes | None:
@@ -1052,6 +1275,8 @@ async def callback(request: Request) -> Response:
     if request.method != "POST":
         # 즐겨찾기 · 뒤로 가기로 GET 이 오면 앱 첫 화면으로.
         return redirect(cfg, "/", 303)
+    # 통합인증에서 돌아온 누계 — 실패도 센다(시작에 비해 적으면 ADFS 화면에서 멈춘 것이다).
+    runtime.count_login_return()
     now = _now()
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type != FORM_CONTENT_TYPE:
@@ -1072,7 +1297,8 @@ async def callback(request: Request) -> Response:
         runtime.record_event(
             "idp_error", level=logging.WARNING, error=received, description=description
         )
-        return _fail(cfg, f"idp_error:{detail}", state=state, now=now)
+        next_path = _state_next(cfg, request.cookies, state, now)
+        return _fail(cfg, f"idp_error:{detail}", state=state, now=now, next_path=next_path)
 
     state_cookie = cfg.state_cookie(state) if _STATE_VALUE.match(state) else ""
     stored = request.cookies.get(state_cookie) if state_cookie else None
@@ -1080,22 +1306,30 @@ async def callback(request: Request) -> Response:
         # 뒤로 가기 · 폼 재전송 — 이미 로그인한 브라우저면 조용히 앱으로.
         if isinstance(identity_from_cookies(request.cookies, cfg, now), Identity):
             return redirect(cfg, "/", 303)
-        return _fail(cfg, "state_missing", state=state, now=now)
+        missing = "state_missing" if has_our_cookies(cfg, request.cookies) else NO_COOKIES
+        return _fail(cfg, missing, state=state, now=now)
     try:
         claims = verify_state(stored, cfg, now=now)
     except SsoReject:
         return _fail(cfg, "state_invalid", state=state, now=now)
+    next_path = sanitize_next(claims.next_path)
     if not hmac.compare_digest(claims.state.encode("utf-8"), state.encode("utf-8")):
-        return _fail(cfg, "state_mismatch", state=state, now=now)
+        return _fail(cfg, "state_mismatch", state=state, now=now, next_path=next_path)
     digest = hashlib.sha256(state.encode("utf-8")).hexdigest()
     if not runtime.remember_used_state(digest, claims.exp):
-        return _fail(cfg, "state_reused", state=state, now=now)
+        return _fail(cfg, "state_reused", state=state, now=now, next_path=next_path)
 
     try:
         login = verify_id_token(form.get("id_token", ""), cfg, expected_nonce=claims.nonce, now=now)
     except SsoReject as exc:
         return _fail(
-            cfg, exc.code, state=state, now=now, diagnostic=exc.diagnostic, loginid=exc.loginid
+            cfg,
+            exc.code,
+            state=state,
+            now=now,
+            diagnostic=exc.diagnostic,
+            loginid=exc.loginid,
+            next_path=next_path,
         )
     runtime.note_login_claims(login.claim_names)
     if not runtime.current_access(cfg).allows(login.loginid) and access_store.is_unread(cfg):
@@ -1108,10 +1342,17 @@ async def callback(request: Request) -> Response:
     token, session = issue_session(
         cfg, loginid=login.loginid, name=login.name, dept=login.dept, now=now
     )
-    response = redirect(cfg, sanitize_next(claims.next_path), 303)
+    response = redirect(cfg, next_path, 303)
     set_session_cookie(response, cfg, token, end=session.exp, now=now)
     if len(response.raw_headers[-1][1]) > MAX_SESSION_COOKIE_BYTES:
-        return _fail(cfg, "session_cookie_too_large", state=state, now=now, loginid=login.loginid)
+        return _fail(
+            cfg,
+            "session_cookie_too_large",
+            state=state,
+            now=now,
+            loginid=login.loginid,
+            next_path=next_path,
+        )
     clear_state_cookie(response, state_cookie)
     clear_attempt_cookie(response, cfg)
     # 늘 지운다 — 콜백은 IdP 의 교차 사이트 POST 라 `SameSite=Lax` 인 거절 표가 실려 오지 않아
@@ -1154,7 +1395,8 @@ def _state_cookie_names(cfg: SsoConfig, cookies: Mapping[str, str]) -> Sequence[
 
 
 async def logout(request: Request) -> Response:
-    """`GET /auth/sso/logout` — 쿠키 셋을 지우고 세션 묶음(sid)을 폐기 목록에. IdP 로 보내지 않는다.
+    """`GET /auth/sso/logout?next=` — 쿠키 셋을 지우고 세션 묶음(sid)을 폐기 목록에. IdP 로 보내지
+    않는다. `next`(앱 정보 카드 링크가 싣는 로그아웃 전 화면 — 정화)는 「다시 들어가기」 가 간다.
 
     쿠키는 서명 · 꼴만 본다(`decode_session` — 끝 시각은 안 봄). 막 끝난 쿠키로 눌러도 같은 sid 의
     다른 탭 열린 연결 · 옛 토큰을 멈추게. 폐기는 그 묶음의 상한(`auth_time + 최대`) + 여유까지다.
@@ -1174,7 +1416,7 @@ async def logout(request: Request) -> Response:
         runtime.revoke_session(claims.sid, until=until, now=now)
         runtime.forget_renewal(claims.sid)
         runtime.record_event("logout", loginid=claims.loginid, sid=claims.sid[:8])
-    response = logout_page(cfg)
+    response = logout_page(cfg, sanitize_next(request.query_params.get("next")))
     clear_session_cookie(response, cfg)
     clear_attempt_cookie(response, cfg)
     clear_denied_cookie(response, cfg)
@@ -1184,30 +1426,44 @@ async def logout(request: Request) -> Response:
 
 
 async def error(request: Request) -> Response:
-    """`GET /auth/sso/error?id=` — 보관한 진단으로 오류 화면. id 가 없거나 지났으면 사유 코드만.
+    """`GET /auth/sso/error?id=&code=&next=` — 보관한 진단으로 로그인 실패 화면. id 가 없거나
+    지났으면 사유 코드만(진단 표 · 진단 번호 없음).
 
     거절 갈래(`DENIED_CODES`)는 공통 틀의 거절 화면이다 — 콜백 · 등록 경로가 진단 없이 이 코드로
     보내고, 꼴은 지금 상태가 정한다(`denied_family_page`). 포털 거절(`idp_error:access_denied`)도
-    같은
-    틀의 거절 꼴이다(403).
+    같은 틀의 거절 꼴이다(403). `login_loop` 는 되풀이 화면이다. `next` 는 다시 정화해 단추에만
+    쓴다.
     """
     cfg = runtime.config()
     guarded = mode_guard(cfg)
     if guarded is not None:
         return guarded
+    now = _now()
+    next_path = sanitize_next(request.query_params.get("next"))
     diagnostic_id = request.query_params.get("id", "")
     record = runtime.get_diagnostic(diagnostic_id) if _DIAGNOSTIC_ID.match(diagnostic_id) else None
     if record is not None:
-        code = record.get("code", "unknown")
+        code = record.get("code", UNKNOWN)
     else:
+        diagnostic_id = ""
         code = request.query_params.get("code", "")
         if code in DENIED_CODES:
-            return denied_family_page(cfg, code, request.cookies)
+            return denied_family_page(cfg, code, request.cookies, now=now)
         if code not in allowed_reason_codes(cfg):
-            code = "unknown"
+            code = UNKNOWN
     if code == PORTAL_REFUSED:
-        return portal_refused_page(cfg)
-    return error_page(cfg, code, record, status=400)
+        return portal_refused_page(cfg, now=now, next_path=next_path)
+    if code == LOGIN_LOOP:
+        return loop_page(cfg, next_path, now=now)
+    return error_page(
+        cfg,
+        code,
+        record,
+        status=400,
+        next_path=next_path,
+        diagnostic_id=diagnostic_id,
+        now=now,
+    )
 
 
 def register_request_problem(headers: Mapping[str, str], cfg: SsoConfig) -> str | None:

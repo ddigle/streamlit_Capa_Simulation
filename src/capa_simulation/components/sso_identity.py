@@ -62,7 +62,11 @@ from capa_simulation.auth.web import (
 from capa_simulation.components.app_header import render_shell_style
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.stop_panel import primary_link, render_contact_caption
+from capa_simulation.components.stop_panel import (
+    primary_link,
+    reference_line,
+    render_contact_caption,
+)
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CHANGES_CHIP_ID,
@@ -89,10 +93,19 @@ REVOKED_NOTICE = "이 브라우저에서 로그아웃했습니다."
 MISSING_NOTICE = "로그인 정보가 없습니다."
 # 계정 바뀜 경고의 꼬리 — 앞에 새 계정의 표시 이름(「…」)이 선다(`account_changed_notice`).
 ACCOUNT_CHANGED_TAIL = " 계정으로 바뀌었습니다"
-NO_GATE_NOTICE = (
+# 문지기 없이 뜬 앱(카드 p2-config) — 누구나 읽는 경고 한 줄. 실행 명령 · 환경변수 이름 · 문서
+# 경로는 접힌 「관리자용 진단」 의 `NO_GATE_DIAGNOSTIC` 으로 옮겼다.
+NO_GATE_NOTICE = "지금은 앱을 열 수 없습니다(서버 시작 설정)"
+NO_GATE_DIAGNOSTIC = (
     f"통합인증을 켜는 설정(`{names.ENV_CLIENT_ID}`)인데 문지기 없이 앱이 시작됐습니다. "
     "`streamlit run capa_server.py` 로 띄워야 합니다(C-DEP 은 시작 스크립트가 그렇게 띄웁니다)."
 )
+NO_GATE_PROBLEMS_CAPTION = "설정을 마치지 못한 환경변수"
+# 참고 줄의 사유 낱말(새 번호 체계 없음 — 앱 안 멈춤 판의 갈래 키).
+NO_GATE_REFERENCE = "sso_no_gate"
+NO_GATE_DIAGNOSTIC_KEY = "sso_no_gate_diagnostic"
+NO_GATE_DIAGNOSTIC_TITLE = "문지기 없이 시작됨 진단"
+NO_GATE_COPY_KEY = "sso_no_gate"
 LOGIN_AGAIN_LABEL = "다시 로그인"
 REFRESH_LABEL = "새로고침"
 # 「새로고침」 을 누르기 전에 알아야 하는 되돌릴 수 없는 결과(설계 규칙 UI-NTF-09) — 풍선.
@@ -179,13 +192,42 @@ def _render_stop_chrome() -> None:
     st.html(_STOP_TOOLBAR_STYLE)
 
 
+def no_gate_diagnostic_lines(cfg: SsoConfig) -> list[str]:
+    """문지기 없이 뜬 앱의 관리자용 진단 줄(마크다운) — 까닭 · 실행 명령, 설정 문제(이름 — 까닭),
+    안내 문서. 값은 싣지 않는다."""
+    lines = [NO_GATE_DIAGNOSTIC]
+    if cfg.problems:
+        problems = [f"`{problem.env}` — {problem.reason}" for problem in cfg.problems]
+        lines.append(f"{NO_GATE_PROBLEMS_CAPTION}  \n" + "  \n".join(problems))
+    lines.append(f"안내 문서 `{names.SETUP_DOC}`")
+    return lines
+
+
 def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
+    """문지기 없이 뜬 앱 — 앱 안 멈춤 판(경고 한 줄 · 문의 캡션 · 참고 줄 · 접힌 진단). 다시 열어도
+    같아 주 단추가 없다 — 운영자가 진입 파일로 다시 띄워야 풀린다.
+
+    진단 복사 부품은 여기서 불러온다 — Components v2 는 import 때 등록되므로 이 모듈을 진입 파일이
+    먼저 부르더라도(감사 행위자) 실행기 전에 등록되지 않게.
+    """
+    from capa_simulation.components.diagnostic_copy import (
+        ADMIN_DIAGNOSTIC_LABEL,
+        diagnostic_text,
+        plain_lines,
+        render_diagnostic_copy,
+    )
+
     _render_stop_chrome()
     st.error(NO_GATE_NOTICE, icon=":material/gpp_bad:")
-    if cfg.problems:
-        lines = [f"`{problem.env}` — {problem.reason}" for problem in cfg.problems]
-        st.caption("설정을 마치지 못한 환경변수  \n" + "  \n".join(lines))
-    st.caption(f"안내 문서 `{names.SETUP_DOC}`")
+    render_contact_caption(cfg.access.contact)
+    reference = reference_line(NO_GATE_REFERENCE)
+    st.caption(reference)
+    lines = no_gate_diagnostic_lines(cfg)
+    with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=NO_GATE_DIAGNOSTIC_KEY):
+        text = diagnostic_text(NO_GATE_DIAGNOSTIC_TITLE, [reference], plain_lines(lines))
+        render_diagnostic_copy(text, key=NO_GATE_COPY_KEY)
+        for line in lines:
+            st.caption(line)
     st.stop()
 
 
@@ -297,6 +339,14 @@ def viewer_can_audit() -> bool:
     return audit_recorder.enabled() and viewer_is_admin()
 
 
+def logout_url(cfg: SsoConfig) -> str:
+    """로그아웃 주소 — 지금 화면(`return_path`)이 `/` 가 아니면 `?next=` 로 싣는다. 로그아웃 화면의
+    「다시 들어가기」 가 로그아웃 전에 보던 화면으로 간다(카드 p1-logout — 그쪽이 다시 정화한다)."""
+    back = return_path(cfg)
+    query = "" if back == "/" else f"?{urlencode({'next': back})}"
+    return public_link(cfg, f"{names.LOGOUT_PATH}{query}")
+
+
 def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str | None:
     """앱 정보 카드 셋째 줄 — 「이름 · 부서 · 로그아웃」. 꺼짐(신원 없음)이면 `None`.
 
@@ -312,7 +362,7 @@ def sso_credit_line(identity: Identity | None, *, now: int | None = None) -> str
     parts = [literal_markdown(identity.display_name)]
     if identity.dept:
         parts.append(literal_markdown(identity.dept))
-    parts.append(_same_tab_link(public_link(cfg, names.LOGOUT_PATH), LOGOUT_LABEL))
+    parts.append(_same_tab_link(logout_url(cfg), LOGOUT_LABEL))
     line = " · ".join(parts)
     moment = _now() if now is None else now
     end, capped = session_end_of(identity, cfg, moment)
