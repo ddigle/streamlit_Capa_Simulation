@@ -677,3 +677,18 @@ def test_raised_marks_draw_above_units_and_their_inside_lets_presses_through() -
     assert "stack: !FAB && stackChanged() ? stackPayload() : null" in apply
     undo = _js_decl("function undo() {")
     assert "if (Array.isArray(op.raised)) setRaised(op.raised)" in undo
+
+
+def test_the_fab_editor_order_buttons_say_they_stay_inside_their_layer() -> None:
+    """단추 풍선 글(editor.html)은 층 편집기의 뜻(호기끼리 · 영역 · 도형이 호기 위로)이다 — FAB
+    편집기(호기 겹 없음)는 같은 겹 안 뜻의 글로 바꾼다."""
+    head = JS[JS.index("  const FAB_ORDER_TITLES = {") :]
+    head = head[: head.index("\n  }\n")]
+    assert all(f"{order}: '" in head for order in ("front", "fwd", "bwd", "back"))
+    assert "호기" not in head
+    assert (
+        "for (const button of orderButtons) button.title = FAB_ORDER_TITLES[button.dataset.order]"
+        in JS
+    )
+    floor_titles = re.findall(r'data-order="\w+"[^>]*\n\s*title="([^"]+)"', HTML)
+    assert len(floor_titles) == 4 and any("호기 위로" in title for title in floor_titles)

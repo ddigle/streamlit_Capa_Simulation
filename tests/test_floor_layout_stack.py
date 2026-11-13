@@ -437,3 +437,31 @@ def test_the_fab_editor_refuses_an_order_across_tiers() -> None:
     (설계 F (가))."""
     with pytest.raises(ValueError, match="FAB 전체 도면에는 호기 위로"):
         parse_fab_editor_apply({"stack": {"units": [], "raised": []}}, (101.0, 62.0))
+
+
+def test_an_old_official_revision_with_floor_differences_refuses_a_stack(tmp_path: Path) -> None:
+    """공식이어도 가정이던 때의 배치 차이가 있는 층이면 순서도 요소 · 위치와 같이 거부한다."""
+    repository = _seeded(tmp_path)
+    scenario_id = _clone(repository).equipment_scenario_id
+    session = _session(repository, scenario_id)
+    saved = repository.save_equipment(_request(session, scenario_id, floor_marks={KEY: [ZONE]}))
+    assert saved.schedule is not None
+    cleared = repository.clear_layout_overlay(
+        scenario_id, expected_latest_schedule_revision_id=saved.schedule.schedule_revision_id
+    )
+    assert cleared is not None
+    release = repository.latest_equipment_release()
+    assert release is not None
+    repository.publish_equipment_release(
+        cleared.schedule_revision_id,
+        released_by=None,
+        note=None,
+        expected_latest_release_no=release.release_no,
+    )
+    old = _session(repository, scenario_id, saved.schedule.schedule_revision_id)
+
+    with pytest.raises(EquipmentLayoutScopeError, match="겹친 순서를 고치지 않았습니다"):
+        repository.save_equipment(
+            _request(old, scenario_id, floor_stacks={KEY: FloorStack(units=("EQ-02", "EQ-01"))})
+        )
+    assert _stack_rows(repository) == []

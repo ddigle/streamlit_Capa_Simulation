@@ -323,6 +323,13 @@ export default function (component) {
   // 선택 칸 「순서」 줄 — 맨 앞으로 · 앞으로 · 뒤로 · 맨 뒤로(`data-order` front · fwd · bwd · back).
   const orderRow = q('.sle-order')
   const orderButtons = [...host.querySelectorAll('.sle-order-step')]
+  // FAB 편집기의 순서 단추 풍선 — 겹이 둘(영역·도형 아래, 층 블록 · 그 밖의 요소 위)이고 서로 넘지 않는다.
+  const FAB_ORDER_TITLES = {
+    front: '맨 앞으로 (Ctrl+Shift+]) — 같은 겹의 맨 위로. 영역·도형은 아래 겹, 층 블록과 그 밖의 요소는 위 겹이고 서로 넘지 않습니다',
+    fwd: '앞으로 (Ctrl+]) — 위에 겹친 요소 하나 너머로(같은 겹 안)',
+    bwd: '뒤로 (Ctrl+[) — 아래에 겹친 요소 하나 너머로(같은 겹 안)',
+    back: '맨 뒤로 (Ctrl+Shift+[) — 같은 겹의 맨 아래로',
+  }
   const markNameWord = q('.sle-mark-name-word')
   const bayPrefix = q('.sle-bay-prefix')
   // 동선·베이의 선·머리(여럿 골라도 — 고른 것 가운데 동선·베이 모두에 건다).
@@ -7671,6 +7678,10 @@ export default function (component) {
   // ---------------------------------------------------------------- 단추
   moveButton.onclick = () => sendItems(selectedItems(), moveSelect.value)
   for (const button of orderButtons) button.onclick = () => stackOrder(button.dataset.order)
+  // FAB 에는 호기 겹이 없어 같은 겹 안 순서만이다(설계 F (가)) — 단추 풍선도 그 뜻으로 바꾼다(층 편집기 글은 editor.html).
+  if (FAB) {
+    for (const button of orderButtons) button.title = FAB_ORDER_TITLES[button.dataset.order] || button.title
+  }
   moduleTile.onclick = () => {
     const chosen = selectedItems()
     if (chosen.length === 1) retileModules(chosen[0])
