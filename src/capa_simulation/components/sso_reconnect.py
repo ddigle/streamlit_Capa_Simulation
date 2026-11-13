@@ -49,12 +49,16 @@ b2). 띠가 창 제목과 닫기 X 를 덮고 본문 줄만 삐져나와 같은 
 물음의 답으로 가른다(`probeKind`): 401 이면 위 「다시 로그인」 띠, 503 + `X-Capa-Stage`(시작 임시
 응답 — `scripts/container_stage.py`)면 그 상태 줄(`/_capa_stage` 셋째 줄의 짧은 글)을 실은
 재시작 띠 「서버를 다시 시작하는 중입니다 — <데이터 받는 중 · 2번째 받기>. 끝나면 이 탭이 저절로
-다시 붙습니다. 이 탭에서 저장하지 않은 편집은 사라집니다.」, 표 없는 5xx(앞단)와 답이 아예 없는
-동안은 「서버 응답을 기다리는 중입니다」, 답 없음이 `UNREACHABLE_AFTER_MS` 를 넘게 이어지면
-「서버에 닿지 않습니다 — 다시 붙는 중」. 그 밖의 답(서버가 떠 있음)은 띠를 걷는다 — Streamlit
-이 스스로 다시 붙는다. 재시작 띠는 링크가 없고(기다리면 붙는다) 로그인 띠가 서 있으면 서지 않는다.
-띠가 선 동안 영어 연결 창(`CONNECTION_DIALOG_TEXTS` — 401 · 5xx · not responding)을 감춘다(같은
-길). 다시 붙으면 띠를 걷고 서버 재시작 알림(`GL-07`)이 이어 알린다.
+다시 붙습니다. 이 탭에서 저장하지 않은 편집은 사라집니다.」, 답이 아예 없는 동안(연결 실패 ·
+`PROBE_TIMEOUT_MS` 넘김)은 「서버 응답을 기다리는 중입니다」, 답 없음이 `UNREACHABLE_AFTER_MS` 를
+넘게 이어지면 「서버에 닿지 않습니다 — 다시 붙는 중」. 표 없는 5xx 는 같은 뿌리의 health 를 한 번 더
+묻는다 — 표 없이 2xx 면 앱이 떠서 이 물음을 거절하는 것이라(통합인증 설정 막힘의 503 — 새로 읽으면
+설정 화면) 기다리라고 하지 않고 띠를 걷는다(시작 임시 화면의 쪽 JS 와 같은 판정). health 도 앱 답이
+아니면(앞단 502 · 504 · Streamlit 준비 전) 기다림이다. 그 밖의 답(서버가 떠 있음)은 띠를 걷는다 —
+Streamlit 이 스스로 다시 붙는다. 재시작 띠는 링크가 없고(기다리면 붙는다) 로그인 띠가 서 있으면 서지
+않는다. 띠가 선 동안 영어 연결 창(`CONNECTION_DIALOG_TEXTS` — 401 · 5xx · 시간 넘김 · not
+responding · localhost 의 still running)을 감춘다(같은 길). 다시 붙으면 띠를 걷고 서버 재시작
+알림(`GL-07`)이 이어 알린다.
 
 **통합인증이 꺼진 서버에도 싣는다** — 재시작은 통합인증과 상관없다. 꺼짐이면 로그인 띠 없이 재시작
 갈래만 돌고(`restart_script`), 물음은 지금 주소 기준 상대 경로(`<지금 경로의 폴더>/_stcore/…`)로
@@ -86,16 +90,24 @@ HOST_CONFIG_PATH = "/_stcore/host-config"
 # 띠가 선 동안 감추는 Streamlit 연결 오류 창의 글 — 401 이라 띠가 선 그 창만 고른다(Streamlit 1.63
 # 프런트 글, 비공식 — 판올림으로 글이 바뀌면 창이 남을 뿐 띠는 그대로다).
 CONNECTION_DIALOG_TEXT = "Connection failed with status 401"
-# 재시작 띠가 선 동안 함께 감추는 창 글 — 임시 응답의 503 · 앞단의 502 · 504 와 답이 없는 틈(같은
-# 프런트 글). 띠가 선 동안만 감추므로 앱 팝업은 건드리지 않는다.
+# 재시작 띠가 선 동안 함께 감추는 창 글 — 임시 응답의 503 · 앞단의 502 · 504, 핑 시간 넘김(앞단이
+# 요청을 붙듦), 답이 없는 틈(localhost 로 연 탭은 글이 다르다 — 같은 프런트 글). 띠가 선 동안만
+# 감추므로 앱 팝업은 건드리지 않는다.
 CONNECTION_DIALOG_TEXTS = (
     CONNECTION_DIALOG_TEXT,
     "Connection failed with status 5",
     "Streamlit server is not responding",
+    "Connection timed out.",
+    "Is Streamlit still running?",
 )
 RESTART_BANNER_ID = "capa-restart-band"
 STAGE_HEADER = "X-Capa-Stage"
 STAGE_STATUS_PATH = "/_capa_stage"
+# 표 없는 5xx 뒤 한 번 더 묻는 곳 — 앱이 떠 있으면 문지기가 막힘에서도 앱으로 넘긴다.
+HEALTH_PATH = names.HEALTH_PATH
+# 물음 하나의 시간 상한 — 앞단이 요청을 붙들어도 다음 물음이 막히지 않게 묻는 사이보다 짧다. 넘기면
+# 답 없음으로 센다.
+PROBE_TIMEOUT_MS = 8_000
 # 답이 아예 없는 물음이 이만큼 이어지면 「닿지 않습니다」 로 바꾼다(답이 한 번 오면 다시 센다).
 UNREACHABLE_AFTER_MS = 20_000
 RESTART_LEAD = "서버를 다시 시작하는 중입니다"
@@ -135,13 +147,18 @@ function connectionDialog(text) {
   for (var i = 0; i < marks.length; i++) if (text.indexOf(marks[i]) !== -1) return true;
   return false;
 }
-// 물음의 답 → 띠 갈래. `status` 가 null 이면 답이 없었다(연결 실패). `staged` 는 시작 임시 응답의
-// 표(`X-Capa-Stage`), `downMs` 는 끊긴 지 지난 시간이다.
-function probeKind(status, staged, downMs, unreachableMs) {
+// health 답이 앱의 것인가 — 표 없는 2xx(시작 임시 응답의 health 는 표가 있다).
+function appAnswers(status, staged) {
+  return typeof status === "number" && status >= 200 && status < 300 && !staged;
+}
+// 물음의 답 → 띠 갈래. `status` 가 null 이면 답이 없었다(연결 실패 · 시간 넘김). `staged` 는 시작
+// 임시 응답의 표(`X-Capa-Stage`), `appUp` 은 표 없는 5xx 뒤 health 가 앱의 답이었는가(앱이 떠서
+// 거절하는 중), `downMs` 는 답 없음이 이어진 시간이다.
+function probeKind(status, staged, appUp, downMs, unreachableMs) {
   if (status === 401) return "login";
   if (status === null) return downMs >= unreachableMs ? "unreachable" : "waiting";
   if (staged) return "stage";
-  if (status >= 500) return "waiting";
+  if (status >= 500) return appUp ? "none" : "waiting";
   return "none";
 }
 // 재시작 띠 글 — 임시 응답 상태 줄(`/_capa_stage`)의 셋째 줄(JSON) 짧은 글. 없으면(옛 임시 응답)
@@ -228,14 +245,37 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     if (box.textContent !== notice) box.textContent = notice;
     hideConnectionDialogs();
   }
-  function answered(status, staged, downMs) {
-    var kind = probeKind(status, staged, downMs, %(unreachable_ms)d);
+  // 묻는 한 번 — 상한 안에 답이 없으면 끊고 답 없음(거절)으로 센다. 답은 상태 · 표 · (원하면) 글.
+  function ask(path, withText) {
+    var stop = new AbortController();
+    var timer = window.setTimeout(function () {
+      stop.abort();
+    }, %(timeout_ms)d);
+    return fetch(appRoot() + path, {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: stop.signal,
+    })
+      .then(function (response) {
+        var answer = { status: response.status, staged: response.headers.has(%(stage_header)s) };
+        if (!withText) return answer;
+        return response.text().then(function (text) {
+          answer.text = text;
+          return answer;
+        });
+      })
+      .finally(function () {
+        window.clearTimeout(timer);
+      });
+  }
+  function answered(status, staged, appUp, downMs) {
+    var kind = probeKind(status, staged, appUp, downMs, %(unreachable_ms)d);
     if (kind === "login" || kind === "none") return Promise.resolve(hideRestart());
     if (kind === "waiting") return Promise.resolve(showRestart(%(waiting)s));
     if (kind === "unreachable") return Promise.resolve(showRestart(%(unreachable)s));
-    return fetch(appRoot() + %(stage_path)s, { credentials: "same-origin", cache: "no-store" })
-      .then(function (response) {
-        return response.headers.has(%(stage_header)s) ? response.text() : "";
+    return ask(%(stage_path)s, true)
+      .then(function (answer) {
+        return answer.staged ? answer.text : "";
       })
       .catch(function () {
         return "";
@@ -243,6 +283,17 @@ function loginHref(base, prefix, loginPath, pathname, search) {
       .then(function (text) {
         showRestart(restartNotice(text, %(restart_lead)s, %(restart_tail)s));
       });
+  }
+  // 표 없는 5xx — 앱이 떠서 거절하는지 health 를 한 번 더 묻는다.
+  function answeredServerError(status) {
+    return ask(%(health_path)s, false).then(
+      function (health) {
+        return answered(status, false, appAnswers(health.status, health.staged), 0);
+      },
+      function () {
+        return answered(status, false, false, 0);
+      }
+    );
   }
   // 이름이 `tick` 의 `root`(앱 루트 요소)와 겹치지 않게 한다 — 겹치면 그 안에서 함수가 가려진다.
   function appRoot() {
@@ -293,17 +344,17 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     if (probing || !probeDue(since, lastProbe, now, %(wait_ms)d, %(gap_ms)d)) return;
     probing = true;
     lastProbe = now;
-    var probe = appRoot() + %(host_config)s;
-    fetch(probe, { credentials: "same-origin", cache: "no-store" })
+    ask(%(host_config)s, false)
       .then(
-        function (response) {
-          if (response.status === 401 && %(login_on)s) showBanner();
+        function (answer) {
+          if (answer.status === 401 && %(login_on)s) showBanner();
           silentSince = null;
-          return answered(response.status, response.headers.has(%(stage_header)s), 0);
+          if (answer.status >= 500 && !answer.staged) return answeredServerError(answer.status);
+          return answered(answer.status, answer.staged, false, 0);
         },
         function () {
           if (silentSince === null) silentSince = now;
-          return answered(null, false, now - silentSince);
+          return answered(null, false, false, now - silentSince);
         }
       )
       .catch(function () {})
@@ -365,6 +416,8 @@ def _script(cfg: SsoConfig | None) -> str:
         "login_on": "true" if cfg is not None else "false",
         "host_config": script_literal(HOST_CONFIG_PATH),
         "stage_path": script_literal(STAGE_STATUS_PATH),
+        "health_path": script_literal(HEALTH_PATH),
+        "timeout_ms": PROBE_TIMEOUT_MS,
         "stage_header": script_literal(STAGE_HEADER),
         "dialog_texts": json.dumps(list(CONNECTION_DIALOG_TEXTS)).replace("<", "\\u003c"),
         "restart_lead": script_literal(RESTART_LEAD),

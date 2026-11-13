@@ -398,8 +398,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - `components/sso_reconnect.py` — 끊긴 탭의 띠 스크립트 하나(같은 틱 · 같은 물음 — `probeKind`). 툴바 iframe(`render_theme_toggle` 의
     `extra_scripts`)에 늘 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를 묻고, 401 이면(통합인증이 켜진 서버만)
     「다시 로그인」 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를, 503 + `X-Capa-Stage`(시작 임시 응답)면 `/_capa_stage` 셋째 줄의 짧은 글을
-    실은 링크 없는 재시작 띠를, 표 없는 5xx · 답 없음이면 「서버 응답을 기다리는 중입니다」(답 없음 20초 넘으면 「서버에 닿지 않습니다 — 다시
-    붙는 중」)를 연결 오류 창 위에 세우고 그 영어 창(401 · 503 · not responding)을 감춘다. 로그인 띠가 서 있으면 재시작 띠는 서지 않는다.
+    실은 링크 없는 재시작 띠를, 답 없음(연결 실패 · 물음 8초 넘김 `PROBE_TIMEOUT_MS`)이면 「서버 응답을 기다리는 중입니다」(답 없음 20초 넘으면
+    「서버에 닿지 않습니다 — 다시 붙는 중」)를 연결 오류 창 위에 세우고 그 영어 창(401 · 5xx · 시간 넘김 · not responding · localhost 의
+    still running)을 감춘다. 표 없는 5xx 는 같은 뿌리 health 를 한 번 더 물어 표 없는 2xx(앱이 떠서 거절 — 통합인증 설정 막힘의 503,
+    `appAnswers`)면 띠를 걷고 아니면(앞단 502 · 504 · Streamlit 준비 전) 기다림이다. 로그인 띠가 서 있으면 재시작 띠는 서지 않는다.
     꺼짐이면 재시작 갈래만(`restart_script` — 물음은 지금 경로의 폴더 기준)이라 꺼짐 툴바 iframe 에도 스크립트 하나가 실린다. IdP 로 저절로 보내지 않는다
     (로그아웃을 조용히 되돌리지 않게). 띠 색은 두 팔레트(`band_styles`)를 함께 싣고 띠를 세우는 순간 `capaTheme` 으로 앱 테마를
     골라 칠하며, 양옆 12px 안에서 내용 폭으로 가운데 선다(`left`/`right` 12px + `margin-inline:auto` + `width:fit-content`).

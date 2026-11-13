@@ -16,22 +16,27 @@ import re
 import time
 from typing import Any
 
+from asgi_driver import http
 from js_runner import run_js_json
 from sso_support import LOGINID, PUBLIC_URL, use_config
 
 from capa_simulation.auth import names
+from capa_simulation.auth.gate import SsoGate
 from capa_simulation.auth.identity import Identity
 from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
 from capa_simulation.components.sso_reconnect import (
     BANNER_ID,
     CONNECTION_DIALOG_TEXT,
+    HEALTH_PATH,
     HOST_CONFIG_PATH,
     PROBE_GAP_MS,
+    PROBE_TIMEOUT_MS,
     PROBE_WAIT_MS,
     RECONNECT_NOTICE,
     RESTART_BANNER_ID,
     RESTART_LEAD,
     RESTART_TAIL,
+    STAGE_HEADER,
     UNREACHABLE_AFTER_MS,
     UNREACHABLE_NOTICE,
     WAITING_NOTICE,
@@ -72,7 +77,7 @@ def test_off_mode_carries_only_the_restart_band() -> None:
     scripts = sso_reconnect_scripts(None)
 
     assert scripts == (restart_script(),)
-    assert "response.status === 401 && false" in scripts[0]
+    assert "answer.status === 401 && false" in scripts[0]
     assert json.dumps(RESTART_BANNER_ID) in scripts[0]
 
 
@@ -92,7 +97,7 @@ def test_script_watches_the_connection_marker_and_asks_host_config() -> None:
     assert '[data-testid="stApp"]' in script
     assert '"data-test-connection-state"' in script
     assert json.dumps(HOST_CONFIG_PATH) in script
-    assert "response.status === 401" in script
+    assert "answer.status === 401" in script
     assert 'credentials: "same-origin"' in script
     assert json.dumps(BANNER_ID) in script
     assert json.dumps(RECONNECT_NOTICE, ensure_ascii=False) in script
@@ -215,6 +220,9 @@ def test_only_the_connection_windows_count_as_the_ones_the_bands_replace() -> No
         "Connection error Connection failed with status 503.",
         "Streamlit server is not responding. Are you connected to the internet?",
         "Connection error Connection failed with status 502.",
+        "Connection error Connection timed out.",
+        "Connection error Is Streamlit still running? If you accidentally stopped Streamlit, "
+        "just restart it in your terminal: streamlit run yourscript.py",
         "Connection error Connection failed with status 404.",
         "공식 지정 · 메모",
         "",
@@ -224,7 +232,7 @@ def test_only_the_connection_windows_count_as_the_ones_the_bands_replace() -> No
 const texts = {json.dumps(texts)};
 process.stdout.write(JSON.stringify(texts.map(connectionDialog)));
 """
-    assert _node(script, runner) == [True, True, True, True, False, False, False, False]
+    assert _node(script, runner) == [True] * 6 + [False] * 4
     assert CONNECTION_DIALOG_TEXT == "Connection failed with status 401"
 
 
@@ -247,20 +255,23 @@ def test_the_band_hides_that_window_while_it_stands_and_gives_it_back_after() ->
 
 # --------------------------------------------------------------------------- 서버 재시작 띠
 def test_one_probe_answer_picks_one_band() -> None:
-    """같은 틱 · 같은 물음 — 401 은 로그인 띠, 임시 응답의 503 은 재시작 띠, 표 없는 5xx 와 답
-    없음은 기다림, 답 없음이 오래면 닿지 않음, 그 밖(서버가 떠 있음)은 띠를 걷는다."""
+    """같은 틱 · 같은 물음 — 401 은 로그인 띠, 임시 응답의 503 은 재시작 띠, 앱 답이 아닌 표 없는
+    5xx(앞단)와 답 없음은 기다림, 답 없음이 오래면 닿지 않음, 그 밖(서버가 떠 있음)은 띠를 걷는다.
+    표 없는 5xx 라도 health 가 앱의 답이면(앱이 떠서 거절 — 통합인증 설정 막힘의 503) 기다리라고
+    하지 않는다."""
     script = restart_script()
     runner = f"""
 const U = {UNREACHABLE_AFTER_MS};
 process.stdout.write(JSON.stringify([
-  probeKind(401, false, 5000, U),
-  probeKind(503, true, 5000, U),
-  probeKind(502, false, 5000, U),
-  probeKind(503, false, 5000, U),
-  probeKind(null, false, U - 1, U),
-  probeKind(null, false, U, U),
-  probeKind(200, false, 5000, U),
-  probeKind(404, false, 5000, U),
+  probeKind(401, false, false, 5000, U),
+  probeKind(503, true, false, 5000, U),
+  probeKind(502, false, false, 5000, U),
+  probeKind(503, false, false, 5000, U),
+  probeKind(503, false, true, 5000, U),
+  probeKind(null, false, false, U - 1, U),
+  probeKind(null, false, false, U, U),
+  probeKind(200, false, false, 5000, U),
+  probeKind(404, false, false, 5000, U),
 ]));
 """
     assert _node(script, runner) == [
@@ -268,11 +279,49 @@ process.stdout.write(JSON.stringify([
         "stage",
         "waiting",
         "waiting",
+        "none",
         "waiting",
         "unreachable",
         "none",
         "none",
     ]
+
+
+def test_only_an_unmarked_2xx_health_counts_as_the_app_answering() -> None:
+    """앱이 떠 있는지는 시작 임시 화면의 쪽 JS 와 같은 판정 — health 가 표 없이 2xx. 임시 응답의
+    health(표 있음) · 앞단 5xx · 답 없음은 아니다."""
+    script = restart_script()
+    runner = """
+process.stdout.write(JSON.stringify([
+  appAnswers(200, false),
+  appAnswers(204, false),
+  appAnswers(200, true),
+  appAnswers(502, false),
+  appAnswers(503, false),
+  appAnswers(null, false),
+  appAnswers(undefined, false),
+]));
+"""
+    assert _node(script, runner) == [True, True, False, False, False, False, False]
+
+
+def test_a_blocked_gate_answers_its_own_503_and_lets_health_through() -> None:
+    """앱이 떠서 막힘이면 문지기가 host-config 에 표 없는 503 을 내고 health 는 앱으로 넘긴다 — 띠가
+    「기다리는 중」 으로 남지 않는 판정(health 한 번 더)의 전제."""
+    use_config(drop=[names.ENV_ISSUER])
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    gated = SsoGate(app)
+    asked = {"sec-fetch-mode": "cors"}
+    blocked = http(gated, "GET", HOST_CONFIG_PATH, headers=asked)
+    health = http(gated, "GET", HEALTH_PATH, headers=asked)
+
+    assert blocked.status == 503 and blocked.header(STAGE_HEADER) is None
+    assert (health.status, health.text) == (200, "ok")
+    assert health.header(STAGE_HEADER) is None
 
 
 def test_the_restart_band_carries_the_stage_phrase() -> None:
@@ -336,8 +385,13 @@ def test_the_restart_band_has_no_link_and_yields_to_the_login_band() -> None:
     tick = script.split("function tick()", 1)[1]
     assert "hideBanner();\n      hideRestart();" in tick
     # 「닿지 않습니다」 는 답 없음이 이어진 시간으로 센다 — 임시 응답이 답하던 끊김은 세지 않는다.
-    assert "answered(null, false, now - silentSince)" in tick
-    assert "silentSince = null;\n          return answered(response.status" in tick
+    assert "answered(null, false, false, now - silentSince)" in tick
+    assert "silentSince = null;\n          if (answer.status >= 500 && !answer.staged)" in tick
     # `tick` 안의 `var root`(앱 루트 요소)가 물음 뿌리 함수를 가리지 않는다(브라우저 실측 — 가려지면
     # 물음이 한 번도 나가지 않는다).
-    assert "var probe = appRoot() + " in tick and "function root(" not in script
+    assert f"ask({json.dumps(HOST_CONFIG_PATH)}, false)" in tick and "function root(" not in script
+    ask = script.split("function ask(path, withText)", 1)[1].split("function answered(", 1)[0]
+    assert "fetch(appRoot() + path, {" in ask
+    # 물음마다 시간 상한 — 앞단이 요청을 붙들어도 다음 물음이 막히지 않고 답 없음으로 센다.
+    assert f"stop.abort();\n    }}, {PROBE_TIMEOUT_MS});" in ask and "signal: stop.signal" in ask
+    assert PROBE_TIMEOUT_MS < PROBE_GAP_MS
