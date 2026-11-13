@@ -375,7 +375,10 @@ def after_token_failure(ticket: Ticket, *, refresh: bool = True) -> Ticket | Non
         if place is None or not _exchange_known():
             return None
         now = clock()
-        _note_death(ticket.mark, now)
+        # 죽은 토큰이 아직 들어 있는 토큰일 때만 센다 — 조회가 도는 사이 이 프로세스의 미리 한
+        # 갱신이 바꿔 끼운 토큰의 실패는 그 교환이 죽인 것이지 다른 곳의 로그인이 아니다.
+        if bdq_token.read_installed_mark(place.folder, place.account) == ticket.mark:
+            _note_death(ticket.mark, now)
         if not refresh:
             return None
         env = os.environ

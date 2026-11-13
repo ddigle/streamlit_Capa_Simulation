@@ -471,6 +471,30 @@ def test_a_failure_while_another_thread_already_refreshed_asks_again_without_exc
     assert retry.mark == bdq_token.InstalledMark(clock.now, "refresh")
 
 
+def test_a_token_our_own_early_refresh_replaced_is_not_counted_as_killed_elsewhere(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """긴 조회가 갱신으로 넣은 토큰 T1 으로 도는 사이 이 프로세스가 6시간 갱신으로 T2 를 넣으면 —
+    그 조회의 토큰 실패는 우리 교환이 죽인 것이라 고리 기록에 들지 않는다(바깥 로그인 한 번에
+    멈추지 않는다)."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    fake = FakeExchange()
+    turn_on(monkeypatch, fake)
+    long_query = bdq_refresh.before_query()
+    assert long_query.mark is not None and long_query.mark.source == "refresh"
+    clock.advance(hours=6)
+    bdq_refresh.before_query()
+    assert fake.calls == 2
+
+    retry = bdq_refresh.after_token_failure(long_query)
+    assert retry is not None and fake.calls == 2
+    clock.advance(minutes=10)
+    current = bdq_refresh.before_query()
+    bdq_refresh.after_token_failure(current, refresh=False)
+
+    assert bdq_refresh.status().mode == "on"
+
+
 def test_attempts_are_at_least_five_minutes_apart(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1568,6 +1568,19 @@ def test_a_refresh_token_is_kept_private_and_while_the_shape_is_unknown_nothing_
     assert not (credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}.lock").exists()
 
 
+def test_taking_the_refresh_token_out_of_the_table_turns_it_off(place: Path) -> None:
+    """끄는 길은 환경변수 표에서 빼기다 — 앞 실행이 둔 갱신 토큰 파일이 남아 있으면 지운다."""
+    credentials = place / "config" / ".credential"
+    credentials.mkdir(parents=True)
+    refresh_file = credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}"
+    refresh_file.write_bytes(FAKE_BDQ_REFRESH.encode())
+
+    report, _ = _main(place, ALL_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert not refresh_file.exists()
+    assert _refresh(report)["mode"] == "off"
+
+
 def test_the_same_refresh_token_is_not_written_again(place: Path) -> None:
     """파일 수정 시각이 갱신 토큰을 처음 본 때다 — 같은 내용이면 다시 쓰지 않는다."""
     credentials = place / "config" / ".credential"

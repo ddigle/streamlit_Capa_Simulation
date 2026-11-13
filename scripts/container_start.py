@@ -671,13 +671,19 @@ REFRESH_LABEL = "토큰 자동 갱신"
 
 def store_refresh_token(environ: Mapping[str, str], credential_dir: Path) -> str | None:
     """CD 환경변수 `CAPA_BDQ_REFRESH_TOKEN` 을 자격 폴더의 0600 파일로 옮긴다(같은 내용이면 다시
-    쓰지 않는다 — 파일 수정 시각이 갱신 토큰을 처음 본 때다). 쓰지 못한 까닭 또는 `None`(썼음 ·
-    값 없음). 까닭에 값 · 길이를 싣지 않는다."""
+    쓰지 않는다 — 파일 수정 시각이 갱신 토큰을 처음 본 때다). 값이 없으면 앞 실행이 둔 파일을
+    지운다 — 환경변수 표에서 빼는 것이 끄는 길이다(`/config` 가 다시 띄워도 남는 자리여도). 쓰지
+    못한 까닭 또는 `None`(썼음 · 값 없음). 까닭에 값 · 길이를 싣지 않는다."""
     raw = environ.get(BDQ_REFRESH_TOKEN_ENV, "").strip()
-    if not raw:
-        return None
     account = environ.get(BDQ_USER_NAME_ENV, "").strip()
     target = bdq_refresh.refresh_token_path(credential_dir, account) if account else None
+    if not raw:
+        if target is not None:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError as error:
+                return f"앞 갱신 토큰 파일을 지우지 못함({type(error).__name__})"
+        return None
     if target is None:
         return f"{BDQ_USER_NAME_ENV} 이 없거나 파일 이름으로 못 써 갱신 토큰을 두지 못함"
     try:
