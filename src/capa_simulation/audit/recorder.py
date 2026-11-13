@@ -43,6 +43,12 @@ DET_LIMIT_BYTES: Final = 1024
 DET_TEXT_LIMIT: Final = 120
 DET_LIST_LIMIT: Final = 20
 DET_COUNTS_LIMIT: Final = 50
+# 시간 묶음 건수 표가 키 글로 쓸 수 있는 바이트 — 넘는 새 키는 `other` 로 센다. 키마다 따옴표 ·
+# 쌍점 · 쉼표 · 건수 자리를 `_COUNT_KEY_OVERHEAD` 로 잡아 합계 · 시간 칸과 함께 늘 1KB 안에 든다.
+COUNTS_KEY_BUDGET: Final = 768
+_COUNT_KEY_OVERHEAD: Final = 12
+TRUNC_KEY: Final = "trunc"
+OTHER_KEY: Final = "other"
 
 # 실행 문맥이 없는 배경 스레드 둘 — 이름은 `auto_update_scheduler.THREAD_NAME` ·
 # `object_sync_worker.THREAD_NAME` 과 같다(시험이 맞댄다). 무거운 모듈을 import 하지 않으려
@@ -229,7 +235,12 @@ def _det_value(value: object) -> object:
 
 
 def clean_det(spec: events.EventSpec, det: Mapping[str, object] | None) -> dict[str, object]:
-    """허용 키만, 값은 다듬어서, 정규화 1KB 안으로."""
+    """허용 키만, 값은 다듬어서, 정규화 1KB 안으로.
+
+    넘치면 `trunc` 를 달고 먼저 건수 표(시간 묶음의 `counts`)를 줄인다 — 작은 건수부터 `other`
+    하나로 모아 합계 · 시간 칸은 남긴다. 그래도 넘치면 정렬 끝 키부터 뺀다(`trunc` 는 빼지 않는다).
+    두 고리 모두 돌 때마다 줄어 반드시 끝난다.
+    """
     if not det:
         return {}
     kept = {
@@ -237,10 +248,33 @@ def clean_det(spec: events.EventSpec, det: Mapping[str, object] | None) -> dict[
         for key, value in det.items()
         if key in spec.det_keys and value is not None
     }
-    while kept and len(text_bytes(kept)) > DET_LIMIT_BYTES:
-        kept.pop(sorted(kept)[-1])
-        kept["trunc"] = True
+    if len(text_bytes(kept)) <= DET_LIMIT_BYTES:
+        return kept
+    kept[TRUNC_KEY] = True
+    for key in sorted(name for name, value in kept.items() if isinstance(value, dict)):
+        _shrink_counts(kept, key)
+    while len(text_bytes(kept)) > DET_LIMIT_BYTES:
+        victims = sorted(name for name in kept if name != TRUNC_KEY)
+        if not victims:
+            break
+        kept.pop(victims[-1])
     return kept
+
+
+def _shrink_counts(kept: dict[str, object], key: str) -> None:
+    """`kept[key]` 건수 표의 작은 건수부터 `other` 로 모은다.
+
+    1KB 안에 들거나 `other` 만 남을 때까지 — 돌 때마다 키 하나가 줄어 끝난다.
+    """
+    raw = kept[key]
+    counts: dict[str, int] = dict(raw) if isinstance(raw, dict) else {}
+    kept[key] = counts
+    while len(text_bytes(kept)) > DET_LIMIT_BYTES:
+        names = [name for name in counts if name != OTHER_KEY]
+        if not names:
+            return
+        smallest = min(names, key=lambda name: (counts[name], name))
+        counts[OTHER_KEY] = counts.get(OTHER_KEY, 0) + counts.pop(smallest)
 
 
 def text_bytes(value: Mapping[str, object]) -> bytes:
@@ -419,14 +453,27 @@ def count(summary: str, code: str) -> None:
                 bucket = None
             if bucket is None:
                 bucket = _STATE.buckets.setdefault(summary, _Bucket(hour))
-            if len(bucket.counts) < DET_COUNTS_LIMIT or key in bucket.counts:
+            if key in bucket.counts or _room_for(bucket, key):
                 bucket.counts[key] = bucket.counts.get(key, 0) + 1
             else:
-                bucket.counts["other"] = bucket.counts.get("other", 0) + 1
+                bucket.counts[OTHER_KEY] = bucket.counts.get(OTHER_KEY, 0) + 1
         if closed is not None:
             _close_bucket(summary, closed)
     except Exception:  # noqa: BLE001
         _LOGGER.exception("감사 시간 묶음을 세지 못했습니다.")
+
+
+def _room_for(bucket: _Bucket, key: str) -> bool:
+    """새 키를 건수 표에 따로 둘 자리가 있나 — 키 수 상한과 키 글 바이트 상한을 함께 본다.
+
+    무인증 요청이 고른 사유 코드가 키가 되므로, 키 수만 막으면 긴 코드 몇십 개로 한 줄이 1KB 를
+    넘는다. `other` 자리는 늘 남겨 둔다.
+    """
+    if len(bucket.counts) >= DET_COUNTS_LIMIT - 1:
+        return False
+    used = sum(len(name.encode("utf-8")) + _COUNT_KEY_OVERHEAD for name in bucket.counts)
+    wanted = len(key.encode("utf-8")) + _COUNT_KEY_OVERHEAD
+    return used + wanted + len(OTHER_KEY) + _COUNT_KEY_OVERHEAD <= COUNTS_KEY_BUDGET
 
 
 def note_denied(loginid: str, reason: str) -> None:

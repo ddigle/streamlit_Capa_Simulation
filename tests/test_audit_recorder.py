@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from child_env import narrow_child_env
 
-from capa_simulation.audit import recorder
+from capa_simulation.audit import events, recorder
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INST = "0123456789ab"
@@ -269,6 +269,72 @@ def test_denied_logins_keep_the_first_per_account_and_count_the_rest(on: Clock) 
     (summary,) = recorder.take_pending()
     assert summary["ev"] == "authz_fail_access_list_summary"
     assert summary["det"] == {"total": 4, "accounts": 2, "hour": "2026-11-13T07"}
+
+
+def _finishes(work: Callable[[], object], seconds: float = 5.0) -> list[object]:
+    """`work` 를 데몬 스레드로 돌려 `seconds` 안에 끝나는지 본다 — 끝없는 고리가 시험 조각을 붙잡지
+    않게 한다. 돌려준 값은 목록 하나에 담는다."""
+    done: list[object] = []
+    thread = threading.Thread(target=lambda: done.append(work()), daemon=True)
+    thread.start()
+    thread.join(seconds)
+    assert not thread.is_alive(), "끝나지 않았다"
+    return done
+
+
+_BIG_VALUES: dict[str, object] = {
+    "text": "가" * 400,
+    "list": [f"{index:02d}-" + "x" * 70 for index in range(40)],
+    "counts": {f"idp_error:{index:02d}" + "z" * 50: index + 1 for index in range(60)},
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_BIG_VALUES))
+@pytest.mark.parametrize("spec", events.SPECS, ids=lambda spec: spec.name)
+def test_every_detail_shrinks_under_a_kilobyte_and_returns(
+    spec: events.EventSpec, shape: str
+) -> None:
+    det = {key: _BIG_VALUES[shape] for key in spec.det_keys}
+
+    (kept,) = _finishes(lambda: recorder.clean_det(spec, det))
+
+    assert isinstance(kept, dict)
+    assert len(recorder.text_bytes(kept)) <= recorder.DET_LIMIT_BYTES
+
+
+def test_a_huge_summary_keeps_its_total_and_hour_and_folds_small_counts() -> None:
+    spec = events.SPEC_BY_NAME[recorder.SUMMARY_LOGIN_FAIL]
+    counts = {f"idp_error:{index:02d}" + "q" * 40: index + 1 for index in range(25)}
+    det = {"counts": counts, "total": sum(counts.values()), "hour": "2026-11-13T07"}
+
+    (kept,) = _finishes(lambda: recorder.clean_det(spec, det))
+
+    assert isinstance(kept, dict)
+    assert kept["trunc"] is True
+    assert (kept["total"], kept["hour"]) == (det["total"], "2026-11-13T07")
+    folded = kept["counts"]
+    assert isinstance(folded, dict) and "other" in folded
+    assert sum(folded.values()) == det["total"], "모아도 건수 합은 그대로"
+    assert len(recorder.text_bytes(kept)) <= recorder.DET_LIMIT_BYTES
+
+
+def test_many_long_unauthenticated_error_codes_never_stall_the_hour_close(on: Clock) -> None:
+    """무인증 콜백이 고른 긴 오류 코드 수십 개 — 정시를 넘긴 첫 사건과 비우기가 곧 돌아오고 한 줄은
+    1KB 안이다(건수 표 키 글 상한 · 넘친 키는 `other`)."""
+    for index in range(25):
+        code = chr(ord("a") + index % 26) * 30 + f"_{index:02d}" + "_" * 7
+        recorder.from_sso_event("idp_error", {"error": code})
+    on.moment += timedelta(hours=1)
+
+    _finishes(lambda: recorder.from_sso_event("idp_error", {"error": "access_denied"}))
+    (lines,) = _finishes(recorder.take_pending)
+
+    assert isinstance(lines, list)
+    (summary,) = [line for line in lines if line["ev"] == recorder.SUMMARY_LOGIN_FAIL]
+    assert summary["det"]["total"] == 25
+    assert summary["det"]["counts"]["other"] > 0
+    assert "trunc" not in summary["det"]
+    assert len(recorder.text_bytes(summary["det"])) <= recorder.DET_LIMIT_BYTES
 
 
 def test_sso_events_map_to_audit_lines_without_jti_or_department(on: Clock) -> None:
