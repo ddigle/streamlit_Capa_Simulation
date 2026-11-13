@@ -32,6 +32,7 @@ import pytest
 
 import capa_simulation.settings as settings
 from capa_simulation.auth import names as sso_names
+from capa_simulation.io import bdq_refresh, bdq_token
 from capa_simulation.io import container_start_report as report_contract
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -526,6 +527,8 @@ def test_the_login_token_is_written_where_the_package_reads_it(
     assert token_file["modified_at"]
     assert report["user_name"] == {"present": True, "masked": "fa***"}
     _assert_no_secret(json.dumps(report, ensure_ascii=False))
+    mark = bdq_token.read_installed_mark(place / "config" / ".credential", FAKE_BDQ_USER)
+    assert mark is not None and mark.source == "start"
 
 
 def test_a_base64_token_is_decoded_so_line_breaks_survive_the_value_column(place: Path) -> None:
@@ -1496,3 +1499,186 @@ def test_the_start_script_reads_the_sso_names_from_the_light_module() -> None:
     assert container_start.sso_presence({sso_names.ENV_SCOPE: " "}) == dict.fromkeys(
         sso_names.SSO_ENVIRONMENT, False
     )
+
+
+# --- 토큰 자동 갱신(갱신 토큰 `CAPA_BDQ_REFRESH_TOKEN`) -------------------------------------
+
+FAKE_BDQ_REFRESH = "FAKE-bdq-refresh-token-9999-zyxwvuts"
+REFRESH_ENVIRONMENT = {**ALL_ENVIRONMENT, report_contract.BDQ_REFRESH_TOKEN_ENV: FAKE_BDQ_REFRESH}
+
+
+def _refresh(report: Mapping[str, object]) -> dict[str, object]:
+    refresh = report["refresh"]
+    assert isinstance(refresh, dict)
+    return refresh
+
+
+def _assert_no_refresh_secret(text: str) -> None:
+    encoded = base64.b64encode(FAKE_BDQ_REFRESH.encode()).decode()
+    for secret in (FAKE_BDQ_REFRESH, encoded, "FAKE-new-login"):
+        assert secret not in text, f"갱신 토큰 · 받은 토큰 원문이 남았다: {secret!r}"
+
+
+def test_without_a_refresh_token_the_start_says_off_and_writes_the_token_as_before(
+    place: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report, _ = _main(place, ALL_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert _refresh(report) == {
+        "mode": "off",
+        "reason": "갱신 토큰 없음",
+        "installed": False,
+        "failed": False,
+    }
+    target = place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}"
+    assert target.read_bytes() == FAKE_BDQ_TOKEN.encode()
+    assert "토큰 자동 갱신 — 꺼짐: 갱신 토큰 없음" in capsys.readouterr().out
+    assert report_contract.BDQ_REFRESH_TOKEN_ENV not in report["missing_environment"]  # type: ignore[operator]
+
+
+def test_a_refresh_token_is_kept_private_and_while_the_shape_is_unknown_nothing_else_changes(
+    place: Path, capsys: pytest.CaptureFixture[str], keeps_permission_bits: bool
+) -> None:
+    """지금 꼴(요청 꼴 미정) — 갱신 토큰은 0600 파일로 옮기고 앱 · 하위 프로세스에 넘기지 않는다.
+    로그인 토큰 단계는 갱신 토큰이 없을 때와 똑같이 `CAPA_BDQ_TOKEN` 을 쓴다."""
+    runner = FakeRunner([_probe("ok", "9.9.9")])
+
+    report, fake_exec = _main(place, REFRESH_ENVIRONMENT, runner)
+
+    credentials = place / "config" / ".credential"
+    refresh_file = credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}"
+    assert refresh_file.read_bytes() == FAKE_BDQ_REFRESH.encode()
+    if keeps_permission_bits:
+        assert stat.S_IMODE(refresh_file.stat().st_mode) == 0o600
+        assert stat.S_IMODE(credentials.stat().st_mode) == 0o700
+    token = credentials / f"bigdataquery.token.{FAKE_BDQ_USER}"
+    assert token.read_bytes() == FAKE_BDQ_TOKEN.encode()
+    assert _steps(report)[report_contract.STEP_TOKEN] == {
+        "status": report_contract.STATUS_OK,
+        "reason": "토큰 파일을 씀",
+    }
+    assert _refresh(report)["mode"] == "ready" and _refresh(report)["reason"] == "요청 꼴 미정"
+    output = capsys.readouterr().out
+    assert "토큰 자동 갱신 — 준비: 요청 꼴 미정" in output
+    [(_file, _args, app_env)] = fake_exec.calls
+    assert report_contract.BDQ_REFRESH_TOKEN_ENV not in app_env
+    for env in runner.envs:
+        assert report_contract.BDQ_REFRESH_TOKEN_ENV not in env
+    _assert_no_refresh_secret(json.dumps(report, ensure_ascii=False) + output)
+    assert not (credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}.lock").exists()
+
+
+def test_the_same_refresh_token_is_not_written_again(place: Path) -> None:
+    """파일 수정 시각이 갱신 토큰을 처음 본 때다 — 같은 내용이면 다시 쓰지 않는다."""
+    credentials = place / "config" / ".credential"
+    credentials.mkdir(parents=True)
+    refresh_file = credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}"
+    refresh_file.write_bytes(FAKE_BDQ_REFRESH.encode())
+    os.utime(refresh_file, (1_000_000_000, 1_000_000_000))
+
+    _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert refresh_file.stat().st_mtime == 1_000_000_000
+
+
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        ("base64:@@@", "base64: 값을 풀지 못함"),
+        ("too-short", "바이트보다 짧음"),
+    ],
+)
+def test_a_refresh_token_that_cannot_be_kept_is_a_failure_and_the_token_step_is_unchanged(
+    place: Path, value: str, reason: str
+) -> None:
+    environ = {**ALL_ENVIRONMENT, report_contract.BDQ_REFRESH_TOKEN_ENV: value}
+
+    report, _ = _main(place, environ, FakeRunner([_probe("ok", "9.9.9")]))
+
+    refresh = _refresh(report)
+    assert refresh["mode"] == "off" and refresh["failed"] is True
+    assert reason in str(refresh["reason"]) and value not in str(refresh["reason"])
+    assert _steps(report)[report_contract.STEP_TOKEN]["reason"] == "토큰 파일을 씀"
+
+
+def _known_shape(
+    monkeypatch: pytest.MonkeyPatch, *, error: BaseException | None = None
+) -> list[tuple[bytes, str]]:
+    """요청 꼴을 안 것으로 — 가짜 교환. 받은 (갱신 토큰, 계정)을 남긴다."""
+    received: list[tuple[bytes, str]] = []
+
+    def fake(refresh_token: bytes, account: str) -> bdq_refresh.Exchanged:
+        received.append((refresh_token, account))
+        if error is not None:
+            raise error
+        return bdq_refresh.Exchanged(b"FAKE-new-login-token-from-start")
+
+    monkeypatch.setattr(bdq_refresh, "REQUEST_SHAPE_KNOWN", True)
+    monkeypatch.setattr(bdq_refresh, "exchange", fake)
+    return received
+
+
+def test_with_refresh_on_the_start_uses_the_refreshed_token_instead_of_the_variable(
+    place: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    received = _known_shape(monkeypatch)
+
+    report, _ = _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+
+    credentials = place / "config" / ".credential"
+    token = credentials / f"bigdataquery.token.{FAKE_BDQ_USER}"
+    assert received == [(FAKE_BDQ_REFRESH.encode(), FAKE_BDQ_USER)]
+    assert token.read_bytes() == b"FAKE-new-login-token-from-start"
+    mark = bdq_token.read_installed_mark(credentials, FAKE_BDQ_USER)
+    assert mark is not None and mark.source == "refresh"
+    assert _steps(report)[report_contract.STEP_TOKEN]["reason"] == "자동 갱신으로 받은 토큰을 씀"
+    assert _refresh(report)["installed"] is True and _refresh(report)["mode"] == "on"
+    output = capsys.readouterr().out
+    assert "토큰 자동 갱신 — 켜짐" in output
+    _assert_no_refresh_secret(json.dumps(report, ensure_ascii=False) + output)
+
+
+def test_a_failed_start_refresh_falls_back_to_the_variable_without_echoing_secrets(
+    place: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _known_shape(
+        monkeypatch, error=RuntimeError(f"rejected {FAKE_BDQ_REFRESH} for {FAKE_BDQ_USER}")
+    )
+
+    report, _ = _main(place, REFRESH_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
+
+    token = place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}"
+    assert token.read_bytes() == FAKE_BDQ_TOKEN.encode()
+    refresh = _refresh(report)
+    assert refresh["failed"] is True and refresh["installed"] is False
+    assert refresh["reason"] == "시작 때 갱신 실패 — 교환 실패(RuntimeError)"
+    output = capsys.readouterr().out
+    _assert_no_refresh_secret(json.dumps(report, ensure_ascii=False) + output)
+    _assert_no_secret(json.dumps(report, ensure_ascii=False) + output)
+    parsed = report_contract.parse_report(report)
+    assert parsed is not None and parsed.refresh is not None and parsed.refresh.failed is True
+
+
+def test_the_redactor_hides_the_refresh_token_in_every_form() -> None:
+    content = f"{FAKE_BDQ_REFRESH}\nsecond-line-of-refresh\n"
+    encoded = "base64:" + base64.b64encode(content.encode()).decode()
+    redact = container_start.Redactor.from_environ({report_contract.BDQ_REFRESH_TOKEN_ENV: encoded})
+
+    text = redact(f"pip 오류 {encoded} {encoded.removeprefix('base64:')} {content}")
+
+    assert FAKE_BDQ_REFRESH not in text and "second-line-of-refresh" not in text
+    assert encoded.removeprefix("base64:") not in text
+
+
+def test_old_reports_without_the_refresh_field_still_read() -> None:
+    report = {
+        "version": 1,
+        "steps": {
+            name: {"status": report_contract.STATUS_OK, "reason": ""}
+            for name in report_contract.STEPS
+        },
+    }
+    parsed = report_contract.parse_report(report)
+    assert parsed is not None and parsed.refresh is None
+    broken = report_contract.parse_report({**report, "refresh": {"mode": "?", "reason": 1}})
+    assert broken is not None and broken.refresh is None

@@ -26,14 +26,18 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
      패키지가 앱 의존성을 바꾸지 못하게 한다. 이 pip 에는 자격증명이 하나도 없다.
 1. 로그인 토큰 — `CAPA_BDQ_TOKEN` 과 `CAPA_BDQ_USER_NAME` 이 있으면 패키지가 보는 자리
    (`/config/.credential/bigdataquery.token.<계정>`)에 그 값을 쓴다(`base64:` 로 시작하면 풀어서).
-   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다.
+   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다. 그 앞에 갱신 토큰
+   `CAPA_BDQ_REFRESH_TOKEN` 이 있으면 같은 폴더의 `capa-bdq-refresh.<계정>`(0600)으로 옮기고, 자동
+   갱신이 켜짐이면(`io/bdq_refresh.py` — 요청 꼴을 알 때) 바로 갱신해 받은 토큰을 쓴다 —
+   `CAPA_BDQ_TOKEN` 은 갱신이 실패했을 때만 쓴다. 꺼짐 · 준비는 지금 길 그대로다. 진행 한 줄
+   「토큰 자동 갱신 — 꺼짐 · 준비 · 켜짐」 과 결과 파일 `refresh` 칸에 갈래 · 까닭만 남긴다.
 2. 요청자 계정 — `CAPA_BDQ_USER_NAME` 은 앱이 그대로 읽는다. 있는지만 적는다.
 
 결과는 `settings.CONTAINER_START_REPORT_PATH` 에 남고 앱 화면(Admin Area 「서버 시작 점검」)이
 읽는다. **비밀값은 어디에도 남기지 않는다** — pip 출력·예외 문구의 토큰과 URL 자격증명을 가리고
-계정은 앞 두 글자만 둔다. 하위 프로세스(import 확인·pip·aws)에도 두 비밀값을 넘기지 않는다 — 깔린
-패키지의 import 코드가 그 값을 읽지 못하게 한다. 앱은 `os.execvpe` 로 이 프로세스를 갈아 끼워 신호·
-종료 동작이 옛 `CMD` 와 같고, 실행 줄의 두 비밀값은 앱에 넘기지 않는다.
+계정은 앞 두 글자만 둔다. 하위 프로세스(import 확인·pip·aws)에도 세 비밀값(두 토큰 · 갱신
+토큰)을 넘기지 않는다 — 깔린 패키지의 import 코드가 그 값을 읽지 못하게 한다. 앱은 `os.execvpe` 로
+이 프로세스를 갈아 끼워 신호·종료 동작이 옛 `CMD` 와 같고, 실행 줄의 세 비밀값은 앱에 넘기지 않는다.
 
 **어느 단계가 실패해도, 예상하지 못한 예외가 나도 앱은 띄운다 — DB 받기 하나만 예외다.** `managed`
 에서 앱을 띄우는 길은 「이번 실행의 `boot-pull` 이 종료 코드 0 으로 끝남」 한 길뿐이다. 받지 못하면
@@ -81,13 +85,14 @@ import container_stage
 
 from capa_simulation import settings
 from capa_simulation.auth import names as sso_names
-from capa_simulation.io import bdq_token
+from capa_simulation.io import bdq_refresh, bdq_token
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
     ARTIFACTORY_TOKEN_ENV,
     ARTIFACTORY_USER_ENV,
     AWS_CLI_VERSION,
+    BDQ_REFRESH_TOKEN_ENV,
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     CD_ENVIRONMENT,
@@ -193,7 +198,7 @@ PROBE_MARKER = "capa-bdq-probe"
 # 앱과 하위 프로세스에 넘기지 않는 실행 줄 값. 앱은 요청자 계정만 읽는다. 앱 쪽 「결과 없음」
 # 안내가 같은 이름으로 스크립트가 돌았는지 가른다.
 SECRET_ENVIRONMENT = APP_WITHHELD_ENVIRONMENT
-# 하위 프로세스(import 확인·pip)에 넘기지 않는 값 — 두 비밀값과 통합인증 비밀값 · 접속 명단.
+# 하위 프로세스(import 확인·pip)에 넘기지 않는 값 — 세 비밀값과 통합인증 비밀값 · 접속 명단.
 # 통합인증 쪽은 앱에는 넘긴다(앱이 읽고 지운다).
 CHILD_WITHHELD_ENVIRONMENT = (*APP_WITHHELD_ENVIRONMENT, *sso_names.WITHHELD_ENVIRONMENT)
 _PROBE_CODE = f"""
@@ -371,7 +376,7 @@ def dependency_pip_command(
 
 
 def child_environment(environ: Mapping[str, str]) -> dict[str, str]:
-    """하위 프로세스(import 확인·pip)에 넘기는 환경 — 두 비밀값과 통합인증 비밀값을 뺀다."""
+    """하위 프로세스(import 확인·pip)에 넘기는 환경 — 세 비밀값과 통합인증 비밀값을 뺀다."""
     return {
         name: value for name, value in environ.items() if name not in CHILD_WITHHELD_ENVIRONMENT
     }
@@ -401,21 +406,14 @@ class Redactor:
 
     @classmethod
     def from_environ(cls, environ: Mapping[str, str]) -> Redactor:
-        token = environ.get(BDQ_TOKEN_ENV, "").strip()
-        secrets = [environ.get(ARTIFACTORY_TOKEN_ENV, "").strip(), token]
+        secrets = [environ.get(ARTIFACTORY_TOKEN_ENV, "").strip()]
         # 통합인증 비밀값도 어떤 출력에도 남기지 않는다(하위 프로세스에는 넘기지 않지만 예외 글 등).
         # 너무 짧은 값(틀린 설정)까지 가리면 출력이 뭉개진다 — 앱이 「짧음」 으로 막는다.
         sso_secrets = [environ.get(name, "").strip() for name in sso_names.SECRET_ENVIRONMENT]
         secrets += [value for value in sso_secrets if len(value) >= 8]
-        if token.startswith("base64:"):
-            secrets.append(token.removeprefix("base64:").strip())
-            try:
-                decoded = _decode_token(token).decode("utf-8", errors="replace")
-            except ValueError:
-                decoded = ""
-            # 푼 내용의 줄 조각도 가린다. 너무 짧은 조각(`{`·`}`)까지 가리면 출력이 뭉개진다.
-            pieces = [decoded.strip(), *(line.strip() for line in decoded.splitlines())]
-            secrets += [piece for piece in pieces if len(piece) >= 8]
+        # 로그인 토큰과 갱신 토큰 — 원문 · `base64:` 몸 · 푼 내용의 줄 조각.
+        for name in (BDQ_TOKEN_ENV, BDQ_REFRESH_TOKEN_ENV):
+            secrets += _token_forms(environ.get(name, "").strip())
         accounts = [
             environ.get(ARTIFACTORY_USER_ENV, "").strip(),
             environ.get(BDQ_USER_NAME_ENV, "").strip(),
@@ -429,6 +427,21 @@ class Redactor:
         for account in self._accounts:
             text = text.replace(account, mask_account(account))
         return text
+
+
+def _token_forms(token: str) -> list[str]:
+    """토큰 값을 가릴 꼴 — 원문과, `base64:` 면 그 몸 · 푼 내용 · 푼 내용의 줄 조각."""
+    forms = [token]
+    if token.startswith("base64:"):
+        forms.append(token.removeprefix("base64:").strip())
+        try:
+            decoded = _decode_token(token).decode("utf-8", errors="replace")
+        except ValueError:
+            decoded = ""
+        # 푼 내용의 줄 조각도 가린다. 너무 짧은 조각(`{`·`}`)까지 가리면 출력이 뭉개진다.
+        pieces = [decoded.strip(), *(line.strip() for line in decoded.splitlines())]
+        forms += [piece for piece in pieces if len(piece) >= 8]
+    return forms
 
 
 def _forms(value: str) -> set[str]:
@@ -646,10 +659,51 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
         _tighten_folder(target.parent)
         return StepResult(STATUS_OK, "같은 내용의 토큰 파일이 이미 있어 다시 쓰지 않음")
     try:
-        _write_private(target, content)
+        # 넣는 길 셋의 한 곳 — 토큰 곁에 넣은 때 표지(출처 `start`)를 남긴다(`io/bdq_token.py`).
+        bdq_token.put_token(credential_dir, account, content, "start")
     except OSError as error:
         return StepResult(STATUS_FAILED, f"{credential_dir} 에 쓰지 못함({type(error).__name__})")
     return StepResult(STATUS_OK, "토큰 파일을 씀")
+
+
+REFRESH_LABEL = "토큰 자동 갱신"
+
+
+def store_refresh_token(environ: Mapping[str, str], credential_dir: Path) -> str | None:
+    """CD 환경변수 `CAPA_BDQ_REFRESH_TOKEN` 을 자격 폴더의 0600 파일로 옮긴다(같은 내용이면 다시
+    쓰지 않는다 — 파일 수정 시각이 갱신 토큰을 처음 본 때다). 쓰지 못한 까닭 또는 `None`(썼음 ·
+    값 없음). 까닭에 값 · 길이를 싣지 않는다."""
+    raw = environ.get(BDQ_REFRESH_TOKEN_ENV, "").strip()
+    if not raw:
+        return None
+    account = environ.get(BDQ_USER_NAME_ENV, "").strip()
+    target = bdq_refresh.refresh_token_path(credential_dir, account) if account else None
+    if target is None:
+        return f"{BDQ_USER_NAME_ENV} 이 없거나 파일 이름으로 못 써 갱신 토큰을 두지 못함"
+    try:
+        content = _decode_token(raw)
+    except ValueError:
+        return f"{BDQ_REFRESH_TOKEN_ENV} 의 base64: 값을 풀지 못함"
+    if len(content.strip()) < MIN_TOKEN_BYTES:
+        return f"{BDQ_REFRESH_TOKEN_ENV} 을 푼 내용이 {MIN_TOKEN_BYTES}바이트보다 짧음"
+    try:
+        if bdq_token.holds_same(target, content):
+            _tighten(target, 0o600)
+            _tighten_folder(target.parent)
+        else:
+            _write_private(target, content)
+    except OSError as error:
+        return f"갱신 토큰 파일을 쓰지 못함({type(error).__name__})"
+    return None
+
+
+def refresh_step(environ: Mapping[str, str], credential_dir: Path) -> bdq_refresh.StartRefresh:
+    """갱신 토큰을 두고, 켜짐이면 바로 갱신한다. 꺼짐 · 준비는 아무것도 바꾸지 않는다 — 다음
+    로그인 토큰 단계가 지금 길 그대로 돈다."""
+    problem = store_refresh_token(environ, credential_dir)
+    if problem is not None:
+        return bdq_refresh.StartRefresh("off", problem, failed=True)
+    return bdq_refresh.refresh_at_start(environ, credential_dir)
 
 
 def user_name_step(environ: Mapping[str, str]) -> StepResult:
@@ -723,13 +777,31 @@ def collect_report(
         install = install_step(environ, runner, redactor)
         return install.result
 
+    refresh = bdq_refresh.StartRefresh("off", "확인하지 못함", failed=True)
+
+    def run_token() -> StepResult:
+        nonlocal refresh
+        try:
+            refresh = refresh_step(environ, credential_dir)
+        except Exception as error:
+            refresh = bdq_refresh.StartRefresh(
+                "off", f"예상하지 못한 실패({type(error).__name__})", failed=True
+            )
+        if refresh.installed:
+            return StepResult(STATUS_OK, "자동 갱신으로 받은 토큰을 씀")
+        return token_step(environ, credential_dir)
+
     steps = {
         STEP_INSTALL: _guarded(run_install, redactor),
-        STEP_TOKEN: _guarded(lambda: token_step(environ, credential_dir), redactor),
+        STEP_TOKEN: _guarded(run_token, redactor),
         STEP_USER_NAME: _guarded(lambda: user_name_step(environ), redactor),
     }
     for name, result in steps.items():
         echo(f"{STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")
+    refresh = bdq_refresh.StartRefresh(
+        refresh.mode, redactor(refresh.reason), refresh.installed, refresh.failed
+    )
+    echo(f"{REFRESH_LABEL} — {bdq_refresh.MODE_LABELS[refresh.mode]}: {refresh.reason}")
     presence = sso_presence(environ)
     echo(sso_presence_line(presence))
     account = environ.get(BDQ_USER_NAME_ENV, "").strip()
@@ -754,6 +826,7 @@ def collect_report(
         ],
         "pip_tail": [redactor(line) for line in install.pip_tail],
         "sso_environment": presence,
+        "refresh": refresh.as_json(),
     }
 
 

@@ -1900,6 +1900,30 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - C-DEP CD 시작 점검 결과 파일이 있으면 「패키지가 없습니다」·로그인 토큰 오류(`is_login_token_failure`)·`user_name`
     안내 **뒤에** 그 단계의 결과 한 단락과 넣을 환경변수를 덧붙인다(첫 문장·갈래·종류 이름은 그대로, 파일이 없으면 지금
     문구 그대로). `BDQ_USER_NAME_ENV` 는 `io/container_start_report.py` 가 이름을 갖고 여기서 다시 내보낸다.
+  - 토큰 자동 갱신(`io/bdq_refresh.py`)의 조회 길 한 자리가 `_get_data_once` 다 — `getData` 바로 앞 `before_query`(갱신할 때면 먼저
+    갱신, 실패해도 조회는 그대로), 갈래 「토큰」(`classify_query_failure` — `AD-10` 을 세우는 판정. 넓은 안내 추정
+    `is_login_token_failure` 로는 산 토큰을 바꾸지 않는다)이면 `after_token_failure` 로 한 번 갱신해 새 토큰이면 조회를 한 번만
+    다시 한다. 토큰 실패 표지(`_note_token_failure(True)`)는 마지막 시도 뒤에만 선다. 꺼짐 · 준비면 아무것도 하지 않는다.
+- `src/capa_simulation/io/bdq_refresh.py` — BigDataQuery 로그인 토큰 자동 갱신(2026-11-14 사용자 결정 — 갱신 토큰은 C-DEP 환경변수 표,
+  「발급 6시간 뒤」 사람 손 · CI/CD · 재시작 없이)의 **틀**이다. 표준 라이브러리만 쓴다(시작 스크립트가 먼저 읽고, 조회 길은
+  예약 스레드에서도 돈다 — Streamlit 을 import 하지 않는다).
+  - 교환 한 곳 `exchange(refresh_token, account) -> Exchanged(token, expires_at)` — 갱신 요청 꼴(주소 · 방법 · 넣는 자리 · 응답
+    칸)이 담당자 답 대기라 지금은 `RefreshNotConfigured` 를 내고 곁의 `REQUEST_SHAPE_KNOWN` 이 거짓이다. 답이 오면 그 몸만
+    채우고 표지를 참으로 바꾼다(짐작한 HTTP 클라이언트를 두지 않는다). 그 밖은 시험이 가짜 교환으로 돈다(`tests/test_bdq_refresh.py`).
+  - 상태 넷(`status`) — 꺼짐(갱신 토큰 파일 없음 · 계정 없음 · 환경변수 `BIGDATAQUERY_LOGIN_TOKEN`) · 준비(요청 꼴 미정 — 잠금 ·
+    표지 · 파일 쓰기 전에 돌아서 조회 · 시작이 갱신 토큰 없을 때와 똑같다) · 켜짐 · 멈춤. 갱신 토큰 파일은
+    `/config/.credential/capa-bdq-refresh.<계정>`(0600 — 시작 스크립트가 CD 환경변수 `CAPA_BDQ_REFRESH_TOKEN` 을 옮긴다, 앱
+    프로세스에는 넘기지 않는다). 패키지 자리 접두(`bigdataquery.token.`)를 쓰지 않는다.
+  - 언제 — 새 배경 스레드 없이 조회 길에서만(9장 「배경 스레드」): 넣은 때(`bdq_token` 넣은 때 표지, 믿을 수 없으면 토큰 파일
+    수정 시각)부터 `REFRESH_AFTER`(6시간) · 만료를 읽었고 1시간 안 · 토큰 없음이면 먼저, 조회가 갈래 「토큰」 이면 한 번.
+  - 죽이기 고리 막기(계정당 최신 토큰 하나만 산다 — 교환 하나 · 같은 계정의 WebIDE 로그인이 앞 토큰을 죽인다): 교환 + 넣기만
+    스레드 잠금 + 자격 폴더 파일 잠금(`fcntl.flock`, Windows 는 스레드 잠금만) 안 · 잠금 뒤 표지를 다시 읽어 그 사이 다른 쪽이
+    넣었으면 교환하지 않고(실패 뒤면 그 새 토큰으로 한 번 다시) · 시도 사이 `MIN_ATTEMPT_GAP`(5분) · 갱신으로 넣은 서로 다른
+    토큰이 `LOOP_WINDOW`(1시간) 안에 `LOOP_LIMIT`(둘) 번 토큰 실패면 멈춤(「같은 계정이 다른 곳에서 로그인했을 수 있음」 —
+    사람이 넣은 토큰이 그 뒤 들어오거나 재시작이면 풀림). 미리 볼 것(넣기 막힘 · 갱신 토큰 읽기)은 교환 전에 본다.
+  - 비밀 — 토큰 · 갱신 토큰 글자 · 길이를 상태 · 알림 · 로그 · 예외에 싣지 않는다. 교환 예외는 종류 이름만, `Exchanged.token` 은
+    `repr` 밖. 갱신 토큰의 나이는 이 서버가 그 파일을 쓴 때부터 세어 80일이면 `AD-18`(디스크가 처음으로 돌아가면 다시 센다).
+    프로세스 상태는 메모리뿐이고 시험은 `tests/conftest.py` 가 `forget_state` 로 비운다.
 - `src/capa_simulation/io/container_start_report.py` — C-DEP CD 시작 스크립트(`scripts/container_start.py`)와 앱이 함께
   쓰는 환경변수 이름 다섯(`CD_ENVIRONMENT` — 사내 패키지 저장소 주소 `CAPA_COMPANY_INDEX_URL` 을 더해. 사내 PC 도 넣는 이름이라
   CD 서버인지 가르는 `CD_ONLY_ENVIRONMENT` 에는 없다)·결과 파일(`settings.CONTAINER_START_REPORT_PATH` = `data/temp/container_start.json`)
@@ -1921,7 +1945,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     판 값 `AWS_CLI_VERSION` 은 `docker/Dockerfile-prod` 의 `awscli==` 한 줄과 시험이 맞댄다 — `requirements.txt` · 락 밖이고(`tests/test_requirements_export.py` 가 범위를 본다) 사외 개발 환경에 넣지 않는다. 실제 `aws` 왕복은 `CAPA_TEST_AWS_BIN` 이 있을 때 돈다.
 - `src/capa_simulation/io/bdq_token.py` — BigDataQuery 로그인 토큰 파일(`/config/.credential/bigdataquery.token.<계정>`)의 자리 ·
   0600 원자적 쓰기 · 넣기 판정 · 만료 읽기 한 곳. 시작 스크립트(CD 환경변수 `CAPA_BDQ_TOKEN` → 파일)와 Admin 「토큰 넣기」
-  (`components/bdq_token_admin.py`)가 같은 쓰기 길을 쓴다(2026-11-12 사용자 결정 — 패키지는 조회마다 토큰을 다시 읽고,
+  (`components/bdq_token_admin.py`) · 자동 갱신(`io/bdq_refresh.py`)이 같은 쓰기 길(`put_token` — 토큰 곁에 넣은 때 표지
+  `capa-bdq-installed.<계정>.json` 0600: 넣은 UTC 시각 · 출처 `start` · `admin` · `refresh` 뿐, 토큰 글자 · 길이 · 지문 없음. 쓰지 못해도
+  넣기는 넣음)을 쓴다(2026-11-12 사용자 결정 — 패키지는 조회마다 토큰을 다시 읽고,
   프로세스 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 이 파일보다 앞이라 그 key 가 있으면 넣기를 잠근다). 표준 라이브러리만 쓴다 — 시작
   스크립트가 앱 의존성보다 먼저 읽는다. 토큰 글 · 길이를 어떤 까닭 글에도 싣지 않고, 만료 시각만 (자리, inode, 수정 시각, 크기)
   열쇠로 기억한다(넣기는 쓴 뒤 기억을 비운다 — inode 를 믿을 수 없는 파일 체계). 만료는 JWT `exp` 하나만 읽고 그 밖은 「모름」 이다

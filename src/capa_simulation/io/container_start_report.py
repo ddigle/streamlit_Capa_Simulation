@@ -38,6 +38,10 @@ from capa_simulation import settings
 ARTIFACTORY_USER_ENV: Final = "CAPA_ARTIFACTORY_USER"
 ARTIFACTORY_TOKEN_ENV: Final = "CAPA_ARTIFACTORY_TOKEN"
 BDQ_TOKEN_ENV: Final = "CAPA_BDQ_TOKEN"
+# BigDataQuery 갱신 토큰(3개월 유효 — 2026-11-14 사용자 결정). 선택 값이라 `CD_ENVIRONMENT` 에 넣지
+# 않는다(「시작 때 비어 있던 CD 환경변수」 줄에 서지 않게). 시작 스크립트가 자격 폴더의 0600 파일로
+# 옮기고 앱 프로세스에는 넘기지 않는다(`io/bdq_refresh.py`).
+BDQ_REFRESH_TOKEN_ENV: Final = "CAPA_BDQ_REFRESH_TOKEN"
 # 조회 요청자의 사내 계정. 사람마다 다른 값이라 저장소에 두지 않는다 — 배포 ZIP 을 받은 다른
 # 사람이 남의 계정으로 조회하게 된다. 어댑터(`getData(user_name=…)`)와 시작 스크립트(토큰 파일
 # 이름)가 함께 읽는다.
@@ -53,12 +57,17 @@ CD_ENVIRONMENT: Final = (
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
 )
-# 시작 스크립트가 앱 프로세스에 넘기지 않는 두 비밀값. 앱 환경에 남아 있으면 스크립트가 돌지
+# 시작 스크립트가 앱 프로세스에 넘기지 않는 비밀값 셋. 앱 환경에 남아 있으면 스크립트가 돌지
 # 않았다는 뜻이다(`missing_report_notice`).
-APP_WITHHELD_ENVIRONMENT: Final = (ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
+APP_WITHHELD_ENVIRONMENT: Final = (ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV, BDQ_REFRESH_TOKEN_ENV)
 # CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 과 `CAPA_COMPANY_INDEX_URL`
 # 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다.
-CD_ONLY_ENVIRONMENT: Final = (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
+CD_ONLY_ENVIRONMENT: Final = (
+    ARTIFACTORY_USER_ENV,
+    ARTIFACTORY_TOKEN_ENV,
+    BDQ_TOKEN_ENV,
+    BDQ_REFRESH_TOKEN_ENV,
+)
 START_SCRIPT: Final = "scripts/container_start.py"
 # 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
 # 견준다.
@@ -171,6 +180,19 @@ class ContainerStartReport:
     sso_environment: Mapping[str, bool] | None = None
     # 동기화 칸. S3 키도 `managed` 도 없는 서버 · 옛 꼴 파일에는 없어 `None` 이다.
     sync: SyncStart | None = None
+    # 시작 때 토큰 자동 갱신(`io/bdq_refresh.refresh_at_start`) — 꺼짐 · 준비 · 켜짐과 까닭 낱말.
+    # 옛 꼴 파일에는 없어 `None` 이다.
+    refresh: StartRefreshRecord | None = None
+
+
+@dataclass(frozen=True)
+class StartRefreshRecord:
+    """결과 파일 `refresh` 칸 — 시작 때 자동 갱신의 갈래와 까닭 낱말(비밀 없음)."""
+
+    mode: str
+    reason: str
+    installed: bool = False
+    failed: bool = False
 
 
 def mask_account(name: str) -> str:
@@ -242,6 +264,25 @@ def parse_report(data: object) -> ContainerStartReport | None:
         home_masked=_text_or_none(runtime.get("home")),
         sso_environment=_presence_or_none(data.get("sso_environment")),
         sync=parse_sync(data.get("sync")),
+        refresh=parse_refresh(data.get("refresh")),
+    )
+
+
+REFRESH_MODES: Final = ("off", "ready", "on", "halted")
+
+
+def parse_refresh(data: object) -> StartRefreshRecord | None:
+    """`refresh` 칸을 읽는다. 없거나 꼴이 어긋나면 `None` — 펼침의 다른 칸은 그대로 선다."""
+    if not isinstance(data, dict):
+        return None
+    mode, reason = data.get("mode"), data.get("reason")
+    if mode not in REFRESH_MODES or not isinstance(reason, str):
+        return None
+    return StartRefreshRecord(
+        mode=str(mode),
+        reason=reason,
+        installed=data.get("installed") is True,
+        failed=data.get("failed") is True,
     )
 
 
@@ -437,8 +478,9 @@ MISSING_REPORT_ACTION: Final = "이 문구를 그대로 알려 주세요."
 def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | None:
     """CD 환경변수는 앱에 들어왔는데 결과 파일이 없을 때의 한 단락. CD 전용 key 가 없으면 `None`.
 
-    시작 스크립트는 두 비밀값을 앱에 넘기지 않으므로, 그 key 가 앱 환경에 있으면 스크립트가 돌지
-    않은 것이다(C-DEP 이 이미지 `CMD` 대신 다른 시작 명령을 썼을 때). 비밀값이 없고 계정만 있으면
+    시작 스크립트는 비밀값(`APP_WITHHELD_ENVIRONMENT`)을 앱에 넘기지 않으므로, 그 key 가 앱
+    환경에 있으면 스크립트가 돌지 않은 것이다(C-DEP 이 이미지 `CMD` 대신 다른 시작 명령을 썼을
+    때). 비밀값이 없고 계정만 있으면
     스크립트가 돌지 않았는지 결과를 쓰지 못했는지 가를 수 없다. 이 문구에 `CAPA_BDQ_USER_NAME` 을
     섞지 않는다 — 점검 스크립트가 그 이름으로 「요청자 계정 필요」를 가른다.
     """
