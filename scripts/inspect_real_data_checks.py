@@ -463,7 +463,8 @@ def _failure(exc: BaseException) -> str:
     """예외 종류만. 문구는 식별값을 실을 수 있어 찍지 않는다.
 
     대당 Capa 기준정보 연결 오류(`ReferenceJoinError`)도 `ValueError` 로 적는다(`failure_kind`) —
-    꼴과 개수는 6-3 a(`inspect_revision_calculations.py`)가 리비전마다 적는다.
+    꼴과 개수는 6-3 a(`inspect_revision_calculations.py`)가 리비전마다 적고, 8-2D 는 건너뛴 원천에
+    꼴 이름만 덧붙인다(`SkippedSource.shape`).
     """
     return f"실패({failure_kind(exc)})"
 
@@ -931,17 +932,28 @@ def _latest_equipment_revision(
 # 데이터셋으로 넘어간다. 후보마다 리비전 표를 읽고 계산하므로 수를 묶는다. 서는 것이 없으면 가장
 # 최근 것으로 돌아간다.
 SOURCE_CANDIDATES: Final = 5
+# 건너뛴 원천의 꼴 칸 — 꼴이 없는 멈춤과 리비전 1 없음(8-2D).
+NO_SHAPE: Final = "-"
 
 
 @dataclass(frozen=True)
 class SkippedSource:
     """리비전 1 계산이 서지 않아 건너뛴 원천 데이터셋 — 원천에서 온 것 가운데 최근부터 차례 ·
-    적재일 · 원천 종류(앱이 붙인 이름) · 까닭(단계와 예외 종류만). 이름·ID·값은 싣지 않는다."""
+    적재일 · 원천 종류(앱이 붙인 이름) · 까닭(단계와 예외 종류만) · 자리 · 꼴. 이름·ID·값은
+    싣지 않는다.
+
+    `place` 는 6-3 a(`inspect_revision_calculations`)와 같은 차례 번호 `S<n> r1` 이다 — 리비전
+    1 이 없으면 `S<n>`, 6-3 a 가 번호를 매기지 않는 시나리오(리비전이 하나도 없음)면 `S-`.
+    `shape` 는 기준정보 연결 오류(`ReferenceJoinError`)의 꼴 이름(`0 이하(ST)` 같은 것 — 개수
+    없이)이고, 꼴이 없는 멈춤과 리비전 1 없음은 `-` 다.
+    """
 
     order: int
     imported: str
     source_type: str
     reason: str
+    place: str = "S-"
+    shape: str = NO_SHAPE
 
 
 @dataclass
@@ -977,8 +989,9 @@ class SourceData:
                 f"데이터셋 {len(self.skipped):,}(런북 8-2):"
             )
             lines.extend(
-                f"  - 최근부터 {item.order:,}번째 · 원천 종류 `{item.source_type}` · 적재 "
-                f"{item.imported} — {item.reason}"
+                f"  - 최근부터 {item.order:,}번째 · {item.place} · 원천 종류 "
+                f"`{item.source_type}` · 적재 {item.imported} — {item.reason}"
+                + ("" if item.shape == NO_SHAPE else f" · 꼴 {item.shape}")
                 for item in self.skipped
             )
         return lines
@@ -1012,6 +1025,53 @@ def _dataset_rows(
             [*DERIVED_SOURCE_TYPES, SOURCE_CANDIDATES],
         ).fetchall()
     return [(str(row[0]), str(row[1]), str(row[2]), row[3]) for row in rows]
+
+
+class NumberedRevision(NamedTuple):
+    """리비전 하나의 자리 — 6-3 a 와 같은 시나리오 차례 번호와 리비전 번호, ID 둘."""
+
+    scenario_no: int
+    scenario_id: str
+    dataset_id: str | None
+    revision_id: str
+    revision_no: int
+
+
+def _numbered_revisions(connection: duckdb.DuckDBPyConnection) -> list[NumberedRevision]:
+    """저장된 모든 리비전과 그 시나리오 차례 번호 — 6-3 a 의 `list_revisions` 와 같은 규칙이다.
+
+    시나리오는 만든 차례(같으면 ID 차례)이고 리비전이 없는 시나리오는 번호를 받지 않는다. 같은
+    DB 면 8-2D · 8-12 의 `S<n> r<n>` 이 6-3 a 의 줄과 같다.
+    """
+    numbers: dict[str, int] = {}
+    revisions: list[NumberedRevision] = []
+    for scenario_id, dataset_id, revision_id, revision_no in connection.execute(
+        """
+        SELECT s.scenario_id, d.dataset_id, r.revision_id, r.revision_no
+        FROM app_meta.scenario AS s
+        JOIN app_meta.scenario_revision AS r ON r.scenario_id = s.scenario_id
+        LEFT JOIN app_meta.dataset AS d ON d.scenario_id = s.scenario_id
+        ORDER BY s.created_at, s.scenario_id, r.revision_no
+        """
+    ).fetchall():
+        revisions.append(
+            NumberedRevision(
+                scenario_no=numbers.setdefault(str(scenario_id), len(numbers) + 1),
+                scenario_id=str(scenario_id),
+                dataset_id=None if dataset_id is None else str(dataset_id),
+                revision_id=str(revision_id),
+                revision_no=int(revision_no),
+            )
+        )
+    return revisions
+
+
+def _source_place(numbers: dict[str, int], scenario_id: str, *, revision_one: bool) -> str:
+    """건너뛴 원천의 자리 — `S<n> r1`, 리비전 1 이 없으면 `S<n>`, 번호가 없으면 `S-`."""
+    number = numbers.get(scenario_id)
+    if number is None:
+        return "S-"
+    return f"S{number} r1" if revision_one else f"S{number}"
 
 
 def _revision_one(
@@ -1082,8 +1142,9 @@ def load_source(session: Session) -> SourceData | None:
 
     `--dataset-id` 가 없으면 원천에서 온 데이터셋을 최근 것부터 보아 리비전 1 계산(대당 Capa →
     소요대수)이 서는 첫 것을 고른다 — 서지 않은 것은 건너뛰고 그 차례 · 적재일 · 원천 종류 · 까닭
-    (단계와 예외 종류)을 남긴다. 최근 `SOURCE_CANDIDATES` 개가 모두 서지 않으면 가장 최근 것으로
-    돌아간다(그 계산 실패가 8-2 에 그대로 찍힌다). `--dataset-id` 로 고른 것은 건너뛰지 않는다.
+    (단계와 예외 종류) · 6-3 a 와 같은 자리(`S<n> r1`) · 꼴을 남긴다. 최근 `SOURCE_CANDIDATES` 개가
+    모두 서지 않으면 가장 최근 것으로 돌아간다(그 계산 실패가 8-2 에 그대로 찍힌다).
+    `--dataset-id` 로 고른 것은 건너뛰지 않는다.
     """
     if session._source is not None or session._source_failure is not None:
         return session._source
@@ -1109,13 +1170,28 @@ def load_source(session: Session) -> SourceData | None:
         )
         picked: _Candidate | None = None
         newest: _Candidate | None = None
+        # 6-3 a 와 같은 시나리오 차례 번호 — `--dataset-id` 는 건너뛰지 않아 쓰지 않는다.
+        numbers = (
+            {}
+            if session.dataset_id
+            else {
+                revision.scenario_id: revision.scenario_no
+                for revision in _numbered_revisions(connection)
+            }
+        )
         for order, (dataset_id, scenario_id, source_type, imported_at) in enumerate(rows, 1):
             loaded = _revision_one(connection, scenario_id, dataset_id)
             if loaded is None:
                 if session.dataset_id:
                     break
                 skipped.append(
-                    SkippedSource(order, _imported_day(imported_at), source_type, "리비전 1 없음")
+                    SkippedSource(
+                        order,
+                        _imported_day(imported_at),
+                        source_type,
+                        "리비전 1 없음",
+                        place=_source_place(numbers, scenario_id, revision_one=False),
+                    )
                 )
                 continue
             candidate = _Candidate(
@@ -1131,12 +1207,15 @@ def load_source(session: Session) -> SourceData | None:
                 picked = candidate
                 break
             newest = newest or candidate
+            problem = candidate.required.problem
             skipped.append(
                 SkippedSource(
                     order,
                     _imported_day(imported_at),
                     source_type,
                     f"{candidate.required.step} {candidate.required.failure}",
+                    place=_source_place(numbers, scenario_id, revision_one=True),
+                    shape=NO_SHAPE if problem is None else problem.label,
                 )
             )
         fell_back = picked is None and newest is not None
@@ -1192,7 +1271,10 @@ def load_source(session: Session) -> SourceData | None:
 
 def _source_note(source: SourceData) -> str | None:
     """요약의 8-2D — 더 최근 원천 데이터셋을 건너뛴 때만. 「8-2D 고름 k/N · 건너뜀 n · <차례>번째
-    <까닭> …」, 후보가 모두 서지 않았으면 「건너뜀」 대신 「선 것 없음」."""
+    <까닭> <자리> <꼴> …」, 후보가 모두 서지 않았으면 「건너뜀」 대신 「선 것 없음」.
+
+    자리 · 꼴은 까닭 뒤에 붙인다 — 그 앞은 옛 꼴(`1번째 대당 Capa 실패(ValueError)`) 그대로다.
+    자리는 6-3 a 와 같은 `S<n> r1`(`SkippedSource.place`), 꼴은 개수 없는 꼴 이름이나 `-` 다."""
     if not source.skipped:
         return None
     return _note(
@@ -1201,7 +1283,7 @@ def _source_note(source: SourceData) -> str | None:
         f"선 것 없음 {len(source.skipped) + 1:,}"
         if source.fell_back
         else f"건너뜀 {len(source.skipped):,}",
-        *(f"{item.order:,}번째 {item.reason}" for item in source.skipped),
+        *(f"{item.order:,}번째 {item.reason} {item.place} {item.shape}" for item in source.skipped),
     )
 
 
@@ -2042,23 +2124,30 @@ def _route_category_lines(link: RouteLink, route: pd.DataFrame) -> list[str]:
 @dataclass(frozen=True)
 class Required:
     """리비전 1 로 다시 계산한 `RQ_REQB` 행별 결과. 실패하면 멈춘 단계(`대당 Capa` · `소요대수`)와
-    예외 종류만 남는다."""
+    예외 종류, 기준정보 연결 오류(`ReferenceJoinError`)면 그 꼴(개수 · 컬럼 이름만)이 남는다."""
 
     frame: pd.DataFrame | None
     failure: str | None = None
     step: str = ""
+    problem: ReferenceJoinProblem | None = None
+
+
+def _stopped(step: str, exc: BaseException) -> Required:
+    """멈춘 계산 — 6-3 a(`inspect_revision_calculations._failed`)처럼 꼴은 예외가 든 것만 든다."""
+    problem = exc.problem if isinstance(exc, ReferenceJoinError) else None
+    return Required(frame=None, failure=_failure(exc), step=step, problem=problem)
 
 
 def _calculate_required(tables: dict[str, pd.DataFrame]) -> Required:
-    """대당 Capa → 소요대수. 기준정보 오류면 계산이 멈춘다 — 멈춘 단계와 종류만 적는다."""
+    """대당 Capa → 소요대수. 기준정보 오류면 계산이 멈춘다 — 멈춘 단계와 종류 · 꼴만 적는다."""
     try:
         unit_capacity = _unit_capacity(tables)
     except Exception as exc:  # 문구에는 키 값이 실린다
-        return Required(frame=None, failure=_failure(exc), step="대당 Capa")
+        return _stopped("대당 Capa", exc)
     try:
         return Required(frame=_required_from(tables, unit_capacity))
     except Exception as exc:  # 문구에는 키 값이 실린다
-        return Required(frame=None, failure=_failure(exc), step="소요대수")
+        return _stopped("소요대수", exc)
 
 
 def _wafer_route_tables(cells: RouteCells) -> list[str]:
@@ -4222,28 +4311,16 @@ def _blank_stop_places(
     found = _blank_capacity_cells(connection, scope, "NOT only_dropped")
     if not found:
         return []
-    numbers: dict[str, int] = {}
-    places: list[BlankStopPlace] = []
-    for scenario_id, dataset_id, revision_id, revision_no in connection.execute(
-        """
-        SELECT s.scenario_id, d.dataset_id, r.revision_id, r.revision_no
-        FROM app_meta.scenario AS s
-        JOIN app_meta.scenario_revision AS r ON r.scenario_id = s.scenario_id
-        LEFT JOIN app_meta.dataset AS d ON d.scenario_id = s.scenario_id
-        ORDER BY s.created_at, s.scenario_id, r.revision_no
-        """
-    ).fetchall():
-        scenario_no = numbers.setdefault(str(scenario_id), len(numbers) + 1)
-        if str(revision_id) in found:
-            places.append(
-                BlankStopPlace(
-                    scenario_no=scenario_no,
-                    revision_no=int(revision_no),
-                    revision_id=str(revision_id),
-                    dataset_id=None if dataset_id is None else str(dataset_id),
-                )
-            )
-    return places
+    return [
+        BlankStopPlace(
+            scenario_no=revision.scenario_no,
+            revision_no=revision.revision_no,
+            revision_id=revision.revision_id,
+            dataset_id=revision.dataset_id,
+        )
+        for revision in _numbered_revisions(connection)
+        if revision.revision_id in found
+    ]
 
 
 def _normal_keys(frame: pd.DataFrame, keys: Sequence[str]) -> pd.DataFrame:
