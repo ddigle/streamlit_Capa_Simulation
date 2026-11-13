@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import errno
 import threading
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta, timezone
+from io import FileIO
 from pathlib import Path
 
 import pytest
@@ -237,6 +239,54 @@ def test_any_failure_while_writing_puts_the_lines_back(
     monkeypatch.setattr(spool, "_append", real)
     assert spool.drain() == 1
     assert spool.last_sealed()[0] == 1
+
+
+def test_a_partial_write_on_a_full_disk_is_cut_back_and_no_seq_is_lost(
+    clock: Clock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """디스크가 차 묶음의 앞 40바이트만 적히고 실패해도 — 꼬리를 되잘라 다음 비우기가 같은 순번을
+    온전히 다시 적는다."""
+    recorder.record("session_created", actor="demo.first")
+    assert spool.drain() == 1
+    real = spool._write_all
+
+    def partial(handle: FileIO, payload: bytes) -> None:
+        handle.write(payload[:40])
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(spool, "_write_all", partial)
+    recorder.record("session_created", actor="demo.second")
+    assert spool.drain() == 0
+    monkeypatch.setattr(spool, "_write_all", real)
+    recorder.record("session_created", actor="demo.third")
+    assert spool.drain() == 2
+
+    path = spool.spool_path("2026-11-13", INST, tmp_path)
+    lines = spool.read_lines(path)
+    assert [(line["seq"], line["actor"]) for line in lines] == [
+        (1, "demo.first"),
+        (2, "demo.second"),
+        (3, "demo.third"),
+    ]
+    assert [line["seq"] for line in spool.unshipped_lines(path)] == [1, 2, 3]
+    assert chain.verify(lines) == ()
+
+
+def test_a_tail_left_without_a_newline_does_not_swallow_the_next_line(
+    clock: Clock, tmp_path: Path
+) -> None:
+    """되자르기마저 실패해 반쪽 꼬리가 남은 파일 — 다음 덧붙이기가 줄바꿈부터 적어 새 줄은
+    온전하다."""
+    recorder.record("session_created", actor="demo.first")
+    spool.drain()
+    path = spool.spool_path("2026-11-13", INST, tmp_path)
+    with path.open("ab") as handle:
+        handle.write(b'{"seq":2,"ev":"session_cre')
+    recorder.record("session_created", actor="demo.second")
+
+    assert spool.drain() == 1
+
+    assert [line["actor"] for line in spool.read_lines(path)] == ["demo.first", "demo.second"]
 
 
 def test_the_fingerprint_changes_when_a_file_grows(clock: Clock, tmp_path: Path) -> None:

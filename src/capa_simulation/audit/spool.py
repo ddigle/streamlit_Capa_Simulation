@@ -22,6 +22,7 @@ import os
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
+from io import FileIO
 from pathlib import Path
 from typing import Any, Final
 
@@ -93,12 +94,43 @@ def reset() -> None:
 
 # ------------------------------------------------------------------ 비우기
 def _append(path: Path, lines: list[dict[str, Any]]) -> None:
+    """줄 묶음을 파일 끝에 덧붙이고 fsync 한다(버퍼 없이 — 닫을 때 남은 바이트를 다시 쓰지 않는다).
+
+    쓰다 실패하면(디스크 참 등) 쓰기 전 길이로 되자르고 예외를 올린다 — 반쯤 쓴 꼬리가 다음
+    비우기의 첫 줄과 한 줄로 붙어 그 순번이 영영 읽히지 않는 일을 막는다. 되자르기마저 실패해
+    꼬리가 남았으면 다음 덧붙이기가 줄바꿈부터 적는다(꼬리 한 줄만 읽히지 않는다).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = "".join(chain.dump(line) + "\n" for line in lines).encode("utf-8")
-    with path.open("ab") as handle:
-        handle.write(payload)
-        handle.flush()
-        os.fsync(handle.fileno())
+    with path.open("ab", buffering=0) as handle:
+        start = os.fstat(handle.fileno()).st_size
+        if start and not _ends_with_newline(path, start):
+            payload = b"\n" + payload
+        try:
+            _write_all(handle, payload)
+            os.fsync(handle.fileno())
+        except BaseException:
+            try:
+                handle.truncate(start)
+            except OSError:
+                _LOGGER.exception("감사 스풀의 반쯤 쓴 꼬리를 되자르지 못했습니다.")
+            raise
+
+
+def _write_all(handle: FileIO, payload: bytes) -> None:
+    """버퍼 없는 파일에 바이트를 끝까지 적는다(한 번에 다 적지 못할 수 있다)."""
+    view = memoryview(payload)
+    while view:
+        written = handle.write(view)
+        if not written:
+            raise OSError("감사 스풀에 한 바이트도 적지 못했습니다.")
+        view = view[written:]
+
+
+def _ends_with_newline(path: Path, size: int) -> bool:
+    with path.open("rb") as reader:
+        reader.seek(size - 1)
+        return reader.read(1) == b"\n"
 
 
 def drain() -> int:
