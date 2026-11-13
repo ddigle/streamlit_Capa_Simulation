@@ -215,8 +215,11 @@ def test_a_basetemp_root_inside_a_git_work_tree_is_refused_before_anything_is_ma
     assert run_test_shard.main(["--shard", "1", "--of", "4", "--basetemp-root", str(root)]) == 2
 
     captured = capsys.readouterr()
-    # 사내 동시 실행 줄은 표준 오류 파일의 첫 줄을 옮겨 적는다 — 그 줄이 까닭이다.
-    assert str(tree) in captured.err.splitlines()[0]
+    # 사내 동시 실행 줄은 표준 오류 파일의 첫 줄을 압축본에 옮겨 적는다 — 그 한 줄이 까닭이고,
+    # 사용자 폴더 이름이 든 로컬 경로는 싣지 않는다.
+    [reason] = captured.err.splitlines()
+    assert "git 작업 트리 안" in reason
+    assert "repo" not in reason and str(tmp_path) not in reason
     assert captured.out == ""
     assert not (tree / "e2e").exists()
 
@@ -246,7 +249,7 @@ def test_keeps_its_mark_when_it_fails(tmp_path):
 
 def test_a_shard_ends_with_its_counts_in_its_own_temp_folder(tmp_path: Path) -> None:
     """저장소 `addopts` 와 함께 실제로 돌린다 — 조각마다 「n failed, n passed …」 끝줄로 수를
-    적고, 조각 임시 폴더에는 실패한 시험의 파일만 남는다(보존 정책 `failed`)."""
+    적고, 조각 임시 폴더에는 call 이 실패한 시험의 파일만 남는다(보존 정책 `failed`)."""
     synthetic = tmp_path / "test_synthetic_shard.py"
     synthetic.write_text(SYNTHETIC_TEST, encoding="utf-8")
     basetemp = run_test_shard.shard_basetemp(tmp_path / "roots", 3)
