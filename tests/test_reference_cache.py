@@ -16,7 +16,8 @@ except RuntimeError as exc:
     app = AppTest.from_string(test_script).run()
 
     assert not app.exception
-    assert "활성 DuckDB 시나리오가 없습니다" in app.markdown[0].value
+    assert "공식버전이 없어 불러온 시나리오가 없습니다" in app.markdown[0].value
+    assert "DuckDB" not in app.markdown[0].value
 
 
 def test_activated_duckdb_snapshot_is_the_only_effective_reference() -> None:

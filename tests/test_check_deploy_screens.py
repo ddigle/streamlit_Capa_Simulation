@@ -1622,6 +1622,7 @@ def test_the_narrow_label_widths_straddle_the_label_css_thresholds() -> None:
 
 def test_the_toolbar_labels_cover_the_declared_order() -> None:
     from capa_simulation.components.theme_toggle import (
+        CANON_MARK_ID,
         CHANGES_CHIP_ID,
         PROCESS_CHIP_ID,
         SAMPLE_MARK_ID,
@@ -1629,8 +1630,10 @@ def test_the_toolbar_labels_cover_the_declared_order() -> None:
     )
 
     assert set(screens.TOOLBAR_LABELS) == set(TOOLBAR_BUTTON_ORDER)
-    # 공정 칩 · 합성 샘플 표지 · 변경 칩은 그럴 때만 서서 차례 항목이 세지 않는다.
-    assert screens.TOOLBAR_OPTIONAL == frozenset({PROCESS_CHIP_ID, SAMPLE_MARK_ID, CHANGES_CHIP_ID})
+    # 공정 칩 · 합성 샘플 · 「정본 아님」 표지 · 변경 칩은 그럴 때만 서서 차례 항목이 세지 않는다.
+    assert screens.TOOLBAR_OPTIONAL == frozenset(
+        {PROCESS_CHIP_ID, SAMPLE_MARK_ID, CANON_MARK_ID, CHANGES_CHIP_ID}
+    )
 
 
 def test_the_alert_center_contract_matches_the_app() -> None:
@@ -4755,3 +4758,12 @@ def test_the_new_items_never_write() -> None:
     added = {"upeh_rows", "entry_sections", "upeh_help", "space_zone_fields"}
     assert added <= {item.key for item in ITEMS}
     assert not any(item.writes for item in ITEMS if item.key in added)
+
+
+def test_the_core_page_failure_card_counts_as_an_exception() -> None:
+    """코어 화면 감싸기(`page_failure_card`)는 처리 못 한 오류를 Streamlit 오류 상자 대신 카드로
+    바꾼다 — 화면 확인이 예외를 세는 자리는 그 카드 칸도 센다(놓치면 깨진 화면이 「예외 0」 이
+    된다)."""
+    from capa_simulation.components.page_failure_card import CARD_KEY
+
+    assert f".st-key-{CARD_KEY}" in screens._GAP_EVIDENCE_JS

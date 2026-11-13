@@ -195,31 +195,49 @@ def applied_lob_key(app: AppTest) -> "LobFigureKey":
     return applied
 
 
-def data_error_messages(app: AppTest) -> list[str]:
-    """그 회차에 선 「데이터 Error」 마크의 오류 글 — 자리에는 없고 마크와 한 칸의 표지에 실린다."""
+def data_error_messages(app: AppTest, *, empty: bool = False) -> list[str]:
+    """그 회차에 선 「데이터 Error」 마크의 오류 글 — 자리에는 없고 마크와 한 칸의 표지에 실린다.
+    `empty` 면 마크 대신 선 빈 상태 회색 한 줄(불러온 리비전 없음 — 공식버전 없는 사본)의 글이다."""
     from capa_simulation import alerts
-    from capa_simulation.components.data_error_mark import MARK_CLASS
+    from capa_simulation.components.data_error_mark import EMPTY_CLASS, MARK_CLASS
 
+    place = EMPTY_CLASS if empty else MARK_CLASS
     bodies = [str(element.proto.body) for element in app.get("html")]
     return [
         str(note["full"])
         for body in bodies
-        if MARK_CLASS in body
+        if place in body
         for note in alerts.marker_notes(body)
         if note.get("keep")
     ]
 
 
 def run_phase(app: AppTest, phase: str) -> dict[str, object]:
+    # 실패 기록은 UI 없는 모듈이다 — 카드 모듈(컴포넌트를 등록한다)은 첫 AppTest 회차 뒤에 부른다.
+    from capa_simulation import page_failures
+
+    known = {failure.ref for failure in page_failures.recent_failures()}
     started_at = perf_counter()
     app.run()
     elapsed = perf_counter() - started_at
+    from capa_simulation.components.page_failure_card import HEADLINE
+
     failures = [
         (str(exception.proto.type or "Exception"), str(exception.value))
         for exception in app.exception
     ]
-    failures.extend(("st.error", str(error.value)) for error in app.error)
+    # 처리 못 한 오류는 코어 화면 감싸기가 카드(오류 상자 머리 한 줄)로 바꾼다 — 예외 종류는 이
+    # 프로세스의 실패 기록에서 읽는다(카드 글은 종류를 싣지 않는다).
+    failures.extend(
+        (failure.kind, HEADLINE)
+        for failure in page_failures.recent_failures()
+        if failure.ref not in known
+    )
+    failures.extend(
+        ("st.error", str(error.value)) for error in app.error if error.value != HEADLINE
+    )
     failures.extend(("데이터 Error", message) for message in data_error_messages(app))
+    failures.extend(("빈 상태", message) for message in data_error_messages(app, empty=True))
     if failures:
         raise HomeFailure(phase, failures)
     chart_count = len(app.get("plotly_chart"))

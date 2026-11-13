@@ -1721,7 +1721,10 @@ def test_a_broken_equipment_database_keeps_the_official_section(
     app = _ok(_app((root / "scenario.duckdb", broken)).run())
 
     assert "설비 일정 없음: 설비 DB 오류" in _header(app)
-    assert [note["short"] for note in events(app, "PD-01")] == [DYNAMIC_DB_ERROR_TITLE]
+    # 설비 DB 를 읽지 못한 것은 이 화면에서 풀 수 없다 — 짧은 글 끝이 관리자에게 알리라는 말이다.
+    assert [note["short"] for note in events(app, "PD-01")] == [
+        DYNAMIC_DB_ERROR_TITLE + " — 관리자에게 알려 주세요"
+    ]
     assert data_error_marks(app) == 1
     labels = _label_texts(app)
     assert "① Static 기준" in labels and "② 일정 가용" not in labels

@@ -126,6 +126,7 @@ try:
     from capa_simulation.alerts import POPUP_SECONDS  # noqa: E402
     from capa_simulation.components.theme_toggle import (  # noqa: E402
         ALARM_BUTTON_ID,
+        CANON_MARK_ID,
         CHANGES_CHIP_ID,
         GUIDE_BUTTON_ID,
         PRINT_BUTTON_ID,
@@ -242,6 +243,7 @@ EQUIPMENT_DISCARD_KEY: Final = "equipment_master_discard_v1"
 TOOLBAR_LABELS: Final[dict[str, str]] = {
     PROCESS_CHIP_ID: "공정 칩",
     SAMPLE_MARK_ID: "합성 샘플",
+    CANON_MARK_ID: "정본 아님",
     CHANGES_CHIP_ID: "변경 칩",
     GUIDE_BUTTON_ID: "Guide",
     ALARM_BUTTON_ID: "Alarm",
@@ -249,8 +251,11 @@ TOOLBAR_LABELS: Final[dict[str, str]] = {
     THEME_BUTTON_ID: "테마",
 }
 # 그럴 때만 서는 단추 — 툴바 차례 항목은 늘 서는 단추만 센다(공정 칩은 공용 공정 값이 있을 때, 합성
-# 샘플 표지는 원천 미연결 화면에서 샘플을 켠 동안, 변경 칩은 바뀐 것이 있을 때).
-TOOLBAR_OPTIONAL: Final = frozenset({PROCESS_CHIP_ID, SAMPLE_MARK_ID, CHANGES_CHIP_ID})
+# 샘플 표지는 원천 미연결 화면에서 샘플을 켠 동안, 「정본 아님」 표지는 정본이 아닌 데이터로 뜬
+# 서버에서, 변경 칩은 바뀐 것이 있을 때).
+TOOLBAR_OPTIONAL: Final = frozenset(
+    {PROCESS_CHIP_ID, SAMPLE_MARK_ID, CANON_MARK_ID, CHANGES_CHIP_ID}
+)
 # 알림 칸이 `document.body` 에 붙이는 호스트(`alert_center.js` 의 `HOST_ID` — 열린 shadow root).
 ALERT_HOST_ID: Final = "capa-alert-host"
 # Streamlit 1.63 대화상자 층(`stDialog` z-index — 2026-11-03 사본 실측). 알림창이 이 위여야 한다.
@@ -4335,8 +4340,10 @@ _GAP_EVIDENCE_JS = """({keys, closed, heading}) => {
     closed: !!card && card.innerText.includes(closed),
     matches: !!title && !!heading && words(title.textContent).startsWith(words(heading)),
     rows: grid ? Number(grid.getAttribute("aria-rowcount")) - 1 : null,
-    exceptions: document.querySelectorAll('[data-testid="stMain"] [data-testid="stException"]')
-      .length,
+    exceptions: document.querySelectorAll(
+      '[data-testid="stMain"] [data-testid="stException"], '
+        + '[data-testid="stMain"] .st-key-capa_page_failure'
+    ).length,
   };
 }"""
 _HTML_TAG = re.compile(r"<[^>]+>")

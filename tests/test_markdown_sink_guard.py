@@ -164,6 +164,14 @@ PLAIN_TEXT_BUILDERS: dict[tuple[str, str], str] = {
         "옛 판 흔적 시나리오 한 칸 — 상태 알림 SC-03 전문이다. 알림 칸 JS 가 textContent 로 그린다"
         "(마크다운 자리가 아니다)"
     ),
+    ("src/capa_simulation/components/missing_page.py", "missing_text"): (
+        "없는 화면 주소 알림의 짧은 글 · 전문 — 알림 칸 JS 가 textContent 로 그린다(마크다운 "
+        "자리가 아니다). 이름은 모듈 선언의 이름이다"
+    ),
+    ("src/capa_simulation/components/page_failure_card.py", "render_page_failure_alert"): (
+        "코어 화면 오류 관리자 알림 AD-22 의 짧은 글 · 전문 — 알림 칸 JS 가 textContent 로 그린다"
+        "(마크다운 자리가 아니다). 이름은 화면 탭 이름이다"
+    ),
     ("src/capa_simulation/components/state_alerts.py", "alarm_table_place"): (
         "딸린 표가 있는 알림 전문의 목록 자리 — 알림 칸 JS 가 textContent 로 그린다(마크다운 "
         "자리가 아니다). 이름은 코드의 표 이름 상수다"

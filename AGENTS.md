@@ -1799,7 +1799,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 쪽은 산출 결과가 따로 낸다 — 대당 Capa 제외 `ST-14`(지문 내용 = 건수 + 제외사유별 건수, 딸린 표 = 「제외 기준정보」),
     대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일, 딸린 표 = 「소요대수 제외 기준정보」), PKG 의
     Buffer 밖 행 `ST-21`(알림 — 규칙이라 고칠 것이 없다, 딸린 표 = 「PKG Buffer 밖 행」). 두 사유를 한 알림에 섞지 않는다.
-- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다). `managed` 가 아니면 Streamlit 호출이 없다.
+- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다 — 짧은 글은 누구나 꼴(`SY-02` · `SY-03` 일반 사용자는 「— 관리자에게 알려 주세요」), 관리자 지시 · 런북 · 갈래는 관리자 몫 전문에만, 관리자 줄의 「그 화면으로」 는 Admin Area, `SY-06` 은 관리자 몫에만, 일꾼이 없으면 관리자 전문 끝 `WORKER_ABSENT_LINE`)과 머리 띠 「정본 아님」 표지의 코드(`not_canonical_code` — 9장 「알림 칸」). 펼침 제목 끝은 CI/CD 판정 배지 하나(`CICD_VERDICTS` — 일꾼 판정 제목마다 초록 「CI/CD 눌러도 됨」 · 주황 「기다리세요」 · 빨강 「누르면 저장 잃음」, 복사 글은 평문 낱말 — 2026-11-14 보드 카드 p2-sync). `managed` 가 아니면 Streamlit 호출이 없다.
+- `src/capa_simulation/components/admin_view.py` — 관리자 몫 알림 · 전문을 이 회차에 보일지 한 곳(`admin_notes_visible` — 통합인증이 켜짐이 아니면 누구에게나, 켜짐이면 `sso_identity.viewer_is_admin`). 보이기만 가르고 쓰기 · 관리자 단추의 두 번째 벽은 그 자리 판정 그대로다(2026-11-14 보드 리뷰 반영 「관리자 회차에만 은 꺼진 서버에서 아무도 못 본다」).
 - `src/capa_simulation/components/container_start_check.py` — Admin Area 탭 위 「서버 시작 점검」 펼침. C-DEP CD 시작
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
   — 결과 파일이 아니라 지금 설정에서 `sso_status.sso_start_step` 으로 판정, client id 발급 전의 「건너뜀」 은 정상 + S3 키 · `managed` 가 있는 서버의
@@ -1809,6 +1810,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수(`CD_ONLY_ENVIRONMENT`)가 앱에 있으면 「결과 없음」 펼침으로 스크립트가 돌지 않았거나 결과를 쓰지 못했음을
   알린다(`missing_report_notice`). 파일은 있는데 읽지 못하면(빈 파일·JSON 아님·모르는 꼴 — `report_file_exists`)
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
+  시작 점검 관리자 알림 `AD-01`(`render_start_check_alert` — `app.py` 가 토큰 알림 앞에서 모든 화면 회차에 부른다, 2026-11-14 「앱 대신 뜨는
+  화면」 보드 카드 p2-sync 「AD-01 범위를 넓힘」)은 결과 없음 · 못 읽음 · 실패한 단계(`failed_start_steps` — 토큰 줄은 `AD-10` 몫이라 뺀다)를
+  관리자 몫(`admin_view.admin_notes_visible`)에 조치 알림으로 낸다 — 지문은 (제목, 실패 단계 이름들), 「그 화면으로」 는 Admin Area. 결과 파일도
+  CD 전용 환경변수도 없는 프로세스(`start_check_alert_possible` — 프로세스 동안 그대로)는 Streamlit 호출이 없다. Admin 펼침은 이 알림을 따로
+  내지 않는다.
   BigDataQuery 토큰 실패 관리자 알림 `AD-10`(`render_token_alert` — `app.py` 가 동기화 알림 곁에서 모든 화면 회차에 부른다, 2026-11-12 리뷰
   202611111500 보드 N8 (가))도 여기다 — 결과 파일이 있는 서버(C-DEP)에서만 부르고(없으면 Streamlit 호출 0), 시작 점검 토큰 줄 「실패」 나
   어댑터의 프로세스 표지(`company_bigdataquery_adapter.last_query_failed_on_token` — 조회가 토큰 갈래로 실패하면 서고 조회가 성공하면
@@ -1841,7 +1847,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   짧은 글은 값 + 할 일이고 토큰 · 갱신 토큰 글자 · 길이가 없다. `AD-12` ~ `AD-16` 은 접속 · 작업 기록 갈래 몫이라 비워 둔다.
   시험 `tests/test_bdq_token_admin.py`.
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
-- `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드(모듈·화면 이름, 형식·첫 줄, 끄는 법, import 꼴 안내, 모듈 폴더 안 프레임만). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
+- `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드. 자리에는 누구나 읽는 머리 한 줄(「「<모듈>」 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 · 가드 자리 · 앞 동작이면 그 범위의 말)과 값 줄 「담당 <이름>」 만, 개발자용 정보(형식·첫 줄, import 꼴 안내, 끄는 법, 모듈 폴더 안 프레임만)는 접힌 「담당자용 진단」 안 코드 칸 + 복사 단추다(`DIAGNOSTIC_LABEL` — 복사 key 는 카드마다 새로, 2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-rare). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
+- `src/capa_simulation/components/page_failure_card.py` — 코어 화면 감싸기(`run_core_page` — `app.py` 가 모듈이 아닌 화면의 `navigation.run()` 을 이것으로 부른다, `module_runtime` 과 같은 예외 사다리: 제어 예외 · `KeyboardInterrupt` 는 다시 던지고 `FragmentHandledException` 은 적기만, 그 밖 `BaseException` 은 카드 — 처리한 실패는 둘 다 `st.stop()` 으로 끝내 `app.py` 의 멈춤 길(`finish_stopped`)을 탄다. 정상으로 돌아오면 Streamlit 이 그 회차를 끝까지 돈 것으로 보고 오류 자리 아래에서 이번에 그리지 못한 위젯의 미저장 값을 지운다). 처리 못 한 오류는 Streamlit 기본 오류 상자(경로 · traceback) 대신 그 화면 자리 카드 하나 — 「이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 + 값 줄 「참고 번호 <8자> · <오류 종류>」, 관리자 몫(`admin_view`)에만 접힌 「관리자용 진단」(첫 줄 · 이 저장소 안 프레임 · 복사 — C-DEP 에는 로그가 없다). 실패는 `page_failures` 에 적고 서버 로그에 참고 번호와 원문을 남긴다. 관리자 상태 알림 `AD-22`(`render_page_failure_alert` — `app.py` 가 토큰 알림 곁에서 부른다)는 프로세스 기록에서 낸다 — 오류가 난 탭이 관리자의 탭이 아니어서다. 이벤트 칸 수가 프로세스 동안 같도록 시작 점검 알림 `AD-01` 과 같은 판정(`start_check_alert_possible`)이 참인 서버만 회차마다 한 자리(실패가 없거나 관리자가 아니면 해소)이고 그 밖(개발 · 사내 PC · 시험)은 Streamlit 호출이 없다 — 그 서버는 통합인증이 꺼져 카드의 「관리자용 진단」 이 누구에게나 선다. 지문은 프로세스에서 난 (화면, 종류) 쌍 모두, 건수는 최근 줄 상한과 따로 센다. HOME 의 「그 화면으로」 주소는 빈 글자다. 시험은 `conftest` 가 감싸기를 걷어(`app.py` 를 도는 시험이 실패를 놓치지 않게) 보고, 감싸기 자체는 `@pytest.mark.page_failure_card`(`tests/test_page_failure_card.py`). 화면 확인(`check_deploy_screens` 의 예외 세기)도 이 카드 칸(`CARD_KEY`)을 예외로 센다. 운영 이미지는 감싸지 못한 자리(위젯 콜백 · 프래그먼트만 도는 회차)의 Streamlit 기본 오류 상자에 오류 종류 이름만 싣는다(`docker/Dockerfile-prod` 의 `STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=type` — 보드 d12 (가)).
+- `src/capa_simulation/components/missing_page.py` — 없는 화면 주소(꺼진 · 실패한 모듈 화면 · 옛 주소 · 남이 보낸 링크)로 들어와 HOME 을 도는 회차를 가려 사건 알림 하나(「없는 화면 주소 — HOME 을 열었습니다」, 꺼진 · 실패한 모듈이면 「「<모듈>」 은 꺼져 있습니다 · 담당 <이름>」 — `module_registry.discovered`). 판정은 Streamlit 페이지 관리자가 받은 주소 이름(`intended_page_name`)과 `st.navigation()` 이 고른 주소의 맞댐이고 같은 주소는 세션에 한 번이다. `app.py` 가 이번 화면을 적은 뒤 · 알림 칸 앞에서 부른다. 코드는 등록부 「동작 결과 — 안내」(`FL-02`)이고 영어 「Page not found」 팝업은 감추지 않는다(2026-11-14 보드 카드 p2-rare).
 - `src/capa_simulation/components/exclusion_table.py` — `산출 결과` 의 제외 목록 가운데 표가 커서 알림에 싣지 못한 것(대당
   Capa `제외 기준정보 확인` · 소요대수 탭 목록)을 본문에 그리는 단일 렌더러다(`column_help` — 칸 머리 풍선). 화면은
   표시명 복사본, CSV 는 원본이고,
@@ -2048,8 +2056,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 숫자처럼 보이는 글자 칸(글자로 둔 달 머리 「26.11」 — 숫자로 두면 「26.1」 처럼 끝 0 이 사라진다)은 작성기가 스스로 모아 시트의 「오류 무시」 표지(`ignoredErrors` · `numberStoredAsText` — `pageMargins` 바로 뒤, 이웃 칸은 범위로 묶음)로 덮어 Excel 의 초록 삼각형(「텍스트 형식으로 저장된 숫자」)을 끈다 — 시트를 짓는 쪽은 범위를 넘기지 않고, 숫자 칸 · 숫자로 안 보이는 글자 칸은 덮지 않는다(2026-11-11 사용자 실기 Q2-6). 같은 입력은 같은 바이트다. 작성기가 내는 바이트가 바뀌면 통을 세션에 기억하는 세 판(`process_capa_view.SHEET_SCHEMA_VERSION` · `availability_gap_panel.GAP_SHEET_SCHEMA_VERSION` · `calculation_result.SHEET_SCHEMA_VERSION`)을 함께 올린다 — 올리지 않으면 같은 조건의 옛 통이 세션에서 그대로 나온다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py` — 되읽기는 표준 라이브러리 시험 도우미 `tests/xlsx_read.py`).
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
 - `src/capa_simulation/io/reference_cache.py` — 세션 활성 리비전의 표·공용 표시순서 경계다(5장 1, XLSB 대체 없음). 활성
-  리비전이 없는 읽기는 `NoActiveRevision`(`RuntimeError`)이고, `page_bootstrap.bootstrap_error_message` 가 저장소가 보관본만
-  들었을 때만 `ARCHIVED_ONLY_MESSAGE`(보관함 › 되돌리기)로 가른다 — 그 갈래만 저장소를 읽고 없는 DB 는 만들지 않는다(작은 결정 a8).
+  리비전이 없는 읽기는 `NoActiveRevision`(`RuntimeError`)이고, `page_bootstrap.bootstrap_error_message` 가 저장소를 보고 글 셋
+  (`reference_cache` 의 `NO_OFFICIAL_MESSAGE` · `ARCHIVED_ONLY_MESSAGE`(보관함 › 되돌리기 — 작은 결정 a8) · `NOT_LOADED_MESSAGE`(공식은 있는데
+  이 세션이 안 불러옴))로 가른다(`no_revision_message` — 그 갈래만 저장소를 읽고 없는 DB 는 만들지 않는다). 그 글은 오류가 아니라 빈
+  상태다 — 화면은 「데이터 Error」 마크 대신 회색 한 줄(「공식버전 없음」)을 세운다(`page_bootstrap.empty_state` · `data_error_mark`,
+  2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p1-no-revision).
 - `src/capa_simulation/persistence/` — 시뮬레이션·설비 DuckDB 의 마이그레이션·Repository·캐시를 독립된 모듈·파일로 둔다.
   - 쓰기는 프로세스 잠금 + 단일 트랜잭션, 읽기는 작업별 연결이다. `app.py` 는 rerun 한 번을 `pinned_connections` 의
     게으른 핀으로 감싼다(상시 앵커가 아니다, 9장).
@@ -2697,6 +2708,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   영숫자 꼴, 링크로 데이터 자리 밖을 가리키면 거절, 받기는 임시 파일에서 한 번에 바꿈). 키 · 주소 · 버킷은
   `auth.runtime.config().access_s3`(운영 진입 파일이 환경에서 뺀 뒤에도 남는 한 벌), 모드는 `object_storage.load_settings`.
   모듈 시험 표지(`module_registry.TEST_RUN_ENV_VAR`)면 밖에 닿지 않는다. 까닭 · 로그는 고정 낱말뿐이다.
+- `src/capa_simulation/page_failures.py` — 코어 화면 실패 기록(참고 번호 · 시각 · 화면 이름 · 주소 · 예외 형식 이름 — 본문은 적지 않는다, 최근 20건과 따로 건수 · 난 (화면, 종류) 쌍, 재시작하면 빔). UI 없음. `page_failure_card` 가 적고 `AD-22` 가 읽는다.
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
@@ -4112,9 +4124,11 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/components/alert_center.py` (+ `alert_center_assets/` CSS · JS) — 알림 칸 Components v2. **`app.py`
   에서만 불러온다**(탭 줄과 같은 까닭). 화면 탭 줄 바로 뒤 · 페이지 앞에서 고정 key(`ALERT_CENTER_KEY`)로 매 앱 전체 회차
   그린다. JS 가 `document.body` 에 제 호스트(`#capa-alert-host`, 그림자 DOM — 알림창 · Alarm 패널 · 변경 판 · 시선 끌기
-  테두리 · 공정 판)와 머리 툴바 슬롯에 네 호스트(공정 칩 · 합성 샘플 표지 · 변경 칩 · Alarm 단추)를 세우고 칸 자체는
+  테두리 · 공정 판)와 머리 툴바 슬롯에 다섯 호스트(공정 칩 · 합성 샘플 표지 · 「정본 아님」 표지 · 변경 칩 · Alarm 단추)를 세우고 칸 자체는
   접는다(`_HIDE_STYLE`). 공정 칩은 공용 공정 값(`process_field.header_chip`)이 있을 때만, 합성 샘플 표지는 지금 화면이 원천 미연결
-  화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만 선다(2026-11-09 보드 C1 (라) · T8 — 9장 「알림 칸」). data 는 세션만 읽는다
+  화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만, 「정본 아님」 표지는 정본이 아닌 데이터로 뜬 서버(`SY-05` · `SY-01` —
+  `app.py` 가 `object_sync_status.not_canonical_code()` 를 `canon=` 으로 넘긴다)에서만 선다(2026-11-09 보드 C1 (라) · T8, 2026-11-14 「앱 대신
+  뜨는 화면」 보드 d13 (가) — 9장 「알림 칸」). data 는 세션만 읽는다
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
   `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」). 패널은
   브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id · 앞 부트 표지는
@@ -4167,8 +4181,17 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   글(까닭 · 예시 행 · 고칠 곳)은 자리에 없고 알림창(같은 글이면 이 탭에 한 번) · `Alarm` 줄(전문 · 로그 · 복사)에만 있다. `goto` 는 채울 입력이 다른 화면에 있을 때
   그 화면의 (이름, 주소) 또는 (이름, 주소, 표 · 탭)이다 — `data_error_note` 가 셋째 칸을 `tab` 으로 풀어 줄의 화면 칸이 「화면 › 표」
   이고 「그 화면으로」 가 그 표까지 연다(`calculation_stop_notice` 는 고칠 칸이 든 표 이름을 싣는다 — 모듈수는 화면 없음). 줄의 화면 칸과 「그 화면으로」 가 그 화면이다(`alerts.state` 의 `goto` 와 같다, 표 없이 알림만 내는 산출 결과의 `state_alerts.alert_page_error` 도 받는다). `render_data_error_mark()`
-  는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) · `alert_marks.place_errors`(오류 없이
-  그렸다).
+  는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과 — 글을 넘기면 빈 상태를 가른다). **빈 상태** — 받은 글에 불러온 리비전 없음의 글 셋 가운데
+  하나가 들었으면(화면이 머리를 붙였어도 — `page_bootstrap.empty_state`) 마크 대신 회색 한 줄(`EMPTY_CLASS` — 「공식버전 없음」 · 「불러올
+  시나리오 없음 · 보관본만」 · 「불러온 시나리오 없음」)이고, 알림은 그 화면 코드의 **확인 단계** 사건 알림(「공식버전 없음 — 시나리오 관리에서
+  발행」 · `goto` 시나리오 관리 › Capa 시나리오, 계기 `EMPTY_CAUSE`)이다. 상태 알림 `SC-01` 을 다시 쓰지 않는 것은 계산 화면이 정상 회차에 해소를
+  낼 자리가 없어 발행 뒤에도 그 줄이 「지금도 있음」 으로 남기 때문이다. **짧은 글 꼴** — 사람이 고칠 수 없는 DB 실패(다른 프로그램의 잠금 · 쓰기 실패 ·
+  열기 실패 · 그 밖의 DB 실패 — `bootstrap_error_message` 의 첫 문단 상수 `HELD_LEAD` 등)는 짧은 글 끝이 「— 관리자에게 알려 주세요」(부르는 쪽이
+  준 짧은 글에도 붙는다 — `screen_error_short`), 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다. 그 DB 실패의 전문(파일 경로 · 파일을 연 프로세스
+  번호 · 원문 줄)은 관리자 몫(`admin_view.admin_notes_visible`)에만 싣고 그 밖에는 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」 만이다
+  (`screen_error_public`). 고칠 곳을 주지 않은 경로 · 계획 표 빈 리비전은
+  「그 화면으로」 가 시나리오 관리 「DB 등록」 이다(`screen_error_goto`). 시험: `tests/test_data_error_mark.py`(꼴 · 자리 그물) ·
+  `tests/test_no_revision_pages.py`(공식버전 없는 저장소로 모든 화면 — 마크 없음 · 확인 알림) · `alert_marks.place_errors`(오류 없이 그렸다).
 - `src/capa_simulation/components/change_summary.py` — 머리 변경 칩(D5 (가))의 「이 세션의 변경」 목록. 탭 줄 주황 점과 같은
   세션 판정(`pending_edit_pages` · 설비 편집본 · FAB 배치 대기 · Space 층 사용 초안 · 작은 편집표 · Past Data · 시나리오 관리 표
   초안)에 시나리오 미저장(`has_unsaved_scenario_changes`) · 설비 가정(`remembered_equipment_label` 의 공식 시나리오 아님) · UPEH
@@ -7556,6 +7579,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
 - **합성 샘플 표지**(보드 T8)는 지금 화면이 원천 미연결 화면(`PageSpec.pending_source`)이고 「샘플 데이터」 가 켜졌을 때만 공정
   칩 오른쪽에 선다(`alert_center.shows_sample_mark` — `sample_data.sample_switch_on` 을 읽기만). 변경 칩(주황 면 알약)과 갈리게
   점선 네모 · 주황 글 · 플라스크이고 누르는 것이 없다(풍선 「합성 샘플 — 실적이 아님 · 사이드바 「샘플 데이터」 로 끔」).
+- **「정본 아님」 표지**(2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) · 카드 p1-not-canonical)는 정본이 아닌 데이터로 뜬 서버 —
+  버킷의 정본을 받지 않음(`SY-05`)과 동기화 꺼짐(`SY-01`) — 에서 모든 화면 · 모든 사용자에게 합성 샘플 표지 오른쪽에 늘 선다(여기
+  저장한 것은 다음 배포에 사라진다 — 알림창을 놓쳐도 보이게, 설계 규칙 UI-LAY-04 · UI-LAY-13 — 본문 위가 아니라 머리 띠). 오류 색
+  실선 네모 · 옅은 면 · 구름 끊김 아이콘이고, 누르면 Alarm 패널을 거르기 없이 열고 그 코드의 줄로 굴려 잠깐 빛낸다(`openAlarmAt` —
+  파이썬 회차 없음). 멈춤 화면(통합인증)은 다른 툴바 단추와 함께 감춘다. 저장은 막지 않는다(2026-11-07 결정 그대로). 같은 알림의
+  짧은 글은 누구나 읽는 꼴(「정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다」 · 「저장이 정본에 올라가지 않습니다」)이고
+  환경변수 칸 · CI/CD · 설정 파일 지시는 관리자 몫 전문에만 싣는다(`components/admin_view.admin_notes_visible` — 통합인증이 꺼진
+  서버는 누구에게나). 정본 점검을 못 한 서버(`SY-06`)는 관리자 몫에만 선다.
 
 ### 팝업과 콜백
 
@@ -8455,7 +8486,7 @@ Admin)은 그 결과 파일만 읽는다. 커밋되는
   실패는 처음과 회복 때만 남긴다(주기마다 쌓지 않는다).
 - **DB 가 코드보다 새 것이면 막지 않고 알린다.** 적용된 마이그레이션 최고 번호가 코드보다 높으면(옛 배포 ZIP 으로 되돌린
   상태) 앱은 그대로 뜨고 상태 알림(`GL-02` · `GL-06` — 알림창 · Alarm)만 낸다(`MigrationOutcome.schema_ahead`) — 막으면 DB 를 복원하기 전에는 되돌릴
-  수 없다. 운영 서버 `managed` 의 시작 받기는 다른 층이다 — 받은 DB 판이 코드보다 새로우면 그 앱을 띄우지 않는다(`schema_newer` — 2026-11-07 통합 검수 C2 확정, `docs/objectstore_setup.md` 8장).
+  수 없다. 전문은 그 상태에서 저장하면 새 판이 더한 칸이 빠진 채 저장된다는 것을 미리 말한다(`schema_ahead_message` — 2026-11-14 보드 카드 p2-sync). 운영 서버 `managed` 의 시작 받기는 다른 층이다 — 받은 DB 판이 코드보다 새로우면 그 앱을 띄우지 않는다(`schema_newer` — 2026-11-07 통합 검수 C2 확정, `docs/objectstore_setup.md` 8장).
 - **설비 `0027` 을 실은 배포부터 옛 배포 ZIP 으로 되돌리지 않는다**(사내 런북 4-2 끝) — 새 판에서 한 번이라도 저장한 뒤의
   옛 판은 설비 마스터를 빈 표로 읽는다(첫 저장이 계약 v4 공통이라). 옛 판에서 저장한 흔적(경계 뒤 계약 v3 공통)이 있으면
   새 판이 설비 마스터 저장을 막고(`EquipmentLegacyTraceError`) 설비 화면이 상태 알림 `SB-19` 를 낸다. 빠져나가는 길은 백업

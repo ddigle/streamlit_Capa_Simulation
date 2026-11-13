@@ -128,16 +128,23 @@ def test_a_plain_local_app_has_no_worker_or_alert_chance() -> None:
 @pytest.mark.parametrize(
     ("values", "title"),
     [
-        ({}, "DB 동기화 · 올릴 것 없음"),
-        ({"dirty": {"simulation": True}}, "DB 동기화 · 올릴 것 있음"),
-        ({"phase": object_sync_worker.PHASE_UPLOADING}, "DB 동기화 · 올리는 중"),
-        ({"failures": 3, "failure_kind": "denied"}, "DB 동기화 · 실패"),
-        ({"blocked": "parent_moved"}, "DB 동기화 · 멈춤"),
+        ({}, "DB 동기화 · 올릴 것 없음 :green-badge[CI/CD 눌러도 됨]"),
+        ({"dirty": {"simulation": True}}, "DB 동기화 · 올릴 것 있음 :orange-badge[기다리세요]"),
+        (
+            {"phase": object_sync_worker.PHASE_UPLOADING},
+            "DB 동기화 · 올리는 중 :orange-badge[기다리세요]",
+        ),
+        (
+            {"failures": 3, "failure_kind": "denied"},
+            "DB 동기화 · 실패 :red-badge[누르면 저장 잃음]",
+        ),
+        ({"blocked": "parent_moved"}, "DB 동기화 · 멈춤 :red-badge[누르면 저장 잃음]"),
     ],
 )
 def test_the_title_is_the_verdict(
     monkeypatch: pytest.MonkeyPatch, values: dict[str, object], title: str
 ) -> None:
+    """펼침 제목 끝에 지금 CI/CD 를 눌러도 되는지 판정 배지 하나(색 + 낱말 — 카드 p2-sync)."""
     _boot(monkeypatch, managed=True)
     _admin(monkeypatch, admin=False)
     _worker(monkeypatch, **values)
@@ -146,6 +153,18 @@ def test_the_title_is_the_verdict(
 
     assert not list(app.exception)
     assert _labels(app) == [title]
+
+
+def test_every_health_title_has_a_cicd_verdict() -> None:
+    """일꾼 판정 제목마다 CI/CD 판정이 있다 — 새 제목을 더하면 여기서 걸린다."""
+    titles = {
+        object_sync_worker.TITLE_CLEAN,
+        object_sync_worker.TITLE_DIRTY,
+        object_sync_worker.TITLE_UPLOADING,
+        object_sync_worker.TITLE_FAILED,
+        object_sync_worker.TITLE_BLOCKED,
+    }
+    assert set(object_sync_status.CICD_VERDICTS) == titles
 
 
 def test_lines_carry_labels_and_numbers_only(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,7 +227,7 @@ def test_a_missing_worker_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
 
     app = AppTest.from_string(PANEL).run()
 
-    assert _labels(app) == ["DB 동기화 · 실패"]
+    assert _labels(app) == ["DB 동기화 · 실패 :red-badge[누르면 저장 잃음]"]
     assert "동기화 일꾼이 돌지 않음" in _text(app)
 
 
@@ -513,3 +532,128 @@ def test_a_stale_button_of_someone_who_lost_the_right_does_not_upload(
 
     assert not list(app.exception)
     assert handle.requests == 0
+
+
+def _view(monkeypatch: pytest.MonkeyPatch, *, admin: bool) -> None:
+    """관리자 몫 보기(`admin_view.admin_notes_visible`)를 바꿔 끼운다."""
+    monkeypatch.setattr(object_sync_status, "admin_notes_visible", lambda: admin)
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_a_server_that_skipped_the_canon_says_so_in_plain_words(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """`SY-05` 짧은 글은 누구나 읽는 꼴이고, 환경변수 칸 · CI/CD 지시는 관리자 몫 전문에만 있다(카드
+    p1-not-canonical)."""
+    _boot(monkeypatch, head_ignored=True)
+    _view(monkeypatch, admin=admin)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-05")
+    assert note is not None
+    assert note["short"] == "정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라집니다"
+    assert ("CAPA_S3_SYNC_MODE" in str(note["full"])) is admin
+    assert ("관리자에게 알려 주세요" in str(note["full"])) is not admin
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_a_broken_setting_says_saves_do_not_reach_the_canon(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """`SY-01` 짧은 글은 「저장이 정본에 올라가지 않습니다」 하나이고 설정 파일 이름은 관리자
+    몫에만."""
+    _boot(monkeypatch, disabled_reason="CAPA_S3_SYNC_MODE 는 local 또는 managed 여야 합니다")
+    _view(monkeypatch, admin=admin)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-01")
+    assert note is not None
+    assert note["short"] == "저장이 정본에 올라가지 않습니다"
+    assert ("config/object_storage.json" in str(note["full"])) is admin
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_an_unchecked_canon_is_for_the_admin_only(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """정본 점검을 못 한 서버(`SY-06`)는 일반 사용자가 할 일이 없어 관리자 몫에만 선다. 관리자가
+    아닌 회차도 같은 수의 표지를 쓴다(조건만 거짓)."""
+    _boot(monkeypatch, head_unchecked=("CAPA_S3_PROFILE",))
+    _view(monkeypatch, admin=admin)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    assert (active_state(app, "SY-06") is not None) is admin
+    assert len([note for note in alert_notes(app) if note["code"] in SY_CODES]) == 6
+
+
+@pytest.mark.parametrize(
+    ("boot", "code"),
+    [
+        ({"head_ignored": True}, "SY-05"),
+        ({"disabled_reason": "꼴이 틀림", "head_ignored": True}, "SY-05"),
+        ({"disabled_reason": "꼴이 틀림"}, "SY-01"),
+        ({"head_unchecked": ("CAPA_S3_PROFILE",)}, None),
+        ({"managed": True}, None),
+        ({}, None),
+    ],
+)
+def test_the_head_mark_names_the_code_of_a_server_off_the_canon(
+    monkeypatch: pytest.MonkeyPatch, boot: dict[str, object], code: str | None
+) -> None:
+    """머리 띠 「정본 아님」 표지는 정본을 받지 않은 서버(`SY-05`)와 동기화가 꺼진 서버(`SY-01`)에만
+    선다 — 점검을 못 한 서버(`SY-06`)는 정본이 아닌지 모른다."""
+    _boot(monkeypatch, **boot)  # type: ignore[arg-type]
+
+    assert object_sync_status.not_canonical_code() == code
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """`SY-02` · `SY-03` 짧은 글은 일반 사용자에게 「— 관리자에게 알려 주세요」 이고, 관리자 몫은
+    갈래 · 런북 · 「그 화면으로」 Admin 「DB 동기화」 다. 일꾼이 서지 않은 서버의 관리자 전문에는
+    CI/CD 를 누르면 저장이 사라진다는 한 줄이 붙는다(카드 p2-sync)."""
+    _boot(monkeypatch, managed=True)
+    _view(monkeypatch, admin=admin)
+    monkeypatch.setattr(object_sync_worker, "current_status", lambda: None)
+
+    app = AppTest.from_string(ALERTS).run()
+
+    overdue = active_state(app, "SY-02")
+    assert overdue is not None
+    if admin:
+        assert overdue["short"] == "저장이 정본에 올라가지 못함 — 동기화 일꾼이 돌지 않음"
+        assert str(overdue["full"]).endswith(object_sync_status.WORKER_ABSENT_LINE)
+        assert overdue["href"] == "admin_area"
+    else:
+        assert overdue["short"] == "저장이 정본에 올라가지 못함 — 관리자에게 알려 주세요"
+        assert "Admin" not in str(overdue["full"]) and "CI/CD" not in str(overdue["full"])
+        assert overdue.get("href", "") != "admin_area"
+
+    handle = _worker(monkeypatch, blocked="forked")
+    app.run()
+    blocked = active_state(app, "SY-03")
+    assert blocked is not None and handle is not None
+    if admin:
+        assert blocked["short"] == "올리기가 멈춤 — 원격이 갈라짐"
+        assert "런북" in str(blocked["full"])
+    else:
+        assert blocked["short"] == "올리기가 멈춤 — 관리자에게 알려 주세요"
+        assert "런북" not in str(blocked["full"])
+
+
+def test_a_handed_over_copy_says_how_to_get_fresh_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """정본을 넘긴 사본(`SY-04`)의 전문은 최신 데이터를 보려면 사본을 다시 받으라고 끝난다 — 할
+    일은 런북을 가리키고 스크립트 이름은 싣지 않는다(카드 p2-sync 글 그대로)."""
+    _boot(monkeypatch, handed_over_utc="2026-11-07T00:00:00Z")
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-04")
+    assert note is not None
+    assert str(note["full"]).endswith("최신 데이터를 보려면 사본을 다시 받습니다(런북).")
+    assert "sync_object_storage" not in str(note["full"])

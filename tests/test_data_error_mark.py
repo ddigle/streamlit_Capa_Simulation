@@ -16,7 +16,9 @@ from __future__ import annotations
 import ast
 import re
 from collections import Counter
+from pathlib import Path
 
+import duckdb
 import pytest
 from alert_marks import alert_notes, data_error_marks, data_error_texts, events
 from source_sites import (
@@ -30,12 +32,16 @@ from source_sites import (
 )
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation import alerts
+from capa_simulation import alerts, page_bootstrap
+from capa_simulation.components import admin_view
 from capa_simulation.components.data_error_mark import (
+    EMPTY_CAUSE,
+    EMPTY_CLASS,
     MARK_CLASS,
     MARK_LABEL,
     MARK_NEXT,
     data_error_mark_html,
+    data_error_note,
 )
 from capa_simulation.design import theme, tokens
 
@@ -54,8 +60,11 @@ PRESSED = "누른 동작의 실패 — 저장 · 적용 · 불러오기 단추 �
 NO_ALARM = "앱이 서지 못해 알림 칸이 없는 멈춤(UI-NTF-08 예외)"
 CHECK_BOARD = "판 자체 — 점검 화면의 결론 상자"
 MODULE_CARD = "모듈 오류 카드(UI-NTF-08 예외)"
+CORE_CARD = "코어 화면의 처리 못 한 오류 카드 — 참고 번호(UI-NTF-08 예외)"
 ALERT_PATH = "알림 길 — 눌린 회차의 곁 칸(`flash`, 곁 오류의 공통 그리기)"
-ERROR_REASONS = frozenset({BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, ALERT_PATH})
+ERROR_REASONS = frozenset(
+    {BESIDE, PRESSED, NO_ALARM, CHECK_BOARD, MODULE_CARD, CORE_CARD, ALERT_PATH}
+)
 # (파일, 맨 바깥 함수) → (`.error(` 수, 까닭). 새 자리는 실패한다 — 그리기 실패면
 # `render_data_error`, 곁 거부 · 누른 동작의 실패면 까닭과 함께 여기에 둔다.
 PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
@@ -159,6 +168,7 @@ PLACE_ERROR_SITES: dict[tuple[str, str], tuple[int, str]] = {
         1,
         MODULE_CARD,
     ),
+    ("src/capa_simulation/components/page_failure_card.py", "render_page_failure"): (1, CORE_CARD),
     ("src/capa_simulation/components/past_data_management.py", "_render_save"): (1, PRESSED),
     ("src/capa_simulation/components/process_rename_management.py", "_render_direct_editor"): (
         3,
@@ -245,6 +255,107 @@ def test_a_mark_whose_input_lives_on_another_screen_sends_the_alarm_there() -> N
     (note,) = alert_notes(app)
     assert (note["page"], note["href"]) == ("표준 목표", "standard_target_capa")
     assert note["keep"] is True
+
+
+def test_a_missing_official_is_a_grey_line_and_a_check_alert_to_the_scenario_screen() -> None:
+    """불러온 리비전이 없는 빈 상태는 마크가 아니라 회색 한 줄이고, 알림은 확인 단계 · 「그
+    화면으로」 시나리오 관리 › Capa 시나리오다 — 화면이 머리를 붙였어도 같다(카드
+    p1-no-revision)."""
+    script = PAGE.replace(
+        'st.session_state.get(\n    "message",',
+        'st.session_state.get(\n    "message_unused",',
+    )
+    script = script.replace(
+        "render_data_error(message,",
+        "from capa_simulation.page_bootstrap import NO_OFFICIAL_MESSAGE\n"
+        "render_data_error('기준정보를 불러오지 못했습니다: ' + NO_OFFICIAL_MESSAGE,",
+    )
+    assert script != PAGE
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert data_error_marks(app) == 0
+    bodies = [str(element.proto.body) for element in app._tree.get("html")]
+    assert any(EMPTY_CLASS in body and "공식버전 없음" in body for body in bodies)
+    (note,) = alert_notes(app)
+    assert (note["code"], note["level"], note["kind"]) == ("ST-20", "check", "event")
+    assert note["short"] == "공식버전 없음 — 시나리오 관리에서 발행"
+    assert (note["page"], note["href"], note["tab"]) == (
+        "시나리오 관리",
+        "scenario_management",
+        "Capa 시나리오",
+    )
+    assert note["cause"] == EMPTY_CAUSE
+
+
+@pytest.mark.parametrize(
+    ("lead", "short"),
+    [
+        (page_bootstrap.HELD_LEAD, "데이터베이스를 열지 못함(다른 프로그램이 엶)"),
+        (page_bootstrap.WRITE_FAILED_LEAD, "데이터베이스에 쓰지 못함"),
+        (page_bootstrap.DB_FAILED_LEAD, "데이터베이스 작업 실패"),
+        (page_bootstrap.OPEN_FAILED_LEAD, "데이터베이스를 열지 못함"),
+    ],
+)
+def test_a_failure_nobody_on_the_screen_can_fix_ends_with_tell_the_admin(
+    lead: str, short: str
+) -> None:
+    """사람이 고칠 수 없는 DB 실패는 알림 짧은 글 끝이 「— 관리자에게 알려 주세요」 다 — 화면이
+    머리를 붙여도, 짧은 글을 따로 줘도 같다. 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다."""
+    message = f"설비 현황을 준비하지 못했습니다. {lead}\n\n- 파일: `x.duckdb`"
+    note = data_error_note(message, code="EQ-09")
+    assert note["short"] == short + page_bootstrap.ADMIN_TAIL
+    given = data_error_note(message, code="EQ-09", text="설비 현황을 준비하지 못했습니다")
+    assert given["short"] == "설비 현황을 준비하지 못했습니다" + page_bootstrap.ADMIN_TAIL
+    own = (
+        "데이터베이스를 열지 못했습니다 — 이 앱이 같은 파일을 정리하는 동안 연결이 겹쳤습니다."
+        "\n\n- 파일: `x.duckdb`"
+    )
+    assert page_bootstrap.ADMIN_TAIL not in data_error_note(own, code="EQ-09")["short"]
+
+
+@pytest.mark.parametrize("admin", [True, False], ids=["admin", "user"])
+def test_a_db_failure_shows_paths_and_process_only_to_the_admin(
+    monkeypatch: pytest.MonkeyPatch, admin: bool
+) -> None:
+    """사람이 고칠 수 없는 DB 실패의 전문(파일 경로 · 파일을 연 프로세스 번호 · 원문 줄)은 관리자
+    몫에만 — 그 밖의 Alarm 줄 · 로그 · 복사 글은 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」
+    만이다. 짧은 글은 둘 다 같다."""
+    monkeypatch.setattr(admin_view, "admin_notes_visible", lambda: admin)
+    message = "설비 현황을 준비하지 못했습니다. " + page_bootstrap.bootstrap_error_message(
+        duckdb.IOException(
+            'Could not set lock on file "/srv/DEMO/x.duckdb": Conflicting lock is held in '
+            "/usr/bin/python3 (PID 4242) by user demo."
+        ),
+        database_paths=(Path("/srv/DEMO/x.duckdb"),),
+    )
+
+    note = data_error_note(message, code="EQ-09")
+
+    assert (
+        note["short"] == "데이터베이스를 열지 못함(다른 프로그램이 엶)" + page_bootstrap.ADMIN_TAIL
+    )
+    hidden = ("/srv/DEMO", "4242", "DuckDB")
+    if admin:
+        assert all(word in note["full"] for word in hidden)
+        return
+    assert not any(word in note["full"] for word in hidden)
+    assert note["full"] == alerts.plain_text(
+        f"설비 현황을 준비하지 못했습니다. {page_bootstrap.HELD_LEAD}\n\n관리자에게 알려 주세요."
+    )
+
+
+def test_an_empty_source_table_points_at_the_registration_tab() -> None:
+    """경로 · 계획 표가 빈 리비전은 원천을 고쳐 다시 등록해야 풀린다 — 화면이 고칠 곳을 주지 않아도
+    「그 화면으로」 가 시나리오 관리 「DB 등록」 을 연다."""
+    note = data_error_note(
+        "「STEP 구성」 표가 비어 계산이 멈춥니다 — 원천을 고쳐 다시 등록하세요.", code="HM-01"
+    )
+    assert (note["page"], note["href"], note["tab"]) == (
+        "시나리오 관리",
+        "scenario_management",
+        "DB 등록",
+    )
+    assert note["level"] == "error"
 
 
 def test_the_mark_shows_only_its_two_words() -> None:

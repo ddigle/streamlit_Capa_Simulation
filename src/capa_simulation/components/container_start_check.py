@@ -22,6 +22,14 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 1시간 전 관리자 알림 `AD-11` 은 `bdq_token_admin` 이 짓는다(이 펼침과 아래 `render_token_alert` 가
 부른다).
 
+**시작 점검 관리자 알림(`AD-01`)** — 결과 파일이 없거나(CD 서버로 보일 때) 읽지 못했거나, 읽었는데
+실패한 단계가 있으면(토큰 줄은 `AD-10` 몫이라 뺀다) 관리자 몫의 모든 화면 회차에 상태 알림으로 낸다
+(`render_start_check_alert` — `app.py` 가 토큰 알림 곁에서 부른다, 2026-11-14 「앱 대신 뜨는 화면」
+보드 카드 p2-sync 「AD-01 범위를 넓힘」). 키만 넣은 서버나 local 서버의 버킷 연결 실패가 펼침
+제목으로만 드러나던 틈을 메운다. 「그 화면으로」 는 Admin Area(이 펼침)다. 알릴 일이 있을 수 없는
+프로세스(결과 파일도 CD 전용 환경변수도 없음 — 프로세스 동안 그대로다)는 Streamlit 호출이 없다.
+Admin 펼침은 이 알림을 따로 내지 않는다.
+
 **토큰 실패 관리자 알림(`AD-10`)** — 결과 파일이 있는 서버(C-DEP)에서 BigDataQuery 조회가 토큰
 갈래로 실패했거나(`company_bigdataquery_adapter.last_query_failed_on_token` — 프로세스의 마지막
 판정) 시작 점검 토큰 줄이 「실패」 면 관리자의 모든 화면 회차에 상태 알림으로 낸다
@@ -43,6 +51,7 @@ from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation import alerts
 from capa_simulation.components import sso_identity
+from capa_simulation.components.admin_view import admin_notes_visible
 from capa_simulation.components.bdq_token_admin import (
     ENVIRONMENT_FIX,
     INSTALL_FIX,
@@ -307,7 +316,6 @@ def render_container_start_check() -> None:
     if report is None:
         _render_missing_report()
         return
-    _report_missing(None)
     title = f"서버 시작 점검 · {report_verdict(report)}"
     # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
     # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다). 다섯째 줄
@@ -336,34 +344,99 @@ def render_container_start_check() -> None:
 
 def _render_missing_report() -> None:
     """결과를 못 읽은 회차 — 파일이 있으면 「결과 파일을 읽지 못함」(꼴이 다름), 없으면 CD 서버로
-    보일 때만 「결과 없음」. 펼침 제목이 판정이고 본문은 까닭 캡션이다 — 알릴 조건은 상태
-    알림(`AD-01`)으로도 낸다(알림창 · Alarm)."""
-    if report_file_exists():
-        title, notice = "서버 시작 점검 · 결과 파일을 읽지 못함", UNREADABLE_REPORT_NOTICE
-        _report_missing(title, UNREADABLE_REPORT_DETAIL)
-    else:
-        missing = missing_report_notice()
-        if missing is None:
-            _report_missing(None)
-            return
-        title, notice = "서버 시작 점검 · 결과 없음", missing
-        _report_missing(title, missing_report_detail(missing))
+    보일 때만 「결과 없음」. 펼침 제목이 판정이고 본문은 까닭 캡션이다 — 알릴 조건은 관리자 몫 상태
+    알림(`AD-01` — `render_start_check_alert`)이 낸다(알림창 · Alarm)."""
+    problem = _missing_problem()
+    if problem is None:
+        return
+    title, notice, _ = problem
     # 넣을 환경변수와 이때 볼 것은 Guide 「서버 시작 점검」 이 안내 문서 절을 가리킨다(UI-TXT-03).
     with remembered_expander(title, icon=":material/rocket_launch:", key=EXPANDER_KEY):
         render_diagnostic_copy(diagnostic_text(title, plain_lines([notice])), key=COPY_KEY)
         st.caption(notice)
 
 
-def _report_missing(title: str | None, detail: str = "") -> None:
-    """서버 시작 점검 결과를 못 읽었는지 상태 알림(`AD-01`). 읽었거나 CD 서버가 아니면 해소다 —
-    Admin 회차마다 한 번 부른다(이벤트 칸 한 자리)."""
+def _missing_problem() -> tuple[str, str, str] | None:
+    """결과를 못 읽은 서버의 (펼침 제목, 펼침 캡션, 알림 전문). 알릴 일이 아니면 None."""
+    if report_file_exists():
+        return (
+            "서버 시작 점검 · 결과 파일을 읽지 못함",
+            UNREADABLE_REPORT_NOTICE,
+            UNREADABLE_REPORT_DETAIL,
+        )
+    missing = missing_report_notice()
+    if missing is None:
+        return None
+    return "서버 시작 점검 · 결과 없음", missing, missing_report_detail(missing)
+
+
+START_CHECK_ALERT_CODE = "AD-01"
+
+
+def failed_start_steps(report: ContainerStartReport) -> list[tuple[str, str]]:
+    """실패한 시작 점검 단계의 (이름, 까닭) — 시작 단계 뒤 동기화 단계 차례. 로그인 토큰 줄은
+    토큰 알림(`AD-10`) 몫이라 뺀다. 까닭은 시작 스크립트가 값을 가린 글이다."""
+    failed = [
+        (STEP_LABELS[step], report.steps[step].reason)
+        for step in STEPS
+        if step != STEP_TOKEN and report.steps[step].status == STATUS_FAILED
+    ]
+    if report.sync is not None:
+        steps = report.sync.steps
+        failed += [
+            (SYNC_STEP_LABELS[name], steps[name].reason)
+            for name in SYNC_STEPS
+            if name in steps and steps[name].status == STATUS_FAILED
+        ]
+    return failed
+
+
+def start_check_alert_possible() -> bool:
+    """`AD-01` 을 낼 일이 있을 수 있는 프로세스인가 — 결과 파일이 있거나 CD 전용 환경변수가 앱에
+    들어왔다. 둘 다 시작 스크립트 · 실행 환경이 정해 프로세스 동안 그대로라 이벤트 칸 수가 회차마다
+    같다."""
+    return report_file_exists() or missing_report_notice() is not None
+
+
+def render_start_check_alert() -> None:
+    """서버 시작 점검 관리자 알림(`AD-01`) — `app.py` 가 회차마다 조건 없이 부른다(모듈 설명).
+
+    관리자가 아닌 회차는 해소로 부른다(같은 수의 표지 — 통합인증이 꺼진 서버는 누구에게나 —
+    `admin_view`). 지문은 (제목, 실패 단계 이름들)이다 — 까닭 글이 바뀌어도 같은 단계면 다시 뜨지
+    않는다."""
+    if not start_check_alert_possible():
+        return
+    report = read_container_start_report()
+    text: str | None = None
+    full: str | None = None
+    content: object = None
+    if report is None:
+        problem = _missing_problem()
+        if problem is not None:
+            title, _, detail = problem
+            text = f"{title} — 배포 서버 환경변수를 확인하세요"
+            full = alerts.plain_text(detail)
+            content = title
+    else:
+        failed = failed_start_steps(report)
+        if failed:
+            names = " · ".join(name for name, _ in failed)
+            text = f"서버 시작 점검 실패 — {names}"
+            reasons = " · ".join(f"{name}: {reason}" for name, reason in failed)
+            full = (
+                f"서버 시작 점검에 실패한 단계가 있습니다 — {reasons}. Admin 「서버 시작 점검」 "
+                "단계 표를 보고 배포 서버 환경변수를 고친 뒤 CI/CD 를 다시 누르세요."
+            )
+            content = ["실패 있음", [name for name, _ in failed]]
+    active = text is not None and admin_notes_visible()
     alerts.state(
-        "AD-01",
+        START_CHECK_ALERT_CODE,
         scope=None,
-        content=title,
-        active=title is not None,
-        text=(None if title is None else f"{title} — 배포 서버 환경변수를 확인하세요"),
-        full=alerts.plain_text(detail) or None,
+        content=content if active else None,
+        active=active,
+        text=text if active else None,
+        full=full if active else None,
+        goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href) if active else None,
     )
 
 

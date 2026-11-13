@@ -24,7 +24,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import module_failures, module_registry, navigation
-from capa_simulation.components.module_failure_card import STOPPED_PAGE
+from capa_simulation.components.module_failure_card import DIAGNOSTIC_LABEL
 from capa_simulation.navigation import DYNAMIC_CAPA, HOME, PageSpec
 from capa_simulation.page_tabs_state import valid_tabs
 from capa_simulation.sidebar_status import APP_RUN_STATE_KEY, CONDITIONS_BOX_KEY
@@ -120,6 +120,16 @@ def _texts(app: AppTest, kind: str) -> list[str]:
     return [str(element.value) for element in getattr(app, kind)]
 
 
+def _diagnostics(app: AppTest) -> str:
+    """오류 카드들의 접힌 「담당자용 진단」 코드 칸 글(오류 종류 · 첫 줄 · 끄는 법 · 위치)."""
+    return "\n".join(
+        str(code.value)
+        for box in app.expander
+        if box.label == DIAGNOSTIC_LABEL
+        for code in box.code
+    )
+
+
 def _key_alerts(app: AppTest) -> list[str]:
     """접두 없는 세션 키 상태 알림(`MO-02` — 알림창 · Alarm, 자리에 그리지 않는다)의 전문."""
     return [str(note["full"]) for note in states(app, "MO-02") if note.get("active")]
@@ -209,11 +219,15 @@ def test_a_crashing_page_shows_only_its_card_and_the_app_goes_on(
     _ok(app)
 
     (card,) = _texts(app, "error")
-    assert "「데모 고장」 모듈의 「고장 데모」 화면에서 오류가 났습니다" in card
-    assert "RuntimeError" in card and "데모 오류" in card
-    # 멈춘 범위는 표지 한 마디, 끄는 법은 그 줄 풍선이다(설계 규칙 UI-TXT-01 · UI-TXT-02).
-    (stopped,) = [item for item in app.caption if str(item.value).startswith(STOPPED_PAGE)]
-    assert "`enabled`" in str(stopped.proto.help) and "demo_crash" in str(stopped.proto.help)
+    # 머리 한 줄은 누구나 읽는 꼴 — 개발자용 정보(종류 · 첫 줄 · 끄는 법 · 위치)는 접힌 「담당자용
+    # 진단」 안에 복사 단추와 함께 있다(2026-11-14 보드 카드 p2-rare, 설계 규칙 UI-TXT-01 ·
+    # UI-NTF-10).
+    assert card == "「데모 고장」 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다"
+    (diagnostic,) = [box for box in app.expander if box.label == DIAGNOSTIC_LABEL]
+    (code,) = diagnostic.code
+    assert "RuntimeError" in code.value and "데모 오류" in code.value
+    assert "`enabled`" in code.value and "demo_crash" in code.value
+    assert "demo_crash/" in code.value
     assert "오류 앞까지 그린 줄입니다." in _texts(app, "markdown")
     assert module_failures.last_failures()["demo_crash"].where == "page"
     assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
@@ -231,10 +245,11 @@ def test_a_missing_package_card_points_to_the_outside_request(
     app.switch_page(DEMO_CRASH_IMPORT).run()
     _ok(app)
 
-    assert any("ModuleNotFoundError" in text for text in _texts(app, "error"))
-    hint = [text for text in _texts(app, "caption") if "사외 요청" in text]
-    assert hint and "demo_not_installed_package" in hint[0]
-    assert "담당자가 앱 관리자에게" in hint[0]
+    (diagnostic,) = [box for box in app.expander if box.label == DIAGNOSTIC_LABEL]
+    (code,) = diagnostic.code
+    assert "ModuleNotFoundError" in code.value
+    assert "사외 요청" in code.value and "demo_not_installed_package" in code.value
+    assert "담당자가 앱 관리자에게" in code.value
 
 
 def test_an_unprefixed_key_is_reported_and_recorded(_app: AppTest, _fixtures: None) -> None:
@@ -324,7 +339,7 @@ def test_a_failing_callback_keeps_the_whole_shell_and_shows_a_card_on_top(
 
     (card,) = _texts(app, "error")
     assert card.startswith("방금 한 동작에서 오류가 났습니다")
-    assert "ValueError" in card and "누른 오류" in card
+    assert "ValueError" in _diagnostics(app) and "누른 오류" in _diagnostics(app)
     # 카드는 화면 맨 위(본문보다 앞)에 선다.
     main = [str(getattr(element, "value", "")) for element in app.main]
     assert main.index(card) < main.index("콜백 화면 본문")
@@ -338,7 +353,7 @@ def test_system_exit_in_a_page_is_a_card_and_the_session_goes_on(_app: AppTest, 
     app.switch_page(str(_lab / "leave.py")).run()
     _ok(app)
 
-    assert any("SystemExit" in text for text in _texts(app, "error"))
+    assert _texts(app, "error") and "SystemExit" in _diagnostics(app)
     assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
     app.switch_page(HOME.path).run()
     _ok(app)
@@ -363,7 +378,8 @@ def test_a_guarded_fragment_error_is_a_card_in_place(_app: AppTest, _lab: Path) 
     _ok(app)
 
     (card,) = _texts(app, "error")
-    assert "「시험 lab」 모듈에서 오류가 났습니다" in card and "감싼 조각 오류" in card
+    assert card.startswith("「시험 lab」 화면의 이 자리에 오류가 났습니다")
+    assert "감싼 조각 오류" in _diagnostics(app)
     assert "조각 뒤 본문" in _texts(app, "markdown")
     assert module_failures.last_failures()["demo_lab"].where == "guard"
 
@@ -397,19 +413,21 @@ def test_a_base_exception_outside_exception_is_a_card_and_the_session_goes_on(
 
     app.switch_page(str(folder / "cancel.py")).run(timeout=60)
     _ok(app)
-    assert any("CancelledError" in text for text in _texts(app, "error"))
+    assert _texts(app, "error") and "CancelledError" in _diagnostics(app)
     assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
 
     app.switch_page(str(folder / "cancelcb.py")).run(timeout=60)
     app.button(key="mod_demo_cancel__cancel").click().run(timeout=60)
     _ok(app)
     (card,) = _texts(app, "error")
-    assert card.startswith("방금 한 동작에서 오류가 났습니다") and "CancelledError" in card
+    assert card.startswith("방금 한 동작에서 오류가 났습니다") and "CancelledError" in _diagnostics(
+        app
+    )
     assert module_failures.last_failures()["demo_cancel"].where == "callback"
 
     app.switch_page(str(folder / "cancelguard.py")).run(timeout=60)
     _ok(app)
-    assert any("CancelledError" in text for text in _texts(app, "error"))
+    assert _texts(app, "error") and "CancelledError" in _diagnostics(app)
     assert "취소 자리 뒤" in _texts(app, "markdown")
     assert module_failures.last_failures()["demo_cancel"].where == "guard"
 
@@ -496,10 +514,9 @@ def test_a_helper_imports_through_the_modules_package_and_a_bare_name_breaks(
 
     app.switch_page(str(folder / "bare.py")).run()
     _ok(app)
-    assert any("ModuleNotFoundError" in text for text in _texts(app, "error"))
-    captions = _texts(app, "caption")
-    assert any("from modules.demo_helper import lab_helper" in text for text in captions)
-    assert not any("사외 요청" in text for text in captions)
+    assert _texts(app, "error") and "ModuleNotFoundError" in _diagnostics(app)
+    assert "from modules.demo_helper import lab_helper" in _diagnostics(app)
+    assert "사외 요청" not in _diagnostics(app)
 
 
 def test_a_page_that_cannot_be_registered_is_left_out_until_restart(
@@ -639,3 +656,26 @@ def test_a_deferred_key_warning_is_not_resolved_in_the_run_that_reports_it(
     assert reported == ["DEMO 넘긴 키 알림"]
     module_runtime.run_module_page(lambda: None, spec)
     assert reported == ["DEMO 넘긴 키 알림", None]
+
+
+def _snapshot_script() -> None:
+    import streamlit as st
+
+    from capa_simulation import module_runtime
+    from capa_simulation.components.module_failure_card import COPY_SESSION_KEY_HEAD
+
+    st.session_state[f"{COPY_SESSION_KEY_HEAD}demo_x_page_1234"] = {"text": "진단"}
+    st.session_state["plain_core_key"] = 1
+    st.session_state["snapshot"] = sorted(module_runtime.key_snapshot("demo_x").values)
+
+
+def test_the_card_copy_button_key_is_not_a_module_key() -> None:
+    """오류 카드 「담당자용 진단」 의 복사 단추는 카드마다 새 key 다 — 모듈 회차 앞뒤 세션 키
+    견주기가 그 머리를 코어 키로 빼야 접두 없는 키 알림(`MO-02`)이 거짓으로 서지 않는다(브라우저
+    확인에서 드러났다 — AppTest 는 그 컴포넌트를 대역으로 바꿔 보지 못한다)."""
+    app = AppTest.from_function(_snapshot_script).run()
+
+    assert not app.exception
+    snapshot = app.session_state["snapshot"]
+    assert "plain_core_key" in snapshot
+    assert not [key for key in snapshot if key.startswith("capa_diagnostic_copy_module_failure_")]

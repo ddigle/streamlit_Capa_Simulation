@@ -22,7 +22,10 @@ from capa_simulation.components.audit_actor import note_session as note_audit_se
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.change_summary import session_changes
-from capa_simulation.components.container_start_check import render_token_alert
+from capa_simulation.components.container_start_check import (
+    render_start_check_alert,
+    render_token_alert,
+)
 from capa_simulation.components.equipment_scenario_status import (
     close_equipment_scenario_dialog,
     equipment_scenario_dialog_is_open,
@@ -35,8 +38,16 @@ from capa_simulation.components.intro_summary import (
     summary_label_script,
     warm_intro_summary,
 )
-from capa_simulation.components.object_sync_status import render_object_sync_alerts
+from capa_simulation.components.missing_page import notice_missing_page
+from capa_simulation.components.object_sync_status import (
+    not_canonical_code,
+    render_object_sync_alerts,
+)
 from capa_simulation.components.page_box_reveal import page_box_reveal_script
+from capa_simulation.components.page_failure_card import (
+    render_page_failure_alert,
+    run_core_page,
+)
 from capa_simulation.components.page_guide import guide_toolbar_script, render_guide_base_style
 from capa_simulation.components.page_link import disabled_link_aria_script
 from capa_simulation.components.page_tabs import (
@@ -558,17 +569,22 @@ with pinned_connections(DUCKDB_PATH):
     # (스키마 경고)은 뒤에 둔다.
     render_page_tabs(current_spec, pages=pages, marks=unsaved_marks, leave=leave_notice(page_file))
     # 알림 칸(`components/alert_center.py` — 오른쪽 아래 알림창 · 툴바 Alarm 단추와 패널 · 변경 칩 ·
-    # 공용 공정 칩 · 합성 샘플 표지). 탭 줄처럼 늘 서는 칸이고 페이지보다 앞이다 — 페이지가
-    # `st.stop()` 해도 섰다. 페이지가 이 회차에 내는 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS
-    # 가 회차 끝에 훑는다. 표지가 「화면」 · 「그 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경
-    # 칩 목록은 탭 점과 같은 세션 판정이다(DB 를 읽지 않는다). 본문 위에는 칸을 두지
-    # 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭 표지다(2026-11-09 보드 C1 (라)).
+    # 공용 공정 칩 · 합성 샘플 표지 · 정본이 아닌 데이터로 뜬 서버의 「정본 아님」 표지). 탭 줄처럼
+    # 늘 서는 칸이고 페이지보다 앞이다 — 페이지가 `st.stop()` 해도 섰다. 페이지가 이 회차에 내는
+    # 알림 · 공정 값 칸 표지는 표지로 오고 알림 칸 JS 가 회차 끝에 훑는다. 표지가 「화면」 · 「그
+    # 화면으로」 를 달게 이번 화면을 먼저 적는다. 변경 칩 목록은 탭 점과 같은 세션 판정이다(DB 를
+    # 읽지 않는다). 본문 위에는 칸을 두지 않는다 — 공용 공정 표지는 머리 띠 칩 · 탭
+    # 표지다(2026-11-09 보드 C1 (라)).
     alerts.note_page("" if current_spec is None else tab_label(current_spec), navigation.url_path)
+    # 없는 화면 주소(꺼진 · 실패한 모듈 화면, 옛 주소, 남이 보낸 링크)로 들어와 HOME 을 도는 회차는
+    # 알림 하나를 담는다 — 이 아래 알림 칸이 보낸다(`components/missing_page.py`).
+    notice_missing_page(navigation.url_path)
     render_alert_center(
         changes=session_changes(
             page_file, hrefs={spec.path: page.url_path for page, spec in pages.specs}
         ),
         current=current_spec,
+        canon=not_canonical_code(),
     )
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차
@@ -590,24 +606,37 @@ with pinned_connections(DUCKDB_PATH):
     # 정본 버킷 동기화 알림(`SY-*`). 값은 메모리 사본뿐이고, 알릴 일이 없는 프로세스(개발 PC ·
     # 시험)는 아무것도 쓰지 않는다.
     render_object_sync_alerts()
+    # 서버 시작 점검 관리자 알림(`AD-01` — 결과 없음 · 못 읽음 · 실패한 단계, 「그 화면으로」 Admin
+    # Area). 결과 파일도 CD 전용 환경변수도 없는 프로세스는 아무것도 쓰지 않는다.
+    render_start_check_alert()
     # BigDataQuery 토큰 관리자 알림 — 실패(`AD-10`) · 만료 1시간 전(`AD-11`) · 자동 갱신 멈춤 · 실패
     # (`AD-17`) · 갱신 토큰 80일(`AD-18`). 시작 점검 결과 파일이 없는 서버(C-DEP 밖)는 아무것도 쓰지
     # 않고, 있는 서버는 이벤트 칸 네 자리다.
     render_token_alert()
+    # 코어 화면 오류 관리자 알림(`AD-22` — 처리 못 한 오류의 참고 번호 · 「그 화면으로」 그 화면).
+    # 시작 점검 알림과 같은 판정의 서버만 이벤트 칸 한 자리이고, 그 밖은 아무것도 쓰지 않는다.
+    render_page_failure_alert()
     # 끝까지 돈 실행 뒤에만 상자 여닫기가 본문을 건너뛴다. 페이지가 `st.stop()` 으로 멈춘 것도
     # 끝까지 돈 것이다 — 그 화면은 멈춘 자리까지가 전부다. 새 상호작용이 끊은 실행은 같은 멈춤
     # 예외로 끝나도 끝까지 돈 것이 아니다(`AppRun.finish_stopped`).
     # 입장 화면 Summary 의 GAP 몫이 「준비 중」으로 나갔으면 페이지를 다 그린 **뒤**에 만들어 둔다 —
     # 비교 대상을 바꾼 회차에 HOME 보다 먼저 비교 계획을 환산하지 않게(다음 회차에 싣는다). 페이지가
     # `st.stop()` 해도 한다. rerun 으로 끊긴 회차에서는 하지 않는다.
-    # 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림).
-    # 처리한 실패는 정상으로 돌아와 아래 꼬리가 돈다. `st.stop()`·`st.rerun()` 은 지금처럼 지나간다.
+    # 모듈 화면은 그 화면만 고장 나게 감싼다(`module_runtime` — 오류 카드·접두 없는 키 알림). 코어
+    # 화면도 처리 못 한 오류를 그 화면 안 카드 · 참고 번호로 바꾼다(`page_failure_card` — 관리자
+    # 알림 `AD-22`). 처리한 실패는 카드 뒤 `st.stop()` 으로 아래 멈춤 길을 탄다 — 끝까지 돈 회차로
+    # 끝나면 Streamlit 이 오류 자리 아래 위젯의 미저장 값을 지운다. `st.stop()`·`st.rerun()` 은
+    # 지금처럼 지나간다.
     try:
         with equipment_pin:
             if current_spec is not None and current_spec.module is not None:
                 run_module_page(navigation.run, current_spec)
             else:
-                navigation.run()
+                run_core_page(
+                    navigation.run,
+                    page="" if current_spec is None else tab_label(current_spec),
+                    href=navigation.url_path,
+                )
     except StopException as stop:
         app_run.finish_stopped(stop)
         warm_intro_summary(str(DUCKDB_PATH.resolve()))

@@ -1,4 +1,4 @@
-# Purpose: 알림창 · Alarm · 변경 칩 · 공정 칩 · 합성 샘플 표지를 맡는 알림 칸을 페이지 앞에 세운다.
+# Purpose: 알림창 · Alarm · 변경 칩 · 공정 칩 · 합성 샘플 · 정본 아님 표지의 알림 칸을 세운다.
 
 """알림 칸(2026-11-03 결정 보드 D1 ~ D5 — 검수표 home-06 · home-08 · home-09). 규칙은 `alerts` 모듈
 설명이다.
@@ -29,6 +29,12 @@
   `process_clear` → `shared_process.clear`).
 - **합성 샘플 표지**(2026-11-09 보드 T8). 「샘플 데이터」 스위치가 켜져 있고 지금 화면이 원천 미연결
   화면(`PageSpec.pending_source`)일 때만 공정 칩 오른쪽에 선다. 누르는 것이 없고 풍선만 있다.
+- **「정본 아님」 표지**(2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) · 카드 p1-not-canonical).
+  정본이 아닌 데이터로 뜬 서버(정본을 받지 않음 `SY-05` · 동기화 꺼짐 `SY-01` — `object_sync_status.
+  not_canonical_code`)에서 모든 화면 · 모든 사용자에게 합성 샘플 표지 오른쪽에 늘 선다(여기 저장한
+  것은 다음 배포에 사라진다 — 알림창을 놓쳐도 보이게). 누르면 Alarm 패널을 거르기 없이 열고 그
+  코드의 줄로 굴려 잠깐 빛낸다(파이썬 회차 없음). data 는 그 코드 글 하나(프로세스에 한 번 정한
+  값)라 회차마다 같다.
 - **다시 붙은 탭은 앱 전체 회차를 한 번 돈다**(2026-11-07 2차 보드 R1 (가)). 프런트는 마지막 회차가
   앱 전체였던 탭에 다시 붙어도 회차를 요청하지 않고, 새 세션은 모르는 프래그먼트의 요청을 회차
   없이 버린다 — 그 탭의 첫 프래그먼트 · 대화상자 저장이 조용히 버려졌다. JS 가 앱 뿌리의 연결
@@ -115,6 +121,7 @@ from capa_simulation.components.scenario_list_state import (
 )
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
+    CANON_MARK_ID,
     CHANGES_CHIP_ID,
     PROCESS_CHIP_ID,
     SAMPLE_MARK_ID,
@@ -225,6 +232,9 @@ TEXT: Final[dict[str, str]] = {
     # 합성 샘플 표지(2026-11-09 보드 T8).
     "sample": "합성 샘플",
     "sample_title": "합성 샘플 — 실적이 아님 · 사이드바 「샘플 데이터」 로 끔",
+    # 「정본 아님」 표지(2026-11-14 보드 d13 (가)) — 풍선은 값 한 줄(그 까닭은 Alarm 줄 전문).
+    "canon": "정본 아님",
+    "canon_title": "정본이 아닌 데이터 — 여기 저장은 다음 배포에 사라짐 · 누르면 Alarm",
 }
 
 
@@ -289,9 +299,11 @@ def alert_center_data(
     changes: list[ChangeItem],
     events: list[alerts.AlertNote],
     current: PageSpec | None = None,
+    canon: str | None = None,
 ) -> dict[str, Any]:
     """알림 칸 data. 같은 변경 · 사건 · 공용 공정 값이면 회차마다 같은 값이다(시각 · 카운터를 싣지
-    않는다). `current` 는 지금 화면의 선언이다 — 공정 칩의 짐작과 합성 샘플 표지가 읽는다."""
+    않는다). `current` 는 지금 화면의 선언이다 — 공정 칩의 짐작과 합성 샘플 표지가 읽는다. `canon`
+    은 정본이 아닌 데이터로 뜬 서버의 알림 코드(「정본 아님」 표지 — 없으면 None)다."""
     mark = session_mark()
     return {
         "events": events,
@@ -320,6 +332,7 @@ def alert_center_data(
             "chip": CHANGES_CHIP_ID,
             "process": PROCESS_CHIP_ID,
             "sample": SAMPLE_MARK_ID,
+            "canon": CANON_MARK_ID,
         },
         "marker": alerts.MARKER_ATTRIBUTE,
         # 이번 화면 주소 — 「그 화면으로」 가 탭을 고를 때 그 화면에 닿았는지 본다.
@@ -334,6 +347,7 @@ def alert_center_data(
         "text": dict(TEXT),
         "process": process_field.header_chip(None if current is None else current.path),
         "sample": shows_sample_mark(current),
+        "canon": canon or "",
     }
 
 
@@ -359,18 +373,23 @@ def _clear_process() -> None:
     shared_process.clear()
 
 
-def render_alert_center(*, changes: list[ChangeItem], current: PageSpec | None = None) -> None:
+def render_alert_center(
+    *, changes: list[ChangeItem], current: PageSpec | None = None, canon: str | None = None
+) -> None:
     """알림 칸을 그린다 — `app.py` 가 화면 탭 줄 바로 뒤, 페이지 앞에서 매 앱 전체 회차 부른다.
 
     콜백이 담아 둔 사건 알림(`alerts.event`)을 이 회차 data 로 꺼내 보낸다. 이벤트 칸에는 접는
-    스타일 한 자리를 쓴다. `current` 는 지금 화면의 선언이다(없으면 None). 앞 회차의 「그 화면으로」
+    스타일 한 자리를 쓴다. `current` 는 지금 화면의 선언이다(없으면 None). `canon` 은 「정본 아님」
+    표지의 알림 코드다(`alert_center_data`). 앞 회차의 「그 화면으로」
     대상이 남았으면 페이지 앞에서 버린다(`expire_check_target` — 이 회차에 누른 것은 남긴다).
     """
     expire_check_target()
     st.html(_HIDE_STYLE)
     _ALERT_CENTER(
         key=ALERT_CENTER_KEY,
-        data=alert_center_data(changes=changes, events=alerts.drain_outbox(), current=current),
+        data=alert_center_data(
+            changes=changes, events=alerts.drain_outbox(), current=current, canon=canon
+        ),
         width="stretch",
         on_reconnected_change=_reconnected,
         on_process_clear_change=_clear_process,

@@ -234,7 +234,7 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     AlertSpec("SC-02", "error", "event", "시나리오 관리를 그리지 못함 — 같은 글이면 한 번"),
     AlertSpec("AU-01", "action", "state", "자동 갱신 예약이 멈춘 것 같음"),
     AlertSpec("AU-02", "action", "state", "자동 갱신 예약 스레드가 서 있지 않음"),
-    AlertSpec("AD-01", "action", "state", "서버 시작 점검 결과 없음 · 못 읽음"),
+    AlertSpec("AD-01", "action", "state", "서버 시작 점검 결과 없음 · 못 읽음 · 실패한 단계"),
     AlertSpec("AD-02", "action", "state", "운영인데 통합인증이 꺼짐"),
     AlertSpec("AD-03", "action", "state", "통합인증 서명 인증서 만료 임박"),
     AlertSpec("AD-04", "action", "state", "BigDataQuery 조회 SQL · 패키지 준비 안 됨"),
@@ -382,6 +382,10 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 실패해 멈췄거나 마지막 시도가 실패했을 때, 그리고 갱신 토큰(3개월)을 처음 쓴 때부터 80일.
     AlertSpec("AD-17", "action", "state", "BigDataQuery 토큰 자동 갱신 멈춤 · 마지막 시도 실패"),
     AlertSpec("AD-18", "action", "state", "BigDataQuery 갱신 토큰 80일 — 바꿀 때"),
+    # 코어 화면의 처리 못 한 오류 — 프로세스 기록(`page_failures`)에서 관리자 몫 회차에 낸다(참고
+    # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`). AD-19 ~ AD-21 은 다른 갈래
+    # 몫이다.
+    AlertSpec("AD-22", "error", "state", "코어 화면의 처리 못 한 오류(참고 번호)"),
 )
 
 

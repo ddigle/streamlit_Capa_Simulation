@@ -266,13 +266,17 @@ except BOOTSTRAP_ERRORS as exc:
     # 패널의 공정 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
     # 회차마다 흔들리지 않게 한다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
     render_stopped_process_field()
-    # 원인 하나의 마크를 세 탭에 같이 세우고, 글은 탭 밖에서 알림으로 한 번 보낸다.
+    # 원인 하나의 마크를 세 탭에 같이 세우고, 글은 탭 밖에서 알림으로 한 번 보낸다. 불러온 리비전이
+    # 없는 빈 상태면 마크 대신 회색 한 줄이다(같은 글로 가른다).
+    stop = calculation_stop_notice(exc, labels=process_labels)
+    stop_message = (
+        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message
+    )
     for error_tab in (unit_capacity_tab, required_tab, availability_tab):
         with error_tab:
-            render_data_error_mark()
-    stop = calculation_stop_notice(exc, labels=process_labels)
+            render_data_error_mark(stop_message)
     alert_page_error(
-        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message,
+        stop_message,
         code="ST-20",
         text=None if stop is None else stop.text,
         goto=None if stop is None else stop.goto,

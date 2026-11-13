@@ -20,6 +20,7 @@ from capa_simulation.components import alert_center, change_summary
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
+    CANON_MARK_ID,
     CHANGES_CHIP_ID,
     GUIDE_BUTTON_ID,
     PRINT_BUTTON_ID,
@@ -117,6 +118,7 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
         == [
             PROCESS_CHIP_ID,
             SAMPLE_MARK_ID,
+            CANON_MARK_ID,
             CHANGES_CHIP_ID,
             GUIDE_BUTTON_ID,
             ALARM_BUTTON_ID,
@@ -132,6 +134,9 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
     # 공용 공정 값이 없으면 칩이 서지 않고, 화면 선언이 없으면 합성 샘플 표지도 서지 않는다.
     assert data["process"] is None
     assert data["sample"] is False
+    # 정본이 아닌 데이터로 뜬 서버가 아니면 「정본 아님」 표지가 서지 않는다.
+    assert data["toolbar"]["canon"] == CANON_MARK_ID
+    assert data["canon"] == ""
     assert data["marker"] == alerts.MARKER_ATTRIBUTE
     assert data["here"] == ""
     # 「그 화면으로」 가 들고 갈 대상의 종류는 콜백이 받는 종류 그대로다 — JS 는 모르는 종류를 대상

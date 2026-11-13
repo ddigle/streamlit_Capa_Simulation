@@ -49,6 +49,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import (
 from capa_simulation import alerts, module_failures, module_registry, settings
 from capa_simulation.components.literal_markdown import literal_names
 from capa_simulation.components.module_failure_card import (
+    COPY_SESSION_KEY_HEAD,
     FailureParts,
     render_failure_parts,
     render_module_failure_card,
@@ -60,6 +61,9 @@ if TYPE_CHECKING:
 
 # 모듈 회차에 코어가 만드는 세션 키(지금 없음). 생기면 여기에 적어 거짓 알림을 막는다.
 CORE_KEYS_DURING_MODULE_RUN: Final[frozenset[str]] = frozenset()
+# 모듈 회차에 코어가 만드는 세션 키의 머리 — 오류 카드 「담당자용 진단」 의 복사 단추(카드마다 새
+# key).
+CORE_KEY_HEADS_DURING_MODULE_RUN: Final[tuple[str, ...]] = (COPY_SESSION_KEY_HEAD,)
 _LOGGER = logging.getLogger("capa_simulation.modules")
 _IMPLEMENTING_TAIL: Final = f" {module_registry.IMPLEMENTING_MARK}"
 # `st.stop()` 으로 멈춘 회차의 키 알림 — (세션 id, 모듈 id) → 글. 그 세션의 다음 그 모듈 회차가
@@ -174,6 +178,7 @@ def _unprefixed_snapshot(module_id: str) -> dict[str, object]:
         if isinstance(key, str)
         and not key.startswith(prefix)
         and key not in CORE_KEYS_DURING_MODULE_RUN
+        and not key.startswith(CORE_KEY_HEADS_DURING_MODULE_RUN)
     }
 
 

@@ -24,7 +24,7 @@ from streamlit.runtime.scriptrunner import ScriptRunnerEvent
 from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
-from capa_simulation import module_failures, module_registry
+from capa_simulation import module_failures, module_registry, page_failures
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
@@ -36,6 +36,7 @@ from capa_simulation.components import (
     diagnostic_copy,
     edit_grid,
     equipment_master_grid,
+    page_failure_card,
     page_tabs,
     paste_form,
     scenario_list_grid,
@@ -160,6 +161,37 @@ def keeps_permission_bits(tmp_path_factory: pytest.TempPathFactory) -> bool:
     if not kept and os.name != "nt" and os.environ.get("GITHUB_ACTIONS") == "true":
         pytest.fail("CI 러너의 파일 체계가 권한 비트를 담지 못한다 — 권한 시험을 건너뛸 수 없다")
     return kept
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "page_failure_card: 코어 화면 감싸기(`page_failure_card.run_core_page`)를 걷지 않고 "
+        "그대로 본다",
+    )
+
+
+def _run_core_page_plainly(run: Any, *, page: str, href: str) -> None:
+    """코어 화면 감싸기를 걷은 꼴 — 처리 못 한 오류가 그대로 `app.exception` 에 남는다."""
+    run()
+
+
+@pytest.fixture(autouse=True)
+def _core_page_errors_still_raise(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """`app.py` 를 도는 시험이 화면의 처리 못 한 오류를 놓치지 않게 코어 화면 감싸기를 걷는다.
+
+    감싸기는 그 오류를 화면 안 카드로 바꿔 `app.exception` 을 비운다 — 그러면 「예외 없이 그렸다」
+    를 보는 시험 수백이 실패를 보지 못한다. 감싸기 자체를 보는 시험은
+    `@pytest.mark.page_failure_card` 로 걷지 않는다. 앞 시험의 실패 기록(프로세스 값 — 관리자 알림
+    `AD-22`)도 넘기지 않는다.
+    """
+    page_failures.forget_failures()
+    if request.node.get_closest_marker("page_failure_card") is None:
+        monkeypatch.setattr(page_failure_card, "run_core_page", _run_core_page_plainly)
+    yield
+    page_failures.forget_failures()
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
