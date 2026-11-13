@@ -79,6 +79,10 @@ HOST_PATTERN: Final = re.compile(r"[A-Za-z0-9_-]+")
 # (`save_section.discard_popover`)와 같은 그림이다(2026-11-12 남은 물음 보드 ③-11 (가) — 하는 일이
 # 다른 두 단추를 헷갈리지 않게).
 DISCARD_ICON: Final = ":material/delete_sweep:"
+# 표 도구 막대 「변경 (n)」 단추 글 — 열한 그리드 공통. 변경 목록 이름(부르는 쪽 `changes_label` —
+# 「적용 전 변경」)은 그 단추 풍선 · 서랍 제목 · 빈 글이 그대로 쓴다(설계 규칙 UI-LAY-11 — 이름은
+# 짧게, 원래 뜻은 풍선).
+CHANGES_BUTTON: Final = "변경"
 _COMMENT_LINE: Final = re.compile(r"^\s*//")
 
 
@@ -176,6 +180,7 @@ def texts(spec: GridSpec, *, changes_label: str) -> dict[str, Any]:
         "redo": "다시 실행",
         "fit": "칸 폭 맞춤",
         "changes": changes_label,
+        "changesButton": CHANGES_BUTTON,
         "full": "전체 화면",
         "fullExit": "전체 화면 닫기 (Esc)",
         "summary": "개수 {count} · 합계 {sum} · 평균 {avg}",
@@ -434,7 +439,11 @@ def shell_data(
 
 def texts_for_empty(*, changes_label: str) -> dict[str, Any]:
     """표 없는 껍데기의 글(머리 글만 쓰인다)."""
-    return {"changes": changes_label, "empty": "이 기간에 행이 없습니다"}
+    return {
+        "changes": changes_label,
+        "changesButton": CHANGES_BUTTON,
+        "empty": "이 기간에 행이 없습니다",
+    }
 
 
 def feed_data(

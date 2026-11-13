@@ -2057,7 +2057,7 @@ _add("RQ_VITAL", 생산계획년월=202609, 양산구분="개발")
 
 
 def test_the_step_popup_counts_the_cells_it_drops_not_the_tables(grid_calls: Calls) -> None:
-    """수는 도구 막대 「적용 전 변경 (n)」 과 같은 칸 수다 — 한 표에서 여러 칸을 고쳐도 다 센다."""
+    """수는 도구 막대 「변경 (n)」 과 같은 칸 수다 — 한 표에서 여러 칸을 고쳐도 다 센다."""
     app = AppTest.from_string(NEW_PATH_TEST_SCRIPT, default_timeout=60)
     app.session_state[DATASET_KEY] = DATASET["UPEH"]
     app.run()

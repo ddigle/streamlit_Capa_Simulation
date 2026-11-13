@@ -361,6 +361,8 @@ function tbLabels(S) {
   d.redo.title = tbText(S, 'redoHint', '다시 실행 (Ctrl+Y)')
   d.fit.setAttribute('aria-label', tbText(S, 'fit', '칸 폭 맞춤'))
   d.fit.title = tbText(S, 'fit', '칸 폭 맞춤') + ' — ' + tbText(S, 'fitHint', '모든 칸 폭을 글에 맞춥니다')
+  // 「변경 (n)」 은 글 단추 — 보이는 글이 이름(수 포함)이고 풍선만 변경 목록 이름이다.
+  d.changes.title = tbText(S, 'changes', '적용 전 변경')
   tbLabel(d.close, tbText(S, 'changesClose', '닫기'))
   d.drawer.setAttribute('aria-label', tbText(S, 'changes', '적용 전 변경'))
   d.dialog.setAttribute('aria-label', tbFill(tbText(S, 'fullLabel', '{title} 전체 화면'), { title: S.model ? S.model.title : '' }))
@@ -406,7 +408,7 @@ function tbSync(S) {
     if (busy === kind) button.setAttribute('aria-busy', 'true')
     else button.removeAttribute('aria-busy')
   }
-  d.changes.textContent = tbText(S, 'changes', '적용 전 변경') + ' (' + tbNumber(cells) + ')'
+  d.changes.textContent = tbText(S, 'changesButton', '변경') + ' (' + tbNumber(cells) + ')'
 }
 
 // 머리를 다시 지었으면 경계 칸에 풍선을 단다(core 가 머리를 지을 때마다 새 칸이다).
@@ -658,7 +660,7 @@ function tbPointerDown(S, event, hit) {
 
 // ---------------------------------------------------------------- 되돌리기 단추
 
-// 표에 하는 단추(되돌리기·다시 실행·칸 폭 맞춤·적용 전 변경·찾기 ▲▼)를 마우스로 누르면 초점을 표로 돌린다 — 이어 누르는
+// 표에 하는 단추(되돌리기·다시 실행·칸 폭 맞춤·변경 (n)·찾기 ▲▼)를 마우스로 누르면 초점을 표로 돌린다 — 이어 누르는
 // Ctrl+Z·화살표·Ctrl+C/V·Delete 가 단추가 아니라 표에 간다(뿌리가 keydown 을 페이지로 내보내지 않으므로 단추에 남으면 아무
 // 일도 없다). 자판(Enter·Space — click 의 detail 0)으로 누르면 단추에 남아 되풀이해 누를 수 있다. run 이 false 를 돌려주면
 // (다른 칸에 초점을 주었다) 돌리지 않는다.
