@@ -1,4 +1,4 @@
-# Purpose: 앱·배포·개발 정보를 모든 화면 사이드바 바닥 카드로 보이고 그 회차 접속 명단 알림을 낸다.
+# Purpose: 앱·배포·개발 정보를 모든 화면 사이드바 바닥 카드로 보이고 그 회차의 계정 알림을 낸다.
 
 """App name, build, developer, and contact pinned to the foot of the sidebar.
 
@@ -28,8 +28,10 @@ CSS(`sidebar_style.build_sidebar_stylesheet`)가 이 key 로 잡는다.
 **모든 화면 모든 회차에 서는 자리라 접속 명단 상태 알림(`AD-08` · `AD-09`)도 여기서 낸다**
 (`sso_status.render_access_alerts`, 2026-11-08 사용자 답 U4 — S3 명단을 못 읽은 동안 관리자는
 Admin 을 열기 전 어느 화면에서나 알아야 한다). S3 명단을 쓰지 않는 서버에서는 아무것도 부르지 않아
-요소 순번이 그대로이고, 쓰는 서버에서는 회차마다 이벤트 칸 두 자리로 늘 같다. 카드 칸 밖에서
-부른다 — 스타일만 든 표지라 이벤트 칸으로 가고 카드 칸의 자식 수는 그대로다.
+요소 순번이 그대로이고, 쓰는 서버에서는 회차마다 이벤트 칸 두 자리로 늘 같다. 같은 까닭으로
+통합인증이 켜진 서버는 로그인 갱신 거절 알림(`AD-21` — `sso_refresh_alert.render_refresh_alert`,
+관리자 회차에만 선다)도 여기서 낸다(회차마다 이벤트 칸 한 자리). 카드 칸 밖에서 부른다 — 스타일만
+든 표지라 이벤트 칸으로 가고 카드 칸의 자식 수는 그대로다.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from capa_simulation.components.sso_refresh_alert import render_refresh_alert
 from capa_simulation.components.sso_status import render_access_alerts, render_audit_alerts
 from capa_simulation.settings import (
     APP_NAME,
@@ -103,3 +106,4 @@ def render_app_credits(sso_line: str | None = None) -> None:
             st.caption("  \n".join((*credit_lines(), sso_line)), unsafe_allow_html=True)
     render_access_alerts()
     render_audit_alerts()
+    render_refresh_alert()

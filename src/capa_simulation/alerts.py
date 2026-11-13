@@ -379,6 +379,9 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-expiry). 쓰는 중에도 늘지 않는 끝이라 저장해
     # 두라고 알린다. 글은 남은 분을 부를 때 준다.
     AlertSpec("AD-20", "action", "event", "로그인 최대 시간 10분 전 — 저장해 두기"),
+    # 로그인 갱신이 출처 · 머리 검사에서만 거절되는 서버 — 관리자 회차에만(`components/
+    # sso_refresh_alert.py`, 같은 보드 카드 p2-rare). 그대로면 쓰는 중에도 유지 시간 뒤 끊긴다.
+    AlertSpec("AD-21", "action", "state", "로그인 갱신이 출처 · 머리 검사에서 거절됨"),
 )
 
 

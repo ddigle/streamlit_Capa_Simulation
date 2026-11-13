@@ -2488,7 +2488,8 @@ def test_the_list_alerts_leave_the_status_box_and_hold_two_event_slots(
 ) -> None:
     """두 알림은 앱 정보 카드 한 곳에서만 낸다 — 「통합인증 점검」 이 또 내면 Admin 회차에 같은
     알림이 둘이다. 카드는 S3 명단을 쓰는 서버의 회차마다 이벤트 칸 두 자리로 늘 같다(관리자든
-    아니든 · 조건이 있든 없든 — 회차마다 자리 수가 달라지면 안 된다)."""
+    아니든 · 조건이 있든 없든 — 회차마다 자리 수가 달라지면 안 된다). 켜진 서버라 로그인 갱신
+    거절 알림(`AD-21`) 한 자리가 늘 함께 선다."""
     store, endpoint = mock_s3
     store.force["GET"] = (403, "AccessDenied")
     cfg = s3_config(store, endpoint)
@@ -2500,22 +2501,25 @@ def test_the_list_alerts_leave_the_status_box_and_hold_two_event_slots(
         assert states(status, "AD-08") == [] and states(status, "AD-09") == [], who
         card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
         assert not list(card.exception), who
-        assert len(card._tree.get("html")) == 2, who
+        assert len(card._tree.get("html")) == 3, who
         assert len(states(card, "AD-08")) == 1 and len(states(card, "AD-09")) == 1, who
+        assert len(states(card, "AD-21")) == 1, who
         assert bool(active_state(card, "AD-08")) is (who == ADMIN), who
 
 
 def test_the_card_writes_no_alert_slot_where_the_s3_list_is_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """S3 명단을 쓰지 않는 서버(개발 PC · 사내 WebIDE · 환경변수 명단)는 카드가 알림 자리를 쓰지
-    않아 요소 순번이 그대로다."""
+    """S3 명단을 쓰지 않는 서버(개발 PC · 사내 WebIDE · 환경변수 명단)는 카드가 명단 알림 자리를
+    쓰지 않는다. 켜진 서버라 로그인 갱신 거절 알림(`AD-21`) 한 자리만 선다 — 꺼진 서버는 그것도
+    없다(`tests/test_sso_refresh_alert.py`)."""
     for environ in ({}, {names.ENV_ACCESS_ADMINS: ADMIN, names.ENV_ACCESS_USERS: USER}):
         cfg = use_config(environ)
         _as_person(cfg, ADMIN, monkeypatch)
         card = AppTest.from_string(CARD_SCRIPT, default_timeout=30).run()
         assert not list(card.exception)
-        assert card._tree.get("html") == []
+        assert len(card._tree.get("html")) == 1
+        assert [item["code"] for item in states(card)] == ["AD-21"]
 
 
 def test_the_read_alert_goes_only_to_those_who_can_act(
