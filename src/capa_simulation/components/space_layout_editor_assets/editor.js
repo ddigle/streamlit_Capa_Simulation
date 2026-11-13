@@ -1003,6 +1003,7 @@ export default function (component) {
   // 도면 요소 겹 — 호기 아래(below) · 호기 겹 하나(호기 상자들) · 호기 위(above)를 한 줄로 본 새 {below, above}, 움직이지 않으면
   // null. 영역·도형(`raisable`)은 호기 겹을 넘나든다 — 아래 겹 맨 위에서 「앞으로」 면 호기 위 맨 아래(호기와 겹쳤을 때 — 겹치지
   // 않으면 다음 겹친 것 너머), 「맨 앞으로」 면 위 겹 맨 위, 「맨 뒤로」 면 아래 겹 맨 아래. 그 밖의 것은 제 겹 안에서만 돈다.
+  // 올린 영역·도형은 그 쪽에 겹친 것이 없어도 「뒤로 · 맨 뒤로」 로 올림이 풀린다(`stuck`).
   function stackDeck(below, units, above, chosen, how) {
     const bar = { id: '', bar: true, parts: units }
     const line = [...below, bar, ...above]
@@ -1016,10 +1017,26 @@ export default function (component) {
       const stop = free(e) ? -1 : side.indexOf(bar)
       return stop < 0 ? side : side.slice(0, stop)
     }
+    const deal = (order) => {
+      const at = order.indexOf(bar)
+      return { below: order.slice(0, at), above: order.slice(at + 1) }
+    }
+    // 막혀 움직이지 않을 때 — 고른 것에 호기 위로 올린 영역·도형이 있으면 「뒤로 · 맨 뒤로」 가 올림을 푼다. 올림은 그림에 보이지
+    // 않는 저장 상태라 그대로 두면 나중에 밑으로 온 호기를 덮는다(2026-11-13 확인 보드 1 (가) — 보드 7-3 「겹친 것이 없으면
+    // 움직이지 않는다」 의 이 경우 하나만 예외). 「뒤로」 는 고른 올린 것만 호기 아래 겹 맨 위로, 「맨 뒤로」 는 고른 영역·도형을
+    // 아래 겹 맨 아래로 모은다(고른 것끼리 차례 그대로). 그 밖의 고른 것(위 겹 요소)은 제자리다.
+    const stuck = () => {
+      const lifted = line.filter((e, k) => picked(e) && free(e) && k > barAt)
+      if (up || !lifted.length) return null
+      const go = how === 'back' ? line.filter((e) => picked(e) && free(e)) : lifted
+      const rest = line.filter((e) => !go.includes(e))
+      const cut = how === 'back' ? 0 : rest.indexOf(bar)
+      return deal([...rest.slice(0, cut), ...go, ...rest.slice(cut)])
+    }
     let next
     if (how === 'front' || how === 'back') {
       const covered = line.some((e, k) => picked(e) && reach(e, k, up).some((o) => !picked(o) && stackMeet(e, o)))
-      if (!covered) return null
+      if (!covered) return stuck()
       const low = (e) => line.indexOf(e) < barAt
       const keep = line.filter((e) => !picked(e))
       const cut = keep.indexOf(bar)
@@ -1045,9 +1062,8 @@ export default function (component) {
       }
       next = up ? seq : seq.reverse()
     }
-    if (next.every((e, k) => e === line[k])) return null
-    const at = next.indexOf(bar)
-    return { below: next.slice(0, at), above: next.slice(at + 1) }
+    if (next.every((e, k) => e === line[k])) return stuck()
+    return deal(next)
   }
   // entries — 지금 그리는 차례(아래 → 위, S.items 차례)의 [{id, tier, x, y, w, h, group?, raisable?}](tier '' 는 순서 밖). 고른 것을
   // 움직인 새 {ids(S.items 차례), raised(호기 위 겹의 영역·도형 id)} — 호기는 호기 자리끼리, 도면 요소는 요소 자리끼리 바꾸어 다른
@@ -4574,7 +4590,8 @@ export default function (component) {
     return true
   }
   // 선택 칸 「순서」 줄 — 고른 것에 호기나 도면 요소가 있을 때 선다. 끝에 닿은 쪽 단추는 잠그고 「이미 맨 앞입니다」 · 「이미 맨
-  // 뒤입니다」 풍선이다 — 위 겹 요소 밑에 호기 · 호기 아래 요소가 겹쳐 더 내리지 못하면 그 까닭(`KEEP_ABOVE_REASON`)이다.
+  // 뒤입니다」 풍선이다 — 위 겹 요소 밑에 호기 · 호기 아래 요소가 겹쳐 더 내리지 못하면 그 까닭(`KEEP_ABOVE_REASON`)이다. 올린
+  // 영역·도형을 고르면 「뒤로 · 맨 뒤로」 는 겹친 것이 없어도 열린다(`stackDeck` 의 `stuck` — 올림을 푼다).
   function syncOrder() {
     const chosen = stackChosen()
     orderRow.hidden = chosen.size === 0

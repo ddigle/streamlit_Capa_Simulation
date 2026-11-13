@@ -570,6 +570,35 @@ def test_a_raise_only_apply_does_not_pin_the_unit_order_and_undoing_it_drops_the
     clear_equipment_repository()
 
 
+def test_a_saved_raise_lowered_in_the_editor_drops_its_row_on_save(
+    tmp_path: Path, editor_calls: list[dict[str, Any]]
+) -> None:
+    """저장된 올림을 편집기에서 내린 적용(겹친 것 없는 자리의 올린 영역도 「뒤로 · 맨 뒤로」 로
+    내려온다 — 2026-11-13 확인 보드 1 (가))은 그 층 순서 대기분이 되고, 「배치 저장」 한 번에 올림
+    행이 걷혀 편집기가 그 영역을 다시 호기 아래로 그린다. 리비전은 만들지 않는다."""
+    app, database = _open_editor(tmp_path)
+    zone = {"id": "Z1", "kind": "zone", "x": 80, "y": 40, "w": 10, "h": 10}
+    for raised in (["Z1"], []):
+        app.session_state[FAKE_APPLY_KEY] = {
+            "epoch": editor_calls[-1]["epoch"],
+            "changes": [],
+            "canvas": None,
+            "marks": [zone],
+            "stack": {"units": ["EQ-01", "EQ-02"], "raised": raised},
+        }
+        app.run()
+        assert not app.exception, [item.message for item in app.exception]
+        assert not place_errors(app), [item.value for item in app.error]
+        assert any("겹친 순서 1개 층" in item.value for item in app.markdown)
+        app.button(key="space_layout_save").click().run()
+        assert not app.exception, [item.message for item in app.exception]
+        repository = DuckDBEquipmentRepository(database)
+        assert repository.load_floor_layout_stack("C1", "1F").raised == frozenset(raised)
+        assert [bool(mark.get("raised")) for mark in editor_calls[-1]["marks"]] == [bool(raised)]
+    assert len(repository.list_revisions()) == 1
+    clear_equipment_repository()
+
+
 def test_a_raise_only_apply_keeps_module_siblings_where_the_master_rows_put_them(
     tmp_path: Path, editor_calls: list[dict[str, Any]]
 ) -> None:

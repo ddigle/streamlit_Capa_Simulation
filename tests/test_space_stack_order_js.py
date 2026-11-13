@@ -379,6 +379,7 @@ const out = []
 for (const [pick, act] of input.steps) {
   if (pick) S.selection = new Set(pick)
   if (act === 'undo') undo()
+  else if (act && act.to) for (const m of selectedItems()) [m.x, m.y] = act.to
   else if (act) out.push(stackOrder(act))
   out.push(look(act || 'look'))
 }
@@ -587,6 +588,52 @@ def test_an_upper_mark_never_goes_below_the_units() -> None:
     assert out == [True, False]
 
 
+def test_a_raised_mark_with_nothing_under_it_still_comes_down_under_the_units() -> None:
+    """호기 위로 올린 영역 · 도형은 아무것과도 겹치지 않는 자리에 있어도 「뒤로 · 맨 뒤로」 로
+    올림이 풀린다(2026-11-13 확인 보드 1 (가) — 올림은 그림에 안 보이는 저장 상태라 남으면 나중에
+    밑으로 온 호기를 덮는다). 「뒤로」 는 호기 아래 겹 맨 위, 「맨 뒤로」 는 아래 겹 맨 아래다. 겹친
+    것을 찾으면 한 걸음은 그대로 그것 너머이고, 올리지 않은 것 · 올리는 쪽은 겹친 것이 없으면
+    그대로 움직이지 않는다(보드 7-3)."""
+    unit = _unit("EQ", 2, 2)
+    far = _free("Z", "above", 40, 40, 10, 10)
+    low = _free("W", "below", 70, 70)
+    cases = [
+        ([unit, far], ["Z"], "bwd"),
+        ([unit, far], ["Z"], "back"),
+        ([low, unit, far], ["Z"], "bwd"),
+        ([low, unit, far], ["Z"], "back"),
+    ]
+    assert _moves(cases, raised=True) == [[], [], [], []]
+    assert _moves(cases) == [["EQ", "Z"], ["EQ", "Z"], ["W", "EQ", "Z"], ["Z", "EQ", "W"]]
+    # 밑에 겹친 아래 겹 요소가 있으면 한 걸음은 그 너머(아래 겹 맨 위에서 멈추지 않는다).
+    under = _free("W", "below", 41, 41)
+    assert _moves([([under, unit, far], ["Z"], "bwd")]) == [["Z", "EQ", "W"]]
+    # 올린 둘을 함께 — 서로의 차례를 지킨 채 둘 다 내려온다.
+    far2 = _free("Z2", "above", 60, 60)
+    both = [low, unit, far, far2]
+    out = _moves([(both, ["Z", "Z2"], "bwd"), (both, ["Z", "Z2"], "back")])
+    assert out == [["W", "EQ", "Z", "Z2"], ["Z", "EQ", "Z2", "W"]]
+    assert _moves([(both, ["Z", "Z2"], "bwd")], raised=True) == [[]]
+    # 호기 위에 박힌 글자와 함께 골라도 올린 것은 내려오고 글자는 제자리다.
+    text = _box("T", "above", 3, 3, 2, 2)
+    mixed = [unit, text, far]
+    out = _moves([(mixed, ["T", "Z"], "bwd"), (mixed, ["T", "Z"], "back")])
+    assert out == [["EQ", "Z", "T"], ["EQ", "Z", "T"]]
+    # 그대로인 것 — 올리는 쪽, 올리지 않은 먼 영역, 올릴 수 없는 위 겹 상자.
+    plain = _box("P", "above", 40, 40)
+    still = _moves(
+        [
+            ([unit, far], ["Z"], "fwd"),
+            ([unit, far], ["Z"], "front"),
+            ([low, unit], ["W"], "bwd"),
+            ([low, unit], ["W"], "back"),
+            ([unit, plain], ["P"], "bwd"),
+            ([unit, plain], ["P"], "back"),
+        ]
+    )
+    assert still == [None] * 6
+
+
 def test_units_move_among_units_and_a_module_bundle_moves_as_one() -> None:
     """호기는 호기 겹 안에서만, 모듈 묶음은 묶음째 움직인다(설계 A (가)) — 덩이 자리는 가장 아래
     모듈의 자리이고 모듈 하나만 골라도 묶음 전체가 간다. 겹친 것이 없으면 움직이지 않는다."""
@@ -647,6 +694,47 @@ def test_a_raised_zone_that_arrived_raised_counts_nothing_until_it_is_lowered() 
     assert first["raised"] == ["Z-1"] and first["changes"] == 0 and first["stack"] is False
     assert lowered_ok is True and lowered["raised"] == []
     assert lowered["changes"] == 1 and lowered["stack"] is True
+
+
+def test_a_raised_zone_moved_clear_of_everything_still_comes_down_as_one_change() -> None:
+    """올린 영역을 아무것과도 겹치지 않는 자리로 옮겨도 「뒤로 · 맨 뒤로」 가 잠기지 않는다(풍선
+    「이미 맨 뒤입니다」 가 아니다 — 2026-11-13 확인 보드 1 (가)). 내리면 다른 순서 바꿈과 같은
+    길이라 받은 올림을 푼 것은 「적용 안 한 변경 1건」 · `stack` 이고 되돌리기 한 번에 돌아온다.
+    내려온 뒤 겹친 것이 없는 영역은 다시 「이미 맨 뒤입니다」 다."""
+    out = _order_run(
+        [
+            [["Z-1"], "fwd"],
+            [None, {"to": [40, 40]}],
+            [None, "bwd"],
+            [None, "undo"],
+            [None, "back"],
+        ],
+        items=_UNIT_ITEMS,
+    )
+    lift_ok, lift, moved, bwd_ok, bwd, undone, back_ok, back = out
+    assert lift_ok is True and lift["raised"] == ["Z-1"]
+    assert moved["raised"] == ["Z-1"] and moved["changes"] == 1
+    assert moved["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": "", "back": ""}
+    assert bwd_ok is True and bwd["raised"] == [] and bwd["undo"] == 2
+    assert bwd["locks"] == {"front": _FRONT, "fwd": _FRONT, "bwd": _BACK, "back": _BACK}
+    assert undone["raised"] == ["Z-1"] and undone["locks"]["bwd"] == ""
+    assert back_ok is True and back["raised"] == []
+    # 받은 올림(저장값) — 「뒤로」 는 먼 아래 영역 위(아래 겹 맨 위), 「맨 뒤로」 는 그 밑이다.
+    items = [
+        ("EQ-01", "unit", 0, 0, 4, 4),
+        ("Z-1", "zone", 40, 40, 6, 6, None, True),
+        ("Z-2", "zone", 70, 70, 4, 4),
+    ]
+    first, bwd_ok, bwd, undone, back_ok, back = _order_run(
+        [[["Z-1"], None], [None, "bwd"], [None, "undo"], [None, "back"]], items=items
+    )
+    assert first["locks"]["bwd"] == "" and first["locks"]["back"] == ""
+    assert bwd_ok is True and bwd["order"] == ["EQ-01", "Z-2", "Z-1"] and bwd["raised"] == []
+    assert bwd["changes"] == 1 and bwd["stack"] is True
+    assert undone["order"] == ["EQ-01", "Z-1", "Z-2"] and undone["raised"] == ["Z-1"]
+    assert undone["changes"] == 0 and undone["stack"] is False
+    assert back_ok is True and back["order"] == ["EQ-01", "Z-1", "Z-2"] and back["raised"] == []
+    assert back["changes"] == 1 and back["stack"] is True
 
 
 def test_the_fab_editor_keeps_zones_under_its_blocks() -> None:

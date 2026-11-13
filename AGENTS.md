@@ -1620,7 +1620,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`stackUnits` — 모듈 묶음째 덩이, 설계 A (가)), 요소 겹(`stackDeck` — 아래 겹 · 호기 겹 하나 · 위 겹을 한 줄로 보고 올릴 수 있는
     영역·도형 `raisable` 만 호기 겹을 넘는다, 설계 C (가); FAB 은 `raisable` 이 없어 겹 안만, 설계 F (가)), 둘을 합친 새 차례 ·
     올림(`stackPlan` — 「앞으로 · 뒤로」 는 그 쪽에서 겹친 것 하나를 넘고 「맨 앞 · 맨 뒤」 는 끝으로, 그 쪽에 겹친 것이 없으면
-    null), 위 겹 요소가 호기 · 아래 요소 위에 막혀 내리지 못함(`stackPinned` → 풍선 `KEEP_ABOVE_REASON`), 순서 키(`orderKeyOf`)다.
+    null. 예외 하나 — 고른 것에 올린 영역·도형이 있으면 막혀도 「뒤로」 는 그것을 아래 겹 맨 위로, 「맨 뒤로」 는 고른 영역·도형을
+    아래 겹 맨 아래로 내려 올림을 푼다(`stackDeck` 의 `stuck`, 2026-11-13 확인 보드 1 (가) — 올림은 그림에 안 보이는 저장 상태라
+    남으면 나중에 밑으로 온 호기를 덮는다)), 위 겹 요소가 호기 · 아래 요소 위에 막혀 내리지 못함(`stackPinned` → 풍선 `KEEP_ABOVE_REASON`), 순서 키(`orderKeyOf`)다.
     선택 칸 「순서」 줄(`.sle-order` — 돌리기·뒤집기 줄 밑, 단추 넷 `sle-order-step`)은 고른 것에 호기나 도면 요소가 있을 때 서고, 끝에
     닿은 쪽 단추와 `data.orderEditable` 거짓(가정 설비 시나리오 — `orderLock` 풍선)은 `lockWith` 로 잠근다(`syncOrder`). 단추·키
     (`Ctrl+Shift+]` · `Ctrl+]` · `Ctrl+[` · `Ctrl+Shift+[`, 서식 · 뒤집기 키 뒤)는 `stackOrder` 한 길이고 되돌리기 한 번(`op: 'order'`
