@@ -1004,7 +1004,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     「확인만」 은 콜백(`on_sheetCheck_change` → `_check_sheet_request` — 그린 회차의 편집본 · 표 조건 · 잠금 · 캔버스 · 오늘을 쥔
     `partial`, 편집본 세대가 바뀌었으면 버림)이 본문보다 먼저 같은 `check_sheet_cells` 로 판정해 세션 `space_sheet_verdict_v1`
     에 두고(다음 회차 data `sheetVerdict`) 새로 막힌 칸(설비명 · 칸 · 글 · 규칙이 앞 판정에 없던 것)만 `EQ-25` 로 낸다 — 편집본에는
-    넣지 않는다. 그 밖의 적용 거부(층 · FAB 편집기의 「적용하지 못했습니다」 · 다시 서는 사이의 누름)도 편집기 아래 글 상자 대신
+    넣지 않는다. 앞 판정은 요청의 `base`(브라우저에서 고친 칸이 마지막으로 빈 seq)보다 뒤의 seq 일 때만 쓴다 — 칸을 비운 뒤 같은
+    막힌 값을 다시 치면 다시 알린다(R2 리뷰 지적 4). 그 밖의 적용 거부(층 · FAB 편집기의 「적용하지 못했습니다」 · 다시 서는 사이의 누름)도 편집기 아래 글 상자 대신
     `_refuse_apply`(알림창 · Alarm `FL-04` · `FL-03` + 한 번 더 돎)다(설계 규칙 UI-NTF-03 예외). 받은 적용은 쓴
     (설비명, 칸)(따라간 묶음 형제 포함)을 작업 공간 `stage_sheet_cells`(이번 이름 바꿈을 따라감)에 두고 세션
     `space_sheet_applied_v1` 를 올린다 — epoch 에 들어 같은 값으로 다듬어진 적용도 새 epoch 로 브라우저 칸을 비운다. 칸
@@ -1415,7 +1416,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     열린 칸을 확정 없이 닫는다(`dropOpenSheetCell` — 버릴 글이 「확인만」 으로 나가 `EQ-25` 가 서지 않게, R2 리뷰 지적 3). 「되돌리기」
     는 친 글이 칸을 바꾸는 글이었으면 뒤따르는 click 을 한 번 삼켜(`S.undoSwallow`) 앞 고침까지 되돌리지 않는다. 「고른 호기」 탭의 그림 열쇠는 보이는 줄 id 모음(정렬)이라 같은 묶음 안 누르기로 표를 다시 만들지 않고, 열린 칸이
     있으면 다시 그리기를 닫을 때까지 미룬다. 칸을 확정하거나(Delete 포함) 칸 되돌리기마다 트리거 `sheetCheck`({epoch, seq —
-    오르기만 함, cells — 고친 칸 전부})로 「확인만」 묻고(`sheetEditSend` — 고친 칸이 없으면 묻지 않고 판정을 걷는다), 판정은
+    오르기만 함, base — 고친 칸이 마지막으로 빈 seq `S.sheetBase`, cells — 고친 칸 전부})로 「확인만」 묻고(`sheetEditSend` —
+    고친 칸이 없으면 묻지 않고 판정을 걷으며 그 seq 가 다음 base 다. 「처음 상태로」(`resetSheetEdit`)도 seq 를 올려 그 자리를 잡는다), 판정은
     data `sheetVerdict`({epoch, seq, blocked, follow})를 **마지막으로 보낸 seq** 일 때만 받는다. 막힌 칸으로 거부한 적용은 data
     `sheetRefused`({epoch, nonce, blocked, follow})를 nonce 마다 한 번 받는다. 둘 다 막힌 칸(판정한 글이 지금 친 글과 같을
     때만)을 빨갛게 짚고 「적용」 을 잠근다(까닭 「「호기 정보」 막힌 칸 n개」). 색은 팔레트 `cell-*`(설비 마스터 표 토큰

@@ -1379,14 +1379,19 @@ def checking_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 def _check(
-    app: AppTest, calls: list[dict[str, Any]], seq: int, *cells: tuple[str, str, str]
+    app: AppTest,
+    calls: list[dict[str, Any]],
+    seq: int,
+    *cells: tuple[str, str, str],
+    base: int = 0,
 ) -> list[dict[str, Any]]:
     """창 칸 확인 한 번 — 낸 `EQ-25` 사건(대역은 본문 안에서 콜백을 불러 그 회차 끝 표지 자리가
     보낸다 — 브라우저에서는 콜백이 본문보다 먼저라 머리 알림 칸이 보낸다)을 돌려주고, 한 번 더 돌아
-    판정이 편집기 data 에 실린다."""
+    판정이 편집기 data 에 실린다. `base` 는 브라우저에서 고친 칸이 마지막으로 빈 seq 다."""
     app.session_state[FAKE_CHECK_KEY] = {
         "epoch": calls[-1]["epoch"],
         "seq": seq,
+        "base": base,
         "cells": [{"id": unit, "col": column, "text": text} for unit, column, text in cells],
     }
     app.run()
@@ -1436,6 +1441,28 @@ def test_each_confirmed_window_cell_is_checked_at_once_and_new_blocks_alarm(
     )
     assert checking_calls[-1]["sheetVerdict"]["blocked"] == []
     assert not sent
+    clear_equipment_repository()
+
+
+def test_a_check_after_the_window_emptied_alarms_the_same_blocked_cell_again(
+    tmp_path: Path, checking_calls: list[dict[str, Any]]
+) -> None:
+    """R2 리뷰 지적 4 — 처음 상태로 · 되돌리기로 고친 칸이 0개가 되면 브라우저는 묻지 않고 판정을
+    걷는다. 그 뒤 같은 칸에 같은 막힌 값을 다시 치면 서버가 앞 판정을 「이미 알린 칸」 으로 써
+    빨강만 서고 `EQ-25` 가 다시 서지 않았다. 요청의 `base`(칸이 마지막으로 빈 seq)보다 뒤의 판정만
+    앞 판정으로 쓴다 — 잇달아 친 확인(앞 판정을 받기 전, 같은 base)은 두 번 알리지 않는다."""
+    app, _ = _open_editor(tmp_path)
+    blocked = ("EQ-01", "반입일정", "2026-08-01")
+
+    assert len(_check(app, checking_calls, 1, blocked)) == 1
+    # 판정 1 을 받기 전에 다른 칸을 잇달아 확정한 확인 — 같은 base 0.
+    assert not _check(app, checking_calls, 2, blocked, ("EQ-01", "투자구분", "개발"))
+    # 칸을 모두 비움(seq 3 — 묻지 않음) 뒤 같은 막힌 값을 다시 친다.
+    again = _check(app, checking_calls, 4, blocked, base=3)
+    assert len(again) == 1 and again[0]["short"].startswith("EQ-01 반입일정 2026-08-01 — ")
+    assert checking_calls[-1]["sheetVerdict"]["seq"] == 4
+    # 그 뒤로는 base 3 그대로 — 다시 알리지 않는다.
+    assert not _check(app, checking_calls, 5, blocked, ("EQ-01", "투자구분", "개발"), base=3)
     clear_equipment_repository()
 
 

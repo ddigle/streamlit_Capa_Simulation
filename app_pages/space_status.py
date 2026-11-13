@@ -2206,9 +2206,12 @@ def _check_sheet_request(
 
     편집본은 고치지 않는다 — 판정(`check_sheet_cells`, 표와 같은 인자)을 세션에 두어 다음 회차
     편집기 data `sheetVerdict` 로 돌려주고, **새로** 막힌 칸(같은 편집기 · epoch 의 앞 판정에 없던
-    칸 · 글 · 규칙)만 알림창 · Alarm 사건 `EQ-25` 로 낸다. 그린 회차의 편집본 세대와 지금 세대가
-    다르면(그 사이 편집본이 바뀜 — 다음 회차에 편집기가 새 epoch 로 선다) 버린다. 꼴이 어긋난 요청도
-    조용히 버린다 — 「적용」 이 같은 판정을 한 번 더 한다."""
+    칸 · 글 · 규칙)만 알림창 · Alarm 사건 `EQ-25` 로 낸다. 앞 판정은 요청의 `base`(브라우저에서 고친
+    칸이 마지막으로 빈 seq — 처음 상태로 · 되돌리기로 칸이 0개가 되면 묻지 않고 판정을 걷는다)보다
+    뒤의 seq 일 때만 쓴다 — 칸을 비운 뒤 같은 칸에 같은 막힌 값을 다시 치면 다시 알린다(R2 리뷰 지적
+    4). 잇달아 친 확인(앞 판정을 받기 전)은 같은 base 라 앞 판정을 쓴다. 그린 회차의 편집본 세대와
+    지금 세대가 다르면(그 사이 편집본이 바뀜 — 다음 회차에 편집기가 새 epoch 로 선다) 버린다. 꼴이
+    어긋난 요청도 조용히 버린다 — 「적용」 이 같은 판정을 한 번 더 한다."""
     if equipment_buffer_generation() != generation:
         return
     try:
@@ -2225,11 +2228,14 @@ def _check_sheet_request(
     except (ValueError, TypeError, KeyError):
         return
     previous = st.session_state.get(SHEET_VERDICT_KEY)
+    base = payload.get("base", 0)
+    since = base if isinstance(base, int) and not isinstance(base, bool) else 0
     seen = (
         blocked_keys(previous)
         if isinstance(previous, Mapping)
         and previous.get("editor") == editor_key
         and previous.get("epoch") == epoch
+        and int(previous.get("seq") or 0) > since
         else frozenset()
     )
     st.session_state[SHEET_VERDICT_KEY] = {

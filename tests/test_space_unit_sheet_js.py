@@ -889,9 +889,9 @@ process.stdout.write(JSON.stringify({
 def test_ctrl_z_on_a_window_row_undoes_like_the_undo_button() -> None:
     """R2 리뷰 지적 2 · 2026-11-13 사용자 답 「다음 배포로」 — 창 줄에 초점이 있을 때 Ctrl+Z 가 칸
     고침을 되돌리지 않았다(창 키를 도면 단축키로 새지 않게 모두 막음). 배치 편집에서 입력 칸 밖의
-    Ctrl(⌘)+Z 만 「되돌리기」 단추와 같은 `undo()` 로 보내고(Shift 를 더해도 — 편집기 몸과 같은 판정),
-    그 밖의 키는 여전히 도면으로 새지 않는다. 보기 화면 · 입력 칸 안(칸 글 · 펼침 찾기 칸)은 실행
-    취소가 아니다."""
+    Ctrl(⌘)+Z 만 「되돌리기」 단추와 같은 `undo()` 로 보내고(Shift 를 더해도 — 편집기 몸과 같은
+    판정), 그 밖의 키는 여전히 도면으로 새지 않는다. 보기 화면 · 입력 칸 안(칸 글 · 펼침 찾기 칸)은
+    실행 취소가 아니다."""
     body = _EDIT.search(JS)
     assert body, "editor.js 에 // <sheet-edit> 구획이 없습니다"
     row = {"ctrl": True, "meta": False, "key": "z", "tag": "TR"}
@@ -921,10 +921,10 @@ def test_ctrl_z_on_a_window_row_undoes_like_the_undo_button() -> None:
 
 def test_reset_and_undo_drop_an_open_cell_before_its_blur_commits() -> None:
     """R2 리뷰 지적 3 — 칸을 연 채 「처음 상태로」 · 「되돌리기」 를 누르면 누름(blur)이 칸을 먼저
-    확정해 「확인만」 이 나가고, 버린 값이 막힌 값이면 창에 빨간 칸이 없는데 `EQ-25` 가 섰다. 두 단추는
-    누름 시작(blur 보다 먼저)에서 열린 칸을 확정 없이 닫고, 「되돌리기」 는 친 글이 칸을 바꾸는 글이면
-    뒤따르는 click 을 한 번 삼켜 앞 고침까지 되돌리지 않는다. 잠긴 단추 · 왼쪽 밖 단추는 그대로(다른
-    곳 누름처럼 blur 가 확정)다."""
+    확정해 「확인만」 이 나가고, 버린 값이 막힌 값이면 창에 빨간 칸이 없는데 `EQ-25` 가 섰다. 두
+    단추는 누름 시작(blur 보다 먼저)에서 열린 칸을 확정 없이 닫고, 「되돌리기」 는 친 글이 칸을
+    바꾸는 글이면 뒤따르는 click 을 한 번 삼켜 앞 고침까지 되돌리지 않는다. 잠긴 단추 · 왼쪽 아닌
+    마우스 단추는 그대로(다른 곳 누름처럼 blur 가 확정)다."""
     block = JS[JS.index("  function dropOpenSheetCell() {") : JS.index("  unplaceButton.onclick =")]
     drop = block[: block.index("\n  }\n")]
     assert "closeSheetCell(false)" in drop and "closeSheetCell(true)" not in drop
@@ -945,6 +945,24 @@ def test_reset_and_undo_drop_an_open_cell_before_its_blur_commits() -> None:
     # 다른 곳 누름(열린 칸의 blur)은 여전히 확정이다.
     opener = JS[JS.index("  function openSheetCell(") : JS.index("  function closeSheetCell(")]
     assert "input.onblur = () => closeSheetCell(true)" in opener
+
+
+def test_a_check_carries_the_seq_where_the_window_last_emptied() -> None:
+    """R2 리뷰 지적 4 — 고친 칸이 0개가 되면(되돌리기 · 처음 상태로) 묻지 않으므로 서버는 앞 판정을
+    「이미 알린 칸」 으로 계속 썼다. 칸이 빈 자리의 seq 를 `base` 로 기억해 다음 확인마다
+    싣는다(서버는 그보다 뒤의 판정만 앞 판정으로 쓴다 — `space_status._check_sheet_request`). 「처음
+    상태로」 도 그 자리를 새로 잡고 seq 를 올려 늦게 온 앞 판정을 받지 않는다."""
+    send = JS[JS.index("  function sheetEditSend() {") : JS.index("  function adoptSheetEdit(")]
+    empty = send[send.index("if (!cells.size) {") : send.index("setTriggerValue('sheetCheck'")]
+    assert "S.sheetBase = S.sheetSeq" in empty
+    assert (
+        "setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, base: S.sheetBase || 0,"
+    ) in send
+    reset = JS[JS.index("  function resetSheetEdit() {") :]
+    reset = reset[: reset.index("\n  }\n")]
+    assert reset.index("S.sheetSeq = (S.sheetSeq || 0) + 1") < reset.index(
+        "S.sheetBase = S.sheetSeq"
+    )
 
 
 def test_a_painted_cell_keeps_its_long_text_tip_in_step_with_the_shown_text() -> None:

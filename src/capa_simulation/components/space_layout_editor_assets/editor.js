@@ -8942,6 +8942,9 @@ export default function (component) {
   function resetSheetEdit() {
     closeSheetCell(false, null, true)
     S.sheetCells = new Map()
+    // 칸이 0개가 된 자리 — 늦게 온 앞 판정은 받지 않고, 다음 확인은 앞 판정을 「이미 알린 칸」 으로 쓰지 않는다(`sheetEditSend`).
+    S.sheetSeq = (S.sheetSeq || 0) + 1
+    S.sheetBase = S.sheetSeq
     S.sheetVerdict = null
     S.sheetCursor = null
     S.sheetPress = null
@@ -9140,17 +9143,20 @@ export default function (component) {
   // 칸 확정마다 서버에 「확인만」 묻는다(2026-11-12 시안 보드 답 5-6 메모 「호기 정보 창에서 즉시 막고, 알람으로」 · Q1 (가)) —
   // 고친 칸 전부를 보내 마지막 상태로 판정받으므로 입력 차례를 타지 않고, 편집본에는 넣지 않는다. 판정은 data `sheetVerdict`(같은
   // seq)로 와 막힌 칸이 친 값 그대로 빨갛게 서고(알림은 파이썬이 낸다) 「적용」 이 잠긴다. 고친 칸이 없으면 묻지 않고 판정을 걷는다.
+  // 고친 칸이 0개가 된 자리의 seq 는 다음 요청들의 `base` 다 — 서버는 그보다 뒤의 판정만 「이미 알린 칸」 으로 쓴다(칸을 비운 뒤
+  // 같은 막힌 값을 다시 치면 다시 알린다 — R2 리뷰 지적 4. 앞 판정을 받기 전에 잇달아 친 확인은 같은 base 라 두 번 알리지 않는다).
   function sheetEditSend() {
     if (!SHEET_EDIT) return
     const cells = sheetEditCells()
     S.sheetSeq = (S.sheetSeq || 0) + 1
     if (!cells.size) {
+      S.sheetBase = S.sheetSeq
       S.sheetVerdict = null
       S.sheetEditRev = (S.sheetEditRev || 0) + 1
       updateStatus()
       return
     }
-    setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, cells: sheetEditPayload(cells) })
+    setTriggerValue('sheetCheck', { epoch: S.epoch, seq: S.sheetSeq, base: S.sheetBase || 0, cells: sheetEditPayload(cells) })
   }
   // 적용 거부(data `sheetRefused` — {epoch, nonce, blocked, follow}, 파이썬 `verdict_payload`)를 한 번 받는다 — 막힌 칸이 빨강 + 까닭
   // 풍선으로 서고 「적용」 이 잠긴다. 고친 칸은 그대로다(같은 epoch).
