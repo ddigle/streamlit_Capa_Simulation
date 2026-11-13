@@ -202,21 +202,28 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-@pytest.hookimpl(trylast=True)
-def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:
+def pytest_fixture_post_finalizer(
+    fixturedef: pytest.FixtureDef[Any], request: pytest.FixtureRequest
+) -> None:
     """정리 뒤 사라진 시험 `tmp_path` 자리에 빈 폴더를 다시 둔다 — 그 이름을 세션 안에서 다시
     내주지 않게 하는 자동 복원이다.
 
-    보존 정책 `failed`(`tmp_path_retention_policy` — 조각 실행기가 쓴다)는 통과한 시험의
-    `tmp_path` 를 정리 단계에서 지운다. 지운 채 두면 pytest 가 같은 이름(시험 이름 앞 30자 +
-    번호)을 다음 시험에 다시 내준다. 경로를 키로 쓰는 프로세스 캐시(`get_scenario_repository` ·
-    `get_equipment_repository` 와 경로 · 쓰기 세대만 키인 `st.cache_data`)가 그 경로에 앞 시험의
-    저장소 · 값을 돌려줘, 새 빈 DB 를 연 시험이 데이터 오류로 멈추거나 앞 시험 값을 조용히 본다.
-    빈 폴더는 번호만 붙잡고 파일은 지워진 채다. `trylast` 라 `tmp_path` 정리(보존 정책의
-    지우기)가 끝난 뒤 본다 — 기본 보존에서는 할 일이 없다.
+    보존 정책 `failed`(`tmp_path_retention_policy` — 조각 실행기가 쓴다)는 call 이 통과한 시험과
+    call 까지 가지 못한 시험의 `tmp_path` 를 정리 단계에서 지운다. 지운 채 두면 pytest 가 같은
+    이름(시험 이름 앞 30자 + 번호)을 다음 시험에 다시 내준다. 경로를 키로 쓰는 프로세스 캐시
+    (`get_scenario_repository` · `get_equipment_repository` 와 경로 · 쓰기 세대만 키인
+    `st.cache_data`)가 그 경로에 앞 시험의 저장소 · 값을 돌려줘, 새 빈 DB 를 연 시험이 데이터
+    오류로 멈추거나 앞 시험 값을 조용히 본다. 빈 폴더는 번호만 붙잡고 파일은 지워진 채다.
+
+    pytest 는 준비 하나의 정리(보존 정책의 지우기 포함)를 다 돌린 뒤, 값을 비우기 전에 이 훅을
+    부른다. 그래서 같은 시험의 다른 준비가 정리에서 오류를 내도, `tmp_path` 를
+    `request.getfixturevalue` 로 늦게 받았어도, 준비 오류로 본문까지 못 갔어도 본다. 시험 정리 훅
+    (`pytest_runtest_teardown`)은 앞의 오류에 막히고 `item.funcargs` 에 든 것만 봐 셋을 놓친다.
+    기본 보존에서는 할 일이 없다. 다시 불려 값이 이미 비었거나 준비가 실패해 값이 없으면 넘긴다.
     """
-    funcargs = getattr(item, "funcargs", None) or {}
-    path = funcargs.get("tmp_path")
+    if fixturedef.argname != "tmp_path" or fixturedef.cached_result is None:
+        return
+    path = fixturedef.cached_result[0]
     if isinstance(path, Path) and not path.exists():
         path.mkdir(parents=True, exist_ok=True)
 
