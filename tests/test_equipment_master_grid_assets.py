@@ -2869,6 +2869,40 @@ def test_the_view_is_kept_only_when_moves_and_inserted_rows_explain_the_new_list
     assert result == [True, True, True, False, False, False, False]
 
 
+_INSERTED_ABOVE_RUNNER = """
+const input = JSON.parse(require('fs').readFileSync(0, 'utf8'))
+process.stdout.write(JSON.stringify(input.cases.map((c) => insertedAbove(c[0], c[1], c[2]))))
+"""
+
+
+def test_inserted_rows_above_the_first_seen_row_push_the_scroll_down_by_their_count() -> None:
+    """R2 리뷰 지적 5(브라우저로 잼 — 고친 줄이 위로 굴러간 채 「호기 상세」 에서 묶음 칸을
+    고치면 형제 셋이 보이는 줄 위에 끼워져 보던 첫 줄이 셋 아래로 밀렸다). 지킨 보기에서 보던 첫
+    줄 앞에 선 끼운 줄 수만큼 스크롤을 내린다 — 표에서 바로 고쳐 끼운 줄이 보던 줄 뒤면 0 이다.
+    늘어난 높이를 먼저 세워 내린 스크롤이 옛 끝에 잘리지 않는다(UI-PRF-03)."""
+    cases = [
+        [["a", "t", "x", "y", "z", "b", "c"], "b", ["x", "y", "z"]],
+        [["a", "t", "x", "y", "b", "c"], "a", ["x", "y"]],
+        [["a", "t", "x", "b"], "t", ["x"]],
+        [["x", "a", "b"], "b", ["x"]],
+        [["a", "b"], "q", ["x"]],
+        [["a", "b", "x"], "b", []],
+    ]
+    result: object = _node({"cases": cases}, _INSERTED_ABOVE_RUNNER)
+    assert result == [3, 0, 0, 1, 0, 0]
+    draw = _function("drawGrid")
+    kept = draw[draw.index("if (!keptView(before, after, moved, inserted)) {") :]
+    assert kept.index("S.resetScroll = true") < kept.index(
+        "S.model.ordered[Math.floor(S.scroller.scrollTop / ROW_H)]"
+    )
+    assert "renamed.has(id) ? renamed.get(id) : id" in kept
+    shift = draw[draw.index("  if (shift) {") :]
+    assert shift.index("S.body.style.height = S.model.ordered.length * ROW_H + 'px'") < shift.index(
+        "S.scroller.scrollTop += shift * ROW_H"
+    )
+    assert shift.index("S.scroller.scrollTop += shift * ROW_H") < shift.index("paintWindow(S)")
+
+
 _GROUP_VIEW_RUNNER = (
     _BURST_RUNNER[: _BURST_RUNNER.index("const parentElement = new FakeNode('div')")]
     + r"""
