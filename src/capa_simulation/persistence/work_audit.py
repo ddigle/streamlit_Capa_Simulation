@@ -149,8 +149,14 @@ def voc_resolve(args: Mapping[str, Any], result: Any) -> WorkNote:
     )
 
 
+def _deleted(result: Any) -> dict[str, object] | None:
+    """지우기 함수의 돌려준 값(참 · 거짓) — 그 사이 다른 세션이 지워 지울 것이 없었으면 거짓이다.
+    실패 줄(결과 `None`)에는 싣지 않는다."""
+    return None if result is None else {"deleted": bool(result)}
+
+
 def voc_delete(args: Mapping[str, Any], result: Any) -> WorkNote:
-    return WorkNote(tgt=_target("voc", args.get("post_id")))
+    return WorkNote(tgt=_target("voc", args.get("post_id")), det=_deleted(result))
 
 
 # ------------------------------------------------------------------ 설비
@@ -238,7 +244,7 @@ def baseline_save(args: Mapping[str, Any], result: Any) -> WorkNote:
 
 
 def baseline_delete(args: Mapping[str, Any], result: Any) -> WorkNote:
-    return WorkNote(tgt=_target("baseline", args.get("baseline_id")))
+    return WorkNote(tgt=_target("baseline", args.get("baseline_id")), det=_deleted(result))
 
 
 def drawing(args: Mapping[str, Any], result: Any) -> WorkNote:

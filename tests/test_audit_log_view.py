@@ -30,6 +30,7 @@ def _line(ts: str, ev: str, actor: str = "demo.user", **extra: Any) -> dict[str,
         "authn_login_fail": ("access", "fail"),
         "authz_fail_access_list": ("access", "denied"),
         "data_scenario_delete": ("data", "success"),
+        "data_voc_delete": ("data", "success"),
         "data_official_publish": ("data", "success"),
         "user_created": ("admin", "success"),
     }[ev]
@@ -62,6 +63,18 @@ def test_the_summary_has_a_blank_row_for_a_day_without_records() -> None:
     assert (today["작업"], today["공식 발행"], today["삭제"], today["관리"]) == (2, 1, 1, 1)
     assert frame.iloc[1].iloc[1:].isna().all(), "기록기가 안 돈 날은 0 이 아니라 빈칸"
     assert frame.iloc[2]["접속자"] == 1
+
+
+def test_a_delete_that_found_nothing_is_not_counted_as_a_delete() -> None:
+    lines = [
+        _line("2026-11-13T00:20:00.000Z", "data_voc_delete", det={"deleted": False}),
+        _line("2026-11-13T00:21:00.000Z", "data_voc_delete", det={"deleted": True}),
+        _line("2026-11-13T00:22:00.000Z", "data_scenario_delete"),
+    ]
+
+    today = view.summary_table(lines, TODAY, TODAY).iloc[0]
+
+    assert (today["삭제"], today["작업"]) == (2, 3)
 
 
 def test_today_values_are_the_four_value_cells() -> None:

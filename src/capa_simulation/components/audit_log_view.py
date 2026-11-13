@@ -300,7 +300,8 @@ def _count(day: _Day, line: Mapping[str, Any]) -> None:
         day.work += 1
     if ev == "data_official_publish":
         day.official += 1
-    if ev in _DELETE_EVENTS:
+    if ev in _DELETE_EVENTS and det.get("deleted") is not False:
+        # 지울 것이 없었던 지우기(그 사이 다른 세션이 지움 — `deleted` 거짓)는 삭제로 세지 않는다.
         day.deletes += 1
     if line.get("cat") == "admin":
         day.admin += 1

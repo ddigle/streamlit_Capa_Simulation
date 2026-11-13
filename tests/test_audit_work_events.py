@@ -252,6 +252,23 @@ def test_equipment_writes_record_too(on: None, tmp_path: Path) -> None:
         ("data_target_clear", None),
         ("data_baseline_delete", {"type": "baseline", "id": "demo-missing-baseline"}),
     ]
+    assert lines[1]["det"] == {"deleted": False}, "지울 것이 없던 지우기는 그렇다고 남는다"
+
+
+def test_a_delete_that_found_nothing_says_so(
+    on: None, repository: DuckDBScenarioRepository
+) -> None:
+    """그 사이 다른 세션이 지운 글 — 이 세션의 지우기는 `deleted` 거짓으로 남고 실제로 지운 줄만
+    참이다(같은 대상을 둘이 지운 것처럼 보이지 않게)."""
+    post = repository.create_voc_post(category="질문", title="t", body="b", author=ACTOR)
+    assert repository.remove_voc_post(post) is True
+    assert repository.remove_voc_post(post) is False
+
+    deletes = [line for line in _work() if line["ev"] == "data_voc_delete"]
+    assert [(line["out"], line["det"]) for line in deletes] == [
+        ("success", {"deleted": True}),
+        ("success", {"deleted": False}),
+    ]
 
 
 def test_an_off_recorder_writes_no_line_and_resolves_nobody(
