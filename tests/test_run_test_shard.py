@@ -190,6 +190,48 @@ def test_a_basetemp_root_gives_each_shard_its_own_folder_from_the_caller(
         assert command[command.index("tmp_path_retention_policy=failed") - 1] == "-o"
 
 
+@pytest.mark.parametrize("marker", ["folder", "file"])
+def test_a_basetemp_root_inside_a_git_work_tree_is_refused_before_anything_is_made(
+    marker: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """저장소 안 임시 자리는 사본 전용 스크립트 시험 · 시험 문지기가 운영 자리로 거절해 거짓 실패가
+    쏟아진다 — 실행기가 먼저 멈춘다. 워크트리의 `.git` 은 파일이다."""
+    tree = tmp_path / "repo"
+    tree.mkdir()
+    if marker == "folder":
+        (tree / ".git").mkdir()
+    else:
+        (tree / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    root = tree / "e2e" / "pt"
+
+    def must_not_run(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("거절한 판은 pytest 를 부르지 않는다")
+
+    monkeypatch.setattr(subprocess, "run", must_not_run)
+
+    with pytest.raises(SystemExit) as caught:
+        run_test_shard.main(["--shard", "1", "--of", "4", "--basetemp-root", str(root)])
+
+    assert caught.value.code == 2
+    assert str(tree) in capsys.readouterr().err
+    assert not (tree / "e2e").exists()
+
+
+def test_the_holder_is_the_nearest_folder_with_git_on_either_spelling(tmp_path: Path) -> None:
+    holder = run_test_shard.git_work_tree_holder
+    assert holder(tmp_path / "pt") is None
+    tree = tmp_path / "repo"
+    (tree / ".git").mkdir(parents=True)
+    assert holder(tree / "a" / "pt") == tree
+    if os.name != "nt":
+        # 저장소를 가리키는 링크 아래도 저장소 안이다.
+        (tmp_path / "link").symlink_to(tree, target_is_directory=True)
+        assert holder(tmp_path / "link" / "pt") is not None
+
+
 SYNTHETIC_TEST = """
 def test_leaves_a_mark(tmp_path):
     (tmp_path / "mark").write_text("x", encoding="utf-8")

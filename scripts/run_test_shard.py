@@ -19,8 +19,9 @@
 - **함께 돌아도** — 캐시(`.pytest_cache`)를 쓰지 않아 조각들이 같은 파일을 덮지 않는다. 한 PC 에서
   여러 조각을 함께 돌릴 때는 `--basetemp-root` 를 준다 — 조각마다 `<폴더>/shard<k>` 를 임시 폴더로
   쓰고(pytest 가 시작 때 비운다), 기본 임시 폴더의 오래된 차례 지우기가 서로의 폴더에 닿지 않는다.
-  주지 않으면 pytest 기본이다. 폴더는 저장소(git 작업 트리) 밖에 둔다 — 사본 전용 스크립트 시험이
-  조상에 `.git` 이 있는 임시 자리를 운영 자리로 거절해 거짓으로 실패한다.
+  주지 않으면 pytest 기본이다. 폴더는 저장소(git 작업 트리) 밖에 둔다 — 사본 전용 스크립트 시험과
+  시험 문지기가 조상에 `.git` 이 있는 임시 자리를 운영 자리로 거절해 거짓으로 실패한다. 그래서 그런
+  폴더를 주면 아무것도 만들지 않고 멈춘다(종료 코드 2).
 - **임시 폴더 보존** — `--basetemp-root` 를 주면 보존 정책을 `failed` 로 건다. 통과한 시험의
   `tmp_path` 는 끝나자마자 지우고(빈 폴더가 번호를 붙잡는다 — `tests/conftest.py`) 실패한 시험의
   것만 남긴다. pytest 기본(모두 남김)이면 조각 하나가 GB 단위로 쌓인다 — 시작 때 그 폴더를 비우니
@@ -32,6 +33,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -93,6 +95,21 @@ def pytest_command(files: Sequence[Path], *, basetemp: Path | None = None) -> li
     ]
 
 
+def git_work_tree_holder(path: Path) -> Path | None:
+    """`path` 나 그 위 폴더 가운데 `.git` 을 든 첫 폴더 — git 작업 트리 밖이면 None.
+
+    시험이 운영 DB 자리를 가르는 판정(`settings.is_operational_database_place` 3)과 같다 — 적은
+    그대로의 경로와 푼 경로를 둘 다 보고, `.git` 이 파일인 워크트리도 든다. 그 판정이 거절할 자리를
+    여기서 먼저 거절한다.
+    """
+    given = Path(os.path.abspath(path.expanduser()))
+    for candidate in (given, given.resolve()):
+        for place in (candidate, *candidate.parents):
+            if os.path.lexists(place / ".git"):
+                return place
+    return None
+
+
 def shard_basetemp(root: Path, shard: int) -> Path:
     """조각의 임시 폴더. 부르는 자리 기준으로 풀고(pytest 는 저장소 뿌리에서 돈다) 뿌리를 만든다 —
     pytest 는 `--basetemp` 하나만 만들고 그 위 폴더가 없으면 첫 시험 준비에서 멈춘다."""
@@ -117,6 +134,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     options = parser.parse_args(argv)
     if not 1 <= options.shard <= options.of:
         parser.error("--shard 는 1 이상 --of 이하입니다.")
+    if options.basetemp_root is not None:
+        holder = git_work_tree_holder(options.basetemp_root)
+        if holder is not None:
+            parser.error(
+                f"--basetemp-root 는 저장소(git 작업 트리) 밖 폴더를 줍니다 — {holder} 에 .git 이"
+                " 있어 그 아래 임시 자리는 시험이 운영 자리로 거절합니다."
+            )
     return options
 
 
