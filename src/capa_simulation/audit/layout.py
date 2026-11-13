@@ -17,6 +17,7 @@ from __future__ import annotations
 import gzip
 import json
 import re
+import zlib
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any, Final
@@ -100,8 +101,21 @@ def encode_lines(lines: Iterable[Mapping[str, Any]]) -> bytes:
 
 
 def decode_lines(data: bytes) -> list[dict[str, Any]]:
-    """gzip 바이트 → 줄들. 읽지 못한 줄은 건너뛴다."""
+    """gzip 바이트 → 줄들. 읽지 못한 줄은 건너뛴다. 압축이 깨졌으면 `UNREADABLE` 가운데 하나를
+    올린다(`decode_or_none` 은 `None`)."""
     return parse_text(gzip.decompress(data).decode("utf-8", errors="replace"))
+
+
+# 압축이 깨진 조각(gzip 머리 · 잘린 끝 · deflate 오류)을 읽을 때 나는 예외.
+UNREADABLE: Final = (OSError, EOFError, zlib.error)
+
+
+def decode_or_none(data: bytes) -> list[dict[str, Any]] | None:
+    """`decode_lines` — 압축이 깨졌으면 `None`(깨진 조각 하나가 할 일 전체를 멈추지 않게)."""
+    try:
+        return decode_lines(data)
+    except UNREADABLE:
+        return None
 
 
 def parse_text(text: str) -> list[dict[str, Any]]:

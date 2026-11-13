@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 from uuid import uuid4
 
-from capa_simulation.audit import layout, recorder, spool
+from capa_simulation.audit import chain, layout, recorder, spool
 from capa_simulation.io.object_storage import (
     ObjectRecord,
     ObjectStorageClient,
@@ -217,7 +217,7 @@ def ship(
             continue
         day, inst = parsed
         for chunk in _chunks(spool.unshipped_lines(path), SEGMENT_LINES):
-            first, last = int(chunk[0]["seq"]), int(chunk[-1]["seq"])
+            first, last = _seq(chunk[0]), _seq(chunk[-1])
             key = layout.piece_key("seg", day, inst, first, last)
             step()
             bucket.put_new(key, layout.encode_lines(chunk))
@@ -237,17 +237,21 @@ def previous_tail(
     base: Path | None = None,
     step: Step = _no_step,
 ) -> dict[str, Any] | None:
-    """앞 인스턴스의 마지막 줄 — 남은 스풀이 있으면 그것, 없으면 최근 이틀 조각 중 가장 늦은 것."""
+    """앞 인스턴스의 마지막 줄 — 남은 스풀이 있으면 그것, 없으면 최근 이틀 조각 중 가장 늦은 것.
+
+    순번이 정수가 아닌 줄은 끝 줄로 쓰지 않는다. 고른 조각이 깨졌거나 쓸 줄이 없으면 `None`(앞
+    끝을 모름 — `end_mark none`)이다. 깨진 조각 하나가 새 인스턴스의 올리기를 막지 않게 한다.
+    """
     tails: list[dict[str, Any]] = []
     for path in spool.spool_files(base):
         parsed = spool.parse_spool_name(path)
         if parsed is None or parsed[1] == own_inst:
             continue
-        lines = spool.read_lines(path)
-        if lines:
-            tails.append(lines[-1])
+        last_line = _last_numbered(spool.read_lines(path))
+        if last_line is not None:
+            tails.append(last_line)
     if tails:
-        return max(tails, key=lambda line: (str(line.get("ts", "")), int(line.get("seq", 0))))
+        return max(tails, key=lambda line: (str(line.get("ts", "")), _seq(line)))
     candidates: list[ObjectRecord] = []
     for day in (today, today - timedelta(days=1)):
         step()
@@ -267,13 +271,27 @@ def previous_tail(
         ),
     )
     step()
-    lines = layout.decode_lines(bucket.get(latest.key))
-    return lines[-1] if lines else None
+    lines = layout.decode_or_none(bucket.get(latest.key))
+    return None if lines is None else _last_numbered(lines)
+
+
+def _seq(line: Mapping[str, Any]) -> int:
+    """순번을 고른 줄(`chain.seq_of` 가 `None` 이 아닌 줄)의 순번."""
+    return chain.seq_of(line) or 0
+
+
+def _last_numbered(lines: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """순번이 정수인 마지막 줄."""
+    for line in reversed(lines):
+        if chain.seq_of(line) is not None:
+            return line
+    return None
 
 
 def note_chain_link(tail: Mapping[str, Any] | None) -> None:
     """새 인스턴스가 앞 인스턴스 끝 해시를 잇는 줄(`audit_chain_link`)."""
-    if tail is None:
+    seq = None if tail is None else chain.seq_of(tail)
+    if tail is None or seq is None:
         recorder.record("audit_chain_link", actor="system:object_sync", det={"end_mark": "none"})
         return
     recorder.record(
@@ -281,7 +299,7 @@ def note_chain_link(tail: Mapping[str, Any] | None) -> None:
         actor="system:object_sync",
         det={
             "prev_inst": str(tail.get("inst", "")),
-            "prev_seq": int(tail.get("seq", 0)),
+            "prev_seq": seq,
             "prev_h": str(tail.get("h", "")),
             "end_mark": "shutdown" if tail.get("ev") == "sys_shutdown" else "none",
         },
@@ -350,16 +368,27 @@ def compact(bucket: AuditBucket, *, today: date, step: Step = _no_step) -> Compa
             parts = sorted(manifests.get(day, []))
             covered: set[str] = set()
             for part in parts:
-                payload = json.loads(manifest_bytes(day, part).decode("utf-8"))
-                covered.update(str(key) for key in payload.get("segments", []))
+                covered.update(_segments_of(manifest_bytes(day, part)))
             fresh = sorted(set(pieces) - covered)
             if not fresh:
                 continue
             lines: dict[tuple[str, int], dict[str, Any]] = {}
+            readable: list[str] = []
             for key in fresh:
                 _pause_point(step)
-                for line in layout.decode_lines(bucket.get(key)):
-                    lines.setdefault((str(line.get("inst", "")), int(line.get("seq", 0))), line)
+                decoded = layout.decode_or_none(bucket.get(key))
+                if decoded is None:
+                    # 압축이 깨진 조각은 판에 싣지 않는다 — 버킷에 남고 다음 묶음이 다시 본다.
+                    _LOGGER.warning("감사 조각을 읽지 못해 일별 묶음에서 뺍니다: %s", key)
+                    continue
+                readable.append(key)
+                for line in decoded:
+                    seq = chain.seq_of(line)
+                    if seq is not None:
+                        lines.setdefault((str(line.get("inst", "")), seq), line)
+            if not readable:
+                continue
+            fresh = readable
             ordered = [lines[key] for key in sorted(lines)]
             body = layout.encode_lines(ordered)
             part = used.get(day, -1) + 1
@@ -392,18 +421,31 @@ def compact(bucket: AuditBucket, *, today: date, step: Step = _no_step) -> Compa
     return CompactOutcome(tuple(written))
 
 
+def _segments_of(manifest: bytes) -> set[str]:
+    """manifest 가 덮은 조각 키. 읽지 못하는 manifest 는 빈 집합이다 — 그 조각들은 다음 판이 한 번
+    더 묶는다(같은 (inst, seq) 는 화면이 하나만 쓴다)."""
+    try:
+        payload = json.loads(manifest.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return set()
+    segments = payload.get("segments") if isinstance(payload, dict) else None
+    return {str(key) for key in segments} if isinstance(segments, list) else set()
+
+
 def _instances(lines: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, object]]:
-    found: dict[str, dict[str, object]] = {}
+    """인스턴스마다 첫 · 끝 seq 와 끝 해시(순번을 고른 줄만 받는다)."""
+    first: dict[str, int] = {}
+    last: dict[str, tuple[int, object]] = {}
     for line in lines:
         inst = str(line.get("inst", ""))
-        seq = int(line.get("seq", 0))
-        entry = found.setdefault(inst, {"first": seq, "last": seq, "last_h": line.get("h", "")})
-        if seq < int(str(entry["first"])):
-            entry["first"] = seq
-        if seq >= int(str(entry["last"])):
-            entry["last"] = seq
-            entry["last_h"] = line.get("h", "")
-    return found
+        seq = _seq(line)
+        first[inst] = min(first.get(inst, seq), seq)
+        if inst not in last or seq >= last[inst][0]:
+            last[inst] = (seq, line.get("h", ""))
+    return {
+        inst: {"first": first[inst], "last": last[inst][0], "last_h": last[inst][1]}
+        for inst in first
+    }
 
 
 # ------------------------------------------------------------------ 미러

@@ -44,10 +44,26 @@ def dump(line: Mapping[str, Any]) -> str:
     return json.dumps(dict(line), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def seq_of(line: Mapping[str, Any]) -> int | None:
+    """줄의 순번 — 0 이상의 정수(또는 숫자 글)면 그 수, 아니면 `None`.
+
+    버킷 · 스풀에서 읽은 줄은 바깥에서 고쳤을 수 있다. 읽는 쪽(올리기 · 일별 묶음 · 화면)은 이것으로
+    순번을 읽고 `None` 인 줄을 건너뛴다 — 깨진 줄 하나가 할 일 전체를 멈추지 않게.
+    """
+    value = line.get("seq")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str) and value.isascii() and value.isdigit():
+        return int(value)
+    return None
+
+
 @dataclass(frozen=True)
 class ChainProblem:
     """끊긴 곳 하나 — 인스턴스 · 순번 · 갈래(`hash` 고침 · `link` 앞 줄과 안 이어짐 · `gap` 빠짐 ·
-    `order` 순서 바뀜 · `start` 첫 줄이 GENESIS 가 아님)."""
+    `order` 순서 바뀜 · `start` 첫 줄이 GENESIS 가 아님 · `seq` 순번이 정수가 아님 — 순번 0)."""
 
     inst: str
     seq: int
@@ -68,7 +84,10 @@ def verify(
     problems: list[ChainProblem] = []
     for line in lines:
         inst = str(line.get("inst", ""))
-        seq = int(line.get("seq", 0))
+        seq = seq_of(line)
+        if seq is None:
+            problems.append(ChainProblem(inst, 0, "seq"))
+            continue
         prev = str(line.get("prev", ""))
         stored = str(line.get(HASH_KEY, ""))
         if stored != line_hash(prev, line):

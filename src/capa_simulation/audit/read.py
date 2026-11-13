@@ -15,18 +15,19 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final
 
-from capa_simulation.audit import layout, spool
+from capa_simulation.audit import chain, layout, spool
 
 KST: Final = timezone(timedelta(hours=9), "KST")
 KST_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
 
 
 def parse_ts(value: str) -> datetime | None:
-    """`2026-11-13T07:51:02.123Z` → 시각대가 붙은 UTC 시각."""
+    """`2026-11-13T07:51:02.123Z` → 시각대가 붙은 UTC 시각. 시각대가 없으면 `None`(견줄 수 없다)."""
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return None
+    return None if moment.tzinfo is None else moment
 
 
 def kst_text(value: str) -> str:
@@ -82,7 +83,7 @@ def _read(path: Path) -> list[dict[str, Any]]:
         if path.name.endswith(".gz"):
             return layout.decode_lines(path.read_bytes())
         return layout.parse_text(path.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, EOFError, ValueError):
+    except (*layout.UNREADABLE, ValueError):
         return []
 
 
@@ -100,16 +101,20 @@ def fingerprint(base: Path, start: date, end: date) -> tuple[object, ...]:
 
 
 def load_lines(base: Path, start: date, end: date) -> list[dict[str, Any]]:
-    """KST 기간 [start, end] 의 줄들(시각 차례). 같은 (inst, seq) 는 하나만."""
+    """KST 기간 [start, end] 의 줄들(시각 차례). 같은 (inst, seq) 는 하나만.
+
+    시각 · 순번 꼴이 아닌 줄(바깥에서 고친 조각)은 건너뛴다 — 깨진 줄 하나가 탭을 멈추지 않게.
+    """
     first, after = kst_bounds(start, end)
     seen: set[tuple[str, int]] = set()
     rows: list[tuple[datetime, str, int, dict[str, Any]]] = []
     for utc_date in utc_dates(start, end):
         for line in _lines_of(files_for(base, utc_date)):
             moment = parse_ts(str(line.get("ts", "")))
-            if moment is None or not first <= moment < after:
+            seq = chain.seq_of(line)
+            if moment is None or seq is None or not first <= moment < after:
                 continue
-            key = (str(line.get("inst", "")), int(line.get("seq", 0) or 0))
+            key = (str(line.get("inst", "")), seq)
             if key in seen:
                 continue
             seen.add(key)

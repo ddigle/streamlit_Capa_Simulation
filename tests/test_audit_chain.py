@@ -81,3 +81,20 @@ def test_the_dumped_line_reads_back_the_same_on_one_line() -> None:
     assert json.loads(dumped) == line
     assert "\n" not in dumped
     assert chain.line_hash(line["prev"], json.loads(dumped)) == line["h"]
+
+
+def test_a_line_whose_seq_is_not_a_number_is_named_and_skipped() -> None:
+    lines = _chain(3)
+    broken = [lines[0], {**lines[1], "seq": "x"}, {**lines[1], "seq": None}, lines[2]]
+
+    problems = [(p.seq, p.kind) for p in chain.verify(broken)]
+
+    assert problems == [(0, "seq"), (0, "seq"), (3, "gap")]
+    assert [chain.seq_of({"seq": value}) for value in (7, "12", "x", None, True, -1)] == [
+        7,
+        12,
+        None,
+        None,
+        None,
+        None,
+    ]

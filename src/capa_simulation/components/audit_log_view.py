@@ -274,6 +274,11 @@ class _Day:
     admin: int = 0
 
 
+def _whole(value: object) -> int:
+    """건수 칸 — 정수(참 · 거짓 제외)가 아니면 0. 바깥에서 고친 줄 하나가 탭을 멈추지 않게."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
 def _count(day: _Day, line: Mapping[str, Any]) -> None:
     ev = str(line.get("ev", ""))
     actor = str(line.get("actor", ""))
@@ -286,11 +291,11 @@ def _count(day: _Day, line: Mapping[str, Any]) -> None:
     if ev in _LOGIN_FAIL_EVENTS:
         day.fails += 1
     elif ev == "authn_login_fail_summary":
-        day.fails += int(det.get("total", 0) or 0)
+        day.fails += _whole(det.get("total"))
     if ev in _DENIED_EVENTS:
         day.denied += 1
     elif ev == "authz_fail_access_list_summary":
-        day.denied += int(det.get("total", 0) or 0) - int(det.get("accounts", 0) or 0)
+        day.denied += max(_whole(det.get("total")) - _whole(det.get("accounts")), 0)
     if line.get("cat") == "data":
         day.work += 1
     if ev == "data_official_publish":

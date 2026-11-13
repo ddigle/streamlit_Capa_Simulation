@@ -510,3 +510,87 @@ def test_a_daily_file_left_without_its_manifest_is_never_reused(box: Box) -> Non
         manifest["sha256"]
         == hashlib.sha256(box.store.objects[layout.daily_key("2026-11-12", 1)]).hexdigest()
     )
+
+
+OTHER = "9a9a9a9a9a9a"
+
+
+def _plant(box: Box, day: str, lines: list[dict[str, object]], *, first: int = 1) -> str:
+    """다른 인스턴스의 조각을 버킷에 바로 넣는다(바깥에서 고친 조각 꼴)."""
+    key = layout.piece_key("seg", day, OTHER, first, first + max(len(lines), 1) - 1)
+    box.store.put(key, layout.encode_lines(lines))
+    return key
+
+
+def _broken_lines(day: str) -> list[dict[str, object]]:
+    moment = f"{day}T01:00:00.000Z"
+    return [
+        {"inst": OTHER, "seq": 4, "h": "ab" * 32, "ts": moment, "ev": "session_created"},
+        {"inst": OTHER, "seq": "x", "ts": moment, "ev": "session_created"},
+        {"inst": OTHER, "seq": None, "ts": moment, "ev": "session_created"},
+    ]
+
+
+def test_a_broken_seq_in_another_piece_does_not_stop_a_new_instance(box: Box) -> None:
+    """앞 인스턴스 조각에 순번이 정수가 아닌 줄이 있어도 새 인스턴스는 사슬을 잇고 제 줄을
+    올린다."""
+    _plant(box, "2026-11-13", _broken_lines("2026-11-13"))
+    box.record(2)
+    tasks = box.tasks()
+
+    tasks.run_ship(0.0)
+
+    assert tasks._linked and shipper.health().failures == 0
+    own = [key for key in box.keys(layout.SEG_PREFIX) if f"/{INST}__" in key]
+    shipped = [line for key in own for line in layout.decode_lines(box.store.objects[key])]
+    (link,) = [line for line in shipped if line["ev"] == "audit_chain_link"]
+    assert link["det"]["prev_inst"] == OTHER and link["det"]["prev_seq"] == 4
+    assert [line["ev"] for line in shipped].count("session_created") == 2
+
+
+def test_a_piece_with_only_broken_lines_links_to_nothing(box: Box) -> None:
+    _plant(box, "2026-11-13", _broken_lines("2026-11-13")[1:])
+    box.record(1)
+
+    box.tasks().run_ship(0.0)
+
+    shipped = [
+        line
+        for key in box.keys(layout.SEG_PREFIX)
+        if f"/{INST}__" in key
+        for line in layout.decode_lines(box.store.objects[key])
+    ]
+    (link,) = [line for line in shipped if line["ev"] == "audit_chain_link"]
+    assert link["det"] == {"end_mark": "none"}
+
+
+def test_compact_skips_broken_lines_and_unreadable_pieces(box: Box) -> None:
+    _yesterday(box, 2)
+    planted = _plant(box, "2026-11-12", _broken_lines("2026-11-12"), first=4)
+    corrupt = layout.piece_key("seg", "2026-11-12", OTHER, 9, 9)
+    box.store.put(corrupt, b"not a gzip piece")
+
+    outcome = shipper.compact(box.bucket, today=TODAY)
+
+    assert outcome.written == (layout.daily_key("2026-11-12", 0),)
+    manifest = json.loads(box.store.objects[layout.manifest_key("2026-11-12", 0)])
+    assert planted in manifest["segments"] and corrupt not in manifest["segments"]
+    assert manifest["lines"] == 3
+    assert manifest["instances"][OTHER] == {"first": 4, "last": 4, "last_h": "ab" * 32}
+
+
+def test_the_log_tab_reader_skips_broken_lines_and_pieces(box: Box) -> None:
+    box.record(1)
+    other = spool.spool_path("2026-11-13", OTHER, box.base)
+    other.write_text(
+        "\n".join(json.dumps(line) for line in _broken_lines("2026-11-13"))
+        + '\n{"inst":"9a9a9a9a9a9a","seq":5,"ts":"2026-11-13T01:00:00"}\n',
+        encoding="utf-8",
+    )
+    mirrored = layout.mirror_path(box.base, layout.piece_key("seg", "2026-11-13", OTHER, 9, 9))
+    mirrored.parent.mkdir(parents=True, exist_ok=True)
+    mirrored.write_bytes(b"\x1f\x8b\x08\x00broken deflate")
+
+    rows = read.load_lines(box.base, date(2026, 11, 13), date(2026, 11, 13))
+
+    assert sorted((row["inst"], row["seq"]) for row in rows) == [(INST, 1), (OTHER, 4)]

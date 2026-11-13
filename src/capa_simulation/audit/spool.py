@@ -189,10 +189,11 @@ def read_lines(path: Path) -> list[dict[str, Any]]:
 
 
 def unshipped_lines(path: Path) -> list[dict[str, Any]]:
-    """이 스풀 파일에서 아직 올리지 않은 줄(seq 차례)."""
+    """이 스풀 파일에서 아직 올리지 않은 줄(seq 차례). 순번이 정수가 아닌 줄은 건너뛴다."""
     done = shipped_seq(path)
-    lines = [line for line in read_lines(path) if int(line.get("seq", 0)) > done]
-    return sorted(lines, key=lambda line: int(line.get("seq", 0)))
+    numbered = [(chain.seq_of(line), line) for line in read_lines(path)]
+    lines = [(seq, line) for seq, line in numbered if seq is not None and seq > done]
+    return [line for _, line in sorted(lines, key=lambda item: item[0])]
 
 
 def prune(daily_dates: Iterable[str], base: Path | None = None) -> list[Path]:
