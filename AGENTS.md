@@ -331,6 +331,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `capa_server.py` — C-DEP 운영 진입점(`streamlit run capa_server.py` — 앱 스크립트는 `app.py` 하나 그대로). `app.py` 를
   `st.App` 으로 감싸 통합인증 경로 다섯과 문지기를 같은 프로세스에 붙인다. 모듈 수준 `app = st.App(...)` 리터럴 대입이어야 Streamlit 이 찾는다(함수가 만든 App 은
   조용히 빈 화면 — `test_sso_entry.py`). 개발 · WebIDE · 시험 · 화면 확인은 `streamlit run app.py` 그대로다.
+- `src/capa_simulation/audit/` — 접속 · 작업 감사 기록(Admin Area 「접속 · 작업 기록」). 두 DB 밖에 쌓는다 — 메모리 큐 →
+  로컬 스풀 → 버킷 `audit/` 접두사의 새 객체(5장 40). 통합인증이 켜진 C-DEP 기동에서만 켜지고(`recorder.enabled()`) 꺼진 곳은
+  호출 0 이다. 사건 이름 · 갈래 · 한글 표시명 · 허용 상세 키는 `audit/events.py`, 글 다듬기(줄바꿈 · 제어 문자 · 길이 · 토큰 꼴
+  가림, 통합인증 로그 칸 `log_field` 도 여기 — `auth/runtime.py` 가 쓴다)는 `audit/text.py`, 해시 사슬(정규화 · 해시 · 검증)은
+  `audit/chain.py`, 기록기(넣기만 · 상한 20,000줄 · 버린 수 · 행위자 해석기 · 시간 묶음 · 통합인증 사건 대응표
+  `from_sso_event`)는 `audit/recorder.py` 다. `recorder` · `chain` · `events` · `text` 는 표준 라이브러리만 쓴다(문지기가
+  부른다 — `tests/test_audit_recorder.py` 가 Streamlit · DuckDB · PyJWT 가 딸려 오지 않는지 본다).
 - `src/capa_simulation/auth/` — 통합인증(ADFS · form_post). Streamlit 을 import 하지 않는다(문지기는 이벤트 루프에서
   돈다). 환경변수 이름 · 경로 · 쿠키 이름은 `auth/names.py`(표준 라이브러리만), 모드(꺼짐 · 켜짐 · 막힘) 판정과 검증된 설정은
   `auth/config.py`, ID 토큰(RS256 — aud · iss · nonce 를 반드시 본다) · 세션 토큰(HS256 — `sid` · `auth_time` 을 싣고 갱신은 새

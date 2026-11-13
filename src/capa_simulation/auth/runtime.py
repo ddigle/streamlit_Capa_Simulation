@@ -35,6 +35,7 @@ from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import NamedTuple
 
+from capa_simulation.audit.text import log_field
 from capa_simulation.auth import names
 from capa_simulation.auth.access import AccessList, AccessSource
 from capa_simulation.auth.config import SsoConfig, SsoMode, load_config
@@ -71,7 +72,6 @@ REFRESH_OUTCOMES: tuple[str, ...] = (
     "forbidden",
     "bad_request",
 )
-_FIELD_LIMIT = 200
 
 
 @dataclass(frozen=True)
@@ -433,14 +433,6 @@ def get_diagnostic(diagnostic_id: str) -> dict[str, str] | None:
         return dict(record)
 
 
-def _clean_field(value: object) -> str:
-    text = str(value)
-    cleaned = "".join(
-        "_" if (ch.isspace() or ch == "=" or ord(ch) < 32 or ord(ch) == 127) else ch for ch in text
-    )
-    return cleaned[:_FIELD_LIMIT] or "-"
-
-
 def is_anonymous(item: SsoEvent) -> bool:
     """로그인하지 않은 누구나 남길 수 있는 사건인가 — 서명이 통과하기 전의 실패(계정 없음)."""
     return item.event in ANONYMOUS_EVENTS and item.value("loginid") in ("", "-")
@@ -472,12 +464,12 @@ def record_event(event: str, *, level: int = logging.INFO, **fields: str) -> Non
     밀어내지 못한다. 토큰 · state · nonce · 쿠키 · 비밀값 · 이름 · 부서는 넘기지 않는다(부르는 쪽
     규칙).
     """
-    cleaned = tuple((key, _clean_field(value)) for key, value in fields.items())
-    line = f"sso event={_clean_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
+    cleaned = tuple((key, log_field(value)) for key, value in fields.items())
+    line = f"sso event={log_field(event)}" + "".join(f" {key}={value}" for key, value in cleaned)
     LOGGER.log(level, line)
     with _LOCK:
         _STATE.event_seq += 1
-        item = SsoEvent(at=_now(), event=_clean_field(event), fields=cleaned, seq=_STATE.event_seq)
+        item = SsoEvent(at=_now(), event=log_field(event), fields=cleaned, seq=_STATE.event_seq)
         if item.event == DENIED_EVENT:
             _note_denied(item)
         elif item.event == ACCESS_RETRY_FAILED_EVENT:

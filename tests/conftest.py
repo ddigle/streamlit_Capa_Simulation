@@ -25,6 +25,7 @@ from streamlit.testing.v1.local_script_runner import LocalScriptRunner
 
 import capa_simulation.settings as settings
 from capa_simulation import module_failures, module_registry
+from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.auth import names as sso_names
 from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.components import (
@@ -293,6 +294,17 @@ def _without_sso_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     sso_runtime.reset()
     yield
     sso_runtime.reset()
+
+
+@pytest.fixture(autouse=True)
+def _audit_recorder_off() -> Iterator[None]:
+    """감사 기록기를 끈 채로 시작하고 끝에 비운다 — 켜는 시험은 `start` 를 스스로 부른다.
+
+    앞 시험이 켠 기록기 · 큐 · 해석기가 뒤 시험에 남으면 꺼짐 회차의 「호출 0」 이 깨진다.
+    """
+    audit_recorder.reset()
+    yield
+    audit_recorder.reset()
 
 
 @pytest.fixture(autouse=True)
