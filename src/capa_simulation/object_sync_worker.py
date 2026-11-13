@@ -72,14 +72,17 @@ from capa_simulation.persistence import sync_state
 from capa_simulation.persistence.equipment_repository import DuckDBEquipmentRepository
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
 from capa_simulation.persistence.snapshot_export import SnapshotBusy, SnapshotRaced
-from capa_simulation.persistence.sync_state import MarkClock
+from capa_simulation.persistence.sync_state import GenerationState, MarkClock
 from capa_simulation.services.object_storage_manifest import (
     BLOCKING_PUSH,
     DATASET_NAMES,
     FAILURE_OTHER,
     FAILURE_WORKER_ABSENT,
     DatasetName,
+    Origin,
+    Pointer,
     PushDecision,
+    pointer_from_json,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -177,6 +180,8 @@ class WorkerStatus:
     last_tick: float
     dirty: Mapping[DatasetName, bool] = field(default_factory=dict)
     seq: int | None = None
+    # 그 세대를 낸 쪽. `boot` 면 시작 펜스다 — 받은 뒤 아무도 저장하지 않았다.
+    origin: Origin | None = None
     last_success_utc: str | None = None
     sizes: Mapping[DatasetName, int] = field(default_factory=dict)
     lock_seconds: float | None = None
@@ -262,6 +267,7 @@ class ObjectSyncWorker:
             phase=PHASE_IDLE,
             last_tick=started,
             seq=generation.base_seq,
+            origin=base_origin(generation),
             last_success_utc=generation.base_synced_at_utc,
         )
 
@@ -412,7 +418,7 @@ class ObjectSyncWorker:
     def _apply(self, outcome: PublishOutcome, now: float) -> bool:
         """회차 결과를 상태에 적는다. 돌려주는 값은 들고 간 표시가 정본에 닿았는지다."""
         if outcome.settled is not None:
-            self._note_success(outcome.settled.seq)
+            self._note_success(outcome.settled)
         if outcome.confirm_deferred:
             self._retry_at = now + SOFT_RETRY_SECONDS
             return False
@@ -431,7 +437,7 @@ class ObjectSyncWorker:
         self._set(failures=0, failure_kind=None, blocked=None)
         if outcome.published and outcome.pointer is not None:
             self._note_success(
-                outcome.pointer.seq,
+                outcome.pointer,
                 sizes={name: result.size_bytes for name, result in outcome.uploaded.items()},
                 lock_seconds=outcome.lock_seconds,
                 transfer_seconds=outcome.transfer_seconds,
@@ -441,7 +447,7 @@ class ObjectSyncWorker:
 
     def _note_success(
         self,
-        seq: int,
+        pointer: Pointer,
         *,
         sizes: Mapping[DatasetName, int] | None = None,
         lock_seconds: float | None = None,
@@ -451,7 +457,8 @@ class ObjectSyncWorker:
             current = self._status
             self._status = _replaced(
                 current,
-                seq=seq,
+                seq=pointer.seq,
+                origin=pointer.origin,
                 last_success_utc=self._wall_clock(),
                 sizes={**current.sizes, **(sizes or {})},
                 lock_seconds=current.lock_seconds if lock_seconds is None else lock_seconds,
@@ -534,6 +541,19 @@ class ObjectSyncWorker:
 
 def _replaced(status: WorkerStatus, **changes: object) -> WorkerStatus:
     return WorkerStatus(**{**status.__dict__, **changes})
+
+
+def base_origin(state: GenerationState) -> Origin | None:
+    """기준 세대를 낸 쪽 — 받을 때 든 포인터 본문(사이드카)에서 읽는다. 받지 않고 읽는다.
+
+    못 읽으면 모름이다 — 화면 꼬리 하나라 일꾼을 세우는 일을 막지 않는다.
+    """
+    if state.base_pointer_key is None or state.base_pointer_json is None:
+        return None
+    try:
+        return pointer_from_json(state.base_pointer_json, pointer_key=state.base_pointer_key).origin
+    except (ValueError, KeyError, TypeError):
+        return None
 
 
 _START_LOCK = threading.Lock()

@@ -70,6 +70,8 @@ ORIGINS: Final[tuple[Origin, ...]] = get_args(Origin)
 # 운영 앱이 정본을 넘겨받은 뒤의 표시. HEAD 가 이 값이면 사내 PC 는 올리지 못한다. 되돌린 HEAD 도
 # 운영 앱의 정본이다 — 다음 시작의 펜스가 서기 전 틈에 표지 없는 PC 가 그 위로 올리면 안 된다.
 WRITER_ORIGINS: Final = frozenset({"app", "boot", "rollback"})
+# `boot` 세대의 이름 — 포인터 메모 · Admin 「DB 동기화」 세대 줄 · `status` 원격 줄이 같이 쓴다.
+BOOT_FENCE_LABEL: Final = "시작 펜스"
 
 # 실패 갈래 — 시작 화면 · 보고 · 상태 파일 · 알림이 함께 쓰는 고정 낱말. 서버 글을 싣지 않는다.
 FAILURE_CONFIG: Final = "config"
@@ -360,6 +362,15 @@ def next_pointer(
 def writer_taken_over(head: Pointer | None) -> bool:
     """정본을 운영 앱이 넘겨받은 뒤인가. 그러면 사내 PC 의 쓰기 명령은 거절한다."""
     return head is not None and head.origin in WRITER_ORIGINS
+
+
+def origin_tail(origin: str | None) -> str:
+    """세대 번호 뒤에 붙는 꼬리 — 시작 펜스면 ` (시작 펜스)`, 그 밖은 빈 글.
+
+    펜스는 앞 세대와 멤버가 같은 포인터 하나라 저장 없이도 세대가 는다 — 번호만 보면 누가 저장한
+    것처럼 읽힌다.
+    """
+    return f" ({BOOT_FENCE_LABEL})" if origin == "boot" else ""
 
 
 class PushDecision(str, Enum):

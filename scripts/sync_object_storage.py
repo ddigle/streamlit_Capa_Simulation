@@ -654,8 +654,10 @@ def command_init(args: argparse.Namespace) -> int:
 def command_status(args: argparse.Namespace) -> int:
     client = build_client(args)
     decision, remote, state, dirty = engine.plan_push(client, sync_paths())
-    print(f"원격 : {'비어 있음' if remote.head_seq is None else f'seq {remote.head_seq}'}")
-    _seq_fact("원격", remote.head_seq, none="비어 있음")
+    tail = _head_tail(client, remote)
+    remote_text = "비어 있음" if remote.head_seq is None else f"seq {remote.head_seq}{tail}"
+    print(f"원격 : {remote_text}")
+    _fact(f"원격 {remote_text}")
     print(f"로컬 : {'세대 미상' if state.base_seq is None else f'seq {state.base_seq}'}")
     _seq_fact("로컬", state.base_seq, none="세대 미상")
     for dataset in datasets(args):
@@ -679,6 +681,18 @@ def command_status(args: argparse.Namespace) -> int:
         return 0
     print(f"판정 : {manifest.decision_message(decision, head_seq=remote.head_seq)}")
     return 0
+
+
+def _head_tail(client: ObjectStorageClient, remote: engine.RemoteHead) -> str:
+    """원격 HEAD 가 시작 펜스면 ` (시작 펜스)` — HEAD 포인터를 한 번 받는다. 받거나 읽지 못하면 꼬리
+    없이 둔다(세대 번호 · 판정은 목록 한 번으로 이미 났다)."""
+    if remote.head_key is None:
+        return ""
+    try:
+        head = engine.read_pointer(client, remote.head_key)
+    except (ObjectStorageError, ValueError):
+        return ""
+    return manifest.origin_tail(head.origin)
 
 
 def command_generations(args: argparse.Namespace) -> int:
