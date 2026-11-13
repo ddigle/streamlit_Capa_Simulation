@@ -45,6 +45,7 @@ import streamlit as st
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.auth.config import SsoConfig, SsoMode
+from capa_simulation.auth.gate import ended_reason
 from capa_simulation.auth.identity import (
     Identity,
     IdentityProblem,
@@ -60,6 +61,7 @@ from capa_simulation.auth.web import (
 from capa_simulation.components.app_header import render_shell_style
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.stop_panel import primary_link, render_contact_caption
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CHANGES_CHIP_ID,
@@ -84,12 +86,19 @@ EXPIRED_NOTICE = (
 )
 REVOKED_NOTICE = "이 브라우저에서 로그아웃했습니다."
 MISSING_NOTICE = "로그인 정보가 없습니다."
-ACCOUNT_CHANGED_NOTICE = "다른 계정으로 바뀌었습니다 — 새로고침하세요."
+# 계정 바뀜 경고의 꼬리 — 앞에 새 계정의 표시 이름(「…」)이 선다(`account_changed_notice`).
+ACCOUNT_CHANGED_TAIL = " 계정으로 바뀌었습니다"
 NO_GATE_NOTICE = (
     f"통합인증을 켜는 설정(`{names.ENV_CLIENT_ID}`)인데 문지기 없이 앱이 시작됐습니다. "
     "`streamlit run capa_server.py` 로 띄워야 합니다(C-DEP 은 시작 스크립트가 그렇게 띄웁니다)."
 )
 LOGIN_AGAIN_LABEL = "다시 로그인"
+# 명단에서 빠진 사람의 단추 — 거절 화면의 신청 단추와 같은 이름(설계 규칙 UI-CON-02). 같은 로그인
+# 경로라 통합인증을 거쳐 콜백의 거절 화면으로 간다.
+ACCESS_REQUEST_LABEL = "접속 권한 신청"
+REFRESH_LABEL = "새로고침"
+# 「새로고침」 을 누르기 전에 알아야 하는 되돌릴 수 없는 결과(설계 규칙 UI-NTF-09) — 풍선.
+REFRESH_TIP = "이 탭에서 저장하지 않은 편집은 사라집니다"
 LOGOUT_LABEL = "로그아웃"
 
 _PROBLEM_NOTICES: Mapping[IdentityProblem, str] = {
@@ -154,9 +163,14 @@ def return_path(cfg: SsoConfig) -> str:
     return sanitize_next(path + (f"?{query}" if query else ""))
 
 
-def login_again_link(cfg: SsoConfig) -> str:
-    target = f"{names.LOGIN_PATH}?{urlencode({'next': return_path(cfg)})}"
-    return _same_tab_link(public_link(cfg, target), LOGIN_AGAIN_LABEL)
+def login_url(cfg: SsoConfig) -> str:
+    """다시 로그인 주소 — 로그인 경로 + 돌아올 자리(`return_path`). 바탕은 `CAPA_PUBLIC_URL`."""
+    return public_link(cfg, f"{names.LOGIN_PATH}?{urlencode({'next': return_path(cfg)})}")
+
+
+def account_changed_notice(display_name: str) -> str:
+    """계정 바뀜 경고 — 새 계정(지금 쿠키 — 이 브라우저의 값)의 표시 이름을 막아 싣는다."""
+    return f"「{literal_markdown(display_name)}」{ACCOUNT_CHANGED_TAIL}"
 
 
 def _render_stop_chrome() -> None:
@@ -187,15 +201,30 @@ def signed_out_notice(cfg: SsoConfig, problem: IdentityProblem) -> str:
 
 
 def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
+    """로그인 끝남 멈춤 — 경고 한 줄 · 주 단추 · 문의 캡션(앱 안 멈춤 판 `stop_panel`).
+
+    단추는 까닭으로 가른다(「다시 로그인」 띠와 같은 낱말 — `gate.ended_reason`): 명단에서 빠짐은
+    「접속 권한 신청」, 명단 못 읽음은 끊긴 구름 아이콘 + 「다시 로그인」, 그 밖은 「다시 로그인」.
+    셋 다 같은 로그인 경로다. 사이드바 카드가 서지 않아 문의처는 단추 아래 캡션으로 싣는다.
+    """
     _render_stop_chrome()
-    st.warning(signed_out_notice(cfg, problem), icon=":material/lock_clock:")
-    st.markdown(login_again_link(cfg), unsafe_allow_html=True)
+    reason = ended_reason(problem, cfg)
+    icon = ":material/cloud_off:" if reason == names.REASON_UNREAD else ":material/lock_clock:"
+    st.warning(signed_out_notice(cfg, problem), icon=icon)
+    label = ACCESS_REQUEST_LABEL if reason == names.REASON_DENIED else LOGIN_AGAIN_LABEL
+    st.markdown(primary_link(login_url(cfg), label), unsafe_allow_html=True)
+    render_contact_caption()
     st.stop()
 
 
-def _stop_account_changed() -> NoReturn:
+def _stop_account_changed(cfg: SsoConfig, identity: Identity) -> NoReturn:
+    """계정 바뀜 멈춤 — 새 계정 이름 + 주 단추 「새로고침」(같은 탭 새 문서 — 새 세션이 새 계정으로
+    선다. `st.rerun` 은 같은 세션이라 앞 계정의 세션 상태가 남는다) + 되돌릴 수 없는 결과 풍선."""
     _render_stop_chrome()
-    st.warning(ACCOUNT_CHANGED_NOTICE, icon=":material/switch_account:")
+    st.warning(account_changed_notice(identity.display_name), icon=":material/switch_account:")
+    refresh = public_link(cfg, return_path(cfg))
+    st.markdown(primary_link(refresh, REFRESH_LABEL, title=REFRESH_TIP), unsafe_allow_html=True)
+    render_contact_caption()
     st.stop()
 
 
@@ -218,7 +247,7 @@ def require_signed_in() -> Identity | None:
         _stop_signed_out(cfg, found)
     seen = st.session_state.get(SSO_LOGINID_KEY)
     if isinstance(seen, str) and seen != found.loginid:
-        _stop_account_changed()
+        _stop_account_changed(cfg, found)
     st.session_state[SSO_LOGINID_KEY] = found.loginid
     return found
 

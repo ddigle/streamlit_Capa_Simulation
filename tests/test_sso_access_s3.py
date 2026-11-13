@@ -2454,6 +2454,33 @@ def test_an_open_tab_stopped_while_the_list_is_unread_says_it_could_not_check(
 
     assert not list(app.exception), [item.message for item in app.exception]
     assert [warning.value for warning in app.warning] == [web.LIST_UNREAD_TEXT]
+    # 명단 못 읽음은 끊긴 구름 아이콘 + 「다시 로그인」 — 「접속 권한 신청」 이 아니다(서버 문제).
+    assert app.warning[0].icon == ":material/cloud_off:"
+    [link] = [str(item.value) for item in app.markdown]
+    assert sso_identity.LOGIN_AGAIN_LABEL in link
+    assert sso_identity.ACCESS_REQUEST_LABEL not in link
+
+
+def test_the_probe_of_an_open_tab_names_the_unread_list(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """S3 명단을 못 읽은 서버의 열린 탭 탐침 401 은 까닭 「unread」 다 — 띠가 「1분 뒤 다시
+    로그인」 을 고른다. 명단에 든 사람이어도 같다(명단을 못 읽었으니 모른다)."""
+    store, endpoint = mock_s3
+    store.force["GET"] = (503, "SlowDown")
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+    token = session_token(cfg, USER)
+
+    response = http(
+        gated_app(),
+        "GET",
+        "/_stcore/host-config",
+        headers={**FETCH, "cookie": f"{cfg.session_cookie}={token}"},
+    )
+
+    assert response.status == 401
+    assert response.header(names.REASON_HEADER.lower()) == names.REASON_UNREAD
 
 
 def test_the_list_alerts_leave_the_status_box_and_hold_two_event_slots(

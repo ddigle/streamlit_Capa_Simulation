@@ -52,7 +52,7 @@ from capa_simulation.auth.server import sso_routes
 from capa_simulation.auth.tokens import SESSION_LEEWAY, issue_session
 from capa_simulation.components import sso_identity, sso_status
 from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.sso_reconnect import RECONNECT_NOTICE
+from capa_simulation.components.sso_reconnect import DENIED_NOTICE, RECONNECT_NOTICE
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -488,7 +488,9 @@ def test_every_identity_problem_has_a_stop_notice() -> None:
 
 
 def test_the_reconnect_banner_names_the_list_too() -> None:
+    """까닭 머리가 없을 때의 옛 글은 명단에서 빠짐까지 적는다. 머리가 오면 그 갈래는 따로 선다."""
     assert "접속 명단에서 빠졌거나" in RECONNECT_NOTICE
+    assert "접속 명단에서 빠져" in DENIED_NOTICE
 
 
 # --- 콜백 -------------------------------------------------------------------------------------
@@ -715,6 +717,50 @@ def test_fetch_with_a_dropped_cookie_is_401() -> None:
 
     assert response.status == 401
     assert "<html" not in response.text
+    # 본문은 그대로이고 까닭 낱말만 머리에 단다 — 「다시 로그인」 띠가 「접속 권한 신청」 을 고른다.
+    assert response.text == web.LOGIN_REQUIRED
+    assert response.header(names.REASON_HEADER.lower()) == names.REASON_DENIED
+
+
+@pytest.mark.parametrize("cookie", ["none", "expired", "forged"])
+def test_fetch_without_a_valid_cookie_names_the_other_reason(cookie: str) -> None:
+    """쿠키 없음 · 끝남 · 위조는 「그 밖」 이다 — 로그아웃은 쿠키를 지우고 끝난 쿠키는 브라우저가
+    버리므로 띠가 물을 때 그 둘은 쿠키 없음으로 온다. 머리에는 낱말만이다(계정 · 값 없음)."""
+    cfg = listed_config()
+    headers = dict(FETCH)
+    if cookie == "expired":
+        old = int(time.time()) - cfg.session_max_seconds - 3600
+        token, _ = issue_session(cfg, loginid=USER, name=None, dept=None, now=old)
+        headers["cookie"] = f"{cfg.session_cookie}={token}"
+    elif cookie == "forged":
+        headers["cookie"] = f"{cfg.session_cookie}=x.y.z"
+
+    response = http(gated_app(), "GET", "/_stcore/host-config", headers=headers)
+
+    assert response.status == 401
+    assert response.header(names.REASON_HEADER.lower()) == names.REASON_OTHER
+
+
+def test_navigation_and_the_refresh_route_carry_no_reason() -> None:
+    """까닭 머리는 문지기의 탐색 아닌 401 에만 단다 — 탐색은 IdP 로 가고, 갱신 경로는 처리기가
+    출처를 먼저 보고 답한다(세션 유효 여부를 응답 차이로 알리지 않는다)."""
+    cfg = listed_config()
+
+    navigation = http(gated_app(), "GET", "/", headers={**NAVIGATE, **cookie_of(cfg, GONE)})
+    refresh = http(
+        gated_app(),
+        "POST",
+        names.REFRESH_PATH,
+        headers={
+            **FETCH,
+            **ORIGIN,
+            names.REFRESH_HEADER.lower(): names.REFRESH_HEADER_VALUE,
+            **cookie_of(cfg, GONE),
+        },
+    )
+
+    assert navigation.status == 302 and navigation.header(names.REASON_HEADER.lower()) is None
+    assert refresh.status == 401 and refresh.header(names.REASON_HEADER.lower()) is None
 
 
 def test_upload_with_a_dropped_cookie_is_401() -> None:

@@ -19,7 +19,7 @@ import pytest
 from sso_support import PUBLIC_URL, renewed_session, use_config
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import names, runtime, web
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.identity import Identity
 from capa_simulation.auth.tokens import issue_session
@@ -39,6 +39,7 @@ from capa_simulation.components.theme_toggle import (
     THEME_BUTTON_ID,
     TOOLBAR_BUTTON_ORDER,
 )
+from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_PATH = PROJECT_ROOT / "app.py"
@@ -264,6 +265,49 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
     assert href.startswith(f"{PUBLIC_URL}{names.LOGIN_PATH}?next=")
     assert parse_qs(urlsplit(href).query)["next"] == ["/process_detail?theme=dark"]
     assert 'target="_self"' in link and sso_identity.LOGIN_AGAIN_LABEL in link
+    # 글 링크가 아니라 앱 주 단추 꼴이다(강조색 면 — 카드 p1-tab-ended).
+    assert 'role="button"' in link and "background:" in link
+    assert sso_identity.ACCESS_REQUEST_LABEL not in link
+    assert app.warning[0].icon == ":material/lock_clock:"
+
+
+def test_the_stop_panel_names_the_contact_under_its_button(
+    cookies: dict[str, str], page_url: Callable[[str | None], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """사이드바 카드가 서지 않는 멈춤 화면이라 문의 메일을 단추 아래 캡션으로 싣는다(값만). 비면
+    줄이 없다."""
+    use_config()
+    runtime.mark_gate_installed()
+    page_url(f"{PUBLIC_URL}/")
+    monkeypatch.delenv(APP_CONTACT_EMAIL_ENV, raising=False)
+
+    bare = AppTest.from_string(SCRIPT).run()
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, "help@example.com")
+    shown = AppTest.from_string(SCRIPT).run()
+
+    assert _caption_values(bare) == []
+    assert _caption_values(shown) == ["문의 help@example.com"]
+
+
+def test_a_dropped_account_is_offered_the_access_request(
+    cookies: dict[str, str], page_url: Callable[[str | None], None]
+) -> None:
+    """명단에서 빠진 열린 탭의 단추는 「접속 권한 신청」 이다 — 같은 로그인 경로라 통합인증을 거쳐
+    콜백의 거절 화면(신청은 그 화면이 받는다)으로 간다."""
+    cfg = use_config({names.ENV_ACCESS_ADMINS: "demo.admin", names.ENV_ACCESS_USERS: "demo.user"})
+    runtime.mark_gate_installed()
+    token, _ = _session(cfg, loginid="demo.gone")
+    cookies[cfg.session_cookie] = token
+    page_url(f"{PUBLIC_URL}/space_status")
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert [warning.value for warning in app.warning] == [web.NOT_ON_LIST_TEXT]
+    [link] = [str(item.value) for item in app.markdown]
+    assert sso_identity.ACCESS_REQUEST_LABEL in link
+    href = link.split('href="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+    assert href.startswith(f"{PUBLIC_URL}{names.LOGIN_PATH}?next=")
+    assert parse_qs(urlsplit(href).query)["next"] == ["/space_status"]
 
 
 def _ended_session(cfg: SsoConfig) -> tuple[str, Identity, int]:
@@ -306,18 +350,33 @@ def test_an_open_tab_stops_when_the_renewal_ran_out_too(cookies: dict[str, str])
     assert _texts(app) == []
 
 
-def test_a_new_account_in_the_same_session_stops(cookies: dict[str, str]) -> None:
-    """같은 Streamlit 세션이 다른 계정의 쿠키로 이어지면 새로고침하라고 멈춘다."""
+def test_a_new_account_in_the_same_session_stops(
+    cookies: dict[str, str], page_url: Callable[[str | None], None]
+) -> None:
+    """같은 Streamlit 세션이 다른 계정의 쿠키로 이어지면 새 계정 이름과 주 단추 「새로고침」 으로
+    멈춘다. 단추는 같은 탭 새 문서(지금 경로 + 질의)라 새 세션이 새 계정으로 선다 — 앞 계정의 세션
+    상태를 이어 쓰지 않는다. 풍선이 저장하지 않은 편집이 사라진다고 먼저 말한다(UI-NTF-09)."""
     cfg, _ = _on(cookies)
+    page_url(f"{PUBLIC_URL}/space_status")
     at = AppTest.from_string(SCRIPT)
+    at.query_params["theme"] = "dark"
     at.run()
-    other, _ = _session(cfg, loginid="other.user")
+    other, _ = _session(cfg, loginid="other.user", name="다른*사람")
     cookies[cfg.session_cookie] = other
 
     app = at.run()
 
-    assert [warning.value for warning in app.warning] == [sso_identity.ACCOUNT_CHANGED_NOTICE]
+    assert [warning.value for warning in app.warning] == [
+        sso_identity.account_changed_notice("다른*사람")
+    ]
+    assert app.warning[0].value == "「다른\\*사람」 계정으로 바뀌었습니다"
     assert _texts(app) == []
+    [link] = [str(item.value) for item in app.markdown]
+    href = link.split('href="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+    assert href == f"{PUBLIC_URL}/space_status?theme=dark"
+    assert 'target="_self"' in link and sso_identity.REFRESH_LABEL in link
+    assert f'title="{sso_identity.REFRESH_TIP}"' in link
+    assert st_session_loginid(at) == "dev.user", "멈춘 세션은 앞 계정 표지를 바꾸지 않는다"
 
 
 def test_an_enabled_setting_without_the_gate_stops(cookies: dict[str, str]) -> None:
@@ -342,6 +401,10 @@ def test_a_broken_setting_without_the_gate_names_the_problems(cookies: dict[str,
     captions = "\n".join(_caption_values(app))
     assert f"`{names.ENV_ISSUER}`" in captions
     assert "idp.example.invalid" not in captions
+
+
+def st_session_loginid(at: AppTest) -> object:
+    return at.session_state[sso_identity.SSO_LOGINID_KEY]
 
 
 def _styles(app: AppTest) -> list[str]:
@@ -473,8 +536,13 @@ def test_the_real_app_opens_home_with_the_name_on_the_card(
     assert toolbar and toolbar[-1][-2:] == (reconnect_script(cfg), refresh_script(cfg))
 
     assert not list(app.exception), [element.message for element in app.exception]
-    stops = {*sso_identity._PROBLEM_NOTICES.values(), sso_identity.ACCOUNT_CHANGED_NOTICE}
+    stops = set(sso_identity._PROBLEM_NOTICES.values())
     assert not [warning.value for warning in app.warning if warning.value in stops]
+    assert not [
+        warning.value
+        for warning in app.warning
+        if str(warning.value).endswith(sso_identity.ACCOUNT_CHANGED_TAIL)
+    ]
     credit = [str(c.value) for c in app.sidebar.caption if "개발 사용자 · 개발부서" in str(c.value)]
     assert len(credit) == 1
     assert credit[0].split("  \n")[:2] == list(credit_lines())

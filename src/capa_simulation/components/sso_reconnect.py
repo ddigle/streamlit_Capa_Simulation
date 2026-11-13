@@ -14,9 +14,22 @@ CONNECTING 이 이어진다).
 이 스크립트가 그 빈자리를 메운다. 앱 루트(`stApp`)의 연결 상태 표지(`data-test-connection-state`)를
 1초마다 읽어, 붙어 있지 않은 채 `PROBE_WAIT_MS` 가 지나면 같은 출처의 `/_stcore/host-config` 에
 쿠키를 실어 묻는다(`PROBE_GAP_MS` 마다 한 번). **401 이면** 로그인이 끝난 것이므로 화면 맨 위에
-한국어 띠와 「다시 로그인」 링크를 세운다. 그 밖(망 끊김 · 서버 재시작 — 200 이나 연결 실패)은
+한국어 띠와 링크를 세운다. 그 밖(망 끊김 · 서버 재시작 — 200 이나 연결 실패)은
 Streamlit 이 스스로 다시 붙으므로 아무것도 하지 않는다. 다시 붙으면(다른 탭에서 다시 로그인한 뒤
 등) 띠를 걷는다.
+
+**띠는 까닭 셋으로 가른다**(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-tab-ended). 문지기가 그
+401 에 까닭 낱말 머리(`names.REASON_HEADER` — `gate.ended_reason`)를 단다. 로그아웃은 쿠키를 지우고
+끝난 쿠키는 브라우저가 버리므로 물을 때 쿠키가 남아 있는 갈래는 명단에서 빠짐 · 명단 못 읽음뿐이다 —
+넷으로 가르지 않는다.
+
+- `other`(대부분 — 쓰지 않아 끝남 · 최대 시간 지남 · 로그아웃): `OTHER_NOTICE` + 「다시 로그인」.
+- `denied`(명단에서 빠짐): `DENIED_NOTICE` + 「접속 권한 신청」 — 같은 로그인 경로라 통합인증을 거쳐
+  콜백의 거절 화면으로 간다(신청은 그 화면이 받는다).
+- `unread`(서버가 S3 명단을 아직 못 읽음): `UNREAD_NOTICE` + 「다시 로그인」.
+- 머리가 없으면(앞단이 뗐거나 옛 서버) 넷을 다 적은 옛 글(`RECONNECT_NOTICE`)로 떨어진다.
+
+끊긴 동안 물음은 이어지므로 까닭이 바뀌면(명단을 읽은 뒤 빠짐이 드러남 등) 띠 글을 바꾼다.
 
 **자동으로 IdP 로 보내지 않는다.** 로그아웃은 이 브라우저의 앱 로그인을 끝내는 일이다 — 열어 둔
 다른 탭이 `run_every` 프래그먼트 회차나 클릭 하나로 저절로 다시 로그인하면 로그아웃이 조용히
@@ -57,10 +70,12 @@ from urllib.parse import urlsplit
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.identity import Identity
-from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
+from capa_simulation.components.sso_identity import ACCESS_REQUEST_LABEL, LOGIN_AGAIN_LABEL
 from capa_simulation.design import tokens
 
 BANNER_ID = "capa-sso-reconnect"
+# 띠에 단 까닭 표지 — 까닭이 바뀌면 띠를 다시 세운다(브라우저 확인 · 시험이 읽는다).
+KIND_ATTRIBUTE = "data-capa-sso-reason"
 # 붙어 있지 않은 채 이만큼 지나야 묻는다 — 잠깐의 끊김(재실행 · 망 흔들림)에는 묻지 않는다.
 PROBE_WAIT_MS = 3_000
 # 묻는 사이 — 끊긴 동안 이만큼마다 한 번.
@@ -71,8 +86,18 @@ HOST_CONFIG_PATH = "/_stcore/host-config"
 # 프런트 글, 비공식 — 판올림으로 글이 바뀌면 창이 남을 뿐 띠는 그대로다).
 CONNECTION_DIALOG_TEXT = "Connection failed with status 401"
 # 열린 탭이 끝나면 사용자가 실제로 보는 것은 이 띠다 — 문지기가 앱 스크립트의 만료 화면보다 먼저
-# 연결을 닫는다. 그래서 끝난 까닭 넷(쓰지 않음 · 하루 최대 시간 · 로그아웃 · 명단에서 빠짐)을 여기에
-# 다 적는다.
+# 연결을 닫는다. 까닭 머리가 오면 셋으로 가른 글, 오지 않으면(앞단이 뗌 · 옛 서버) 까닭 넷을 다 적은
+# 옛 글이다.
+OTHER_NOTICE = (
+    "로그인이 끝나 이 탭이 서버에 다시 붙지 못합니다(오래 쓰지 않았거나, 로그인 최대 시간이 "
+    "지났거나, 로그아웃했습니다). 다시 로그인하면 이 탭에서 저장하지 않은 편집은 사라집니다."
+)
+DENIED_NOTICE = (
+    "이 계정은 접속 명단에서 빠져 이 탭을 이어 쓸 수 없습니다. 저장하지 않은 편집은 사라집니다."
+)
+UNREAD_NOTICE = (
+    f"서버가 접속 명단을 읽지 못해 다시 붙지 못합니다 — 1분 뒤 「{LOGIN_AGAIN_LABEL}」 을 누르세요."
+)
 RECONNECT_NOTICE = (
     "통합인증 로그인이 끝나 이 탭이 서버에 다시 붙지 못합니다(오래 쓰지 않았거나 로그인 최대 "
     "시간이 지났거나 접속 명단에서 빠졌거나 이 브라우저에서 로그아웃했습니다). 다시 로그인하면 이 "
@@ -99,6 +124,11 @@ function probeDue(since, lastProbe, now, waitMs, gapMs) {
 // 띠가 대신 말하는 Streamlit 연결 오류 창인가 — 그 창의 글로 가른다(앱 팝업은 아니다).
 function connectionDialog(text) {
   return typeof text === "string" && text.indexOf(%(dialog_text)s) !== -1;
+}
+// 문지기가 401 에 단 까닭 낱말 → 띠 갈래. 모르는 낱말 · 머리 없음(앞단이 뗌 · 옛 서버)은 옛 글.
+function bandKind(reason) {
+  if (reason === "denied" || reason === "unread" || reason === "other") return reason;
+  return "legacy";
 }
 // 다시 로그인 주소 — 공개 주소 + 로그인 경로 + next(지금 경로에서 공개 주소의 경로 접두를 뗀
 // 것 + 질의).
@@ -141,19 +171,26 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     if (box) box.remove();
     restoreConnectionDialogs();
   }
-  function showBanner() {
-    if (doc.getElementById(%(banner_id)s)) return;
+  var bands = %(bands)s;
+  function showBanner(kind) {
+    var band = bands[kind] || bands.legacy;
+    var shown = doc.getElementById(%(banner_id)s);
+    if (shown) {
+      if (shown.getAttribute(%(kind_attr)s) === kind) return;
+      shown.remove();
+    }
     var isDark = dark();
     var box = doc.createElement("div");
     box.id = %(banner_id)s;
+    box.setAttribute(%(kind_attr)s, kind);
     box.setAttribute("role", "alert");
     // 연결 오류 창(react-aria 모달)이 바깥을 inert 로 만들 때 이 띠는 빼게 한다.
     box.setAttribute("data-react-aria-top-layer", "");
     box.style.cssText = isDark ? %(dark_box_style)s : %(light_box_style)s;
     var text = doc.createElement("span");
-    text.textContent = %(notice)s;
+    text.textContent = band.notice;
     var link = doc.createElement("a");
-    link.textContent = %(label)s;
+    link.textContent = band.label;
     link.target = "_self";
     link.href = loginHref(
       %(base)s, %(prefix)s, %(login_path)s,
@@ -184,7 +221,7 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     var probe = parentWindow.location.origin + %(prefix)s + %(host_config)s;
     fetch(probe, { credentials: "same-origin", cache: "no-store" })
       .then(function (response) {
-        if (response.status === 401) showBanner();
+        if (response.status === 401) showBanner(bandKind(response.headers.get(%(reason_header)s)));
       })
       .catch(function () {})
       .then(function () {
@@ -225,6 +262,16 @@ def band_styles(mode: str) -> tuple[str, str]:
     return box_style, link_style
 
 
+def band_texts() -> dict[str, dict[str, str]]:
+    """띠 갈래 → (글, 링크 이름). 갈래는 문지기의 까닭 낱말 셋과 머리 없음(`legacy`)이다."""
+    return {
+        names.REASON_OTHER: {"notice": OTHER_NOTICE, "label": LOGIN_AGAIN_LABEL},
+        names.REASON_DENIED: {"notice": DENIED_NOTICE, "label": ACCESS_REQUEST_LABEL},
+        names.REASON_UNREAD: {"notice": UNREAD_NOTICE, "label": LOGIN_AGAIN_LABEL},
+        "legacy": {"notice": RECONNECT_NOTICE, "label": LOGIN_AGAIN_LABEL},
+    }
+
+
 def reconnect_script(cfg: SsoConfig) -> str:
     """다시 붙지 못한 탭에 「다시 로그인」 띠를 세우는 스크립트(주소 · 문구 · 두 팔레트가 고정)."""
     prefix = urlsplit(cfg.public_url).path.rstrip("/")
@@ -236,8 +283,9 @@ def reconnect_script(cfg: SsoConfig) -> str:
         "dark_box_style": script_literal(dark_box),
         "light_link_style": script_literal(light_link),
         "dark_link_style": script_literal(dark_link),
-        "notice": script_literal(RECONNECT_NOTICE),
-        "label": script_literal(LOGIN_AGAIN_LABEL),
+        "bands": json.dumps(band_texts(), ensure_ascii=False).replace("<", "\\u003c"),
+        "kind_attr": script_literal(KIND_ATTRIBUTE),
+        "reason_header": script_literal(names.REASON_HEADER),
         "base": script_literal(cfg.public_url),
         "prefix": script_literal(prefix),
         "login_path": script_literal(names.LOGIN_PATH),

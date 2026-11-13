@@ -386,7 +386,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다. 운영 · 개발 안내는 `docs/sso_setup.md`.
   - `components/sso_identity.py` — 앱 스크립트 쪽 두 번째 벽. `app.py` 가 `theme.begin_run()` 바로 뒤 · 입장 화면 앞에서 부르는
     `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
-    없이 뜬 서버는 멈춤 화면 + `st.stop()`). 위젯 콜백(본문보다 먼저 돈다)과 프래그먼트 회차(`app.py` 를 돌리지 않는다)는 이
+    없이 뜬 서버는 멈춤 화면 + `st.stop()`). 로그인 끝남 · 계정 바뀜 멈춤은 앱 안 멈춤 판(`components/stop_panel.py`)이다 — 경고
+    한 줄 · 같은 탭 주 단추 꼴 링크(`primary_link` — `st.link_button` 은 새 탭이고 `st.rerun` 은 앞 계정의 세션을 잇는다) · 「문의
+    <메일>」 캡션. 단추는 까닭(`gate.ended_reason` — 띠와 같은 낱말)으로 가른다: 명단에서 빠짐 「접속 권한 신청」, 명단 못 읽음
+    `cloud_off` + 「다시 로그인」, 계정 바뀜은 새 계정 이름 + 「새로고침」(풍선 `REFRESH_TIP`). 위젯 콜백(본문보다 먼저 돈다)과 프래그먼트 회차(`app.py` 를 돌리지 않는다)는 이
     벽을 지나지 않는다 — 열린 탭의 만료 · 로그아웃은 문지기가 websocket 메시지마다 막는다(`gate._WatchedSocket`, 9장). 관리자 회차 판정 `viewer_is_admin`(지금 다시 검증한 신원 — 켜짐이 아니면 거짓, `AD-10`)과 앱 정보 카드 셋째 줄(`sso_credit_line`)도 여기서 짓는다 — 「다시 로그인」 · 「로그아웃」
     은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 끝 30분 전 경고는 갱신 표까지 본 끝
     (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
@@ -397,7 +400,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     그대로다. 시험은 `tests/test_sso_streamlit.py`.
   - `components/sso_reconnect.py` — 만료 · 로그아웃으로 다시 붙지 못한 탭의 「다시 로그인」 띠. 통합인증이 켜진 서버만 툴바
     iframe(`render_theme_toggle` 의 `extra_scripts`)에 싣는다 — 연결 상태 표지가 끊김인 채 3초가 지나면 같은 출처 host-config 를
-    묻고 401 이면 한국어 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를 연결 오류 창 위에 세운다. IdP 로 저절로 보내지 않는다
+    묻고 401 이면 한국어 띠 + 같은 탭 링크(지금 경로 · 질의로 돌아옴)를 연결 오류 창 위에 세운다. 띠 글은 문지기가 그 401 에 단
+    까닭 낱말 머리(`names.REASON_HEADER` — `denied` · `unread` · `other`, `gate.ended_reason`)로 셋을 가르고(`band_texts`), 머리가
+    없으면 옛 글이다. 까닭이 바뀌면 띠를 다시 세운다. IdP 로 저절로 보내지 않는다
     (로그아웃을 조용히 되돌리지 않게). 띠 색은 두 팔레트(`band_styles`)를 함께 싣고 띠를 세우는 순간 `capaTheme` 으로 앱 테마를
     골라 칠하며, 양옆 12px 안에서 내용 폭으로 가운데 선다(`left`/`right` 12px + `margin-inline:auto` + `width:fit-content`).
     바깥 화면(거절 · 로그아웃)의 보조 링크는 강조 토큰 색이다(`auth/web.py`). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
