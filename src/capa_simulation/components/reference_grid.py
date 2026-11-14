@@ -121,12 +121,13 @@ GRID_BOX: Final = "reference_grid_box"
 ACTION_ROW: Final = "reference_action_row"
 # 단추 줄과 표 도구 막대를 한 줄로 세우는 창 폭 — 본문이 고친 뒤의 단추 줄(`ACTION_ROW_RESERVE_PX`
 # 까지) 곁에 막대가 드는 가장 좁은 창을 잰 값이다(샘플 관측 — 사이드바 300 · 좌우 여백 35 · 고친 뒤
-# 단추 줄 429 · 그림 단추 막대 409 — 찾기 칸 140 · 「적용 전 (1)」, 본문 세로 스크롤 막대(10px)를 켠
-# Chrome · 글꼴 흉내 · 창 높이 649 로 1px 이분 탐색). 고칠 칸이 두 자리면 1221 이라 1215 ~ 1220 창은
-# 막대 끝 「전체 화면」 단추 하나가 둘째 줄로 꺾인다(겹침 · 잘림 없음 — 생산 계획 두 그리드와 같은
-# 꼴). 사내 보고 창(1283)도 한 줄이다. 그보다 좁으면 막대가 표 바로 위 제 줄로 내려앉는다(설계 규칙
-# UI-LAY-11 · UI-ACC-02 — `edit_grid.one_line_style`).
-ONE_LINE_MIN_WINDOW_PX: Final = 1215
+# 단추 줄 436 · 그림 단추 막대 416 — 찾기 칸 140 · 「적용 전 (10)」, 본문 세로 스크롤 막대(10px)를
+# 켠 Chrome · 글꼴 흉내 · 창 높이 649 로 1px 이분 탐색). 고칠 칸 · 「적용 전 (n)」 의 n 이 두 자리일
+# 때 잰 값이라 n 이 한두 자리면 막대 끝 「전체 화면」 까지 한 줄로 서고 꺾이는 창이 없다(n 이 세
+# 자리면 문턱부터 7px 창은 「전체 화면」 하나가 둘째 줄 — 겹침 · 잘림 없음, 생산 계획 두 그리드와
+# 같은 꼴). 사내 보고 창(1283)도 한 줄이다. 그보다 좁으면 막대가 표 바로 위 제 줄로 내려앉는다
+# (설계 규칙 UI-LAY-11 · UI-ACC-02 — `edit_grid.one_line_style`).
+ONE_LINE_MIN_WINDOW_PX: Final = 1221
 ACTION_ROW_RESERVE_PX: Final = 460
 ONE_LINE_STYLE: Final = edit_grid.one_line_style(
     ACTIONS_BOX,
