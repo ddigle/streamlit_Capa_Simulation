@@ -200,9 +200,11 @@ LOOP_TEXT = (
 # `{clock}` 은 「○시 ○분」(KST) — 시도 쿠키가 늦어도 사라지는 때다(`loop_frame`).
 LOOP_WAIT_TEXT = "{clock} 뒤에 「다시 시도」 를 누르세요."
 LOGOUT_TITLE = "로그아웃했습니다"
+# 다른 탭은 저절로 로그인 화면으로 가지 않는다 — 다음 누름에 「다시 로그인」 띠가 서고 사람이
+# 그 띠를 누른다(`components/sso_reconnect` — 링크 이름 `sso_identity.LOGIN_AGAIN_LABEL`).
 LOGOUT_TEXT = (
     "이 브라우저에서 이 앱의 로그인만 끝냈습니다. "
-    "열어 둔 다른 탭도 다음에 누를 때 로그인 화면으로 갑니다."
+    "열어 둔 다른 탭은 다음에 누르면 「다시 로그인」 을 보입니다."
 )
 CONFIG_TITLE = "지금은 앱을 열 수 없습니다"
 CONFIG_TEXT = "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 문의처에 알려 주세요."
@@ -1053,16 +1055,16 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
     )
 
 
-def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> Frame:
+def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None) -> Frame:
     """명단을 한 번도 읽지 못함 — 권한 문제가 아니다. 잠시 뒤 풀리는 때와 관리자가 고칠 때를
-    가른다."""
+    가른다. 신청 글 상자 없이 문의 줄만이다 — 그 글의 머리 「접속 권한」 이 「권한 문제가
+    아닙니다」 와 부딪힌다. 거절 표는 「다시 확인」 이 돌아갈 화면만 준다."""
     needs_admin = access_store.unread_needs_admin(cfg)
     text, step = (
         (LIST_UNREAD_ADMIN_TEXT, LIST_UNREAD_ADMIN_STEP)
         if needs_admin
         else (LIST_UNREAD_WAIT_TEXT, LIST_UNREAD_WAIT_STEP)
     )
-    note = "" if ticket is None else _note(ticket, LIST_UNREAD, now)
     return Frame(
         title=LIST_UNREAD_TITLE,
         chip="maintenance",
@@ -1070,10 +1072,7 @@ def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
         steps=(_reachable(cfg, step),),
         primary=_login_link(cfg, CHECK_AGAIN_LABEL, "/" if ticket is None else ticket.next_path),
         secondary=_other_account(cfg),
-        note_label=_reachable(cfg, NOTE_LABEL) if note else "",
-        note_text=note,
         reference=LIST_UNREAD,
-        account="" if ticket is None else ticket.loginid,
         contact_email=_contact_email(),
         contact_text=cfg.access.contact,
     )
@@ -1136,14 +1135,18 @@ def denied_family_page(
     if ticket is not None and code == REGISTER_FAILED:
         return frame_response(register_failed_frame(cfg, ticket, moment), status=403, now=moment)
     if access_store.is_unread(cfg):
-        return frame_response(list_unread_frame(cfg, ticket, moment), status=403, now=moment)
+        return frame_response(list_unread_frame(cfg, ticket), status=403, now=moment)
     return frame_response(not_on_list_frame(cfg, ticket, moment), status=403, now=moment)
 
 
 def portal_refused_page(
     cfg: SsoConfig, *, now: int | None = None, next_path: str = "/"
 ) -> HTMLResponse:
-    """통합인증(포털)이 앱 사용을 막음 — 신청 칸 없음(서명 전 실패라 누구인지 모른다)."""
+    """통합인증(포털)이 앱 사용을 막음 — 신청 칸 없음(서명 전 실패라 누구인지 모른다).
+
+    다시 해도 같은 실패라 통합인증 로그아웃 주소가 있으면 「다른 계정으로 로그인」 이 주 단추이고
+    「다시 시도」 는 보조 링크다. 그 주소가 없는 서버는 다른 계정으로 갈 길이 없어 「다시 시도」 가
+    주 단추다 — 막다른 화면을 두지 않는다."""
     moment = _now() if now is None else now
     retry = _login_link(cfg, RETRY_LABEL, next_path)
     other = _other_account(cfg)

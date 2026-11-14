@@ -34,7 +34,7 @@ from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.gate import SsoGate
 from capa_simulation.auth.server import sso_routes
 from capa_simulation.auth.tokens import STATE_TTL, issue_state
-from capa_simulation.components import sso_status
+from capa_simulation.components import sso_identity, sso_reconnect, sso_status
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
@@ -539,6 +539,43 @@ def test_the_portal_refusal_retry_keeps_the_first_screen() -> None:
     assert next_of(retry) == "/space"
 
 
+@pytest.mark.parametrize("logout_url", ["", "https://idp.example.invalid/adfs/oauth2/logout"])
+def test_the_portal_refusal_main_button_is_another_account_only_with_a_logout_address(
+    logout_url: str,
+) -> None:
+    """포털 거절은 다시 해도 같다 — 통합인증 로그아웃 주소가 있으면 주 단추가 「다른 계정으로
+    로그인」 이고 「다시 시도」 는 보조 링크다. 없는 서버는 다른 계정으로 갈 길이 없어 「다시
+    시도」 가 주 단추다(2026-11-14 보드 decided 4 · 공통 틀 「주 단추는 늘 있다」)."""
+    cfg = use_config({names.ENV_LOGOUT_URL: logout_url} if logout_url else None)
+    app = routes_app()
+    jar: dict[str, str] = {}
+    begin(app, cfg, jar, "/space")
+    cookies = {name: value for name, value in jar.items() if name != STATE_KEY}
+
+    page = follow(
+        app,
+        http(
+            app,
+            "POST",
+            names.CALLBACK_PATH,
+            headers={**FORM, "cookie": cookie_header(cookies)},
+            body=urlencode({"error": "access_denied", "state": jar[STATE_KEY]}).encode(),
+        ),
+    )
+
+    assert page.status == 403 and web.PORTAL_TITLE in page.text
+    [main_button] = button_hrefs(page)
+    [retry] = hrefs(page, web.RETRY_LABEL)
+    assert next_of(retry) == "/space"
+    if logout_url:
+        assert main_button == logout_url
+        assert hrefs(page, web.OTHER_ACCOUNT_LABEL) == [logout_url]
+        assert f'<a class="button" href="{html.escape(retry)}">' not in page.text
+    else:
+        assert main_button == retry
+        assert web.OTHER_ACCOUNT_LABEL not in page.text
+
+
 @pytest.mark.parametrize(
     ("raw", "kept"),
     [
@@ -562,6 +599,22 @@ def test_logout_goes_back_to_the_screen_before_logout(raw: str, kept: str) -> No
     assert f'href="mailto:{CONTACT_EMAIL}"' in top
     assert web.OTHER_ACCOUNT_LABEL not in page.text
     assert "evil" not in page.text and "javascript" not in page.text
+
+
+def test_the_logout_text_names_the_band_the_other_tabs_show() -> None:
+    """다른 탭은 저절로 로그인 화면으로 가지 않는다 — 다음 누름에 띠가 서고 사람이 그 띠의
+    「다시 로그인」 을 누른다. 로그아웃 화면 글은 그 띠의 링크 이름을 그대로 쓰고, 통합인증까지
+    끝내는 법은 Guide · 안내 문서에만 둔다(2026-11-14 보드 logout · UI-CON-02)."""
+    use_config()
+
+    page = http(routes_app(), "GET", names.LOGOUT_PATH)
+
+    band = sso_reconnect.band_texts()[names.REASON_OTHER]["label"]
+    assert band == sso_identity.LOGIN_AGAIN_LABEL
+    assert f"「{band}」" in web.LOGOUT_TEXT
+    assert f"<p>{web.LOGOUT_TEXT}</p>" in main_part(page)
+    assert "로그인 화면으로 갑니다" not in page.text
+    assert "통합인증" not in web.LOGOUT_TEXT
 
 
 # --- 설정 막힘 ----------------------------------------------------------------------------

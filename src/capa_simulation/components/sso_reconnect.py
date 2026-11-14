@@ -64,14 +64,17 @@ b2). 띠가 창 제목과 닫기 X 를 덮고 본문 줄만 삐져나와 같은 
 재시작 띠 「서버를 다시 시작하는 중입니다 — <데이터 받는 중 · 2번째 받기>. 끝나면 이 탭이 저절로
 다시 붙습니다. 이 탭에서 저장하지 않은 편집은 사라집니다.」, 답이 아예 없는 동안(연결 실패 ·
 `PROBE_TIMEOUT_MS` 넘김)은 「서버 응답을 기다리는 중입니다」, 답 없음이 `UNREACHABLE_AFTER_MS` 를
-넘게 이어지면 「서버에 닿지 않습니다 — 다시 붙는 중」. 표 없는 5xx 는 같은 뿌리의 health 를 한 번 더
-묻는다 — 표 없이 2xx 면 앱이 떠서 이 물음을 거절하는 것이라(통합인증 설정 막힘의 503 — 새로 읽으면
-설정 화면) 기다리라고 하지 않고 띠를 걷는다(시작 임시 화면의 쪽 JS 와 같은 판정). health 도 앱 답이
-아니면(앞단 502 · 504 · Streamlit 준비 전) 기다림이다. 그 밖의 답(서버가 떠 있음)은 띠를 걷는다 —
-Streamlit 이 스스로 다시 붙는다. 재시작 띠는 링크가 없고(기다리면 붙는다) 로그인 띠가 서 있으면 서지
-않는다. 띠가 선 동안 영어 연결 창(`CONNECTION_DIALOG_TEXTS` — 401 · 5xx · 시간 넘김 · not
-responding · localhost 의 still running)을 감춘다(같은 길). 다시 붙으면 띠를 걷고 서버 재시작
-알림(`GL-07`)이 이어 알린다.
+넘게 이어지면 「서버에 닿지 않습니다 — 다시 붙는 중」. 표 없는 5xx 는 같은 뿌리의 health 를
+한 번 더 묻는다(시작 임시 화면의 쪽 JS 와 같은 판정 — 표 없는 2xx 면 앱의 답). health 도 앱 답이
+아니면(앞단 502 · 504 · Streamlit 준비 전) 기다림이다. 앱의 답이면 host-config 를 한 번 더 묻고,
+그래도 표 없는 5xx 면 앱이 떠서 이 탭을 거절하는 것이다(통합인증 설정 막힘의 503 — 기다려도 붙지
+않고 새로 열면 설정 화면). 그때는 같은 자리에 설정 막힘 띠(`BLOCKED_NOTICE` — 설정 막힘 화면과
+같은 낱말)와 지금 문서를 다시 여는 「새로고침」 링크(풍선 — 저장하지 않은 편집은 사라짐)를
+세운다(2026-11-14 보드 english). 다시 물을 때 앱이 답하면 넘김 틈의 앞단 5xx 였으므로 띠를 걷는다.
+그 밖의 답(서버가 떠 있음)도 띠를 걷는다 — Streamlit 이 스스로 다시 붙는다. 재시작 띠는 링크가
+없고(기다리면 붙는다) 재시작 자리의 띠는 로그인 띠가 서 있으면 서지 않는다. 띠가 선 동안 영어 연결
+창(`CONNECTION_DIALOG_TEXTS` — 401 · 5xx · 시간 넘김 · not responding · localhost 의 still
+running)을 감춘다(같은 길). 다시 붙으면 띠를 걷고 서버 재시작 알림(`GL-07`)이 이어 알린다.
 
 **통합인증이 꺼진 서버에도 싣는다** — 재시작은 통합인증과 상관없다. 꺼짐이면 로그인 띠 없이 재시작
 갈래만 돌고(`restart_script`), 물음은 지금 주소 기준 상대 경로(`<지금 경로의 폴더>/_stcore/…`)로
@@ -90,8 +93,8 @@ from urllib.parse import urlsplit
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.identity import Identity
-from capa_simulation.auth.web import REGISTER_LABEL
-from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
+from capa_simulation.auth.web import CONFIG_TITLE, REGISTER_LABEL
+from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL, REFRESH_LABEL, REFRESH_TIP
 from capa_simulation.design import tokens
 
 BANNER_ID = "capa-sso-reconnect"
@@ -106,9 +109,9 @@ HOST_CONFIG_PATH = "/_stcore/host-config"
 # 띠가 선 동안 감추는 Streamlit 연결 오류 창의 글 — 401 이라 띠가 선 그 창만 고른다(Streamlit 1.63
 # 프런트 글, 비공식 — 판올림으로 글이 바뀌면 창이 남을 뿐 띠는 그대로다).
 CONNECTION_DIALOG_TEXT = "Connection failed with status 401"
-# 재시작 띠가 선 동안 함께 감추는 창 글 — 임시 응답의 503 · 앞단의 502 · 504, 핑 시간 넘김(앞단이
-# 요청을 붙듦), 답이 없는 틈(localhost 로 연 탭은 글이 다르다 — 같은 프런트 글). 띠가 선 동안만
-# 감추므로 앱 팝업은 건드리지 않는다.
+# 재시작 자리의 띠가 선 동안 함께 감추는 창 글 — 임시 응답의 503 · 막힘의 503 · 앞단의 502 · 504,
+# 핑 시간 넘김(앞단이 요청을 붙듦), 답이 없는 틈(localhost 로 연 탭은 글이 다르다 — 같은 프런트 글).
+# 띠가 선 동안만 감추므로 앱 팝업은 건드리지 않는다.
 CONNECTION_DIALOG_TEXTS = (
     CONNECTION_DIALOG_TEXT,
     "Connection failed with status 5",
@@ -130,6 +133,14 @@ RESTART_LEAD = "서버를 다시 시작하는 중입니다"
 RESTART_TAIL = "끝나면 이 탭이 저절로 다시 붙습니다. 이 탭에서 저장하지 않은 편집은 사라집니다."
 WAITING_NOTICE = "서버 응답을 기다리는 중입니다"
 UNREACHABLE_NOTICE = "서버에 닿지 않습니다 — 다시 붙는 중"
+# 앱이 떠서 이 탭을 거절함(통합인증 설정 막힘) — 설정 막힘 화면(`auth/web.CONFIG_TITLE` ·
+# `CONFIG_TEXT` 첫 문장)과 같은 낱말이고 링크는 지금 문서를 다시 여는 「새로고침」 이다. 문의처는
+# 새로 연 설정 화면의 문의 줄이 말한다(띠에는 문의 줄이 없다).
+BLOCKED_NOTICE = (
+    f"{CONFIG_TITLE} — 서버 설정을 고치는 중입니다. 잠시 뒤 「{REFRESH_LABEL}」 을 누르세요."
+)
+# 재시작 자리에 선 띠가 설정 막힘 띠임을 가르는 표지 — 재시작 띠 글로 바뀔 때 링크째 다시 세운다.
+BLOCKED_MARK = "data-capa-blocked"
 # 열린 탭이 끝나면 사용자가 실제로 보는 것은 이 띠다 — 문지기가 앱 스크립트의 만료 화면보다 먼저
 # 연결을 닫는다. 까닭 머리가 오면 셋으로 가른 글, 오지 않으면(앞단이 뗌 · 옛 서버) 까닭 넷을 다 적은
 # 옛 글이다.
@@ -182,14 +193,20 @@ function bandKind(reason) {
 function appAnswers(status, staged) {
   return typeof status === "number" && status >= 200 && status < 300 && !staged;
 }
+// health 가 앱의 답일 때 다시 물은 host-config 의 답이 아직 표 없는 5xx 인가 — 그러면 앱이 떠서
+// 이 탭을 거절하는 것이다(통합인증 설정 막힘). 다시 물을 때 앱이 답하면 넘김 틈의 앞단 5xx 였다.
+function stillRefused(status, staged) {
+  return typeof status === "number" && status >= 500 && !staged;
+}
 // 물음의 답 → 띠 갈래. `status` 가 null 이면 답이 없었다(연결 실패 · 시간 넘김). `staged` 는 시작
-// 임시 응답의 표(`X-Capa-Stage`), `appUp` 은 표 없는 5xx 뒤 health 가 앱의 답이었는가(앱이 떠서
-// 거절하는 중), `downMs` 는 답 없음이 이어진 시간이다.
-function probeKind(status, staged, appUp, downMs, unreachableMs) {
+// 임시 응답의 표(`X-Capa-Stage`), `appUp` 은 표 없는 5xx 뒤 health 가 앱의 답이었는가, `downMs` 는
+// 답 없음이 이어진 시간, `refused` 는 그 뒤 다시 물은 host-config 도 표 없는 5xx 였는가(앱이 떠서
+// 거절 — 막힘)다.
+function probeKind(status, staged, appUp, downMs, unreachableMs, refused) {
   if (status === 401) return "login";
   if (status === null) return downMs >= unreachableMs ? "unreachable" : "waiting";
   if (staged) return "stage";
-  if (status >= 500) return appUp ? "none" : "waiting";
+  if (status >= 500) return !appUp ? "waiting" : refused ? "blocked" : "none";
   return "none";
 }
 // 재시작 띠 글 — 임시 응답 상태 줄(`/_capa_stage`)의 셋째 줄(JSON) 짧은 글. 없으면(옛 임시 응답)
@@ -272,7 +289,8 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     if (box) box.remove();
     restoreConnectionDialogs();
   }
-  // 재시작 띠 — 링크 없는 한 줄. 로그인 띠가 서 있으면 세우지 않는다(로그인이 먼저다).
+  // 재시작 띠 — 링크 없는 한 줄. 로그인 띠가 서 있으면 세우지 않는다(로그인이 먼저다). 같은 자리에
+  // 설정 막힘 띠(링크 있음 — `showBlocked`)가 서 있었으면 걷고 새로 세운다.
   function hideRestart() {
     var box = doc.getElementById(%(restart_id)s);
     if (!box) return;
@@ -282,6 +300,10 @@ function loginHref(base, prefix, loginPath, pathname, search) {
   function showRestart(notice) {
     if (doc.getElementById(%(banner_id)s)) return;
     var box = doc.getElementById(%(restart_id)s);
+    if (box && box.hasAttribute(%(blocked_mark)s)) {
+      box.remove();
+      box = null;
+    }
     if (!box) {
       box = doc.createElement("div");
       box.id = %(restart_id)s;
@@ -321,9 +343,10 @@ function loginHref(base, prefix, loginPath, pathname, search) {
         window.clearTimeout(timer);
       });
   }
-  function answered(status, staged, appUp, downMs) {
-    var kind = probeKind(status, staged, appUp, downMs, %(unreachable_ms)d);
+  function answered(status, staged, appUp, downMs, refused) {
+    var kind = probeKind(status, staged, appUp, downMs, %(unreachable_ms)d, refused);
     if (kind === "login" || kind === "none") return Promise.resolve(hideRestart());
+    if (kind === "blocked") return Promise.resolve(showBlocked());
     if (kind === "waiting") return Promise.resolve(showRestart(%(waiting)s));
     if (kind === "unreachable") return Promise.resolve(showRestart(%(unreachable)s));
     return ask(%(stage_path)s, true)
@@ -337,16 +360,58 @@ function loginHref(base, prefix, loginPath, pathname, search) {
         showRestart(restartNotice(text, %(restart_lead)s, %(restart_tail)s));
       });
   }
-  // 표 없는 5xx — 앱이 떠서 거절하는지 health 를 한 번 더 묻는다.
+  // 표 없는 5xx — 앱이 떠서 거절하는지 health 를 한 번 더 묻는다. 앱의 답이면 host-config 를 다시
+  // 물어 그래도 표 없는 5xx 인지 본다(넘김 틈의 앞단 5xx 는 다시 물을 때 앱이 답한다).
   function answeredServerError(status) {
     return ask(%(health_path)s, false).then(
       function (health) {
-        return answered(status, false, appAnswers(health.status, health.staged), 0);
+        if (!appAnswers(health.status, health.staged)) return answered(status, false, false, 0);
+        return ask(%(host_config)s, false).then(
+          function (again) {
+            return answered(status, false, true, 0, stillRefused(again.status, again.staged));
+          },
+          function () {
+            return answered(status, false, true, 0, false);
+          }
+        );
       },
       function () {
         return answered(status, false, false, 0);
       }
     );
+  }
+  // 설정 막힘 띠 — 앱이 떠서 이 탭을 거절한다(기다려도 붙지 않는다). 재시작 띠와 같은 자리 · 같은
+  // 꼴에 지금 문서를 다시 여는 「새로고침」 링크(풍선 — 저장하지 않은 편집은 사라짐)를 단다. 로그인
+  // 띠가 서 있으면 세우지 않는다.
+  function showBlocked() {
+    if (doc.getElementById(%(banner_id)s)) return;
+    var box = doc.getElementById(%(restart_id)s);
+    if (box && !box.hasAttribute(%(blocked_mark)s)) {
+      box.remove();
+      box = null;
+    }
+    if (!box) {
+      var isDark = dark();
+      box = doc.createElement("div");
+      box.id = %(restart_id)s;
+      box.setAttribute(%(blocked_mark)s, "");
+      box.setAttribute("role", "alert");
+      box.setAttribute("data-react-aria-top-layer", "");
+      box.style.cssText = isDark ? %(dark_box_style)s : %(light_box_style)s;
+      var text = doc.createElement("span");
+      text.textContent = %(blocked)s;
+      var link = doc.createElement("a");
+      link.textContent = %(refresh_label)s;
+      link.title = %(refresh_tip)s;
+      link.target = "_self";
+      link.href = parentWindow.location.href;
+      link.style.cssText = isDark ? %(dark_link_style)s : %(light_link_style)s;
+      box.appendChild(text);
+      box.appendChild(link);
+      doc.body.appendChild(box);
+    }
+    hideConnectionDialogs();
+    watchConnectionDialogs();
   }
   // 이름이 `tick` 의 `root`(앱 루트 요소)와 겹치지 않게 한다 — 겹치면 그 안에서 함수가 가려진다.
   function appRoot() {
@@ -442,13 +507,15 @@ def band_styles(mode: str) -> tuple[str, str]:
     ink = tokens.palette_value(mode, "ACCENT_TEXT")
     shade = tokens.palette_value(mode, "NAV_SHADOW")
     # 양옆 12px 안에서 내용 폭으로 서고 가운데 놓인다 — `left:50%` 로 밀면 내용 맞춤 폭의 상한이
-    # 남은 절반이 되어 좁은 창에서 띠가 창의 절반 폭으로 접힌다.
+    # 남은 절반이 되어 좁은 창에서 띠가 창의 절반 폭으로 접힌다. 글은 띄어쓰기에서만 줄을 바꿔
+    # 한국어 낱말을 가운데서 가르지 않고, 띄어쓰기 없는 긴 글만 아무 데서나 접는다(UI-ACC-02).
     box_style = (
         "position:fixed;top:12px;left:12px;right:12px;margin-inline:auto;width:fit-content;"
         "z-index:2147483647;"
         "max-width:min(720px,calc(100vw - 24px));box-sizing:border-box;padding:12px 16px;"
         f"border-radius:8px;background:{fill};color:{ink};font-family:{tokens.FONT_FAMILY};"
         f"font-size:14px;line-height:1.5;box-shadow:0 6px 24px {shade};"
+        "word-break:keep-all;overflow-wrap:anywhere;"
     )
     link_style = (
         f"margin-left:10px;color:{ink};font-weight:700;text-decoration:underline;"
@@ -496,6 +563,10 @@ def _script(cfg: SsoConfig | None) -> str:
         "restart_tail": script_literal(RESTART_TAIL),
         "waiting": script_literal(WAITING_NOTICE),
         "unreachable": script_literal(UNREACHABLE_NOTICE),
+        "blocked": script_literal(BLOCKED_NOTICE),
+        "blocked_mark": script_literal(BLOCKED_MARK),
+        "refresh_label": script_literal(REFRESH_LABEL),
+        "refresh_tip": script_literal(REFRESH_TIP),
         "unreachable_ms": UNREACHABLE_AFTER_MS,
         "wait_ms": PROBE_WAIT_MS,
         "gap_ms": PROBE_GAP_MS,

@@ -20,14 +20,17 @@ from asgi_driver import http
 from js_runner import run_js_json
 from sso_support import LOGINID, PUBLIC_URL, use_config
 
-from capa_simulation.auth import names
+from capa_simulation.auth import names, page_frame
 from capa_simulation.auth.gate import SsoGate
 from capa_simulation.auth.identity import Identity
-from capa_simulation.auth.web import REGISTER_LABEL
-from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL
+from capa_simulation.auth.web import CONFIG_TEXT, CONFIG_TITLE, REGISTER_LABEL
+from capa_simulation.components.sso_identity import LOGIN_AGAIN_LABEL, REFRESH_LABEL, REFRESH_TIP
 from capa_simulation.components.sso_reconnect import (
     BANNER_ID,
+    BLOCKED_MARK,
+    BLOCKED_NOTICE,
     CONNECTION_DIALOG_TEXT,
+    CONNECTION_DIALOG_TEXTS,
     DENIED_NOTICE,
     HEALTH_PATH,
     HOST_CONFIG_PATH,
@@ -156,6 +159,25 @@ def test_the_band_carries_both_palettes_and_picks_the_app_theme_when_it_stands()
     assert 'capaTheme.resolve(parentWindow).choice === "Dark"' in script
     assert "box.style.cssText = isDark ?" in script
     assert "link.style.cssText = isDark ?" in script
+
+
+def test_bands_and_out_of_app_pages_break_only_between_words_in_a_narrow_window() -> None:
+    """좁은 창(390)에서 띠(로그인 · 재시작 · 막힘 — 한 서식)와 앱 밖 틀의 글이 한국어 낱말을
+    「고치는 중입니 / 다」 · 「다시 로그 / 인」 처럼 가운데서 가르지 않는다. 띄어쓰기에서만 줄을
+    바꾸고, 띄어쓰기 없는 긴 메일 · 주소만 아무 데서나 접어 가로로 넘치지 않는다(UI-ACC-02)."""
+    page = page_frame.render(
+        page_frame.Frame(title="t", chip=None, lead=(), primary=page_frame.Link("a", "/")), now=0
+    )
+    css = page.split("<style>", 1)[1].split("</style>", 1)[0]
+    body = re.search(r"(?m)^body \{([^}]*)\}", css)
+
+    assert body is not None
+    assert "word-break: keep-all;" in body.group(1), "본문 글 전체가 물려받는다"
+    assert "overflow-wrap: anywhere;" in body.group(1), "긴 메일 · 주소가 넘치지 않게"
+    for mode in ("light", "dark"):
+        box, _ = band_styles(mode)
+        assert "word-break:keep-all;overflow-wrap:anywhere;" in box
+        assert json.dumps(box, ensure_ascii=False) in restart_script()
 
 
 def test_script_text_cannot_break_out_of_its_script_tag() -> None:
@@ -304,6 +326,58 @@ process.stdout.write(JSON.stringify([
         "none",
         "none",
     ]
+
+
+def test_an_app_that_still_refuses_on_the_second_ask_is_the_blocked_band() -> None:
+    """표 없는 5xx 뒤 health 가 앱의 답이고 다시 물은 host-config 도 표 없는 5xx 면 앱이 떠서 이
+    탭을 거절하는 것이다(통합인증 설정 막힘) — 설정 막힘 띠다. 다시 물을 때 앱이 답하면(넘김 틈의
+    앞단 5xx) 띠를 걷고, health 가 앱의 답이 아니면 기다림이다. 401 · 임시 응답 · 답 없음은 그
+    갈래 그대로다(2026-11-14 보드 english)."""
+    script = restart_script()
+    runner = f"""
+const U = {UNREACHABLE_AFTER_MS};
+process.stdout.write(JSON.stringify([
+  probeKind(503, false, true, 0, U, true),
+  probeKind(503, false, true, 0, U, false),
+  probeKind(502, false, false, 0, U, true),
+  probeKind(401, false, true, 0, U, true),
+  probeKind(503, true, true, 0, U, true),
+  probeKind(null, false, true, 0, U, true),
+  stillRefused(503, false),
+  stillRefused(502, false),
+  stillRefused(503, true),
+  stillRefused(200, false),
+  stillRefused(401, false),
+  stillRefused(null, false),
+  stillRefused(undefined, false),
+]));
+"""
+    assert _node(script, runner) == [
+        "blocked",
+        "none",
+        "waiting",
+        "login",
+        "stage",
+        "waiting",
+        True,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ]
+
+
+def test_the_blocked_band_speaks_the_setup_page_words_and_the_refresh_name() -> None:
+    """설정 막힘 띠 글은 설정 막힘 화면(`CONFIG_TITLE` · `CONFIG_TEXT` 첫 문장)과 같은 낱말이고,
+    링크는 앱 안 이름 「새로고침」 이다(UI-CON-02). 띠에는 문의 줄이 없어 「문의처」 를 가리키지
+    않는다 — 새로 연 설정 화면의 문의 줄이 말한다. 감추는 영어 창 글에 503 이 든다."""
+    assert BLOCKED_NOTICE.startswith(f"{CONFIG_TITLE} — ")
+    assert CONFIG_TEXT.split(". ", 1)[0] + "." in BLOCKED_NOTICE
+    assert f"「{REFRESH_LABEL}」" in BLOCKED_NOTICE
+    assert "문의처" not in BLOCKED_NOTICE
+    assert any(mark in "Connection failed with status 503." for mark in CONNECTION_DIALOG_TEXTS)
 
 
 def test_only_an_unmarked_2xx_health_counts_as_the_app_answering() -> None:
@@ -461,11 +535,15 @@ def test_the_band_is_rebuilt_when_the_reason_changes_between_probes() -> None:
 # --------------------------------------------------------------------------- 스크립트 통째로
 # 가짜 창 · 문서(DOM 없음)에서 띠 스크립트 전체를 돌린다 — 틱을 두 번(끊김 시작 ·
 # `PROBE_WAIT_MS` 뒤) 손으로 부르고, host-config 물음에는 진짜 `Response`(머리 이름이 다르면 까닭이
-# 빠진다)로 답한다.
+# 빠진다)로 답한다. `routes` 는 주소 끝 → 차례로 내줄 답(마지막 답은 되풀이 · null 은 답 없음)이고,
+# `more` 는 그 뒤 `PROBE_GAP_MS` 마다 더 묻는 횟수다.
 _WHOLE_SCRIPT_RUNNER = """
 const SCRIPT = %(script)s;
 const ANSWER = %(answer)s;
+const ROUTES = %(routes)s;
+const MORE = %(more)d;
 const WAIT_MS = %(wait_ms)d;
+const GAP_MS = %(gap_ms)d;
 let now = 1000000;
 Date.now = () => now;
 const elements = new Map();
@@ -492,10 +570,17 @@ const doc = {
   querySelectorAll: () => [],
 };
 const asked = [];
+function answerFor(url) {
+  for (const [tail, list] of Object.entries(ROUTES)) {
+    if (url.endsWith(tail)) return list.length > 1 ? list.shift() : list[0];
+  }
+  return ANSWER;
+}
 globalThis.fetch = (url) => {
   asked.push(String(url));
-  if (ANSWER === null) return Promise.reject(new Error("down"));
-  return Promise.resolve(new Response("", { status: ANSWER.status, headers: ANSWER.headers }));
+  const answer = answerFor(String(url));
+  if (answer === null) return Promise.reject(new Error("down"));
+  return Promise.resolve(new Response("", { status: answer.status, headers: answer.headers }));
 };
 let tick = null;
 const parentWindow = {
@@ -515,11 +600,20 @@ globalThis.window = {
 };
 new Function(SCRIPT)();
 (async () => {
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise((done) => setImmediate(done));
+  };
   tick();
   now += WAIT_MS + 1;
   tick();
-  for (let i = 0; i < 20; i++) await new Promise((done) => setImmediate(done));
+  await settle();
+  for (let i = 0; i < MORE; i++) {
+    now += GAP_MS + 1;
+    tick();
+    await settle();
+  }
   const band = elements.get(%(banner_id)s) || null;
+  const slot = elements.get(%(restart_id)s) || null;
   process.stdout.write(JSON.stringify({
     asked,
     band: band && {
@@ -529,16 +623,38 @@ new Function(SCRIPT)();
       href: band.children[1].href,
     },
     restart: elements.has(%(restart_id)s),
+    slot: slot && {
+      blocked: slot.hasAttribute(%(blocked_mark)s),
+      role: slot.getAttribute("role"),
+      text: slot.textContent,
+      parts: slot.children.map((child) => ({
+        tag: child.tagName,
+        text: child.textContent,
+        href: child.href,
+        title: child.title || "",
+        target: child.target,
+      })),
+    },
   }));
 })();
 """
 
 
-def _run_whole(script: str, answer: dict[str, Any] | None) -> Any:
+def _run_whole(
+    script: str,
+    answer: dict[str, Any] | None,
+    *,
+    routes: dict[str, list[dict[str, Any] | None]] | None = None,
+    more: int = 0,
+) -> Any:
     runner = _WHOLE_SCRIPT_RUNNER % {
         "script": json.dumps(script),
         "answer": json.dumps(answer),
+        "routes": json.dumps(routes or {}),
+        "more": more,
         "wait_ms": PROBE_WAIT_MS,
+        "gap_ms": PROBE_GAP_MS,
+        "blocked_mark": json.dumps(BLOCKED_MARK),
         "banner_id": json.dumps(BANNER_ID),
         "kind_attr": json.dumps(KIND_ATTRIBUTE),
         "restart_id": json.dumps(RESTART_BANNER_ID),
@@ -591,3 +707,79 @@ def test_a_401_on_a_server_without_sign_in_raises_no_band() -> None:
 
     assert result["band"] is None
     assert result["restart"] is False
+
+
+# --------------------------------------------------------------------------- 설정 막힘 띠
+_REFUSED: dict[str, Any] = {"status": 503, "headers": {}}
+_APP_HEALTH: dict[str, Any] = {"status": 200, "headers": {}}
+
+
+def test_a_blocked_server_raises_the_korean_band_with_a_refresh_link_end_to_end() -> None:
+    """열어 둔 탭이 통합인증 설정 막힘으로 다시 선 서버를 만나면(host-config 표 없는 503 ·
+    health 는 앱의 답 · 다시 물어도 503) 영어 창 「Connection failed with status 503.」 대신 재시작
+    자리에 설정 막힘 띠와 지금 문서를 다시 여는 「새로고침」 링크(풍선 — 저장하지 않은 편집은
+    사라짐)가 선다. 통합인증이 꺼진 서버에서 연 탭(`restart_script`)도 같다(2026-11-14 보드
+    english)."""
+    for script in (reconnect_script(use_config()), restart_script()):
+        result = _run_whole(
+            script, None, routes={HOST_CONFIG_PATH: [_REFUSED], HEALTH_PATH: [_APP_HEALTH]}
+        )
+
+        asked = result["asked"]
+        assert len(asked) == 3
+        assert asked[0].endswith(HOST_CONFIG_PATH) and asked[1].endswith(HEALTH_PATH)
+        assert asked[2].endswith(HOST_CONFIG_PATH), "앱의 답이면 host-config 를 한 번 더 묻는다"
+        assert result["band"] is None
+        slot = result["slot"]
+        assert slot is not None and slot["blocked"] is True and slot["role"] == "alert"
+        [text, link] = slot["parts"]
+        assert (text["tag"], text["text"]) == ("span", BLOCKED_NOTICE)
+        assert (link["tag"], link["text"], link["title"]) == ("a", REFRESH_LABEL, REFRESH_TIP)
+        assert link["target"] == "_self"
+        assert link["href"] == "https://capa.example.invalid/Space?tab=1", "지금 문서를 다시 연다"
+
+
+def test_a_handover_gap_that_answers_on_the_second_ask_raises_no_band() -> None:
+    """넘김 틈 — 앞단 502 를 받은 뒤 앱이 서서 health 가 앱의 답이고 다시 물은 host-config 가 답하면
+    막힘이 아니다. 띠를 세우지 않는다(Streamlit 이 스스로 다시 붙는다)."""
+    gap = {"status": 502, "headers": {}}
+    up = {"status": 200, "headers": {}}
+
+    result = _run_whole(
+        reconnect_script(use_config()),
+        None,
+        routes={HOST_CONFIG_PATH: [gap, up], HEALTH_PATH: [_APP_HEALTH]},
+    )
+
+    assert len(result["asked"]) == 3
+    assert result["restart"] is False and result["band"] is None
+
+
+def test_the_blocked_band_and_the_restart_band_take_turns_in_one_place() -> None:
+    """같은 자리 — 막힘 띠가 선 뒤 서버가 내려가 답이 없으면 링크 없는 기다림 띠로 바뀌고, 기다림
+    띠가 선 뒤 막힘으로 서면 링크째 다시 선다. 막힘 띠도 로그인 띠가 서 있으면 서지 않고 선 동안
+    영어 창을 감춘다."""
+    script = reconnect_script(use_config())
+
+    down = _run_whole(
+        script,
+        None,
+        routes={HOST_CONFIG_PATH: [_REFUSED, _REFUSED, None], HEALTH_PATH: [_APP_HEALTH]},
+        more=1,
+    )
+    back = _run_whole(
+        script,
+        None,
+        routes={HOST_CONFIG_PATH: [None, _REFUSED], HEALTH_PATH: [_APP_HEALTH]},
+        more=1,
+    )
+
+    assert down["slot"] is not None and down["slot"]["blocked"] is False
+    assert (down["slot"]["text"], down["slot"]["parts"]) == (WAITING_NOTICE, [])
+    assert back["slot"] is not None and back["slot"]["blocked"] is True
+    assert [part["text"] for part in back["slot"]["parts"]] == [BLOCKED_NOTICE, REFRESH_LABEL]
+    blocked = script.split("function showBlocked()", 1)[1].split("\n  }\n", 1)[0] + "\n  }"
+    assert blocked.lstrip("{ \n").startswith(
+        f"if (doc.getElementById({json.dumps(BANNER_ID)})) return;"
+    )
+    assert blocked.rstrip().endswith("hideConnectionDialogs();\n    watchConnectionDialogs();\n  }")

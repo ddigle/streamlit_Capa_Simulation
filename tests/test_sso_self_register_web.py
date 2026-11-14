@@ -33,6 +33,7 @@ from test_sso_access import (
     sign_in,
 )
 
+from capa_simulation import settings
 from capa_simulation.auth import access_store, names, page_frame, runtime, web
 from capa_simulation.auth.access import GRADE_ADMIN, GRADE_USER
 from capa_simulation.auth.config import SsoConfig
@@ -454,10 +455,35 @@ def test_an_unread_list_shows_maintenance_without_a_button(
     assert page_frame.CHIP_WORDS["maintenance"] in page.text
     assert web.REGISTER_LABEL not in page.text and "<form" not in page.text
     assert "1분 뒤" in page.text if text == web.LIST_UNREAD_WAIT_TEXT else "1분 뒤" not in page.text
-    assert '<pre class="pick">' in page.text, "표가 있으면 문의처로 보낼 글"
+    assert '<pre class="pick">' not in page.text, "표가 있어도 신청 글 상자 없음"
     pressed = press(app, jar, {"t": "x" * 32})
     assert pressed.status == 403
     assert OBJECT not in store.objects
+
+
+def test_an_unread_list_keeps_only_the_contact_line_without_a_request_note(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """명단을 못 읽은 화면은 권한 문제가 아니라 신청 글 상자(머리 「접속 권한」)를 세우지
+    않는다 — 거절 표가 있는 브라우저여도 문의 줄만 남는다(2026-11-14 보드 decided 3 · 카드
+    p0-unread 「신청 칸 없음 · 권한 문제가 아닙니다」)."""
+    monkeypatch.setenv("CAPA_APP_CONTACT_EMAIL", "capa-help@example.invalid")
+    store, endpoint = mock_s3
+    store.force["GET"] = (503, "SlowDown")
+    cfg = s3_started(store, endpoint, **{names.ENV_ACCESS_CONTACT: "CAPA 창구"})
+    app = gated_app()
+    jar: dict[str, str] = {}
+
+    page = denied(app, jar, NEWCOMER, username="새 사람")
+
+    assert cfg.denied_cookie in jar, "거절 표가 든 브라우저다"
+    assert page.status == 403 and web.LIST_UNREAD_TITLE in page.text
+    assert '<pre class="pick">' not in page.text
+    assert web.NOTE_LABEL not in page.text and web.NO_CONTACT_TEXT[web.NOTE_LABEL] not in page.text
+    assert f"[{settings.APP_LABEL}] 접속 권한" not in page.text
+    assert NEWCOMER not in page.text and "새 사람" not in page.text
+    contact = f'{page_frame.CONTACT_LABEL} · <a href="mailto:capa-help@example.invalid">'
+    assert contact in page.text and "CAPA 창구" in page.text
 
 
 def test_the_off_server_answers_404_on_the_register_path() -> None:
