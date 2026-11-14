@@ -689,7 +689,8 @@ def test_a_long_retry_adds_the_contact_line_after_ten_minutes() -> None:
 def test_a_pull_after_init_or_rollback_shows_the_clock_and_the_pull_notes(kind: str) -> None:
     """관리자가 처음 올리기(init) · 되돌리기(rollback)를 한 직후의 다음 확인은 그대로 몇 분 받기다 —
     실제 내려받기로 넘어간 뒤는 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄(「n번째 받는 중 · 지난
-    시간」, 서버 시작부터)과 첫 받기의 두 노트가 선다. 표지 · 제목 · 띠는 그 갈래 그대로다."""
+    시간」, 서버 시작부터)과 첫 받기의 두 노트가 선다. 표지 · 제목은 그 갈래 그대로이고, 열어 둔
+    탭의 재시작 띠도 같은 때 같은 말 「데이터 받는 중 · n번째 받기」 다(다시 받기와 한 글)."""
     waiting = container_stage.stage_view(
         _state(attempt=4, kind=kind, failed_at=1100.0, next_at=1160.0)
     )
@@ -704,7 +705,13 @@ def test_a_pull_after_init_or_rollback_shows_the_clock_and_the_pull_notes(kind: 
     assert 'data-since="1000000" data-progress="5번째 받는 중"' in page
     assert again.notes == (container_stage.NOTE_MINUTES, container_stage.NOTE_NO_CICD)
     assert container_stage.NOTE_NO_CICD in page
-    assert (again.chip, again.title, again.band) == (waiting.chip, waiting.title, waiting.band)
+    assert (again.chip, again.title) == (waiting.chip, waiting.title)
+    assert again.band == "데이터 받는 중 · 5번째 받기"
+    retry = container_stage.stage_view(
+        _state(attempt=5, trying=True, kind="unreachable", failed_at=1100.0)
+    )
+    assert again.band == retry.band
+    assert waiting.band.startswith("점검 중 · ")
     assert waiting.notes == () and container_stage.value_text(waiting, 1100.0).startswith("다음 ")
 
 
@@ -763,12 +770,14 @@ def test_the_stage_shows_a_pull_only_once_the_download_is_seen() -> None:
         opened.attempt(2)
         checking = _status(port)
         assert checking[1] == "확인하는 중"
+        assert json.loads(checking[2])["band"] == "점검 중 · 데이터를 처음 올리는 중"
         assert container_stage.NOTE_NO_CICD not in _ask(port, "GET", "/")[2].decode("utf-8")
 
         seen[0] = True
         pulling = _status(port)
         again = _status(port)
         assert pulling[1].startswith("2번째 받는 중 · 지난 시간 ")
+        assert json.loads(pulling[2])["band"] == "데이터 받는 중 · 2번째 받기"
         assert json.loads(pulling[2])["v"] == json.loads(checking[2])["v"] + 1
         assert json.loads(again[2])["v"] == json.loads(pulling[2])["v"]
         assert container_stage.NOTE_NO_CICD in _ask(port, "GET", "/")[2].decode("utf-8")

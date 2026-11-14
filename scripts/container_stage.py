@@ -449,6 +449,12 @@ def _label(kind: str) -> str:
     return FAILURE_LABELS.get(kind, FAILURE_LABELS[FAILURE_OTHER])
 
 
+def _pull_band(count: int) -> str:
+    """받는 동안의 재시작 띠 글 — 첫 받기 · 다시 받기 · 처음 올리기 · 되돌리기 뒤 받기가 같은
+    말이다."""
+    return f"데이터 받는 중 · {count}번째 받기"
+
+
 def _starting_view(state: StageState) -> StageView:
     if state.step != STEP_PULL:
         return StageView(
@@ -469,20 +475,22 @@ def _starting_view(state: StageState) -> StageView:
         progress=f"{count}번째 받기",
         since=state.started_at,
         notes=(NOTE_MINUTES, NOTE_NO_CICD),
-        band=f"데이터 받는 중 · {count}번째 받기",
+        band=_pull_band(count),
     )
 
 
 @dataclass(frozen=True)
 class _Wait:
     """실패 뒤 값 줄 — 시도가 돌면 그 글, 아니면 다음 시각까지 센다. 다시 받기가 도는 동안이면
-    지난 시간(서버 시작부터)과 첫 받기의 두 노트도 함께다."""
+    지난 시간(서버 시작부터)과 첫 받기의 두 노트, 그 받기의 재시작 띠 글도 함께다(비면 갈래의
+    띠 글)."""
 
     progress: str = ""
     since: float | None = None
     until: float | None = None
     until_label: str = ""
     notes: tuple[str, ...] = ()
+    band: str = ""
 
 
 def _waiting(state: StageState, label: str, trying: str) -> _Wait:
@@ -493,11 +501,13 @@ def _waiting(state: StageState, label: str, trying: str) -> _Wait:
 
 def _pulling(state: StageState) -> _Wait:
     """실패 뒤 다시 받기가 도는 동안 — 「n번째 받는 중 · 지난 시간」 이 흐르고 첫 받기의 두 노트가
-    선다. 정상으로 받는 몇 분이 멈춘 것처럼 보이지 않게."""
+    선다. 정상으로 받는 몇 분이 멈춘 것처럼 보이지 않게. 열어 둔 탭의 재시작 띠도 같은 때 같은 말
+    「데이터 받는 중 · n번째 받기」 다."""
     return _Wait(
         progress=f"{state.attempt}번째 받는 중",
         since=state.started_at,
         notes=(NOTE_MINUTES, NOTE_NO_CICD),
+        band=_pull_band(state.attempt),
     )
 
 
@@ -528,7 +538,7 @@ def _remote_empty_view(state: StageState) -> StageView:
         until=wait.until,
         until_label=wait.until_label,
         notes=wait.notes,
-        band="점검 중 · 데이터를 처음 올리는 중",
+        band=wait.band or "점검 중 · 데이터를 처음 올리는 중",
     )
 
 
@@ -544,10 +554,8 @@ def _retry_view(state: StageState) -> StageView:
     since = state.failing_since
     if state.trying:
         wait = _pulling(state)
-        band = f"데이터 받는 중 · {state.attempt}번째 받기"
     else:
         wait = _Wait(until=state.next_at, until_label=LABEL_NEXT_TRY)
-        band = "저장소에 잠시 닿지 못함 · 다시 시도 중"
     return StageView(
         tone=TONE_RETRY,
         chip=CHIP_RETRY,
@@ -568,7 +576,7 @@ def _retry_view(state: StageState) -> StageView:
         since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
-        band=band,
+        band=wait.band or "저장소에 잠시 닿지 못함 · 다시 시도 중",
     )
 
 
@@ -630,7 +638,7 @@ def _human_view(state: StageState) -> StageView:
         until=wait.until,
         until_label=wait.until_label,
         notes=wait.notes,
-        band="점검 중 · 관리자가 고쳐야 열림",
+        band=wait.band or "점검 중 · 관리자가 고쳐야 열림",
     )
 
 
