@@ -137,6 +137,7 @@ from capa_simulation.services.auto_official_update import (
     time_text,
     week_label,
 )
+from capa_simulation.sidebar_status import note_periodic_fragment
 
 SETTINGS_FLASH_KEY = "auto_official_update_settings_flash"
 # 설정 폼을 제출하지 않은 회차에 본 저장본 version(`write_guard.remember_seen`). 제출 회차에는
@@ -765,9 +766,12 @@ def _run_result_text(run: AutoOfficialUpdateRun, reason: str) -> str:
 
 def _render_run_result(repository: DuckDBScenarioRepository) -> None:
     """「지금 실행」 결과 알림 한 칸. 담아 둔 결과가 없으면 끊긴 회차를 기록에서 찾는다 — 아직 도는
-    중이면 결과 대신 「도는 중」 안내를 두고 기록을 다시 본다(`_poll_running_round`)."""
+    중이면 결과 대신 「도는 중」 안내를 두고 기록을 다시 본다(`_poll_running_round`). 안내를 세운
+    실행은 그 표를 남겨 이 페이지의 여닫기 · 팝업 열기가 다시 보기 시계를 멈추지 않게 한다
+    (`note_periodic_fragment`)."""
     if pending_flash(RUN_RESULT_KEY) is None and _recover_run_result(repository):
         _poll_running_round(repository)
+        note_periodic_fragment()
         return
     render_flash(RUN_RESULT_KEY, RUN_WARNING_KEY)
 

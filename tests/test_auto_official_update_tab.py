@@ -103,6 +103,32 @@ render_auto_official_update(
 """
 
 W41_CATALOG = catalog_frame(("PSM W41", "SIM-W41", "2026-10-12 09:00:00"))
+NEIGHBOUR_BOX = "auto_tab_test_neighbour_box"
+# `app.py` 처럼 실행 표지를 맨 앞에 세우고 끝에서 닫는 페이지 — 탭 곁에 여닫기 상자 하나.
+TAB_WITH_A_BOX_SCRIPT = """
+from pathlib import Path
+
+import capa_simulation.settings as settings
+
+settings.DUCKDB_PATH = Path({path!r})
+
+import streamlit as st
+from auto_update_fakes import fixed_clock
+
+from capa_simulation.components.auto_official_update_tab import render_auto_official_update
+from capa_simulation.persistence.cache import get_scenario_repository
+from capa_simulation.sidebar_status import begin_app_run, on_box_toggle
+
+run = begin_app_run()
+render_auto_official_update(get_scenario_repository({path!r}), clock=fixed_clock)
+st.checkbox(
+    "이웃 상자",
+    key="auto_tab_test_neighbour_box",
+    on_change=on_box_toggle,
+    args=("auto_tab_test_neighbour_box", "이웃 상자"),
+)
+run.finish()
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -1077,6 +1103,38 @@ def _cut_off_published_round(path: Path) -> tuple[DuckDBScenarioRepository, str]
     run = repository.find_manual_auto_official_update_run("cut0ff")
     assert run is not None and run.status == STATUS_PUBLISHED
     return repository, run.run_id
+
+
+@pytest.mark.parametrize("running", [True, False])
+def test_a_running_notice_keeps_toggles_on_the_whole_app(
+    database: Path, monkeypatch: pytest.MonkeyPatch, running: bool
+) -> None:
+    """「도는 중」 안내(`run_every` 프래그먼트)가 선 실행 뒤의 상자 여닫기는 앱 전체로 돈다.
+    여닫기 콜백이 앱 전체 요청을 프래그먼트 회차로 바꾸면 브라우저가 이미 지운 시계를 다시 세울
+    회차가 오지 않아, 회차가 끝나도 「도는 중」 이 다음 앱 전체 회차까지 남는다
+    (`note_periodic_fragment`). 안내가 없는 탭은 빠른 길(빈 프래그먼트만) 그대로다(대조)."""
+    import streamlit as st_module
+
+    from capa_simulation import sidebar_status
+    from capa_simulation.components.auto_official_update_tab import PENDING_RUN_TOKEN_KEY
+
+    repository, run_id = _cut_off_published_round(database)
+    repository.update_auto_official_update_run(run_id, {"status": STATUS_RUNNING})
+    monkeypatch.setattr(sidebar_status, "_current_page_hash", lambda: "page")
+    calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(st_module, "rerun", lambda *args, **kwargs: calls.append(args))
+    app = AppTest.from_string(TAB_WITH_A_BOX_SCRIPT.format(path=str(database)), default_timeout=180)
+    if running:
+        app.session_state[PENDING_RUN_TOKEN_KEY] = "cut0ff"
+    app = app.run()
+    assert not app.exception, [element.message for element in app.exception]
+    assert len(_running_notices(app)) == int(running)
+    assert app.session_state[sidebar_status.APP_RUN_STATE_KEY]["complete"] is True
+
+    app.checkbox(key=NEIGHBOUR_BOX).check().run()
+
+    assert not app.exception, [element.message for element in app.exception]
+    assert calls == ([] if running else [(sidebar_status.SIDEBAR_TOGGLE_FRAGMENT_KEY,)])
 
 
 def test_the_short_run_columns_get_a_width_and_the_reason_stays_cut(database: Path) -> None:
