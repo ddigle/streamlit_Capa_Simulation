@@ -94,7 +94,7 @@ MISSING_NOTICE = "로그인 정보가 없습니다."
 # 계정 바뀜 경고의 꼬리 — 앞에 새 계정의 표시 이름(「…」)이 선다(`account_changed_notice`).
 ACCOUNT_CHANGED_TAIL = " 계정으로 바뀌었습니다"
 # 문지기 없이 뜬 앱(카드 p2-config) — 누구나 읽는 경고 한 줄. 실행 명령 · 환경변수 이름 · 문서
-# 경로는 접힌 「관리자용 진단」 의 `NO_GATE_DIAGNOSTIC` 으로 옮겼다.
+# 경로는 접힌 「관리자용 진단」 의 `NO_GATE_DIAGNOSTIC` 에만 둔다.
 NO_GATE_NOTICE = "지금은 앱을 열 수 없습니다(서버 시작 설정)"
 NO_GATE_DIAGNOSTIC = (
     f"통합인증을 켜는 설정(`{names.ENV_CLIENT_ID}`)인데 문지기 없이 앱이 시작됐습니다. "

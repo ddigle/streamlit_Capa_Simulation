@@ -465,7 +465,36 @@ def test_the_logout_link_carries_the_screen_before_logout(
     href = line.split('href="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
     assert href.startswith(f"{PUBLIC_URL}{names.LOGOUT_PATH}?next=")
     assert parse_qs(urlsplit(href).query)["next"] == ["/space_status?theme=dark"]
-    assert names.LOGOUT_PATH in LOGOUT_SELECTOR, "갱신 스크립트는 질의가 붙어도 이 링크를 뺀다"
+    assert _attribute_selector_matches(LOGOUT_SELECTOR, href), (
+        "갱신 스크립트는 질의가 붙은 이 링크도 로그아웃으로 알아본다"
+    )
+
+
+def _attribute_selector_matches(selector: str, href: str) -> bool:
+    """`a[href<연산자>="값"]` 꼴 선택자가 그 href 에 맞는가 — CSS 속성 선택자의 뜻 그대로."""
+    found = re.fullmatch(r'a\[href([*^$~|]?)="([^"]*)"\]', selector)
+    assert found is not None, f"속성 선택자 하나여야 한다 — {selector}"
+    operator, value = found.groups()
+    if operator == "*":
+        return value in href
+    if operator == "^":
+        return href.startswith(value)
+    if operator == "$":
+        return href.endswith(value)
+    if operator == "~":
+        return value in href.split()
+    if operator == "|":
+        return href == value or href.startswith(f"{value}-")
+    return href == value
+
+
+def test_the_selector_reader_knows_each_operator() -> None:
+    """위 판정이 연산자마다 다르게 답한다 — `$=` · `=` 로 바뀐 선택자는 질의 붙은 링크를 놓친다."""
+    href = f"{PUBLIC_URL}{names.LOGOUT_PATH}?next=%2Fspace"
+    assert _attribute_selector_matches(f'a[href*="{names.LOGOUT_PATH}"]', href)
+    assert _attribute_selector_matches(f'a[href^="{PUBLIC_URL}"]', href)
+    assert not _attribute_selector_matches(f'a[href$="{names.LOGOUT_PATH}"]', href)
+    assert not _attribute_selector_matches(f'a[href="{names.LOGOUT_PATH}"]', href)
 
 
 def st_session_loginid(at: AppTest) -> object:
