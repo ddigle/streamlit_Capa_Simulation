@@ -568,7 +568,8 @@ def test_resubmitting_a_denied_form_never_gets_a_session() -> None:
     assert not has_live_session(cfg, again)
     assert error_code_of(again) == "state_reused"
     assert not has_live_session(cfg, after_back)
-    assert error_code_of(after_back) == "state_missing"
+    # 상태 쿠키는 지워졌지만 그 state 는 이미 썼다 — 「뒤로」 다시 보냄은 재사용이다.
+    assert error_code_of(after_back) == "state_reused"
 
 
 def test_pressing_check_again_many_times_never_shows_the_loop_page() -> None:
@@ -1018,7 +1019,7 @@ def test_the_reason_codes_stay_apart() -> None:
     assert portal.status == 403 and web.NOT_ON_LIST_TITLE not in portal.text
     assert web.PORTAL_TITLE in portal.text and web.REGISTER_LABEL not in portal.text
     made_up = _denied_page(f"{names.ERROR_PATH}?code=not_on_list2")
-    assert made_up.status == 400 and "<code>unknown</code>" in made_up.text
+    assert made_up.status == 400 and "참고 unknown · " in made_up.text
 
 
 def test_the_page_stays_when_the_list_is_not_enforced() -> None:

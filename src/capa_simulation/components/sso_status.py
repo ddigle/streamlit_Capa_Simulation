@@ -12,7 +12,8 @@ redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩
 - 꺼짐(운영)이면 「주소를 아는 사람은 누구나 들어옵니다」 경고와 「켜면 막힐 문제」(`readiness`)를
   그린다. 다만 운영 서버의 Admin Area 는 관리자에게만 열리고(`sso_identity.admin_area_locked`) 꺼진
   서버에는 관리자 신원이 없어 이 펼침은 화면에 닿지 않는다 — 켜기 전 미리 보기 길이 없고, 켜려다
-  막히면 설정 화면(`web.config_page`)이 같은 표로 까닭을 말한다(`docs/sso_setup.md` 5장). 운영인데
+  막히면 설정 화면(`web.config_page`)의 접힌 「관리자용 진단」 이 「고칠 것 n개」 와 다시 접힌
+  「환경변수 전체(n)」 표(이 펼침과 같은 꼴)로 까닭을 말한다(`docs/sso_setup.md` 5장). 운영인데
   꺼짐 알림 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다
   (`render_off_in_production_alert`) — 잠긴 회차에도 Alarm 으로 닿는다.
 - 막힘이면 문지기가 앱을 열지 않으므로 이 펼침에 닿지 않는다(설정 화면이 진단 창구다). 닿았다면
@@ -106,6 +107,14 @@ REFRESH_OUTCOME_LABELS: dict[str, str] = {
 REFRESH_HELP = (
     "앱을 쓰는 동안 로그인을 늘린 횟수의 기동 뒤 누계입니다 — 재시작하면 0 입니다. 「출처·머리 "
     f"거절」 만 늘고 「다시 발급」 이 0 이면 접속 주소가 `{names.ENV_PUBLIC_URL}` 과 같은지 봅니다."
+)
+# 로그인 시작 · 돌아옴 누계 줄의 풍선 — 범위와 「ADFS 화면에서 멈춤」 을 읽는 법.
+LOGIN_FLOW_HELP = (
+    "브라우저가 통합인증(ADFS)으로 간 로그인 시작과 그 가운데 앱으로 돌아온 수의 기동 뒤 "
+    "누계입니다 — 재시작하면 0 입니다. 링크 미리보기 · 감시 요청 · 같은 로그인의 다시 보냄은 세지 "
+    "않습니다. 돌아옴이 시작보다 훨씬 적으면 사람들이 ADFS 화면에서 멈춘 것입니다 — 포털 등록 주소"
+    "(redirect\\_uri) · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 사건이 남지 "
+    "않습니다. 멈춘 화면을 찍어 받아 그 글로 고칩니다."
 )
 # redirect_uri 줄의 풍선 — 포털 등록값과 대 보는 법.
 REDIRECT_HELP = "redirect\\_uri 는 포털 Endpoint URL 과 한 글자도 같아야 합니다."
@@ -357,6 +366,12 @@ def refresh_count_line() -> str:
     return f"**로그인 갱신(기동 뒤 누계)** · {items}"
 
 
+def login_flow_line() -> str:
+    """로그인 시작 · 돌아옴 누계 한 줄(기동 뒤 — 재시작하면 0). 돌아옴은 실패 · 거절도 센다."""
+    starts, returns = runtime.login_flow_counts()
+    return f"**로그인 시작 · 돌아옴(기동 뒤 누계)** · 시작 {starts} · 돌아옴 {returns}"
+
+
 def readiness_line(cfg: SsoConfig) -> str:
     """꺼짐 때 「켜면 막힐 문제」 한 줄 — client id 를 넣기 전에 나머지 값을 미리 본다."""
     if not cfg.readiness:
@@ -369,13 +384,18 @@ def _event_code(fields: dict[str, str]) -> str:
     """사건 표의 「사유 코드」 칸 — 실패 사유 · IdP 오류 · 설정 문제 이름 · 인증서 남은 날 차례.
 
     만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
-    로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다.
+    로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다. 로그인
+    실패(`login_fail`)는 진단 번호의 앞 글자 `diag` 를 「진단 …」 으로 붙인다 — 실패 화면 바닥 참고
+    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(감사 기록이 켜진 서버는 펼침에 표를
+    그리지 않아 「복사」 글 `status_text` 의 표에서).
     """
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
         if value and value != "-":
             end = fields.get("end", "")
-            return f"{value} · {end}" if end and end != "-" else value
+            diag = fields.get("diag", "")
+            tail = [part for part in (end, f"진단 {diag}" if diag else "") if part and part != "-"]
+            return " · ".join((value, *tail))
     days = fields.get("days", "")
     return f"남은 날 {days}" if days else "-"
 
@@ -629,7 +649,7 @@ def status_text(title: str, cfg: SsoConfig, *, now: datetime) -> str:
         head.append(readiness_line(cfg))
     facts = fact_lines(cfg, now=now, shareable=True)
     if cfg.mode is SsoMode.ON:
-        facts += [refresh_count_line(), last_claims_line()]
+        facts += [login_flow_line(), refresh_count_line(), last_claims_line()]
     events = recent_event_table()
     denied = denied_account_line()
     anonymous = anonymous_failure_line()
@@ -717,6 +737,7 @@ def render_sso_status() -> None:
         st.caption("  \n".join(facts))
         if cfg.mode is SsoMode.ON:
             # 꺼짐(운영)은 갱신 경로가 404 라 누계가 늘 0 이고 로그인도 없다 — 켜짐에서만 싣는다.
+            st.caption(login_flow_line(), help=LOGIN_FLOW_HELP)
             st.caption(refresh_count_line(), help=REFRESH_HELP)
             st.caption(last_claims_line())
         # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(관리자)이

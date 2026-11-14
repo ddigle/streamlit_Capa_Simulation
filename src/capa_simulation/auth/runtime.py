@@ -1,8 +1,9 @@
-# Purpose: 통합인증 프로세스 상태 — 설정·명단 한 벌·문지기 표지·세션 폐기·갱신 표·진단·사건·로거.
+# Purpose: 통합인증 프로세스 상태 — 설정·명단·문지기 표지·세션 폐기·갱신 표·누계·진단·사건·로거.
 
 """통합인증 프로세스 상태.
 
-로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 쓴 state · 진단 · 사건 고리 ·
+로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 로그인 시작 · 돌아옴 누계 · 쓴
+state · 진단 · 사건 고리 ·
 명단 밖 로그인 표 · 「접속 권한 신청」 실패 뒤의 틈 · 마지막 로그인의 클레임 이름 · 지금 접속 명단
 한 벌(S3 명단이 켜졌을 때 —
 `AccessSource`, 통째로 바꾼다)을 둔다. 모두 프로세스 메모리이고(replica 1 전제)
@@ -137,6 +138,8 @@ class _State:
     access_source: AccessSource | None = None
     access_retry_failures: int = 0
     self_register_failures: int = 0
+    login_starts: int = 0
+    login_returns: int = 0
     register_cooldowns: dict[str, int] = field(default_factory=dict)
 
 
@@ -346,6 +349,31 @@ def refresh_counts() -> dict[str, int]:
         return {outcome: _STATE.refresh_counts[outcome] for outcome in REFRESH_OUTCOMES}
 
 
+def count_login_start() -> None:
+    """로그인 시작 하나 — 브라우저의 문서 탐색을 IdP 로 보냄(`web.browser_navigation`). 되풀이로
+    막은 시작 · 링크 미리보기 · 감시 요청은 세지 않는다."""
+    with _LOCK:
+        _STATE.login_starts += 1
+
+
+def count_login_return() -> None:
+    """이 앱이 시작한 로그인이 통합인증에서 돌아온 콜백 하나 — 검증한 상태 쿠키가 실린 처음 쓰는
+    state(IdP 오류는 그 상태 쿠키가 맞을 때). 뒤 결과(성공 · 실패 · 거절)는 가리지 않고, 꼴이 틀린
+    POST · 다시 보냄 · 10분 지난 상태는 세지 않는다."""
+    with _LOCK:
+        _STATE.login_returns += 1
+
+
+def login_flow_counts() -> tuple[int, int]:
+    """기동 뒤 (로그인 시작, 돌아옴) 누계 — 재시작하면 0. 사건 고리에 적지 않는다(누구나 시작할 수
+    있어 고리를 밀어내지 않게). 시작에 비해 돌아옴이 적으면 통합인증(ADFS) 화면에서 멈춘 것이다 —
+    포털 등록 주소 · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 기록이 없다. 사람이
+    로그인 화면을 그냥 닫은 것 · 쿠키 없이 돌아온 것(「로그인 전 실패」 의 `no_cookies`)도 돌아옴에
+    들지 않아 차이는 크게 벌어질 때만 읽는다."""
+    with _LOCK:
+        return _STATE.login_starts, _STATE.login_returns
+
+
 def remember_used_state(digest: str, exp: int) -> bool:
     """콜백이 쓴 state 를 만료까지 기억한다. 처음이면 True, 이미 쓴 것이면 False(재사용)."""
     now = _now()
@@ -358,6 +386,15 @@ def remember_used_state(digest: str, exp: int) -> bool:
             del _STATE.used_states[oldest]
         _STATE.used_states[digest] = exp
         return True
+
+
+def state_used(digest: str) -> bool:
+    """콜백이 이 state 를 이미 썼는가(만료 전) — 읽기만 한다. 상태 쿠키 없이 같은 state 가 다시 오면
+    (로그인을 마친 뒤 「뒤로」 · 폼 재전송) 쿠키 문제가 아니라 재사용이다."""
+    now = _now()
+    with _LOCK:
+        expires = _STATE.used_states.get(digest)
+        return expires is not None and expires >= now
 
 
 def note_register_failure(ticket_id: str, *, now: int | None = None) -> None:
@@ -578,8 +615,8 @@ def denied_total() -> int:
 
 
 def reset() -> None:
-    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 누계 · state · 진단 · 사건 · 명단 밖
-    로그인 표 · 신청 틈 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
+    """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 · 로그인 누계 · state · 진단 · 사건 ·
+    명단 밖 로그인 표 · 신청 틈 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()

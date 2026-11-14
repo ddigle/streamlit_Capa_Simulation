@@ -9,6 +9,7 @@ websocket 핸드셰이크가 없다). 설정은 `sso_support.use_config` 로 기
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -26,9 +27,10 @@ from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import SHELL_STYLE
+from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.sso_reconnect import BANNER_ID, reconnect_script, restart_script
-from capa_simulation.components.sso_refresh import refresh_script
+from capa_simulation.components.sso_refresh import LOGOUT_SELECTOR, refresh_script
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CANON_MARK_ID,
@@ -412,6 +414,87 @@ def test_a_broken_setting_without_the_gate_names_the_problems(cookies: dict[str,
     captions = "\n".join(_caption_values(app))
     assert f"`{names.ENV_ISSUER}`" in captions
     assert "idp.example.invalid" not in captions
+
+
+def test_the_gate_less_stop_says_little_and_folds_the_admin_text(
+    cookies: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """문지기 없이 뜬 앱(카드 p2-config) — 누구나 읽는 경고 한 줄(실행 명령 · 환경변수 이름 없음) ·
+    문의 캡션 · 참고 줄. 지금까지의 글(까닭 · 실행 명령 · 설정 문제 이름 · 안내 문서)은 앱 안 판의
+    접힌 「관리자용 진단」(`diagnostic_copy.ADMIN_DIAGNOSTIC_LABEL`)에 있고 다시 열어도 같아 주
+    단추가 없다."""
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, "help@example.com")
+    use_config(drop=[names.ENV_ISSUER])
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    [error] = app.error
+    assert error.value == sso_identity.NO_GATE_NOTICE
+    for word in ("streamlit", "ADFS", "docs/", "문지기"):
+        assert word not in error.value
+    [fold] = app.expander
+    assert fold.label == ADMIN_DIAGNOSTIC_LABEL
+    folded = [str(item.value) for item in fold.caption]
+    assert folded[0] == sso_identity.NO_GATE_DIAGNOSTIC
+    assert any(f"`{names.ENV_ISSUER}`" in line for line in folded)
+    assert folded[-1] == f"안내 문서 `{names.SETUP_DOC}`"
+    outside = [value for value in _caption_values(app) if value not in folded]
+    assert outside[0] == "문의 help@example.com"
+    assert re.fullmatch(
+        rf"참고 {sso_identity.NO_GATE_REFERENCE} · \d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}} UTC",
+        outside[1],
+    )
+    assert list(app.button) == [] and not [item for item in app.markdown if "href" in item.value]
+
+
+def test_the_logout_link_carries_the_screen_before_logout(
+    cookies: dict[str, str], page_url: Callable[[str | None], None]
+) -> None:
+    """앱 정보 카드의 「로그아웃」 은 지금 화면 · 질의를 `next` 로 싣는다 — 로그아웃 화면의 「다시
+    들어가기」 가 그리로 간다(카드 p1-logout). 첫 화면이면 싣지 않는다."""
+    _on(cookies)
+    page_url(f"{PUBLIC_URL}/space_status")
+    at = AppTest.from_string(SCRIPT)
+    at.query_params["theme"] = "dark"
+
+    app = at.run()
+
+    [caption] = _caption_values(app)
+    line = caption.split("  \n")[2]
+    href = line.split('href="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+    assert href.startswith(f"{PUBLIC_URL}{names.LOGOUT_PATH}?next=")
+    assert parse_qs(urlsplit(href).query)["next"] == ["/space_status?theme=dark"]
+    assert _attribute_selector_matches(LOGOUT_SELECTOR, href), (
+        "갱신 스크립트는 질의가 붙은 이 링크도 로그아웃으로 알아본다"
+    )
+
+
+def _attribute_selector_matches(selector: str, href: str) -> bool:
+    """`a[href<연산자>="값"]` 꼴 선택자가 그 href 에 맞는가 — CSS 속성 선택자의 뜻 그대로."""
+    found = re.fullmatch(r'a\[href([*^$~|]?)="([^"]*)"\]', selector)
+    assert found is not None, f"속성 선택자 하나여야 한다 — {selector}"
+    operator, value = found.groups()
+    if operator == "*":
+        return value in href
+    if operator == "^":
+        return href.startswith(value)
+    if operator == "$":
+        return href.endswith(value)
+    if operator == "~":
+        return value in href.split()
+    if operator == "|":
+        return href == value or href.startswith(f"{value}-")
+    return href == value
+
+
+def test_the_selector_reader_knows_each_operator() -> None:
+    """위 판정이 연산자마다 다르게 답한다 — `$=` · `=` 로 바뀐 선택자는 질의 붙은 링크를 놓친다."""
+    href = f"{PUBLIC_URL}{names.LOGOUT_PATH}?next=%2Fspace"
+    assert _attribute_selector_matches(f'a[href*="{names.LOGOUT_PATH}"]', href)
+    assert _attribute_selector_matches(f'a[href^="{PUBLIC_URL}"]', href)
+    assert not _attribute_selector_matches(f'a[href$="{names.LOGOUT_PATH}"]', href)
+    assert not _attribute_selector_matches(f'a[href="{names.LOGOUT_PATH}"]', href)
 
 
 def st_session_loginid(at: AppTest) -> object:

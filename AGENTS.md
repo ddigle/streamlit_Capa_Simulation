@@ -377,8 +377,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `jti` 로 다시 서명, 끝 시각 규칙은 `session_end` 한 곳) · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 → 신원은
   `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 접속 명단(목록 글 → loginid → 등급 맵 · `AccessList.allows` · loginid 꼴 `LOGINID_PATTERN` · S3 파일 몫을 얹는 `compose_access` — 표준 라이브러리만)은
   `auth/access.py`, S3 명단 파일(꼴 판정 · 기동 때 읽기 · 자가 회복 `retry_unread` · 관리자만 쓰는 `save_changes`(넣기 · 빼기 · 등급) · `reread` · 거절 표 신원으로 쓰는 `register_self` — 5장 37)은 `auth/access_store.py`, 프로세스 상태(설정 한 벌 · 지금 명단 한 벌 `current_access` · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
-  갱신 누계 · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
-  `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 · 등록 완료 · 확인 못 함 · 포털 거절 — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
+  갱신 누계 · 로그인 시작 · 돌아옴 누계(`login_flow_counts` — 시작은 브라우저 문서 탐색만, 돌아옴은 검증한 상태 쿠키와 처음 온 콜백만 · 돌아옴이 적으면 ADFS 화면에서 멈춤) · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
+  `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다 · 상태 쿠키는 토큰(10분)보다 긴 1시간이라 10분 넘게 머문 콜백은 쿠키 없음이 아니라 시간 지남, 실패 사건에 진단 번호 앞 8자 `diag`) · 시도 쿠키(「시작 횟수.마지막 시작 시각」 — 되풀이 화면의 기다릴 시각이 밀리지 않음) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「관리자용 진단」(머리 줄 · 줄 · 표 · 다시 접힌 칸 하나 — 칸 안은 표 · 이름표 | 값 표 · 줄, 환경변수 이름 칸은 `_` 뒤 `<wbr>`), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
   websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
@@ -386,7 +386,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/sso_support.py`) · 공개 저장소 감시 `tests/test_public_repo_hygiene.py` 다. 운영 · 개발 안내는 `docs/sso_setup.md`.
   - `components/sso_identity.py` — 앱 스크립트 쪽 두 번째 벽. `app.py` 가 `theme.begin_run()` 바로 뒤 · 입장 화면 앞에서 부르는
     `require_signed_in()` 이 매 회차 `st.context.cookies` 의 세션 쿠키를 다시 검증한다(만료 · 다른 탭 로그아웃 · 계정 바뀜 · 문지기
-    없이 뜬 서버는 멈춤 화면 + `st.stop()`). 로그인 끝남 · 계정 바뀜 멈춤은 앱 안 멈춤 판(`components/stop_panel.py`)이다 — 경고
+    없이 뜬 서버는 멈춤 화면 + `st.stop()`). 문지기 없이 뜬 서버는 경고 「지금은 앱을 열 수 없습니다(서버 시작 설정)」 · 문의 캡션 · 참고 줄 ·
+    접힌 「관리자용 진단」(`diagnostic_copy.ADMIN_DIAGNOSTIC_LABEL` — 실행 명령 · 설정 문제 이름 · 안내 문서, 복사 부품은 함수 안에서 import)이고
+    단추가 없다. 앱 정보 카드의 로그아웃 링크는 지금 화면을 `?next=` 로 싣는다(`logout_url` — `/` 면 없음). 로그인 끝남 · 계정 바뀜 멈춤은 앱 안 멈춤 판(`components/stop_panel.py`)이다 — 경고
     한 줄 · 같은 탭 주 단추 꼴 링크(`primary_link` — `st.link_button` 은 새 탭이고 `st.rerun` 은 앞 계정의 세션을 잇는다. 역할은
     링크 그대로 — `role="button"` 은 Space 로 열리지 않는다) · 「문의 <메일> · <창구 글>」 캡션(`CAPA_ACCESS_CONTACT` 는 로그인 ·
     접속 멈춤만 넘긴다 — 둘 다 비면 없음). 단추는 까닭(`gate.ended_reason` — 띠와 같은 낱말)으로 가른다: 명단에서 빠짐 「접속 권한 신청」, 명단 못 읽음
@@ -415,7 +417,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꺼짐이면 재시작 갈래만(`restart_script` — 물음은 지금 경로의 폴더 기준)이라 꺼짐 툴바 iframe 에도 스크립트 하나가 실린다. IdP 로 저절로 보내지 않는다
     (로그아웃을 조용히 되돌리지 않게). 띠 색은 두 팔레트(`band_styles`)를 함께 싣고 띠를 세우는 순간 `capaTheme` 으로 앱 테마를
     골라 칠하며, 양옆 12px 안에서 내용 폭으로 가운데 선다(`left`/`right` 12px + `margin-inline:auto` + `width:fit-content`).
-    바깥 화면(거절 · 로그아웃)의 보조 링크는 강조 토큰 색이다(`auth/web.py`). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
+    바깥 화면(거절 · 로그아웃 — 공통 틀)의 보조 링크는 강조 토큰 색이다(`auth/page_frame.py`). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
     시험 `tests/test_sso_refresh.py`(판정 구획 node).
@@ -426,9 +428,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`CAPA_PUBLIC_URL` 바탕) · `ADFS_ISSUER` · 서명 인증서 지문(x5t · SHA-256 앞 16자)은 포털 등록값과 한 글자씩 대 보려고 보인다.
     이 셋도 사외 리뷰 압축본 · 전문에는 옮기지 않는다(`docs/dual_env_workflow.md`). 최근 사건 표와 「명단 밖 로그인」(계정마다 한 줄 · 횟수,
     `runtime.denied_accounts` · 누계 `denied_total`)과 「로그인 전 실패」(무인증 실패 —
-    따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 사실 줄은 「라벨 · 값」 꼴이다 — 「로그인 유지 · 마지막 사용 뒤 n시간 · 최대 n시간」,
-    켜짐이면 그 아래 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
-    재시작하면 0)를 한 줄로 보인다(갱신은 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 일반 · 읽지 못함 — 등급 이름은 「접속 명단」 표와 같다), 그 아래 「S3 명단」 줄(`access_s3_line` — 꺼짐 · 정상 · 실패와 까닭 분류 · HTTP 상태 · 명단 n · 버전 · 쓰기 칸, 있으면 `등급을 일반으로 읽음 n` · `스스로 등록 실패 n`, 키 · 주소 · 값 없음이라 리뷰 압축본에 옮길 수 있다), 그 아래 마지막 로그인의 클레임 이름(값 없음,
+    따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 로그인 실패 줄의 사유 코드 칸 끝은 `진단 <앞 8자>`(`_event_code` — 실패 화면 참고 줄의 진단 번호와 맞추는 열쇠, 통합인증이 켜진 서버는 감사 기록이 켜져 펼침에 사건 표를 그리지 않으므로 「복사」 글 `status_text` 에만 선다). 사실 줄은 「라벨 · 값」 꼴이다 — 「로그인 유지 · 마지막 사용 뒤 n시간 · 최대 n시간」,
+    켜짐이면 그 아래 「로그인 시작 · 돌아옴」 누계(`runtime.login_flow_counts` — 시작은 브라우저 문서 탐색을 IdP 로 보낸 수(`web.browser_navigation`), 돌아옴은 그 로그인이 검증한 상태 쿠키와 처음 온 콜백(실패 · 거절 · IdP 오류 포함, 꼴이 틀린 POST · 다시 보냄은 빼고), 돌아옴이 시작보다 훨씬
+    적으면 ADFS 화면에서 멈춘 것 — 풍선 `LOGIN_FLOW_HELP`)와 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
+    재시작하면 0)를 한 줄씩 보인다(둘 다 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 일반 · 읽지 못함 — 등급 이름은 「접속 명단」 표와 같다), 그 아래 「S3 명단」 줄(`access_s3_line` — 꺼짐 · 정상 · 실패와 까닭 분류 · HTTP 상태 · 명단 n · 버전 · 쓰기 칸, 있으면 `등급을 일반으로 읽음 n` · `스스로 등록 실패 n`, 키 · 주소 · 값 없음이라 리뷰 압축본에 옮길 수 있다), 그 아래 마지막 로그인의 클레임 이름(값 없음,
     `runtime.last_login_claims` — 그룹 클레임이 오는지 보는 길)을 싣는다. 시험은 `tests/test_sso_status.py` · `tests/test_sso_access.py`.
   - `scripts/s3_mock_store.py` — 개발 · 시험용 가짜 S3(서명을 받은 요청 그대로 다시 지어 검증 · 메모리만 · 루프백만 · env 파일이 작업 트리 안이면 거절). S3 명단 시험과 `docs/sso_setup.md` 8장이 쓴다.
   - `scripts/sso_mock_idp.py` — 개발 · 시험용 가짜 IdP(실행 때 RSA 키를 메모리에만 만든다, `APP_ENV` 가 운영이면 · 루프백이 아닌

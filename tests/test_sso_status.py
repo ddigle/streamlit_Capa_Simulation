@@ -203,6 +203,30 @@ def test_the_refresh_counts_stay_a_value_line_and_the_help_says_how_to_read_them
     assert list(sso_status.REFRESH_OUTCOME_LABELS) == list(runtime.REFRESH_OUTCOMES)
 
 
+def test_the_login_starts_and_returns_stand_as_a_value_line_with_their_help() -> None:
+    """「로그인 시작 · 돌아옴」 누계(기동 뒤) — 값 한 줄, 읽는 법(돌아옴이 적으면 ADFS 화면에서
+    멈춤)은 풍선이 말한다(보드 critic-missing 1 · UI-TXT-01 · 04). 리뷰로 옮기는 복사 글에도 실리고,
+    꺼짐(운영)에서는 서지 않는다."""
+    cfg = use_config()
+    runtime.mark_gate_installed()
+    runtime.count_login_start()
+    runtime.count_login_start()
+    runtime.count_login_return()
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    [line] = [item for item in app.caption if item.proto.help == sso_status.LOGIN_FLOW_HELP]
+    assert line.value == "**로그인 시작 · 돌아옴(기동 뒤 누계)** · 시작 2 · 돌아옴 1"
+    assert "ADFS 화면에서 멈춘" in sso_status.LOGIN_FLOW_HELP
+    assert "재시작" in sso_status.LOGIN_FLOW_HELP
+    copied = sso_status.status_text("통합인증 점검", cfg, now=dt.datetime.now(dt.timezone.utc))
+    assert "로그인 시작 · 돌아옴(기동 뒤 누계) · 시작 2 · 돌아옴 1" in copied
+    use_config(drop=[names.ENV_CLIENT_ID])
+    off = AppTest.from_string(SCRIPT).run()
+    assert not [item for item in off.caption if item.proto.help == sso_status.LOGIN_FLOW_HELP]
+
+
 def test_an_expiring_certificate_stays_in_the_table_and_the_alarm_not_in_a_line() -> None:
     """만료 임박은 상태 알림(`AD-03`)과 표 까닭 칸이 말한다 — 펼침에 같은 말을 세우지
     않는다(설계 규칙 UI-TXT-07 · UI-NTF-02). 새 인증서를 더하는 법은 알림 전문 · Guide 다."""
