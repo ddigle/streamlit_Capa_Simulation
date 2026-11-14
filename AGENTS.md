@@ -69,7 +69,9 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 
 GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
 비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
-자동 생성한다. 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
+자동 생성한다. 운영 서버(`SsoConfig.operational` — Admin Area 잠금과 같은 판정)에서는 빈 저장소에도
+만들지 않아 「공식버전 없음」 으로 서고, 관리자가 데이터를 올리면 공식이 선다(2026-11-14 물음 보드
+seed (nopub)). 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
 기준정보가 아니다. 실제 표시순서는 시나리오와 분리된 공용 DB 프로필이며, 선택적 로컬
 `data/input/RQ_DISPLAY_ORDER.csv` 또는 웹 Excel 표 붙여넣기로 초기화할 수 있다.
 
@@ -1913,6 +1915,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 보관본도 사용자 시나리오다 — 공식 없이 보관본만 남은 저장소는 빈 저장소가 아니라 시드를 만들지 않는다
     (`list_scenarios(include_archived=True)`). 발행 복구는 저장소(보관본 포함)에 시드 하나뿐일 때만이다 — 곁에 다른 시나리오가
     있으면 되돌린 보관 시드로 보고 발행하지 않는다.
+  - `seed=False`(운영 서버 — `scenario_activation.builtin_seed_allowed`)면 시드를 만들지도, 발행 전에 멈춘 시드를 발행하지도
+    않는다 — 빈 저장소는 공식버전 없이 남는다(`empty_without_seed`, 2026-11-14 물음 보드 seed (nopub)). 기본값은 참이라
+    스크립트(`bootstrap_builtin_seed.py` · `benchmark_home.py`)는 그대로 시드를 만든다.
 - `src/capa_simulation/scenario_registration.py` — BigDataQuery 원천을 리비전 1 시나리오로 저장하는 **세션 없는** 등록 길이다.
   - 화면 등록(`components/bigdataquery_registration.py`)과 자동 갱신이 같은 `save_bigdataquery_scenario` 를 불러 원천
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
@@ -2153,6 +2158,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
   활성화한다(새 세션은 최신 공식 리비전). 프리셋 키·기본값은 이 파일과 `persistence/models.py` 에만 선언한다.
+  - 저장소가 비었으면 첫 세션 부트스트랩(`bootstrap_latest_official_scenario`)이 운영 서버가 아닐 때만 내장 시드로 첫
+    공식버전을 세운다(`builtin_seed_allowed` — `SsoConfig.operational` 의 반대, Admin Area 잠금과 같은 판정. 2026-11-14 물음
+    보드 seed (nopub), `tests/test_application_bootstrap.py`).
   - 값 칸(`_STALE_VALUE_KEYS`)을 지우고 HOME 토글에 기본값을 적으므로 토글을 그리기 전에만 부른다(9장). 활성
     시나리오의 새 리비전 저장(`activate_saved_revision`)은 토글을 둔다. UPEH 가정 % 도 같은 길에서 100 을 적고 그
     공유 위젯의 주인 칸을 지운다(구간은 둔다, `tests/test_scenario_activation.py`).
@@ -5596,6 +5604,8 @@ RQ_MODULE
 11. **내장 시드는 빈 저장소에만 쓴다.** 공식버전 또는 사용자 시나리오가 있으면 자동
     부트스트랩이 새 시나리오를 만들거나 기존 상태를 변경하지 않는다. 보관본도 사용자 시나리오다 —
     보관본만 남은 저장소는 빈 저장소가 아니다. 내장 시드는 합성 데모이며 운영 시나리오로 간주하지 않는다.
+    운영 서버(`SsoConfig.operational`)는 빈 저장소에도 시드를 쓰지 않는다 — 합성 견본이 「공식 v1」 로 서서 HOME 이
+    가짜 숫자를 공식처럼 보이지 않게, 데이터가 없으면 「공식버전 없음」 으로 선다(2026-11-14 물음 보드 seed (nopub)).
 12. **공용 필터 기본값과 개인 조회를 분리한다.** 표준 목표 Capa 공정 기본값과
     「조회·집계 설정」(조회일의 시작일·종료일 두 키·상세 토글·제품 분류 수준·출력 지표)은 불변
     리비전 프리셋에 저장하고, 페이지에서 바꾼 값은 현재 세션에만 둔다. 신규 리비전 저장

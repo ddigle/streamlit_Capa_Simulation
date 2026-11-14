@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation.application_bootstrap import ensure_initial_scenario
+from capa_simulation.auth import runtime as sso_runtime
 from capa_simulation.home_state import HOME_TOGGLE_DEFAULTS
 from capa_simulation.io.reference_cache import (
     HOME_FIGURE_CACHE_KEY,
@@ -322,14 +323,26 @@ def _activate(snapshot: ScenarioSnapshot, *, release_toggles: bool) -> ActiveSce
     return active
 
 
+def builtin_seed_allowed() -> bool:
+    """빈 저장소에 내장 합성 시드를 「공식 v1」 로 스스로 올려도 되는 서버인가 — 운영 서버
+    (`SsoConfig.operational` — Admin Area 잠금 `sso_identity.admin_area_locked` 와 같은 판정)가
+    아니다. 개발 `app.py` · 사내 WebIDE · 사내 PC 는 지금처럼 시드로 시작하고, 운영 서버의 빈
+    저장소는 공식버전 없음으로 선다(2026-11-14 물음 보드 seed (nopub))."""
+    return not sso_runtime.config().operational
+
+
 def bootstrap_latest_official_scenario(database_path: str) -> bool:
-    """Activate the latest official revision once for a new browser session."""
+    """Activate the latest official revision once for a new browser session.
+
+    저장소가 비었으면 운영 서버가 아닐 때만 내장 시드로 첫 공식버전을
+    세운다(`builtin_seed_allowed`).
+    """
     if active_persisted_revision_id() is not None:
         return False
     if st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True:
         return False
     repository = get_scenario_repository(database_path)
-    bootstrap = ensure_initial_scenario(repository)
+    bootstrap = ensure_initial_scenario(repository, seed=builtin_seed_allowed())
     release = bootstrap.release
     if release is None:
         st.session_state[OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY] = True
