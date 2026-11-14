@@ -2350,14 +2350,13 @@ def test_the_next_1113_board_answers_are_recorded() -> None:
     """v1.26 — 6-26 은 「배포 뒤 다섯 일」 확인 보드 카드 가운데 이 문서 몫 열셋이 보드 차례대로 한
     줄씩이고 고른 글은 선택지 라벨이다. 모두 카드 권장이고 메모가 없다. 고친 셋(1 · 4 · 5)은 커밋을
     들고 나머지 열은 커밋이 없다. 1 (가) 의 예외는 6-22 zone-order-ui · 6-24 d-order-step 줄과 7-1
-    에 있다. 6-25 줄은 답 구절만 고쳤다(앞 시험이 6-26 앞에서 끊어 본다)."""
+    에 있다. 6-25 줄은 답 구절만 고쳤다(앞 시험이 6-26 앞에서 끊어 본다). 6-27 은 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.26" in document.split("\n## 1. ")[0]
     assert "- **v1.26 — 2026-11-13.**" in _chapter(document, 8)
     assert "6-26 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-26. ") :]
+    board = section[section.index("\n### 6-26. ") : section.index("\n### 6-27. ")]
     assert NEXT_1113_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -2389,3 +2388,103 @@ def test_the_next_1113_board_answers_are_recorded() -> None:
     assert "같은 보드 1 (가)" in earlier("\n### 6-22. ", "zone-order-ui")
     assert "확인 보드 1 (가)로 예외 하나" in earlier("\n### 6-24. ", "d-order-step")
     assert "2026-11-13 오후 확인 보드 1 (가)로 호기 위로 올린 영역" in _chapter(document, 7)
+
+
+# 2026-11-14 「월요일 배포 앞」 물음 보드(6-27)의 답 — 카드 아홉(여쭘 일곱 · 정한 것
+# 두 장) 모두 카드 권장이고 메모는 없다. 정한 것 두 장(열둘 · 열)은 점마다 한 줄이라
+# 줄은 스물아홉이다. 고른 글은 보드 선택지 라벨(정한 것은 「좋음」)이고, 커밋은 미리 짠
+# 갈래 다섯 · 통합 커밋의 것이다. 범위 답 · 지금대로 · 런북 몫 줄은 커밋이 없다. 줄 id 는
+# 보드 카드 id(정한 것은 `decided-n` · `decided-login-n`)이고 차례는 보드 차례다.
+MONDAY_1114_ADDRESS = "https://claude.ai/artifact/NndcBhF6q2wcvuMHqPKwJ9"
+MONDAY_1114_ANSWERS = {
+    "ship": "모두 싣기 — E2E 를 통과하면",
+    "seed": "운영 서버에서는 올리지 않는다",
+    "stop-panels": "한 꼴로 맞춘다",
+    "english": "한국어 띠로 바꾼다",
+    "boot-record": "Admin Area 통합인증 점검의 「최근 사건」 에 한 줄 남긴다",
+    "prod-off": "잠금 유지",
+    "logout": "실제대로 고침",
+    **{f"decided-{number}": "좋음" for number in range(1, 13)},
+    **{f"decided-login-{number}": "좋음" for number in range(1, 11)},
+}
+MONDAY_1114_COMMITS = {
+    "seed": ("98f4995", "2735684"),
+    "stop-panels": ("e7a34af", "5e89cbc"),
+    "english": ("a24bde1", "8281cb3", "f152833"),
+    "boot-record": ("86dc0d1", "0582511", "bc8f6e2"),
+    "prod-off": ("aeff718", "a930ad3", "537ae0a"),
+    "logout": ("931b130",),
+    "decided-1": ("a930ad3", "d1aed42", "537ae0a"),
+    "decided-2": ("b0bcfcc",),
+    "decided-3": ("e2a199b",),
+    "decided-4": ("b8ae0a4",),
+    "decided-5": ("91cb4fd", "12931ca"),
+    "decided-6": ("d6ae6d9",),
+    "decided-7": ("445dcb4", "5adba78", "9b45426", "1f44374"),
+    "decided-8": ("ebcb1ba",),
+    "decided-9": ("9c0ce55", "0a757a3"),
+    "decided-10": ("8d1cf6e", "e9598db"),
+    "decided-11": ("c121117", "1b03493"),
+    "decided-login-1": ("18d42dc",),
+    "decided-login-2": ("18d42dc",),
+    "decided-login-3": ("18d42dc", "466ec88", "5378d46"),
+    "decided-login-5": ("2ae91dc",),
+    "decided-login-7": ("eca1b21", "cfe84e7"),
+    "decided-login-8": ("7806a60",),
+}
+# 보드에 올리지 않고 구현이 좁게 정한 것 — 절 끝 표의 줄 이름.
+MONDAY_1114_NARROW = (
+    "register-label",
+    "login-fail-kinds",
+    "loop-time",
+    "config-fold",
+    "official-narrow",
+)
+
+
+def test_the_monday_1114_board_answers_are_recorded() -> None:
+    """v1.27 — 6-27 은 「월요일 배포 앞」 물음 보드 카드 아홉이 보드 차례대로이고, 정한 것
+    두 장은 점마다 한 줄이라 스물아홉 줄이다. 고른 글은 선택지 라벨(정한 것은 「좋음」)이고
+    모두 카드 권장 · 메모 없음이다. 고친 줄만 커밋을 든다. 끝 표는 보드에 올리지 않고 구현이
+    정한 다섯 줄이다. 6-26 줄은 그때 기록 그대로다(앞 시험이 6-27 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.27" in document.split("\n## 1. ")[0]
+    assert "- **v1.27 — 2026-11-14.**" in _chapter(document, 8)
+    assert "6-27 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-27. ") :]
+    assert MONDAY_1114_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-14) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(MONDAY_1114_ANSWERS)
+    assert len(found) == 29
+    assert found == MONDAY_1114_ANSWERS
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert bool(commit.search(line)) is (key in MONDAY_1114_COMMITS), key
+    for key, shas in MONDAY_1114_COMMITS.items():
+        for sha in shas:
+            assert f"`{sha}`" in by_id[key], (key, sha)
+    assert "권장과 다른 답" not in board
+    assert "— 메모 「" not in board
+    assert "`fallback/pre-p0-1116`" in by_id["ship"]
+
+    rows = re.findall(
+        r"^\| ([\w-]+) \| .+ \| (`[0-9a-f]{7}`(?: · `[0-9a-f]{7}`)*) \| ([^|]+) \|$",
+        board,
+        re.MULTILINE,
+    )
+    assert tuple(row[0] for row in rows) == MONDAY_1114_NARROW
+    for _, _, rules in rows:
+        cited = RULE_TOKEN.findall(rules)
+        assert cited and set(cited) <= known, rules
