@@ -43,7 +43,12 @@ react-aria 모달이라 열리는 동안 바깥 요소를 `inert` 로 만든다 
 b2). 띠가 창 제목과 닫기 X 를 덮고 본문 줄만 삐져나와 같은 일을 두 번(그것도 영어로) 말했다. 창은
 띠보다 늦게 뜰 때가 있어 띠가 선 동안 화면 바뀜을 지켜보아 뜨는 그 순간 감추고, 매 틱 한 번 더
 찾는다. 가르는 표는 창 글(`connectionDialog` — 판정 구획)이다 — 같은 꼴의 앱 팝업(`st.dialog`)은
-건드리지 않는다. 띠를 걷으면 지켜보기를 끝내고 감춘 창을 되돌린다(띠가 없을 때의 창은 그대로다).
+건드리지 않는다. 머리의 Streamlit 상태 글(`STATUS_WIDGET_SELECTOR` — 「CONNECTING」)도 같은
+표지 · 같은 지켜보기로 띠가 선 동안 감춘다 — 띠가 같은 일을 한국어로 말하는데 넓은 창에서는 띠 옆에
+그대로 보였다(E2E — 보드 답 english=band 와 같은 뜻). 띠가 선 동안은 끊긴 때라 그 자리는 연결 상태
+글뿐이고, 전환 뒤 새 요소로 다시 서도 지켜보기가 그리기 전에 감춘다. 띠를 걷으면 지켜보기를 끝내고
+감춘 창 · 상태 글을 되돌린다(띠가 없을 때의 창 · 상태 글 — 잠깐의 끊김 · 평소의 실행 표시 — 은
+그대로다).
 
 링크는 `CAPA_PUBLIC_URL` 바탕의 `/auth/sso/login?next=<지금 경로 + 질의>` 다 — 경로에서 공개 주소의
 경로 접두(WebIDE `/proxy/<포트>`)를 떼는 것은 `sso_identity.return_path` 와 같은 규칙이고, 서버가
@@ -82,7 +87,8 @@ running)을 감춘다(같은 길). 다시 붙으면 띠를 걷고 서버 재시�
 그래서 꺼짐의 툴바 iframe 에도 스크립트 하나가 더 실린다(내용은 프로세스 안에서 늘 같다).
 
 **비공식 경로다.** Streamlit 1.63 프런트의 연결 상태 표지에 기댄다. 판올림으로 표지가 사라지면 띠가
-서지 않을 뿐 나머지는 그대로다 — 올릴 때 만료 · 로그아웃 뒤 다시 붙기를 브라우저로 한 번 본다.
+서지 않을 뿐 나머지는 그대로다 — 올릴 때 만료 · 로그아웃 뒤 다시 붙기를 브라우저로 한 번 본다(머리
+상태 글의 표가 바뀌면 그 글이 띠 곁에 다시 보일 뿐이다).
 """
 
 from __future__ import annotations
@@ -119,6 +125,9 @@ CONNECTION_DIALOG_TEXTS = (
     "Connection timed out.",
     "Is Streamlit still running?",
 )
+# 띠가 선 동안 함께 감추는 Streamlit 머리 상태 글(「CONNECTING」 · 실행 표시가 서는 자리 —
+# Streamlit 1.63 프런트 표, 비공식). 끊긴 동안 그 자리는 연결 상태 글뿐이다.
+STATUS_WIDGET_SELECTOR = '[data-testid="stStatusWidget"]'
 RESTART_BANNER_ID = "capa-restart-band"
 STAGE_HEADER = "X-Capa-Stage"
 STAGE_STATUS_PATH = "/_capa_stage"
@@ -249,7 +258,7 @@ function loginHref(base, prefix, loginPath, pathname, search) {
   function dark() {
     return typeof capaTheme !== "undefined" && capaTheme.resolve(parentWindow).choice === "Dark";
   }
-  // 띠가 선 동안 감춘 연결 오류 창 표지 — 띠를 걷을 때 이 표지가 있는 창만 되돌린다.
+  // 띠가 선 동안 감춘 연결 오류 창 · 머리 상태 글 표지 — 띠를 걷을 때 이 표지가 있는 것만 되돌린다.
   var HIDDEN_MARK = "data-capa-sso-hidden";
   function hideConnectionDialogs() {
     var boxes = doc.querySelectorAll('[data-testid="stDialog"]');
@@ -259,9 +268,18 @@ function loginHref(base, prefix, loginPath, pathname, search) {
       dialog.setAttribute(HIDDEN_MARK, "");
       dialog.style.setProperty("display", "none", "important");
     }
+    // 머리 상태 글(「CONNECTING」)도 띠가 대신 말한다 — 띠가 선 동안만 부르므로 끊긴 때의 글뿐이다.
+    var widgets = doc.querySelectorAll(%(status_widget)s);
+    for (var j = 0; j < widgets.length; j++) {
+      var widget = widgets[j];
+      if (widget.hasAttribute(HIDDEN_MARK)) continue;
+      widget.setAttribute(HIDDEN_MARK, "");
+      widget.style.setProperty("display", "none", "important");
+    }
   }
-  // 띠가 선 동안 뒤늦게 뜨는 연결 오류 창은 뜨는 그 순간 감춘다 — 틱만 기다리면 창이 한 틱 동안
-  // 띠 곁에 보였다. 지켜보기는 띠가 선 동안만 한다(평소 회차의 화면 바뀜을 지켜보지 않는다).
+  // 띠가 선 동안 뒤늦게 뜨는 연결 오류 창 · 새 요소로 다시 선 머리 상태 글은 뜨는 그 순간 감춘다 —
+  // 틱만 기다리면 창이 한 틱 동안 띠 곁에 보였다. 지켜보기는 띠가 선 동안만 한다(평소 회차의 화면
+  // 바뀜을 지켜보지 않는다).
   var watcher = null;
   function watchConnectionDialogs() {
     var Observer = parentWindow.MutationObserver || window.MutationObserver;
@@ -559,6 +577,7 @@ def _script(cfg: SsoConfig | None) -> str:
         "timeout_ms": PROBE_TIMEOUT_MS,
         "stage_header": script_literal(STAGE_HEADER),
         "dialog_texts": json.dumps(list(CONNECTION_DIALOG_TEXTS)).replace("<", "\\u003c"),
+        "status_widget": script_literal(STATUS_WIDGET_SELECTOR),
         "restart_lead": script_literal(RESTART_LEAD),
         "restart_tail": script_literal(RESTART_TAIL),
         "waiting": script_literal(WAITING_NOTICE),

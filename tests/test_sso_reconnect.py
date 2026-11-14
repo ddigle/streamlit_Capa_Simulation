@@ -44,6 +44,7 @@ from capa_simulation.components.sso_reconnect import (
     RESTART_LEAD,
     RESTART_TAIL,
     STAGE_HEADER,
+    STATUS_WIDGET_SELECTOR,
     UNREACHABLE_AFTER_MS,
     UNREACHABLE_NOTICE,
     UNREAD_NOTICE,
@@ -536,7 +537,11 @@ def test_the_band_is_rebuilt_when_the_reason_changes_between_probes() -> None:
 # 가짜 창 · 문서(DOM 없음)에서 띠 스크립트 전체를 돌린다 — 틱을 두 번(끊김 시작 ·
 # `PROBE_WAIT_MS` 뒤) 손으로 부르고, host-config 물음에는 진짜 `Response`(머리 이름이 다르면 까닭이
 # 빠진다)로 답한다. `routes` 는 주소 끝 → 차례로 내줄 답(마지막 답은 되풀이 · null 은 답 없음)이고,
-# `more` 는 그 뒤 `PROBE_GAP_MS` 마다 더 묻는 횟수다.
+# `more` 는 그 뒤 `PROBE_GAP_MS` 마다 더 묻는 횟수다. 문서에는 Streamlit 머리 상태 글
+# (`stStatusWidget` — 「CONNECTING」)과 영어 연결 창(`stDialog`)이 하나씩 있고 화면 바뀜
+# 지켜보기(`MutationObserver`)는 부름을 붙잡아 둔다. 그 둘의 모습(감춤 표지 · 인라인 서식)을 네 때에
+# 적는다 — 첫 틱 뒤(띠 전) · 물음 뒤 · 상태 글이 새 요소로 다시 선 뒤(지켜보기를 부름) · 다시 붙은
+# 틱 뒤.
 _WHOLE_SCRIPT_RUNNER = """
 const SCRIPT = %(script)s;
 const ANSWER = %(answer)s;
@@ -550,7 +555,13 @@ const elements = new Map();
 function element(tag) {
   const node = {
     tagName: tag, id: "", textContent: "", target: "", href: "", children: [], attrs: {},
-    style: { cssText: "", setProperty() {}, removeProperty() {} },
+    style: {
+      cssText: "", props: {},
+      setProperty(name, value, priority) {
+        this.props[name] = value + (priority ? " !" + priority : "");
+      },
+      removeProperty(name) { delete this.props[name]; },
+    },
     setAttribute(name, value) { this.attrs[name] = String(value); },
     getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; },
     hasAttribute(name) { return name in this.attrs; },
@@ -562,13 +573,44 @@ function element(tag) {
 }
 const root = element("div");
 root.setAttribute("data-test-connection-state", "DISCONNECTED_FOREVER");
+const HIDDEN = "data-capa-sso-hidden";
+function testid(id, text) {
+  const node = element("div");
+  node.setAttribute("data-testid", id);
+  node.textContent = text;
+  return node;
+}
+let widgets = [testid("stStatusWidget", "CONNECTING")];
+const dialogs = [testid("stDialog", "Connection error Connection timed out.")];
 const doc = {
   body: { appendChild(child) { elements.set(child.id, child); return child; } },
   createElement: element,
   getElementById: (id) => elements.get(id) || null,
   querySelector: (selector) => (selector.includes("stApp") ? root : null),
-  querySelectorAll: () => [],
+  querySelectorAll: (selector) => {
+    if (selector.includes("stStatusWidget")) return widgets.slice();
+    if (selector.includes("stDialog")) return dialogs.slice();
+    if (selector.includes(HIDDEN)) {
+      return widgets.concat(dialogs).filter((node) => node.hasAttribute(HIDDEN));
+    }
+    return [];
+  },
 };
+let observed = null;
+class Observer {
+  constructor(callback) { this.callback = callback; }
+  observe() { observed = this.callback; }
+  disconnect() { observed = null; }
+}
+function looks() {
+  const look = (node) => ({ mark: node.getAttribute(HIDDEN), style: { ...node.style.props } });
+  return {
+    band: elements.has(%(banner_id)s) || elements.has(%(restart_id)s),
+    widgets: widgets.map(look),
+    dialogs: dialogs.map(look),
+    watching: observed !== null,
+  };
+}
 const asked = [];
 function answerFor(url) {
   for (const [tail, list] of Object.entries(ROUTES)) {
@@ -585,6 +627,7 @@ globalThis.fetch = (url) => {
 let tick = null;
 const parentWindow = {
   document: doc,
+  MutationObserver: Observer,
   location: {
     origin: "https://capa.example.invalid",
     href: "https://capa.example.invalid/Space?tab=1",
@@ -604,6 +647,7 @@ new Function(SCRIPT)();
     for (let i = 0; i < 20; i++) await new Promise((done) => setImmediate(done));
   };
   tick();
+  const start = looks();
   now += WAIT_MS + 1;
   tick();
   await settle();
@@ -612,9 +656,10 @@ new Function(SCRIPT)();
     tick();
     await settle();
   }
+  const standing = looks();
   const band = elements.get(%(banner_id)s) || null;
   const slot = elements.get(%(restart_id)s) || null;
-  process.stdout.write(JSON.stringify({
+  const result = {
     asked,
     band: band && {
       kind: band.getAttribute(%(kind_attr)s),
@@ -635,7 +680,15 @@ new Function(SCRIPT)();
         target: child.target,
       })),
     },
-  }));
+  };
+  // 상태 글이 전환 뒤 새 요소로 다시 선다 — 지켜보기가 그 바뀜을 받는다(틱을 기다리지 않는다).
+  widgets = [testid("stStatusWidget", "CONNECTING")];
+  if (observed) observed([]);
+  const remounted = looks();
+  root.setAttribute("data-test-connection-state", "CONNECTED");
+  tick();
+  result.looks = { start, standing, remounted, back: looks() };
+  process.stdout.write(JSON.stringify(result));
 })();
 """
 
@@ -783,3 +836,66 @@ def test_the_blocked_band_and_the_restart_band_take_turns_in_one_place() -> None
         f"if (doc.getElementById({json.dumps(BANNER_ID)})) return;"
     )
     assert blocked.rstrip().endswith("hideConnectionDialogs();\n    watchConnectionDialogs();\n  }")
+
+
+# --------------------------------------------------------------------------- 머리 상태 글
+_SHOWN: dict[str, Any] = {"mark": None, "style": {}}
+_HIDDEN: dict[str, Any] = {"mark": "", "style": {"display": "none !important"}}
+
+
+def test_a_standing_band_also_hides_the_header_connecting_status_and_gives_it_back() -> None:
+    """띠가 선 동안 Streamlit 머리 상태 글(「CONNECTING」 — `stStatusWidget`)도 감춘다. 띠가
+    같은 일을 한국어로 말하는데 넓은 창에서는 띠 옆에 그대로 보였다(E2E B-06 · D-09 · D-26 — 1600
+    창에서 다 보임, 보드 답 english=band · b2 와 같은 뜻). 영어 창과 같은 표지 · 지켜보기 길이라
+    전환 뒤 새 요소로 다시 선 상태 글도 틱을 기다리지 않고 감추고, 다시 붙어 띠를 걷으면 되돌린다.
+    로그인 띠 · 재시작 자리의 기다림 띠 · 설정 막힘 띠가 모두 같다."""
+    script = reconnect_script(use_config())
+    hide = script.split("function hideConnectionDialogs()", 1)[1].split("function", 1)[0]
+    assert STATUS_WIDGET_SELECTOR == '[data-testid="stStatusWidget"]'
+    assert f"doc.querySelectorAll({json.dumps(STATUS_WIDGET_SELECTOR)})" in hide
+    assert 'widget.style.setProperty("display", "none", "important");' in hide
+    runs = {
+        "login": _run_whole(
+            script,
+            {"status": 401, "headers": {names.REASON_HEADER: names.REASON_OTHER}},
+        ),
+        "waiting": _run_whole(restart_script(), None),
+        "blocked": _run_whole(
+            restart_script(),
+            None,
+            routes={HOST_CONFIG_PATH: [_REFUSED], HEALTH_PATH: [_APP_HEALTH]},
+        ),
+    }
+
+    for name, result in runs.items():
+        looks = result["looks"]
+        assert looks["start"] == {
+            "band": False,
+            "widgets": [_SHOWN],
+            "dialogs": [_SHOWN],
+            "watching": False,
+        }, name
+        assert looks["standing"] == {
+            "band": True,
+            "widgets": [_HIDDEN],
+            "dialogs": [_HIDDEN],
+            "watching": True,
+        }, name
+        assert looks["remounted"]["widgets"] == [_HIDDEN], name
+        assert looks["back"] == {
+            "band": False,
+            "widgets": [_SHOWN],
+            "dialogs": [_SHOWN],
+            "watching": False,
+        }, name
+
+
+def test_without_a_band_the_header_status_is_left_alone() -> None:
+    """띠가 서지 않는 동안(끊긴 지 3초 전 · 서버가 떠 있어 띠를 걷는 답)의 머리 상태 글은 건드리지
+    않는다 — 잠깐의 끊김에 보이는 「CONNECTING」 · 평소의 실행 표시는 Streamlit 그대로다."""
+    result = _run_whole(reconnect_script(use_config()), {"status": 200, "headers": {}})
+
+    for moment, look in result["looks"].items():
+        assert look["band"] is False, moment
+        assert look["widgets"] == [_SHOWN], moment
+        assert look["watching"] is False, moment
