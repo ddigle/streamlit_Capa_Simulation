@@ -465,10 +465,69 @@ def test_the_two_palettes_match_the_app_tokens() -> None:
 
 def test_the_diagnostics_fold_has_the_app_admin_diagnostic_name() -> None:
     """접힌 진단의 이름은 앱 안 판(코어 화면 오류 카드 · 앱 시작 실패 판)과 같은 글이다 — 시작
-    화면은 Streamlit 을 부르지 않아 같은 글을 따로 들고 여기서 맞댄다(설계 규칙 UI-CON-02)."""
+    화면은 Streamlit 을 부르지 않아 로그인 화면 틀의 낱말을 쓰고, 그 글이 앱 안 판의 글과 같은지
+    여기서 맞댄다(설계 규칙 UI-CON-02)."""
     from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 
     assert container_stage.DIAGNOSTICS_SUMMARY == ADMIN_DIAGNOSTIC_LABEL
+
+
+def _css_variables(css: str) -> dict[str, dict[str, str]]:
+    """`:root` 의 밝은 변수와 `prefers-color-scheme: dark` 안의 어두운 변수."""
+    light_part, _, dark_part = css.partition("@media (prefers-color-scheme: dark)")
+
+    def found(part: str) -> dict[str, str]:
+        return dict(re.findall(r"--([a-z-]+):\s*([^;]+);", part))
+
+    return {"light": found(light_part), "dark": found(dark_part)}
+
+
+def test_the_stage_chips_are_the_login_frame_table() -> None:
+    """2026-11-14 보드 decided 8 — 시작 임시 화면의 표지 낱말과 색은 로그인 화면 틀
+    (`auth/page_frame`)과 한 표다. 결마다 틀의 같은 표지 키의 낱말이 서고, 그 색 변수는 두 테마
+    모두 틀이 그리는 값과 같다(시작 중 · 점검 중 · 다시 시도 — 셋 다)."""
+    from capa_simulation.auth import page_frame
+    from capa_simulation.design import tokens
+
+    views = {
+        "start": container_stage.stage_view(_state()),
+        "retry": container_stage.stage_view(_state(attempt=1, kind="unreachable")),
+        "check": container_stage.stage_view(_state(attempt=1, kind="remote_empty")),
+    }
+    stage_css = _css_variables(container_stage.page_css())
+    frame_css = _css_variables(page_frame.palette_css())
+    page = container_stage.page_css()
+
+    assert set(views) == set(container_stage.TONE_CHIPS)
+    for tone, view in views.items():
+        chip = container_stage.TONE_CHIPS[tone]
+        assert view.tone == tone
+        assert view.chip == page_frame.CHIP_WORDS[chip]
+        assert f".tone-{tone} {{ color: var(--chip-{chip}); }}" in page
+        for mode in ("light", "dark"):
+            role = page_frame.CHIP_ROLES[chip]
+            assert stage_css[mode][f"chip-{chip}"] == tokens.palette_value(mode, role), (tone, mode)
+            assert stage_css[mode][f"chip-{chip}"] == frame_css[mode][f"chip-{chip}"], (tone, mode)
+
+
+def test_the_frame_words_are_the_login_frame_words() -> None:
+    """접힌 진단 · 문의 줄 · 참고 줄의 머리 낱말도 로그인 화면 틀의 낱말이다 — 앱 안 멈춤 판
+    (`components/stop_panel.py`)도 같은 낱말이다(UI-CON-02)."""
+    from capa_simulation.auth import page_frame
+    from capa_simulation.components import stop_panel
+
+    contact = container_stage.StageContact(email="demo@example.com")
+    view = container_stage.stage_view(_state(attempt=1, kind="timeout", failed_at=1100.0))
+    page = container_stage.render_main(view, now=1100.0, version=0, contact=contact)
+
+    assert container_stage.DIAGNOSTICS_SUMMARY == page_frame.DIAGNOSTIC_LABEL
+    assert f"<summary>{page_frame.DIAGNOSTIC_LABEL}</summary>" in page
+    assert _line_text(page, "contact").startswith(f"{page_frame.CONTACT_LABEL} ")
+    assert _line_text(page, "ref").startswith(f"{page_frame.REFERENCE_LABEL} ")
+    assert (stop_panel.CONTACT_PREFIX, stop_panel.REFERENCE_PREFIX) == (
+        page_frame.CONTACT_LABEL,
+        page_frame.REFERENCE_LABEL,
+    )
 
 
 def test_the_mark_is_the_app_mark() -> None:

@@ -12,8 +12,11 @@ C-DEP 의 상태 검사는 시작 제한이 1분이고 무엇을 묻는지 모�
 **꼴은 앱 밖 화면의 공통 틀이다** — 4px 강조 줄 · 앱 마크 · 「S.PKG CAPA」/「AX
 Management」 · 상태 표지(낱말 + 색) · 제목 · 까닭 · 단계 줄 「준비 · 점검 → 설치 →
 데이터 받기 → 앱」(받지 않는 서버는 받기 칸 없음) · 값 줄(지난 시간 · 다음 시도 n초) ·
-문의 줄 · 참고 줄 · 접힌 「관리자용 진단」. 포트를 잡는 첫 순간이라 Streamlit ·
-`design.tokens` 를 불러오지 않는다 — 두 팔레트는 상수(`PALETTES`)이고 시험이 토큰과
+문의 줄 · 참고 줄 · 접힌 「관리자용 진단」. 앱이 서기 전의 단순한 꼴(스크립트 · 단계 줄 ·
+값 줄)은 이 화면 몫이고, 낱말(표지 셋 · 「관리자용 진단」 · 「문의」 · 「참고」)과 표지 색 역할은
+로그인 화면 틀(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES`)과 한 표다 — 그 표를
+불러 쓴다. 포트를 잡는 첫 순간이라 Streamlit · `design.tokens` 를 불러오지 않는다
+(`page_frame` 도 tokens 를 그릴 때만 부른다) — 두 팔레트는 상수(`PALETTES`)이고 시험이 토큰과
 맞댄다. 밝게 · 어둡게는 `prefers-color-scheme` 로 고른다(앱 테마를 모르는 화면).
 
 **한 상태 → 한 보기.** 시작 스크립트는 단계 · 받기 시도 · 실패만 알리고(`Stage.begin` ·
@@ -60,6 +63,13 @@ from typing import Final
 from urllib.parse import quote, urlsplit
 
 from capa_simulation.auth.names import CALLBACK_PATH, ENV_ACCESS_CONTACT, REGISTER_PATH
+from capa_simulation.auth.page_frame import (
+    CHIP_ROLES,
+    CHIP_WORDS,
+    CONTACT_LABEL,
+    DIAGNOSTIC_LABEL,
+    REFERENCE_LABEL,
+)
 from capa_simulation.services.object_storage_manifest import (
     DATASET_LABELS,
     FAILURE_CLI_MISSING,
@@ -102,14 +112,20 @@ STEP_LABELS: Final[Mapping[str, str]] = {
 }
 NOW_WORD: Final = "지금"
 
-# 상태 표지 — 앱 밖 화면의 공통 다섯 낱말 가운데 이 화면이 쓰는 셋. 색은 낱말과 늘
-# 함께다(색만으로 뜻을 싣지 않음).
-CHIP_STARTING: Final = "시작 중"
-CHIP_RETRY: Final = "다시 시도"
-CHIP_MAINTENANCE: Final = "점검 중"
+# 상태 표지 — 앱 밖 화면의 공통 다섯 낱말 가운데 이 화면이 쓰는 셋(낱말 · 색 역할은 로그인 화면
+# 틀의 표). 색은 낱말과 늘 함께다(색만으로 뜻을 싣지 않음). 결(tone)은 이 화면의 이름이다 —
+# `/_capa_stage` 셋째 줄 · 쪽 서식의 `tone-*` 가 쓰는 값이라 그대로 두고, 틀의 표지 키로 잇는다.
 TONE_START: Final = "start"
 TONE_RETRY: Final = "retry"
 TONE_CHECK: Final = "check"
+TONE_CHIPS: Final[Mapping[str, str]] = {
+    TONE_START: "starting",
+    TONE_RETRY: "retry",
+    TONE_CHECK: "maintenance",
+}
+CHIP_STARTING: Final = CHIP_WORDS[TONE_CHIPS[TONE_START]]
+CHIP_RETRY: Final = CHIP_WORDS[TONE_CHIPS[TONE_RETRY]]
+CHIP_MAINTENANCE: Final = CHIP_WORDS[TONE_CHIPS[TONE_CHECK]]
 
 TITLE_STARTING: Final = "앱을 시작하는 중입니다"
 TITLE_PULLING: Final = "데이터를 받는 중입니다"
@@ -186,13 +202,14 @@ _MIB: Final = 1024 * 1024
 LABEL_NEXT_TRY: Final = "다음 시도"
 LABEL_NEXT_CHECK: Final = "다음 확인"
 CLOCK_WORD: Final = "지난 시간"
-DIAGNOSTICS_SUMMARY: Final = "관리자용 진단"
+DIAGNOSTICS_SUMMARY: Final = DIAGNOSTIC_LABEL
 # 잠시 닿지 못함이 이만큼 이어지면 문의 줄을 세운다.
 LONG_RETRY_SECONDS: Final = 600
 
 # 두 팔레트의 값 — `design/tokens.py` 의 같은 이름 값과 시험이 맞댄다
 # (`tests/test_container_stage.py`). 이 화면은 tokens 를 불러오지 않는다(모듈 설명).
-# CSS 변수 이름 → 토큰 이름.
+# CSS 변수 이름 → 토큰 이름. 표지 색(`chip-<틀의 표지 키>`)은 틀의 역할 표에서 온다 — 틀이 역할을
+# 바꾸면 아래 상수에 그 토큰이 없을 때 시험이 잡는다.
 PALETTE_ROLES: Final[tuple[tuple[str, str], ...]] = (
     ("fg", "TEXT"),
     ("muted", "TEXT_MUTED"),
@@ -201,8 +218,7 @@ PALETTE_ROLES: Final[tuple[tuple[str, str], ...]] = (
     ("line", "BORDER"),
     ("accent", "ACCENT"),
     ("warm", "BRAND_DIE_WARM"),
-    ("retry", "ALERT_CHECK"),
-    ("check", "ALERT_ACTION"),
+    *((f"chip-{chip}", CHIP_ROLES[chip]) for chip in TONE_CHIPS.values()),
 )
 PALETTES: Final[Mapping[str, Mapping[str, str]]] = {
     "light": {
@@ -269,9 +285,7 @@ main { width: 100%; max-width: 640px; background: var(--card); border: 1px solid
   border: 1px solid currentColor; border-radius: 999px; font-size: .8rem; font-weight: 700; }
 .chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%;
   background: currentColor; }
-.tone-start { color: var(--accent); }
-.tone-retry { color: var(--retry); }
-.tone-check { color: var(--check); }
+__TONE_RULES__
 h1 { font-size: 1.3rem; line-height: 1.4; margin: 0 0 8px; }
 p { margin: 6px 0; }
 .steps { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 0;
@@ -295,16 +309,19 @@ details ul { margin: 6px 0 0; padding-left: 18px; }
 
 
 def page_css() -> str:
-    """밝은 · 어두운 팔레트 변수 + 본문 규칙."""
+    """밝은 · 어두운 팔레트 변수 + 본문 규칙. 표지 결(`tone-*`)은 틀의 표지 색 변수를 쓴다."""
 
     def variables(mode: str) -> str:
         palette = PALETTES[mode]
         return " ".join(f"--{name}: {palette[role]};" for name, role in PALETTE_ROLES)
 
+    tones = "\n".join(
+        f".tone-{tone} {{ color: var(--chip-{chip}); }}" for tone, chip in TONE_CHIPS.items()
+    )
     return (
         f":root {{ color-scheme: light dark; {variables('light')} --font: {FONT_FAMILY}; }}\n"
         f"@media (prefers-color-scheme: dark) {{ :root {{ {variables('dark')} }} }}"
-        f"{_CSS_BODY}"
+        f"{_CSS_BODY.replace('__TONE_RULES__', tones)}"
     )
 
 
@@ -673,7 +690,7 @@ def _contact_html(contact: StageContact) -> str:
         )
     if contact.text:
         parts.append(_esc(contact.text))
-    return f'<p class="contact">문의 {" · ".join(parts)}</p>' if parts else ""
+    return f'<p class="contact">{CONTACT_LABEL} {" · ".join(parts)}</p>' if parts else ""
 
 
 def render_main(
@@ -714,7 +731,7 @@ def render_main(
     parts.append(_contact_html(contact))
     if view.reference:
         at = "" if view.reference_at is None else f" · {_utc(view.reference_at)}"
-        parts.append(f'<p class="ref">참고 {_esc(view.reference)}{at}</p>')
+        parts.append(f'<p class="ref">{REFERENCE_LABEL} {_esc(view.reference)}{at}</p>')
     if view.diagnostics:
         items = "".join(f"<li>{_esc(line)}</li>" for line in view.diagnostics)
         parts.append(
