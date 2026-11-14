@@ -383,13 +383,17 @@ def readiness_line(cfg: SsoConfig) -> str:
 
 
 def _event_code(fields: dict[str, str]) -> str:
-    """사건 표의 「사유 코드」 칸 — 실패 사유 · IdP 오류 · 설정 문제 이름 · 인증서 남은 날 차례.
+    """사건 표의 「사유 코드」 칸 — 실패 사유 · IdP 오류 · 설정 문제 이름 · 빠진 명단 항목 수 ·
+    인증서 남은 날 차례.
 
     만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
     로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다. 로그인
     실패(`login_fail`)는 진단 번호의 앞 글자 `diag` 를 「진단 …」 으로 붙인다 — 실패 화면 바닥 참고
     줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(로그인 전 실패 표는 펼침에 늘 있고, 서명이
     맞은 뒤의 실패는 감사 기록이 켜진 서버면 「복사」 글 `status_text` 의 최근 사건 표에서).
+    명단을 다시 쓰며 못 읽는 항목을 빠뜨린 저장(`access_saved` · `access_self_registered` 의
+    `dropped` 가 0 보다 큼)은 파일의 고친 기록과 같은 이름 `drop_unreadable n` 이다 — 감사 기록기가
+    꺼진 서버에서는 이 표가 그 수를 보는 화면 창구다.
     """
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
@@ -401,6 +405,9 @@ def _event_code(fields: dict[str, str]) -> str:
             parts = (end, kind, f"진단 {diag}" if diag else "")
             tail = [part for part in parts if part and part != "-"]
             return " · ".join((value, *tail))
+    dropped = fields.get("dropped", "")
+    if dropped.isdigit() and int(dropped) > 0:
+        return f"{access_store.CHANGE_DROP} {int(dropped)}"
     days = fields.get("days", "")
     return f"남은 날 {days}" if days else "-"
 

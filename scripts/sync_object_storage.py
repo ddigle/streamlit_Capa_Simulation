@@ -34,7 +34,9 @@
 있음/없음으로 찍고, 진단 글(오류 첫 줄 · 「실행한 명령」 — `io/object_storage.py` 가 원격 진단용으로
 값째 만든다) 안의 값은 받아 찍는 자리에서 `<주소>` · `<버킷>` · `<프로필>` 로 바꾼다. 세대 줄의
 작성자는 `<작성자>` 다. 원값을 보는 옵션은 없다 — 값은 C-DEP 환경변수 표와 사용자 창의 변수에만
-있다.
+있다. 내 PC 경로(받은 폴더 · 백업 · 「로컬 DB 가 없습니다」 · 진단 글의 파일 인자 · `probe --write`
+의 기록 파일)의 홈 폴더 앞부분은 `%USERPROFILE%` 로 찍는다(리뷰에 옮길 때 계정 이름이 나가지 않게
+— 여닫는 경로 값은 그대로다).
 
 **정본을 바꾸는 손 동작은 감사 조각을 남긴다.** `rollback` · `init` · `fetch-copy` · `prune` 은 끝에
 그 버킷의 `audit/v1/tool/…` 에 한 줄짜리 조각을 새로 올린다(`audit/tool.py` — 행위자는 OS 사용자,
@@ -46,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import tempfile
@@ -185,6 +188,8 @@ ENDPOINT_TAG = "<주소>"
 BUCKET_TAG = "<버킷>"
 PROFILE_TAG = "<프로필>"
 AUTHOR_TAG = "<작성자>"
+# 내 PC 경로 앞부분(`C:\Users\<계정>`) — 셸 변수 꼴로 둔다(읽는 사람이 어디인지는 안다).
+HOME_TAG = "%USERPROFILE%"
 # 버킷을 이 글자 수 이하면 글자 수만 찍는다 — 앞 두 글자와 뒤 두 글자가 값 전부가 된다.
 SHORT_BUCKET = 4
 
@@ -241,9 +246,44 @@ def endpoint_forms(endpoint: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(form for form in forms if form))
 
 
+# 홈 폴더 경로 뒤에 올 수 있는 글자 — 이 앞에서 끝나야 그 폴더다(`…\ab` 가 `…\abc` 를 먹지 않게).
+_PATH_END = r"(?=$|[\\/'\"\s)])"
+# 홈 값이 무엇이든 남는 꼴 — 짧은 8.3 이름(`ABCDEF~1`) · `/` 구분자 · 대소문자 · 다른 계정의 홈 ·
+# 겹 구분자(오류 글이 경로를 `repr` 로 실어 `\\` 가 둘씩 선다). 계정 칸은 다음 구분자 · 따옴표 · 줄
+# 끝 · 닫는 괄호 앞까지다(이름에 빈칸이 들어도 다 가린다). 드라이브 글자 앞이 글자 · 숫자면 주소의
+# `scheme://` 라 건드리지 않는다.
+_USERS_FOLDER = re.compile(
+    r"(?<![A-Za-z0-9])[A-Za-z]:[\\/]+Users[\\/]+[^\\/'\"\r\n)]+", re.IGNORECASE
+)
+
+
+def _home_forms() -> tuple[str, ...]:
+    r"""`USERPROFILE` 이 글에 나오는 꼴 — 넣은 그대로 · `/` 구분자 · `\` 구분자 · `\\` 겹 구분자
+    (오류 글의 `repr`, 끝 구분자는 뗀다). 값이 없거나 드라이브 뿌리 같은 꼴(구분자가 없음)이면
+    비운다."""
+    home = os.environ.get("USERPROFILE", "").strip().rstrip("\\/")
+    if not re.search(r"[\\/]", home):
+        return ()
+    back = home.replace("/", "\\")
+    forms = (home, home.replace("\\", "/"), back, back.replace("\\", "\\\\"))
+    return tuple(sorted(dict.fromkeys(forms), key=len, reverse=True))
+
+
+def mask_home(text: str) -> str:
+    r"""글 안의 내 PC 홈 폴더(`C:\Users\<계정>`)를 `%USERPROFILE%` 로 — 그 뒤의 경로는 그대로 둔다.
+
+    출력에만 쓴다 — 실제로 여닫는 경로 값은 바꾸지 않는다. 설정을 못 읽은 실행에서도 가린다(주소 ·
+    버킷 · 프로필 가림과 따로)."""
+    for form in _home_forms():
+        pattern = re.compile(re.escape(form) + _PATH_END, re.IGNORECASE)
+        text = pattern.sub(lambda _found: HOME_TAG, text)
+    return _USERS_FOLDER.sub(lambda _found: HOME_TAG, text)
+
+
 def masked(text: str) -> str:
-    """받아 찍는 글 안의 사내 값을 이름표로 — 진단 글 · 엔진이 감싼 실패 글이 지난다."""
-    return _REDACTION.apply(text)
+    """받아 찍는 글 안의 사내 값 · 내 PC 홈 폴더를 이름표로 — 진단 글 · 엔진이 감싼 실패 글이
+    지난다."""
+    return mask_home(_REDACTION.apply(text))
 
 
 def _stop_line(error: BaseException) -> str:
@@ -590,7 +630,7 @@ def command_probe(args: argparse.Namespace) -> int:
     print(json.dumps(shown, ensure_ascii=False, indent=1))
     if args.write:
         args.write.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
-        print(f"기록          : {args.write}")
+        print(f"기록          : {masked(str(args.write))}")
     return 0
 
 
@@ -664,7 +704,8 @@ def command_init(args: argparse.Namespace) -> int:
         if _blocked_by_running_app(dataset, "스냅샷을 내보내"):
             return 1
         if not database_path.exists():
-            print(f"[중단] {DATASET_LABELS[dataset]} 로컬 DB 가 없습니다: {database_path}")
+            shown = masked(str(database_path))
+            print(f"[중단] {DATASET_LABELS[dataset]} 로컬 DB 가 없습니다: {shown}")
             _stopped("로컬 DB 없음")
             return 1
     outcome = engine.init_generation(
@@ -796,7 +837,8 @@ def command_pull(args: argparse.Namespace) -> int:
     outcome = engine.apply_pull(client, paths, plan)
     for dataset, install in outcome.installs.items():
         backup = install.database_backup or install.backup_dir
-        print(f"{DATASET_LABELS[dataset]} 설치 : seq {outcome.seq} (이전 파일 백업 {backup})")
+        shown = masked(str(backup))
+        print(f"{DATASET_LABELS[dataset]} 설치 : seq {outcome.seq} (이전 파일 백업 {shown})")
     return 0
 
 
@@ -904,7 +946,7 @@ def command_fetch_copy(args: argparse.Namespace) -> int:
         _stopped(STOP_REQUEST)
         return 1
     _AUDIT_DETAIL["seq_to"] = outcome.pointer.seq
-    print(f"받음 : seq {outcome.pointer.seq} · {outcome.folder}")
+    print(f"받음 : seq {outcome.pointer.seq} · {masked(str(outcome.folder))}")
     _fact(f"받음 seq {outcome.pointer.seq}")
     return 0
 

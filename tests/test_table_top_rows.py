@@ -159,3 +159,43 @@ def test_the_shared_search_box_lets_all_three_grids_stand_on_one_line_in_the_rep
         *(layout.min_window_px for layout in plan_grid.LAYOUTS.values()),
     ]
     assert max(windows) <= 1283
+
+
+def test_the_three_grids_measure_their_one_line_window_the_same_way() -> None:
+    """세 그리드(기준 정보 · PKG PLAN · 수율)의 한 줄 문턱은 같은 조건(사이드바 300 · 본문 세로
+    스크롤 막대를 켠 Chrome · 같은 표 도구 막대)으로 잰 값이라 문턱 − 왼쪽 비움이 셋 다 같다 — 한
+    그리드만 잰 값보다 높게 두면 그 사이 창에서 그 그리드만 막대가 제 줄로 내려앉는다(물음 보드
+    「정한 것」 11 — 수율 · 기준 정보 문턱을 잰 값으로)."""
+    windows = {
+        "reference": (reference_grid.ONE_LINE_MIN_WINDOW_PX, reference_grid.ACTION_ROW_RESERVE_PX),
+        **{
+            table: (layout.min_window_px, layout.reserve_px)
+            for table, layout in plan_grid.LAYOUTS.items()
+        },
+    }
+    gaps = {name: window - reserve for name, (window, reserve) in windows.items()}
+
+    assert len(set(gaps.values())) == 1, gaps
+
+
+# 고칠 칸 · 「적용 전 (n)」 의 n 이 두 자리일 때 잰 문턱 − 왼쪽 비움(샘플 관측 — 사이드바 300 ·
+# 그림 단추 막대 416 · 본문 세로 스크롤 막대를 켠 Chrome · 글꼴 흉내 · 창 높이 649, 1px 이분
+# 탐색). n 이 한 자리일 때 잰 값은 755 다.
+TWO_DIGIT_ONE_LINE_GAP_PX = 761
+
+
+def test_the_one_line_windows_are_measured_with_a_two_digit_count() -> None:
+    """세 그리드의 한 줄 문턱은 n 이 두 자리일 때 잰 값이다 — 한 자리로 잰 값이면 두 자리 n 에서
+    그 사이 6px 창마다 막대 끝 「전체 화면」 하나가 둘째 줄로 꺾인다(물음 보드 「정한 것」 11 리뷰 —
+    꺾이는 창을 새로 만들지 않는다)."""
+    windows = {
+        "reference": (reference_grid.ONE_LINE_MIN_WINDOW_PX, reference_grid.ACTION_ROW_RESERVE_PX),
+        **{
+            table: (layout.min_window_px, layout.reserve_px)
+            for table, layout in plan_grid.LAYOUTS.items()
+        },
+    }
+
+    gaps = {name: window - reserve for name, (window, reserve) in windows.items()}
+
+    assert set(gaps.values()) == {TWO_DIGIT_ONE_LINE_GAP_PX}, gaps

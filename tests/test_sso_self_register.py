@@ -663,6 +663,53 @@ def test_what_a_registration_rewrites_on_the_side_is_an_automatic_line(
     assert dropped["det"] == {"count": 1, "rev_from": 4, "rev_to": 5}
 
 
+def test_a_registration_drops_unreadable_entries_and_counts_them_without_the_audit_log(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """감사 기록기가 꺼진 서버에서도 — 스스로 등록이 다시 쓰며 못 읽은 항목은 파일에서 빠지고, 빠진
+    수가 파일의 고친 기록(`drop_unreadable n`)과 서버 사건(`access_self_registered` 의 `dropped`)에
+    남는다(물음 보드 「정한 것」 9). 사건에는 계정이 없다."""
+    store, endpoint = mock_s3
+    store.put(
+        OBJECT,
+        json.dumps(
+            {
+                "format": 1,
+                "revision": 4,
+                "users": [
+                    {"loginid": USER, "grade": GRADE_USER},
+                    {"loginid": "DOMAIN\\x"},
+                    "demo.flat",
+                ],
+            }
+        ).encode(),
+    )
+    store.put(names.ACCESS_SEEDED_OBJECT, b'{"format": 1}')
+    cfg = s3_config(store, endpoint)
+    access_store.read_at_start(cfg)
+    assert runtime.current_access(cfg).unreadable_count == 2
+
+    access_store.register_self(cfg, NEWCOMER)
+
+    saved = json.loads(store.objects[OBJECT].decode("utf-8"))
+    assert [item["loginid"] for item in saved["users"]] == [NEWCOMER, USER]
+    assert [item["what"] for item in saved["changes"]] == ["self_add", "drop_unreadable 2"]
+    assert runtime.current_access(cfg).unreadable_count == 0
+    (event,) = [item for item in runtime.recent_events() if item.event == "access_self_registered"]
+    assert event.value("dropped") == "2"
+    assert event.value("revision") == "5"
+    assert NEWCOMER not in " ".join(value for _key, value in event.fields)
+    # Admin 「최근 사건」 표의 사유 코드 칸은 고친 기록과 같은 이름이다 — C-DEP 에는 서버 로그
+    # 창구가 없다.
+    assert sso_status.recent_event_table()["사유 코드"].tolist()[0] == "drop_unreadable 2"
+
+    access_store.register_self(cfg, "demo.newcomer2")
+
+    latest = runtime.recent_events()[0]
+    assert (latest.event, latest.value("dropped")) == ("access_self_registered", "0")
+    assert sso_status.recent_event_table()["사유 코드"].tolist()[0] == "-"
+
+
 @pytest.mark.usefixtures("audit_on")
 def test_the_first_file_seeded_by_a_registration_is_an_automatic_line(
     mock_s3: tuple[MockStore, str],
