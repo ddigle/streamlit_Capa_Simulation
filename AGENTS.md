@@ -368,7 +368,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     글은 Guide · 풍선이고 빈 결과는 평문 한 줄이다. 닫힌 탭이면 부르지 않는다(카드도 서지 않는다). 감사 알림 `AD-12`(보관
     안 됨) · `AD-13`(14일 넘게 늦은 조각)은 앱 정보 카드 뒤 `sso_status.render_audit_alerts` 가 켜진 서버의 매 회차 갈래
     없이 두 자리를 쓰고 관리자 회차에만 세운다(꺼진 서버는 호출 0). 감사가 켜진 서버의 「통합인증 점검」 은 사람
-    단위 사건 표를 그리지 않고 누계 줄과 리뷰용 「복사」 만 남긴다(설계 AU19).
+    단위 사건 표(최근 사건 · 명단 밖 로그인)를 그리지 않고 그 둘은 누계 줄과 리뷰용 「복사」 글로만 남긴다(설계 AU19 —
+    로그인 전 실패 표 · 앱 시작 실패 줄은 그린다, 2026-11-14 보드 decided-login 5 · boot-record).
   - `components/audit_actor.py` — 감사 기록의 앱 쪽. 스크립트 스레드 행위자 해석기(`resolve` — 쿠키를 **지금** 다시 검증한
     `sso_identity.verified_identity`, 실행 문맥이 없으면 `None`), 세션 첫 회차의 `session_created`(`note_session` — `sid8` ·
     `tab8` = Streamlit 세션 id 의 SHA-256 앞 8자), 부트스트랩 뒤 비우기(`drain`). `app.py` 는 신원이 있는 회차(통합인증 켜짐)에만
@@ -424,6 +425,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     꺼짐이면 재시작 갈래만(`restart_script` — 물음은 지금 경로의 폴더 기준)이라 꺼짐 툴바 iframe 에도 스크립트 하나가 실린다. IdP 로 저절로 보내지 않는다
     (로그아웃을 조용히 되돌리지 않게). 띠 색은 두 팔레트(`band_styles`)를 함께 싣고 띠를 세우는 순간 `capaTheme` 으로 앱 테마를
     골라 칠하며, 양옆 12px 안에서 내용 폭으로 가운데 선다(`left`/`right` 12px + `margin-inline:auto` + `width:fit-content`).
+    띠 글은 앱 밖 공통 틀 글처럼 띄어쓰기에서만 줄을 바꾸고(`word-break: keep-all`) 띄어쓰기 없는 긴 메일 · 주소만 접는다
+    (`overflow-wrap: anywhere` — 390 창에서 낱말이 가운데서 갈리던 것, 2026-11-14 보드 english 리뷰).
     바깥 화면(거절 · 로그아웃 — 공통 틀)의 보조 링크는 강조 토큰 색이다(`auth/page_frame.py`). 시험은 `tests/test_sso_reconnect.py`(판정 구획 node).
   - `components/sso_refresh.py` — 앱 화면의 사람 입력(누름 · 키 · 휠 · 터치, `isTrusted`)이 있고 직전 갱신 뒤 5분이 지났을 때만
     `POST /auth/sso/refresh`. 타이머 없음 · 로그아웃 링크 제외 · 부모 창에 차례 상태. 통합인증이 켜진 서버만 툴바 iframe 에 싣는다.
