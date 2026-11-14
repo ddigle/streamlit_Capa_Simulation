@@ -2446,14 +2446,14 @@ def test_the_monday_1114_board_answers_are_recorded() -> None:
     """v1.27 — 6-27 은 「월요일 배포 앞」 물음 보드 카드 아홉이 보드 차례대로이고, 정한 것
     두 장은 점마다 한 줄이라 스물아홉 줄이다. 고른 글은 선택지 라벨(정한 것은 「좋음」)이고
     모두 카드 권장 · 메모 없음이다. 고친 줄만 커밋을 든다. 끝 표는 보드에 올리지 않고 구현이
-    정한 다섯 줄이다. 6-26 줄은 그때 기록 그대로다(앞 시험이 6-27 앞에서 끊어 본다)."""
+    정한 다섯 줄이다. 6-26 줄은 그때 기록 그대로다(앞 시험이 6-27 앞에서 끊어 본다). 6-28 은 뒤
+    시험이 본다."""
     document = _text()
-    assert "판 v1.27" in document.split("\n## 1. ")[0]
     assert "- **v1.27 — 2026-11-14.**" in _chapter(document, 8)
     assert "6-27 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-27. ") :]
+    board = section[section.index("\n### 6-27. ") : section.index("\n### 6-28. ")]
     assert MONDAY_1114_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -2488,3 +2488,44 @@ def test_the_monday_1114_board_answers_are_recorded() -> None:
     for _, _, rules in rows:
         cited = RULE_TOKEN.findall(rules)
         assert cited and set(cited) <= known, rules
+
+
+# 2026-11-15 다섯 사람 E2E 1바퀴 고침이 앞 답(6-11 b2 · 6-27 english)을 넓혀 읽은 것(6-28) — 보드
+# 답이 아니라 기록이고 사용자 확인은 그림 보드로 받는다. 줄 id 와 그 줄이 드는 커밋.
+WIDENED_1115_LINES = {"band-connecting": ("946025e",)}
+
+
+def test_the_widened_1115_readings_are_recorded() -> None:
+    """v1.28 — 6-28 은 E2E 고침이 앞 답을 넓혀 읽은 기록 한 줄이고, 줄마다 커밋 · 「답 밖 — 구현이
+    정함」 · 그림 보드 확인을 든다. 넓힌 뜻은 UI-LAY-05 그물 줄(머리 CONNECTING 과 그 시험)에도
+    섰다. 앞 절 줄은 그때 기록 그대로다(앞 시험이 6-28 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.28" in document.split("\n## 1. ")[0]
+    assert "- **v1.28 — 2026-11-15.**" in _chapter(document, 8)
+    assert "6-28 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-28. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-15) · ([^()]+)\)$", line)
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        assert "답 밖 — 구현이 정함" in line and "그림 보드" in line, line
+        for sha in WIDENED_1115_LINES[match.group(1)]:
+            assert f"`{sha}`" in line, (line, sha)
+    assert tuple(found) == tuple(WIDENED_1115_LINES)
+    band = lines[0]
+    assert "6-11 b2" in band and "6-27 english" in band
+    assert "UI-LAY-05" in band
+
+    net = {rule.id: rule for rule in _rules()}["UI-LAY-05"].fields["그물"][0]
+    assert "영어 연결 오류 창 · 머리 CONNECTING 감춤" in net
+    assert (
+        "tests/test_sso_reconnect.py::"
+        "test_a_standing_band_also_hides_the_header_connecting_status_and_gives_it_back" in net
+    )
