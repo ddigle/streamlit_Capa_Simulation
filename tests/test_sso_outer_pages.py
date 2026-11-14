@@ -12,7 +12,7 @@ from __future__ import annotations
 import html
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import pytest
@@ -269,8 +269,9 @@ def test_lingering_on_the_portal_reads_as_time_passed_not_as_cookies(
 
 
 def test_a_failure_event_carries_the_diagnostic_reference_for_the_admin() -> None:
-    """바닥 참고 줄의 「진단 <번호>」 를 받은 관리자가 Admin 「통합인증 점검」 의 사건 줄에서 같은
-    번호를 찾는다 — 사건에는 앞 여덟 글자만(번호 전체는 10분 동안 진단을 다시 여는 주소 값)."""
+    """바닥 참고 줄의 「진단 <번호>」 를 받은 관리자가 Admin 「통합인증 점검」 의 사건 줄(통합인증이
+    켜진 서버는 펼침의 「복사」 글)에서 같은 번호를 찾는다 — 사건에는 앞 여덟 글자만(번호 전체는
+    10분 동안 진단을 다시 여는 주소 값)."""
     cfg = use_config()
     app = routes_app()
     jar: dict[str, str] = {}
@@ -287,6 +288,11 @@ def test_a_failure_event_carries_the_diagnostic_reference_for_the_admin() -> Non
     assert full not in str(event.fields)
     rows = sso_status.recent_event_table(anonymous=True)
     assert list(rows["사유 코드"]) == [f"{web.NO_COOKIES} · 진단 {full[:8]}"]
+    copied = sso_status.status_text("통합인증 점검", cfg, now=datetime.now(timezone.utc))
+    assert f"\t{web.NO_COOKIES} · 진단 {full[:8]}\t" in copied, (
+        "감사 기록이 켜진 서버는 복사 글에서 찾는다"
+    )
+    assert full not in copied
 
 
 @pytest.mark.parametrize(

@@ -386,7 +386,8 @@ def _event_code(fields: dict[str, str]) -> str:
     만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
     로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다. 로그인
     실패(`login_fail`)는 진단 번호의 앞 글자 `diag` 를 「진단 …」 으로 붙인다 — 실패 화면 바닥 참고
-    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다.
+    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(감사 기록이 켜진 서버는 펼침에 표를
+    그리지 않아 「복사」 글 `status_text` 의 표에서).
     """
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
