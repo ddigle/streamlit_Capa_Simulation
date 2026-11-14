@@ -602,3 +602,70 @@ def test_the_real_app_stops_on_the_panel_and_retries_into_home(real_app: AppTest
     assert "Capa LOB Summary" in [item.value for item in app.title], "HOME 이 섰다"
     # 데이터를 연 회차가 이어짐을 끊었다 — 같은 잠김이 다시 나면 새 줄이다.
     assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+
+def _store_without_official(path: Path) -> None:
+    """공식버전이 없는 저장소 — 사용자 시나리오 하나(발행 안 함). 부트스트랩은 열고 시드를 올리지
+    않는다(`existing_without_official`)."""
+    from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import (
+        BUILTIN_SEED_MONTHS,
+        build_builtin_seed_dataset,
+        builtin_seed_processes,
+    )
+
+    repository = DuckDBScenarioRepository(path)
+    repository.initialize()
+    prepared = build_builtin_seed_dataset()
+    repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="데모 사용자 시나리오",
+            source_simulation_code="DEMO-USER-001",
+            source_simulation_name="데모 원천",
+            source_type="TEST",
+            pipeline_version="test-v1",
+        ),
+        prepared.reference_tables,
+        ScenarioPreset(
+            min(BUILTIN_SEED_MONTHS), max(BUILTIN_SEED_MONTHS), builtin_seed_processes()
+        ),
+        source_data=prepared.source_data,
+    )
+    assert repository.latest_official_release() is None
+
+
+def test_opening_a_store_without_an_official_also_ends_the_run(
+    real_app: AppTest, tmp_path: Path
+) -> None:
+    """공식버전이 없는 저장소(빈 운영 서버 · 발행 전 저장소)도 연 회차가 이어짐을 끊는다 —
+    부트스트랩이 공식을 올리지 못해 거짓을 돌려줘도 저장소는 열렸다. 끊지 않으면 몇 시간 뒤 같은
+    잠김이 다시 나도 최근 사건에 새 줄이 남지 않는다."""
+    _store_without_official(tmp_path / "scenario.duckdb")
+
+    app = real_app.run()
+    assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")]
+
+    app = app.button(key=boot_stop.RETRY_KEY).click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert boot_stop.HELD_LINE not in [item.value for item in app.error]
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")] * 2
+
+
+def test_a_rerun_of_a_loaded_session_does_not_end_the_run(real_app: AppTest) -> None:
+    """이미 올라온 세션의 회차는 저장소를 열지 않는다 — 이어짐을 끊지 않아, 이 탭이 도는 동안 다른
+    탭이 같은 잠김으로 거듭 막혀도 최근 사건에 줄이 쌓이지 않는다."""
+    app = real_app.run()
+    app = app.button(key=boot_stop.RETRY_KEY).click().run()
+    assert boot_stop.HELD_LINE not in [item.value for item in app.error]
+    # 다른 탭이 같은 잠김으로 막혔다(이어짐이 새로 선다).
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+    app = app.run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert not runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")] * 2

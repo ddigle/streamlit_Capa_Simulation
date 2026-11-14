@@ -110,6 +110,7 @@ from capa_simulation.persistence._sql_helpers import pinned_connections
 from capa_simulation.persistence.cache import get_scenario_repository
 from capa_simulation.process_detail_state import PROCESS_DETAIL_CANVAS_CHART_KEY
 from capa_simulation.scenario_activation import (
+    OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY,
     bootstrap_latest_official_scenario,
     check_active_scenario_latest,
     has_unsaved_scenario_changes,
@@ -317,9 +318,14 @@ heartbeat_if_managed()
 # DB 를 한 번도 읽지 않는 회차(캐시만 쓰는 화면의 재실행)는 인스턴스를 열지 않는다.
 with pinned_connections(DUCKDB_PATH):
     try:
-        # 데이터를 열어 공식 시나리오를 올린 회차면 앱 시작 실패의 이어짐을 끊는다(최근 사건 고리에
-        # 같은 갈래를 다시 남길 수 있게 — `components/boot_stop.py`).
-        if bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve())):
+        # 부트스트랩이 이 회차에 저장소를 열고 끝냈으면 앱 시작 실패의 이어짐을 끊는다(최근
+        # 사건 고리에 같은 갈래를 다시 남길 수 있게 — `components/boot_stop.py`). 공식버전이
+        # 없는 저장소도 연 것이다 — 「해 봤다」 표지는 공식을 올렸든 없든 저장소를 연 회차에만
+        # 새로 선다. 이미 올라온 세션 · 해 본 세션의 회차는 저장소를 열지 않아 끊지 않는다(다른
+        # 탭이 아직 막혀 있어도 줄이 쌓이지 않게).
+        attempted = st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True
+        bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
+        if not attempted and st.session_state.get(OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY) is True:
             note_boot_success()
     except Exception as exc:  # 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
         # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면 화면이 한
