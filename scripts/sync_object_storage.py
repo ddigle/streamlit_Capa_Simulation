@@ -36,7 +36,8 @@
 작성자는 `<작성자>` 다. 원값을 보는 옵션은 없다 — 값은 C-DEP 환경변수 표와 사용자 창의 변수에만
 있다. 내 PC 경로(받은 폴더 · 백업 · 「로컬 DB 가 없습니다」 · 진단 글의 파일 인자 · `probe --write`
 의 기록 파일)의 홈 폴더 앞부분은 `%USERPROFILE%` 로 찍는다(리뷰에 옮길 때 계정 이름이 나가지 않게
-— 여닫는 경로 값은 그대로다).
+— 여닫는 경로 값은 그대로다). 표준 오류도 같다 — 도는 동안 어느 모듈의 로거 글이든
+(`_masked_logging`), 잡지 못한 예외의 트레이스백도(`_masked_excepthook`) 같은 가림을 지난다.
 
 **정본을 바꾸는 손 동작은 감사 조각을 남긴다.** `rollback` · `init` · `fetch-copy` · `prune` 은 끝에
 그 버킷의 `audit/v1/tool/…` 에 한 줄짜리 조각을 새로 올린다(`audit/tool.py` — 행위자는 OS 사용자,
@@ -48,15 +49,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
 import tempfile
+import traceback
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import TracebackType
 from urllib.parse import urlsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -288,6 +293,35 @@ def masked(text: str) -> str:
 
 def _stop_line(error: BaseException) -> str:
     return f"[중단] {masked(str(error))}"
+
+
+class _MaskedLogHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """로거 글을 표준 오류로 — 형식을 마친 글(트레이스백까지)이 `masked()` 를 지난다."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return masked(super().format(record))
+
+
+@contextmanager
+def _masked_logging() -> Iterator[None]:
+    """명령이 도는 동안 뿌리 로거에 가리는 처리기를 단다. 이 프로세스의 다른 모듈(감사 조각 ·
+    사이드카 · 엔진)의 로거 글도 뿌리까지 올라오므로 이 길을 지난다 — 처리기가 없으면 Python 이
+    가림 없이 표준 오류에 찍는다(`logging.lastResort`)."""
+    handler = _MaskedLogHandler(sys.stderr)
+    handler.setLevel(logging.WARNING)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        yield
+    finally:
+        root.removeHandler(handler)
+
+
+def _masked_excepthook(
+    kind: type[BaseException], error: BaseException, trace: TracebackType | None
+) -> None:
+    """잡지 못한 예외(코드 결함)도 트레이스백 · 종료 1 그대로 끝나되 그 글은 가림을 지난다."""
+    sys.stderr.write(masked("".join(traceback.format_exception(kind, error, trace))))
 
 
 def _load_redaction(args: argparse.Namespace) -> None:
@@ -1142,7 +1176,8 @@ def main(argv: list[str] | None = None) -> int:
     _use_utf8_output()
     args = parse_args(argv)
     _SUMMARY.reset()
-    code = _run_command(args)
+    with _masked_logging():
+        code = _run_command(args)
     if args.command not in NO_SUMMARY:
         print(summary_line(args.command, code))
     return code
@@ -1185,4 +1220,5 @@ def _run_command(args: argparse.Namespace) -> int:
 
 
 if __name__ == "__main__":
+    sys.excepthook = _masked_excepthook
     sys.exit(main())
