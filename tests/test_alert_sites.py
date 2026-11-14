@@ -36,6 +36,9 @@ from capa_simulation.navigation import ALL_SPECS
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # 경고를 직접 그려도 되는 두 모듈 — 알림의 한 길이다.
 OWNERS = ("src/capa_simulation/components/flash.py", "src/capa_simulation/alerts.py")
+# 상태 알림을 내는 이름 — 그리는 `state` 와 표지만 짓는 `state_note`(「데이터 Error」 마크 칸 · 알림
+# 칸 data 에 싣는 자리).
+STATE_CALLS = frozenset({"state", "state_note"})
 _LOGGERS = frozenset({"logger", "logging", "log", "LOGGER", "_LOG", "_LOGGER", "warnings"})
 
 PLACE_FORM = "자리 글 — 팝업 · 폼 안 검증. 고칠 입력이 그 자리에 있다(알림창 · 기록 없음, 설계 2-2)"
@@ -199,18 +202,16 @@ NAMED_WITHOUT_GOTO: dict[tuple[str, str], str] = {
         "src/capa_simulation/components/required_exclusion_notice.py",
         "alert_capacity_exclusions",
     ): LIST_HERE,
-    ("src/capa_simulation/components/scenario_management.py", "_report_missing_official"): (
-        SAME_SCREEN
-    ),
 }
 
 
 def state_alerts_naming_a_screen_without_goto() -> set[tuple[str, str]]:
-    """상태 알림(`alerts.state`) 가운데 짧은 글 · 전문이 화면 이름을 말하고 `goto` 가 없는 자리."""
+    """상태 알림(`alerts.state` · 표지만 짓는 `alerts.state_note`) 가운데 짧은 글 · 전문이 화면
+    이름을 말하고 `goto` 가 없는 자리."""
     resolver = TextResolver()
     found: set[tuple[str, str]] = set()
     for relative, outer, path, scope, call in screen_calls(screen_files(exclude=OWNERS)):
-        if called_name(call) != "state" or receiver(call) != "alerts":
+        if called_name(call) not in STATE_CALLS or receiver(call) != "alerts":
             continue
         keywords = {item.arg: item.value for item in call.keywords}
         if "goto" in keywords:
@@ -268,7 +269,8 @@ def test_every_allowed_site_says_why() -> None:
 
 
 def _alert_text_strings() -> list[tuple[str, int, str]]:
-    """`alerts.state(...)` 의 `text` · `full` 인자에 든 문자열 조각을 (파일, 줄, 글)로 모은다."""
+    """`alerts.state(...)` · `alerts.state_note(...)` 의 `text` · `full` 인자에 든 문자열 조각을
+    (파일, 줄, 글)로 모은다."""
     found: list[tuple[str, int, str]] = []
     for path in sorted((PROJECT_ROOT / "src").rglob("*.py")) + sorted(
         (PROJECT_ROOT / "app_pages").rglob("*.py")
@@ -276,7 +278,7 @@ def _alert_text_strings() -> list[tuple[str, int, str]]:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
                 continue
-            if node.func.attr != "state":
+            if node.func.attr not in STATE_CALLS:
                 continue
             for keyword in node.keywords:
                 if keyword.arg not in {"text", "full"}:

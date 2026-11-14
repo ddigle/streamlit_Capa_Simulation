@@ -30,6 +30,7 @@ InitialScenarioBootstrapStatus = Literal[
     "created_builtin_seed",
     "repaired_builtin_seed",
     "existing_without_official",
+    "empty_without_seed",
 ]
 
 
@@ -43,9 +44,14 @@ _BOOTSTRAP_LOCK = threading.RLock()
 
 
 def ensure_initial_scenario(
-    repository: DuckDBScenarioRepository,
+    repository: DuckDBScenarioRepository, *, seed: bool = True
 ) -> InitialScenarioBootstrap:
-    """Create and publish the built-in seed only when the scenario store is empty."""
+    """Create and publish the built-in seed only when the scenario store is empty.
+
+    `seed` 가 거짓이면(운영 서버 — `scenario_activation.builtin_seed_allowed`) 시드를 만들지도,
+    발행 전에 멈춘 시드를 발행하지도 않는다 — 합성 견본이 「공식 v1」 이 되는 두 길을 함께 닫는다.
+    빈 저장소는 공식버전 없이 남는다(`empty_without_seed` — 2026-11-14 물음 보드 seed (nopub)).
+    """
     with _BOOTSTRAP_LOCK:
         release = repository.latest_official_release()
         if release is not None:
@@ -53,6 +59,11 @@ def ensure_initial_scenario(
 
         # 보관본만 남아도 빈 저장소가 아니다 — 보관본을 빼고 세면 그 위에 데모가 공식으로 선다.
         scenarios = repository.list_scenarios(include_archived=True)
+        if not seed:
+            status: InitialScenarioBootstrapStatus = (
+                "existing_without_official" if scenarios else "empty_without_seed"
+            )
+            return InitialScenarioBootstrap(status, None)
         # 발행 전에 멈춘 시드는 저장소에 그것 하나뿐이다. 곁에 다른 시나리오가 있으면 보관에서
         # 되돌린 시드이고, 발행하면 공식은 지울 수 없으니 데모가 공식 자리를 차지한다.
         lone_scenario = scenarios[0] if len(scenarios) == 1 else None

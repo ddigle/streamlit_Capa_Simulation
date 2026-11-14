@@ -257,34 +257,65 @@ def test_a_mark_whose_input_lives_on_another_screen_sends_the_alarm_there() -> N
     assert note["keep"] is True
 
 
-def test_a_missing_official_is_a_grey_line_and_a_check_alert_to_the_scenario_screen() -> None:
-    """불러온 리비전이 없는 빈 상태는 마크가 아니라 회색 한 줄이고, 알림은 확인 단계 · 「그
-    화면으로」 시나리오 관리 › Capa 시나리오다 — 화면이 머리를 붙였어도 같다(카드
-    p1-no-revision)."""
+def _empty_state_script(constant: str) -> str:
+    """머리를 붙인 빈 상태 글(`page_bootstrap` 의 그 상수)로 마크를 부르는 화면."""
     script = PAGE.replace(
         'st.session_state.get(\n    "message",',
         'st.session_state.get(\n    "message_unused",',
     )
     script = script.replace(
         "render_data_error(message,",
-        "from capa_simulation.page_bootstrap import NO_OFFICIAL_MESSAGE\n"
-        "render_data_error('기준정보를 불러오지 못했습니다: ' + NO_OFFICIAL_MESSAGE,",
+        f"from capa_simulation.page_bootstrap import {constant}\n"
+        f"render_data_error('기준정보를 불러오지 못했습니다: ' + {constant},",
     )
     assert script != PAGE
-    app = AppTest.from_string(script).run()
+    return script
+
+
+@pytest.mark.parametrize(
+    ("constant", "missing", "tab"),
+    [("NO_OFFICIAL_MESSAGE", "none", "Capa 시나리오"), ("EMPTY_STORE_MESSAGE", "empty", "DB 등록")],
+    ids=["listed", "empty_store"],
+)
+def test_a_missing_official_is_a_grey_line_and_the_one_missing_official_alert(
+    constant: str, missing: page_bootstrap.MissingOfficial, tab: str
+) -> None:
+    """불러온 리비전이 없는 빈 상태는 마크가 아니라 회색 한 줄이고, 공식버전이 없으면 알림은 그
+    화면 코드의 사건 알림이 아니라 공식버전 없음 상태 알림 `SC-01` 하나다(확인 단계 · 「그
+    화면으로」 시나리오 관리 › Capa 시나리오) — 화면이 머리를 붙였어도 같다(카드 p1-no-revision ·
+    2026-11-14 물음 보드 decided 5). 시나리오가 하나도 없는 저장소는 회색 줄은 같고 알림이 그
+    갈래(「그 화면으로」 시나리오 관리 › DB 등록)다(물음 보드 seed (nopub))."""
+    app = AppTest.from_string(_empty_state_script(constant)).run()
     assert not app.exception
     assert data_error_marks(app) == 0
     bodies = [str(element.proto.body) for element in app._tree.get("html")]
     assert any(EMPTY_CLASS in body and "공식버전 없음" in body for body in bodies)
     (note,) = alert_notes(app)
-    assert (note["code"], note["level"], note["kind"]) == ("ST-20", "check", "event")
-    assert note["short"] == "공식버전 없음 — 시나리오 관리에서 발행"
+    assert (note["code"], note["level"], note["kind"], note["active"]) == (
+        "SC-01",
+        "check",
+        "state",
+        True,
+    )
+    assert note == page_bootstrap.missing_official_note(missing)
     assert (note["page"], note["href"], note["tab"]) == (
         "시나리오 관리",
         "scenario_management",
-        "Capa 시나리오",
+        tab,
     )
+
+
+def test_a_screen_that_has_not_loaded_the_official_keeps_its_own_check_alert() -> None:
+    """공식버전은 있는데 이 세션이 안 불러온 빈 상태는 공식버전 없음이 아니다 — 그 화면 코드의 확인
+    단계 사건 알림(「새로고침하면 공식버전을 엶」)이고 「그 화면으로」 는 없다."""
+    app = AppTest.from_string(_empty_state_script("NOT_LOADED_MESSAGE")).run()
+    assert not app.exception
+    assert data_error_marks(app) == 0
+    (note,) = alert_notes(app)
+    assert (note["code"], note["level"], note["kind"]) == ("ST-20", "check", "event")
+    assert note["short"] == "불러온 시나리오 없음 — 새로고침하면 공식버전을 엶"
     assert note["cause"] == EMPTY_CAUSE
+    assert "tab" not in note
 
 
 @pytest.mark.parametrize(

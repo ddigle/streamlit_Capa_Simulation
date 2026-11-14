@@ -4823,6 +4823,10 @@
 
 ### 데이터·DB
 
+- (2026-11-14) **운영 서버는 빈 저장소에 내장 합성 시드를 「공식 v1」 로 올리지 않는다**(물음 보드 seed (nopub)). 판정은 Admin Area 잠금과 같은
+  `SsoConfig.operational`(`scenario_activation.builtin_seed_allowed`)이고, 만들기와 발행 전에 멈춘 시드의 발행 복구를 함께 닫는다
+  (`application_bootstrap.ensure_initial_scenario(seed=False)` → `empty_without_seed`). 빈 운영 서버는 「공식버전 없음」 으로 서고 관리자가
+  데이터를 올리면(정본 받기 · DB 등록 뒤 공식 지정) 공식이 선다. 개발 `app.py` · 사내 WebIDE · 사내 PC 는 지금처럼 시드로 시작한다.
 - (2026-11-10) **선행 B/O · Past Data · 선행 입고 실적은 공용 프로필로 둔다**(다-3 ④ — 2026-09 「안정화되면 리비전으로 옮긴다」 방침을 거둠,
   규칙집 7-1) — 선행 B/O(`0018`) · Past Data(`0019`) · 선행 입고 실적(`0031`).
 - (2026-11-10) **입력 비가동 대수 설비 시나리오별 — 다-2 답**: ① 일정 리비전에 실음 ② 복제 · 발행 때 따라감 ③ 모든 시나리오에 복사 ④ 주차별에서는

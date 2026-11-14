@@ -775,6 +775,47 @@ def state(
     화면 대신 그 화면이다(두 화면이 같은 조건을 내면 어느 화면이 먼저 내도 줄이 같다 — 일정 없는
     호기 `EQ-04`). 자리에는 아무것도 그리지 않는다(D2 (나)).
     """
+    emit(
+        [
+            state_note(
+                code,
+                scope=scope,
+                content=content,
+                active=active,
+                text=text,
+                full=full,
+                level=level,
+                scope_label=scope_label,
+                cause=cause,
+                detail=detail,
+                tab=tab,
+                tables=tables,
+                goto=goto,
+                target=target,
+            )
+        ]
+    )
+
+
+def state_note(
+    code: str,
+    *,
+    scope: object,
+    content: object,
+    active: bool,
+    text: str | None = None,
+    full: str | None = None,
+    level: Level | None = None,
+    scope_label: str = "",
+    cause: str = "",
+    detail: str = "",
+    tab: str = "",
+    tables: Sequence[AlertTable | None] = (),
+    goto: tuple[str, str] | None = None,
+    target: GotoTarget | None = None,
+) -> AlertNote:
+    """상태 알림 표지 한 칸(그리지 않는다) — 인자는 `state` 와 같다. 이벤트 칸을 쓰지 않는
+    자리(「데이터 Error」 마크 칸의 숨은 표지 · 알림 칸 data)가 상태 알림을 실을 때 쓴다."""
     note = _base(code, level, text, full)
     if goto is not None:
         note["page"], note["href"] = goto
@@ -795,7 +836,7 @@ def state(
         note["tables"] = carried
     if active and target is not None:
         note["target"] = target
-    emit([note])
+    return note
 
 
 def flush() -> None:

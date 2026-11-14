@@ -93,6 +93,7 @@ from capa_simulation.page_bootstrap import (
     load_page_context,
     resolve_effective_months,
     stop_calculation_on_error,
+    stopped_field_value,
 )
 from capa_simulation.persistence.cache import load_global_securement_threshold
 from capa_simulation.scenario_state import scenario_month_table
@@ -263,15 +264,15 @@ try:
     # HOME·Static Capa 와 같은 기준을 읽는다 — 같은 확보율이 화면마다 다른 색으로 보이면 안 된다.
     threshold_profile = load_global_securement_threshold(str(DUCKDB_PATH.resolve()))
 except BOOTSTRAP_ERRORS as exc:
-    # 패널의 공정 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
-    # 회차마다 흔들리지 않게 한다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
-    render_stopped_process_field()
     # 원인 하나의 마크를 세 탭에 같이 세우고, 글은 탭 밖에서 알림으로 한 번 보낸다. 불러온 리비전이
     # 없는 빈 상태면 마크 대신 회색 한 줄이다(같은 글로 가른다).
     stop = calculation_stop_notice(exc, labels=process_labels)
     stop_message = (
         bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message
     )
+    # 패널의 공정 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를 지켜 패널 높이가
+    # 회차마다 흔들리지 않게 한다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
+    render_stopped_process_field(stopped_field_value(stop_message))
     for error_tab in (unit_capacity_tab, required_tab, availability_tab):
         with error_tab:
             render_data_error_mark(stop_message)

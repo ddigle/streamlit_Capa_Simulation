@@ -18,11 +18,14 @@ Cut-off — `goto` 로 Alarm 줄의 「그 화면으로」 가 그 화면(셋째
 서지 못해 알림 칸이 없는 부트스트랩 실패(`app.py` — 그때는 볼 `Alarm` 이 없다).
 
 **불러온 리비전이 없는 회차는 빈 상태다.** 이 함수들이 받은 글이 `page_bootstrap.empty_state` 의 글
-(공식버전 없음 · 보관본만 · 안 불러옴 — 화면이 머리를 붙였어도)이면 마크 대신 회색 한 줄(「공식버전
-없음」)을 세우고, 글은 그 화면 코드의 **확인 단계** 사건 알림(「공식버전 없음 — 시나리오 관리에서
-발행」 · 「그 화면으로」 시나리오 관리 › Capa 시나리오)으로 보낸다. 상태 알림 `SC-01` 을 함께 쓰지
-않는 것은 계산 화면이 정상 회차에 해소를 낼 자리가 없어서다 — 발행한 뒤에도 Alarm 줄이 「지금도
-있음」 으로 남는다.
+(공식버전 없음 · 시나리오 없음 · 보관본만 · 안 불러옴 — 화면이 머리를 붙였어도)이면 마크 대신
+회색 한 줄(「공식버전 없음」)을 세운다. 공식버전이 없는 세 갈래(없음 · 시나리오 없음 · 보관본만)의
+알림은 화면마다 따로 내지 않고 상태 알림 `SC-01` 하나다(`page_bootstrap.missing_official_note` —
+시나리오 관리 「Capa 시나리오」 탭과 같은 표지라 어느 화면을 돌아도 Alarm 줄 하나 · 알림창 한 번,
+2026-11-14 물음 보드 decided 5). 해소는
+공식버전이 있다고 확인한 회차의 알림 칸이 낸다(`alert_center`). 공식은 있는데 이 세션이 안 불러온
+갈래만 그 화면 코드의 **확인 단계** 사건 알림(「불러온 시나리오 없음 — 새로고침하면 공식버전을
+엶」)이다.
 
 **알림 짧은 글 꼴.** 사람이 고칠 수 없는 DB 실패(`page_bootstrap.screen_error_short`)는 「… —
 관리자에게 알려 주세요」 로 끝나고, 사용자가 고칠 원인인데 부르는 쪽이 고칠 화면을 주지 않은 경로 ·
@@ -98,21 +101,21 @@ def empty_state_html(line: str) -> str:
 def _empty_state_note(
     message: str, state: page_bootstrap.EmptyState, *, code: str
 ) -> alerts.AlertNote:
-    """빈 상태의 확인 단계 사건 알림 — 같은 코드 + 같은 글이면 같은 id 라 이 탭에 한 번 뜬다."""
+    """빈 상태의 알림 — 공식버전이 없으면 상태 알림 `SC-01` 하나(어느 화면이든 같은 표지), 공식은
+    있는데 안 불러왔으면 그 화면의 확인 단계 사건 알림(같은 코드 + 같은 글이면 같은 id 라 이 탭에 한
+    번 뜬다)."""
+    if state.missing is not None:
+        return page_bootstrap.missing_official_note(state.missing)
     plain = alerts.plain_text(message)
-    note = alerts.event_note(
+    return alerts.event_note(
         code,
         text=state.text,
         full=plain,
         level="check",
         cause=EMPTY_CAUSE,
         alert_id="empty-" + alerts.fingerprint(code, None, plain),
-        tab=state.goto[2] if state.goto is not None else "",
         keep=True,
     )
-    if state.goto is not None:
-        note["page"], note["href"] = state.goto[0], state.goto[1]
-    return note
 
 
 def data_error_note(
@@ -126,9 +129,10 @@ def data_error_note(
     """오류 글의 사건 알림 표지 한 칸(`alerts.page_error_note`) — `goto` 셋째 칸을 `tab` 으로 푼다.
     그 칸이 있으면 줄의 화면 칸이 「화면 › 표」 이고 「그 화면으로」 가 그 표까지 연다.
 
-    빈 상태 글이면 확인 단계 알림(`_empty_state_note`)이고, `text` · `goto` 를 주지 않았으면 짧은
-    글 · 고칠 곳을 글에서 고른다(`page_bootstrap.screen_error_short` · `screen_error_goto`). 사람이
-    고칠 수 없는 DB 실패의 전문은 관리자 몫이 아니면 걷는다(`screen_error_public`)."""
+    빈 상태 글이면 그 알림(`_empty_state_note` — 공식버전이 없으면 `SC-01`)이고, `text` ·
+    `goto` 를 주지 않았으면 짧은 글 · 고칠 곳을 글에서 고른다(`page_bootstrap.screen_error_short`
+    · `screen_error_goto`). 사람이 고칠 수 없는 DB 실패의 전문은 관리자 몫이 아니면
+    걷는다(`screen_error_public`)."""
     state = page_bootstrap.empty_state(message)
     if state is not None:
         return _empty_state_note(message, state, code=code)

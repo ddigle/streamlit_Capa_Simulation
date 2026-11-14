@@ -69,7 +69,9 @@ XLSB를 읽지 않는다. `templates/structure_template.xlsb`는 초기 표시�
 
 GitHub 소스만 있는 빈 환경에서는 `config/bootstrap_display_order.json`과 코드로 생성한
 비민감 `DEMO_*` Core Data를 공통 변환 파이프라인에 넣어 초기 시나리오·리비전·공식버전을
-자동 생성한다. 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
+자동 생성한다. 운영 서버(`SsoConfig.operational` — Admin Area 잠금과 같은 판정)에서는 빈 저장소에도
+만들지 않아 「공식버전 없음」 으로 서고, 관리자가 데이터를 올리면 공식이 선다(2026-11-14 물음 보드
+seed (nopub)). 기존 시나리오나 공식버전은 자동 시드가 변경하지 않으며 내장 시드는 운영
 기준정보가 아니다. 실제 표시순서는 시나리오와 분리된 공용 DB 프로필이며, 선택적 로컬
 `data/input/RQ_DISPLAY_ORDER.csv` 또는 웹 Excel 표 붙여넣기로 초기화할 수 있다.
 
@@ -1174,6 +1176,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바로 선다. 옛 세션의 작업 이름은 위젯 앞에서 버린다. 지금 올라와 있는 리비전과 공식 표지는 사이드바 시나리오 칸 · 머리 띠, 최신
     공식은 목록 표 `공식버전` 칸 · 오른쪽 「공식 이력」 이 말한다. 공식버전 없음은 상태 알림 `SC-01` — 활성 시나리오가 0건이고
     보관본만 있으면 글을 갈라 보관함 › 「되돌리기」 를 가리킨다(내용 값 `archived_only` — 검수 보드 st-sc01, 작은 결정 a8 과 같은 꼴).
+    시나리오가 하나도 없으면(보관본도 없음 — 빈 디스크로 뜬 운영 서버) 글을 갈라 「DB 등록」 을 가리키고 「그 화면으로」 가 그 탭을
+    연다(내용 값 `empty` — 2026-11-14 물음 보드 seed (nopub), 계산 화면의 `no_revision_message` 와 같은 판정).
+    표지는 불러온 리비전 없이 멈춘 계산 화면과 한 벌(`page_bootstrap.missing_official_note`)이라 어느 화면이 내도 Alarm 줄 하나 ·
+    알림창 한 번이고, 해소는 공식버전을 확인한 회차의 알림 칸 data 가 낸다(2026-11-14 물음 보드 decided 5).
   - 목록 관리는 안 3(2026-11-06 사용자 결정 — 옛 C안의 편집표 둘 · 카드를 대신한다)이다 — 설비 마스터와 같은 두 칸 틀(`components/side_panel.py`) 안 왼쪽 시나리오
     표(브라우저 표 `components/scenario_list_grid.py` — 손잡이 · 순서 · 시나리오명 · 최신 · 공식버전 · 최근 수정), 오른쪽 칸 「상세 · 점검 · 저장 전 변경 · 공식 이력 · 보관함」(점검은 `components/scenario_input_check.py`).
     상세는 리비전 표(r · 리비전명 · 상태)가 맨 위에 서서 머리가 왼쪽 표 머리와 윗선이 같고(사용자 요청 2026-11-07), 그 아래 연 시나리오의 제목 · 원천 코드 · 최근 수정과 고른 리비전의 값 줄(메모 · 저장일 · 부모 — 같은 마운트가 그려 줄을 누르면 회차 전에 바뀐다), 「선택한 리비전 불러오기」 ·
@@ -1913,6 +1919,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 보관본도 사용자 시나리오다 — 공식 없이 보관본만 남은 저장소는 빈 저장소가 아니라 시드를 만들지 않는다
     (`list_scenarios(include_archived=True)`). 발행 복구는 저장소(보관본 포함)에 시드 하나뿐일 때만이다 — 곁에 다른 시나리오가
     있으면 되돌린 보관 시드로 보고 발행하지 않는다.
+  - `seed=False`(운영 서버 — `scenario_activation.builtin_seed_allowed`)면 시드를 만들지도, 발행 전에 멈춘 시드를 발행하지도
+    않는다 — 빈 저장소는 공식버전 없이 남는다(`empty_without_seed`, 2026-11-14 물음 보드 seed (nopub)). 기본값은 참이라
+    스크립트(`bootstrap_builtin_seed.py` · `benchmark_home.py`)는 그대로 시드를 만든다.
 - `src/capa_simulation/scenario_registration.py` — BigDataQuery 원천을 리비전 1 시나리오로 저장하는 **세션 없는** 등록 길이다.
   - 화면 등록(`components/bigdataquery_registration.py`)과 자동 갱신이 같은 `save_bigdataquery_scenario` 를 불러 원천
     메타·메모(상세 조회기간 · CS 가 비어 뺀 행 수 · 대당 Capa 멈춤의 꼴과 개수)가 같은 꼴로 남는다. 세션 활성화와 프리셋은
@@ -2077,11 +2086,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/xlsx_small.py` — 값 · 서식(칠 · 글자 · 숫자 꼴 · 테두리 · 정렬) · 열 너비 · 줄 높이 · 고정을 든 작은 xlsx 통을 표준 라이브러리(`zipfile` · 글자 XML)만으로 쓴다 — 새 의존성을 넣지 않는다(사내 이미지 · WebIDE 가 새 패키지를 받는지 따로 확인해야 한다). Excel 이 「복구」 창 없이 여는 꼴을 지킨다: ECMA-376 요소 차례, `fills` 첫 둘 `none` · `gray125`, 사용자 숫자 꼴 164 부터, 색 `FFRRGGBB`, sharedStrings, XML 이 받지 않는 제어 문자 걷기, NaN · 무한은 빈 칸, 파트와 `[Content_Types].xml` · 관계 파일의 짝(뼈대는 xlsxwriter 출력과 같고 테마 파트만 없다 — 글꼴이 테마를 가리키지 않는다). 숫자처럼 보이는 글자 칸(글자로 둔 달 머리 「26.11」 — 숫자로 두면 「26.1」 처럼 끝 0 이 사라진다)은 작성기가 스스로 모아 시트의 「오류 무시」 표지(`ignoredErrors` · `numberStoredAsText` — `pageMargins` 바로 뒤, 이웃 칸은 범위로 묶음)로 덮어 Excel 의 초록 삼각형(「텍스트 형식으로 저장된 숫자」)을 끈다 — 시트를 짓는 쪽은 범위를 넘기지 않고, 숫자 칸 · 숫자로 안 보이는 글자 칸은 덮지 않는다(2026-11-11 사용자 실기 Q2-6). 같은 입력은 같은 바이트다. 작성기가 내는 바이트가 바뀌면 통을 세션에 기억하는 세 판(`process_capa_view.SHEET_SCHEMA_VERSION` · `availability_gap_panel.GAP_SHEET_SCHEMA_VERSION` · `calculation_result.SHEET_SCHEMA_VERSION`)을 함께 올린다 — 올리지 않으면 같은 조건의 옛 통이 세션에서 그대로 나온다. 토큰 · 도메인을 모른다(`tests/test_xlsx_small.py` — 되읽기는 표준 라이브러리 시험 도우미 `tests/xlsx_read.py`).
 - `src/capa_simulation/io/bigdataquery_catalog.py` — 기간 내 코드 목록만 조회한다(상세 SQL·정규화 경로와 섞지 않는다).
 - `src/capa_simulation/io/reference_cache.py` — 세션 활성 리비전의 표·공용 표시순서 경계다(5장 1, XLSB 대체 없음). 활성
-  리비전이 없는 읽기는 `NoActiveRevision`(`RuntimeError`)이고, `page_bootstrap.bootstrap_error_message` 가 저장소를 보고 글 셋
-  (`reference_cache` 의 `NO_OFFICIAL_MESSAGE` · `ARCHIVED_ONLY_MESSAGE`(보관함 › 되돌리기 — 작은 결정 a8) · `NOT_LOADED_MESSAGE`(공식은 있는데
+  리비전이 없는 읽기는 `NoActiveRevision`(`RuntimeError`)이고, `page_bootstrap.bootstrap_error_message` 가 저장소를 보고 글 넷
+  (`reference_cache` 의 `NO_OFFICIAL_MESSAGE` · `EMPTY_STORE_MESSAGE`(시나리오가 하나도 없음 — DB 등록, 2026-11-14 물음 보드 seed (nopub)) ·
+  `ARCHIVED_ONLY_MESSAGE`(보관함 › 되돌리기 — 작은 결정 a8) · `NOT_LOADED_MESSAGE`(공식은 있는데
   이 세션이 안 불러옴))로 가른다(`no_revision_message` — 그 갈래만 저장소를 읽고 없는 DB 는 만들지 않는다). 그 글은 오류가 아니라 빈
   상태다 — 화면은 「데이터 Error」 마크 대신 회색 한 줄(「공식버전 없음」)을 세운다(`page_bootstrap.empty_state` · `data_error_mark`,
-  2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p1-no-revision).
+  2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p1-no-revision). 공식버전이 없는 세 갈래의 알림은 화면마다 따로 내지 않고 상태 알림
+  `SC-01` 하나이고, 멈춘 회차의 사이드바 잠긴 값 칸도 「계산 멈춤」 대신 그 회색 줄 글이다(`page_bootstrap.stopped_field_value` —
+  2026-11-14 물음 보드 decided 5).
 - `src/capa_simulation/persistence/` — 시뮬레이션·설비 DuckDB 의 마이그레이션·Repository·캐시를 독립된 모듈·파일로 둔다.
   - 쓰기는 프로세스 잠금 + 단일 트랜잭션, 읽기는 작업별 연결이다. `app.py` 는 rerun 한 번을 `pinned_connections` 의
     게으른 핀으로 감싼다(상시 앵커가 아니다, 9장).
@@ -2151,6 +2163,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   없는 토큰은 리비전 고정값(`pristine_content_token`)이라 세션끼리 계산 캐시를 나눈다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
   활성화한다(새 세션은 최신 공식 리비전). 프리셋 키·기본값은 이 파일과 `persistence/models.py` 에만 선언한다.
+  - 저장소가 비었으면 첫 세션 부트스트랩(`bootstrap_latest_official_scenario`)이 운영 서버가 아닐 때만 내장 시드로 첫
+    공식버전을 세운다(`builtin_seed_allowed` — `SsoConfig.operational` 의 반대, Admin Area 잠금과 같은 판정. 2026-11-14 물음
+    보드 seed (nopub), `tests/test_application_bootstrap.py`).
   - 값 칸(`_STALE_VALUE_KEYS`)을 지우고 HOME 토글에 기본값을 적으므로 토글을 그리기 전에만 부른다(9장). 활성
     시나리오의 새 리비전 저장(`activate_saved_revision`)은 토글을 둔다. UPEH 가정 % 도 같은 길에서 100 을 적고 그
     공유 위젯의 주인 칸을 지운다(구간은 둔다, `tests/test_scenario_activation.py`).
@@ -3972,7 +3987,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
   dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다. 공통 진입이 멈춘 회차(산출 결과 · 공정 Capa 상세 · 제약 시뮬레이션 — 산출 결과는 소요대수 · 확보율 탭의 표가 멈춘 회차도)는
   `render_stopped_process_field()` 가 같은 key 의 잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다(HOME 공정 필터 줄과 같은 꼴 — 검수
-  보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세 · 제약 시뮬레이션도 멈춘 회차에 그 앞 「설비 시나리오」 줄을
+  보드 p-stop-row). 불러온 리비전이 없는 빈 상태로 멈췄으면 값 칸은 본문 회색 줄과 같은 글(「공식버전 없음」 등 —
+  `page_bootstrap.stopped_field_value`, 2026-11-14 물음 보드 decided 5)이다. 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세 · 제약 시뮬레이션도 멈춘 회차에 그 앞 「설비 시나리오」 줄을
   정상 회차처럼 잠그지 않고 세워(`equipment_scenario_status.render_stopped_equipment_scenario_row` — 설비 DB 를 못 읽으면 줄 없음,
   2026-11-10 답 Q2-29 · 2026-11-11 보드 C1) 같은 높이다. 선택지 기록 · 표지는 남기지
   않는다(머리 칩 · 탭 표지의 짐작을 빈 목록으로 덮지 않게).
@@ -4171,7 +4187,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `app.py` 가 `object_sync_status.not_canonical_code()` 를 `canon=` 으로 넘긴다)에서만 선다(2026-11-09 보드 C1 (라) · T8, 2026-11-14 「앱 대신
   뜨는 화면」 보드 d13 (가) — 9장 「알림 칸」). data 는 세션만 읽는다
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
-  `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」). 패널은
+  `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」, 이 세션이
+  공식버전을 확인했으면(`official_known` — `app.py` 가 `intro_summary.latest_official_revision()` 으로 넘긴다) 공식버전 없음
+  `SC-01` 의 해소 표지 — 2026-11-14 물음 보드 decided 5. 그 data 가 선 동안 화면 표지의 같은 칸 「있음」 은 앞 회차가 남긴 표지라
+  보지 않는다 — JS `settledStateKeys` · `markerNotes`, `tests/test_alert_center_assets.py`). 패널은
   브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id · 앞 부트 표지는
   이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
   문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 딸린 표(`tables`)는 표마다 「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저
@@ -4223,11 +4242,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   글(까닭 · 예시 행 · 고칠 곳)은 자리에 없고 알림창(같은 글이면 이 탭에 한 번) · `Alarm` 줄(전문 · 로그 · 복사)에만 있다. `goto` 는 채울 입력이 다른 화면에 있을 때
   그 화면의 (이름, 주소) 또는 (이름, 주소, 표 · 탭)이다 — `data_error_note` 가 셋째 칸을 `tab` 으로 풀어 줄의 화면 칸이 「화면 › 표」
   이고 「그 화면으로」 가 그 표까지 연다(`calculation_stop_notice` 는 고칠 칸이 든 표 이름을 싣는다 — 모듈수는 화면 없음). 줄의 화면 칸과 「그 화면으로」 가 그 화면이다(`alerts.state` 의 `goto` 와 같다, 표 없이 알림만 내는 산출 결과의 `state_alerts.alert_page_error` 도 받는다). `render_data_error_mark()`
-  는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과 — 글을 넘기면 빈 상태를 가른다). **빈 상태** — 받은 글에 불러온 리비전 없음의 글 셋 가운데
+  는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과 — 글을 넘기면 빈 상태를 가른다). **빈 상태** — 받은 글에 불러온 리비전 없음의 글 넷 가운데
   하나가 들었으면(화면이 머리를 붙였어도 — `page_bootstrap.empty_state`) 마크 대신 회색 한 줄(`EMPTY_CLASS` — 「공식버전 없음」 · 「불러올
-  시나리오 없음 · 보관본만」 · 「불러온 시나리오 없음」)이고, 알림은 그 화면 코드의 **확인 단계** 사건 알림(「공식버전 없음 — 시나리오 관리에서
-  발행」 · `goto` 시나리오 관리 › Capa 시나리오, 계기 `EMPTY_CAUSE`)이다. 상태 알림 `SC-01` 을 다시 쓰지 않는 것은 계산 화면이 정상 회차에 해소를
-  낼 자리가 없어 발행 뒤에도 그 줄이 「지금도 있음」 으로 남기 때문이다. **짧은 글 꼴** — 사람이 고칠 수 없는 DB 실패(다른 프로그램의 잠금 · 쓰기 실패 ·
+  시나리오 없음 · 보관본만」 · 「불러온 시나리오 없음」)이다. 공식버전이 없는 세 갈래(없음 · 시나리오 없음 · 보관본만)의 알림은 화면마다 따로 내지 않고 상태 알림
+  `SC-01` 하나다(`page_bootstrap.missing_official_note` — 시나리오 관리 「Capa 시나리오」 탭과 같은 표지라 범위 · 지문이 같아 어느 화면을 돌아도
+  Alarm 줄 하나 · 알림창 한 번, `goto` 시나리오 관리 › Capa 시나리오 — 시나리오가 하나도 없으면 고를 목록이 없어 › DB 등록, 본문 회색 줄은
+  그대로 「공식버전 없음」, 2026-11-14 물음 보드 seed (nopub)). 마크 칸의 숨은 표지에 실어 이벤트 칸 자리 수는 그대로다. 해소는 공식버전이
+  있다고 확인한 회차의 알림 칸 data 가 낸다(`alert_center` 의 `official_known` — 계산 화면은 정상 회차에 해소를 낼 자리가 없다, 2026-11-14 물음 보드
+  decided 5). 공식은 있는데 이 세션이 안 불러온 갈래만 그 화면 코드의 **확인 단계** 사건 알림(「불러온 시나리오 없음 — 새로고침하면 공식버전을
+  엶」, 계기 `EMPTY_CAUSE`)이다. **짧은 글 꼴** — 사람이 고칠 수 없는 DB 실패(다른 프로그램의 잠금 · 쓰기 실패 ·
   열기 실패 · 그 밖의 DB 실패 — `bootstrap_error_message` 의 첫 문단 상수 `HELD_LEAD` 등)는 짧은 글 끝이 「— 관리자에게 알려 주세요」(부르는 쪽이
   준 짧은 글에도 붙는다 — `screen_error_short`), 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다. 그 DB 실패의 전문(파일 경로 · 파일을 연 프로세스
   번호 · 원문 줄)은 관리자 몫(`admin_view.admin_notes_visible`)에만 싣고 그 밖에는 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」 만이다
@@ -5589,6 +5612,8 @@ RQ_MODULE
 11. **내장 시드는 빈 저장소에만 쓴다.** 공식버전 또는 사용자 시나리오가 있으면 자동
     부트스트랩이 새 시나리오를 만들거나 기존 상태를 변경하지 않는다. 보관본도 사용자 시나리오다 —
     보관본만 남은 저장소는 빈 저장소가 아니다. 내장 시드는 합성 데모이며 운영 시나리오로 간주하지 않는다.
+    운영 서버(`SsoConfig.operational`)는 빈 저장소에도 시드를 쓰지 않는다 — 합성 견본이 「공식 v1」 로 서서 HOME 이
+    가짜 숫자를 공식처럼 보이지 않게, 데이터가 없으면 「공식버전 없음」 으로 선다(2026-11-14 물음 보드 seed (nopub)).
 12. **공용 필터 기본값과 개인 조회를 분리한다.** 표준 목표 Capa 공정 기본값과
     「조회·집계 설정」(조회일의 시작일·종료일 두 키·상세 토글·제품 분류 수준·출력 지표)은 불변
     리비전 프리셋에 저장하고, 페이지에서 바꾼 값은 현재 세션에만 둔다. 신규 리비전 저장

@@ -133,6 +133,22 @@ function stateVerdict(entry, note) {
   }
   return entry && entry.active ? 'resolved' : 'none'
 }
+// 알림 칸 data 가 해소(`active` 거짓)로 실은 상태 알림의 칸(`stateKey`) — 서버가 그 조건이 사라졌다고 확인한 것이다(공식버전 없음
+// `SC-01` — `alert_center.alert_center_data` 의 `official_known`).
+function settledStateKeys(events) {
+  const keys = new Set()
+  for (const note of Array.isArray(events) ? events : []) {
+    if (note && note.kind === 'state' && !note.active) keys.add(stateKey(note))
+  }
+  return keys
+}
+// 화면 표지에서 다룰 알림 — `settled` 칸의 「있음」 상태 알림은 뺀다. data 는 회차 앞에 닿고 그때 문서에는 앞 회차 화면의 표지가
+// 아직 남아 있어(새 회차가 그 칸을 갈기 전), 보면 방금 닫은 줄을 다시 열고 알림창을 띄운다.
+function markerNotes(notes, settled) {
+  return (Array.isArray(notes) ? notes : []).filter(
+    (note) => !(note && note.kind === 'state' && note.active && settled.has(stateKey(note))),
+  )
+}
 // 상태 알림 줄의 표지 — 'open'(지금도 있음) · 'scope'(범위가 바뀌어 닫힘 — 조건은 새 범위 줄에 그대로일 수 있다) ·
 // 'changed'(같은 범위에서 내용이 바뀌어 닫힘 — 조건은 새 줄에 이어진다) · 'resolved'(조건이 사라짐). 사건 알림 줄은 null.
 // 닫힌 셋은 줄 상태(`row.state`)가 모두 'resolved' 라 「닫힌 것 숨김」 이 함께 감춘다.
@@ -875,6 +891,7 @@ function raiseLocal(C, note, paint = true) {
 
 function scan(C) {
   const marker = C.data.marker || 'data-capa-alerts'
+  const settled = settledStateKeys(C.data.events)
   let changed = false
   for (const node of document.querySelectorAll(`[${marker}]`)) {
     let notes = null
@@ -884,7 +901,7 @@ function scan(C) {
       continue
     }
     if (!Array.isArray(notes)) continue
-    for (const note of notes) if (handle(C, note)) changed = true
+    for (const note of markerNotes(notes, settled)) if (handle(C, note)) changed = true
   }
   if (changed) persist(C)
   readProcessMark(C)

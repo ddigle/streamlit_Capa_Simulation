@@ -190,12 +190,12 @@ def test_no_active_revision_over_a_store_of_archived_scenarios_points_at_the_arc
     assert "DuckDB" not in message
 
 
-@pytest.mark.parametrize(("archived", "active"), [(1, 1), (0, 0)], ids=["listed", "empty"])
-def test_no_active_revision_says_there_is_no_official_unless_every_scenario_is_archived(
+@pytest.mark.parametrize(("archived", "active"), [(1, 1), (0, 1)], ids=["listed", "active"])
+def test_no_active_revision_says_there_is_no_official_while_a_scenario_is_listed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, archived: int, active: int
 ) -> None:
-    """공식버전이 없는 저장소는 예외 글과 상관없이 「공식버전 없음」 글 하나다(카드 p1-no-revision —
-    내부 말 「DuckDB」 를 걷는다)."""
+    """공식버전이 없고 목록에 시나리오가 있는 저장소는 예외 글과 상관없이 「공식버전 없음」 글
+    하나다(카드 p1-no-revision — 내부 말 「DuckDB」 를 걷는다)."""
     database = tmp_path / "store.duckdb"
     _store_with_scenarios(database, archived=archived, active=active)
     monkeypatch.setattr(settings, "DUCKDB_PATH", database)
@@ -204,6 +204,29 @@ def test_no_active_revision_says_there_is_no_official_unless_every_scenario_is_a
 
     assert message == page_bootstrap.NO_OFFICIAL_MESSAGE
     assert "DuckDB" not in message
+    state = page_bootstrap.empty_state("기준정보를 불러오지 못했습니다: " + message)
+    assert state is not None and (state.line, state.missing) == ("공식버전 없음", "none")
+
+
+def test_no_active_revision_over_a_store_without_any_scenario_points_at_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시나리오가 하나도 없는 저장소(보관본도 없음 — 빈 디스크로 뜬 운영 서버)는 목록에서 고를 것도
+    보관함에서 되돌릴 것도 없다 — 「DB 등록」 에서 시나리오를 등록하라는 글이다. 본문 회색 줄은
+    그대로 「공식버전 없음」 이고 알림 갈래만 「시나리오 없음」 이다(2026-11-14 물음 보드 seed
+    (nopub))."""
+    database = tmp_path / "store.duckdb"
+    _store_with_scenarios(database, archived=0, active=0)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+
+    message = bootstrap_error_message(NoActiveRevision("아무 글"))
+
+    assert message == page_bootstrap.EMPTY_STORE_MESSAGE
+    assert "DB 등록" in message and "보관함" not in message
+    assert "DuckDB" not in message
+    state = page_bootstrap.empty_state("기준정보를 불러오지 못했습니다: " + message)
+    assert state is not None and (state.line, state.missing) == ("공식버전 없음", "empty")
+    assert page_bootstrap.stopped_field_value(message) == "공식버전 없음"
 
 
 def test_no_active_revision_when_an_official_exists_says_to_reload(

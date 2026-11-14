@@ -15,7 +15,7 @@ import pytest
 from alert_marks import alert_notes
 from streamlit.testing.v1 import AppTest
 
-from capa_simulation import alerts, sync_boot
+from capa_simulation import alerts, page_bootstrap, sync_boot
 from capa_simulation.components import alert_center, change_summary
 from capa_simulation.components.sample_data import SAMPLE_TOGGLE_KEY
 from capa_simulation.components.theme_toggle import (
@@ -495,18 +495,78 @@ def test_the_app_draws_the_alert_center_before_the_page_and_sends_queued_events(
     꺼낸다. 「화면」 · 「그 화면으로」 를 달 이번 화면을 적는다."""
     app = _ok(_app.run())
     assert sent and sent[-1]["key"] == alert_center.ALERT_CENTER_KEY
-    assert sent[-1]["data"]["events"] == []
+    # 담아 둔 사건 알림이 없는 회차의 사건 칸은 빈다 — 공식버전을 확인한 세션은 공식버전 없음
+    # `SC-01` 해소 표지만 싣는다.
+    assert sent[-1]["data"]["events"] == [page_bootstrap.missing_official_note(None)]
     assert app.session_state[alerts.PAGE_KEY] == {"page": "HOME", "href": ""}
 
     app.session_state[alerts.OUTBOX_KEY] = [
         alerts.AlertNote(id="demo", code="FL-01", kind="event", level="info", short="저장했습니다.")
     ]
     _ok(app.run())
-    delivered = [note["id"] for note in sent[-1]["data"]["events"]] + [
-        note["id"] for note in alert_notes(app) if note.get("id") == "demo"
-    ]
+    delivered = [
+        note["id"] for note in sent[-1]["data"]["events"] if note.get("kind") == "event"
+    ] + [note["id"] for note in alert_notes(app) if note.get("id") == "demo"]
     assert delivered == ["demo"]
     assert alerts.OUTBOX_KEY not in app.session_state
+
+
+def test_the_data_resolves_a_missing_official_only_when_the_session_knows_one() -> None:
+    """공식버전 없음 `SC-01` 의 해소 표지는 이 세션이 공식버전을 확인한 회차의 data 에만 선다 —
+    모르면 싣지 않는다(있다고도 없다고도 말하지 않는다). 해소 표지는 화면 · 탭이 내는 알림과 같은
+    줄(코드 · 범위)을 닫는다."""
+    unknown = alert_center.alert_center_data(changes=[], events=[])
+    assert not [note for note in unknown["events"] if note.get("code") == "SC-01"]
+
+    known = alert_center.alert_center_data(changes=[], events=[], official_known=True)
+    (resolved,) = [note for note in known["events"] if note.get("code") == "SC-01"]
+    raised = page_bootstrap.missing_official_note("none")
+    assert (resolved["kind"], resolved["active"], resolved["fp"]) == ("state", False, "")
+    assert resolved["scope"] == raised["scope"]
+
+
+def test_a_store_without_an_official_raises_one_alert_from_home_and_no_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sent: list[dict[str, Any]]
+) -> None:
+    """공식버전이 없는 저장소로 띄운 `app.py` — HOME 은 공식버전 없음 `SC-01` 하나를 내고(HOME
+    코드의 사건 알림 없음) 알림 칸은 해소 표지를 싣지 않는다. 같은 세션에서 공식버전이 서고 요약이
+    다시 확인하면 알림 칸이 해소 표지를 싣는다."""
+    from test_page_bootstrap import _store_with_scenarios
+
+    import capa_simulation.components.horizontal_scrollbar as horizontal_scrollbar
+    import capa_simulation.components.intro_overlay as intro_overlay
+    import capa_simulation.components.intro_summary as intro_summary
+    import capa_simulation.components.month_range_picker as month_range_picker
+    import capa_simulation.settings as settings
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+    database = tmp_path / "scenario.duckdb"
+    _store_with_scenarios(database, archived=0, active=1)
+    monkeypatch.setattr(settings, "DUCKDB_PATH", database)
+    monkeypatch.setattr(settings, "EQUIPMENT_DUCKDB_PATH", tmp_path / "equipment.duckdb")
+    monkeypatch.setattr(horizontal_scrollbar, "render_horizontal_scrollbar", lambda *a, **k: None)
+    monkeypatch.setattr(intro_overlay, "render_intro_overlay", lambda: None)
+    monkeypatch.setattr(intro_summary, "_SUMMARY", lambda **kwargs: None)
+    monkeypatch.setattr(
+        month_range_picker, "_MONTH_RANGE_APPLY", lambda **kwargs: SimpleNamespace(apply=None)
+    )
+    app = _ok(AppTest.from_file(str(APP_PATH), default_timeout=300).run())
+
+    assert not [note for note in sent[-1]["data"]["events"] if note.get("code") == "SC-01"]
+    raised = [note for note in alert_notes(app) if note.get("code") == "SC-01"]
+    assert raised == [page_bootstrap.missing_official_note("none")]
+    assert not [note for note in alert_notes(app) if note.get("code") == "HM-01"]
+
+    repository = DuckDBScenarioRepository(database)
+    (scenario,) = repository.list_scenarios()
+    repository.publish_official_revision(
+        scenario.scenario_id, scenario.active_revision_id, release_name="DEMO v1", note=""
+    )
+    # 요약의 다음 확인(30초)을 기다리지 않고 지금 다시 보게 한다(공식 지정 뒤와 같은 길).
+    app.session_state[intro_summary._SESSION_KEY] = {"checked_at": -1e9, "data": {}}
+    _ok(app.run())
+    (resolved,) = [note for note in sent[-1]["data"]["events"] if note.get("code") == "SC-01"]
+    assert resolved == page_bootstrap.missing_official_note(None)
 
 
 def test_the_change_chip_lists_an_upeh_assumption_in_the_assume_group(

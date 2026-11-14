@@ -139,6 +139,7 @@ from capa_simulation.page_bootstrap import (
     process_page_inputs,
     prune_list_selection,
     render_schema_ahead_warning,
+    stopped_field_value,
 )
 from capa_simulation.persistence.cache import (
     load_global_advance_load,
@@ -319,12 +320,13 @@ except BOOTSTRAP_ERRORS as exc:
     # 설비 시나리오 줄은 잠그지 않고 선다(2026-11-10 답 Q2-29). HOME 칸 방문의 공식 고정은 공정 ·
     # 달을 정한 뒤의 일이라 걸지 않는다.
     render_stopped_equipment_scenario_row()
+    stop_message = bootstrap_error_message(exc, labels=process_labels)
     # 패널의 공정 줄도 잠긴 채 자리를 지킨다(HOME 과 같은 꼴 — 검수 보드 p-stop-row).
-    render_stopped_process_field()
+    render_stopped_process_field(stopped_field_value(stop_message))
     # 카드는 멈춘 회차에도 선다 — 「조회 조건」 제목만 남은 빈 구역을 만들지 않는다.
     with condition_card(CARD_LABEL, name=CARD_NAME, icon=CARD_ICON):
         st.caption(NO_PROCESS_MARK)
-    _stop_with_error(bootstrap_error_message(exc, labels=process_labels))
+    _stop_with_error(stop_message)
 
 thresholds = page_inputs.thresholds
 context = page_inputs.context

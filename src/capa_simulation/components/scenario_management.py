@@ -122,7 +122,9 @@ from capa_simulation.io.reference_cache import (
 from capa_simulation.page_bootstrap import (
     BOOTSTRAP_ERRORS,
     PAGE_DIALOG_SUFFIX,
+    MissingOfficial,
     bootstrap_error_message,
+    missing_official_note,
     prune_named_choice,
 )
 from capa_simulation.persistence._sql_helpers import pinned_connections
@@ -486,43 +488,25 @@ def _report_missing_official(
     repository: DuckDBScenarioRepository, alert_tab: str | None, *, active_count: int
 ) -> None:
     """공식버전이 없는 것은 상태 알림(`SC-01` — 알림창 · Alarm)이다. 있어도 부른다(해소) — 닫힌
-    탭이면 알리지 않고 읽지도 않는다.
+    탭이면 알리지 않고 읽지도 않는다. 표지는 불러온 리비전 없이 멈춘 계산 화면과 한 벌이다
+    (`page_bootstrap.missing_official_note` — 어느 화면이 내도 Alarm 줄 하나).
 
     시나리오가 보관본만 남았으면 목록에 고를 것이 없다 — 그 상태만 글을 갈라 보관함의 「되돌리기」
-    를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 그 판정의 보관본 읽기는 공식버전이
-    없고 활성 시나리오가 0건(`active_count`)일 때만 한다. 내용 값이 갈라 바뀌면 그 줄도 새로
-    뜬다(지문)."""
+    를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 시나리오가 하나도 없으면(보관본도
+    없음 — 빈 디스크로 뜬 운영 서버) 「DB 등록」 을 가리킨다(2026-11-14 물음 보드 seed (nopub) —
+    계산 화면의 `page_bootstrap.no_revision_message` 와 같은 판정). 그 판정의 보관본 읽기는
+    공식버전이 없고 활성 시나리오가 0건(`active_count`)일 때만 한다. 내용 값이 갈라 바뀌면 그 줄도
+    새로 뜬다(지문)."""
     if alert_tab is None:
         return
     official = repository.latest_official_release()
-    archived_only = (
-        official is None
-        and active_count == 0
-        and bool(repository.list_scenarios(include_archived=True))
-    )
-    if archived_only:
-        text = "공식버전이 없습니다 — 보관본만 있음 · 목록 관리 「보관함」 › 「되돌리기」"
-        full = (
-            "공식버전이 없고 보관본만 있어 지정할 시나리오가 없습니다 — 시나리오 관리 › Capa "
-            "시나리오 › 목록 관리의 「보관함」 에서 「되돌리기」 한 뒤 「공식으로 지정…」 으로 "
-            "리비전 하나를 공식으로 정하세요."
-        )
-    else:
-        text = "공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 목록 관리 「공식으로 지정…」"
-        full = (
-            "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다 — 시나리오 관리 › "
-            "Capa 시나리오 › 목록 관리에서 시나리오를 고르고 「공식으로 지정…」 으로 리비전 하나를 "
-            "공식으로 정하세요."
-        )
-    alerts.state(
-        "SC-01",
-        scope=None,
-        content=("archived_only" if archived_only else True) if official is None else None,
-        active=official is None,
-        text=text,
-        full=full,
-        tab=alert_tab,
-    )
+    missing: MissingOfficial | None = None
+    if official is None:
+        missing = "none"
+        if active_count == 0:
+            listed = bool(repository.list_scenarios(include_archived=True))
+            missing = "archived_only" if listed else "empty"
+    alerts.emit([missing_official_note(missing)])
 
 
 @dataclass(frozen=True)
