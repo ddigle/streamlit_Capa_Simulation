@@ -1740,6 +1740,17 @@ def test_unreadable_entries_lost_on_save_are_counted_in_the_change_log(
 
     saved = json.loads(store.objects[OBJECT])
     assert [item["what"] for item in saved["changes"]] == ["add", "drop_unreadable 2"]
+    # 같은 수가 사건 `access_saved` 의 `dropped` 칸과 Admin 「최근 사건」 표의 사유 코드에도 — 고친
+    # 기록 · 스스로 등록과 같은 이름으로(물음 보드 「정한 것」 9).
+    (event,) = [item for item in runtime.recent_events() if item.event == "access_saved"]
+    assert event.value("dropped") == "2"
+    rows = sso_status.recent_event_table()
+    assert rows.loc[rows["사건"] == "access_saved", "사유 코드"].tolist() == ["drop_unreadable 2"]
+
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), remove=[USER])
+
+    assert runtime.recent_events()[0].value("dropped") == "0"
+    assert sso_status.recent_event_table()["사유 코드"].tolist()[0] == "-"
 
 
 def test_saving_before_a_good_read_is_refused(mock_s3: tuple[MockStore, str]) -> None:

@@ -699,11 +699,15 @@ def test_a_registration_drops_unreadable_entries_and_counts_them_without_the_aud
     assert event.value("dropped") == "2"
     assert event.value("revision") == "5"
     assert NEWCOMER not in " ".join(value for _key, value in event.fields)
+    # Admin 「최근 사건」 표의 사유 코드 칸은 고친 기록과 같은 이름이다 — C-DEP 에는 서버 로그
+    # 창구가 없다.
+    assert sso_status.recent_event_table()["사유 코드"].tolist()[0] == "drop_unreadable 2"
 
     access_store.register_self(cfg, "demo.newcomer2")
 
     latest = runtime.recent_events()[0]
     assert (latest.event, latest.value("dropped")) == ("access_self_registered", "0")
+    assert sso_status.recent_event_table()["사유 코드"].tolist()[0] == "-"
 
 
 @pytest.mark.usefixtures("audit_on")

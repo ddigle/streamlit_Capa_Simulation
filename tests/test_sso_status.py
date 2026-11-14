@@ -158,6 +158,28 @@ def test_recent_events_tell_an_idle_end_from_the_maximum() -> None:
     assert codes[:3] == ["revoked", "expired · idle", "expired · max"]
 
 
+def test_recent_events_show_the_unreadable_entries_a_list_write_dropped() -> None:
+    """명단을 다시 쓰며 못 읽는 항목을 빠뜨린 저장 — 관리자 저장(`access_saved`)이든 스스로
+    등록(`access_self_registered`)이든 — 은 사유 코드에 파일의 고친 기록과 같은 이름
+    `drop_unreadable n` 이 선다. 빠진 것이 없으면(0) 「-」 이고, 「복사」 글의 표에도 같은 칸이다
+    (물음 보드 「정한 것」 9 — 감사 기록기가 꺼진 서버에서는 이 표가 그 수의 화면 창구다)."""
+    cfg = use_config()
+    runtime.record_event(
+        "access_saved", loginid="dev.user", added="1", removed="0", revision="3", dropped="0"
+    )
+    runtime.record_event("access_self_registered", users="3", revision="4", dropped="2")
+    runtime.record_event(
+        "access_saved", loginid="dev.user", added="1", removed="0", revision="5", dropped="1"
+    )
+
+    rows = sso_status.recent_event_table()
+
+    assert rows["사건"].tolist()[:3] == ["access_saved", "access_self_registered", "access_saved"]
+    assert rows["사유 코드"].tolist()[:3] == ["drop_unreadable 1", "drop_unreadable 2", "-"]
+    copied = sso_status.status_text("통합인증 점검", cfg, now=dt.datetime.now(dt.timezone.utc))
+    assert "drop_unreadable 2" in copied and "drop_unreadable 1" in copied
+
+
 def _refresh_caption_elements(app: AppTest) -> list[Any]:
     return [item for item in app.caption if str(item.value).startswith("**로그인 갱신(")]
 
