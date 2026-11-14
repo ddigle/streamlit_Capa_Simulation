@@ -1172,6 +1172,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     바로 선다. 옛 세션의 작업 이름은 위젯 앞에서 버린다. 지금 올라와 있는 리비전과 공식 표지는 사이드바 시나리오 칸 · 머리 띠, 최신
     공식은 목록 표 `공식버전` 칸 · 오른쪽 「공식 이력」 이 말한다. 공식버전 없음은 상태 알림 `SC-01` — 활성 시나리오가 0건이고
     보관본만 있으면 글을 갈라 보관함 › 「되돌리기」 를 가리킨다(내용 값 `archived_only` — 검수 보드 st-sc01, 작은 결정 a8 과 같은 꼴).
+    표지는 불러온 리비전 없이 멈춘 계산 화면과 한 벌(`page_bootstrap.missing_official_note`)이라 어느 화면이 내도 Alarm 줄 하나 ·
+    알림창 한 번이고, 해소는 공식버전을 확인한 회차의 알림 칸 data 가 낸다(2026-11-14 물음 보드 decided 5).
   - 목록 관리는 안 3(2026-11-06 사용자 결정 — 옛 C안의 편집표 둘 · 카드를 대신한다)이다 — 설비 마스터와 같은 두 칸 틀(`components/side_panel.py`) 안 왼쪽 시나리오
     표(브라우저 표 `components/scenario_list_grid.py` — 손잡이 · 순서 · 시나리오명 · 최신 · 공식버전 · 최근 수정), 오른쪽 칸 「상세 · 점검 · 저장 전 변경 · 공식 이력 · 보관함」(점검은 `components/scenario_input_check.py`).
     상세는 리비전 표(r · 리비전명 · 상태)가 맨 위에 서서 머리가 왼쪽 표 머리와 윗선이 같고(사용자 요청 2026-11-07), 그 아래 연 시나리오의 제목 · 원천 코드 · 최근 수정과 고른 리비전의 값 줄(메모 · 저장일 · 부모 — 같은 마운트가 그려 줄을 누르면 회차 전에 바뀐다), 「선택한 리비전 불러오기」 ·
@@ -2079,7 +2081,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`reference_cache` 의 `NO_OFFICIAL_MESSAGE` · `ARCHIVED_ONLY_MESSAGE`(보관함 › 되돌리기 — 작은 결정 a8) · `NOT_LOADED_MESSAGE`(공식은 있는데
   이 세션이 안 불러옴))로 가른다(`no_revision_message` — 그 갈래만 저장소를 읽고 없는 DB 는 만들지 않는다). 그 글은 오류가 아니라 빈
   상태다 — 화면은 「데이터 Error」 마크 대신 회색 한 줄(「공식버전 없음」)을 세운다(`page_bootstrap.empty_state` · `data_error_mark`,
-  2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p1-no-revision).
+  2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p1-no-revision). 공식버전이 없는 두 갈래의 알림은 화면마다 따로 내지 않고 상태 알림
+  `SC-01` 하나이고, 멈춘 회차의 사이드바 잠긴 값 칸도 「계산 멈춤」 대신 그 회색 줄 글이다(`page_bootstrap.stopped_field_value` —
+  2026-11-14 물음 보드 decided 5).
 - `src/capa_simulation/persistence/` — 시뮬레이션·설비 DuckDB 의 마이그레이션·Repository·캐시를 독립된 모듈·파일로 둔다.
   - 쓰기는 프로세스 잠금 + 단일 트랜잭션, 읽기는 작업별 연결이다. `app.py` 는 rerun 한 번을 `pinned_connections` 의
     게으른 핀으로 감싼다(상시 앵커가 아니다, 9장).
@@ -3968,7 +3972,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   세션(`CONTEXT_KEY`)에 적고 `page_script_hash` 로 다른 페이지 것을 가린다. 판(Components v2)의 트리거는 `apply` 하나다 — 결과
   dict 메서드 이름(`clear` 등)을 트리거 이름으로 쓰지 않는다. 공통 진입이 멈춘 회차(산출 결과 · 공정 Capa 상세 · 제약 시뮬레이션 — 산출 결과는 소요대수 · 확보율 탭의 표가 멈춘 회차도)는
   `render_stopped_process_field()` 가 같은 key 의 잠긴 값 칸 「계산 멈춤」 으로 자리를 지킨다(HOME 공정 필터 줄과 같은 꼴 — 검수
-  보드 p-stop-row). 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세 · 제약 시뮬레이션도 멈춘 회차에 그 앞 「설비 시나리오」 줄을
+  보드 p-stop-row). 불러온 리비전이 없는 빈 상태로 멈췄으면 값 칸은 본문 회색 줄과 같은 글(「공식버전 없음」 등 —
+  `page_bootstrap.stopped_field_value`, 2026-11-14 물음 보드 decided 5)이다. 산출 결과는 정상 회차와 같은 높이다. 공정 Capa 상세 · 제약 시뮬레이션도 멈춘 회차에 그 앞 「설비 시나리오」 줄을
   정상 회차처럼 잠그지 않고 세워(`equipment_scenario_status.render_stopped_equipment_scenario_row` — 설비 DB 를 못 읽으면 줄 없음,
   2026-11-10 답 Q2-29 · 2026-11-11 보드 C1) 같은 높이다. 선택지 기록 · 표지는 남기지
   않는다(머리 칩 · 탭 표지의 짐작을 빈 목록으로 덮지 않게).
@@ -4167,7 +4172,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `app.py` 가 `object_sync_status.not_canonical_code()` 를 `canon=` 으로 넘긴다)에서만 선다(2026-11-09 보드 C1 (라) · T8, 2026-11-14 「앱 대신
   뜨는 화면」 보드 d13 (가) — 9장 「알림 칸」). data 는 세션만 읽는다
   (콜백이 담은 사건 `alerts.drain_outbox` · 변경 목록 `change_summary.session_changes` · 등록부 · 이 회차 테마 팔레트
-  `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」). 패널은
+  `palette()` · 글 `TEXT` · 프로세스마다 한 번 정하는 부트 표지 `BOOT_MARK` 와 재시작 알림 — 9장 「서버 재시작 알림」, 이 세션이
+  공식버전을 확인했으면(`official_known` — `app.py` 가 `intro_summary.latest_official_revision()` 으로 넘긴다) 공식버전 없음
+  `SC-01` 의 해소 표지 — 2026-11-14 물음 보드 decided 5. 그 data 가 선 동안 화면 표지의 같은 칸 「있음」 은 앞 회차가 남긴 표지라
+  보지 않는다 — JS `settledStateKeys` · `markerNotes`, `tests/test_alert_center_assets.py`). 패널은
   브라우저 안에서만 열고 닫아 파이썬 회차가 돌지 않는다. 기록 · 상태 지문 표 · 본 사건 id · 앞 부트 표지는
   이 브라우저 탭 `sessionStorage`(`STORAGE`)다(D1 (가)). 툴바 실제 폭을 재어 `--capa-toolbar-width` · `data-capa-toolbar` 를
   문서 뿌리에 단다(`app_header` 의 실측 규칙이 읽는다). 줄의 딸린 표(`tables`)는 표마다 「… 보기」 가 펼치고 「CSV 내려받기」 가 브라우저
@@ -4221,9 +4229,12 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   이고 「그 화면으로」 가 그 표까지 연다(`calculation_stop_notice` 는 고칠 칸이 든 표 이름을 싣는다 — 모듈수는 화면 없음). 줄의 화면 칸과 「그 화면으로」 가 그 화면이다(`alerts.state` 의 `goto` 와 같다, 표 없이 알림만 내는 산출 결과의 `state_alerts.alert_page_error` 도 받는다). `render_data_error_mark()`
   는 마크만(알림을 탭 밖에서 따로 보내는 산출 결과 — 글을 넘기면 빈 상태를 가른다). **빈 상태** — 받은 글에 불러온 리비전 없음의 글 셋 가운데
   하나가 들었으면(화면이 머리를 붙였어도 — `page_bootstrap.empty_state`) 마크 대신 회색 한 줄(`EMPTY_CLASS` — 「공식버전 없음」 · 「불러올
-  시나리오 없음 · 보관본만」 · 「불러온 시나리오 없음」)이고, 알림은 그 화면 코드의 **확인 단계** 사건 알림(「공식버전 없음 — 시나리오 관리에서
-  발행」 · `goto` 시나리오 관리 › Capa 시나리오, 계기 `EMPTY_CAUSE`)이다. 상태 알림 `SC-01` 을 다시 쓰지 않는 것은 계산 화면이 정상 회차에 해소를
-  낼 자리가 없어 발행 뒤에도 그 줄이 「지금도 있음」 으로 남기 때문이다. **짧은 글 꼴** — 사람이 고칠 수 없는 DB 실패(다른 프로그램의 잠금 · 쓰기 실패 ·
+  시나리오 없음 · 보관본만」 · 「불러온 시나리오 없음」)이다. 공식버전이 없는 두 갈래(없음 · 보관본만)의 알림은 화면마다 따로 내지 않고 상태 알림
+  `SC-01` 하나다(`page_bootstrap.missing_official_note` — 시나리오 관리 「Capa 시나리오」 탭과 같은 표지라 범위 · 지문이 같아 어느 화면을 돌아도
+  Alarm 줄 하나 · 알림창 한 번, `goto` 시나리오 관리 › Capa 시나리오). 마크 칸의 숨은 표지에 실어 이벤트 칸 자리 수는 그대로다. 해소는 공식버전이
+  있다고 확인한 회차의 알림 칸 data 가 낸다(`alert_center` 의 `official_known` — 계산 화면은 정상 회차에 해소를 낼 자리가 없다, 2026-11-14 물음 보드
+  decided 5). 공식은 있는데 이 세션이 안 불러온 갈래만 그 화면 코드의 **확인 단계** 사건 알림(「불러온 시나리오 없음 — 새로고침하면 공식버전을
+  엶」, 계기 `EMPTY_CAUSE`)이다. **짧은 글 꼴** — 사람이 고칠 수 없는 DB 실패(다른 프로그램의 잠금 · 쓰기 실패 ·
   열기 실패 · 그 밖의 DB 실패 — `bootstrap_error_message` 의 첫 문단 상수 `HELD_LEAD` 등)는 짧은 글 끝이 「— 관리자에게 알려 주세요」(부르는 쪽이
   준 짧은 글에도 붙는다 — `screen_error_short`), 이 앱 자신의 잠금(새로고침으로 풀림)은 아니다. 그 DB 실패의 전문(파일 경로 · 파일을 연 프로세스
   번호 · 원문 줄)은 관리자 몫(`admin_view.admin_notes_visible`)에만 싣고 그 밖에는 화면 머리 · 첫 문단 · 「관리자에게 알려 주세요.」 만이다

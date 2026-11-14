@@ -15,7 +15,16 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, NamedTuple, ParamSpec, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Final,
+    Literal,
+    NamedTuple,
+    ParamSpec,
+    TypeAlias,
+    TypeVar,
+    overload,
+)
 
 import duckdb
 import pandas as pd
@@ -255,17 +264,25 @@ def no_revision_message() -> str:
     return NO_OFFICIAL_MESSAGE
 
 
+# 공식버전이 없는 저장소의 갈래 — 시나리오가 없거나 활성 시나리오가 있음(`none`), 보관본만
+# 남음(`archived_only`). 상태 알림 `SC-01` 의 글 · 지문이 이것으로 갈린다.
+MissingOfficial: TypeAlias = Literal["none", "archived_only"]
+
+
 class EmptyState(NamedTuple):
     """불러온 리비전이 없어 화면에 볼 것이 없는 빈 상태 — 「데이터 Error」 마크 대신 서는 것."""
 
     line: str
-    """본문 회색 한 줄(값 — 설계 규칙 UI-TXT-04)."""
+    """본문 회색 한 줄(값 — 설계 규칙 UI-TXT-04). 멈춘 회차의 사이드바 잠긴 값 칸도 이 글이다
+    (`stopped_field_value`)."""
+
+    missing: MissingOfficial | None
+    """공식버전이 없는 갈래면 그 값 — 알림은 화면마다 따로 내지 않고 상태 알림 `SC-01` 하나다
+    (`missing_official_note`). 공식은 있는데 이 세션이 안 불러왔으면 None."""
 
     text: str
-    """그 화면 확인 단계 알림의 짧은 글 — 무엇이 없고 어디서 푸나."""
-
-    goto: tuple[str, str, str] | None
-    """Alarm 줄의 「그 화면으로」 — (화면 이름, 주소, 탭). 고칠 화면이 없으면 None."""
+    """공식은 있는데 안 불러온 회차의 그 화면 확인 단계 알림 짧은 글. 공식버전이 없는 갈래는 빈
+    글이다(`SC-01` 이 말한다)."""
 
 
 # 공식버전 · 보관본을 푸는 자리 — 시나리오 관리 「Capa 시나리오」 탭(탭 이름은
@@ -273,35 +290,77 @@ class EmptyState(NamedTuple):
 # 시험이 맞댄다).
 SCENARIO_TAB_NAME: Final = "Capa 시나리오"
 REGISTRATION_TAB_NAME: Final = "DB 등록"
-_EMPTY_STATES: Final[tuple[tuple[str, str, str, bool], ...]] = (
-    (NO_OFFICIAL_MESSAGE, "공식버전 없음", "공식버전 없음 — 시나리오 관리에서 발행", True),
-    (
-        ARCHIVED_ONLY_MESSAGE,
-        "불러올 시나리오 없음 · 보관본만",
-        "불러올 시나리오 없음 — 보관본만 · 시나리오 관리 보관함에서 되돌림",
-        True,
-    ),
-    (
-        NOT_LOADED_MESSAGE,
-        "불러온 시나리오 없음",
-        "불러온 시나리오 없음 — 새로고침하면 공식버전을 엶",
-        False,
-    ),
+_EMPTY_STATES: Final[tuple[EmptyState, ...]] = (
+    EmptyState("공식버전 없음", "none", ""),
+    EmptyState("불러올 시나리오 없음 · 보관본만", "archived_only", ""),
+    EmptyState("불러온 시나리오 없음", None, "불러온 시나리오 없음 — 새로고침하면 공식버전을 엶"),
+)
+_EMPTY_MESSAGES: Final[tuple[str, ...]] = (
+    NO_OFFICIAL_MESSAGE,
+    ARCHIVED_ONLY_MESSAGE,
+    NOT_LOADED_MESSAGE,
 )
 
 
 def empty_state(message: str) -> EmptyState | None:
     """화면 오류 글이 불러온 리비전 없음(`no_revision_message` 의 글 셋 — 머리를 붙였어도)이면 그 빈
     상태, 아니면 None."""
-    for full, line, text, to_scenarios in _EMPTY_STATES:
+    for full, state in zip(_EMPTY_MESSAGES, _EMPTY_STATES, strict=True):
         if full in message:
-            goto = (
-                (tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href, SCENARIO_TAB_NAME)
-                if to_scenarios
-                else None
-            )
-            return EmptyState(line=line, text=text, goto=goto)
+            return state
     return None
+
+
+# 공식버전 없음 상태 알림 — 시나리오 관리 「Capa 시나리오」 탭과 불러온 리비전 없이 멈춘 계산
+# 화면이 같은 표지를 낸다(같은 코드 · 범위 · 내용이라 Alarm 줄 하나 · 알림창 한 번), 공식버전이
+# 있다고 확인한 회차의 알림 칸이 해소를 낸다(`alert_center` — 2026-11-14 물음 보드 decided 5).
+MISSING_OFFICIAL_CODE: Final = "SC-01"
+_MISSING_OFFICIAL_TEXTS: Final[Mapping[MissingOfficial, tuple[str, str]]] = {
+    "none": (
+        "공식버전이 없습니다 — 새 세션이 불러올 기준 없음 · 목록 관리 「공식으로 지정…」",
+        "공식버전이 없습니다. 새 웹 세션에서 자동으로 불러올 기준이 없습니다 — 시나리오 관리 › "
+        "Capa 시나리오 › 목록 관리에서 시나리오를 고르고 「공식으로 지정…」 으로 리비전 하나를 "
+        "공식으로 정하세요.",
+    ),
+    "archived_only": (
+        "공식버전이 없습니다 — 보관본만 있음 · 목록 관리 「보관함」 › 「되돌리기」",
+        "공식버전이 없고 보관본만 있어 지정할 시나리오가 없습니다 — 시나리오 관리 › Capa "
+        "시나리오 › 목록 관리의 「보관함」 에서 「되돌리기」 한 뒤 「공식으로 지정…」 으로 "
+        "리비전 하나를 공식으로 정하세요.",
+    ),
+}
+
+
+def missing_official_note(missing: MissingOfficial | None) -> alerts.AlertNote:
+    """공식버전 없음 상태 알림(`SC-01`) 표지 한 칸(그리지 않는다) — `missing` 이 None 이면 해소다.
+
+    범위는 없고(저장소 하나의 조건) 내용 값은 갈래(없음 `True` · 보관본만 `archived_only`)라, 어느
+    화면이 내도 같은 줄이고 알림창은 이 브라우저 탭에 한 번 뜬다. 줄의 화면 칸과 「그 화면으로」 는
+    시나리오 관리 › Capa 시나리오다."""
+    text, full = _MISSING_OFFICIAL_TEXTS["none" if missing is None else missing]
+    return alerts.state_note(
+        MISSING_OFFICIAL_CODE,
+        scope=None,
+        content=None if missing is None else (True if missing == "none" else missing),
+        active=missing is not None,
+        text=text,
+        full=full,
+        tab=SCENARIO_TAB_NAME,
+        goto=(tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href),
+    )
+
+
+# 계산이 멈춘 회차의 사이드바 잠긴 값 칸 글 — HOME 공정 필터 · 주요공정 히트맵 줄과 공용 공정 줄이
+# 같은 글이다.
+STOPPED_FIELD_VALUE: Final = "계산 멈춤"
+
+
+def stopped_field_value(message: str) -> str:
+    """멈춘 회차의 사이드바 잠긴 값 칸 글 — 화면 오류 글이 불러온 리비전 없는 빈 상태면 본문
+    회색 한 줄과 같은 글(「공식버전 없음」 등), 아니면 「계산 멈춤」(설계 규칙 UI-DAT-11 — 본문과
+    사이드바가 서로 다른 말을 하지 않는다)."""
+    state = empty_state(message)
+    return STOPPED_FIELD_VALUE if state is None else state.line
 
 
 def _original_line(exc: BaseException) -> str:

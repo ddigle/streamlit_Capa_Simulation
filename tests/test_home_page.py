@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from alert_marks import alert_notes, data_error_texts, place_errors
+from alert_marks import alert_notes, data_error_marks, data_error_texts, place_errors, states
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.components.home_dimensions import (
@@ -887,7 +887,9 @@ def test_home_reports_a_missing_active_revision_instead_of_a_traceback(tmp_path:
     app = AppTest.from_string(_home_script(database), default_timeout=300).run()
 
     assert not list(app.exception)
-    assert len(data_error_texts(app)) == 1
+    # 안내는 공식버전 없음 상태 알림 하나다(2026-11-14 물음 보드 decided 5) — 마크 · 오류 글 없음.
+    assert [note["code"] for note in states(app) if note["active"]] == ["SC-01"]
+    assert data_error_marks(app) == 0 and not data_error_texts(app)
 
 
 def test_home_names_the_data_range_when_the_selection_is_outside_it(seeded_database: Path) -> None:

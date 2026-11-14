@@ -35,6 +35,7 @@ from capa_simulation.components.equipment_scenario_status import (
 from capa_simulation.components.home_rendering import HOME_CELL_CHART_KEYS
 from capa_simulation.components.intro_overlay import render_intro_overlay
 from capa_simulation.components.intro_summary import (
+    latest_official_revision,
     render_intro_summary,
     summary_label_script,
     warm_intro_summary,
@@ -598,6 +599,8 @@ with pinned_connections(DUCKDB_PATH):
         ),
         current=current_spec,
         canon=not_canonical_code(),
+        # 공식버전 없음 `SC-01` 의 해소 — 위 요약이 이 회차에 확인한 세션 값이다(DB 를 읽지 않는다).
+        official_known=latest_official_revision() is not None,
     )
 
     # 설비 DB 를 rerun 한 번에 여러 번 여는 화면(`PageSpec.uses_equipment_db`)에서만 그 회차

@@ -29,6 +29,14 @@
   `process_clear` → `shared_process.clear`).
 - **합성 샘플 표지**(2026-11-09 보드 T8). 「샘플 데이터」 스위치가 켜져 있고 지금 화면이 원천 미연결
   화면(`PageSpec.pending_source`)일 때만 공정 칩 오른쪽에 선다. 누르는 것이 없고 풍선만 있다.
+- **공식버전 없음 `SC-01` 의 해소는 이 칸이 낸다**(2026-11-14 물음 보드 decided 5). 알림은 시나리오
+  관리 「Capa 시나리오」 탭과 불러온 리비전 없이 멈춘 계산 화면이 같은 표지로 내지만, 공식버전이
+  선 뒤의 계산 화면은 정상으로 그려 해소를 낼 자리가 없다. 그래서 이 세션이 공식버전을 확인한
+  회차(`official_known` — 입장 화면 요약이 30초에 한 번 본 세션 값, DB 를 읽지 않는다)에는 data 에
+  해소 표지를 늘 싣는다 — 줄이 없는 탭에서는 아무 일도 없다. 모르는 회차에는 싣지 않는다(있다고도
+  없다고도 말하지 않는다). data 가 해소로 실은 칸의 「있음」 표지는 그 data 가 선 동안 보지
+  않는다(JS `settledStateKeys` · `markerNotes`) — data 는 회차 앞에 닿고 그때 문서에는 앞 회차
+  화면의 표지가 남아 있어, 보면 방금 닫은 줄을 다시 열고 알림창을 띄운다.
 - **「정본 아님」 표지**(2026-11-14 「앱 대신 뜨는 화면」 보드 d13 (가) · 카드 p1-not-canonical).
   정본이 아닌 데이터로 뜬 서버(정본을 받지 않음 `SY-05` · 동기화 꺼짐 `SY-01` — `object_sync_status.
   not_canonical_code`)에서 모든 화면 · 모든 사용자에게 합성 샘플 표지 오른쪽에 늘 선다(여기 저장한
@@ -113,7 +121,7 @@ from typing import Any, Final
 
 import streamlit as st
 
-from capa_simulation import alerts, shared_process, sync_boot
+from capa_simulation import alerts, page_bootstrap, shared_process, sync_boot
 from capa_simulation.components import process_field
 from capa_simulation.components.access_list_admin import (
     ACCESS_LIST_TARGET_KIND,
@@ -339,13 +347,18 @@ def alert_center_data(
     events: list[alerts.AlertNote],
     current: PageSpec | None = None,
     canon: str | None = None,
+    official_known: bool = False,
 ) -> dict[str, Any]:
     """알림 칸 data. 같은 변경 · 사건 · 공용 공정 값이면 회차마다 같은 값이다(시각 · 카운터를 싣지
     않는다). `current` 는 지금 화면의 선언이다 — 공정 칩의 짐작과 합성 샘플 표지가 읽는다. `canon`
-    은 정본이 아닌 데이터로 뜬 서버의 알림 코드(「정본 아님」 표지 — 없으면 None)다."""
+    은 정본이 아닌 데이터로 뜬 서버의 알림 코드(「정본 아님」 표지 — 없으면 None)다.
+    `official_known` 이면 공식버전 없음 `SC-01` 의 해소 표지를 사건 뒤에 싣는다(모듈 설명)."""
     mark = session_mark()
     return {
-        "events": events,
+        "events": [
+            *events,
+            *([page_bootstrap.missing_official_note(None)] if official_known else []),
+        ],
         "changes": changes,
         "groups": [{"id": group, "label": label} for group, label in GROUPS],
         "levels": [
@@ -417,21 +430,30 @@ def _clear_process() -> None:
 
 
 def render_alert_center(
-    *, changes: list[ChangeItem], current: PageSpec | None = None, canon: str | None = None
+    *,
+    changes: list[ChangeItem],
+    current: PageSpec | None = None,
+    canon: str | None = None,
+    official_known: bool = False,
 ) -> None:
     """알림 칸을 그린다 — `app.py` 가 화면 탭 줄 바로 뒤, 페이지 앞에서 매 앱 전체 회차 부른다.
 
     콜백이 담아 둔 사건 알림(`alerts.event`)을 이 회차 data 로 꺼내 보낸다. 이벤트 칸에는 접는
     스타일 한 자리를 쓴다. `current` 는 지금 화면의 선언이다(없으면 None). `canon` 은 「정본 아님」
-    표지의 알림 코드다(`alert_center_data`). 앞 회차의 「그 화면으로」
-    대상이 남았으면 페이지 앞에서 버린다(`expire_check_target` — 이 회차에 누른 것은 남긴다).
+    표지의 알림 코드, `official_known` 은 이 세션이 공식버전을 확인했는가다(`alert_center_data`).
+    앞 회차의 「그 화면으로」 대상이 남았으면 페이지 앞에서 버린다(`expire_check_target` — 이 회차에
+    누른 것은 남긴다).
     """
     expire_check_target()
     st.html(_HIDE_STYLE)
     _ALERT_CENTER(
         key=ALERT_CENTER_KEY,
         data=alert_center_data(
-            changes=changes, events=alerts.drain_outbox(), current=current, canon=canon
+            changes=changes,
+            events=alerts.drain_outbox(),
+            current=current,
+            canon=canon,
+            official_known=official_known,
         ),
         width="stretch",
         on_reconnected_change=_reconnected,

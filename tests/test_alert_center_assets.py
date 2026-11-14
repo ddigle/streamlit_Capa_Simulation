@@ -8,13 +8,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
 
 from js_runner import run_js_json
 
-from capa_simulation import alerts
+from capa_simulation import alerts, page_bootstrap
 from capa_simulation.components import alert_center
 
 ASSETS = alert_center._ASSETS
@@ -385,6 +386,40 @@ out.copy = copyText([
 ])
 console.log(JSON.stringify(out))
 """
+
+
+def test_a_condition_the_data_settled_is_not_reopened_by_a_leftover_screen_mark() -> None:
+    """알림 칸 data 가 해소로 실은 상태 알림(공식버전 없음 `SC-01` — 서버가 공식버전을 확인함)은
+    그 data 가 선 동안 화면 표지의 같은 칸 「있음」 을 보지 않는다. data 는 회차 앞에 닿고 그때
+    문서에는 앞 회차 화면의 표지가 남아 있어, 보면 방금 닫은 줄을 다시 열고 알림창을 띄운다
+    (2026-11-14 물음 보드 decided 5). 다른 칸 · 사건 알림 · 해소 표지는 그대로 다룬다."""
+    settled_note = page_bootstrap.missing_official_note(None)
+    raised = page_bootstrap.missing_official_note("none")
+    out = _node(
+        f"""
+const settledNote = {json.dumps(settled_note, ensure_ascii=False)}
+const raised = {json.dumps(raised, ensure_ascii=False)}
+const other = {{ kind: 'state', code: 'EQ-04', scope: 's1', active: true, fp: 'f' }}
+const event = {{ kind: 'event', code: 'HM-01', id: 'e1', short: '글' }}
+const settled = settledStateKeys([event, settledNote])
+const codes = (notes) =>
+  notes.map((note) => note.code + ':' + note.kind + ':' + Boolean(note.active))
+console.log(JSON.stringify({{
+  keys: [...settled],
+  kept: codes(markerNotes([raised, other, event, settledNote], settled)),
+  none: codes(markerNotes([raised], settledStateKeys([]))),
+  empty: [...settledStateKeys(undefined)],
+}}))
+"""
+    )
+    assert out["keys"] == [f"SC-01|{settled_note['scope']}"]
+    assert out["kept"] == ["EQ-04:state:true", "HM-01:event:false", "SC-01:state:false"]
+    assert out["none"] == ["SC-01:state:true"]
+    assert out["empty"] == []
+    scan = JS[JS.index("function scan(") :]
+    scan = scan[: scan.index("\n}\n")]
+    assert "const settled = settledStateKeys(C.data.events)" in scan
+    assert "for (const note of markerNotes(notes, settled))" in scan
 
 
 def test_a_restart_is_a_different_boot_mark_stored_in_this_tab() -> None:

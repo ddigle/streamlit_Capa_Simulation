@@ -110,6 +110,7 @@ from capa_simulation.page_bootstrap import (
     bootstrap_error_message,
     calculation_stop_notice,
     selected_month_range,
+    stopped_field_value,
 )
 from capa_simulation.performance import PerformanceTrace
 from capa_simulation.persistence.cache import (
@@ -563,12 +564,20 @@ try:
 except BOOTSTRAP_ERRORS as exc:
     # 막대를 남긴 채 멈추면 오류 문구 위에 멈춰 선 진행률이 함께 보인다.
     loading.close()
+    # 기준 정보의 빈 칸으로 멈췄으면 알림이 채울 화면을 연다. 같은 `except` 가 받는 DB 오류 · 자료
+    # 없는 달은 그 화면이 없어 HOME 줄 그대로다.
+    stop = calculation_stop_notice(exc, labels=process_labels)
+    stop_message = (
+        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message
+    )
     # 패널의 공정 필터 · 주요공정 히트맵 줄은 계산 뒤에야 채워진다. 멈춘 회차에도 잠긴 줄로 자리를
-    # 지켜 패널 높이가 회차마다 흔들리지 않게 한다 — 까닭은 Alarm 의 오류가 말한다.
+    # 지켜 패널 높이가 회차마다 흔들리지 않게 한다 — 까닭은 Alarm 의 오류가 말한다. 공식버전이 없는
+    # 빈 상태면 값 칸도 본문 회색 줄과 같은 글이다(`stopped_field_value`).
+    stopped_value = stopped_field_value(stop_message)
     with page_condition_slot(0).container():
         condition_field(
             PROCESS_FIELD_LABEL,
-            "계산 멈춤",
+            stopped_value,
             slug="process_filter",
             key=PROCESS_FIELD_KEY,
             icon=PROCESS_FIELD_ICON,
@@ -576,12 +585,9 @@ except BOOTSTRAP_ERRORS as exc:
             disabled=True,
         )
     with page_condition_slot(1).container():
-        render_stopped_key_process_field()
-    # 기준 정보의 빈 칸으로 멈췄으면 알림이 채울 화면을 연다. 같은 `except` 가 받는 DB 오류 · 자료
-    # 없는 달은 그 화면이 없어 HOME 줄 그대로다.
-    stop = calculation_stop_notice(exc, labels=process_labels)
+        render_stopped_key_process_field(stopped_value)
     render_data_error(
-        bootstrap_error_message(exc, labels=process_labels) if stop is None else stop.message,
+        stop_message,
         code="HM-01",
         text=None if stop is None else stop.text,
         goto=None if stop is None else stop.goto,
