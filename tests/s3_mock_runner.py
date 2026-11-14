@@ -18,7 +18,6 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 from xml.etree import ElementTree
@@ -94,8 +93,8 @@ class MockStoreRunner:
             "ETag": headers.get("etag", ""),
         }
         if "last-modified" in headers:
-            moment = parsedate_to_datetime(headers["last-modified"]).astimezone(timezone.utc)
-            payload_json["LastModified"] = moment.isoformat()
+            # `aws` 1 판은 HEAD · GET 의 머리 글을 바꾸지 않고 찍는다(RFC 1123 — 목록 XML 만 ISO).
+            payload_json["LastModified"] = headers["last-modified"]
         if operation == "get-object":
             Path(args[-1]).write_bytes(body)
             payload_json["ContentLength"] = len(body)

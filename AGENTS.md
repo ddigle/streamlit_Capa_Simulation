@@ -2083,6 +2083,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `tests/conftest.py` 가 토큰 폴더를 없는 곳으로 돌리고 `BIGDATAQUERY_LOGIN_TOKEN` 을 지운다(`tests/test_bdq_token.py`).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
+  - `aws` 가 찍는 시각은 두 꼴이다 — 목록(XML)은 ISO, HEAD · GET 은 `Last-Modified` 머리 글 그대로(RFC 1123 — `aws` 1 판, 운영 이미지 판).
+    둘 다 읽고(`_parse_timestamp`) 못 읽으면 모름이다 — HEAD 시각을 못 읽으면 감사 기록의 시계 차이 확인(`sys_clock_skew`)이 말없이 끝난다
+    (E2E C-17). 시험 실행기(`tests/s3_mock_runner.py`)도 HEAD · GET 시각을 `aws` 1 판처럼 머리 글 그대로 돌려준다.
   - 주소 · 버킷 · 프로필(`CAPA_S3_ENDPOINT_URL` · `CAPA_S3_BUCKET` · `CAPA_S3_PROFILE`)은 사내 값이라 **환경변수로만** 받는다 — 코드 · 설정 파일에
     기본값이 없고(공개 저장소, 2026-11-12 사용자 결정) 하나라도 비면 `aws` 를 부르기 전에 넣을 이름을 대고 멈춘다(`require_settings` — 실패
     갈래 `config`). 값을 읽는 `load_settings` 는 멈추지 않는다(동기화를 쓰지 않는 앱이 설정 오류로 내려앉지 않게). 모드 · 영역은
