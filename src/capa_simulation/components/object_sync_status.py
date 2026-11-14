@@ -259,17 +259,18 @@ def render_object_sync_alerts() -> None:
         ),
     )
     # 일반 사용자는 이 알림으로 할 일이 없다 — 관리자 몫에만 선다(정본이 아닌 것이 확인되면
-    # `SY-05`).
+    # `SY-05`). 관리자가 아닌 회차의 해소 표지에는 글을 싣지 않는다(빈 CD 칸 이름이 실리지 않게).
     unchecked = " · ".join(sync_boot.head_unchecked())
+    unchecked_shown = bool(unchecked) and admin
     alerts.state(
         HEAD_UNCHECKED_CODE,
         scope=None,
         content=unchecked or None,
-        active=bool(unchecked) and admin,
-        text=None if not unchecked else f"정본 점검 못 함 — CD 환경변수 {unchecked} 없음",
+        active=unchecked_shown,
+        text=f"정본 점검 못 함 — CD 환경변수 {unchecked} 없음" if unchecked_shown else None,
         full=(
             None
-            if not unchecked
+            if not unchecked_shown
             else (
                 f"C-DEP 환경변수 표에 {unchecked} 칸이 없어 시작 점검이 버킷에 정본이 있는지 보지 "
                 "못했습니다. 정본이 있는데 받지 않은 서버라면 여기서 저장한 것은 다음 CI/CD 에 "
