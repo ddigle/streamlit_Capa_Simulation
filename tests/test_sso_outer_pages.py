@@ -592,6 +592,8 @@ def test_the_setup_page_says_maintenance_first_and_folds_the_admin_list_on_top()
     redirect = f"<td>계산한 redirect_uri</td><td><code>{PUBLIC_URL}/auth/callback</code></td>"
     assert redirect in facts and "<td>서명 인증서 x5t</td><td><code>" in facts
     assert "<td>서명 인증서 SHA-256</td><td><code>" in facts and "<wbr>" not in facts
+    assert re.search(r"<td>서명 인증서 만료</td><td><code>\d{4}-\d{2}-\d{2}</code></td>", facts)
+    assert "<td>서명 인증서 키</td><td><code>RSA 2048비트</code></td>" in facts
     lines = re.findall(r"<li>(.*?)</li>", facts)
     assert lines == [html.escape(web.CONFIG_REDIRECT_NOTE), html.escape(web.CONFIG_HOW_TO)]
     assert sso_secret() not in page.text and CLIENT_ID not in page.text

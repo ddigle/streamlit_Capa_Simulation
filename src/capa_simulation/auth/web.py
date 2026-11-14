@@ -801,9 +801,10 @@ def _issuer_candidate(cfg: SsoConfig) -> str:
 
 
 def config_facts(cfg: SsoConfig, now: int) -> page_frame.Table:
-    """「환경변수 전체」 표 아래 이름표 | 값 — 계산한 redirect_uri · 서명 인증서 · 이슈어 후보 ·
-    서버 시각 · 안내 문서. 값 칸은 글자 그대로(`<code>`)다 — 포털 등록값과 한 글자씩 대 본다.
-    계산한 주소 · 인증서 지문은 지금까지 이 화면에 실려 온 값이다(보드 D9 — 그대로 둔다)."""
+    """「환경변수 전체」 표 아래 이름표 | 값 — 계산한 redirect_uri · 서명 인증서(x5t · SHA-256 앞
+    16자 · 만료 · 키) · 이슈어 후보 · 서버 시각 · 안내 문서. 값 칸은 글자 그대로(`<code>`)다 —
+    포털 등록값과 한 글자씩 대 본다. 계산한 주소 · 인증서 지문은 지금까지 이 화면에 실려 온
+    값이다(보드 D9 — 그대로 둔다)."""
     rows: list[tuple[str, str]] = []
     if cfg.redirect_uri:
         rows.append(("계산한 redirect_uri", cfg.redirect_uri))
@@ -813,7 +814,8 @@ def config_facts(cfg: SsoConfig, now: int) -> page_frame.Table:
         rows += [
             (f"{label} x5t", cert.x5t),
             (f"{label} SHA-256", f"{cert.sha256[:16]}…"),
-            (f"{label} 만료", f"{cert.not_after:%Y-%m-%d} · RSA {cert.key_bits}비트"),
+            (f"{label} 만료", f"{cert.not_after:%Y-%m-%d}"),
+            (f"{label} 키", f"RSA {cert.key_bits}비트"),
         ]
     candidate = _issuer_candidate(cfg)
     if candidate:
