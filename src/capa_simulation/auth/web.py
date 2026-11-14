@@ -200,9 +200,11 @@ LOOP_TEXT = (
 # `{clock}` 은 「○시 ○분」(KST) — 시도 쿠키가 늦어도 사라지는 때다(`loop_frame`).
 LOOP_WAIT_TEXT = "{clock} 뒤에 「다시 시도」 를 누르세요."
 LOGOUT_TITLE = "로그아웃했습니다"
+# 다른 탭은 저절로 로그인 화면으로 가지 않는다 — 다음 누름에 「다시 로그인」 띠가 서고 사람이
+# 그 띠를 누른다(`components/sso_reconnect` — 링크 이름 `sso_identity.LOGIN_AGAIN_LABEL`).
 LOGOUT_TEXT = (
     "이 브라우저에서 이 앱의 로그인만 끝냈습니다. "
-    "열어 둔 다른 탭도 다음에 누를 때 로그인 화면으로 갑니다."
+    "열어 둔 다른 탭은 다음에 누르면 「다시 로그인」 을 보입니다."
 )
 CONFIG_TITLE = "지금은 앱을 열 수 없습니다"
 CONFIG_TEXT = "서버 설정을 고치는 중입니다. 잠시 뒤 다시 열어 보고, 계속되면 문의처에 알려 주세요."
