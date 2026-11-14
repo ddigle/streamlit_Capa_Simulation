@@ -730,7 +730,7 @@ def _map_sso(event: str, fields: Mapping[str, str], extra: Mapping[str, str]) ->
             out="fail",
             actor=SYSTEM_SSO,
             why=reason,
-            det={"reason": reason, "status": _field(fields, "status")},
+            det={"reason": reason, "status": _field(fields, "status") or None},
         )
     elif event in ("access_save_failed", "access_seed_mark_failed"):
         code = reason if event == "access_save_failed" else f"seed_mark:{reason}"
@@ -740,5 +740,5 @@ def _map_sso(event: str, fields: Mapping[str, str], extra: Mapping[str, str]) ->
             actor=loginid or SYSTEM_SSO,
             verified=bool(loginid),
             why=reason,
-            det={"reason": code, "status": _field(fields, "status")},
+            det={"reason": code, "status": _field(fields, "status") or None},
         )

@@ -136,6 +136,22 @@ def test_logout_and_closed_sessions_become_session_lines(clock: Clock) -> None:
     assert lines[1]["det"] == {"end": "idle"}
 
 
+def test_an_access_failure_without_an_http_status_keeps_no_empty_status(clock: Clock) -> None:
+    """HTTP 상태 없이 끝난 명단 읽기 · 저장 실패(주소에 닿지 못함 · 파일 깨짐)는 det 에 빈
+    `status` 를 싣지 않는다 — 기록 보기의 상세 칸이 값 없는 「상태」 를 달지 않게(E2E A-12 ·
+    A-13)."""
+    runtime.record_event("access_read", reason="unreachable", status="-")
+    runtime.record_event("access_save_failed", reason="corrupt", loginid=LOGINID, status="-")
+    runtime.record_event("access_read", reason="auth_rejected", status="403")
+
+    lines = recorder.take_pending()
+    assert [(line["ev"], line["det"]) for line in lines] == [
+        ("sys_access_read_fail", {"reason": "unreachable"}),
+        ("sys_access_save_fail", {"reason": "corrupt"}),
+        ("sys_access_read_fail", {"reason": "auth_rejected", "status": "403"}),
+    ]
+
+
 def test_renewals_fold_into_one_line_per_hour(clock: Clock) -> None:
     for outcome in ("renewed", "renewed", "skipped", "unauthorized"):
         runtime.count_refresh(outcome)
