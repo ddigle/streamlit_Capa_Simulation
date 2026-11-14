@@ -1,4 +1,4 @@
-# Purpose: 동기화 도구의 어느 출력에도 주소 · 버킷 · 프로필 · 작성자 원값이 없는지 검증한다.
+# Purpose: 동기화 도구의 어느 출력에도 주소 · 버킷 · 프로필 · 작성자 원값과 내 PC 홈이 없는지 본다.
 
 """사내 리뷰 202611131000 — 이관 때 `doctor` 의 값 줄과 실패한 aws 명령 줄이 그대로 사내 에이전트
 대화에 붙었다. 이 파일은 값을 **환경변수로 넣고 스크립트의 설정 읽기를 그대로 태운다**(왕복 시험의
@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import json
+import re
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
@@ -303,3 +304,126 @@ def test_settings_the_script_cannot_read_still_end_on_its_own_lines(
 
     assert code == 1
     assert json.loads(printed.splitlines()[-1])["kind"] == manifest.FAILURE_OTHER
+
+
+# --- 내 PC 경로(물음 보드 「정한 것」 10) -----------------------------------------------------
+
+HOME_TAG = "%USERPROFILE%"
+
+
+C_HOME = "C:\\Users\\demo.hidden"
+D_HOME = "D:\\Profiles\\demo.hidden"
+
+
+@pytest.mark.parametrize(
+    ("home", "text", "shown"),
+    [
+        (
+            C_HOME,
+            "--body 'C:\\Users\\demo.hidden\\AppData\\Local\\Temp\\capa\\a.zst'",
+            "--body '%USERPROFILE%\\AppData\\Local\\Temp\\capa\\a.zst'",
+        ),
+        (
+            C_HOME,
+            "받음 : seq 2 · C:\\Users\\DEMO.HIDDEN\\copy",
+            "받음 : seq 2 · %USERPROFILE%\\copy",
+        ),
+        (C_HOME, "c:/users/demo.hidden/AppData/x", "%USERPROFILE%/AppData/x"),
+        (C_HOME, "C:\\Users\\DEMOHI~1\\AppData\\Local\\x", "%USERPROFILE%\\AppData\\Local\\x"),
+        (C_HOME, "C:\\Users\\demo hidden two\\x.duckdb", "%USERPROFILE%\\x.duckdb"),
+        (C_HOME, "C:\\Users\\demo.hiddenmore\\x", "%USERPROFILE%\\x"),
+        (C_HOME, "(이전 파일 백업 C:\\Users\\demo.hidden)", "(이전 파일 백업 %USERPROFILE%)"),
+        (
+            D_HOME,
+            "D:\\Profiles\\demo.hidden\\x · d:/profiles/DEMO.HIDDEN/y",
+            "%USERPROFILE%\\x · %USERPROFILE%/y",
+        ),
+        (C_HOME, "D:\\data\\capa\\x.duckdb", "D:\\data\\capa\\x.duckdb"),
+        (
+            C_HOME,
+            "[Errno 13] Permission denied: 'C:\\\\Users\\\\demo.hidden\\\\AppData\\\\x'",
+            "[Errno 13] Permission denied: '%USERPROFILE%\\\\AppData\\\\x'",
+        ),
+        (
+            D_HOME,
+            "'C:\\\\Users\\\\DEMOHI~1\\\\x' · 'D:\\\\Profiles\\\\demo.hidden\\\\y'",
+            "'%USERPROFILE%\\\\x' · '%USERPROFILE%\\\\y'",
+        ),
+        (C_HOME, "https://users/demo.hidden/x", "https://users/demo.hidden/x"),
+    ],
+)
+def test_the_home_folder_is_shown_as_userprofile_in_every_form(
+    monkeypatch: pytest.MonkeyPatch, home: str, text: str, shown: str
+) -> None:
+    """홈 값 그대로 · 대소문자 · `/` 구분자 · 짧은 8.3 이름 · 빈칸 든 계정 · 다른 계정 · 드라이브가
+    다른 홈 · 오류 글의 겹 구분자(`repr`) 모두 `%USERPROFILE%` 로 — 그 뒤 경로는 그대로, 홈 밖
+    경로와 주소(`https://users/…`)는 건드리지 않는다."""
+    script = _load_script()
+    monkeypatch.setenv("USERPROFILE", home)
+
+    assert script.masked(text) == shown
+
+
+def test_the_four_places_that_print_a_pc_path_show_userprofile(
+    rig: SimpleNamespace,
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """사내 PC 경로가 찍히던 자리 넷 — 실패한 aws 명령 줄의 `--body` · 받을 경로, `fetch-copy` 의
+    받은 폴더, `init` 의 「로컬 DB 가 없습니다」, `pull` 의 백업 경로 — 가 홈을 이름표로 찍는다.
+    출력만 가린다: 받은 폴더 · 백업은 실제 경로에 그대로 있다(리뷰 202611131000 sync not_done 1).
+
+    홈은 이 시험의 임시 뿌리다 — 운영 DB 자리(`tmp_path`)와 받을 폴더(그 곁)가 함께 그 아래에 든다.
+    """
+    home = str(tmp_path_factory.getbasetemp())
+    assert str(tmp_path).startswith(home)
+    monkeypatch.setenv("USERPROFILE", home)
+
+    def assert_home_hidden(printed: str, where: str) -> None:
+        assert home not in printed, (where, printed)
+        assert HOME_TAG in printed, (where, printed)
+
+    database = rig.paths.databases["simulation"]
+    parked = database.with_suffix(".parked")
+    database.rename(parked)
+    code, printed = _run(rig, "init", "--keep-writer")
+    database = parked.rename(database)
+    assert code == 1
+    assert f"[중단] 시뮬레이션 로컬 DB 가 없습니다: {HOME_TAG}" in printed
+    assert_home_hidden(printed, "init 로컬 DB 없음")
+
+    _fail(rig, "put-object", "/snapshots/")
+    code, printed = _run(rig, "init", "--keep-writer")
+    assert code == 1
+    # Windows 경로는 `\` 가 있어 aws 인자가 따옴표로 싸인다 — 따옴표가 있든 없든.
+    assert re.search(r"--body '?%USERPROFILE%", printed), printed
+    assert_home_hidden(printed, "init --body")
+    rig.store.failures.clear()
+
+    assert _run(rig, "init", "--keep-writer")[0] == 0
+    _fail(rig, "get-object")
+    code, printed = _run(rig, "fetch-copy", "--to", str(tmp_path_factory.mktemp("copy") / "failed"))
+    assert code == 1
+    assert re.search(r" '?%USERPROFILE%", printed.split("실행한 명령: ", 1)[1]), printed
+    assert_home_hidden(printed, "fetch-copy 받을 경로")
+    rig.store.failures.clear()
+
+    folder = tmp_path_factory.mktemp("copy") / "fetched"
+    code, printed = _run(rig, "fetch-copy", "--to", str(folder))
+    assert code == 0
+    assert f"받음 : seq 1 · {HOME_TAG}" in printed
+    assert_home_hidden(printed, "fetch-copy 받음")
+    assert any(folder.iterdir()), "받은 폴더는 실제 경로에 있다"
+
+    _mark_a_save(rig)
+    assert _run(rig, "push")[0] == 0
+    assert _run(rig, "rollback", "--to", "1", "--yes")[0] == 0
+    code, printed = _run(rig, "pull")
+    assert code == 0, printed
+    installs = [line for line in printed.splitlines() if " 설치 : seq " in line]
+    assert len(installs) == 2, printed
+    for line in installs:
+        assert f"(이전 파일 백업 {HOME_TAG}" in line, line
+    assert_home_hidden(printed, "pull 백업")
+    assert any(snapshot_export.backup_dir().iterdir()), "백업은 실제 경로에 있다"
