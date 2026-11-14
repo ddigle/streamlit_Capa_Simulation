@@ -350,13 +350,16 @@ def refresh_counts() -> dict[str, int]:
 
 
 def count_login_start() -> None:
-    """로그인 시작 하나(IdP 로 보냄 — 되풀이로 막은 시작은 세지 않는다)."""
+    """로그인 시작 하나 — 브라우저의 문서 탐색을 IdP 로 보냄(`web.browser_navigation`). 되풀이로
+    막은 시작 · 링크 미리보기 · 감시 요청은 세지 않는다."""
     with _LOCK:
         _STATE.login_starts += 1
 
 
 def count_login_return() -> None:
-    """통합인증에서 돌아온 콜백 하나(POST — 성공 · 실패 · 거절을 가리지 않는다)."""
+    """이 앱이 시작한 로그인이 통합인증에서 돌아온 콜백 하나 — 검증한 상태 쿠키가 실린 처음 쓰는
+    state(IdP 오류는 그 상태 쿠키가 맞을 때). 뒤 결과(성공 · 실패 · 거절)는 가리지 않고, 꼴이 틀린
+    POST · 다시 보냄 · 10분 지난 상태는 세지 않는다."""
     with _LOCK:
         _STATE.login_returns += 1
 
@@ -364,7 +367,9 @@ def count_login_return() -> None:
 def login_flow_counts() -> tuple[int, int]:
     """기동 뒤 (로그인 시작, 돌아옴) 누계 — 재시작하면 0. 사건 고리에 적지 않는다(누구나 시작할 수
     있어 고리를 밀어내지 않게). 시작에 비해 돌아옴이 적으면 통합인증(ADFS) 화면에서 멈춘 것이다 —
-    포털 등록 주소 · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 기록이 없다."""
+    포털 등록 주소 · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 기록이 없다. 사람이
+    로그인 화면을 그냥 닫은 것 · 쿠키 없이 돌아온 것(「로그인 전 실패」 의 `no_cookies`)도 돌아옴에
+    들지 않아 차이는 크게 벌어질 때만 읽는다."""
     with _LOCK:
         return _STATE.login_starts, _STATE.login_returns
 

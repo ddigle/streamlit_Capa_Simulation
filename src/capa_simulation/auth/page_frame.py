@@ -16,9 +16,10 @@
    (`CAPA_ACCESS_CONTACT`)은 그 뒤에. 둘 다 비면 그리지 않는다(UI-TXT-08).
 7. 바닥 「참고 <사유 코드> · <시각> UTC」(+ 있으면 「 · 진단 <번호>」 — 오류 화면이 보관한
    진단의 번호, 한 번 눌러 통째로 고름) — 새 번호 체계 없이 지금 사유 코드 · 진단 번호를 쓴다.
-8. 접힌 「관리자용 진단」 — 줄 · 이름표와 값의 표 · 그 안에 다시 접힌 칸 하나(설정 막힘의
-   「환경변수 전체(n)」). 접어도 누구나 펼친다 — 토큰 · 비밀값 · 쿠키 값은 싣지 않고, 지금까지
-   실어 온 계산한 주소 · 등록 번호 · 인증서 지문과 이름 · 수만 싣는다(보드 D9 「이름 · 수」).
+8. 접힌 「관리자용 진단」 — 머리 줄(설정 막힘의 「고칠 것 n개」) · 줄 · 이름표와 값의 표 · 그
+   안에 다시 접힌 칸 하나(설정 막힘의 「환경변수 전체(n)」 — 표 · 값 표 · 줄). 접어도 누구나
+   펼친다 — 토큰 · 비밀값 · 쿠키 값은 싣지 않고, 지금까지 실어 온 계산한 주소 · 등록 번호 ·
+   인증서 지문과 이름 · 수만 싣는다(보드 D9 「이름 · 수」).
 
 스크립트가 없다(CSP `default-src 'none'`) — 마크는 인라인 SVG, 서식은 인라인 `<style>` 이다.
 밝은 · 어두운 팔레트(`design/tokens`)를 함께 싣고 `prefers-color-scheme` 로 고른다
@@ -174,20 +175,23 @@ class Form:
 
 @dataclass(frozen=True)
 class Table:
-    """접힌 진단 안의 표 하나 — 머리(없으면 빈 튜플) · 줄 · 글자 그대로 보일 칸 번호(`<code>`)."""
+    """접힌 진단 안의 표 하나 — 머리(없으면 빈 튜플) · 줄 · 글자 그대로 보일 칸 번호(`<code>`) ·
+    좁은 창에서 `_` 뒤에서 먼저 끊을 칸 번호(환경변수 이름 — `<wbr>`, 복사한 글은 그대로다)."""
 
     rows: tuple[tuple[str, ...], ...]
     head: tuple[str, ...] = ()
     code_columns: tuple[int, ...] = ()
+    break_columns: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
 class Fold:
-    """접힌 진단 안에 다시 접힌 칸 하나 — 이름 · 표 · 그 아래 줄."""
+    """접힌 진단 안에 다시 접힌 칸 하나 — 이름 · 표 · 값 표(이름표 | 값) · 그 아래 줄."""
 
     summary: str
     table: Table | None = None
     lines: tuple[str, ...] = ()
+    facts: Table | None = None
 
 
 @dataclass(frozen=True)
@@ -195,7 +199,8 @@ class Frame:
     """화면 한 장의 내용 — 모두 평문이다(이 모듈이 이스케이프한다).
 
     `primary` 가 `None` 이면 보조 링크만 선다 — 그때 `secondary` 가 비어 있으면 안 된다(막다른
-    화면). `reference_id` 는 오류 화면이 보관한 진단의 번호(바닥 참고 줄 끝)다.
+    화면). `reference_id` 는 오류 화면이 보관한 진단의 번호(바닥 참고 줄 끝)다. `diagnostic_head` 는
+    접힌 진단 맨 위의 글머리 없는 한 줄이다(그 아래 `diagnostics` 줄의 수를 말하는 머리).
     """
 
     title: str
@@ -208,6 +213,7 @@ class Frame:
     note_text: str = ""
     reference: str = ""
     reference_id: str = ""
+    diagnostic_head: str = ""
     diagnostics: tuple[str, ...] = ()
     diagnostic_table: Table | None = None
     diagnostic_fold: Fold | None = None
@@ -272,10 +278,13 @@ def clock_text(moment: int, *, round_up: bool = False) -> str:
 
 
 def table_html(table: Table) -> str:
-    """진단 표 — 칸 글은 모두 이스케이프하고, `code_columns` 칸은 글자 그대로(`<code>`)."""
+    """진단 표 — 칸 글은 모두 이스케이프하고, `code_columns` 칸은 글자 그대로(`<code>`),
+    `break_columns` 칸은 `_` 뒤에 끊을 자리(`<wbr>`)를 둔다."""
 
     def cell(index: int, value: str, tag: str) -> str:
         shown = _esc(value)
+        if tag == "td" and index in table.break_columns:
+            shown = shown.replace("_", "_<wbr>")
         if tag == "td" and index in table.code_columns and value:
             shown = f"<code>{shown}</code>"
         return f"<{tag}>{shown}</{tag}>"
@@ -298,15 +307,24 @@ def _lines_html(lines: Sequence[str]) -> str:
 
 
 def diagnostics_html(frame: Frame) -> str:
-    """접힌 「관리자용 진단」 — 줄 → 표 → 다시 접힌 칸. 셋 다 없으면 빈 글(그리지 않는다)."""
-    if not (frame.diagnostics or frame.diagnostic_table or frame.diagnostic_fold):
+    """접힌 「관리자용 진단」 — 머리 줄 → 줄 → 표 → 다시 접힌 칸(표 → 값 표 → 줄). 넷 다 없으면
+    빈 글(그리지 않는다)."""
+    if not (
+        frame.diagnostic_head
+        or frame.diagnostics
+        or frame.diagnostic_table
+        or frame.diagnostic_fold
+    ):
         return ""
-    parts = [_lines_html(frame.diagnostics)]
+    parts = [f"<p>{_esc(frame.diagnostic_head)}</p>"] if frame.diagnostic_head else []
+    parts.append(_lines_html(frame.diagnostics))
     if frame.diagnostic_table is not None:
         parts.append(table_html(frame.diagnostic_table))
     fold = frame.diagnostic_fold
     if fold is not None:
-        inner = "" if fold.table is None else table_html(fold.table)
+        inner = "".join(
+            table_html(table) for table in (fold.table, fold.facts) if table is not None
+        )
         parts.append(
             f"<details><summary>{_esc(fold.summary)}</summary>{inner}"
             f"{_lines_html(fold.lines)}</details>"

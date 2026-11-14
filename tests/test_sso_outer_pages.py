@@ -20,6 +20,7 @@ from asgi_driver import AsgiResponse, http
 from sso_support import (
     CLIENT_ID,
     PUBLIC_URL,
+    expiring_signing,
     id_token_claims,
     make_id_token,
     sso_secret,
@@ -30,10 +31,16 @@ from starlette.applications import Starlette
 from capa_simulation.audit import read as audit_read
 from capa_simulation.auth import names, page_frame, runtime, web
 from capa_simulation.auth.config import SsoConfig
+from capa_simulation.auth.gate import SsoGate
 from capa_simulation.auth.server import sso_routes
+from capa_simulation.auth.tokens import STATE_TTL, issue_state
+from capa_simulation.components import sso_status
+from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 FORM = {"content-type": "application/x-www-form-urlencoded"}
+# 브라우저가 주소창 · 링크로 연 문서 탐색의 머리(로그인 시작 누계가 세는 요청).
+BROWSER = {"sec-fetch-mode": "navigate", "sec-fetch-dest": "document", "sec-fetch-site": "none"}
 # 쿠키 꾸러미 안에 함께 드는 마지막 state(쿠키가 아니다 — 콜백에 보내지 않는다).
 STATE_KEY = "~state"
 CONTACT_EMAIL = "help@example.com"
@@ -56,8 +63,10 @@ def cookie_header(cookies: dict[str, str]) -> str:
 
 
 def begin(app: Starlette, cfg: SsoConfig, jar: dict[str, str], next_path: str = "/") -> str:
-    """로그인 시작 — 받은 쿠키를 `jar` 에 담고 (state, nonce) 가운데 nonce 를 돌려준다."""
-    headers = {"cookie": cookie_header(jar)} if jar else None
+    """브라우저의 로그인 시작 — 받은 쿠키를 `jar` 에 담고 (state, nonce) 가운데 nonce 를
+    돌려준다."""
+    cookies = {name: value for name, value in jar.items() if name != STATE_KEY}
+    headers = {**BROWSER, "cookie": cookie_header(cookies)} if cookies else dict(BROWSER)
     response = http(
         app, "GET", f"{names.LOGIN_PATH}?next={quote(next_path, safe='')}", headers=headers
     )
@@ -227,8 +236,139 @@ def test_no_cookie_at_all_is_its_own_case() -> None:
     assert f"<p>{web.NO_COOKIES_TEXT}</p>" in top
     assert button_hrefs(page), "다시 시도(공개 주소로 다시 시작하면 다른 주소 문제는 풀린다)"
     assert "10분" in admin_part(page)
+    attempt = response.cookie(cfg.attempt_cookie)
+    assert attempt is not None and attempt.deleted, "고쳐지지 않는 실패 — 되풀이를 세지 않는다"
     [event] = [item for item in runtime.recent_events() if item.value("reason") == web.NO_COOKIES]
     assert event.event == "login_fail"
+
+
+def test_lingering_on_the_portal_reads_as_time_passed_not_as_cookies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """통합인증 화면에 10분 넘게 머문 뒤 로그인 — 시도 쿠키(2분)는 사라졌지만 상태 쿠키는 토큰보다
+    오래 살아(1시간) 실려 온다. 쿠키 설정 탓으로 말하지 않고 「시간이 지남」(잠시 문제)이며,
+    늦은 토큰으로 로그인되지 않는다."""
+    cfg = use_config()
+    app = routes_app()
+    jar: dict[str, str] = {}
+    nonce = begin(app, cfg, jar, "/space")
+    token = make_id_token(id_token_claims(nonce))
+    later = int(time.time()) + STATE_TTL + 60
+    assert STATE_TTL + 60 < web.STATE_COOKIE_TTL, "상태 쿠키는 아직 산다"
+    jar.pop(cfg.attempt_cookie)
+    monkeypatch.setattr(web, "_now", lambda: later)
+
+    response = callback(app, jar, token)
+    page = follow(app, response)
+
+    assert query_of(response)["code"] == "state_invalid"
+    assert web.failure_kind("state_invalid") == web.KIND_RETRY
+    assert cfg.session_cookie not in jar, "늦은 토큰으로는 들어오지 않는다"
+    assert f"<p>{web.LOGIN_RETRY_TEXT}</p>" in main_part(page)
+    assert web.NO_COOKIES_TEXT not in page.text
+
+
+def test_a_failure_event_carries_the_diagnostic_reference_for_the_admin() -> None:
+    """바닥 참고 줄의 「진단 <번호>」 를 받은 관리자가 Admin 「통합인증 점검」 의 사건 줄에서 같은
+    번호를 찾는다 — 사건에는 앞 여덟 글자만(번호 전체는 10분 동안 진단을 다시 여는 주소 값)."""
+    cfg = use_config()
+    app = routes_app()
+    jar: dict[str, str] = {}
+    begin(app, cfg, jar)
+
+    response = callback(app, {STATE_KEY: jar[STATE_KEY]}, "x")
+    page = follow(app, response)
+
+    full = query_of(response)["id"]
+    assert len(full) > web.DIAGNOSTIC_REF_LENGTH == 8
+    assert f" · 진단 {full}</span>" in main_part(page)
+    [event] = runtime.recent_events(anonymous=True)
+    assert event.value("diag") == full[:8]
+    assert full not in str(event.fields)
+    rows = sso_status.recent_event_table(anonymous=True)
+    assert list(rows["사유 코드"]) == [f"{web.NO_COOKIES} · 진단 {full[:8]}"]
+
+
+@pytest.mark.parametrize(
+    ("headers", "body", "code", "status"),
+    [
+        ({"content-type": "text/plain"}, b"x=1", "bad_content_type", 415),
+        ({**FORM, "content-length": str(64 * 1024 + 1)}, b"a=1", "body_too_large", 413),
+        (FORM, b"a=1&a=2", "bad_form", 303),
+    ],
+)
+def test_a_malformed_callback_stops_counting_attempts(
+    headers: dict[str, str], body: bytes, code: str, status: int
+) -> None:
+    """콜백 꼴이 틀림(설정 문제 — 다시 해도 같음) — 시도 쿠키를 지운다."""
+    cfg = use_config()
+    cookies = {cfg.attempt_cookie: web.attempt_value(2, int(time.time()))}
+
+    response = http(
+        routes_app(),
+        "POST",
+        names.CALLBACK_PATH,
+        headers={**headers, "cookie": cookie_header(cookies)},
+        body=body,
+    )
+
+    assert response.status == status
+    assert web.failure_kind(code) == web.KIND_SETUP
+    assert (query_of(response).get("code") if status == 303 else code) == code
+    if status != 303:
+        assert code in response.text
+    attempt = response.cookie(cfg.attempt_cookie)
+    assert attempt is not None and attempt.deleted
+
+
+@pytest.mark.parametrize("stored", ["forged", "expired", "other_state"])
+def test_an_idp_error_with_an_unusable_state_cookie_goes_back_to_the_first_screen(
+    stored: str,
+) -> None:
+    """IdP 오류의 「다시 시도」 는 그 상태 쿠키의 next 를 쓴다 — 쿠키가 위조 · 만료 · 다른 state 의
+    것이면 `/` 이고, 이 앱이 시작한 로그인으로 세지 않는다(돌아옴 누계 그대로)."""
+    cfg = use_config()
+    state = "S" * 43
+    now = int(time.time())
+    values = {
+        "forged": issue_state(cfg, state=state, nonce="n" * 43, next_path="/space", now=now)[:-4]
+        + "AAAA",
+        "expired": issue_state(
+            cfg, state=state, nonce="n" * 43, next_path="/space", now=now - STATE_TTL - 10
+        ),
+        "other_state": issue_state(
+            cfg, state="T" * 43, nonce="n" * 43, next_path="/space", now=now
+        ),
+    }
+
+    response = http(
+        routes_app(),
+        "POST",
+        names.CALLBACK_PATH,
+        headers={**FORM, "cookie": cookie_header({cfg.state_cookie(state): values[stored]})},
+        body=urlencode({"error": "access_denied", "state": state}).encode(),
+    )
+
+    assert "next" not in query_of(response), "처음 가려던 화면은 / (주소에 싣지 않음)"
+    assert runtime.login_flow_counts() == (0, 0)
+
+
+def test_a_used_state_is_remembered_until_its_end_and_not_after(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """쓴 state 는 그 상태 토큰의 끝까지(그 초 포함) 재사용으로 읽고, 그 뒤에는 잊는다."""
+    runtime.reset()
+    moment = [1_000_000]
+    monkeypatch.setattr(runtime, "_now", lambda: moment[0])
+    assert runtime.remember_used_state("d" * 64, 1_000_600)
+
+    assert runtime.state_used("d" * 64)
+    assert not runtime.remember_used_state("d" * 64, 1_000_600), "끝 전에는 재사용"
+    moment[0] = 1_000_600
+    assert runtime.state_used("d" * 64), "끝 그 초까지"
+    moment[0] = 1_000_601
+    assert not runtime.state_used("d" * 64)
+    assert runtime.remember_used_state("d" * 64, 1_001_201), "끝난 뒤에는 처음처럼"
 
 
 def test_back_after_a_login_is_a_reuse_not_a_cookie_problem() -> None:
@@ -261,7 +401,7 @@ def test_retrying_a_setup_failure_never_reaches_the_loop_page() -> None:
 
     for _ in range(5):
         nonce = begin(app, cfg, jar)
-        assert jar[cfg.attempt_cookie] == "1"
+        assert web.attempt_record(jar[cfg.attempt_cookie])[0] == 1
         response = callback(app, jar, make_id_token(id_token_claims(nonce, aud="other-app")))
         assert query_of(response)["code"] == "aud_mismatch"
         assert cfg.attempt_cookie not in jar
@@ -277,9 +417,11 @@ def test_repeated_temporary_failures_reach_the_loop_page_with_a_time_and_a_butto
     for _ in range(web.MAX_LOGIN_ATTEMPTS):
         begin(app, cfg, jar, "/space")
         callback(app, jar, make_id_token(id_token_claims("another-tab-nonce")))
-    assert jar[cfg.attempt_cookie] == str(web.MAX_LOGIN_ATTEMPTS)
+    count, last_start = web.attempt_record(jar[cfg.attempt_cookie])
+    assert count == web.MAX_LOGIN_ATTEMPTS and last_start is not None
+    third = web.attempt_value(count, FIXED_NOW)
 
-    page = web.start_login(cfg, {cfg.attempt_cookie: jar[cfg.attempt_cookie]}, "/space", FIXED_NOW)
+    page = web.start_login(cfg, {cfg.attempt_cookie: third}, "/space", FIXED_NOW, browser=True)
 
     text = bytes(page.body).decode("utf-8")
     assert page.status_code == 200 and page.headers.get("location") is None
@@ -293,6 +435,30 @@ def test_repeated_temporary_failures_reach_the_loop_page_with_a_time_and_a_butto
     assert not any(
         cookie.startswith(cfg.state_cookie_prefix) for cookie in page.headers.getlist("set-cookie")
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "seen_at", "clock"),
+    [
+        (f"3.{FIXED_NOW - 30}", FIXED_NOW, "14시 32분"),
+        (f"3.{FIXED_NOW - 30}", FIXED_NOW + 50, "14시 32분"),
+        ("3", FIXED_NOW, "14시 33분"),
+        ("3.0", FIXED_NOW, "14시 31분"),
+        (f"3.{FIXED_NOW + 9999}", FIXED_NOW, "14시 33분"),
+    ],
+)
+def test_the_loop_clock_is_when_the_attempt_cookie_ends_and_does_not_move(
+    value: str, seen_at: int, clock: str
+) -> None:
+    """기다릴 시각은 마지막 시작 + 2분(시도 쿠키가 사라지는 때)이라 화면을 다시 봐도 밀리지 않는다.
+    시각이 없는 옛 꼴은 지금 + 2분, 서명하지 않은 값이라 지금 ~ 지금 + 2분으로 좁힌다(14:30:20)."""
+    cfg = use_config()
+
+    page = web.start_login(cfg, {cfg.attempt_cookie: value}, "/", seen_at)
+
+    text = bytes(page.body).decode("utf-8")
+    assert f"<p>{clock} 뒤에 「다시 시도」 를 누르세요.</p>" in text
+    assert not page.headers.getlist("set-cookie"), "되풀이 화면은 시도 쿠키를 다시 심지 않는다"
 
 
 def test_the_loop_code_on_the_error_path_shows_the_loop_page() -> None:
@@ -412,15 +578,22 @@ def test_the_setup_page_says_maintenance_first_and_folds_the_admin_list_on_top()
     assert "참고 config_broken · " in top and f'href="mailto:{CONTACT_EMAIL}"' in top
     assert names.ENV_ACCESS_ADMINS not in top, "환경변수 이름은 접힌 진단 안에만"
     folded = admin_part(page)
-    items = re.findall(r"<li>(.*?)</li>", folded.split("<details>", 1)[0])
-    assert items[0] == "통합인증 설정을 마치지 못했습니다 — 고칠 것 1개"
-    assert items[1] == html.escape(web.CONFIG_ADMINS_TEXT)
+    outer = folded.split("<details>", 1)[0]
+    assert outer.startswith("<p>통합인증 설정을 마치지 못했습니다 — 고칠 것 1개</p><ul>")
+    items = re.findall(r"<li>(.*?)</li>", outer)
+    assert items == [html.escape(web.CONFIG_ADMINS_TEXT)], "「1개」 아래 글머리는 하나"
+    assert html.escape(web.CONFIG_HOW_TO) not in outer
     fold = folded.split("<details>", 1)[1]
     total = len(names.SSO_ENVIRONMENT)
     assert fold.startswith(f"<summary>환경변수 전체({total})</summary><table>")
     for name in names.SSO_ENVIRONMENT:
-        assert f"<code>{name}</code>" in fold
-    assert f"{PUBLIC_URL}/auth/callback" in fold and "서명 인증서 · x5t " in fold
+        assert f"<td><code>{name.replace('_', '_<wbr>')}</code></td>" in fold
+    facts = fold.split("</table>", 1)[1]
+    redirect = f"<td>계산한 redirect_uri</td><td><code>{PUBLIC_URL}/auth/callback</code></td>"
+    assert redirect in facts and "<td>서명 인증서 x5t</td><td><code>" in facts
+    assert "<td>서명 인증서 SHA-256</td><td><code>" in facts and "<wbr>" not in facts
+    lines = re.findall(r"<li>(.*?)</li>", facts)
+    assert lines == [html.escape(web.CONFIG_REDIRECT_NOTE), html.escape(web.CONFIG_HOW_TO)]
     assert sso_secret() not in page.text and CLIENT_ID not in page.text
 
 
@@ -429,11 +602,33 @@ def test_the_setup_page_counts_each_variable_to_fix_once() -> None:
 
     page = http(routes_app(), "GET", names.LOGIN_PATH)
 
-    items = re.findall(r"<li>(.*?)</li>", admin_part(page).split("<details>", 1)[0])
-    assert items[0] == "통합인증 설정을 마치지 못했습니다 — 고칠 것 2개"
+    outer = admin_part(page).split("<details>", 1)[0]
+    assert outer.startswith("<p>통합인증 설정을 마치지 못했습니다 — 고칠 것 2개</p><ul>")
+    items = re.findall(r"<li>(.*?)</li>", outer)
+    assert len(items) == 2
     assert any(item.startswith(names.ENV_ISSUER) for item in items)
     assert any(item.startswith(names.ENV_SIGNING_CERT) for item in items)
     assert web.CONFIG_ADMINS_TEXT not in page.text
+    facts = admin_part(page).split("<details>", 1)[1].split("</table>", 1)[1]
+    assert f"<td>{names.ENV_ISSUER} 후보</td><td><code>" in facts
+    assert html.escape(web.CONFIG_ISSUER_NOTE) in facts
+
+
+def test_the_setup_page_puts_a_notice_beside_its_variable() -> None:
+    """막지 않는 알림(서명 인증서 만료가 30일 안)은 Admin 「통합인증 점검」 표처럼 그 환경변수 줄의
+    까닭 칸에 붙는다 — 이름은 그 줄에서 글자 그대로다."""
+    use_config(
+        {names.ENV_SIGNING_CERT: expiring_signing().der_b64},
+        drop=[names.ENV_ACCESS_ADMINS, names.ENV_ACCESS_USERS],
+    )
+
+    page = http(routes_app(), "GET", names.LOGIN_PATH)
+
+    fold = admin_part(page).split("<details>", 1)[1]
+    name = names.ENV_SIGNING_CERT.replace("_", "_<wbr>")
+    [row] = re.findall(rf"<tr><td><code>{re.escape(name)}</code></td>(.*?)</tr>", fold)
+    assert row.startswith("<td>있음</td><td>") and "30일" in row
+    assert "알림 · " not in fold
 
 
 def test_without_any_contact_the_contact_sentences_point_at_the_app_admin(
@@ -457,8 +652,10 @@ def test_without_any_contact_the_contact_sentences_point_at_the_app_admin(
 
 
 def test_login_starts_and_returns_are_counted_since_boot() -> None:
-    """「로그인 시작 n · 돌아옴 n」 — 시작은 IdP 로 보낸 것만(되풀이로 막은 시작은 빼고), 돌아옴은
-    통합인증에서 온 콜백 POST 를 실패 · 거절까지 센다(GET 은 세지 않는다). 재시작하면 0."""
+    """「로그인 시작 n · 돌아옴 n」 — 시작은 브라우저의 문서 탐색을 IdP 로 보낸 것만(되풀이로 막은
+    시작 · 비브라우저 · 그림 요청은 빼고), 돌아옴은 이 앱이 시작한 로그인이 검증한 상태 쿠키와
+    처음 돌아온 것만(실패 · 거절 · IdP 오류 포함 — 꼴이 틀린 POST · 모르는 state · 다시 보냄 ·
+    GET 은 빼고). 재시작하면 0."""
     cfg = use_config()
     app = routes_app()
     jar: dict[str, str] = {}
@@ -468,17 +665,57 @@ def test_login_starts_and_returns_are_counted_since_boot() -> None:
     assert runtime.login_flow_counts() == (1, 0)
     callback(app, jar, make_id_token(id_token_claims(nonce, aud="other-app")))
     assert runtime.login_flow_counts() == (1, 1)
-    nonce = begin(app, cfg, jar)
-    callback(app, jar, make_id_token(id_token_claims(nonce)))
-    http(app, "GET", names.CALLBACK_PATH)
-    web.start_login(cfg, {cfg.attempt_cookie: "3"}, "/", int(time.time()))
 
-    assert runtime.login_flow_counts() == (2, 2)
+    assert http(app, "GET", names.LOGIN_PATH).status == 302
+    image = {"sec-fetch-mode": "no-cors", "sec-fetch-dest": "image", "sec-fetch-site": "cross-site"}
+    assert http(app, "HEAD", names.LOGIN_PATH, headers=image).status == 302
+    http(app, "POST", names.CALLBACK_PATH, headers={"content-type": "text/plain"}, body=b"x")
+    forged = urlencode({"state": "A" * 43, "id_token": "x"}).encode()
+    http(app, "POST", names.CALLBACK_PATH, headers=FORM, body=forged)
+    http(app, "GET", names.CALLBACK_PATH)
+    assert runtime.login_flow_counts() == (1, 1), "사람 아닌 요청 · 꼴이 틀린 POST 는 세지 않는다"
+
+    nonce = begin(app, cfg, jar)
+    token = make_id_token(id_token_claims(nonce))
+    assert callback(app, jar, token).status == 303 and cfg.session_cookie in jar
+    replay = callback(app, {STATE_KEY: jar[STATE_KEY]}, token)
+    assert query_of(replay)["code"] == "state_reused"
+    assert runtime.login_flow_counts() == (2, 2), "같은 로그인의 다시 보냄은 한 번"
+
+    jar = {}
+    begin(app, cfg, jar)
+    cookies = {name: value for name, value in jar.items() if name != STATE_KEY}
+    refused = urlencode({"error": "access_denied", "state": jar[STATE_KEY]}).encode()
+    headers = {**FORM, "cookie": cookie_header(cookies)}
+    http(app, "POST", names.CALLBACK_PATH, headers=headers, body=refused)
+    web.start_login(cfg, {cfg.attempt_cookie: "3"}, "/", int(time.time()), browser=True)
+
+    assert runtime.login_flow_counts() == (3, 3)
     runtime.reset()
     assert runtime.login_flow_counts() == (0, 0)
 
 
+def test_the_gate_counts_only_browser_navigations_as_login_starts() -> None:
+    """문지기는 쿠키 없는 GET · HEAD 를 모두 로그인으로 보내지만(비브라우저도) 시작 누계는
+    브라우저의 문서 탐색만 센다 — 링크 미리보기 · 감시 요청이 「ADFS 화면에서 멈춤」 처럼 읽히지
+    않게."""
+    use_config()
+    gate = SsoGate(routes_app())
+
+    assert http(gate, "GET", "/").status == 302
+    assert http(gate, "HEAD", "/space").status == 302
+    assert runtime.login_flow_counts() == (0, 0)
+    assert http(gate, "GET", "/space", headers=BROWSER).status == 302
+    assert runtime.login_flow_counts() == (1, 0)
+
+
 # --- 틀 -----------------------------------------------------------------------------------
+
+
+def test_the_outer_diagnostic_fold_has_the_same_name_as_the_in_app_one() -> None:
+    """「관리자용 진단」 은 앱 밖 틀(설정 막힘 · 로그인 실패)과 앱 안 판(문지기 없이 뜬 앱 · 오류
+    카드)이 같은 이름이다(UI-CON-02) — 두 상수를 맞댄다."""
+    assert page_frame.DIAGNOSTIC_LABEL == ADMIN_DIAGNOSTIC_LABEL
 
 
 def test_the_frame_folds_a_table_and_a_second_fold_and_escapes_them() -> None:
@@ -490,20 +727,28 @@ def test_the_frame_folds_a_table_and_a_second_fold_and_escapes_them() -> None:
         secondary=(page_frame.Link("다시 시도", "/x"),),
         reference="code",
         reference_id="abc<i>",
+        diagnostic_head="<em>머리</em>",
         diagnostics=("<b>줄</b>",),
         diagnostic_table=page_frame.Table(rows=(("이름", "<script>"),), code_columns=(1,)),
         diagnostic_fold=page_frame.Fold(
             "<u>접힘</u>",
-            table=page_frame.Table(rows=(("A", "B"),), head=("<h>", "칸")),
+            table=page_frame.Table(
+                rows=(("A_B<x>", "B"),), head=("<h>", "칸"), code_columns=(0,), break_columns=(0,)
+            ),
+            facts=page_frame.Table(rows=(("값_이름", "<v>_1"),), code_columns=(1,)),
             lines=("<s>끝</s>",),
         ),
     )
 
     text = page_frame.render(frame, now=FIXED_NOW)
 
-    for raw in ("<script>", "<b>줄", "<u>", "<s>", "<h>", "<i>"):
+    for raw in ("<script>", "<b>줄", "<u>", "<s>", "<h>", "<i>", "<em>", "<x>", "<v>"):
         assert raw not in text, raw
     assert "<td><code>&lt;script&gt;</code></td>" in text
+    assert "<summary>관리자용 진단</summary><p>&lt;em&gt;머리&lt;/em&gt;</p><ul>" in text
+    assert "<td><code>A_<wbr>B&lt;x&gt;</code></td>" in text, "이름 칸만 `_` 뒤에서 끊는다"
+    assert "<td>값_이름</td><td><code>&lt;v&gt;_1</code></td>" in text, "값 칸은 글자 그대로"
+    assert text.index("A_<wbr>B") < text.index("값_이름") < text.index("&lt;s&gt;끝")
     assert "참고 code · 2026-11-14 05:30 UTC · 진단 abc&lt;i&gt;" in text
     assert 'class="button"' not in text, "주 단추 없음 — 보조 링크만"
     outer = text.split(f"<details><summary>{page_frame.DIAGNOSTIC_LABEL}</summary>", 1)[1]

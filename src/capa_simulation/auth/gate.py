@@ -53,6 +53,7 @@ from capa_simulation.auth.identity import (
 )
 from capa_simulation.auth.web import (
     LOGIN_REQUIRED,
+    browser_navigation,
     config_page,
     method_not_allowed,
     next_from_scope,
@@ -82,16 +83,15 @@ def request_headers(scope: Scope) -> dict[str, str]:
 def is_navigation(method: str, headers: dict[str, str]) -> bool:
     """최상위 탐색인가.
 
-    브라우저(Sec-Fetch-* 가 있음)는 `navigate` + `document` 만, 비브라우저는 GET · HEAD 전부.
+    브라우저(Sec-Fetch-* 가 있음)는 `navigate` + `document` 만(`web.browser_navigation`),
+    비브라우저는 GET · HEAD 전부 — 비브라우저도 로그인으로 보내되 로그인 시작 누계는 세지 않는다.
     """
     if method not in _READ_METHODS:
         return False
     fetch_headers = [name for name in headers if name.startswith("sec-fetch-")]
     if not fetch_headers:
         return True
-    return (
-        headers.get("sec-fetch-mode") == "navigate" and headers.get("sec-fetch-dest") == "document"
-    )
+    return browser_navigation(headers)
 
 
 def ended_reason(problem: IdentityProblem, cfg: SsoConfig) -> str:
@@ -223,7 +223,13 @@ class SsoGate:
             return
         if is_navigation(method, headers):
             next_path = next_from_scope(path, scope.get("raw_path"), scope.get("query_string"))
-            response = start_login(cfg, parse_cookie_header(headers.get("cookie")), next_path, now)
+            response = start_login(
+                cfg,
+                parse_cookie_header(headers.get("cookie")),
+                next_path,
+                now,
+                browser=browser_navigation(headers),
+            )
             await response(scope, receive, send)
             return
         # 본문은 그대로 두고 까닭 낱말만 머리에 단다 — 「다시 로그인」 띠가 글을 고른다.

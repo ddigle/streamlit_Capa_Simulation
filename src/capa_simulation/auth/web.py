@@ -80,6 +80,7 @@ from capa_simulation.auth.tokens import (
     STATE_TTL,
     DeniedClaims,
     SsoReject,
+    StateClaims,
     VerifiedLogin,
     clean_text,
     decode_session,
@@ -100,7 +101,17 @@ MAX_FORM_FIELDS = 20
 MAX_NEXT_LENGTH = 2048
 MAX_LOGIN_ATTEMPTS = 3
 ATTEMPT_TTL = 120
+# 상태 쿠키의 수명(초) — 상태 토큰(`STATE_TTL` 10분)보다 긴 1시간이다. 통합인증 화면에 10분
+# 넘게 머문 사람의 콜백에도 쿠키가 실려 와 「시간이 지남」(`state_invalid` — 잠시 문제)으로
+# 읽히고, 쿠키가 하나도 오지 않는 「쿠키 없음」 은 쿠키를 막았거나 다른 주소로 연 때에 남는다.
+# 토큰의 끝은 그대로라 늦게 온 쿠키로 로그인되지는 않는다.
+STATE_COOKIE_TTL = STATE_TTL * 6
+# 시도 쿠키 값 — 「시작 횟수」 또는 「시작 횟수.마지막 시작 시각(초)」. 서명하지 않은 값이라 되풀이
+# 화면의 기다릴 시각은 지금 ~ 지금 + `ATTEMPT_TTL` 안으로 좁혀 쓴다.
+_ATTEMPT_VALUE = re.compile(r"([0-9]{1,2})(?:\.([0-9]{1,12}))?")
 MAX_STATE_COOKIES = 5
+# 사건(`login_fail`)에 싣는 진단 번호의 앞 글자 수 — 화면 참고 줄의 번호와 맞추는 열쇠(`_fail`).
+DIAGNOSTIC_REF_LENGTH = 8
 MAX_SESSION_COOKIE_BYTES = 3584
 # 「접속 권한 신청」 폼 본문의 끝 — 숨은 표지 하나뿐이다.
 MAX_REGISTER_BODY_BYTES = 4096
@@ -202,6 +213,11 @@ CONFIG_ADMINS_TEXT = (
     "값을 넣고 CI/CD 를 다시 돌리세요."
 )
 CONFIG_HOW_TO = "C-DEP 배포 설정의 환경변수 표를 고친 뒤 CI/CD 를 다시 돌리세요."
+CONFIG_REDIRECT_NOTE = "redirect_uri 는 포털의 Endpoint URL 과 한 글자도 같아야 합니다."
+CONFIG_ISSUER_NOTE = (
+    f"{names.ENV_ISSUER} 후보는 관례일 뿐입니다 — 그대로 넣지 말고 첫 로그인 오류 화면의 "
+    "받은 iss 로 확인합니다."
+)
 CONFIG_ENV_FOLD = "환경변수 전체({count})"
 CONFIG_ENV_HEAD = ("환경변수", "상태", "까닭")
 # 문의 설정 두 칸(메일 · 창구 글)이 모두 비어 문의 줄이 서지 않는 서버 — 「문의처」 를 가리키는 글을
@@ -286,8 +302,9 @@ _NONCE_REASON = "다른 로그인의 토큰입니다."
 _COOKIE_REASON = "로그인 쿠키를 저장하지 못했습니다."
 _NO_COOKIES_REASON = (
     "콜백에 이 앱의 쿠키(상태 · 시도)가 하나도 오지 않았습니다 — 접속 주소가 설정값"
-    f"({names.ENV_PUBLIC_URL})과 다르거나 브라우저가 쿠키를 막았거나, 통합인증 화면에 10분 넘게 "
-    "머물렀거나, 로그인을 마치고 10분 넘게 지나 「뒤로」 로 다시 보냈습니다."
+    f"({names.ENV_PUBLIC_URL})과 다르거나 브라우저가 쿠키를 막았거나, 통합인증 화면에 1시간 넘게 "
+    "머물렀거나, 로그인을 마치고 10분 넘게 지나(또는 서버를 다시 시작한 뒤) 「뒤로」 로 다시 "
+    "보냈습니다."
 )
 # 관리자용 진단의 사유 한 줄(사유 코드별). 모르는 사유 코드는 빈 글이다 — 제목과 참고 줄만 선다.
 REASON_TEXT: Mapping[str, str] = {
@@ -433,6 +450,18 @@ def origin_allowed(origin: str | None, cfg: SsoConfig) -> bool:
     """
     expected = cfg.public_origin
     return bool(origin) and bool(expected) and url_origin(origin or "") == expected
+
+
+def browser_navigation(headers: Mapping[str, str]) -> bool:
+    """브라우저의 최상위 문서 탐색인가(`Sec-Fetch-Mode: navigate` + `Sec-Fetch-Dest: document`).
+
+    로그인 시작 누계는 이것만 센다 — 링크 미리보기 · 가동 감시 · curl(Sec-Fetch 머리 없음)과
+    남의 페이지가 심은 그림 · 틀 요청은 통합인증 화면에 사람이 닿지 않아 「ADFS 화면에서 멈춤」
+    처럼 읽힌다.
+    """
+    return (
+        headers.get("sec-fetch-mode") == "navigate" and headers.get("sec-fetch-dest") == "document"
+    )
 
 
 def refresh_request_problem(headers: Mapping[str, str], cfg: SsoConfig) -> str | None:
@@ -589,10 +618,18 @@ def set_denied_cookie(
     )
 
 
-def _attempts(raw: str | None) -> int:
-    if raw is None or not raw.isascii() or not raw.isdigit() or len(raw) > 2:
-        return 0
-    return int(raw)
+def attempt_record(raw: str | None) -> tuple[int, int | None]:
+    """시도 쿠키 값 → (시작 횟수, 마지막 시작 시각 또는 `None`). 꼴이 틀리면 (0, None)."""
+    found = _ATTEMPT_VALUE.fullmatch(raw or "")
+    if found is None:
+        return 0, None
+    started = found.group(2)
+    return int(found.group(1)), (int(started) if started else None)
+
+
+def attempt_value(attempts: int, now: int) -> str:
+    """시도 쿠키에 심는 값 — 「시작 횟수.마지막 시작 시각」."""
+    return f"{attempts}.{now}"
 
 
 def _state_cookie_age_order(
@@ -637,17 +674,26 @@ def authorize_url(cfg: SsoConfig, *, state: str, nonce: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
 
-def start_login(cfg: SsoConfig, cookies: Mapping[str, str], next_path: str, now: int) -> Response:
-    """IdP 로 보낸다(302) — 상태 쿠키 · 시도 쿠키를 심고 로그인 시작 누계를 하나 센다.
+def start_login(
+    cfg: SsoConfig,
+    cookies: Mapping[str, str],
+    next_path: str,
+    now: int,
+    *,
+    browser: bool = False,
+) -> Response:
+    """IdP 로 보낸다(302) — 상태 쿠키 · 시도 쿠키를 심는다. 브라우저의 문서 탐색(`browser` —
+    `browser_navigation`)이면 로그인 시작 누계를 하나 센다.
 
-    시도 쿠키는 시작마다 2분(`ATTEMPT_TTL`)으로 다시 심는다 — 「마지막 시작 뒤 2분 안에 또 시작」 이
-    이어져 넷째 시작이 되면(쿠키 값 3) IdP 로 보내지 않고 되풀이 화면을 낸다(처음 가려던 화면은
-    그 화면의 「다시 시도」 가 지킨다). 되풀이 화면은 쿠키를 다시 심지 않는다.
+    시도 쿠키는 시작마다 2분(`ATTEMPT_TTL`)으로 다시 심고 값에 그 시각을 싣는다 — 「마지막 시작
+    뒤 2분 안에 또 시작」 이 이어져 넷째 시작이 되면(시작 횟수 3) IdP 로 보내지 않고 되풀이
+    화면을 낸다(처음 가려던 화면은 그 화면의 「다시 시도」 가 지킨다). 되풀이 화면은 쿠키를 다시
+    심지 않는다. 상태 쿠키는 토큰보다 오래 산다(`STATE_COOKIE_TTL`).
     """
-    attempts = _attempts(cookies.get(cfg.attempt_cookie))
+    attempts, last_start = attempt_record(cookies.get(cfg.attempt_cookie))
     if attempts >= MAX_LOGIN_ATTEMPTS:
         runtime.record_event("login_fail", level=logging.WARNING, reason=LOGIN_LOOP, loginid="-")
-        return loop_page(cfg, sanitize_next(next_path), now=now)
+        return loop_page(cfg, sanitize_next(next_path), now=now, last_start=last_start)
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     value = issue_state(cfg, state=state, nonce=nonce, next_path=sanitize_next(next_path), now=now)
@@ -659,17 +705,23 @@ def start_login(cfg: SsoConfig, cookies: Mapping[str, str], next_path: str, now:
     for _, name in existing[: max(0, surplus)]:
         clear_state_cookie(response, name)
     set_cookie(
-        response, cfg.state_cookie(state), value, max_age=STATE_TTL, secure=True, samesite="none"
+        response,
+        cfg.state_cookie(state),
+        value,
+        max_age=STATE_COOKIE_TTL,
+        secure=True,
+        samesite="none",
     )
     set_cookie(
         response,
         cfg.attempt_cookie,
-        str(attempts + 1),
+        attempt_value(attempts + 1, now),
         max_age=ATTEMPT_TTL,
         secure=True,
         samesite="none",
     )
-    runtime.count_login_start()
+    if browser:
+        runtime.count_login_start()
     return response
 
 
@@ -691,10 +743,18 @@ def failure_kind(code: str) -> str:
 
 
 def _env_table(cfg: SsoConfig) -> page_frame.Table:
-    """환경변수 전체 — 이름 | 상태(있음 · 없음 · 없음(선택) · 틀림) | 까닭. 값은 싣지 않는다."""
+    """환경변수 전체 — 이름 | 상태(있음 · 없음 · 없음(선택) · 틀림) | 까닭. 값은 싣지 않는다.
+
+    알림(`notices` — 인증서 만료 가까움 등)은 막지 않으므로 상태를 바꾸지 않고 까닭에만
+    붙인다(Admin 「통합인증 점검」 의 표와 같은 꼴). 이름 칸은 글자 그대로이고 좁은 창에서 `_`
+    뒤에서 먼저 끊는다.
+    """
     problems: dict[str, list[SsoProblem]] = {}
     for problem in cfg.problems:
         problems.setdefault(problem.env, []).append(problem)
+    notices: dict[str, list[SsoProblem]] = {}
+    for notice in cfg.notices:
+        notices.setdefault(notice.env, []).append(notice)
     rows: list[tuple[str, str, str]] = []
     for name in names.SSO_ENVIRONMENT:
         present = cfg.env_presence.get(name, False)
@@ -705,10 +765,16 @@ def _env_table(cfg: SsoConfig) -> page_frame.Table:
         else:
             status = "있음" if present else "없음(선택)"
             reason = ""
-        rows.append((name, status, reason))
+        extra = " · ".join(notice.reason for notice in notices.pop(name, []))
+        rows.append((name, status, " · ".join(part for part in (reason, extra) if part)))
     for env, found in problems.items():
         rows.append((env, "틀림", " · ".join(problem.reason for problem in found)))
-    return page_frame.Table(tuple(rows), head=CONFIG_ENV_HEAD, code_columns=(0,))
+    for env, found in notices.items():
+        status = "있음" if cfg.env_presence.get(env, False) else "없음(선택)"
+        rows.append((env, status, " · ".join(notice.reason for notice in found)))
+    return page_frame.Table(
+        tuple(rows), head=CONFIG_ENV_HEAD, code_columns=(0,), break_columns=(0,)
+    )
 
 
 def config_fixes(cfg: SsoConfig) -> list[str]:
@@ -727,33 +793,50 @@ def config_fixes(cfg: SsoConfig) -> list[str]:
     return lines
 
 
-def _config_fold_lines(cfg: SsoConfig, now: int) -> tuple[str, ...]:
-    """「환경변수 전체」 표 아래 — 알림 · 계산한 redirect_uri · 서명 인증서 · 이슈어 후보 · 서버
-    시각. 계산한 주소 · 인증서 지문은 지금까지 이 화면에 실려 온 값이다(보드 D9 — 그대로 둔다)."""
-    lines = [f"알림 · {item.env} — {item.reason}" for item in cfg.notices]
+def _issuer_candidate(cfg: SsoConfig) -> str:
+    """이슈어 칸이 문제일 때만 보일 관례 후보(없으면 빈 글)."""
+    if any(item.env == names.ENV_ISSUER for item in cfg.problems):
+        return cfg.issuer_candidate or ""
+    return ""
+
+
+def config_facts(cfg: SsoConfig, now: int) -> page_frame.Table:
+    """「환경변수 전체」 표 아래 이름표 | 값 — 계산한 redirect_uri · 서명 인증서 · 이슈어 후보 ·
+    서버 시각 · 안내 문서. 값 칸은 글자 그대로(`<code>`)다 — 포털 등록값과 한 글자씩 대 본다.
+    계산한 주소 · 인증서 지문은 지금까지 이 화면에 실려 온 값이다(보드 D9 — 그대로 둔다)."""
+    rows: list[tuple[str, str]] = []
     if cfg.redirect_uri:
-        lines.append(
-            f"계산한 redirect_uri · {cfg.redirect_uri} — 포털의 Endpoint URL 과 한 글자도 "
-            "같아야 합니다."
-        )
-    lines.extend(
-        f"서명 인증서 · x5t {cert.x5t} · SHA-256 {cert.sha256[:16]}… · "
-        f"만료 {cert.not_after.strftime('%Y-%m-%d')} · RSA {cert.key_bits}비트"
-        for cert in cfg.signing_certs
-    )
-    if any(item.env == names.ENV_ISSUER for item in cfg.problems) and cfg.issuer_candidate:
-        lines.append(
-            f"{names.ENV_ISSUER} 후보(관례일 뿐 — 그대로 넣지 말고 첫 로그인 오류 화면의 받은 "
-            f"iss 로 확인) · {cfg.issuer_candidate}"
-        )
-    lines.append(f"서버 시각 {_utc_now_text(now)} · 안내 문서 {names.SETUP_DOC}")
+        rows.append(("계산한 redirect_uri", cfg.redirect_uri))
+    many = len(cfg.signing_certs) > 1
+    for index, cert in enumerate(cfg.signing_certs, start=1):
+        label = f"서명 인증서 {index}" if many else "서명 인증서"
+        rows += [
+            (f"{label} x5t", cert.x5t),
+            (f"{label} SHA-256", f"{cert.sha256[:16]}…"),
+            (f"{label} 만료", f"{cert.not_after:%Y-%m-%d} · RSA {cert.key_bits}비트"),
+        ]
+    candidate = _issuer_candidate(cfg)
+    if candidate:
+        rows.append((f"{names.ENV_ISSUER} 후보", candidate))
+    rows += [("서버 시각", _utc_now_text(now)), ("안내 문서", names.SETUP_DOC)]
+    return page_frame.Table(tuple(rows), code_columns=(1,))
+
+
+def _config_fold_lines(cfg: SsoConfig) -> tuple[str, ...]:
+    """값 표 아래 — 값을 대 보는 법과 고친 뒤 할 일."""
+    lines: list[str] = []
+    if cfg.redirect_uri:
+        lines.append(CONFIG_REDIRECT_NOTE)
+    if _issuer_candidate(cfg):
+        lines.append(CONFIG_ISSUER_NOTE)
+    lines.append(CONFIG_HOW_TO)
     return tuple(lines)
 
 
 def config_frame(cfg: SsoConfig, now: int) -> Frame:
-    """설정 막힘 화면 — 위는 누구나 읽는 「지금은 앱을 열 수 없습니다」, 아래 접힌 진단에 고칠 것과
-    다시 접힌 「환경변수 전체(n)」(표 · 알림 · 인증서). 「다시 열기」 는 지금 문서를 다시 연다 —
-    공개 주소(`CAPA_PUBLIC_URL`)가 바로 틀린 변수일 수 있다."""
+    """설정 막힘 화면 — 위는 누구나 읽는 「지금은 앱을 열 수 없습니다」, 아래 접힌 진단에 「고칠 것
+    n개」 머리 줄과 고칠 것 줄, 다시 접힌 「환경변수 전체(n)」(표 · 값 표 · 고친 뒤 할 일). 「다시
+    열기」 는 지금 문서를 다시 연다 — 공개 주소(`CAPA_PUBLIC_URL`)가 바로 틀린 변수일 수 있다."""
     fixes = config_fixes(cfg)
     table = _env_table(cfg)
     return Frame(
@@ -762,15 +845,13 @@ def config_frame(cfg: SsoConfig, now: int) -> Frame:
         lead=(_reachable(cfg, CONFIG_TEXT),),
         primary=Link(REOPEN_LABEL, ""),
         reference=CONFIG_BROKEN,
-        diagnostics=(
-            CONFIG_FIX_COUNT.format(text=CONFIG_BROKEN_TEXT, count=len(fixes)),
-            *fixes,
-            CONFIG_HOW_TO,
-        ),
+        diagnostic_head=CONFIG_FIX_COUNT.format(text=CONFIG_BROKEN_TEXT, count=len(fixes)),
+        diagnostics=tuple(fixes),
         diagnostic_fold=page_frame.Fold(
             CONFIG_ENV_FOLD.format(count=len(table.rows)),
             table=table,
-            lines=_config_fold_lines(cfg, now),
+            facts=config_facts(cfg, now),
+            lines=_config_fold_lines(cfg),
         ),
         contact_email=_contact_email(),
         contact_text=cfg.access.contact,
@@ -1079,14 +1160,25 @@ def portal_refused_page(
     return frame_response(frame, status=403, now=moment)
 
 
-def loop_frame(cfg: SsoConfig, next_path: str, now: int) -> Frame:
+def loop_ready_at(now: int, last_start: int | None) -> int:
+    """되풀이 화면의 기다릴 시각 — 시도 쿠키가 사라지는 때(마지막 시작 + `ATTEMPT_TTL`).
+
+    시도 쿠키는 시작마다 2분으로 다시 심고 되풀이 화면은 다시 심지 않으므로 그 시각은 화면을
+    다시 봐도 같다. 시각이 없는 옛 꼴 값이면 지금 + 2분(늦어도 그때 사라짐)이고, 서명하지 않은
+    값이라 지금 ~ 지금 + 2분 안으로 좁힌다.
+    """
+    if last_start is None:
+        return now + ATTEMPT_TTL
+    return min(max(last_start + ATTEMPT_TTL, now), now + ATTEMPT_TTL)
+
+
+def loop_frame(cfg: SsoConfig, next_path: str, now: int, *, last_start: int | None = None) -> Frame:
     """되풀이 화면 — 「○시 ○분 뒤에 「다시 시도」 를 누르세요」 + 주 단추 「다시 시도」.
 
     되풀이는 「마지막 로그인 시작 뒤 2분(`ATTEMPT_TTL`) 안에 또 시작」 이 이어져 넷째 시작이 될 때다
-    — 시도 쿠키는 시작마다 2분으로 다시 심고 이 화면은 다시 심지 않으므로, 지금 + 2분이면 늦어도 그
-    쿠키가 사라진다(분은 올림). 시각은 KST 다(`page_frame.clock_text`).
+    — 기다릴 시각은 `loop_ready_at`(분은 올림), 시각은 KST 다(`page_frame.clock_text`).
     """
-    ready = page_frame.clock_text(now + ATTEMPT_TTL, round_up=True)
+    ready = page_frame.clock_text(loop_ready_at(now, last_start), round_up=True)
     return Frame(
         title=LOOP_TITLE,
         chip="retry",
@@ -1102,16 +1194,22 @@ def loop_frame(cfg: SsoConfig, next_path: str, now: int) -> Frame:
     )
 
 
-def loop_page(cfg: SsoConfig, next_path: str = "/", *, now: int | None = None) -> HTMLResponse:
+def loop_page(
+    cfg: SsoConfig,
+    next_path: str = "/",
+    *,
+    now: int | None = None,
+    last_start: int | None = None,
+) -> HTMLResponse:
     """로그인 되풀이 화면(공통 틀, 200)."""
     moment = _now() if now is None else now
-    return frame_response(loop_frame(cfg, next_path, moment), status=200, now=moment)
+    frame = loop_frame(cfg, next_path, moment, last_start=last_start)
+    return frame_response(frame, status=200, now=moment)
 
 
 def logout_frame(cfg: SsoConfig, next_path: str = "/") -> Frame:
     """「로그아웃했습니다」 — 표지 없음. 「다시 들어가기」 는 로그아웃 전에 보던 화면으로, 「다른
-    계정으로 로그인」 은 통합인증 로그아웃 주소가 있을 때만(전의 「통합인증에서도 로그아웃」 이 하던
-    일)."""
+    계정으로 로그인」(통합인증 로그아웃 주소로 간다)은 그 주소가 있을 때만."""
     return Frame(
         title=LOGOUT_TITLE,
         chip=None,
@@ -1154,7 +1252,13 @@ def _fail(
 
     주소에 처음 가려던 화면(`next` — 검증한 상태 토큰의 것, `/` 면 싣지 않음)을 싣는다. 잠시 문제가
     아니면(설정 문제 · 쿠키 없음 · 포털 거절) 시도 쿠키를 지운다 — 다시 해도 같은 실패라 남기면
-    「다시 시도」 를 되풀이한 사람이 되풀이 화면으로 잘못 간다.
+    「다시 시도」 를 되풀이한 사람이 되풀이 화면으로 잘못 간다. 콜백은 누구나 보낼 수 있어 남의
+    페이지의 교차 사이트 폼도 그 브라우저의 시도 쿠키를 지울 수 있다 — 되풀이 막음은 편의 장치이고
+    인증 경계가 아니다(실패는 늘 사람이 눌러야 하는 멈춘 화면으로 끝나 저절로 되풀이하지 않는다).
+
+    사건(`login_fail`)에는 진단 번호의 앞 `DIAGNOSTIC_REF_LENGTH` 자(`diag`)를 싣는다 — 화면
+    바닥 참고 줄의 「진단 <번호>」 와 Admin 「통합인증 점검」 의 사건 줄 · 서버 로그를 맞추는
+    열쇠다. 번호 전체는 10분 동안 그 진단을 다시 여는 주소 값이라 사건에는 싣지 않는다.
     """
     record = {"code": code, "at": _utc_now_text(now)}
     if diagnostic:
@@ -1166,7 +1270,13 @@ def _fail(
         clear_state_cookie(response, cfg.state_cookie(state))
     if failure_kind(code) != KIND_RETRY:
         clear_attempt_cookie(response, cfg)
-    runtime.record_event("login_fail", level=logging.WARNING, reason=code, loginid=loginid or "-")
+    runtime.record_event(
+        "login_fail",
+        level=logging.WARNING,
+        reason=code,
+        loginid=loginid or "-",
+        diag=diagnostic_id[:DIAGNOSTIC_REF_LENGTH],
+    )
     return response
 
 
@@ -1219,10 +1329,13 @@ def _fail_now(cfg: SsoConfig, code: str, status: int) -> Response:
 
 
 def has_our_cookies(cfg: SsoConfig, cookies: Mapping[str, str]) -> bool:
-    """이 앱의 통합인증 쿠키(상태 · 시도 · 세션 · 거절 표)가 하나라도 왔는가. 콜백은 교차 사이트
-    POST 라 대개 `SameSite=None` 인 상태 · 시도 쿠키만 실린다 — 하나도 없으면 브라우저가 이 주소의
-    쿠키를 저장하지 않았거나 다른 주소로 시작한 것이다(통합인증 화면에 10분 넘게 머물러 둘 다
-    사라진 때와는 가르지 못한다)."""
+    """이 앱의 통합인증 쿠키(상태 · 시도 · 세션 · 거절 표)가 하나라도 왔는가. 통합인증과 앱이 다른
+    사이트면 콜백은 교차 사이트 POST 라 `SameSite=None` 인 상태 · 시도 쿠키만 실린다 — 하나도 없으면
+    브라우저가 이 주소의 쿠키를 저장하지 않았거나 다른 주소로 시작한 것이다. 상태 쿠키는 토큰보다
+    오래 살아(`STATE_COOKIE_TTL` 1시간) 통합인증 화면에 10분 넘게 머문 때는 쿠키가 실려 오고, 1시간
+    넘게 머문 때와만 가르지 못한다. 두 주소가 같은 등록 도메인 아래(같은 사이트)면 `SameSite=Lax` 인
+    세션 · 거절 표 쿠키도 실린다 — 살아 있는 세션은 콜백이 먼저 앱으로 보내고, 낡은 세션 · 거절 표만
+    왔으면 쿠키 없음 대신 `state_missing`(잠시 문제)이 된다."""
     own = (cfg.attempt_cookie, cfg.session_cookie, cfg.denied_cookie)
     return any(name in own or name.startswith(cfg.state_cookie_prefix) for name in cookies)
 
@@ -1232,8 +1345,9 @@ def _missing_state_code(cfg: SsoConfig, cookies: Mapping[str, str], state: str) 
 
     이미 쓴 state 면 `state_reused` 다 — 로그인을 마친 뒤 「뒤로」 는 IdP 화면이 같은 state 를
     다시 보내는데, 성공 · 실패가 상태 · 시도 쿠키를 지우고 세션 쿠키는 `SameSite=Lax` 라 교차 사이트
-    POST 에 실리지 않아 쿠키가 하나도 없다. 이 앱의 다른 쿠키가 왔으면 `state_missing`, 하나도
-    없으면 `no_cookies` 다.
+    POST 에 실리지 않아 쿠키가 하나도 없다(쓴 state 는 그 토큰의 끝까지만 기억한다 — 그 뒤 · 재시작
+    뒤의 「뒤로」 는 아래 갈래다). 이 앱의 다른 쿠키가 왔으면 `state_missing`, 하나도 없으면
+    `no_cookies` 다.
     """
     if _STATE_VALUE.match(state):
         if runtime.state_used(hashlib.sha256(state.encode("utf-8")).hexdigest()):
@@ -1241,16 +1355,24 @@ def _missing_state_code(cfg: SsoConfig, cookies: Mapping[str, str], state: str) 
     return "state_missing" if has_our_cookies(cfg, cookies) else NO_COOKIES
 
 
-def _state_next(cfg: SsoConfig, cookies: Mapping[str, str], state: str, now: int) -> str:
-    """IdP 오류처럼 상태 검증 전에 실패할 때 그 상태 쿠키에서 처음 가려던 화면을 꺼낸다(없거나
-    읽지 못하면 `/`)."""
+def state_cookie_claims(
+    cfg: SsoConfig, cookies: Mapping[str, str], state: str, now: int
+) -> StateClaims | None:
+    """그 state 의 상태 쿠키를 검증한 내용 — 없거나 위조 · 만료 · 다른 state 의 것이면 `None`.
+
+    IdP 오류처럼 상태 검증 전에 실패할 때 처음 가려던 화면을 꺼내고(없으면 `/`), 그 로그인이 이
+    앱이 시작한 것인지(돌아옴 누계) 가른다.
+    """
     stored = cookies.get(cfg.state_cookie(state)) if _STATE_VALUE.match(state) else None
     if stored is None:
-        return "/"
+        return None
     try:
-        return sanitize_next(verify_state(stored, cfg, now=now).next_path)
+        claims = verify_state(stored, cfg, now=now)
     except SsoReject:
-        return "/"
+        return None
+    if not hmac.compare_digest(claims.state.encode("utf-8"), state.encode("utf-8")):
+        return None
+    return claims
 
 
 async def _read_body(request: Request, *, limit: int = MAX_BODY_BYTES) -> bytes | None:
@@ -1289,8 +1411,6 @@ async def callback(request: Request) -> Response:
     if request.method != "POST":
         # 즐겨찾기 · 뒤로 가기로 GET 이 오면 앱 첫 화면으로.
         return redirect(cfg, "/", 303)
-    # 통합인증에서 돌아온 누계 — 실패도 센다(시작에 비해 적으면 ADFS 화면에서 멈춘 것이다).
-    runtime.count_login_return()
     now = _now()
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type != FORM_CONTENT_TYPE:
@@ -1311,7 +1431,11 @@ async def callback(request: Request) -> Response:
         runtime.record_event(
             "idp_error", level=logging.WARNING, error=received, description=description
         )
-        next_path = _state_next(cfg, request.cookies, state, now)
+        started = state_cookie_claims(cfg, request.cookies, state, now)
+        if started is not None:
+            # 이 앱이 시작한 로그인이 통합인증에서 돌아옴 — 실패를 지우는 그 상태 쿠키와 함께 한 번.
+            runtime.count_login_return()
+        next_path = "/" if started is None else sanitize_next(started.next_path)
         return _fail(cfg, f"idp_error:{detail}", state=state, now=now, next_path=next_path)
 
     state_cookie = cfg.state_cookie(state) if _STATE_VALUE.match(state) else ""
@@ -1331,6 +1455,9 @@ async def callback(request: Request) -> Response:
     digest = hashlib.sha256(state.encode("utf-8")).hexdigest()
     if not runtime.remember_used_state(digest, claims.exp):
         return _fail(cfg, "state_reused", state=state, now=now, next_path=next_path)
+    # 이 앱이 시작한 로그인이 제때 처음 돌아옴(검증한 상태 쿠키 · 처음 쓰는 state) — 뒤 결과(실패 ·
+    # 거절 · 성공)를 가리지 않는다. 꼴이 틀린 POST · 다시 보냄 · 10분 지난 상태는 세지 않는다.
+    runtime.count_login_return()
 
     try:
         login = verify_id_token(form.get("id_token", ""), cfg, expected_nonce=claims.nonce, now=now)
@@ -1400,7 +1527,8 @@ async def login(request: Request) -> Response:
     next_path = sanitize_next(request.query_params.get("next"))
     if isinstance(identity_from_cookies(request.cookies, cfg, now), Identity):
         return redirect(cfg, next_path, 303)
-    return start_login(cfg, request.cookies, next_path, now)
+    browser = browser_navigation(request.headers)
+    return start_login(cfg, request.cookies, next_path, now, browser=browser)
 
 
 def _state_cookie_names(cfg: SsoConfig, cookies: Mapping[str, str]) -> Sequence[str]:
@@ -1467,7 +1595,8 @@ async def error(request: Request) -> Response:
     if code == PORTAL_REFUSED:
         return portal_refused_page(cfg, now=now, next_path=next_path)
     if code == LOGIN_LOOP:
-        return loop_page(cfg, next_path, now=now)
+        _, last_start = attempt_record(request.cookies.get(cfg.attempt_cookie))
+        return loop_page(cfg, next_path, now=now, last_start=last_start)
     return error_page(
         cfg,
         code,

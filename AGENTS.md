@@ -377,8 +377,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   `jti` 로 다시 서명, 끝 시각 규칙은 `session_end` 한 곳) · 상태 토큰(HS256)은 `auth/tokens.py`, 쿠키 → 신원은
   `auth/identity.py`(문지기와 앱 스크립트가 같은 함수), 접속 명단(목록 글 → loginid → 등급 맵 · `AccessList.allows` · loginid 꼴 `LOGINID_PATTERN` · S3 파일 몫을 얹는 `compose_access` — 표준 라이브러리만)은
   `auth/access.py`, S3 명단 파일(꼴 판정 · 기동 때 읽기 · 자가 회복 `retry_unread` · 관리자만 쓰는 `save_changes`(넣기 · 빼기 · 등급) · `reread` · 거절 표 신원으로 쓰는 `register_self` — 5장 37)은 `auth/access_store.py`, 프로세스 상태(설정 한 벌 · 지금 명단 한 벌 `current_access` · 문지기 표지 · 세션 폐기(`sid`) · 로그인 갱신 표 ·
-  갱신 누계 · 로그인 시작 · 돌아옴 누계(`login_flow_counts` — 돌아옴이 적으면 ADFS 화면에서 멈춤) · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
-  `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「관리자용 진단」(줄 · 표 · 다시 접힌 칸 하나), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
+  갱신 누계 · 로그인 시작 · 돌아옴 누계(`login_flow_counts` — 시작은 브라우저 문서 탐색만, 돌아옴은 검증한 상태 쿠키와 처음 온 콜백만 · 돌아옴이 적으면 ADFS 화면에서 멈춤) · 진단 · 사건 · 명단 밖 로그인 표 · 마지막 로그인의 클레임 이름 · 로거)는 `auth/runtime.py`, 경로 여섯(`/auth/callback` · `/auth/sso/login` · `/auth/sso/logout` ·
+  `/auth/sso/error` · `POST /auth/sso/refresh` · `POST /auth/sso/register` — 거절 화면 「접속 권한 신청」) · 로그인 시작 · 거절 표(15분 HttpOnly — 본인 계정 표시 · 신청의 유일한 신원) · 로그인 실패 갈래(`failure_kind` — 잠시 · 설정 · 쿠키 없음, 설정 문제 · 쿠키 없음은 시도 쿠키를 지운다 · 상태 쿠키는 토큰(10분)보다 긴 1시간이라 10분 넘게 머문 콜백은 쿠키 없음이 아니라 시간 지남, 실패 사건에 진단 번호 앞 8자 `diag`) · 시도 쿠키(「시작 횟수.마지막 시작 시각」 — 되풀이 화면의 기다릴 시각이 밀리지 않음) · 처음 가려던 화면(`next` — 상태 토큰 · 로그아웃 링크 `?next=` · 오류 주소, 읽을 때마다 `sanitize_next`) · 화면은 `auth/web.py`, 앱 밖 화면의 공통 틀(거절 갈래 · 포털 거절 · 로그인 실패 셋 · 되풀이 · 로그아웃 · 설정 막힘 — 위는 누구나 읽는 글, 바닥 「참고 사유 코드 · 시각 UTC(· 진단 번호)」, 접힌 「관리자용 진단」(머리 줄 · 줄 · 표 · 다시 접힌 칸 하나 — 칸 안은 표 · 이름표 | 값 표 · 줄, 환경변수 이름 칸은 `_` 뒤 `<wbr>`), 사람이 읽는 「○시 ○분」 은 KST — 순수 HTML · 토큰 팔레트 · 스크립트 없음)은 `auth/page_frame.py`, 순수 ASGI 문지기는 `auth/gate.py`(`BaseHTTPMiddleware` 는
   websocket 을 넘겨 쓰지 않는다), 진입 파일 창구는 `auth/server.py` 다. PyJWT 는 함수 안에서 import 한다 — 꺼짐(`ADFS_CLIENT_ID`
   없음)은 그 패키지 없이도 뜬다. 신원은 세션 상태가 아니라 HttpOnly 쿠키에서 매번 다시 검증한다(`?token=` · 세션 상태 보관 안
   씀). Streamlit 자체 `/auth/login` · `/auth/logout` · `/oauth2callback` 이름은 피한다. 개발용 가짜 IdP 는
@@ -428,8 +428,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     (`CAPA_PUBLIC_URL` 바탕) · `ADFS_ISSUER` · 서명 인증서 지문(x5t · SHA-256 앞 16자)은 포털 등록값과 한 글자씩 대 보려고 보인다.
     이 셋도 사외 리뷰 압축본 · 전문에는 옮기지 않는다(`docs/dual_env_workflow.md`). 최근 사건 표와 「명단 밖 로그인」(계정마다 한 줄 · 횟수,
     `runtime.denied_accounts` · 누계 `denied_total`)과 「로그인 전 실패」(무인증 실패 —
-    따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 사실 줄은 「라벨 · 값」 꼴이다 — 「로그인 유지 · 마지막 사용 뒤 n시간 · 최대 n시간」,
-    켜짐이면 그 아래 「로그인 시작 · 돌아옴」 누계(`runtime.login_flow_counts` — 시작은 IdP 로 보낸 수, 돌아옴은 콜백 POST(실패 · 거절 포함), 돌아옴이 시작보다 훨씬
+    따로 둔 고리와 사유별 누계, `runtime.ANONYMOUS_EVENTS`)를 나눠 보인다. 로그인 실패 줄의 사유 코드 칸 끝은 `진단 <앞 8자>`(`_event_code` — 실패 화면 참고 줄의 진단 번호와 맞추는 열쇠). 사실 줄은 「라벨 · 값」 꼴이다 — 「로그인 유지 · 마지막 사용 뒤 n시간 · 최대 n시간」,
+    켜짐이면 그 아래 「로그인 시작 · 돌아옴」 누계(`runtime.login_flow_counts` — 시작은 브라우저 문서 탐색을 IdP 로 보낸 수(`web.browser_navigation`), 돌아옴은 그 로그인이 검증한 상태 쿠키와 처음 온 콜백(실패 · 거절 · IdP 오류 포함, 꼴이 틀린 POST · 다시 보냄은 빼고), 돌아옴이 시작보다 훨씬
     적으면 ADFS 화면에서 멈춘 것 — 풍선 `LOGIN_FLOW_HELP`)와 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
     재시작하면 0)를 한 줄씩 보인다(둘 다 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 일반 · 읽지 못함 — 등급 이름은 「접속 명단」 표와 같다), 그 아래 「S3 명단」 줄(`access_s3_line` — 꺼짐 · 정상 · 실패와 까닭 분류 · HTTP 상태 · 명단 n · 버전 · 쓰기 칸, 있으면 `등급을 일반으로 읽음 n` · `스스로 등록 실패 n`, 키 · 주소 · 값 없음이라 리뷰 압축본에 옮길 수 있다), 그 아래 마지막 로그인의 클레임 이름(값 없음,
     `runtime.last_login_claims` — 그룹 클레임이 오는지 보는 길)을 싣는다. 시험은 `tests/test_sso_status.py` · `tests/test_sso_access.py`.

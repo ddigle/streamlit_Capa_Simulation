@@ -122,7 +122,11 @@ def test_login_start_redirects_to_the_idp_with_seven_parameters() -> None:
 
 
 def test_state_cookie_attributes() -> None:
+    """상태 쿠키는 1시간 살고 그 안의 토큰은 10분이다 — 통합인증 화면에 10분 넘게 머문 콜백에도
+    쿠키가 실려 「시간 지남」 으로 읽히되 늦은 토큰으로는 로그인되지 않는다. 시도 쿠키는 시작 횟수와
+    그 시각을 싣고 2분 산다."""
     cfg = use_config()
+    before = int(time.time())
 
     login = begin(routes_app(), cfg)
 
@@ -132,10 +136,15 @@ def test_state_cookie_attributes() -> None:
     assert cookie.has("httponly") and cookie.has("secure")
     assert cookie.get("samesite") == "none"
     assert cookie.get("path") == "/"
-    assert cookie.get("max-age") == "600"
+    assert cookie.get("max-age") == "3600" == str(web.STATE_COOKIE_TTL)
     assert not cookie.has("domain")
+    claims = verify_state(login.cookie_value, cfg, now=before)
+    assert claims.exp - claims.iat == 600, "토큰의 끝은 10분 그대로"
     attempt = login.response.cookie(cfg.attempt_cookie)
-    assert attempt is not None and attempt.value == "1"
+    assert attempt is not None
+    count, started = web.attempt_record(attempt.value)
+    assert count == 1 and started is not None and before <= started <= int(time.time())
+    assert attempt.value == f"1.{started}"
     assert attempt.get("max-age") == "120" and attempt.has("secure")
     assert attempt.get("samesite") == "none"
 

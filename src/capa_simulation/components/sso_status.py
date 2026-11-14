@@ -12,7 +12,8 @@ redirect_uri · issuer 는 비밀이 아니고 포털 등록값과 한 글자씩
 - 꺼짐(운영)이면 「주소를 아는 사람은 누구나 들어옵니다」 경고와 「켜면 막힐 문제」(`readiness`)를
   그린다. 다만 운영 서버의 Admin Area 는 관리자에게만 열리고(`sso_identity.admin_area_locked`) 꺼진
   서버에는 관리자 신원이 없어 이 펼침은 화면에 닿지 않는다 — 켜기 전 미리 보기 길이 없고, 켜려다
-  막히면 설정 화면(`web.config_page`)이 같은 표로 까닭을 말한다(`docs/sso_setup.md` 5장). 운영인데
+  막히면 설정 화면(`web.config_page`)의 접힌 「관리자용 진단」 이 「고칠 것 n개」 와 다시 접힌
+  「환경변수 전체(n)」 표(이 펼침과 같은 꼴)로 까닭을 말한다(`docs/sso_setup.md` 5장). 운영인데
   꺼짐 알림 `AD-02` 는 이 펼침이 아니라 Admin Area 가 잠금 판정 앞에서 낸다
   (`render_off_in_production_alert`) — 잠긴 회차에도 Alarm 으로 닿는다.
 - 막힘이면 문지기가 앱을 열지 않으므로 이 펼침에 닿지 않는다(설정 화면이 진단 창구다). 닿았다면
@@ -109,8 +110,9 @@ REFRESH_HELP = (
 )
 # 로그인 시작 · 돌아옴 누계 줄의 풍선 — 범위와 「ADFS 화면에서 멈춤」 을 읽는 법.
 LOGIN_FLOW_HELP = (
-    "통합인증(ADFS)으로 보낸 로그인 시작과 앱으로 돌아온 수의 기동 뒤 누계입니다 — 재시작하면 0 "
-    "입니다. 돌아옴이 시작보다 훨씬 적으면 사람들이 ADFS 화면에서 멈춘 것입니다 — 포털 등록 주소"
+    "브라우저가 통합인증(ADFS)으로 간 로그인 시작과 그 가운데 앱으로 돌아온 수의 기동 뒤 "
+    "누계입니다 — 재시작하면 0 입니다. 링크 미리보기 · 감시 요청 · 같은 로그인의 다시 보냄은 세지 "
+    "않습니다. 돌아옴이 시작보다 훨씬 적으면 사람들이 ADFS 화면에서 멈춘 것입니다 — 포털 등록 주소"
     "(redirect\\_uri) · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 사건이 남지 "
     "않습니다. 멈춘 화면을 찍어 받아 그 글로 고칩니다."
 )
@@ -382,13 +384,17 @@ def _event_code(fields: dict[str, str]) -> str:
     """사건 표의 「사유 코드」 칸 — 실패 사유 · IdP 오류 · 설정 문제 이름 · 인증서 남은 날 차례.
 
     만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
-    로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다.
+    로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다. 로그인
+    실패(`login_fail`)는 진단 번호의 앞 글자 `diag` 를 「진단 …」 으로 붙인다 — 실패 화면 바닥 참고
+    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다.
     """
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
         if value and value != "-":
             end = fields.get("end", "")
-            return f"{value} · {end}" if end and end != "-" else value
+            diag = fields.get("diag", "")
+            tail = [part for part in (end, f"진단 {diag}" if diag else "") if part and part != "-"]
+            return " · ".join((value, *tail))
     days = fields.get("days", "")
     return f"남은 날 {days}" if days else "-"
 
