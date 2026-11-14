@@ -31,7 +31,10 @@ HTML 과 `/_capa_stage` 가 같은 보기에서 나온다.
   끼운다. 지난 시간 · 남은 초는 1초마다 서버 시각 차로 센다(브라우저 시계를 믿지 않는다).
 - 앱이 답하면 **처음 연 주소를 다시 읽는다** — 재시작 중에 누른 로그아웃 · 로그인 경로도
   그대로 이어진다. POST 로 받은 쪽(콜백 form_post 등)과 콜백 경로만 바탕 주소로 간다 —
-  다시 읽으면 다시 보내거나 쓴 코드를 되풀이한다. 요청 경로는 HTML 에 싣지 않는다(표지
+  다시 읽으면 다시 보내거나 쓴 코드를 되풀이한다. 예외는 거절 화면의 「접속 권한 신청」
+  (`REGISTER_PATH` POST)이다 — 신청이 앱에 닿지 않았으니 「다시 눌러 주세요」 한 줄
+  (`NOTE_REGISTER_LOST`)을 띄우고, 앱이 뜨면 같은 주소를 GET 으로 연다(다시 보내지 않는다 —
+  앱이 그 GET 을 거절 화면으로 보내 단추가 다시 선다). 요청 경로는 HTML 에 싣지 않는다(표지
   `data-return` 만).
 - 질의까지 찍는 기본 요청 기록을 끈다 — `/auth/callback?code=…` 가 표준 오류에 남는다.
 - POST 본문은 상한 안에서 읽어 버린다 — 안 읽고 닫으면 보낸 쪽이 `BrokenPipe` 로 끊긴다.
@@ -56,7 +59,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Final
 from urllib.parse import quote, urlsplit
 
-from capa_simulation.auth.names import CALLBACK_PATH, ENV_ACCESS_CONTACT
+from capa_simulation.auth.names import CALLBACK_PATH, ENV_ACCESS_CONTACT, REGISTER_PATH
 from capa_simulation.services.object_storage_manifest import (
     DATASET_LABELS,
     FAILURE_CLI_MISSING,
@@ -120,6 +123,13 @@ REASON_REMOTE_EMPTY: Final = (
 )
 REASON_TRANSIENT: Final = "저절로 다시 시도합니다."
 NOTE_LONG_RETRY: Final = "계속되면 문의처에 알려 주세요."
+# 재시작 틈에 이 응답이 대신 받은 「접속 권한 신청」(거절 화면 단추 — `auth/web.REGISTER_LABEL` 과
+# 같은 이름, 시험이 맞댄다).
+NOTE_REGISTER_LOST: Final = "「접속 권한 신청」 이 닿지 않았습니다 — 앱이 열리면 다시 눌러 주세요."
+# 쪽이 앱으로 갈 길(`data-return`) — 처음 연 주소 · 바탕 주소 · 같은 주소를 GET 으로(잃은 신청).
+RETURN_HERE: Final = "here"
+RETURN_BASE: Final = "base"
+RETURN_RESEND: Final = "resend"
 NOSCRIPT_NOTE: Final = "저절로 넘어가지 않으면 잠시 뒤 새로고침하세요."
 # 사람이 고쳐야 풀리는 갈래(시작 스크립트가 300초마다 다시 본다) — (제목, 까닭). 표지는 「점검 중」.
 HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
@@ -150,6 +160,10 @@ HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
         "관리자가 최신 판으로 다시 배포해야 열립니다.",
     ),
 }
+# 관리자가 앱 밖에서 고치면(되돌리기 — rollback) 다음 확인이 그대로 받기가 되는 사람 갈래. 그 받기가
+# 도는 동안은 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄 · 노트다(이관 전 `remote_empty` 의 처음
+# 올리기 — init — 도 같다). 다른 사람 갈래는 CI/CD 로 고치므로 「다시 확인하는 중」 그대로다.
+REPAIRED_IN_PLACE: Final = (FAILURE_CORRUPT, FAILURE_FORKED)
 # 경우별 할 일 한 줄(접힌 「관리자용 진단」).
 HUMAN_ACTIONS: Final[Mapping[str, str]] = {
     FAILURE_CONFIG: "C-DEP 환경변수 표를 고친 뒤 CI/CD",
@@ -268,6 +282,7 @@ p { margin: 6px 0; }
 .steps li.now b { font-size: .72rem; border: 1px solid currentColor; border-radius: 4px;
   padding: 0 4px; }
 .value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lost { font-weight: 700; }
 .note { color: var(--muted); font-size: .9rem; }
 .contact { margin-top: 16px; font-size: .9rem; }
 a { color: var(--accent); }
@@ -437,11 +452,14 @@ def _starting_view(state: StageState) -> StageView:
 
 @dataclass(frozen=True)
 class _Wait:
-    """실패 뒤 값 줄 — 시도가 돌면 그 글, 아니면 다음 시각까지 센다."""
+    """실패 뒤 값 줄 — 시도가 돌면 그 글, 아니면 다음 시각까지 센다. 다시 받기가 도는 동안이면
+    지난 시간(서버 시작부터)과 첫 받기의 두 노트도 함께다."""
 
     progress: str = ""
+    since: float | None = None
     until: float | None = None
     until_label: str = ""
+    notes: tuple[str, ...] = ()
 
 
 def _waiting(state: StageState, label: str, trying: str) -> _Wait:
@@ -450,9 +468,25 @@ def _waiting(state: StageState, label: str, trying: str) -> _Wait:
     return _Wait(until=state.next_at, until_label=label)
 
 
+def _pulling(state: StageState) -> _Wait:
+    """실패 뒤 다시 받기가 도는 동안 — 「n번째 받는 중 · 지난 시간」 이 흐르고 첫 받기의 두 노트가
+    선다. 정상으로 받는 몇 분이 멈춘 것처럼 보이지 않게."""
+    return _Wait(
+        progress=f"{state.attempt}번째 받는 중",
+        since=state.started_at,
+        notes=(NOTE_MINUTES, NOTE_NO_CICD),
+    )
+
+
 def _remote_empty_view(state: StageState) -> StageView:
+    """이관 전. 관리자가 처음 올리면(init) 다음 확인이 그대로 받기라 도는 동안은 다시 받기의
+    값 줄이다."""
     assert state.kind is not None
-    wait = _waiting(state, LABEL_NEXT_CHECK, "확인하는 중")
+    wait = (
+        _pulling(state)
+        if state.trying
+        else _Wait(until=state.next_at, until_label=LABEL_NEXT_CHECK)
+    )
     return StageView(
         tone=TONE_CHECK,
         chip=CHIP_MAINTENANCE,
@@ -467,8 +501,10 @@ def _remote_empty_view(state: StageState) -> StageView:
             f"시도 {state.failures}회",
         ),
         progress=wait.progress,
+        since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
+        notes=wait.notes,
         band="점검 중 · 데이터를 처음 올리는 중",
     )
 
@@ -484,19 +520,17 @@ def _retry_view(state: StageState) -> StageView:
     assert state.kind is not None
     since = state.failing_since
     if state.trying:
-        wait = _Wait(progress=f"{state.attempt}번째 받는 중")
-        notes: tuple[str, ...] = (NOTE_MINUTES, NOTE_NO_CICD)
+        wait = _pulling(state)
         band = f"데이터 받는 중 · {state.attempt}번째 받기"
     else:
         wait = _Wait(until=state.next_at, until_label=LABEL_NEXT_TRY)
-        notes = ()
         band = "저장소에 잠시 닿지 못함 · 다시 시도 중"
     return StageView(
         tone=TONE_RETRY,
         chip=CHIP_RETRY,
         title=TITLE_TRANSIENT,
         reasons=(REASON_TRANSIENT,),
-        notes=notes,
+        notes=wait.notes,
         late_note=NOTE_LONG_RETRY,
         late_after=None if since is None else since + LONG_RETRY_SECONDS,
         reference=state.kind,
@@ -508,7 +542,7 @@ def _retry_view(state: StageState) -> StageView:
             f"시도 {state.failures}회",
         ),
         progress=wait.progress,
-        since=state.started_at if state.trying else None,
+        since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
         band=band,
@@ -543,11 +577,17 @@ def _fact_lines(kind: str, facts: StageFacts) -> list[str]:
 
 
 def _human_view(state: StageState) -> StageView:
-    """사람이 고쳐야 풀리는 시작 실패 — 「점검 중」, 경우별 쉬운 말, 접힌 진단(이름 · 수)."""
+    """사람이 고쳐야 풀리는 시작 실패 — 「점검 중」, 경우별 쉬운 말, 접힌 진단(이름 · 수).
+    되돌리기로 풀리는 갈래(`REPAIRED_IN_PLACE`)의 다시 받기는 그 값 줄이다."""
     assert state.kind is not None
     title, reason = HUMAN_SCREENS[state.kind]
     retries = state.kind != FAILURE_SCHEMA_NEWER
-    wait = _waiting(state, LABEL_NEXT_CHECK, "다시 확인하는 중") if retries else _Wait()
+    if state.trying and state.kind in REPAIRED_IN_PLACE:
+        wait = _pulling(state)
+    elif retries:
+        wait = _waiting(state, LABEL_NEXT_CHECK, "다시 확인하는 중")
+    else:
+        wait = _Wait()
     return StageView(
         tone=TONE_CHECK,
         chip=CHIP_MAINTENANCE,
@@ -562,8 +602,10 @@ def _human_view(state: StageState) -> StageView:
             f"시도 {state.failures}회",
         ),
         progress=wait.progress,
+        since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
+        notes=wait.notes,
         band="점검 중 · 관리자가 고쳐야 열림",
     )
 
@@ -634,8 +676,16 @@ def _contact_html(contact: StageContact) -> str:
     return f'<p class="contact">문의 {" · ".join(parts)}</p>' if parts else ""
 
 
-def render_main(view: StageView, *, now: float, version: int, contact: StageContact) -> str:
-    """`<main>` 한 덩이 — 쪽 JS 가 판이 바뀌면 이것만 갈아 끼운다."""
+def render_main(
+    view: StageView,
+    *,
+    now: float,
+    version: int,
+    contact: StageContact,
+    register_lost: bool = False,
+) -> str:
+    """`<main>` 한 덩이 — 쪽 JS 가 판이 바뀌면 이것만 갈아 끼운다. `register_lost` 면 제목 · 까닭
+    아래 「다시 눌러 주세요」 한 줄(`data-keep` — 갈아 끼워도 쪽 JS 가 옮겨 단다)."""
     parts = [
         f'<main data-version="{version}" data-now="{_ms(now)}">',
         f'<header class="brand">{_mark_svg()}<div><strong>{_esc(APP_LABEL)}</strong>'
@@ -644,6 +694,8 @@ def render_main(view: StageView, *, now: float, version: int, contact: StageCont
         f"<h1>{_esc(view.title)}</h1>",
         *(f'<p class="reason">{_esc(reason)}</p>' for reason in view.reasons),
     ]
+    if register_lost:
+        parts.append(f'<p class="lost" data-keep>{_esc(NOTE_REGISTER_LOST)}</p>')
     if view.steps:
         items = "".join(
             f'<li class="now">{_esc(label)} <b>{NOW_WORD}</b></li>'
@@ -694,7 +746,8 @@ _PAGE: Final = """<!DOCTYPE html>
 
 # 쪽의 되풀이. 틈(소켓을 닫고 앱이 잡기까지)의 실패는 무시하고 다음 번에 다시 본다. 판정 구획
 # (`// <stage-rule>`)은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다.
-PAGE_SCRIPT: Final = """
+PAGE_SCRIPT: Final = (
+    """
 // <stage-rule>
 function clockText(seconds) {
   const total = Math.max(Math.floor(seconds), 0);
@@ -712,9 +765,15 @@ function sinceText(progress, sinceMs, nowMs) {
 function untilText(label, untilMs, nowMs) {
   return label + " " + Math.max(Math.ceil((untilMs - nowMs) / 1000), 0) + "초 뒤";
 }
-// 앱이 뜨면 갈 곳 — 처음 연 주소. POST 로 받은 쪽 · 콜백 경로는 바탕 주소.
+// 앱이 뜨면 갈 곳 — 처음 연 주소. POST 로 받은 쪽 · 콜백 경로는 바탕 주소. 잃은 신청은 처음
+// 연 주소(신청 경로 — 앱이 GET 을 거절 화면으로 보낸다).
 function returnTarget(mode, base, href) {
-  return mode === "here" && href ? href : base;
+  return (mode === "__HERE__" || mode === "__RESEND__") && href ? href : base;
+}
+// 갈 곳이 지금 주소면 다시 읽는다("reload") — `#…` 가 붙은 주소에 replace 는 조각 이동만 해 쪽을
+// 다시 받지 않는다. 잃은 신청은 같은 주소여도 "replace" 다 — 다시 읽으면 POST 를 다시 보낸다.
+function returnWay(mode, target, current) {
+  return mode !== "__RESEND__" && target === current ? "reload" : "replace";
 }
 // 상태 줄 셋째 줄(JSON). 없거나 못 읽으면 null — 옛 임시 응답이다.
 function stageInfo(line) {
@@ -727,6 +786,13 @@ function stageInfo(line) {
   }
 }
 // </stage-rule>
+// 판이 바뀌어 갈아 끼우는 새 `<main>` 에 「다시 눌러 주세요」 한 줄(`[data-keep]`)을 옮겨 단다 —
+// 서버는 바탕 주소 GET 으로 판을 다시 그려 그 한 줄을 모른다. 자리는 제목 · 까닭 바로 아래.
+function carryKept(fresh, kept) {
+  if (!kept || fresh.querySelector("[data-keep]")) return;
+  const marks = fresh.querySelectorAll("h1, .reason");
+  if (marks.length) marks[marks.length - 1].after(kept);
+}
 async function stageTick(deps) {
   const base = deps.base;
   try {
@@ -768,10 +834,10 @@ if (typeof document !== "undefined") {
     mode: body.dataset.return,
     href: window.location.href,
     fetch: (url, options) => window.fetch(url, options),
-    // 같은 주소면 다시 읽는다 — `#…` 가 붙은 주소는 replace 가 조각 이동만 하고 쪽을 다시
-    // 받지 않는다.
     goTo: (url) =>
-      url === window.location.href ? window.location.reload() : window.location.replace(url),
+      returnWay(body.dataset.return, url, window.location.href) === "reload"
+        ? window.location.reload()
+        : window.location.replace(url),
     show: (headline, detail) => {
       const title = document.querySelector("h1");
       if (title) title.textContent = headline;
@@ -784,9 +850,11 @@ if (typeof document !== "undefined") {
         const answer = await window.fetch(body.dataset.base, { cache: "no-store" });
         if (answer.ok && answer.headers.has("X-Capa-Stage")) {
           const next = new DOMParser().parseFromString(await answer.text(), "text/html");
-          const fresh = next.querySelector("main");
-          if (fresh) {
-            main().replaceWith(document.importNode(fresh, true));
+          const found = next.querySelector("main");
+          if (found) {
+            const fresh = document.importNode(found, true);
+            carryKept(fresh, main().querySelector("[data-keep]"));
+            main().replaceWith(fresh);
             document.title = next.title;
           }
         }
@@ -799,6 +867,9 @@ if (typeof document !== "undefined") {
   window.setInterval(paint, 1000);
 }
 """.replace("__CLOCK_WORD__", CLOCK_WORD)
+    .replace("__HERE__", RETURN_HERE)
+    .replace("__RESEND__", RETURN_RESEND)
+)
 
 
 def base_path_of(public_url: str) -> str:
@@ -810,6 +881,16 @@ def base_path_of(public_url: str) -> str:
     if not path or _BASE_PATH.fullmatch(path) is None:
         return "/"
     return path.rstrip("/") + "/"
+
+
+def return_mode(method: str, path: str) -> str:
+    """쪽이 앱으로 갈 길 — 「접속 권한 신청」 POST 는 잃은 신청, 그 밖의 POST · 콜백 경로는 바탕
+    주소, 나머지는 처음 연 주소."""
+    if method == "POST" and path.endswith(REGISTER_PATH):
+        return RETURN_RESEND
+    if method == "POST" or path.endswith(CALLBACK_PATH):
+        return RETURN_BASE
+    return RETURN_HERE
 
 
 def status_text(view: StageView, *, now: float, version: int) -> str:
@@ -902,13 +983,19 @@ class _Handler(BaseHTTPRequestHandler):
         display = self.server.display
         state, now = display.read(), display.clock()
         view = stage_view(state)
-        back = "base" if self.command == "POST" or path.endswith(CALLBACK_PATH) else "here"
+        back = return_mode(self.command, path)
         return _PAGE.format(
             title=_esc(f"{view.title} · {APP_LABEL}"),
             css=page_css(),
             base=_esc(self.server.base_path),
             back=back,
-            main=render_main(view, now=now, version=state.version, contact=self.server.contact),
+            main=render_main(
+                view,
+                now=now,
+                version=state.version,
+                contact=self.server.contact,
+                register_lost=back == RETURN_RESEND,
+            ),
             script=PAGE_SCRIPT,
         ).encode("utf-8")
 

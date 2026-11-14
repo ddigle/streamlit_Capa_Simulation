@@ -355,11 +355,40 @@ def test_the_page_goes_back_to_the_address_it_was_opened_at() -> None:
     assert result == {"more": False, "went": [opened], "shown": [], "updated": []}
 
 
+def _return_ways(cases: list[list[str]]) -> list[str]:
+    driver = (
+        container_stage.PAGE_SCRIPT
+        + "\nconsole.log(JSON.stringify("
+        + json.dumps(cases)
+        + ".map(([mode, target, current]) => returnWay(mode, target, current))));"
+    )
+    result = json.loads(run_js(driver, what="앱으로 갈 길").stdout)
+    assert isinstance(result, list)
+    return result
+
+
 def test_going_back_to_the_same_address_reloads_the_page() -> None:
     """`#…` 가 붙은 주소에 replace 는 조각 이동만 해 쪽을 다시 받지 않는다 — 같은 주소면 다시
-    읽는다."""
-    script = container_stage.PAGE_SCRIPT
-    assert "url === window.location.href ? window.location.reload()" in script
+    읽는다. 쪽의 `goTo` 가 이 판정을 쓴다."""
+    same = "https://capa.example.invalid/spkg/capa/Space#floor"
+
+    assert _return_ways([["here", same, same], ["here", "/spkg/capa/", same]]) == [
+        "reload",
+        "replace",
+    ]
+    assert "returnWay(body.dataset.return, url, window.location.href)" in (
+        container_stage.PAGE_SCRIPT
+    )
+
+
+def test_a_lost_access_request_is_opened_again_without_sending_it() -> None:
+    """재시작 틈에 받은 「접속 권한 신청」 은 앱이 뜨면 같은 주소를 GET 으로 연다(앱이 거절 화면으로
+    보낸다) — 다시 읽으면(reload) 브라우저가 POST 를 다시 보낸다."""
+    opened = "https://capa.example.invalid/spkg/capa/auth/sso/register"
+    result = _tick([{"ok": True, "mark": False}], "/spkg/capa/", mode="resend", href=opened)
+
+    assert result == {"more": False, "went": [opened], "shown": [], "updated": []}
+    assert _return_ways([["resend", opened, opened]]) == ["replace"]
 
 
 def test_a_posted_or_callback_page_goes_to_the_base_instead() -> None:
@@ -596,6 +625,39 @@ def test_a_long_retry_adds_the_contact_line_after_ten_minutes() -> None:
     assert 'data-after="1600000">계속되면 문의처에 알려 주세요.' in late
 
 
+@pytest.mark.parametrize("kind", ["remote_empty", "corrupt", "forked"])
+def test_a_pull_after_init_or_rollback_shows_the_clock_and_the_pull_notes(kind: str) -> None:
+    """관리자가 처음 올리기(init) · 되돌리기(rollback)를 한 직후의 다음 확인은 그대로 몇 분 받기다 —
+    잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄(「n번째 받는 중 · 지난 시간」, 서버 시작부터)과 첫
+    받기의 두 노트가 선다. 표지 · 제목 · 띠는 그 갈래 그대로다."""
+    waiting = container_stage.stage_view(
+        _state(attempt=4, kind=kind, failed_at=1100.0, next_at=1160.0)
+    )
+    again = container_stage.stage_view(_state(attempt=5, trying=True, kind=kind, failed_at=1100.0))
+    page = container_stage.render_main(
+        again, now=1200.0, version=1, contact=container_stage.StageContact()
+    )
+
+    assert container_stage.value_text(again, 1200.0) == "5번째 받는 중 · 지난 시간 3분 20초"
+    assert 'data-since="1000000" data-progress="5번째 받는 중"' in page
+    assert again.notes == (container_stage.NOTE_MINUTES, container_stage.NOTE_NO_CICD)
+    assert container_stage.NOTE_NO_CICD in page
+    assert (again.chip, again.title, again.band) == (waiting.chip, waiting.title, waiting.band)
+    assert waiting.notes == () and container_stage.value_text(waiting, 1100.0).startswith("다음 ")
+
+
+@pytest.mark.parametrize(
+    "kind", ["config", "cli_missing", "denied", "no_bucket", "disk_full", "diverged"]
+)
+def test_a_recheck_fixed_by_ci_cd_keeps_its_short_value(kind: str) -> None:
+    """CI/CD 로 고치는 사람 갈래의 다시 확인은 「다시 확인하는 중」 그대로다 — 「받는 동안 CI/CD 를
+    다시 누르면 …」 노트가 그 갈래의 할 일(CI/CD)과 어긋나지 않게."""
+    again = container_stage.stage_view(_state(attempt=5, trying=True, kind=kind, failed_at=1100.0))
+
+    assert container_stage.value_text(again, 1200.0) == "다시 확인하는 중"
+    assert again.notes == () and again.since is None
+
+
 @pytest.mark.parametrize(
     ("method", "path", "back"),
     [
@@ -605,6 +667,8 @@ def test_a_long_retry_adds_the_contact_line_after_ten_minutes() -> None:
         ("GET", "/auth/callback?code=FAKE-code-0002", "base"),
         ("POST", "/auth/callback", "base"),
         ("POST", "/auth/sso/request", "base"),
+        ("POST", "/auth/sso/register", "resend"),
+        ("GET", "/auth/sso/register", "here"),
     ],
 )
 def test_the_page_marks_where_to_return_without_the_path(
@@ -616,6 +680,78 @@ def test_the_page_marks_where_to_return_without_the_path(
 
     assert f'data-return="{back}"' in page
     assert "FAKE-code-0002" not in page
+
+
+def test_a_lost_access_request_asks_to_press_again(
+    stage: tuple[container_stage.Stage, int],
+) -> None:
+    """재시작 틈에 누른 「접속 권한 신청」(POST)은 앱에 닿지 않았다 — 그 쪽에만 「다시 눌러 주세요」
+    한 줄이 선다. 다른 POST · 같은 경로의 GET 에는 없다. 공개 주소 바탕 아래 경로도 같다."""
+    _opened, port = stage
+    line = f'<p class="lost" data-keep>{html.escape(container_stage.NOTE_REGISTER_LOST)}</p>'
+
+    lost = _ask(port, "POST", "/auth/sso/register", body=b"t=FAKE-mark-0003")[2].decode("utf-8")
+    other = _ask(port, "POST", "/auth/callback", body=b"code=FAKE-code-0002")[2].decode("utf-8")
+    shown = _ask(port, "GET", "/auth/sso/register")[2].decode("utf-8")
+
+    assert line in lost and "FAKE-mark-0003" not in lost
+    assert line not in other and line not in shown
+    assert container_stage.return_mode("POST", "/spkg/capa/auth/sso/register") == "resend"
+    assert container_stage.return_mode("POST", "/spkg/capa/auth/sso/registered") == "base"
+    # 제목 · 까닭 바로 아래 — 단계 줄 · 값 줄보다 먼저 읽힌다.
+    assert lost.index("</h1>") < lost.index(line) < lost.index('class="steps"')
+
+
+def test_the_lost_request_line_names_the_button_of_the_denied_screen() -> None:
+    """한 개념 한 이름(UI-CON-02) — 거절 화면 단추 이름 그대로다. 시작 화면은 `auth/web` 을
+    불러오지 않아 글을 따로 들고 여기서 맞댄다."""
+    from capa_simulation.auth import web
+
+    assert container_stage.NOTE_REGISTER_LOST.startswith(f"「{web.REGISTER_LABEL}」 ")
+
+
+CARRY_DRIVER = textwrap.dedent(
+    """
+    const data = JSON.parse(require("fs").readFileSync(0, "utf-8"));
+    const log = [];
+    const node = (name) => ({ name, after: (moved) => log.push([name, moved.name]) });
+    const fresh = {
+      querySelector: (selector) =>
+        selector === "[data-keep]" && data.freshHasLine ? node("line") : null,
+      querySelectorAll: (selector) =>
+        selector === "h1, .reason" ? data.marks.map((name) => node(name)) : [],
+    };
+    carryKept(fresh, data.kept ? node("kept") : null);
+    console.log(JSON.stringify(log));
+    """
+)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ({"kept": True, "freshHasLine": False, "marks": ["h1"]}, [["h1", "kept"]]),
+        (
+            {"kept": True, "freshHasLine": False, "marks": ["h1", "reason"]},
+            [["reason", "kept"]],
+        ),
+        ({"kept": True, "freshHasLine": True, "marks": ["h1"]}, []),
+        ({"kept": False, "freshHasLine": False, "marks": ["h1"]}, []),
+    ],
+)
+def test_the_press_again_line_survives_a_new_stage(
+    case: dict[str, object], expected: list[list[str]]
+) -> None:
+    """판이 바뀌면 쪽은 바탕 주소 GET 으로 받은 새 `<main>` 으로 갈아 끼운다 — 그 판은 잃은 신청을
+    모르므로 「다시 눌러 주세요」 한 줄을 옛 판에서 옮겨 제목 · 까닭 바로 아래에 단다(한 번만)."""
+    completed = run_js(
+        container_stage.PAGE_SCRIPT + CARRY_DRIVER,
+        what="다시 눌러 주세요 한 줄 옮기기",
+        stdin=json.dumps(case),
+    )
+
+    assert json.loads(completed.stdout) == expected
+    assert 'carryKept(fresh, main().querySelector("[data-keep]"))' in (container_stage.PAGE_SCRIPT)
 
 
 def test_the_contact_line_takes_only_the_mail_shape_and_plain_text() -> None:
