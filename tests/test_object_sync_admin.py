@@ -749,6 +749,21 @@ def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
         assert "런북" not in str(blocked["full"])
 
 
+def test_a_handed_over_copy_tells_the_moment_in_korean_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """넘긴 시각은 KST 분까지 — UTC ISO 그대로면 KST 0 ~ 9시에 넘긴 사본이 하루 앞 날짜로 읽혔다
+    (E2E E-10)."""
+    _boot(monkeypatch, handed_over_utc="2026-11-14T16:43:02Z")
+
+    app = AppTest.from_string(ALERTS).run()
+
+    note = active_state(app, "SY-04")
+    assert note is not None
+    assert str(note["full"]).startswith("이 DB 는 2026-11-15 01:43 에 정본을 넘긴 사본입니다.")
+    assert "T16:43" not in str(note["full"])
+
+
 def test_a_handed_over_copy_says_how_to_get_fresh_data(monkeypatch: pytest.MonkeyPatch) -> None:
     """정본을 넘긴 사본(`SY-04`)의 전문은 최신 데이터를 보려면 사본을 다시 받으라고 끝난다 — 할
     일은 런북을 가리키고 스크립트 이름은 싣지 않는다(카드 p2-sync 글 그대로)."""

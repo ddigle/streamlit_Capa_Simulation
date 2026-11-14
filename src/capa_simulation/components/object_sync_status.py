@@ -35,6 +35,7 @@ from typing import Final
 import streamlit as st
 
 from capa_simulation import alerts, object_sync_worker, sync_boot
+from capa_simulation.audit import read as audit_read
 from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit import shipper as audit_shipper
 from capa_simulation.audit import spool as audit_spool
@@ -95,6 +96,14 @@ BLOCKED_LABELS: Final[dict[str, str]] = {
     PushDecision.REMOTE_EMPTY.value: "원격이 비어 있음",
     PushDecision.UNKNOWN_BASE.value: "이 DB 의 세대를 모름",
 }
+
+
+def _kst_minute(utc_text: str) -> str:
+    """사내 PC `init` 이 남긴 UTC 시각 → KST 「YYYY-MM-DD HH:MM」. 읽지 못하면 받은 글 그대로."""
+    moment = audit_read.parse_ts(utc_text)
+    return (
+        utc_text if moment is None else moment.astimezone(audit_read.KST).strftime("%Y-%m-%d %H:%M")
+    )
 
 
 def current_health() -> tuple[WorkerStatus | None, SyncHealth]:
@@ -234,8 +243,8 @@ def render_object_sync_alerts() -> None:
             None
             if handed_over is None
             else (
-                f"이 DB 는 {handed_over} 에 정본을 넘긴 사본입니다. 여기서 저장해도 정본에 "
-                "올라가지 않습니다. 최신 데이터를 보려면 사본을 다시 받습니다(런북)."
+                f"이 DB 는 {_kst_minute(handed_over)} 에 정본을 넘긴 사본입니다. 여기서 저장해도 "
+                "정본에 올라가지 않습니다. 최신 데이터를 보려면 사본을 다시 받습니다(런북)."
             )
         ),
     )
