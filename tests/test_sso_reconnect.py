@@ -246,20 +246,30 @@ process.stdout.write(JSON.stringify(texts.map(connectionDialog)));
 
 
 def test_the_band_hides_that_window_while_it_stands_and_gives_it_back_after() -> None:
-    """창은 띠보다 늦게 뜰 때가 있어 띠가 선 동안 매 틱 찾고, 띠를 걷으면 감춘 창만 되돌린다 —
-    띠가 없을 때의 창은 건드리지 않는다."""
+    """창은 띠보다 늦게 뜰 때가 있어 띠가 선 동안 화면 바뀜을 지켜보아 뜨는 그 순간 감추고(틱만
+    기다리면 한 틱 동안 띠 곁에 보였다) 매 틱 한 번 더 찾는다. 띠를 걷으면 지켜보기를 끝내고 감춘
+    창만 되돌린다 — 띠가 없을 때의 창은 건드리지 않는다."""
     script = reconnect_script(use_config())
 
     assert "doc.querySelectorAll('[data-testid=\"stDialog\"]')" in script
     assert 'dialog.style.setProperty("display", "none", "important");' in script
     show = script.split("function showBanner(kind)", 1)[1].split("function tick()", 1)[0]
-    assert show.rstrip().endswith("hideConnectionDialogs();\n  }")
+    assert show.rstrip().endswith("hideConnectionDialogs();\n    watchConnectionDialogs();\n  }")
     hide = script.split("function hideBanner()", 1)[1].split("function showBanner(kind)", 1)[0]
     assert "restoreConnectionDialogs();" in hide
     tick = script.split("function tick()", 1)[1]
     assert "if (doc.getElementById(" in tick and "hideConnectionDialogs();" in tick
     restore = script.split("function restoreConnectionDialogs()", 1)[1].split("function", 1)[0]
     assert 'boxes[i].style.removeProperty("display");' in restore
+    assert "watcher.disconnect();" in restore
+    watch = script.split("function watchConnectionDialogs()", 1)[1].split("function", 1)[0]
+    assert "parentWindow.MutationObserver" in watch
+    assert (
+        "watcher.observe(doc.body, { childList: true, subtree: true, characterData: true });"
+        in (script)
+    )
+    observed = script.split("watcher = new Observer(function () {", 1)[1].split("});", 1)[0]
+    assert "doc.getElementById(" in observed and "hideConnectionDialogs();" in observed
 
 
 # --------------------------------------------------------------------------- 서버 재시작 띠

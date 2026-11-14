@@ -41,9 +41,9 @@ react-aria 모달이라 열리는 동안 바깥 요소를 `inert` 로 만든다 
 
 **띠가 선 동안 그 영어 창(「Connection failed with status 401.」)은 감춘다**(2026-11-08 사용자 답
 b2). 띠가 창 제목과 닫기 X 를 덮고 본문 줄만 삐져나와 같은 일을 두 번(그것도 영어로) 말했다. 창은
-띠보다 늦게 뜰 때가 있어 띠가 선 동안 매 틱 찾는다. 가르는 표는 창 글(`connectionDialog` — 판정
-구획)이다 — 같은 꼴의 앱 팝업(`st.dialog`)은 건드리지 않는다. 띠를 걷으면 감춘 창을 되돌린다(띠가
-없을 때의 창은 그대로다).
+띠보다 늦게 뜰 때가 있어 띠가 선 동안 화면 바뀜을 지켜보아 뜨는 그 순간 감추고, 매 틱 한 번 더
+찾는다. 가르는 표는 창 글(`connectionDialog` — 판정 구획)이다 — 같은 꼴의 앱 팝업(`st.dialog`)은
+건드리지 않는다. 띠를 걷으면 지켜보기를 끝내고 감춘 창을 되돌린다(띠가 없을 때의 창은 그대로다).
 
 링크는 `CAPA_PUBLIC_URL` 바탕의 `/auth/sso/login?next=<지금 경로 + 질의>` 다 — 경로에서 공개 주소의
 경로 접두(WebIDE `/proxy/<포트>`)를 떼는 것은 `sso_identity.return_path` 와 같은 규칙이고, 서버가
@@ -243,7 +243,24 @@ function loginHref(base, prefix, loginPath, pathname, search) {
       dialog.style.setProperty("display", "none", "important");
     }
   }
+  // 띠가 선 동안 뒤늦게 뜨는 연결 오류 창은 뜨는 그 순간 감춘다 — 틱만 기다리면 창이 한 틱 동안
+  // 띠 곁에 보였다. 지켜보기는 띠가 선 동안만 한다(평소 회차의 화면 바뀜을 지켜보지 않는다).
+  var watcher = null;
+  function watchConnectionDialogs() {
+    var Observer = parentWindow.MutationObserver || window.MutationObserver;
+    if (watcher || !Observer) return;
+    watcher = new Observer(function () {
+      if (doc.getElementById(%(banner_id)s) || doc.getElementById(%(restart_id)s)) {
+        hideConnectionDialogs();
+      }
+    });
+    watcher.observe(doc.body, { childList: true, subtree: true, characterData: true });
+  }
   function restoreConnectionDialogs() {
+    if (watcher) {
+      watcher.disconnect();
+      watcher = null;
+    }
     var boxes = doc.querySelectorAll("[" + HIDDEN_MARK + "]");
     for (var i = 0; i < boxes.length; i++) {
       boxes[i].removeAttribute(HIDDEN_MARK);
@@ -275,6 +292,7 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     }
     if (box.textContent !== notice) box.textContent = notice;
     hideConnectionDialogs();
+    watchConnectionDialogs();
   }
   // 묻는 한 번 — 상한 안에 답이 없으면 끊고 답 없음(거절)으로 센다. 답은 상태 · 표 · (원하면) 글.
   function ask(path, withText) {
@@ -365,6 +383,7 @@ function loginHref(base, prefix, loginPath, pathname, search) {
     box.appendChild(link);
     doc.body.appendChild(box);
     hideConnectionDialogs();
+    watchConnectionDialogs();
   }
   function tick() {
     var root = doc.querySelector('[data-testid="stApp"]');
