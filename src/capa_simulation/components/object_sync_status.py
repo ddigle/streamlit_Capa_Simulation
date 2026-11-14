@@ -68,14 +68,15 @@ from capa_simulation.services.object_storage_manifest import (
     PushDecision,
     origin_tail,
 )
-from capa_simulation.sidebar_status import remembered_expander
+from capa_simulation.sidebar_status import note_periodic_fragment, remembered_expander
 
 EXPANDER_KEY: Final = "admin_area_object_sync"
 COPY_KEY: Final = "object_sync"
 UPLOAD_NOW_KEY: Final = "admin_area_object_sync_upload_now"
 FLASH_KEY: Final = "admin_area_object_sync_flash"
-# 올리는 동안 펼침 안 값을 다시 그리는 간격.
+# 펼침이 서 있는 동안 값을 다시 보는 간격과 그 프래그먼트의 key.
 REFRESH_SECONDS: Final = 5
+LIVE_FRAGMENT_KEY: Final = "admin_area_object_sync_live"
 DISABLED_CODE: Final = "SY-01"
 OVERDUE_CODE: Final = "SY-02"
 BLOCKED_CODE: Final = "SY-03"
@@ -387,25 +388,31 @@ def panel_label(health: SyncHealth) -> str:
     return f"{panel_title(health)} :{color}-badge[{word}]"
 
 
-def _render_body() -> None:
-    """값 줄과 그 글을 복사하는 단추 — 올리는 동안 다시 그려도 복사 글이 화면과 같다."""
-    status, health = current_health()
+def _is_uploading(status: WorkerStatus | None) -> bool:
+    return status is not None and status.phase == object_sync_worker.PHASE_UPLOADING
+
+
+def _render_body(status: WorkerStatus | None, health: SyncHealth) -> None:
+    """값 줄과 그 글을 복사하는 단추 — 다시 그려도 복사 글이 화면과 같다."""
     lines = status_lines(status, health, now=time.monotonic())
     title = f"{panel_title(health)} · {cicd_verdict(health)[1]}"
     render_diagnostic_copy(diagnostic_text(title, plain_lines(lines)), key=COPY_KEY)
     st.caption("  \n".join(lines))
 
 
-@st.fragment(run_every=REFRESH_SECONDS)
-def _render_live_body() -> None:
-    """올리는 동안만 값을 다시 그린다. 알림 표지는 이 안에서 내지 않는다(AGENTS 9장).
+@st.fragment(run_every=REFRESH_SECONDS, key=LIVE_FRAGMENT_KEY)
+def _render_live_body(drawn_label: str, drawn_uploading: bool) -> None:
+    """펼침이 서 있는 동안 늘 값을 다시 그린다(접혀 있어도 — 제목 배지가 판정이다). 알림 표지는
+    이 안에서 내지 않는다(AGENTS 9장).
 
-    끝나면 앱 회차로 돌아가 제목 · 단추를 함께 고친다 — 이 프래그먼트도 그때 사라진다.
+    제목(CI/CD 판정 배지)과 「지금 올리기」 잠금은 앱 회차가 그린다. 그린 때와 판정 · 잠금이
+    달라지면 — 다른 회차의 저장 · 올리기 시작과 끝 · 실패 — 앱 회차로 돌아가 함께 고친다. 그린
+    순간 값에 머물면 연 채 둔 화면이 다른 회차의 저장 뒤에도 초록 「CI/CD 눌러도 됨」 을 보인다.
     """
-    status = object_sync_worker.current_status()
-    if status is None or status.phase != object_sync_worker.PHASE_UPLOADING:
+    status, health = current_health()
+    if panel_label(health) != drawn_label or _is_uploading(status) != drawn_uploading:
         st.rerun(scope="app")
-    _render_body()
+    _render_body(status, health)
 
 
 def render_object_sync_status() -> None:
@@ -413,8 +420,9 @@ def render_object_sync_status() -> None:
     if not sync_boot.is_managed():
         return
     status, health = current_health()
-    uploading = status is not None and status.phase == object_sync_worker.PHASE_UPLOADING
-    with remembered_expander(panel_label(health), icon=":material/cloud_sync:", key=EXPANDER_KEY):
+    uploading = _is_uploading(status)
+    label = panel_label(health)
+    with remembered_expander(label, icon=":material/cloud_sync:", key=EXPANDER_KEY):
         if _viewer_is_admin():
             st.button(
                 "지금 올리기",
@@ -425,7 +433,6 @@ def render_object_sync_status() -> None:
                 on_click=_upload_now,
             )
         render_flash(FLASH_KEY)
-        if uploading:
-            _render_live_body()
-        else:
-            _render_body()
+        _render_live_body(label, uploading)
+    # 이 페이지의 여닫기 · 팝업 열기가 시계를 멈추지 않게(`note_periodic_fragment`).
+    note_periodic_fragment()

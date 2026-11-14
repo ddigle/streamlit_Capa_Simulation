@@ -1831,7 +1831,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 경로 쪽은 산출 결과가 따로 낸다 — 대당 Capa 제외 `ST-14`(지문 내용 = 건수 + 제외사유별 건수, 딸린 표 = 「제외 기준정보」),
     대당 Capa 가 없어 소요대수에서 뺀 경로 `ST-15`(확인 필요 — 기준정보를 고칠 일, 딸린 표 = 「소요대수 제외 기준정보」), PKG 의
     Buffer 밖 행 `ST-21`(알림 — 규칙이라 고칠 것이 없다, 딸린 표 = 「PKG Buffer 밖 행」). 두 사유를 한 알림에 섞지 않는다.
-- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 올리는 동안만 프래그먼트로 갱신)과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다 — 짧은 글은 누구나 꼴(`SY-02` · `SY-03` 일반 사용자는 「— 관리자에게 알려 주세요」), 관리자 지시 · 런북 · 갈래는 관리자 몫 전문에만, 관리자 줄의 「그 화면으로」 는 Admin Area, `SY-06` 은 관리자 몫에만, 일꾼이 없으면 관리자 전문 끝 `WORKER_ABSENT_LINE`)과 머리 띠 「정본 아님」 표지의 코드(`not_canonical_code` — 9장 「알림 칸」). 펼침 제목 끝은 CI/CD 판정 배지 하나(`CICD_VERDICTS` — 일꾼 판정 제목마다 초록 「CI/CD 눌러도 됨」 · 주황 「기다리세요」 · 빨강 「누르면 저장 잃음」, 복사 글은 평문 낱말 — 2026-11-14 보드 카드 p2-sync). `managed` 가 아니면 Streamlit 호출이 없다.
+- `src/capa_simulation/components/object_sync_status.py` — Admin 「DB 동기화」 펼침(올릴 것 · 마지막 올림 · 세대 · 갈래 — 기준 세대가 시작 펜스면 세대 번호 뒤 `(시작 펜스)`, 일꾼 상태의 `origin` 으로 — 펼침이 서 있는 동안 늘 `run_every` 프래그먼트(`LIVE_FRAGMENT_KEY` · 5초)로 갱신하고, 판정 제목 · 「지금 올리기」 잠금이 그린 때와 달라지면 앱 회차로 돌아가 함께 고친다 — 그린 순간 값에 머물면 연 채 둔 화면이 다른 회차의 저장 뒤에도 초록 「CI/CD 눌러도 됨」 을 보였다(E2E C-11), 그 페이지의 여닫기는 앱 전체로 돈다(`note_periodic_fragment` — 9장 「여닫을 때…」))과 관리자용 「지금 올리기」, 동기화 상태 알림 `SY-01` ~ `SY-06`(`app.py` 가 `GL-02` 곁 한 자리에서 부른다 — 짧은 글은 누구나 꼴(`SY-02` · `SY-03` 일반 사용자는 「— 관리자에게 알려 주세요」), 관리자 지시 · 런북 · 갈래는 관리자 몫 전문에만, 관리자 줄의 「그 화면으로」 는 Admin Area, `SY-06` 은 관리자 몫에만, 일꾼이 없으면 관리자 전문 끝 `WORKER_ABSENT_LINE`)과 머리 띠 「정본 아님」 표지의 코드(`not_canonical_code` — 9장 「알림 칸」). 펼침 제목 끝은 CI/CD 판정 배지 하나(`CICD_VERDICTS` — 일꾼 판정 제목마다 초록 「CI/CD 눌러도 됨」 · 주황 「기다리세요」 · 빨강 「누르면 저장 잃음」, 복사 글은 평문 낱말 — 2026-11-14 보드 카드 p2-sync). `managed` 가 아니면 Streamlit 호출이 없다.
 - `src/capa_simulation/components/admin_view.py` — 관리자 몫 알림 · 전문 · 접힌 「관리자용 진단」 을 이 회차에 보일지 한 곳(`admin_notes_visible` — 관리자(`sso_identity.viewer_is_admin`)면 참, 아니면 통합인증이 켜짐이 아니고 운영 서버(`SsoConfig.operational` — Admin Area 잠금 `admin_area_locked` 와 한 뿌리)가 아닐 때만 누구에게나). 그래서 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않고(Admin Area 가 모두에게 잠긴 것과 같다 — 참인 회차에는 Admin Area 가 늘 열려 「그 화면으로」 가 잠긴 화면을 가리키지 않는다), 개발 `app.py` · 사내 WebIDE · 사내 PC 는 누구에게나다. 이것을 부르는 자리 — 시작 점검 `AD-01` · 접속 명단 `AD-08` · `AD-09` · `AD-19` · 로그인 갱신 거절 `AD-21` · 코어 화면 오류 `AD-22` · 동기화 `SY-*` 관리자 전문 · DB 실패 전문(`data_error_mark`) · 코어 화면 오류 카드 · 앱 시작 실패 판 · 문지기 없이 뜬 앱 판(`sso_identity`)의 「관리자용 진단」. BigDataQuery 토큰 알림(`AD-10` · `AD-11` · `AD-17` · `AD-18`)은 밖이다 — 통합인증이 꺼진 C-DEP 에서는 아무에게도 띄우지 않는다(규칙집 결정 ad10-nosso, `viewer_is_admin` 그대로). 보이기만 가르고 쓰기 · 관리자 단추의 두 번째 벽은 그 자리 판정(`viewer_is_admin`) 그대로다(2026-11-14 보드 리뷰 반영 「관리자 회차에만 은 꺼진 서버에서 아무도 못 본다」). 시험은 `tests/test_admin_view.py`(설정 × 관리자 진리표 · Admin Area 잠금과 맞댐).
 - `src/capa_simulation/components/container_start_check.py` — Admin Area 탭 위 「서버 시작 점검」 펼침. C-DEP CD 시작
   스크립트의 결과 파일(`io/container_start_report.py`)이 있을 때만 단계 표(설치·로그인 토큰 파일·요청자 계정 + 넷째 줄 「통합인증」
@@ -7398,6 +7398,14 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   때만 그렇게 하고(`fragment_rerun_is_safe`), 아니면 앱 전체를 다시 돌린다. 화면 탭 줄의 화면을 옮기지 않는 누름(고정·
   끌어서 차례·지금 탭이 아닌 탭 닫기 — 2026-11-02 사용자 요청)도 같은 길이다(`page_tabs._settle_drawn`). Components v2
   트리거는 부품 key 의 위젯이 아니라 트리거 모음 칸을 바꾸므로 판정이 그 칸도 같은 위젯으로 센다(`own_widget_ids`).
+  **예외 — `run_every` 프래그먼트가 선 페이지.** 브라우저는 앱 전체 회차가 시작될 때 `run_every` 시계를 모두 지우고
+  그 회차가 프래그먼트를 다시 세울 때 다시 단다. 콜백이 앱 전체 요청을 빈 프래그먼트 회차로 바꾸면 시계는 지워졌는데
+  다시 달 회차가 오지 않아 그 프래그먼트가 다음 앱 전체 회차까지 멈춘다(2026-11-14 E2E — Admin 「DB 동기화」 를 연 채
+  이웃 상자를 여닫자 45초 넘게 다시 돌지 않았다). 그래서 `run_every` 프래그먼트를 세우는 자리는 전체 실행 안에서
+  `sidebar_status.note_periodic_fragment()` 를 부르고, 그 실행 뒤의 앱 전체 요청은 `rerun_fragment_if_alone` 이 프래그먼트
+  회차로 바꾸지 않는다(그 페이지의 여닫기 · 팝업 열기는 앱 전체 회차 — 지금은 `managed` 서버 관리자의 Admin Area).
+  프래그먼트 안 위젯의 요청은 브라우저가 시계를 지우지 않아 그대로 빠른 길이고, 다른 페이지로 옮겨 새 전체 실행이 서면
+  표가 빠진다(표는 그 실행의 표지 — `AppRun` 칸 `periodic`).
 - 회차마다 페이지가 다시 채우는 자리표시자(사이드바 페이지 칸 등)는 `st.empty` 가 아니라 `st.container` 로 둔다 —
   `st.empty` 칸은 회차가 시작되자마자 앞 회차 내용을 지워 계산 동안 화면이 튀고, 블록은 페이지가 다시 보낼 때까지 앞
   내용을 남긴다. 빈 컨테이너는 그려지지 않아 높이가 없으므로 그런 칸에 `border`·`height` 를 주지 않는다.

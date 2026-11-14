@@ -69,8 +69,9 @@ SIDEBAR_TOGGLE_SINK_KEY = "sidebar_box_toggle_sink"
 # 이번 전체 실행이 끝까지 돌았는가. 실행 도중에 상자를 누르면 그 요청이 진행 중인 실행을 끊고
 # 프래그먼트 재실행으로 바뀌어 본문이 반쯤 그려진 채 남는다(실측). 끝나지 않은 실행 뒤에는
 # 콜백이 물러나 평소처럼 앱 전체를 다시 돌린다. **세션 대입이 아니라 이 dict 를 고친다** —
-# `st.stop()` 이 걸린 동안의 세션 대입은 다시 멈춤 예외를 낸다(실측). 칸은 셋이다 — `complete`
-# (끝까지 돌았나), `run`(가장 늦게 시작한 실행의 표지), `page`(끝까지 돈 실행의 페이지).
+# `st.stop()` 이 걸린 동안의 세션 대입은 다시 멈춤 예외를 낸다(실측). 칸은 넷이다 — `complete`
+# (끝까지 돌았나), `run`(가장 늦게 시작한 실행의 표지), `page`(끝까지 돈 실행의 페이지),
+# `periodic`(`run_every` 프래그먼트를 세운 실행의 표지 — `note_periodic_fragment`).
 APP_RUN_STATE_KEY = "sidebar_app_run_state"
 
 # 조건 패널의 시나리오·조회기간 팝업을 여닫는 **키 붙은 호스트 프래그먼트**(`app.py`). 값 칸을
@@ -225,8 +226,10 @@ def rerun_fragment_if_alone(fragment_key: str, widget_key: str) -> None:
     - **이번 상호작용에서 `widget_key` 말고 다른 위젯도 바뀌었을 때**.
     - 프래그먼트를 찾지 못할 때(이번 실행에 등록되지 않았거나, AppTest 처럼 실행마다 프래그먼트
       저장소가 새로 생길 때). `st.rerun` 이 던지는 재실행 예외는 잡지 않는다.
+    - 직전 전체 실행이 `run_every` 프래그먼트를 세웠고 이번 요청이 앱 전체 요청일 때
+      (`note_periodic_fragment`).
     """
-    if not fragment_rerun_is_safe(widget_key):
+    if not fragment_rerun_is_safe(widget_key) or _would_stop_periodic_fragments():
         return
     try:
         st.rerun(fragment_key)
@@ -247,6 +250,37 @@ def fragment_rerun_is_safe(widget_key: str) -> bool:
     if page is None or state.get("page") != page:
         return False
     return _only_this_widget_changed(widget_key)
+
+
+def note_periodic_fragment() -> None:
+    """이번 전체 실행이 `run_every` 프래그먼트를 세웠다고 적는다 — 그 프래그먼트를 부르는 자리가
+    전체 실행 안에서 부른다.
+
+    브라우저는 앱 전체 회차가 시작될 때 `run_every` 시계를 모두 지우고, 그 회차가 프래그먼트를
+    다시 세울 때 시계를 다시 단다. 여닫기 · 팝업 열기 콜백이 앱 전체 요청을 프래그먼트만 도는
+    회차로 바꾸면 시계는 이미 지워졌는데 다시 달 회차가 오지 않아, 그 프래그먼트가 다음 앱 전체
+    회차까지 멈춘다(Admin 「DB 동기화」 를 연 채 이웃 상자를 여닫으면 「지금 올리기」 가 잠긴 채
+    남는다). 그래서 이 표가 선 동안 앱 전체 요청의 콜백은 프래그먼트 회차로 바꾸지 않는다
+    (`rerun_fragment_if_alone`). 표는 그 실행의 표지(`run`)라 다른 페이지로 옮겨 새 전체 실행이
+    서면 저절로 빠진다.
+    """
+    state = st.session_state.get(APP_RUN_STATE_KEY)
+    if isinstance(state, dict) and state.get("run") is not None:
+        state["periodic"] = state["run"]
+
+
+def _would_stop_periodic_fragments() -> bool:
+    """지금 앱 전체 요청을 프래그먼트 회차로 바꾸면 직전 전체 실행이 세운 `run_every` 시계가
+    멈추는가. 프래그먼트 안 위젯의 요청(프래그먼트 회차)은 브라우저가 시계를 지우지 않아
+    거짓이다."""
+    state = st.session_state.get(APP_RUN_STATE_KEY)
+    if not isinstance(state, dict):
+        return False
+    periodic = state.get("periodic")
+    if periodic is None or periodic is not state.get("run"):
+        return False
+    ctx = get_script_run_ctx(suppress_warning=True)
+    return ctx is not None and not ctx.fragment_ids_this_run
 
 
 def rerun_app_unless_alone(widget_key: str) -> None:
