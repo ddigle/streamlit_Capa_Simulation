@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 import pytest
-from alert_marks import active_state
+from alert_marks import active_state, alert_notes, states
 from sso_support import (
     CLIENT_ID,
     PUBLIC_URL,
@@ -45,6 +45,12 @@ from capa_simulation.components.sso_status import (
 
 render_off_in_production_alert()
 render_sso_status()
+"""
+
+OFF_ALERT_SCRIPT = """
+from capa_simulation.components.sso_status import render_off_in_production_alert
+
+render_off_in_production_alert()
 """
 
 
@@ -91,6 +97,33 @@ def test_off_in_production_warns_and_lists_what_would_block() -> None:
     text = _all_text(app)
     assert "**켜면 막힐 문제** · " in text and f"`{names.ENV_ISSUER}` — 값이 없음" in text
     assert f"`{names.ENV_PUBLIC_URL}` — https 가 아님" in text
+
+
+@pytest.mark.parametrize("server", ["on", "development"])
+def test_the_off_in_production_marker_carries_no_text_where_it_is_resolved(server: str) -> None:
+    """Admin Area 는 `AD-02` 를 잠금 앞에서 부르므로, 켜진 서버에서 주소로 Admin Area 를 연 일반
+    회차 · 개발 회차도 해소 표지를 싣는다. 그 숨은 표지에는 짧은 글 · 전문을 싣지 않는다 — 등록부
+    이름으로 떨어진다. 조건이 선 회차(운영인데 꺼짐)의 글을 먼저 읽어 헛통과를 막는다."""
+    runtime.reset()
+    runtime.start({names.ENV_APP_ENV: "prod", names.ENV_PUBLIC_URL: "http://capa.example.invalid"})
+    warned = active_state(AppTest.from_string(OFF_ALERT_SCRIPT).run(), "AD-02")
+    assert warned is not None
+    if server == "on":
+        use_config()
+    else:
+        runtime.reset()
+        runtime.start({})
+
+    app = AppTest.from_string(OFF_ALERT_SCRIPT).run()
+
+    assert not list(app.exception)
+    [note] = states(app, "AD-02")
+    assert not note["active"]
+    entry = alerts.spec("AD-02")
+    fallback = entry.full or entry.short or entry.title
+    assert (note["short"], note["full"]) == (alerts.short_text(entry.short or fallback), fallback)
+    raw = json.dumps(alert_notes(app), ensure_ascii=False)
+    assert [text for text in (warned["short"], warned["full"]) if str(text) in raw] == []
 
 
 def test_off_in_production_with_everything_else_ready_says_nothing_blocks() -> None:

@@ -735,7 +735,8 @@ def render_off_in_production_alert() -> None:
     통합인증이 꺼진 운영 서버에는 관리자 신원이 없어 Admin Area 가 모두에게 잠기고(`sso_identity.
     admin_area_locked`) 펼침 본문에 닿지 않는다 — 잠긴 회차에도 Alarm 으로 닿게 펼침 밖에 둔다. 그
     서버는 누구나 들어오는 상태라 알림이 보이는 사람을 가리지 않는다. 켜진 서버 · 개발에서는 해소로
-    부른다.
+    부르고, 해소 표지에는 짧은 글 · 전문을 싣지 않는다 — 켜진 서버에서 주소로 Admin Area 를 연 일반
+    회차의 숨은 표지에 운영 낱말이 실리지 않게(관리자 몫 알림과 같은 꼴).
     """
     cfg = runtime.config()
     off_in_production = cfg.mode is SsoMode.OFF and cfg.prod
@@ -744,8 +745,12 @@ def render_off_in_production_alert() -> None:
         scope=None,
         content=off_in_production or None,
         active=off_in_production,
-        text="운영 서버인데 통합인증이 꺼져 있습니다 — Client ID 환경변수를 넣으세요",
-        full=alerts.plain_text(OFF_IN_PRODUCTION_WARNING),
+        text=(
+            "운영 서버인데 통합인증이 꺼져 있습니다 — Client ID 환경변수를 넣으세요"
+            if off_in_production
+            else None
+        ),
+        full=alerts.plain_text(OFF_IN_PRODUCTION_WARNING) if off_in_production else None,
     )
 
 
