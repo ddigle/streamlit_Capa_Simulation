@@ -11,7 +11,8 @@ d12 (가)).
 - **카드** — 앱 안 멈춤 판의 한 꼴(`stop_panel` — 보드 stop-panels): 오류 상자 머리 한 줄 「이
   화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 → 주 단추 「다시 시도」(회차 하나 —
   누름이 화면을 다시 돌린다) → 문의 줄 → 참고 줄 「참고 <참고 번호 8자> · <UTC 분> · <오류 종류>」
-  (운영 서버도 오류 종류 이름은 보인다 — d12 (가)) → 관리자 몫에만 접힌 「관리자용 진단」
+  (UTC 분은 실패를 적은 순간 — `AD-22` 의 시각과 같은 순간이다. 운영 서버도 오류 종류 이름은
+  보인다 — d12 (가)) → 관리자 몫에만 접힌 「관리자용 진단」
   (`stop_panel.admin_fold_visible` — 운영 아닌 꺼진 서버는 누구에게나) — 화면 · 첫 줄(200자) · 이
   저장소 안 프레임(`<상대 경로>:<줄> in <함수>` — 절대 경로 · 설치 패키지 프레임 없음) · 복사 단추.
   C-DEP 에는 셸도 로그도 없어 관리자가 원문을 보는 자리가 이 접힘이다.
@@ -121,7 +122,8 @@ def render_page_failure(failure: PageFailure, exc: BaseException) -> None:
     with st.container(key=CARD_KEY):
         st.error(HEADLINE, icon=CARD_ICON)
         st.button(RETRY_LABEL, key=RETRY_KEY, type="primary")
-        render_stop_footer(failure.ref, kind=failure.kind, fold=fold)
+        # 참고 줄의 시각은 실패를 적은 순간이다 — 그린 순간이 아니라 `AD-22` 와 같은 순간.
+        render_stop_footer(failure.ref, kind=failure.kind, fold=fold, now=failure.epoch)
 
 
 def _record(page: str, href: str, exc: BaseException) -> PageFailure:
