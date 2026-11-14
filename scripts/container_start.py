@@ -177,8 +177,8 @@ PROBE_TIMEOUT_SECONDS = 60
 BOOT_PULL_TIMEOUT_SECONDS = 7200
 BOOT_PULL_SCRIPT = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
 # 받기가 실제 내려받기로 넘어갔다는 빈 표지 파일 — 결과 파일 옆. 시도마다 지우고 `boot-pull` 이
-# 멤버를 받기 직전에 남긴다. 임시 화면은 이 표지가 선 뒤에만 「n번째 받는 중」 을 보인다(처음
-# 올리기 · 되돌리기를 기다리는 짧은 확인은 받기가 아니다).
+# 멤버를 받기 직전에 남긴다. 임시 화면은 이 표지가 선 뒤에만 「n번째 받는 중」 을 보인다(받기로
+# 넘어가기 전에 머무는 확인 — 처음 올리기 전 · 갈라짐 · 깨진 포인터 — 은 받기가 아니다).
 BOOT_DOWNLOAD_MARK_NAME = "container_boot_download"
 # 받기 실패 뒤 물러남. 끝값으로 되풀이한다.
 BOOT_BACKOFF_SECONDS: tuple[int, ...] = (5, 10, 20, 40, 60)

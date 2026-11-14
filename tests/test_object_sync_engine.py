@@ -967,6 +967,31 @@ def test_a_check_that_stays_or_keeps_never_tells_a_download(rig: SimpleNamespace
     assert forked.kind == manifest.FAILURE_FORKED and forked_noted == []
 
 
+def test_a_broken_member_shows_up_while_downloading_so_it_is_a_pull(rig: SimpleNamespace) -> None:
+    """깨진 멤버(없음 · 크기 · 해시)는 받는 도중에 드러난다 — 되돌리기 전의 300초 확인도 멤버를
+    받기 시작하면 실제 받기라 임시 화면은 그동안 「n번째 받는 중」 이다(받기를 마치고 깨짐으로
+    머문다). 깨진 포인터 · 갈라짐은 받기 전에 머문다(아래 · 위 시험)."""
+    _wipe_disk(rig)
+    key = rig.store.keys("equipment/snapshots/")[0]
+    rig.store.objects[key] = b"broken"
+    before = _member_gets(rig)
+
+    outcome, noted = _boot_noting(rig)
+
+    assert outcome.kind == manifest.FAILURE_CORRUPT
+    assert noted == [before]
+
+
+def test_a_broken_pointer_never_tells_a_download(rig: SimpleNamespace) -> None:
+    _wipe_disk(rig)
+    head = rig.store.pointer_keys()[0]
+    rig.store.objects[head] = b"{"
+
+    outcome, noted = _boot_noting(rig)
+
+    assert outcome.kind == manifest.FAILURE_CORRUPT and noted == []
+
+
 def test_too_little_disk_never_tells_a_download(
     rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -180,8 +180,9 @@ HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
 }
 # 관리자가 앱 밖에서 고치면(되돌리기 — rollback) 다음 확인이 그대로 받기가 되는 사람 갈래. 그 확인이
 # 실제 내려받기로 넘어간 뒤(`StageState.downloading`)는 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄 ·
-# 노트다(이관 전 `remote_empty` 의 처음 올리기 — init — 도 같다). 고치기 전의 짧은 확인과 다른 사람
-# 갈래(CI/CD 로 고침)는 「다시 확인하는 중」 이다.
+# 노트다(이관 전 `remote_empty` 의 처음 올리기 — init — 도 같다). 고치기 전이어도 확인이 멤버를
+# 받기 시작하면(깨진 멤버는 받는 도중에 드러난다) 그동안은 그 값 줄이다. 받기 전에 머무는 확인과
+# 다른 사람 갈래(CI/CD 로 고침)는 「다시 확인하는 중」 이다.
 REPAIRED_IN_PLACE: Final = (FAILURE_CORRUPT, FAILURE_FORKED)
 # 경우별 할 일 한 줄(접힌 「관리자용 진단」).
 HUMAN_ACTIONS: Final[Mapping[str, str]] = {
