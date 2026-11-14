@@ -941,8 +941,13 @@ def register_self(
                 seed_mark_pending=mark_missing,
             )
         )
+        # 받은 판의 못 읽은 항목은 이 쓰기로 파일에서 빠진다 — 그 수를 사건에도 싣는다(감사 기록기가
+        # 꺼진 서버에서도 남게). 계정은 싣지 않는다.
         runtime.record_event(
-            "access_self_registered", users=str(len(fresh.entries)), revision=str(result.revision)
+            "access_self_registered",
+            users=str(len(fresh.entries)),
+            revision=str(result.revision),
+            dropped=str(base.unreadable),
         )
         _audit_self_register(key, base.revision, result.revision, out="success")
         _audit_side_effects(
