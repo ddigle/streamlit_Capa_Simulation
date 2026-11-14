@@ -398,7 +398,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     은 같은 탭에서 여는 원문 HTML 링크(`target="_self"`, 이름 · 부서는 `literal_markdown`)다. 끝 30분 전 경고는 갱신 표까지 본 끝
     (`identity.session_end_of`)으로 세고, 최대 시간이 정한 끝이면 `CAP_WARNING_SUFFIX`, 쓰지 않아 끝나 가면 `IDLE_WARNING_SUFFIX` 다.
     최대 시간이 정한 끝 10분 안의 첫 회차에는 `components/sso_expiry.py` 가 사건 알림 `AD-20`(「로그인 최대 시간까지 n분 — 저장해
-    두세요」)을 한 번 담는다 — 세션 칸(그 sid)과 고정 id(`alerts.event` 의 `alert_id` — sid 지문)로 같은 탭에 한 번이다. `app.py` 가
+    두세요」)을 한 번 담는다 — 세션 칸(그 sid)과 고정 id(`alerts.event` 의 `alert_id` — sid 지문)로 같은 탭에 한 번이다. 전문 끝 줄
+    「로그아웃 뒤 다시 로그인하면 시간이 새로 셉니다」 는 로그아웃(sid 폐기 · 쿠키 지움) 뒤 ADFS 콜백이 새 sid · 새 `auth_time` 을 내는
+    경로 그대로다 — 로그인한 채 로그인 경로를 다시 여는 것은 끝을 늘리지 않는다(`tests/test_sso_expiry.py`). `app.py` 가
     신원이 있을 때만 부르고 담기만 한다(요소 순번 그대로). 어느 화면의 일도 아니라 화면 · 주소 없이 싣는다(`alerts.event` 의
     `pageless` — 이번 회차의 화면은 `app.py` 가 그 뒤에 적는다).
     멈춤 화면은 `st.stop()` 앞에서 껍데기 스타일(`app_header.render_shell_style` — ⋮ 메뉴 · Deploy 감춤)과 툴바 단추 감춤
