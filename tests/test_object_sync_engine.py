@@ -918,6 +918,84 @@ def test_too_little_disk_stays_before_downloading(
     assert (outcome.needed_bytes, outcome.free_bytes) == (100, 1)
 
 
+def _member_gets(rig: SimpleNamespace) -> int:
+    return sum(
+        1
+        for operation, key in rig.store.operations()
+        if operation == "get-object" and "/snapshots/" in key
+    )
+
+
+def _boot_noting(rig: SimpleNamespace) -> tuple[engine.BootOutcome, list[int]]:
+    """`on_download` 를 부를 때마다 그때까지 받은 멤버 수를 적는다 — 받기 직전인지 본다."""
+    noted: list[int] = []
+    outcome = engine.boot_pull(
+        rig.client, rig.paths, on_download=lambda: noted.append(_member_gets(rig))
+    )
+    return outcome, noted
+
+
+def test_a_real_download_tells_the_start_screen_just_before_the_members(
+    rig: SimpleNamespace,
+) -> None:
+    """확인이 실제 내려받기로 넘어가는 순간 한 번 알린다 — 시작 임시 화면이 그때부터 「n번째 받는
+    중」 을 보인다(처음 올리기 · 되돌리기 뒤 다음 확인). 멤버를 받기 전이다."""
+    _wipe_disk(rig)
+    before = _member_gets(rig)
+
+    outcome, noted = _boot_noting(rig)
+
+    assert outcome.action == engine.ACTION_DOWNLOADED
+    assert noted == [before]
+    assert _member_gets(rig) > before
+
+
+def test_a_check_that_stays_or_keeps_never_tells_a_download(rig: SimpleNamespace) -> None:
+    """원격이 갈라짐 · 어긋남 · 그대로 둠 · 디스크 부족은 받기가 아니다 — 알리지 않는다(이관 전
+    빈 원격은 아래 시험)."""
+    kept, kept_noted = _boot_noting(rig)
+    assert kept.action == engine.ACTION_KEPT and kept_noted == []
+
+    _save(rig)
+    _another_writer_publishes(rig)
+    diverged, diverged_noted = _boot_noting(rig)
+    assert diverged.kind == manifest.FAILURE_DIVERGED and diverged_noted == []
+
+    head = rig.store.pointer_keys()[0]
+    rig.store.objects[head.replace("abcdef01", "abcdef02")] = rig.store.objects[head]
+    forked, forked_noted = _boot_noting(rig)
+    assert forked.kind == manifest.FAILURE_FORKED and forked_noted == []
+
+
+def test_too_little_disk_never_tells_a_download(
+    rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def full(_folder: Path, _needed: int) -> None:
+        raise snapshot_export.DiskSpaceShort(100, 1)
+
+    monkeypatch.setattr(snapshot_export, "require_free_space", full)
+    _wipe_disk(rig)
+
+    outcome, noted = _boot_noting(rig)
+
+    assert outcome.kind == manifest.FAILURE_DISK_FULL and noted == []
+
+
+def test_an_empty_remote_never_tells_a_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """이관 전의 1분 확인은 받기가 아니다."""
+    monkeypatch.setattr(app_settings, "DATA_DIR", tmp_path)
+    paths = seed_pair(tmp_path)
+    noted: list[str] = []
+
+    outcome = engine.boot_pull(
+        fake_client(FakeStore()), paths, on_download=lambda: noted.append("받기")
+    )
+
+    assert outcome.kind == manifest.FAILURE_REMOTE_EMPTY and noted == []
+
+
 def test_an_unreachable_store_is_a_word_not_a_trace(rig: SimpleNamespace) -> None:
     rig.store.failures.append(Failure("list-objects-v2", stderr=CONNECT_TEXT))
 

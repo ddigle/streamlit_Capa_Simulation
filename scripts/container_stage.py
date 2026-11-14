@@ -21,7 +21,9 @@ Management」 · 상태 표지(낱말 + 색) · 제목 · 까닭 · 단계 줄 �
 
 **한 상태 → 한 보기.** 시작 스크립트는 단계 · 받기 시도 · 실패만 알리고(`Stage.begin` ·
 `step` · `attempt` · `fail`), 보이는 글은 순수 함수 `stage_view` 하나가 정한다 — 쪽
-HTML 과 `/_capa_stage` 가 같은 보기에서 나온다.
+HTML 과 `/_capa_stage` 가 같은 보기에서 나온다. 시도가 실제 내려받기로 넘어갔는지는 시작
+스크립트가 준 물음(`download_seen` — 받기 하위 프로세스가 남기는 표지 파일)을 상태를 읽을 때 묻고
+판을 올린다 — 받기는 하위 프로세스라 시작 스크립트가 그 순간을 알릴 수 없다.
 
 - 모든 경로의 GET · HEAD · POST 가 200 + 안내 쪽이다. `/_stcore/health` 는 200 `ok` 이고 그 밖의
   `/_stcore/*` 는 503 이다 — 옛 탭의 재접속이 HTML 을 JSON 으로 읽지 않게.
@@ -176,9 +178,10 @@ HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
         "관리자가 최신 판으로 다시 배포해야 열립니다.",
     ),
 }
-# 관리자가 앱 밖에서 고치면(되돌리기 — rollback) 다음 확인이 그대로 받기가 되는 사람 갈래. 그 받기가
-# 도는 동안은 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄 · 노트다(이관 전 `remote_empty` 의 처음
-# 올리기 — init — 도 같다). 다른 사람 갈래는 CI/CD 로 고치므로 「다시 확인하는 중」 그대로다.
+# 관리자가 앱 밖에서 고치면(되돌리기 — rollback) 다음 확인이 그대로 받기가 되는 사람 갈래. 그 확인이
+# 실제 내려받기로 넘어간 뒤(`StageState.downloading`)는 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄 ·
+# 노트다(이관 전 `remote_empty` 의 처음 올리기 — init — 도 같다). 고치기 전의 짧은 확인과 다른 사람
+# 갈래(CI/CD 로 고침)는 「다시 확인하는 중」 이다.
 REPAIRED_IN_PLACE: Final = (FAILURE_CORRUPT, FAILURE_FORKED)
 # 경우별 할 일 한 줄(접힌 「관리자용 진단」).
 HUMAN_ACTIONS: Final[Mapping[str, str]] = {
@@ -368,6 +371,9 @@ class StageState:
     # 지금(받는 중) 또는 마지막(실패한) 받기 시도 번호.
     attempt: int = 0
     trying: bool = False
+    # 이 시도가 실제 내려받기로 넘어갔다(원격 머리가 비지 않았고 받기로 판정 — 받기 하위 프로세스의
+    # 표지). 시도마다 새로 센다.
+    downloading: bool = False
     kind: str | None = None
     failed_at: float | None = None
     # 잠시 닿지 못함 갈래(`retry_kind`)가 끊김 없이 이어진 첫 실패 시각 — 다른 갈래를 지나면
@@ -496,13 +502,13 @@ def _pulling(state: StageState) -> _Wait:
 
 
 def _remote_empty_view(state: StageState) -> StageView:
-    """이관 전. 관리자가 처음 올리면(init) 다음 확인이 그대로 받기라 도는 동안은 다시 받기의
-    값 줄이다."""
+    """이관 전. 관리자가 처음 올리면(init) 다음 확인이 그대로 받기라 실제 내려받기로 넘어간 뒤는
+    다시 받기의 값 줄이다. 아직 비어 있는지 보는 짧은 확인은 「확인하는 중」 이다."""
     assert state.kind is not None
     wait = (
         _pulling(state)
-        if state.trying
-        else _Wait(until=state.next_at, until_label=LABEL_NEXT_CHECK)
+        if state.trying and state.downloading
+        else _waiting(state, LABEL_NEXT_CHECK, "확인하는 중")
     )
     return StageView(
         tone=TONE_CHECK,
@@ -595,11 +601,12 @@ def _fact_lines(kind: str, facts: StageFacts) -> list[str]:
 
 def _human_view(state: StageState) -> StageView:
     """사람이 고쳐야 풀리는 시작 실패 — 「점검 중」, 경우별 쉬운 말, 접힌 진단(이름 · 수).
-    되돌리기로 풀리는 갈래(`REPAIRED_IN_PLACE`)의 다시 받기는 그 값 줄이다."""
+    되돌리기로 풀리는 갈래(`REPAIRED_IN_PLACE`)의 확인이 실제 내려받기로 넘어간 뒤는 다시 받기의
+    값 줄이다."""
     assert state.kind is not None
     title, reason = HUMAN_SCREENS[state.kind]
     retries = state.kind != FAILURE_SCHEMA_NEWER
-    if state.trying and state.kind in REPAIRED_IN_PLACE:
+    if state.trying and state.downloading and state.kind in REPAIRED_IN_PLACE:
         wait = _pulling(state)
     elif retries:
         wait = _waiting(state, LABEL_NEXT_CHECK, "다시 확인하는 중")
@@ -917,11 +924,18 @@ def status_text(view: StageView, *, now: float, version: int) -> str:
 
 
 class _Display:
-    """지금 상태. 시작 스크립트가 쓰고 응답 스레드가 읽는다."""
+    """지금 상태. 시작 스크립트가 쓰고 응답 스레드가 읽는다. `download_seen` 은 받기 시도가 실제
+    내려받기로 넘어갔는가를 묻는 것이다 — 읽을 때 물어 넘어갔으면 상태를 올린다(판이 바뀌어 열어 둔
+    쪽이 본문을 갈아 끼운다). 시도가 돌지 않는 동안(앞 시도의 표지가 남았어도)은 묻지 않는다."""
 
-    def __init__(self, clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.time,
+        download_seen: Callable[[], bool] | None = None,
+    ) -> None:
         self._lock = threading.Lock()
         self.clock = clock
+        self._download_seen = download_seen
         self._state = StageState(started_at=clock())
 
     def change(self, how: Callable[[StageState], StageState]) -> None:
@@ -929,8 +943,23 @@ class _Display:
             changed = how(self._state)
             self._state = replace(changed, version=self._state.version + 1)
 
+    def _downloading_now(self) -> bool:
+        if self._download_seen is None:
+            return False
+        try:
+            return bool(self._download_seen())
+        except Exception:
+            return False
+
     def read(self) -> StageState:
         with self._lock:
+            state = self._state
+        if not state.trying or state.downloading or not self._downloading_now():
+            return state
+        # 묻는 사이 시작 스크립트가 상태를 바꿨으면(실패 · 다음 시도) 올리지 않는다.
+        with self._lock:
+            if self._state.version == state.version:
+                self._state = replace(state, downloading=True, version=state.version + 1)
             return self._state
 
 
@@ -970,9 +999,10 @@ def prepare_server(
     base_path: str = "/",
     contact: StageContact | None = None,
     clock: Callable[[], float] = time.time,
+    download_seen: Callable[[], bool] | None = None,
 ) -> None:
-    """듣는 서버에 상태 · 바탕 경로 · 문의 줄을 단다."""
-    server.display = _Display(clock)
+    """듣는 서버에 상태 · 바탕 경로 · 문의 줄 · 내려받기 물음을 단다."""
+    server.display = _Display(clock, download_seen)
     server.base_path = base_path
     server.contact = contact or StageContact()
 
@@ -1087,9 +1117,14 @@ class Stage:
         self._change(lambda state: replace(state, step=name))
 
     def attempt(self, number: int) -> None:
-        """`number` 번째 받기를 시작한다 — 앞 실패 낱말은 남기되 값 줄은 「받는 중」 이 된다(잠시
-        닿지 못함은 지난 시간 · 첫 받기의 두 노트와 함께)."""
-        self._change(lambda state: replace(state, attempt=number, trying=True, next_at=None))
+        """`number` 번째 받기를 시작한다 — 앞 실패 낱말은 남기고 값 줄은 그 갈래의 「받는 중」 ·
+        「확인하는 중」 꼴이 된다(`stage_view`). 이관 전 · 되돌리기 갈래의 「n번째 받는 중」 과 두
+        노트는 그 시도가 실제 내려받기로 넘어간 뒤(`download_seen`)다."""
+        self._change(
+            lambda state: replace(
+                state, attempt=number, trying=True, downloading=False, next_at=None
+            )
+        )
 
     def fail(
         self,
@@ -1112,6 +1147,7 @@ class Stage:
                 state,
                 attempt=number,
                 trying=False,
+                downloading=False,
                 kind=known,
                 facts=(facts or StageFacts()).checked(),
                 failed_at=moment,
@@ -1145,8 +1181,10 @@ def open_stage(
     base_path: str = "/",
     contact: StageContact | None = None,
     clock: Callable[[], float] = time.time,
+    download_seen: Callable[[], bool] | None = None,
 ) -> Stage:
-    """포트를 잡아 답하기 시작한다. 잡지 못해도 예외를 내지 않는다 — 앱 띄우기가 먼저다."""
+    """포트를 잡아 답하기 시작한다. 잡지 못해도 예외를 내지 않는다 — 앱 띄우기가 먼저다.
+    `download_seen` 은 받기 시도가 실제 내려받기로 넘어갔는가를 묻는다(`_Display`)."""
     choices: tuple[tuple[type[_StageServer], str], ...] = (
         (_V6StageServer, "::"),
         (_V4StageServer, "0.0.0.0"),
@@ -1156,7 +1194,9 @@ def open_stage(
             server = factory((host, port), _Handler)
         except OSError:
             continue
-        prepare_server(server, base_path=base_path, contact=contact, clock=clock)
+        prepare_server(
+            server, base_path=base_path, contact=contact, clock=clock, download_seen=download_seen
+        )
         stage = Stage(server)
         stage.start()
         return stage

@@ -17,6 +17,7 @@ import subprocess
 import sys
 import textwrap
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -687,12 +688,14 @@ def test_a_long_retry_adds_the_contact_line_after_ten_minutes() -> None:
 @pytest.mark.parametrize("kind", ["remote_empty", "corrupt", "forked"])
 def test_a_pull_after_init_or_rollback_shows_the_clock_and_the_pull_notes(kind: str) -> None:
     """관리자가 처음 올리기(init) · 되돌리기(rollback)를 한 직후의 다음 확인은 그대로 몇 분 받기다 —
-    잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄(「n번째 받는 중 · 지난 시간」, 서버 시작부터)과 첫
-    받기의 두 노트가 선다. 표지 · 제목 · 띠는 그 갈래 그대로다."""
+    실제 내려받기로 넘어간 뒤는 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄(「n번째 받는 중 · 지난
+    시간」, 서버 시작부터)과 첫 받기의 두 노트가 선다. 표지 · 제목 · 띠는 그 갈래 그대로다."""
     waiting = container_stage.stage_view(
         _state(attempt=4, kind=kind, failed_at=1100.0, next_at=1160.0)
     )
-    again = container_stage.stage_view(_state(attempt=5, trying=True, kind=kind, failed_at=1100.0))
+    again = container_stage.stage_view(
+        _state(attempt=5, trying=True, downloading=True, kind=kind, failed_at=1100.0)
+    )
     page = container_stage.render_main(
         again, now=1200.0, version=1, contact=container_stage.StageContact()
     )
@@ -703,6 +706,119 @@ def test_a_pull_after_init_or_rollback_shows_the_clock_and_the_pull_notes(kind: 
     assert container_stage.NOTE_NO_CICD in page
     assert (again.chip, again.title, again.band) == (waiting.chip, waiting.title, waiting.band)
     assert waiting.notes == () and container_stage.value_text(waiting, 1100.0).startswith("다음 ")
+
+
+@pytest.mark.parametrize(
+    ("kind", "value"),
+    [
+        ("remote_empty", "확인하는 중"),
+        ("corrupt", "다시 확인하는 중"),
+        ("forked", "다시 확인하는 중"),
+    ],
+)
+def test_a_check_before_init_or_rollback_is_not_a_pull(kind: str, value: str) -> None:
+    """처음 올리기 · 되돌리기 전의 짧은 확인(1분 · 300초)은 받기가 아니다 — 실제 내려받기로 넘어가기
+    전에는 「n번째 받는 중 · 지난 시간」 도 받는 동안의 두 노트도 서지 않는다(UI-DAT-11)."""
+    waiting = container_stage.stage_view(
+        _state(attempt=4, kind=kind, failed_at=1100.0, next_at=1160.0)
+    )
+    checking = container_stage.stage_view(
+        _state(attempt=5, trying=True, kind=kind, failed_at=1100.0)
+    )
+    page = container_stage.render_main(
+        checking, now=1200.0, version=1, contact=container_stage.StageContact()
+    )
+
+    assert container_stage.value_text(checking, 1200.0) == value
+    assert checking.notes == () and checking.since is None
+    assert "받는 중" not in page and container_stage.NOTE_NO_CICD not in page
+    assert (checking.chip, checking.title, checking.band) == (
+        waiting.chip,
+        waiting.title,
+        waiting.band,
+    )
+
+
+def test_the_stage_shows_a_pull_only_once_the_download_is_seen() -> None:
+    """받기는 하위 프로세스라 시작 스크립트는 그 순간을 모른다 — 임시 응답이 상태를 읽을 때
+    물음(`download_seen` — 받기가 남기는 표지)을 묻고, 넘어갔으면 판을 한 번 올린다(열어 둔 쪽이
+    본문을 갈아 끼운다). 시도가 돌지 않는 동안은 앞 시도의 표지가 남았어도 묻지 않고, 다음 시도는
+    새로 센다."""
+    port = _free_port()
+    seen = [False]
+    opened = container_stage.open_stage(port, download_seen=lambda: seen[0])
+    assert opened.bound
+    try:
+        opened.begin(managed=True)
+        opened.step(container_stage.STEP_PULL)
+        opened.attempt(1)
+        opened.fail(1, "remote_empty", wait_seconds=60)
+        failed = json.loads(_status(port)[2])["v"]
+        seen[0] = True
+        waiting = _status(port)
+        assert waiting[1].startswith("다음 확인 ")
+        assert json.loads(waiting[2])["v"] == failed
+
+        seen[0] = False
+        opened.attempt(2)
+        checking = _status(port)
+        assert checking[1] == "확인하는 중"
+        assert container_stage.NOTE_NO_CICD not in _ask(port, "GET", "/")[2].decode("utf-8")
+
+        seen[0] = True
+        pulling = _status(port)
+        again = _status(port)
+        assert pulling[1].startswith("2번째 받는 중 · 지난 시간 ")
+        assert json.loads(pulling[2])["v"] == json.loads(checking[2])["v"] + 1
+        assert json.loads(again[2])["v"] == json.loads(pulling[2])["v"]
+        assert container_stage.NOTE_NO_CICD in _ask(port, "GET", "/")[2].decode("utf-8")
+
+        opened.fail(2, "corrupt", wait_seconds=300)
+        seen[0] = False
+        opened.attempt(3)
+        assert _status(port)[1] == "다시 확인하는 중"
+    finally:
+        opened.close()
+
+
+def _checking(state: container_stage.StageState) -> container_stage.StageState:
+    return replace(
+        state,
+        managed=True,
+        step=container_stage.STEP_PULL,
+        kind="remote_empty",
+        attempt=5,
+        trying=True,
+    )
+
+
+def test_a_question_that_fails_or_races_leaves_the_short_check() -> None:
+    """물음이 예외를 내면 받지 않는 것으로 본다(쪽은 그대로 답한다). 묻는 사이 시작 스크립트가
+    상태를 바꿨으면(그 시도를 실패로 닫음) 올리지 않는다 — 끝난 시도를 「받는 중」 으로 되살리지
+    않는다."""
+
+    def broken() -> bool:
+        raise OSError(5, "표지를 못 읽음")
+
+    unread = container_stage._Display(lambda: 1000.0, broken)
+    unread.change(_checking)
+    assert unread.read().downloading is False
+
+    holder: list[container_stage._Display] = []
+
+    def racing() -> bool:
+        holder[0].change(lambda state: replace(state, trying=False, next_at=1060.0))
+        return True
+
+    racy = container_stage._Display(lambda: 1000.0, racing)
+    holder.append(racy)
+    racy.change(_checking)
+    state = racy.read()
+
+    assert (state.trying, state.downloading) == (False, False)
+    assert container_stage.value_text(container_stage.stage_view(state), 1000.0) == (
+        "다음 확인 60초 뒤"
+    )
 
 
 @pytest.mark.parametrize(

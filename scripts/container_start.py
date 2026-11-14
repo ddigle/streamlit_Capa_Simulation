@@ -176,6 +176,10 @@ PROBE_TIMEOUT_SECONDS = 60
 # 끊겨도 다음 시도가 작업 자리를 비우고 처음부터 다시 받는다.
 BOOT_PULL_TIMEOUT_SECONDS = 7200
 BOOT_PULL_SCRIPT = PROJECT_ROOT / "scripts" / "sync_object_storage.py"
+# 받기가 실제 내려받기로 넘어갔다는 빈 표지 파일 — 결과 파일 옆. 시도마다 지우고 `boot-pull` 이
+# 멤버를 받기 직전에 남긴다. 임시 화면은 이 표지가 선 뒤에만 「n번째 받는 중」 을 보인다(처음
+# 올리기 · 되돌리기를 기다리는 짧은 확인은 받기가 아니다).
+BOOT_DOWNLOAD_MARK_NAME = "container_boot_download"
 # 받기 실패 뒤 물러남. 끝값으로 되풀이한다.
 BOOT_BACKOFF_SECONDS: tuple[int, ...] = (5, 10, 20, 40, 60)
 # 사람이 손대야 풀리는 갈래는 재촉하지 않는다 — 다시 해도 풀리지 않고 저장소만 두드린다. 화면
@@ -1291,6 +1295,25 @@ def parse_boot_line(stdout: str) -> BootPull:
     return BootPull(kind=FAILURE_OTHER)
 
 
+def boot_download_mark() -> Path:
+    """내려받기 표지 자리. 부를 때마다 결과 파일 자리에서 읽는다 — 시험이 그 칸을 tmp 로 옮긴다."""
+    return report_contract.report_path().with_name(BOOT_DOWNLOAD_MARK_NAME)
+
+
+def boot_download_seen() -> bool:
+    """이번 받기 시도가 실제 내려받기로 넘어갔는가 — 임시 화면이 상태를 읽을 때 묻는다."""
+    return boot_download_mark().exists()
+
+
+def forget_boot_download(echo: Callable[[str], None]) -> None:
+    """앞 시도(또는 앞 실행)의 표지를 지운다. 못 지우면 화면만 일찍 「받는 중」 이 되니 받기는
+    잇는다."""
+    try:
+        boot_download_mark().unlink(missing_ok=True)
+    except OSError as error:
+        echo(f"앞 받기의 표지를 지우지 못함 — {type(error).__name__}")
+
+
 def boot_pull_once(runner: Runner, env: Mapping[str, str]) -> BootPull:
     """받기 한 번(하위 프로세스 — 앱이 뜨기 전에 메모리 · DuckDB 인스턴스를 다 놓는다).
 
@@ -1298,7 +1321,13 @@ def boot_pull_once(runner: Runner, env: Mapping[str, str]) -> BootPull:
     """
     try:
         completed = runner(
-            [sys.executable, str(BOOT_PULL_SCRIPT), "boot-pull"],
+            [
+                sys.executable,
+                str(BOOT_PULL_SCRIPT),
+                "boot-pull",
+                "--download-mark",
+                str(boot_download_mark()),
+            ],
             timeout=BOOT_PULL_TIMEOUT_SECONDS,
             env=env,
         )
@@ -1342,6 +1371,7 @@ def pull_until_ready(
     attempt = 0
     while True:
         attempt += 1
+        forget_boot_download(echo)
         stage.attempt(attempt)
         missing: list[str] = []
         try:
@@ -1354,6 +1384,7 @@ def pull_until_ready(
         except Exception:
             pulled = BootPull(kind=FAILURE_OTHER)
         if pulled.kind is None:
+            forget_boot_download(echo)
             return pulled, attempt
         wait = boot_backoff_seconds(pulled.kind, attempt)
         unset = f" · CD 환경변수 {'·'.join(missing)} 없음" if missing else ""
@@ -1464,7 +1495,9 @@ def open_start_stage(port: str, environ: Mapping[str, str]) -> container_stage.S
     try:
         base = container_stage.base_path_of(environ.get(sso_names.ENV_PUBLIC_URL, ""))
         contact = container_stage.contact_of(environ)
-        stage = container_stage.open_stage(int(port), base_path=base, contact=contact)
+        stage = container_stage.open_stage(
+            int(port), base_path=base, contact=contact, download_seen=boot_download_seen
+        )
     except Exception as error:
         _echo(f"임시 응답을 세우지 못함 — {type(error).__name__}")
         return container_stage.Stage(None)
