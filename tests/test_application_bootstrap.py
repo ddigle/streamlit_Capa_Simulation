@@ -4,10 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from alert_marks import data_error_marks
+from alert_marks import alert_notes, data_error_marks, states
 from streamlit.testing.v1 import AppTest
 from test_all_pages_render import _page_script
 
+from capa_simulation import page_bootstrap
 from capa_simulation.application_bootstrap import ensure_initial_scenario
 from capa_simulation.auth import names, runtime
 from capa_simulation.components.data_error_mark import EMPTY_CLASS
@@ -326,7 +327,9 @@ def test_every_screen_of_an_empty_operational_server_stands_without_a_seed(
 ) -> None:
     """빈 디스크로 뜬 운영 서버 — 어느 화면도 예외 · 「데이터 Error」 마크 없이 서고, 리비전으로
     본문을 그리는 화면은 회색 「공식버전 없음」 한 줄이다. 어느 화면을 열어도 시드 시나리오 · 공식이
-    생기지 않는다."""
+    생기지 않는다. 알림은 어느 화면이 내도 공식버전 없음 `SC-01` 의 「시나리오 없음」 갈래 한 줄이고
+    (목록 관리에서 고를 시나리오가 없다) 「그 화면으로」 는 시나리오 관리 › DB 등록이다 — 시나리오
+    관리 탭이 내는 것과 같은 줄이다(2026-11-14 물음 보드 seed (nopub))."""
     _operational()
     database, equipment = empty_operational_store
     app = AppTest.from_string(
@@ -338,6 +341,15 @@ def test_every_screen_of_an_empty_operational_server_stands_without_a_seed(
         bodies = [str(element.proto.body) for element in app._tree.get("html")]
         assert any(EMPTY_CLASS in body and "공식버전 없음" in body for body in bodies), page_path
         assert data_error_marks(app) == 0, page_path
+        assert [note for note in states(app, "SC-01") if note["active"]], page_path
+    expected = page_bootstrap.missing_official_note("empty")
+    for note in states(app, "SC-01"):
+        assert note == expected, page_path
+    assert not [
+        note
+        for note in alert_notes(app)
+        if note.get("kind") == "event" and "공식버전" in str(note.get("short", ""))
+    ], page_path
     if database.exists():
         repository = DuckDBScenarioRepository(database)
         assert repository.latest_official_release() is None, page_path

@@ -492,16 +492,20 @@ def _report_missing_official(
     (`page_bootstrap.missing_official_note` — 어느 화면이 내도 Alarm 줄 하나).
 
     시나리오가 보관본만 남았으면 목록에 고를 것이 없다 — 그 상태만 글을 갈라 보관함의 「되돌리기」
-    를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 그 판정의 보관본 읽기는 공식버전이
-    없고 활성 시나리오가 0건(`active_count`)일 때만 한다. 내용 값이 갈라 바뀌면 그 줄도 새로
-    뜬다(지문)."""
+    를 가리킨다(검수 보드 st-sc01 — 작은 결정 a8 과 같은 꼴). 시나리오가 하나도 없으면(보관본도
+    없음 — 빈 디스크로 뜬 운영 서버) 「DB 등록」 을 가리킨다(2026-11-14 물음 보드 seed (nopub) —
+    계산 화면의 `page_bootstrap.no_revision_message` 와 같은 판정). 그 판정의 보관본 읽기는
+    공식버전이 없고 활성 시나리오가 0건(`active_count`)일 때만 한다. 내용 값이 갈라 바뀌면 그 줄도
+    새로 뜬다(지문)."""
     if alert_tab is None:
         return
     official = repository.latest_official_release()
     missing: MissingOfficial | None = None
     if official is None:
-        archived_only = active_count == 0 and bool(repository.list_scenarios(include_archived=True))
-        missing = "archived_only" if archived_only else "none"
+        missing = "none"
+        if active_count == 0:
+            listed = bool(repository.list_scenarios(include_archived=True))
+            missing = "archived_only" if listed else "empty"
     alerts.emit([missing_official_note(missing)])
 
 

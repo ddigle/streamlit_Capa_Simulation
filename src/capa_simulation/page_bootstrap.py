@@ -186,9 +186,10 @@ def empty_source_table_stop(exc: BaseException) -> str | None:
     return EMPTY_TABLE_STOP.format(name=EMPTY_SOURCE_TABLES[found["table"]])
 
 
-# 이 세션에 불러온 리비전이 없을 때의 글 셋(`reference_cache` 가 갖는다 — 화면이 머리를 붙여도 이
+# 이 세션에 불러온 리비전이 없을 때의 글 넷(`reference_cache` 가 갖는다 — 화면이 머리를 붙여도 이
 # 글이 그대로 들어 있어 빈 상태를 가른다). 이름은 앞 시험 · 화면이 읽던 그대로 둔다.
 ARCHIVED_ONLY_MESSAGE = reference_cache.ARCHIVED_ONLY_MESSAGE
+EMPTY_STORE_MESSAGE = reference_cache.EMPTY_STORE_MESSAGE
 NO_OFFICIAL_MESSAGE = reference_cache.NO_OFFICIAL_MESSAGE
 NOT_LOADED_MESSAGE = reference_cache.NOT_LOADED_MESSAGE
 
@@ -241,9 +242,10 @@ def screen_error_goto(message: str) -> tuple[str, str, str] | None:
 
 
 def no_revision_message() -> str:
-    """불러온 리비전이 없는 회차의 글 — 저장소를 보고 셋 가운데 하나를 고른다.
+    """불러온 리비전이 없는 회차의 글 — 저장소를 보고 넷 가운데 하나를 고른다.
 
     공식버전이 있으면(이 세션이 첫 접속 뒤에 발행된 것을 아직 안 불러옴) `NOT_LOADED_MESSAGE`,
+    시나리오가 하나도 없으면(보관본 포함 — 빈 디스크로 뜬 운영 서버) `EMPTY_STORE_MESSAGE`,
     시나리오가 있고 모두 보관본이면 `ARCHIVED_ONLY_MESSAGE`, 그 밖은 `NO_OFFICIAL_MESSAGE` 다. DB
     파일이 없으면 보지 않는다(여기서 빈 저장소를 만들지 않는다). 읽지 못하면(판 올리기 실패 포함)
     공식버전 없음으로 본다. 경로는 부를 때 설정에서 읽는다(시험이 바꾼다). 드문 상태라 회차 비용이
@@ -259,14 +261,17 @@ def no_revision_message() -> str:
         scenarios = repository.list_scenarios(include_archived=True)
     except (OSError, duckdb.Error, MigrationFailed):
         return NO_OFFICIAL_MESSAGE
-    if scenarios and all(scenario.status != "ACTIVE" for scenario in scenarios):
+    if not scenarios:
+        return EMPTY_STORE_MESSAGE
+    if all(scenario.status != "ACTIVE" for scenario in scenarios):
         return ARCHIVED_ONLY_MESSAGE
     return NO_OFFICIAL_MESSAGE
 
 
-# 공식버전이 없는 저장소의 갈래 — 시나리오가 없거나 활성 시나리오가 있음(`none`), 보관본만
-# 남음(`archived_only`). 상태 알림 `SC-01` 의 글 · 지문이 이것으로 갈린다.
-MissingOfficial: TypeAlias = Literal["none", "archived_only"]
+# 공식버전이 없는 저장소의 갈래 — 활성 시나리오가 있음(`none`), 시나리오가 하나도 없음(`empty`
+# — 보관본도 없다), 보관본만 남음(`archived_only`). 상태 알림 `SC-01` 의 글 · 지문 · 「그
+# 화면으로」 탭이 이것으로 갈린다.
+MissingOfficial: TypeAlias = Literal["none", "empty", "archived_only"]
 
 
 class EmptyState(NamedTuple):
@@ -285,25 +290,28 @@ class EmptyState(NamedTuple):
     글이다(`SC-01` 이 말한다)."""
 
 
-# 공식버전 · 보관본을 푸는 자리 — 시나리오 관리 「Capa 시나리오」 탭(탭 이름은
-# `scenario_management_tabs.CAPA_SCENARIO_TAB_NAME` 과 같은 글 — 그 모듈은 여기서 부를 수 없어
-# 시험이 맞댄다).
+# 공식버전 · 보관본을 푸는 자리 — 시나리오 관리 「Capa 시나리오」 탭, 시나리오가 하나도 없거나
+# 원천 표가 빈 리비전을 푸는 자리 — 「DB 등록」 탭(탭 이름은 `scenario_management_tabs` 의
+# `CAPA_SCENARIO_TAB_NAME` · `QUERY_TAB_NAME` 과 같은 글 — 그 모듈은 여기서 부를 수 없어 시험이
+# 맞댄다).
 SCENARIO_TAB_NAME: Final = "Capa 시나리오"
 REGISTRATION_TAB_NAME: Final = "DB 등록"
 _EMPTY_STATES: Final[tuple[EmptyState, ...]] = (
     EmptyState("공식버전 없음", "none", ""),
+    EmptyState("공식버전 없음", "empty", ""),
     EmptyState("불러올 시나리오 없음 · 보관본만", "archived_only", ""),
     EmptyState("불러온 시나리오 없음", None, "불러온 시나리오 없음 — 새로고침하면 공식버전을 엶"),
 )
 _EMPTY_MESSAGES: Final[tuple[str, ...]] = (
     NO_OFFICIAL_MESSAGE,
+    EMPTY_STORE_MESSAGE,
     ARCHIVED_ONLY_MESSAGE,
     NOT_LOADED_MESSAGE,
 )
 
 
 def empty_state(message: str) -> EmptyState | None:
-    """화면 오류 글이 불러온 리비전 없음(`no_revision_message` 의 글 셋 — 머리를 붙였어도)이면 그 빈
+    """화면 오류 글이 불러온 리비전 없음(`no_revision_message` 의 글 넷 — 머리를 붙였어도)이면 그 빈
     상태, 아니면 None."""
     for full, state in zip(_EMPTY_MESSAGES, _EMPTY_STATES, strict=True):
         if full in message:
@@ -322,6 +330,12 @@ _MISSING_OFFICIAL_TEXTS: Final[Mapping[MissingOfficial, tuple[str, str]]] = {
         "Capa 시나리오 › 목록 관리에서 시나리오를 고르고 「공식으로 지정…」 으로 리비전 하나를 "
         "공식으로 정하세요.",
     ),
+    "empty": (
+        "공식버전이 없습니다 — 시나리오 없음 · DB 등록에서 시나리오 등록",
+        "공식버전이 없고 시나리오도 없어 지정할 시나리오가 없습니다 — 시나리오 관리 › DB 등록에서 "
+        "시나리오를 등록한 뒤 Capa 시나리오 › 목록 관리에서 「공식으로 지정…」 으로 리비전 하나를 "
+        "공식으로 정하세요.",
+    ),
     "archived_only": (
         "공식버전이 없습니다 — 보관본만 있음 · 목록 관리 「보관함」 › 「되돌리기」",
         "공식버전이 없고 보관본만 있어 지정할 시나리오가 없습니다 — 시나리오 관리 › Capa "
@@ -334,9 +348,11 @@ _MISSING_OFFICIAL_TEXTS: Final[Mapping[MissingOfficial, tuple[str, str]]] = {
 def missing_official_note(missing: MissingOfficial | None) -> alerts.AlertNote:
     """공식버전 없음 상태 알림(`SC-01`) 표지 한 칸(그리지 않는다) — `missing` 이 None 이면 해소다.
 
-    범위는 없고(저장소 하나의 조건) 내용 값은 갈래(없음 `True` · 보관본만 `archived_only`)라, 어느
-    화면이 내도 같은 줄이고 알림창은 이 브라우저 탭에 한 번 뜬다. 줄의 화면 칸과 「그 화면으로」 는
-    시나리오 관리 › Capa 시나리오다."""
+    범위는 없고(저장소 하나의 조건) 내용 값은 갈래(없음 `True` · 시나리오 없음 `empty` · 보관본만
+    `archived_only`)라, 어느 화면이 내도 같은 줄이고 알림창은 이 브라우저 탭에 한 번 뜬다(첫
+    시나리오를 등록해 갈래가 바뀌면 그 줄은 닫히고 새 줄이 뜬다). 줄의 화면 칸과 「그 화면으로」 는
+    시나리오 관리 › Capa 시나리오이고, 시나리오가 하나도 없으면 고를 목록이 없어 시나리오 관리 ›
+    DB 등록이다."""
     text, full = _MISSING_OFFICIAL_TEXTS["none" if missing is None else missing]
     return alerts.state_note(
         MISSING_OFFICIAL_CODE,
@@ -345,7 +361,7 @@ def missing_official_note(missing: MissingOfficial | None) -> alerts.AlertNote:
         active=missing is not None,
         text=text,
         full=full,
-        tab=SCENARIO_TAB_NAME,
+        tab=REGISTRATION_TAB_NAME if missing == "empty" else SCENARIO_TAB_NAME,
         goto=(tab_label(SCENARIO_MANAGEMENT), SCENARIO_MANAGEMENT.href),
     )
 
@@ -414,10 +430,10 @@ def bootstrap_error_message(
     `try` 가 둘 다 받는 자리도 있다. 경로를 여기에 박아 두면 설비 DB 가 잠겼을 때 사용자가
     멀쩡한 시뮬레이션 파일을 들여다보게 된다.
 
-    **불러온 리비전이 없는 오류**(`reference_cache.NoActiveRevision`)는 저장소를 보고 글 셋 가운데
-    하나로 바꾼다(`no_revision_message` — 공식버전 없음 · 보관본만 · 공식은 있는데 안 불러옴). 그
-    판정만 이 갈래에서 저장소를 읽는다(드문 상태라 회차 비용이 없다). 화면은 그 글을 「데이터
-    Error」 마크가 아니라 회색 한 줄의 빈 상태로 그린다(`empty_state`).
+    **불러온 리비전이 없는 오류**(`reference_cache.NoActiveRevision`)는 저장소를 보고 글 넷 가운데
+    하나로 바꾼다(`no_revision_message` — 공식버전 없음 · 시나리오 없음 · 보관본만 · 공식은 있는데
+    안 불러옴). 그 판정만 이 갈래에서 저장소를 읽는다(드문 상태라 회차 비용이 없다). 화면은 그 글을
+    「데이터 Error」 마크가 아니라 회색 한 줄의 빈 상태로 그린다(`empty_state`).
 
     **사람이 고칠 수 없는 DB 실패**(다른 프로그램의 잠금 · 쓰기 실패 · 열기 실패 · 그 밖의 DB
     실패)는 첫 문단을 고정 글(`_ADMIN_LEADS`)로 둔다 — 화면 알림의 짧은 글이 그 첫 문단으로 그

@@ -272,12 +272,20 @@ def _empty_state_script(constant: str) -> str:
     return script
 
 
-def test_a_missing_official_is_a_grey_line_and_the_one_missing_official_alert() -> None:
+@pytest.mark.parametrize(
+    ("constant", "missing", "tab"),
+    [("NO_OFFICIAL_MESSAGE", "none", "Capa 시나리오"), ("EMPTY_STORE_MESSAGE", "empty", "DB 등록")],
+    ids=["listed", "empty_store"],
+)
+def test_a_missing_official_is_a_grey_line_and_the_one_missing_official_alert(
+    constant: str, missing: page_bootstrap.MissingOfficial, tab: str
+) -> None:
     """불러온 리비전이 없는 빈 상태는 마크가 아니라 회색 한 줄이고, 공식버전이 없으면 알림은 그
     화면 코드의 사건 알림이 아니라 공식버전 없음 상태 알림 `SC-01` 하나다(확인 단계 · 「그
     화면으로」 시나리오 관리 › Capa 시나리오) — 화면이 머리를 붙였어도 같다(카드 p1-no-revision ·
-    2026-11-14 물음 보드 decided 5)."""
-    app = AppTest.from_string(_empty_state_script("NO_OFFICIAL_MESSAGE")).run()
+    2026-11-14 물음 보드 decided 5). 시나리오가 하나도 없는 저장소는 회색 줄은 같고 알림이 그
+    갈래(「그 화면으로」 시나리오 관리 › DB 등록)다(물음 보드 seed (nopub))."""
+    app = AppTest.from_string(_empty_state_script(constant)).run()
     assert not app.exception
     assert data_error_marks(app) == 0
     bodies = [str(element.proto.body) for element in app._tree.get("html")]
@@ -289,11 +297,11 @@ def test_a_missing_official_is_a_grey_line_and_the_one_missing_official_alert() 
         "state",
         True,
     )
-    assert note == page_bootstrap.missing_official_note("none")
+    assert note == page_bootstrap.missing_official_note(missing)
     assert (note["page"], note["href"], note["tab"]) == (
         "시나리오 관리",
         "scenario_management",
-        "Capa 시나리오",
+        tab,
     )
 
 

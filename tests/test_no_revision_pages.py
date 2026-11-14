@@ -24,7 +24,10 @@ from capa_simulation import page_bootstrap
 from capa_simulation.components.data_error_mark import EMPTY_CLASS
 from capa_simulation.components.home_preference import KEY_PROCESS_FIELD_KEY
 from capa_simulation.components.process_field import FIELD_KEY as SHARED_PROCESS_FIELD_KEY
-from capa_simulation.components.scenario_management_tabs import CAPA_SCENARIO_TAB_NAME
+from capa_simulation.components.scenario_management_tabs import (
+    CAPA_SCENARIO_TAB_NAME,
+    QUERY_TAB_NAME,
+)
 from capa_simulation.navigation import ALL_SPECS, SCENARIO_MANAGEMENT
 from capa_simulation.page_tabs_state import tab_label
 
@@ -68,23 +71,28 @@ def _active_missing(app: AppTest) -> list[dict[str, object]]:
 
 
 def test_the_scenario_tab_name_matches_the_screen() -> None:
-    """빈 상태 알림의 탭 이름은 시나리오 관리 탭 이름과 같다(그 모듈을 부를 수 없어 글로 둔다)."""
+    """빈 상태 알림의 탭 이름은 시나리오 관리 탭 이름과 같다(그 모듈을 부를 수 없어 글로 둔다) —
+    시나리오가 하나도 없을 때 가리키는 「DB 등록」 도 그 탭 이름과 같다."""
     assert page_bootstrap.SCENARIO_TAB_NAME == CAPA_SCENARIO_TAB_NAME
+    assert page_bootstrap.REGISTRATION_TAB_NAME == QUERY_TAB_NAME
 
 
 def test_one_missing_official_alert_is_the_same_mark_wherever_it_comes_from() -> None:
     """공식버전 없음은 한 표지다 — 범위가 없고 내용 값이 갈래라 어느 화면이 내도 Alarm 줄 하나 ·
-    알림창 한 번이고, 해소 표지는 같은 줄(범위)을 닫는다. 보관본만 남은 갈래는 내용이 달라 새로
-    뜬다."""
+    알림창 한 번이고, 해소 표지는 같은 줄(범위)을 닫는다. 보관본만 남은 갈래 · 시나리오가 하나도
+    없는 갈래는 내용이 달라 새로 뜬다 — 시나리오가 없으면 고를 목록이 없어 「그 화면으로」 가
+    「DB 등록」 탭을 연다(2026-11-14 물음 보드 seed (nopub))."""
     none = page_bootstrap.missing_official_note("none")
+    empty = page_bootstrap.missing_official_note("empty")
     archived = page_bootstrap.missing_official_note("archived_only")
     resolved = page_bootstrap.missing_official_note(None)
 
-    assert none["code"] == archived["code"] == resolved["code"] == "SC-01"
-    assert none["kind"] == "state" and none["level"] == "check"
-    assert none["active"] and archived["active"] and not resolved["active"]
-    assert none["scope"] == archived["scope"] == resolved["scope"]
-    assert none["fp"] and archived["fp"] and none["fp"] != archived["fp"]
+    assert none["code"] == empty["code"] == archived["code"] == resolved["code"] == "SC-01"
+    for note in (none, empty, archived):
+        assert note["kind"] == "state" and note["level"] == "check" and note["active"]
+    assert not resolved["active"]
+    assert none["scope"] == empty["scope"] == archived["scope"] == resolved["scope"]
+    assert len({none["fp"], empty["fp"], archived["fp"]} - {""}) == 3
     assert resolved["fp"] == ""
     for note in (none, archived):
         assert (note["page"], note["href"], note["tab"]) == (
@@ -92,7 +100,14 @@ def test_one_missing_official_alert_is_the_same_mark_wherever_it_comes_from() ->
             SCENARIO_MANAGEMENT.href,
             CAPA_SCENARIO_TAB_NAME,
         )
+    assert (empty["page"], empty["href"], empty["tab"]) == (
+        tab_label(SCENARIO_MANAGEMENT),
+        SCENARIO_MANAGEMENT.href,
+        QUERY_TAB_NAME,
+    )
     assert "보관함" in archived["short"] and "보관함" not in none["short"]
+    assert "DB 등록" in empty["short"] and "DB 등록" in str(empty["full"])
+    assert "보관함" not in empty["short"] and "목록 관리" not in empty["short"]
 
 
 @pytest.mark.parametrize("page_path", [spec.path for spec in ALL_SPECS])
