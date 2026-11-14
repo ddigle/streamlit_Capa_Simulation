@@ -524,7 +524,9 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
     """상태 알림 `AD-08` — 못 읽은 동안은 관리자만 들어오고, 읽어 둔 뒤의 실패는 지난 명단이다.
 
     조치 알림이고 그 자리(「다시 읽기」)가 관리자에게만 있어 관리자 회차(`admin`)에만 세운다. 다른
-    사람의 회차는 해소로 부른다 — 사실은 「통합인증 점검」 의 「S3 명단」 줄이 그대로 말한다.
+    사람의 회차는 해소로 부른다 — 사실은 「통합인증 점검」 의 「S3 명단」 줄이 그대로 말한다. 해소
+    표지에는 짧은 글 · 전문을 싣지 않는다(일반 · 익명 회차의 숨은 표지에 관리자 글이 실리지 않게 —
+    `sso_refresh_alert` 와 같은 꼴, 아래 둘 · 감사 알림도 같다).
     할 일은 거절 화면 「점검 중」 과 같은 두 갈래다(`access_store.needs_admin_fix` — 보드
     p0-unread): 잠시 뒤 풀리는 까닭이면 「다시 읽기」, 다시 해도 같은 까닭이면 설정 · 권한 ·
     파일을 먼저 고친다.
@@ -544,11 +546,13 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
         scope=None,
         content=(problem, unread) if active else None,
         active=active,
-        text=f"접속 명단을 S3 에서 읽지 못했습니다 — {effect}",
+        text=f"접속 명단을 S3 에서 읽지 못했습니다 — {effect}" if active else None,
         full=(
             f"접속 명단을 S3 에서 읽지 못했습니다"
             f"{f'({access_problem_text(problem)})' if problem is not None else ''} — {effect}. "
             f"{todo}"
+            if active
+            else None
         ),
         goto=_admin_area_goto(),
     )
@@ -566,10 +570,12 @@ def _access_seed_alert(*, admin: bool) -> None:
         scope=None,
         content=None,
         active=seeded,
-        text="접속 명단이 환경변수 첫 버전입니다 — S3 파일 없음",
+        text="접속 명단이 환경변수 첫 버전입니다 — S3 파일 없음" if seeded else None,
         full=(
             "S3 명단 파일이 아직 없어 CAPA_ACCESS_USERS 를 첫 버전으로 씁니다. Admin 「접속 명단」 "
             "에서 첫 저장을 하면 파일이 생기고, 그 뒤에는 환경변수를 듣지 않습니다."
+            if seeded
+            else None
         ),
         goto=_admin_area_goto(),
     )
@@ -597,11 +603,13 @@ def _new_registration_alert(*, admin: bool, now: int) -> None:
         scope=None,
         content=latest if active else None,
         active=active,
-        text=f"새 등록 {count}명 — 최근 {NEW_REGISTRATION_DAYS}일 스스로 등록",
+        text=f"새 등록 {count}명 — 최근 {NEW_REGISTRATION_DAYS}일 스스로 등록" if active else None,
         full=(
             f"최근 {NEW_REGISTRATION_DAYS}일 동안 거절 화면의 「접속 권한 신청」 으로 "
             f"스스로 등록한 사람이 {count}명 명단에 있습니다. Admin 「접속 명단」 에서 "
             "등록 길 「스스로」 줄을 보고 모르는 사람이면 지웁니다."
+            if active
+            else None
         ),
         goto=_admin_area_goto(),
         target=access_list_target(),
@@ -637,7 +645,7 @@ def render_audit_alerts() -> None:
     감사 기록기가 켜진 서버(통합인증 켜짐 기동 — 프로세스 동안 바뀌지 않는다)에서만 부르고, 꺼진
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
     서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다. 판정 재료는 메모리 표지뿐이다(파일 IO
-    없음). 관리자 회차에만 세우고 다른 회차는 해소로 부른다.
+    없음). 관리자 회차에만 세우고 다른 회차는 해소로 부른다(해소 표지에는 글을 싣지 않는다).
     """
     if not audit_recorder.enabled():
         return
@@ -648,10 +656,16 @@ def render_audit_alerts() -> None:
         scope=None,
         content=keeping or None,
         active=bool(keeping),
-        text="접속 · 작업 기록이 버킷에 보관되지 않습니다 — " + " · ".join(keeping),
+        text=(
+            "접속 · 작업 기록이 버킷에 보관되지 않습니다 — " + " · ".join(keeping)
+            if keeping
+            else None
+        ),
         full=(
             "접속 · 작업 기록이 버킷에 보관되지 않습니다(" + " · ".join(keeping) + "). DB 동기화 "
             "칸을 보고 「지금 올리기」 를 누릅니다. 계속되면 사외에 리뷰로 알립니다."
+            if keeping
+            else None
         ),
         tab=AUDIT_TAB_NAME,
         goto=_audit_goto(),
@@ -662,10 +676,16 @@ def render_audit_alerts() -> None:
         scope=None,
         content=late or None,
         active=bool(late),
-        text=f"접속 · 작업 기록 조각 {len(late)}개가 너무 늦게 왔습니다 — 일별 묶음 밖",
+        text=(
+            f"접속 · 작업 기록 조각 {len(late)}개가 너무 늦게 왔습니다 — 일별 묶음 밖"
+            if late
+            else None
+        ),
         full=(
             f"14일보다 늦게 온 기록 조각이 {len(late)}개 있습니다. 고치려 하지 않고 날짜를 점검 "
             "기록에 적은 뒤 저장소 관리자 · 보안 담당에 알립니다."
+            if late
+            else None
         ),
         tab=AUDIT_TAB_NAME,
         goto=_audit_goto(),

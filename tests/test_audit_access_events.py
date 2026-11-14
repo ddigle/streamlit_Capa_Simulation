@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
@@ -12,16 +13,20 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import pytest
 from asgi_driver import AsgiResponse, http
-from sso_support import LOGINID, id_token_claims, make_id_token, use_config
+from sso_support import LOGINID, id_token_claims, make_id_token, sso_environ, use_config
 from starlette.applications import Starlette
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation.audit import boot, recorder, spool
-from capa_simulation.auth import names, runtime
+from capa_simulation.auth import access_store, names, runtime, server
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.server import sso_routes
 from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+from s3_mock_store import MockStore, start_mock  # noqa: E402
 
 FORM = {"content-type": "application/x-www-form-urlencoded"}
 INST = "0a0b0c0d0e0f"
@@ -151,6 +156,82 @@ def test_boot_turns_the_recorder_on_only_for_an_enabled_sso(tmp_path: Path) -> N
     assert len(lines[1]["det"]["admin_fp"]) == 8
     assert LOGINID not in _payload(lines)
     assert all(line["actor"] == "system:app" and line["grade"] == "system" for line in lines)
+
+
+@pytest.fixture()
+def mock_s3() -> Iterator[tuple[MockStore, str]]:
+    store = MockStore()
+    mock, endpoint = start_mock(store)
+    yield store, endpoint
+    mock.shutdown()
+    mock.server_close()
+
+
+def _boot_like_the_entry(
+    store: MockStore, endpoint: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> SsoConfig:
+    """`capa_server.py` 의 차례 그대로 — `start_sso()`(설정 · 기동 명단 읽기) 뒤 `boot.start`."""
+    spool.configure(tmp_path)
+    runtime.reset()
+    environ = sso_environ(
+        {
+            names.ENV_S3_ACCESS_KEY: store.access_key,
+            names.ENV_S3_SECRET_KEY: store.secret_key,
+            names.ENV_S3_ENDPOINT: endpoint,
+            names.ENV_S3_BUCKET: store.bucket,
+            names.ENV_S3_REGION: store.region,
+        }
+    )
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    cfg = server.start_sso()
+    assert boot.start(cfg) is True
+    return cfg
+
+
+def test_a_list_read_failure_at_boot_is_one_audit_line_after_the_recorder_is_on(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """기동 명단 읽기는 진입 파일에서 기록기보다 먼저 돈다(`start_sso` → `start_audit`). 그 실패도
+    「접속 명단 읽기 실패」 한 줄로 남는다(시작 줄 뒤). 뒤따르는 자가 회복 실패는 누계만 센다 —
+    들어오지 못하는 사람이 되풀이해 남길 수 있다(`runtime.ACCESS_RETRY_FAILED_EVENT`)."""
+    store, endpoint = mock_s3
+    store.force["GET"] = (503, "SlowDown")
+
+    cfg = _boot_like_the_entry(store, endpoint, monkeypatch, tmp_path)
+
+    assert access_store.is_unread(cfg)
+    lines = recorder.take_pending()
+    assert [line["ev"] for line in lines] == [
+        "sys_startup",
+        "authz_admin_config",
+        "sys_access_read_fail",
+    ]
+    failed = lines[-1]
+    assert (failed["out"], failed["actor"], failed["grade"]) == ("fail", "system:sso", "system")
+    problem = runtime.access_source()
+    assert problem is not None and problem.problem is not None
+    assert failed["why"] == problem.problem.kind
+    assert failed["det"] == {"reason": problem.problem.kind, "status": "503"}
+
+    access_store.retry_unread(cfg, now=int(time.time()) + access_store.RETRY_SECONDS + 1)
+
+    assert runtime.access_retry_failures() == 1
+    assert recorder.take_pending() == []
+
+
+def test_a_good_list_read_at_boot_leaves_no_failure_line(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store, endpoint = mock_s3
+
+    cfg = _boot_like_the_entry(store, endpoint, monkeypatch, tmp_path)
+
+    assert not access_store.is_unread(cfg)
+    assert [line["ev"] for line in recorder.take_pending()] == [
+        "sys_startup",
+        "authz_admin_config",
+    ]
 
 
 def test_the_deploy_version_falls_back_to_the_app_version(monkeypatch: pytest.MonkeyPatch) -> None:

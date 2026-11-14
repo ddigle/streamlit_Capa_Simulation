@@ -8,7 +8,9 @@
 
 켜면 줄 셋을 남긴다 — `sys_startup`(환경 · 판 · 통합인증 · 동기화 모드),
 `authz_admin_config`(관리자 수 · 목록 지문 8자 — 사람 값은 싣지 않는다), 시작 받기
-기록이 있으면 `sys_boot_pull`.
+기록이 있으면 `sys_boot_pull`. 그 뒤 기동 명단 읽기가 실패한 서버면 `sys_access_read_fail` 한 줄을
+더한다 — 진입 파일은 `start_sso()`(S3 명단을 한 번 읽는다) 다음에 이 함수를 불러, 그 읽기의 사건이
+기록기가 켜지기 전에 지나간다(`_note_list_read_at_start`).
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import logging
 
 from capa_simulation import settings, sync_boot
 from capa_simulation.audit import recorder
-from capa_simulation.auth import access_store
+from capa_simulation.auth import access_store, runtime
 from capa_simulation.auth.access import GRADE_ADMIN
 from capa_simulation.auth.config import SsoConfig, SsoMode
 
@@ -88,6 +90,24 @@ def start(cfg: SsoConfig) -> bool:
                     "seconds": round(boot.pull_seconds, 1),
                 },
             )
+        _note_list_read_at_start(cfg)
     except Exception:  # noqa: BLE001 — 기록기가 앱 기동을 막지 않는다
         _LOGGER.exception("감사 기록기를 켜지 못했습니다.")
     return recorder.enabled()
+
+
+def _note_list_read_at_start(cfg: SsoConfig) -> None:
+    """기동 명단 읽기(`access_store.read_at_start`)가 실패했으면 그 사건을 지금 대응표로 넘긴다.
+
+    서버 로그 · 사건 고리의 `access_read` 실패와 같은 칸(사유 · 상태)이다. 기동 때 한 번만 부르므로
+    뒤의 자가 회복 실패(누계만 — `runtime.ACCESS_RETRY_FAILED_EVENT`)와 겹치지 않는다.
+    """
+    if not access_store.is_on(cfg):
+        return
+    source = runtime.access_source()
+    problem = None if source is None else source.problem
+    if problem is None:
+        return
+    recorder.from_sso_event(
+        "access_read", {"reason": problem.kind, "status": str(problem.status or "-")}
+    )
