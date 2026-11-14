@@ -101,8 +101,9 @@ def test_no_screen_shows_the_error_mark_for_a_missing_official(
 ) -> None:
     """공식버전이 없어 멈춘 화면은 어디서나 마크가 아니라 회색 한 줄이고, 알림은 그 화면 코드의 사건
     알림이 아니라 공식버전 없음 상태 알림 `SC-01` 하나다(시나리오 관리 탭과 같은 표지 — 범위 ·
-    지문이 같다). 리비전으로 본문을 그리는 화면은 반드시 그 한 줄이 서고, 멈춘 사이드바 공정 줄도
-    본문과 같은 「공식버전 없음」 이다."""
+    지문이 같다). 리비전으로 본문을 그리는 화면은 반드시 그 알림을 내고, 그 알림을 낸 화면은
+    시나리오 관리(목록 탭이 회색 줄 없이 알림을 낸다)만 빼고 모두 그 한 줄이 선다 — 필요 단축
+    일정 · 재공 현황도 그렇다. 멈춘 사이드바 공정 줄도 본문과 같은 「공식버전 없음」 이다."""
     database, equipment = unpublished_databases
     app = AppTest.from_string(
         _page_script(page_path, database, equipment), default_timeout=300
@@ -123,7 +124,7 @@ def test_no_screen_shows_the_error_mark_for_a_missing_official(
     if not missing:
         return
     assert data_error_marks(app) == 0, page_path
-    if page_path in REVISION_PAGES:
+    if page_path != SCENARIO_MANAGEMENT.path:
         assert _empty_lines(app) >= 1, page_path
     for note in missing:
         assert (note["scope"], note["fp"]) == (expected["scope"], expected["fp"]), page_path
