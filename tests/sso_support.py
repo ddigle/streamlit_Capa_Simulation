@@ -121,6 +121,11 @@ def expiring_signing() -> SigningMaterial:
 
 
 @functools.cache
+def later_expiring_signing() -> SigningMaterial:
+    return _material(2048, valid_days=20)
+
+
+@functools.cache
 def ec_certificate_b64() -> str:
     key = ec.generate_private_key(ec.SECP256R1())
     return base64.b64encode(_certificate(key, valid_days=30)).decode("ascii")

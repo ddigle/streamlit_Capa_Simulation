@@ -8,9 +8,12 @@
 
 켜면 줄 셋을 남긴다 — `sys_startup`(환경 · 판 · 통합인증 · 동기화 모드),
 `authz_admin_config`(관리자 수 · 목록 지문 8자 — 사람 값은 싣지 않는다), 시작 받기
-기록이 있으면 `sys_boot_pull`. 그 뒤 기동 명단 읽기가 실패한 서버면 `sys_access_read_fail` 한 줄을
-더한다 — 진입 파일은 `start_sso()`(S3 명단을 한 번 읽는다) 다음에 이 함수를 불러, 그 읽기의 사건이
-기록기가 켜지기 전에 지나간다(`_note_list_read_at_start`).
+기록이 있으면 `sys_boot_pull`. 그 뒤 기록기가 켜지기 전에 지나간 기동 사건을 그 차례로 따라잡는다 —
+진입 파일은 `start_sso()`(설정을 읽고 S3 명단을 한 번 읽는다) 다음에 이 함수를 불러, 그 안의 사건이
+대응표에 닿지 못한다. 만료가 30일 안인 서명 인증서마다 `sys_cert_expiring` 한 줄
+(`_note_expiring_certs` — 설정 읽기의 `cert_expiring`), 기동 명단 읽기가 실패한 서버면
+`sys_access_read_fail` 한 줄(`_note_list_read_at_start`)이다. 오래 떠 있는 서버에서 뒤에 30일 안으로
+들어온 인증서는 다음 기동에 남는다(화면은 `AD-03` 이 알린다).
 """
 
 from __future__ import annotations
@@ -90,10 +93,21 @@ def start(cfg: SsoConfig) -> bool:
                     "seconds": round(boot.pull_seconds, 1),
                 },
             )
+        _note_expiring_certs(cfg)
         _note_list_read_at_start(cfg)
     except Exception:  # noqa: BLE001 — 기록기가 앱 기동을 막지 않는다
         _LOGGER.exception("감사 기록기를 켜지 못했습니다.")
     return recorder.enabled()
+
+
+def _note_expiring_certs(cfg: SsoConfig) -> None:
+    """설정 읽기(`runtime.start`)가 낸 서명 인증서 만료 임박을 인증서마다 지금 대응표로 넘긴다.
+
+    서버 로그의 `cert_expiring` 과 같은 판정 · 같은 남은 날(`runtime.expiring_certs`)이다. 통합인증
+    켜짐이면 S3 명단과 상관없이 부른다.
+    """
+    for days, _ in runtime.expiring_certs(cfg):
+        recorder.from_sso_event("cert_expiring", {"days": str(days)})
 
 
 def _note_list_read_at_start(cfg: SsoConfig) -> None:

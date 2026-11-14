@@ -41,7 +41,7 @@ from capa_simulation.audit import recorder as audit_recorder
 from capa_simulation.audit.text import log_field
 from capa_simulation.auth import names
 from capa_simulation.auth.access import AccessList, AccessSource
-from capa_simulation.auth.config import SsoConfig, SsoMode, load_config
+from capa_simulation.auth.config import CERT_WARNING_DAYS, SsoConfig, SsoMode, load_config
 from capa_simulation.auth.tokens import SESSION_LEEWAY
 
 LOGGER = logging.getLogger(names.LOGGER_NAME)
@@ -186,11 +186,23 @@ def _announce(cfg: SsoConfig) -> None:
         locked="1" if cfg.locked else "0",
         problems=problems,
     )
-    now = time.time()
+    for days, x5t in expiring_certs(cfg):
+        record_event("cert_expiring", level=logging.WARNING, days=str(days), x5t=x5t)
+
+
+def expiring_certs(cfg: SsoConfig, *, now: float | None = None) -> tuple[tuple[int, str], ...]:
+    """만료가 `CERT_WARNING_DAYS` 일 안인(이미 지난 것 포함) 서명 인증서마다 (남은 날, x5t 앞 16자).
+
+    남은 날은 내림한 온 날 수다. 기동 로그의 `cert_expiring`(`_announce`)과 감사 기록기의 기동
+    따라잡기(`audit/boot.py`)가 같은 판정을 쓴다.
+    """
+    moment = time.time() if now is None else now
+    found: list[tuple[int, str]] = []
     for cert in cfg.signing_certs:
-        days = int((cert.not_after.timestamp() - now) // 86400)
-        if days <= 30:
-            record_event("cert_expiring", level=logging.WARNING, days=str(days), x5t=cert.x5t[:16])
+        days = int((cert.not_after.timestamp() - moment) // 86400)
+        if days <= CERT_WARNING_DAYS:
+            found.append((days, cert.x5t[:16]))
+    return tuple(found)
 
 
 def start(environ: MutableMapping[str, str]) -> SsoConfig:
