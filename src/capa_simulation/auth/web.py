@@ -1140,7 +1140,11 @@ def denied_family_page(
 def portal_refused_page(
     cfg: SsoConfig, *, now: int | None = None, next_path: str = "/"
 ) -> HTMLResponse:
-    """통합인증(포털)이 앱 사용을 막음 — 신청 칸 없음(서명 전 실패라 누구인지 모른다)."""
+    """통합인증(포털)이 앱 사용을 막음 — 신청 칸 없음(서명 전 실패라 누구인지 모른다).
+
+    다시 해도 같은 실패라 통합인증 로그아웃 주소가 있으면 「다른 계정으로 로그인」 이 주 단추이고
+    「다시 시도」 는 보조 링크다. 그 주소가 없는 서버는 다른 계정으로 갈 길이 없어 「다시 시도」 가
+    주 단추다 — 막다른 화면을 두지 않는다."""
     moment = _now() if now is None else now
     retry = _login_link(cfg, RETRY_LABEL, next_path)
     other = _other_account(cfg)

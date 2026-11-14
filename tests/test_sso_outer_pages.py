@@ -539,6 +539,43 @@ def test_the_portal_refusal_retry_keeps_the_first_screen() -> None:
     assert next_of(retry) == "/space"
 
 
+@pytest.mark.parametrize("logout_url", ["", "https://idp.example.invalid/adfs/oauth2/logout"])
+def test_the_portal_refusal_main_button_is_another_account_only_with_a_logout_address(
+    logout_url: str,
+) -> None:
+    """포털 거절은 다시 해도 같다 — 통합인증 로그아웃 주소가 있으면 주 단추가 「다른 계정으로
+    로그인」 이고 「다시 시도」 는 보조 링크다. 없는 서버는 다른 계정으로 갈 길이 없어 「다시
+    시도」 가 주 단추다(2026-11-14 보드 decided 4 · 공통 틀 「주 단추는 늘 있다」)."""
+    cfg = use_config({names.ENV_LOGOUT_URL: logout_url} if logout_url else None)
+    app = routes_app()
+    jar: dict[str, str] = {}
+    begin(app, cfg, jar, "/space")
+    cookies = {name: value for name, value in jar.items() if name != STATE_KEY}
+
+    page = follow(
+        app,
+        http(
+            app,
+            "POST",
+            names.CALLBACK_PATH,
+            headers={**FORM, "cookie": cookie_header(cookies)},
+            body=urlencode({"error": "access_denied", "state": jar[STATE_KEY]}).encode(),
+        ),
+    )
+
+    assert page.status == 403 and web.PORTAL_TITLE in page.text
+    [main_button] = button_hrefs(page)
+    [retry] = hrefs(page, web.RETRY_LABEL)
+    assert next_of(retry) == "/space"
+    if logout_url:
+        assert main_button == logout_url
+        assert hrefs(page, web.OTHER_ACCOUNT_LABEL) == [logout_url]
+        assert f'<a class="button" href="{html.escape(retry)}">' not in page.text
+    else:
+        assert main_button == retry
+        assert web.OTHER_ACCOUNT_LABEL not in page.text
+
+
 @pytest.mark.parametrize(
     ("raw", "kept"),
     [
