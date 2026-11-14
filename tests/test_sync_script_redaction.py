@@ -210,15 +210,19 @@ def test_probe_prints_tags_in_place_of_the_values_and_the_author(
     rig: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """`probe` 의 결과 JSON 은 확인자를 이름표로 찍고, `--write` 로 쓰는 능력 기록은 원값을 그대로
-    둔다. 거절된 조건부 쓰기 줄과 첫 쓰기의 `[중단]` 줄도 같은 가림을 지난다."""
+    둔다. 그 기록 파일 경로의 내 PC 홈은 「기록」 줄에 `%USERPROFILE%` 로 찍히고 파일은 실제 경로에
+    선다. 거절된 조건부 쓰기 줄과 첫 쓰기의 `[중단]` 줄도 같은 가림을 지난다."""
     _probe_on_the_fake_store(rig, monkeypatch)
     record = tmp_path / "capabilities.json"
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
     code, printed = _run(rig, "probe", "--write", str(record))
 
     assert code == 0, printed
     _assert_hidden(printed, "probe")
     assert '"_확인자": "<작성자>"' in printed
+    assert f"기록          : {Path(HOME_TAG) / record.name}\n" in printed, printed
+    assert str(tmp_path) not in printed
     assert json.loads(record.read_text(encoding="utf-8"))["_확인자"] == AUTHOR
 
     def fail_the_conditional_put(operation: str, _key: str) -> None:

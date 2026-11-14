@@ -33,9 +33,9 @@
 있음/없음으로 찍고, 진단 글(오류 첫 줄 · 「실행한 명령」 — `io/object_storage.py` 가 원격 진단용으로
 값째 만든다) 안의 값은 받아 찍는 자리에서 `<주소>` · `<버킷>` · `<프로필>` 로 바꾼다. 세대 줄의
 작성자는 `<작성자>` 다. 원값을 보는 옵션은 없다 — 값은 C-DEP 환경변수 표와 사용자 창의 변수에만
-있다. 내 PC 경로(받은 폴더 · 백업 · 「로컬 DB 가 없습니다」 · 진단 글의 파일 인자)의 홈 폴더
-앞부분은 `%USERPROFILE%` 로 찍는다(리뷰에 옮길 때 계정 이름이 나가지 않게 — 여닫는 경로 값은
-그대로다).
+있다. 내 PC 경로(받은 폴더 · 백업 · 「로컬 DB 가 없습니다」 · 진단 글의 파일 인자 · `probe --write`
+의 기록 파일)의 홈 폴더 앞부분은 `%USERPROFILE%` 로 찍는다(리뷰에 옮길 때 계정 이름이 나가지 않게
+— 여닫는 경로 값은 그대로다).
 
 **정본을 바꾸는 손 동작은 감사 조각을 남긴다.** `rollback` · `init` · `fetch-copy` · `prune` 은 끝에
 그 버킷의 `audit/v1/tool/…` 에 한 줄짜리 조각을 새로 올린다(`audit/tool.py` — 행위자는 OS 사용자,
@@ -623,7 +623,7 @@ def command_probe(args: argparse.Namespace) -> int:
     print(json.dumps(shown, ensure_ascii=False, indent=1))
     if args.write:
         args.write.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
-        print(f"기록          : {args.write}")
+        print(f"기록          : {masked(str(args.write))}")
     return 0
 
 
