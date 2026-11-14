@@ -7,6 +7,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 
 from capa_simulation import alerts
+from capa_simulation.auth.runtime import note_boot_failure, note_boot_success
 from capa_simulation.auto_update_scheduler import ensure_auto_update_scheduler
 from capa_simulation.components.accent_button_style import render_accent_button_style
 from capa_simulation.components.alert_center import render_alert_center
@@ -20,7 +21,7 @@ from capa_simulation.components.app_header import (
 from capa_simulation.components.audit_actor import drain as drain_audit
 from capa_simulation.components.audit_actor import note_session as note_audit_session
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_CHART_KEY
-from capa_simulation.components.boot_stop import render_boot_stop
+from capa_simulation.components.boot_stop import classify_boot_failure, kind_name, render_boot_stop
 from capa_simulation.components.cell_press_guard import cell_press_guard_script
 from capa_simulation.components.change_summary import session_changes
 from capa_simulation.components.container_start_check import (
@@ -316,7 +317,10 @@ heartbeat_if_managed()
 # DB 를 한 번도 읽지 않는 회차(캐시만 쓰는 화면의 재실행)는 인스턴스를 열지 않는다.
 with pinned_connections(DUCKDB_PATH):
     try:
-        bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve()))
+        # 데이터를 열어 공식 시나리오를 올린 회차면 앱 시작 실패의 이어짐을 끊는다(최근 사건 고리에
+        # 같은 갈래를 다시 남길 수 있게 — `components/boot_stop.py`).
+        if bootstrap_latest_official_scenario(str(DUCKDB_PATH.resolve())):
+            note_boot_success()
     except Exception as exc:  # 어떤 실패든 원인을 읽을 수 있게 바꿔야 한다
         # DuckDB 파일은 프로세스 배타 잠금이다. 서버가 이미 떠 있는데 한 번 더 실행하면 화면이 한
         # 줄도 그려지기 전에 예외가 그대로 노출되고, Windows 로캘 탓에 원본 메시지의 한글이 깨져
@@ -327,6 +331,9 @@ with pinned_connections(DUCKDB_PATH):
         # 라벨·부제)이다.
         render_app_header()
         render_boot_stop(exc)
+        # 관리자가 판의 참고 줄과 맞출 자리 — 통합인증 점검의 최근 사건 고리에 같은 갈래가 이어지는
+        # 동안 한 줄(C-DEP 에는 서버 로그 창구가 없다).
+        note_boot_failure(classify_boot_failure(exc).code, kind_name(exc))
         st.stop()
     # 감사 큐를 스풀 파일에 비운다(쌓인 것이 있을 때만 파일 IO — 대개 0). 통합인증 꺼짐은 부르지
     # 않는다. DB 를 열지 않는다.

@@ -406,6 +406,60 @@ def test_a_failing_admin_check_falls_back_to_no_details(monkeypatch: pytest.Monk
     assert "PID" not in _every_text(app)
 
 
+def _boot_events() -> list[tuple[str, str]]:
+    """최근 사건 고리의 앱 시작 실패 줄(새것 먼저) — (사유 코드, 오류 종류)."""
+    return [
+        (item.value("reason"), item.value("kind"))
+        for item in runtime.recent_events()
+        if item.event == runtime.BOOT_FAIL_EVENT
+    ]
+
+
+def test_a_boot_failure_is_left_once_in_the_recent_events_while_it_lasts() -> None:
+    """관리자가 참고 줄과 짝을 맞출 자리(보드 boot-record) — 앱 시작 실패를 통합인증 점검의 최근
+    사건 고리에 한 줄 남긴다. 같은 갈래가 이어지면 회차 · 「다시 시도」 · 다른 사람의 새 탭마다 쌓지
+    않고 처음 한 번만이다. 다른 갈래면 새 줄이다."""
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert not runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert runtime.note_boot_failure(boot_stop.MIGRATION_FAILED, "MigrationChanged")
+    assert not runtime.note_boot_failure(boot_stop.MIGRATION_FAILED, "MigrationChanged")
+
+    assert _boot_events() == [
+        (boot_stop.MIGRATION_FAILED, "MigrationChanged"),
+        (boot_stop.LOCKED, "IOException"),
+    ]
+
+
+def test_a_successful_bootstrap_ends_the_run_of_a_boot_failure() -> None:
+    """부트스트랩이 한 번 데이터를 열면(`note_boot_success`) 이어짐이 끊겨 같은 갈래가 다시 나면 새
+    줄이다 — 몇 시간 뒤의 같은 잠김이 앞 줄에 묻히지 않는다."""
+    runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    runtime.note_boot_success()
+    runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")] * 2
+
+
+def test_the_recent_event_table_shows_the_branch_and_the_kind() -> None:
+    """Admin 「통합인증 점검」 의 최근 사건 표 — 사건 `boot_fail` · 사유 코드 「<갈래> · <오류
+    종류>」 (판의 참고 줄과 같은 낱말). 새 알림은 띄우지 않는다 — 감사 대응표 밖이라 감사 줄도
+    없다."""
+    from capa_simulation.components import sso_status
+
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert not runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+    table = sso_status.recent_event_table()
+
+    assert table.to_dict("records")[0] | {"시각": "-"} == {
+        "시각": "-",
+        "사건": runtime.BOOT_FAIL_EVENT,
+        "사유 코드": "db_locked · IOException",
+        "계정": "-",
+    }
+    assert len(table) == 1
+
+
 def test_a_changed_migration_offers_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(APP_CONTACT_EMAIL_ENV, raising=False)
 
@@ -510,6 +564,26 @@ def real_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     return AppTest.from_file(str(APP_PATH), default_timeout=300)
 
 
+def test_the_real_app_leaves_one_recent_event_while_the_failure_lasts(
+    real_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """진짜 `app.py` — 판을 그린 회차가 최근 사건에 한 줄을 남기고, 「다시 시도」 가 같은 잠김으로
+    또 멈춰도 줄이 늘지 않는다."""
+    import capa_simulation.scenario_activation as scenario_activation
+
+    app = real_app.run()
+
+    def still_locked(database_path: str) -> bool:
+        raise _lock(424242)
+
+    monkeypatch.setattr(scenario_activation, "bootstrap_latest_official_scenario", still_locked)
+    app = app.button(key=boot_stop.RETRY_KEY).click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")]
+
+
 def test_the_real_app_stops_on_the_panel_and_retries_into_home(real_app: AppTest) -> None:
     """진짜 `app.py` — 첫 회차는 멈춤 판(머리 띠 아래), 「다시 시도」 를 누르면 다시 열어 HOME 이
     선다(부트스트랩은 실패한 회차에 「해 봤다」 표지를 세우지 않는다)."""
@@ -519,8 +593,12 @@ def test_the_real_app_stops_on_the_panel_and_retries_into_home(real_app: AppTest
     assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
     assert "Capa LOB Summary" not in [item.value for item in app.title]
 
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")]
+
     app = app.button(key=boot_stop.RETRY_KEY).click().run()
 
     assert not list(app.exception), [item.message for item in app.exception]
     assert boot_stop.HELD_LINE not in [item.value for item in app.error]
     assert "Capa LOB Summary" in [item.value for item in app.title], "HOME 이 섰다"
+    # 데이터를 연 회차가 이어짐을 끊었다 — 같은 잠김이 다시 나면 새 줄이다.
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")

@@ -3357,6 +3357,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   앱 시작 실패 · 접속 멈춤 · 한 화면 오류 — 의 한 꼴: 경고 띠 → 주 단추 하나 → 문의 줄 → 참고 줄 → 접힌 진단. 띠와 주 단추는 부르는 쪽이, 뒤 셋은
   `render_stop_footer` 가 같은 차례로 그리고 관리자 몫 판정 `admin_fold_visible` 이 셋의 물러섬을 한 곳에 둔다. 시험 `tests/test_stop_panel.py`). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
   함께 보낸다(자리를 먹지 않는다). 시험은 `tests/test_boot_stop.py`.
+  관리자가 참고 줄과 짝을 맞출 자리로 Admin 「통합인증 점검」 최근 사건 고리에 사건 `boot_fail`(사유 코드 = 갈래 키 · `kind` = 오류 종류 — 표의 사유 코드 칸은 「<갈래> · <종류>」)을 한 줄 남긴다(`auth.runtime.note_boot_failure`, 보드 boot-record — C-DEP 에는 서버 로그 창구가 없다). 같은 갈래가 이어지면 처음 한 번만(회차 · 「다시 시도」 · 다른 사람의 새 탭마다 쌓지 않는다)이고 `app.py` 가 부트스트랩이 데이터를 연 회차(`bootstrap_latest_official_scenario` 가 참)에 `note_boot_success` 로 이어짐을 끊는다. 이어짐 표지는 통합인증 프로세스 상태(`runtime.reset` 이 비운다)에 있다. 새 알림 번호 · 감사 대응은 없다.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다
   그려지면 `Detail`(원래 화면)·`Summary`(최신 공식버전 여섯 달 요약)로 들이고 같은 탭에서는 다시 띄우지 않는다.
   실행이 끝났을 때 앱 시작 실패 표지(`boot_stop.BOOT_STOP_ATTRIBUTE`)가 있으면 「준비 완료」 대신 상태 낱말 「열지 못함」, 끝낸

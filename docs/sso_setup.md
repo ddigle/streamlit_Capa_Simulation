@@ -341,10 +341,12 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   | 「로그인이 되풀이됩니다」 | 시각까지 기다려 「다시 시도」. 여러 사람이면 바로 앞 실패의 사유 코드(Admin 「로그인 전 실패」 누계)를 본다 |
   | **ADFS 화면에서 멈춤**(우리 화면이 안 뜸) | 포털 등록 주소(redirect_uri) · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 사건이 없다. Admin 「로그인 시작 · 돌아옴」 에서 돌아옴이 시작보다 훨씬 적은지 보고, 멈춘 ADFS 화면을 찍어 받아 그 글로 포털 · ADFS 담당과 고친다 |
   | 「지금은 앱을 열 수 없습니다」(설정 화면) | 접힌 진단의 「고칠 것 n개」 대로 C-DEP 환경변수 표를 고치고 CI/CD |
+  | 「지금은 데이터를 열 수 없습니다」 · 「앱 업데이트를 마치지 못했습니다」(앱 안 · 앱 시작 실패 · 참고 `db_locked` · `db_disk_full` · `db_permission` · `db_cannot_open` · `db_other` · `migration_failed`) | 최근 사건의 `boot_fail` 줄(사유 코드 = 참고 줄의 갈래 · 오류 종류)과 시각으로 맞춘다 — 같은 갈래가 이어지면 처음 한 줄만 남으니 그 시각부터 지금까지 이어진 것으로 읽는다. 원문 · 파일 경로는 관리자로 그 판을 열어 접힌 「관리자용 진단」 에서 본다. 감사 기록이 켜진 서버는 펼침이 사건 표를 그리지 않아 맨 위 「복사」 글의 최근 사건 표에 있다 |
   | 「지금은 앱을 열 수 없습니다(서버 시작 설정)」(앱 안 · 참고 `sso_no_gate`) | 문지기 없이 떴다 — `streamlit run capa_server.py` 로 띄운다(C-DEP 시작 스크립트는 그렇게 띄운다). 접힌 진단은 관리자 몫에만 선다 |
   | 앱 안 멈춤 「다시 로그인」 · 「접속 권한 신청」 · 「새로고침」(참고 `sso_expired` · `sso_revoked` · `sso_missing` · `not_on_list` · `list_unread` · `sso_account_changed`) | 사유 낱말 · 시각으로 최근 사건(`session_closed` 의 사유 코드 `expired` · `revoked`)이나 「명단 밖 로그인」 표 · 「S3 명단」 줄을 본다. 쿠키 없음은 대개 그 사람이 다시 로그인하면 풀린다 |
 - 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_denied|login_fail|idp_error|logout|session_closed|cert_expiring|access_read|access_retry_failed|access_saved|access_self_registered|access_self_register_failed|access_save_failed|access_seed_mark_failed …` 한 줄씩
-  (`session_closed` 는 만료 · 로그아웃한 열린 탭의 연결을 문지기가 닫은 것 — 만료면 `end=idle`(쓰지 않아 끝남) · `end=max`(최대 시간)).
+  (`session_closed` 는 만료 · 로그아웃한 열린 탭의 연결을 문지기가 닫은 것 — 만료면 `end=idle`(쓰지 않아 끝남) · `end=max`(최대 시간)). 앱 시작 실패는
+  `sso event=boot_fail reason=<갈래> kind=<오류 종류>` 다 — 같은 갈래가 이어지면 처음 한 줄이고 부트스트랩이 한 번 데이터를 열면 이어짐이 끊긴다(새 알림 · 감사 줄은 없다).
 - **거절 화면**(`/auth/sso/error?code=not_on_list`, 403) — 접속 명단 밖. 사유 코드 `not_on_list` 는 IdP 의 `access_denied`(포털이 거절 — 같은 틀의 포털 거절 꼴 `idp_error:access_denied`)와 다르다. 바닥 참고 줄의 사유 코드 · 시각으로 Admin 최근 사건과 짝을 맞춘다. 명단
   밖인 사람과 까닭을 맞출 때는 Admin 「명단 밖 로그인」 표를 본다. loginid 는 실데이터라 리뷰 압축본 · 전문에 옮기지 않는다. S3 명단을 아직 못 읽은 동안의
   거절은 `code=list_unread` 의 같은 꼴 화면(「접속 권한을 확인하지 못했습니다」)이고, 그 거절도 「명단 밖 로그인」 표에 센다(사건 사유 코드 `list_unread`).

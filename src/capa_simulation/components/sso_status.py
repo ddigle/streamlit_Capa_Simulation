@@ -393,8 +393,11 @@ def _event_code(fields: dict[str, str]) -> str:
         value = fields.get(key, "")
         if value and value != "-":
             end = fields.get("end", "")
+            # 앱 시작 실패(`boot_fail`)는 오류 종류 이름 — 판의 참고 줄 끝과 같은 값이다.
+            kind = fields.get("kind", "")
             diag = fields.get("diag", "")
-            tail = [part for part in (end, f"진단 {diag}" if diag else "") if part and part != "-"]
+            parts = (end, kind, f"진단 {diag}" if diag else "")
+            tail = [part for part in parts if part and part != "-"]
             return " · ".join((value, *tail))
     days = fields.get("days", "")
     return f"남은 날 {days}" if days else "-"
