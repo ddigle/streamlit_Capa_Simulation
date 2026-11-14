@@ -198,6 +198,9 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   화면으로 간다), S3 명단을 못 읽은 서버의 열린 탭은 끊긴 구름 아이콘 + 「다시 로그인」 이다. 끝난 쿠키로 새로 열면 경고 없이
   통합인증을 거쳐 다시 들어온다. 같은 탭이 다른 계정으로 이어지면 「「<새 계정 이름>」 계정으로 바뀌었습니다」 와 주 단추
   「새로고침」(같은 탭에서 지금 화면을 새로 연다 — 풍선 「이 탭에서 저장하지 않은 편집은 사라집니다」).
+  이 멈춤들은 앱 안 멈춤 판의 한 꼴이라(앱 시작 실패 · 한 화면 오류와 같은 차례 — 보드 stop-panels) 문의 줄 아래 「참고 <사유 낱말> · <시각> UTC」 가
+  선다 — 만료 `sso_expired` · 다른 탭 로그아웃 `sso_revoked` · 쿠키 없음 `sso_missing` · 명단에서 빠짐 `not_on_list` · 명단 못 읽음 `list_unread`(뒤 둘은
+  거절 화면과 같은 낱말) · 계정 바뀜 `sso_account_changed`. 접힌 「관리자용 진단」 은 없다(그 회차에는 검증된 신원이 없다).
 - **열어 둔 탭** — 만료됐거나 다른 탭에서 로그아웃한 뒤 그 탭에서 무엇이든 누르면(위젯 · 팝업 · 자동으로 도는 화면 조각
   포함) 서버가 그 요청을 받지 않고 연결을 닫는다. 탭은 다시 붙지 못하고, 3초쯤 뒤 화면 맨 위에 띠와 링크가 선다(띠가 선 동안
   Streamlit 의 영어 연결 오류 창 「Connection failed with status 401.」 은 감춘다). 띠는 까닭 셋으로 가른다 — 문지기가 띠가 묻는
@@ -339,6 +342,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   | **ADFS 화면에서 멈춤**(우리 화면이 안 뜸) | 포털 등록 주소(redirect_uri) · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 사건이 없다. Admin 「로그인 시작 · 돌아옴」 에서 돌아옴이 시작보다 훨씬 적은지 보고, 멈춘 ADFS 화면을 찍어 받아 그 글로 포털 · ADFS 담당과 고친다 |
   | 「지금은 앱을 열 수 없습니다」(설정 화면) | 접힌 진단의 「고칠 것 n개」 대로 C-DEP 환경변수 표를 고치고 CI/CD |
   | 「지금은 앱을 열 수 없습니다(서버 시작 설정)」(앱 안 · 참고 `sso_no_gate`) | 문지기 없이 떴다 — `streamlit run capa_server.py` 로 띄운다(C-DEP 시작 스크립트는 그렇게 띄운다). 접힌 진단은 관리자 몫에만 선다 |
+  | 앱 안 멈춤 「다시 로그인」 · 「접속 권한 신청」 · 「새로고침」(참고 `sso_expired` · `sso_revoked` · `sso_missing` · `not_on_list` · `list_unread` · `sso_account_changed`) | 사유 낱말 · 시각으로 최근 사건(`session_closed` 의 사유 코드 `expired` · `revoked`)이나 「명단 밖 로그인」 표 · 「S3 명단」 줄을 본다. 쿠키 없음은 대개 그 사람이 다시 로그인하면 풀린다 |
 - 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_denied|login_fail|idp_error|logout|session_closed|cert_expiring|access_read|access_retry_failed|access_saved|access_self_registered|access_self_register_failed|access_save_failed|access_seed_mark_failed …` 한 줄씩
   (`session_closed` 는 만료 · 로그아웃한 열린 탭의 연결을 문지기가 닫은 것 — 만료면 `end=idle`(쓰지 않아 끝남) · `end=max`(최대 시간)).
 - **거절 화면**(`/auth/sso/error?code=not_on_list`, 403) — 접속 명단 밖. 사유 코드 `not_on_list` 는 IdP 의 `access_denied`(포털이 거절 — 같은 틀의 포털 거절 꼴 `idp_error:access_denied`)와 다르다. 바닥 참고 줄의 사유 코드 · 시각으로 Admin 최근 사건과 짝을 맞춘다. 명단

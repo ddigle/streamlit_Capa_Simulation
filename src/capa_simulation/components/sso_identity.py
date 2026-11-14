@@ -53,7 +53,9 @@ from capa_simulation.auth.identity import (
     session_end_of,
 )
 from capa_simulation.auth.web import (
+    LIST_UNREAD,
     LIST_UNREAD_TEXT,
+    NOT_ON_LIST,
     NOT_ON_LIST_TEXT,
     REGISTER_LABEL,
     public_link,
@@ -63,9 +65,9 @@ from capa_simulation.components.app_header import render_shell_style
 from capa_simulation.components.intro_overlay import SUMMARY_LABEL_ID
 from capa_simulation.components.literal_markdown import literal_markdown
 from capa_simulation.components.stop_panel import (
+    AdminFold,
     primary_link,
-    reference_line,
-    render_contact_caption,
+    render_stop_footer,
 )
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
@@ -103,6 +105,9 @@ NO_GATE_DIAGNOSTIC = (
 NO_GATE_PROBLEMS_CAPTION = "설정을 마치지 못한 환경변수"
 # 참고 줄의 사유 낱말(새 번호 체계 없음 — 앱 안 멈춤 판의 갈래 키).
 NO_GATE_REFERENCE = "sso_no_gate"
+# 로그인 끝남 · 계정 바뀜 멈춤의 사유 낱말. 명단 밖 · 명단 못 읽음은 거절 화면의 바닥 참고 줄과 같은
+# 낱말(`web.NOT_ON_LIST` · `web.LIST_UNREAD`)이고, 쿠키 없음 · 위조는 글이 같아 한 낱말이다.
+ACCOUNT_CHANGED_REFERENCE = "sso_account_changed"
 NO_GATE_DIAGNOSTIC_KEY = "sso_no_gate_diagnostic"
 NO_GATE_DIAGNOSTIC_TITLE = "문지기 없이 시작됨 진단"
 NO_GATE_COPY_KEY = "sso_no_gate"
@@ -118,6 +123,13 @@ _PROBLEM_NOTICES: Mapping[IdentityProblem, str] = {
     IdentityProblem.MISSING: MISSING_NOTICE,
     IdentityProblem.INVALID: MISSING_NOTICE,
     IdentityProblem.DENIED: NOT_ON_LIST_TEXT,
+}
+_PROBLEM_REFERENCES: Mapping[IdentityProblem, str] = {
+    IdentityProblem.EXPIRED: "sso_expired",
+    IdentityProblem.REVOKED: "sso_revoked",
+    IdentityProblem.MISSING: "sso_missing",
+    IdentityProblem.INVALID: "sso_missing",
+    IdentityProblem.DENIED: NOT_ON_LIST,
 }
 
 # 멈춤 화면이 감추는 툴바 단추 — 툴바 iframe 이 세운 Guide · Print · 테마. 앞 회차의 iframe 이 부모
@@ -204,51 +216,23 @@ def no_gate_diagnostic_lines(cfg: SsoConfig) -> list[str]:
 
 
 def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
-    """문지기 없이 뜬 앱 — 앱 안 멈춤 판(경고 한 줄 · 문의 캡션 · 참고 줄 · 접힌 진단). 다시 열어도
+    """문지기 없이 뜬 앱 — 앱 안 멈춤 판(경고 한 줄 · 문의 줄 · 참고 줄 · 접힌 진단). 다시 열어도
     같아 주 단추가 없다 — 운영자가 진입 파일로 다시 띄워야 풀린다.
 
-    접힌 진단(실행 명령 · 설정 문제 이름 · 안내 문서)은 관리자 몫(`_no_gate_diagnostic_visible`)에만
-    세운다 — 앱 안 판의 「관리자용 진단」 은 앱 시작 실패 판 · 코어 화면 오류 카드와 한 판정이다.
-    다른 사람에게는 참고 줄의 사유 낱말(`NO_GATE_REFERENCE`)만이다.
-
-    진단 복사 부품은 여기서 불러온다 — Components v2 는 import 때 등록되므로 이 모듈을 진입 파일이
-    먼저 부르더라도(감사 행위자) 실행기 전에 등록되지 않게.
+    접힌 진단(실행 명령 · 설정 문제 이름 · 안내 문서)은 관리자 몫에만 선다
+    (`stop_panel.admin_fold_visible`) — 앱 안 판의 「관리자용 진단」 은 앱 시작 실패 판 · 코어 화면
+    오류 카드와 한 판정이다. 다른 사람에게는 참고 줄의 사유 낱말(`NO_GATE_REFERENCE`)만이다.
     """
-    from capa_simulation.components.diagnostic_copy import (
-        ADMIN_DIAGNOSTIC_LABEL,
-        diagnostic_text,
-        plain_lines,
-        render_diagnostic_copy,
-    )
-
     _render_stop_chrome()
     st.error(NO_GATE_NOTICE, icon=":material/gpp_bad:")
-    render_contact_caption(cfg.access.contact)
-    reference = reference_line(NO_GATE_REFERENCE)
-    st.caption(reference)
-    if _no_gate_diagnostic_visible():
-        lines = no_gate_diagnostic_lines(cfg)
-        with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=NO_GATE_DIAGNOSTIC_KEY):
-            text = diagnostic_text(NO_GATE_DIAGNOSTIC_TITLE, [reference], plain_lines(lines))
-            render_diagnostic_copy(text, key=NO_GATE_COPY_KEY)
-            for line in lines:
-                st.caption(line)
+    fold = AdminFold(
+        NO_GATE_DIAGNOSTIC_TITLE,
+        NO_GATE_DIAGNOSTIC_KEY,
+        NO_GATE_COPY_KEY,
+        notes=tuple(no_gate_diagnostic_lines(cfg)),
+    )
+    render_stop_footer(NO_GATE_REFERENCE, access_contact=cfg.access.contact, fold=fold)
     st.stop()
-
-
-def _no_gate_diagnostic_visible() -> bool:
-    """문지기 없이 뜬 앱 판의 접힌 진단을 세우나 — 관리자 몫(`admin_view.admin_notes_visible` —
-    관리자, 또는 통합인증이 켜짐이 아니고 운영 서버가 아닌 회차의 누구나)일 때만. 이 판이 마지막
-    자리라 판정이 무엇을 내도 닫힌 쪽(진단 없음)으로 물러선다.
-
-    `admin_view` 는 이 모듈을 부르므로 여기서 불러온다(순환 import).
-    """
-    try:
-        from capa_simulation.components.admin_view import admin_notes_visible
-
-        return admin_notes_visible()
-    except Exception:
-        return False
 
 
 def signed_out_notice(cfg: SsoConfig, problem: IdentityProblem) -> str:
@@ -260,13 +244,21 @@ def signed_out_notice(cfg: SsoConfig, problem: IdentityProblem) -> str:
     return _PROBLEM_NOTICES[problem]
 
 
+def signed_out_reference(cfg: SsoConfig, problem: IdentityProblem) -> str:
+    """로그인 끝남 멈춤의 참고 줄 사유 낱말 — 명단 밖이어도 S3 명단을 아직 못 읽은 동안이면 거절
+    화면과 같은 `list_unread` 다(`signed_out_notice` 와 같은 가름)."""
+    if problem is IdentityProblem.DENIED and access_store.is_unread(cfg):
+        return LIST_UNREAD
+    return _PROBLEM_REFERENCES[problem]
+
+
 def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
-    """로그인 끝남 멈춤 — 경고 한 줄 · 주 단추 · 문의 캡션(앱 안 멈춤 판 `stop_panel`).
+    """로그인 끝남 멈춤 — 앱 안 멈춤 판(`stop_panel`): 경고 한 줄 · 주 단추 · 문의 줄 · 참고 줄.
 
     단추는 까닭으로 가른다(「다시 로그인」 띠와 같은 낱말 — `gate.ended_reason`): 명단에서 빠짐은
     「접속 권한 신청」, 명단 못 읽음은 끊긴 구름 아이콘 + 「다시 로그인」, 그 밖은 「다시 로그인」.
     셋 다 같은 로그인 경로다. 사이드바 카드가 서지 않아 문의처(문의 메일 · 접속 요청 창구 글)는 단추
-    아래 캡션으로 싣는다.
+    아래 줄로 싣는다. 접힌 진단은 없다 — 이 회차에는 검증된 신원이 없어 관리자 몫이 서지 않는다.
     """
     _render_stop_chrome()
     reason = ended_reason(problem, cfg)
@@ -276,18 +268,19 @@ def _stop_signed_out(cfg: SsoConfig, problem: IdentityProblem) -> NoReturn:
     # 규칙 UI-CON-02). 같은 로그인 경로라 통합인증을 거쳐 콜백의 거절 화면으로 간다.
     label = REGISTER_LABEL if reason == names.REASON_DENIED else LOGIN_AGAIN_LABEL
     st.markdown(primary_link(login_url(cfg), label), unsafe_allow_html=True)
-    render_contact_caption(cfg.access.contact)
+    render_stop_footer(signed_out_reference(cfg, problem), access_contact=cfg.access.contact)
     st.stop()
 
 
 def _stop_account_changed(cfg: SsoConfig, identity: Identity) -> NoReturn:
     """계정 바뀜 멈춤 — 새 계정 이름 + 주 단추 「새로고침」(같은 탭 새 문서 — 새 세션이 새 계정으로
-    선다. `st.rerun` 은 같은 세션이라 앞 계정의 세션 상태가 남는다) + 되돌릴 수 없는 결과 풍선."""
+    선다. `st.rerun` 은 같은 세션이라 앞 계정의 세션 상태가 남는다) + 되돌릴 수 없는 결과 풍선 ·
+    문의 줄 · 참고 줄(앱 안 멈춤 판 `stop_panel`)."""
     _render_stop_chrome()
     st.warning(account_changed_notice(identity.display_name), icon=":material/switch_account:")
     refresh = public_link(cfg, return_path(cfg))
     st.markdown(primary_link(refresh, REFRESH_LABEL, title=REFRESH_TIP), unsafe_allow_html=True)
-    render_contact_caption(cfg.access.contact)
+    render_stop_footer(ACCOUNT_CHANGED_REFERENCE, access_contact=cfg.access.contact)
     st.stop()
 
 

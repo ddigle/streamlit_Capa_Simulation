@@ -27,7 +27,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.tokens import issue_session
-from capa_simulation.components import boot_stop, sso_identity
+from capa_simulation.components import admin_view, boot_stop, sso_identity, stop_panel
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 from capa_simulation.page_bootstrap import ADMIN_TAIL, bootstrap_error_message, screen_error_short
 from capa_simulation.persistence._migration_core import (
@@ -272,7 +272,7 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
     assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
     assert app.error[0].icon == ":material/database_off:"
     [retry] = app.button
-    assert (retry.label, retry.key) == (boot_stop.RETRY_LABEL, boot_stop.RETRY_KEY)
+    assert (retry.label, retry.key) == (stop_panel.RETRY_LABEL, boot_stop.RETRY_KEY)
     captions = [str(item.value) for item in app.caption]
     assert captions[0] == "문의 help@example.com"
     assert re.fullmatch(
@@ -336,7 +336,7 @@ def test_someone_outside_the_admin_audience_sees_only_the_kind_name(
     for secret in ("PID", "424242", SECRET_PATH, "Conflicting lock", "DB 도구", "IO Error"):
         assert secret not in shown, secret
     assert any(str(item.value).endswith(" · IOException") for item in app.caption)
-    assert [item.label for item in app.button] == [boot_stop.RETRY_LABEL]
+    assert [item.label for item in app.button] == [stop_panel.RETRY_LABEL]
 
 
 def test_the_admin_of_a_signed_in_server_gets_the_details_fold(
@@ -359,7 +359,7 @@ def test_a_failing_admin_check_falls_back_to_no_details(monkeypatch: pytest.Monk
     def broken() -> bool:
         raise RuntimeError("판정 실패")
 
-    monkeypatch.setattr(boot_stop, "admin_notes_visible", broken)
+    monkeypatch.setattr(admin_view, "admin_notes_visible", broken)
 
     app = _run("lock", monkeypatch)
 

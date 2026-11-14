@@ -3,15 +3,14 @@
 """앱 시작 실패 판(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p1-boot).
 
 `app.py` 의 공식 시나리오 부트스트랩이 실패하면(DB 잠김 · DB 판 올리기 실패 · DB 열기 · 쓰기 실패 ·
-그 밖) 사이드바 · 앱 정보 카드 · 알림 칸이 서지 못한다. 그 자리에 앱 안 멈춤 판(`stop_panel`)을
-그린다 — 경고 한 줄 · 주 단추 「다시 시도」 · 문의 캡션(사이드바 카드가 없어 여기에) · 참고 「사유 ·
-시각 · 오류 종류」 · 접힌 「관리자용 진단」(관리자 몫에만).
+그 밖) 사이드바 · 앱 정보 카드 · 알림 칸이 서지 못한다. 그 자리에 앱 안 멈춤 판(`stop_panel` 의 한
+꼴)을 그린다 — 경고 한 줄 · 주 단추 「다시 시도」 · 문의 줄(사이드바 카드가 없어 여기에) · 참고
+「사유 · 시각 · 오류 종류」 · 접힌 「관리자용 진단」(관리자 몫에만).
 
 - 경고 한 줄은 사용자가 할 일이 보이는 쉬운 말이다. 프로세스 번호 · 서버 파일 경로 · 개발 PC 조치
   (DB 도구를 닫으라 등) · 원문은 접힌 진단 안으로 옮긴다(복사 단추 — UI-NTF-10). 접힌 진단은 관리자
-  몫(`admin_view.admin_notes_visible` — 관리자, 또는 운영 아닌 꺼진 서버의 누구나)에만 선다 — 접어도
-  누구나 펼치므로 접힘으로 가리지 않는다. 다른 사람에게는 참고 줄 끝의 오류 종류 이름만이다(보드
-  d12 (가) — 문의할 때 쓸 이름). 판정이 무엇을 내도 닫힌 쪽(진단 없음)으로 물러선다 — 마지막 자리다.
+  몫(`stop_panel.admin_fold_visible` — 관리자, 또는 운영 아닌 꺼진 서버의 누구나)에만 선다. 다른
+  사람에게는 참고 줄 끝의 오류 종류 이름만이다(보드 d12 (가) — 문의할 때 쓸 이름).
 - 갈래(`classify_boot_failure`): 잠김 → 「지금은 데이터를 열 수 없습니다」 + 「다시 시도」. 다른
   프로세스가 쥔 잠김은 사람이 고칠 수 없는 원인이라 경고 끝이 「— 관리자에게 알려 주세요」 다 — 뒤
   회차의 같은 잠김(`page_bootstrap.screen_error_short` 의 `ADMIN_TAIL`, 카드 p1-no-revision)과 같은
@@ -42,14 +41,7 @@ import duckdb
 import streamlit as st
 
 from capa_simulation import alerts
-from capa_simulation.components.admin_view import admin_notes_visible
-from capa_simulation.components.diagnostic_copy import (
-    ADMIN_DIAGNOSTIC_LABEL,
-    diagnostic_text,
-    render_diagnostic_copy,
-)
-from capa_simulation.components.literal_markdown import literal_markdown
-from capa_simulation.components.stop_panel import reference_line, render_contact_caption
+from capa_simulation.components.stop_panel import RETRY_LABEL, AdminFold, render_stop_footer
 from capa_simulation.page_bootstrap import ADMIN_TAIL, bootstrap_error_message
 from capa_simulation.persistence._migration_core import MigrationFailed
 from capa_simulation.persistence._sql_helpers import is_own_process_lock, lock_holder_pid
@@ -62,7 +54,6 @@ LOCKED_LINE: Final = "지금은 데이터를 열 수 없습니다"
 # 다른 프로세스가 쥔 잠김 — 뒤 회차의 DB 실패 알림 짧은 글과 같은 꼬리.
 HELD_LINE: Final = f"{LOCKED_LINE}{ADMIN_TAIL}"
 UPDATE_LINE: Final = "앱 업데이트를 마치지 못했습니다 — 관리자가 고칠 때까지 열 수 없습니다"
-RETRY_LABEL: Final = "다시 시도"
 RETRY_KEY: Final = "boot_stop_retry"
 DIAGNOSTIC_KEY: Final = "boot_stop_diagnostic"
 DIAGNOSTIC_TITLE: Final = "앱 시작 실패 진단"
@@ -152,30 +143,17 @@ def boot_marker_html(failure: BootFailure) -> str:
 def render_boot_stop(exc: BaseException) -> None:
     """앱 시작 실패 판을 그린다 — `app.py` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()` 한다."""
     failure = classify_boot_failure(exc)
-    head = reference_line(failure.code)
     kind = kind_name(exc)
-    reference = f"{head} · {kind}"
     # 운영 서버의 서버 기록에는 갈래와 종류 이름만 — 원문은 관리자 몫의 접힌 진단에 있다.
     _LOGGER.warning("앱 시작 실패 %s (%s)", failure.code, kind)
     st.html(boot_marker_html(failure))
     st.error(failure.line, icon=":material/database_off:")
     if failure.retry:
         st.button(RETRY_LABEL, key=RETRY_KEY, type="primary")
-    render_contact_caption()
-    st.caption(f"{head} · {literal_markdown(kind)}")
-    if not _diagnostic_visible():
-        return
-    blocks = ([reference], [alerts.plain_text(bootstrap_error_message(exc))], [original_line(exc)])
-    with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=DIAGNOSTIC_KEY):
-        render_diagnostic_copy(diagnostic_text(DIAGNOSTIC_TITLE, *blocks), key=COPY_KEY)
-        # 진단 글은 글자 그대로(평문 칸) — 조치 문장 · 파일 경로 · 원문을 자리 글로 늘어놓지 않는다.
-        st.code("\n\n".join("\n".join(block) for block in blocks), language=None, wrap_lines=True)
-
-
-def _diagnostic_visible() -> bool:
-    """접힌 진단을 세우나 — 관리자 몫(`admin_notes_visible`)일 때만. 이 판이 마지막 자리라 판정이
-    무엇을 내도 닫힌 쪽으로 물러선다."""
-    try:
-        return admin_notes_visible()
-    except Exception:
-        return False
+    fold = AdminFold(
+        DIAGNOSTIC_TITLE,
+        DIAGNOSTIC_KEY,
+        COPY_KEY,
+        blocks=((alerts.plain_text(bootstrap_error_message(exc)),), (original_line(exc),)),
+    )
+    render_stop_footer(failure.code, kind=kind, fold=fold)
