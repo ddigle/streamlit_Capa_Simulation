@@ -29,6 +29,7 @@ from streamlit.testing.v1 import AppTest
 from capa_simulation import alerts
 from capa_simulation.auth import access_store, names, runtime
 from capa_simulation.components import sso_status
+from capa_simulation.components.literal_markdown import literal_markdown
 
 SCRIPT = """
 from capa_simulation.components.sso_status import render_sso_status
@@ -415,6 +416,64 @@ def test_with_the_audit_log_on_the_status_keeps_the_pre_login_failure_table() ->
     assert len([c for c in captions if c.startswith("명단 밖 로그인")]) == 1
     copied = sso_status.status_text("통합인증 점검", cfg, now=dt.datetime.now(dt.timezone.utc))
     assert "최근 사건(새것 먼저)" in copied
+
+
+def _boot_failure_captions(app: AppTest) -> list[str]:
+    return [
+        str(c.value) for c in app.caption if str(c.value).startswith(sso_status.BOOT_FAILURE_LABEL)
+    ]
+
+
+def test_with_the_audit_log_on_the_status_still_shows_the_boot_failure_line() -> None:
+    """감사 기록이 켜진 서버(통합인증 켜짐 — C-DEP)도 펼침에 앱 시작 실패 줄을 늘 싣는다 — 감사
+    대응표 밖이라 「접속 · 작업 기록」 탭에 없고, 사람이 불러 준 판의 참고 줄(「참고 db_locked ·
+    <UTC 분>」)과 짝을 맞추는 자리다(보드 boot-record). 줄은 고리의 `boot_fail` 마다 하나(새것
+    먼저)이고 시각은 참고 줄과 같은 UTC 분이다. 최근 사건 표의 상한(20)보다 많은 사건 뒤에도 남는다.
+    실패가 없으면 줄이 없다."""
+    from capa_simulation.audit import recorder
+    from capa_simulation.components import stop_panel
+
+    use_config()
+    runtime.mark_gate_installed()
+    recorder.start(env="cdep", version="test", inst="b0b0b0b0b0b0")
+    assert _boot_failure_captions(AppTest.from_string(SCRIPT).run()) == []
+
+    assert runtime.note_boot_failure("db_locked", "IOException")
+    for index in range(sso_status.RECENT_EVENT_LIMIT + 5):
+        runtime.record_event("login_ok", loginid=f"dev.user{index}", hours="12", jti="abcdefgh")
+    assert runtime.note_boot_failure("migration_failed", "MigrationChanged")
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    boots = [item for item in runtime.recent_events() if item.event == runtime.BOOT_FAIL_EVENT]
+    expected = []
+    for item in boots:
+        code, kind = item.value("reason"), item.value("kind")
+        # 시각은 판의 참고 줄 끝과 같은 글자다.
+        moment = stop_panel.reference_line(code, now=item.at).split(" · ", 1)[1]
+        expected.append(
+            f"{sso_status.BOOT_FAILURE_LABEL} · {literal_markdown(code)} · {kind} · {moment}"
+        )
+    assert [line.split(" · ")[1] for line in expected] == ["migration\\_failed", "db\\_locked"]
+    assert _boot_failure_captions(app) == ["  \n".join(expected)]
+    # 사람 단위 사건 표는 그대로 그리지 않는다(최근 사건 표 없음).
+    assert not any(str(c.value).startswith("최근 사건") for c in app.caption)
+
+
+def test_without_the_audit_log_the_boot_failure_stays_in_the_recent_event_table() -> None:
+    """감사가 꺼진 서버는 최근 사건 표가 `boot_fail` 줄을 싣는다 — 같은 펼침에 줄을 한 번 더 그리지
+    않는다(UI-TXT-07)."""
+    use_config()
+    runtime.mark_gate_installed()
+    assert runtime.note_boot_failure("db_locked", "IOException")
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    assert _boot_failure_captions(app) == []
+    events = app.dataframe[1].value
+    assert runtime.BOOT_FAIL_EVENT in events["사건"].tolist()
 
 
 def test_an_unknown_list_file_reads_as_an_unknown_format() -> None:

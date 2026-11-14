@@ -86,6 +86,8 @@ CERT_WARNING_DAYS = 30
 CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S"
 # 「새 등록」 알림(`AD-19`)이 세는 기간(일).
 NEW_REGISTRATION_DAYS = 30
+# 앱 시작 실패 줄의 머리 낱말(`boot_failure_line`).
+BOOT_FAILURE_LABEL = "앱 시작 실패"
 
 # 비밀값 줄의 까닭 — 값은 싣지 않고 검사를 지났다는 사실만. 사람이 고른 문장인지는 가리지 못한다.
 SECRET_CHECKS_PASSED = "길이 · 글자 가짓수 · 자리표 · 되풀이 · 차례 검사 통과(무작위 값인지는 모름)"
@@ -429,6 +431,32 @@ def recent_event_table(limit: int = RECENT_EVENT_LIMIT, *, anonymous: bool = Fal
     return pd.DataFrame(rows, columns=["시각", "사건", "사유 코드", "계정"])
 
 
+def _utc_minute(at: int) -> str:
+    """앱 시작 실패 판의 참고 줄과 같은 시각 꼴 — `YYYY-MM-DD HH:MM UTC`
+    (`stop_panel.reference_line`)."""
+    return datetime.fromtimestamp(at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") + " UTC"
+
+
+def boot_failure_line() -> str | None:
+    """앱 시작 실패 줄(새것 먼저, 고리의 `boot_fail` 마다 한 줄) — 「앱 시작 실패 · <갈래> · <오류
+    종류> · <처음 시각>」. 시각은 판의 참고 줄과 같은 UTC 분이다 — 같은 갈래가 이어지면 처음 한
+    번만 남는다(`runtime.note_boot_failure`). 고리 전체(50줄)에서 고르므로 최근 사건 표의 상한에
+    밀리지 않는다. 없으면 `None`."""
+    lines = [
+        " · ".join(
+            (
+                BOOT_FAILURE_LABEL,
+                literal_markdown(event.value("reason")),
+                literal_markdown(event.value("kind")),
+                _utc_minute(event.at),
+            )
+        )
+        for event in runtime.recent_events(runtime.MAX_EVENTS, anonymous=False)
+        if event.event == runtime.BOOT_FAIL_EVENT
+    ]
+    return "  \n".join(lines) if lines else None
+
+
 def denied_account_line() -> str | None:
     """명단 밖 로그인 누계 한 줄(기동 뒤 — 재시작하면 0). 아무도 막히지 않았으면 `None`."""
     total = runtime.denied_total()
@@ -756,6 +784,13 @@ def render_sso_status() -> None:
             else:
                 st.caption("최근 사건(새것 먼저)")
                 st.dataframe(events, hide_index=True, width="stretch")
+        else:
+            # 앱 시작 실패 줄은 감사 기록이 켜져도 늘 싣는다 — 감사 대응표 밖이라 「접속 · 작업
+            # 기록」 탭에 없고, 판의 참고 줄과 짝을 맞추는 자리다(보드 boot-record). 감사가 꺼진
+            # 서버는 위 최근 사건 표가 같은 줄을 싣는다.
+            boot = boot_failure_line()
+            if boot is not None:
+                st.caption(boot)
         denied = denied_account_line()
         if denied is not None:
             st.caption(denied)

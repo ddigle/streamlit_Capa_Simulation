@@ -433,7 +433,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     켜짐이면 그 아래 「로그인 시작 · 돌아옴」 누계(`runtime.login_flow_counts` — 시작은 브라우저 문서 탐색을 IdP 로 보낸 수(`web.browser_navigation`), 돌아옴은 그 로그인이 검증한 상태 쿠키와 처음 온 콜백(실패 · 거절 · IdP 오류 포함, 꼴이 틀린 POST · 다시 보냄은 빼고), 돌아옴이 시작보다 훨씬
     적으면 ADFS 화면에서 멈춘 것 — 풍선 `LOGIN_FLOW_HELP`)와 「로그인 갱신」 누계(`runtime.refresh_counts` — 다시 발급 · 건너뜀 · 로그인 없음 · 출처·머리 거절 · 꼴 거절,
     재시작하면 0)를 한 줄씩 보인다(둘 다 사건 고리에 적지 않는다). 접속 명단은 사실 줄에 개수만(`access_line` — 관리자 · 일반 · 읽지 못함 — 등급 이름은 「접속 명단」 표와 같다), 그 아래 「S3 명단」 줄(`access_s3_line` — 꺼짐 · 정상 · 실패와 까닭 분류 · HTTP 상태 · 명단 n · 버전 · 쓰기 칸, 있으면 `등급을 일반으로 읽음 n` · `스스로 등록 실패 n`, 키 · 주소 · 값 없음이라 리뷰 압축본에 옮길 수 있다), 그 아래 마지막 로그인의 클레임 이름(값 없음,
-    `runtime.last_login_claims` — 그룹 클레임이 오는지 보는 길)을 싣는다. 시험은 `tests/test_sso_status.py` · `tests/test_sso_access.py`.
+    `runtime.last_login_claims` — 그룹 클레임이 오는지 보는 길)을 싣는다. 감사 기록이 켜진 서버는 최근 사건 표 대신 앱 시작 실패 줄(`boot_failure_line` — 「앱 시작 실패 · <갈래> · <오류 종류> · <처음 시각>」, 고리 전체(50줄)의 `boot_fail` 마다 한 줄 · 시각은 판의 참고 줄과 같은 UTC 분)을 늘 싣는다 — 감사 대응표 밖이라 「접속 · 작업 기록」 탭에 없다(보드 boot-record). 감사가 꺼진 서버는 최근 사건 표가 같은 줄을 싣는다. 시험은 `tests/test_sso_status.py` · `tests/test_sso_access.py`.
   - `scripts/s3_mock_store.py` — 개발 · 시험용 가짜 S3(서명을 받은 요청 그대로 다시 지어 검증 · 메모리만 · 루프백만 · env 파일이 작업 트리 안이면 거절). S3 명단 시험과 `docs/sso_setup.md` 8장이 쓴다.
   - `scripts/sso_mock_idp.py` — 개발 · 시험용 가짜 IdP(실행 때 RSA 키를 메모리에만 만든다, `APP_ENV` 가 운영이면 · 루프백이 아닌
     `--host` 면 · env 파일이 작업 트리 안이면 거절). 실제 ADFS 없이 로컬 · 사내 WebIDE 에서 로그인 흐름을 끝까지 돌린다. `--app-url` 이 루프백이 아니면 env 파일에 `--loginid` 를 관리자 목록으로 적는다(접속 명단이 켜지므로).
