@@ -24,6 +24,8 @@
 스크립트가 없다(CSP `default-src 'none'`) — 마크는 인라인 SVG, 서식은 인라인 `<style>` 이다.
 밝은 · 어두운 팔레트(`design/tokens`)를 함께 싣고 `prefers-color-scheme` 로 고른다
 (UI-ACC-01). 좁은 창은 양옆 16px(UI-ACC-02) — 표는 칸 안에서 줄을 바꿔 가로로 넘치지 않는다.
+글은 띄어쓰기에서만 줄을 바꿔 한국어 낱말을 가운데서 가르지 않고(`word-break: keep-all`), 띄어쓰기
+없는 긴 메일 · 주소만 아무 데서나 접는다(`overflow-wrap: anywhere`).
 사람이 읽는 시각(「○시 ○분」)은 한국 시각(KST — +09:00 고정, 일광 절약 시간 없음 — 감사 기록
 화면과 같은 기준)이고, 관리자가 사건과 맞추는 바닥 참고 줄은 UTC 다. 표준 라이브러리와 토큰
 팔레트만 쓴다 —
@@ -82,7 +84,7 @@ _PALETTE_ROLES: Final = (
 )
 _FRAME_CSS: Final = """
 body { margin: 0; padding: 0 16px; background: var(--bg); color: var(--fg); line-height: 1.6;
-  font-family: var(--font); }
+  font-family: var(--font); word-break: keep-all; overflow-wrap: anywhere; }
 .bar { height: 4px; background: var(--accent); margin: 0 -16px; }
 main { max-width: 640px; margin: 32px auto; padding: 24px 28px; background: var(--card);
   border: 1px solid var(--line); border-radius: 12px; }

@@ -507,13 +507,15 @@ def band_styles(mode: str) -> tuple[str, str]:
     ink = tokens.palette_value(mode, "ACCENT_TEXT")
     shade = tokens.palette_value(mode, "NAV_SHADOW")
     # 양옆 12px 안에서 내용 폭으로 서고 가운데 놓인다 — `left:50%` 로 밀면 내용 맞춤 폭의 상한이
-    # 남은 절반이 되어 좁은 창에서 띠가 창의 절반 폭으로 접힌다.
+    # 남은 절반이 되어 좁은 창에서 띠가 창의 절반 폭으로 접힌다. 글은 띄어쓰기에서만 줄을 바꿔
+    # 한국어 낱말을 가운데서 가르지 않고, 띄어쓰기 없는 긴 글만 아무 데서나 접는다(UI-ACC-02).
     box_style = (
         "position:fixed;top:12px;left:12px;right:12px;margin-inline:auto;width:fit-content;"
         "z-index:2147483647;"
         "max-width:min(720px,calc(100vw - 24px));box-sizing:border-box;padding:12px 16px;"
         f"border-radius:8px;background:{fill};color:{ink};font-family:{tokens.FONT_FAMILY};"
         f"font-size:14px;line-height:1.5;box-shadow:0 6px 24px {shade};"
+        "word-break:keep-all;overflow-wrap:anywhere;"
     )
     link_style = (
         f"margin-left:10px;color:{ink};font-weight:700;text-decoration:underline;"

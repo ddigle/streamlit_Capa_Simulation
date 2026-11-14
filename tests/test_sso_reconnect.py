@@ -20,7 +20,7 @@ from asgi_driver import http
 from js_runner import run_js_json
 from sso_support import LOGINID, PUBLIC_URL, use_config
 
-from capa_simulation.auth import names
+from capa_simulation.auth import names, page_frame
 from capa_simulation.auth.gate import SsoGate
 from capa_simulation.auth.identity import Identity
 from capa_simulation.auth.web import CONFIG_TEXT, CONFIG_TITLE, REGISTER_LABEL
@@ -159,6 +159,25 @@ def test_the_band_carries_both_palettes_and_picks_the_app_theme_when_it_stands()
     assert 'capaTheme.resolve(parentWindow).choice === "Dark"' in script
     assert "box.style.cssText = isDark ?" in script
     assert "link.style.cssText = isDark ?" in script
+
+
+def test_bands_and_out_of_app_pages_break_only_between_words_in_a_narrow_window() -> None:
+    """좁은 창(390)에서 띠(로그인 · 재시작 · 막힘 — 한 서식)와 앱 밖 틀의 글이 한국어 낱말을
+    「고치는 중입니 / 다」 · 「다시 로그 / 인」 처럼 가운데서 가르지 않는다. 띄어쓰기에서만 줄을
+    바꾸고, 띄어쓰기 없는 긴 메일 · 주소만 아무 데서나 접어 가로로 넘치지 않는다(UI-ACC-02)."""
+    page = page_frame.render(
+        page_frame.Frame(title="t", chip=None, lead=(), primary=page_frame.Link("a", "/")), now=0
+    )
+    css = page.split("<style>", 1)[1].split("</style>", 1)[0]
+    body = re.search(r"(?m)^body \{([^}]*)\}", css)
+
+    assert body is not None
+    assert "word-break: keep-all;" in body.group(1), "본문 글 전체가 물려받는다"
+    assert "overflow-wrap: anywhere;" in body.group(1), "긴 메일 · 주소가 넘치지 않게"
+    for mode in ("light", "dark"):
+        box, _ = band_styles(mode)
+        assert "word-break:keep-all;overflow-wrap:anywhere;" in box
+        assert json.dumps(box, ensure_ascii=False) in restart_script()
 
 
 def test_script_text_cannot_break_out_of_its_script_tag() -> None:
