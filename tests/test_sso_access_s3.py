@@ -26,6 +26,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1268,7 +1269,14 @@ def test_the_callback_reads_again_just_before_denying(mock_s3: tuple[MockStore, 
     )
 
 
-def test_the_retry_runs_at_most_once_a_minute(mock_s3: tuple[MockStore, str]) -> None:
+def test_the_retry_runs_at_most_once_a_minute(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """59초 되감기는 다시 가지 않고 60초면 한 번 더 간다. 접속 판정의 시계(`access_store`)만
+    멈춘다 — 실제 시계면 두 로그인 사이에 정수 초 경계를 넘어 59초가 60초로 읽힐 수 있다. 서명 ·
+    세션 시각은 실제 시계 그대로다."""
+    frozen = int(time.time())
+    monkeypatch.setattr(access_store, "time", SimpleNamespace(time=lambda: frozen))
     store, endpoint = mock_s3
     store.force["GET"] = (503, "SlowDown")
     cfg = s3_config(store, endpoint)
@@ -1812,6 +1820,7 @@ render_app_credits()
 """
 PAGE_SCRIPT = """
 from pathlib import Path
+from types import SimpleNamespace
 
 import capa_simulation.settings as settings
 
