@@ -110,6 +110,16 @@ def _texts(app: AppTest) -> list[str]:
     return [str(element.value) for element in app.text]
 
 
+_REFERENCE = re.compile(r"참고 (?P<code>\S+) · \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC")
+
+
+def _reference_code(app: AppTest) -> str:
+    """멈춤 판 맨 아래 캡션이 참고 줄이고 그 사유 낱말을 돌려준다."""
+    found = _REFERENCE.fullmatch(str(app.caption[-1].value))
+    assert found is not None, app.caption[-1].value
+    return found["code"]
+
+
 def _caption_values(app: AppTest) -> list[str]:
     return [str(caption.value) for caption in app.caption]
 
@@ -228,12 +238,12 @@ def test_the_card_counts_down_to_the_renewed_end_of_an_open_tab() -> None:
 
 
 @pytest.mark.parametrize(
-    ("make_cookie", "notice"),
+    ("make_cookie", "notice", "reference"),
     [
-        ("expired", sso_identity.EXPIRED_NOTICE),
-        ("revoked", sso_identity.REVOKED_NOTICE),
-        ("missing", sso_identity.MISSING_NOTICE),
-        ("forged", sso_identity.MISSING_NOTICE),
+        ("expired", sso_identity.EXPIRED_NOTICE, "sso_expired"),
+        ("revoked", sso_identity.REVOKED_NOTICE, "sso_revoked"),
+        ("missing", sso_identity.MISSING_NOTICE, "sso_missing"),
+        ("forged", sso_identity.MISSING_NOTICE, "sso_missing"),
     ],
 )
 def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
@@ -241,8 +251,11 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
     page_url: Callable[[str | None], None],
     make_cookie: str,
     notice: str,
+    reference: str,
 ) -> None:
-    """만료 · 다른 탭 로그아웃 · 쿠키 없음 · 위조는 멈춤 화면이다 — 입장 화면 · DB 에 안 닿는다."""
+    """만료 · 다른 탭 로그아웃 · 쿠키 없음 · 위조는 멈춤 화면이다 — 입장 화면 · DB 에 안 닿는다. 앱
+    안 멈춤 판의 한 꼴로 참고 줄 「참고 <사유 낱말> · <UTC 분>」 이 단추 아래 선다(쿠키 없음 ·
+    위조는 글이 같아 한 낱말). 이 회차에는 검증된 신원이 없어 접힌 진단은 없다."""
     cfg = use_config()
     runtime.mark_gate_installed()
     if make_cookie == "expired":
@@ -273,6 +286,8 @@ def test_a_session_without_a_valid_cookie_stops_with_a_login_again_link(
     assert "background:" in link and "role=" not in link
     assert web.REGISTER_LABEL not in link
     assert app.warning[0].icon == ":material/lock_clock:"
+    assert _reference_code(app) == reference
+    assert list(app.expander) == []
 
 
 def test_the_stop_panel_names_the_contact_under_its_button(
@@ -296,10 +311,13 @@ def test_the_stop_panel_names_the_contact_under_its_button(
     runtime.mark_gate_installed()
     mail_only = AppTest.from_string(SCRIPT).run()
 
-    assert _caption_values(bare) == []
-    assert _caption_values(window_only) == ["문의 데모 접속 창구 \\*내선\\* 0000"]
-    assert _caption_values(both) == ["문의 help@example.com · 데모 접속 창구 \\*내선\\* 0000"]
-    assert _caption_values(mail_only) == ["문의 help@example.com"]
+    # 문의 줄 뒤는 늘 참고 줄이다(앱 안 멈춤 판의 한 꼴).
+    for app in (bare, window_only, both, mail_only):
+        assert _reference_code(app) == "sso_missing"
+    assert _caption_values(bare)[:-1] == []
+    assert _caption_values(window_only)[:-1] == ["문의 데모 접속 창구 \\*내선\\* 0000"]
+    assert _caption_values(both)[:-1] == ["문의 help@example.com · 데모 접속 창구 \\*내선\\* 0000"]
+    assert _caption_values(mail_only)[:-1] == ["문의 help@example.com"]
 
 
 def test_a_dropped_account_is_offered_the_access_request(
@@ -321,6 +339,8 @@ def test_a_dropped_account_is_offered_the_access_request(
     href = link.split('href="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
     assert href.startswith(f"{PUBLIC_URL}{names.LOGIN_PATH}?next=")
     assert parse_qs(urlsplit(href).query)["next"] == ["/space_status"]
+    # 참고 줄의 사유 낱말은 거절 화면의 바닥 참고 줄과 같다.
+    assert _reference_code(app) == web.NOT_ON_LIST
 
 
 def _ended_session(cfg: SsoConfig) -> tuple[str, Identity, int]:
@@ -389,6 +409,7 @@ def test_a_new_account_in_the_same_session_stops(
     assert href == f"{PUBLIC_URL}/space_status?theme=dark"
     assert 'target="_self"' in link and sso_identity.REFRESH_LABEL in link
     assert f'title="{sso_identity.REFRESH_TIP}"' in link
+    assert _reference_code(app) == sso_identity.ACCOUNT_CHANGED_REFERENCE
     assert st_session_loginid(at) == "dev.user", "멈춘 세션은 앞 계정 표지를 바꾸지 않는다"
 
 

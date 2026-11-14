@@ -8,12 +8,14 @@ d12 (가)).
 `AttributeError` · `IndexError` 등)는 Streamlit 기본 오류 상자(형식 · 글 · traceback · 서버 경로)
 대신 그 화면 자리에 카드 하나로 선다 — 사이드바 · 머리 띠 · 탭 줄 · 다른 화면은 그대로다.
 
-- **카드** — 오류 상자 머리 한 줄 「이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수
-  있습니다」 + 값 줄 「참고 번호 <8자> · <오류 종류>」(운영 서버도 오류 종류 이름은 보인다 — d12
-  (가)). 관리자 몫(`admin_view.admin_notes_visible` — 운영 아닌 꺼진 서버는 누구에게나)에만 접힌
-  「관리자용 진단」 이 선다 — 첫 줄(200자) · 이 저장소 안 프레임(`<상대 경로>:<줄> in <함수>` —
-  절대 경로 · 설치 패키지 프레임 없음) · 복사 단추. C-DEP 에는 셸도 로그도 없어 관리자가 원문을
-  보는 자리가 이 접힘이다.
+- **카드** — 앱 안 멈춤 판의 한 꼴(`stop_panel` — 보드 stop-panels): 오류 상자 머리 한 줄 「이
+  화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 → 주 단추 「다시 시도」(회차 하나 —
+  누름이 화면을 다시 돌린다) → 문의 줄 → 참고 줄 「참고 <참고 번호 8자> · <UTC 분> · <오류 종류>」
+  (UTC 분은 실패를 적은 순간 — `AD-22` 의 시각과 같은 순간이다. 운영 서버도 오류 종류 이름은
+  보인다 — d12 (가)) → 관리자 몫에만 접힌 「관리자용 진단」
+  (`stop_panel.admin_fold_visible` — 운영 아닌 꺼진 서버는 누구에게나) — 화면 · 첫 줄(200자) · 이
+  저장소 안 프레임(`<상대 경로>:<줄> in <함수>` — 절대 경로 · 설치 패키지 프레임 없음) · 복사 단추.
+  C-DEP 에는 셸도 로그도 없어 관리자가 원문을 보는 자리가 이 접힘이다.
 - **멈춤으로 끝낸다** — 처리한 실패(카드 · 아래 프래그먼트 실패)는 `st.stop()` 으로 회차를
   끝낸다. 정상으로 돌아오면 Streamlit 이 그 회차를 끝까지 돈 회차로 보고, 이번에 그리지 못한
   위젯(오류 자리 아래의 편집 칸 · 입력 칸)의 미저장 값을 지운다. 멈춤은 그 값을 남기고
@@ -52,12 +54,7 @@ from streamlit.runtime.scriptrunner_utils.exceptions import ScriptControlExcepti
 from capa_simulation import alerts, page_failures, settings
 from capa_simulation.components.admin_view import admin_notes_visible
 from capa_simulation.components.container_start_check import start_check_alert_possible
-from capa_simulation.components.diagnostic_copy import (
-    ADMIN_DIAGNOSTIC_LABEL,
-    diagnostic_text,
-    render_diagnostic_copy,
-)
-from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.stop_panel import RETRY_LABEL, AdminFold, render_stop_footer
 from capa_simulation.page_failures import PageFailure
 
 # 카드 칸 key — 한 회차에 카드는 하나다(화면 하나). 화면 확인 스크립트가 이 칸을 오류로 센다.
@@ -66,6 +63,8 @@ COPY_KEY: Final = "page_failure"
 # 접힌 진단의 key — 이름이 글자 그대로가 아니라(공용 상수) 고정 key 를 단다(`test_popover_keys`).
 # 한 회차에 카드는 하나다.
 DIAGNOSTIC_KEY: Final = "page_failure_diagnostic"
+# 「다시 시도」 의 key — 한 회차에 카드는 하나다.
+RETRY_KEY: Final = "page_failure_retry"
 CARD_ICON: Final = ":material/error:"
 HEADLINE: Final = "이 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다"
 ALERT_CODE: Final = "AD-22"
@@ -101,12 +100,12 @@ def project_frames(exc: BaseException) -> tuple[str, ...]:
 
 
 def diagnostic_lines(failure: PageFailure, exc: BaseException) -> list[str]:
-    """「관리자용 진단」 의 평문 줄 — 화면 · 오류(종류: 첫 줄) · 참고 번호 · 위치."""
+    """「관리자용 진단」 의 평문 줄 — 화면 · 오류(종류: 첫 줄) · 위치. 참고 번호는 진단 맨 위 참고
+    줄(`stop_panel.render_stop_footer`)이 싣는다."""
     message = first_line(exc)
     lines = [
         f"화면 · {failure.page or failure.href or '-'}",
         f"오류 · {failure.kind}" + (f": {message}" if message else ""),
-        f"참고 번호 · {failure.ref} · {failure.at}",
     ]
     frames = project_frames(exc)
     if frames:
@@ -117,14 +116,14 @@ def diagnostic_lines(failure: PageFailure, exc: BaseException) -> list[str]:
 
 def render_page_failure(failure: PageFailure, exc: BaseException) -> None:
     """카드를 지금 자리에 그린다(모듈 설명)."""
+    fold = AdminFold(
+        HEADLINE, DIAGNOSTIC_KEY, COPY_KEY, blocks=(tuple(diagnostic_lines(failure, exc)),)
+    )
     with st.container(key=CARD_KEY):
         st.error(HEADLINE, icon=CARD_ICON)
-        st.caption(f"참고 번호 {failure.ref} · {literal_markdown(failure.kind)}")
-        if admin_notes_visible():
-            lines = diagnostic_lines(failure, exc)
-            with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=DIAGNOSTIC_KEY):
-                render_diagnostic_copy(diagnostic_text(HEADLINE, lines), key=COPY_KEY)
-                st.code("\n".join(lines), language=None)
+        st.button(RETRY_LABEL, key=RETRY_KEY, type="primary")
+        # 참고 줄의 시각은 실패를 적은 순간이다 — 그린 순간이 아니라 `AD-22` 와 같은 순간.
+        render_stop_footer(failure.ref, kind=failure.kind, fold=fold, now=failure.epoch)
 
 
 def _record(page: str, href: str, exc: BaseException) -> PageFailure:

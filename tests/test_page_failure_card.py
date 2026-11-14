@@ -5,14 +5,19 @@
 
 from __future__ import annotations
 
+import re
+import time
+from types import SimpleNamespace
+
 import pytest
 from alert_marks import active_state, states
 from streamlit.runtime.scriptrunner_utils.exceptions import StopException
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import alerts, page_failures
-from capa_simulation.components import page_failure_card
+from capa_simulation.components import admin_view, page_failure_card, stop_panel
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
+from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 pytestmark = pytest.mark.page_failure_card
 
@@ -30,10 +35,13 @@ def _crashing_page() -> None:
     st.write("감싸기 뒤 꼬리")
 
 
-def test_an_unhandled_error_becomes_a_card_with_a_reference_number() -> None:
+def test_an_unhandled_error_becomes_a_card_with_a_reference_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """처리 못 한 오류는 Streamlit 기본 오류 상자(경로 · traceback) 대신 그 화면 안 카드 하나다 —
-    머리 한 줄 · 참고 번호 · 오류 종류. 카드 뒤에는 `st.stop()` 으로 멈춰 감싸기 뒤 꼬리가 돌지
-    않는다(`app.py` 는 멈춤 길에서 회차 끝 일을 한다)."""
+    머리 한 줄 · 「다시 시도」 · 문의 줄 · 참고 번호 · 오류 종류. 카드 뒤에는 `st.stop()` 으로 멈춰
+    감싸기 뒤 꼬리가 돌지 않는다(`app.py` 는 멈춤 길에서 회차 끝 일을 한다)."""
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, "demo@example.com")
     app = AppTest.from_function(_crashing_page).run()
 
     assert not app.exception
@@ -48,8 +56,38 @@ def test_an_unhandled_error_becomes_a_card_with_a_reference_number() -> None:
         "AttributeError",
     )
     assert len(failure.ref) == 8 and failure.ref.upper() == failure.ref
-    (caption,) = [item for item in app.caption if "참고 번호" in str(item.value)]
-    assert caption.value == f"참고 번호 {failure.ref} · AttributeError"
+    # 앱 안 멈춤 판의 한 꼴(보드 stop-panels) — 주 단추 「다시 시도」 · 문의 줄 · 참고 줄
+    # 「참고 <참고 번호> · <UTC 분> · <오류 종류>」.
+    [retry] = app.button
+    assert (retry.label, retry.key) == (stop_panel.RETRY_LABEL, page_failure_card.RETRY_KEY)
+    captions = [str(item.value) for item in app.caption]
+    assert captions[0] == "문의 demo@example.com"
+    assert re.fullmatch(
+        rf"참고 {failure.ref} · \d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}} UTC · AttributeError",
+        captions[1],
+    )
+    assert len(captions) == 2
+
+
+def test_the_reference_line_carries_the_moment_the_failure_was_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """참고 줄의 UTC 분은 실패를 적은 순간이다 — 그린 순간이 아니다. 관리자 알림 `AD-22` 의 시각
+    (`at`, 서버 시각)과 같은 순간이라 사람이 불러 준 줄과 알림 전문이 한 순간을 가리킨다. 적은
+    시계만 한 해 앞으로 돌려 그린 시계(지금)와 갈라 놓는다."""
+    recorded = 1767323045.0  # 2026-01-02 03:04:05 UTC
+    clock = SimpleNamespace(time=lambda: recorded, strftime=time.strftime, localtime=time.localtime)
+    monkeypatch.setattr(page_failures, "time", clock)
+
+    app = AppTest.from_function(_crashing_page).run()
+
+    (failure,) = page_failures.recent_failures()
+    assert failure.epoch == recorded
+    assert failure.at == time.strftime("%H:%M:%S", time.localtime(recorded))
+    reference = f"참고 {failure.ref} · 2026-01-02 03:04 UTC · AttributeError"
+    assert reference in [str(item.value) for item in app.caption]
+    (box,) = [item for item in app.expander if item.label == ADMIN_DIAGNOSTIC_LABEL]
+    assert box.code[0].value.splitlines()[0] == reference
 
 
 def test_the_admin_diagnostic_carries_the_message_and_repository_frames() -> None:
@@ -59,6 +97,10 @@ def test_the_admin_diagnostic_carries_the_message_and_repository_frames() -> Non
 
     (box,) = [item for item in app.expander if item.label == ADMIN_DIAGNOSTIC_LABEL]
     (code,) = box.code
+    (failure,) = page_failures.recent_failures()
+    # 진단 맨 위는 판의 참고 줄이다 — 사람이 불러 준 줄과 관리자가 펼친 글이 같은 글로 시작한다.
+    assert code.value.startswith(f"참고 {failure.ref} · ")
+    assert code.value.splitlines()[0] == str(app.caption[-1].value)
     assert "오류 · AttributeError: DEMO 값 없음" in code.value
     # 감싸기 자신의 프레임(늘 같은 줄)과 저장소 밖 경로는 싣지 않는다.
     assert "page_failure_card.py" not in code.value
@@ -77,11 +119,58 @@ def test_frames_are_repository_relative_without_the_wrapper() -> None:
 
 def test_a_viewer_who_is_not_the_admin_sees_only_the_kind(monkeypatch: pytest.MonkeyPatch) -> None:
     """통합인증이 켜진 서버의 관리자가 아닌 사람은 오류 종류 이름 · 참고 번호만 본다(d12 (가))."""
-    monkeypatch.setattr(page_failure_card, "admin_notes_visible", lambda: False)
+    monkeypatch.setattr(admin_view, "admin_notes_visible", lambda: False)
 
     app = AppTest.from_function(_crashing_page).run()
 
     assert app.error and not [item for item in app.expander if item.label == ADMIN_DIAGNOSTIC_LABEL]
+    assert "DEMO 값 없음" not in "\n".join(str(item.value) for item in app.caption)
+
+
+def _once_crashing_page() -> None:
+    import streamlit as st
+
+    from capa_simulation.components.page_failure_card import run_core_page
+
+    def body() -> None:
+        runs = st.session_state.get("demo_runs", 0) + 1
+        st.session_state["demo_runs"] = runs
+        if runs == 1:
+            raise AttributeError("DEMO 처음만")
+        st.text("다시 그렸다")
+
+    run_core_page(body, page="공정 Capa 상세", href="process_capa_detail")
+
+
+def test_the_retry_button_runs_the_screen_again() -> None:
+    """주 단추 「다시 시도」 는 회차 하나다 — 누르면 그 화면을 다시 돌려 풀린 오류면 카드가
+    걷힌다."""
+    app = AppTest.from_function(_once_crashing_page).run()
+    assert [item.value for item in app.error] == [page_failure_card.HEADLINE]
+
+    app = app.button(key=page_failure_card.RETRY_KEY).click().run()
+
+    assert not app.exception
+    assert list(app.error) == []
+    assert [str(item.value) for item in app.text] == ["다시 그렸다"]
+
+
+def test_a_failing_admin_check_leaves_the_card_without_the_fold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """관리자 몫 판정이 예외를 내도 카드는 서고 접힌 진단만 없다 — 판이 마지막 자리다(앱 안 멈춤 판
+    셋이 같은 물러섬)."""
+
+    def broken() -> bool:
+        raise RuntimeError("판정 실패")
+
+    monkeypatch.setattr(admin_view, "admin_notes_visible", broken)
+
+    app = AppTest.from_function(_crashing_page).run()
+
+    assert not app.exception
+    assert [item.value for item in app.error] == [page_failure_card.HEADLINE]
+    assert list(app.expander) == []
     assert "DEMO 값 없음" not in "\n".join(str(item.value) for item in app.caption)
 
 

@@ -86,6 +86,8 @@ CERT_WARNING_DAYS = 30
 CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S"
 # 「새 등록」 알림(`AD-19`)이 세는 기간(일).
 NEW_REGISTRATION_DAYS = 30
+# 앱 시작 실패 줄의 머리 낱말(`boot_failure_line`).
+BOOT_FAILURE_LABEL = "앱 시작 실패"
 
 # 비밀값 줄의 까닭 — 값은 싣지 않고 검사를 지났다는 사실만. 사람이 고른 문장인지는 가리지 못한다.
 SECRET_CHECKS_PASSED = "길이 · 글자 가짓수 · 자리표 · 되풀이 · 차례 검사 통과(무작위 값인지는 모름)"
@@ -386,15 +388,18 @@ def _event_code(fields: dict[str, str]) -> str:
     만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
     로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다. 로그인
     실패(`login_fail`)는 진단 번호의 앞 글자 `diag` 를 「진단 …」 으로 붙인다 — 실패 화면 바닥 참고
-    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(감사 기록이 켜진 서버는 펼침에 표를
-    그리지 않아 「복사」 글 `status_text` 의 표에서).
+    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(로그인 전 실패 표는 펼침에 늘 있고, 서명이
+    맞은 뒤의 실패는 감사 기록이 켜진 서버면 「복사」 글 `status_text` 의 최근 사건 표에서).
     """
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
         if value and value != "-":
             end = fields.get("end", "")
+            # 앱 시작 실패(`boot_fail`)는 오류 종류 이름 — 판의 참고 줄 끝과 같은 값이다.
+            kind = fields.get("kind", "")
             diag = fields.get("diag", "")
-            tail = [part for part in (end, f"진단 {diag}" if diag else "") if part and part != "-"]
+            parts = (end, kind, f"진단 {diag}" if diag else "")
+            tail = [part for part in parts if part and part != "-"]
             return " · ".join((value, *tail))
     days = fields.get("days", "")
     return f"남은 날 {days}" if days else "-"
@@ -424,6 +429,32 @@ def recent_event_table(limit: int = RECENT_EVENT_LIMIT, *, anonymous: bool = Fal
             )
         )
     return pd.DataFrame(rows, columns=["시각", "사건", "사유 코드", "계정"])
+
+
+def _utc_minute(at: int) -> str:
+    """앱 시작 실패 판의 참고 줄과 같은 시각 꼴 — `YYYY-MM-DD HH:MM UTC`
+    (`stop_panel.reference_line`)."""
+    return datetime.fromtimestamp(at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M") + " UTC"
+
+
+def boot_failure_line() -> str | None:
+    """앱 시작 실패 줄(새것 먼저, 고리의 `boot_fail` 마다 한 줄) — 「앱 시작 실패 · <갈래> · <오류
+    종류> · <처음 시각>」. 시각은 판의 참고 줄과 같은 UTC 분이다 — 같은 갈래가 이어지면 처음 한
+    번만 남는다(`runtime.note_boot_failure`). 고리 전체(50줄)에서 고르므로 최근 사건 표의 상한에
+    밀리지 않는다. 없으면 `None`."""
+    lines = [
+        " · ".join(
+            (
+                BOOT_FAILURE_LABEL,
+                literal_markdown(event.value("reason")),
+                literal_markdown(event.value("kind")),
+                _utc_minute(event.at),
+            )
+        )
+        for event in runtime.recent_events(runtime.MAX_EVENTS, anonymous=False)
+        if event.event == runtime.BOOT_FAIL_EVENT
+    ]
+    return "  \n".join(lines) if lines else None
 
 
 def denied_account_line() -> str | None:
@@ -742,7 +773,9 @@ def render_sso_status() -> None:
             st.caption(last_claims_line())
         # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(관리자)이
         # 보인다 — 여기에는 누계 줄만 남기고 표는 그리지 않는다(같은 정보를 두 자리에 두지
-        # 않는다, UI-TXT-07). 리뷰용 「복사」 글(`status_text`)은 그대로 표까지 싣는다.
+        # 않는다, UI-TXT-07). 리뷰용 「복사」 글(`status_text`)은 그대로 표까지 싣는다. 로그인 전
+        # 실패 표는 늘 그린다 — 감사 줄에는 그 실패가 한 시간 건수뿐이라 겹치지 않고, 실패
+        # 화면 참고 줄의 진단 번호를 맞추는 자리다(보드 decided-login 5).
         tables = not audit_recorder.enabled()
         if tables:
             events = recent_event_table()
@@ -751,6 +784,13 @@ def render_sso_status() -> None:
             else:
                 st.caption("최근 사건(새것 먼저)")
                 st.dataframe(events, hide_index=True, width="stretch")
+        else:
+            # 앱 시작 실패 줄은 감사 기록이 켜져도 늘 싣는다 — 감사 대응표 밖이라 「접속 · 작업
+            # 기록」 탭에 없고, 판의 참고 줄과 짝을 맞추는 자리다(보드 boot-record). 감사가 꺼진
+            # 서버는 위 최근 사건 표가 같은 줄을 싣는다.
+            boot = boot_failure_line()
+            if boot is not None:
+                st.caption(boot)
         denied = denied_account_line()
         if denied is not None:
             st.caption(denied)
@@ -759,9 +799,8 @@ def render_sso_status() -> None:
         anonymous = anonymous_failure_line()
         if anonymous is not None:
             st.caption(anonymous, help=ANONYMOUS_HELP)
-            if tables:
-                st.dataframe(
-                    recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
-                    hide_index=True,
-                    width="stretch",
-                )
+            st.dataframe(
+                recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
+                hide_index=True,
+                width="stretch",
+            )

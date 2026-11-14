@@ -27,7 +27,7 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.tokens import issue_session
-from capa_simulation.components import boot_stop, sso_identity
+from capa_simulation.components import admin_view, boot_stop, sso_identity, stop_panel
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
 from capa_simulation.page_bootstrap import ADMIN_TAIL, bootstrap_error_message, screen_error_short
 from capa_simulation.persistence._migration_core import (
@@ -110,7 +110,9 @@ def test_failures_split_into_the_board_branches(
     make: Callable[[], BaseException], code: str, retry: bool
 ) -> None:
     """잠김(남 · 자기) → 판 올리기 실패 → 디스크 가득 → 권한 → 열 수 없음 → 그 밖. 판 올리기 실패만
-    「다시 시도」 가 없다(다시 해도 같다). 남이 쥔 잠김만 「— 관리자에게 알려 주세요」 로 끝난다."""
+    「다시 시도」 가 없다(다시 해도 같다). 자기 잠김(다시 하면 풀림) · 판 올리기 실패 밖은 모두 「—
+    관리자에게 알려 주세요」 로 끝난다 — 열기 · 쓰기 실패는 까닭을 괄호에 싣는다(보드 decided-login
+    7)."""
     error = make()
     failure = boot_stop.classify_boot_failure(error)
 
@@ -120,8 +122,44 @@ def test_failures_split_into_the_board_branches(
         assert failure.line == (boot_stop.LOCKED_LINE if own else boot_stop.HELD_LINE)
     elif code == boot_stop.MIGRATION_FAILED:
         assert failure.line == boot_stop.UPDATE_LINE
+    elif code == boot_stop.OTHER:
+        assert failure.line == boot_stop.HELD_LINE
     else:
-        assert failure.line == f"{boot_stop.LOCKED_LINE} — {boot_stop.IO_WORDS[code]}"
+        word = boot_stop.IO_WORDS[code]
+        assert failure.line == f"{boot_stop.LOCKED_LINE}({word}){ADMIN_TAIL}"
+
+
+@pytest.mark.parametrize(
+    ("code", "line"),
+    [
+        (
+            boot_stop.DISK_FULL,
+            "지금은 데이터를 열 수 없습니다(디스크가 가득 참) — 관리자에게 알려 주세요",
+        ),
+        (
+            boot_stop.PERMISSION,
+            "지금은 데이터를 열 수 없습니다(파일 권한) — 관리자에게 알려 주세요",
+        ),
+        (
+            boot_stop.CANNOT_OPEN,
+            "지금은 데이터를 열 수 없습니다(파일을 열 수 없음) — 관리자에게 알려 주세요",
+        ),
+        (boot_stop.OTHER, "지금은 데이터를 열 수 없습니다 — 관리자에게 알려 주세요"),
+    ],
+    ids=["disk-full", "permission", "cannot-open", "other"],
+)
+def test_an_io_failure_asks_for_the_admin_like_the_later_rounds(code: str, line: str) -> None:
+    """열기 · 쓰기 실패와 그 밖은 사람이 고칠 수 없다 — 경고가 「…(<까닭>) — 관리자에게 알려
+    주세요」 로 뒤 회차 DB 실패 알림의 짧은 글(「…(다른 프로그램이 엶) — 관리자에게 알려
+    주세요」)과 같은 꼴이고 「다시 시도」 는 그대로다(보드 decided-login 7)."""
+    failure = boot_stop._io_failure(code)
+
+    assert failure.line == line
+    assert failure.retry
+    later = screen_error_short(bootstrap_error_message(_lock(424242)))
+    assert later is not None
+    assert re.fullmatch(r".+\(.+\) — 관리자에게 알려 주세요", later)
+    assert later.endswith(ADMIN_TAIL) and failure.line.endswith(ADMIN_TAIL)
 
 
 @pytest.mark.parametrize("own", [False, True], ids=["held-by-another", "own-process"])
@@ -272,7 +310,7 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
     assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
     assert app.error[0].icon == ":material/database_off:"
     [retry] = app.button
-    assert (retry.label, retry.key) == (boot_stop.RETRY_LABEL, boot_stop.RETRY_KEY)
+    assert (retry.label, retry.key) == (stop_panel.RETRY_LABEL, boot_stop.RETRY_KEY)
     captions = [str(item.value) for item in app.caption]
     assert captions[0] == "문의 help@example.com"
     assert re.fullmatch(
@@ -336,7 +374,7 @@ def test_someone_outside_the_admin_audience_sees_only_the_kind_name(
     for secret in ("PID", "424242", SECRET_PATH, "Conflicting lock", "DB 도구", "IO Error"):
         assert secret not in shown, secret
     assert any(str(item.value).endswith(" · IOException") for item in app.caption)
-    assert [item.label for item in app.button] == [boot_stop.RETRY_LABEL]
+    assert [item.label for item in app.button] == [stop_panel.RETRY_LABEL]
 
 
 def test_the_admin_of_a_signed_in_server_gets_the_details_fold(
@@ -359,13 +397,67 @@ def test_a_failing_admin_check_falls_back_to_no_details(monkeypatch: pytest.Monk
     def broken() -> bool:
         raise RuntimeError("판정 실패")
 
-    monkeypatch.setattr(boot_stop, "admin_notes_visible", broken)
+    monkeypatch.setattr(admin_view, "admin_notes_visible", broken)
 
     app = _run("lock", monkeypatch)
 
     assert not list(app.exception), [item.message for item in app.exception]
     assert list(app.expander) == []
     assert "PID" not in _every_text(app)
+
+
+def _boot_events() -> list[tuple[str, str]]:
+    """최근 사건 고리의 앱 시작 실패 줄(새것 먼저) — (사유 코드, 오류 종류)."""
+    return [
+        (item.value("reason"), item.value("kind"))
+        for item in runtime.recent_events()
+        if item.event == runtime.BOOT_FAIL_EVENT
+    ]
+
+
+def test_a_boot_failure_is_left_once_in_the_recent_events_while_it_lasts() -> None:
+    """관리자가 참고 줄과 짝을 맞출 자리(보드 boot-record) — 앱 시작 실패를 통합인증 점검의 최근
+    사건 고리에 한 줄 남긴다. 같은 갈래가 이어지면 회차 · 「다시 시도」 · 다른 사람의 새 탭마다 쌓지
+    않고 처음 한 번만이다. 다른 갈래면 새 줄이다."""
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert not runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert runtime.note_boot_failure(boot_stop.MIGRATION_FAILED, "MigrationChanged")
+    assert not runtime.note_boot_failure(boot_stop.MIGRATION_FAILED, "MigrationChanged")
+
+    assert _boot_events() == [
+        (boot_stop.MIGRATION_FAILED, "MigrationChanged"),
+        (boot_stop.LOCKED, "IOException"),
+    ]
+
+
+def test_a_successful_bootstrap_ends_the_run_of_a_boot_failure() -> None:
+    """부트스트랩이 한 번 데이터를 열면(`note_boot_success`) 이어짐이 끊겨 같은 갈래가 다시 나면 새
+    줄이다 — 몇 시간 뒤의 같은 잠김이 앞 줄에 묻히지 않는다."""
+    runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    runtime.note_boot_success()
+    runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")] * 2
+
+
+def test_the_recent_event_table_shows_the_branch_and_the_kind() -> None:
+    """Admin 「통합인증 점검」 의 최근 사건 표 — 사건 `boot_fail` · 사유 코드 「<갈래> · <오류
+    종류>」 (판의 참고 줄과 같은 낱말). 새 알림은 띄우지 않는다 — 감사 대응표 밖이라 감사 줄도
+    없다."""
+    from capa_simulation.components import sso_status
+
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert not runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+    table = sso_status.recent_event_table()
+
+    assert table.to_dict("records")[0] | {"시각": "-"} == {
+        "시각": "-",
+        "사건": runtime.BOOT_FAIL_EVENT,
+        "사유 코드": "db_locked · IOException",
+        "계정": "-",
+    }
+    assert len(table) == 1
 
 
 def test_a_changed_migration_offers_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -472,6 +564,26 @@ def real_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     return AppTest.from_file(str(APP_PATH), default_timeout=300)
 
 
+def test_the_real_app_leaves_one_recent_event_while_the_failure_lasts(
+    real_app: AppTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """진짜 `app.py` — 판을 그린 회차가 최근 사건에 한 줄을 남기고, 「다시 시도」 가 같은 잠김으로
+    또 멈춰도 줄이 늘지 않는다."""
+    import capa_simulation.scenario_activation as scenario_activation
+
+    app = real_app.run()
+
+    def still_locked(database_path: str) -> bool:
+        raise _lock(424242)
+
+    monkeypatch.setattr(scenario_activation, "bootstrap_latest_official_scenario", still_locked)
+    app = app.button(key=boot_stop.RETRY_KEY).click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")]
+
+
 def test_the_real_app_stops_on_the_panel_and_retries_into_home(real_app: AppTest) -> None:
     """진짜 `app.py` — 첫 회차는 멈춤 판(머리 띠 아래), 「다시 시도」 를 누르면 다시 열어 HOME 이
     선다(부트스트랩은 실패한 회차에 「해 봤다」 표지를 세우지 않는다)."""
@@ -481,8 +593,79 @@ def test_the_real_app_stops_on_the_panel_and_retries_into_home(real_app: AppTest
     assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
     assert "Capa LOB Summary" not in [item.value for item in app.title]
 
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")]
+
     app = app.button(key=boot_stop.RETRY_KEY).click().run()
 
     assert not list(app.exception), [item.message for item in app.exception]
     assert boot_stop.HELD_LINE not in [item.value for item in app.error]
     assert "Capa LOB Summary" in [item.value for item in app.title], "HOME 이 섰다"
+    # 데이터를 연 회차가 이어짐을 끊었다 — 같은 잠김이 다시 나면 새 줄이다.
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+
+def _store_without_official(path: Path) -> None:
+    """공식버전이 없는 저장소 — 사용자 시나리오 하나(발행 안 함). 부트스트랩은 열고 시드를 올리지
+    않는다(`existing_without_official`)."""
+    from capa_simulation.persistence.models import ScenarioCreate, ScenarioPreset
+    from capa_simulation.persistence.repository import DuckDBScenarioRepository
+    from capa_simulation.services.builtin_seed import (
+        BUILTIN_SEED_MONTHS,
+        build_builtin_seed_dataset,
+        builtin_seed_processes,
+    )
+
+    repository = DuckDBScenarioRepository(path)
+    repository.initialize()
+    prepared = build_builtin_seed_dataset()
+    repository.create_scenario(
+        ScenarioCreate(
+            scenario_name="데모 사용자 시나리오",
+            source_simulation_code="DEMO-USER-001",
+            source_simulation_name="데모 원천",
+            source_type="TEST",
+            pipeline_version="test-v1",
+        ),
+        prepared.reference_tables,
+        ScenarioPreset(
+            min(BUILTIN_SEED_MONTHS), max(BUILTIN_SEED_MONTHS), builtin_seed_processes()
+        ),
+        source_data=prepared.source_data,
+    )
+    assert repository.latest_official_release() is None
+
+
+def test_opening_a_store_without_an_official_also_ends_the_run(
+    real_app: AppTest, tmp_path: Path
+) -> None:
+    """공식버전이 없는 저장소(빈 운영 서버 · 발행 전 저장소)도 연 회차가 이어짐을 끊는다 —
+    부트스트랩이 공식을 올리지 못해 거짓을 돌려줘도 저장소는 열렸다. 끊지 않으면 몇 시간 뒤 같은
+    잠김이 다시 나도 최근 사건에 새 줄이 남지 않는다."""
+    _store_without_official(tmp_path / "scenario.duckdb")
+
+    app = real_app.run()
+    assert [item.value for item in app.error] == [boot_stop.HELD_LINE]
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")]
+
+    app = app.button(key=boot_stop.RETRY_KEY).click().run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert boot_stop.HELD_LINE not in [item.value for item in app.error]
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")] * 2
+
+
+def test_a_rerun_of_a_loaded_session_does_not_end_the_run(real_app: AppTest) -> None:
+    """이미 올라온 세션의 회차는 저장소를 열지 않는다 — 이어짐을 끊지 않아, 이 탭이 도는 동안 다른
+    탭이 같은 잠김으로 거듭 막혀도 최근 사건에 줄이 쌓이지 않는다."""
+    app = real_app.run()
+    app = app.button(key=boot_stop.RETRY_KEY).click().run()
+    assert boot_stop.HELD_LINE not in [item.value for item in app.error]
+    # 다른 탭이 같은 잠김으로 막혔다(이어짐이 새로 선다).
+    assert runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+
+    app = app.run()
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    assert not runtime.note_boot_failure(boot_stop.LOCKED, "IOException")
+    assert _boot_events() == [(boot_stop.LOCKED, "IOException")] * 2

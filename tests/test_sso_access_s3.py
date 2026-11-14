@@ -2515,6 +2515,8 @@ def test_an_open_tab_stopped_while_the_list_is_unread_says_it_could_not_check(
     [link] = [str(item.value) for item in app.markdown]
     assert sso_identity.LOGIN_AGAIN_LABEL in link
     assert web.REGISTER_LABEL not in link
+    # 참고 줄의 사유 낱말도 거절 화면의 「확인하지 못했습니다」 와 같다.
+    assert str(app.caption[-1].value).startswith(f"참고 {web.LIST_UNREAD} · ")
 
 
 def test_the_probe_of_an_open_tab_names_the_unread_list(

@@ -39,6 +39,9 @@ class PageFailure:
     href: str
     # 예외 형식 이름.
     kind: str
+    # `at` 과 같은 순간의 UNIX 초 — 카드 참고 줄의 UTC 분이 이 값이라 `AD-22` 의 시각과 같은
+    # 순간을 가리킨다.
+    epoch: float
 
 
 _LOCK = threading.Lock()
@@ -55,8 +58,14 @@ def new_ref() -> str:
 def record_failure(*, page: str, href: str, kind: str) -> PageFailure:
     """실패 하나를 적고 돌려준다."""
     global _COUNT
+    now = time.time()
     failure = PageFailure(
-        ref=new_ref(), at=time.strftime("%H:%M:%S"), page=page, href=href, kind=kind
+        ref=new_ref(),
+        at=time.strftime("%H:%M:%S", time.localtime(now)),
+        page=page,
+        href=href,
+        kind=kind,
+        epoch=now,
     )
     with _LOCK:
         _RECENT.append(failure)

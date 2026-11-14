@@ -4,8 +4,8 @@
 
 로그아웃 폐기(세션 묶음 `sid` 단위) · 로그인 갱신 표 · 갱신 누계 · 로그인 시작 · 돌아옴 누계 · 쓴
 state · 진단 · 사건 고리 ·
-명단 밖 로그인 표 · 「접속 권한 신청」 실패 뒤의 틈 · 마지막 로그인의 클레임 이름 · 지금 접속 명단
-한 벌(S3 명단이 켜졌을 때 —
+명단 밖 로그인 표 · 「접속 권한 신청」 실패 뒤의 틈 · 마지막 로그인의 클레임 이름 · 앱 시작 실패
+이어짐 표지 · 지금 접속 명단 한 벌(S3 명단이 켜졌을 때 —
 `AccessSource`, 통째로 바꾼다)을 둔다. 모두 프로세스 메모리이고(replica 1 전제)
 재시작하면 비워진다 —
 로그아웃 폐기 목록이 사라지면 지운 쿠키를 다시 넣은 탭이 그 끝까지 살아나지만, 쿠키 자체는
@@ -66,6 +66,11 @@ SELF_REGISTER_FAILED_EVENT = "access_self_register_failed"
 # 같은 거절 표로 실패한 신청을 다시 해 보기까지의 틈(초). 그 사이의 신청은 저장소에 가지 않는다 —
 # 저장소가 막힌 동안 한 사람의 되풀이가 입출력 잠금을 잡고 감사 줄을 쌓지 않게.
 REGISTER_COOLDOWN = 60
+# 앱 시작 실패(`components/boot_stop.py` — 부트스트랩이 데이터를 열지 못한 회차). C-DEP 에는 서버
+# 로그 창구가 없어 사람이 불러 준 참고 줄(「참고 db_locked · 18:27」)을 관리자가 맞출 자리로 고리에
+# 한 줄 남긴다. 같은 갈래가 이어지면 처음 한 번만이다 — 회차 · 「다시 시도」 · 다른 사람의 새 탭마다
+# 쌓이면 다른 사건을 밀어낸다. 부트스트랩이 한 번 성공하면 이어짐이 끊긴다(`note_boot_success`).
+BOOT_FAIL_EVENT = "boot_fail"
 MAX_REGISTER_COOLDOWNS = 10_000
 MAX_DIAGNOSTICS = 100
 DIAGNOSTIC_TTL = 600
@@ -141,6 +146,8 @@ class _State:
     login_starts: int = 0
     login_returns: int = 0
     register_cooldowns: dict[str, int] = field(default_factory=dict)
+    # 고리에 남긴 앱 시작 실패의 갈래 — 부트스트랩이 성공하면 비운다.
+    boot_failure: str | None = None
 
 
 _LOCK = threading.Lock()
@@ -511,6 +518,23 @@ def get_diagnostic(diagnostic_id: str) -> dict[str, str] | None:
         return dict(record)
 
 
+def note_boot_failure(code: str, kind: str) -> bool:
+    """앱 시작 실패를 최근 사건 고리에 한 줄(`BOOT_FAIL_EVENT` — 사유 코드는 참고 줄의 갈래 키,
+    `kind` 는 오류 종류 이름). 같은 갈래가 이어지면 처음 한 번만 남긴다. 남겼는지 돌려준다."""
+    with _LOCK:
+        if _STATE.boot_failure == code:
+            return False
+        _STATE.boot_failure = code
+    record_event(BOOT_FAIL_EVENT, level=logging.WARNING, reason=code, kind=kind)
+    return True
+
+
+def note_boot_success() -> None:
+    """부트스트랩이 데이터를 열었다 — 앱 시작 실패의 이어짐을 끊는다(다음 실패는 다시 남는다)."""
+    with _LOCK:
+        _STATE.boot_failure = None
+
+
 def is_anonymous(item: SsoEvent) -> bool:
     """로그인하지 않은 누구나 남길 수 있는 사건인가 — 서명이 통과하기 전의 실패(계정 없음)."""
     return item.event in ANONYMOUS_EVENTS and item.value("loginid") in ("", "-")
@@ -616,7 +640,8 @@ def denied_total() -> int:
 
 def reset() -> None:
     """시험 전용 — 설정 · 표지 · 폐기 목록 · 갱신 표 · 갱신 · 로그인 누계 · state · 진단 · 사건 ·
-    명단 밖 로그인 표 · 신청 틈 · 클레임 이름 · 명단 한 벌을 비우고 stdout 처리기를 뗀다."""
+    명단 밖 로그인 표 · 신청 틈 · 클레임 이름 · 앱 시작 실패 이어짐 · 명단 한 벌을 비우고 stdout
+    처리기를 뗀다."""
     global _STATE
     with _LOCK:
         _STATE = _State()
