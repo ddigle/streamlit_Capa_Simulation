@@ -110,7 +110,9 @@ def test_failures_split_into_the_board_branches(
     make: Callable[[], BaseException], code: str, retry: bool
 ) -> None:
     """잠김(남 · 자기) → 판 올리기 실패 → 디스크 가득 → 권한 → 열 수 없음 → 그 밖. 판 올리기 실패만
-    「다시 시도」 가 없다(다시 해도 같다). 남이 쥔 잠김만 「— 관리자에게 알려 주세요」 로 끝난다."""
+    「다시 시도」 가 없다(다시 해도 같다). 자기 잠김(다시 하면 풀림) · 판 올리기 실패 밖은 모두 「—
+    관리자에게 알려 주세요」 로 끝난다 — 열기 · 쓰기 실패는 까닭을 괄호에 싣는다(보드 decided-login
+    7)."""
     error = make()
     failure = boot_stop.classify_boot_failure(error)
 
@@ -120,8 +122,44 @@ def test_failures_split_into_the_board_branches(
         assert failure.line == (boot_stop.LOCKED_LINE if own else boot_stop.HELD_LINE)
     elif code == boot_stop.MIGRATION_FAILED:
         assert failure.line == boot_stop.UPDATE_LINE
+    elif code == boot_stop.OTHER:
+        assert failure.line == boot_stop.HELD_LINE
     else:
-        assert failure.line == f"{boot_stop.LOCKED_LINE} — {boot_stop.IO_WORDS[code]}"
+        word = boot_stop.IO_WORDS[code]
+        assert failure.line == f"{boot_stop.LOCKED_LINE}({word}){ADMIN_TAIL}"
+
+
+@pytest.mark.parametrize(
+    ("code", "line"),
+    [
+        (
+            boot_stop.DISK_FULL,
+            "지금은 데이터를 열 수 없습니다(디스크가 가득 참) — 관리자에게 알려 주세요",
+        ),
+        (
+            boot_stop.PERMISSION,
+            "지금은 데이터를 열 수 없습니다(파일 권한) — 관리자에게 알려 주세요",
+        ),
+        (
+            boot_stop.CANNOT_OPEN,
+            "지금은 데이터를 열 수 없습니다(파일을 열 수 없음) — 관리자에게 알려 주세요",
+        ),
+        (boot_stop.OTHER, "지금은 데이터를 열 수 없습니다 — 관리자에게 알려 주세요"),
+    ],
+    ids=["disk-full", "permission", "cannot-open", "other"],
+)
+def test_an_io_failure_asks_for_the_admin_like_the_later_rounds(code: str, line: str) -> None:
+    """열기 · 쓰기 실패와 그 밖은 사람이 고칠 수 없다 — 경고가 「…(<까닭>) — 관리자에게 알려
+    주세요」 로 뒤 회차 DB 실패 알림의 짧은 글(「…(다른 프로그램이 엶) — 관리자에게 알려
+    주세요」)과 같은 꼴이고 「다시 시도」 는 그대로다(보드 decided-login 7)."""
+    failure = boot_stop._io_failure(code)
+
+    assert failure.line == line
+    assert failure.retry
+    later = screen_error_short(bootstrap_error_message(_lock(424242)))
+    assert later is not None
+    assert re.fullmatch(r".+\(.+\) — 관리자에게 알려 주세요", later)
+    assert later.endswith(ADMIN_TAIL) and failure.line.endswith(ADMIN_TAIL)
 
 
 @pytest.mark.parametrize("own", [False, True], ids=["held-by-another", "own-process"])

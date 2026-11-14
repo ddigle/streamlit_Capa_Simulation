@@ -3345,7 +3345,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     `dblclick`)을 Plotly 까지 내려보내지 않는다. 첫 누름의 `mouseup`·`click` 은 건드리지 않는다. 판정은 순수 구획
     `<cell-press-hold>`(node 시험 `tests/test_cell_press_guard.py`). 화면을 옮기는 칸 선택 그림을 더하면 여기에도 넘긴다.
 - `src/capa_simulation/components/boot_stop.py` — 앱이 데이터를 열지 못한 회차의 앱 안 멈춤 판(`app.py` 의 부트스트랩
-  `except` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()`). 갈래(`classify_boot_failure`)는 잠김(남 · 자기 — 쥔 PID 가 적힘. 남이 쥔 잠김은 경고 끝이 「— 관리자에게 알려 주세요」(`HELD_LINE` — 뒤 회차 DB 실패 알림의 `page_bootstrap.ADMIN_TAIL` 과 같은 일, 카드 p1-no-revision), 자기 잠김은 다시 하면 풀려 꼬리가 없다) →
+  `except` 가 머리 띠 뒤에 부르고 곧바로 `st.stop()`). 갈래(`classify_boot_failure`)는 잠김(남 · 자기 — 쥔 PID 가 적힘. 남이 쥔 잠김은 경고 끝이 「— 관리자에게 알려 주세요」(`HELD_LINE` — 뒤 회차 DB 실패 알림의 `page_bootstrap.ADMIN_TAIL` 과 같은 일, 카드 p1-no-revision), 자기 잠김은 다시 하면 풀려 꼬리가 없다. 아래 열기 · 쓰기 실패와 그 밖도 남이 쥔 잠김과 같은 꼬리에 까닭을 괄호로 싣는다 — 「지금은 데이터를 열 수 없습니다(디스크가 가득 참) — 관리자에게 알려 주세요」 + 「다시 시도」, 그 밖은 괄호 없이(`io_line` — 뒤 회차 DB 실패 알림의 짧은 글과 같은 꼴, 보드 decided-login 7)) →
   판 올리기 실패(`_migration_core.MigrationFailed` — 이미 적용된 SQL 의 체크섬이 바뀜(`MigrationChanged`) · 새 SQL 이 SQL · 데이터
   오류로 실패함, 「다시 시도」 없음) → 디스크 가득(errno · 영문 고정 문구) → 파일 권한 → 열 수 없음(`Cannot open`·`Could not set
   lock`) → 그 밖이다. 진단의 원문은 판 올리기 실패가 감싼 DuckDB 오류(`__cause__`)다.

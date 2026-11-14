@@ -18,9 +18,12 @@
   새로고침을 권한다). 판 올리기 실패(`MigrationFailed` — 이미 적용된
   마이그레이션이 바뀜 · 새 SQL 이 SQL · 데이터 오류로 실패함) → 「앱 업데이트를 마치지 못했습니다 —
   관리자가 고칠 때까지 열 수 없습니다」, 다시 해도 같아 「다시 시도」 를 두지 않는다(UI-INP-07).
-  열기 · 쓰기 실패와 그 밖 → 같은 경고 끝에 낱말 하나(「디스크가 가득 참」 · 「파일 권한」 ·
-  「파일을 열 수 없음」 · 「그 밖」) + 「다시 시도」. 새 SQL 을 적용하다 난 입출력 오류(디스크 가득
-  등)는 감싸지 않아 제 갈래로 간다.
+  열기 · 쓰기 실패와 그 밖도 사람이 고칠 수 없는 원인이라 같은 꼬리다 — 「지금은 데이터를 열 수
+  없습니다(<까닭>) — 관리자에게 알려 주세요」 + 「다시 시도」. 까닭은 「디스크가 가득 참」 · 「파일
+  권한」 · 「파일을 열 수 없음」 이고, 그 밖은 까닭 칸 없이 꼬리만이다(갈래는 참고 줄의 `db_other`
+  가 말한다). 뒤 회차 DB 실패 알림의 짧은 글(「데이터베이스를 열지 못함(다른 프로그램이 엶) —
+  관리자에게 알려 주세요」)과 같은 꼴이다(보드 decided-login 7). 새 SQL 을 적용하다 난 입출력
+  오류(디스크 가득 등)는 감싸지 않아 제 갈래로 간다.
 - 참고 줄의 사유 낱말은 이 갈래 키이고 새 번호 체계가 아니다. 시각은 UTC 분까지다.
 - 「다시 시도」 는 회차 하나다(누름이 앱 전체를 다시 돌린다) — 부트스트랩은 성공한 회차에만 「해
   봤다」 표지를 세워 다음 회차가 다시 연다.
@@ -61,7 +64,8 @@ COPY_KEY: Final = "boot_stop"
 # 화면에 옮기는 원문 길이 — DuckDB 글에는 SQL 줄 · 위치 표시가 붙어 길어진다.
 ORIGINAL_LIMIT: Final = 300
 
-# 갈래 키(참고 줄의 사유 낱말) → 경고 끝 낱말. 잠김 · 판 올리기 실패는 낱말 없이 제 글이다.
+# 갈래 키(참고 줄의 사유 낱말) → 경고의 까닭 칸. 잠김 · 판 올리기 실패는 낱말 없이 제 글이고, 그
+# 밖은 까닭 칸이 없다(`_io_failure`).
 LOCKED: Final = "db_locked"
 MIGRATION_FAILED: Final = "migration_failed"
 DISK_FULL: Final = "db_disk_full"
@@ -72,7 +76,6 @@ IO_WORDS: Final = {
     DISK_FULL: "디스크가 가득 참",
     PERMISSION: "파일 권한",
     CANNOT_OPEN: "파일을 열 수 없음",
-    OTHER: "그 밖",
 }
 # DuckDB · OS 의 영문 고정 문구(로캘이 깨도 남는 ASCII 꼬리).
 _DISK_FULL_MARKERS: Final = ("No space left on device",)
@@ -89,8 +92,15 @@ class BootFailure:
     retry: bool
 
 
+def io_line(code: str) -> str:
+    """열기 · 쓰기 실패와 그 밖의 경고 한 줄 — 「지금은 데이터를 열 수 없습니다(<까닭>) — 관리자에게
+    알려 주세요」. 까닭 낱말이 없는 갈래(그 밖)는 꼬리만 붙는다."""
+    word = IO_WORDS.get(code)
+    return f"{LOCKED_LINE}({word}){ADMIN_TAIL}" if word else HELD_LINE
+
+
 def _io_failure(code: str) -> BootFailure:
-    return BootFailure(code, f"{LOCKED_LINE} — {IO_WORDS[code]}", retry=True)
+    return BootFailure(code, io_line(code), retry=True)
 
 
 def classify_boot_failure(exc: BaseException) -> BootFailure:
