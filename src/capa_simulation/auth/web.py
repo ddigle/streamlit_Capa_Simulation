@@ -1053,16 +1053,16 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
     )
 
 
-def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> Frame:
+def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None) -> Frame:
     """명단을 한 번도 읽지 못함 — 권한 문제가 아니다. 잠시 뒤 풀리는 때와 관리자가 고칠 때를
-    가른다."""
+    가른다. 신청 글 상자 없이 문의 줄만이다 — 그 글의 머리 「접속 권한」 이 「권한 문제가
+    아닙니다」 와 부딪힌다. 거절 표는 「다시 확인」 이 돌아갈 화면만 준다."""
     needs_admin = access_store.unread_needs_admin(cfg)
     text, step = (
         (LIST_UNREAD_ADMIN_TEXT, LIST_UNREAD_ADMIN_STEP)
         if needs_admin
         else (LIST_UNREAD_WAIT_TEXT, LIST_UNREAD_WAIT_STEP)
     )
-    note = "" if ticket is None else _note(ticket, LIST_UNREAD, now)
     return Frame(
         title=LIST_UNREAD_TITLE,
         chip="maintenance",
@@ -1070,10 +1070,7 @@ def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
         steps=(_reachable(cfg, step),),
         primary=_login_link(cfg, CHECK_AGAIN_LABEL, "/" if ticket is None else ticket.next_path),
         secondary=_other_account(cfg),
-        note_label=_reachable(cfg, NOTE_LABEL) if note else "",
-        note_text=note,
         reference=LIST_UNREAD,
-        account="" if ticket is None else ticket.loginid,
         contact_email=_contact_email(),
         contact_text=cfg.access.contact,
     )
@@ -1136,7 +1133,7 @@ def denied_family_page(
     if ticket is not None and code == REGISTER_FAILED:
         return frame_response(register_failed_frame(cfg, ticket, moment), status=403, now=moment)
     if access_store.is_unread(cfg):
-        return frame_response(list_unread_frame(cfg, ticket, moment), status=403, now=moment)
+        return frame_response(list_unread_frame(cfg, ticket), status=403, now=moment)
     return frame_response(not_on_list_frame(cfg, ticket, moment), status=403, now=moment)
 
 
