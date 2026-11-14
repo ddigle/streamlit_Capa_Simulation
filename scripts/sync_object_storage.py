@@ -17,7 +17,8 @@
 **앱을 끈 상태에서 쓴다.** DuckDB 파일은 프로세스 배타 잠금이라 앱이 떠 있으면 설치가 실패한다.
 `status` · `generations` · `doctor` · `probe` · `fetch-copy` · `rollback` · `prune` 은 앱이 떠
 있어도 안전하다. `boot-pull` 은 컨테이너 시작 스크립트가 앱을 띄우기 전에 부르고, 값 없는 결과 한
-줄(JSON)을 찍는다.
+줄(JSON)을 찍는다. 확인이 실제 내려받기로 넘어가면 `--download-mark` 로 받은 자리에 빈 표지 파일을
+남긴다 — 시작 임시 화면이 그 표지를 보고서야 「n번째 받는 중」 을 보인다.
 
 **주소 · 버킷 · 프로필은 환경변수(또는 인자)로만 받는다** — 사내 값이라 저장소에 기본값이 없다.
 비었으면 `aws` 를 부르기 전에 넣을 환경변수 이름을 대고 멈춘다(`docs/objectstore_setup.md` 6장).
@@ -49,6 +50,7 @@ import re
 import sys
 import tempfile
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -361,7 +363,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     generations = sub.add_parser("generations", help="되돌릴 세대를 고를 목록을 찍는다.")
     generations.add_argument("--limit", type=int, default=30, help="찍을 세대 수. 기본 30.")
 
-    sub.add_parser("boot-pull", help="컨테이너 시작의 받기 — 결과 한 줄을 찍는다.")
+    boot_pull = sub.add_parser("boot-pull", help="컨테이너 시작의 받기 — 결과 한 줄을 찍는다.")
+    boot_pull.add_argument(
+        "--download-mark",
+        type=Path,
+        help="실제 내려받기로 넘어가면 남길 표지 파일(시작 스크립트가 시도마다 준다).",
+    )
     audit_list = sub.add_parser(
         "audit-list", help="감사 기록 조각 · 일별 파일 수를 날짜(또는 달)로 센다(값 없음)."
     )
@@ -944,6 +951,22 @@ def _boot_line(outcome: engine.BootOutcome) -> str:
     )
 
 
+def _download_noter(mark: Path | None) -> Callable[[], None] | None:
+    """실제 내려받기로 넘어간 순간 `mark` 를 남기는 것 — 시작 스크립트의 임시 화면이 그 표지를 보고
+    「n번째 받는 중」 을 보인다. 표지는 화면 몫이라 쓰지 못해도 받기를 실패시키지 않는다."""
+    if mark is None:
+        return None
+
+    def note() -> None:
+        try:
+            mark.parent.mkdir(parents=True, exist_ok=True)
+            mark.touch()
+        except OSError:
+            return
+
+    return note
+
+
 def command_boot_pull(args: argparse.Namespace) -> int:
     """앱이 뜨기 전 받기. 종료 코드 0 일 때만 시작 스크립트가 앱을 띄운다.
 
@@ -956,7 +979,9 @@ def command_boot_pull(args: argparse.Namespace) -> int:
         return 1
     client = build_client(args)
     sync_boot.clear_boot_record()
-    outcome = engine.boot_pull(client, sync_paths())
+    outcome = engine.boot_pull(
+        client, sync_paths(), on_download=_download_noter(args.download_mark)
+    )
     if outcome.ok:
         assert outcome.action is not None and outcome.seq is not None
         sync_boot.write_boot_record(

@@ -435,6 +435,57 @@ def test_a_failed_pull_backs_off_and_only_success_starts_the_app(box: SimpleName
     assert _sync()["pull_attempts"] == 4
 
 
+def test_each_try_clears_the_download_mark_that_the_stage_asks_about(
+    box: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """받기는 하위 프로세스라 실제 내려받기로 넘어간 순간은 그 프로세스가 남기는 표지로만 안다 —
+    시도마다 앞 시도(앞 실행)의 표지를 지우고 그 자리를 넘기며, 임시 응답은 그 표지를 묻는다.
+    앱으로 넘어가며 지운다."""
+    asked: dict[str, object] = {}
+
+    def open_stage(port: int, **options: object) -> container_stage.Stage:
+        asked.update(options)
+        stage = FakeStage(box.log)
+        box.stages.append(stage)
+        return stage
+
+    monkeypatch.setattr(container_stage, "open_stage", open_stage)
+    mark = container_start.boot_download_mark()
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.touch()
+    given: list[Path] = []
+    left: list[bool] = []
+    seen: list[bool | None] = []
+
+    def ask() -> bool | None:
+        question = asked.get("download_seen")
+        return bool(question()) if callable(question) else None
+
+    class Downloading(Runner):
+        def __call__(
+            self, args: Sequence[str], *, timeout: float, env: Mapping[str, str]
+        ) -> subprocess.CompletedProcess[str]:
+            if _is_boot_pull(args):
+                path = Path(args[list(args).index("--download-mark") + 1])
+                given.append(path)
+                left.append(path.exists())
+                seen.append(ask())
+                path.touch()
+                seen.append(ask())
+            return super().__call__(args, timeout=timeout, env=env)
+
+    runner = Downloading(box.log, [_failed("corrupt"), _boot(DOWNLOADED)])
+
+    # 받기 실패는 영원히 되풀이한다 — 시험이 어긋나도 멈추게 세 번째 물러남에서 끊는다.
+    launched = _start(box, _managed(box), runner, stay_after=3)
+
+    assert len(launched) == 1
+    assert given == [mark, mark] and mark.parent == settings.CONTAINER_START_REPORT_PATH.parent
+    assert left == [False, False]
+    assert seen == [False, True, False, True]
+    assert not mark.exists()
+
+
 def test_an_empty_remote_keeps_waiting_and_never_starts_the_app(box: SimpleNamespace) -> None:
     """이관 전이다. 빈 DB 로 떠서 정본을 덮는 길을 막는다."""
     runner = Runner(box.log, [_failed("remote_empty")] * 8)

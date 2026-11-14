@@ -904,18 +904,34 @@ ACTION_KEPT: Final = "kept"
 
 
 def boot_pull(
-    client: ObjectStorageClient, paths: SyncPaths, *, scratch_dir: Path | None = None
+    client: ObjectStorageClient,
+    paths: SyncPaths,
+    *,
+    scratch_dir: Path | None = None,
+    on_download: Callable[[], None] | None = None,
 ) -> BootOutcome:
     """앱이 뜨기 전 받기 한 번. 받기 표(`decide_boot`) · 설치 · 펜스까지. 예상한 실패는 갈래로 준다.
 
     **펜스** — 설치 뒤 같은 멤버로 포인터 G+1 을 게시한다. 끝나는 옛 pod 가 그 뒤로 포인터를 내려면
     「HEAD 그대로인가」 에서 멈춘다. 세대 대조만 쓰므로 조건부 쓰기가 필요 없다.
+
+    `on_download` 는 확인이 실제 내려받기로 넘어가는 순간(판정이 받기이고 디스크 앞 점검을 지난
+    뒤 멤버를 받기 직전) 부른다 — 시작 임시 화면이 그때부터 「n번째 받는 중」 을 보인다. 원격이
+    비었거나 갈라졌거나 포인터가 깨졌거나 그대로 두는 확인에서는 부르지 않는다. 깨진 멤버는 받는
+    도중에 드러나므로 그 확인에서는 부른다(실제로 받았다). 예외를 내지 않는 것을 넘긴다.
     """
     started = time.perf_counter()
     seen: dict[str, int] = {}
     try:
         for _attempt in range(BOOT_ATTEMPTS):
-            outcome = _boot_once(client, paths, scratch_dir=scratch_dir, started=started, seen=seen)
+            outcome = _boot_once(
+                client,
+                paths,
+                scratch_dir=scratch_dir,
+                started=started,
+                seen=seen,
+                on_download=on_download,
+            )
             if outcome is not None:
                 return outcome
     except SnapshotRejected as exc:
@@ -945,6 +961,7 @@ def _boot_once(
     scratch_dir: Path | None,
     started: float,
     seen: dict[str, int],
+    on_download: Callable[[], None] | None = None,
 ) -> BootOutcome | None:
     """`None` 이면 HEAD 가 움직였다 — 처음부터 다시 본다. 본 HEAD 세대는 `seen` 에 남긴다(실패 때
     진단의 「멈춘 세대」)."""
@@ -1002,6 +1019,8 @@ def _boot_once(
             )
     if decision is BootDecision.DOWNLOAD:
         snapshot_export.require_free_space(scratch, _needed_bytes(pointer))
+        if on_download is not None:
+            on_download()
         downloads = _download_members(client, pointer, scratch=scratch)
         try:
             _install_pair(paths, downloads)

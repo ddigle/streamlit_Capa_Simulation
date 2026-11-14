@@ -12,13 +12,18 @@ C-DEP 의 상태 검사는 시작 제한이 1분이고 무엇을 묻는지 모�
 **꼴은 앱 밖 화면의 공통 틀이다** — 4px 강조 줄 · 앱 마크 · 「S.PKG CAPA」/「AX
 Management」 · 상태 표지(낱말 + 색) · 제목 · 까닭 · 단계 줄 「준비 · 점검 → 설치 →
 데이터 받기 → 앱」(받지 않는 서버는 받기 칸 없음) · 값 줄(지난 시간 · 다음 시도 n초) ·
-문의 줄 · 참고 줄 · 접힌 「관리자용 진단」. 포트를 잡는 첫 순간이라 Streamlit ·
-`design.tokens` 를 불러오지 않는다 — 두 팔레트는 상수(`PALETTES`)이고 시험이 토큰과
+문의 줄 · 참고 줄 · 접힌 「관리자용 진단」. 앱이 서기 전의 단순한 꼴(스크립트 · 단계 줄 ·
+값 줄)은 이 화면 몫이고, 낱말(표지 셋 · 「관리자용 진단」 · 「문의」 · 「참고」)과 표지 색 역할은
+로그인 화면 틀(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES`)과 한 표다 — 그 표를
+불러 쓴다. 포트를 잡는 첫 순간이라 Streamlit · `design.tokens` 를 불러오지 않는다
+(`page_frame` 도 tokens 를 그릴 때만 부른다) — 두 팔레트는 상수(`PALETTES`)이고 시험이 토큰과
 맞댄다. 밝게 · 어둡게는 `prefers-color-scheme` 로 고른다(앱 테마를 모르는 화면).
 
 **한 상태 → 한 보기.** 시작 스크립트는 단계 · 받기 시도 · 실패만 알리고(`Stage.begin` ·
 `step` · `attempt` · `fail`), 보이는 글은 순수 함수 `stage_view` 하나가 정한다 — 쪽
-HTML 과 `/_capa_stage` 가 같은 보기에서 나온다.
+HTML 과 `/_capa_stage` 가 같은 보기에서 나온다. 시도가 실제 내려받기로 넘어갔는지는 시작
+스크립트가 준 물음(`download_seen` — 받기 하위 프로세스가 남기는 표지 파일)을 상태를 읽을 때 묻고
+판을 올린다 — 받기는 하위 프로세스라 시작 스크립트가 그 순간을 알릴 수 없다.
 
 - 모든 경로의 GET · HEAD · POST 가 200 + 안내 쪽이다. `/_stcore/health` 는 200 `ok` 이고 그 밖의
   `/_stcore/*` 는 503 이다 — 옛 탭의 재접속이 HTML 을 JSON 으로 읽지 않게.
@@ -31,7 +36,10 @@ HTML 과 `/_capa_stage` 가 같은 보기에서 나온다.
   끼운다. 지난 시간 · 남은 초는 1초마다 서버 시각 차로 센다(브라우저 시계를 믿지 않는다).
 - 앱이 답하면 **처음 연 주소를 다시 읽는다** — 재시작 중에 누른 로그아웃 · 로그인 경로도
   그대로 이어진다. POST 로 받은 쪽(콜백 form_post 등)과 콜백 경로만 바탕 주소로 간다 —
-  다시 읽으면 다시 보내거나 쓴 코드를 되풀이한다. 요청 경로는 HTML 에 싣지 않는다(표지
+  다시 읽으면 다시 보내거나 쓴 코드를 되풀이한다. 예외는 거절 화면의 「접속 권한 신청」
+  (`REGISTER_PATH` POST)이다 — 신청이 앱에 닿지 않았으니 「다시 눌러 주세요」 한 줄
+  (`NOTE_REGISTER_LOST`)을 띄우고, 앱이 뜨면 같은 주소를 GET 으로 연다(다시 보내지 않는다 —
+  앱이 그 GET 을 거절 화면으로 보내 단추가 다시 선다). 요청 경로는 HTML 에 싣지 않는다(표지
   `data-return` 만).
 - 질의까지 찍는 기본 요청 기록을 끈다 — `/auth/callback?code=…` 가 표준 오류에 남는다.
 - POST 본문은 상한 안에서 읽어 버린다 — 안 읽고 닫으면 보낸 쪽이 `BrokenPipe` 로 끊긴다.
@@ -56,7 +64,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Final
 from urllib.parse import quote, urlsplit
 
-from capa_simulation.auth.names import CALLBACK_PATH, ENV_ACCESS_CONTACT
+from capa_simulation.auth.names import CALLBACK_PATH, ENV_ACCESS_CONTACT, REGISTER_PATH
+from capa_simulation.auth.page_frame import (
+    CHIP_ROLES,
+    CHIP_WORDS,
+    CONTACT_LABEL,
+    DIAGNOSTIC_LABEL,
+    REFERENCE_LABEL,
+)
 from capa_simulation.services.object_storage_manifest import (
     DATASET_LABELS,
     FAILURE_CLI_MISSING,
@@ -99,14 +114,20 @@ STEP_LABELS: Final[Mapping[str, str]] = {
 }
 NOW_WORD: Final = "지금"
 
-# 상태 표지 — 앱 밖 화면의 공통 다섯 낱말 가운데 이 화면이 쓰는 셋. 색은 낱말과 늘
-# 함께다(색만으로 뜻을 싣지 않음).
-CHIP_STARTING: Final = "시작 중"
-CHIP_RETRY: Final = "다시 시도"
-CHIP_MAINTENANCE: Final = "점검 중"
+# 상태 표지 — 앱 밖 화면의 공통 다섯 낱말 가운데 이 화면이 쓰는 셋(낱말 · 색 역할은 로그인 화면
+# 틀의 표). 색은 낱말과 늘 함께다(색만으로 뜻을 싣지 않음). 결(tone)은 이 화면의 이름이다 —
+# `/_capa_stage` 셋째 줄 · 쪽 서식의 `tone-*` 가 쓰는 값이라 그대로 두고, 틀의 표지 키로 잇는다.
 TONE_START: Final = "start"
 TONE_RETRY: Final = "retry"
 TONE_CHECK: Final = "check"
+TONE_CHIPS: Final[Mapping[str, str]] = {
+    TONE_START: "starting",
+    TONE_RETRY: "retry",
+    TONE_CHECK: "maintenance",
+}
+CHIP_STARTING: Final = CHIP_WORDS[TONE_CHIPS[TONE_START]]
+CHIP_RETRY: Final = CHIP_WORDS[TONE_CHIPS[TONE_RETRY]]
+CHIP_MAINTENANCE: Final = CHIP_WORDS[TONE_CHIPS[TONE_CHECK]]
 
 TITLE_STARTING: Final = "앱을 시작하는 중입니다"
 TITLE_PULLING: Final = "데이터를 받는 중입니다"
@@ -120,6 +141,13 @@ REASON_REMOTE_EMPTY: Final = (
 )
 REASON_TRANSIENT: Final = "저절로 다시 시도합니다."
 NOTE_LONG_RETRY: Final = "계속되면 문의처에 알려 주세요."
+# 재시작 틈에 이 응답이 대신 받은 「접속 권한 신청」(거절 화면 단추 — `auth/web.REGISTER_LABEL` 과
+# 같은 이름, 시험이 맞댄다).
+NOTE_REGISTER_LOST: Final = "「접속 권한 신청」 이 닿지 않았습니다 — 앱이 열리면 다시 눌러 주세요."
+# 쪽이 앱으로 갈 길(`data-return`) — 처음 연 주소 · 바탕 주소 · 같은 주소를 GET 으로(잃은 신청).
+RETURN_HERE: Final = "here"
+RETURN_BASE: Final = "base"
+RETURN_RESEND: Final = "resend"
 NOSCRIPT_NOTE: Final = "저절로 넘어가지 않으면 잠시 뒤 새로고침하세요."
 # 사람이 고쳐야 풀리는 갈래(시작 스크립트가 300초마다 다시 본다) — (제목, 까닭). 표지는 「점검 중」.
 HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
@@ -150,6 +178,12 @@ HUMAN_SCREENS: Final[Mapping[str, tuple[str, str]]] = {
         "관리자가 최신 판으로 다시 배포해야 열립니다.",
     ),
 }
+# 관리자가 앱 밖에서 고치면(되돌리기 — rollback) 다음 확인이 그대로 받기가 되는 사람 갈래. 그 확인이
+# 실제 내려받기로 넘어간 뒤(`StageState.downloading`)는 잠시 닿지 못한 뒤의 다시 받기와 같은 값 줄 ·
+# 노트다(이관 전 `remote_empty` 의 처음 올리기 — init — 도 같다). 고치기 전이어도 확인이 멤버를
+# 받기 시작하면(깨진 멤버는 받는 도중에 드러난다) 그동안은 그 값 줄이다. 받기 전에 머무는 확인과
+# 다른 사람 갈래(CI/CD 로 고침)는 「다시 확인하는 중」 이다.
+REPAIRED_IN_PLACE: Final = (FAILURE_CORRUPT, FAILURE_FORKED)
 # 경우별 할 일 한 줄(접힌 「관리자용 진단」).
 HUMAN_ACTIONS: Final[Mapping[str, str]] = {
     FAILURE_CONFIG: "C-DEP 환경변수 표를 고친 뒤 CI/CD",
@@ -172,13 +206,14 @@ _MIB: Final = 1024 * 1024
 LABEL_NEXT_TRY: Final = "다음 시도"
 LABEL_NEXT_CHECK: Final = "다음 확인"
 CLOCK_WORD: Final = "지난 시간"
-DIAGNOSTICS_SUMMARY: Final = "관리자용 진단"
+DIAGNOSTICS_SUMMARY: Final = DIAGNOSTIC_LABEL
 # 잠시 닿지 못함이 이만큼 이어지면 문의 줄을 세운다.
 LONG_RETRY_SECONDS: Final = 600
 
 # 두 팔레트의 값 — `design/tokens.py` 의 같은 이름 값과 시험이 맞댄다
 # (`tests/test_container_stage.py`). 이 화면은 tokens 를 불러오지 않는다(모듈 설명).
-# CSS 변수 이름 → 토큰 이름.
+# CSS 변수 이름 → 토큰 이름. 표지 색(`chip-<틀의 표지 키>`)은 틀의 역할 표에서 온다 — 틀이 역할을
+# 바꾸면 아래 상수에 그 토큰이 없을 때 시험이 잡는다.
 PALETTE_ROLES: Final[tuple[tuple[str, str], ...]] = (
     ("fg", "TEXT"),
     ("muted", "TEXT_MUTED"),
@@ -187,8 +222,7 @@ PALETTE_ROLES: Final[tuple[tuple[str, str], ...]] = (
     ("line", "BORDER"),
     ("accent", "ACCENT"),
     ("warm", "BRAND_DIE_WARM"),
-    ("retry", "ALERT_CHECK"),
-    ("check", "ALERT_ACTION"),
+    *((f"chip-{chip}", CHIP_ROLES[chip]) for chip in TONE_CHIPS.values()),
 )
 PALETTES: Final[Mapping[str, Mapping[str, str]]] = {
     "light": {
@@ -255,9 +289,7 @@ main { width: 100%; max-width: 640px; background: var(--card); border: 1px solid
   border: 1px solid currentColor; border-radius: 999px; font-size: .8rem; font-weight: 700; }
 .chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%;
   background: currentColor; }
-.tone-start { color: var(--accent); }
-.tone-retry { color: var(--retry); }
-.tone-check { color: var(--check); }
+__TONE_RULES__
 h1 { font-size: 1.3rem; line-height: 1.4; margin: 0 0 8px; }
 p { margin: 6px 0; }
 .steps { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 0;
@@ -268,6 +300,7 @@ p { margin: 6px 0; }
 .steps li.now b { font-size: .72rem; border: 1px solid currentColor; border-radius: 4px;
   padding: 0 4px; }
 .value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lost { font-weight: 700; }
 .note { color: var(--muted); font-size: .9rem; }
 .contact { margin-top: 16px; font-size: .9rem; }
 a { color: var(--accent); }
@@ -280,16 +313,19 @@ details ul { margin: 6px 0 0; padding-left: 18px; }
 
 
 def page_css() -> str:
-    """밝은 · 어두운 팔레트 변수 + 본문 규칙."""
+    """밝은 · 어두운 팔레트 변수 + 본문 규칙. 표지 결(`tone-*`)은 틀의 표지 색 변수를 쓴다."""
 
     def variables(mode: str) -> str:
         palette = PALETTES[mode]
         return " ".join(f"--{name}: {palette[role]};" for name, role in PALETTE_ROLES)
 
+    tones = "\n".join(
+        f".tone-{tone} {{ color: var(--chip-{chip}); }}" for tone, chip in TONE_CHIPS.items()
+    )
     return (
         f":root {{ color-scheme: light dark; {variables('light')} --font: {FONT_FAMILY}; }}\n"
         f"@media (prefers-color-scheme: dark) {{ :root {{ {variables('dark')} }} }}"
-        f"{_CSS_BODY}"
+        f"{_CSS_BODY.replace('__TONE_RULES__', tones)}"
     )
 
 
@@ -336,6 +372,9 @@ class StageState:
     # 지금(받는 중) 또는 마지막(실패한) 받기 시도 번호.
     attempt: int = 0
     trying: bool = False
+    # 이 시도가 실제 내려받기로 넘어갔다(원격 머리가 비지 않았고 받기로 판정 — 받기 하위 프로세스의
+    # 표지). 시도마다 새로 센다.
+    downloading: bool = False
     kind: str | None = None
     failed_at: float | None = None
     # 잠시 닿지 못함 갈래(`retry_kind`)가 끊김 없이 이어진 첫 실패 시각 — 다른 갈래를 지나면
@@ -411,6 +450,12 @@ def _label(kind: str) -> str:
     return FAILURE_LABELS.get(kind, FAILURE_LABELS[FAILURE_OTHER])
 
 
+def _pull_band(count: int) -> str:
+    """받는 동안의 재시작 띠 글 — 첫 받기 · 다시 받기 · 처음 올리기 · 되돌리기 뒤 받기가 같은
+    말이다."""
+    return f"데이터 받는 중 · {count}번째 받기"
+
+
 def _starting_view(state: StageState) -> StageView:
     if state.step != STEP_PULL:
         return StageView(
@@ -431,17 +476,22 @@ def _starting_view(state: StageState) -> StageView:
         progress=f"{count}번째 받기",
         since=state.started_at,
         notes=(NOTE_MINUTES, NOTE_NO_CICD),
-        band=f"데이터 받는 중 · {count}번째 받기",
+        band=_pull_band(count),
     )
 
 
 @dataclass(frozen=True)
 class _Wait:
-    """실패 뒤 값 줄 — 시도가 돌면 그 글, 아니면 다음 시각까지 센다."""
+    """실패 뒤 값 줄 — 시도가 돌면 그 글, 아니면 다음 시각까지 센다. 다시 받기가 도는 동안이면
+    지난 시간(서버 시작부터)과 첫 받기의 두 노트, 그 받기의 재시작 띠 글도 함께다(비면 갈래의
+    띠 글)."""
 
     progress: str = ""
+    since: float | None = None
     until: float | None = None
     until_label: str = ""
+    notes: tuple[str, ...] = ()
+    band: str = ""
 
 
 def _waiting(state: StageState, label: str, trying: str) -> _Wait:
@@ -450,9 +500,27 @@ def _waiting(state: StageState, label: str, trying: str) -> _Wait:
     return _Wait(until=state.next_at, until_label=label)
 
 
+def _pulling(state: StageState) -> _Wait:
+    """실패 뒤 다시 받기가 도는 동안 — 「n번째 받는 중 · 지난 시간」 이 흐르고 첫 받기의 두 노트가
+    선다. 정상으로 받는 몇 분이 멈춘 것처럼 보이지 않게. 열어 둔 탭의 재시작 띠도 같은 때 같은 말
+    「데이터 받는 중 · n번째 받기」 다."""
+    return _Wait(
+        progress=f"{state.attempt}번째 받는 중",
+        since=state.started_at,
+        notes=(NOTE_MINUTES, NOTE_NO_CICD),
+        band=_pull_band(state.attempt),
+    )
+
+
 def _remote_empty_view(state: StageState) -> StageView:
+    """이관 전. 관리자가 처음 올리면(init) 다음 확인이 그대로 받기라 실제 내려받기로 넘어간 뒤는
+    다시 받기의 값 줄이다. 아직 비어 있는지 보는 짧은 확인은 「확인하는 중」 이다."""
     assert state.kind is not None
-    wait = _waiting(state, LABEL_NEXT_CHECK, "확인하는 중")
+    wait = (
+        _pulling(state)
+        if state.trying and state.downloading
+        else _waiting(state, LABEL_NEXT_CHECK, "확인하는 중")
+    )
     return StageView(
         tone=TONE_CHECK,
         chip=CHIP_MAINTENANCE,
@@ -467,9 +535,11 @@ def _remote_empty_view(state: StageState) -> StageView:
             f"시도 {state.failures}회",
         ),
         progress=wait.progress,
+        since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
-        band="점검 중 · 데이터를 처음 올리는 중",
+        notes=wait.notes,
+        band=wait.band or "점검 중 · 데이터를 처음 올리는 중",
     )
 
 
@@ -484,19 +554,15 @@ def _retry_view(state: StageState) -> StageView:
     assert state.kind is not None
     since = state.failing_since
     if state.trying:
-        wait = _Wait(progress=f"{state.attempt}번째 받는 중")
-        notes: tuple[str, ...] = (NOTE_MINUTES, NOTE_NO_CICD)
-        band = f"데이터 받는 중 · {state.attempt}번째 받기"
+        wait = _pulling(state)
     else:
         wait = _Wait(until=state.next_at, until_label=LABEL_NEXT_TRY)
-        notes = ()
-        band = "저장소에 잠시 닿지 못함 · 다시 시도 중"
     return StageView(
         tone=TONE_RETRY,
         chip=CHIP_RETRY,
         title=TITLE_TRANSIENT,
         reasons=(REASON_TRANSIENT,),
-        notes=notes,
+        notes=wait.notes,
         late_note=NOTE_LONG_RETRY,
         late_after=None if since is None else since + LONG_RETRY_SECONDS,
         reference=state.kind,
@@ -508,10 +574,10 @@ def _retry_view(state: StageState) -> StageView:
             f"시도 {state.failures}회",
         ),
         progress=wait.progress,
-        since=state.started_at if state.trying else None,
+        since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
-        band=band,
+        band=wait.band or "저장소에 잠시 닿지 못함 · 다시 시도 중",
     )
 
 
@@ -543,11 +609,18 @@ def _fact_lines(kind: str, facts: StageFacts) -> list[str]:
 
 
 def _human_view(state: StageState) -> StageView:
-    """사람이 고쳐야 풀리는 시작 실패 — 「점검 중」, 경우별 쉬운 말, 접힌 진단(이름 · 수)."""
+    """사람이 고쳐야 풀리는 시작 실패 — 「점검 중」, 경우별 쉬운 말, 접힌 진단(이름 · 수).
+    되돌리기로 풀리는 갈래(`REPAIRED_IN_PLACE`)의 확인이 실제 내려받기로 넘어간 뒤는 다시 받기의
+    값 줄이다."""
     assert state.kind is not None
     title, reason = HUMAN_SCREENS[state.kind]
     retries = state.kind != FAILURE_SCHEMA_NEWER
-    wait = _waiting(state, LABEL_NEXT_CHECK, "다시 확인하는 중") if retries else _Wait()
+    if state.trying and state.downloading and state.kind in REPAIRED_IN_PLACE:
+        wait = _pulling(state)
+    elif retries:
+        wait = _waiting(state, LABEL_NEXT_CHECK, "다시 확인하는 중")
+    else:
+        wait = _Wait()
     return StageView(
         tone=TONE_CHECK,
         chip=CHIP_MAINTENANCE,
@@ -562,9 +635,11 @@ def _human_view(state: StageState) -> StageView:
             f"시도 {state.failures}회",
         ),
         progress=wait.progress,
+        since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
-        band="점검 중 · 관리자가 고쳐야 열림",
+        notes=wait.notes,
+        band=wait.band or "점검 중 · 관리자가 고쳐야 열림",
     )
 
 
@@ -631,11 +706,19 @@ def _contact_html(contact: StageContact) -> str:
         )
     if contact.text:
         parts.append(_esc(contact.text))
-    return f'<p class="contact">문의 {" · ".join(parts)}</p>' if parts else ""
+    return f'<p class="contact">{CONTACT_LABEL} {" · ".join(parts)}</p>' if parts else ""
 
 
-def render_main(view: StageView, *, now: float, version: int, contact: StageContact) -> str:
-    """`<main>` 한 덩이 — 쪽 JS 가 판이 바뀌면 이것만 갈아 끼운다."""
+def render_main(
+    view: StageView,
+    *,
+    now: float,
+    version: int,
+    contact: StageContact,
+    register_lost: bool = False,
+) -> str:
+    """`<main>` 한 덩이 — 쪽 JS 가 판이 바뀌면 이것만 갈아 끼운다. `register_lost` 면 제목 · 까닭
+    아래 「다시 눌러 주세요」 한 줄(`data-keep` — 갈아 끼워도 쪽 JS 가 옮겨 단다)."""
     parts = [
         f'<main data-version="{version}" data-now="{_ms(now)}">',
         f'<header class="brand">{_mark_svg()}<div><strong>{_esc(APP_LABEL)}</strong>'
@@ -644,6 +727,8 @@ def render_main(view: StageView, *, now: float, version: int, contact: StageCont
         f"<h1>{_esc(view.title)}</h1>",
         *(f'<p class="reason">{_esc(reason)}</p>' for reason in view.reasons),
     ]
+    if register_lost:
+        parts.append(f'<p class="lost" data-keep>{_esc(NOTE_REGISTER_LOST)}</p>')
     if view.steps:
         items = "".join(
             f'<li class="now">{_esc(label)} <b>{NOW_WORD}</b></li>'
@@ -662,7 +747,7 @@ def render_main(view: StageView, *, now: float, version: int, contact: StageCont
     parts.append(_contact_html(contact))
     if view.reference:
         at = "" if view.reference_at is None else f" · {_utc(view.reference_at)}"
-        parts.append(f'<p class="ref">참고 {_esc(view.reference)}{at}</p>')
+        parts.append(f'<p class="ref">{REFERENCE_LABEL} {_esc(view.reference)}{at}</p>')
     if view.diagnostics:
         items = "".join(f"<li>{_esc(line)}</li>" for line in view.diagnostics)
         parts.append(
@@ -694,7 +779,8 @@ _PAGE: Final = """<!DOCTYPE html>
 
 # 쪽의 되풀이. 틈(소켓을 닫고 앱이 잡기까지)의 실패는 무시하고 다음 번에 다시 본다. 판정 구획
 # (`// <stage-rule>`)은 DOM 을 모르는 순수 함수라 node 시험이 떼어 돌린다.
-PAGE_SCRIPT: Final = """
+PAGE_SCRIPT: Final = (
+    """
 // <stage-rule>
 function clockText(seconds) {
   const total = Math.max(Math.floor(seconds), 0);
@@ -712,9 +798,15 @@ function sinceText(progress, sinceMs, nowMs) {
 function untilText(label, untilMs, nowMs) {
   return label + " " + Math.max(Math.ceil((untilMs - nowMs) / 1000), 0) + "초 뒤";
 }
-// 앱이 뜨면 갈 곳 — 처음 연 주소. POST 로 받은 쪽 · 콜백 경로는 바탕 주소.
+// 앱이 뜨면 갈 곳 — 처음 연 주소. POST 로 받은 쪽 · 콜백 경로는 바탕 주소. 잃은 신청은 처음
+// 연 주소(신청 경로 — 앱이 GET 을 거절 화면으로 보낸다).
 function returnTarget(mode, base, href) {
-  return mode === "here" && href ? href : base;
+  return (mode === "__HERE__" || mode === "__RESEND__") && href ? href : base;
+}
+// 갈 곳이 지금 주소면 다시 읽는다("reload") — `#…` 가 붙은 주소에 replace 는 조각 이동만 해 쪽을
+// 다시 받지 않는다. 잃은 신청은 같은 주소여도 "replace" 다 — 다시 읽으면 POST 를 다시 보낸다.
+function returnWay(mode, target, current) {
+  return mode !== "__RESEND__" && target === current ? "reload" : "replace";
 }
 // 상태 줄 셋째 줄(JSON). 없거나 못 읽으면 null — 옛 임시 응답이다.
 function stageInfo(line) {
@@ -727,6 +819,13 @@ function stageInfo(line) {
   }
 }
 // </stage-rule>
+// 판이 바뀌어 갈아 끼우는 새 `<main>` 에 「다시 눌러 주세요」 한 줄(`[data-keep]`)을 옮겨 단다 —
+// 서버는 바탕 주소 GET 으로 판을 다시 그려 그 한 줄을 모른다. 자리는 제목 · 까닭 바로 아래.
+function carryKept(fresh, kept) {
+  if (!kept || fresh.querySelector("[data-keep]")) return;
+  const marks = fresh.querySelectorAll("h1, .reason");
+  if (marks.length) marks[marks.length - 1].after(kept);
+}
 async function stageTick(deps) {
   const base = deps.base;
   try {
@@ -768,10 +867,10 @@ if (typeof document !== "undefined") {
     mode: body.dataset.return,
     href: window.location.href,
     fetch: (url, options) => window.fetch(url, options),
-    // 같은 주소면 다시 읽는다 — `#…` 가 붙은 주소는 replace 가 조각 이동만 하고 쪽을 다시
-    // 받지 않는다.
     goTo: (url) =>
-      url === window.location.href ? window.location.reload() : window.location.replace(url),
+      returnWay(body.dataset.return, url, window.location.href) === "reload"
+        ? window.location.reload()
+        : window.location.replace(url),
     show: (headline, detail) => {
       const title = document.querySelector("h1");
       if (title) title.textContent = headline;
@@ -784,9 +883,11 @@ if (typeof document !== "undefined") {
         const answer = await window.fetch(body.dataset.base, { cache: "no-store" });
         if (answer.ok && answer.headers.has("X-Capa-Stage")) {
           const next = new DOMParser().parseFromString(await answer.text(), "text/html");
-          const fresh = next.querySelector("main");
-          if (fresh) {
-            main().replaceWith(document.importNode(fresh, true));
+          const found = next.querySelector("main");
+          if (found) {
+            const fresh = document.importNode(found, true);
+            carryKept(fresh, main().querySelector("[data-keep]"));
+            main().replaceWith(fresh);
             document.title = next.title;
           }
         }
@@ -799,6 +900,9 @@ if (typeof document !== "undefined") {
   window.setInterval(paint, 1000);
 }
 """.replace("__CLOCK_WORD__", CLOCK_WORD)
+    .replace("__HERE__", RETURN_HERE)
+    .replace("__RESEND__", RETURN_RESEND)
+)
 
 
 def base_path_of(public_url: str) -> str:
@@ -812,6 +916,16 @@ def base_path_of(public_url: str) -> str:
     return path.rstrip("/") + "/"
 
 
+def return_mode(method: str, path: str) -> str:
+    """쪽이 앱으로 갈 길 — 「접속 권한 신청」 POST 는 잃은 신청, 그 밖의 POST · 콜백 경로는 바탕
+    주소, 나머지는 처음 연 주소."""
+    if method == "POST" and path.endswith(REGISTER_PATH):
+        return RETURN_RESEND
+    if method == "POST" or path.endswith(CALLBACK_PATH):
+        return RETURN_BASE
+    return RETURN_HERE
+
+
 def status_text(view: StageView, *, now: float, version: int) -> str:
     """`/_capa_stage` 의 세 줄 — 제목 · 값 한 줄 · JSON(판 · 재시작 띠 글 · 서버 시각 ms)."""
     info = {"v": version, "band": view.band, "tone": view.tone, "now": _ms(now)}
@@ -819,11 +933,18 @@ def status_text(view: StageView, *, now: float, version: int) -> str:
 
 
 class _Display:
-    """지금 상태. 시작 스크립트가 쓰고 응답 스레드가 읽는다."""
+    """지금 상태. 시작 스크립트가 쓰고 응답 스레드가 읽는다. `download_seen` 은 받기 시도가 실제
+    내려받기로 넘어갔는가를 묻는 것이다 — 읽을 때 물어 넘어갔으면 상태를 올린다(판이 바뀌어 열어 둔
+    쪽이 본문을 갈아 끼운다). 시도가 돌지 않는 동안(앞 시도의 표지가 남았어도)은 묻지 않는다."""
 
-    def __init__(self, clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.time,
+        download_seen: Callable[[], bool] | None = None,
+    ) -> None:
         self._lock = threading.Lock()
         self.clock = clock
+        self._download_seen = download_seen
         self._state = StageState(started_at=clock())
 
     def change(self, how: Callable[[StageState], StageState]) -> None:
@@ -831,8 +952,23 @@ class _Display:
             changed = how(self._state)
             self._state = replace(changed, version=self._state.version + 1)
 
+    def _downloading_now(self) -> bool:
+        if self._download_seen is None:
+            return False
+        try:
+            return bool(self._download_seen())
+        except Exception:
+            return False
+
     def read(self) -> StageState:
         with self._lock:
+            state = self._state
+        if not state.trying or state.downloading or not self._downloading_now():
+            return state
+        # 묻는 사이 시작 스크립트가 상태를 바꿨으면(실패 · 다음 시도) 올리지 않는다.
+        with self._lock:
+            if self._state.version == state.version:
+                self._state = replace(state, downloading=True, version=state.version + 1)
             return self._state
 
 
@@ -872,9 +1008,10 @@ def prepare_server(
     base_path: str = "/",
     contact: StageContact | None = None,
     clock: Callable[[], float] = time.time,
+    download_seen: Callable[[], bool] | None = None,
 ) -> None:
-    """듣는 서버에 상태 · 바탕 경로 · 문의 줄을 단다."""
-    server.display = _Display(clock)
+    """듣는 서버에 상태 · 바탕 경로 · 문의 줄 · 내려받기 물음을 단다."""
+    server.display = _Display(clock, download_seen)
     server.base_path = base_path
     server.contact = contact or StageContact()
 
@@ -902,13 +1039,19 @@ class _Handler(BaseHTTPRequestHandler):
         display = self.server.display
         state, now = display.read(), display.clock()
         view = stage_view(state)
-        back = "base" if self.command == "POST" or path.endswith(CALLBACK_PATH) else "here"
+        back = return_mode(self.command, path)
         return _PAGE.format(
             title=_esc(f"{view.title} · {APP_LABEL}"),
             css=page_css(),
             base=_esc(self.server.base_path),
             back=back,
-            main=render_main(view, now=now, version=state.version, contact=self.server.contact),
+            main=render_main(
+                view,
+                now=now,
+                version=state.version,
+                contact=self.server.contact,
+                register_lost=back == RETURN_RESEND,
+            ),
             script=PAGE_SCRIPT,
         ).encode("utf-8")
 
@@ -983,9 +1126,14 @@ class Stage:
         self._change(lambda state: replace(state, step=name))
 
     def attempt(self, number: int) -> None:
-        """`number` 번째 받기를 시작한다 — 앞 실패 낱말은 남기되 값 줄은 「받는 중」 이 된다(잠시
-        닿지 못함은 지난 시간 · 첫 받기의 두 노트와 함께)."""
-        self._change(lambda state: replace(state, attempt=number, trying=True, next_at=None))
+        """`number` 번째 받기를 시작한다 — 앞 실패 낱말은 남기고 값 줄은 그 갈래의 「받는 중」 ·
+        「확인하는 중」 꼴이 된다(`stage_view`). 이관 전 · 되돌리기 갈래의 「n번째 받는 중」 과 두
+        노트는 그 시도가 실제 내려받기로 넘어간 뒤(`download_seen`)다."""
+        self._change(
+            lambda state: replace(
+                state, attempt=number, trying=True, downloading=False, next_at=None
+            )
+        )
 
     def fail(
         self,
@@ -1008,6 +1156,7 @@ class Stage:
                 state,
                 attempt=number,
                 trying=False,
+                downloading=False,
                 kind=known,
                 facts=(facts or StageFacts()).checked(),
                 failed_at=moment,
@@ -1041,8 +1190,10 @@ def open_stage(
     base_path: str = "/",
     contact: StageContact | None = None,
     clock: Callable[[], float] = time.time,
+    download_seen: Callable[[], bool] | None = None,
 ) -> Stage:
-    """포트를 잡아 답하기 시작한다. 잡지 못해도 예외를 내지 않는다 — 앱 띄우기가 먼저다."""
+    """포트를 잡아 답하기 시작한다. 잡지 못해도 예외를 내지 않는다 — 앱 띄우기가 먼저다.
+    `download_seen` 은 받기 시도가 실제 내려받기로 넘어갔는가를 묻는다(`_Display`)."""
     choices: tuple[tuple[type[_StageServer], str], ...] = (
         (_V6StageServer, "::"),
         (_V4StageServer, "0.0.0.0"),
@@ -1052,7 +1203,9 @@ def open_stage(
             server = factory((host, port), _Handler)
         except OSError:
             continue
-        prepare_server(server, base_path=base_path, contact=contact, clock=clock)
+        prepare_server(
+            server, base_path=base_path, contact=contact, clock=clock, download_seen=download_seen
+        )
         stage = Stage(server)
         stage.start()
         return stage

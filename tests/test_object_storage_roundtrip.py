@@ -923,6 +923,58 @@ def test_boot_pull_prints_a_line_without_values(
     assert line["seq"] == 2
 
 
+def _boot_line(capsys: pytest.CaptureFixture[str]) -> dict[str, object]:
+    line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert isinstance(line, dict)
+    return line
+
+
+def test_boot_pull_leaves_the_download_mark_only_when_it_downloads(
+    harness: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """시작 스크립트가 준 자리에 실제 내려받기 직전 빈 표지를 남긴다 — 임시 화면이 그 표지를
+    보고서야 「n번째 받는 중」 이다. 이관 전 빈 원격 · 그대로 둠은 받기가 아니라 남기지 않는다."""
+    monkeypatch.setenv("CAPA_S3_BUCKET", "Demo_ops")
+    mark = harness.tmp_path / "temp" / "container_boot_download"
+
+    assert _run(harness, "boot-pull", "--download-mark", str(mark)) == 1
+    assert _boot_line(capsys)["kind"] == "remote_empty" and not mark.exists()
+
+    _init(harness)
+    capsys.readouterr()
+    assert _run(harness, "boot-pull", "--download-mark", str(mark)) == 0
+    assert _boot_line(capsys)["action"] == "kept" and not mark.exists()
+
+    for path in (harness.database, harness.equipment):
+        path.unlink()
+        sync_state.sidecar_path(path).unlink()
+    assert _run(harness, "boot-pull", "--download-mark", str(mark)) == 0
+    assert _boot_line(capsys)["action"] == "downloaded" and mark.is_file()
+
+
+def test_a_download_mark_that_cannot_be_written_does_not_fail_the_pull(
+    harness: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """표지는 화면 몫이다 — 못 써도 받기는 성공이고 앱이 뜬다."""
+    monkeypatch.setenv("CAPA_S3_BUCKET", "Demo_ops")
+    _init(harness)
+    blocker = harness.tmp_path / "not-a-folder"
+    blocker.write_text("파일", encoding="utf-8")
+    for path in (harness.database, harness.equipment):
+        path.unlink()
+        sync_state.sidecar_path(path).unlink()
+    capsys.readouterr()
+
+    assert _run(harness, "boot-pull", "--download-mark", str(blocker / "mark")) == 0
+
+    assert _boot_line(capsys)["action"] == "downloaded"
+    assert not (blocker / "mark").exists()
+
+
 @pytest.mark.parametrize("blank", ["endpoint_url", "bucket", "profile"])
 def test_boot_pull_with_a_missing_in_house_value_stays(
     harness: SimpleNamespace,

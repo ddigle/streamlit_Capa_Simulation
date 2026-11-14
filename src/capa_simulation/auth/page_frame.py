@@ -44,7 +44,8 @@ from typing import Final
 
 from capa_simulation import settings
 
-# 상태 표지 — 낱말과 색 역할(토큰 이름). 로그아웃 화면은 표지가 없다.
+# 상태 표지 — 낱말과 색 역할(토큰 이름). 로그아웃 화면은 표지가 없다. 시작 임시 화면
+# (`scripts/container_stage.py` — 「시작 중」 · 「다시 시도」 · 「점검 중」)도 이 두 표를 불러 쓴다.
 CHIP_WORDS: Final = {
     "denied": "권한 없음",
     "registered": "등록 완료",
@@ -52,7 +53,7 @@ CHIP_WORDS: Final = {
     "maintenance": "점검 중",
     "starting": "시작 중",
 }
-_CHIP_ROLES: Final = {
+CHIP_ROLES: Final = {
     "denied": "ALERT_ERROR",
     "registered": "ACCENT",
     "retry": "ALERT_CHECK",
@@ -80,7 +81,7 @@ _PALETTE_ROLES: Final = (
     ("accent", "ACCENT"),
     ("accent-text", "ACCENT_TEXT"),
     ("die-warm", "BRAND_DIE_WARM"),
-    *((f"chip-{name}", role) for name, role in _CHIP_ROLES.items()),
+    *((f"chip-{name}", role) for name, role in CHIP_ROLES.items()),
 )
 _FRAME_CSS: Final = """
 body { margin: 0; padding: 0 16px; background: var(--bg); color: var(--fg); line-height: 1.6;
