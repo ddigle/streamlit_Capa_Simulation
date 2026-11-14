@@ -10,7 +10,10 @@ from __future__ import annotations
 import dataclasses
 import importlib.util
 import json
+import os
 import re
+import socket
+import subprocess
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
@@ -431,3 +434,159 @@ def test_the_four_places_that_print_a_pc_path_show_userprofile(
         assert f"(이전 파일 백업 {HOME_TAG}" in line, line
     assert_home_hidden(printed, "pull 백업")
     assert any(snapshot_export.backup_dir().iterdir()), "백업은 실제 경로에 있다"
+
+
+# --- 닫힌 주소 · 표준 오류(E2E D-16) ---------------------------------------------------------
+#
+# 사내 PC 처럼 스크립트를 따로 띄운다 — 같은 프로세스에서 `main()` 을 부르면 pytest 가 뿌리
+# 로거에 제 처리기를 달아 로거 글이 표준 오류로 가지 않는다(그 길이 샌 곳이다). `aws` 자리만
+# 바꾼다: 주소에 실제로 붙어 보고, 닫혀 있으면 `aws` 1.46.3 이 찍는 꼴로 실패한다.
+
+CHILD_DRIVER = r"""
+import logging, os, runpy, socket, sys, time
+from urllib.parse import urlsplit
+
+from pathlib import Path
+
+time.sleep = lambda _seconds: None  # 재시도 물러남만 건너뛴다
+from capa_simulation import object_sync_engine, settings
+from capa_simulation.io import object_storage
+
+# 저장소 `data/` 를 건드리지 않는다 — 운영 DB 자리 · 작업 폴더를 시험 뿌리로.
+settings.DATA_DIR = Path(os.environ["CHILD_DATA_DIR"])
+settings.DUCKDB_PATH = settings.DATA_DIR / "capa_simulation.duckdb"
+settings.EQUIPMENT_DUCKDB_PATH = settings.DATA_DIR / "equipment_availability.duckdb"
+
+script, mode, *argv = sys.argv[1:]
+
+
+def closed(self, args, env, *, timeout_seconds):
+    args = list(args)
+    endpoint = args[args.index("--endpoint-url") + 1]
+    bucket = args[args.index("--bucket") + 1]
+    key = args[args.index("--key") + 1] if "--key" in args else ""
+    if mode == "log-argv":
+        # 어느 모듈의 로거든 원값을 실을 수 있다 — 도구는 그 글도 가려야 한다.
+        logging.getLogger("capa_simulation.io.object_storage").warning("aws %s", " ".join(args))
+    parts = urlsplit(endpoint)
+    try:
+        socket.create_connection((parts.hostname, parts.port), timeout=2).close()
+    except OSError:
+        text = f'\nCould not connect to the endpoint URL: "{endpoint}/{bucket}/{key}"\n'
+        return object_storage.CommandResult(tuple(args), 255, "", text, 0.0)
+    raise SystemExit("주소가 열려 있다 — 시험 전제가 틀렸다")
+
+
+def crash(*_args, **_kwargs):
+    names = ("CAPA_S3_ENDPOINT_URL", "CAPA_S3_BUCKET", "CAPA_S3_PROFILE")
+    values = [os.environ[name] for name in names]
+    values.append(os.path.join(os.environ["USERPROFILE"], "x"))
+    raise IndexError("코드 결함 " + " ".join(values))
+
+
+object_storage.SubprocessCommandRunner.run = closed
+if mode == "crash":
+    object_sync_engine.fetch_copy = crash
+sys.argv = [script, *argv]
+runpy.run_path(script, run_name="__main__")
+"""
+
+
+def _closed_endpoint() -> str:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
+
+
+def _run_child(home: Path, endpoint: str, mode: str, *argv: str) -> tuple[int, str, str]:
+    temp = home / "AppData" / "Local" / "Temp"
+    temp.mkdir(parents=True, exist_ok=True)
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(("CAPA_", "AWS_", "PYTHON"))
+    }
+    env.update(
+        {
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+            "CHILD_DATA_DIR": str(home.parent / "data"),
+            "CAPA_S3_ENDPOINT_URL": endpoint,
+            "CAPA_S3_BUCKET": BUCKET,
+            "CAPA_S3_PROFILE": PROFILE,
+            "USERPROFILE": str(home),
+            "TMPDIR": str(temp),
+            "TEMP": str(temp),
+            "TMP": str(temp),
+        }
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", CHILD_DRIVER, str(SCRIPT_PATH), mode, *argv],
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=240,
+        check=False,
+    )
+    return done.returncode, done.stdout, done.stderr
+
+
+def _assert_no_value(stream: str, where: str, endpoint: str, home: Path) -> None:
+    raw = (endpoint, endpoint.removeprefix("http://"), BUCKET, PROFILE, str(home))
+    left = [value for value in raw if value.lower() in stream.lower()]
+    assert left == [], (where, left, stream)
+
+
+AUDITED_ON_A_CLOSED_ADDRESS = (("fetch-copy", "--to", "{copy}"), ("rollback", "--to", "1", "--yes"))
+
+
+@pytest.mark.parametrize("argv", AUDITED_ON_A_CLOSED_ADDRESS, ids=["fetch-copy", "rollback"])
+def test_a_closed_address_leaves_no_value_on_either_stream(
+    tmp_path: Path, argv: tuple[str, ...]
+) -> None:
+    """감사 대상 명령이 닫힌 주소에 멈추면 감사 조각 올리기도 실패한다. 그 경고는 갈래 낱말 한 줄
+    이고 트레이스백 · 실패 글(주소 · 버킷 · 프로필 · `--body` 의 내 PC 임시 경로)을 싣지 않는다."""
+    endpoint = _closed_endpoint()
+    home = tmp_path / "home"
+    copy = str(home / "copy")
+
+    code, out, err = _run_child(home, endpoint, "plain", *(part.format(copy=copy) for part in argv))
+
+    assert code == 1, (out, err)
+    _assert_no_value(out, "stdout", endpoint, home)
+    _assert_no_value(err, "stderr", endpoint, home)
+    assert "Traceback" not in err, err
+    assert "감사 조각을 올리지 못했습니다 — unreachable" in err.splitlines(), err
+    assert "[경고] 감사 기록 조각을 올리지 못했습니다 — 명령의 결과는 그대로입니다." in out
+    assert out.splitlines()[-1].startswith(f"전송용 요약: {argv[0]} 멈춤 "), out
+
+
+def test_any_logger_line_passes_the_mask(tmp_path: Path) -> None:
+    """도구가 도는 동안 어느 로거의 글이든 표준 오류에 닿기 전에 가림을 지난다."""
+    endpoint = _closed_endpoint()
+    home = tmp_path / "home"
+
+    code, out, err = _run_child(home, endpoint, "log-argv", "fetch-copy", "--to", str(home / "c"))
+
+    assert code == 1, (out, err)
+    assert "aws s3api put-object --bucket <버킷> --endpoint-url <주소> --profile <프로필>" in err, (
+        err
+    )
+    assert f"--body {HOME_TAG}" in err, err
+    _assert_no_value(out, "stdout", endpoint, home)
+    _assert_no_value(err, "stderr", endpoint, home)
+
+
+def test_an_unexpected_error_prints_a_masked_traceback(tmp_path: Path) -> None:
+    """예상 밖의 예외(코드 결함)는 그대로 트레이스백 · 종료 1 로 끝나되, 그 글도 가림을 지난다."""
+    endpoint = _closed_endpoint()
+    home = tmp_path / "home"
+
+    code, out, err = _run_child(home, endpoint, "crash", "fetch-copy", "--to", str(home / "c"))
+
+    assert code == 1, (out, err)
+    assert "Traceback" in err and "IndexError: 코드 결함 <주소> <버킷> <프로필>" in err, err
+    _assert_no_value(out, "stdout", endpoint, home)
+    _assert_no_value(err, "stderr", endpoint, home)

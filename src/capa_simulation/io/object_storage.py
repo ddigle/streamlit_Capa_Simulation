@@ -29,7 +29,8 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol
 from uuid import uuid4
@@ -705,12 +706,19 @@ def _parse_json(result: CommandResult) -> dict[str, Any]:
 
 
 def _parse_timestamp(value: object) -> datetime | None:
+    """`aws` 가 찍은 시각. 목록(XML)은 ISO 이고, HEAD · GET 은 `Last-Modified` 머리 글 그대로다
+    (RFC 1123 — `aws` 1 판, 운영 이미지 판). 못 읽으면 모름(None)이다."""
     if not isinstance(value, str):
         return None
     try:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
+        pass
+    try:
+        moment = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
         return None
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
 
 
 # 서비스가 돌려준 오류 코드만 본다. 연결·시간 초과 오류는 URL 을 키까지 찍으므로, 키의 날짜·seq·

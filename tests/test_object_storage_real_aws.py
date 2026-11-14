@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -175,6 +175,18 @@ def test_prune_goes_by_the_time_the_store_gave(real: SimpleNamespace) -> None:
 
     assert outcome.deleted == 2
     assert not [key for key in real.store.objects if "__s000000000001__" in key]
+
+
+def test_head_reads_the_time_the_store_gave(real: SimpleNamespace) -> None:
+    """실제 `aws` 1 판은 HEAD 의 `Last-Modified` 를 머리 글 그대로 찍는다(RFC 1123). 감사 기록의
+    시계 차이 확인이 이 시각을 쓴다(E2E C-17)."""
+    moment = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(minutes=2)
+    real.store.clock = lambda: moment
+    real.store.put("audit/v1/seg/probe.jsonl.gz", b"x")
+
+    record = real.client.head("audit/v1/seg/probe.jsonl.gz")
+
+    assert record is not None and record.last_modified == moment
 
 
 def test_rollback_reads_the_head_of_each_member(real: SimpleNamespace) -> None:

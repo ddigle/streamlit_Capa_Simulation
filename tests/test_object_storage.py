@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -115,6 +116,44 @@ def test_list_objects_parses_keys_sizes_and_etags() -> None:
     assert records[0].size_bytes == 512
     assert records[0].etag == "abc123"
     assert records[0].last_modified is not None
+
+
+# `aws` 1.46.3(운영 이미지 판)이 HEAD · GET 의 `Last-Modified` 머리를 그대로 찍는 꼴 —
+# 목록(XML)만 ISO 다.
+HEADER_TIME = "Sat, 14 Nov 2026 14:02:06 GMT"
+
+
+def test_head_and_get_read_the_time_in_the_header_form_the_cli_prints(tmp_path: Path) -> None:
+    """HEAD · GET 의 시각을 못 읽으면 감사 기록의 시계 차이 확인이 말없이 끝난다(E2E C-17)."""
+    payload = json.dumps({"LastModified": HEADER_TIME, "ContentLength": 5, "ETag": '"e"'})
+    runner = FakeRunner(responses=[_ok(payload), _ok(payload)])
+    client = _client(runner)
+    expected = datetime(2026, 11, 14, 14, 2, 6, tzinfo=timezone.utc)
+    destination = tmp_path / "a.bin"
+    destination.write_bytes(b"hello")  # 가짜 실행기는 받은 파일을 쓰지 않는다
+
+    head = client.head("audit/v1/seg/a.jsonl.gz")
+    got = client.get_file("audit/v1/seg/a.jsonl.gz", destination)
+
+    assert head is not None and head.last_modified == expected
+    assert got.last_modified == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("2026-09-08T09:15:00+00:00", datetime(2026, 9, 8, 9, 15, tzinfo=timezone.utc)),
+        ("2026-09-08T09:15:00.000Z", datetime(2026, 9, 8, 9, 15, tzinfo=timezone.utc)),
+        (HEADER_TIME, datetime(2026, 11, 14, 14, 2, 6, tzinfo=timezone.utc)),
+        ("Sat, 14 Nov 2026 14:02:06 -0000", datetime(2026, 11, 14, 14, 2, 6, tzinfo=timezone.utc)),
+        ("시각 아님", None),
+        ("", None),
+    ],
+)
+def test_both_time_forms_are_read_and_others_are_unknown(
+    text: str, expected: datetime | None
+) -> None:
+    assert object_storage._parse_timestamp(text) == expected
 
 
 def test_head_returns_none_for_a_missing_key() -> None:

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 from alert_marks import active_state, alert_notes, flashed
+from fragment_browser import FragmentBrowser, install_fragment_browser
 from sso_support import use_config
 from streamlit.testing.v1 import AppTest
 from test_sso_access import session_token
@@ -38,6 +39,24 @@ ALERTS = """
 from capa_simulation.components.object_sync_status import render_object_sync_alerts
 
 render_object_sync_alerts()
+"""
+NEIGHBOUR_BOX = "object_sync_test_neighbour_box"
+# `app.py` 처럼 실행 표지를 맨 앞에 세우고 끝에서 닫는 페이지 — 펼침 곁에 여닫기 상자 하나.
+PANEL_WITH_A_NEIGHBOUR_BOX = """
+import streamlit as st
+
+from capa_simulation.components.object_sync_status import render_object_sync_status
+from capa_simulation.sidebar_status import begin_app_run, on_box_toggle
+
+run = begin_app_run()
+render_object_sync_status()
+st.checkbox(
+    "이웃 상자",
+    key="object_sync_test_neighbour_box",
+    on_change=on_box_toggle,
+    args=("object_sync_test_neighbour_box", "이웃 상자"),
+)
+run.finish()
 """
 SY_CODES = ("SY-01", "SY-02", "SY-03", "SY-04", "SY-05", "SY-06")
 ADMIN = "demo.admin"
@@ -294,6 +313,90 @@ def test_the_button_is_locked_while_uploading(monkeypatch: pytest.MonkeyPatch) -
     button = app.button(key=object_sync_status.UPLOAD_NOW_KEY)
     assert button.disabled is True
     assert button.help == object_sync_status.UPLOADING_WHY
+
+
+# --- 열어 둔 화면이 따라가기(E2E C-11 · C-15 F3) ------------------------------------------------
+
+
+def _live_fragment(browser: FragmentBrowser) -> str:
+    """본문(복사 단추 · 값 줄)을 그린 프래그먼트 — 그 프래그먼트가 `run_every` 로 다시 돈다."""
+    return browser.fragment_keyed("admin_area_object_sync_live")
+
+
+def test_an_open_panel_follows_a_save_from_another_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """올릴 것이 없을 때 연 화면도 본문이 프래그먼트로 다시 돈다. 다른 회차가 저장하면 판정이
+    달라지므로 앱 회차로 돌아가 제목 배지까지 고친다 — 그린 순간의 초록 「CI/CD 눌러도 됨」 이 남지
+    않는다."""
+    browser = install_fragment_browser(monkeypatch)
+    _boot(monkeypatch, managed=True)
+    _admin(monkeypatch)
+    handle = _worker(monkeypatch)
+    app = AppTest.from_string(PANEL).run()
+    assert _labels(app) == ["DB 동기화 · 올릴 것 없음 :green-badge[CI/CD 눌러도 됨]"]
+    live = _live_fragment(browser)
+
+    browser.fragment_queue = [live]
+    app = app.run()
+    assert not list(app.exception)
+    assert browser.started == [[live]], "판정이 그대로면 프래그먼트만 돈다"
+
+    handle.current = replace(handle.current, dirty={"simulation": True})
+    browser.fragment_queue = [live]
+    app = app.run()
+
+    assert not list(app.exception)
+    assert browser.started == [[live], []]
+    assert _labels(app) == ["DB 동기화 · 올릴 것 있음 :orange-badge[기다리세요]"]
+
+
+def test_a_panel_opened_while_uploading_unlocks_the_button_after_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = install_fragment_browser(monkeypatch)
+    _boot(monkeypatch, managed=True)
+    _admin(monkeypatch)
+    handle = _worker(monkeypatch, phase=object_sync_worker.PHASE_UPLOADING)
+    app = AppTest.from_string(PANEL).run()
+    assert app.button(key=object_sync_status.UPLOAD_NOW_KEY).disabled is True
+    live = _live_fragment(browser)
+
+    handle.current = replace(handle.current, phase=object_sync_worker.PHASE_IDLE, seq=3)
+    browser.fragment_queue = [live]
+    app = app.run()
+
+    assert not list(app.exception)
+    assert browser.started == [[live], []]
+    assert app.button(key=object_sync_status.UPLOAD_NOW_KEY).disabled is False
+    assert _labels(app) == ["DB 동기화 · 올릴 것 없음 :green-badge[CI/CD 눌러도 됨]"]
+
+
+def test_the_panel_keeps_toggles_on_the_whole_app_while_it_watches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """여닫기 콜백이 앱 전체 요청을 프래그먼트 회차로 바꾸면 브라우저가 이미 지운 `run_every`
+    시계를 다시 세울 회차가 오지 않는다 — 펼침이 선 실행 뒤의 여닫기는 앱 전체로 돈다(E2E 실측:
+    이웃 상자를 여닫은 뒤 45초 동안 다시 돌지 않았다)."""
+    _boot(monkeypatch, managed=True)
+    _admin(monkeypatch)
+    _worker(monkeypatch)
+
+    import streamlit as st_module
+
+    from capa_simulation import sidebar_status
+
+    monkeypatch.setattr(sidebar_status, "_current_page_hash", lambda: "page")
+    calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(st_module, "rerun", lambda *args, **kwargs: calls.append(args))
+    app = AppTest.from_string(PANEL_WITH_A_NEIGHBOUR_BOX).run()
+    state = app.session_state[sidebar_status.APP_RUN_STATE_KEY]
+    assert state["complete"] is True
+
+    app.checkbox(key=NEIGHBOUR_BOX).check().run()
+
+    assert not list(app.exception)
+    assert calls == [], "앱 전체 재실행으로 물러난다"
 
 
 def test_a_broken_setting_raises_the_off_alert(monkeypatch: pytest.MonkeyPatch) -> None:

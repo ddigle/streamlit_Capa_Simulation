@@ -369,6 +369,93 @@ def test_a_fragment_body_does_not_restore_over_a_run_that_began_meanwhile() -> N
     assert state["complete"] is False
 
 
+# --- `run_every` 프래그먼트가 선 페이지(E2E C-11 · C-15) ------------------------------------------
+
+
+def _periodic_script() -> None:
+    """`app.py` 꼴 실행 표지 + (`sidebar_box_toggle_test_end` 가 `left` 가 아니면) `run_every`
+    프래그먼트를 세웠다는 표 + 본문 상자 하나 + 프래그먼트 안 상자 하나."""
+    import streamlit as st
+
+    from capa_simulation.sidebar_status import (
+        SIDEBAR_TOGGLE_FRAGMENT_KEY,
+        begin_app_run,
+        note_periodic_fragment,
+        on_box_toggle,
+        rerun_fragment_if_alone,
+    )
+
+    run = begin_app_run()
+    box_key = "sidebar_box_toggle_test_box"
+    st.checkbox("상자", key=box_key, on_change=on_box_toggle, args=(box_key, "상자"))
+
+    @st.fragment(key="sidebar_box_toggle_test_inner")
+    def inner() -> None:
+        inner_key = "sidebar_box_toggle_test_other"
+        st.checkbox(
+            "안 상자",
+            key=inner_key,
+            on_change=rerun_fragment_if_alone,
+            args=(SIDEBAR_TOGGLE_FRAGMENT_KEY, inner_key),
+        )
+
+    inner()
+    if st.session_state.get("sidebar_box_toggle_test_end") != "left":
+        note_periodic_fragment()
+    run.finish()
+
+
+def test_a_page_with_a_periodic_fragment_keeps_toggles_on_the_whole_app(
+    rerun_calls: list[tuple[object, ...]],
+) -> None:
+    """앱 전체 요청을 프래그먼트 회차로 바꾸면 브라우저가 이미 지운 `run_every` 시계를 다시 세울
+    회차가 오지 않는다 — 그 페이지의 여닫기는 앱 전체로 돈다."""
+    app = AppTest.from_function(_periodic_script).run()
+
+    app.checkbox(key=BOX_KEY).check().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert rerun_calls == []
+
+
+def test_leaving_the_page_brings_the_fragment_toggle_back(
+    rerun_calls: list[tuple[object, ...]],
+) -> None:
+    """표는 그 실행의 표지다 — `run_every` 프래그먼트가 없는 새 전체 실행 뒤에는 여닫기가 다시
+    프래그먼트만 돌린다(양성 대조)."""
+    from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_FRAGMENT_KEY
+
+    app = AppTest.from_function(_periodic_script).run()
+    app.session_state[END_KEY] = "left"
+    app.run()
+
+    app.checkbox(key=BOX_KEY).check().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert rerun_calls == [(SIDEBAR_TOGGLE_FRAGMENT_KEY,)]
+
+
+def test_a_widget_inside_a_fragment_keeps_the_fragment_rerun(
+    rerun_calls: list[tuple[object, ...]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """프래그먼트 안 위젯의 요청은 프래그먼트 회차라 브라우저가 시계를 지우지 않는다 — 표가 서
+    있어도 그대로 프래그먼트만 돌린다."""
+    from fragment_browser import install_fragment_browser
+
+    from capa_simulation.sidebar_status import SIDEBAR_TOGGLE_FRAGMENT_KEY
+
+    browser = install_fragment_browser(monkeypatch)
+    app = AppTest.from_function(_periodic_script).run()
+    inner = browser.fragment_keyed("sidebar_box_toggle_test_inner")
+
+    browser.fragment_queue = [inner]
+    app.checkbox(key=OTHER_KEY).check().run()
+
+    assert not app.exception, [item.message for item in app.exception]
+    assert browser.started[0] == [inner]
+    assert rerun_calls == [(SIDEBAR_TOGGLE_FRAGMENT_KEY,)]
+
+
 def _decorators(path: Path, function: str) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     (node,) = [

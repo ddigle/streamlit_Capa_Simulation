@@ -239,6 +239,26 @@ def test_upload_now_clears_the_backoff(rig: Rig) -> None:
     assert rig.worker.status().failures == 0
 
 
+def test_upload_now_keeps_counting_while_the_store_keeps_refusing(rig: Rig) -> None:
+    """누를 때마다 연속 실패가 1 로 돌아가면 배지가 「누르면 저장 잃음」 에 닿지 못한다 — 누름은
+    물러남 대기만 비우고, 연속 실패 수는 성공 때만 0 으로 돌아간다."""
+    _settled(rig)
+    rig.engine.results.extend([UNREACHABLE] * OVERDUE_FAILURES)
+    sync_state.request_upload()
+    rig.worker.tick()
+    assert rig.worker.status().failures == 1
+
+    for count in range(2, OVERDUE_FAILURES + 1):
+        rig.worker.request_now()
+        rig.worker.tick()
+        assert rig.engine.uploads == count
+        assert rig.worker.status().failures == count
+
+    status = rig.worker.status()
+    assert status.failure_kind == "unreachable"
+    assert assess(status, sync_state.mark_clock(), rig.clock()).title == worker_module.TITLE_FAILED
+
+
 def test_upload_now_on_a_blocked_worker_judges_again(rig: Rig) -> None:
     _settled(rig)
     rig.engine.results.append(PublishOutcome(decision=PushDecision.PARENT_MOVED))

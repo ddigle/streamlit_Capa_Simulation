@@ -290,7 +290,7 @@ class ObjectSyncWorker:
         self._wake.set()
 
     def request_now(self) -> None:
-        """「지금 올리기」. 물러남을 비우고, 막힘이면 다시 판정만 한다."""
+        """「지금 올리기」. 물러남을 비우고(연속 실패 수는 그대로), 막힘이면 다시 판정만 한다."""
         with self._state_lock:
             self._manual = True
         self._wake.set()
@@ -346,9 +346,10 @@ class ObjectSyncWorker:
             manual = self._manual
             self._manual = False
         if manual:
+            # 누름은 물러남 대기만 비운다 — 연속 실패 수는 성공 때만 0 이다(누를 때마다 0 이면
+            # 계속 실패하는 동안 배지가 「누르면 저장 잃음」 에 닿지 못한다).
             self._retry_at = None
             self._blocked_until = now
-            self._set(failures=0, failure_kind=None)
         dirty = self._read_dirty()
         if any(dirty.values()):
             sync_state.note_leftover_marks()
