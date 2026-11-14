@@ -24,7 +24,7 @@ from capa_simulation.auth import names, runtime, web
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.identity import Identity
 from capa_simulation.auth.tokens import issue_session
-from capa_simulation.components import sso_identity
+from capa_simulation.components import admin_view, sso_identity
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import SHELL_STYLE
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
@@ -393,20 +393,26 @@ def test_a_new_account_in_the_same_session_stops(
 
 
 def test_an_enabled_setting_without_the_gate_stops(cookies: dict[str, str]) -> None:
-    """켜진 설정인데 `streamlit run app.py` 로 떴으면(문지기 표지 없음) 쿠키가 맞아도 멈춘다."""
+    """켜진 설정인데 `streamlit run app.py` 로 떴으면(문지기 표지 없음) 쿠키가 맞아도 멈춘다. 그
+    쿠키가 관리자(`LOGINID`)면 접힌 진단이 선다 — 관리자 몫 한 판정(`admin_view`)."""
     cfg = use_config()
     token, _ = _session(cfg)
     cookies[cfg.session_cookie] = token
 
     app = AppTest.from_string(SCRIPT).run()
 
+    assert not list(app.exception)
     assert [error.value for error in app.error] == [sso_identity.NO_GATE_NOTICE]
     assert _texts(app) == []
+    [fold] = app.expander
+    assert fold.label == ADMIN_DIAGNOSTIC_LABEL
+    assert str(fold.caption[0].value) == sso_identity.NO_GATE_DIAGNOSTIC
 
 
 def test_a_broken_setting_without_the_gate_names_the_problems(cookies: dict[str, str]) -> None:
-    """반쯤 설정(막힘)으로 문지기 없이 뜨면 이름 목록도 보인다 — 값은 보이지 않는다."""
-    use_config(drop=[names.ENV_ISSUER])
+    """운영이 아닌 서버가 반쯤 설정(막힘)으로 문지기 없이 뜨면 이름 목록도 보인다(관리자 몫 — 꺼짐 ·
+    막힘의 운영 아닌 서버는 누구나) — 값은 보이지 않는다."""
+    use_config({names.ENV_APP_ENV: "dev"}, drop=[names.ENV_ISSUER])
 
     app = AppTest.from_string(SCRIPT).run()
 
@@ -416,15 +422,97 @@ def test_a_broken_setting_without_the_gate_names_the_problems(cookies: dict[str,
     assert "idp.example.invalid" not in captions
 
 
+def _every_value(app: AppTest) -> list[str]:
+    """화면에 선 글 전부 — 경고 · 캡션 · 마크다운 · 코드 · 글 · 펼침 이름."""
+    elements = (*app.error, *app.warning, *app.caption, *app.markdown, *app.code, *app.text)
+    return [str(element.value) for element in elements] + [str(fold.label) for fold in app.expander]
+
+
+# 관리자 몫이 아닌 회차에 어느 칸에도 없어야 하는 낱말 — 실행 명령 · 환경변수 이름 · 문서 경로.
+_GATE_LESS_ADMIN_WORDS = (
+    "streamlit",
+    "capa_server",
+    names.ENV_CLIENT_ID,
+    names.ENV_ISSUER,
+    names.SETUP_DOC,
+    sso_identity.NO_GATE_PROBLEMS_CAPTION,
+    ADMIN_DIAGNOSTIC_LABEL,
+)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "drop", "loginid"),
+    [
+        pytest.param({}, [names.ENV_ISSUER], None, id="broken-prod"),
+        pytest.param({}, [], None, id="on-prod-no-cookie"),
+        pytest.param({}, [], "other.user", id="on-prod-user"),
+        pytest.param(
+            {names.ENV_APP_ENV: "dev", names.ENV_PUBLIC_URL: "http://127.0.0.1:8080"},
+            [],
+            None,
+            id="on-dev-no-cookie",
+        ),
+    ],
+)
+def test_the_gate_less_stop_keeps_the_fold_from_people_outside_the_admin_audience(
+    cookies: dict[str, str],
+    overrides: dict[str, str],
+    drop: list[str],
+    loginid: str | None,
+) -> None:
+    """관리자 몫(`admin_view.admin_notes_visible`)이 아닌 회차 — 막힌 운영 서버의 누구나, 켜진
+    설정의 일반 사용자 · 쿠키 없는 사람 — 에는 접힌 진단이 서지 않고 실행 명령 · 환경변수 이름 ·
+    안내 문서가 어느 칸에도 없다. 경고 한 줄 · 참고 줄(사유 낱말)은 그대로다."""
+    cfg = use_config(overrides, drop=drop)
+    if loginid is not None:
+        token, _ = _session(cfg, loginid=loginid)
+        cookies[cfg.session_cookie] = token
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    assert [error.value for error in app.error] == [sso_identity.NO_GATE_NOTICE]
+    assert list(app.expander) == []
+    values = _every_value(app)
+    for word in _GATE_LESS_ADMIN_WORDS:
+        assert not [value for value in values if word in value], word
+    assert any(
+        value.startswith(f"참고 {sso_identity.NO_GATE_REFERENCE} · ")
+        for value in _caption_values(app)
+    )
+    assert _texts(app) == []
+
+
+def test_a_failing_admin_check_leaves_the_gate_less_stop_without_the_fold(
+    cookies: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정이 예외를 내면 접힌 진단 없음으로 물러선다 — 이 판이 마지막 자리라 판은 그대로 선다(운영
+    아닌 막힘이라 판정이 섰다면 누구에게나 보였을 회차)."""
+
+    def broken() -> bool:
+        raise RuntimeError("판정 실패")
+
+    monkeypatch.setattr(admin_view, "admin_notes_visible", broken)
+    use_config({names.ENV_APP_ENV: "dev"}, drop=[names.ENV_ISSUER])
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    assert not list(app.exception)
+    assert [error.value for error in app.error] == [sso_identity.NO_GATE_NOTICE]
+    assert list(app.expander) == []
+    assert not [value for value in _every_value(app) if names.ENV_ISSUER in value]
+    assert _texts(app) == []
+
+
 def test_the_gate_less_stop_says_little_and_folds_the_admin_text(
     cookies: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """문지기 없이 뜬 앱(카드 p2-config) — 누구나 읽는 경고 한 줄(실행 명령 · 환경변수 이름 없음) ·
     문의 캡션 · 참고 줄. 지금까지의 글(까닭 · 실행 명령 · 설정 문제 이름 · 안내 문서)은 앱 안 판의
     접힌 「관리자용 진단」(`diagnostic_copy.ADMIN_DIAGNOSTIC_LABEL`)에 있고 다시 열어도 같아 주
-    단추가 없다."""
+    단추가 없다. 접힌 진단이 서는 관리자 몫 회차 — 운영이 아닌 막힌 서버(누구나)에서 본다."""
     monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, "help@example.com")
-    use_config(drop=[names.ENV_ISSUER])
+    use_config({names.ENV_APP_ENV: "dev"}, drop=[names.ENV_ISSUER])
 
     app = AppTest.from_string(SCRIPT).run()
 

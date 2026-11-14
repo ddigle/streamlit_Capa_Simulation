@@ -94,7 +94,7 @@ MISSING_NOTICE = "로그인 정보가 없습니다."
 # 계정 바뀜 경고의 꼬리 — 앞에 새 계정의 표시 이름(「…」)이 선다(`account_changed_notice`).
 ACCOUNT_CHANGED_TAIL = " 계정으로 바뀌었습니다"
 # 문지기 없이 뜬 앱(카드 p2-config) — 누구나 읽는 경고 한 줄. 실행 명령 · 환경변수 이름 · 문서
-# 경로는 접힌 「관리자용 진단」 의 `NO_GATE_DIAGNOSTIC` 에만 둔다.
+# 경로는 관리자 몫에만 서는 접힌 「관리자용 진단」 의 `NO_GATE_DIAGNOSTIC` 에만 둔다.
 NO_GATE_NOTICE = "지금은 앱을 열 수 없습니다(서버 시작 설정)"
 NO_GATE_DIAGNOSTIC = (
     f"통합인증을 켜는 설정(`{names.ENV_CLIENT_ID}`)인데 문지기 없이 앱이 시작됐습니다. "
@@ -207,6 +207,10 @@ def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
     """문지기 없이 뜬 앱 — 앱 안 멈춤 판(경고 한 줄 · 문의 캡션 · 참고 줄 · 접힌 진단). 다시 열어도
     같아 주 단추가 없다 — 운영자가 진입 파일로 다시 띄워야 풀린다.
 
+    접힌 진단(실행 명령 · 설정 문제 이름 · 안내 문서)은 관리자 몫(`_no_gate_diagnostic_visible`)에만
+    세운다 — 앱 안 판의 「관리자용 진단」 은 앱 시작 실패 판 · 코어 화면 오류 카드와 한 판정이다.
+    다른 사람에게는 참고 줄의 사유 낱말(`NO_GATE_REFERENCE`)만이다.
+
     진단 복사 부품은 여기서 불러온다 — Components v2 는 import 때 등록되므로 이 모듈을 진입 파일이
     먼저 부르더라도(감사 행위자) 실행기 전에 등록되지 않게.
     """
@@ -222,13 +226,29 @@ def _stop_without_gate(cfg: SsoConfig) -> NoReturn:
     render_contact_caption(cfg.access.contact)
     reference = reference_line(NO_GATE_REFERENCE)
     st.caption(reference)
-    lines = no_gate_diagnostic_lines(cfg)
-    with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=NO_GATE_DIAGNOSTIC_KEY):
-        text = diagnostic_text(NO_GATE_DIAGNOSTIC_TITLE, [reference], plain_lines(lines))
-        render_diagnostic_copy(text, key=NO_GATE_COPY_KEY)
-        for line in lines:
-            st.caption(line)
+    if _no_gate_diagnostic_visible():
+        lines = no_gate_diagnostic_lines(cfg)
+        with st.expander(ADMIN_DIAGNOSTIC_LABEL, key=NO_GATE_DIAGNOSTIC_KEY):
+            text = diagnostic_text(NO_GATE_DIAGNOSTIC_TITLE, [reference], plain_lines(lines))
+            render_diagnostic_copy(text, key=NO_GATE_COPY_KEY)
+            for line in lines:
+                st.caption(line)
     st.stop()
+
+
+def _no_gate_diagnostic_visible() -> bool:
+    """문지기 없이 뜬 앱 판의 접힌 진단을 세우나 — 관리자 몫(`admin_view.admin_notes_visible` —
+    관리자, 또는 통합인증이 켜짐이 아니고 운영 서버가 아닌 회차의 누구나)일 때만. 이 판이 마지막
+    자리라 판정이 무엇을 내도 닫힌 쪽(진단 없음)으로 물러선다.
+
+    `admin_view` 는 이 모듈을 부르므로 여기서 불러온다(순환 import).
+    """
+    try:
+        from capa_simulation.components.admin_view import admin_notes_visible
+
+        return admin_notes_visible()
+    except Exception:
+        return False
 
 
 def signed_out_notice(cfg: SsoConfig, problem: IdentityProblem) -> str:

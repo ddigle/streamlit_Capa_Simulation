@@ -33,10 +33,11 @@ import streamlit as st
 from capa_simulation import alerts
 
 COPY_LABEL: Final = "복사"
-# 접힌 진단 펼침의 이름. 앱 안 — 코어 화면 오류 카드(`page_failure_card`)와 앱 시작 실패
-# 판(`boot_stop`) — 은 관리자 몫(`admin_view.admin_notes_visible`)에만 세우고 서버 경로 · 원문을
-# 싣는다. 로그인 전 시작 임시 화면(`scripts/container_stage.py`)은 누구나 펼치되 이름 · 수만
-# 싣는다(보드 d9 (가)) — Streamlit 을 부르지 않아 같은 글을 따로 들고 시험이 맞댄다.
+# 접힌 진단 펼침의 이름. 앱 안 — 코어 화면 오류 카드(`page_failure_card`) · 앱 시작 실패
+# 판(`boot_stop`) · 문지기 없이 뜬 앱 판(`sso_identity`) — 은 관리자 몫
+# (`admin_view.admin_notes_visible`)에만 세우고 서버 경로 · 원문 · 실행 명령을 싣는다. 로그인 전
+# 시작 임시 화면(`scripts/container_stage.py`)은 누구나 펼치되 이름 · 수만 싣는다(보드 d9 (가)) —
+# Streamlit 을 부르지 않아 같은 글을 따로 들고 시험이 맞댄다.
 ADMIN_DIAGNOSTIC_LABEL: Final = "관리자용 진단"
 COPY_TITLE: Final = "이 펼침의 글을 통째로 복사"
 COPIED_MESSAGE: Final = "복사했습니다"

@@ -259,7 +259,9 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   「C-DEP 배포 설정의 환경변수 표를 고친 뒤 CI/CD 를 다시 돌리세요.」. 접어도 누구나 펼친다 — 값 · 비밀값 · client id 는 싣지 않고, 전부터 실려 온 계산한 주소 ·
   인증서 지문과 이름 · 수만 싣는다.
 - **문지기 없이 뜬 앱**(`streamlit run app.py` 로 켜진 설정을 띄움 — 앱 안 멈춤) — 경고 「지금은 앱을 열 수 없습니다(서버 시작 설정)」 · 문의 캡션 · 「참고
-  sso_no_gate · <시각> UTC」. 실행 명령 · 설정 문제 이름 · 안내 문서는 접힌 「관리자용 진단」(복사 단추)에 있다. 다시 열어도 같아 단추가 없다.
+  sso_no_gate · <시각> UTC」. 실행 명령 · 설정 문제 이름 · 안내 문서는 접힌 「관리자용 진단」(복사 단추)에 있다. 다시 열어도 같아 단추가 없다. 접힌 진단은
+  관리자 몫(`admin_view.admin_notes_visible` — 앱 시작 실패 판과 한 판정)에만 선다 — 관리자 세션 쿠키가 있는 사람, 또는 운영이 아닌 서버의 막힘(누구나).
+  운영 서버 · 켜진 설정의 다른 사람에게는 참고 줄의 `sso_no_gate` 만이고, 그 뜻은 「`streamlit run capa_server.py` 로 다시 띄운다」 다(아래 대응표).
 - **접속 명단 · 거절 화면** — 통합인증을 지났어도 명단에 없으면 앱에 들어오지 못한다. 세션 쿠키를 받지 못하고 거절 화면을 본다(HTTP 403). 거절 갈래 ·
   포털 거절 화면은 공통 틀(`auth/page_frame.py` — 머리 · 상태 표지 · 제목 · 까닭 · 다음에 할 일 · 주 단추 · 문의 줄 · 바닥 「참고 <사유 코드> · <시각> UTC」 ·
   접힌 「관리자용 진단」, 밝게 · 어둡게, 스크립트 없음)로 그린다. 문의 줄은 `CAPA_APP_CONTACT_EMAIL`(메일 링크)과 `CAPA_ACCESS_CONTACT`(창구 글)이고 둘 다 비면 없다.
@@ -336,7 +338,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
   | 「로그인이 되풀이됩니다」 | 시각까지 기다려 「다시 시도」. 여러 사람이면 바로 앞 실패의 사유 코드(Admin 「로그인 전 실패」 누계)를 본다 |
   | **ADFS 화면에서 멈춤**(우리 화면이 안 뜸) | 포털 등록 주소(redirect_uri) · 앱 등록 번호 · ADFS 장애 · 계정 잠김은 앱으로 돌아오지 않아 사건이 없다. Admin 「로그인 시작 · 돌아옴」 에서 돌아옴이 시작보다 훨씬 적은지 보고, 멈춘 ADFS 화면을 찍어 받아 그 글로 포털 · ADFS 담당과 고친다 |
   | 「지금은 앱을 열 수 없습니다」(설정 화면) | 접힌 진단의 「고칠 것 n개」 대로 C-DEP 환경변수 표를 고치고 CI/CD |
-  | 「지금은 앱을 열 수 없습니다(서버 시작 설정)」(앱 안) | 접힌 진단 — `capa_server.py` 로 띄운다(C-DEP 시작 스크립트는 그렇게 띄운다) |
+  | 「지금은 앱을 열 수 없습니다(서버 시작 설정)」(앱 안 · 참고 `sso_no_gate`) | 문지기 없이 떴다 — `streamlit run capa_server.py` 로 띄운다(C-DEP 시작 스크립트는 그렇게 띄운다). 접힌 진단은 관리자 몫에만 선다 |
 - 서버 로그(볼 수 있다면) — `sso event=config|login_ok|login_denied|login_fail|idp_error|logout|session_closed|cert_expiring|access_read|access_retry_failed|access_saved|access_self_registered|access_self_register_failed|access_save_failed|access_seed_mark_failed …` 한 줄씩
   (`session_closed` 는 만료 · 로그아웃한 열린 탭의 연결을 문지기가 닫은 것 — 만료면 `end=idle`(쓰지 않아 끝남) · `end=max`(최대 시간)).
 - **거절 화면**(`/auth/sso/error?code=not_on_list`, 403) — 접속 명단 밖. 사유 코드 `not_on_list` 는 IdP 의 `access_denied`(포털이 거절 — 같은 틀의 포털 거절 꼴 `idp_error:access_denied`)와 다르다. 바닥 참고 줄의 사유 코드 · 시각으로 Admin 최근 사건과 짝을 맞춘다. 명단
@@ -430,8 +432,8 @@ python -m streamlit run capa_server.py --server.port 8510
   뒤 61초를 실제로 기다린 다음 브라우저 시계만 5분 넘겨(Playwright `clock.set_system_time` — 타이머를 쏘는 `fast_forward` · `run_for`
   는 Streamlit 타이머를 건드린다) 휠 한 번 → `204` + `Set-Cookie`(새 `jti`, `sid` · `auth_time` 그대로), Admin 「다시 발급」 이 는다.
 - 개발 · 시험 · 화면 확인(`scripts/check_deploy_screens.py`)은 지금처럼 `app.py` 로 띄운다 — 통합인증 환경변수가 없으면 꺼짐이고,
-  켜진 설정을 `app.py` 로 띄우면 「지금은 앱을 열 수 없습니다(서버 시작 설정)」 로 멈춘다(진입 파일 없이 열리지 않게 — 까닭은 접힌 진단의 「문지기 없이 앱이
-  시작됐습니다」).
+  켜진 설정을 `app.py` 로 띄우면 「지금은 앱을 열 수 없습니다(서버 시작 설정)」 · 참고 `sso_no_gate` 로 멈춘다(진입 파일 없이 열리지 않게 — `capa_server.py` 로
+  띄우면 풀린다. 「문지기 없이 앱이 시작됐습니다」 글은 관리자 몫에만 서는 접힌 진단에 있다 — 켜진 설정에는 관리자 세션 쿠키가 있어야 보인다).
 - **로그인 실패 화면 갈래를 가짜 IdP 로 보려면** — `--aud other-app`(설정 문제 · aud), 앱 쪽 `ADFS_SIGNING_CERT` 를 다른 인증서로(서명), 브라우저 쿠키를 지운 뒤
   가짜 IdP 화면에서 보냄(쿠키 없음 — `--submit-delay-ms` 로 시간을 번다. 쿠키를 지우지 않고 10분 넘게 늦추면 시간 지남 `state_invalid`), 오류 주소에
   `?code=state_missing`(잠시 문제)을 직접 연다.
