@@ -386,8 +386,8 @@ def _event_code(fields: dict[str, str]) -> str:
     만료로 닫힌 열린 탭(`session_closed`)은 끝난 까닭 `end`(idle · max)를 붙인다 — C-DEP 에는 서버
     로그 창구가 없어 「쓰는 중인데 끊겼다」 문의를 하루 상한인지 유휴인지 이 칸으로 가른다. 로그인
     실패(`login_fail`)는 진단 번호의 앞 글자 `diag` 를 「진단 …」 으로 붙인다 — 실패 화면 바닥 참고
-    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(감사 기록이 켜진 서버는 펼침에 표를
-    그리지 않아 「복사」 글 `status_text` 의 표에서).
+    줄의 「진단 <번호>」 를 받은 관리자가 이 칸과 맞춘다(로그인 전 실패 표는 펼침에 늘 있고, 서명이
+    맞은 뒤의 실패는 감사 기록이 켜진 서버면 「복사」 글 `status_text` 의 최근 사건 표에서).
     """
     for key in ("reason", "error", "problems", "mode"):
         value = fields.get(key, "")
@@ -745,7 +745,9 @@ def render_sso_status() -> None:
             st.caption(last_claims_line())
         # 감사 기록이 켜진 서버는 사람 단위 사건을 「접속 · 작업 기록」 탭(관리자)이
         # 보인다 — 여기에는 누계 줄만 남기고 표는 그리지 않는다(같은 정보를 두 자리에 두지
-        # 않는다, UI-TXT-07). 리뷰용 「복사」 글(`status_text`)은 그대로 표까지 싣는다.
+        # 않는다, UI-TXT-07). 리뷰용 「복사」 글(`status_text`)은 그대로 표까지 싣는다. 로그인 전
+        # 실패 표는 늘 그린다 — 감사 줄에는 그 실패가 한 시간 건수뿐이라 겹치지 않고, 실패
+        # 화면 참고 줄의 진단 번호를 맞추는 자리다(보드 decided-login 5).
         tables = not audit_recorder.enabled()
         if tables:
             events = recent_event_table()
@@ -762,9 +764,8 @@ def render_sso_status() -> None:
         anonymous = anonymous_failure_line()
         if anonymous is not None:
             st.caption(anonymous, help=ANONYMOUS_HELP)
-            if tables:
-                st.dataframe(
-                    recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
-                    hide_index=True,
-                    width="stretch",
-                )
+            st.dataframe(
+                recent_event_table(ANONYMOUS_EVENT_LIMIT, anonymous=True),
+                hide_index=True,
+                width="stretch",
+            )

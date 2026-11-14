@@ -387,24 +387,32 @@ def test_the_status_shows_audit_events_and_anonymous_failures_apart() -> None:
     assert set(anonymous["계정"].tolist()) == {"-"}
 
 
-def test_with_the_audit_log_on_the_status_keeps_only_the_count_lines() -> None:
-    """감사 기록이 켜진 서버는 사람 단위 사건 표를 「접속 · 작업 기록」 탭이 보인다 — 점검
-    펼침에는 설정 진단 · 누계 줄과 리뷰용 「복사」 만 남는다(설계 AU19). 복사 글은 그대로 표까지."""
+def test_with_the_audit_log_on_the_status_keeps_the_pre_login_failure_table() -> None:
+    """감사 기록이 켜진 서버는 사람 단위 사건 표(최근 사건 · 명단 밖 로그인)를 「접속 · 작업 기록」
+    탭이 보인다 — 점검 펼침에는 그 둘의 누계 줄과 리뷰용 「복사」 만 남는다(설계 AU19). 로그인 전
+    실패 표는 그대로 그린다 — 감사 줄에는 그 실패가 한 시간 건수뿐이라 겹치지 않고, 실패 화면의 진단
+    번호를 맞추는 자리다(보드 decided-login 5). 복사 글은 그대로 표까지."""
     from capa_simulation.audit import recorder
 
     cfg = use_config()
     runtime.mark_gate_installed()
     recorder.start(env="cdep", version="test", inst="b0b0b0b0b0b0")
     runtime.record_event("login_ok", loginid="dev.user", hours="12", jti="abcdefgh")
+    runtime.record_event(runtime.DENIED_EVENT, level=logging.WARNING, loginid="demo.gone")
     _flood(30)
 
     app = AppTest.from_string(SCRIPT).run()
 
     assert not list(app.exception)
-    assert len(app.dataframe) == 1, "설정 진단 표 하나만"
+    assert len(app.dataframe) == 2, "설정 진단 표와 로그인 전 실패 표"
+    anonymous = app.dataframe[1].value
+    assert len(anonymous) == sso_status.ANONYMOUS_EVENT_LIMIT
+    assert set(anonymous["계정"].tolist()) == {"-"}
+    assert "login_ok" not in anonymous["사건"].tolist()
     captions = [str(c.value) for c in app.caption]
     assert not any(caption.startswith("최근 사건") for caption in captions)
     assert len([c for c in captions if c.startswith("**로그인 전 실패")]) == 1
+    assert len([c for c in captions if c.startswith("명단 밖 로그인")]) == 1
     copied = sso_status.status_text("통합인증 점검", cfg, now=dt.datetime.now(dt.timezone.utc))
     assert "최근 사건(새것 먼저)" in copied
 
