@@ -56,6 +56,7 @@ from capa_simulation.components.saved_note import (
     note_placeholder,
     ready_note_field,
 )
+from capa_simulation.components.sso_identity import admin_area_locked
 from capa_simulation.components.table_toolbar import TABLE_TOOLBAR_ROOM, render_csv_download
 from capa_simulation.components.write_guard import (
     SEEN_MISSING_MESSAGE,
@@ -186,6 +187,7 @@ ACTION_ROW_CSS = f"""
 # 직접 편집 서식 한 벌 — 서식만 든 `st.html` 은 이벤트 칸으로 가므로 하나로 묶어 한 번 보낸다.
 DIRECT_EDITOR_STYLE = f"<style>{HEADING_ROW_CSS}{ACTION_ROW_CSS}</style>"
 # 바꾼 것 없는 붙여넣기의 알림(직접 편집과 같은 「바뀐 것이 없습니다」 — 설계 규칙 UI-STA-01).
+DISPLAY_ORDER_NOT_ADMIN_MESSAGE = "관리자만 공용 표시순서를 바꿀 수 있습니다"
 DISPLAY_ORDER_PASTE_UNCHANGED_MESSAGE = (
     "바뀐 것이 없습니다 — 붙여넣은 표가 지금 공용 표시순서 그대로라 새 버전을 만들지 않았습니다."
 )
@@ -269,6 +271,11 @@ def _clipboard_dialog(
         confirm_label="현재 공용 표시순서 전체 교체를 확인했습니다.",
     )
     if submit is None:
+        return
+    # 팝업 안의 누름은 팝업만 다시 돌아 페이지 앞머리의 Admin Area 잠금을 지나지 않는다 — 팝업을 연
+    # 뒤 관리자 등급을 잃은 사람의 적용이 저장되지 않게 쓰는 순간 다시 판정한다.
+    if admin_area_locked():
+        refuse_paste(CLIPBOARD_FORM_KEY, DISPLAY_ORDER_NOT_ADMIN_MESSAGE)
         return
     if not submit.text.strip():
         refuse_paste(CLIPBOARD_FORM_KEY, "적용할 표시순서 표를 Excel에서 복사해 붙여넣으세요.")

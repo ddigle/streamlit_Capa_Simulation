@@ -1,5 +1,5 @@
-# Purpose: Admin Area 관리자 전용 — 운영 서버 잠금·개발 열림·명단 관리자 열림·사이드바 메뉴 빼기를
-# 지킨다.
+# Purpose: Admin Area 관리자 전용 — 운영 서버 잠금·개발 열림·명단 관리자 열림·사이드바 메뉴
+# 빼기·팝업 적용의 다시 판정을 지킨다.
 
 """Admin Area 를 관리자에게만(2026-11-13 보드 D11 · 2026-11-14 답).
 
@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 from sso_support import sso_environ, use_config
 from streamlit.testing.v1 import AppTest
@@ -253,3 +254,118 @@ def test_the_operational_server_without_the_gate_stays_locked(
     assert not list(app.exception), [element.message for element in app.exception]
     assert [error.value for error in app.error] == [sso_identity.NO_GATE_NOTICE]
     assert "Admin Area" not in _support_links(app), "메뉴가 서지 않는다"
+
+
+# --- 팝업 안의 적용 — 팝업만 다시 돌아 페이지 잠금을 지나지 않는다 ----------------------
+
+_DISPLAY_ORDER_ROWS = {
+    "페이지 구분": ["생산 계획", "생산 계획"],
+    "탭 구분": ["환산", "환산"],
+    "정렬우선순위": [1, 1],
+    "분류컬럼": ["양산구분", "양산구분"],
+    "정렬방식": ["사용자지정", "사용자지정"],
+    "분류값": ["양산", "ER"],
+    "값표시순서": [1, 2],
+    "활성여부": ["Y", "Y"],
+}
+
+
+def _paste_component_script(database_path: Path, *, display_order: bool) -> str:
+    """Admin Area 탭 하나만 그린다 — 팝업만 다시 도는 회차처럼 페이지 잠금을 거치지 않는다. 마지막
+    줄에 다시 읽은 공용 버전을 적는다."""
+    if display_order:
+        body = f"""
+import pandas as pd
+from capa_simulation.components.display_order_management import render_display_order_management
+from capa_simulation.persistence.cache import load_global_display_order
+repository.initialize_global_display_order(pd.DataFrame({_DISPLAY_ORDER_ROWS!r}))
+render_display_order_management(repository)
+st.text("v%d" % load_global_display_order(str(database_path)).version)
+"""
+    else:
+        body = """
+from capa_simulation.components.process_rename_management import render_process_rename_management
+from capa_simulation.persistence.cache import load_global_process_rename
+render_process_rename_management(repository, ["SAW", "MOLD"])
+st.text("v%d" % load_global_process_rename(str(database_path)).version)
+"""
+    return f"""
+from pathlib import Path
+
+import streamlit as st
+
+from capa_simulation.persistence.repository import DuckDBScenarioRepository
+
+database_path = Path({str(database_path)!r})
+repository = DuckDBScenarioRepository(database_path)
+repository.initialize()
+{body}"""
+
+
+def _demote_list_admin() -> None:
+    """다른 관리자가 `LIST_ADMIN` 을 일반으로 내린 뒤의 명단."""
+    cfg = runtime.config()
+    document = ListDocument(revision=2, entries=(ListEntry(LIST_ADMIN), ListEntry(USER)))
+    runtime.publish_access_source(
+        AccessSource(access=compose_access(cfg.access, document), document=document)
+    )
+
+
+@pytest.mark.parametrize("display_order", [False, True], ids=["process_rename", "display_order"])
+@pytest.mark.parametrize("demoted", [False, True], ids=["still_admin", "demoted"])
+def test_a_paste_popup_opened_as_admin_saves_only_while_still_admin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, display_order: bool, demoted: bool
+) -> None:
+    """팝업을 연 뒤 등급을 잃은 사람의 「적용」 은 저장되지 않는다 — 팝업 안의 누름은 팝업만 다시
+    돌아 `app_pages/admin_area.py` 앞머리의 잠금을 지나지 않으므로 쓰는 순간 다시 판정한다."""
+    from alert_marks import flashed
+
+    from capa_simulation.components import display_order_management, process_rename_management
+
+    use_config({names.ENV_ACCESS_ADMINS: ADMIN, names.ENV_ACCESS_USERS: ""})
+    runtime.mark_gate_installed()
+    _with_list_admin()
+    _as(monkeypatch, LIST_ADMIN)
+    if display_order:
+        opener, text_key, confirm_key, apply_label = (
+            "display_order_open_paste",
+            "global_display_order_clipboard",
+            display_order_management.CLIPBOARD_CONFIRM_KEY,
+            "붙여넣기 표시순서 적용",
+        )
+        rows = dict(_DISPLAY_ORDER_ROWS, 값표시순서=[2, 1])
+        pasted = pd.DataFrame(rows).to_csv(index=False, sep="\t")
+        refusal = display_order_management.DISPLAY_ORDER_NOT_ADMIN_MESSAGE
+    else:
+        opener, text_key, confirm_key, apply_label = (
+            "admin_area_process_rename_open_paste",
+            "admin_area_process_rename_clipboard",
+            process_rename_management.CLIPBOARD_CONFIRM_KEY,
+            "붙여넣기 표시명 적용",
+        )
+        pasted = "공정\t표시명\nSAW\t절단\nMOLD\t성형"
+        refusal = process_rename_management.PROCESS_RENAME_NOT_ADMIN_MESSAGE
+    script = _paste_component_script(tmp_path / "shared.duckdb", display_order=display_order)
+    app = AppTest.from_string(script).run(timeout=60)
+    before = app.text[-1].value
+    app.button(key=opener).click().run(timeout=60)
+    assert any(area.key == text_key for area in app.text_area), "관리자에게는 팝업이 열린다"
+
+    if demoted:
+        _demote_list_admin()
+        assert sso_identity.admin_area_locked()
+    app.text_area(text_key).set_value(pasted)
+    app.checkbox(confirm_key).check()
+    next(button for button in app.button if button.label == apply_label).click()
+    app.run(timeout=60)
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    errors = [str(error.value) for error in flashed(app, "error")]
+    if demoted:
+        assert errors == [refusal]
+        assert app.text[-1].value == before, "등급을 잃은 뒤의 적용은 공용 설정을 바꾸지 않는다"
+    else:
+        assert errors == []
+        assert app.text[-1].value != before, (
+            "아직 관리자면 그대로 저장된다(이 시험이 빈 시험이 아님)"
+        )
