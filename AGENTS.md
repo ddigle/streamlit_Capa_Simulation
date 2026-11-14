@@ -420,7 +420,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     세운다)를, 503 + `X-Capa-Stage`(시작 임시 응답)면 `/_capa_stage` 셋째 줄의 짧은 글을
     실은 링크 없는 재시작 띠를, 답 없음(연결 실패 · 물음 8초 넘김 `PROBE_TIMEOUT_MS`)이면 「서버 응답을 기다리는 중입니다」(답 없음 20초 넘으면
     「서버에 닿지 않습니다 — 다시 붙는 중」)를 연결 오류 창 위에 세우고 그 영어 창(401 · 5xx · 시간 넘김 · not responding · localhost 의
-    still running)을 감춘다. 표 없는 5xx 는 같은 뿌리 health 를 한 번 더 물어 앱의 답(표 없는 2xx — `appAnswers`)이 아니면(앞단 502 · 504 ·
+    still running)과 머리 상태 글(`STATUS_WIDGET_SELECTOR` — 「CONNECTING」)을 같은 표지 · 같은 지켜보기로 감춘다(띠를 걷으면 되돌리고, 띠가
+    없을 때의 창 · 상태 글은 건드리지 않는다). 표 없는 5xx 는 같은 뿌리 health 를 한 번 더 물어 앱의 답(표 없는 2xx — `appAnswers`)이 아니면(앞단 502 · 504 ·
     Streamlit 준비 전) 기다림이고, 앱의 답이면 host-config 를 다시 물어 그래도 표 없는 5xx(`stillRefused` — 앱이 떠서 거절, 통합인증 설정 막힘의
     503)면 같은 자리에 설정 막힘 띠(`BLOCKED_NOTICE` — 설정 막힘 화면 `CONFIG_TITLE` 과 같은 낱말 + 지금 문서를 다시 여는 「새로고침」
     링크, 풍선 `REFRESH_TIP` — 2026-11-14 보드 english), 다시 물을 때 앱이 답하면(넘김 틈) 띠를 걷는다. 로그인 띠가 서 있으면 재시작 자리의 띠는 서지 않는다.
