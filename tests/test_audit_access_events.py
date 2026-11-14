@@ -13,7 +13,16 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import pytest
 from asgi_driver import AsgiResponse, http
-from sso_support import LOGINID, id_token_claims, make_id_token, sso_environ, use_config
+from sso_support import (
+    LOGINID,
+    expiring_signing,
+    id_token_claims,
+    later_expiring_signing,
+    make_id_token,
+    signing,
+    sso_environ,
+    use_config,
+)
 from starlette.applications import Starlette
 from streamlit.testing.v1 import AppTest
 
@@ -232,6 +241,45 @@ def test_a_good_list_read_at_boot_leaves_no_failure_line(
         "sys_startup",
         "authz_admin_config",
     ]
+
+
+def test_expiring_signing_certs_at_boot_are_one_audit_line_each(tmp_path: Path) -> None:
+    """서명 인증서 만료 임박(`cert_expiring`)은 설정을 읽는 `runtime.start` 에서만 나고, 그때는 감사
+    기록기가 켜지기 전이다. 기록기를 켠 자리에서 만료가 30일 안인 인증서마다 「서명 인증서 만료
+    임박」 한 줄이 선다(시작 줄 뒤 · 인증서 차례). S3 명단이 없는 서버에서도 선다 — 명단 읽기
+    따라잡기와 따로다. 남은 날은 서버 로그의 `cert_expiring` 과 같은 셈(내림)이다."""
+    spool.configure(tmp_path)
+    cfg = use_config(
+        {
+            names.ENV_SIGNING_CERT: ",".join(
+                (
+                    expiring_signing().der_b64,
+                    signing().der_b64,
+                    later_expiring_signing().der_b64,
+                )
+            )
+        }
+    )
+    assert not access_store.is_on(cfg)
+    announced = [
+        event.value("days")
+        for event in reversed(runtime.recent_events(anonymous=False))
+        if event.event == "cert_expiring"
+    ]
+    assert announced == ["9", "19"]
+
+    assert boot.start(cfg) is True
+
+    lines = recorder.take_pending()
+    assert [line["ev"] for line in lines] == [
+        "sys_startup",
+        "authz_admin_config",
+        "sys_cert_expiring",
+        "sys_cert_expiring",
+    ]
+    for line in lines[2:]:
+        assert (line["out"], line["actor"], line["grade"]) == ("success", "system:sso", "system")
+    assert [line["det"] for line in lines[2:]] == [{"days": 9}, {"days": 19}]
 
 
 def test_the_deploy_version_falls_back_to_the_app_version(monkeypatch: pytest.MonkeyPatch) -> None:

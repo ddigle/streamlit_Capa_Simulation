@@ -357,8 +357,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   손입력 이름은 `claimed`)는 `persistence/work_audit.py` 가 짓는다(시험 `tests/test_audit_work_events.py` 가 설계서 2-3 표의
   함수 → 사건을 맞댄다). 켜는 곳은 `audit/boot.py` 하나다 —
   `capa_server.py` 가 `start_sso()` 바로 뒤에 부르고 통합인증 모드가 켜짐일 때만 켜며 `sys_startup` · `authz_admin_config`(관리자
-  수 · 목록 지문 8자) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 사용자)를 꽂는다. S3 명단의 기동 읽기는 `start_sso()` 안이라
-  기록기보다 먼저 돈다 — 그 읽기가 실패한 서버면 같은 자리에서 `sys_access_read_fail` 한 줄을 더한다(`_note_list_read_at_start`).
+  수 · 목록 지문 8자) · `sys_boot_pull` 을 남기고 등급 판정기(관리자 · 사용자)를 꽂는다. 설정 읽기와 S3 명단의 기동 읽기는 `start_sso()`
+  안이라 기록기보다 먼저 돈다 — 같은 자리에서 그 사건을 따라잡는다. 만료가 30일 안인 서명 인증서마다 `sys_cert_expiring` 한 줄
+  (`_note_expiring_certs` — 서버 로그 `cert_expiring` 과 한 판정 `runtime.expiring_certs`, 기동 때만), 그 읽기가 실패한 서버면
+  `sys_access_read_fail` 한 줄(`_note_list_read_at_start`).
   자가 회복 실패(`access_retry_failed`)는 대응표 밖이다(누계만).
   통합인증 사건은 `auth/runtime.record_event` 가 잠금 밖에서 대응표(`from_sso_event`)로 넘기고(로그인 성공의 이름은 감사
   줄에만 — `audit=` 칸, 서버 로그 · 고리에는 싣지 않는다), 갱신 누계는 시간 묶음으로 센다.
