@@ -2614,6 +2614,7 @@ E2E_1115_ANSWERS = {
     "s-A-13": "두 화면 모두 작은 링크로 낮춤",
     "s-A-14": "표지를 「점검 중」 으로",
     "s-C-02": "「등록 길」 값을 「관리자가 넣음」 으로",
+    "s-C-13": "지금대로",
     "s-C-14": "80일 좋음",
     "s-B-12": "이대로",
     "s-A-01": "좋음",
@@ -2692,6 +2693,13 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
         assert phrase in refresh, phrase
     frame = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
     assert "s-C-14 「80일 좋음」" in frame
+
+    # s-C-13 「지금대로」 — 시작 점검 표 「토큰 자동 갱신」 줄의 결과 낱말 · 제목 판정 밖을 예외로.
+    con02_except = rules["UI-CON-02"].fields["예외"][0]
+    for phrase in ("토큰 자동 갱신", "준비 · 꺼짐 · 켜짐 · 멈춤", "정상 · 건너뜀 · 실패", "s-C-13"):
+        assert phrase in con02_except, phrase
+    assert "s-C-13" in rules["UI-DAT-11"].fields["예외"][0]
+    assert "s-C-13 「지금대로」" in frame
 
     narrowed = [line for line in _chapter(document, 7).splitlines() if "s-A-13" in line]
     assert len(narrowed) == 1, "7-1 에 공통 틀 「주 단추 하나」 를 좁힌 줄이 하나 있다"
