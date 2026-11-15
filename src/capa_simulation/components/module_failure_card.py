@@ -13,7 +13,10 @@
   둔다 — 담당자가 메신저로 옮긴다.
 - Streamlit 기본 traceback 전문(서버 경로가 나간다)을 그리지 않는다. 프레임은 **모듈 폴더 안**의
   것만 `<id>/<상대 경로>:<줄> in <함수>` 꼴로 싣는다.
-- 예외 글은 첫 줄 200자만 싣는다(진단 칸은 코드 칸이라 마크다운으로 해석되지 않는다).
+- 예외 글은 첫 줄 200자만 싣는다(진단 칸은 코드 칸이라 마크다운으로 해석되지 않는다). 그래서 앱이
+  짓는 안내 줄(끄는 법 · import 안내)도 코드 표지(백틱) 없이 짓는다 — 평문 칸에서는 글자로 보인다.
+- 진단 칸은 줄을 꺾는다(`wrap_lines`) — 사내 보고 창(1283)에서 끄는 법 줄이 칸 밖으로 넘치지
+  않는다. 앱 안 멈춤 판의 접힌 진단(`stop_panel`)과 같은 꼴이다(설계 규칙 UI-CON-04).
 - 복사 단추 key 는 카드마다 새로 짓는다 — 한 화면에 카드가 여럿 서도 겹치지 않는다.
 """
 
@@ -76,14 +79,15 @@ def _local_names(folder: Path) -> frozenset[str]:
 
 
 def import_hint(exc: BaseException, *, module_id: str, folder: Path) -> str:
-    """import 실패면 셋 가운데 하나(첫 해당)의 안내 한 줄, 아니면 빈 글자."""
+    """import 실패면 셋 가운데 하나(첫 해당)의 안내 한 줄(평문 — 코드 표지 없음), 아니면 빈
+    글자."""
     if not isinstance(exc, ImportError):
         return ""
     name = exc.name or ""
     if name == API_MODULE or name.startswith(f"{API_MODULE}."):
         return (
             f"이 모듈이 쓰는 코어 창구 이름이 이 코어(API {API_MAJOR}.{API_MINOR})에 없습니다 — "
-            f"module.json 의 api·api_minor 와 `{GUIDE_DOCUMENT}` 부록 C 를 봅니다."
+            f"module.json 의 api·api_minor 와 {GUIDE_DOCUMENT} 부록 C 를 봅니다."
         )
     if not isinstance(exc, ModuleNotFoundError) or not name:
         return ""
@@ -91,12 +95,12 @@ def import_hint(exc: BaseException, *, module_id: str, folder: Path) -> str:
     if head == "modules" or head in _local_names(folder):
         helper = head if head != "modules" else "<이름>"
         return (
-            f"같은 모듈의 파일은 이렇게 부릅니다 — `from modules.{module_id} import {helper}`"
-            f"(`{GUIDE_DOCUMENT}` 3장)."
+            f"같은 모듈의 파일은 이렇게 부릅니다({GUIDE_DOCUMENT} 3장) — "
+            f"from modules.{module_id} import {helper}"
         )
     return (
-        f"이 서버에 없는 패키지입니다: `{head}` — 담당자가 앱 관리자에게 알리면 앱 관리자가 "
-        f"「사외 요청」 으로 코어 의존성에 넣습니다(`{GUIDE_DOCUMENT}` 6장)."
+        f"이 서버에 없는 패키지입니다: {head} — 담당자가 앱 관리자에게 알리면 앱 관리자가 "
+        f"「사외 요청」 으로 코어 의존성에 넣습니다({GUIDE_DOCUMENT} 6장)."
     )
 
 
@@ -147,11 +151,12 @@ def _headline(module_name: str, page_title: str | None, where: str) -> str:
 
 
 def switch_off_help(module_id: str, *, page_title: str | None) -> str:
-    """진단 칸의 끄는 법 — 그대로 쓰는 범위와 모듈을 끄는 법(`docs/module_guide.md` 9-2)."""
+    """진단 칸의 끄는 법 — 그대로 쓰는 범위와 모듈을 끄는 법(`docs/module_guide.md` 9-2). 평문
+    칸에 싣는 줄이라 코드 표지 없이 짓는다."""
     kept = "화면의 나머지와 다른 화면은" if page_title is None else "다른 화면은"
     return (
-        f"{kept} 그대로 씁니다. 끄려면 `module.json` 의 `enabled` 를 false 로 하거나 실행 "
-        f"환경변수(`{DISABLED_ENV_VAR}={module_id}`)를 넣고 앱을 다시 띄웁니다."
+        f"{kept} 그대로 씁니다. 끄려면 module.json 의 enabled 를 false 로 하거나 실행 "
+        f"환경변수({DISABLED_ENV_VAR}={module_id})를 넣고 앱을 다시 띄웁니다."
     )
 
 
@@ -202,7 +207,7 @@ def render_failure_parts(
             diagnostic_text(_headline(module_name, page_title, where), lines),
             key=f"{COPY_KEY_HEAD}{module_id}_{where}_{uuid.uuid4().hex[:8]}",
         )
-        st.code("\n".join(lines), language=None)
+        st.code("\n".join(lines), language=None, wrap_lines=True)
 
 
 def render_module_failure_card(

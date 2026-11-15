@@ -337,7 +337,8 @@ def render_container_start_check() -> None:
             st.caption(missing)
         if report.pip_tail:
             st.caption(PIP_TAIL_LABEL)
-            st.code("\n".join(report.pip_tail), language=None)
+            # 접힌 진단의 평문 칸 — 줄을 꺾는다(앱 안 멈춤 판 진단 · 모듈 오류 카드와 같은 꼴).
+            st.code("\n".join(report.pip_tail), language=None, wrap_lines=True)
     if admin:
         render_token_dialog()
 

@@ -24,6 +24,7 @@ from streamlit.errors import StreamlitPageNotFoundError
 from streamlit.testing.v1 import AppTest
 
 from capa_simulation import module_failures, module_registry, navigation
+from capa_simulation.components import module_failure_card
 from capa_simulation.components.module_failure_card import DIAGNOSTIC_LABEL
 from capa_simulation.navigation import DYNAMIC_CAPA, HOME, PageSpec
 from capa_simulation.page_tabs_state import valid_tabs
@@ -226,8 +227,13 @@ def test_a_crashing_page_shows_only_its_card_and_the_app_goes_on(
     (diagnostic,) = [box for box in app.expander if box.label == DIAGNOSTIC_LABEL]
     (code,) = diagnostic.code
     assert "RuntimeError" in code.value and "데모 오류" in code.value
-    assert "`enabled`" in code.value and "demo_crash" in code.value
+    assert "module.json 의 enabled 를 false" in code.value and "demo_crash" in code.value
     assert "demo_crash/" in code.value
+    # 진단 칸은 평문 칸이라 코드 표지(백틱)가 글자로 보인다 — 줄을 짓는 곳에서 쓰지 않는다.
+    # 사내 보고 창(1283)에서 끄는 법 줄이 칸 밖으로 넘치지 않게 줄을 꺾는다(앱 안 멈춤 판의 접힌
+    # 진단과 같은 꼴 — 설계 규칙 UI-CON-04).
+    assert "`" not in code.value
+    assert code.proto.wrap_lines
     assert "오류 앞까지 그린 줄입니다." in _texts(app, "markdown")
     assert module_failures.last_failures()["demo_crash"].where == "page"
     assert app.session_state[APP_RUN_STATE_KEY]["complete"] is True
@@ -250,6 +256,7 @@ def test_a_missing_package_card_points_to_the_outside_request(
     assert "ModuleNotFoundError" in code.value
     assert "사외 요청" in code.value and "demo_not_installed_package" in code.value
     assert "담당자가 앱 관리자에게" in code.value
+    assert "`" not in code.value and code.proto.wrap_lines
 
 
 def test_an_unprefixed_key_is_reported_and_recorded(_app: AppTest, _fixtures: None) -> None:
@@ -517,6 +524,7 @@ def test_a_helper_imports_through_the_modules_package_and_a_bare_name_breaks(
     assert _texts(app, "error") and "ModuleNotFoundError" in _diagnostics(app)
     assert "from modules.demo_helper import lab_helper" in _diagnostics(app)
     assert "사외 요청" not in _diagnostics(app)
+    assert "`" not in _diagnostics(app)
 
 
 def test_a_page_that_cannot_be_registered_is_left_out_until_restart(
@@ -679,3 +687,31 @@ def test_the_card_copy_button_key_is_not_a_module_key() -> None:
     snapshot = app.session_state["snapshot"]
     assert "plain_core_key" in snapshot
     assert not [key for key in snapshot if key.startswith("capa_diagnostic_copy_module_failure_")]
+
+
+def test_the_diagnostic_hints_are_plain_text(tmp_path: Path) -> None:
+    """「담당자용 진단」 칸은 평문 칸(`st.code`)이라 코드 표지(백틱)가 글자로 보인다 — 끄는 법과
+    import 안내 셋(코어 창구 이름 없음 · 같은 모듈 파일을 맨이름으로 부름 · 서버에 없는 패키지)을
+    표지 없이 짓는다. 복사 글도 같은 줄이다."""
+    folder = tmp_path / "demo_x"
+    folder.mkdir()
+    (folder / "lab_helper.py").write_text("", encoding="utf-8")
+    errors = (
+        ImportError("cannot import name 'x'", name="capa_simulation.module_api"),
+        ModuleNotFoundError("No module named 'lab_helper'", name="lab_helper"),
+        ModuleNotFoundError("No module named 'demo_pkg'", name="demo_pkg"),
+    )
+
+    hints = [
+        module_failure_card.import_hint(error, module_id="demo_x", folder=folder)
+        for error in errors
+    ]
+    helps = [
+        module_failure_card.switch_off_help("demo_x", page_title=title) for title in (None, "데모")
+    ]
+
+    assert all(hints)
+    assert "from modules.demo_x import lab_helper" in hints[1]
+    assert "demo_pkg" in hints[2]
+    assert all("CAPA_MODULES_DISABLED=demo_x" in text for text in helps)
+    assert not [text for text in (*hints, *helps) if "`" in text]
