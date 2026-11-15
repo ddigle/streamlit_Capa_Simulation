@@ -350,7 +350,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   에 서명한 요청으로 옮기는 `tests/s3_mock_runner.py` 위). 사내 PC 운영 도구(`sync_object_storage.py` 의 rollback · init ·
   fetch-copy · prune)는 기록기를 켜지 않고 명령마다 한 줄 조각을 `audit/v1/tool/…` 에 바로 올린다(`audit/tool.py` — 행위자는
   OS 사용자, `verified` 거짓, 건너뛴 명령 · 빈 설정은 남기지 않음, 올리지 못해도 종료 코드 그대로). 관리자 행위(명단 추가 · 삭제
-  — 대상 loginid 마다 한 줄, 답을 못 받으면 `unknown` · 토큰 넣기 — 결과와 만료만 · 지금 올리기 · 자동 갱신 설정 — 바뀐 칸
+  — 대상 loginid 마다 한 줄, 답을 못 받으면 `unknown`(시도한 판), 쓰지 못한 실패 `fail` 은 판 전 = 후 — `access_store._audit_revisions`, 기록 보기 상세는
+  「판 n(그대로)」 — `audit_log_view.detail_text` · 토큰 넣기 — 결과와 만료만 · 지금 올리기 · 자동 갱신 설정 — 바뀐 칸
   이름과 판만 · 자동 갱신 수동 실행)는 그 함수 · 콜백이 `recorder.record` 를 부른다. 데이터 작업은 두 저장소의 쓰기 함수에 단
   표지 `@audited`(`audit/work.py` — 돌아온 뒤(COMMIT 뒤) 한 줄, 예외면 `out=fail` 한 줄을 넣고 예외는 그대로, 꺼진 프로세스는
   원래 함수만, 표지 단 함수 안의 표지 단 함수는 바깥 한 줄만)이고, 대상 id · 이름표 · 상세(값 원문 · 메모 · VOC 본문 없음,

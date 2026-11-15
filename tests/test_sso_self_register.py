@@ -510,6 +510,44 @@ def test_a_failed_registration_is_audited_as_a_failure(mock_s3: tuple[MockStore,
 
     (line,) = audit_lines("user_self_registered")
     assert line["out"] == "fail"
+    assert line["det"] == {"rev_from": 1, "rev_to": 1}, "거절된 쓰기 — 명단은 판 1 그대로"
+
+
+@pytest.mark.usefixtures("audit_on")
+def test_a_registration_without_an_answer_keeps_the_attempted_revision(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """답을 못 받은 쓰기는 들어갔을 수 있다 — 결과 「결과 모름」 에 시도한 판(전 → 후)을 남긴다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    store.answer_delay["PUT"] = 1.0
+    monkeypatch.setattr(s3_small, "READ_TIMEOUT_SECONDS", 0.2)
+    recorder.take_pending()
+
+    with pytest.raises(access_store.SaveUnconfirmedError):
+        access_store.register_self(cfg, NEWCOMER)
+
+    (line,) = audit_lines("user_self_registered")
+    assert (line["out"], line["det"]) == ("unknown", {"rev_from": 1, "rev_to": 2})
+
+
+@pytest.mark.usefixtures("audit_on")
+def test_a_stale_registration_is_audited_as_unchanged(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """옛 판을 받아 얹지 않은 신청도 실패 줄이다 — 쓰지 않았으니 판은 메모리 판 그대로다."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    stale = store.objects[OBJECT]
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), add=[OTHER])
+    _serve_once(monkeypatch, stale)
+    recorder.take_pending()
+
+    with pytest.raises(access_store.StoreConflictError):
+        access_store.register_self(cfg, NEWCOMER)
+
+    (line,) = audit_lines("user_self_registered")
+    assert (line["out"], line["det"]) == ("fail", {"rev_from": 2, "rev_to": 2})
 
 
 @pytest.mark.usefixtures("audit_on")

@@ -387,8 +387,8 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 | 갱신 경로 누계(`refresh_counts`) | `session_renew_summary` | 한 시간에 한 줄 — 결과별 건수 |
 | `cert_expiring` · `access_read`(실패) · `access_save_failed` · `access_seed_mark_failed` | `sys_cert_expiring` · `sys_access_read_fail` · `sys_access_save_fail` | 남은 날 · 사유 · 상태 |
 | (Streamlit 세션 첫 회차) | `session_created` | 계정 · sid 앞 8자 · 탭 꼬리표(Streamlit 세션 id 의 SHA-256 앞 8자) |
-| (명단 저장 `save_changes`) | `user_created` · `user_deleted` · `user_grade_changed` | 관리자 · **대상 loginid** · 명단 판 전 → 후(등급 바꿈은 등급 전 → 후도), 답을 못 받으면 결과 `unknown` |
-| (스스로 등록 `register_self`) | `user_self_registered` | 행위자 = 그 사람(거절 표의 인증 신원) · **대상 loginid** · 판 전 → 후(실패면 결과 `fail` · `unknown`). 서버 로그 · 사건 고리의 `access_self_registered` 에는 계정이 없고, 실패(`access_self_register_failed`)는 감사 대응표 밖이다 — 그 사람의 실패 줄 하나만 남는다 |
+| (명단 저장 `save_changes`) | `user_created` · `user_deleted` · `user_grade_changed` | 관리자 · **대상 loginid** · 명단 판 전 → 후(등급 바꿈은 등급 전 → 후도), 답을 못 받으면 결과 `unknown`(시도한 판). 쓰지 못한 실패(`fail` — 거절 · 그 사이 바뀜)는 판 전 = 후로 남겨 기록 보기 상세가 「판 n(그대로)」 다 |
+| (스스로 등록 `register_self`) | `user_self_registered` | 행위자 = 그 사람(거절 표의 인증 신원) · **대상 loginid** · 판 전 → 후(실패면 결과 `fail` · `unknown` — `fail` 은 판 전 = 후라 기록 보기 상세가 「판 n(그대로)」, `unknown` 은 들어갔을 수 있어 시도한 판). 서버 로그 · 사건 고리의 `access_self_registered` 에는 계정이 없고, 실패(`access_self_register_failed`)는 감사 대응표 밖이다 — 그 사람의 실패 줄 하나만 남는다 |
 | (다시 쓰기에 딸린 일) | `user_bulk_dropped` · `user_seeded` | 못 읽은 항목이 빠진 수 · 첫 판 심기 수 · 판 전 → 후. 관리자 저장이면 행위자가 그 관리자, 스스로 등록이면 자동 행위 `system:sso`(미검증) — 일반 사용자의 누름이 관리 행위로 읽히지 않게 |
 
 - 기동 때 `sys_startup`(환경 · 통합인증 · 동기화 모드)과 `authz_admin_config`(관리자 수 · 목록 지문 8자 — 사람 값은

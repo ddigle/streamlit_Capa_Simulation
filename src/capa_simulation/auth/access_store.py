@@ -762,7 +762,7 @@ def _audit_list_change(
 
     못 읽은 항목 정리 · 첫 판 심기는 수만 남긴다. 기록기가 꺼졌으면 아무것도 하지 않는다.
     """
-    revisions = {"rev_from": document.revision, "rev_to": result.revision}
+    revisions = _audit_revisions(document.revision, result.revision, out=out)
     added, removed = targets
     for event, keys in (("user_created", added), ("user_deleted", removed)):
         for key in keys:
@@ -777,6 +777,13 @@ def _audit_list_change(
     if out != "success":
         return
     _audit_side_effects(document, result.revision, actor=actor, verified=True, seeded=seeded)
+
+
+def _audit_revisions(before: int, attempted: int, *, out: str) -> dict[str, int]:
+    """감사 줄의 명단 판 전 · 후. 쓰지 못한 실패(`fail` — 저장소가 거절했거나 쓰기 전에 멈춤)는
+    명단이 그 판 그대로라 후 = 전이다(기록 보기 「판 n(그대로)」). 답을 못 받은 `unknown` 은
+    들어갔을 수 있어 시도한 판을 적는다."""
+    return {"rev_from": before, "rev_to": before if out == "fail" else attempted}
 
 
 def _audit_side_effects(
@@ -824,8 +831,7 @@ def _audit_grade_change(
             det={
                 "grade_from": previous,
                 "grade_to": entry.grade,
-                "rev_from": before.revision,
-                "rev_to": result.revision,
+                **_audit_revisions(before.revision, result.revision, out=out),
             },
         )
 
@@ -971,14 +977,15 @@ def _older_than_memory(source: AccessSource, fetched: _Fetched) -> bool:
 
 
 def _audit_self_register(loginid: str, rev_from: int, rev_to: int, *, out: str) -> None:
-    """스스로 등록의 감사 줄 — 저지른 사람이 곧 대상(인증 신원 — 거절 표). 계정은 이 줄에만."""
+    """스스로 등록의 감사 줄 — 저지른 사람이 곧 대상(인증 신원 — 거절 표). 계정은 이 줄에만.
+    `rev_to` 는 시도한 판이다 — 실패 줄은 그 판 대신 그대로인 판을 적는다(`_audit_revisions`)."""
     audit_recorder.record(
         "user_self_registered",
         out=out,
         actor=loginid,
         verified=True,
         tgt={"type": "loginid", "id": loginid},
-        det={"rev_from": rev_from, "rev_to": rev_to},
+        det=_audit_revisions(rev_from, rev_to, out=out),
     )
 
 
