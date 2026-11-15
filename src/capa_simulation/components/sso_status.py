@@ -70,10 +70,13 @@ from capa_simulation.io.container_start_report import (
 )
 from capa_simulation.navigation import ADMIN_AREA, ADMIN_AREA_LOG_TAB
 from capa_simulation.page_tabs_state import tab_label
-from capa_simulation.sidebar_status import remembered_expander
+from capa_simulation.sidebar_status import open_remembered_box, remembered_expander
 
 # 펼침 key. 「서버 시작 점검」 바로 뒤 · 탭 묶음 위에 서므로 자리를 key 로 고정한다.
 EXPANDER_KEY = "admin_area_sso_status"
+# 알림의 「그 화면으로」 가 Admin Area 에 닿은 뒤 이 펼침을 여는 받는 쪽의 이름
+# (`alerts.GotoTarget`).
+SSO_STATUS_TARGET_KIND = "sso_status"
 # 감사 알림이 여는 탭(아이콘 없이 — `alerts.state` 의 `tab`).
 AUDIT_TAB_NAME = ADMIN_AREA_LOG_TAB.split(": ", 1)[-1]
 COPY_KEY = "sso_status"
@@ -520,6 +523,18 @@ def _admin_area_goto() -> tuple[str, str]:
     """관리자 알림의 고칠 화면 — 어느 화면에서 떠도 「그 화면으로」 는 Admin Area 다(그 안 펼침까지
     여는 줄은 대상을 함께 싣는다)."""
     return tab_label(ADMIN_AREA), ADMIN_AREA.href
+
+
+def sso_status_target() -> alerts.GotoTarget:
+    """이 펼침을 가리키는 알림(로그인 갱신 거절 `AD-21`)이 들고 가는 대상 — 받는 쪽이 「통합인증
+    점검」 펼침을 연다(나머지 칸은 쓰지 않는다)."""
+    return alerts.GotoTarget(kind=SSO_STATUS_TARGET_KIND, scenario="-", revision="-")
+
+
+def open_sso_status(_scenario: str, _revision: str) -> None:
+    """알림 칸의 「그 화면으로」 콜백이 Admin Area 에 닿은 회차 맨 앞에서 부른다 — 「통합인증
+    점검」 펼침을 연다(설계 규칙 UI-NAV-01 — 데려가면 그 자리까지 연다)."""
+    open_remembered_box(EXPANDER_KEY)
 
 
 def _access_list_goto_target() -> alerts.GotoTarget:

@@ -140,6 +140,7 @@ from capa_simulation.components.scenario_list_state import (
     expire_check_target,
     queue_check_target,
 )
+from capa_simulation.components.sso_status import SSO_STATUS_TARGET_KIND, open_sso_status
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CANON_MARK_ID,
@@ -209,6 +210,8 @@ GOTO_RECEIVERS: Final[Mapping[str, Callable[[str, str], None]]] = {
     START_CHECK_TARGET_KIND: open_start_check,
     # Admin 「DB 동기화」 펼침 — 관리자 몫 동기화 알림 `SY-02` · `SY-03` 이 들고 간다.
     SYNC_TARGET_KIND: open_sync_panel,
+    # Admin 「통합인증 점검」 펼침 — 로그인 갱신 거절 알림 `AD-21` 이 들고 간다.
+    SSO_STATUS_TARGET_KIND: open_sso_status,
 }
 
 # 알림 칸이 쓰는 글. `{…}` 는 JS 가 채운다. 「사내」 를 쓰지 않는다.
@@ -426,7 +429,7 @@ def _on_goto() -> None:
     값은 이 브라우저 탭 저장소에 있던 줄에서 오므로 꼴을 보고(`alerts.goto_target`) 아는 종류
     (`GOTO_RECEIVERS`)만 받는다 — 「점검」 칸이 고를 리비전(`CHECK_TARGET_KIND`)과 Admin 펼침(「접속
     명단」 `ACCESS_LIST_TARGET_KIND` · 「서버 시작 점검」 `START_CHECK_TARGET_KIND` · 「DB 동기화」
-    `SYNC_TARGET_KIND`)."""
+    `SYNC_TARGET_KIND` · 「통합인증 점검」 `SSO_STATUS_TARGET_KIND`)."""
     state = st.session_state.get(ALERT_CENTER_KEY)
     raw = state.get("goto") if isinstance(state, Mapping) else getattr(state, "goto", None)
     target = alerts.goto_target(raw)

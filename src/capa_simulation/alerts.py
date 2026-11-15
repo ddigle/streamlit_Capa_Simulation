@@ -450,7 +450,8 @@ class GotoTarget(TypedDict):
     종류만 받는다(`components/alert_center.py` `GOTO_RECEIVERS` — JS 도 data `goto_kinds` 로 그
     종류만 들고 가고, 모르는 종류는 대상 없는 줄처럼 탭 길 마지막 칸을 누른다). 「소요대수에 들지
     않은 수요」 경고가 든 리비전(`scenario_list_state.CHECK_TARGET_KIND`)과, 관리자 알림이
-    가리키는 Admin 펼침(「접속 명단」 · 「서버 시작 점검」 — 나머지 두 칸은 쓰지 않는다)이다."""
+    가리키는 Admin 펼침(「서버 시작 점검」 · 「DB 동기화」 · 「통합인증 점검」 · 「접속 명단」 —
+    나머지 두 칸은 쓰지 않는다)이다."""
 
     kind: str
     scenario: str
