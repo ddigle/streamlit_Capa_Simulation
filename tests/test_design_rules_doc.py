@@ -2559,9 +2559,8 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
     「예외: 없음」 이던 자리에 앱 밖 틀의 「한 번 눌러 통째로 고름」(보드 frame)을 든다(판정 s-A-01
     등). 6-29 는 2026-11-14 토큰 자동 갱신 틀의 사용자 결정 한 줄 — 메모 원문 · 「답 밖 — 구현이
     정함」 · 지금 「준비」 · 커밋을 들고, 뒤집힌 6-25 token-entry 「조사만」 은 7-1 에 남는다(6-25
-    줄은 그대로)."""
+    줄은 그대로). 판 머리와 6-30 은 뒤 시험이 본다."""
     document = _text()
-    assert "판 v1.29" in document.split("\n## 1. ")[0]
     assert "- **v1.29 — 2026-11-15.**" in _chapter(document, 8)
 
     rules = {rule.id: rule for rule in _rules()}
@@ -2577,7 +2576,7 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
 
     assert "6-29 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-29. ") :]
+    record = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -2602,3 +2601,148 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
     assert len(turned_lines) == 1, "7-1 에 뒤집힌 6-25 token-entry 「조사만」 줄이 하나 있다"
     turned = turned_lines[0]
     assert "6-25 token-entry" in turned and "6-29" in turned and TOKEN_SHIP_MEMO in turned
+
+
+# 2026-11-15 E2E 그림 검수 보드(6-30)의 답 — 카드 열하나(여쭘 여덟 · 되돌리기 어려운 화면
+# 하나 · 정한 것 한 장 · 규칙 판정 목록). 선택지가 있는 여덟은 모두 카드 권장이고, 화면 · 정한
+# 것은 「좋음」, 규칙 판정 목록은 메모 「오케이」 다. 고른 글은 보드 선택지 라벨이고 줄 id 는 보드
+# 카드 id, 차례는 보드 차례다. 고칠 것은 같은 답을 입히는 코드 갈래 몫이라 그 줄은 커밋을 들지
+# 않는다.
+E2E_1115_ADDRESS = "https://claude.ai/artifact/RXJnm5dTtyADFK5gHXeWUL"
+E2E_1115_ANSWERS = {
+    "q-self-fail-rev": "실패 줄은 「판 1(그대로)」 로",
+    "q-narrow-admin": "다음 판에 고침",
+    "s-A-13": "두 화면 모두 작은 링크로 낮춤",
+    "s-A-14": "표지를 「점검 중」 으로",
+    "s-C-02": "「등록 길」 값을 「관리자가 넣음」 으로",
+    "s-C-13": "지금대로",
+    "s-C-14": "80일 좋음",
+    "s-B-12": "이대로",
+    "s-A-01": "좋음",
+    **{f"decided-e2e-{number}": "좋음" for number in range(1, 4)},
+    "rule-list": "메모 「오케이」",
+}
+# 커밋을 든 줄 — 답 앞 E2E 고침의 커밋이다(정한 것 셋 — 점마다 한 줄).
+E2E_1115_COMMITS: dict[str, tuple[str, ...]] = {
+    "decided-e2e-1": ("946025e",),
+    "decided-e2e-2": ("00ddc26", "b3e55e8"),
+    "decided-e2e-3": ("9375577",),
+}
+# 월요일 배포 전에 같은 답을 입히는 코드 갈래가 고치는 줄.
+E2E_1115_CODE_LANE = ("q-self-fail-rev", "s-A-13", "s-A-14", "s-C-02")
+# q-narrow-admin 「다음 판에 고침」 이 남긴 TODO 2장 할 일의 첫 구절(다른 문서가 이 구절로 찾는다).
+E2E_1115_NARROW_TODO = (
+    "좁은 창(390)에서 낱말 단위 줄바꿈을 앱 안 카드(모듈 오류 카드 머리 줄) · Admin Area 탭 줄 · "
+    "로그인 전 실패 표 · Alarm 줄 · 알림창 글로 넓힘 — "
+    "2026-11-15 E2E 보드 q-narrow-admin 답 「다음 판」"
+)
+
+
+def test_the_e2e_1115_board_answers_are_recorded() -> None:
+    """v1.30 — 6-30 은 E2E 그림 검수 보드 카드가 보드 차례대로 한 줄씩(정한 것 한 장은 점마다
+    한 줄 — 열셋)이고 고른 글은 선택지 라벨이다. 모두 카드 권장이고 권장과 다른 답이 없으며 메모는
+    규칙 판정 목록 하나다. 고칠 것 넷은 코드 갈래 몫이라 커밋이 없고, 커밋은 정한 것 셋(답 앞 E2E
+    고침)만 든다. 답이 걸린 규칙은 글 · 예외 · 근거 줄에 카드 id 를 든다 — 실패한 쓰기 · 엇갈린
+    표지(UI-DAT-11), 「관리자」 한 낱말 두 뜻(UI-CON-02), 누르기 전에 보이는 저장(UI-NTF-09),
+    「정본 아님」 표지(UI-LAY-05 · UI-TXT-06 · UI-ACC-02 · 4장), 갱신 토큰 80일(4장), 「토큰 자동
+    갱신」 줄 낱말(UI-CON-02 · UI-DAT-11 예외), 배지 정확성(UI-PRF-01 예외), 판정 목록 보고
+    꼴(PRC-07). 공통 틀 「주 단추 하나」 를 좁힌 것은 7-1 에, 다음 판 할 일은 TODO 2장에 있다.
+    6-28 · 6-29 줄은 받은 답 구절만 더했다(앞 시험들이 저마다 다음 절 앞에서 끊어 본다)."""
+    document = _text()
+    assert "판 v1.30" in document.split("\n## 1. ")[0]
+    assert "- **v1.30 — 2026-11-15.**" in _chapter(document, 8)
+    assert "6-30 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    board = section[section.index("\n### 6-30. ") :]
+    assert E2E_1115_ADDRESS in board
+    lines = [line for line in board.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: dict[str, str] = {}
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-15) · ([^()]+)\)$", line)
+        assert match, line
+        found[match.group(1)] = match.group(2)
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+    assert tuple(found) == tuple(E2E_1115_ANSWERS)
+    assert found == E2E_1115_ANSWERS
+
+    by_id = {line.split(" · ", 1)[0][2:]: line for line in lines}
+    commit = re.compile(r"커밋 `[0-9a-f]{7}`")
+    for key, line in by_id.items():
+        assert bool(commit.search(line)) is (key in E2E_1115_COMMITS), key
+        assert ("코드 갈래가 고친다" in line) is (key in E2E_1115_CODE_LANE), key
+    for key, shas in E2E_1115_COMMITS.items():
+        for sha in shas:
+            assert f"`{sha}`" in by_id[key], (key, sha)
+    assert "권장과 다른 답" not in board
+    memos = [key for key, chosen in E2E_1115_ANSWERS.items() if chosen.startswith("메모 「")]
+    assert [key for key, line in by_id.items() if "메모 「" in line] == memos
+
+    rules = {rule.id: rule for rule in _rules()}
+    dat11 = rules["UI-DAT-11"].fields["근거"][0]
+    assert "q-self-fail-rev" in dat11 and "s-A-14" in dat11 and "「판 1(그대로)」" in dat11
+    con02 = rules["UI-CON-02"].fields["근거"][0]
+    assert "s-C-02" in con02 and "「관리자가 넣음」" in con02
+    assert "s-A-01" in rules["UI-NTF-09"].fields["근거"][0]
+
+    # s-B-12 「이대로」 — 「정본 아님」 머리 표지의 모양은 4장에 확정, 머리 목록 · 예외에 이름.
+    assert "「정본 아님」 표지" in rules["UI-LAY-05"].text
+    assert "정본 아님으로 확인되지 않은 서버" in rules["UI-LAY-05"].text
+    assert "정본을 받은 서버" not in rules["UI-LAY-05"].text
+    assert "s-B-12" in rules["UI-LAY-05"].fields["근거"][0]
+    txt06 = rules["UI-TXT-06"].fields["예외"][0]
+    assert "「정본 아님」 표지" in txt06 and "s-B-12" in txt06 and "줄이지 않는다" in txt06
+    assert "「정본 아님」 표지" in rules["UI-ACC-02"].fields["예외"][0]
+    canon = next(
+        row
+        for row in _chapter(document, 4).splitlines()
+        if row.startswith("| 「정본 아님」 표지 |")
+    )
+    for phrase in ("실선", "`cloud_off`", "12px 700", "`SY-01`", "s-B-12 「이대로」"):
+        assert phrase in canon, phrase
+
+    # s-C-14 「80일 좋음」 — 6-29 의 답 밖 값을 4장에 확정하고 6-29 줄이 그 답을 가리킨다.
+    refresh = next(
+        row for row in _chapter(document, 4).splitlines() if row.startswith("| 갱신 토큰 알림 |")
+    )
+    for phrase in ("처음 쓴 날부터 80일", "`AD-18`", "셈 시작일", "s-C-14 「80일 좋음」"):
+        assert phrase in refresh, phrase
+    frame = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
+    assert "s-C-14 「80일 좋음」" in frame
+
+    # s-C-13 「지금대로」 — 시작 점검 표 「토큰 자동 갱신」 줄의 결과 낱말 · 제목 판정 밖을 예외로.
+    con02_except = rules["UI-CON-02"].fields["예외"][0]
+    for phrase in ("토큰 자동 갱신", "준비 · 꺼짐 · 켜짐 · 멈춤", "정상 · 건너뜀 · 실패", "s-C-13"):
+        assert phrase in con02_except, phrase
+    assert "s-C-13" in rules["UI-DAT-11"].fields["예외"][0]
+    assert "s-C-13 「지금대로」" in frame
+
+    # decided-e2e 「좋음」 — 1 은 6-28 이 받은 답을 가리키고, 2 는 UI-PRF-01 예외(정확성이 이김)다.
+    widened = section[section.index("\n### 6-28. ") : section.index("\n### 6-29. ")]
+    band = next(line for line in widened.splitlines() if line.startswith("- band-connecting · "))
+    assert "decided-e2e 1" in band and "「좋음」" in band
+    assert "사용자 확인은 그림 보드에서 「좋음」" in _chapter(document, 1)
+    prf01 = rules["UI-PRF-01"]
+    assert "`run_every`" in prf01.fields["예외"][0] and "decided-e2e 2" in prf01.fields["예외"][0]
+    assert (
+        "tests/test_sidebar_box_toggle.py::"
+        "test_a_page_with_a_periodic_fragment_keeps_toggles_on_the_whole_app"
+        in prf01.fields["그물"][0]
+    )
+    assert "decided-e2e 2 · 3" in dat11
+
+    # q-narrow-admin 「다음 판에 고침」 — TODO 2장 열린 할 일 · 3장 결정 기록 줄을 가리킨다.
+    todo = (PROJECT_ROOT / "docs/TODO.md").read_text(encoding="utf-8")
+    assert E2E_1115_NARROW_TODO in todo
+    assert "「좁은 창(390)에서 낱말 단위 줄바꿈을 …」" in by_id["q-narrow-admin"]
+    assert f"`{E2E_1115_ADDRESS}` — 규칙집 6-30 · v1.30" in todo
+
+    # rule-list 메모 「오케이」 — 규칙 안 화면은 판정 목록으로만 보고하는 꼴을 받았다.
+    prc07 = rules["PRC-07"].fields["근거"][0]
+    assert "rule-list" in prc07 and "「오케이」" in prc07 and "규칙 판정 목록" in prc07
+
+    narrowed = [line for line in _chapter(document, 7).splitlines() if "s-A-13" in line]
+    assert len(narrowed) == 1, "7-1 에 공통 틀 「주 단추 하나」 를 좁힌 줄이 하나 있다"
+    assert "frame" in narrowed[0] and "p1-login-fail" in narrowed[0]
