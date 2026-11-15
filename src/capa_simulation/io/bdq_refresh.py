@@ -81,6 +81,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import socket
 import sys
@@ -768,7 +769,9 @@ class StartRefresh:
     """시작 때 자동 갱신 한 번의 결과 — 결과 파일 `refresh` 칸. `installed`(갱신해 받은 토큰을
     넣음) · `kept`(갱신으로 넣어 둔 토큰을 그대로 둠)면 시작 스크립트가 `CAPA_BDQ_TOKEN` 을 쓰지
     않는다. `leftover` 는 옛 갱신 토큰 파일을 지우지 못한 까닭(시작 스크립트가 채운다 — 없으면
-    빈 글)."""
+    빈 글). `table_changed` 는 사람이 표에서 바꾼 `CAPA_BDQ_TOKEN` 을 쓰게 뒀다는 것 — 시작
+    스크립트가 로그인 토큰 단계가 그 값을 넣은 뒤에만 `remember_table_value` 를 부른다. 결과
+    파일에는 싣지 않는다(까닭 낱말 `START_TABLE_CHANGED` 가 같은 것을 말한다)."""
 
     mode: Mode
     reason: str
@@ -776,6 +779,7 @@ class StartRefresh:
     failed: bool = False
     kept: bool = False
     leftover: str = ""
+    table_changed: bool = False
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -795,6 +799,8 @@ START_NO_INPUT: Final = "갱신하지 않음"
 START_TABLE_CHANGED: Final = f"{BDQ_TOKEN_ENV} 이 지난 시작 때와 달라 그 값을 씀"
 
 StartValue = Literal["same", "changed", "unknown"]
+# 시작 값 표지의 HMAC-SHA256 꼴 — `hexdigest()` 그대로(소문자 hex 64자).
+_MAC_FORM: Final = re.compile(r"[0-9a-f]{64}")
 
 
 def _start_value_mac(salt: bytes, content: bytes) -> str:
@@ -829,12 +835,15 @@ def _compare_start_value(place: _Place, content: bytes) -> StartValue:
     if not isinstance(data, dict):
         return "unknown"
     salt, mac = data.get("salt"), data.get("mac")
-    # `hmac.compare_digest` 는 ASCII 밖 글자가 든 str 에 TypeError 를 낸다 — 망가진 표지는 모름이다.
-    if not isinstance(salt, str) or not isinstance(mac, str) or not mac.isascii():
+    # `remember_start_value` 가 쓰는 꼴(소문자 hex 64자 HMAC · 빈 것이 아닌 소금)만 견준다 —
+    # 잘리거나 고쳐 쓴 표지를 「바뀜」 으로 읽으면 갱신으로 넣은 토큰을 표의 옛 값으로 덮는다.
+    if not isinstance(salt, str) or not isinstance(mac, str) or not _MAC_FORM.fullmatch(mac):
         return "unknown"
     try:
         salt_bytes = bytes.fromhex(salt)
     except ValueError:
+        return "unknown"
+    if not salt_bytes:
         return "unknown"
     same = hmac.compare_digest(_start_value_mac(salt_bytes, content), mac)
     return "same" if same else "changed"
@@ -856,15 +865,29 @@ def _table_token(environ: Mapping[str, str]) -> bytes | None:
 
 
 def _table_changed(place: _Place, environ: Mapping[str, str]) -> bool:
-    """사람이 표에서 `CAPA_BDQ_TOKEN` 을 바꿨나 — 지난 시작 때 값과 다르면 참. 쓸 수 있는 값이면
-    이번 값을 기억한다(같으면 다시 쓰지 않는다). 지난 값을 모르면 거짓(지금처럼)."""
+    """사람이 표에서 `CAPA_BDQ_TOKEN` 을 바꿨나 — 지난 시작 때 값과 다르면 참. 지난 값을 모르면
+    거짓(지금처럼)이고 이번 값을 바로 기억한다. 바뀐 값은 여기서 기억하지 않는다 — 로그인 토큰
+    단계가 그 값을 넣은 뒤에 시작 스크립트가 `remember_table_value` 로 기억한다(넣지 못하면
+    표지가 지난 값 그대로라 다음 시작이 다시 「바뀜」 으로 보고 그 값을 쓴다)."""
     content = _table_token(environ)
     if content is None:
         return False
     seen = _compare_start_value(place, content)
-    if seen != "same":
+    if seen == "unknown":
         remember_start_value(place.folder, place.account, content)
     return seen == "changed"
+
+
+def remember_table_value(environ: Mapping[str, str], folder: Path) -> None:
+    """로그인 토큰 단계가 표의 `CAPA_BDQ_TOKEN` 을 자격 폴더에 넣은 뒤(쓴 · 같은 내용이 이미 있음)
+    그 값을 시작 값 표지로 남긴다 — `refresh_at_start` 가 「바뀜」 으로 보고 그 값을 쓰게 둔
+    시작(`StartRefresh.table_changed`)에만 시작 스크립트가 부른다. 견줄 때와 같은 꼴(푼 바이트)을
+    기억한다. 쓸 수 없는 값 · 계정 · 자리면 아무것도 하지 않고, 쓰기 실패는 삼킨다."""
+    content = _table_token(environ)
+    account = environ.get(BDQ_USER_NAME_ENV, "").strip()
+    if content is None or not account:
+        return
+    remember_start_value(folder, account, content)
 
 
 def _holds_refreshed(place: _Place, mark: bdq_token.InstalledMark | None, now: datetime) -> bool:
@@ -880,7 +903,8 @@ def refresh_at_start(environ: Mapping[str, str], folder: Path) -> StartRefresh:
     그대로 — 시작 값 표지도 쓰지 않는다). 켜짐이면:
 
     - 사람이 표에서 `CAPA_BDQ_TOKEN` 을 바꿨으면(시작 값 표지와 다름) 교환하지 않고 그 값을 쓰게
-      둔다 — 교환하면 그 새 토큰을 죽인다. 다음 갱신은 그 토큰을 넣은 때부터 센다.
+      둔다(`table_changed`) — 교환하면 그 새 토큰을 죽인다. 다음 갱신은 그 토큰을 넣은 때부터
+      센다. 그 값은 로그인 토큰 단계가 넣은 뒤에야 기억한다(`remember_table_value`).
     - 자격 폴더에 지금 토큰이 없거나 쓸 수 없으면(처음 띄움 · 디스크가 처음으로 돌아감) 갱신의
       입력이 없다 — 실패로 적지 않고 로그인 토큰 단계가 `CAPA_BDQ_TOKEN` 을 쓰게 둔다.
     - 아니면 조회 길과 같은 문(`_due` — 넣은 때 표지)으로 갱신할 때만 교환한다 — 다시 띄울 때마다
@@ -893,7 +917,7 @@ def refresh_at_start(environ: Mapping[str, str], folder: Path) -> StartRefresh:
     if not _exchange_known():
         return StartRefresh("ready", SHAPE_UNKNOWN)
     if _table_changed(place, environ):
-        return StartRefresh("on", START_TABLE_CHANGED)
+        return StartRefresh("on", START_TABLE_CHANGED, table_changed=True)
     current_token, problem = _read_current(place)
     if current_token is None:
         return StartRefresh("on", f"{problem} — {START_NO_INPUT}")

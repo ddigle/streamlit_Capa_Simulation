@@ -810,7 +810,12 @@ def collect_report(
             return StepResult(STATUS_OK, "자동 갱신으로 받은 토큰을 씀")
         if refresh.kept:
             return StepResult(STATUS_OK, "자동 갱신으로 넣어 둔 토큰을 그대로 씀")
-        return token_step(environ, credential_dir)
+        written = token_step(environ, credential_dir)
+        if refresh.table_changed and written.status == STATUS_OK:
+            # 사람이 표에서 바꾼 값 — 넣은 뒤에야 기억한다. 넣지 못하면 표지가 지난 값 그대로라
+            # 다음 시작이 다시 그 값을 쓴다.
+            bdq_refresh.remember_table_value(environ, credential_dir)
+        return written
 
     steps = {
         STEP_INSTALL: _guarded(run_install, redactor),

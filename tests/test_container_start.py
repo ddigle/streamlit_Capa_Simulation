@@ -1894,6 +1894,82 @@ def test_a_changed_table_token_is_used_without_exchanging_even_when_the_refresh_
     assert _refresh(report)["reason"] == bdq_refresh.START_TABLE_CHANGED
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [OSError("disk is full"), RuntimeError("unexpected")],
+    ids=["쓰기 실패", "뜻밖의 실패"],
+)
+def test_a_changed_table_token_that_could_not_be_put_is_used_again_at_the_next_start(
+    place: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    """사람이 표에서 바꾼 값을 로그인 토큰 단계가 넣지 못하면 그 값을 시작 값 표지로 기억하지
+    않는다 — 다음 시작이 다시 「바뀜」 으로 보고 그 값을 쓴다(넣기 전에 기억하면 다음 시작은
+    「같음」 이라 갱신으로 넣은 옛 토큰을 그대로 둬 사람이 넣은 값이 쓰이지 않는다)."""
+    received = _known_shape(monkeypatch)
+    token, content, _written = _persisted(place, source="refresh", age=timedelta(hours=1))
+    bdq_refresh.remember_start_value(_credentials(place), FAKE_BDQ_USER, FAKE_BDQ_TOKEN.encode())
+    changed = {**AUTO_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: NEW_TABLE_TOKEN}
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise failure
+
+    with monkeypatch.context() as patch:
+        patch.setattr(bdq_token, "put_token", refuse)
+        report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert token.read_bytes() == content
+    assert _refresh(report)["reason"] == bdq_refresh.START_TABLE_CHANGED
+    assert _steps(report)[report_contract.STEP_TOKEN]["status"] == report_contract.STATUS_FAILED
+
+    bdq_refresh.forget_state()
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert received == []
+    assert token.read_bytes() == NEW_TABLE_TOKEN.encode()
+    assert _refresh(report)["reason"] == bdq_refresh.START_TABLE_CHANGED
+    assert _steps(report)[report_contract.STEP_TOKEN] == {
+        "status": report_contract.STATUS_OK,
+        "reason": "토큰 파일을 씀",
+    }
+
+    bdq_refresh.forget_state()
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+    assert _refresh(report)["reason"] == bdq_refresh.START_NOT_DUE and received == []
+
+
+def test_a_changed_table_token_already_in_the_folder_is_remembered_as_put(
+    place: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """표에서 바꾼 값이 자격 폴더의 토큰과 같아도(「토큰 넣기」 로 넣고 표도 그 값으로 고침)
+    로그인 토큰 단계가 「같은 내용」 으로 끝나면 넣은 것이다 — 그 값을 기억해 다음 시작은
+    「바뀜」 이 아니다."""
+    received = _known_shape(monkeypatch)
+    credentials = _credentials(place)
+    credentials.mkdir(parents=True)
+    bdq_token.put_token(
+        credentials,
+        FAKE_BDQ_USER,
+        NEW_TABLE_TOKEN.encode(),
+        "admin",
+        datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=1),
+        environ=AUTO_ENVIRONMENT,
+    )
+    bdq_refresh.remember_start_value(credentials, FAKE_BDQ_USER, FAKE_BDQ_TOKEN.encode())
+    changed = {**AUTO_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: NEW_TABLE_TOKEN}
+
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+
+    assert _refresh(report)["reason"] == bdq_refresh.START_TABLE_CHANGED
+    assert _steps(report)[report_contract.STEP_TOKEN] == {
+        "status": report_contract.STATUS_OK,
+        "reason": "같은 내용의 토큰 파일이 이미 있어 다시 쓰지 않음",
+    }
+
+    bdq_refresh.forget_state()
+    report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
+    assert _refresh(report)["reason"] == bdq_refresh.START_NOT_DUE and received == []
+
+
 def test_without_a_start_value_mark_a_refreshed_token_is_kept_as_before(
     place: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1917,8 +1993,31 @@ def test_without_a_start_value_mark_a_refreshed_token_is_kept_as_before(
         b"[]",
         json.dumps({"salt": "zz", "mac": "00"}).encode(),
         json.dumps({"salt": "00", "mac": "éé"}).encode(),
+        json.dumps({"salt": "00" * 32, "mac": ""}).encode(),
+        json.dumps({"salt": "00" * 32, "mac": "00"}).encode(),
+        json.dumps({"salt": "00" * 32, "mac": "0" * 63}).encode(),
+        json.dumps({"salt": "00" * 32, "mac": "0" * 65}).encode(),
+        json.dumps({"salt": "00" * 32, "mac": "AB" * 32}).encode(),
+        json.dumps({"salt": "00" * 32, "mac": "g" + "0" * 63}).encode(),
+        json.dumps({"salt": "00" * 32, "mac": "0" * 64 + "\n"}).encode(),
+        json.dumps({"salt": "", "mac": "0" * 64}).encode(),
+        json.dumps({"salt": " ", "mac": "0" * 64}).encode(),
     ],
-    ids=["JSON 아님", "꼴 다름", "소금 못 풂", "ASCII 밖"],
+    ids=[
+        "JSON 아님",
+        "꼴 다름",
+        "소금 못 풂",
+        "ASCII 밖",
+        "mac 빔",
+        "mac 짧음",
+        "mac 63자",
+        "mac 65자",
+        "mac 대문자",
+        "mac hex 밖 글자",
+        "mac 끝 줄바꿈",
+        "소금 빔",
+        "소금 공백뿐",
+    ],
 )
 def test_a_broken_start_value_mark_is_unknown_and_the_start_goes_on(
     place: Path, monkeypatch: pytest.MonkeyPatch, broken: bytes
@@ -1933,7 +2032,9 @@ def test_a_broken_start_value_mark_is_unknown_and_the_start_goes_on(
 
     assert received == [] and token.read_bytes() == content
     assert (_refresh(report)["kept"], _refresh(report)["failed"]) == (True, False)
-    assert set(json.loads(_start_value_file(place).read_bytes())) == {"salt", "mac"}
+    rewritten = _start_value_file(place).read_bytes()
+    assert rewritten != broken
+    assert set(json.loads(rewritten)) == {"salt", "mac"}
 
 
 def test_the_start_value_mark_holds_no_usable_form_of_the_token(
