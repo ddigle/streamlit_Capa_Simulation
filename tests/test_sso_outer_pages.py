@@ -706,7 +706,7 @@ def test_without_any_contact_the_contact_sentences_point_at_the_app_admin(
         assert text not in page.text
         assert web.NO_CONTACT_TEXT[text] in page.text
         assert "문의처" not in main_part(page)
-        assert f"{page_frame.CONTACT_LABEL} · " not in page.text, "문의 줄이 없다"
+        assert f'<p class="muted">{page_frame.CONTACT_LABEL} ' not in page.text, "문의 줄이 없다"
 
 
 # --- 누계 ---------------------------------------------------------------------------------

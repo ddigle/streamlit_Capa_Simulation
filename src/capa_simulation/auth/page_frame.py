@@ -246,7 +246,9 @@ def mark_svg() -> str:
 
 
 def contact_line(email: str, text: str) -> str:
-    """문의 줄 — 메일은 링크, 창구 글은 그 뒤 평문. 둘 다 비면 빈 글(그리지 않는다)."""
+    """문의 줄 「문의 <메일> · <창구 글>」 — 메일은 링크, 창구 글은 그 뒤 평문. 둘 다 비면 빈
+    글(그리지 않는다). 시작 임시 화면 · 앱 안 멈춤 판의 문의 줄과 같은 글자 꼴이다(시험이
+    맞댄다)."""
     parts: list[str] = []
     if email:
         parts.append(f'<a href="mailto:{_esc(email)}">{_esc(email)}</a>')
@@ -254,7 +256,7 @@ def contact_line(email: str, text: str) -> str:
         parts.append(_esc(text))
     if not parts:
         return ""
-    return f'<p class="muted">{CONTACT_LABEL} · {" · ".join(parts)}</p>'
+    return f'<p class="muted">{CONTACT_LABEL} {" · ".join(parts)}</p>'
 
 
 def reference_text(code: str, now: int, diagnostic_id: str = "") -> str:

@@ -1002,6 +1002,54 @@ def test_the_contact_and_reference_lines_read_like_the_in_app_stop_panel(
     assert stop_panel.contact_caption() == "문의 demo@example.com"
 
 
+@pytest.mark.parametrize(
+    ("email", "text", "expected"),
+    [
+        ("demo@example.com", "데모 창구", "문의 demo@example.com · 데모 창구"),
+        ("demo@example.com", "", "문의 demo@example.com"),
+        ("", "데모 창구", "문의 데모 창구"),
+    ],
+    ids=["mail-and-counter", "mail-only", "counter-only"],
+)
+def test_the_three_contact_lines_carry_the_same_letters(
+    monkeypatch: pytest.MonkeyPatch, email: str, text: str, expected: str
+) -> None:
+    """문의 줄을 짓는 세 함수는 태그를 걷은 글자가 같다 — 「문의 <메일> · <창구 글>」(설계 규칙
+    UI-CON-04). 앱 밖 공통 틀(`auth/page_frame.contact_line` — 거절 · 포털 거절 · 로그인 실패 셋 ·
+    되풀이 · 로그아웃 · 설정 막힘 · 등록 · 저장 실패), 시작 임시 화면(Streamlit 을 부르지 않는다),
+    앱 안 멈춤 판(`components/stop_panel.contact_caption`)이다.
+
+    메일만인 꼴은 앱 시작 실패 판의 꼴이기도 하다 — 그 판은 `CAPA_ACCESS_CONTACT` 가 있어도 창구
+    글을 넘기지 않는다(접속 요청 창구는 데이터를 열지 못한 실패의 연락처가 아니다 — 판 쪽은
+    `tests/test_boot_stop.py`)."""
+    from capa_simulation.auth import page_frame
+    from capa_simulation.components import stop_panel
+
+    monkeypatch.setenv("CAPA_APP_CONTACT_EMAIL", email)
+    view = container_stage.stage_view(_state())
+    contact = container_stage.StageContact(email=email, text=text)
+    stage_page = container_stage.render_main(view, now=1000.0, version=0, contact=contact)
+
+    assert _line_text(page_frame.contact_line(email, text), "muted") == expected
+    assert _line_text(stage_page, "contact") == expected
+    assert stop_panel.contact_caption(text) == expected
+
+
+def test_no_contact_line_anywhere_when_both_are_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from capa_simulation.auth import page_frame
+    from capa_simulation.components import stop_panel
+
+    monkeypatch.delenv("CAPA_APP_CONTACT_EMAIL", raising=False)
+    view = container_stage.stage_view(_state())
+    stage_page = container_stage.render_main(
+        view, now=1000.0, version=0, contact=container_stage.StageContact()
+    )
+
+    assert page_frame.contact_line("", "") == ""
+    assert 'class="contact"' not in stage_page
+    assert stop_panel.contact_caption() is None
+
+
 def test_the_page_carries_the_frame_parts_and_both_themes(
     stage: tuple[container_stage.Stage, int],
 ) -> None:

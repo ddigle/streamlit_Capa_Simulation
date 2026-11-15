@@ -128,7 +128,7 @@ LOGIN_REQUIRED = "login required"
 # 접속 명단 밖 — IdP 의 `access_denied`(포털이 거절)와 섞이지 않게 따로 둔 사유 코드와 화면 글.
 NOT_ON_LIST = "not_on_list"
 NOT_ON_LIST_TITLE = "접속 권한이 없습니다"
-NOT_ON_LIST_TEXT = "이 앱을 쓸 수 있는 명단에 없습니다."
+NOT_ON_LIST_TEXT = "이 앱의 접속 명단에 없습니다."
 # S3 명단을 아직 한 번도 읽지 못해(관리자만 들어옴) 명단에 있는지 확인하지 못한 거절의 사유 코드와
 # 화면 글. 사람이 명단에 있는지는 말하지 않는다 — 읽지 못했으니 모른다.
 LIST_UNREAD = "list_unread"

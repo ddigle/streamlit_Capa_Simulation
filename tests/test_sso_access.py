@@ -958,9 +958,15 @@ def test_the_denied_page_opens_directly_and_says_only_the_fixed_text() -> None:
     assert web.DENIED_NO_TICKET_TEXT in page.text
     assert web.SIGN_IN_TO_APPLY_LABEL in page.text
     assert f"{PUBLIC_URL}{names.LOGIN_PATH}?next=%2F" in page.text
-    assert "문의 ·" not in page.text, "문의 메일 · 창구 글이 없으면 그 줄이 없다"
+    assert '<p class="muted">문의 ' not in page.text, "문의 메일 · 창구 글이 없으면 그 줄이 없다"
     assert web.REGISTER_LABEL not in page.text, "표가 없으면 신청 단추가 없다"
     assert web.OTHER_ACCOUNT_LABEL not in page.text
+
+
+def test_the_denied_text_names_the_list_like_the_account_line() -> None:
+    """계정을 감춘 꼴(주소만 연 사람 · 앱 안 멈춤 판)과 계정이 보이는 꼴은 같은 명단을 같은
+    이름으로 부른다 — 계정 값만 뺀 같은 글이다(설계 규칙 UI-CON-02)."""
+    assert web.DENIED_ACCOUNT_TEXT.endswith(f" — {web.NOT_ON_LIST_TEXT}")
 
 
 def test_the_denied_page_after_a_real_denial_carries_no_claim_value() -> None:
@@ -983,7 +989,7 @@ def test_the_contact_is_escaped() -> None:
     page = _denied_page()
 
     assert "<script>" not in page.text
-    assert "문의 · &lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;담당&quot;" in page.text
+    assert "문의 &lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;담당&quot;" in page.text
 
 
 def test_the_logout_link_appears_when_set() -> None:
@@ -1006,7 +1012,7 @@ def test_the_unread_code_on_a_server_that_read_its_list_shows_the_live_state() -
     assert not page.set_cookies
     assert web.LIST_UNREAD_TITLE not in page.text
     assert web.NOT_ON_LIST_TITLE in page.text
-    assert "문의 · CAPA 담당 창구" in page.text
+    assert "문의 CAPA 담당 창구" in page.text
 
 
 def test_the_reason_codes_stay_apart() -> None:

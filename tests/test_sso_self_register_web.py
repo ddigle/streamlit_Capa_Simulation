@@ -482,7 +482,7 @@ def test_an_unread_list_keeps_only_the_contact_line_without_a_request_note(
     assert web.NOTE_LABEL not in page.text and web.NO_CONTACT_TEXT[web.NOTE_LABEL] not in page.text
     assert f"[{settings.APP_LABEL}] 접속 권한" not in page.text
     assert NEWCOMER not in page.text and "새 사람" not in page.text
-    contact = f'{page_frame.CONTACT_LABEL} · <a href="mailto:capa-help@example.invalid">'
+    contact = f'{page_frame.CONTACT_LABEL} <a href="mailto:capa-help@example.invalid">'
     assert contact in page.text and "CAPA 창구" in page.text
 
 
@@ -686,6 +686,6 @@ def test_without_any_contact_the_steps_name_the_app_admin(
 
     page = follow(app, jar, press(app, jar, {"t": mark}))
 
-    assert f"{page_frame.CONTACT_LABEL} · " not in page.text, "문의 줄이 없다"
+    assert f'<p class="muted">{page_frame.CONTACT_LABEL} ' not in page.text, "문의 줄이 없다"
     assert "문의처" not in page.text
     assert web.NO_CONTACT_TEXT[web.SEND_NOTE_STEP] in page.text
