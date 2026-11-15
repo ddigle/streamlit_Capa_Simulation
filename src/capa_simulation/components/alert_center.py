@@ -203,7 +203,7 @@ SESSION_MARK_KEY: Final = "alert_center_session_mark_v1"
 # 탭 길 마지막 칸을 누른다.
 GOTO_RECEIVERS: Final[Mapping[str, Callable[[str, str], None]]] = {
     CHECK_TARGET_KIND: queue_check_target,
-    # Admin 「접속 명단」 펼침 — 스스로 등록 알림 `AD-19` 가 들고 간다.
+    # Admin 「접속 명단」 펼침 — 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 가 들고 간다.
     ACCESS_LIST_TARGET_KIND: open_access_list,
     # Admin 「서버 시작 점검」 펼침 — 시작 점검 알림 `AD-01` 이 들고 간다.
     START_CHECK_TARGET_KIND: open_start_check,

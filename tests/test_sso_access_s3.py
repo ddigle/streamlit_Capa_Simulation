@@ -30,7 +30,14 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from alert_marks import active_state, alert_notes, states
+from alert_marks import (
+    GOTO_PRELUDE,
+    GOTO_PRESS_KEY,
+    active_state,
+    alert_notes,
+    box_expanded,
+    states,
+)
 from asgi_driver import http, websocket_talk
 from child_env import narrow_child_env
 from cryptography import x509
@@ -2474,7 +2481,8 @@ def test_unread_locks_adding_and_warns_the_admin_on_any_screen(
     mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """못 읽은 동안은 관리자만 들어온다 — 관리자는 Admin 을 열기 전 어느 화면에서나 알림을 받는다
-    (앱 정보 카드가 낸다, 2026-11-08 사용자 답 U4). 「그 화면으로」 는 Admin Area 다."""
+    (앱 정보 카드가 낸다, 2026-11-08 사용자 답 U4). 「그 화면으로」 는 Admin Area 의 「접속 명단」
+    펼침까지다(`test_the_list_alerts_open_the_access_list_box_from_another_screen`)."""
     store, endpoint = mock_s3
     store.force["GET"] = (403, "AccessDenied")
     cfg = s3_config(store, endpoint)
@@ -3189,6 +3197,58 @@ def test_the_first_version_raises_a_check_alert(
 
     app.run()
     assert not active_state(app, "AD-09")
+
+
+# 다른 화면 ↔ Admin 「접속 명단」 — 앱 정보 카드의 접속 명단 알림과 알림 칸 「그 화면으로」 의
+# 콜백(`GOTO_PRELUDE`). 세션 `test_page` 가 `admin` 일 때만 펼침을 그린다.
+CARD_THEN_LIST_SCRIPT = (
+    GOTO_PRELUDE
+    + """
+import streamlit as st
+
+from capa_simulation.components.access_list_admin import render_access_list_admin
+from capa_simulation.components.app_credits import render_app_credits
+
+render_app_credits()
+if st.session_state.get("test_page") == "admin":
+    render_access_list_admin()
+"""
+)
+
+
+@pytest.mark.parametrize("code", ["AD-08", "AD-09"])
+def test_the_list_alerts_open_the_access_list_box_from_another_screen(
+    mock_s3: tuple[MockStore, str], monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    """못 읽음 `AD-08`(「「접속 명단」 의 「다시 읽기」」) · 환경변수 첫 버전 `AD-09`(「「접속
+    명단」 에서 첫 저장」)의 「그 화면으로」 는 다른 화면에서 눌러도 그 펼침까지 연다 — 새 등록
+    `AD-19` 와 같은 받는 쪽(설계 규칙 UI-NAV-01)."""
+    from capa_simulation.components import alert_center
+
+    store, endpoint = mock_s3
+    if code == "AD-08":
+        store.force["GET"] = (403, "AccessDenied")
+        cfg = s3_config(store, endpoint)
+        access_store.read_at_start(cfg)
+    else:
+        cfg = _seeded(store, endpoint, USER)
+    _as_person(cfg, ADMIN, monkeypatch)
+
+    app = AppTest.from_string(CARD_THEN_LIST_SCRIPT, default_timeout=30)
+    app.session_state["test_page"] = "other"
+    app.run()
+    note = active_state(app, code)
+    assert note is not None and note["href"] == "admin_area"
+    assert note["target"]["kind"] == access_list_admin.ACCESS_LIST_TARGET_KIND
+
+    app.session_state["test_page"] = "admin"
+    app.run()
+    assert box_expanded(app, access_list_admin.EXPANDER_KEY) is False
+    app.session_state[GOTO_PRESS_KEY] = note["target"]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert box_expanded(app, access_list_admin.EXPANDER_KEY) is True
+    assert alert_center.GOTO_RECEIVERS[note["target"]["kind"]] is access_list_admin.open_access_list
 
 
 def test_the_first_version_alert_goes_only_to_those_who_can_act(

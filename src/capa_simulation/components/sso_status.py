@@ -517,8 +517,17 @@ def _viewer_is_admin(cfg: SsoConfig) -> bool:
 
 
 def _admin_area_goto() -> tuple[str, str]:
-    """두 알림의 고칠 자리 — 어느 화면에서 떠도 「그 화면으로」 는 Admin Area 다."""
+    """관리자 알림의 고칠 화면 — 어느 화면에서 떠도 「그 화면으로」 는 Admin Area 다(그 안 펼침까지
+    여는 줄은 대상을 함께 싣는다)."""
     return tab_label(ADMIN_AREA), ADMIN_AREA.href
+
+
+def _access_list_goto_target() -> alerts.GotoTarget:
+    """접속 명단 알림 셋이 들고 가는 대상 — 받는 쪽이 「접속 명단」 펼침을 연다(설계 규칙
+    UI-NAV-01). 그 펼침 모듈이 이 모듈을 불러 쓰므로 부를 때 가져온다."""
+    from capa_simulation.components.access_list_admin import access_list_target
+
+    return access_list_target()
 
 
 def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
@@ -556,6 +565,7 @@ def _access_read_alert(cfg: SsoConfig, *, admin: bool) -> None:
             else None
         ),
         goto=_admin_area_goto(),
+        target=_access_list_goto_target(),
     )
 
 
@@ -579,6 +589,7 @@ def _access_seed_alert(*, admin: bool) -> None:
             else None
         ),
         goto=_admin_area_goto(),
+        target=_access_list_goto_target(),
     )
 
 
@@ -589,8 +600,6 @@ def _new_registration_alert(*, admin: bool, now: int) -> None:
     있을 때만 알림창이 뜬다(사람을 빼도 뜨지 않는다 — UI-NTF-07). 「그 화면으로」 가 Admin Area 의
     「접속 명단」 펼침을 연다(`access_list_admin.open_access_list` — UI-NAV-01).
     """
-    from capa_simulation.components.access_list_admin import access_list_target
-
     source = runtime.access_source()
     document = None if source is None else source.document
     count, latest = (
@@ -613,7 +622,7 @@ def _new_registration_alert(*, admin: bool, now: int) -> None:
             else None
         ),
         goto=_admin_area_goto(),
-        target=access_list_target(),
+        target=_access_list_goto_target(),
     )
 
 
