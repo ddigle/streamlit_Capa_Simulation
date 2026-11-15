@@ -54,6 +54,7 @@ from capa_simulation.io.container_start_report import (
     BDQ_TOKEN_ENV,
     StartRefreshRecord,
 )
+from capa_simulation.korea_time import kst_clock
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.sidebar_status import keeps_app_run_open
@@ -84,7 +85,7 @@ OPEN_HELP: Final = (
 )
 NOT_ADMIN_MESSAGE: Final = "관리자만 토큰을 넣을 수 있습니다"
 TOKEN_LINE_LABEL: Final = "**지금 토큰**"
-# 알림창 짧은 글의 만료 시각 꼴(서버 시각대) — 전문은 펼침과 같은 `CLOCK_FORMAT`.
+# 알림창 짧은 글의 만료 시각 꼴(KST) — 전문은 펼침과 같은 `CLOCK_FORMAT`.
 SHORT_CLOCK_FORMAT: Final = "%m-%d %H:%M"
 UNKNOWN_CLOCK: Final = "알 수 없음"
 # 알림 전문의 할 일 — 패키지가 읽는 자리마다(`AD-10` 조회 실패 · `AD-11` 이 함께 쓴다). 평문이다
@@ -111,9 +112,9 @@ def _utc_text(moment: datetime | None) -> str:
 
 
 def _clock(moment: datetime, layout: str = CLOCK_FORMAT) -> str:
-    """서버 시각대의 시각 글. 그 시각대로 옮기지 못하면(넘침) 「알 수 없음」."""
+    """KST 시각 글(`korea_time`). KST 로 옮기지 못하면(넘침 · 시각대 없음) 「알 수 없음」."""
     try:
-        return moment.astimezone().strftime(layout)
+        return kst_clock(moment, layout)
     except (OverflowError, OSError, ValueError):
         return UNKNOWN_CLOCK
 

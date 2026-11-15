@@ -60,6 +60,7 @@ from capa_simulation.components.paste_form import refuse_paste, render_paste_for
 from capa_simulation.components.sso_status import NEW_REGISTRATION_DAYS, access_problem_text
 from capa_simulation.components.table_toolbar import toolbar_clearance
 from capa_simulation.io.s3_small import S3Failure
+from capa_simulation.korea_time import kst_clock
 from capa_simulation.sidebar_status import remembered_box_key, remembered_expander
 
 EXPANDER_KEY: Final = "admin_area_access_list"
@@ -286,10 +287,11 @@ def _add_dialog() -> None:
 
 
 def _when_text(value: str) -> str:
-    """파일의 UTC 시각 → 서버 시각대 글. 읽거나 옮기지 못하면 받은 글 그대로(사람이 고친 파일)."""
+    """파일의 UTC 시각 → KST 글(`korea_time`). 읽거나 옮기지 못하면 받은 글 그대로(사람이 고친 파일
+    — 시각대 없는 시각 포함)."""
     try:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return moment.astimezone().strftime("%Y-%m-%d %H:%M")
+        return kst_clock(moment, "%Y-%m-%d %H:%M")
     except (ValueError, OverflowError, OSError):
         return value
 

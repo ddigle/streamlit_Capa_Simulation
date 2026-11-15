@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Final
 
-from capa_simulation import settings
+from capa_simulation import korea_time, settings
 
 # 상태 표지 — 낱말과 색 역할(토큰 이름). 로그아웃 화면은 표지가 없다. 시작 임시 화면
 # (`scripts/container_stage.py` — 「시작 중」 · 「다시 시도」 · 「점검 중」)도 이 두 표를 불러 쓴다.
@@ -64,8 +64,9 @@ DIAGNOSTIC_LABEL: Final = "관리자용 진단"
 CONTACT_LABEL: Final = "문의"
 REFERENCE_LABEL: Final = "참고"
 DIAGNOSTIC_ID_LABEL: Final = "진단"
-# 사람이 읽는 시각의 기준(「○시 ○분」) — `audit/read.KST` 와 같다(시험이 맞댄다).
-KST: Final = timezone(timedelta(hours=9), "KST")
+# 사람이 읽는 시각의 기준(「○시 ○분」) — 화면 시각 한 곳 `korea_time.KST` 그대로(감사 기록
+# 화면과 같다).
+KST: Final = korea_time.KST
 # 본문 글의 `{account}` 자리 — 거절 표가 있는 그 브라우저에만 본인 계정이 선다(보드 D2 답).
 ACCOUNT_SLOT: Final = "{account}"
 # 마크 모양 — `components/intro_overlay.MARK_RING_PATH` · `MARK_DIE_ORIGINS` 와 같다(시험이 맞댄다).

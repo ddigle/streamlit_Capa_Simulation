@@ -115,7 +115,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final
 
@@ -144,6 +144,7 @@ from capa_simulation.components.theme_toggle import (
     TOOLBAR_SLOT,
 )
 from capa_simulation.design import tokens
+from capa_simulation.korea_time import KST
 from capa_simulation.navigation import PageSpec
 
 _ASSETS = Path(__file__).with_name("alert_center_assets")
@@ -160,9 +161,6 @@ STORAGE: Final = {
 }
 # 이 서버 프로세스의 부트 표지 — 프로세스마다 한 번 정해 세션 · 회차가 달라도 그대로다.
 BOOT_MARK: Final = alerts.new_id()
-# 서버 재시작 알림 전문 끝 한 줄의 시각대 — 사용자는 한국 시각으로 읽는다(컨테이너 시계는 UTC
-# 일 수 있다).
-KST: Final = timezone(timedelta(hours=9), "KST")
 LAST_SAVE_PREFIX: Final = "마지막으로 정본에 올라간 저장"
 
 

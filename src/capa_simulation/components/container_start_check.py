@@ -97,6 +97,7 @@ from capa_simulation.io.container_start_report import (
     report_verdict,
     seconds_between,
 )
+from capa_simulation.korea_time import kst_clock
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.sidebar_status import remembered_expander
@@ -153,11 +154,11 @@ def build_step_table(
 
 
 def clock_text(value: str) -> str:
-    """결과 파일의 ISO 시각 → 진단 펼침 시각 꼴(`sso_status.CLOCK_FORMAT`). 못 읽으면 받은 글
-    그대로다."""
+    """결과 파일의 ISO 시각 → 진단 펼침 시각 꼴(`sso_status.CLOCK_FORMAT` — KST, `korea_time`). 못
+    읽으면(시각대 없는 시각 포함) 받은 글 그대로다."""
     try:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return moment.astimezone().strftime(CLOCK_FORMAT)
+        return kst_clock(moment, CLOCK_FORMAT)
     except (ValueError, OverflowError, OSError):
         return value
 

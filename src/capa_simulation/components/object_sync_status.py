@@ -47,6 +47,7 @@ from capa_simulation.components.diagnostic_copy import (
     render_diagnostic_copy,
 )
 from capa_simulation.components.flash import queue_flash, render_flash
+from capa_simulation.korea_time import kst_clock
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.object_sync_worker import (
     TITLE_BLOCKED,
@@ -101,9 +102,7 @@ BLOCKED_LABELS: Final[dict[str, str]] = {
 def _kst_minute(utc_text: str) -> str:
     """사내 PC `init` 이 남긴 UTC 시각 → KST 「YYYY-MM-DD HH:MM」. 읽지 못하면 받은 글 그대로."""
     moment = audit_read.parse_ts(utc_text)
-    return (
-        utc_text if moment is None else moment.astimezone(audit_read.KST).strftime("%Y-%m-%d %H:%M")
-    )
+    return utc_text if moment is None else kst_clock(moment, "%Y-%m-%d %H:%M")
 
 
 def current_health() -> tuple[WorkerStatus | None, SyncHealth]:
@@ -291,12 +290,12 @@ def render_object_sync_alerts() -> None:
 
 
 def _clock_text(value: str | None) -> str:
-    """UTC 글 → 서버 시각대 글. 못 읽으면 받은 글 그대로."""
+    """UTC 글 → KST 글(`korea_time`). 못 읽으면(시각대 없는 시각 포함) 받은 글 그대로."""
     if value is None:
         return "없음"
     try:
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return moment.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        return kst_clock(moment, "%Y-%m-%d %H:%M:%S")
     except (ValueError, OverflowError, OSError):
         return value
 

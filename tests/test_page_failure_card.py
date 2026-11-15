@@ -73,7 +73,7 @@ def test_the_reference_line_carries_the_moment_the_failure_was_recorded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """참고 줄의 UTC 분은 실패를 적은 순간이다 — 그린 순간이 아니다. 관리자 알림 `AD-22` 의 시각
-    (`at`, 서버 시각)과 같은 순간이라 사람이 불러 준 줄과 알림 전문이 한 순간을 가리킨다. 적은
+    (`at`, KST)과 같은 순간이라 사람이 불러 준 줄과 알림 전문이 한 순간을 가리킨다. 적은
     시계만 한 해 앞으로 돌려 그린 시계(지금)와 갈라 놓는다."""
     recorded = 1767323045.0  # 2026-01-02 03:04:05 UTC
     clock = SimpleNamespace(time=lambda: recorded, strftime=time.strftime, localtime=time.localtime)
@@ -83,7 +83,7 @@ def test_the_reference_line_carries_the_moment_the_failure_was_recorded(
 
     (failure,) = page_failures.recent_failures()
     assert failure.epoch == recorded
-    assert failure.at == time.strftime("%H:%M:%S", time.localtime(recorded))
+    assert failure.at == "12:04:05"
     reference = f"참고 {failure.ref} · 2026-01-02 03:04 UTC · AttributeError"
     assert reference in [str(item.value) for item in app.caption]
     (box,) = [item for item in app.expander if item.label == ADMIN_DIAGNOSTIC_LABEL]
