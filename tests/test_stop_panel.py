@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 import time
 from collections.abc import Callable
@@ -24,6 +25,7 @@ from capa_simulation import page_failures
 from capa_simulation.auth import runtime
 from capa_simulation.auth.tokens import issue_session
 from capa_simulation.components import sso_identity, stop_panel
+from capa_simulation.design import theme, tokens
 from capa_simulation.settings import APP_CONTACT_EMAIL_ENV
 
 pytestmark = pytest.mark.page_failure_card
@@ -62,6 +64,11 @@ def _screen_page() -> None:
     run_core_page(body, page="공정 Capa 상세", href="process_capa_detail")
 
 
+def _glyphs(markup: str) -> str:
+    """원문 HTML 캡션의 보이는 글자 — 태그를 걷고 HTML 이스케이프를 푼다."""
+    return html.unescape(re.sub(r"<[^>]+>", "", markup))
+
+
 def _shape(node: Any) -> list[str]:
     """판의 차례 — 띠 · 주 단추(단추 · 같은 탭 링크) · 문의 줄 · 참고 줄 · 접힌 진단. 스타일만 든
     칸(`st.html`)은 자리를 먹지 않아 뺀다. 펼침 안은 보지 않는다."""
@@ -75,7 +82,7 @@ def _shape(node: Any) -> list[str]:
         elif kind == "Markdown" and 'target="_self"' in str(child.value):
             shape.append("primary")
         elif kind == "Caption":
-            value = str(child.value)
+            value = _glyphs(str(child.value))
             if value.startswith(f"{stop_panel.CONTACT_PREFIX} "):
                 shape.append("contact")
             elif value.startswith(f"{stop_panel.REFERENCE_PREFIX} "):
@@ -174,3 +181,43 @@ def test_every_stop_panel_stands_in_one_order(panel: str, monkeypatch: pytest.Mo
     assert (found["code"], found["kind"]) == (code, kind)
     retry = [str(item.label) for item in app.button]
     assert retry in ([], [stop_panel.RETRY_LABEL])
+    # 문의 줄 메일은 그 회차 테마의 강조색 링크다(원문 HTML 캡션 — 아래 시험).
+    [contact] = [
+        item
+        for item in app.caption
+        if _glyphs(str(item.value)).startswith(f"{stop_panel.CONTACT_PREFIX} ")
+    ]
+    assert contact.allow_html
+    assert f'style="color:{tokens.ACCENT}">{CONTACT}</a>' in str(contact.value)
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_the_contact_mail_link_takes_the_accent_of_the_run_theme(
+    mode: theme.Mode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """문의 줄 메일은 그 회차 테마의 강조색(`ACCENT`) 링크다 — 사이드바 앱 정보 카드 · 앱 밖 화면의
+    문의처와 같은 색(design_system 「문의처는 메일 링크라 ACCENT」). Streamlit 기본 링크색은 어두운
+    테마에서 둘레 캡션 글과 같은 색이라 링크로 보이지 않는다.
+
+    줄은 원문 HTML 문단 하나(`<p>…</p>`)다 — 마크다운 줄 안에 `<a>` 를 끼우면 GFM 자동 링크가 안의
+    메일 글을 한 번 더 링크로 감싸, 서식을 든 링크는 비고 기본색 링크만 보인다. 그래서 창구 글은
+    마크다운이 아니라 HTML 로 막고, 문단을 끊는 빈 줄이 없게 공백을 하나로 접는다. 보이는 글자는
+    평문 문의 줄(`contact_caption` — 시작 임시 화면과 맞댄다)과 같다."""
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, CONTACT)
+    window = "데모 창구 <b>*내선*</b> & \n\n 0000"
+
+    with theme.pinned_mode(mode):
+        markup = stop_panel.contact_markup(window)
+
+    assert markup is not None
+    assert markup.startswith("<p>") and markup.endswith("</p>") and "\n" not in markup
+    accent = tokens.palette_value(mode, "ACCENT")
+    assert re.findall(r"<a\b[^>]*>", markup) == [
+        f'<a href="mailto:{CONTACT}" style="color:{accent}">'
+    ]
+    assert "<b>" not in markup and "&lt;b&gt;*내선*&lt;/b&gt; &amp; 0000" in markup
+    assert _glyphs(markup) == stop_panel.contact_caption(window)
+    assert stop_panel.contact_caption(window) == f"문의 {CONTACT} · 데모 창구 <b>*내선*</b> & 0000"
+    monkeypatch.delenv(APP_CONTACT_EMAIL_ENV)
+    assert stop_panel.contact_markup("데모 창구") == "<p>문의 데모 창구</p>"
+    assert stop_panel.contact_markup() is None and stop_panel.contact_caption() is None

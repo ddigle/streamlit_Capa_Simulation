@@ -11,7 +11,9 @@
 싣는다(UI-TXT-04).
 
 - **문의 줄** — 앱 밖 화면의 문의 줄과 같은 차례다. 메일, 그 뒤에 창구 글(`CAPA_ACCESS_CONTACT` —
-  로그인 · 접속 멈춤만 넘긴다), 둘 다 비면 줄이 없다.
+  로그인 · 접속 멈춤만 넘긴다), 둘 다 비면 줄이 없다. 메일은 그 회차 테마의 강조색(`ACCENT`)
+  링크다 — 사이드바 앱 정보 카드 · 앱 밖 화면의 문의처와 같은 색(UI-ACC-01 · UI-CON-04). 줄은
+  원문 HTML 문단 하나로 그린다(`contact_markup`).
 - **참고 줄** — 「참고 <사유 낱말> · <YYYY-MM-DD HH:MM> UTC」(+ 「 · <오류 종류>」). 사유 낱말은
   판의 갈래 키(앱 시작 실패 `db_locked` · 접속 멈춤 `sso_expired` 등)이고, 한 화면 오류는 그 자리에
   참고 번호(8자 — 관리자 알림 `AD-22` · 서버 로그가 같은 번호를 싣는다)를 둔다. 새 번호 체계가
@@ -89,19 +91,46 @@ def primary_link(url: str, label: str, *, title: str | None = None) -> str:
     )
 
 
+def _contact_parts(access_contact: str) -> tuple[str, str]:
+    """문의 줄의 두 칸 — 메일과 창구 글. 창구 글은 공백(줄바꿈 포함)을 하나로 접는다(한 줄
+    값이다)."""
+    return app_contact_email(), " ".join(access_contact.split())
+
+
 def contact_caption(access_contact: str = "") -> str | None:
-    """「문의 <메일> · <창구 글>」 — 둘 다 비면 `None`(줄을 그리지 않는다). 창구 글은 운영자가 적은
-    글이라 마크다운 글자 그대로 막는다."""
-    parts = [part for part in (app_contact_email(), literal_markdown(access_contact)) if part]
+    """「문의 <메일> · <창구 글>」 평문 — 보이는 글자 그대로다(시작 임시 화면의 문의 줄과 시험이
+    맞댄다). 둘 다 비면 `None`(줄을 그리지 않는다)."""
+    parts = [part for part in _contact_parts(access_contact) if part]
     return f"{CONTACT_PREFIX} {' · '.join(parts)}" if parts else None
 
 
+def contact_markup(access_contact: str = "") -> str | None:
+    """문의 줄의 원문 HTML — 문단 하나(`<p>…</p>`)이고 메일은 그 회차 테마의 강조색 링크다. 둘 다
+    비면 `None`.
+
+    마크다운 줄 안에 `<a>` 를 끼우면 GFM 자동 링크가 안의 메일 글을 한 번 더 링크로 감싸, 색을 든
+    링크는 비고 기본색 링크만 보인다. 문단 하나로 시작하는 원문 HTML 은 마크다운이 풀지 않으므로
+    창구 글(운영자가 적은 글)은 HTML 로 막는다 — 빈 줄은 문단을 끊으므로 `_contact_parts` 가 공백을
+    접는다. 색은 그릴 때마다 읽는다(멈춤은 `app.py` 가 앱 서식을 보내기 전이라 링크에 직접
+    싣는다)."""
+    email, text = _contact_parts(access_contact)
+    parts: list[str] = []
+    if email:
+        parts.append(
+            f'<a href="mailto:{html.escape(email, quote=True)}" '
+            f'style="color:{tokens.ACCENT}">{html.escape(email, quote=False)}</a>'
+        )
+    if text:
+        parts.append(html.escape(text, quote=False))
+    return f"<p>{CONTACT_PREFIX} {' · '.join(parts)}</p>" if parts else None
+
+
 def render_contact_caption(access_contact: str = "") -> None:
-    """문의 캡션 한 줄 — `access_contact` 는 접속 요청 창구 글(로그인 · 접속 멈춤만 넘긴다). 둘 다
-    비면 아무것도 그리지 않는다."""
-    line = contact_caption(access_contact)
+    """문의 캡션 한 줄(`contact_markup`) — `access_contact` 는 접속 요청 창구 글(로그인 · 접속
+    멈춤만 넘긴다). 둘 다 비면 아무것도 그리지 않는다."""
+    line = contact_markup(access_contact)
     if line is not None:
-        st.caption(line)
+        st.caption(line, unsafe_allow_html=True)
 
 
 def reference_line(code: str, *, now: float | None = None) -> str:

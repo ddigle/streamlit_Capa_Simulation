@@ -1047,7 +1047,7 @@ Alarm 밖의 진단 글(원본 오류 펼침 · Admin 진단 · 서버 시작 �
 - 범위: 앱 서식 · 컴포넌트 자산
 - 예외: 없음
 - 판단: 어두운 테마에서 이 색은 무엇이 되나?
-- 그물: `tests/test_design_tokens.py` · `tests/test_theme_tokens_follow_the_run.py` · 자산별 팔레트 시험(`tests/test_alert_center_assets.py`) · `tests/test_equipment_master_grid_assets.py`(칠한 단추 호버 대비) · `tests/test_sso_reconnect.py::test_the_band_carries_both_palettes_and_picks_the_app_theme_when_it_stands`(다시 로그인 띠 두 팔레트) · `tests/test_sso_web.py::test_plain_links_on_the_outer_pages_take_the_accent_token`(바깥 화면 보조 링크 색)
+- 그물: `tests/test_design_tokens.py` · `tests/test_theme_tokens_follow_the_run.py` · 자산별 팔레트 시험(`tests/test_alert_center_assets.py`) · `tests/test_equipment_master_grid_assets.py`(칠한 단추 호버 대비) · `tests/test_sso_reconnect.py::test_the_band_carries_both_palettes_and_picks_the_app_theme_when_it_stands`(다시 로그인 띠 두 팔레트) · `tests/test_sso_web.py::test_plain_links_on_the_outer_pages_take_the_accent_token`(바깥 화면 보조 링크 색) · `tests/test_stop_panel.py::test_the_contact_mail_link_takes_the_accent_of_the_run_theme`(앱 안 멈춤 판 문의 메일 링크 색 — 두 테마)
 - 그물 후보: JS · CSS 자산 전체의 색 리터럴 훑기
 - 근거: AGENTS 8장, TODO 3장 기록(2026-11-03), 이번 배포 전후 보드 q-hover(2026-11-06)
 - 지금 값: 없음

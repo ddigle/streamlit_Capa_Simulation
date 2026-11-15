@@ -3386,7 +3386,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   관리자 몫(`admin_view.admin_notes_visible`)에만 선다 — 접어도 누구나 펼치므로 접힘으로 가리지 않고, 판정이 무엇을 내도 진단
   없음으로 물러선다(마지막 자리). 운영 서버에서 통합인증이 꺼진 동안은 아무에게도 서지 않는다. 공용 조각은 `components/stop_panel.py`(앱 안 멈춤 판 셋 —
   앱 시작 실패 · 접속 멈춤 · 한 화면 오류 — 의 한 꼴: 경고 띠 → 주 단추 하나 → 문의 줄 → 참고 줄 → 접힌 진단. 띠와 주 단추는 부르는 쪽이, 뒤 셋은
-  `render_stop_footer` 가 같은 차례로 그리고 관리자 몫 판정 `admin_fold_visible` 이 셋의 물러섬을 한 곳에 둔다. 시험 `tests/test_stop_panel.py`). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
+  `render_stop_footer` 가 같은 차례로 그리고 관리자 몫 판정 `admin_fold_visible` 이 셋의 물러섬을 한 곳에 둔다. 문의 줄 메일은 그 회차 테마의 `ACCENT` 링크로 사이드바 앱 정보 카드 · 앱 밖 화면의 문의처와 같은 색이다 — 줄은 원문 HTML 문단 하나(`contact_markup` — 마크다운 줄 안의 `<a>` 는 GFM 자동 링크가 메일 글을 한 번 더 감싸 색이 빠진다), 보이는 글은 평문 `contact_caption` 과 같다. 시험 `tests/test_stop_panel.py`). 서버 기록에는 갈래와 종류 이름만 남긴다. 입장 화면이 읽는 스타일 표지(`BOOT_STOP_ATTRIBUTE` — 값은 경고 한 줄)를
   함께 보낸다(자리를 먹지 않는다). 시험은 `tests/test_boot_stop.py`.
   관리자가 참고 줄과 짝을 맞출 자리로 Admin 「통합인증 점검」 최근 사건 고리에 사건 `boot_fail`(사유 코드 = 갈래 키 · `kind` = 오류 종류 — 표의 사유 코드 칸은 「<갈래> · <종류>」)을 한 줄 남긴다(`auth.runtime.note_boot_failure`, 보드 boot-record — C-DEP 에는 서버 로그 창구가 없다). 같은 갈래가 이어지면 처음 한 번만(회차 · 「다시 시도」 · 다른 사람의 새 탭마다 쌓지 않는다)이고 `app.py` 가 부트스트랩이 저장소를 열고 끝낸 회차(공식버전이 없어도 — 「해 봤다」 표지 `OFFICIAL_BOOTSTRAP_ATTEMPTED_KEY` 가 그 회차에 새로 선다. 이미 올라온 세션 · 해 본 세션의 회차는 저장소를 열지 않아 끊지 않는다)에 `note_boot_success` 로 이어짐을 끊는다. 이어짐 표지는 통합인증 프로세스 상태(`runtime.reset` 이 비운다)에 있다. 새 알림 번호 · 감사 대응은 없다.
 - `src/capa_simulation/components/intro_overlay.py` — 탭을 처음 연 사용자의 첫 로딩을 덮는 입장 화면이다. 다

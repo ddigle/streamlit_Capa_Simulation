@@ -24,7 +24,7 @@ from capa_simulation.auth import names, runtime, web
 from capa_simulation.auth.config import SsoConfig
 from capa_simulation.auth.identity import Identity
 from capa_simulation.auth.tokens import issue_session
-from capa_simulation.components import admin_view, sso_identity
+from capa_simulation.components import admin_view, sso_identity, stop_panel
 from capa_simulation.components.app_credits import credit_lines
 from capa_simulation.components.app_header import SHELL_STYLE
 from capa_simulation.components.diagnostic_copy import ADMIN_DIAGNOSTIC_LABEL
@@ -315,9 +315,15 @@ def test_the_stop_panel_names_the_contact_under_its_button(
     for app in (bare, window_only, both, mail_only):
         assert _reference_code(app) == "sso_missing"
     assert _caption_values(bare)[:-1] == []
-    assert _caption_values(window_only)[:-1] == ["문의 데모 접속 창구 \\*내선\\* 0000"]
-    assert _caption_values(both)[:-1] == ["문의 help@example.com · 데모 접속 창구 \\*내선\\* 0000"]
-    assert _caption_values(mail_only)[:-1] == ["문의 help@example.com"]
+    # 문의 줄은 원문 HTML 캡션이다(메일은 강조색 링크 — `tests/test_stop_panel.py`). 창구 글은
+    # HTML 로 막아 마크다운이 풀지 않는다 — 별표가 글자 그대로 보인다.
+    assert _caption_values(window_only)[:-1] == ["<p>문의 데모 접속 창구 *내선* 0000</p>"]
+    assert _caption_values(both)[:-1] == [stop_panel.contact_markup(window)]
+    assert stop_panel.contact_caption(window) == (
+        "문의 help@example.com · 데모 접속 창구 *내선* 0000"
+    )
+    assert _caption_values(mail_only)[:-1] == [stop_panel.contact_markup()]
+    assert stop_panel.contact_caption() == "문의 help@example.com"
 
 
 def test_a_dropped_account_is_offered_the_access_request(
@@ -549,7 +555,8 @@ def test_the_gate_less_stop_says_little_and_folds_the_admin_text(
     assert any(f"`{names.ENV_ISSUER}`" in line for line in folded)
     assert folded[-1] == f"안내 문서 `{names.SETUP_DOC}`"
     outside = [value for value in _caption_values(app) if value not in folded]
-    assert outside[0] == "문의 help@example.com"
+    assert outside[0] == stop_panel.contact_markup()
+    assert stop_panel.contact_caption() == "문의 help@example.com"
     assert re.fullmatch(
         rf"참고 {sso_identity.NO_GATE_REFERENCE} · \d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}} UTC",
         outside[1],
