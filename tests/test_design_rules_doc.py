@@ -2559,9 +2559,8 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
     「예외: 없음」 이던 자리에 앱 밖 틀의 「한 번 눌러 통째로 고름」(보드 frame)을 든다(판정 s-A-01
     등). 6-29 는 2026-11-14 토큰 자동 갱신 틀의 사용자 결정 한 줄 — 메모 원문 · 「답 밖 — 구현이
     정함」 · 지금 「준비」 · 커밋을 들고, 뒤집힌 6-25 token-entry 「조사만」 은 7-1 에 남는다(6-25
-    줄은 그대로)."""
+    줄은 그대로). 판 머리는 v1.30 시험이 본다."""
     document = _text()
-    assert "판 v1.29" in document.split("\n## 1. ")[0]
     assert "- **v1.29 — 2026-11-15.**" in _chapter(document, 8)
 
     rules = {rule.id: rule for rule in _rules()}
@@ -2577,7 +2576,7 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
 
     assert "6-29 에 있다" in _chapter(document, 1)
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-29. ") :]
+    record = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -2602,3 +2601,52 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
     assert len(turned_lines) == 1, "7-1 에 뒤집힌 6-25 token-entry 「조사만」 줄이 하나 있다"
     turned = turned_lines[0]
     assert "6-25 token-entry" in turned and "6-29" in turned and TOKEN_SHIP_MEMO in turned
+
+
+TOKEN_RENEW_1115_LINES = {"token-renew-input": ("6dde83a", "6430f3b")}
+TOKEN_RENEW_MEMO = (
+    "일단 내가 인지하고있는건 3개월짜리를 받는 방법은 특수한 케이스고, 우리는 8시간짜리 토큰을 "
+    "6시간마다 갱신하는 방향으로 가는게 좋을것같음. 내일 토큰 갱신하는 명령어 전달해주겠음"
+)
+
+
+def test_the_token_renewal_input_decision_is_recorded_and_the_refresh_token_turned() -> None:
+    """v1.30 — 6-30 은 2026-11-15 대화의 사용자 결정 한 줄(3개월 갱신 토큰 대신 지금 쓰는 8시간짜리
+    로그인 토큰을 6시간마다) — 대화 원문 · 「답 밖 — 구현이 정함」 · 지금 「준비」 · 커밋 · 걷은
+    `AD-18` 을 든다. 뒤집힌 6-29 token-auto-frame 의 갱신 토큰 몫은 7-1 에 남고 6-29 줄은
+    그대로다."""
+    document = _text()
+    assert "판 v1.30" in document.split("\n## 1. ")[0]
+    assert "- **v1.30 — 2026-11-15.**" in _chapter(document, 8)
+    assert "6-30 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-30. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-15) · ([^()]+)\)$", line)
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        assert "답 밖 — 구현이 정함" in line and f"「{TOKEN_RENEW_MEMO}」" in line, line
+        for sha in TOKEN_RENEW_1115_LINES[match.group(1)]:
+            assert f"`{sha}`" in line, (line, sha)
+    assert tuple(found) == tuple(TOKEN_RENEW_1115_LINES)
+    renew = lines[0]
+    assert "「준비 · 요청 꼴 미정」" in renew and "6-29 token-auto-frame" in renew
+    assert "renew(current_token, account)`" in renew and "`CAPA_BDQ_AUTO_REFRESH`" in renew
+    assert "`AD-18`" in renew and "걷었다" in renew
+    frame = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
+    assert "`CAPA_BDQ_REFRESH_TOKEN`" in frame and "`AD-18`" in frame, (
+        "6-29 줄은 그때 기록 그대로다"
+    )
+
+    reversed_ = _chapter(document, 7)
+    turned_lines = [line for line in reversed_.splitlines() if TOKEN_RENEW_MEMO in line]
+    assert len(turned_lines) == 1, "7-1 에 뒤집힌 6-29 갱신 토큰 몫 줄이 하나 있다"
+    turned = turned_lines[0]
+    assert "6-29 token-auto-frame" in turned and "6-30" in turned
+    assert "s-C-14" in turned and "`AD-18`" in turned and "`CAPA_BDQ_AUTO_REFRESH=on`" in turned
