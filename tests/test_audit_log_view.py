@@ -177,6 +177,59 @@ def test_the_record_table_is_newest_first_with_names_targets_and_details() -> No
     assert frame[frame["사건"] == "로그인"].iloc[0]["세션"] == "abcd1234"
 
 
+RECORDS_SCRIPT = """
+from datetime import date
+
+from capa_simulation.components import audit_log_view as view
+
+line = {
+    "ts": "2026-11-13T00:13:00.000Z",
+    "ev": "user_grade_changed",
+    "cat": "admin",
+    "out": "fail",
+    "actor": "demo.admin",
+    "verified": True,
+    "tgt": {"type": "loginid", "id": "demo.admin"},
+    "det": {"grade_from": "admin", "grade_to": "user", "rev_from": 5, "rev_to": 5},
+}
+session = {
+    "ts": "2026-11-13T00:12:00.000Z",
+    "ev": "session_created",
+    "cat": "access",
+    "out": "success",
+    "actor": "demo.admin",
+    "verified": True,
+    "sid8": "ODjEMVcn",
+}
+day = date(2026, 11, 13)
+view.render_audit_log(view.LogConditions(day, day), [session, line], day)
+"""
+
+
+def test_the_record_view_gives_the_detail_and_session_columns_a_width() -> None:
+    """기록 표의 상세 · 세션 칸은 자동 폭이 아니라 정한 px 이다(E2E C5-F1). 자동 폭은 앞 줄 몇
+    개만 재고 평균의 두 배가 넘는 글을 빼서, 빈 칸이 많은 상세 칸의 긴 글 한 줄(끝의
+    「판 n(그대로)」 표지)이 창 1283 에서 잘렸다. 상세를 넓히면 남는 폭 몫이 줄어 세션 칸이 8자
+    세션 글보다 좁아지므로 함께 정한다. 대상 칸은 일부러 자동 폭이다 — 정한 폭은 상한이기도 해서
+    작업 줄만 있는 표의 「이름 (id)」 를 자른다(E2E 흉내 1283: 자동 344 → 84 로 정하면 91)."""
+    app = AppTest.from_string(RECORDS_SCRIPT).run()
+    app.session_state[view.VIEW_KEY] = view.VIEW_RECORDS
+    app.run()
+
+    assert not list(app.exception), [element.message for element in app.exception]
+    [table] = [frame for frame in app.dataframe if "상세" in frame.value.columns]
+    assert table.value["상세"].iloc[0] == "등급 전 admin · 등급 user · 판 5(그대로)"
+    assert table.value["대상"].iloc[0] == "demo.admin"
+    assert table.value["세션"].iloc[1] == "ODjEMVcn"
+    widths = {name: config.get("width") for name, config in json.loads(table.proto.columns).items()}
+    assert widths["상세"] == view.DETAIL_WIDTH_PX
+    assert widths["세션"] == view.SESSION_WIDTH_PX
+    assert widths.get("대상") is None
+    assert {name for name, width in widths.items() if width is not None} == {"상세", "세션"}
+    # 칸 이름을 바꾸고 설정을 그대로 두면 폭이 소리 없이 빠진다 — 설정 칸은 표 칸 안이다.
+    assert set(view.record_column_config()) <= set(view.RECORD_COLUMNS)
+
+
 def test_conditions_filter_people_categories_and_outcomes() -> None:
     every = view.LogConditions(TODAY, TODAY)
     only = view.LogConditions(TODAY, TODAY, ("demo.other",), ("access",), ("fail",))
