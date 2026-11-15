@@ -2614,6 +2614,7 @@ E2E_1115_ANSWERS = {
     "s-A-13": "두 화면 모두 작은 링크로 낮춤",
     "s-A-14": "표지를 「점검 중」 으로",
     "s-C-02": "「등록 길」 값을 「관리자가 넣음」 으로",
+    "s-C-14": "80일 좋음",
     "s-B-12": "이대로",
     "s-A-01": "좋음",
 }
@@ -2628,8 +2629,8 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     라벨이다. 모두 카드 권장이고 권장과 다른 답이 없다. 고칠 것 넷은 코드 갈래 몫이라 커밋이
     없다. 답이 걸린 규칙은 근거 줄에 카드 id 를 든다 — 실패한 쓰기 · 엇갈린 표지(UI-DAT-11),
     「관리자」 한 낱말 두 뜻(UI-CON-02), 누르기 전에 보이는 되돌릴 수 없는 저장(UI-NTF-09). 공통
-    틀 「주 단추 하나」 를 다시 해도 같은 화면에서 좁힌 것은 7-1 에 남는다. 6-29 줄은 그때 기록
-    그대로다(앞 시험이 6-30 앞에서 끊어 본다)."""
+    틀 「주 단추 하나」 를 다시 해도 같은 화면에서 좁힌 것은 7-1 에 남는다. 6-29 줄은 그 답 밖
+    값을 받은 구절만 더했다(앞 시험이 6-30 앞에서 끊어 본다)."""
     document = _text()
     assert "판 v1.30" in document.split("\n## 1. ")[0]
     assert "- **v1.30 — 2026-11-15.**" in _chapter(document, 8)
@@ -2682,6 +2683,15 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     )
     for phrase in ("실선", "`cloud_off`", "12px 700", "`SY-01`", "s-B-12 「이대로」"):
         assert phrase in canon, phrase
+
+    # s-C-14 「80일 좋음」 — 6-29 의 답 밖 값을 4장에 확정하고 6-29 줄이 그 답을 가리킨다.
+    refresh = next(
+        row for row in _chapter(document, 4).splitlines() if row.startswith("| 갱신 토큰 알림 |")
+    )
+    for phrase in ("처음 쓴 날부터 80일", "`AD-18`", "셈 시작일", "s-C-14 「80일 좋음」"):
+        assert phrase in refresh, phrase
+    frame = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
+    assert "s-C-14 「80일 좋음」" in frame
 
     narrowed = [line for line in _chapter(document, 7).splitlines() if "s-A-13" in line]
     assert len(narrowed) == 1, "7-1 에 공통 틀 「주 단추 하나」 를 좁힌 줄이 하나 있다"
