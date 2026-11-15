@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from alert_marks import states
+from alert_marks import GOTO_PRELUDE, GOTO_PRESS_KEY, active_state, box_expanded, states
 from sso_support import use_config
 from streamlit.testing.v1 import AppTest
 
@@ -248,6 +248,62 @@ def test_a_late_piece_raises_ad_13_for_viewers_only(
             ADMIN_AREA.href,
             "접속 · 작업 기록",
         )
+
+
+# 다른 화면 ↔ Admin 「DB 동기화」 — 감사 알림과 알림 칸 「그 화면으로」 의 콜백(`GOTO_PRELUDE`).
+# 세션 `test_page` 가 `admin` 일 때만 펼침을 그린다.
+GOTO_SCRIPT = (
+    GOTO_PRELUDE
+    + """
+import streamlit as st
+
+from capa_simulation.components.object_sync_status import render_object_sync_status
+from capa_simulation.components.sso_status import render_audit_alerts
+
+render_audit_alerts()
+if st.session_state.get("test_page") == "admin":
+    render_object_sync_status()
+"""
+)
+
+
+def test_the_keeping_alert_opens_the_db_sync_box_its_text_names(
+    cookies: dict[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`AD-12` 전문은 「DB 동기화 칸을 보고 「지금 올리기」 를 누릅니다」 다 — 그 펼침이 서는
+    서버(`managed`)에서는 「그 화면으로」 가 다른 화면에서 눌려도 그 펼침까지 연다(설계 규칙
+    UI-NAV-01). 펼침이 없는 서버(「동기화 아님」)는 기록 탭 그대로다
+    (`test_an_on_server_writes_both_codes_every_call_and_raises_them_for_viewers`)."""
+    from capa_simulation import object_sync_worker, sync_boot
+    from capa_simulation.components import object_sync_status
+
+    cfg = use_config()
+    runtime.mark_gate_installed()
+    spool.configure(tmp_path)
+    recorder.start(env="cdep", version="test", inst="efefefefefef")
+    recorder.set_grader(grader(cfg))
+    token, _ = issue_session(cfg, loginid="dev.user", name=None, dept=None, now=int(time.time()))
+    cookies[cfg.session_cookie] = token
+    monkeypatch.setattr(sync_boot, "is_managed", lambda: True)
+    monkeypatch.setattr(shipper, "keeping_problems", lambda **_: ("올리기 밀림",))
+    monkeypatch.setattr(object_sync_worker, "current_status", lambda: None)
+
+    app = AppTest.from_string(GOTO_SCRIPT)
+    app.session_state["test_page"] = "other"
+    app.run()
+    note = active_state(app, "AD-12")
+    assert note is not None and note["href"] == ADMIN_AREA.href
+    assert "tab" not in note, "탭을 실으면 알림 칸이 마지막 칸을 누르지 않고 대상만 보낸다"
+    assert note["target"]["kind"] == object_sync_status.SYNC_TARGET_KIND
+
+    app.session_state["test_page"] = "admin"
+    app.run()
+    assert box_expanded(app, object_sync_status.EXPANDER_KEY) is False
+    app.session_state[GOTO_PRESS_KEY] = note["target"]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert box_expanded(app, object_sync_status.EXPANDER_KEY) is True
+    shipper.reset()
 
 
 def test_the_operations_doc_names_the_monthly_record_like_the_alerts() -> None:

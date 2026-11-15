@@ -59,6 +59,7 @@ from capa_simulation.components.diagnostic_copy import (
     table_lines,
 )
 from capa_simulation.components.literal_markdown import literal_markdown
+from capa_simulation.components.object_sync_status import sync_panel_target
 from capa_simulation.io import s3_small
 from capa_simulation.io.container_start_report import (
     STATUS_FAILED,
@@ -635,7 +636,8 @@ def render_access_alerts() -> None:
 
 
 def _audit_goto() -> tuple[str, str]:
-    """감사 알림의 고칠 자리 — 어느 화면에서 떠도 Admin Area(「접속 · 작업 기록」 탭)다."""
+    """감사 알림의 기록 탭 자리 — 어느 화면에서 떠도 Admin Area 「접속 · 작업 기록」 탭이다(`AD-13`
+    과 「DB 동기화」 펼침이 없는 서버의 `AD-12`)."""
     return tab_label(ADMIN_AREA), ADMIN_AREA.href
 
 
@@ -646,11 +648,14 @@ def render_audit_alerts() -> None:
     서버(개발 PC · 사내 WebIDE · 시험)는 Streamlit 호출이 하나도 없어 요소 순번이 그대로다. 켜진
     서버에서는 부를 때마다 이벤트 칸에 늘 두 자리를 쓴다. 판정 재료는 메모리 표지뿐이다(파일 IO
     없음). 관리자 회차에만 세우고 다른 회차는 해소로 부른다(해소 표지에는 글을 싣지 않는다).
+    `AD-12` 의 「그 화면으로」 는 전문이 가리키는 「DB 동기화」 펼침까지다 — 그 펼침이 서는 서버
+    (`managed`)에서만이고, 펼침이 없는 서버(「동기화 아님」)는 기록 탭이다(설계 규칙 UI-NAV-01).
     """
     if not audit_recorder.enabled():
         return
     viewer = sso_identity.viewer_can_audit()
-    keeping = audit_shipper.keeping_problems(managed=sync_boot.is_managed()) if viewer else ()
+    managed = sync_boot.is_managed()
+    keeping = audit_shipper.keeping_problems(managed=managed) if viewer else ()
     alerts.state(
         "AD-12",
         scope=None,
@@ -667,8 +672,10 @@ def render_audit_alerts() -> None:
             if keeping
             else None
         ),
-        tab=AUDIT_TAB_NAME,
-        goto=_audit_goto(),
+        # 탭과 대상을 함께 실으면 알림 칸이 탭 길의 마지막 칸을 누르지 않고 대상만 보낸다.
+        tab="" if managed else AUDIT_TAB_NAME,
+        goto=_admin_area_goto() if managed else _audit_goto(),
+        target=sync_panel_target() if managed else None,
     )
     late = audit_shipper.chain_problems() if viewer else ()
     alerts.state(
