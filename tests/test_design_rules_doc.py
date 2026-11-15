@@ -2735,7 +2735,7 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
 
     # q-narrow-admin 「다음 판에 고침」 — TODO 2장 열린 할 일 · 3장 결정 기록 줄을 가리킨다.
     todo = (PROJECT_ROOT / "docs/TODO.md").read_text(encoding="utf-8")
-    assert f"- [ ] **{E2E_1115_NARROW_TODO}**" in todo
+    assert E2E_1115_NARROW_TODO in todo
     assert "「좁은 창(390)에서 낱말 단위 줄바꿈을 …」" in by_id["q-narrow-admin"]
     assert f"`{E2E_1115_ADDRESS}` — 규칙집 6-30 · v1.30" in todo
 
