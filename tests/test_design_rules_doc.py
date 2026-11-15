@@ -2498,9 +2498,9 @@ WIDENED_1115_LINES = {"band-connecting": ("946025e",)}
 def test_the_widened_1115_readings_are_recorded() -> None:
     """v1.28 — 6-28 은 E2E 고침이 앞 답을 넓혀 읽은 기록 한 줄이고, 줄마다 커밋 · 「답 밖 — 구현이
     정함」 · 그림 보드 확인을 든다. 넓힌 뜻은 UI-LAY-05 그물 줄(머리 CONNECTING 과 그 시험)에도
-    섰다. 앞 절 줄은 그때 기록 그대로다(앞 시험이 6-28 앞에서 끊어 본다)."""
+    섰다. 앞 절 줄은 그때 기록 그대로다(앞 시험이 6-28 앞에서 끊어 본다). 판 머리는 뒤 시험이
+    본다."""
     document = _text()
-    assert "판 v1.28" in document.split("\n## 1. ")[0]
     assert "- **v1.28 — 2026-11-15.**" in _chapter(document, 8)
     assert "6-28 에 있다" in _chapter(document, 1)
 
@@ -2529,3 +2529,18 @@ def test_the_widened_1115_readings_are_recorded() -> None:
         "tests/test_sso_reconnect.py::"
         "test_a_standing_band_also_hides_the_header_connecting_status_and_gives_it_back" in net
     )
+
+
+# 2026-11-15 다섯 사람 E2E 그림 보드 카드를 규칙집에 대 본 판정(PRC-07)이 찾은 규칙집 · 기록
+# 빈칸 — 판정의 「예외」 근거가 규칙집 밖 보드 답뿐이던 자리를 규칙 글에 이름으로 올린다(PRC-08).
+def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
+    """v1.29 — UI-TXT-01 예외가 앱이 서기 전 시작 임시 화면(`scripts/container_stage.py`)을 이름으로
+    든다(판정 s-D-01 ~ 07 의 근거가 「앱 대신 뜨는 화면」 보드 답뿐이었다)."""
+    document = _text()
+    assert "판 v1.29" in document.split("\n## 1. ")[0]
+    assert "- **v1.29 — 2026-11-15.**" in _chapter(document, 8)
+
+    rules = {rule.id: rule for rule in _rules()}
+    txt01 = rules["UI-TXT-01"].fields["예외"][0]
+    assert "시작 임시 화면" in txt01 and "`scripts/container_stage.py`" in txt01
+    assert "p1-stage-start" in txt01 and "p2-stage-human" in txt01
