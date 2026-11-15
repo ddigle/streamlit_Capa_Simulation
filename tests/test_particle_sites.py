@@ -118,7 +118,6 @@ _READINGS = {
     "BIGDATAQUERY_LOGIN_TOKEN": "토큰",
     "CAPA_ARTIFACTORY_USER": "유저",
     "CAPA_BDQ_TOKEN": "토큰",
-    "CAPA_BDQ_REFRESH_TOKEN": "토큰",
     "CAPA_BDQ_USER_NAME": "네임",
     "CAPA_S3_SYNC_MODE": "모드",
     "DEPLOY_MANIFEST.json": "제이슨",

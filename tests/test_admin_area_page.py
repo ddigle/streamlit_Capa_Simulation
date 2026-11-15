@@ -995,7 +995,7 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     assert "실패" in expander
     [steps] = [frame for frame in app.dataframe if "단계" in getattr(frame.value, "columns", [])]
     # 넷째 줄 「통합인증」 · 다섯째 줄 「토큰 자동 갱신」 은 결과 파일이 아니라 지금 프로세스에서
-    # 판정한다(시험 환경은 둘 다 꺼짐 — 갱신 토큰이 없다).
+    # 판정한다(시험 환경은 둘 다 꺼짐 — 자동 갱신 켜기 값이 없다).
     assert steps.value["결과"].tolist() == ["실패", "정상", "정상", "건너뜀", "꺼짐"]
     assert steps.value["단계"].iloc[3] == "통합인증"
     assert steps.value["단계"].iloc[4] == "토큰 자동 갱신"

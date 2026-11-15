@@ -2648,17 +2648,17 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     판정 목록 하나다. 고칠 것 넷은 같은 날 코드 갈래가 고쳐 합친 커밋을 들고, 정한 것 셋은 답 앞 E2E
     고침의 커밋을 든다. 답이 걸린 규칙은 글 · 예외 · 근거 줄에 카드 id 를 든다 — 실패한 쓰기 ·
     엇갈린 표지(UI-DAT-11), 「관리자」 한 낱말 두 뜻(UI-CON-02), 누르기 전에 보이는 저장(UI-NTF-09),
-    「정본 아님」 표지(UI-LAY-05 · UI-TXT-06 · UI-ACC-02 · 4장), 갱신 토큰 80일(4장), 「토큰 자동
-    갱신」 줄 낱말(UI-CON-02 · UI-DAT-11 예외), 배지 정확성(UI-PRF-01 예외), 판정 목록 보고
-    꼴(PRC-07). 공통 틀 「주 단추 하나」 를 좁힌 것은 7-1 에, 다음 판 할 일은 TODO 2장에 있다. 6-28
-    · 6-29 줄은 받은 답 구절만 더했다(앞 시험들이 저마다 다음 절 앞에서 끊어 본다)."""
+    「정본 아님」 표지(UI-LAY-05 · UI-TXT-06 · UI-ACC-02 · 4장), 갱신 토큰 80일(4장 — 같은 날 밤
+    6-31 로 뒤집혀 그 줄은 7-1 로 옮기고 6-30 줄에 표지), 「토큰 자동 갱신」 줄 낱말(UI-CON-02 ·
+    UI-DAT-11 예외), 배지 정확성(UI-PRF-01 예외), 판정 목록 보고 꼴(PRC-07). 공통 틀 「주 단추
+    하나」 를 좁힌 것은 7-1 에, 다음 판 할 일은 TODO 2장에 있다. 6-28 · 6-29 줄은 받은 답 구절만
+    더했다(앞 시험들이 저마다 다음 절 앞에서 끊어 본다). 판 머리는 v1.31 시험이 본다."""
     document = _text()
-    assert "판 v1.30" in document.split("\n## 1. ")[0]
     assert "- **v1.30 — 2026-11-15.**" in _chapter(document, 8)
     assert "6-30 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    board = section[section.index("\n### 6-30. ") :]
+    board = section[section.index("\n### 6-30. ") : section.index("\n### 6-31. ")]
     assert E2E_1115_ADDRESS in board
     lines = [line for line in board.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
@@ -2707,12 +2707,20 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     for phrase in ("실선", "`cloud_off`", "12px 700", "`SY-01`", "s-B-12 「이대로」"):
         assert phrase in canon, phrase
 
-    # s-C-14 「80일 좋음」 — 6-29 의 답 밖 값을 4장에 확정하고 6-29 줄이 그 답을 가리킨다.
+    # s-C-14 「80일 좋음」 — 6-29 의 답 밖 값을 받았고 6-29 줄이 그 답을 가리킨다. 같은 날 밤
+    # 토큰 입력 결정(6-31)으로 뒤집혀 6-30 줄은 그대로 두고 표지를 달았고, 4장 줄은 걷어 그 값을
+    # 7-1 로 옮겼다.
+    assert not any(
+        row.startswith("| 갱신 토큰 알림 |") for row in _chapter(document, 4).splitlines()
+    ), "4장 「갱신 토큰 알림」 줄은 7-1 로 옮겼다"
     refresh = next(
-        row for row in _chapter(document, 4).splitlines() if row.startswith("| 갱신 토큰 알림 |")
+        line
+        for line in _chapter(document, 7).splitlines()
+        if line.startswith("- ") and "4장 옛 지금 값 「갱신 토큰 알림" in line
     )
-    for phrase in ("처음 쓴 날부터 80일", "`AD-18`", "셈 시작일", "s-C-14 「80일 좋음」"):
+    for phrase in ("처음 쓴 날부터 80일", "`AD-18`", "셈 시작일", "s-C-14 「80일 좋음」", "(6-31)"):
         assert phrase in refresh, phrase
+    assert "토큰 입력 결정(6-31)으로 뒤집힘" in by_id["s-C-14"]
     frame = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
     assert "s-C-14 「80일 좋음」" in frame
 
@@ -2750,3 +2758,53 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     narrowed = [line for line in _chapter(document, 7).splitlines() if "s-A-13" in line]
     assert len(narrowed) == 1, "7-1 에 공통 틀 「주 단추 하나」 를 좁힌 줄이 하나 있다"
     assert "frame" in narrowed[0] and "p1-login-fail" in narrowed[0]
+
+
+TOKEN_RENEW_1115_LINES = {"token-renew-input": ("6dde83a", "6430f3b", "94a4977", "f7307b8")}
+TOKEN_RENEW_MEMO = (
+    "일단 내가 인지하고있는건 3개월짜리를 받는 방법은 특수한 케이스고, 우리는 8시간짜리 토큰을 "
+    "6시간마다 갱신하는 방향으로 가는게 좋을것같음. 내일 토큰 갱신하는 명령어 전달해주겠음"
+)
+
+
+def test_the_token_renewal_input_decision_is_recorded_and_the_refresh_token_turned() -> None:
+    """v1.31 — 6-31 은 2026-11-15 대화의 사용자 결정 한 줄(3개월 갱신 토큰 대신 지금 쓰는 8시간짜리
+    로그인 토큰을 6시간마다) — 대화 원문 · 「답 밖 — 구현이 정함」 · 지금 「준비」 · 커밋 · 걷은
+    `AD-18` 을 든다. 뒤집힌 6-29 token-auto-frame 의 갱신 토큰 몫과 그 80일을 받은 6-30 s-C-14 ·
+    4장 옛 지금 값은 7-1 한 줄에 남고 6-29 줄은 그대로다(6-30 s-C-14 줄 · 4장은 v1.30 시험이
+    본다)."""
+    document = _text()
+    assert "판 v1.31" in document.split("\n## 1. ")[0]
+    assert "- **v1.31 — 2026-11-15.**" in _chapter(document, 8)
+    assert "6-31 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-31. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-15) · ([^()]+)\)$", line)
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        assert "답 밖 — 구현이 정함" in line and f"「{TOKEN_RENEW_MEMO}」" in line, line
+        for sha in TOKEN_RENEW_1115_LINES[match.group(1)]:
+            assert f"`{sha}`" in line, (line, sha)
+    assert tuple(found) == tuple(TOKEN_RENEW_1115_LINES)
+    renew = lines[0]
+    assert "「준비 · 요청 꼴 미정」" in renew and "6-29 token-auto-frame" in renew
+    assert "renew(current_token, account)`" in renew and "`CAPA_BDQ_AUTO_REFRESH`" in renew
+    assert "`AD-18`" in renew and "걷었다" in renew
+    frame = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
+    assert "`CAPA_BDQ_REFRESH_TOKEN`" in frame and "`AD-18`" in frame, (
+        "6-29 줄은 그때 기록 그대로다"
+    )
+
+    reversed_ = _chapter(document, 7)
+    turned_lines = [line for line in reversed_.splitlines() if TOKEN_RENEW_MEMO in line]
+    assert len(turned_lines) == 1, "7-1 에 뒤집힌 6-29 갱신 토큰 몫 줄이 하나 있다"
+    turned = turned_lines[0]
+    assert "6-29 token-auto-frame" in turned and "(6-31)" in turned
+    assert "s-C-14" in turned and "`AD-18`" in turned and "`CAPA_BDQ_AUTO_REFRESH=on`" in turned

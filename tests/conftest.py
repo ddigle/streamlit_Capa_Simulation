@@ -45,7 +45,7 @@ from capa_simulation.components import (
     voc_draft_keeper,
 )
 from capa_simulation.io import bdq_refresh, bdq_token, company_bigdataquery_adapter, object_storage
-from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
+from capa_simulation.io.container_start_report import BDQ_AUTO_REFRESH_ENV, CD_ONLY_ENVIRONMENT
 
 
 def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
@@ -307,6 +307,9 @@ def _without_container_start_report(
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
     for name in CD_ONLY_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+    # 토큰 자동 갱신 켜기 값도 지운다 — 이 PC 의 환경에 있으면 넣기가 넣은 때 표지를 쓰고 상태가
+    # 꺼짐이 아니게 된다. 켠 꼴이 필요한 시험은 따로 넣는다.
+    monkeypatch.delenv(BDQ_AUTO_REFRESH_ENV, raising=False)
     # 토큰 파일 자리도 없는 곳으로 — 시험이 이 PC 의 진짜 토큰(WebIDE `/config/.credential`)을 읽지
     # 않게 한다. 패키지가 파일보다 먼저 읽는 환경변수도 지운다.
     monkeypatch.setattr(

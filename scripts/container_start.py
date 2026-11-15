@@ -26,20 +26,23 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
      패키지가 앱 의존성을 바꾸지 못하게 한다. 이 pip 에는 자격증명이 하나도 없다.
 1. 로그인 토큰 — `CAPA_BDQ_TOKEN` 과 `CAPA_BDQ_USER_NAME` 이 있으면 패키지가 보는 자리
    (`/config/.credential/bigdataquery.token.<계정>`)에 그 값을 쓴다(`base64:` 로 시작하면 풀어서).
-   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다. 그 앞에 갱신 토큰
-   `CAPA_BDQ_REFRESH_TOKEN` 이 있으면 같은 폴더의 `capa-bdq-refresh.<계정>`(0600)으로 옮기고(값이
-   없거나 거절이면 앞 실행이 둔 갱신 파일들을 지운다), 자동 갱신이 켜짐이면(`io/bdq_refresh.py` —
-   요청 꼴을 알 때) 조회 길과 같은 문(넣은 때부터 6시간 · 만료 1시간 안 · 토큰 없음)일 때만 갱신해
-   받은 토큰을 쓴다. 자격 폴더의 토큰이 갱신으로 넣은 것이면 갱신하지 않았거나 실패해도 그대로
-   두고, `CAPA_BDQ_TOKEN` 은 그 밖이거나 사람이 표에서 그 값을 바꿨을 때(지난 시작 때와 다름) 쓴다.
+   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다. 그 앞에 자격 폴더에 남은
+   옛 갱신 토큰 파일(`capa-bdq-refresh.<계정>`)을 지우고(지우지 못하면 까닭 한 줄), 자동 갱신을 끈
+   서버(`CAPA_BDQ_AUTO_REFRESH` 가 `on` 이 아님)면 앞 실행이 둔 넣은 때 표지 · 잠금 · 시작 값 표지도
+   지운다. 켜짐이면(`io/bdq_refresh.py` — 갱신 명령을 알 때) 조회 길과 같은 문(넣은 때부터
+   6시간 · 만료 1시간 안)일 때만 자격 폴더의 지금 토큰으로 갱신해 받은 토큰을 쓴다(지금 토큰이
+   없으면 갱신하지 않는다). 자격 폴더의 토큰이 갱신으로 넣은 것이면 갱신하지 않았거나 실패해도
+   그대로 두고,
+   `CAPA_BDQ_TOKEN` 은 그 밖이거나 사람이 표에서 그 값을 바꿨을 때(지난 시작 때와 다름) 쓴다.
    꺼짐 · 준비는 지금 길 그대로다. 진행 한 줄 「토큰 자동 갱신 — 꺼짐 · 준비 · 켜짐」 과 결과 파일
    `refresh` 칸에 갈래 · 까닭만 남긴다.
 2. 요청자 계정 — `CAPA_BDQ_USER_NAME` 은 앱이 그대로 읽는다. 있는지만 적는다.
 
 결과는 `settings.CONTAINER_START_REPORT_PATH` 에 남고 앱 화면(Admin Area 「서버 시작 점검」)이
 읽는다. **비밀값은 어디에도 남기지 않는다** — pip 출력·예외 문구의 토큰과 URL 자격증명을 가리고
-계정은 앞 두 글자만 둔다. 하위 프로세스(import 확인·pip·aws)에도 세 비밀값(두 토큰 · 갱신
-토큰)을 넘기지 않는다 — 깔린 패키지의 import 코드가 그 값을 읽지 못하게 한다. 앱은 `os.execvpe` 로
+계정은 앞 두 글자만 둔다. 하위 프로세스(import 확인·pip·aws)에도 세 비밀값(두 토큰 · 표에
+남았을 수 있는 옛 갱신 토큰)을 넘기지 않는다 — 깔린 패키지의 import 코드가 그 값을 읽지 못하게
+한다. 앱은 `os.execvpe` 로
 이 프로세스를 갈아 끼워 신호·종료 동작이 옛 `CMD` 와 같고, 실행 줄의 세 비밀값은 앱에 넘기지 않는다.
 
 **어느 단계가 실패해도, 예상하지 못한 예외가 나도 앱은 띄운다 — DB 받기 하나만 예외다.** `managed`
@@ -96,12 +99,12 @@ from capa_simulation.io.container_start_report import (
     ARTIFACTORY_TOKEN_ENV,
     ARTIFACTORY_USER_ENV,
     AWS_CLI_VERSION,
-    BDQ_REFRESH_TOKEN_ENV,
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     CD_ENVIRONMENT,
     COMPANY_INDEX_URL_ENV,
     REPORT_VERSION,
+    RETIRED_BDQ_REFRESH_TOKEN_ENV,
     STATUS_FAILED,
     STATUS_LABELS,
     STATUS_OK,
@@ -437,8 +440,8 @@ class Redactor:
         # 너무 짧은 값(틀린 설정)까지 가리면 출력이 뭉개진다 — 앱이 「짧음」 으로 막는다.
         sso_secrets = [environ.get(name, "").strip() for name in sso_names.SECRET_ENVIRONMENT]
         secrets += [value for value in sso_secrets if len(value) >= 8]
-        # 로그인 토큰과 갱신 토큰 — 원문 · `base64:` 몸 · 푼 내용의 줄 조각.
-        for name in (BDQ_TOKEN_ENV, BDQ_REFRESH_TOKEN_ENV):
+        # 로그인 토큰과 표에 남았을 수 있는 옛 갱신 토큰 — 원문 · `base64:` 몸 · 푼 내용의 줄 조각.
+        for name in (BDQ_TOKEN_ENV, RETIRED_BDQ_REFRESH_TOKEN_ENV):
             secrets += _token_forms(environ.get(name, "").strip())
         accounts = [
             environ.get(ARTIFACTORY_USER_ENV, "").strip(),
@@ -685,8 +688,9 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
         _tighten_folder(target.parent)
         return StepResult(STATUS_OK, "같은 내용의 토큰 파일이 이미 있어 다시 쓰지 않음")
     try:
-        # 넣는 길 셋의 한 곳 — 토큰 곁에 넣은 때 표지(출처 `start`)를 남긴다(`io/bdq_token.py`).
-        bdq_token.put_token(credential_dir, account, content, "start")
+        # 넣는 길 셋의 한 곳 — 자동 갱신을 켰으면 토큰 곁에 넣은 때 표지(출처 `start`)를 남긴다
+        # (`io/bdq_token.py`).
+        bdq_token.put_token(credential_dir, account, content, "start", environ=environ)
     except OSError as error:
         return StepResult(STATUS_FAILED, f"{credential_dir} 에 쓰지 못함({type(error).__name__})")
     return StepResult(STATUS_OK, "토큰 파일을 씀")
@@ -695,66 +699,30 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
 REFRESH_LABEL = "토큰 자동 갱신"
 
 
-def store_refresh_token(environ: Mapping[str, str], credential_dir: Path) -> str | None:
-    """CD 환경변수 `CAPA_BDQ_REFRESH_TOKEN` 을 자격 폴더의 0600 파일로 옮긴다(같은 내용이면 다시
-    쓰지 않는다 — 파일 수정 시각이 갱신 토큰을 처음 본 때다). 값이 없으면 앞 실행이 둔 갱신 토큰 ·
-    넣은 때 표지 · 잠금 · 시작 값 표지를 지운다 — 환경변수 표에서 빼는 것이 끄는 길이고(`/config`
-    가 다시 띄워도 남는 자리여도) 꺼진 자격 폴더는 자동 갱신 앞과 같다. 값을 거절했거나(짧음 · 풀지
-    못함) 쓰지 못했어도 같이 지운다 — 남기면 앱이 옛 갱신 토큰으로 돌아 새 값이 쓰이지 않는 것을
-    모른다. 두지 못한 까닭 또는 `None`(썼음 · 값 없음). 까닭에 값 · 길이를 싣지 않는다."""
-    raw = environ.get(BDQ_REFRESH_TOKEN_ENV, "").strip()
+def forget_old_refresh_token(environ: Mapping[str, str], credential_dir: Path) -> str | None:
+    """자격 폴더에 남은 옛 갱신 토큰 파일(`capa-bdq-refresh.<계정>`)을 지운다 — 자동 갱신은 읽지
+    않는 비밀이라 남기지 않는다. 지우지 못한 까닭 또는 `None`(지웠음 · 없었음 · 계정을 몰라 자리를
+    못 정함). 까닭에 값 · 길이를 싣지 않는다."""
     account = environ.get(BDQ_USER_NAME_ENV, "").strip()
-    target = bdq_refresh.refresh_token_path(credential_dir, account) if account else None
-    if not raw:
-        return _forget_refresh(credential_dir, account) if target is not None else None
-    if target is None:
-        return f"{BDQ_USER_NAME_ENV} 이 없거나 파일 이름으로 못 써 갱신 토큰을 두지 못함"
     try:
-        content = _decode_token(raw)
-    except ValueError:
-        return _refused(
-            f"{BDQ_REFRESH_TOKEN_ENV} 의 base64: 값을 풀지 못함", credential_dir, account
-        )
-    if len(content.strip()) < MIN_TOKEN_BYTES:
-        reason = f"{BDQ_REFRESH_TOKEN_ENV} 을 푼 내용이 {MIN_TOKEN_BYTES}바이트보다 짧음"
-        return _refused(reason, credential_dir, account)
-    try:
-        if bdq_token.holds_same(target, content):
-            _tighten(target, 0o600)
-            _tighten_folder(target.parent)
-        else:
-            _write_private(target, content)
+        bdq_refresh.forget_old_refresh_token(credential_dir, account)
     except OSError as error:
-        reason = f"갱신 토큰 파일을 쓰지 못함({type(error).__name__})"
-        return _refused(reason, credential_dir, account)
+        return f"옛 갱신 토큰 파일을 지우지 못함({type(error).__name__})"
     return None
-
-
-def _forget_refresh(credential_dir: Path, account: str) -> str | None:
-    """앞 실행이 둔 갱신 파일들을 지운다(`bdq_refresh.forget_refresh_files`). 갱신 토큰 파일을
-    지우지 못한 까닭 또는 `None`."""
-    try:
-        bdq_refresh.forget_refresh_files(credential_dir, account)
-    except OSError as error:
-        return f"앞 갱신 토큰 파일을 지우지 못함({type(error).__name__})"
-    return None
-
-
-def _refused(reason: str, credential_dir: Path, account: str) -> str:
-    """새 갱신 토큰을 두지 못함 — 앞 실행의 갱신 파일들도 지우고 까닭을 돌려준다."""
-    problem = _forget_refresh(credential_dir, account)
-    return reason if problem is None else f"{reason} — {problem}"
 
 
 def refresh_step(environ: Mapping[str, str], credential_dir: Path) -> bdq_refresh.StartRefresh:
-    """갱신 토큰을 두고, 켜짐이면 갱신할 때만 갱신한다(갱신으로 넣어 둔 토큰은 그대로 두고, 사람이
-    표에서 `CAPA_BDQ_TOKEN` 을 바꿨으면 교환하지 않고 다음 단계가 그 값을 쓰게 둔다 —
-    `bdq_refresh.refresh_at_start`). 꺼짐 · 준비는 아무것도 바꾸지 않는다 — 다음 로그인 토큰 단계가
-    지금 길 그대로 돈다."""
-    problem = store_refresh_token(environ, credential_dir)
-    if problem is not None:
-        return bdq_refresh.StartRefresh("off", problem, failed=True)
-    return bdq_refresh.refresh_at_start(environ, credential_dir)
+    """옛 갱신 토큰 파일을 지우고, 자동 갱신을 끈 서버면 앞 실행이 둔 넣은 때 표지 · 잠금 · 시작
+    값 표지도 지운다(끈 자격 폴더는 자동 갱신 앞과 같다). 켜짐이면 갱신할 때만 자격 폴더의 지금
+    토큰으로 갱신한다(갱신으로 넣어 둔 토큰은 그대로 두고, 사람이 표에서 `CAPA_BDQ_TOKEN` 을
+    바꿨으면 교환하지 않고 다음 단계가 그 값을 쓰게 둔다 — `bdq_refresh.refresh_at_start`). 꺼짐 ·
+    준비는 토큰을 바꾸지 않는다 — 다음 로그인 토큰 단계가 지금 길 그대로 돈다."""
+    leftover = forget_old_refresh_token(environ, credential_dir)
+    if not bdq_token.auto_refresh_switched_on(environ):
+        account = environ.get(BDQ_USER_NAME_ENV, "").strip()
+        bdq_refresh.forget_auto_refresh_files(credential_dir, account)
+    result = bdq_refresh.refresh_at_start(environ, credential_dir)
+    return result if leftover is None else replace(result, leftover=leftover)
 
 
 def user_name_step(environ: Mapping[str, str]) -> StepResult:
@@ -851,8 +819,11 @@ def collect_report(
     }
     for name, result in steps.items():
         echo(f"{STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")
-    refresh = dataclasses.replace(refresh, reason=redactor(refresh.reason))
-    echo(f"{REFRESH_LABEL} — {bdq_refresh.MODE_LABELS[refresh.mode]}: {refresh.reason}")
+    refresh = dataclasses.replace(
+        refresh, reason=redactor(refresh.reason), leftover=redactor(refresh.leftover)
+    )
+    tail = f" · {refresh.leftover}" if refresh.leftover else ""
+    echo(f"{REFRESH_LABEL} — {bdq_refresh.MODE_LABELS[refresh.mode]}: {refresh.reason}{tail}")
     presence = sso_presence(environ)
     echo(sso_presence_line(presence))
     account = environ.get(BDQ_USER_NAME_ENV, "").strip()
