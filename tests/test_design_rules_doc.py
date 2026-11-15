@@ -2441,6 +2441,7 @@ MONDAY_1114_NARROW = (
     "config-fold",
     "official-narrow",
     "boot-contact",
+    "intro-stopped",
 )
 
 
