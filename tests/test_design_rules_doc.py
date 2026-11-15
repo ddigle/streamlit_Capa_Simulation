@@ -2689,6 +2689,8 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
 
     # s-B-12 「이대로」 — 「정본 아님」 머리 표지의 모양은 4장에 확정, 머리 목록 · 예외에 이름.
     assert "「정본 아님」 표지" in rules["UI-LAY-05"].text
+    assert "정본 아님으로 확인되지 않은 서버" in rules["UI-LAY-05"].text
+    assert "정본을 받은 서버" not in rules["UI-LAY-05"].text
     assert "s-B-12" in rules["UI-LAY-05"].fields["근거"][0]
     txt06 = rules["UI-TXT-06"].fields["예외"][0]
     assert "「정본 아님」 표지" in txt06 and "s-B-12" in txt06 and "줄이지 않는다" in txt06
