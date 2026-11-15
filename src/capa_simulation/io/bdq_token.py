@@ -21,14 +21,14 @@ Admin 「토큰 넣기」(`components/bdq_token_admin.py`)가 관리자가 넣�
 시각 · 크기가 열쇠) 토큰 글은 붙들지 않는다.
 
 **넣은 때 표지.** 넣는 길 셋 — 시작 스크립트(`start`) · Admin 「토큰 넣기」(`admin`) · 자동
-갱신(`refresh`, `io/bdq_refresh.py`) — 은 모두 `put_token` 으로 쓰고, 같은 폴더에 갱신 토큰
-파일(`capa-bdq-refresh.<계정>` — 시작 스크립트가 둔다)이 있을 때만 토큰을 쓴 뒤 곁에
+갱신(`refresh`, `io/bdq_refresh.py`) — 은 모두 `put_token` 으로 쓰고, 자동 갱신을 켰을 때만(CD
+환경변수 `CAPA_BDQ_AUTO_REFRESH` 가 `on` — `auto_refresh_switched_on`) 토큰을 쓴 뒤 곁에
 `capa-bdq-installed.<계정>.json`(0600)을 남긴다 — 넣은 UTC 시각과 출처(자동 갱신이면 응답이
 알려 준 만료 시각도)뿐이고 토큰 글자 · 길이 · 지문은 없다. 자동 갱신이 「넣은 때부터 6시간」
-을 이 표지로 센다. 갱신 토큰이 없으면(자동 갱신 꺼짐) 표지를 쓰지 않고 앞 표지를 지운다 —
-자격 폴더가 자동 갱신 앞과 같다. 표지는 덧붙은 기록이라 쓰지 못해도 넣기는 넣음이다(그때는
-토큰 파일 수정 시각이 대신한다). 패키지 자리 접두(`bigdataquery.token.`)를 쓰지 않는다 —
-패키지가 그 폴더를 어떻게 훑는지 모른다.
+을 이 표지로 센다. 끈 서버는 표지를 쓰지 않고 앞 표지를 지운다 — 자격 폴더가 자동 갱신 앞과
+같다. 표지는 덧붙은 기록이라 쓰지 못해도 넣기는 넣음이다(그때는 토큰 파일 수정 시각이
+대신한다). 패키지 자리 접두(`bigdataquery.token.`)를 쓰지 않는다 — 패키지가 그 폴더를 어떻게
+훑는지 모른다. 자동 갱신은 이 모듈이 쓴 토큰 파일을 갱신의 입력(지금 토큰)으로 읽는다.
 
 **만료 시각.** 토큰의 꼴을 아직 모른다(WebIDE 실측 35바이트 — 점 셋 JWT 는 아니다). 지금
 읽는 꼴은 JWT 의 `exp` 하나뿐이고 그 밖은 「모름」 이다 — 실제 토큰의 꼴은 사내 확인
@@ -53,7 +53,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Final, Literal
 
-from capa_simulation.io.container_start_report import BDQ_USER_NAME_ENV
+from capa_simulation.io.container_start_report import (
+    BDQ_AUTO_REFRESH_ENV,
+    BDQ_AUTO_REFRESH_ON,
+    BDQ_USER_NAME_ENV,
+)
 
 # 패키지(`bdq.login()`·`getData()`)가 토큰을 찾는 자리. 패키지가 이 자리만 보므로 옮기지
 # 않는다. 시험은 이 이름을 바꿔 끼운다 — 부를 때마다 읽는다(`credential_dir`).
@@ -77,8 +81,6 @@ _LATEST_EXPIRY: Final = datetime.max.replace(tzinfo=timezone.utc) - timedelta(da
 # 넣은 때 표지(모듈 설명). 패키지 자리 접두를 쓰지 않는다.
 INSTALLED_MARK_PREFIX: Final = "capa-bdq-installed."
 INSTALLED_MARK_SUFFIX: Final = ".json"
-# 자동 갱신의 갱신 토큰 파일(`io/bdq_refresh.py`) — 있으면 넣은 때 표지를 쓴다.
-REFRESH_TOKEN_PREFIX: Final = "capa-bdq-refresh."
 
 # 넣기 · 갱신이 함께 잡는 잠금 — 한 프로세스의 두 길이 같은 파일을 겹쳐 쓰지 않는다.
 _WRITE_LOCK: Final = threading.Lock()
@@ -171,22 +173,11 @@ def installed_mark_path(folder: Path, account: str) -> Path | None:
     return folder / f"{INSTALLED_MARK_PREFIX}{account}{INSTALLED_MARK_SUFFIX}"
 
 
-def refresh_token_path(folder: Path, account: str) -> Path | None:
-    """계정의 갱신 토큰 파일 자리(`io/bdq_refresh.py`). 계정 이름이 폴더 밖을 가리키면 `None`."""
-    if token_file_path(folder, account) is None:
-        return None
-    return folder / f"{REFRESH_TOKEN_PREFIX}{account}"
-
-
-def refresh_token_present(folder: Path, account: str) -> bool:
-    """갱신 토큰 파일이 있나 — 넣은 때 표지를 쓸지 가른다. 볼 수 없으면 없다."""
-    path = refresh_token_path(folder, account)
-    if path is None:
-        return False
-    try:
-        return path.is_file()
-    except OSError:
-        return False
+def auto_refresh_switched_on(environ: Mapping[str, str] | None = None) -> bool:
+    """자동 갱신을 켰나 — CD 환경변수 `CAPA_BDQ_AUTO_REFRESH` 가 `on`(앞뒤 공백 · 대소문자 무관)
+    이면 참, 그 밖의 값 · 없음은 거짓. 넣은 때 표지를 쓸지 가르고, 자동 갱신 상태의 첫 문이다."""
+    env = os.environ if environ is None else environ
+    return env.get(BDQ_AUTO_REFRESH_ENV, "").strip().lower() == BDQ_AUTO_REFRESH_ON
 
 
 def forget_installed_mark(folder: Path, account: str) -> None:
@@ -211,18 +202,21 @@ def put_token(
     source: InstallSource,
     at: datetime | None = None,
     expires_at: datetime | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
 ) -> None:
-    """토큰 파일을 쓰고(0600 원자적 바꿔 끼우기) 갱신 토큰 파일이 있으면 곁에 넣은 때 표지를
-    남긴다(없으면 앞 표지를 지운다 — 자동 갱신 꺼짐은 그 앞과 같은 폴더). 넣는 길 셋의 한 곳이다.
-    토큰 쓰기 실패는 `OSError` 로 올리고, 표지 쓰기 · 지우기 실패는 삼킨다(덧붙은 기록 — 토큰
-    파일 수정 시각이 대신한다). 계정이 파일 이름으로 못 쓰는 글이면 `ValueError`."""
+    """토큰 파일을 쓰고(0600 원자적 바꿔 끼우기) 자동 갱신을 켰으면(`environ` 의 켜기 값 — 없으면
+    프로세스 환경) 곁에 넣은 때 표지를 남긴다(끄면 앞 표지를 지운다 — 자동 갱신 꺼짐은 그 앞과
+    같은 폴더). 넣는 길 셋의 한 곳이다. 토큰 쓰기 실패는 `OSError` 로 올리고, 표지 쓰기 · 지우기
+    실패는 삼킨다(덧붙은 기록 — 토큰 파일 수정 시각이 대신한다). 계정이 파일 이름으로 못 쓰는
+    글이면 `ValueError`."""
     target = token_file_path(folder, account)
     if target is None:
         raise ValueError("계정 이름을 파일 이름으로 쓸 수 없다")
     write_private(target, content)
     # 한 시각 눈금 안의 두 쓰기는 같은 열쇠일 수 있다 — 쓴 쪽이 기억을 비운다.
     forget_expiry_memo()
-    if refresh_token_present(folder, account):
+    if auto_refresh_switched_on(environ):
         write_installed_mark(folder, account, source, at, expires_at)
     else:
         forget_installed_mark(folder, account)
@@ -368,7 +362,7 @@ def install_content(
         if holds_same(target, content):
             return InstallOutcome("same")
         try:
-            put_token(place, account, content, source, at, expires_at)
+            put_token(place, account, content, source, at, expires_at, environ=env)
         except OSError as error:
             return InstallOutcome("refused", f"토큰 파일을 쓰지 못했습니다({type(error).__name__})")
     return InstallOutcome("written")

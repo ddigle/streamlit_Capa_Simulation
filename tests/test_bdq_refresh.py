@@ -1,4 +1,4 @@
-# Purpose: BDQ 토큰 자동 갱신의 준비 · 갱신 때 · 잠금 · 고리 멈춤 · 비밀을 가짜 교환으로 검증한다.
+# Purpose: BDQ 토큰 자동 갱신의 켜기 · 입력 · 갱신 때 · 고리 멈춤 · 비밀을 가짜 교환으로 검증한다.
 
 from __future__ import annotations
 
@@ -26,12 +26,11 @@ import pytest
 from capa_simulation.io import bdq_refresh, bdq_token
 from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io import container_start_report as report_contract
-from capa_simulation.io.container_start_report import BDQ_USER_NAME_ENV
+from capa_simulation.io.container_start_report import BDQ_AUTO_REFRESH_ENV, BDQ_USER_NAME_ENV
 
 ACCOUNT = "fakeaccount"
 # 가짜 값만 쓴다 — 사내 꼴을 모른다. 심은 값이 어떤 글에도 나오지 않는지 찾는다.
 FAKE_TOKEN = "FAKE-bdq-login-token-0000-abcdefghi"
-FAKE_REFRESH = "FAKE-bdq-refresh-token-9999-zyxwvuts"
 TOKEN_ERROR = "HTTP 401 invalid token"
 
 
@@ -57,7 +56,8 @@ class Clock:
 
 
 class FakeExchange:
-    """가짜 교환 — 부른 수와 받은 값을 세고, 새 가짜 토큰을 준다(또는 `error` 를 낸다)."""
+    """가짜 교환(`bdq_refresh.renew`) — 부른 수와 받은 (지금 토큰, 계정)을 세고, 새 가짜 토큰을
+    준다(또는 `error` 를 낸다)."""
 
     def __init__(
         self,
@@ -73,11 +73,11 @@ class FakeExchange:
         self.gate = gate
         self._lock = threading.Lock()
 
-    def __call__(self, refresh_token: bytes, account: str) -> bdq_refresh.Exchanged:
+    def __call__(self, current_token: bytes, account: str) -> bdq_refresh.Exchanged:
         with self._lock:
             self.calls += 1
             number = self.calls
-            self.received.append((refresh_token, account))
+            self.received.append((current_token, account))
         if self.gate is not None:
             self.gate.wait(5)
         if self.error is not None:
@@ -90,9 +90,11 @@ class FakeExchange:
 
 @pytest.fixture
 def folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """자동 갱신을 켠 서버의 자격 폴더 — 켜기 값 `on` · 계정."""
     target = tmp_path / "credential"
     monkeypatch.setattr(bdq_token, "CREDENTIAL_DIR", target)
     monkeypatch.setenv(BDQ_USER_NAME_ENV, ACCOUNT)
+    monkeypatch.setenv(BDQ_AUTO_REFRESH_ENV, "on")
     return target
 
 
@@ -104,9 +106,9 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
 
 
 def turn_on(monkeypatch: pytest.MonkeyPatch, fake: FakeExchange) -> None:
-    """요청 꼴을 안 것으로 — 교환 자리를 가짜로 바꿔 끼운다."""
+    """갱신 명령을 안 것으로 — 교환 자리를 가짜로 바꿔 끼운다."""
     monkeypatch.setattr(bdq_refresh, "REQUEST_SHAPE_KNOWN", True)
-    monkeypatch.setattr(bdq_refresh, "exchange", fake)
+    monkeypatch.setattr(bdq_refresh, "renew", fake)
 
 
 def token_file(folder: Path) -> Path:
@@ -120,12 +122,9 @@ def lay_out(
     issued_ago: timedelta = timedelta(hours=1),
     source: bdq_token.InstallSource = "start",
     token: str = FAKE_TOKEN,
-    refresh: str | None = FAKE_REFRESH,
 ) -> datetime:
-    """시작 스크립트가 남기는 꼴 — 갱신 토큰 파일과 `issued_ago` 앞에 넣은 토큰 · 표지."""
+    """켠 서버의 시작 스크립트가 남기는 꼴 — `issued_ago` 앞에 넣은 토큰 · 넣은 때 표지."""
     folder.mkdir(parents=True, exist_ok=True)
-    if refresh is not None:
-        bdq_token.write_private(folder / f"capa-bdq-refresh.{ACCOUNT}", refresh.encode())
     issued = clock.now - issued_ago
     bdq_token.put_token(folder, ACCOUNT, token.encode(), source, issued)
     os.utime(token_file(folder), (issued.timestamp(), issued.timestamp()))
@@ -161,11 +160,13 @@ def query(module: FakeModule) -> object:
 # --- 교환 한 곳 · 준비 ------------------------------------------------------------------
 
 
-def test_the_exchange_says_the_request_shape_is_not_known_yet() -> None:
+def test_the_renewal_says_the_command_is_not_known_yet() -> None:
+    """갱신 명령은 2026-11-16 에 받는다 — 지금 교환 한 곳은 「미정」 을 내고 받은 지금 토큰 · 계정을
+    글에 싣지 않는다."""
     assert bdq_refresh.REQUEST_SHAPE_KNOWN is False
     with pytest.raises(bdq_refresh.RefreshNotConfigured) as caught:
-        bdq_refresh.exchange(FAKE_REFRESH.encode(), ACCOUNT)
-    assert FAKE_REFRESH not in str(caught.value) and ACCOUNT not in str(caught.value)
+        bdq_refresh.renew(FAKE_TOKEN.encode(), ACCOUNT)
+    assert FAKE_TOKEN not in str(caught.value) and ACCOUNT not in str(caught.value)
 
 
 def test_the_exchanged_token_stays_out_of_its_repr() -> None:
@@ -181,16 +182,22 @@ def test_the_modes_match_what_the_report_reads() -> None:
 @pytest.mark.parametrize(
     ("setup", "reason"),
     [
-        ("nothing", bdq_refresh.NO_REFRESH_TOKEN),
+        ("no switch", "켜지 않음"),
+        ("other value", f"{BDQ_AUTO_REFRESH_ENV} 값이 on 이 아님"),
         ("no account", f"{BDQ_USER_NAME_ENV} 없음"),
         ("environment token", f"{bdq_token.LOGIN_TOKEN_ENV} 있음"),
     ],
 )
-def test_without_a_usable_refresh_token_it_is_off(
+def test_without_the_switch_or_a_usable_place_it_is_off(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, setup: str, reason: str
 ) -> None:
-    if setup != "nothing":
-        lay_out(folder, clock)
+    """켜기는 `CAPA_BDQ_AUTO_REFRESH=on` 하나다 — 없거나 그 밖의 값이면 토큰이 있어도 꺼짐이고
+    까닭에 값을 싣지 않는다."""
+    lay_out(folder, clock)
+    if setup == "no switch":
+        monkeypatch.delenv(BDQ_AUTO_REFRESH_ENV)
+    if setup == "other value":
+        monkeypatch.setenv(BDQ_AUTO_REFRESH_ENV, "true")
     if setup == "no account":
         monkeypatch.delenv(BDQ_USER_NAME_ENV)
     if setup == "environment token":
@@ -199,9 +206,39 @@ def test_without_a_usable_refresh_token_it_is_off(
     state = bdq_refresh.status()
 
     assert (state.mode, state.reason, state.label) == ("off", reason, "꺼짐")
+    assert "true" not in state.reason
 
 
-def test_with_a_refresh_token_and_no_request_shape_it_is_ready(folder: Path, clock: Clock) -> None:
+@pytest.mark.parametrize("value", ["on", " ON ", "On"])
+def test_the_switch_reads_on_without_case_or_spaces(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    lay_out(folder, clock)
+    monkeypatch.setenv(BDQ_AUTO_REFRESH_ENV, value)
+
+    assert bdq_refresh.status().mode == "ready"
+
+
+def test_off_changes_nothing_on_the_query_path_even_when_the_command_is_known(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """켜지 않은 서버 — 명령을 알고 갱신할 때(7시간)여도 교환을 부르지 않고 자격 폴더는 그대로다
+    (사람이 `CAPA_BDQ_TOKEN` · 「토큰 넣기」 로 넣는 지금 길)."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    monkeypatch.delenv(BDQ_AUTO_REFRESH_ENV)
+    fake = FakeExchange()
+    turn_on(monkeypatch, fake)
+    before = snapshot(folder)
+
+    module = FakeModule(Exception(TOKEN_ERROR))
+    with pytest.raises(adapter.BigDataQueryCallError):
+        query(module)
+
+    assert (fake.calls, module.calls) == (0, 1)
+    assert snapshot(folder) == before
+
+
+def test_switched_on_without_the_command_it_is_ready(folder: Path, clock: Clock) -> None:
     lay_out(folder, clock)
 
     state = bdq_refresh.status()
@@ -212,11 +249,11 @@ def test_with_a_refresh_token_and_no_request_shape_it_is_ready(folder: Path, clo
 def test_ready_changes_nothing_on_the_query_path(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """지금 꼴(요청 꼴 미정) — 갱신 토큰이 있고 6시간이 지나 갱신할 때여도 교환을 부르지 않고 자격
-    폴더는 바이트 · 시각 그대로, 조회 · 실패 · 관리자 표지는 갱신 토큰이 없을 때와 똑같다."""
+    """지금 꼴(갱신 명령 미정) — 켰고 6시간이 지나 갱신할 때여도 교환을 부르지 않고 자격 폴더는
+    바이트 · 시각 그대로, 조회 · 실패 · 관리자 표지는 끈 서버와 똑같다."""
     lay_out(folder, clock, issued_ago=timedelta(hours=7))
     called: list[bytes] = []
-    monkeypatch.setattr(bdq_refresh, "exchange", lambda token, _account: called.append(token))
+    monkeypatch.setattr(bdq_refresh, "renew", lambda token, _account: called.append(token))
     before = snapshot(folder)
 
     module = FakeModule(Exception(TOKEN_ERROR))
@@ -276,7 +313,8 @@ def test_six_hours_after_it_was_put_the_token_is_refreshed_first(
     query(module)
 
     assert fake.calls == 1 and module.calls == 1
-    assert fake.received == [(FAKE_REFRESH.encode(), ACCOUNT)]
+    # 입력은 지금 토큰 — 넣기 길이 쓴 토큰 파일의 바이트 그대로다.
+    assert fake.received == [(FAKE_TOKEN.encode(), ACCOUNT)]
     assert token_file(folder).read_bytes() == b"FAKE-new-login-0001-abcdefgh"
     mark = bdq_token.read_installed_mark(folder, ACCOUNT)
     assert mark == bdq_token.InstalledMark(clock.now, "refresh")
@@ -315,7 +353,7 @@ def test_an_expiry_the_exchange_reported_brings_the_next_refresh_forward(
     turn_on(monkeypatch, fake)
     monkeypatch.setattr(
         bdq_refresh,
-        "exchange",
+        "renew",
         lambda token, account: bdq_refresh.Exchanged(fake(token, account).token, reported),
     )
 
@@ -355,7 +393,7 @@ def test_a_reported_expiry_already_inside_the_hour_is_not_trusted(
         moment = clock.now.replace(tzinfo=None) if reported is None else clock.now + reported
         return bdq_refresh.Exchanged(got.token, moment)
 
-    monkeypatch.setattr(bdq_refresh, "exchange", exchange)
+    monkeypatch.setattr(bdq_refresh, "renew", exchange)
     for _ in range(10):
         query(FakeModule(None))
         clock.advance(minutes=6)
@@ -397,7 +435,7 @@ def test_a_refreshed_token_is_not_refreshed_again_on_its_expiry_right_after_it_w
             return bdq_refresh.Exchanged(_jwt(expires, fake.calls))
         return bdq_refresh.Exchanged(got.token, expires)
 
-    monkeypatch.setattr(bdq_refresh, "exchange", exchange)
+    monkeypatch.setattr(bdq_refresh, "renew", exchange)
     for _ in range(10):
         query(FakeModule(None))
         clock.advance(minutes=6)
@@ -416,7 +454,7 @@ def test_a_refreshed_token_killed_within_the_hold_still_counts_toward_the_loop(
     turn_on(monkeypatch, fake)
     monkeypatch.setattr(
         bdq_refresh,
-        "exchange",
+        "renew",
         lambda token, account: bdq_refresh.Exchanged(
             fake(token, account).token, clock.now + timedelta(minutes=61)
         ),
@@ -434,17 +472,68 @@ def test_a_refreshed_token_killed_within_the_hold_still_counts_toward_the_loop(
     assert fake.calls == 2
 
 
-def test_a_missing_token_is_refreshed(
+def test_the_next_renewal_takes_the_token_the_last_one_put(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    lay_out(folder, clock)
-    token_file(folder).unlink()
+    """6시간마다 이어진다 — 둘째 갱신의 입력은 첫 갱신이 넣은 토큰이다(시작 때 토큰이 아니다)."""
+    lay_out(folder, clock, issued_ago=timedelta(hours=7))
     fake = FakeExchange()
     turn_on(monkeypatch, fake)
 
     bdq_refresh.before_query()
+    clock.advance(hours=6)
+    bdq_refresh.before_query()
 
-    assert fake.calls == 1 and token_file(folder).is_file()
+    assert [token for token, _account in fake.received] == [
+        FAKE_TOKEN.encode(),
+        b"FAKE-new-login-0001-abcdefgh",
+    ]
+    assert token_file(folder).read_bytes() == b"FAKE-new-login-0002-abcdefgh"
+
+
+def _unreadable(monkeypatch: pytest.MonkeyPatch, target: Path) -> None:
+    reader = Path.read_bytes
+
+    def refuse(self: Path) -> bytes:
+        if self == target:
+            raise PermissionError(errno.EACCES, "Permission denied")
+        return reader(self)
+
+    monkeypatch.setattr(Path, "read_bytes", refuse)
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        ("missing", "지금 토큰 없음"),
+        ("empty", "지금 토큰이 비었음"),
+        ("unreadable", "지금 토큰을 읽지 못함(PermissionError)"),
+    ],
+    ids=["없음", "빔", "못 읽음"],
+)
+def test_a_token_that_cannot_be_read_is_not_renewed_and_says_why(
+    folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, damage: str, reason: str
+) -> None:
+    """입력(지금 토큰)이 없거나 · 비었거나 · 못 읽으면 교환을 부르지 않고 그 까닭이 마지막 시도
+    실패로 선다(표 줄). 교환을 부르지 않았으니 조회가 이어져도 거듭 실패로 멈추지 않는다."""
+    issued = lay_out(folder, clock, issued_ago=timedelta(hours=7))
+    if damage == "missing":
+        token_file(folder).unlink()
+    if damage == "empty":
+        token_file(folder).write_bytes(b"  \n")
+        os.utime(token_file(folder), (issued.timestamp(), issued.timestamp()))
+    if damage == "unreadable":
+        _unreadable(monkeypatch, token_file(folder))
+    fake = FakeExchange()
+    turn_on(monkeypatch, fake)
+
+    for _ in range(2 * bdq_refresh.FAILED_EXCHANGE_LIMIT):
+        bdq_refresh.before_query()
+        clock.advance(minutes=6)
+
+    state = bdq_refresh.status()
+    assert fake.calls == 0
+    assert (state.mode, state.last_failure, state.last_failure_unreached) == ("on", reason, False)
 
 
 def test_a_mark_from_the_future_or_older_than_the_file_falls_back_to_the_file_time(
@@ -832,14 +921,14 @@ def test_a_success_between_failed_exchanges_starts_the_count_again(
     outcomes = [True, True, False, True, True]
     fake = FakeExchange()
 
-    def flaky(refresh_token: bytes, account: str) -> bdq_refresh.Exchanged:
-        got = fake(refresh_token, account)
+    def flaky(current_token: bytes, account: str) -> bdq_refresh.Exchanged:
+        got = fake(current_token, account)
         if outcomes.pop(0):
             raise answered()
         return got
 
     turn_on(monkeypatch, fake)
-    monkeypatch.setattr(bdq_refresh, "exchange", flaky)
+    monkeypatch.setattr(bdq_refresh, "renew", flaky)
     for hours in (0, 0, 0, 6, 0):
         clock.advance(hours=hours, minutes=6)
         query(FakeModule(None))
@@ -886,7 +975,7 @@ def test_an_outage_that_never_reached_the_server_does_not_stop_and_it_resumes(
         return got
 
     turn_on(monkeypatch, fake)
-    monkeypatch.setattr(bdq_refresh, "exchange", outage)
+    monkeypatch.setattr(bdq_refresh, "renew", outage)
     tries = 2 * bdq_refresh.FAILED_EXCHANGE_LIMIT + 1
     for _ in range(tries):
         query(FakeModule(None))
@@ -927,7 +1016,7 @@ def test_unreached_attempts_neither_count_toward_the_stop_nor_reset_it(
         raise outcomes.pop(0) if outcomes else answered()
 
     turn_on(monkeypatch, fake)
-    monkeypatch.setattr(bdq_refresh, "exchange", mixed)
+    monkeypatch.setattr(bdq_refresh, "renew", mixed)
     for _ in range(5):
         query(FakeModule(None))
         clock.advance(minutes=6)
@@ -1031,7 +1120,7 @@ def test_an_unexpected_failure_on_the_query_path_is_recorded_not_swallowed(
     turn_on(monkeypatch, FakeExchange())
 
     def broken(*_args: object) -> bool:
-        raise LookupError(FAKE_REFRESH)
+        raise LookupError(FAKE_TOKEN)
 
     monkeypatch.setattr(bdq_refresh, "_due", broken)
 
@@ -1110,9 +1199,11 @@ def test_the_same_token_back_still_moves_the_put_time(
 def test_no_secret_reaches_a_status_a_log_or_an_exception(
     folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """교환이 갱신 토큰 · 새 토큰을 문구에 실어 실패해도 상태 · 로그 · 조회 예외 · 표지에 없다."""
+    """교환이 지금 토큰(입력)을 원문 · base64 로 문구에 실어 실패해도 상태 · 로그 · 조회 예외 ·
+    표지에 없고, 실패 갈래에 토큰 길이도 없다."""
     lay_out(folder, clock, issued_ago=timedelta(hours=7))
-    leaked = f"bad request body refresh={FAKE_REFRESH} token={FAKE_TOKEN}"
+    encoded = base64.b64encode(FAKE_TOKEN.encode()).decode()
+    leaked = f"bad request body token={FAKE_TOKEN} encoded={encoded}"
     fake = FakeExchange(error=RuntimeError(leaked))
     turn_on(monkeypatch, fake)
     caplog.set_level(logging.DEBUG)
@@ -1124,11 +1215,12 @@ def test_no_secret_reaches_a_status_a_log_or_an_exception(
     mark = (folder / f"capa-bdq-installed.{ACCOUNT}.json").read_text(encoding="utf-8")
     messages = [record.getMessage() for record in caplog.records]
     texts = [repr(state), str(caught.value), repr(caught.value.__cause__), mark, *messages]
-    for secret in (FAKE_REFRESH, FAKE_TOKEN):
+    for secret in (FAKE_TOKEN, encoded):
         for text in texts:
             assert secret not in text
     assert set(json.loads(mark)) == {"installed_at", "source"}
     assert state.last_failure == "교환 실패(RuntimeError)"
+    assert str(len(FAKE_TOKEN)) not in state.last_failure + state.reason
 
 
 def streamlit_calls_in_a_thread(work: Callable[[], object]) -> list[str]:
@@ -1193,15 +1285,15 @@ def test_the_refresh_runs_in_a_thread_without_streamlit(
         assert bdq_refresh.status().reason == bdq_refresh.HALT_ELSEWHERE
         clock.advance(minutes=1)
         bdq_token.install_content(b"FAKE-admin-put-login-token-abc", "admin", at=clock.now)
-        bdq_refresh.exchange = unreachable
+        bdq_refresh.renew = unreachable
         clock.advance(minutes=6)
         quietly(FakeModule(Exception(TOKEN_ERROR)))
         assert bdq_refresh.status().last_failure_unreached
-        bdq_refresh.exchange = failing
+        bdq_refresh.renew = failing
         for _ in range(bdq_refresh.FAILED_EXCHANGE_LIMIT):
             clock.advance(minutes=6)
             quietly(FakeModule(Exception(TOKEN_ERROR)))
-        bdq_refresh.refresh_token_aging(bdq_refresh.status())
+        bdq_refresh.status()
 
     assert streamlit_calls_in_a_thread(work) == []
     assert fake.calls == 2 and failing.calls == bdq_refresh.FAILED_EXCHANGE_LIMIT
@@ -1228,20 +1320,3 @@ def test_the_refresh_modules_load_without_streamlit() -> None:
         env=environ,
     )
     assert done.stdout.strip() == "False"
-
-
-def test_a_refresh_token_is_due_for_replacement_after_eighty_days(
-    folder: Path, clock: Clock
-) -> None:
-    lay_out(folder, clock)
-    refresh_file = folder / f"capa-bdq-refresh.{ACCOUNT}"
-    seen = (clock.now - timedelta(days=79, hours=23)).timestamp()
-    os.utime(refresh_file, (seen, seen))
-
-    state = bdq_refresh.status()
-    assert state.refresh_token_since is not None
-    assert bdq_refresh.refresh_token_aging(state) is False
-
-    clock.advance(hours=1)
-    assert bdq_refresh.refresh_token_aging(bdq_refresh.status()) is True
-    assert bdq_refresh.refresh_token_aging(bdq_refresh.RefreshStatus("off")) is False

@@ -460,12 +460,12 @@ def render_start_check_alert() -> None:
 
 
 def render_token_alert() -> None:
-    """BigDataQuery 토큰 관리자 알림 넷 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
-    (`bdq_token_admin.render_expiry_alert`), 자동 갱신 멈춤 · 실패 `AD-17` 과 갱신 토큰 80일 `AD-18`
+    """BigDataQuery 토큰 관리자 알림 셋 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
+    (`bdq_token_admin.render_expiry_alert`), 자동 갱신 멈춤 · 실패 `AD-17`
     (`bdq_token_admin.render_refresh_alerts`). `app.py` 가 회차마다 조건 없이 부른다.
 
     결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않는다 — 그 파일은 시작 스크립트가 앱보다 먼저
-    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 네 자리를
+    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 세 자리를
     쓰고 관리자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
     실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다.
     """
@@ -491,7 +491,7 @@ def render_token_alert() -> None:
     )
     # 만료 1시간 전 관리자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
     render_expiry_alert()
-    # 자동 갱신 관리자 알림(`AD-17` · `AD-18`) — 이벤트 칸 두 자리 더.
+    # 자동 갱신 관리자 알림(`AD-17`) — 이벤트 칸 한 자리 더.
     render_refresh_alerts()
 
 

@@ -38,10 +38,14 @@ from capa_simulation import settings
 ARTIFACTORY_USER_ENV: Final = "CAPA_ARTIFACTORY_USER"
 ARTIFACTORY_TOKEN_ENV: Final = "CAPA_ARTIFACTORY_TOKEN"
 BDQ_TOKEN_ENV: Final = "CAPA_BDQ_TOKEN"
-# BigDataQuery 갱신 토큰(3개월 유효 — 2026-11-14 사용자 결정). 선택 값이라 `CD_ENVIRONMENT` 에 넣지
-# 않는다(「시작 때 비어 있던 CD 환경변수」 줄에 서지 않게). 시작 스크립트가 자격 폴더의 0600 파일로
-# 옮기고 앱 프로세스에는 넘기지 않는다(`io/bdq_refresh.py`).
-BDQ_REFRESH_TOKEN_ENV: Final = "CAPA_BDQ_REFRESH_TOKEN"
+# BigDataQuery 토큰 자동 갱신 켜기(`io/bdq_refresh.py` — 값이 `on` 이면 켬, 그 밖 · 없으면 꺼짐).
+# 비밀이 아니라 앱에도 넘긴다. 선택 값이라 `CD_ENVIRONMENT` 에 넣지 않고(「시작 때 비어 있던 CD
+# 환경변수」 줄에 서지 않게) CD 서버를 가르는 `CD_ONLY_ENVIRONMENT` 에도 넣지 않는다.
+BDQ_AUTO_REFRESH_ENV: Final = "CAPA_BDQ_AUTO_REFRESH"
+BDQ_AUTO_REFRESH_ON: Final = "on"
+# 자동 갱신이 읽지 않는 갱신 토큰 이름 — 표에 남아 있어도 비밀이라 앱 · 하위 프로세스에 넘기지 않고
+# 시작 스크립트 출력에서 가린다(`APP_WITHHELD_ENVIRONMENT`).
+RETIRED_BDQ_REFRESH_TOKEN_ENV: Final = "CAPA_BDQ_REFRESH_TOKEN"
 # 조회 요청자의 사내 계정. 사람마다 다른 값이라 저장소에 두지 않는다 — 배포 ZIP 을 받은 다른
 # 사람이 남의 계정으로 조회하게 된다. 어댑터(`getData(user_name=…)`)와 시작 스크립트(토큰 파일
 # 이름)가 함께 읽는다.
@@ -58,15 +62,18 @@ CD_ENVIRONMENT: Final = (
     BDQ_USER_NAME_ENV,
 )
 # 시작 스크립트가 앱 프로세스에 넘기지 않는 비밀값 셋. 앱 환경에 남아 있으면 스크립트가 돌지
-# 않았다는 뜻이다(`missing_report_notice`).
-APP_WITHHELD_ENVIRONMENT: Final = (ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV, BDQ_REFRESH_TOKEN_ENV)
+# 않았다는 뜻이다(`missing_report_notice` — CD 전용 key 와 겹치는 것만 본다).
+APP_WITHHELD_ENVIRONMENT: Final = (
+    ARTIFACTORY_TOKEN_ENV,
+    BDQ_TOKEN_ENV,
+    RETIRED_BDQ_REFRESH_TOKEN_ENV,
+)
 # CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 과 `CAPA_COMPANY_INDEX_URL`
 # 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다.
 CD_ONLY_ENVIRONMENT: Final = (
     ARTIFACTORY_USER_ENV,
     ARTIFACTORY_TOKEN_ENV,
     BDQ_TOKEN_ENV,
-    BDQ_REFRESH_TOKEN_ENV,
 )
 START_SCRIPT: Final = "scripts/container_start.py"
 # 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
@@ -195,6 +202,9 @@ class StartRefreshRecord:
     failed: bool = False
     # 시작 때 갱신으로 넣어 둔 토큰을 그대로 두었나(`CAPA_BDQ_TOKEN` 을 쓰지 않음). 옛 파일은 거짓.
     kept: bool = False
+    # 자격 폴더에 남은 옛 갱신 토큰 파일을 지우지 못한 까닭(지웠거나 없었으면 빈 글). 옛 결과
+    # 파일은 빈 글.
+    leftover: str = ""
 
 
 def mask_account(name: str) -> str:
@@ -280,12 +290,14 @@ def parse_refresh(data: object) -> StartRefreshRecord | None:
     mode, reason = data.get("mode"), data.get("reason")
     if mode not in REFRESH_MODES or not isinstance(reason, str):
         return None
+    leftover = data.get("leftover")
     return StartRefreshRecord(
         mode=str(mode),
         reason=reason,
         installed=data.get("installed") is True,
         failed=data.get("failed") is True,
         kept=data.get("kept") is True,
+        leftover=leftover if isinstance(leftover, str) else "",
     )
 
 

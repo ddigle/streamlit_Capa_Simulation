@@ -1,35 +1,42 @@
 # Purpose: BigDataQuery 로그인 토큰 자동 갱신의 교환 한 곳 · 상태 · 갱신 때 · 고리 막기를 둔다.
 
-"""BigDataQuery 로그인 토큰 자동 갱신(2026-11-14 사용자 결정 — 갱신 토큰은 C-DEP 환경변수 표, 갱신은
-「발급 6시간 뒤」 사람 손 · CI/CD · 재시작 없이).
+"""BigDataQuery 로그인 토큰 자동 갱신(2026-11-15 사용자 결정 — 지금 쓰는 8시간짜리 로그인 토큰을
+6시간마다 그 토큰으로 갱신한다. 「6시간 · 사람 손 · CI/CD · 재시작 없이」 는 2026-11-14 결정
+그대로).
 
-**교환 한 곳(`exchange`).** 갱신 토큰(3개월 비밀)을 새 로그인 토큰으로 바꾸는 요청의 꼴(주소 ·
-방법 · 갱신 토큰을 넣는 자리 · 응답 칸)은 아직 모른다 — 담당자 답 대기. 그래서 지금 `exchange` 는
-`RefreshNotConfigured` 를 내고 곁의 `REQUEST_SHAPE_KNOWN` 은 거짓이다. 답이 오면 그 몸만 채우고
-표지를 참으로 바꾼다. 이 함수 밖의 모든 것은 시험이 가짜 교환으로 돌린다.
+**교환 한 곳(`renew`).** 지금 토큰을 새 로그인 토큰으로 바꾸는 갱신 명령(무엇을 부르나 · 입력 ·
+출력 · 실패 꼴)은 아직 모른다 — 사용자가 2026-11-16 에 준다. 그래서 지금 `renew` 는
+`RefreshNotConfigured` 를 내고 곁의 `REQUEST_SHAPE_KNOWN` 은 거짓이다. 명령을 받으면 그 몸만
+채우고 표지를 참으로 바꾼다. 이 함수 밖의 모든 것은 시험이 가짜 교환으로 돌린다.
 
-**상태**(`status`) — `off`(꺼짐: 갱신 토큰 파일 없음 · 계정 없음 · 패키지가 먼저 읽는 환경변수
-토큰) · `ready`(준비: 갱신 토큰은 있는데 요청 꼴 미정) · `on`(켜짐) · `halted`(멈춤 — 아래 고리
-막기).
-**준비에서는 아무것도 바꾸지 않는다** — 잠금 · 표지 · 파일 쓰기 전에 돌아서고 조회 · 시작은 갱신
-토큰이 없을 때와 똑같이 돈다.
+**입력은 지금 토큰.** 넣는 길 셋(시작 · Admin 「토큰 넣기」 · 갱신)이 쓰는 토큰 파일
+(`bdq_token.token_file_path` — 패키지가 읽는 자리)을 잠금 안에서 읽어 넘긴다. 앱 환경에 비밀을
+새로 넘기지 않는다. 토큰 파일이 없거나 · 못 읽거나 · 비었으면 갱신하지 않고(교환을 부르지
+않아 거듭 실패 셈 밖) 그 까닭을 마지막 시도 실패로 남긴다 — 「서버 시작 점검」 표 줄에 선다.
 
-**갱신 토큰 자리.** 시작 스크립트(`scripts/container_start.py`)가 CD 환경변수
-`CAPA_BDQ_REFRESH_TOKEN` 을 `/config/.credential/capa-bdq-refresh.<계정>`(0600, 폴더 0700)으로 쓰고
-앱 프로세스 환경에는 넘기지 않는다. 패키지 자리 접두(`bigdataquery.token.`)를 쓰지 않는다.
+**켜기**(`bdq_token.auto_refresh_switched_on`) — CD 환경변수 `CAPA_BDQ_AUTO_REFRESH` 가 `on` 일
+때만 켠다. 끄면 지금 길 그대로다(사람이 `CAPA_BDQ_TOKEN` · Admin 「토큰 넣기」 로 넣음).
+
+**상태**(`status`) — `off`(꺼짐: 켜지 않음 · 계정 없음 · 패키지가 먼저 읽는 환경변수 토큰) ·
+`ready`(준비: 켰는데 갱신 명령 미정) · `on`(켜짐) · `halted`(멈춤 — 아래 고리 막기).
+**준비에서는 아무것도 바꾸지 않는다** — 잠금 · 표지 · 파일 쓰기 전에 돌아서고 조회 · 시작은 끈
+서버와 똑같이 돈다.
 
 **언제 갱신하나 — 조회 길 한 곳.** 새 배경 스레드를 세우지 않는다(AGENTS 9장 — 배경 스레드는 예약 ·
 동기화 일꾼 둘뿐). 어댑터(`company_bigdataquery_adapter._get_data_once`)가 `getData` 바로 앞에서
 `before_query` 를 부르고 — 넣은 때(`bdq_token` 넣은 때 표지)부터 `REFRESH_AFTER`(6시간)가 지났거나
-만료를 읽었고 1시간 안이거나 토큰이 없으면 먼저 갱신한다 — 조회가 토큰 갈래로 실패하면
-`after_token_failure` 로 한 번 갱신하고 새 토큰이면 조회를 한 번만 다시 한다. 조회 길은 공식버전
-자동 갱신 예약 스레드에서도 돈다 — 이 모듈은 Streamlit 을 import 하지 않는다.
+만료를 읽었고 1시간 안이거나 토큰이 없으면 먼저 갱신한다(토큰이 없으면 입력이 없어 실패로만 남는다)
+— 조회가 토큰 갈래로 실패하면 `after_token_failure` 로 한 번 갱신하고 새 토큰이면 조회를 한 번만
+다시 한다. 조회 길은 공식버전 자동 갱신 예약 스레드에서도 돈다 — 이 모듈은 Streamlit 을 import
+하지 않는다. 입력이 지금 토큰이라 이미 죽은(만료 · 다른 곳의 로그인) 토큰으로는 갱신되지 않을 수
+있다 — 아무도 조회하지 않은 채 8시간이 지나면 사람이 넣어야 할 수 있다(갱신 명령을 받은 뒤 확인).
 
 **죽이기 고리 막기.** 계정당 최신 토큰 하나만 살아 있다(교환 하나가 앞 토큰을 죽이고, 같은 계정의
-WebIDE 로그인이 운영 토큰을 죽인다 — 2026-11-12 담당자 답).
+다른 곳 — WebIDE · 사내 PC — 로그인이 운영 토큰을 죽인다. 거꾸로 갱신으로 받은 새 토큰이 그쪽
+토큰을 죽일 수 있다 — 2026-11-12 담당자 답).
 - 교환 + 넣기는 스레드 잠금과 자격 폴더의 파일 잠금 안에서만 한다(`getData` 는 잠금 밖).
 - 잠금을 잡은 뒤 넣은 때 표지를 다시 읽어, 결정한 때와 다르면(다른 스레드 · 프로세스가 넣음)
-  교환하지 않는다 — 실패 뒤라면 그 새 토큰으로 한 번 다시 한다.
+  교환하지 않는다 — 실패 뒤라면 그 새 토큰으로 한 번 다시 한다. 지금 토큰은 그 뒤에 읽는다.
 - 시도 사이 최소 `MIN_ATTEMPT_GAP`(5분) — 성공 · 실패 모두. 파일 잠금을 걸지 못하면(잠금을 받지
   않는 파일 체계) 스레드 잠금만으로 간다.
 - 갱신으로 넣은 서로 다른 토큰이 `LOOP_WINDOW`(1시간) 안에 `LOOP_LIMIT`(둘) 번, 또는
@@ -38,7 +45,8 @@ WebIDE 로그인이 운영 토큰을 죽인다 — 2026-11-12 담당자 답).
   안)를 넘긴 토큰의 실패는 제 수명이라 세지 않는다.
 - 교환을 부른 뒤 새 토큰을 넣지 못한 시도(서버가 답한 거절 · 응답 꼴 다름 · 넣기 거절)가
   `FAILED_EXCHANGE_LIMIT`(셋) 번 잇따르면 멈춘다(까닭 「갱신이 거듭 실패함」) — 교환 하나하나가 그
-  계정의 최신 토큰을 죽였을 수 있다. 넣으면 다시 센다.
+  계정의 최신 토큰을 죽였을 수 있다. 지금 토큰이 만료됐거나 다른 곳의 로그인으로 죽었으면 갱신이
+  거절돼 이 멈춤으로 온다. 넣으면 다시 센다.
 - 갱신 서버에 닿지 못한 교환(연결 거부 · 이름 풀기 실패 · 시간 초과 — `reached_the_server`)은 아무
   토큰도 죽이지 않았다 — 위 셈에 더하지도 되돌리지도 않고 5분 간격으로 다시 시도한다(까닭 「갱신
   서버에 닿지 못함」, 닿으면 풀린다). 짧은 인증 서버 장애가 자동 갱신을 멈추지 않게 한다.
@@ -47,23 +55,21 @@ WebIDE 로그인이 운영 토큰을 죽인다 — 2026-11-12 담당자 답).
   그 사이 토큰 실패는 제 수명이 아니라 고리 셈에 든다(토큰 실패 뒤 갱신은 이 셈이 막는다).
 - 멈춤은 사람이 넣은 토큰(Admin 「토큰 넣기」 · 시작 스크립트)이 멈춘 뒤 들어오거나 앱을 다시 띄우면
   풀린다. 마지막 시도 실패도 그 뒤 사람이 넣으면 지운다.
-- 미리 볼 것(넣기 막힘 · 계정 · 갱신 토큰 읽기)은 교환 **전에** 본다 — 받은 토큰을 못 넣으면 앞
+- 미리 볼 것(넣기 막힘 · 계정 · 지금 토큰 읽기)은 교환 **전에** 본다 — 받은 토큰을 못 넣으면 앞
   토큰만 죽인 셈이다.
 - 시작 때도 같은 문(`_due`)을 쓴다 — 갱신할 때가 아니면 교환하지 않고, 자격 폴더의 토큰이 갱신으로
   넣은 것이면 `CAPA_BDQ_TOKEN` 으로 덮지 않는다(지난 시작 때와 같은 값이면 첫 교환 때 이미 죽었다).
-  사람이 표에서 그 값을 바꿨으면(시작 값 표지와 다름) 교환하지 않고 그 값을 쓴다.
+  사람이 표에서 그 값을 바꿨으면(시작 값 표지와 다름) 교환하지 않고 그 값을 쓴다. 자격 폴더에 지금
+  토큰이 없으면(처음 띄움 · 디스크가 처음으로 돌아감) 갱신하지 않고 로그인 토큰 단계가 쓰게 둔다.
 
-**비밀.** 토큰 · 갱신 토큰의 글자 · 길이 · 지문을 어떤 글(상태 까닭 · 알림 · 로그 · 예외)에도 싣지
-않는다. 교환이 낸 예외는 종류 이름만 남긴다 — 그 문구에 요청 · 응답이 실려 올 수 있다.
-`Exchanged.token` 은 `repr` 에서 뺀다. 시작 값 표지(`capa-bdq-start-value.<계정>.json`)는
-「지난 시작 때의 `CAPA_BDQ_TOKEN` 과 같은가」 만 가르는 HMAC-SHA256 과 그 파일만의 무작위 소금이다
-— 토큰 파일 곁(같은 0700 폴더 · 0600)이라 읽을 수 있는 쪽은 이미 토큰을 읽고, 소금이 파일마다 달라
-다른 자리의 값과 맞춰 볼 수 없으며, 토큰이 문턱(16바이트) 넘는 비밀이라 되짚어 풀 수 없다. 화면 ·
-결과 파일 · 로그에는 싣지 않는다.
-
-**갱신 토큰의 나이.** 3개월 유효 — 이 서버가 그 갱신 토큰 파일을 처음 쓴 때(파일 수정 시각 — 시작
-스크립트는 같은 내용이면 다시 쓰지 않는다)부터 `REFRESH_TOKEN_WARNING_AGE`(80일)이면 관리자
-알림(`AD-18`). 컨테이너 디스크가 다시 띄울 때 처음으로 돌아가면 그때마다 다시 센다(사내 확인 거리).
+**비밀.** 토큰 글자 · 길이 · 지문을 어떤 글(상태 까닭 · 알림 · 로그 · 예외)에도 싣지 않는다. 교환이
+낸 예외는 종류 이름만 남긴다 — 그 문구에 요청 · 응답이 실려 올 수 있다. `Exchanged.token` 은
+`repr` 에서 뺀다. 시작 값 표지(`capa-bdq-start-value.<계정>.json`)는 「지난 시작 때의
+`CAPA_BDQ_TOKEN` 과 같은가」 만 가르는 HMAC-SHA256 과 그 파일만의 무작위 소금이다 — 토큰 파일
+곁(같은 0700 폴더 · 0600)이라 읽을 수 있는 쪽은 이미 토큰을 읽고, 소금이 파일마다 달라 다른 자리의
+값과 맞춰 볼 수 없으며, 토큰이 문턱(16바이트) 넘는 비밀이라 되짚어 풀 수 없다. 화면 · 결과 파일 ·
+로그에는 싣지 않는다. 자격 폴더에 남은 옛 갱신 토큰 파일(`capa-bdq-refresh.<계정>`)은 읽지 않고
+시작 스크립트가 지운다(`forget_old_refresh_token`).
 
 시작 스크립트가 앱 의존성보다 먼저 읽으므로 표준 라이브러리만 쓴다.
 """
@@ -88,24 +94,28 @@ from pathlib import Path
 from typing import Final, Literal
 
 from capa_simulation.io import bdq_token
-from capa_simulation.io.container_start_report import BDQ_TOKEN_ENV, BDQ_USER_NAME_ENV
+from capa_simulation.io.container_start_report import (
+    BDQ_AUTO_REFRESH_ENV,
+    BDQ_TOKEN_ENV,
+    BDQ_USER_NAME_ENV,
+)
 
 if sys.platform != "win32":
     import fcntl
 
 # --- 교환 한 곳 -----------------------------------------------------------------------
 
-# 갱신 요청의 꼴을 아는가 — 「준비」 와 「켜짐」 을 가른다(교환을 부르지 않고 안다). `exchange` 의
+# 갱신 명령의 꼴을 아는가 — 「준비」 와 「켜짐」 을 가른다(교환을 부르지 않고 안다). `renew` 의
 # 몸을 채울 때 참으로 바꾼다.
 REQUEST_SHAPE_KNOWN: bool = False
 
 
 class RefreshNotConfigured(RuntimeError):
-    """갱신 요청 꼴(주소 · 방법 · 갱신 토큰을 넣는 자리 · 응답 칸)을 아직 모른다(담당자 답 대기)."""
+    """갱신 명령(무엇을 부르나 · 입력 · 출력 · 실패 꼴)을 아직 모른다(2026-11-16 사용자가 줌)."""
 
 
 class ExchangeUnreached(Exception):
-    """갱신 서버에 닿지 못했다 — 요청을 보내지 못해 아무 토큰도 죽이지 않았다. `exchange` 의 몸이 그
+    """갱신 서버에 닿지 못했다 — 요청을 보내지 못해 아무 토큰도 죽이지 않았다. `renew` 의 몸이 그
     갈래를 따로 알면 이것을 낸다(`from` 으로 원인을 붙여도 된다)."""
 
 
@@ -147,27 +157,30 @@ class Exchanged:
     expires_at: datetime | None = None
 
 
-def exchange(refresh_token: bytes, account: str) -> Exchanged:
-    """갱신 토큰으로 새 로그인 토큰을 받는다. **담당자 답이 오면 이 몸만 채운다**(그리고
-    `REQUEST_SHAPE_KNOWN` 을 참으로).
+def renew(current_token: bytes, account: str) -> Exchanged:
+    """지금 로그인 토큰(토큰 파일 바이트 그대로)으로 새 로그인 토큰을 받는다. **갱신 명령을 받으면
+    이 몸만 채운다**(그리고 `REQUEST_SHAPE_KNOWN` 을 참으로).
 
-    채울 때 지킬 것: 표준 라이브러리(`urllib.request`)만 · 시간 제한 · 사내 CA 는 OS 인증서 묶음 ·
-    갱신 토큰은 명령줄 · 주소 쿼리에 싣지 않음 · 실패는 예외로(문구에 비밀이 실려도 부르는 쪽은
-    종류 이름만 남긴다). 서버에 닿지 못한 실패는 `reached_the_server` 가 가르는 종류(또는
-    `ExchangeUnreached`)로 낸다 — 그 밖은 거듭 실패로 센다. 응답을 기다리다 난 시간 초과는 요청이
-    닿은 뒤라 `ExchangeUnreached` 가 아닌 다른 예외로 바꿔 낼지 그 몸에서 정한다. 응답이 갱신 토큰도
-    새로 주면 `Exchanged` 에 칸을 더해 갱신 토큰 파일을 바꿔 쓴다.
+    채울 때 지킬 것: 시작 스크립트가 앱 의존성보다 먼저 읽으므로 표준 라이브러리만 · 시간 제한 ·
+    사내 CA 는 OS 인증서 묶음 · 토큰은 명령줄(`ps` 로 누구나 본다) · 주소 쿼리에 싣지 않음 · 실패는
+    예외로(문구에 비밀이 실려도 부르는 쪽은 종류 이름만 남긴다). 서버에 닿지 못한 실패는
+    `reached_the_server` 가 가르는 종류(또는 `ExchangeUnreached`)로 낸다 — 그 밖은 거듭 실패로
+    센다. 응답을 기다리다 난 시간 초과는 요청이 닿은 뒤라 `ExchangeUnreached` 가 아닌 다른 예외로
+    바꿔 낼지 그 몸에서 정한다. 명령이 토큰 파일을 스스로 쓰는 꼴이면 그 파일을 넣기 길(`put_token`)
+    밖에서 바꾸게 되니 받은 토큰을 돌려주는 꼴로 감싼다.
     """
-    del refresh_token, account
-    raise RefreshNotConfigured("갱신 요청 꼴 미정")
+    del current_token, account
+    raise RefreshNotConfigured("갱신 명령 미정")
 
 
 # --- 자리 · 값 --------------------------------------------------------------------------
 
-REFRESH_FILE_PREFIX: Final = bdq_token.REFRESH_TOKEN_PREFIX
+# 잠금 파일과 옛 갱신 토큰 파일이 함께 쓰는 접두. 패키지 자리 접두(`bigdataquery.token.`)를 쓰지
+# 않는다 — 패키지가 그 폴더를 어떻게 훑는지 모른다.
+REFRESH_FILE_PREFIX: Final = "capa-bdq-refresh."
 LOCK_SUFFIX: Final = ".lock"
-# 넣은 때부터 이만큼 지나면 미리 갱신한다(2026-11-14 사용자 요청 「발급 6시간 뒤」 — 서버 수명
-# 8시간).
+# 넣은 때부터 이만큼 지나면 미리 갱신한다(2026-11-15 사용자 결정 「8시간짜리 토큰을 6시간마다」 —
+# 서버 수명 8시간).
 REFRESH_AFTER: Final = timedelta(hours=6)
 # 토큰에서 만료를 읽었으면 이만큼 앞부터 갱신한다(만료 전 관리자 알림 `AD-11` 과 같은 앞당김).
 EXPIRY_LEAD: Final = timedelta(seconds=bdq_token.EXPIRY_WARNING_SECONDS)
@@ -182,8 +195,6 @@ FAILED_EXCHANGE_LIMIT: Final = 3
 # 갱신으로 넣은 토큰은 넣은 지 이만큼 안에는 만료를 근거로 다시 갱신하지 않는다(그 사이 토큰 실패는
 # 고리 셈에 든다).
 REFRESHED_HOLD: Final = timedelta(minutes=30)
-# 갱신 토큰(3개월 유효)을 바꿀 때를 알리는 나이.
-REFRESH_TOKEN_WARNING_AGE: Final = timedelta(days=80)
 # 넣은 때 표지가 지금보다 이만큼 넘게 앞이면(시계가 뒤로 감) 믿지 않는다. 토큰 파일이 표지보다
 # 이만큼 넘게 새로우면 밖에서 바꾼 것이다(표지는 토큰을 쓴 뒤에 초 단위로 쓴다).
 CLOCK_SLACK: Final = timedelta(minutes=5)
@@ -196,11 +207,16 @@ MODE_LABELS: Final[Mapping[Mode, str]] = {
     "on": "켜짐",
     "halted": "멈춤",
 }
-NO_REFRESH_TOKEN: Final = "갱신 토큰 없음"
+# 꺼짐 까닭 — 켜기 환경변수가 없음 · `on` 이 아닌 값.
+NOT_SWITCHED_ON: Final = "켜지 않음"
+SWITCH_NOT_ON: Final = f"{BDQ_AUTO_REFRESH_ENV} 값이 on 이 아님"
 SHAPE_UNKNOWN: Final = "요청 꼴 미정"
 HALT_ELSEWHERE: Final = "같은 계정이 다른 곳에서 로그인했을 수 있음"
 HALT_FAILING: Final = "갱신이 거듭 실패함"
 UNREACHED: Final = "갱신 서버에 닿지 못함"
+# 지금 토큰(갱신의 입력)을 쓸 수 없는 까닭 — 교환을 부르지 않는다.
+TOKEN_MISSING: Final = "지금 토큰 없음"
+TOKEN_EMPTY: Final = "지금 토큰이 비었음"
 START_VALUE_PREFIX: Final = "capa-bdq-start-value."
 START_VALUE_SUFFIX: Final = ".json"
 
@@ -215,34 +231,40 @@ def _system_clock() -> datetime:
 clock: Callable[[], datetime] = _system_clock
 
 
-def refresh_token_path(folder: Path, account: str) -> Path | None:
-    """계정의 갱신 토큰 파일 자리(`bdq_token.refresh_token_path`). 계정 이름이 폴더 밖을 가리키면
-    `None`."""
-    return bdq_token.refresh_token_path(folder, account)
+def old_refresh_token_path(folder: Path, account: str) -> Path | None:
+    """자격 폴더에 남았을 수 있는 옛 갱신 토큰 파일 자리(`capa-bdq-refresh.<계정>` — 자동 갱신은
+    읽지 않는다). 계정 이름이 폴더 밖을 가리키면 `None`."""
+    if bdq_token.token_file_path(folder, account) is None:
+        return None
+    return folder / f"{REFRESH_FILE_PREFIX}{account}"
 
 
 def lock_path(folder: Path, account: str) -> Path | None:
     """계정의 잠금 파일 자리. 계정 이름이 폴더 밖을 가리키면 `None`."""
-    path = refresh_token_path(folder, account)
-    return None if path is None else path.with_name(f"{path.name}{LOCK_SUFFIX}")
+    if bdq_token.token_file_path(folder, account) is None:
+        return None
+    return folder / f"{REFRESH_FILE_PREFIX}{account}{LOCK_SUFFIX}"
 
 
 def start_value_path(folder: Path, account: str) -> Path | None:
     """계정의 시작 값 표지 자리(지난 시작 때 `CAPA_BDQ_TOKEN` 의 소금 친 HMAC). 계정 이름이 폴더
     밖을 가리키면 `None`."""
-    if refresh_token_path(folder, account) is None:
+    if bdq_token.token_file_path(folder, account) is None:
         return None
     return folder / f"{START_VALUE_PREFIX}{account}{START_VALUE_SUFFIX}"
 
 
-def forget_refresh_files(folder: Path, account: str) -> None:
-    """자동 갱신이 자격 폴더에 둔 것(갱신 토큰 · 넣은 때 표지 · 잠금 · 시작 값 표지)을 지운다 — 꺼진
-    자격 폴더는 자동 갱신 앞과 같다. 갱신 토큰 파일을 지우지 못하면 `OSError` 를 올리고(앱이 옛
-    갱신 토큰으로 돈다), 나머지는 덧붙은 기록이라 실패를 삼킨다."""
-    target = refresh_token_path(folder, account)
-    if target is None:
-        return
-    target.unlink(missing_ok=True)
+def forget_old_refresh_token(folder: Path, account: str) -> None:
+    """옛 갱신 토큰 파일을 지운다(없으면 그대로) — 쓰지 않는 비밀이 자격 폴더에 남지 않게. 지우지
+    못하면 `OSError` 를 올린다(시작 스크립트가 까닭 한 줄로 남긴다)."""
+    target = old_refresh_token_path(folder, account)
+    if target is not None:
+        target.unlink(missing_ok=True)
+
+
+def forget_auto_refresh_files(folder: Path, account: str) -> None:
+    """자동 갱신이 자격 폴더에 둔 것(넣은 때 표지 · 잠금 · 시작 값 표지)을 지운다 — 끈 서버의 자격
+    폴더는 자동 갱신 앞과 같다. 덧붙은 기록이라 실패를 삼킨다."""
     bdq_token.forget_installed_mark(folder, account)
     for extra in (lock_path(folder, account), start_value_path(folder, account)):
         if extra is None:
@@ -270,28 +292,39 @@ def _modified(path: Path | None) -> datetime | None:
 class _Place:
     folder: Path
     account: str
-    refresh_file: Path
 
 
 def _place(environ: Mapping[str, str] | None, folder: Path | None) -> tuple[_Place | None, str]:
-    """갱신할 자리 또는 (없음, 꺼짐 까닭). 까닭은 값 낱말이고 비밀이 없다."""
+    """갱신할 자리 또는 (없음, 꺼짐 까닭). 까닭은 값 낱말이고 비밀이 없다(켜기 값도 싣지 않는다)."""
     env = os.environ if environ is None else environ
+    if not bdq_token.auto_refresh_switched_on(env):
+        return None, SWITCH_NOT_ON if env.get(BDQ_AUTO_REFRESH_ENV, "").strip() else NOT_SWITCHED_ON
     if bdq_token.environment_token_set(env):
         return None, f"{bdq_token.LOGIN_TOKEN_ENV} 있음"
     account = env.get(BDQ_USER_NAME_ENV, "").strip()
     if not account:
         return None, f"{BDQ_USER_NAME_ENV} 없음"
     base = bdq_token.credential_dir() if folder is None else folder
-    path = refresh_token_path(base, account)
-    if path is None:
+    if bdq_token.token_file_path(base, account) is None:
         return None, f"{BDQ_USER_NAME_ENV} 을 파일 이름으로 못 씀"
+    return _Place(base, account), ""
+
+
+def _read_current(place: _Place) -> tuple[bytes | None, str]:
+    """갱신의 입력 — 지금 토큰 파일의 바이트(넣기 길 셋이 쓴 그대로) 또는 (없음, 쓸 수 없는 까닭).
+    까닭은 종류 낱말이고 토큰 글 · 길이를 싣지 않는다."""
+    target = bdq_token.token_file_path(place.folder, place.account)
+    if target is None:  # `_place` 가 먼저 거른다 — 타입을 좁힌다
+        return None, TOKEN_MISSING
     try:
-        present = path.is_file()
-    except OSError:
-        present = False
-    if not present:
-        return None, NO_REFRESH_TOKEN
-    return _Place(base, account, path), ""
+        content = target.read_bytes()
+    except FileNotFoundError:
+        return None, TOKEN_MISSING
+    except OSError as error:
+        return None, f"지금 토큰을 읽지 못함({type(error).__name__})"
+    if not content.strip():
+        return None, TOKEN_EMPTY
+    return content, ""
 
 
 # --- 프로세스 상태 ---------------------------------------------------------------------
@@ -404,17 +437,16 @@ class RefreshStatus:
 
     `reason` 은 꺼짐 · 준비 · 멈춤의 까닭 낱말(멈춤은 `HALT_ELSEWHERE` · `HALT_FAILING`),
     `last_refreshed_at` 은 갱신으로 넣은 토큰의 넣은 때(넣은 때 표지), `last_failure` 는 이
-    프로세스의 마지막 시도 실패 갈래(성공하면 · 그 뒤 사람이 넣으면 비운다),
-    `last_failure_unreached` 는 그 실패가 갱신 서버에 닿지 못한 것인가(멈춤 셈 밖 — 닿으면
-    풀린다), `refresh_token_since` 는 이 서버가 갱신 토큰 파일을 쓴 때, `last_attempt_at` 은 이
-    프로세스가 마지막으로 교환을 시도한 때(없으면 시작 때 결과가 가장 새 소식)다."""
+    프로세스의 마지막 시도 실패 갈래(지금 토큰을 쓸 수 없음 포함 — 성공하면 · 그 뒤 사람이 넣으면
+    비운다), `last_failure_unreached` 는 그 실패가 갱신 서버에 닿지 못한 것인가(멈춤 셈 밖 — 닿으면
+    풀린다), `last_attempt_at` 은 이 프로세스가 마지막으로 갱신을 시도한 때(없으면 시작 때 결과가
+    가장 새 소식)다."""
 
     mode: Mode
     reason: str = ""
     last_refreshed_at: datetime | None = None
     last_failure: str = ""
     last_failure_at: datetime | None = None
-    refresh_token_since: datetime | None = None
     last_attempt_at: datetime | None = None
     last_failure_unreached: bool = False
 
@@ -424,15 +456,14 @@ class RefreshStatus:
 
 
 def status(environ: Mapping[str, str] | None = None) -> RefreshStatus:
-    """지금 자동 갱신 상태. 회차마다 불러도 된다(작은 파일 둘의 stat · 표지 읽기). 예외를 내지
-    않는다 — 읽다 무엇이 나도 꺼짐으로 물러선다."""
+    """지금 자동 갱신 상태. 회차마다 불러도 된다(작은 표지 하나 읽기 — 토큰 파일은 읽지 않는다).
+    예외를 내지 않는다 — 읽다 무엇이 나도 꺼짐으로 물러선다."""
     try:
         place, off = _place(environ, None)
         if place is None:
             return RefreshStatus("off", off)
         mark = bdq_token.read_installed_mark(place.folder, place.account)
         refreshed = mark.installed_at if mark is not None and mark.source == "refresh" else None
-        since = _modified(place.refresh_file)
         with _STATE_LOCK:
             _release_by_person(mark)
             halted = _STATE.halted_at is not None
@@ -442,28 +473,19 @@ def status(environ: Mapping[str, str] | None = None) -> RefreshStatus:
             attempted = _STATE.last_attempt_at
             known = REQUEST_SHAPE_KNOWN and not _STATE.shape_unknown
         if not known:
-            return RefreshStatus("ready", SHAPE_UNKNOWN, refresh_token_since=since)
+            return RefreshStatus("ready", SHAPE_UNKNOWN)
         return RefreshStatus(
             "halted" if halted else "on",
             halt_reason if halted else "",
             last_refreshed_at=refreshed,
             last_failure=failure,
             last_failure_at=failed_at,
-            refresh_token_since=since,
             last_attempt_at=attempted,
             last_failure_unreached=unreached,
         )
     except Exception as error:
         _LOGGER.warning("BigDataQuery 자동 갱신 상태를 읽지 못함: %s", type(error).__name__)
         return RefreshStatus("off", "확인하지 못함")
-
-
-def refresh_token_aging(state: RefreshStatus, now: datetime | None = None) -> bool:
-    """갱신 토큰을 바꿀 때인가 — 갱신 토큰이 있고(꺼짐이 아님) 처음 쓴 때부터 80일."""
-    if state.mode == "off" or state.refresh_token_since is None:
-        return False
-    moment = clock() if now is None else now
-    return moment - state.refresh_token_since >= REFRESH_TOKEN_WARNING_AGE
 
 
 # --- 조회 길 ----------------------------------------------------------------------------
@@ -614,7 +636,8 @@ def _folder_lock(place: _Place) -> Iterator[None]:
     없음 · 권한) 잠금을 걸지 못하면(잠금을 받지 않는 파일 체계 — `ENOLCK` 등) 스레드 잠금만으로
     간다 — 한 컨테이너에서 시작 스크립트와 앱은 차례로 돌아(같은 프로세스를 갈아 끼움) 겹치지
     않는다. 그 사실은 로그에 종류 이름 한 줄(이 프로세스에서 한 번)뿐이고 표 줄 · `AD-17` 에는
-    서지 않는다 — 갱신은 제대로 돈다. Windows 는 스레드 잠금만 — 거기선 갱신 토큰이 없다."""
+    서지 않는다 — 갱신은 제대로 돈다. Windows 는 스레드 잠금만 — 사내 PC 는 자동 갱신을 켜지
+    않는다."""
     path = lock_path(place.folder, place.account)
     descriptor: int | None = None
     if sys.platform != "win32" and path is not None:
@@ -666,16 +689,14 @@ def _attempt(
         if blocked is not None:
             _note_failure("넣기 막힘", now)
             return "failed"
-        try:
-            secret = place.refresh_file.read_bytes()
-        except OSError as error:
-            _note_failure(f"갱신 토큰을 읽지 못함({type(error).__name__})", now)
-            return "failed"
-        if not secret.strip():
-            _note_failure("갱신 토큰이 비었음", now)
+        # 입력은 지금 토큰 — 표지를 다시 본 뒤(다른 쪽이 넣었으면 위에서 돌아섰다) 잠금 안에서
+        # 읽는다. 쓸 수 없으면 교환을 부르지 않아 거듭 실패 셈 밖이다.
+        current_token, problem = _read_current(place)
+        if current_token is None:
+            _note_failure(problem, now)
             return "failed"
         try:
-            got = exchange(secret, place.account)
+            got = renew(current_token, place.account)
         except RefreshNotConfigured:
             with _STATE_LOCK:
                 _STATE.shape_unknown = True
@@ -735,13 +756,15 @@ def _put_exchanged(
 class StartRefresh:
     """시작 때 자동 갱신 한 번의 결과 — 결과 파일 `refresh` 칸. `installed`(갱신해 받은 토큰을
     넣음) · `kept`(갱신으로 넣어 둔 토큰을 그대로 둠)면 시작 스크립트가 `CAPA_BDQ_TOKEN` 을 쓰지
-    않는다."""
+    않는다. `leftover` 는 옛 갱신 토큰 파일을 지우지 못한 까닭(시작 스크립트가 채운다 — 없으면
+    빈 글)."""
 
     mode: Mode
     reason: str
     installed: bool = False
     failed: bool = False
     kept: bool = False
+    leftover: str = ""
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -750,11 +773,14 @@ class StartRefresh:
             "installed": self.installed,
             "failed": self.failed,
             "kept": self.kept,
+            "leftover": self.leftover,
         }
 
 
 START_KEPT: Final = "갱신으로 넣은 토큰을 그대로 씀"
 START_NOT_DUE: Final = "갱신할 때가 아님"
+# 자격 폴더에 지금 토큰이 없음 · 쓸 수 없음(처음 띄움 · 디스크가 처음으로 돌아감) — 실패가 아니다.
+START_NO_INPUT: Final = "갱신하지 않음"
 START_TABLE_CHANGED: Final = f"{BDQ_TOKEN_ENV} 이 지난 시작 때와 달라 그 값을 씀"
 
 StartValue = Literal["same", "changed", "unknown"]
@@ -839,11 +865,13 @@ def _holds_refreshed(place: _Place, mark: bdq_token.InstalledMark | None, now: d
 
 
 def refresh_at_start(environ: Mapping[str, str], folder: Path) -> StartRefresh:
-    """시작 스크립트가 갱신 토큰 파일을 쓴 뒤 부른다. 꺼짐 · 준비는 아무것도 하지 않는다(지금 길
+    """시작 스크립트가 로그인 토큰 단계 앞에 부른다. 꺼짐 · 준비는 아무것도 하지 않는다(지금 길
     그대로 — 시작 값 표지도 쓰지 않는다). 켜짐이면:
 
     - 사람이 표에서 `CAPA_BDQ_TOKEN` 을 바꿨으면(시작 값 표지와 다름) 교환하지 않고 그 값을 쓰게
       둔다 — 교환하면 그 새 토큰을 죽인다. 다음 갱신은 그 토큰을 넣은 때부터 센다.
+    - 자격 폴더에 지금 토큰이 없거나 쓸 수 없으면(처음 띄움 · 디스크가 처음으로 돌아감) 갱신의
+      입력이 없다 — 실패로 적지 않고 로그인 토큰 단계가 `CAPA_BDQ_TOKEN` 을 쓰게 둔다.
     - 아니면 조회 길과 같은 문(`_due` — 넣은 때 표지)으로 갱신할 때만 교환한다 — 다시 띄울 때마다
       산 토큰을 죽이지 않는다. 자격 폴더의 토큰이 갱신으로 넣은 것이면 교환하지 않았거나 실패해도
       그 토큰을 그대로 둔다(`kept`) — 지난 시작 때와 같은 `CAPA_BDQ_TOKEN` 은 첫 교환 때 이미
@@ -855,6 +883,9 @@ def refresh_at_start(environ: Mapping[str, str], folder: Path) -> StartRefresh:
         return StartRefresh("ready", SHAPE_UNKNOWN)
     if _table_changed(place, environ):
         return StartRefresh("on", START_TABLE_CHANGED)
+    current_token, problem = _read_current(place)
+    if current_token is None:
+        return StartRefresh("on", f"{problem} — {START_NO_INPUT}")
     seen = bdq_token.read_installed_mark(place.folder, place.account)
     now = clock()
     refreshed = _holds_refreshed(place, seen, now)
