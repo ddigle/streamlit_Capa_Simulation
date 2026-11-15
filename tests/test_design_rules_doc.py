@@ -2619,6 +2619,7 @@ E2E_1115_ANSWERS = {
     "s-B-12": "이대로",
     "s-A-01": "좋음",
     **{f"decided-e2e-{number}": "좋음" for number in range(1, 4)},
+    "rule-list": "메모 「오케이」",
 }
 # 커밋을 든 줄 — 답 앞 E2E 고침의 커밋이다(정한 것 셋 — 점마다 한 줄).
 E2E_1115_COMMITS: dict[str, tuple[str, ...]] = {
@@ -2719,6 +2720,10 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
         in prf01.fields["그물"][0]
     )
     assert "decided-e2e 2 · 3" in dat11
+
+    # rule-list 메모 「오케이」 — 규칙 안 화면은 판정 목록으로만 보고하는 꼴을 받았다.
+    prc07 = rules["PRC-07"].fields["근거"][0]
+    assert "rule-list" in prc07 and "「오케이」" in prc07 and "규칙 판정 목록" in prc07
 
     narrowed = [line for line in _chapter(document, 7).splitlines() if "s-A-13" in line]
     assert len(narrowed) == 1, "7-1 에 공통 틀 「주 단추 하나」 를 좁힌 줄이 하나 있다"
