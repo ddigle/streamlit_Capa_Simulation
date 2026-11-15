@@ -1839,11 +1839,17 @@ def _start_value_file(place: Path) -> Path:
     return _credentials(place) / f"capa-bdq-start-value.{FAKE_BDQ_USER}.json"
 
 
+@pytest.mark.parametrize(
+    "table_value",
+    [NEW_TABLE_TOKEN, "base64:" + base64.b64encode(NEW_TABLE_TOKEN.encode()).decode("ascii")],
+    ids=["글자 그대로", "base64"],
+)
 def test_a_token_a_person_changed_in_the_table_is_used_over_the_refreshed_one(
-    place: Path, monkeypatch: pytest.MonkeyPatch
+    place: Path, monkeypatch: pytest.MonkeyPatch, table_value: str
 ) -> None:
     """`/config` 가 남는 자리 — 지난 시작 때와 같은 `CAPA_BDQ_TOKEN` 이면 갱신으로 넣은 토큰을
-    그대로 두고, 사람이 표에서 값을 바꿨으면 교환 없이 그 값을 쓴다(깨진 갱신에서 빠져나오는 길)."""
+    그대로 두고, 사람이 표에서 값을 바꿨으면 교환 없이 그 값을 쓴다(깨진 갱신에서 빠져나오는 길).
+    `base64:` 값도 넣은 뒤 견줄 때와 같은 꼴(푼 바이트)로 기억해 다음 시작이 「같음」 이다."""
     received = _known_shape(monkeypatch)
     token, content, _written = _persisted(place, source="refresh", age=timedelta(hours=1))
     report, _ = _main(place, AUTO_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
@@ -1856,7 +1862,7 @@ def test_a_token_a_person_changed_in_the_table_is_used_over_the_refreshed_one(
     assert _refresh(report)["kept"] is True
 
     bdq_refresh.forget_state()
-    changed = {**AUTO_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: NEW_TABLE_TOKEN}
+    changed = {**AUTO_ENVIRONMENT, report_contract.BDQ_TOKEN_ENV: table_value}
     report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
 
     assert token.read_bytes() == NEW_TABLE_TOKEN.encode() and received == []
@@ -1871,7 +1877,8 @@ def test_a_token_a_person_changed_in_the_table_is_used_over_the_refreshed_one(
     assert _steps(report)[report_contract.STEP_TOKEN]["reason"] == "토큰 파일을 씀"
     mark = bdq_token.read_installed_mark(_credentials(place), FAKE_BDQ_USER)
     assert mark is not None and mark.source == "start"
-    assert NEW_TABLE_TOKEN not in json.dumps(report, ensure_ascii=False)
+    written = json.dumps(report, ensure_ascii=False)
+    assert NEW_TABLE_TOKEN not in written and table_value.removeprefix("base64:") not in written
 
     bdq_refresh.forget_state()
     report, _ = _main(place, changed, FakeRunner([_probe("ok", "9.9.9")]))
