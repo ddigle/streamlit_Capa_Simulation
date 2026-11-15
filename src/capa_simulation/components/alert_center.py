@@ -88,10 +88,11 @@
 - **「그 화면으로」 는 그 화면 안 탭까지 연다** — 표지의 `tab` 이 있으면 그 화면에 닿은 회차가 끝난
   뒤 이름이 맞는 탭 단추를 누른다(`stateful_tabs` 탭이라 보통 누름과 같은 회차가 돈다).
 - **줄이 대상을 들고 가면 닿은 뒤에만 보낸다**(2026-11-11 다음 배포 물음 보드 F4 뒤 (a)). 표지의
-  `target`(`alerts.GotoTarget` — 「소요대수에 들지 않은 수요」 경고의 리비전)은 그 줄에 남고, 누르면
-  탭 길을 마지막 칸 앞까지 연 뒤 회차가 끝났을 때 마지막 칸을 누르는 대신 트리거(`goto`)로 한 번
-  보낸다 — 콜백(`_on_goto`)이 아는 종류만 받아 세션에 적고 마지막 칸(「점검」)을 함께
-  연다(`scenario_list_state.queue_check_target`). 같은 회차의 화면이 그 대상을 쓴다. 탭 길 · 대상은
+  `target`(`alerts.GotoTarget` — 「소요대수에 들지 않은 수요」 경고의 리비전 · 관리자 알림의 Admin
+  펼침)은 그 줄에 남고, 누르면 탭 길을 마지막 칸 앞까지 연 뒤 회차가 끝났을 때 마지막 칸을 누르는
+  대신 트리거(`goto`)로 한 번 보낸다 — 콜백(`_on_goto`)이 아는 종류만 받아 세션에 적고 마지막
+  칸(「점검」)을 함께 연다(`scenario_list_state.queue_check_target` — Admin 펼침은 그 펼침을 편다).
+  같은 회차의 화면이 그 대상을 쓴다. 탭 길 · 대상은
   화면 탭 줄이 그 누름의 이동을 보냈다고 알린(사건의 `opened`) 뒤에 닿은 화면에서만 잇는다 — 길이
   막히면(떠나기 확인 취소 · 탭 상한 · 붙든 누름이 버려짐) 알리지 않아, 그 뒤 손으로 그 화면에 가도
   탭을 누르지 · 대상을 보내지 않는다(시간 넘김 · 단추 없음도 보내지 않는다). 대상은 받는 쪽이 아는
@@ -128,12 +129,18 @@ from capa_simulation.components.access_list_admin import (
     open_access_list,
 )
 from capa_simulation.components.change_summary import GROUPS, ChangeItem
+from capa_simulation.components.container_start_check import (
+    START_CHECK_TARGET_KIND,
+    open_start_check,
+)
+from capa_simulation.components.object_sync_status import SYNC_TARGET_KIND, open_sync_panel
 from capa_simulation.components.sample_data import sample_switch_on
 from capa_simulation.components.scenario_list_state import (
     CHECK_TARGET_KIND,
     expire_check_target,
     queue_check_target,
 )
+from capa_simulation.components.sso_status import SSO_STATUS_TARGET_KIND, open_sso_status
 from capa_simulation.components.theme_toggle import (
     ALARM_BUTTON_ID,
     CANON_MARK_ID,
@@ -197,8 +204,14 @@ SESSION_MARK_KEY: Final = "alert_center_session_mark_v1"
 # 탭 길 마지막 칸을 누른다.
 GOTO_RECEIVERS: Final[Mapping[str, Callable[[str, str], None]]] = {
     CHECK_TARGET_KIND: queue_check_target,
-    # Admin 「접속 명단」 펼침 — 스스로 등록 알림 `AD-19` 가 들고 간다.
+    # Admin 「접속 명단」 펼침 — 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 가 들고 간다.
     ACCESS_LIST_TARGET_KIND: open_access_list,
+    # Admin 「서버 시작 점검」 펼침 — 시작 점검 알림 `AD-01` 이 들고 간다.
+    START_CHECK_TARGET_KIND: open_start_check,
+    # Admin 「DB 동기화」 펼침 — 관리자 몫 동기화 알림 `SY-02` · `SY-03` 이 들고 간다.
+    SYNC_TARGET_KIND: open_sync_panel,
+    # Admin 「통합인증 점검」 펼침 — 로그인 갱신 거절 알림 `AD-21` 이 들고 간다.
+    SSO_STATUS_TARGET_KIND: open_sso_status,
 }
 
 # 알림 칸이 쓰는 글. `{…}` 는 JS 가 채운다. 「사내」 를 쓰지 않는다.
@@ -414,8 +427,9 @@ def _on_goto() -> None:
     """대상을 실은 줄의 「그 화면으로」 트리거(`goto`)의 콜백 — 그 줄의 탭 길을 마지막 칸 앞까지 연
     뒤에만 온다(마지막 칸은 받는 쪽이 연다).
     값은 이 브라우저 탭 저장소에 있던 줄에서 오므로 꼴을 보고(`alerts.goto_target`) 아는 종류
-    (`GOTO_RECEIVERS`)만 받는다 — 「점검」 칸이 고를 리비전(`CHECK_TARGET_KIND`)과 Admin 「접속
-    명단」 펼침(`ACCESS_LIST_TARGET_KIND`)."""
+    (`GOTO_RECEIVERS`)만 받는다 — 「점검」 칸이 고를 리비전(`CHECK_TARGET_KIND`)과 Admin 펼침(「접속
+    명단」 `ACCESS_LIST_TARGET_KIND` · 「서버 시작 점검」 `START_CHECK_TARGET_KIND` · 「DB 동기화」
+    `SYNC_TARGET_KIND` · 「통합인증 점검」 `SSO_STATUS_TARGET_KIND`)."""
     state = st.session_state.get(ALERT_CENTER_KEY)
     raw = state.get("goto") if isinstance(state, Mapping) else getattr(state, "goto", None)
     target = alerts.goto_target(raw)

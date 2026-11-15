@@ -18,6 +18,8 @@
   자리). 해소 표지에는 짧은 글 · 전문을 싣지 않는다 — 일반 사용자 회차의 숨은 표지에 운영
   낱말(접속 주소 환경변수 · 갱신 머리 이름)이 실리지 않게(알림 칸은 해소에 글을 쓰지 않는다).
 - 통합인증이 켜진 서버만 부른다. 꺼짐 · 막힘이면 Streamlit 호출이 하나도 없다(요소 순번 그대로).
+- 「그 화면으로」 는 전문이 가리키는 Admin 「통합인증 점검」 펼침까지다 — 줄이 대상을 들고 가 다른
+  화면에서 눌려도 연다(`sso_status.open_sso_status`, 설계 규칙 UI-NAV-01).
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from capa_simulation import alerts
 from capa_simulation.auth import names, runtime
 from capa_simulation.auth.config import SsoMode
 from capa_simulation.components.admin_view import admin_notes_visible
+from capa_simulation.components.sso_status import sso_status_target
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
 
@@ -62,4 +65,5 @@ def render_refresh_alert() -> None:
         text=SHORT_TEXT if active else None,
         full=FULL_TEXT.format(hours=cfg.session_seconds // 3600) if active else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
+        target=sso_status_target(),
     )

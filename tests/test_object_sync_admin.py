@@ -16,7 +16,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from alert_marks import active_state, alert_notes, flashed
+from alert_marks import (
+    GOTO_PRELUDE,
+    GOTO_PRESS_KEY,
+    active_state,
+    alert_notes,
+    box_expanded,
+    flashed,
+)
 from fragment_browser import FragmentBrowser, install_fragment_browser
 from sso_support import use_config
 from streamlit.testing.v1 import AppTest
@@ -747,6 +754,66 @@ def test_an_upload_that_cannot_reach_the_canon_asks_the_user_to_tell_the_admin(
     else:
         assert blocked["short"] == "올리기가 멈춤 — 관리자에게 알려 주세요"
         assert "런북" not in str(blocked["full"])
+
+
+# 다른 화면 ↔ Admin 「DB 동기화」 — `app.py` 가 회차마다 내는 동기화 알림과 알림 칸 「그 화면으로」
+# 의 콜백(`GOTO_PRELUDE`). 세션 `test_page` 가 `admin` 일 때만 펼침을 그린다.
+PANEL_AFTER_GOTO = (
+    GOTO_PRELUDE
+    + """
+import streamlit as st
+
+from capa_simulation.components.object_sync_status import (
+    render_object_sync_alerts,
+    render_object_sync_status,
+)
+
+render_object_sync_alerts()
+if st.session_state.get("test_page") == "admin":
+    render_object_sync_status()
+"""
+)
+
+
+def test_the_upload_alerts_open_the_db_sync_box_from_another_screen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """관리자 몫 `SY-02` · `SY-03` 의 「그 화면으로」 는 다른 화면에서 눌러도 Admin 「DB 동기화」
+    펼침까지 연다(설계 규칙 UI-NAV-01 — 전문이 「Admin 「DB 동기화」 를 보세요」 다). 관리자가 아닌
+    회차에는 「그 화면으로」 도 대상도 없다."""
+    from capa_simulation.components import alert_center
+
+    _boot(monkeypatch, managed=True)
+    _view(monkeypatch, admin=True)
+    _admin(monkeypatch)
+    monkeypatch.setattr(object_sync_worker, "current_status", lambda: None)
+    app = AppTest.from_string(PANEL_AFTER_GOTO)
+    app.session_state["test_page"] = "other"
+    app.run()
+    overdue = active_state(app, "SY-02")
+    assert overdue is not None and overdue["href"] == "admin_area"
+    assert overdue["target"]["kind"] == object_sync_status.SYNC_TARGET_KIND
+
+    app.session_state["test_page"] = "admin"
+    app.run()
+    assert box_expanded(app, object_sync_status.EXPANDER_KEY) is False
+    app.session_state[GOTO_PRESS_KEY] = overdue["target"]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert box_expanded(app, object_sync_status.EXPANDER_KEY) is True
+    receiver = alert_center.GOTO_RECEIVERS[object_sync_status.SYNC_TARGET_KIND]
+    assert receiver is object_sync_status.open_sync_panel
+
+    _worker(monkeypatch, blocked="forked")
+    app.run()
+    blocked = active_state(app, "SY-03")
+    assert blocked is not None and blocked["target"] == overdue["target"]
+
+    _view(monkeypatch, admin=False)
+    app.run()
+    user_blocked = active_state(app, "SY-03")
+    assert user_blocked is not None and "target" not in user_blocked
+    assert user_blocked.get("href", "") != "admin_area"
 
 
 def test_a_handed_over_copy_tells_the_moment_in_korean_time(

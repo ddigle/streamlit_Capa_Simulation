@@ -8,7 +8,10 @@ from typing import Any
 import pandas as pd
 import pytest
 from alert_marks import (
+    GOTO_PRELUDE,
+    GOTO_PRESS_KEY,
     active_state,
+    box_expanded,
     data_error_marks,
     flashed,
     infos,
@@ -1094,6 +1097,80 @@ def test_the_server_start_check_adds_the_sync_lines_when_the_server_has_them(
     assert "**한도** · 메모리 1.0 GiB · CPU 2 · 논리 코어 8" in captions
     assert "받기 2.5초 · 앱 응답까지 45초" in captions
     assert "**앞 pod 마지막 올림 → 이번 앱 준비** · 105초" in captions
+
+
+def _goto_script(database_path: Path, report_path: Path) -> str:
+    """다른 화면 ↔ Admin Area — `app.py` 가 회차마다 내는 `AD-01` 과 알림 칸 「그 화면으로」 의
+    콜백(`GOTO_PRELUDE`). 세션 `test_page` 가 `admin` 일 때만 Admin Area 를 그린다."""
+    return (
+        GOTO_PRELUDE
+        + f"""
+from pathlib import Path
+
+import streamlit as st
+
+import capa_simulation.settings as settings
+from capa_simulation.components.container_start_check import render_start_check_alert
+
+settings.DUCKDB_PATH = Path({str(database_path)!r})
+settings.CONTAINER_START_REPORT_PATH = Path({str(report_path)!r})
+
+render_start_check_alert()
+if st.session_state.get("test_page") == "admin":
+    source = Path({str(PAGE)!r})
+    exec(
+        compile(source.read_text(encoding="utf-8"), str(source), "exec"),
+        {{"__name__": "__main__"}},
+    )
+"""
+    )
+
+
+def test_the_start_check_alert_opens_its_box_from_another_screen(tmp_path: Path) -> None:
+    """`AD-01` 의 「그 화면으로」 는 다른 화면에서 눌러도 Admin Area 의 「서버 시작 점검」
+    펼침까지 연다(설계 규칙 UI-NAV-01 — 「접속 명단」 `AD-19` 와 같은 길). 줄이 대상을 들고 가고,
+    알림 칸이 그 화면에 닿은 뒤 보낸 대상을 받는 쪽이 펼침을 편다."""
+    from capa_simulation.components import alert_center, container_start_check
+
+    report = tmp_path / "container_start.json"
+    failed = {"status": "failed", "reason": "설치 시도 실패 — pip 종료 코드 1"}
+    ok = {"status": "ok", "reason": "정상"}
+    report.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "written_at": "2026-11-15T09:00:00+09:00",
+                "steps": {"install": failed, "token": ok, "user_name": ok},
+                "bigdataquery_version": None,
+                "token_file": {"exists": True, "modified_at": "2026-11-15T09:00:00+09:00"},
+                "user_name": {"present": True, "masked": "fa***"},
+                "missing_environment": [],
+                "pip_tail": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    app = AppTest.from_string(_goto_script(tmp_path / "scenario.duckdb", report))
+    app.session_state["test_page"] = "other"
+    app.run(timeout=120)
+    note = active_state(app, "AD-01")
+    assert note is not None and note["href"] == ADMIN_AREA.href
+    assert note["target"]["kind"] == container_start_check.START_CHECK_TARGET_KIND
+    assert box_expanded(app, container_start_check.EXPANDER_KEY) is None, "다른 화면"
+
+    # 그 화면에 닿은 회차 — 펼침은 기본 닫힘이다.
+    app.session_state["test_page"] = "admin"
+    app.run(timeout=120)
+    assert box_expanded(app, container_start_check.EXPANDER_KEY) is False
+
+    # 알림 칸이 닿은 뒤 보낸 대상 — 받는 쪽이 펼침을 편다.
+    app.session_state[GOTO_PRESS_KEY] = note["target"]
+    app.run(timeout=120)
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert box_expanded(app, container_start_check.EXPANDER_KEY) is True
+    receiver = alert_center.GOTO_RECEIVERS[container_start_check.START_CHECK_TARGET_KIND]
+    assert receiver is container_start_check.open_start_check
 
 
 def test_a_cd_server_without_a_start_report_says_the_script_did_not_run(

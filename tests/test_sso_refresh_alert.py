@@ -3,8 +3,8 @@
 """`components/sso_refresh_alert.py`(2026-11-13 「앱 대신 뜨는 화면」 보드 카드 p2-rare 한 조각).
 
 기동 뒤 갱신이 출처 · 머리 검사에서만 거절됐으면(「다시 발급」 0) 관리자 회차에 상태 알림 `AD-21` 이
-서고 「그 화면으로」 는 Admin Area 다. 다른 회차는 해소로 부르고, 켜진 서버는 회차마다 이벤트 칸 한
-자리로 같다. 꺼진 서버는 아무것도 부르지 않는다.
+서고 「그 화면으로」 는 Admin 「통합인증 점검」 펼침까지다. 다른 회차는 해소로 부르고, 켜진 서버는
+회차마다 이벤트 칸 한 자리로 같다. 꺼진 서버는 아무것도 부르지 않는다.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from alert_marks import active_state, states
+from alert_marks import GOTO_PRELUDE, GOTO_PRESS_KEY, active_state, box_expanded, states
 from sso_support import use_config
 from streamlit.testing.v1 import AppTest
 
@@ -75,6 +75,52 @@ def test_only_an_admin_sees_refusals_without_any_renewal(monkeypatch: pytest.Mon
     assert "처음 로그인 6시간 뒤 끊깁니다" in note["full"]
     assert names.ENV_PUBLIC_URL in note["full"] and names.REFRESH_HEADER in note["full"]
     assert (note["page"], note["href"]) == ("Admin Area", "admin_area")
+
+
+# 다른 화면 ↔ Admin 「통합인증 점검」 — 알림과 알림 칸 「그 화면으로」 의 콜백(`GOTO_PRELUDE`).
+# 세션 `test_page` 가 `admin` 일 때만 펼침을 그린다.
+STATUS_AFTER_GOTO = (
+    GOTO_PRELUDE
+    + """
+import streamlit as st
+
+from capa_simulation.components.sso_refresh_alert import render_refresh_alert
+from capa_simulation.components.sso_status import render_sso_status
+
+render_refresh_alert()
+if st.session_state.get("test_page") == "admin":
+    render_sso_status()
+"""
+)
+
+
+def test_the_refusal_alert_opens_the_sso_status_box_from_another_screen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`AD-21` 전문은 「Admin 「통합인증 점검」 의 로그인 갱신 줄과 함께 봅니다」 다 — 「그
+    화면으로」 는 다른 화면에서 눌러도 그 펼침까지 연다(설계 규칙 UI-NAV-01)."""
+    from capa_simulation.components import alert_center, sso_status
+
+    cfg = _config()
+    _count(forbidden=3)
+    _as(cfg, ADMIN, monkeypatch)
+    app = AppTest.from_string(STATUS_AFTER_GOTO, default_timeout=30)
+    app.session_state["test_page"] = "other"
+    app.run()
+    note = active_state(app, sso_refresh_alert.ALERT_CODE)
+    assert note is not None and note["href"] == "admin_area"
+    assert note["target"]["kind"] == sso_status.SSO_STATUS_TARGET_KIND
+
+    app.session_state["test_page"] = "admin"
+    app.run()
+    assert box_expanded(app, sso_status.EXPANDER_KEY) is False
+    app.session_state[GOTO_PRESS_KEY] = note["target"]
+    app.run()
+    assert not list(app.exception), [element.message for element in app.exception]
+    assert box_expanded(app, sso_status.EXPANDER_KEY) is True
+    assert (
+        alert_center.GOTO_RECEIVERS[sso_status.SSO_STATUS_TARGET_KIND] is sso_status.open_sso_status
+    )
 
 
 @pytest.mark.parametrize(

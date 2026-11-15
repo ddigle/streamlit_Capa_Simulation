@@ -28,7 +28,9 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 보드 카드 p2-sync 「AD-01 범위를 넓힘」). 키만 넣은 서버나 local 서버의 버킷 연결 실패가 펼침
 제목으로만 드러나던 틈을 메운다. 「그 화면으로」 는 Admin Area(이 펼침)다. 알릴 일이 있을 수 없는
 프로세스(결과 파일도 CD 전용 환경변수도 없음 — 프로세스 동안 그대로다)는 Streamlit 호출이 없다.
-Admin 펼침은 이 알림을 따로 내지 않는다.
+Admin 펼침은 이 알림을 따로 내지 않는다. 줄은 이 펼침을 대상으로 들고 가 다른 화면에서 눌려도
+펼침까지 연다(`open_start_check` — 알림 칸의 받는 쪽 `START_CHECK_TARGET_KIND`, 설계 규칙
+UI-NAV-01).
 
 **토큰 실패 관리자 알림(`AD-10`)** — 결과 파일이 있는 서버(C-DEP)에서 BigDataQuery 조회가 토큰
 갈래로 실패했거나(`company_bigdataquery_adapter.last_query_failed_on_token` — 프로세스의 마지막
@@ -99,7 +101,7 @@ from capa_simulation.io.container_start_report import (
 )
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
-from capa_simulation.sidebar_status import remembered_expander
+from capa_simulation.sidebar_status import open_remembered_box, remembered_expander
 
 # 펼침 key. 탭 묶음 위에 서므로 자리를 key 로 고정한다(9장 「조건부 알림 뒤 key 없는 펼침」).
 # 편 상태는 기억 칸(`remembered_expander`)에 둔다 — 진단을 읽다 다른 화면(VOC 등)에 다녀와도
@@ -372,6 +374,20 @@ def _missing_problem() -> tuple[str, str, str] | None:
 
 
 START_CHECK_ALERT_CODE = "AD-01"
+# 알림의 「그 화면으로」 가 Admin Area 에 닿은 뒤 이 펼침을 여는 받는 쪽의 이름
+# (`alerts.GotoTarget`).
+START_CHECK_TARGET_KIND = "start_check"
+
+
+def start_check_target() -> alerts.GotoTarget:
+    """`AD-01` 이 들고 가는 대상 — 받는 쪽이 이 펼침을 연다(나머지 칸은 쓰지 않는다)."""
+    return alerts.GotoTarget(kind=START_CHECK_TARGET_KIND, scenario="-", revision="-")
+
+
+def open_start_check(_scenario: str, _revision: str) -> None:
+    """알림 칸의 「그 화면으로」 콜백이 Admin Area 에 닿은 회차 맨 앞에서 부른다 — 「서버 시작
+    점검」 펼침을 연다(설계 규칙 UI-NAV-01 — 데려가면 그 자리까지 연다)."""
+    open_remembered_box(EXPANDER_KEY)
 
 
 def failed_start_steps(report: ContainerStartReport) -> list[tuple[str, str]]:
@@ -438,6 +454,7 @@ def render_start_check_alert() -> None:
         text=text if active else None,
         full=full if active else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href) if active else None,
+        target=start_check_target() if active else None,
     )
 
 
