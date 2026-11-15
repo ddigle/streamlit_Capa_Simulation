@@ -168,6 +168,27 @@ def test_an_unknown_failure_word_never_reaches_the_screen(
     assert FAILURE_LABELS["other"] in _ask(port, "GET", "/")[2].decode("utf-8")
 
 
+def test_a_failure_of_unknown_cause_does_not_say_the_store_was_not_reached(
+    stage: tuple[container_stage.Stage, int],
+) -> None:
+    """원인을 모르는 실패(`other` — 알아보지 못한 aws 오류 · 로컬 OSError · 시작 줄을 읽지
+    못함)는 제목 · 상태 줄 · 열어 둔 탭의 띠 어디에도 「저장소에 잠시 닿지 못함」 을 말하지 않는다
+    — 닿지 못함 · 시간 초과일 때만 그 말이다(UI-DAT-11)."""
+    opened, port = stage
+
+    opened.fail(1, "other", wait_seconds=5)
+    other = _status(port)
+    other_page = _ask(port, "GET", "/")[2].decode("utf-8")
+    opened.fail(2, "unreachable", wait_seconds=5)
+    reached = _status(port)
+
+    assert other[0] == container_stage.TITLE_TRANSIENT_UNKNOWN == "데이터를 잠시 받지 못했습니다"
+    assert json.loads(other[2])["band"] == "데이터를 잠시 받지 못함 · 다시 시도 중"
+    assert "닿지 못" not in other_page.split("<script", 1)[0]
+    assert reached[0] == container_stage.TITLE_TRANSIENT == "저장소에 잠시 닿지 못했습니다"
+    assert json.loads(reached[2])["band"] == "저장소에 잠시 닿지 못함 · 다시 시도 중"
+
+
 def test_no_value_from_the_environment_is_on_the_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -639,6 +660,45 @@ def test_a_retry_that_is_pulling_shows_the_clock_and_the_pull_notes() -> None:
     assert waiting.notes == () and waiting.band == "저장소에 잠시 닿지 못함 · 다시 시도 중"
 
 
+# 「다시 시도」 판으로 오는 갈래 — 원격이 비어 있음 · 사람 갈래가 아닌 낱말 표의 키 전부.
+RETRY_KINDS = sorted(kind for kind in FAILURE_LABELS if container_stage.retry_kind(kind))
+
+
+@pytest.mark.parametrize("kind", RETRY_KINDS)
+def test_only_a_store_not_reached_is_titled_so(kind: str) -> None:
+    """표지는 일어난 것만 말한다(UI-DAT-11) — 「저장소에 잠시 닿지 못했습니다」 · 띠 「저장소에
+    잠시 닿지 못함 · …」 는 닿지 못함 · 시간 초과(닿지 못함의 한 꼴)일 때만이다. 원인을 모르는
+    실패(`other`)와 그 밖에 이 판으로 오는 갈래는 원인을 말하지 않는 「데이터를 잠시 받지
+    못했습니다」 · 「데이터를 잠시 받지 못함 · 다시 시도 중」 이고, 표지 · 까닭 · 10분 문의 줄 ·
+    값 줄 · 진단 할 일은 같다(제목 낱말은 같은 화면의 「데이터를 받는 중입니다」 · 「데이터를
+    처음 올리는 중입니다」 와 짝)."""
+    state = _state(attempt=2, kind=kind, failed_at=1100.0, failing_since=1000.0, next_at=1112.0)
+    view = container_stage.stage_view(state)
+    reached_view = container_stage.stage_view(replace(state, kind="unreachable"))
+    reached = kind in ("unreachable", "timeout")
+
+    assert view.title == (
+        "저장소에 잠시 닿지 못했습니다" if reached else "데이터를 잠시 받지 못했습니다"
+    )
+    assert view.band == (
+        "저장소에 잠시 닿지 못함 · 다시 시도 중"
+        if reached
+        else "데이터를 잠시 받지 못함 · 다시 시도 중"
+    )
+    assert (view.tone, view.chip) == ("retry", container_stage.CHIP_RETRY)
+    assert view.reasons == (container_stage.REASON_TRANSIENT,)
+    assert (view.late_note, view.late_after) == (container_stage.NOTE_LONG_RETRY, 1600.0)
+    assert container_stage.value_text(view, 1100.0) == "다음 시도 12초 뒤"
+    assert view.diagnostics[1:] == reached_view.diagnostics[1:]
+    assert view.diagnostics[0] == FAILURE_LABELS[kind]
+
+
+def test_the_retry_screen_takes_the_store_pair_and_the_unknown_cause() -> None:
+    """닿지 못함 · 시간 초과 · 원인 모름은 늘 「다시 시도」 판이다 — 갈래 표가 바뀌어 빠지면 위
+    시험이 그 갈래를 보지 않게 되므로 여기서 잡는다."""
+    assert {"unreachable", "timeout", "other"} <= set(RETRY_KINDS)
+
+
 def test_the_ten_minute_line_counts_only_the_unbroken_retry_run(
     stage: tuple[container_stage.Stage, int],
 ) -> None:
@@ -1065,6 +1125,31 @@ def test_the_page_carries_the_frame_parts_and_both_themes(
     assert "<noscript>" in page and container_stage.NOSCRIPT_NOTE in page
     assert "border-top: 4px solid var(--accent)" in page
     assert "#f7f8fa" not in page
+
+
+def _body_rule(css: str) -> dict[str, str]:
+    """맨 앞 `body { … }` 규칙의 선언(이름 → 값)."""
+    found = re.search(r"(?m)^body \{([^}]*)\}", css)
+    assert found is not None
+    return dict(re.findall(r"([a-z-]+):\s*([^;]+);", found.group(1)))
+
+
+def test_the_page_breaks_only_between_words_like_the_login_frame() -> None:
+    """좁은 창(390)에서 「시작하지 못했습니 / 다」 처럼 한국어 낱말을 가운데서 가르지 않는다 — 띄어
+    쓰기에서만 줄을 바꾸고 띄어쓰기 없는 긴 메일 · 주소만 아무 데서나 접는다. 앱 밖 화면 묶음
+    (로그인 화면 틀 · 열어 둔 탭의 띠 — `tests/test_sso_reconnect.py`)과 같은 두 선언이고, 본문
+    규칙에 두어 제목 · 까닭 · 노트 · 잃은 신청 줄 · 펼친 진단이 모두 물려받는다(UI-ACC-02)."""
+    from capa_simulation.auth import page_frame
+
+    frame_page = page_frame.render(
+        page_frame.Frame(title="t", chip=None, lead=(), primary=page_frame.Link("a", "/")), now=0
+    )
+    stage_body = _body_rule(container_stage.page_css())
+    frame_body = _body_rule(frame_page.split("<style>", 1)[1].split("</style>", 1)[0])
+
+    for name, value in (("word-break", "keep-all"), ("overflow-wrap", "anywhere")):
+        assert stage_body.get(name) == value, name
+        assert frame_body.get(name) == value, name
 
 
 # --------------------------------------------------------------------------- 사람이 고쳐야 풀림

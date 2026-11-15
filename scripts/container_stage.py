@@ -17,7 +17,8 @@ Management」 · 상태 표지(낱말 + 색) · 제목 · 까닭 · 단계 줄 �
 로그인 화면 틀(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES`)과 한 표다 — 그 표를
 불러 쓴다. 포트를 잡는 첫 순간이라 Streamlit · `design.tokens` 를 불러오지 않는다
 (`page_frame` 도 tokens 를 그릴 때만 부른다) — 두 팔레트는 상수(`PALETTES`)이고 시험이 토큰과
-맞댄다. 밝게 · 어둡게는 `prefers-color-scheme` 로 고른다(앱 테마를 모르는 화면).
+맞댄다. 밝게 · 어둡게는 `prefers-color-scheme` 로 고른다(앱 테마를 모르는 화면). 글은 틀처럼
+띄어쓰기에서만 줄을 바꾸고(`word-break: keep-all`) 띄어쓰기 없는 긴 메일 · 주소만 접는다.
 
 **한 상태 → 한 보기.** 시작 스크립트는 단계 · 받기 시도 · 실패만 알리고(`Stage.begin` ·
 `step` · `attempt` · `fail`), 보이는 글은 순수 함수 `stage_view` 하나가 정한다 — 쪽
@@ -86,6 +87,8 @@ from capa_simulation.services.object_storage_manifest import (
     FAILURE_OTHER,
     FAILURE_REMOTE_EMPTY,
     FAILURE_SCHEMA_NEWER,
+    FAILURE_TIMEOUT,
+    FAILURE_UNREACHABLE,
 )
 from capa_simulation.settings import APP_LABEL, APP_SUBTITLE, app_contact_email
 
@@ -133,6 +136,13 @@ TITLE_STARTING: Final = "앱을 시작하는 중입니다"
 TITLE_PULLING: Final = "데이터를 받는 중입니다"
 TITLE_REMOTE_EMPTY: Final = "데이터를 처음 올리는 중입니다"
 TITLE_TRANSIENT: Final = "저장소에 잠시 닿지 못했습니다"
+# 「다시 시도」 판의 제목 · 열어 둔 탭의 띠 글은 저장소에 닿지 못함 · 시간 초과일 때만 그
+# 원인을 말하고, 원인을 모르는 실패(`other` 등)는 원인을 말하지 않는다 — 표지 · 까닭 · 값 줄은
+# 같다.
+STORE_NOT_REACHED: Final = (FAILURE_UNREACHABLE, FAILURE_TIMEOUT)
+TITLE_TRANSIENT_UNKNOWN: Final = "데이터를 잠시 받지 못했습니다"
+BAND_TRANSIENT: Final = "저장소에 잠시 닿지 못함 · 다시 시도 중"
+BAND_TRANSIENT_UNKNOWN: Final = "데이터를 잠시 받지 못함 · 다시 시도 중"
 NOTE_AUTO: Final = "끝나면 저절로 앱으로 넘어갑니다."
 NOTE_MINUTES: Final = "몇 분 걸릴 수 있습니다."
 NOTE_NO_CICD: Final = "받는 동안 CI/CD 를 다시 누르면 받기가 처음부터 다시 시작됩니다."
@@ -275,7 +285,7 @@ _CSS_BODY: Final = """
 html, body { margin: 0; }
 body { min-height: 100vh; display: flex; justify-content: center; align-items: flex-start;
   padding: 48px 16px; background: var(--bg); color: var(--fg); font-family: var(--font);
-  line-height: 1.6; }
+  line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
 main { width: 100%; max-width: 640px; background: var(--card); border: 1px solid var(--line);
   border-top: 4px solid var(--accent); border-radius: 12px; padding: 24px 28px; }
 .brand { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; }
@@ -544,15 +554,19 @@ def _remote_empty_view(state: StageState) -> StageView:
 
 
 def retry_kind(kind: str) -> bool:
-    """잠시 닿지 못함 갈래인가 — 원격이 비어 있음 · 사람이 고쳐야 풀리는 갈래가 아닌 실패."""
+    """「다시 시도」 갈래인가 — 원격이 비어 있음 · 사람이 고쳐야 풀리는 갈래가 아닌 실패(닿지 못함 ·
+    시간 초과 · 원인 모름)."""
     return kind != FAILURE_REMOTE_EMPTY and kind not in HUMAN_SCREENS
 
 
 def _retry_view(state: StageState) -> StageView:
-    """잠시 닿지 못함. 다시 받기가 도는 동안은 값 줄이 「n번째 받는 중 · 지난 시간」 으로 흐르고
-    첫 받기의 두 노트가 선다 — 정상으로 받는 몇 분이 멈춘 것처럼 보이지 않게."""
+    """잠시 닿지 못함 · 시간 초과 · 원인 모름 — 저절로 다시 시도한다. 제목 · 띠 글만 원인을
+    아는지에 따라 갈리고(`STORE_NOT_REACHED`) 나머지는 같다. 다시 받기가 도는 동안은 값 줄이
+    「n번째 받는 중 · 지난 시간」 으로 흐르고 첫 받기의 두 노트가 선다 — 정상으로 받는 몇 분이
+    멈춘 것처럼 보이지 않게."""
     assert state.kind is not None
     since = state.failing_since
+    reached = state.kind in STORE_NOT_REACHED
     if state.trying:
         wait = _pulling(state)
     else:
@@ -560,7 +574,7 @@ def _retry_view(state: StageState) -> StageView:
     return StageView(
         tone=TONE_RETRY,
         chip=CHIP_RETRY,
-        title=TITLE_TRANSIENT,
+        title=TITLE_TRANSIENT if reached else TITLE_TRANSIENT_UNKNOWN,
         reasons=(REASON_TRANSIENT,),
         notes=wait.notes,
         late_note=NOTE_LONG_RETRY,
@@ -577,7 +591,7 @@ def _retry_view(state: StageState) -> StageView:
         since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
-        band=wait.band or "저장소에 잠시 닿지 못함 · 다시 시도 중",
+        band=wait.band or (BAND_TRANSIENT if reached else BAND_TRANSIENT_UNKNOWN),
     )
 
 
