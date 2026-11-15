@@ -313,7 +313,7 @@ REFRESH_UNREACHED_SHORT: Final = (
 )
 # 입력이 지금 토큰이라 그 토큰이 죽으면 갱신이 서지 않는다 — 실패 · 멈춤 전문이 함께 쓴다.
 DEAD_INPUT_NOTE: Final = (
-    "지금 토큰이 만료됐거나 같은 계정의 다른 곳(WebIDE · 사내 PC) 로그인으로 죽었으면 그 "
+    "지금 토큰이 만료됐거나 같은 계정의 다른 곳(WebIDE · 다른 PC) 로그인으로 죽었으면 그 "
     "토큰으로는 갱신할 수 없습니다."
 )
 
@@ -365,7 +365,7 @@ def _refresh_alert_text(state: bdq_refresh.RefreshStatus) -> str:
     if state.mode == "halted":
         return (
             "갱신으로 넣은 토큰이 거듭 토큰 실패로 죽어 자동 갱신을 멈췄습니다 — "
-            f"{bdq_refresh.HALT_ELSEWHERE}(WebIDE · 사내 PC · 다른 서버). 계정당 토큰은 하나라 "
+            f"{bdq_refresh.HALT_ELSEWHERE}(WebIDE · 다른 PC · 다른 서버). 계정당 토큰은 하나라 "
             "갱신으로 받은 새 토큰도 그쪽 토큰을 죽일 수 있습니다. 그 로그인을 멈춘 뒤 "
             f"{RESTART_NOTE}"
         )

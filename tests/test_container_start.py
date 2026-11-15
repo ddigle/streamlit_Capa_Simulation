@@ -527,7 +527,7 @@ def test_the_login_token_is_written_where_the_package_reads_it(
     assert token_file["modified_at"]
     assert report["user_name"] == {"present": True, "masked": "fa***"}
     _assert_no_secret(json.dumps(report, ensure_ascii=False))
-    # 갱신 토큰이 없으면(자동 갱신 꺼짐) 넣은 때 표지도 없다 — 자격 폴더는 토큰 파일 하나다.
+    # 자동 갱신을 켜지 않으면 넣은 때 표지도 없다 — 자격 폴더는 토큰 파일 하나다.
     assert [path.name for path in target.parent.iterdir()] == [target.name]
 
 
@@ -1795,7 +1795,7 @@ def test_a_restart_keeps_a_young_refreshed_token_without_exchanging(
 def test_a_failed_restart_refresh_keeps_the_refreshed_token(
     place: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """갱신할 때라 교환했는데 실패 — 자격 폴더의 갱신 토큰을 `CAPA_BDQ_TOKEN` 으로 덮지 않는다."""
+    """갱신할 때라 교환했는데 실패 — 갱신으로 넣어 둔 토큰을 `CAPA_BDQ_TOKEN` 으로 덮지 않는다."""
     received = _known_shape(monkeypatch, error=TimeoutError("read timed out"))
     token, content, _written = _persisted(place, source="refresh", age=timedelta(hours=7))
 

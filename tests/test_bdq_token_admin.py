@@ -655,7 +655,7 @@ def test_a_stopped_refresh_tells_the_administrator_why(
     assert note["short"] == bdq_token_admin.REFRESH_HALTED_SHORT
     assert len(note["short"]) <= alerts.SHORT_LIMIT
     assert bdq_refresh.HALT_ELSEWHERE in note["full"] and "「토큰 넣기」" in note["full"]
-    assert "사내 PC" in note["full"]
+    assert "다른 PC" in note["full"] and "사내" not in note["full"]
     assert (note["page"], note["href"]) == (tab_label(ADMIN_AREA), ADMIN_AREA.href)
 
 
@@ -710,7 +710,7 @@ def test_a_refresh_stopped_by_failing_exchanges_asks_for_a_new_token(
     assert len(note["short"]) <= alerts.SHORT_LIMIT
     assert bdq_refresh.HALT_ELSEWHERE not in note["full"]
     assert f"{bdq_refresh.FAILED_EXCHANGE_LIMIT}번 잇따라" in note["full"]
-    assert "만료" in note["full"] and "사내 PC" in note["full"]
+    assert "만료" in note["full"] and "다른 PC" in note["full"] and "사내" not in note["full"]
     assert report_contract.BDQ_TOKEN_ENV in note["full"] and "「토큰 넣기」" in note["full"]
     assert "갱신 토큰" not in note["full"] and "5분" not in note["full"]
 
