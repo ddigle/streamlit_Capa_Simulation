@@ -1949,10 +1949,33 @@ def test_the_admin_sees_the_list(
     frame = app.dataframe[0].value
     assert list(frame.columns) == ["계정", "이름", "부서", "등록 시각", "등록 길", "등급"]
     assert sorted(frame["계정"].tolist()) == [OTHER, USER]
-    assert frame["등록 길"].tolist() == ["관리자", "관리자"], "옛 파일(칸 없음)은 관리자가 넣음"
+    assert frame["등록 길"].tolist() == ["관리자가 넣음", "관리자가 넣음"], "옛 파일(칸 없음)"
     assert frame["등급"].tolist() == ["일반", "일반"]
     assert app.multiselect(key=access_list_admin.ACCESS_LIST_REMOVE_KEY).options
     assert any("버전 1 · 명단 2 · 관리자 1(환경변수 1)" in str(item.value) for item in app.caption)
+
+
+def test_the_way_in_reads_the_same_words_as_the_recent_table_and_not_as_a_grade(
+    mock_s3: tuple[MockStore, str],
+) -> None:
+    """「등록 길」 은 바로 아래 「최근 등록 · 빼기」 의 「한 일」 과 같은 두 낱말(스스로 등록 ·
+    관리자가 넣음)이고 「등급」 칸의 「관리자」 와 겹치지 않는다(E2E 보드 s-C-02)."""
+    store, endpoint = mock_s3
+    cfg = started(store, endpoint, USER)
+    access_store.save_changes(cfg, identity_of(cfg, ADMIN), grades={USER: GRADE_ADMIN})
+    access_store.register_self(cfg, "demo.self")
+    source = runtime.access_source()
+    assert source is not None and source.document is not None
+
+    table = access_list_admin.people_table(source.document).set_index("계정")
+    recent = access_list_admin.recent_changes_table(source.document, now=int(time.time()))
+
+    assert table.loc[USER, "등록 길"] == "관리자가 넣음"
+    assert table.loc[USER, "등급"] == "관리자", "등급 칸의 「관리자」 는 그대로"
+    assert table.loc["demo.self", "등록 길"] == "스스로 등록"
+    assert set(table["등록 길"]) <= set(recent["한 일"]) | {"관리자가 넣음"}
+    assert set(table["등록 길"]).isdisjoint(access_list_admin.GRADE_LABELS.values())
+    assert "스스로 등록" in recent["한 일"].tolist()
 
 
 def test_the_recent_registrations_and_removals_fold_under_the_table(
@@ -3331,6 +3354,7 @@ def test_a_new_self_registration_alerts_admins_once_with_a_count_only(
     first = active_state(card(ADMIN), "AD-19")
     assert first is not None
     assert first["short"].startswith("새 등록 2명")
+    assert f"등록 길 「{access_list_admin.VIA_SELF_LABEL}」" in first["full"], "표의 낱말 그대로"
     assert "demo.first" not in json.dumps(first, ensure_ascii=False)
     assert first["target"]["kind"] == access_list_admin.ACCESS_LIST_TARGET_KIND
     assert first["page"] == "Admin Area"

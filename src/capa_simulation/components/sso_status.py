@@ -633,7 +633,7 @@ def _new_registration_alert(*, admin: bool, now: int) -> None:
         full=(
             f"최근 {NEW_REGISTRATION_DAYS}일 동안 거절 화면의 「접속 권한 신청」 으로 "
             f"스스로 등록한 사람이 {count}명 명단에 있습니다. Admin 「접속 명단」 에서 "
-            "등록 길 「스스로」 줄을 보고 모르는 사람이면 지웁니다."
+            "등록 길 「스스로 등록」 줄을 보고 모르는 사람이면 지웁니다."
             if active
             else None
         ),

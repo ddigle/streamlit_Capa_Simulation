@@ -21,14 +21,13 @@
 붙여 넣은 글이 표면 머리 줄의 `loginid`(또는 이 표의 「계정」) 칸만 읽고, 그 칸을 찾지 못한 표는
 넣지 않는다 — 다른 칸의 값(날짜 · 이름)이 명단에 들어가면 그 값을 가진 사람에게 접속이 열린다.
 
-표는 계정 · 이름 · 부서 · 등록 시각 · 등록 길(스스로 · 관리자) · 등급이다(2026-11-14 보드
-p0-admin-list ·
-n2 답). 등급은 고른 사람에게 「관리자로」 · 「일반으로」 — 환경변수 관리자는 늘 관리자라 내리지
-못하고,
-자기 등급은 자기가 내리지 못한다(`access_store` 가 다시 본다). 접속 명단 알림 `AD-08` · `AD-09` ·
-`AD-19` 의 「그 화면으로」 가 이 펼침을 연다(`open_access_list` — 알림 칸의 받는 쪽
-`ACCESS_LIST_TARGET_KIND`). 표 아래
-접힌 「최근 등록 · 빼기(30일)」 은 파일의 고친 기록에서 꺼낸 읽기 전용 표다(시각 · 계정 · 한 일).
+표는 계정 · 이름 · 부서 · 등록 시각 · 등록 길(스스로 등록 · 관리자가 넣음 — 아래 「최근 등록 ·
+빼기」 의 「한 일」 과 같은 낱말, 등급 칸의 「관리자」 와 겹치지 않게 — E2E 보드 s-C-02) · 등급이다
+(2026-11-14 보드 p0-admin-list · n2 답). 등급은 고른 사람에게 「관리자로」 · 「일반으로」 —
+환경변수 관리자는 늘 관리자라 내리지 못하고, 자기 등급은 자기가 내리지 못한다(`access_store` 가
+다시 본다). 접속 명단 알림 `AD-08` · `AD-09` · `AD-19` 의 「그 화면으로」 가 이 펼침을
+연다(`open_access_list` — 알림 칸의 받는 쪽 `ACCESS_LIST_TARGET_KIND`). 표 아래 접힌 「최근
+등록 · 빼기(30일)」 은 파일의 고친 기록에서 꺼낸 읽기 전용 표다(시각 · 계정 · 한 일).
 """
 
 from __future__ import annotations
@@ -79,8 +78,10 @@ LOGINID_HEADER: Final = "loginid"
 ACCOUNT_HEADER: Final = "계정"
 _ACCOUNT_HEADERS: Final = (LOGINID_HEADER, ACCOUNT_HEADER)
 TABLE_COLUMNS: Final = ("계정", "이름", "부서", "등록 시각", "등록 길", "등급")
-VIA_LABELS: Final = {VIA_SELF: "스스로"}
-VIA_ADMIN_LABEL: Final = "관리자"
+# 명단에 든 길 — 「등록 길」 칸과 「최근 등록 · 빼기」 의 「한 일」 이 함께 쓰는 두 낱말.
+VIA_SELF_LABEL: Final = "스스로 등록"
+VIA_ADMIN_LABEL: Final = "관리자가 넣음"
+VIA_LABELS: Final = {VIA_SELF: VIA_SELF_LABEL}
 GRADE_LABELS: Final = {GRADE_ADMIN: "관리자", GRADE_USER: "일반"}
 ENV_ADMIN_LABEL: Final = "관리자(환경변수)"
 _CELL_SEPARATORS: Final = ("\t", ",", ";")
@@ -114,8 +115,8 @@ RECENT_EXPANDER_KEY: Final = "admin_area_access_list_recent"
 RECENT_LABEL: Final = f"최근 등록 · 빼기({NEW_REGISTRATION_DAYS}일)"
 RECENT_COLUMNS: Final = ("시각", "계정", "한 일")
 RECENT_WHAT: Final = {
-    access_store.CHANGE_SELF: "스스로 등록",
-    access_store.CHANGE_ADD: "관리자가 넣음",
+    access_store.CHANGE_SELF: VIA_SELF_LABEL,
+    access_store.CHANGE_ADD: VIA_ADMIN_LABEL,
     access_store.CHANGE_REMOVE: "뺌",
 }
 
@@ -364,7 +365,7 @@ def _render_remove_picker(document: ListDocument) -> None:
 
 
 def recent_changes_table(document: ListDocument, *, now: int) -> pd.DataFrame:
-    """최근 `NEW_REGISTRATION_DAYS` 일의 등록(스스로 · 관리자) · 빼기 — 새것 먼저.
+    """최근 `NEW_REGISTRATION_DAYS` 일의 등록(스스로 등록 · 관리자가 넣음) · 빼기 — 새것 먼저.
 
     칸은 시각 | 계정 | 한 일이다.
 
