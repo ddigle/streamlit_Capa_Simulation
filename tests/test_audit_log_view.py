@@ -238,8 +238,27 @@ def test_a_late_piece_raises_ad_13_for_viewers_only(
     assert [item["active"] for item in late] == [active, active]
     if active:
         assert "1개" in late[0]["short"]
+        # 적을 곳은 운영 문서 6장과 같은 이름 — 1판에는 앱 안 「점검 기록」 단추가 없다.
+        assert late[0]["full"] == (
+            "14일보다 늦게 온 기록 조각이 1개 있습니다. 고치려 하지 않고 날짜를 월 점검 기록(앱 "
+            "밖)에 적은 뒤 저장소 관리자 · 보안 담당에 알립니다."
+        )
         assert (late[0]["page"], late[0]["href"], late[0]["tab"]) == (
             tab_label(ADMIN_AREA),
             ADMIN_AREA.href,
             "접속 · 작업 기록",
         )
+
+
+def test_the_operations_doc_names_the_monthly_record_like_the_alerts() -> None:
+    """운영 문서의 알림 조치와 월 1회 점검이 같은 이름 하나(「월 점검 기록」)를 쓴다 — 「점검
+    결과」 라는 둘째 이름이 남지 않고, 두 알림 줄은 앱 밖에 적는다고 말한다(1판에는 앱 안 단추가
+    없다)."""
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "audit_log_operations.md").read_text(
+        encoding="utf-8"
+    )
+    rows = [line for line in doc.splitlines() if line.startswith(("| `AD-12` |", "| `AD-13` |"))]
+
+    assert "점검 결과" not in doc
+    assert len(rows) == 2
+    assert all("월 점검 기록(앱 밖)에 적" in row for row in rows), rows
