@@ -2432,13 +2432,16 @@ MONDAY_1114_COMMITS = {
     "decided-login-7": ("eca1b21", "cfe84e7"),
     "decided-login-8": ("7806a60",),
 }
-# 보드에 올리지 않고 구현이 좁게 정한 것 — 절 끝 표의 줄 이름.
+# 보드에 올리지 않고 구현이 좁게 정한 것 — 절 끝 표의 줄 이름. 뒤의 줄은 2026-11-15 E2E 그림
+# 보드 규칙 판정(PRC-07)이 「표에 없는 구현의 좁은 결정」 으로 찾아 v1.29 에 더한 것이다.
 MONDAY_1114_NARROW = (
     "register-label",
     "login-fail-kinds",
     "loop-time",
     "config-fold",
     "official-narrow",
+    "boot-contact",
+    "intro-stopped",
 )
 
 
@@ -2446,8 +2449,8 @@ def test_the_monday_1114_board_answers_are_recorded() -> None:
     """v1.27 — 6-27 은 「월요일 배포 앞」 물음 보드 카드 아홉이 보드 차례대로이고, 정한 것
     두 장은 점마다 한 줄이라 스물아홉 줄이다. 고른 글은 선택지 라벨(정한 것은 「좋음」)이고
     모두 카드 권장 · 메모 없음이다. 고친 줄만 커밋을 든다. 끝 표는 보드에 올리지 않고 구현이
-    정한 다섯 줄이다. 6-26 줄은 그때 기록 그대로다(앞 시험이 6-27 앞에서 끊어 본다). 6-28 은 뒤
-    시험이 본다."""
+    정한 줄이다(갈래 결과 다섯 · v1.29 에 E2E 규칙 판정이 찾은 것). 6-26 줄은 그때 기록
+    그대로다(앞 시험이 6-27 앞에서 끊어 본다). 6-28 은 뒤 시험이 본다."""
     document = _text()
     assert "- **v1.27 — 2026-11-14.**" in _chapter(document, 8)
     assert "6-27 에 있다" in _chapter(document, 1)
@@ -2498,14 +2501,14 @@ WIDENED_1115_LINES = {"band-connecting": ("946025e",)}
 def test_the_widened_1115_readings_are_recorded() -> None:
     """v1.28 — 6-28 은 E2E 고침이 앞 답을 넓혀 읽은 기록 한 줄이고, 줄마다 커밋 · 「답 밖 — 구현이
     정함」 · 그림 보드 확인을 든다. 넓힌 뜻은 UI-LAY-05 그물 줄(머리 CONNECTING 과 그 시험)에도
-    섰다. 앞 절 줄은 그때 기록 그대로다(앞 시험이 6-28 앞에서 끊어 본다)."""
+    섰다. 앞 절 줄은 그때 기록 그대로다(앞 시험이 6-28 앞에서 끊어 본다). 판 머리와 6-29 는 뒤
+    시험이 본다."""
     document = _text()
-    assert "판 v1.28" in document.split("\n## 1. ")[0]
     assert "- **v1.28 — 2026-11-15.**" in _chapter(document, 8)
     assert "6-28 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-28. ") :]
+    record = section[section.index("\n### 6-28. ") : section.index("\n### 6-29. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -2529,3 +2532,73 @@ def test_the_widened_1115_readings_are_recorded() -> None:
         "tests/test_sso_reconnect.py::"
         "test_a_standing_band_also_hides_the_header_connecting_status_and_gives_it_back" in net
     )
+
+
+# 2026-11-15 다섯 사람 E2E 그림 보드 카드를 규칙집에 대 본 판정(PRC-07)이 찾은 규칙집 · 기록
+# 빈칸 — 판정의 「예외」 근거가 규칙집 밖 보드 답뿐이던 자리를 규칙 글에 이름으로 올린다(PRC-08).
+# 6-29 는 설계 문서에만 있던 2026-11-14 토큰 자동 갱신 틀 사용자 결정의 기록이다 — 줄 id 와 커밋.
+TOKEN_FRAME_1114_LINES = {
+    "token-auto-frame": (
+        "d7415a9",
+        "c170434",
+        "303a0be",
+        "57b91c2",
+        "405380e",
+        "0086c6b",
+        "357dd58",
+    )
+}
+TOKEN_SHIP_MEMO = (
+    "다음 배포는 월요일 예정인데 그때까지 토큰 자동 갱신 기능을 구현하는것을 목표로 하자"
+)
+
+
+def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
+    """v1.29 — UI-TXT-01 예외가 앱이 서기 전 시작 임시 화면(`scripts/container_stage.py`)을 이름으로
+    든다(판정 s-D-01 ~ 07 의 근거가 「앱 대신 뜨는 화면」 보드 답뿐이었다). UI-NTF-10 은
+    「예외: 없음」 이던 자리에 앱 밖 틀의 「한 번 눌러 통째로 고름」(보드 frame)을 든다(판정 s-A-01
+    등). 6-29 는 2026-11-14 토큰 자동 갱신 틀의 사용자 결정 한 줄 — 메모 원문 · 「답 밖 — 구현이
+    정함」 · 지금 「준비」 · 커밋을 들고, 뒤집힌 6-25 token-entry 「조사만」 은 7-1 에 남는다(6-25
+    줄은 그대로)."""
+    document = _text()
+    assert "판 v1.29" in document.split("\n## 1. ")[0]
+    assert "- **v1.29 — 2026-11-15.**" in _chapter(document, 8)
+
+    rules = {rule.id: rule for rule in _rules()}
+    txt01 = rules["UI-TXT-01"].fields["예외"][0]
+    assert "시작 임시 화면" in txt01 and "`scripts/container_stage.py`" in txt01
+    assert "p1-stage-start" in txt01 and "p2-stage-human" in txt01
+
+    ntf10 = rules["UI-NTF-10"].fields["예외"][0]
+    assert ntf10 != "없음"
+    assert "`auth/page_frame.py`" in ntf10 and "`default-src 'none'`" in ntf10
+    assert "한 번 눌러 통째로 고른다" in ntf10 and "frame" in ntf10
+    assert "`scripts/container_stage.py`" in ntf10
+
+    assert "6-29 에 있다" in _chapter(document, 1)
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-29. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-14) · ([^()]+)\)$", line)
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        assert "답 밖 — 구현이 정함" in line and f"「{TOKEN_SHIP_MEMO}」" in line, line
+        for sha in TOKEN_FRAME_1114_LINES[match.group(1)]:
+            assert f"`{sha}`" in line, (line, sha)
+    assert tuple(found) == tuple(TOKEN_FRAME_1114_LINES)
+    frame = lines[0]
+    assert "「준비」" in frame and "6-25 token-entry" in frame
+    assert "`AD-17`" in frame and "`AD-18`" in frame
+    earlier = section[section.index("\n### 6-25. ") : section.index("\n### 6-26. ")]
+    assert "REST 자동 갱신은 조사만" in earlier, "6-25 token-entry 줄은 그때 기록 그대로다"
+
+    reversed_ = _chapter(document, 7)
+    turned_lines = [line for line in reversed_.splitlines() if "REST 자동 갱신은 조사만" in line]
+    assert len(turned_lines) == 1, "7-1 에 뒤집힌 6-25 token-entry 「조사만」 줄이 하나 있다"
+    turned = turned_lines[0]
+    assert "6-25 token-entry" in turned and "6-29" in turned and TOKEN_SHIP_MEMO in turned
