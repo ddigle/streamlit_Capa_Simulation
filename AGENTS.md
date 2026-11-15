@@ -1849,7 +1849,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   환경변수와 상관없이 「결과 파일을 읽지 못함」 펼침이다(`UNREADABLE_REPORT_NOTICE` — BigDataQuery 안내도 같은 글). 회차마다 그 작은 JSON 만 읽고 DB 를 열지 않는다.
   시작 점검 관리자 알림 `AD-01`(`render_start_check_alert` — `app.py` 가 토큰 알림 앞에서 모든 화면 회차에 부른다, 2026-11-14 「앱 대신 뜨는
   화면」 보드 카드 p2-sync 「AD-01 범위를 넓힘」)은 결과 없음 · 못 읽음 · 실패한 단계(`failed_start_steps` — 토큰 줄은 `AD-10` 몫이라 뺀다)를
-  관리자 몫(`admin_view.admin_notes_visible`)에 조치 알림으로 낸다 — 지문은 (제목, 실패 단계 이름들), 「그 화면으로」 는 Admin Area. 결과 파일도
+  관리자 몫(`admin_view.admin_notes_visible`)에 조치 알림으로 낸다 — 지문은 (제목, 실패 단계 이름들), 「그 화면으로」 는 Admin Area 의 이 펼침까지(줄이 대상을 들고 가 다른 화면에서 눌려도 연다 — `open_start_check` · 알림 칸 받는 쪽 `start_check`, 설계 규칙 UI-NAV-01). 결과 파일도
   CD 전용 환경변수도 없는 프로세스(`start_check_alert_possible` — 프로세스 동안 그대로)는 Streamlit 호출이 없다. Admin 펼침은 이 알림을 따로
   내지 않는다.
   BigDataQuery 토큰 실패 관리자 알림 `AD-10`(`render_token_alert` — `app.py` 가 동기화 알림 곁에서 모든 화면 회차에 부른다, 2026-11-12 리뷰

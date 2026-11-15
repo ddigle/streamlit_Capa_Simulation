@@ -171,3 +171,27 @@ def events(app: AppTest | ElementTree, code: str) -> list[dict[str, Any]]:
         for note in alert_notes(app)
         if note.get("kind") == "event" and note.get("code") == code
     ]
+
+
+# 「그 화면으로」 누름 — 알림 칸이 그 화면에 닿은 뒤 보내는 트리거(`goto`)의 콜백
+# (`alert_center._on_goto`)을 회차 맨 앞에서 그대로 부른다. 시험 스크립트 맨 앞에 넣고, 누를 줄의
+# 대상(표지의 `target`)을 `GOTO_PRESS_KEY` 에 둔 뒤 돌린다.
+GOTO_PRESS_KEY = "test_goto_press"
+GOTO_PRELUDE = f"""
+import streamlit as _st
+from capa_simulation.components import alert_center as _alert_center
+
+_pressed = _st.session_state.pop({GOTO_PRESS_KEY!r}, None)
+if _pressed is not None:
+    _st.session_state[_alert_center.ALERT_CENTER_KEY] = {{"goto": _pressed}}
+    _alert_center._on_goto()
+"""
+
+
+def box_expanded(app: AppTest, key: str) -> bool | None:
+    """`key` 를 단 본문 펼침의 편 상태 — 아이콘이 달린 펼침을 AppTest 는 `status` 로 센다. 없으면
+    None."""
+    for element in [*app.main.expander, *app.main.status]:
+        if str(element.proto.id).rsplit("-", 1)[-1] == key:
+            return bool(element.proto.expanded)
+    return None

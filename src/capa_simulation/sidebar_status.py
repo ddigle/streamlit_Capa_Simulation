@@ -337,6 +337,14 @@ def remembered_box_key(key: str) -> str:
     return f"{key}__remembered"
 
 
+def open_remembered_box(key: str) -> None:
+    """기억 상자(`remembered_expander`)를 다음에 그릴 때 펴 둔다 — 알림 「그 화면으로」 의 받는 쪽이
+    그 화면 회차 맨 앞(콜백)에서 부른다. 제목이 판정으로 바뀌는 상자라 기억 칸의 제목은 비워 둔다 —
+    그리는 회차가 제목이 다르다고 보고 기억한 펼침(참)을 다시 놓는다."""
+    st.session_state[key] = True
+    st.session_state[remembered_box_key(key)] = (True, "")
+
+
 def sidebar_expander(
     label: str,
     *,
