@@ -26,6 +26,7 @@ from typing import Any, Final
 
 import pandas as pd
 import streamlit as st
+from streamlit.elements.lib.column_types import ColumnConfig
 
 from capa_simulation.audit import events, read, spool
 from capa_simulation.components.date_panel import date_range_field
@@ -67,6 +68,12 @@ RECORD_COLUMNS: Final = (
     "화면",
     "세션",
 )
+# 기록 표의 상세 · 세션 칸 폭(px — `record_column_config`). 왼쪽 여백 7 을 두고, 상세는 명단 판이
+# 세 자리인 줄 「등급 전 user · 등급 admin · 판 전 103 · 판 104」(글 220.2)가, 세션은 8자 세션
+# 앞머리(무작위 5,000개 가운데 가장 넓은 것 66.4)가 다 드는 폭이다(샘플 관측 — 표 글꼴 12.25px).
+# 세션은 끝 칸이라 줄이 많아 선 세로 스크롤 막대(10px)가 그 오른쪽을 덮으므로 그만큼 더 둔다.
+DETAIL_WIDTH_PX: Final = 232
+SESSION_WIDTH_PX: Final = 84
 SUMMARY_COLUMNS: Final = (
     "날짜",
     "접속자",
@@ -254,6 +261,22 @@ def record_table(lines: Sequence[Mapping[str, Any]], names: Mapping[str, str]) -
     return pd.DataFrame(rows, columns=list(RECORD_COLUMNS))
 
 
+def record_column_config() -> dict[str, ColumnConfig]:
+    """상세 · 세션 칸만 폭을 준다 — 나머지 칸은 글에 맞춘 자동 폭 그대로다.
+
+    표의 자동 폭은 앞 줄 열 개쯤만 재고 평균의 두 배가 넘는 글은 빼고 잰다. 빈 칸이 많은 상세
+    칸은 그래서 긴 글 한 줄이 머리 글 폭까지 줄어 잘린다 — 끝의 「판 n(그대로)」 표지가 먼저
+    잘린다. 폭 이름이 아니라 px 이다 — 표가 stretch 라 남는 폭은 모든 칸이 똑같이 나눠 더 받는다.
+    상세가 넓어진 만큼 그 몫이 줄어 세션 칸이 8자 세션 글보다 좁아지므로 세션 칸도 정한다(글
+    길이가 늘 같아 폭을 정해도 잘리지 않는다). 대상 칸은 정하지 않는다 — 정한 폭은 상한이기도
+    해서, 작업 줄만 있는 표에서 자동 폭이면 다 보이는 「이름 (id)」 를 자른다. 창 1283(사이드바
+    펼침)에서 가로 스크롤이 서지 않는 값이다(샘플 관측)."""
+    return {
+        "상세": st.column_config.TextColumn(width=DETAIL_WIDTH_PX),
+        "세션": st.column_config.TextColumn(width=SESSION_WIDTH_PX),
+    }
+
+
 def _kst_day(line: Mapping[str, Any]) -> date | None:
     moment = read.parse_ts(str(line.get("ts", "")))
     return None if moment is None else moment.astimezone(read.KST).date()
@@ -390,6 +413,7 @@ def render_audit_log(
     if view == VIEW_RECORDS:
         st.dataframe(
             record_table(shown, people_names(lines)),
+            column_config=record_column_config(),
             hide_index=True,
             width="stretch",
             key=TABLE_KEY,
