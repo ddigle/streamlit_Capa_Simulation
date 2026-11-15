@@ -963,6 +963,12 @@ def test_the_denied_page_opens_directly_and_says_only_the_fixed_text() -> None:
     assert web.OTHER_ACCOUNT_LABEL not in page.text
 
 
+def test_the_denied_text_names_the_list_like_the_account_line() -> None:
+    """계정을 감춘 꼴(주소만 연 사람 · 앱 안 멈춤 판)과 계정이 보이는 꼴은 같은 명단을 같은
+    이름으로 부른다 — 계정 값만 뺀 같은 글이다(설계 규칙 UI-CON-02)."""
+    assert web.DENIED_ACCOUNT_TEXT.endswith(f" — {web.NOT_ON_LIST_TEXT}")
+
+
 def test_the_denied_page_after_a_real_denial_carries_no_claim_value() -> None:
     listed_config()
     app = gated_app()
