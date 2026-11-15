@@ -697,7 +697,8 @@ def _value_html(view: StageView, now: float) -> str:
 
 
 # 문의 줄 · 참고 줄은 앱 안 멈춤 판(`components/stop_panel.py` 의 `contact_caption` ·
-# `reference_line`)과 같은 글자 꼴이다 — Streamlit 을 부르지 않아 따로 짓고 시험이 맞댄다.
+# `reference_line`)과 같은 글자 꼴이다 — Streamlit 을 부르지 않아 따로 짓고 시험이 맞댄다. 문의 줄은
+# 앱 밖 공통 틀(`auth/page_frame.contact_line`)과도 같은 글자다.
 def _contact_html(contact: StageContact) -> str:
     parts: list[str] = []
     if contact.email:
