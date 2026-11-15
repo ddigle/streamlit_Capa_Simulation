@@ -56,6 +56,8 @@ CONTACT_PREFIX = "문의"
 REFERENCE_PREFIX = "참고"
 # 회차 하나로 풀리는 판(앱 시작 실패 · 한 화면 오류)의 주 단추.
 RETRY_LABEL: Final = "다시 시도"
+# 판 아래 문의 · 참고 줄을 감싸는 칸 — 그 칸의 캡션 흐림을 걷는다(`footer_style`).
+STOP_FOOTER_KEY: Final = "capa_stop_footer"
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,15 @@ def render_contact_caption(access_contact: str = "") -> None:
         st.caption(line, unsafe_allow_html=True)
 
 
+def footer_style() -> str:
+    """판 아래 캡션(문의 · 참고 줄)의 흐림을 걷고 `TEXT_MUTED` 글자로 — 사이드바 앱 정보 카드와 같은
+    꼴. Streamlit 은 캡션 칸에 흐림 0.6 을 걸어, 그대로면 강조색 메일 링크가 밝게에서 2.5:1 로
+    흐려진다. 멈춤은 `app.py` 가 앱 서식을 보내기 전이라 판이 스스로 싣는다(스타일만 든 `st.html` 은
+    자리를 먹지 않는다)."""
+    box = f'.st-key-{STOP_FOOTER_KEY} [data-testid="stCaptionContainer"]'
+    return f"<style>{box} {{ opacity: 1; }} {box} p {{ color: {tokens.TEXT_MUTED}; }}</style>"
+
+
 def reference_line(code: str, *, now: float | None = None) -> str:
     """「참고 <사유 낱말> · <YYYY-MM-DD HH:MM> UTC」 — 관리자가 시각으로 짝을 맞춘다."""
     moment = datetime.fromtimestamp(time.time() if now is None else now, tz=timezone.utc)
@@ -185,9 +196,11 @@ def render_stop_footer(
     """판의 경고 띠 · 주 단추 아래 — 문의 줄 → 참고 줄 → (관리자 몫이면) 접힌 진단. 참고 줄 평문을
     돌려준다. 오류 종류 이름(있으면 「 · <종류>」 — 누구에게나 보이는 값, 보드 d12 (가))은 마크다운
     글자 그대로 막아 캡션에 싣는다."""
-    render_contact_caption(access_contact)
     head = reference_line(code, now=now)
-    st.caption(head if kind is None else f"{head} · {literal_markdown(kind)}")
+    with st.container(key=STOP_FOOTER_KEY):
+        st.html(footer_style())
+        render_contact_caption(access_contact)
+        st.caption(head if kind is None else f"{head} · {literal_markdown(kind)}")
     reference = head if kind is None else f"{head} · {kind}"
     if fold is not None and admin_fold_visible():
         _render_fold(fold, reference)

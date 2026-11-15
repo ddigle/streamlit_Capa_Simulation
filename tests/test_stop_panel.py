@@ -191,6 +191,37 @@ def test_every_stop_panel_stands_in_one_order(panel: str, monkeypatch: pytest.Mo
     assert f'style="color:{tokens.ACCENT}">{CONTACT}</a>' in str(contact.value)
 
 
+@pytest.mark.parametrize("panel", list(PANELS))
+def test_the_footer_lines_do_not_fade(panel: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """문의 · 참고 줄은 열쇠 붙은 칸(`STOP_FOOTER_KEY`) 안에 서고, 그 칸의 캡션은 흐림을 걷고
+    `TEXT_MUTED` 글자다 — 사이드바 앱 정보 카드와 같은 꼴. Streamlit 캡션 흐림(0.6)이 남으면 강조색
+    메일 링크가 밝게에서 2.5:1 로 흐려진다."""
+    monkeypatch.setenv(APP_CONTACT_EMAIL_ENV, CONTACT)
+    run = PANELS[panel][0]
+
+    app = run(monkeypatch)
+
+    assert not list(app.exception), [item.message for item in app.exception]
+    footer = _find_key(app.main, stop_panel.STOP_FOOTER_KEY)
+    assert footer is not None, "문의 · 참고 줄을 감싼 칸이 없다"
+    captions = [str(item.value) for item in footer.caption]
+    assert any(_glyphs(text).startswith(f"{stop_panel.CONTACT_PREFIX} ") for text in captions)
+    assert any(text.startswith(f"{stop_panel.REFERENCE_PREFIX} ") for text in captions)
+    style = stop_panel.footer_style()
+    assert "opacity: 1" in style and f"color: {tokens.TEXT_MUTED}" in style
+    assert f".st-key-{stop_panel.STOP_FOOTER_KEY}" in style
+
+
+def _find_key(node: Any, key: str) -> Any:
+    for child in getattr(node, "children", {}).values():
+        if key in str(getattr(child, "key", "") or ""):
+            return child
+        found = _find_key(child, key)
+        if found is not None:
+            return found
+    return None
+
+
 @pytest.mark.parametrize("mode", ["light", "dark"])
 def test_the_contact_mail_link_takes_the_accent_of_the_run_theme(
     mode: theme.Mode, monkeypatch: pytest.MonkeyPatch
