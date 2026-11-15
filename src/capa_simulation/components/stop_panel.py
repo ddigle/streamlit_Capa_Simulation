@@ -106,6 +106,13 @@ def contact_caption(access_contact: str = "") -> str | None:
     return f"{CONTACT_PREFIX} {' · '.join(parts)}" if parts else None
 
 
+def contact_link_style() -> str:
+    """문의 메일 링크 서식 — 그 회차 테마의 강조색 + 밑줄. 강조색과 둘레 글(`TEXT_MUTED`)의 밝기
+    대비가 1.01(밝게) · 1.48(어둡게)이라 색만으로는 링크가 갈리지 않는다(UI-ACC-03 — 앱 밖 틀 ·
+    사이드바 앱 정보 카드의 문의 링크와 같은 꼴)."""
+    return f"color:{tokens.ACCENT};text-decoration:underline"
+
+
 def contact_markup(access_contact: str = "") -> str | None:
     """문의 줄의 원문 HTML — 문단 하나(`<p>…</p>`)이고 메일은 그 회차 테마의 강조색 링크다. 둘 다
     비면 `None`.
@@ -120,7 +127,7 @@ def contact_markup(access_contact: str = "") -> str | None:
     if email:
         parts.append(
             f'<a href="mailto:{html.escape(email, quote=True)}" '
-            f'style="color:{tokens.ACCENT}">{html.escape(email, quote=False)}</a>'
+            f'style="{contact_link_style()}">{html.escape(email, quote=False)}</a>'
         )
     if text:
         parts.append(html.escape(text, quote=False))

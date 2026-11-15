@@ -374,11 +374,12 @@ def test_the_app_credits_card_is_pinned_to_the_sidebar_bottom(
         block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"]']
     )
     assert caption == ["margin-bottom: 0", "opacity: 1"]
-    # 글은 작은 보조색, 메일 링크는 두 테마 모두 토큰의 `ACCENT` 다.
+    # 글은 작은 보조색, 메일 링크는 두 테마 모두 토큰의 `ACCENT` 이고 밑줄을 든다 — `ACCENT` 와
+    # `TEXT_MUTED` 의 밝기 대비가 1.01(밝게) · 1.48(어둡게)이라 색만으로는 갈리지 않는다(UI-ACC-03).
     text = _declarations(block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] p'])
     assert f"color: {tokens.TEXT_MUTED}" in text
     link = _declarations(block, [f'.st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] a'])
-    assert link == [f"color: {tokens.ACCENT}"]
+    assert link == [f"color: {tokens.ACCENT}", "text-decoration: underline"]
 
 
 def test_the_toggle_sink_is_hidden_and_short_runs_do_not_dim_the_body() -> None:

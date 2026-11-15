@@ -188,7 +188,7 @@ def test_every_stop_panel_stands_in_one_order(panel: str, monkeypatch: pytest.Mo
         if _glyphs(str(item.value)).startswith(f"{stop_panel.CONTACT_PREFIX} ")
     ]
     assert contact.allow_html
-    assert f'style="color:{tokens.ACCENT}">{CONTACT}</a>' in str(contact.value)
+    assert f'style="{stop_panel.contact_link_style()}">{CONTACT}</a>' in str(contact.value)
 
 
 @pytest.mark.parametrize("panel", list(PANELS))
@@ -244,7 +244,7 @@ def test_the_contact_mail_link_takes_the_accent_of_the_run_theme(
     assert markup.startswith("<p>") and markup.endswith("</p>") and "\n" not in markup
     accent = tokens.palette_value(mode, "ACCENT")
     assert re.findall(r"<a\b[^>]*>", markup) == [
-        f'<a href="mailto:{CONTACT}" style="color:{accent}">'
+        f'<a href="mailto:{CONTACT}" style="color:{accent};text-decoration:underline">'
     ]
     assert "<b>" not in markup and "&lt;b&gt;*내선*&lt;/b&gt; &amp; 0000" in markup
     assert _glyphs(markup) == stop_panel.contact_caption(window)

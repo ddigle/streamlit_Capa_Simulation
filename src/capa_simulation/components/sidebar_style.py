@@ -765,9 +765,12 @@ def build_sidebar_stylesheet(
         }}"""
         # 문의처는 마크다운이 메일 링크로 만든다. 누를 수 있는 곳이라 `ACCENT` 다 — 그대로 두면
         # 어두운 테마에서 Streamlit 기본 링크색(거의 흰색)으로 떠 작은 글 가운데 혼자 튄다.
+        # `ACCENT` 와 둘레 글(`TEXT_MUTED`)의 밝기 대비가 1.01 · 1.48 이라 색만으로는 갈리지 않아
+        # 밑줄을 든다(UI-ACC-03 — 앱 설정 `linkUnderline = false` 가 걷은 밑줄을 이 링크에만).
         f"""
         .st-key-{APP_CREDITS_KEY} [data-testid="stCaptionContainer"] a {{
             color: {tokens.ACCENT};
+            text-decoration: underline;
         }}"""
         # 상자 여닫기 콜백이 다시 돌리는 빈 프래그먼트와 조건 패널 팝업 호스트 프래그먼트의 본문 칸.
         # 아무것도 그리지 않지만(팝업은 본문 밖에 선다) 칸이 서면 본문에 간격이 하나
