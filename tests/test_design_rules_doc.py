@@ -2614,6 +2614,7 @@ E2E_1115_ANSWERS = {
     "s-A-13": "두 화면 모두 작은 링크로 낮춤",
     "s-A-14": "표지를 「점검 중」 으로",
     "s-C-02": "「등록 길」 값을 「관리자가 넣음」 으로",
+    "s-B-12": "이대로",
     "s-A-01": "좋음",
 }
 # 커밋을 든 줄 — 답 앞 E2E 고침의 커밋이다.
@@ -2667,6 +2668,20 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     con02 = rules["UI-CON-02"].fields["근거"][0]
     assert "s-C-02" in con02 and "「관리자가 넣음」" in con02
     assert "s-A-01" in rules["UI-NTF-09"].fields["근거"][0]
+
+    # s-B-12 「이대로」 — 「정본 아님」 머리 표지의 모양은 4장에 확정, 머리 목록 · 예외에 이름.
+    assert "「정본 아님」 표지" in rules["UI-LAY-05"].text
+    assert "s-B-12" in rules["UI-LAY-05"].fields["근거"][0]
+    txt06 = rules["UI-TXT-06"].fields["예외"][0]
+    assert "「정본 아님」 표지" in txt06 and "s-B-12" in txt06 and "줄이지 않는다" in txt06
+    assert "「정본 아님」 표지" in rules["UI-ACC-02"].fields["예외"][0]
+    canon = next(
+        row
+        for row in _chapter(document, 4).splitlines()
+        if row.startswith("| 「정본 아님」 표지 |")
+    )
+    for phrase in ("실선", "`cloud_off`", "12px 700", "`SY-01`", "s-B-12 「이대로」"):
+        assert phrase in canon, phrase
 
     narrowed = [line for line in _chapter(document, 7).splitlines() if "s-A-13" in line]
     assert len(narrowed) == 1, "7-1 에 공통 틀 「주 단추 하나」 를 좁힌 줄이 하나 있다"
