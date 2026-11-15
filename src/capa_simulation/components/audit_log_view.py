@@ -200,12 +200,22 @@ def render_conditions(today: date) -> tuple[LogConditions, list[dict[str, Any]]]
 
 # ------------------------------------------------------------------ 표
 def detail_text(line: Mapping[str, Any]) -> str:
-    """상세 칸 — 「행 120 · 칸 3」 같은 짧은 값 글."""
+    """상세 칸 — 「행 120 · 칸 3」 같은 짧은 값 글.
+
+    명단 판(`rev_from` · `rev_to`)이 같은 줄은 쓰지 못한 실패라 「판 n(그대로)」 한 칸으로 접는다 —
+    「판 전 1 · 판 1」 이 판이 오른 줄처럼 읽히지 않게. 다른 판 칸(`version_*`)은 접지 않는다.
+    """
     det = line.get("det")
     if not isinstance(det, Mapping):
         return line.get("why", "") or ""
+    same_revision = "rev_from" in det and "rev_to" in det and det["rev_from"] == det["rev_to"]
     parts: list[str] = []
     for key, value in det.items():
+        if same_revision and key == "rev_from":
+            continue
+        if same_revision and key == "rev_to":
+            parts.append(f"{events.DET_LABELS[key]} {value}{events.SAME_REVISION_MARK}")
+            continue
         if isinstance(value, bool):
             value = events.YES_NO[value]
         elif isinstance(value, Mapping):

@@ -121,6 +121,37 @@ def test_a_put_without_an_answer_is_an_unknown_outcome(
 
     (line,) = [line for line in recorder.take_pending() if line["ev"] == "user_created"]
     assert (line["out"], line["tgt"]["id"]) == ("unknown", USER)
+    assert line["det"]["rev_to"] == line["det"]["rev_from"] + 1, "들어갔을 수 있다 — 시도한 판"
+
+
+@pytest.mark.parametrize("why", ["refused", "conflict"])
+def test_a_failed_save_leaves_the_revision_unchanged_on_every_line(
+    on: None, mock_s3: tuple[MockStore, str], why: str
+) -> None:
+    """저장소가 거절했거나(PUT 403) 그 사이 바뀌어 쓰지 않은 저장 — 명단 판은 그대로라 넣기 ·
+    빼기 · 등급 바꿈 줄 모두 판 전 = 후다(기록 보기 「판 n(그대로)」)."""
+    store, endpoint = mock_s3
+    cfg = _started(store, endpoint)
+    admin = _identity(cfg, ADMIN)
+    access_store.save_changes(cfg, admin, add=[USER, OTHER])
+    recorder.take_pending()
+    if why == "refused":
+        store.force["PUT"] = (403, "AccessDenied")
+    else:
+        store.put(names.DEFAULT_ACCESS_OBJECT, b'{"format": 1, "revision": 9, "users": []}')
+
+    with pytest.raises((s3_small.S3Failure, access_store.StoreConflictError)):
+        access_store.save_changes(
+            cfg, admin, add=["demo.third"], remove=[OTHER], grades={USER: "admin"}
+        )
+
+    lines = {line["ev"]: line for line in recorder.take_pending() if line["ev"].startswith("user_")}
+    assert sorted(lines) == ["user_created", "user_deleted", "user_grade_changed"]
+    for line in lines.values():
+        assert line["out"] == "fail", line
+        assert line["det"]["rev_to"] == line["det"]["rev_from"] == 1, line
+    grade = lines["user_grade_changed"]["det"]
+    assert (grade["grade_from"], grade["grade_to"]) == ("user", "admin"), "시도한 등급은 그대로"
 
 
 TOKEN_SCRIPT = """

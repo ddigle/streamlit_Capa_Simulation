@@ -138,6 +138,25 @@ def code_of(response: AsgiResponse) -> str:
     return parse_qs(urlsplit(response.header("location") or "").query)["code"][0]
 
 
+def chip_of(page: AsgiResponse) -> tuple[str, str]:
+    """머리 표지 — (색 역할 키, 낱말)."""
+    found = re.search(
+        r'<span class="chip" style="color: var\(--chip-(\w+)\)">([^<]+)</span>', page.text
+    )
+    assert found is not None, "표지가 있다"
+    return found[1], found[2]
+
+
+def actions(page: AsgiResponse) -> list[tuple[str, bool]]:
+    """단추 줄의 링크 · 단추 — (이름, 주 단추인가) 를 차례대로."""
+    block = re.search(r'<div class="actions">(.*?)</div>', page.text, re.S)
+    assert block is not None, "단추 줄이 있다"
+    return [
+        (label, 'class="button"' in attrs)
+        for attrs, label in re.findall(r"<(?:a|button)([^>]*)>([^<]+)</(?:a|button)>", block[1])
+    ]
+
+
 # --- 거절 표 --------------------------------------------------------------------------------------
 
 
@@ -412,6 +431,24 @@ def test_without_the_s3_list_there_is_no_button_but_a_note(
     note = re.search(r'<pre class="pick">(.*?)</pre>', page.text, re.S)
     assert note is not None and NEWCOMER in note.group(1) and "새 사람" in note.group(1)
     assert 'href="mailto:capa-help@example.invalid"' in page.text and "CAPA 창구" in page.text
+    assert actions(page) == [(web.CHECK_AGAIN_LABEL, False)], "다시 해도 같은 화면 — 작은 링크"
+
+
+def test_without_the_s3_list_both_ways_out_are_small_links() -> None:
+    """명단 파일을 쓰지 않는 서버의 거절 — 「다시 확인」 · 「다른 계정으로 로그인」 둘 다 보조
+    링크이고 할 일의 중심은 신청 글 · 문의 줄이다(E2E 보드 s-A-13 link). 「다시 확인」 은 처음
+    가려던 화면으로 간다."""
+    use_config(
+        {names.ENV_ACCESS_ADMINS: ADMIN, names.ENV_LOGOUT_URL: "https://idp.example.invalid/out"}
+    )
+    app = gated_app()
+    jar: dict[str, str] = {}
+
+    page = denied(app, jar, NEWCOMER)
+
+    assert actions(page) == [(web.CHECK_AGAIN_LABEL, False), (web.OTHER_ACCOUNT_LABEL, False)]
+    again = re.search(rf'<a href="([^"]+)">{web.CHECK_AGAIN_LABEL}</a>', page.text)
+    assert again is not None and names.LOGIN_PATH in unquote(again[1])
 
 
 def test_a_failed_save_shows_the_note_instead(mock_s3: tuple[MockStore, str]) -> None:
@@ -427,7 +464,9 @@ def test_a_failed_save_shows_the_note_instead(mock_s3: tuple[MockStore, str]) ->
 
     assert code_of(pressed) == web.REGISTER_FAILED
     assert page.status == 403 and web.REGISTER_FAILED_TITLE in page.text
-    assert page_frame.CHIP_WORDS["retry"] in page.text
+    # 명단을 읽지 못한 화면과 같은 서버 쪽 문제 — 같은 표지 낱말 · 색(보드 s-A-14).
+    assert chip_of(page) == ("maintenance", page_frame.CHIP_WORDS["maintenance"])
+    assert page_frame.CHIP_WORDS["retry"] not in page.text
     assert "<form" not in page.text and '<pre class="pick">' in page.text
     assert NEWCOMER not in stored_users(store)
 
@@ -452,10 +491,13 @@ def test_an_unread_list_shows_maintenance_without_a_button(
 
     assert page.status == 403
     assert web.LIST_UNREAD_TITLE in page.text and text in page.text
-    assert page_frame.CHIP_WORDS["maintenance"] in page.text
+    assert chip_of(page) == ("maintenance", page_frame.CHIP_WORDS["maintenance"])
     assert web.REGISTER_LABEL not in page.text and "<form" not in page.text
     assert "1분 뒤" in page.text if text == web.LIST_UNREAD_WAIT_TEXT else "1분 뒤" not in page.text
     assert '<pre class="pick">' not in page.text, "표가 있어도 신청 글 상자 없음"
+    # 다시 하면 풀릴 수 있는 「1분 뒤」 는 큰 단추, 관리자가 고칠 쪽은 작은 링크(보드 s-A-13).
+    waiting = text == web.LIST_UNREAD_WAIT_TEXT
+    assert actions(page) == [(web.CHECK_AGAIN_LABEL, waiting)]
     pressed = press(app, jar, {"t": "x" * 32})
     assert pressed.status == 403
     assert OBJECT not in store.objects

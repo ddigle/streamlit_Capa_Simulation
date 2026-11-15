@@ -1020,24 +1020,19 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
     other = _other_account(cfg)
     if access_store.can_register(cfg):
         steps = (DENIED_REGISTER_STEP, *((DENIED_OTHER_STEP,) if other else ()))
-        primary: Link | Form = Form(
+        primary: Form | None = Form(
             REGISTER_LABEL,
             public_link(cfg, names.REGISTER_PATH),
             (("t", denied_form_mark(cfg, ticket.jti)),),
         )
         note = ""
     else:
+        # 명단 파일을 쓰지 않는 서버 — 관리자가 명단을 고치기 전에는 「다시 확인」 이 같은 화면이라
+        # 주 단추 없이 보조 링크다(보드 s-A-13). 할 일의 중심은 신청 글 · 문의 줄이다.
         steps = (_reachable(cfg, SEND_NOTE_STEP), *((DENIED_OTHER_STEP,) if other else ()))
-        primary = _login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path)
+        primary = None
         note = _note(ticket, NOT_ON_LIST, now)
-    secondary = (
-        other
-        if isinstance(primary, Link)
-        else (
-            _login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path),
-            *other,
-        )
-    )
+    secondary = (_login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path), *other)
     return Frame(
         title=NOT_ON_LIST_TITLE,
         chip="denied",
@@ -1058,20 +1053,23 @@ def not_on_list_frame(cfg: SsoConfig, ticket: DeniedClaims | None, now: int) -> 
 def list_unread_frame(cfg: SsoConfig, ticket: DeniedClaims | None) -> Frame:
     """명단을 한 번도 읽지 못함 — 권한 문제가 아니다. 잠시 뒤 풀리는 때와 관리자가 고칠 때를
     가른다. 신청 글 상자 없이 문의 줄만이다 — 그 글의 머리 「접속 권한」 이 「권한 문제가
-    아닙니다」 와 부딪힌다. 거절 표는 「다시 확인」 이 돌아갈 화면만 준다."""
+    아닙니다」 와 부딪힌다. 거절 표는 「다시 확인」 이 돌아갈 화면만 준다. 「다시 확인」 은 잠시
+    뒤 풀릴 수 있을 때만 주 단추이고, 관리자가 고칠 때는 다시 해도 같은 화면이라 보조 링크다
+    (로그인 설정 문제 화면과 같은 꼴 — 보드 s-A-13)."""
     needs_admin = access_store.unread_needs_admin(cfg)
     text, step = (
         (LIST_UNREAD_ADMIN_TEXT, LIST_UNREAD_ADMIN_STEP)
         if needs_admin
         else (LIST_UNREAD_WAIT_TEXT, LIST_UNREAD_WAIT_STEP)
     )
+    again = _login_link(cfg, CHECK_AGAIN_LABEL, "/" if ticket is None else ticket.next_path)
     return Frame(
         title=LIST_UNREAD_TITLE,
         chip="maintenance",
         lead=(text,),
         steps=(_reachable(cfg, step),),
-        primary=_login_link(cfg, CHECK_AGAIN_LABEL, "/" if ticket is None else ticket.next_path),
-        secondary=_other_account(cfg),
+        primary=None if needs_admin else again,
+        secondary=((again,) if needs_admin else ()) + _other_account(cfg),
         reference=LIST_UNREAD,
         contact_email=_contact_email(),
         contact_text=cfg.access.contact,
@@ -1093,10 +1091,11 @@ def registered_frame(cfg: SsoConfig, ticket: DeniedClaims) -> Frame:
 
 
 def register_failed_frame(cfg: SsoConfig, ticket: DeniedClaims, now: int) -> Frame:
-    """저장 실패 — 단추 대신 미리 채운 신청 글과 문의 줄(보드 D6)."""
+    """저장 실패 — 단추 대신 미리 채운 신청 글과 문의 줄(보드 D6). 표지는 명단을 읽지 못한 화면과
+    같은 서버 쪽 문제라 「점검 중」 이다 — 할 일이 「문의처로 글 보내기」 라(E2E 보드 s-A-14)."""
     return Frame(
         title=REGISTER_FAILED_TITLE,
-        chip="retry",
+        chip="maintenance",
         lead=(REGISTER_FAILED_TEXT,),
         steps=(_reachable(cfg, SEND_NOTE_STEP),),
         primary=_login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path),

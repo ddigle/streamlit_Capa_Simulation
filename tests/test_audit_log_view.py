@@ -142,6 +142,28 @@ def test_every_detail_key_has_a_korean_label_and_flags_read_in_korean() -> None:
     assert view.detail_text(voc) == "지움 아니오"
 
 
+@pytest.mark.parametrize(
+    ("det", "shown"),
+    [
+        ({"rev_from": 1, "rev_to": 2}, "판 전 1 · 판 2"),
+        ({"rev_from": 1, "rev_to": 1}, "판 1(그대로)"),
+        (
+            {"grade_from": "user", "grade_to": "admin", "rev_from": 3, "rev_to": 3},
+            "등급 전 user · 등급 admin · 판 3(그대로)",
+        ),
+        ({"count": 2, "rev_from": 4, "rev_to": 5}, "수 2 · 판 전 4 · 판 5"),
+        ({"rev_from": 4}, "판 전 4"),
+        ({"version_from": 3, "version_to": 3}, "판 전 3 · 판 3"),
+    ],
+)
+def test_a_failed_list_line_reads_as_the_same_revision(det: dict[str, Any], shown: str) -> None:
+    """명단 판(`rev_*`)이 전 = 후인 줄(쓰지 못한 실패)은 「판 n(그대로)」 한 칸이다 — 판이 오른
+    것처럼 읽히지 않게. 오른 줄 · 다른 판 칸(`version_*`)은 그대로 둘 다 보인다."""
+    line = _line("2026-11-13T00:13:00.000Z", "user_created", det=det)
+
+    assert view.detail_text(line) == shown
+
+
 def test_the_record_table_is_newest_first_with_names_targets_and_details() -> None:
     frame = view.record_table(LINES, view.people_names(LINES))
 

@@ -222,6 +222,8 @@ DET_LABELS: Final[Mapping[str, str]] = {
 }
 # 참 · 거짓 값의 표시(상세 칸).
 YES_NO: Final[Mapping[bool, str]] = {True: "예", False: "아니오"}
+# 명단 판 전 = 후인 줄(쓰지 못한 실패)의 표시 — 두 칸 대신 「판 n(그대로)」 한 칸(상세 칸).
+SAME_REVISION_MARK: Final = "(그대로)"
 
 
 def spec_of(name: str) -> EventSpec | None:
