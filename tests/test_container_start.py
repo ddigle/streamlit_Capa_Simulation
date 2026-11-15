@@ -20,6 +20,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -1626,8 +1627,9 @@ def test_an_old_refresh_token_file_is_removed_at_every_start(place: Path, switch
 def test_an_old_refresh_token_file_that_cannot_be_removed_says_so_in_one_line(
     place: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """지우지 못하면(그 자리가 폴더 · 권한) 까닭 한 줄이 진행 줄 · 결과 파일에 남고 다른 단계는
-    그대로 돈다."""
+    """지우지 못하면(그 자리가 폴더 · 권한) 까닭 한 줄(종류 이름만)이 진행 줄 · 결과 파일에 남고
+    다른 단계는 그대로 돈다. 폴더를 지우려 할 때의 종류는 OS 마다 다르다(Linux `IsADirectoryError`
+    · Windows · macOS `PermissionError`)."""
     credentials = _credentials(place)
     stuck = credentials / f"capa-bdq-refresh.{FAKE_BDQ_USER}"
     (stuck / "inside").mkdir(parents=True)
@@ -1635,17 +1637,17 @@ def test_an_old_refresh_token_file_that_cannot_be_removed_says_so_in_one_line(
     report, _ = _main(place, ALL_ENVIRONMENT, FakeRunner([_probe("ok", "9.9.9")]))
 
     refresh = _refresh(report)
-    assert refresh["leftover"] == "옛 갱신 토큰 파일을 지우지 못함(IsADirectoryError)"
+    leftover = str(refresh["leftover"])
+    assert re.fullmatch(
+        r"옛 갱신 토큰 파일을 지우지 못함\((IsADirectory|Permission)Error\)", leftover
+    )
     assert (refresh["mode"], refresh["reason"], refresh["failed"]) == ("off", "켜지 않음", False)
     assert _steps(report)[report_contract.STEP_TOKEN]["reason"] == "토큰 파일을 씀"
     output = capsys.readouterr().out
-    assert (
-        "토큰 자동 갱신 — 꺼짐: 켜지 않음 · 옛 갱신 토큰 파일을 지우지 못함(IsADirectoryError)"
-        in output
-    )
+    assert f"토큰 자동 갱신 — 꺼짐: 켜지 않음 · {leftover}" in output
     parsed = report_contract.parse_report(report)
     assert parsed is not None and parsed.refresh is not None
-    assert parsed.refresh.leftover == refresh["leftover"]
+    assert parsed.refresh.leftover == leftover
 
 
 def test_a_refresh_token_left_in_the_table_reaches_neither_the_app_nor_any_output(

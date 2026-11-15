@@ -2603,7 +2603,7 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
     assert "6-25 token-entry" in turned and "6-29" in turned and TOKEN_SHIP_MEMO in turned
 
 
-TOKEN_RENEW_1115_LINES = {"token-renew-input": ("6dde83a", "6430f3b")}
+TOKEN_RENEW_1115_LINES = {"token-renew-input": ("6dde83a", "6430f3b", "94a4977")}
 TOKEN_RENEW_MEMO = (
     "일단 내가 인지하고있는건 3개월짜리를 받는 방법은 특수한 케이스고, 우리는 8시간짜리 토큰을 "
     "6시간마다 갱신하는 방향으로 가는게 좋을것같음. 내일 토큰 갱신하는 명령어 전달해주겠음"
