@@ -1019,6 +1019,31 @@ def test_the_page_carries_the_frame_parts_and_both_themes(
     assert "#f7f8fa" not in page
 
 
+def _body_rule(css: str) -> dict[str, str]:
+    """맨 앞 `body { … }` 규칙의 선언(이름 → 값)."""
+    found = re.search(r"(?m)^body \{([^}]*)\}", css)
+    assert found is not None
+    return dict(re.findall(r"([a-z-]+):\s*([^;]+);", found.group(1)))
+
+
+def test_the_page_breaks_only_between_words_like_the_login_frame() -> None:
+    """좁은 창(390)에서 「시작하지 못했습니 / 다」 처럼 한국어 낱말을 가운데서 가르지 않는다 — 띄어
+    쓰기에서만 줄을 바꾸고 띄어쓰기 없는 긴 메일 · 주소만 아무 데서나 접는다. 앱 밖 화면 묶음
+    (로그인 화면 틀 · 열어 둔 탭의 띠 — `tests/test_sso_reconnect.py`)과 같은 두 선언이고, 본문
+    규칙에 두어 제목 · 까닭 · 노트 · 잃은 신청 줄 · 펼친 진단이 모두 물려받는다(UI-ACC-02)."""
+    from capa_simulation.auth import page_frame
+
+    frame_page = page_frame.render(
+        page_frame.Frame(title="t", chip=None, lead=(), primary=page_frame.Link("a", "/")), now=0
+    )
+    stage_body = _body_rule(container_stage.page_css())
+    frame_body = _body_rule(frame_page.split("<style>", 1)[1].split("</style>", 1)[0])
+
+    for name, value in (("word-break", "keep-all"), ("overflow-wrap", "anywhere")):
+        assert stage_body.get(name) == value, name
+        assert frame_body.get(name) == value, name
+
+
 # --------------------------------------------------------------------------- 사람이 고쳐야 풀림
 @pytest.mark.parametrize(
     ("kind", "title"),

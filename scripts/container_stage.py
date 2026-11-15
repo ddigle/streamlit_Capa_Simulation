@@ -17,7 +17,8 @@ Management」 · 상태 표지(낱말 + 색) · 제목 · 까닭 · 단계 줄 �
 로그인 화면 틀(`auth/page_frame.py` 의 `CHIP_WORDS` · `CHIP_ROLES`)과 한 표다 — 그 표를
 불러 쓴다. 포트를 잡는 첫 순간이라 Streamlit · `design.tokens` 를 불러오지 않는다
 (`page_frame` 도 tokens 를 그릴 때만 부른다) — 두 팔레트는 상수(`PALETTES`)이고 시험이 토큰과
-맞댄다. 밝게 · 어둡게는 `prefers-color-scheme` 로 고른다(앱 테마를 모르는 화면).
+맞댄다. 밝게 · 어둡게는 `prefers-color-scheme` 로 고른다(앱 테마를 모르는 화면). 글은 틀처럼
+띄어쓰기에서만 줄을 바꾸고(`word-break: keep-all`) 띄어쓰기 없는 긴 메일 · 주소만 접는다.
 
 **한 상태 → 한 보기.** 시작 스크립트는 단계 · 받기 시도 · 실패만 알리고(`Stage.begin` ·
 `step` · `attempt` · `fail`), 보이는 글은 순수 함수 `stage_view` 하나가 정한다 — 쪽
@@ -275,7 +276,7 @@ _CSS_BODY: Final = """
 html, body { margin: 0; }
 body { min-height: 100vh; display: flex; justify-content: center; align-items: flex-start;
   padding: 48px 16px; background: var(--bg); color: var(--fg); font-family: var(--font);
-  line-height: 1.6; }
+  line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
 main { width: 100%; max-width: 640px; background: var(--card); border: 1px solid var(--line);
   border-top: 4px solid var(--accent); border-radius: 12px; padding: 24px 28px; }
 .brand { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; }
