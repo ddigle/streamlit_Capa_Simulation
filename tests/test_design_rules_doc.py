@@ -2611,6 +2611,7 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
 E2E_1115_ADDRESS = "https://claude.ai/artifact/RXJnm5dTtyADFK5gHXeWUL"
 E2E_1115_ANSWERS = {
     "q-self-fail-rev": "실패 줄은 「판 1(그대로)」 로",
+    "q-narrow-admin": "다음 판에 고침",
     "s-A-13": "두 화면 모두 작은 링크로 낮춤",
     "s-A-14": "표지를 「점검 중」 으로",
     "s-C-02": "「등록 길」 값을 「관리자가 넣음」 으로",
@@ -2629,15 +2630,24 @@ E2E_1115_COMMITS: dict[str, tuple[str, ...]] = {
 }
 # 월요일 배포 전에 같은 답을 입히는 코드 갈래가 고치는 줄.
 E2E_1115_CODE_LANE = ("q-self-fail-rev", "s-A-13", "s-A-14", "s-C-02")
+# q-narrow-admin 「다음 판에 고침」 이 남긴 TODO 2장 할 일의 첫 구절(다른 문서가 이 구절로 찾는다).
+E2E_1115_NARROW_TODO = (
+    "좁은 창(390)에서 낱말 단위 줄바꿈을 앱 안 카드(모듈 오류 카드 머리 줄) · Admin Area 탭 줄 · "
+    "로그인 전 실패 표 · Alarm 줄 · 알림창 글로 넓힘 — "
+    "2026-11-15 E2E 보드 q-narrow-admin 답 「다음 판」"
+)
 
 
 def test_the_e2e_1115_board_answers_are_recorded() -> None:
-    """v1.30 — 6-30 은 E2E 그림 검수 보드 카드가 보드 차례대로 한 줄씩이고 고른 글은 선택지
-    라벨이다. 모두 카드 권장이고 권장과 다른 답이 없다. 고칠 것 넷은 코드 갈래 몫이라 커밋이
-    없다. 답이 걸린 규칙은 근거 줄에 카드 id 를 든다 — 실패한 쓰기 · 엇갈린 표지(UI-DAT-11),
-    「관리자」 한 낱말 두 뜻(UI-CON-02), 누르기 전에 보이는 되돌릴 수 없는 저장(UI-NTF-09). 공통
-    틀 「주 단추 하나」 를 다시 해도 같은 화면에서 좁힌 것은 7-1 에 남는다. 6-29 줄은 그 답 밖
-    값을 받은 구절만 더했다(앞 시험이 6-30 앞에서 끊어 본다)."""
+    """v1.30 — 6-30 은 E2E 그림 검수 보드 카드가 보드 차례대로 한 줄씩(정한 것 한 장은 점마다
+    한 줄 — 열셋)이고 고른 글은 선택지 라벨이다. 모두 카드 권장이고 권장과 다른 답이 없으며 메모는
+    규칙 판정 목록 하나다. 고칠 것 넷은 코드 갈래 몫이라 커밋이 없고, 커밋은 정한 것 셋(답 앞 E2E
+    고침)만 든다. 답이 걸린 규칙은 글 · 예외 · 근거 줄에 카드 id 를 든다 — 실패한 쓰기 · 엇갈린
+    표지(UI-DAT-11), 「관리자」 한 낱말 두 뜻(UI-CON-02), 누르기 전에 보이는 저장(UI-NTF-09),
+    「정본 아님」 표지(UI-LAY-05 · UI-TXT-06 · UI-ACC-02 · 4장), 갱신 토큰 80일(4장), 「토큰 자동
+    갱신」 줄 낱말(UI-CON-02 · UI-DAT-11 예외), 배지 정확성(UI-PRF-01 예외), 판정 목록 보고
+    꼴(PRC-07). 공통 틀 「주 단추 하나」 를 좁힌 것은 7-1 에, 다음 판 할 일은 TODO 2장에 있다.
+    6-28 · 6-29 줄은 받은 답 구절만 더했다(앞 시험들이 저마다 다음 절 앞에서 끊어 본다)."""
     document = _text()
     assert "판 v1.30" in document.split("\n## 1. ")[0]
     assert "- **v1.30 — 2026-11-15.**" in _chapter(document, 8)
@@ -2720,6 +2730,12 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
         in prf01.fields["그물"][0]
     )
     assert "decided-e2e 2 · 3" in dat11
+
+    # q-narrow-admin 「다음 판에 고침」 — TODO 2장 열린 할 일 · 3장 결정 기록 줄을 가리킨다.
+    todo = (PROJECT_ROOT / "docs/TODO.md").read_text(encoding="utf-8")
+    assert f"- [ ] **{E2E_1115_NARROW_TODO}**" in todo
+    assert "「좁은 창(390)에서 낱말 단위 줄바꿈을 …」" in by_id["q-narrow-admin"]
+    assert f"`{E2E_1115_ADDRESS}` — 규칙집 6-30 · v1.30" in todo
 
     # rule-list 메모 「오케이」 — 규칙 안 화면은 판정 목록으로만 보고하는 꼴을 받았다.
     prc07 = rules["PRC-07"].fields["근거"][0]
