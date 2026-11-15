@@ -2432,13 +2432,15 @@ MONDAY_1114_COMMITS = {
     "decided-login-7": ("eca1b21", "cfe84e7"),
     "decided-login-8": ("7806a60",),
 }
-# 보드에 올리지 않고 구현이 좁게 정한 것 — 절 끝 표의 줄 이름.
+# 보드에 올리지 않고 구현이 좁게 정한 것 — 절 끝 표의 줄 이름. 뒤의 줄은 2026-11-15 E2E 그림
+# 보드 규칙 판정(PRC-07)이 「표에 없는 구현의 좁은 결정」 으로 찾아 v1.29 에 더한 것이다.
 MONDAY_1114_NARROW = (
     "register-label",
     "login-fail-kinds",
     "loop-time",
     "config-fold",
     "official-narrow",
+    "boot-contact",
 )
 
 
@@ -2446,8 +2448,8 @@ def test_the_monday_1114_board_answers_are_recorded() -> None:
     """v1.27 — 6-27 은 「월요일 배포 앞」 물음 보드 카드 아홉이 보드 차례대로이고, 정한 것
     두 장은 점마다 한 줄이라 스물아홉 줄이다. 고른 글은 선택지 라벨(정한 것은 「좋음」)이고
     모두 카드 권장 · 메모 없음이다. 고친 줄만 커밋을 든다. 끝 표는 보드에 올리지 않고 구현이
-    정한 다섯 줄이다. 6-26 줄은 그때 기록 그대로다(앞 시험이 6-27 앞에서 끊어 본다). 6-28 은 뒤
-    시험이 본다."""
+    정한 줄이다(갈래 결과 다섯 · v1.29 에 E2E 규칙 판정이 찾은 것). 6-26 줄은 그때 기록
+    그대로다(앞 시험이 6-27 앞에서 끊어 본다). 6-28 은 뒤 시험이 본다."""
     document = _text()
     assert "- **v1.27 — 2026-11-14.**" in _chapter(document, 8)
     assert "6-27 에 있다" in _chapter(document, 1)
