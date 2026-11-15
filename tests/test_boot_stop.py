@@ -312,7 +312,10 @@ def test_a_locked_database_shows_a_plain_line_a_retry_and_folds_the_details(
     [retry] = app.button
     assert (retry.label, retry.key) == (stop_panel.RETRY_LABEL, boot_stop.RETRY_KEY)
     captions = [str(item.value) for item in app.caption]
-    assert captions[0] == "문의 help@example.com"
+    # 문의 줄은 원문 HTML 캡션(메일은 강조색 링크 — `tests/test_stop_panel.py`)이고 보이는 글은
+    # 메일만이다.
+    assert captions[0] == stop_panel.contact_markup()
+    assert stop_panel.contact_caption() == "문의 help@example.com"
     assert re.fullmatch(
         r"참고 db_locked · \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC · IOException", captions[1]
     )

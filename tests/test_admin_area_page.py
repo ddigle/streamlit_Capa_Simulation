@@ -1008,7 +1008,10 @@ def test_the_server_start_check_shows_the_container_report(tmp_path: Path) -> No
     assert "pip 종료 코드 1" in steps.value["까닭"].iloc[0]
     # 옛 결과 파일에는 통합인증 칸이 없어 그 캡션도 없다.
     assert not [c.value for c in app.caption if "시작 때 있던 통합인증" in c.value]
-    assert any("No matching distribution" in block.value for block in app.code)
+    # pip 출력 끝은 접힌 진단(복사 단추)의 평문 칸이라 사내 보고 창(1283)에서도 줄을 꺾는다 — 앱 안
+    # 멈춤 판의 접힌 진단 · 모듈 오류 카드와 같은 꼴(설계 규칙 UI-CON-04).
+    pip = [block for block in app.code if "No matching distribution" in block.value]
+    assert pip and all(block.proto.wrap_lines for block in pip)
     assert any("fa\\*\\*\\*" in caption.value for caption in app.caption)
     # 실패한 단계(설치)는 관리자 몫 상태 알림이다 — 로그인 토큰 줄은 `AD-10` 몫이라 넣지 않는다.
     note = active_state(app, "AD-01")

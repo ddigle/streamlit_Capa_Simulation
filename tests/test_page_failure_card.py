@@ -61,7 +61,8 @@ def test_an_unhandled_error_becomes_a_card_with_a_reference_number(
     [retry] = app.button
     assert (retry.label, retry.key) == (stop_panel.RETRY_LABEL, page_failure_card.RETRY_KEY)
     captions = [str(item.value) for item in app.caption]
-    assert captions[0] == "문의 demo@example.com"
+    assert captions[0] == stop_panel.contact_markup()
+    assert stop_panel.contact_caption() == "문의 demo@example.com"
     assert re.fullmatch(
         rf"참고 {failure.ref} · \d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}} UTC · AttributeError",
         captions[1],
