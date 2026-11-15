@@ -168,6 +168,27 @@ def test_an_unknown_failure_word_never_reaches_the_screen(
     assert FAILURE_LABELS["other"] in _ask(port, "GET", "/")[2].decode("utf-8")
 
 
+def test_a_failure_of_unknown_cause_does_not_say_the_store_was_not_reached(
+    stage: tuple[container_stage.Stage, int],
+) -> None:
+    """원인을 모르는 실패(`other` — 알아보지 못한 aws 오류 · 로컬 OSError · 시작 줄을 읽지
+    못함)는 제목 · 상태 줄 · 열어 둔 탭의 띠 어디에도 「저장소에 잠시 닿지 못함」 을 말하지 않는다
+    — 닿지 못함 · 시간 초과일 때만 그 말이다(UI-DAT-11)."""
+    opened, port = stage
+
+    opened.fail(1, "other", wait_seconds=5)
+    other = _status(port)
+    other_page = _ask(port, "GET", "/")[2].decode("utf-8")
+    opened.fail(2, "unreachable", wait_seconds=5)
+    reached = _status(port)
+
+    assert other[0] == container_stage.TITLE_TRANSIENT_UNKNOWN == "데이터를 잠시 받지 못했습니다"
+    assert json.loads(other[2])["band"] == "데이터를 잠시 받지 못함 · 다시 시도 중"
+    assert "닿지 못" not in other_page.split("<script", 1)[0]
+    assert reached[0] == container_stage.TITLE_TRANSIENT == "저장소에 잠시 닿지 못했습니다"
+    assert json.loads(reached[2])["band"] == "저장소에 잠시 닿지 못함 · 다시 시도 중"
+
+
 def test_no_value_from_the_environment_is_on_the_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -637,6 +658,45 @@ def test_a_retry_that_is_pulling_shows_the_clock_and_the_pull_notes() -> None:
     assert again.notes == (container_stage.NOTE_MINUTES, container_stage.NOTE_NO_CICD)
     assert again.band == "데이터 받는 중 · 3번째 받기"
     assert waiting.notes == () and waiting.band == "저장소에 잠시 닿지 못함 · 다시 시도 중"
+
+
+# 「다시 시도」 판으로 오는 갈래 — 원격이 비어 있음 · 사람 갈래가 아닌 낱말 표의 키 전부.
+RETRY_KINDS = sorted(kind for kind in FAILURE_LABELS if container_stage.retry_kind(kind))
+
+
+@pytest.mark.parametrize("kind", RETRY_KINDS)
+def test_only_a_store_not_reached_is_titled_so(kind: str) -> None:
+    """표지는 일어난 것만 말한다(UI-DAT-11) — 「저장소에 잠시 닿지 못했습니다」 · 띠 「저장소에
+    잠시 닿지 못함 · …」 는 닿지 못함 · 시간 초과(닿지 못함의 한 꼴)일 때만이다. 원인을 모르는
+    실패(`other`)와 그 밖에 이 판으로 오는 갈래는 원인을 말하지 않는 「데이터를 잠시 받지
+    못했습니다」 · 「데이터를 잠시 받지 못함 · 다시 시도 중」 이고, 표지 · 까닭 · 10분 문의 줄 ·
+    값 줄 · 진단 할 일은 같다(제목 낱말은 같은 화면의 「데이터를 받는 중입니다」 · 「데이터를
+    처음 올리는 중입니다」 와 짝)."""
+    state = _state(attempt=2, kind=kind, failed_at=1100.0, failing_since=1000.0, next_at=1112.0)
+    view = container_stage.stage_view(state)
+    reached_view = container_stage.stage_view(replace(state, kind="unreachable"))
+    reached = kind in ("unreachable", "timeout")
+
+    assert view.title == (
+        "저장소에 잠시 닿지 못했습니다" if reached else "데이터를 잠시 받지 못했습니다"
+    )
+    assert view.band == (
+        "저장소에 잠시 닿지 못함 · 다시 시도 중"
+        if reached
+        else "데이터를 잠시 받지 못함 · 다시 시도 중"
+    )
+    assert (view.tone, view.chip) == ("retry", container_stage.CHIP_RETRY)
+    assert view.reasons == (container_stage.REASON_TRANSIENT,)
+    assert (view.late_note, view.late_after) == (container_stage.NOTE_LONG_RETRY, 1600.0)
+    assert container_stage.value_text(view, 1100.0) == "다음 시도 12초 뒤"
+    assert view.diagnostics[1:] == reached_view.diagnostics[1:]
+    assert view.diagnostics[0] == FAILURE_LABELS[kind]
+
+
+def test_the_retry_screen_takes_the_store_pair_and_the_unknown_cause() -> None:
+    """닿지 못함 · 시간 초과 · 원인 모름은 늘 「다시 시도」 판이다 — 갈래 표가 바뀌어 빠지면 위
+    시험이 그 갈래를 보지 않게 되므로 여기서 잡는다."""
+    assert {"unreachable", "timeout", "other"} <= set(RETRY_KINDS)
 
 
 def test_the_ten_minute_line_counts_only_the_unbroken_retry_run(

@@ -87,6 +87,8 @@ from capa_simulation.services.object_storage_manifest import (
     FAILURE_OTHER,
     FAILURE_REMOTE_EMPTY,
     FAILURE_SCHEMA_NEWER,
+    FAILURE_TIMEOUT,
+    FAILURE_UNREACHABLE,
 )
 from capa_simulation.settings import APP_LABEL, APP_SUBTITLE, app_contact_email
 
@@ -134,6 +136,13 @@ TITLE_STARTING: Final = "앱을 시작하는 중입니다"
 TITLE_PULLING: Final = "데이터를 받는 중입니다"
 TITLE_REMOTE_EMPTY: Final = "데이터를 처음 올리는 중입니다"
 TITLE_TRANSIENT: Final = "저장소에 잠시 닿지 못했습니다"
+# 「다시 시도」 판의 제목 · 열어 둔 탭의 띠 글은 저장소에 닿지 못함 · 시간 초과일 때만 그
+# 원인을 말하고, 원인을 모르는 실패(`other` 등)는 원인을 말하지 않는다 — 표지 · 까닭 · 값 줄은
+# 같다.
+STORE_NOT_REACHED: Final = (FAILURE_UNREACHABLE, FAILURE_TIMEOUT)
+TITLE_TRANSIENT_UNKNOWN: Final = "데이터를 잠시 받지 못했습니다"
+BAND_TRANSIENT: Final = "저장소에 잠시 닿지 못함 · 다시 시도 중"
+BAND_TRANSIENT_UNKNOWN: Final = "데이터를 잠시 받지 못함 · 다시 시도 중"
 NOTE_AUTO: Final = "끝나면 저절로 앱으로 넘어갑니다."
 NOTE_MINUTES: Final = "몇 분 걸릴 수 있습니다."
 NOTE_NO_CICD: Final = "받는 동안 CI/CD 를 다시 누르면 받기가 처음부터 다시 시작됩니다."
@@ -545,15 +554,19 @@ def _remote_empty_view(state: StageState) -> StageView:
 
 
 def retry_kind(kind: str) -> bool:
-    """잠시 닿지 못함 갈래인가 — 원격이 비어 있음 · 사람이 고쳐야 풀리는 갈래가 아닌 실패."""
+    """「다시 시도」 갈래인가 — 원격이 비어 있음 · 사람이 고쳐야 풀리는 갈래가 아닌 실패(닿지 못함 ·
+    시간 초과 · 원인 모름)."""
     return kind != FAILURE_REMOTE_EMPTY and kind not in HUMAN_SCREENS
 
 
 def _retry_view(state: StageState) -> StageView:
-    """잠시 닿지 못함. 다시 받기가 도는 동안은 값 줄이 「n번째 받는 중 · 지난 시간」 으로 흐르고
-    첫 받기의 두 노트가 선다 — 정상으로 받는 몇 분이 멈춘 것처럼 보이지 않게."""
+    """잠시 닿지 못함 · 시간 초과 · 원인 모름 — 저절로 다시 시도한다. 제목 · 띠 글만 원인을
+    아는지에 따라 갈리고(`STORE_NOT_REACHED`) 나머지는 같다. 다시 받기가 도는 동안은 값 줄이
+    「n번째 받는 중 · 지난 시간」 으로 흐르고 첫 받기의 두 노트가 선다 — 정상으로 받는 몇 분이
+    멈춘 것처럼 보이지 않게."""
     assert state.kind is not None
     since = state.failing_since
+    reached = state.kind in STORE_NOT_REACHED
     if state.trying:
         wait = _pulling(state)
     else:
@@ -561,7 +574,7 @@ def _retry_view(state: StageState) -> StageView:
     return StageView(
         tone=TONE_RETRY,
         chip=CHIP_RETRY,
-        title=TITLE_TRANSIENT,
+        title=TITLE_TRANSIENT if reached else TITLE_TRANSIENT_UNKNOWN,
         reasons=(REASON_TRANSIENT,),
         notes=wait.notes,
         late_note=NOTE_LONG_RETRY,
@@ -578,7 +591,7 @@ def _retry_view(state: StageState) -> StageView:
         since=wait.since,
         until=wait.until,
         until_label=wait.until_label,
-        band=wait.band or "저장소에 잠시 닿지 못함 · 다시 시도 중",
+        band=wait.band or (BAND_TRANSIENT if reached else BAND_TRANSIENT_UNKNOWN),
     )
 
 
