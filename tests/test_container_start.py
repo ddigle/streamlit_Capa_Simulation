@@ -20,7 +20,6 @@ import importlib.util
 import io
 import json
 import os
-import re
 import stat
 import subprocess
 import sys
@@ -1328,12 +1327,7 @@ def _report(written_at: str) -> report_contract.ContainerStartReport:
 @pytest.mark.parametrize(
     ("written_at", "started"),
     [
-        (
-            "2026-10-24T09:00:00+09:00",
-            datetime.fromisoformat("2026-10-24T09:00:00+09:00")
-            .astimezone()
-            .strftime("%Y\\-%m\\-%d %H\\:%M\\:%S"),
-        ),
+        ("2026-10-24T00:00:00Z", "2026\\-10\\-24 09\\:00\\:00"),
         ("", "알 수 없음"),
     ],
 )
@@ -1351,11 +1345,11 @@ def test_the_start_check_caption_is_a_value_line_without_a_pointer(
 
 
 def test_a_start_time_that_cannot_be_read_stays_as_written() -> None:
-    """결과 파일의 시각은 진단 펼침 꼴(`sso_status.CLOCK_FORMAT`)로 적고, 못 읽는 글은 받은 그대로다
-    — 값을 지우지 않는다."""
+    """결과 파일의 시각은 진단 펼침 꼴(`sso_status.CLOCK_FORMAT` — KST)로 적고, 못 읽는 글은 받은
+    그대로다 — 값을 지우지 않는다."""
     from capa_simulation.components.container_start_check import clock_text
 
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", clock_text("2026-11-07T00:00:00Z"))
+    assert clock_text("2026-11-07T00:00:00Z") == "2026-11-07 09:00:00"
     assert clock_text("어제 오후") == "어제 오후"
 
 

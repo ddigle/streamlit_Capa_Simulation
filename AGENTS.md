@@ -2758,7 +2758,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   영숫자 꼴, 링크로 데이터 자리 밖을 가리키면 거절, 받기는 임시 파일에서 한 번에 바꿈). 키 · 주소 · 버킷은
   `auth.runtime.config().access_s3`(운영 진입 파일이 환경에서 뺀 뒤에도 남는 한 벌), 모드는 `object_storage.load_settings`.
   모듈 시험 표지(`module_registry.TEST_RUN_ENV_VAR`)면 밖에 닿지 않는다. 까닭 · 로그는 고정 낱말뿐이다.
-- `src/capa_simulation/page_failures.py` — 코어 화면 실패 기록(참고 번호 · 시각 · 화면 이름 · 주소 · 예외 형식 이름 — 본문은 적지 않는다, 최근 20건과 따로 건수 · 난 (화면, 종류) 쌍, 재시작하면 빔). UI 없음. `page_failure_card` 가 적고 `AD-22` 가 읽는다.
+- `src/capa_simulation/korea_time.py` — 화면 · 알림 · 복사 글에 그리는 시각의 시각대 한 곳(`KST` — +09:00 고정 ·
+  `kst_clock(시각대 붙은 시각 · UNIX 초, 꼴)` — 시각대 없는 시각은 `ValueError`, 먼 시각은 넘침을 그대로 올림). 표준 라이브러리만
+  쓴다 — `audit/read.KST` · `auth/page_frame.KST` 는 이 상수 그대로다. 규칙은 8장 「화면 시각은 KST」.
+- `src/capa_simulation/page_failures.py` — 코어 화면 실패 기록(참고 번호 · 시각(KST) · 화면 이름 · 주소 · 예외 형식 이름 — 본문은 적지 않는다, 최근 20건과 따로 건수 · 난 (화면, 종류) 쌍, 재시작하면 빔). UI 없음. `page_failure_card` 가 적고 `AD-22` 가 읽는다.
 - `src/capa_simulation/module_failures.py` — 모듈 실행 기록(마지막 실패와 자리 · 재시작까지 뺀 화면 · 회차 시간 · 접두 없는 키). Streamlit 실행 문맥 없이 돌고 UI 를 부르지 않는다. `module_api`·`module_runtime`·`navigation` 이 함께 적는다(순환 막기).
 - `src/capa_simulation/module_runtime.py` — 모듈 화면 실행 감싸기(그 화면만 오류 카드 · `StopException`·`RerunException` 은 다시 던지고 `SystemExit`·`FragmentHandledException` 은 적고 정상으로 돌아옴 · 앞선 콜백 실패 카드 · 접두 없는 세션 키의 새로·바꿈·지움 알림 — 상태 알림 `MO-02`, 범위는 모듈 id. 화면 앞에서는 넘긴 것이 없어도 `alerts.flush` 한 자리).
 - `src/capa_simulation/page_bootstrap.py` — 계산 페이지 공통 진입 절차(활성 리비전·표시순서·활성 시나리오·
@@ -6817,6 +6820,16 @@ HOME 표시 확보율 줄도 같은 함수(`home_display_rates`)를 쓴다.
   글 속 달 구간(UPEH 가정 배지·CSV 표지 「UPEH 가정 110% · 26.07–26.12」)도 `month_label` 이다 — 「26-07」 같은 사본 꼴을
   두지 않는다. Plotly 날짜 x 축(설비 생애주기 Gantt)은 기본 눈금(「Oct 4 2026」)을 두지 않고 날·주 눈금은 `YYYY-MM-DD`,
   달 눈금부터는 `YY.MM` 이다(`equipment_lifecycle_gantt.DATE_TICK_FORMAT_STOPS`).
+- **화면 시각은 KST 다.** 화면 · 알림 · 복사 글에 그리는 시각(감사 표 「시각(KST)」 · 접속 명단 「등록 시각」 · 「최근 등록 ·
+  빼기」 · 서버 시작 점검 · DB 동기화 · 토큰 · 통합인증 최근 사건 · 화면 오류 `AD-22` · 모듈 상태 「최근 실패」 · BigDataQuery
+  목록 「조회」 시각)은 `korea_time.kst_clock`(또는 `KST`)으로 옮기고 서버 시각대(`astimezone()` 인자 없음 · `time.localtime` ·
+  `time.strftime(꼴)` · `fromtimestamp(초)`)에 기대지 않는다 — C-DEP 컨테이너는 이미지가 시각대를 정해(UTC 일 수 있다) 사내 PC(KST)와
+  같은 일이 9시간 어긋나 보인다. 칸 이름에 「(KST)」 를 붙이지 않는 자리도 KST 다. 「… UTC」 로 적기로 정한 자리(오류 카드 ·
+  앱 밖 화면 바닥 참고 줄 · 시작 실패 줄 · 앱 밖 진단 「서버 시각」)와 저장 꼴 · 서버 로그 · 파일 이름은 UTC 그대로다. 시각대
+  없는(naive) 벽시계 — 업무 「오늘」(`date.today()`) · DB 에 시각대 없이 적는 저장 시각(DuckDB `current_timestamp` 기본값 ·
+  `datetime.now()`) · 자동 갱신 매일 지정 시각 — 는 서버 시각대를 따르며 그물의 허용 목록에 까닭과 함께 남아 있다.
+  그물 `tests/test_server_clock_sites.py`(서버 시각대 부름의 자리 · 수 · 까닭) · `tests/test_screen_clock_kst.py`(UTC 서버에서 본
+  대표 자리).
 - 연간 Total 칸에는 물량(Density·Wafer 계획·계획 세부수량)만 합계를 적고 Capa·확보율·B/N 칸은 비운다 — 월별 Capa 의
   단순 합은 연간 Capa 가 아니라 그 해 투입 가능량으로 잘못 읽힌다.
 - 주요 표의 분류 컬럼은 고정하고 월 컬럼은 필요할 때 가로 스크롤한다.

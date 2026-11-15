@@ -24,6 +24,8 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Final
 
+from capa_simulation.korea_time import kst_clock
+
 RECENT_LIMIT: Final = 20
 
 
@@ -32,7 +34,7 @@ class PageFailure:
     """코어 화면 실패 하나 — 사용자가 문의할 때 대는 참고 번호(`ref`)로 서버 로그와 잇는다."""
 
     ref: str
-    # "HH:MM:SS"(서버 시각).
+    # "HH:MM:SS"(KST — `korea_time`).
     at: str
     # 화면 이름 · 주소(알림 「그 화면으로」).
     page: str
@@ -61,7 +63,7 @@ def record_failure(*, page: str, href: str, kind: str) -> PageFailure:
     now = time.time()
     failure = PageFailure(
         ref=new_ref(),
-        at=time.strftime("%H:%M:%S", time.localtime(now)),
+        at=kst_clock(now, "%H:%M:%S"),
         page=page,
         href=href,
         kind=kind,

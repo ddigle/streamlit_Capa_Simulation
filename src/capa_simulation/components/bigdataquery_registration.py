@@ -62,6 +62,7 @@ from capa_simulation.io.company_bigdataquery_adapter import (
     registration_detail_window,
 )
 from capa_simulation.io.container_start_report import STEP_INSTALL, start_check_hint
+from capa_simulation.korea_time import KST
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS, bootstrap_error_message
 from capa_simulation.persistence.cache import load_global_display_order
 from capa_simulation.persistence.repository import DuckDBScenarioRepository
@@ -214,6 +215,7 @@ class CatalogResult:
 
     frame: pd.DataFrame
     window: QueryWindow
+    # 조회한 순간(KST — 시각대가 붙어 있다).
     queried_at: datetime
     token: str
     # (코드, PLAN) 마다 목록에 보인 가장 이른 원천 등록일. 상세 조회 기본 창의 시작을 정한다.
@@ -441,7 +443,8 @@ def _run_catalog_query(window: QueryWindow) -> None:
             frame = fetch_simulation_catalog(window)
             catalog = normalize_catalog(frame)
             first_registered = first_registration_dates(frame)
-            queried_at = datetime.now()
+            # 목록 캡션의 「HH:MM:SS 조회」 는 사람이 읽는 시각이라 KST 다(`korea_time`).
+            queried_at = datetime.now(KST)
             # 세션 대입을 spinner 블록 안에서 끝낸다. 블록을 빠져나가는 첫 `st` 호출이
             # 탭 전환 rerun 으로 터지면 조회 결과가 통째로 버려진다.
             st.session_state[CATALOG_RESULT_KEY] = CatalogResult(

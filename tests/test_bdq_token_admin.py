@@ -18,12 +18,13 @@ from capa_simulation import alerts
 from capa_simulation import settings as app_settings
 from capa_simulation.components import bdq_token_admin, container_start_check, sso_identity
 from capa_simulation.components.diagnostic_copy import COMPONENT_KEY_PREFIX
-from capa_simulation.components.sso_status import CLOCK_FORMAT
 from capa_simulation.io import bdq_refresh, bdq_token
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
 
+# 화면 시각의 기준 — 서버 시각대가 무엇이든 한국 시각(+09:00)이다(`korea_time`).
+SEOUL = timezone(timedelta(hours=9))
 CHECK_SCRIPT = """
 from capa_simulation.components.container_start_check import render_container_start_check
 
@@ -248,7 +249,7 @@ def test_the_value_line_and_the_copy_text_show_a_readable_expiry(
 
     line = bdq_token_admin.token_line()
 
-    assert "만료 " + expires.astimezone().strftime("%Y-%m-%d %H:%M") in line
+    assert "만료 " + expires.astimezone(SEOUL).strftime("%Y-%m-%d %H:%M") in line
     assert "지남" not in line
     assert fake_jwt(expires) not in line
 
@@ -290,7 +291,7 @@ def test_the_expiry_alert_rises_an_hour_before_for_the_administrator(
     assert note is not None
     assert note["level"] == "action"
     assert note["short"] == (
-        f"BigDataQuery 로그인 토큰 만료 {expires.astimezone().strftime('%m-%d %H:%M')} — "
+        f"BigDataQuery 로그인 토큰 만료 {expires.astimezone(SEOUL).strftime('%m-%d %H:%M')} — "
         "새 토큰을 넣으세요"
     )
     assert len(note["short"]) <= alerts.SHORT_LIMIT
@@ -515,12 +516,10 @@ def test_an_on_row_shows_the_last_refresh_and_the_last_failure() -> None:
 
     _label, mode, reason = bdq_token_admin.refresh_start_step(None, state)
 
-    clock = CLOCK_FORMAT
-    later = (moment + timedelta(hours=6)).astimezone().strftime(clock)
     assert mode == "켜짐"
     assert reason == (
-        f"마지막 갱신 {moment.astimezone().strftime(clock)} · 마지막 시도 실패 · "
-        f"교환 실패(OSError) · {later}"
+        "마지막 갱신 2026-11-14 10:00:00 · 마지막 시도 실패 · "
+        "교환 실패(OSError) · 2026-11-14 16:00:00"
     )
 
 

@@ -15,9 +15,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final
 
+from capa_simulation import korea_time
 from capa_simulation.audit import chain, layout, spool
 
-KST: Final = timezone(timedelta(hours=9), "KST")
+# 화면 시각 한 곳 `korea_time.KST` 그대로다.
+KST: Final = korea_time.KST
 KST_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
 
 

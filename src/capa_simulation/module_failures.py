@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
+from capa_simulation.korea_time import kst_clock
 from capa_simulation.module_registry import key_prefix
 
 # 모듈 화면마다 남기는 접두 없는 키 이름의 상한.
@@ -33,7 +34,7 @@ CALLBACK_FAILURE_SUFFIX: Final = "_core_callback_failure"
 
 @dataclass(frozen=True)
 class ModuleFailure:
-    # "HH:MM:SS"(서버 시각).
+    # "HH:MM:SS"(KST — `korea_time`).
     at: str
     # 화면 slug — 콜백·guard 에서는 화면을 몰라 빈 글자다.
     page: str
@@ -52,7 +53,9 @@ _KEY_WARNINGS: dict[str, tuple[str, ...]] = {}
 
 def record_failure(module_id: str, *, page: str, kind: str, where: str) -> None:
     """모듈의 마지막 실패 하나를 적는다(앞의 것은 덮는다)."""
-    failure = ModuleFailure(at=time.strftime("%H:%M:%S"), page=page, kind=kind, where=where)
+    failure = ModuleFailure(
+        at=kst_clock(time.time(), "%H:%M:%S"), page=page, kind=kind, where=where
+    )
     with _LOCK:
         _FAILURES[module_id] = failure
 

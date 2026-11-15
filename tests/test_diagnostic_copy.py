@@ -195,8 +195,7 @@ def test_the_copy_of_the_start_check_carries_the_table_and_the_pip_tail(
     assert not list(app.exception), [item.message for item in app.exception]
     text = diagnostic_copies[_copy_key("container_start_check")]
     assert text.splitlines()[0] == "서버 시작 점검 · 실패 있음"
-    started = container_start_check.clock_text("2026-11-07T09:00:00+09:00")
-    assert f"시작 기록 · {started} · scripts/container_start.py" in text
+    assert "시작 기록 · 2026-11-07 09:00:00 · scripts/container_start.py" in text
     assert "단계\t결과\t까닭" in text and "pip 설치 실패" in text
     assert "시작 때 비어 있던 CD 환경변수 · CAPA_BDQ_TOKEN" in text
     # pip 출력은 마크다운이 아니라 받은 글 그대로다(빈칸도) — 주소만 가린다.

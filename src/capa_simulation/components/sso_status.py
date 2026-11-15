@@ -68,6 +68,7 @@ from capa_simulation.io.container_start_report import (
     STATUS_SKIPPED,
     mask_account,
 )
+from capa_simulation.korea_time import kst_clock
 from capa_simulation.navigation import ADMIN_AREA, ADMIN_AREA_LOG_TAB
 from capa_simulation.page_tabs_state import tab_label
 from capa_simulation.sidebar_status import open_remembered_box, remembered_expander
@@ -86,7 +87,7 @@ ANONYMOUS_EVENT_LIMIT = 10
 ANONYMOUS_COUNT_LIMIT = 8
 DENIED_ACCOUNT_LIMIT = 20
 CERT_WARNING_DAYS = 30
-# 진단 펼침의 시각 꼴 — 서버 시각대 초까지(`container_start_check` 도 이 꼴로 적는다).
+# 진단 펼침의 시각 꼴 — KST 초까지(`korea_time` — `container_start_check` 도 이 꼴로 적는다).
 CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S"
 # 「새 등록」 알림(`AD-19`)이 세는 기간(일).
 NEW_REGISTRATION_DAYS = 30
@@ -417,7 +418,7 @@ def _event_code(fields: dict[str, str]) -> str:
 
 
 def _clock_text(at: int) -> str:
-    return datetime.fromtimestamp(at).astimezone().strftime(CLOCK_FORMAT)
+    return kst_clock(at, CLOCK_FORMAT)
 
 
 def recent_event_table(limit: int = RECENT_EVENT_LIMIT, *, anonymous: bool = False) -> pd.DataFrame:
