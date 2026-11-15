@@ -2053,8 +2053,10 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     않는다). 자격 폴더에 지금 토큰이 없으면(처음 띄움 · 디스크가 처음으로 돌아감) 실패로 적지 않고 로그인 토큰 단계가
     `CAPA_BDQ_TOKEN` 을 쓰게 둔다(`START_NO_INPUT`). 자격 폴더의 토큰이 갱신으로 넣은 것이면 교환하지 않았거나 실패해도 그대로 둔다(`kept` — 지난 시작 때와 같은
     `CAPA_BDQ_TOKEN` 은 첫 교환 때 이미 죽었다). 사람이 표에서 `CAPA_BDQ_TOKEN` 을 바꿨으면(시작 값 표지
-    `capa-bdq-start-value.<계정>.json` 과 다름) 교환하지 않고 그 값을 쓴다(`START_TABLE_CHANGED`). 표지가 없으면(앞 판 · 영속이
-    아닌 `/config`) 지금처럼. 표지는 켜짐에서만 쓰고 그 파일만의 무작위 소금과 HMAC-SHA256 뿐이다(토큰 곁 0600 — 읽을 수 있는 쪽은
+    `capa-bdq-start-value.<계정>.json` 과 다름) 교환하지 않고 그 값을 쓴다(`START_TABLE_CHANGED`). 바뀐 값은 로그인 토큰 단계가
+    정상으로 끝난 뒤에만 기억한다(`StartRefresh.table_changed` → `remember_table_value` — 넣지 못하면 다음 시작이 다시 그 값을 쓴다).
+    표지가 없거나 꼴이 어긋나면(소문자 hex 64자 HMAC · 빈 것이 아닌 소금이 아님 — 앞 판 · 영속이 아닌 `/config` · 잘린 파일)
+    「모름」 이라 지금처럼. 표지는 켜짐에서만 쓰고 그 파일만의 무작위 소금과 HMAC-SHA256 뿐이다(토큰 곁 0600 — 읽을 수 있는 쪽은
     이미 토큰을 읽고, 소금이 달라 다른 자리와 맞춰 볼 수 없다).
   - 비밀 — 토큰 글자 · 길이 · 지문을 상태 · 알림 · 로그 · 예외 · 결과 파일에 싣지 않는다. 교환 예외는 종류 이름만,
     `Exchanged.token` 은 `repr` 밖. 프로세스 상태는 메모리뿐이고 시험은 `tests/conftest.py` 가 `forget_state` 로 비운다.
