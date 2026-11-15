@@ -138,6 +138,15 @@ def code_of(response: AsgiResponse) -> str:
     return parse_qs(urlsplit(response.header("location") or "").query)["code"][0]
 
 
+def chip_of(page: AsgiResponse) -> tuple[str, str]:
+    """머리 표지 — (색 역할 키, 낱말)."""
+    found = re.search(
+        r'<span class="chip" style="color: var\(--chip-(\w+)\)">([^<]+)</span>', page.text
+    )
+    assert found is not None, "표지가 있다"
+    return found[1], found[2]
+
+
 def actions(page: AsgiResponse) -> list[tuple[str, bool]]:
     """단추 줄의 링크 · 단추 — (이름, 주 단추인가) 를 차례대로."""
     block = re.search(r'<div class="actions">(.*?)</div>', page.text, re.S)
@@ -455,7 +464,9 @@ def test_a_failed_save_shows_the_note_instead(mock_s3: tuple[MockStore, str]) ->
 
     assert code_of(pressed) == web.REGISTER_FAILED
     assert page.status == 403 and web.REGISTER_FAILED_TITLE in page.text
-    assert page_frame.CHIP_WORDS["retry"] in page.text
+    # 명단을 읽지 못한 화면과 같은 서버 쪽 문제 — 같은 표지 낱말 · 색(보드 s-A-14).
+    assert chip_of(page) == ("maintenance", page_frame.CHIP_WORDS["maintenance"])
+    assert page_frame.CHIP_WORDS["retry"] not in page.text
     assert "<form" not in page.text and '<pre class="pick">' in page.text
     assert NEWCOMER not in stored_users(store)
 
@@ -480,7 +491,7 @@ def test_an_unread_list_shows_maintenance_without_a_button(
 
     assert page.status == 403
     assert web.LIST_UNREAD_TITLE in page.text and text in page.text
-    assert page_frame.CHIP_WORDS["maintenance"] in page.text
+    assert chip_of(page) == ("maintenance", page_frame.CHIP_WORDS["maintenance"])
     assert web.REGISTER_LABEL not in page.text and "<form" not in page.text
     assert "1분 뒤" in page.text if text == web.LIST_UNREAD_WAIT_TEXT else "1분 뒤" not in page.text
     assert '<pre class="pick">' not in page.text, "표가 있어도 신청 글 상자 없음"

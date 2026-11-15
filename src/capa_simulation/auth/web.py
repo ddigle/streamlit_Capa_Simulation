@@ -1091,10 +1091,11 @@ def registered_frame(cfg: SsoConfig, ticket: DeniedClaims) -> Frame:
 
 
 def register_failed_frame(cfg: SsoConfig, ticket: DeniedClaims, now: int) -> Frame:
-    """저장 실패 — 단추 대신 미리 채운 신청 글과 문의 줄(보드 D6)."""
+    """저장 실패 — 단추 대신 미리 채운 신청 글과 문의 줄(보드 D6). 표지는 명단을 읽지 못한 화면과
+    같은 서버 쪽 문제라 「점검 중」 이다 — 할 일이 「문의처로 글 보내기」 라(E2E 보드 s-A-14)."""
     return Frame(
         title=REGISTER_FAILED_TITLE,
-        chip="retry",
+        chip="maintenance",
         lead=(REGISTER_FAILED_TEXT,),
         steps=(_reachable(cfg, SEND_NOTE_STEP),),
         primary=_login_link(cfg, CHECK_AGAIN_LABEL, ticket.next_path),
