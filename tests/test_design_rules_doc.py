@@ -2535,7 +2535,9 @@ def test_the_widened_1115_readings_are_recorded() -> None:
 # 빈칸 — 판정의 「예외」 근거가 규칙집 밖 보드 답뿐이던 자리를 규칙 글에 이름으로 올린다(PRC-08).
 def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
     """v1.29 — UI-TXT-01 예외가 앱이 서기 전 시작 임시 화면(`scripts/container_stage.py`)을 이름으로
-    든다(판정 s-D-01 ~ 07 의 근거가 「앱 대신 뜨는 화면」 보드 답뿐이었다)."""
+    든다(판정 s-D-01 ~ 07 의 근거가 「앱 대신 뜨는 화면」 보드 답뿐이었다). UI-NTF-10 은
+    「예외: 없음」 이던 자리에 앱 밖 틀의 「한 번 눌러 통째로 고름」(보드 frame)을 든다(판정 s-A-01
+    등)."""
     document = _text()
     assert "판 v1.29" in document.split("\n## 1. ")[0]
     assert "- **v1.29 — 2026-11-15.**" in _chapter(document, 8)
@@ -2544,3 +2546,9 @@ def test_the_e2e_1115_judgment_gaps_are_written_into_the_rules() -> None:
     txt01 = rules["UI-TXT-01"].fields["예외"][0]
     assert "시작 임시 화면" in txt01 and "`scripts/container_stage.py`" in txt01
     assert "p1-stage-start" in txt01 and "p2-stage-human" in txt01
+
+    ntf10 = rules["UI-NTF-10"].fields["예외"][0]
+    assert ntf10 != "없음"
+    assert "`auth/page_frame.py`" in ntf10 and "`default-src 'none'`" in ntf10
+    assert "한 번 눌러 통째로 고른다" in ntf10 and "frame" in ntf10
+    assert "`scripts/container_stage.py`" in ntf10
