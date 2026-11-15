@@ -15,7 +15,9 @@
 화면이 기다리지 않는다.
 
 상태 알림은 `app.py` 가 `GL-02` 곁 한 자리에서 부른다(`render_object_sync_alerts`). 프래그먼트 ·
-팝업 안에서 부르지 않는다.
+팝업 안에서 부르지 않는다. 관리자 몫 `SY-02` · `SY-03` 줄은 이 펼침을 대상으로 들고 가 다른
+화면에서 눌려도 펼침까지 연다(`open_sync_panel` — 알림 칸의 받는 쪽 `SYNC_TARGET_KIND`, 설계 규칙
+UI-NAV-01).
 
 **누구나 읽는 짧은 글 · 관리자 몫 전문**(2026-11-14 「앱 대신 뜨는 화면」 보드 카드
 p1-not-canonical). 짧은 글은 누구나 읽는 꼴이고, 일반 사용자가 할 수 없는 지시(C-DEP 환경변수 칸 ·
@@ -69,7 +71,11 @@ from capa_simulation.services.object_storage_manifest import (
     PushDecision,
     origin_tail,
 )
-from capa_simulation.sidebar_status import note_periodic_fragment, remembered_expander
+from capa_simulation.sidebar_status import (
+    note_periodic_fragment,
+    open_remembered_box,
+    remembered_expander,
+)
 
 EXPANDER_KEY: Final = "admin_area_object_sync"
 COPY_KEY: Final = "object_sync"
@@ -84,6 +90,9 @@ BLOCKED_CODE: Final = "SY-03"
 HANDED_OVER_CODE: Final = "SY-04"
 HEAD_IGNORED_CODE: Final = "SY-05"
 HEAD_UNCHECKED_CODE: Final = "SY-06"
+# 알림의 「그 화면으로」 가 Admin Area 에 닿은 뒤 이 펼침을 여는 받는 쪽의 이름
+# (`alerts.GotoTarget`).
+SYNC_TARGET_KIND: Final = "object_sync"
 _MIB: Final = 1024 * 1024
 
 NOT_ADMIN_MESSAGE: Final = "관리자만 지금 올리기를 쓸 수 있습니다"
@@ -109,6 +118,18 @@ def _kst_minute(utc_text: str) -> str:
 def current_health() -> tuple[WorkerStatus | None, SyncHealth]:
     status = object_sync_worker.current_status()
     return status, assess(status, sync_state.mark_clock(), time.monotonic())
+
+
+def sync_panel_target() -> alerts.GotoTarget:
+    """관리자 몫 동기화 알림이 들고 가는 대상 — 받는 쪽이 이 펼침을 연다(나머지 칸은 쓰지
+    않는다)."""
+    return alerts.GotoTarget(kind=SYNC_TARGET_KIND, scenario="-", revision="-")
+
+
+def open_sync_panel(_scenario: str, _revision: str) -> None:
+    """알림 칸의 「그 화면으로」 콜백이 Admin Area 에 닿은 회차 맨 앞에서 부른다 — 「DB 동기화」
+    펼침을 연다(설계 규칙 UI-NAV-01 — 데려가면 그 자리까지 연다)."""
+    open_remembered_box(EXPANDER_KEY)
 
 
 def failure_label(kind: str | None) -> str:
@@ -184,9 +205,10 @@ def render_object_sync_alerts() -> None:
     )
     managed = sync_boot.is_managed()
     health = current_health()[1] if managed else None
-    # 관리자 몫 줄의 「그 화면으로」 — Admin 「DB 동기화」 펼침(Admin Area 맨 위). 관리자가 아닌
-    # 회차는 그 화면이 없을 수 있어 달지 않는다.
+    # 관리자 몫 줄의 「그 화면으로」 — Admin 「DB 동기화」 펼침까지(줄이 대상을 들고 간다). 관리자가
+    # 아닌 회차는 그 화면이 없을 수 있어 달지 않는다.
     to_panel = (tab_label(ADMIN_AREA), ADMIN_AREA.href) if admin else None
+    panel_target = sync_panel_target() if admin else None
     overdue = None if health is None else health.overdue
     alerts.state(
         OVERDUE_CODE,
@@ -202,6 +224,7 @@ def render_object_sync_alerts() -> None:
         ),
         full=None if overdue is None else _overdue_full(overdue, admin=admin),
         goto=to_panel if overdue is not None else None,
+        target=panel_target,
     )
     blocked = None if health is None else health.blocked
     label = "" if blocked is None else BLOCKED_LABELS.get(blocked, blocked)
@@ -231,6 +254,7 @@ def render_object_sync_alerts() -> None:
             )
         ),
         goto=to_panel if blocked is not None else None,
+        target=panel_target,
     )
     handed_over = sync_boot.handed_over_utc()
     alerts.state(

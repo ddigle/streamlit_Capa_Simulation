@@ -143,11 +143,12 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
     # 없는 줄처럼 다룬다(마지막 칸을 누른다).
     from capa_simulation.components.access_list_admin import ACCESS_LIST_TARGET_KIND
     from capa_simulation.components.container_start_check import START_CHECK_TARGET_KIND
+    from capa_simulation.components.object_sync_status import SYNC_TARGET_KIND
     from capa_simulation.components.scenario_list_state import CHECK_TARGET_KIND
 
     assert data["goto_kinds"] == sorted(alert_center.GOTO_RECEIVERS)
     assert data["goto_kinds"] == sorted(
-        [CHECK_TARGET_KIND, ACCESS_LIST_TARGET_KIND, START_CHECK_TARGET_KIND]
+        [CHECK_TARGET_KIND, ACCESS_LIST_TARGET_KIND, START_CHECK_TARGET_KIND, SYNC_TARGET_KIND]
     )
     assert set(data["storage"]) == {"log", "states", "seen", "boot"}
     assert [group["id"] for group in data["groups"]] == ["lose", "keep", "assume"]
