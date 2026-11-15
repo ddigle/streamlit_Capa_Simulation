@@ -2021,8 +2021,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     돈다(`tests/test_bdq_refresh.py`). 입력은 넣기 길 셋이 쓰는 토큰 파일(`bdq_token.token_file_path`)을 잠금 안 · 표지 재확인 뒤에
     읽은 바이트다 — 앱 환경에 비밀을 새로 넘기지 않는다. 없음 · 빔 · 못 읽음이면 교환을 부르지 않고(거듭 실패 셈 밖) 그 까닭
     (`TOKEN_MISSING` · `TOKEN_EMPTY` · 「지금 토큰을 읽지 못함(종류)」)을 마지막 시도 실패로 남긴다.
-  - 상태 넷(`status`) — 꺼짐(켜지 않음 — CD 환경변수 `CAPA_BDQ_AUTO_REFRESH` 가 없음 · `on` 이 아닌 값, 계정 없음 · 환경변수
-    `BIGDATAQUERY_LOGIN_TOKEN`) · 준비(갱신 명령 미정 — 잠금 · 표지 · 파일 쓰기 전에 돌아서 조회 · 시작이 끈 서버와 똑같다) ·
+  - 상태 넷(`status`) — 꺼짐(켜지 않음 — CD 환경변수 `CAPA_BDQ_AUTO_REFRESH` 가 없음 · `on` 이 아닌 값, 앱 쪽은 C-DEP 시작 점검 결과 파일이 없는
+    자리 「C-DEP 서버가 아님」, 계정 없음 · 환경변수 `BIGDATAQUERY_LOGIN_TOKEN`) · 준비(갱신 명령 미정 — 갱신 길은 잠금 · 표지 ·
+    파일 쓰기 전에 돌아서고 토큰 쓰기 · 조회는 끈 서버와 같다, 켠 서버라 넣은 때 표지만 더해진다) ·
     켜짐 · 멈춤. 켜기 판정은 `bdq_token.auto_refresh_switched_on`(앞뒤 공백 · 대소문자 무관 `on`) 하나다. 잠금 파일은
     `capa-bdq-refresh.<계정>.lock` 이고, 같은 접두의 옛 갱신 토큰 파일(`capa-bdq-refresh.<계정>`)은 읽지 않고 시작 스크립트가
     지운다(`forget_old_refresh_token`). 패키지 자리 접두(`bigdataquery.token.`)를 쓰지 않는다.

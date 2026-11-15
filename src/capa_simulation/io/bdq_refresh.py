@@ -17,10 +17,10 @@
 **켜기**(`bdq_token.auto_refresh_switched_on`) — CD 환경변수 `CAPA_BDQ_AUTO_REFRESH` 가 `on` 일
 때만 켠다. 끄면 지금 길 그대로다(사람이 `CAPA_BDQ_TOKEN` · Admin 「토큰 넣기」 로 넣음).
 
-**상태**(`status`) — `off`(꺼짐: 켜지 않음 · 계정 없음 · 패키지가 먼저 읽는 환경변수 토큰) ·
-`ready`(준비: 켰는데 갱신 명령 미정) · `on`(켜짐) · `halted`(멈춤 — 아래 고리 막기).
-**준비에서는 아무것도 바꾸지 않는다** — 잠금 · 표지 · 파일 쓰기 전에 돌아서고 조회 · 시작은 끈
-서버와 똑같이 돈다.
+**상태**(`status`) — `off`(꺼짐: 켜지 않음 · C-DEP 서버가 아님 · 계정 없음 · 패키지가 먼저
+읽는 환경변수 토큰) · `ready`(준비: 켰는데 갱신 명령 미정) · `on`(켜짐) · `halted`(멈춤 — 아래
+고리 막기). **준비에서는 갱신하지 않는다** — 갱신 길은 잠금 · 표지 · 파일 쓰기 전에 돌아서고,
+토큰 쓰기 · 조회는 끈 서버와 같다(켠 서버라 넣은 때 표지만 더해진다).
 
 **언제 갱신하나 — 조회 길 한 곳.** 새 배경 스레드를 세우지 않는다(AGENTS 9장 — 배경 스레드는 예약 ·
 동기화 일꾼 둘뿐). 어댑터(`company_bigdataquery_adapter._get_data_once`)가 `getData` 바로 앞에서
@@ -98,6 +98,7 @@ from capa_simulation.io.container_start_report import (
     BDQ_AUTO_REFRESH_ENV,
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
+    report_path,
 )
 
 if sys.platform != "win32":
@@ -209,6 +210,9 @@ MODE_LABELS: Final[Mapping[Mode, str]] = {
 }
 # 꺼짐 까닭 — 켜기 환경변수가 없음 · `on` 이 아닌 값.
 NOT_SWITCHED_ON: Final = "켜지 않음"
+# 켜기 값이 있어도 C-DEP 시작 점검 결과 파일이 없는 서버(WebIDE · 개발 · 사내 PC) — 같은 계정의
+# 운영 토큰을 그 자리에서 갱신해 죽이지 않게 꺼짐으로 둔다(그 자리에는 표 줄 · 알림도 없다).
+NOT_C_DEP: Final = "C-DEP 서버가 아님"
 SWITCH_NOT_ON: Final = f"{BDQ_AUTO_REFRESH_ENV} 값이 on 이 아님"
 SHAPE_UNKNOWN: Final = "요청 꼴 미정"
 HALT_ELSEWHERE: Final = "같은 계정이 다른 곳에서 로그인했을 수 있음"
@@ -294,11 +298,18 @@ class _Place:
     account: str
 
 
-def _place(environ: Mapping[str, str] | None, folder: Path | None) -> tuple[_Place | None, str]:
-    """갱신할 자리 또는 (없음, 꺼짐 까닭). 까닭은 값 낱말이고 비밀이 없다(켜기 값도 싣지 않는다)."""
+def _place(
+    environ: Mapping[str, str] | None, folder: Path | None, *, at_start: bool = False
+) -> tuple[_Place | None, str]:
+    """갱신할 자리 또는 (없음, 꺼짐 까닭). 까닭은 값 낱말이고 비밀이 없다(켜기 값도 싣지 않는다).
+
+    앱 쪽(`at_start` 거짓)은 C-DEP 시작 점검 결과 파일이 있는 서버에서만 켠다 — 시작 스크립트는
+    그 파일을 끝에 쓰므로 `refresh_at_start` 는 이 문을 건너뛴다(부르는 것 자체가 C-DEP 다)."""
     env = os.environ if environ is None else environ
     if not bdq_token.auto_refresh_switched_on(env):
         return None, SWITCH_NOT_ON if env.get(BDQ_AUTO_REFRESH_ENV, "").strip() else NOT_SWITCHED_ON
+    if not at_start and not report_path().is_file():
+        return None, NOT_C_DEP
     if bdq_token.environment_token_set(env):
         return None, f"{bdq_token.LOGIN_TOKEN_ENV} 있음"
     account = env.get(BDQ_USER_NAME_ENV, "").strip()
@@ -876,7 +887,7 @@ def refresh_at_start(environ: Mapping[str, str], folder: Path) -> StartRefresh:
       산 토큰을 죽이지 않는다. 자격 폴더의 토큰이 갱신으로 넣은 것이면 교환하지 않았거나 실패해도
       그 토큰을 그대로 둔다(`kept`) — 지난 시작 때와 같은 `CAPA_BDQ_TOKEN` 은 첫 교환 때 이미
       죽었다."""
-    place, off = _place(environ, folder)
+    place, off = _place(environ, folder, at_start=True)
     if place is None:
         return StartRefresh("off", off)
     if not _exchange_known():

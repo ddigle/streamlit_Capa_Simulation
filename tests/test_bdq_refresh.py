@@ -23,6 +23,7 @@ from typing import get_args
 import pandas as pd
 import pytest
 
+from capa_simulation import settings
 from capa_simulation.io import bdq_refresh, bdq_token
 from capa_simulation.io import company_bigdataquery_adapter as adapter
 from capa_simulation.io import container_start_report as report_contract
@@ -90,12 +91,28 @@ class FakeExchange:
 
 @pytest.fixture
 def folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """자동 갱신을 켠 서버의 자격 폴더 — 켜기 값 `on` · 계정."""
+    """자동 갱신을 켠 C-DEP 서버의 자격 폴더 — 켜기 값 `on` · 계정 · 시작 점검 결과 파일."""
     target = tmp_path / "credential"
     monkeypatch.setattr(bdq_token, "CREDENTIAL_DIR", target)
     monkeypatch.setenv(BDQ_USER_NAME_ENV, ACCOUNT)
     monkeypatch.setenv(BDQ_AUTO_REFRESH_ENV, "on")
+    report = tmp_path / "container-start-report.json"
+    report.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", report)
     return target
+
+
+def test_the_switch_is_ignored_outside_a_c_dep_server(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """켜기 값이 있어도 시작 점검 결과 파일이 없는 서버(WebIDE · 개발 app.py · 사내 PC)는 꺼짐이다 —
+    같은 계정의 운영 토큰을 그 자리에서 갱신해 죽이지 않게(그 자리에는 표 줄 · 알림도 없다)."""
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", folder.parent / "absent.json")
+
+    state = bdq_refresh.status()
+
+    assert state.mode == "off"
+    assert state.reason == bdq_refresh.NOT_C_DEP
 
 
 @pytest.fixture
