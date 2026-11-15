@@ -2618,9 +2618,14 @@ E2E_1115_ANSWERS = {
     "s-C-14": "80일 좋음",
     "s-B-12": "이대로",
     "s-A-01": "좋음",
+    **{f"decided-e2e-{number}": "좋음" for number in range(1, 4)},
 }
-# 커밋을 든 줄 — 답 앞 E2E 고침의 커밋이다.
-E2E_1115_COMMITS: dict[str, tuple[str, ...]] = {}
+# 커밋을 든 줄 — 답 앞 E2E 고침의 커밋이다(정한 것 셋 — 점마다 한 줄).
+E2E_1115_COMMITS: dict[str, tuple[str, ...]] = {
+    "decided-e2e-1": ("946025e",),
+    "decided-e2e-2": ("00ddc26", "b3e55e8"),
+    "decided-e2e-3": ("9375577",),
+}
 # 월요일 배포 전에 같은 답을 입히는 코드 갈래가 고치는 줄.
 E2E_1115_CODE_LANE = ("q-self-fail-rev", "s-A-13", "s-A-14", "s-C-02")
 
@@ -2700,6 +2705,20 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
         assert phrase in con02_except, phrase
     assert "s-C-13" in rules["UI-DAT-11"].fields["예외"][0]
     assert "s-C-13 「지금대로」" in frame
+
+    # decided-e2e 「좋음」 — 1 은 6-28 이 받은 답을 가리키고, 2 는 UI-PRF-01 예외(정확성이 이김)다.
+    widened = section[section.index("\n### 6-28. ") : section.index("\n### 6-29. ")]
+    band = next(line for line in widened.splitlines() if line.startswith("- band-connecting · "))
+    assert "decided-e2e 1" in band and "「좋음」" in band
+    assert "사용자 확인은 그림 보드에서 「좋음」" in _chapter(document, 1)
+    prf01 = rules["UI-PRF-01"]
+    assert "`run_every`" in prf01.fields["예외"][0] and "decided-e2e 2" in prf01.fields["예외"][0]
+    assert (
+        "tests/test_sidebar_box_toggle.py::"
+        "test_a_page_with_a_periodic_fragment_keeps_toggles_on_the_whole_app"
+        in prf01.fields["그물"][0]
+    )
+    assert "decided-e2e 2 · 3" in dat11
 
     narrowed = [line for line in _chapter(document, 7).splitlines() if "s-A-13" in line]
     assert len(narrowed) == 1, "7-1 에 공통 틀 「주 단추 하나」 를 좁힌 줄이 하나 있다"
