@@ -272,6 +272,64 @@ def test_a_token_environment_variable_blocks_the_login(
     assert spawned.calls == []
 
 
+_TTY_DRIVER = """
+import os, sys
+from pathlib import Path
+place, out, account, password = sys.argv[1:5]
+fd = os.open(place, os.O_RDWR)
+try:
+    os.close(os.open("/dev/tty", os.O_RDWR))
+except OSError:
+    Path(out).write_text("no-ctty")
+    raise SystemExit(0)
+from capa_simulation.io import bdq_login
+result = bdq_login.attempt_login(account, password, folder=Path(sys.argv[5]), timeout=10)
+Path(out).write_text(result.outcome)
+"""
+
+
+@pytest.mark.skipif(os.name != "posix", reason="제어 터미널은 POSIX 의 것")
+def test_a_controlling_terminal_does_not_take_the_password_from_stdin(
+    fake: FakeBdq, tmp_path: Path
+) -> None:
+    """부르는 프로세스에 제어 터미널이 있어도(WebIDE · tmux) `getpass` 가 `/dev/tty` 를 읽어 멈추지
+    않고 표준 입력으로 읽는다 — 로그인 하위 프로세스를 새 세션으로 띄운다."""
+    master, slave = os.openpty()
+    try:
+        out = tmp_path / "outcome.txt"
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join((str(PROJECT_ROOT / "src"), os.environ["PYTHONPATH"])),
+        }
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                _TTY_DRIVER,
+                os.ttyname(slave),
+                str(out),
+                ACCOUNT,
+                PASSWORD,
+                str(fake.credential_dir),
+            ],
+            env=env,
+            start_new_session=True,
+            timeout=60,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    finally:
+        os.close(slave)
+        os.close(master)
+    outcome = out.read_text(encoding="utf-8")
+    if outcome == "no-ctty":
+        pytest.skip("이 자리에서는 제어 터미널을 세우지 못한다")
+    assert outcome == bdq_login.OUTCOME_OK
+    assert fake.logins() == 1
+
+
 # --- 비밀 경계 ---------------------------------------------------------------------------
 
 

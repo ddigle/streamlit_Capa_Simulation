@@ -77,6 +77,17 @@ def _connection_error() -> Exception:
     return ConnectionError("connection refused (fake)")
 
 
+def _read_password(prompt: str) -> str:
+    """POSIX 는 `getpass.getpass`(제어 터미널이 있으면 `/dev/tty`, 없으면 표준 입력 폴백) 그대로다.
+    Windows 의 `getpass` 는 표준 입력이 아니라 콘솔 키보드(`msvcrt`)를 읽어 시험이 멈추므로 표준
+    입력 폴백 길만 흉내 낸다 — 이 기능이 도는 자리(C-DEP)는 Linux 다."""
+    if os.name == "nt":
+        # 표준 라이브러리 타입 스텁에 없는 이름이라 이름으로 찾는다.
+        fallback = vars(getpass)["fallback_getpass"]
+        return str(fallback(prompt))
+    return getpass.getpass(prompt)
+
+
 print("========================================")
 print(" bigdataquery (fake) — 안내 배너")
 print("========================================")
@@ -89,7 +100,7 @@ def login() -> None:
     """표준 입력 두 줄(계정 · 비밀번호)로 로그인한다. 맞으면 토큰 파일을 새로 쓴다."""
     _log("login")
     account = input("AD Account : ")
-    password = getpass.getpass("Password : ")
+    password = _read_password("Password : ")
     scenes = _scenes()
     if "slow" in scenes:
         time.sleep(float(os.environ.get("FAKE_BDQ_SLOW_SECONDS", "30")))
