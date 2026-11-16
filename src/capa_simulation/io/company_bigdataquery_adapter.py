@@ -26,6 +26,8 @@ from typing import Final, Protocol, cast
 
 import pandas as pd
 
+from capa_simulation.io import bdq_login
+from capa_simulation.io import bdq_login_store as login_store
 from capa_simulation.io.container_start_report import (
     BDQ_USER_NAME_ENV as BDQ_USER_NAME_ENV,
 )
@@ -417,6 +419,11 @@ def _validated_simulation_code(value: str) -> str:
 def resolve_user_name() -> str | None:
     """조회 요청자의 사내 계정. 없으면 `None` 이고, 그러면 인자를 아예 넘기지 않는다.
 
+    계정 하나의 원천(`bdq_login_store.effective_account`)이다 — C-DEP 자동 로그인에 저장된 계정이
+    있으면 그 ID(토큰 파일 이름 · `getTokenTime` 과 같은 계정, Admin 폼으로 바뀌면 곧바로 새 ID),
+    없으면 `CAPA_BDQ_USER_NAME`. 저장 객체를 읽다 무엇이 나도 환경변수 계정으로 물러선다 — 조회를
+    막지 않는다.
+
     **값이 없다고 여기서 멈추지 않는다.** Windows 에서는 패키지가 로그인 이름으로 요청자를
     스스로 식별하므로 지금도 인자 없이 잘 돈다 — 여기서 막으면 도는 경로를 새로 깨는 것이다.
     빈값을 거부하는 것은 서버(Linux) 환경뿐이고, 그때는 `call_get_data` 가 패키지의 문구를
@@ -425,7 +432,11 @@ def resolve_user_name() -> str | None:
     Windows 로그인 이름으로 대신 채우지도 않는다. 사내 계정과 다르면 조용히 남의 이름이
     붙거나 권한 오류로 되돌아오는데, 둘 다 원인이 안 보인다.
     """
-    return os.environ.get(BDQ_USER_NAME_ENV, "").strip() or None
+    try:
+        account = login_store.effective_account()
+    except Exception:  # 저장 객체 읽기가 깨져도 조회는 환경변수 계정으로 돈다
+        account = os.environ.get(BDQ_USER_NAME_ENV, "").strip()
+    return account or None
 
 
 def get_data_keywords(query: str) -> dict[str, object]:
@@ -500,10 +511,25 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     패키지가 내는 `parameter user_name is necessary.` 만으로는 어느 환경변수를 넣어야
     하는지 알 수 없다. 사내 WebIDE 에서 로그인·토큰이 모두 정상인데도 조회가 100% 막혀
     있었고, 원인을 찾는 데 두 세션이 걸렸다.
+
+    **다시 로그인(C-DEP 자동 로그인).** `getData` 는 `bdq_login.run_with_relogin` 안에서 부른다 —
+    저장된 계정이 있고 멈춤이 아니며 패키지의 토큰 예외 종류(`bdq_login.RELOGIN_EXCEPTIONS` 한 줄)로
+    실패했을 때만 다시 로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이
+    다시 조회). 문구 낱말만 맞은 토큰 갈래는 다시 로그인하지 않는다(알림 `AD-10` 만). 저장된 계정이
+    없으면 지금과 같이 한 번 부른다. 다시 한 조회는 인자(요청자 계정)를 새로 읽고, 실패까지 걸린
+    초는 마지막 부름에서 잰다 — 로그인 시간이 긴 실패로 셈해지지 않게. 아래 감싸기 · 토큰 표지는
+    다시 로그인을 거친 마지막 결과에 한 번이다. Streamlit 을 부르지 않는다(공식버전 자동 갱신
+    스레드도 이 길이다).
     """
     started = time.monotonic()
+
+    def ask() -> object:
+        nonlocal started
+        started = time.monotonic()
+        return module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
+
     try:
-        answer = module.getData(**get_data_keywords(query))  # type: ignore[arg-type]
+        answer = bdq_login.run_with_relogin(ask)
     except Exception as error:  # 패키지 예외 종류를 모른다. 문구만 보고 바꿔 던진다
         if resolve_user_name() is None and "user_name" in str(error):
             _log_failure(
@@ -574,6 +600,9 @@ def is_login_token_failure(error: BaseException) -> bool:
 # 조회 실패의 갈래. 패키지 예외 종류를 모르므로 예외 사슬의 종류 이름과 문구의 낱말로 가른 추정이다.
 # 「토큰」 은 다시 해도 같다 — 토큰을 새로 받아야 풀린다(C-DEP 는 관리자 일, WebIDE 는 다시 로그인).
 QUERY_FAILURE_TOKEN: Final = "토큰"
+# 「서버 혼잡」 은 DB 서버의 대기열이 가득 차 조회를 받지 않은 것이다(Impala `queue full` — 토큰과
+# 무관). 잠시 뒤 다시 하면 풀리지만 앱은 스스로 다시 묻지 않는다 — 안내만 한다.
+QUERY_FAILURE_BUSY: Final = "서버 혼잡"
 QUERY_FAILURE_TIMEOUT: Final = "시간 초과"
 QUERY_FAILURE_CONNECTION: Final = "연결"
 QUERY_FAILURE_SQL: Final = "SQL"
@@ -608,6 +637,11 @@ _TOKEN_FAILURE_WORDS: Final[tuple[str, ...]] = (
     "token is expired",
     "expired token",
 )
+# 「서버 혼잡」 의 근거 — 대기열이 가득 찼다는 말(대소문자 · 사이 낱말 is/was 무시). 토큰 다음, 다른
+# 갈래보다 먼저 본다 — 같은 문구에 실린 「Rejected query」 · 드라이버 함수 이름(`SQL…`)이 그 밖으로
+# 가르지 않게. 근거 낱말(`query_failure_clue`)은 이 이름 하나다.
+_BUSY_PATTERN: Final = re.compile(r"\bqueue\s+(?:(?:is|was)\s+)?full\b", re.IGNORECASE)
+BUSY_CLUE: Final = "queue full"
 # 차례대로 본다 — 「connect timeout」 은 시간 초과, 「host not found」 는 연결이다.
 _FAILURE_WORDS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     (
@@ -681,6 +715,8 @@ TOKEN_ADVICE_LOCAL: Final = (
 )
 _FAILURE_ADVICE: Final[Mapping[str, str]] = {
     QUERY_FAILURE_TOKEN: TOKEN_ADVICE_SERVER,
+    QUERY_FAILURE_BUSY: "DB 서버가 혼잡해 조회를 받지 않았습니다 — 잠시 뒤 같은 조회를 다시 "
+    "하세요.",
     QUERY_FAILURE_TIMEOUT: "DB 응답이 늦었습니다 — 잠시 뒤 같은 조회를 다시 하거나 "
     "기간을 줄여 다시 하세요.",
     QUERY_FAILURE_CONNECTION: "DB 에 닿지 못했습니다 — 네트워크 연결을 확인하고 잠시 뒤 같은 "
@@ -743,11 +779,13 @@ def _sorted_failure(error: BaseException) -> tuple[str, str]:
     """(갈래, 근거 낱말). 종류(`TimeoutError`·`ConnectionError`)로 가렸거나 맞은 낱말이 없으면
     낱말은 빈 글이다. 낱말은 `_TOKEN_FAILURE_WORDS` · `_FAILURE_WORDS` 의 것뿐이라 문구를 싣지
     않는다. 토큰을 맨 앞에 본다 — 사슬에 `ConnectionError` 가 있거나 문구에 연결 낱말이 있어도 토큰
-    실패는 「연결」 안내(네트워크 · 다시)가 틀린 길이다."""
+    실패는 「연결」 안내(네트워크 · 다시)가 틀린 길이다. 그다음이 서버 혼잡(`_BUSY_PATTERN`)이다."""
     chain = _failure_chain(error)
     token = _token_clue(chain)
     if token is not None:
         return QUERY_FAILURE_TOKEN, token
+    if any(_BUSY_PATTERN.search(str(link)) for link in chain):
+        return QUERY_FAILURE_BUSY, BUSY_CLUE
     if any(isinstance(link, TimeoutError) for link in chain):
         return QUERY_FAILURE_TIMEOUT, ""
     if any(isinstance(link, ConnectionError) for link in chain):
@@ -786,8 +824,8 @@ def _log_failure(message: str, *, kind: str = "", type_names: tuple[str, ...] = 
 
 
 def _is_long_wait_failure(kind: str, clue: str, seconds: float | None) -> bool:
-    """오래 기다린 끝의 실패를 시간 초과로 올릴지. 토큰 · 시간 초과 · 연결은 그 갈래가 맞고, SQL 은
-    문법 낱말일 때만 그대로 둔다."""
+    """오래 기다린 끝의 실패를 시간 초과로 올릴지. 토큰 · 서버 혼잡 · 시간 초과 · 연결은 그 갈래가
+    맞고, SQL 은 문법 낱말일 때만 그대로 둔다."""
     if seconds is None or seconds < LONG_FAILURE_SECONDS:
         return False
     return kind == QUERY_FAILURE_OTHER or (

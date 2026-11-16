@@ -1982,7 +1982,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     고르면 등록일 −7~+3일) 넓은 기본 창으로 조용히 떨어지지 않는다. 같은 코드 재수신은 원천 코드 불변 검사가 막는다.
   - `getData` 가 낸 패키지 예외는 `call_get_data` 가 `BigDataQueryCallError`(`RuntimeError`)로 감싼다 — 패키지의 `Error`
     같은 종류는 화면의 `BOOTSTRAP_ERRORS` 밖이라 그대로 두면 목록·저장 화면이 traceback 으로 멈춘다. 감싼 예외는 갈래
-    (`classify_query_failure` — 토큰·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
+    (`classify_query_failure` — 토큰·서버 혼잡·시간 초과·연결·SQL·그 밖, 사슬의 종류 이름과 문구 낱말로 가른 추정)와 다시 할 길을 말하고
     원문(300자까지)과 원래 예외(`__cause__`)를 남긴다. 토큰은 맨 앞에 보고 분명한 근거만 쓴다 — 토큰 예외 종류 이름
     (`_TOKEN_FAILURE_TYPE_WORDS` — `TokenNotFound…` · 만료를 단 이름, 문법 낱말보다 먼저)이나 분명한 토큰 낱말(`_TOKEN_FAILURE_WORDS`
     — `invalid token` · `token expired` 류와 패키지의 「no bigdataquery token」, 종류 이름 `InvalidToken…` 도 이쪽)이고, 이쪽은 문법
@@ -2000,6 +2000,21 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
     회차를 세워 서버에 같은 조회가 겹쳐 쌓였다(`call_get_data` 의 `_IN_FLIGHT`, 캐시가 아니다). 합류는 조회 시작부터
     `IN_FLIGHT_JOIN_SECONDS`(20분 — 잰 가장 긴 실패 907초를 넘긴 자리)까지이고, 그 뒤의 첫 부름이 자리를 넘겨받아 새로 묻는다 —
     돌아오지 않는 `getData` 하나가 프로세스의 그 조회문 부름을 재시작까지 멈춰 세우지 않게 한다.
+  - 「서버 혼잡」(`QUERY_FAILURE_BUSY`)은 DB 서버 대기열이 가득 차 조회를 받지 않은 것이다(Impala `queue full` — `pyodbc.Error`
+    HY000, 2026-11-16 사내 확인 · D8). 토큰 다음, 다른 갈래보다 먼저 본다(`_BUSY_PATTERN` — `queue full` · `queue is full` 따위,
+    대소문자 무시, 근거 낱말 `BUSY_CLUE`) — 같은 문구의 「Rejected query」 · `SQL…` 함수 이름이 그 밖으로 가르지 않게. 안내는
+    「잠시 뒤 같은 조회를 다시」 뿐이고 앱은 스스로 다시 묻지 않는다. 오래 기다린 끝이어도 시간 초과로 올리지 않는다.
+  - 요청자 계정(`resolve_user_name`)은 계정 하나의 원천(`bdq_login_store.effective_account` — C-DEP 자동 로그인에 저장된
+    계정이 있으면 그 ID, Admin 폼으로 바뀌면 곧바로 새 ID, 없으면 `CAPA_BDQ_USER_NAME`)이고 저장 객체 읽기가 깨지면 환경변수
+    계정으로 물러선다. `getData` 는 `bdq_login.run_with_relogin` 안에서 부른다(`_get_data_once`) — 저장된 계정이 있고 멈춤이
+    아니며 패키지의 토큰 예외 종류(`bdq_login.RELOGIN_EXCEPTIONS` 한 줄 — 지금은 `TokenNotFoundException` 하나)로 실패하면 다시
+    로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이). 다시 한 조회도 토큰 오류면 멈춤을 저장하고,
+    로그인 거절도 멈춤 저장, 닿지 못함 · 패키지 없음은 멈추지 않고 원래 실패다(D3 · D4 · D6). 문구 낱말만 맞은 토큰 갈래는 다시
+    로그인하지 않는다(`AD-10` 만 — D9). 감싸기 · 토큰 표지 · 실패 초는 다시 로그인을 거친 마지막 부름에 한 번이다. 저장된
+    계정이 없으면(키 없음 · `managed` 아님 · 객체 없음) 지금과 같다 — 하위 프로세스 0 · 키가 없으면 S3 요청 0. 같은 조회문 합류
+    (`_IN_FLIGHT`) 안이라 겹친 부름은 다시 로그인을 함께 기다린다. 모듈 창구 `module_api.query_bigdataquery` 도 같은 길이다.
+    Streamlit 을 부르지 않는다(공식버전 자동 갱신 스레드 — `tests/test_company_bigdataquery_adapter.py` 가 별도 프로세스의 맨
+    스레드로 본다).
   - import 실패도 `load_bigdataquery_module` 이 모두 `RuntimeError` 로 올린다. 「패키지가 없습니다」는 패키지 자체가 없을
     때만이고(점검 스크립트가 이 문구로 가른다), 깔렸는데 불러오다 깨지면(DLL·numpy 판·패키지가 쓰는 모듈 없음) 「불러오지
     못했습니다」와 빠진 모듈 이름 또는 원문을 단다.
@@ -2063,7 +2078,7 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   바뀌었으면 성공(남은 분이 7시간 이하 · 모름은 성공 + 경고), 그 밖은 표지로 `rejected`(애매해도 — 계정 잠김 방지) · `unreached`(연결 ·
   시간 초과의 양의 증거) · `unavailable`(패키지 없음 · 시도 전 거절). 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤
   표시를 쓴다(D3). 자동 시도 연속 3번 · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 `bigdataquery.exceptions` 의 토큰 예외
-  종류(`RELOGIN_EXCEPTIONS` 한 줄)에서만이다(`run_with_relogin` — 어댑터가 감쌀 자리, 다음 단계). 폼 제출(`login_from_form` — 실패면
+  종류(`RELOGIN_EXCEPTIONS` 한 줄)에서만이다(`run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를 감싼다). 폼 제출(`login_from_form` — 실패면
   저장하지 않음, D5) · 지우기(`forget_login`) · 시작(`start_login` — 시작 스크립트)이 같은 잠금이다. 앱 기동 한 번(`start_in_app` —
   `capa_server.py`)은 키를 쥐고 빼고 저장 객체를 읽어 두며, 이번 시작이 거절을 보고도 멈춤 표시를 쓰지 못했거나 로그인 단계가 예상하지
   못하게 멈췄으면 그 한 벌을 프로세스에서 멈춘다(시작 스크립트의 프로세스 안 멈춤은 앱으로 바뀌며 사라진다 — 거절은 표시를 다시 써

@@ -4,20 +4,43 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import subprocess
 import sys
 import threading
+from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pandas as pd
 import pytest
+from bdq_login_support import (
+    ACCOUNT,
+    ADMIN_ID,
+    OTHER_ACCOUNT,
+    PASSWORD,
+    WRONG_PASSWORD,
+    FakeBdq,
+    requests_on,
+    running_mock,
+    switch_on,
+    target_of,
+    use_fake_bdq,
+)
+from s3_mock_store import MockStore
 
+from capa_simulation.io import bdq_login
+from capa_simulation.io import bdq_login_store as login_store
 from capa_simulation.io import company_bigdataquery_adapter as adapter
+from capa_simulation.io.bdq_login_store import LoginSecret
+from capa_simulation.io.s3_small import S3Target
 from capa_simulation.page_bootstrap import BOOTSTRAP_ERRORS
 
-CONTRACT_PATH = Path(__file__).resolve().parents[1] / "config" / "data_contract.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CONTRACT_PATH = PROJECT_ROOT / "config" / "data_contract.json"
 
 
 def _module(get_data: object) -> SimpleNamespace:
@@ -1183,3 +1206,432 @@ def test_a_cd_server_without_a_start_report_says_so_after_the_missing_package_te
     assert "서버 시작 점검 결과가 없습니다" in text and "돌지 않은 것으로" in text
     assert adapter.BDQ_USER_NAME_ENV not in text
     assert "FAKE-artifactory-token" not in text
+
+
+# --- 서버 혼잡(Impala `queue full`) --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        Error("Rejected query from pool root.default: queue full, limit=200, num_queued=200."),
+        Error(
+            "('HY000', '[HY000] [Cloudera][ImpalaODBC] (110) Error while executing a query in "
+            "Impala: [HY000] : Admission rejected: Queue is full (SQLExecDirectW)')"
+        ),
+        Error("QUEUE FULL"),
+        _chained(Error("Error executing SQL statement"), Error("the queue was full")),
+        _chained(ConnectionError("server busy"), Error("queue full")),
+    ],
+)
+def test_a_full_server_queue_is_its_own_kind_and_says_try_again_later(error: BaseException) -> None:
+    """사내 확인(2026-11-16) — Impala 대기열이 가득 차면 `pyodbc.Error`(HY000)가 「queue full」 을
+    싣고 온다. 토큰과 무관하고 잠시 뒤 다시 하면 풀린다 — 「Rejected query」 · `SQL…` 함수 이름이
+    함께 실려도 그 밖이 아니라 「서버 혼잡」 이다(D8)."""
+    assert (adapter.classify_query_failure(error), adapter.query_failure_clue(error)) == (
+        adapter.QUERY_FAILURE_BUSY,
+        adapter.BUSY_CLUE,
+    )
+    wrapped = adapter.BigDataQueryCallError(error, seconds=907.4)
+    text = str(wrapped)
+    assert (wrapped.kind, wrapped.clue) == (adapter.QUERY_FAILURE_BUSY, adapter.BUSY_CLUE)
+    assert text.startswith("BigDataQuery 조회가 실패했습니다(서버 혼잡).")
+    assert "잠시 뒤" in text and "다시 해도 같으니" not in text and "기간을 줄여" not in text
+    assert adapter.is_login_token_failure(error) is False
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        (Error("requeue fullness check"), adapter.QUERY_FAILURE_OTHER),
+        (Error("queue length 3"), adapter.QUERY_FAILURE_OTHER),
+        (TokenNotFoundException("no bigdataquery token (queue full)"), adapter.QUERY_FAILURE_TOKEN),
+    ],
+)
+def test_only_the_full_queue_words_make_the_busy_kind_and_the_token_still_comes_first(
+    error: BaseException, kind: str
+) -> None:
+    assert adapter.classify_query_failure(error) == kind
+
+
+def test_a_busy_server_is_not_asked_again_by_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """서버 혼잡은 안내만 한다 — 앱은 같은 조회를 스스로 다시 묻지 않는다(D8)."""
+    calls: list[int] = []
+
+    def busy(**_kwargs: object) -> pd.DataFrame:
+        calls.append(1)
+        raise Error("Rejected query from pool root.default: queue full")
+
+    monkeypatch.setattr(importlib, "import_module", lambda _: _module(busy))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_BUSY and calls == [1]
+    assert adapter.last_query_failed_on_token() is False
+
+
+# --- C-DEP 자동 로그인 — 조회 중 다시 로그인(D4 · D9) -------------------------------------------
+#
+# 로그인은 진짜 하위 프로세스가 가짜 `bigdataquery`(`tests/fixtures/bdq_fake/`)를 불러 돈다.
+# 장면마다 하위 프로세스에서 `login()` 이 불린 수를 센다(`FakeBdq.logins`) — 계정 잠김 방지가
+# 불변식이다.
+
+
+def _package_token_error() -> type[Exception]:
+    """패키지의 토큰 파일 없음 예외와 같은 자리 · 이름(`bigdataquery.exceptions`)의 종류."""
+    return type("TokenNotFoundException", (Exception,), {"__module__": "bigdataquery.exceptions"})
+
+
+class _TokenFileReader:
+    """조회마다 그 계정의 토큰 파일을 다시 읽는 `getData` — 파일이 없으면 패키지의 토큰 예외(사내
+    2.5.0 확인과 같은 꼴). `always_refuse` 면 파일이 있어도 토큰 예외다."""
+
+    def __init__(self, fake: FakeBdq, *, always_refuse: bool = False) -> None:
+        self.fake = fake
+        self.always_refuse = always_refuse
+        self.error = _package_token_error()
+        self.calls: list[dict[str, object]] = []
+
+    def getData(self, **kwargs: object) -> pd.DataFrame:  # noqa: N802 — 패키지 이름 그대로
+        self.calls.append(dict(kwargs))
+        account = str(kwargs.get("user_name", ""))
+        if self.always_refuse or not self.fake.token_path(account).is_file():
+            raise self.error(f"There is no bigdataquery token issued for AD user {account}")
+        return pd.DataFrame({"a": [1]})
+
+
+@pytest.fixture()
+def fake(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeBdq:
+    return use_fake_bdq(monkeypatch, tmp_path)
+
+
+@pytest.fixture()
+def login_s3(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[MockStore, S3Target]]:
+    """가짜 S3 한 벌 — 앱 프로세스의 닿을 곳(`app_target`)을 그곳으로."""
+    with running_mock() as (mock, endpoint):
+        target = target_of(mock, endpoint)
+        monkeypatch.setattr(login_store, "app_target", lambda: target)
+        yield mock, target
+
+
+def _stored(monkeypatch: pytest.MonkeyPatch, target: S3Target, *, password: str = PASSWORD) -> None:
+    """`managed` + 키를 켜고 계정을 저장한다(앱 프로세스 기억도 바뀐다)."""
+    key = switch_on(monkeypatch)
+    written = login_store.save_login(target, key.encode(), LoginSecret(ACCOUNT, password), ADMIN_ID)
+    assert written.ok
+
+
+def _object_state(mock: MockStore) -> str:
+    with mock.lock:
+        state = json.loads(mock.objects[login_store.OBJECT_KEY])["state"]
+    assert isinstance(state, str)
+    return state
+
+
+def test_a_missing_token_logs_in_again_and_the_same_query_runs_once_more(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """저장된 계정이 `CAPA_BDQ_USER_NAME` 을 이긴다 — 조회 · 토큰 파일 · 다시 로그인이 한
+    계정이다."""
+    mock, target = login_s3
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, OTHER_ACCOUNT)
+    _stored(monkeypatch, target)
+    module = _TokenFileReader(fake)
+
+    frame = adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert isinstance(frame, pd.DataFrame) and len(frame) == 1
+    assert [call["user_name"] for call in module.calls] == [ACCOUNT, ACCOUNT]
+    assert fake.logins() == 1
+    assert adapter.last_query_failed_on_token() is False
+    assert _object_state(mock) == "ok" and bdq_login.status().state == "ok"
+
+
+def test_the_relogin_reads_the_key_the_app_took_out_of_the_environment(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """운영 앱은 기동 때 키를 쥐고 환경에서 뺀다(`take_secret_key`) — 저장 객체 읽기 · 다시
+    로그인이 쥔 키로 돈다."""
+    _, target = login_s3
+    _stored(monkeypatch, target)
+    login_store.forget_state()
+    login_store.take_secret_key(os.environ)
+    assert login_store.SECRET_KEY_ENV not in os.environ
+    module = _TokenFileReader(fake)
+
+    frame = adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert isinstance(frame, pd.DataFrame)
+    assert [call["user_name"] for call in module.calls] == [ACCOUNT, ACCOUNT]
+    assert fake.logins() == 1
+
+
+def test_a_second_token_error_after_our_own_login_stops_and_stays_a_token_failure(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    mock, target = login_s3
+    _stored(monkeypatch, target)
+    module = _TokenFileReader(fake, always_refuse=True)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_TOKEN
+    assert len(module.calls) == 2 and fake.logins() == 1
+    assert _object_state(mock) == "stopped"
+    status = bdq_login.status()
+    assert status.state == "stopped" and status.stop_reason == bdq_login.REASON_TOKEN_AFTER_LOGIN
+    assert adapter.last_query_failed_on_token() is True
+
+    with pytest.raises(adapter.BigDataQueryCallError):
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+    assert len(module.calls) == 3 and fake.logins() == 1
+
+
+def test_a_rejected_login_stops_and_returns_the_first_failure(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    mock, target = login_s3
+    _stored(monkeypatch, target, password=WRONG_PASSWORD)
+    module = _TokenFileReader(fake)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_TOKEN
+    assert isinstance(raised.value.__cause__, module.error)
+    assert len(module.calls) == 1 and fake.logins() == 1
+    assert _object_state(mock) == "stopped"
+    assert bdq_login.status().stop_reason == bdq_login.REASON_TOKEN_UNCHANGED
+    for _ in range(2):
+        with pytest.raises(adapter.BigDataQueryCallError):
+            adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+    assert fake.logins() == 1
+
+
+def test_an_unreached_login_does_not_stop_and_returns_the_first_failure(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """서버에 닿지 못한 로그인은 멈추지 않는다(D6) — 원래 실패를 돌려주고, 쉬는 동안은 다시 띄우지
+    않는다."""
+    mock, target = login_s3
+    _stored(monkeypatch, target)
+    monkeypatch.setenv("FAKE_BDQ_SCENE", "connection")
+    module = _TokenFileReader(fake)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_TOKEN
+    assert isinstance(raised.value.__cause__, module.error)
+    assert len(module.calls) == 1 and fake.logins() == 1
+    assert _object_state(mock) == "ok"
+    status = bdq_login.status()
+    assert status.state == "ok" and status.paused
+    with pytest.raises(adapter.BigDataQueryCallError):
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+    assert fake.logins() == 1
+
+
+def test_a_token_failure_known_only_by_its_words_does_not_log_in(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """문구 낱말만 맞은 토큰 갈래는 알림만이다(D9) — 다시 로그인은 패키지의 토큰 예외 종류에서만."""
+    _, target = login_s3
+    _stored(monkeypatch, target)
+    calls: list[int] = []
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        calls.append(1)
+        raise Error("HTTP 500 invalid token")
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(_module(refuse), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_TOKEN
+    assert calls == [1] and fake.logins() == 0
+    assert adapter.last_query_failed_on_token() is True
+
+
+def test_a_busy_server_with_a_stored_login_does_not_log_in(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    _, target = login_s3
+    _stored(monkeypatch, target)
+    calls: list[int] = []
+
+    def busy(**_kwargs: object) -> pd.DataFrame:
+        calls.append(1)
+        raise Error("Rejected query from pool root.default: queue full")
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(_module(busy), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_BUSY
+    assert calls == [1] and fake.logins() == 0
+
+
+def test_without_a_key_or_a_stored_login_the_query_is_as_before(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """잠든 불변식 — 키가 없으면 S3 에 묻지 않고 하위 프로세스도 띄우지 않으며 인자 · 실패가 지금과
+    같다. 키가 있어도 저장된 계정이 없으면 S3 읽기 한 번 뒤 같은 인자 · 갈래다(끝 절은 키가 CD 전용
+    이름이라 서버 안내 — `token_advice`)."""
+    mock, _ = login_s3
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, OTHER_ACCOUNT)
+    spawned: list[object] = []
+    real_run = subprocess.run
+
+    def record(*args: object, **kwargs: object) -> object:
+        spawned.append(args)
+        return real_run(*args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(subprocess, "run", record)
+    module = _TokenFileReader(fake)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as plain:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+    assert module.calls == [
+        {"param": "SELECT 1", "convert_type": True, "verbose": True, "user_name": OTHER_ACCOUNT}
+    ]
+    assert plain.value.kind == adapter.QUERY_FAILURE_TOKEN
+    assert requests_on(mock, login_store.OBJECT_KEY) == []
+
+    switch_on(monkeypatch)
+    login_store.forget_state()
+    with pytest.raises(adapter.BigDataQueryCallError) as keyed:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+    assert module.calls[-1] == module.calls[0] and len(module.calls) == 2
+    assert (keyed.value.kind, keyed.value.type_names) == (plain.value.kind, plain.value.type_names)
+    assert requests_on(mock, login_store.OBJECT_KEY) == ["GET"]
+    assert spawned == [] and fake.logins() == 0
+
+
+def test_an_account_changed_in_the_form_is_used_by_the_next_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """폼으로 계정이 바뀌면(저장소 기억이 바뀐다) 떠 있는 앱의 다음 조회가 곧바로 새 ID 다."""
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "env_account")
+    captured: list[object] = []
+
+    def answer(**kwargs: object) -> pd.DataFrame:
+        captured.append(kwargs.get("user_name"))
+        return pd.DataFrame({"a": [1]})
+
+    def remember(account: str) -> None:
+        login_store.remember(
+            login_store.StoredLogin(
+                LoginSecret(account, PASSWORD), "cipher", "de", "2026-11-16T09:00:00+09:00", "ok"
+            )
+        )
+
+    remember(ACCOUNT)
+    adapter.call_get_data(_module(answer), "SELECT 1")
+    remember(OTHER_ACCOUNT)
+    adapter.call_get_data(_module(answer), "SELECT 2")
+    login_store.remember(None)
+    adapter.call_get_data(_module(answer), "SELECT 3")
+
+    assert captured == [ACCOUNT, OTHER_ACCOUNT, "env_account"]
+
+
+def test_a_broken_store_read_falls_back_to_the_environment_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, " env_account ")
+
+    def broken() -> object:
+        raise RuntimeError("store read failed")
+
+    monkeypatch.setattr(login_store, "current", broken)
+
+    assert adapter.resolve_user_name() == "env_account"
+
+
+def test_every_relogin_kind_is_also_the_token_kind() -> None:
+    """다시 로그인을 거는 종류(`bdq_login.RELOGIN_EXCEPTIONS` — D9 의 한 줄)는 모두 갈래
+    「토큰」 이다 — 한 줄을 더해도 그 실패의 안내 · 관리자 알림(`AD-10`)이 토큰 길을 따른다."""
+    for qualified in bdq_login.RELOGIN_EXCEPTIONS:
+        module_name, _, name = qualified.rpartition(".")
+        error = type(name, (Exception,), {"__module__": module_name})("x")
+        assert bdq_login.is_relogin_error(error), qualified
+        assert adapter.classify_query_failure(error) == adapter.QUERY_FAILURE_TOKEN, qualified
+
+
+_THREAD_SCRIPT = """
+import json
+import os
+import sys
+import threading
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+from s3_mock_store import MockStore, start_mock
+
+from capa_simulation.io import bdq_token
+from capa_simulation.io import bdq_login_store as store
+from capa_simulation.io import company_bigdataquery_adapter as adapter
+from capa_simulation.io.bdq_login_store import LoginSecret
+from capa_simulation.io.s3_small import S3Target
+
+mock = MockStore()
+server, endpoint = start_mock(mock)
+target = S3Target(
+    endpoint_url=endpoint,
+    bucket=mock.bucket,
+    region=mock.region,
+    access_key=mock.access_key,
+    secret_key=mock.secret_key,
+)
+store.app_target = lambda: target
+bdq_token.CREDENTIAL_DIR = Path(os.environ["FAKE_BDQ_CREDENTIAL_DIR"])
+account, password = sys.stdin.read().splitlines()[:2]
+key = os.environ[store.SECRET_KEY_ENV].encode()
+assert store.save_login(target, key, LoginSecret(account, password), "demo.admin").ok
+out = {}
+
+
+def work():
+    try:
+        answer = adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+        out["rows"] = len(answer)
+        out["thread"] = threading.current_thread() is not threading.main_thread()
+    except BaseException as error:
+        out["error"] = type(error).__name__
+
+
+worker = threading.Thread(target=work)
+worker.start()
+worker.join(120)
+out["streamlit"] = "streamlit" in sys.modules
+print(json.dumps(out))
+"""
+
+
+def test_the_relogin_runs_in_a_plain_thread_without_streamlit(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """공식버전 자동 갱신 스레드도 어댑터를 지난다 — 실행 문맥 없는 스레드에서 토큰 예외 → 다시
+    로그인 → 같은 조회가 돌고, 그 길 어디에서도 Streamlit 을 불러오지 않는다(부를 수 없다). 가짜
+    패키지를 그대로 불러오는 별도 프로세스라 진짜 `bigdataquery.exceptions` 자리의 종류다."""
+    key = switch_on(monkeypatch)
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([str(PROJECT_ROOT / "src"), os.environ["PYTHONPATH"]]),
+        login_store.SECRET_KEY_ENV: key,
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", _THREAD_SCRIPT, str(PROJECT_ROOT / "scripts")],
+        input=f"{ACCOUNT}\n{PASSWORD}\n",
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=180,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr[-2000:]
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert result == {"rows": 1, "thread": True, "streamlit": False}
+    assert fake.logins() == 1
