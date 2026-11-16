@@ -113,6 +113,7 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
 | `CAPA_COMPANY_INDEX_URL` | 사내 Artifactory 인덱스 주소(`https://…/simple` 통째 — 자격증명 없이, 사내 PC 와 같은 값). 사내 값이라 저장소에 없다. **이 이름을 읽는 판을 싣는 CI/CD 전에 넣는다** — 없으면 설치를 건너뛰어 BigDataQuery 조회가 멈춘다. 이 키를 모르는 앞 배포에 먼저 넣어도 해가 없다 | 0. 설치 |
 | `CAPA_BDQ_TOKEN` | WebIDE 에서 로그인해 만든 토큰 파일의 **내용**(아래) | 1. 로그인 |
 | `CAPA_BDQ_USER_NAME` | 본인 AD 계정(`<AD 계정>`) — 토큰 파일 이름과 `getData(user_name=…)` 에 함께 쓴다 | 1·2 |
+| `CAPA_BDQ_SECRET_KEY` | (자동 로그인을 쓸 때만) Fernet 키 44글자 — `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 출력. 동기화 모드가 `managed` 인 서버에서만 쓰인다 | 1. 로그인(자동) |
 
 - 설치는 `bigdataquery` 가 없을 때만 하고, 판과 인덱스는 `requirements-company.txt` 를 읽는다 — 인덱스 줄의
   `${CAPA_COMPANY_INDEX_URL}` 을 pip · uv 와 같은 꼴로 펼치고, 그 값이 비면 설치를 건너뛰며(`CD 환경변수 … 없음`) `https://주소`
@@ -129,6 +130,12 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
     그때는 「서버 시작 점검」 의 pip 출력 끝을 알려 준다.
   - 앱 포트는 시작 점검이 끝난 뒤에 열리므로 짧게 잡았다 — 두 pip 를 합쳐 240초, import 확인은 60초, pip 는 연결마다
     15초·재시도 2번에 포기한다.
+- **자동 로그인**(`CAPA_BDQ_SECRET_KEY` 가 있고 `managed` 인 서버) — 계정 · 비밀번호는 환경변수 표에 두지 않고 Admin Area
+  「BDQ 자동 로그인」 에서만 넣는다. 그 키로 감싸 버킷 `secrets/bdq_login.json` 에 두고, 시작 스크립트가 시작마다 그 계정으로 한 번
+  로그인한다(성공하면 `CAPA_BDQ_TOKEN` 은 쓰지 않는다 — 실패 · 닿지 못함이면 아래처럼 그 값을 예비로 쓴다). 로그인이 거절되면 다시
+  시도하지 않고 멈추며(관리자 알림 `AD-23`) 다시 띄워도 그대로다 — Admin Area 에서 계정을 다시 넣어 성공하면 풀린다. 키를 바꾸면
+  저장된 계정을 풀 수 없어 「계정 없음」 이 되니 다시 넣는다. 「서버 시작 점검」 표의 「BDQ 자동 로그인」 줄이 시작 때 결과다. 저장된
+  계정이 있으면 토큰 파일 이름과 조회 계정은 그 ID 다(`CAPA_BDQ_USER_NAME` 보다 앞).
 - 토큰은 `/config/.credential/bigdataquery.token.<CAPA_BDQ_USER_NAME>` 에 0600(폴더 0700)으로 쓴다(같은 내용이면
   다시 쓰지 않고 권한만 맞춘다). 패키지가 그 자리만 보므로 `/config` 에 못 쓰면 다른 곳에 쓰지 않고 실패로 적는다.
   앱은 `$DSUSER` 로 돌아 `/` 에 폴더를 만들 수 없으므로 이미지가 `/config/.credential` 을 미리 만들어 넘긴다.

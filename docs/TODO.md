@@ -104,6 +104,15 @@
   비권장 · 조회마다 다시 읽음(`BIGDATAQUERY_LOGIN_TOKEN` 이 파일보다 앞) · 만료 시각 있음 · C-DEP 연결 열림. 남은 것은 ② 하나다.
   ⑤ (선택) 실제 브라우저 확인 — 폼 `clear_on_submit` 거절 뒤 다음 상호작용에서 거절된 값이 서버로 다시 오는지, 비밀번호 칸에서 브라우저가 저장을
   제안하는지(AppTest 로는 볼 수 없다).
+- [ ] **BigDataQuery 자동 로그인**(2026-11-16 사용자 결정 D1 ~ D11 — 토큰이 만료 · 무효면 앱이 저장된 계정으로 다시 로그인). 들어간 것(가지
+  `feat/bdq-login-1116`): 저장 객체 `io/bdq_login_store.py`(버킷 `secrets/bdq_login.json` · CD 환경변수 `CAPA_BDQ_SECRET_KEY` Fernet), 하위 프로세스
+  로그인 `io/bdq_login.py` · `io/bdq_login_child.py`, 시작 스크립트 단계(설치 → 자동 로그인 → 예비 토큰 → 요청자 계정 · 결과 칸 `bdq_login`),
+  「서버 시작 점검」 표 줄 「BDQ 자동 로그인」, 관리자 알림 `AD-23`(멈춤) · `AD-10` 가리킴 · 서 있는 동안 `AD-11` 해소, 앱 기동 읽기
+  (`start_in_app` — 키를 쥐고 환경에서 뺌). 남은 것: ① 어댑터가 조회를 `run_with_relogin` 으로 감싸고 조회 계정을 `effective_account` 로 · queue
+  full 갈래(D8) ② Admin Area 「BDQ 자동 로그인」 폼(D5 · D7 — 관리자 전용 · `st.form` · 지우기 단추 · 상태 줄)과 규칙집 결정 기록(표 줄 · `AD-23`)
+  ③ `scripts/module_check_rules.py` M21 금지 자리에 `secrets/bdq_login.json` ④ `sync_object_storage.py` 의 init · fetch-copy · generations ·
+  rollback 이 `secrets/` 를 다루지 않음을 시험으로 고정 ⑤ 사내 확인 — 진짜 2.5.0 이 표준 입력 세 줄(첫 줄은 본문) · 제어 터미널 없는 새 세션에서
+  로그인하는지(WebIDE 한 번, D11) · 무효 · 만료 토큰의 예외 종류(`RELOGIN_EXCEPTIONS` 한 줄에 더함).
 - [ ] **통합인증 권한 다음 단계 — S3 명단 · 화면별 등급**(2026-11-05 — 1단계 접속 명단은 `auth/access.py`, 3장 「운영·배포」 같은 날). **사용자 결정(같은 날): 그룹 클레임 · 포털 그룹 제한은 쓰지 않고 `loginid`(사내 고유 계정명) + S3 영속 명단으로 간다** — 환경변수 명단은 고칠 때마다 CI/CD 재시작이라 저장 데이터가 사라지고(영속 저장 전) 모든 연결이 끊긴다.
   ① S3 명단 — **구현(가지 `feat/access-s3-1105` — `auth/access_store.py` · `io/s3_small.py` · `components/access_list_admin.py`, `docs/sso_setup.md` 5 · 7장).** S3 의 작은 JSON 파일 하나(DuckDB 아님), 시작 때 받아 메모리에 올리고 판정은 메모리(`session_check` 한 곳 그대로), Admin 에서 고치면 S3 저장 + 메모리 즉시 반영이라 재시작 없음. `CAPA_ACCESS_ADMINS` 는 관리자 판별 · S3 장애 비상구로 남고(못 읽으면 관리자만 통과) 키가 있으면 `CAPA_ACCESS_USERS` 는 파일이 없을 때의 첫 판으로만 쓴다(2026-11-07 — 표지 객체로 처음 한 번만, `docs/sso_setup.md` 2 · 5장). **아직 실제 C-DEP · 실제 S3 에서 돌리지 못했다**(가짜 S3 로만 — `aws` 와 달리 SigV4 직접 구현이라 ECS 호환은 사내 첫 확인이 답이다). 받을 답: C-DEP 에서 쓸 S3 키(앱용 가능한지 · 쓰기 권한) · C-DEP 에서 S3 주소 접속(Admin 「S3 명단」 줄이 답한다) · HTTPS 가능 여부 · 없는 키에 저장소가 `NoSuchKey` 를 주는지(첫 적용의 줄이 `정상 · … · 판 0` 이면 준다, `실패 · 그 밖의 응답(HTTP 404 …)` 면 첫 파일을 손으로 올린다 — `docs/sso_setup.md` 2장).
   **S3 명단 검토 뒤 결정 필요(2026-11-05 — 지금 코드로 동작하고, 정하면 바꾼다).** ⓐ 읽어 둔 뒤 404 면 메모리 명단을 유지한다(문서 규칙 「404 는 빈 명단」 을 「받아 둔 파일이 없을 때 `NoSuchKey` 만」 으로 좁혔다) — 파일을 정말 지운 경우 메모리 명단을 파일로 되살리는 단추가 없다(저장은 「그 사이 바뀜」 으로 막히고, 재시작하면 빈 명단). 단추를 둘지 답 대기. ⓑ S3 요청의 이름 풀기(DNS)는 8초 마감 밖이다 — 끊으려면 짧은 타이머 스레드가 필요해 AGENTS 9장 「배경 스레드」 와 부딪힌다. 이대로 둘지 답 대기. ⓒ 통합인증 조치 알림 `AD-02` · `AD-03` 은 관리자가 아닌 사람에게도 뜬다(`AD-08` 만 관리자 회차로 좁혔다) — 같이 좁힐지 답 대기.
