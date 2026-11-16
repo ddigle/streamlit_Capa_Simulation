@@ -2771,7 +2771,7 @@ def test_the_token_renewal_input_decision_is_recorded_and_the_refresh_token_turn
     로그인 토큰을 6시간마다) — 대화 원문 · 「답 밖 — 구현이 정함」 · 지금 「준비」 · 커밋 · 걷은
     `AD-18` 을 든다. 뒤집힌 6-29 token-auto-frame 의 갱신 토큰 몫과 그 80일을 받은 6-30 s-C-14 ·
     4장 옛 지금 값은 7-1 한 줄에 남고 6-29 줄은 그대로다(6-30 s-C-14 줄 · 4장은 v1.30 시험이
-    본다). 판 머리는 v1.33 시험이 보고, 6-31 구간은 6-32 앞에서 끊는다."""
+    본다). 판 머리는 v1.34 시험이 보고, 6-31 구간은 6-32 앞에서 끊는다."""
     document = _text()
     assert "- **v1.31 — 2026-11-15.**" in _chapter(document, 8)
     assert "6-31 에 있다" in _chapter(document, 1)
@@ -2816,7 +2816,7 @@ def test_the_token_refresh_frame_removal_is_recorded_and_its_exceptions_are_gone
     「서버 시작 점검」 표의 「토큰 자동 갱신」 줄이 없어져 UI-CON-02 · UI-DAT-11 예외는
     「없음」 으로 돌아갔고 규칙 글 · 4장에 그 줄이 없다. 6-29 token-auto-frame · 6-30 s-C-13 ·
     6-31 token-renew-input 줄은 그때 기록 그대로이고 걷음 표지만 달며, 뒤집힌 것은 7-1 한 줄이다.
-    판 머리는 v1.33 시험이 본다."""
+    판 머리는 v1.34 시험이 본다."""
     document = _text()
     assert "- **v1.32 — 2026-11-16.**" in _chapter(document, 8)
 
@@ -2855,20 +2855,36 @@ AUTO_LOGIN_WEBIDE_MEMO = (
     "운영서버 동작으로 인해 토큰이 초기화되는것을 감수하겠다는것."
 )
 AUTO_LOGIN_ADMIN_MEMO = "입력한 관리자의 앱 로그인 ID였음."
+# v1.34 — 6-32 줄 밑 들여쓴 줄(같은 날 사용자 답 둘)과 그 답이 닫지 않은 「답 밖」 꼴.
+AUTO_LOGIN_ANSWER_HEAD = "\n  - 2026-11-16 사용자 답 — D6 좁힘 · 새 화면 꼴: "
+AUTO_LOGIN_ANSWERS = ("「이대로 (Recommended)」", "「그대로 싣기 (Recommended)」")
+AUTO_LOGIN_STILL_WAITING = (
+    "`BDQ_LOGIN_LABEL`",
+    "`AD-23`",
+    "서 있는 동안 `AD-11` 해소",
+    "60초",
+    "접힌 펼침 하나",
+    "폼 아래 닿지 못함 · 패키지 없음 한 줄",
+    "지우기 숨김",
+    "「넣기」 단추 둘",
+    "펼침 안 인라인 비밀 폼",
+    "`AD-10` 의 할 일 다시 넣기 먼저",
+)
 
 
 def test_the_bdq_auto_login_decision_is_recorded_with_what_the_implementation_chose() -> None:
     """v1.33 — 6-32 는 2026-11-16 BigDataQuery 자동 로그인 사용자 결정(D1 ~ D11) 가운데 화면에
     걸리는 몫 한 줄이다 — 폼 자리 · 실패면 저장 안 함 · 폼에 보일 것 · 멈춤 알림 · 서버 혼잡 안내와
     대화 원문 둘(D7 넣은 관리자 · D11 WebIDE)을 들고, 구현이 답 밖에서 정한 꼴은 「답 밖 — 구현이
-    정함」 에 사용자 확인 대기로 남긴다(규칙 예외 칸에는 올리지 않음). 뒤집힌 결정은 없다."""
+    정함」 에 사용자 확인 대기로 남긴다(규칙 예외 칸에는 올리지 않음). 뒤집힌 결정은 없다.
+    판 머리는 v1.34 시험이 보고, 6-32 구간은 v1.34 의 들여쓴 줄 앞에서 끊는다."""
     document = _text()
-    assert "판 v1.33" in document.split("\n## 1. ")[0]
     assert "- **v1.33 — 2026-11-16.**" in _chapter(document, 8)
     assert "6-32 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-32. ") :]
+    start = section.index("\n### 6-32. ")
+    record = section[start : section.index(AUTO_LOGIN_ANSWER_HEAD, start)]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -2895,3 +2911,50 @@ def test_the_bdq_auto_login_decision_is_recorded_with_what_the_implementation_ch
     ):
         assert phrase in decision, phrase
     assert "bdq-auto-login" not in _chapter(document, 7), "뒤집힌 결정이 없어 7-1 에 줄이 없다"
+
+
+def test_the_bdq_auto_login_answers_close_the_narrowed_d6_and_the_new_forms() -> None:
+    """v1.34 — 6-32 줄은 그때 기록 그대로 두고, 그 밑 들여쓴 줄 하나(6-14 Q2-26 선례)가 같은 날
+    사용자 답 둘(D6 좁힘 · 새 화면 꼴)을 고른 글 원문으로 들어 그 꼴들의 사용자 확인 대기를 닫는다.
+    묻지 않은 나머지 「답 밖」 꼴은 그대로 대기이고, 셋째 답(토큰 만료 대응)은 화면 결정이 아니라
+    TODO 에만 있다. D6 은 좁혔을 뿐이라 7-1 줄이 없다."""
+    document = _text()
+    assert "판 v1.34" in document.split("\n## 1. ")[0]
+    assert "- **v1.34 — 2026-11-16.**" in _chapter(document, 8)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-32. ") :]
+    [decision] = [line for line in record.splitlines() if line.startswith("- ")]
+    assert "답 밖 — 구현이 정함(사용자 확인 대기)" in decision, "6-32 줄은 그때 기록 그대로다"
+    assert record.count(AUTO_LOGIN_ANSWER_HEAD) == 1
+    tail = record[record.index(AUTO_LOGIN_ANSWER_HEAD) + 1 :]
+    [answer] = [line for line in tail.splitlines() if line.startswith("  - ")]
+    match = re.search(r"\((2026-11-16) · ([^()]+)\)$", answer)
+    assert match, answer
+    cited = RULE_TOKEN.findall(match.group(2))
+    assert cited and set(cited) <= {rule.id for rule in _rules()}, answer
+    for phrase in (
+        *AUTO_LOGIN_ANSWERS,
+        "`AD-24`",
+        "「로그인 확인 못 함(까닭) — 저장 안 함」",
+        "「결과 저장 못 함」",
+        "「멈춤 — 닿지 못함 · 확인 못 함 연속 상한」",
+        "「멈춤 — 시도 결과를 적지 못함」",
+        "「꺼짐 — 키 없음」",
+        "성공 없이 3번",
+        "뒤집은 것이 아니다",
+    ):
+        assert phrase in answer, phrase
+    waiting = answer[answer.index("묻지 않은 나머지") :]
+    for phrase in AUTO_LOGIN_STILL_WAITING:
+        assert phrase in waiting, phrase
+    assert "그대로 사용자 확인 대기다" in waiting
+    assert "셋째 답(토큰 만료 대응)" in answer and "`docs/TODO.md` 1장" in answer
+    assert "bdq-auto-login" not in _chapter(document, 7), "D6 은 좁혔을 뿐이라 7-1 에 줄이 없다"
+
+    todo = (PROJECT_ROOT / "docs/TODO.md").read_text(encoding="utf-8")
+    entry = todo[todo.index("- [ ] **BigDataQuery 자동 로그인**") :]
+    entry = entry[: entry.index("\n- [")]
+    for answer_text in AUTO_LOGIN_ANSWERS:
+        assert answer_text in entry, answer_text
+    assert "「일반 오류일 때만 넣기 (Recommended)」" in entry
