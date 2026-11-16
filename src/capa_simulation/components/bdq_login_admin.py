@@ -188,6 +188,8 @@ def result_words(result: bdq_login.LoginResult) -> str:
         return "로그인 실패"
     if result.outcome == bdq_login.OUTCOME_UNREACHED:
         return "서버에 닿지 못함"
+    if result.outcome == bdq_login.OUTCOME_UNCONFIRMED:
+        return f"로그인 확인 못 함({login_reason_text(result.reason)})"
     if result.reason in _PACKAGE_REASONS:
         return "패키지 없음"
     return f"로그인하지 않음({login_reason_text(result.reason)})"
@@ -242,7 +244,7 @@ def _announce(outcome: bdq_login.FormResult) -> None:
     됐는데 저장하지 못했으면 알림창 오류."""
     result = outcome.result
     if outcome.saved:
-        audit_recorder.record(AUDIT_SET, det={"result": "saved", "reason": result.warning})
+        audit_recorder.record(AUDIT_SET, det={"result": "saved", "reason": ""})
         queue_flash(FLASH_KEY, f"BigDataQuery {result_words(result)}")
         return
     if result.ok:

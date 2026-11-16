@@ -121,7 +121,6 @@ def test_a_right_password_is_ok_with_the_remaining_minutes(fake: FakeBdq, spawne
     result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
     assert result.outcome == bdq_login.OUTCOME_OK and result.ok
     assert result.remaining_minutes is not None and 470 <= result.remaining_minutes <= 480
-    assert result.warning == ""
     assert fake.token_path().is_file()
     assert fake.logins() == 1
     call = spawned.calls[0]
@@ -209,15 +208,17 @@ def test_a_child_past_its_time_limit_is_unreached(
     assert fake.logins() == 1
 
 
-def test_a_changed_token_wins_over_a_time_limit(
+def test_a_changed_token_past_the_time_limit_is_unconfirmed_never_unreached_or_rejected(
     monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
 ) -> None:
+    """로그인은 토큰을 바꿨는데 남은 시간을 재다 시간을 넘김 — 성공으로 세지 않되(7시간 초과를 못
+    봄) 거절도 닿지 못함도 아니다."""
     scene(monkeypatch, "time_slow")
     monkeypatch.setenv("FAKE_BDQ_SLOW_SECONDS", "20")
     result = bdq_login.attempt_login(ACCOUNT, PASSWORD, timeout=3)
-    assert result.outcome == bdq_login.OUTCOME_OK
-    assert result.remaining_minutes is None
-    assert result.warning == bdq_login.WARNING_REMAINING_UNKNOWN
+    assert result == bdq_login.LoginResult(
+        bdq_login.OUTCOME_UNCONFIRMED, bdq_login.REASON_REMAINING_UNKNOWN
+    )
 
 
 def test_a_package_that_fails_to_import_is_unavailable_without_a_login(
@@ -242,25 +243,33 @@ def test_a_missing_package_is_unavailable(monkeypatch: pytest.MonkeyPatch, fake:
 
 
 @pytest.mark.parametrize(
-    ("names", "minutes", "warning"),
+    ("names", "password", "minutes", "reason"),
     [
-        (("time_odd",), None, bdq_login.WARNING_REMAINING_UNKNOWN),
-        (("time_raises",), None, bdq_login.WARNING_REMAINING_UNKNOWN),
-        (("time_short",), 25, bdq_login.WARNING_REMAINING_SHORT),
+        (("time_odd",), PASSWORD, None, bdq_login.REASON_REMAINING_UNKNOWN),
+        (("time_raises",), PASSWORD, None, bdq_login.REASON_REMAINING_UNKNOWN),
+        (("time_short",), PASSWORD, 25, bdq_login.REASON_REMAINING_SHORT),
+        (("wrong_truncates",), WRONG_PASSWORD, None, bdq_login.REASON_REMAINING_UNKNOWN),
+        (("wrong_writes_garbage",), WRONG_PASSWORD, None, bdq_login.REASON_REMAINING_UNKNOWN),
     ],
 )
-def test_an_odd_remaining_time_is_ok_with_a_warning_never_rejected(
+def test_a_changed_token_without_more_than_seven_hours_is_unconfirmed_never_rejected(
     monkeypatch: pytest.MonkeyPatch,
     fake: FakeBdq,
     names: tuple[str, ...],
+    password: str,
     minutes: int | None,
-    warning: str,
+    reason: str,
 ) -> None:
+    """성공은 「토큰이 바뀌었고 남은 시간이 7시간 초과」(사용자 답)다. 바뀌었어도 남은 시간이 꼴이
+    다르거나 · 못 재거나 · 짧으면 — 또 틀린 비밀번호에 패키지가 파일을 비우거나 다른 글로 덮어도 —
+    성공이 아니고(폼은 저장하지 않는다), 꼴이 다른 답이 멈춤이 되지도 않는다."""
+    fake.write_live_token()
     scene(monkeypatch, *names)
-    result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
-    assert result.outcome == bdq_login.OUTCOME_OK
+    result = bdq_login.attempt_login(ACCOUNT, password)
+    assert result.outcome == bdq_login.OUTCOME_UNCONFIRMED and not result.ok
+    assert result.reason == reason
     assert result.remaining_minutes == minutes
-    assert result.warning == warning
+    assert fake.logins() == 1
 
 
 def test_the_misspelled_days_field_is_read(monkeypatch: pytest.MonkeyPatch, fake: FakeBdq) -> None:
@@ -268,7 +277,6 @@ def test_the_misspelled_days_field_is_read(monkeypatch: pytest.MonkeyPatch, fake
     result = bdq_login.attempt_login(ACCOUNT, PASSWORD)
     assert result.ok and result.remaining_minutes is not None
     assert 1440 + 470 <= result.remaining_minutes <= 1440 + 480
-    assert result.warning == ""
 
 
 @pytest.mark.parametrize(
@@ -967,6 +975,34 @@ def test_a_failed_form_login_saves_nothing_and_keeps_what_was_there(
     fake.write_live_token(OTHER_ACCOUNT)
     outcome = bdq_login.login_from_form(OTHER_ACCOUNT, WRONG_PASSWORD, ADMIN_ID)
     assert not outcome.saved and outcome.result.outcome == bdq_login.OUTCOME_REJECTED
+    with mock.lock:
+        assert mock.objects[store.OBJECT_KEY] == before
+    assert store.effective_account() == ACCOUNT
+    assert fake.logins() == 1
+
+
+@pytest.mark.parametrize(
+    ("name", "password"), [("wrong_writes_garbage", WRONG_PASSWORD), ("time_short", PASSWORD)]
+)
+def test_an_unconfirmed_form_login_saves_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
+    mock_s3: tuple[MockStore, S3Target],
+    name: str,
+    password: str,
+) -> None:
+    """폼 저장은 사용자 판정 그대로 — 토큰이 바뀌었어도 남은 시간 7시간 초과를 보지 못하면 저장하지
+    않고 앞 저장 · 상태를 그대로 둔다(D5)."""
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    stored_login(target, key)
+    with mock.lock:
+        before = mock.objects[store.OBJECT_KEY]
+    scene(monkeypatch, name)
+    outcome = bdq_login.login_from_form(OTHER_ACCOUNT, password, ADMIN_ID)
+    assert not outcome.saved
+    assert outcome.result.outcome == bdq_login.OUTCOME_UNCONFIRMED
     with mock.lock:
         assert mock.objects[store.OBJECT_KEY] == before
     assert store.effective_account() == ACCOUNT

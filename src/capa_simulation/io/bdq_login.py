@@ -19,9 +19,12 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 읽는다. 시간 제한이 있고, tty 가 있는 자리에서도 비밀번호를 표준 입력으로 읽게 새 세션으로
 띄운다(제어 터미널 없음).
 
-**판정.** 로그인 전후 토큰 파일(`io/bdq_token` 의 자리) 내용의 다이제스트가 바뀌었으면 성공이다 —
-로그인이 받아들여진 것이라 잠김 걱정이 없다. 하위 프로세스가 시간을 넘겼거나 남은 시간을 못 쟀어도
-바뀌었으면 성공이다. 남은 분이 `REMAINING_WARNING_MINUTES` 이하거나 모르면 성공 + 경고일 뿐이다.
+**판정.** 로그인 전후 토큰 파일(`io/bdq_token` 의 자리) 내용의 다이제스트가 바뀌었고 같은 하위
+프로세스가 로그인 뒤 잰 남은 분이 `REMAINING_WARNING_MINUTES`(7시간)를 넘으면 성공이다(2026-11-16
+사용자 답 「내용이 바뀌었고 남은 시간이 7시간을 넘으면 성공」). 바뀌었는데 남은 시간을 모르거나(하위
+프로세스 시간 초과 · `getTokenTime` 예외 · 꼴이 다른 답) 7시간 이하면 `unconfirmed` 다 — 패키지가
+실패 때 토큰 파일을 다른 글로 덮는 꼴이면 틀린 비밀번호일 수 있으니 폼은 저장하지 않고, 자동 길은
+성공으로 세지 않되 멈추지도 않는다(꼴이 다른 답이 멈춤이 되지 않게 — 쉬는 시간 · 연속 상한에 든다).
 그대로(또는 파일 없음)면 표지로 가른다 — 패키지를 못 불러옴은 `unavailable`(시도 없음), 요청을
 보내기 전 연결 단계의 양의 증거(`bdq_login_child.is_unreached` — 종류 이름만으로 가르지 않는다)나
 하위 프로세스 시간 초과는 `unreached`, 그 밖은 모두 `rejected` 다(애매한 실패도 — 계정 잠김 방지가
@@ -31,7 +34,7 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 곧바로 적고(그 `cipher` 의 한 벌은 자동 시도 없음) 객체에 멈춤 표시를 쓴다(재시작마다 다시 시도하지
 않게). 관리자가 폼에서 다시 넣어 성공하면 풀린다. 자동 시도는 프로세스 안에서 연달아
 `AUTO_ATTEMPT_LIMIT` 번까지(하위 프로세스를 띄운 수 — 성공에만 0 으로)이고, `unreached` ·
-`unavailable` 뒤에는 `UNREACHED_PAUSE_SECONDS` 동안 쉰다.
+`unavailable` · `unconfirmed` 뒤에는 `UNREACHED_PAUSE_SECONDS` 동안 쉰다.
 
 **동시성.** 로그인은 프로세스 잠금 하나로 줄 세운다. 토큰 예외를 본 조회는 그 조회 앞의 토큰
 다이제스트를 들고 잠금을 기다리고, 잠금을 얻었을 때 다이제스트가 바뀌었으면(누가 이미 다시 로그인)
@@ -84,19 +87,22 @@ T = TypeVar("T")
 LOGIN_TIMEOUT_SECONDS: Final = 60.0
 # 프로세스 안 연속 자동 시도 상한 — 하위 프로세스를 띄운 수, 성공에만 0 으로.
 AUTO_ATTEMPT_LIMIT: Final = 3
-# `unreached` · `unavailable` 뒤 자동 시도를 쉬는 초.
+# `unreached` · `unavailable` · `unconfirmed` 뒤 자동 시도를 쉬는 초.
 UNREACHED_PAUSE_SECONDS: Final = 300.0
-# 이 분 이하로 남았으면 성공 + 경고(수명 8시간 — 막 받은 토큰은 7시간 넘게 남는다).
+# 이 분을 넘게 남아야 성공(수명 8시간 — 막 받은 토큰은 7시간 넘게 남는다). 이하 · 모름은
+# `unconfirmed`.
 REMAINING_WARNING_MINUTES: Final = 7 * 60
 # 다시 로그인을 거는 예외 종류(`모듈.이름`). 사슬의 어느 고리든 그 종류(또는 하위 종류)면 건다.
 # 무효 · 만료 토큰의 종류를 알게 되면 이 한 줄에 더한다.
 RELOGIN_EXCEPTIONS: Final[tuple[str, ...]] = ("bigdataquery.exceptions.TokenNotFoundException",)
 
-Outcome = Literal["ok", "rejected", "unreached", "unavailable"]
+Outcome = Literal["ok", "rejected", "unreached", "unavailable", "unconfirmed"]
 OUTCOME_OK: Final = "ok"
 OUTCOME_REJECTED: Final = "rejected"
 OUTCOME_UNREACHED: Final = "unreached"
 OUTCOME_UNAVAILABLE: Final = "unavailable"
+# 토큰은 바뀌었지만 남은 시간이 7시간을 넘는다고 확인하지 못함 — 성공도 거절도 아니다.
+OUTCOME_UNCONFIRMED: Final = "unconfirmed"
 
 # 까닭 코드 — 짧은 영문(멈춤 표시 `stop_reason` 에도 그대로 들어간다).
 REASON_TOKEN_UNCHANGED: Final = "token_unchanged"
@@ -114,8 +120,9 @@ REASON_TOKEN_AFTER_LOGIN: Final = "token_after_login"
 # 시작 스크립트의 로그인 단계가 예상하지 못하게 멈춤 — 로그인을 시도했는지 모르니 멈춤으로 본다.
 REASON_UNEXPECTED: Final = "unexpected"
 
-WARNING_REMAINING_SHORT: Final = "remaining_short"
-WARNING_REMAINING_UNKNOWN: Final = "remaining_unknown"
+# `unconfirmed` 의 까닭 — 남은 시간이 7시간 이하 · 모름.
+REASON_REMAINING_SHORT: Final = "remaining_short"
+REASON_REMAINING_UNKNOWN: Final = "remaining_unknown"
 
 # 자동 시도를 건너뛴 까닭.
 SKIP_STOPPED: Final = "stopped"
@@ -163,13 +170,12 @@ class LoginResult:
     """로그인 한 번(또는 시도 전 거절)의 결과. 비밀 · 예외 문구 · 하위 출력이 없다.
 
     `reason` 은 짧은 영문 까닭 코드, `error_kind` 는 예외 종류의 `모듈.이름`, `remaining_minutes` 는
-    로그인 뒤 잰 남은 분(모르면 `None`), `warning` 은 성공의 덧붙임(`WARNING_*`)이다."""
+    로그인 뒤 잰 남은 분(모르면 `None`)이다."""
 
     outcome: Outcome
     reason: str = ""
     error_kind: str = ""
     remaining_minutes: int | None = None
-    warning: str = ""
 
     @property
     def ok(self) -> bool:
@@ -189,7 +195,7 @@ class Attempt:
 @dataclass(frozen=True)
 class Recovery:
     """조회 중 토큰 예외 뒤의 회복. `retry` 면 같은 조회를 한 번 다시 한다. `logged_in` 은 이 회복이
-    스스로 로그인해 성공한 것(다시 한 조회가 또 토큰 오류면 멈춘다)."""
+    스스로 로그인해 토큰이 바뀐 것(성공 · 확인 못 함 — 다시 한 조회가 또 토큰 오류면 멈춘다)."""
 
     retry: bool
     logged_in: bool = False
@@ -208,7 +214,9 @@ class FormResult:
     save_failure: str = ""
 
 
-StartStatus = Literal["off", "absent", "stopped", "ok", "rejected", "unreached", "unavailable"]
+StartStatus = Literal[
+    "off", "absent", "stopped", "ok", "rejected", "unreached", "unavailable", "unconfirmed"
+]
 
 
 @dataclass(frozen=True)
@@ -491,14 +499,13 @@ def _judge(
 ) -> LoginResult:
     if changed:
         minutes = marker.minutes if marker is not None and marker.stage == "done" else None
-        if minutes is None:
-            warning = WARNING_REMAINING_UNKNOWN
-        elif minutes <= REMAINING_WARNING_MINUTES:
-            warning = WARNING_REMAINING_SHORT
-        else:
-            warning = ""
-        error_kind = marker.error if marker is not None and marker.stage == "login" else ""
-        return LoginResult(OUTCOME_OK, "", error_kind, minutes, warning)
+        if minutes is not None and minutes > REMAINING_WARNING_MINUTES:
+            return LoginResult(OUTCOME_OK, remaining_minutes=minutes)
+        reason = REASON_REMAINING_UNKNOWN if minutes is None else REASON_REMAINING_SHORT
+        error_kind = ""
+        if marker is not None:
+            error_kind = marker.error if marker.stage == "login" else marker.time_error
+        return LoginResult(OUTCOME_UNCONFIRMED, reason, error_kind, minutes)
     if spawn_failed:
         return LoginResult(OUTCOME_UNAVAILABLE, REASON_SPAWN_FAILED)
     if timed_out:
@@ -572,8 +579,8 @@ def attempt_login(
 
 def _log(result: LoginResult, *, path: str) -> None:
     detail = f" 종류={result.error_kind}" if result.error_kind else ""
-    if result.warning:
-        detail += f" 경고={result.warning}"
+    if result.remaining_minutes is not None:
+        detail += f" 남은분={result.remaining_minutes}"
     _LOGGER.warning(
         "BigDataQuery 로그인(%s): 결과=%s 까닭=%s%s",
         path,
@@ -684,8 +691,12 @@ def recover_after_token_failure(
         attempt = _auto_attempt_locked(
             stored, target=target, folder=folder, environ=environ, path="조회"
         )
-    ok = attempt.result is not None and attempt.result.ok
-    return Recovery(ok, logged_in=ok, attempt=attempt, stored=stored)
+    # 확인 못 한 로그인도 토큰은 바뀌었다 — 같은 조회를 한 번 다시 하고, 또 토큰 오류면 멈춘다(D4).
+    retry = attempt.result is not None and attempt.result.outcome in (
+        OUTCOME_OK,
+        OUTCOME_UNCONFIRMED,
+    )
+    return Recovery(retry, logged_in=retry, attempt=attempt, stored=stored)
 
 
 def _stop_after_retry(recovery: Recovery, target: S3Target | None) -> None:

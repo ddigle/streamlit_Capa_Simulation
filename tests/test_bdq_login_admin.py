@@ -240,6 +240,8 @@ def test_a_failed_login_saves_nothing_and_keeps_what_was_there(
     [
         ("connection", "서버에 닿지 못함 — 저장 안 함"),
         ("import_fails", "패키지 없음 — 저장 안 함"),
+        ("time_raises", "로그인 확인 못 함(남은 시간 모름) — 저장 안 함"),
+        ("time_short", "로그인 확인 못 함(남은 시간 7시간 이하) — 저장 안 함"),
     ],
 )
 def test_a_login_that_could_not_be_judged_says_so_and_saves_nothing(
@@ -256,7 +258,7 @@ def test_a_login_that_could_not_be_judged_says_so_and_saves_nothing(
     assert not app.exception
     assert [str(item.value) for item in app.error] == [line]
     assert _object(mock) is None
-    assert fake.logins() == (1 if scene == "connection" else 0)
+    assert fake.logins() == (0 if scene == "import_fails" else 1)
     _no_secret_left(app, ACCOUNT, PASSWORD)
 
 

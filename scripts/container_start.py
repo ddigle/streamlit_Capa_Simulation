@@ -108,6 +108,7 @@ from capa_simulation.io.container_start_report import (
     LOGIN_ERROR,
     LOGIN_KEY_OK,
     LOGIN_OK,
+    LOGIN_UNCONFIRMED,
     REPORT_VERSION,
     RETIRED_BDQ_REFRESH_TOKEN_ENV,
     STATUS_FAILED,
@@ -845,7 +846,6 @@ def auto_login_step(
         "reason": started.reason,
         "key": key,
         "remaining_minutes": None if result is None else result.remaining_minutes,
-        "warning": "" if result is None else result.warning,
         "error_kind": "" if result is None else result.error_kind,
         "failure_kind": started.failure_kind,
         "stop_write": started.stop_write,
@@ -853,7 +853,7 @@ def auto_login_step(
     return LoginStep(
         cell,
         bdq_login_store.account_of(stored, environ),
-        renewed=started.status == LOGIN_OK,
+        renewed=started.status in (LOGIN_OK, LOGIN_UNCONFIRMED),
         stored=stored is not None,
     )
 

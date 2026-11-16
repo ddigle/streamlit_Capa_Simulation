@@ -143,7 +143,8 @@ STATUS_LABELS: Final[Mapping[str, str]] = {
 # Area 의 계정 넣는 자리 이름이다 — 알림 글(`AD-10` · `AD-23`)이 이 이름으로 그 자리를 가리킨다.
 BDQ_LOGIN_LABEL: Final = "BDQ 자동 로그인"
 # 갈래 — `off`(기능이 서지 않음) · `absent`(저장된 계정 없음) · `stopped`(멈춤이라 로그인 없음) ·
-# 로그인 결과 넷(`ok` · `rejected` · `unreached` · `unavailable`) · `error`(단계가 예상하지 못하게
+# 로그인 결과 다섯(`ok` · `rejected` · `unreached` · `unavailable` · `unconfirmed` — 토큰은
+# 바뀌었지만 남은 시간을 확인하지 못함, 패키지가 쓴 토큰을 둔다) · `error`(단계가 예상하지 못하게
 # 멈춤 — 예비 토큰 길). `io/bdq_login.StartLogin.status` 와 같은 낱말에 `error` 를 더했다.
 LOGIN_OFF: Final = "off"
 LOGIN_ABSENT: Final = "absent"
@@ -152,6 +153,7 @@ LOGIN_OK: Final = "ok"
 LOGIN_REJECTED: Final = "rejected"
 LOGIN_UNREACHED: Final = "unreached"
 LOGIN_UNAVAILABLE: Final = "unavailable"
+LOGIN_UNCONFIRMED: Final = "unconfirmed"
 LOGIN_ERROR: Final = "error"
 LOGIN_STATUSES: Final = frozenset(
     {
@@ -162,12 +164,13 @@ LOGIN_STATUSES: Final = frozenset(
         LOGIN_REJECTED,
         LOGIN_UNREACHED,
         LOGIN_UNAVAILABLE,
+        LOGIN_UNCONFIRMED,
         LOGIN_ERROR,
     }
 )
 # 자동 로그인이 서 있는(저장된 계정이 있고 멈춤이 아닌) 시작 갈래 — 예비 토큰 길로 갔어도 조회 중
 # 토큰 예외면 다시 로그인한다.
-LOGIN_STANDING: Final = frozenset({LOGIN_OK, LOGIN_UNREACHED, LOGIN_UNAVAILABLE})
+LOGIN_STANDING: Final = frozenset({LOGIN_OK, LOGIN_UNREACHED, LOGIN_UNAVAILABLE, LOGIN_UNCONFIRMED})
 # 키 꼴 검사 결과(`key`) — `bdq_login_store` 의 까닭 코드와 같은 낱말.
 LOGIN_KEY_OK: Final = "ok"
 LOGIN_KEY_MISSING: Final = "no_key"
@@ -205,6 +208,8 @@ _LOGIN_REASON_WORDS: Final[Mapping[str, str]] = {
     "version": "객체 판이 다름",
     "undecryptable": "키로 풀지 못함",
     "unexpected": "예상하지 못한 실패",
+    "remaining_unknown": "남은 시간 모름",
+    "remaining_short": "남은 시간 7시간 이하",
 }
 
 
@@ -245,7 +250,7 @@ class LoginStart:
     예외 문구가 없다. 꼴이 어긋난 칸은 비운다.
 
     `status` — `LOGIN_*`. `reason` — 까닭 코드. `key` — 키 꼴 검사(`LOGIN_KEY_*`, 못 읽으면 빈 글).
-    `remaining_minutes` — 로그인 뒤 잰 남은 분(모르면 `None`). `warning` — 성공의 덧붙임.
+    `remaining_minutes` — 로그인 뒤 잰 남은 분(모르면 `None`).
     `error_kind` — 예외 종류의 `모듈.이름`. `failure_kind` — S3 읽기 실패 분류. `stop_write` —
     거절의 멈춤 표시를 객체에 쓰지 못한 까닭(빈 글이면 씀 · 해당 없음)."""
 
@@ -253,7 +258,6 @@ class LoginStart:
     reason: str = ""
     key: str = ""
     remaining_minutes: int | None = None
-    warning: str = ""
     error_kind: str = ""
     failure_kind: str = ""
     stop_write: str = ""
@@ -378,7 +382,6 @@ def parse_login(data: object) -> LoginStart | None:
         reason=_login_code(data.get("reason")),
         key=key if isinstance(key, str) and key in _LOGIN_KEYS else "",
         remaining_minutes=minutes if minutes is not None and minutes >= 0 else None,
-        warning=_login_code(data.get("warning")),
         error_kind=(
             error_kind
             if isinstance(error_kind, str) and _LOGIN_ERROR_KIND.fullmatch(error_kind)
@@ -437,6 +440,8 @@ def login_step(login: LoginStart) -> StartStep | None:
         return StartStep(STATUS_FAILED, f"닿지 못함 — {login_reason_text(reason)}{fallback}")
     if status == LOGIN_UNAVAILABLE:
         return StartStep(STATUS_FAILED, f"못 함 — {login_reason_text(reason)}{fallback}")
+    if status == LOGIN_UNCONFIRMED:
+        return StartStep(STATUS_FAILED, f"확인 못 함 — {login_reason_text(reason)}")
     kind = f"({login.error_kind})" if login.error_kind else ""
     return StartStep(STATUS_FAILED, f"예상하지 못한 실패{kind}{fallback}")
 
