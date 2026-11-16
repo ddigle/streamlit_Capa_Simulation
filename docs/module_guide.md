@@ -85,7 +85,7 @@
 | `data/modules/<id>/` | 읽기만 한다 — 화면이 실행 중에 쓴다. 손으로 넣거나 고치지 않고, 지울 때는 먼저 묻는다 | 네 모듈의 데이터 자리다 — 코드에서는 `ctx.data_dir`. 손으로 넣은 파일은 그 PC 에만 있다(아래) |
 | 그 밖 전부 — `app.py`·`app_pages/`·`src/`·`tests/`·`scripts/`·`docs/`·`config/`·루트 파일·다른 모듈 | 읽기만 한다 | 코어와 남의 모듈이다. 고쳐도 다음 배포가 덮는다 |
 | 코어 두 DB(`data/capa_simulation.duckdb`·`data/equipment_availability.duckdb`)·`data/input`·`data/output`·`data/temp`·`review/`·`.deploy/`·`~/.aws`·`/proc` | 열지도 않는다 | 운영 데이터 · 배포 기록과 운영 버킷 키다 |
-| 자격 — BigDataQuery 요청자 계정 · 토큰(토큰 파일 자리 `.credential` · `bigdataquery.token`), S3 키 · 주소 · 버킷, 통합인증 비밀의 환경변수(`CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 이름) | 읽지도 않는다 — 코드에 그 이름을 적으면 점검 오류(M21) | 코어가 쥔다. 조회 · 올리기 · 받기는 코어 도우미로 한다(3-10). S3 키는 운영 DB 를 지울 수 있는 권한이다 |
+| 자격 — BigDataQuery 요청자 계정 · 토큰(토큰 파일 자리 `.credential` · `bigdataquery.token`), 자동 로그인 계정의 버킷 자리(`secrets/` · `bdq_login`), S3 키 · 주소 · 버킷, 통합인증 비밀의 환경변수(`CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 이름) | 읽지도 않는다 — 코드에 그 이름을 적으면 점검 오류(M21) | 코어가 쥔다. 조회 · 올리기 · 받기는 코어 도우미로 한다(3-10). S3 키는 운영 DB 를 지울 수 있는 권한이다 |
 
 - 배포 ZIP 은 `modules/` 를 싣지도 덮지도 지우지도 않는다. `data/modules/` 도 지우지 않는다.
 - **첫 배포 주의** — 이 지침서가 실린 배포를 앱 관리자가 적용하기 **전에는** 저장소에 `modules/` 를 올리지 않는다(PR 도 합치지 않는다).
@@ -599,6 +599,7 @@ S3 키는 코어가 쥐고 모듈은 그 값을 읽지 않는다 — 그 환경�
   올리고, 화면이 처음 설 때(파일이 없을 때 · 세션에 한 번) 받는다(아래 예).
 - **이름** — `ctx.data_dir` 안의 상대 이름이다. `/` 로 나눈 마디 넷까지이고 마디는 영문 · 숫자로 시작해 영문 · 숫자 · `.` · `_` · `-` 만
   쓴다(예: `memo.csv` · `backup/2026-11.csv`). 그 밖(`..` · 절대 경로 · 한글 · 빈칸 · 데이터 자리 밖을 가리키는 링크)은 「이름 거절」 이다.
+  버킷 자리는 이름이 무엇이든 `modules/<id>/` 아래다 — 코어의 정본 · 명단 · 비밀 자리에는 닿지 않는다.
 - **크기** — 파일 하나는 `api.S3_MAX_BYTES`(8 MiB)까지다. 넘으면 「너무 큼」 이다. 한 번에 메모리에 올려 보내고 받는다.
 - **기다림** — 올리기 · 받기는 끝날 때까지 그 회차를 묶는다. 파일 하나에 최대 약 35초(상한 크기를 가장 느린 속도로 옮길 때)다. 작은
   파일은 아래 예처럼 처음 설 때 받아도 되지만, 큰 파일은 단추를 눌렀을 때 받는다(4장).
@@ -800,7 +801,7 @@ if asked:
 | 감싸지 않은 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 에 맨 함수 | `ctx.callback(함수)`(글자 `"rerun"` · `"ignore"` 는 그대로 된다) | 콜백은 앱 코드보다 먼저 돈다. 거기서 난 오류는 그 회차의 사이드바 · 머리 띠 · 탭 줄까지 지운다 | M18 |
 | `use_container_width=` | `width="stretch"` · `width="content"` | Streamlit 이 곧 지울 인자다. 올림 한 번에 그 화면이 오류 카드가 된다 | M19 |
 | 화면이 처음 그려질 때(첫 회차) 팝업을 스스로 열기(점검이 잡지 않는다 — 이 지침으로만 지킨다) · `st.dialog(dismissible=False)`(M20 경고) | 팝업은 단추를 눌렀을 때만 연다. `dismissible` 은 적지 않는다 — 닫기(✕ · Esc · 바깥 누름)가 남는다 | 누가 그 화면 주소로 처음 오면 입장 화면이 먼저 덮인다. 닫을 수 없는 팝업은 그 밑에 숨어 앱 화면을 묶는다 — 아무것도 누를 수 없고 새로고침해도 같아 앱에 들어갈 수 없다 | M20 |
-| 자격 읽기 — `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름, 토큰 파일 자리 `.credential` · `bigdataquery.token`(시험 파일도) | `api.query_bigdataquery` · `api.s3_upload` · `api.s3_download`(3-10) | 계정 · 토큰 · 키는 코어가 쥔다. S3 키는 운영 DB 를 지울 수 있는 권한이고, 한 프로세스라 읽은 값은 어디로든 샐 수 있다 | M21 |
+| 자격 읽기 — `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름, 토큰 파일 자리 `.credential` · `bigdataquery.token`, 자동 로그인 계정의 버킷 자리 `secrets/` · `bdq_login`(시험 파일도) | `api.query_bigdataquery` · `api.s3_upload` · `api.s3_download`(3-10) | 계정 · 토큰 · 키는 코어가 쥔다. S3 키는 운영 DB 를 지울 수 있는 권한이고, 한 프로세스라 읽은 값은 어디로든 샐 수 있다 | M21 |
 
 그 밖에 알아 둘 것:
 
@@ -1301,7 +1302,7 @@ Admin Area 안쪽 탭 줄 오른쪽 끝의 팝오버다. 앱 관리자가 본다
 | M18 | 콜백 — `on_change` · `on_click` · `on_submit` · `on_select` · `on_dismiss` 인자에 글자 상수(`"rerun"` · `"ignore"`)도 `<무엇>.callback(…)` 호출도 아닌 값이 옴 | 오류 |
 | M19 | 폐기 예정 Streamlit 인자 — `use_container_width=`(`width="stretch"` · `width="content"` 로) | 오류 |
 | M20 | 닫을 수 없는 팝업 — `st.dialog(…)` 의 `dismissible=` 에 `True` 가 아닌 값(`False` · 변수). 처음 들어온 사람의 입장 화면 밑에 숨어 앱 화면을 묶는다(4장) | 경고 |
-| M21 | 자격 · 비밀 — 글자 전체가 `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름(대소문자 무시라 같은 꼴의 데이터 열 이름 `aws_region` 도 걸린다, 앞뒤 `$` · `%` · `{}` 표지와 f-문자열의 앞 상수 포함), 경로 마디로 쓴 토큰 파일 자리 — `.credential` 마디 · `bigdataquery.token` 으로 시작하는 마디(역슬래시 꼴 포함 — 열 이름 · 설명 글 안의 낱말 `db.credential_log` 는 아니다). 시험 파일도 같다. 글자로 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다 — 계정 · 토큰 · 키는 코어가 쥐고 모듈은 도우미(3-10)를 쓴다 | 오류 |
+| M21 | 자격 · 비밀 — 글자 전체가 `CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` · `ADFS_` 로 시작하는 환경변수 이름(대소문자 무시라 같은 꼴의 데이터 열 이름 `aws_region` 도 걸린다, 앞뒤 `$` · `%` · `{}` 표지와 f-문자열의 앞 상수 포함), 경로 마디로 쓴 토큰 파일 자리 — `.credential` 마디 · `bigdataquery.token` 으로 시작하는 마디, 경로 마디로 쓴 BigDataQuery 자동 로그인 계정의 버킷 자리 — 뒤에 `/` 가 붙은 `secrets/` 마디 · `bdq_login` 으로 시작하는 마디(역슬래시 꼴 포함 — 열 이름 · 설명 글 안의 낱말 `db.credential_log` · `my_secrets/` · `bdq_login_count` 는 아니다). 시험 파일도 같다. 글자로 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다 — 계정 · 토큰 · 키는 코어가 쥐고 모듈은 도우미(3-10)를 쓴다 | 오류 |
 
 점검 출력의 꼴(합성 예):
 

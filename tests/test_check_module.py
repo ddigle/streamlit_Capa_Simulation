@@ -1380,6 +1380,12 @@ def test_m20_is_a_warning_that_keeps_the_module_passing(
         'user = "demo"\nNAME = f"bigdataquery.token.{user}"\n',
         'FOLDER = "C:\\\\Users\\\\demo\\\\.credential"\n',
         'FOLDER = "~/.credential/"\n',
+        'KEY = "secrets/bdq_login.json"\n',
+        'KEY = "../../secrets/x.json"\n',
+        'KEY = "Secrets\\\\bdq_login.json"\n',
+        'NAME = "bdq_login.json"\n',
+        'from pathlib import Path\nKEY = Path("secrets") / "bdq_login.json"\n',
+        'part = "x"\nKEY = f"secrets/{part}.json"\n',
     ],
 )
 def test_m21_blocks_credential_names_and_token_places(tmp_path: Path, body: str) -> None:
@@ -1400,6 +1406,11 @@ def test_m21_blocks_credential_names_and_token_places(tmp_path: Path, body: str)
         'NAME = "demo/.credentials/x"\n',
         'TEXT = "bigdataquery.token 은 코어가 쥔다"\n',
         'COLUMN = "bigdataquery.tokens"\n',
+        'NAME = "secrets"\n',
+        'NAME = "my_secrets/x.csv"\n',
+        'COLUMN = "bdq_login_count"\n',
+        'TEXT = "secrets 는 코어가 쥔다"\n',
+        '"""비밀(secrets/)은 코어가 쥔다."""\n',
     ],
 )
 def test_m21_leaves_other_text_alone(tmp_path: Path, body: str) -> None:

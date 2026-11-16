@@ -603,6 +603,20 @@ def test_the_pr_check_merges_only_the_head_it_checked() -> None:
         assert not re.search(pattern, '+  "maturity": "L1",'), pattern
 
 
+def test_every_credential_place_m21_blocks_is_named_in_the_guide() -> None:
+    """M21 이 막는 자리(토큰 파일 · BigDataQuery 자동 로그인 계정의 버킷 자리 — 2026-11-16
+    D2)는 점검 규칙 표 · 금지 표 · 2장 자리 표가 모두 이름으로 적는다 — 그물을 넓히고 지침서를
+    두면 담당자 에이전트가 까닭 모를 오류를 만난다. 3-10 은 도우미의 버킷 자리가 늘
+    `modules/<id>/` 아래라고 말한다."""
+    m21 = next(line for line in _section("부록 B").splitlines() if line.startswith("| M21 |"))
+    forbidden = next(line for line in GUIDE.splitlines() if line.startswith("| 자격 읽기 — "))
+    places = next(line for line in GUIDE.splitlines() if line.startswith("| 자격 — "))
+    for marker in rules.CREDENTIAL_FILE_MARKERS:
+        for where, line in (("부록 B", m21), ("금지 표", forbidden), ("2장", places)):
+            assert f"`{marker}`" in line, (where, marker)
+    assert "버킷 자리는 이름이 무엇이든 `modules/<id>/` 아래다" in _section("3-10.")
+
+
 def test_the_pr_check_looks_for_credential_reads_the_static_rules_do_not_see() -> None:
     """런북 4-6 — 통합 검수 D6 (가)는 키를 앱 환경변수로 넘기는 구조를 두는 대신 PR 점검으로 본다.
     `check_module.py` 는 자격 이름 · 토큰 파일 자리(M21) 밖의 환경변수 **읽기**를 보지 않으므로 두

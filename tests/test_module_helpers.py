@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import pandas as pd
 import pytest
@@ -21,8 +22,8 @@ from streamlit.testing.v1 import AppTest
 
 from capa_simulation import module_api, module_helpers, module_registry
 from capa_simulation.auth import names, runtime
+from capa_simulation.io import bdq_login_store, object_storage
 from capa_simulation.io import company_bigdataquery_adapter as adapter
-from capa_simulation.io import object_storage
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEMO_OK_PAGE = PROJECT_ROOT / "tests" / "fixtures" / "modules" / "demo_ok" / "demo_ok_page.py"
@@ -214,6 +215,80 @@ def test_a_hand_made_context_with_a_bad_id_cannot_leave_its_prefix(
     assert module_api.s3_download(forged, "demo.csv").reason == "이름 거절"
     assert not (data_root.parent / "demo_other").exists()
     assert store.requests == []
+
+
+# ------------------------------------------------------------------ S3 — 코어의 비밀 자리
+# BigDataQuery 자동 로그인 계정 객체(`bdq_login_store.OBJECT_KEY`)는 모듈 데이터와 같은 버킷 ·
+# 같은 키로 닿는 자리다(2026-11-16 사용자 결정 D2). 모듈 도우미는 이름이 무엇이든
+# `modules/<id>/` 밖을 가리키지 못한다.
+SECRET_BODY = b'{"v": 1, "cipher": "CANARY-cipher-not-a-real-token"}'
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../secrets/bdq_login.json",
+        "../../secrets/bdq_login.json",
+        "../../../secrets/bdq_login.json",
+        "/secrets/bdq_login.json",
+        "secrets/../../../secrets/bdq_login.json",
+        "a/../../../secrets/bdq_login.json",
+        "..\\..\\secrets\\bdq_login.json",
+        "secrets\\bdq_login.json",
+        "a//secrets/bdq_login.json",
+        "./secrets/bdq_login.json",
+        "%2e%2e/%2e%2e/secrets/bdq_login.json",
+        "secrets/bdq_login.json/",
+    ],
+)
+def test_no_module_name_climbs_to_the_core_secret(
+    ctx: module_api.ModuleContext, store: MockStore, name: str
+) -> None:
+    store.put(bdq_login_store.OBJECT_KEY, SECRET_BODY)
+
+    assert module_api.s3_upload(ctx, name) == module_api.S3Result(False, "이름 거절")
+    assert module_api.s3_download(ctx, name) == module_api.S3Result(False, "이름 거절")
+    assert store.requests == []
+    assert store.objects == {bdq_login_store.OBJECT_KEY: SECRET_BODY}
+
+
+@pytest.mark.parametrize("forged_id", ["..", "../secrets", "secrets/..", "", "demo_ok/../.."])
+def test_a_forged_module_id_cannot_reach_the_core_secret(
+    ctx: module_api.ModuleContext, store: MockStore, forged_id: str
+) -> None:
+    store.put(bdq_login_store.OBJECT_KEY, SECRET_BODY)
+    (ctx.data_dir / "bdq_login.json").write_bytes(b"mine\n")
+
+    for result in (
+        module_helpers.s3_upload(forged_id, ctx.data_dir, "bdq_login.json"),
+        module_helpers.s3_download(forged_id, ctx.data_dir, "bdq_login.json"),
+    ):
+        assert result.reason == "이름 거절", forged_id
+    assert store.requests == []
+    assert store.objects == {bdq_login_store.OBJECT_KEY: SECRET_BODY}
+
+
+def test_a_name_that_spells_the_secret_stays_under_the_module_prefix(
+    ctx: module_api.ModuleContext, store: MockStore
+) -> None:
+    """꼴이 맞는 이름 `secrets/bdq_login.json` 은 받지만 자리는 `modules/demo_ok/` 아래다 — 코어의
+    객체를 덮지도 받지도 않는다."""
+    store.put(bdq_login_store.OBJECT_KEY, SECRET_BODY)
+    local = ctx.data_dir / "secrets" / "bdq_login.json"
+    local.parent.mkdir(parents=True)
+    local.write_bytes(b"mine\n")
+
+    assert module_api.s3_upload(ctx, "secrets/bdq_login.json").ok
+    local.unlink()
+    assert module_api.s3_download(ctx, "secrets/bdq_login.json").ok
+
+    assert local.read_bytes() == b"mine\n"
+    assert store.objects == {
+        bdq_login_store.OBJECT_KEY: SECRET_BODY,
+        f"{KEY_PREFIX}secrets/bdq_login.json": b"mine\n",
+    }
+    keys = [unquote(urlsplit(raw).path).lstrip("/").partition("/")[2] for _, raw in store.requests]
+    assert keys and all(key.startswith(KEY_PREFIX) for key in keys), keys
 
 
 # ------------------------------------------------------------------ S3 — 예외 없이 결과로

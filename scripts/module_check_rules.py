@@ -205,9 +205,13 @@ _KERNEL_PATTERN: Final = re.compile(r"(?<![\w.\-])/proc/")
 # 같은 꼴의 데이터 열 이름도 걸린다)과 BigDataQuery 토큰 파일 자리를 막는다. 토큰 파일 자리는
 # 경로 마디로만 잡는다 — 마디 전체가 `.credential`, 또는 `bigdataquery.token` 으로 시작하고
 # 뒤가 `.<계정>` · 끝인 마디(역슬래시는 `/` 로 읽는다). 열 이름 · 설명 글 안의 낱말
-# (`db.credential_log` · `(.credential)`)은 걸지 않는다. 글자로 찾는 그물이라 이름을 이어 만든
-# 꼴은 못 잡는다(방어선은 PR 점검 — 런북 4-6). 시험 파일도 같다. `check_module.py` 는 모듈
-# 시험의 환경에서 같은 이름의 변수를 뺀다.
+# (`db.credential_log` · `(.credential)`)은 걸지 않는다. BigDataQuery 자동 로그인 계정의
+# 버킷 자리(`io/bdq_login_store.OBJECT_KEY` — 2026-11-16 사용자 결정 D2)도 같은 꼴로 막는다
+# — `secrets` 뒤에 `/` 가 붙은 마디 · `bdq_login` 으로 시작하고 뒤가 `.` · `/` · 끝인 마디
+# (`my_secrets/` · `bdq_login_count` · 낱말 `secrets` 는 아니다). 모듈 S3 도우미는 이름이
+# 무엇이든 `modules/<id>/` 밖에 닿지 않으므로 이 글자는 도우미 밖 길을 찾는 그물이다. 글자로
+# 찾는 그물이라 이름을 이어 만든 꼴은 못 잡는다(방어선은 PR 점검 — 런북 4-6). 시험 파일도
+# 같다. `check_module.py` 는 모듈 시험의 환경에서 같은 이름의 변수를 뺀다.
 CREDENTIAL_ENV_PREFIXES: Final = ("CAPA_BDQ_", "CAPA_S3_", "AWS_", "JWT_SECRET", "ADFS_")
 _CREDENTIAL_NAME: Final = re.compile(
     r"[$%{]*(?P<name>(?:" + "|".join(CREDENTIAL_ENV_PREFIXES) + r")[A-Z0-9_]*)[}%]*",
@@ -216,6 +220,8 @@ _CREDENTIAL_NAME: Final = re.compile(
 _CREDENTIAL_FILE_PATTERNS: Final = (
     (".credential", re.compile(r"(?:^|/)\.credential(?:/|$)")),
     ("bigdataquery.token", re.compile(r"(?:^|/)bigdataquery\.token(?:[./]|$)")),
+    ("secrets/", re.compile(r"(?:^|/)secrets/")),
+    ("bdq_login", re.compile(r"(?:^|/)bdq_login(?:[./]|$)")),
 )
 CREDENTIAL_FILE_MARKERS: Final = tuple(marker for marker, _ in _CREDENTIAL_FILE_PATTERNS)
 
