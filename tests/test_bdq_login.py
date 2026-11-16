@@ -1354,3 +1354,46 @@ def test_a_retry_stop_does_not_hit_a_login_the_form_put_in_meanwhile(
     assert object_state(mock) == "ok"
     assert store.effective_account() == OTHER_ACCOUNT
     assert bdq_login.status().state == "ok"
+
+
+def test_a_wrong_password_answered_in_a_connection_shape_stops_at_the_first_start(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """저장된 비밀번호가 틀렸고 패키지가 서버의 401 을 errno 없는 `ConnectionError` 로 낸다 — 첫
+    시작에서 거절로 멈추고, 다시 띄워도 로그인하지 않는다(검토 high 의 장면)."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        scene(monkeypatch, "wrong_conn_builtin")
+        environ = start_environment(mock, endpoint, key)
+        fake.write_live_token()
+        stored_login(target_of(mock, endpoint), key, password=WRONG_PASSWORD)
+        assert bdq_login.start_login(environ).status == "rejected"
+        for _ in range(2):
+            bdq_login.forget_state()
+            assert bdq_login.start_login(environ).status == "stopped"
+        assert fake.logins() == 1
+        assert object_state(mock) == "stopped"
+
+
+def test_a_wrong_password_that_overwrites_the_token_stops_at_the_miss_limit(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """저장된 비밀번호가 틀렸고 패키지가 실패 때 토큰 파일을 다른 글로 덮는다 — 성공이 아니고
+    (`unconfirmed`), 재시작을 건너 세어 성공 없이 `MISS_LIMIT` 번이면 멈춘다(검토 medium 장면)."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        scene(monkeypatch, "wrong_writes_garbage")
+        environ = start_environment(mock, endpoint, key)
+        stored_login(target_of(mock, endpoint), key, password=WRONG_PASSWORD)
+        statuses: list[str] = []
+        for _ in range(bdq_login.MISS_LIMIT + 2):
+            bdq_login.forget_state()
+            statuses.append(bdq_login.start_login(environ).status)
+        assert statuses == [
+            *(["unconfirmed"] * (bdq_login.MISS_LIMIT - 1)),
+            "stopped",
+            "stopped",
+            "stopped",
+        ]
+        assert fake.logins() == bdq_login.MISS_LIMIT
+        assert stored_meta(mock)["stop_reason"] == bdq_login.REASON_MISS_LIMIT
