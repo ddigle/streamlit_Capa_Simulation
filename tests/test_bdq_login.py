@@ -304,6 +304,40 @@ def test_values_that_break_the_line_protocol_are_refused_before_spawning(
     assert spawned.calls == [] and fake.logins() == 0
 
 
+def test_a_token_put_in_while_a_wrong_login_runs_does_not_count_as_a_new_token(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """틀린 비밀번호 로그인이 도는 사이 관리자가 「토큰 넣기」 를 누름 — 넣기는 로그인이 끝날 때까지
+    기다리고, 로그인 앞뒤 다이제스트는 넣은 토큰을 보지 않는다(거절 그대로)."""
+    monkeypatch.setenv(BDQ_USER_NAME_ENV, ACCOUNT)
+    fake.write_live_token()
+    scene(monkeypatch, "slow")
+    monkeypatch.setenv("FAKE_BDQ_SLOW_SECONDS", "2")
+    installed: list[str] = []
+    started = threading.Event()
+
+    def install() -> None:
+        started.wait(timeout=10)
+        installed.append(bdq_token.install_token("demo-installed-token-0123456789").status)
+
+    helper = threading.Thread(target=install)
+    helper.start()
+    real_run = subprocess.run
+
+    def run_and_signal(*args: Any, **kwargs: Any) -> Any:
+        started.set()
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run_and_signal)
+    result = bdq_login.attempt_login(ACCOUNT, WRONG_PASSWORD, timeout=30)
+    helper.join(timeout=30)
+    assert result == bdq_login.LoginResult(
+        bdq_login.OUTCOME_REJECTED, bdq_login.REASON_TOKEN_UNCHANGED
+    )
+    assert installed == ["written"]
+    assert fake.token_path().read_bytes() == b"demo-installed-token-0123456789"
+
+
 def test_a_token_environment_variable_blocks_the_login(
     monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, spawned: Spawned
 ) -> None:

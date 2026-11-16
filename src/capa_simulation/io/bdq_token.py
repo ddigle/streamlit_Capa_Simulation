@@ -40,7 +40,8 @@ import json
 import os
 import stat
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -68,7 +69,18 @@ EXPIRY_WARNING_SECONDS: Final = 3600
 _EARLIEST_EXPIRY: Final = datetime.min.replace(tzinfo=timezone.utc) + timedelta(days=1)
 _LATEST_EXPIRY: Final = datetime.max.replace(tzinfo=timezone.utc) - timedelta(days=1)
 
+# 이 프로세스의 토큰 파일 쓰기(「토큰 넣기」)와 자동 로그인의 앞뒤 다이제스트 재기를 줄 세운다 —
+# 로그인이 도는 사이 넣은 토큰이 「로그인이 토큰을 바꿈」 으로 읽히지 않게(`holding_token_writes`).
 _WRITE_LOCK: Final = threading.Lock()
+
+
+@contextmanager
+def holding_token_writes() -> Iterator[None]:
+    """이 프로세스의 토큰 파일 쓰기(`install_token`)를 막는 동안 — 자동 로그인
+    (`bdq_login.attempt_login`)이 로그인 앞뒤 토큰 파일 다이제스트를 재는 동안 쥔다. 다시 들어갈 수
+    없다(그 안에서 `install_token` 을 부르지 않는다)."""
+    with _WRITE_LOCK:
+        yield
 
 
 def credential_dir() -> Path:

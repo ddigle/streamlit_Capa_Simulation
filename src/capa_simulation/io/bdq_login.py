@@ -600,27 +600,30 @@ def attempt_login(
     target = bdq_token.token_file_path(place, account)
     if target is None:
         return LoginResult(OUTCOME_UNAVAILABLE, REASON_BAD_ACCOUNT)
-    before = file_digest(target)
     limit = LOGIN_TIMEOUT_SECONDS if timeout is None else timeout
     output = b""
     timed_out = spawn_failed = False
-    try:
-        completed = subprocess.run(
-            login_command(),
-            input=f"{account}\n{account}\n{password}\n".encode(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            env=child_environment(env),
-            timeout=limit,
-            check=False,
-            start_new_session=os.name == "posix",
-        )
-        output = completed.stdout or b""
-    except subprocess.TimeoutExpired:
-        timed_out = True
-    except OSError:
-        spawn_failed = True
-    after = file_digest(target)
+    # 앞뒤 다이제스트 사이에 이 프로세스의 「토큰 넣기」 가 끼면 로그인이 토큰을 바꾼 것으로 읽힌다
+    # — 그 쓰기를 막은 채 잰다(로그인 잠금 다음 토큰 쓰기 잠금 차례).
+    with bdq_token.holding_token_writes():
+        before = file_digest(target)
+        try:
+            completed = subprocess.run(
+                login_command(),
+                input=f"{account}\n{account}\n{password}\n".encode(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=child_environment(env),
+                timeout=limit,
+                check=False,
+                start_new_session=os.name == "posix",
+            )
+            output = completed.stdout or b""
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        except OSError:
+            spawn_failed = True
+        after = file_digest(target)
     return _judge(
         changed=after is not None and after != before,
         marker=None if timed_out or spawn_failed else parse_marker(output),
