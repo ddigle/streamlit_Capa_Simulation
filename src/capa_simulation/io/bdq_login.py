@@ -49,11 +49,13 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 import 하지 않는다. 새 배경 스레드를 세우지 않는다.
 
 **다시 로그인의 문.** 토큰 파일 없음(`bigdataquery.exceptions` 의 종류 —
-`RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 어느 고리의 글에 `RELOGIN_MESSAGES` 문구 — 「You
-have invalid token」, HTTP 400)에서 다시 로그인한다. 만료 · 무효는 패키지 종류가 아니고(바깥
-`ConnectionError` · 안쪽 `Exception`, 2026-11-16 사내 실측) 둘의 사슬이 같아 한 길이다 — 바깥
-`ConnectionError` 를 연결 실패로 먼저 가르지 않는다. 문구 상수 밖의 토큰 낱말만 맞은 갈래는
-알림만이다(어댑터 몫). 문구는 판정에만 쓴다.
+`RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 고리의 글에 `RELOGIN_MESSAGES` 문구 — 「You have
+invalid token」. 실측의 응답 코드는 400 이고 판정은 코드를 보지 않는다)에서 다시 로그인한다.
+사슬은 `failure_chain` 이다(원인이 있으면 원인, 없으면 문맥, `_CHAIN_LIMIT` 고리까지 — 둘째 고리부터
+앱이 만든 예외 앞에서 멈춘다). 만료 · 무효는 패키지 종류가 아니고(바깥 `ConnectionError` · 안쪽
+`Exception`, 2026-11-16 사내 실측) 둘의 사슬이 같아 한 길이다 — 바깥 `ConnectionError` 를 연결
+실패로 먼저 가르지 않는다. 문구 상수 밖의 토큰 낱말만 맞은 갈래는 알림만이다(어댑터 몫). 문구는
+판정에만 쓴다.
 
 **비밀.** 결과 · 로그 · 예외에 계정 · 비밀번호 · 예외 문구 · 하위 출력이 없다 — 예외 종류의
 `모듈.이름` 과 짧은 영문 까닭 코드만. 토큰 다이제스트도 밖으로 내지 않는다(지문이다).
@@ -106,11 +108,13 @@ UNREACHED_PAUSE_SECONDS: Final = 300.0
 # 이 분을 넘게 남아야 성공(수명 8시간 — 막 받은 토큰은 7시간 넘게 남는다). 이하 · 모름은
 # `unconfirmed`.
 REMAINING_WARNING_MINUTES: Final = 7 * 60
-# 다시 로그인을 거는 예외 종류(`모듈.이름`). 사슬의 어느 고리든 그 종류(또는 하위 종류)면 건다.
+# 다시 로그인을 거는 예외 종류(`모듈.이름`). 사슬(`failure_chain`)의 고리가 그 종류(또는 하위
+# 종류)면 건다.
 RELOGIN_EXCEPTIONS: Final[tuple[str, ...]] = ("bigdataquery.exceptions.TokenNotFoundException",)
-# 다시 로그인을 거는 문구(소문자 — `casefold` 로 견준다). 사슬의 어느 고리의 글에든 있으면 건다.
-# 만료 · 무효 토큰의 `getData` 가 조회 전 토큰 확인에서 HTTP 400 으로 내는 안쪽 문구다(두 경우가
-# 같은 글). 판정에만 쓰고 결과 · 로그 · 예외에 싣지 않는다(문구에는 계정이 실릴 수 있다).
+# 다시 로그인을 거는 문구(소문자 — `casefold` 로 견준다). 사슬(`failure_chain`)의 고리의 글에 있으면
+# 건다. 만료 · 무효 토큰의 `getData` 가 조회 전 토큰 확인에서 내는 안쪽 문구다(두 경우가 같은 글 —
+# 실측의 응답 코드는 400 이고, 판정은 글 끝의 응답 코드를 보지 않는다). 판정에만 쓰고 결과 · 로그 ·
+# 예외에 싣지 않는다(문구에는 계정이 실릴 수 있다).
 RELOGIN_MESSAGES: Final[tuple[str, ...]] = ("you have invalid token",)
 
 Outcome = Literal["ok", "rejected", "unreached", "unavailable", "unconfirmed"]
@@ -810,20 +814,43 @@ def _has_relogin_message(error: BaseException) -> bool:
     return any(message and message.casefold() in text for message in RELOGIN_MESSAGES)
 
 
-def is_relogin_error(error: BaseException) -> bool:
-    """다시 로그인을 걸 예외인가 — 사슬(`__cause__` · `__context__`)의 고리 가운데 그 종류나 상위
-    종류가 `RELOGIN_EXCEPTIONS` 에 있거나 그 글에 `RELOGIN_MESSAGES` 문구가 있는 것. 패키지를 import
-    하지 않는다. 문구는 판정에만 쓰고 돌려주지 않는다."""
-    seen: list[BaseException] = []
+def _made_by_app(error: BaseException) -> bool:
+    """앱이 만든 예외인가 — 종류나 상위 종류가 `capa_simulation` 모듈의 것(어댑터
+    `BigDataQueryCallError` · 모듈 창구 `BigDataQueryError` 따위)."""
+    return any(
+        kind.__module__ == "capa_simulation" or kind.__module__.startswith("capa_simulation.")
+        for kind in type(error).__mro__
+    )
+
+
+def failure_chain(error: BaseException) -> list[BaseException]:
+    """`error` 와 그 앞 고리들 — 원인(`__cause__`)이 있으면 원인, 없으면 문맥(`__context__`)을 따라
+    `_CHAIN_LIMIT` 고리까지(traceback 이 보여 주는 차례). 돌아오는 사슬은 끊는다.
+
+    둘째 고리부터는 앱이 만든 예외(`_made_by_app`)를 만나면 그 고리를 넣지 않고 멈춘다 — 호출자가
+    앞 실패를 처리하는 `except` 안에서 다시 조회하면 새 실패의 문맥이 그 앞 실패(어댑터가 감싼
+    것)여서, 그 너머의 앞 토큰 실패를 새 실패의 근거로 읽지 않게. 감싼 예외의 글은 패키지 글을
+    옮겨 싣기도 하니 그 고리의 글도 보지 않는다. 패키지 사슬에는 앱 예외가 끼지 않는다."""
+    chain: list[BaseException] = []
     current: BaseException | None = error
-    while current is not None and current not in seen and len(seen) < _CHAIN_LIMIT:
-        seen.append(current)
-        for kind in type(current).__mro__:
+    while current is not None and current not in chain and len(chain) < _CHAIN_LIMIT:
+        if chain and _made_by_app(current):
+            break
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def is_relogin_error(error: BaseException) -> bool:
+    """다시 로그인을 걸 예외인가 — 사슬(`failure_chain`)의 고리 가운데 그 종류나 상위 종류가
+    `RELOGIN_EXCEPTIONS` 에 있거나 그 글에 `RELOGIN_MESSAGES` 문구가 있는 것. 패키지를 import 하지
+    않는다. 문구는 판정에만 쓰고 돌려주지 않는다."""
+    for link in failure_chain(error):
+        for kind in type(link).__mro__:
             if f"{kind.__module__}.{kind.__qualname__}" in RELOGIN_EXCEPTIONS:
                 return True
-        if _has_relogin_message(current):
+        if _has_relogin_message(link):
             return True
-        current = current.__cause__ or current.__context__
     return False
 
 

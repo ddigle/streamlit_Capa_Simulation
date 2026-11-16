@@ -1867,7 +1867,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   D1 ~ D11, 아래 `io/bdq_login.py`)이 회복한다: 계정은 Admin Area 관리자 폼에서만 넣고(환경변수 표에 비밀번호 없음) 버킷
   `secrets/bdq_login.json` 에 키 `CAPA_BDQ_SECRET_KEY` 로 감싸 두며, 저장된 계정이 조회 · 토큰 파일 이름 · 남은 시간 모두의
   계정 하나의 원천이다. 시작마다 한 번 로그인하고, 조회가 토큰 파일 없음(패키지 종류 `TokenNotFoundException`)이나 만료 · 무효 토큰(안쪽
-  문구 「You have invalid token」, HTTP 400 — 둘이 같은 사슬이고 패키지 종류가 아니다, 2026-11-16 사내 실측 · 사용자 결정)으로 실패하면
+  문구 「You have invalid token」 — 실측의 응답 코드는 400 이고 판정은 코드를 보지 않는다, 둘이 같은 사슬이고 패키지 종류가 아니다,
+  2026-11-16 사내 실측 · 사용자 결정)으로 실패하면
   다시 로그인해 같은 조회를 한 번만 다시 한다(WebIDE 가 같은 계정으로 로그인해 운영 토큰이 죽어도 D11 대로 이 길로 돌아온다 — 운영
   로그인이 WebIDE 토큰을 초기화하는 것은 감수).
   로그인 거절 · 다시 한 조회도 토큰 오류 · 그 밖의 애매한 실패는 다시 시도하지 않고 멈춤을 객체에 적어 재시작에도 시도하지 않으며(관리자
@@ -2044,9 +2045,13 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   - 요청자 계정(`resolve_user_name`)은 계정 하나의 원천(`bdq_login_store.effective_account` — C-DEP 자동 로그인에 저장된
     계정이 있으면 그 ID, Admin 폼으로 바뀌면 곧바로 새 ID, 없으면 `CAPA_BDQ_USER_NAME`)이고 저장 객체 읽기가 깨지면 환경변수
     계정으로 물러선다. `getData` 는 `bdq_login.run_with_relogin` 안에서 부른다(`_get_data_once`) — 저장된 계정이 있고 멈춤이
-    아니며 토큰 파일 없음(`bdq_login.RELOGIN_EXCEPTIONS` — `TokenNotFoundException`)이나 만료 · 무효 토큰(사슬 어느 고리의 글에
-    `bdq_login.RELOGIN_MESSAGES` 문구 「You have invalid token」, HTTP 400 — 바깥 `ConnectionError` 를 연결로 먼저 가르지 않는다)으로
-    실패하면 다시 로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이). 다시 한 조회도 토큰 오류면 멈춤을
+    아니며 토큰 파일 없음(`bdq_login.RELOGIN_EXCEPTIONS` — `TokenNotFoundException`)이나 만료 · 무효 토큰(사슬 고리의 글에
+    `bdq_login.RELOGIN_MESSAGES` 문구 「You have invalid token」 — 응답 코드는 보지 않고(실측은 400), 바깥 `ConnectionError` 를 연결로
+    먼저 가르지 않는다)으로 실패하면 다시 로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이). 사슬은
+    `bdq_login.failure_chain` 하나로 갈래(`_failure_chain`)와 같다 — 원인이 있으면 원인, 없으면 문맥을 따라 5고리까지(traceback 차례),
+    둘째 고리부터 앱이 만든 예외(종류 · 상위 종류가 `capa_simulation` 모듈 — `BigDataQueryCallError` · 모듈 창구 `BigDataQueryError`)
+    앞에서 그 고리의 글도 보지 않고 멈춘다(호출자가 앞 실패를 처리하는 `except` 안에서 다시 조회해도 앞 토큰 실패가 새 실패의 근거가
+    되지 않게). 다시 한 조회가 토큰과 상관없는 실패(SQL · 연결 · 시간 초과)면 그 갈래로 올라가고 멈추지 않는다. 다시 한 조회도 토큰 오류면 멈춤을
     저장하고, 로그인 거절도 멈춤 저장, 닿지 못함 · 패키지 없음은 멈추지 않고 원래 실패다(D3 · D4 · D6). 그 문구 밖의 토큰 낱말만
     맞은 갈래는 다시 로그인하지 않는다(`AD-10` 만 — 2026-11-16 사용자 결정이 D9 「종류에서만」 을 문구 기준으로 바꿈). 갈래 판정도 그
     문구를 문법 낱말보다 먼저 봐 다시 로그인한 실패가 「토큰」 이다. 감싸기 · 토큰 표지 · 실패 초는 다시 로그인을 거친 마지막 부름에
@@ -2132,8 +2137,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 관리자
   알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). 자동 시도 연속 3번
   (하위 프로세스를 띄운 수) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 토큰 파일 없음(`bigdataquery.exceptions` 의
-  종류 — `RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 어느 고리의 글에 `RELOGIN_MESSAGES` 문구 「You have invalid token」 — `casefold`
-  로 견주고 판정에만 쓴다)에서만이다(`is_relogin_error` · `run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를
+  종류 — `RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 `failure_chain` 의 고리 글에 `RELOGIN_MESSAGES` 문구 「You have invalid token」 —
+  `casefold` 로 견주고 응답 코드는 보지 않으며 판정에만 쓴다)에서만이다(`is_relogin_error` · `run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를
   감싼다). 다시 로그인 뒤 재조회도 토큰 오류일 때의 멈춤은 그 잠금 아래에서 지금 기억한 한 벌이 그 로그인의 한 벌일 때만 쓴다. 폼 제출(`login_from_form` — 실패면
   저장하지 않음, D5) · 지우기(`forget_login`) · 시작(`start_login` — 시작 스크립트)이 같은 잠금이다. 앱 기동 한 번(`start_in_app` —
   `capa_server.py`)은 키를 쥐고 빼고 저장 객체를 읽어 두며, 이번 시작이 거절을 보고도 멈춤 표시를 쓰지 못했거나 로그인 단계가 예상하지

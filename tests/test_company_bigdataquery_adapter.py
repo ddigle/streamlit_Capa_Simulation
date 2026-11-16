@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
@@ -35,6 +35,7 @@ from bdq_login_support import (
 )
 from s3_mock_store import MockStore
 
+from capa_simulation import module_helpers
 from capa_simulation.io import bdq_login
 from capa_simulation.io import bdq_login_store as login_store
 from capa_simulation.io import company_bigdataquery_adapter as adapter
@@ -1530,6 +1531,146 @@ def test_a_measured_failure_again_after_our_own_login_stops_as_a_token_failure(
     status = bdq_login.status()
     assert status.state == "stopped" and status.stop_reason == bdq_login.REASON_TOKEN_AFTER_LOGIN
     assert adapter.last_query_failed_on_token() is True
+
+
+_SYNTAX_TEXT = "AnalysisException: Syntax error in line 1: SELEC 1"
+
+
+class _MeasuredThen:
+    """토큰 파일이 처음 내용(`stale`)이면 실측 꼴 토큰 실패, 바뀐 뒤(다시 로그인 뒤)에는
+    `later()` 의 실패를 내는 `getData`. 낸 예외를 `raised` 에 모은다."""
+
+    def __init__(self, fake: FakeBdq, stale: bytes, later: Callable[[], BaseException]) -> None:
+        self.fake = fake
+        self.stale = stale
+        self.later = later
+        self.calls: list[dict[str, object]] = []
+        self.raised: list[BaseException] = []
+
+    def getData(self, **kwargs: object) -> pd.DataFrame:  # noqa: N802 — 패키지 이름 그대로
+        self.calls.append(dict(kwargs))
+        dead = self.fake.token_path(str(kwargs.get("user_name", ""))).read_bytes() == self.stale
+        self.raised.append(measured_token_failure() if dead else self.later())
+        raise self.raised[-1]
+
+
+@pytest.mark.parametrize(
+    ("later", "kind"),
+    [
+        (lambda: Error(_SYNTAX_TEXT), adapter.QUERY_FAILURE_SQL),
+        (lambda: ConnectionRefusedError("Connection refused"), adapter.QUERY_FAILURE_CONNECTION),
+        (lambda: TimeoutError("read timed out"), adapter.QUERY_FAILURE_TIMEOUT),
+    ],
+    ids=["sql", "connection", "timeout"],
+)
+def test_a_failure_after_our_own_login_that_is_not_a_token_error_does_not_stop(
+    later: Callable[[], BaseException],
+    kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
+    login_s3: tuple[MockStore, S3Target],
+) -> None:
+    """실측 꼴 토큰 실패 → 다시 로그인 1번 → 다시 한 조회가 토큰과 상관없는 실패 — 그 실패의 갈래로
+    올라가고 멈추지 않으며 토큰 표지도 서지 않는다(멈춤은 다시 한 조회도 토큰 오류일 때만 — D4)."""
+    mock, target = login_s3
+    _stored(monkeypatch, target)
+    module = _MeasuredThen(fake, fake.write_expired_token(), later)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert raised.value.kind == kind
+    assert len(module.raised) == 2 and raised.value.__cause__ is module.raised[1]
+    assert len(module.calls) == 2 and fake.logins() == 1
+    assert _object_state(mock) == "ok"
+    status = bdq_login.status()
+    assert status.state == "ok" and not status.stop_reason
+    assert adapter.last_query_failed_on_token() is False
+
+
+def _earlier_failure(shape: str) -> RuntimeError:
+    """호출자가 받아 들고 있는 앞 조회의 실패 — 어댑터가 감싼 토큰 실패(`call_error`), 그 글에
+    문구가 실린 것(`call_error_phrase_in_text` — 패키지 바깥 글에 문구가 온 꼴), 모듈 창구가 그
+    글을 옮겨 감싼 것(`module_error_phrase_in_text`)."""
+    first = measured_token_failure() if shape == "call_error" else Exception(MEASURED_INNER)
+    try:
+        raise adapter.BigDataQueryCallError(first) from first
+    except adapter.BigDataQueryCallError as call_error:
+        if shape != "module_error_phrase_in_text":
+            return call_error
+        try:
+            raise module_helpers.BigDataQueryError(call_error.kind, str(call_error)) from call_error
+        except module_helpers.BigDataQueryError as module_error:
+            return module_error
+
+
+@pytest.mark.parametrize(
+    "shape", ["call_error", "call_error_phrase_in_text", "module_error_phrase_in_text"]
+)
+def test_a_query_while_the_caller_handles_an_earlier_token_failure_does_not_log_in(
+    shape: str, monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """호출자 · 모듈이 앞 토큰 실패를 처리하는 `except` 안에서 다시 조회했고 그 조회는 구문 오류 —
+    앞 실패의 사슬(어댑터 · 모듈 창구가 감싼 것과 그 글)을 보지 않아 로그인 0번 · 조회 1번 · 갈래
+    SQL 이고 멈춤도 토큰 표지도 없다."""
+    mock, target = login_s3
+    _stored(monkeypatch, target)
+    fake.write_live_token()
+    calls: list[int] = []
+
+    def syntax(**_kwargs: object) -> pd.DataFrame:
+        calls.append(1)
+        raise Error(_SYNTAX_TEXT)
+
+    earlier = _earlier_failure(shape)
+    phrase_in_text = bdq_login.RELOGIN_MESSAGES[0] in str(earlier).casefold()
+    assert phrase_in_text == (shape != "call_error")
+    try:
+        raise earlier
+    except RuntimeError:
+        with pytest.raises(adapter.BigDataQueryCallError) as raised:
+            adapter.call_get_data(_module(syntax), "SELEC 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_SQL
+    assert raised.value.type_names == ("Error",)
+    assert calls == [1] and fake.logins() == 0
+    assert _object_state(mock) == "ok" and bdq_login.status().state == "ok"
+    assert adapter.last_query_failed_on_token() is False
+
+
+def test_the_failure_walk_reads_an_app_made_head_but_stops_before_a_later_one() -> None:
+    """갈래 · 종류 이름은 다시 로그인과 같은 걷기다 — 머리 고리는 감싼 예외여도 읽어 그 원인을
+    따라가고, 둘째 고리부터는 앱이 만든 예외 앞에서 멈춘다."""
+    wrapped = _earlier_failure("call_error")
+    assert adapter.classify_query_failure(wrapped) == adapter.QUERY_FAILURE_TOKEN
+    assert adapter.failure_type_names(wrapped) == (
+        "BigDataQueryCallError",
+        "ConnectionError",
+        "Exception",
+    )
+    try:
+        raise wrapped
+    except RuntimeError:
+        try:
+            raise Error(_SYNTAX_TEXT)
+        except Error as later:
+            assert later.__context__ is wrapped
+            assert adapter.classify_query_failure(later) == adapter.QUERY_FAILURE_SQL
+            assert not adapter.is_login_token_failure(later)
+            assert adapter.failure_type_names(later) == ("Error",)
+
+
+@pytest.mark.parametrize("code", [400, 500, 502, 503])
+def test_the_relogin_phrase_is_the_token_kind_whatever_the_response_code(code: int) -> None:
+    """갈래도 다시 로그인처럼 응답 코드를 보지 않는다(실측은 400) — 같은 문구면 5xx 여도
+    「토큰」."""
+    inner = Exception(MEASURED_INNER.replace("Code : 400", f"Code : {code}"))
+    outer = ConnectionError(MEASURED_OUTER)
+    outer.__context__ = inner
+    assert (adapter.classify_query_failure(outer), adapter.query_failure_clue(outer)) == (
+        adapter.QUERY_FAILURE_TOKEN,
+        "invalid token",
+    )
 
 
 def test_an_authentication_connection_error_without_the_phrase_does_not_log_in(

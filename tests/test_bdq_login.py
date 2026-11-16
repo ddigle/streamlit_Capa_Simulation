@@ -730,6 +730,65 @@ def test_every_relogin_phrase_is_a_plain_casefolded_phrase() -> None:
         assert message in MEASURED_INNER.casefold(), message
 
 
+@pytest.mark.parametrize("code", [400, 500, 502, 503])
+def test_the_relogin_phrase_does_not_look_at_the_response_code(code: int) -> None:
+    """판정은 문구 기준이고 글 끝의 응답 코드는 보지 않는다(실측은 400) — 같은 문구가 5xx 로 와도
+    다시 로그인을 건다."""
+    inner = Exception(MEASURED_INNER.replace("Code : 400", f"Code : {code}"))
+    assert str(inner).endswith(f"Code : {code}")
+    outer = ConnectionError(MEASURED_OUTER)
+    outer.__context__ = inner
+    assert bdq_login.is_relogin_error(outer)
+
+
+def test_the_chain_follows_the_cause_before_the_context() -> None:
+    """사슬은 traceback 이 보여 주는 차례다 — 원인이 있으면 원인을 따라가고 그 고리의 문맥은 보지
+    않는다. 원인에 문구가 없고 문맥에만 있으면 다시 로그인을 걸지 않는다(실측 꼴은 원인만 ·
+    문맥만이라 둘 다 걸린다)."""
+    both = ConnectionError(MEASURED_OUTER)
+    both.__cause__ = RuntimeError("HTTPError 400 Client Error")
+    both.__context__ = Exception(MEASURED_INNER)
+    assert not bdq_login.is_relogin_error(both)
+    assert bdq_login.failure_chain(both) == [both, both.__cause__]
+
+
+# 앱이 만든 예외 꼴(종류의 모듈이 `capa_simulation` 아래) · 그것을 물려받은 모듈 코드의 예외 꼴.
+_AppWrapped = type("AppWrapped", (RuntimeError,), {"__module__": "capa_simulation.io.demo_wrap"})
+_ModuleWrapped = type("ModuleWrapped", (_AppWrapped,), {"__module__": "modules.demo_wrap.page"})
+_SYNTAX_TEXT = "AnalysisException: Syntax error in line 1: SELEC 1"
+
+
+def _raised_while_handling(earlier: BaseException, later: BaseException) -> BaseException:
+    """`earlier` 를 처리하는 `except` 안에서 낸 `later` — 문맥이 `earlier` 다."""
+    try:
+        raise earlier
+    except BaseException:
+        try:
+            raise later
+        except BaseException as caught:
+            return caught
+    raise AssertionError("닿지 않는다")
+
+
+@pytest.mark.parametrize("phrase_in_wrapper", [False, True])
+@pytest.mark.parametrize("wrapper", [_AppWrapped, _ModuleWrapped])
+def test_a_failure_raised_while_handling_an_app_wrapped_failure_does_not_reach_into_it(
+    phrase_in_wrapper: bool, wrapper: type[BaseException]
+) -> None:
+    """호출자가 앞 실패(앱이 감싼 것)를 처리하는 `except` 안에서 다시 조회해 난 실패는 그 앞 실패의
+    사슬을 보지 않는다 — 둘째 고리부터 앱이 만든 예외(상위 종류로 물려받은 것도) 앞에서 멈추고, 감싼
+    예외의 글(패키지 글을 옮겨 싣기도 한다)도 보지 않는다. 머리 고리는 앱 예외여도 본다."""
+    first = Exception(MEASURED_INNER) if phrase_in_wrapper else measured_token_failure()
+    wrapped = wrapper(f"wrapped — {first}")
+    wrapped.__cause__ = first
+    later = _raised_while_handling(wrapped, RuntimeError(_SYNTAX_TEXT))
+    assert later.__context__ is wrapped
+    assert not bdq_login.is_relogin_error(later)
+    assert bdq_login.failure_chain(later) == [later]
+    assert bdq_login.is_relogin_error(wrapped)
+    assert bdq_login.failure_chain(wrapped)[:2] == [wrapped, first]
+
+
 _FAKE_TOKEN_SCRIPT = """
 import json
 import sys
@@ -1089,6 +1148,78 @@ def test_a_measured_failure_again_after_our_own_login_stops(
     with pytest.raises(ConnectionError):
         bdq_login.run_with_relogin(query)
     assert len(failures) == 3 and fake.logins() == 1
+
+
+@pytest.mark.parametrize(
+    "later",
+    [
+        lambda: RuntimeError(_SYNTAX_TEXT),
+        lambda: ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"),
+        lambda: TimeoutError("read timed out"),
+    ],
+    ids=["sql", "connection", "timeout"],
+)
+def test_a_failure_after_our_own_login_that_is_not_a_token_error_does_not_stop(
+    later: Callable[[], BaseException],
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
+    mock_s3: tuple[MockStore, S3Target],
+) -> None:
+    """실측 꼴 토큰 실패 → 스스로 다시 로그인 1번 → 다시 한 조회가 토큰과 상관없는 실패(SQL · 연결 ·
+    시간 초과) — 그 실패가 그대로 올라가고 멈추지 않는다(멈춤은 다시 한 조회도 토큰 오류일 때만 —
+    D4). 다음 조회의 같은 실패도 로그인하지 않는다."""
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    stale = fake.write_expired_token()
+    stored_login(target, key)
+    failures: list[BaseException] = []
+
+    def query() -> str:
+        dead = fake.token_path().read_bytes() == stale
+        failures.append(measured_token_failure() if dead else later())
+        raise failures[-1]
+
+    with pytest.raises(Exception) as caught:
+        bdq_login.run_with_relogin(query)
+    assert len(failures) == 2 and caught.value is failures[1]
+    assert fake.logins() == 1
+    assert object_state(mock) == "ok"
+    status = bdq_login.status()
+    assert status.state == "ok" and not status.stop_reason
+    with pytest.raises(Exception) as again:
+        bdq_login.run_with_relogin(query)
+    assert len(failures) == 3 and again.value is failures[2]
+    assert fake.logins() == 1 and object_state(mock) == "ok"
+
+
+def test_a_query_run_while_the_caller_handles_an_earlier_token_failure_does_not_log_in(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """호출자가 앞 토큰 실패(앱이 감싼 것)를 처리하는 `except` 안에서 다시 조회했고 그 조회가 토큰과
+    상관없는 실패면 — 앞 실패의 사슬을 보지 않아 로그인하지 않고(0번) 그 실패가 그대로 올라가며
+    멈춤도 없다."""
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    fake.write_live_token()
+    stored_login(target, key)
+    failures: list[BaseException] = []
+
+    def query() -> str:
+        failures.append(RuntimeError(_SYNTAX_TEXT))
+        raise failures[-1]
+
+    wrapped = _AppWrapped("earlier")
+    wrapped.__cause__ = measured_token_failure()
+    try:
+        raise wrapped
+    except RuntimeError:
+        with pytest.raises(RuntimeError) as caught:
+            bdq_login.run_with_relogin(query)
+    assert caught.value is failures[0] and caught.value.__context__ is wrapped
+    assert len(failures) == 1 and fake.logins() == 0
+    assert object_state(mock) == "ok" and bdq_login.status().state == "ok"
 
 
 def test_the_relogin_phrase_stays_out_of_results_logs_and_the_object(

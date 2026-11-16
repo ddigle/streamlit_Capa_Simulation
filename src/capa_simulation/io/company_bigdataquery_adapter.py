@@ -514,9 +514,11 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
 
     **다시 로그인(C-DEP 자동 로그인).** `getData` 는 `bdq_login.run_with_relogin` 안에서 부른다 —
     저장된 계정이 있고 멈춤이 아니며 토큰 파일 없음(`bdq_login.RELOGIN_EXCEPTIONS`)이나 만료 · 무효
-    토큰(「You have invalid token」, HTTP 400 — `bdq_login.RELOGIN_MESSAGES`)으로 실패했을 때만 다시
-    로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이 다시 조회). 그 문구
-    밖의 토큰 낱말만 맞은 갈래는 다시 로그인하지 않는다(알림 `AD-10` 만). 저장된 계정이
+    토큰(「You have invalid token」 — `bdq_login.RELOGIN_MESSAGES`, 응답 코드는 보지 않음)으로
+    실패했을 때만 다시 로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이
+    다시 조회). 그 문구 밖의 토큰 낱말만 맞은 갈래는 다시 로그인하지 않는다(알림 `AD-10` 만).
+    호출자가 앞 실패를 처리하는 `except` 안에서 불러도 그 앞 실패의 사슬은 보지 않는다
+    (`bdq_login.failure_chain`). 저장된 계정이
     없으면 지금과 같이 한 번 부른다. 다시 한 조회는 인자(요청자 계정)를 새로 읽고, 실패까지 걸린
     초는 마지막 부름에서 잰다 — 로그인 시간이 긴 실패로 셈해지지 않게. 아래 감싸기 · 토큰 표지는
     다시 로그인을 거친 마지막 결과에 한 번이다. Streamlit 을 부르지 않는다(공식버전 자동 갱신
@@ -769,13 +771,10 @@ def _original_text(error: BaseException) -> str:
 
 
 def _failure_chain(error: BaseException) -> list[BaseException]:
-    """`error` 와 그 원인들(`__cause__`·`__context__`). 돌아오는 사슬은 끊는다."""
-    chain: list[BaseException] = []
-    current: BaseException | None = error
-    while current is not None and current not in chain and len(chain) < 5:
-        chain.append(current)
-        current = current.__cause__ or current.__context__
-    return chain
+    """`error` 와 그 앞 고리들 — 다시 로그인 판정과 같은 걷기(`bdq_login.failure_chain` — 원인이
+    있으면 원인, 없으면 문맥, 5고리까지, 둘째 고리부터 앱이 만든 예외 앞에서 멈춤)라 갈래와 다시
+    로그인이 같은 고리를 본다."""
+    return bdq_login.failure_chain(error)
 
 
 def failure_type_names(error: BaseException) -> tuple[str, ...]:

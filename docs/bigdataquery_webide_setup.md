@@ -149,8 +149,8 @@ CD 로 띄운 서버에는 셸이 없고 시작 명령도 바꿀 수 없다(CI/C
      펼침에는 상태(없음 · 정상 · 멈춤과 까닭) · 마지막 결과와 남은 시간 · 넣은 관리자 앱 ID 앞 두 글자와 시각만 보이고 BDQ 계정
      ID 는 보이지 않는다. 바꾸는 길은 다시 넣기, 없애는 길은 「지우기」 하나다.
   3. **조회 중** — 조회가 토큰 파일 없음(패키지 종류 `bigdataquery.exceptions.TokenNotFoundException`)이나 **만료 · 무효 토큰**
-     (패키지 문구 「You have invalid token」, HTTP 400)으로 실패하면 다시 로그인해 같은 조회를 한 번만 다시 한다. 만료 토큰과 다른
-     로그인으로 밀려난 무효 토큰은 같은 두 줄 — 바깥 `ConnectionError`(「There is a problem with authentication. …」) · 안쪽
+     (패키지 문구 「You have invalid token」 — 응답 코드는 보지 않음, 실측은 400)으로 실패하면 다시 로그인해 같은 조회를 한 번만
+     다시 한다. 만료 토큰과 다른 로그인으로 밀려난 무효 토큰은 같은 두 줄 — 바깥 `ConnectionError`(「There is a problem with authentication. …」) · 안쪽
      `Exception`(「You have invalid token. Please login again using the login() function: HTTP Response Code : 400」) — 이고 둘 다
      패키지 종류가 아니라(2026-11-16 사내 실측) 앱은 종류가 아니라 그 문구로 가른다(같은 날 사용자 결정). 조회 전 토큰 확인에서 막혀
      조회문은 DB 로 가기 전이다. 패키지가 조회마다 토큰 파일을 다시 읽으므로 앱을 다시 띄우지 않는다. 다시 로그인으로도 풀리지 않으면
