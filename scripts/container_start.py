@@ -26,16 +26,7 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
      패키지가 앱 의존성을 바꾸지 못하게 한다. 이 pip 에는 자격증명이 하나도 없다.
 1. 로그인 토큰 — `CAPA_BDQ_TOKEN` 과 `CAPA_BDQ_USER_NAME` 이 있으면 패키지가 보는 자리
    (`/config/.credential/bigdataquery.token.<계정>`)에 그 값을 쓴다(`base64:` 로 시작하면 풀어서).
-   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다. 그 앞에 자격 폴더에 남은
-   옛 갱신 토큰 파일(`capa-bdq-refresh.<계정>`)을 지우고(지우지 못하면 까닭 한 줄), 자동 갱신을 끈
-   서버(`CAPA_BDQ_AUTO_REFRESH` 가 `on` 이 아님)면 앞 실행이 둔 넣은 때 표지 · 잠금 · 시작 값 표지도
-   지운다. 켜짐이면(`io/bdq_refresh.py` — 갱신 명령을 알 때) 조회 길과 같은 문(넣은 때부터
-   6시간 · 만료 1시간 안)일 때만 자격 폴더의 지금 토큰으로 갱신해 받은 토큰을 쓴다(지금 토큰이
-   없으면 갱신하지 않는다). 자격 폴더의 토큰이 갱신으로 넣은 것이면 갱신하지 않았거나 실패해도
-   그대로 두고,
-   `CAPA_BDQ_TOKEN` 은 그 밖이거나 사람이 표에서 그 값을 바꿨을 때(지난 시작 때와 다름) 쓴다.
-   꺼짐 · 준비는 지금 길 그대로다. 진행 한 줄 「토큰 자동 갱신 — 꺼짐 · 준비 · 켜짐」 과 결과 파일
-   `refresh` 칸에 갈래 · 까닭만 남긴다.
+   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다.
 2. 요청자 계정 — `CAPA_BDQ_USER_NAME` 은 앱이 그대로 읽는다. 있는지만 적는다.
 
 결과는 `settings.CONTAINER_START_REPORT_PATH` 에 남고 앱 화면(Admin Area 「서버 시작 점검」)이
@@ -66,7 +57,6 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import getpass
 import json
 import os
@@ -92,7 +82,7 @@ import container_stage
 
 from capa_simulation import settings
 from capa_simulation.auth import names as sso_names
-from capa_simulation.io import bdq_refresh, bdq_token
+from capa_simulation.io import bdq_token
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
@@ -688,41 +678,10 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
         _tighten_folder(target.parent)
         return StepResult(STATUS_OK, "같은 내용의 토큰 파일이 이미 있어 다시 쓰지 않음")
     try:
-        # 넣는 길 셋의 한 곳 — 자동 갱신을 켰으면 토큰 곁에 넣은 때 표지(출처 `start`)를 남긴다
-        # (`io/bdq_token.py`).
-        bdq_token.put_token(credential_dir, account, content, "start", environ=environ)
+        bdq_token.put_token(credential_dir, account, content)
     except OSError as error:
         return StepResult(STATUS_FAILED, f"{credential_dir} 에 쓰지 못함({type(error).__name__})")
     return StepResult(STATUS_OK, "토큰 파일을 씀")
-
-
-REFRESH_LABEL = "토큰 자동 갱신"
-
-
-def forget_old_refresh_token(environ: Mapping[str, str], credential_dir: Path) -> str | None:
-    """자격 폴더에 남은 옛 갱신 토큰 파일(`capa-bdq-refresh.<계정>`)을 지운다 — 자동 갱신은 읽지
-    않는 비밀이라 남기지 않는다. 지우지 못한 까닭 또는 `None`(지웠음 · 없었음 · 계정을 몰라 자리를
-    못 정함). 까닭에 값 · 길이를 싣지 않는다."""
-    account = environ.get(BDQ_USER_NAME_ENV, "").strip()
-    try:
-        bdq_refresh.forget_old_refresh_token(credential_dir, account)
-    except OSError as error:
-        return f"옛 갱신 토큰 파일을 지우지 못함({type(error).__name__})"
-    return None
-
-
-def refresh_step(environ: Mapping[str, str], credential_dir: Path) -> bdq_refresh.StartRefresh:
-    """옛 갱신 토큰 파일을 지우고, 자동 갱신을 끈 서버면 앞 실행이 둔 넣은 때 표지 · 잠금 · 시작
-    값 표지도 지운다(끈 자격 폴더는 자동 갱신 앞과 같다). 켜짐이면 갱신할 때만 자격 폴더의 지금
-    토큰으로 갱신한다(갱신으로 넣어 둔 토큰은 그대로 두고, 사람이 표에서 `CAPA_BDQ_TOKEN` 을
-    바꿨으면 교환하지 않고 다음 단계가 그 값을 쓰게 둔다 — `bdq_refresh.refresh_at_start`). 꺼짐 ·
-    준비는 토큰을 바꾸지 않는다 — 다음 로그인 토큰 단계가 지금 길 그대로 돈다."""
-    leftover = forget_old_refresh_token(environ, credential_dir)
-    if not bdq_token.auto_refresh_switched_on(environ):
-        account = environ.get(BDQ_USER_NAME_ENV, "").strip()
-        bdq_refresh.forget_auto_refresh_files(credential_dir, account)
-    result = bdq_refresh.refresh_at_start(environ, credential_dir)
-    return result if leftover is None else replace(result, leftover=leftover)
 
 
 def user_name_step(environ: Mapping[str, str]) -> StepResult:
@@ -796,39 +755,13 @@ def collect_report(
         install = install_step(environ, runner, redactor)
         return install.result
 
-    refresh = bdq_refresh.StartRefresh("off", "확인하지 못함", failed=True)
-
-    def run_token() -> StepResult:
-        nonlocal refresh
-        try:
-            refresh = refresh_step(environ, credential_dir)
-        except Exception as error:
-            refresh = bdq_refresh.StartRefresh(
-                "off", f"예상하지 못한 실패({type(error).__name__})", failed=True
-            )
-        if refresh.installed:
-            return StepResult(STATUS_OK, "자동 갱신으로 받은 토큰을 씀")
-        if refresh.kept:
-            return StepResult(STATUS_OK, "자동 갱신으로 넣어 둔 토큰을 그대로 씀")
-        written = token_step(environ, credential_dir)
-        if refresh.table_changed and written.status == STATUS_OK:
-            # 사람이 표에서 바꾼 값 — 넣은 뒤에야 기억한다. 넣지 못하면 표지가 지난 값 그대로라
-            # 다음 시작이 다시 그 값을 쓴다.
-            bdq_refresh.remember_table_value(environ, credential_dir)
-        return written
-
     steps = {
         STEP_INSTALL: _guarded(run_install, redactor),
-        STEP_TOKEN: _guarded(run_token, redactor),
+        STEP_TOKEN: _guarded(lambda: token_step(environ, credential_dir), redactor),
         STEP_USER_NAME: _guarded(lambda: user_name_step(environ), redactor),
     }
     for name, result in steps.items():
         echo(f"{STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")
-    refresh = dataclasses.replace(
-        refresh, reason=redactor(refresh.reason), leftover=redactor(refresh.leftover)
-    )
-    tail = f" · {refresh.leftover}" if refresh.leftover else ""
-    echo(f"{REFRESH_LABEL} — {bdq_refresh.MODE_LABELS[refresh.mode]}: {refresh.reason}{tail}")
     presence = sso_presence(environ)
     echo(sso_presence_line(presence))
     account = environ.get(BDQ_USER_NAME_ENV, "").strip()
@@ -853,7 +786,6 @@ def collect_report(
         ],
         "pip_tail": [redactor(line) for line in install.pip_tail],
         "sso_environment": presence,
-        "refresh": refresh.as_json(),
     }
 
 

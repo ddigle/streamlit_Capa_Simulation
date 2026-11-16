@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from capa_simulation.io import bdq_token
-from capa_simulation.io.container_start_report import BDQ_AUTO_REFRESH_ENV, BDQ_USER_NAME_ENV
+from capa_simulation.io.container_start_report import BDQ_USER_NAME_ENV
 
 ACCOUNT = "fakeaccount"
 # 가짜 토큰만 쓴다 — 사내 토큰 꼴(35바이트 · 한 줄)을 흉내 낸 값과 가짜 JWT.
@@ -55,10 +55,6 @@ def env(**extra: str) -> dict[str, str]:
     return {BDQ_USER_NAME_ENV: ACCOUNT, **extra}
 
 
-# 자동 갱신을 켠 서버의 환경 — 넣은 때 표지를 쓴다.
-ON = {BDQ_AUTO_REFRESH_ENV: "on"}
-
-
 def test_a_token_is_written_where_the_package_reads_it(
     folder: Path, keeps_permission_bits: bool
 ) -> None:
@@ -71,8 +67,6 @@ def test_a_token_is_written_where_the_package_reads_it(
     if keeps_permission_bits:
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
         assert stat.S_IMODE(folder.stat().st_mode) == 0o700
-    # 임시 파일이 남지 않는다 — 토큰뿐이다(자동 갱신을 켜지 않으면 넣은 때 표지도 없다 — 자동 갱신
-    # 앞과 같은 폴더).
     assert [path.name for path in folder.iterdir()] == [target.name]
 
 
@@ -296,87 +290,3 @@ def test_the_warning_starts_one_hour_before_and_stays_after() -> None:
     assert bdq_token.expiry_is_near(state, expires - hour) is True
     assert bdq_token.expiry_is_near(state, expires + timedelta(days=1)) is True
     assert bdq_token.expiry_is_near(bdq_token.TokenState("file"), expires) is False
-
-
-def test_a_put_token_leaves_when_and_from_where_without_the_token(
-    folder: Path, keeps_permission_bits: bool
-) -> None:
-    """넣은 때 표지 — 넣은 UTC 시각과 출처뿐이고 토큰 글자 · 길이 · 지문은 없다."""
-    at = datetime(2026, 11, 14, 1, 2, 3, tzinfo=timezone.utc)
-
-    outcome = bdq_token.install_content(FAKE_TOKEN.encode(), "refresh", env(**ON), at=at)
-
-    assert outcome.status == "written"
-    mark = folder / f"capa-bdq-installed.{ACCOUNT}.json"
-    payload = json.loads(mark.read_bytes())
-    assert payload == {"installed_at": "2026-11-14T01:02:03Z", "source": "refresh"}
-    assert FAKE_TOKEN not in mark.read_text(encoding="utf-8")
-    assert str(len(FAKE_TOKEN)) not in mark.read_text(encoding="utf-8")
-    if keeps_permission_bits:
-        assert stat.S_IMODE(mark.stat().st_mode) == 0o600
-    assert bdq_token.read_installed_mark(folder, ACCOUNT) == bdq_token.InstalledMark(at, "refresh")
-
-
-def test_the_admin_put_is_marked_and_the_same_token_keeps_the_mark(folder: Path) -> None:
-    assert bdq_token.install_token(FAKE_TOKEN, env(**ON)).status == "written"
-    first = bdq_token.read_installed_mark(folder, ACCOUNT)
-    assert first is not None and first.source == "admin"
-
-    later = datetime(2030, 1, 1, tzinfo=timezone.utc)
-    again = bdq_token.install_content(FAKE_TOKEN.encode(), "refresh", env(**ON), at=later)
-    assert again.status == "same"
-
-    assert bdq_token.read_installed_mark(folder, ACCOUNT) == first
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        b"",
-        b"not json",
-        b"[1]",
-        b'{"installed_at": "2026-11-14T01:02:03Z", "source": "x"}',
-        b'{"installed_at": "yesterday", "source": "admin"}',
-        b"[" * 100_000,
-    ],
-)
-def test_a_broken_mark_reads_as_none(folder: Path, content: bytes) -> None:
-    folder.mkdir(parents=True)
-    (folder / f"capa-bdq-installed.{ACCOUNT}.json").write_bytes(content)
-
-    assert bdq_token.read_installed_mark(folder, ACCOUNT) is None
-    assert bdq_token.read_installed_mark(folder, "../escape") is None
-
-
-def test_a_mark_that_cannot_be_written_does_not_undo_the_put(folder: Path) -> None:
-    """표지는 덧붙은 기록이다 — 그 자리가 막혀도 토큰은 넣음이다."""
-    (folder / f"capa-bdq-installed.{ACCOUNT}.json").mkdir(parents=True)
-
-    assert bdq_token.install_token(FAKE_TOKEN, env(**ON)).status == "written"
-
-    assert (folder / f"bigdataquery.token.{ACCOUNT}").read_text(encoding="utf-8") == FAKE_TOKEN
-    assert bdq_token.read_installed_mark(folder, ACCOUNT) is None
-
-
-@pytest.mark.parametrize("value", ["", "off", "true", "1", "yes"])
-def test_with_auto_refresh_off_a_put_leaves_no_mark_and_clears_an_old_one(
-    folder: Path, value: str
-) -> None:
-    """자동 갱신 꺼짐(`CAPA_BDQ_AUTO_REFRESH` 가 `on` 이 아님) — 넣기는 표지를 쓰지 않고 앞 실행의
-    표지를 지운다. 패키지가 읽는 자격 폴더가 자동 갱신 앞과 같다."""
-    assert bdq_token.install_token(FAKE_TOKEN, env(**ON)).status == "written"
-    assert bdq_token.read_installed_mark(folder, ACCOUNT) is not None
-
-    off = env(**{BDQ_AUTO_REFRESH_ENV: value})
-    assert bdq_token.install_token(f"{FAKE_TOKEN}-next", off).status == "written"
-
-    assert [path.name for path in folder.iterdir()] == [f"bigdataquery.token.{ACCOUNT}"]
-
-
-@pytest.mark.parametrize(
-    ("value", "on"),
-    [("on", True), (" On ", True), ("ON", True), ("", False), ("off", False), ("true", False)],
-)
-def test_the_auto_refresh_switch_is_on_only_for_on(value: str, on: bool) -> None:
-    assert bdq_token.auto_refresh_switched_on({BDQ_AUTO_REFRESH_ENV: value}) is on
-    assert bdq_token.auto_refresh_switched_on({}) is False

@@ -1,4 +1,4 @@
-# Purpose: Admin 서버 시작 점검의 지금 토큰 줄 · 토큰 넣기 · 자동 갱신 줄과 토큰 관리자 알림을 둔다.
+# Purpose: Admin 서버 시작 점검의 지금 토큰 줄 · 토큰 넣기 팝업 · 토큰 만료 관리자 알림을 둔다.
 
 """BigDataQuery 토큰 넣기(2026-11-12 사용자 결정 — 「Admin 「토큰 넣기」 + 만료 1시간 전 관리자
 알림 먼저, REST 자동 갱신은 조사만」).
@@ -25,14 +25,6 @@ base64 · 쓰기 실패)은 칸 아래 한 줄이고(폼 검증 — UI-NTF-03) �
 **물러서기.** 이 알림은 `app.py` 가 모든 화면 회차에 부르는 자리라, 지금 토큰을 읽다 무엇이 나도
 (`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로 물러서고 시각을 못 옮기면 「알 수 없음」
 이다 — 덧붙은 보기가 화면을 멈추지 않는다.
-
-**자동 갱신(`io/bdq_refresh.py`).** 펼침 표에 「토큰 자동 갱신」 줄 하나(`refresh_start_step` — 결과
-파일이 아니라 지금 프로세스에서 판정, 통합인증 줄과 같은 꼴)가 결과 칸에 꺼짐 · 준비 · 켜짐 · 멈춤,
-까닭 칸에 값 낱말(켜지 않음 · 요청 꼴 미정 · 마지막 갱신 시각 · 마지막 시도 실패 갈래 — 지금 토큰을
-쓸 수 없음 포함 · 멈춤 까닭)만 싣는다. 관리자 알림 `AD-17`(자동 갱신 멈춤 · 마지막 시도 실패)은
-`render_refresh_alerts` 가 `AD-11` 곁에서 회차마다 조건 없이 부른다. 갱신의 입력이 지금 토큰이라
-할 일은 늘 새 토큰 넣기(「토큰 넣기」 · `CAPA_BDQ_TOKEN` + CI/CD)다. 토큰 글자 · 길이는 어디에도
-없다.
 """
 
 from __future__ import annotations
@@ -49,8 +41,8 @@ from capa_simulation.components.admin_dialog import ADMIN_DIALOG_KEY
 from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.sso_status import CLOCK_FORMAT
-from capa_simulation.io import bdq_refresh, bdq_token
-from capa_simulation.io.container_start_report import BDQ_TOKEN_ENV, StartRefreshRecord
+from capa_simulation.io import bdq_token
+from capa_simulation.io.container_start_report import BDQ_TOKEN_ENV
 from capa_simulation.korea_time import kst_clock
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
@@ -65,9 +57,6 @@ FORM_KEY: Final = "admin_area_bdq_token_form"
 INPUT_KEY: Final = "admin_area_bdq_token_input"
 FLASH_KEY: Final = "admin_area_bdq_token_flash"
 EXPIRY_ALERT_CODE: Final = "AD-11"
-# 토큰 자동 갱신 — 멈춤 · 마지막 시도 실패(`AD-17`).
-REFRESH_ALERT_CODE: Final = "AD-17"
-REFRESH_STEP_LABEL: Final = "토큰 자동 갱신"
 
 OPEN_LABEL: Final = "토큰 넣기"
 DIALOG_TITLE: Final = "BigDataQuery 토큰 넣기"
@@ -254,132 +243,3 @@ def _expiry_alert_text(state: bdq_token.TokenState) -> str:
     when = _clock(expires) if expires is not None else UNKNOWN_CLOCK
     head = f"BigDataQuery 로그인 토큰의 만료 시각은 {when} 입니다(1시간 전부터 알립니다). "
     return head + (ENVIRONMENT_FIX if state.source == "environment" else INSTALL_FIX)
-
-
-# --- 자동 갱신 ---------------------------------------------------------------------------
-
-
-def read_refresh() -> bdq_refresh.RefreshStatus:
-    """지금 자동 갱신 상태 — 읽다 무엇이 나도 꺼짐 「확인하지 못함」 으로 물러선다."""
-    try:
-        return bdq_refresh.status()
-    except Exception:
-        return bdq_refresh.RefreshStatus("off", "확인하지 못함")
-
-
-def refresh_start_step(
-    record: StartRefreshRecord | None, state: bdq_refresh.RefreshStatus | None = None
-) -> tuple[str, str, str]:
-    """「서버 시작 점검」 표의 자동 갱신 줄 `(단계, 결과, 까닭)` — 결과는 꺼짐 · 준비 · 켜짐 · 멈춤,
-    까닭은 값 낱말뿐이다. 결과 파일 `refresh` 칸의 까닭을 둘 때 싣는다.
-
-    - 시작 때 자동 갱신 단계가 뜻밖에 멈춤(기록이 꺼짐 + 실패): 지금 상태가 무엇이든 싣는다.
-    - 시작 갱신 실패(기록이 켜짐 + 실패): 이 프로세스가 아직 갱신을 시도하지 않았을 때만 —
-      시도했으면 그 결과가 더 새 소식이다.
-    - 옛 갱신 토큰 파일을 지우지 못함(기록의 `leftover`): 상태와 상관없이 끝에 덧붙인다 — 쓰지 않는
-      비밀이 자격 폴더에 남았다."""
-    current = read_refresh() if state is None else state
-    reason = current.reason
-    broke_at_start = record is not None and record.failed and record.mode == "off"
-    if current.mode == "on":
-        parts = [
-            f"마지막 갱신 {_clock(current.last_refreshed_at)}"
-            if current.last_refreshed_at is not None
-            else "갱신 전"
-        ]
-        if current.last_failure:
-            when = _clock(current.last_failure_at) if current.last_failure_at else UNKNOWN_CLOCK
-            parts.append(f"마지막 시도 실패 · {current.last_failure} · {when}")
-        elif (
-            record is not None
-            and record.failed
-            and not broke_at_start
-            and current.last_attempt_at is None
-        ):
-            parts.append(record.reason)
-        reason = " · ".join(parts)
-    if broke_at_start and record is not None:
-        reason = record.reason if current.mode == "off" else f"{reason} · {record.reason}"
-    if record is not None and record.leftover:
-        reason = f"{reason} · {record.leftover}" if reason else record.leftover
-    return REFRESH_STEP_LABEL, current.label, reason
-
-
-REFRESH_HALTED_SHORT: Final = "BigDataQuery 토큰 자동 갱신 멈춤 — 같은 계정 로그인을 확인하세요"
-REFRESH_STUCK_SHORT: Final = "BigDataQuery 토큰 자동 갱신 멈춤 — 새 토큰을 넣으세요"
-REFRESH_FAILED_SHORT: Final = "BigDataQuery 토큰 자동 갱신 실패 — 이어지면 새 토큰을 넣으세요"
-REFRESH_UNREACHED_SHORT: Final = (
-    f"BigDataQuery 토큰 자동 갱신 — {bdq_refresh.UNREACHED}, 이어지면 연결을 확인하세요"
-)
-# 입력이 지금 토큰이라 그 토큰이 죽으면 갱신이 서지 않는다 — 실패 · 멈춤 전문이 함께 쓴다.
-DEAD_INPUT_NOTE: Final = (
-    "지금 토큰이 만료됐거나 같은 계정의 다른 곳(WebIDE · 다른 PC) 로그인으로 죽었으면 그 "
-    "토큰으로는 갱신할 수 없습니다."
-)
-
-
-def render_refresh_alerts() -> None:
-    """자동 갱신 관리자 알림 `AD-17`(멈춤 · 마지막 시도 실패). 결과 파일이 있는 서버에서 회차마다
-    조건 없이 부른다(이벤트 칸 한 자리 — 관리자가 아니거나 조건이 없으면 해소). 지문은 갈래
-    낱말뿐이다."""
-    state = read_refresh()
-    admin = sso_identity.viewer_is_admin()
-    halted = state.mode == "halted"
-    trouble = admin and (halted or (state.mode == "on" and bool(state.last_failure)))
-    alerts.state(
-        REFRESH_ALERT_CODE,
-        scope=None,
-        content=(state.mode, state.reason, state.last_failure) if trouble else None,
-        active=trouble,
-        text=_refresh_alert_short(state) if trouble else None,
-        full=_refresh_alert_text(state) if trouble else None,
-        goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
-    )
-
-
-def _refresh_alert_short(state: bdq_refresh.RefreshStatus) -> str:
-    """`AD-17` 짧은 글 — 멈춤 까닭(다른 곳의 로그인 · 거듭 실패) · 마지막 시도 실패(서버에 닿지
-    못함은 따로 — 지금 토큰이 아니라 연결을 가리킨다)."""
-    if state.mode != "halted":
-        return REFRESH_UNREACHED_SHORT if state.last_failure_unreached else REFRESH_FAILED_SHORT
-    if state.reason == bdq_refresh.HALT_FAILING:
-        return REFRESH_STUCK_SHORT
-    return REFRESH_HALTED_SHORT
-
-
-RESTART_NOTE: Final = (
-    "Admin 「서버 시작 점검」 의 「토큰 넣기」 로 새 토큰을 넣거나, CD 환경변수 "
-    f"{BDQ_TOKEN_ENV} 값을 새 토큰으로 바꾸고 CI/CD 를 다시 누르면 다시 켜집니다."
-)
-
-
-def _refresh_alert_text(state: bdq_refresh.RefreshStatus) -> str:
-    """`AD-17` 전문(평문) — 무엇이 일어났고 무엇을 하면 풀리나."""
-    when = _clock(state.last_failure_at) if state.last_failure_at else UNKNOWN_CLOCK
-    if state.mode == "halted" and state.reason == bdq_refresh.HALT_FAILING:
-        return (
-            f"자동 갱신이 {bdq_refresh.FAILED_EXCHANGE_LIMIT}번 잇따라 새 토큰을 넣지 못해 "
-            f"멈췄습니다(마지막 · {state.last_failure} · {when}) — 시도마다 이 "
-            f"계정의 앞 토큰이 죽었을 수 있습니다. {DEAD_INPUT_NOTE} {RESTART_NOTE}"
-        )
-    if state.mode == "halted":
-        return (
-            "갱신으로 넣은 토큰이 거듭 토큰 실패로 죽어 자동 갱신을 멈췄습니다 — "
-            f"{bdq_refresh.HALT_ELSEWHERE}(WebIDE · 다른 PC · 다른 서버). 계정당 토큰은 하나라 "
-            "갱신으로 받은 새 토큰도 그쪽 토큰을 죽일 수 있습니다. 그 로그인을 멈춘 뒤 "
-            f"{RESTART_NOTE}"
-        )
-    if state.last_failure_unreached:
-        return (
-            f"자동 갱신이 갱신 서버에 닿지 못했습니다({state.last_failure} · {when}) — 요청을 "
-            "보내지 못해 토큰은 그대로이고 멈추지 않습니다. 5분이 지난 뒤의 조회에서 다시 "
-            "시도하고, 닿으면 이 알림이 풀립니다. 오래 이어지면 이 서버에서 갱신 서버로 가는 "
-            "연결(사내망 · 주소 · 인증서)을 확인하세요. 그 사이 지금 토큰이 만료되면 그 토큰으로는 "
-            "갱신할 수 없어 「토큰 넣기」 로 새 토큰을 넣어야 합니다."
-        )
-    return (
-        f"마지막 자동 갱신 시도가 실패했습니다({state.last_failure} · {when}). 5분이 지난 뒤의 "
-        f"조회에서 다시 시도하고, 갱신 서버에 닿은 시도가 {bdq_refresh.FAILED_EXCHANGE_LIMIT}번 "
-        f"잇따라 새 토큰을 넣지 못하면 멈춥니다. {DEAD_INPUT_NOTE} 그때는 「토큰 넣기」 로 새 "
-        "토큰을 넣으세요(지금 토큰이 없을 때도 같습니다)."
-    )

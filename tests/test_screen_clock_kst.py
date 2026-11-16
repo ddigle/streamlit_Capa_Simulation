@@ -32,7 +32,7 @@ from capa_simulation.components import (
     object_sync_status,
     sso_status,
 )
-from capa_simulation.io import bdq_refresh
+from capa_simulation.io.bdq_token import TokenState
 from capa_simulation.object_sync_worker import SyncHealth, WorkerStatus
 
 # 2026-11-14 16:56:09 UTC = 2026-11-15 01:56:09 KST.
@@ -139,16 +139,12 @@ def test_the_sync_times_are_korean_on_a_utc_server(utc_server: None) -> None:
 
 
 def test_the_token_times_are_korean_on_a_utc_server(utc_server: None) -> None:
-    """BigDataQuery 토큰 자동 갱신 줄의 마지막 갱신 · 마지막 시도 실패 시각."""
-    state = bdq_refresh.RefreshStatus(
-        "on", last_refreshed_at=MOMENT, last_failure="교환 실패(OSError)", last_failure_at=MOMENT
-    )
+    """Admin 「서버 시작 점검」 의 「지금 토큰」 줄 — 파일 수정 · 만료 시각."""
+    state = TokenState("file", modified_at=MOMENT, expires_at=MOMENT)
 
-    _label, _mode, reason = bdq_token_admin.refresh_start_step(None, state)
+    line = bdq_token_admin.token_line(state)
 
-    assert reason == (
-        f"마지막 갱신 {KST_SECOND} · 마지막 시도 실패 · 교환 실패(OSError) · {KST_SECOND}"
-    )
+    assert line == f"**지금 토큰** · 파일 · 수정 {KST_SECOND} · 만료 {KST_SECOND} · 지남"
 
 
 def test_the_sso_event_time_is_korean_on_a_utc_server(

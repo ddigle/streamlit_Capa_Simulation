@@ -100,6 +100,28 @@ def test_nothing_is_written_off_the_cd_server(monkeypatch: pytest.MonkeyPatch) -
     assert calls == []
 
 
+def test_a_token_failure_asks_the_package_once_and_raises_the_mark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """토큰 갈래로 실패한 조회는 패키지(`getData`)를 한 번만 부르고 — 다시 묻지 않는다 — 프로세스
+    표지(`AD-10`)를 세운다."""
+    calls: list[str] = []
+
+    def get_data(**_kwargs: object) -> pd.DataFrame:
+        calls.append("getData")
+        raise ConnectionError("500 invalid token")
+
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, "fake")
+    monkeypatch.setattr(importlib, "import_module", lambda _: SimpleNamespace(getData=get_data))
+
+    with pytest.raises(adapter.BigDataQueryCallError) as caught:
+        adapter.call_get_data(adapter.load_bigdataquery_module(), "SELECT 1")
+
+    assert caught.value.kind == adapter.QUERY_FAILURE_TOKEN
+    assert calls == ["getData"]
+    assert adapter.last_query_failed_on_token() is True
+
+
 def test_a_failed_start_token_step_tells_the_administrator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

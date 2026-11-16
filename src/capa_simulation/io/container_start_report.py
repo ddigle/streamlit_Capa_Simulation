@@ -38,13 +38,8 @@ from capa_simulation import settings
 ARTIFACTORY_USER_ENV: Final = "CAPA_ARTIFACTORY_USER"
 ARTIFACTORY_TOKEN_ENV: Final = "CAPA_ARTIFACTORY_TOKEN"
 BDQ_TOKEN_ENV: Final = "CAPA_BDQ_TOKEN"
-# BigDataQuery 토큰 자동 갱신 켜기(`io/bdq_refresh.py` — 값이 `on` 이면 켬, 그 밖 · 없으면 꺼짐).
-# 비밀이 아니라 앱에도 넘긴다. 선택 값이라 `CD_ENVIRONMENT` 에 넣지 않고(「시작 때 비어 있던 CD
-# 환경변수」 줄에 서지 않게) CD 서버를 가르는 `CD_ONLY_ENVIRONMENT` 에도 넣지 않는다.
-BDQ_AUTO_REFRESH_ENV: Final = "CAPA_BDQ_AUTO_REFRESH"
-BDQ_AUTO_REFRESH_ON: Final = "on"
-# 자동 갱신이 읽지 않는 갱신 토큰 이름 — 표에 남아 있어도 비밀이라 앱 · 하위 프로세스에 넘기지 않고
-# 시작 스크립트 출력에서 가린다(`APP_WITHHELD_ENVIRONMENT`).
+# 걷은 갱신 토큰 이름 — 앱은 읽지 않는다. 표에 남아 있어도 비밀이라 앱 · 하위 프로세스에 넘기지
+# 않고 시작 스크립트 출력에서 가린다(`APP_WITHHELD_ENVIRONMENT`).
 RETIRED_BDQ_REFRESH_TOKEN_ENV: Final = "CAPA_BDQ_REFRESH_TOKEN"
 # 조회 요청자의 사내 계정. 사람마다 다른 값이라 저장소에 두지 않는다 — 배포 ZIP 을 받은 다른
 # 사람이 남의 계정으로 조회하게 된다. 어댑터(`getData(user_name=…)`)와 시작 스크립트(토큰 파일
@@ -70,11 +65,7 @@ APP_WITHHELD_ENVIRONMENT: Final = (
 )
 # CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 과 `CAPA_COMPANY_INDEX_URL`
 # 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다.
-CD_ONLY_ENVIRONMENT: Final = (
-    ARTIFACTORY_USER_ENV,
-    ARTIFACTORY_TOKEN_ENV,
-    BDQ_TOKEN_ENV,
-)
+CD_ONLY_ENVIRONMENT: Final = (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
 START_SCRIPT: Final = "scripts/container_start.py"
 # 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
 # 견준다.
@@ -187,24 +178,6 @@ class ContainerStartReport:
     sso_environment: Mapping[str, bool] | None = None
     # 동기화 칸. S3 키도 `managed` 도 없는 서버 · 옛 꼴 파일에는 없어 `None` 이다.
     sync: SyncStart | None = None
-    # 시작 때 토큰 자동 갱신(`io/bdq_refresh.refresh_at_start`) — 꺼짐 · 준비 · 켜짐과 까닭 낱말.
-    # 옛 꼴 파일에는 없어 `None` 이다.
-    refresh: StartRefreshRecord | None = None
-
-
-@dataclass(frozen=True)
-class StartRefreshRecord:
-    """결과 파일 `refresh` 칸 — 시작 때 자동 갱신의 갈래와 까닭 낱말(비밀 없음)."""
-
-    mode: str
-    reason: str
-    installed: bool = False
-    failed: bool = False
-    # 시작 때 갱신으로 넣어 둔 토큰을 그대로 두었나(`CAPA_BDQ_TOKEN` 을 쓰지 않음). 옛 파일은 거짓.
-    kept: bool = False
-    # 자격 폴더에 남은 옛 갱신 토큰 파일을 지우지 못한 까닭(지웠거나 없었으면 빈 글). 옛 결과
-    # 파일은 빈 글.
-    leftover: str = ""
 
 
 def mask_account(name: str) -> str:
@@ -276,28 +249,6 @@ def parse_report(data: object) -> ContainerStartReport | None:
         home_masked=_text_or_none(runtime.get("home")),
         sso_environment=_presence_or_none(data.get("sso_environment")),
         sync=parse_sync(data.get("sync")),
-        refresh=parse_refresh(data.get("refresh")),
-    )
-
-
-REFRESH_MODES: Final = ("off", "ready", "on", "halted")
-
-
-def parse_refresh(data: object) -> StartRefreshRecord | None:
-    """`refresh` 칸을 읽는다. 없거나 꼴이 어긋나면 `None` — 펼침의 다른 칸은 그대로 선다."""
-    if not isinstance(data, dict):
-        return None
-    mode, reason = data.get("mode"), data.get("reason")
-    if mode not in REFRESH_MODES or not isinstance(reason, str):
-        return None
-    leftover = data.get("leftover")
-    return StartRefreshRecord(
-        mode=str(mode),
-        reason=reason,
-        installed=data.get("installed") is True,
-        failed=data.get("failed") is True,
-        kept=data.get("kept") is True,
-        leftover=leftover if isinstance(leftover, str) else "",
     )
 
 
