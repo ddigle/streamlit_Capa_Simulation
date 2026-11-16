@@ -76,6 +76,7 @@ from capa_simulation.io.bdq_login_store import LoadResult, LoginSecret, StoredLo
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
     LOGIN_ERROR,
+    LOGIN_OK,
     LOGIN_REJECTED,
     LOGIN_STANDING,
     LOGIN_STOPPED,
@@ -324,6 +325,11 @@ class _Process:
     stopped_cipher: str = field(default="", repr=False)
     stopped_reason: str = ""
     last: LastAttempt | None = None
+    # 멈추지 않은 채 자동 로그인이 서지 못한 갈래(`unreached` · `unconfirmed` · `unavailable`)와 그
+    # 까닭 — 관리자 알림(`AD-24`, D6 「알림만」)이 읽는다. 이번 시작 기록에서
+    # 이어받고(`start_in_app`) 성공 · 멈춤 · 폼 성공 · 지우기에 걷힌다.
+    trouble: str = ""
+    trouble_reason: str = ""
     # 이번 시작이 남긴 멈춤(`start_in_app`) — 까닭 코드와, 객체에 멈춤 표시를 아직 써 보지
     # 않았는지. 어느 한 벌인지 모른 채(기동 읽기가 실패했어도) 선다 — 그 사이 객체를 바꿀 길은 이
     # 앱의 폼 하나이고 폼이 성공하면 걷힌다.
@@ -350,6 +356,8 @@ def forget_state() -> None:
         _STATE.last = None
         _STATE.held_reason = ""
         _STATE.held_write = False
+        _STATE.trouble = ""
+        _STATE.trouble_reason = ""
     store.forget_state()
 
 
@@ -361,12 +369,22 @@ def _reset_after_success() -> None:
         _STATE.stopped_reason = ""
         _STATE.held_reason = ""
         _STATE.held_write = False
+        _STATE.trouble = ""
+        _STATE.trouble_reason = ""
 
 
 def _stop_in_process(cipher: str, reason: str) -> None:
     with _STATE_LOCK:
         _STATE.stopped_cipher = cipher
         _STATE.stopped_reason = reason
+        _STATE.trouble = ""
+        _STATE.trouble_reason = ""
+
+
+def _note_trouble(outcome: str, reason: str) -> None:
+    with _STATE_LOCK:
+        _STATE.trouble = outcome
+        _STATE.trouble_reason = reason
 
 
 def _pause() -> None:
@@ -414,12 +432,16 @@ ViewState = Literal["off", "none", "ok", "stopped"]
 class LoginView:
     """알림 · 지금 상태 줄이 읽는 한 벌 — `off`(기능이 서지 않음) · `none`(저장된 계정 없음) ·
     `ok`(서 있음) · `stopped`(멈춤). `live` 는 이 프로세스가 기억한 것에서 읽었나(아니면 시작 기록).
-    계정 · 비밀번호가 없다."""
+    `trouble` 은 서 있는(`ok`) 채 자동 로그인이 서지 못한 갈래(`unreached` · `unconfirmed` ·
+    `unavailable` — 멈추지 않았다, D6)이고 `trouble_reason` 이 그 까닭 코드다. 계정 · 비밀번호가
+    없다."""
 
     state: ViewState
     stop_reason: str = ""
     stopped_at: str = ""
     live: bool = False
+    trouble: str = ""
+    trouble_reason: str = ""
 
     @property
     def standing(self) -> bool:
@@ -445,6 +467,10 @@ def current_view(start: LoginStart | None = None) -> LoginView:
             if not at and live.last is not None:
                 at = live.last.at
             return LoginView("stopped", live.stop_reason, at, live=True)
+        if live.state == "ok":
+            with _STATE_LOCK:
+                trouble, why = _STATE.trouble, _STATE.trouble_reason
+            return LoginView("ok", live=True, trouble=trouble, trouble_reason=why)
         return LoginView(live.state, live=True)
     with _STATE_LOCK:
         held = _STATE.held_reason
@@ -455,7 +481,8 @@ def current_view(start: LoginStart | None = None) -> LoginView:
     if start.status in (LOGIN_STOPPED, LOGIN_REJECTED, LOGIN_ERROR):
         return LoginView("stopped", start.reason or REASON_UNEXPECTED)
     if start.status in LOGIN_STANDING:
-        return LoginView("ok")
+        trouble = "" if start.status == LOGIN_OK else start.status
+        return LoginView("ok", trouble=trouble, trouble_reason=start.reason if trouble else "")
     return LoginView("none")
 
 
@@ -697,6 +724,7 @@ def _settle(stored: StoredLogin, result: LoginResult, target: S3Target) -> Attem
         _reset_after_success()
     elif not stopped:
         _pause()
+        _note_trouble(result.outcome, result.reason)
     if stopped or failure:
         _stop_in_process(stored.cipher, reason if reason is not None else REASON_ATTEMPTING)
     return Attempt(result, stop_write=failure, stopped_reason=reason or "")
@@ -742,16 +770,19 @@ def _auto_attempt_locked(
         _note_last(refused, auto=True)
         _log(refused, path=path)
         _pause()
+        _note_trouble(refused.outcome, refused.reason)
         return Attempt(refused)
     resolved = _resolve_target(target)
     if resolved is None:
         _pause()
+        _note_trouble(OUTCOME_UNAVAILABLE, SKIP_UNGUARDED)
         return Attempt(None, SKIP_UNGUARDED, stop_write=store.WRITE_UNAVAILABLE)
     guard = store.mark_attempting(resolved, cipher=stored.cipher)
     if not guard.ok:
         if guard.reason in (store.WRITE_CHANGED, store.WRITE_GONE):
             return Attempt(None, SKIP_CHANGED, stop_write=_write_failure(guard))
         _pause()
+        _note_trouble(OUTCOME_UNAVAILABLE, SKIP_UNGUARDED)
         return Attempt(None, SKIP_UNGUARDED, stop_write=_write_failure(guard))
     with _STATE_LOCK:
         _STATE.streak += 1
@@ -973,7 +1004,9 @@ def start_in_app(environ: MutableMapping[str, str]) -> None:
        앱으로 바뀌며 사라지므로, 첫 토큰 예외가 같은 계정으로 또 로그인하지 않게(계정 잠김 방지).
        아래 읽기가 실패해도 선다. 읽은 한 벌이 시작이 판정한 한 벌이 아니면(넣은 시각
        `entered_at` 이 다름 — 그 뒤 관리자가 다시 넣음) 걷는다. 폼이 성공하거나 지우면 걷힌다.
-    3. 저장 객체를 한 번 읽어 기억한다 — 화면 회차의 첫 읽기가 S3 GET 을 잠금 아래 기다리지 않게.
+    3. 시작이 멈추지 않은 채 서지 못했으면(닿지 못함 · 확인 못 함 · 못 함) 그 갈래를 이어받는다 —
+       관리자 알림(`AD-24`)이 읽고, 이 프로세스의 다음 자동 시도가 고쳐 쓴다.
+    4. 저장 객체를 한 번 읽어 기억한다 — 화면 회차의 첫 읽기가 S3 GET 을 기다리지 않게.
        기능이 서지 않으면 S3 에 묻지 않는다. 시작의 거절이고 객체가 아직 `ok` 면 멈춤 표시를 한 번
        더 써 본다(못 읽었으면 다음 자동 시도 자리에서 써 본다).
     """
@@ -995,6 +1028,8 @@ def start_in_app(environ: MutableMapping[str, str]) -> None:
             )
             _STATE.held_write = rejected
         _LOGGER.warning("BigDataQuery 자동 로그인: 시작의 멈춤을 넘겨받음(%s)", start.status)
+    elif start is not None and start.status in LOGIN_STANDING and start.status != LOGIN_OK:
+        _note_trouble(start.status, start.reason)
     try:
         loaded = store.load_state()
     except Exception as error:  # 기동 읽기가 깨져도 앱은 뜬다 — 조회가 다시 읽는다

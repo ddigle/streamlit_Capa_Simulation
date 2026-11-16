@@ -397,6 +397,12 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 사용자 결정 D3 · D4). Admin Area 「BDQ 자동 로그인」 에서 계정을 다시 넣어 로그인이 성공하면
     # 풀린다.
     AlertSpec("AD-23", "action", "state", "BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣기"),
+    # BigDataQuery 자동 로그인이 멈추지 않은 채 서지 못함 — 시작 때 · 조회 중 자동 로그인이 서버에
+    # 닿지 못했거나 · 로그인을 확인하지 못했거나 · 시도하지 못한 C-DEP 서버의 관리자
+    # 회차(`container_start_check.render_token_alert`, 2026-11-16 사용자 결정 D6 「알림만」). 다음
+    # 자동 시도가 성공하거나 멈추거나 Admin Area 「BDQ 자동 로그인」 에서 다시 넣으면 걷힌다 — 성공
+    # 없이 이어지면 `AD-23`(멈춤)으로 넘어간다.
+    AlertSpec("AD-24", "action", "state", "BigDataQuery 자동 로그인이 서지 못함 — 다시 시도 대기"),
 )
 
 

@@ -207,8 +207,8 @@ GOTO_RECEIVERS: Final[Mapping[str, Callable[[str, str], None]]] = {
     ACCESS_LIST_TARGET_KIND: open_access_list,
     # Admin 「서버 시작 점검」 펼침 — 시작 점검 알림 `AD-01` 이 들고 간다.
     START_CHECK_TARGET_KIND: open_start_check,
-    # Admin 「BDQ 자동 로그인」 펼침 — 자동 로그인 멈춤 `AD-23` · 계정 없음 갈래의 `AD-10` 이
-    # 들고 간다.
+    # Admin 「BDQ 자동 로그인」 펼침 — 자동 로그인 멈춤 `AD-23` · 서지 못함 `AD-24` · 계정 넣기 ·
+    # 다시 넣기 갈래의 `AD-10` 이 들고 간다.
     BDQ_LOGIN_TARGET_KIND: open_bdq_login,
     # Admin 「DB 동기화」 펼침 — 관리자 몫 동기화 알림 `SY-02` · `SY-03` 이 들고 간다.
     SYNC_TARGET_KIND: open_sync_panel,

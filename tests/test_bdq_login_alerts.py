@@ -39,6 +39,7 @@ from capa_simulation.components.container_start_check import render_token_alert
 render_token_alert()
 """
 STOP = container_start_check.LOGIN_STOP_ALERT_CODE
+TROUBLE = container_start_check.LOGIN_TROUBLE_ALERT_CODE
 FAILURE = container_start_check.TOKEN_ALERT_CODE
 EXPIRY = bdq_token_admin.EXPIRY_ALERT_CODE
 ENV_USER = "demo_env_user"
@@ -105,7 +106,7 @@ def test_a_stored_stop_tells_the_administrator_to_enter_the_account_again(
     assert "`" not in note["full"]
     assert (note["page"], note["href"]) == (tab_label(ADMIN_AREA), ADMIN_AREA.href)
     _secret_free(note)
-    for code in (FAILURE, EXPIRY, STOP):
+    for code in (FAILURE, EXPIRY, STOP, TROUBLE):
         assert len(states(app, code)) == 1, code
 
     # 관리자가 다시 넣어 성공하면(기억이 `ok`) 해소로 닫힌다.
@@ -246,8 +247,8 @@ def test_the_stop_and_the_entry_alerts_open_the_bdq_login_box(
         (False, "none", False, True),
         (True, "none", False, False),
         (False, "none", True, False),
-        (False, "ok", False, False),
-        (False, "stopped", False, False),
+        (False, "ok", False, True),
+        (False, "stopped", False, True),
         (False, "off", False, False),
     ],
 )
@@ -258,9 +259,97 @@ def test_the_token_alert_target_follows_the_fix_it_names(
     environment_token: bool,
     targeted: bool,
 ) -> None:
-    """`AD-10` 의 대상은 전문의 할 일이 계정 넣기일 때만이다 — 시작 점검 실패 · 토큰 환경변수 ·
-    저장된 계정이 있음(정상 · 멈춤) · 꺼짐은 대상이 없다."""
+    """`AD-10` 의 대상은 전문의 첫 할 일이 계정 넣기 · 다시 넣기일 때만이다 — 시작 점검 실패 ·
+    토큰 환경변수 · 꺼짐은 대상이 없다."""
     if environment_token:
         monkeypatch.setenv(bdq_token.LOGIN_TOKEN_ENV, "demo-environment-token")
     target = container_start_check._token_alert_target(start_failed, bdq_login.LoginView(state))
     assert target == (bdq_login_target() if targeted else None)
+
+
+def test_a_token_failure_with_a_stored_account_points_at_entering_it_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장된 계정이 있는데(정상 · 멈춤) 조회가 토큰 갈래로 실패 — 조회 중 다시 로그인은 토큰 파일이
+    없어졌을 때만 서므로, 첫 할 일은 Admin 「BDQ 자동 로그인」 에서 다시 넣기(곧바로 새 토큰)다.
+    「토큰 넣기」 는 그 뒤 또는이다."""
+    _server(tmp_path, monkeypatch)
+    _query(monkeypatch, ConnectionError("500 invalid token"))
+    for stored in (_stored(), _stored(store.STATE_STOPPED, "token_unchanged")):
+        store.remember(stored)
+        note = active_state(AppTest.from_string(SCRIPT).run(), FAILURE)
+        assert note is not None
+        full = note["full"]
+        assert bdq_token_admin.RELOGIN_FIX in full and bdq_token_admin.INSTALL_FIX in full
+        assert full.index(bdq_token_admin.RELOGIN_FIX) < full.index(bdq_token_admin.INSTALL_FIX)
+        assert note["target"] == bdq_login_target()
+        _secret_free(note)
+
+
+@pytest.mark.parametrize(
+    ("cell", "word", "reason"),
+    [
+        ({"status": "unreached", "reason": "timeout"}, "서버에 닿지 못함", "시간 초과"),
+        (
+            {"status": "unconfirmed", "reason": "remaining_unknown"},
+            "로그인 확인 못 함",
+            "남은 시간 모름",
+        ),
+        (
+            {"status": "unavailable", "reason": "import_failed"},
+            "시도하지 못함",
+            "패키지를 불러오지 못함",
+        ),
+    ],
+)
+def test_a_start_that_could_not_stand_the_auto_login_tells_the_administrator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cell: Mapping[str, object],
+    word: str,
+    reason: str,
+) -> None:
+    """시작 때 자동 로그인이 멈추지 않은 채 서지 못함(닿지 못함 · 확인 못 함 · 못 함) — D6
+    「알림만」 을 `AD-24` 가 낸다. 멈춤 알림은 서지 않고, 지문은 갈래 낱말 하나다."""
+    _server(tmp_path, monkeypatch, cell)
+
+    app = AppTest.from_string(SCRIPT).run()
+
+    note = active_state(app, TROUBLE)
+    assert note is not None
+    assert note["short"] == f"BigDataQuery 자동 로그인 {word} — 다시 시도 대기"
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    assert reason in note["full"] and "「BDQ 자동 로그인」" in note["full"]
+    assert note["target"] == bdq_login_target()
+    assert active_state(app, STOP) is None
+    _secret_free(note)
+
+
+def test_the_trouble_alert_follows_the_process_and_clears_on_success_or_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """앱이 기억을 읽은 뒤에는 이 프로세스의 자동 시도가 고쳐 쓴다 — 서지 못하면 서고, 성공 · 멈춤 ·
+    관리자 아님이면 해소다."""
+    _server(tmp_path, monkeypatch)
+    stored = _stored()
+    store.remember(stored)
+    monkeypatch.setattr(
+        bdq_login, "_STATE", bdq_login._Process(trouble="unreached", trouble_reason="connection")
+    )
+    app = AppTest.from_string(SCRIPT).run()
+    note = active_state(app, TROUBLE)
+    assert note is not None and "연결 실패" in note["full"]
+
+    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: False)
+    assert active_state(app.run(), TROUBLE) is None
+    monkeypatch.setattr(sso_identity, "viewer_is_admin", lambda: True)
+
+    monkeypatch.setattr(bdq_login, "_STATE", bdq_login._Process())
+    assert active_state(app.run(), TROUBLE) is None
+
+    monkeypatch.setattr(
+        bdq_login, "_STATE", bdq_login._Process(trouble="unreached", trouble_reason="connection")
+    )
+    store.remember(_stored(store.STATE_STOPPED, "miss_limit"))
+    app.run()
+    assert active_state(app, TROUBLE) is None and active_state(app, STOP) is not None

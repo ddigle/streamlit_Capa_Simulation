@@ -804,10 +804,17 @@ def test_an_ok_attempt_resets_the_streak(
     for _ in range(2):
         bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
         clock[0] += bdq_login.UNREACHED_PAUSE_SECONDS + 1
+    view = bdq_login.current_view()
+    assert (view.state, view.trouble, view.trouble_reason) == (
+        "ok",
+        bdq_login.OUTCOME_UNREACHED,
+        bdq_login.REASON_CONNECTION,
+    )
     scene(monkeypatch)
     recovery = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
     assert recovery.retry and recovery.logged_in
     assert bdq_login.status().streak == 0
+    assert bdq_login.current_view().trouble == ""
     assert fake.logins() == 3
 
 

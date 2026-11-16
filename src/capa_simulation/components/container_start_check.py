@@ -65,6 +65,7 @@ from capa_simulation.components.bdq_token_admin import (
     AUTO_LOGIN_FIX,
     ENVIRONMENT_FIX,
     INSTALL_FIX,
+    RELOGIN_FIX,
     render_expiry_alert,
     render_token_dialog,
     render_token_row,
@@ -123,6 +124,15 @@ COPY_KEY = "container_start_check"
 TOKEN_ALERT_CODE = "AD-10"
 # BigDataQuery 자동 로그인 멈춤 관리자 알림(`render_token_alert` 끝).
 LOGIN_STOP_ALERT_CODE = "AD-23"
+# BigDataQuery 자동 로그인이 멈추지 않은 채 서지 못함(닿지 못함 · 확인 못 함 · 못 함 — D6
+# 「알림만」).
+LOGIN_TROUBLE_ALERT_CODE = "AD-24"
+# 그 갈래의 알림창 짧은 글 낱말.
+_TROUBLE_WORDS = {
+    "unreached": "서버에 닿지 못함",
+    "unconfirmed": "로그인 확인 못 함",
+    "unavailable": "시도하지 못함",
+}
 PIP_TAIL_LABEL = "pip 출력 끝(자격증명은 가렸습니다)"
 COPY_PIP_TAIL_LABEL = "pip 출력 끝(자격증명 · 주소는 가렸습니다)"
 ADDRESS_MASK = "<주소>"
@@ -488,12 +498,12 @@ def login_view(report: ContainerStartReport | None) -> bdq_login.LoginView:
 
 
 def render_token_alert() -> None:
-    """BigDataQuery 토큰 관리자 알림 셋 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
-    (`bdq_token_admin.render_expiry_alert`), 자동 로그인 멈춤 `AD-23`. `app.py` 가 회차마다 조건
-    없이 부른다.
+    """BigDataQuery 토큰 관리자 알림 넷 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
+    (`bdq_token_admin.render_expiry_alert`), 자동 로그인 멈춤 `AD-23`, 자동 로그인이 멈추지 않은 채
+    서지 못함 `AD-24`. `app.py` 가 회차마다 조건 없이 부른다.
 
     결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않는다 — 그 파일은 시작 스크립트가 앱보다 먼저
-    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 세 자리를
+    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 네 자리를
     쓰고 관리자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
     실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다. 자동 로그인 상태는 S3 에 묻지 않고
     읽는다(`login_view`) — 서 있는 동안 `AD-11` 은 해소다.
@@ -527,13 +537,15 @@ def render_token_alert() -> None:
     render_expiry_alert(standing=view.standing)
     # 자동 로그인 멈춤(`AD-23`) — 한 자리 더.
     render_login_stop_alert(view, admin=admin)
+    # 자동 로그인이 멈추지 않은 채 서지 못함(`AD-24`) — 한 자리 더.
+    render_login_trouble_alert(view, admin=admin)
 
 
 def _token_alert_target(start_failed: bool, view: bdq_login.LoginView) -> alerts.GotoTarget | None:
-    """`AD-10` 이 들고 갈 대상 — 전문의 할 일이 Admin 「BDQ 자동 로그인」 에 계정 넣기일 때만(시작
-    점검 실패도 패키지가 읽는 토큰 환경변수도 아니고 저장된 계정이 없음 — `_token_alert_text` 와
-    같은 차례) 그 펼침이다(UI-NAV-01). 그 밖은 대상 없이 Admin Area 다."""
-    if start_failed or bdq_token.environment_token_set() or view.state != "none":
+    """`AD-10` 이 들고 갈 대상 — 전문의 첫 할 일이 Admin 「BDQ 자동 로그인」 에 계정 넣기 · 다시
+    넣기일 때만(시작 점검 실패도 패키지가 읽는 토큰 환경변수도 아니고 기능이 섬 —
+    `_token_alert_text` 와 같은 차례) 그 펼침이다(UI-NAV-01). 그 밖은 대상 없이 Admin Area 다."""
+    if start_failed or bdq_token.environment_token_set() or view.state == "off":
         return None
     return bdq_login_target()
 
@@ -553,6 +565,36 @@ def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
         full=_login_stop_text(view) if active else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
         target=bdq_login_target() if active else None,
+    )
+
+
+def render_login_trouble_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
+    """자동 로그인이 멈추지 않은 채 서지 못함 관리자 알림(`AD-24` — D6 「알림만」) — 이벤트 칸 한
+    자리. 시작 때 · 조회 중 자동 로그인이 서버에 닿지 못했거나 · 로그인을 확인하지 못했거나 ·
+    시도하지 못한 채 서 있으면(`view.trouble`) 선다. 지문은 갈래 낱말 하나다 — 계정 · 까닭 글을 싣지
+    않는다. 다음 자동 시도가 성공하거나 멈추거나 폼에서 다시 넣으면 걷힌다. 「그 화면으로」 는 Admin
+    「BDQ 자동 로그인」 펼침까지 연다."""
+    word = _TROUBLE_WORDS.get(view.trouble, "")
+    active = view.state == "ok" and bool(word) and admin
+    alerts.state(
+        LOGIN_TROUBLE_ALERT_CODE,
+        scope=None,
+        content=[view.trouble] if active else None,
+        active=active,
+        text=f"BigDataQuery 자동 로그인 {word} — 다시 시도 대기" if active else None,
+        full=_login_trouble_text(view, word) if active else None,
+        goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
+        target=bdq_login_target() if active else None,
+    )
+
+
+def _login_trouble_text(view: bdq_login.LoginView, word: str) -> str:
+    """`AD-24` 전문(평문) — 무엇이 서지 못했고 무엇이 그다음인가. 계정 · 비밀번호가 없다."""
+    reason = login_reason_text(view.trouble_reason) if view.trouble_reason else "까닭 모름"
+    return (
+        f"저장된 BigDataQuery 계정의 자동 로그인이 {word}({reason}). 멈추지 않고 다음 토큰 오류 · "
+        f"재시작 때 다시 시도합니다 — 성공 없이 {bdq_login.MISS_LIMIT}번 이어지면 멈춥니다. Admin "
+        f"Area 「{BDQ_LOGIN_LABEL}」 에서 계정을 다시 넣으면 곧바로 로그인해 봅니다."
     )
 
 
@@ -579,7 +621,8 @@ def _token_alert_text(
     길이다. 조회 실패의 새 토큰 길은 패키지가 읽는 자리를 따른다 — 환경변수
     `BIGDATAQUERY_LOGIN_TOKEN` 이 있으면 「토큰 넣기」 가 잠기니 그 값 바꾸기다(값은 보지
     않는다). 자동 로그인이 켜졌는데 저장된 계정이 없으면(`view.state == "none"`) Admin Area 의 계정
-    넣는 자리를 가리킨다."""
+    넣는 자리를, 저장된 계정이 있으면(정상 · 멈춤) 그 자리에서 다시 넣기(곧바로 로그인해 새 토큰 —
+    조회 중 다시 로그인은 토큰 파일이 없어졌을 때만 선다)를 먼저 가리킨다."""
     found: list[str] = []
     if start_reason is not None:
         found.append(f"서버 시작 점검의 「로그인 토큰 파일」 줄이 실패입니다({start_reason})")
@@ -596,4 +639,8 @@ def _token_alert_text(
         return ". ".join(found) + f". {ENVIRONMENT_FIX}"
     if view is not None and view.state == "none":
         return ". ".join(found) + f". {AUTO_LOGIN_FIX}"
+    if view is not None and view.state in ("ok", "stopped"):
+        return ". ".join(found) + (
+            f". {RELOGIN_FIX} {INSTALL_FIX} 이 알림은 그 뒤 조회가 한 번 성공하면 풀립니다."
+        )
     return ". ".join(found) + f". {INSTALL_FIX} 이 알림은 넣은 뒤 조회가 한 번 성공하면 풀립니다."
