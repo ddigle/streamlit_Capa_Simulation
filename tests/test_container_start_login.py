@@ -508,6 +508,26 @@ def test_the_login_cell_is_read_leniently() -> None:
         ({"status": "ok", "remaining_minutes": 25}, ("ok", "정상 · 남은 0시간 25분")),
         ({"status": "ok"}, ("ok", "정상 · 남은 시간 모름")),
         (
+            {"status": "ok", "remaining_minutes": 479, "stop_write": "write_failed:timeout"},
+            ("failed", "정상 · 남은 7시간 59분 · 결과 저장 못 함"),
+        ),
+        (
+            {"status": "unconfirmed", "reason": "remaining_unknown"},
+            ("failed", "확인 못 함 — 남은 시간 모름"),
+        ),
+        (
+            {"status": "unavailable", "reason": "unguarded", "stop_write": "write_failed:x"},
+            ("failed", "못 함 — 시도 표시를 쓰지 못함 · 결과 저장 못 함 · 예비 토큰"),
+        ),
+        (
+            {"status": "stopped", "reason": "miss_limit"},
+            ("failed", "멈춤 — 닿지 못함 · 확인 못 함 연속 상한 · 예비 토큰"),
+        ),
+        (
+            {"status": "stopped", "reason": "attempting"},
+            ("failed", "멈춤 — 시도 결과를 적지 못함 · 예비 토큰"),
+        ),
+        (
             {"status": "error", "reason": "unexpected", "error_kind": "OSError"},
             ("failed", "예상하지 못한 실패(OSError) · 예비 토큰"),
         ),
@@ -540,15 +560,28 @@ def test_the_start_check_table_gains_the_login_row_only_where_it_is_shown() -> N
         pip_tail=(),
     )
     off = report_contract.LoginStart("off", "not_managed")
+    no_key = report_contract.LoginStart("off", "no_key")
     stopped = report_contract.LoginStart("stopped", "token_unchanged")
 
     assert login_rows(base) == []
     assert login_rows(_with(base, off)) == []
     assert report_contract.report_verdict(_with(base, off)) == "모두 정상"
+    # 키 없는 `managed` 서버(이관을 마친 지금의 운영)는 줄은 서되 제목 판정에 세지 않는다 — 키도
+    # 객체도 없으면 지금과 같다(잠든 불변식).
+    assert login_rows(_with(base, no_key)) == [("BDQ 자동 로그인", "건너뜀", "꺼짐 — 키 없음")]
+    assert report_contract.report_verdict(_with(base, no_key)) == "모두 정상"
     assert login_rows(_with(base, stopped)) == [
         ("BDQ 자동 로그인", "실패", "멈춤 — 토큰이 바뀌지 않음 · 예비 토큰")
     ]
     assert report_contract.report_verdict(_with(base, stopped)) == "실패 있음"
+
+
+def test_the_key_alone_does_not_make_a_missing_report_notice() -> None:
+    """자동 로그인 키는 CD 서버를 가르는 데 쓰지 않는다 — 키를 넣고 `app.py` 로 띄운 자리(개발 ·
+    WebIDE 시험)에 「결과 파일이 없다」 안내가 붙지 않는다(운영 앱은 기동 때 키를 환경에서 뺀다)."""
+    assert report_contract.BDQ_SECRET_KEY_ENV not in report_contract.CD_ONLY_ENVIRONMENT
+    assert report_contract.BDQ_SECRET_KEY_ENV not in report_contract.APP_WITHHELD_ENVIRONMENT
+    assert report_contract.missing_report_notice({report_contract.BDQ_SECRET_KEY_ENV: "x"}) is None
 
 
 def _with(

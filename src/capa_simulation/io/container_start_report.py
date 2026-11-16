@@ -74,13 +74,14 @@ APP_WITHHELD_ENVIRONMENT: Final = (
     RETIRED_BDQ_REFRESH_TOKEN_ENV,
 )
 # CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 과 `CAPA_COMPANY_INDEX_URL`
-# 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다. 자동 로그인 키는 「비어 있던 CD 환경변수」
-# (`CD_ENVIRONMENT`)에 들지 않는다 — 넣지 않은 서버가 늘 그 이름을 빈 값으로 적게 된다.
+# 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다. 자동 로그인 키(`CAPA_BDQ_SECRET_KEY`)도 넣지 않는다
+# — 운영 앱은 기동 때 그 키를 환경에서 빼므로 가르는 데 쓰이지 않고, 키를 넣고 `app.py` 로 띄운 자리
+# (개발 · WebIDE 시험)에서는 결과 파일이 없다는 안내만 잘못 붙인다. 「비어 있던 CD 환경변수」
+# (`CD_ENVIRONMENT`)에도 들지 않는다 — 넣지 않은 서버가 늘 그 이름을 빈 값으로 적게 된다.
 CD_ONLY_ENVIRONMENT: Final = (
     ARTIFACTORY_USER_ENV,
     ARTIFACTORY_TOKEN_ENV,
     BDQ_TOKEN_ENV,
-    BDQ_SECRET_KEY_ENV,
 )
 START_SCRIPT: Final = "scripts/container_start.py"
 # 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
@@ -276,6 +277,13 @@ class LoginStart:
         """「서버 시작 점검」 표에 줄을 세우나 — `managed` 가 아닌 서버는 이 기능이 없어 세우지
         않는다."""
         return not (self.status == LOGIN_OFF and self.reason == LOGIN_NOT_MANAGED)
+
+    @property
+    def counted(self) -> bool:
+        """펼침 제목 판정(`report_verdict`)에 세나 — 키를 넣지 않아 꺼진 줄(`off` · `no_key`)은 시작
+        단계의 결과가 아니라 기능 상태라 세지 않는다(키 없는 `managed` 서버의 제목이 「건너뜀 있음」
+        이 되지 않게 — 잠든 불변식)."""
+        return self.shown and not (self.status == LOGIN_OFF and self.reason == LOGIN_KEY_MISSING)
 
 
 @dataclass(frozen=True)
@@ -694,7 +702,8 @@ def report_verdict(report: ContainerStartReport) -> str:
     statuses = {step.status for step in report.steps.values()}
     if report.sync is not None:
         statuses |= {step.status for step in report.sync.steps.values()}
-    login = None if report.bdq_login is None else login_step(report.bdq_login)
+    counted = report.bdq_login is not None and report.bdq_login.counted
+    login = login_step(report.bdq_login) if counted and report.bdq_login is not None else None
     if login is not None:
         statuses.add(login.status)
     if STATUS_FAILED in statuses:

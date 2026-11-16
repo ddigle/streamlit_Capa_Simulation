@@ -45,7 +45,7 @@ from capa_simulation.components import (
     voc_draft_keeper,
 )
 from capa_simulation.io import bdq_login, bdq_token, company_bigdataquery_adapter, object_storage
-from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
+from capa_simulation.io.container_start_report import BDQ_SECRET_KEY_ENV, CD_ONLY_ENVIRONMENT
 
 
 def script_stopped_with_its_data(self: LocalScriptRunner) -> bool:
@@ -307,6 +307,8 @@ def _without_container_start_report(
     monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", absent)
     for name in CD_ONLY_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+    # 자동 로그인 키도 — 있으면 `managed` 시험에서 그 기능이 저절로 선다.
+    monkeypatch.delenv(BDQ_SECRET_KEY_ENV, raising=False)
     # 토큰 파일 자리도 없는 곳으로 — 시험이 이 PC 의 진짜 토큰(WebIDE `/config/.credential`)을 읽지
     # 않게 한다. 패키지가 파일보다 먼저 읽는 환경변수도 지운다.
     monkeypatch.setattr(
