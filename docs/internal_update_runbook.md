@@ -549,6 +549,9 @@ uv run --no-sync python scripts/apply_deploy_package.py <내려받은 ZIP 경로
   통합인증 경로·문지기를 붙인 운영 진입점). 사내 WebIDE 터미널에서는 부르지 않는다 — WebIDE 는 지금처럼 `app.py` 다
   (넣을 key 는 [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md) 「C-DEP CD(배포 서버)」 · [`objectstore_setup.md`](objectstore_setup.md) 2장).
 - 이미지의 `aws` 는 `requirements.txt` 밖의 따로 된 한 줄(`awscli==1.46.3`)이다. 앱 의존성이 아니라 이 파일 · 사내 PC 환경에 없다.
+- 사내 값 · BigDataQuery 환경변수(이름만 — 값은 리뷰에 옮기지 않는다): `CAPA_COMPANY_INDEX_URL`(사내 패키지 저장소 — 없으면 시작 때 `bigdataquery` 설치를
+  건너뛴다) · `CAPA_APP_CONTACT_EMAIL`(문의처) · 선택 `CAPA_BDQ_SECRET_KEY`(BigDataQuery 자동 로그인 키 — 비밀값, `managed` 서버만 — 6-4 끝 절). 뜻 · 넣는 때는
+  [`bigdataquery_webide_setup.md`](bigdataquery_webide_setup.md) 「C-DEP CD(배포 서버)」 표다.
 - 통합인증 환경변수(이름만 — 값은 리뷰에 옮기지 않는다): `ADFS_CLIENT_ID`(켜는 스위치 — 비면 꺼짐) · `JWT_SECRET_KEY` · `APP_ENV` ·
   `ADFS_AUTHORIZE_URL` · `ADFS_ISSUER` · `ADFS_SIGNING_CERT` · `CAPA_PUBLIC_URL` · 선택 `CAPA_SSO` · `CAPA_SSO_SESSION_HOURS` ·
   `CAPA_SSO_SESSION_MAX_HOURS` · `ADFS_SCOPE` · `ADFS_RESOURCE` · `ADFS_CLAIM_*` · `ADFS_LOGOUT_URL` · 접속 명단 `CAPA_ACCESS_ADMINS`(운영 필수) · 선택 `CAPA_ACCESS_USERS` ·
@@ -717,20 +720,32 @@ ZIP 바로 다음 배포의 1-3 백업 복원만 한다**(`0031` 과 같은 자�
 uv run --no-sync python -m ruff format --check .
 uv run --no-sync python -m ruff check .
 uv run --no-sync python -m mypy
-uv run --no-sync python -m pytest
 ```
 
-**넷을 차례로, `pytest` 는 다른 관문과 겹치지 않게 단독으로** 돌린다. 동시에 돌린 첫 실행에서 AppTest 가
-`KeyError: 'client_state'` 로 간헐 실패한 적이 있다(Streamlit 의 끝남 판정 경쟁 — `202610070927` 부터 `tests/conftest.py`
-가 막는다). 그래도 나오면 `pytest` 만 한 번 더 단독으로 돌리고, 두 번째도 실패하면 「발견」으로 적는다.
+**위 셋은 에이전트가 차례로 돌리고, 넷째 `pytest` 는 아래 넷 동시 한 번이 판정이다**(2026-11-14 사용자 답 — 리뷰 `202611131000` 보드
+gates (가) 「다음 배포부터 넷 동시 한 번을 판정으로, 둘로 나눈 차례는 걷음」). `pytest` 는 위 셋과 겹치지 않게 그 셋이 끝난 뒤 돌린다 — 동시에
+돌린 첫 실행에서 AppTest 가 `KeyError: 'client_state'` 로 간헐 실패한 적이 있다(Streamlit 의 끝남 판정 경쟁 — `202610070927` 부터
+`tests/conftest.py` 가 막는다).
 
-`pytest` 가 오래 걸리면(7장이 그 배포의 수를 적는다) 백그라운드로 돌리고 끝줄을 읽는다. 사내 백그라운드 실행은 30분이면
-죽는다(0-2) — 죽으면 아래 두 줄로 나눠 차례로 돌리고 두 끝줄을 모두 적는다(테스트 파일은 모두 `tests\` 바로 아래다).
+**`pytest` — 넷 동시 한 번.** 시험 파일을 크기로 고르게 네 조각으로 나눠(`scripts/run_test_shard.py`) 한 PC 에서 동시에 돈다. 조각마다 오래
+걸려(7장이 그 배포의 수 · 사내 어림을 적는다) 사내 백그라운드 실행 30분 상한(0-2) 밖이다 — 그래서 사용자가 **저장소 뿌리의 별도 PowerShell
+창에서** 아래 펜스를 치고 끝줄 넷(펜스 넷째 줄이 그 창에 찍는다)을 붙여 준다. 에이전트는 끝줄만 받는다. `$o` 는 **저장소(git 작업 트리) 밖**이어야
+한다 — 안이면 조각마다 바로 멈춘다(종료 2 — `s<k>.txt` 는 비고 `s<k>.err` 첫 줄이 까닭이다). **에이전트는 `$o` 아래를 열지 않는다** — `e2e_copy`
+아래라 권한 템플릿이 읽기를 막는다.
 
 ```powershell
-uv run --no-sync python -m pytest (Get-ChildItem tests\test_[a-l]*.py | Resolve-Path -Relative)
-uv run --no-sync python -m pytest (Get-ChildItem tests\test_[m-z]*.py | Resolve-Path -Relative)
+$o = "$HOME\e2e_copy\pt-$(Get-Date -Format MMddHHmm)"; mkdir $o
+$py = "$PWD\.venv\Scripts\python.exe"
+1..4 | % { Start-Process $py "scripts\run_test_shard.py --shard $_ --of 4 --basetemp-root `"$o`"" -NoNewWindow -PassThru -RedirectStandardOutput "$o\s$_.txt" -RedirectStandardError "$o\s$_.err" } | Wait-Process
+1..4 | % { "조각 $_ " + (Get-Content "$o\s$_.txt" -Tail 1) }
+Remove-Item -Recurse -Force "$o\shard*"
 ```
+
+네 조각 모두 실패 0 · 오류 0 이면 통과다 — 통과 · 건너뜀 수를 어떻게 견주고 리뷰에 어떤 꼴로 옮기는지는 그 배포의 7장이 정한다. 실패 · 오류가 있는
+조각만 같은 창에서 같은 조건으로 단독 재실행한다 — `& $py scripts\run_test_shard.py --shard 3 --of 4 --basetemp-root "$o"`(조각 3 일 때의 꼴이다.
+**에이전트가 `3` 자리를 실패한 조각 번호로 채워 건넨다**). 단독에서 통과하면 부하 흔들림(환경)이고, 단독에서도 실패하면 「발견」 으로 적는다.
+끝줄이 「n passed …」 꼴이 아니면 사용자가 그 창에서 `Get-Content "$o\s3.err" -TotalCount 1` 로 첫 줄을 찍어 붙여 준다(이것도 에이전트가 `3` 을
+그 조각 번호로 채워 건넨다). 끝나면 `$o` 폴더는 사용자가 지운다.
 
 앱이 떠 있어도 된다 — 테스트는 임시 DB 만 쓰고, 저장소의 `data/*.duckdb` 를 새로 만들면 실패로 끝나게 막혀 있다
 (0-1 의 「적용 먼저」가 이 점을 쓴다). 실패가 나오면 3-2 에 해당하는지 먼저 보고, 아니면 리뷰 문서의 「발견」으로 적는다.
@@ -1414,7 +1429,8 @@ uv run --no-sync python scripts/check_deploy_screens.py --playwright-dir $HOME/p
 
 사용자가 앱(8501)을 계속 써야 하는데 실데이터로 넓게 봐야 할 때 쓴다 — 전 리비전 계산 · 화면 확인 스크립트(c) · HOME 시간.
 `202610120655` 리뷰의 「실데이터 E2E」(전 리비전 54 계산 · 페이지 17 · 탭 49 · HOME cold/warm)가 이 꼴이었다. **7-8 ·
-8장의 대신이 아니다** — 그 둘은 그대로 앱을 끈 채 운영 DB 로 한다. 사본 E2E 는 그 위에 더하는 확인이다.
+8장의 대신이 아니다** — 이관 뒤(6-4)에는 7-8 · 8장도 6-4 「사본 받기」 로 받은 사본으로 한다 — 이관 전에는 앱을 끈 채 운영 DB 로. 사본 E2E 는
+그 위에 더하는 확인이다.
 
 **무엇을(아래 4)의 a · b · c) 할지는 배포마다 그 배포의 7-0 이 정한다.** 7-0 이 필수로 적은 것은 늘 한다 — 사용자 앱을 끄지
 않으니 기다릴 일이 없다. 7-0 이 「선택」 으로 둔 것만 사용자가 고른다.
@@ -1649,7 +1665,7 @@ WebIDE(리눅스)면 `$py` 는 `<저장소>/.venv/bin/python` 이고, 트리는 
 - a · b 는 **적용 뒤** 저장소에서 4) 그대로(사용자 창) 이 사본 DB(`$e2e\data`)로 부른다 — 적용 전 저장소의 스크립트는 직전 배포 것이고, 사본
   트리의 스크립트는 사본 `data\` 를 운영 자리로 보고 거절한다(4) a). 사본 앱이 한 번 떠 마이그레이션을 건 뒤라야 한다(a 는
   `read_only` 라 걸지 못한다).
-- 1장 ~ 2장 · 7-8 · 8장은 이 길에서도 앱을 끈 채 운영 트리 · 운영 DB 로 한다.
+- 1장 ~ 2장은 이 길에서도 앱을 끈 채 운영 트리로 한다. 이관 뒤(6-4)에는 7-8 · 8장도 6-4 「사본 받기」 로 받은 사본으로 한다 — 이관 전에는 앱을 끈 채 운영 DB 로.
 
 **쓸 수 있는 때 — 넷이 모두 참일 때만.** 하나라도 아니면 이 절을 쓰지 않고 적용 뒤 1) 부터 한다.
 
