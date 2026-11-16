@@ -9,6 +9,8 @@ S3 는 서명을 검증하는 가짜 저장소(`scripts/s3_mock_store.py`)다. �
 from __future__ import annotations
 
 import json
+import threading
+import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 
@@ -372,6 +374,80 @@ def test_an_unread_store_is_retried_later_not_remembered(
     monkeypatch.setattr(store, "UNREAD_RETRY_SECONDS", 0.0)
     assert store.current() is not None
     assert requests_on(mock, store.OBJECT_KEY).count("GET") == 2
+
+
+def _stale_unread() -> None:
+    """기억이 「읽지 못함」 이고 다시 읽을 때가 지난 꼴."""
+    store.remember(None)
+    with store._MEMO_LOCK:
+        store._MEMO.result = store.LoadResult(None, store.REASON_UNREAD, "timeout")
+        store._MEMO.read_at = time.monotonic() - store.UNREAD_RETRY_SECONDS - 1
+
+
+def test_screen_reads_never_wait_for_another_thread_rereading_s3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """화면 회차의 읽기(`peek_state` · `current_view` · 토큰 파일 계정)는 다른 스레드가 S3 를 다시
+    읽는 동안(마감까지 걸리는 꼴) 기다리지 않고 옛 기억을 본다. 그동안 다른 계정 원천 부름도 옛
+    기억을 받는다 — S3 읽기는 한 번에 하나다."""
+    from capa_simulation.io import bdq_token
+
+    switch_on(monkeypatch)
+    monkeypatch.setenv(BDQ_USER_NAME_ENV, "demo_env_user")
+    reading = threading.Event()
+    release = threading.Event()
+    reads: list[int] = []
+
+    def slow_load() -> store.LoadResult:
+        reads.append(1)
+        reading.set()
+        release.wait(timeout=10)
+        return store.LoadResult(None, store.REASON_UNREAD, "timeout")
+
+    monkeypatch.setattr(store, "load_for_app", slow_load)
+    _stale_unread()
+    reader = threading.Thread(target=store.effective_account)
+    reader.start()
+    try:
+        assert reading.wait(timeout=10)
+        began = time.monotonic()
+        assert store.peek_state() is not None
+        assert bdq_login.current_view().state == "none"
+        assert bdq_token.account_name() == "demo_env_user"
+        assert store.effective_account() == "demo_env_user"
+        assert time.monotonic() - began < 1.0
+    finally:
+        release.set()
+        reader.join(timeout=10)
+    assert reads == [1]
+
+
+def test_a_save_landing_while_s3_is_read_is_not_overwritten_by_that_read(
+    monkeypatch: pytest.MonkeyPatch, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """S3 를 읽는 사이에 폼 저장이 기억을 바꾸면, 늦게 끝난 그 읽기(옛 객체)로 덮지 않는다."""
+    _, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    reading = threading.Event()
+    release = threading.Event()
+
+    def slow_load() -> store.LoadResult:
+        reading.set()
+        release.wait(timeout=10)
+        return store.LoadResult(None, store.REASON_NO_OBJECT)
+
+    monkeypatch.setattr(store, "load_for_app", slow_load)
+    seen: list[store.LoadResult] = []
+    reader = threading.Thread(target=lambda: seen.append(store.load_state()))
+    reader.start()
+    assert reading.wait(timeout=10)
+    written = store.save_login(target, key.encode(), SECRET, ADMIN_ID)
+    release.set()
+    reader.join(timeout=10)
+    assert written.ok
+    assert seen and seen[0].stored is not None
+    assert store.current() is not None and store.effective_account() == ACCOUNT
 
 
 def test_account_of_prefers_the_stored_login() -> None:

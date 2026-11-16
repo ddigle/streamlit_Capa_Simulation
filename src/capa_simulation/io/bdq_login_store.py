@@ -33,8 +33,11 @@ C-DEP(동기화 모드 `managed`)에서 BDQ 토큰이 죽으면 앱이 저장된
 글 전체를 든다. 로그 · 결과에 계정 · 비밀번호 · 키를 싣지 않는다.
 
 **프로세스 기억.** 조회마다 묻는 계정 원천(`effective_account`)이 S3 에 가지 않게, 앱 프로세스는 한
-번 읽은 결과를 잠금 아래 기억하고(`current` · `load_state`) 저장 · 지우기 · 멈춤 표시가 그 기억을
-바꾼다. 시험은 `forget_state` 로 비운다. Streamlit 을 부르지 않는다 — 공식버전 자동 갱신 스레드의
+번 읽은 결과를 기억하고(`current` · `load_state`) 저장 · 지우기 · 멈춤 표시가 그 기억을 바꾼다.
+기억 잠금은 S3 를 기다리며 쥐지 않는다 — S3 읽기는 따로 한 번에 하나만 돌고(그동안 다른 부름은 옛
+기억을 받는다 — 처음 읽기만 기다린다), 읽는 동안 기억이 바뀌었으면(세대 수) 읽은 결과를 버린다.
+그래서 화면 회차마다 도는 `peek_*` 는 S3 가 느리거나 끊겨도 멎지 않는다. 시험은 `forget_state` 로
+비운다. Streamlit 을 부르지 않는다 — 공식버전 자동 갱신 스레드의
 조회도 이 길을 지난다.
 
 무거운 의존성(cryptography · 설정 읽기 · 통합인증 설정)은 함수 안에서 불러온다 — 시작 스크립트가
@@ -599,10 +602,15 @@ class _Memo:
     loaded: bool = False
     result: LoadResult = field(default_factory=lambda: LoadResult(None, ""))
     read_at: float = 0.0
+    # 기억을 바꾼 수 — S3 를 읽는 동안 저장 · 지우기 · 멈춤이 기억을 바꿨으면 읽은 결과를 버린다.
+    generation: int = 0
 
 
 _MEMO = _Memo()
+# 기억만 지킨다 — S3 를 기다리며 쥐지 않는다(화면 회차의 `peek_*` 가 멎지 않게).
 _MEMO_LOCK: Final = threading.Lock()
+# S3 읽기를 한 번에 하나로 — 읽는 동안 다른 부름은 옛 기억을 받는다(처음 읽기만 기다린다).
+_READ_LOCK: Final = threading.Lock()
 
 
 def forget_state() -> None:
@@ -611,6 +619,7 @@ def forget_state() -> None:
         _MEMO.loaded = False
         _MEMO.result = LoadResult(None, "")
         _MEMO.read_at = 0.0
+        _MEMO.generation += 1
     with _TAKEN_LOCK:
         _TAKEN.taken = False
         _TAKEN.text = ""
@@ -618,7 +627,7 @@ def forget_state() -> None:
 
 def peek_state() -> LoadResult | None:
     """기억한 읽기 결과를 S3 에 묻지 않고 본다 — 아직 읽지 않았으면 `None`. 화면 회차마다 도는
-    자리(알림 · 지금 토큰 줄)가 쓴다 — 읽기(`load_state`)는 S3 GET 을 잠금 아래 기다린다."""
+    자리(알림 · 지금 토큰 줄)가 쓴다. 다른 스레드가 S3 를 읽는 중이어도 기다리지 않는다."""
     with _MEMO_LOCK:
         return _MEMO.result if _MEMO.loaded else None
 
@@ -637,6 +646,7 @@ def remember(stored: StoredLogin | None, reason: str = REASON_NO_OBJECT) -> None
         _MEMO.loaded = True
         _MEMO.result = LoadResult(stored, "" if stored is not None else reason)
         _MEMO.read_at = time.monotonic()
+        _MEMO.generation += 1
 
 
 def _remember_meta(
@@ -646,8 +656,10 @@ def _remember_meta(
     stopped_at: str | None,
     misses: int,
 ) -> None:
-    """기억한 한 벌이 그 `cipher` 면 메타를 바꾼다(다른 한 벌이면 그대로)."""
+    """기억한 한 벌이 그 `cipher` 면 메타를 바꾼다(다른 한 벌이면 그대로). 어느 쪽이든 읽는 중인
+    S3 결과는 버린다(객체를 막 고쳐 썼다)."""
     with _MEMO_LOCK:
+        _MEMO.generation += 1
         stored = _MEMO.result.stored
         if stored is not None and stored.cipher == cipher:
             _MEMO.result = LoadResult(
@@ -672,21 +684,50 @@ def load_for_app() -> LoadResult:
     return load(target, secret_key())
 
 
+def _fresh_locked() -> LoadResult | None:
+    """`_MEMO_LOCK` 아래 — 기억이 아직 쓸 만하면 그것(S3 를 읽지 못한 결과는 `UNREAD_RETRY_SECONDS`
+    까지)."""
+    if not _MEMO.loaded:
+        return None
+    if (
+        _MEMO.result.reason == REASON_UNREAD
+        and time.monotonic() - _MEMO.read_at >= UNREAD_RETRY_SECONDS
+    ):
+        return None
+    return _MEMO.result
+
+
 def load_state() -> LoadResult:
     """기억한 읽기 결과(처음이면 읽는다). S3 를 읽지 못한 결과는 `UNREAD_RETRY_SECONDS` 뒤 다시
-    읽는다."""
+    읽는다. S3 읽기는 기억 잠금 밖에서 한 번에 하나만 돌고, 그동안 다른 부름은 옛 기억을 받는다(처음
+    읽기만 기다린다). 읽는 동안 기억이 바뀌었으면 읽은 결과를 버리고 바뀐 기억을 준다."""
     with _MEMO_LOCK:
-        fresh = _MEMO.loaded and not (
-            _MEMO.result.reason == REASON_UNREAD
-            and time.monotonic() - _MEMO.read_at >= UNREAD_RETRY_SECONDS
-        )
-        if fresh:
-            return _MEMO.result
+        fresh = _fresh_locked()
+        if fresh is not None:
+            return fresh
+        stale = _MEMO.result if _MEMO.loaded else None
+    if stale is not None:
+        if not _READ_LOCK.acquire(blocking=False):
+            return stale
+    else:
+        _READ_LOCK.acquire()
+    try:
+        with _MEMO_LOCK:
+            fresh = _fresh_locked()
+            if fresh is not None:
+                return fresh
+            generation = _MEMO.generation
         result = load_for_app()
-        _MEMO.loaded = True
-        _MEMO.result = result
-        _MEMO.read_at = time.monotonic()
-        return result
+        with _MEMO_LOCK:
+            if _MEMO.generation != generation:
+                return _MEMO.result
+            _MEMO.loaded = True
+            _MEMO.result = result
+            _MEMO.read_at = time.monotonic()
+            _MEMO.generation += 1
+            return result
+    finally:
+        _READ_LOCK.release()
 
 
 def current() -> StoredLogin | None:
