@@ -687,7 +687,7 @@ def token_step(
     계정이 있으면 그 ID)이고, 주지 않으면 `CAPA_BDQ_USER_NAME` 이다."""
     if renewed:
         return StepResult(
-            STATUS_OK, f"자동 로그인이 새 토큰을 씀 — CD 환경변수 {BDQ_TOKEN_ENV} 는 쓰지 않음"
+            STATUS_OK, f"자동 로그인이 새 토큰을 씀 — CD 환경변수 {BDQ_TOKEN_ENV} 은 쓰지 않음"
         )
     raw = environ.get(BDQ_TOKEN_ENV, "").strip()
     if not raw:
