@@ -737,9 +737,29 @@ def token_advice() -> str:
     return TOKEN_ADVICE_LOCAL if start_check_hint(STEP_TOKEN) is None else TOKEN_ADVICE_SERVER
 
 
+# 원문에서 요청자 계정을 가리는 글.
+ACCOUNT_MASK: Final = "***"
+
+
+def _accounts_to_hide() -> tuple[str, ...]:
+    """원문에서 가릴 요청자 계정 — 계정 원천(저장된 자동 로그인 계정 · `CAPA_BDQ_USER_NAME`)의 두
+    자리를 S3 에 묻지 않고 읽는다(`bdq_login_store.peek_account`). 긴 것부터(겹친 이름이 반만
+    가려지지 않게). 한 글자는 가리지 않는다(문구 전체를 지운다)."""
+    names = {os.environ.get(BDQ_USER_NAME_ENV, "").strip()}
+    try:
+        names.add(login_store.peek_account())
+    except Exception:  # 기억을 읽다 깨져도 환경변수 계정은 가린다
+        pass
+    return tuple(sorted((name for name in names if len(name) >= 2), key=len, reverse=True))
+
+
 def _original_text(error: BaseException) -> str:
-    """화면에 옮길 원문 한 줄 — 종류 이름과 `_ORIGINAL_TEXT_LIMIT` 로 자른 문구."""
+    """화면에 옮길 원문 한 줄 — 종류 이름과 `_ORIGINAL_TEXT_LIMIT` 로 자른 문구. 패키지 문구가 실은
+    요청자 계정(저장된 BDQ 계정 ID 는 화면에 보이지 않는다 — D7)은 자르기 전에 가린다 — 조회한
+    누구나 보는 글이고 모듈로도 간다."""
     text = str(error).strip()
+    for name in _accounts_to_hide():
+        text = text.replace(name, ACCOUNT_MASK)
     if len(text) > _ORIGINAL_TEXT_LIMIT:
         text = text[:_ORIGINAL_TEXT_LIMIT] + " …"
     return f"{type(error).__name__}: {text or '(문구 없음)'}"

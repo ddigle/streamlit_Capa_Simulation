@@ -1635,3 +1635,31 @@ def test_the_relogin_runs_in_a_plain_thread_without_streamlit(
     result = json.loads(completed.stdout.strip().splitlines()[-1])
     assert result == {"rows": 1, "thread": True, "streamlit": False}
     assert fake.logins() == 1
+
+
+def test_the_failure_text_hides_the_requester_accounts(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """패키지 문구가 요청자 계정을 실어도 화면 · 모듈로 가는 실패 글에 저장된 BDQ 계정 ID ·
+    `CAPA_BDQ_USER_NAME` 이 없다(D7 — 조회한 누구나 보는 글이다)."""
+    from capa_simulation import module_helpers
+
+    _, target = login_s3
+    monkeypatch.setenv(adapter.BDQ_USER_NAME_ENV, OTHER_ACCOUNT)
+    _stored(monkeypatch, target, password=WRONG_PASSWORD)
+    module = _TokenFileReader(fake)
+    error = module.error(f"no token for {ACCOUNT} (env {OTHER_ACCOUNT})")
+    text = str(adapter.BigDataQueryCallError(error))
+    assert ACCOUNT not in text and OTHER_ACCOUNT not in text
+    assert f"no token for {adapter.ACCOUNT_MASK}" in text
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+    assert ACCOUNT not in str(raised.value)
+
+    monkeypatch.setattr(adapter, "load_bigdataquery_module", lambda: module)
+    monkeypatch.setattr(module_helpers, "in_module_test_run", lambda: False)
+    with pytest.raises(module_helpers.BigDataQueryError) as from_module:
+        module_helpers.query_bigdataquery("demo_mod", "SELECT 1")
+    assert ACCOUNT not in str(from_module.value)
+    assert OTHER_ACCOUNT not in str(from_module.value)
