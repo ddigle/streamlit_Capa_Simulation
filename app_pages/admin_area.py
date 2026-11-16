@@ -1,5 +1,5 @@
-# Purpose: 관리자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록 탭, 위의 서버·통합인증 점검·접속
-# 명단.
+# Purpose: 관리자 전용 잠금과 표시명·표시순서·원천 품질·접속 기록 탭, 위의 서버 점검·BDQ 자동
+# 로그인·통합인증 점검·접속 명단.
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import streamlit as st
 
 from capa_simulation.components.access_list_admin import render_access_list_admin
 from capa_simulation.components.audit_log_view import render_audit_tab
+from capa_simulation.components.bdq_login_admin import render_bdq_login_admin
 from capa_simulation.components.container_start_check import render_container_start_check
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.display_order_management import (
@@ -73,6 +74,9 @@ render_page_guide("admin_area", title="Admin Area")
 # C-DEP CD 서버에는 셸도 로그도 없어 시작 스크립트의 결과를 여기서 읽는다. 결과 파일이 없는
 # 개발·사내 PC 에서는 아무것도 그리지 않는다(DB 를 열지 않고 작은 JSON 하나만 읽는다).
 render_container_start_check()
+# BigDataQuery 자동 로그인 계정 넣기 · 지우기 — `managed` + 키(`CAPA_BDQ_SECRET_KEY`) 서버의 관리자
+# 회차에만 선다(그 밖에는 아무것도 그리지 않는다). 예비 「토큰 넣기」 는 바로 위 펼침 안에 그대로다.
+render_bdq_login_admin()
 # 정본 버킷 동기화 — CI/CD 를 누르기 전에 보는 자리. `managed` 서버에만 선다(개발·사내 PC 그대로).
 render_object_sync_status()
 # 통합인증의 설정 판정 · 서명 인증서 · 최근 사건. 꺼짐이고 운영(`APP_ENV=prod`)이 아니면 아무것도

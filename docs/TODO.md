@@ -109,8 +109,9 @@
   로그인 `io/bdq_login.py` · `io/bdq_login_child.py`, 시작 스크립트 단계(설치 → 자동 로그인 → 예비 토큰 → 요청자 계정 · 결과 칸 `bdq_login`),
   「서버 시작 점검」 표 줄 「BDQ 자동 로그인」, 관리자 알림 `AD-23`(멈춤) · `AD-10` 가리킴 · 서 있는 동안 `AD-11` 해소, 앱 기동 읽기
   (`start_in_app` — 키를 쥐고 환경에서 뺌), 어댑터(`getData` 를 `run_with_relogin` 으로 감쌈 · 조회 계정 `effective_account` · 갈래 「서버 혼잡」
-  — queue full, D8). 남은 것: ① 무효 · 만료 토큰이 `RELOGIN_EXCEPTIONS` 밖 종류면 다시 로그인하지 않고 `AD-10` 만이다 — 종류 이름을 받으면 그 한
-  줄에 더한다 ② Admin Area 「BDQ 자동 로그인」 폼(D5 · D7 — 관리자 전용 · `st.form` · 지우기 단추 · 상태 줄)과 규칙집 결정 기록(표 줄 · `AD-23`)
+  — queue full, D8), Admin Area 「BDQ 자동 로그인」 폼(`components/bdq_login_admin.py` — 관리자 전용 · `st.form` · 지우기 · 상태 줄 · `AD-23` ·
+  `AD-10` 「그 화면으로」 가 그 펼침까지). 남은 것: ① 무효 · 만료 토큰이 `RELOGIN_EXCEPTIONS` 밖 종류면 다시 로그인하지 않고 `AD-10` 만이다 —
+  종류 이름을 받으면 그 한 줄에 더한다 ② 규칙집 결정 기록 후보(표 줄 · `AD-23` · 「BDQ 자동 로그인」 펼침 — 새 꼴인지 사용자 확인)
   ③ `scripts/module_check_rules.py` M21 금지 자리에 `secrets/bdq_login.json` ④ `sync_object_storage.py` 의 init · fetch-copy · generations ·
   rollback 이 `secrets/` 를 다루지 않음을 시험으로 고정 ⑤ 사내 확인 — 진짜 2.5.0 이 표준 입력 세 줄(첫 줄은 본문) · 제어 터미널 없는 새 세션에서
   로그인하는지(WebIDE 한 번, D11) · 무효 · 만료 토큰의 예외 종류(`RELOGIN_EXCEPTIONS` 한 줄에 더함).

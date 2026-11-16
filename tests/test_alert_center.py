@@ -142,6 +142,7 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
     # 「그 화면으로」 가 들고 갈 대상의 종류는 콜백이 받는 종류 그대로다 — JS 는 모르는 종류를 대상
     # 없는 줄처럼 다룬다(마지막 칸을 누른다).
     from capa_simulation.components.access_list_admin import ACCESS_LIST_TARGET_KIND
+    from capa_simulation.components.bdq_login_admin import BDQ_LOGIN_TARGET_KIND
     from capa_simulation.components.container_start_check import START_CHECK_TARGET_KIND
     from capa_simulation.components.object_sync_status import SYNC_TARGET_KIND
     from capa_simulation.components.scenario_list_state import CHECK_TARGET_KIND
@@ -153,6 +154,7 @@ def test_the_data_carries_the_registry_levels_limits_and_toolbar_order() -> None
             CHECK_TARGET_KIND,
             ACCESS_LIST_TARGET_KIND,
             START_CHECK_TARGET_KIND,
+            BDQ_LOGIN_TARGET_KIND,
             SYNC_TARGET_KIND,
             SSO_STATUS_TARGET_KIND,
         ]

@@ -60,6 +60,7 @@ from streamlit.elements.lib.column_types import ColumnConfig
 from capa_simulation import alerts
 from capa_simulation.components import sso_identity
 from capa_simulation.components.admin_view import admin_notes_visible
+from capa_simulation.components.bdq_login_admin import bdq_login_target
 from capa_simulation.components.bdq_token_admin import (
     AUTO_LOGIN_FIX,
     ENVIRONMENT_FIX,
@@ -520,6 +521,7 @@ def render_token_alert() -> None:
             else None
         ),
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
+        target=_token_alert_target(start_failed, view) if active else None,
     )
     # 만료 1시간 전 관리자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
     render_expiry_alert(standing=view.standing)
@@ -527,10 +529,20 @@ def render_token_alert() -> None:
     render_login_stop_alert(view, admin=admin)
 
 
+def _token_alert_target(start_failed: bool, view: bdq_login.LoginView) -> alerts.GotoTarget | None:
+    """`AD-10` 이 들고 갈 대상 — 전문의 할 일이 Admin 「BDQ 자동 로그인」 에 계정 넣기일 때만(시작
+    점검 실패도 패키지가 읽는 토큰 환경변수도 아니고 저장된 계정이 없음 — `_token_alert_text` 와
+    같은 차례) 그 펼침이다(UI-NAV-01). 그 밖은 대상 없이 Admin Area 다."""
+    if start_failed or bdq_token.environment_token_set() or view.state != "none":
+        return None
+    return bdq_login_target()
+
+
 def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
     """자동 로그인 멈춤 관리자 알림(`AD-23`) — 이벤트 칸 한 자리. 멈춤이 아니거나 관리자가 아니면
     해소로 부른다. 지문은 (멈춘 까닭, 멈춘 시각)이다 — 계정을 싣지 않는다. 다시 넣어 성공하면
-    풀린다(D3)."""
+    풀린다(D3). 「그 화면으로」 는 Admin 「BDQ 자동 로그인」 펼침까지 연다(대상 `bdq_login` —
+    UI-NAV-01)."""
     active = view.state == "stopped" and admin
     alerts.state(
         LOGIN_STOP_ALERT_CODE,
@@ -540,6 +552,7 @@ def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
         text="BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣으세요" if active else None,
         full=_login_stop_text(view) if active else None,
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
+        target=bdq_login_target() if active else None,
     )
 
 

@@ -93,6 +93,8 @@ SPECS: Final[tuple[EventSpec, ...]] = (
     _spec("user_seeded", "admin", "명단 첫 판 심기", "count", *_REV),
     _spec("authz_admin_config", "admin", "관리자 구성", "admins", "admin_fp"),
     _spec("admin_token_set", "admin", "BigDataQuery 토큰 넣기", "result", "expires"),
+    _spec("admin_bdq_login_set", "admin", "BigDataQuery 자동 로그인 계정 넣기", "result", "reason"),
+    _spec("admin_bdq_login_delete", "admin", "BigDataQuery 자동 로그인 계정 지우기", "result"),
     _spec("admin_sync_push", "admin", "지금 올리기", "result"),
     _spec("admin_sync_rollback", "admin", "세대 되돌리기", *_SEQ, "result"),
     _spec("admin_sync_init", "admin", "이관", *_SEQ, "result", "datasets"),

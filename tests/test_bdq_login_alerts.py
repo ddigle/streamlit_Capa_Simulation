@@ -24,6 +24,7 @@ from test_token_failure_alert import _query
 from capa_simulation import alerts
 from capa_simulation import settings as app_settings
 from capa_simulation.components import bdq_token_admin, container_start_check, sso_identity
+from capa_simulation.components.bdq_login_admin import bdq_login_target
 from capa_simulation.io import bdq_login, bdq_token
 from capa_simulation.io import bdq_login_store as store
 from capa_simulation.io import container_start_report as report_contract
@@ -216,3 +217,50 @@ def test_a_view_that_cannot_be_read_falls_back_to_resolved(
 
     assert not list(app.exception)
     assert [item["active"] for item in states(app, STOP)] == [False]
+
+
+def test_the_stop_and_the_entry_alerts_open_the_bdq_login_box(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「그 화면으로」 는 Admin 「BDQ 자동 로그인」 펼침까지 연다(UI-NAV-01) — 멈춤 `AD-23` 과, 할
+    일이 계정 넣기인 `AD-10`. 패키지가 읽는 토큰 환경변수 갈래의 `AD-10` 은 대상이 없다(할 일이 그
+    펼침이 아니다)."""
+    _server(tmp_path, monkeypatch)
+    store.remember(_stored(store.STATE_STOPPED, "token_unchanged"))
+    note = active_state(AppTest.from_string(SCRIPT).run(), STOP)
+    assert note is not None and note["target"] == bdq_login_target()
+
+    store.remember(None)
+    _query(monkeypatch, ConnectionError("500 invalid token"))
+    note = active_state(AppTest.from_string(SCRIPT).run(), FAILURE)
+    assert note is not None and note["target"] == bdq_login_target()
+
+    monkeypatch.setenv(bdq_token.LOGIN_TOKEN_ENV, "demo-environment-token")
+    note = active_state(AppTest.from_string(SCRIPT).run(), FAILURE)
+    assert note is not None and "target" not in note
+
+
+@pytest.mark.parametrize(
+    ("start_failed", "state", "environment_token", "targeted"),
+    [
+        (False, "none", False, True),
+        (True, "none", False, False),
+        (False, "none", True, False),
+        (False, "ok", False, False),
+        (False, "stopped", False, False),
+        (False, "off", False, False),
+    ],
+)
+def test_the_token_alert_target_follows_the_fix_it_names(
+    monkeypatch: pytest.MonkeyPatch,
+    start_failed: bool,
+    state: bdq_login.ViewState,
+    environment_token: bool,
+    targeted: bool,
+) -> None:
+    """`AD-10` 의 대상은 전문의 할 일이 계정 넣기일 때만이다 — 시작 점검 실패 · 토큰 환경변수 ·
+    저장된 계정이 있음(정상 · 멈춤) · 꺼짐은 대상이 없다."""
+    if environment_token:
+        monkeypatch.setenv(bdq_token.LOGIN_TOKEN_ENV, "demo-environment-token")
+    target = container_start_check._token_alert_target(start_failed, bdq_login.LoginView(state))
+    assert target == (bdq_login_target() if targeted else None)

@@ -398,7 +398,9 @@ def login_reason_text(code: str) -> str:
     return _LOGIN_REASON_WORDS.get(code, code)
 
 
-def _remaining_text(minutes: int | None) -> str:
+def remaining_text(minutes: int | None) -> str:
+    """남은 분 → 「남은 n시간 n분」(모르면 「남은 시간 모름」) — 표 줄과 Admin 「BDQ 자동
+    로그인」 이 함께 쓴다."""
     if minutes is None:
         return "남은 시간 모름"
     hours, rest = divmod(minutes, 60)
@@ -416,7 +418,7 @@ def login_step(login: LoginStart) -> StartStep | None:
     status = login.status
     reason = login.reason
     if status == LOGIN_OK:
-        return StartStep(STATUS_OK, f"정상 · {_remaining_text(login.remaining_minutes)}")
+        return StartStep(STATUS_OK, f"정상 · {remaining_text(login.remaining_minutes)}")
     if status == LOGIN_OFF:
         result = STATUS_SKIPPED if reason == LOGIN_KEY_MISSING else STATUS_FAILED
         return StartStep(result, f"꺼짐 — {login_reason_text(reason)}")
