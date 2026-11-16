@@ -2771,13 +2771,13 @@ def test_the_token_renewal_input_decision_is_recorded_and_the_refresh_token_turn
     로그인 토큰을 6시간마다) — 대화 원문 · 「답 밖 — 구현이 정함」 · 지금 「준비」 · 커밋 · 걷은
     `AD-18` 을 든다. 뒤집힌 6-29 token-auto-frame 의 갱신 토큰 몫과 그 80일을 받은 6-30 s-C-14 ·
     4장 옛 지금 값은 7-1 한 줄에 남고 6-29 줄은 그대로다(6-30 s-C-14 줄 · 4장은 v1.30 시험이
-    본다). 판 머리는 v1.32 시험이 본다."""
+    본다). 판 머리는 v1.33 시험이 보고, 6-31 구간은 6-32 앞에서 끊는다."""
     document = _text()
     assert "- **v1.31 — 2026-11-15.**" in _chapter(document, 8)
     assert "6-31 에 있다" in _chapter(document, 1)
 
     section = _chapter(document, 6)
-    record = section[section.index("\n### 6-31. ") :]
+    record = section[section.index("\n### 6-31. ") : section.index("\n### 6-32. ")]
     lines = [line for line in record.splitlines() if line.startswith("- ")]
     known = {rule.id for rule in _rules()}
     found: list[str] = []
@@ -2815,9 +2815,9 @@ def test_the_token_refresh_frame_removal_is_recorded_and_its_exceptions_are_gone
     """v1.32 — 2026-11-16 사용자 결정으로 BigDataQuery 토큰 자동 갱신 틀(6-29 · 6-31)을 걷었다.
     「서버 시작 점검」 표의 「토큰 자동 갱신」 줄이 없어져 UI-CON-02 · UI-DAT-11 예외는
     「없음」 으로 돌아갔고 규칙 글 · 4장에 그 줄이 없다. 6-29 token-auto-frame · 6-30 s-C-13 ·
-    6-31 token-renew-input 줄은 그때 기록 그대로이고 걷음 표지만 달며, 뒤집힌 것은 7-1 한 줄이다."""
+    6-31 token-renew-input 줄은 그때 기록 그대로이고 걷음 표지만 달며, 뒤집힌 것은 7-1 한 줄이다.
+    판 머리는 v1.33 시험이 본다."""
     document = _text()
-    assert "판 v1.32" in document.split("\n## 1. ")[0]
     assert "- **v1.32 — 2026-11-16.**" in _chapter(document, 8)
 
     rules = {rule.id: rule for rule in _rules()}
@@ -2847,3 +2847,51 @@ def test_the_token_refresh_frame_removal_is_recorded_and_its_exceptions_are_gone
         "「토큰 넣기」",
     ):
         assert phrase in turned, phrase
+
+
+AUTO_LOGIN_1116_LINES = {"bdq-auto-login": ("7fa04ef4", "a334b157", "a8680b16", "57dcd76b")}
+AUTO_LOGIN_WEBIDE_MEMO = (
+    "WebIDE에서 이 계정으로 BDQ를 쓰지 않는다는것은 아님. 테스트용으로 쓸수있는데, 그 과정에서 "
+    "운영서버 동작으로 인해 토큰이 초기화되는것을 감수하겠다는것."
+)
+AUTO_LOGIN_ADMIN_MEMO = "입력한 관리자의 앱 로그인 ID였음."
+
+
+def test_the_bdq_auto_login_decision_is_recorded_with_what_the_implementation_chose() -> None:
+    """v1.33 — 6-32 는 2026-11-16 BigDataQuery 자동 로그인 사용자 결정(D1 ~ D11) 가운데 화면에
+    걸리는 몫 한 줄이다 — 폼 자리 · 실패면 저장 안 함 · 폼에 보일 것 · 멈춤 알림 · 서버 혼잡 안내와
+    대화 원문 둘(D7 넣은 관리자 · D11 WebIDE)을 들고, 구현이 답 밖에서 정한 꼴은 「답 밖 — 구현이
+    정함」 에 사용자 확인 대기로 남긴다(규칙 예외 칸에는 올리지 않음). 뒤집힌 결정은 없다."""
+    document = _text()
+    assert "판 v1.33" in document.split("\n## 1. ")[0]
+    assert "- **v1.33 — 2026-11-16.**" in _chapter(document, 8)
+    assert "6-32 에 있다" in _chapter(document, 1)
+
+    section = _chapter(document, 6)
+    record = section[section.index("\n### 6-32. ") :]
+    lines = [line for line in record.splitlines() if line.startswith("- ")]
+    known = {rule.id for rule in _rules()}
+    found: list[str] = []
+    for line in lines:
+        match = re.match(r"^- ([\w-]+) · .+ → \*\*([^*]+)\*\*.*\((2026-11-16) · ([^()]+)\)$", line)
+        assert match, line
+        found.append(match.group(1))
+        cited = RULE_TOKEN.findall(match.group(4))
+        assert cited and set(cited) <= known, line
+        for sha in AUTO_LOGIN_1116_LINES[match.group(1)]:
+            assert f"`{sha}`" in line, (line, sha)
+    assert tuple(found) == tuple(AUTO_LOGIN_1116_LINES)
+    [decision] = lines
+    for phrase in (
+        "D1 ~ D11",
+        f"「{AUTO_LOGIN_WEBIDE_MEMO}」",
+        f"「{AUTO_LOGIN_ADMIN_MEMO}」",
+        "답 밖 — 구현이 정함(사용자 확인 대기)",
+        "`AD-23`",
+        "`AD-11`",
+        "`BDQ_LOGIN_LABEL`",
+        "저장하지 않고 폼에 실패만",
+        "BDQ 계정 ID 는 보이지 않는다",
+    ):
+        assert phrase in decision, phrase
+    assert "bdq-auto-login" not in _chapter(document, 7), "뒤집힌 결정이 없어 7-1 에 줄이 없다"

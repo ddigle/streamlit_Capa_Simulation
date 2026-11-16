@@ -1770,6 +1770,15 @@ uv run --no-sync python scripts/sync_object_storage.py --bucket $b rollback --to
 같은 세대에 포인터가 둘이면 그 세대 줄의 키 꼬리 8자리를 `--token` 뒤에 붙여 더한다. 그 뒤 CI/CD 로 새 pod 가 그 세대를 받게 한다. **멈춘 pod 의 미반영 변경은 그 CI/CD 로 사라진다** — 사용자에게 먼저 알린다. 이 도구는 주소 · 버킷 · 프로필 · 작성자를 가려 찍는다(`doctor` 세대 줄 끝의
 작성자는 이름표 「작성자」, 실패 글 안의 값은 이름표 「주소」 · 「버킷」 · 「프로필」 — 이름표는 꺾쇠로 감싸 찍힌다) — 그래도 리뷰에는 seq · 갈래만 옮긴다(5장).
 
+### BigDataQuery 자동 로그인 키 · 계정 — 사용자만 다룬다
+
+C-DEP 환경변수 표의 `CAPA_BDQ_SECRET_KEY`(BigDataQuery 자동 로그인 키 — 운영 C-DEP 표에만 두고, 동기화 모드 `managed` 서버에서만 쓰인다)와
+자동 로그인 계정 · 비밀번호는 사용자 몫이다. 키는 사용자가 자기 창에서 한 줄로 만들어(`bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」 의
+「자동 로그인」 1) 찍힌 값을 C-DEP 표에만 붙여 넣고, 계정은 관리자가 Admin Area 「BDQ 자동 로그인」 에서 넣는다. 에이전트는 그 줄을 건네기만 하고
+키 · 계정 · 비밀번호를 받지도 옮기지도 않는다 — 리뷰에는 「서버 시작 점검」 의 「BDQ 자동 로그인」 줄 상태 낱말 · 남은 시간과 `AD-23` 있음/없음만
+옮긴다. 저장 객체 `secrets/bdq_login.json` 은 위 `fetch-copy` · `generations` · `rollback` 에 실리지 않는다(`objectstore_setup.md` 머리). 키를
+바꾸면 저장된 계정을 풀 수 없어 계정을 다시 넣는다.
+
 ## 7. 이번 배포에서 사내가 따로 확인해야 하는 것
 
 > **[Opus 구간 1]** 들어가기 전에 0-2 대로 모델을 바꿔 달라고 한다 — 2-1 앞에서 한 번(2-1 첫 줄로 `runbook_next.md` 를 꺼낸 바로 뒤), 이 머리와 7-0 으로 할 일 · 차례를 정하고 ZIP · 적용 기록의 stamp 와 줄끝을 보기까지(`--dry-run` 의 지움 · 보존 대조는 구간 밖 — 그 뒤 2-1 에서).

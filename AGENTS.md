@@ -134,7 +134,9 @@ seed (nopub)). 기존 시나리오나 공식버전은 자동 시드가 변경하
   계정 · 토큰은 코어가 채운다), S3 는 `s3_upload` · `s3_download`(모듈 데이터 자리 파일 하나를 버킷의 `modules/<id>/` 아래로 —
   접속 명단과 같은 키 · 주소 · 버킷, 동기화 모드 `managed` 서버에서만, 파일 하나 8 MiB, 예외 없이 `S3Result`)다 — 창구 1.3, 속은
   `module_helpers`. 언제 올리고 받을지는 모듈이 정한다. 자격 환경변수 이름(`CAPA_BDQ_` · `CAPA_S3_` · `AWS_` · `JWT_SECRET` ·
-  `ADFS_`)과 토큰 파일 자리(`.credential` · `bigdataquery.token`)를 코드에 적으면 점검 오류 M21(시험 막음)이다. `bigdataquery`
+  `ADFS_`)과 토큰 파일 자리(`.credential` · `bigdataquery.token`) · BigDataQuery 자동 로그인 계정의 버킷 자리(`secrets/` ·
+  `bdq_login` 마디)를 코드에 적으면 점검 오류 M21(시험 막음)이다 — S3 도우미는 이름이 무엇이든 `modules/<id>/` 밖에 닿지 않는다
+  (`tests/test_module_helpers.py`). `bigdataquery`
   직접 import 는 2026-11-01 결정대로 경고(M09)로 둔다. 모듈 시험(`check_module.py`)은 자격 이름의 변수를 빼고
   `CAPA_MODULES_TEST_RUN` 을 켜 도우미가 밖에 닿지 않는다(조회 · S3 모두 「쓸 수 없음」).
 - 깨진 모듈은 그 화면만 오류 카드다 — 화면 본문은 `module_runtime.run_module_page`, 위젯 콜백은 `ctx.callback`, 프래그먼트 · 팝업
@@ -1861,7 +1863,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   202611111500 보드 N8 (가))도 여기다 — 결과 파일이 있는 서버(C-DEP)에서만 부르고(없으면 Streamlit 호출 0), 시작 점검 토큰 줄 「실패」 나
   어댑터의 프로세스 표지(`company_bigdataquery_adapter.last_query_failed_on_token` — 조회가 토큰 갈래로 실패하면 서고 조회가 성공하면
   내린다, 예약 스레드도 같은 값을 쓴다)가 있으면 관리자(`sso_identity.viewer_is_admin` — 통합인증이 켜짐이 아니면 아무도 아니다) 회차에
-  조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 자동 갱신은 하지 않는다. 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
+  조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 만료 전에 미리 갱신하지 않는다 — 대신 C-DEP 자동 로그인(2026-11-16 사용자 결정
+  D1 ~ D11, 아래 `io/bdq_login.py`)이 회복한다: 계정은 Admin Area 관리자 폼에서만 넣고(환경변수 표에 비밀번호 없음) 버킷
+  `secrets/bdq_login.json` 에 키 `CAPA_BDQ_SECRET_KEY` 로 감싸 두며, 저장된 계정이 조회 · 토큰 파일 이름 · 남은 시간 모두의
+  계정 하나의 원천이다. 시작마다 한 번 로그인하고, 조회가 패키지의 토큰 예외 종류로 실패하면 다시 로그인해 같은 조회를 한 번만
+  다시 한다(WebIDE 가 같은 계정으로 로그인해 운영 토큰이 죽어도 이 길로 돌아온다 — 운영 로그인이 WebIDE 토큰을 초기화하는 것은
+  감수, D11). 로그인 거절 · 다시 한 조회도 토큰 오류 · 그 밖의 애매한 실패는 다시 시도하지 않고 멈춤을 객체에 적어 재시작에도
+  시도하지 않으며(관리자 `AD-23` — 폼에서 다시 넣어 성공해야 풀린다), 연결 · 시간 초과의 양의 증거만 「닿지 못함」 으로(패키지를
+  불러오지 못하면 시도 자체가 없어) 멈추지 않는다. 계정 잠김 방지가 불변식이다 — 폼 한 번에 시도 한 번 · 자동 연속 3번 상한 · 닿지 못함 뒤 5분 쉼 · 프로세스 잠금 하나 ·
+  새 배경 스레드 없음. 키도 객체도 없는 서버는 시작 · 조회가 지금과 같다(「토큰 넣기」 · `CAPA_BDQ_TOKEN` 예비 길). 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
   CD 환경변수 값 바꿔 두기다 — 패키지가 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 을 읽는 서버(넣기가 잠긴다)면 그 값 바꾸기 + CI/CD
   (`bdq_token.environment_token_set` — 값은 보지 않는다, 글은 `AD-11` 과 같은 `bdq_token_admin.ENVIRONMENT_FIX`), 자동 로그인이 켜졌는데
   (`managed` + 키) 저장된 계정이 없으면 Admin Area 「BDQ 자동 로그인」 에 계정 넣기다(`bdq_token_admin.AUTO_LOGIN_FIX`). 같은 함수 끝에서 만료 알림
@@ -2092,6 +2102,9 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   60초 뒤 다시) 계정 원천 `effective_account` · S3 에 묻지 않는 보기 `peek_state` · `peek_account` 를 낸다. 앱은 기동 때 키를 쥐고
   환경에서 뺀다(`take_secret_key` — 앱의 aws 하위 프로세스가 물려받지 않게). 풀린 값(`LoginSecret`) · `cipher` 는 repr 에 없고 풀기 ·
   읽기 실패는 까닭 코드만 돌려준다. 무거운 의존성(cryptography · 설정)은 함수 안에서 불러온다. 시험 `tests/test_bdq_login_store.py`.
+  저장 경계 — 동기화 도구(`init` · `push` · `fetch-copy` · `generations` · `rollback` · `boot-pull` · `prune`)와 일꾼의 세대 올리기 ·
+  HEAD 보기 · 하루 정리는 `secrets/` 를 나열 · 복사 · 지우지 않는다(목록은 세대 · 스냅샷 · `audit/` 접두뿐 — 버킷 전체를 나열하는
+  자리가 없다, `tests/test_bucket_secret_boundary.py` 가 가짜 S3 의 받은 요청으로 본다). 지우는 길은 Admin 「지우기」 하나다.
 - `src/capa_simulation/io/bdq_login.py` — BigDataQuery 자동 로그인 실행기. 로그인 한 번(`attempt_login`)은 `sys.executable` 하위
   프로세스(`io/bdq_login_child.py` — 표준 라이브러리만, `runpy`)이고 계정 · 비밀번호는 표준 입력으로만, 하위 환경은 비밀 이름 · `CAPA_S3_*` ·
   `AWS_*` 를 뺀 것, 출력은 버리고 표지 한 줄만 읽는다(시간 제한 60초, 새 세션으로 띄움). 판정은 로그인 전후 토큰 파일 다이제스트가
