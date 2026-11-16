@@ -15,6 +15,14 @@
 `모듈.이름`(`error` · `time_error`) · 서버에 닿지 못한 양의 증거(`net`) · 남은 분(`minutes`)만 있고
 예외 문구 · 계정 · 비밀번호는 없다.
 
+**「닿지 못함」 의 증거**(`is_unreached`)는 요청을 서버에 보내기 **전** 단계(연결)의 실패뿐이다 —
+연결 거절 · 길 없음 · 이름 풀기 · 연결 시간 초과. 종류 이름만으로 가르지 않는다: 패키지가 서버가
+답한 HTTP 오류(틀린 비밀번호의 401)를 `ConnectionError` 꼴로 낼 수 있어서다(사내 문구 「Auth
+Connection failed: HTTP Response Code :」). 그래서 OS 가 낸 연결 단계 errno 가 붙은 것, `urllib3` 의
+연결 단계 종류, 그리고 그것을 감싼 `requests` 의 연결 실패(응답이 없고 첫 인자가 그 원인 예외 —
+라이브러리가 만든 꼴)만 받는다. 읽기 시간 초과(`ReadTimeout`) · 연결이 끊김(`ECONNRESET` ·
+`Connection aborted`)은 비밀번호가 서버에 이미 간 뒤일 수 있어 증거가 아니다 — 거절(멈춤)로 간다.
+
 `stage` — `input`(계정 줄 없음) · `import`(패키지를 불러오지 못함 — 로그인 시도 없음) · `login`
 (`login()` 이 예외) · `done`(`login()` 이 돌아옴). 로그인이 받아들여졌는지는 부르는 쪽이 토큰 파일
 다이제스트로 가른다 — 이 본문은 판정하지 않는다.
@@ -22,6 +30,7 @@
 
 from __future__ import annotations
 
+import errno
 import importlib
 import re
 import socket
@@ -38,6 +47,28 @@ _NAME_PART = re.compile(r"[^A-Za-z0-9_.]")
 _NAME_LIMIT = 200
 # 원인을 따라가는 깊이(`__cause__` 만 — 아래 `is_unreached`).
 _CHAIN_LIMIT = 5
+# 연결 단계에서 OS 가 내는 errno — 요청을 보내기 전(거절 · 길 없음 · 연결 시간 초과 · 주소 없음).
+# 끊김(`ECONNRESET` · `EPIPE` · `ECONNABORTED`)은 서버가 요청을 읽은 뒤일 수 있어 넣지 않는다.
+CONNECT_ERRNOS = frozenset(
+    code
+    for code in (
+        getattr(errno, name, None)
+        for name in (
+            "ECONNREFUSED",
+            "ENETUNREACH",
+            "EHOSTUNREACH",
+            "ENETDOWN",
+            "EHOSTDOWN",
+            "ETIMEDOUT",
+            "EADDRNOTAVAIL",
+        )
+    )
+    if code is not None
+)
+# `urllib3` 의 연결 단계 종류 — 요청을 보내기 전(`urllib3.exceptions`).
+_URLLIB3_CONNECT = frozenset({"NewConnectionError", "ConnectTimeoutError", "NameResolutionError"})
+# 그 밖에서 정의된 `OSError` 하위 종류만 errno 로 가른다 — 라이브러리 종류는 아래 꼴로 따로 본다.
+_LIBRARY_ROOTS = frozenset({"requests", "urllib3"})
 
 
 def qualified_name(error: BaseException) -> str:
@@ -47,28 +78,58 @@ def qualified_name(error: BaseException) -> str:
     return text if text[:1].isalpha() or text[:1] == "_" else f"_{text}"[:_NAME_LIMIT]
 
 
-def _unreached_kinds() -> tuple[type[BaseException], ...]:
-    """서버에 닿지 못한 양의 증거로 보는 종류 — 연결 · 시간 초과 · 이름 풀기, 그리고 `requests` 가
-    이미 불러와져 있으면 그 연결 · 시간 초과(패키지가 쓴다)."""
-    kinds: list[type[BaseException]] = [ConnectionError, TimeoutError, socket.gaierror]
-    requests_errors = sys.modules.get("requests.exceptions")
-    for name in ("ConnectionError", "Timeout"):
-        found = getattr(requests_errors, name, None)
-        if isinstance(found, type) and issubclass(found, BaseException):
-            kinds.append(found)
-    return tuple(kinds)
+def _has_kind(error: BaseException, module: str, names: frozenset[str]) -> bool:
+    """종류 사슬(`__mro__`)에 그 모듈의 그 이름이 있나 — 패키지를 import 하지 않는다."""
+    return any(
+        kind.__module__ == module and kind.__qualname__ in names for kind in type(error).__mro__
+    )
+
+
+def _connect_stage(error: BaseException, depth: int = 0) -> bool:
+    """요청을 서버에 보내기 전(연결 단계)의 실패라는 양의 증거인가.
+
+    - OS 연결 오류: errno 가 `CONNECT_ERRNOS` 인 `OSError`(이름 풀기 `socket.gaierror` 와 errno 가
+      붙은 연결 거절은 errno 값과 상관없이) — 라이브러리(`requests` · `urllib3`)가 정의한 종류는
+      뺀다. errno 가 없는 `ConnectionError("…HTTP Response Code…")` 는 패키지가 글로 만든 것이라
+      아니다.
+    - `urllib3` 의 연결 단계 종류(`_URLLIB3_CONNECT`), 그리고 그 까닭(`reason`)을 단
+    `MaxRetryError`.
+    - `requests` 의 연결 실패(`ConnectionError` · `ConnectTimeout`): 응답이 없고 첫 인자가 원인
+      예외일 때 그 원인으로 — 라이브러리가 만든 꼴이다. 글만 든 것 · 읽기 단계 원인
+      (`ProtocolError`)은 아니다.
+    """
+    if depth >= _CHAIN_LIMIT:
+        return False
+    root = type(error).__module__.split(".", 1)[0]
+    if isinstance(error, OSError) and root not in _LIBRARY_ROOTS:
+        if error.errno is None:
+            return False
+        if isinstance(error, (socket.gaierror, ConnectionRefusedError)):
+            return True
+        return error.errno in CONNECT_ERRNOS
+    if _has_kind(error, "urllib3.exceptions", _URLLIB3_CONNECT):
+        return True
+    if _has_kind(error, "urllib3.exceptions", frozenset({"MaxRetryError"})):
+        reason = getattr(error, "reason", None)
+        return isinstance(reason, BaseException) and _connect_stage(reason, depth + 1)
+    if _has_kind(error, "requests.exceptions", frozenset({"ConnectionError"})):
+        if getattr(error, "response", None) is not None or not error.args:
+            return False
+        first = error.args[0]
+        return isinstance(first, BaseException) and _connect_stage(first, depth + 1)
+    return False
 
 
 def is_unreached(error: BaseException) -> bool:
-    """로그인 예외가 서버에 닿지 못한 양의 증거인가 — 그 예외나 명시적 원인(`raise … from`) 사슬에
-    연결 · 시간 초과 종류가 있으면. 다른 예외를 처리하다 난 것(`__context__` 만)은 증거로 보지
-    않는다 — 앞 시도가 끊기고 다음 시도가 닿아 거절된 꼴일 수 있다. 문구는 보지 않는다."""
-    kinds = _unreached_kinds()
+    """로그인 예외가 서버에 닿지 못한 양의 증거인가 — 그 예외나 명시적 원인(`raise … from`) 사슬의
+    고리 가운데 연결 단계 실패(`_connect_stage`)가 있으면. 다른 예외를 처리하다 난 것(`__context__`
+    만)은 증거로 보지 않는다 — 앞 시도가 끊기고 다음 시도가 닿아 거절된 꼴일 수 있다. 문구는 보지
+    않는다."""
     current: BaseException | None = error
     for _ in range(_CHAIN_LIMIT):
         if current is None:
             break
-        if isinstance(current, kinds):
+        if _connect_stage(current):
             return True
         current = current.__cause__
     return False

@@ -11,9 +11,11 @@
 
 from __future__ import annotations
 
+import errno
 import importlib.util
 import logging
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -169,6 +171,32 @@ def test_only_a_connection_kind_is_unreached(
     assert result.outcome == bdq_login.OUTCOME_REJECTED
     assert result.error_kind == "builtins.RuntimeError"
     assert fake.logins() == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "kind"),
+    [
+        ("wrong_conn_builtin", "builtins.ConnectionError"),
+        ("wrong_conn_subclass", None),
+        ("wrong_requests_conn_text", "requests.exceptions.ConnectionError"),
+        ("wrong_read_timeout", "requests.exceptions.ReadTimeout"),
+        ("wrong_http_error_from_conn", "builtins.ConnectionError"),
+    ],
+)
+def test_a_wrong_password_in_a_connection_shape_is_rejected_not_unreached(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, name: str, kind: str | None
+) -> None:
+    """서버가 답한 401 을 패키지가 연결 꼴(errno 없는 `ConnectionError` · 그 하위 종류 · 글만 든
+    `requests` 연결 실패 · 읽기 시간 초과 · HTTP 오류를 원인으로 단 것)로 내도 「닿지 못함」 이
+    아니다 — 멈춤으로 가야 재시작마다 틀린 비밀번호로 다시 로그인하지 않는다(계정 잠김 방지)."""
+    fake.write_live_token()
+    scene(monkeypatch, name)
+    result = bdq_login.attempt_login(ACCOUNT, WRONG_PASSWORD)
+    assert result.outcome == bdq_login.OUTCOME_REJECTED
+    assert result.reason == bdq_login.REASON_LOGIN_RAISED
+    if kind is not None:
+        assert result.error_kind == kind
+    assert fake.logins() == 1
 
 
 def test_a_child_past_its_time_limit_is_unreached(
@@ -491,10 +519,13 @@ def test_remaining_minutes_joins_the_split_fields(answer: object, minutes: int |
 
 
 def test_the_unreached_evidence_follows_only_explicit_causes() -> None:
+    refused = ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused")
+    connect_timeout = TimeoutError(errno.ETIMEDOUT, "Connection timed out")
+
     def caused() -> BaseException:
         try:
             try:
-                raise ConnectionRefusedError
+                raise refused
             except ConnectionRefusedError as error:
                 raise RuntimeError("wrapped") from error
         except RuntimeError as wrapped:
@@ -503,16 +534,78 @@ def test_the_unreached_evidence_follows_only_explicit_causes() -> None:
     def context_only() -> BaseException:
         try:
             try:
-                raise TimeoutError
+                raise connect_timeout
             except TimeoutError:
                 raise RuntimeError("auth") from None
         except RuntimeError as wrapped:
             return wrapped
 
-    assert bdq_login_child.is_unreached(TimeoutError())
+    assert bdq_login_child.is_unreached(connect_timeout)
     assert bdq_login_child.is_unreached(caused())
     assert not bdq_login_child.is_unreached(context_only())
     assert not bdq_login_child.is_unreached(ValueError("timeout connection refused"))
+
+
+def _closed_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _real_request_error(*, read_timeout: bool = False) -> BaseException:
+    """`requests` 가 스스로 만든 실패 — 닫힌 포트(연결 거절) 또는 답하지 않는 소켓(읽기 시간
+    초과)."""
+    import requests
+
+    session = requests.Session()
+    session.trust_env = False
+    if not read_timeout:
+        with pytest.raises(requests.exceptions.ConnectionError) as refused:
+            session.post(f"http://127.0.0.1:{_closed_port()}/auth", timeout=5)
+        return refused.value
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = int(listener.getsockname()[1])
+        with pytest.raises(requests.exceptions.ReadTimeout) as late:
+            session.post(f"http://127.0.0.1:{port}/auth", data=b"x", timeout=(5, 0.5))
+        return late.value
+
+
+def test_the_unreached_evidence_is_the_connect_stage_not_the_kind_name() -> None:
+    """닿지 못함은 요청을 보내기 전(연결 단계)의 양의 증거뿐이다 — 라이브러리가 만든 연결 거절 ·
+    errno 가 붙은 OS 연결 오류 · 이름 풀기. 종류 이름만 맞은 것(errno 없는 `ConnectionError` · 글만
+    든 `requests` 연결 실패 · 응답을 든 것)과 요청이 이미 간 뒤의 것(읽기 시간 초과 · 끊김 · errno
+    없는 `socket.timeout`)은 아니다."""
+    import requests
+
+    real_refusal = _real_request_error()
+    assert bdq_login_child.is_unreached(real_refusal)
+    assert bdq_login_child.is_unreached(ConnectionRefusedError(errno.ECONNREFUSED, "refused"))
+    assert bdq_login_child.is_unreached(OSError(errno.EHOSTUNREACH, "No route to host"))
+    assert bdq_login_child.is_unreached(socket.gaierror(socket.EAI_NONAME, "Name not known"))
+    wrapped = RuntimeError("login failed")
+    wrapped.__cause__ = real_refusal
+    assert bdq_login_child.is_unreached(wrapped)
+
+    assert not bdq_login_child.is_unreached(_real_request_error(read_timeout=True))
+    assert not bdq_login_child.is_unreached(ConnectionError("HTTP Response Code : 401"))
+    assert not bdq_login_child.is_unreached(ConnectionRefusedError())
+    assert not bdq_login_child.is_unreached(ConnectionResetError(errno.ECONNRESET, "reset"))
+    assert not bdq_login_child.is_unreached(TimeoutError("timed out"))
+    assert not bdq_login_child.is_unreached(
+        requests.exceptions.ConnectionError("Auth Connection failed: HTTP Response Code : 401")
+    )
+    assert not bdq_login_child.is_unreached(requests.exceptions.ConnectTimeout("connect (text)"))
+    answered = requests.Response()
+    answered.status_code = 401
+    assert not bdq_login_child.is_unreached(
+        requests.exceptions.ConnectionError(real_refusal.args[0], response=answered)
+    )
+    library_kind = type(
+        "BdqConnectionError", (requests.exceptions.ConnectionError,), {"__module__": "bigdataquery"}
+    )
+    assert not bdq_login_child.is_unreached(library_kind("HTTP Response Code : 401"))
 
 
 # --- 다시 로그인의 문 ----------------------------------------------------------------------

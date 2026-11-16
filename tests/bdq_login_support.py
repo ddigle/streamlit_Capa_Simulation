@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 import sys
 import time
 from collections.abc import Iterator
@@ -105,8 +106,9 @@ class FakeBdq:
         return self.credential_dir / f"bigdataquery.token.{account}"
 
     def write_live_token(self, account: str = ACCOUNT) -> bytes:
-        """지금 발급된 꼴의 살아 있는 토큰(옛 토큰 장면)."""
-        content = f"oldtoken{account}_{int(time.time() * 1000)}".encode("ascii")
+        """지금 발급된 꼴의 살아 있는 토큰(옛 토큰 장면 — 가짜 패키지의 `getTokenTime` 이 받는
+        꼴)."""
+        content = f"{secrets.token_hex(12)}_{int(time.time() * 1000)}".encode("ascii")
         self.credential_dir.mkdir(parents=True, exist_ok=True)
         self.token_path(account).write_bytes(content)
         return content

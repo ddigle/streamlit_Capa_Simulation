@@ -20,20 +20,29 @@
 - `FAKE_BDQ_SLOW_SECONDS` — `slow` · `time_slow` 장면에서 잠드는 초(기본 30).
 - `FAKE_BDQ_SCENE` — 쉼표로 이은 장면:
   `wrong_raises`(틀린 비밀번호에 예외 — 기본은 문구만 찍고 끝남) · `exit_on_wrong`(틀린 비밀번호에
-  `sys.exit`) · `connection`(연결 예외 — `requests` 가 있으면 그 종류) · `connection_context`(연결
-  예외를 처리하다 난 다른 예외 — 원인 사슬이 아니라 문맥만) · `slow`(로그인 중 잠듦) · `time_odd`
-  (`getTokenTime` 꼴이 다름) · `time_typo`(날 칸이 `remining_days`, 하루 더) · `time_short`
-  (25분 남음) ·
-  `time_raises`(`getTokenTime` 예외) · `time_slow`(`getTokenTime` 중 잠듦 — 토큰은 이미 새로 씀) ·
-  `import_fails`(import 때 예외).
+  `sys.exit`) · `connection`(진짜 연결 거절 — 닫힌 루프백 포트에 `requests` 로 묻는다, 없으면 소켓)
+  · `connection_context`(연결 예외를 처리하다 난 다른 예외 — 원인 사슬이 아니라 문맥만) · `slow`
+  (로그인 중 잠듦) · `time_odd`(`getTokenTime` 꼴이 다름) · `time_typo`(날 칸이 `remining_days`,
+  하루 더) · `time_short`(25분 남음) · `time_raises`(`getTokenTime` 예외) ·
+  `time_slow`(`getTokenTime` 중 잠듦 — 토큰은 이미 새로 씀) · `import_fails`(import 때 예외).
+- 틀린 비밀번호(서버가 답한 401)를 연결 꼴로 내는 장면 — `wrong_conn_builtin`(errno 없는
+  `ConnectionError`) · `wrong_conn_subclass`(그 하위 종류) · `wrong_requests_conn_text`(글만 든
+  `requests` 연결 실패) · `wrong_read_timeout`(진짜 읽기 시간 초과 — 받기만 하고 답하지 않는 루프백
+  소켓) · `wrong_http_error_from_conn`(HTTP 오류를 원인으로 단 `ConnectionError`).
+- 틀린 비밀번호에 토큰 파일을 건드리는 장면 — `wrong_truncates`(빈 파일로) · `wrong_writes_garbage`
+  (다른 글로). `getTokenTime` 은 서버처럼 발급 꼴(`<16진 24글자>_<발급 ms>`)이 아닌 토큰을 받지
+  않는다(예외).
 """
 
 from __future__ import annotations
 
+import errno
 import getpass
 import hashlib
 import os
+import re
 import secrets
+import socket
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -46,6 +55,8 @@ __version__ = "0.0.0+fake"
 
 TOKEN_LIFETIME = timedelta(hours=8)
 _KST = timezone(timedelta(hours=9))
+# 서버가 발급한 토큰 꼴 — 그 밖은 서버가 받지 않는다(`getTokenTime` 예외).
+_ISSUED = re.compile(r"[0-9a-f]{24}_([0-9]{10,16})")
 
 
 def _scenes() -> frozenset[str]:
@@ -64,17 +75,50 @@ def _token_path(account: str) -> Path:
     return Path(os.environ.get("FAKE_BDQ_CREDENTIAL_DIR", ".")) / f"bigdataquery.token.{account}"
 
 
-def _connection_error() -> Exception:
-    requests_errors = sys.modules.get("requests.exceptions")
-    if requests_errors is None:
+def _closed_port() -> int:
+    """지금 아무도 듣지 않는 루프백 포트."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _connection_error() -> BaseException:
+    """진짜 연결 거절 — `requests` 가 있으면 라이브러리가 만든 그 꼴(환경 프록시를 타지 않게
+    `trust_env` 를 끈다), 없으면 소켓의 것."""
+    port = _closed_port()
+    try:
+        import requests
+    except ImportError:
+        requests = None  # type: ignore[assignment]
+    if requests is not None:
+        session = requests.Session()
+        session.trust_env = False
         try:
-            import requests.exceptions as requests_errors
-        except ImportError:
-            requests_errors = None
-    found = getattr(requests_errors, "ConnectionError", None)
-    if isinstance(found, type) and issubclass(found, Exception):
-        return found("HTTPSConnectionPool: Max retries exceeded (fake)")
-    return ConnectionError("connection refused (fake)")
+            session.post(f"http://127.0.0.1:{port}/auth", timeout=5)
+        except requests.exceptions.ConnectionError as error:
+            return error
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=5).close()
+    except OSError as error:
+        return error
+    return ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused (fake)")
+
+
+def _read_timeout() -> BaseException:
+    """진짜 읽기 시간 초과 — 받기만 하고 답하지 않는 루프백 소켓에 묻는다(요청은 이미 갔다)."""
+    import requests
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = int(listener.getsockname()[1])
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            session.post(f"http://127.0.0.1:{port}/auth", data=b"x", timeout=(5, 0.5))
+        except requests.exceptions.ReadTimeout as error:
+            return error
+    raise AssertionError("읽기 시간 초과가 나지 않음")
 
 
 def _read_password(prompt: str) -> str:
@@ -113,6 +157,7 @@ def login() -> None:
             raise RuntimeError("Auth Connection failed: HTTP Response Code : 401") from None
     digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
     if digest != os.environ.get("FAKE_BDQ_PASSWORD_SHA256", ""):
+        _wrong_scenes(account, scenes)
         if "wrong_raises" in scenes:
             raise Exception(f"Auth Connection failed: HTTP Response Code : 401 ({account})")
         if "exit_on_wrong" in scenes:
@@ -123,6 +168,41 @@ def login() -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(f"{secrets.token_hex(12)}_{int(time.time() * 1000)}", encoding="utf-8")
     print(f"login success: {account}")
+
+
+def _wrong_scenes(account: str, scenes: frozenset[str]) -> None:
+    """틀린 비밀번호(서버가 401 로 답함)의 장면 가운데 연결 꼴 예외 · 토큰 파일 건드리기."""
+    if "wrong_conn_builtin" in scenes:
+        raise ConnectionError("Auth Connection failed: HTTP Response Code : 401")
+    if "wrong_conn_subclass" in scenes:
+
+        class AuthConnectionError(ConnectionError):
+            pass
+
+        raise AuthConnectionError("Auth Connection failed: HTTP Response Code : 401")
+    if "wrong_requests_conn_text" in scenes:
+        import requests.exceptions
+
+        raise requests.exceptions.ConnectionError(
+            "Auth Connection failed: HTTP Response Code : 401"
+        )
+    if "wrong_read_timeout" in scenes:
+        raise _read_timeout()
+    if "wrong_http_error_from_conn" in scenes:
+        import requests.exceptions
+
+        try:
+            raise requests.exceptions.HTTPError("401 Client Error")
+        except requests.exceptions.HTTPError as inner:
+            raise ConnectionError("Auth Connection failed: HTTP Response Code : 401") from inner
+    if "wrong_truncates" in scenes:
+        target = _token_path(account)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+    if "wrong_writes_garbage" in scenes:
+        target = _token_path(account)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"invalid_login_{int(time.time() * 1000)}", encoding="utf-8")
 
 
 def getTokenTime(user_name: str) -> dict[str, object]:
@@ -137,7 +217,10 @@ def getTokenTime(user_name: str) -> dict[str, object]:
         raise TokenNotFoundException(
             f"There is no bigdataquery token issued for AD user {user_name}"
         )
-    issued_ms = int(path.read_text(encoding="utf-8").strip().rsplit("_", 1)[1])
+    found = _ISSUED.fullmatch(path.read_text(encoding="utf-8").strip())
+    if found is None:
+        raise RuntimeError("Auth Connection failed: HTTP Response Code : 401")
+    issued_ms = int(found.group(1))
     issued = datetime.fromtimestamp(issued_ms / 1000, tz=_KST)
     now = datetime.now(_KST)
     left = max(issued + TOKEN_LIFETIME - now, timedelta(0))
