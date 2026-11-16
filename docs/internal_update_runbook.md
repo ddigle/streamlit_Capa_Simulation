@@ -1775,8 +1775,8 @@ uv run --no-sync python scripts/sync_object_storage.py --bucket $b rollback --to
 C-DEP 환경변수 표의 `CAPA_BDQ_SECRET_KEY`(BigDataQuery 자동 로그인 키 — 운영 C-DEP 표에만 두고, 동기화 모드 `managed` 서버에서만 쓰인다)와
 자동 로그인 계정 · 비밀번호는 사용자 몫이다. 키는 사용자가 자기 창에서 한 줄로 만들어(`bigdataquery_webide_setup.md` 「C-DEP CD(배포 서버)」 의
 「자동 로그인」 1) 찍힌 값을 C-DEP 표에만 붙여 넣고, 계정은 관리자가 Admin Area 「BDQ 자동 로그인」 에서 넣는다. 에이전트는 그 줄을 건네기만 하고
-키 · 계정 · 비밀번호를 받지도 옮기지도 않는다 — 리뷰에는 「서버 시작 점검」 의 「BDQ 자동 로그인」 줄 상태 낱말 · 남은 시간과 `AD-23` 있음/없음만
-옮긴다. 저장 객체 `secrets/bdq_login.json` 은 위 `fetch-copy` · `generations` · `rollback` 에 실리지 않는다(`objectstore_setup.md` 머리). 키를
+키 · 계정 · 비밀번호를 받지도 옮기지도 않는다 — 리뷰에는 「서버 시작 점검」 의 「BDQ 자동 로그인」 줄 상태 낱말 · 남은 시간과 `AD-23` · `AD-24`
+있음/없음만 옮긴다. 저장 객체 `secrets/bdq_login.json` 은 위 `fetch-copy` · `generations` · `rollback` 에 실리지 않는다(`objectstore_setup.md` 머리). 키를
 바꾸면 저장된 계정을 풀 수 없어 계정을 다시 넣는다.
 
 ## 7. 이번 배포에서 사내가 따로 확인해야 하는 것

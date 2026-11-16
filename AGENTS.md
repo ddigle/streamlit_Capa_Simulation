@@ -1866,19 +1866,23 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   조치 알림으로 선다. 지문은 그 두 참거짓뿐이고 「그 화면으로」 는 Admin Area 다. 만료 전에 미리 갱신하지 않는다 — 대신 C-DEP 자동 로그인(2026-11-16 사용자 결정
   D1 ~ D11, 아래 `io/bdq_login.py`)이 회복한다: 계정은 Admin Area 관리자 폼에서만 넣고(환경변수 표에 비밀번호 없음) 버킷
   `secrets/bdq_login.json` 에 키 `CAPA_BDQ_SECRET_KEY` 로 감싸 두며, 저장된 계정이 조회 · 토큰 파일 이름 · 남은 시간 모두의
-  계정 하나의 원천이다. 시작마다 한 번 로그인하고, 조회가 패키지의 토큰 예외 종류로 실패하면 다시 로그인해 같은 조회를 한 번만
-  다시 한다(WebIDE 가 같은 계정으로 로그인해 운영 토큰이 죽어도 이 길로 돌아온다 — 운영 로그인이 WebIDE 토큰을 초기화하는 것은
-  감수, D11). 로그인 거절 · 다시 한 조회도 토큰 오류 · 그 밖의 애매한 실패는 다시 시도하지 않고 멈춤을 객체에 적어 재시작에도
-  시도하지 않으며(관리자 `AD-23` — 폼에서 다시 넣어 성공해야 풀린다), 연결 · 시간 초과의 양의 증거만 「닿지 못함」 으로(패키지를
-  불러오지 못하면 시도 자체가 없어) 멈추지 않는다. 계정 잠김 방지가 불변식이다 — 폼 한 번에 시도 한 번 · 자동 연속 3번 상한 · 닿지 못함 뒤 5분 쉼 · 프로세스 잠금 하나 ·
-  새 배경 스레드 없음. 키도 객체도 없는 서버는 시작 · 조회가 지금과 같다(「토큰 넣기」 · `CAPA_BDQ_TOKEN` 예비 길). 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
+  계정 하나의 원천이다. 시작마다 한 번 로그인하고, 조회가 패키지의 토큰 예외 종류(지금은 토큰 파일 없음 하나 — 무효 · 만료 종류는 사내
+  확인 거리)로 실패하면 다시 로그인해 같은 조회를 한 번만 다시 한다(WebIDE 가 같은 계정으로 로그인해 운영 토큰이 죽으면 D11 은 이 길로
+  돌아오기를 바라지만, 그 예외 종류를 알기 전에는 `AD-10` 의 다시 넣기로 돌아온다 — 운영 로그인이 WebIDE 토큰을 초기화하는 것은 감수).
+  로그인 거절 · 다시 한 조회도 토큰 오류 · 그 밖의 애매한 실패는 다시 시도하지 않고 멈춤을 객체에 적어 재시작에도 시도하지 않으며(관리자
+  `AD-23` — 폼에서 다시 넣어 성공해야 풀린다), 요청을 보내기 전 연결 단계의 양의 증거만 「닿지 못함」 으로(패키지를 불러오지 못하면 시도
+  자체가 없어) 멈추지 않는다(관리자 `AD-24` — 성공 없이 3번이면 멈춤). 계정 잠김 방지가 불변식이다 — 폼 한 번에 시도 한 번 · 자동 시도
+  앞의 시도 표시(쓰지 못하면 로그인 없음) · 자동 연속 3번 상한 · 재시작을 건너는 닿지 못함 · 확인 못 함 3번 상한 · 닿지 못함 뒤 5분 쉼 ·
+  프로세스 잠금 하나 · 새 배경 스레드 없음. 키도 객체도 없는 서버는 시작 · 조회가 지금과 같다(「토큰 넣기」 · `CAPA_BDQ_TOKEN` 예비 길). 할 일 글은 시작 점검 실패면 그 까닭 고치기 + CI/CD, 조회 실패면 「토큰 넣기」 +
   CD 환경변수 값 바꿔 두기다 — 패키지가 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 을 읽는 서버(넣기가 잠긴다)면 그 값 바꾸기 + CI/CD
   (`bdq_token.environment_token_set` — 값은 보지 않는다, 글은 `AD-11` 과 같은 `bdq_token_admin.ENVIRONMENT_FIX`), 자동 로그인이 켜졌는데
-  (`managed` + 키) 저장된 계정이 없으면 Admin Area 「BDQ 자동 로그인」 에 계정 넣기다(`bdq_token_admin.AUTO_LOGIN_FIX`). 같은 함수 끝에서 만료 알림
+  (`managed` + 키) 저장된 계정이 없으면 Admin Area 「BDQ 자동 로그인」 에 계정 넣기다(`bdq_token_admin.AUTO_LOGIN_FIX`), 저장된 계정이
+  있으면(정상 · 멈춤) 그 자리에서 다시 넣기(곧바로 새 토큰 — `RELOGIN_FIX`)를 먼저, 「토큰 넣기」 를 그다음으로 적는다. 같은 함수 끝에서 만료 알림
   `AD-11`(`bdq_token_admin.render_expiry_alert` — 자동 로그인이 서 있는 동안은 해소)과 자동 로그인 멈춤 알림 `AD-23`(`render_login_stop_alert` —
-  관리자 회차, 지문은 (멈춘 까닭, 멈춘 시각), 「그 화면으로」 Admin Area 「BDQ 자동 로그인」 펼침까지 — 대상 `bdq_login`, 다시 넣어 성공하면 풀린다 — 2026-11-16 결정 D3 · D4)도 부른다
-  — `AD-10` 도 할 일이 계정 넣기인 갈래(`_token_alert_target`)에서는 같은 대상을 들고 간다. 결과
-  파일이 있는 서버는 회차마다 이벤트 칸 세 자리다. 자동 로그인 상태는 S3 에 묻지 않고 읽는다(`login_view` → `bdq_login.current_view` —
+  관리자 회차, 지문은 (멈춘 까닭, 멈춘 시각), 「그 화면으로」 Admin Area 「BDQ 자동 로그인」 펼침까지 — 대상 `bdq_login`, 다시 넣어 성공하면 풀린다 — 2026-11-16 결정 D3 · D4),
+  자동 로그인이 멈추지 않은 채 서지 못함 알림 `AD-24`(`render_login_trouble_alert` — 시작 · 조회 중 닿지 못함 · 확인 못 함 · 못 함, 지문은 갈래
+  낱말 하나, 같은 대상 — D6 「알림만」)도 부른다 — `AD-10` 도 할 일이 계정 넣기 · 다시 넣기인 갈래(`_token_alert_target` — 꺼짐 아니고 시작
+  점검 실패 · 토큰 환경변수 아님)에서는 같은 대상을 들고 간다. 결과 파일이 있는 서버는 회차마다 이벤트 칸 네 자리다. 자동 로그인 상태는 S3 에 묻지 않고 읽는다(`login_view` → `bdq_login.current_view` —
   무엇이 나도 `off` 로 물러선다). 시험 `tests/test_bdq_login_alerts.py`.
 - `src/capa_simulation/components/bdq_token_admin.py` — Admin 「서버 시작 점검」 펼침 표 아래 「지금 토큰」 값 줄(`token_line` — 패키지가
   다음 조회에 읽을 토큰의 자리 · 파일 수정 시각 · 만료, 토큰 글 없음 — 복사 글에도 싣는다)과 관리자 회차의 「토큰 넣기」 단추 · 팝업
@@ -1893,7 +1897,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   서지 않는다(`io/bdq_token.token_expiry` — JWT `exp` 만).
   `app.py` 가 모든 화면 회차에 부르는 자리라 지금 토큰을 읽다 무엇이 나도(`read_current`) 값 줄은 「확인하지 못함」, 알림은 해소로
   물러서고, 시각대로 못 옮기는 시각은 「알 수 없음」(`_clock`)이다 — 넣기는 쓴 뒤 무엇이 나도 넣음으로 끝난다.
-  토큰 알림의 걷은 번호 `AD-17`(자동 갱신 멈춤 · 실패) · `AD-18`(갱신 토큰 80일)은 다시 쓰지 않는다 — 자동 로그인 멈춤은 새 번호 `AD-23` 이다.
+  토큰 알림의 걷은 번호 `AD-17`(자동 갱신 멈춤 · 실패) · `AD-18`(갱신 토큰 80일)은 다시 쓰지 않는다 — 자동 로그인 멈춤은 새 번호 `AD-23`,
+  서지 못함은 `AD-24` 다.
   시험 `tests/test_bdq_token_admin.py`.
 - `src/capa_simulation/components/bdq_login_admin.py` — Admin Area 「BDQ 자동 로그인」 펼침(`BDQ_LOGIN_LABEL` — 「서버 시작 점검」 표 줄과
   같은 이름, 2026-11-16 결정 D1 · D2 · D5 · D7). 동기화 모드 `managed` + 쓸 수 있는 키(`bdq_login_store.availability` — 앱은 기동 때 키를 쥐고
@@ -1904,13 +1909,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   「넣기」. 「넣기」 콜백(`_on_submit`)이 두 칸 값을 읽자마자 세션 칸을 빈 글로 바꾸고(본문 · 뒤 회차 어디에도 값이 없다) 누른 회차의 신원을
   다시 검증해 관리자일 때만 `bdq_login.login_from_form` 한 번 — 저장까지 되면 알림창(「BigDataQuery 로그인 됨 · 남은 n시간 n분」 · 멈춤 풀림 ·
   떠 있는 앱의 계정 원천이 곧바로 새 ID), 로그인 실패는 저장 없이 폼 아래 한 줄 + Alarm(「로그인 실패 — 저장 안 함」 · 「서버에 닿지 못함 —
-  저장 안 함」 · 「패키지 없음 — 저장 안 함」 · 그 밖의 시도 전 거절은 「로그인하지 않음(까닭) — 저장 안 함」), 로그인은 됐는데 저장 실패는
+  저장 안 함」 · 「로그인 확인 못 함(남은 시간 모름 · 7시간 이하) — 저장 안 함」 · 「패키지 없음 — 저장 안 함」 · 그 밖의 시도 전 거절은
+  「로그인하지 않음(까닭) — 저장 안 함」), 로그인은 됐는데 저장 실패는
   알림창 오류, 빈 칸 · 관리자 아님은 시도 없이 폼 아래 거부(`write_guard.queue_refusal` → `take_refusal`, `tests/test_data_error_mark.py`
   BESIDE). 같은 세션의 겹쳐 온 둘째 누름은 같은 값이면 시도하지 않는다(`write_guard.save_once` — 출발점은 값의 HMAC 지문, 키는 프로세스마다
   새로 · 빈 꼬리 누름은 `just_written`). 저장된 계정이 있을 때만 상태 줄 곁에 「정말 지웁니다」 확인 체크 + 「지우기」(체크 전 잠김 · 까닭
   풍선 `paste_form.PASTE_CONFIRM_WHY`, 켜면 되돌릴 수 없음 · 예비 길 풍선 — 페이지 안 확인 한 번, 브라우저 대화상자 아님)가 선다. 감사 줄
   `admin_bdq_login_set`(결과 · 까닭 코드) · `admin_bdq_login_delete`(결과)에는 계정 · 비밀번호가 없다. 알림 「그 화면으로」 받는 쪽
-  `open_bdq_login`(대상 `bdq_login` — `AD-23` · 계정 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
+  `open_bdq_login`(대상 `bdq_login` — `AD-23` · `AD-24` · 계정 넣기 · 다시 넣기 갈래의 `AD-10`). 「토큰 넣기」(바로 위 펼침 안)는 예비로 남고 같은 결과의 단추가
   아니다(토큰 값 ↔ 계정 — UI-LAY-12). 시험 `tests/test_bdq_login_admin.py`(가짜 패키지 하위 프로세스 · 가짜 S3, 장면마다 `login()` 수).
 - `src/capa_simulation/components/module_status.py` — Admin Area 안쪽 탭 줄 오른쪽 끝 「모듈 상태」 팝오버(2026-11-10 보드 Q-6 — 켜짐·꺼짐·실패 수는 닫힌 단추 글 `status_title`, 그 안에 복사 · 까닭, 마지막 오류·회차 시간 표 — 칸 「마지막 회차 시간(ms)」 에 ms 정수, 정렬이 값 차례인 숫자 칸 `Int64` · `localized` — · 환경변수 줄). 탭 묶음을 담은 칸의 key 를 받으면 단추 칸을 그 칸 오른쪽 위에 얹는다(`tools_style` — 탭이 없는 회차는 흐름 안). 모듈 폴더가 없으면(사외 · `CAPA_MODULES_ROOT=off`) 그리지 않는다.
 - `src/capa_simulation/components/module_failure_card.py` — 모듈 오류 카드. 자리에는 누구나 읽는 머리 한 줄(「「<모듈>」 화면에 오류가 났습니다 — 다른 화면은 그대로 쓸 수 있습니다」 · 가드 자리 · 앞 동작이면 그 범위의 말)과 값 줄 「담당 <이름>」 만, 개발자용 정보(형식·첫 줄, import 꼴 안내, 끄는 법, 모듈 폴더 안 프레임만)는 접힌 「담당자용 진단」 안 코드 칸 + 복사 단추다(`DIAGNOSTIC_LABEL` — 복사 key 는 카드마다 새로, 2026-11-14 「앱 대신 뜨는 화면」 보드 카드 p2-rare). 코드 칸은 평문이라 앱이 짓는 안내 줄(끄는 법 · import 안내)에 코드 표지(백틱)를 쓰지 않고, 줄을 꺾는다(`wrap_lines` — 앱 안 멈춤 판의 접힌 진단 · Admin 「서버 시작 점검」 pip 출력 끝과 같은 꼴, 설계 규칙 UI-CON-04). `module_runtime`(화면·콜백)과 `module_api` 의 `guard`(제자리)가 함께 쓴다.
@@ -2055,13 +2061,15 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   쓰는 환경변수 이름 다섯(`CD_ENVIRONMENT` — 사내 패키지 저장소 주소 `CAPA_COMPANY_INDEX_URL` 을 더해. 사내 PC 도 넣는 이름이라
   CD 서버인지 가르는 `CD_ONLY_ENVIRONMENT` 에는 없다. 앱이 읽지 않는 옛 갱신 토큰 이름
   `CAPA_BDQ_REFRESH_TOKEN`(`RETIRED_BDQ_REFRESH_TOKEN_ENV`)은 표에 남아 있어도 앱 · 하위 프로세스에 넘기지 않고 가리도록
-  `APP_WITHHELD_ENVIRONMENT` 에만 둔다. BigDataQuery 자동 로그인 키 `CAPA_BDQ_SECRET_KEY`(`BDQ_SECRET_KEY_ENV` — Fernet 키)는
-  `CD_ONLY_ENVIRONMENT` 에만 있다 — 앱이 쓰므로 `APP_WITHHELD_ENVIRONMENT`(앱 환경에 있으면 「시작 스크립트가 안 돎」 표지)에 넣지 않고,
-  넣지 않은 서버가 늘 빈 값으로 적지 않게 `CD_ENVIRONMENT` 에도 넣지 않는다)·결과 파일(`settings.CONTAINER_START_REPORT_PATH` =
+  `APP_WITHHELD_ENVIRONMENT` 에만 둔다. BigDataQuery 자동 로그인 키 `CAPA_BDQ_SECRET_KEY`(`BDQ_SECRET_KEY_ENV` — Fernet 키)는 세
+  묶음 어디에도 없다 — 앱이 쓰므로 `APP_WITHHELD_ENVIRONMENT`(앱 환경에 있으면 「시작 스크립트가 안 돎」 표지)에 넣지 않고, 운영 앱은
+  기동 때 빼므로 CD 서버를 가르는 `CD_ONLY_ENVIRONMENT` 에도(키를 넣고 `app.py` 로 띄운 자리에 「결과 없음」 안내가 붙지 않게), 넣지
+  않은 서버가 늘 빈 값으로 적지 않게 `CD_ENVIRONMENT` 에도 넣지 않는다)·결과 파일(`settings.CONTAINER_START_REPORT_PATH` =
   `data/temp/container_start.json`) 꼴·화면 안내 문장(`step_hint`)이다. 결과 파일의 자동 로그인 칸 `bdq_login`(`LoginStart` ·
-  `parse_login` — 갈래 `LOGIN_*` · 까닭 코드 · 키 꼴 검사 · 남은 분 · 예외 종류 · S3 읽기 분류 · 멈춤 표시 못 씀, 꼴이 어긋난 칸은 비운다,
-  계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은 시간) · 멈춤(까닭) · 닿지 못함(예비 토큰),
-  `managed` 가 아닌 서버는 줄 없음 — 판정 `report_verdict` 에 든다)도 여기다. 줄 이름 `BDQ_LOGIN_LABEL`(「BDQ 자동 로그인」)은 Admin Area
+  `parse_login` — 갈래 `LOGIN_*`(`unconfirmed` 포함) · 까닭 코드 · 키 꼴 검사 · 남은 분 · 예외 종류 · S3 읽기 분류 · 객체에 결과를 못 씀 ·
+  판정한 객체의 넣은 시각, 꼴이 어긋난 칸은 비운다, 계정 · 비밀번호 · 키 없음)과 그 표 줄 낱말(`login_step` — 꺼짐 · 계정 없음 · 정상(남은
+  시간) · 멈춤(까닭) · 닿지 못함 · 못 함(예비 토큰) · 확인 못 함 · 결과 저장 못 함, `managed` 가 아닌 서버는 줄 없음 — 판정 `report_verdict`
+  에 들되 키가 없어 꺼진 줄은 기능 상태라 세지 않는다 `LoginStart.counted`)도 여기다. 줄 이름 `BDQ_LOGIN_LABEL`(「BDQ 자동 로그인」)은 Admin Area
   의 계정 넣는 자리 이름이기도 하다 — 알림 글이 그 이름으로 가리킨다. 표준 라이브러리와 `settings` 만 읽는다 — 시작 스크립트가 앱 의존성보다 먼저 쓴다.
   - CD 는 시작 명령을 못 바꾸고 셸도 없어 이미지 `CMD` 가 그 스크립트다. 스크립트는 `bigdataquery` 를 하위 프로세스로
     불러 보고, 없으면 `requirements-company.txt` 의 판·인덱스로 pip 를 두 번 부른다(인덱스 줄은 사내 주소 대신
@@ -2095,11 +2103,14 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
 - `src/capa_simulation/io/bdq_login_store.py` — BigDataQuery 자동 로그인 계정의 저장 객체 한 곳(버킷 `secrets/bdq_login.json` —
   세대 · 스냅샷 · `access/` · `modules/` 밖, 2026-11-16 사용자 결정 D1 · D2). 계정 · 비밀번호 JSON 을 CD 환경변수 `CAPA_BDQ_SECRET_KEY`
   (cryptography Fernet)로 감싼 `cipher` 와 메타(`entered_by` 넣은 관리자 앱 ID 앞 두 글자 · `entered_at` · `state` `ok`/`stopped` ·
-  `stop_reason` · `stopped_at`)다. `managed` 이고 키 꼴이 맞을 때만 선다(`availability` — 키가 없으면 S3 에 묻지 않는다). 키 없음 · 틀림 ·
-  객체 없음 · 깨짐 · 판 다름 · 풀리지 않음은 모두 「저장된 계정 없음」 이고 죽지도 멈추지도 않는다. 멈춤 표시는 `cipher` 를 손대지 않고
-  메타만 고쳐 쓴다(`mark_stopped` — 그 사이 다른 계정으로 바뀌었으면 쓰지 않음). 작은 객체 읽기 · 쓰기 · 지우기는 `io/s3_small` 이다.
-  앱 프로세스는 한 번 읽은 결과를 잠금 아래 기억하고(`load_state` · `current` — 저장 · 지우기 · 멈춤 표시가 바꾼다, S3 를 못 읽었으면
-  60초 뒤 다시) 계정 원천 `effective_account` · S3 에 묻지 않는 보기 `peek_state` · `peek_account` 를 낸다. 앱은 기동 때 키를 쥐고
+  `stop_reason` · `stopped_at` · `misses` — 성공 없이 이어진 닿지 못함 · 확인 못 함의 수, 없으면 0)다. `managed` 이고 키 꼴이 맞을 때만
+  선다(`availability` — 키가 없으면 S3 에 묻지 않는다). 키 없음 · 틀림 · 객체 없음 · 깨짐 · 판 다름 · 풀리지 않음은 모두 「저장된 계정
+  없음」 이고 죽지도 멈추지도 않는다. 멈춤 표시(`mark_stopped`) · 자동 시도 앞의 시도 표시(`mark_attempting` — 멈춤 `attempting`, 기억은
+  바꾸지 않음) · 시도 결과(`record_outcome` — 상태 · `misses`)는 `cipher` 를 손대지 않고 메타만 고쳐 쓴다(그 사이 다른 계정으로
+  바뀌었으면 쓰지 않음). 작은 객체 읽기 · 쓰기 · 지우기는 `io/s3_small` 이다. 앱 프로세스는 한 번 읽은 결과를 기억하고(`load_state` ·
+  `current` — 저장 · 지우기 · 멈춤 · 결과 쓰기가 바꾼다, S3 를 못 읽었으면 60초 뒤 다시) 계정 원천 `effective_account` · S3 에 묻지
+  않는 보기 `peek_state` · `peek_account` 를 낸다. 기억 잠금은 S3 를 기다리며 쥐지 않는다 — S3 읽기는 따로 한 번에 하나(그동안 다른
+  부름은 옛 기억 · 처음 읽기만 기다림)이고 읽는 동안 기억이 바뀌었으면(세대 수) 읽은 결과를 버린다. 앱은 기동 때 키를 쥐고
   환경에서 뺀다(`take_secret_key` — 앱의 aws 하위 프로세스가 물려받지 않게). 풀린 값(`LoginSecret`) · `cipher` 는 repr 에 없고 풀기 ·
   읽기 실패는 까닭 코드만 돌려준다. 무거운 의존성(cryptography · 설정)은 함수 안에서 불러온다. 시험 `tests/test_bdq_login_store.py`.
   저장 경계 — 동기화 도구(`init` · `push` · `fetch-copy` · `generations` · `rollback` · `boot-pull` · `prune`)와 일꾼의 세대 올리기 ·
@@ -2107,22 +2118,31 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   자리가 없다, `tests/test_bucket_secret_boundary.py` 가 가짜 S3 의 받은 요청으로 본다). 지우는 길은 Admin 「지우기」 하나다.
 - `src/capa_simulation/io/bdq_login.py` — BigDataQuery 자동 로그인 실행기. 로그인 한 번(`attempt_login`)은 `sys.executable` 하위
   프로세스(`io/bdq_login_child.py` — 표준 라이브러리만, `runpy`)이고 계정 · 비밀번호는 표준 입력으로만, 하위 환경은 비밀 이름 · `CAPA_S3_*` ·
-  `AWS_*` 를 뺀 것, 출력은 버리고 표지 한 줄만 읽는다(시간 제한 60초, 새 세션으로 띄움). 판정은 로그인 전후 토큰 파일 다이제스트가
-  바뀌었으면 성공(남은 분이 7시간 이하 · 모름은 성공 + 경고), 그 밖은 표지로 `rejected`(애매해도 — 계정 잠김 방지) · `unreached`(연결 ·
-  시간 초과의 양의 증거) · `unavailable`(패키지 없음 · 시도 전 거절). 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤
-  표시를 쓴다(D3). 자동 시도 연속 3번 · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 `bigdataquery.exceptions` 의 토큰 예외
-  종류(`RELOGIN_EXCEPTIONS` 한 줄)에서만이다(`run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를 감싼다). 폼 제출(`login_from_form` — 실패면
+  `AWS_*` 를 뺀 것, 출력은 버리고 표지 한 줄만 읽는다(시간 제한 60초, 새 세션으로 띄움 — 앞뒤 다이제스트는 이 프로세스의 「토큰 넣기」
+  쓰기를 막은 채 잰다). 판정은 로그인 전후 토큰 파일 다이제스트가 바뀌었고 같은 하위 프로세스가 잰 남은 분이 7시간을 넘으면 성공(2026-11-16
+  사용자 답), 바뀌었는데 남은 시간을 모르거나 7시간 이하면 `unconfirmed`(성공도 거절도 아님 — 폼은 저장하지 않고 자동 길은 멈추지 않되
+  쉬는 시간 · 연속 수에 든다), 그 밖은 표지로 `rejected`(애매해도 — 계정 잠김 방지) · `unreached`(요청을 보내기 전 연결 단계의 양의 증거 —
+  OS 연결 errno · 이름 풀기 · `urllib3` 연결 단계 종류 · 그것을 든 응답 없는 `requests` 연결 실패, 또는 하위 프로세스 시간 초과. 종류 이름만
+  연결인 401 · 읽기 시간 초과 · 끊김은 거절) · `unavailable`(패키지 없음 · 시도 전 거절). 자동 시도(시작 · 조회 중)는 로그인 **앞에** 객체를
+  멈춤(`attempting`)으로 써 두고(쓰지 못하면 로그인하지 않음) 결과로 고쳐 쓴다 — 결과를 적지 못하거나 도중에 끊기면 다음 시작이 로그인하지
+  않는다. 거절은 다시 시도하지 않고 프로세스 안에 멈추고 객체에 멈춤을 쓴다(D3). `unreached` · `unconfirmed` 는 멈추지 않되(D6 — 관리자
+  알림 `AD-24`) 객체의 `misses` 를 올려 재시작을 건너 세고 성공 없이 `MISS_LIMIT`(3)번이면 멈춘다(까닭 `miss_limit`). 자동 시도 연속 3번
+  (하위 프로세스를 띄운 수) · `unreached` 뒤 5분 쉼 · 프로세스 잠금 하나, 다시 로그인은 `bigdataquery.exceptions` 의 토큰 예외
+  종류(`RELOGIN_EXCEPTIONS` 한 줄 — 지금은 토큰 파일 없음 하나)에서만이다(`run_with_relogin` — 어댑터 `_get_data_once` 가 `getData` 를
+  감싼다). 다시 로그인 뒤 재조회도 토큰 오류일 때의 멈춤은 그 잠금 아래에서 지금 기억한 한 벌이 그 로그인의 한 벌일 때만 쓴다. 폼 제출(`login_from_form` — 실패면
   저장하지 않음, D5) · 지우기(`forget_login`) · 시작(`start_login` — 시작 스크립트)이 같은 잠금이다. 앱 기동 한 번(`start_in_app` —
   `capa_server.py`)은 키를 쥐고 빼고 저장 객체를 읽어 두며, 이번 시작이 거절을 보고도 멈춤 표시를 쓰지 못했거나 로그인 단계가 예상하지
-  못하게 멈췄으면 그 한 벌을 프로세스에서 멈춘다(시작 스크립트의 프로세스 안 멈춤은 앱으로 바뀌며 사라진다 — 거절은 표시를 다시 써
-  본다). 화면 회차의 상태는 S3 에 묻지 않는 `current_view`(`off` · `none` · `ok` · `stopped` — 기억이 없으면 이번 시작 기록, 거절 ·
+  못하게 멈췄으면 그 한 벌(결과 칸의 넣은 시각 `entered_at` 이 같은 것)을 프로세스에서 멈춘다(시작 스크립트의 프로세스 안 멈춤은 앱으로
+  바뀌며 사라진다 — 거절은 표시를 다시 써 본다). 시작이 멈추지 않은 채 서지 못했으면 그 갈래를 이어받는다(`AD-24`). 화면 회차의 상태는
+  S3 에 묻지 않는 `current_view`(`off` · `none` · `ok` · `stopped` 와 서지 못한 갈래 `trouble` — 기억이 없으면 이번 시작 기록, 거절 ·
   멈춤 · `error` 는 멈춤)다. Streamlit 을 부르지 않는다 — 공식버전 자동 갱신 스레드도 어댑터를 지난다. 결과 · 로그에 계정 · 비밀번호 ·
   예외 문구 · 하위 출력이 없다. 시험 `tests/test_bdq_login.py`(가짜 패키지 `tests/fixtures/bdq_fake/` 를 진짜 하위 프로세스로 띄워
   `login()` 이 불린 수를 센다) · `tests/test_container_start_login.py`(앱 기동).
 - `src/capa_simulation/io/bdq_login_child.py` — 자동 로그인 하위 프로세스 본문(표준 라이브러리만). 표준 입력 첫 줄이 계정이고 나머지는
   패키지 `login()` 이 읽는다(계정 `input()` · 비밀번호 `getpass` 폴백). 로그인 뒤 `getTokenTime` 의 나뉜 남은 시간(`remaining_days` 두
   철자 · `remaining_hours` · `remaining_minutes`)을 분으로 합쳐 표지 한 줄(`capa-bdq-login stage=… error=<모듈.이름> net=… minutes=…`)만
-  찍는다 — 예외 문구 · 패키지 출력은 싣지 않는다.
+  찍는다 — 예외 문구 · 패키지 출력은 싣지 않는다. `net`(닿지 못함의 증거 — `is_unreached`)은 요청을 보내기 전 연결 단계의 실패만이고
+  종류 이름으로 가르지 않는다(errno 없는 `ConnectionError` · 글만 든 `requests` 연결 실패 · 응답을 든 것 · 읽기 시간 초과는 아님).
 - `src/capa_simulation/io/object_storage.py` — 사내 S3 호환 스토리지의 큰 파일(DuckDB 스냅샷)을 `aws` CLI 로 주고받는 경계이자 앱의 유일한
   `subprocess` 자리다(명령 실행기 주입, 모든 명령에 `--profile`). 프로필 줄 한 벌(`profile_settings`)과 실패 갈래(`classify_failure` — 서버 글을 화면에 싣지 않는다)도 여기다.
   - `aws` 가 찍는 시각은 두 꼴이다 — 목록(XML)은 ISO, HEAD · GET 은 `Last-Modified` 머리 글 그대로(RFC 1123 — `aws` 1 판, 운영 이미지 판).
