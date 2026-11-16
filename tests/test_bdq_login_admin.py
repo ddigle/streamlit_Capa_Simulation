@@ -25,6 +25,7 @@ from bdq_login_support import (
     PASSWORD,
     WRONG_PASSWORD,
     FakeBdq,
+    requests_on,
     running_mock,
     switch_on,
     target_of,
@@ -382,6 +383,30 @@ def test_deleting_needs_the_confirm_check_and_then_removes_the_login(
     assert _status(app) == f"{bdq_login_admin.STATUS_LABEL} · {bdq_login_admin.NONE_WORD}"
     assert not app.checkbox
     assert fake.logins() == 0
+
+
+def test_the_delete_callback_refuses_without_the_confirm_check(
+    server: tuple[MockStore, S3Target, str], fake: FakeBdq
+) -> None:
+    """잠긴 단추를 믿지 않는다 — 콜백이 확인 체크를 다시 보고, 꺼져 있으면 S3 에 지우기를 보내지
+    않는다."""
+    mock, target, key = server
+    _save(target, key)
+    script = """
+from capa_simulation.components import bdq_login_admin
+from capa_simulation.components.flash import render_flash
+
+bdq_login_admin._delete()
+render_flash(bdq_login_admin.FLASH_KEY)
+"""
+    app = AppTest.from_string(script).run()
+
+    assert not app.exception
+    assert [item.value for item in flashed(app, "warning")] == [
+        bdq_login_admin.CONFIRM_FIRST_MESSAGE
+    ]
+    assert _object(mock) is not None
+    assert requests_on(mock, login_store.OBJECT_KEY).count("DELETE") == 0
 
 
 # --- 감사 · 「그 화면으로」 ----------------------------------------------------------------------

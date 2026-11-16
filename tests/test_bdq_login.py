@@ -737,6 +737,79 @@ def test_a_second_token_error_after_our_own_login_stops(
     assert fake.logins() == 1
 
 
+def test_a_retry_after_someone_else_renewed_that_still_fails_does_not_stop(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """누가 이미 다시 로그인해(토큰이 바뀜) 로그인 없이 다시 한 조회가 또 토큰 오류 — 이 프로세스는
+    로그인하지 않았으니 멈추지 않는다(멈춤은 스스로 로그인한 뒤의 둘째 토큰 오류에만 — D4)."""
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    stored_login(target, key)
+    fake.write_live_token()
+    error = token_error()
+    calls: list[int] = []
+
+    def query() -> str:
+        calls.append(1)
+        if len(calls) == 1:
+            fake.token_path().write_bytes(b"renewed-by-someone-else_1")
+        raise error("still")
+
+    with pytest.raises(error):
+        bdq_login.run_with_relogin(query)
+    assert len(calls) == 2 and fake.logins() == 0
+    assert object_state(mock) == "ok"
+    assert bdq_login.status().state == "ok"
+
+
+def test_a_restart_with_a_stored_stop_never_logs_in_until_the_form(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, tmp_path: Path
+) -> None:
+    """멈춤이 저장된 채 재시작 — 시작 스크립트도, 앱으로 바뀐 프로세스의 조회 토큰 예외도 로그인하지
+    않는다(멈춤을 넘겨받을 시작 거절이 없어도 객체의 멈춤 하나로). 폼으로 다시 넣어 성공하면
+    풀린다."""
+    import json
+
+    import capa_simulation.settings as settings
+
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", tmp_path / "start.json")
+    with running_mock() as (mock, endpoint):
+        target = target_of(mock, endpoint)
+        key = switch_on(monkeypatch)
+        stored = stored_login(target, key)
+        assert store.mark_stopped(target, "token_after_login", cipher=stored.cipher).ok
+        bdq_login.forget_state()
+        started = bdq_login.start_login(start_environment(mock, endpoint, key))
+        assert started.status == "stopped" and fake.logins() == 0
+        (tmp_path / "start.json").write_text(
+            json.dumps({"bdq_login": {"status": "stopped", "reason": "token_after_login"}}),
+            encoding="utf-8",
+        )
+        bdq_login.forget_state()
+        monkeypatch.setattr(store, "app_target", lambda: target)
+        switch_on(monkeypatch, key)
+        bdq_login.start_in_app(os.environ)
+        assert bdq_login.current_view().state == "stopped"
+        error = token_error()
+
+        def query() -> str:
+            if not fake.token_path().is_file():
+                raise error("no token")
+            return "rows"
+
+        for _ in range(3):
+            with pytest.raises(error):
+                bdq_login.run_with_relogin(query)
+        assert fake.logins() == 0
+        assert object_state(mock) == "stopped"
+        form = bdq_login.login_from_form(ACCOUNT, PASSWORD, ADMIN_ID)
+        assert form.saved and fake.logins() == 1
+        fake.token_path().unlink()
+        assert bdq_login.run_with_relogin(query) == "rows"
+        assert fake.logins() == 2
+
+
 def test_a_text_only_token_failure_does_not_log_in(
     monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
 ) -> None:

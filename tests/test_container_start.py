@@ -524,6 +524,8 @@ def test_the_login_token_is_written_where_the_package_reads_it(
     assert token_file["modified_at"]
     assert report["user_name"] == {"present": True, "masked": "fa***"}
     _assert_no_secret(json.dumps(report, ensure_ascii=False))
+    # 자격 폴더는 토큰 파일 하나다 — 시작이 곁에 다른 파일(표지 · 잠금)을 두지 않는다.
+    assert [path.name for path in target.parent.iterdir()] == [target.name]
 
 
 def test_a_base64_token_is_decoded_so_line_breaks_survive_the_value_column(place: Path) -> None:
@@ -539,6 +541,7 @@ def test_a_base64_token_is_decoded_so_line_breaks_survive_the_value_column(place
     target = place / "config" / ".credential" / f"bigdataquery.token.{FAKE_BDQ_USER}"
     assert target.read_bytes() == content
     assert _steps(report)[report_contract.STEP_TOKEN]["status"] == report_contract.STATUS_OK
+    assert [path.name for path in target.parent.iterdir()] == [target.name]
 
 
 def test_a_broken_base64_token_is_failed_without_writing(place: Path) -> None:
