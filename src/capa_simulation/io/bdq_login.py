@@ -242,6 +242,8 @@ class LoginStatus:
     streak: int
     paused: bool
     stopped_in_process: bool
+    # 이번 시작이 남긴 멈춤의 까닭(`start_in_app` — 시작의 거절 · 예상하지 못한 멈춤). 없으면 빈 글.
+    held_reason: str = ""
 
     @property
     def state(self) -> Literal["none", "ok", "stopped"]:
@@ -260,6 +262,8 @@ class LoginStatus:
         stored = self.load.stored
         if stored is not None and stored.stop_reason:
             return stored.stop_reason
+        if self.stopped_in_process and self.held_reason:
+            return self.held_reason
         if self.stopped_in_process and self.last is not None:
             return self.last.result.reason
         return ""
@@ -285,6 +289,11 @@ class _Process:
     paused_until: float = 0.0
     stopped_cipher: str = field(default="", repr=False)
     last: LastAttempt | None = None
+    # 이번 시작이 남긴 멈춤(`start_in_app`) — 까닭 코드와, 객체에 멈춤 표시를 아직 써 보지
+    # 않았는지. 어느 한 벌인지 모른 채(기동 읽기가 실패했어도) 선다 — 그 사이 객체를 바꿀 길은 이
+    # 앱의 폼 하나이고 폼이 성공하면 걷힌다.
+    held_reason: str = ""
+    held_write: bool = False
 
 
 _STATE = _Process()
@@ -303,6 +312,8 @@ def forget_state() -> None:
         _STATE.paused_until = 0.0
         _STATE.stopped_cipher = ""
         _STATE.last = None
+        _STATE.held_reason = ""
+        _STATE.held_write = False
     store.forget_state()
 
 
@@ -311,6 +322,8 @@ def _reset_after_success() -> None:
         _STATE.streak = 0
         _STATE.paused_until = 0.0
         _STATE.stopped_cipher = ""
+        _STATE.held_reason = ""
+        _STATE.held_write = False
 
 
 def _note_last(result: LoginResult, *, auto: bool) -> None:
@@ -321,13 +334,16 @@ def _note_last(result: LoginResult, *, auto: bool) -> None:
 def _status_of(loaded: LoadResult) -> LoginStatus:
     with _STATE_LOCK:
         stored = loaded.stored
-        stopped_here = stored is not None and _STATE.stopped_cipher == stored.cipher
+        stopped_here = stored is not None and (
+            _STATE.stopped_cipher == stored.cipher or bool(_STATE.held_reason)
+        )
         return LoginStatus(
             load=loaded,
             last=_STATE.last,
             streak=_STATE.streak,
             paused=_monotonic() < _STATE.paused_until,
             stopped_in_process=stopped_here,
+            held_reason=_STATE.held_reason,
         )
 
 
@@ -388,6 +404,10 @@ def current_view(start: LoginStart | None = None) -> LoginView:
                 at = live.last.at
             return LoginView("stopped", live.stop_reason, at, live=True)
         return LoginView(live.state, live=True)
+    with _STATE_LOCK:
+        held = _STATE.held_reason
+    if held:
+        return LoginView("stopped", held)
     if start is None:
         return LoginView("none")
     if start.status in (LOGIN_STOPPED, LOGIN_REJECTED, LOGIN_ERROR):
@@ -595,10 +615,19 @@ def _auto_attempt_locked(
     environ: Mapping[str, str] | None,
     path: str,
 ) -> Attempt:
-    """자동 시도 한 번 — `_LOGIN_LOCK` 을 쥔 채 부른다."""
+    """자동 시도 한 번 — `_LOGIN_LOCK` 을 쥔 채 부른다. 이번 시작이 남긴 멈춤(`held_reason`)이
+    있으면 로그인하지 않고, 거절의 멈춤 표시를 아직 써 보지 않았으면 한 번 써 본다."""
     with _STATE_LOCK:
-        if stored.stopped or _STATE.stopped_cipher == stored.cipher:
-            return Attempt(None, SKIP_STOPPED)
+        held = _STATE.held_reason
+        write_held = bool(held) and _STATE.held_write and not stored.stopped
+        if write_held:
+            _STATE.held_write = False
+        stopped = stored.stopped or _STATE.stopped_cipher == stored.cipher or bool(held)
+    if stopped:
+        if write_held:
+            return Attempt(None, SKIP_STOPPED, stop_write=_persist_stop(stored, held, target))
+        return Attempt(None, SKIP_STOPPED)
+    with _STATE_LOCK:
         if _STATE.streak >= AUTO_ATTEMPT_LIMIT:
             return Attempt(None, SKIP_ATTEMPT_LIMIT)
         if _monotonic() < _STATE.paused_until:
@@ -800,36 +829,47 @@ def start_in_app(environ: MutableMapping[str, str]) -> None:
 
     1. 키를 쥐고 프로세스 환경에서 뺀다(`store.take_secret_key`) — 앱이 띄우는 하위 프로세스(aws
        등)가 물려받지 않게.
-    2. 저장 객체를 한 번 읽어 기억한다 — 화면 회차의 첫 읽기가 S3 GET 을 잠금 아래 기다리지 않게.
-       기능이 서지 않으면 S3 에 묻지 않는다.
-    3. 이번 시작 스크립트의 로그인 단계가 거절을 보고도 멈춤 표시를 쓰지 못했거나(객체는 아직 `ok`)
-       예상하지 못하게 멈췄으면, 이 프로세스에서 그 한 벌을 멈춘다 — 시작 스크립트의 프로세스 안
-       멈춤은 앱으로 바뀌며 사라지므로 첫 토큰 예외가 같은 계정으로 또 로그인하지 않게(계정 잠김
-       방지). 거절은 멈춤 표시를 한 번 더 써 본다.
+    2. 이번 시작 스크립트의 로그인 단계가 거절했거나(멈춤 표시를 썼든 못 썼든) 예상하지 못하게
+       멈췄으면 그 멈춤을 이 프로세스에 든다(`held_reason`) — 시작 스크립트의 프로세스 안 멈춤은
+       앱으로 바뀌며 사라지므로, 첫 토큰 예외가 같은 계정으로 또 로그인하지 않게(계정 잠김 방지).
+       아래 읽기가 실패해도 선다. 폼이 성공하거나 지우면 걷힌다.
+    3. 저장 객체를 한 번 읽어 기억한다 — 화면 회차의 첫 읽기가 S3 GET 을 잠금 아래 기다리지 않게.
+       기능이 서지 않으면 S3 에 묻지 않는다. 시작의 거절이고 객체가 아직 `ok` 면 멈춤 표시를 한 번
+       더 써 본다(못 읽었으면 다음 자동 시도 자리에서 써 본다).
     """
     try:
         store.take_secret_key(environ)
-        loaded = store.load_state()
-    except Exception as error:  # 기동 읽기가 깨져도 앱은 뜬다 — 조회가 다시 읽는다
-        _LOGGER.warning("BigDataQuery 자동 로그인 기동 읽기 실패: %s", type(error).__name__)
-        return
-    stored = loaded.stored
-    if stored is None or stored.stopped:
-        return
+    except Exception as error:  # 키를 못 쥐어도 앱은 뜬다 — 기능이 꺼짐으로 머문다
+        _LOGGER.warning("BigDataQuery 자동 로그인 키 쥐기 실패: %s", type(error).__name__)
     try:
         report = read_container_start_report()
     except Exception:  # 결과 파일을 못 읽으면 넘겨받을 멈춤도 없다
         report = None
     start = None if report is None else report.bdq_login
-    if start is None or start.status not in (LOGIN_REJECTED, LOGIN_ERROR):
-        return
-    if start.status == LOGIN_ERROR:
+    if start is not None and start.status in (LOGIN_REJECTED, LOGIN_ERROR):
+        rejected = start.status == LOGIN_REJECTED
+        reason = start.reason if start.reason and ":" not in start.reason else ""
         with _STATE_LOCK:
-            _STATE.stopped_cipher = stored.cipher
-        _LOGGER.warning("BigDataQuery 자동 로그인: 시작 단계가 멈춰 이 프로세스에서 멈춤")
+            _STATE.held_reason = reason or (
+                REASON_TOKEN_UNCHANGED if rejected else REASON_UNEXPECTED
+            )
+            _STATE.held_write = rejected
+        _LOGGER.warning("BigDataQuery 자동 로그인: 시작의 멈춤을 넘겨받음(%s)", start.status)
+    try:
+        loaded = store.load_state()
+    except Exception as error:  # 기동 읽기가 깨져도 앱은 뜬다 — 조회가 다시 읽는다
+        _LOGGER.warning("BigDataQuery 자동 로그인 기동 읽기 실패: %s", type(error).__name__)
+        return
+    stored = loaded.stored
+    with _STATE_LOCK:
+        write_held = _STATE.held_write and stored is not None and not stored.stopped
+        held = _STATE.held_reason
+        if write_held:
+            _STATE.held_write = False
+    if not write_held or stored is None:
         return
     try:
-        failure = _persist_stop(stored, start.reason or REASON_TOKEN_UNCHANGED, None)
+        failure = _persist_stop(stored, held, None)
     except Exception as error:  # 멈춤 표시를 못 써도 프로세스 안 멈춤은 섰다
         failure = type(error).__name__
-    _LOGGER.warning("BigDataQuery 자동 로그인: 시작 거절을 넘겨받아 멈춤(표시 %s)", failure or "씀")
+    _LOGGER.warning("BigDataQuery 자동 로그인: 시작 거절의 멈춤 표시 %s", failure or "씀")

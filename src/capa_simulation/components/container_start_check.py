@@ -547,7 +547,7 @@ def _login_stop_text(view: bdq_login.LoginView) -> str:
     """전문(평문) — 왜 멈췄고 무엇을 하면 풀리나. 계정 · 비밀번호가 없다."""
     reason = login_reason_text(view.stop_reason) if view.stop_reason else "까닭 모름"
     return (
-        f"저장된 BigDataQuery 계정의 로그인이 거절돼 자동 로그인을 멈췄습니다({reason}). 계정이 "
+        f"저장된 BigDataQuery 계정의 자동 로그인을 멈췄습니다({reason}). 계정이 "
         f"잠기지 않게 다시 시도하지 않습니다. Admin Area 「{BDQ_LOGIN_LABEL}」 에서 계정을 다시 "
         "넣어 로그인이 성공하면 풀립니다. 그때까지 조회는 예비 토큰(CD 환경변수 "
         f"{BDQ_TOKEN_ENV} · 「토큰 넣기」)으로 합니다."

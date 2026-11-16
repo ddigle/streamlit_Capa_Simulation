@@ -670,3 +670,44 @@ def test_the_app_start_without_a_key_asks_nothing(
         bdq_login.start_in_app(os.environ)
         assert mock.requests == []
     assert bdq_login.current_view().state == "off"
+
+
+def test_a_start_stop_holds_even_when_the_boot_read_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시작이 거절을 보고도 멈춤 표시를 쓰지 못했는데 앱의 기동 읽기마저 실패해도, 뒤에 다시 읽은
+    객체(`ok`)로 첫 토큰 예외가 로그인하지 않는다 — 멈춤은 읽기와 따로 들고 있다가 그 자리에서
+    표시를 써 본다. 관리자가 폼으로 다시 넣어 성공하면 풀린다."""
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", tmp_path / "start.json")
+    cell = {"status": "rejected", "reason": "token_unchanged", "stop_write": "write_failed:x"}
+    _start_report(tmp_path / "start.json", cell)
+    key = new_key()
+    spawned: list[object] = []
+    with running_mock() as (mock, endpoint):
+        target = target_of(mock, endpoint)
+        store.save_login(target, key.encode(), LoginSecret(ACCOUNT, PASSWORD), ADMIN_ID)
+        store.forget_state()
+        monkeypatch.setattr(store, "app_target", lambda: target)
+        monkeypatch.setattr(store, "UNREAD_RETRY_SECONDS", 0.0)
+        monkeypatch.setenv(MODE_ENV, "managed")
+        monkeypatch.setenv(KEY_ENV, key)
+        mock.force_on("GET", store.OBJECT_KEY, times=1)
+        monkeypatch.setattr(bdq_login, "attempt_login", lambda *a, **k: spawned.append(a))
+
+        bdq_login.start_in_app(os.environ)
+
+        seen = store.peek_state()
+        assert seen is not None and seen.reason == store.REASON_UNREAD
+        assert bdq_login.current_view().state == "stopped"
+        recovery = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
+        assert not recovery.retry and spawned == []
+        assert json.loads(mock.objects[store.OBJECT_KEY])["state"] == "stopped"
+        assert bdq_login.status().state == "stopped"
+        assert bdq_login.current_view().stop_reason == "token_unchanged"
+
+        monkeypatch.setattr(bdq_login, "attempt_login", lambda *a, **k: bdq_login.LoginResult("ok"))
+        form = bdq_login.login_from_form(
+            ACCOUNT, PASSWORD, ADMIN_ID, target=target, key=key.encode()
+        )
+        assert form.saved
+        assert bdq_login.status().state == "ok" and bdq_login.current_view().state == "ok"
