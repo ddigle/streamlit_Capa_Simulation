@@ -11,6 +11,13 @@
 꼴로 쓴다. `getTokenTime` 은 파일에 든 토큰의 남은 시간을 나뉜 값(`remaining_days` ·
 `remaining_hours` · `remaining_minutes`)으로 준다.
 
+만료 · 무효 토큰은 같은 날 사내 실측(18:2x)을 따른다 — `getTokenTime` 은 만료 토큰에 예외
+없이 「The token already has expired at … please login again.」 을 찍고 0/0/0 을 준다.
+`getData` 는 조회 전 토큰 확인에서 만료 · 무효(다른 로그인으로 밀려남 — `FAKE_BDQ_REVOKED` ·
+발급 꼴이 아님) 토큰에 같은 두 줄을 낸다 — 안쪽 `Exception`(「You have invalid token. … HTTP
+Response Code : 400」)을 잡은 `except` 안에서 바깥 `ConnectionError`(「There is a problem with
+authentication. …」)라 안쪽은 `__context__` 다. 둘 다 `bigdataquery.exceptions` 종류가 아니다.
+
 시험 전용 환경변수(`FAKE_BDQ_*`):
 
 - `FAKE_BDQ_CREDENTIAL_DIR` — 토큰 폴더(앱의 `bdq_token.CREDENTIAL_DIR` 와 같은 곳으로).
@@ -18,6 +25,7 @@
   하위 환경에 비밀번호가 없다는 시험이 그대로 선다.
 - `FAKE_BDQ_LOG` — 부른 기록(`import` · `login`)을 한 줄씩 덧붙이는 파일.
 - `FAKE_BDQ_SLOW_SECONDS` — `slow` · `time_slow` 장면에서 잠드는 초(기본 30).
+- `FAKE_BDQ_REVOKED` — 쉼표로 이은 무효 토큰(다른 로그인이 밀어낸 것 — 서버가 받지 않는다).
 - `FAKE_BDQ_SCENE` — 쉼표로 이은 장면:
   `wrong_raises`(틀린 비밀번호에 예외 — 기본은 문구만 찍고 끝남) · `exit_on_wrong`(틀린 비밀번호에
   `sys.exit`) · `connection`(진짜 연결 거절 — 닫힌 루프백 포트에 `requests` 로 묻는다, 없으면 소켓)
@@ -57,6 +65,14 @@ TOKEN_LIFETIME = timedelta(hours=8)
 _KST = timezone(timedelta(hours=9))
 # 서버가 발급한 토큰 꼴 — 그 밖은 서버가 받지 않는다(`getTokenTime` 예외).
 _ISSUED = re.compile(r"[0-9a-f]{24}_([0-9]{10,16})")
+# 조회 전 토큰 확인이 만료 · 무효 토큰에 내는 두 줄(사내 실측 문구 그대로 — 계정은 싣지 않는다).
+INVALID_TOKEN_TEXT = (
+    "You have invalid token. Please login again using the login() function: "
+    "HTTP Response Code : 400"
+)
+AUTH_PROBLEM_TEXT = (
+    "There is a problem with authentication. Please contact the person in charge of bigdataquery"
+)
 
 
 def _scenes() -> frozenset[str]:
@@ -220,10 +236,9 @@ def getTokenTime(user_name: str) -> dict[str, object]:
     found = _ISSUED.fullmatch(path.read_text(encoding="utf-8").strip())
     if found is None:
         raise RuntimeError("Auth Connection failed: HTTP Response Code : 401")
-    issued_ms = int(found.group(1))
-    issued = datetime.fromtimestamp(issued_ms / 1000, tz=_KST)
+    expires = _expires_at(found)
     now = datetime.now(_KST)
-    left = max(issued + TOKEN_LIFETIME - now, timedelta(0))
+    left = max(expires - now, timedelta(0))
     if "time_short" in scenes:
         left = timedelta(minutes=25)
     if "time_typo" in scenes:
@@ -231,8 +246,12 @@ def getTokenTime(user_name: str) -> dict[str, object]:
     total = int(left.total_seconds() // 60)
     days, rest = divmod(total, 1440)
     hours, minutes = divmod(rest, 60)
-    expiration = (now + left).strftime("%Y-%m-%d %H:%M:%S")
-    print(f"토큰 만료 시각: {expiration}+09:00")
+    if total <= 0:
+        expiration = expires.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"The token already has expired at {expiration}+09:00, please login again.")
+    else:
+        expiration = (now + left).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"토큰 만료 시각: {expiration}+09:00")
     if "time_odd" in scenes:
         return {"expiration_date": expiration, "remaining": f"{hours}h {minutes}m"}
     days_key = "remining_days" if "time_typo" in scenes else "remaining_days"
@@ -244,14 +263,39 @@ def getTokenTime(user_name: str) -> dict[str, object]:
     }
 
 
+def _expires_at(found: re.Match[str]) -> datetime:
+    """발급 꼴 토큰의 만료 시각 — 끝 `_` 뒤 발급 ms 에 수명을 더한다."""
+    issued = datetime.fromtimestamp(int(found.group(1)) / 1000, tz=_KST)
+    return issued + TOKEN_LIFETIME
+
+
+def _revoked() -> frozenset[str]:
+    raw = os.environ.get("FAKE_BDQ_REVOKED", "")
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
+def _check_token(token: str) -> None:
+    """조회 전 토큰 확인 — 만료 · 무효(밀려남 · 발급 꼴 아님)면 사내 실측의 두 줄. 안쪽을 잡은
+    `except` 안에서 바깥을 내므로 안쪽은 `__context__` 다(`__cause__` 없음)."""
+    found = _ISSUED.fullmatch(token)
+    if found is not None and token not in _revoked() and datetime.now(_KST) < _expires_at(found):
+        return
+    try:
+        raise Exception(INVALID_TOKEN_TEXT)
+    except Exception:
+        raise ConnectionError(AUTH_PROBLEM_TEXT)  # noqa: B904 — 패키지 꼴 그대로(문맥만)
+
+
 def getData(
     *, param: str, convert_type: bool = True, verbose: bool = True, user_name: str = ""
 ) -> list[dict[str, str]]:
-    """조회마다 토큰 파일을 다시 읽는다. 없으면 `TokenNotFoundException`."""
+    """조회마다 토큰 파일을 다시 읽는다. 없으면 `TokenNotFoundException`, 만료 · 무효면 사내 실측의
+    두 줄(바깥 `ConnectionError` · 안쪽 `Exception`) — 조회문은 DB 로 가기 전이다."""
     del convert_type, verbose
     path = _token_path(user_name)
     if not path.is_file():
         raise TokenNotFoundException(
             f"There is no bigdataquery token issued for AD user {user_name}"
         )
+    _check_token(path.read_text(encoding="utf-8").strip())
     return [{"param": param}]

@@ -1,4 +1,4 @@
-# Purpose: BDQ 자동 로그인 시험 공용 — 가짜 패키지 자리 · 합성 값 · 가짜 S3 · 로그인 기록 세기.
+# Purpose: BDQ 자동 로그인 시험 공용 — 가짜 패키지 자리 · 합성 값 · 실측 꼴 실패 · 가짜 S3.
 
 """BDQ 자동 로그인 시험의 공용 부품.
 
@@ -38,6 +38,33 @@ OTHER_ACCOUNT = "demo_other"
 PASSWORD = "CANARY-pw-7Q2"
 WRONG_PASSWORD = "CANARY-wrong-3Z8"
 ADMIN_ID = "demo.admin"
+# 만료 · 무효 토큰의 `getData` 가 내는 두 줄(2026-11-16 사내 실측 — 둘이 같다). 안쪽이 다시 로그인
+# 문구를 든다. 가짜 패키지도 같은 글을 낸다.
+MEASURED_INNER = (
+    "You have invalid token. Please login again using the login() function: "
+    "HTTP Response Code : 400"
+)
+MEASURED_OUTER = (
+    "There is a problem with authentication. Please contact the person in charge of bigdataquery"
+)
+# 다시 로그인 문구가 결과 · 로그 · 저장 객체에 새지 않았는지 볼 조각.
+MEASURED_FRAGMENTS = ("invalid token", "login() function", "problem with authentication")
+
+
+def measured_token_failure(link: str = "context") -> ConnectionError:
+    """실측 꼴 사슬 하나(부를 때마다 새로) — 바깥 `ConnectionError` · 안쪽 `Exception`. `link` 는
+    안쪽을 다는 길이다 — `context`(안쪽을 잡은 `except` 안에서 바깥을 냄 — 가짜 패키지 꼴) ·
+    `cause`(`raise … from`)."""
+    inner = Exception(MEASURED_INNER)
+    try:
+        if link == "cause":
+            raise ConnectionError(MEASURED_OUTER) from inner
+        try:
+            raise inner
+        except Exception:
+            raise ConnectionError(MEASURED_OUTER)  # noqa: B904 — 실측 꼴(문맥만)
+    except ConnectionError as outer:
+        return outer
 
 
 def new_key() -> str:
@@ -108,7 +135,14 @@ class FakeBdq:
     def write_live_token(self, account: str = ACCOUNT) -> bytes:
         """지금 발급된 꼴의 살아 있는 토큰(옛 토큰 장면 — 가짜 패키지의 `getTokenTime` 이 받는
         꼴)."""
-        content = f"{secrets.token_hex(12)}_{int(time.time() * 1000)}".encode("ascii")
+        return self._write_issued(account, time.time())
+
+    def write_expired_token(self, account: str = ACCOUNT) -> bytes:
+        """9시간 전에 발급된 꼴의 만료 토큰(수명 8시간)."""
+        return self._write_issued(account, time.time() - 9 * 3600)
+
+    def _write_issued(self, account: str, issued: float) -> bytes:
+        content = f"{secrets.token_hex(12)}_{int(issued * 1000)}".encode("ascii")
         self.credential_dir.mkdir(parents=True, exist_ok=True)
         self.token_path(account).write_bytes(content)
         return content
@@ -125,6 +159,7 @@ def use_fake_bdq(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeBdq:
     monkeypatch.setenv("FAKE_BDQ_LOG", str(log))
     monkeypatch.delenv("FAKE_BDQ_SCENE", raising=False)
     monkeypatch.delenv("FAKE_BDQ_SLOW_SECONDS", raising=False)
+    monkeypatch.delenv("FAKE_BDQ_REVOKED", raising=False)
     monkeypatch.setattr(bdq_token, "CREDENTIAL_DIR", credential_dir)
     return FakeBdq(credential_dir, log)
 

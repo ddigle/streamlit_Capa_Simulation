@@ -48,8 +48,12 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 로그인하지 않고 바로 다시 조회한다. 공식버전 자동 갱신 스레드도 어댑터를 부르므로 Streamlit 을
 import 하지 않는다. 새 배경 스레드를 세우지 않는다.
 
-**다시 로그인의 문.** `bigdataquery.exceptions` 의 토큰 예외 종류(`RELOGIN_EXCEPTIONS` — 한 줄로
-더한다)에서만 다시 로그인한다. 문구 낱말만 맞은 토큰 갈래는 알림만이다(어댑터 몫).
+**다시 로그인의 문.** 토큰 파일 없음(`bigdataquery.exceptions` 의 종류 —
+`RELOGIN_EXCEPTIONS`)과 만료 · 무효 토큰(사슬 어느 고리의 글에 `RELOGIN_MESSAGES` 문구 — 「You
+have invalid token」, HTTP 400)에서 다시 로그인한다. 만료 · 무효는 패키지 종류가 아니고(바깥
+`ConnectionError` · 안쪽 `Exception`, 2026-11-16 사내 실측) 둘의 사슬이 같아 한 길이다 — 바깥
+`ConnectionError` 를 연결 실패로 먼저 가르지 않는다. 문구 상수 밖의 토큰 낱말만 맞은 갈래는
+알림만이다(어댑터 몫). 문구는 판정에만 쓴다.
 
 **비밀.** 결과 · 로그 · 예외에 계정 · 비밀번호 · 예외 문구 · 하위 출력이 없다 — 예외 종류의
 `모듈.이름` 과 짧은 영문 까닭 코드만. 토큰 다이제스트도 밖으로 내지 않는다(지문이다).
@@ -103,8 +107,11 @@ UNREACHED_PAUSE_SECONDS: Final = 300.0
 # `unconfirmed`.
 REMAINING_WARNING_MINUTES: Final = 7 * 60
 # 다시 로그인을 거는 예외 종류(`모듈.이름`). 사슬의 어느 고리든 그 종류(또는 하위 종류)면 건다.
-# 무효 · 만료 토큰의 종류를 알게 되면 이 한 줄에 더한다.
 RELOGIN_EXCEPTIONS: Final[tuple[str, ...]] = ("bigdataquery.exceptions.TokenNotFoundException",)
+# 다시 로그인을 거는 문구(소문자 — `casefold` 로 견준다). 사슬의 어느 고리의 글에든 있으면 건다.
+# 만료 · 무효 토큰의 `getData` 가 조회 전 토큰 확인에서 HTTP 400 으로 내는 안쪽 문구다(두 경우가
+# 같은 글). 판정에만 쓰고 결과 · 로그 · 예외에 싣지 않는다(문구에는 계정이 실릴 수 있다).
+RELOGIN_MESSAGES: Final[tuple[str, ...]] = ("you have invalid token",)
 
 Outcome = Literal["ok", "rejected", "unreached", "unavailable", "unconfirmed"]
 OUTCOME_OK: Final = "ok"
@@ -794,9 +801,19 @@ def _auto_attempt_locked(
     return _settle(stored, result, resolved)
 
 
+def _has_relogin_message(error: BaseException) -> bool:
+    """그 고리의 글에 `RELOGIN_MESSAGES` 문구가 있나. 글을 만들다 깨지면 없음이다."""
+    try:
+        text = str(error).casefold()
+    except Exception:  # 패키지 예외의 글 만들기가 깨져도 판정은 이어 간다
+        return False
+    return any(message and message.casefold() in text for message in RELOGIN_MESSAGES)
+
+
 def is_relogin_error(error: BaseException) -> bool:
     """다시 로그인을 걸 예외인가 — 사슬(`__cause__` · `__context__`)의 고리 가운데 그 종류나 상위
-    종류가 `RELOGIN_EXCEPTIONS` 에 있는 것. 패키지를 import 하지 않는다. 문구는 보지 않는다."""
+    종류가 `RELOGIN_EXCEPTIONS` 에 있거나 그 글에 `RELOGIN_MESSAGES` 문구가 있는 것. 패키지를 import
+    하지 않는다. 문구는 판정에만 쓰고 돌려주지 않는다."""
     seen: list[BaseException] = []
     current: BaseException | None = error
     while current is not None and current not in seen and len(seen) < _CHAIN_LIMIT:
@@ -804,6 +821,8 @@ def is_relogin_error(error: BaseException) -> bool:
         for kind in type(current).__mro__:
             if f"{kind.__module__}.{kind.__qualname__}" in RELOGIN_EXCEPTIONS:
                 return True
+        if _has_relogin_message(current):
+            return True
         current = current.__cause__ or current.__context__
     return False
 

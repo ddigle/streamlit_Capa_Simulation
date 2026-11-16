@@ -622,7 +622,7 @@ def _token_alert_text(
     `BIGDATAQUERY_LOGIN_TOKEN` 이 있으면 「토큰 넣기」 가 잠기니 그 값 바꾸기다(값은 보지
     않는다). 자동 로그인이 켜졌는데 저장된 계정이 없으면(`view.state == "none"`) Admin Area 의 계정
     넣는 자리를, 저장된 계정이 있으면(정상 · 멈춤) 그 자리에서 다시 넣기(곧바로 로그인해 새 토큰 —
-    조회 중 다시 로그인은 토큰 파일이 없어졌을 때만 선다)를 먼저 가리킨다."""
+    조회 중 다시 로그인이 토큰 파일 없음 · 만료 · 무효를 풀지 못한 뒤다)를 먼저 가리킨다."""
     found: list[str] = []
     if start_reason is not None:
         found.append(f"서버 시작 점검의 「로그인 토큰 파일」 줄이 실패입니다({start_reason})")

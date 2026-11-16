@@ -270,9 +270,9 @@ def test_the_token_alert_target_follows_the_fix_it_names(
 def test_a_token_failure_with_a_stored_account_points_at_entering_it_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """저장된 계정이 있는데(정상 · 멈춤) 조회가 토큰 갈래로 실패 — 조회 중 다시 로그인은 토큰 파일이
-    없어졌을 때만 서므로, 첫 할 일은 Admin 「BDQ 자동 로그인」 에서 다시 넣기(곧바로 새 토큰)다.
-    「토큰 넣기」 는 그 뒤 또는이다."""
+    """저장된 계정이 있는데(정상 · 멈춤) 조회가 토큰 갈래로 실패 — 조회 중 다시 로그인이 풀지
+    못했으므로(멈춤 · 쉬는 중 · 그 문구 밖의 토큰 낱말), 첫 할 일은 Admin 「BDQ 자동 로그인」 에서
+    다시 넣기(곧바로 새 토큰)다. 「토큰 넣기」 는 그 뒤 또는이다."""
     _server(tmp_path, monkeypatch)
     _query(monkeypatch, ConnectionError("500 invalid token"))
     for stored in (_stored(), _stored(store.STATE_STOPPED, "token_unchanged")):

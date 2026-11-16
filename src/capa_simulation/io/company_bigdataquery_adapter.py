@@ -513,9 +513,10 @@ def _get_data_once(module: BigDataQueryModule, query: str) -> object:
     있었고, 원인을 찾는 데 두 세션이 걸렸다.
 
     **다시 로그인(C-DEP 자동 로그인).** `getData` 는 `bdq_login.run_with_relogin` 안에서 부른다 —
-    저장된 계정이 있고 멈춤이 아니며 패키지의 토큰 예외 종류(`bdq_login.RELOGIN_EXCEPTIONS` 한 줄)로
-    실패했을 때만 다시 로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이
-    다시 조회). 문구 낱말만 맞은 토큰 갈래는 다시 로그인하지 않는다(알림 `AD-10` 만). 저장된 계정이
+    저장된 계정이 있고 멈춤이 아니며 토큰 파일 없음(`bdq_login.RELOGIN_EXCEPTIONS`)이나 만료 · 무효
+    토큰(「You have invalid token」, HTTP 400 — `bdq_login.RELOGIN_MESSAGES`)으로 실패했을 때만 다시
+    로그인해 같은 조회를 한 번 다시 한다(누가 이미 다시 로그인했으면 로그인 없이 다시 조회). 그 문구
+    밖의 토큰 낱말만 맞은 갈래는 다시 로그인하지 않는다(알림 `AD-10` 만). 저장된 계정이
     없으면 지금과 같이 한 번 부른다. 다시 한 조회는 인자(요청자 계정)를 새로 읽고, 실패까지 걸린
     초는 마지막 부름에서 잰다 — 로그인 시간이 긴 실패로 셈해지지 않게. 아래 감싸기 · 토큰 표지는
     다시 로그인을 거친 마지막 결과에 한 번이다. Streamlit 을 부르지 않는다(공식버전 자동 갱신
@@ -626,7 +627,9 @@ _TOKEN_FAILURE_TYPE_WORDS_UNLESS_QUERY: Final[tuple[str, ...]] = ("invalidtoken"
 # 문구 낱말. 첫째는 패키지가 토큰이 없을 때 내는 문구(「There is no bigdataquery token issued for AD
 # user …」)다. 토큰 자리(`.credential`)만 말하는 문구는 갈래를 정하지 않는다(안내만 —
 # `is_login_token_failure`). 구문 오류의 「unexpected token」 은 여기 없고, 문법 낱말
-# (`_QUERY_TEXT_WORDS`)이 함께 있으면 토큰으로 보지 않는다.
+# (`_QUERY_TEXT_WORDS`)이 함께 있으면 토큰으로 보지 않는다 — 다시 로그인 문구
+# (`bdq_login.RELOGIN_MESSAGES` — 만료 · 무효 토큰의 「You have invalid token」)만은 그보다 먼저
+# 본다.
 _TOKEN_FAILURE_WORDS: Final[tuple[str, ...]] = (
     "no bigdataquery token",
     "invalid token",
@@ -782,12 +785,15 @@ def failure_type_names(error: BaseException) -> tuple[str, ...]:
 
 def _token_clue(chain: list[BaseException]) -> str | None:
     """갈래 「토큰」 이면 근거 낱말(`_TOKEN_FAILURE_WORDS` 의 것 — 종류 이름으로 가렸으면 빈 글),
-    아니면 None. 토큰 예외 종류 이름(`_TOKEN_FAILURE_TYPE_WORDS`)이 먼저고, 그 밖의 근거는 문법
-    낱말이 함께 있으면 구문 오류로 보고 None 이다."""
+    아니면 None. 토큰 예외 종류 이름(`_TOKEN_FAILURE_TYPE_WORDS`)과 다시 로그인 문구
+    (`bdq_login.RELOGIN_MESSAGES` — 다시 로그인한 실패가 「연결」 · SQL 로 가지 않게)가 먼저고,
+    그 밖의 근거는 문법 낱말이 함께 있으면 구문 오류로 보고 None 이다."""
     names = " ".join(type(link).__name__ for link in chain).casefold().replace("_", "")
     if any(word in names for word in _TOKEN_FAILURE_TYPE_WORDS):
         return ""
     text = " ".join(str(link) for link in chain).casefold()
+    if any(message and message.casefold() in text for message in bdq_login.RELOGIN_MESSAGES):
+        return next((word for word in _TOKEN_FAILURE_WORDS if word in text), "")
     if any(word in names or word in text for word in _QUERY_TEXT_WORDS):
         return None
     if any(word in names for word in _TOKEN_FAILURE_TYPE_WORDS_UNLESS_QUERY):

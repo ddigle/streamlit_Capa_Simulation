@@ -20,10 +20,13 @@ import pytest
 from bdq_login_support import (
     ACCOUNT,
     ADMIN_ID,
+    MEASURED_INNER,
+    MEASURED_OUTER,
     OTHER_ACCOUNT,
     PASSWORD,
     WRONG_PASSWORD,
     FakeBdq,
+    measured_token_failure,
     requests_on,
     running_mock,
     switch_on,
@@ -1068,6 +1071,17 @@ class InvalidTokenError(Exception):
         (Error("unexpected token"), adapter.QUERY_FAILURE_OTHER, ""),
         (Error("Session expired"), adapter.QUERY_FAILURE_OTHER, "expired"),
         (ConnectionError("500 Server Error"), adapter.QUERY_FAILURE_CONNECTION, ""),
+        (measured_token_failure("context"), adapter.QUERY_FAILURE_TOKEN, "invalid token"),
+        (measured_token_failure("cause"), adapter.QUERY_FAILURE_TOKEN, "invalid token"),
+        (
+            _chained(
+                ConnectionError(MEASURED_OUTER),
+                _chained(Exception(MEASURED_INNER), Error("AnalysisException: query rejected")),
+            ),
+            adapter.QUERY_FAILURE_TOKEN,
+            "invalid token",
+        ),
+        (ConnectionError(MEASURED_OUTER), adapter.QUERY_FAILURE_CONNECTION, ""),
     ],
 )
 def test_a_login_token_failure_is_its_own_kind_before_connection(
@@ -1075,8 +1089,11 @@ def test_a_login_token_failure_is_its_own_kind_before_connection(
 ) -> None:
     """getData 의 invalid token(HTTP 500)은 「연결」 이 아니라 「토큰」 이다 — 「연결」 안내
     (네트워크 · 다시 하기)는 틀린 길이다(리뷰 202611111500 사외요청 3). 분명한 근거만 「토큰」 이고,
-    구문 오류의 token 은 SQL 그대로다. 토큰 예외 종류 이름은 문법 낱말보다 먼저다. 「토큰」 이면
-    시작 점검 토큰 줄 안내(`is_login_token_failure`)도 붙는다."""
+    구문 오류의 token 은 SQL 그대로다. 토큰 예외 종류 이름은 문법 낱말보다 먼저다. 만료 · 무효
+    토큰의 실측 꼴 사슬(바깥 `ConnectionError` · 안쪽 「You have invalid token」 — 2026-11-16)은
+    안쪽이 문맥이든 원인이든, 다른 고리에 문법 낱말이 있어도 「토큰」 이고(다시 로그인 문구가 먼저),
+    문구 없는 바깥 `ConnectionError` 하나는 「연결」 이다. 「토큰」 이면 시작 점검 토큰 줄
+    안내(`is_login_token_failure`)도 붙는다."""
     assert (adapter.classify_query_failure(error), adapter.query_failure_clue(error)) == (
         kind,
         clue,
@@ -1271,7 +1288,7 @@ def test_a_busy_server_is_not_asked_again_by_the_app(monkeypatch: pytest.MonkeyP
     assert adapter.last_query_failed_on_token() is False
 
 
-# --- C-DEP 자동 로그인 — 조회 중 다시 로그인(D4 · D9) -------------------------------------------
+# --- C-DEP 자동 로그인 — 조회 중 다시 로그인(D4 · 문구 기준) ------------------------------------
 #
 # 로그인은 진짜 하위 프로세스가 가짜 `bigdataquery`(`tests/fixtures/bdq_fake/`)를 불러 돈다.
 # 장면마다 하위 프로세스에서 `login()` 이 불린 수를 센다(`FakeBdq.logins`) — 계정 잠김 방지가
@@ -1437,7 +1454,8 @@ def test_an_unreached_login_does_not_stop_and_returns_the_first_failure(
 def test_a_token_failure_known_only_by_its_words_does_not_log_in(
     monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
 ) -> None:
-    """문구 낱말만 맞은 토큰 갈래는 알림만이다(D9) — 다시 로그인은 패키지의 토큰 예외 종류에서만."""
+    """다시 로그인 문구(`bdq_login.RELOGIN_MESSAGES` — 「You have invalid token」) 밖의 토큰 낱말만
+    맞은 갈래는 알림만이다 — 갈래는 「토큰」 이고 다시 묻지 않는다."""
     _, target = login_s3
     _stored(monkeypatch, target)
     calls: list[int] = []
@@ -1452,6 +1470,86 @@ def test_a_token_failure_known_only_by_its_words_does_not_log_in(
     assert raised.value.kind == adapter.QUERY_FAILURE_TOKEN
     assert calls == [1] and fake.logins() == 0
     assert adapter.last_query_failed_on_token() is True
+
+
+class _MeasuredExpiry:
+    """만료 · 무효 토큰에 실측 꼴 사슬을 내는 `getData` — 토큰 파일이 처음 내용(`stale`)이거나
+    `always_refuse` 면 바깥 `ConnectionError` · 안쪽 「You have invalid token」(2026-11-16)."""
+
+    def __init__(self, fake: FakeBdq, stale: bytes, *, link: str, always_refuse: bool = False):
+        self.fake = fake
+        self.stale = stale
+        self.link = link
+        self.always_refuse = always_refuse
+        self.calls: list[dict[str, object]] = []
+
+    def getData(self, **kwargs: object) -> pd.DataFrame:  # noqa: N802 — 패키지 이름 그대로
+        self.calls.append(dict(kwargs))
+        account = str(kwargs.get("user_name", ""))
+        if self.always_refuse or self.fake.token_path(account).read_bytes() == self.stale:
+            raise measured_token_failure(self.link)
+        return pd.DataFrame({"a": [1]})
+
+
+@pytest.mark.parametrize("link", ["context", "cause"])
+def test_a_measured_expiry_logs_in_again_and_the_same_query_runs_once_more(
+    link: str, monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """만료 · 무효 토큰의 실측 꼴 사슬(2026-11-16 사용자 결정 — 문구 기준)도 다시 로그인 1번 + 같은
+    조회 1번 다시다 — 바깥 `ConnectionError` 를 연결 실패로 먼저 가르지 않는다."""
+    mock, target = login_s3
+    _stored(monkeypatch, target)
+    module = _MeasuredExpiry(fake, fake.write_expired_token(), link=link)
+
+    frame = adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert isinstance(frame, pd.DataFrame) and len(frame) == 1
+    assert [call["user_name"] for call in module.calls] == [ACCOUNT, ACCOUNT]
+    assert fake.logins() == 1
+    assert adapter.last_query_failed_on_token() is False
+    assert _object_state(mock) == "ok" and bdq_login.status().state == "ok"
+
+
+@pytest.mark.parametrize("link", ["context", "cause"])
+def test_a_measured_failure_again_after_our_own_login_stops_as_a_token_failure(
+    link: str, monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """다시 로그인한 뒤 다시 한 조회도 같은 사슬 — 멈춤을 저장하고(D4) 갈래는 「연결」 이 아니라
+    「토큰」 이다(다시 로그인 판정과 갈래가 어긋나지 않는다)."""
+    mock, target = login_s3
+    _stored(monkeypatch, target)
+    module = _MeasuredExpiry(fake, fake.write_expired_token(), link=link, always_refuse=True)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(cast(adapter.BigDataQueryModule, module), "SELECT 1")
+
+    assert (raised.value.kind, raised.value.clue) == (adapter.QUERY_FAILURE_TOKEN, "invalid token")
+    assert isinstance(raised.value.__cause__, ConnectionError)
+    assert len(module.calls) == 2 and fake.logins() == 1
+    assert _object_state(mock) == "stopped"
+    status = bdq_login.status()
+    assert status.state == "stopped" and status.stop_reason == bdq_login.REASON_TOKEN_AFTER_LOGIN
+    assert adapter.last_query_failed_on_token() is True
+
+
+def test_an_authentication_connection_error_without_the_phrase_does_not_log_in(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, login_s3: tuple[MockStore, S3Target]
+) -> None:
+    """바깥 `ConnectionError` 만 오고 안쪽 문구가 없으면 다시 로그인하지 않는다 — 갈래 「연결」."""
+    _, target = login_s3
+    _stored(monkeypatch, target)
+    calls: list[int] = []
+
+    def refuse(**_kwargs: object) -> pd.DataFrame:
+        calls.append(1)
+        raise ConnectionError(MEASURED_OUTER)
+
+    with pytest.raises(adapter.BigDataQueryCallError) as raised:
+        adapter.call_get_data(_module(refuse), "SELECT 1")
+
+    assert raised.value.kind == adapter.QUERY_FAILURE_CONNECTION
+    assert calls == [1] and fake.logins() == 0
+    assert adapter.last_query_failed_on_token() is False
 
 
 def test_a_busy_server_with_a_stored_login_does_not_log_in(
@@ -1549,14 +1647,28 @@ def test_a_broken_store_read_falls_back_to_the_environment_account(
     assert adapter.resolve_user_name() == "env_account"
 
 
-def test_every_relogin_kind_is_also_the_token_kind() -> None:
-    """다시 로그인을 거는 종류(`bdq_login.RELOGIN_EXCEPTIONS` — D9 의 한 줄)는 모두 갈래
-    「토큰」 이다 — 한 줄을 더해도 그 실패의 안내 · 관리자 알림(`AD-10`)이 토큰 길을 따른다."""
+def test_every_relogin_kind_and_phrase_is_also_the_token_kind() -> None:
+    """다시 로그인을 거는 종류(`bdq_login.RELOGIN_EXCEPTIONS`)와 문구
+    (`bdq_login.RELOGIN_MESSAGES`)는 모두 갈래 「토큰」 이다 — 한 줄을 더해도 그 실패의 안내 ·
+    관리자 알림(`AD-10`)이 토큰 길을 따른다. 문구는 바깥 `ConnectionError` 의 안쪽에 있어도, 다른
+    고리에 문법 낱말이 있어도 같다."""
     for qualified in bdq_login.RELOGIN_EXCEPTIONS:
         module_name, _, name = qualified.rpartition(".")
         error = type(name, (Exception,), {"__module__": module_name})("x")
         assert bdq_login.is_relogin_error(error), qualified
         assert adapter.classify_query_failure(error) == adapter.QUERY_FAILURE_TOKEN, qualified
+    assert bdq_login.RELOGIN_MESSAGES
+    for message in bdq_login.RELOGIN_MESSAGES:
+        for error in (
+            Exception(message.upper()),
+            _chained(ConnectionError(MEASURED_OUTER), Exception(message)),
+            _chained(ConnectionError(f"{message} (syntax)"), Error("ParseException")),
+        ):
+            assert bdq_login.is_relogin_error(error), (message, error)
+            assert adapter.classify_query_failure(error) == adapter.QUERY_FAILURE_TOKEN, error
+            assert adapter.is_login_token_failure(error), error
+    assert adapter.classify_query_failure(measured_token_failure()) == adapter.QUERY_FAILURE_TOKEN
+    assert MEASURED_INNER.casefold().startswith(bdq_login.RELOGIN_MESSAGES[0])
 
 
 _THREAD_SCRIPT = """
@@ -1599,6 +1711,7 @@ def work():
         out["thread"] = threading.current_thread() is not threading.main_thread()
     except BaseException as error:
         out["error"] = type(error).__name__
+        out["kind"] = getattr(error, "kind", "")
 
 
 worker = threading.Thread(target=work)
@@ -1609,12 +1722,39 @@ print(json.dumps(out))
 """
 
 
+_THREAD_ROWS = {"rows": 1, "thread": True, "streamlit": False}
+
+
+@pytest.mark.parametrize(
+    ("start", "password", "expected"),
+    [
+        ("missing", PASSWORD, _THREAD_ROWS),
+        ("expired", PASSWORD, _THREAD_ROWS),
+        ("revoked", PASSWORD, _THREAD_ROWS),
+        (
+            "expired",
+            WRONG_PASSWORD,
+            {"error": "BigDataQueryCallError", "kind": "토큰", "streamlit": False},
+        ),
+    ],
+)
 def test_the_relogin_runs_in_a_plain_thread_without_streamlit(
-    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+    start: str,
+    password: str,
+    expected: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
 ) -> None:
     """공식버전 자동 갱신 스레드도 어댑터를 지난다 — 실행 문맥 없는 스레드에서 토큰 예외 → 다시
     로그인 → 같은 조회가 돌고, 그 길 어디에서도 Streamlit 을 불러오지 않는다(부를 수 없다). 가짜
-    패키지를 그대로 불러오는 별도 프로세스라 진짜 `bigdataquery.exceptions` 자리의 종류다."""
+    패키지를 그대로 불러오는 별도 프로세스라 진짜 `bigdataquery.exceptions` 자리의 종류(토큰 파일
+    없음)와 사내 실측 꼴 사슬(만료 · 다른 로그인으로 밀려난 토큰 — 바깥 `ConnectionError` · 안쪽
+    「You have invalid token」)을 그대로 받는다. 로그인이 거절되면 첫 실패가 갈래 「토큰」 으로
+    올라간다."""
+    if start == "expired":
+        fake.write_expired_token()
+    elif start == "revoked":
+        monkeypatch.setenv("FAKE_BDQ_REVOKED", fake.write_live_token().decode("ascii"))
     key = switch_on(monkeypatch)
     env = {
         **os.environ,
@@ -1623,7 +1763,7 @@ def test_the_relogin_runs_in_a_plain_thread_without_streamlit(
     }
     completed = subprocess.run(
         [sys.executable, "-c", _THREAD_SCRIPT, str(PROJECT_ROOT / "scripts")],
-        input=f"{ACCOUNT}\n{PASSWORD}\n",
+        input=f"{ACCOUNT}\n{password}\n",
         capture_output=True,
         text=True,
         env=env,
@@ -1633,7 +1773,7 @@ def test_the_relogin_runs_in_a_plain_thread_without_streamlit(
 
     assert completed.returncode == 0, completed.stderr[-2000:]
     result = json.loads(completed.stdout.strip().splitlines()[-1])
-    assert result == {"rows": 1, "thread": True, "streamlit": False}
+    assert result == expected
     assert fake.logins() == 1
 
 
