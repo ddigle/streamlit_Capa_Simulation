@@ -170,6 +170,7 @@ def test_save_then_load_goes_round_and_the_body_holds_only_the_cipher(
         "state": "ok",
         "stop_reason": None,
         "stopped_at": None,
+        "misses": 0,
     }
     loaded = store.load(target, key)
     assert loaded.reason == "" and loaded.stored is not None

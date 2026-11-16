@@ -104,12 +104,17 @@ def stored_login(
     return written.stored
 
 
-def object_state(mock: MockStore) -> str:
+def stored_meta(mock: MockStore) -> dict[str, object]:
     import json
 
     with mock.lock:
         data = json.loads(mock.objects[store.OBJECT_KEY])
-    state = data["state"]
+    assert isinstance(data, dict)
+    return data
+
+
+def object_state(mock: MockStore) -> str:
+    state = stored_meta(mock)["state"]
     assert isinstance(state, str)
     return state
 
@@ -669,27 +674,53 @@ def test_a_rejected_auto_attempt_stops_in_process_and_in_the_object(
     status = bdq_login.status()
     assert status.state == "stopped" and not status.active
     assert status.stop_reason == bdq_login.REASON_TOKEN_UNCHANGED
-    assert not bdq_login.auto_login_active()
     assert fake.logins() == 1
 
 
 def test_a_stop_that_cannot_be_written_still_stops_the_process(
     monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
 ) -> None:
+    """시도 표시는 썼는데 결과(거절의 멈춤)를 적지 못함 — 객체는 시도 표시(멈춤)로 남고 프로세스도
+    멈춘다. 로그인은 한 번뿐."""
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    stored_login(target, key, password=WRONG_PASSWORD)
+    mock.force_on("PUT", store.SECRETS_PREFIX, after=1, times=100, status=500)
+    recovery = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
+    assert recovery.attempt is not None
+    assert recovery.attempt.stop_write.startswith(store.WRITE_FAILED)
+    assert stored_meta(mock)["stop_reason"] == bdq_login.REASON_ATTEMPTING
+    assert object_state(mock) == "stopped"
+    for _ in range(3):
+        skipped = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
+        assert skipped.attempt is not None and skipped.attempt.skipped == bdq_login.SKIP_STOPPED
+    status = bdq_login.status()
+    assert status.state == "stopped"
+    assert status.stop_reason == bdq_login.REASON_TOKEN_UNCHANGED
+    assert fake.logins() == 1
+
+
+def test_an_unwritable_attempt_mark_means_no_login(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """시도 표시를 쓰지 못하면 로그인하지 않는다(멈춤 아님 · 쉰다) — 결과를 적을 길이 없는 채로
+    로그인하면 재시작이 그 결과를 모른다."""
     mock, target = mock_s3
     key = switch_on(monkeypatch)
     monkeypatch.setattr(store, "app_target", lambda: target)
     stored_login(target, key, password=WRONG_PASSWORD)
     mock.force["PUT"] = (500, "InternalError")
     recovery = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
-    assert recovery.attempt is not None
+    assert recovery.attempt is not None and recovery.attempt.result is None
+    assert recovery.attempt.skipped == bdq_login.SKIP_UNGUARDED
     assert recovery.attempt.stop_write.startswith(store.WRITE_FAILED)
+    assert not recovery.retry
     assert object_state(mock) == "ok"
-    for _ in range(3):
-        skipped = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
-        assert skipped.attempt is not None and skipped.attempt.skipped == bdq_login.SKIP_STOPPED
-    assert bdq_login.status().state == "stopped"
-    assert fake.logins() == 1
+    again = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
+    assert again.attempt is not None and again.attempt.skipped == bdq_login.SKIP_PAUSED
+    assert bdq_login.status().state == "ok"
+    assert fake.logins() == 0
 
 
 def test_unreached_attempts_pause_and_stop_at_the_limit(
@@ -715,13 +746,15 @@ def test_unreached_attempts_pause_and_stop_at_the_limit(
         "unreached",
         "paused",
         "unreached",
-        "attempt_limit",
-        "attempt_limit",
-        "attempt_limit",
+        "stopped",
+        "stopped",
+        "stopped",
     ]
-    assert fake.logins() == bdq_login.AUTO_ATTEMPT_LIMIT
-    assert object_state(mock) == "ok"
-    assert bdq_login.status().state == "ok"
+    assert fake.logins() == bdq_login.MISS_LIMIT
+    assert object_state(mock) == "stopped"
+    assert stored_meta(mock)["stop_reason"] == bdq_login.REASON_MISS_LIMIT
+    status = bdq_login.status()
+    assert status.state == "stopped" and status.stop_reason == bdq_login.REASON_MISS_LIMIT
 
 
 def test_an_ok_attempt_resets_the_streak(
@@ -957,7 +990,7 @@ def test_with_nothing_stored_the_query_runs_as_before(
     assert spawned.calls == [] and fake.logins() == 0
     assert requests_on(mock, store.OBJECT_KEY) == ["GET"]
     assert bdq_login.start_login({}) == bdq_login.StartLogin("off", store.REASON_NOT_MANAGED)
-    assert not bdq_login.auto_login_active()
+    assert not bdq_login.status().active
 
 
 # --- 폼 ---------------------------------------------------------------------------------
@@ -1139,3 +1172,144 @@ def test_start_with_a_broken_object_or_a_wrong_key_is_absent(
         assert bdq_login.start_login(no_key) == bdq_login.StartLogin("off", store.REASON_NO_KEY)
         assert len(mock.requests) == requests_before
         assert spawned.calls == [] and fake.logins() == 0
+
+
+# --- 재시작을 건너는 잠김 방지 ----------------------------------------------------------------
+
+
+def test_persistent_unreached_starts_stop_at_the_miss_limit_across_restarts(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """닿지 못함은 멈추지 않지만(D6) 객체의 `misses` 가 재시작을 건너 센다 — 성공 없이 `MISS_LIMIT`
+    번이면 멈추고, 그 뒤 재시작은 로그인하지 않는다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        scene(monkeypatch, "connection")
+        environ = start_environment(mock, endpoint, key)
+        stored_login(target_of(mock, endpoint), key)
+        statuses: list[str] = []
+        for _ in range(bdq_login.MISS_LIMIT + 2):
+            bdq_login.forget_state()
+            statuses.append(bdq_login.start_login(environ).status)
+        assert statuses == [
+            *(["unreached"] * (bdq_login.MISS_LIMIT - 1)),
+            "stopped",
+            "stopped",
+            "stopped",
+        ]
+        assert fake.logins() == bdq_login.MISS_LIMIT
+        meta = stored_meta(mock)
+        assert meta["state"] == "stopped" and meta["stop_reason"] == bdq_login.REASON_MISS_LIMIT
+        assert meta["misses"] == bdq_login.MISS_LIMIT
+
+
+def test_a_success_clears_the_misses(monkeypatch: pytest.MonkeyPatch, fake: FakeBdq) -> None:
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        scene(monkeypatch, "connection")
+        stored_login(target_of(mock, endpoint), key)
+        unreached = bdq_login.start_login(start_environment(mock, endpoint, key))
+        assert unreached.status == "unreached"
+        assert stored_meta(mock)["misses"] == 1
+        scene(monkeypatch)
+        bdq_login.forget_state()
+        assert bdq_login.start_login(start_environment(mock, endpoint, key)).status == "ok"
+        meta = stored_meta(mock)
+        assert meta["misses"] == 0 and meta["state"] == "ok" and meta["stop_reason"] is None
+
+
+def test_a_stop_that_cannot_be_written_at_start_is_still_stopped_at_every_restart(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """시작이 거절을 보고 멈춤을 쓰지 못함(시도 표시 뒤의 PUT 500) — 객체는 앞서 써 둔 시도
+    표시(멈춤)로 남아 다시 띄워도 로그인하지 않는다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        environ = start_environment(mock, endpoint, key)
+        fake.write_live_token()
+        stored_login(target_of(mock, endpoint), key, password=WRONG_PASSWORD)
+        mock.force_on("PUT", store.SECRETS_PREFIX, after=1, times=100, status=500)
+        first = bdq_login.start_login(environ)
+        assert first.status == "rejected" and first.stop_write.startswith(store.WRITE_FAILED)
+        for _ in range(3):
+            bdq_login.forget_state()
+            again = bdq_login.start_login(environ)
+            assert again.status == "stopped"
+            assert again.reason == bdq_login.REASON_ATTEMPTING
+        assert fake.logins() == 1
+
+
+def test_an_attempt_cut_short_leaves_a_stop_for_the_next_start(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    """시도 표시를 써 둔 채 프로세스가 끊김(결과를 적기 전) — 다음 시작은 멈춤으로 읽고 로그인하지
+    않는다."""
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        stored = stored_login(target_of(mock, endpoint), key)
+        assert store.mark_attempting(target_of(mock, endpoint), cipher=stored.cipher).ok
+        bdq_login.forget_state()
+        started = bdq_login.start_login(start_environment(mock, endpoint, key))
+        assert started.status == "stopped" and started.reason == bdq_login.REASON_ATTEMPTING
+        assert fake.logins() == 0
+
+
+def test_an_unwritable_attempt_mark_at_start_logs_in_nowhere(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq
+) -> None:
+    with running_mock() as (mock, endpoint):
+        key = switch_on(monkeypatch)
+        stored_login(target_of(mock, endpoint), key)
+        mock.force["PUT"] = (500, "InternalError")
+        started = bdq_login.start_login(start_environment(mock, endpoint, key))
+        assert started.status == "unavailable" and started.reason == bdq_login.SKIP_UNGUARDED
+        assert object_state(mock) == "ok"
+        assert fake.logins() == 0
+
+
+def test_refusals_before_spawning_do_not_count_as_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+    fake: FakeBdq,
+    spawned: Spawned,
+    mock_s3: tuple[MockStore, S3Target],
+) -> None:
+    """하위 프로세스를 띄우기 전 거절(패키지가 먼저 읽는 토큰 환경변수)은 연속 시도 수에 들지 않고
+    시도 표시도 쓰지 않는다."""
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    stored_login(target, key)
+    monkeypatch.setenv(bdq_token.LOGIN_TOKEN_ENV, "demo-token-value-0123456789")
+    recovery = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
+    assert recovery.attempt is not None and recovery.attempt.result is not None
+    assert recovery.attempt.result.reason == bdq_login.REASON_ENV_TOKEN
+    assert bdq_login.status().streak == 0
+    assert requests_on(mock, store.OBJECT_KEY).count("PUT") == 1
+    assert spawned.calls == []
+
+
+def test_a_retry_stop_does_not_hit_a_login_the_form_put_in_meanwhile(
+    monkeypatch: pytest.MonkeyPatch, fake: FakeBdq, mock_s3: tuple[MockStore, S3Target]
+) -> None:
+    """스스로 다시 로그인한 뒤 다시 한 조회가 또 토큰 오류인데, 그 사이 관리자가 폼으로 다른 계정을
+    넣었다 — 멈춤은 옛 계정의 것이라 새 계정을 덮지 않는다(로그인 잠금 아래 `cipher` 대조)."""
+    mock, target = mock_s3
+    key = switch_on(monkeypatch)
+    monkeypatch.setattr(store, "app_target", lambda: target)
+    fake.write_live_token()
+    stored_login(target, key)
+    error = token_error()
+    calls: list[int] = []
+
+    def query() -> str:
+        calls.append(1)
+        if len(calls) == 2:
+            assert bdq_login.login_from_form(OTHER_ACCOUNT, PASSWORD, ADMIN_ID).saved
+        raise error("still no token")
+
+    with pytest.raises(error):
+        bdq_login.run_with_relogin(query)
+    assert len(calls) == 2
+    assert object_state(mock) == "ok"
+    assert store.effective_account() == OTHER_ACCOUNT
+    assert bdq_login.status().state == "ok"

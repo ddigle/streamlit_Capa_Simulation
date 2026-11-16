@@ -15,10 +15,14 @@ C-DEP(동기화 모드 `managed`)에서 BDQ 토큰이 죽으면 앱이 저장된
 
 **객체 꼴.** JSON 한 벌 — `v`(판 1) · `cipher`(계정 · 비밀번호 JSON 을 Fernet 으로 감싼 글) ·
 `entered_by`(넣은 관리자 앱 로그인 ID 앞 두 글자) · `entered_at`(KST ISO) · `state`(`ok` ·
-`stopped`) · `stop_reason`(짧은 영문 코드) · `stopped_at`. 멈춤 표시는 `cipher` 를 손대지 않고
-메타만 고쳐 다시 쓴다(`mark_stopped` — 키 없이도 된다). 객체는 세대(`generations/`) · 스냅샷 ·
-접속 명단(`access/`) · 모듈 데이터(`modules/`) 밖의 `secrets/` 아래다 — 동기화 정리 · 이관 도구는
-그 접두를 보지 않는다.
+`stopped`) · `stop_reason`(짧은 영문 코드) · `stopped_at` · `misses`(성공 없이 이어진 자동 시도
+가운데 닿지 못함 · 확인 못 함의 수 — 재시작을 건너 센다, 없으면 0). 멈춤 표시 · 시도 표시 · 시도
+결과는 `cipher` 를 손대지 않고 메타만 고쳐 다시 쓴다(`mark_stopped` · `mark_attempting` ·
+`record_outcome` — 키 없이도 된다). 자동 시도는 로그인 **앞에** 객체를 멈춤(`stop_reason`
+`attempting`)으로 써 두고 결과로 고쳐 쓴다 — 결과를 적지 못하거나 프로세스가 도중에 끊기면 다음
+시작이 멈춤으로 읽어 다시 로그인하지 않는다(안전한 쪽으로 닫힘). 객체는 세대(`generations/`) ·
+스냅샷 · 접속 명단(`access/`) · 모듈 데이터(`modules/`) 밖의 `secrets/` 아래다 — 동기화 정리 · 이관
+도구는 그 접두를 보지 않는다.
 
 **「저장된 계정 없음」.** 키가 없거나 꼴이 틀리거나 · 객체가 없거나 · 깨졌거나 · 판이 다르거나 ·
 키가 맞지 않아 풀리지 않으면 모두 없음이다 — 죽지도 멈추지도 않고 지금 길(`CAPA_BDQ_TOKEN`)로
@@ -94,6 +98,8 @@ WRITE_GONE: Final = "gone"
 WRITE_CHANGED: Final = "changed"
 WRITE_BAD_INPUT: Final = "bad_input"
 
+# 자동 시도가 로그인 앞에 써 두는 멈춤 까닭 — 결과로 고쳐 쓰지 못한 채 남으면 그대로 멈춤이다.
+ATTEMPTING_REASON: Final = "attempting"
 # 멈춤 까닭 코드의 꼴 — 짧은 영문 소문자 · 숫자 · 밑줄.
 _REASON_CODE: Final = re.compile(r"[a-z][a-z0-9_]{0,39}")
 _FERNET_KEY: Final = re.compile(r"[A-Za-z0-9_-]{43}=")
@@ -241,6 +247,7 @@ class StoredLogin:
     state: StoredState
     stop_reason: str | None = None
     stopped_at: str | None = None
+    misses: int = 0
 
     @property
     def stopped(self) -> bool:
@@ -309,6 +316,7 @@ def _document(
     state: StoredState,
     stop_reason: str | None,
     stopped_at: str | None,
+    misses: int = 0,
 ) -> bytes:
     data = {
         "v": DOCUMENT_VERSION,
@@ -318,6 +326,7 @@ def _document(
         "state": state,
         "stop_reason": stop_reason,
         "stopped_at": stopped_at,
+        "misses": misses,
     }
     return json.dumps(data, ensure_ascii=True, sort_keys=True).encode("ascii")
 
@@ -330,6 +339,7 @@ class _Meta:
     state: StoredState
     stop_reason: str | None
     stopped_at: str | None
+    misses: int
 
 
 def _optional_text(value: object) -> tuple[bool, str | None]:
@@ -361,6 +371,8 @@ def _parse_meta(body: bytes) -> tuple[_Meta | None, str]:
     state = data.get("state")
     reason_ok, stop_reason = _optional_text(data.get("stop_reason"))
     stopped_ok, stopped_at = _optional_text(data.get("stopped_at"))
+    misses = data.get("misses", 0)
+    misses_ok = isinstance(misses, int) and not isinstance(misses, bool) and misses >= 0
     if (
         not isinstance(cipher, str)
         or not cipher
@@ -369,13 +381,20 @@ def _parse_meta(body: bytes) -> tuple[_Meta | None, str]:
         or state not in _STATES
         or not reason_ok
         or not stopped_ok
+        or not misses_ok
     ):
         return None, REASON_BROKEN
     if stop_reason is not None and _REASON_CODE.fullmatch(stop_reason) is None:
         return None, REASON_BROKEN
     checked: StoredState = STATE_OK if state == STATE_OK else STATE_STOPPED
     return _Meta(
-        cipher, entered_by[:ENTERED_BY_CHARS], entered_at, checked, stop_reason, stopped_at
+        cipher,
+        entered_by[:ENTERED_BY_CHARS],
+        entered_at,
+        checked,
+        stop_reason,
+        stopped_at,
+        int(misses),
     ), ""
 
 
@@ -396,6 +415,7 @@ def parse_document(body: bytes, key: bytes) -> LoadResult:
             state=meta.state,
             stop_reason=meta.stop_reason,
             stopped_at=meta.stopped_at,
+            misses=meta.misses,
         )
     )
 
@@ -451,20 +471,25 @@ def save_login(
     return WriteResult(True, stored=stored)
 
 
-def mark_stopped(
+def _rewrite_meta(
     target: S3Target,
-    reason: str,
-    *,
     cipher: str,
+    *,
+    stopped: bool,
+    reason: str | None,
+    misses: int | None,
+    remember_it: bool,
     at: datetime | None = None,
 ) -> WriteResult:
-    """멈춤 표시 — 객체의 `cipher` 는 그대로 두고 상태 · 까닭 · 시각만 고쳐 다시 쓴다. 키가 필요
-    없다.
+    """객체의 `cipher` 는 그대로 두고 상태 · 까닭 · 시각 · `misses`(`None` 이면 그대로)만 고쳐 다시
+    쓴다. 키가 필요 없다.
 
-    `cipher` 는 막 거절된 한 벌의 것이다 — 객체가 그 사이 다른 계정으로 바뀌었으면(관리자가 다시
-    넣음) 새 계정을 멈추지 않고 `WRITE_CHANGED` 다. 받기 → 쓰기 틈은 replica 1 전제로 받아들인다.
-    """
-    if _REASON_CODE.fullmatch(reason) is None:
+    `cipher` 는 이 프로세스가 든 한 벌의 것이다 — 객체가 그 사이 다른 계정으로 바뀌었으면(관리자가
+    다시 넣음) 새 계정을 건드리지 않고 `WRITE_CHANGED`, 없거나 깨졌으면 `WRITE_GONE` 다. 받기 →
+    쓰기 틈은 replica 1 전제로 받아들인다(같은 프로세스의 쓰기는 로그인 잠금이 줄 세운다)."""
+    if reason is not None and _REASON_CODE.fullmatch(reason) is None:
+        return WriteResult(False, WRITE_BAD_INPUT)
+    if misses is not None and misses < 0:
         return WriteResult(False, WRITE_BAD_INPUT)
     failure_kind = ""
     try:
@@ -480,9 +505,17 @@ def mark_stopped(
         return WriteResult(False, WRITE_GONE)
     if meta.cipher != cipher:
         return WriteResult(False, WRITE_CHANGED)
-    stopped_at = kst_text(at)
+    state: StoredState = STATE_STOPPED if stopped else STATE_OK
+    stopped_at = kst_text(at) if stopped else None
+    count = meta.misses if misses is None else misses
     body = _document(
-        meta.cipher, meta.entered_by, meta.entered_at, STATE_STOPPED, reason, stopped_at
+        meta.cipher,
+        meta.entered_by,
+        meta.entered_at,
+        state,
+        reason if stopped else None,
+        stopped_at,
+        count,
     )
     try:
         s3_small.put_object(target, OBJECT_KEY, body)
@@ -490,8 +523,59 @@ def mark_stopped(
         failure_kind = failure.kind
     if failure_kind:
         return WriteResult(False, WRITE_FAILED, failure_kind)
-    _remember_stopped(cipher, reason, stopped_at)
+    if remember_it:
+        _remember_meta(cipher, state, reason if stopped else None, stopped_at, count)
     return WriteResult(True)
+
+
+def mark_stopped(
+    target: S3Target,
+    reason: str,
+    *,
+    cipher: str,
+    at: datetime | None = None,
+) -> WriteResult:
+    """멈춤 표시 — 상태 · 까닭 · 시각만 고쳐 다시 쓴다(`misses` 그대로). 성공하면 기억도
+    멈춤이다."""
+    return _rewrite_meta(
+        target, cipher, stopped=True, reason=reason, misses=None, remember_it=True, at=at
+    )
+
+
+def mark_attempting(target: S3Target, *, cipher: str, at: datetime | None = None) -> WriteResult:
+    """자동 시도 앞의 시도 표시 — 객체를 멈춤(`ATTEMPTING_REASON`)으로 써 둔다. 이 쓰기가 실패하면
+    로그인하지 않는다. 기억은 바꾸지 않는다 — 로그인이 도는 동안 이 프로세스의 화면 · 알림에
+    멈춤으로 보이지 않게(결과를 적지 못하면 부르는 쪽이 프로세스 안 멈춤을 세운다)."""
+    return _rewrite_meta(
+        target,
+        cipher,
+        stopped=True,
+        reason=ATTEMPTING_REASON,
+        misses=None,
+        remember_it=False,
+        at=at,
+    )
+
+
+def record_outcome(
+    target: S3Target,
+    *,
+    cipher: str,
+    stopped: bool,
+    reason: str | None,
+    misses: int,
+    at: datetime | None = None,
+) -> WriteResult:
+    """자동 시도의 결과를 적는다 — 상태(멈춤이면 까닭) · `misses`. 성공하면 기억도 바꾼다."""
+    return _rewrite_meta(
+        target,
+        cipher,
+        stopped=stopped,
+        reason=reason,
+        misses=misses,
+        remember_it=True,
+        at=at,
+    )
 
 
 def delete_login(target: S3Target) -> WriteResult:
@@ -555,13 +639,25 @@ def remember(stored: StoredLogin | None, reason: str = REASON_NO_OBJECT) -> None
         _MEMO.read_at = time.monotonic()
 
 
-def _remember_stopped(cipher: str, reason: str, stopped_at: str) -> None:
-    """기억한 한 벌이 그 `cipher` 면 멈춤으로 바꾼다(다른 한 벌이면 그대로)."""
+def _remember_meta(
+    cipher: str,
+    state: StoredState,
+    reason: str | None,
+    stopped_at: str | None,
+    misses: int,
+) -> None:
+    """기억한 한 벌이 그 `cipher` 면 메타를 바꾼다(다른 한 벌이면 그대로)."""
     with _MEMO_LOCK:
         stored = _MEMO.result.stored
         if stored is not None and stored.cipher == cipher:
             _MEMO.result = LoadResult(
-                replace(stored, state=STATE_STOPPED, stop_reason=reason, stopped_at=stopped_at)
+                replace(
+                    stored,
+                    state=state,
+                    stop_reason=reason,
+                    stopped_at=stopped_at,
+                    misses=misses,
+                )
             )
 
 

@@ -159,6 +159,7 @@ def test_without_a_key_the_start_is_the_walked_one(
         "error_kind": "",
         "failure_kind": "",
         "stop_write": "",
+        "entered_at": "",
     }
     steps = _steps(real)
     assert steps[report_contract.STEP_TOKEN] == {"status": "ok", "reason": "토큰 파일을 씀"}
@@ -461,7 +462,8 @@ def test_a_rejected_start_stores_the_stop_and_the_next_start_does_not_log_in(
             bdq_login.forget_state()
             again = _check(environ, fake.credential_dir)
             assert _cell(again)["status"] == "stopped"
-        assert requests_on(mock, store.OBJECT_KEY).count("PUT") == 2, "저장 한 번 + 멈춤 한 번"
+        puts = requests_on(mock, store.OBJECT_KEY).count("PUT")
+        assert puts == 3, "저장 한 번 + 시도 표시 한 번 + 멈춤 한 번"
     assert _cell(first)["status"] == "rejected" and _cell(first)["stop_write"] == ""
     assert fake.logins() == 1
     assert fake.token_path(ACCOUNT).read_text(encoding="utf-8") == FAKE_BDQ_TOKEN
@@ -655,6 +657,36 @@ def test_the_app_takes_over_a_start_stop_that_was_not_stored(
         assert saved == ("stopped" if status == "rejected" else "ok")
         recovery = bdq_login.recover_after_token_failure(bdq_login.token_digest(ACCOUNT))
         assert not recovery.retry
+    assert spawned == []
+
+
+@pytest.mark.parametrize("same", [True, False], ids=["같은 한 벌", "다시 넣은 한 벌"])
+def test_the_app_holds_a_start_rejection_only_for_the_login_it_judged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, same: bool
+) -> None:
+    """앱 기동이 넘겨받는 시작 거절은 시작이 판정한 한 벌(넣은 시각 `entered_at`)에만 — 그 뒤 다시
+    넣은 계정에는 멈춤을 쓰지 않는다."""
+    monkeypatch.setattr(settings, "CONTAINER_START_REPORT_PATH", tmp_path / "start.json")
+    key = new_key()
+    spawned: list[object] = []
+    monkeypatch.setattr(bdq_login, "attempt_login", lambda *a, **k: spawned.append(a))
+    with running_mock() as (mock, endpoint):
+        target = target_of(mock, endpoint)
+        written = store.save_login(target, key.encode(), LoginSecret(ACCOUNT, PASSWORD), ADMIN_ID)
+        assert written.stored is not None
+        judged = written.stored.entered_at if same else "2026-01-01T09:00:00+09:00"
+        cell = {"status": "rejected", "reason": "token_unchanged", "entered_at": judged}
+        _start_report(tmp_path / "start.json", cell)
+        store.forget_state()
+        monkeypatch.setattr(store, "app_target", lambda: target)
+        monkeypatch.setenv(MODE_ENV, "managed")
+        monkeypatch.setenv(KEY_ENV, key)
+
+        bdq_login.start_in_app(os.environ)
+
+        assert bdq_login.current_view().state == ("stopped" if same else "ok")
+        saved = json.loads(mock.objects[store.OBJECT_KEY])["state"]
+        assert saved == ("stopped" if same else "ok")
     assert spawned == []
 
 

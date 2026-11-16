@@ -849,6 +849,7 @@ def auto_login_step(
         "error_kind": "" if result is None else result.error_kind,
         "failure_kind": started.failure_kind,
         "stop_write": started.stop_write,
+        "entered_at": "" if stored is None else stored.entered_at,
     }
     return LoginStep(
         cell,

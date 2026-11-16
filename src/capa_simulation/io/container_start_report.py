@@ -182,6 +182,8 @@ LOGIN_NOT_MANAGED: Final = "not_managed"
 # `모듈.이름`. 꼴이 어긋난 값은 읽을 때 버린다 — 화면 · 알림에 값이 실리지 않게.
 _LOGIN_CODE: Final = re.compile(r"[a-z][a-z0-9_]{0,39}(?::[a-z][a-z0-9_]{0,39})?")
 _LOGIN_ERROR_KIND: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{0,199}")
+# 넣은 시각 꼴 — KST ISO(초까지, 시각대 붙음).
+_LOGIN_MOMENT: Final = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}")
 # 표 줄 까닭 — 아는 코드는 낱말로, 모르는 코드는 그대로.
 _LOGIN_REASON_WORDS: Final[Mapping[str, str]] = {
     "token_unchanged": "토큰이 바뀌지 않음",
@@ -210,6 +212,10 @@ _LOGIN_REASON_WORDS: Final[Mapping[str, str]] = {
     "unexpected": "예상하지 못한 실패",
     "remaining_unknown": "남은 시간 모름",
     "remaining_short": "남은 시간 7시간 이하",
+    "miss_limit": "닿지 못함 · 확인 못 함 연속 상한",
+    "attempting": "시도 결과를 적지 못함",
+    "unguarded": "시도 표시를 쓰지 못함",
+    "changed": "계정이 그 사이 바뀜",
 }
 
 
@@ -252,7 +258,9 @@ class LoginStart:
     `status` — `LOGIN_*`. `reason` — 까닭 코드. `key` — 키 꼴 검사(`LOGIN_KEY_*`, 못 읽으면 빈 글).
     `remaining_minutes` — 로그인 뒤 잰 남은 분(모르면 `None`).
     `error_kind` — 예외 종류의 `모듈.이름`. `failure_kind` — S3 읽기 실패 분류. `stop_write` —
-    거절의 멈춤 표시를 객체에 쓰지 못한 까닭(빈 글이면 씀 · 해당 없음)."""
+    객체에 시도 표시 · 결과 · 멈춤을 쓰지 못한 까닭(빈 글이면 씀 · 해당 없음). `entered_at` — 판정한
+    저장 객체의 넣은 시각(KST ISO — 비밀이 아니다. 앱 기동이 그 사이 다시 넣은 계정에 멈춤을 잘못
+    넘겨받지 않게 대조한다)."""
 
     status: str
     reason: str = ""
@@ -261,6 +269,7 @@ class LoginStart:
     error_kind: str = ""
     failure_kind: str = ""
     stop_write: str = ""
+    entered_at: str = ""
 
     @property
     def shown(self) -> bool:
@@ -389,11 +398,16 @@ def parse_login(data: object) -> LoginStart | None:
         ),
         failure_kind=_login_code(data.get("failure_kind")),
         stop_write=_login_code(data.get("stop_write")),
+        entered_at=_login_moment(data.get("entered_at")),
     )
 
 
 def _login_code(value: object) -> str:
     return value if isinstance(value, str) and _LOGIN_CODE.fullmatch(value) else ""
+
+
+def _login_moment(value: object) -> str:
+    return value if isinstance(value, str) and _LOGIN_MOMENT.fullmatch(value) else ""
 
 
 def login_reason_text(code: str) -> str:
@@ -414,14 +428,17 @@ def login_step(login: LoginStart) -> StartStep | None:
     """자동 로그인 칸 → 「서버 시작 점검」 표 한 줄(결과 · 까닭). 줄을 세우지 않는 서버는 `None`.
 
     까닭은 상태 낱말과 결과뿐이다 — 꺼짐(키 없음) · 계정 없음 · 정상(남은 시간) · 멈춤(까닭) ·
-    닿지 못함(예비 토큰). 예비 토큰 길로 간 갈래는 그 사실을 붙인다."""
+    닿지 못함(예비 토큰). 예비 토큰 길로 간 갈래는 그 사실을 붙이고, 객체에 결과를 적지 못했으면
+    (다음 시작은 멈춤으로 읽는다) 그 사실을 붙인다."""
     if not login.shown:
         return None
     fallback = " · 예비 토큰"
+    unwritten = " · 결과 저장 못 함" if login.stop_write else ""
     status = login.status
     reason = login.reason
     if status == LOGIN_OK:
-        return StartStep(STATUS_OK, f"정상 · {remaining_text(login.remaining_minutes)}")
+        line = f"정상 · {remaining_text(login.remaining_minutes)}{unwritten}"
+        return StartStep(STATUS_FAILED if unwritten else STATUS_OK, line)
     if status == LOGIN_OFF:
         result = STATUS_SKIPPED if reason == LOGIN_KEY_MISSING else STATUS_FAILED
         return StartStep(result, f"꺼짐 — {login_reason_text(reason)}")
@@ -437,11 +454,12 @@ def login_step(login: LoginStart) -> StartStep | None:
         detail = login_reason_text(reason) if reason else "까닭 모름"
         return StartStep(STATUS_FAILED, f"멈춤 — {detail}{tail}{fallback}")
     if status == LOGIN_UNREACHED:
-        return StartStep(STATUS_FAILED, f"닿지 못함 — {login_reason_text(reason)}{fallback}")
+        detail = f"{login_reason_text(reason)}{unwritten}{fallback}"
+        return StartStep(STATUS_FAILED, f"닿지 못함 — {detail}")
     if status == LOGIN_UNAVAILABLE:
-        return StartStep(STATUS_FAILED, f"못 함 — {login_reason_text(reason)}{fallback}")
+        return StartStep(STATUS_FAILED, f"못 함 — {login_reason_text(reason)}{unwritten}{fallback}")
     if status == LOGIN_UNCONFIRMED:
-        return StartStep(STATUS_FAILED, f"확인 못 함 — {login_reason_text(reason)}")
+        return StartStep(STATUS_FAILED, f"확인 못 함 — {login_reason_text(reason)}{unwritten}")
     kind = f"({login.error_kind})" if login.error_kind else ""
     return StartStep(STATUS_FAILED, f"예상하지 못한 실패{kind}{fallback}")
 

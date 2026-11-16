@@ -30,11 +30,16 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 하위 프로세스 시간 초과는 `unreached`, 그 밖은 모두 `rejected` 다(애매한 실패도 — 계정 잠김 방지가
 불변식). 로그인 동안 토큰 파일을 치우지 않는다.
 
-**잠김 방지.** 폼 제출 한 번에 시도 한 번. `rejected` 는 다시 시도하지 않고 멈춘다 — 프로세스 안에
-곧바로 적고(그 `cipher` 의 한 벌은 자동 시도 없음) 객체에 멈춤 표시를 쓴다(재시작마다 다시 시도하지
-않게). 관리자가 폼에서 다시 넣어 성공하면 풀린다. 자동 시도는 프로세스 안에서 연달아
-`AUTO_ATTEMPT_LIMIT` 번까지(하위 프로세스를 띄운 수 — 성공에만 0 으로)이고, `unreached` ·
-`unavailable` · `unconfirmed` 뒤에는 `UNREACHED_PAUSE_SECONDS` 동안 쉰다.
+**잠김 방지.** 폼 제출 한 번에 시도 한 번. 자동 시도(시작 · 조회 중)는 로그인 **앞에** 객체를
+멈춤(`attempting`)으로 써 두고(`store.mark_attempting` — 그 쓰기가 실패하면 로그인하지 않는다)
+결과로 고쳐 쓴다(`store.record_outcome`). 결과를 적지 못하거나 프로세스가 도중에 끊기면 객체는
+멈춤으로 남아 다음 시작이 로그인하지 않는다(안전한 쪽으로 닫힘). `rejected` 는 다시 시도하지 않고
+멈춘다 — 프로세스 안에 곧바로 적고(그 `cipher` 의 한 벌은 자동 시도 없음) 객체에 멈춤을
+쓴다(재시작마다 다시 시도하지 않게). `unreached` · `unconfirmed` 는 멈추지 않되(D6) 객체의 `misses`
+를 하나 올려 재시작을 건너 세고, 성공 없이 `MISS_LIMIT` 번에 닿으면 멈춘다(까닭 `miss_limit`).
+관리자가 폼에서 다시 넣어 성공하면 풀린다. 자동 시도는 프로세스 안에서 연달아 `AUTO_ATTEMPT_LIMIT`
+번까지(하위 프로세스를 띄운 수 — 성공에만 0 으로)이고, `unreached` · `unavailable` · `unconfirmed`
+뒤에는 `UNREACHED_PAUSE_SECONDS` 동안 쉰다.
 
 **동시성.** 로그인은 프로세스 잠금 하나로 줄 세운다. 토큰 예외를 본 조회는 그 조회 앞의 토큰
 다이제스트를 들고 잠금을 기다리고, 잠금을 얻었을 때 다이제스트가 바뀌었으면(누가 이미 다시 로그인)
@@ -87,6 +92,8 @@ T = TypeVar("T")
 LOGIN_TIMEOUT_SECONDS: Final = 60.0
 # 프로세스 안 연속 자동 시도 상한 — 하위 프로세스를 띄운 수, 성공에만 0 으로.
 AUTO_ATTEMPT_LIMIT: Final = 3
+# 성공 없이 이어진 닿지 못함 · 확인 못 함의 상한 — 객체에 적어 재시작을 건너 센다. 닿으면 멈춤.
+MISS_LIMIT: Final = 3
 # `unreached` · `unavailable` · `unconfirmed` 뒤 자동 시도를 쉬는 초.
 UNREACHED_PAUSE_SECONDS: Final = 300.0
 # 이 분을 넘게 남아야 성공(수명 8시간 — 막 받은 토큰은 7시간 넘게 남는다). 이하 · 모름은
@@ -119,6 +126,12 @@ REASON_ENV_TOKEN: Final = "env_token"
 REASON_TOKEN_AFTER_LOGIN: Final = "token_after_login"
 # 시작 스크립트의 로그인 단계가 예상하지 못하게 멈춤 — 로그인을 시도했는지 모르니 멈춤으로 본다.
 REASON_UNEXPECTED: Final = "unexpected"
+# 닿지 못함 · 확인 못 함이 성공 없이 `MISS_LIMIT` 번 — 멈춤.
+REASON_MISS_LIMIT: Final = "miss_limit"
+# 시도 표시를 써 둔 채 결과를 적지 못함(또는 도중에 끊김) — 멈춤(`store.ATTEMPTING_REASON`).
+REASON_ATTEMPTING: Final = store.ATTEMPTING_REASON
+# 하위 프로세스를 띄우기 전에 돌아온 까닭 — 연속 시도 수에 들지 않는다.
+PRE_SPAWN_REASONS: Final = frozenset({REASON_BAD_INPUT, REASON_BAD_ACCOUNT, REASON_ENV_TOKEN})
 
 # `unconfirmed` 의 까닭 — 남은 시간이 7시간 이하 · 모름.
 REASON_REMAINING_SHORT: Final = "remaining_short"
@@ -128,6 +141,10 @@ REASON_REMAINING_UNKNOWN: Final = "remaining_unknown"
 SKIP_STOPPED: Final = "stopped"
 SKIP_ATTEMPT_LIMIT: Final = "attempt_limit"
 SKIP_PAUSED: Final = "paused"
+# 시도 표시를 쓰지 못함 — 로그인하지 않았다(멈춤 아님 · 쉰다).
+SKIP_UNGUARDED: Final = "unguarded"
+# 객체가 그 사이 다른 계정으로 바뀌었거나 없어짐 — 든 한 벌로 로그인하지 않는다.
+SKIP_CHANGED: Final = "changed"
 
 # 조회 중 회복에서 로그인 없이 끝난 까닭.
 RECOVERY_NO_LOGIN: Final = "no_login"
@@ -184,12 +201,14 @@ class LoginResult:
 
 @dataclass(frozen=True)
 class Attempt:
-    """자동 시도 한 번 — 건너뛰었으면 `result` 가 `None` 이고 `skipped` 가 까닭. `rejected` 의 멈춤
-    표시를 객체에 쓰지 못했으면 `stop_write` 가 그 까닭이다(프로세스 안 멈춤은 그대로 선다)."""
+    """자동 시도 한 번 — 건너뛰었으면 `result` 가 `None` 이고 `skipped` 가 까닭. 객체에 시도 표시 ·
+    결과 · 멈춤을 쓰지 못했으면 `stop_write` 가 그 까닭이다(결과를 못 적었으면 프로세스 안 멈춤이
+    선다). 이 시도로 멈췄으면 `stopped_reason` 이 그 까닭(거절 · 연속 상한)."""
 
     result: LoginResult | None
     skipped: str = ""
     stop_write: str = ""
+    stopped_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -251,15 +270,17 @@ class LoginStatus:
     streak: int
     paused: bool
     stopped_in_process: bool
-    # 이번 시작이 남긴 멈춤의 까닭(`start_in_app` — 시작의 거절 · 예상하지 못한 멈춤). 없으면 빈 글.
-    held_reason: str = ""
+    # 프로세스 안 멈춤의 까닭 — 이번 시작이 남긴 멈춤(`start_in_app`) · 이 프로세스의 거절 · 결과를
+    # 적지 못함. 없으면 빈 글.
+    process_reason: str = ""
 
     @property
     def state(self) -> Literal["none", "ok", "stopped"]:
         stored = self.load.stored
         if stored is None:
             return "none"
-        return "stopped" if stored.stopped or self.stopped_in_process else "ok"
+        stopped = stored.stopped or stored.misses >= MISS_LIMIT or self.stopped_in_process
+        return "stopped" if stopped else "ok"
 
     @property
     def active(self) -> bool:
@@ -271,8 +292,10 @@ class LoginStatus:
         stored = self.load.stored
         if stored is not None and stored.stop_reason:
             return stored.stop_reason
-        if self.stopped_in_process and self.held_reason:
-            return self.held_reason
+        if self.stopped_in_process and self.process_reason:
+            return self.process_reason
+        if stored is not None and stored.misses >= MISS_LIMIT:
+            return REASON_MISS_LIMIT
         if self.stopped_in_process and self.last is not None:
             return self.last.result.reason
         return ""
@@ -296,7 +319,10 @@ class Marker:
 class _Process:
     streak: int = 0
     paused_until: float = 0.0
+    # 프로세스 안에서 멈춘 한 벌(`cipher`)과 그 까닭 — 거절 · 결과를 적지 못함 · 다시 로그인 뒤 토큰
+    # 오류. 객체의 멈춤 표시를 쓰지 못했어도 선다.
     stopped_cipher: str = field(default="", repr=False)
+    stopped_reason: str = ""
     last: LastAttempt | None = None
     # 이번 시작이 남긴 멈춤(`start_in_app`) — 까닭 코드와, 객체에 멈춤 표시를 아직 써 보지
     # 않았는지. 어느 한 벌인지 모른 채(기동 읽기가 실패했어도) 선다 — 그 사이 객체를 바꿀 길은 이
@@ -320,6 +346,7 @@ def forget_state() -> None:
         _STATE.streak = 0
         _STATE.paused_until = 0.0
         _STATE.stopped_cipher = ""
+        _STATE.stopped_reason = ""
         _STATE.last = None
         _STATE.held_reason = ""
         _STATE.held_write = False
@@ -331,8 +358,20 @@ def _reset_after_success() -> None:
         _STATE.streak = 0
         _STATE.paused_until = 0.0
         _STATE.stopped_cipher = ""
+        _STATE.stopped_reason = ""
         _STATE.held_reason = ""
         _STATE.held_write = False
+
+
+def _stop_in_process(cipher: str, reason: str) -> None:
+    with _STATE_LOCK:
+        _STATE.stopped_cipher = cipher
+        _STATE.stopped_reason = reason
+
+
+def _pause() -> None:
+    with _STATE_LOCK:
+        _STATE.paused_until = _monotonic() + UNREACHED_PAUSE_SECONDS
 
 
 def _note_last(result: LoginResult, *, auto: bool) -> None:
@@ -343,16 +382,16 @@ def _note_last(result: LoginResult, *, auto: bool) -> None:
 def _status_of(loaded: LoadResult) -> LoginStatus:
     with _STATE_LOCK:
         stored = loaded.stored
-        stopped_here = stored is not None and (
-            _STATE.stopped_cipher == stored.cipher or bool(_STATE.held_reason)
-        )
+        stopped_cipher = stored is not None and _STATE.stopped_cipher == stored.cipher
+        stopped_here = stored is not None and (stopped_cipher or bool(_STATE.held_reason))
+        reason = _STATE.held_reason or (_STATE.stopped_reason if stopped_cipher else "")
         return LoginStatus(
             load=loaded,
             last=_STATE.last,
             streak=_STATE.streak,
             paused=_monotonic() < _STATE.paused_until,
             stopped_in_process=stopped_here,
-            held_reason=_STATE.held_reason,
+            process_reason=reason,
         )
 
 
@@ -366,12 +405,6 @@ def peek_status() -> LoginStatus | None:
     자리(알림)가 쓴다."""
     loaded = store.peek_state()
     return None if loaded is None else _status_of(loaded)
-
-
-def auto_login_active() -> bool:
-    """자동 로그인이 서 있나(저장 객체 기억은 처음이면 읽는다). 화면 회차의 알림은 S3 에 묻지 않는
-    `current_view` 를 쓴다."""
-    return status().active
 
 
 ViewState = Literal["off", "none", "ok", "stopped"]
@@ -523,6 +556,27 @@ def _judge(
     return LoginResult(OUTCOME_REJECTED, REASON_TOKEN_UNCHANGED)
 
 
+def _precheck(
+    account: str,
+    password: str,
+    *,
+    folder: Path | None,
+    environ: Mapping[str, str] | None,
+) -> LoginResult | None:
+    """하위 프로세스를 띄우기 전 거절(`PRE_SPAWN_REASONS` — 빈 값 · 줄바꿈 · 파일 이름으로 못 쓰는
+    계정 · 패키지가 파일보다 먼저 읽는 토큰 환경변수가 있음). 띄울 수 있으면 `None`."""
+    env = os.environ if environ is None else environ
+    problem = _input_problem(account, password)
+    if problem is not None:
+        return LoginResult(OUTCOME_UNAVAILABLE, problem)
+    place = bdq_token.credential_dir() if folder is None else folder
+    if bdq_token.token_file_path(place, account) is None:
+        return LoginResult(OUTCOME_UNAVAILABLE, REASON_BAD_ACCOUNT)
+    if bdq_token.environment_token_set(env):
+        return LoginResult(OUTCOME_UNAVAILABLE, REASON_ENV_TOKEN)
+    return None
+
+
 def attempt_login(
     account: str,
     password: str,
@@ -539,15 +593,13 @@ def attempt_login(
     계정 · 패키지가 파일보다 먼저 읽는 토큰 환경변수가 있음)은 `unavailable` 이고 하위 프로세스를
     띄우지 않는다."""
     env = os.environ if environ is None else environ
-    problem = _input_problem(account, password)
-    if problem is not None:
-        return LoginResult(OUTCOME_UNAVAILABLE, problem)
+    refused = _precheck(account, password, folder=folder, environ=env)
+    if refused is not None:
+        return refused
     place = bdq_token.credential_dir() if folder is None else folder
     target = bdq_token.token_file_path(place, account)
     if target is None:
         return LoginResult(OUTCOME_UNAVAILABLE, REASON_BAD_ACCOUNT)
-    if bdq_token.environment_token_set(env):
-        return LoginResult(OUTCOME_UNAVAILABLE, REASON_ENV_TOKEN)
     before = file_digest(target)
     limit = LOGIN_TIMEOUT_SECONDS if timeout is None else timeout
     output = b""
@@ -602,17 +654,49 @@ def _resolve_target(target: S3Target | None) -> S3Target | None:
         return None
 
 
+def _write_failure(write: store.WriteResult) -> str:
+    """쓰기 실패의 짧은 코드(`까닭:분류`)."""
+    return f"{write.reason}:{write.failure_kind}" if write.failure_kind else write.reason
+
+
 def _persist_stop(stored: StoredLogin, reason: str, target: S3Target | None) -> str:
     """객체에 멈춤 표시를 쓴다. 못 쓰면 그 까닭(빈 글이면 씀). 프로세스 안 멈춤은 먼저 선다."""
-    with _STATE_LOCK:
-        _STATE.stopped_cipher = stored.cipher
+    _stop_in_process(stored.cipher, reason)
     resolved = _resolve_target(target)
     if resolved is None:
         return store.WRITE_UNAVAILABLE
     write = store.mark_stopped(resolved, reason, cipher=stored.cipher)
-    if write.ok:
-        return ""
-    return f"{write.reason}:{write.failure_kind}" if write.failure_kind else write.reason
+    return "" if write.ok else _write_failure(write)
+
+
+def _settle(stored: StoredLogin, result: LoginResult, target: S3Target) -> Attempt:
+    """하위 프로세스를 띄운 자동 시도의 결과를 객체와 프로세스에 적는다.
+
+    성공은 `misses` 0 · 멈춤 풂, 거절은 멈춤, 닿지 못함 · 확인 못 함은 `misses` 하나 더(성공 없이
+    `MISS_LIMIT` 번이면 멈춤), 패키지 · 하위 프로세스가 서지 못함(로그인 시도 없음)은 그대로다.
+    결과를 적지 못하면 객체는 앞서 써 둔 시도 표시(멈춤)로 남고 이 프로세스도 그 한 벌을 멈춘다."""
+    stopped = False
+    reason: str | None = None
+    misses = stored.misses
+    if result.ok:
+        misses = 0
+    elif result.outcome == OUTCOME_REJECTED:
+        stopped, reason = True, result.reason or REASON_TOKEN_UNCHANGED
+    elif result.outcome in (OUTCOME_UNREACHED, OUTCOME_UNCONFIRMED):
+        misses = stored.misses + 1
+        if misses >= MISS_LIMIT:
+            stopped, reason = True, REASON_MISS_LIMIT
+    write = store.record_outcome(
+        target, cipher=stored.cipher, stopped=stopped, reason=reason, misses=misses
+    )
+    failure = "" if write.ok else _write_failure(write)
+    if result.ok:
+        _reset_after_success()
+    elif not stopped:
+        _pause()
+    if stopped or failure:
+        _stop_in_process(stored.cipher, reason if reason is not None else REASON_ATTEMPTING)
+    return Attempt(result, stop_write=failure, stopped_reason=reason or "")
 
 
 def _auto_attempt_locked(
@@ -623,14 +707,23 @@ def _auto_attempt_locked(
     environ: Mapping[str, str] | None,
     path: str,
 ) -> Attempt:
-    """자동 시도 한 번 — `_LOGIN_LOCK` 을 쥔 채 부른다. 이번 시작이 남긴 멈춤(`held_reason`)이
-    있으면 로그인하지 않고, 거절의 멈춤 표시를 아직 써 보지 않았으면 한 번 써 본다."""
+    """자동 시도 한 번 — `_LOGIN_LOCK` 을 쥔 채 부른다.
+
+    멈춤(객체 · 프로세스 안 · 이번 시작이 남긴 것 — `held_reason`)이면 로그인하지 않고, 시작의
+    거절을 아직 객체에 써 보지 않았으면 한 번 써 본다. 연속 상한 · 쉬는 중이면 건너뛴다. 띄우기 전
+    거절은 시도 표시 없이 돌아온다. 그 밖은 시도 표시를 먼저 쓰고(실패하면 로그인하지 않는다)
+    로그인한 뒤 결과를 적는다(`_settle`)."""
     with _STATE_LOCK:
         held = _STATE.held_reason
         write_held = bool(held) and _STATE.held_write and not stored.stopped
         if write_held:
             _STATE.held_write = False
-        stopped = stored.stopped or _STATE.stopped_cipher == stored.cipher or bool(held)
+        stopped = (
+            stored.stopped
+            or stored.misses >= MISS_LIMIT
+            or _STATE.stopped_cipher == stored.cipher
+            or bool(held)
+        )
     if stopped:
         if write_held:
             return Attempt(None, SKIP_STOPPED, stop_write=_persist_stop(stored, held, target))
@@ -640,19 +733,29 @@ def _auto_attempt_locked(
             return Attempt(None, SKIP_ATTEMPT_LIMIT)
         if _monotonic() < _STATE.paused_until:
             return Attempt(None, SKIP_PAUSED)
-        _STATE.streak += 1
     secret = stored.secret
+    refused = _precheck(secret.account, secret.password, folder=folder, environ=environ)
+    if refused is not None:
+        _note_last(refused, auto=True)
+        _log(refused, path=path)
+        _pause()
+        return Attempt(refused)
+    resolved = _resolve_target(target)
+    if resolved is None:
+        _pause()
+        return Attempt(None, SKIP_UNGUARDED, stop_write=store.WRITE_UNAVAILABLE)
+    guard = store.mark_attempting(resolved, cipher=stored.cipher)
+    if not guard.ok:
+        if guard.reason in (store.WRITE_CHANGED, store.WRITE_GONE):
+            return Attempt(None, SKIP_CHANGED, stop_write=_write_failure(guard))
+        _pause()
+        return Attempt(None, SKIP_UNGUARDED, stop_write=_write_failure(guard))
+    with _STATE_LOCK:
+        _STATE.streak += 1
     result = attempt_login(secret.account, secret.password, folder=folder, environ=environ)
     _note_last(result, auto=True)
     _log(result, path=path)
-    if result.ok:
-        _reset_after_success()
-        return Attempt(result)
-    if result.outcome == OUTCOME_REJECTED:
-        return Attempt(result, stop_write=_persist_stop(stored, result.reason, target))
-    with _STATE_LOCK:
-        _STATE.paused_until = _monotonic() + UNREACHED_PAUSE_SECONDS
-    return Attempt(result)
+    return _settle(stored, result, resolved)
 
 
 def is_relogin_error(error: BaseException) -> bool:
@@ -692,25 +795,36 @@ def recover_after_token_failure(
             stored, target=target, folder=folder, environ=environ, path="조회"
         )
     # 확인 못 한 로그인도 토큰은 바뀌었다 — 같은 조회를 한 번 다시 하고, 또 토큰 오류면 멈춘다(D4).
+    # 이 시도로 이미 멈췄으면(연속 상한) 다시 조회만 하고 멈춤을 또 쓰지 않는다.
     retry = attempt.result is not None and attempt.result.outcome in (
         OUTCOME_OK,
         OUTCOME_UNCONFIRMED,
     )
-    return Recovery(retry, logged_in=retry, attempt=attempt, stored=stored)
+    logged_in = retry and not attempt.stopped_reason
+    return Recovery(retry, logged_in=logged_in, attempt=attempt, stored=stored)
 
 
 def _stop_after_retry(recovery: Recovery, target: S3Target | None) -> None:
-    """스스로 다시 로그인한 뒤 다시 한 조회가 또 토큰 오류 — 멈춘다(저장)."""
+    """스스로 다시 로그인한 뒤 다시 한 조회가 또 토큰 오류 — 멈춘다(저장). 로그인 잠금 아래에서,
+    지금 기억한 한 벌이 그 로그인의 한 벌일 때만 — 그 사이 폼이 다른 계정을 넣었거나 지웠으면 새
+    계정을 멈추지 않는다."""
     stored = recovery.stored
     if stored is None:
         return
-    failed = LoginResult(OUTCOME_REJECTED, REASON_TOKEN_AFTER_LOGIN)
-    _note_last(failed, auto=True)
-    _log(failed, path="조회")
-    try:
-        _persist_stop(stored, REASON_TOKEN_AFTER_LOGIN, target)
-    except Exception:  # 멈춤 표시를 못 써도 프로세스 안 멈춤은 섰다
-        _LOGGER.warning("BigDataQuery 로그인 멈춤 표시를 쓰지 못함")
+    with _LOGIN_LOCK:
+        try:
+            now = store.current()
+        except Exception:  # 기억을 읽다 깨지면 든 한 벌로 멈춘다(안전한 쪽)
+            now = stored
+        if now is None or now.cipher != stored.cipher:
+            return
+        failed = LoginResult(OUTCOME_REJECTED, REASON_TOKEN_AFTER_LOGIN)
+        _note_last(failed, auto=True)
+        _log(failed, path="조회")
+        try:
+            _persist_stop(now, REASON_TOKEN_AFTER_LOGIN, target)
+        except Exception:  # 멈춤 표시를 못 써도 프로세스 안 멈춤은 섰다
+            _LOGGER.warning("BigDataQuery 로그인 멈춤 표시를 쓰지 못함")
 
 
 def run_with_relogin(
@@ -804,9 +918,11 @@ def forget_login(target: S3Target | None = None) -> store.WriteResult:
 def start_login(environ: Mapping[str, str], *, folder: Path | None = None) -> StartLogin:
     """시작 스크립트의 로그인 단계 — `managed` + 키 + 객체 상태 `ok` 면 로그인한다.
 
-    `ok` 면 패키지가 새 토큰을 쓴 것이고, `rejected` 면 멈춤을 저장한다. `unreached` ·
-    `unavailable` · `absent` · `stopped` · `off` 는 지금 길(`CAPA_BDQ_TOKEN`)로 간다 — 그 판단은
-    부르는 쪽 몫이다."""
+    `ok` 면 패키지가 새 토큰을 쓴 것이고, `rejected` 면 멈춤을 저장한다. 닿지 못함 · 확인 못 함이
+    연속 상한에 닿았으면 `stopped`(까닭 `miss_limit`)다. 시도 표시를 쓰지 못했으면 로그인 없이
+    `unavailable`(까닭 `unguarded`)이다. `unreached` · `unavailable` · `absent` · `stopped` · `off`
+    는 지금 길(`CAPA_BDQ_TOKEN`)로 가고 `unconfirmed` 는 패키지가 쓴 토큰을 둔다 — 그 판단은 부르는
+    쪽 몫이다."""
     off = store.availability(environ)
     if off is not None:
         return StartLogin("off", off)
@@ -828,10 +944,18 @@ def start_login(environ: Mapping[str, str], *, folder: Path | None = None) -> St
             stored, target=target, folder=folder, environ=environ, path="시작"
         )
     result = attempt.result
+    written = attempt.stop_write
     if result is None:
-        return StartLogin("stopped", attempt.skipped, stored=stored)
+        if attempt.skipped in (SKIP_UNGUARDED, SKIP_CHANGED):
+            return StartLogin("unavailable", attempt.skipped, stop_write=written, stored=stored)
+        reason = REASON_MISS_LIMIT if stored.misses >= MISS_LIMIT else attempt.skipped
+        return StartLogin("stopped", reason, stop_write=written, stored=stored)
+    if attempt.stopped_reason and result.outcome != OUTCOME_REJECTED:
+        return StartLogin(
+            "stopped", attempt.stopped_reason, result=result, stop_write=written, stored=stored
+        )
     return StartLogin(
-        result.outcome, result.reason, result=result, stop_write=attempt.stop_write, stored=stored
+        result.outcome, result.reason, result=result, stop_write=written, stored=stored
     )
 
 
@@ -844,7 +968,8 @@ def start_in_app(environ: MutableMapping[str, str]) -> None:
     2. 이번 시작 스크립트의 로그인 단계가 거절했거나(멈춤 표시를 썼든 못 썼든) 예상하지 못하게
        멈췄으면 그 멈춤을 이 프로세스에 든다(`held_reason`) — 시작 스크립트의 프로세스 안 멈춤은
        앱으로 바뀌며 사라지므로, 첫 토큰 예외가 같은 계정으로 또 로그인하지 않게(계정 잠김 방지).
-       아래 읽기가 실패해도 선다. 폼이 성공하거나 지우면 걷힌다.
+       아래 읽기가 실패해도 선다. 읽은 한 벌이 시작이 판정한 한 벌이 아니면(넣은 시각
+       `entered_at` 이 다름 — 그 뒤 관리자가 다시 넣음) 걷는다. 폼이 성공하거나 지우면 걷힌다.
     3. 저장 객체를 한 번 읽어 기억한다 — 화면 회차의 첫 읽기가 S3 GET 을 잠금 아래 기다리지 않게.
        기능이 서지 않으면 S3 에 묻지 않는다. 시작의 거절이고 객체가 아직 `ok` 면 멈춤 표시를 한 번
        더 써 본다(못 읽었으면 다음 자동 시도 자리에서 써 본다).
@@ -873,7 +998,11 @@ def start_in_app(environ: MutableMapping[str, str]) -> None:
         _LOGGER.warning("BigDataQuery 자동 로그인 기동 읽기 실패: %s", type(error).__name__)
         return
     stored = loaded.stored
+    judged = "" if start is None else start.entered_at
     with _STATE_LOCK:
+        if stored is not None and judged and stored.entered_at != judged:
+            _STATE.held_reason = ""
+            _STATE.held_write = False
         write_held = _STATE.held_write and stored is not None and not stored.stopped
         held = _STATE.held_reason
         if write_held:
