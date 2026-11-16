@@ -7,6 +7,11 @@ C-DEP(`managed`)에서 BDQ 토큰이 만료 · 무효가 되면 앱이 저장된
 (`run_with_relogin` · `recover_after_token_failure` — 어댑터가 부른다), Admin 폼 제출
 (`login_from_form`).
 
+**앱 기동과 화면.** 앱은 기동 때 한 번(`start_in_app` — `capa_server.py`) 키를 쥐고 환경에서 빼고
+저장 객체를 읽어 두며, 시작 스크립트가 거절을 보고도 멈춤 표시를 쓰지 못했으면 그 멈춤을 넘겨받는다
+(시작 스크립트의 프로세스 안 멈춤은 앱으로 바뀌며 사라진다). 화면 회차마다 도는 알림은 S3 에 묻지
+않는 `current_view` 로 상태를 읽는다 — 기억이 없으면 이번 시작 기록(결과 파일의 자동 로그인 칸).
+
 **로그인 한 번**(`attempt_login`)은 `sys.executable` 하위 프로세스(`io/bdq_login_child.py`)다.
 계정 · 비밀번호는 표준 입력으로만 넘기고 명령줄 · 환경변수에 없다. 하위 환경은 비밀
 이름(시작 스크립트가 앱에 넘기지 않는 것 · 통합인증 비밀 · `CAPA_BDQ_SECRET_KEY` · `CAPA_S3_*` ·
@@ -49,7 +54,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, TypeVar
@@ -59,7 +64,15 @@ from capa_simulation.io import bdq_login_store as store
 from capa_simulation.io import bdq_token
 from capa_simulation.io.bdq_login_child import MARKER
 from capa_simulation.io.bdq_login_store import LoadResult, LoginSecret, StoredLogin
-from capa_simulation.io.container_start_report import APP_WITHHELD_ENVIRONMENT
+from capa_simulation.io.container_start_report import (
+    APP_WITHHELD_ENVIRONMENT,
+    LOGIN_ERROR,
+    LOGIN_REJECTED,
+    LOGIN_STANDING,
+    LOGIN_STOPPED,
+    LoginStart,
+    read_container_start_report,
+)
 
 if TYPE_CHECKING:
     from capa_simulation.io.s3_small import S3Target
@@ -97,6 +110,8 @@ REASON_BAD_INPUT: Final = "bad_input"
 REASON_BAD_ACCOUNT: Final = "bad_account"
 REASON_ENV_TOKEN: Final = "env_token"
 REASON_TOKEN_AFTER_LOGIN: Final = "token_after_login"
+# 시작 스크립트의 로그인 단계가 예상하지 못하게 멈춤 — 로그인을 시도했는지 모르니 멈춤으로 본다.
+REASON_UNEXPECTED: Final = "unexpected"
 
 WARNING_REMAINING_SHORT: Final = "remaining_short"
 WARNING_REMAINING_UNKNOWN: Final = "remaining_unknown"
@@ -303,9 +318,7 @@ def _note_last(result: LoginResult, *, auto: bool) -> None:
         _STATE.last = LastAttempt(store.kst_text(), auto, result)
 
 
-def status() -> LoginStatus:
-    """지금 상태(저장 객체 기억은 처음이면 읽는다)."""
-    loaded = store.load_state()
+def _status_of(loaded: LoadResult) -> LoginStatus:
     with _STATE_LOCK:
         stored = loaded.stored
         stopped_here = stored is not None and _STATE.stopped_cipher == stored.cipher
@@ -318,9 +331,70 @@ def status() -> LoginStatus:
         )
 
 
+def status() -> LoginStatus:
+    """지금 상태(저장 객체 기억은 처음이면 읽는다)."""
+    return _status_of(store.load_state())
+
+
+def peek_status() -> LoginStatus | None:
+    """지금 상태를 S3 에 묻지 않고 — 저장 객체를 아직 읽지 않았으면 `None`. 화면 회차마다 도는
+    자리(알림)가 쓴다."""
+    loaded = store.peek_state()
+    return None if loaded is None else _status_of(loaded)
+
+
 def auto_login_active() -> bool:
-    """자동 로그인이 서 있나 — 만료 전 알림(`AD-11`)을 내지 않을지 가른다."""
+    """자동 로그인이 서 있나(저장 객체 기억은 처음이면 읽는다). 화면 회차의 알림은 S3 에 묻지 않는
+    `current_view` 를 쓴다."""
     return status().active
+
+
+ViewState = Literal["off", "none", "ok", "stopped"]
+
+
+@dataclass(frozen=True)
+class LoginView:
+    """알림 · 지금 상태 줄이 읽는 한 벌 — `off`(기능이 서지 않음) · `none`(저장된 계정 없음) ·
+    `ok`(서 있음) · `stopped`(멈춤). `live` 는 이 프로세스가 기억한 것에서 읽었나(아니면 시작 기록).
+    계정 · 비밀번호가 없다."""
+
+    state: ViewState
+    stop_reason: str = ""
+    stopped_at: str = ""
+    live: bool = False
+
+    @property
+    def standing(self) -> bool:
+        """자동 로그인이 서 있나 — 만료 전 알림(`AD-11`)을 내지 않는다."""
+        return self.state == "ok"
+
+
+def current_view(start: LoginStart | None = None) -> LoginView:
+    """지금 자동 로그인 상태 — S3 에 묻지 않는다(화면 회차마다 불러도 된다).
+
+    키가 없거나 꼴이 틀리거나 `managed` 가 아니면 `off` 다(키를 먼저 본다 — 키 없는 서버는 설정
+    파일도 읽지 않는다). 이 프로세스가 저장 객체를 읽어 기억했으면(기동 때 `start_in_app`) 그것과
+    프로세스 안 멈춤으로, 아직 읽지 않았거나 S3 를 읽지 못했으면 이번 시작 기록(`start` — 결과
+    파일의 자동 로그인 칸)으로 가른다. 시작 기록의 거절 · 멈춤 · 예상하지 못한 실패는
+    멈춤이다(애매하면 멈춤)."""
+    if store.key_problem() is not None or not store.is_managed():
+        return LoginView("off")
+    live = peek_status()
+    if live is not None and live.load.reason != store.REASON_UNREAD:
+        if live.state == "stopped":
+            stored = live.load.stored
+            at = stored.stopped_at if stored is not None and stored.stopped_at else ""
+            if not at and live.last is not None:
+                at = live.last.at
+            return LoginView("stopped", live.stop_reason, at, live=True)
+        return LoginView(live.state, live=True)
+    if start is None:
+        return LoginView("none")
+    if start.status in (LOGIN_STOPPED, LOGIN_REJECTED, LOGIN_ERROR):
+        return LoginView("stopped", start.reason or REASON_UNEXPECTED)
+    if start.status in LOGIN_STANDING:
+        return LoginView("ok")
+    return LoginView("none")
 
 
 # --- 하위 프로세스 ------------------------------------------------------------------------
@@ -718,3 +792,44 @@ def start_login(environ: Mapping[str, str], *, folder: Path | None = None) -> St
     return StartLogin(
         result.outcome, result.reason, result=result, stop_write=attempt.stop_write, stored=stored
     )
+
+
+def start_in_app(environ: MutableMapping[str, str]) -> None:
+    """앱 기동 때 한 번(`capa_server.py` — 통합인증 기동 뒤, 연결을 받기 전). 예외를 내지 않는다 —
+    어떤 실패도 앱 띄우기를 막지 않는다.
+
+    1. 키를 쥐고 프로세스 환경에서 뺀다(`store.take_secret_key`) — 앱이 띄우는 하위 프로세스(aws
+       등)가 물려받지 않게.
+    2. 저장 객체를 한 번 읽어 기억한다 — 화면 회차의 첫 읽기가 S3 GET 을 잠금 아래 기다리지 않게.
+       기능이 서지 않으면 S3 에 묻지 않는다.
+    3. 이번 시작 스크립트의 로그인 단계가 거절을 보고도 멈춤 표시를 쓰지 못했거나(객체는 아직 `ok`)
+       예상하지 못하게 멈췄으면, 이 프로세스에서 그 한 벌을 멈춘다 — 시작 스크립트의 프로세스 안
+       멈춤은 앱으로 바뀌며 사라지므로 첫 토큰 예외가 같은 계정으로 또 로그인하지 않게(계정 잠김
+       방지). 거절은 멈춤 표시를 한 번 더 써 본다.
+    """
+    try:
+        store.take_secret_key(environ)
+        loaded = store.load_state()
+    except Exception as error:  # 기동 읽기가 깨져도 앱은 뜬다 — 조회가 다시 읽는다
+        _LOGGER.warning("BigDataQuery 자동 로그인 기동 읽기 실패: %s", type(error).__name__)
+        return
+    stored = loaded.stored
+    if stored is None or stored.stopped:
+        return
+    try:
+        report = read_container_start_report()
+    except Exception:  # 결과 파일을 못 읽으면 넘겨받을 멈춤도 없다
+        report = None
+    start = None if report is None else report.bdq_login
+    if start is None or start.status not in (LOGIN_REJECTED, LOGIN_ERROR):
+        return
+    if start.status == LOGIN_ERROR:
+        with _STATE_LOCK:
+            _STATE.stopped_cipher = stored.cipher
+        _LOGGER.warning("BigDataQuery 자동 로그인: 시작 단계가 멈춰 이 프로세스에서 멈춤")
+        return
+    try:
+        failure = _persist_stop(stored, start.reason or REASON_TOKEN_UNCHANGED, None)
+    except Exception as error:  # 멈춤 표시를 못 써도 프로세스 안 멈춤은 섰다
+        failure = type(error).__name__
+    _LOGGER.warning("BigDataQuery 자동 로그인: 시작 거절을 넘겨받아 멈춤(표시 %s)", failure or "씀")

@@ -1477,7 +1477,8 @@ def test_child_processes_get_neither_the_secret_nor_the_access_lists() -> None:
 
 
 def test_the_start_script_reads_the_sso_names_from_the_light_module() -> None:
-    """시작 스크립트가 쓰는 이름 튜플은 `auth.names` 하나다(무거운 auth 모듈을 끌어오지 않는다)."""
+    """시작 스크립트가 쓰는 이름 튜플은 `auth.names` 하나다(무거운 auth 모듈을 끌어오지 않는다).
+    자동 로그인 키는 앱에는 넘기고 하위 프로세스에는 넘기지 않는다."""
     assert container_start.CHILD_WITHHELD_ENVIRONMENT == (
         *report_contract.APP_WITHHELD_ENVIRONMENT,
         sso_names.ENV_SECRET,
@@ -1485,7 +1486,9 @@ def test_the_start_script_reads_the_sso_names_from_the_light_module() -> None:
         sso_names.ENV_S3_SECRET_KEY,
         sso_names.ENV_ACCESS_ADMINS,
         sso_names.ENV_ACCESS_USERS,
+        report_contract.BDQ_SECRET_KEY_ENV,
     )
+    assert report_contract.BDQ_SECRET_KEY_ENV not in report_contract.APP_WITHHELD_ENVIRONMENT
     assert container_start.sso_presence({sso_names.ENV_SCOPE: " "}) == dict.fromkeys(
         sso_names.SSO_ENVIRONMENT, False
     )

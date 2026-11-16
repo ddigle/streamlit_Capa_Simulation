@@ -42,7 +42,7 @@ from capa_simulation.components.dialog_host import DialogHost
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.sso_status import CLOCK_FORMAT
 from capa_simulation.io import bdq_token
-from capa_simulation.io.container_start_report import BDQ_TOKEN_ENV
+from capa_simulation.io.container_start_report import BDQ_LOGIN_LABEL, BDQ_TOKEN_ENV
 from capa_simulation.korea_time import kst_clock
 from capa_simulation.navigation import ADMIN_AREA
 from capa_simulation.page_tabs_state import tab_label
@@ -83,6 +83,12 @@ INSTALL_FIX: Final = (
     "Admin 「서버 시작 점검」 의 「토큰 넣기」 로 새 토큰을 넣으면 다음 조회부터 쓰입니다 — "
     f"컨테이너를 다시 띄우면 CD 환경변수 {BDQ_TOKEN_ENV} 값으로 돌아가니 그 값도 새 토큰으로 "
     "바꿔 두세요."
+)
+# 자동 로그인이 켜졌는데(`managed` + 키) 저장된 계정이 없는 서버의 할 일(`AD-10`) — 계정을 넣으면
+# 그 자리에서 로그인해 새 토큰을 받고, 뒤로 토큰이 죽으면 앱이 스스로 다시 로그인한다.
+AUTO_LOGIN_FIX: Final = (
+    f"Admin Area 「{BDQ_LOGIN_LABEL}」 에 BigDataQuery 계정을 넣으면 앱이 로그인해 새 토큰을 받고, "
+    "뒤로 토큰이 죽으면 스스로 다시 로그인합니다. 이 알림은 그 뒤 조회가 한 번 성공하면 풀립니다."
 )
 
 
@@ -212,14 +218,18 @@ def _token_dialog() -> None:
     HOST.finish()
 
 
-def render_expiry_alert() -> None:
+def render_expiry_alert(*, standing: bool = False) -> None:
     """토큰 만료 1시간 전 관리자 알림(`AD-11`). 결과 파일이 있는 서버에서 회차마다 조건 없이 부른다
     (이벤트 칸 한 자리 — 토큰을 읽지 못해도 해소로 그 자리를 쓴다). 지문은 만료 시각 하나다 —
-    회차마다 바뀌는 지금 시각을 싣지 않는다."""
+    회차마다 바뀌는 지금 시각을 싣지 않는다. 자동 로그인이 서 있는 동안(`standing` —
+    `bdq_login.current_view`)은 해소로 부른다 — 토큰이 죽으면 앱이 다시 로그인한다."""
     state = read_current()
     expires = state.expires_at
     active = (
-        expires is not None and bdq_token.expiry_is_near(state) and sso_identity.viewer_is_admin()
+        not standing
+        and expires is not None
+        and bdq_token.expiry_is_near(state)
+        and sso_identity.viewer_is_admin()
     )
     alerts.state(
         EXPIRY_ALERT_CODE,

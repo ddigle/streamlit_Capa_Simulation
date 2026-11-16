@@ -26,6 +26,9 @@ Admin 「토큰 넣기」(`components/bdq_token_admin.py`)가 관리자가 넣�
 뒷벽이다. 읽기는 덧붙은 보기라 무엇을 받아도 예외를 내지 않는다 — 풀 수 없는 몸 · 깊은 중첩 ·
 어느 시각대로도 못 옮길 먼 시각은 모두 「모름」 이다(만료 알림은 모든 화면 회차에 돈다).
 
+**계정.** 파일 이름의 계정은 계정 하나의 원천(`account_name`)이다 — 저장된 자동 로그인 계정
+(`io/bdq_login_store.py`)이 있으면 그 ID 가 `CAPA_BDQ_USER_NAME` 을 이긴다.
+
 시작 스크립트가 앱 의존성보다 먼저 읽으므로 표준 라이브러리만 쓴다.
 """
 
@@ -43,6 +46,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Final, Literal
 
+from capa_simulation.io import bdq_login_store
 from capa_simulation.io.container_start_report import BDQ_USER_NAME_ENV
 
 # 패키지(`bdq.login()`·`getData()`)가 토큰을 찾는 자리. 패키지가 이 자리만 보므로 옮기지
@@ -155,6 +159,13 @@ class InstallOutcome:
     reason: str = ""
 
 
+def account_name(environ: Mapping[str, str] | None = None) -> str:
+    """토큰 파일 이름의 계정 — 계정 하나의 원천(`bdq_login_store.peek_account`). 이 프로세스가
+    기억한 저장된 자동 로그인 계정이 있으면 그 ID, 없으면 `CAPA_BDQ_USER_NAME`. S3 에 묻지 않는다
+    (앱은 기동 때 한 번 읽어 둔다). 화면에 싣지 않는다."""
+    return bdq_login_store.peek_account(environ)
+
+
 def environment_token_set(environ: Mapping[str, str] | None = None) -> bool:
     """패키지가 토큰 파일보다 먼저 읽는 환경변수 `BIGDATAQUERY_LOGIN_TOKEN` 이 이 프로세스에 있나.
     값은 보지 않는다(풀지 않는다)."""
@@ -170,7 +181,7 @@ def blocked_reason(environ: Mapping[str, str] | None = None) -> str | None:
             f"환경변수 {LOGIN_TOKEN_ENV} 이 있어 패키지가 토큰 파일보다 그 값을 먼저 읽습니다 — "
             "CD 환경변수 표에서 그 key 를 빼야 넣은 토큰이 쓰입니다"
         )
-    account = env.get(BDQ_USER_NAME_ENV, "").strip()
+    account = account_name(env)
     if not account:
         return f"{BDQ_USER_NAME_ENV} 이 없어 토큰 파일 이름을 정할 수 없습니다"
     if token_file_path(credential_dir(), account) is None:
@@ -201,7 +212,7 @@ def install_token(raw: str, environ: Mapping[str, str] | None = None) -> Install
             "refused", f"{MIN_TOKEN_BYTES}바이트보다 짧아 토큰이 아닌 값으로 봅니다"
         )
     env = os.environ if environ is None else environ
-    account = env.get(BDQ_USER_NAME_ENV, "").strip()
+    account = account_name(env)
     folder = credential_dir()
     target = token_file_path(folder, account)
     if target is None:  # blocked_reason 이 먼저 거른다 — 타입을 좁힌다
@@ -290,7 +301,7 @@ def current_token(environ: Mapping[str, str] | None = None) -> TokenState:
     if environment_token_set(env):
         value = env.get(LOGIN_TOKEN_ENV, "").strip()
         return TokenState("environment", expires_at=token_expiry(value.encode("utf-8")))
-    target = token_file_path(credential_dir(), env.get(BDQ_USER_NAME_ENV, "").strip())
+    target = token_file_path(credential_dir(), account_name(env))
     if target is None:
         return TokenState("unknown")
     try:

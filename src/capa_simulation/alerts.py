@@ -392,6 +392,11 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # 코어 화면의 처리 못 한 오류 — 프로세스 기록(`page_failures`)에서 관리자 몫 회차에 낸다(참고
     # 번호 · 「그 화면으로」 그 화면, `components/page_failure_card`).
     AlertSpec("AD-22", "error", "state", "코어 화면의 처리 못 한 오류(참고 번호)"),
+    # BigDataQuery 자동 로그인 멈춤 — 저장된 계정의 로그인이 거절돼(시작 · 조회 중) 다시 시도하지
+    # 않고 멈춘 C-DEP 서버의 관리자 회차(`container_start_check.render_token_alert`, 2026-11-16
+    # 사용자 결정 D3 · D4). Admin Area 「BDQ 자동 로그인」 에서 계정을 다시 넣어 로그인이 성공하면
+    # 풀린다.
+    AlertSpec("AD-23", "action", "state", "BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣기"),
 )
 
 

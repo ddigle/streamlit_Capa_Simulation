@@ -9,9 +9,9 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
 경로 · 문지기를 붙인 운영 진입점, `docs/sso_setup.md`).
 
 **차례** — ① 임시 응답(`container_stage.py` — 맨 앞, 앱 포트에서 상태 검사에 답한다) ② AWS 프로필
-③ 점검(aws 판 · ECS 연결 · 버킷 목록 · 디스크 · pod · cgroup) ④ 설치 · 토큰 · 요청자 계정 ⑤ 두 DB
-받기 ⑥ 소켓을 닫고 앱이 된다. S3 키도 `managed` 도 없으면 ② ③ ⑤ 를 건너뛰고, 키만 있으면 ② ③ 까지
-돌고 앱은 빈 디스크로 뜬다(첫 CI/CD 로 aws 판 · 연결을 보는 판).
+③ 점검(aws 판 · ECS 연결 · 버킷 목록 · 디스크 · pod · cgroup) ④ 설치 · 자동 로그인 · 토큰 · 요청자
+계정 ⑤ 두 DB 받기 ⑥ 소켓을 닫고 앱이 된다. S3 키도 `managed` 도 없으면 ② ③ ⑤ 를 건너뛰고,
+키만 있으면 ② ③ 까지 돌고 앱은 빈 디스크로 뜬다(첫 CI/CD 로 aws 판 · 연결을 보는 판).
 
 0. 설치 — `bigdataquery` 가 없고 `CAPA_ARTIFACTORY_USER`·`CAPA_ARTIFACTORY_TOKEN`·
    `CAPA_COMPANY_INDEX_URL` 이 있으면 pip 를 두 번 부른다. 판·인덱스는 `requirements-company.txt` 가
@@ -24,17 +24,27 @@ C-DEP 의 CD 는 시작 명령을 바꿀 수 없고(CI/CD 단추 → 통과하�
      본다. pip 설정 파일은 끈다(`PIP_CONFIG_FILE=os.devnull`) — 그 안의 추가 인덱스도 막는다.
    - 의존성은 이미지의 기본 인덱스로 채운다. 앱 판 고정(`requirements.txt`)을 제약으로 걸어 사내
      패키지가 앱 의존성을 바꾸지 못하게 한다. 이 pip 에는 자격증명이 하나도 없다.
-1. 로그인 토큰 — `CAPA_BDQ_TOKEN` 과 `CAPA_BDQ_USER_NAME` 이 있으면 패키지가 보는 자리
+- 자동 로그인 — `managed` 이고 `CAPA_BDQ_SECRET_KEY` 가 Fernet 키 꼴이고 저장 객체(`secrets/
+  bdq_login.json`)의 상태가 `ok` 면 저장된 계정으로 한 번 로그인한다(`bdq_login.start_login` — 하위
+  프로세스, 비밀번호는 표준 입력으로만). 성공하면 패키지가 쓴 새 토큰을 둔다. 거절이면 객체에 멈춤을
+  쓰고(다시 띄워도 로그인하지 않는다), 닿지 못함 · 패키지 없음 · 멈춤 · 계정 없음 · 꺼짐은 아래 예비
+  토큰 길로 간다. 결과는 결과 파일의 `bdq_login` 칸(갈래 · 코드 · 남은 분 — 비밀 없음)이고, 풀린
+  계정 · 비밀번호는 곧바로 가리개에 들어간다(계정도 통째로 가린다).
+1. 로그인 토큰(예비) — `CAPA_BDQ_TOKEN` 이 있으면 패키지가 보는 자리
    (`/config/.credential/bigdataquery.token.<계정>`)에 그 값을 쓴다(`base64:` 로 시작하면 풀어서).
-   푼 내용이 비었거나 `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다.
-2. 요청자 계정 — `CAPA_BDQ_USER_NAME` 은 앱이 그대로 읽는다. 있는지만 적는다.
+   계정은 계정 하나의 원천이다 — 저장된 자동 로그인 계정이 있으면 그 ID, 없으면
+   `CAPA_BDQ_USER_NAME`. 자동 로그인이 성공했으면 쓰지 않는다. 푼 내용이 비었거나
+   `MIN_TOKEN_BYTES` 보다 짧으면 쓰지 않고 「실패」 다.
+2. 요청자 계정 — `CAPA_BDQ_USER_NAME` 은 앱이 그대로 읽는다(저장된 자동 로그인 계정이 있으면 앱이
+   기동 때 저장 객체를 읽어 그 ID 를 쓴다). 있는지만 적는다.
 
 결과는 `settings.CONTAINER_START_REPORT_PATH` 에 남고 앱 화면(Admin Area 「서버 시작 점검」)이
 읽는다. **비밀값은 어디에도 남기지 않는다** — pip 출력·예외 문구의 토큰과 URL 자격증명을 가리고
 계정은 앞 두 글자만 둔다. 하위 프로세스(import 확인·pip·aws)에도 세 비밀값(두 토큰 · 표에
-남았을 수 있는 옛 갱신 토큰)을 넘기지 않는다 — 깔린 패키지의 import 코드가 그 값을 읽지 못하게
-한다. 앱은 `os.execvpe` 로
-이 프로세스를 갈아 끼워 신호·종료 동작이 옛 `CMD` 와 같고, 실행 줄의 세 비밀값은 앱에 넘기지 않는다.
+남았을 수 있는 옛 갱신 토큰)과 자동 로그인 키를 넘기지 않는다 — 깔린 패키지의 import 코드가 그
+값을 읽지 못하게 한다. 앱은 `os.execvpe` 로 이 프로세스를 갈아 끼워 신호·종료 동작이 옛 `CMD` 와
+같고, 실행 줄의 세 비밀값은 앱에 넘기지 않는다(자동 로그인 키는 앱이 쓰므로 넘긴다 — 앱이 기동 때
+쥐고 환경에서 뺀다).
 
 **어느 단계가 실패해도, 예상하지 못한 예외가 나도 앱은 띄운다 — DB 받기 하나만 예외다.** `managed`
 에서 앱을 띄우는 길은 「이번 실행의 `boot-pull` 이 종료 코드 0 으로 끝남」 한 길뿐이다. 받지 못하면
@@ -72,7 +82,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from types import FrameType
@@ -82,17 +92,22 @@ import container_stage
 
 from capa_simulation import settings
 from capa_simulation.auth import names as sso_names
-from capa_simulation.io import bdq_token
+from capa_simulation.io import bdq_login, bdq_login_store, bdq_token
 from capa_simulation.io import container_start_report as report_contract
 from capa_simulation.io.container_start_report import (
     APP_WITHHELD_ENVIRONMENT,
     ARTIFACTORY_TOKEN_ENV,
     ARTIFACTORY_USER_ENV,
     AWS_CLI_VERSION,
+    BDQ_LOGIN_LABEL,
+    BDQ_SECRET_KEY_ENV,
     BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     CD_ENVIRONMENT,
     COMPANY_INDEX_URL_ENV,
+    LOGIN_ERROR,
+    LOGIN_KEY_OK,
+    LOGIN_OK,
     REPORT_VERSION,
     RETIRED_BDQ_REFRESH_TOKEN_ENV,
     STATUS_FAILED,
@@ -217,9 +232,13 @@ PROBE_MARKER = "capa-bdq-probe"
 # 앱과 하위 프로세스에 넘기지 않는 실행 줄 값. 앱은 요청자 계정만 읽는다. 앱 쪽 「결과 없음」
 # 안내가 같은 이름으로 스크립트가 돌았는지 가른다.
 SECRET_ENVIRONMENT = APP_WITHHELD_ENVIRONMENT
-# 하위 프로세스(import 확인·pip)에 넘기지 않는 값 — 세 비밀값과 통합인증 비밀값 · 접속 명단.
-# 통합인증 쪽은 앱에는 넘긴다(앱이 읽고 지운다).
-CHILD_WITHHELD_ENVIRONMENT = (*APP_WITHHELD_ENVIRONMENT, *sso_names.WITHHELD_ENVIRONMENT)
+# 하위 프로세스(import 확인·pip·aws)에 넘기지 않는 값 — 세 비밀값과 통합인증 비밀값 · 접속 명단 ·
+# 자동 로그인 키. 통합인증 쪽과 자동 로그인 키는 앱에는 넘긴다(앱이 읽고 지운다).
+CHILD_WITHHELD_ENVIRONMENT = (
+    *APP_WITHHELD_ENVIRONMENT,
+    *sso_names.WITHHELD_ENVIRONMENT,
+    BDQ_SECRET_KEY_ENV,
+)
 _PROBE_CODE = f"""
 import importlib, importlib.metadata
 try:
@@ -265,6 +284,8 @@ class Runner(Protocol):
 
 
 ExecApp = Callable[[str, list[str], dict[str, str]], object]
+# 자동 로그인 단계 — (시작 환경, 토큰 폴더) → 결과. 시험이 갈래마다 바꿔 끼운다.
+StartLoginFn = Callable[[Mapping[str, str], Path], bdq_login.StartLogin]
 
 
 def run_command(
@@ -395,7 +416,9 @@ def dependency_pip_command(
 
 
 def child_environment(environ: Mapping[str, str]) -> dict[str, str]:
-    """하위 프로세스(import 확인·pip)에 넘기는 환경 — 세 비밀값과 통합인증 비밀값을 뺀다."""
+    """하위 프로세스(import 확인·pip·aws)에 넘기는 환경 — 세 비밀값과 통합인증 비밀값 · 자동 로그인
+    키를 뺀다. 자동 로그인 하위 프로세스는 제 환경(`bdq_login.child_environment` — S3 · AWS 도
+    뺀다)을 쓴다."""
     return {
         name: value for name, value in environ.items() if name not in CHILD_WITHHELD_ENVIRONMENT
     }
@@ -430,6 +453,8 @@ class Redactor:
         # 너무 짧은 값(틀린 설정)까지 가리면 출력이 뭉개진다 — 앱이 「짧음」 으로 막는다.
         sso_secrets = [environ.get(name, "").strip() for name in sso_names.SECRET_ENVIRONMENT]
         secrets += [value for value in sso_secrets if len(value) >= 8]
+        # 자동 로그인 키 — 꼴이 틀린 값이어도 그대로 가린다.
+        secrets.append(environ.get(BDQ_SECRET_KEY_ENV, "").strip())
         # 로그인 토큰과 표에 남았을 수 있는 옛 갱신 토큰 — 원문 · `base64:` 몸 · 푼 내용의 줄 조각.
         for name in (BDQ_TOKEN_ENV, RETIRED_BDQ_REFRESH_TOKEN_ENV):
             secrets += _token_forms(environ.get(name, "").strip())
@@ -438,6 +463,13 @@ class Redactor:
             environ.get(BDQ_USER_NAME_ENV, "").strip(),
         ]
         return cls(secrets, accounts)
+
+    def add_secrets(self, values: Iterable[str]) -> None:
+        """뒤에 알게 된 비밀값(풀린 자동 로그인 계정 · 비밀번호)을 더한다. 이 가리개를 쥔 출력
+        함수 · 결과 쓰기가 그대로 새 값도 가린다. 계정도 앞 두 글자가 아니라 통째로 가린다 — 저장된
+        BDQ 계정 ID 는 화면에 보이지 않는다."""
+        merged = set(self._secrets) | {form for value in values if value for form in _forms(value)}
+        self._secrets = sorted(merged, key=len, reverse=True)
 
     def __call__(self, text: str) -> str:
         for secret in self._secrets:
@@ -642,11 +674,25 @@ def install_step(
     )
 
 
-def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
+def token_step(
+    environ: Mapping[str, str],
+    credential_dir: Path,
+    *,
+    account: str | None = None,
+    renewed: bool = False,
+) -> StepResult:
+    """예비 토큰 길 — `CAPA_BDQ_TOKEN` 을 토큰 파일로 쓴다. 자동 로그인이 성공했으면(`renewed`)
+    패키지가 쓴 새 토큰을 덮지 않는다. `account` 는 파일 이름의 계정(계정 하나의 원천 — 저장된
+    계정이 있으면 그 ID)이고, 주지 않으면 `CAPA_BDQ_USER_NAME` 이다."""
+    if renewed:
+        return StepResult(
+            STATUS_OK, f"자동 로그인이 새 토큰을 씀 — CD 환경변수 {BDQ_TOKEN_ENV} 는 쓰지 않음"
+        )
     raw = environ.get(BDQ_TOKEN_ENV, "").strip()
     if not raw:
         return StepResult(STATUS_SKIPPED, f"CD 환경변수 {BDQ_TOKEN_ENV} 없음 — 만들지 않음")
-    account = environ.get(BDQ_USER_NAME_ENV, "").strip()
+    if account is None:
+        account = environ.get(BDQ_USER_NAME_ENV, "").strip()
     if not account:
         return StepResult(
             STATUS_FAILED, f"CD 환경변수 {BDQ_USER_NAME_ENV} 없음 — 토큰 파일 이름을 못 정함"
@@ -684,9 +730,13 @@ def token_step(environ: Mapping[str, str], credential_dir: Path) -> StepResult:
     return StepResult(STATUS_OK, "토큰 파일을 씀")
 
 
-def user_name_step(environ: Mapping[str, str]) -> StepResult:
+def user_name_step(environ: Mapping[str, str], *, stored: bool = False) -> StepResult:
+    """요청자 계정 — `CAPA_BDQ_USER_NAME` 이 있거나 저장된 자동 로그인 계정이 있으면(`stored` — 그
+    ID 가 조회 계정을 이긴다) 정상이다. ID 는 싣지 않는다."""
     if environ.get(BDQ_USER_NAME_ENV, "").strip():
         return StepResult(STATUS_OK, "있음")
+    if stored:
+        return StepResult(STATUS_OK, f"저장된 {BDQ_LOGIN_LABEL} 계정")
     return StepResult(
         STATUS_SKIPPED, f"CD 환경변수 {BDQ_USER_NAME_ENV} 없음 — 조회가 user_name 으로 거부됨"
     )
@@ -720,14 +770,18 @@ def _file_state(path: Path) -> bool | None:
         return None
 
 
-def runtime_facts(environ: Mapping[str, str], redactor: Redactor) -> dict[str, object]:
+def runtime_facts(
+    environ: Mapping[str, str], redactor: Redactor, *, account: str | None = None
+) -> dict[str, object]:
     """컨테이너의 실행 사용자·HOME(가린 꼴). 패키지가 토큰 파일 이름·자리를 계정 값이 아니라 이
-    둘로 정한다면 화면에서 어긋남을 가를 수 있게 싣는다."""
+    둘로 정한다면 화면에서 어긋남을 가를 수 있게 싣는다. `account` 는 토큰 파일 이름의 계정(주지
+    않으면 `CAPA_BDQ_USER_NAME`)이고 같은지 참거짓만 싣는다."""
     try:
         os_user = getpass.getuser().strip()
     except Exception:
         os_user = ""
-    account = environ.get(BDQ_USER_NAME_ENV, "").strip()
+    if account is None:
+        account = environ.get(BDQ_USER_NAME_ENV, "").strip()
     home = environ.get("HOME", "").strip()
     if home and os_user:
         home = "/".join(mask_account(part) if part == os_user else part for part in home.split("/"))
@@ -738,6 +792,81 @@ def runtime_facts(environ: Mapping[str, str], redactor: Redactor) -> dict[str, o
     }
 
 
+def default_start_login(environ: Mapping[str, str], credential_dir: Path) -> bdq_login.StartLogin:
+    return bdq_login.start_login(environ, folder=credential_dir)
+
+
+@dataclass(frozen=True)
+class LoginStep:
+    """자동 로그인 단계의 끝. `cell` 은 결과 파일 칸(갈래 · 코드 · 수 — 비밀 없음), `account` 는
+    토큰 파일 이름의 계정(계정 하나의 원천 — 결과 파일 · 출력에 싣지 않는다), `renewed` 는 로그인이
+    성공해 패키지가 새 토큰을 쓴 것, `stored` 는 저장된 계정이 있는 것."""
+
+    cell: dict[str, object]
+    account: str = field(repr=False)
+    renewed: bool = False
+    stored: bool = False
+
+
+def auto_login_step(
+    environ: Mapping[str, str],
+    credential_dir: Path,
+    redactor: Redactor,
+    start_login: StartLoginFn = default_start_login,
+) -> LoginStep:
+    """설치 뒤 · 예비 토큰 앞 — `managed` + 키 + 객체 상태 `ok` 면 저장된 계정으로 로그인한다
+    (`bdq_login.start_login` — 거절이면 멈춤을 저장한다). 풀린 계정 · 비밀번호는 곧바로 가리개에
+    더한다. 어떤 예외도 그 종류 이름만 남기고 예비 토큰 길로 간다 — 예외 문구를 싣지 않는다(가리개가
+    아직 모르는 값을 들 수 있다)."""
+    key = bdq_login_store.key_problem(environ) or LOGIN_KEY_OK
+    try:
+        started = start_login(environ, credential_dir)
+    except Exception as error:
+        # 멈추기 전에 풀었을 수 있는 한 벌(`start_login` 이 기억한 것) — 파일 이름 · 가리개에 쓴다.
+        seen = bdq_login_store.peek_state()
+        stored = None if seen is None else seen.stored
+        if stored is not None:
+            redactor.add_secrets((stored.secret.account, stored.secret.password))
+        cell: dict[str, object] = {
+            "status": LOGIN_ERROR,
+            "reason": bdq_login.REASON_UNEXPECTED,
+            "key": key,
+            "error_kind": type(error).__name__,
+        }
+        return LoginStep(
+            cell, bdq_login_store.account_of(stored, environ), stored=stored is not None
+        )
+    stored = started.stored
+    if stored is not None:
+        redactor.add_secrets((stored.secret.account, stored.secret.password))
+    result = started.result
+    cell = {
+        "status": started.status,
+        "reason": started.reason,
+        "key": key,
+        "remaining_minutes": None if result is None else result.remaining_minutes,
+        "warning": "" if result is None else result.warning,
+        "error_kind": "" if result is None else result.error_kind,
+        "failure_kind": started.failure_kind,
+        "stop_write": started.stop_write,
+    }
+    return LoginStep(
+        cell,
+        bdq_login_store.account_of(stored, environ),
+        renewed=started.status == LOGIN_OK,
+        stored=stored is not None,
+    )
+
+
+def login_line(cell: Mapping[str, object]) -> str | None:
+    """진행 한 줄 — 표 줄과 같은 낱말. 줄을 세우지 않는 서버(`managed` 아님)는 `None`."""
+    login = report_contract.parse_login(dict(cell))
+    step = None if login is None else report_contract.login_step(login)
+    if step is None:
+        return None
+    return f"{BDQ_LOGIN_LABEL} — {STATUS_LABELS[step.status]}: {step.reason}"
+
+
 def collect_report(
     environ: Mapping[str, str],
     *,
@@ -745,8 +874,11 @@ def collect_report(
     runner: Runner,
     redactor: Redactor,
     echo: Callable[[str], None],
+    start_login: StartLoginFn = default_start_login,
 ) -> dict[str, object]:
-    """세 단계를 차례로 돌려 결과 파일에 쓸 내용을 만든다. 값은 모두 가린 꼴이다."""
+    """설치 → 자동 로그인 → 예비 토큰 → 요청자 계정을 차례로 돌려 결과 파일에 쓸 내용을 만든다.
+    값은 모두 가린 꼴이다. 토큰 파일 이름의 계정은 계정 하나의 원천이다 — 저장된 자동 로그인
+    계정이 있으면 그 ID(결과 파일에는 싣지 않는다)."""
     echo(f"{STEP_LABELS[STEP_INSTALL]} 확인")
     install = InstallOutcome(StepResult(STATUS_FAILED, ""), None, [])
 
@@ -755,17 +887,27 @@ def collect_report(
         install = install_step(environ, runner, redactor)
         return install.result
 
+    installed = _guarded(run_install, redactor)
+    login = auto_login_step(environ, credential_dir, redactor, start_login)
+    account = login.account
     steps = {
-        STEP_INSTALL: _guarded(run_install, redactor),
-        STEP_TOKEN: _guarded(lambda: token_step(environ, credential_dir), redactor),
-        STEP_USER_NAME: _guarded(lambda: user_name_step(environ), redactor),
+        STEP_INSTALL: installed,
+        STEP_TOKEN: _guarded(
+            lambda: token_step(environ, credential_dir, account=account, renewed=login.renewed),
+            redactor,
+        ),
+        STEP_USER_NAME: _guarded(lambda: user_name_step(environ, stored=login.stored), redactor),
     }
     for name, result in steps.items():
         echo(f"{STEP_LABELS[name]} — {STATUS_LABELS[result.status]}: {result.reason}")
+    line = login_line(login.cell)
+    if line is not None:
+        echo(line)
     presence = sso_presence(environ)
     echo(sso_presence_line(presence))
-    account = environ.get(BDQ_USER_NAME_ENV, "").strip()
     target = token_file_path(credential_dir, account) if account else None
+    # 요청자 계정 칸은 CD 환경변수 값의 것이다 — 저장된 계정 ID 는 앞 두 글자도 싣지 않는다.
+    user_name = environ.get(BDQ_USER_NAME_ENV, "").strip()
     return {
         "version": REPORT_VERSION,
         "written_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -776,16 +918,17 @@ def collect_report(
             "modified_at": None if target is None else _modified_at(target),
             "path": None if target is None else redactor(str(target)),
         },
-        "runtime": runtime_facts(environ, redactor),
+        "runtime": runtime_facts(environ, redactor, account=account),
         "user_name": {
-            "present": bool(account),
-            "masked": mask_account(account) if account else None,
+            "present": bool(user_name),
+            "masked": mask_account(user_name) if user_name else None,
         },
         "missing_environment": [
             name for name in CD_ENVIRONMENT if not environ.get(name, "").strip()
         ],
         "pip_tail": [redactor(line) for line in install.pip_tail],
         "sso_environment": presence,
+        "bdq_login": login.cell,
     }
 
 
@@ -1445,6 +1588,7 @@ def main(
     runner: Runner = run_command,
     exec_app: ExecApp = os.execvpe,
     sleep: Callable[[float], None] = time.sleep,
+    start_login: StartLoginFn = default_start_login,
 ) -> int:
     args = _parse(argv)
     env = dict(os.environ if environ is None else environ)
@@ -1462,7 +1606,13 @@ def main(
         stage.begin(managed=plan.managed)
         sync = _prepare_sync(env, plan, runner=runner, started_at_utc=started_at_utc, sleep=sleep)
         stage.step(container_stage.STEP_INSTALL)
-        report = check_and_record(env, credential_dir=args.credential_dir, runner=runner, sync=sync)
+        report = check_and_record(
+            env,
+            credential_dir=args.credential_dir,
+            runner=runner,
+            sync=sync,
+            start_login=start_login,
+        )
         if plan.managed:
             stage.step(container_stage.STEP_PULL)
             pulled, attempts = pull_until_ready(
@@ -1493,10 +1643,11 @@ def check_and_record(
     credential_dir: Path,
     runner: Runner,
     sync: Mapping[str, object] | None = None,
+    start_login: StartLoginFn = default_start_login,
 ) -> Mapping[str, object]:
-    """세 단계를 돌려 결과 파일을 남기고 그 내용을 돌려준다. 여기서 난 어떤 `Exception` 도 앱
-    띄우기를 막지 않는다 — 가리개를 만들기 전에 멈췄으면 종류 이름만 찍는다(값이 든 문구를 가릴 수
-    없다)."""
+    """세 단계와 자동 로그인을 돌려 결과 파일을 남기고 그 내용을 돌려준다. 여기서 난 어떤
+    `Exception` 도 앱 띄우기를 막지 않는다 — 가리개를 만들기 전에 멈췄으면 종류 이름만 찍는다(값이
+    든 문구를 가릴 수 없다)."""
     redactor: Redactor | None = None
     report: Mapping[str, object]
     extra = {} if sync is None else {"sync": sync}
@@ -1509,6 +1660,7 @@ def check_and_record(
             runner=runner,
             redactor=active,
             echo=lambda text: _echo(active(text)),
+            start_login=start_login,
         )
     except Exception as error:
         detail = (

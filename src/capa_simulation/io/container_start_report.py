@@ -17,6 +17,10 @@ CD 서버는 시작 명령을 바꿀 수 없고 셸에 들어갈 수도 없다. 
 DB 받기와 재서 남긴 수(디스크 · pod · cgroup · 다운 시간). 값은 갈래와 수뿐이고 주소 · 버킷 · 키가
 없어 리뷰 압축본에 옮길 수 있다. 꼴은 더하기만 했다 — 옛 파일은 그 칸이 없어 `None` 이다.
 
+**자동 로그인 칸**(`bdq_login`)은 BigDataQuery 자동 로그인 단계의 결과다 — 갈래 낱말 · 까닭 코드 ·
+키 꼴 검사 · 남은 분뿐이고 계정 · 비밀번호 · 키가 없다(`parse_login` 이 꼴을 다시 본다). 「서버 시작
+점검」 표 줄(`login_step`)과 앱 기동의 멈춤 넘겨받기(`bdq_login.start_in_app`) · 알림이 읽는다.
+
 **앱 응답 시각**은 앱이 따로 남긴다(`note_app_ready`) — 시작 스크립트는 exec 뒤에 없다.
 """
 
@@ -45,6 +49,12 @@ RETIRED_BDQ_REFRESH_TOKEN_ENV: Final = "CAPA_BDQ_REFRESH_TOKEN"
 # 사람이 남의 계정으로 조회하게 된다. 어댑터(`getData(user_name=…)`)와 시작 스크립트(토큰 파일
 # 이름)가 함께 읽는다.
 BDQ_USER_NAME_ENV: Final = "CAPA_BDQ_USER_NAME"
+# BigDataQuery 자동 로그인 계정을 감싸는 cryptography Fernet 키(`io/bdq_login_store.py`). 비밀이다
+# — 앱 프로세스가 저장 · 다시 로그인에 쓰므로 시작 스크립트는 앱에 넘기고
+# (`APP_WITHHELD_ENVIRONMENT` 에 넣지 않는다 — 앱 환경의 그 이름들은 「시작 스크립트가 안 돎」
+# 표지다), 하위 프로세스에는 넘기지 않고 출력에서 가린다. 앱은 기동 때 읽은 뒤 `os.environ` 에서
+# 뺀다(`bdq_login.start_in_app`).
+BDQ_SECRET_KEY_ENV: Final = "CAPA_BDQ_SECRET_KEY"
 # 사내 패키지 저장소 주소. 사내 값이라 저장소에 두지 않는다(공개 저장소) —
 # `requirements-company.txt` 의 `--index-url` 줄이 이 이름을 `${…}` 로 가리키고, 사내 PC 는 사용자
 # 환경변수 · C-DEP 는 환경변수 표에 둔다. 비밀값은 아니다(자격증명은 시작 스크립트가 따로 넣는다).
@@ -64,8 +74,14 @@ APP_WITHHELD_ENVIRONMENT: Final = (
     RETIRED_BDQ_REFRESH_TOKEN_ENV,
 )
 # CD 배포 설정에만 넣는 key. 개발·사내 PC(WebIDE)는 `CAPA_BDQ_USER_NAME` 과 `CAPA_COMPANY_INDEX_URL`
-# 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다.
-CD_ONLY_ENVIRONMENT: Final = (ARTIFACTORY_USER_ENV, ARTIFACTORY_TOKEN_ENV, BDQ_TOKEN_ENV)
+# 도 쓰므로 그 둘로는 CD 서버인지 가르지 않는다. 자동 로그인 키는 「비어 있던 CD 환경변수」
+# (`CD_ENVIRONMENT`)에 들지 않는다 — 넣지 않은 서버가 늘 그 이름을 빈 값으로 적게 된다.
+CD_ONLY_ENVIRONMENT: Final = (
+    ARTIFACTORY_USER_ENV,
+    ARTIFACTORY_TOKEN_ENV,
+    BDQ_TOKEN_ENV,
+    BDQ_SECRET_KEY_ENV,
+)
 START_SCRIPT: Final = "scripts/container_start.py"
 # 운영 이미지의 aws 판. `docker/Dockerfile-prod` 의 고정 줄과 시험이 맞댄다 — 시작 점검이 이 판과
 # 견준다.
@@ -123,6 +139,74 @@ STATUS_LABELS: Final[Mapping[str, str]] = {
     STATUS_FAILED: "실패",
 }
 
+# BigDataQuery 자동 로그인 칸(`bdq_login`). 이름은 Admin 「서버 시작 점검」 표의 줄 이름이자 Admin
+# Area 의 계정 넣는 자리 이름이다 — 알림 글(`AD-10` · `AD-23`)이 이 이름으로 그 자리를 가리킨다.
+BDQ_LOGIN_LABEL: Final = "BDQ 자동 로그인"
+# 갈래 — `off`(기능이 서지 않음) · `absent`(저장된 계정 없음) · `stopped`(멈춤이라 로그인 없음) ·
+# 로그인 결과 넷(`ok` · `rejected` · `unreached` · `unavailable`) · `error`(단계가 예상하지 못하게
+# 멈춤 — 예비 토큰 길). `io/bdq_login.StartLogin.status` 와 같은 낱말에 `error` 를 더했다.
+LOGIN_OFF: Final = "off"
+LOGIN_ABSENT: Final = "absent"
+LOGIN_STOPPED: Final = "stopped"
+LOGIN_OK: Final = "ok"
+LOGIN_REJECTED: Final = "rejected"
+LOGIN_UNREACHED: Final = "unreached"
+LOGIN_UNAVAILABLE: Final = "unavailable"
+LOGIN_ERROR: Final = "error"
+LOGIN_STATUSES: Final = frozenset(
+    {
+        LOGIN_OFF,
+        LOGIN_ABSENT,
+        LOGIN_STOPPED,
+        LOGIN_OK,
+        LOGIN_REJECTED,
+        LOGIN_UNREACHED,
+        LOGIN_UNAVAILABLE,
+        LOGIN_ERROR,
+    }
+)
+# 자동 로그인이 서 있는(저장된 계정이 있고 멈춤이 아닌) 시작 갈래 — 예비 토큰 길로 갔어도 조회 중
+# 토큰 예외면 다시 로그인한다.
+LOGIN_STANDING: Final = frozenset({LOGIN_OK, LOGIN_UNREACHED, LOGIN_UNAVAILABLE})
+# 키 꼴 검사 결과(`key`) — `bdq_login_store` 의 까닭 코드와 같은 낱말.
+LOGIN_KEY_OK: Final = "ok"
+LOGIN_KEY_MISSING: Final = "no_key"
+LOGIN_KEY_BAD: Final = "bad_key"
+_LOGIN_KEYS: Final = frozenset({LOGIN_KEY_OK, LOGIN_KEY_MISSING, LOGIN_KEY_BAD})
+# 꺼짐 까닭 가운데 표 줄을 세우지 않는 것 — 동기화 모드가 `managed` 가 아닌 서버는 이 기능이 없다.
+LOGIN_NOT_MANAGED: Final = "not_managed"
+# 칸에 싣는 코드 꼴 — 짧은 영문 소문자 · 숫자 · 밑줄 · 쌍점(쓰기 실패 `까닭:분류`), 예외 종류의
+# `모듈.이름`. 꼴이 어긋난 값은 읽을 때 버린다 — 화면 · 알림에 값이 실리지 않게.
+_LOGIN_CODE: Final = re.compile(r"[a-z][a-z0-9_]{0,39}(?::[a-z][a-z0-9_]{0,39})?")
+_LOGIN_ERROR_KIND: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{0,199}")
+# 표 줄 까닭 — 아는 코드는 낱말로, 모르는 코드는 그대로.
+_LOGIN_REASON_WORDS: Final[Mapping[str, str]] = {
+    "token_unchanged": "토큰이 바뀌지 않음",
+    "login_raised": "로그인 예외",
+    "no_marker": "결과 표지 없음",
+    "token_after_login": "다시 로그인 뒤에도 토큰 오류",
+    "timeout": "시간 초과",
+    "connection": "연결 실패",
+    "import_failed": "패키지를 불러오지 못함",
+    "no_input": "입력을 읽지 못함",
+    "spawn_failed": "하위 프로세스를 띄우지 못함",
+    "bad_input": "값 꼴이 틀림",
+    "bad_account": "계정을 파일 이름으로 못 씀",
+    "env_token": "환경변수 BIGDATAQUERY_LOGIN_TOKEN 있음",
+    "attempt_limit": "연속 시도 상한",
+    "paused": "쉬는 중",
+    "stopped": "멈춤",
+    "no_key": "키 없음",
+    "bad_key": "키 꼴이 틀림",
+    "no_target": "S3 닿을 곳 없음",
+    "no_object": "계정 없음",
+    "unread": "읽지 못함",
+    "broken": "객체 꼴이 다름",
+    "version": "객체 판이 다름",
+    "undecryptable": "키로 풀지 못함",
+    "unexpected": "예상하지 못한 실패",
+}
+
 
 @dataclass(frozen=True)
 class StartStep:
@@ -156,6 +240,32 @@ class SyncStart:
 
 
 @dataclass(frozen=True)
+class LoginStart:
+    """BigDataQuery 자동 로그인 칸. 값은 갈래 낱말 · 짧은 코드 · 수뿐이다 — 계정 · 비밀번호 · 키 ·
+    예외 문구가 없다. 꼴이 어긋난 칸은 비운다.
+
+    `status` — `LOGIN_*`. `reason` — 까닭 코드. `key` — 키 꼴 검사(`LOGIN_KEY_*`, 못 읽으면 빈 글).
+    `remaining_minutes` — 로그인 뒤 잰 남은 분(모르면 `None`). `warning` — 성공의 덧붙임.
+    `error_kind` — 예외 종류의 `모듈.이름`. `failure_kind` — S3 읽기 실패 분류. `stop_write` —
+    거절의 멈춤 표시를 객체에 쓰지 못한 까닭(빈 글이면 씀 · 해당 없음)."""
+
+    status: str
+    reason: str = ""
+    key: str = ""
+    remaining_minutes: int | None = None
+    warning: str = ""
+    error_kind: str = ""
+    failure_kind: str = ""
+    stop_write: str = ""
+
+    @property
+    def shown(self) -> bool:
+        """「서버 시작 점검」 표에 줄을 세우나 — `managed` 가 아닌 서버는 이 기능이 없어 세우지
+        않는다."""
+        return not (self.status == LOGIN_OFF and self.reason == LOGIN_NOT_MANAGED)
+
+
+@dataclass(frozen=True)
 class ContainerStartReport:
     """시작 스크립트가 남긴 한 번의 결과. 값은 모두 이미 가린 꼴이다."""
 
@@ -178,6 +288,8 @@ class ContainerStartReport:
     sso_environment: Mapping[str, bool] | None = None
     # 동기화 칸. S3 키도 `managed` 도 없는 서버 · 옛 꼴 파일에는 없어 `None` 이다.
     sync: SyncStart | None = None
+    # BigDataQuery 자동 로그인 칸. 옛 꼴 파일 · 도중에 멈춘 시작 점검에는 없어 `None` 이다.
+    bdq_login: LoginStart | None = None
 
 
 def mask_account(name: str) -> str:
@@ -249,7 +361,82 @@ def parse_report(data: object) -> ContainerStartReport | None:
         home_masked=_text_or_none(runtime.get("home")),
         sso_environment=_presence_or_none(data.get("sso_environment")),
         sync=parse_sync(data.get("sync")),
+        bdq_login=parse_login(data.get("bdq_login")),
     )
+
+
+def parse_login(data: object) -> LoginStart | None:
+    """자동 로그인 칸을 읽는다. 없거나 갈래 낱말이 어긋나면 `None`. 꼴이 어긋난 나머지 칸은 그
+    칸만 비운다 — 화면 · 알림에 값이 실리지 않게."""
+    if not isinstance(data, dict) or data.get("status") not in LOGIN_STATUSES:
+        return None
+    minutes = _int_or_none(data.get("remaining_minutes"))
+    key = data.get("key")
+    error_kind = data.get("error_kind")
+    return LoginStart(
+        status=str(data["status"]),
+        reason=_login_code(data.get("reason")),
+        key=key if isinstance(key, str) and key in _LOGIN_KEYS else "",
+        remaining_minutes=minutes if minutes is not None and minutes >= 0 else None,
+        warning=_login_code(data.get("warning")),
+        error_kind=(
+            error_kind
+            if isinstance(error_kind, str) and _LOGIN_ERROR_KIND.fullmatch(error_kind)
+            else ""
+        ),
+        failure_kind=_login_code(data.get("failure_kind")),
+        stop_write=_login_code(data.get("stop_write")),
+    )
+
+
+def _login_code(value: object) -> str:
+    return value if isinstance(value, str) and _LOGIN_CODE.fullmatch(value) else ""
+
+
+def login_reason_text(code: str) -> str:
+    """자동 로그인 까닭 코드 → 낱말(표 줄 · 알림 글). 모르는 코드는 그대로."""
+    return _LOGIN_REASON_WORDS.get(code, code)
+
+
+def _remaining_text(minutes: int | None) -> str:
+    if minutes is None:
+        return "남은 시간 모름"
+    hours, rest = divmod(minutes, 60)
+    return f"남은 {hours}시간 {rest}분"
+
+
+def login_step(login: LoginStart) -> StartStep | None:
+    """자동 로그인 칸 → 「서버 시작 점검」 표 한 줄(결과 · 까닭). 줄을 세우지 않는 서버는 `None`.
+
+    까닭은 상태 낱말과 결과뿐이다 — 꺼짐(키 없음) · 계정 없음 · 정상(남은 시간) · 멈춤(까닭) ·
+    닿지 못함(예비 토큰). 예비 토큰 길로 간 갈래는 그 사실을 붙인다."""
+    if not login.shown:
+        return None
+    fallback = " · 예비 토큰"
+    status = login.status
+    reason = login.reason
+    if status == LOGIN_OK:
+        return StartStep(STATUS_OK, f"정상 · {_remaining_text(login.remaining_minutes)}")
+    if status == LOGIN_OFF:
+        result = STATUS_SKIPPED if reason == LOGIN_KEY_MISSING else STATUS_FAILED
+        return StartStep(result, f"꺼짐 — {login_reason_text(reason)}")
+    if status == LOGIN_ABSENT:
+        if reason in ("", "no_object"):
+            return StartStep(STATUS_SKIPPED, "계정 없음")
+        detail = login_reason_text(reason)
+        if login.failure_kind:
+            detail += f"({login.failure_kind})"
+        return StartStep(STATUS_FAILED, f"계정 없음 — {detail}")
+    if status in (LOGIN_STOPPED, LOGIN_REJECTED):
+        tail = " · 멈춤 저장 못 함" if login.stop_write else ""
+        detail = login_reason_text(reason) if reason else "까닭 모름"
+        return StartStep(STATUS_FAILED, f"멈춤 — {detail}{tail}{fallback}")
+    if status == LOGIN_UNREACHED:
+        return StartStep(STATUS_FAILED, f"닿지 못함 — {login_reason_text(reason)}{fallback}")
+    if status == LOGIN_UNAVAILABLE:
+        return StartStep(STATUS_FAILED, f"못 함 — {login_reason_text(reason)}{fallback}")
+    kind = f"({login.error_kind})" if login.error_kind else ""
+    return StartStep(STATUS_FAILED, f"예상하지 못한 실패{kind}{fallback}")
 
 
 def parse_sync(data: object) -> SyncStart | None:
@@ -464,8 +651,9 @@ def missing_report_notice(environ: Mapping[str, str] | None = None) -> str | Non
             "명령(`CMD`) 대신 다른 명령으로 앱을 띄운 것으로 보이고, 그러면 시작 스크립트로 "
             "설치·로그인 토큰을 갖출 수 없습니다."
         )
+    names = "·".join(f"`{name}`" for name in present)
     return (
-        f"서버 시작 점검 결과가 없습니다 — CD 환경변수 `{ARTIFACTORY_USER_ENV}` 는 들어왔는데 "
+        f"서버 시작 점검 결과가 없습니다 — CD 환경변수({names})는 들어왔는데 "
         f"시작 스크립트(`{START_SCRIPT}`)의 결과 파일이 없습니다. 스크립트가 돌지 않았거나 "
         "`data/temp/` 에 결과를 쓰지 못했습니다."
     )
@@ -481,6 +669,9 @@ def report_verdict(report: ContainerStartReport) -> str:
     statuses = {step.status for step in report.steps.values()}
     if report.sync is not None:
         statuses |= {step.status for step in report.sync.steps.values()}
+    login = None if report.bdq_login is None else login_step(report.bdq_login)
+    if login is not None:
+        statuses.add(login.status)
     if STATUS_FAILED in statuses:
         return "실패 있음"
     if STATUS_SKIPPED in statuses:

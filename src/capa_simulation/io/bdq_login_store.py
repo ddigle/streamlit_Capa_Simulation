@@ -9,8 +9,9 @@ C-DEP(동기화 모드 `managed`)에서 BDQ 토큰이 죽으면 앱이 저장된
 
 **켜짐.** 동기화 모드가 `managed` 이고 CD 환경변수 `CAPA_BDQ_SECRET_KEY`(cryptography Fernet 키)의
 꼴이 맞을 때만 선다(`availability`). 키는 앱 프로세스가 저장 · 다시 로그인에 쓰므로 시작 스크립트가
-앱에 넘기고, 하위 프로세스에는 넘기지 않는다(`io/bdq_login.child_environment`). 키가 없으면 S3 에
-한 번도 묻지 않는다.
+앱에 넘기고, 앱은 기동 때 쥔 뒤 환경에서 뺀다(`take_secret_key`). 하위 프로세스에는 넘기지 않는다
+(`io/bdq_login.child_environment` · 시작 스크립트의 하위 프로세스 환경). 키가 없으면 S3 에 한 번도
+묻지 않는다.
 
 **객체 꼴.** JSON 한 벌 — `v`(판 1) · `cipher`(계정 · 비밀번호 JSON 을 Fernet 으로 감싼 글) ·
 `entered_by`(넣은 관리자 앱 로그인 ID 앞 두 글자) · `entered_at`(KST ISO) · `state`(`ok` ·
@@ -45,21 +46,23 @@ import os
 import re
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Final, Literal
 
 from capa_simulation.io import s3_small
-from capa_simulation.io.container_start_report import BDQ_USER_NAME_ENV
+from capa_simulation.io.container_start_report import BDQ_SECRET_KEY_ENV, BDQ_USER_NAME_ENV
 
 if TYPE_CHECKING:
     from capa_simulation.io.s3_small import S3Target
 
 # CD 환경변수 — Fernet 키(32바이트를 URL 안전 base64 로 적은 44글자). 비밀이라 값을 어떤 글에도
 # 싣지 않는다. 앱 프로세스에는 넘기고(`APP_WITHHELD_ENVIRONMENT` 에 넣지 않는다) 하위 프로세스에는
-# 넘기지 않는다.
-SECRET_KEY_ENV: Final = "CAPA_BDQ_SECRET_KEY"
+# 넘기지 않는다. 이름의 정본은 시작 스크립트와 함께 쓰는 `container_start_report` 다. 앱은 기동 때
+# 한 번 읽어 쥐고 환경에서 뺀다(`take_secret_key`) — 앱이 띄우는 하위 프로세스(aws 등)가 물려받지
+# 않게.
+SECRET_KEY_ENV: Final = BDQ_SECRET_KEY_ENV
 # 버킷 안 자리. 접두는 동기화 정리(`object_storage_manifest.PRUNE_PREFIXES`) · 모듈 데이터
 # (`module_helpers.S3_KEY_PREFIX`) · 접속 명단(`access/`) 밖이다.
 SECRETS_PREFIX: Final = "secrets/"
@@ -127,17 +130,48 @@ def valid_key_text(text: str) -> bool:
         return False
 
 
+@dataclass
+class _Taken:
+    """기동 때 환경에서 뺀 키 글(`take_secret_key`). 뺐으면 프로세스 환경 대신 이것을 읽는다."""
+
+    taken: bool = False
+    text: str = field(default="", repr=False)
+
+
+_TAKEN = _Taken()
+_TAKEN_LOCK: Final = threading.Lock()
+
+
+def take_secret_key(environ: MutableMapping[str, str]) -> None:
+    """앱 기동 때 한 번 — 키 글을 쥐고 `environ`(프로세스 환경)에서 뺀다. 그 뒤 `environ` 을 주지
+    않은 키 읽기(`secret_key()` · `key_problem()` · `availability()`)는 쥔 글을 본다. 두 번째 부름은
+    처음 쥔 글을 그대로 둔다(이미 뺐다)."""
+    with _TAKEN_LOCK:
+        if _TAKEN.taken:
+            environ.pop(SECRET_KEY_ENV, None)
+            return
+        _TAKEN.text = environ.pop(SECRET_KEY_ENV, "").strip()
+        _TAKEN.taken = True
+
+
+def _key_text(environ: Mapping[str, str] | None) -> str:
+    if environ is None:
+        with _TAKEN_LOCK:
+            if _TAKEN.taken:
+                return _TAKEN.text
+        environ = os.environ
+    return environ.get(SECRET_KEY_ENV, "").strip()
+
+
 def secret_key(environ: Mapping[str, str] | None = None) -> bytes | None:
     """키 바이트(꼴이 맞을 때만). 없거나 틀리면 `None`."""
-    env = os.environ if environ is None else environ
-    text = env.get(SECRET_KEY_ENV, "").strip()
+    text = _key_text(environ)
     return text.encode("ascii") if text and valid_key_text(text) else None
 
 
 def key_problem(environ: Mapping[str, str] | None = None) -> str | None:
     """키가 쓰일 수 없는 까닭(`REASON_NO_KEY` · `REASON_BAD_KEY`). 쓸 수 있으면 `None`."""
-    env = os.environ if environ is None else environ
-    text = env.get(SECRET_KEY_ENV, "").strip()
+    text = _key_text(environ)
     if not text:
         return REASON_NO_KEY
     return None if valid_key_text(text) else REASON_BAD_KEY
@@ -488,11 +522,29 @@ _MEMO_LOCK: Final = threading.Lock()
 
 
 def forget_state() -> None:
-    """시험 전용 — 기억한 읽기 결과를 지운다(다음 `current` 가 다시 읽는다)."""
+    """시험 전용 — 기억한 읽기 결과와 기동 때 쥔 키를 지운다(다음 `current` 가 다시 읽는다)."""
     with _MEMO_LOCK:
         _MEMO.loaded = False
         _MEMO.result = LoadResult(None, "")
         _MEMO.read_at = 0.0
+    with _TAKEN_LOCK:
+        _TAKEN.taken = False
+        _TAKEN.text = ""
+
+
+def peek_state() -> LoadResult | None:
+    """기억한 읽기 결과를 S3 에 묻지 않고 본다 — 아직 읽지 않았으면 `None`. 화면 회차마다 도는
+    자리(알림 · 지금 토큰 줄)가 쓴다 — 읽기(`load_state`)는 S3 GET 을 잠금 아래 기다린다."""
+    with _MEMO_LOCK:
+        return _MEMO.result if _MEMO.loaded else None
+
+
+def peek_account(environ: Mapping[str, str] | None = None) -> str:
+    """계정 원천을 S3 에 묻지 않고 — 기억한 저장된 계정이 있으면 그 ID, 없거나 아직 읽지 않았으면
+    `CAPA_BDQ_USER_NAME`. 앱은 기동 때 한 번 읽어 두므로(`bdq_login.start_in_app`) 화면 회차의
+    토큰 파일 자리 · 지금 토큰 줄이 이것으로 `effective_account` 와 같은 답을 얻는다."""
+    loaded = peek_state()
+    return account_of(None if loaded is None else loaded.stored, environ)
 
 
 def remember(stored: StoredLogin | None, reason: str = REASON_NO_OBJECT) -> None:

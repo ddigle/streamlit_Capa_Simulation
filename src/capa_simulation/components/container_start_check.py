@@ -22,6 +22,12 @@ S3 키나 `managed` 가 있는 서버는 표에 동기화 줄(aws CLI · ECS 연
 1시간 전 관리자 알림 `AD-11` 은 `bdq_token_admin` 이 짓는다(이 펼침과 아래 `render_token_alert` 가
 부른다).
 
+**BDQ 자동 로그인** — `managed` 서버의 표에는 통합인증 줄 뒤에 「BDQ 자동 로그인」 줄
+(`login_rows` — 시작 때 결과: 꺼짐 · 계정 없음 · 정상(남은 시간) · 멈춤(까닭) · 닿지 못함(예비
+토큰))이 서고 판정에 든다. 자동 로그인이 멈추면 관리자 알림 `AD-23`(`render_login_stop_alert`)이
+서고, 서 있는 동안 `AD-11` 은 해소다. 상태는 S3 에 묻지 않고 읽는다(`login_view` —
+`bdq_login.current_view`).
+
 **시작 점검 관리자 알림(`AD-01`)** — 결과 파일이 없거나(CD 서버로 보일 때) 읽지 못했거나, 읽었는데
 실패한 단계가 있으면(토큰 줄은 `AD-10` 몫이라 뺀다) 관리자 몫의 모든 화면 회차에 상태 알림으로 낸다
 (`render_start_check_alert` — `app.py` 가 토큰 알림 곁에서 부른다, 2026-11-14 「앱 대신 뜨는 화면」
@@ -55,6 +61,7 @@ from capa_simulation import alerts
 from capa_simulation.components import sso_identity
 from capa_simulation.components.admin_view import admin_notes_visible
 from capa_simulation.components.bdq_token_admin import (
+    AUTO_LOGIN_FIX,
     ENVIRONMENT_FIX,
     INSTALL_FIX,
     render_expiry_alert,
@@ -74,9 +81,11 @@ from capa_simulation.components.sso_status import (
     sso_start_step,
     started_environment_caption,
 )
-from capa_simulation.io import bdq_token
+from capa_simulation.io import bdq_login, bdq_token
 from capa_simulation.io.company_bigdataquery_adapter import last_query_failed_on_token
 from capa_simulation.io.container_start_report import (
+    BDQ_LOGIN_LABEL,
+    BDQ_TOKEN_ENV,
     BDQ_USER_NAME_ENV,
     STATUS_FAILED,
     STATUS_LABELS,
@@ -89,6 +98,8 @@ from capa_simulation.io.container_start_report import (
     UNREADABLE_REPORT_NOTICE,
     ContainerStartReport,
     SyncStart,
+    login_reason_text,
+    login_step,
     missing_report_detail,
     missing_report_notice,
     read_app_ready,
@@ -109,6 +120,8 @@ EXPANDER_KEY = "admin_area_container_start_check"
 COPY_KEY = "container_start_check"
 # BigDataQuery 토큰 실패 관리자 알림(`render_token_alert`).
 TOKEN_ALERT_CODE = "AD-10"
+# BigDataQuery 자동 로그인 멈춤 관리자 알림(`render_token_alert` 끝).
+LOGIN_STOP_ALERT_CODE = "AD-23"
 PIP_TAIL_LABEL = "pip 출력 끝(자격증명은 가렸습니다)"
 COPY_PIP_TAIL_LABEL = "pip 출력 끝(자격증명 · 주소는 가렸습니다)"
 ADDRESS_MASK = "<주소>"
@@ -192,6 +205,16 @@ def fact_lines(report: ContainerStartReport) -> list[str]:
     if report.home_masked:
         lines.append(f"**HOME** · {literal_markdown(report.home_masked)}")
     return lines
+
+
+def login_rows(report: ContainerStartReport) -> list[tuple[str, str, str]]:
+    """표에 더하는 「BDQ 자동 로그인」 줄 — 시작 때의 결과(상태 낱말 · 남은 시간 · 까닭). 옛 파일 ·
+    `managed` 가 아닌 서버는 빈 목록이다. 계정 · 비밀번호는 결과 파일에 원래 없다."""
+    login = report.bdq_login
+    step = None if login is None else login_step(login)
+    if step is None:
+        return []
+    return [(BDQ_LOGIN_LABEL, STATUS_LABELS[step.status], step.reason)]
 
 
 def sync_rows(report: ContainerStartReport) -> list[tuple[str, str, str]]:
@@ -320,7 +343,7 @@ def render_container_start_check() -> None:
     title = f"서버 시작 점검 · {report_verdict(report)}"
     # 넷째 줄 「통합인증」 은 결과 파일이 아니라 이 프로세스의 지금 설정에서 판정한다 — 시작
     # 스크립트는 통합인증 값을 검증하지 않고 앱에 넘긴다(이름만 결과 파일에 남긴다).
-    steps = build_step_table(report, (sso_start_step(), *sync_rows(report)))
+    steps = build_step_table(report, (sso_start_step(), *login_rows(report), *sync_rows(report)))
     facts = report_fact_lines(report)
     # 「지금 토큰」 은 시작 기록이 아니라 지금 파일에서 읽는다 — 「토큰 넣기」 가 바꾼다.
     token = token_line()
@@ -454,14 +477,25 @@ def render_start_check_alert() -> None:
     )
 
 
+def login_view(report: ContainerStartReport | None) -> bdq_login.LoginView:
+    """지금 자동 로그인 상태(S3 에 묻지 않음 — `bdq_login.current_view`). 무엇이 나도 `off` 로
+    물러선다 — 모든 화면 회차에 도는 알림 자리다."""
+    try:
+        return bdq_login.current_view(None if report is None else report.bdq_login)
+    except Exception:
+        return bdq_login.LoginView("off")
+
+
 def render_token_alert() -> None:
-    """BigDataQuery 토큰 관리자 알림 둘 — 실패 `AD-10` 과 만료 1시간 전 `AD-11`
-    (`bdq_token_admin.render_expiry_alert`). `app.py` 가 회차마다 조건 없이 부른다.
+    """BigDataQuery 토큰 관리자 알림 셋 — 실패 `AD-10`, 만료 1시간 전 `AD-11`
+    (`bdq_token_admin.render_expiry_alert`), 자동 로그인 멈춤 `AD-23`. `app.py` 가 회차마다 조건
+    없이 부른다.
 
     결과 파일이 없는 서버(C-DEP 밖)는 아무것도 부르지 않는다 — 그 파일은 시작 스크립트가 앱보다 먼저
-    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 두 자리를
+    한 번 쓰므로 프로세스 동안 있고 없음이 바뀌지 않는다. 있는 서버는 회차마다 이벤트 칸 세 자리를
     쓰고 관리자가 아닌 회차는 해소로 부른다. `AD-10` 의 지문은 (시작 점검 토큰 줄 실패, 조회 토큰
-    실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다.
+    실패) 두 참거짓뿐이다 — 시각 · 계정 · 원문을 싣지 않는다. 자동 로그인 상태는 S3 에 묻지 않고
+    읽는다(`login_view`) — 서 있는 동안 `AD-11` 은 해소다.
     """
     if not report_file_exists():
         return
@@ -469,7 +503,9 @@ def render_token_alert() -> None:
     step = None if report is None else report.steps.get(STEP_TOKEN)
     start_failed = step is not None and step.status == STATUS_FAILED
     query_failed = last_query_failed_on_token()
-    active = (start_failed or query_failed) and sso_identity.viewer_is_admin()
+    view = login_view(report)
+    admin = sso_identity.viewer_is_admin()
+    active = (start_failed or query_failed) and admin
     alerts.state(
         TOKEN_ALERT_CODE,
         scope=None,
@@ -477,23 +513,60 @@ def render_token_alert() -> None:
         active=active,
         text="BigDataQuery 로그인 토큰 실패 — 조회가 막힙니다" if active else None,
         full=(
-            _token_alert_text(step.reason if start_failed and step else None, query_failed)
+            _token_alert_text(
+                step.reason if start_failed and step else None, query_failed, view=view
+            )
             if active
             else None
         ),
         goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
     )
     # 만료 1시간 전 관리자 알림(`AD-11`) — 같은 서버 · 같은 회차, 이벤트 칸 한 자리 더.
-    render_expiry_alert()
+    render_expiry_alert(standing=view.standing)
+    # 자동 로그인 멈춤(`AD-23`) — 한 자리 더.
+    render_login_stop_alert(view, admin=admin)
 
 
-def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
+def render_login_stop_alert(view: bdq_login.LoginView, *, admin: bool) -> None:
+    """자동 로그인 멈춤 관리자 알림(`AD-23`) — 이벤트 칸 한 자리. 멈춤이 아니거나 관리자가 아니면
+    해소로 부른다. 지문은 (멈춘 까닭, 멈춘 시각)이다 — 계정을 싣지 않는다. 다시 넣어 성공하면
+    풀린다(D3)."""
+    active = view.state == "stopped" and admin
+    alerts.state(
+        LOGIN_STOP_ALERT_CODE,
+        scope=None,
+        content=[view.stop_reason, view.stopped_at] if active else None,
+        active=active,
+        text="BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣으세요" if active else None,
+        full=_login_stop_text(view) if active else None,
+        goto=(tab_label(ADMIN_AREA), ADMIN_AREA.href),
+    )
+
+
+def _login_stop_text(view: bdq_login.LoginView) -> str:
+    """전문(평문) — 왜 멈췄고 무엇을 하면 풀리나. 계정 · 비밀번호가 없다."""
+    reason = login_reason_text(view.stop_reason) if view.stop_reason else "까닭 모름"
+    return (
+        f"저장된 BigDataQuery 계정의 로그인이 거절돼 자동 로그인을 멈췄습니다({reason}). 계정이 "
+        f"잠기지 않게 다시 시도하지 않습니다. Admin Area 「{BDQ_LOGIN_LABEL}」 에서 계정을 다시 "
+        "넣어 로그인이 성공하면 풀립니다. 그때까지 조회는 예비 토큰(CD 환경변수 "
+        f"{BDQ_TOKEN_ENV} · 「토큰 넣기」)으로 합니다."
+    )
+
+
+def _token_alert_text(
+    start_reason: str | None,
+    query_failed: bool,
+    *,
+    view: bdq_login.LoginView | None = None,
+) -> str:
     """전문(평문 — 알림창 · Alarm 은 `textContent` 로 넣는다) — 무엇이 실패했고 무엇을 하면 풀리나.
     시작 점검 까닭은 시작 스크립트가 이미 가린 글이다. 시작 점검 실패의 까닭은 토큰 값만이 아니다
     (계정 칸 · 파일 권한 · 폴더 쓰기 등) — 그때 할 일은 그 까닭 고치기이고, 새 토큰은 조회 실패만의
     길이다. 조회 실패의 새 토큰 길은 패키지가 읽는 자리를 따른다 — 환경변수
     `BIGDATAQUERY_LOGIN_TOKEN` 이 있으면 「토큰 넣기」 가 잠기니 그 값 바꾸기다(값은 보지
-    않는다)."""
+    않는다). 자동 로그인이 켜졌는데 저장된 계정이 없으면(`view.state == "none"`) Admin Area 의 계정
+    넣는 자리를 가리킨다."""
     found: list[str] = []
     if start_reason is not None:
         found.append(f"서버 시작 점검의 「로그인 토큰 파일」 줄이 실패입니다({start_reason})")
@@ -508,4 +581,6 @@ def _token_alert_text(start_reason: str | None, query_failed: bool) -> str:
         )
     if bdq_token.environment_token_set():
         return ". ".join(found) + f". {ENVIRONMENT_FIX}"
+    if view is not None and view.state == "none":
+        return ". ".join(found) + f". {AUTO_LOGIN_FIX}"
     return ". ".join(found) + f". {INSTALL_FIX} 이 알림은 넣은 뒤 조회가 한 번 성공하면 풀립니다."

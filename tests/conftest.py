@@ -44,7 +44,7 @@ from capa_simulation.components import (
     space_layout_editor,
     voc_draft_keeper,
 )
-from capa_simulation.io import bdq_token, company_bigdataquery_adapter, object_storage
+from capa_simulation.io import bdq_login, bdq_token, company_bigdataquery_adapter, object_storage
 from capa_simulation.io.container_start_report import CD_ONLY_ENVIRONMENT
 
 
@@ -314,6 +314,16 @@ def _without_container_start_report(
     )
     monkeypatch.delenv(bdq_token.LOGIN_TOKEN_ENV, raising=False)
     bdq_token.forget_expiry_memo()
+
+
+@pytest.fixture(autouse=True)
+def _without_bdq_login_state() -> Iterator[None]:
+    """BigDataQuery 자동 로그인의 프로세스 상태(연속 시도 · 쉬는 시간 · 프로세스 안 멈춤 · 마지막
+    시도)와 저장 객체 기억 · 기동 때 쥔 키를 다음 시험에 넘기지 않는다 — 계정 원천(`bdq_token`
+    파일 이름)과 알림(`AD-23` · `AD-11`)이 그 기억을 읽는다."""
+    bdq_login.forget_state()
+    yield
+    bdq_login.forget_state()
 
 
 @pytest.fixture(autouse=True)

@@ -417,8 +417,8 @@ def test_nothing_is_written_off_the_cd_server(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_the_retired_token_alert_numbers_stay_empty() -> None:
-    """토큰 알림은 `AD-10` · `AD-11` 둘이다 — 걷은 `AD-17`(자동 갱신 멈춤 · 실패) · `AD-18`(갱신
-    토큰 80일)은 등록부에 없고 다시 쓰지 않는다(`alerts` 모듈 설명)."""
-    for code in ("AD-10", "AD-11"):
+    """토큰 알림은 `AD-10` · `AD-11` · `AD-23`(자동 로그인 멈춤) 셋이다 — 걷은 `AD-17`(자동 갱신
+    멈춤 · 실패) · `AD-18`(갱신 토큰 80일)은 등록부에 없고 다시 쓰지 않는다(`alerts` 모듈 설명)."""
+    for code in ("AD-10", "AD-11", "AD-23"):
         assert alerts.REGISTRY[code].kind == "state"
     assert "AD-17" not in alerts.REGISTRY and "AD-18" not in alerts.REGISTRY

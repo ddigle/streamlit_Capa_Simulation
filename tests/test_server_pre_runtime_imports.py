@@ -26,6 +26,7 @@ import sys
 from capa_simulation.audit.boot import deploy_version, start as start_audit
 from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
 from capa_simulation.components.audit_actor import install as install_audit_actor
+from capa_simulation.io.bdq_login import start_in_app as start_bdq_login
 from capa_simulation.io.container_start_report import note_app_ready
 from capa_simulation.object_sync_worker import start_object_sync
 

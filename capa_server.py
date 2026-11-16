@@ -13,6 +13,7 @@
 - 꺼짐 모드(`ADFS_CLIENT_ID` 없음)에서도 이 파일로 뜬다 — 경로 여섯은 404, 문지기는 모두 통과.
 """
 
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -20,11 +21,15 @@ import streamlit as st
 from capa_simulation.audit.boot import start as start_audit
 from capa_simulation.auth.server import sso_middleware, sso_routes, start_sso
 from capa_simulation.components.audit_actor import install as install_audit_actor
+from capa_simulation.io.bdq_login import start_in_app as start_bdq_login
 from capa_simulation.io.container_start_report import note_app_ready
 from capa_simulation.object_sync_worker import start_object_sync
 
 # 환경변수를 한 번 읽어 검증하고 로그 처리기를 단 뒤 비밀값 · 접속 명단을 `os.environ` 에서 뺀다.
 sso_config = start_sso()
+# BigDataQuery 자동 로그인 — 키를 쥐고 환경에서 뺀 뒤 저장된 계정을 한 번 읽어 둔다(닿을 곳은 위
+# 설정이 쥔 S3 명단 키). 꺼진 서버는 S3 에 묻지 않는다. 실패해도 앱은 뜬다.
+start_bdq_login(os.environ)
 # 접속 · 작업 감사 기록. 통합인증이 켜진 기동에서만 켠다 — 꺼짐이면 기록기도 탭도 서지 않는다.
 # 행위자 해석기(스크립트 스레드의 쿠키를 지금 다시 검증)는 켜졌을 때만 꽂는다.
 start_audit(sso_config)
