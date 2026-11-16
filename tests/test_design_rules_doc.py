@@ -2650,9 +2650,10 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     엇갈린 표지(UI-DAT-11), 「관리자」 한 낱말 두 뜻(UI-CON-02), 누르기 전에 보이는 저장(UI-NTF-09),
     「정본 아님」 표지(UI-LAY-05 · UI-TXT-06 · UI-ACC-02 · 4장), 갱신 토큰 80일(4장 — 같은 날 밤
     6-31 로 뒤집혀 그 줄은 7-1 로 옮기고 6-30 줄에 표지), 「토큰 자동 갱신」 줄 낱말(UI-CON-02 ·
-    UI-DAT-11 예외), 배지 정확성(UI-PRF-01 예외), 판정 목록 보고 꼴(PRC-07). 공통 틀 「주 단추
-    하나」 를 좁힌 것은 7-1 에, 다음 판 할 일은 TODO 2장에 있다. 6-28 · 6-29 줄은 받은 답 구절만
-    더했다(앞 시험들이 저마다 다음 절 앞에서 끊어 본다). 판 머리는 v1.31 시험이 본다."""
+    UI-DAT-11 예외 — 2026-11-16 틀을 걷어 v1.32 가 예외를 「없음」 으로 되돌림), 배지 정확성
+    (UI-PRF-01 예외), 판정 목록 보고 꼴(PRC-07). 공통 틀 「주 단추 하나」 를 좁힌 것은 7-1 에, 다음
+    판 할 일은 TODO 2장에 있다. 6-28 · 6-29 줄은 받은 답 구절만 더했다(앞 시험들이 저마다 다음 절
+    앞에서 끊어 본다). 판 머리는 v1.32 시험이 본다."""
     document = _text()
     assert "- **v1.30 — 2026-11-15.**" in _chapter(document, 8)
     assert "6-30 에 있다" in _chapter(document, 1)
@@ -2724,11 +2725,9 @@ def test_the_e2e_1115_board_answers_are_recorded() -> None:
     frame = section[section.index("\n### 6-29. ") : section.index("\n### 6-30. ")]
     assert "s-C-14 「80일 좋음」" in frame
 
-    # s-C-13 「지금대로」 — 시작 점검 표 「토큰 자동 갱신」 줄의 결과 낱말 · 제목 판정 밖을 예외로.
-    con02_except = rules["UI-CON-02"].fields["예외"][0]
-    for phrase in ("토큰 자동 갱신", "준비 · 꺼짐 · 켜짐 · 멈춤", "정상 · 건너뜀 · 실패", "s-C-13"):
-        assert phrase in con02_except, phrase
-    assert "s-C-13" in rules["UI-DAT-11"].fields["예외"][0]
+    # s-C-13 「지금대로」 — 시작 점검 표 「토큰 자동 갱신」 줄의 결과 낱말 · 제목 판정 밖을 예외로
+    # 받았다. 2026-11-16 틀을 걷어 두 예외는 「없음」 으로 돌아갔다(v1.32 시험이 본다) — 6-29 줄의
+    # 답 구절은 그때 기록 그대로다.
     assert "s-C-13 「지금대로」" in frame
 
     # decided-e2e 「좋음」 — 1 은 6-28 이 받은 답을 가리키고, 2 는 UI-PRF-01 예외(정확성이 이김)다.
@@ -2772,9 +2771,8 @@ def test_the_token_renewal_input_decision_is_recorded_and_the_refresh_token_turn
     로그인 토큰을 6시간마다) — 대화 원문 · 「답 밖 — 구현이 정함」 · 지금 「준비」 · 커밋 · 걷은
     `AD-18` 을 든다. 뒤집힌 6-29 token-auto-frame 의 갱신 토큰 몫과 그 80일을 받은 6-30 s-C-14 ·
     4장 옛 지금 값은 7-1 한 줄에 남고 6-29 줄은 그대로다(6-30 s-C-14 줄 · 4장은 v1.30 시험이
-    본다)."""
+    본다). 판 머리는 v1.32 시험이 본다."""
     document = _text()
-    assert "판 v1.31" in document.split("\n## 1. ")[0]
     assert "- **v1.31 — 2026-11-15.**" in _chapter(document, 8)
     assert "6-31 에 있다" in _chapter(document, 1)
 
@@ -2808,3 +2806,44 @@ def test_the_token_renewal_input_decision_is_recorded_and_the_refresh_token_turn
     turned = turned_lines[0]
     assert "6-29 token-auto-frame" in turned and "(6-31)" in turned
     assert "s-C-14" in turned and "`AD-18`" in turned and "`CAPA_BDQ_AUTO_REFRESH=on`" in turned
+
+
+TOKEN_FRAME_REMOVED = "2026-11-16 사용자 결정으로 틀을 걷음(7-1)"
+
+
+def test_the_token_refresh_frame_removal_is_recorded_and_its_exceptions_are_gone() -> None:
+    """v1.32 — 2026-11-16 사용자 결정으로 BigDataQuery 토큰 자동 갱신 틀(6-29 · 6-31)을 걷었다.
+    「서버 시작 점검」 표의 「토큰 자동 갱신」 줄이 없어져 UI-CON-02 · UI-DAT-11 예외는
+    「없음」 으로 돌아갔고 규칙 글 · 4장에 그 줄이 없다. 6-29 token-auto-frame · 6-30 s-C-13 ·
+    6-31 token-renew-input 줄은 그때 기록 그대로이고 걷음 표지만 달며, 뒤집힌 것은 7-1 한 줄이다."""
+    document = _text()
+    assert "판 v1.32" in document.split("\n## 1. ")[0]
+    assert "- **v1.32 — 2026-11-16.**" in _chapter(document, 8)
+
+    rules = {rule.id: rule for rule in _rules()}
+    for rule_id in ("UI-CON-02", "UI-DAT-11"):
+        assert rules[rule_id].fields["예외"] == ["없음"], rule_id
+    assert "토큰 자동 갱신" not in _chapter(document, 3)
+    assert "토큰 자동 갱신" not in _chapter(document, 4)
+
+    section = _chapter(document, 6)
+    for key in ("token-auto-frame", "s-C-13", "token-renew-input"):
+        [line] = [line for line in section.splitlines() if line.startswith(f"- {key} · ")]
+        assert TOKEN_FRAME_REMOVED in line, key
+
+    turned_lines = [
+        line
+        for line in _chapter(document, 7).splitlines()
+        if "2026-11-16 사용자 결정으로 틀을 걷었다" in line
+    ]
+    assert len(turned_lines) == 1, "7-1 에 걷은 자동 갱신 틀 줄이 하나 있다"
+    turned = turned_lines[0]
+    for phrase in (
+        "6-29 token-auto-frame",
+        "6-31 token-renew-input",
+        "s-C-13",
+        "`CAPA_BDQ_AUTO_REFRESH`",
+        "`AD-17`",
+        "「토큰 넣기」",
+    ):
+        assert phrase in turned, phrase
