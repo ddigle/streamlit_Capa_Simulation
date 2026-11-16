@@ -1,4 +1,4 @@
-# Purpose: S3 호환 저장소의 작은 객체 하나를 표준 라이브러리만으로 받고·올리고·머리만 본다(SigV4).
+# Purpose: S3 호환 저장소의 작은 객체 하나를 표준 라이브러리로 받기·올리기·지우기·머리 보기(SigV4).
 
 """작은 객체 경계.
 
@@ -7,6 +7,8 @@ KiB 짜리 객체 하나를 앱 프로세스가 직접 주고받는 자리다. �
 자리에서 `aws` 프로세스를 띄우지 않고, 프로필 없이 환경변수 키로 붙고, 의존성을 늘리지 않으려는
 것이다. 모듈 데이터 파일(`module_helpers` — 모듈 화면이 부르는 올리기 · 받기)도 이 경계를 쓰고, 그
 쪽만 상한 · 마감을 넓혀 넘긴다(`get_object` · `put_object` 의 `max_bytes` · `deadline_seconds`).
+BigDataQuery 자동 로그인 계정 객체(`io/bdq_login_store`)도 이 경계로 받고 · 쓰고 · 지운다
+(`delete_object`).
 
 - **표준 라이브러리만** 쓴다 — `auth` 가 import 해도 Streamlit · 무거운 모듈이 딸려 오지 않는다.
 - **경로 스타일 주소**(`/<버킷>/<키>`) — 버킷 이름에 대문자 · 밑줄이 있어 가상 호스트로 적지 못한다.
@@ -428,3 +430,12 @@ def put_object(
     if not 200 <= status < 300:
         raise _rejected(status, data, bucket_missing=True)
     return etag
+
+
+def delete_object(target: S3Target, key: str, *, moment: float | None = None) -> None:
+    """객체를 지운다. 없는 키도 성공이다(S3 는 없는 키의 DELETE 에 204 로 답한다 — 코드 있는 404
+    `NoSuchKey` 도 같이 받는다). 그 밖의 응답은 `S3Failure` 다."""
+    status, _etag, data = _exchange(target, "DELETE", key, moment=moment)
+    if 200 <= status < 300 or (status == 404 and _error_code(data) == _NO_SUCH_KEY):
+        return
+    raise _rejected(status, data)
