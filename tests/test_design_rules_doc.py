@@ -3026,32 +3026,53 @@ def test_the_notice_name_answer_reverses_the_old_home_box_name_once() -> None:
 
 
 def test_the_notice_chip_exceptions_and_values_match_the_code() -> None:
-    """v1.35 — 「공지」 칩은 좁은 창에서도 글째(UI-ACC-02 예외 — 코드에 그 칩의 `@media` 가
-    없다)이고 풍선 · 읽기 이름도 짧은 글 표의 고정 글(UI-TXT-06 예외 — 관리자 글 없음)이며, Admin
-    끝 시각 칸(`st.time_input`)은 UI-INP-03 밖이다. 4장 지금 값에 「공지」 칩 줄이 있고(검수 전),
-    「정본 아님」 줄은 변경 칩 다음을 Guide 로 적지 않는다. 6-33 표는 끝 시각 기본값을 「세션에
-    한 번」 으로 적지 않는다(화면을 떠났다 오면 다시 심고, 손대지 않은 기본값이 지나면 새
-    기본값)."""
+    """v1.35 — 「공지」 칩은 좁은 창(900px 미만)에서 공정 칩 · 합성 샘플 표지처럼 확성기
+    아이콘만이다(같은 날 공지 확인 보드 q-narrow — 권장이 아닌 답. 처음 적은 UI-ACC-02 예외
+    「글째」 는 걷었다 — 코드는 `alert_center.css` 900px 미만 규칙의 `.notice .word`). 풍선 · 읽기
+    이름은 짧은 글 표의 고정 글(UI-TXT-06 예외 — 관리자 글 없음)이며, Admin 끝 시각 칸
+    (`st.time_input`)은 UI-INP-03 밖이다. 4장 지금 값에 「공지」 칩 줄이 있고(검수 전),
+    「정본 아님」 줄은 변경 칩 다음을 Guide 로 적지 않고 이제 그 표지만 좁은 창 규칙이 없다고
+    말한다. 6-33 표는 끝 시각 기본값을 「세션에 한 번」 으로 적지 않는다(화면을 떠났다 오면 다시
+    심고, 손대지 않은 기본값이 지나면 새 기본값). 8장 v1.35 기록에 확인 보드 답 넷이 있다."""
     document = _text()
     rules = {rule.id: rule for rule in _rules()}
     narrow = " ".join(rules["UI-ACC-02"].fields["예외"])
-    assert "「공지」 칩도 좁은 창에서 Alarm 점으로 합치지 않고 글째 선다" in narrow
+    assert "「정본 아님」 표지는 좁은 창에서도" in narrow and "「공지」" not in narrow
+    assert "공지 확인 보드 q-narrow" in " ".join(rules["UI-ACC-02"].fields["근거"])
     assert "Admin 「공지」 끝 시각" in " ".join(rules["UI-INP-03"].fields["예외"])
-    assert "칩 풍선 · 읽기 이름도 같은 표의 고정 글" in " ".join(rules["UI-TXT-06"].fields["예외"])
+    plain = " ".join(rules["UI-TXT-06"].fields["예외"])
+    assert "칩 풍선 · 읽기 이름도 같은 표의 고정 글" in plain
+    assert "좁은 창에서는 공정 칩 · 합성 샘플 표지처럼 확성기 아이콘만" in plain
 
     values = _chapter(document, 4).splitlines()
     [chip] = [line for line in values if line.startswith("| 「공지」 칩 |")]
-    for phrase in ("`campaign` 13px", "좁은 창 규칙 없음", "Guide 바로 왼쪽", "검수 전"):
+    for phrase in ("`campaign` 13px", "확성기 아이콘만", "q-narrow", "Guide 바로 왼쪽", "검수 전"):
         assert phrase in chip, phrase
+    assert "좁은 창 규칙 없음" not in chip
     [canon] = [line for line in values if line.startswith("| 「정본 아님」 표지 |")]
     assert "변경 칩 · 「공지」 칩 · Guide 왼쪽" in canon
-    assert "이 표지와 「공지」 칩만 좁은 창 규칙이 없다" in canon
+    assert "이 표지만 좁은 창 규칙이 없다" in canon
+    assert "합성 샘플 표지 · 「공지」 칩은 900px 미만 아이콘만" in canon
 
     section = _chapter(document, 6)
     record = section[section.index("\n### 6-33. ") :]
     table = record[record.index("구현이 좁게 정한 것(보드에 올리지 않음") :]
     for row in ("| 끝 시각 글 |", "| 끝 시각 칸 |", "| 칩 풍선 · 좁은 창 |", "| 공지 줄 보관 |"):
         assert row in table, row
+    [tip] = [line for line in table.splitlines() if line.startswith("| 칩 풍선 · 좁은 창 |")]
+    assert "900px 미만 창에서는 확성기 아이콘만" in tip and "글째" not in tip
     assert "세션에 한 번" not in table
     assert "다른 관리자가 공지를 바꿨습니다" not in record
-    assert "UI-ACC-02 「공지」 칩" in _chapter(document, 8)
+    history = _chapter(document, 8)
+    assert "UI-ACC-02 「공지」 칩" in history
+    v135 = history[history.index("- **v1.35 — 2026-11-17.**") :]
+    v135 = v135[: v135.index("\n- **v1.3")] if "\n- **v1.3" in v135 else v135
+    for phrase in (
+        "https://claude.ai/artifact/FVdiHY3N3fH6dNa5oJeVdZ",
+        "q-narrow 「좁은 창에서는 확성기 아이콘만」(권장이 아닌 답",
+        "q-voc 「그대로 둔다」",
+        "q-long 「값 줄만으로 둔다」",
+        "checked 「좋음」",
+        "7-1 줄은 없다",
+    ):
+        assert phrase in v135, phrase
