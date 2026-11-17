@@ -20,12 +20,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from alert_marks import active_state
+from alert_marks import active_state, flashed
 from grade_support import (
     GRADE_PARAMS,
     as_grade,
     assert_refusals_caught,
     grade_page_script,
+    judge_spy,
     operational_sso_off,
     unrestricted,
     visible_labels,
@@ -39,7 +40,7 @@ from test_equipment_scenario_repository import _clone, _seeded
 
 from capa_simulation.auth import grades
 from capa_simulation.components import equipment_master_grid as emg
-from capa_simulation.components import grade_ui, space_layout_editor
+from capa_simulation.components import grade_ui, space_layout_editor, sso_identity
 from capa_simulation.components.availability_sheet_keys import GAP_SHEET_MENU_KEY
 from capa_simulation.components.equipment_data_workspace import GRID_LOADED_KEY
 from capa_simulation.components.equipment_master_tab import (
@@ -50,7 +51,11 @@ from capa_simulation.components.equipment_master_tab import (
     SIDE_NEW,
     TABLE_KEY,
 )
-from capa_simulation.components.equipment_scenario_management import CONTINUE_BUTTON_KEY
+from capa_simulation.components.equipment_scenario_management import (
+    CONTINUE_BUTTON_KEY,
+    PUBLISH_BUTTON_KEY,
+    SCENARIO_KEY,
+)
 from capa_simulation.components.equipment_settings_dialog import (
     EQUIPMENT_DIALOG_KEY,
     SETTINGS_DIALOG,
@@ -429,6 +434,42 @@ def test_the_equipment_scenario_buttons_follow_the_grade(
     continues = [button for button in app.button if button.key == CONTINUE_BUTTON_KEY]
     assert bool(continues) is (grade == grades.DEVELOPER), "「이대로 이어 쓰기」 는 개발자만"
     assert _hidden(app, "equipment_scenario_table_tools_v1") is not manager
+
+
+@pytest.mark.page_failure_card
+def test_a_publish_pressed_on_a_screen_drawn_before_losing_the_grade_is_refused_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """설비 시나리오 「공식으로 지정」 — 관리자로 그린 화면(단추가 선 옛 화면)에서 실무자로 내려
+    누르면 쓰는 순간의 벽이 막는다. 본문 누름이라 받는 자리는 화면 감싸기(`run_core_page`)다 —
+    오류 카드 없이 거절 알림 한 번, 공식 번호 그대로."""
+    repository = _seeded(tmp_path)
+    setup = _clone(repository)
+    as_grade(monkeypatch, grades.MANAGER)
+    app = AppTest.from_string(
+        grade_page_script(SCENARIO_TAB.format(database=str(repository.database_path))),
+        default_timeout=60,
+    )
+    _ok(app.run())
+    app.selectbox(key=SCENARIO_KEY).set_value(setup.equipment_scenario_id)
+    _ok(app.run())
+    release = repository.latest_equipment_release()
+    assert release is not None
+
+    as_grade(monkeypatch, grades.EDITOR)
+    # 누른 회차의 화면 판정은 옛 화면 그대로(단추가 선 채) — 벽만 실제 등급을 본다.
+    monkeypatch.setattr(sso_identity, "viewer_can", lambda _action: True)
+    with judge_spy() as seen:
+        app.button(key=PUBLISH_BUTTON_KEY).click().run()
+
+    _ok(app)
+    assert not list(app.error), "오류 카드(AD-22)가 서지 않는다"
+    assert [item.value for item in flashed(app, "error")] == [
+        grades.refusal_text("equipment.publish")
+    ]
+    after = repository.latest_equipment_release()
+    assert after is not None and after.release_no == release.release_no
+    assert ("equipment.publish", grades.EDITOR) in seen
 
 
 # ------------------------------------------------------------------ 운영 아님 · 통합인증 꺼짐

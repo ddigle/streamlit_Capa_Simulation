@@ -3851,7 +3851,9 @@ def render_small_editor(
             _render_bulk_delete_status(frames) if read_only is None else (False, False)
         )
         if read_only is not None:
-            # 값만 — 고칠 칸도 고르기 칸도 없는 읽기 표(편집본은 그대로다).
+            # 값만 — 고칠 칸도 고르기 칸도 없는 읽기 표(편집본은 그대로다). 표 도구 막대가 바로 위
+            # 「표 보기 ▾」 줄을 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+            toolbar_clearance()
             st.dataframe(
                 view.frame,
                 hide_index=True,
