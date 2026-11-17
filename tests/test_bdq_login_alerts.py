@@ -115,6 +115,26 @@ def test_a_stored_stop_tells_the_administrator_to_enter_the_account_again(
     assert active_state(app, STOP) is None
 
 
+def test_a_stop_without_a_marker_says_the_login_was_not_confirmed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """하위 프로세스가 표지 없이 끝난 멈춤은 「로그인 확인 못 함」 — 비밀번호를 의심해 다시 넣게
+    하는 글이 아니라 진단 줄을 먼저 보라는 글이다. 멈춤 · 풀리는 길은 거절과 같다."""
+    _server(tmp_path, monkeypatch)
+    store.remember(_stored(store.STATE_STOPPED, bdq_login.REASON_NO_MARKER))
+
+    note = active_state(AppTest.from_string(SCRIPT).run(), STOP)
+
+    assert note is not None
+    assert note["short"] == "BigDataQuery 자동 로그인 멈춤 — 로그인 확인 못 함"
+    assert len(note["short"]) <= alerts.SHORT_LIMIT
+    full = note["full"]
+    assert "로그인 확인 못 함 — 결과 표지 없음" in full and "진단 줄" in full
+    assert "비밀번호가 틀렸는지 모릅니다" in full and "다시 시도하지 않습니다" in full
+    assert "`" not in full
+    _secret_free(note)
+
+
 def test_a_stop_found_at_start_tells_the_administrator_before_any_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

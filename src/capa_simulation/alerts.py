@@ -395,7 +395,8 @@ SPECS: Final[tuple[AlertSpec, ...]] = (
     # BigDataQuery 자동 로그인 멈춤 — 저장된 계정의 로그인이 거절돼(시작 · 조회 중) 다시 시도하지
     # 않고 멈춘 C-DEP 서버의 관리자 회차(`container_start_check.render_token_alert`, 2026-11-16
     # 사용자 결정 D3 · D4). Admin Area 「BDQ 자동 로그인」 에서 계정을 다시 넣어 로그인이 성공하면
-    # 풀린다.
+    # 풀린다. 하위 프로세스가 결과 표지 없이 끝난 멈춤은 짧은 글이 「로그인 확인 못 함」 이다
+    # (`bdq_login.UNCONFIRMED_REJECT_REASONS` — 비밀번호를 의심하게 하지 않는다).
     AlertSpec("AD-23", "action", "state", "BigDataQuery 자동 로그인 멈춤 — 계정을 다시 넣기"),
     # BigDataQuery 자동 로그인이 멈추지 않은 채 서지 못함 — 시작 때 · 조회 중 자동 로그인이 서버에
     # 닿지 못했거나 · 로그인을 확인하지 못했거나 · 시도하지 못한 C-DEP 서버의 관리자

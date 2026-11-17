@@ -40,6 +40,12 @@ authentication. …」)라 안쪽은 `__context__` 다. 둘 다 `bigdataquery.ex
 - 틀린 비밀번호에 토큰 파일을 건드리는 장면 — `wrong_truncates`(빈 파일로) · `wrong_writes_garbage`
   (다른 글로). `getTokenTime` 은 서버처럼 발급 꼴(`<16진 24글자>_<발급 ms>`)이 아닌 토큰을 받지
   않는다(예외).
+- 하위 프로세스가 표지 없이 끝나는 장면 — `exit_on_import`(import 중 `os._exit(4)`) · `exit_hard`
+  (`login()` 이 계정 · 비밀번호를 든 예외의 traceback 을 표준 오류에 찍고 `os._exit(3)`) ·
+  `stderr_account_line`(예외 줄 자리에 계정을 찍고 `os._exit(3)`) · `signal_kill`(`login()` 중
+  제 프로세스에 SIGKILL — POSIX).
+- `FAKE_BDQ_VERSION` — 패키지 `__version__`(기본 `0.0.0+fake`). 낯선 꼴 판이 표지를 깨지 않는지
+  본다.
 """
 
 from __future__ import annotations
@@ -50,16 +56,18 @@ import hashlib
 import os
 import re
 import secrets
+import signal
 import socket
 import sys
 import time
+import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from bigdataquery.exceptions import TokenNotFoundException
 
 __all__ = ["TokenNotFoundException", "getData", "getTokenTime", "login"]
-__version__ = "0.0.0+fake"
+__version__ = os.environ.get("FAKE_BDQ_VERSION", "0.0.0+fake")
 
 TOKEN_LIFETIME = timedelta(hours=8)
 _KST = timezone(timedelta(hours=9))
@@ -157,6 +165,33 @@ print("========================================")
 _log("import")
 if "import_fails" in _scenes():
     raise RuntimeError("fake package init failure")
+if "exit_on_import" in _scenes():
+    sys.stdout.flush()
+    os._exit(4)
+
+
+class LoginRefused(Exception):
+    """틀린 비밀번호를 값과 함께 글로 낸 꼴(`exit_hard`) — 표준 오류에서 종류 이름만 읽는지 본다."""
+
+
+def _end_without_marker(account: str, password: str, scenes: frozenset[str]) -> None:
+    """표지 없이 끝나는 장면 — 표준 오류에 값을 든 글을 남기고 프로세스를 바로 끝낸다."""
+    if "exit_hard" in scenes:
+        try:
+            raise LoginRefused(f"bad password {password} for {account}")
+        except LoginRefused:
+            traceback.print_exc()
+        sys.stderr.flush()
+        os._exit(3)
+    if "stderr_account_line" in scenes:
+        sys.stderr.write(
+            f'Traceback (most recent call last):\n  File "<fake>", line 1, in login\n'
+            f"{account}: denied\n"
+        )
+        sys.stderr.flush()
+        os._exit(3)
+    if "signal_kill" in scenes and sys.platform != "win32":
+        os.kill(os.getpid(), signal.SIGKILL)
 
 
 def login() -> None:
@@ -165,6 +200,7 @@ def login() -> None:
     account = input("AD Account : ")
     password = _read_password("Password : ")
     scenes = _scenes()
+    _end_without_marker(account, password, scenes)
     if "slow" in scenes:
         time.sleep(float(os.environ.get("FAKE_BDQ_SLOW_SECONDS", "30")))
     if "connection" in scenes:

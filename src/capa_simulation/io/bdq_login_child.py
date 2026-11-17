@@ -26,6 +26,12 @@ Connection failed: HTTP Response Code :」). 그래서 OS 가 낸 연결 단계 
 `stage` — `input`(계정 줄 없음) · `import`(패키지를 불러오지 못함 — 로그인 시도 없음) · `login`
 (`login()` 이 예외) · `done`(`login()` 이 돌아옴). 로그인이 받아들여졌는지는 부르는 쪽이 토큰 파일
 다이제스트로 가른다 — 이 본문은 판정하지 않는다.
+
+**단계 줄**(`STEP_MARKER`)은 표지와 따로 선다 — 패키지를 불러오기 · `login()` · `getTokenTime`
+에 들어가기 바로 앞에 한 줄씩 찍고 곧바로 내보낸다. 하위 프로세스가 표지 없이 끝나도(죽음 ·
+시그널) 부르는 쪽이 어디까지 갔는지와 판(`VERSION_PACKAGES` — 불러온 모듈의 `__version__`, 아니면
+설치 정보)을 읽는다. 판은 짧은 판 글자 꼴만 싣고(`?` — 꼴이 낯섦, `-` — 없음) 표지의 꼴에는 들지
+않는다 — 낯선 판 글자 하나가 표지를 깨 좋은 로그인을 「표지 없음」 으로 만들지 않게.
 """
 
 from __future__ import annotations
@@ -35,10 +41,18 @@ import importlib
 import re
 import socket
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 MARKER = "capa-bdq-login"
 STAGES = ("input", "import", "login", "done")
+# 단계 줄 — 표지와 다른 머리(표지 줄 머리는 `MARKER` 뒤 공백이라 겹치지 않는다).
+STEP_MARKER = "capa-bdq-login-step"
+# 단계 줄의 단계 — 그 일에 들어가기 바로 앞에 찍는다.
+STEP_STAGES = ("import", "login", "time")
+# 단계 줄에 판을 싣는 배포 — 패키지와 그 비밀번호 칸 패키지.
+VERSION_PACKAGES = ("bigdataquery", "getpass_asterisk")
+# 판 글자 꼴 — 그 밖은 `?`, 없으면 `-`.
+VERSION_TEXT = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+!_-]{0,39}")
 # `getTokenTime` 의 남은 날 칸 — 옮겨 적힌 철자(`remining_days`)도 받는다. 둘 다 없으면 0 날이다.
 DAYS_KEYS = ("remaining_days", "remining_days")
 HOURS_KEY = "remaining_hours"
@@ -181,6 +195,40 @@ def marker_line(
     )
 
 
+def version_text(value: object) -> str:
+    """판 글자 — 꼴(`VERSION_TEXT`)에 맞으면 그대로, 빈 값 · 글이 아니면 `-`, 꼴이 낯설면 `?`."""
+    if not isinstance(value, str) or not value:
+        return "-"
+    return value if VERSION_TEXT.fullmatch(value) else "?"
+
+
+def installed_version(name: str) -> str:
+    """설치 정보(`importlib.metadata`)의 판 — 불러오지 않고 읽는다. 없거나 읽다 깨지면 `-`."""
+    try:
+        from importlib import metadata
+
+        return version_text(metadata.version(name))
+    except Exception:  # 설치 정보가 없거나 낯선 꼴이어도 진단 칸 하나가 빌 뿐이다
+        return "-"
+
+
+def loaded_version(name: str, fallback: str) -> str:
+    """불러온 모듈의 `__version__` — 아직 불러오지 않았거나 없으면 `fallback`(설치 판). 읽다 무엇이
+    나도 `fallback` 이다 — 판 읽기가 로그인 길을 끊지 않게."""
+    try:
+        module = sys.modules.get(name)
+        value = getattr(module, "__version__", None) if module is not None else None
+    except Exception:  # 낯선 모듈 속성이 깨져도 진단 칸 하나가 빌 뿐이다
+        return fallback
+    return version_text(value) if isinstance(value, str) and value else fallback
+
+
+def step_line(stage: str, versions: Mapping[str, str]) -> str:
+    """단계 줄 하나 — 단계와 판(`VERSION_PACKAGES` 차례)."""
+    shown = " ".join(f"{name}={versions.get(name, '-')}" for name in VERSION_PACKAGES)
+    return f"{STEP_MARKER} stage={stage} {shown}"
+
+
 def _emit(line: str) -> None:
     stream = sys.__stdout__
     if stream is None:
@@ -192,19 +240,25 @@ def _emit(line: str) -> None:
         pass
 
 
-def run() -> str:
-    """로그인 한 번 → 표지 한 줄(찍지 않고 돌려준다)."""
+def run(emit: Callable[[str], None] = _emit) -> str:
+    """로그인 한 번 → 표지 한 줄(찍지 않고 돌려준다). 단계 줄은 그 자리에서 `emit` 으로 내보낸다."""
     account = sys.stdin.readline().rstrip("\r\n")
     if not account:
         return marker_line("input")
+    versions = {name: installed_version(name) for name in VERSION_PACKAGES}
+    emit(step_line("import", versions))
     try:
         module = importlib.import_module("bigdataquery")
     except BaseException as error:  # 패키지 초기화가 낼 종류를 모른다 — 무엇이든 로그인 시도 없음
         return marker_line("import", error=qualified_name(error))
+    versions = {name: loaded_version(name, versions[name]) for name in VERSION_PACKAGES}
+    emit(step_line("login", versions))
     try:
         module.login()
     except BaseException as error:  # 틀린 비밀번호 · 연결 · 종료 요청까지 모두 종류 이름만 남긴다
         return marker_line("login", error=qualified_name(error), net=is_unreached(error))
+    versions = {name: loaded_version(name, versions[name]) for name in VERSION_PACKAGES}
+    emit(step_line("time", versions))
     try:
         answer = module.getTokenTime(account)
     except BaseException as error:  # 남은 시간을 못 재도 로그인 판정은 부르는 쪽 몫이다

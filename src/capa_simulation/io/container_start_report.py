@@ -18,8 +18,11 @@ DB 받기와 재서 남긴 수(디스크 · pod · cgroup · 다운 시간). 값
 없어 리뷰 압축본에 옮길 수 있다. 꼴은 더하기만 했다 — 옛 파일은 그 칸이 없어 `None` 이다.
 
 **자동 로그인 칸**(`bdq_login`)은 BigDataQuery 자동 로그인 단계의 결과다 — 갈래 낱말 · 까닭 코드 ·
-키 꼴 검사 · 남은 분뿐이고 계정 · 비밀번호 · 키가 없다(`parse_login` 이 꼴을 다시 본다). 「서버 시작
-점검」 표 줄(`login_step`)과 앱 기동의 멈춤 넘겨받기(`bdq_login.start_in_app`) · 알림이 읽는다.
+키 꼴 검사 · 남은 분 · 하위 프로세스 진단(`ChildDiag` — 종료 코드 · 시그널 · 걸린 초 · 닿은 단계 ·
+표준 오류 마지막 예외 종류 · 판)뿐이고 계정 · 비밀번호 · 키가 없다(`parse_login` 이 꼴을 다시 본다).
+「서버 시작 점검」 표 줄(`login_step`) · 진단 값 줄과 앱 기동의 멈춤
+넘겨받기(`bdq_login.start_in_app`) · 알림이 읽는다. 진단 칸 꼴과 그 화면 · 로그 글은 Admin 「BDQ
+자동 로그인」 의 마지막 시도 진단과 함께 쓴다.
 
 **앱 응답 시각**은 앱이 따로 남긴다(`note_app_ready`) — 시작 스크립트는 exec 뒤에 없다.
 """
@@ -251,6 +254,112 @@ class SyncStart:
     head_unchecked: tuple[str, ...] = ()
 
 
+# 하위 프로세스 진단 칸의 꼴 — 단계는 하위 본문의 단계 줄 낱말(`bdq_login_child.STEP_STAGES`), 판은
+# 짧은 판 글자(`bdq_login_child.VERSION_TEXT`), 시그널은 POSIX 이름. 이 모듈은 하위 본문을 import
+# 하지 않는다 — 같은 꼴을 시험이 맞댄다.
+CHILD_STAGES: Final = ("import", "login", "time")
+_CHILD_VERSION: Final = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+!_-]{0,39}")
+_CHILD_SIGNAL: Final = re.compile(r"SIG[A-Z0-9]{1,12}")
+# 종료 코드 · 초의 받는 범위(Windows 의 종료 코드는 부호 없는 32비트까지 온다).
+_CHILD_EXIT_LIMIT: Final = 2**32
+_CHILD_SECONDS_LIMIT: Final = 86_400.0
+
+
+@dataclass(frozen=True)
+class ChildDiag:
+    """자동 로그인 하위 프로세스 한 번의 진단 — 수와 짧은 이름뿐이고 계정 · 비밀번호 · 토큰 · 예외
+    문구 · 하위 출력이 없다.
+
+    `exit_code` — 종료 코드(시간 초과로 끊었으면 `None`, POSIX 시그널로 죽었으면 음수).
+    `signal` — 그 시그널 이름. `seconds` — 띄워서 끝날 때까지 걸린 초(소수 첫째 자리). `stage` —
+    하위 본문이 마지막으로 들어간 단계(`CHILD_STAGES` — 하나도 못 들어갔으면 빈 글). `stderr_kind`
+    — 표준 오류 마지막 traceback 의 예외 종류(`모듈.이름`, 없으면 빈 글). `bigdataquery` ·
+    `getpass_asterisk` — 하위 본문이 읽은 판(불러온 모듈의 `__version__`, 아니면 설치 정보 — `-`
+    없음 · `?` 낯선 꼴 · 빈 글 모름)."""
+
+    exit_code: int | None = None
+    signal: str = ""
+    seconds: float | None = None
+    stage: str = ""
+    stderr_kind: str = ""
+    bigdataquery: str = ""
+    getpass_asterisk: str = ""
+
+    def fields(self) -> dict[str, object]:
+        """칸 이름 → 값 — 결과 파일 칸 · 감사 상세가 함께 쓴다. 모르는 값은 `None`."""
+        return {
+            "exit": self.exit_code,
+            "signal": self.signal or None,
+            "sec": self.seconds,
+            "stage": self.stage or None,
+            "stderr": self.stderr_kind or None,
+            "bigdataquery": self.bigdataquery or None,
+            "getpass_asterisk": self.getpass_asterisk or None,
+        }
+
+    @property
+    def code(self) -> str:
+        """로그 한 덩이 — `exit=0 sec=4.1 stage=import stderr=- bigdataquery=2.5.0 …`(모름은
+        `-`)."""
+        return " ".join(
+            f"{name}={'-' if value is None else value}" for name, value in self.fields().items()
+        )
+
+    @property
+    def text(self) -> str:
+        """화면 값 조각 — 「종료 0 · 4.1초 · 단계 import · stderr - · bigdataquery 2.5.0 ·
+        getpass_asterisk -」(시그널이면 「종료 -9(SIGKILL)」, 끊었으면 「종료 -」)."""
+        if self.exit_code is None:
+            ended = "종료 -"
+        elif self.signal:
+            ended = f"종료 {self.exit_code}({self.signal})"
+        else:
+            ended = f"종료 {self.exit_code}"
+        parts = [ended]
+        if self.seconds is not None:
+            parts.append(f"{self.seconds:.1f}초")
+        parts += [
+            f"단계 {self.stage or '-'}",
+            f"stderr {self.stderr_kind or '-'}",
+            f"bigdataquery {self.bigdataquery or '-'}",
+            f"getpass_asterisk {self.getpass_asterisk or '-'}",
+        ]
+        return " · ".join(parts)
+
+
+def parse_child(data: object) -> ChildDiag | None:
+    """진단 칸을 읽는다. 칸이 없으면(옛 파일 · 하위 프로세스를 띄우지 않음) `None`. 꼴이 어긋난 값은
+    그 값만 비운다 — 화면에 값이 실리지 않게."""
+    if not isinstance(data, dict):
+        return None
+    code = _int_or_none(data.get("exit"))
+    seconds = _float_or_none(data.get("sec"))
+    stage = data.get("stage")
+    return ChildDiag(
+        exit_code=code if code is not None and abs(code) < _CHILD_EXIT_LIMIT else None,
+        signal=_matched(_CHILD_SIGNAL, data.get("signal")),
+        seconds=(
+            round(seconds, 1)
+            if seconds is not None and 0 <= seconds < _CHILD_SECONDS_LIMIT
+            else None
+        ),
+        stage=stage if isinstance(stage, str) and stage in CHILD_STAGES else "",
+        stderr_kind=_matched(_LOGIN_ERROR_KIND, data.get("stderr")),
+        bigdataquery=_child_version(data.get("bigdataquery")),
+        getpass_asterisk=_child_version(data.get("getpass_asterisk")),
+    )
+
+
+def _matched(pattern: re.Pattern[str], value: object) -> str:
+    return value if isinstance(value, str) and pattern.fullmatch(value) else ""
+
+
+def _child_version(value: object) -> str:
+    if value in ("-", "?"):
+        return str(value)
+    return _matched(_CHILD_VERSION, value)
+
+
 @dataclass(frozen=True)
 class LoginStart:
     """BigDataQuery 자동 로그인 칸. 값은 갈래 낱말 · 짧은 코드 · 수뿐이다 — 계정 · 비밀번호 · 키 ·
@@ -261,7 +370,7 @@ class LoginStart:
     `error_kind` — 예외 종류의 `모듈.이름`. `failure_kind` — S3 읽기 실패 분류. `stop_write` —
     객체에 시도 표시 · 결과 · 멈춤을 쓰지 못한 까닭(빈 글이면 씀 · 해당 없음). `entered_at` — 판정한
     저장 객체의 넣은 시각(KST ISO — 비밀이 아니다. 앱 기동이 그 사이 다시 넣은 계정에 멈춤을 잘못
-    넘겨받지 않게 대조한다)."""
+    넘겨받지 않게 대조한다). `child` — 로그인 하위 프로세스 진단(띄우지 않았으면 `None`)."""
 
     status: str
     reason: str = ""
@@ -271,6 +380,7 @@ class LoginStart:
     failure_kind: str = ""
     stop_write: str = ""
     entered_at: str = ""
+    child: ChildDiag | None = None
 
     @property
     def shown(self) -> bool:
@@ -407,6 +517,7 @@ def parse_login(data: object) -> LoginStart | None:
         failure_kind=_login_code(data.get("failure_kind")),
         stop_write=_login_code(data.get("stop_write")),
         entered_at=_login_moment(data.get("entered_at")),
+        child=parse_child(data.get("child")),
     )
 
 
