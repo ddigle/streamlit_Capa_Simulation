@@ -41,8 +41,7 @@ def test_the_equipment_csv_upload_box_has_its_own_limit_below_the_server_limit(
 
 
 def test_the_server_upload_limit_is_the_streamlit_default() -> None:
-    """앱 전체 상한은 200MB(Streamlit 기본값)다 — 2026-11-17 메모리 보드 q-upload 「200MB 로
-    낮춘다」 가 2026-10-22 「1024 유지」 를 뒤집었다. 올린 파일은 통째로 서버 메모리 바이트라 큰
-    파일 하나가 컨테이너 메모리 한도(1GiB)를 넘기면 앱이 다시 선다. 모듈 올리기 칸도 이 값을
-    물려받는다(`docs/module_guide.md` 3-9 데모 표 예시 아래)."""
+    """앱 전체 상한은 200MB(Streamlit 기본값 — 2026-11-17 메모리 보드 q-upload)다. 올린 파일은
+    통째로 서버 메모리 바이트라 큰 파일 하나가 컨테이너 메모리 한도(1GiB)를 넘기면 앱이 다시
+    선다. 모듈 올리기 칸도 이 값을 물려받는다(`docs/module_guide.md` 3-9 데모 표 예시 아래)."""
     assert _server_upload_limit_mb() == 200

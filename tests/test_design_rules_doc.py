@@ -3027,8 +3027,8 @@ def test_the_notice_name_answer_reverses_the_old_home_box_name_once() -> None:
 
 def test_the_notice_chip_exceptions_and_values_match_the_code() -> None:
     """v1.35 — 「공지」 칩은 좁은 창(900px 미만)에서 공정 칩 · 합성 샘플 표지처럼 확성기
-    아이콘만이다(같은 날 공지 확인 보드 q-narrow — 권장이 아닌 답. 처음 적은 UI-ACC-02 예외
-    「글째」 는 걷었다 — 코드는 `alert_center.css` 900px 미만 규칙의 `.notice .word`). 풍선 · 읽기
+    아이콘만이다(같은 날 공지 확인 보드 q-narrow — 권장이 아닌 답. UI-ACC-02 예외에 그 칩이 없고
+    코드는 `alert_center.css` 900px 미만 규칙의 `.notice .word`). 풍선 · 읽기
     이름은 짧은 글 표의 고정 글(UI-TXT-06 예외 — 관리자 글 없음)이며, Admin 끝 시각 칸
     (`st.time_input`)은 UI-INP-03 밖이다. 4장 지금 값에 「공지」 칩 줄이 있고(검수 전),
     「정본 아님」 줄은 변경 칩 다음을 Guide 로 적지 않고 이제 그 표지만 좁은 창 규칙이 없다고
