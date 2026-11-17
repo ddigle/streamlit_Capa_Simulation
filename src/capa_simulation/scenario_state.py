@@ -211,9 +211,12 @@ def _retire_edit_cell(previous: object) -> None:
     길(`clear_active_scenario`)이 부른다. 키는 **갈아끼워지는 dict 의** (reference_version,
     content_token)이다 — 다른 리비전을 불러올 때는 새 번호와 다르다. pristine 토큰 칸(세션끼리
     나누는 리비전 결과)은 걷지 않는다. 부르는 쪽은 새 시나리오를 다 지은 뒤 세션에 넣기 바로 앞에
-    부른다 — 짓다 막히면(`KeyError` · `ValueError`) 아무 칸도 걷지 않는다. 바꾸는 길은 모두 그 뒤 옛
-    dict 로 계산을 부르지 않는다(`tests/test_edit_token_retire.py`). 편집본을 쥔 채 끝난 세션의 칸은
-    상한에서 밀릴 때까지 남는다.
+    부른다 — 짓다 막히면(`KeyError` · `ValueError`) 아무 칸도 걷지 않는다. 걷은 뒤 옛 dict 로 계산을
+    다시 부르면 그 칸을 한 번 더 계산할 뿐 값은 같다 — 편집 적용 길은 곧바로 앱 전체 회차를 다시
+    돌린다는 것을 `tests/test_edit_token_retire.py` 의 정적 그물이 보고, 되돌리기 · 불러오기 ·
+    저장 뒤 · 버리기를 부르는 곳(콜백 · `st.rerun` · 알림만 남기는 관리 화면)은 그물 없이 코드로
+    따라갔다.
+    편집본을 쥔 채 끝난 세션의 칸은 상한에서 밀릴 때까지 남는다.
     """
     if not isinstance(previous, dict):
         return
