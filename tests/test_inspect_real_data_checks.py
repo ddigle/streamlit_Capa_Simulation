@@ -3023,6 +3023,11 @@ CENSUS_KEYS = {
 }
 
 
+# 요약 `8-10T` — 객체 칸 수 식(글자만 + 섞임 + 빈)과 섞인 칸이 있는 리비전 / 본 리비전. 칸 수는 합성
+# 표본의 표 꼴에 달려 고정하지 않고 「섞임 0 · 빈 0 이면 칸 = 글자만」 만 본다.
+OBJECT_SUMMARY: Final = r"- 8-10T 칸 (\d+) = 글자만 \1 \+ 섞임 0 \+ 빈 0 · 걸림 {hit}/{seen}"
+
+
 def _census_row(output: str, key: str) -> str:
     """센서스 표에서 그 키 줄의 `걸림 / 봄 | 수 |` 부분."""
     rows = [line for line in output.splitlines() if line.startswith(f"| {CENSUS_KEYS[key]} | ")]
@@ -3187,12 +3192,16 @@ def test_the_census_counts_each_planted_shape_without_names(
     # C11 은 빈 칸(None · 빈 글 · 스페이스뿐 · 탭뿐)과 다른 표기("x")를 나눠 센다 — " y " 는 공백 ·
     # 대소문자를 무시하면 Y 다. 탭뿐인 칸은 DuckDB `trim` 이 떼지 않아도 앱 판정처럼 빈칸이고,
     # 「Y」 뒤 탭 · 「n」 뒤 줄바꿈은 앱이 Y · N 으로 받아 세지 않는다(보드 ②-8 (가)).
-    assert summary[1:] == [
+    assert summary[1:-1] == [
         f"- 8-10 C{index} {count}"
         for index, count in enumerate(
             [1, 1, 1, 1, 1, 2, 1, 1, 1, 1, "5 = 빈칸 4 + 다른표기 1", 1], start=1
         )
     ]
+    # 객체 칸 줄은 C 줄 뒤 따로 — 머리의 `0 아님` · `합` 에 들지 않는다. 합성 표본의 객체 칸은
+    # 글자뿐이다.
+    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), summary[-1]), summary[-1]
+    assert "- 객체 칸(메모리 줄이기 R1 의 「글자 칸만」 조건 — 요약 키 `8-10T`) — " in output
     assert checks.check_transcript(_summary(output)) == []
     # 거르는 식만으로 센 수(지난 리뷰의 C11)는 앱이 받는 탭 · 줄바꿈 꼬리 둘도 세어 합보다 크다.
     with duckdb.connect(str(simulation), read_only=True) as connection:
@@ -3265,12 +3274,71 @@ def test_the_census_counts_every_revision_only_when_asked(
     # 설비 DB 가 없으면 그 줄만 이 스크립트의 문구로 멈춘다.
     assert _census_row(every, "names") == "- | 설비 DB를 열지 못함 |"
     # 요약 머리는 범위(전부 · 본 리비전 수)를 밝히고, 멈춘 줄은 수 줄과 따로 센다.
-    assert _uncoded(_summary(every)) == [
+    bare = _uncoded(_summary(every))
+    assert bare[:3] == [
         "- 8-10 전부 2 · 0 아님 1/12 · 실패 1 · 합 2",
         "- 8-10 C3 2",
         "- 8-10 C12 설비 DB를 열지 못함",
     ]
+    # 객체 칸 줄도 같은 범위(전부 2)를 본다 — 옛 리비전은 행이 든 표 하나만 센다.
+    (objects,) = bare[3:]
+    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=2), objects), objects
     assert checks.check_transcript(_summary(every)) == []
+
+
+def test_an_object_column_is_text_only_when_every_value_left_is_a_string() -> None:
+    """객체 칸의 값 종류는 R1 이 모으는 판정(`infer_dtype(skipna=True)`) 그대로 — 빈 값(None ·
+    NaN)을 빼고 모두 글자면 `글자만`, 빈 값뿐이면 `빈`, 글자 아닌 값이 하나라도 있으면 `섞임`(글자가
+    하나도 없어도). DuckDB 글자 칸은 글자 · 빈 값만 내므로 섞인 칸은 손으로 만든 칸으로 본다."""
+    kinds = [
+        checks.object_column_kind(pd.Series(values, dtype="object"))
+        for values in (
+            ["A", None, "B", float("nan")],
+            [None, None],
+            ["1", 1],
+            ["A", True],
+            [1.0, None],
+            [b"x", "y"],
+        )
+    ]
+
+    assert kinds == ["글자만", "빈", "섞임", "섞임", "섞임", "섞임"]
+
+
+def test_the_object_column_census_counts_kinds_per_revision_table_and_column(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """리비전 · 표 · 칸마다 한 번 세고, 행 없는 표 · 숫자 칸은 세지 않으며, 섞인 칸이 있는 리비전
+    수를 따로 센다. 요약 `8-10T` 의 식은 `--check-summary` 가 다시 셈한다."""
+    first = next(iter(REVISION_TABLES.values()))
+
+    def fake_load_frame(_connection: object, **kwargs: str) -> pd.DataFrame:
+        table, owner = kwargs["table_name"], kwargs["owner_id"]
+        if owner == "r1" and table == first:
+            return pd.DataFrame(
+                {"a": pd.Series(["x", 1], dtype="object"), "b": [None, None], "n": [1.0, 2.0]}
+            )
+        if owner == "r1" or table == first:
+            return pd.DataFrame({"a": ["x", "y"]})
+        return pd.DataFrame({"a": pd.Series([], dtype="object")})
+
+    monkeypatch.setattr(checks, "load_frame", fake_load_frame)
+    scope = checks.CensusScope(
+        picked="picked AS (SELECT * FROM (VALUES ('r1'), ('r2')) AS t(revision_id))",
+        revisions=2,
+        label="시험",
+    )
+    with duckdb.connect() as connection:
+        measured = checks.census_object_columns(connection, scope)
+
+    tables = len(REVISION_TABLES)
+    assert measured == checks.ObjectColumns(text=(tables - 1) + 1, mixed=1, empty=1, hit=1, seen=2)
+    note = checks._object_columns_note(measured)
+    assert note == f"- 8-10T 칸 {tables + 2} = 글자만 {tables} + 섞임 1 + 빈 1 · 걸림 1/2"
+    coded = checks.summary_lines([note])
+    assert checks.check_transcript(coded) == []
+    typo = [line.replace(f"글자만 {tables} ", f"글자만 {tables - 1} ") for line in coded]
+    assert checks.check_transcript(typo)
 
 
 def test_the_census_value_ranges_follow_the_reference_editor() -> None:
@@ -3407,6 +3475,7 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
         "8-4s",
         "8-4u",
         "8-10",
+        "8-10T",
         "8-11",
         "8-12",
     ]
@@ -3423,15 +3492,16 @@ def test_the_summary_is_short_ordered_by_block_and_its_check_lines_add_up(
     assert bare[9] == "- 8-4s S1 · L1/1 · O v1→r1 · X0 · U0 · G0 · Y0"
     assert bare[10] == "- 8-4u 행 9 = H 6 + E 1 + 앞 0 + 다른 1 + 빈 1 · 뺌 2/6"
     assert bare[11] == "- 8-10 활성 1 · 모두 0 (12/12)"
+    assert re.fullmatch(OBJECT_SUMMARY.format(hit=0, seen=1), bare[12]), bare[12]
     assert re.fullmatch(
         GRID_SUMMARY_IN_RANGE,
-        bare[12],
-    ), bare[12]
-    assert bare[13] == "- 8-12 전부 1 · 걸림 0"
+        bare[13],
+    ), bare[13]
+    assert bare[14] == "- 8-12 전부 1 · 걸림 0"
     assert checks.check_transcript(lines) == []
     assert (
-        sum(1 for line in lines if " = " in line) == 4
-    )  # 8-3 · 8-4 · 8-4u · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
+        sum(1 for line in lines if " = " in line) == 5
+    )  # 8-3 · 8-4 · 8-4u · 8-10T · 8-11 (경로 갈래 0 이라 8-2B 는 식 없음)
 
 
 def test_a_check_code_catches_a_one_digit_slip_and_a_swap() -> None:
