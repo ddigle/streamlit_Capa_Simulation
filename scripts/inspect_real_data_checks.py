@@ -3835,7 +3835,9 @@ OBJECT_EMPTY: Final = "빈"
 def object_column_kind(values: pd.Series) -> str:
     """객체 칸 하나의 값 종류 — 빈 값(None · NaN)을 빼고 모두 글자면 `글자만`, 빈 값뿐이면 `빈`,
     글자가 아닌 값(숫자 · 참거짓 · 바이트 등)이 하나라도 있으면 `섞임`(글자가 하나도 없어도). R1 이
-    모으는 칸은 `글자만` 뿐이다 — 같은 판정(`pd.api.types.infer_dtype(skipna=True)`)이다."""
+    모으는 칸은 `글자만` 안에서만 나온다 — 첫 판정은 같고
+    (`pd.api.types.infer_dtype(skipna=True)`), R1 은 그 위에 고유 값이 정확히 `str` 이 아니거나
+    모두 다른 칸을 더 거른다(`_sql_helpers.share_repeated_text`)."""
     kind = pd.api.types.infer_dtype(values, skipna=True)
     if kind == "string":
         return OBJECT_TEXT
