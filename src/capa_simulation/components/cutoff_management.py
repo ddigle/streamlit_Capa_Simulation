@@ -22,6 +22,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.editor_state import discard_editor, editor_widget_key
 from capa_simulation.components.flash import queue_flash, render_flash
 from capa_simulation.components.literal_markdown import literal_names
@@ -103,6 +104,8 @@ _VIEW_APPLY_KEY = "equipment_cutoff_view_apply_v1"
 # 끝에 얹는 칸 · 제출 줄(2026-11-08 사용자 답 g17 · d6). 내려받기 단추는 폼 안에 둘 수
 # 없다(Streamlit).
 _CSV_KEY = "equipment_cutoff_csv_v1"
+# 표 도구 막대를 등급으로 가르는 칸(설비 화면 내려받기 — 관리자부터).
+_TOOLS_KEY = "equipment_cutoff_tools_v1"
 _ACTIONS_KEY = "equipment_cutoff_actions_v1"
 _SUBMIT_ROW_KEY = "equipment_cutoff_submit_row_v1"
 # 폼 윗선 · 오른쪽 끝에서 제출 줄 단추까지(Streamlit 1.63 폼 꼴 — 사본 앱에서 잰 값).
@@ -161,9 +164,15 @@ def render_cutoff_management(
     `공정` 필터 선택지 글자에만 쓴다. 편집표에 표시명 보조 칸을 두지 않는다 — 편집 결과가 곧
     저장값이라(필터가 없으면 `merge_edited_rows` 가 편집표를 통째로 돌려준다) 보조 칸을 저장 전에
     매번 걸러야 하고, `볼 컬럼` 에도 끼어든다.
+
+    **등급**(2026-11-18 접속 등급) — Cut-off 저장은 관리자부터다. 그 아래 등급은 같은 표를 값만
+    보고(읽기 표 — 잠김 표지 없이, 설계 규칙 UI-INP-07 예외 · UI-NTF-05) 왕복 CSV · 표 위 작은 단추
+    줄은 설비 화면 내려받기 등급(관리자부터)에만 선다.
     """
     # 회차마다 DB 를 열지 않는다 — 저장이 성공하면 아래에서 비운다(`equipment_cache`).
     stored = load_process_cutoff(str(repository.database_path))
+    can_save = sso_identity.viewer_can("equipment.cutoff")
+    can_export = sso_identity.viewer_can("equipment.export")
 
     # Cut-off 의 뜻(표준 납기 일수, 소수는 내림)은 가용설비 현황 Guide 가 말한다.
     st.markdown("#### :material/schedule: 공정별 Cut-off")
@@ -172,8 +181,23 @@ def render_cutoff_management(
     if missing:
         # 곁 경고는 고칠 표가 바로 아래일 때만이다 — 잠긴 표에는 고칠 입력이 없어 상태 알림
         # (`report_missing_cutoffs` — `EQ-12`)에 맡긴다(설계 규칙 UI-NTF-02).
-        if locked_reason is None:
+        if locked_reason is None and can_save:
             _render_missing_cutoffs(missing)
+
+    if not can_save:
+        with grade_ui.toolbar_scope("equipment.export", _TOOLS_KEY):
+            if can_export:
+                with st.container(horizontal=True, horizontal_alignment="right"):
+                    _render_roundtrip_csv(stored)
+            toolbar_clearance()
+            st.dataframe(
+                stored.loc[:, PROCESS_CUTOFF_EDIT_COLUMNS] if not stored.empty else stored,
+                hide_index=True,
+                width="stretch",
+                placeholder="",
+                key=_LOCKED_VIEW_KEY,
+            )
+        return stored
 
     if locked_reason is not None:
         # 자리에는 표지 한 마디, 까닭은 풍선이다(설계 규칙 UI-TXT-04 · UI-INP-07). 왕복 양식 CSV 는

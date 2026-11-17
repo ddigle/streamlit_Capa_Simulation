@@ -29,6 +29,7 @@ import streamlit as st
 # 테스트가 `settings.EQUIPMENT_DUCKDB_PATH` 를 갈아끼운다 — 부를 때 모듈에서 찾는다.
 import capa_simulation.settings as settings
 from capa_simulation import alerts
+from capa_simulation.components import grade_ui, sso_identity
 from capa_simulation.components.app_header import (
     STATUS_NEWER,
     STATUS_UNSAVED,
@@ -455,6 +456,7 @@ def equipment_scenario_dialog_is_open() -> bool:
     icon=EQUIPMENT_SCENARIO_FIELD_ICON,
     on_dismiss=close_equipment_scenario_dialog,
 )
+@grade_ui.in_fragment
 def show_equipment_scenario_dialog(page_file: str | None) -> None:
     """팝업 껍데기. 열림 키가 있는 동안 `app.py` 의 호스트 프래그먼트가 매 회차 부른다."""
     render_equipment_scenario_dialog_body(page_file=page_file)
@@ -482,7 +484,14 @@ def render_equipment_scenario_dialog_body(
                 text="설비 시나리오를 읽지 못했습니다",
             )
             return
-        _render_dialog_body(str(resolved), session, can_save=page_file in SAVE_PAGES)
+        # 저장 구획은 비가동 일정이라도 저장하는 등급(실무자부터)에만 선다 — 열람은 불러오기만
+        # (설계 규칙 UI-INP-07 예외, 2026-11-18 접속 등급). 실무자의 비가동 밖 변경은 저장소가
+        # 쓰기 잠금 안에서 내용으로 막는다.
+        _render_dialog_body(
+            str(resolved),
+            session,
+            can_save=page_file in SAVE_PAGES and sso_identity.viewer_can("equipment.downtime"),
+        )
 
 
 def _render_dialog_body(database_path: str, session: EquipmentSession, *, can_save: bool) -> None:

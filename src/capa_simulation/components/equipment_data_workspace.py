@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from capa_simulation import alerts
+from capa_simulation.auth import grades
 from capa_simulation.components.date_panel import date_range_field
 from capa_simulation.components.editor_state import (
     discard_editor,
@@ -87,6 +88,7 @@ from capa_simulation.persistence.equipment_repository import (
 from capa_simulation.services.equipment_bulk_delete import (
     BASELINE_TARGET,
     DOWNTIME_TARGET,
+    EQUIPMENT_TARGET,
     TARGET_LAYOUT,
     DeletionPlan,
     RowKey,
@@ -515,14 +517,86 @@ def _bump_buffer_generation() -> None:
     st.session_state[BUFFER_GENERATION_KEY] = equipment_buffer_generation() + 1
 
 
+# 편집본 세 표(기존 보유대수 · 설비 마스터 · 비가동 일정)를 고치는 데 필요한 등급 동작(2026-11-18
+# 접속 등급 — 실무자는 비가동 일정만, 열람은 값만).
+TABLE_ACTIONS: dict[str, str] = {
+    BASELINE_TARGET: "equipment.save",
+    EQUIPMENT_TARGET: "equipment.save",
+    DOWNTIME_TARGET: "equipment.downtime",
+}
+_POSITION_ACTIONS = (
+    TABLE_ACTIONS[BASELINE_TARGET],
+    TABLE_ACTIONS[EQUIPMENT_TARGET],
+    TABLE_ACTIONS[DOWNTIME_TARGET],
+)
+
+
+def _viewer_can(action: str) -> bool:
+    """화면 등급 판정(`sso_identity.viewer_can`). 부를 때 읽는다 — 그 모듈은 머리 띠 · 입장 화면을
+    거쳐 `equipment_scenario_activation` 을 읽고, 그것이 이 모듈을 읽어 맨 위에서 부르면 돌고
+    돈다."""
+    from capa_simulation.components import sso_identity
+
+    return sso_identity.viewer_can(action)
+
+
+def table_editable(target: str) -> bool:
+    """이 화면 등급으로 그 표를 고치나(화면 판정 — 「이 등급으로 보기」 를 따른다)."""
+    return _viewer_can(TABLE_ACTIONS[target])
+
+
+def table_lock(target: str) -> str | None:
+    """그 표를 고칠 수 없으면 그 까닭 한 줄(거절 글), 고칠 수 있으면 None."""
+    action = TABLE_ACTIONS[target]
+    return None if _viewer_can(action) else grades.refusal_text(action)
+
+
+def editable_targets() -> tuple[str, ...]:
+    """이 화면 등급으로 고치는 표 — 「엑셀·CSV로 한꺼번에」 의 「등록할 표」 가 쓴다."""
+    return tuple(target for target in _TARGETS if table_editable(target))
+
+
+def refuse_out_of_grade(action: str) -> None:
+    """화면 등급 밖 편집을 받지 않았다는 알림 — 알림창 · Alarm 에 한 번(저장 벽의 거절과 같은 글,
+    설계 규칙 UI-NTF-03). 팝업 · 프래그먼트 회차면 이어 도는 본문이 앱 전체를 다시 그려 알림을
+    낸다(`grade_ui.in_fragment`)."""
+    from capa_simulation.components import grade_ui, sso_identity
+
+    grade_ui.refuse(grades.GradeDenied(action, grades.need_of(action), sso_identity.screen_grade()))
+    st.session_state[grade_ui.PENDING_KEY] = True
+
+
+def _grade_kept(frames: Frames) -> Frames:
+    """화면 등급 밖 표의 변경을 걷은 편집본 — 지금 편집본과 다른 그 표는 지금 편집본 것으로 둔다.
+
+    실무자 편집본에 비가동 밖 변경이 한 번 들어가면 그 세션의 비가동 저장이 모두 거절되므로(저장소
+    내용 대조 벽) 편집본에 드는 길(작은 편집표 제출 · 엑셀·CSV 넣기 · 일괄 삭제 · 되살리기 · 예시 행
+    지우기 · Space 적용 · 표 출납)에서 막는다. 걷은 것이 있으면 거절 알림을 한 번 담는다.
+    """
+    current = st.session_state.get(BUFFER_KEY)
+    allowed = tuple(_viewer_can(action) for action in _POSITION_ACTIONS)
+    if all(allowed) or not isinstance(current, tuple) or len(current) != 3:
+        return frames
+    kept = list(frames)
+    refused: str | None = None
+    for position, ok in enumerate(allowed):
+        if not ok and not same_frame_content(current[position], frames[position]):
+            kept[position] = current[position]
+            refused = refused or _POSITION_ACTIONS[position]
+    if refused is not None:
+        refuse_out_of_grade(refused)
+    return kept[0], kept[1], kept[2]
+
+
 def _store_changed_buffer(frames: Frames) -> None:
     """내용이 바뀐 편집본을 넣고 세대를 올린다. 일괄 삭제 확정 · 되살리기가 이 길로만 쓴다.
 
     세대가 「저장하지 않은 편집」의 근거다(`has_unsaved_equipment_edits` — 저장본으로 돌아온 세대만
     뺀다). 편집표 칸은 그대로이고 행만 빠진 제출에서 세대가 그대로면, 테마 단추가 묻지 않고
-    새로고침하고 다른 사람의 저장이 이 삭제를 알림 없이 버린다.
+    새로고침하고 다른 사람의 저장이 이 삭제를 알림 없이 버린다. 화면 등급 밖 표의 변경은 넣지
+    않는다(`_grade_kept`).
     """
-    st.session_state[BUFFER_KEY] = frames
+    st.session_state[BUFFER_KEY] = _grade_kept(frames)
     _bump_buffer_generation()
     _note_if_back_to_saved()
 
@@ -1021,7 +1095,9 @@ def _remember_edits(frames: Frames, *, keep_undo: bool = False) -> None:
     """작은 편집표의 편집을 편집본에 넣는다. `keep_undo` 면 표의 되돌리기를 비우지 않는다 — 미룬
     표 단계 되돌리기가 곧바로 그 위에 얹힌다(`defer_grid_undo` — 칸만 고친 편집이라 줄 자리가
     그대로일 때만)."""
-    # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다.
+    # 검증 실패한 값도 수정할 수 있어야 한다. 화면 계산이 읽는 draft에는 올리지 않는다. 화면 등급
+    # 밖 표의 변경은 넣지 않는다(`_grade_kept`).
+    frames = _grade_kept(frames)
     current = st.session_state.get(BUFFER_KEY)
     unchanged = isinstance(current, tuple) and all(
         same_frame_content(left, right) for left, right in zip(current, frames, strict=True)
@@ -1132,7 +1208,7 @@ def apply_master_grid_result(applied: GridApplied) -> None:
         follow_unit_renames(applied.renamed, {})
     if applied.changed:
         if any(applied.frames_changed):
-            st.session_state[BUFFER_KEY] = state.frames
+            st.session_state[BUFFER_KEY] = _grade_kept(state.frames)
             _drop_changed_editors(applied.frames_changed)
         _bump_buffer_generation()
     if state.overlay:
@@ -2069,7 +2145,18 @@ def save_equipment_buffer(
     `reopens` 는 이 저장이 그 회차 편집본을 세우기 전(콜백 — 설비 마스터 「리비전 저장」·Space
     「배치 저장」)에 돈다는 뜻이다. 남이 먼저 공통 대장을 저장해 거부되면 같은 회차 본문이 편집본을
     그 저장본으로 다시 세우므로 거부 글도 그 길을 말한다(`common_conflict_reopened`).
+
+    **등급** — 첫 쓰기 전에 한 번 본다(`grades.require_all`): 설비 편집본은 비가동 일정 저장(실무자
+    부터 — 비가동 밖 변경은 저장소가 쓰기 잠금 안에서 내용 대조로 다시 본다), FAB 대기분이 있으면
+    설비 · Space 저장(관리자부터)을 함께 — 한 누름에 반쪽 저장이 없다. 거절은 그대로 올린다(받는
+    자리는 화면 — 콜백 `grade_ui.on_press` · 팝업 `grade_ui.in_fragment`).
     """
+    grades.require_all(
+        [
+            *(["equipment.downtime"] if frames is not None else []),
+            *(["equipment.save"] if frames is None or pending_fab_layout() is not None else []),
+        ]
+    )
     fab_tail = _fab_tail()
     if frames is None:
         return (
@@ -2110,6 +2197,8 @@ def save_equipment_buffer(
             fab_tail=fab_tail,
             reopens=reopens,
         )
+    except grades.REFUSALS:
+        raise
     except BOOTSTRAP_ERRORS as exc:
         if not (fab_saved or fab_error):
             raise
@@ -2523,9 +2612,11 @@ def _render_current_data_downloads(
     scenario_name: str | None,
     edit_note: str,
     memo_key: tuple[object, ...],
+    targets: Collection[str] = _TARGETS,
 ) -> None:
     """세 표의 **현재 데이터**를 내려받는 단추 셋 — 설비 마스터 탭 메뉴 「엑셀·CSV」 의 양식 단추
     아래에 같은 차례로 선다. `edit_note` 는 편집본이 언제 이 파일에 드는지 말하는 캡션 글이다.
+    `targets` 는 세울 표다(화면 등급 — 실무자는 비가동 일정 하나).
     내보낼 바이트와 「편집본」 판정은 `memo_key`(편집본 세대·출발점·저장본 토큰) 열쇠로 세션
     메모(`GRID_MEMO_KEY`)에 한 번만 낸다 — 고친 편집본은 회차마다 직렬화해 합성 3천 대에 수십 ms 가
     들었다(개편 명세 8장).
@@ -2608,6 +2699,8 @@ def _render_current_data_downloads(
         (buffered_equipment, buffered_baseline, buffered_downtime),
         strict=True,
     ):
+        if label not in targets:
+            continue
         # 빈 표도 막지 않는다. 헤더만 든 파일이 곧 정확한 컬럼 차례의 양식이고, 그대로
         # 붙여넣으면 0행으로 읽혀 아무것도 바꾸지 않는다. 양식 단추처럼 세로로 쌓는다 — 나란히
         # 두면 칸 폭에 이름이 잘려 행 수가 「64…」 로 읽혔다(설계 규칙 UI-ACC-02).
@@ -2665,6 +2758,9 @@ def _drop_example_rows() -> None:
     않는다. 알림은 쓰기 알림 표지에도 적어(`note_notice`) 그 둘째 회차가 지우지 않게 한다(2026-10-27
     E2E 「삭제 확정」 과 같은 결함류).
     """
+    if not table_editable(BASELINE_TARGET):
+        refuse_out_of_grade(TABLE_ACTIONS[BASELINE_TARGET])
+        return
     notices = notice_marks()
     frames: Frames = st.session_state[BUFFER_KEY]
     removed = _example_row_count(frames)
@@ -3644,6 +3740,7 @@ def render_small_editor(
     drafts_replaced: bool,
     undo: Callable[[], None] | None = None,
     on_deleted: Callable[[], None] | None = None,
+    read_only: str | None = None,
 ) -> Callable[[], None] | None:
     """설비 마스터 탭 표 고르기의 작은 편집표 하나(기존 보유대수·비가동 일정 — 개편 명세 4-7)를
     그린다. 「보기 적용」 으로 확정한 보기(`_editor_view`)를 고르기 칸 붙은 편집표
@@ -3662,7 +3759,14 @@ def render_small_editor(
     되돌리기(`defer_grid_undo`)를 편집을 넣은 뒤 잇는 길이다 — 값을 바꾼 편집이 줄을 지웠거나 통째
     단계면 되돌리기를 비우고 편집을 지킨다(그 사실은 알림창이 말한다). 값이 그대로인 편집(「선택」
     칸만 고름)은 그대로 되돌린다(`_undo_lines_up`). `on_deleted` 는 「삭제 확정」 을
-    받은 제출 뒤에 부른다 — 화면이 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다(c6)."""
+    받은 제출 뒤에 부른다 — 화면이 「한 단계 되돌리기」 가 있는 「저장 전 변경」 칸을 연다(c6).
+
+    `read_only`(화면 등급으로 그 표를 고칠 수 없는 까닭 — `table_lock`)를 주면 값만 보인다 —
+    작업 줄 단추(「편집본에 적용」 · 「모두 선택」 · 「선택 ▾」) · 예시 행 줄 · 삭제 확인 없이
+    「표 보기 ▾」 와 읽기 표만(설계 규칙 UI-INP-07 예외 · UI-NTF-05 — 2026-11-18 접속 등급).
+    표 위 작은 단추 줄(표 도구 막대)은 그 표를 고치거나 내려받는 등급에만 선다 — 비가동 일정은
+    실무자부터, 기존 보유대수는 설비 화면 내려받기 등급부터(`grade_ui.toolbar_scope`). 실무자의
+    비가동 일정 편집표는 줄 더하기 · 지우기가 그 막대에 있어 실무자에게 둔다."""
     frames: Frames = st.session_state[BUFFER_KEY]
     baseline_table = target == BASELINE_TARGET
     position = 0 if baseline_table else 2
@@ -3676,7 +3780,7 @@ def render_small_editor(
             st.session_state.pop(PENDING_DELETE_KEY, None)
     # 알림은 늘 서 있는 한 칸 안에 그린다(아래 편집표 칸의 자리를 고정한다).
     with render_flash(_ERROR_KEY, _NOTICE_KEY):
-        if baseline_table:
+        if baseline_table and read_only is None:
             example_rows = _example_row_count(frames)
             if example_rows:
                 st.warning(
@@ -3692,8 +3796,17 @@ def render_small_editor(
     selection = _current_selection()
     action_row = f"equipment_small_{slug}_action_row_v1"
     st.html(f"<style>{toolbar_room_css(action_row)}</style>")
-    # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다).
-    with st.container(key=f"equipment_small_{slug}_editor_v1"):
+    tools_action = "equipment.export" if baseline_table else TABLE_ACTIONS[DOWNTIME_TARGET]
+    # 폼이 아니라 key 있는 칸 하나다(단추·보기·표가 한 칸에 선다). 그 바깥 칸이 표 도구 막대를
+    # 등급으로 가른다.
+    from capa_simulation.components import grade_ui
+
+    apply_clicked = False
+    action: str | None = None
+    with (
+        grade_ui.toolbar_scope(tools_action, f"equipment_small_{slug}_tools_v1"),
+        st.container(key=f"equipment_small_{slug}_editor_v1"),
+    ):
         # 표 위 작업 줄은 한 줄이다(설계 규칙 UI-LAY-11) — 그 끝에 「표 보기 ▾」 팝오버(보기 설정 ·
         # 「보기 적용」 — `_editor_view`)가 선다. 접힘 줄을 따로 세우지 않는다(2026-11-09 사용자
         # 보드 T5 — Cut-off 표와 같은 꼴). 줄 오른쪽 끝은 표 도구 막대 자리로 비운다 — 표가 줄 바로
@@ -3703,18 +3816,19 @@ def render_small_editor(
         view_apply_key = f"equipment_{slug}_view_apply_v1"
         downtime = frames[2]
         with st.container(horizontal=True, gap="small", key=action_row):
-            # 적용하지 않은 편집 · 필수 칸을 비운 새 줄이 버려지는 것은 누르기 전에 알아야 해 이
-            # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
-            apply_clicked = st.button(
-                "편집본에 적용",
-                key=f"equipment_{slug}_apply_v1",
-                type="primary",
-                icon=":material/check:",
-                help=f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}",
-            )
-            action = _selection_buttons(
-                slug, delete_locked=None if baseline_table else delete_locked
-            )
+            if read_only is None:
+                # 적용하지 않은 편집 · 필수 칸을 비운 새 줄이 버려지는 것은 누르기 전에 알아야 해 이
+                # 단추의 풍선에 둔다(설계 규칙 UI-NTF-09 · UI-TXT-01 — 표 밑에 늘 세우지 않는다).
+                apply_clicked = st.button(
+                    "편집본에 적용",
+                    key=f"equipment_{slug}_apply_v1",
+                    type="primary",
+                    icon=":material/check:",
+                    help=f"{small_editor_required_note(target)} {SMALL_EDITOR_NOTE}",
+                )
+                action = _selection_buttons(
+                    slug, delete_locked=None if baseline_table else delete_locked
+                )
             if baseline_table:
                 view, requested, view_clicked = _editor_view(
                     frames[0],
@@ -3733,8 +3847,24 @@ def render_small_editor(
                     locked=(EQUIPMENT_ID_COLUMN, "비가동유형", "시작일"),
                     apply_key=view_apply_key,
                 )
-        confirm_delete, cancel_delete = _render_bulk_delete_status(frames)
-        if baseline_table:
+        confirm_delete, cancel_delete = (
+            _render_bulk_delete_status(frames) if read_only is None else (False, False)
+        )
+        if read_only is not None:
+            # 값만 — 고칠 칸도 고르기 칸도 없는 읽기 표(편집본은 그대로다). 표 도구 막대가 바로 위
+            # 「표 보기 ▾」 줄을 덮지 않게 띄운다(AGENTS 9장 「표 도구 막대」).
+            toolbar_clearance()
+            st.dataframe(
+                view.frame,
+                hide_index=True,
+                width="stretch",
+                placeholder="",
+                column_config=dict(view.column_config),
+                key=f"equipment_small_{slug}_view_only_v1",
+            )
+            edited = frames[position]
+            checked: frozenset[RowKey] = frozenset()
+        elif baseline_table:
             edited, checked = _selectable_editor(
                 frames[0],
                 view,

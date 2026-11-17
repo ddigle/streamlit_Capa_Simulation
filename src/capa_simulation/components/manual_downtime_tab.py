@@ -44,11 +44,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Final
+from typing import Any, Final
 
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.components import admin_view, grade_ui, sso_identity
 from capa_simulation.components.data_error_mark import render_data_error
 from capa_simulation.components.equipment_save_fields import (
     SAVED_BY_LABEL,
@@ -121,6 +122,11 @@ __all__ = [
 
 MANUAL_FORM_KEY: Final = "equipment_manual_downtime_form"
 MANUAL_EDITOR_KEY: Final = "equipment_manual_downtime_editor"
+# 등급으로 표 도구 막대를 가르는 칸(편집표 · 읽기 표 — 실무자부터)과 저장 이력 칸(설비 화면
+# 내려받기 — 관리자부터), 열람의 읽기 표.
+MANUAL_TOOLS_KEY: Final = "equipment_manual_downtime_tools"
+MANUAL_HISTORY_TOOLS_KEY: Final = "equipment_manual_downtime_history_tools"
+MANUAL_VIEW_ONLY_KEY: Final = "equipment_manual_downtime_view_only"
 MANUAL_NOTE_KEY: Final = "equipment_manual_downtime_note"
 MANUAL_SAVED_BY_KEY: Final = "equipment_manual_downtime_saved_by"
 MANUAL_BASE_VERSION_KEY: Final = "equipment_manual_downtime_base_version"
@@ -246,13 +252,20 @@ def render_manual_downtime_tab(
     owner_tab: OpenTab | None,
     locked_reason: str | None = None,
 ) -> None:
-    """탭 본문. 숨은 회차에도 폼을 그린다(적은 칸을 지킨다) — 저장 이력만 열린 회차에 그린다."""
+    """탭 본문. 숨은 회차에도 폼을 그린다(적은 칸을 지킨다) — 저장 이력만 열린 회차에 그린다.
+
+    입력 비가동 고치기 · 저장은 실무자부터다(2026-11-18 접속 등급 — 2차 답 「다」). 열람은 같은 표를
+    값만 본다(설계 규칙 UI-INP-07 예외 · UI-NTF-05 — 저장 줄 없이 읽기 표). 표 위 작은 단추 줄도
+    실무자부터 선다(`grade_ui.toolbar_scope` — 열린 물음: 2차 답이 이 표의 내려받기를 말하지
+    않았다)."""
     try:
         profile = load_manual_downtime(database_path)
     except BOOTSTRAP_ERRORS as exc:
         render_data_error(
             "입력 비가동대수를 읽지 못했습니다 — "
-            + bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)),
+            + admin_view.diagnostic_message(
+                bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            ),
             code="EQ-09",
             text="입력 비가동대수를 읽지 못했습니다",
         )
@@ -267,17 +280,48 @@ def render_manual_downtime_tab(
         # 빈 결과는 평문 한 줄, 칸이 서는 법은 풍선이다(설계 규칙 UI-TXT-04).
         st.caption("넣을 칸이 없습니다.", help=MANUAL_NO_CELLS_HELP)
         return
-    _render_editor(
-        database_path=database_path,
-        profile=profile,
-        processes=processes,
-        absent=absent,
-        months=ordered_months,
-        process_labels=process_labels,
-        locked_reason=locked_reason,
-    )
+    if not sso_identity.viewer_can("equipment.manual_downtime"):
+        with grade_ui.toolbar_scope("equipment.manual_downtime", MANUAL_TOOLS_KEY):
+            st.dataframe(
+                manual_editor_frame(
+                    profile, processes, ordered_months, process_labels, absent=absent
+                ),
+                hide_index=True,
+                width="stretch",
+                placeholder="",
+                column_config=_month_columns(ordered_months),
+                key=MANUAL_VIEW_ONLY_KEY,
+            )
+    else:
+        _render_editor(
+            database_path=database_path,
+            profile=profile,
+            processes=processes,
+            absent=absent,
+            months=ordered_months,
+            process_labels=process_labels,
+            locked_reason=locked_reason,
+        )
     if not tab_is_hidden(owner_tab):
-        _render_history(database_path)
+        with grade_ui.toolbar_scope("equipment.export", MANUAL_HISTORY_TOOLS_KEY):
+            _render_history(database_path)
+
+
+def _month_columns(months: Sequence[int]) -> dict[str, Any]:
+    """편집표 · 읽기 표 칸 꼴 — 공정 칸(고정)과 달마다 소수 둘째 자리 대수."""
+    return {
+        MANUAL_PROCESS_COLUMN: st.column_config.TextColumn("공정", pinned=True, width="medium"),
+        **{
+            str(int(month)): st.column_config.NumberColumn(
+                month_label(int(month)),
+                min_value=0.0,
+                max_value=MANUAL_DOWNTIME_MAX_UNITS,
+                step=0.01,
+                format="%.2f",
+            )
+            for month in months
+        },
+    }
 
 
 def _render_intro(profile: ManualDowntime, months: Sequence[int]) -> None:
@@ -369,7 +413,10 @@ def _render_editor(
         # 표 앞 띄움을 두지 않는다 — 표 도구 막대(표 머리 위 37px)는 저장 줄 오른쪽 끝 빈 자리
         # 위에 선다(AGENTS 9장 「표 도구 막대」 — 저장 줄 → 표 14px, 폼 안 빈 알림 칸은 간격을
         # 먹지 않는다).
-        with st.container(key=MANUAL_EDITOR_KEY):
+        with (
+            grade_ui.toolbar_scope("equipment.manual_downtime", MANUAL_TOOLS_KEY),
+            st.container(key=MANUAL_EDITOR_KEY),
+        ):
             edited = st.data_editor(
                 frame,
                 key=manual_editor_key(started),
@@ -379,21 +426,7 @@ def _render_editor(
                 # 결측 칸은 `None` 글자가 아니라 빈칸으로 그린다(`month_editor` 와 같은 규칙).
                 placeholder="",
                 disabled=True if locked else [MANUAL_PROCESS_COLUMN],
-                column_config={
-                    MANUAL_PROCESS_COLUMN: st.column_config.TextColumn(
-                        "공정", pinned=True, width="medium"
-                    ),
-                    **{
-                        str(int(month)): st.column_config.NumberColumn(
-                            month_label(int(month)),
-                            min_value=0.0,
-                            max_value=MANUAL_DOWNTIME_MAX_UNITS,
-                            step=0.01,
-                            format="%.2f",
-                        )
-                        for month in months
-                    },
-                },
+                column_config=_month_columns(months),
             )
     if not submitted:
         # 이 회차가 그린 저장본이 사용자가 본 화면이다 — 제출·충돌 회차에는 적지
@@ -426,7 +459,11 @@ def _render_editor(
             manual_downtime_digest(prepare_manual_downtime(raw)),
         )
     except ValueError as exc:
-        notice.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        notice.error(
+            admin_view.diagnostic_message(
+                bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            )
+        )
         return
     repository = get_equipment_repository(database_path)
     reviewer = str(saved_by or "")
@@ -460,15 +497,25 @@ def _render_editor(
             queue_flash(MANUAL_FLASH_KEY, MANUAL_SAVED_MESSAGE)
             mark_note_saved_again(MANUAL_NOTE_KEY, memo)
         else:
-            message = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            message = admin_view.diagnostic_message(
+                bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            )
             note_profile_conflict(conflict_marks, MANUAL_SAVE_NAME, message)
             queue_refusal(MANUAL_SAVE_NAME, message)
         st.rerun(scope="app")
     except BOOTSTRAP_ERRORS as exc:
-        notice.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        notice.error(
+            admin_view.diagnostic_message(
+                bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            )
+        )
         return
     except ValueError as exc:
-        notice.error(bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,)))
+        notice.error(
+            admin_view.diagnostic_message(
+                bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+            )
+        )
         return
     if version is None:
         notice.info(MANUAL_UNCHANGED_MESSAGE, icon=":material/info:")
@@ -493,7 +540,9 @@ def _render_history(database_path: str) -> None:
     try:
         saves = load_manual_downtime_saves(database_path, limit=_HISTORY_LIMIT)
     except BOOTSTRAP_ERRORS as exc:
-        message = bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        message = admin_view.diagnostic_message(
+            bootstrap_error_message(exc, database_paths=(EQUIPMENT_DUCKDB_PATH,))
+        )
         render_data_error(
             f"저장 이력을 읽지 못했습니다 — {message}",
             code="EQ-09",

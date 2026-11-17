@@ -25,6 +25,7 @@ from typing import Any, NamedTuple
 import pandas as pd
 
 from capa_simulation import alerts
+from capa_simulation.components import sso_identity
 from capa_simulation.components.state_alerts import (
     ALARM_ROW_PLACE,
     alarm_table_place,
@@ -388,6 +389,7 @@ def report_layout_warnings(
                 title=LAYOUT_WARNING_TABLE,
                 file_name=LAYOUT_WARNING_FILE,
                 clip=True,
+                csv=sso_identity.viewer_can("equipment.export"),
             ),
         ),
     )
