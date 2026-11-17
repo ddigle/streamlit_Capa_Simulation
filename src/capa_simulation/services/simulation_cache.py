@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 import pandas as pd
 import streamlit as st
 
+from capa_simulation.frame_sharing import is_locked_write_error
 from capa_simulation.services.availability_gap import GapComparison, build_availability_gap
 from capa_simulation.services.availability_sheet import AvailabilitySheet, build_availability_sheet
 from capa_simulation.services.capacity_reference_editor import build_reference_edit_table
@@ -1763,7 +1764,12 @@ def _capacity_outcome(tables: Mapping[str, pd.DataFrame]) -> CapacityOutcome:
     try:
         unit_capacity, required_equipment = get_capacity_and_demand(tables)
     except ValueError as exc:
-        # 기준정보 계약 위반만 결과로 담는다. 다른 예외는 코드 결함이라 그대로 올린다.
+        # 기준정보 계약 위반만 결과로 담는다. 다른 예외는 코드 결함이라 그대로 올린다 — 잠긴
+        # 세션 표(모듈수 `RQ_MODULE` 은 사본 없이 넘긴다)에 제자리로 쓰다 난 read-only 오류도
+        # `ValueError` 지만 코드 결함이라 담지 않는다. 담으면 프로세스 전역 칸에 들어가 그
+        # 리비전을 연 모든 세션 · 저장 검사가 기준정보 멈춤으로 본다(AGENTS 5장 20).
+        if not isinstance(exc, ReferenceJoinError) and is_locked_write_error(exc):
+            raise
         problem = exc.problem if isinstance(exc, ReferenceJoinError) else None
         return CapacityOutcome(None, None, str(exc), problem)
     return CapacityOutcome(unit_capacity, required_equipment, None)

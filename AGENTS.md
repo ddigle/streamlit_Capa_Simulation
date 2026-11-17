@@ -2277,8 +2277,8 @@ Streamlit 페이지나 상태를 변경했다면 `streamlit.testing.v1.AppTest` 
   (`_retire_edit_cell` → `simulation_cache.retire_full_capacity_outcome` — pristine 칸은 걷지 않는다,
   `tests/test_edit_token_retire.py`).
 - `src/capa_simulation/frame_sharing.py` — 세션끼리 함께 쓰는 표의 numpy 배열(데이터 블록 · 축 · 확장 배열 칸) 잠금
-  (`lock_frame`) · 잠김 확인(`frame_is_locked`) · 잠긴 표의 겉껍데기 사본(`shared_view` — 프레임 · 축 객체만 새로)을 한 곳에
-  둔다(5장 20). pandas · numpy 만 보는 잎이라 `persistence/cache.py` · `io/reference_cache.py` · `scenario_state.py` 가 함께
+  (`lock_frame`) · 잠김 확인(`frame_is_locked`) · 잠긴 표의 겉껍데기 사본(`shared_view` — 프레임 · 축 객체만 새로) · 잠긴
+  배열에 쓰다 난 오류 가르기(`is_locked_write_error` — 계산 결과 칸이 담지 않고 다시 올린다)를 한 곳에 둔다(5장 20). pandas · numpy 만 보는 잎이라 `persistence/cache.py` · `io/reference_cache.py` · `scenario_state.py` 가 함께
   쓴다.
 - `src/capa_simulation/scenario_activation.py`, `scenario_preset_state.py` — 저장 리비전과 그 프리셋을 세션에 원자적으로
   활성화한다(새 세션은 최신 공식 리비전). 프리셋 키·기본값은 이 파일과 `persistence/models.py` 에만 선언한다.
@@ -5815,7 +5815,10 @@ RQ_MODULE
       `copy(deep=True)` 만으로는 열 이름 배열을 공유한다)이다.
     - **세션 표의 편집은 표를 통째로 갈아 끼우는 것으로만 한다**(`apply_month_updates` · `apply_table_updates` · 고칠 표는
       `scenario_table` 의 깊은 사본에서). 세션 원본 · 편집본에 같은 dtype 으로 제자리 쓰면(`df.loc[…] = …` ·
-      `columns.values[i] = …`) 잠긴 배열이 `ValueError`(read-only)를 내고 계산 화면은 「계산을 멈췄습니다」 로 받는다 —
+      `columns.values[i] = …`) 잠긴 배열이 `ValueError`(read-only)를 내고 계산 화면은 「계산을 멈췄습니다」 로 받는다. 그
+      오류는 코드 결함이라 계산 결과 칸에 담지 않는다 — 전체 기간 칸(`simulation_cache._capacity_outcome`)은 기준정보 계약
+      위반만 결과로 담고 read-only 는 다시 올린다(`frame_sharing.is_locked_write_error`, 담으면 프로세스 전역 칸이라 그
+      리비전을 연 모든 세션 · 저장 검사가 기준정보 멈춤으로 본다) —
       모든 화면 시험(`tests/test_all_pages_render.py`)이 멈춤 글 0 · 공유 유지를, `tests/test_session_table_sharing.py`
       가 잠김 · 같은 메모리 · 표 교체 · 끔 스위치를 본다.
     - **세션 표의 크기를 재지 않는다** — `memory_usage(deep=True)` · `info(memory_usage="deep")` · `sys.getsizeof(df)`

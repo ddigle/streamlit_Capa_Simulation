@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
+from capa_simulation.frame_sharing import lock_frame, shared_view
 from capa_simulation.services import simulation_cache as sc
 from capa_simulation.services.builtin_seed import build_builtin_seed_dataset
 from capa_simulation.services.unit_capacity import (
@@ -152,6 +153,47 @@ def test_slicing_on_every_call_matches_the_old_sliced_cell(
         new_key, _scenario_tables=tables, _reference_tables=tables
     )
     _assert_same_frame(again[0], new_first[0])
+
+
+def test_a_write_to_a_locked_session_table_is_raised_and_never_cached(
+    tables: dict[str, pd.DataFrame], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """세션 원본은 공용 칸과 배열을 함께 쓰는 잠긴 표이고 모듈수(`RQ_MODULE`)는 사본 없이 계산에
+    넘어간다. 계산이 거기에 제자리로 쓰면 나는 read-only `ValueError` 는 코드 결함이라 결과 칸에
+    담지 않고 그대로 올린다 — 담으면 프로세스 전역 칸이라 그 리비전을 연 모든 세션 · 저장 검사가
+    기준정보 멈춤으로 본다(AGENTS 5장 20). 기준정보 계약 위반(`ValueError`)은 그대로 결과로
+    담긴다."""
+    module = tables["RQ_MODULE"].copy(deep=True)
+    lock_frame(module)
+    reference = {**tables, "RQ_MODULE": shared_view(module)}
+    calls: list[str] = []
+
+    def writes_in_place(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+        calls.append("write")
+        target = inputs["RQ_MODULE"]
+        target.iloc[0, list(target.columns).index("모듈수")] = 3.0
+        raise AssertionError("잠긴 표에 썼는데 막히지 않았다")
+
+    monkeypatch.setattr(sc, "get_capacity_and_demand", writes_in_place)
+    key = (1, f"test-locked-write-{uuid4().hex}")
+    for _ in range(2):
+        with pytest.raises(ValueError, match="read-only"):
+            sc.get_full_capacity_outcome(key, _scenario_tables=tables, _reference_tables=reference)
+    assert calls == ["write", "write"], "read-only 오류는 칸에 담기지 않아 부를 때마다 다시 돈다"
+    assert float(module["모듈수"].iloc[0]) == float(tables["RQ_MODULE"]["모듈수"].iloc[0])
+
+    def breaks_contract(inputs: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+        calls.append("contract")
+        raise ValueError("RQ_MODULE 계약 위반 시험")
+
+    monkeypatch.setattr(sc, "get_capacity_and_demand", breaks_contract)
+    contract_key = (1, f"test-contract-{uuid4().hex}")
+    for _ in range(2):
+        outcome = sc.get_full_capacity_outcome(
+            contract_key, _scenario_tables=tables, _reference_tables=reference
+        )
+        assert outcome.error == "RQ_MODULE 계약 위반 시험"
+    assert calls.count("contract") == 1, "계약 위반은 결과로 담겨 다시 계산하지 않는다"
 
 
 def test_an_error_outside_the_period_still_stops_and_says_so(

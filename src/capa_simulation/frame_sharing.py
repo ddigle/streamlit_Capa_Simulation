@@ -1,4 +1,4 @@
-# Purpose: 세션끼리 함께 쓰는 표의 배열을 잠그고 잠김을 보며 잠긴 표의 겉껍데기 사본을 짓는다.
+# Purpose: 세션끼리 함께 쓰는 표의 배열 잠금 · 잠김 확인 · 겉껍데기 사본 · 잠긴 쓰기 오류를 둔다.
 
 """함께 쓰는 표의 잠금과 겉껍데기 사본(AGENTS 5장 20).
 
@@ -54,6 +54,17 @@ def lock_frame(frame: pd.DataFrame) -> None:
 def frame_is_locked(frame: pd.DataFrame) -> bool:
     """데이터 · 축 배열이 모두 잠겼는가 — 겉껍데기 사본으로 함께 써도 되는 표인가."""
     return all(not array.flags.writeable for array in frame_arrays(frame))
+
+
+def is_locked_write_error(exc: BaseException) -> bool:
+    """잠긴(읽기 전용) 배열에 쓰다 난 `ValueError` 인가 — 데이터가 아니라 코드 결함이다(5장 20).
+
+    numpy 대입은 `assignment destination is read-only`, pandas 의 Cython 길은
+    `buffer source array is read-only`, ufunc 의 `out=` 은 `output array is read-only` 를 낸다 —
+    셋 다 `read-only` 를 든다. 기준정보 계약 위반을 결과로 담는 캐시
+    (`simulation_cache._capacity_outcome`)가 이 오류를 담지 않고 다시 올리게 가른다.
+    """
+    return isinstance(exc, ValueError) and "read-only" in str(exc)
 
 
 def shared_view(frame: pd.DataFrame) -> pd.DataFrame:
