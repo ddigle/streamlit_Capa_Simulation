@@ -282,7 +282,8 @@ uv sync
 ### 4단계. 사내 전용 패키지 넣기 (사내만)
 
 사내 패키지 저장소 주소는 사내 값이라 저장소에 없습니다(공개 저장소). 이 PC 의 사용자 환경변수
-`CAPA_COMPANY_INDEX_URL` 에 한 번 넣고 **새 창**을 엽니다(넣은 창과 그 전에 열린 창에는 안 보입니다). 값은 지금 쓰는 사내
+`CAPA_COMPANY_INDEX_URL` 에 한 번 넣고 **새 창**을 엽니다(넣은 창과 그 전에 열린 창에는 안 보입니다 — 이미 떠 있던 VS Code ·
+Windows Terminal 에서 연 새 창 · 탭도 못 받을 수 있어 그때는 그 프로그램을 다시 엽니다. 사내 런북 4-1 에 그 창에서 값을 불러오는 한 줄이 있습니다). 값은 지금 쓰는 사내
 Artifactory 인덱스 주소(`https://…/simple` 통째, 계정·토큰 없이) 그대로입니다 — 이 줄이 환경변수로 바뀌기 전 판의
 `requirements-company.txt` `--index-url` 줄에 있던 주소이고, 사내 git 이력의 그 판에서 읽을 수 있습니다.
 
@@ -367,7 +368,7 @@ New-Item -ItemType Directory review -Force
 |---|---|
 | `uv lock` 이 `dns error` 로 죽는다 | `bigdataquery` 를 `pyproject.toml` 에서 빼 `requirements-company.txt` 에 둡니다. |
 | `bigdataquery` 가 사라졌다 | 맨 `uv sync` 를 돌렸습니다. 4단계를 다시 하고 이후 `--inexact` 를 씁니다. |
-| `uv pip install -r requirements-company.txt` 가 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}` 로 멈춘다 | 이 창에 사용자 환경변수 `CAPA_COMPANY_INDEX_URL` 이 없거나 주소 꼴(`https://…/simple` 통째)이 아닙니다. 4단계 첫 줄로 넣고 새 PowerShell 창에서 다시 칩니다 — Claude 세션 안에서 `! ` 로 쳤다면 그 세션은 넣은 값을 보지 못하므로 Claude 를 새 창에서 다시 띄웁니다. |
+| `uv pip install -r requirements-company.txt` 가 `Invalid URL … ${CAPA_COMPANY_INDEX_URL}` 로 멈춘다 | 이 창에 사용자 환경변수 `CAPA_COMPANY_INDEX_URL` 이 없거나 주소 꼴(`https://…/simple` 통째)이 아닙니다. 4단계 첫 줄로 넣고 새 PowerShell 창에서 다시 칩니다 — Claude 세션 안에서 `! ` 로 쳤다면 그 세션은 넣은 값을 보지 못하므로 Claude 를 새 창에서 다시 띄웁니다. 이미 떠 있던 VS Code · Windows Terminal 에서 연 새 창도 값을 못 받을 수 있습니다 — 그 프로그램을 다시 열거나 그 창에서 `$env:CAPA_COMPANY_INDEX_URL = [Environment]::GetEnvironmentVariable("CAPA_COMPANY_INDEX_URL","User")` 를 먼저 칩니다. |
 | `uv pip check` 가 `bigdataquery` 와 pandas · numpy 충돌을 찍는다 | 락이 그 패키지의 범위를 벗어났습니다. 사외가 `pyproject.toml` 범위와 락을 맞춥니다 — 사내 런북 4-1. |
 | `duckdb.IOException` | 앱이 DB 를 쥔 채 스크립트·테스트를 돌렸습니다(배타 잠금). 앱을 끄고 다시 — 고장이 아닙니다. |
 | 앱이 「Port 8501 is not available」 로 멈춘다 | 다른 것이 8501 을 쥐고 있습니다. 포트를 적었으므로 다음 번호로 말없이 옮겨 서지 않고 멈춘 것입니다. 누가 쥐었는지 보는 법은 [`docs/internal_update_runbook.md`](docs/internal_update_runbook.md) 4-2 「접속이 안 되면」. |

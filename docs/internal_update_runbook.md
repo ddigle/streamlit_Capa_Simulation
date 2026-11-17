@@ -609,6 +609,14 @@ uv pip install -r requirements-company.txt
 PowerShell 창에서 다시 친다 — Claude 세션은 시작 때의 환경을 그대로 들고 있어 넣은 값을 보지 못한다(이 세션에서 이어 치려면
 Claude 를 새 창에서 다시 띄운다).
 
+「새 창」 은 프로그램째 새로 연 창이다 — 이미 떠 있던 프로그램(VS Code · Windows Terminal)에서 연 새 창 · 탭은 그 프로그램이 뜰 때의 환경을
+물려받아 새로 넣은 사용자 환경변수를 못 받을 수 있고, 그러면 같은 `Invalid URL` 로 멈춘다. 그 프로그램을 모두 닫고 다시 열거나, 설치를 칠 그 창에서 먼저 아래
+한 줄로 값을 불러온 뒤 위 줄을 친다(이 줄도 사용자가 자기 창에서 친다 — `! ` 로 친 Claude 세션에 넣어도 사용자 창에는 남지 않는다).
+
+```powershell
+$env:CAPA_COMPANY_INDEX_URL = [Environment]::GetEnvironmentVariable("CAPA_COMPANY_INDEX_URL","User")
+```
+
 ### 4-2. 마이그레이션은 앱이 알아서 한다
 
 앱을 한 번 띄우면 `data/capa_simulation.duckdb` 와 `data/equipment_availability.duckdb` 에
